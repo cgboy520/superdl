@@ -1,4 +1,4 @@
-/** 租户下钻抽屉:实名摘要 + 账单/流水/订单/实例/配额/事件 六 Tab + 跳审计。
+/** 租户下钻抽屉:实名摘要 + 账单/流水/订单/实例/在线服务/配额/事件 七 Tab + 跳审计。
  *  文件名 dash 前缀 = 非路由组件,不进 TanStack Router 的路由树。
  *  抽屉数据全部按 user_id / uuid 反查,实例选择器在账单过滤与事件时间线间复用同一份列表。 */
 
@@ -55,9 +55,18 @@ import { useApiErrorText } from "@superdl/ui";
 import { useCsvExport } from "@superdl/ui";
 import { useFormat } from "@superdl/ui";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
+import { AdminServicesTable } from "./-AdminServicesTable";
 
 // 抽屉 Tab 白名单(tenants 路由 ?dtab= 校验共用)
-export const DRAWER_TABS = ["bills", "ledger", "orders", "instances", "quota", "events"] as const;
+export const DRAWER_TABS = [
+  "bills",
+  "ledger",
+  "orders",
+  "instances",
+  "services",
+  "quota",
+  "events",
+] as const;
 export type DrawerTab = (typeof DRAWER_TABS)[number];
 
 export function TenantDrawer({
@@ -151,6 +160,11 @@ export function TenantDrawer({
                 key: "instances",
                 label: t("tenants.tabInstances"),
                 children: <TenantInstancesTab instances={instances} total={instancesTotal} />,
+              },
+              {
+                key: "services",
+                label: t("tenants.tabServices"),
+                children: <AdminServicesTable userId={tenant.id} compact />,
               },
               {
                 key: "quota",

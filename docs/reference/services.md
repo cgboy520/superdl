@@ -52,6 +52,7 @@
 | `GET /api/v1/services/{slug}/api-keys` | user | 列表,只回 `key_prefix`,不回明文 |
 | `POST /api/v1/services/{slug}/api-keys` | user | 新建;**明文只在本次响应里出现一次**;单服务活跃密钥上限见 [limits.md](./limits.md);已删除的服务 409 |
 | `DELETE /api/v1/services/{slug}/api-keys/{key_id}` | user | 吊销:写 `revoked_at`,不删行 |
+| `GET /api/admin/v1/services` | admin/ops/finance/readonly | 管理端全局列表(不限租户,`user_id` / `q` / `include_released`),见 [admin.md](./admin.md) |
 | `/api/internal/v1/endpoint-auth` | 无(集群内) | 网关 `SecurityPolicy.extAuth` 的回调,**不对公网开放**;须接受全部 HTTP 方法(鉴权请求沿用客户端原始 method,405 不是 2xx) |
 
 实例层对服务的版本实例只开放只读端点(详情 / 接入信息 / 事件 / 日志 / 监控)与购买模式类端点(续费 / 转换);

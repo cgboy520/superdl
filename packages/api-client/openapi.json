@@ -1151,6 +1151,139 @@
         "title": "AdminSelfPasswordRequest",
         "type": "object"
       },
+      "AdminServiceOut": {
+        "description": "管理端全局服务视图:含租户与当前版本实例的调度节点(不暴露给用户端)。",
+        "properties": {
+          "container": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceContainerOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current_instance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InstanceOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "desired_state": {
+            "title": "Desired State",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "node_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Name"
+          },
+          "protocol": {
+            "title": "Protocol",
+            "type": "string"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "released_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Released At"
+          },
+          "require_api_key": {
+            "title": "Require Api Key",
+            "type": "boolean"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "rollout_instance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InstanceOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "url",
+          "protocol",
+          "require_api_key",
+          "desired_state",
+          "status",
+          "ready",
+          "revision",
+          "current_instance",
+          "rollout_instance",
+          "container",
+          "created_at",
+          "updated_at",
+          "released_at",
+          "user_id"
+        ],
+        "title": "AdminServiceOut",
+        "type": "object"
+      },
       "AdminSettlementGapOut": {
         "description": "管理端结算缺口视图:水位线被越过但账未结清的窗口留痕。",
         "properties": {
@@ -5306,6 +5439,44 @@
           "items"
         ],
         "title": "Page[AdminRefundOut]",
+        "type": "object"
+      },
+      "Page_AdminServiceOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminServiceOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "Page[AdminServiceOut]",
         "type": "object"
       },
       "Page_AdminSettlementGapOut_": {
@@ -14307,6 +14478,120 @@
           }
         ],
         "summary": "Revenue Report",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/services": {
+      "get": {
+        "description": "全局在线服务(不限租户)。q:服务名或 slug 前缀;默认不列已删除。游标分页(降序)。\n只读:处置走当前版本实例的 force-stop。",
+        "operationId": "admin_list_services_api_admin_v1_services_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_released",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Released",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_AdminServiceOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin List Services",
         "tags": [
           "admin"
         ]

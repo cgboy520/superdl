@@ -20,7 +20,9 @@
 | `/nodes` 节点与 GPU | ops/readonly | 节点表(台账;最近心跳列/排序/池与状态筛选;cordon 需原因)+ 每卡热力网格 + 添加节点 + 注册记录(进行中/全部) |
 | `/skus` SKU 与定价 | ops 可写 | SKU 表(容量/已售/实际超卖率列,行内上下架开关)+ 编辑抽屉(改价必填原因+二次确认+影响预览;含 `period_enabled` 开关「包周期」;含 `spot_enabled` 开关「竞价档」,**新建时默认关**)+ 从集群资源创建 + 容量预览 |
 | `GET /api/admin/v1/skus/{sku_id}/impact` | ops/finance/readonly | 改价影响面(只读):活跃实例数/涉及用户数/占用卡数 |
-| `/tenants` 租户与实例 | ops 可写 | 租户表(q 纯数字按 id 精确命中+手机号后缀;`order=asc|desc` 注册先后服务端排序——余额/消费等聚合列按页拼装,不提供排序;冻结文案含影响预览、响应回显 instances_stopped)+ 账单下钻侧滑(游标加载更多)+ 全局实例表(强制停止;**强制回收**,只对 `market='spot'` 且 running 的实例可用;**购买模式**列 = 按量 / 竞价 / 包日 / 包周 / 包月 / 包年);各页 user_id 单元格一律链接到 `/tenants?q=<id>` |
+| `/tenants` 租户与实例 | ops 可写 | 租户表(q 纯数字按 id 精确命中+手机号后缀;`order=asc|desc` 注册先后服务端排序——余额/消费等聚合列按页拼装,不提供排序;冻结文案含影响预览、响应回显 instances_stopped)+ 账单下钻侧滑(游标加载更多)+ 全局实例表(强制停止;**强制回收**,只对 `market='spot'` 且 running 的实例可用;**购买模式**列 = 按量 / 竞价 / 包日 / 包周 / 包月 / 包年;**形态**列 = 开发机 / 在线服务,服务行链到 `/services?q=<slug>`)+ 租户抽屉「在线服务」Tab(同一张表按 user_id 过滤,取前 100 条并明示截断);各页 user_id 单元格一律链接到 `/tenants?q=<id>` |
+| `/services` 在线服务 | 全角色只读;强制停止 ops | 全局服务表(服务 / 归属 / 服务端点 / 状态·就绪 / 当前实例(链到全局实例表按 uuid 检索)/ 版本 / 节点 / 创建时间);`q` 匹配名称与 slug 前缀、「含已删除」开关,均入 URL;唯一处置「强制停止」委托当前版本实例的 `force-stop`(同一条审计与尾账路径) |
+| `GET /api/admin/v1/services?user_id=&q=&include_released=&cursor=&limit=` | ops/finance/readonly | 不限租户的服务列表(`AdminServiceOut` = `ServiceOut` + `user_id` + 当前实例 `node_name`);默认不列已删除;`total` 只在 `user_id` 过滤时算 |
 | `POST /api/admin/v1/tenants/{user_id}/freeze` `/unfreeze` | ops | `{reason}` 必填;冻结与 status 变更同事务对该用户全部实例下发停机(经 outbox),响应回显 `instances_stopped`(creating/starting 由巡检收敛,不计入);解冻不自动开机,站内信告知用户手动开机 |
 | `POST /api/admin/v1/instances/{uuid}/force-stop` | ops | `{reason}` 必填;仅 running(其余 409),下发关机并结算尾账 |
 | `POST /api/admin/v1/instances/{uuid}/preempt` | ops | `{reason}` 必填;**强制回收一台竞价实例**(腾容量)。仅 `market='spot'`(否则 `orchestrator.preemptNotSpot`)且 running(否则 409)。走与自动抢占**同一条**回收路径:同一个 reason `preempted`、同样的宽限窗与短信 / 站内信通知,宽限窗内 Pod 仍在,尾账按实际运行秒数结算 |

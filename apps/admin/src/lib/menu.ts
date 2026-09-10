@@ -6,6 +6,7 @@ import {
   ApiOutlined,
   AuditOutlined,
   CloudDownloadOutlined,
+  CloudServerOutlined,
   ClusterOutlined,
   CustomerServiceOutlined,
   DeploymentUnitOutlined,
@@ -37,6 +38,7 @@ export const MENU_ROLES = {
   "/images": ["admin", "ops", "readonly"], // 对齐后端 /images require_roles(finance 无)
 
   "/tenants": ALL_ROLES,
+  "/services": ALL_ROLES, // 读全角色;强制停止按钮级 disable + 后端 403 兜底
   "/finance": ["admin", "finance", "readonly"], // ops 无财务权限
   "/tickets": ALL_ROLES, // 读全角色;写操作(ops/admin)由按钮级 disable + 后端 403 兜底
   "/audit": ALL_ROLES,
@@ -60,6 +62,7 @@ export const MENU = [
   { key: "/skus", icon: TagsOutlined, labelKey: "menu.skus" },
   { key: "/images", icon: CloudDownloadOutlined, labelKey: "menu.images" },
   { key: "/tenants", icon: TeamOutlined, labelKey: "menu.tenants" },
+  { key: "/services", icon: CloudServerOutlined, labelKey: "menu.services" },
   { key: "/finance", icon: PayCircleOutlined, labelKey: "menu.finance" },
   { key: "/tickets", icon: CustomerServiceOutlined, labelKey: "menu.tickets" },
   { key: "/audit", icon: AuditOutlined, labelKey: "menu.audit" },

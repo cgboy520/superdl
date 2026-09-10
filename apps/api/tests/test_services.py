@@ -28,7 +28,14 @@ from app.modules.services import service
 from app.modules.services.models import Service, ServiceApiKey
 from app.modules.services.schemas import ServiceCreate
 from app.modules.services.state import derive_status
-from tests.helpers import drain, drain_strict, new_user, provision_service, service_body
+from tests.helpers import (
+    admin_headers,
+    drain,
+    drain_strict,
+    new_user,
+    provision_service,
+    service_body,
+)
 
 pytestmark = pytest.mark.usefixtures("fake")
 
@@ -495,6 +502,50 @@ class TestLifecycle:
         assert (
             await client.post(f"/api/v1/services/{slug}/start", headers=headers)
         ).status_code == 409
+
+
+class TestAdminList:
+    async def test_admin_sees_all_tenants_with_owner_and_filters(self, client, sm, fake):
+        """管理端全局服务表跨租户、带归属;q 按 slug 前缀命中;user_id 过滤附 total;
+        已删除默认不列、include_released 才列。挂了说明运营看不到谁在对外放服务。"""
+        headers, svc, user_id = await provision_service(client, sm, fake, phone="13900000360")
+        _, other, other_user = await provision_service(client, sm, fake, phone="13900000361")
+        ah = await admin_headers(sm, client, role="readonly")
+        listed = await client.get("/api/admin/v1/services", headers=ah)
+        assert listed.status_code == 200, listed.text
+        rows = {i["slug"]: i for i in listed.json()["items"]}
+        assert rows[svc["slug"]]["user_id"] == user_id
+        assert rows[other["slug"]]["user_id"] == other_user
+        assert "node_name" in rows[svc["slug"]]
+        by_q = (
+            await client.get("/api/admin/v1/services", params={"q": svc["slug"][:8]}, headers=ah)
+        ).json()
+        assert [i["slug"] for i in by_q["items"]] == [svc["slug"]]
+        by_user = (
+            await client.get("/api/admin/v1/services", params={"user_id": user_id}, headers=ah)
+        ).json()
+        assert [i["slug"] for i in by_user["items"]] == [svc["slug"]] and by_user["total"] == 1
+
+        slug = svc["slug"]
+        await client.post(f"/api/v1/services/{slug}/stop", headers=headers)
+        await drain(sm)
+        fake.finish_delete(f"tenant-{user_id}", svc["current_instance"]["uuid"])
+        await reconcile_once(sm)
+        assert (await client.delete(f"/api/v1/services/{slug}", headers=headers)).status_code == 200
+        await drain(sm)
+        await reconcile_once(sm)
+        default = (
+            await client.get("/api/admin/v1/services", params={"user_id": user_id}, headers=ah)
+        ).json()
+        assert default["items"] == [] and default["total"] == 0
+        with_released = (
+            await client.get(
+                "/api/admin/v1/services",
+                params={"user_id": user_id, "include_released": "true"},
+                headers=ah,
+            )
+        ).json()
+        assert [i["status"] for i in with_released["items"]] == ["released"]
 
 
 class TestDeriveStatus:

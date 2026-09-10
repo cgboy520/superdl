@@ -12,6 +12,7 @@ describe("tenants validateSearch", () => {
   it("tab/q 序列化往返:合法值原样保留", () => {
     const out = validate({ tab: "instances", q: "13800001111", dtab: "quota" });
     expect(out).toEqual({ tab: "instances", q: "13800001111", dtab: "quota" });
+    expect(validate({ dtab: "services" })).toEqual({ dtab: "services" });
   });
 
   it("非法/空值剥离:白名单外的 tab、空 q、未知参数一律不落", () => {

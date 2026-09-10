@@ -11,11 +11,12 @@ import {
   skuVariant,
   useDebouncedValue,
   useNow,
+  workloadTypeMap,
   type InstanceStatus,
 } from "@superdl/ui";
 import { HexTag, LoadMore, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { App, Badge, Button, Card, Input, Modal, Select, Space, Table, Tabs, Tag, Tooltip, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -411,7 +412,7 @@ function InstancesTab() {
         />
       </Space>
       <Table<AdminInstanceOut>
-        scroll={{ x: 1140 }}
+        scroll={{ x: 1250 }}
         rowKey="uuid"
         loading={isLoading}
         locale={{
@@ -452,6 +453,22 @@ function InstancesTab() {
                   </span>
                   <HexTag color={tm?.color}>{tm ? t(tm.labelKey) : String(r.spec.tier)}</HexTag>
                 </Space>
+              );
+            },
+          },
+          {
+            // 形态:开发机 / 在线服务;服务行链到在线服务页按 slug 找服务
+            title: t("tenants.colWorkload"),
+            width: 110,
+            render: (_, r) => {
+              const wm = metaOf(workloadTypeMap, r.workload_type);
+              const tag = <HexTag color={wm?.color}>{wm ? t(wm.labelKey) : r.workload_type}</HexTag>;
+              return r.service_slug ? (
+                <Link to="/services" search={{ q: r.service_slug }}>
+                  {tag}
+                </Link>
+              ) : (
+                tag
               );
             },
           },

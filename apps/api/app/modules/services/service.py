@@ -30,6 +30,7 @@ from app.modules.orchestrator import service as orchestrator_service
 from app.modules.orchestrator.schemas import WORKLOAD_SERVICE, InstanceOut
 from app.modules.services.models import DESIRED_RUNNING, DESIRED_STOPPED, Service, ServiceApiKey
 from app.modules.services.schemas import (
+    AdminServiceOut,
     ServiceContainerOut,
     ServiceCreate,
     ServiceEventOut,
@@ -235,9 +236,14 @@ def _container_of(instance: "Instance") -> ServiceContainerOut:
     )
 
 
-async def build_views(session: AsyncSession, services: Sequence[Service]) -> list[ServiceOut]:
+async def build_views(
+    session: AsyncSession,
+    services: Sequence[Service],
+    *,
+    instances: dict[int, "Instance"] | None = None,
+) -> list[ServiceOut]:
     """批量出参:两次批量查询(实例、包周期概要),与列表长度无关。"""
-    by_id = await _instances_of(session, services)
+    by_id = instances if instances is not None else await _instances_of(session, services)
     instance_outs = [InstanceOut.model_validate(i) for i in by_id.values()]
     await orchestrator_service.attach_instance_details(session, instance_outs)
     outs_by_id = {o.id: o for o in instance_outs}
@@ -303,6 +309,51 @@ async def list_services_page(
     if status:
         views = [v for v in views if v.status == status]
     return Page[ServiceOut](items=views, next_cursor=next_cursor)
+
+
+async def admin_list_services_page(
+    session: AsyncSession,
+    *,
+    user_id: int | None = None,
+    q: str | None = None,
+    include_released: bool = False,
+    cursor: str | None = None,
+    limit: int | None = None,
+) -> Page[AdminServiceOut]:
+    """管理端全局服务列表(不限租户):q 匹配名称与 slug 前缀;默认不列已删除。
+    total 只在 user_id 过滤时算(租户抽屉要分得开「正好 N 条」与「被截断」)。"""
+    stmt = select(Service).order_by(Service.id.desc())
+    if user_id:
+        stmt = stmt.where(Service.user_id == user_id)
+    if not include_released:
+        stmt = stmt.where(Service.released_at.is_(None))
+    q = (q or "").strip()
+    if q:
+        stmt = stmt.where(
+            Service.name.ilike(f"%{like_escape(q)}%", escape="\\")
+            | Service.public_slug.like(f"{like_escape(q)}%", escape="\\")
+        )
+    page_items, next_cursor = await paginate_by_id(
+        session, stmt, id_col=Service.id, cursor=cursor, limit=limit
+    )
+    by_id = await _instances_of(session, page_items)
+    views = await build_views(session, page_items, instances=by_id)
+    items: list[AdminServiceOut] = []
+    for svc, view in zip(page_items, views, strict=True):
+        current = by_id.get(svc.current_instance_id) if svc.current_instance_id else None
+        items.append(
+            AdminServiceOut(
+                **view.model_dump(),
+                user_id=svc.user_id,
+                node_name=current.node_name if current else None,
+            )
+        )
+    total: int | None = None
+    if user_id:
+        total = await session.scalar(
+            select(func.count()).select_from(stmt.order_by(None).subquery())
+        )
+    return Page[AdminServiceOut](items=items, next_cursor=next_cursor, total=total)
 
 
 # ---------- 生命周期 ----------

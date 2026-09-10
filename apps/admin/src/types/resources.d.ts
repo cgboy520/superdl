@@ -380,6 +380,7 @@ export default interface Resources {
       "nodes": "节点与 GPU",
       "overview": "运营总览",
       "platform": "平台配置",
+      "services": "在线服务",
       "settings": "系统设置",
       "skus": "SKU 与定价",
       "tenants": "租户与实例",
@@ -657,6 +658,25 @@ export default interface Resources {
       "ops": "运维",
       "readonly": "只读"
     },
+    "services": {
+      "capped": "只显示前 {{shown}} 条,共 {{total}} 条;",
+      "colActions": "操作",
+      "colCreatedAt": "创建时间",
+      "colEndpoint": "服务端点",
+      "colInstance": "当前实例",
+      "colNode": "节点",
+      "colRevision": "版本",
+      "colService": "服务",
+      "colStatus": "状态",
+      "forceStopConfirm": "强制停止服务 {{name}}({{slug}})的当前实例?端点立即返回 503,尾账立即结算并通知用户。",
+      "forceStopNeedsRunning": "只有运行中或未就绪的服务可以强制停止",
+      "forceStopTitle": "强制停止服务",
+      "includeReleased": "含已删除",
+      "notReady": "未就绪",
+      "ready": "就绪",
+      "searchPlaceholder": "服务名或 slug 前缀",
+      "viewAll": "去「在线服务」页看全部"
+    },
     "settings": {
       "announceContentLabel": "内容",
       "announceContentPlaceholder": "说明影响范围、时间窗口与用户需要做什么",
@@ -845,6 +865,7 @@ export default interface Resources {
       "colTotalConsumed": "累计消费",
       "colType": "类型",
       "colUnitPrice": "单价",
+      "colWorkload": "形态",
       "deletion": {
         "approve": "执行注销",
         "approveBlocked": "存在未通过的校验项:须实例 0 台、数据盘 0 块、余额为零才可执行",
@@ -930,6 +951,7 @@ export default interface Resources {
       "tabLedger": "资金流水",
       "tabOrders": "订单",
       "tabQuota": "配额",
+      "tabServices": "在线服务",
       "tabTenants": "租户",
       "unfreeze": "解冻",
       "unfreezeConfirm": "确认解冻租户 {{id}}?",
@@ -1151,13 +1173,9 @@ export default interface Resources {
     },
     "orchestrator": {
       "accessNeedsRunning": "实例运行中才能获取接入信息",
-      "apiKeyInvalid": "访问密钥无效",
-      "apiKeyNotFound": "访问密钥不存在",
-      "apiKeyQuota": "单个服务的访问密钥已达上限({{max}} 把),请先吊销不用的密钥",
       "convertNeedsRunningOrStopped": "只有运行中或已关机的实例可以转包周期",
       "convertNotOnDemand": "只有按量计费的实例可以转包周期",
       "cpuSkuNoGpu": "该规格为 CPU 实例(不带 GPU),不能选择 GPU 数量",
-      "devWorkloadExtraFields": "开发机不支持服务容器参数({{fields}}):要对外发布服务请改用服务型实例",
       "envKeyInvalid": "环境变量名「{{name}}」不合法:只能用字母、数字和下划线,且不能以数字开头",
       "envKeyReserved": "环境变量名「{{name}}」由平台占用(JUPYTER_ / SUPERDL_ 前缀与 AUTHORIZED_KEYS),请换一个",
       "envSecretKeyUnknown": "标为密文的环境变量「{{name}}」不在环境变量列表里",
@@ -1185,8 +1203,8 @@ export default interface Resources {
       "renewNotSubscription": "只有包周期实例可以续费",
       "renewReleased": "实例正在释放或已释放,无法续费",
       "restartNeedsRunning": "仅运行中的实例可以重启",
-      "serviceEndpointNotFound": "该实例没有对外服务端点(仅服务型实例有)",
-      "servicePortRequired": "服务型实例必须填写容器监听端口",
+      "serviceInstanceLifecycle": "这台实例属于在线服务,请在「在线服务」里停止 / 启动 / 删除该服务",
+      "servicePortRequired": "请填写容器监听端口",
       "servicePortReserved": "端口 {{port}} 由平台占用(22 = SSH,8888 = JupyterLab),请把服务改到其他端口",
       "spotNotEnabled": "该规格暂未上竞价档,请选择按量或包周期",
       "sshKeyRequired": "请至少选择一个 SSH 公钥(实例仅支持密钥登录)",
@@ -1196,6 +1214,15 @@ export default interface Resources {
       "stopNeedsRunning": "仅运行中的实例可以关机",
       "toOnDemandNotSpot": "只有竞价实例可以转按量",
       "vcpuQuota": "CPU 实例的 vCPU 总数将超过上限({{max}} 核),请释放后再创建或联系客服提额"
+    },
+    "services": {
+      "apiKeyInvalid": "访问密钥无效",
+      "apiKeyNotFound": "访问密钥不存在",
+      "apiKeyQuota": "单个服务的访问密钥已达上限({{max}} 把),请先吊销不用的密钥",
+      "deleteNeedsStopped": "请先停止服务,再删除",
+      "notFound": "服务不存在",
+      "released": "服务已删除,不能再操作",
+      "rolloutInFlight": "服务正在更新版本,完成后再试"
     },
     "tickets": {
       "notFound": "工单不存在",
@@ -1414,6 +1441,20 @@ export default interface Resources {
         "paid": "已完成",
         "pending": "待审批",
         "rejected": "已驳回"
+      },
+      "service": {
+        "deploying": "部署中",
+        "failed": "已失败",
+        "frozen": "已冻结",
+        "released": "已删除",
+        "releasing": "删除中",
+        "running": "运行中",
+        "stopped": "已停止",
+        "stopping": "停止中",
+        "unready": "未就绪"
+      },
+      "serviceHint": {
+        "unready": "容器已启动但健康检查未通过;实例照常计费,平台不会替你停"
       },
       "subscription": {
         "active": "在保",

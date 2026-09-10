@@ -103,9 +103,10 @@ class ServiceOut(BaseModel):
 
 
 class AdminServiceOut(ServiceOut):
-    """管理端全局服务视图:含租户(不暴露给用户端)。"""
+    """管理端全局服务视图:含租户与当前版本实例的调度节点(不暴露给用户端)。"""
 
     user_id: int
+    node_name: str | None = None
 
 
 class ServiceEventOut(InstanceEventOut):

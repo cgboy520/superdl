@@ -69,6 +69,7 @@ MATRIX: dict[str, str | frozenset[str]] = {
     "GET /api/admin/v1/images/{image_id}/nodes": _OPS_RO,
     "POST /api/admin/v1/images/{image_id}/prewarm": _OPS,
     "GET /api/admin/v1/instances": _ANY_READ,
+    "GET /api/admin/v1/services": _ANY_READ,
     "GET /api/admin/v1/instances/{uuid}/events": _ANY_READ,
     "POST /api/admin/v1/instances/{uuid}/force-stop": _OPS,
     "POST /api/admin/v1/instances/{uuid}/preempt": _OPS,

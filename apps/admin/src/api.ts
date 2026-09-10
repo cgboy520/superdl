@@ -61,6 +61,7 @@ import {
   adminInvoicesExportApiAdminV1InvoicesExportGet,
   adminRefundsExportApiAdminV1RefundsExportGet,
   adminListInstancesApiAdminV1InstancesGet,
+  adminListServicesApiAdminV1ServicesGet,
   adminListNodesApiAdminV1NodesGet,
   adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet,
   adminPortPoolStatsApiAdminV1NodesPortPoolGet,
@@ -119,6 +120,7 @@ import type {
   AdminListDeletionRequestsApiAdminV1DeletionRequestsGetParams,
   AdminListInstanceEventsApiAdminV1InstancesUuidEventsGetParams,
   AdminListInstancesApiAdminV1InstancesGetParams,
+  AdminListServicesApiAdminV1ServicesGetParams,
   AdminListInvoicesApiAdminV1InvoicesGetParams,
   AdminListOrdersApiAdminV1OrdersGetParams,
   AdminListRefundsApiAdminV1RefundsGetParams,
@@ -178,6 +180,7 @@ export { isApiError } from "@superdl/api-client";
 export type {
   EnrollmentCommandOut,
   AdminInstanceOut,
+  AdminServiceOut,
   NodeMetricsOut,
   OverviewOut,
   SkuAdminOut,
@@ -298,6 +301,16 @@ export function useAdminInstances(
 ) {
   const queryKey = ["admin", "instances", params, options?.limit ?? 50] as const;
   const q = useCursorPages(queryKey, adminListInstancesApiAdminV1InstancesGet, params, options);
+  return { ...q, queryKey };
+}
+
+/** 全局在线服务(不限租户);user_id 过滤时响应带 total(抽屉截断提示用)。 */
+export function useAdminServices(
+  params?: Omit<AdminListServicesApiAdminV1ServicesGetParams, "cursor" | "limit">,
+  options?: { enabled?: boolean; limit?: number },
+) {
+  const queryKey = ["admin", "services", params, options?.limit ?? 50] as const;
+  const q = useCursorPages(queryKey, adminListServicesApiAdminV1ServicesGet, params, options);
   return { ...q, queryKey };
 }
 

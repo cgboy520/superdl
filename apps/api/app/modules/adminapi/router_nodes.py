@@ -47,6 +47,8 @@ from app.modules.orchestrator.schemas import (
     InstanceOut,
     PortPoolStatsOut,
 )
+from app.modules.services import service as services_service
+from app.modules.services.schemas import AdminServiceOut
 
 router = APIRouter(tags=["admin"])
 
@@ -79,6 +81,27 @@ async def admin_list_instances(
     await orchestrator_service.attach_instance_details(session, items)
     # total 仅租户视角(service 层只在 user_id 过滤时算):抽屉区分「正好 N 条」与「被截断」
     return Page[AdminInstanceOut](items=items, next_cursor=page.next_cursor, total=page.total)
+
+
+@router.get("/services", dependencies=[require_roles("ops", "finance", "readonly")])
+async def admin_list_services(
+    session: DbSession,
+    user_id: int | None = None,
+    q: str | None = None,
+    include_released: bool = False,
+    cursor: str | None = Cursor,
+    limit: int | None = Limit,
+) -> Page[AdminServiceOut]:
+    """全局在线服务(不限租户)。q:服务名或 slug 前缀;默认不列已删除。游标分页(降序)。
+    只读:处置走当前版本实例的 force-stop。"""
+    return await services_service.admin_list_services_page(
+        session,
+        user_id=user_id,
+        q=q,
+        include_released=include_released,
+        cursor=cursor,
+        limit=limit,
+    )
 
 
 @router.post("/instances/{uuid}/force-stop", dependencies=[require_roles("ops")])

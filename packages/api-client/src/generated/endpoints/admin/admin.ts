@@ -34,6 +34,7 @@ import type {
   AdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetParams,
   AdminListOrdersApiAdminV1OrdersGetParams,
   AdminListRefundsApiAdminV1RefundsGetParams,
+  AdminListServicesApiAdminV1ServicesGetParams,
   AdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetParams,
   AdminListTenantsApiAdminV1TenantsGetParams,
   AdminListTicketsApiAdminV1TicketsGetParams,
@@ -115,6 +116,7 @@ import type {
   PageAdminInstanceOut,
   PageAdminOrderOut,
   PageAdminRefundOut,
+  PageAdminServiceOut,
   PageAdminSettlementGapOut,
   PageAdminTicketOut,
   PageBillHourlyOut,
@@ -2524,6 +2526,38 @@ export const getRevenueReportApiAdminV1ReportsRevenueGetUrl = (params?: RevenueR
 export const revenueReportApiAdminV1ReportsRevenueGet = async (params?: RevenueReportApiAdminV1ReportsRevenueGetParams, options?: Parameters<typeof customFetch>[1]): Promise<RevenueReportOut> => {
 
   return customFetch<RevenueReportOut>(getRevenueReportApiAdminV1ReportsRevenueGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+export const getAdminListServicesApiAdminV1ServicesGetUrl = (params?: AdminListServicesApiAdminV1ServicesGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/v1/services?${stringifiedParams}` : `/api/admin/v1/services`
+}
+
+/**
+ * 全局在线服务(不限租户)。q:服务名或 slug 前缀;默认不列已删除。游标分页(降序)。
+ * 只读:处置走当前版本实例的 force-stop。
+ * @summary Admin List Services
+ */
+export const adminListServicesApiAdminV1ServicesGet = async (params?: AdminListServicesApiAdminV1ServicesGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageAdminServiceOut> => {
+
+  return customFetch<PageAdminServiceOut>(getAdminListServicesApiAdminV1ServicesGetUrl(params),
   {
     ...options,
     method: 'GET'

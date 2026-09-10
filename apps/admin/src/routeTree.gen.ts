@@ -19,6 +19,7 @@ import { Route as AppFinanceRouteImport } from './routes/_app/finance'
 import { Route as AppImagesRouteImport } from './routes/_app/images'
 import { Route as AppNodesRouteImport } from './routes/_app/nodes'
 import { Route as AppPlatformRouteImport } from './routes/_app/platform'
+import { Route as AppServicesRouteImport } from './routes/_app/services'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppSkusRouteImport } from './routes/_app/skus'
 import { Route as AppTenantsRouteImport } from './routes/_app/tenants'
@@ -73,6 +74,11 @@ const AppPlatformRoute = AppPlatformRouteImport.update({
   path: '/platform',
   getParentRoute: () => AppRoute,
 } as any)
+const AppServicesRoute = AppServicesRouteImport.update({
+  id: '/services',
+  path: '/services',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppSettingsRoute = AppSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -104,6 +110,7 @@ export interface FileRoutesByFullPath {
   '/images': typeof AppImagesRoute
   '/nodes': typeof AppNodesRoute
   '/platform': typeof AppPlatformRoute
+  '/services': typeof AppServicesRoute
   '/settings': typeof AppSettingsRoute
   '/skus': typeof AppSkusRoute
   '/tenants': typeof AppTenantsRoute
@@ -118,6 +125,7 @@ export interface FileRoutesByTo {
   '/images': typeof AppImagesRoute
   '/nodes': typeof AppNodesRoute
   '/platform': typeof AppPlatformRoute
+  '/services': typeof AppServicesRoute
   '/settings': typeof AppSettingsRoute
   '/skus': typeof AppSkusRoute
   '/tenants': typeof AppTenantsRoute
@@ -135,6 +143,7 @@ export interface FileRoutesById {
   '/_app/images': typeof AppImagesRoute
   '/_app/nodes': typeof AppNodesRoute
   '/_app/platform': typeof AppPlatformRoute
+  '/_app/services': typeof AppServicesRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/skus': typeof AppSkusRoute
   '/_app/tenants': typeof AppTenantsRoute
@@ -153,6 +162,7 @@ export interface FileRouteTypes {
     | '/images'
     | '/nodes'
     | '/platform'
+    | '/services'
     | '/settings'
     | '/skus'
     | '/tenants'
@@ -167,6 +177,7 @@ export interface FileRouteTypes {
     | '/images'
     | '/nodes'
     | '/platform'
+    | '/services'
     | '/settings'
     | '/skus'
     | '/tenants'
@@ -183,6 +194,7 @@ export interface FileRouteTypes {
     | '/_app/images'
     | '/_app/nodes'
     | '/_app/platform'
+    | '/_app/services'
     | '/_app/settings'
     | '/_app/skus'
     | '/_app/tenants'
@@ -267,6 +279,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPlatformRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/services': {
+      id: '/_app/services'
+      path: '/services'
+      fullPath: '/services'
+      preLoaderRoute: typeof AppServicesRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/settings': {
       id: '/_app/settings'
       path: '/settings'
@@ -306,6 +325,7 @@ interface AppRouteChildren {
   AppImagesRoute: typeof AppImagesRoute
   AppNodesRoute: typeof AppNodesRoute
   AppPlatformRoute: typeof AppPlatformRoute
+  AppServicesRoute: typeof AppServicesRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppSkusRoute: typeof AppSkusRoute
   AppTenantsRoute: typeof AppTenantsRoute
@@ -321,6 +341,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppImagesRoute: AppImagesRoute,
   AppNodesRoute: AppNodesRoute,
   AppPlatformRoute: AppPlatformRoute,
+  AppServicesRoute: AppServicesRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppSkusRoute: AppSkusRoute,
   AppTenantsRoute: AppTenantsRoute,
