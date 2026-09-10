@@ -1,10 +1,10 @@
 /**
  * 在线服务冒烟:市场「部署服务」→ 部署服务页(规格已带入)→ 填容器与服务配置 → 部署 → 跳到服务详情 → 运行中 →
- * 端点卡拿到 URL → 新建 API Key(一次性展示)→ 吊销 → 停止服务。
+ * 端点卡拿到 URL → 新建 API Key(一次性展示)→ 吊销 → 停止服务 → 设置里改名与关鉴权。
  * 前置与 smoke 同款:API+worker 在跑,fake 编排。
  *
  * 这条挂了通常说明:市场页没把规格带进部署页、部署页没打到 /services(或部署后没跳详情)、
- * 服务详情的端点卡 / 状态派生断了,或一次性 Key 弹窗的保存闸松了。
+ * 服务详情的端点卡 / 状态派生断了,一次性 Key 弹窗的保存闸松了,或设置 Tab 的 PATCH 没生效。
  */
 import { expect, test } from "@playwright/test";
 
@@ -71,6 +71,18 @@ test("部署在线服务并拿到端点与 API Key", async ({ page }) => {
     .getByRole("button", { name: /^确\s*定$/ })
     .click();
   await expect(page.getByText(/停止中|已停止/).first()).toBeVisible({ timeout: 30_000 });
+
+  // ── 设置 Tab:改名即时反映到头部;关鉴权走确认,端点卡随之显示「公开访问」
+  await page.getByRole("tab", { name: "设置" }).click();
+  await page.getByLabel("服务名称").fill("e2e-renamed");
+  await page.getByRole("button", { name: /^保\s*存$/ }).click();
+  await expect(page.getByRole("heading", { name: "e2e-renamed" })).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("switch", { name: "访问鉴权" }).click();
+  await page
+    .locator(".ant-modal-confirm-btns")
+    .getByRole("button", { name: /^确\s*定$/ })
+    .click();
+  await expect(page.getByText("公开访问").first()).toBeVisible({ timeout: 15_000 });
 
   // ── 列表:服务在「在线服务」里,不在容器实例里
   await page.goto("/services");

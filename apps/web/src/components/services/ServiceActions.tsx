@@ -1,5 +1,5 @@
 /**
- * 服务操作组:停止 / 启动 常显互斥,更多 ▾ 里放删除;条目永不隐藏,灰置用 Tooltip 说明前置条件。
+ * 服务操作组:停止 / 启动 常显互斥,更多 ▾ 里放访问密钥 / 设置直达与删除;条目永不隐藏,灰置用 Tooltip 说明前置条件。
  * 停止是二次确认(端点 503、GPU 计费停止、端点与 Key 保留);删除走键入名称 + 勾选的多级防护,
  * 且运行中的服务必须先停(后端 409 同判据)。
  */
@@ -7,6 +7,7 @@
 import { DownOutlined } from "@ant-design/icons";
 import type { ServiceOut } from "@superdl/api-client";
 import { TypeConfirmModal, useConfirm } from "@superdl/ui/components";
+import { useNavigate } from "@tanstack/react-router";
 import { App, Button, Dropdown, Space, Tooltip, Typography } from "antd";
 import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
@@ -77,7 +78,10 @@ export function ServiceActions({
   const { t } = useTranslation();
   const { message } = App.useApp();
   const confirm = useConfirm();
+  const navigate = useNavigate();
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const goTab = (tab: "keys" | "settings") =>
+    void navigate({ to: "/services/$slug", params: { slug: service.slug }, search: { tab } });
   const stop = useStopService({ onSuccess: () => message.success(t("services.actions.stopped")) });
   const start = useStartService({ onSuccess: () => message.success(t("services.actions.started")) });
   const s = service.status;
@@ -118,6 +122,9 @@ export function ServiceActions({
       <Dropdown
         menu={{
           items: [
+            { key: "keys", label: t("services.actions.keys"), onClick: () => goTab("keys") },
+            { key: "settings", label: t("services.actions.settings"), onClick: () => goTab("settings") },
+            { type: "divider" },
             {
               key: "delete",
               danger: true,

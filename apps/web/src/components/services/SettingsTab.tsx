@@ -1,0 +1,169 @@
+/** 服务设置 Tab:改名 / 访问鉴权开关 / 调试 SSH / 危险区。
+ *  改名与鉴权只 PATCH services 行,几秒内生效、不重新部署;关鉴权走 L2 确认(端点从此人人可调且照常计费);
+ *  开着鉴权却没有可用 Key 时常驻提醒,否则端点建好了却谁也调不通。SSH 随版本固定,这里只回显不改。 */
+
+import type { ServiceOut } from "@superdl/api-client";
+import { useConfirm } from "@superdl/ui/components";
+import { Alert, App, Button, Card, Input, Space, Switch, theme, Tooltip, Typography } from "antd";
+import { useState } from "react";
+import { useTranslation } from "react-i18next";
+
+import { useUpdateService } from "../../api/mutations";
+import { useInstanceAccess, useServiceApiKeys } from "../../api/queries";
+import { CopyButton } from "../common";
+import { DeleteServiceModal } from "./ServiceActions";
+
+export function SettingsTab({
+  service,
+  onGoKeys,
+  onDeleted,
+}: {
+  service: ServiceOut;
+  onGoKeys: () => void;
+  onDeleted: () => void;
+}) {
+  const { t } = useTranslation();
+  const { message } = App.useApp();
+  const { token } = theme.useToken();
+  const confirm = useConfirm();
+  const [name, setName] = useState(service.name);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const update = useUpdateService(service.slug);
+  const keysQ = useServiceApiKeys(service.slug);
+  const liveKeys = (keysQ.data ?? []).filter((k) => k.revoked_at == null).length;
+  const released = service.released_at != null;
+  const live = service.status === "running" || service.status === "unready";
+  const inst = service.current_instance;
+  const withSsh = service.container?.with_ssh ?? false;
+  const accessQ = useInstanceAccess(inst?.uuid ?? "", { enabled: live && withSsh && inst != null });
+  const trimmed = name.trim();
+  const nameDirty = trimmed !== "" && trimmed !== service.name;
+  const deletable =
+    service.status === "stopped" ||
+    service.status === "frozen" ||
+    service.status === "failed" ||
+    service.status === "deploying";
+
+  const setAuth = async (on: boolean) => {
+    await update.mutateAsync({ require_api_key: on });
+    message.success(t("services.settings.authSaved"));
+  };
+
+  return (
+    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+      <Card size="small" title={t("services.settings.nameCard")}>
+        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+          <Typography.Text type="secondary">{t("services.settings.nameLabel")}</Typography.Text>
+          <Space wrap>
+            <Input
+              maxLength={64}
+              aria-label={t("services.settings.nameLabel")}
+              value={name}
+              disabled={released}
+              onChange={(e) => setName(e.target.value)}
+              style={{ width: 320, maxWidth: "100%" }}
+            />
+            <Button
+              type="primary"
+              disabled={!nameDirty || released}
+              loading={update.isPending}
+              onClick={async () => {
+                await update.mutateAsync({ name: trimmed });
+                message.success(t("services.settings.saved"));
+              }}
+            >
+              {t("services.settings.save")}
+            </Button>
+          </Space>
+        </Space>
+      </Card>
+
+      <Card size="small" title={t("services.settings.authCard")}>
+        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+          <Space>
+            <Switch
+              checked={service.require_api_key}
+              disabled={released}
+              loading={update.isPending}
+              aria-label={t("services.settings.authCard")}
+              onChange={(on) => {
+                if (on) {
+                  void setAuth(true);
+                  return;
+                }
+                confirm({
+                  title: t("services.settings.authOffConfirmTitle"),
+                  consequences: [
+                    t("services.settings.authOffConfirmBody"),
+                    t("services.settings.authOffConfirmKeep"),
+                  ],
+                  danger: true,
+                  onOk: () => setAuth(false),
+                });
+              }}
+            />
+            <Typography.Text>
+              {service.require_api_key ? t("services.authRequired") : t("services.authPublic")}
+            </Typography.Text>
+          </Space>
+          <Typography.Text type="secondary">{t("services.settings.authEffectNote")}</Typography.Text>
+          <Typography.Text type="secondary">{t("copy.serviceGatewayAuth")}</Typography.Text>
+          {service.require_api_key && keysQ.isSuccess && liveKeys === 0 && !released && (
+            <Alert
+              type="warning"
+              showIcon
+              title={t("services.settings.noLiveKeyWarn")}
+              action={
+                <Button size="small" onClick={onGoKeys}>
+                  {t("services.settings.goKeys")}
+                </Button>
+              }
+            />
+          )}
+        </Space>
+      </Card>
+
+      <Card size="small" title={t("services.settings.sshCard")}>
+        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+          {!withSsh ? (
+            <Typography.Text type="secondary">{t("services.settings.sshFixedNote")}</Typography.Text>
+          ) : !live ? (
+            <Alert type="info" showIcon title={t("services.settings.sshNotRunning")} />
+          ) : (
+            <>
+              <Typography.Text code>{accessQ.data?.ssh_command ?? "…"}</Typography.Text>
+              {accessQ.data?.ssh_command && (
+                <CopyButton text={accessQ.data.ssh_command} label={t("instances.copyCommand")} />
+              )}
+              <Typography.Text type="secondary">{t("copy.sshKeyOnly")}</Typography.Text>
+            </>
+          )}
+          {withSsh && (
+            <Typography.Text type="secondary">{t("services.settings.sshOpenNote")}</Typography.Text>
+          )}
+        </Space>
+      </Card>
+
+      <Card
+        size="small"
+        title={t("services.detail.dangerZone")}
+        style={{ borderColor: token.colorErrorBorder }}
+      >
+        <Space orientation="vertical">
+          <Typography.Text type="secondary">{t("services.detail.dangerNote")}</Typography.Text>
+          <Tooltip title={deletable ? undefined : t("services.actions.deleteNeedsStopped")}>
+            <Button danger disabled={!deletable} onClick={() => setDeleteOpen(true)}>
+              {t("services.actions.delete")}
+            </Button>
+          </Tooltip>
+        </Space>
+      </Card>
+      <DeleteServiceModal
+        service={service}
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        onDeleted={onDeleted}
+      />
+    </Space>
+  );
+}

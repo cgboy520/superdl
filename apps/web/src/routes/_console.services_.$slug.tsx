@@ -1,5 +1,5 @@
 /** 服务详情:头部(名称 / 状态 / 版本 / 操作)+ 常驻服务端点卡 + Tab
- *  `概览 / 访问密钥 / 监控 / 日志 / 事件 / 账单` + 危险区删除。
+ *  `概览 / 访问密钥 / 监控 / 日志 / 事件 / 账单 / 设置`(危险区在设置里)。
  *  只有一条服务轮询(过渡态 5s、运行中 30s、已删除停),端点卡与头部同源不再另打端点查询;
  *  监控与日志打的是当前版本实例。 */
 
@@ -8,20 +8,7 @@ import { fontSize, formatDateTime, isTransientServiceStatus, localToday } from "
 import { DataErrorAlert, moneyOr } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import {
-  Alert,
-  Breadcrumb,
-  Button,
-  Card,
-  Descriptions,
-  Skeleton,
-  Space,
-  Tabs,
-  Tag,
-  theme,
-  Tooltip,
-  Typography,
-} from "antd";
+import { Alert, Breadcrumb, Card, Descriptions, Skeleton, Space, Tabs, Tag, Typography } from "antd";
 import { useFormat } from "@superdl/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -47,10 +34,19 @@ import { LogsPanel } from "../components/instance/LogsPanel";
 import { MetricsPanel } from "../components/instance/MetricsPanel";
 import { ApiKeysCard } from "../components/services/ApiKeysCard";
 import { EndpointCard } from "../components/services/EndpointCard";
-import { DeleteServiceModal, ServiceActions } from "../components/services/ServiceActions";
+import { ServiceActions } from "../components/services/ServiceActions";
+import { SettingsTab } from "../components/services/SettingsTab";
 import { requireAuth } from "../lib/guard";
 
-export const SERVICE_DETAIL_TABS = ["overview", "keys", "metrics", "logs", "events", "bills"] as const;
+export const SERVICE_DETAIL_TABS = [
+  "overview",
+  "keys",
+  "metrics",
+  "logs",
+  "events",
+  "bills",
+  "settings",
+] as const;
 export type ServiceDetailTab = (typeof SERVICE_DETAIL_TABS)[number];
 
 /** tab 白名单:非法值(含旧链接的 ?tab=service)回退默认 Tab,不渲染无选中态的 Tabs。 */
@@ -266,11 +262,9 @@ function BillsTab({ slug }: { slug: string }) {
 function ServiceDetail() {
   const { t } = useTranslation(["web", "shared"]);
   const { formatHourlyPrice, formatMoney, formatPeriodPrice } = useFormat();
-  const { token } = theme.useToken();
   const { slug } = Route.useParams();
   const { tab } = Route.useSearch();
   const navigate = useNavigate();
-  const [deleteOpen, setDeleteOpen] = useState(false);
   const {
     data: service,
     isError: serviceError,
@@ -306,11 +300,6 @@ function ServiceDetail() {
   const activeTab: ServiceDetailTab = tab ?? "overview";
   const goTab = (k: string, replace: boolean) =>
     void navigate({ to: "/services/$slug", params: { slug }, search: { tab: k as ServiceDetailTab }, replace });
-  const deletable =
-    service.status === "stopped" ||
-    service.status === "frozen" ||
-    service.status === "failed" ||
-    service.status === "deploying";
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
@@ -414,24 +403,20 @@ function ServiceDetail() {
             children: <EventsTab slug={service.slug} status={service.status} />,
           },
           { key: "bills", label: t("services.detail.tabBills"), children: <BillsTab slug={service.slug} /> },
+          {
+            key: "settings",
+            label: t("services.detail.tabSettings"),
+            children: (
+              <SettingsTab
+                // 换服务时重置本地草稿(名称输入框)
+                key={service.slug}
+                service={service}
+                onGoKeys={() => goTab("keys", false)}
+                onDeleted={() => void navigate({ to: "/services" })}
+              />
+            ),
+          },
         ]}
-      />
-
-      <Card title={t("services.detail.dangerZone")} style={{ borderColor: token.colorErrorBorder }}>
-        <Space orientation="vertical">
-          <Typography.Text type="secondary">{t("services.detail.dangerNote")}</Typography.Text>
-          <Tooltip title={deletable ? undefined : t("services.actions.deleteNeedsStopped")}>
-            <Button danger disabled={!deletable} onClick={() => setDeleteOpen(true)}>
-              {t("services.actions.delete")}
-            </Button>
-          </Tooltip>
-        </Space>
-      </Card>
-      <DeleteServiceModal
-        service={service}
-        open={deleteOpen}
-        onClose={() => setDeleteOpen(false)}
-        onDeleted={() => void navigate({ to: "/services" })}
       />
     </Space>
   );
