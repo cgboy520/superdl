@@ -49,6 +49,7 @@ import { HourlyBillsTable } from "../components/HourlyBillsTable";
 import { WarnThresholdField } from "../components/WarnThresholdField";
 import {
   useBillSummary,
+  useHourlyBillPages,
   useDailySummary,
   useInvoiceEligible,
   useInvoicePages,
@@ -104,6 +105,16 @@ export const Route = createFileRoute("/_console/billing")({
 const PENDING_ORDER_KEY = "superdl.web.pendingRecharge";
 
 /** 支付倒计时:把到期时刻渲染成剩余时长。 */
+/** 按月小时账单(带实例列):hook 必须在组件里调,不能塞进 Tabs 的 items 数组。 */
+function MonthlyBillsTab({ month, tzOffsetMinutes }: { month: string; tzOffsetMinutes: number }) {
+  return (
+    <HourlyBillsTable
+      query={useHourlyBillPages({ month, tz_offset_minutes: tzOffsetMinutes })}
+      showInstance
+    />
+  );
+}
+
 function PayCountdown({ expiresAt }: { expiresAt: string }) {
   const { t } = useTranslation();
   const [left, setLeft] = useState(() => Math.max(0, new Date(expiresAt).getTime() - Date.now()));
@@ -1062,12 +1073,7 @@ function BillingPage() {
             {
               key: "bills",
               label: t("billing.tabBills"),
-              children: (
-                <HourlyBillsTable
-                  params={{ month, tz_offset_minutes: tzOffsetMinutes }}
-                  showInstance
-                />
-              ),
+              children: <MonthlyBillsTab month={month} tzOffsetMinutes={tzOffsetMinutes} />,
             },
             { key: "ledger", label: t("billing.tabLedger"), children: <LedgerTable /> },
             { key: "refunds", label: t("billing.tabRefunds"), children: <RefundTab /> },

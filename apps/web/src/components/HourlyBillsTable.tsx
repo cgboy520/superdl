@@ -1,23 +1,25 @@
-/** 小时账单表:费用中心(按月,带实例列)与实例详情账单 Tab(按实例)同一张表。
- *  两处的列口径必须一致 —— 各写一份就会出现「详情页时长按秒、费用中心按分」这类对不上的账。
- *  金额一律按字符串渲染,不过 Number。 */
+/** 小时账单表:费用中心(按月,带实例列)、实例详情账单 Tab(按实例)与服务详情账单 Tab(按服务下全部版本)同一张表。
+ *  三处的列口径必须一致 —— 各写一份就会出现「详情页时长按秒、费用中心按分」这类对不上的账。
+ *  查询结果由调用方注入(参数形态各不相同),本组件只管渲染;金额一律按字符串渲染,不过 Number。 */
 
-import type { BillHourlyOut, ListHourlyBillsApiV1BillsHourlyGetParams } from "@superdl/api-client";
+import type { ApiError, BillHourlyOut, PageBillHourlyOut } from "@superdl/api-client";
 import { formatDateTime } from "@superdl/ui";
 import { EmptyState, LoadMore, TableErrorEmpty } from "@superdl/ui/components";
+import type { InfiniteData, UseInfiniteQueryResult } from "@tanstack/react-query";
 import { Space, Table } from "antd";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
-import { useHourlyBillPages } from "../api/queries";
 import { useFormat } from "@superdl/ui";
 
+export type HourlyBillsQuery = UseInfiniteQueryResult<InfiniteData<PageBillHourlyOut>, ApiError>;
+
 export function HourlyBillsTable({
-  params,
+  query,
   showInstance = false,
 }: {
-  params: Omit<ListHourlyBillsApiV1BillsHourlyGetParams, "cursor" | "limit">;
-  /** 费用中心跨实例查,需要实例列;实例详情页本来就在一台机器的上下文里,不重复显示 */
+  query: HourlyBillsQuery;
+  /** 费用中心跨实例查,需要实例列;实例 / 服务详情页本来就在一台机器的上下文里,不重复显示 */
   showInstance?: boolean;
 }) {
   const { t } = useTranslation();
@@ -31,7 +33,7 @@ export function HourlyBillsTable({
     isFetchNextPageError,
     hasNextPage,
     fetchNextPage,
-  } = useHourlyBillPages(params);
+  } = query;
   const rows = useMemo<BillHourlyOut[]>(() => (data?.pages ?? []).flatMap((p) => p.items), [data]);
 
   return (

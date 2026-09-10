@@ -4,13 +4,12 @@
  *  Jupyter 卡一律不出(服务型实例根本没建 Jupyter 入口)。 */
 
 import {
-  isApiError,
   type ApiKeyOut,
   type InstanceEventOut,
   type InstanceOut,
 } from "@superdl/api-client";
 import { fontSize, formatDateTime, isTransientInstanceStatus, localToday } from "@superdl/ui";
-import { DataErrorAlert, EChart, LoadMore, moneyOr, TableErrorEmpty, useConfirm } from "@superdl/ui/components";
+import { DataErrorAlert, moneyOr, TableErrorEmpty, useConfirm } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
@@ -21,17 +20,12 @@ import {
   Button,
   Card,
   Descriptions,
-  Empty,
-  Radio,
-  Select,
   Skeleton,
   Space,
-  Switch,
   Table,
   Tabs,
   Tag,
   theme,
-  Timeline,
   Tooltip,
   Typography,
 } from "antd";
@@ -43,11 +37,11 @@ import { useResetJupyterToken, useRevokeApiKey } from "../api/mutations";
 import {
   useApiKeys,
   useDailySummary,
+  useHourlyBillPages,
   useInstance,
   useInstanceAccess,
   useInstanceEventPages,
   useInstanceLogs,
-  useInstanceMetrics,
   useServiceEndpoint,
 } from "../api/queries";
 import { ApiKeyModal } from "../components/ApiKeyModal";
@@ -57,12 +51,13 @@ import {
   SpotTag,
   SubscriptionTag,
   TierTag,
-  useEventReasonText,
 } from "../components/common";
 import { HourlyBillsTable } from "../components/HourlyBillsTable";
+import { EventsPanel } from "../components/instance/EventsPanel";
+import { LogsPanel } from "../components/instance/LogsPanel";
+import { MetricsPanel } from "../components/instance/MetricsPanel";
 import { InstanceActions, ReleaseModal, canReleaseStatus } from "../components/InstanceActions";
 import { requireAuth } from "../lib/guard";
-import { useThemeMode } from "../stores/theme";
 
 // service 只对服务型实例出;白名单照收(dev 实例带 ?tab=service 进来时下面回退默认 Tab)
 const DETAIL_TABS = ["metrics", "service", "access", "logs", "events", "bills"] as const;
@@ -78,79 +73,6 @@ export const Route = createFileRoute("/_console/instances_/$uuid")({
   },
   component: InstanceDetail,
 });
-
-const SERIES_META = {
-  gpu_util: { nameKey: "instances.seriesGpu", unit: "%" },
-  vram_used_mb: { nameKey: "instances.seriesVram", unit: "MB" },
-  cpu_pct: { nameKey: "instances.seriesCpu", unit: "%" },
-  mem_used_mb: { nameKey: "instances.seriesMem", unit: "MB" },
-} as const;
-
-function MetricsTab({ uuid, running }: { uuid: string; running: boolean }) {
-  const { t } = useTranslation();
-  const mode = useThemeMode();
-  const [range, setRange] = useState<"1h" | "6h" | "24h">("1h");
-  const { data, error, isLoading, refetch } = useInstanceMetrics(
-    uuid,
-    { range },
-    { enabled: running, refetchInterval: 60_000, retry: 0 },
-  );
-
-  if (!running) {
-    return <Alert type="info" showIcon title={t("instances.metricsNotRunning")} />;
-  }
-  // 503 = 监控源未接入/断源(专用文案,不影响计费);其余错误绝不能静默渲染成空图
-  if (error && isApiError(error) && error.status === 503) {
-    return <Alert type="warning" showIcon title={t("copy.monitoringDown")} />;
-  }
-  if (error) {
-    return <DataErrorAlert onRetry={() => void refetch()} />;
-  }
-  const series = (data?.series ?? {}) as Record<string, [number, number][]>;
-  return (
-    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-      <Radio.Group
-        value={range}
-        onChange={(e) => setRange(e.target.value as typeof range)}
-        optionType="button"
-        options={[
-          { value: "1h", label: t("instances.range1h") },
-          { value: "6h", label: t("instances.range6h") },
-          { value: "24h", label: t("instances.range24h") },
-        ]}
-      />
-      {Object.entries(SERIES_META).map(([key, meta]) => (
-        <Card key={key} size="small" title={t(meta.nameKey)} loading={isLoading}>
-          {!isLoading && (series[key]?.length ?? 0) === 0 ? (
-            <Typography.Text type="secondary" style={{ display: "block", padding: "24px 0" }}>
-              {t("instances.metricsNoData")}
-            </Typography.Text>
-          ) : (
-          <EChart
-            theme={mode === "dark" ? "web-dark" : "web-light"}
-            style={{ height: 180 }}
-            ariaLabel={t(meta.nameKey)}
-            option={{
-              grid: { left: 48, right: 16, top: 16, bottom: 24 },
-              xAxis: { type: "time" },
-              yAxis: { type: "value", axisLabel: { formatter: `{value}${meta.unit}` } },
-              tooltip: { trigger: "axis" },
-              series: [
-                {
-                  type: "line",
-                  showSymbol: false,
-                  areaStyle: { opacity: 0.08 },
-                  data: (series[key] ?? []).map(([ts, v]) => [ts * 1000, v]),
-                },
-              ],
-            }}
-          />
-          )}
-        </Card>
-      ))}
-    </Space>
-  );
-}
 
 /** 连接:SSH 卡按 with_ssh 出,Jupyter 卡只对开发机出。
  *  接入信息的每个字段都可空,必须按「拿到什么渲染什么」写。 */
@@ -481,17 +403,9 @@ function ServiceTab({ instance, onShowLogs }: { instance: InstanceOut; onShowLog
   );
 }
 
-const LOG_TAIL_OPTIONS = [100, 200, 500, 1000];
-
 function LogsTab({ uuid, viewable }: { uuid: string; viewable: boolean }) {
-  const { t } = useTranslation();
-  const { token } = theme.useToken();
   const [tail, setTail] = useState(200);
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  // 贴底判定:距底 ≤40px 视为贴底;用户上滚即暂停跟随,新行计数在浮动钮上
-  const [pinned, setPinned] = useState(true);
-  const [newCount, setNewCount] = useState(0);
   const { data, error, refetch } = useInstanceLogs(
     uuid,
     { tail_lines: tail },
@@ -499,132 +413,23 @@ function LogsTab({ uuid, viewable }: { uuid: string; viewable: boolean }) {
     { enabled: viewable, refetchInterval: autoRefresh ? 10_000 : false, retry: 0 },
   );
   const lines = useMemo(() => data?.lines ?? [], [data]);
-
-  const scrollToBottom = () => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-    setPinned(true);
-    setNewCount(0);
-  };
-
-  // 渲染期派生(react 推荐模式,避免 effect 内级联 setState):
-  // 非贴底时新行数累计到浮动钮上;tail 档变化整体替换内容,复位到贴底跟随
-  const [prevLen, setPrevLen] = useState(lines.length);
-  if (lines.length !== prevLen) {
-    const grew = lines.length - prevLen;
-    setPrevLen(lines.length);
-    if (!pinned && grew > 0) setNewCount((n) => n + grew);
-  }
-  const [prevTail, setPrevTail] = useState(tail);
-  if (tail !== prevTail) {
-    setPrevTail(tail);
-    setPrevLen(0);
-    setPinned(true);
-    setNewCount(0);
-  }
-
-  // 自动跟随:仅在贴底时滚到底部(纯 DOM 操作,不碰 state)
-  useEffect(() => {
-    if (!pinned) return;
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [lines, pinned]);
-
-  const onScroll = () => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 40;
-    setPinned(atBottom);
-    if (atBottom) setNewCount(0);
-  };
-
-  if (!viewable) {
-    return <Alert type="info" showIcon title={t("instances.logsNotRunning")} />;
-  }
-
-  const download = () => {
-    const blob = new Blob([`${lines.join("\n")}\n`], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${uuid}.log`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
   return (
-    <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-      <Space wrap size={12}>
-        <Typography.Text type="secondary">{t("instances.logsTail")}</Typography.Text>
-        <Select
-          value={tail}
-          style={{ width: 104 }}
-          options={LOG_TAIL_OPTIONS.map((n) => ({ value: n, label: String(n) }))}
-          onChange={setTail}
-        />
-        <Switch
-          checked={autoRefresh}
-          onChange={setAutoRefresh}
-          aria-label={t("instances.logsAutoRefresh")}
-        />
-        <Typography.Text>{t("instances.logsAutoRefresh")}</Typography.Text>
-        <Button size="small" disabled={lines.length === 0} onClick={download}>
-          {t("instances.logsDownload")}
-        </Button>
-        {data?.truncated && (
-          <Typography.Text type="secondary">
-            {t("instances.logsTruncatedNote", { lines: tail })}
-          </Typography.Text>
-        )}
-      </Space>
-      {error ? (
-        <DataErrorAlert onRetry={() => void refetch()} />
-      ) : (
-        <div style={{ position: "relative" }}>
-          <div
-            ref={scrollRef}
-            onScroll={onScroll}
-            style={{
-              height: 420,
-              overflow: "auto",
-              padding: "8px 12px",
-              background: token.colorFillQuaternary,
-              border: `1px solid ${token.colorBorderSecondary}`,
-              borderRadius: token.borderRadius,
-              fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-              fontSize: fontSize.caption,
-              lineHeight: 1.7,
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-all",
-            }}
-          >
-            {lines.length === 0 ? (
-              <Typography.Text type="secondary">{t("instances.logsEmpty")}</Typography.Text>
-            ) : (
-              lines.map((line, i) => <div key={i}>{line}</div>)
-            )}
-          </div>
-          {!pinned && (
-            <Button
-              size="small"
-              type="primary"
-              onClick={scrollToBottom}
-              style={{ position: "absolute", right: 16, bottom: 12, boxShadow: token.boxShadow }}
-            >
-              {newCount > 0
-                ? t("instances.logsBackToBottomNew", { count: newCount })
-                : t("instances.logsBackToBottom")}
-            </Button>
-          )}
-        </div>
-      )}
-    </Space>
+    <LogsPanel
+      viewable={viewable}
+      lines={lines}
+      truncated={data?.truncated}
+      error={error}
+      onRetry={() => void refetch()}
+      tail={tail}
+      onTail={setTail}
+      autoRefresh={autoRefresh}
+      onAutoRefresh={setAutoRefresh}
+      downloadName={uuid}
+    />
   );
 }
 
 function EventsTab({ uuid, status }: { uuid: string; status?: string }) {
-  const { t } = useTranslation();
-  const reasonText = useEventReasonText();
   const queryClient = useQueryClient();
   // 时间线即计费依据:过渡态必须跟着状态一起刷新;游标分页 + 加载更多。
   // 轮询三律③:infinite 查询不挂 refetchInterval;事件只在状态迁移时产生,
@@ -654,46 +459,23 @@ function EventsTab({ uuid, status }: { uuid: string; status?: string }) {
     [data],
   );
   return (
-    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-      <Alert type="info" showIcon title={t("copy.eventsAreBilling")} />
-      {isError && <DataErrorAlert onRetry={() => void refetch()} />}
-      {/* 无事件渲染空白会把「实例尚无状态变更」读成加载失败:给一句话空态 */}
-      {!isError && !isLoading && events.length === 0 && (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("instances.eventsEmpty")} />
-      )}
-      <Timeline
-        items={events.map((e) => ({
-          color:
-            e.to_status === "running" ? "green" : e.to_status === "failed" ? "red" : "gray",
-          content: (
-            <Space orientation="vertical" size={0}>
-              <Typography.Text strong>
-                {e.from_status ?? "—"} → {e.to_status}
-                {(e.from_status === "running" || e.to_status === "running") && (
-                  <Typography.Text type="secondary">{t("instances.billingBoundary")}</Typography.Text>
-                )}
-              </Typography.Text>
-              <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                {t("instances.eventMetaLine", {
-                  time: formatDateTime(e.created_at),
-                  reason: reasonText(e.reason),
-                  actor: e.actor,
-                })}
-              </Typography.Text>
-            </Space>
-          ),
-        }))}
-      />
-      <LoadMore
-        hasNextPage={hasNextPage ?? false}
-        loading={isFetchingNextPage}
-        isError={isFetchNextPageError}
-        loadedCount={events.length}
-        onLoadMore={() => void fetchNextPage()}
-      />
-    </Space>
+    <EventsPanel
+      events={events}
+      isLoading={isLoading}
+      isError={isError}
+      onRetry={() => void refetch()}
+      hasNextPage={hasNextPage ?? false}
+      isFetchingNextPage={isFetchingNextPage}
+      isFetchNextPageError={isFetchNextPageError}
+      onLoadMore={() => void fetchNextPage()}
+    />
   );
 }
+
+function BillsTab({ instanceId }: { instanceId: number }) {
+  return <HourlyBillsTable query={useHourlyBillPages({ instance_id: instanceId })} />;
+}
+
 
 function InstanceDetail() {
   const { t } = useTranslation();
@@ -821,7 +603,7 @@ function InstanceDetail() {
           {
             key: "metrics",
             label: t("instances.tabMetrics"),
-            children: <MetricsTab uuid={uuid} running={running} />,
+            children: <MetricsPanel uuid={uuid} running={running} />,
           },
           // 「服务」只对服务型实例出:开发机没有端点也没有 Key
           ...(isService
@@ -867,7 +649,7 @@ function InstanceDetail() {
           {
             key: "bills",
             label: t("instances.tabBills"),
-            children: <HourlyBillsTable params={{ instance_id: instance.id }} />,
+            children: <BillsTab instanceId={instance.id} />,
           },
         ]}
       />
