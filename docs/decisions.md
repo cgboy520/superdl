@@ -237,8 +237,17 @@
 
   见 `deploy/cluster/README.md`、`deploy/app/k8s/04-gateway.yaml`。
 
-- **服务容器是实例的第二种形态,不另立实体。** 加一列 `instances.workload_type`(`dev` / `service`),Pod spec 在
-  `build_pod_spec` 按形态分叉,其余全部复用——状态机、计费、配额、回收、reconciler、监控、审计一行不改。见 `docs/reference/services.md`、`docs/reference/orchestrator.md`。
+- **部署服务是独立聚合根,实例是它的不可变版本。** `services` 只存身份与网关侧属性(`public_slug` 兼作 API 路径标识、
+  `require_api_key`、`desired_state`、当前 / 候选实例指针、版本计数);服务状态由 `desired_state` + 当前 / 候选实例的状态与就绪位
+  **派生、不落库**,不另立状态机。每次部署 = 一台新实例(快照镜像 / 命令 / env / 端口 / 健康路径 / slug),`instances.service_id` 反指。
+  **计费、配额、回收、reconciler、迁移监听的主体仍是实例**,`bills_hourly` / `instance_events` 一行不改;服务级操作一律委托
+  `orchestrator.service` 的 row 级函数,orchestrator 不反向依赖 services、不查 `services` 表(`build_pod_spec` 只读实例快照列)。
+  约束:实例级生命周期端点(stop / start / restart / DELETE)对服务实例一律 409,购买模式类端点照常;`POST /instances` 不再接受服务字段;
+  版本更新 v1 只做 recreate(先停旧版本再起新版本,期间端点 503;slug / URL / API Key 不变),且不对包周期服务开放
+  (新实例 = 重新预付一整段周期、旧订阅随释放作废,订阅结转另立设计);HTTPRoute 仍每实例一条,`rollout_instance_id` 为蓝绿预留。
+  见 `docs/reference/services.md`。
+- **`instances.workload_type` 只决定 Pod 形态。** `dev` / `service` 在 `build_pod_spec` 分叉(restartPolicy、探针、SSH / Jupyter / 服务
+  Service 与路由),reconciler 的 `pod_unready` 豁免也按它判;它与 `service_id` 同真同假(CHECK 兜底),不承载产品语义。
 - **对外服务的鉴权放在网关,不要求用户容器自己实现。** 用 `extAuth`,一条 SecurityPolicy 挂在 `svc-https` listener 上服务全部端点,
   对象数 O(1),吊销即时生效。约束:**鉴权结果没有任何缓存**,控制面是全部对外服务的同步依赖。见 `docs/reference/services.md`。
 - **服务型实例持续 not-ready 不判故障。** `workload_type='service'` 时 reconciler 跳过 `pod_unready` 一支,实例留在
