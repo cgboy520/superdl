@@ -203,9 +203,9 @@ async def test_pool_label_spoof_is_corrected_and_cordoned(sm, fake_auto_ready):
     """冒名节点:登记为 cpu 池的机器把 config.yaml 改成 superdl.io/pool=kata,想吸走别人的
     VM 隔离负载(落到攻击者宿主上,宿主 root 可读)。
 
-    关键在于此时登记行是 **failed** —— nodes/reconciler 正是把「标签与登记不符」判成
-    failed。旧实现的池事实源只查 status='joined',对这一行恰好查不到登记池,纠偏静默跳过、
-    伪标签长期有效。挂了 = 池标签纠偏对它唯一要防的攻击完全失效。
+    刻意让登记行落在 failed(nodes/reconciler 把「标签与登记不符」判成 failed):
+    池事实源若只查 status='joined' 就查不到这一行,纠偏静默跳过、伪标签长期有效。
+    挂了 = 池标签纠偏对它唯一要防的攻击完全失效。
     """
     from app.modules.nodes.models import NodeEnrollment
 
@@ -226,7 +226,7 @@ async def test_pool_label_spoof_is_corrected_and_cordoned(sm, fake_auto_ready):
                 select(NodeEnrollment).where(NodeEnrollment.node_name == "spoofer-1")
             )
         ).scalar_one()
-        # 前提:这正是旧实现漏掉的那一档
+        # 前提自检:登记行确实落在 failed 档(而非 joined)
         assert enrollment.status == "failed" and enrollment.pool == "cpu"
 
     counts = await node_spec_patrol(sm)

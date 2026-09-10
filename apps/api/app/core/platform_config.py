@@ -72,7 +72,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "bool",
         prod_forbidden=("false",),
         hint="开启后 /auth/sms-code 必须带阿里云验证码 2.0 的一次性 token(凭据在「人机验证」组);"
-        "关闭 = 发码口子只剩 IP/手机号限流;prod 在线关闭已禁,env 层关闭启动 fail-fast(D-4)",
+        "关闭 = 发码口子只剩 IP/手机号限流;prod 在线关闭已禁,env 层关闭启动 fail-fast",
     ),
     "admin_mfa_enabled": SettingSpec(
         "security",
@@ -86,7 +86,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "bool",
         prod_forbidden=("false",),
         hint="开启后用户端「账户设置」可提交三要素核验(凭据在「实名认证」组,缺失即 502);"
-        "关闭 = 提交返 409,不影响已实名用户;prod 在线关闭已禁,env 层关闭启动 fail-fast(D-4)",
+        "关闭 = 提交返 409,不影响已实名用户;prod 在线关闭已禁,env 层关闭启动 fail-fast",
     ),
     "real_name_required_for_recharge": SettingSpec(
         "security",

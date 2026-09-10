@@ -246,6 +246,39 @@ class TestProdConfigValidation:
         assert s.real_name_enabled is False
         assert s.sms_access_key_id is None
 
+    def test_prod_worker_role_skips_api_only_secrets(self):
+        """worker 不挂 superdl-auth / superdl-edge(secrets 分域):prod 下按角色跳过 jwt_secret 与
+        admin_edge_token 两项,其余项照拒;api 角色缺 admin_edge_token 仍拒启。"""
+        import pytest
+        from pydantic import ValidationError
+
+        from app.core.config import Settings
+
+        worker = {**self._complete_prod_kwargs(), "process_role": "worker"}
+        worker.pop("jwt_secret", None)
+        worker.pop("admin_edge_token", None)
+        assert Settings(**worker).process_role == "worker"
+        with pytest.raises(ValidationError, match="sms_provider"):
+            Settings(**{**worker, "sms_provider": "mock"})
+        # 非 core 组件不挂 superdl-cloud / superdl-payment:渠道 provider 不校验,其余照拒
+        tenant_mgr = {
+            **worker,
+            "worker_component": "tenant-mgr",
+            "sms_provider": "mock",
+            "payment_mock": True,
+        }
+        assert Settings(**tenant_mgr).worker_component == "tenant-mgr"
+        with pytest.raises(ValidationError, match="k8s_backend"):
+            Settings(**{**tenant_mgr, "k8s_backend": "fake"})
+        # disk-ops 只挂 db/metrics:连配置主密钥也不校验;tenant-mgr 挂 crypto 则照拒
+        assert Settings(
+            **{**tenant_mgr, "worker_component": "disk-ops", "config_encryption_key": None}
+        )
+        with pytest.raises(ValidationError, match="config_encryption_key"):
+            Settings(**{**tenant_mgr, "config_encryption_key": None})
+        with pytest.raises(ValidationError, match="admin_edge_token"):
+            Settings(**{**self._complete_prod_kwargs(), "admin_edge_token": ""})
+
     def test_required_real_name_without_enabled_rejected_in_any_env(self):
         """充值强制实名而实名认证未开启 = 用户永远完不成实名,任何环境都拒
         (经平台配置在线打开的同一组合由 platform_config 写入侧拦,见 test_platform_config)。"""
@@ -638,7 +671,7 @@ class TestSmsCodeAtRest:
 
 class TestGhostEnvKeys:
     def test_unknown_superdl_vars_reported(self, monkeypatch):
-        """拼错/残留的 SUPERDL_* 变量会被 pydantic 静默忽略:启动扫描负责把它们措出来。"""
+        """拼错/残留的 SUPERDL_* 变量会被 pydantic 静默忽略:启动扫描负责把它们揪出来。"""
         from app.core.config import unknown_superdl_env_keys
 
         monkeypatch.setenv("SUPERDL_JWT_SECRET", "x")  # 合法键

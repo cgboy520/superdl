@@ -24,5 +24,5 @@ Prometheus 代理查询、`usage_hourly` 聚合、事件计费与指标估算对
 - Prometheus 响应形态异常(缺 `data.result`、序列缺 `values` 等)统一归 `PrometheusUnavailable`:详情端点 503,批量/节点端点 `available=false`,绝不击穿成 500。
 - 指标源按实例 spec 的 `pool_label` 选:hami 池用 HAMi vGPUmonitor per-container 指标,查空回落 DCGM;kata / mig 池恒用 DCGM。HAMi 共享卡上 DCGM 的 `{pod=}` 归属不可靠,不得用于 hami 池;判据是池不是档位——mig 池同属「共享」档但走 DCGM。
 - 标签常量集中在 `prom.py` 文件头部:`DCGM_NODE_LABEL` 是 dcgm-exporter 4.x 的小写 `hostname`(3.x 为 `Hostname`)。`NODE_QUERIES` 走该维度出 per-GPU 多序列,与 `HAMI_QUERIES` 同经 `query_range_multi` 返回多序列。
-- `prometheus_url` 在 prod 下 fail-fast(含 localhost 拒启)。
+- `prometheus_url` 指向本地时 prod 启动只打 WARNING、不拒启(计费不受影响,用量面板与对账全空),见 [security.md](./security.md)。
 - 节点级指标端点见 [observability.md](./observability.md)。

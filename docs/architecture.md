@@ -108,9 +108,8 @@ worker 侧其余定时任务:outbox 卡单回收、小时结算、数据盘日�
 `deploy/cluster/admission/tenant-restrictions.yaml` 的**七条 ValidatingAdmissionPolicy(全部 `Deny`)**收窄:
 平台 SA 写范围(`superdl` / `tenant-*` namespace 与 nodes)、租户 Pod 安全基线、Node 字段级写白名单、
 全局 Pod 兜底、Pod 与 Job 模板各一条 Secret 引用白名单、Node 删除对象白名单,RBAC 与准入叠加才是完整最小权限。
-后两条 Secret 白名单堵的是一条 RBAC 直觉之外的等价:**某命名空间内的 `pods:create`(或 `batch/jobs:create`)
-等价于该命名空间的 `secrets:get`** —— kubelet 代创建者解析 `secretKeyRef` / `envFrom` / secret 卷 /
-`imagePullSecrets`,不做任何 secrets 授权检查,PSA `restricted` 也不约束 Secret 挂载。口径见
+后两条 Secret 白名单堵的是「命名空间内 `pods:create`(或 `batch/jobs:create`)等价于该命名空间的
+`secrets:get`」这条 RBAC 直觉之外的通路,机制与完整口径见
 [`reference/security.md`](./reference/security.md)。HTTPRoute 条数随活跃实例线性增长,是 Envoy 数据面内存的主要变量。
 
 ## 6. 数据模型

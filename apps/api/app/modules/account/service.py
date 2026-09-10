@@ -1010,7 +1010,7 @@ async def approve_deletion(
     session: AsyncSession, request_id: int, *, admin_id: int
 ) -> AccountDeletionRequest:
     """执行注销(仅超管)。冷静期未满 409;残留资源/余额非零 → 自动驳回 + 409(清单);
-    全通过则同事务匿名化:手机号哈希化、实名/企业字段清空、token_version+1、status=deleted。
+    全通过则同事务匿名化:手机号改写为随机占位串、实名字段清空、token_version+1、status=deleted。
     """
     # 延迟 import 防循环:orchestrator.service → account.service
     from app.modules.billing import service as billing_service

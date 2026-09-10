@@ -33,9 +33,9 @@ kube-apiserver-arg:
   # (etcd 也在上面)吃光。
   - audit-log-maxsize=100
   - audit-log-maxbackup=10
-kubelet-arg:
-  # 单 Pod PID 上限:fork bomb 会耗尽节点进程表。
-  # 与 node-join.sh / rke2 server-config.yaml 同值,改时同步。
-  - podPidsLimit=4096
+# 单 Pod PID 上限(podPidsLimit)不在这里:它是 KubeletConfiguration 字段而非 kubelet flag,
+# 写进 kubelet-arg 会让 k3s 拒启(unknown flag)。由 ansible 落 kubelet 配置 drop-in
+# /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/50-superdl.conf(模板 rke2/kubelet-superdl.conf,
+# 与 node-join.sh 写给 GPU 节点的同值)。
 # 单机时 server 兼跑业务负载,不打 CriticalAddonsOnly taint(与 RKE2 server 相反);
 # 多机 light 集群给 server 补 taint,GPU 节点经管理端一键加入。

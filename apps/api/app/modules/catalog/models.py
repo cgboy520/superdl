@@ -33,14 +33,14 @@ class Sku(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(64))
     gpu_model: Mapped[str] = mapped_column(String(32), index=True)  # e.g. RTX4090 / A100
-    # dedicated(专用整卡)/ shared(共享切分);标准 vs 经济由 pool_label 派生
-    # (mig 池 = 硬切分标准档,hami 池 = 软切分经济档),不单列枚举值
+    # dedicated(专用整卡)/ shared(共享切分)/ cpu(纯 CPU 不带卡);标准 vs 经济由
+    # pool_label 派生(mig 池 = 硬切分标准档,hami 池 = 软切分经济档),不单列枚举值
     tier: Mapped[str] = mapped_column(String(16), index=True)
     mig_profile: Mapped[str | None] = mapped_column(String(32))  # e.g. 1g.10gb(仅 mig 档)
     gpu_cores_pct: Mapped[int] = mapped_column(default=100)  # 算力份额 %(共享档 <100)
     vram_gb: Mapped[int]  # 每实例显存配额
     oversell_cores: Mapped[Decimal] = mapped_column(Numeric(4, 2), default=Decimal("1.00"))
-    pool_label: Mapped[str] = mapped_column(String(32))  # 节点池:kata / hami / mig
+    pool_label: Mapped[str] = mapped_column(String(32))  # 节点池:kata / hami / mig / cpu
     vcpu: Mapped[int]
     mem_gb: Mapped[int]
     disk_gb: Mapped[int] = mapped_column(default=100)  # 实例盘(含 100G 免费)

@@ -10,7 +10,6 @@ server: https://<api-vip>:9345
 token: <cluster-token>
 node-label:
   - "superdl.io/pool=<kata|hami|mig|cpu>" # 装机时定池,Kata 与 HAMi 永不混布;cpu = 无卡机池
-kubelet-arg:
-  # 单 Pod PID 上限(默认 -1 = 无限):fork bomb 会耗尽节点进程表、拖垮 kubelet/containerd,
-  # 殃及同机全部租户。与 server-config.yaml、node-join.sh 写出的 agent config.yaml 同值,改时同步。
-  - podPidsLimit=4096
+# 单 Pod PID 上限(podPidsLimit)不写在这里:它是 KubeletConfiguration 字段而非 kubelet flag,
+# 写进 kubelet-arg 会让 agent 拒启。node-join.sh 落 kubelet 配置 drop-in
+# /var/lib/rancher/rke2/agent/etc/kubelet.conf.d/50-superdl.conf(内容同 kubelet-superdl.conf)。

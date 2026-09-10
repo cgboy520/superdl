@@ -17,6 +17,7 @@ from app.core.k8s.real import (
     GATEWAY_DATAPLANE_NAMESPACE,
     PRIVATE_CIDRS,
     RealOrchestrator,
+    pod_cidr_gateways,
 )
 
 
@@ -129,6 +130,23 @@ class TestTenantNetpol:
         ip_block: Any = ssh._from[0].ip_block
         assert ip_block._except == ["10.244.0.0/16"]
         assert not set(PRIVATE_CIDRS) <= set(ip_block._except)
+
+    def test_ssh_ingress_allows_node_pod_subnet_gateways(self):
+        """flannel 上跨节点 NodePort 的 SNAT 来源是入口节点的 Pod 子网网关(.0),落在被排掉的
+        Pod 网段内:必须逐节点放回 .0/32 与 .1/32。挂了 = 只有直连实例所在节点才能 SSH,
+        连接串里的网关域名一律被拒(实机已复现)。"""
+        gws = pod_cidr_gateways(["10.42.5.0/24", "10.42.0.0/24", "fd00::/64", "not-a-cidr"])
+        assert gws == ["10.42.0.0/32", "10.42.0.1/32", "10.42.5.0/32", "10.42.5.1/32"]
+        spec: Any = self._orch()._tenant_netpol("tenant-x", gws).spec
+        peers = spec.ingress[1]._from
+        assert peers[0].ip_block._except == ["10.42.0.0/16"]
+        assert [p.ip_block.cidr for p in peers[1:]] == gws
+        assert all(p.ip_block._except is None for p in peers[1:])
+
+    def test_no_gateway_peers_when_pod_cidr_not_excluded(self):
+        """不排 Pod 网段时 0.0.0.0/0 已覆盖一切,不重复下发网关 /32。"""
+        spec: Any = self._orch("")._tenant_netpol("tenant-x", ["10.42.0.0/32"]).spec
+        assert len(spec.ingress[1]._from) == 1
 
     def test_empty_pod_cidr_emits_no_except(self):
         """留空是排障回退口:apiserver 拒绝空 except 数组,必须整个字段缺席而不是 []。"""

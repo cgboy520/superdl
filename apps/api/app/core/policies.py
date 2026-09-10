@@ -46,7 +46,7 @@ POLICY_SPECS: dict[str, tuple[Literal["decimal", "int"], Decimal, Decimal]] = {
     "period_discount_week": ("int", Decimal(50), Decimal(100)),
     "period_discount_month": ("int", Decimal(50), Decimal(100)),
     "period_discount_year": ("int", Decimal(50), Decimal(100)),
-    # 包周期到期前多少天开始预警(短信 + 站内信,每天至多一条)
+    # 包周期到期前多少天开始预警(短信 + 站内信,每个到期时刻至多一条)
     "period_expire_warn_days": ("int", Decimal(1), Decimal(30)),
     # 竞价价 = 按量价 × pct/100。上界 90:竞价的对价是「可被回收」,必须让出折扣
     "spot_discount_pct": ("int", Decimal(10), Decimal(90)),

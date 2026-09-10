@@ -230,6 +230,31 @@ def _statuses_from_listing(
     return [by_key.get((ns, uuid), _MISSING_POD) for _id, _status, ns, uuid, _created in rows]
 
 
+# 上一轮看到的节点集合(进程内);变化即把在册租户 ns 的 NetPol 重下发
+_known_nodes: frozenset[str] | None = None
+
+
+async def _resync_tenant_netpols_on_node_change(
+    orch: Any, readiness: dict[str, bool] | None, namespaces: Iterable[str]
+) -> None:
+    """节点入池/退役(或本进程首轮)时重跑 ensure_namespace:租户 NetPol 的 SSH 入方向按节点
+    逐个放行 Pod 子网网关(core/k8s/real.py pod_cidr_gateways),新节点不重下发就永远进不来。
+    节点视图本轮不可用则跳过,不动已知集合。"""
+    global _known_nodes
+    if readiness is None:
+        return
+    current = frozenset(readiness)
+    if current == _known_nodes:
+        return
+    for ns in sorted(set(namespaces)):
+        try:
+            await orch.ensure_namespace(ns)
+        except Exception:
+            logger.exception("tenant_netpol_resync_failed", namespace=ns)
+            return  # 下一轮再试,已知集合不推进
+    _known_nodes = current
+
+
 async def _node_readiness() -> dict[str, bool] | None:
     """节点 → 是否 NotReady。本轮节点视图不可用返回 None(node_lost 判定回落旧口径)。"""
     try:
@@ -283,6 +308,9 @@ async def _reconcile_instances(
         return
     statuses = _statuses_from_listing(rows, listing)
     not_ready_by_node = await _node_readiness()
+    await _resync_tenant_netpols_on_node_change(
+        orch, not_ready_by_node, (ns for _id, _st, ns, _uuid, _created in rows)
+    )
     stuck = {sm_def.STOPPING: 0, sm_def.RELEASING: 0}
 
     for (instance_id, row_status, _ns, _uuid, _created), st in zip(rows, statuses, strict=True):

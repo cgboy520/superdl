@@ -128,8 +128,9 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
       `Programmed=True`,`attachedRoutes` 与预期条数一致。这也是管理端「集群」页「实例入口(网关)」那一格的判据
 - [ ] **策略真的挂上了**:`kubectl -n superdl describe securitypolicy superdl-admin-allowlist` /
       `securitypolicy superdl-svc-extauth` / `backendtrafficpolicy superdl-api-ratelimit` /
-      `backendtrafficpolicy superdl-svc-ratelimit` / `backendtrafficpolicy superdl-app-ratelimit` /
-      `clienttrafficpolicy superdl-gateway`,六者 `status.ancestors[].conditions` 均 `Accepted=True`。listener 的 `sectionName` 写错**不报错**、
+      `backendtrafficpolicy superdl-api-webhooks` / `backendtrafficpolicy superdl-svc-ratelimit` /
+      `backendtrafficpolicy superdl-app-ratelimit` /
+      `clienttrafficpolicy superdl-gateway`,七者 `status.ancestors[].conditions` 均 `Accepted=True`。listener 的 `sectionName` 写错**不报错**、
       apply 照样成功,只是策略静默失效(白名单没了、限流没了、**鉴权没了**),线上看不出异常 ——
       这里是唯一线索
 - [ ] 三个平台域各 `curl -I https://<域>` 证书链正确;`curl -I http://<域>` 返回 301

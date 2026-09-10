@@ -44,6 +44,18 @@ def decode_master_key(raw: str, *, label: str) -> bytes:
     return key
 
 
+# worker 组件消费的 Secret 域,与 deploy/app/k8s/03-worker.yaml 各 Deployment 的 envFrom 同源
+# (改清单同步改这里);superdl-db / superdl-metrics 人人都有,不列。all = 单进程跑全部组件
+_WORKER_SECRET_DOMAINS: dict[str, frozenset[str]] = {
+    "all": frozenset({"crypto", "cloud", "payment", "registry"}),
+    "core": frozenset({"crypto", "cloud", "payment"}),
+    "tenant-mgr": frozenset({"crypto", "registry"}),
+    "node-mgr": frozenset({"crypto"}),
+    "prewarm": frozenset({"crypto", "registry"}),
+    "disk-ops": frozenset(),
+}
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="SUPERDL_", env_file=".env", extra="ignore")
 
@@ -96,7 +108,8 @@ class Settings(BaseSettings):
     real_name_access_key_secret: str | None = None
 
     # 人机校验(阿里云验证码 2.0,/auth/sms-code 前置闸)。开关与凭据均可被平台配置中心覆盖:
-    # 关闭 = 跳过校验(prod 关闭不拒启动,由配置中心告警提示);scene/prefix 为客户端初始化公开信息
+    # 关闭 = 跳过校验;prod 下必须开启(lifespan 合规闸 fail-fast,见
+    # platform_config.assert_prod_compliance_gates);scene/prefix 为客户端初始化公开信息
     captcha_enabled: bool = False
     captcha_scene_id: str | None = None
     captcha_prefix: str | None = None
@@ -219,6 +232,10 @@ class Settings(BaseSettings):
     # (Host + 该头)校验——Host 可被集群内直连调用方伪造,密钥把「知道 admin_host」
     # 与「能进 admin 反代面」分开。prod 必填(启动 fail-fast);dev/test 无 ingress 不启用
     admin_edge_token: str = ""
+    # 进程角色:api / worker 共用同一份 Settings,但 worker 按 secrets 分域不挂 superdl-auth 与
+    # superdl-edge(deploy/app/secrets.example.yaml 消费矩阵),prod 校验按角色跳过 jwt_secret 与
+    # admin_edge_token 两项;由 deploy/app/k8s/03-worker.yaml 的 env 置 worker
+    process_role: Literal["api", "worker"] = "api"
     # SSH 入口不单独配域名:实例只靠 NodePort 区分,连接串直接用实例自己的域名(与 Jupyter
     # 同名,见 orchestrator/service.jupyter_host)。部署约束:泛域名解析到的地址必须同时能
     # 转发本端口段(单节点即节点本身;多节点为转发该端口段的 LB/VIP)
@@ -347,6 +364,12 @@ class Settings(BaseSettings):
         """共享档允许池的解析视图(逗号分隔,去空白去空项;catalog._check_tier_pool 消费)。"""
         return tuple(p.strip() for p in self.shared_tier_allowed_pools.split(",") if p.strip())
 
+    def _secret_domains(self) -> frozenset[str]:
+        """本进程挂载的 Secret 域;api 与单进程 worker(all)全量,分组件 worker 按清单裁剪。"""
+        if self.process_role == "api":
+            return frozenset({"auth", "crypto", "edge", "cloud", "payment", "registry"})
+        return _WORKER_SECRET_DOMAINS.get(self.worker_component, _WORKER_SECRET_DOMAINS["all"])
+
     @model_validator(mode="after")
     def _validate_prod(self) -> "Settings":
         """生产配置 fail-fast:开发默认值未改则拒绝启动。
@@ -362,7 +385,7 @@ class Settings(BaseSettings):
         # 「CHANGE_ME_32_CHARS_MINIMUM_______」这类 33 字符占位(唯一字符仅 15 个);真实
         # openssl rand -hex 32 输出唯一字符期望 ~20+,不受影响。JWT secret 是 opaque bytes,
         # 不强制编码格式,只查来源痕迹与熵。
-        if (
+        if self.process_role == "api" and (
             self.jwt_secret == _DEV_JWT_SECRET
             or "change_me" in self.jwt_secret.lower()
             or len(self.jwt_secret) < 32
@@ -376,11 +399,14 @@ class Settings(BaseSettings):
             problems.append("access_token_ttl_seconds 超过 1 小时上限")
         if self.refresh_token_ttl_seconds > 7 * 24 * 3600:
             problems.append("refresh_token_ttl_seconds 超过 7 天上限")
-        if self.sms_provider == "mock":
+        # 各 worker 组件只挂自己消费的 Secret 域(deploy/app/k8s/03-worker.yaml envFrom 是事实源):
+        # 拿不到的项不校验,否则组件在 prod 永远起不来
+        domains = self._secret_domains()
+        if "cloud" in domains and self.sms_provider == "mock":
             problems.append("sms_provider 不得为 mock(验证码将是固定值)")
         if self.k8s_backend == "fake":
             problems.append("k8s_backend 不得为 fake")
-        if self.payment_mock:
+        if "payment" in domains and self.payment_mock:
             problems.append("payment_mock 必须为 false")
         if "superdl:superdl@localhost" in self.database_url:
             problems.append("database_url 仍为本地开发默认")
@@ -421,9 +447,9 @@ class Settings(BaseSettings):
             )
         if not self.metrics_token:
             problems.append("metrics_token 未配置(/metrics 将无鉴权暴露)")
-        if not self.admin_edge_token:
+        if self.process_role == "api" and not self.admin_edge_token:
             problems.append("admin_edge_token 未配置(管理端边缘共享密钥:/api/admin 双闸的其中一闸)")
-        if not self.config_encryption_key:
+        if "crypto" in domains and not self.config_encryption_key:
             problems.append("config_encryption_key 未配置(平台配置敏感项加密主密钥)")
         # 密钥格式校验(非空时的 b64/32 字节)在 _validate_invariants,与环境无关
         if problems:

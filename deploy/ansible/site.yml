@@ -71,6 +71,21 @@
         state: directory
         mode: "0755"
 
+    - name: kubelet 配置 drop-in 目录(发行版首次启动前建好也无妨,00-*.conf 由它自管)
+      file:
+        path: "/var/lib/rancher/{{ cluster_distro }}/agent/etc/kubelet.conf.d"
+        state: directory
+        mode: "0755"
+
+    # podPidsLimit 是 KubeletConfiguration 字段而非 kubelet flag(写进 kubelet-arg 会让 server 拒启),
+    # 走 drop-in;与 node-join.sh 写给 GPU 节点的同值
+    - name: 分发 kubelet 配置 drop-in(单 Pod PID 上限)
+      copy:
+        src: ../cluster/rke2/kubelet-superdl.conf
+        dest: "/var/lib/rancher/{{ cluster_distro }}/agent/etc/kubelet.conf.d/50-superdl.conf"
+        mode: "0644"
+      notify: restart-server
+
     - name: 分发 apiserver 审计策略(缺失则 apiserver 起不来)
       copy:
         src: ../cluster/rke2/audit-policy.yaml   # rke2/k3s 共用同一策略文件
@@ -241,12 +256,7 @@
 
     - name: 控制面节点打平台组件落点标签(--overwrite:幂等,可反复跑)
       # 选择器按 control-plane 角色而非主机名:节点名与 inventory 主机名不保证一致。
-      # 必须由本步骤用管理凭据打,不能回到 server-config.yaml 的 node-label:
-      # node-label 是 kubelet 自声明,持 join token 的机器把它写进自己的 config.yaml
-      # 就能把 api/worker/前端/Envoy 全吸到攻击者 root 的机器上。
-      # node-restriction.kubernetes.io/* 前缀由 NodeRestriction 准入插件禁止 kubelet 自签
-      # (rke2/k3s server-config.yaml 已显式钉住该插件),平台 SA 也无权改(VAP 策略③只放行
-      # superdl.io/*),于是这个落点只有握管理凭据的人能定。
+      # 为何必须在这里用管理凭据打、不能退回 node-label,见上方块注释。
       command: >-
         {{ kubectl_bin }} --kubeconfig {{ kubeconfig_path }}
         label nodes -l node-role.kubernetes.io/control-plane

@@ -6,7 +6,8 @@
 
 canonical 规则:RTX 消费卡 = RTX<数字><后缀>(4090 仅 24G,不带显存);
 数据中心同名多容量家族(A100/A800/H100/H800/H200/V100)带 -{显存}G 后缀;
-T4/L4/L40S/A10 等单容量卡取家族名;CMP 矿卡系列(CMP 170HX / 90HX 等,nvidia-smi 只报
+T4/L4/L40S/A10 等单容量卡取家族名(GB10 = DGX Spark 统一内存 SoC,同此);
+CMP 矿卡系列(CMP 170HX / 90HX 等,nvidia-smi 只报
 "NVIDIA Graphics Device",型号来自 lspci 方括号名)取 CMP<数字>HX。巡检将 canonical 写入
 节点 label `superdl.io/gpu-model`,gpu_adapter 以 nodeSelector 依赖它。
 """
@@ -18,7 +19,7 @@ _MULTI_VRAM_FAMILIES = frozenset({"A100", "A800", "H100", "H800", "H200", "V100"
 
 # 单容量/免后缀白名单(数据中心与推理卡)
 _PLAIN_FAMILIES = frozenset(
-    {"T4", "L4", "L20", "L40", "L40S", "A10", "A16", "A30", "A40", "H20", "B200", "GB200"}
+    {"T4", "L4", "L20", "L40", "L40S", "A10", "A16", "A30", "A40", "H20", "B200", "GB200", "GB10"}
 )
 
 # 噪声 token(厂牌/系列词)与形态 token(封装/显存介质)
@@ -46,11 +47,13 @@ DEFAULT_VRAM_GB: dict[str, int] = {
     "V100-16G": 16,
     "V100-32G": 32,
     "CMP170HX": 8,
+    # 统一内存(nvidia-smi 显存报 N/A):按 HAMi preConfiguredDeviceMemory 的纳管口径计,给 CPU 侧留余量
+    "GB10": 96,
 }
 
 _RTX_RE = re.compile(r"\bRTX\s*(\d{3,4})\s*(TI|SUPER|D)?\b")
 _CMP_RE = re.compile(r"\bCMP\s*(\d{2,3})\s*HX\b")
-_FAMILY_RE = re.compile(r"\b([AHLBV]\d{2,4}S?|GB\d{3}|T4)\b")
+_FAMILY_RE = re.compile(r"\b([AHLBV]\d{2,4}S?|GB\d{2,3}|T4)\b")
 _VRAM_RE = re.compile(r"\b(\d{2,3})\s*GB?\b")
 
 

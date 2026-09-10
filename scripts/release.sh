@@ -49,7 +49,9 @@ resolve_digest() { # <完整镜像引用> → sha256:...
   elif command -v skopeo > /dev/null 2>&1; then
     out="$(skopeo inspect --format '{{.Digest}}' "docker://$ref" 2> /dev/null || true)"
   elif command -v docker > /dev/null 2>&1; then
-    out="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$ref" 2> /dev/null || true)"
+    # --raw 取顶层 manifest/index 原文,digest 即其 sha256;--format '{{.Manifest.Digest}}' 在 buildx
+    # 0.2x 上对单 manifest 镜像会退回默认文本输出,解析不出 digest
+    out="$(docker buildx imagetools inspect --raw "$ref" 2> /dev/null | sha256sum | awk 'NF && $1 ~ /^[0-9a-f]{64}$/ {print "sha256:" $1}' || true)"
   else
     echo "::error::找不到可解析 digest 的工具(crane / skopeo / docker buildx),拒绝按可变 tag 发布" >&2
     return 1
@@ -131,6 +133,9 @@ if ! kubectl -n "$NS" get secret superdl-registry-pull > /dev/null 2>&1; then
 fi
 
 echo "==> 2/5 迁移 Job(先于滚动)"
+# Job 的 envFrom 引用 ConfigMap superdl-api-config:首装时它还不存在(随第 3 步的 kustomize 一起下发),
+# 先单独 apply 命名空间与 ConfigMap(不含任何镜像),否则 Job Pod 停在 CreateContainerConfigError
+kubectl apply -f "${K8S_DIR}/00-namespace-config.yaml"
 render_checked < "${K8S_DIR}/10-migrate-job.yaml" | kubectl create -f -
 if ! kubectl -n "$NS" wait --for=condition=complete --timeout=300s "job/superdl-migrate-${TAG}"; then
   echo "::error::迁移 Job 未成功,终止发布;日志:" >&2

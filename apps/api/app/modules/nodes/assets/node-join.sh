@@ -27,6 +27,7 @@ API_BASE="__API_BASE__" # 服务端下发时替换;可用 --api-base 覆盖(测�
 STATE_DIR="${SUPERDL_JOIN_STATE_DIR:-/var/lib/superdl-node-join}"
 LOG_FILE="${SUPERDL_JOIN_LOG_FILE:-/var/log/superdl-node-join.log}"
 ETC_DIR="${SUPERDL_JOIN_ETC_DIR:-/etc}"
+RANCHER_STATE_DIR="${SUPERDL_JOIN_RANCHER_STATE_DIR:-/var/lib/rancher}"  # kubelet drop-in 落点 <distro>/agent/etc/kubelet.conf.d
 LVM_IMG_DIR="${SUPERDL_JOIN_LVM_DIR:-/var/lib/superdl-lvm}"  # loop 兜底镜像目录(仅显式选择时用)
 # IOMMU 分组目录:非空 = 直通已生效。可覆盖仅为 bats 造状态(直接读宿主 sysfs 会让 kata
 # 用例在任何没开 VT-d 的机器上永久红);生产一律默认值
@@ -53,7 +54,8 @@ PIN_RKE2_CN="${SUPERDL_JOIN_PIN_RKE2_CN:-5541410b86d4d19d927d820be85156e787be3fd
 # 升版时与上方安装器 pin 同节奏复核
 NVCTK_MIN_VERSION="${SUPERDL_JOIN_NVCTK_MIN_VERSION:-1.17.8}"
 # 单 Pod PID 上限:fork bomb 可耗尽节点进程表拖垮 kubelet/containerd,殃及同机租户;
-# 与 deploy/cluster/rke2/server-config.yaml 的 podPidsLimit=4096 同值
+# 是 KubeletConfiguration 字段而非 kubelet flag(kubelet-arg 写它直接拒启),落 kubelet.conf.d
+# drop-in;与 deploy/cluster/rke2/kubelet-superdl.conf(server 由 ansible 分发)同值
 POD_PIDS_LIMIT="${SUPERDL_JOIN_POD_PIDS_LIMIT:-4096}"
 
 # ---------- 参数 ----------
@@ -113,7 +115,8 @@ if [[ "$UNINSTALL" == "1" ]]; then
   fi
   if [[ -n "$DISTRO_NAME" && "$SERVER_HERE" == "0" ]]; then
     rm -f "$ETC_DIR/rancher/$DISTRO_NAME/config.yaml" "$ETC_DIR/rancher/$DISTRO_NAME/registries.yaml" \
-      "$ETC_DIR/rancher/$DISTRO_NAME/harbor-ca.crt"
+      "$ETC_DIR/rancher/$DISTRO_NAME/harbor-ca.crt" \
+      "$RANCHER_STATE_DIR/$DISTRO_NAME/agent/etc/kubelet.conf.d/50-superdl.conf"
   fi
   rm -rf "$STATE_DIR"
   echo "==== 卸载完成:agent 已移除,平台侧请记得在集群中删除该节点(kubectl delete node) ===="
@@ -275,7 +278,7 @@ PYEOF
 }
 
 step_precheck() {
-  [[ "$(uname -m)" == "x86_64" ]] || { echo "仅支持 x86_64"; return 1; }
+  case "$(uname -m)" in x86_64 | aarch64) ;; *) echo "仅支持 x86_64 / aarch64(当前 $(uname -m))"; return 1 ;; esac
   command -v python3 >/dev/null || { echo "缺少 python3"; return 1; }
   command -v systemctl >/dev/null || { echo "需要 systemd"; return 1; }
   # 不用 grep -q:pipefail 下 grep 命中即退出会让仍在输出的 lspci 收到 SIGPIPE,整条判为失败
@@ -308,7 +311,10 @@ EOF
 }
 
 step_sysctl() {
-  echo "user.max_user_namespaces=65536" > "$ETC_DIR"/sysctl.d/99-superdl.conf
+  # inotify 实例数默认 128:每个容器日志/配置 watch 各占一个,GPU 栈与租户 Pod 一多,
+  # device plugin 就报 "couldn't initialize inotify: too many open files" 起不来
+  printf 'user.max_user_namespaces=65536\nfs.inotify.max_user_instances=8192\nfs.inotify.max_user_watches=1048576\n' \
+    > "$ETC_DIR"/sysctl.d/99-superdl.conf
   sysctl --system >/dev/null
 }
 
@@ -581,11 +587,15 @@ step_agent_config() {
     echo "  - \"superdl.io/pool=$pool\""
     local l
     for l in "${extra[@]}"; do echo "  - \"$l\""; done
-    # 单 Pod PID 上限:fork bomb 可耗尽节点进程表拖垮 kubelet/containerd,殃及同机租户
-    echo "kubelet-arg:"
-    echo "  - \"podPidsLimit=$POD_PIDS_LIMIT\""
   } > "$RANCHER_DIR"/config.yaml
   chmod 600 "$RANCHER_DIR"/config.yaml
+  # 单 Pod PID 上限走 kubelet 配置 drop-in(k3s/rke2 自动读 agent/etc/kubelet.conf.d,按文件名序合并):
+  # podPidsLimit 不是 kubelet flag,写进 kubelet-arg 会让 agent 拒启(unknown flag)
+  local dropin_dir="$RANCHER_STATE_DIR/$DISTRO/agent/etc/kubelet.conf.d"
+  mkdir -p "$dropin_dir"
+  printf 'apiVersion: kubelet.config.k8s.io/v1beta1\nkind: KubeletConfiguration\npodPidsLimit: %s\n' \
+    "$POD_PIDS_LIMIT" > "$dropin_dir/50-superdl.conf"
+  chmod 644 "$dropin_dir/50-superdl.conf"
 }
 
 step_agent_install() {

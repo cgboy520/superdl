@@ -31,7 +31,7 @@
 落 `/var/lib/superdl-node-join/token`(0600)供断点续跑,装机完成即连同 bootstrap.json 一起删除。
 k3s/rke2 安装器不裸 `curl|sh`:固定 URL 下载后校验脚本内置 sha256 pin 再执行;
 管道执行时重启前从 API 重拉脚本本体,并校验 bootstrap 下发的脚本指纹(script_sha256,缺失或不符即中止)。
-join token 轮换:server 侧 `rke2 token rotate` 后在管理端更新一处即可。
+join token(= agent token)轮换见 deploy/cluster/README.md「server token 与 agent token」(`token rotate` 只轮换 server token)。
 
 落盘权限:`umask 077` 前置(生成文件先窄后宽,无 0644→chmod 窗口),日志显式 0644。
 卸载:`sudo bash node-join.sh --uninstall` 逆向拆除(agent、本脚本写入的 sysctl/GRUB/黑名单/

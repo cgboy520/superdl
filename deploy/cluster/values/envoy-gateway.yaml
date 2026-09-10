@@ -26,9 +26,9 @@ deployment:
   pod:
     nodeSelector:
       # 平台组件落点统一锚点(与 deploy/app/k8s 各清单一致);GPU 节点严禁打此标签。
-      # node-restriction.kubernetes.io/* 是 NodeRestriction 准入插件禁止 kubelet 自签的前缀:
-      # 换掉旧的 node-role.superdl.io/infra 是因为那个键节点可以自己声明——持 join token 的
-      # 机器把它写进自己的 config.yaml 就能把控制面吸到攻击者 root 的机器上。标签由
+      # node-restriction.kubernetes.io/* 是 NodeRestriction 准入插件禁止 kubelet 自签的前缀,
+      # 不许换成节点可自己声明的键(node-label 自打)——持 join token 的机器把那种键写进
+      # 自己的 config.yaml 就能把控制面吸到攻击者 root 的机器上。标签由
       # deploy/ansible/site.yml 用管理凭据在装机后打,平台 SA 也无权改(VAP 策略③只放行 superdl.io/*)。
       node-restriction.kubernetes.io/superdl-infra: "true"
     tolerations:

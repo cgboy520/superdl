@@ -126,6 +126,9 @@ rules:
     resources: ["pods", "persistentvolumeclaims"]
     verbs: ["get", "list", "create", "delete"]
   - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list"]   # 只读:reconciler 判 node_lost 要看节点 Ready(orchestrator/reconciler._node_readiness)
+  - apiGroups: [""]
     resources: ["services", "resourcequotas", "limitranges"]
     # patch:SSH Service 端口漂移收敛(real.py _reconcile_ssh_service_conflict_sync)、
     # Quota/LimitRange 的收敛 patch;limitranges 不授 list/delete(平台从不删,
@@ -181,7 +184,7 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["nodes"]
-    verbs: ["get", "list", "patch", "delete"]   # delete 新增:节点退役
+    verbs: ["get", "list", "patch", "delete"]   # delete:节点退役(对象白名单由 VAP 策略⑦收窄)
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

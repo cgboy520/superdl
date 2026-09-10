@@ -41,7 +41,7 @@
 - **支付宝回调应答必须是纯文本 `success`**,不能返回 JSON。
 - 下单必须向渠道传过期时间(微信 `time_expire` RFC3339 / 支付宝 `timeout_express` 分钟),与本地关单时间同步。
 - 关单后到达、验签有效且金额一致的成功回调自动入账(与人工补单同等校验);failed 单与金额不符仍拒。指标 `superdl_payment_closed_order_rescued_total` 非零即说明本地关单 TTL 与渠道过期不同步。
-- 查单 poller 每 2 分钟收敛丢回调(advisory lock 1007),不扫 closed 单;单笔入账失败(金额/渠道不符、唯一约束冲突)记 `superdl_payment_recover_failed_total` 后跳过,不中断整轮;残余窗口由异常清单 + 人工补单兜底。
+- 查单 poller 每 2 分钟收敛丢回调(advisory lock 1007):扫 pending 超 60s、近 48h 的 failed 与 closed 单(closed 按关单时刻 `expires_at` 界定;渠道中间态会把单打成 failed,关单前最后一刻支付成功而回调丢失则留下 closed 单,渠道查单是唯一事实源),渠道侧已支付即按回调同路径入账;单笔入账失败(金额/渠道不符、唯一约束冲突)记 `superdl_payment_recover_failed_total` 后跳过,不中断整轮;残余窗口由异常清单 + 人工补单兜底。
 - 人工补单为渠道核验制:服务端实时查渠道(锁外查询、显式超时 15s,落账前行锁内复核状态),已支付且金额一致才入账;pending / closed / failed 单均可补,渠道是唯一事实源。支持 Idempotency-Key:同键重放且已入账则回当前状态而非 409(落 `orders.backfill_idempotency_key`)。见 [admin.md](./admin.md)。
 
 ### 退款与发票

@@ -13,7 +13,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    # 注销匿名化后改写为 del:{id}:{sha256 前 12 位}(释放原手机号占用的唯一约束),故宽于 20
+    # 注销匿名化后改写为 del:{id}:{随机 16 hex}(释放原手机号占用的唯一约束),故宽于 20
     phone: Mapped[str] = mapped_column(String(40), unique=True)
     password_hash: Mapped[str | None] = mapped_column(String(128))
     status: Mapped[str] = mapped_column(String(16), default="active")  # active / frozen / deleted
@@ -120,7 +120,7 @@ class SmsCode(Base):
     phone: Mapped[str] = mapped_column(String(20), index=True)
     # 带密钥摘要,禁止明文入库(见 core.crypto.hash_sms_code)
     code_hash: Mapped[str] = mapped_column(String(64))
-    purpose: Mapped[str] = mapped_column(String(16))  # register / login
+    purpose: Mapped[str] = mapped_column(String(16))  # register / login / reset_password
     expires_at: Mapped[datetime]
     used_at: Mapped[datetime | None]
     attempts: Mapped[int] = mapped_column(default=0)  # 校验失败计次,达上限即作废

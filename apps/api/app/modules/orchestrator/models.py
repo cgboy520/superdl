@@ -215,7 +215,8 @@ class ServiceApiKey(Base):
     # HMAC-SHA256 hex(crypto.hash_api_key);唯一索引即鉴权回源的查询路径
     key_hash: Mapped[str] = mapped_column(String(64), unique=True)
     key_prefix: Mapped[str] = mapped_column(String(16))  # sk-a1b2c3d4,列表页回显用
-    # 鉴权回源时直写不节流:代价是同一行的一次 UPDATE,节流会让「最近使用」失去排查价值
+    # 最近使用(「钥匙还被谁用」的排查线索,分钟级粒度足够):
+    # 每 key 每 60s 至多一写(见 service._touch_key_last_used)
     last_used_at: Mapped[datetime | None]
     revoked_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

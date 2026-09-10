@@ -64,9 +64,9 @@ kube-apiserver-arg:
   # 会把控制面根分区吃光——那个分区上还有 etcd。100MiB × 10 份封顶。
   - audit-log-maxsize=100
   - audit-log-maxbackup=10
-kubelet-arg:
-  # 单 Pod PID 上限(默认 -1 = 无限):fork bomb 会耗尽节点进程表、拖垮 kubelet/containerd。
-  # 与 node-join.sh 写进 GPU agent 的 config.yaml 同值,改时同步。
-  - podPidsLimit=4096
+# 单 Pod PID 上限(podPidsLimit,默认 -1 = 无限):是 KubeletConfiguration 字段而非 kubelet flag,
+# 写进 kubelet-arg 会让 server 拒启(unknown flag)。由 ansible 落 kubelet 配置 drop-in
+# /var/lib/rancher/rke2/agent/etc/kubelet.conf.d/50-superdl.conf(模板 kubelet-superdl.conf,
+# 与 node-join.sh 写给 GPU 节点的同值)。
 node-taint:
   - "CriticalAddonsOnly=true:NoExecute"   # server 不跑业务负载

@@ -89,8 +89,8 @@ web/admin 前端:各 2 副本 + PDB `minAvailable: 1` + liveness/readiness 同�
 
 平台自身(api / web / admin)跑在宿主机(systemd + nginx)、集群里只有租户负载时:
 
-- `app/k8s/04-gateway.yaml` 里平台的三个 listener、三条平台 HTTPRoute 与
-  `superdl-admin-allowlist` / `superdl-api-ratelimit` 一律不下发(backend 不存在)。
+- `app/k8s/04-gateway.yaml` 里平台的三个 listener、四条平台 HTTPRoute 与
+  `superdl-admin-allowlist` / `superdl-api-ratelimit` / `superdl-api-webhooks` 一律不下发(backend 不存在)。
 - `SecurityPolicy.extAuth` 的 `backendRefs` 指向的 `superdl-api` Service 需自建:
   **无 selector 的 Service + 手写 EndpointSlice**,地址指向宿主机。
 - 宿主机另开一个内部 server 承接该回调,必须:只监听内网/隧道地址、只放行网关节点、

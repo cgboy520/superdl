@@ -158,7 +158,8 @@ class TestArrearsChain:
             )
             await session.commit()
 
-        # 模拟竞态窗口:无锁 get_balance 看到旧值 0;随后充值落库,锁内 lock_wallet 读到真值
+        # 模拟竞态窗口:无锁粗筛 get_available_balance 看到旧值 0;
+        # 随后充值落库,锁内 lock_wallet 读到真值
         async def stale_get_balance(session, uid):
             return Decimal("0.00")
 

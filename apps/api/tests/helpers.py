@@ -206,7 +206,6 @@ async def send_code(
 ) -> None:
     resp = await client.post(
         "/api/v1/auth/sms-code",
-        # mock 渠道固定放行串(人机校验闸门;与 MOCK_SMS_CODE "123456" 同哲学)
         json={"phone": phone, "purpose": purpose},
     )
     assert resp.status_code == 204, resp.text

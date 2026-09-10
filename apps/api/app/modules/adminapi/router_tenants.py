@@ -328,7 +328,7 @@ async def admin_approve_deletion(
     admin: AdminUser = require_roles(),
 ) -> AdminDeletionRequestOut:
     """执行注销:冷静期未满 409;残留实例/数据盘或余额非零 → 自动驳回 + 409(detail 清单);
-    全通过则同事务匿名化(手机号哈希化、实名清空、全撤登录态)。"""
+    全通过则同事务匿名化(手机号改写为随机占位串、实名清空、全撤登录态)。"""
     from app.modules.account import service as account_service
 
     req = await account_service.approve_deletion(session, request_id, admin_id=admin.id)

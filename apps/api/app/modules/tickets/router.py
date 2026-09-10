@@ -76,6 +76,6 @@ async def append_message(
 
 @router.post("/tickets/{ticket_id}/close")
 async def close_ticket(ticket_id: int, user: CurrentUser, session: DbSession) -> TicketOut:
-    """关闭工单(仅 resolved;closed_at 仅此路径落)。"""
+    """关闭工单(仅 resolved;closed_at 仅 closed 落)。"""
     ticket = await service.close_ticket(session, user.id, ticket_id)
     return TicketOut.model_validate(ticket)

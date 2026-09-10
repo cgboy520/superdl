@@ -70,8 +70,11 @@ spec:
             capabilities: {drop: ["ALL"]}
           volumeMounts:
             - {name: tmp, mountPath: /tmp}
+            # 镜像 entrypoint 的 envsubst 把模板渲染到 /etc/nginx/conf.d/default.conf,只读根下必须可写
+            - {name: nginx-conf, mountPath: /etc/nginx/conf.d}
       volumes:
         - {name: tmp, emptyDir: {}}
+        - {name: nginx-conf, emptyDir: {}}
 ---
 apiVersion: v1
 kind: Service
@@ -166,8 +169,11 @@ spec:
             capabilities: {drop: ["ALL"]}
           volumeMounts:
             - {name: tmp, mountPath: /tmp}
+            # 镜像 entrypoint 的 envsubst 把模板渲染到 /etc/nginx/conf.d/default.conf,只读根下必须可写
+            - {name: nginx-conf, mountPath: /etc/nginx/conf.d}
       volumes:
         - {name: tmp, emptyDir: {}}
+        - {name: nginx-conf, emptyDir: {}}
 ---
 apiVersion: v1
 kind: Service

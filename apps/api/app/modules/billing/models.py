@@ -112,9 +112,10 @@ class SettlementWatermark(Base):
 class SettlementGap(Base):
     """结算缺口登记:水位线越过但账未结清的窗口,一律在此留痕。
 
-    两个来源:追平截断(catchup_truncated,整窗跳过,object_id=0)与死信
-    (dead_letter,单对象连续失败超限)。只登记不自动补:由补结任务或人工按
-    (kind, window_start, object_id) 追溯,处理后标记 resolved_at。
+    四种来源:追平截断(catchup_truncated,整窗跳过,object_id=0)、死信
+    (dead_letter,单对象连续失败超限)、水位线缺失(watermark_missing,整窗)、
+    欠费宽限跳日(grace_overlap,单盘,有意不计费)。只登记不自动补:由补结任务
+    或人工按 (kind, window_start, object_id) 追溯,处理后标记 resolved_at。
     """
 
     __tablename__ = "settlement_gaps"
@@ -124,7 +125,8 @@ class SettlementGap(Base):
     kind: Mapped[str] = mapped_column(String(16))  # hourly / daily_disk
     window_start: Mapped[datetime]  # 缺口窗口起点(小时/自然日)
     object_id: Mapped[int] = mapped_column(BigInteger, default=0)  # 实例/盘 id;0 = 整窗截断
-    reason: Mapped[str] = mapped_column(String(32))  # catchup_truncated / dead_letter
+    # catchup_truncated / dead_letter / watermark_missing / grace_overlap
+    reason: Mapped[str] = mapped_column(String(32))
     resolved_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 

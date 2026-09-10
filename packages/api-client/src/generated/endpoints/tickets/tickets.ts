@@ -107,7 +107,7 @@ export const getCloseTicketApiV1TicketsTicketIdClosePostUrl = (ticketId: number,
 }
 
 /**
- * 关闭工单(仅 resolved;closed_at 仅此路径落)。
+ * 关闭工单(仅 resolved;closed_at 仅 closed 落)。
  * @summary Close Ticket
  */
 export const closeTicketApiV1TicketsTicketIdClosePost = async (ticketId: number, options?: Parameters<typeof customFetch>[1]): Promise<TicketOut> => {

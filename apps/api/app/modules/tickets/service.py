@@ -229,7 +229,7 @@ async def append_message(
 
 
 async def close_ticket(session: AsyncSession, user_id: int, ticket_id: int) -> Ticket:
-    """用户关闭(仅 resolved;closed_at 仅此路径落)。"""
+    """用户关闭(仅 resolved;closed_at 仅 closed 落)。"""
     ticket = await _get_my_for_update(session, user_id, ticket_id)
     if ticket.status != "resolved":
         raise conflict(key="tickets.stateNotClosable", params={"status": ticket.status})

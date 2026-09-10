@@ -1,7 +1,13 @@
 # topolvm lvmd 的 LVM 配置:实例盘销毁(lvremove)时对 extent 发 NVMe TRIM,消除跨租户数据
 # 残留(lvremove 默认只摘映射不清零 extent,Kata VM 可直读虚拟块设备)。
 # 只写差异项,缺省项取 LVM 内建默认;同键重复段后者生效,与镜像内默认配置合并安全。
-# 由 helmfile topolvm release 的 presync hook 应用。
+# 由 helmfile topolvm release 的 presync hook 应用:hook 先于 release 跑,首装时命名空间尚不存在,
+# 故本文件自带 Namespace(helm 的 createNamespace 对已存在的命名空间是幂等的)。
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: topolvm-system
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:

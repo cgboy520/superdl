@@ -13,9 +13,9 @@
 - **命令清单只有一份**:CLAUDE.md「常用命令」;README 只放快速开始。
 - **停机发布,不留兼容窗口、不支持回滚。** 发布顺序恒为「先 `alembic upgrade head`,后替换代码」
   (k8s 流:迁移 Job 先于滚动,期间旧 Pod 短暂 503);`/readyz` 只认 DB == 代码 head,落后/领先/未知版本
-  一律摘流。迁移无需向前兼容(expand-only 门禁已拆除),破坏性 DDL 允许但须在提交说明写明数据影响;
-  不支持发布回滚(fix-forward),downgrade 一律 raise。约束:alembic 历史已压缩为单条基线
-  `20260901_1620c05976ce`(prod/dev 库以 `alembic stamp` 对齐),模型与迁移一致性由 `alembic check` 把关。
+  一律摘流。迁移无需向前兼容,破坏性 DDL 允许但须在提交说明写明数据影响;
+  不支持发布回滚(fix-forward),downgrade 一律 raise。约束:alembic 历史为单条基线
+  `20260901_1620c05976ce`,模型与迁移一致性由 `alembic check` 把关。
 - **私有仓库,不放 LICENSE。** 默认保留全部权利;转公开或对外交付前先定许可证。
 - **release notes 不手维护。** 打 tag 用 `gh release create --generate-notes`,不设 CHANGELOG 文件。
 - **orval 只生成 fetcher 与 model 类型,不生成 TanStack Query hooks。** `packages/api-client` 用
@@ -71,7 +71,7 @@
   「以结算时的实例单价为准」:`settlement.reprice_current_hour` 在钱包行锁内改写 `unit_price`、按新价重算 `amount`、
   补扣差价并打 `detail.repriced`。约束:转换对用户必然是涨价(`spot_discount_pct` 上界 90),所以只补扣、不退款;
   这一条必须写进转换确认弹窗。见 `docs/reference/billing.md`。
-- **微信支付验签只走微信支付公钥模式。** 平台证书模式已移除:`wechat_public_key` 与 `wechat_public_key_id`
+- **微信支付验签只走微信支付公钥模式,不做平台证书模式。** `wechat_public_key` 与 `wechat_public_key_id`
   为渠道必填,缺一即 `PAYMENT_CHANNEL_ERROR`(fail-closed,与其余凭据缺失同路径)。见 `docs/reference/payment.md`。
 
 ## 安全
@@ -79,7 +79,8 @@
 - **安全取舍集中在一处。** token 存 localStorage、固定窗口限流、用户端无 2FA、仅 +86、双人制衡残余等,
   见 `docs/reference/security.md`「已接受取舍」,勿再单独立项。
 - **管理端全角色强制 TOTP。** 收成安全策略开关 `admin_mfa_enabled`(默认开),只有全员开 / 全员关两档。
-  关闭是运营决定,代价是配置中心告警 + 审计 reason。登录限流四层桶保留为纵深,见 `docs/reference/admin.md`。
+  关闭是运营决定(prod 在线禁关,只可经部署层变更),代价是配置中心告警 + 审计 reason;
+  登录限流四层桶保留为纵深,见 `docs/reference/admin.md`。
 - **日志 PII / 凭据全局脱敏。** `apps/api/app/core/logging.py` 按键名(phone / id_number / token / secret /
   password / code)兜底打码,防新增日志点漏脱敏。
 - **账号级登录锁定。** 账号维 15 分钟窗 + 日窗阶梯锁定,与 IP 维桶叠加——撞库可以换 IP,换不了目标账号。
@@ -93,8 +94,9 @@
   留空只作排障临时回退。见 `docs/reference/security.md`。
 - **安全功能是开关,不是 mock 提供方。** 人机验证、实名、管理端 MFA 一律用 `*_enabled` 布尔开关表达
   (平台配置·安全策略组);只有流程无它完不成的第三方各保留唯一一个替身(`sms_provider=mock` /
-  `payment_mock` / `k8s_backend=fake`),prod 拒绝。prod 允许关闭安全开关,代价是配置中心红牌 + 审计 reason,
-  不是启动拒绝。约束:`/auth/sms-code` 的 `captcha_token` 是可选参数(开启时缺失 400)。
+  `payment_mock` / `k8s_backend=fake`),prod 拒绝。prod 在线写库层禁关安全开关;人机验证 / 实名 /
+  充值强制实名另有启动合规闸(`PROD_REQUIRED_SWITCHES`,env 层关闭即拒启)。
+  约束:`/auth/sms-code` 的 `captcha_token` 是可选参数(开启时缺失 400)。
 - **prod 启动校验只管 provider,不管凭据齐全性;真实集群不绑定 prod。** `_validate_prod` 只拒 sms / payment 的
   mock provider 与基础设施占位值,凭据齐全性交给运行期渠道工厂 fail-closed。唯一组合约束
   `real_name_required_for_recharge ⇒ real_name_enabled` 任意环境生效(`_validate_invariants` 与写入侧
@@ -242,6 +244,7 @@
 - **服务型实例持续 not-ready 不判故障。** `workload_type='service'` 时 reconciler 跳过 `pod_unready` 一支,实例留在
   running,就绪与否如实呈现在服务 Tab;`pod_lost` 与 `node_lost` 两支不豁免——not-ready 判据是用户自己声明的 readinessProbe。配套:服务容器必配 `startupProbe`(15 分钟启动预算)。
   见 `apps/api/tests/test_orchestrator_lifecycle.py::TestServiceWorkloadUnreadyExemption`。
+
 ## 功能缺口路线图(仅方向,未排期;实施前各自补设计)
 
 已知的功能完备度缺口,按资金风险与用户价值排序。约束:每一项动工前必须先在本文档补「决定与约束」条目,

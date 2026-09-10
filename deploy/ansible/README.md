@@ -7,7 +7,7 @@ NVMe VG、registries.yaml 与 agent 加入)。
 
 ## OS 基线
 
-- **Ubuntu Server 22.04 / 24.04 LTS**(其它发行版未验证),x86_64。
+- **Ubuntu Server 22.04 / 24.04 LTS**(其它发行版未验证),x86_64 或 aarch64(DGX Spark 等 arm64 机型)。
 - 目标机:root 或 sudo(`become: true`)、python3、ssh 可达、可出公网(从 `rancher-mirror.rancher.cn` 下载安装器)。
 
 ## inventory 分组
@@ -30,7 +30,8 @@ ansible-playbook -i inventory.ini site.yml -e cluster_distro=k3s    # k3s(light 
 
 ## 行为约定
 
-- 顺序:audit-policy.yaml + registries.yaml(+ 非空时的 harbor-ca.crt)→ server config(仓库模板渲染,
+- 顺序:kubelet 配置 drop-in(`../cluster/rke2/kubelet-superdl.conf`,podPidsLimit)+ audit-policy.yaml +
+  registries.yaml(+ 非空时的 harbor-ca.crt)→ server config(仓库模板渲染,
   占位符无残留才落盘,0600)→ 安装 rke2/k3s server(安装器先落盘、sha256 校验、再执行;幂等,已装跳过)→ enable+start
   → 等 kube-apiserver `/readyz` 就绪 → 给控制面节点打平台组件落点标签
   `node-restriction.kubernetes.io/superdl-infra=true`(`--overwrite`,幂等可反复跑)。

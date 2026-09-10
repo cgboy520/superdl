@@ -99,10 +99,10 @@ class AuditActor:
 
 
 class AuditMiddleware:
-    """纯 ASGI 实现(对齐 ObservabilityMiddleware):不经过 BaseHTTPMiddleware 的
-    请求/响应包装——流式路由(强制审计的 CSV 导出)不再被整段缓冲,
-    anyio 任务/取消语义差异也一并消失。响应头落定(http.response.start)即按状态码
-    落审计,与原「call_next 返回后落行」语义一致;连响应都没构造出来的异常按 500 留痕。"""
+    """纯 ASGI 实现(对齐 ObservabilityMiddleware),不走 BaseHTTPMiddleware:
+    它会整段缓冲流式响应(强制审计的 CSV 导出),且有 anyio 任务/取消语义差异。
+    响应头落定(http.response.start)即按状态码落审计;
+    连响应都没构造出来的异常按 500 留痕。"""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app

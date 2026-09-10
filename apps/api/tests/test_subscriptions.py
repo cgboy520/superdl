@@ -881,7 +881,7 @@ class TestExpiryChain:
 class TestRenewConcurrency:
     """续费并发(手动 × 自动)的零重复扣款纪律。
 
-    挂了 = 审计 P1-2 竞态回归:两条路径产出第二条 active 订阅行,
+    挂了 = 两条路径产出第二条 active 订阅行,
     或同一周期(同一 renewed_from_id)被续出两行、二次扣款。
     """
 
@@ -1002,7 +1002,7 @@ class TestRestartGate:
             assert "包周期已到期" in notice.title
 
     async def test_payg_restart_insufficient_balance_aborts_at_stopped(self, client, sm, fake):
-        """按量实例余额不足:重启中止在 stopped 并发通知(原行为回归)。"""
+        """按量实例余额不足:重启中止在 stopped 并发通知。"""
         headers, uuid, user_id = await provision_running(client, sm, fake, "13900000150")
         async with sm() as s:
             await s.execute(update(Wallet).where(Wallet.user_id == user_id).values(balance=0))

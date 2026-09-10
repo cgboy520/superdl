@@ -149,11 +149,11 @@ class TestRefreshCookie:
         assert r3.status_code == 200, r3.text
 
     async def test_cookie_path_requires_csrf_header(self, client: AsyncClient, sm):
-        """cookie 路径缺 X-Requested-With → 403(双提交纵深);body 旁路已删除。"""
+        """cookie 路径缺 X-Requested-With → 403(双提交纵深);body 不构成刷新旁路。"""
         await register(client, "13800000106")
         resp = await client.post("/api/v1/auth/refresh")  # jar 里有 cookie,无头
         assert resp.status_code == 403
-        # body 旁路已删除:带 token 的 body 不再被读取(jar 有 cookie + 有头才放行)
+        # body 不被读取:jar 有 cookie + 有 CSRF 头才放行,body 传什么都不影响
         jar_before = current_refresh_token(client)
         ignored_body = await client.post(
             "/api/v1/auth/refresh",
@@ -196,7 +196,7 @@ class TestLogout:
     ):
         """登出消费(consumed_via=logout)的 jti 在宽限窗内重放:一律 401,
         但不 bump token_version——并发首刷已合法轮换时,在线会话不被误撤
-        (旧语义:按并发重试补发新对,等于给已登出的 token 又开了一条有效链)。"""
+        (若按并发重试补发新对,等于给已登出的 token 又开一条有效链)。"""
         data = await register(client, "13800000104")
         consumed = current_refresh_token(client)
         resp = await logout_via_cookie(client)

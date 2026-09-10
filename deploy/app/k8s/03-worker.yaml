@@ -75,6 +75,7 @@ spec:
             - secretRef: {name: superdl-cloud}
             - secretRef: {name: superdl-payment}
           env:
+            - {name: SUPERDL_PROCESS_ROLE, value: worker}   # 不挂 superdl-auth/superdl-edge,prod 校验按角色跳过那两项
             - {name: SUPERDL_WORKER_HEARTBEAT, value: /tmp/superdl-worker-heartbeat}
             - {name: SUPERDL_WORKER_COMPONENT, value: core}
           ports:
@@ -152,6 +153,7 @@ spec:
             - secretRef: {name: superdl-metrics}
             - secretRef: {name: superdl-registry}
           env:
+            - {name: SUPERDL_PROCESS_ROLE, value: worker}   # 不挂 superdl-auth/superdl-edge,prod 校验按角色跳过那两项
             - {name: SUPERDL_WORKER_HEARTBEAT, value: /tmp/superdl-worker-heartbeat}
             - {name: SUPERDL_WORKER_COMPONENT, value: tenant-mgr}
           ports:
@@ -216,6 +218,7 @@ spec:
             - secretRef: {name: superdl-crypto}
             - secretRef: {name: superdl-metrics}
           env:
+            - {name: SUPERDL_PROCESS_ROLE, value: worker}   # 不挂 superdl-auth/superdl-edge,prod 校验按角色跳过那两项
             - {name: SUPERDL_WORKER_HEARTBEAT, value: /tmp/superdl-worker-heartbeat}
             - {name: SUPERDL_WORKER_COMPONENT, value: node-mgr}
           ports:
@@ -281,6 +284,7 @@ spec:
             - secretRef: {name: superdl-metrics}
             - secretRef: {name: superdl-registry}
           env:
+            - {name: SUPERDL_PROCESS_ROLE, value: worker}   # 不挂 superdl-auth/superdl-edge,prod 校验按角色跳过那两项
             - {name: SUPERDL_WORKER_HEARTBEAT, value: /tmp/superdl-worker-heartbeat}
             - {name: SUPERDL_WORKER_COMPONENT, value: prewarm}
           ports:
@@ -345,6 +349,7 @@ spec:
             - secretRef: {name: superdl-db}
             - secretRef: {name: superdl-metrics}
           env:
+            - {name: SUPERDL_PROCESS_ROLE, value: worker}   # 不挂 superdl-auth/superdl-edge,prod 校验按角色跳过那两项
             - {name: SUPERDL_WORKER_HEARTBEAT, value: /tmp/superdl-worker-heartbeat}
             - {name: SUPERDL_WORKER_COMPONENT, value: disk-ops}
           ports:

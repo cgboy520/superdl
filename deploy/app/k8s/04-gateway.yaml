@@ -1,6 +1,6 @@
 # 北向唯一入口:Gateway API + Envoy Gateway。EG 控制面与 Envoy 数据面 Pod 都在
 # envoy-gateway-system(由 helmfile 装,见 deploy/cluster/),本文件只描述入口本身:
-# GatewayClass / 数据面参数 / 6 个监听器 / 5 条路由 / 6 条策略。
+# GatewayClass / 数据面参数 / 6 个监听器 / 5 条路由 / 7 条策略。
 # TLS 证书见 05-cert-manager.yaml;certificateRefs 与 Gateway 同 ns,不需要 ReferenceGrant。
 apiVersion: gateway.networking.k8s.io/v1
 kind: GatewayClass

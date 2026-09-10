@@ -318,8 +318,8 @@ class TestAlertAck:
         user = await register(client, "13900000991")
         await client.post("/api/v1/webhooks/alertmanager", json=am_payload_for(user["user"]["id"]))
         ops = await admin_headers(sm, client, role="ops")
-        # 告警流 3 行:平台 admin_alert + 租户 gpu_fault(均 critical)+ 管理员绑定 TOTP 告警
-        # (#46 检测闭环,warning)。ack 掉 gpu 行后剩 2
+        # 告警流 3 行:平台 admin_alert + 租户 gpu_fault(均 critical)+ 管理员绑定 TOTP
+        # 检测告警(warning)。ack 掉 gpu 行后剩 2
         body = (await client.get("/api/admin/v1/alerts/unread-count", headers=ops)).json()
         assert body["count"] == 3
         assert body["critical_count"] == 2
@@ -335,7 +335,7 @@ class TestAlertAck:
 
     async def test_forged_namespace_without_real_user_no_tenant_notify(self, client, sm, fake):
         """伪造 namespace=tenant-<不存在的用户>:平台流照落,租户短信/站内信一行都不许出
-        (归属必须查库核实,label 是提交方写得的)。"""
+        (归属必须查库核实,label 由提交方任意填写)。"""
         await client.post("/api/v1/webhooks/alertmanager", json=AM_PAYLOAD)  # tenant-1 无此用户
         async with sm() as session:
             rows = (await session.execute(select(Notification))).scalars().all()

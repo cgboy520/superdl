@@ -8,6 +8,9 @@ warn() { echo "warn: $*" >&2; }
 : "${JUPYTER_TOKEN:?required(平台经 Pod env 注入,缺失说明编排层装配错误)}"
 
 export HOME=/root
+# Jupyter 终端跟 SHELL 走(jupyter_server_terminals:未设则回落 sh;非 tty 下自动加 -l 走登录 shell,
+# 与 SSH 会话同源读 /etc/profile.d/superdl-env.sh);不设就是 sh,没有补全与历史
+export SHELL=/bin/bash
 export JUPYTER_RUNTIME_DIR="${JUPYTER_RUNTIME_DIR:-/run/jupyter}"   # 该目录下的文件含 token,不能落实例盘
 export JUPYTER_DATA_DIR="${JUPYTER_DATA_DIR:-/root/.local/share/jupyter}"
 # 配置目录同样不能落实例盘(/root 是 PVC):放进去的 jupyter_server_config.py 会跨 Pod

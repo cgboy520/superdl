@@ -26,6 +26,7 @@
 | Jupyter 监听 | `--ip=0.0.0.0`,端口 `8888`;只绑 localhost 则 Service/Ingress 打不通 |
 | Jupyter 鉴权 | 读环境变量 `JUPYTER_TOKEN` 作为 token,**缺失必须启动失败**;并且**必须显式传 `--IdentityProvider.token="$JUPYTER_TOKEN"`** —— 只靠环境变量时它只是 traitlets 的默认值(优先级最低),`$JUPYTER_CONFIG_DIR/jupyter_server_config.py` 里一行 `c.IdentityProvider.token = ""` 就能把鉴权整个关掉(`auth_enabled` 变 False,匿名请求一律发到生成用户),命令行才压得住配置文件。加载 `superdl_jupyter_auth` 扩展:`/superdl-bootstrap` 一次性票据(单次、60s,HMAC 密钥=token 本体)核销后种第一方 cookie,token 不进 URL |
 | Jupyter 默认界面 | `--ServerApp.default_url=/lab`,票据核销后 302 到 `/lab`;界面语言默认 zh-CN(`lab-overrides.json`,用户可在设置里改) |
+| Jupyter 终端 | entrypoint 导出 `SHELL=/bin/bash`:jupyter_server_terminals 按它起终端(未设则回落 `sh`),非 tty 下自动追加 `-l` 走登录 shell,与 SSH 会话同源读 `/etc/profile.d/superdl-env.sh`;基座必须带 bash |
 | Jupyter 进程 | 守护循环拉起(不用 exec 当 PID 1),连续秒退 5 次才放弃 |
 | Jupyter Origin | 读环境变量 `JUPYTER_ALLOW_ORIGIN`(本实例域名)作为 `ServerApp.allow_origin`;**禁止写死 `'*'`** —— cookie 会话下等于放行跨站 WebSocket 在用户实例内执行代码 |
 | Jupyter 套件 | 每个镜像必装:`jupyterlab` / `jupyter-ai[jupyternaut,magics]` / `jupyter-resource-usage` / `jupyterlab-language-pack-zh-CN` / `ipykernel`(少了 ipykernel 实例里没有 Python 内核) |

@@ -79,12 +79,14 @@ spec:
         (has(object.metadata.labels) && 'superdl.io/managed' in object.metadata.labels &&
          object.metadata.labels['superdl.io/managed'] == 'true')
       message: "tenant-* 命名空间的 superdl.io/managed=true 标签不可摘除"
-    # 其余资源:命名空间内只能写 superdl 或 tenant-*;集群级只放行 nodes(cordon/标签 patch)
+    # 其余资源:命名空间内只能写 superdl 或 tenant-*;集群级只放行 nodes(cordon/标签 patch)。
+    # 集群级请求的 request 里**没有 namespace 键**(不是空串):不加 has() 守卫,CEL 求值报
+    # no such key 而按 failurePolicy: Fail 拒绝,现象是节点标签/cordon 全部 422、实例永远调度不上
     - expression: >-
         (request.resource.group == '' && request.resource.resource == 'namespaces') ||
-        request.namespace == 'superdl' ||
-        request.namespace.startsWith('tenant-') ||
-        (request.namespace == '' && request.resource.group == '' && request.resource.resource == 'nodes')
+        (has(request.namespace) &&
+         (request.namespace == 'superdl' || request.namespace.startsWith('tenant-'))) ||
+        (!has(request.namespace) && request.resource.group == '' && request.resource.resource == 'nodes')
       message: "平台 SA 的写操作仅限 superdl/tenant-* 命名空间与 nodes"
     # roles/rolebindings 再收窄一档到 tenant-*:tenant-mgr 持有 escalate/bind
     # (不持有集群级 secrets 却要下发租户 ns 内的 secrets Role,否则 apiserver 提权防护 403),
@@ -92,7 +94,7 @@ spec:
     - expression: >-
         !(request.resource.group == 'rbac.authorization.k8s.io' &&
           (request.resource.resource == 'roles' || request.resource.resource == 'rolebindings')) ||
-        request.namespace.startsWith('tenant-')
+        (has(request.namespace) && request.namespace.startsWith('tenant-'))
       message: "平台 SA 只能在 tenant-* 命名空间写 roles/rolebindings"
     # Secret 类型收窄:平台只建 kubernetes.io/dockerconfigjson(拉取凭据,real.py
     # _ensure_pull_secret_sync)与不带 type 的 Opaque(per-instance env)。
@@ -113,7 +115,7 @@ metadata:
   name: superdl-platform-sa-scope
 spec:
   policyName: superdl-platform-sa-scope
-  validationActions: [Deny]   # 首次上线可先 [Audit] 观察,确认零误伤再改 Deny
+  validationActions: [Deny]   # 七条恒为 Deny,无 Audit 观察档(preflight.sh 与 release.sh 均断言含 Deny)
 
 ---
 # 策略二:租户命名空间(平台打标 superdl.io/managed=true)内的 Pod 安全基线,
@@ -207,7 +209,7 @@ metadata:
   name: superdl-tenant-pod-baseline
 spec:
   policyName: superdl-tenant-pod-baseline
-  validationActions: [Deny]   # 首次上线可先 [Audit] 观察,确认零误伤再改 Deny
+  validationActions: [Deny]
 
 ---
 # 策略三:平台 SA 对 Node 的字段级写白名单。K8s RBAC 无法限字段,而 nodes:patch 全字段可写
@@ -346,7 +348,7 @@ metadata:
   name: superdl-global-pod-guard
 spec:
   policyName: superdl-global-pod-guard
-  # [Deny]。转 Deny 前逐个核对过本仓库会创建 Pod 的**全部**非豁免命名空间,零违反:
+  # 本仓库会创建 Pod 的**全部**非豁免命名空间均满足基线(新增命名空间前照此核对):
   #   superdl        api/worker/前端/migrate Job/pg-backup CronJob 均无 privileged/hostPath/
   #                  host*/runtimeClassName;预热 Job 的 nodeName 由 superdl.io/prewarm 标签放行
   #   cert-manager   controller/webhook/cainjector 与 acme-dns(../acme-dns.yaml)都是普通
@@ -569,8 +571,8 @@ spec:
 # node-restriction.kubernetes.io/superdl-infra,由 deploy/ansible/site.yml 用管理凭据打上,
 # 而 NodeRestriction 禁止 kubelet 自己打该前缀。删掉一个控制面 Node 对象后 kubelet 会重新
 # 注册,但**标签不会跟着回来** —— api / 5 个 worker / 前端 / Envoy 数据面一起 Pending,
-# 而集群表面上「只是少了一个标签」。(旧的 node-role.superdl.io/infra 是节点自述的,
-# 删了会自动补回,所以这条风险是随落点加固一起出现的,必须一起堵。)
+# 而集群表面上「只是少了一个标签」。(节点自述的标签会随重新注册自动补回;
+# node-restriction.* 正因 kubelet 打不上,才补不回来,所以删除必须在准入层堵死。)
 #
 # 判据用 oldObject(DELETE 时 object 为 null):带控制面角色、etcd 角色或任一 infra 标签的
 # 节点一律不可删。GPU 工作节点不带这些标签,退役链路不受影响。
@@ -603,9 +605,9 @@ spec:
         !('node-role.kubernetes.io/master' in variables.labels) &&
         !('node-role.kubernetes.io/etcd' in variables.labels)
       message: "平台 SA 禁止删除控制面/etcd 节点(node.decommission 只退役 GPU 工作节点)"
-    # 两个 infra 标签都锁:node-restriction.* 是权威锚点(全部落点已迁完,仓库内无人再选旧键);
-    # 旧键 node-role.superdl.io/infra 继续锁着是给存量集群兜底——早于本次迁移装的节点上
-    # 它还留在 Node 对象里,那些节点同样删不得。
+    # 两个 infra 标签都锁:node-restriction.* 是权威锚点(仓库内落点全部用它);
+    # node-role.superdl.io/infra 仓库内已无引用,锁它是给仍带该标签的存量节点兜底——
+    # 那些节点同样删不得。
     - expression: >-
         !('node-restriction.kubernetes.io/superdl-infra' in variables.labels) &&
         !('node-role.superdl.io/infra' in variables.labels)

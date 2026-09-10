@@ -1,4 +1,4 @@
-"""统一错误体 {code, message, message_key, params, detail}。
+"""统一错误体 {code, message, message_key, params, detail, request_id}。
 
 message 恒为渲染后的中文;message_key/params 供前端查多语言目录
 (core/messages.py 为单一事实源)。ErrorCode 是程序化分支依据。"""
@@ -168,7 +168,7 @@ def current_request_id() -> str | None:
 def _error_body(
     code: ErrorCode, message: str, message_key: str | None, params: Any, detail: Any
 ) -> dict[str, Any]:
-    """统一错误体六键结构的单一定义点(四个 handler 共用)。"""
+    """统一错误体六键结构的单一定义点(全部 exception handler 与中间件直渲响应共用)。"""
     return {
         "code": code.value,
         "message": message,

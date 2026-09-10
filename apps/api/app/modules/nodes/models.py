@@ -11,7 +11,8 @@ from app.core.db import Base
 class NodeEnrollment(Base):
     """GPU 服务器注册令牌与加入进度。
 
-    一节点一令牌;token 明文只在创建/重生成响应出现一次,库中仅存 sha256。
+    一节点一令牌;token 明文只在创建/重生成响应出现一次,
+    库中仅存 HMAC-SHA256(core/crypto.hash_node_token)。
     状态机:pending → installing → rebooting ⇆ installing → joining → joined,
     旁路终态 failed / expired / revoked;迁移集中在 service.transition_enrollment。
     """
@@ -20,11 +21,11 @@ class NodeEnrollment(Base):
     __table_args__ = (UniqueConstraint("created_by", "idempotency_key"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    token_hash: Mapped[str] = mapped_column(String(64), unique=True)  # sha256 hex
-    # 首次 bootstrap 消费注册令牌后换发的窄权限令牌(仅 /progress 上报),同只存 sha256;
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)  # HMAC-SHA256 hex
+    # 首次 bootstrap 消费注册令牌后换发的窄权限令牌(仅 /progress 上报),同只存 HMAC 摘要;
     # NULL = 尚未 bootstrap(pending)或注册令牌已轮换作废
     progress_token_hash: Mapped[str | None] = mapped_column(String(64), unique=True)
-    pool: Mapped[str] = mapped_column(String(8))  # kata / hami / mig(分池铁律)
+    pool: Mapped[str] = mapped_column(String(8))  # kata / hami / mig / cpu(分池铁律)
     hostname: Mapped[str | None] = mapped_column(String(253))  # 期望主机名(签发时必填,防令牌串用)
     note: Mapped[str | None] = mapped_column(String(128))
     nvme_devices: Mapped[list[str] | None] = mapped_column(JSONB)  # TopoLVM VG 设备(可选)

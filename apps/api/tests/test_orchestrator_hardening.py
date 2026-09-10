@@ -81,7 +81,7 @@ async def _backdate_created(sm, uuid: str, age: timedelta) -> None:
 class TestEnsurePortRace:
     async def test_concurrent_segment_extension_self_heals(self, sm):
         """空池并发扩段:on_conflict_do_nothing + 函数内重试消化唯一冲突,
-        不抛 IntegrityError、不拖累外层事务(旧实现:败方整笔建实例进 outbox 退避)。"""
+        不抛 IntegrityError、不拖累外层事务(挂了 = 败方整笔建实例事务进 outbox 退避)。"""
         import asyncio
 
         from app.modules.orchestrator.ports import ensure_port

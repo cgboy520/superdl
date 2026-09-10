@@ -86,7 +86,7 @@ class OutboxTask(Base):
     )  # pending / running / done / dead / discarded(管理端人工忽略)
     retries: Mapped[int] = mapped_column(default=0)
     next_retry_at: Mapped[datetime] = mapped_column(server_default=func.now(), index=True)
-    # 128:lane_id 定长上限(见 workers/main.make_worker_id);迁移 b4e7d1a92c06 放宽后须同宽
+    # 128:lane_id 定长上限(见 workers/main.make_worker_id 的长度预算),改列宽须两处同步
     locked_by: Mapped[str | None] = mapped_column(String(128))
     locked_at: Mapped[datetime | None]
     last_error: Mapped[str | None] = mapped_column(Text)

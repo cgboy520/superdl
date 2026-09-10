@@ -18,6 +18,7 @@ class TestCanonical:
         assert canonical_gpu_model("Tesla T4") == "T4"
         assert canonical_gpu_model("NVIDIA L40S") == "L40S"
         assert canonical_gpu_model("NVIDIA H20") == "H20"
+        assert canonical_gpu_model("NVIDIA GB10") == "GB10"
 
     def test_lspci_tail(self):
         assert (
@@ -38,6 +39,7 @@ class TestCanonical:
     def test_gfd_label(self):
         assert canonical_gpu_model("NVIDIA-GeForce-RTX-4090") == "RTX4090"
         assert canonical_gpu_model("NVIDIA-A100-SXM4-80GB") == "A100-80G"
+        assert canonical_gpu_model("NVIDIA-GB10") == "GB10"
         assert canonical_gpu_model("Tesla-V100-SXM2-32GB") == "V100-32G"
 
     def test_unknown_returns_none(self):

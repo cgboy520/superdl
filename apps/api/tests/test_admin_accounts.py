@@ -81,7 +81,7 @@ class TestAdminAccounts:
         """65~72 字符口令:创建(字节校验 ≤72B 放行)后能登录(挂了 = 登录上限 64 <
         创建上限,该区间口令的管理员被 422 永久锁死;>72 字节由 _check_password_bytes 拦在创建侧)。"""
         h = await admin_headers(sm, client)
-        long_pw = "Lp" + "x9" * 34  # 70 字符 = 70 字节,创建放行、旧登录上限(64)会锁死
+        long_pw = "Lp" + "x9" * 34  # 70 字符 = 70 字节,落在 65~72 区间
         resp = await client.post(
             "/api/admin/v1/admins",
             json={

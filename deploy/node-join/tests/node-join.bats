@@ -10,6 +10,7 @@ setup() {
   export SUPERDL_JOIN_LOG_FILE="$TMP/join.log"
   export SUPERDL_JOIN_ETC_DIR="$TMP/etc"
   export SUPERDL_JOIN_LVM_DIR="$TMP/lvm"
+  export SUPERDL_JOIN_RANCHER_STATE_DIR="$TMP/rancher"
   # IOMMU 分组非空 = 直通已生效(默认场景);要测「未生效需重启」的用例自行清空该目录
   export SUPERDL_JOIN_IOMMU_DIR="$TMP/iommu_groups"
   mkdir -p "$TMP/iommu_groups/0"
@@ -257,8 +258,9 @@ run_script() { run bash "$SCRIPT" --token-file "$TMP/token" --api-base http://fa
   done
   # NVIDIA Container Toolkit:版本 ≥ 下限,走跳过分支(dpkg-query shim 报 1.17.8)
   [[ "$output" == *"nvidia-container-toolkit 1.17.8 ≥ 1.17.8,跳过"* ]]
-  # kubelet 单 Pod PID 上限落进 agent config(fork bomb 防线,与 server-config.yaml 同值)
-  grep -q 'podPidsLimit=4096' "$TMP/etc/rancher/rke2/config.yaml"
+  # kubelet 单 Pod PID 上限落 kubelet 配置 drop-in(不是 kubelet-arg:那不是 flag,agent 会拒启)
+  grep -q 'podPidsLimit: 4096' "$TMP/rancher/rke2/agent/etc/kubelet.conf.d/50-superdl.conf"
+  ! grep -q 'podPidsLimit' "$TMP/etc/rancher/rke2/config.yaml"
   # 进度上报含关键阶段与收尾
   grep -q '"phase":"agent_start","state":"ok"' "$CURL_LOG"
   grep -q '"phase":"waiting_node","state":"ok"' "$CURL_LOG"
@@ -468,7 +470,8 @@ EOF
   run_script
   [ "$status" -eq 0 ]
   grep -q "superdl.io/pool=hami" "$TMP/etc/rancher/k3s/config.yaml"
-  grep -q 'podPidsLimit=4096' "$TMP/etc/rancher/k3s/config.yaml"
+  grep -q 'podPidsLimit: 4096' "$TMP/rancher/k3s/agent/etc/kubelet.conf.d/50-superdl.conf"
+  ! grep -q 'podPidsLimit' "$TMP/etc/rancher/k3s/config.yaml"
   [ "$(stat -c %a "$TMP/etc/rancher/k3s/config.yaml")" = "600" ]
   grep -q 'mirrors:' "$TMP/etc/rancher/k3s/registries.yaml"
   [ ! -e "$TMP/etc/rancher/rke2" ]

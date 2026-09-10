@@ -224,8 +224,7 @@ def endpoint_slug_from_host(host: str | None) -> str | None:
     if not name.endswith(suffix):
         return None
     slug = name[: -len(suffix)]
-    # 只收单段左标签 + svc- 前缀:部署可把 Jupyter 与端点放在同一后缀下(靠端口分开),
-    # 少了这两条 Jupyter 域名就成了鉴权端点的别名
+    # 只收单段左标签 + svc- 前缀:少任一条,同后缀部署下 Jupyter 域名就成鉴权端点的别名
     if "." in slug or not slug.startswith(ENDPOINT_SLUG_PREFIX):
         return None
     return slug
@@ -234,8 +233,7 @@ def endpoint_slug_from_host(host: str | None) -> str | None:
 def _snapshot_spec(sku: "Sku") -> dict[str, Any]:
     return {
         "sku_name": sku.name,
-        # SKU 原价时价快照(字符串,JSONB 不存 Decimal);折扣策略在线可调,竞价转按量
-        # 只能读它还原原价,不能拿折后价反推
+        # SKU 原价时价快照(字符串,JSONB 不存 Decimal);竞价转按量据它还原原价,不拿折后价反推
         "base_price_hourly": money_str(sku.price_hourly),
         "gpu_model": sku.gpu_model,
         "tier": sku.tier,
@@ -335,8 +333,7 @@ async def _validate_image_ref(
     """
     if not is_valid_image_ref(image_ref):
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.imageRefInvalid")
-    # 服务型实例要求版本钉死:它 restartPolicy=Always,可变 tag 会让一次无人值守的容器重启
-    # 换掉线上版本
+    # 服务型实例钉死版本:restartPolicy=Always 下可变 tag 会让一次无人值守重启换掉线上版本
     if require_pinned and not is_pinned_image_ref(image_ref):
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.imageRefNotPinned")
     allowed = effective_image_allowlist(await get_effective_platform_config(session))

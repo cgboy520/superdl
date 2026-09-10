@@ -127,7 +127,7 @@ class TestAlipayCallbackSignature:
 
         priv, _pub = keypair
         body = _alipay_notify(priv) + b"&body=&extend="
-        #  sanity:解析侧确实会丢掉这两个空值参数
+        # sanity:解析侧确实会丢掉这两个空值参数
         assert dict(parse_qsl(body.decode())).get("body") is None
         result = await _alipay_channel(keypair).parse_callback({}, body)
         assert result.success is True

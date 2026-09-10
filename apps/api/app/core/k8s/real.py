@@ -9,8 +9,9 @@
 
 import asyncio
 import hashlib
+import ipaddress
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, cast
 
@@ -53,6 +54,27 @@ PREWARM_LABEL = "superdl.io/prewarm"  # 预热 Job 专用标签,与 managed(实�
 # (Gateway **对象**所在 ns)。须与 deploy/cluster/helmfile.yaml.gotmpl 里 envoy-gateway
 # release 的 namespace 一致。
 GATEWAY_DATAPLANE_NAMESPACE = "envoy-gateway-system"
+
+
+def pod_cidr_gateways(cidrs: Iterable[str]) -> list[str]:
+    """各节点 Pod 子网的网关地址(网络地址 .0 与首个主机地址 .1)的 /32 列表,排序去重。
+
+    flannel(VXLAN)上跨节点 NodePort 的 SNAT 来源是入口节点 flannel.1 的地址 = 子网 .0,
+    cni0 是 .1;两者都落在 tenant_pod_cidr 之内,租户 NetPol 的 except 排掉 Pod 网段时必须
+    把它们单独放回来,否则经网关节点 IP:NodePort 的 SSH 全部被拒。IPv6 / 非法串忽略。
+    """
+    out: set[str] = set()
+    for raw in cidrs:
+        try:
+            net = ipaddress.ip_network(raw, strict=False)
+        except ValueError:
+            continue
+        if net.version != 4:
+            continue
+        out.add(f"{net.network_address}/32")
+        out.add(f"{net.network_address + 1}/32")
+    return sorted(out, key=lambda c: ipaddress.ip_address(c.split("/")[0]))
+
 
 # 租户 ns 的 Pod Security Admission 标签。enforce 只到 baseline:平台镜像以 root 运行,
 # restricted 的 runAsNonRoot 会拒绝全部租户 Pod;逃逸面由 kata VM / userns 承担。
@@ -342,7 +364,7 @@ class RealOrchestrator:
         self._ensure_juicefs_pvc_sync(namespace)
 
     def _ensure_tenant_rbac_sync(self, namespace: str) -> None:
-        """租户 ns 内授予 tenant-mgr 的 secrets 权限(替代原集群级 ClusterRole secrets 规则)。
+        """租户 ns 内授予 tenant-mgr 的 secrets 权限。
 
         per-instance env Secret(JUPYTER_TOKEN)与拉取凭据的读写在租户 ns 内完成;
         权限随 ns 生命周期(ns 删除即回收),存量 ns 由 create_or_patch 收敛补齐。
@@ -411,7 +433,9 @@ class RealOrchestrator:
             lambda: self.core.patch_namespaced_limit_range("tenant-defaults", namespace, limits),
         )
 
-    def _tenant_netpol(self, namespace: str) -> "client.V1NetworkPolicy":
+    def _tenant_netpol(
+        self, namespace: str, node_gateways: list[str] | None = None
+    ) -> "client.V1NetworkPolicy":
         """入方向:默认拒东西向,放行网关数据面(不限端口)与 SSH(22);
         出方向放行公网(除私网/元数据网段):TCP 扣明确滥用途黑名单,UDP 白名单 53/443,+ DNS。
 
@@ -419,8 +443,10 @@ class RealOrchestrator:
         from 不能排私网 —— 跨节点 NodePort 经 SNAT 后来源是节点内网 IP。sshd 仅密钥登录。
         但**可以且必须**排掉 Pod 网段(tenant_pod_cidr):Pod→Pod 是同一 overlay 内的直连,
         不经 SNAT,来源仍是对端 Pod IP;不排等于把 22 端口对全集群租户敞开(扫一遍
-        Pod 网段就能挨个连别人的实例),而排掉它不影响任何一条合法路径 —— 节点 SNAT
-        后的来源是节点内网 IP,不落在 Pod 网段里。
+        Pod 网段就能挨个连别人的实例)。排掉之后要把各节点 Pod 子网的网关地址
+        (node_gateways,pod_cidr_gateways 算出的 .0/32 与 .1/32)逐个放回:flannel 上跨节点
+        NodePort 的 SNAT 来源正是入口节点的 flannel.1(子网 .0),不放回则只有直连实例所在
+        节点的 IP 才能 SSH,连接串里的网关域名一律被拒。
 
         网关数据面来源不限端口:服务型实例的容器端口由用户声明,平台事先不知道是哪个;
         Envoy 只打到平台生成的 HTTPRoute 里的 backend 端口,租户间东西向仍默认拒。
@@ -445,15 +471,9 @@ class RealOrchestrator:
                             )
                         ],
                     ),
-                    # SSH NodePort 入流量,排除 Pod 网段的租户互连(见 docstring)
+                    # SSH NodePort 入流量,排除 Pod 网段的租户互连,再逐节点放回子网网关(见 docstring)
                     client.V1NetworkPolicyIngressRule(
-                        _from=[
-                            client.V1NetworkPolicyPeer(
-                                ip_block=client.V1IPBlock(
-                                    cidr="0.0.0.0/0", _except=self._ssh_ingress_except()
-                                )
-                            )
-                        ],
+                        _from=self._ssh_ingress_peers(node_gateways),
                         ports=[client.V1NetworkPolicyPort(protocol="TCP", port=22)],
                     ),
                 ],
@@ -507,8 +527,37 @@ class RealOrchestrator:
         cidr = (self.settings.tenant_pod_cidr or "").strip()
         return [cidr] if cidr else None
 
+    def _ssh_ingress_peers(self, node_gateways: list[str] | None) -> list[Any]:
+        """0.0.0.0/0 排 Pod 网段,再逐个放回节点 Pod 子网网关;不排网段时前者已覆盖一切。"""
+        peers: list[Any] = [
+            client.V1NetworkPolicyPeer(
+                ip_block=client.V1IPBlock(cidr="0.0.0.0/0", _except=self._ssh_ingress_except())
+            )
+        ]
+        if self._ssh_ingress_except():
+            peers += [
+                client.V1NetworkPolicyPeer(ip_block=client.V1IPBlock(cidr=g))
+                for g in (node_gateways or [])
+            ]
+        return peers
+
+    def _node_pod_gateways_sync(self) -> list[str]:
+        """全部节点 spec.podCIDR(s) 的网关 /32;读不到(RBAC / apiserver 抖动)返回空并告警,
+        NetPol 照常下发,只是跨节点 SSH 要等下一轮收敛(reconciler 在节点集合变化时重下发)。"""
+        try:
+            nodes = self.core.list_node().items
+        except Exception:
+            logger.exception("netpol_node_gateways_unavailable")
+            return []
+        cidrs: list[str] = []
+        for n in nodes:
+            spec = n.spec
+            cidrs += list(spec.pod_cidrs or ([spec.pod_cidr] if spec.pod_cidr else []))
+        return pod_cidr_gateways(cidrs)
+
     def _ensure_default_netpol_sync(self, namespace: str) -> None:
-        policy = self._tenant_netpol(namespace)
+        gateways = self._node_pod_gateways_sync() if self._ssh_ingress_except() else None
+        policy = self._tenant_netpol(namespace, gateways)
         _create_or_patch(
             lambda: self.net.create_namespaced_network_policy(namespace, policy),
             lambda: self.net.patch_namespaced_network_policy("tenant-default", namespace, policy),

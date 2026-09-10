@@ -164,7 +164,8 @@ app_gateway=../app/k8s/04-gateway.yaml
 # 管理端白名单的占位符是 192.0.2.0/24(RFC 5737 文档网段)而非 CHANGE_ME_*,见
 # ../app/k8s/04-gateway.yaml 的 superdl-admin-allowlist;这道检查在 apply 前拦住未替换。
 if [[ -f "$app_gateway" ]]; then
-  if grep -q '192\.0\.2\.0/24' "$app_gateway"; then
+  # 只扫有效行:文件头注释本身会提到 192.0.2.0/24,不算残留
+  if grep -vE '^\s*#' "$app_gateway" | grep -q '192\.0\.2\.0/24'; then
     miss "$app_gateway 管理端白名单仍是 192.0.2.0/24 占位(替换为办公网/跳板机出口 CIDR)"
   else
     ok "$app_gateway 管理端白名单已配真实网段"
@@ -308,7 +309,7 @@ fi
 say "== 应用 NetworkPolicy 出向(提示性)=="
 netpol=../app/k8s/09-networkpolicy.yaml
 if [[ -f "$netpol" ]]; then
-  if grep -q 'CHANGE_ME' "$netpol"; then
+  if grep -vE '^\s*#' "$netpol" | grep -q 'CHANGE_ME'; then
     say "  ⚠ $netpol 出向规则含 CHANGE_ME 占位(PG/对象存储/支付·短信网关/K8s API 端点):"
     say "    apply 前必须替换为真实端点,否则平台出向全断(提示项,不阻断)"
   else

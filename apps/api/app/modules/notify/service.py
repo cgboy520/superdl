@@ -503,7 +503,7 @@ async def ingest_alertmanager(session: AsyncSession, payload: dict) -> int:
                 user_id = int(ns.removeprefix(prefix))
             except ValueError:
                 continue
-            # label 是提交方写得的:归属必须查库核实(存在且活跃),否则伪造 namespace
+            # label 是提交方写的:归属必须查库核实(存在且活跃),否则伪造 namespace
             # 可向任意 user_id 发短信;再按用户限流,伪造刷屏烧不了短信预算
             from app.modules.account import service as account_service
 

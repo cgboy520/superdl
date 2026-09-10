@@ -335,8 +335,7 @@ async def test_service_container_drill(client, sm, fake):
                 )
             ).scalars()
         )
-    # 流水金额带符号,逐条与 balance_after 快照对齐(与开发机那条演练同一套断言):
-    # 服务实例走的就是这套账,没有第二条账路
+    # 流水金额带符号,逐条与 balance_after 快照对齐
     running = Decimal("0.00")
     for e in entries:
         running += e.amount

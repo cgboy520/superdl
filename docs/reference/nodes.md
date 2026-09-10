@@ -38,7 +38,7 @@
 - 令牌绝对过期:expires_at 对一切非终态生效(progress 只刷新 last_report_at,不延长截止),过期即 404,请求路径不迁移状态;落 expired 由对账器清扫。
 - 签发令牌时必填期望主机名,bootstrap 上报主机名不符即置 failed 并 409(被盗令牌不能在别的机器换出 join token)。
 - bootstrap 下发配置收窄到 9 键(cluster 组 server_url / join_token / agent_version / driver_version / install_mirror / registries_yaml + 镜像仓库组 registry_host / registry_ca_pem / registry_proxy_projects,后三者只用于渲染 registries.yaml 与落 CA),全量生效配置(含解密后的支付私钥、Harbor 机器人 Secret)不出注册链路。
-- 一节点一令牌,不做批量可重用令牌;不做 drain。join token 最终必然落节点 agent config 文件(0600 root),轮换走发行版自带的 token rotate。
+- 一节点一令牌,不做批量可重用令牌;不做 drain。join token 最终必然落节点 agent config 文件(0600 root),轮换流程见 `deploy/cluster/README.md`「server token 与 agent token」。
 
 ### 台账与巡检
 
