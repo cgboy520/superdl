@@ -127,6 +127,9 @@ from app.modules.orchestrator.queries import (
     instance_names as instance_names,
 )
 from app.modules.orchestrator.queries import (
+    instances_by_ids as instances_by_ids,
+)
+from app.modules.orchestrator.queries import (
     list_instances_by_status as list_instances_by_status,
 )
 from app.modules.orchestrator.queries import (
@@ -351,39 +354,38 @@ async def _validate_image_ref(
 
 
 async def _check_user_quota(
-    session: AsyncSession, user_id: int, new_gpus: int, new_vcpus: int
+    session: AsyncSession,
+    user_id: int,
+    new_gpus: int,
+    new_vcpus: int,
+    *,
+    exclude_instance_id: int | None = None,
 ) -> None:
     """每用户配额(实例数 / GPU 总数 / CPU 实例 vCPU 总数);K8s 侧 ResourceQuota 为兜底。
 
     生效值走 account.get_user_limits(用户覆盖 → 平台策略 → env 默认);vCPU 维只有平台
     策略层 `max_vcpus_per_user`,无用户级覆盖列。GPU 实例只计 GPU 维、CPU 实例只计 vCPU 维,
-    两维互不相交。
+    两维互不相交。exclude_instance_id = 即将被新实例替换的旧实例,不占三维名额
+    (否则 max_instances=1 的用户永远换不了版本)。
     """
 
     limits = await account_service.get_user_limits(session, user_id)
     policies = await get_effective_policies(session)
-    live = (
-        (
-            await session.execute(
-                select(
-                    func.count(),
-                    func.coalesce(func.sum(Instance.gpu_count), 0),
-                    # CPU 实例(gpu_count=0)的 vCPU 合计;spec 是落库时的 SKU 快照
-                    func.coalesce(
-                        func.sum(cast(Instance.spec["vcpu"].astext, Integer)).filter(
-                            Instance.gpu_count == 0
-                        ),
-                        0,
-                    ),
-                ).where(
-                    Instance.user_id == user_id,
-                    Instance.status.notin_(("released", "failed")),
-                )
-            )
-        )
-        .tuples()
-        .one()
+    stmt = select(
+        func.count(),
+        func.coalesce(func.sum(Instance.gpu_count), 0),
+        # CPU 实例(gpu_count=0)的 vCPU 合计;spec 是落库时的 SKU 快照
+        func.coalesce(
+            func.sum(cast(Instance.spec["vcpu"].astext, Integer)).filter(Instance.gpu_count == 0),
+            0,
+        ),
+    ).where(
+        Instance.user_id == user_id,
+        Instance.status.notin_(("released", "failed")),
     )
+    if exclude_instance_id is not None:
+        stmt = stmt.where(Instance.id != exclude_instance_id)
+    live = (await session.execute(stmt)).tuples().one()
     count, gpus, vcpus = live
     if count >= limits.max_instances:
         raise AppError(
@@ -443,12 +445,14 @@ async def _soft_admit_capacity(
     *,
     market: str = MARKET_ON_DEMAND,
     user_id: int | None = None,
+    freeing_slots: int = 0,
 ) -> None:
     """创建软准入:台账显示该 (池, 型号) 可分配量不足 → 先尝试抢占竞价实例,仍不足则 409。
 
     台账 60s 粒度只是近似:无数据一律放行交调度器裁决,本判断只挡「确定卖不出去」的单。
     抢占只对 GPU 档的非竞价请求生效:竞价请求不许抢别人,CPU 档的容量口径是 vCPU/内存
-    而非卡数,套不上「腾几张卡」的换算。
+    而非卡数,套不上「腾几张卡」的换算。freeing_slots = 同一笔请求里即将停机腾出的槽位
+    (版本更新时旧实例的份额),台账还没来得及反映,先加回可售数。
     """
     policies = await get_effective_policies(session)
     specs = await nodes_service.list_node_specs(session)
@@ -458,6 +462,7 @@ async def _soft_admit_capacity(
     if matching_free is None:
         return
     sellable -= await _reserved_slots(session, sku)
+    sellable += freeing_slots
     # 要占几份容量:GPU 实例按卡数,CPU 实例(gpu_count=0)占 1 台的位置
     needed = gpu_count if gpu_count > 0 else 1
     if sellable < needed and market != MARKET_SPOT and sku.tier != TIER_CPU:
@@ -585,7 +590,7 @@ async def _create_service_endpoint(
     raise AssertionError("unreachable")  # pragma: no cover
 
 
-async def create_instance(
+async def create_instance_row(
     session: AsyncSession,
     user_id: int,
     *,
@@ -608,13 +613,16 @@ async def create_instance(
     market: str = MARKET_ON_DEMAND,
     period: str | None = None,
     period_count: int = 1,
+    exclude_instance_id: int | None = None,
 ) -> tuple[Instance, bool]:
-    """创建实例(202 异步)。返回 (实例, created):created=False = 幂等重放,
-    路由据此回 200 + X-Idempotent-Replay 而非 202。
+    """创建实例的 row 级核心:软准入 → 钱包行锁临界区 → 写 instances / 事件 / outbox,
+    **不 commit**(调用方决定事务边界;用户端入口是 create_instance)。
+    返回 (实例, created):created=False = 幂等重放。
 
     service 形态额外落一行 service_endpoints,按 with_ssh 决定要不要 SSH 入口。
     market='subscription' 时同事务再落一行 subscriptions、按周期总价一次性扣款(不许透支),
-    扣完还要过一遍在途燃烧率校验。
+    扣完还要过一遍在途燃烧率校验。exclude_instance_id = 同一笔请求里即将被替换的旧实例:
+    配额与软准入把它的份额让给新实例,余额不让(重叠窗口两台都真实计费)。
     """
     # 异参检测指纹:下单参数全集(改任何一个都视为新请求)。dict 先排序保证确定性;
     # env 含密文键值也只进 sha256,不落明文
@@ -671,7 +679,14 @@ async def create_instance(
     if market == MARKET_SPOT and not sku.spot_enabled:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.spotNotEnabled")
     # 抢占在本函数内下发,与建实例同事务:后面任何一步失败都会把回收一起回滚
-    await _soft_admit_capacity(session, sku, gpu_count, market=market, user_id=user_id)
+    await _soft_admit_capacity(
+        session,
+        sku,
+        gpu_count,
+        market=market,
+        user_id=user_id,
+        freeing_slots=await _freeing_slots_of(session, exclude_instance_id, sku),
+    )
     # service_port 必填/保留端口、subscription 必带 period 由契约层 InstanceCreate
     # 与 DB CHECK 把关,本函数唯一生产入口是路由层,不重复校验
     is_service = workload_type == WORKLOAD_SERVICE
@@ -706,7 +721,13 @@ async def create_instance(
     if not is_subscription:
         await billing_service.assert_can_afford(session, user_id, additional_hourly=estimate)
     # CPU 实例才计 vCPU 维(GPU 实例的 vCPU 是配卡的附属,不单独设闸)
-    await _check_user_quota(session, user_id, gpu_count, sku.vcpu if gpu_count == 0 else 0)
+    await _check_user_quota(
+        session,
+        user_id,
+        gpu_count,
+        sku.vcpu if gpu_count == 0 else 0,
+        exclude_instance_id=exclude_instance_id,
+    )
 
     selected: list[str] = []
     if wants_ssh:
@@ -806,15 +827,49 @@ async def create_instance(
         )
     )
     enqueue(session, "instance.create", {"instance_id": instance.id})
-    await session.commit()
-    logger.info("instance_create_accepted", instance_id=instance.id, user_id=user_id)
     return instance, True
+
+
+async def _freeing_slots_of(session: AsyncSession, instance_id: int | None, sku: "Sku") -> int:
+    """即将被替换的旧实例在 (池, 型号) 台账上占的可售份额:running 且同池同 canonical 型号
+    才算(停机实例的卡在台账上本就是空闲的)。"""
+    if instance_id is None:
+        return 0
+    old = await session.get(Instance, instance_id)
+    if old is None or old.status != sm_def.RUNNING or old.gpu_count == 0:
+        return 0
+    if old.spec.get("pool_label") != sku.pool_label or canonical_gpu_model(
+        str(old.spec.get("gpu_model") or "")
+    ) != canonical_gpu_model(sku.gpu_model):
+        return 0
+    return old.gpu_count * catalog_service.sellable_per_gpu(
+        sku.pool_label, sku.gpu_cores_pct, sku.oversell_cores
+    )
+
+
+async def create_instance(
+    session: AsyncSession, user_id: int, **kwargs: Any
+) -> tuple[Instance, bool]:
+    """创建实例(202 异步):create_instance_row + commit。返回 (实例, created),
+    created=False = 幂等重放,路由据此回 200 + X-Idempotent-Replay 而非 202。"""
+    instance, created = await create_instance_row(session, user_id, **kwargs)
+    if created:
+        await session.commit()
+        logger.info("instance_create_accepted", instance_id=instance.id, user_id=user_id)
+    return instance, created
 
 
 async def instance_by_id(session: AsyncSession, instance_id: int) -> Instance:
     """按主键取实例(不限归属、不限状态;行从不硬删,按 id 必命中)。
     系统侧巡检用,用户请求一律走 get_instance。"""
     return (await session.execute(select(Instance).where(Instance.id == instance_id))).scalar_one()
+
+
+async def instance_status(session: AsyncSession, instance_id: int) -> str | None:
+    """按主键取实例状态;不存在返回 None(不抛)。鉴权回调这类「拒绝也要 401 而非 500」
+    的路径用它,别用会 scalar_one 抛错的 instance_by_id。"""
+    instance = await session.get(Instance, instance_id)
+    return None if instance is None else instance.status
 
 
 async def get_instance(session: AsyncSession, user_id: int, uuid: str) -> Instance:
@@ -956,23 +1011,39 @@ async def _attach_subscriptions(session: AsyncSession, items: "Sequence[Instance
             item.subscription = InstanceSubscriptionOut.model_validate(row)
 
 
-async def list_events(
-    session: AsyncSession, instance_id: int, *, cursor: str | None = None, limit: int | None = None
-):
-    """实例事件时间线:降序(最新在前)游标分页,与资金流水/账单同一套分页语义。"""
-    from app.core.pagination import Page, paginate_by_id
-    from app.modules.orchestrator.schemas import InstanceEventOut
+async def list_events_raw(
+    session: AsyncSession,
+    instance_ids: Sequence[int],
+    *,
+    cursor: str | None = None,
+    limit: int | None = None,
+) -> RawPage[InstanceEvent]:
+    """多台实例的事件并集:降序(最新在前)游标分页的 ORM 行(服务级时间线跨版本合并用)。"""
+    from app.core.pagination import paginate_by_id
 
+    if not instance_ids:
+        return RawPage(items=[], next_cursor=None)
     stmt = (
         select(InstanceEvent)
-        .where(InstanceEvent.instance_id == instance_id)
+        .where(InstanceEvent.instance_id.in_(list(instance_ids)))
         .order_by(InstanceEvent.id.desc())
     )
     page_items, next_cursor = await paginate_by_id(
         session, stmt, id_col=InstanceEvent.id, cursor=cursor, limit=limit
     )
+    return RawPage(items=page_items, next_cursor=next_cursor)
+
+
+async def list_events(
+    session: AsyncSession, instance_id: int, *, cursor: str | None = None, limit: int | None = None
+):
+    """实例事件时间线:降序(最新在前)游标分页,与资金流水/账单同一套分页语义。"""
+    from app.core.pagination import Page
+    from app.modules.orchestrator.schemas import InstanceEventOut
+
+    raw = await list_events_raw(session, [instance_id], cursor=cursor, limit=limit)
     return Page[InstanceEventOut](
-        items=[InstanceEventOut.model_validate(e) for e in page_items], next_cursor=next_cursor
+        items=[InstanceEventOut.model_validate(e) for e in raw.items], next_cursor=raw.next_cursor
     )
 
 
@@ -988,12 +1059,20 @@ async def rename_instance(
 # ---------- 用户操作 ----------
 
 
-async def stop_instance(session: AsyncSession, user_id: int, uuid: str) -> Instance:
-    instance = await get_instance(session, user_id, uuid)
+async def stop_instance_row(
+    session: AsyncSession, instance: Instance, *, reason: str = "user_stop", actor: str = "user"
+) -> Instance:
+    """关机的 row 级核心:running 守卫 → stopping + outbox,**不 commit**。"""
     if instance.status != sm_def.RUNNING:
         raise AppError(ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.stopNeedsRunning")
-    await transition(session, instance, sm_def.STOPPING, reason="user_stop", actor="user")
+    await transition(session, instance, sm_def.STOPPING, reason=reason, actor=actor)
     enqueue(session, "instance.stop", {"instance_id": instance.id})
+    return instance
+
+
+async def stop_instance(session: AsyncSession, user_id: int, uuid: str) -> Instance:
+    instance = await get_instance(session, user_id, uuid)
+    await stop_instance_row(session, instance)
     await session.commit()
     return instance
 
@@ -1014,8 +1093,9 @@ async def _rebind_data_disk(session: AsyncSession, instance: Instance) -> None:
     await disks_service.attach_for_instance(session, instance.user_id, disk.id, instance.id)
 
 
-async def start_instance(session: AsyncSession, user_id: int, uuid: str) -> Instance:
-    instance = await get_instance(session, user_id, uuid)
+async def start_instance_row(session: AsyncSession, user_id: int, instance: Instance) -> Instance:
+    """开机的 row 级核心:锁实例 → 冻结 / 状态 / 节点 / 集群 / 订阅 / 数据盘 / 余额逐道闸
+    → starting + outbox,**不 commit**。"""
     # 锁序 instance → disk → wallet(与停机尾账 instance→bill→wallet、删盘
     # disk→bill→wallet 同向):先锁实例行,挂载校验(盘锁)先于余额校验(钱包锁)。
     # 先钱包后盘/后实例会与其成交叉死锁对;锁内重读(populate_existing),
@@ -1061,6 +1141,12 @@ async def start_instance(session: AsyncSession, user_id: int, uuid: str) -> Inst
     # 也会让 reconciler 的宽限判定立即超时
     instance.unready_since = None
     enqueue(session, "instance.start", {"instance_id": instance.id})
+    return instance
+
+
+async def start_instance(session: AsyncSession, user_id: int, uuid: str) -> Instance:
+    instance = await get_instance(session, user_id, uuid)
+    instance = await start_instance_row(session, user_id, instance)
     await session.commit()
     return instance
 
@@ -1285,10 +1371,10 @@ async def set_instance_auto_renew(
     return instance
 
 
-async def release_instance(
-    session: AsyncSession, user_id: int, uuid: str, *, actor: str = "user"
+async def release_instance_row(
+    session: AsyncSession, instance: Instance, *, actor: str = "user", reason: str | None = None
 ) -> Instance:
-    instance = await get_instance(session, user_id, uuid)
+    """释放的 row 级核心:状态守卫 → releasing + outbox,**不 commit**;释放中 / 已释放幂等直回。"""
     if instance.status in (sm_def.RELEASING, sm_def.RELEASED):
         # 幂等释放:释放中/已释放直接回当前状态,重试/双击不报 400
         return instance
@@ -1300,8 +1386,20 @@ async def release_instance(
         sm_def.STOPPING,  # 关机悬挂:允许用户直接放弃(reconciler 超时强删兜底)
     ):
         raise AppError(ErrorCode.INSTANCE_NOT_STOPPED, key="orchestrator.releaseNeedsStopped")
-    await transition(session, instance, sm_def.RELEASING, reason=f"{actor}_release", actor=actor)
+    await transition(
+        session, instance, sm_def.RELEASING, reason=reason or f"{actor}_release", actor=actor
+    )
     enqueue(session, "instance.release", {"instance_id": instance.id})
+    return instance
+
+
+async def release_instance(
+    session: AsyncSession, user_id: int, uuid: str, *, actor: str = "user"
+) -> Instance:
+    instance = await get_instance(session, user_id, uuid)
+    if instance.status in (sm_def.RELEASING, sm_def.RELEASED):
+        return instance
+    await release_instance_row(session, instance, actor=actor)
     await session.commit()
     return instance
 

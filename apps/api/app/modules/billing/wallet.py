@@ -4,6 +4,7 @@
 本文件函数不 commit —— 由调用方把余额变动放进业务事务。
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -316,14 +317,20 @@ async def hourly_bills_page(
     user_id: int,
     *,
     instance_id: int | None = None,
+    instance_ids: Sequence[int] | None = None,
     month_range: tuple | None = None,
     cursor: str | None = None,
     limit: int | None = None,
 ):
-    """小时账单游标分页(用户端与管理端下钻共用同一实现)。"""
+    """小时账单游标分页(用户端与管理端下钻共用同一实现)。
+    instance_ids = 一组实例(服务下全部版本)的并集;给空列表即无账可查。"""
     stmt = select(BillHourly).where(BillHourly.user_id == user_id).order_by(BillHourly.id.desc())
     if instance_id is not None:
         stmt = stmt.where(BillHourly.instance_id == instance_id)
+    if instance_ids is not None:
+        if not instance_ids:
+            return Page[BillHourlyOut](items=[], next_cursor=None)
+        stmt = stmt.where(BillHourly.instance_id.in_(list(instance_ids)))
     if month_range is not None:
         stmt = stmt.where(
             BillHourly.hour_start >= month_range[0], BillHourly.hour_start < month_range[1]
