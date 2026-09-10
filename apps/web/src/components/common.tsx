@@ -11,6 +11,7 @@ import {
   marketLabelKey,
   marketMap,
   metaOf,
+  serviceStatusMap,
   skuTierMap,
   skuVariant,
   spotReclaimTag,
@@ -38,6 +39,30 @@ export function InstanceStatusBadge({
   return (
     <span>
       <Badge status={meta?.badge ?? "default"} text={meta ? t(meta.labelKey) : status} />
+      {status === "frozen" && frozenDeadline && (
+        <Tag color="red" style={{ marginInlineStart: 8 }}>
+          {formatReclaimCountdown(frozenDeadline)}
+        </Tag>
+      )}
+    </span>
+  );
+}
+
+/** 在线服务的派生状态徽标;unready 带解释 tooltip(它不是故障:容器在跑、照常计费)。 */
+export function ServiceStatusBadge({
+  status,
+  frozenDeadline,
+}: {
+  status: string;
+  frozenDeadline?: string | null;
+}) {
+  const { t } = useTranslation(["web", "shared"]);
+  const { formatReclaimCountdown } = useFormat();
+  const meta = metaOf(serviceStatusMap, status);
+  const badge = <Badge status={meta?.badge ?? "default"} text={meta ? t(meta.labelKey) : status} />;
+  return (
+    <span>
+      {meta && "hintKey" in meta && meta.hintKey ? <Tooltip title={t(meta.hintKey)}>{badge}</Tooltip> : badge}
       {status === "frozen" && frozenDeadline && (
         <Tag color="red" style={{ marginInlineStart: 8 }}>
           {formatReclaimCountdown(frozenDeadline)}

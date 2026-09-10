@@ -32,18 +32,33 @@ _RESERVED_ENV_PREFIXES = ("JUPYTER_", "SUPERDL_", "NVIDIA_")
 _RESERVED_ENV_NAMES = frozenset({"AUTHORIZED_KEYS"})
 _ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
-# service 形态专属入参。dev 形态显式传任何一项都 422:build_pod_spec 的 dev 分支不读它们,
-# 静默忽略会让用户以为「启动命令/环境变量已生效」
-_SERVICE_ONLY_FIELDS: tuple[str, ...] = (
-    "container_command",
-    "container_args",
-    "env",
-    "env_secret_keys",
-    "service_port",
-    "health_path",
-    "require_api_key",
-    "with_ssh",
-)
+
+def validate_market_shape(market: str, period: str | None, fields_set: set[str]) -> None:
+    """购买模式与周期字段的配对(创建实例与部署服务共用):包周期必带周期;
+    按量 / 竞价单里带周期字段一律拒,静默忽略会让用户以为自己买的是包月。"""
+    if market == MARKET_SUBSCRIPTION:
+        if period is None:
+            raise ValueError(render_message("orchestrator.periodRequired", None))
+    elif "period" in fields_set or "period_count" in fields_set:
+        raise ValueError(render_message("orchestrator.periodOnOnDemand", None))
+
+
+def validate_health_path(health_path: str | None) -> None:
+    if health_path is not None and not health_path.startswith("/"):
+        raise ValueError(render_message("orchestrator.healthPathSlash", None))
+
+
+def validate_user_env(env: dict[str, str] | None, secret_keys: list[str] | None) -> None:
+    """用户环境变量键名(与 build_pod_spec 注入项同源的黑名单)与密文键子集关系。"""
+    env = env or {}
+    for name in env:
+        if not _ENV_NAME_RE.match(name):
+            raise ValueError(render_message("orchestrator.envKeyInvalid", {"name": name}))
+        if name in _RESERVED_ENV_NAMES or name.startswith(_RESERVED_ENV_PREFIXES):
+            raise ValueError(render_message("orchestrator.envKeyReserved", {"name": name}))
+    for name in secret_keys or ():
+        if name not in env:
+            raise ValueError(render_message("orchestrator.envSecretKeyUnknown", {"name": name}))
 
 
 class InstanceSubscriptionOut(BaseModel):
@@ -82,30 +97,19 @@ class RenewOut(BaseModel):
 
 
 class InstanceCreate(BaseModel):
+    # 拒收未知字段:服务容器参数(启动命令 / 端口 / env)属于 /services,打到这里静默忽略
+    # 会让用户以为「启动命令已生效」而实例跑的是镜像原样
+    model_config = {"extra": "forbid"}
+
     sku_id: int
     # 0 = CPU 实例(SKU 的 max_gpus_per_instance 也为 0);实际配对按 SKU 形态在
     # service.create_instance 判,契约层只挡明显越界
     gpu_count: int = Field(default=1, ge=0, le=8)
     image_ref: str = Field(min_length=1, max_length=256)
-    # 不带 min_length:不开 SSH 的服务型实例没有公钥可选;何时必须非空由下面的
-    # model_validator 按形态判(dev 恒需要,service 只在 with_ssh 时需要)
-    ssh_key_ids: list[int] = Field(default_factory=list)
+    # 开发机只有密钥登录:一把公钥都不选 = 建出一台谁也登不上去的实例
+    ssh_key_ids: list[int] = Field(min_length=1)
     name: str | None = Field(default=None, max_length=64)
     data_disk_id: int | None = None
-
-    # ---- 服务型实例(dev 形态一项都不传)----
-    workload_type: Literal["dev", "service"] = WORKLOAD_DEV
-    container_command: list[str] | None = None
-    container_args: list[str] | None = None
-    # 用户环境变量。整包加密落库,其中 env_secret_keys 列出的键在 Pod 侧走 Secret,
-    # 其余进 Pod spec 的明文 env
-    env: dict[str, str] | None = None
-    env_secret_keys: list[str] | None = None
-    service_port: int | None = Field(default=None, ge=1, le=65535)
-    health_path: str | None = Field(default=None, max_length=128)
-    require_api_key: bool = True
-    # 服务型实例默认不开 SSH:开了就要占一个 NodePort,而服务容器通常连 sshd 都没有
-    with_ssh: bool = False
 
     # ---- 购买模式 ----
     # spot 与 subscription 互斥(market 是单值):可被回收与买断一段时间没有自洽的合并语义
@@ -115,46 +119,7 @@ class InstanceCreate(BaseModel):
 
     @model_validator(mode="after")
     def _market_shape(self) -> "InstanceCreate":
-        if self.market == MARKET_SUBSCRIPTION:
-            if self.period is None:
-                raise ValueError(render_message("orchestrator.periodRequired", None))
-        elif "period" in self.model_fields_set or "period_count" in self.model_fields_set:
-            # 按量单里带周期字段一律拒,静默忽略会让用户以为自己买的是包月
-            raise ValueError(render_message("orchestrator.periodOnOnDemand", None))
-        return self
-
-    @model_validator(mode="after")
-    def _workload_shape(self) -> "InstanceCreate":
-        if self.workload_type == WORKLOAD_DEV:
-            # 必须判「显式传了」而不是「值非默认」:布尔字段按值判分不出「没传」与
-            # 「传了刚好等于默认值」
-            extra = [f for f in _SERVICE_ONLY_FIELDS if f in self.model_fields_set]
-            if extra:
-                raise ValueError(
-                    render_message(
-                        "orchestrator.devWorkloadExtraFields", {"fields": "、".join(extra)}
-                    )
-                )
-        elif self.service_port is None:
-            raise ValueError(render_message("orchestrator.servicePortRequired", None))
-        elif self.service_port in RESERVED_SERVICE_PORTS:
-            raise ValueError(
-                render_message("orchestrator.servicePortReserved", {"port": self.service_port})
-            )
-        if self.health_path is not None and not self.health_path.startswith("/"):
-            raise ValueError(render_message("orchestrator.healthPathSlash", None))
-        env = self.env or {}
-        for name in env:
-            if not _ENV_NAME_RE.match(name):
-                raise ValueError(render_message("orchestrator.envKeyInvalid", {"name": name}))
-            if name in _RESERVED_ENV_NAMES or name.startswith(_RESERVED_ENV_PREFIXES):
-                raise ValueError(render_message("orchestrator.envKeyReserved", {"name": name}))
-        for name in self.env_secret_keys or ():
-            if name not in env:
-                raise ValueError(render_message("orchestrator.envSecretKeyUnknown", {"name": name}))
-        # 开了 SSH 却一把公钥都不选 = 建出一台谁也登不上去的实例(镜像不收口令登录)
-        if not self.ssh_key_ids and (self.workload_type == WORKLOAD_DEV or self.with_ssh):
-            raise ValueError(render_message("orchestrator.sshKeyRequired", None))
+        validate_market_shape(self.market, self.period, self.model_fields_set)
         return self
 
 
@@ -177,8 +142,7 @@ class InstanceOut(BaseModel):
     # 不拿 ssh_port 是否为空代替:端口是 outbox 建 Pod 时才分配的,creating 期间恒空
     with_ssh: bool
     ssh_port: int | None
-    # 服务型实例的端点 slug(dev 恒 None)。放在列表项里让列表页零成本内联,免得前端逐行
-    # 打 /service(接口调用不得随行数放大);由一次批量查询回填(service._attach_service_slugs)
+    # 所属在线服务的 slug 快照(dev 恒 None);服务实例默认不进用户端实例列表
     service_slug: str | None = None
     data_disk_id: int | None
     frozen_deadline: datetime | None
@@ -209,7 +173,7 @@ class InstanceEventOut(BaseModel):
 class InstanceAccessOut(BaseModel):
     """接入信息:字段随形态出现或缺席,不是「恒有值」的契约。
 
-    dev = SSH + Jupyter;service = 端点 URL,开了 SSH 的服务实例两者都有。
+    dev = SSH + Jupyter;服务的版本实例 = 端点 URL,开了 SSH 的两者都有。
     不按形态拆两个端点:前端拿到什么就渲染什么,少一次「先判形态再选接口」的分叉。
     """
 
@@ -218,47 +182,6 @@ class InstanceAccessOut(BaseModel):
     ssh_command: str | None = None
     jupyter_url: str | None = None
     endpoint_url: str | None = None
-
-
-class ServiceEndpointOut(BaseModel):
-    """对外服务端点视图(仅 workload_type='service' 的实例有)。"""
-
-    slug: str
-    url: str
-    container_port: int
-    health_path: str | None
-    require_api_key: bool
-    # 就绪 = 实例 running 且巡检没观察到 Pod not-ready。服务实例持续 not-ready 不判 failed,
-    # 所以这一位是用户判断「我的服务起来没有」的唯一真相,不能拿 status 代替
-    ready: bool
-    # 容器配置回显(创建时写入,之后不可改)。env 只回明文项,密文项只回键名
-    # (env_secret_keys):回值就等于给了一个把密文变量读回明文的端点
-    container_command: list[str] | None
-    container_args: list[str] | None
-    env: dict[str, str]
-    env_secret_keys: list[str]
-    created_at: datetime
-
-
-class ApiKeyCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=64)
-
-
-class ApiKeyOut(BaseModel):
-    id: int
-    name: str
-    key_prefix: str
-    last_used_at: datetime | None
-    revoked_at: datetime | None
-    created_at: datetime
-
-    model_config = {"from_attributes": True}
-
-
-class ApiKeyCreateOut(ApiKeyOut):
-    """创建响应:明文 key 只在这一次出现,库里只有 HMAC 摘要,关掉就找不回来。"""
-
-    key: str
 
 
 class InstanceLogsOut(BaseModel):

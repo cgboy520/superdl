@@ -17,8 +17,8 @@ const { createMutate, onSuccessRef } = vi.hoisted(() => ({
   onSuccessRef: { current: undefined as ((d: unknown) => void) | undefined },
 }));
 
-vi.mock("../api/mutations", () => ({
-  useCreateApiKey: (_uuid: string, o?: { onSuccess?: (d: unknown) => void }) => {
+vi.mock("../../api/mutations", () => ({
+  useCreateServiceApiKey: (_slug: string, o?: { onSuccess?: (d: unknown) => void }) => {
     onSuccessRef.current = o?.onSuccess;
     return { mutate: createMutate, isPending: false };
   },
@@ -34,7 +34,7 @@ async function openSuccessState(onClose = vi.fn()) {
   const user = userEvent.setup();
   render(
     <App>
-      <ApiKeyModal uuid="u-1" open onClose={onClose} />
+      <ApiKeyModal slug="svc-1" open onClose={onClose} />
     </App>,
   );
   await user.type(screen.getByLabelText("名称"), "线上推理");
@@ -56,7 +56,7 @@ describe("ApiKeyModal", () => {
   it("未填名称时创建按钮禁用(空名字的 Key 无法辨认用途)", () => {
     render(
       <App>
-        <ApiKeyModal uuid="u-1" open onClose={vi.fn()} />
+        <ApiKeyModal slug="svc-1" open onClose={vi.fn()} />
       </App>,
     );
     expect(screen.getByRole("button", { name: /^创\s*建$/ })).toBeDisabled();

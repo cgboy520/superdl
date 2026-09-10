@@ -1,6 +1,7 @@
 /** 控制台主导航(侧栏与窄屏抽屉共用同一份,选中态均为最长前缀匹配)。 */
 
 import {
+  ApiOutlined,
   AppstoreOutlined,
   BellOutlined,
   CloudServerOutlined,
@@ -16,6 +17,7 @@ export const CONSOLE_NAV = [
   { key: "/dashboard", icon: <DashboardOutlined />, labelKey: "dashboard.title" },
   { key: "/market", icon: <AppstoreOutlined />, labelKey: "market.title" },
   { key: "/instances", icon: <CloudServerOutlined />, labelKey: "instances.title" },
+  { key: "/services", icon: <ApiOutlined />, labelKey: "services.title" },
   { key: "/storage", icon: <HddOutlined />, labelKey: "storage.title" },
   { key: "/billing", icon: <WalletOutlined />, labelKey: "billing.title" },
   { key: "/support", icon: <QuestionCircleOutlined />, labelKey: "support.title" },

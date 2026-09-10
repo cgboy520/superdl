@@ -8,5 +8,6 @@ export * from "./legal/legal";
 export * from "./metering/metering";
 export * from "./node-enroll/node-enroll";
 export * from "./notify/notify";
+export * from "./services/services";
 export * from "./tickets/tickets";
 export * from "./webhooks/webhooks";

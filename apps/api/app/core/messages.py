@@ -233,12 +233,6 @@ MESSAGES: dict[str, str] = {
     "orchestrator.accessNeedsRunning": "实例运行中才能获取接入信息",
     # 网关 extAuth 回调的统一拒绝文案:它会原样回给服务的调用方(可能是任意第三方),
     # 所以不区分「密钥错」「已吊销」「不属这个端点」「实例没在跑」——区分了就是探测口子
-    "orchestrator.apiKeyInvalid": "访问密钥无效",
-    "orchestrator.apiKeyNotFound": "访问密钥不存在",
-    "orchestrator.apiKeyQuota": "单个服务的访问密钥已达上限({max} 把),请先吊销不用的密钥",
-    "orchestrator.devWorkloadExtraFields": (
-        "开发机不支持服务容器参数({fields}):要对外发布服务请改用服务型实例"
-    ),
     "orchestrator.envKeyInvalid": (
         "环境变量名「{name}」不合法:只能用字母、数字和下划线,且不能以数字开头"
     ),
@@ -275,7 +269,9 @@ MESSAGES: dict[str, str] = {
         "按监管要求,开通算力前需完成实名认证:请先到「设置 · 实名认证」完成核验"
     ),
     "orchestrator.restartNeedsRunning": "仅运行中的实例可以重启",
-    "orchestrator.serviceEndpointNotFound": "该实例没有对外服务端点(仅服务型实例有)",
+    "orchestrator.serviceInstanceLifecycle": (
+        "这台实例属于在线服务,请在「在线服务」里停止 / 启动 / 删除该服务"
+    ),
     "orchestrator.convertNeedsRunningOrStopped": "只有运行中或已关机的实例可以转包周期",
     "orchestrator.convertNotOnDemand": "只有按量计费的实例可以转包周期",
     "orchestrator.periodNotEnabled": "该规格暂不支持包周期,请选择按量计费",
@@ -286,7 +282,7 @@ MESSAGES: dict[str, str] = {
     "orchestrator.periodRequired": "包周期实例必须选择计费周期",
     "orchestrator.renewNotSubscription": "只有包周期实例可以续费",
     "orchestrator.renewReleased": "实例正在释放或已释放,无法续费",
-    "orchestrator.servicePortRequired": "服务型实例必须填写容器监听端口",
+    "orchestrator.servicePortRequired": "请填写容器监听端口",
     "orchestrator.servicePortReserved": (
         "端口 {port} 由平台占用(22 = SSH,8888 = JupyterLab),请把服务改到其他端口"
     ),
@@ -298,6 +294,14 @@ MESSAGES: dict[str, str] = {
     "orchestrator.vcpuQuota": (
         "CPU 实例的 vCPU 总数将超过上限({max} 核),请释放后再创建或联系客服提额"
     ),
+    # 在线服务
+    "services.apiKeyInvalid": "访问密钥无效",
+    "services.apiKeyNotFound": "访问密钥不存在",
+    "services.apiKeyQuota": "单个服务的访问密钥已达上限({max} 把),请先吊销不用的密钥",
+    "services.deleteNeedsStopped": "请先停止服务,再删除",
+    "services.notFound": "服务不存在",
+    "services.released": "服务已删除,不能再操作",
+    "services.rolloutInFlight": "服务正在更新版本,完成后再试",
     # 工单
     "tickets.notFound": "工单不存在",
     "tickets.openLimitReached": "进行中的工单已达上限({max} 个),请等待客服处理或关闭后再提交",

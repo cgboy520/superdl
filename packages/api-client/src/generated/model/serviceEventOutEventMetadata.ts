@@ -5,4 +5,4 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type InstanceCreateEnv = {[key: string]: string} | null;
+export type ServiceEventOutEventMetadata = { [key: string]: unknown } | null;

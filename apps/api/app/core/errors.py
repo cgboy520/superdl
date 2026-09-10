@@ -57,9 +57,7 @@ class ErrorCode(StrEnum):
     INSTANCE_NOT_STOPPED = "INSTANCE_NOT_STOPPED"
     INSTANCE_FROZEN = "INSTANCE_FROZEN"
     NO_CAPACITY = "NO_CAPACITY"
-    # 服务型实例(对外 HTTPS 端点)
-    SERVICE_ENDPOINT_NOT_FOUND = "SERVICE_ENDPOINT_NOT_FOUND"
-    # 网关 extAuth 回调的唯一拒绝码:密钥错/已吊销/不属该端点/实例未运行一律同码同文案,
+    # 网关 extAuth 回调的唯一拒绝码:密钥错/已吊销/不属该服务/实例未运行一律同码同文案,
     # 调用方(可能是任意第三方)据此分不出被拒的具体原因
     API_KEY_INVALID = "API_KEY_INVALID"
     # 计费

@@ -210,11 +210,11 @@ async def test_pull_secret_managed_per_tenant_when_registry_configured(client, s
 
 
 async def test_service_container_drill(client, sm, fake):
-    """E2E 演练二:部署服务 → 建 Key → 经端点鉴权调用 → 吊销 → 401 → 释放。
+    """E2E 演练二:部署服务 → 建 Key → 经端点鉴权调用 → 吊销 → 401 → 停止 → 删除。
 
     与 test_endpoint_auth.py 的矩阵不重合:那边逐条钉鉴权判据,这里跑一条脚本走完全程,
-    守住只有在整链路里才看得见的事 —— 服务型实例不占 SSH 端口池、不建 Jupyter 入口、
-    密文 env 不落 Pod spec、全程资金自洽。
+    守住只有在整链路里才看得见的事 —— 服务的版本实例不占 SSH 端口池、不建 Jupyter 入口、
+    密文 env 不落 Pod spec、不进实例列表、删除后服务落终态,全程资金自洽。
     """
     phone = "13411113333"
     await client.post("/api/v1/auth/sms-code", json={"phone": phone, "purpose": "register"})
@@ -237,14 +237,14 @@ async def test_service_container_drill(client, sm, fake):
     await seed_node_spec(sm)
 
     # ── 部署服务:不开 SSH、带密文 env、要 API Key ──────────────
-    inst = (
+    svc = (
         await client.post(
-            "/api/v1/instances",
+            "/api/v1/services",
             json={
                 "sku_id": sku_id,
                 "image_ref": "registry.superdl.local/vllm:v0.6.3",
                 "ssh_key_ids": [],
-                "workload_type": "service",
+                "name": "drill",
                 "container_command": ["python"],
                 "container_args": ["-m", "vllm.entrypoints.openai.api_server"],
                 "env": {"MAX_MODEL_LEN": "8192", "HF_TOKEN": "hf_drill_secret"},
@@ -255,11 +255,14 @@ async def test_service_container_drill(client, sm, fake):
             headers=h,
         )
     ).json()
-    uuid = inst["uuid"]
+    slug = svc["slug"]
+    uuid = svc["current_instance"]["uuid"]
+    assert svc["status"] == "deploying"
     await drain(sm)
     fake.mark_ready(f"tenant-{user_id}", uuid)
     await reconcile_once(sm)
-    assert (await client.get(f"/api/v1/instances/{uuid}", headers=h)).json()["status"] == "running"
+    svc = (await client.get(f"/api/v1/services/{slug}", headers=h)).json()
+    assert svc["status"] == "running" and svc["ready"] is True
 
     # 不占 SSH 端口池:端口段 30000–32767 是全平台硬上限,白占一个名额就少一台带 SSH 的实例
     async with sm() as session:
@@ -279,23 +282,26 @@ async def test_service_container_drill(client, sm, fake):
     assert pod_spec.restart_policy == "Always"
     assert pod_spec.service_port == 8000 and pod_spec.with_ssh is False
 
+    # 版本实例不进实例列表(它由服务驱动),但实例级只读端点仍可达
+    listed = (await client.get("/api/v1/instances", headers=h)).json()["items"]
+    assert [i["uuid"] for i in listed] == []
+    assert (await client.get(f"/api/v1/instances/{uuid}", headers=h)).status_code == 200
+
     # ── 端点与 Key ────────────────────────────────────────────
-    endpoint = (await client.get(f"/api/v1/instances/{uuid}/service", headers=h)).json()
-    slug = endpoint["slug"]
-    assert endpoint["url"].endswith(f"{slug}.{get_settings().service_domain_suffix}")
-    assert endpoint["require_api_key"] is True
+    assert svc["url"].endswith(f"{slug}.{get_settings().service_domain_suffix}")
+    assert svc["require_api_key"] is True
     # 容器配置回显:明文项给值,密文项只给键名
-    assert endpoint["env"] == {"MAX_MODEL_LEN": "8192"}
-    assert endpoint["env_secret_keys"] == ["HF_TOKEN"]
+    assert svc["container"]["env"] == {"MAX_MODEL_LEN": "8192"}
+    assert svc["container"]["env_secret_keys"] == ["HF_TOKEN"]
 
     created = (
-        await client.post(f"/api/v1/instances/{uuid}/api-keys", json={"name": "drill"}, headers=h)
+        await client.post(f"/api/v1/services/{slug}/api-keys", json={"name": "drill"}, headers=h)
     ).json()
     plain = created["key"]
     assert plain.startswith("sk-")
     # 明文只此一次:列表接口再也拿不到它
-    listed = (await client.get(f"/api/v1/instances/{uuid}/api-keys", headers=h)).json()
-    assert plain not in str(listed)
+    listed_keys = (await client.get(f"/api/v1/services/{slug}/api-keys", headers=h)).json()
+    assert plain not in str(listed_keys)
 
     # ── 网关鉴权链路(模拟 Envoy extAuth 回调)────────────────
     auth_url = "/api/internal/v1/endpoint-auth"
@@ -308,23 +314,32 @@ async def test_service_container_drill(client, sm, fake):
 
     # ── 吊销 → 立即 401(网关侧无缓存,吊销即时生效)──────────
     assert (
-        await client.delete(f"/api/v1/instances/{uuid}/api-keys/{created['id']}", headers=h)
+        await client.delete(f"/api/v1/services/{slug}/api-keys/{created['id']}", headers=h)
     ).status_code == 200
     denied = await client.post(auth_url, headers={**host, "authorization": f"Bearer {plain}"})
     assert denied.status_code == 401
     assert denied.json()["code"] == "API_KEY_INVALID"
 
-    # ── 关机 → 释放;全程资金自洽 ─────────────────────────────
-    await client.post(f"/api/v1/instances/{uuid}/stop", headers=h)
+    # ── 停止 → 删除;服务落终态,全程资金自洽 ─────────────────
+    stopped = await client.post(f"/api/v1/services/{slug}/stop", headers=h)
+    assert stopped.status_code == 200, stopped.text
+    assert stopped.json()["status"] == "stopping"
     await drain(sm)
     fake.finish_delete(f"tenant-{user_id}", uuid)
     await reconcile_once(sm)
-    assert (await client.get(f"/api/v1/instances/{uuid}", headers=h)).json()["status"] == "stopped"
+    svc = (await client.get(f"/api/v1/services/{slug}", headers=h)).json()
+    assert svc["status"] == "stopped" and svc["desired_state"] == "stopped"
 
-    assert (await client.delete(f"/api/v1/instances/{uuid}", headers=h)).status_code in (200, 202)
+    deleted = await client.delete(f"/api/v1/services/{slug}", headers=h)
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["status"] == "releasing"
     await drain(sm)
+    await reconcile_once(sm)
+    svc = (await client.get(f"/api/v1/services/{slug}", headers=h)).json()
+    assert svc["status"] == "released" and svc["released_at"] is not None
+    assert (await client.get("/api/v1/services", headers=h)).json()["items"] == []
 
-    # 充值 - 消费 = 余额:服务实例与开发机共用同一套计费,没有第二条账路
+    # 充值 - 消费 = 余额:服务的版本实例与开发机共用同一套计费,没有第二条账路
     async with sm() as session:
         entries = list(
             (

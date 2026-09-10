@@ -10,15 +10,15 @@ import { Button, Checkbox, Card, Input, Modal, Space, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { useCreateApiKey } from "../api/mutations";
-import { CopyButton } from "./common";
+import { useCreateServiceApiKey } from "../../api/mutations";
+import { CopyButton } from "../common";
 
 export function ApiKeyModal({
-  uuid,
+  slug,
   open,
   onClose,
 }: {
-  uuid: string;
+  slug: string;
   open: boolean;
   onClose: () => void;
 }) {
@@ -26,7 +26,7 @@ export function ApiKeyModal({
   const [name, setName] = useState("");
   const [created, setCreated] = useState<ApiKeyCreateOut | null>(null);
   const [saved, setSaved] = useState(false);
-  const create = useCreateApiKey(uuid, { onSuccess: (d) => setCreated(d) });
+  const create = useCreateServiceApiKey(slug, { onSuccess: (d) => setCreated(d) });
   const close = () => {
     setName("");
     setCreated(null);
@@ -38,7 +38,7 @@ export function ApiKeyModal({
     return (
       <Modal
         open={open}
-        title={t("instances.apiKeyCreated")}
+        title={t("services.keys.created")}
         // 明文只此一次:X 与遮罩关闭全部封掉,只留勾选后的那个按钮
         closable={false}
         mask={{ closable: false }}
@@ -46,16 +46,16 @@ export function ApiKeyModal({
         onCancel={close}
         footer={
           <Button type="primary" disabled={!saved} onClick={close}>
-            {t("instances.apiKeyClose")}
+            {t("services.keys.close")}
           </Button>
         }
       >
         <Space orientation="vertical" size={12} style={{ width: "100%" }}>
           <Typography.Text type="danger" strong>
-            {t("instances.apiKeyOnceWarn")}
+            {t("services.keys.onceWarn")}
           </Typography.Text>
           <Card size="small">
-            <CopyButton text={created.key} label={t("instances.apiKeyCopy")} />
+            <CopyButton text={created.key} label={t("services.keys.copy")} />
             <pre
               style={{
                 margin: "8px 0 0",
@@ -69,7 +69,7 @@ export function ApiKeyModal({
             </pre>
           </Card>
           <Checkbox checked={saved} onChange={(e) => setSaved(e.target.checked)}>
-            {t("instances.apiKeySavedConfirm")}
+            {t("services.keys.savedConfirm")}
           </Checkbox>
         </Space>
       </Modal>
@@ -79,21 +79,21 @@ export function ApiKeyModal({
   return (
     <Modal
       open={open}
-      title={t("instances.apiKeyNew")}
+      title={t("services.keys.new")}
       onCancel={close}
-      okText={t("instances.apiKeyCreateOk")}
-      cancelText={t("instances.apiKeyCancel")}
+      okText={t("services.keys.createOk")}
+      cancelText={t("services.keys.cancel")}
       confirmLoading={create.isPending}
       okButtonProps={{ disabled: name.trim() === "" }}
       onOk={() => create.mutate(name.trim())}
     >
       <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-        <Typography.Text type="secondary">{t("instances.apiKeyNameLabel")}</Typography.Text>
+        <Typography.Text type="secondary">{t("services.keys.nameLabel")}</Typography.Text>
         <Input
           maxLength={64}
           autoFocus
-          aria-label={t("instances.apiKeyNameLabel")}
-          placeholder={t("instances.apiKeyNamePlaceholder")}
+          aria-label={t("services.keys.nameLabel")}
+          placeholder={t("services.keys.namePlaceholder")}
           value={name}
           onChange={(e) => setName(e.target.value)}
           onPressEnter={() => {

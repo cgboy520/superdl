@@ -193,14 +193,16 @@ def _register_module_routers(app: FastAPI) -> None:
     from app.modules.nodes.enroll_router import router as node_enroll_router
     from app.modules.notify.router import router as notify_router
     from app.modules.orchestrator.disks_router import router as disks_router
-    from app.modules.orchestrator.endpoint_auth_router import router as endpoint_auth_router
     from app.modules.orchestrator.router import router as orchestrator_router
+    from app.modules.services.endpoint_auth_router import router as endpoint_auth_router
+    from app.modules.services.router import router as services_router
     from app.modules.tickets.router import router as tickets_router
 
     app.include_router(account_router, prefix="/api/v1")
     app.include_router(catalog_router, prefix="/api/v1")
     app.include_router(orchestrator_router, prefix="/api/v1")
     app.include_router(disks_router, prefix="/api/v1")
+    app.include_router(services_router, prefix="/api/v1")
     app.include_router(billing_router, prefix="/api/v1")
     app.include_router(webhooks_router, prefix="/api/v1")
     app.include_router(node_enroll_router, prefix="/api/v1")

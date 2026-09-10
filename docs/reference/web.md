@@ -1,6 +1,6 @@
 # 用户控制台
 
-`apps/web`:公开层 + 控制台七屏。视觉规格见 `docs/ui-ux-spec.md`。
+`apps/web`:公开层 + 控制台八屏。视觉规格见 `docs/ui-ux-spec.md`。
 
 ## 契约
 
@@ -12,9 +12,11 @@
 | `/dashboard` | 登录 | 概览 |
 | `/market` | 公开可浏览 | 筛选链 + SKU 表格单选 + 底部结算条;CTA 即库存;「计费方式」= 按量 / 包日 / 包周 / 包月 / 包年 / 竞价,后五者带折扣角标(折扣从 `/policies` 读)。选中周期后结算条显示周期总价并把 `?period=` 带进创建页;选中竞价后结算条显示折后时价 + 原价划线,并常驻一条「竞价实例在容量紧张时会被平台回收」的提示 |
 | `/market/create/:skuId` | 登录 | 单栏卡片流:规格/镜像级联/数据盘(可行内直建)/SSH 公钥(可行内添加)/名称 + 结算条;经济档知情同意。`?period=` 承接市场页的计费方式,选了周期即提交 `market/period/period_count`;**选了竞价则在提交前弹竞价知情同意 modal**(五条 + 必勾复选框,与经济档同款组件),提交 `market='spot'`、不带 `period` |
-| `/market/create/:skuId?workload=service` | 登录 | 同一条卡片流的服务形态:容器(镜像/启动命令/启动参数/环境变量)+ 对外服务(端口/协议/健康检查/访问鉴权)+ 可选 SSH;主按钮「部署服务」 |
-| `/instances` | 登录 | 登录后默认落地页;表格含状态徽标(冻结倒计时)、利用率 sparkline、今日消费/包周期到期、SSH 复制、Jupyter 直达;包周期实例在「更多」里多「续费」(modal)与「自动续费」开关,按量实例多「转包周期」(同形 modal,一次性预扣),竞价实例多「转按量」(确认弹窗,免被回收),页头有临期横幅 |
-| `/instances/:uuid` | 登录 | 监控 / 服务 / 连接 / 日志 / 事件时间线 / 账单 Tab + 危险区释放;包周期实例页头多一个到期标签,已到期时开机按钮禁用并提示先续费;**服务** Tab 仅 `workload_type='service'` 渲染(端点 URL、API Key 表与一次性新建 modal、调用示例、容器配置回显),**连接** Tab 在服务形态下按 `with_ssh` 决定是否出 SSH 卡片、一律不出 Jupyter 卡片 |
+| `/market/create/:skuId?workload=service` | 登录 | 同一条卡片流的服务形态:容器(镜像/启动命令/启动参数/环境变量)+ 对外服务(端口/协议/健康检查/访问鉴权)+ 可选 SSH;主按钮「部署服务」,提交到 `POST /services` 并跳服务详情 |
+| `/services` | 登录 | 在线服务列表:名称 / 派生状态 / 服务端点(复制)/ 规格 / 版本 / 费用 / 创建时间 / 操作(停止 · 启动 · 删除);`?status=`、`?q=` 入 URL;列表不轮询,deploying / stopping / releasing 逐条 5s 轻轮询 |
+| `/services/:slug` | 登录 | 服务详情:头部(状态 / 版本 / 操作)+ 常驻服务端点卡(URL、就绪、鉴权方式)+ Tab `概览 / 访问密钥 / 监控 / 日志 / 事件 / 账单`(`?tab=` 直达)+ 危险区删除;只有一条服务轮询(过渡态 5s、运行中 30s、已删除停),监控与日志打当前版本实例 |
+| `/instances` | 登录 | 登录后默认落地页;只列开发机(在线服务的版本实例在 `/services`);表格含状态徽标(冻结倒计时)、利用率 sparkline、今日消费/包周期到期、SSH 复制、Jupyter 直达;包周期实例在「更多」里多「续费」(modal)与「自动续费」开关,按量实例多「转包周期」(同形 modal,一次性预扣),竞价实例多「转按量」(确认弹窗,免被回收),页头有临期横幅 |
+| `/instances/:uuid` | 登录 | 监控 / 连接 / 日志 / 事件时间线 / 账单 Tab + 危险区释放;包周期实例页头多一个到期标签,已到期时开机按钮禁用并提示先续费;在线服务的版本实例直链可达,**连接** Tab 按 `with_ssh` 决定是否出 SSH 卡片、不出 Jupyter 卡片;旧链接的 `?tab=service` 由白名单剥离回默认 Tab |
 | `/billing` | 登录 | 余额卡 + 充值 modal(二维码轮询)+ 消费概览 + 账单/收支明细/退款/发票 + CSV 导出 |
 | `/storage` | 登录 | 挂载全景图 + 数据盘列表(扩容抽屉、到期倒计时、多级删除防护) |
 | `/settings` | 登录 | SSH 公钥、通知阈值、实名入口、危险区账号注销 |
@@ -39,7 +41,7 @@
 - **包周期的金额以服务端报价为准。** 下单与续费的响应带完整报价三件套(原价 / 优惠 / 应付),前端逐行渲染、不自己做乘法;市场页与创建页在提交前只能按 `/policies` 的折扣算展示值,并注明以最终报价为准。续费与转包周期的请求都必须带 `Idempotency-Key`(每次打开 modal 生成一个)。
 - 竞价实例被抢占时状态走 `stopping → stopped`,与用户自己关机在状态上没有区别,**事件时间线的 reason 映射必须覆盖 `preempted`** —— 那是用户唯一能分辨「这台是被平台回收的」的地方。
 - 到期信息已内联在 `InstanceOut.subscription` 里(列表一次批量回填),列表页**不得**为它逐行再打接口。
-- 服务端点的就绪为「否」时**不当故障渲染**:服务型实例持续 not-ready 也留在 running,如实显示并提示检查容器日志与健康检查路径(见 [services.md](./services.md))。
+- 服务的 `unready` **不当故障渲染**(warning 徽标 + 解释 tooltip):版本实例持续 not-ready 也留在 running、照常计费,端点卡如实显示并把人引到日志(见 [services.md](./services.md))。服务详情只挂一条 `useService` 轮询,端点卡与头部同源;监控 / 账单 / 日志走服务级 hooks(`api/queries.ts` 的 `useService*`),失效域 `SERVICE_INVALIDATES`。
 - 月份等日期按本地时区计算;`/instances/:uuid` 直接刷新可达。
 - Jupyter `window.open` 必须带 `noopener,noreferrer`。
 - echarts 按需注册收口在 `packages/ui` 的 `EChart` 组件;design tokens 与全局 `styles.css` 统一,不留硬编码色。

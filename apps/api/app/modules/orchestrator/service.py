@@ -7,7 +7,6 @@
 再导出它们:跨模块只经 app.modules.orchestrator.service 访问(lint-imports 强制)。
 """
 
-import base64
 import hashlib
 import hmac
 import json
@@ -20,12 +19,11 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from fastapi import status as http_status
-from sqlalchemy import Integer, cast, func, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import Integer, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
-from app.core.crypto import decrypt_str, encrypt_str, hash_api_key, hash_api_key_candidates
+from app.core.crypto import decrypt_str, encrypt_str
 from app.core.errors import AppError, ErrorCode, conflict, not_found
 from app.core.gpu_adapter import POOL_HAMI, POOL_KATA, TIER_CPU, spec_to_gpu_request
 from app.core.gpu_models import canonical_gpu_model
@@ -62,13 +60,7 @@ from app.modules.catalog import service as catalog_service
 from app.modules.nodes import service as nodes_service
 from app.modules.notify import service as notify_service
 from app.modules.orchestrator import statemachine as sm_def
-from app.modules.orchestrator.models import (
-    DataDisk,
-    Instance,
-    InstanceEvent,
-    ServiceApiKey,
-    ServiceEndpoint,
-)
+from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent
 from app.modules.orchestrator.ports import (
     active_gpu_counts_by_sku as active_gpu_counts_by_sku,
 )
@@ -176,19 +168,21 @@ from app.modules.orchestrator.transitions import (
 if TYPE_CHECKING:
     from app.modules.catalog.models import Sku
     from app.modules.nodes.models import NodeSpec
-    from app.modules.orchestrator.schemas import (
-        InstanceLogsOut,
-        InstanceOut,
-        ServiceEndpointOut,
-    )
+    from app.modules.orchestrator.schemas import InstanceLogsOut, InstanceOut
 
 logger = get_logger(__name__)
 
-# 单实例活跃密钥上限;密钥行永不删(吊销只写 revoked_at),没有上限即一条无限追加写的口子
-MAX_API_KEYS_PER_INSTANCE = 20
-# 端点公网域名左标签前缀,与 deploy 侧 Gateway listener 的 hostname 通配同一形态
-ENDPOINT_SLUG_PREFIX = "svc-"
-_SLUG_ATTEMPTS = 3
+
+@dataclass(frozen=True)
+class ServiceBinding:
+    """建实例时把它绑成某个在线服务的一个版本:快照到实例行的暴露规格(orchestrator 不查
+    services 表,建 Pod 只读这些快照列)。"""
+
+    service_id: int
+    revision: int
+    slug: str
+    service_port: int
+    health_path: str | None
 
 
 def jupyter_host(instance_uuid: str, settings: Settings | None = None) -> str:
@@ -216,21 +210,6 @@ def service_endpoint_host(slug: str, settings: Settings | None = None) -> str:
     HTTPRoute hostname / 用户看到的 URL / 鉴权回调解析 slug 三处同一口径,只从这里拼。"""
     s = settings or get_settings()
     return f"{slug}.{s.service_domain_suffix}"
-
-
-def endpoint_slug_from_host(host: str | None) -> str | None:
-    """从 Host 头反解端点 slug;不匹配本环境的服务域名后缀一律 None(交调用方拒绝)。"""
-    if not host:
-        return None
-    name = host.split(":")[0].strip().rstrip(".").lower()
-    suffix = f".{get_settings().service_domain_suffix.lower()}"
-    if not name.endswith(suffix):
-        return None
-    slug = name[: -len(suffix)]
-    # 只收单段左标签 + svc- 前缀:少任一条,同后缀部署下 Jupyter 域名就成鉴权端点的别名
-    if "." in slug or not slug.startswith(ENDPOINT_SLUG_PREFIX):
-        return None
-    return slug
 
 
 def _snapshot_spec(sku: "Sku") -> dict[str, Any]:
@@ -552,44 +531,6 @@ async def pending_hourly(session: AsyncSession, user_id: int) -> Decimal:
     return sum((hourly_cost(price, count) for price, count in rows), Decimal("0.00"))
 
 
-def _new_endpoint_slug() -> str:
-    """公网端点左标签:svc- + 10 位 base32(约 50 bit 熵)。不用 instance.uuid:内部主键
-    不该出现在公网域名、TLS SNI、访问日志与第三方 Referer 里。"""
-    raw = base64.b32encode(secrets.token_bytes(7)).decode().lower().rstrip("=")
-    return f"{ENDPOINT_SLUG_PREFIX}{raw[:10]}"
-
-
-async def _create_service_endpoint(
-    session: AsyncSession,
-    instance: Instance,
-    *,
-    container_port: int,
-    health_path: str | None,
-    require_api_key: bool,
-) -> ServiceEndpoint:
-    """建服务端点行,slug 撞 UNIQUE 就换一个重试(最多 3 次)。
-    每次插入必须包在 SAVEPOINT 里,否则一次碰撞会把整笔建实例事务打成 rollback-only。"""
-    for attempt in range(_SLUG_ATTEMPTS):
-        endpoint = ServiceEndpoint(
-            instance_id=instance.id,
-            public_slug=_new_endpoint_slug(),
-            container_port=container_port,
-            health_path=health_path,
-            require_api_key=require_api_key,
-        )
-        try:
-            async with session.begin_nested():
-                session.add(endpoint)
-                await session.flush()
-        except IntegrityError:
-            if attempt == _SLUG_ATTEMPTS - 1:
-                raise
-            logger.warning("service_endpoint_slug_collision", instance_id=instance.id)
-            continue
-        return endpoint
-    raise AssertionError("unreachable")  # pragma: no cover
-
-
 async def create_instance_row(
     session: AsyncSession,
     user_id: int,
@@ -601,61 +542,55 @@ async def create_instance_row(
     name: str | None,
     data_disk_id: int | None,
     idempotency_key: str | None,
-    workload_type: str = WORKLOAD_DEV,
     container_command: list[str] | None = None,
     container_args: list[str] | None = None,
     env: dict[str, str] | None = None,
     env_secret_keys: list[str] | None = None,
-    service_port: int | None = None,
-    health_path: str | None = None,
-    require_api_key: bool = True,
     with_ssh: bool = False,
     market: str = MARKET_ON_DEMAND,
     period: str | None = None,
     period_count: int = 1,
+    service: ServiceBinding | None = None,
     exclude_instance_id: int | None = None,
+    fingerprint: str | None = None,
 ) -> tuple[Instance, bool]:
     """创建实例的 row 级核心:软准入 → 钱包行锁临界区 → 写 instances / 事件 / outbox,
-    **不 commit**(调用方决定事务边界;用户端入口是 create_instance)。
+    **不 commit**(调用方决定事务边界;用户端入口是 create_instance,服务端入口在 services)。
     返回 (实例, created):created=False = 幂等重放。
 
-    service 形态额外落一行 service_endpoints,按 with_ssh 决定要不要 SSH 入口。
+    service 非空即建成某个在线服务的一个版本:形态 service、镜像必须钉版本、暴露规格快照到
+    实例行、按 with_ssh 决定要不要 SSH 入口;dev 形态恒开 SSH。
     market='subscription' 时同事务再落一行 subscriptions、按周期总价一次性扣款(不许透支),
     扣完还要过一遍在途燃烧率校验。exclude_instance_id = 同一笔请求里即将被替换的旧实例:
     配额与软准入把它的份额让给新实例,余额不让(重叠窗口两台都真实计费)。
+    fingerprint 由调用方给时(服务部署)必须与 instance_fingerprint 同算法。
     """
-    # 异参检测指纹:下单参数全集(改任何一个都视为新请求)。dict 先排序保证确定性;
-    # env 含密文键值也只进 sha256,不落明文
-    fingerprint = request_fingerprint(
-        user_id,
-        sku_id,
-        gpu_count,
-        image_ref,
-        sorted(ssh_key_ids),
-        name,
-        data_disk_id,
-        workload_type,
-        container_command,
-        container_args,
-        sorted(env.items()) if env else None,
-        sorted(env_secret_keys) if env_secret_keys else None,
-        service_port,
-        health_path,
-        require_api_key,
-        with_ssh,
-        market,
-        period,
-        period_count,
-    )
+    is_service = service is not None
+    workload_type = WORKLOAD_SERVICE if is_service else WORKLOAD_DEV
+    if fingerprint is None:
+        fingerprint = instance_fingerprint(
+            user_id,
+            sku_id=sku_id,
+            gpu_count=gpu_count,
+            image_ref=image_ref,
+            ssh_key_ids=ssh_key_ids,
+            name=name,
+            data_disk_id=data_disk_id,
+            workload_type=workload_type,
+            container_command=container_command,
+            container_args=container_args,
+            env=env,
+            env_secret_keys=env_secret_keys,
+            service_port=service.service_port if service else None,
+            health_path=service.health_path if service else None,
+            with_ssh=with_ssh,
+            market=market,
+            period=period,
+            period_count=period_count,
+        )
     if idempotency_key:
-        existing = await find_replay(
-            session,
-            Instance,
-            owner_col=Instance.user_id,
-            owner_id=user_id,
-            key=idempotency_key,
-            window=IDEMPOTENCY_WINDOW,
-            fingerprint=fingerprint,
+        existing = await find_instance_replay(
+            session, user_id, key=idempotency_key, fingerprint=fingerprint
         )
         if existing is not None:
             return existing, False
@@ -675,7 +610,7 @@ async def create_instance_row(
             key="orchestrator.gpuCountRange",
             params={"max": sku.max_gpus_per_instance},
         )
-    await _validate_image_ref(session, image_ref, require_pinned=workload_type == WORKLOAD_SERVICE)
+    await _validate_image_ref(session, image_ref, require_pinned=is_service)
     if market == MARKET_SPOT and not sku.spot_enabled:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.spotNotEnabled")
     # 抢占在本函数内下发,与建实例同事务:后面任何一步失败都会把回收一起回滚
@@ -687,9 +622,6 @@ async def create_instance_row(
         user_id=user_id,
         freeing_slots=await _freeing_slots_of(session, exclude_instance_id, sku),
     )
-    # service_port 必填/保留端口、subscription 必带 period 由契约层 InstanceCreate
-    # 与 DB CHECK 把关,本函数唯一生产入口是路由层,不重复校验
-    is_service = workload_type == WORKLOAD_SERVICE
     # dev 形态恒开 SSH(那是它唯一的登录方式);service 形态由用户勾选
     wants_ssh = with_ssh if is_service else True
 
@@ -765,6 +697,11 @@ async def create_instance_row(
             if env
             else None
         ),
+        service_id=service.service_id if service else None,
+        service_revision=service.revision if service else None,
+        service_slug=service.slug if service else None,
+        service_port=service.service_port if service else None,
+        health_path=service.health_path if service else None,
     )
     result = await insert_idempotent(
         session,
@@ -801,15 +738,6 @@ async def create_instance_row(
         from app.modules.orchestrator import disks as disks_service
 
         await disks_service.attach_for_instance(session, user_id, disk_id_validated, instance.id)
-    if is_service:
-        assert service_port is not None  # 契约层已拦,这里给类型收敛
-        await _create_service_endpoint(
-            session,
-            instance,
-            container_port=service_port,
-            health_path=health_path,
-            require_api_key=require_api_key,
-        )
     session.add(
         InstanceEvent(
             instance_id=instance.id,
@@ -822,12 +750,97 @@ async def create_instance_row(
                 "gpu_count": gpu_count,
                 "workload_type": workload_type,
                 "market": market,
+                **(
+                    {"service_id": service.service_id, "revision": service.revision}
+                    if service
+                    else {}
+                ),
             },
             created_at=now_utc(),
         )
     )
     enqueue(session, "instance.create", {"instance_id": instance.id})
     return instance, True
+
+
+def instance_fingerprint(
+    user_id: int,
+    *,
+    sku_id: int,
+    gpu_count: int,
+    image_ref: str,
+    ssh_key_ids: list[int],
+    name: str | None,
+    data_disk_id: int | None,
+    workload_type: str,
+    container_command: list[str] | None,
+    container_args: list[str] | None,
+    env: dict[str, str] | None,
+    env_secret_keys: list[str] | None,
+    service_port: int | None,
+    health_path: str | None,
+    with_ssh: bool,
+    market: str,
+    period: str | None,
+    period_count: int,
+    extra: tuple[object, ...] = (),
+) -> str:
+    """异参检测指纹:下单参数全集(改任何一个都视为新请求)。dict 先排序保证确定性;
+    env 含密文键值也只进 sha256,不落明文。服务部署把服务级属性经 extra 并入。"""
+    return request_fingerprint(
+        user_id,
+        sku_id,
+        gpu_count,
+        image_ref,
+        sorted(ssh_key_ids),
+        name,
+        data_disk_id,
+        workload_type,
+        container_command,
+        container_args,
+        sorted(env.items()) if env else None,
+        sorted(env_secret_keys) if env_secret_keys else None,
+        service_port,
+        health_path,
+        with_ssh,
+        market,
+        period,
+        period_count,
+        *extra,
+    )
+
+
+async def find_instance_replay(
+    session: AsyncSession, user_id: int, *, key: str, fingerprint: str
+) -> Instance | None:
+    """同 (user, Idempotency-Key) 在 24h 窗内的既有实例;同键异参在 find_replay 内 409。"""
+    return await find_replay(
+        session,
+        Instance,
+        owner_col=Instance.user_id,
+        owner_id=user_id,
+        key=key,
+        window=IDEMPOTENCY_WINDOW,
+        fingerprint=fingerprint,
+    )
+
+
+async def lock_instance(session: AsyncSession, instance_id: int) -> Instance | None:
+    """FOR UPDATE 锁实例行并重读(状态判定对锁内新鲜值成立);不存在返回 None。"""
+    return await session.get(Instance, instance_id, with_for_update=True, populate_existing=True)
+
+
+async def instances_of_service(session: AsyncSession, service_id: int) -> list[Instance]:
+    """某在线服务的全部版本实例(含已释放),版本号降序。"""
+    return list(
+        (
+            await session.execute(
+                select(Instance)
+                .where(Instance.service_id == service_id)
+                .order_by(Instance.service_revision.desc(), Instance.id.desc())
+            )
+        ).scalars()
+    )
 
 
 async def _freeing_slots_of(session: AsyncSession, instance_id: int | None, sku: "Sku") -> int:
@@ -903,17 +916,23 @@ async def list_instances_page(
     name: str | None = None,
     cursor: str | None = None,
     limit: int | None = None,
+    service_id: int | None = None,
+    include_released: bool = False,
 ):
     """用户端实例列表:降序游标分页 + status 精确 / name 模糊过滤。
-    name 同时匹配 uuid 前缀(同 admin_list_instances 的 q 语义);released 终态永不出列表。"""
+    name 同时匹配 uuid 前缀(同 admin_list_instances 的 q 语义)。
+    默认只列开发机(service_id 为空的行);给 service_id 即该服务的版本实例(版本号降序),
+    include_released 才连已释放的一起列(版本历史)。"""
     from app.core.pagination import Page, paginate_by_id
     from app.modules.orchestrator.schemas import InstanceOut
 
-    stmt = (
-        select(Instance)
-        .where(Instance.user_id == user_id, Instance.status != sm_def.RELEASED)
-        .order_by(Instance.id.desc())
-    )
+    stmt = select(Instance).where(Instance.user_id == user_id)
+    if service_id is None:
+        stmt = stmt.where(Instance.service_id.is_(None)).order_by(Instance.id.desc())
+    else:
+        stmt = stmt.where(Instance.service_id == service_id).order_by(Instance.id.desc())
+    if not include_released:
+        stmt = stmt.where(Instance.status != sm_def.RELEASED)
     if status is not None:
         stmt = stmt.where(Instance.status == status)
     name = (name or "").strip()
@@ -932,9 +951,8 @@ async def list_instances_page(
 
 
 async def attach_instance_details(session: AsyncSession, items: "Sequence[InstanceOut]") -> None:
-    """回填两个住在别处的字段:服务端点 slug 与包周期概要。两次批量查询,与列表长度无关;
-    列表页与详情页共用同一条路径。"""
-    await _attach_service_slugs(session, items)
+    """回填住在别处的字段(包周期概要):一次批量查询,与列表长度无关;
+    列表页、详情页与服务视图共用同一条路径。"""
     await _attach_subscriptions(session, items)
 
 
@@ -975,30 +993,8 @@ async def instance_view(session: AsyncSession, instance: Instance) -> "InstanceO
     return items[0]
 
 
-async def _attach_service_slugs(session: AsyncSession, items: "Sequence[InstanceOut]") -> None:
-    """给列表项回填端点 slug:一次查询,不是每行一次(接口调用不得随行数放大)。"""
-    ids = [i.id for i in items if i.workload_type == WORKLOAD_SERVICE]
-    if not ids:
-        return
-    # 必须 .tuples().all():直接 dict(Result) 会走映射协议报 "not subscriptable",
-    # .tuples() 还把行类型收成 tuple[int, str],dict() 的返回类型才推得出来
-    slugs = dict(
-        (
-            await session.execute(
-                select(ServiceEndpoint.instance_id, ServiceEndpoint.public_slug).where(
-                    ServiceEndpoint.instance_id.in_(ids)
-                )
-            )
-        )
-        .tuples()
-        .all()
-    )
-    for item in items:
-        item.service_slug = slugs.get(item.id)
-
-
 async def _attach_subscriptions(session: AsyncSession, items: "Sequence[InstanceOut]") -> None:
-    """给列表项回填包周期概要:一次查询,理由同 _attach_service_slugs。"""
+    """给列表项回填包周期概要:一次查询,不随行数放大。"""
     from app.modules.orchestrator.schemas import InstanceSubscriptionOut
 
     ids = [i.id for i in items if i.market == MARKET_SUBSCRIPTION]
@@ -1059,6 +1055,14 @@ async def rename_instance(
 # ---------- 用户操作 ----------
 
 
+def _reject_service_instance(instance: Instance) -> None:
+    """服务的版本实例不接受实例级生命周期操作(stop / start / restart / release / 重置 token):
+    它们由 /services 的动作统一驱动,否则 DELETE /instances 能把服务打成悬空。
+    购买模式类端点(续费 / 转换)与只读端点照常。"""
+    if instance.service_id is not None:
+        raise conflict(key="orchestrator.serviceInstanceLifecycle")
+
+
 async def stop_instance_row(
     session: AsyncSession, instance: Instance, *, reason: str = "user_stop", actor: str = "user"
 ) -> Instance:
@@ -1072,6 +1076,7 @@ async def stop_instance_row(
 
 async def stop_instance(session: AsyncSession, user_id: int, uuid: str) -> Instance:
     instance = await get_instance(session, user_id, uuid)
+    _reject_service_instance(instance)
     await stop_instance_row(session, instance)
     await session.commit()
     return instance
@@ -1146,6 +1151,7 @@ async def start_instance_row(session: AsyncSession, user_id: int, instance: Inst
 
 async def start_instance(session: AsyncSession, user_id: int, uuid: str) -> Instance:
     instance = await get_instance(session, user_id, uuid)
+    _reject_service_instance(instance)
     instance = await start_instance_row(session, user_id, instance)
     await session.commit()
     return instance
@@ -1153,6 +1159,7 @@ async def start_instance(session: AsyncSession, user_id: int, uuid: str) -> Inst
 
 async def restart_instance(session: AsyncSession, user_id: int, uuid: str) -> Instance:
     instance = await get_instance(session, user_id, uuid)
+    _reject_service_instance(instance)
     if instance.status != sm_def.RUNNING:
         raise AppError(
             ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.restartNeedsRunning"
@@ -1397,6 +1404,7 @@ async def release_instance(
     session: AsyncSession, user_id: int, uuid: str, *, actor: str = "user"
 ) -> Instance:
     instance = await get_instance(session, user_id, uuid)
+    _reject_service_instance(instance)
     if instance.status in (sm_def.RELEASING, sm_def.RELEASED):
         return instance
     await release_instance_row(session, instance, actor=actor)
@@ -1413,11 +1421,10 @@ def build_pod_spec(
     distro: str | None = None,
     data_disk_subpath: str | None = None,
     image_pull_secret: str | None = None,
-    endpoint: ServiceEndpoint | None = None,
 ) -> InstancePodSpec:
     """构造 Pod spec。data_disk_subpath 必须由调用方从 `data_disks.juicefs_subpath` 读出传入,
     就地重算会与擦除路径对不上;image_pull_secret 是托管到该 ns 的拉取凭据 Secret 名;
-    endpoint 是服务型实例的端点行(service 形态必传,dev 形态恒 None)。
+    服务形态的暴露规格只读实例行上的快照列(service_slug / service_port / health_path)。
 
     dev/service 两形态的差别集中在本函数,k8s 层只按 spec 字段建对象。
     """
@@ -1429,8 +1436,8 @@ def build_pod_spec(
         distro=distro,
     )
     is_service = instance.workload_type == WORKLOAD_SERVICE
-    if is_service and endpoint is None:
-        raise RuntimeError(f"service instance {instance.uuid} has no service_endpoints row")
+    if is_service and (instance.service_slug is None or instance.service_port is None):
+        raise RuntimeError(f"service instance {instance.uuid} lacks service snapshot columns")
     # 开没开 SSH 只认 instances.with_ssh,不从 ssh_port 反推:端口是 outbox 建 Pod 时才分配的,
     # 不要 SSH 的实例不进端口池,ssh_port 恒 None 属正常态
     if instance.with_ssh and instance.ssh_port is None:
@@ -1477,26 +1484,22 @@ def build_pod_spec(
         restart_policy="Always" if is_service else "Never",
         command=tuple(instance.container_command) if instance.container_command else None,
         args=tuple(instance.container_args) if instance.container_args else None,
-        service_port=endpoint.container_port if endpoint else None,
-        service_host=(service_endpoint_host(endpoint.public_slug, settings) if endpoint else None),
-        health_path=endpoint.health_path if endpoint else None,
+        service_port=instance.service_port if is_service else None,
+        service_host=(
+            service_endpoint_host(instance.service_slug, settings)
+            if is_service and instance.service_slug
+            else None
+        ),
+        health_path=instance.health_path if is_service else None,
         with_ssh=instance.with_ssh,
     )
-
-
-async def get_service_endpoint(session: AsyncSession, instance_id: int) -> ServiceEndpoint | None:
-    return (
-        await session.execute(
-            select(ServiceEndpoint).where(ServiceEndpoint.instance_id == instance_id)
-        )
-    ).scalar_one_or_none()
 
 
 async def build_pod_spec_with_cluster(
     session: AsyncSession, instance: Instance, *, image_pull_secret: str | None = None
 ) -> InstancePodSpec:
-    """outbox handler 用:带集群发行版上下文(k3s → shared 档显式 runtimeClassName)、
-    数据盘 subPath(从盘记录读,不就地重算)与服务端点行。"""
+    """outbox handler 用:带集群发行版上下文(k3s → shared 档显式 runtimeClassName)与
+    数据盘 subPath(从盘记录读,不就地重算)。"""
     row = await nodes_service.get_cluster_status(session)
     subpath: str | None = None
     if instance.data_disk_id is not None:
@@ -1504,24 +1507,18 @@ async def build_pod_spec_with_cluster(
         if disk is None:
             raise RuntimeError(f"data disk {instance.data_disk_id} missing for {instance.uuid}")
         subpath = disk.juicefs_subpath
-    endpoint = (
-        await get_service_endpoint(session, instance.id)
-        if instance.workload_type == WORKLOAD_SERVICE
-        else None
-    )
     return build_pod_spec(
         instance,
         distro=row.distro if row else None,
         data_disk_subpath=subpath,
         image_pull_secret=image_pull_secret,
-        endpoint=endpoint,
     )
 
 
 # ---------- 接入信息 ----------
 
 
-def build_access(instance: Instance, endpoint: ServiceEndpoint | None = None) -> dict[str, Any]:
+def build_access(instance: Instance) -> dict[str, Any]:
     """接入信息。按形态给字段:没有的入口不回空串占位,直接缺席(契约全可空)。"""
     settings = get_settings()
     if instance.status != sm_def.RUNNING:
@@ -1536,116 +1533,17 @@ def build_access(instance: Instance, endpoint: ServiceEndpoint | None = None) ->
     if instance.workload_type == WORKLOAD_DEV:
         # 一次性入场票据:bootstrap handler 验签核销后 Set-Cookie 再跳 Jupyter,token 不进 URL
         out["jupyter_url"] = _new_jupyter_ticket(instance, _token_plain(instance))
-    if endpoint is not None:
-        out["endpoint_url"] = f"https://{service_endpoint_host(endpoint.public_slug, settings)}"
+    if instance.service_slug:
+        out["endpoint_url"] = f"https://{service_endpoint_host(instance.service_slug, settings)}"
     return out
 
 
 async def get_access(session: AsyncSession, user_id: int, uuid: str) -> dict[str, Any]:
-    """路由入口:取实例(带 owner 校验)+ 服务端点,再拼接入信息。"""
-    instance = await get_instance(session, user_id, uuid)
-    endpoint = (
-        await get_service_endpoint(session, instance.id)
-        if instance.workload_type == WORKLOAD_SERVICE
-        else None
-    )
-    return build_access(instance, endpoint)
+    """路由入口:取实例(带 owner 校验)再拼接入信息。"""
+    return build_access(await get_instance(session, user_id, uuid))
 
 
-# ---------- 服务端点与访问密钥 ----------
-
-
-async def _require_service_endpoint(
-    session: AsyncSession, user_id: int, uuid: str
-) -> tuple[Instance, ServiceEndpoint]:
-    """取「用户自己的服务型实例 + 端点行」。非属主 404(get_instance),非服务型 404。"""
-    instance = await get_instance(session, user_id, uuid)
-    endpoint = (
-        await get_service_endpoint(session, instance.id)
-        if instance.workload_type == WORKLOAD_SERVICE
-        else None
-    )
-    if endpoint is None:
-        raise AppError(
-            ErrorCode.SERVICE_ENDPOINT_NOT_FOUND,
-            key="orchestrator.serviceEndpointNotFound",
-            http_status=http_status.HTTP_404_NOT_FOUND,
-        )
-    return instance, endpoint
-
-
-async def service_endpoint_view(
-    session: AsyncSession, user_id: int, uuid: str
-) -> "ServiceEndpointOut":
-    from app.modules.orchestrator.schemas import ServiceEndpointOut
-
-    instance, endpoint = await _require_service_endpoint(session, user_id, uuid)
-    plain_env, secret_env = instance_env(instance)
-    return ServiceEndpointOut(
-        slug=endpoint.public_slug,
-        url=f"https://{service_endpoint_host(endpoint.public_slug)}",
-        container_port=endpoint.container_port,
-        health_path=endpoint.health_path,
-        require_api_key=endpoint.require_api_key,
-        # 只读 DB:请求路径不碰 K8s。unready_since 由巡检写,是 Pod 就绪的库内投影
-        ready=instance.status == sm_def.RUNNING and instance.unready_since is None,
-        container_command=list(instance.container_command) if instance.container_command else None,
-        container_args=list(instance.container_args) if instance.container_args else None,
-        # 密文项只回键名不回值:回值就成了「把密文变量读回明文」的入口
-        env=plain_env,
-        env_secret_keys=sorted(secret_env),
-        created_at=endpoint.created_at,
-    )
-
-
-async def list_api_keys(session: AsyncSession, user_id: int, uuid: str) -> list[ServiceApiKey]:
-    """列出该服务实例的访问密钥(含已吊销的:吊销记录本身是审计线索)。"""
-    instance, _ = await _require_service_endpoint(session, user_id, uuid)
-    return list(
-        (
-            await session.execute(
-                select(ServiceApiKey)
-                .where(ServiceApiKey.instance_id == instance.id)
-                .order_by(ServiceApiKey.id.desc())
-            )
-        ).scalars()
-    )
-
-
-async def create_api_key(
-    session: AsyncSession, user_id: int, uuid: str, *, name: str
-) -> tuple[ServiceApiKey, str]:
-    """新建访问密钥。返回 (行, 明文);明文只此一次,库里只有 HMAC 摘要。
-    不支持 Idempotency-Key:重放要回同一份明文就得把明文留在库里,与只存摘要冲突。"""
-    instance, _ = await _require_service_endpoint(session, user_id, uuid)
-    # 计数必须串行:FOR UPDATE 锁实例行(实例:密钥 = 1:N),并发建钥在实例行上排队;
-    # 否则 count-then-insert 两请求同见 19 把、各插一把越过上限
-    await session.execute(select(Instance.id).where(Instance.id == instance.id).with_for_update())
-    live = (
-        await session.execute(
-            select(func.count())
-            .select_from(ServiceApiKey)
-            .where(ServiceApiKey.instance_id == instance.id, ServiceApiKey.revoked_at.is_(None))
-        )
-    ).scalar_one()
-    if live >= MAX_API_KEYS_PER_INSTANCE:
-        raise AppError(
-            ErrorCode.VALIDATION_ERROR,
-            key="orchestrator.apiKeyQuota",
-            params={"max": MAX_API_KEYS_PER_INSTANCE},
-        )
-    plaintext = f"sk-{secrets.token_urlsafe(32)}"
-    row = ServiceApiKey(
-        user_id=user_id,
-        instance_id=instance.id,
-        name=name,
-        key_hash=hash_api_key(plaintext),
-        # 前 11 位(sk- + 8 位):够用户在列表里认出是哪一把,又不足以缩小爆破空间
-        key_prefix=plaintext[:11],
-    )
-    session.add(row)
-    await session.commit()
-    return row, plaintext
+# ---------- SSH 公钥 ----------
 
 
 async def strip_ssh_key_from_instances(session: AsyncSession, user_id: int, public_key: str) -> int:
@@ -1675,195 +1573,9 @@ async def strip_ssh_key_from_instances(session: AsyncSession, user_id: int, publ
     return stripped
 
 
-async def revoke_api_key(
-    session: AsyncSession, user_id: int, uuid: str, key_id: int
-) -> ServiceApiKey:
-    """吊销访问密钥:写 revoked_at,不删行(谁在什么时候吊销了哪把,得留得下来)。"""
-    instance, _ = await _require_service_endpoint(session, user_id, uuid)
-    row = (
-        await session.execute(
-            select(ServiceApiKey).where(
-                ServiceApiKey.id == key_id, ServiceApiKey.instance_id == instance.id
-            )
-        )
-    ).scalar_one_or_none()
-    if row is None:
-        raise not_found(key="orchestrator.apiKeyNotFound")
-    if row.revoked_at is None:  # 重复吊销幂等:不刷新时刻,首次吊销的时点才是审计事实
-        row.revoked_at = now_utc()
-        await session.commit()
-        # 鉴权缓存主动失效:本进程即刻拒,跨副本最坏一个 TTL(5s)收敛
-        invalidate_endpoint_auth_cache(key_id=row.id)
-    return row
-
-
-@dataclass(frozen=True)
-class EndpointAuthResult:
-    """鉴权通过的凭据。key_id 为 None = 该端点不要求 API Key(公开端点)。"""
-
-    slug: str
-    key_id: int | None
-
-
-def _endpoint_denied() -> AppError:
-    return AppError(
-        ErrorCode.API_KEY_INVALID,
-        key="orchestrator.apiKeyInvalid",
-        http_status=http_status.HTTP_401_UNAUTHORIZED,
-    )
-
-
-# ---------- extAuth 鉴权缓存 ----------
-# extAuth 回调挂在每个 svc-https 请求的同步路径上:无缓存时每请求 3 次 SELECT +
-# 一次 UPDATE+commit(last_used_at),数据面流量直接放大成中央库写压。
-# 正向结果进程内缓存 5s:
-# - 吊销:revoke_api_key 主动失效本进程条目,跨副本最坏一个 TTL 收敛;
-# - 停机:RUNNING 迁出经 transition 监听器失效(同进程),跨副本 TTL 兜底;
-#   停机同时删 svc HTTPRoute(网关 404),缓存只影响优雅删除窗口;
-# - 负结果不缓存:爆破每次回源(主键级 SELECT、无写),新建密钥立即可用。
-# last_used_at 从「每请求直写」降为「每 key 每 60s 至多一写」:它是排查
-# 「钥匙还被谁用」的审计线索,分钟级粒度足够,写放大从 rps 降为 key 数/分钟。
-_ENDPOINT_AUTH_CACHE_TTL_SECONDS = 5.0
-_ENDPOINT_AUTH_CACHE_MAX = 4096
-_LAST_USED_WRITE_INTERVAL_SECONDS = 60.0
-
-
-@dataclass(frozen=True)
-class _EndpointAuthCacheEntry:
-    result: EndpointAuthResult
-    instance_id: int
-    key_id: int | None
-    expires_at: float  # time.monotonic 口径
-
-
-_endpoint_auth_cache: dict[tuple[str, str], _EndpointAuthCacheEntry] = {}
-_endpoint_key_last_write: dict[int, float] = {}
-
-
-def _endpoint_auth_cache_get(slug: str, key_hash: str) -> _EndpointAuthCacheEntry | None:
-    entry = _endpoint_auth_cache.get((slug, key_hash))
-    if entry is None or entry.expires_at <= time.monotonic():
-        return None
-    return entry
-
-
-def _endpoint_auth_cache_put(slug: str, key_hash: str, entry: _EndpointAuthCacheEntry) -> None:
-    cache = _endpoint_auth_cache
-    if len(cache) >= _ENDPOINT_AUTH_CACHE_MAX:
-        # key 来自任意外网输入,表必须有界:先清过期,仍满则整表清空(宁可回源不可无界)
-        now = time.monotonic()
-        for k in [k for k, v in cache.items() if v.expires_at <= now]:
-            del cache[k]
-        if len(cache) >= _ENDPOINT_AUTH_CACHE_MAX:
-            cache.clear()
-    cache[(slug, key_hash)] = entry
-
-
-def invalidate_endpoint_auth_cache(
-    *, key_id: int | None = None, instance_id: int | None = None
-) -> None:
-    """主动失效(吊销按 key、停机按实例);表 ≤4096,全扫代价可忽略。"""
-    doomed = [
-        k
-        for k, v in _endpoint_auth_cache.items()
-        if (key_id is not None and v.key_id == key_id)
-        or (instance_id is not None and v.instance_id == instance_id)
-    ]
-    for k in doomed:
-        del _endpoint_auth_cache[k]
-
-
-def clear_endpoint_auth_cache() -> None:
-    """测试隔离用:函数级 TRUNCATE 清库清不到进程内缓存。"""
-    _endpoint_auth_cache.clear()
-    _endpoint_key_last_write.clear()
-
-
-async def _touch_key_last_used(session: AsyncSession, key_id: int | None) -> None:
-    """last_used_at 节流直写:每 key 每进程 60s 至多一次 UPDATE+commit。"""
-    if key_id is None:
-        return
-    now = time.monotonic()
-    last = _endpoint_key_last_write.get(key_id)
-    if last is not None and now - last < _LAST_USED_WRITE_INTERVAL_SECONDS:
-        return
-    await session.execute(
-        update(ServiceApiKey).where(ServiceApiKey.id == key_id).values(last_used_at=now_utc())
-    )
-    await session.commit()
-    _endpoint_key_last_write[key_id] = now
-
-
-async def verify_endpoint_key(
-    session: AsyncSession, *, slug: str | None, key: str | None
-) -> EndpointAuthResult:
-    """网关 extAuth 回调的校验链:端点存在 → 实例 running → 密钥有效且属于该端点。
-    任一环节不过都抛同一个 401(同码同文案),区分开等于给第三方一个枚举平台端点的预言机。"""
-    if not slug:
-        raise _endpoint_denied()
-    # candidates 兼读主密钥轮换世代(见 crypto.py);缓存键取当前世代([0]),稳定
-    key_hashes = hash_api_key_candidates(key) if key else []
-    key_hash = key_hashes[0] if key_hashes else ""
-    cached = _endpoint_auth_cache_get(slug, key_hash)
-    if cached is not None:
-        await _touch_key_last_used(session, cached.key_id)
-        return cached.result
-    endpoint = (
-        await session.execute(select(ServiceEndpoint).where(ServiceEndpoint.public_slug == slug))
-    ).scalar_one_or_none()
-    if endpoint is None:
-        raise _endpoint_denied()
-    instance = await session.get(Instance, endpoint.instance_id)
-    # 非 running 一律拒:Pod 可能还在优雅删除期里活着,光靠删 HTTPRoute 收口有窗口
-    if instance is None or instance.status != sm_def.RUNNING:
-        raise _endpoint_denied()
-    expires = time.monotonic() + _ENDPOINT_AUTH_CACHE_TTL_SECONDS
-    if not endpoint.require_api_key:
-        result = EndpointAuthResult(slug=endpoint.public_slug, key_id=None)
-        _endpoint_auth_cache_put(
-            slug, key_hash, _EndpointAuthCacheEntry(result, instance.id, None, expires)
-        )
-        return result
-    if not key:
-        raise _endpoint_denied()
-    row = (
-        await session.execute(
-            select(ServiceApiKey).where(ServiceApiKey.key_hash.in_(key_hashes)).limit(1)
-        )
-    ).scalar_one_or_none()
-    # instance_id 比对是「A 用户的密钥打 B 用户端点」的唯一闸门:密钥是全局唯一的
-    # 高熵串,查得到不等于用得上
-    if row is None or row.revoked_at is not None or row.instance_id != endpoint.instance_id:
-        raise _endpoint_denied()
-    result = EndpointAuthResult(slug=endpoint.public_slug, key_id=row.id)
-    _endpoint_auth_cache_put(
-        slug, key_hash, _EndpointAuthCacheEntry(result, instance.id, row.id, expires)
-    )
-    await _touch_key_last_used(session, row.id)
-    return result
-
-
-_endpoint_cache_listener_registered = False
-
-
-def register_endpoint_auth_cache_listener() -> None:
-    """RUNNING 迁出即失效该实例的鉴权缓存(幂等注册;跨进程副本由 TTL 兜底收敛)。"""
-    global _endpoint_cache_listener_registered
-    if _endpoint_cache_listener_registered:
-        return
-
-    async def _drop_on_leave_running(
-        _session: AsyncSession, instance: Instance, event: InstanceEvent
-    ) -> None:
-        if event.from_status == sm_def.RUNNING:
-            invalidate_endpoint_auth_cache(instance_id=instance.id)
-
-    register_transition_listener(_drop_on_leave_running)
-    _endpoint_cache_listener_registered = True
-
-
 async def reset_jupyter_token(session: AsyncSession, user_id: int, uuid: str) -> Instance:
     instance = await get_instance(session, user_id, uuid)
+    _reject_service_instance(instance)
     instance.jupyter_token = _encode_token(secrets.token_urlsafe(24), instance_uuid=instance.uuid)
     # 需要重建 Pod 才生效(env 注入);running 时走 restart 流程
     if instance.status == sm_def.RUNNING:

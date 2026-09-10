@@ -8,7 +8,7 @@
 /**
  * 接入信息:字段随形态出现或缺席,不是「恒有值」的契约。
  *
- * dev = SSH + Jupyter;service = 端点 URL,开了 SSH 的服务实例两者都有。
+ * dev = SSH + Jupyter;服务的版本实例 = 端点 URL,开了 SSH 的两者都有。
  * 不按形态拆两个端点:前端拿到什么就渲染什么,少一次「先判形态再选接口」的分叉。
  */
 export interface InstanceAccessOut {

@@ -415,7 +415,7 @@ function MarketPage() {
           loggedIn ? (
             <>
               {/* 服务形态与开发机走同一条创建流,只是带上 workload=service */}
-              <Tooltip title={selected ? t("market.deployServiceHint") : t("market.selectFirst")}>
+              <Tooltip title={selected ? t("services.deployFromMarketHint") : t("market.selectFirst")}>
                 <Button
                   size="large"
                   disabled={!selected}
@@ -434,7 +434,7 @@ function MarketPage() {
                     });
                   }}
                 >
-                  {t("market.deployService")}
+                  {t("services.deploy")}
                 </Button>
               </Tooltip>
               <Tooltip title={selected ? undefined : t("market.selectFirst")}>

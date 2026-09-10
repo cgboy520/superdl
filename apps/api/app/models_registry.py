@@ -14,6 +14,7 @@ from app.modules.metering import models as metering_models
 from app.modules.nodes import models as nodes_models
 from app.modules.notify import models as notify_models
 from app.modules.orchestrator import models as orchestrator_models
+from app.modules.services import models as services_models
 from app.modules.tickets import models as tickets_models
 
 __all__ = [
@@ -32,6 +33,7 @@ __all__ = [
     "platform_config",
     "policies",
     "ratelimit",
+    "services_models",
     "tickets_models",
 ]
 

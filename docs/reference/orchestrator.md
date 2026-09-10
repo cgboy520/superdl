@@ -4,10 +4,10 @@
 
 ## 数据模型
 
-- `instances`:uuid、user_id、SKU 快照(sku_id + `spec` jsonb + price_hourly;`spec.base_price_hourly` 是 SKU **原价**时价快照,竞价转按量据它还原单价)、market(CHECK ∈ {on_demand, spot, subscription},默认 on_demand)、gpu_count(CHECK ≥0;**0 = 纯 CPU 实例**,见 [catalog.md](./catalog.md))、status、k8s(namespace/node_name(253))、ssh_port?、jupyter_token(AES-GCM 密文)、image_ref、data_disk_id?、workload_type(CHECK ∈ {dev, service})、with_ssh、container_command?/container_args?(jsonb)、env_encrypted?、idempotency_key 唯一?(24h 窗口,窗外同键按新单)、version(乐观锁)
+- `instances`:uuid、user_id、SKU 快照(sku_id + `spec` jsonb + price_hourly;`spec.base_price_hourly` 是 SKU **原价**时价快照,竞价转按量据它还原单价)、market(CHECK ∈ {on_demand, spot, subscription},默认 on_demand)、gpu_count(CHECK ≥0;**0 = 纯 CPU 实例**,见 [catalog.md](./catalog.md))、status、k8s(namespace/node_name(253))、ssh_port?、jupyter_token(AES-GCM 密文)、image_ref、data_disk_id?、workload_type(CHECK ∈ {dev, service},与 service_id 同真同假)、service_id?/service_revision?/service_slug?/service_port?/health_path?(所属在线服务与该版本的暴露规格快照,orchestrator 建 Pod 只读它们)、with_ssh、container_command?/container_args?(jsonb)、env_encrypted?、idempotency_key 唯一?(24h 窗口,窗外同键按新单)、version(乐观锁)
 - `instance_events`:instance_id、from_status、to_status、reason、actor(user/system/admin)、metadata —— 追加式,计费主依据
 - `port_allocations`:port 唯一(30000~32767)、instance_id nullable(部分唯一:一台实例至多一个端口)
-- 服务型实例的 `service_endpoints` 与 `service_api_keys` 见 [services.md](./services.md)
+- 在线服务(`services`、`service_api_keys`)与其版本实例的关系见 [services.md](./services.md)
 
 状态机:creating→running/failed/releasing;running→stopping/failed;stopping→stopped/releasing;
 stopped→starting/frozen/releasing;starting→running/failed;frozen→stopped/releasing;
@@ -20,8 +20,8 @@ reason:欠费 `arrears_stop` / `arrears_freeze`,包周期到期 `subscription_ex
 
 | 端点 | 角色/鉴权 | 说明 |
 |---|---|---|
-| `POST /api/v1/instances` | user | Idempotency-Key;软准入(台账无货 409)→ 钱包行锁临界区(在途+新增余额校验、配额)→ 事务写 instances(creating)+event+outbox → 202。`market` 默认 `on_demand`;取 `subscription` 时 `period` 必填、`period_count` 1~36,同事务预扣整段周期(见 [billing.md](./billing.md));`market='on_demand'` 却显式带 `period`/`period_count` 一律 422;`market='spot'` 要求 SKU `spot_enabled` 为真(否则 400 `orchestrator.spotNotEnabled`)且不带 `period`,软准入判无货时先抢占竞价实例腾容量,腾不出才 409 `NO_CAPACITY` |
-| `GET /api/v1/instances` | user | 降序游标分页 `?cursor=&limit=`;`status` 精确过滤,`name` 模糊匹配(含 uuid 前缀) |
+| `POST /api/v1/instances` | user | 只建开发机(拒收服务容器参数;部署在线服务走 `POST /services`)。Idempotency-Key;软准入(台账无货 409)→ 钱包行锁临界区(在途+新增余额校验、配额)→ 事务写 instances(creating)+event+outbox → 202。`market` 默认 `on_demand`;取 `subscription` 时 `period` 必填、`period_count` 1~36,同事务预扣整段周期(见 [billing.md](./billing.md));`market='on_demand'` 却显式带 `period`/`period_count` 一律 422;`market='spot'` 要求 SKU `spot_enabled` 为真(否则 400 `orchestrator.spotNotEnabled`)且不带 `period`,软准入判无货时先抢占竞价实例腾容量,腾不出才 409 `NO_CAPACITY` |
+| `GET /api/v1/instances` | user | 降序游标分页 `?cursor=&limit=`;`status` 精确过滤,`name` 模糊匹配(含 uuid 前缀);**只列开发机**,在线服务的版本实例不出列表 |
 | `GET /api/v1/instances/{uuid}` | user | 详情 |
 | `PATCH /api/v1/instances/{uuid}` | user | 改名 |
 | `POST /api/v1/instances/{uuid}/stop\|start\|restart` | user | 同构,均经 outbox;start 对 failed 放行(恢复边) |
@@ -36,11 +36,12 @@ reason:欠费 `arrears_stop` / `arrears_freeze`,包周期到期 `subscription_ex
 | `POST /api/v1/instances/{uuid}/reset-jupyter-token` | user | 轮换 token(密文落库),旧票据与旧 URL 立即失效 |
 | `POST /api/admin/v1/instances/{uuid}/preempt` | ops | 强制回收一台竞价实例腾容量,reason 必填;非竞价报 `orchestrator.preemptNotSpot`,非 running 报 `orchestrator.forceStopNeedsRunning`(见 [admin.md](./admin.md)) |
 
-服务端点信息、API Key 与网关鉴权回调三组端点见 [services.md](./services.md)。
+在线服务的全部端点见 [services.md](./services.md)。实例级生命周期端点(stop / start / restart / DELETE / 重置 token)对服务的版本实例一律 409 `orchestrator.serviceInstanceLifecycle`;只读端点与购买模式类端点(续费 / 转换)照常。
 
 ## 规则与不变量
 
 - 状态迁移只能经 `orchestrator/service.py` 的 transition 函数(同事务写 `instance_events`),禁止直接 UPDATE status;非法迁移报 `INSTANCE_INVALID_TRANSITION`。
+- 生命周期分两层:`create_instance_row` / `stop_instance_row` / `start_instance_row` / `release_instance_row` 是不 commit 的 row 级核心(services 模块在自己的事务里调它们),用户端入口 `create_instance` 等只做取实例 + commit。`create_instance_row` 的 `service=ServiceBinding(...)` 把实例建成某个在线服务的一个版本;`exclude_instance_id` 让即将被替换的旧实例不占配额与软准入名额(余额不让)。锁序 instance → service → disk → wallet。
 - 请求路径不许调 K8s:业务写入与 `outbox_tasks` 插入同一事务,K8s 动作一律由 worker 执行。唯一例外是日志端点的只读直读,由 owner / 限流 / 超时三道闸兜住。
 - **购买模式变更不写 `instance_events`**(`subscribe_instance` 与 `convert_to_on_demand` 同理):该表是计费主依据(running↔非 running 的边),非状态迁移的行会污染 `running_seconds_in_window` 的重建。变更痕迹在审计日志与资金流水里。
 - K8s 访问收敛在 `app/core/k8s`,`K8sOrchestrator` 协议是唯一接口面(方法清单见 `app/core/k8s/base.py`)。FakeOrchestrator(dev/test,内存态,可注入故障)与 RealOrchestrator(kubernetes 官方客户端)必须同步实现协议全部方法。
@@ -113,9 +114,9 @@ reason:欠费 `arrears_stop` / `arrears_freeze`,包周期到期 `subscription_ex
 
 ### 实例形态
 
-实例有两种形态(`instances.workload_type`),差别只在 `build_pod_spec` 的分叉与建哪些 K8s 对象;状态机、计费、配额、回收、reconciler、监控、审计全部共用:
+实例有两种形态(`instances.workload_type`),差别只在 `build_pod_spec` 的分叉与建哪些 K8s 对象;状态机、计费、配额、回收、reconciler、监控、审计全部共用。`service` 形态的实例是某个在线服务的一个版本(`service_id` 反指),暴露规格(`service_slug` / `service_port` / `health_path`)快照在实例行上,建 Pod 只读它们:
 
-| | `dev`(SSH + JupyterLab) | `service`(对外 HTTP 服务) |
+| | `dev`(SSH + JupyterLab) | `service`(在线服务的版本) |
 |---|---|---|
 | `restartPolicy` | `Never`(容器退出即故障) | `Always`(kubelet 原地重启容器,Pod 不重建:重建会换名字,而全套 reconciler 都建立在「Pod 名 = 实例 uuid」上) |
 | command / args | 不设,用镜像 ENTRYPOINT | 用户可覆盖(`container_command` / `container_args`) |
@@ -125,7 +126,7 @@ reason:欠费 `arrears_stop` / `arrears_freeze`,包周期到期 `subscription_ex
 | 服务 Service + HTTPRoute | 无 | `<uuid>-svc` ClusterIP + 挂 `svc-https` listener 的 HTTPRoute |
 | 探针 | 无(无探针时 ready ≡ 容器已启动) | `health_path` 非空时 startupProbe(失败阈值 90 × 10s = 15 分钟启动预算)+ readinessProbe |
 
-服务端点的域名规则、鉴权链路与 API Key 生命周期见 [services.md](./services.md)。
+在线服务的域名规则、鉴权链路、状态派生与 API Key 生命周期见 [services.md](./services.md)。
 
 ### 网关与接入
 

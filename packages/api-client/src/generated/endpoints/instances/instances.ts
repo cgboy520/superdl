@@ -5,9 +5,6 @@
  * OpenAPI spec version: 0.1.0
  */
 import type {
-  ApiKeyCreate,
-  ApiKeyCreateOut,
-  ApiKeyOut,
   CreateInstanceApiV1InstancesPostHeaders,
   GetInstanceLogsApiV1InstancesUuidLogsGetParams,
   InstanceAccessOut,
@@ -24,7 +21,6 @@ import type {
   PageInstanceOut,
   RenewInstanceApiV1InstancesUuidRenewPostHeaders,
   RenewOut,
-  ServiceEndpointOut,
   SubscribeInstanceApiV1InstancesUuidSubscribePostHeaders
 } from '../../model';
 
@@ -46,7 +42,8 @@ export const getListInstancesApiV1InstancesGetUrl = (params?: ListInstancesApiV1
 }
 
 /**
- * 实例列表:降序游标分页;status 精确过滤,name 模糊匹配(含 uuid 前缀)。
+ * 实例列表(只列开发机;在线服务的版本实例走 /services):降序游标分页;
+ * status 精确过滤,name 模糊匹配(含 uuid 前缀)。
  * @summary List Instances
  */
 export const listInstancesApiV1InstancesGet = async (params?: ListInstancesApiV1InstancesGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageInstanceOut> => {
@@ -196,7 +193,7 @@ export const getGetInstanceAccessApiV1InstancesUuidAccessGetUrl = (uuid: string,
 }
 
 /**
- * 接入信息。字段按形态出现:dev 给 SSH + Jupyter,service 给端点 URL(开了 SSH 就都有)。
+ * 接入信息。字段按形态出现:dev 给 SSH + Jupyter,服务版本实例给端点 URL(开了 SSH 就都有)。
  * @summary Get Instance Access
  */
 export const getInstanceAccessApiV1InstancesUuidAccessGet = async (uuid: string, options?: Parameters<typeof customFetch>[1]): Promise<InstanceAccessOut> => {
@@ -205,83 +202,6 @@ export const getInstanceAccessApiV1InstancesUuidAccessGet = async (uuid: string,
   {
     ...options,
     method: 'GET'
-
-
-  }
-);}
-
-
-export const getListApiKeysApiV1InstancesUuidApiKeysGetUrl = (uuid: string,) => {
-
-
-
-
-  return `/api/v1/instances/${uuid}/api-keys`
-}
-
-/**
- * 访问密钥列表(含已吊销)。不含明文——库里就没有明文。
- * @summary List Api Keys
- */
-export const listApiKeysApiV1InstancesUuidApiKeysGet = async (uuid: string, options?: Parameters<typeof customFetch>[1]): Promise<ApiKeyOut[]> => {
-
-  return customFetch<ApiKeyOut[]>(getListApiKeysApiV1InstancesUuidApiKeysGetUrl(uuid),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-);}
-
-
-export const getCreateApiKeyApiV1InstancesUuidApiKeysPostUrl = (uuid: string,) => {
-
-
-
-
-  return `/api/v1/instances/${uuid}/api-keys`
-}
-
-/**
- * 新建访问密钥。响应里的 key 是明文,且只在这一次出现。
- *
- * 不收 Idempotency-Key:重放要回同一份明文就得把明文留在库里,与「只存摘要」冲突。
- * @summary Create Api Key
- */
-export const createApiKeyApiV1InstancesUuidApiKeysPost = async (uuid: string,
-    apiKeyCreate: ApiKeyCreate, options?: Parameters<typeof customFetch>[1]): Promise<ApiKeyCreateOut> => {
-
-  return customFetch<ApiKeyCreateOut>(getCreateApiKeyApiV1InstancesUuidApiKeysPostUrl(uuid),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(apiKeyCreate)
-  }
-);}
-
-
-export const getRevokeApiKeyApiV1InstancesUuidApiKeysKeyIdDeleteUrl = (uuid: string,
-    keyId: number,) => {
-
-
-
-
-  return `/api/v1/instances/${uuid}/api-keys/${keyId}`
-}
-
-/**
- * 吊销访问密钥(写 revoked_at,不删行)。重复吊销幂等。
- * @summary Revoke Api Key
- */
-export const revokeApiKeyApiV1InstancesUuidApiKeysKeyIdDelete = async (uuid: string,
-    keyId: number, options?: Parameters<typeof customFetch>[1]): Promise<ApiKeyOut> => {
-
-  return customFetch<ApiKeyOut>(getRevokeApiKeyApiV1InstancesUuidApiKeysKeyIdDeleteUrl(uuid,keyId),
-  {
-    ...options,
-    method: 'DELETE'
 
 
   }
@@ -449,30 +369,6 @@ export const restartInstanceApiV1InstancesUuidRestartPost = async (uuid: string,
   {
     ...options,
     method: 'POST'
-
-
-  }
-);}
-
-
-export const getGetServiceEndpointApiV1InstancesUuidServiceGetUrl = (uuid: string,) => {
-
-
-
-
-  return `/api/v1/instances/${uuid}/service`
-}
-
-/**
- * 服务端点(仅服务型实例;dev 实例 404)。
- * @summary Get Service Endpoint
- */
-export const getServiceEndpointApiV1InstancesUuidServiceGet = async (uuid: string, options?: Parameters<typeof customFetch>[1]): Promise<ServiceEndpointOut> => {
-
-  return customFetch<ServiceEndpointOut>(getGetServiceEndpointApiV1InstancesUuidServiceGetUrl(uuid),
-  {
-    ...options,
-    method: 'GET'
 
 
   }

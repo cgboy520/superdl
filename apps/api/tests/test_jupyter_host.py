@@ -11,12 +11,8 @@ import pytest
 
 from app.core.config import Settings, get_settings
 from app.modules.orchestrator.models import Instance
-from app.modules.orchestrator.service import (
-    _new_jupyter_ticket,
-    endpoint_slug_from_host,
-    jupyter_host,
-    jupyter_origin,
-)
+from app.modules.orchestrator.service import _new_jupyter_ticket, jupyter_host, jupyter_origin
+from app.modules.services.service import endpoint_slug_from_host
 
 
 def _settings(**overrides):

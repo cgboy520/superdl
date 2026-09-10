@@ -662,12 +662,12 @@ async def set_platform_setting(sm: async_sessionmaker[AsyncSession], key: str, v
 
 
 def service_body(sku_id: int, **over) -> dict:
+    """POST /services 的最小请求体(不开 SSH、需要 API Key、端口 8000)。"""
     body = {
         "sku_id": sku_id,
         "gpu_count": 1,
         "image_ref": "registry.superdl.local/vllm:0.11.0",
         "ssh_key_ids": [],
-        "workload_type": "service",
         "service_port": 8000,
     }
     body.update(over)
@@ -688,19 +688,20 @@ async def provision_service(
     *,
     phone: str = "13900000301",
     **over,
-) -> tuple[dict[str, str], str, int]:
-    """建一台 running 的服务型实例。返回 (headers, uuid, user_id)。"""
+) -> tuple[dict[str, str], dict, int]:
+    """部署一个 running 的在线服务。返回 (headers, 服务出参, user_id);
+    版本实例的 uuid 在 svc["current_instance"]["uuid"]。"""
     headers, user_id, key_id, sku_id = await new_user(client, sm, phone)
     over.setdefault("ssh_key_ids", [key_id] if over.get("with_ssh") else [])
-    resp = await client.post(
-        "/api/v1/instances", json=service_body(sku_id, **over), headers=headers
-    )
+    resp = await client.post("/api/v1/services", json=service_body(sku_id, **over), headers=headers)
     assert resp.status_code == 202, resp.text
-    uuid = resp.json()["uuid"]
+    svc = resp.json()
     await drain_strict(sm)
-    fake.mark_ready(f"tenant-{user_id}", uuid)
+    fake.mark_ready(f"tenant-{user_id}", svc["current_instance"]["uuid"])
     await reconcile_once(sm)
-    return headers, uuid, user_id
+    fresh = await client.get(f"/api/v1/services/{svc['slug']}", headers=headers)
+    assert fresh.status_code == 200, fresh.text
+    return headers, fresh.json(), user_id
 
 
 def gpu_spec(tier: str, pool: str, **extra):

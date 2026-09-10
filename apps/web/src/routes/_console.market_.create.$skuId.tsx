@@ -1,10 +1,11 @@
 /**
  * 创建实例:单栏卡片流 + 底部结算条;经济档需知情同意。
  * 数据盘「新建」为行内直建:提交时先建盘再建实例,建盘成功而实例失败必须提示盘已计费。
- * `?workload=service` 走服务形态,只换镜像/SSH 两张卡与提交体,规格/数据盘/结算条/幂等键复用。
+ * `?workload=service` 走服务形态:换掉镜像/SSH 两张卡,提交到 /services(部署在线服务)并跳服务详情;
+ * 规格/数据盘/结算条/幂等键复用。
  */
 
-import { isApiError, type DiskOut, type InstanceOut, type SkuMarketOut } from "@superdl/api-client";
+import { isApiError, type DiskOut, type InstanceOut, type ServiceOut, type SkuMarketOut } from "@superdl/api-client";
 import {
   billingUnits,
   compareAmounts,
@@ -45,7 +46,7 @@ import { useMemo, useState } from "react";
 
 import { useFormat } from "@superdl/ui";
 import { useApiErrorText } from "@superdl/ui";
-import { useCreateDisk, useCreateInstance } from "../api/mutations";
+import { useCreateDisk, useCreateInstance, useCreateService } from "../api/mutations";
 import { useDisks, useImages, usePolicies, useSkus, useWallet } from "../api/queries";
 import { ChipRow } from "../components/ChipRow";
 import { CheckoutBar } from "../components/CheckoutBar";
@@ -212,18 +213,24 @@ function CreatePage() {
     }));
   }, [images]);
 
-  const pageTitle = isService ? t("create.serviceTitle") : t("create.title");
+  const pageTitle = isService ? t("services.deploy") : t("create.title");
   const errText = useApiErrorText();
   const create = useCreateInstance({
     // 错误统一在本页 doCreate 的 catch 里出(避免 NO_CAPACITY 引导与全局错误弹两条)
     silentError: true,
     onSuccess: (data) => {
       const inst = data as InstanceOut;
-      message.success(
-        isService ? t("create.deploying", { name: inst.name }) : t("create.creating", { name: inst.name }),
-      );
+      message.success(t("create.creating", { name: inst.name }));
       leave.bypass();
       void navigate({ to: "/instances" });
+    },
+  });
+  const createService = useCreateService({
+    silentError: true,
+    onSuccess: (svc: ServiceOut) => {
+      message.success(t("services.deploying", { name: svc.name }));
+      leave.bypass();
+      void navigate({ to: "/services/$slug", params: { slug: svc.slug } });
     },
   });
   const createDisk = useCreateDisk();
@@ -422,36 +429,49 @@ function CreatePage() {
         diskId = disk.id;
       }
       try {
-        await create.mutateAsync({
-          body: {
-            sku_id: sku.id,
-            gpu_count: gpus,
-            image_ref: imageRef,
-            // 服务实例取消勾选 SSH 后不带公钥(不开 sshd 的容器注入 authorized_keys 无意义)
-            ssh_key_ids: isService && !withSsh ? [] : keyIds,
-            name: name || null,
-            data_disk_id: diskId,
-            ...(period
-              ? { market: "subscription" as const, period, period_count: periodCount }
-              : isSpot
-                ? { market: "spot" as const }
-                : {}),
-            ...(isService
-              ? {
-                  workload_type: "service" as const,
-                  container_command: commandList.length > 0 ? commandList : null,
-                  container_args: argList.length > 0 ? argList : null,
-                  env: envEntries.length > 0 ? envDict : null,
-                  env_secret_keys: envSecretKeys.length > 0 ? envSecretKeys : null,
-                  service_port: servicePort,
-                  health_path: healthPath.trim() || null,
-                  require_api_key: requireApiKey,
-                  with_ssh: withSsh,
-                }
-              : {}),
-          },
-          idempotencyKey,
-        });
+        const marketBody = period
+          ? { market: "subscription" as const, period, period_count: periodCount }
+          : isSpot
+            ? { market: "spot" as const }
+            : {};
+        if (isService) {
+          // canSubmit 已保证端口非空(serviceIssue);这里只做类型收窄
+          if (servicePort == null) return;
+          await createService.mutateAsync({
+            body: {
+              sku_id: sku.id,
+              gpu_count: gpus,
+              image_ref: imageRef,
+              // 不勾 SSH 就不带公钥(不开 sshd 的容器注入 authorized_keys 无意义)
+              ssh_key_ids: withSsh ? keyIds : [],
+              name: name || null,
+              data_disk_id: diskId,
+              ...marketBody,
+              container_command: commandList.length > 0 ? commandList : null,
+              container_args: argList.length > 0 ? argList : null,
+              env: envEntries.length > 0 ? envDict : null,
+              env_secret_keys: envSecretKeys.length > 0 ? envSecretKeys : null,
+              service_port: servicePort,
+              health_path: healthPath.trim() || null,
+              require_api_key: requireApiKey,
+              with_ssh: withSsh,
+            },
+            idempotencyKey,
+          });
+        } else {
+          await create.mutateAsync({
+            body: {
+              sku_id: sku.id,
+              gpu_count: gpus,
+              image_ref: imageRef,
+              ssh_key_ids: keyIds,
+              name: name || null,
+              data_disk_id: diskId,
+              ...marketBody,
+            },
+            idempotencyKey,
+          });
+        }
       } catch (err) {
         // silentError 模式下提示统一在这里出:库存不足给换档引导,其余给错误原文
         if (isApiError(err) && err.code === "NO_CAPACITY") {
@@ -493,9 +513,11 @@ function CreatePage() {
   const columns = skuColumns({ fmt, t, cpu: isCpu });
 
   const submitLabel = period
-    ? t("create.payAndCreate")
+    ? isService
+      ? t("services.payAndDeploy")
+      : t("create.payAndCreate")
     : isService
-      ? t("create.deployService")
+      ? t("services.deploy")
       : t("create.createAndStart");
 
   return (
@@ -894,7 +916,7 @@ function CreatePage() {
                   type="primary"
                   size="large"
                   disabled={!canSubmit}
-                  loading={submitting || create.isPending}
+                  loading={submitting || create.isPending || createService.isPending}
                   onClick={submit}
                 >
                   {submitLabel}
@@ -914,7 +936,7 @@ function CreatePage() {
       <SpotConsentModal
         open={spotOpen}
         policy={spotPolicy}
-        loading={submitting || create.isPending}
+        loading={submitting || create.isPending || createService.isPending}
         onCancel={() => setSpotOpen(false)}
         onConfirm={() => {
           setSpotOpen(false);
@@ -932,7 +954,7 @@ function CreatePage() {
         ]}
         agreeLabel={t("create.ecoAgree")}
         confirmLabel={t("create.ecoConfirm")}
-        loading={submitting || create.isPending}
+        loading={submitting || create.isPending || createService.isPending}
         onCancel={() => setEcoOpen(false)}
         onConfirm={() => {
           setEcoOpen(false);

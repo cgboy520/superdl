@@ -18,6 +18,7 @@
 | 进行中工单 | 10 | — | `tickets/service.py` `MAX_OPEN_TICKETS` |
 | SSH 公钥 | 不限;同用户指纹唯一 | — | `ssh_keys` |
 | 容器临时存储 | 请求 2Gi,上限 64Gi | — | `core/k8s/real.py` |
+| 单服务活跃 API Key | 20 | — | `services/service.py` `MAX_API_KEYS_PER_SERVICE`;吊销的不计 |
 | 对外服务端点限流 | 20 rps/端点 | — | **生效在网关的本地令牌桶里**(挂 `svc-https` listener 的 `BackendTrafficPolicy`,桶按路由分),限额手工渲染进 `deploy/app/k8s/04-gateway.yaml` 清单,不回源平台配置 —— 改值 = 改清单重新下发。见 [services.md](./services.md) |
 
 集群级:SSH NodePort 端口池 30000~32767(排除 30500),即单集群最多约 2767 台**带 SSH 的**实例 —— 服务型实例默认 `with_ssh=false`,不进这个池,不占这段名额(`SUPERDL_SSH_PORT_RANGE_START` / `SUPERDL_SSH_PORT_RANGE_END`,排除集 `SUPERDL_SSH_PORT_EXCLUDED` 默认 `{30500}`;运行期撞占的端口标 blocked 并周期复检放回,水位见 `GET /api/admin/v1/nodes/port-pool`)。分配在段内**随机**(复用与扩段都不按升序):顺序分配会让在用 SSH 入口恒聚低段、可枚举。
@@ -40,7 +41,7 @@
 | 数据盘欠费宽限 / 冻结 | 7 天 / 30 天 | 策略 `disk_grace_days` / `disk_frozen_days`(各 1~365) |
 | 数据盘单价 | 0.0350 元/GB·月 | 策略 `disk_price_gb_month`(0.0010~1.0000),建盘时快照 |
 | failed 实例保留 | 7 天后回收 | env `failed_retention_days` |
-| stopped 实例保留 | 30 天后回收,提前 7 天预警 | env `stopped_retention_days` / `stopped_retention_warn_days` |
+| stopped 实例保留 | 30 天后回收,提前 7 天预警(停机的在线服务同受此约束:版本实例被回收即服务删除) | env `stopped_retention_days` / `stopped_retention_warn_days` |
 | creating 超时 | 300s → failed 退款 | env `creating_timeout_seconds` |
 | running 持续 not-ready 判失联 | 600s(须宽于 unreachable toleration 300s) | env `running_unready_timeout_seconds` |
 | stopping / releasing 悬挂 | 各 600s,一档重发删除、二档强删 | env `stopping_timeout_seconds` / `releasing_timeout_seconds` |

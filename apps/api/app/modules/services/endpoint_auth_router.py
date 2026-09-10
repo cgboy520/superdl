@@ -21,7 +21,7 @@ from typing import Annotated
 from fastapi import APIRouter, Header, Response
 
 from app.core.db import DbSession
-from app.modules.orchestrator import service
+from app.modules.services import service
 
 router = APIRouter(tags=["endpoint-auth"], include_in_schema=False)
 

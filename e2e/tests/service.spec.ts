@@ -1,16 +1,16 @@
 /**
- * 服务容器冒烟:市场「部署服务」→ 填容器与对外服务 → 部署 → 运行中 →
- * 「服务」Tab 拿到端点 URL → 新建 API Key(一次性展示)→ 吊销。
+ * 在线服务冒烟:市场「部署服务」→ 填容器与对外访问 → 部署 → 跳到服务详情 → 运行中 →
+ * 端点卡拿到 URL → 新建 API Key(一次性展示)→ 吊销 → 停止服务。
  * 前置与 smoke 同款:API+worker 在跑,fake 编排。
  *
- * 这条挂了通常说明:创建页的形态分叉断了(服务字段没提交/dev 字段漏传),
- * 或「服务」Tab 没按 workload_type 渲染,或一次性 Key 弹窗的保存闸松了。
+ * 这条挂了通常说明:创建页的服务分支没打到 /services(或部署后没跳详情)、
+ * 服务详情的端点卡 / 状态派生断了,或一次性 Key 弹窗的保存闸松了。
  */
 import { expect, test } from "@playwright/test";
 
-import { pickSharedStandardSku, setupUser, waitFirstRowRunning } from "./helpers";
+import { pickSharedStandardSku, setupUser } from "./helpers";
 
-test("部署服务并拿到端点与 API Key", async ({ page }) => {
+test("部署在线服务并拿到端点与 API Key", async ({ page }) => {
   // ── 建号 + 充值 + 公钥(API 直达;UI 链路由 smoke 覆盖)
   await setupUser(page, "500");
 
@@ -30,33 +30,24 @@ test("部署服务并拿到端点与 API Key", async ({ page }) => {
   await page.getByLabel("健康检查").fill("/health");
   await page.getByRole("button", { name: "部署服务" }).click();
 
-  // ── 列表:创建中 → 运行中
-  const row = await waitFirstRowRunning(page);
-  // 服务型实例在列表里带标记,slug 随 InstanceOut 一起下发(不额外打接口)
-  await expect(row.getByText(/svc-[a-z0-9]+/)).toBeVisible();
+  // ── 部署后直达服务详情:部署中 → 运行中(worker + reconciler 推进)
+  await expect(page).toHaveURL(/\/services\/svc-[a-z0-9]+/, { timeout: 20_000 });
+  await expect(page.getByText("运行中").first()).toBeVisible({ timeout: 90_000 });
+  // 端点卡:完整 URL 的 <code>(概览 Tab 的 curl 示例里还有一份,取端点卡那个)
+  await expect(page.locator("code", { hasText: /^https:\/\/svc-[a-z0-9]+\./ }).first()).toBeVisible();
 
-  // ── 详情「服务」Tab:端点 URL
-  await row.dblclick();
-  await expect(page).toHaveURL(/instances\/[0-9a-f-]{8,}/, { timeout: 10_000 });
-  await page.getByRole("tab", { name: "服务" }).click();
-  await expect(page.getByText("服务端点")).toBeVisible({ timeout: 15_000 });
-  // 端点 URL 在页面上出现两次(端点卡 + curl 示例),取卡片里那个 <code>
-  await expect(page.locator("code", { hasText: /^https:\/\/svc-[a-z0-9]+\./ })).toBeVisible();
-
-  // ── 新建 Key:一次性展示,勾选前关不掉
+  // ── 访问密钥 Tab:新建 Key 一次性展示,勾选前关不掉
+  await page.getByRole("tab", { name: "访问密钥" }).click();
   await page.getByRole("button", { name: "新建 Key" }).click();
   await page.getByLabel("名称").fill("e2e");
   // antd 会在两个汉字之间自动插空格(「创 建」),按名定位一律用正则容忍它
   await page.getByRole("button", { name: /^创\s*建$/ }).click();
   await expect(page.getByText("关闭后无法再查看")).toBeVisible({ timeout: 15_000 });
-  const plainKey = page.getByText(/^sk-[A-Za-z0-9_-]{8,}$/);
-  await expect(plainKey).toBeVisible();
+  await expect(page.getByText(/^sk-[A-Za-z0-9_-]{8,}$/)).toBeVisible();
   // 「未勾选保存则关不掉」的禁用闸由 ApiKeyModal.test.tsx 覆盖,这层只走通流程
   const closeBtn = page.getByRole("button", { name: "已保存,关闭" });
   await page.getByRole("checkbox", { name: "我已保存这把 Key" }).check();
   await closeBtn.click();
-
-  // 关窗后明文再也不出现在页面上(列表只回前缀)
   await expect(page.getByText("关闭后无法再查看")).toBeHidden({ timeout: 10_000 });
   await expect(page.locator("tbody").getByText("e2e")).toBeVisible({ timeout: 15_000 });
 
@@ -65,10 +56,27 @@ test("部署服务并拿到端点与 API Key", async ({ page }) => {
     .getByRole("button", { name: /^吊\s*销$/ })
     .first()
     .click();
-  // 确认弹窗用的是 antd 默认 okText(「确 定」)而非行内的「吊销」,按后者取 .last() 会拿到被遮罩挡住的按钮
+  // 确认弹窗用的是 antd 默认 okText(「确 定」)而非行内的「吊销」
   await page
     .locator(".ant-modal-confirm-btns")
     .getByRole("button", { name: /^确\s*定$/ })
     .click();
   await expect(page.getByText("已吊销").first()).toBeVisible({ timeout: 15_000 });
+
+  // ── 停止服务:头部按钮 → 确认 → 状态离开运行中;端点与 Key 仍在
+  await page.getByRole("button", { name: /^停\s*止$/ }).first().click();
+  await page
+    .locator(".ant-modal-confirm-btns")
+    .getByRole("button", { name: /^确\s*定$/ })
+    .click();
+  await expect(page.getByText(/停止中|已停止/).first()).toBeVisible({ timeout: 30_000 });
+
+  // ── 列表:服务在「在线服务」里,不在容器实例里
+  await page.goto("/services");
+  // 行里有两处 slug 文本(名称列的 slug 与端点列的主机名),取名称列那个精确匹配
+  await expect(page.locator(".ant-table-row").first().getByText(/^svc-[a-z0-9]+$/)).toBeVisible({
+    timeout: 15_000,
+  });
+  await page.goto("/instances");
+  await expect(page.locator(".ant-table-row")).toHaveCount(0);
 });

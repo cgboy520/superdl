@@ -62,7 +62,8 @@ apps/api/app/
 ├─ modules/
 │  ├─ account/      # 注册登录、JWT、SSH 公钥、实名字段
 │  ├─ catalog/      # SKU、镜像目录、库存近似查询、镜像预热
-│  ├─ orchestrator/ # 实例状态机、K8s 编排、reconciler、SSH 端口池、数据盘、服务端点
+│  ├─ orchestrator/ # 实例状态机、K8s 编排、reconciler、SSH 端口池、数据盘
+│  ├─ services/     # 在线服务聚合根:部署 / 停止 / 删除 / 密钥、网关鉴权回调、状态派生
 │  ├─ billing/      # 钱包、账本、小时结算、数据盘日结、余额巡检、支付渠道与回调、资金核对
 │  ├─ metering/     # Prometheus 代理查询、usage_hourly 聚合
 │  ├─ nodes/        # 节点注册(node-join.sh)、规格巡检、集群状态
@@ -100,7 +101,7 @@ worker 侧其余定时任务:outbox 卡单回收、小时结算、数据盘日�
 |---|---|
 | SSH | 控制面维护端口池表 `port_allocations`,每实例分配一个 NodePort;仅密钥登录,禁密码。**SSH 与 Jupyter 必须拆成两个 Service**:合并后 `type=NodePort` 会给每个 port 都分配 NodePort,Jupyter 会占走端口池号段 |
 | JupyterLab | 实例 Pod 内跑 JupyterLab(8888),**每实例一条 HTTPRoute**(建在租户 ns,挂 `app-https` listener)按 host 路由到 ClusterIP Service,token 由控制面注入,泛域名证书一张 |
-| 对外服务端点 | 服务型实例(`workload_type='service'`)的公网入口 `<slug>.svc.<域名>`,**每实例一条 HTTPRoute** 挂 `svc-https` listener。API Key 在网关校验(一条 `SecurityPolicy.extAuth` 挂 listener 服务全部端点,对象数 O(1)),用户容器不实现鉴权;**鉴权结果无缓存**,控制面是全部端点的同步依赖,见 [reference/services.md](./reference/services.md) |
+| 对外服务端点 | 在线服务(`services`,独立聚合根)的公网入口 `<slug>.svc.<域名>`;服务持有一台 `workload_type='service'` 的版本实例,**每实例一条 HTTPRoute** 挂 `svc-https` listener。API Key 在网关校验(一条 `SecurityPolicy.extAuth` 挂 listener 服务全部端点,对象数 O(1)),用户容器不实现鉴权;**鉴权结果无缓存**,控制面是全部端点的同步依赖,见 [reference/services.md](./reference/services.md) |
 | 租户 NetworkPolicy | 默认拒东西向。入方向只放行两处:Envoy 数据面所在 ns(`envoy-gateway-system`,不是 Gateway 对象所在的 `superdl`)**不限端口**(服务容器端口由用户声明),以及 TCP 22(SSH NodePort,来源不能排整段私网 —— 跨节点 NodePort 经 SNAT 后是节点内网 IP;但**必须排掉 Pod 网段**,不排则租户可互扫 22)。出方向 DNS 收敛到 CoreDNS,公网 TCP 扣滥用端口与数据存储端口黑名单、UDP 走白名单,私网与云元数据网段一律拒 |
 | 网关策略 | 源 IP 白名单(管理端)、边缘限流(API 域,匿名回调路由同款重写 + 更严请求体上限)、服务端点鉴权与限流、租户 Jupyter listener 限流、全局超时与连接兜底,7 个策略对象挂在 Gateway / HTTPRoute 上(`deploy/app/k8s/04-gateway.yaml`)。挂载点是 listener 的 `sectionName`,**写错不报错**:apply 照样成功,策略静默失效,唯一线索在策略对象的 `status.ancestors[].conditions`;6 个 listener 名锁死 |
 
@@ -114,14 +115,15 @@ worker 侧其余定时任务:outbox 卡单回收、小时结算、数据盘日�
 
 ## 6. 数据模型
 
-`users` 一对多持有 `instances` / `data_disks` / `orders`,一对一持有 `wallets`;`skus` 定义实例规格;`instances` 派生
+`users` 一对多持有 `instances` / `data_disks` / `orders`,一对一持有 `wallets`;`skus` 定义实例规格;`services` 一对多持有 `instances`(每台是它的一个不可变版本);`instances` 派生
 `instance_events`(状态流水)、`bills_hourly`(账单)、`usage_hourly`(指标聚合),并可挂载一块 `data_disks`(按日出 `bills_daily_disk`)。
 
 | 模块 | 表 |
 |---|---|
 | account | `users` `ssh_keys` `used_refresh_tokens` `sms_codes` `user_quota_overrides` `account_deletion_requests` |
 | catalog | `skus` `images` `image_node_cache` |
-| orchestrator | `instances` `instance_events` `port_allocations` `data_disks` `service_endpoints` `service_api_keys` |
+| orchestrator | `instances` `instance_events` `port_allocations` `data_disks` |
+| services | `services` `service_api_keys` |
 | billing | `wallets` `balance_ledger` `bills_hourly` `bills_daily_disk` `subscriptions` `settlement_watermarks` `settlement_gaps` `reconcile_checkpoints` `orders` `invoice_requests` `refund_requests` |
 | metering | `usage_hourly` |
 | nodes | `node_enrollments` `node_specs` `cluster_status` |
@@ -141,7 +143,8 @@ worker 侧其余定时任务:outbox 卡单回收、小时结算、数据盘日�
   并用 `renewed_from_id` 串链、老行转 expired,不在原行上累加到期时刻。
 - 订阅行的 UNIQUE(user_id, idempotency_key) 服务**转换与续费**两条路径,共用一个键命名空间,故两处重放查询都带 `subscriptions.request_fingerprint` 做异参检测(同键异参 409);下单那条订阅行不带幂等键,整笔创建的幂等由同事务的 `instances` 行担保。
 - 服务端点凭据只存密钥摘要:`service_api_keys.key_hash` 唯一(HMAC-SHA256),明文只在创建响应出现一次,
-  吊销写 `revoked_at` 不删行;`service_endpoints.public_slug` 唯一,是公网域名左标签(不用 instance.uuid)。
+  吊销写 `revoked_at` 不删行;`services.public_slug` 唯一,是公网域名左标签兼 API 路径标识(不用 instance.uuid);
+  `instances.service_id` 反指所属服务,与 `workload_type='service'` 同真同假(CHECK 兜底)。
 - `skus.oversell_cores` 变更仅影响新实例;`data_disks.price_gb_month` 是创建时快照价,调价不追溯已有盘。
 
 ## 7. 核心流程

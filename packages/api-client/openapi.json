@@ -3115,7 +3115,7 @@
         "type": "object"
       },
       "InstanceAccessOut": {
-        "description": "接入信息:字段随形态出现或缺席,不是「恒有值」的契约。\n\ndev = SSH + Jupyter;service = 端点 URL,开了 SSH 的服务实例两者都有。\n不按形态拆两个端点:前端拿到什么就渲染什么,少一次「先判形态再选接口」的分叉。",
+        "description": "接入信息:字段随形态出现或缺席,不是「恒有值」的契约。\n\ndev = SSH + Jupyter;服务的版本实例 = 端点 URL,开了 SSH 的两者都有。\n不按形态拆两个端点:前端拿到什么就渲染什么,少一次「先判形态再选接口」的分叉。",
         "properties": {
           "endpoint_url": {
             "anyOf": [
@@ -3190,35 +3190,8 @@
         "type": "object"
       },
       "InstanceCreate": {
+        "additionalProperties": false,
         "properties": {
-          "container_args": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Container Args"
-          },
-          "container_command": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Container Command"
-          },
           "data_disk_id": {
             "anyOf": [
               {
@@ -3230,52 +3203,12 @@
             ],
             "title": "Data Disk Id"
           },
-          "env": {
-            "anyOf": [
-              {
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Env"
-          },
-          "env_secret_keys": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Env Secret Keys"
-          },
           "gpu_count": {
             "default": 1,
             "maximum": 8.0,
             "minimum": 0.0,
             "title": "Gpu Count",
             "type": "integer"
-          },
-          "health_path": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Health Path"
           },
           "image_ref": {
             "maxLength": 256,
@@ -3329,24 +3262,6 @@
             "title": "Period Count",
             "type": "integer"
           },
-          "require_api_key": {
-            "default": true,
-            "title": "Require Api Key",
-            "type": "boolean"
-          },
-          "service_port": {
-            "anyOf": [
-              {
-                "maximum": 65535.0,
-                "minimum": 1.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Service Port"
-          },
           "sku_id": {
             "title": "Sku Id",
             "type": "integer"
@@ -3355,27 +3270,15 @@
             "items": {
               "type": "integer"
             },
+            "minItems": 1,
             "title": "Ssh Key Ids",
             "type": "array"
-          },
-          "with_ssh": {
-            "default": false,
-            "title": "With Ssh",
-            "type": "boolean"
-          },
-          "workload_type": {
-            "default": "dev",
-            "enum": [
-              "dev",
-              "service"
-            ],
-            "title": "Workload Type",
-            "type": "string"
           }
         },
         "required": [
           "sku_id",
-          "image_ref"
+          "image_ref",
+          "ssh_key_ids"
         ],
         "title": "InstanceCreate",
         "type": "object"
@@ -5747,6 +5650,82 @@
         "title": "Page[RefundOut]",
         "type": "object"
       },
+      "Page_ServiceEventOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceEventOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "Page[ServiceEventOut]",
+        "type": "object"
+      },
+      "Page_ServiceOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "Page[ServiceOut]",
+        "type": "object"
+      },
       "Page_TenantOut_": {
         "properties": {
           "items": {
@@ -6990,8 +6969,8 @@
         "title": "ReversalResolve",
         "type": "object"
       },
-      "ServiceEndpointOut": {
-        "description": "对外服务端点视图(仅 workload_type='service' 的实例有)。",
+      "ServiceContainerOut": {
+        "description": "当前版本的容器配置回显(创建那一版时写入,之后不可改;要改请更新版本)。\nenv 只回明文项,密文项只回键名:回值就等于给了一个把密文变量读回明文的端点。",
         "properties": {
           "container_args": {
             "anyOf": [
@@ -7021,15 +7000,6 @@
             ],
             "title": "Container Command"
           },
-          "container_port": {
-            "title": "Container Port",
-            "type": "integer"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
           "env": {
             "additionalProperties": {
               "type": "string"
@@ -7055,16 +7025,386 @@
             ],
             "title": "Health Path"
           },
+          "image_ref": {
+            "title": "Image Ref",
+            "type": "string"
+          },
+          "service_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Port"
+          },
+          "with_ssh": {
+            "title": "With Ssh",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "image_ref",
+          "container_command",
+          "container_args",
+          "env",
+          "env_secret_keys",
+          "service_port",
+          "health_path",
+          "with_ssh"
+        ],
+        "title": "ServiceContainerOut",
+        "type": "object"
+      },
+      "ServiceCreate": {
+        "properties": {
+          "container_args": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container Args"
+          },
+          "container_command": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container Command"
+          },
+          "data_disk_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Disk Id"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Env"
+          },
+          "env_secret_keys": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Env Secret Keys"
+          },
+          "gpu_count": {
+            "default": 1,
+            "maximum": 8.0,
+            "minimum": 0.0,
+            "title": "Gpu Count",
+            "type": "integer"
+          },
+          "health_path": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Health Path"
+          },
+          "image_ref": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Image Ref",
+            "type": "string"
+          },
+          "market": {
+            "default": "on_demand",
+            "enum": [
+              "on_demand",
+              "subscription",
+              "spot"
+            ],
+            "title": "Market",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "period": {
+            "anyOf": [
+              {
+                "enum": [
+                  "day",
+                  "week",
+                  "month",
+                  "year"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period"
+          },
+          "period_count": {
+            "default": 1,
+            "maximum": 36.0,
+            "minimum": 1.0,
+            "title": "Period Count",
+            "type": "integer"
+          },
+          "protocol": {
+            "const": "http",
+            "default": "http",
+            "title": "Protocol",
+            "type": "string"
+          },
+          "require_api_key": {
+            "default": true,
+            "title": "Require Api Key",
+            "type": "boolean"
+          },
+          "service_port": {
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Service Port",
+            "type": "integer"
+          },
+          "sku_id": {
+            "title": "Sku Id",
+            "type": "integer"
+          },
+          "ssh_key_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Ssh Key Ids",
+            "type": "array"
+          },
+          "with_ssh": {
+            "default": false,
+            "title": "With Ssh",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "sku_id",
+          "image_ref",
+          "service_port"
+        ],
+        "title": "ServiceCreate",
+        "type": "object"
+      },
+      "ServiceEventOut": {
+        "description": "服务级时间线 = 全部版本实例的事件并集,标出事件属于哪一版。",
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "event_metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Metadata"
+          },
+          "from_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Status"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "instance_uuid": {
+            "title": "Instance Uuid",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision"
+          },
+          "to_status": {
+            "title": "To Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "from_status",
+          "to_status",
+          "reason",
+          "actor",
+          "event_metadata",
+          "created_at",
+          "instance_uuid",
+          "revision"
+        ],
+        "title": "ServiceEventOut",
+        "type": "object"
+      },
+      "ServiceOut": {
+        "properties": {
+          "container": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceContainerOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current_instance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InstanceOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "desired_state": {
+            "title": "Desired State",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "protocol": {
+            "title": "Protocol",
+            "type": "string"
+          },
           "ready": {
             "title": "Ready",
             "type": "boolean"
+          },
+          "released_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Released At"
           },
           "require_api_key": {
             "title": "Require Api Key",
             "type": "boolean"
           },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "rollout_instance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InstanceOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "slug": {
             "title": "Slug",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
             "type": "string"
           },
           "url": {
@@ -7073,19 +7413,55 @@
           }
         },
         "required": [
+          "id",
           "slug",
+          "name",
           "url",
-          "container_port",
-          "health_path",
+          "protocol",
           "require_api_key",
+          "desired_state",
+          "status",
           "ready",
-          "container_command",
-          "container_args",
-          "env",
-          "env_secret_keys",
-          "created_at"
+          "revision",
+          "current_instance",
+          "rollout_instance",
+          "container",
+          "created_at",
+          "updated_at",
+          "released_at"
         ],
-        "title": "ServiceEndpointOut",
+        "title": "ServiceOut",
+        "type": "object"
+      },
+      "ServicePatch": {
+        "description": "改名与鉴权开关:两者都只改 services 行,不重新部署。",
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "require_api_key": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Require Api Key"
+          }
+        },
+        "title": "ServicePatch",
         "type": "object"
       },
       "SettlementGapResolve": {
@@ -16253,7 +16629,7 @@
     },
     "/api/v1/instances": {
       "get": {
-        "description": "实例列表:降序游标分页;status 精确过滤,name 模糊匹配(含 uuid 前缀)。",
+        "description": "实例列表(只列开发机;在线服务的版本实例走 /services):降序游标分页;\nstatus 精确过滤,name 模糊匹配(含 uuid 前缀)。",
         "operationId": "list_instances_api_v1_instances_get",
         "parameters": [
           {
@@ -16623,7 +16999,7 @@
     },
     "/api/v1/instances/{uuid}/access": {
       "get": {
-        "description": "接入信息。字段按形态出现:dev 给 SSH + Jupyter,service 给端点 URL(开了 SSH 就都有)。",
+        "description": "接入信息。字段按形态出现:dev 给 SSH + Jupyter,服务版本实例给端点 URL(开了 SSH 就都有)。",
         "operationId": "get_instance_access_api_v1_instances__uuid__access_get",
         "parameters": [
           {
@@ -16664,171 +17040,6 @@
           }
         ],
         "summary": "Get Instance Access",
-        "tags": [
-          "instances"
-        ]
-      }
-    },
-    "/api/v1/instances/{uuid}/api-keys": {
-      "get": {
-        "description": "访问密钥列表(含已吊销)。不含明文——库里就没有明文。",
-        "operationId": "list_api_keys_api_v1_instances__uuid__api_keys_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "uuid",
-            "required": true,
-            "schema": {
-              "title": "Uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/ApiKeyOut"
-                  },
-                  "title": "Response List Api Keys Api V1 Instances  Uuid  Api Keys Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "List Api Keys",
-        "tags": [
-          "instances"
-        ]
-      },
-      "post": {
-        "description": "新建访问密钥。响应里的 key 是明文,且只在这一次出现。\n\n不收 Idempotency-Key:重放要回同一份明文就得把明文留在库里,与「只存摘要」冲突。",
-        "operationId": "create_api_key_api_v1_instances__uuid__api_keys_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "uuid",
-            "required": true,
-            "schema": {
-              "title": "Uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ApiKeyCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiKeyCreateOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Create Api Key",
-        "tags": [
-          "instances"
-        ]
-      }
-    },
-    "/api/v1/instances/{uuid}/api-keys/{key_id}": {
-      "delete": {
-        "description": "吊销访问密钥(写 revoked_at,不删行)。重复吊销幂等。",
-        "operationId": "revoke_api_key_api_v1_instances__uuid__api_keys__key_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "uuid",
-            "required": true,
-            "schema": {
-              "title": "Uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "key_id",
-            "required": true,
-            "schema": {
-              "title": "Key Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiKeyOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Revoke Api Key",
         "tags": [
           "instances"
         ]
@@ -17255,54 +17466,6 @@
           }
         ],
         "summary": "Restart Instance",
-        "tags": [
-          "instances"
-        ]
-      }
-    },
-    "/api/v1/instances/{uuid}/service": {
-      "get": {
-        "description": "服务端点(仅服务型实例;dev 实例 404)。",
-        "operationId": "get_service_endpoint_api_v1_instances__uuid__service_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "uuid",
-            "required": true,
-            "schema": {
-              "title": "Uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ServiceEndpointOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Get Service Endpoint",
         "tags": [
           "instances"
         ]
@@ -18160,6 +18323,885 @@
         "summary": "Get Policies",
         "tags": [
           "billing"
+        ]
+      }
+    },
+    "/api/v1/services": {
+      "get": {
+        "description": "服务列表:降序游标分页;name 模糊匹配(含 slug 前缀),status 按派生状态过滤;已删除的不列。",
+        "operationId": "list_services_api_v1_services_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Name"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_ServiceOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Services",
+        "tags": [
+          "services"
+        ]
+      },
+      "post": {
+        "description": "部署服务:同事务落 services 行 + 第 1 版实例(creating)+ 事件 + outbox,202 异步。\n幂等键重放回 200 + X-Idempotent-Replay。",
+        "operationId": "create_service_api_v1_services_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Service",
+        "tags": [
+          "services"
+        ]
+      }
+    },
+    "/api/v1/services/{slug}": {
+      "delete": {
+        "description": "删除服务:释放当前实例并吊销全部密钥;运行中须先停止。数据盘不受影响。",
+        "operationId": "delete_service_api_v1_services__slug__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Service",
+        "tags": [
+          "services"
+        ]
+      },
+      "get": {
+        "operationId": "get_service_api_v1_services__slug__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Service",
+        "tags": [
+          "services"
+        ]
+      },
+      "patch": {
+        "description": "改名 / 访问鉴权开关。开关只改网关回调的判定,几秒内生效,不重新部署。",
+        "operationId": "patch_service_api_v1_services__slug__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServicePatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Patch Service",
+        "tags": [
+          "services"
+        ]
+      }
+    },
+    "/api/v1/services/{slug}/api-keys": {
+      "get": {
+        "description": "访问密钥列表(含已吊销)。不含明文——库里就没有明文。",
+        "operationId": "list_api_keys_api_v1_services__slug__api_keys_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ApiKeyOut"
+                  },
+                  "title": "Response List Api Keys Api V1 Services  Slug  Api Keys Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Api Keys",
+        "tags": [
+          "services"
+        ]
+      },
+      "post": {
+        "description": "新建访问密钥。响应里的 key 是明文,且只在这一次出现。\n\n不收 Idempotency-Key:重放要回同一份明文就得把明文留在库里,与「只存摘要」冲突。",
+        "operationId": "create_api_key_api_v1_services__slug__api_keys_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyCreateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Api Key",
+        "tags": [
+          "services"
+        ]
+      }
+    },
+    "/api/v1/services/{slug}/api-keys/{key_id}": {
+      "delete": {
+        "description": "吊销访问密钥(写 revoked_at,不删行)。重复吊销幂等。",
+        "operationId": "revoke_api_key_api_v1_services__slug__api_keys__key_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "schema": {
+              "title": "Key Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Revoke Api Key",
+        "tags": [
+          "services"
+        ]
+      }
+    },
+    "/api/v1/services/{slug}/bills": {
+      "get": {
+        "description": "小时账单:该服务下全部版本实例的并集(账单主体仍是实例)。",
+        "operationId": "list_service_bills_api_v1_services__slug__bills_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_BillHourlyOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Service Bills",
+        "tags": [
+          "services"
+        ]
+      }
+    },
+    "/api/v1/services/{slug}/events": {
+      "get": {
+        "description": "状态时间线(计费依据):全部版本实例的事件并集,降序游标分页。",
+        "operationId": "list_service_events_api_v1_services__slug__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_ServiceEventOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Service Events",
+        "tags": [
+          "services"
+        ]
+      }
+    },
+    "/api/v1/services/{slug}/logs": {
+      "get": {
+        "description": "当前版本的容器日志:只读、限流 20/h/user、K8s 读 5s 超时;非运行中 409。不记审计。",
+        "operationId": "get_service_logs_api_v1_services__slug__logs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tail_lines",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "minimum": 1,
+              "title": "Tail Lines",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceLogsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Service Logs",
+        "tags": [
+          "services"
+        ]
+      }
+    },
+    "/api/v1/services/{slug}/revisions": {
+      "get": {
+        "description": "版本历史 = 该服务下全部实例(含已释放),按版本号降序。",
+        "operationId": "list_revisions_api_v1_services__slug__revisions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_InstanceOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Revisions",
+        "tags": [
+          "services"
+        ]
+      }
+    },
+    "/api/v1/services/{slug}/start": {
+      "post": {
+        "operationId": "start_service_api_v1_services__slug__start_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Start Service",
+        "tags": [
+          "services"
+        ]
+      }
+    },
+    "/api/v1/services/{slug}/stop": {
+      "post": {
+        "description": "停止:当前实例关机,端点随之 503;服务端点与密钥保留。",
+        "operationId": "stop_service_api_v1_services__slug__stop_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Stop Service",
+        "tags": [
+          "services"
         ]
       }
     },

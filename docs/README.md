@@ -26,7 +26,7 @@
 | [account.md](./reference/account.md) | 注册登录、JWT 会话、SSH 公钥、实名、账号注销 |
 | [catalog.md](./reference/catalog.md) | SKU、平台镜像目录、近似库存 |
 | [orchestrator.md](./reference/orchestrator.md) | 实例状态机、outbox 编排、reconciler、SSH / JupyterLab 接入、K8s 抽象 |
-| [services.md](./reference/services.md) | 对外服务端点:域名规则、网关 API Key 鉴权、限流与可用性取舍 |
+| [services.md](./reference/services.md) | 在线服务聚合根:数据模型与状态派生、部署 / 停止 / 删除契约、域名规则、网关 API Key 鉴权、限流与可用性取舍 |
 | [disks.md](./reference/disks.md) | 数据盘生命周期、配额、扩容与日结 |
 | [images.md](./reference/images.md) | 镜像目录管理、集群内 P2P 缓存与逐节点预热 |
 | [billing.md](./reference/billing.md) | 钱包、账本、小时结算、包周期与竞价口径、欠费回收、策略参数 |

@@ -12,7 +12,8 @@ import {
   getLedgerApiV1WalletLedgerGet,
   getPoliciesApiV1PoliciesGet,
   getRechargeApiV1WalletRechargesOrderNoGet,
-  getServiceEndpointApiV1InstancesUuidServiceGet,
+  getServiceApiV1ServicesSlugGet,
+  getServiceLogsApiV1ServicesSlugLogsGet,
   getSiteConfigApiV1SiteConfigGet,
   getWalletApiV1WalletGet,
   instancesMetricsSummaryApiV1MetricsInstancesGet,
@@ -22,7 +23,11 @@ import {
   listExpiringInstancesApiV1InstancesExpiringGet,
   listInstanceEventsApiV1InstancesUuidEventsGet,
   listInstancesApiV1InstancesGet,
-  listApiKeysApiV1InstancesUuidApiKeysGet,
+  listApiKeysApiV1ServicesSlugApiKeysGet,
+  listRevisionsApiV1ServicesSlugRevisionsGet,
+  listServiceBillsApiV1ServicesSlugBillsGet,
+  listServiceEventsApiV1ServicesSlugEventsGet,
+  listServicesApiV1ServicesGet,
   listInvoiceEligibleApiV1BillingInvoicesEligibleGet,
   listMyInvoicesApiV1BillingInvoicesGet,
   listMyRefundsApiV1WalletRefundsGet,
@@ -40,17 +45,21 @@ import type {
   ApiKeyOut,
   GetInstanceLogsApiV1InstancesUuidLogsGetParams,
   GetInstanceMetricsApiV1InstancesUuidMetricsGetParams,
+  GetServiceLogsApiV1ServicesSlugLogsGetParams,
   InstanceLogsOut,
   InstanceOut,
   ListHourlyBillsApiV1BillsHourlyGetParams,
   ListInstanceEventsApiV1InstancesUuidEventsGetParams,
+  ListServiceBillsApiV1ServicesSlugBillsGetParams,
+  ListServiceEventsApiV1ServicesSlugEventsGetParams,
   PageInstanceEventOut,
   PageInstanceOut,
+  PageServiceOut,
   RechargeOut,
-  ServiceEndpointOut,
+  ServiceOut,
   TicketDetailOut,
 } from "@superdl/api-client";
-import { isTransientInstanceStatus } from "@superdl/ui";
+import { isTransientInstanceStatus, isTransientServiceStatus } from "@superdl/ui";
 import { useInfiniteQuery, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { InfiniteData } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef } from "react";
@@ -205,17 +214,98 @@ export const useInstanceEventPages = (uuid: string) =>
   );
 export const useInstanceAccess = (uuid: string, opts?: QueryOpts) =>
   useApiQuery(["instances", uuid, "access"], () => getInstanceAccessApiV1InstancesUuidAccessGet(uuid), opts);
-/** 服务端点(仅 workload_type='service' 的实例有,dev 实例调用会 404)。
- *  ready 位是「服务起来没有」的唯一真相:持续 not-ready 时 status 仍是 running,不能拿 status 代替。 */
-export const useServiceEndpoint = (uuid: string, opts?: QueryOpts<ServiceEndpointOut>) =>
+
+// ---------- 在线服务 ----------
+/** 轻量整表视图(首 100 条,概览计数 / 命令面板用);列表页走 useServicePages 游标分页。 */
+export const useServices = (opts?: QueryOpts<PageServiceOut>) =>
+  useQuery<PageServiceOut, ApiError, ServiceOut[]>({
+    queryKey: ["services", "first100"],
+    queryFn: () => listServicesApiV1ServicesGet({ limit: 100 }),
+    select: (p) => p.items,
+    ...opts,
+  });
+/** 服务列表游标分页:status(派生态)精确 / name 模糊(含 slug 前缀)服务端过滤,不挂轮询。 */
+export const useServicePages = (params?: { status?: string; name?: string }) => {
+  const status = params?.status;
+  const name = params?.name?.trim() || undefined;
+  return useCursorPages(["services", "pages", { status, name }], listServicesApiV1ServicesGet, { status, name }, 20);
+};
+/** 过渡态服务逐条轻轮询(deploying / stopping / releasing,5s,到终态即停);
+ *  任一条 status 迁移即失效列表查询回刷。判据与 useTransientInstanceRefresh 同款。 */
+export function useTransientServiceRefresh(rows: ServiceOut[]) {
+  const queryClient = useQueryClient();
+  const transientKey = rows
+    .filter((s) => isTransientServiceStatus(s.status))
+    .map((s) => s.slug)
+    .join(",");
+  const transientSlugs = useMemo(() => (transientKey ? transientKey.split(",") : []), [transientKey]);
+  const results = useQueries({
+    queries: transientSlugs.map((slug) => ({
+      queryKey: ["services", slug] as const,
+      queryFn: () => getServiceApiV1ServicesSlugGet(slug),
+      refetchInterval: (q: { state: { data: ServiceOut | undefined } }) =>
+        q.state.data && isTransientServiceStatus(q.state.data.status) ? 5_000 : false,
+    })),
+  });
+  const statusesKey = results.map((r) => r.data?.status ?? "").join(",");
+  const lastSeen = useRef(new Map<string, string>());
+  useEffect(() => {
+    let changed = false;
+    const alive = new Set(transientSlugs);
+    transientSlugs.forEach((slug, i) => {
+      const status = results[i]?.data?.status;
+      if (!status) return;
+      const prev = lastSeen.current.get(slug);
+      lastSeen.current.set(slug, status);
+      if (prev !== undefined && prev !== status) changed = true;
+    });
+    for (const slug of [...lastSeen.current.keys()]) {
+      if (!alive.has(slug)) lastSeen.current.delete(slug);
+    }
+    if (changed) void queryClient.invalidateQueries({ queryKey: ["services", "pages"] });
+  }, [statusesKey, transientSlugs, results, queryClient]);
+}
+export const useService = (slug: string, opts?: QueryOpts<ServiceOut>) =>
+  useApiQuery(["services", slug], () => getServiceApiV1ServicesSlugGet(slug), opts);
+/** 服务级时间线(全部版本实例的事件并集)游标分页;不挂轮询,由详情页服务轮询检测到迁移后失效。 */
+export const useServiceEventPages = (slug: string) =>
+  useCursorPages(
+    ["services", slug, "events", "pages"],
+    (p?: ListServiceEventsApiV1ServicesSlugEventsGetParams) =>
+      listServiceEventsApiV1ServicesSlugEventsGet(slug, p),
+    undefined,
+    50,
+  );
+/** 版本历史 = 该服务下全部实例(含已释放),版本号降序。 */
+export const useServiceRevisions = (slug: string, opts?: QueryOpts) =>
   useApiQuery(
-    ["instances", uuid, "service"],
-    () => getServiceEndpointApiV1InstancesUuidServiceGet(uuid),
+    ["services", slug, "revisions"],
+    () => listRevisionsApiV1ServicesSlugRevisionsGet(slug, { limit: 50 }),
     opts,
   );
-/** 实例的 API Key 列表:只有前缀,明文只在创建响应里出现一次。 */
-export const useApiKeys = (uuid: string, opts?: QueryOpts<ApiKeyOut[]>) =>
-  useApiQuery(["instances", uuid, "api-keys"], () => listApiKeysApiV1InstancesUuidApiKeysGet(uuid), opts);
+/** 当前版本的容器日志:tail / 自动刷新由调用方经 params 与 refetchInterval 控制。 */
+export const useServiceLogs = (
+  slug: string,
+  params: GetServiceLogsApiV1ServicesSlugLogsGetParams,
+  opts?: QueryOpts<InstanceLogsOut>,
+) =>
+  useApiQuery(
+    ["services", slug, "logs", params],
+    () => getServiceLogsApiV1ServicesSlugLogsGet(slug, params),
+    opts,
+  );
+/** 服务的 API Key 列表:只有前缀,明文只在创建响应里出现一次。 */
+export const useServiceApiKeys = (slug: string, opts?: QueryOpts<ApiKeyOut[]>) =>
+  useApiQuery(["services", slug, "api-keys"], () => listApiKeysApiV1ServicesSlugApiKeysGet(slug), opts);
+/** 服务小时账单(全部版本实例并集)游标分页,与实例详情账单 Tab 同一张表。 */
+export const useServiceBillPages = (slug: string) =>
+  useCursorPages(
+    ["services", slug, "bills", "pages"],
+    (p?: ListServiceBillsApiV1ServicesSlugBillsGetParams) =>
+      listServiceBillsApiV1ServicesSlugBillsGet(slug, p),
+    undefined,
+    50,
+  );
 /** 容器日志:tail/自动刷新由调用方经 params 与 refetchInterval 控制。 */
 export const useInstanceLogs = (
   uuid: string,

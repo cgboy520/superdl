@@ -12,14 +12,16 @@ import {
   cancelDeletionRequestApiV1MeDeletionRequestCancelPost,
   closeTicketApiV1TicketsTicketIdClosePost,
   convertToOnDemandApiV1InstancesUuidToOnDemandPost,
-  createApiKeyApiV1InstancesUuidApiKeysPost,
+  createApiKeyApiV1ServicesSlugApiKeysPost,
   createDeletionRequestApiV1MeDeletionRequestPost,
   createDiskApiV1DisksPost,
   createInstanceApiV1InstancesPost,
   createInvoiceApiV1BillingInvoicesPost,
   createRechargeApiV1WalletRechargesPost,
   createRefundApiV1WalletRefundsPost,
+  createServiceApiV1ServicesPost,
   createTicketApiV1TicketsPost,
+  deleteServiceApiV1ServicesSlugDelete,
   deleteDiskApiV1DisksUuidDelete,
   deleteSshKeyApiV1SshKeysKeyIdDelete,
   expandDiskApiV1DisksUuidPatch,
@@ -29,6 +31,7 @@ import {
   markAllReadApiV1NotificationsReadAllPost,
   markReadApiV1NotificationsNotificationIdReadPost,
   mockWebhookApiV1WebhooksMockPost,
+  patchServiceApiV1ServicesSlugPatch,
   registerApiV1AuthRegisterPost,
   resetPasswordApiV1AuthPasswordResetPost,
   releaseInstanceApiV1InstancesUuidDelete,
@@ -36,13 +39,15 @@ import {
   renewInstanceApiV1InstancesUuidRenewPost,
   resetJupyterTokenApiV1InstancesUuidResetJupyterTokenPost,
   restartInstanceApiV1InstancesUuidRestartPost,
-  revokeApiKeyApiV1InstancesUuidApiKeysKeyIdDelete,
+  revokeApiKeyApiV1ServicesSlugApiKeysKeyIdDelete,
   sendSmsCodeApiV1AuthSmsCodePost,
   setAutoRenewApiV1InstancesUuidAutoRenewPost,
   setWarnThresholdApiV1MeWarnThresholdPatch,
   submitRealNameApiV1MeRealNamePost,
   startInstanceApiV1InstancesUuidStartPost,
+  startServiceApiV1ServicesSlugStartPost,
   stopInstanceApiV1InstancesUuidStopPost,
+  stopServiceApiV1ServicesSlugStopPost,
   subscribeInstanceApiV1InstancesUuidSubscribePost,
 } from "@superdl/api-client";
 import type {
@@ -61,6 +66,9 @@ import type {
   PasswordResetRequest,
   RegisterRequest,
   RenewOut,
+  ServiceCreate,
+  ServiceOut,
+  ServicePatch,
   SmsCodeRequest,
   TicketCreate,
   TicketMessageCreate,
@@ -202,18 +210,49 @@ export const useResetJupyterToken = () =>
     invalidates: ["instances"],
   });
 
+// 在线服务
+// 服务写操作影响:服务域(列表 / 详情 / 事件 / 账单)与钱包余额(启停即结算)
+const SERVICE_INVALIDATES = ["services", "wallet", "bills", "bill-daily-summary"] as const;
+/** 部署服务:必须带幂等键(按表单快照派生,重放回同一个服务而不是再部署一个)。 */
+export const useCreateService = (o?: { onSuccess?: (d: ServiceOut) => void; silentError?: boolean }) =>
+  useApiMutation(
+    ({ body, idempotencyKey }: { body: ServiceCreate; idempotencyKey: string }) =>
+      createServiceApiV1ServicesPost(body, { "Idempotency-Key": idempotencyKey }),
+    { ...o, invalidates: [...SERVICE_INVALIDATES, "skus", "disks"] },
+  );
+export const useStopService = (o?: CallerOpts<ServiceOut>) =>
+  useApiMutation((slug: string) => stopServiceApiV1ServicesSlugStopPost(slug), {
+    ...o,
+    invalidates: [...SERVICE_INVALIDATES, "skus"],
+  });
+export const useStartService = (o?: CallerOpts<ServiceOut>) =>
+  useApiMutation((slug: string) => startServiceApiV1ServicesSlugStartPost(slug), {
+    ...o,
+    invalidates: [...SERVICE_INVALIDATES, "skus"],
+  });
+export const useDeleteService = (o?: CallerOpts<ServiceOut>) =>
+  useApiMutation((slug: string) => deleteServiceApiV1ServicesSlugDelete(slug), {
+    ...o,
+    invalidates: [...SERVICE_INVALIDATES, "skus", "disks"],
+  });
+/** 改名 / 鉴权开关:只改 services 行,失效面只有服务域。 */
+export const useUpdateService = (slug: string, o?: CallerOpts<ServiceOut>) =>
+  useApiMutation((body: ServicePatch) => patchServiceApiV1ServicesSlugPatch(slug, body), {
+    ...o,
+    invalidates: ["services"],
+  });
 /** 新建服务访问 Key:响应里的明文 key 只露面这一次(库里只有 HMAC 摘要),
  *  调用方必须把它交给一次性展示的成功态,禁止入缓存或日志。 */
-export const useCreateApiKey = (uuid: string, o?: CallerOpts<ApiKeyCreateOut>) =>
-  useApiMutation((name: string) => createApiKeyApiV1InstancesUuidApiKeysPost(uuid, { name }), {
+export const useCreateServiceApiKey = (slug: string, o?: CallerOpts<ApiKeyCreateOut>) =>
+  useApiMutation((name: string) => createApiKeyApiV1ServicesSlugApiKeysPost(slug, { name }), {
     ...o,
-    invalidates: ["instances"],
+    invalidates: ["services"],
   });
 /** 吊销 Key:写 revoked_at 不删行,列表仍看得到这把 Key 存在过。 */
-export const useRevokeApiKey = (uuid: string, o?: CallerOpts) =>
-  useApiMutation((keyId: number) => revokeApiKeyApiV1InstancesUuidApiKeysKeyIdDelete(uuid, keyId), {
+export const useRevokeServiceApiKey = (slug: string, o?: CallerOpts) =>
+  useApiMutation((keyId: number) => revokeApiKeyApiV1ServicesSlugApiKeysKeyIdDelete(slug, keyId), {
     ...o,
-    invalidates: ["instances"],
+    invalidates: ["services"],
   });
 
 // wallet / billing
@@ -283,7 +322,7 @@ export const useExpandDisk = (o?: { onSuccess?: () => void }) =>
 export const useDeleteDisk = (o?: { onSuccess?: () => void }) =>
   useApiMutation((uuid: string) => deleteDiskApiV1DisksUuidDelete(uuid), {
     ...o,
-    invalidates: ["disks", "wallet", "instances"],
+    invalidates: ["disks", "wallet", "instances", "services"],
   });
 
 // ssh keys / notify

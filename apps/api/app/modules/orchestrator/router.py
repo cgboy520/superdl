@@ -11,9 +11,6 @@ from app.modules.account.deps import CurrentUser
 from app.modules.billing.schemas import SubscriptionQuoteOut
 from app.modules.orchestrator import service
 from app.modules.orchestrator.schemas import (
-    ApiKeyCreate,
-    ApiKeyCreateOut,
-    ApiKeyOut,
     InstanceAccessOut,
     InstanceAutoRenew,
     InstanceCreate,
@@ -23,7 +20,6 @@ from app.modules.orchestrator.schemas import (
     InstanceRename,
     InstanceRenew,
     RenewOut,
-    ServiceEndpointOut,
 )
 
 router = APIRouter(tags=["instances"])
@@ -57,15 +53,6 @@ async def create_instance(
         market=body.market,
         period=body.period,
         period_count=body.period_count,
-        workload_type=body.workload_type,
-        container_command=body.container_command,
-        container_args=body.container_args,
-        env=body.env,
-        env_secret_keys=body.env_secret_keys,
-        service_port=body.service_port,
-        health_path=body.health_path,
-        require_api_key=body.require_api_key,
-        with_ssh=body.with_ssh,
     )
     if not created:
         mark_idempotent_replay(response)
@@ -82,7 +69,8 @@ async def list_instances(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[InstanceOut]:
-    """实例列表:降序游标分页;status 精确过滤,name 模糊匹配(含 uuid 前缀)。"""
+    """实例列表(只列开发机;在线服务的版本实例走 /services):降序游标分页;
+    status 精确过滤,name 模糊匹配(含 uuid 前缀)。"""
     return await service.list_instances_page(
         session, user.id, status=status, name=name, cursor=cursor, limit=limit
     )
@@ -264,47 +252,8 @@ async def list_instance_events(
 async def get_instance_access(
     uuid: str, user: CurrentUser, session: DbSession
 ) -> InstanceAccessOut:
-    """接入信息。字段按形态出现:dev 给 SSH + Jupyter,service 给端点 URL(开了 SSH 就都有)。"""
+    """接入信息。字段按形态出现:dev 给 SSH + Jupyter,服务版本实例给端点 URL(开了 SSH 就都有)。"""
     return InstanceAccessOut.model_validate(await service.get_access(session, user.id, uuid))
-
-
-@router.get("/instances/{uuid}/service")
-async def get_service_endpoint(
-    uuid: str, user: CurrentUser, session: DbSession
-) -> ServiceEndpointOut:
-    """服务端点(仅服务型实例;dev 实例 404)。"""
-    return await service.service_endpoint_view(session, user.id, uuid)
-
-
-@router.get("/instances/{uuid}/api-keys")
-async def list_api_keys(uuid: str, user: CurrentUser, session: DbSession) -> list[ApiKeyOut]:
-    """访问密钥列表(含已吊销)。不含明文——库里就没有明文。"""
-    rows = await service.list_api_keys(session, user.id, uuid)
-    return [ApiKeyOut.model_validate(r) for r in rows]
-
-
-@router.post("/instances/{uuid}/api-keys", status_code=status.HTTP_201_CREATED)
-async def create_api_key(
-    uuid: str, body: ApiKeyCreate, user: CurrentUser, session: DbSession, request: Request
-) -> ApiKeyCreateOut:
-    """新建访问密钥。响应里的 key 是明文,且只在这一次出现。
-
-    不收 Idempotency-Key:重放要回同一份明文就得把明文留在库里,与「只存摘要」冲突。
-    """
-    row, plaintext = await service.create_api_key(session, user.id, uuid, name=body.name)
-    # 审计只落 id 与名字,明文绝不进 detail
-    set_audit_target(request, f"instance:{uuid}", {"api_key_id": row.id, "name": row.name})
-    return ApiKeyCreateOut(**ApiKeyOut.model_validate(row).model_dump(), key=plaintext)
-
-
-@router.delete("/instances/{uuid}/api-keys/{key_id}")
-async def revoke_api_key(
-    uuid: str, key_id: int, user: CurrentUser, session: DbSession, request: Request
-) -> ApiKeyOut:
-    """吊销访问密钥(写 revoked_at,不删行)。重复吊销幂等。"""
-    row = await service.revoke_api_key(session, user.id, uuid, key_id)
-    set_audit_target(request, f"instance:{uuid}", {"api_key_id": key_id})
-    return ApiKeyOut.model_validate(row)
 
 
 @router.get("/instances/{uuid}/logs")

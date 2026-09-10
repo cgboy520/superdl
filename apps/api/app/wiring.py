@@ -13,11 +13,9 @@ def wire_modules() -> None:
     from app.modules.nodes import handlers as _node_handlers  # noqa: F401 注册 node.cordon handler
     from app.modules.notify import service as _notify_service  # noqa: F401 注册 notify.sms handler
     from app.modules.orchestrator import handlers as _handlers  # noqa: F401 注册 outbox handlers
-    from app.modules.orchestrator.service import (
-        estimate_available_many,
-        register_endpoint_auth_cache_listener,
-    )
+    from app.modules.orchestrator.service import estimate_available_many
+    from app.modules.services.service import register_service_listeners
 
     register_inventory_provider(estimate_available_many)
     register_billing_edge_listener()
-    register_endpoint_auth_cache_listener()
+    register_service_listeners()
