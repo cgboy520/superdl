@@ -11,6 +11,7 @@ import { useFormat } from "@superdl/ui";
 import {
   useDailySummary,
   useInstances,
+  useServices,
   useNotifications,
   useRefundableOrders,
   useUnreadCount,
@@ -95,6 +96,7 @@ function Overview() {
   const { t } = useTranslation();
   const { formatMoney } = useFormat();
   const instancesQ = useInstances();
+  const servicesQ = useServices();
   const walletQ = useWallet();
   const { data: instances } = instancesQ;
   const { data: wallet } = walletQ;
@@ -108,6 +110,8 @@ function Overview() {
   const todayTotal = daily ? formatMoney(addAmounts(daily.gpu_total, daily.disk_total)) : "—";
 
   const running = instances?.filter((i) => i.status === "running").length ?? 0;
+  const services = servicesQ.data;
+  const servicesRunning = services?.filter((s) => s.status === "running").length ?? 0;
   const hasWarn = (unread?.items ?? []).some((n) => n.type === "balance_warn" || n.type === "arrears");
   const announcement = (unread?.items ?? []).find((n) => n.type === "announcement");
 
@@ -151,6 +155,18 @@ function Overview() {
               </>
             )}
           </KpiCard>,
+          <KpiCard key="services" pending={servicesQ.isPending}>
+            {servicesQ.isError ? (
+              <DataErrorAlert onRetry={() => void servicesQ.refetch()} />
+            ) : (
+              <Link to="/services" style={{ color: "inherit" }}>
+                <Statistic title={t("dashboard.totalServices")} value={services ? services.length : "—"} />
+                <Typography.Text type="secondary">
+                  {services ? t("dashboard.servicesRunning", { count: servicesRunning }) : " "}
+                </Typography.Text>
+              </Link>
+            )}
+          </KpiCard>,
           <KpiCard key="balance" pending={walletQ.isPending}>
             {walletQ.isError ? (
               <DataErrorAlert onRetry={() => void walletQ.refetch()} />
@@ -186,6 +202,9 @@ function Overview() {
           </Link>
           <Link to="/instances">
             <Button>{t("dashboard.manageInstances")}</Button>
+          </Link>
+          <Link to="/services">
+            <Button>{t("dashboard.manageServices")}</Button>
           </Link>
           <Link to="/storage">
             <Button>{t("dashboard.dataDisks")}</Button>

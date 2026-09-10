@@ -1,6 +1,6 @@
 /** 控制台全局快捷键(挂在 _console 布局,与 CommandPalette 的 ⌘K 并存):
  *  `/`      聚焦当前页第一个带 data-search-input 的搜索框(无搜索框则不动作)
- *  `g`+序列 500ms 内两键导航:g d→/dashboard,g i→/instances,g b→/billing,g m→/market
+ *  `g`+序列 500ms 内两键导航:g d→/dashboard,g i→/instances,g s→/services,g b→/billing,g m→/market
  *  输入框/文本域/contenteditable 聚焦时一律不触发。 */
 
 import { useNavigate } from "@tanstack/react-router";
@@ -49,6 +49,10 @@ export function useGlobalHotkeys() {
           case "i":
             e.preventDefault();
             void navigate({ to: "/instances" });
+            return;
+          case "s":
+            e.preventDefault();
+            void navigate({ to: "/services" });
             return;
           case "b":
             e.preventDefault();

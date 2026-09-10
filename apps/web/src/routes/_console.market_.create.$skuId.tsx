@@ -1,11 +1,10 @@
 /**
- * 创建实例:单栏卡片流 + 底部结算条;经济档需知情同意。
+ * 创建实例(开发机):单栏卡片流 + 底部结算条;经济档需知情同意。
  * 数据盘「新建」为行内直建:提交时先建盘再建实例,建盘成功而实例失败必须提示盘已计费。
- * `?workload=service` 走服务形态:换掉镜像/SSH 两张卡,提交到 /services(部署在线服务)并跳服务详情;
- * 规格/数据盘/结算条/幂等键复用。
+ * 部署在线服务走独立的 /services/new。
  */
 
-import { isApiError, type DiskOut, type InstanceOut, type ServiceOut, type SkuMarketOut } from "@superdl/api-client";
+import { isApiError, type DiskOut, type InstanceOut, type SkuMarketOut } from "@superdl/api-client";
 import {
   billingUnits,
   compareAmounts,
@@ -31,10 +30,7 @@ import {
   Button,
   Card,
   Cascader,
-  Checkbox,
   Input,
-  InputNumber,
-  Radio,
   Skeleton,
   Space,
   Table,
@@ -46,28 +42,18 @@ import { useMemo, useState } from "react";
 
 import { useFormat } from "@superdl/ui";
 import { useApiErrorText } from "@superdl/ui";
-import { useCreateDisk, useCreateInstance, useCreateService } from "../api/mutations";
+import { useCreateDisk, useCreateInstance } from "../api/mutations";
 import { useDisks, useImages, usePolicies, useSkus, useWallet } from "../api/queries";
 import { ChipRow } from "../components/ChipRow";
 import { CheckoutBar } from "../components/CheckoutBar";
 import { ConsentModal } from "../components/ConsentModal";
-import { ArgRowsEditor } from "../components/create/ArgRowsEditor";
 import { DataDiskCard, defaultDiskName, type DiskMode } from "../components/create/DataDiskCard";
-import { EnvRowsEditor } from "../components/create/EnvRowsEditor";
 import { SshKeyPicker } from "../components/create/SshKeyPicker";
 import { PeriodQuoteRows, periodQuoteOf, usePeriodDiscounts } from "../components/periodBilling";
 import { BillingModeCard, skuColumns, type BillingMode } from "../components/skuTable";
 import { SpotConsentModal, SpotPriceInline, spotPriceOf, useSpotPolicy } from "../components/spotBilling";
 import { requireAuth } from "../lib/guard";
-import {
-  commandToList,
-  envEntriesOf,
-  envRowIssue,
-  isPinnedImageRef,
-  RESERVED_SERVICE_PORTS,
-  type ArgRow,
-  type EnvRow,
-} from "../lib/serviceSpec";
+import { isPinnedImageRef } from "../lib/serviceSpec";
 import { useLeaveGuard } from "../lib/useLeaveGuard";
 
 export const Route = createFileRoute("/_console/market_/create/$skuId")({
@@ -75,7 +61,6 @@ export const Route = createFileRoute("/_console/market_/create/$skuId")({
     search: Record<string, unknown>,
   ): {
     gpus?: number;
-    workload?: "service";
     period?: BillingPeriod;
     market?: "spot";
     count?: number;
@@ -84,13 +69,11 @@ export const Route = createFileRoute("/_console/market_/create/$skuId")({
     const g = Number(search.gpus);
     const out: {
       gpus?: number;
-      workload?: "service";
       period?: BillingPeriod;
       market?: "spot";
       count?: number;
     } = {};
     if (Number.isInteger(g) && g >= 1 && g <= 8) out.gpus = g;
-    if (search.workload === "service") out.workload = "service";
     if (typeof search.period === "string" && isBillingPeriod(search.period)) {
       out.period = search.period;
       // 市场页购买时长选择器透传(1~36,与市场页 URL 同一口径)
@@ -110,9 +93,8 @@ function CreatePage() {
   const fmt = useFormat();
   const { formatHourlyPrice } = fmt;
   const { skuId } = Route.useParams();
-  const { gpus: gpusFromMarket, workload, period: periodFromMarket, market: marketFromUrl, count: countFromMarket } =
+  const { gpus: gpusFromMarket, period: periodFromMarket, market: marketFromUrl, count: countFromMarket } =
     Route.useSearch();
-  const isService = workload === "service";
   const navigate = useNavigate();
   const { message } = App.useApp();
   const confirm = useConfirm();
@@ -143,15 +125,6 @@ function CreatePage() {
   const [existingDiskId, setExistingDiskId] = useState<number>();
   const [keyIds, setKeyIds] = useState<number[]>([]);
   const [name, setName] = useState("");
-  // 服务形态专属
-  const [serviceImage, setServiceImage] = useState("");
-  const [command, setCommand] = useState("");
-  const [argRows, setArgRows] = useState<ArgRow[]>([]);
-  const [envRows, setEnvRows] = useState<EnvRow[]>([]);
-  const [servicePort, setServicePort] = useState<number | null>(null);
-  const [healthPath, setHealthPath] = useState("");
-  const [requireApiKey, setRequireApiKey] = useState(true);
-  const [withSsh, setWithSsh] = useState(false);
   const [ecoOpen, setEcoOpen] = useState(false);
   const [spotOpen, setSpotOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -161,7 +134,7 @@ function CreatePage() {
   // 「取消」脏判定的挂载快照:与初始值逐项比对,任一字段非默认即脏
   const [mountSnapshot] = useState(() => ({ gpuCount, billingMode, newDiskName }));
 
-  // 表单脏 = 任一字段非挂载初值(服务形态下已填内容多,直接离开会整页丢)
+  // 表单脏 = 任一字段非挂载初值
   const formDirty =
     gpuCount !== mountSnapshot.gpuCount ||
     billingMode !== mountSnapshot.billingMode ||
@@ -175,15 +148,7 @@ function CreatePage() {
     newDiskGb !== 100 ||
     existingDiskId != null ||
     keyIds.length > 0 ||
-    name.trim() !== "" ||
-    serviceImage.trim() !== "" ||
-    command.trim() !== "" ||
-    argRows.some((r) => r.value.trim() !== "") ||
-    envRows.some((r) => r.name.trim() !== "" || r.value.trim() !== "") ||
-    servicePort != null ||
-    healthPath.trim() !== "" ||
-    !requireApiKey ||
-    withSsh;
+    name.trim() !== "";
 
   const leave = useLeaveGuard(formDirty);
 
@@ -213,7 +178,7 @@ function CreatePage() {
     }));
   }, [images]);
 
-  const pageTitle = isService ? t("services.deploy") : t("create.title");
+  const pageTitle = t("create.title");
   const errText = useApiErrorText();
   const create = useCreateInstance({
     // 错误统一在本页 doCreate 的 catch 里出(避免 NO_CAPACITY 引导与全局错误弹两条)
@@ -223,14 +188,6 @@ function CreatePage() {
       message.success(t("create.creating", { name: inst.name }));
       leave.bypass();
       void navigate({ to: "/instances" });
-    },
-  });
-  const createService = useCreateService({
-    silentError: true,
-    onSuccess: (svc: ServiceOut) => {
-      message.success(t("services.deploying", { name: svc.name }));
-      leave.bypass();
-      void navigate({ to: "/services/$slug", params: { slug: svc.slug } });
     },
   });
   const createDisk = useCreateDisk();
@@ -325,41 +282,11 @@ function CreatePage() {
   const enough =
     balanceReady && needAmount != null && compareAmounts(wallet.balance, needAmount) >= 0;
 
-  const imageRef = isService
-    ? serviceImage.trim()
-    : imageTab === "platform"
-      ? platformImage?.[3]
-      : customImage.trim();
+  const imageRef = imageTab === "platform" ? platformImage?.[3] : customImage.trim();
 
-  const envEntries = envEntriesOf(envRows);
-  const envDict = Object.fromEntries(envEntries.map((r) => [r.name, r.value]));
-  const envSecretKeys = envEntries.filter((r) => r.secret).map((r) => r.name);
-  const commandList = commandToList(command);
-  const argList = argRows.map((r) => r.value.trim()).filter((v) => v !== "");
-
-  /** 服务形态的提交前置条件,返回一句可读原因(挂在禁用按钮的 tooltip 上)。 */
-  const serviceIssue = ((): string | null => {
-    if (!isService) return null;
-    if (!imageRef) return t("create.serviceNeedsImage");
-    if (!isPinnedImageRef(imageRef)) return tErr("orchestrator.imageRefNotPinned");
-    if (servicePort == null) return t("create.servicePortRequired");
-    if (RESERVED_SERVICE_PORTS.includes(servicePort)) return t("create.servicePortReserved");
-    if (healthPath.trim() !== "" && !healthPath.trim().startsWith("/")) {
-      return t("create.healthPathSlash");
-    }
-    const bad = envRows.map((r) => envRowIssue(r, envRows)).find((e) => e != null);
-    if (bad === "invalid") return t("create.envNameInvalid");
-    if (bad === "reserved") return t("create.envNameReserved");
-    if (bad === "duplicate") return t("create.envNameDuplicate");
-    // 开了 SSH 必须至少选一把公钥(后端同款校验)
-    if (withSsh && keyIds.length === 0) return t("create.serviceNeedsKey");
-    return null;
-  })();
-
-  const canSubmit = isService
-    ? serviceIssue == null
-    : // dev 形态后端同判 pinned 硬闸(等 400 才知道太迟),前端同样拦截并即时红框
-      imageRef != null && imageRef !== "" && isPinnedImageRef(imageRef) && keyIds.length > 0;
+  // 后端同判 pinned 硬闸(等 400 才知道太迟),前端同样拦截并即时红框
+  const canSubmit =
+    imageRef != null && imageRef !== "" && isPinnedImageRef(imageRef) && keyIds.length > 0;
 
   const onCancel = () => {
     if (!formDirty) {
@@ -380,8 +307,7 @@ function CreatePage() {
   };
 
   const doCreate = async () => {
-    // canSubmit 已保证有镜像(两种形态各有一条判据);这里再挡一次是把类型收窄到 string,
-    // 下面拼幂等键与提交时不必再各写一次 ?? "" 兜底
+    // canSubmit 已保证有镜像;这里再挡一次是把类型收窄到 string
     if (!imageRef) return;
     setSubmitting(true);
     // 幂等键由参数派生且失败不轮换:响应丢失后重提不会开出第二台,改了参数才是新单
@@ -393,22 +319,12 @@ function CreatePage() {
       mode,
       period ? periodCount : null,
       imageRef,
-      (isService && !withSsh ? [] : [...keyIds].sort((a, b) => a - b)).join(","),
+      [...keyIds].sort((a, b) => a - b).join(","),
       name || null,
       diskMode,
       existingDiskId ?? null,
       diskMode === "new" ? newDiskName.trim() : null,
       diskMode === "new" ? newDiskGb : null,
-      // 服务参数也进快照:改了端口/环境变量再提交是一张新单
-      isService ? "service" : "dev",
-      isService ? servicePort : null,
-      isService ? commandList.join(" ") : null,
-      isService ? argList.join("\u0000") : null,
-      isService ? JSON.stringify(envDict) : null,
-      isService ? envSecretKeys.join(",") : null,
-      isService ? healthPath.trim() : null,
-      isService ? String(requireApiKey) : null,
-      isService ? String(withSsh) : null,
     ]);
     try {
       let diskId: number | null = diskMode === "existing" ? (existingDiskId ?? null) : null;
@@ -429,49 +345,22 @@ function CreatePage() {
         diskId = disk.id;
       }
       try {
-        const marketBody = period
-          ? { market: "subscription" as const, period, period_count: periodCount }
-          : isSpot
-            ? { market: "spot" as const }
-            : {};
-        if (isService) {
-          // canSubmit 已保证端口非空(serviceIssue);这里只做类型收窄
-          if (servicePort == null) return;
-          await createService.mutateAsync({
-            body: {
-              sku_id: sku.id,
-              gpu_count: gpus,
-              image_ref: imageRef,
-              // 不勾 SSH 就不带公钥(不开 sshd 的容器注入 authorized_keys 无意义)
-              ssh_key_ids: withSsh ? keyIds : [],
-              name: name || null,
-              data_disk_id: diskId,
-              ...marketBody,
-              container_command: commandList.length > 0 ? commandList : null,
-              container_args: argList.length > 0 ? argList : null,
-              env: envEntries.length > 0 ? envDict : null,
-              env_secret_keys: envSecretKeys.length > 0 ? envSecretKeys : null,
-              service_port: servicePort,
-              health_path: healthPath.trim() || null,
-              require_api_key: requireApiKey,
-              with_ssh: withSsh,
-            },
-            idempotencyKey,
-          });
-        } else {
-          await create.mutateAsync({
-            body: {
-              sku_id: sku.id,
-              gpu_count: gpus,
-              image_ref: imageRef,
-              ssh_key_ids: keyIds,
-              name: name || null,
-              data_disk_id: diskId,
-              ...marketBody,
-            },
-            idempotencyKey,
-          });
-        }
+        await create.mutateAsync({
+          body: {
+            sku_id: sku.id,
+            gpu_count: gpus,
+            image_ref: imageRef,
+            ssh_key_ids: keyIds,
+            name: name || null,
+            data_disk_id: diskId,
+            ...(period
+              ? { market: "subscription" as const, period, period_count: periodCount }
+              : isSpot
+                ? { market: "spot" as const }
+                : {}),
+          },
+          idempotencyKey,
+        });
       } catch (err) {
         // silentError 模式下提示统一在这里出:库存不足给换档引导,其余给错误原文
         if (isApiError(err) && err.code === "NO_CAPACITY") {
@@ -512,13 +401,7 @@ function CreatePage() {
 
   const columns = skuColumns({ fmt, t, cpu: isCpu });
 
-  const submitLabel = period
-    ? isService
-      ? t("services.payAndDeploy")
-      : t("create.payAndCreate")
-    : isService
-      ? t("services.deploy")
-      : t("create.createAndStart");
+  const submitLabel = period ? t("create.payAndCreate") : t("create.createAndStart");
 
   return (
     // 不用 Space:其 ant-space-item 包装会让 sticky 结算条的包含块只剩自身高度
@@ -548,10 +431,6 @@ function CreatePage() {
           showIcon
           title={t("copy.spotReclaimNotice", { seconds: spotPolicy.graceSeconds })}
         />
-      )}
-      {/* 服务形态选竞价只警示不禁止,但被回收会断掉对外地址,这一句必须在下单前出现 */}
-      {isSpot && isService && (
-        <Alert type="warning" showIcon title={t("copy.spotNotForService")} />
       )}
 
       <Alert type="info" showIcon title={t("copy.instanceDiskLocalNotice")} />
@@ -589,119 +468,6 @@ function CreatePage() {
         </Space>
       </Card>
 
-      {isService ? (
-        <>
-          <Card title={t("create.containerCard")}>
-            <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-              <Space orientation="vertical" size={4} style={{ width: "100%" }}>
-                <Typography.Text type="secondary">{t("create.containerImageLabel")}</Typography.Text>
-                <Input
-                  placeholder="registry.example.com/your/image:v1.2.0"
-                  aria-label={t("create.containerImageLabel")}
-                  value={serviceImage}
-                  onChange={(e) => setServiceImage(e.target.value)}
-                  status={
-                    serviceImage.trim() !== "" && !isPinnedImageRef(serviceImage.trim())
-                      ? "error"
-                      : undefined
-                  }
-                />
-                <Typography.Text type="secondary">{t("copy.serviceImagePinned")}</Typography.Text>
-              </Space>
-
-              <Space orientation="vertical" size={4} style={{ width: "100%" }}>
-                <Typography.Text type="secondary">{t("create.commandLabel")}</Typography.Text>
-                <Input
-                  placeholder={t("create.commandPlaceholder")}
-                  aria-label={t("create.commandLabel")}
-                  value={command}
-                  onChange={(e) => setCommand(e.target.value)}
-                />
-                <Typography.Text type="secondary">{t("create.commandHint")}</Typography.Text>
-              </Space>
-
-              <ArgRowsEditor rows={argRows} onChange={setArgRows} />
-              <EnvRowsEditor rows={envRows} onChange={setEnvRows} />
-            </Space>
-          </Card>
-
-          <Card title={t("create.serviceCard")}>
-            <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-              <Space size={24} wrap align="start">
-                <Space orientation="vertical" size={4}>
-                  <Typography.Text type="secondary">{t("create.servicePortLabel")}</Typography.Text>
-                  <InputNumber
-                    min={1}
-                    max={65535}
-                    style={{ width: "100%", maxWidth: 160 }}
-                    placeholder="8000"
-                    aria-label={t("create.servicePortLabel")}
-                    status={
-                      servicePort != null && RESERVED_SERVICE_PORTS.includes(servicePort)
-                        ? "error"
-                        : undefined
-                    }
-                    value={servicePort}
-                    onChange={(v) => setServicePort(typeof v === "number" ? v : null)}
-                  />
-                </Space>
-                <Space orientation="vertical" size={4}>
-                  <Typography.Text type="secondary">{t("create.protocolLabel")}</Typography.Text>
-                  {/* TCP / gRPC 未上线:灰置并写明,不隐藏 */}
-                  <Radio.Group
-                    value="http"
-                    options={[
-                      { value: "http", label: "HTTP" },
-                      { value: "tcp", label: "TCP", disabled: true },
-                      { value: "grpc", label: "gRPC", disabled: true },
-                    ]}
-                  />
-                  <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                    {t("create.protocolSoon")}
-                  </Typography.Text>
-                </Space>
-              </Space>
-              <Typography.Text type="secondary">{t("create.servicePortHint")}</Typography.Text>
-
-              <Space orientation="vertical" size={4} style={{ width: "100%" }}>
-                <Typography.Text type="secondary">{t("create.healthLabel")}</Typography.Text>
-                <Input
-                  style={{ width: "100%", maxWidth: 320 }}
-                  placeholder="/healthz"
-                  aria-label={t("create.healthLabel")}
-                  status={
-                    healthPath.trim() !== "" && !healthPath.trim().startsWith("/") ? "error" : undefined
-                  }
-                  value={healthPath}
-                  onChange={(e) => setHealthPath(e.target.value)}
-                />
-                <Typography.Text type="secondary">{t("create.healthHint")}</Typography.Text>
-              </Space>
-
-              <Space orientation="vertical" size={4}>
-                <Typography.Text type="secondary">{t("create.endpointLabel")}</Typography.Text>
-                <Typography.Text type="secondary">{t("create.endpointPending")}</Typography.Text>
-              </Space>
-
-              <Space orientation="vertical" size={4} style={{ width: "100%" }}>
-                <Typography.Text type="secondary">{t("create.authLabel")}</Typography.Text>
-                <Radio.Group
-                  value={requireApiKey ? "key" : "public"}
-                  onChange={(e) => setRequireApiKey(e.target.value === "key")}
-                  options={[
-                    { value: "key", label: t("create.authRequire") },
-                    { value: "public", label: t("create.authPublic") },
-                  ]}
-                />
-                {!requireApiKey && (
-                  <Typography.Text type="warning">{t("create.authPublicHint")}</Typography.Text>
-                )}
-                <Typography.Text type="secondary">{t("copy.serviceGatewayAuth")}</Typography.Text>
-              </Space>
-            </Space>
-          </Card>
-        </>
-      ) : (
       <Card title={t("create.imageCard")}>
         <Tabs
           activeKey={imageTab}
@@ -764,7 +530,6 @@ function CreatePage() {
           ]}
         />
       </Card>
-      )}
 
       <DataDiskCard
         mode={diskMode}
@@ -777,33 +542,19 @@ function CreatePage() {
         onExistingIdChange={setExistingDiskId}
       />
 
-      {!isService && (
-        <Card title={t("create.sshCard")}>
-          <SshKeyPicker value={keyIds} onChange={setKeyIds} />
-        </Card>
-      )}
+      <Card title={t("create.sshCard")}>
+        <SshKeyPicker value={keyIds} onChange={setKeyIds} />
+      </Card>
 
       <Card title={t("create.nameCard")}>
-        <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-          <Input
-            placeholder={t("create.namePlaceholder")}
-            maxLength={64}
-            aria-label={t("create.nameCard")}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            style={{ width: "100%", maxWidth: 320 }}
-          />
-          {isService && (
-            <>
-              <Checkbox checked={withSsh} onChange={(e) => setWithSsh(e.target.checked)}>
-                {t("create.withSsh")}
-              </Checkbox>
-              <Typography.Text type="secondary">{t("create.withSshHint")}</Typography.Text>
-              {/* 勾了才要公钥:后端对 with_ssh 的实例同样要求 ssh_key_ids 非空 */}
-              {withSsh && <SshKeyPicker value={keyIds} onChange={setKeyIds} />}
-            </>
-          )}
-        </Space>
+        <Input
+          placeholder={t("create.namePlaceholder")}
+          maxLength={64}
+          aria-label={t("create.nameCard")}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          style={{ width: "100%", maxWidth: 320 }}
+        />
       </Card>
 
       {/* 余额查询失败绝不静默转圈:结算条上方给可重试错误条,CTA 改普通禁用态 */}
@@ -907,16 +658,12 @@ function CreatePage() {
                 {submitLabel}
               </Button>
             ) : enough ? (
-              <Tooltip
-                title={
-                  canSubmit ? undefined : (serviceIssue ?? t("create.selectImageAndKey"))
-                }
-              >
+              <Tooltip title={canSubmit ? undefined : t("create.selectImageAndKey")}>
                 <Button
                   type="primary"
                   size="large"
                   disabled={!canSubmit}
-                  loading={submitting || create.isPending || createService.isPending}
+                  loading={submitting || create.isPending}
                   onClick={submit}
                 >
                   {submitLabel}
@@ -936,7 +683,7 @@ function CreatePage() {
       <SpotConsentModal
         open={spotOpen}
         policy={spotPolicy}
-        loading={submitting || create.isPending || createService.isPending}
+        loading={submitting || create.isPending}
         onCancel={() => setSpotOpen(false)}
         onConfirm={() => {
           setSpotOpen(false);
@@ -954,7 +701,7 @@ function CreatePage() {
         ]}
         agreeLabel={t("create.ecoAgree")}
         confirmLabel={t("create.ecoConfirm")}
-        loading={submitting || create.isPending || createService.isPending}
+        loading={submitting || create.isPending}
         onCancel={() => setEcoOpen(false)}
         onConfirm={() => {
           setEcoOpen(false);

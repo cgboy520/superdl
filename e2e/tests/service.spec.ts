@@ -1,9 +1,9 @@
 /**
- * 在线服务冒烟:市场「部署服务」→ 填容器与对外访问 → 部署 → 跳到服务详情 → 运行中 →
+ * 在线服务冒烟:市场「部署服务」→ 部署服务页(规格已带入)→ 填容器与服务配置 → 部署 → 跳到服务详情 → 运行中 →
  * 端点卡拿到 URL → 新建 API Key(一次性展示)→ 吊销 → 停止服务。
  * 前置与 smoke 同款:API+worker 在跑,fake 编排。
  *
- * 这条挂了通常说明:创建页的服务分支没打到 /services(或部署后没跳详情)、
+ * 这条挂了通常说明:市场页没把规格带进部署页、部署页没打到 /services(或部署后没跳详情)、
  * 服务详情的端点卡 / 状态派生断了,或一次性 Key 弹窗的保存闸松了。
  */
 import { expect, test } from "@playwright/test";
@@ -14,18 +14,19 @@ test("部署在线服务并拿到端点与 API Key", async ({ page }) => {
   // ── 建号 + 充值 + 公钥(API 直达;UI 链路由 smoke 覆盖)
   await setupUser(page, "500");
 
-  // ── 市场:选规格 → 结算条「部署服务」进服务形态创建流
+  // ── 市场:选规格 → 结算条「部署服务」进部署页,规格随 ?sku_id 带入并折叠回显
   await pickSharedStandardSku(page);
   await page.getByRole("button", { name: "部署服务" }).click();
-  await expect(page).toHaveURL(/workload=service/);
+  await expect(page).toHaveURL(/\/services\/new\?.*sku_id=\d+/);
+  await expect(page.getByRole("button", { name: "更换规格" })).toBeVisible({ timeout: 15_000 });
 
-  // ── 容器卡:可变 tag 必须被拦住(后端也有硬闸,这里守前端早报错)
+  // ── 容器配置:可变 tag 必须被拦住(后端也有硬闸,这里守前端早报错)
   const image = page.getByLabel("镜像地址");
   await image.fill("registry.superdl.local/vllm:latest");
   await expect(page.getByRole("button", { name: "部署服务" })).toBeDisabled();
   await image.fill("registry.superdl.local/vllm:v0.6.3");
 
-  // ── 对外服务卡:端口 + 健康检查(不开 SSH,因此不用选公钥)
+  // ── 服务配置:端口 + 健康检查(不开 SSH,因此不用选公钥)
   await page.getByLabel("服务端口").fill("8000");
   await page.getByLabel("健康检查").fill("/health");
   await page.getByRole("button", { name: "部署服务" }).click();

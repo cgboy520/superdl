@@ -17,7 +17,6 @@ import {
   spotReclaimTag,
   statusColors,
   subscriptionStatusMap,
-  workloadTypeMap,
 } from "@superdl/ui";
 import { HexTag } from "@superdl/ui/components";
 import { App, Badge, Button, Tag, Tooltip } from "antd";
@@ -85,12 +84,6 @@ export function TierTag({ tier, pool }: { tier: string; pool?: string | null }) 
   if (!meta) return <Tag>{variant}</Tag>;
   const tag = <HexTag color={meta.color}>{t(meta.labelKey)}</HexTag>;
   return "hintKey" in meta && meta.hintKey ? <Tooltip title={t(meta.hintKey)}>{tag}</Tooltip> : tag;
-}
-
-export function WorkloadTag({ workloadType }: { workloadType: string }) {
-  const { t } = useTranslation(["web", "shared"]);
-  if (workloadType !== "service") return null;
-  return <Tag color={workloadTypeMap.service.color}>{t(workloadTypeMap.service.labelKey)}</Tag>;
 }
 
 export function SubscriptionTag({

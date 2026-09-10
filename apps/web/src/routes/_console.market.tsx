@@ -414,7 +414,7 @@ function MarketPage() {
         actions={
           loggedIn ? (
             <>
-              {/* 服务形态与开发机走同一条创建流,只是带上 workload=service */}
+              {/* 部署服务走独立页(/services/new),这里只把选中的规格与计费方式带过去 */}
               <Tooltip title={selected ? t("services.deployFromMarketHint") : t("market.selectFirst")}>
                 <Button
                   size="large"
@@ -422,14 +422,13 @@ function MarketPage() {
                   onClick={() => {
                     if (!selected) return;
                     void navigate({
-                      to: "/market/create/$skuId",
-                      params: { skuId: String(selected.id) },
+                      to: "/services/new",
                       search: {
+                        sku_id: selected.id,
                         ...(isCpu ? {} : { gpus: gpuCount }),
                         ...(period ? { period } : {}),
                         ...(period && periodCount > 1 ? { count: periodCount } : {}),
                         ...(isSpot ? { market: "spot" as const } : {}),
-                        workload: "service" as const,
                       },
                     });
                   }}

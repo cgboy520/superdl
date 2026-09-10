@@ -29,9 +29,9 @@ export function EnvRowsEditor({
   const [bulkSkipped, setBulkSkipped] = useState<number | null>(null);
 
   const issueText = (issue: EnvNameIssue): string => {
-    if (issue === "invalid") return t("create.envNameInvalid");
-    if (issue === "reserved") return t("create.envNameReserved");
-    return t("create.envNameDuplicate");
+    if (issue === "invalid") return t("services.form.envNameInvalid");
+    if (issue === "reserved") return t("services.form.envNameReserved");
+    return t("services.form.envNameDuplicate");
   };
 
   const update = (id: string, patch: Partial<EnvRow>) =>
@@ -50,7 +50,7 @@ export function EnvRowsEditor({
 
   return (
     <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-      <Typography.Text type="secondary">{t("create.envLabel")}</Typography.Text>
+      <Typography.Text type="secondary">{t("services.form.envLabel")}</Typography.Text>
       {rows.map((row, i) => {
         const issue = envRowIssue(row, rows);
         return (
@@ -58,8 +58,8 @@ export function EnvRowsEditor({
             <Flex gap={8} wrap align="center">
               <Input
                 style={{ flex: "1 1 180px", minWidth: 140 }}
-                placeholder={t("create.envNamePlaceholder")}
-                aria-label={t("create.envNameAria", { index: i + 1 })}
+                placeholder={t("services.form.envNamePlaceholder")}
+                aria-label={t("services.form.envNameAria", { index: i + 1 })}
                 autoFocus={row.id === lastId}
                 status={issue ? "error" : undefined}
                 value={row.name}
@@ -67,16 +67,16 @@ export function EnvRowsEditor({
               />
               <Input
                 style={{ flex: "2 1 240px", minWidth: 180 }}
-                placeholder={t("create.envValuePlaceholder")}
-                aria-label={t("create.envValueAria", { index: i + 1 })}
+                placeholder={t("services.form.envValuePlaceholder")}
+                aria-label={t("services.form.envValueAria", { index: i + 1 })}
                 value={row.value}
                 onChange={(e) => update(row.id, { value: e.target.value })}
               />
               <Checkbox checked={row.secret} onChange={(e) => update(row.id, { secret: e.target.checked })}>
-                {t("create.envSecret")}
+                {t("services.form.envSecret")}
               </Checkbox>
               <Button onClick={() => onChange(rows.filter((r) => r.id !== row.id))}>
-                {t("create.rowRemove")}
+                {t("services.form.rowRemove")}
               </Button>
             </Flex>
             {issue && (
@@ -95,15 +95,15 @@ export function EnvRowsEditor({
             setLastId(id);
           }}
         >
-          {t("create.addEnv")}
+          {t("services.form.addEnv")}
         </Button>
-        <Button onClick={() => setBulkOpen(true)}>{t("create.bulkAdd")}</Button>
+        <Button onClick={() => setBulkOpen(true)}>{t("services.form.bulkAdd")}</Button>
       </Space>
-      <Typography.Text type="secondary">{t("create.envSecretHint")}</Typography.Text>
+      <Typography.Text type="secondary">{t("services.form.envSecretHint")}</Typography.Text>
       <Modal
-        title={t("create.bulkAddEnvTitle")}
+        title={t("services.form.bulkAddEnvTitle")}
         open={bulkOpen}
-        okText={t("create.bulkAddConfirm")}
+        okText={t("services.form.bulkAddConfirm")}
         onOk={submitBulk}
         onCancel={() => {
           setBulkOpen(false);
@@ -112,17 +112,17 @@ export function EnvRowsEditor({
         }}
       >
         <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-          <Typography.Text type="secondary">{t("create.bulkAddEnvHint")}</Typography.Text>
+          <Typography.Text type="secondary">{t("services.form.bulkAddEnvHint")}</Typography.Text>
           <Input.TextArea
             rows={8}
             value={bulkText}
             onChange={(e) => setBulkText(e.target.value)}
             placeholder={"KEY=VALUE"}
-            aria-label={t("create.bulkAddEnvTitle")}
+            aria-label={t("services.form.bulkAddEnvTitle")}
           />
           {bulkSkipped != null && bulkSkipped > 0 && (
             <Typography.Text type="warning">
-              {t("create.bulkAddSkipped", { count: bulkSkipped })}
+              {t("services.form.bulkAddSkipped", { count: bulkSkipped })}
             </Typography.Text>
           )}
         </Space>

@@ -3,15 +3,15 @@
  *  触发:顶栏触发器(派发自定义事件)或全局 ⌘K / Ctrl+K;
  *  实例分组只在已有缓存数据时渲染(空分组壳内不渲染)。 */
 
-import { CloudServerOutlined } from "@ant-design/icons";
-import { fontSize, instanceStatusMap, metaOf } from "@superdl/ui";
+import { ApiOutlined, CloudServerOutlined } from "@ant-design/icons";
+import { fontSize, instanceStatusMap, metaOf, serviceStatusMap } from "@superdl/ui";
 import { COMMAND_KBD_HINT, CommandPaletteShell, type CommandPaletteGroup } from "@superdl/ui/components";
 import { useNavigate } from "@tanstack/react-router";
 import { Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { useInstances } from "../api/queries";
+import { useInstances, useServices } from "../api/queries";
 import { CONSOLE_NAV } from "./layout/consoleNav";
 
 export const COMMAND_PALETTE_OPEN_EVENT = "superdl:command-palette-open";
@@ -24,6 +24,7 @@ export function CommandPalette() {
   const [open, setOpen] = useState(false);
   // 实例数据只取已缓存/打开后才拉(首 100 条);无缓存时实例分组不渲染
   const { data: instances } = useInstances({ enabled: open });
+  const { data: services } = useServices({ enabled: open });
 
   const groups: CommandPaletteGroup[] = [
     {
@@ -65,8 +66,38 @@ export function CommandPalette() {
       }),
     },
     {
+      heading: t("command.groupServices"),
+      // key 加前缀:cmdk 的 key 全局唯一,不能与实例 uuid 撞
+      items: (services ?? []).map((s) => {
+        const meta = metaOf(serviceStatusMap, s.status);
+        const inst = s.current_instance;
+        return {
+          key: `svc:${s.slug}`,
+          value: `${s.name} ${s.slug}`,
+          keywords: [s.name, s.slug],
+          run: () => void navigate({ to: "/services/$slug", params: { slug: s.slug } }),
+          label: (
+            <>
+              <ApiOutlined />
+              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>{s.name}</span>
+              <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                {meta ? t(meta.labelKey) : s.status}
+                {inst ? ` · ${inst.spec["gpu_model"] as string} × ${inst.gpu_count}` : ""}
+              </Typography.Text>
+            </>
+          ),
+        };
+      }),
+    },
+    {
       heading: t("command.groupActions"),
       items: [
+        {
+          key: "deploy",
+          label: t("command.actionDeploy"),
+          keywords: ["deploy", "service", "bushu", "fuwu"],
+          run: () => void navigate({ to: "/services/new" }),
+        },
         {
           key: "rent",
           label: t("command.actionRent"),

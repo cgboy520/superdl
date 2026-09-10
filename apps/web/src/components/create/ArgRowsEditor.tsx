@@ -27,13 +27,13 @@ export function ArgRowsEditor({
 
   return (
     <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-      <Typography.Text type="secondary">{t("create.argsLabel")}</Typography.Text>
+      <Typography.Text type="secondary">{t("services.form.argsLabel")}</Typography.Text>
       {rows.map((row, i) => (
         <Flex key={row.id} gap={8} wrap style={{ width: "100%" }}>
           <Input
             style={{ flex: "1 1 320px", minWidth: 0 }}
-            placeholder={t("create.argPlaceholder")}
-            aria-label={t("create.argAria", { index: i + 1 })}
+            placeholder={t("services.form.argPlaceholder")}
+            aria-label={t("services.form.argAria", { index: i + 1 })}
             autoFocus={row.id === lastId}
             value={row.value}
             onChange={(e) =>
@@ -41,7 +41,7 @@ export function ArgRowsEditor({
             }
           />
           <Button onClick={() => onChange(rows.filter((r) => r.id !== row.id))}>
-            {t("create.rowRemove")}
+            {t("services.form.rowRemove")}
           </Button>
         </Flex>
       ))}
@@ -53,14 +53,14 @@ export function ArgRowsEditor({
             setLastId(id);
           }}
         >
-          {t("create.addArg")}
+          {t("services.form.addArg")}
         </Button>
-        <Button onClick={() => setBulkOpen(true)}>{t("create.bulkAdd")}</Button>
+        <Button onClick={() => setBulkOpen(true)}>{t("services.form.bulkAdd")}</Button>
       </Space>
       <Modal
-        title={t("create.bulkAddArgsTitle")}
+        title={t("services.form.bulkAddArgsTitle")}
         open={bulkOpen}
-        okText={t("create.bulkAddConfirm")}
+        okText={t("services.form.bulkAddConfirm")}
         onOk={submitBulk}
         onCancel={() => {
           setBulkOpen(false);
@@ -68,12 +68,12 @@ export function ArgRowsEditor({
         }}
       >
         <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-          <Typography.Text type="secondary">{t("create.bulkAddArgsHint")}</Typography.Text>
+          <Typography.Text type="secondary">{t("services.form.bulkAddArgsHint")}</Typography.Text>
           <Input.TextArea
             rows={8}
             value={bulkText}
             onChange={(e) => setBulkText(e.target.value)}
-            aria-label={t("create.bulkAddArgsTitle")}
+            aria-label={t("services.form.bulkAddArgsTitle")}
           />
         </Space>
       </Modal>

@@ -27,6 +27,7 @@ import { Route as LegalPrivacyRouteImport } from './routes/legal.privacy'
 import { Route as LegalTermsRouteImport } from './routes/legal.terms'
 import { Route as ConsoleInstancesUuidRouteImport } from './routes/_console.instances_.$uuid'
 import { Route as ConsoleServicesSlugRouteImport } from './routes/_console.services_.$slug'
+import { Route as ConsoleServicesNewRouteImport } from './routes/_console.services_.new'
 import { Route as ConsoleSupportTicketIdRouteImport } from './routes/_console.support_.$ticketId'
 import { Route as ConsoleMarketCreateSkuIdRouteImport } from './routes/_console.market_.create.$skuId'
 
@@ -119,6 +120,11 @@ const ConsoleServicesSlugRoute = ConsoleServicesSlugRouteImport.update({
   path: '/services/$slug',
   getParentRoute: () => ConsoleRoute,
 } as any)
+const ConsoleServicesNewRoute = ConsoleServicesNewRouteImport.update({
+  id: '/services_/new',
+  path: '/services/new',
+  getParentRoute: () => ConsoleRoute,
+} as any)
 const ConsoleSupportTicketIdRoute = ConsoleSupportTicketIdRouteImport.update({
   id: '/support_/$ticketId',
   path: '/support/$ticketId',
@@ -149,6 +155,7 @@ export interface FileRoutesByFullPath {
   '/legal/terms': typeof LegalTermsRoute
   '/instances/$uuid': typeof ConsoleInstancesUuidRoute
   '/services/$slug': typeof ConsoleServicesSlugRoute
+  '/services/new': typeof ConsoleServicesNewRoute
   '/support/$ticketId': typeof ConsoleSupportTicketIdRoute
   '/market/create/$skuId': typeof ConsoleMarketCreateSkuIdRoute
 }
@@ -170,6 +177,7 @@ export interface FileRoutesByTo {
   '/legal/terms': typeof LegalTermsRoute
   '/instances/$uuid': typeof ConsoleInstancesUuidRoute
   '/services/$slug': typeof ConsoleServicesSlugRoute
+  '/services/new': typeof ConsoleServicesNewRoute
   '/support/$ticketId': typeof ConsoleSupportTicketIdRoute
   '/market/create/$skuId': typeof ConsoleMarketCreateSkuIdRoute
 }
@@ -193,6 +201,7 @@ export interface FileRoutesById {
   '/legal/terms': typeof LegalTermsRoute
   '/_console/instances_/$uuid': typeof ConsoleInstancesUuidRoute
   '/_console/services_/$slug': typeof ConsoleServicesSlugRoute
+  '/_console/services_/new': typeof ConsoleServicesNewRoute
   '/_console/support_/$ticketId': typeof ConsoleSupportTicketIdRoute
   '/_console/market_/create/$skuId': typeof ConsoleMarketCreateSkuIdRoute
 }
@@ -216,6 +225,7 @@ export interface FileRouteTypes {
     | '/legal/terms'
     | '/instances/$uuid'
     | '/services/$slug'
+    | '/services/new'
     | '/support/$ticketId'
     | '/market/create/$skuId'
   fileRoutesByTo: FileRoutesByTo
@@ -237,6 +247,7 @@ export interface FileRouteTypes {
     | '/legal/terms'
     | '/instances/$uuid'
     | '/services/$slug'
+    | '/services/new'
     | '/support/$ticketId'
     | '/market/create/$skuId'
   id:
@@ -259,6 +270,7 @@ export interface FileRouteTypes {
     | '/legal/terms'
     | '/_console/instances_/$uuid'
     | '/_console/services_/$slug'
+    | '/_console/services_/new'
     | '/_console/support_/$ticketId'
     | '/_console/market_/create/$skuId'
   fileRoutesById: FileRoutesById
@@ -401,6 +413,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConsoleServicesSlugRouteImport
       parentRoute: typeof ConsoleRoute
     }
+    '/_console/services_/new': {
+      id: '/_console/services_/new'
+      path: '/services/new'
+      fullPath: '/services/new'
+      preLoaderRoute: typeof ConsoleServicesNewRouteImport
+      parentRoute: typeof ConsoleRoute
+    }
     '/_console/support_/$ticketId': {
       id: '/_console/support_/$ticketId'
       path: '/support/$ticketId'
@@ -430,6 +449,7 @@ interface ConsoleRouteChildren {
   ConsoleSupportRoute: typeof ConsoleSupportRoute
   ConsoleInstancesUuidRoute: typeof ConsoleInstancesUuidRoute
   ConsoleServicesSlugRoute: typeof ConsoleServicesSlugRoute
+  ConsoleServicesNewRoute: typeof ConsoleServicesNewRoute
   ConsoleSupportTicketIdRoute: typeof ConsoleSupportTicketIdRoute
   ConsoleMarketCreateSkuIdRoute: typeof ConsoleMarketCreateSkuIdRoute
 }
@@ -446,6 +466,7 @@ const ConsoleRouteChildren: ConsoleRouteChildren = {
   ConsoleSupportRoute: ConsoleSupportRoute,
   ConsoleInstancesUuidRoute: ConsoleInstancesUuidRoute,
   ConsoleServicesSlugRoute: ConsoleServicesSlugRoute,
+  ConsoleServicesNewRoute: ConsoleServicesNewRoute,
   ConsoleSupportTicketIdRoute: ConsoleSupportTicketIdRoute,
   ConsoleMarketCreateSkuIdRoute: ConsoleMarketCreateSkuIdRoute,
 }

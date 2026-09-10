@@ -60,7 +60,6 @@ import {
   SubscriptionTag,
   TierTag,
   useEventReasonText,
-  WorkloadTag,
 } from "../components/common";
 import { RenewModal } from "../components/RenewModal";
 import { GpuSparkline } from "../components/GpuSparkline";
@@ -96,13 +95,12 @@ export const Route = createFileRoute("/_console/instances")({
   component: InstancesPage,
 });
 
-/** 展开行(running):SSH / Jupyter / 服务地址快捷工具,access 仅在展开时拉取。
- *  接入信息的字段随形态出现或缺席,必须按「拿到什么渲染什么」写,不能假定字段恒有值。 */
+/** 展开行(running):SSH / Jupyter 快捷工具,access 仅在展开时拉取;
+ *  接入信息的字段可空,必须按「拿到什么渲染什么」写。 */
 function ExpandedTools({ instance }: { instance: InstanceOut }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { data: access, isError, refetch } = useInstanceAccess(instance.uuid);
-  const isService = instance.workload_type === "service";
   return (
     <Space size={12} wrap align="center">
       {isError ? (
@@ -110,23 +108,18 @@ function ExpandedTools({ instance }: { instance: InstanceOut }) {
       ) : access?.ssh_command ? (
         <CopyButton text={access.ssh_command} label="SSH" />
       ) : null}
-      {access?.endpoint_url && (
-        <CopyButton text={access.endpoint_url} label={t("instances.copyEndpoint")} />
-      )}
-      {!isService && (
-        <Button
-          size="small"
-          icon={<CodeOutlined />}
-          disabled={!access?.jupyter_url}
-          onClick={() => {
-            if (access?.jupyter_url) {
-              window.open(access.jupyter_url, "_blank", "noopener,noreferrer");
-            }
-          }}
-        >
-          {t("common.jupyter")}
-        </Button>
-      )}
+      <Button
+        size="small"
+        icon={<CodeOutlined />}
+        disabled={!access?.jupyter_url}
+        onClick={() => {
+          if (access?.jupyter_url) {
+            window.open(access.jupyter_url, "_blank", "noopener,noreferrer");
+          }
+        }}
+      >
+        {t("common.jupyter")}
+      </Button>
       <Button
         size="small"
         type="link"
@@ -134,14 +127,13 @@ function ExpandedTools({ instance }: { instance: InstanceOut }) {
           navigate({
             to: "/instances/$uuid",
             params: { uuid: instance.uuid },
-            search: { tab: isService ? "service" : "metrics" },
+            search: { tab: "metrics" },
           })
         }
       >
-        {isService ? t("instances.serviceLink") : t("instances.monitorLink")}
+        {t("instances.monitorLink")}
       </Button>
-      {/* 这句是 Jupyter 专属的:服务型实例没有 Jupyter,挂上去就是句假话 */}
-      {!isService && !access && !isError && (
+      {!access && !isError && (
         <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
           {t("copy.jupyterNeedsRunning")}
         </Typography.Text>
@@ -379,8 +371,7 @@ function BillingCell({
   );
 }
 
-/** 规格列。服务型实例挂 [服务] 标记 + 端点 slug;slug 直接取自 InstanceOut,
- *  不为它多打一次请求(列表页不按行数放大接口调用)。 */
+/** 规格列:GPU 型号 × 数量 + 档位徽标,popover 展开完整配置。 */
 function SpecCell({ instance }: { instance: InstanceOut }) {
   const { t } = useTranslation(["web", "shared"]);
   return (
@@ -409,12 +400,6 @@ function SpecCell({ instance }: { instance: InstanceOut }) {
           {instance.spec["gpu_model"] as string} × {instance.gpu_count}
         </Typography.Text>
         <TierTag tier={instance.spec["tier"] as string} pool={instance.spec["pool_label"] as string} />
-        <WorkloadTag workloadType={instance.workload_type} />
-        {instance.service_slug && (
-          <Typography.Text type="secondary" code style={{ fontSize: fontSize.caption }}>
-            {instance.service_slug}
-          </Typography.Text>
-        )}
       </Space>
     </Popover>
   );
