@@ -1,38 +1,27 @@
-/** 部署服务:分段单页(① 基本信息 → ② 容器配置 → ③ 服务配置 → ④ 高级配置)+ 左侧步骤锚点 + 底部结算条。不用 antd Form,全部受控 state + 派生 issue。数据盘「新建」先建盘再部署,建盘成功而部署失败须提示盘已计费。 */
+/** 部署服务:分段单页(① 基本信息 → ② 容器配置(含数据盘)→ ③ 服务配置 → ④ 高级配置)+ 左侧步骤锚点(窄屏改顶部横向)+ 底部结算条(未完成项清单在条上方)。
+ *  不用 antd Form,全部受控 state + 派生 issue,每段独立标状态;字段级错误就地显示。数据盘「新建」先建盘再部署,建盘成功而部署失败须提示盘已计费。 */
 
 import { isApiError, type DiskOut, type SkuMarketOut } from "@superdl/api-client";
 import {
   billingUnits,
   compareAmounts,
   diskDailyEstimate,
+  fontSize,
   formatDate,
   idemKeyOf,
   isBillingPeriod,
+  layout,
   MAX_PERIOD_COUNT,
   mulPrice,
   PERIOD_HOURS,
   periodMap,
+  POLL,
   skuVariant,
   type BillingPeriod,
 } from "@superdl/ui";
-import { DataErrorAlert, useConfirm } from "@superdl/ui/components";
+import { DataErrorAlert, PageHeader, useConfirm } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import {
-  Alert,
-  App,
-  Button,
-  Card,
-  Checkbox,
-  Col,
-  Descriptions,
-  Grid,
-  Input,
-  Row,
-  Space,
-  Steps,
-  Tooltip,
-  Typography,
-} from "antd";
+import { App, Button, Card, Checkbox, Col, Descriptions, Grid, Input, Row, Space, Steps, Tooltip, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -110,7 +99,7 @@ function DeployPage() {
   const confirm = useConfirm();
   const wide = Grid.useBreakpoint().md;
 
-  const skusQ = useSkus({ refetchInterval: 30_000 });
+  const skusQ = useSkus({ refetchInterval: POLL.steady });
   const { data: skus } = skusQ;
   const { data: disks } = useDisks();
   const walletQ = useWallet();
@@ -134,7 +123,7 @@ function DeployPage() {
   const [envRows, setEnvRows] = useState<EnvRow[]>([]);
   const [diskMode, setDiskMode] = useState<DiskMode>("none");
   const [newDiskName, setNewDiskName] = useState(defaultDiskName);
-  const [newDiskGb, setNewDiskGb] = useState(100);
+  const [newDiskGb, setNewDiskGb] = useState<number>();
   const [existingDiskId, setExistingDiskId] = useState<number>();
   // ③ 服务配置
   const [servicePort, setServicePort] = useState<number | null>(null);
@@ -161,7 +150,7 @@ function DeployPage() {
     envRows.some((r) => r.name.trim() !== "" || r.value.trim() !== "") ||
     diskMode !== "none" ||
     newDiskName !== mountSnapshot.newDiskName ||
-    newDiskGb !== 100 ||
+    newDiskGb != null ||
     existingDiskId != null ||
     servicePort != null ||
     healthPath.trim() !== "" ||
@@ -184,6 +173,9 @@ function DeployPage() {
 
   const sku: SkuMarketOut | undefined = (skus ?? []).find((s) => s.id === skuId);
   const isCpu = sku?.tier === "cpu";
+  // 盘容量初值取策略下限(不写死 100);锚点滚动补顶栏
+  const diskGbValue = newDiskGb ?? policies?.disk_min_gb ?? 100;
+  const anchorStyle = { scrollMarginTop: layout.scrollMarginTop } as const;
   const gpus = isCpu ? 0 : gpuCount;
   const priceUnits = isCpu ? 1 : gpuCount;
   const periodBlocked = sku != null && !sku.period_enabled;
@@ -208,7 +200,7 @@ function DeployPage() {
   const diskPriceGbMonth = policies?.disk_price_gb_month;
   const diskGb =
     diskMode === "new"
-      ? newDiskGb
+      ? diskGbValue
       : diskMode === "existing"
         ? ((disks ?? []).find((d) => d.id === existingDiskId)?.size_gb ?? 0)
         : 0;
@@ -291,7 +283,7 @@ function DeployPage() {
       diskMode,
       existingDiskId ?? null,
       diskMode === "new" ? newDiskName.trim() : null,
-      diskMode === "new" ? newDiskGb : null,
+      diskMode === "new" ? diskGbValue : null,
       servicePort,
       commandList.join(" "),
       argList.join(" "),
@@ -307,7 +299,7 @@ function DeployPage() {
         let disk: DiskOut;
         try {
           disk = (await createDisk.mutateAsync({
-            body: { name: newDiskName.trim() || defaultDiskName(), size_gb: newDiskGb },
+            body: { name: newDiskName.trim() || defaultDiskName(), size_gb: diskGbValue },
             // 与服务同一个参数快照派生
             idempotencyKey,
           })) as DiskOut;
@@ -382,12 +374,9 @@ function DeployPage() {
         t("services.form.section4"),
       ].map((title, i) => ({
         title,
-        status:
-          firstIssueIndex < 0 || i < firstIssueIndex
-            ? "finish"
-            : i === firstIssueIndex
-              ? "process"
-              : "wait",
+        // 每段独立算状态:有问题 = error(红点),没问题 = finish;不再被「第一个问题」折叠
+        status: sectionIssues[i] ? (i === firstIssueIndex ? "process" : "error") : "finish",
+        description: sectionIssues[i] ?? undefined,
       }))}
     />
   );
@@ -395,7 +384,7 @@ function DeployPage() {
   const sections = (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {/* ① 基本信息:名称 + 算力规格 + 计费方式 */}
-      <Card id={SECTION_IDS[0]} title={t("services.form.section1")}>
+      <Card id={SECTION_IDS[0]} style={anchorStyle} title={t("services.form.section1")}>
         <Space orientation="vertical" size={16} style={{ width: "100%" }}>
           <Space orientation="vertical" size={4} style={{ width: "100%" }}>
             <Typography.Text type="secondary">{t("services.form.nameLabel")}</Typography.Text>
@@ -430,44 +419,44 @@ function DeployPage() {
             count={periodCount}
             onCountChange={setPeriodCount}
           />
-          {period && <Alert type="info" showIcon title={t("copy.periodReserved")} />}
-          {periodBlocked && isBillingPeriod(billingMode) && (
-            <Alert type="info" showIcon title={t("period.fallbackToHourly")} />
+          {/* 竞价只警示不禁止;回收会断对外地址,下单前必须出现(贴在计费卡下,不做页顶常驻) */}
+          {isSpot && (
+            <Typography.Text type="warning" style={{ fontSize: fontSize.caption }}>
+              {t("copy.spotNotForService")}
+            </Typography.Text>
           )}
-          {sku && !sku.spot_enabled && billingMode === "spot" && (
-            <Alert type="info" showIcon title={t("market.spotFallbackToHourly")} />
-          )}
-          {/* 竞价只警示不禁止;回收会断对外地址,下单前必须出现 */}
-          {isSpot && <Alert type="warning" showIcon title={t("copy.spotNotForService")} />}
         </Space>
       </Card>
 
-      {/* ② 容器配置 */}
-      <Card id={SECTION_IDS[1]} title={t("services.form.section2")}>
-        <ContainerFields
-          image={image}
-          onImage={setImage}
-          command={command}
-          onCommand={setCommand}
-          argRows={argRows}
-          onArgRows={setArgRows}
-          envRows={envRows}
-          onEnvRows={setEnvRows}
-        />
+      {/* ② 容器配置(数据盘归在本段) */}
+      <Card id={SECTION_IDS[1]} style={anchorStyle} title={t("services.form.section2")}>
+        <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+          <ContainerFields
+            image={image}
+            onImage={setImage}
+            command={command}
+            onCommand={setCommand}
+            argRows={argRows}
+            onArgRows={setArgRows}
+            envRows={envRows}
+            onEnvRows={setEnvRows}
+          />
+          <DataDiskCard
+            variant="section"
+            mode={diskMode}
+            onModeChange={setDiskMode}
+            newName={newDiskName}
+            onNewNameChange={setNewDiskName}
+            newGb={diskGbValue}
+            onNewGbChange={setNewDiskGb}
+            existingId={existingDiskId}
+            onExistingIdChange={setExistingDiskId}
+          />
+        </Space>
       </Card>
-      <DataDiskCard
-        mode={diskMode}
-        onModeChange={setDiskMode}
-        newName={newDiskName}
-        onNewNameChange={setNewDiskName}
-        newGb={newDiskGb}
-        onNewGbChange={setNewDiskGb}
-        existingId={existingDiskId}
-        onExistingIdChange={setExistingDiskId}
-      />
 
       {/* ③ 服务配置 */}
-      <Card id={SECTION_IDS[2]} title={t("services.form.section3")}>
+      <Card id={SECTION_IDS[2]} style={anchorStyle} title={t("services.form.section3")}>
         <PublicAccessFields
           port={servicePort}
           onPort={setServicePort}
@@ -479,7 +468,7 @@ function DeployPage() {
       </Card>
 
       {/* ④ 高级配置:调试 SSH + 更新策略说明 + 配置摘要 */}
-      <Card id={SECTION_IDS[3]} title={t("services.form.section4")}>
+      <Card id={SECTION_IDS[3]} style={anchorStyle} title={t("services.form.section4")}>
         <Space orientation="vertical" size={16} style={{ width: "100%" }}>
           <Space orientation="vertical" size={8} style={{ width: "100%" }}>
             <Checkbox checked={withSsh} onChange={(e) => setWithSsh(e.target.checked)}>
@@ -548,20 +537,31 @@ function DeployPage() {
   return (
     // 不用 Space(ant-space-item 包装会破坏 sticky 结算条的包含块)
     <div style={{ display: "flex", flexDirection: "column", gap: 16, width: "100%" }}>
-      <Typography.Title level={4} style={{ margin: 0 }}>
-        {t("services.deploy")}
-      </Typography.Title>
+      <PageHeader title={t("services.deploy")} back={{ label: t("services.backToList"), onClick: onCancel }} />
       {wide ? (
         <Row gutter={16} wrap={false}>
-          <Col flex="160px">
-            <div style={{ position: "sticky", top: 88 }}>{steps}</div>
+          <Col flex="200px">
+            <div style={{ position: "sticky", top: layout.scrollMarginTop }}>{steps}</div>
           </Col>
           <Col flex="auto" style={{ minWidth: 0 }}>
             {sections}
           </Col>
         </Row>
       ) : (
-        sections
+        <>
+          {/* 窄屏:横向步骤条在顶,分段导航照样可用 */}
+          <Steps
+            size="small"
+            responsive={false}
+            current={firstIssueIndex >= 0 ? firstIssueIndex : SECTION_IDS.length - 1}
+            onChange={scrollTo}
+            items={[1, 2, 3, 4].map((n, i) => ({
+              title: t(`services.form.section${n}` as "services.form.section1"),
+              status: sectionIssues[i] ? (i === firstIssueIndex ? "process" : "error") : "finish",
+            }))}
+          />
+          {sections}
+        </>
       )}
 
       {walletQ.isError && <DataErrorAlert onRetry={() => void walletQ.refetch()} />}
@@ -579,49 +579,50 @@ function DeployPage() {
                 })
             : t("services.form.specNeeded")
         }
+        notice={
+          !canSubmit && sku ? (
+            <Space size={8} wrap style={{ fontSize: fontSize.caption }}>
+              <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                {t("create.issuesTitle", { count: sectionIssues.filter((i) => i != null).length })}
+              </Typography.Text>
+              {sectionIssues.map((issue, i) =>
+                issue ? (
+                  <Button key={SECTION_IDS[i]} type="link" size="small" style={{ paddingInline: 0, fontSize: fontSize.caption }} onClick={() => scrollTo(i)}>
+                    {issue}
+                  </Button>
+                ) : null,
+              )}
+            </Space>
+          ) : undefined
+        }
+        breakdown={period && quote ? <PeriodQuoteRows quote={quote} gpuCount={gpuCount} cpu={isCpu} /> : undefined}
         items={
           period && quote
             ? [
-                ...(diskGb > 0 && diskPriceGbMonth
-                  ? [
-                      {
-                        label: t("create.dailyCostLabel"),
-                        hint: t("create.dailyCostHint"),
-                        value: t("common.dailyApprox", { amount: diskDaily }),
-                      },
-                    ]
-                  : []),
-                {
-                  label: t("create.expiresAtLabel"),
-                  value: t("create.expiresAtApprox", { date: formatDate(expiresAt) }),
-                },
                 {
                   label: t("period.costLabel", { period: t(periodMap[period].labelKey) }),
                   value: fmt.formatPeriodPrice(quote.amount, period, periodCount),
                 },
+                ...(diskGb > 0 && diskPriceGbMonth
+                  ? [{ label: t("create.diskCostLabel"), hint: t("create.dailyCostHint"), value: t("common.dailyApprox", { amount: diskDaily }) }]
+                  : []),
+                { label: t("create.expiresAtLabel"), value: t("create.expiresAtApprox", { date: formatDate(expiresAt) }), muted: true },
               ]
             : [
                 {
-                  label: t("create.dailyCostLabel"),
-                  hint: t("create.dailyCostHint"),
-                  value: t("common.dailyApprox", {
-                    amount: diskGb > 0 && diskPriceGbMonth ? diskDaily : "0.00",
-                  }),
-                },
-                {
                   label: t("create.configCostLabel"),
+                  suffix: !sku ? undefined : isCpu ? t("sku.wholeMachine") : t("sku.timesCards", { count: gpuCount }),
                   value: !sku ? (
                     "--"
                   ) : isSpot ? (
-                    <SpotPriceInline
-                      baseHourly={sku.price_hourly}
-                      units={priceUnits}
-                      policy={spotPolicy}
-                    />
+                    <SpotPriceInline baseHourly={sku.price_hourly} units={priceUnits} policy={spotPolicy} />
                   ) : (
                     formatHourlyPrice(hourlyTotal)
                   ),
                 },
+                ...(diskGb > 0 && diskPriceGbMonth
+                  ? [{ label: t("create.diskCostLabel"), hint: t("create.dailyCostHint"), value: t("common.dailyApprox", { amount: diskDaily }) }]
+                  : []),
               ]
         }
         detail={

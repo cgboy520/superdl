@@ -1,29 +1,16 @@
-/** 实例详情:监控(降级文案)/ 连接 / 日志 / 事件时间线(= 计费依据)/ 账单 + 危险区释放。事件/账单 Tab 游标分页;面包屑返回列表不丢筛选态。服务的版本实例不进列表但直链可达:「连接」按 with_ssh 出 SSH 卡,Jupyter 卡不出。 */
+/** 实例详情:连接 / 监控 / 日志 / 事件时间线(= 计费依据)/ 账单 / 设置(改名 + 危险区释放)。默认 Tab 按状态(running → 连接,其余 → 事件);事件/账单 Tab 游标分页;面包屑返回列表不丢筛选态。服务的版本实例不进列表但直链可达:「连接」按 with_ssh 出 SSH 卡,Jupyter 卡不出。 */
 
 import { type InstanceEventOut, type InstanceOut } from "@superdl/api-client";
-import { formatDateTime, isTransientInstanceStatus, localToday } from "@superdl/ui";
-import { DataErrorAlert, moneyOr, useConfirm } from "@superdl/ui/components";
+import { controlWidth, formatDateTime, isTransientInstanceStatus, localToday, POLL } from "@superdl/ui";
+import { DangerZone, DataErrorAlert, moneyOr, useConfirm } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import {
-  Alert,
-  App,
-  Breadcrumb,
-  Button,
-  Card,
-  Descriptions,
-  Skeleton,
-  Space,
-  Tabs,
-  theme,
-  Tooltip,
-  Typography,
-} from "antd";
+import { Alert, App, Breadcrumb, Button, Card, Descriptions, Input, Skeleton, Space, Tabs, Typography } from "antd";
 import { useFormat } from "@superdl/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { useResetJupyterToken } from "../api/mutations";
+import { useRenameInstance, useResetJupyterToken } from "../api/mutations";
 import {
   useDailySummary,
   useHourlyBillPages,
@@ -48,7 +35,7 @@ import { requireAuth } from "../lib/guard";
 import { useRememberedListSearch } from "../stores/listSearch";
 
 // 旧链接的 ?tab=service 不在白名单,回默认 Tab
-const DETAIL_TABS = ["metrics", "access", "logs", "events", "bills"] as const;
+const DETAIL_TABS = ["access", "metrics", "logs", "events", "bills", "settings"] as const;
 
 export const Route = createFileRoute("/_console/instances_/$uuid")({
   beforeLoad: requireAuth,
@@ -132,7 +119,7 @@ function LogsTab({ uuid, viewable }: { uuid: string; viewable: boolean }) {
     uuid,
     { tail_lines: tail },
     // 页面不可见时间隔轮询自动暂停(未开 refetchIntervalInBackground)
-    { enabled: viewable, refetchInterval: autoRefresh ? 10_000 : false, retry: 0 },
+    { enabled: viewable, refetchInterval: autoRefresh ? POLL.logs : false, retry: 0 },
   );
   const lines = useMemo(() => data?.lines ?? [], [data]);
   return (
@@ -196,10 +183,66 @@ function BillsTab({ instanceId }: { instanceId: number }) {
 }
 
 
+/** 设置 Tab:改名 + 危险区(释放),与服务详情的设置 Tab 对齐。 */
+function SettingsTab({
+  instance,
+  canRelease,
+  onRelease,
+}: {
+  instance: InstanceOut;
+  canRelease: boolean;
+  onRelease: () => void;
+}) {
+  const { t } = useTranslation();
+  const { message } = App.useApp();
+  const [name, setName] = useState(instance.name);
+  const rename = useRenameInstance();
+  const dirty = name.trim() !== "" && name.trim() !== instance.name;
+  const save = async () => {
+    await rename.mutateAsync({ uuid: instance.uuid, name: name.trim() });
+    message.success(t("instances.renamed"));
+  };
+  return (
+    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+      <Card size="small" title={t("instances.settingsBasic")}>
+        <Space wrap>
+          <Input
+            value={name}
+            maxLength={64}
+            aria-label={t("create.nameLabel")}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
+            style={{ width: controlWidth.lg }}
+          />
+          <Button
+            type="primary"
+            disabled={!dirty}
+            loading={rename.isPending}
+            onClick={() => void save()}
+          >
+            {t("instances.saveName")}
+          </Button>
+        </Space>
+      </Card>
+      <DangerZone
+        title={t("instances.dangerZone")}
+        description={t("instances.dangerNote")}
+        actions={[
+          {
+            key: "release",
+            label: t("instances.release"),
+            onClick: onRelease,
+            disabled: !canRelease,
+            disabledReason: t("copy.releaseNeedsStopped"),
+          },
+        ]}
+      />
+    </Space>
+  );
+}
+
 function InstanceDetail() {
   const { t } = useTranslation();
   const { formatHourlyPrice, formatMoney, formatPeriodPrice } = useFormat();
-  const { token } = theme.useToken();
   const { uuid } = Route.useParams();
   const { tab } = Route.useSearch();
   const navigate = useNavigate();
@@ -211,10 +254,10 @@ function InstanceDetail() {
     refetch: refetchInstance,
   } = useInstance(uuid, {
     refetchInterval: (q) =>
-      q.state.data && isTransientInstanceStatus(q.state.data.status) ? 5_000 : 30_000,
+      q.state.data && isTransientInstanceStatus(q.state.data.status) ? POLL.transient : POLL.steady,
   });
   const { date, tzOffsetMinutes } = localToday();
-  const { data: daily } = useDailySummary(date, tzOffsetMinutes, { refetchInterval: 60_000 });
+  const { data: daily } = useDailySummary(date, tzOffsetMinutes, { refetchInterval: POLL.daily });
   const todayAmount =
     (instance && daily?.items.find((it) => it.instance_id === instance.id)?.total_amount) ?? null;
 
@@ -236,7 +279,8 @@ function InstanceDetail() {
   }
   const running = instance.status === "running";
   const canRelease = canReleaseStatus(instance.status);
-  const activeTab = tab ?? "metrics";
+  // 默认 Tab 按状态:running 最想做的是连接;其余(停机 / 失败 / 过渡态)看事件最有用
+  const activeTab = tab ?? (running ? "access" : "events");
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
@@ -308,6 +352,7 @@ function InstanceDetail() {
           {/* 「事件日志」跳到本页事件 Tab */}
           <InstanceActions
             instance={instance}
+            size="middle"
             onShowEvents={() =>
               void navigate({ to: "/instances/$uuid", params: { uuid }, search: { tab: "events" } })
             }
@@ -323,14 +368,14 @@ function InstanceDetail() {
         }
         items={[
           {
-            key: "metrics",
-            label: t("instances.tabMetrics"),
-            children: <MetricsPanel uuid={uuid} running={running} />,
-          },
-          {
             key: "access",
             label: t("instances.tabAccess"),
             children: <AccessTab instance={instance} running={running} />,
+          },
+          {
+            key: "metrics",
+            label: t("instances.tabMetrics"),
+            children: <MetricsPanel uuid={uuid} running={running} />,
           },
           {
             key: "logs",
@@ -352,22 +397,19 @@ function InstanceDetail() {
             label: t("instances.tabBills"),
             children: <BillsTab instanceId={instance.id} />,
           },
+          {
+            key: "settings",
+            label: t("instances.tabSettings"),
+            children: (
+              <SettingsTab
+                instance={instance}
+                canRelease={canRelease}
+                onRelease={() => setReleaseOpen(true)}
+              />
+            ),
+          },
         ]}
       />
-
-      <Card title={t("instances.dangerZone")} style={{ borderColor: token.colorErrorBorder }}>
-        <Space orientation="vertical">
-          <Typography.Text type="secondary">
-            {t("instances.dangerNote")}
-          </Typography.Text>
-          {/* 禁用原因走 Tooltip 不用原生 title(全站禁用项同一处理) */}
-          <Tooltip title={canRelease ? undefined : t("copy.releaseNeedsStopped")}>
-            <Button danger disabled={!canRelease} onClick={() => setReleaseOpen(true)}>
-              {t("instances.release")}
-            </Button>
-          </Tooltip>
-        </Space>
-      </Card>
       <ReleaseModal
         instance={instance}
         open={releaseOpen}

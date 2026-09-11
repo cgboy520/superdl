@@ -1,7 +1,8 @@
-/** 更新版本抽屉(基于当前版本预填):容器 / 服务 / 高级配置可改,规格与计费沿用,鉴权在「设置」改。密文 env 不回显:每个密文键默认「沿用」(进 env_secret_keep),可覆盖或删除。提交前 L2 确认;幂等键按表单快照派生,失败不轮换。 */
+/** 更新版本抽屉(基于当前版本预填):容器 / 服务 / 高级配置可改,规格与计费沿用,鉴权在「设置」改。密文 env 不回显:每个密文键默认「沿用」(进 env_secret_keep),可覆盖或删除。
+ *  提交按钮固定在 Drawer footer;脏表单点遮罩 / 关闭 / 路由跳走都走离开确认(useLeaveGuard);提交前 L2 确认;幂等键按表单快照派生,失败不轮换。 */
 
 import { isApiError, type ServiceOut, type ServiceRevisionCreate } from "@superdl/api-client";
-import { idemKeyOf, marketLabelKey, useApiErrorText } from "@superdl/ui";
+import { drawerWidth, idemKeyOf, marketLabelKey, useApiErrorText } from "@superdl/ui";
 import { useConfirm } from "@superdl/ui/components";
 import { Alert, App, Button, Card, Checkbox, Drawer, Space, Tag, Tooltip, Typography } from "antd";
 import { useState } from "react";
@@ -18,6 +19,7 @@ import {
   type ArgRow,
   type EnvRow,
 } from "../../lib/serviceSpec";
+import { useLeaveGuard } from "../../lib/useLeaveGuard";
 import { SshKeyPicker } from "../create/SshKeyPicker";
 import { ContainerFields } from "./ContainerCard";
 import { PublicAccessFields } from "./PublicAccessCard";
@@ -31,19 +33,9 @@ export function RevisionDrawer({
   open: boolean;
   onClose: () => void;
 }) {
-  const { t } = useTranslation();
-  return (
-    <Drawer
-      size="min(760px, 100vw)"
-      open={open}
-      onClose={onClose}
-      destroyOnHidden
-      title={t("services.revision.title", { no: service.revision })}
-    >
-      {/* 每次打开从当前版本重新预填 */}
-      {open && <RevisionForm key={service.revision} service={service} onClose={onClose} />}
-    </Drawer>
-  );
+  // 每次打开从当前版本重新预填;表单持有 Drawer 以便把提交钮放进 footer
+  if (!open) return null;
+  return <RevisionForm key={service.revision} service={service} onClose={onClose} />;
 }
 
 function RevisionForm({ service, onClose }: { service: ServiceOut; onClose: () => void }) {
@@ -69,6 +61,36 @@ function RevisionForm({ service, onClose }: { service: ServiceOut; onClose: () =
   const [keyIds, setKeyIds] = useState<number[]>([]);
   const [nonce] = useState(() => crypto.randomUUID());
   const create = useCreateRevision(service.slug, { silentError: true });
+  // 脏判定:任一字段偏离预填值
+  const dirty =
+    image !== (c?.image_ref ?? "") ||
+    command !== (c?.container_command?.join(" ") ?? "") ||
+    argRows.map((r) => r.value).join("\n") !== (c?.container_args ?? []).join("\n") ||
+    envRows.length !== Object.keys(c?.env ?? {}).length ||
+    envRows.some((r) => r.secret || (c?.env ?? {})[r.name] !== r.value) ||
+    keepKeys.length !== (c?.env_secret_keys ?? []).length ||
+    port !== (c?.service_port ?? null) ||
+    healthPath !== (c?.health_path ?? "") ||
+    withSsh !== (c?.with_ssh ?? false);
+  // 路由跳走由 useLeaveGuard 拦;抽屉自身关闭走下面的 requestClose
+  const leave = useLeaveGuard(dirty);
+  const requestClose = () => {
+    if (!dirty) {
+      onClose();
+      return;
+    }
+    confirm({
+      title: t("create.discardConfirmTitle"),
+      consequences: [t("create.discardConfirmBody")],
+      okText: t("create.discardConfirmOk"),
+      cancelText: t("create.discardConfirmCancel"),
+      danger: true,
+      onOk: () => {
+        leave.bypass();
+        onClose();
+      },
+    });
+  };
 
   const imageRef = image.trim();
   const issue = ((): string | null => {
@@ -131,6 +153,7 @@ function RevisionForm({ service, onClose }: { service: ServiceOut; onClose: () =
         try {
           await create.mutateAsync({ body, idempotencyKey });
           message.success(t("services.revision.started", { no: nextNo }));
+          leave.bypass();
           onClose();
         } catch (err) {
           if (isApiError(err) && err.code === "NO_CAPACITY") {
@@ -151,6 +174,23 @@ function RevisionForm({ service, onClose }: { service: ServiceOut; onClose: () =
   const billingKey = inst ? marketLabelKey(inst.market, inst.subscription?.period) : null;
 
   return (
+    <Drawer
+      size={drawerWidth.lg}
+      open
+      onClose={requestClose}
+      destroyOnHidden
+      title={t("services.revision.title", { no: service.revision })}
+      footer={
+        <Space style={{ width: "100%", justifyContent: "flex-end" }}>
+          <Button onClick={requestClose}>{t("services.revision.cancel")}</Button>
+          <Tooltip title={issue ?? undefined}>
+            <Button type="primary" disabled={issue != null} loading={create.isPending} onClick={submit}>
+              {t("services.revision.submit")}
+            </Button>
+          </Tooltip>
+        </Space>
+      }
+    >
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Alert type="warning" showIcon title={t("services.revision.notice")} />
       <Card size="small" title={t("services.revision.sectionContainer")}>
@@ -164,6 +204,7 @@ function RevisionForm({ service, onClose }: { service: ServiceOut; onClose: () =
             onArgRows={setArgRows}
             envRows={envRows}
             onEnvRows={setEnvRows}
+            collapsibleEnv
           />
           {keepKeys.length > 0 && (
             <Space orientation="vertical" size={4} style={{ width: "100%" }}>
@@ -220,14 +261,8 @@ function RevisionForm({ service, onClose }: { service: ServiceOut; onClose: () =
           })}
         </Typography.Text>
       </Card>
-      <Space style={{ width: "100%", justifyContent: "flex-end" }}>
-        <Button onClick={onClose}>{t("services.revision.cancel")}</Button>
-        <Tooltip title={issue ?? undefined}>
-          <Button type="primary" disabled={issue != null} loading={create.isPending} onClick={submit}>
-            {t("services.revision.submit")}
-          </Button>
-        </Tooltip>
-      </Space>
     </Space>
+    {leave.modal}
+    </Drawer>
   );
 }

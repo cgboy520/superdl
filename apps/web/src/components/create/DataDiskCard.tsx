@@ -26,6 +26,7 @@ export function DataDiskCard({
   existingId,
   onExistingIdChange,
   id,
+  variant = "card",
 }: {
   mode: DiskMode;
   onModeChange: (mode: DiskMode) => void;
@@ -37,6 +38,8 @@ export function DataDiskCard({
   onExistingIdChange: (id: number | undefined) => void;
   /** 锚点 id(未完成项清单跳转用) */
   id?: string;
+  /** card = 独立卡(创建页);section = 嵌在别的卡里,只出标题行(部署页容器配置段) */
+  variant?: "card" | "section";
 }) {
   const { t } = useTranslation();
   const disksQ = useDisks();
@@ -45,8 +48,7 @@ export function DataDiskCard({
   // 「约 ¥X/日」为展示层估算(月价/30,BigInt);入账以后端日结为准
   const diskDaily = diskDailyEstimate(diskPriceGbMonth, newGb);
 
-  return (
-    <Card id={id} title={t("create.diskCard")} className="anchor-card">
+  const body = (
       <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
         <Radio.Group
           value={mode}
@@ -144,6 +146,20 @@ export function DataDiskCard({
           </Typography.Text>
         </Space>
       </Space>
+  );
+  if (variant === "section") {
+    return (
+      <div id={id}>
+        <Typography.Text strong style={{ display: "block", marginBottom: space.sm }}>
+          {t("create.diskCard")}
+        </Typography.Text>
+        {body}
+      </div>
+    );
+  }
+  return (
+    <Card id={id} title={t("create.diskCard")} className="anchor-card">
+      {body}
     </Card>
   );
 }

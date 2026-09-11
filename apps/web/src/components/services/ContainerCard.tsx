@@ -16,6 +16,7 @@ export function ContainerFields({
   onArgRows,
   envRows,
   onEnvRows,
+  collapsibleEnv,
 }: {
   image: string;
   onImage: (v: string) => void;
@@ -25,6 +26,8 @@ export function ContainerFields({
   onArgRows: (rows: ArgRow[]) => void;
   envRows: EnvRow[];
   onEnvRows: (rows: EnvRow[]) => void;
+  /** 更新版本抽屉:环境变量折叠为「N 个变量 · 展开编辑」 */
+  collapsibleEnv?: boolean;
 }) {
   const { t } = useTranslation();
   const { t: tErr } = useTranslation("errors");
@@ -56,7 +59,7 @@ export function ContainerFields({
         <Typography.Text type="secondary">{t("services.form.commandHint")}</Typography.Text>
       </Space>
       <ArgRowsEditor rows={argRows} onChange={onArgRows} />
-      <EnvRowsEditor rows={envRows} onChange={onEnvRows} />
+      <EnvRowsEditor rows={envRows} onChange={onEnvRows} collapsible={collapsibleEnv} />
     </Space>
   );
 }

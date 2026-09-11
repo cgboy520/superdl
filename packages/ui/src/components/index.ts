@@ -16,3 +16,5 @@ export { HexTag } from "./HexTag";
 export { LoadMore } from "./LoadMore";
 export { moneyOr, DataErrorAlert } from "./QueryState";
 export { useConfirm, TypeConfirmModal } from "./confirm";
+export { DangerZone } from "./DangerZone";
+export type { DangerAction } from "./DangerZone";

@@ -139,6 +139,8 @@ export interface EChartProps {
   empty?: boolean | ReactNode;
   /** 断源降级:true 默认文案,ReactNode 自定义 */
   degraded?: boolean | ReactNode;
+  /** 联动组名:同组图表 axisPointer / tooltip 联动(echarts.connect) */
+  group?: string;
 }
 
 export default function EChart({
@@ -150,16 +152,21 @@ export default function EChart({
   loading,
   empty,
   degraded,
+  group,
 }: EChartProps) {
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
   const { t } = useTranslation("shared");
 
-  // theme 变化整体重建实例
+  // theme / group 变化整体重建实例
   useEffect(() => {
     if (!ref.current) return;
     const chart = echarts.init(ref.current, theme);
     chartRef.current = chart;
+    if (group) {
+      chart.group = group;
+      echarts.connect(group);
+    }
     const observer = new ResizeObserver(() => chart.resize());
     observer.observe(ref.current);
     return () => {
@@ -167,7 +174,7 @@ export default function EChart({
       chart.dispose();
       chartRef.current = null;
     };
-  }, [theme]);
+  }, [theme, group]);
 
   useEffect(() => {
     chartRef.current?.setOption(

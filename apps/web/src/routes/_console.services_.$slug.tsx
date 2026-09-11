@@ -1,4 +1,4 @@
-/** 服务详情:头部(名称 / 状态 / 版本 / 操作)+ 常驻服务端点卡 + Tab `概览 / 访问密钥 / 监控 / 日志 / 版本 / 事件 / 账单 / 设置`(危险区在设置里);「更新版本」是抽屉。只有一条服务轮询(过渡态 5s、运行中 30s、已删除停);监控与日志打当前版本实例。 */
+/** 服务详情:头部(名称 / 状态 / 版本 / 操作)+ 常驻服务端点卡 + Tab `概览(含小时账单)/ 访问密钥(公开访问时不出)/ 监控 / 日志 / 历史(版本 + 事件)/ 设置`(危险区在设置里);「更新版本」是抽屉。只有一条服务轮询(过渡态 / 运行中 / 已删除停);监控与日志打当前版本实例。旧链接 ?tab=revisions|events → history、?tab=bills → overview。 */
 
 import type { InstanceEventOut, InstanceOut, ServiceOut } from "@superdl/api-client";
 import {
@@ -56,24 +56,19 @@ import { ServiceActions } from "../components/services/ServiceActions";
 import { SettingsTab } from "../components/services/SettingsTab";
 import { requireAuth } from "../lib/guard";
 
-export const SERVICE_DETAIL_TABS = [
-  "overview",
-  "keys",
-  "metrics",
-  "logs",
-  "revisions",
-  "events",
-  "bills",
-  "settings",
-] as const;
+export const SERVICE_DETAIL_TABS = ["overview", "keys", "metrics", "logs", "history", "settings"] as const;
 export type ServiceDetailTab = (typeof SERVICE_DETAIL_TABS)[number];
 
-/** tab 白名单:非法值(含旧链接的 ?tab=service)回默认 Tab。 */
+/** 旧 Tab 名映射(revisions / events → history,bills → overview) */
+const LEGACY_TABS: Record<string, ServiceDetailTab> = { revisions: "history", events: "history", bills: "overview" };
+
+/** tab 白名单:旧名归一,非法值(含更早的 ?tab=service)回默认 Tab。 */
 export function serviceDetailValidateSearch(search: Record<string, unknown>): { tab?: ServiceDetailTab } {
   const tab = search["tab"];
-  return typeof tab === "string" && (SERVICE_DETAIL_TABS as readonly string[]).includes(tab)
-    ? { tab: tab as ServiceDetailTab }
-    : {};
+  if (typeof tab !== "string") return {};
+  if ((SERVICE_DETAIL_TABS as readonly string[]).includes(tab)) return { tab: tab as ServiceDetailTab };
+  const legacy = LEGACY_TABS[tab];
+  return legacy ? { tab: legacy } : {};
 }
 
 export const Route = createFileRoute("/_console/services_/$slug")({
@@ -379,7 +374,9 @@ function ServiceDetail() {
   const inst = service.current_instance ?? service.rollout_instance;
   const live = service.status === "running" || service.status === "unready";
   const todayAmount = (inst && daily?.items.find((it) => it.instance_id === inst.id)?.total_amount) ?? null;
-  const activeTab: ServiceDetailTab = tab ?? "overview";
+  const requested: ServiceDetailTab = tab ?? "overview";
+  // 公开访问时无「访问密钥」Tab:深链落到设置(鉴权开关在那)
+  const activeTab: ServiceDetailTab = requested === "keys" && !service.require_api_key ? "settings" : requested;
   const goTab = (k: string, replace: boolean) =>
     void navigate({ to: "/services/$slug", params: { slug }, search: { tab: k as ServiceDetailTab }, replace });
 
@@ -454,25 +451,42 @@ function ServiceDetail() {
         </Space>
       </Card>
 
-      <EndpointCard service={service} onShowLogs={() => goTab("logs", false)} />
+      <EndpointCard service={service} onShowLogs={() => goTab("logs", false)} onShowEvents={() => goTab("history", false)} />
 
       <Tabs
         activeKey={activeTab}
         // Tab activeKey 入 URL 用 replace(ui-ux-spec §1-8)
         onChange={(k) => goTab(k, true)}
         items={[
-          { key: "overview", label: t("services.detail.tabOverview"), children: <OverviewTab service={service} /> },
           {
-            key: "keys",
-            label: t("services.detail.tabKeys"),
+            key: "overview",
+            label: t("services.detail.tabOverview"),
             children: (
-              <ApiKeysCard
-                slug={service.slug}
-                requireApiKey={service.require_api_key}
-                released={service.released_at != null}
-              />
+              <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+                <OverviewTab service={service} />
+                {/* 小时账单并入概览(全部版本实例) */}
+                <Card size="small" title={t("services.detail.tabBills")}>
+                  <BillsTab slug={service.slug} />
+                </Card>
+              </Space>
             ),
           },
+          // 公开访问时网关不校验 Key,不出该 Tab(设置里开回鉴权后再出)
+          ...(service.require_api_key
+            ? [
+                {
+                  key: "keys",
+                  label: t("services.detail.tabKeys"),
+                  children: (
+                    <ApiKeysCard
+                      slug={service.slug}
+                      requireApiKey={service.require_api_key}
+                      released={service.released_at != null}
+                    />
+                  ),
+                },
+              ]
+            : []),
           {
             key: "metrics",
             label: t("services.detail.tabMetrics"),
@@ -484,16 +498,20 @@ function ServiceDetail() {
           },
           { key: "logs", label: t("services.detail.tabLogs"), children: <LogsTab service={service} /> },
           {
-            key: "revisions",
-            label: t("services.detail.tabRevisions"),
-            children: <RevisionsTab service={service} />,
+            // 版本与事件都是历史轴,合成一个 Tab
+            key: "history",
+            label: t("services.detail.tabHistory"),
+            children: (
+              <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+                <Card size="small" title={t("services.detail.tabRevisions")}>
+                  <RevisionsTab service={service} />
+                </Card>
+                <Card size="small" title={t("services.detail.tabEvents")}>
+                  <EventsTab slug={service.slug} status={service.status} />
+                </Card>
+              </Space>
+            ),
           },
-          {
-            key: "events",
-            label: t("services.detail.tabEvents"),
-            children: <EventsTab slug={service.slug} status={service.status} />,
-          },
-          { key: "bills", label: t("services.detail.tabBills"), children: <BillsTab slug={service.slug} /> },
           {
             key: "settings",
             label: t("services.detail.tabSettings"),

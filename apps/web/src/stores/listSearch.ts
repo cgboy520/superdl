@@ -35,7 +35,10 @@ export const listSearchStore = createStore<{
   },
 }));
 
-/** 读取某列表路径最近的筛选态(无记录返回空对象)。 */
+/** 无记录时的稳定空对象(selector 必须返回稳定引用,否则 useSyncExternalStore 会无限重渲染) */
+const EMPTY: ListSearch = Object.freeze({});
+
+/** 读取某列表路径最近的筛选态(无记录返回稳定的空对象)。 */
 export function useRememberedListSearch(path: string): ListSearch {
-  return useStore(listSearchStore, (s) => s.byPath[path] ?? {});
+  return useStore(listSearchStore, (s) => s.byPath[path] ?? EMPTY);
 }

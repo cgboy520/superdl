@@ -17,10 +17,13 @@ describe("servicesValidateSearch", () => {
 });
 
 describe("serviceDetailValidateSearch", () => {
-  it("八个合法 tab 保留;旧链接的 ?tab=service 与未知值回默认", () => {
-    for (const tab of ["overview", "keys", "metrics", "logs", "revisions", "events", "bills", "settings"]) {
+  it("六个合法 tab 保留;旧 Tab 名归一(revisions/events → history,bills → overview);?tab=service 与未知值回默认", () => {
+    for (const tab of ["overview", "keys", "metrics", "logs", "history", "settings"]) {
       expect(serviceDetailValidateSearch({ tab })).toEqual({ tab });
     }
+    expect(serviceDetailValidateSearch({ tab: "revisions" })).toEqual({ tab: "history" });
+    expect(serviceDetailValidateSearch({ tab: "events" })).toEqual({ tab: "history" });
+    expect(serviceDetailValidateSearch({ tab: "bills" })).toEqual({ tab: "overview" });
     expect(serviceDetailValidateSearch({ tab: "service" })).toEqual({});
     expect(serviceDetailValidateSearch({ tab: "xyz" })).toEqual({});
   });

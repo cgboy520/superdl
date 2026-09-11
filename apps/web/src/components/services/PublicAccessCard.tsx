@@ -1,7 +1,8 @@
-/** 服务配置段(对外访问):服务端口 / 协议(TCP、gRPC 即将上线,灰置不隐藏)/ 健康检查 / 访问鉴权 / 端点占位。 */
+/** 服务配置段(对外访问):服务端口 / 协议(TCP、gRPC 即将上线,灰置不隐藏)/ 健康检查 / 访问鉴权 / 端点占位。字段级错误在 blur 后就地显示(不只喂给提交钮 tooltip)。 */
 
-import { fontSize } from "@superdl/ui";
+import { controlWidth, fontSize } from "@superdl/ui";
 import { Input, InputNumber, Radio, Space, Typography } from "antd";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { RESERVED_SERVICE_PORTS } from "../../lib/serviceSpec";
@@ -25,6 +26,16 @@ export function PublicAccessFields({
   hideAuth?: boolean;
 }) {
   const { t } = useTranslation();
+  const [portTouched, setPortTouched] = useState(false);
+  const [healthTouched, setHealthTouched] = useState(false);
+  const portError =
+    port != null && RESERVED_SERVICE_PORTS.includes(port)
+      ? t("services.form.portReserved")
+      : portTouched && port == null
+        ? t("services.form.portRequired")
+        : null;
+  const healthError =
+    healthTouched && healthPath.trim() !== "" && !healthPath.trim().startsWith("/") ? t("services.form.healthPathSlash") : null;
   return (
     <Space orientation="vertical" size={12} style={{ width: "100%" }}>
       <Space size={24} wrap align="start">
@@ -33,13 +44,19 @@ export function PublicAccessFields({
           <InputNumber
             min={1}
             max={65535}
-            style={{ width: "100%", maxWidth: 160 }}
+            style={{ width: "100%", maxWidth: controlWidth.sm }}
             placeholder="8000"
             aria-label={t("services.form.portLabel")}
-            status={port != null && RESERVED_SERVICE_PORTS.includes(port) ? "error" : undefined}
+            status={portError ? "error" : undefined}
             value={port}
             onChange={(v) => onPort(typeof v === "number" ? v : null)}
+            onBlur={() => setPortTouched(true)}
           />
+          {portError && (
+            <Typography.Text type="danger" style={{ fontSize: fontSize.caption }}>
+              {portError}
+            </Typography.Text>
+          )}
         </Space>
         <Space orientation="vertical" size={4}>
           <Typography.Text type="secondary">{t("services.form.protocolLabel")}</Typography.Text>
@@ -61,13 +78,19 @@ export function PublicAccessFields({
       <Space orientation="vertical" size={4} style={{ width: "100%" }}>
         <Typography.Text type="secondary">{t("services.form.healthLabel")}</Typography.Text>
         <Input
-          style={{ width: "100%", maxWidth: 320 }}
+          style={{ width: "100%", maxWidth: controlWidth.lg }}
           placeholder="/healthz"
           aria-label={t("services.form.healthLabel")}
-          status={healthPath.trim() !== "" && !healthPath.trim().startsWith("/") ? "error" : undefined}
+          status={healthError ? "error" : undefined}
           value={healthPath}
           onChange={(e) => onHealthPath(e.target.value)}
+          onBlur={() => setHealthTouched(true)}
         />
+        {healthError && (
+          <Typography.Text type="danger" style={{ fontSize: fontSize.caption }}>
+            {healthError}
+          </Typography.Text>
+        )}
         <Typography.Text type="secondary">{t("services.form.healthHint")}</Typography.Text>
       </Space>
       {!hideAuth && (
