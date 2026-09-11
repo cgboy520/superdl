@@ -22,7 +22,7 @@ def test_entry_imports_in_fresh_interpreter(entry: str) -> None:
         [sys.executable, "-c", entry],
         capture_output=True,
         text=True,
-        env={"SUPERDL_K8S_BACKEND": "fake", "PATH": "/usr/bin:/bin"},
+        env={"SUPERDL_ENVIRONMENT": "test", "SUPERDL_K8S_BACKEND": "fake", "PATH": "/usr/bin:/bin"},
         timeout=120,
     )
     assert proc.returncode == 0, proc.stderr[-2000:]
