@@ -367,7 +367,7 @@
       "stopped": "Stop requested",
       "toPeriod": "Switch to a subscription"
     },
-    "billingBoundary": "(billing boundary)",
+    "billingBoundary": "Billing boundary",
     "colActions": "Actions",
     "colBillAmount": "Amount",
     "colBillDuration": "Runtime",

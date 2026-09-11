@@ -869,7 +869,7 @@ export default interface Resources {
         "stopped": "已下发关机",
         "toPeriod": "转包周期"
       },
-      "billingBoundary": "(计费边界)",
+      "billingBoundary": "计费边界",
       "colActions": "操作",
       "colBillAmount": "金额",
       "colBillDuration": "运行时长",
