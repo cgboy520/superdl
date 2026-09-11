@@ -1,8 +1,10 @@
-/** 高危操作统一模式:原因必填 → 二次确认 → 执行 → message 反馈;无权角色按钮可见但禁用 + tooltip。 */
+/** 高危操作统一模式:原因必填 → 二次确认 → 执行 → message 反馈;无权角色按钮可见但禁用 + tooltip。
+ *  target(目标标识:租户 #id·手机 / 实例名·uuid 前缀 / 节点名 / 退款单号)在两步弹窗都显示,操作者看得见自己在动哪一条。 */
 
-import { App, Button, Form, Input, Modal, Tooltip } from "antd";
+import { fontSize, space } from "@superdl/ui";
+import { App, Button, Form, Input, Modal, Space, Tooltip, Typography } from "antd";
 import type { ButtonProps } from "antd";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useApiErrorText } from "@superdl/ui";
@@ -13,12 +15,16 @@ interface Props {
   label: string;
   title: string;
   confirmText: string;
+  /** 目标标识(两步弹窗顶部回显) */
+  target?: ReactNode;
   danger?: boolean;
   disabled?: boolean;
   /** 禁用原因(tooltip) */
   disabledReason: string;
   /** 触发按钮尺寸(默认 small) */
   size?: ButtonProps["size"];
+  /** 触发按钮形态(行内「更多」里用 link) */
+  type?: ButtonProps["type"];
   /** 返回字符串作成功提示,否则用通用文案 */
   onSubmit: (reason: string) => Promise<string | void>;
 }
@@ -27,10 +33,12 @@ export function ReasonAction({
   label,
   title,
   confirmText,
+  target,
   danger,
   disabled,
   disabledReason,
   size = "small",
+  type,
   onSubmit,
 }: Props) {
   const { t } = useTranslation();
@@ -44,7 +52,7 @@ export function ReasonAction({
   const [form] = Form.useForm<{ reason: string }>();
 
   const button = (
-    <Button danger={danger} size={size} disabled={disabled} onClick={() => setOpen(true)}>
+    <Button danger={danger} size={size} type={type} disabled={disabled} onClick={() => setOpen(true)}>
       {label}
     </Button>
   );
@@ -63,6 +71,12 @@ export function ReasonAction({
       setLoading(false);
     }
   };
+
+  const targetLine = target ? (
+    <Typography.Text type="secondary" style={{ display: "block", fontSize: fontSize.caption, marginBottom: space.sm }}>
+      {t("common.targetLabel")}:{target}
+    </Typography.Text>
+  ) : null;
 
   return (
     <>
@@ -88,6 +102,7 @@ export function ReasonAction({
         okText={t("common.next")}
         destroyOnHidden
       >
+        {targetLine}
         <Form form={form} layout="vertical">
           <Form.Item
             name="reason"
@@ -114,7 +129,15 @@ export function ReasonAction({
         okText={t("common.confirmExecute")}
         okButtonProps={{ danger, loading }}
       >
-        {confirmText}
+        <Space orientation="vertical" size={space.xs} style={{ width: "100%" }}>
+          {targetLine}
+          <span>{confirmText}</span>
+          {reasonSnapshot && (
+            <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+              {t("common.reasonLabel")}:{reasonSnapshot}
+            </Typography.Text>
+          )}
+        </Space>
       </Modal>
     </>
   );

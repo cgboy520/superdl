@@ -175,8 +175,9 @@ export function SettlementGapsTab() {
                   </Button>
                   <ReasonAction
                     label={t("finance.gapResolve")}
+                    target={`#${row.id} · ${t(KIND_LABEL_KEY[row.kind as GapKind] ?? "finance.gapKindHourly")} · ${row.object_id}`}
                     title={t("finance.gapResolveTitle")}
-                    confirmText={t("finance.gapResolveConfirm")}
+                    confirmText={t("finance.gapResolveConfirm", { id: row.id })}
                     disabled={!writable}
                     disabledReason={t("finance.financeOnlyGap")}
                     onSubmit={async (reason) => {

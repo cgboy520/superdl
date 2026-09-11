@@ -1,10 +1,14 @@
-/** user_id 单元格:点击去租户页按 id 找人。 */
+/** user_id 单元格:点击去租户页按 id 找人并直接打开该租户抽屉(?tenant=)。 */
 
 import { Link } from "@tanstack/react-router";
 import type { TableColumnType } from "antd";
 
 export function TenantLink({ id }: { id: number }) {
-  return <Link to="/tenants" search={{ q: String(id) }}>#{id}</Link>;
+  return (
+    <Link to="/tenants" search={{ q: String(id), tenant: id }}>
+      #{id}
+    </Link>
+  );
 }
 
 /** 「租户」列工厂:user_id → TenantLink。 */

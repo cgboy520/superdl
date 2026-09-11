@@ -57,6 +57,8 @@
 ## 规则与不变量
 
 - 管理端与用户端 API 物理分离,token 不通用;侧栏菜单按角色过滤(`lib/menu.ts` 与后端 `require_roles` 逐端点对齐),直接输 URL 由后端 403 兜底。
+- 深链参数(运营面互相转达的视图,一律入 URL):`/tenants?tenant=<id>` 打开租户抽屉(`TenantLink` 与告警 `tenant` 目标都带);`/tenants?tab=instances&inode=<node>` 按节点看实例(节点表「已用」列链到);`/nodes?node=<name>`;`/tickets?id=<id>`;`/platform?group=<group>`(当前配置分组);`/images?image=<id>`(展开该镜像的节点缓存面板,失败计数标可点)。告警 → 目标的映射在 `lib/alertLink.ts`。
+- 高危操作 `ReasonAction` 一律带 `target`(租户 #id·手机 / 实例名·uuid 前缀 / 节点名 / 退款单号等),两步弹窗都回显目标,二次确认再回显原因。
 - 菜单项事实源 `lib/menu.ts` 的 `MENU`(侧栏与 ⌘K 共用;`group` 分四组:总览 / 资源 / 业务 / 治理,顺序 `MENU_GROUP_ORDER`),可见性由 `MENU_ROLES` 过滤;键集一致性由 `lib/menu.test.ts` 守护。
 - 表格密度与固定列:`adminThemeComponents.Table` 统一 13px / `cellPaddingBlock 8`;`scroll.x ≥ 1000` 的表固定标识列与操作列并 `sticky`(顶栏高度 `layout.topBarHeight`);宽表页 `PageContainer width="full"`;轮询页页头挂新鲜度条(`useAutoRefresh` + `PageHeader.freshness`)。
 - `src/routes/` 下的非路由文件以 `-` 开头(tanstack router 的 routeFileIgnorePrefix)。

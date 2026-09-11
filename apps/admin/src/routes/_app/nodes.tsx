@@ -14,7 +14,7 @@ import {
 } from "@superdl/ui";
 import { EChart, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   Alert,
   App,
@@ -547,8 +547,9 @@ function EnrollmentsCard({ writable }: { writable: boolean }) {
                 {/* 重新生成:旧命令立即失效,先收原因 */}
                 <ReasonAction
                   label={t("nodes.regenerate")}
+                  target={r.hostname ?? `#${r.id}`}
                   title={t("nodes.regenerateConfirmTitle")}
-                  confirmText={t("nodes.regenerateConfirmDesc")}
+                  confirmText={t("nodes.regenerateConfirmDesc", { host: r.hostname ?? `#${r.id}` })}
                   disabled={!writable || !["pending", "expired", "failed"].includes(r.status)}
                   disabledReason={
                     !writable ? t("nodes.readonlyNoOp") : t("nodes.regenerateOnly")
@@ -560,8 +561,9 @@ function EnrollmentsCard({ writable }: { writable: boolean }) {
                 {!["joined", "failed", "expired", "revoked"].includes(r.status) && (
                   <ReasonAction
                     label={t("nodes.revoke")}
+                    target={r.hostname ?? `#${r.id}`}
                     title={t("nodes.revokeTitle")}
-                    confirmText={t("nodes.revokeConfirm")}
+                    confirmText={t("nodes.revokeConfirm", { host: r.hostname ?? `#${r.id}` })}
                     danger
                     disabled={!writable}
                     disabledReason={t("nodes.readonlyNoRevoke")}
@@ -823,6 +825,15 @@ function NodesPage() {
               title: t("nodes.colUsed"),
               dataIndex: "gpu_used",
               sorter: (a, b) => a.gpu_used - b.gpu_used,
+              // 已用卡数链到「租户与实例 › 实例」按节点过滤:从节点直达上面跑着谁
+              render: (v: number, r) =>
+                v > 0 ? (
+                  <Link to="/tenants" search={{ tab: "instances", inode: r.name }}>
+                    {v}
+                  </Link>
+                ) : (
+                  v
+                ),
             },
             { title: t("nodes.colDriver"), render: (_, r) => r.driver_version || "—" },
             { title: "CUDA", render: (_, r) => r.cuda_version || "—" },
@@ -886,6 +897,7 @@ function NodesPage() {
                   <Space>
                     <ReasonAction
                       label={cordoned ? t("nodes.uncordonBtn") : t("nodes.cordonBtn")}
+                      target={r.name}
                       title={cordoned ? t("nodes.uncordonTitle") : t("nodes.cordonTitle")}
                       confirmText={
                         cordoned

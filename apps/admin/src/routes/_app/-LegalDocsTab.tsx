@@ -273,6 +273,7 @@ function CellEditor({
               </Button>
               <ReasonAction
                 label={t("settings.legal.archive")}
+                target={draft ? `${docLabel} · v${draft.version}` : docLabel}
                 title={t("settings.legal.archive")}
                 confirmText={t("settings.legal.confirmArchive")}
                 danger

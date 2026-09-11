@@ -22,6 +22,7 @@ import {
   App,
   Button,
   Card,
+  Checkbox,
   Col,
   DatePicker,
   Descriptions,
@@ -354,6 +355,8 @@ function ReviewConfirmModal({
   const { message } = App.useApp();
   const ctx = useAdjustContext(target?.adj.user_id ?? null);
   const [rejectReason, setRejectReason] = useState("");
+  // 批准是入账动作:核对勾选后才放行(与驳回的必填理由对称)
+  const [acked, setAcked] = useState(false);
   const review = useReviewAdjustment({
     mutation: {
       onSuccess: () => {
@@ -377,7 +380,7 @@ function ReviewConfirmModal({
       okButtonProps={{
         danger: !approve,
         loading: review.isPending,
-        disabled: ctx.isError || (!approve && !isValidReason(rejectReason)),
+        disabled: ctx.isError || (approve ? !acked : !isValidReason(rejectReason)),
       }}
       onCancel={onClose}
       onOk={() =>
@@ -409,6 +412,11 @@ function ReviewConfirmModal({
         <Descriptions.Item label={t("finance.colCreatedBy")}>#{adj.created_by}</Descriptions.Item>
         <Descriptions.Item label={t("finance.colReason")}>{adj.reason}</Descriptions.Item>
       </Descriptions>
+      {approve && (
+        <Checkbox checked={acked} onChange={(e) => setAcked(e.target.checked)} style={{ marginTop: 12 }}>
+          {t("finance.approveAck")}
+        </Checkbox>
+      )}
       {!approve && (
         <Form layout="vertical" style={{ marginTop: 12 }}>
           <Form.Item
@@ -1090,6 +1098,7 @@ function RefundsTab() {
                     <>
                       <ReasonAction
                         label={t("finance.refundApprove")}
+                        target={`${r.refund_no} · ${formatMoney(r.amount)}`}
                         title={t("finance.refundApproveTitle")}
                         confirmText={t("finance.refundApproveConfirm", {
                           amount: formatMoney(r.amount),
@@ -1106,8 +1115,9 @@ function RefundsTab() {
                       />
                       <ReasonAction
                         label={t("finance.refundReject")}
+                        target={`${r.refund_no} · ${formatMoney(r.amount)}`}
                         title={t("finance.refundRejectTitle")}
-                        confirmText={t("finance.refundRejectConfirm")}
+                        confirmText={t("finance.refundRejectConfirm", { no: r.refund_no, amount: formatMoney(r.amount) })}
                         danger
                         disabled={!writable}
                         disabledReason={noPerm}
@@ -1143,8 +1153,9 @@ function RefundsTab() {
                   )}
                   <ReasonAction
                     label={t("finance.cancelRefund")}
+                    target={`${r.refund_no} · ${formatMoney(r.amount)}`}
                     title={t("finance.cancelRefundTitle")}
-                    confirmText={t("finance.cancelRefundConfirm")}
+                    confirmText={t("finance.cancelRefundConfirm", { no: r.refund_no, amount: formatMoney(r.amount) })}
                     danger
                     disabled={!writable}
                     disabledReason={noPerm}
@@ -1425,8 +1436,9 @@ function InvoicesTab() {
                   </Tooltip>
                   <ReasonAction
                     label={t("finance.invoiceReject")}
+                    target={`#${r.id} · ${formatMoney(r.amount)}`}
                     title={t("finance.invoiceRejectTitle")}
-                    confirmText={t("finance.invoiceRejectConfirm")}
+                    confirmText={t("finance.invoiceRejectConfirm", { id: r.id, amount: formatMoney(r.amount) })}
                     danger
                     disabled={!writable}
                     disabledReason={noPerm}

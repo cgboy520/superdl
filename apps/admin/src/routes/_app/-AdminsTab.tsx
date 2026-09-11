@@ -1,7 +1,7 @@
 /** 管理员账号:建号 / 改角色 / 停用 / 重置密码 + 自助改密。 */
 
 import { adminColors, fontSize, formatDateTime } from "@superdl/ui";
-import { TableErrorEmpty } from "@superdl/ui/components";
+import { TableErrorEmpty, useConfirm } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Alert, App, Button, Card, Form, Input, Modal, Select, Space, Table, Tag, Typography } from "antd";
@@ -40,6 +40,7 @@ export function AdminsTab() {
   const { t } = useTranslation();
   const errText = useApiErrorText();
   const { message, modal } = App.useApp();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { admin: me, logout } = useAuth();
@@ -140,6 +141,7 @@ export function AdminsTab() {
             />
             <ReasonAction
               label={row.status === "active" ? t("admins.disable") : t("admins.enable")}
+              target={row.username}
               title={t("admins.confirmStatusTitle", { name: row.username })}
               confirmText={
                 row.status === "active" ? t("admins.disableConfirm", { name: row.username }) : t("admins.enableConfirm", { name: row.username })
@@ -169,8 +171,9 @@ export function AdminsTab() {
             {row.totp_enabled && (
               <ReasonAction
                 label={t("admins.resetMfa")}
+                target={row.username}
                 title={t("admins.resetMfaTitle", { name: row.username })}
-                confirmText={t("admins.resetMfaConfirm")}
+                confirmText={t("admins.resetMfaConfirm", { name: row.username })}
                 danger
                 disabled={!isSuperAdmin || isSelf}
                 disabledReason={noPerm ?? selfNote ?? t("admins.superAdminOnly")}
@@ -353,14 +356,24 @@ export function AdminsTab() {
         onOk={async () => {
           const v = await pwdForm.validateFields();
           if (!pwdTarget) return;
-          try {
-            await resetPwd.mutateAsync({ id: pwdTarget.id, data: { password: v.password, reason: v.reason } });
-            message.success(t("admins.passwordReset"));
-            setPwdTarget(null);
-            refresh();
-          } catch (e) {
-            message.error(errText(e));
-          }
+          const target = pwdTarget;
+          // 二次确认带目标:重置会踢掉该管理员全部登录态
+          confirm({
+            title: t("admins.resetPasswordConfirmTitle", { name: target.username }),
+            consequences: [t("admins.resetKicksSessions")],
+            okText: t("admins.resetPassword"),
+            danger: true,
+            onOk: async () => {
+              try {
+                await resetPwd.mutateAsync({ id: target.id, data: { password: v.password, reason: v.reason } });
+                message.success(t("admins.passwordReset"));
+                setPwdTarget(null);
+                refresh();
+              } catch (e) {
+                message.error(errText(e));
+              }
+            },
+          });
         }}
       >
         <Alert type="warning" showIcon style={{ marginBottom: 12 }} title={t("admins.resetKicksSessions")} />

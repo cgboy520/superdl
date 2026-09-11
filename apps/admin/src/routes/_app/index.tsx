@@ -247,6 +247,7 @@ function DeadTasksCard() {
               <Space>
                 <ReasonAction
                   label={t("overview.replay")}
+                  target={`#${r.id} · ${r.type}`}
                   title={t("overview.replayTitle")}
                   confirmText={t("overview.replayConfirmMeta", { id: r.id, type: r.type })}
                   disabled={!writable}
@@ -259,6 +260,7 @@ function DeadTasksCard() {
                 />
                 <ReasonAction
                   label={t("overview.ignore")}
+                  target={`#${r.id} · ${r.type}`}
                   title={t("overview.ignoreTitle")}
                   confirmText={t("overview.ignoreConfirm", { id: r.id, type: r.type })}
                   danger

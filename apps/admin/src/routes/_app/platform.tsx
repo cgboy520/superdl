@@ -7,7 +7,7 @@ import { ArrowLeftOutlined } from "@ant-design/icons";
 import { adminColors, fontSize, formatDateTime, useFormDraft } from "@superdl/ui";
 import { PageContainer } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   Alert,
   Collapse,
@@ -41,6 +41,13 @@ import { useApiErrorText } from "@superdl/ui";
 import { useAdminRole } from "../../stores/auth";
 
 export const Route = createFileRoute("/_app/platform")({
+  // group:当前配置分组入 URL(默认 security 剥离),可直链
+  validateSearch: (search: Record<string, unknown>): { group?: Group } => ({
+    group:
+      typeof search.group === "string" && search.group !== "security" && search.group in GROUP_LABEL_KEY
+        ? (search.group as Group)
+        : undefined,
+  }),
   component: PlatformConfigPage,
 });
 
@@ -643,7 +650,11 @@ function PlatformConfigPage() {
       : {};
   });
   const [reasonOpen, setReasonOpen] = useState(false);
-  const [active, setActive] = useState<Group>("security");
+  // 当前分组 = URL(?group=),默认 security
+  const navigate = useNavigate({ from: "/platform" });
+  const active: Group = Route.useSearch({ select: (s) => s.group }) ?? "security";
+  const setActive = (g: Group) =>
+    void navigate({ to: "/platform", replace: true, search: (prev) => ({ ...prev, group: g === "security" ? undefined : g }) });
   // 「前往」跳入的来源分组(回链)
   const [originGroup, setOriginGroup] = useState<Group | null>(null);
   const [reasonForm] = Form.useForm<{ reason: string }>();

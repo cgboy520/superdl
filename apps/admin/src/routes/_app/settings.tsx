@@ -380,6 +380,7 @@ function AnnouncementTab() {
               r.status === "published" ? (
                 <ReasonAction
                   label={t("settings.revoke")}
+                  target={r.title}
                   title={t("settings.revokeTitle")}
                   confirmText={t("settings.revokeConfirm", { title: r.title })}
                   danger

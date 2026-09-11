@@ -8,9 +8,9 @@ import {
   useAutoRefresh,
   type ImageCacheStatus,
 } from "@superdl/ui";
-import { PageContainer, TableErrorEmpty } from "@superdl/ui/components";
+import { PageContainer, TableErrorEmpty, useConfirm } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   Alert,
   App,
@@ -49,6 +49,10 @@ import { ReasonAction } from "../../components/ReasonAction";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 export const Route = createFileRoute("/_app/images")({
+  // image:展开该镜像的节点缓存面板(告警 / 节点页可直链到失败节点清单)
+  validateSearch: (search: Record<string, unknown>): { image?: number } => ({
+    image: Number.isInteger(Number(search.image)) && Number(search.image) > 0 ? Number(search.image) : undefined,
+  }),
   component: ImagesPage,
 });
 
@@ -149,6 +153,12 @@ function ImagesPage() {
     ? `${cluster.config.registry_host}/${cluster.config.registry_project ?? "superdl"}/`
     : "harbor.example.com/superdl/";
   const [form] = Form.useForm<ImageFormValues>();
+  const confirm = useConfirm();
+  // 展开行入 URL(?image=):失败计数标可点开对应节点面板
+  const navigate = useNavigate({ from: "/images" });
+  const expandedImage = Route.useSearch({ select: (s) => s.image });
+  const setExpandedImage = (id: number | undefined) =>
+    void navigate({ to: "/images", replace: true, search: (prev) => ({ ...prev, image: id }) });
 
   const refresh = () => void qc.invalidateQueries({ queryKey });
   const create = useCreateImage({
@@ -256,6 +266,8 @@ function ImagesPage() {
         pagination={false}
         expandable={{
           expandedRowRender: (r) => <ImageNodesPanel imageId={r.id} />,
+          expandedRowKeys: expandedImage != null ? [expandedImage] : [],
+          onExpand: (open, r) => setExpandedImage(open ? r.id : undefined),
         }}
         columns={[
           {
@@ -286,9 +298,19 @@ function ImagesPage() {
                   disabled={!writable}
                   // 行级 loading
                   loading={update.isPending && update.variables?.imageId === r.id}
-                  onChange={(on) =>
-                    update.mutate({ imageId: r.id, data: { prewarm_enabled: on } })
-                  }
+                  onChange={(on) => {
+                    // 关闭预热影响新节点的秒级启动承诺:L1 确认;开启直接生效
+                    if (on) {
+                      update.mutate({ imageId: r.id, data: { prewarm_enabled: true } });
+                      return;
+                    }
+                    confirm({
+                      title: t("images.prewarmOffTitle", { name: `${r.framework} ${r.framework_version}` }),
+                      consequences: [t("images.prewarmOffBody")],
+                      okText: t("images.prewarmOffOk"),
+                      onOk: () => update.mutate({ imageId: r.id, data: { prewarm_enabled: false } }),
+                    });
+                  }}
                 />
               </Tooltip>
             ),
@@ -309,7 +331,20 @@ function ImagesPage() {
                   <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                     {r.coverage.cached}/{r.coverage.total}
                   </Typography.Text>
-                  {r.failed_nodes > 0 && <Tag color="red">{t("images.failedCount", { count: r.failed_nodes })}</Tag>}
+                  {r.failed_nodes > 0 && (
+                    <Tag
+                      color="red"
+                      style={{ cursor: "pointer" }}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setExpandedImage(r.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") setExpandedImage(r.id);
+                      }}
+                    >
+                      {t("images.failedCount", { count: r.failed_nodes })}
+                    </Tag>
+                  )}
                 </Space>
               );
             },
@@ -337,6 +372,7 @@ function ImagesPage() {
                 </Tooltip>
                 <ReasonAction
                   label={t("images.delete")}
+                  target={`${r.framework} ${r.framework_version}`}
                   title={t("images.deleteTitle")}
                   confirmText={t("images.deleteConfirm", { name: `${r.framework} ${r.framework_version}` })}
                   danger

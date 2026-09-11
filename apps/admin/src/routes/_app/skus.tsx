@@ -486,6 +486,7 @@ function SkusPage() {
               v === "on" ? (
                 <ReasonAction
                   label={t("skus.offSale")}
+                  target={r.name}
                   danger
                   title={t("skus.offSaleTitle")}
                   confirmText={t("skus.offSaleConfirm", { name: r.name })}
@@ -502,6 +503,7 @@ function SkusPage() {
                 // 上架:规格缺要素被拒时给「强制上架」出口
                 <ReasonAction
                   label={t("skus.onSale")}
+                  target={r.name}
                   title={t("skus.onSaleTitle")}
                   confirmText={t("skus.onSaleConfirm", { name: r.name })}
                   disabled={!writable}

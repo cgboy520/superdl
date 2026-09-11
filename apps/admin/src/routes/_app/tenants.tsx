@@ -59,6 +59,8 @@ export const Route = createFileRoute("/_app/tenants")({
     iq?: string;
     tstatus?: string;
     order?: "asc";
+    /** 打开抽屉的租户 id(可转达的视图,入 URL) */
+    tenant?: number;
   } => ({
     q: typeof search.q === "string" && search.q ? search.q : undefined,
     tab: TENANTS_TABS.includes(search.tab as TenantsTab) ? (search.tab as TenantsTab) : undefined,
@@ -72,6 +74,7 @@ export const Route = createFileRoute("/_app/tenants")({
     tstatus:
       search.tstatus === "active" || search.tstatus === "frozen" ? search.tstatus : undefined,
     order: search.order === "asc" ? "asc" : undefined,
+    tenant: Number.isInteger(Number(search.tenant)) && Number(search.tenant) > 0 ? Number(search.tenant) : undefined,
   }),
   component: TenantsPage,
 });
@@ -80,7 +83,14 @@ function TenantsTab() {
   const { t: tt } = useTranslation();
   const { formatMoney } = useFormat();
   const navigate = useNavigate({ from: "/tenants" });
-  const [drilldown, setDrilldown] = useState<TenantRow | null>(null);
+  // 抽屉开合入 URL(?tenant=):告警 / 财务页可直链到某租户抽屉
+  const urlTenant = Route.useSearch({ select: (s) => s.tenant });
+  const setDrilldown = (row: TenantRow | null) =>
+    void navigate({
+      to: "/tenants",
+      replace: true,
+      search: (prev) => ({ ...prev, tenant: row?.id, dtab: row ? prev.dtab : undefined }),
+    });
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();
@@ -138,6 +148,7 @@ function TenantsTab() {
   );
   const { data, queryKey, isLoading, isError, error, refetch, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = tenantsQ;
   const tenants: TenantRow[] = data?.pages.flatMap((p) => p.items) ?? [];
+  const drilldown = urlTenant != null ? (tenants.find((r) => r.id === urlTenant) ?? null) : null;
   const freeze = useFreezeTenant();
   const unfreeze = useUnfreezeTenant();
   const refresh = () => void qc.invalidateQueries({ queryKey });
@@ -299,6 +310,7 @@ function TenantsTab() {
               <span onClick={(e) => e.stopPropagation()}>
               <ReasonAction
                 label={tt("tenants.freeze")}
+                target={`#${t.id} · ${t.phone_masked}`}
                 danger
                 title={tt("tenants.freezeTitle")}
                 confirmText={tt("tenants.freezeConfirm", {
@@ -320,6 +332,7 @@ function TenantsTab() {
               <span onClick={(e) => e.stopPropagation()}>
               <ReasonAction
                 label={tt("tenants.unfreeze")}
+                target={`#${t.id} · ${t.phone_masked}`}
                 title={tt("tenants.unfreezeTitle")}
                 confirmText={tt("tenants.unfreezeConfirm", { id: t.id })}
                 disabled={!writable}
@@ -498,6 +511,7 @@ function InstancesTab() {
                 <Space>
                   <ReasonAction
                     label={t("tenants.forceStop")}
+                    target={`${r.name} · ${r.uuid.slice(0, 8)}`}
                     danger
                     title={t("tenants.forceStopTitle")}
                     confirmText={t("tenants.forceStopConfirm", { name: r.name, id: r.uuid.slice(0, 8) })}
@@ -511,6 +525,7 @@ function InstancesTab() {
                   {/* 强制回收:走自动抢占同一路径(通知 + 宽限窗);与强制停止分开 */}
                   <ReasonAction
                     label={t("tenants.preempt")}
+                    target={`${r.name} · ${r.uuid.slice(0, 8)}`}
                     danger
                     title={t("tenants.preemptTitle")}
                     confirmText={t("tenants.preemptConfirm", {
@@ -740,6 +755,7 @@ function DeletionsTab() {
                   </Tooltip>
                   <ReasonAction
                     label={t("tenants.deletion.reject")}
+                    target={`#${r.user_id} · ${r.phone_masked}`}
                     title={t("tenants.deletion.rejectTitle")}
                     confirmText={t("tenants.deletion.rejectConfirm")}
                     disabled={!isAdmin}

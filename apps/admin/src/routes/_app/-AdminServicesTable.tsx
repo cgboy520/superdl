@@ -150,6 +150,7 @@ export function AdminServicesTable({
               return (
                 <ReasonAction
                   label={t("tenants.forceStop")}
+                  target={`${r.name} · ${r.slug}`}
                   danger
                   title={t("services.forceStopTitle")}
                   confirmText={t("services.forceStopConfirm", { name: r.name, slug: r.slug })}
