@@ -431,7 +431,7 @@ jobs:
           for _ in $(seq 1 30); do curl -sf localhost:8000/healthz && break; sleep 1; done
       - name: Playwright smoke
         env:
-          # 管理端冒烟(登录 → MFA → 调账双人复核 → 冻结租户);不设此变量即跳过
+          # 管理端冒烟(登录 → 强制绑定 TOTP → 进控制台);不设此变量即跳过
           SUPERDL_ADMIN_E2E: "1"
         run: |
           pnpm install --frozen-lockfile
