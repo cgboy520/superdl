@@ -37,7 +37,6 @@ from app.core.timeutil import (
 from app.modules.billing import wallet
 from app.modules.billing.models import BillHourly, SettlementGap, SettlementWatermark
 from app.modules.billing.schemas import AdminSettlementGapOut
-from app.modules.orchestrator import service as orchestrator_service
 
 logger = get_logger(__name__)
 
@@ -481,6 +480,8 @@ async def _catchup_settle(
         if watermark is None:
             # 无水位线:首次部署(窗口前没有任何可计费对象)只引导不登记缺口;
             # 有历史却无水位线 = 水位线行丢失,只结最近窗口并登记 watermark_missing 缺口
+            from app.modules.orchestrator import service as orchestrator_service
+
             async with sm() as session:
                 has_history = await orchestrator_service.billing_history_exists_before(
                     session, kind, target_start
