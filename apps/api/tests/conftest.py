@@ -1,10 +1,12 @@
-"""测试基建:testcontainers 起真 PG18,create_all 建表,函数级 TRUNCATE 隔离。"""
+"""测试基建:testcontainers 起真 PG18(关持久化),create_all 建表,会话级 app,
+函数级隔离 = 只 TRUNCATE 非空表 + 序列全量归位。"""
 
 import os
 from collections.abc import AsyncIterator, Iterator
 from typing import TYPE_CHECKING
 
 import pytest
+from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -20,12 +22,30 @@ os.environ["SUPERDL_K8S_BACKEND"] = "fake"  # 单测一律 FakeOrchestrator,隔�
 os.environ["SUPERDL_CREATING_TIMEOUT_SECONDS"] = "300"
 # 测试签名密钥 ≥32 字节
 os.environ["SUPERDL_JWT_SECRET"] = "test-jwt-secret-32-bytes-minimum!!"
+# bcrypt 取最低 cost:一次管理员建号+登录+TOTP 绑定要跑 12 次哈希,cost 12 下约 3s
+os.environ["SUPERDL_BCRYPT_ROUNDS"] = "4"
+
+# 测试库不要持久化保证:每次 commit / TRUNCATE 都免 fsync
+_PG_TEST_CMD = "postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _logging_pipeline() -> None:
+    """测试不跑 lifespan,在此装上与运行期同一套日志管道;structlog 未配置时的默认渲染器会用 rich
+    带局部变量渲染异常栈,一条 500 的深栈要几十秒。"""
+    from app.core.logging import setup_logging
+
+    setup_logging()
 
 
 @pytest.fixture(scope="session")
 def pg_url() -> Iterator[str]:
-    with PostgresContainer("postgres:18", driver="asyncpg") as pg:
-        url = pg.get_connection_url()
+    container = PostgresContainer("postgres:18", driver="asyncpg").with_command(_PG_TEST_CMD)
+    with container as pg:
+        # Windows 上 localhost 先解析到 ::1,Docker 端口转发对 IPv6 不应答:连接池每条新连接
+        # 先白等 21s 超时才回落 IPv4;直接给 IPv4 字面量
+        host = pg.get_container_host_ip()
+        url = pg.get_connection_url(host="127.0.0.1" if host == "localhost" else host)
         os.environ["SUPERDL_DATABASE_URL"] = url
         # 环境变量就位后再清缓存
         from app.core.config import get_settings
@@ -60,7 +80,7 @@ async def engine(pg_url: str) -> AsyncIterator[AsyncEngine]:
 
 @pytest.fixture
 async def sm(engine: AsyncEngine) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
-    """函数级 sessionmaker;测试结束 TRUNCATE 全部表保证隔离。"""
+    """函数级 sessionmaker;测试结束清空非空表并归位序列保证隔离。"""
     from app.core.db import get_sessionmaker
     from app.models_registry import Base
 
@@ -103,17 +123,37 @@ async def sm(engine: AsyncEngine) -> AsyncIterator[async_sessionmaker[AsyncSessi
     yield smaker
 
     async with engine.begin() as conn:
-        tables = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
-        if tables:
-            await conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
+        # TRUNCATE 成本随表数(relfilenode 数)而非行数:一次往返探出非空表只截它们;
+        # 序列用 setval 全量归 1(不走 RESTART IDENTITY 的 relfilenode 改写),覆盖表已空但序列已走
+        probe = " UNION ALL ".join(
+            f"SELECT '{t.name}' WHERE EXISTS (SELECT 1 FROM \"{t.name}\")"
+            for t in Base.metadata.sorted_tables
+        )
+        dirty = (await conn.execute(text(probe))).scalars().all()
+        if dirty:
+            names = ", ".join(f'"{n}"' for n in dirty)
+            await conn.execute(text(f"TRUNCATE {names} CASCADE"))
+        await conn.execute(
+            text(
+                "SELECT setval(c.oid::regclass, 1, false) FROM pg_class c "
+                "WHERE c.relkind = 'S' AND c.relnamespace = 'public'::regnamespace"
+            )
+        )
+
+
+@pytest.fixture(scope="session")
+def asgi_app(pg_url: str) -> FastAPI:
+    """会话级 app:路由树约 200 条,只建一次;需要换 settings 重建的用例自行 create_app()。"""
+    from app.main import create_app
+
+    return create_app()
 
 
 @pytest.fixture
-async def client(sm: async_sessionmaker[AsyncSession]) -> AsyncIterator[AsyncClient]:
-    from app.main import create_app
-
-    app = create_app()
-    transport = ASGITransport(app=app)
+async def client(
+    sm: async_sessionmaker[AsyncSession], asgi_app: FastAPI
+) -> AsyncIterator[AsyncClient]:
+    transport = ASGITransport(app=asgi_app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
 
