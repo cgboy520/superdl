@@ -80,6 +80,30 @@
     "limitOption_one": "{{count}} / page",
     "limitOption_other": "{{count}} / page"
   },
+  "bulk": {
+    "ackSelected_one": "Acknowledge {{count}} selected",
+    "ackSelected_other": "Acknowledge {{count}} selected",
+    "clear": "Clear selection",
+    "cordonConfirm_one": "Cordon {{count}} selected node: no new instances are scheduled to it; existing ones are unaffected.",
+    "cordonConfirm_other": "Cordon {{count}} selected nodes: no new instances are scheduled to them; existing ones are unaffected.",
+    "done_one": "{{count}} item processed",
+    "done_other": "{{count}} items processed",
+    "ignoreConfirm_one": "Discard {{count}} selected dead-letter task: no more retries; the reason is recorded.",
+    "ignoreConfirm_other": "Discard {{count}} selected dead-letter tasks: no more retries; the reason is recorded for each.",
+    "partial": "{{ok}} succeeded, {{failed}} failed",
+    "replayConfirm_one": "Replay {{count}} selected dead-letter task (the same reason is recorded for each).",
+    "replayConfirm_other": "Replay {{count}} selected dead-letter tasks (the same reason is recorded for each).",
+    "replayGapsTitle_one": "Replay {{count}} selected settlement gap?",
+    "replayGapsTitle_other": "Replay {{count}} selected settlement gaps?",
+    "replaySelected_one": "Replay {{count}} selected",
+    "replaySelected_other": "Replay {{count}} selected",
+    "selectAllUnacked_one": "Select all unacknowledged ({{count}})",
+    "selectAllUnacked_other": "Select all unacknowledged ({{count}})",
+    "selected_one": "{{count}} selected",
+    "selected_other": "{{count}} selected",
+    "uncordonConfirm_one": "Uncordon {{count}} selected node: scheduling resumes.",
+    "uncordonConfirm_other": "Uncordon {{count}} selected nodes: scheduling resumes."
+  },
   "cluster": {
     "cfgProm": "Prometheus URL",
     "cfgServer": "Server URL",
@@ -126,6 +150,8 @@
     "actionRefresh": "Refresh current page data",
     "actionUnackedAlerts": "View unacknowledged alerts",
     "groupActions": "Actions",
+    "groupInstances": "Instances",
+    "groupTenants": "Tenants",
     "hint": "↑↓ navigate · ↵ open · esc close",
     "noResults": "No results",
     "refreshDone": "Refresh triggered",
@@ -140,6 +166,7 @@
     "exportCsv": "Export CSV",
     "listCapped": "Showing the cap of {{max}} rows — older records are not listed; narrow the range with the filters above",
     "loading": "Loading…",
+    "more": "More",
     "next": "Next",
     "readonlyNoCreate": "Read-only role cannot create",
     "readonlyNoEdit": "Read-only role cannot edit",
@@ -151,6 +178,11 @@
     "secondConfirm": "Confirm again",
     "statusFilter": "Filter by status",
     "targetLabel": "Target"
+  },
+  "filter": {
+    "clear": "Clear filters",
+    "count_one": "{{count}} item",
+    "count_other": "{{count}} items"
   },
   "finance": {
     "adjustCreated": "Adjustment created — awaiting a second administrator's review",

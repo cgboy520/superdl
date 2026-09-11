@@ -58,7 +58,10 @@
 
 - 管理端与用户端 API 物理分离,token 不通用;侧栏菜单按角色过滤(`lib/menu.ts` 与后端 `require_roles` 逐端点对齐),直接输 URL 由后端 403 兜底。
 - 深链参数(运营面互相转达的视图,一律入 URL):`/tenants?tenant=<id>` 打开租户抽屉(`TenantLink` 与告警 `tenant` 目标都带);`/tenants?tab=instances&inode=<node>` 按节点看实例(节点表「已用」列链到);`/nodes?node=<name>`;`/tickets?id=<id>`;`/platform?group=<group>`(当前配置分组);`/images?image=<id>`(展开该镜像的节点缓存面板,失败计数标可点)。告警 → 目标的映射在 `lib/alertLink.ts`。
-- 高危操作 `ReasonAction` 一律带 `target`(租户 #id·手机 / 实例名·uuid 前缀 / 节点名 / 退款单号等),两步弹窗都回显目标,二次确认再回显原因。
+- 高危操作 `ReasonAction` 一律带 `target`(租户 #id·手机 / 实例名·uuid 前缀 / 节点名 / 退款单号等),两步弹窗都回显目标,二次确认再回显原因;原因框 Ctrl/⌘+Enter 进下一步;禁用态保持可聚焦(`aria-disabled`)。
+- 批量操作(`BulkBar` + `runBulk`,后端无批量端点,逐条并发、汇总「成功 N / 失败 M」):告警批量确认、死信批量重放 / 忽略、结算缺口批量重放、节点批量 cordon / uncordon(一条原因作用于全部所选,逐条进审计)。
+- 行内动作 ≤2 + `RowMoreMenu`(退款单「取消」、镜像「删除」收进更多);筛选控件走 `FilterBar`(清除筛选 + 服务端 total);检索框 ↔ URL 走 `useUrlCommittedInput`;状态标走 `StatusTag`(只接受 packages/ui 的状态表)。
+- 命令面板实体检索:纯数字 → 租户 id(直开抽屉);≥6 位十六进制 → 实例 uuid 前缀(→ 租户页实例 Tab);页面导航按侧栏分组分节。
 - 菜单项事实源 `lib/menu.ts` 的 `MENU`(侧栏与 ⌘K 共用;`group` 分四组:总览 / 资源 / 业务 / 治理,顺序 `MENU_GROUP_ORDER`),可见性由 `MENU_ROLES` 过滤;键集一致性由 `lib/menu.test.ts` 守护。
 - 表格密度与固定列:`adminThemeComponents.Table` 统一 13px / `cellPaddingBlock 8`;`scroll.x ≥ 1000` 的表固定标识列与操作列并 `sticky`(顶栏高度 `layout.topBarHeight`);宽表页 `PageContainer width="full"`;轮询页页头挂新鲜度条(`useAutoRefresh` + `PageHeader.freshness`)。
 - `src/routes/` 下的非路由文件以 `-` 开头(tanstack router 的 routeFileIgnorePrefix)。

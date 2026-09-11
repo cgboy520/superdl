@@ -15,6 +15,7 @@ import {
   useResolveSettlementGap,
   useSettlementGaps,
 } from "../../api";
+import { BulkBar, runBulk } from "../../components/BulkBar";
 import { ReasonAction } from "../../components/ReasonAction";
 import { useApiErrorText } from "@superdl/ui";
 import { canWriteFinance, useAdminRole } from "../../stores/auth";
@@ -56,6 +57,27 @@ export function SettlementGapsTab() {
   const confirm = useConfirm();
 
   const items: AdminSettlementGapOut[] = (data?.pages ?? []).flatMap((p) => p.items);
+  // 批量重放:勾选未核销行,逐条并发(幂等原语,只补不重扣)
+  const [selected, setSelected] = useState<number[]>([]);
+  const [bulkPending, setBulkPending] = useState(false);
+  const bulkReplay = () =>
+    confirm({
+      title: t("bulk.replayGapsTitle", { count: selected.length }),
+      consequences: [t("finance.gapReplayConfirm")],
+      okText: t("finance.gapReplay"),
+      onOk: async () => {
+        setBulkPending(true);
+        try {
+          const { ok, failed } = await runBulk(selected, (id) => replay.mutateAsync({ gapId: id }));
+          setSelected([]);
+          refresh();
+          if (failed > 0) message.warning(t("bulk.partial", { ok, failed }));
+          else message.success(t("bulk.done", { count: ok }));
+        } finally {
+          setBulkPending(false);
+        }
+      },
+    });
 
   return (
     <>
@@ -78,12 +100,26 @@ export function SettlementGapsTab() {
         {/* 手动刷新重置回第一页 */}
         <Button onClick={() => void qc.resetQueries({ queryKey })}>{t("common.refresh")}</Button>
       </Space>
+      <BulkBar count={selected.length} onClear={() => setSelected([])}>
+        <Button type="primary" size="small" disabled={!writable} loading={bulkPending} onClick={bulkReplay}>
+          {t("bulk.replaySelected", { count: selected.length })}
+        </Button>
+      </BulkBar>
       <Table<AdminSettlementGapOut>
         rowKey="id"
         size="small"
         loading={isLoading}
         dataSource={items}
         pagination={false}
+        rowSelection={
+          writable
+            ? {
+                selectedRowKeys: selected,
+                onChange: (keys) => setSelected(keys.map(Number)),
+                getCheckboxProps: (row) => ({ disabled: row.resolved_at != null }),
+              }
+            : undefined
+        }
         locale={{
           emptyText: (
             <TableErrorEmpty

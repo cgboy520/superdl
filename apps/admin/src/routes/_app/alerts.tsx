@@ -2,11 +2,14 @@
 
 import { controlWidth, fontSize, formatDateTime, POLL, space, useAutoRefresh } from "@superdl/ui";
 import { EmptyState, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
+import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Badge, Button, List, Select, Space, Tooltip, Typography } from "antd";
+import { App, Badge, Button, Checkbox, List, Select, Space, Tooltip, Typography } from "antd";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { type AlertRow, useAlerts } from "../../api";
+import { type AlertRow, useAckAlert, useAlerts } from "../../api";
+import { BulkBar, runBulk } from "../../components/BulkBar";
 import { alertLink, SEVERITY_LABEL_KEY, severityColor, useAckAlertWithFeedback } from "../../lib/alertLink";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
@@ -43,6 +46,26 @@ function AlertsPage() {
   );
   // 确认闭环见 lib/alertLink
   const ack = useAckAlertWithFeedback();
+  // 批量确认:勾选未确认项,逐条并发(后端无批量端点)
+  const { message } = App.useApp();
+  const qc = useQueryClient();
+  const ackRaw = useAckAlert();
+  const [selected, setSelected] = useState<number[]>([]);
+  const [bulkPending, setBulkPending] = useState(false);
+  const unacked = rows.filter((a) => a.acked_at == null);
+  const allSelected = unacked.length > 0 && unacked.every((a) => selected.includes(a.id));
+  const bulkAck = async () => {
+    setBulkPending(true);
+    try {
+      const { ok, failed } = await runBulk(selected, (id) => ackRaw.mutateAsync({ alertId: id }));
+      setSelected([]);
+      void qc.invalidateQueries({ queryKey: ["admin", "alerts"] });
+      if (failed > 0) message.warning(t("bulk.partial", { ok, failed }));
+      else message.success(t("bulk.done", { count: ok }));
+    } finally {
+      setBulkPending(false);
+    }
+  };
   const setFilters = (next: { severity?: string; acked?: string }) =>
     void navigate({ to: "/alerts", replace: true, search: (prev) => ({ ...prev, ...next }) });
 
@@ -84,6 +107,22 @@ function AlertsPage() {
         </Space>
       }
     >
+      {writable && unacked.length > 0 && (
+        <div style={{ marginBottom: space.sm, paddingInline: space.md }}>
+          <Checkbox
+            checked={allSelected}
+            indeterminate={selected.length > 0 && !allSelected}
+            onChange={(e) => setSelected(e.target.checked ? unacked.map((a) => a.id) : [])}
+          >
+            {t("bulk.selectAllUnacked", { count: unacked.length })}
+          </Checkbox>
+        </div>
+      )}
+      <BulkBar count={selected.length} onClear={() => setSelected([])}>
+        <Button type="primary" size="small" loading={bulkPending} onClick={() => void bulkAck()}>
+          {t("bulk.ackSelected", { count: selected.length })}
+        </Button>
+      </BulkBar>
       <List
         loading={alertsQ.isLoading}
         dataSource={rows}
@@ -117,6 +156,17 @@ function AlertsPage() {
               }
             >
               <List.Item.Meta
+                avatar={
+                  writable && a.acked_at == null ? (
+                    <Checkbox
+                      aria-label={a.title}
+                      checked={selected.includes(a.id)}
+                      onChange={(e) =>
+                        setSelected((s) => (e.target.checked ? [...s, a.id] : s.filter((id) => id !== a.id)))
+                      }
+                    />
+                  ) : undefined
+                }
                 title={
                   <Space size={8} wrap>
                     <Badge color={severityColor(a.severity)} />

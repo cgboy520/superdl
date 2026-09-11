@@ -51,8 +51,18 @@ export function ReasonAction({
   const [reasonSnapshot, setReasonSnapshot] = useState("");
   const [form] = Form.useForm<{ reason: string }>();
 
+  // 禁用态保持可聚焦(aria-disabled + 拦截点击),键盘用户也能读到 tooltip 里的原因
   const button = (
-    <Button danger={danger} size={size} type={type} disabled={disabled} onClick={() => setOpen(true)}>
+    <Button
+      danger={danger}
+      size={size}
+      type={type}
+      aria-disabled={disabled || undefined}
+      className={disabled ? "btn-aria-disabled" : undefined}
+      onClick={() => {
+        if (!disabled) setOpen(true);
+      }}
+    >
       {label}
     </Button>
   );
@@ -78,6 +88,18 @@ export function ReasonAction({
     </Typography.Text>
   ) : null;
 
+  const goNext = async () => {
+    try {
+      await form.validateFields();
+    } catch {
+      return;
+    }
+    // 先关原因弹窗再开二次确认
+    setReasonSnapshot(form.getFieldValue("reason") as string);
+    setOpen(false);
+    setConfirming(true);
+  };
+
   return (
     <>
       {disabled && disabledReason ? <Tooltip title={disabledReason}>{button}</Tooltip> : button}
@@ -88,17 +110,7 @@ export function ReasonAction({
           setOpen(false);
           setConfirming(false);
         }}
-        onOk={async () => {
-          try {
-            await form.validateFields();
-          } catch {
-            return;
-          }
-          // 先关原因弹窗再开二次确认
-          setReasonSnapshot(form.getFieldValue("reason") as string);
-          setOpen(false);
-          setConfirming(true);
-        }}
+        onOk={goNext}
         okText={t("common.next")}
         destroyOnHidden
       >
@@ -109,7 +121,19 @@ export function ReasonAction({
             label={t("common.reasonLabel")}
             rules={[{ required: true, min: 2, message: t("common.reasonRule") }]}
           >
-            <Input.TextArea rows={3} maxLength={REASON_MAX_LEN} showCount placeholder={t("common.reasonPlaceholder")} />
+            <Input.TextArea
+              rows={3}
+              maxLength={REASON_MAX_LEN}
+              showCount
+              placeholder={t("common.reasonPlaceholder")}
+              // Ctrl/⌘+Enter 进下一步
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                  e.preventDefault();
+                  void goNext();
+                }
+              }}
+            />
           </Form.Item>
         </Form>
       </Modal>

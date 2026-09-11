@@ -1,5 +1,6 @@
 import {
   adminColors,
+  controlWidth,
   deletionStatusMap,
   fontSize,
   formatDateTime,
@@ -10,7 +11,6 @@ import {
   metaOf,
   skuTierMap,
   skuVariant,
-  useDebouncedValue,
   useNow,
   workloadTypeMap,
   type InstanceStatus,
@@ -18,8 +18,8 @@ import {
 import { HexTag, LoadMore, PageContainer, TableErrorEmpty, TypeConfirmModal } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { App, Badge, Button, Card, Input, Modal, Select, Space, Table, Tabs, Tag, Tooltip, Typography } from "antd";
-import { useEffect, useState } from "react";
+import { App, Button, Card, Input, Modal, Select, Space, Table, Tabs, Tag, Tooltip, Typography } from "antd";
+import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -40,7 +40,10 @@ import {
 import { useApiErrorText, useFormat } from "@superdl/ui";
 import { LIST_CAPS, ListCapNote } from "../../components/ListCapNote";
 import { ReasonAction } from "../../components/ReasonAction";
+import { FilterBar } from "../../components/FilterBar";
+import { StatusTag } from "../../components/StatusTag";
 import { TenantLink, tenantColumn } from "../../components/TenantLink";
+import { useUrlCommittedInput } from "../../lib/useUrlCommittedInput";
 import { REASON_MAX_LEN } from "../../lib/validators";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 import { DRAWER_TABS, type DrawerTab, TenantDrawer } from "./-TenantDrawer";
@@ -94,28 +97,14 @@ function TenantsTab() {
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();
-  // 检索落审计,提交才触发:input = 输入框即时值,已提交查询 = URL 的 q
+  // 检索落审计,提交才触发:输入框即时值 ↔ URL 的 q(useUrlCommittedInput:防抖回写 + 外部变化同步)
   const urlQ = Route.useSearch({ select: (s) => s.q });
-  const [input, setInput] = useState(urlQ ?? "");
-  // URL q 变化同步进输入框(渲染期派生态)
-  const [prevUrlQ, setPrevUrlQ] = useState(urlQ);
-  if (urlQ !== prevUrlQ) {
-    setPrevUrlQ(urlQ);
-    if (urlQ !== undefined) {
-      setInput(urlQ);
-    }
-  }
-  // 输入 300ms 防抖回写 ?q=;已提交查询以 URL 为事实源
-  const debouncedInput = useDebouncedValue(input, 300);
-  useEffect(() => {
-    // 与 URL 已一致不回写
-    if (debouncedInput === (urlQ ?? "")) return;
-    void navigate({
-      to: "/tenants",
-      replace: true,
-      search: (prev) => ({ ...prev, q: debouncedInput || undefined }),
-    });
-  }, [debouncedInput, urlQ, navigate]);
+  const commitQ = useCallback(
+    (next: string | undefined) =>
+      void navigate({ to: "/tenants", replace: true, search: (prev) => ({ ...prev, q: next }) }),
+    [navigate],
+  );
+  const { value: input, setValue: setInput } = useUrlCommittedInput(urlQ, commitQ);
   // 状态筛选与注册排序:服务端参数入 URL
   const statusFilter = Route.useSearch({ select: (s) => s.tstatus });
   const order = Route.useSearch({ select: (s) => s.order });
@@ -393,13 +382,19 @@ function InstancesTab() {
   const preempt = usePreemptInstance();
   const refresh = () => void qc.invalidateQueries({ queryKey });
 
+  const total = data?.pages[0]?.total ?? undefined;
   return (
     <>
-      <Space style={{ marginBottom: 12 }}>
+      {/* 筛选条:控件 + 清除筛选 + 精确总数(服务端 total) */}
+      <FilterBar
+        hasFilter={Boolean(status || instQ || nodeName)}
+        onClear={() => setUrl({ istatus: undefined, iq: undefined, inode: undefined })}
+        count={total ?? undefined}
+      >
         <Select
           allowClear
           placeholder={t("common.statusFilter")}
-          style={{ width: 160 }}
+          style={{ width: controlWidth.sm }}
           value={status}
           onChange={(v) => setUrl({ istatus: v })}
           options={Object.entries(instanceStatusMap).map(([v, m]) => ({
@@ -410,7 +405,7 @@ function InstancesTab() {
         <Input.Search
           allowClear
           placeholder={t("tenants.searchInstancePlaceholder")}
-          style={{ width: 220 }}
+          style={{ width: controlWidth.md }}
           value={instInput}
           onChange={(e) => setInstInput(e.target.value)}
           onSearch={(v) => setUrl({ iq: v || undefined })}
@@ -418,12 +413,12 @@ function InstancesTab() {
         <Input.Search
           allowClear
           placeholder={t("tenants.searchNodePlaceholder")}
-          style={{ width: 200 }}
+          style={{ width: controlWidth.md }}
           value={nodeInput}
           onChange={(e) => setNodeInput(e.target.value)}
           onSearch={(v) => setUrl({ inode: v || undefined })}
         />
-      </Space>
+      </FilterBar>
       <Table<AdminInstanceOut>
         scroll={{ x: 1250 }}
         sticky={{ offsetHeader: layout.topBarHeight }}
@@ -451,10 +446,7 @@ function InstancesTab() {
           {
             title: t("tenants.colStatus"),
             dataIndex: "status",
-            render: (v: InstanceStatus) => {
-              const m = metaOf(instanceStatusMap, v);
-              return <Badge color={m?.color} text={m ? t(m.labelKey) : v} />;
-            },
+            render: (v: InstanceStatus) => <StatusTag map={instanceStatusMap} value={v} variant="badge" />,
           },
           {
             title: t("tenants.colSpec"),
@@ -682,10 +674,7 @@ function DeletionsTab() {
           {
             title: t("tenants.deletion.colStatus"),
             dataIndex: "status",
-            render: (v: string) => {
-              const m = metaOf(deletionStatusMap, v);
-              return <Badge color={m?.color} text={m ? t(m.labelKey) : v} />;
-            },
+            render: (v: string) => <StatusTag map={deletionStatusMap} value={v} variant="badge" />,
           },
           { title: t("tenants.deletion.colReason"), dataIndex: "reason", ellipsis: true },
           {

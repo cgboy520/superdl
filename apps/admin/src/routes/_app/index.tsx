@@ -3,6 +3,7 @@ import { moneyOr, DataErrorAlert, EChart, KpiGrid, PageContainer, TableErrorEmpt
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import {
+  App,
   Badge,
   Button,
   Card,
@@ -39,6 +40,7 @@ import {
   useRetryDeadTask,
   useRevenueReport,
 } from "../../api";
+import { BulkBar, runBulk } from "../../components/BulkBar";
 import { ReasonAction } from "../../components/ReasonAction";
 import { alertLink, SEVERITY_LABEL_KEY, severityColor, useAckAlertWithFeedback } from "../../lib/alertLink";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
@@ -155,6 +157,20 @@ function DeadTasksCard() {
   const retry = useRetryDeadTask();
   const discard = useDiscardDeadTask();
   const refresh = () => void qc.invalidateQueries({ queryKey });
+  // 批量:勾选后一条原因作用于全部所选(后端无批量端点,逐条并发)
+  const [selected, setSelected] = useState<number[]>([]);
+  const { message } = App.useApp();
+  const bulk = async (kind: "retry" | "discard", reason: string) => {
+    const { ok, failed } = await runBulk(selected, (id) =>
+      kind === "retry"
+        ? retry.mutateAsync({ taskId: id, data: { reason } })
+        : discard.mutateAsync({ taskId: id, data: { reason } }),
+    );
+    setSelected([]);
+    refresh();
+    if (failed > 0) message.warning(t("bulk.partial", { ok, failed }));
+    return t("bulk.done", { count: ok });
+  };
 
   // 查询失败由表内空态明示;首响未到渲染骨架占位
   if (!canRead) return null;
@@ -190,11 +206,38 @@ function DeadTasksCard() {
           children: isLoading ? (
             <Skeleton active title={false} paragraph={{ rows: 1 }} />
           ) : (
+      <>
+      <BulkBar count={selected.length} onClear={() => setSelected([])}>
+        <ReasonAction
+          label={t("overview.replay")}
+          target={t("bulk.selected", { count: selected.length })}
+          title={t("overview.replayTitle")}
+          confirmText={t("bulk.replayConfirm", { count: selected.length })}
+          disabled={!writable}
+          disabledReason={t("overview.opsOnly")}
+          onSubmit={(reason) => bulk("retry", reason)}
+        />
+        <ReasonAction
+          label={t("overview.ignore")}
+          target={t("bulk.selected", { count: selected.length })}
+          title={t("overview.ignoreTitle")}
+          confirmText={t("bulk.ignoreConfirm", { count: selected.length })}
+          danger
+          disabled={!writable}
+          disabledReason={t("overview.opsOnly")}
+          onSubmit={(reason) => bulk("discard", reason)}
+        />
+      </BulkBar>
       <Table<DeadTaskRow>
         size="small"
         rowKey="id"
         pagination={false}
         scroll={{ x: 860 }}
+        rowSelection={
+          writable
+            ? { selectedRowKeys: selected, onChange: (keys) => setSelected(keys.map(Number)) }
+            : undefined
+        }
         locale={{
           emptyText: (
             <TableErrorEmpty
@@ -276,6 +319,7 @@ function DeadTasksCard() {
           },
         ]}
       />
+      </>
           ),
         },
       ]}

@@ -41,6 +41,8 @@ export interface CommandPaletteShellProps {
   /** 底部第二条快捷键提示(可选) */
   hintExtraText?: string;
   groups: CommandPaletteGroup[];
+  /** 输入词变化(调用方据此做服务端实体检索,如租户 id / 实例 uuid 前缀) */
+  onQueryChange?: (query: string) => void;
 }
 
 export function CommandPaletteShell({
@@ -52,6 +54,7 @@ export function CommandPaletteShell({
   hintText,
   hintExtraText,
   groups,
+  onQueryChange,
 }: CommandPaletteShellProps) {
   const { token } = theme.useToken();
 
@@ -116,6 +119,7 @@ export function CommandPaletteShell({
           <Command.Input
             autoFocus
             placeholder={label}
+            onValueChange={onQueryChange}
             style={{
               flex: 1,
               border: "none",

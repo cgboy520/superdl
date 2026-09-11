@@ -81,6 +81,20 @@ export default interface Resources {
       "keywordPlaceholder": "动作或对象关键字",
       "limitOption": "每页 {{count}} 条"
     },
+    "bulk": {
+      "ackSelected": "确认所选 {{count}} 条",
+      "clear": "清除选择",
+      "cordonConfirm": "封锁所选 {{count}} 个节点:新实例不再调度到这些节点,已有实例不受影响。",
+      "done": "已处理 {{count}} 项",
+      "ignoreConfirm": "忽略所选 {{count}} 条死信任务:不再重试,原因记入每条审计。",
+      "partial": "成功 {{ok}} 项,失败 {{failed}} 项",
+      "replayConfirm": "重放所选 {{count}} 条死信任务(同一原因记入每条审计)。",
+      "replayGapsTitle": "重放所选 {{count}} 个结算缺口?",
+      "replaySelected": "重放所选 {{count}} 个",
+      "selectAllUnacked": "全选未确认({{count}})",
+      "selected": "已选 {{count}} 项",
+      "uncordonConfirm": "解封所选 {{count}} 个节点:恢复调度。"
+    },
     "cluster": {
       "cfgProm": "Prometheus 地址",
       "cfgServer": "Server 地址",
@@ -126,6 +140,8 @@ export default interface Resources {
       "actionRefresh": "刷新当前页数据",
       "actionUnackedAlerts": "查看未确认告警",
       "groupActions": "操作",
+      "groupInstances": "实例",
+      "groupTenants": "租户",
       "hint": "↑↓ 移动 · ↵ 打开 · esc 关闭",
       "noResults": "无匹配结果",
       "refreshDone": "已触发刷新",
@@ -140,6 +156,7 @@ export default interface Resources {
       "exportCsv": "导出 CSV",
       "listCapped": "已达单次返回上限({{max}} 条):更早的记录未列出,请用上方筛选缩小范围",
       "loading": "加载中…",
+      "more": "更多",
       "next": "下一步",
       "readonlyNoCreate": "只读角色不可创建",
       "readonlyNoEdit": "只读角色不可编辑",
@@ -151,6 +168,10 @@ export default interface Resources {
       "secondConfirm": "二次确认",
       "statusFilter": "状态过滤",
       "targetLabel": "目标"
+    },
+    "filter": {
+      "clear": "清除筛选",
+      "count": "共 {{count}} 条"
     },
     "finance": {
       "adjustCreated": "调账单已发起,等待第二位管理员复核",

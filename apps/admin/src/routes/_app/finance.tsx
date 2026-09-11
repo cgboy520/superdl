@@ -78,6 +78,7 @@ import {
 } from "../../api";
 import { LIST_CAPS, ListCapNote } from "../../components/ListCapNote";
 import { ReasonAction } from "../../components/ReasonAction";
+import { RowMoreMenu } from "../../components/RowMoreMenu";
 import { useApiErrorText } from "@superdl/ui";
 import { useCsvExport, useFormDraft } from "@superdl/ui";
 import { useFormat } from "@superdl/ui";
@@ -1085,6 +1086,7 @@ function RefundsTab() {
               );
             },
           },
+          { title: t("finance.colCreatedAt"), dataIndex: "created_at", width: 150, render: formatDateTime },
           {
             title: t("finance.colAction"),
             width: 230,
@@ -1151,24 +1153,27 @@ function RefundsTab() {
                       </Button>
                     </Tooltip>
                   )}
-                  <ReasonAction
-                    label={t("finance.cancelRefund")}
-                    target={`${r.refund_no} · ${formatMoney(r.amount)}`}
-                    title={t("finance.cancelRefundTitle")}
-                    confirmText={t("finance.cancelRefundConfirm", { no: r.refund_no, amount: formatMoney(r.amount) })}
-                    danger
-                    disabled={!writable}
-                    disabledReason={noPerm}
-                    onSubmit={async (reason) => {
-                      await cancel.mutateAsync({ refundId: r.id, data: { reason } });
-                      refresh();
-                    }}
-                  />
+                  {/* 低频的「取消退款单」收进更多(行内 ≤2 动作) */}
+                  <RowMoreMenu>
+                    <ReasonAction
+                      label={t("finance.cancelRefund")}
+                      type="text"
+                      target={`${r.refund_no} · ${formatMoney(r.amount)}`}
+                      title={t("finance.cancelRefundTitle")}
+                      confirmText={t("finance.cancelRefundConfirm", { no: r.refund_no, amount: formatMoney(r.amount) })}
+                      danger
+                      disabled={!writable}
+                      disabledReason={noPerm}
+                      onSubmit={async (reason) => {
+                        await cancel.mutateAsync({ refundId: r.id, data: { reason } });
+                        refresh();
+                      }}
+                    />
+                  </RowMoreMenu>
                 </Space>
               );
             },
           },
-          { title: t("finance.colCreatedAt"), dataIndex: "created_at", width: 150, render: formatDateTime },
         ]}
       />
       <LoadMore

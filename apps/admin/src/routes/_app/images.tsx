@@ -46,6 +46,7 @@ import {
 } from "../../api";
 import { useApiErrorText } from "@superdl/ui";
 import { ReasonAction } from "../../components/ReasonAction";
+import { RowMoreMenu } from "../../components/RowMoreMenu";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 export const Route = createFileRoute("/_app/images")({
@@ -351,7 +352,7 @@ function ImagesPage() {
           },
           {
             title: t("skus.colActions"),
-            width: 240,
+            width: 220,
             fixed: "right",
             render: (_, r) => (
               <Space>
@@ -370,18 +371,21 @@ function ImagesPage() {
                     {t("skus.edit")}
                   </Button>
                 </Tooltip>
-                <ReasonAction
-                  label={t("images.delete")}
-                  target={`${r.framework} ${r.framework_version}`}
-                  title={t("images.deleteTitle")}
-                  confirmText={t("images.deleteConfirm", { name: `${r.framework} ${r.framework_version}` })}
-                  danger
-                  disabled={!writable}
-                  disabledReason={t("images.readonlyNoDelete")}
-                  onSubmit={async (reason) => {
-                    await del.mutateAsync({ imageId: r.id, data: { reason } });
-                  }}
-                />
+                <RowMoreMenu>
+                  <ReasonAction
+                    label={t("images.delete")}
+                    type="text"
+                    target={`${r.framework} ${r.framework_version}`}
+                    title={t("images.deleteTitle")}
+                    confirmText={t("images.deleteConfirm", { name: `${r.framework} ${r.framework_version}` })}
+                    danger
+                    disabled={!writable}
+                    disabledReason={t("images.readonlyNoDelete")}
+                    onSubmit={async (reason) => {
+                      await del.mutateAsync({ imageId: r.id, data: { reason } });
+                    }}
+                  />
+                </RowMoreMenu>
               </Space>
             ),
           },

@@ -40,3 +40,10 @@ html {
 .command-palette [cmdk-item][data-disabled="true"] {
   opacity: 0.45;
 }
+
+/* aria-disabled 按钮:视觉同 disabled,但保持可聚焦(tooltip 里的禁用原因键盘可达) */
+.btn-aria-disabled,
+.btn-aria-disabled:hover {
+  cursor: not-allowed;
+  opacity: 0.5;
+}

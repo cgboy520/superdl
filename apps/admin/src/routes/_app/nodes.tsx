@@ -56,6 +56,7 @@ import {
 import { useApiErrorText } from "@superdl/ui";
 import { useFormDraft } from "@superdl/ui";
 import { POOL_LABEL_KEY } from "../../lib/pools";
+import { BulkBar, runBulk } from "../../components/BulkBar";
 import { ReasonAction } from "../../components/ReasonAction";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
@@ -677,6 +678,17 @@ function NodesPage() {
         ),
     },
   });
+  // 批量 cordon / uncordon:一条原因作用于全部所选,逐条并发
+  const [bulkSelected, setBulkSelected] = useState<string[]>([]);
+  const bulkCordon = async (on: boolean, reason: string) => {
+    const { ok, failed } = await runBulk(bulkSelected, (name) =>
+      cordon.mutateAsync({ nodeName: name, on, data: { reason } }),
+    );
+    setBulkSelected([]);
+    void qc.invalidateQueries({ queryKey: ["admin", "nodes"] });
+    if (failed > 0) message.warning(t("bulk.partial", { ok, failed }));
+    return t("bulk.done", { count: ok });
+  };
   const poolFilters = [...new Set(nodes.map((n) => (n.unlabeled ? "" : n.pool_label)))].map((p) =>
     p ? { text: p, value: p } : { text: t("nodes.unlabeledTag"), value: "" },
   );
@@ -739,11 +751,36 @@ function NodesPage() {
           }}
           onSearch={(v) => setKw(v.trim().toLowerCase())}
         />
+        <BulkBar count={bulkSelected.length} onClear={() => setBulkSelected([])}>
+          <ReasonAction
+            label={t("nodes.cordonBtn")}
+            target={t("bulk.selected", { count: bulkSelected.length })}
+            title={t("nodes.cordonTitle")}
+            confirmText={t("bulk.cordonConfirm", { count: bulkSelected.length })}
+            disabled={!writable}
+            disabledReason={t("nodes.readonlyNoOp")}
+            onSubmit={(reason) => bulkCordon(true, reason)}
+          />
+          <ReasonAction
+            label={t("nodes.uncordonBtn")}
+            target={t("bulk.selected", { count: bulkSelected.length })}
+            title={t("nodes.uncordonTitle")}
+            confirmText={t("bulk.uncordonConfirm", { count: bulkSelected.length })}
+            disabled={!writable}
+            disabledReason={t("nodes.readonlyNoOp")}
+            onSubmit={(reason) => bulkCordon(false, reason)}
+          />
+        </BulkBar>
         <Table<NodeRow>
           scroll={{ x: 1200 }}
           sticky={{ offsetHeader: layout.topBarHeight }}
           rowKey="name"
           loading={isLoading}
+          rowSelection={
+            writable
+              ? { selectedRowKeys: bulkSelected, onChange: (keys) => setBulkSelected(keys.map(String)), fixed: true }
+              : undefined
+          }
           locale={{
             emptyText: kw ? (
               t("nodes.noMatch")
