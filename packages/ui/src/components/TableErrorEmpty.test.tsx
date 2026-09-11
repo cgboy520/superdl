@@ -1,5 +1,4 @@
-/** TableErrorEmpty:错误态渲染「加载失败 + 重试」,非错误态退回 antd 默认空态。
- *  挂了 = 查询失败又被渲染成「没有数据」。 */
+/** TableErrorEmpty:错误态渲染「加载失败 + 重试」,非错误态退回 antd 默认空态。挂了 = 查询失败被渲染成「没有数据」。 */
 
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -36,7 +35,7 @@ describe("TableErrorEmpty", () => {
     renderEmpty({ isError: true, onRetry });
     expect(screen.getByText("加载失败,请重试")).toBeInTheDocument();
     const btn = screen.getByRole("button");
-    // antd v6 Button 对相邻汉字自动插空格(「重 试」),断言先归一化空白
+    // antd 6 Button 汉字间自动插空格,先归一化空白
     expect(btn.textContent?.replace(/\s/g, "")).toBe("重试");
     await userEvent.click(btn);
     expect(onRetry).toHaveBeenCalledTimes(1);

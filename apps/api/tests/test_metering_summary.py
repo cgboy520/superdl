@@ -1,7 +1,4 @@
-"""GET /api/v1/metrics/instances:实例列表 sparkline 批量摘要。
-
-覆盖:正常序列与 last 值 / 断源 200+available=false / 非 running 排除 / 租户隔离。
-"""
+"""GET /api/v1/metrics/instances:实例列表 sparkline 批量摘要。"""
 
 import pytest
 
@@ -26,7 +23,7 @@ class TestMetricsSummary:
         assert item["last"] == 82.5
 
     async def test_prom_down_returns_200_unavailable(self, client, sm, fake):
-        """断源不 503 —— 列表页不能因监控毁掉(详情端点维持 503 语义)。"""
+        """断源回 200 + available=false,不 503。"""
         headers, _uuid, _user_id = await provision_running(client, sm, fake)
         prom.set_client(prom_mock(fail=True))
         resp = await client.get("/api/v1/metrics/instances", headers=headers)

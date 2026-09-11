@@ -1,11 +1,4 @@
-"""短信渠道抽象(账号验证码与通知短信共用)。
-
-镜像 payment_channels 的 Protocol + 工厂模式:
-- mock:落结构化日志(dev/test 默认);
-- aliyun:dysmsapi SendSms(RPC 签名 V1),凭据与模板码走平台配置中心
-  (env SUPERDL_SMS_* 为默认值层,DB 覆盖免重启生效)。
-prod 下配置完整性由 Settings 校验把关。
-"""
+"""短信渠道(Protocol + 工厂):mock 落结构化日志;aliyun dysmsapi SendSms,凭据走平台配置中心。"""
 
 import json
 from typing import Protocol
@@ -19,17 +12,13 @@ from app.core.ratelimit import check_rate_limit
 
 logger = get_logger(__name__)
 
-# 平台级短信预算闸门(验证码与通知共享一个池;计数落 PG,多副本共享)。
-# 单手机号/单 IP 限流挡不住分布式号码池与重试风暴:小时窗护突发,日窗护预算
+# 平台级短信预算闸门(验证码与通知共享;计数落 PG):小时窗 + 日窗
 SMS_PLATFORM_HOURLY_MAX = 1000
 SMS_PLATFORM_DAILY_MAX = 5000
 
 
 async def ensure_sms_platform_quota() -> None:
-    """平台级短信闸门(计数即准入,原子无竞态)。超限抛 RATE_LIMITED(429)。
-
-    每个 channel.send 调用点之前必须先过此闸;计数含失败尝试,渠道重试同样消耗配额。
-    """
+    """平台级短信闸门,超限抛 RATE_LIMITED(429);每个 channel.send 之前必须先过,计数含失败尝试。"""
     await check_rate_limit(
         "sms-platform:hourly", max_attempts=SMS_PLATFORM_HOURLY_MAX, window_seconds=3600.0
     )
@@ -39,7 +28,7 @@ async def ensure_sms_platform_quota() -> None:
 
 
 class SmsError(RuntimeError):
-    """渠道侧发送失败(网络/签名/模板/欠费)。调用方决定降级还是上抛。"""
+    """渠道侧发送失败。"""
 
 
 class SmsChannel(Protocol):
@@ -50,12 +39,12 @@ class SmsChannel(Protocol):
 
 class MockSmsChannel:
     async def send(self, phone: str, template: str, params: dict[str, str]) -> None:
-        # 手机号与 params.code 由 logging._mask_sensitive_processor 按键名统一打码,这里不重复
+        # 手机号与 params.code 由 logging._mask_sensitive_processor 打码
         logger.info("mock_sms_sent", phone=phone, template=template, params=params)
 
 
 class AliyunSmsChannel:
-    """阿里云 dysmsapi SendSms。只实现发送所需最小面,签名算法为 RPC HMAC-SHA1。"""
+    """阿里云 dysmsapi SendSms(RPC HMAC-SHA1 签名)。"""
 
     ENDPOINT = "https://dysmsapi.aliyuncs.com/"
 

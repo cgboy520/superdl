@@ -1,6 +1,4 @@
-/** 租户下钻抽屉:实名摘要 + 账单/流水/订单/实例/在线服务/配额/事件 七 Tab + 跳审计。
- *  文件名 dash 前缀 = 非路由组件,不进 TanStack Router 的路由树。
- *  抽屉数据全部按 user_id / uuid 反查,实例选择器在账单过滤与事件时间线间复用同一份列表。 */
+/** 租户下钻抽屉:实名摘要 + 账单/流水/订单/实例/在线服务/配额/事件 七 Tab + 跳审计。 */
 
 import {
   fontSize,
@@ -76,25 +74,25 @@ export function TenantDrawer({
   onClose,
 }: {
   tenant: TenantRow | null;
-  /** 抽屉 Tab 受控于调用方 URL 参数(?dtab=) */
+  /** 抽屉 Tab(受控,?dtab=) */
   dtab?: DrawerTab;
   onTabChange?: (tab: DrawerTab) => void;
   onClose: () => void;
 }) {
   const { t } = useTranslation(["admin", "shared"]);
   const { formatMoney } = useFormat();
-  // 抽屉级实例列表:账单过滤 / 事件选择器 / 实例 Tab 三处复用(关抽屉不拉取;取前 100 条)
+  // 抽屉级实例列表(前 100 条),三处复用
   const tenantInstances = useAdminInstances(
     tenant ? { user_id: tenant.id } : undefined,
     { enabled: tenant !== null, limit: 100 },
   );
   const instances = tenantInstances.data?.pages.flatMap((p) => p.items) ?? [];
-  // 租户实例精确计数(后端 user_id 过滤时附):「正好 100 条」与「被 100 条上限截断」必须分得开
+  // 租户实例精确计数(判断是否截断)
   const instancesTotal = tenantInstances.data?.pages[0]?.total ?? null;
 
   return (
     <Drawer
-      // 响应式宽度:桌面 880,窄屏吃满视口宽(antd Drawer 移动端正解)
+      // 桌面 880,窄屏吃满视口宽
       width="min(880px, 100vw)"
       open={tenant !== null}
       onClose={onClose}
@@ -184,7 +182,7 @@ export function TenantDrawer({
   );
 }
 
-/** 小时账单:可按实例过滤(排障:只盯一台机的账);游标「加载更多」。 */
+/** 小时账单:可按实例过滤;游标加载更多。 */
 function BillsTab({ userId, instances }: { userId: number; instances: AdminInstanceOut[] }) {
   const { t } = useTranslation(["admin", "shared"]);
   const { formatMoney, formatHourlyPrice, formatDuration } = useFormat();
@@ -315,7 +313,7 @@ function LedgerTab({ userId }: { userId: number }) {
   );
 }
 
-/** 订单反查:该租户的充值订单(游标分页,加载更多)。 */
+/** 该租户的充值订单(游标分页)。 */
 function OrdersTab({ userId }: { userId: number }) {
   const orders = useOrders({ user_id: userId });
   const rows: OrderRow[] = orders.data?.pages.flatMap((p) => p.items) ?? [];
@@ -352,7 +350,7 @@ function OrdersTab({ userId }: { userId: number }) {
   );
 }
 
-/** 实例反查:只读视图(写操作集中在「全局实例」Tab,口径单一;抽屉取前 100 条)。 */
+/** 实例只读视图(前 100 条;写操作在「全局实例」Tab)。 */
 function TenantInstancesTab({
   instances,
   total,
@@ -363,7 +361,7 @@ function TenantInstancesTab({
   const { t } = useTranslation(["admin", "shared"]);
   return (
     <>
-      {/* 截断必明示:超过 100 台时账单过滤/事件选择器同样只能选到前 100 台 */}
+      {/* 超过 100 台明示截断 */}
       {total !== null && total > instances.length && (
         <Typography.Text
           type="warning"
@@ -400,8 +398,7 @@ function TenantInstancesTab({
           },
         },
         {
-          // 购买模式:标签取 packages/ui 的同一份映射,不在管理端另拼一遍;到期信息已内联在
-          // subscription 里(按量与已释放实例为 null),不逐行再打接口。在保给到期日,失效给状态词并上色
+          // 购买模式标签取 packages/ui 映射;到期信息取内联 subscription
           title: t("tenants.colMarket"),
           width: 150,
           render: (_, r) => {
@@ -448,7 +445,7 @@ function TenantInstancesTab({
   );
 }
 
-/** 配额覆盖:三个数字可留空(=该维走默认链),全空保存 = 清除覆盖;note 必填。 */
+/** 配额覆盖:留空 = 走默认链,全空保存 = 清除覆盖;note 必填。 */
 function QuotaTab({ userId }: { userId: number }) {
   const { t } = useTranslation(["admin", "shared"]);
   const { message } = App.useApp();
@@ -466,7 +463,7 @@ function QuotaTab({ userId }: { userId: number }) {
   }>();
 
   if (quota.isLoading) return <Skeleton active paragraph={{ rows: 3 }} />;
-  // 查询失败绝不渲染成「没有配额数据」(静默 null 会被误读成无覆盖)
+  // 查询失败明示错误
   if (quota.isError) return <DataErrorAlert onRetry={() => void quota.refetch()} />;
   const q = quota.data;
   if (!q) return null;
@@ -561,7 +558,7 @@ function QuotaTab({ userId }: { userId: number }) {
   );
 }
 
-/** 事件时间线:实例选择器 + 该实例的状态迁移事件(倒序,游标加载更多)。 */
+/** 事件时间线:实例选择器 + 状态迁移事件(倒序,游标)。 */
 function EventsTab({ instances }: { instances: AdminInstanceOut[] }) {
   const { t } = useTranslation(["admin", "shared"]);
   const [uuid, setUuid] = useState<string | null>(null);

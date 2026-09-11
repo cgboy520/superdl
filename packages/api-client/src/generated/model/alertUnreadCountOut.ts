@@ -6,8 +6,7 @@
  */
 
 /**
- * 未确认告警数(顶栏铃铛角标)。critical_count 单独给出:
- * 总览「告警(总)」卡的红色高亮要用精确口径,不能从截断的告警流列表推导。
+ * 未确认告警数;critical_count 单独给出(精确口径)。
  */
 export interface AlertUnreadCountOut {
   count: number;

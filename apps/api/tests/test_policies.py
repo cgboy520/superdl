@@ -27,7 +27,7 @@ class TestPolicyOverrides:
         assert "specs" in admin_view
 
     async def test_new_disk_snapshots_overridden_price(self, client: AsyncClient, sm):
-        """铁律:盘价是建盘时快照 —— 覆盖后新盘用新价。"""
+        """盘价是建盘时快照:覆盖后新盘用新价。"""
         ah = await admin_headers(sm, client, role="ops")
         await client.put(
             "/api/admin/v1/policies",
@@ -63,6 +63,6 @@ class TestPolicyOverrides:
 
 class TestPublicPolicies:
     async def test_fields_and_decimal_fidelity(self, client: AsyncClient):
-        """公开端点免鉴权;盘价以 Decimal 字符串出参,保 scale 不失真(禁 float)。"""
+        """公开端点免鉴权;盘价以 Decimal 字符串出参。"""
         body = (await client.get("/api/v1/policies")).json()
         assert isinstance(body["disk_price_gb_month"], str)

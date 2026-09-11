@@ -1,8 +1,4 @@
-/** 查询状态呈现约定(两端共用):错误绝不伪装成数据。
- *  - moneyOr:金额未就绪(加载中/失败)显示 "—",绝不渲染假 ¥0.00
- *  - DataErrorAlert:页面级「部分数据加载失败」横幅
- *  (表格错误态用 TableErrorEmpty)
- */
+/** 查询状态呈现(两端共用):moneyOr 金额未就绪显示 "—";DataErrorAlert 页面级「部分数据加载失败」横幅。 */
 
 import { Alert, Button } from "antd";
 import { useTranslation } from "react-i18next";
@@ -17,7 +13,7 @@ export function DataErrorAlert({
   description,
 }: {
   onRetry: () => void;
-  /** 覆盖默认「部分数据加载失败」(单查询失败场景措辞更准时用) */
+  /** 覆盖默认文案 */
   title?: string;
   description?: string;
 }) {

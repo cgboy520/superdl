@@ -1,5 +1,4 @@
-/** 通知列表项(通知中心与顶栏 Popover 同一份渲染,两处不许再分叉):
- *  已读/未读视觉同一语言:未读 = 左色点 + 浅底 + 左边框;整行点击带键盘语义(与工单列表同一标准)。 */
+/** 通知列表项(通知中心与顶栏 Popover 同一份渲染):未读 = 左色点 + 浅底 + 左边框;整行点击带键盘语义。 */
 
 import type { NotificationOut } from "@superdl/api-client";
 import { fontSize, formatDateTime } from "@superdl/ui";

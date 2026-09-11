@@ -1,32 +1,22 @@
-"""K8s 编排抽象:orchestrator 只面向本协议编程,dev/test 用 Fake,生产用 Real。
-
-业务代码禁止直接 import kubernetes 客户端。
-"""
+"""K8s 编排抽象:orchestrator 只面向本协议编程,dev/test 用 Fake,生产用 Real;业务代码禁止直接
+import kubernetes 客户端。"""
 
 from dataclasses import dataclass, field
 from typing import Protocol
 
-# 存储契约:三个名字须与 deploy/cluster/values/{topolvm,juicefs}.yaml 建出的 StorageClass 一致
-# (K8s 建 PVC 不校验 SC 存在,名字错了 PVC 永久 Pending)。
-# 下发门禁 nodes.require_storage_classes 按名核对已探测到的 SC。
+# StorageClass 名,与 deploy/cluster/values/{topolvm,juicefs}.yaml 一致;下发门禁按名核对
 INSTANCE_DISK_STORAGE_CLASS = "topolvm-provisioner"  # 实例盘:节点本地 NVMe LV
 JUICEFS_STORAGE_CLASS = "superdl-juicefs"  # 数据盘:JuiceFS 共享后端
 JUICEFS_PVC_NAME = "juicefs-shared"  # 每租户 ns 一只共享 PVC(数据盘按 subPath 切分)
 
-# 北向入口契约:三个名字须与 deploy/app/k8s/04-gateway.yaml 里的 Gateway 逐字一致。
-# 写错不报错:create 返回 201、实例照常进 running,只有 HTTPRoute 停在
-# status.parents[].conditions 的 Accepted=False,Jupyter 域名永远 404。
-# 这条链路没有下发门禁,兜底在管理端集群体检的 gateway 项(见 probe_cluster)。
+# 北向入口坐标,与 deploy/app/k8s/04-gateway.yaml 的 Gateway 逐字一致
 GATEWAY_NAMESPACE = "superdl"  # Gateway 对象所在 ns(= 平台自身 ns)
 GATEWAY_NAME = "superdl"
-# 租户 Jupyter 专用 listener(*.app.<域名>)。平台自身三个入口挂在各自的 listener 上,
-# 租户路由只许挂这一个:它是唯一开了 allowedRoutes.namespaces.from=Selector 的。
+# 租户 Jupyter listener(*.app.<域名>),唯一开 allowedRoutes Selector 的
 GATEWAY_APP_LISTENER = "app-https"
-# 服务型实例的对外端点 listener(*.svc.<域名>)。与 app-https 分成两个 listener:
-# 只有这一个挂 SecurityPolicy.extAuth(API Key 鉴权);同 listener 无法用 hostname
-# 分流,只能退化成逐路由挂策略(对象数从 O(1) 变成 O(端点数))。
+# 服务端点 listener(*.svc.<域名>),只有它挂 SecurityPolicy.extAuth
 GATEWAY_SVC_LISTENER = "svc-https"
-# Gateway API 资源坐标(官方客户端无 typed model,一律走 CustomObjectsApi)
+# Gateway API 资源坐标(CustomObjectsApi)
 GATEWAY_API_GROUP = "gateway.networking.k8s.io"
 GATEWAY_API_VERSION = "v1"
 HTTPROUTE_PLURAL = "httproutes"
@@ -34,19 +24,12 @@ GATEWAY_PLURAL = "gateways"
 
 
 def jupyter_service_name(instance_name: str) -> str:
-    """Jupyter 的 ClusterIP Service 名,与 SSH 的 NodePort Service 分开。
-
-    合成一个 type=NodePort Service 时 K8s 会给 Jupyter 也随机分配 NodePort,撞 SSH 端口池。
-    """
+    """Jupyter 的 ClusterIP Service 名(与 SSH NodePort Service 分开)。"""
     return f"{instance_name}-jupyter"
 
 
 def service_endpoint_service_name(instance_name: str) -> str:
-    """服务型实例的 ClusterIP Service 名(网关回源目标)。
-
-    与 SSH(NodePort,同名于实例)和 Jupyter(<name>-jupyter)必须三者分开:合成一个
-    type=NodePort Service 会让 K8s 给每个 port 都分配 NodePort,撞 SSH 端口池。
-    """
+    """服务端点的 ClusterIP Service 名(与 SSH / Jupyter Service 分开)。"""
     return f"{instance_name}-svc"
 
 
@@ -56,8 +39,7 @@ def instance_disk_pvc_name(instance_name: str) -> str:
 
 
 def instance_env_secret_name(instance_name: str) -> str:
-    """per-instance 敏感 env 的 Secret 名(JUPYTER_TOKEN 等)。与实例同生命周期
-    (delete_instance 一并删除);Pod spec 只以 secretKeyRef 引用,明文不落 spec。"""
+    """per-instance 敏感 env 的 Secret 名(JUPYTER_TOKEN 等),随实例删除。"""
     return f"jupyter-{instance_name}"
 
 
@@ -76,44 +58,34 @@ class InstancePodSpec:
     vcpu: int
     mem_gb: int
     disk_gb: int
-    # LB/NodePort 端口池分配;None = 该实例不开 SSH(服务型实例默认不占端口池)
+    # NodePort;None = 不开 SSH
     ssh_node_port: int | None
     jupyter_host: str  # <uuid>.app.<域名>,HTTPRoute hostname
     env: dict[str, str] = field(default_factory=dict)  # 非敏感环境变量
-    # 敏感环境变量(如 JUPYTER_TOKEN):不落 Pod spec(明文 env 会进 etcd/审计日志/
-    # 任何 pods:get 身份),由编排层写 per-instance Secret,Pod 以 secretKeyRef 引用
+    # 敏感环境变量(JUPYTER_TOKEN 等):写 per-instance Secret,Pod 以 secretKeyRef 引用
     secret_env: dict[str, str] = field(default_factory=dict)
     authorized_keys: tuple[str, ...] = ()
     node_selector: dict[str, str] = field(default_factory=dict)  # 池标签
     data_disk_subpath: str | None = None  # JuiceFS 子路径(挂 /root/data)
     scheduler_name: str | None = None  # 指定调度器(HAMi 池 = hami-scheduler)
     annotations: dict[str, str] = field(default_factory=dict)  # 如 HAMi use-gputype
-    # 平台托管的镜像拉取凭据 Secret 名(core/registry.PULL_SECRET_NAME);
-    # None = 项目 public / 未配机器人
+    # 镜像拉取凭据 Secret 名(core/registry.PULL_SECRET_NAME);None = 不引用
     image_pull_secret: str | None = None
 
-    # 服务型实例(workload_type='service')专用;dev 形态全取默认值。
-    # Never = 容器退出即 Pod 终态(dev:Jupyter 挂了即判故障);
-    # Always = kubelet 原地重启容器、Pod 不重建,保住 reconciler 的
-    # 「Pod 名恒等于实例 uuid」假设(重建 Pod 会换名字)
+    # 服务型实例专用;dev 形态全取默认。Never = 容器退出即终态;Always = kubelet 原地重启容器
     restart_policy: str = "Never"
     command: tuple[str, ...] | None = None  # 覆盖镜像 ENTRYPOINT;None = 用镜像自带
     args: tuple[str, ...] | None = None
     service_port: int | None = None  # 非空 → 建 <name>-svc ClusterIP + 服务 HTTPRoute
     service_host: str | None = None  # <slug>.svc.<域名>,服务 HTTPRoute 的 hostname
-    # 非空 → 挂 readinessProbe + startupProbe(httpGet)。startupProbe 不可省:
-    # 只有 readiness 时,加载大模型权重的容器在启动阶段即被判 not-ready,
-    # 而 not-ready 会触发 reconciler 的可用性判定。
+    # 非空 → 挂 readinessProbe + startupProbe(httpGet)
     health_path: str | None = None
-    # False → 不建 SSH NodePort Service(服务型实例默认如此,不占端口池)
+    # False → 不建 SSH NodePort Service
     with_ssh: bool = True
 
 
 class NodePortTaken(Exception):
-    """请求的 NodePort 已被集群里的其它对象占用(apiserver 422)。
-
-    调用方应把该端口标 blocked 并换一个重试。
-    """
+    """请求的 NodePort 已被其它对象占用(apiserver 422);调用方标 blocked 并换端口。"""
 
     def __init__(self, port: int) -> None:
         super().__init__(f"node port {port} already allocated")
@@ -122,18 +94,14 @@ class NodePortTaken(Exception):
 
 @dataclass(frozen=True)
 class PodStatus:
-    """Pod 状态:get_status 单查与 list_instance_pods 全量 LIST 同一形状。
-
-    LIST 条目还带归属(namespace/name)与 labels:reconciler 以全量 LIST 替代逐实例
-    get_status;泄漏回收据 labels 豁免受管 Job(wipe/quota)的子孙 Pod —— 它们带
-    MANAGED_LABEL 会被 LIST 命中,但名字不是实例 uuid,无 labels 就与真泄漏分不开。
-    """
+    """Pod 状态(get_status 与 list_instance_pods 同形状);LIST 条目带 namespace/name 与 labels
+    (泄漏回收据 labels 豁免受管 Job 的子 Pod)。"""
 
     exists: bool
     ready: bool = False
     phase: str = "Unknown"  # Pending / Running / Succeeded / Failed / Unknown
     node_name: str | None = None
-    # deletionTimestamp 已设 = Terminating:read 仍 200、phase 仍 Running,判活必须看这个字段
+    # deletionTimestamp 已设 = Terminating(phase 仍 Running),判活看这个字段
     deleting: bool = False
     namespace: str = ""
     name: str = ""
@@ -153,9 +121,7 @@ class ClusterProbe:
     gpu_operator_present: bool = False
     kata_runtimeclass: bool = False  # RuntimeClass kata-qemu 存在
     nvidia_runtimeclass: bool = False  # RuntimeClass nvidia 存在(k3s 上 shared 档下发的前提)
-    # Gateway 对象 status.conditions 的 Programmed=True(租户 Jupyter 入口)。
-    # 只探控制器 Deployment 不够:CRD 装了、控制器活着,但 listener 的证书 Secret 缺失
-    # 或 hostname 冲突时,Programmed 仍为 False 而流量一条都进不来。
+    # Gateway 对象 status.conditions 的 Programmed=True
     gateway_ready: bool = False
     cert_manager_ready: bool = False  # cert-manager ready≥1(泛域名证书签发与续期)
     nodes_ready: int = 0  # Ready 且可调度的节点数
@@ -194,43 +160,29 @@ class K8sOrchestrator(Protocol):
     async def ensure_pull_secret(
         self, namespace: str, dockerconfigjson: str, fingerprint: str
     ) -> None:
-        """在 namespace 写/覆写平台托管的镜像拉取 Secret(kubernetes.io/dockerconfigjson,
-        名字 core/registry.PULL_SECRET_NAME)。annotation 指纹相同即跳过;轮换只改配置中心,
-        下一次建 Pod / 预热前自动覆写,节点不落凭据。幂等。"""
+        """在 namespace 写/覆写镜像拉取 Secret(dockerconfigjson,core/registry.PULL_SECRET_NAME);
+        annotation 指纹相同即跳过。幂等。"""
         ...
 
     async def create_instance(self, spec: InstancePodSpec) -> None:
-        """创建 Pod + Service + HTTPRoute。已存在则跳过。
-
-        建哪些对象随形态走:dev 建 SSH NodePort + Jupyter ClusterIP + Jupyter HTTPRoute;
-        service 按 with_ssh 决定要不要 SSH,建 <name>-svc ClusterIP + 服务 HTTPRoute,
-        不建 Jupyter 的任何对象。
-        """
+        """创建 Pod + Service + HTTPRoute,已存在则跳过。dev 建 SSH NodePort + Jupyter ClusterIP +
+        Jupyter HTTPRoute;service 建(with_ssh 时 SSH)+ <name>-svc ClusterIP + 服务 HTTPRoute。"""
         ...
 
     async def delete_instance(self, namespace: str, name: str, *, force: bool = False) -> None:
-        """删除该实例的 Pod/Service/HTTPRoute(两种形态的对象一律尝试删,不存在即跳过 ——
-        删除路径不该依赖「这台当初是什么形态」的记忆)。**不动实例盘**,盘必须活过关机
-        (见 delete_instance_disk)。不存在则跳过。
-
-        force=True 走强制删除(gracePeriodSeconds=0,不等 kubelet 确认),只在节点已失联时用
-        —— 节点失联时优雅删除永远完不成。
-        """
+        """删除该实例的 Pod/Service/HTTPRoute(两种形态的对象都试删,不存在即跳过);不动实例盘。
+        force=True 强删(gracePeriodSeconds=0),只在节点失联时用。"""
         ...
 
     async def delete_instance_disk(self, namespace: str, name: str) -> None:
-        """删除该实例的实例盘 PVC。只允许在实例真正终结时调用(释放/回收,以及从未跑起来过的
-        creating 超时);关机、重启、pod_lost 都不许调。不存在则跳过;调用点须先确认 Pod 已消失,
-        否则 pvc-protection 会让删除挂起。"""
+        """删除实例盘 PVC。只在实例终结(释放/回收/creating 超时)时调用,关机、重启、pod_lost 不许调;
+        调用点须先确认 Pod 已消失。不存在则跳过。"""
         ...
 
     async def get_status(self, namespace: str, name: str) -> PodStatus: ...
 
     async def read_instance_logs(self, namespace: str, name: str, *, tail_lines: int) -> str:
-        """读取实例容器日志(只读):末尾 tail_lines 行。
-
-        请求路径同步直读的例外(实时性,不进 outbox);调用方须自行做 owner/状态/限流校验。
-        """
+        """读取实例容器日志末尾 tail_lines 行(请求路径直读的唯一例外);调用方自行做鉴权与限流。"""
         ...
 
     async def list_instance_pods(self) -> list[PodStatus]:
@@ -238,8 +190,7 @@ class K8sOrchestrator(Protocol):
         ...
 
     async def list_instance_endpoints(self) -> list[tuple[str, str]]:
-        """列出全部租户实例的 Service/HTTPRoute (namespace, 实例名;jupyter 副名已归并)。
-        reconciler 孤儿端点清理用(残留端点会持续占 NodePort)。"""
+        """列出全部租户实例的 Service/HTTPRoute (namespace, 实例名),副名已归并;孤儿端点清理用。"""
         ...
 
     async def used_node_ports(self) -> set[int]:
@@ -247,15 +198,12 @@ class K8sOrchestrator(Protocol):
         ...
 
     async def wipe_disk(self, namespace: str, subpath: str) -> None:
-        """真实擦除数据盘的 JuiceFS 子路径(集群侧 Job)。幂等;
-        未完成时抛异常交 outbox 退避重试,下次执行看到已完成即返回。"""
+        """擦除数据盘的 JuiceFS 子路径(集群侧 Job)。幂等;未完成时抛异常交 outbox 重试。"""
         ...
 
     async def set_disk_quota(self, namespace: str, subpath: str, capacity_gb: int) -> None:
-        """下发 JuiceFS 目录硬配额(平台 ns 的 CLI Job,纯元数据操作)。幂等;
-        Job 进行中/失败抛异常交 outbox 退避重试。配额是纯元数据,不挂卷。
-        namespace 用于定位该租户共享 PVC 绑定的 PV 子目录:CSI 动态供给把每租户 PVC
-        落在文件系统根下的独立子目录,配额路径必须带这层前缀才与数据同视图。"""
+        """下发 JuiceFS 目录硬配额(平台 ns 的 CLI Job)。幂等;进行中/失败抛异常交 outbox 重试。
+        namespace 用于定位该租户共享 PVC 的 PV 子目录前缀。"""
         ...
 
     async def delete_disk_quota(self, namespace: str, subpath: str) -> None:
@@ -263,8 +211,7 @@ class K8sOrchestrator(Protocol):
         ...
 
     async def list_nodes(self, include_unlabeled: bool = False) -> list["NodeInfo"]:
-        """节点视图。include_unlabeled=True 时包含未打池标签的节点(台账巡检用);
-        默认仅带 superdl.io/pool 标签的节点。"""
+        """节点视图;默认仅带 superdl.io/pool 标签的节点,include_unlabeled=True 含未打标节点。"""
         ...
 
     async def set_node_labels(self, node_name: str, labels: dict[str, str]) -> None:
@@ -274,9 +221,7 @@ class K8sOrchestrator(Protocol):
     async def prewarm_image(
         self, node_name: str, image_ref: str, *, image_pull_secret: str | None = None
     ) -> None:
-        """在指定节点创建镜像预热 Job(nodeName 定点拉取,image_pull_secret 为平台托管的
-        拉取凭据 Secret 名)。创建后即返回不等待,完成态由巡检经 get_prewarm_status 收敛;
-        已存在同名 Job 则跳过(幂等)。"""
+        """在指定节点创建镜像预热 Job,创建即返回(完成态由巡检收敛);同名已存在则跳过。"""
         ...
 
     async def get_prewarm_status(self, node_name: str, image_ref: str) -> "PrewarmJobStatus":
@@ -296,16 +241,8 @@ class K8sOrchestrator(Protocol):
         ...
 
     async def delete_node(self, node_name: str) -> None:
-        """节点退役:先 cordon 再从集群删除 Node 对象。
-
-        删除前先 cordon,是为了不留「已决定退役、Node 对象还在」的可调度窗口
-        (删除本身要走 apiserver,失败还会退避重试)。
-        幂等:节点已不存在即视为成功 —— 退役的目标态就是它不在集群里。
-
-        注意这只摘掉节点在集群中的身份,**不吊销 kubelet 证书**:kubelet 若仍在运行且
-        持有有效证书与 join token,会自行重新注册(台账里的 cordon 期望态会把它再压住)。
-        真正的凭据吊销是控制面侧动作,见 nodes 模块 runbook。
-        """
+        """节点退役:先 cordon 再删 Node 对象;节点已不存在视为成功。不吊销 kubelet 证书
+        (控制面侧动作,见 nodes 模块 runbook)。"""
         ...
 
 
@@ -313,12 +250,10 @@ GPU_MODEL_NODE_LABEL = (
     "superdl.io/gpu-model"  # 平台 canonical 型号标签(巡检写入,调度 nodeSelector 依赖)
 )
 POOL_NODE_LABEL = "superdl.io/pool"  # 节点池标签(装机时定死;kata / hami / mig 分池铁律)
-# 平台受管对象标签:实例 Pod/Service/HTTPRoute/受管 Job 均打此标,全量 LIST 的过滤依据。
-# 租户 namespace 也打这一个标签,兼作 Gateway `app-https` listener 的
-# allowedRoutes.namespaces.from=Selector 选择器(平台自身 ns 不带此标)。
+# 平台受管对象标签:实例 Pod/Service/HTTPRoute/受管 Job/租户 ns 均打;兼作 Gateway listener 的
+# allowedRoutes Selector
 MANAGED_LABEL = "superdl.io/managed"
-# K8s 控制器自动打在 Job 子孙 Pod 上的标签:泄漏回收的豁免依据
-# (Job 泄漏由 ttl_seconds_after_finished 兜底,不属"未知 Pod 强删"范围)
+# Job 控制器打在子 Pod 上的标签:泄漏回收的豁免依据
 JOB_NAME_LABEL = "batch.kubernetes.io/job-name"
 
 
@@ -331,14 +266,13 @@ class NodeInfo:
     gpu_total: int
     gpu_used: int
     status: str  # Ready / NotReady / Cordoned
-    # 节点物理规格(取自 K8s node.status.capacity;0 表示未知/未上报)
+    # 节点物理规格(node.status.capacity;0 = 未上报)
     vcpu: int = 0
     mem_gb: int = 0
     disk_gb: int = 0
-    # 台账巡检用:GFD 型号原文标签(nvidia.com/gpu.product)与平台 canonical 标签当前值(空串=无)
+    # GFD 型号原文标签(nvidia.com/gpu.product)与平台 canonical 标签当前值(空串=无)
     gpu_model_label: str = ""
     model_label_current: str = ""
-    # GFD 驱动/CUDA 版本标签(nvidia.com/cuda.{driver,runtime}-version.full;
-    # 空串=无 GFD 或非 GPU 节点)
+    # GFD 驱动/CUDA 版本(nvidia.com/cuda.{driver,runtime}-version.full;空串=无)
     driver_version_label: str = ""
     cuda_version_label: str = ""

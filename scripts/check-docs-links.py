@@ -1,29 +1,20 @@
 #!/usr/bin/env python3
-"""文档引用检查(stdlib 零依赖):Markdown 里的相对链接与反引号仓库路径必须真实存在。
+"""文档引用检查(stdlib 零依赖):Markdown 相对链接与反引号仓库路径必须存在。
 
-挂了说明:某份文档引用的文件/目录已被改名或删除(或链接写错),读者会被带到不存在的地方。
-
-检查范围:仓库内全部 *.md(排除 node_modules/.venv/.git/.claude/dist/generated;.claude 下是代理 worktree,不属本仓)。
-检查两类引用:
-1. Markdown 链接 `[text](target)`:target 非 http(s)/mailto/纯锚点时,按所在文件目录解析,
-   去掉 `#anchor` 后必须存在。
-2. 反引号内的仓库路径:形如 `deploy/cluster/README.md`、`app/core/money.py`、
-   `docs/reference/`、`apps/api/alembic/versions/*` —— 依次尝试按「文档所在目录 →
-   仓库根 → apps/api」解析,任一命中即通过;只检查首段是仓库顶层目录
-   (apps/packages/deploy/docs/e2e/scripts/.github)或 apps/api 内部目录
-   (app/alembic/tests/scripts)的 token。路径可带通配符(glob)。
-   不含 `/` 的短名、URL、命令行片段不在检查范围。
-3. 告警规则(`deploy/**/*.yaml`)里的 `runbook_url`:GitHub blob URL 映射回仓库路径,文件必须存在;
-   带 `#锚点` 时锚点必须对得上目标文件的某个标题(按 GitHub 的 slug 规则)。只在全仓模式(无文件参数)检查。
-
-放行:含 `<`/`>`/`{`/`}`/`$` 的占位路径(如 `deploy/k8s/<file>`)不检查。
+范围:仓库内全部 *.md(排除 node_modules/.venv/.git/.claude/dist/generated)。检查:
+1. Markdown 链接 `[text](target)`:非 http(s)/mailto/纯锚点时按所在目录解析,去掉 `#anchor` 后必须存在。
+2. 反引号内的仓库路径:依次按「文档所在目录 → 仓库根 → apps/api」解析,任一命中即通过;只检查首段是
+   仓库顶层目录(apps/packages/deploy/docs/e2e/scripts/.github)或 apps/api 内部目录(app/alembic/tests/scripts)
+   的 token,可带 glob。含 `<>{}$` 的占位路径不检查。
+3. 告警规则(`deploy/**/*.yaml`)的 `runbook_url`:GitHub blob URL 映射回仓库路径,文件必须存在,`#锚点` 须对上
+   目标文件标题(GitHub slug 规则)。只在全仓模式检查。
 
 用法: python3 scripts/check-docs-links.py            # 检查全仓
       python3 scripts/check-docs-links.py a.md b.md  # 只检查给定文件
 退出码:0 通过;1 有断链(逐条打印 file:line: 说明)。
 """
 
-# ruff: noqa: T201  # 闸门脚本以 stdout 报告结果
+# ruff: noqa: T201
 from __future__ import annotations
 
 import glob

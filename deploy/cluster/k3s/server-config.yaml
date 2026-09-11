@@ -4,38 +4,23 @@
 write-kubeconfig-mode: "0640"
 disable:
   - traefik                  # 北向入口统一走 helmfile 装的 Envoy Gateway(与 full 档一致)。
-                             # 必须装机即禁,不能先启用后禁用:部分 k3s 版本上禁用 traefik 会
-                             # 连带删掉它自带的 Gateway API CRD,而平台的 Gateway/HTTPRoute 全挂
-                             # 在这组 CRD 上,删 CRD = 平台三域名与全部租户 Jupyter 入口一起消失。
-# 平台组件落点标签不在这里打(同 rke2/server-config.yaml 的理由):node-label 由节点自己声明,
-# 加入的机器可任意自称 infra 把平台组件吸过去。锚点改用 node-restriction.kubernetes.io/superdl-infra
-# (NodeRestriction 拉黑该前缀,kubelet 打不上),由 deploy/ansible/site.yml 装机后用管理凭据打上。
+                             # 必须装机即禁(事后禁用会连带删掉 Gateway API CRD)
+# 平台组件落点标签 node-restriction.kubernetes.io/superdl-infra 不在这里打,由 deploy/ansible/site.yml 装机后打(同 rke2/server-config.yaml)
 secrets-encryption: true     # etcd/sqlite 静态加密;快照仍需异地加密保存(见 rke2/server-config.yaml 注释)
-# 与 full 档同规:节点加入用专用 agent token,禁止下发 server node-token(见
-# deploy/cluster/README.md「server token 与 agent token」节)。**恒开**:注释掉它 agent 就静默
-# 回落用 server token 认证,而 server token 能把新机器拉成控制面成员。占位由 ansible 渲染
-# (deploy/ansible/site.yml,值经 group_vars/servers.yml 或 -e 注入)。
+# 节点加入用专用 agent token,禁止下发 server node-token(见 deploy/cluster/README.md「server token 与 agent token」)。
+# 恒开;占位由 deploy/ansible/site.yml 渲染
 agent-token: "CHANGE_ME_AGENT_TOKEN"
 embedded-registry: true      # Spegel P2P 镜像共享;配套 registries.yaml 由平台生成下发
                              # (管理端·平台配置·集群接入,node-join.sh 自动落位)
-# API 审计(对齐 rke2/server-config.yaml):策略文件复用 rke2/audit-policy.yaml,装机时
-# 一并拷到 /etc/rancher/k3s/(见 deploy/cluster/README.md 路径 B;缺失则 apiserver 起不来)。
+# API 审计:策略文件复用 rke2/audit-policy.yaml,装机时拷到 /etc/rancher/k3s/(deploy/cluster/README.md 路径 B)
 kube-apiserver-arg:
-  # NodeRestriction 显式钉死(理由同 rke2/server-config.yaml):平台组件的 nodeSelector 用的是
-  # node-restriction.kubernetes.io/superdl-infra,只有这个插件在挡 kubelet 给自己打该前缀标签。
-  # --enable-admission-plugins 相对 K8s 默认开启集是增量,不会关掉 PodSecurity /
-  # ValidatingAdmissionPolicy;k3s 同名 flag 同样是覆盖语义,需要什么就在这里列全。
+  # NodeRestriction 显式钉死(同 rke2/server-config.yaml);同名 flag 是覆盖语义,插件须列全
   - enable-admission-plugins=NodeRestriction
   - audit-policy-file=/etc/rancher/k3s/audit-policy.yaml
   - audit-log-path=/var/lib/rancher/k3s/server/logs/audit.log
   - audit-log-maxage=30
-  # 同 rke2:不设 maxsize/maxbackup = 单文件与轮转份数都不限,30 天足够把控制面根分区
-  # (etcd 也在上面)吃光。
+  # 同 rke2:100MiB × 10 份封顶
   - audit-log-maxsize=100
   - audit-log-maxbackup=10
-# 单 Pod PID 上限(podPidsLimit)不在这里:它是 KubeletConfiguration 字段而非 kubelet flag,
-# 写进 kubelet-arg 会让 k3s 拒启(unknown flag)。由 ansible 落 kubelet 配置 drop-in
-# /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/50-superdl.conf(模板 rke2/kubelet-superdl.conf,
-# 与 node-join.sh 写给 GPU 节点的同值)。
-# 单机时 server 兼跑业务负载,不打 CriticalAddonsOnly taint(与 RKE2 server 相反);
-# 多机 light 集群给 server 补 taint,GPU 节点经管理端一键加入。
+# podPidsLimit 由 ansible 落 kubelet drop-in /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/50-superdl.conf(模板 rke2/kubelet-superdl.conf)。
+# 单机 server 兼跑业务负载,不打 CriticalAddonsOnly taint;多机 light 给 server 补 taint

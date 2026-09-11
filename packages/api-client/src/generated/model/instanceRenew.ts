@@ -7,7 +7,7 @@
 import type { InstanceRenewPeriod } from './instanceRenewPeriod';
 
 /**
- * 续费入参。period 可与当前周期不同(包月转包年),按新周期的折扣重新报价。
+ * 续费入参;period 可与当前周期不同,按新周期折扣重新报价。
  */
 export interface InstanceRenew {
   period: InstanceRenewPeriod;

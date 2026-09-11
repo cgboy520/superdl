@@ -52,7 +52,7 @@ class TestDiskCrud:
         await drain(sm)
         disks = (await client.get("/api/v1/disks", headers=headers)).json()
         assert disks == []
-        # 擦除必须打在盘记录登记的那条子路径上,否则 rm -rf 静默成功而真实数据一字节未动
+        # 擦除打在盘记录登记的子路径上
         assert fake.wiped_disks[-1] == (f"tenant-{user_id}", f"disk-{disk['uuid']}")
 
     async def test_create_requires_balance(self, client, sm, fake):
@@ -63,13 +63,12 @@ class TestDiskCrud:
         assert resp.json()["code"] == "INSUFFICIENT_BALANCE"
 
     async def test_expand_requires_balance(self, client, sm, fake):
-        """扩容与创建同一条燃烧率护栏:余额不足时不得把日费敞口免费放大
-        (否则欠费用户可把盘扩到 disk_max_gb,日结照扣,形成事实透支)。"""
+        """扩容走与创建同一条燃烧率护栏。"""
         headers, user_id, _key = await create_user_with_key(client, "13500000003")
         await fund_wallet(sm, user_id)  # 100.00
         disk = await create_disk(client, headers, size_gb=100)
         await drain(sm)
-        # 余额压到接近零(模拟欠费):4096GB 的增量日费必然过不了护栏
+        # 余额接近零:4096GB 的增量日费过不了护栏
         async with sm() as session:
             await wallet.debit(session, user_id, Decimal("99.99"), allow_negative=False)
             await session.commit()
@@ -77,7 +76,7 @@ class TestDiskCrud:
             f"/api/v1/disks/{disk['uuid']}", json={"size_gb": 4096}, headers=headers
         )
         assert resp.json()["code"] == "INSUFFICIENT_BALANCE"
-        # 容量未被更新(校验与容量更新同一事务)
+        # 容量未被更新
         d = (await client.get("/api/v1/disks", headers=headers)).json()[0]
         assert d["size_gb"] == 100
 
@@ -90,8 +89,7 @@ class TestDiskCrud:
 
 class TestMountLifecycle:
     async def test_attach_rejected_until_quota_synced(self, client, sm, fake):
-        """配额未下发成功的盘不得挂载:JuiceFS 目录硬配额是唯一容量强制点,
-        无配额挂载 = 可写穿声明容量挤爆共享文件系统;同步完成后即可挂。"""
+        """配额未下发成功的盘不得挂载;同步完成后即可挂。"""
         headers, user_id, key_id = await create_user_with_key(client, "13500000013")
         await fund_wallet(sm, user_id, "500.00")
         sku_id = await create_test_sku(sm)
@@ -194,7 +192,7 @@ class TestMountLifecycle:
         await drain(sm)
         await reconcile_once(sm)
         assert (await get_instance(client, headers, a_uuid))["status"] == "stopped"
-        # 删盘但不 drain:盘停在 deleting,引用已摘除 —— 手工恢复引用模拟存量数据/竞态
+        # 删盘不 drain:盘停在 deleting;手工恢复引用模拟竞态
         resp = await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
         assert resp.status_code == 200, resp.text
         async with sm() as session:
@@ -230,8 +228,7 @@ class TestMountLifecycle:
         assert resp.status_code == 202, resp.text
         a_uuid = resp.json()["uuid"]
         await drain(sm)
-        # Pod spec 带 JuiceFS 子路径(挂 /root/data)。子路径的唯一事实源是
-        # data_disks.juicefs_subpath(= disk-<uuid>),不是自增主键
+        # Pod spec 带 JuiceFS 子路径(挂 /root/data),取 data_disks.juicefs_subpath
         pod = fake.pods[(f"tenant-{user_id}", a_uuid)]
         assert pod.spec.data_disk_subpath == f"disk-{disk['uuid']}"
 
@@ -299,8 +296,7 @@ class TestDailyDiskBilling:
         async with sm() as session:
             bill = (await session.execute(select(BillDailyDisk))).scalar_one()
             entries = (await session.execute(select(BalanceLedger))).scalars().all()
-        # 日费按「前 k 天累计 − 前 k−1 天累计」出账(整月累计才精确等于月单价 × 天数 / 30),
-        # 所以单日金额随当月第几天在 0.11/0.12 之间摆动 —— 不能写死某一个值
+        # 日费按「前 k 天累计 − 前 k−1 天累计」出账,单日金额在 0.11/0.12 之间摆动
         yesterday = (billing_day_floor(now_utc()) - timedelta(days=1) + BILLING_DAY_OFFSET).date()
         expected = disk_daily_charge(Decimal("0.0350"), 100, yesterday)
         assert bill.amount == expected
@@ -316,7 +312,7 @@ class TestDailyDiskBilling:
         assert await settle_daily_disks(sm) == 0
 
     async def test_delete_same_day_pays_final_day(self, client, sm, fake):
-        """当日建、当日删:必须出末日账,否则可循环零费用占用存储。"""
+        """当日建、当日删:出末日账。"""
         headers, user_id, _key = await create_user_with_key(client, "13500000022")
         await fund_wallet(sm, user_id)
         disk = await create_disk(client, headers, size_gb=100)
@@ -330,8 +326,7 @@ class TestDailyDiskBilling:
         assert w["balance"] == str(Decimal("100.00") - expected)
 
     async def test_delete_without_watermark_backfills_from_creation(self, client, sm, fake):
-        """水位线缺失(全新部署引导窗口):删盘以建盘日为下界补结欠账天数,
-        而非只结当日(那是少收方向的静默免单)。"""
+        """水位线缺失:删盘以建盘日为下界补结欠账天数。"""
         headers, user_id, _key = await create_user_with_key(client, "13500000025")
         await fund_wallet(sm, user_id)
         disk = await create_disk(client, headers, size_gb=100)
@@ -358,7 +353,7 @@ class TestDailyDiskBilling:
         assert sum(b.amount for b in bills) == expected
 
     async def test_expand_settles_old_size_first(self, client, sm, fake):
-        """扩容前按旧容量结清未出账日期:新容量不追溯到旧日期(多扣用户)。"""
+        """扩容前按旧容量结清未出账日期。"""
         headers, user_id, _key = await create_user_with_key(client, "13500000023")
         await fund_wallet(sm, user_id)
         disk = await create_disk(client, headers, size_gb=100)
@@ -373,7 +368,7 @@ class TestDailyDiskBilling:
         assert bill.amount == disk_daily_charge(Decimal("0.0350"), 100, today)
 
     async def test_frozen_disk_delete_not_billed(self, client, sm, fake):
-        """冻结态不计费:欠费回收删盘不补账(否则把有意不计费的日子补回来)。"""
+        """冻结态不计费:欠费回收删盘不补账。"""
         headers, user_id, _key = await create_user_with_key(client, "13500000024")
         await fund_wallet(sm, user_id)
         disk = await create_disk(client, headers)
@@ -427,10 +422,7 @@ class TestDiskArrearsChain:
         assert disks == []
 
     async def test_recharge_restores_frozen_disk(self, client, sm, fake):
-        """盘已经熬到 frozen 之后再充值,必须能解冻。
-
-        巡检集合若拼成「有 active/grace 盘的用户 ∪ 余额≤0 的用户」,这类用户两边都不在。
-        """
+        """frozen 之后充值能解冻(巡检集合须含有 frozen 盘的用户)。"""
         headers, user_id, _key = await create_user_with_key(client, "13500000032")
         await fund_wallet(sm, user_id)
         await create_disk(client, headers)
@@ -455,8 +447,7 @@ class TestDiskArrearsChain:
         await balance_patrol(sm)
         d = (await client.get("/api/v1/disks", headers=headers)).json()[0]
         assert d["status"] == "active"
-        # grace_started_at sticky:宽限钟累计不随充值清零(防「欠费→充值→再欠费」无限循环);
-        # frozen_started_at 是删除倒计时,出冻结态即清零
+        # grace_started_at 不随充值清零;frozen_started_at 出冻结态即清零
         assert d["frozen_started_at"] is None and d["grace_started_at"] is not None
 
 
@@ -478,7 +469,7 @@ class TestDiskQuota:
 
 class TestDiskIdempotency:
     async def test_repeated_create_with_same_key_returns_same_disk(self, client, sm, fake):
-        """响应丢失时用户按第二下,不能多出一块按日计费的孤儿盘。"""
+        """同幂等键重放不多出一块盘。"""
         headers, user_id, _key = await create_user_with_key(client, "13500000050")
         await fund_wallet(sm, user_id)
         h = {**headers, "Idempotency-Key": "disk-idem-1"}
@@ -490,7 +481,7 @@ class TestDiskIdempotency:
         assert len((await client.get("/api/v1/disks", headers=headers)).json()) == 1
 
     async def test_same_key_different_params_409(self, client, sm, fake):
-        """同键异参(改了容量):显式 409,绝不静默返回上一块盘(弱键复用防线)。"""
+        """同键异参(改了容量):409。"""
         headers, user_id, _key = await create_user_with_key(client, "13500000051")
         await fund_wallet(sm, user_id)
         h = {**headers, "Idempotency-Key": "disk-idem-mix"}

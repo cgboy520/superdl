@@ -1,10 +1,6 @@
-"""审计:所有写操作(POST/PUT/PATCH/DELETE)由中间件统一落 audit_log。
-
-actor 由鉴权依赖写入 request.state.audit_actor;管理端动作带 "admin." 前缀。
-默认走独立 session(fail-open,业务失败也留痕,审计失败不拖垮业务);
-资金域出金动作(退款打款/调账复核/人工补单)改用 write_audit_sync 与业务同事务:
-审计写失败即业务失败回滚——宁可不出金,不可无留痕。
-"""
+"""审计:所有写操作由中间件统一落 audit_log(独立 session,fail-open);actor 取
+request.state.audit_actor,管理端动作带 "admin." 前缀。资金域出金动作改用 write_audit_sync
+与业务同事务(审计写失败即业务回滚)。"""
 
 from datetime import datetime
 from typing import Any
@@ -26,9 +22,7 @@ from app.core.metrics import AUDIT_WRITE_FAILED_TOTAL
 logger = get_logger(__name__)
 
 AUDIT_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-# 不审计的路径前缀(高频只读或基础设施)。endpoint-auth 是网关对每一次服务调用的同步
-# 鉴权回调(方法跟着客户端走,含 POST),审计它等于按服务 QPS 往 audit_log 灌行;
-# 端点侧的可观测走结构化日志与网关访问日志,不走审计表。
+# 不审计的路径前缀(高频只读、基础设施、网关 endpoint-auth 回调)
 AUDIT_EXCLUDE_PREFIXES = (
     "/healthz",
     "/metrics",
@@ -37,9 +31,7 @@ AUDIT_EXCLUDE_PREFIXES = (
     "/api/internal/v1/endpoint-auth",
 )
 
-# 审计 fail-open 的升级闸:连续失败超阈值后写操作 fail-closed(宁可停写,不留无审计窗口)。
-# 单条失败仍 fail-open(抖动不拖垮业务);任一次成功即复位。资金域出金走同步审计
-# 同事务(write_audit_sync),本就 fail-closed,不经本闸。
+# 审计闸:连续失败超阈值后写操作 fail-closed,任一次成功即复位;同步审计不经本闸
 AUDIT_FAIL_CLOSED_THRESHOLD = 10
 _audit_consecutive_failures = 0
 
@@ -56,8 +48,7 @@ def audit_gate_open() -> bool:
 
 
 async def audit_probe_ok() -> bool:
-    """半开探针:闸门关闭期间用一次 SELECT 1 探活;通了即复位放行(自愈),不通继续 503。
-    被拦的写请求本身不再产生审计写(不推进计数),没有探针闸门会永久卡死。"""
+    """半开探针:闸门关闭期间 SELECT 1 探活,通了即复位放行,不通继续 503。"""
     try:
         async with get_sessionmaker()() as session:
             await session.execute(text("SELECT 1"))
@@ -78,13 +69,13 @@ class AuditLog(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     actor_type: Mapped[str] = mapped_column(String(16))  # user / admin / system / anonymous
     actor_id: Mapped[str | None] = mapped_column(String(64))
-    # action/target 由请求路径拼出,长度不可控:入库前一律按列宽截断(见 _build_audit_row)
+    # action/target 入库前按列宽截断(_build_audit_row)
     action: Mapped[str] = mapped_column(String(ACTION_MAX_LENGTH), index=True)  # POST /api/v1/...
     target: Mapped[str | None] = mapped_column(String(TARGET_MAX_LENGTH))  # 如 instance:uuid
     ip: Mapped[str | None] = mapped_column(INET)
     result: Mapped[int]  # HTTP 状态码
     detail: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    # 与结构化日志/响应头 X-Request-ID 同一值:没有它,审计行与那次请求的日志之间无键可连
+    # 与结构化日志/响应头 X-Request-ID 同一值
     request_id: Mapped[str | None] = mapped_column(String(REQUEST_ID_MAX_LENGTH))
     user_agent: Mapped[str | None] = mapped_column(String(USER_AGENT_MAX_LENGTH))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), index=True)
@@ -99,10 +90,8 @@ class AuditActor:
 
 
 class AuditMiddleware:
-    """纯 ASGI 实现(对齐 ObservabilityMiddleware),不走 BaseHTTPMiddleware:
-    它会整段缓冲流式响应(强制审计的 CSV 导出),且有 anyio 任务/取消语义差异。
-    响应头落定(http.response.start)即按状态码落审计;
-    连响应都没构造出来的异常按 500 留痕。"""
+    """纯 ASGI 中间件(不走 BaseHTTPMiddleware,不缓冲流式响应):响应头落定即按状态码落审计,
+    未构造出响应的异常按 500 留痕。"""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -111,12 +100,10 @@ class AuditMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        # Request(scope) 是零成本视图:state/client 与原请求共享同一 scope
         request = Request(scope)
         status_holder = {"status": 500}
 
-        # 审计闸:连续失败超阈值时写操作 fail-closed(读/基础设施路径不受影响);
-        # 关闸态先探活,通了即复位放行(自愈),避免「被拦请求不写审计→永不复位」死锁
+        # 审计闸:关闸态先探活,通了即复位放行
         if (
             request.method in AUDIT_METHODS
             and not request.url.path.startswith(AUDIT_EXCLUDE_PREFIXES)
@@ -131,16 +118,13 @@ class AuditMiddleware:
         async def send_capture(message: Message) -> None:
             if message["type"] == "http.response.start":
                 status_holder["status"] = message["status"]
-                # request_id 只在这里抄得到:AuditMiddleware 注册在 Observability 之外
-                # (add_middleware 前插),它的 finally 跑在 Observability 解绑 contextvar
-                # **之后**;而响应头此刻已由内层 Observability 填好同一个值
+                # request_id 从响应头抄(本中间件在 Observability 外层,contextvar 此时已解绑)
                 request.state.audit_request_id = Headers(scope=message).get("x-request-id")
             await send(message)
 
         try:
             await self.app(scope, receive, send_capture)
         finally:
-            # 未捕获异常已被内层 Uniform500Middleware 渲成 500 响应,到这里按状态码落行
             await _write_audit_row(request, status_holder["status"])
 
 
@@ -149,18 +133,12 @@ def _clip(value: str | None, limit: int) -> str | None:
 
 
 def _audit_request_id(request: Request) -> str | None:
-    """审计行的 request_id:中间件路径由 send_capture 从响应头抄下(见 AuditMiddleware);
-    资金域同步审计在处理函数内调用,contextvar 还绑着,直接读得到。"""
+    """审计行的 request_id:中间件路径从响应头抄,同步审计路径读 contextvar。"""
     return getattr(request.state, "audit_request_id", None) or current_request_id()
 
 
 def _build_audit_row(request: Request, result: int) -> AuditLog:
-    """审计行的单一定义点(异步独立事务与资金域同步事务两条写路径共用)。
-
-    action/target/user_agent 一律按列宽截断:三者都由请求侧决定长度,超宽会让 INSERT 抛
-    StringDataRightTruncation —— 那既丢了这一行,又推进 fail-closed 闸的连续失败计数,
-    任何人都能用一条超长 URL 把写操作打成 503。
-    """
+    """审计行的单一定义点(两条写路径共用);action/target/user_agent 按列宽截断。"""
     actor: AuditActor | None = getattr(request.state, "audit_actor", None)
     path = request.url.path
     action_prefix = "admin." if path.startswith("/api/admin/") else ""
@@ -178,7 +156,7 @@ def _build_audit_row(request: Request, result: int) -> AuditLog:
 
 
 async def _write_audit_row(request: Request, result: int) -> None:
-    # 默认只审计写操作;敏感读端点显式调 mark_audited_read 后也落一行
+    # 默认只审计写操作;敏感读端点显式 mark_audited_read 后也落一行
     if request.method not in AUDIT_METHODS and not getattr(request.state, "audit_force", False):
         return
     if getattr(request.state, "audit_synced", False):
@@ -192,8 +170,7 @@ async def _write_audit_row(request: Request, result: int) -> None:
             await session.commit()
         reset_audit_gate()
     except Exception:
-        # 审计失败不得影响业务响应,但必须可告警(失败即留痕缺口);
-        # 连续失败累计进 fail-closed 闸(见 AuditMiddleware 的审计闸)
+        # 审计失败不影响业务响应;连续失败累计进审计闸
         global _audit_consecutive_failures
         _audit_consecutive_failures += 1
         AUDIT_WRITE_FAILED_TOTAL.inc()
@@ -201,11 +178,7 @@ async def _write_audit_row(request: Request, result: int) -> None:
 
 
 async def write_audit_sync(request: Request, session: AsyncSession, *, result: int = 200) -> None:
-    """资金域关键动作的同步审计:与业务同一事务写入(审计失败即业务失败回滚)。
-
-    在业务 service 的最终 commit 前调用(经 service 的 audit_writer 钩子传入);
-    写后置 audit_synced 标志,中间件的通用审计行跳过本请求,避免双写。
-    """
+    """资金域同步审计:与业务同事务写入,在最终 commit 前调用;写后置 audit_synced,中间件跳过。"""
     session.add(_build_audit_row(request, result))
     request.state.audit_synced = True
 

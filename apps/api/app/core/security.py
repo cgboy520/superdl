@@ -16,23 +16,22 @@ TokenScope = Literal["user", "admin"]
 # access/refresh 之外:mfa_setup(绑定票 10min)/mfa_ticket(登录二要素票 5min)
 TokenType = Literal["access", "refresh", "mfa_setup", "mfa_ticket"]
 
-# bcrypt 只认前 72 字节,超长会在哈希层抛错;schema 的 max_length 按字符计,
-# 中文等多字节口令必须再按字节数拦一道(用户端与管理端共用)
+# bcrypt 只认前 72 字节,口令须按字节数再拦一道
 PASSWORD_MAX_BYTES = 72
 
 
 def check_password_bytes(plain: str) -> None:
-    """哈希前按字节数拦截超长口令,否则 bcrypt 5.x 在哈希层抛 ValueError 变 500。"""
+    """哈希前按字节数拦截超长口令。"""
     if len(plain.encode()) > PASSWORD_MAX_BYTES:
         raise ValueError("密码过长:UTF-8 编码后不得超过 72 字节")
 
 
 def hash_password_sync(plain: str) -> str:
-    """同步版本:只给模块级常量(如时序拉平用的假哈希)用,请求路径一律用异步版。"""
+    """同步版本,只给模块级常量用;请求路径用异步版。"""
     return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
 
 
-# 不存在的账号也走一次哈希校验,拉平时间侧信道(用户端与管理端登录共用)
+# 不存在的账号也走一次哈希校验(拉平时序)
 DUMMY_PASSWORD_HASH = hash_password_sync("dummy-timing-equalizer")
 
 
@@ -43,8 +42,7 @@ def verify_password_sync(plain: str, hashed: str) -> bool:
         return False
 
 
-# bcrypt 单次 ~200ms:必须出让线程池,且并发数取固定小上限(k8s limit 下 os.cpu_count
-# 不可信),撞库/扫号流量排队而非并行抢 CPU,防登录接口被打成全站 DoS
+# bcrypt 专属线程池,并发数取固定小上限
 _BCRYPT_MAX_PARALLEL = 4
 _bcrypt_permits = asyncio.Semaphore(_BCRYPT_MAX_PARALLEL)
 
@@ -74,9 +72,7 @@ def create_token(
     iat: datetime | None = None,
     ttl_seconds: int | None = None,
 ) -> str:
-    """签发 JWT。jti/iat 仅由 refresh 轮换的宽限重放路径显式传入:
-    同一载荷 + 同一密钥的重编码是确定性的,重放才能拿回首次签发的同一对 token。
-    ttl_seconds 仅 mfa_* 短票显式传入;access/refresh 走全局配置。"""
+    """签发 JWT。jti/iat 仅 refresh 宽限重放路径传入;ttl_seconds 仅 mfa_* 短票传入。"""
     settings = get_settings()
     if ttl_seconds is not None:
         ttl = ttl_seconds
@@ -108,7 +104,7 @@ def decode_token(
     expected_type: TokenType = "access",
     leeway_seconds: int = 0,
 ) -> dict[str, Any]:
-    """leeway_seconds:exp 校验宽限(管理端续期用——刚过期几分钟内的 token 可换发新 token)。"""
+    """leeway_seconds:exp 校验宽限(管理端续期用)。"""
     settings = get_settings()
     try:
         payload = jwt.decode(

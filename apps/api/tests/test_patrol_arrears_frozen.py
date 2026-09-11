@@ -1,9 +1,4 @@
-"""余额巡检对「渠道冲正冻结」钱包的判据:一律走可用余额(balance − frozen)。
-
-它挂了说明:被渠道冲正(信用卡拒付/商户后台退款)的账号裸余额还挂着钱,巡检就当他
-还买得起算力——在跑的实例不停机、已冻结的实例还被解冻取消回收倒计时,而结算侧
-`allow_frozen=True` 一路照扣,冲正金额全变成白送的 GPU 时。
-"""
+"""余额巡检对「渠道冲正冻结」钱包一律走可用余额(balance − frozen)。"""
 
 from datetime import timedelta
 from decimal import Decimal
@@ -23,7 +18,7 @@ pytestmark = pytest.mark.usefixtures("fake")
 
 
 async def _freeze(sm, user_id: int, amount: str) -> None:
-    """等额冻结(等价 payment_service.handle_callback 收到已入账订单的冲正通知)。"""
+    """等额冻结(等价收到已入账订单的冲正通知)。"""
     async with sm() as session:
         await wallet.freeze(
             session, user_id, Decimal(amount), ref_id="ord-reversed", remark="渠道冲正冻结"
@@ -50,30 +45,24 @@ async def _drive_to_frozen(client, sm, fake) -> tuple[dict, str, int]:
 
 class TestFrozenWalletArrears:
     async def test_fully_frozen_wallet_stops_running_instance(self, client, sm, fake):
-        """裸余额 100 但全额冻结:实例必须被停机。
-
-        挂了 = 冲正后的账号继续跑 GPU(结算照扣、可用余额早已 ≤ 0),直到人工核销。
-        """
+        """裸余额 100 但全额冻结:实例停机。"""
         headers, uuid, user_id = await provision_running(client, sm, fake)
         await _freeze(sm, user_id, "100.00")
 
         counts = await balance_patrol(sm)
         assert counts["stopped"] == 1
         assert (await get_instance(client, headers, uuid))["status"] == "stopping"
-        # 判据是可用余额而非裸余额:冻结不动 balance,钱还挂在账上
+        # 冻结不动 balance
         w = await _wallet_of(sm, user_id)
         assert w.balance == Decimal("100.00") and w.frozen == Decimal("100.00")
-        # 停机边留痕(结算据此停费)
+        # 停机边留痕
         events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
             "items"
         ]
         assert events[0]["reason"] == "arrears_stop"
 
     async def test_fully_frozen_wallet_does_not_unfreeze_instance(self, client, sm, fake):
-        """已冻结实例遇上「裸余额 > 0 但全额冻结」:不解冻,回收倒计时照走到底。
-
-        挂了 = 冲正金额把实例从回收队列里救回来,等于用一笔正在被追回的充值续命。
-        """
+        """已冻结实例遇上「裸余额 > 0 但全额冻结」:不解冻,回收倒计时照走。"""
         headers, uuid, _user_id = await _drive_to_frozen(client, sm, fake)
 
         counts = await balance_patrol(sm)
@@ -82,7 +71,7 @@ class TestFrozenWalletArrears:
         assert data["status"] == "frozen"
         assert data["frozen_deadline"] is not None
 
-        # 倒计时没被取消:到期照常回收
+        # 到期照常回收
         async with sm() as session:
             await session.execute(
                 update(Instance)
@@ -94,10 +83,7 @@ class TestFrozenWalletArrears:
         assert (await get_instance(client, headers, uuid))["status"] == "releasing"
 
     async def test_released_freeze_unfreezes_instance(self, client, sm, fake):
-        """对照:人工核销解冻后可用余额回正,实例照常解冻回 stopped。
-
-        挂了 = 判据从「可用余额」滑成了「永不解冻」,核销完的用户开不了机。
-        """
+        """人工核销解冻后可用余额回正,实例解冻回 stopped。"""
         headers, uuid, user_id = await _drive_to_frozen(client, sm, fake)
         async with sm() as session:
             await wallet.release_freeze(session, user_id, Decimal("100.00"))
@@ -109,10 +95,7 @@ class TestFrozenWalletArrears:
         assert data["frozen_deadline"] is None
 
     async def test_partial_freeze_warns_on_available_and_keeps_running(self, client, sm, fake):
-        """部分冻结仍有可用额度:不停机,但预警按可用余额算(裸余额算会漏掉预警)。
-
-        挂了 = 要么把还买得起算力的用户误停机,要么预警对着一笔已被冻结的钱报「还能跑很久」。
-        """
+        """部分冻结仍有可用额度:不停机,预警按可用余额算。"""
         headers, uuid, user_id = await provision_running(client, sm, fake)
         # 100 − 70 = 30 可用,单价 1.68/h ≈ 17.9h < 默认预警阈值 24h
         await _freeze(sm, user_id, "70.00")

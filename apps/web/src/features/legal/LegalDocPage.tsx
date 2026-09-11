@@ -1,5 +1,4 @@
-/** 法务文档页:从 GET /api/v1/legal/{doc_key} 拉取当前 published 版渲染。
- * en-US 缺失时服务端回落 zh-CN(fallback=true),顶部给一行提示。 */
+/** 法务文档页:GET /api/v1/legal/{doc_key} 当前 published 版;en-US 缺失服务端回落 zh-CN(fallback=true),顶部一行提示。 */
 
 import { fontSize, formatDateTime } from "@superdl/ui";
 import { DataErrorAlert, LegalMarkdown, PageContainer } from "@superdl/ui/components";
@@ -17,7 +16,7 @@ export function LegalDocPage({ docKey }: { docKey: LegalDocKey }) {
   const { t, i18n } = useTranslation();
   const lang = i18n.language.startsWith("en") ? "en-US" : "zh-CN";
   const { data, isLoading, isError, refetch } = useLegalDoc(docKey, lang);
-  // 静态 t() 调用:i18n extract 只识别字面量键
+  // 静态 t() 调用(extract 只识别字面量键)
   const links = [
     { key: "terms", to: "/legal/terms", label: t("legal.docTerms") },
     { key: "privacy", to: "/legal/privacy", label: t("legal.docPrivacy") },

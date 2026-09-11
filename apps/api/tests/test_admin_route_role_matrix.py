@@ -1,12 +1,5 @@
-"""管理端 route×role 鉴权矩阵扫描。
-
-adminapi 端点表从 app.openapi() 自动收集;矩阵在本文件显式声明 ——
-新增端点未登记即红(收集比对失败),角色门变更未过评审即红(行为断言失败)。
-
-行为断言(每端点 × 每角色):匿名无 token 时 anon 端点不得 403、其余一律 401;已认证角色
-下 admin 恒许、白名单角色不得 401/403(业务层 404/422 与鉴权无关)、非白名单一律 403。
-token 直接铸造不经登录;MFA 绑定与登录链路由 test_admin_mfa.py 覆盖。
-"""
+"""管理端 route×role 鉴权矩阵:端点表从 app.openapi() 收集,矩阵在本文件声明,双向比对。
+匿名:anon 端点不得 403、其余 401;已认证:admin 恒许、白名单角色不得 401/403、其余 403。"""
 
 import re
 
@@ -73,9 +66,7 @@ MATRIX: dict[str, str | frozenset[str]] = {
     "GET /api/admin/v1/instances/{uuid}/events": _ANY_READ,
     "POST /api/admin/v1/instances/{uuid}/force-stop": _OPS,
     "POST /api/admin/v1/instances/{uuid}/preempt": _OPS,
-    # 抬头/邮箱是自然人身份信息:读权限收到 finance(与 issue/reject 同档),
-    # readonly 与 ops 一并摘除 —— readonly 在租户页本就不许 reveal 实名,
-    # 从发票 CSV 拿到同一批身份数据是同一件事的绕道
+    # 发票读权限收到 finance(与 issue/reject 同档)
     "GET /api/admin/v1/invoices": _FIN,
     "GET /api/admin/v1/invoices/export": _FIN,
     "POST /api/admin/v1/invoices/{invoice_id}/issue": _FIN,
@@ -96,8 +87,7 @@ MATRIX: dict[str, str | frozenset[str]] = {
     "GET /api/admin/v1/nodes": _OPS_RO,
     "GET /api/admin/v1/nodes/port-pool": _OPS_RO,
     "POST /api/admin/v1/nodes/{node_name}/cordon": _OPS,
-    # 退役与 cordon / force-stop 同档:都是运维对集群资源的处置动作,
-    # 不可逆性由必填 reason + 审计留痕承担,不由角色门槛承担
+    # 退役与 cordon / force-stop 同档
     "POST /api/admin/v1/nodes/{node_name}/decommission": _OPS,
     "GET /api/admin/v1/nodes/{node_name}/metrics": _OPS_RO,
     "POST /api/admin/v1/nodes/{node_name}/uncordon": _OPS,
@@ -147,7 +137,7 @@ _ROLES = ("readonly", "ops", "finance", "admin")
 
 
 def _collect_admin_endpoints() -> set[str]:
-    """从 OpenAPI 收集管理端端点表(与路由注册同一事实源)。"""
+    """从 OpenAPI 收集管理端端点表。"""
     from app.main import create_app
 
     spec = create_app().openapi()
@@ -171,7 +161,7 @@ def test_matrix_matches_openapi_table() -> None:
 
 
 def _sample_url(path: str) -> str:
-    """路径参数替换为样例值(不存在实体:业务 404/422 均可,鉴权结论不受影响)。"""
+    """路径参数替换为样例值。"""
 
     def repl(m: re.Match[str]) -> str:
         name = m.group(1)
@@ -189,9 +179,7 @@ def _sample_url(path: str) -> str:
 
 
 async def _mint_admin_headers(sm: async_sessionmaker[AsyncSession], role: str) -> dict[str, str]:
-    """直接落 AdminUser 行 + 铸造 admin audience token(跳过登录的 bcrypt 成本;
-    登录/MFA 链路本身由 test_admin_mfa.py 覆盖)。幂等:logout 端点会 bump
-    token_version 吊销已铸 token,同角色重铸须取已有行的当前 ver。"""
+    """直接落 AdminUser 行 + 铸造 admin audience token;同角色重铸取已有行的当前 ver。"""
     async with sm() as session:
         admin = (
             await session.execute(select(AdminUser).where(AdminUser.username == f"matrix-{role}"))
@@ -210,11 +198,7 @@ async def _mint_admin_headers(sm: async_sessionmaker[AsyncSession], role: str) -
 async def test_endpoint_role_gate(
     client: AsyncClient, sm: async_sessionmaker[AsyncSession]
 ) -> None:
-    """整张矩阵一趟跑完,失败汇总后一次性报出。
-
-    逐端点参数化会把「建四个管理员 + 全表 TRUNCATE」的固定开销乘上端点数,而失败信息
-    本身已带端点名;汇总还有个好处:改错一处角色门时一次看到全部受影响端点,不是修一个红一个。
-    """
+    """整张矩阵一趟跑完,失败汇总后一次性报出。"""
     headers_by_role = {role: await _mint_admin_headers(sm, role) for role in _ROLES}
 
     async def call(method: str, url: str, headers: dict[str, str] | None) -> int:
@@ -252,7 +236,7 @@ async def test_endpoint_role_gate(
             elif status != 403:
                 failures.append(f"{role} 应被 403 拦截:{endpoint} -> {status}")
 
-        # 登出即吊销(token_version+1):四个角色的 token 都被这条端点作废,重铸供后续端点用
+        # 登出吊销全部 token,重铸供后续端点用
         if endpoint == "POST /api/admin/v1/auth/logout":
             headers_by_role = {role: await _mint_admin_headers(sm, role) for role in _ROLES}
 

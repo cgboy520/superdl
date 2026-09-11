@@ -1,7 +1,4 @@
-"""实例状态迁移原语(由 service.py 门面再导出):
-
-校验 + 乐观锁更新 + 同事务落 instance_events + 迁移监听器(billing 尾账注册在此)。
-"""
+"""实例状态迁移原语(由 service.py 再导出):校验 + 乐观锁更新 + 落 instance_events + 迁移监听器。"""
 
 from collections.abc import Awaitable, Callable
 from typing import Any, cast
@@ -14,7 +11,7 @@ from app.core.timeutil import now_utc
 from app.modules.orchestrator.models import Instance, InstanceEvent
 from app.modules.orchestrator.statemachine import validate_transition
 
-# 迁移监听器:billing 注册尾账/计费边处理,与状态迁移同事务
+# 迁移监听器(billing 在此注册尾账),与状态迁移同事务
 TransitionListener = Callable[[AsyncSession, Instance, InstanceEvent], Awaitable[None]]
 _transition_listeners: list[TransitionListener] = []
 
@@ -32,7 +29,7 @@ async def transition(
     actor: str,
     metadata: dict[str, Any] | None = None,
 ) -> InstanceEvent:
-    """校验 + 乐观锁更新 + 落事件 + 触发监听器。不 commit,由调用方控制事务。"""
+    """校验 + 乐观锁更新 + 落事件 + 触发监听器;不 commit。"""
     from_status = instance.status
     validate_transition(from_status, to_status)
     result = cast(

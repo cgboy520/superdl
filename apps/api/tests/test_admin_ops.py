@@ -109,8 +109,7 @@ class TestAdjustments:
         assert w["balance"] == "100.00"  # 驳回不动账
 
     async def test_idempotency_scope_and_fingerprint(self, client, sm, fake):
-        """幂等键加固:同键同体重放 → replay;同键异体 → 409 指纹不符;
-        同键同体跨租户 → 各开各的单(作用域含 user_id,弱键跨租户不误判重放)。"""
+        """同键同体重放 → replay;同键异体 → 409;同键同体跨租户 → 各开各的单。"""
         _h1, _u1, user1 = await provision_running(client, sm, fake)
         _h2, u2id, _k2 = await create_user_with_key(client, "13900000141")
         finance = await admin_headers(sm, client, role="finance", username="fin-idem")
@@ -137,7 +136,7 @@ class TestAdjustments:
         )
         assert r3.status_code == 409
         assert r3.json()["message_key"] == "common.idempotencyKeyMismatch"
-        # 同键同体跨租户 → 新单(作用域 (发起人,租户,键))
+        # 同键同体跨租户 → 新单
         r4 = await client.post(
             "/api/admin/v1/adjustments",
             json={**body, "user_id": u2id},
@@ -187,10 +186,7 @@ class TestAdjustments:
         assert len(entries) == 1
 
     async def test_reviewer_created_after_adjustment_rejected(self, client, sm, fake):
-        """防自建第二账号绕双人复核:复核人必须是调账发起前已存在的账号。
-
-        挂了 = 单个 admin 发起调账后自建新账号复核,双人制衡形同虚设。
-        """
+        """复核人必须是调账发起前已存在的账号。"""
         _headers, _uuid, user_id = await provision_running(client, sm, fake)
         fin_a = await admin_headers(sm, client, role="finance", username="fin-late-a")
         resp = await client.post(
@@ -228,7 +224,7 @@ class TestAdjustments:
         assert resp.json()["status"] == "approved"
 
     async def test_adjustment_amount_strict_decimal(self, client, sm, fake):
-        """调账金额契约层严格十进制:科学计数法/超 2 位小数/非数字一律 422,不进服务层。"""
+        """调账金额严格十进制:科学计数法/超 2 位小数/非数字一律 422。"""
         _headers, _uuid, user_id = await provision_running(client, sm, fake)
         fin = await admin_headers(sm, client, role="finance", username="fin-strict")
         for bad in ("1e2", "1E-3", "10.005", "abc", "1,000.00", "10.", ".5", "--10.00", ""):
@@ -249,11 +245,8 @@ class TestAdjustments:
 
 class TestTenantAggregations:
     async def test_tenant_rows_carry_own_aggregates(self, client, sm, fake):
-        """租户列表每行的余额/累计消费/实例数是该租户自己的聚合值,手机号只回掩码,
-        无钱包/无消费的租户金额也按 2 位小数字符串出参。
-
-        挂了 = 按 user 分组的聚合键值错位(客服看到别人的账),或缺省金额没走 as_amount。
-        """
+        """租户列表每行的余额/累计消费/实例数按租户聚合,手机号只回掩码,
+        缺省金额按 2 位小数字符串出参。"""
         from app.modules.billing import service as billing_service
 
         _headers, _uuid, id1 = await provision_running(client, sm, fake, "13600000061")
@@ -292,7 +285,7 @@ class TestNodesAndReports:
 
     async def test_oversell_report(self, client, sm, fake):
         _headers, _uuid, _user_id = await provision_running(client, sm, fake)  # hami 池 50% × 1
-        # 报表读台账(node_specs):先跑一轮巡检把 fake 节点写进台账(等价真实环境 60s 巡检)
+        # 先跑一轮巡检把 fake 节点写进台账(node_specs)
         from app.modules.nodes.patrol import node_spec_patrol
 
         await node_spec_patrol(sm)
@@ -303,7 +296,7 @@ class TestNodesAndReports:
         assert hami["oversell_ratio"] == round(0.5 / 32, 3)
 
     async def test_oversell_report_pool_scoped_utilization(self, client, sm, fake):
-        """利用率按池加权聚合;无数据的池必须是 null,不得用集群均值冒充。"""
+        """利用率按池加权聚合;无数据的池为 null。"""
         from app.modules.metering.models import UsageHourly
         from app.modules.nodes.patrol import node_spec_patrol
         from app.modules.orchestrator.models import Instance
@@ -387,8 +380,7 @@ class TestOutboxDead:
 
 class TestRevenueReport:
     async def test_today_revenue_and_signups(self, client: AsyncClient, sm):
-        """营收口径 = 账单归属期(bills_hourly.hour_start),不是 ledger 入账时间。
-        tz_offset 缺省 480(东八区):UTC 16:00–24:00 的账归北京次日,不在「今日」。"""
+        """营收按账单归属期(bills_hourly.hour_start)计;tz_offset 缺省 480。"""
         from app.modules.billing.models import BillHourly
 
         data = await register(client, "13600000043")
@@ -456,16 +448,12 @@ class TestAnnouncement:
     async def test_publish_bulk_insert_skips_frozen(
         self, client: AsyncClient, sm, monkeypatch: pytest.MonkeyPatch
     ):
-        """群发是批量 INSERT(单事务 ⌈N/1000⌉ 条语句),且只触达 active 用户。
-
-        改回逐用户 INSERT...RETURNING 的 N+1 写法时,本用例经 monkeypatch 直接失败。
-        """
+        """群发是批量 INSERT(单事务 ⌈N/1000⌉ 条语句),只触达 active 用户。"""
         from app.modules.account import service as account_service
         from app.modules.notify import service as notify_service
 
         async def _no_per_user_notify(session, user_id, *args, **kwargs):
-            # 只拦逐用户通知;平台告警流(user_id=None)放行——admin_headers 的
-            # 首登 TOTP 绑定会经它上告警,与公告群发无关
+            # 只拦逐用户通知;平台告警流(user_id=None)放行
             if user_id is not None:
                 raise AssertionError("公告群发不得逐用户调用 notify()")
 
@@ -498,7 +486,7 @@ class TestAnnouncement:
 
 
 class TestTenantBillingDrilldown:
-    """账单争议处理:管理端必须能看到任一租户的账单明细与资金流水。"""
+    """管理端可看任一租户的账单明细与资金流水。"""
 
     async def test_ledger_pagination(self, client, sm):
         from decimal import Decimal
@@ -529,8 +517,7 @@ class TestTenantBillingDrilldown:
 
 class TestFreezeStopsInstances:
     async def test_freeze_stops_running_instances(self, client, sm, fake):
-        """封禁必须同时停机、停计费(计费主链路不看用户状态,只改 status
-        + 撤 token 的话被封账号继续跑、继续扣费)。"""
+        """封禁同时停机、停计费。"""
         h = await admin_headers(sm, client)
         user_headers, uuid, user_id = await provision_running(client, sm, fake, "13600000090")
 
@@ -541,7 +528,7 @@ class TestFreezeStopsInstances:
         )
         assert resp.status_code == 200, resp.text
         assert resp.json()["status"] == "frozen"
-        # 回显停掉的 running 台数,前端据此提示影响面
+        # 回显停掉的 running 台数
         assert resp.json()["instances_stopped"] == 1
         # 冻结即刻生效:用户端凭据被拒
         assert (await client.get("/api/v1/me", headers=user_headers)).status_code == 403
@@ -558,17 +545,17 @@ class TestFreezeStopsInstances:
             )
         assert len(tasks) == 1
 
-        # 用户端此刻已经登不上,用管理端列表核对状态
+        # 用管理端列表核对状态
         listed = (await client.get("/api/admin/v1/instances", headers=h)).json()["items"]
         assert [i["status"] for i in listed if i["uuid"] == uuid] == ["stopping"]
         await drain(sm)
         await reconcile_once(sm)
         listed = (await client.get("/api/admin/v1/instances", headers=h)).json()["items"]
-        # 计费边(running→stopping→stopped)已闭合,后续小时不再产生账单
+        # 计费边(running→stopping→stopped)已闭合
         assert [i["status"] for i in listed if i["uuid"] == uuid] == ["stopped"]
 
     async def test_unfreeze_does_not_auto_start(self, client, sm, fake):
-        """解封不自动开机:解封即批量拉起会立刻又欠费停机。"""
+        """解封不自动开机。"""
         h = await admin_headers(sm, client)
         _uh, uuid, user_id = await provision_running(client, sm, fake, "13600000091")
         await client.post(
@@ -586,7 +573,7 @@ class TestFreezeStopsInstances:
 
 
 class TestAdminSearch:
-    """客服与财务的第一个日常动作:按手机号找人、按订单号找单、按节点找实例。"""
+    """按手机号找人、按订单号找单、按节点找实例。"""
 
     async def test_tenant_lookup_by_phone(self, client, sm, fake):
         h = await admin_headers(sm, client)
@@ -597,13 +584,13 @@ class TestAdminSearch:
             await client.get("/api/admin/v1/tenants", params={"q": "13611110001"}, headers=h)
         ).json()["items"]
         assert [t["phone_masked"] for t in exact] == ["136****0001"]
-        # 只记得后几位也能找到(客服常见情形)
+        # 后缀命中
         resp = await client.get("/api/admin/v1/tenants", params={"q": "0002"}, headers=h)
         suffix = resp.json()["items"]
         assert [t["phone_masked"] for t in suffix] == ["136****0002"]
 
     async def test_tenant_search_escapes_like_metachars(self, client, sm, fake):
-        """q 未转义时一个 % 即拖全表:元字符按字面匹配,正常后缀检索行为不变。"""
+        """q 的 LIKE 元字符按字面匹配,后缀检索行为不变。"""
         h = await admin_headers(sm, client)
         await register(client, "13611110001")
 
@@ -644,7 +631,7 @@ class TestAdminSearch:
         assert len(asc_ids) == len(set(asc_ids))
 
     async def test_tenant_search_is_audited(self, client, sm, fake):
-        """按号码检索是敏感读:默认只审计写操作,这里必须显式留痕。"""
+        """按号码检索是敏感读,显式落审计。"""
         from app.core.audit import AuditLog
 
         h = await admin_headers(sm, client)
@@ -664,7 +651,7 @@ class TestAdminSearch:
         assert rows[0].target == "tenant-search:136****0003"  # 审计里也只留掩码
 
     async def test_plain_tenant_list_is_not_audited(self, client, sm, fake):
-        """不带查询的普通列表不落审计,避免写放大 + 表膨胀。"""
+        """不带查询的普通列表不落审计。"""
         from app.core.audit import AuditLog
 
         h = await admin_headers(sm, client)
@@ -690,7 +677,7 @@ class TestAdminSearch:
             )
         ).json()["items"]
         assert [i["uuid"] for i in by_node] == [uuid]
-        # 「这台 GPU 是谁的」:管理端实例视图带租户与节点
+        # 管理端实例视图带租户与节点
         assert by_node[0]["user_id"] == user_id
         assert by_node[0]["node_name"] == "fake-node-1"
         by_uuid = (
@@ -725,7 +712,7 @@ class TestAdminSearch:
 
 class TestTenantLookupById:
     async def test_numeric_q_hits_user_id(self, client, sm, fake):
-        """订单/调账/实例全以 user_id 指代租户:纯数字 q 必须能按 id 精确命中(排在最前)。"""
+        """纯数字 q 按 user_id 精确命中(排在最前)。"""
         h = await admin_headers(sm, client)
         data = await register(client, "13633330003")
         uid = data["user"]["id"]
@@ -733,7 +720,7 @@ class TestTenantLookupById:
         resp = await client.get("/api/admin/v1/tenants", params={"q": str(uid)}, headers=h)
         rows = resp.json()["items"]
         assert rows[0]["id"] == uid
-        # id 无命中时回落手机号后缀语义,不报错
+        # id 无命中时回落手机号后缀
         assert (
             await client.get("/api/admin/v1/tenants", params={"q": "99999999"}, headers=h)
         ).json()["items"] == []
@@ -762,7 +749,7 @@ class TestAdjustContext:
         assert resp.status_code == 404
 
     async def test_create_unknown_user_rejected(self, client, sm, fake):
-        """钱包会为任意 user_id 凭空建行:发起调账必须先拦住不存在的租户。"""
+        """对不存在的租户发起调账 → 404。"""
         fin = await admin_headers(sm, client, role="finance", username="fin-ghost")
         resp = await client.post(
             "/api/admin/v1/adjustments",
@@ -772,7 +759,7 @@ class TestAdjustContext:
         assert resp.status_code == 404
 
     async def test_create_over_cap_rejected(self, client, sm, fake):
-        """单笔绝对值上限(ADJUST_MAX_ABS):防手滑多敲零,超出走对公/线下流程。"""
+        """单笔绝对值上限 ADJUST_MAX_ABS。"""
         _headers, user_id = await user_headers_with_id(client, "13900000772")
         fin = await admin_headers(sm, client, role="finance", username="fin-cap")
 
@@ -795,7 +782,7 @@ class TestAdjustContext:
 
 class TestOverview:
     async def test_exact_counts(self, client, sm, fake):
-        """总览聚合:精确 COUNT 口径,替代在截断列表(200/500 条)里数数。"""
+        """总览聚合按精确 COUNT。"""
         _headers, _uuid, user_id = await provision_running(client, sm, fake)
         await seed_node_spec(sm, node_name="gpu-a1", pool_label="hami", gpu_count=8, gpu_used=3)
         await seed_node_spec(
@@ -853,8 +840,7 @@ class TestOverview:
 
 class TestAuditPagination:
     async def test_bad_cursor_400(self, client, sm):
-        """非法游标 400。通用续页(下一页全是更早的行)只在
-        test_billing_flow.test_ledger_cursor_pagination 走一次全程。"""
+        """非法游标 400。"""
         ah = await admin_headers(sm, client, role="admin")
 
         resp = await client.get("/api/admin/v1/audit", params={"cursor": "!!!"}, headers=ah)
@@ -863,11 +849,10 @@ class TestAuditPagination:
 
 
 class TestTenantRealnameExposure:
-    """实名透出:全角色默认脱敏;明文查看是逐次显式动作(reveal + reason 必填,
-    readonly 不可 reveal),每次明文读按条数+事由落敏感读审计。"""
+    """实名透出:默认脱敏;reveal + reason 看明文(readonly 不可),明文读落敏感读审计。"""
 
     async def _realname_user(self, client, sm) -> int:
-        """开启安全策略 real_name_enabled 并注入恒过的假渠道,经正式提交路径落脱敏实名字段。"""
+        """开启 real_name_enabled 并注入恒过的假渠道,经正式提交路径落实名字段。"""
         from app.modules.account import service as account_service
         from app.modules.account.realname import set_realname_provider
 
@@ -888,7 +873,7 @@ class TestTenantRealnameExposure:
         return uid
 
     async def test_default_masked_for_all_roles_and_no_audit(self, client, sm, fake):
-        """默认(任意角色,含 ops/finance):姓名留姓掩名;脱敏响应不落实名读审计(防列表页写放大)。"""
+        """默认(任意角色):姓名留姓掩名;脱敏响应不落实名读审计。"""
         from app.core.audit import AuditLog
 
         uid = await self._realname_user(client, sm)
@@ -911,7 +896,7 @@ class TestTenantRealnameExposure:
         assert hits == []
 
     async def test_reveal_requires_reason(self, client, sm, fake):
-        """reveal=true 不带 reason(或过短)→ 400 校验错误,不放行明文。"""
+        """reveal=true 不带 reason(或过短)→ 400。"""
         uid = await self._realname_user(client, sm)
         ah = await admin_headers(sm, client, role="ops")
         resp = await client.get("/api/admin/v1/tenants?reveal=true", headers=ah)
@@ -921,14 +906,14 @@ class TestTenantRealnameExposure:
         assert next(t for t in rows if t["id"] == uid)["id_name"] == "张*"
 
     async def test_readonly_cannot_reveal(self, client, sm, fake):
-        """readonly 即使带 reason 也不可 reveal(403):明文权限不收口到最小角色。"""
+        """readonly 带 reason 也不可 reveal(403)。"""
         await self._realname_user(client, sm)
         ro = await admin_headers(sm, client, role="readonly")
         resp = await client.get("/api/admin/v1/tenants?reveal=true&reason=客服工单核实", headers=ro)
         assert resp.status_code == 403
 
     async def test_reveal_sees_plaintext_and_audited_with_reason(self, client, sm, fake):
-        """reveal + reason:看明文;恰好落一条敏感读审计(条数+事由,内容不进审计)。"""
+        """reveal + reason:看明文;恰好落一条敏感读审计(条数+事由)。"""
         from app.core.audit import AuditLog
 
         uid = await self._realname_user(client, sm)
@@ -973,7 +958,7 @@ class TestTenantQuotaOverride:
         assert body["max_disks"] == 1 and body["effective_max_disks"] == 1
         assert body["note"] == "防滥用限一块"
 
-        # updated_by 落库:写覆盖的管理员 id
+        # updated_by = 写覆盖的管理员 id
         from app.modules.adminapi.models import AdminUser
 
         async with sm() as session:
@@ -1001,12 +986,12 @@ class TestTenantQuotaOverride:
         body = resp.json()
         assert body["max_disks"] is None and body["effective_max_disks"] == 20
         assert body["updated_by"] is None
-        # 读端点同口径:无覆盖时回默认链的生效值
+        # 读端点:无覆盖时回默认链生效值
         got = (await client.get(f"/api/admin/v1/tenants/{user_id}/quota", headers=ah)).json()
         assert got["max_disks"] is None and got["effective_max_disks"] == 20
         await create_disk(client, headers, name="d2", size_gb=50)
 
-        # 清空操作本身也过审计(写操作中间件 + set_audit_target)
+        # 清空操作也过审计
         from app.core.audit import AuditLog
 
         async with sm() as session:
@@ -1056,13 +1041,10 @@ class TestAdminInstanceEvents:
 
 
 class TestAdminListPagination:
-    """管理端列表端点的筛选参数与分页入参。
-
-    游标续页本身是 Page 包装的通用行为,只在 test_billing_flow.test_ledger_cursor_pagination
-    走一次全程;这里只钉每个端点自己的筛选口径与 limit 是否接上。"""
+    """管理端列表端点的筛选参数与 limit。"""
 
     async def test_orders_cursor_and_day_filter(self, client, sm, fake):
-        """订单:游标走查;day=YYYY-MM-DD 只留当日单(昨日单被滤掉)。"""
+        """订单:游标走查;day=YYYY-MM-DD 只留当日单。"""
         from app.modules.billing.models import Order
 
         h = await admin_headers(sm, client, role="finance")
@@ -1078,7 +1060,7 @@ class TestAdminListPagination:
                     )
                 )
             await session.commit()
-        # 把最旧的一单改到昨天:day=today 须滤掉它,day=yesterday 只剩它
+        # 最旧的一单改到昨天
         async with sm() as session:
             oldest = (
                 await session.execute(select(Order).where(Order.order_no == "SDL-PAGE-0"))
@@ -1096,7 +1078,7 @@ class TestAdminListPagination:
             await client.get("/api/admin/v1/orders", params={"day": yesterday}, headers=h)
         ).json()["items"]
         assert [o["order_no"] for o in y_rows] == ["SDL-PAGE-0"]
-        # 非法日期格式 → 400(与对账端点同口径)
+        # 非法日期格式 → 400
         bad = await client.get("/api/admin/v1/orders", params={"day": "2026-13-99"}, headers=h)
         assert bad.status_code == 400
 

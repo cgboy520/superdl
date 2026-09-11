@@ -1,6 +1,4 @@
-/** 容器日志面板(纯展示):末 N 行 + 自动刷新开关 + 贴底跟随 + 下载。
- *  数据与 tail / 自动刷新状态由调用方持有(它们是查询参数),本组件只管滚动跟随与渲染;
- *  实例详情页与服务详情页共用。 */
+/** 容器日志面板(纯展示):末 N 行 + 自动刷新开关 + 贴底跟随 + 下载。数据与 tail / 自动刷新状态由调用方持有;实例详情页与服务详情页共用。 */
 
 import { fontSize } from "@superdl/ui";
 import { DataErrorAlert } from "@superdl/ui/components";
@@ -22,7 +20,7 @@ export function LogsPanel({
   onAutoRefresh,
   downloadName,
 }: {
-  /** 只有容器在跑(或刚停)才能读日志;为假时渲染说明,不发请求 */
+  /** 为假时渲染说明,不发请求 */
   viewable: boolean;
   lines: string[];
   truncated?: boolean;
@@ -38,7 +36,7 @@ export function LogsPanel({
   const { t } = useTranslation();
   const { token } = theme.useToken();
   const scrollRef = useRef<HTMLDivElement>(null);
-  // 贴底判定:距底 ≤40px 视为贴底;用户上滚即暂停跟随,新行计数在浮动钮上
+  // 贴底判定:距底 ≤40px;上滚即暂停跟随,新行计数在浮动钮上
   const [pinned, setPinned] = useState(true);
   const [newCount, setNewCount] = useState(0);
 
@@ -49,8 +47,7 @@ export function LogsPanel({
     setNewCount(0);
   };
 
-  // 渲染期派生(react 推荐模式,避免 effect 内级联 setState):
-  // 非贴底时新行数累计到浮动钮上;tail 档变化整体替换内容,复位到贴底跟随
+  // 渲染期派生:非贴底时新行数累计到浮动钮;tail 档变化整体替换内容并复位贴底
   const [prevLen, setPrevLen] = useState(lines.length);
   if (lines.length !== prevLen) {
     const grew = lines.length - prevLen;
@@ -65,7 +62,7 @@ export function LogsPanel({
     setNewCount(0);
   }
 
-  // 自动跟随:仅在贴底时滚到底部(纯 DOM 操作,不碰 state)
+  // 自动跟随:仅在贴底时滚到底部(纯 DOM 操作)
   useEffect(() => {
     if (!pinned) return;
     const el = scrollRef.current;

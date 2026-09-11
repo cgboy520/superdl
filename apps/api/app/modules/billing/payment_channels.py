@@ -33,7 +33,7 @@ class CallbackResult:
 
 
 class QueryResult:
-    """主动查单结果(丢回调收敛/人工补单核验的唯一事实源)。"""
+    """主动查单结果(丢回调收敛/人工补单核验的事实源)。"""
 
     def __init__(
         self,
@@ -64,9 +64,8 @@ class PaymentChannel(Protocol):
 
 class MockChannel:
     """dev/test 渠道:qr_url 为占位;回调体 {"order_no", "txn_id", "amount"}。
-
-    类级 `_channel_side` 模拟渠道侧账本,支撑查单 poller 与人工补单的测试/演示:
-    mock webhook 入账时同步记录;也可用 mark_paid() 只造"渠道已付但回调丢失"的场景。
+    类级 `_channel_side` 模拟渠道侧账本:mock webhook 入账时同步记录;
+    mark_paid() 只造「渠道已付但回调丢失」。
     """
 
     name = "mock"
@@ -95,7 +94,7 @@ class MockChannel:
                 amount=Decimal(str(data["amount"])),
                 success=bool(data.get("success", True)),
             )
-        # InvalidOperation:amount 非数值;TypeError:报文不是 JSON 对象(数组/标量)
+        # InvalidOperation:amount 非数值;TypeError:报文不是 JSON 对象
         except (ValueError, KeyError, TypeError, InvalidOperation) as exc:
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.mockCallbackParseFailed"
@@ -111,7 +110,7 @@ class MockChannel:
         return QueryResult("paid", channel_txn_id=hit[0], amount=hit[1])
 
 
-# 参与渠道构造的配置键(工厂据此做实例缓存指纹;配置变更即重建,免重启生效)
+# 参与渠道构造的配置键(实例缓存指纹;配置变更即重建)
 WECHAT_CFG_KEYS = (
     "wechat_mchid",
     "wechat_appid",
@@ -130,11 +129,8 @@ ALIPAY_CFG_KEYS = (
 
 
 class WechatChannel:
-    """微信支付 Native(扫码),APIv3。
-
-    验签仅微信支付公钥模式(PUB_KEY_ID_*):wechat_public_key 与 wechat_public_key_id 必填,
-    缺一渠道即不可用(与其余凭据缺失同一 fail-closed 路径)。
-    """
+    """微信支付 Native(扫码),APIv3。验签仅公钥模式:wechat_public_key 与
+    wechat_public_key_id 必填。"""
 
     name = "wechat"
 
@@ -171,7 +167,7 @@ class WechatChannel:
     async def create_payment(self, order: "Order") -> str:  # pragma: no cover - 需真实商户凭据
         import asyncio
 
-        # time_expire:渠道侧与本地 expires_at 同步过期(RFC3339,aware-UTC 直接序列化)
+        # time_expire:渠道侧与本地 expires_at 同步过期(RFC3339)
         code, message = await asyncio.to_thread(
             self._wxpay.pay,
             description=f"SuperDL 充值 {order.order_no}",
@@ -190,10 +186,7 @@ class WechatChannel:
         return json.loads(message)["code_url"]
 
     async def parse_callback(self, headers: dict[str, str], body: bytes) -> CallbackResult:
-        """验签 + AES-GCM 解密 + 核对商户身份。
-
-        SDK 的失败路径不都是返回值(未签名探测请求会直接抛裸 Exception),在此统一归一化。
-        """
+        """验签 + AES-GCM 解密 + 核对商户身份。SDK 的裸 Exception 在此归一化。"""
         import asyncio
         from typing import Any
 
@@ -214,12 +207,12 @@ class WechatChannel:
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackVerifyFailed"
             )
-        # 除验签外还要核对通知里的商户号/应用号确为已方;缺失即判失败,不按缺失放行。
+        # 核对通知里的商户号/应用号;缺失即判失败
         if resource.get("mchid") != self._mchid or resource.get("appid") != self._appid:
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackMerchantMismatch"
             )
-        # 缺字段显式 4xx(裸 [] 索引的 KeyError 会漏成 500,微信对非 SUCCESS 应答重试 15 次)
+        # 缺字段显式 4xx
         out_trade_no = resource.get("out_trade_no")
         transaction_id = resource.get("transaction_id")
         trade_state = resource.get("trade_state")
@@ -230,7 +223,7 @@ class WechatChannel:
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackVerifyFailed"
             )
-        # 官方验证清单:币种必须是人民币,漏校则外币通知的金额会被按 CNY 入账
+        # 币种必须是人民币
         if currency != "CNY":
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackMerchantMismatch"
@@ -299,7 +292,7 @@ class AlipayChannel:
         self._public_key = cfg["alipay_public_key"]
         self._app_id = cfg["alipay_app_id"]
         self._seller_id = cfg.get("alipay_seller_id") or ""
-        # prod 强制 seller_id:回调除验签外必须核对收款方身份,留空等于收款账号不校验
+        # prod 强制 seller_id:回调须核对收款方身份
         if get_settings().environment == "prod" and not self._seller_id:
             raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipaySellerIdRequired")
         self._notify_url = f"{get_settings().public_base_url}/api/v1/webhooks/alipay"
@@ -349,8 +342,7 @@ class AlipayChannel:
             verify_with_rsa,
         )
 
-        # 官方验签口径:剔除空值参数(parse_qsl 默认 keep_blank_values=False)。
-        # 保留空值会把官方未参与加签的空字段拼进验签串,合法通知会被误判失败。
+        # 官方验签口径:剔除空值参数
         params = dict(parse_qsl(body.decode("utf-8")))
         sign = params.pop("sign", "")
         params.pop("sign_type", None)
@@ -365,12 +357,12 @@ class AlipayChannel:
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCallbackVerifyFailed"
             )
-        # 官方通知校验清单的另外两条:app_id 必须是自己的应用,seller_id 必须是自己的收款账号
+        # app_id 与 seller_id 须为已方
         if params.get("app_id") != self._app_id:
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCallbackMerchantMismatch"
             )
-        # seller_id 缺失或不符一律拒收(当面付通知必带 seller_id;缺失即视为伪造/串号)
+        # seller_id 缺失或不符一律拒收
         if params.get("seller_id") != self._seller_id:
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCallbackMerchantMismatch"
@@ -416,7 +408,7 @@ class AlipayChannel:
                 return QueryResult("closed")
             return QueryResult("pending")
         if resp.get("sub_code") == "ACQ.TRADE_NOT_EXIST":
-            return QueryResult("pending")  # 用户未扫码,渠道侧尚无单
+            return QueryResult("pending")  # 用户未扫码
         raise AppError(
             ErrorCode.PAYMENT_CHANNEL_ERROR,
             key="billing.alipayQueryFailed",
@@ -424,14 +416,14 @@ class AlipayChannel:
         )
 
 
-# 真实渠道实例缓存:按配置指纹缓存,配置变更即重建(免重启生效)
+# 真实渠道实例缓存:按配置指纹缓存,配置变更即重建
 _real_channel_cache: dict[str, tuple[tuple[str, ...], PaymentChannel]] = {}
 
 
 async def get_channel(name: str, session: AsyncSession) -> PaymentChannel:
     settings = get_settings()
     if name == "mock":
-        # 无验签渠道只在显式开启时可用;prod 下 payment_mock 必为 false 由 Settings 校验保证
+        # 无验签渠道只在显式开启时可用;prod 下 payment_mock 必为 false(Settings 校验)
         if not settings.payment_mock:
             raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.mockDevOnly")
         return MockChannel()
@@ -445,7 +437,7 @@ async def get_channel(name: str, session: AsyncSession) -> PaymentChannel:
     cached = _real_channel_cache.get(name)
     if cached is not None and cached[0] == fingerprint:
         return cached[1]
-    # 构造函数同步解析 PEM(RSA 密钥加载是阻塞 CPU 操作),出让事件循环
+    # 构造函数同步解析 PEM,出让事件循环
     channel: PaymentChannel = await asyncio.to_thread(
         WechatChannel if name == "wechat" else AlipayChannel, cfg
     )

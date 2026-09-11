@@ -1,7 +1,4 @@
-/** 服务详情:头部(名称 / 状态 / 版本 / 操作)+ 常驻服务端点卡 + Tab
- *  `概览 / 访问密钥 / 监控 / 日志 / 版本 / 事件 / 账单 / 设置`(危险区在设置里);「更新版本」是抽屉。
- *  只有一条服务轮询(过渡态 5s、运行中 30s、已删除停),端点卡与头部同源不再另打端点查询;
- *  监控与日志打的是当前版本实例。 */
+/** 服务详情:头部(名称 / 状态 / 版本 / 操作)+ 常驻服务端点卡 + Tab `概览 / 访问密钥 / 监控 / 日志 / 版本 / 事件 / 账单 / 设置`(危险区在设置里);「更新版本」是抽屉。只有一条服务轮询(过渡态 5s、运行中 30s、已删除停);监控与日志打当前版本实例。 */
 
 import type { InstanceEventOut, InstanceOut, ServiceOut } from "@superdl/api-client";
 import {
@@ -71,7 +68,7 @@ export const SERVICE_DETAIL_TABS = [
 ] as const;
 export type ServiceDetailTab = (typeof SERVICE_DETAIL_TABS)[number];
 
-/** tab 白名单:非法值(含旧链接的 ?tab=service)回退默认 Tab,不渲染无选中态的 Tabs。 */
+/** tab 白名单:非法值(含旧链接的 ?tab=service)回默认 Tab。 */
 export function serviceDetailValidateSearch(search: Record<string, unknown>): { tab?: ServiceDetailTab } {
   const tab = search["tab"];
   return typeof tab === "string" && (SERVICE_DETAIL_TABS as readonly string[]).includes(tab)
@@ -85,12 +82,12 @@ export const Route = createFileRoute("/_console/services_/$slug")({
   component: ServiceDetail,
 });
 
-/** 概览:当前版本的容器配置回显 + 调用示例。密文 env 只显示键名(接口只回 env_secret_keys)。 */
+/** 概览:当前版本容器配置回显 + 调用示例。密文 env 只显示键名(接口只回 env_secret_keys)。 */
 function OverviewTab({ service }: { service: ServiceOut }) {
   const { t } = useTranslation();
   const c = service.container;
   const keysQ = useServiceApiKeys(service.slug, { enabled: service.require_api_key });
-  // 调用示例里的 Key 用「某把未吊销 Key 的前缀 + 省略号」占位,不拿明文(明文根本不在这儿)
+  // 调用示例里的 Key 用「某把未吊销 Key 的前缀 + 省略号」占位
   const livePrefix = (keysQ.data ?? []).find((k) => k.revoked_at == null)?.key_prefix;
   const curl = [
     `curl ${service.url}`,
@@ -112,7 +109,7 @@ function OverviewTab({ service }: { service: ServiceOut }) {
             size="small"
             column={{ xs: 1, sm: 2 }}
             items={[
-              // 镜像地址独占一行:五个单格 + 三个双格会让某一行凑不齐 column,antd 会告警
+              // 镜像地址独占一行(column 凑齐)
               { label: t("services.detail.imageLabel"), span: { xs: 1, sm: 2 }, children: c?.image_ref ?? "—" },
               { label: t("services.detail.portLabel"), children: c?.service_port ?? "—" },
               {
@@ -144,7 +141,7 @@ function OverviewTab({ service }: { service: ServiceOut }) {
               {
                 label: t("services.detail.argsLabel"),
                 span: { xs: 1, sm: 2 },
-                // 创建时是一行一个参数,这里也一行一个:join 成一串会让带空格的参数分不出边界
+                // 一行一个参数
                 children:
                   c?.container_args && c.container_args.length > 0 ? (
                     <Space orientation="vertical" size={2}>
@@ -212,7 +209,7 @@ function OverviewTab({ service }: { service: ServiceOut }) {
 function LogsTab({ service }: { service: ServiceOut }) {
   const [tail, setTail] = useState(200);
   const [autoRefresh, setAutoRefresh] = useState(true);
-  // 部署中最需要启动日志:deploying / running / unready 都可读(容器已建出即有日志)
+  // deploying / running / unready 都可读日志
   const viewable =
     service.status === "deploying" || service.status === "running" || service.status === "unready";
   const { data, error, refetch } = useServiceLogs(
@@ -239,7 +236,7 @@ function LogsTab({ service }: { service: ServiceOut }) {
 
 function EventsTab({ slug, status }: { slug: string; status: string }) {
   const queryClient = useQueryClient();
-  // 服务轮询检测到 status 迁移后失效事件查询:立即 + 3s 延迟各刷一次,覆盖事件行落库略晚的窗口
+  // 服务轮询检测到 status 迁移后失效事件查询:立即 + 3s 延迟各一次
   const prevStatus = useRef(status);
   useEffect(() => {
     if (prevStatus.current === status) return;
@@ -462,7 +459,7 @@ function ServiceDetail() {
 
       <Tabs
         activeKey={activeTab}
-        // Tab activeKey 入 URL 用 replace(ui-ux-spec §1-8):连点六个 Tab 后退一次就该回列表
+        // Tab activeKey 入 URL 用 replace(ui-ux-spec §1-8)
         onChange={(k) => goTab(k, true)}
         items={[
           { key: "overview", label: t("services.detail.tabOverview"), children: <OverviewTab service={service} /> },
@@ -503,7 +500,7 @@ function ServiceDetail() {
             label: t("services.detail.tabSettings"),
             children: (
               <SettingsTab
-                // 换服务时重置本地草稿(名称输入框)
+                // 换服务时重置本地草稿
                 key={service.slug}
                 service={service}
                 onGoKeys={() => goTab("keys", false)}

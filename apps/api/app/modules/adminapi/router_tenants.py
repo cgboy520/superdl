@@ -58,15 +58,10 @@ async def admin_list_tenants(
     reveal: bool = False,
     reason: str | None = Query(default=None, max_length=REASON_MAX_LENGTH),
 ) -> Page[TenantOut]:
-    """租户列表(游标分页)。q = 手机号(完整号码精确,短串按后缀);纯数字额外按租户 id 精确命中。
-
-    id 命中行插在首页最前,手机号后缀命中行保持原序随后。手机号只回掩码。
-    按号码/id 检索是敏感读,显式落一条审计(中间件默认只审计写操作)。
-    order = 注册先后(id)正/倒序;聚合列(余额/消费/实例数)按页拼装,不支持排序。
-
-    实名信息默认全角色脱敏;明文查看是逐次显式动作:reveal=true 且 reason 必填
-    (ops/finance;readonly 不可 reveal),每次明文读按条数+事由落审计——
-    「客服日常浏览列表」不再批量接触明文 PII。
+    """租户列表(游标分页)。q = 手机号(完整号码精确,短串按后缀);纯数字额外按租户 id 精确命中,
+    插在首页最前。手机号只回掩码;按号码/id 检索显式落一条审计。
+    order = id 正/倒序;聚合列按页拼装,不支持排序。
+    实名信息默认脱敏;reveal=true 且 reason 必填回明文(readonly 不可),每次按条数+事由落审计。
     """
     from app.modules.account import service as account_service
     from app.modules.billing import service as billing_service
@@ -80,20 +75,20 @@ async def admin_list_tenants(
     )
     users = list(page.items)
     q_digits = (q or "").strip()
-    # 纯数字额外按租户 id 精确命中(仅首页注入,翻页不重复);id 是 int32,超过 9 位的数字串跳过
+    # 纯数字额外按租户 id 精确命中(仅首页注入);id 是 int32,超过 9 位跳过
     if cursor is None and q_digits.isdigit() and len(q_digits) <= 9:
         by_id = None
         try:
             by_id = await account_service.get_user(session, int(q_digits))
         except AppError:
-            by_id = None  # id 无命中,保留手机号后缀匹配结果
+            by_id = None
         if (
             by_id is not None
             and (not status or by_id.status == status)
             and all(u.id != by_id.id for u in users)
         ):
             users.insert(0, by_id)
-    # 只聚合本页用户:三个按 user 分组的聚合都带 IN 过滤,不做全表 GROUP BY
+    # 只聚合本页用户(IN 过滤)
     page_user_ids = [u.id for u in users]
     balances = await billing_service.balances_by_user(session, page_user_ids)
     consumed = await billing_service.consumed_by_user(session, page_user_ids)
@@ -121,7 +116,7 @@ async def admin_list_tenants(
             )
         )
     if realname_hits:
-        # 明文实名的敏感读逐次留痕:落条数与事由,不落内容(内容即 PII,审计里不复制一份)
+        # 明文实名的敏感读逐次留痕:落条数与事由,不落内容
         PII_REVEAL_ROWS_TOTAL.labels(kind="tenant_realname").inc(realname_hits)
         mark_audited_read(
             request,
@@ -176,7 +171,7 @@ async def admin_tenant_bills(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[BillHourlyOut]:
-    """租户小时账单下钻(可按实例过滤;金额与用户端所见同源)。"""
+    """租户小时账单下钻(可按实例过滤)。"""
     from app.modules.billing import service as billing_service
 
     return await billing_service.hourly_bills_page(
@@ -208,7 +203,7 @@ async def _tenant_quota_out(session: AsyncSession, user_id: int) -> TenantQuotaO
 
 @router.get("/tenants/{user_id}/quota", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_get_tenant_quota(user_id: int, session: DbSession) -> TenantQuotaOut:
-    """配额覆盖现状 + 生效值(抽屉「配额」Tab 数据源)。"""
+    """配额覆盖现状 + 生效值。"""
     return await _tenant_quota_out(session, user_id)
 
 
@@ -216,7 +211,7 @@ async def admin_get_tenant_quota(user_id: int, session: DbSession) -> TenantQuot
 async def admin_set_tenant_quota(
     user_id: int, body: TenantQuotaUpdate, session: DbSession, request: Request, admin: CurrentAdmin
 ) -> TenantQuotaOut:
-    """写配额覆盖(三个数字可留空 = 该维走默认链;全空 = 清除覆盖)。note 必填,审计落前后值。"""
+    """写配额覆盖(数字留空 = 该维走默认链;全空 = 清除覆盖)。note 必填,审计落前后值。"""
     from app.modules.account import service as account_service
 
     before = await account_service.get_quota_override(session, user_id)
@@ -260,7 +255,7 @@ async def admin_set_tenant_quota(
 async def admin_adjust_context(
     user_id: int, session: DbSession, request: Request
 ) -> AdjustContextOut:
-    """调账前置上下文(只读):回显掩码手机号/当前余额/近 3 条流水。不存在 → 404。"""
+    """调账前置上下文(只读):掩码手机号/当前余额/近 3 条流水。不存在 → 404。"""
     mark_audited_read(request, f"tenant-adjust-context:{user_id}")
     return AdjustContextOut.model_validate(await service.adjust_context(session, user_id))
 
@@ -273,14 +268,13 @@ async def admin_freeze_tenant(
     from app.modules.orchestrator import service as orchestrator_service
 
     user = await account_service.admin_set_user_status(session, user_id, "frozen")
-    # 封禁同时停机:计费主链路不看用户状态,只改 status 会让被封账号的 GPU 继续跑并继续扣费。
-    # 与 status 变更同一事务提交,K8s 动作走 outbox。
+    # 封禁同时停机,与 status 变更同一事务;K8s 动作走 outbox
     stopped = await orchestrator_service.stop_all_for_user(session, user_id, reason="tenant_frozen")
     await session.commit()
     set_audit_target(
         request, f"user:{user_id}", detail={"reason": body.reason, "instances_stopped": stopped}
     )
-    # 回显停机台数:前端据此提示「已停 N 台」(creating/starting 由巡检收敛,不在此计数)
+    # 回显停机台数(creating/starting 由巡检收敛,不在此计数)
     return TenantStatusOut(id=user.id, status=user.status, instances_stopped=stopped)
 
 
@@ -292,7 +286,7 @@ async def admin_unfreeze_tenant(
     from app.modules.notify import service as notify_service
 
     user = await account_service.admin_set_user_status(session, user_id, "active")
-    # 刻意不自动开机:解封即批量拉起会立刻又欠费停机,由用户自行开机
+    # 解封不自动开机
     await notify_service.notify(
         session,
         user_id,
@@ -307,14 +301,14 @@ async def admin_unfreeze_tenant(
     return TenantStatusOut(id=user.id, status=user.status)
 
 
-# ---------- 账号注销(读 ops/finance/readonly,写仅 admin——最高危操作) ----------
+# ---------- 账号注销(读 ops/finance/readonly,写仅 admin) ----------
 
 
 @router.get("/deletion-requests", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_list_deletion_requests(
     session: DbSession, status: str | None = None
 ) -> list[AdminDeletionRequestOut]:
-    """注销申请列表(固定截断 200)。行内附执行前校验计数(实例/盘/余额)。"""
+    """注销申请列表(固定截断 200),行内附执行前校验计数。"""
     from app.modules.account import service as account_service
 
     return await account_service.admin_list_deletion_requests(session, status)
@@ -328,7 +322,7 @@ async def admin_approve_deletion(
     admin: AdminUser = require_roles(),
 ) -> AdminDeletionRequestOut:
     """执行注销:冷静期未满 409;残留实例/数据盘或余额非零 → 自动驳回 + 409(detail 清单);
-    全通过则同事务匿名化(手机号改写为随机占位串、实名清空、全撤登录态)。"""
+    全通过则同事务匿名化。"""
     from app.modules.account import service as account_service
 
     req = await account_service.approve_deletion(session, request_id, admin_id=admin.id)
@@ -348,7 +342,7 @@ async def admin_reject_deletion(
     request: Request,
     admin: AdminUser = require_roles(),
 ) -> AdminDeletionRequestOut:
-    """驳回注销申请(理由必填,不受冷静期限制);驳回后用户可重新申请。"""
+    """驳回注销申请(理由必填,不受冷静期限制)。"""
     from app.modules.account import service as account_service
 
     req = await account_service.reject_deletion(

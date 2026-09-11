@@ -1,5 +1,4 @@
-/** 法务文档 Tab:doc_key × locale 状态格 + 左编辑右预览 + 版本历史。
- * 写操作仅 admin;发布确认弹窗带与现版的行级 diff 统计(+/−)。 */
+/** 法务文档 Tab:doc_key × locale 状态格 + 左编辑右预览 + 版本历史;写仅 admin;发布确认带行级 diff 统计。 */
 
 import { adminColors, formatDateTime, legalDocStatusMap, metaOf, useApiErrorText, useFormDraft } from "@superdl/ui";
 import { HexTag, LegalMarkdown, TableErrorEmpty } from "@superdl/ui/components";
@@ -37,7 +36,7 @@ import { useAdminRole } from "../../stores/auth";
 const DOC_KEYS = ["terms", "privacy", "deletion_notice"] as const;
 const LOCALES = ["zh-CN", "en-US"] as const;
 
-/** 行级 diff 统计(LCS):发布确认弹窗展示 +added/−removed。 */
+/** 行级 diff 统计(LCS):+added/−removed。 */
 function diffStats(oldText: string, newText: string): { added: number; removed: number } {
   const a = oldText.split("\n");
   const b = newText.split("\n");
@@ -78,7 +77,7 @@ export function LegalDocsTab() {
   return (
     <Space orientation="vertical" size={12} style={{ width: "100%" }}>
       {!writable && <Alert type="info" showIcon title={t("settings.legal.adminOnlyTip")} />}
-      {/* 静态行 + 查询填格:查询失败时单元格会全显示「missing」,必须明示错误而非伪装缺文档 */}
+      {/* 查询失败明示错误 */}
       {overview.isError && (
         <Alert
           type="error"
@@ -170,22 +169,22 @@ function CellEditor({
   const [content, setContent] = useState("");
   const [note, setNote] = useState("");
   const [publishOpen, setPublishOpen] = useState(false);
-  // 编辑器草稿(sessionStorage,markdown 正文非敏感可入):误刷新/误切换不丢;保存/发布成功后清除
+  // 编辑器草稿(sessionStorage),保存/发布成功后清除
   const localDraft = useFormDraft<{ title: string; content: string; note: string }>(
     `legal-doc-${docKey}-${locale}`,
   );
-  // 数据源(draft/published)切换时同步表单:渲染期间调整状态,避免 effect 级联渲染
+  // 数据源切换时同步表单(渲染期派生态)
   const sourceKey = draft ? `d${draft.id}` : published ? `p${published.id}` : "none";
   const [loadedKey, setLoadedKey] = useState("");
   if (!versionsQ.isLoading && loadedKey !== sourceKey) {
     setLoadedKey(sourceKey);
-    // 本地未提交草稿优先于服务端值:它就是用户上次没来得及保存的内容
+    // 本地草稿优先于服务端值
     const saved = localDraft.load();
     setTitle(saved?.title ?? draft?.title ?? published?.title ?? "");
     setContent(saved?.content ?? draft?.content_md ?? published?.content_md ?? "");
     setNote(saved?.note ?? draft?.effective_note ?? "");
   }
-  // 编辑即存草稿(首次从服务端灌入时写一遍同值,无害)
+  // 编辑即存草稿
   useEffect(() => {
     if (loadedKey !== "") localDraft.save({ title, content, note });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- localDraft 引用稳定(纯 storage 封装)
@@ -224,7 +223,7 @@ function CellEditor({
   });
   const archive = useArchiveLegalDocVersion({
     mutation: {
-      // 成功/失败反馈由 ReasonAction 统一承担;这里只负责数据刷新
+      // 反馈由 ReasonAction 承担,这里只刷新数据
       onSuccess: () => invalidate(),
     },
   });

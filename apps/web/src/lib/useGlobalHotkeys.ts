@@ -1,12 +1,9 @@
-/** 控制台全局快捷键(挂在 _console 布局,与 CommandPalette 的 ⌘K 并存):
- *  `/`      聚焦当前页第一个带 data-search-input 的搜索框(无搜索框则不动作)
- *  `g`+序列 500ms 内两键导航:g d→/dashboard,g i→/instances,g s→/services,g b→/billing,g m→/market
- *  输入框/文本域/contenteditable 聚焦时一律不触发。 */
+/** 控制台全局快捷键(挂在 _console 布局,与 ⌘K 并存):`/` 聚焦当前页第一个 data-search-input;`g`+序列 500ms 内两键导航(g d→/dashboard,g i→/instances,g s→/services,g b→/billing,g m→/market);输入框聚焦时不触发。 */
 
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 
-/** 序列键间隔上限:超过视为两次独立按键 */
+/** 序列键间隔上限 */
 const SEQ_TIMEOUT_MS = 500;
 
 function isTypingTarget(el: Element | null): boolean {

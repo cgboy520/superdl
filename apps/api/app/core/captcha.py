@@ -1,12 +1,5 @@
-"""人机校验渠道 seam(阿里云验证码 2.0;与短信/实名同一 Protocol + 工厂模式)。
-
-是否过这道闸由平台配置·安全策略的 `captcha_enabled` 决定(account.service 读开关);
-开启后凭据与场景走平台配置中心(env SUPERDL_CAPTCHA_* 为默认值层)。没有 mock 渠道:
-关闭即跳过,测试经 set_captcha_channel 注入假渠道。
-
-安全语义:校验门 fail-closed —— 渠道故障(网络/签名/欠费)抛 CaptchaError,
-调用方一律拒绝后续动作。
-"""
+"""人机校验渠道(阿里云验证码 2.0,Protocol + 工厂)。开关 `captcha_enabled`,关闭即跳过,无 mock 渠道
+(测试经 set_captcha_channel 注入);渠道故障抛 CaptchaError,调用方拒绝后续动作。"""
 
 from typing import Protocol
 
@@ -20,19 +13,17 @@ logger = get_logger(__name__)
 
 
 class CaptchaError(RuntimeError):
-    """渠道侧故障(网络/签名/欠费/异常响应)。fail-closed:调用方拒绝后续动作。"""
+    """渠道侧故障;调用方拒绝后续动作。"""
 
 
 class CaptchaChannel(Protocol):
     async def verify(self, captcha_verify_param: str) -> bool:
-        """验签一次通过性校验(CaptchaVerifyParam 一次性,重复调用返 F008)。
-        渠道故障抛 CaptchaError;人/机判定不通过返回 False。"""
+        """验签(CaptchaVerifyParam 一次性);渠道故障抛 CaptchaError,判定不通过返回 False。"""
         ...
 
 
 class AliyunCaptchaChannel:
-    """阿里云验证码 2.0 服务端验签。captcha.cn-shanghai.aliyuncs.com(中国内地),
-    与客户端 region=cn 固定映射(映射错会验签失败,见阿里云服务端接入文档)。"""
+    """阿里云验证码 2.0 服务端验签(captcha.cn-shanghai.aliyuncs.com,对应客户端 region=cn)。"""
 
     ENDPOINT = "https://captcha.cn-shanghai.aliyuncs.com/"
 
@@ -54,7 +45,7 @@ class AliyunCaptchaChannel:
         return {
             "Action": "VerifyIntelligentCaptcha",
             "Version": "2023-03-05",
-            # 服务端强制写入场景:防前端被篡改到其它场景(阿里云官方建议)
+            # 服务端强制写入场景
             "SceneId": self._scene_id,
             "CaptchaVerifyParam": captcha_verify_param,
         }
@@ -68,7 +59,7 @@ class AliyunCaptchaChannel:
             transport=self._transport,
             error_cls=CaptchaError,
         )
-        # Code 为请求级结果(Success/OK 兼容);人机判定在 Result.VerifyResult
+        # Code 为请求级结果;人机判定在 Result.VerifyResult
         if body.get("Code") not in ("Success", "OK"):
             raise CaptchaError(f"captcha rejected: {body.get('Code')} {body.get('Message')}")
         result = body.get("Result")

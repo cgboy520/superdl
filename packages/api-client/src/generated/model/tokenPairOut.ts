@@ -7,7 +7,7 @@
 import type { UserOut } from './userOut';
 
 /**
- * 认证响应:refresh token 全程只走 HttpOnly Cookie,不出现在 JS 可读面。
+ * 认证响应:refresh token 只走 HttpOnly Cookie,不进响应体。
  */
 export interface TokenPairOut {
   access_token: string;

@@ -23,7 +23,7 @@ class _FailingChannel:
 
 class TestAliyunSignature:
     def test_signature_snapshot(self):
-        """RPC V1 签名锚点:排序 / RFC3986 编码 / HMAC-SHA1 任一变动都会破坏此值。"""
+        """RPC V1 签名锚点(排序 / RFC3986 编码 / HMAC-SHA1)。"""
         ch = AliyunSmsChannel("testid", "testsecret", "SuperDL")
         p = rpc_signed_params(
             ch.request_params("13800000000", "SMS_123", {"code": "654321"}),
@@ -97,9 +97,7 @@ class TestNotifySmsBestEffort:
 
 class TestLogRedaction:
     def test_mask_sensitive_processor(self):
-        """全局日志兜底打码(命名约定防线,mock 短信落日志也靠它):phone 前3后4,
-        code/token/secret 整体打码,dict 值(如 params)逐内层键同款;日志被集中采集后,
-        明文验证码等于绕过一切防盗。"""
+        """日志打码:phone 前3后4,code/token/secret 整体打码,dict 值逐内层键同款。"""
         import logging
 
         from app.core.logging import _mask_sensitive_processor
@@ -124,7 +122,7 @@ class TestLogRedaction:
 
 
 class TestPlatformQuota:
-    """平台级配额:单点限流防不住的分布式滥用,由全局预算池闸门兜底。"""
+    """平台级短信配额(全局预算池)。"""
 
     async def test_sms_code_blocked_by_platform_quota(self, client: AsyncClient, sm, monkeypatch):
         """配额耗尽时验证码接口 429 RATE_LIMITED,且不落库无效验证码。"""
@@ -146,7 +144,7 @@ class TestPlatformQuota:
             assert row is None
 
     async def test_notify_sms_digested_when_quota_exhausted(self, sm, monkeypatch):
-        """通知短信遇配额耗尽:消化不重试、不触达渠道(best-effort,重试只会撞墙至死信)。"""
+        """通知短信遇配额耗尽:消化不重试、不触达渠道。"""
         from app.core import sms as sms_module
         from app.core.outbox import OutboxTask
         from app.modules.notify.service import handle_notify_sms

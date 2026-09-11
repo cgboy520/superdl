@@ -60,7 +60,7 @@ async def test_require_hami_ready_gate(sm, fake_auto_ready):
 
     from app.core.errors import AppError, ErrorCode
 
-    # 无缓存 → 拒(先清掉 conftest 预置行)
+    # 无缓存 → 拒
     async with sm() as session:
         row = await service.get_cluster_status(session)
         if row is not None:
@@ -127,7 +127,7 @@ class TestGateWiring:
         resp = await client.post("/api/v1/instances", json=body, headers=headers)
         assert resp.status_code == 409, resp.text
         assert resp.json()["code"] == "CLUSTER_NOT_READY"
-        # dedicated 不受门禁影响:直接创建成功
+        # dedicated 不受门禁影响
         resp2 = await client.post(
             "/api/v1/instances", json={**body, "sku_id": dedicated["id"]}, headers=headers
         )
@@ -136,11 +136,7 @@ class TestGateWiring:
     async def test_dedicated_create_blocked_when_kata_runtimeclass_missing(
         self, sm, fake_auto_ready, client
     ):
-        """dedicated 档缺 RuntimeClass kata-qemu → 即时 409;shared 档不受影响。
-
-        挂了 = Pod 带 runtimeClassName: kata-qemu 下发后被 kubelet 直接拒,
-        用户侧表现成开机几十秒后转 failed(而不是当场告诉他集群没这个档位)。
-        """
+        """dedicated 档缺 RuntimeClass kata-qemu → 即时 409;shared 档不受影响。"""
         from app.modules.nodes.models import ClusterStatus
 
         await seed_skus(sm)
@@ -170,10 +166,7 @@ class TestGateWiring:
         assert resp2.status_code == 202, resp2.text
 
     async def test_create_blocked_when_storage_class_missing(self, sm, fake_auto_ready, client):
-        """SC 名对不上/档位没装 → 即时 409,而不是让用户等 300 秒 Pending 超时判 failed。
-
-        门禁必须按名核对,不能只判「集群里有任意一个 SC」。
-        """
+        """SC 按名核对,对不上 → 即时 409。"""
         from app.modules.nodes.models import ClusterStatus
 
         await seed_skus(sm)
@@ -198,7 +191,7 @@ class TestGateWiring:
         )
         assert resp.status_code == 409, resp.text
         assert resp.json()["detail"]["missing"] == ["topolvm-provisioner"]
-        # 数据盘同理:不能卖一块永远挂不上、却按日计费的盘
+        # 数据盘同理
         resp = await client.post(
             "/api/v1/disks", json={"name": "d", "size_gb": 100}, headers=headers
         )
@@ -287,7 +280,7 @@ async def test_derive_node_distro_chain(sm, fake_auto_ready):
         await session.commit()
     async with sm() as session:
         assert await service.derive_node_distro(session, {}) == "k3s"
-        # 缓存无 distro(未知发行版)→ 回落 agent 版本后缀
+        # 缓存无 distro → 回落 agent 版本后缀
         row = await service.get_cluster_status(session)
         assert row is not None
         row.distro = None
@@ -332,11 +325,11 @@ class TestClusterEndpoints:
         comp = {c["key"]: c for c in body["components"]}
         assert not comp["hami"]["ok"] and comp["hami"]["fix_hint"]
         assert "apply.sh" in comp["monitoring"]["fix_hint"]
-        # 无探测缓存时不知道档位:留占位让人自己挑,不猜一个可能装错档的命令
+        # 无探测缓存:档位留占位
         assert "apply.sh <full|light>" in comp["monitoring"]["fix_hint"]
 
     async def test_fix_hint_env_follows_probed_distro(self, sm, fake_auto_ready, client):
-        """修复命令的档位跟实测发行版走:k3s → -e light。给 full 档命令等于让人装不上。"""
+        """修复命令的档位跟实测发行版走:k3s → -e light。"""
         from app.modules.nodes.patrol import node_spec_patrol
 
         fake_auto_ready.probe_hami_ready = False
@@ -351,10 +344,7 @@ class TestClusterEndpoints:
     async def test_storage_component_uses_the_same_names_as_the_gate(
         self, sm, fake_auto_ready, client
     ):
-        """体检页 storage 与 require_storage_classes 同一口径(按名核对)。
-
-        挂了 = 集群里有任意一个 SC 就给绿灯,而用户创建实例时才撞 409,运维在体检页看不出端倪。
-        """
+        """体检页 storage 与 require_storage_classes 同一口径(按名核对)。"""
         from app.modules.nodes.models import ClusterStatus
 
         async with sm() as session:
@@ -367,7 +357,7 @@ class TestClusterEndpoints:
         comp = {c["key"]: c for c in body["components"]}
         assert comp["storage"]["ok"] is False
         assert "topolvm-provisioner" in comp["storage"]["detail"]
-        # 数据盘 SC 是可选项(light 默认不装 JuiceFS):缺它只提示不可售,不把整项判红
+        # 数据盘 SC 可选:缺它只提示不可售
         async with sm() as session:
             row = await session.get(ClusterStatus, 1)
             assert row is not None
@@ -379,7 +369,7 @@ class TestClusterEndpoints:
         assert "数据盘不可售" in comp["storage"]["detail"]
 
     async def test_kata_component_calls_out_empty_pool(self, sm, fake_auto_ready, client):
-        """RuntimeClass 在、kata 池没节点:独享档一样开不了机,detail 要说出来。"""
+        """RuntimeClass 在、kata 池没节点:detail 说明独享档开不了。"""
         from app.modules.nodes.patrol import node_spec_patrol
 
         fake_auto_ready.pool_capacity.pop("kata", None)

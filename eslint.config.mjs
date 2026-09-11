@@ -1,4 +1,4 @@
-// 全仓统一 ESLint 配置(flat config)。各包的 `eslint src` 自动向上找到此文件。
+// 全仓统一 ESLint 配置(flat config)
 import js from "@eslint/js";
 import reactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
@@ -32,7 +32,7 @@ export default tseslint.config(
       "no-restricted-syntax": [
         "error",
         {
-          // a11y:无 href 的「链接」不是链接(不可聚焦、无键盘语义)——纯动作一律 <Button type="link">
+          // a11y:纯动作用 <Button type="link">,不用无 href 的链接
           selector:
             "JSXOpeningElement[name.type='JSXMemberExpression'][name.object.name='Typography'][name.property.name='Link']:not(:has(> JSXAttribute[name.name='href']))",
           message: "Typography.Link 必须带 href;纯动作请用 <Button type=\"link\" size=\"small\">",
@@ -41,8 +41,7 @@ export default tseslint.config(
     },
   },
   {
-    // apps/*/src 的数据访问一律走 @superdl/api-client 的生成 fetcher/hooks:
-    // 不许拿 customFetch 自己拼 URL,也不许绕过包入口直接 import mutator
+    // apps/*/src 数据访问只走 @superdl/api-client 生成 fetcher,禁 customFetch 与直接 import mutator
     files: ["apps/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": [

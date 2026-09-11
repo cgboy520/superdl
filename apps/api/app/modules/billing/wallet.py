@@ -1,7 +1,6 @@
 """钱包原语:所有余额变动的唯一入口。
 
-更新必须 `SELECT ... FOR UPDATE`,同事务写 balance_ledger(balance_after 快照)。
-本文件函数不 commit —— 由调用方把余额变动放进业务事务。
+更新必须 `SELECT ... FOR UPDATE`,同事务写 balance_ledger(balance_after 快照)。本文件函数不 commit。
 """
 
 from collections.abc import Sequence
@@ -34,12 +33,8 @@ logger = get_logger(__name__)
 
 
 async def _wallet_row(session: AsyncSession, user_id: int, *, lock: bool) -> Wallet:
-    """钱包行,不存在则首建。首建用 INSERT ... ON CONFLICT DO NOTHING:并发首建撞
-    user_id 唯一约束既不抛错也不污染外层事务,随后重查即得胜出方的行。
-
-    lock=True 时 FOR UPDATE,且 populate_existing 必须带:拿到行锁但读到 identity map
-    里的旧副本 = 锁内校验(余额复检/燃烧率)对着陈旧值放行,等同 TOCTOU
-    (实测:锁拿到、balance 是旧的)。
+    """钱包行,不存在则首建(INSERT ... ON CONFLICT DO NOTHING,随后重查)。
+    lock=True 时 FOR UPDATE,且带 populate_existing(强制重读加锁后的值)。
     """
     stmt = select(Wallet).where(Wallet.user_id == user_id)
     if lock:
@@ -60,7 +55,7 @@ async def get_or_create_wallet(session: AsyncSession, user_id: int) -> Wallet:
 
 
 async def lock_wallet(session: AsyncSession, user_id: int) -> Wallet:
-    """FOR UPDATE 锁定钱包行(不存在则先创建,并发首建不炸外层事务)。"""
+    """FOR UPDATE 锁定钱包行(不存在则先创建)。"""
     return await _wallet_row(session, user_id, lock=True)
 
 
@@ -114,20 +109,12 @@ async def debit(
     allow_negative: bool,
     allow_frozen: bool = False,
 ) -> BalanceLedger:
-    """扣款。allow_negative 为必填关键字,每个调用点显式表态。
+    """扣款。allow_negative 为必填关键字,每个调用点显式表态:
+    结算扣款(小时账单、盘日费)与管理员调账扣减允许透支;「先付后用」的同步消费不允许。
 
-    - 结算扣款(小时账单、盘日费)与管理员调账扣减:允许透支;
-    - 「先付后用」的同步消费:不允许(开机/建盘走 assert_can_afford 预校验)。
-
-    allow_frozen 是同一纪律的第二根轴(默认 False = fail-closed,需动用冻结额的
-    调用点必须显式表态):扣款后余额不得击穿 frozen——冻结额是「渠道冲正待核销」的
-    钱,可能被渠道拿回,任何「新消费」(订阅购买/续费、退款打款)都不得动用。
-    唯一合法 True 的场景:对已发生消费的事后收款(小时结算/盘日费,搭配
-    allow_negative=True)——冻结只拦新消费,不赖旧账;渠道冲正核销
-    (resolve_reversal)先解冻后扣减,天然不受此闸约束,无需放行。
-
-    返回刚写入的流水行(已 flush,id 可用)——退款闭环需要回写 wallet_entry_id;
-    其余调用方忽略返回值即可。
+    allow_frozen(默认 False):扣款后余额不得击穿 frozen;唯一合法 True 的场景是对已发生消费的
+    事后收款(小时结算/盘日费,搭配 allow_negative=True)。
+    返回刚写入的流水行(已 flush,id 可用)。
     """
     amount = as_amount(amount)
     if amount <= 0:
@@ -137,8 +124,7 @@ async def debit(
     if not allow_negative and new_balance < 0:
         raise AppError(ErrorCode.INSUFFICIENT_BALANCE, key="billing.insufficientBalance")
     if not allow_frozen and new_balance < wallet.frozen:
-        # 击穿冻结额:文案与裸余额不足区分开——此时充值不能立即解决(新充值同样被
-        # 冻结口径拦住),用户该做的是联系客服核销
+        # 击穿冻结额:文案与裸余额不足区分开
         raise AppError(
             ErrorCode.INSUFFICIENT_BALANCE,
             key="billing.insufficientAvailableFrozen",
@@ -159,7 +145,7 @@ async def get_balance(session: AsyncSession, user_id: int) -> Decimal:
 
 
 def available_of(wallet: Wallet) -> Decimal:
-    """可用余额 = balance - frozen(渠道冲正冻结额不参与新消费)。"""
+    """可用余额 = balance - frozen。"""
     return as_amount(wallet.balance - wallet.frozen)
 
 
@@ -171,17 +157,14 @@ async def get_available_balance(session: AsyncSession, user_id: int) -> Decimal:
 
 
 async def refundable_capacity(session: AsyncSession, user_id: int) -> Decimal:
-    """可退余额(防套现口径):Σ充值 − Σ消费 − Σ已退 − Σ负向调账,下限 0。
-
-    钱包是单池,但能退成现金的只能是「渠道实付且尚未消耗/未退走」的部分:
-    管理端补偿(adjust 正向)不是实付,永不可提现;消费/退款/负向调账(含渠道
-    冲正核销)侵蚀可退额。退款申请与打款两处都按此封顶(申请处提示,打款处硬闸)。
+    """可退余额:Σ充值 − Σ消费 − Σ已退 − Σ负向调账,下限 0。正向 adjust 不进可退额。
+    退款申请与打款两处都按此封顶。
     """
     total = (
         await session.execute(
             select(
                 func.coalesce(
-                    # adjust 只计负向(调减/冲正核销),正向补偿不进可退额
+                    # adjust 只计负向
                     func.sum(
                         case(
                             (BalanceLedger.type == "adjust", func.least(BalanceLedger.amount, 0)),
@@ -199,9 +182,8 @@ async def refundable_capacity(session: AsyncSession, user_id: int) -> Decimal:
 async def freeze(
     session: AsyncSession, user_id: int, amount: Decimal, *, ref_id: str, remark: str
 ) -> Wallet:
-    """等额冻结(渠道冲正):冻结额不参与新消费,但不动 balance、不记 ledger
-    (钱是否真被渠道拿回尚待人工核销)。frozen 可超过 balance:用户已花掉时
-    可用余额为负,全部新消费被拦,直至管理端核销。幂等由调用方(order 行标记)保证。"""
+    """等额冻结(渠道冲正):不动 balance、不记 ledger;frozen 可超过 balance。
+    幂等由调用方(order 行标记)保证。"""
     amount = as_amount(amount)
     if amount <= 0:
         raise ValueError("freeze amount must be positive")
@@ -212,7 +194,7 @@ async def freeze(
 
 
 async def release_freeze(session: AsyncSession, user_id: int, amount: Decimal) -> Wallet:
-    """解冻(核销 release):冲正属渠道噪音,钱还在。floor 0(重复核销不炸)。"""
+    """解冻(核销 release)。floor 0。"""
     amount = as_amount(amount)
     if amount <= 0:
         raise ValueError("release amount must be positive")
@@ -228,36 +210,26 @@ async def assert_can_afford(
     additional_hourly: Decimal = Decimal("0.00"),
     additional_daily_disk: Decimal = Decimal("0.00"),
 ) -> None:
-    """燃烧率感知的开户前校验:余额须覆盖「在途 + 待燃 + 新增」资源的一个预留期消耗。
+    """燃烧率感知的开户前校验:余额 ≥ (在途实例时费 + 待燃时费 + additional_hourly)
+    × afford_cover_hours + (在途盘日费 + additional_daily_disk) × disk_grace_days。
 
-    调用契约(不满足护栏即失效):必须在调用方事务内调用,且调用方须在同一事务内完成
-    资源创建/开机并 commit —— 本函数先 FOR UPDATE 锁钱包行再统计在途,锁持有到提交,
-    并发开户请求因此串行。
-
-    - `additional_hourly`:本次新增实例的小时费(单价 × 卡数,2 位小数)。
-      `additional_daily_disk`:新增数据盘的日均费。
-    - 校验口径:余额 ≥ (在途实例时费 + 待燃时费 + additional_hourly) × afford_cover_hours
-      + (在途盘日费 + additional_daily_disk) × disk_grace_days;「在途」= running 实例
-      + active 数据盘(grace 宽限盘已停计费,不计入);「待燃」= creating/starting 实例
-      (orchestrator.pending_hourly,在本函数内部统一并入——调用方无从遗漏,
-      遗漏即连续开户/循环开机可绕过护栏)。两个预留期均为 policies 在线可调。
-    - 不足抛 INSUFFICIENT_BALANCE(billing.insufficientForInFlight),params 含
-      balance / required / inflight。
-    - 只校验不扣款:这是护栏不是精确预占,实际消耗由结算扣款(允许透支)兜底。
+    必须在调用方事务内调用,调用方同一事务内完成资源创建/开机并 commit
+    (本函数先 FOR UPDATE 锁钱包行)。「在途」= running 实例 + active 数据盘;
+    「待燃」= creating/starting 实例(orchestrator.pending_hourly,内部并入)。
+    不足抛 INSUFFICIENT_BALANCE,params 含 balance / required / inflight。只校验不扣款。
     """
     # 延迟 import 防循环:orchestrator.service → billing.service → wallet
     from app.modules.orchestrator import service as orchestrator_service
 
-    locked = await lock_wallet(session, user_id)  # 先锁再统计:并发新增才能互相看见
+    locked = await lock_wallet(session, user_id)  # 先锁再统计
     policies = await get_effective_policies(session)
 
-    # 锁内只查本用户(用户级 SQL 过滤):全平台分组/全表扫描会把钱包行锁的
-    # 持有时间拖到全表规模,并发开户在锁上排队 × 扫描 = 雪崩
+    # 锁内只查本用户
     running = await orchestrator_service.running_instances_of_user(session, user_id)
     pending = await orchestrator_service.pending_hourly(session, user_id)
     inflight_hourly = (
         sum(
-            # 包周期实例不进燃烧率:它已付过整段周期的钱,再算作在途会让包月用户开不出新机
+            # 包周期实例不进燃烧率
             (
                 hourly_cost(i.price_hourly, i.gpu_count)
                 for i in running
@@ -298,7 +270,7 @@ async def assert_can_afford(
 async def ledger_page(
     session: AsyncSession, user_id: int, *, cursor: str | None = None, limit: int | None = None
 ):
-    """资金流水游标分页(用户端与管理端下钻共用同一实现)。"""
+    """资金流水游标分页(用户端与管理端共用)。"""
     stmt = (
         select(BalanceLedger)
         .where(BalanceLedger.user_id == user_id)
@@ -322,8 +294,7 @@ async def hourly_bills_page(
     cursor: str | None = None,
     limit: int | None = None,
 ):
-    """小时账单游标分页(用户端与管理端下钻共用同一实现)。
-    instance_ids = 一组实例(服务下全部版本)的并集;给空列表即无账可查。"""
+    """小时账单游标分页(用户端与管理端共用)。instance_ids = 一组实例的并集;空列表即无账。"""
     stmt = select(BillHourly).where(BillHourly.user_id == user_id).order_by(BillHourly.id.desc())
     if instance_id is not None:
         stmt = stmt.where(BillHourly.instance_id == instance_id)
@@ -338,7 +309,7 @@ async def hourly_bills_page(
     page_items, next_cursor = await paginate_by_id(
         session, stmt, id_col=BillHourly.id, cursor=cursor, limit=limit
     )
-    # 补实例名供账单页展示(纯数字 id 对运营/用户都不可读;实例行释放后仍保留,可查)
+    # 补实例名供账单页展示(实例行释放后仍保留)
     from app.modules.orchestrator import service as orchestrator_service
 
     names = await orchestrator_service.instance_names(session, [r.instance_id for r in page_items])
@@ -361,9 +332,7 @@ async def consumption_summary(
     session: AsyncSession, user_id: int, start: datetime, end: datetime
 ) -> ConsumptionSummary:
     """[start, end) 窗口内的消费汇总:GPU 时费按实例归因 + 数据盘日费合计。
-
-    月度汇总与当日消费两个端点共用同一口径(窗口边界由端点按本地日/月界折算);
-    items 补实例名(释放后行保留,改名跟当前名)供消费概览环图按名展示。
+    月度汇总与当日消费共用同一口径;items 补实例名。
     """
     from app.modules.orchestrator import service as orchestrator_service
 
@@ -431,7 +400,7 @@ async def billed_by_instance(session: AsyncSession, start, end) -> dict[int, Dec
 async def balances_by_user(
     session: AsyncSession, user_ids: list[int] | None = None
 ) -> dict[int, Decimal]:
-    """各用户余额。user_ids 给定则只聚合这些用户(列表页按本页用户过滤,避免全表)。"""
+    """各用户余额。user_ids 给定则只聚合这些用户。"""
     stmt = select(Wallet.user_id, Wallet.balance)
     if user_ids is not None:
         stmt = stmt.where(Wallet.user_id.in_(user_ids))
@@ -457,13 +426,8 @@ async def consumed_by_user(
 async def revenue_summary(session: AsyncSession, *, tz_offset_minutes: int = 0) -> dict:
     """今日/本月消费额与环比基数。本地日界按 tz_offset 折算。
 
-    口径:计量出账按账单**归属期**切窗(bills_hourly.hour_start / bills_daily_disk.day),
-    而非扣款入账时间(ledger.created_at)——小时结算在次小时 :02 才扣款,按入账时间
-    归属会把 23 点的消费错记到次日;按归属期才与用户账单页、日终核对同口径。
-
-    **包周期预付另按收款当日切窗**(subscriptions.created_at):它不产生任何账单行,
-    归属期就是收款那一刻,没有延迟入账的问题。`*_revenue` 是两者之和;`*_prepaid` 单列,
-    以便看环比时拆走预付尖峰(一笔包年集中在收款当日)。
+    计量出账按账单归属期切窗(bills_hourly.hour_start / bills_daily_disk.day);
+    包周期预付按收款当日切窗(subscriptions.created_at)。`*_revenue` 是两者之和,`*_prepaid` 单列。
     """
     offset = timedelta(minutes=tz_offset_minutes)
     local_now = now_utc() + offset
@@ -517,7 +481,7 @@ async def admin_list_orders(
     cursor: str | None = None,
     limit: int | None = None,
 ) -> RawPage[Order]:
-    """充值订单列表(游标分页,降序)。order_no 精确匹配(unique 索引);day_range 按 created_at 过滤。"""
+    """充值订单列表(游标分页,降序)。order_no 精确匹配;day_range 按 created_at 过滤。"""
     stmt = select(Order).order_by(Order.id.desc())
     if status:
         stmt = stmt.where(Order.status == status)

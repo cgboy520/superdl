@@ -36,7 +36,7 @@ describe("setupAuthCacheGuard", () => {
     const clear = vi.spyOn(qc, "clear");
     const un = setupAuthCacheGuard(qc);
     authStore.getState().login(fakeJwt("1"));
-    authStore.getState().login(fakeJwt("1")); // 续期路径直接 login 新 access token(sub 不变)
+    authStore.getState().login(fakeJwt("1")); // 续期:sub 不变
     await new Promise((r) => setTimeout(r, 20));
     expect(clear).not.toHaveBeenCalled();
     un();
@@ -47,7 +47,7 @@ describe("setupAuthCacheGuard", () => {
     const clear = vi.spyOn(qc, "clear");
     const un = setupAuthCacheGuard(qc);
     authStore.getState().login(fakeJwt("1"));
-    authStore.getState().login(fakeJwt("2")); // 会话过期后另一账号直接登录(无显式登出)
+    authStore.getState().login(fakeJwt("2")); // 换号:无显式登出
     await vi.waitFor(() => expect(clear).toHaveBeenCalledTimes(1));
     un();
   });

@@ -6,7 +6,7 @@
  */
 
 /**
- * 管理端发票申请视图:比用户端多租户 id 与开票操作人/时间。
+ * 管理端发票申请视图:多租户 id 与开票操作人/时间。
  */
 export interface AdminInvoiceOut {
   amount: string;

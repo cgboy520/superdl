@@ -7,7 +7,7 @@
 import type { InvoiceCreateTitleType } from './invoiceCreateTitleType';
 
 /**
- * 开票申请。amount 不进契约:服务端按账期计算,客户端只提交账期+抬头(防篡改)。
+ * 开票申请。amount 不进契约:服务端按账期计算。
  */
 export interface InvoiceCreate {
   /**

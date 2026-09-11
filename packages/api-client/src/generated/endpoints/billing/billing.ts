@@ -51,8 +51,8 @@ export const getExportBillingApiV1BillingExportGetUrl = (params?: ExportBillingA
 }
 
 /**
- * 账单 CSV 导出(流式)。month 仅作用于 hourly;行数硬上限,触顶在文件末尾
- * 写 #SUPERDL_EXPORT_TRUNCATED# 标记行(前端据以提示已截断)。
+ * 账单 CSV 导出(流式)。month 仅作用于 hourly;行数硬上限,触顶在文件末尾写
+ * #SUPERDL_EXPORT_TRUNCATED# 标记行。
  * @summary Export Billing
  */
 export const exportBillingApiV1BillingExportGet = async (params?: ExportBillingApiV1BillingExportGetParams, options?: Parameters<typeof customFetch>[1]): Promise<unknown | string> => {
@@ -133,7 +133,7 @@ export const getListInvoiceEligibleApiV1BillingInvoicesEligibleGetUrl = () => {
 }
 
 /**
- * 各账期可开票额度预览(仅 amount > 0 的已结束账期,申请弹窗的数据源)。
+ * 各账期可开票额度预览(仅 amount > 0 的已结束账期)。
  * @summary List Invoice Eligible
  */
 export const listInvoiceEligibleApiV1BillingInvoicesEligibleGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<InvoiceEligibleOut[]> => {
@@ -164,7 +164,7 @@ export const getBillDailySummaryApiV1BillsDailySummaryGetUrl = (params: BillDail
 }
 
 /**
- * 当日消费(实例列表「今日 ¥Y.YY」与费用中心数据源),本地日界经 tz_offset 折算。
+ * 当日消费,本地日界经 tz_offset 折算。
  * @summary Bill Daily Summary
  */
 export const billDailySummaryApiV1BillsDailySummaryGet = async (params: BillDailySummaryApiV1BillsDailySummaryGetParams, options?: Parameters<typeof customFetch>[1]): Promise<DailySummaryOut> => {
@@ -225,7 +225,7 @@ export const getBillSummaryApiV1BillsSummaryGetUrl = (params: BillSummaryApiV1Bi
 }
 
 /**
- * 月度汇总 + 按实例成本归因(消费概览环图数据源)。窗口按本地月界切。
+ * 月度汇总 + 按实例成本归因。窗口按本地月界切。
  * @summary Bill Summary
  */
 export const billSummaryApiV1BillsSummaryGet = async (params: BillSummaryApiV1BillsSummaryGetParams, options?: Parameters<typeof customFetch>[1]): Promise<BillSummaryOut> => {
@@ -249,7 +249,7 @@ export const getGetPoliciesApiV1PoliciesGetUrl = () => {
 }
 
 /**
- * 计费/回收策略。公开(未登录市场页也要展示盘价);env 默认 + DB 覆盖,管理端在线调整。
+ * 计费/回收策略。公开;env 默认 + DB 覆盖,管理端在线调整。
  * @summary Get Policies
  */
 export const getPoliciesApiV1PoliciesGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<PoliciesOut> => {
@@ -430,7 +430,7 @@ export const getListRefundableOrdersApiV1WalletRefundsEligibleOrdersGetUrl = () 
 }
 
 /**
- * 退款表单候选集:最近充值订单逐单标注可否申请(不可申请的置灰并给出原因码)。
+ * 退款表单候选集:最近充值订单逐单标注可否申请(不可申请的给出原因码)。
  * @summary List Refundable Orders
  */
 export const listRefundableOrdersApiV1WalletRefundsEligibleOrdersGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<RefundableOrderOut[]> => {

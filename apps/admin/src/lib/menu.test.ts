@@ -1,6 +1,4 @@
-/** 菜单单一事实源守护:MENU(侧栏/命令面板共用)与 MENU_ROLES(权限表)键集必须一致——
- *  类型层有 satisfies 编译期约束,本测试防类型被 as/绕过后的运行时漂移;
- *  canSeeMenu 行为按角色矩阵断言(finance 无节点/告警入口,告警页 ops 可见)。 */
+/** MENU 与 MENU_ROLES 键集一致;canSeeMenu 按角色矩阵断言。挂了 = 菜单与权限表漂移。 */
 import { describe, expect, it } from "vitest";
 
 import { MENU, MENU_ROLES, canSeeMenu } from "./menu";

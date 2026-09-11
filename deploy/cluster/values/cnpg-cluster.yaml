@@ -1,7 +1,5 @@
-# cnpg-cluster(cloudnative-pg/cluster chart):平台库(钱包/账本)进 K8s 的唯一受支持形态
-# (deploy/README.md「生产数据库要求」)——3 实例 + S3 持续 WAL 归档(RPO 分钟级)+ 每日定时
-# 基础备份,禁止单实例上生产。仅 environments/<档>.yaml 置 cnpg.enabled=true 时安装。
-# 键名按所钉 chart cluster-v0.8.1 的模板写;升版时以新版模板为准,先 helm template 验证。
+# cnpg-cluster(cloudnative-pg/cluster chart):平台库进 K8s 的唯一受支持形态(deploy/README.md「生产数据库要求」):
+# 3 实例 + S3 持续 WAL 归档 + 每日基础备份。仅 cnpg.enabled=true 时安装;键名按 chart cluster-v0.8.1,升版先 helm template 验证
 version:
   postgresql: "18"            # 与 dev/test、备份镜像(postgres:18)对齐
 cluster:
@@ -29,7 +27,7 @@ backups:
     region: "CHANGE_ME_S3_REGION"        # 如 cn-hangzhou
     bucket: "CHANGE_ME_BUCKET"
     path: "/cnpg"
-  # 凭据不落 values:预建 Secret(键名 ACCESS_KEY_ID / ACCESS_SECRET_KEY,以所钉 chart 模板为准)
+  # 预建 Secret(键名 ACCESS_KEY_ID / ACCESS_SECRET_KEY)
   #   kubectl -n superdl create secret generic cnpg-backup-s3 \
   #     --from-literal=ACCESS_KEY_ID=<ak> --from-literal=ACCESS_SECRET_KEY=<sk>
   secret:
@@ -43,8 +41,7 @@ backups:
   retentionPolicy: "30d"      # 对象存储侧另配生命周期(低频/归档层)
   scheduledBackups:
     - name: daily-basebackup
-      # CNPG schedule 遵循 Go cron 规范:首字段是秒(6 字段,非 Unix 5 字段)
-      # 写 5 字段会被整体错位解析,备份静默不按预期触发
+      # Go cron 6 字段(首字段是秒)
       schedule: "0 30 18 * * *"   # 每日 02:30 北京(与逻辑备份 CronJob 同刻;负载冲突再错峰)
       method: barmanObjectStore
       backupOwnerReference: self

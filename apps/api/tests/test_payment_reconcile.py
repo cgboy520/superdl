@@ -1,7 +1,4 @@
-"""支付对账闭环:查单 poller 收敛丢回调、人工补单(渠道核验制)、异常清单。
-
-验收核心:丢回调场景下钱不丢 —— poller 或补单入账,且重复执行零重复入账。
-"""
+"""支付对账闭环:查单 poller 收敛丢回调、人工补单(渠道核验制)、异常清单;重复执行零重复入账。"""
 
 from datetime import timedelta
 
@@ -38,7 +35,7 @@ class TestReconcilePoller:
         """渠道已付但回调丢失 → poller 查单入账;重复执行零重复入账。"""
         headers = await user_headers(client, "13700000021")
         order = await create_order(client, headers, "66.00")
-        # 渠道侧已支付,但没有任何回调进来
+        # 渠道侧已支付,无回调
         MockChannel.mark_paid(order["order_no"], "txn-lost-1", "66.00")
         await _backdate_order(sm, order["order_no"], 2)
 
@@ -102,7 +99,7 @@ class TestReconcilePoller:
         assert w["balance"] == "55.00"
 
     async def test_stale_closed_order_outside_window_not_scanned(self, client: AsyncClient, sm):
-        """关单时刻(expires_at)超出 48h 的 closed 旧单不参与查单(防无限重扫)。"""
+        """expires_at 超出 48h 的 closed 旧单不参与查单。"""
         headers = await user_headers(client, "13700000046")
         order = await create_order(client, headers, "45.00")
         async with sm() as session:
@@ -122,7 +119,7 @@ class TestReconcilePoller:
         assert w["balance"] == "0.00"
 
     async def test_stale_failed_order_outside_window_not_scanned(self, client: AsyncClient, sm):
-        """48h 窗口外的 failed 旧单不参与查单(防无限重扫下单即废的订单)。"""
+        """48h 窗口外的 failed 旧单不参与查单。"""
         headers = await user_headers(client, "13700000043")
         order = await create_order(client, headers, "44.00")
         async with sm() as session:
@@ -161,7 +158,7 @@ class TestReconcilePoller:
         assert detail["status"] == "pending"
 
     async def test_single_order_failure_does_not_abort_round(self, client: AsyncClient, sm):
-        """单笔入账失败(渠道金额与订单不符)不能中断整轮:后面的订单照常收敛。"""
+        """单笔入账失败不中断整轮。"""
         headers_bad = await user_headers(client, "13700000031")
         bad = await create_order(client, headers_bad, "66.00")
         headers_good = await user_headers(client, "13700000032")
@@ -236,7 +233,7 @@ class TestBackfill:
         )
         assert r1.status_code == 200, r1.text
         assert r1.json()["status"] == "paid"
-        # 同键重放(响应丢失后重试):返回当前状态 + X-Idempotent-Replay,不重复入账
+        # 同键重放:返回当前状态 + X-Idempotent-Replay,不重复入账
         r2 = await client.post(
             f"/api/admin/v1/finance/orders/{order['order_no']}/backfill",
             json={"reason": "回调丢失"},
@@ -249,7 +246,7 @@ class TestBackfill:
         assert w["balance"] == "66.00"
 
     async def test_backfill_key_reused_on_other_order_conflicts(self, client: AsyncClient, sm):
-        """同一幂等键用到另一笔订单:DB 唯一约束兜底,409 并指明持键订单(不 500 不双入账)。"""
+        """同一幂等键用到另一笔订单:409 并指明持键订单。"""
         headers = await user_headers(client, "13700000042")
         order_a = await create_order(client, headers, "61.00")
         order_b = await create_order(client, headers, "62.00")
@@ -276,7 +273,7 @@ class TestBackfill:
         assert w["balance"] == "61.00"
 
     async def test_backfill_refused_when_channel_unpaid(self, client: AsyncClient, sm):
-        """渠道侧未支付 → 补单被拒(操作者无法凭空造账)。"""
+        """渠道侧未支付 → 补单被拒。"""
         headers = await user_headers(client, "13700000024")
         order = await create_order(client, headers, "20.00")
         ah = await admin_headers(sm, client, role="finance")
@@ -291,7 +288,7 @@ class TestBackfill:
         assert w["balance"] == "0.00"
 
     async def test_backfill_failed_order_after_verify(self, client: AsyncClient, sm):
-        """failed 订单不是死胡同:渠道核验为已支付后同样可补单(渠道是唯一事实源)。"""
+        """failed 订单渠道核验为已支付后同样可补单。"""
         headers = await user_headers(client, "13700000029")
         order = await create_order(client, headers, "11.00")
         async with sm() as session:

@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- 管理后台不对搜索引擎开放(叠加 X-Robots-Tag 与 ingress 白名单的纵深) -->
+    <!-- 不对搜索引擎开放 -->
     <meta name="robots" content="noindex,nofollow" />
     <link
       rel="icon"
@@ -11,7 +11,7 @@
     />
     <title>SuperDL 管理控制台</title>
     <style>
-      /* 防 FOUC 静态底色:同步 packages/ui tokens.ts adminColors.bgBase(改动需手动同步) */
+      /* 防 FOUC 静态底色,手动同步 packages/ui tokens.ts adminColors.bgBase */
       body {
         background: #0b1220;
       }

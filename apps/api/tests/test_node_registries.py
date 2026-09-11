@@ -10,15 +10,14 @@ CA = "-----BEGIN CERTIFICATE-----\nMIIBfake\n-----END CERTIFICATE-----"
 
 
 def test_default_is_spegel_only_without_harbor():
-    """未配 Harbor:只剩 Spegel P2P,不指向任何 NodePort。"""
+    """未配 Harbor:只剩 Spegel P2P。"""
     out = render_registries_yaml({})
     assert yaml.safe_load(out) == {"mirrors": {"*": {}}}
     assert "30500" not in out
 
 
 def test_proxy_cache_mirrors_and_ca_without_auth():
-    """代理缓存:每个上游 mirror 到 Harbor 并 rewrite 到代理项目;CA 非空才有 configs.tls;
-    永远没有 auth——凭据泄漏到节点就是这条挂了。"""
+    """代理缓存:每个上游 mirror 到 Harbor 并 rewrite 到代理项目;CA 非空才有 configs.tls;无 auth。"""
     out = render_registries_yaml(
         {
             "registry_host": "harbor.example.com",
@@ -49,7 +48,7 @@ def test_no_ca_no_configs_and_override_verbatim():
 
 
 async def test_bootstrap_carries_registries_and_ca(client, sm):
-    """注册链路下发渲染后的 registries.yaml 与 CA,但不带机器人 Secret(拉取凭据不出注册链路)。"""
+    """注册链路下发 registries.yaml 与 CA,不带机器人 Secret。"""
     from app.core.platform_config import set_platform_settings
 
     await set_platform_setting(sm, "cluster_server_url", "https://10.0.0.10:9345")

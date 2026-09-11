@@ -8,7 +8,7 @@ import type { OverviewOutInstancesByStatus } from './overviewOutInstancesByStatu
 import type { OverviewPoolOut } from './overviewPoolOut';
 
 /**
- * 总览聚合:全部精确计数,不从截断列表推算。
+ * 总览聚合:全部精确计数。
  */
 export interface OverviewOut {
   instances_by_status: OverviewOutInstancesByStatus;

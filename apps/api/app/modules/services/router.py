@@ -36,7 +36,7 @@ async def create_service(
 ) -> ServiceOut:
     """部署服务:同事务落 services 行 + 第 1 版实例(creating)+ 事件 + outbox,202 异步。
     幂等键重放回 200 + X-Idempotent-Replay。"""
-    # 实名闸门与资源创建限流:与创建实例同口径(服务的第一版就是一台实例)
+    # 实名闸门与资源创建限流,与创建实例同口径
     await account_service.require_real_name_if_required(
         session, user, key="orchestrator.realNameRequired"
     )
@@ -59,7 +59,7 @@ async def list_services(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[ServiceOut]:
-    """服务列表:降序游标分页;name 模糊匹配(含 slug 前缀),status 按派生状态过滤;已删除的不列。"""
+    """服务列表:降序游标分页;name 模糊(含 slug 前缀),status 按派生状态过滤;已删除不列。"""
     return await service.list_services_page(
         session, user.id, status=status, name=name, cursor=cursor, limit=limit
     )
@@ -74,7 +74,7 @@ async def get_service(slug: str, user: CurrentUser, session: DbSession) -> Servi
 async def patch_service(
     slug: str, body: ServicePatch, user: CurrentUser, session: DbSession, request: Request
 ) -> ServiceOut:
-    """改名 / 访问鉴权开关。开关只改网关回调的判定,几秒内生效,不重新部署。"""
+    """改名 / 访问鉴权开关;不重新部署。"""
     svc = await service.patch_service(
         session, user.id, slug, name=body.name, require_api_key=body.require_api_key
     )
@@ -191,7 +191,7 @@ async def list_service_bills(
 
 @router.get("/services/{slug}/api-keys")
 async def list_api_keys(slug: str, user: CurrentUser, session: DbSession) -> list[ApiKeyOut]:
-    """访问密钥列表(含已吊销)。不含明文——库里就没有明文。"""
+    """访问密钥列表(含已吊销),不含明文。"""
     rows = await service.list_api_keys(session, user.id, slug)
     return [ApiKeyOut.model_validate(r) for r in rows]
 
@@ -200,12 +200,9 @@ async def list_api_keys(slug: str, user: CurrentUser, session: DbSession) -> lis
 async def create_api_key(
     slug: str, body: ApiKeyCreate, user: CurrentUser, session: DbSession, request: Request
 ) -> ApiKeyCreateOut:
-    """新建访问密钥。响应里的 key 是明文,且只在这一次出现。
-
-    不收 Idempotency-Key:重放要回同一份明文就得把明文留在库里,与「只存摘要」冲突。
-    """
+    """新建访问密钥;响应里的 key 是明文,只在这一次出现。不收 Idempotency-Key。"""
     row, plaintext = await service.create_api_key(session, user.id, slug, name=body.name)
-    # 审计只落 id 与名字,明文绝不进 detail
+    # 审计只落 id 与名字,不落明文
     set_audit_target(request, f"service:{slug}", {"api_key_id": row.id, "name": row.name})
     return ApiKeyCreateOut(**ApiKeyOut.model_validate(row).model_dump(), key=plaintext)
 

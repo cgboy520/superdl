@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# 禁词闸门:扫描 zh 文案目录(locales JSON 值 + 后端 MESSAGES),命中营销套话即失败。
-# 禁词表与 docs/copy-style-guide.md「禁则」同步维护。
-# 白名单:「一键加入」「一键添加」(节点注册产品名词语境)先从文本剥离再匹配,其余「一键」照拦。
+# 禁词闸门:扫 zh locales JSON 值 + 后端 MESSAGES。禁词表与 docs/copy-style-guide.md「禁则」同步。
+# 白名单:「一键加入」「一键添加」先剥离再匹配
 set -euo pipefail
 cd "$(dirname "$0")/.."
 python3 - <<'PY'

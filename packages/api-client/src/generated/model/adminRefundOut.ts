@@ -6,7 +6,7 @@
  */
 
 /**
- * 管理端退款单视图:比用户端多双人制衡的操作人/时间与核销流水关联。
+ * 管理端退款单视图:多操作人/时间与核销流水关联。
  */
 export interface AdminRefundOut {
   amount: string;

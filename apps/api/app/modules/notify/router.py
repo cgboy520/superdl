@@ -16,8 +16,7 @@ from app.modules.notify.schemas import NotificationOut, UnreadCountOut
 
 router = APIRouter(tags=["notify"])
 
-# 告警接入端点无用户鉴权(Bearer token 即鉴权)且报文驱动写库,故加固:
-# IP 限流 + 体积与字段长度上限。
+# 告警接入端点(Bearer token 即鉴权):IP 限流 + 体积与字段长度上限
 ALERT_RATE_LIMIT = 120
 ALERT_RATE_WINDOW = 60.0
 ALERT_MAX_BODY_BYTES = 1024 * 1024
@@ -41,13 +40,13 @@ async def list_notifications(
 
 @router.get("/notifications/unread-count")
 async def unread_count(user: CurrentUser, session: DbSession) -> UnreadCountOut:
-    """未读数轻端点(顶栏角标轮询):DB count,与列表分页解耦。"""
+    """未读数轻端点(顶栏角标轮询)。"""
     return UnreadCountOut(unread_count=await service.unread_count(session, user.id))
 
 
 @router.post("/notifications/read-all", status_code=status.HTTP_204_NO_CONTENT)
 async def mark_all_read(user: CurrentUser, session: DbSession) -> Response:
-    """全部已读(幂等)。注意须注册在 {notification_id} 之前,避免 read-all 被当 id 解析。"""
+    """全部已读(幂等);须注册在 {notification_id} 之前。"""
     await service.mark_all_read(session, user.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -59,7 +58,7 @@ async def mark_read(notification_id: int, user: CurrentUser, session: DbSession)
 
 
 def _truncate_strings(value: Any) -> Any:
-    """递归截断报文里的字符串值:告警 summary/labels 由外部提交,长度不受信。"""
+    """递归截断报文里的字符串值。"""
     if isinstance(value, str):
         return value[:ALERT_MAX_STRING_LEN]
     if isinstance(value, dict):

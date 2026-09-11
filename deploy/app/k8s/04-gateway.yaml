@@ -1,24 +1,19 @@
-# 北向唯一入口:Gateway API + Envoy Gateway。EG 控制面与 Envoy 数据面 Pod 都在
-# envoy-gateway-system(由 helmfile 装,见 deploy/cluster/),本文件只描述入口本身:
-# GatewayClass / 数据面参数 / 6 个监听器 / 5 条路由 / 7 条策略。
-# TLS 证书见 05-cert-manager.yaml;certificateRefs 与 Gateway 同 ns,不需要 ReferenceGrant。
+# 北向唯一入口:Gateway API + Envoy Gateway(控制面与数据面由 helmfile 装在 envoy-gateway-system,见 deploy/cluster/)。
+# 本文件:GatewayClass / 数据面参数 / 6 个监听器 / 5 条路由 / 7 条策略。TLS 证书见 05-cert-manager.yaml(同 ns,不需要 ReferenceGrant)。
 apiVersion: gateway.networking.k8s.io/v1
 kind: GatewayClass
 metadata:
   name: superdl
 spec:
   controllerName: gateway.envoyproxy.io/gatewayclass-controller
-  # GatewayClass 是集群级对象,parametersRef 必须显式给 namespace:漏写不报错,EG 找不到
-  # EnvoyProxy 就按默认参数(1 副本、无 nodeSelector、无资源上限)拉起数据面。
-  # 症状是「配了没生效」,查 GatewayClass 的 status.conditions。
+  # 集群级对象,parametersRef 必须显式写 namespace(漏写不报错,EG 按默认参数起数据面)
   parametersRef:
     group: gateway.envoyproxy.io
     kind: EnvoyProxy
     name: superdl-proxy
     namespace: superdl
 ---
-# Envoy **数据面**的部署参数。deploy/cluster/values/envoy-gateway.yaml 是 EG **控制面**的,
-# 别搞混:调错地方的症状同样是「改了没效果」。
+# Envoy 数据面部署参数(EG 控制面参数在 deploy/cluster/values/envoy-gateway.yaml)
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: EnvoyProxy
 metadata:
@@ -29,34 +24,21 @@ spec:
     type: Kubernetes
     kubernetes:
       envoyDeployment:
-        # 北向唯一入口(api/console/admin/租户 Jupyter 全走这里),单点重启不应断流
         replicas: 2
         container:
-          # requests==limits 提 Guaranteed,避免先于租户 Pod 被驱逐。
-          # 内存随实例数涨:一实例一条 HTTPRoute,全量 xDS 下发进每个 Envoy,5000 条路由时
-          # 数据面可到 1–2 GB。放量前按实测上调 limit 或对单机实例数设硬上限——
-          # 这里 OOMKill 掉的是全站入口。
+          # requests==limits(Guaranteed)。内存随 HTTPRoute 数量涨(5000 条约 1–2 GB),放量前按实测上调
           resources:
             requests: {cpu: 500m, memory: 512Mi}
             limits: {cpu: 500m, memory: 512Mi}
         pod:
-          # 平台组件落点统一走 infra 标签(见 02-api.yaml 同处注释:
-          # node-restriction.kubernetes.io/ 前缀被 NodeRestriction 拉黑,kubelet 不可自打;
-          # 标签由 deploy/ansible/site.yml 用管理凭据打在控制面节点上)。
-          # 数据面持有全部平台域与租户泛域名的 TLS 私钥,落点被冒名节点吸走 = 全站中间人。
-          # GPU 节点严禁打此标签。
+          # infra 标签由 deploy/ansible/site.yml 打在控制面节点上(kubelet 不可自打);GPU 节点禁止打此标签
           nodeSelector:
             node-restriction.kubernetes.io/superdl-infra: "true"
           tolerations:
-            # 必须与 nodeSelector 成对出现:infra 标签落在 RKE2 server 上,而 server 带
-            # CriticalAddonsOnly=true:NoExecute(rke2/server-config.yaml node-taint),
-            # 只钉标签不容忍污点 = Envoy Pod 永远 Pending = 全站无入口。
+            # 与 nodeSelector 成对:infra 节点带 CriticalAddonsOnly=true:NoExecute(rke2/server-config.yaml)
             - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
-          # Guaranteed 只防同优先级驱逐,priorityClass 才保证资源紧张时先于租户 Pod 被保。
           priorityClassName: system-cluster-critical
-          # 2 副本尽量跨节点/跨可用区摊开;小集群不满足时仍可调度(ScheduleAnyway)。
-          # labelSelector 只能用 EG 给 Envoy Pod 打的 owning-gateway-{name,namespace}:
-          # 那些 Pod 不带我们写的任何标签,选错不报错,约束直接退化成空集。
+          # labelSelector 只能用 EG 打的 owning-gateway-{name,namespace} 标签
           topologySpreadConstraints:
             - maxSkew: 1
               topologyKey: kubernetes.io/hostname
@@ -76,16 +58,14 @@ spec:
         minAvailable: 1
       envoyService:
         type: LoadBalancer
-        # 保持 Local(下面 SecurityPolicy 与 BackendTrafficPolicy 成立的前提):改成 Cluster
-        # 会多一跳 kube-proxy SNAT,Envoy 看到的源 IP 全变节点 IP —— 管理端白名单把全部流量
-        # 算成同一个源、每 IP 限流退化成全网一个桶,两条策略当场失效且不报错。
+        # 必须 Local:管理端源 IP 白名单与每 IP 限流依赖真实源 IP
         externalTrafficPolicy: Local
   logging:
-    # Envoy 自身日志(不是访问日志):warn 起步,排障时临时调 info/debug
+    # Envoy 自身日志(非访问日志)
     level:
       default: warn
   shutdown:
-    # 滚动更新先排空在途连接再退出,与 02-api.yaml 的 preStop sleep 是同一件事的两端
+    # 与 02-api.yaml 的 preStop sleep 配对
     drainTimeout: 60s
 ---
 apiVersion: gateway.networking.k8s.io/v1
@@ -95,24 +75,17 @@ metadata:
   namespace: superdl
 spec:
   gatewayClassName: superdl
-  # listener 的 name 就是各策略的 sectionName,**锁死不许改**:名字对不上不报错、apply 照样
-  # 成功,只是策略静默不生效。改动本段后必须
-  # `kubectl describe securitypolicy/backendtrafficpolicy/clienttrafficpolicy -n superdl`
-  # 确认 Accepted=True 再收工。
-  #
-  # 平台三个 listener 必须写**精确 hostname**:租户域与平台域共用一级域时靠「精确优先于通配」
-  # 消歧(SNI 与 Host 同规则),换成通配平台域就会被租户通配 listener 抢走。
-  # HTTPRoute 只要 hostname 与 listener 有交集就能挂上,租户 ns 里建条路由即可劫走平台域名;
-  # 挡住这条的是 RBAC:tenant-* ns 的 httproutes 写权限只给 superdl-tenant-mgr(01-rbac.yaml)。
+  # listener name 即各策略的 sectionName,不许改(对不上时策略静默不生效)。改动后
+  # `kubectl describe securitypolicy/backendtrafficpolicy/clienttrafficpolicy -n superdl` 确认 Accepted=True。
+  # 平台三个 listener 必须写精确 hostname(精确优先于租户通配);租户 ns 的 httproutes 写权限只给 superdl-tenant-mgr(01-rbac.yaml)。
   listeners:
-    # HTTP:只承载 301 跳转(见 superdl-https-redirect),不直接对接任何后端
+    # HTTP 只承载 301 跳转(superdl-https-redirect)
     - name: http
       port: 80
       protocol: HTTP
       allowedRoutes:
         namespaces: {from: Same}
-    # 三个平台域各一个 listener。证书未就绪时只有对应 listener 不 Programmed,表现为
-    # 该域 TLS 握手失败(其它 listener 不受影响);首装顺序见 05-cert-manager.yaml。
+    # 三个平台域各一个 listener;首装顺序见 05-cert-manager.yaml
     - name: api-https
       port: 443
       protocol: HTTPS
@@ -139,14 +112,13 @@ spec:
       hostname: admin.superdl.example.com
       tls:
         mode: Terminate
-        # 独立 secret:管理端的访问边界、证书轮换、故障影响面都要能与用户端分开处理
+        # 管理端独立 secret
         certificateRefs:
           - {kind: Secret, name: superdl-admin-tls}
       allowedRoutes:
         namespaces: {from: Same}
-    # 租户 Jupyter:每实例一条 HTTPRoute 建在租户自己的 ns 里,故必须放开跨 ns 挂载。
-    # selector 用 ensure_namespace 打的 superdl.io/managed=true(core/k8s/real.py 的
-    # MANAGED_LABEL);平台自己的 superdl ns 没有这个标签,于是它精确等于「全部租户 ns」。
+    # 租户 Jupyter:HTTPRoute 建在租户 ns,跨 ns 挂载;selector = ensure_namespace 打的 superdl.io/managed=true
+    # (core/k8s/real.py MANAGED_LABEL),等于全部租户 ns。不挂任何 SecurityPolicy(Jupyter 自带 token 鉴权)
     - name: app-https
       port: 443
       protocol: HTTPS
@@ -160,20 +132,15 @@ spec:
           from: Selector
           selector:
             matchLabels: {superdl.io/managed: "true"}
-    # 服务型实例的对外端点(svc-<slug>.svc.<域>):跨 ns 授权同 app-https,但两者**鉴权口径
-    # 相反**,分两个 listener 就是为了这件事:
-    #   app-https  不挂任何 SecurityPolicy → Jupyter 自己用 token 鉴权,网关不管
-    #   svc-https  挂 superdl-svc-extauth   → 每个请求先回调平台校验 API Key
-    # 别合并进 app-https:通配域只能按路由挂策略,而按路由挂策略是整份 SecurityFeatures 替换
-    # (见 superdl-svc-extauth 的 mergeType 一节),漏挂一条 = 那个端点不鉴权且不报错。
+    # 服务型实例端点(svc-<slug>.svc.<域>):挂 superdl-svc-extauth,每请求回调平台校验 API Key。
+    # 不许与 app-https 合并(两者鉴权口径相反,策略按 listener 挂)
     - name: svc-https
       port: 443
       protocol: HTTPS
       hostname: "*.svc.superdl.example.com"
       tls:
         mode: Terminate
-        # 独立泛域名证书(不与 *.app 共用):合成一张会把两个入口的签发失败绑成一件事。
-        # 见 05-cert-manager.yaml
+        # 独立泛域名证书,见 05-cert-manager.yaml
         certificateRefs:
           - {kind: Secret, name: superdl-svc-wildcard-tls}
       allowedRoutes:
@@ -182,8 +149,7 @@ spec:
           selector:
             matchLabels: {superdl.io/managed: "true"}
 ---
-# HTTP→HTTPS 301。不写 hostnames = 命中 :80 上的一切 Host(含租户 Jupyter 子域);
-# 少了它 80 端口上的请求直接 404 而不是跳 https。
+# HTTP→HTTPS 301。不写 hostnames = 命中 :80 上的一切 Host
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -197,9 +163,7 @@ spec:
         - type: RequestRedirect
           requestRedirect: {scheme: https, statusCode: 301}
 ---
-# 以下三条路由都不写 hostnames:listener 已按 sectionName 限定 Host,重复写等于把域名散落
-# 两处,改域名漏一处就静默不通(两侧 hostname 取交集,交集为空 = 路由不生效且不报错)。
-# backendRefs 的 port 只认端口号不认 Service 端口名,三个 Service 都是 :80 → targetPort http。
+# 以下三条路由不写 hostnames(listener 已按 sectionName 限定 Host)。backendRefs 的 port 只认端口号,三个 Service 都是 :80
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -212,9 +176,7 @@ spec:
     - backendRefs:
         - {name: superdl-api, port: 80}
 ---
-# 匿名支付回调的独立路由:面最薄(无鉴权,验签即鉴权),单独挂更严的请求体上限。
-# Gateway API 最长前缀优先:回调请求只命中本路由,不再吃 superdl-api 的策略,
-# 故边缘限流需在本路由同款重写(见下方 superdl-api-webhooks 策略)。
+# 匿名支付回调独立路由:更严请求体上限;最长前缀优先,不吃 superdl-api 的策略,边缘限流在 superdl-api-webhooks 策略同款重写
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -253,15 +215,9 @@ spec:
     - backendRefs:
         - {name: superdl-admin, port: 80}
 ---
-# 管理端源 IP 白名单(默认启用):把 CIDR 改成办公网/跳板机出口,多个就多写几条 clientCIDRs。
-# preflight.sh 按占位网段扫描,未替换不予放行;长期仍建议叠加 VPN 或身份感知代理。
-#
-# 占位符只能是合法 CIDR(RFC 5737 文档网段 192.0.2.0/24),不能写 CHANGE_ME_*:clientCIDRs
-# 带 CRD 正则校验,非法串会让这一个对象被 apiserver 拒收而其余照常生效(fail-open),
-# 管理端无声失去白名单;合法但无真实主机的网段则是 fail-closed。
-#
-# defaultAction: Deny 是白名单成立的前提:漏写它默认 Allow,规则退化成一条毫无作用的显式放行。
-# 源 IP 的真实性依赖 envoyService.externalTrafficPolicy: Local(见上)。
+# 管理端源 IP 白名单:CIDR 改成办公网/跳板机出口,多个多写几条 clientCIDRs;preflight.sh 按占位网段扫描。
+# 占位符必须是合法 CIDR(RFC 5737 的 192.0.2.0/24),不能写 CHANGE_ME_*(CRD 正则校验)。
+# defaultAction: Deny 不许省;源 IP 真实性依赖 envoyService.externalTrafficPolicy: Local
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: SecurityPolicy
 metadata:
@@ -277,22 +233,10 @@ spec:
         principal:
           clientCIDRs: ["192.0.2.0/24"]   # ← 替换为办公网/跳板机出口 CIDR
 ---
-# 边缘层限流(纵深防御;应用层固定窗口限流不变,见 core/ratelimit.py)。
-# 正常用户单页 API 并发远低于此,只挡爆破/洪水。admin 面另有白名单,不在此列。
-#
-# type: Distinct 不许改:它让 0.0.0.0/0 里每个源 IP 各占一个桶,写成默认的 Exact 会变成
-# 全网共用一个桶——20 rps 全站合计,正常业务量就能把所有人一起限死。
-# 官方文档「local 不支持 distinct 匹配」对 v1.9.0 不成立(local_ratelimit.go 的
-# buildDistinctCIDRMatchRateLimitAction 会再加一个 RemoteAddress 描述符);
-# 升 EG 版本时按源码复核,别按文档改回 Exact。
-#
-# 两条规则各自独立成桶(描述符 key 带 rule 序号),同时生效 = 20/s 且 600/min。
-# 新增规则须知:**不带 clientSelectors 的那条规则决定默认桶的时间单位**,其余规则的单位
-# 必须是它的整数倍,否则整条 policy 翻译失败(Accepted=False)。当前两条都带 selector,
-# 默认桶退化为 uint32max/Second,任何单位都合法。
-#
-# Local 限流是每个 Envoy 实例本地计数,2 副本时全局实际上限约为配置值×副本数;
-# 严格全局需另部署 rate limit service + Redis。
+# 边缘层限流(应用层固定窗口限流不变,见 core/ratelimit.py)。admin 面另有白名单,不在此列。
+# type: Distinct 不许改(每源 IP 一桶;Exact = 全网一桶)。v1.9.0 的 local 限流支持 Distinct,升 EG 版本按源码复核。
+# 两条规则各自成桶,同时生效 = 20/s 且 600/min。新增规则:不带 clientSelectors 的规则决定默认桶时间单位,其余规则单位须为其整数倍。
+# Local 限流按 Envoy 实例本地计数,2 副本时全局上限约为配置值×2
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: BackendTrafficPolicy
 metadata:
@@ -301,16 +245,12 @@ metadata:
 spec:
   targetRefs:
     - {group: gateway.networking.k8s.io, kind: HTTPRoute, name: superdl-api}
-  # 请求体上限(超 1Mi → 413;内层另有 ASGI 流式上限,见 app/core/body_limit.py)。
-  # 必须与限流同挂一个对象:EG 对同一 targetRef 的同类策略不合并,拆成两条则
-  # 最老者生效、另一条静默丢弃(状态条件 Conflicted)。
-  # requestBuffer 会把请求收全再转发,不能挂流式/升级流量——superdl-api 全 REST
-  # 无 WS/gRPC 请求流(CSV 导出与日志仅是响应方向流,不受影响)。
+  # 请求体上限(超 1Mi → 413;ASGI 层另有流式上限,见 app/core/body_limit.py)。
+  # 必须与限流同挂一个对象(EG 对同一 targetRef 的同类策略不合并)。requestBuffer 不能挂流式/升级流量
   requestBuffer:
     limit: 1Mi
   rateLimit:
-    # 不写 spec.rateLimit.type(v1.9.0 已 Deprecated):直接给 local/global,两者可并存;
-    # 写了反而走 backward-compat 分支,只认这一种。
+    # 不写 spec.rateLimit.type(v1.9.0 已 Deprecated)
     local:
       rules:
         - limit: {requests: 20, unit: Second}
@@ -320,9 +260,7 @@ spec:
           clientSelectors:
             - sourceCIDR: {value: 0.0.0.0/0, type: Distinct}
 ---
-# 匿名支付回调:更严请求体上限 256Ki(微信/支付宝通知实载仅数 KB;超 256Ki → 413)。
-# 回调走最长前缀匹配只命中 superdl-api-webhooks 路由,superdl-api-ratelimit 对它
-# 不适用,边缘限流在此同款重写(应用层另有 120/min/IP,见 billing/webhooks_router.py)。
+# 匿名支付回调:请求体上限 256Ki;边缘限流与 superdl-api-ratelimit 同款(应用层另有 120/min/IP,见 billing/webhooks_router.py)
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: BackendTrafficPolicy
 metadata:
@@ -343,28 +281,10 @@ spec:
           clientSelectors:
             - sourceCIDR: {value: 0.0.0.0/0, type: Distinct}
 ---
-# 服务型实例端点的网关鉴权:到 *.svc.<域> 的每个请求先回调平台 API 校验 API Key,
-# 用户容器不实现任何鉴权。**一条策略挂 svc-https listener** = 覆盖该 listener 上的全部租户
-# 路由(含跨 ns 的),新端点上线不必再动网关清单。跨 ns 路由继承 listener 级策略不需要
-# ReferenceGrant,extAuth 的 backendRefs 指向同 ns 的 superdl-api 也不需要。
-# app-https(Jupyter)不挂任何策略 → 天然不鉴权。
-#
-# 下面每个字段的取值按 Envoy Gateway v1.9.0 的 CRD schema 与上游源码定,复核入口:
-#   helm pull oci://docker.io/envoyproxy/gateway-helm --version v1.9.0 --untar
-#   → charts/crds/crds/generated/gateway.envoyproxy.io_securitypolicies.yaml 的 openAPIV3Schema
-#   → 上游 internal/xds/translator/extauth.go、internal/gatewayapi/securitypolicy.go
-# 升 EG 版本时按源码复核,别按文档改。
-#
-# ⚠ 按路由挂 SecurityPolicy 是**整份 SecurityFeatures 替换**(CORS/CSRF/JWT/OIDC/APIKeyAuth/
-# BasicAuth/ExtAuth/Authorization 一起):给某条租户 HTTPRoute 挂一条哪怕只写了 CORS 的策略,
-# 也会把本策略的 extAuth 一并顶掉,那个端点当场无鉴权且不报错。listener 级策略挂不了
-# mergeType(CRD 的 CEL 只允许 xRoute 目标),挡住这条的是 RBAC:租户 ns 里
-# superdl-tenant-mgr 只有 httproutes 写权限、没有 securitypolicies(01-rbac.yaml)。
-# **给谁开了 securitypolicies 写权限,这条豁免就没了。**
-#
-# ⚠ 鉴权服务返回 4xx 时,响应体、状态码与响应头(除 :authority)原样透传给客户端,
-# 没有任何截断或过滤。平台 401 响应体与响应头里带什么公网就看得到什么——栈、内网主机名、
-# Set-Cookie 都会漏出去(平台侧有专门一条测试守这件事)。
+# 服务型实例端点的网关鉴权:挂 svc-https listener,覆盖该 listener 上全部租户路由(含跨 ns,不需要 ReferenceGrant)。
+# 字段取值按 Envoy Gateway v1.9.0 CRD schema 与源码(internal/xds/translator/extauth.go、internal/gatewayapi/securitypolicy.go),升版本按源码复核。
+# 按路由挂 SecurityPolicy 是整份 SecurityFeatures 替换,会顶掉本策略的 extAuth;租户 ns 的 securitypolicies 写权限一律不开(01-rbac.yaml)。
+# 鉴权服务 4xx 的状态码、响应体与响应头原样透传客户端(平台侧有测试守护)
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: SecurityPolicy
 metadata:
@@ -372,86 +292,47 @@ metadata:
   namespace: superdl
 spec:
   targetRefs:
-    # sectionName 在 Gateway 上即 listener 名:写错不报错、apply 照样成功,只是策略静默不挂载
-    # = 全部服务端点不鉴权。收工前按 status.ancestors[].conditions 确认 Accepted=True。
+    # sectionName 即 listener 名,写错不报错;收工前按 status.ancestors[].conditions 确认 Accepted=True
     - {group: gateway.networking.k8s.io, kind: Gateway, name: superdl, sectionName: svc-https}
   extAuth:
-    # 不配时 IR 层默认 10s,而这 10s 挂在每个请求的同步路径上:平台 API 一慢,所有服务端点
-    # 跟着卡满 10s 再 503。1s 足够覆盖「小表主键查询 + last_used_at 回写」。
+    # 同步路径上的每请求超时(默认 10s)
     timeout: 1s
-    # 不配时默认 403,那会把「平台控制面挂了/超时了」伪装成「你的 Key 不对」。
-    # 鉴权服务自己返回 5xx 也走这条(不透传),所以平台 API 的 500 到客户端是 503。
+    # 鉴权服务超时/5xx 时的客户端状态码(默认 403)
     statusOnError: 503
-    # 保持 false:true 时**连策略配置非法都整个绕过鉴权**,一个手误就能让全部付费端点变成公开。
+    # 保持 false(true 时策略配置非法也整个绕过鉴权)
     failOpen: false
-    # 默认只发 :authority / :method / :path / content-length / authorization 五个头,
-    # `x-api-key` 不在其中——漏配的现象是「用 Authorization 的客户端正常、用 X-API-Key 的
-    # 一律 401」,极像平台只认一种写法。
-    # Host 到平台侧是原样的客户端 Host(不是 superdl-api 的地址),平台从它取 slug 才成立。
-    #
-    # ⚠ 绝不能往这里加 x-forwarded-for:鉴权请求本身不带 XFF,而平台 edge_guard 对
-    # /api/internal 带 XFF 的请求一律 404。加了它 = 每次鉴权都 404 = fail-close 下
-    # 全部端点常态 503。
+    # 默认只转发 :authority/:method/:path/content-length/authorization;Host 到平台侧是原始客户端 Host(平台从它取 slug)。
+    # 不许加 x-forwarded-for(edge_guard 对 /api/internal 带 XFF 的请求一律 404)
     headersToExtAuth: ["x-api-key"]
     http:
-      # 只能写 Service 引用不能写 FQDN 字符串:CRD 的 backendRefs 是 Gateway API 对象引用,
-      # 省略 namespace 即取本策略所在 ns(superdl),Service 引用必须带 port。
-      # 网络侧不需要额外放行:09-networkpolicy.yaml 的 api-ingress 已允许
-      # envoy-gateway-system → superdl-api:8000,鉴权回调走的就是这条。
+      # 只能写 Service 引用(省略 namespace 即本 ns),必须带 port;09-networkpolicy.yaml 的 api-ingress 已放行 envoy-gateway-system → superdl-api:8000
       backendRefs:
         - {name: superdl-api, port: 80}
-      # ⚠ 用 pathOverride 不用 path:`path` 是 Envoy 的 path_prefix,原始请求 path 会拼在
-      # 后面(path=/auth + 原始 /hello → /auth/hello),那既要平台侧开 catch-all 路由,
-      # 又会把客户端可控的 path 与 query 拼进平台内部 URL。pathOverride 才是静态整路径。
-      # 两者互斥(CRD CEL:only one of path or pathOverride can be specified),别同时写。
-      #
-      # ⚠ 平台侧这条路由必须**接受全部 HTTP 方法**:鉴权请求沿用原始请求的 :method。
-      # 只注册 GET 会拿到 405,而 4xx 原样透传客户端(见本对象顶部),
-      # 表现为「调用方一 POST 就 405」。
+      # 用 pathOverride(静态整路径)不用 path(path_prefix,会拼接原始 path),两者互斥。
+      # 平台侧该路由必须接受全部 HTTP 方法(鉴权请求沿用原始 :method)
       pathOverride: /api/internal/v1/endpoint-auth
-      # 覆盖语义:列进来的头一定来自鉴权服务,客户端伪造的同名头会被顶掉;没列进来的头
-      # 原样透传客户端值,ext_authz 不做任何过滤。用户容器能信任的头有且只有这两个,
-      # 想让容器再信任一个新头必须同时加到这里,否则那个头是客户端可伪造的。
+      # 列出的头一定来自鉴权服务(顶掉客户端同名头),未列出的头原样透传;用户容器只能信任这两个头
       headersToBackend: ["x-superdl-endpoint", "x-superdl-key-id"]
-      # fail-close 之下,唯一能提升可用性的手段就是让这条回调本身别抖。
       backendSettings:
         retry:
-          # 默认 numRetries=2 且触发条件含 unavailable 与 503:平台 API 主动返回 503 时重试
-          # 毫无意义,只会在故障时把回调量放大 3 倍。收窄成「连接没建起来/被重置」这类瞬时
-          # 故障(典型是 API 滚动更新的摘流窗口),次数压到 1,预算仍在上面的 1s timeout 内。
+          # 只重试连接类瞬时故障 1 次,预算在上面的 1s timeout 内;不设 perRetry.timeout
           numRetries: 1
           retryOn:
             triggers: ["connect-failure", "refused-stream", "reset"]
-          # 别设 perRetry.timeout:上面三个触发条件都是快失败,设了反而会把一次合法的 900ms
-          # 慢鉴权提前掐掉,而慢又不在触发条件里 = 直接 503。
         circuitBreaker:
-          # 四个阈值默认都是 1024,两个 API 副本各 1 CPU 扛不住,排队的结果是每条请求先把
-          # 1s timeout 等满再统一 503。128 × 2 个 Envoy 副本 = 256 并发在途,按每次鉴权约
-          # 10ms 算仍有上万 rps 余量;过载在门口被 statusOnError 挡掉,而不是全网一起变慢。
+          # 128 × 2 副本 = 256 并发在途;过载由 statusOnError 挡在门口
           maxConnections: 128
           maxPendingRequests: 128
         healthCheck:
           active:
-            # 用 /healthz 不用 /readyz:/readyz 含 DB 探测(02-api.yaml),DB 抖一下会让所有
-            # API 端点同时被判不健康,而这不是「哪个 Pod 坏了」的信号。
-            # **别把 panicThreshold 设成 0**:默认 50% 的恐慌模式正是冷启动窗口的兜底,
-            # 关掉它会让首检完成前全部端点 503。
+            # 用 /healthz 不用 /readyz(/readyz 含 DB 探测);panicThreshold 保持默认 50%,不设 0
             type: HTTP
             http: {path: /healthz}
 ---
-# 服务端点限流:一条挂 svc-https listener,覆盖该 listener 上全部租户路由。
-# 限额 20/s/端点,手工渲染进本清单(平台侧无对应策略项,改值 = 改本清单重新下发)。
-# 桶按路由分是自动的,不需要额外 selector:EG 把 local 限流写进每条路由的
-# typedPerFilterConfig,一实例一条 HTTPRoute ⇒ 一个端点一个桶,端点之间不互挤。
-#
-# ⚠ 这里**不许**照抄 superdl-api-ratelimit 的 `sourceCIDR: {type: Distinct}`:不带
-# clientSelectors 的规则是默认桶,而 EG 把 alwaysConsumeDefaultTokenBucket 钉死为 false
-# (请求命中任一 descriptor 就不再消耗默认桶)。加一条 Distinct 规则后默认桶一次都不会被
-# 消耗,「每端点 20/s」当场失效并退化成「每端点每源 IP 20/s」,换 100 个 IP 就能打满用户
-# 容器与鉴权回调。护平台自身入口是 superdl-api-ratelimit 的活,不在这里做。
-#
-# 同 superdl-api-ratelimit:不写已废弃的 spec.rateLimit.type;local 限流是每个 Envoy 实例
-# 本地计数,2 副本时单端点全局实际上限约为 40/s。
+# 服务端点限流:挂 svc-https listener,20/s/端点(手工渲染,改值 = 改本清单重新下发)。
+# 只写一条不带 clientSelectors 的默认桶规则(EG 按路由写入 typedPerFilterConfig,一端点一桶)。
+# 不许加 sourceCIDR Distinct 规则(alwaysConsumeDefaultTokenBucket=false,会让默认桶失效);不写已废弃的 spec.rateLimit.type;
+# 2 副本时单端点实际上限约 40/s
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: BackendTrafficPolicy
 metadata:
@@ -465,26 +346,9 @@ spec:
       rules:
         - limit: {requests: 20, unit: Second}
 ---
-# 租户 Jupyter 入口限流。app-https 是唯一一个**既不鉴权也不限流**的 listener:
-# superdl-svc-extauth 只挂 svc-https(两个 listener 鉴权口径相反,见上),
-# 三条 BackendTrafficPolicy 分别挂 API 路由 / webhooks 路由 / svc-https listener,
-# 而 superdl-gateway 那条是 ClientTrafficPolicy —— 只管超时与连接总量,不管 RPS。
-# 于是每个租户的 Jupyter 端点在边缘层裸奔:一条 HTTPRoute 被打满,吃掉的是 Envoy 的 CPU
-# 与连接预算,影响面是同一对 Envoy 副本上的**全部**租户与平台三域名。
-#
-# 与 superdl-svc-ratelimit 同构(**不是**照抄 superdl-api-ratelimit):
-# 只写一条不带 clientSelectors 的默认桶规则 —— EG 把 local 限流写进每条路由的
-# typedPerFilterConfig,一实例一条 HTTPRoute ⇒ 一个端点一个桶,端点之间不互挤。
-# ⚠ 这里**不许**加 `sourceCIDR: {type: Distinct}`:EG 把 alwaysConsumeDefaultTokenBucket
-# 钉死为 false(命中任一 descriptor 就不再消耗默认桶),加一条 Distinct 规则后默认桶一次都
-# 不会被消耗,「每端点 N/s」当场失效并退化成「每端点每源 IP N/s」,换 100 个 IP 就打穿。
-# 也不能再挂第二条 BackendTrafficPolicy 到同一个 targetRef:EG 对同一 targetRef 的同类策略
-# 不合并,最老者生效、另一条静默丢弃(状态条件 Conflicted)—— 要改就改本对象。
-#
-# 100/s/端点的取值理由:JupyterLab 冷启动一次会在几百毫秒内打出几十个 chunk/API 请求,
-# 20/s(svc-https 的取值)会让正常打开页面就吃 429;WebSocket 只在升级时算一次请求,
-# 内核长连接不消耗令牌。local 限流是每个 Envoy 实例本地计数,2 副本时单端点实际上限约 200/s。
-# 冷启动仍见 429 就上调本值,别改成 Distinct。
+# 租户 Jupyter 入口限流:挂 app-https listener,100/s/端点(JupyterLab 冷启动几百毫秒内几十个请求;WebSocket 只在升级时计一次)。
+# 与 superdl-svc-ratelimit 同构:只写一条默认桶规则,不许加 sourceCIDR Distinct,同一 targetRef 不许挂第二条 BackendTrafficPolicy。
+# 2 副本时单端点实际上限约 200/s;冷启动仍见 429 就上调本值
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: BackendTrafficPolicy
 metadata:
@@ -492,16 +356,14 @@ metadata:
   namespace: superdl
 spec:
   targetRefs:
-    # sectionName 写错不报错、apply 照样成功,只是策略静默不挂载 = 限流又没了。
-    # 收工前按 status.ancestors[].conditions 确认 Accepted=True。
+    # sectionName 写错不报错;收工前按 status.ancestors[].conditions 确认 Accepted=True
     - {group: gateway.networking.k8s.io, kind: Gateway, name: superdl, sectionName: app-https}
   rateLimit:
     local:
       rules:
         - limit: {requests: 100, unit: Second}
 ---
-# 网关级超时与连接兜底。挂 Gateway(不带 sectionName)= 对 6 个 listener 全部生效;
-# streamIdleTimeout 1h 同时覆盖 LLM 推理那种长时间只出 token 的 SSE 流。
+# 网关级超时与连接兜底:挂 Gateway(不带 sectionName)= 6 个 listener 全部生效
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: ClientTrafficPolicy
 metadata:
@@ -512,18 +374,12 @@ spec:
     - {group: gateway.networking.k8s.io, kind: Gateway, name: superdl}
   timeout:
     http:
-      # 必配项:EG 默认 5 分钟,会把 Jupyter 的 WebSocket 与 SSE 长连接按时掐断,症状是
-      # 「用着用着内核就断了/页面提示重连」,极易误诊成鉴权过期或网络抖动。1h 覆盖正常空闲。
+      # 必配(EG 默认 5 分钟会掐断 Jupyter WebSocket / SSE 长连接);1h 同时覆盖 LLM 推理的长 SSE 流
       streamIdleTimeout: 1h
-      # slowloris 双闸(头/完整请求分开计时,EG v1.9.0 HTTPClientTimeout 语义):
-      # - requestHeadersReceivedTimeout:首字节到头部收齐的时限,合法客户端 <1s,10s 已宽;
-      # - requestReceivedTimeout:完整请求(含 body)收齐的时限,响应开始即停表,
-      #   不影响 SSE/长响应;60s 兼容 svc-https 上 MB 级推理请求的慢速上传,
-      #   慢 body 攻击每连接最多占 60s(连接总量另有 connectionLimit 兜底)。
+      # slowloris 双闸:头部收齐时限 / 完整请求(含 body)收齐时限(响应开始即停表,不影响 SSE)
       requestHeadersReceivedTimeout: 10s
       requestReceivedTimeout: 60s
   connection:
     connectionLimit:
-      # **每个 Envoy 实例的连接总量**,不是每源 IP 并发连接数(EG 没有对应原语):
-      # 只做防内存耗尽的总量兜底,每 IP 维度的压制由上面的 RPS/RPM 承担。
+      # 每个 Envoy 实例的连接总量(非每源 IP)
       value: 10000

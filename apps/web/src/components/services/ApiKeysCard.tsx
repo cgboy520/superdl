@@ -1,5 +1,4 @@
-/** 访问密钥卡:名称 / Key 前缀 / 最近使用 / 创建时间 / 吊销 + 新建(一次性展示)。
- *  公开访问的服务仍渲染这张表(Key 可预先建好),附一条「网关不校验 Key」说明。 */
+/** 访问密钥卡:名称 / Key 前缀 / 最近使用 / 创建时间 / 吊销 + 新建(一次性展示)。公开访问的服务仍渲染,附「网关不校验 Key」说明。 */
 
 import type { ApiKeyOut } from "@superdl/api-client";
 import { formatDateTime } from "@superdl/ui";
@@ -19,7 +18,7 @@ export function ApiKeysCard({
 }: {
   slug: string;
   requireApiKey: boolean;
-  /** 已删除的服务不能再建钥(后端 409),按钮直接灰置 */
+  /** 已删除的服务不能再建钥(后端 409),按钮灰置 */
   released: boolean;
 }) {
   const { t } = useTranslation();
@@ -49,7 +48,7 @@ export function ApiKeysCard({
           pagination={false}
           loading={keysQ.isLoading}
           dataSource={keys}
-          // 五列在窄屏必然溢出卡片,与全站宽表同一处理:横向滚动
+          // 窄屏横向滚动
           scroll={{ x: 640 }}
           locale={{
             emptyText: keysQ.isError ? (

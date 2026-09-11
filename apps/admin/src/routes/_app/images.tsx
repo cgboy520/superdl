@@ -53,7 +53,7 @@ interface ImageFormValues {
   prewarm_enabled: boolean;
 }
 
-/** 行展开:该镜像的每节点缓存明细(展开期间 30s 轮询看拉取进度;组件随行展开才挂载,收起即停) */
+/** 行展开:每节点缓存明细(展开期间 30s 轮询) */
 function ImageNodesPanel({ imageId }: { imageId: number }) {
   const { t } = useTranslation(["admin", "shared"]);
   const { data, isError, error, refetch } = useImageNodes(imageId, { refetchInterval: 30_000 });
@@ -117,14 +117,13 @@ function ImageNodesPanel({ imageId }: { imageId: number }) {
 function ImagesPage() {
   const { t } = useTranslation(["admin", "shared"]);
   const errText = useApiErrorText();
-  // 深色主题下必须走 useApp 实例:静态 message 拿不到 ConfigProvider token
   const { message } = App.useApp();
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();
   const { data: images, queryKey, isLoading, isError, error, refetch } = useAdminImages({ refetchInterval: 15_000 });
   const [editing, setEditing] = useState<ImageRow | "new" | null>(null);
-  // 新建镜像的默认仓库前缀:Harbor 地址与平台项目来自平台配置(经集群状态透出,ops 可读)
+  // 新建镜像默认仓库前缀:取平台配置的 Harbor 地址与项目
   const { data: cluster } = useClusterStatus();
   const registryPrefix = cluster?.config.registry_host
     ? `${cluster.config.registry_host}/${cluster.config.registry_project ?? "superdl"}/`
@@ -145,8 +144,7 @@ function ImagesPage() {
   const update = useUpdateImage({
     mutation: {
       onSuccess: (_d, v) => {
-        // 预热开关(单字段补丁)与抽屉整表保存共用本 mutation:反馈文案按补丁形态分开,
-        // 开关切换不说「已保存」这种泛话(与 skus.tsx 开关文案分立同款)
+        // 预热开关与整表保存共用本 mutation,反馈文案按补丁形态分开
         const toggleOnly = Object.keys(v.data).length === 1 && "prewarm_enabled" in v.data;
         message.success(t(toggleOnly ? "images.prewarmToggled" : "images.saved"));
         setEditing(null);
@@ -187,8 +185,7 @@ function ImagesPage() {
     if (editing === "new") {
       create.mutate({ data: values });
     } else if (editing) {
-      // 后端 ImageUpdate(catalog/schemas.py)暂无 reason 字段,编辑不收「变更原因」;
-      // 后端补字段后参照 skus.tsx 的编辑必填 reason 模式补上
+      // ImageUpdate 无 reason 字段
       update.mutate({ imageId: editing.id, data: values });
     }
   };
@@ -255,7 +252,7 @@ function ImagesPage() {
                 <Switch
                   checked={v}
                   disabled={!writable}
-                  // 行级 loading:只转本行开关,不连带其他行(与 skus.tsx 按 variables 隔离同范式)
+                  // 行级 loading
                   loading={update.isPending && update.variables?.imageId === r.id}
                   onChange={(on) =>
                     update.mutate({ imageId: r.id, data: { prewarm_enabled: on } })

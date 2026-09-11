@@ -1,8 +1,4 @@
-/**
- * 算力市场:GPU / CPU 分栏 + 筛选链 chips + 表格 radio 单选 + 底部结算条,数据行 = SKU。
- * CTA 即库存,售罄行灰置不隐藏。未登录可看,结算条 CTA 变「登录后租用」。
- * 两栏筛选维度不同:GPU 按「型号 / 档位 / 显存 / 卡数」,CPU 只按「vCPU / 内存」且价格是整机时价。
- */
+/** 算力市场:GPU / CPU 分栏 + 筛选链 chips + 表格 radio 单选 + 底部结算条,数据行 = SKU。CTA 即库存,售罄行灰置不隐藏;未登录可看,CTA 变「登录后租用」。GPU 按「型号 / 档位 / 显存 / 卡数」筛,CPU 按「vCPU / 内存」筛且价格是整机时价。 */
 
 import {
   billingUnits,
@@ -36,8 +32,7 @@ const ALL = "";
 
 type Kind = "gpu" | "cpu";
 
-/** 市场页 URL 状态:10 个筛选/选中参数,默认值一律剥离(kind=gpu / mode=on_demand /
- *  chips 空档 / gpus=1 / count=1 不进 URL);非法值丢弃回默认。 */
+/** 市场页 URL 状态:10 个筛选/选中参数,默认值一律剥离(kind=gpu / mode=on_demand / chips 空档 / gpus=1 / count=1);非法值回默认。 */
 export interface MarketSearch {
   kind?: Kind;
   mode?: BillingMode;
@@ -64,7 +59,7 @@ export function marketValidateSearch(search: Record<string, unknown>): MarketSea
   const mode = search.mode;
   if (mode === "spot") out.mode = "spot";
   else if (typeof mode === "string" && isBillingPeriod(mode)) out.mode = mode;
-  // on_demand 为默认计费方式,剥离
+  // on_demand 为默认,剥离
   if (typeof search.model === "string" && search.model !== "") out.model = search.model;
   if (
     typeof search.tier === "string" &&
@@ -85,7 +80,7 @@ export function marketValidateSearch(search: Record<string, unknown>): MarketSea
   const sku = posInt(search.sku);
   if (sku != null) out.sku = sku;
   const count = posInt(search.count);
-  // 1 份为默认时长,剥离;超上限非法值丢弃
+  // 1 份为默认,剥离;超上限丢弃
   if (count != null && count > 1 && count <= MAX_PERIOD_COUNT) out.count = count;
   return out;
 }
@@ -102,7 +97,7 @@ function MarketPage() {
   const navigate = useNavigate();
   const loggedIn = useIsLoggedIn();
   const [rulesOpen, setRulesOpen] = useState(false);
-  // 筛选/选中全部入 URL(replace,不产生历史垃圾):可分享、刷新/返回不丢
+  // 筛选/选中全部入 URL(replace)
   const search = Route.useSearch();
   const kind: Kind = search.kind ?? "gpu";
   const billingMode: BillingMode = search.mode ?? "on_demand";
@@ -113,7 +108,7 @@ function MarketPage() {
   const vcpu = search.vcpu ?? 0;
   const memGb = search.mem ?? 0;
   const selectedId = search.sku;
-  // 购买时长(1~36 个周期):入 URL 并透传创建页,与创建页数量选择器同源
+  // 购买时长(1~36 个周期):入 URL 并透传创建页
   const periodCount = search.count ?? 1;
   const update = (next: MarketSearch) =>
     void navigate({ to: "/market", search: next, replace: true });
@@ -124,13 +119,13 @@ function MarketPage() {
     isError,
     refetch,
   } = useSkus({ refetchInterval: 30_000 });
-  // 计费规则的冻结宽限小时数读 /policies;未就绪用无数字兜底句
+  // 冻结宽限小时数读 /policies;未就绪用无数字兜底句
   const { data: policies } = usePolicies();
   const discounts = usePeriodDiscounts();
   const spotPolicy = useSpotPolicy();
 
   const isCpu = kind === "cpu";
-  // 分栏先切分数据源:两栏的 chip 取值域各自从本栏 SKU 聚合,不会互相带出空选项
+  // 分栏先切分数据源:两栏 chip 取值域各自从本栏 SKU 聚合
   const kindSkus = (allSkus ?? []).filter((s) => (s.tier === "cpu") === isCpu);
   const freeByModel = dedupAvailableByModel(kindSkus);
 
@@ -179,7 +174,7 @@ function MarketPage() {
   const needed = isCpu ? 1 : gpuCount;
   const rentable = (s: SkuMarketOut) => (s.available_count ?? 0) >= needed;
 
-  // 选中的规格不接受包周期 / 未上竞价时按量兜底:chips 已灰置,结算条也不能还挂着一个下不了的单
+  // 选中规格不接受包周期 / 未上竞价时按量兜底
   const periodBlocked = selected != null && !selected.period_enabled;
   const spotUnavailable = selected != null && !selected.spot_enabled;
   const spotBlocked = spotUnavailable || spotPolicy == null;
@@ -189,9 +184,9 @@ function MarketPage() {
       : billingMode;
   const isSpot = mode === "spot";
   const period = isBillingPeriod(mode) ? mode : null;
-  // 竞价档选中时,没上竞价的规格整行灰置而不是过滤掉(与「售罄行灰置不隐藏」同一条口径)
+  // 竞价档选中时,没上竞价的规格整行灰置不过滤
   const selectable = (s: SkuMarketOut) => rentable(s) && (!isSpot || s.spot_enabled);
-  // 明细区摊开的单价:竞价档报折后价(与结算条大字同一个数),其余报 SKU 原价
+  // 明细区单价:竞价档报折后价,其余报 SKU 原价
   const unitPrice =
     selected && isSpot
       ? (spotPriceOf(selected.price_hourly, spotPolicy) ?? selected.price_hourly)
@@ -205,7 +200,7 @@ function MarketPage() {
     cpu: isCpu,
     ...(isSpot && spotPolicy ? { spot: spotPolicy } : {}),
   });
-  // 市场页没有报价端点,按 policies 折扣本地估算(展示值,创建页最终报价为准)
+  // 市场页无报价端点,按 policies 折扣本地估算(展示值,创建页报价为准)
   const quote =
     selected && period
       ? periodQuoteOf(
@@ -216,7 +211,7 @@ function MarketPage() {
       : undefined;
 
   return (
-    // 不用 Space:其 ant-space-item 包装会让 sticky 结算条的包含块只剩自身高度
+    // 不用 Space(ant-space-item 包装会破坏 sticky 结算条的包含块)
     <div style={{ display: "flex", flexDirection: "column", gap: 16, width: "100%" }}>
       <Typography.Title level={4} style={{ margin: 0 }}>
         {t("market.title")}
@@ -242,8 +237,7 @@ function MarketPage() {
       {spotUnavailable && billingMode === "spot" && (
         <Alert type="info" showIcon title={t("market.spotFallbackToHourly")} />
       )}
-      {/* 竞价档常驻提示:折扣是拿「可能被回收」换的,选中期间一直摆在页面上;
-          宽限秒数与通知渠道从 /policies 读(与知情同意 modal 同源),策略未就绪不出这句话 */}
+      {/* 竞价档常驻提示;宽限秒数与通知渠道从 /policies 读,策略未就绪不出 */}
       {isSpot && spotPolicy && (
         <Alert
           type="warning"
@@ -258,7 +252,7 @@ function MarketPage() {
             value={kind}
             options={kindOptions}
             onChange={(v) => {
-              // 换栏必须清选中:上一栏的行不在本栏表里(其余筛选保留,回切时仍在)
+              // 换栏清选中,其余筛选保留
               update({ ...search, kind: v === "cpu" ? "cpu" : undefined, sku: undefined });
             }}
           />
@@ -337,7 +331,7 @@ function MarketPage() {
       </Card>
 
       <CheckoutBar
-        // 选中规格/计费方式/时长变化时,汇总/费用数字淡入(动效只在结算条数字区)
+        // 选中规格/计费方式/时长变化时汇总数字淡入
         changeKey={selected ? `${selected.id}-${mode}-${periodCount}` : "none"}
         summary={
           selected
@@ -371,7 +365,7 @@ function MarketPage() {
               }
             : {
                 label: t("create.configCostLabel"),
-                // CPU 规格的 price_hourly 已是整机时价(后端计费份数恒 1),不再乘卡数
+                // CPU 规格 price_hourly 已是整机时价,不乘卡数
                 value: !selected ? (
                   "--"
                 ) : isSpot ? (

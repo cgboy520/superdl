@@ -58,11 +58,7 @@ async def pending_tasks(sm: async_sessionmaker[AsyncSession]) -> int:
 
 class TestPrewarmFullChain:
     async def test_cpu_pool_nodes_are_never_prewarmed(self, sm, fake: FakeOrchestrator) -> None:
-        """无卡机不铺预热行。
-
-        挂了说明:整套 CUDA 镜像会被铺到 cpu 池的无卡机上。fake 的 cpu 节点是 Ready 的,
-        这条只会被「预热选点漏了池维度」挂掉。
-        """
+        """无卡机不铺预热行。"""
         await make_image(sm)
         await prewarm_patrol(sm)
         nodes = {r.node_name for r in await cache_rows(sm)}
@@ -78,7 +74,7 @@ class TestPrewarmFullChain:
         assert [r.status for r in rows] == ["pending"] * 3
         assert await pending_tasks(sm) == 3
 
-        # handler:建 Job(auto_prewarm → succeeded)+ 行置 pulling;drain_strict 断言全部成功
+        # handler:建 Job + 行置 pulling
         assert await drain_strict(sm) == (3, 0)
         rows = await cache_rows(sm)
         assert [r.status for r in rows] == ["pulling"] * 3
@@ -96,7 +92,7 @@ class TestPrewarmFullChain:
         image_id = await make_image(sm)
         await prewarm_patrol(sm)
         await drain(sm)
-        # 重复入队同一目标再 drain(at-least-once 重放)
+        # 重复入队同一目标再 drain
         async with sm() as session:
             from app.core.outbox import enqueue
 
@@ -201,11 +197,7 @@ class TestPrewarmLifecycle:
     async def test_ref_change_via_sql_invalidates_cached_rows(
         self, sm, fake: FakeOrchestrator
     ) -> None:
-        """绕过服务层直接改 image_ref(SQL 批量换域名 / 数据修复)时,缓存行必须作废重拉。
-
-        挂了说明:管理端报「已预热」而节点上留着旧 digest 的镜像,重推的修复到不了实例
-        (admin_update_image 的清行只覆盖走接口那条路)。
-        """
+        """绕过服务层直接改 image_ref 时,缓存行作废重拉。"""
         image_id = await make_image(sm)
         await prewarm_patrol(sm)
         await drain(sm)
@@ -229,14 +221,11 @@ class TestPrewarmLifecycle:
         assert {r.cached_ref for r in rows} == {None}
 
     async def test_pending_row_requeued_after_timeout(self, sm, fake: FakeOrchestrator) -> None:
-        """pending 行超时(默认 10min)重派:outbox 任务死信/丢失后行不再永远卡 pending。
-
-        挂了 = 预热任务一旦丢失,该 (镜像,节点) 永远不会再有缓存。
-        """
+        """pending 行超时(默认 10min)重派。"""
         await make_image(sm)
         await prewarm_patrol(sm)
         assert await pending_tasks(sm) == 3
-        # 模拟任务丢失(死信被人工清理/队列异常):删掉 pending 任务,行仍 pending
+        # 任务丢失:删掉 pending 任务,行仍 pending
         async with sm() as session:
             for t in (await session.execute(select(OutboxTask))).scalars().all():
                 await session.delete(t)
@@ -249,10 +238,7 @@ class TestPrewarmLifecycle:
         assert await pending_tasks(sm) == 3
 
     async def test_not_ready_node_gets_no_new_task(self, sm, fake: FakeOrchestrator) -> None:
-        """NotReady 节点保留行但不派新任务(挂了 = 向失联节点反复派注定失败的拉取 Job)。
-
-        铺行只覆盖 Ready/Cordoned;failed 重试与 pending 重派同样跳过 NotReady。
-        """
+        """NotReady 节点保留行但不派新任务;failed 重试与 pending 重派同样跳过。"""
         from app.core.k8s.base import NodeInfo
 
         fake.inject_node(
@@ -268,7 +254,7 @@ class TestPrewarmLifecycle:
         image_id = await make_image(sm)
         counts = await prewarm_patrol(sm)
         assert counts["planned"] == 3  # 只铺 Ready 三节点,sick-node 不在期望集
-        # 手工种一条 sick-node 的 failed 行(节点转 NotReady 前铺下的行):重试不应派发
+        # sick-node 的 failed 行:重试不派发
         async with sm() as session:
             session.add(
                 ImageNodeCache(
@@ -298,8 +284,7 @@ class TestPrewarmPullSecret:
     async def test_job_references_managed_secret_only_when_robot_configured(
         self, sm, fake: FakeOrchestrator
     ) -> None:
-        """预热 Job 与实例 Pod 同一条凭据链:配了机器人才托管 Secret 到平台 ns 并引用,
-        否则不引用(项目 public)。挂了说明预热在私有项目上会一直 ErrImagePull。"""
+        """预热 Job 与实例 Pod 同一条凭据链:配了机器人才托管 Secret 并引用。"""
         from app.core.config import get_settings
         from app.core.platform_config import set_platform_settings
         from app.core.registry import PULL_SECRET_NAME

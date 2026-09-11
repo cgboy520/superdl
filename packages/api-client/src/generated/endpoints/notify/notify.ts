@@ -54,7 +54,7 @@ export const getMarkAllReadApiV1NotificationsReadAllPostUrl = () => {
 }
 
 /**
- * 全部已读(幂等)。注意须注册在 {notification_id} 之前,避免 read-all 被当 id 解析。
+ * 全部已读(幂等);须注册在 {notification_id} 之前。
  * @summary Mark All Read
  */
 export const markAllReadApiV1NotificationsReadAllPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<void> => {
@@ -78,7 +78,7 @@ export const getUnreadCountApiV1NotificationsUnreadCountGetUrl = () => {
 }
 
 /**
- * 未读数轻端点(顶栏角标轮询):DB count,与列表分页解耦。
+ * 未读数轻端点(顶栏角标轮询)。
  * @summary Unread Count
  */
 export const unreadCountApiV1NotificationsUnreadCountGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<UnreadCountOut> => {

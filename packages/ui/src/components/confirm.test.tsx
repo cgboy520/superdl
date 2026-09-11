@@ -1,7 +1,4 @@
-/** confirm 共享件测试:
- *  - TypeConfirmModal(L3):键入 + 勾选双闸缺一不可、省略勾选闸时只过键入、关闭重开状态重置
- *    (重置靠渲染期派生,关了又开还是上一轮的键入 = 破坏确认形同虚设)。
- *  - useConfirm(L2):后果前置列表与影响说明按结构渲染,danger 透传到红色按钮。 */
+/** confirm 共享件:TypeConfirmModal 双闸缺一不可、省略勾选闸只过键入、关闭重开重置;useConfirm 后果列表与影响说明按结构渲染,danger 透传。 */
 
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -51,14 +48,13 @@ function renderModal(
   );
 }
 
-// antd Button 对两字中文自动插空(autoInsertSpace),可访问名是「确 认 释 放」之外的形态需按原样匹配
+// antd Button 两字中文自动插空,可访问名按原样匹配
 describe("TypeConfirmModal", () => {
   it("键入匹配 + 勾选两道闸全过才解锁确认按钮", async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();
     renderModal({ checkboxLabel: "我确认将清除实例盘全部数据" }, { onConfirm });
     const dialog = await screen.findByRole("dialog");
-    // 键入提示由 shared:confirm.typeNameToConfirm 插值渲染
     expect(within(dialog).getByText("键入 demo-vm 以确认")).toBeInTheDocument();
     const confirmBtn = within(dialog).getByRole("button", { name: "确认释放" });
     expect(confirmBtn).toBeDisabled();
@@ -140,10 +136,10 @@ describe("useConfirm", () => {
         </App>
       </I18nextProvider>,
     );
-    // 两字中文按钮可访问名带自动空格(「触 发」)
+    // 两字中文按钮可访问名带空格
     await user.click(screen.getByRole("button", { name: /触\s*发/ }));
     const dialog = await screen.findByRole("dialog");
-    // antd v6 confirm 标题渲染两处(.ant-modal-title 与 .ant-modal-confirm-title)
+    // antd 6 confirm 标题渲染两处
     expect(within(dialog).getAllByText("确认关机?").length).toBeGreaterThan(0);
     expect(within(dialog).getByText("GPU 立即释放,再开机可能库存不足")).toBeInTheDocument();
     expect(within(dialog).getByText("该操作影响 3 台在跑实例")).toBeInTheDocument();

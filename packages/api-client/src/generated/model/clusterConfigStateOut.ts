@@ -6,7 +6,7 @@
  */
 
 /**
- * 配置就绪位(不回明文):集群页据此指引去平台配置页补键。
+ * 配置就绪位(不回明文)。
  */
 export interface ClusterConfigStateOut {
   grafana_url: string | null;

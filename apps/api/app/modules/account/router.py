@@ -27,14 +27,9 @@ from app.modules.account.schemas import (
 
 router = APIRouter(tags=["account"])
 
-# refresh token 的 HttpOnly Cookie(web SPA 与 API 同源反代,SameSite=Strict 即可):
-# 长期凭据移出 JS 可达面(XSS 偷不走),access token 短 TTL 留前端。
-# refresh_token 不进响应体:body 旁路会把长期凭据暴露在 JS 可读面(XSS 一次偷走 7 天会话)。
-#
-# Cookie 名分环境:prod 用 `__Host-` 前缀(浏览器强制 Secure + path=/ + 无 Domain,
-# 租户子域种不了同名 cookie —— 防 cookie tossing;Jupyter 侧同款,见
-# instance-images/superdl_jupyter_auth.py)。非 prod 走 http,`__Host-` 会被浏览器
-# 拒收,退回无前缀名;两侧 path 都是 /(__Host- 规范要求,同名回读不歧义)。
+# refresh token 只走 HttpOnly Cookie(SameSite=Strict,path=/),不进响应体。
+# Cookie 名分环境:prod 用 `__Host-` 前缀,非 prod(http)无前缀;
+# Jupyter 侧同款,见 instance-images/superdl_jupyter_auth.py。
 _REFRESH_COOKIE_PROD = "__Host-superdl_refresh"
 _REFRESH_COOKIE_DEV = "superdl_refresh"
 
@@ -51,14 +46,13 @@ def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
         max_age=settings.refresh_token_ttl_seconds,
         path="/",
         httponly=True,
-        secure=settings.environment == "prod",  # dev/test 是 http
+        secure=settings.environment == "prod",
         samesite="strict",
     )
 
 
 def _refresh_token_from(request: Request) -> str:
-    """refresh 只收 Cookie(浏览器同源自动随路);必须带自定义头做双提交纵深
-    (跨站表单与简单跨域请求都造不出自定义头;SameSite=Strict 之上的一道)。"""
+    """refresh 只收 Cookie,且必须带 X-Requested-With 双提交头。"""
     cookie_token = request.cookies.get(_refresh_cookie_name())
     if cookie_token is not None:
         if request.headers.get("x-requested-with") != "fetch":
@@ -84,8 +78,7 @@ async def send_sms_code(body: SmsCodeRequest, session: DbSession, request: Reque
 
 
 class CaptchaConfigOut(BaseModel):
-    """前端初始化验证码 SDK 所需的公开信息(身份标/场景非密)。enabled=false(安全策略
-    captcha_enabled 关闭)时前端不加载 SDK,发码不带 token。"""
+    """验证码 SDK 初始化公开信息。enabled=false 时前端不加载 SDK,发码不带 token。"""
 
     enabled: bool
     scene_id: str | None
@@ -94,7 +87,7 @@ class CaptchaConfigOut(BaseModel):
 
 @router.get("/auth/captcha-config")
 async def captcha_config(session: DbSession) -> CaptchaConfigOut:
-    """验证码 2.0 客户端初始化配置(免鉴权;prefix/scene_id 为公开信息)。"""
+    """验证码 2.0 客户端初始化配置(免鉴权)。"""
     from app.core.platform_config import get_effective_platform_config
 
     cfg = await get_effective_platform_config(session)
@@ -105,9 +98,7 @@ async def captcha_config(session: DbSession) -> CaptchaConfigOut:
     )
 
 
-# 凭据类端点的审计目标必须在调用 service **之前**先落一个:失败请求走不到成功分支,
-# 只在成功后标注等于「失败登录是一条没有目标的匿名审计行」——事后答不出哪个账号被打、
-# 是不是撞库。号码一律掩码入库(审计表里不复制一份明文 PII);成功后再覆盖成 user:{id}。
+# 凭据类端点在调用 service 之前先落审计目标(号码掩码入库),成功后再覆盖成 user:{id}。
 def _mark_credential_attempt(request: Request, phone: str, action: str) -> None:
     set_audit_target(request, f"phone:{mask_phone_value(phone)}", detail={"action": action})
 
@@ -159,8 +150,7 @@ async def reset_password(
 
 @router.post("/auth/refresh")
 async def refresh(session: DbSession, request: Request, response: Response) -> TokenPairOut:
-    """轮换刷新:refresh 只经 HttpOnly Cookie 提交(X-Requested-With 双提交头强制);
-    成功即轮换写回新 Cookie。"""
+    """轮换刷新:refresh 只经 HttpOnly Cookie + X-Requested-With 头提交;成功写回新 Cookie。"""
     pair = await service.refresh_tokens(session, _refresh_token_from(request))
     _set_refresh_cookie(response, pair.refresh_token)
     return _token_pair_out(pair)
@@ -168,7 +158,7 @@ async def refresh(session: DbSession, request: Request, response: Response) -> T
 
 @router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(session: DbSession, request: Request) -> Response:
-    """登出当前会话(refresh token 一次性消费位撤销 + 清 Cookie)。token 无效也回 204,防枚举。"""
+    """登出当前会话(消费 refresh token + 清 Cookie)。token 无效也回 204。"""
     await service.logout(session, _refresh_token_from(request))
     resp = Response(status_code=status.HTTP_204_NO_CONTENT)
     resp.delete_cookie(_refresh_cookie_name(), path="/")
@@ -218,7 +208,7 @@ async def create_deletion_request(
 
 @router.get("/me/deletion-request")
 async def get_deletion_request(user: CurrentUser, session: DbSession) -> DeletionRequestOut | None:
-    """当前 pending 申请;无则最近一条(展示驳回原因/冷静期倒计时);从未申请回 null。"""
+    """当前 pending 申请;无则最近一条;从未申请回 null。"""
     req = await service.get_my_deletion_request(session, user.id)
     return DeletionRequestOut.model_validate(req) if req is not None else None
 

@@ -1,7 +1,5 @@
-"""账号注销:申请(键入手机号校验 + 幂等)→ 7 天冷静期 → 撤销/执行(前置校验 + 匿名化)。
-
-注销后:access/refresh 401(文案「账号已注销」)、手机号释放可重注册、账本依法保留。
-"""
+"""账号注销:申请 → 7 天冷静期 → 撤销/执行(前置校验 + 匿名化);
+注销后 access/refresh 401、手机号释放可重注册、账本保留。"""
 
 import hashlib
 import re
@@ -120,7 +118,7 @@ class TestCooldown:
         resp = await client.post(f"/api/admin/v1/deletion-requests/{req_id}/approve", headers=admin)
         assert resp.status_code == 409
         assert resp.json()["message_key"] == "account.deletionCooldown"
-        # 冷静期拦截不驳回:申请仍为 pending
+        # 冷静期内拦截,申请仍 pending
         async with sm() as session:
             req = await session.get(AccountDeletionRequest, req_id)
             assert req is not None and req.status == "pending"
@@ -214,7 +212,7 @@ class TestApproveSuccess:
                 )
             )
             await session.commit()
-        # 登录拿 refresh token(执行后要验证旧凭证全废);refresh 只走 Cookie,从 jar 取
+        # 登录拿 refresh token(从 jar 取)
         await client.post(
             "/api/v1/auth/sms-code",
             json={"phone": PHONE, "purpose": "login"},
@@ -234,8 +232,7 @@ class TestApproveSuccess:
         async with sm() as session:
             user = await session.get(User, user_id)
             assert user is not None
-            # 匿名化占位串:del:{user_id}:{16 位随机 hex};原号码不再出现;实名字段清空;
-            # 状态 deleted。长度不得越过 users.phone 的 40 列宽
+            # 匿名化占位串 del:{user_id}:{16 位随机 hex}(≤40 列宽);实名字段清空;状态 deleted
             assert re.fullmatch(rf"del:{user_id}:[0-9a-f]{{16}}", user.phone), user.phone
             assert len(user.phone) <= 40
             assert PHONE not in user.phone
@@ -253,8 +250,7 @@ class TestApproveSuccess:
         refresh = await refresh_via_cookie(client, old_refresh)
         assert refresh.status_code == 401
         assert refresh.json()["message_key"] == "account.accountDeleted"
-        # 登录 → 拒绝(手机号已释放)。登录路径按防枚举口径统一 loginFailed(400),
-        # 「账号已注销」文案只出现在持有凭证的 access/refresh 路径
+        # 登录 → loginFailed(400)
         await client.post(
             "/api/v1/auth/sms-code",
             json={"phone": PHONE, "purpose": "login"},
@@ -264,8 +260,7 @@ class TestApproveSuccess:
         )
         assert relogin.status_code == 400
         assert relogin.json()["message_key"] == "account.loginFailed"
-        # 同手机号可重新注册(匿名化释放了唯一约束)。上面 relogin 消费验证码后未 commit,
-        # 该码未落消费标记会触发同号发码退避:回拨 created_at 越过窗口
+        # 同手机号可重新注册;回拨上一条验证码越过发码退避窗
         await age_sms_codes(sm)
         send = await client.post(
             "/api/v1/auth/sms-code",
@@ -280,13 +275,7 @@ class TestApproveSuccess:
         assert reregister.json()["user"]["id"] != user_id
 
     async def test_anonymized_phone_is_not_derivable_from_the_number(self, client: AsyncClient, sm):
-        """占位串与原号码之间不得有任何函数关系。
-
-        挂了说明匿名化退回成了「摘要」:11 位手机号的 keyspace 只有约 1.9e9,拿到库 dump
-        的人可以离线穷举反查回号码——那是假名化,不是删除,PIPL 第 47 条的义务没履行。
-        判据取两个可判定的必要条件:同一号码注销两次得到**不同**占位串(有随机性,
-        不是号码的函数),且占位串不等于该号码任何常见摘要形态。
-        """
+        """占位串与原号码无函数关系:同号注销两次得到不同占位串,且不等于任何常见摘要形态。"""
         admin = await admin_headers(sm, client)
         tokens: list[str] = []
         for _ in range(2):
@@ -301,18 +290,18 @@ class TestApproveSuccess:
                 user = await session.get(User, user_id)
                 assert user is not None
                 tokens.append(user.phone.split(":")[-1])
-            # 号码已释放,下一轮重新注册同号(上一轮的验证码未落消费标记,回拨发码退避窗)
+            # 下一轮重新注册同号(回拨发码退避窗)
             await age_sms_codes(sm)
 
         assert tokens[0] != tokens[1], "同号两次注销得到同一串 = 占位串是号码的函数"
         digest = hashlib.sha256(PHONE.encode()).hexdigest()
         for token in tokens:
-            # 无密钥摘要的各种截断/全长形态都不得命中
+            # 无密钥摘要的截断/全长形态都不命中
             assert token not in (digest, digest[:12], digest[:16], digest[: len(token)])
             assert token != hashlib.md5(PHONE.encode()).hexdigest()[: len(token)]
 
     async def test_ledger_preserved(self, client: AsyncClient, sm):
-        """账本按法定义务保留:注销只脱敏身份,balance_ledger 行不动。"""
+        """注销只脱敏身份,balance_ledger 行不动。"""
         headers, user_id, _ = await create_user_with_key(client, PHONE)
         await fund_wallet(sm, user_id, "100.00")
         async with sm() as session:
@@ -324,7 +313,7 @@ class TestApproveSuccess:
                 )
             ).scalar_one()
             assert before > 0
-            # 余额清零(保留账本行),使执行前校验通过
+            # 余额清零(保留账本行)
             await session.execute(
                 update(Wallet).where(Wallet.user_id == user_id).values(balance=Decimal("0.00"))
             )
@@ -349,7 +338,7 @@ class TestAdminRoles:
     async def test_admin_can_reject(self, client: AsyncClient, sm):
         headers, _, _ = await create_user_with_key(client, PHONE)
         req_id = (await _create_request(client, headers)).json()["id"]
-        # 仅 admin 可写(驳回不受冷静期限制,用它验证写通路;角色门由 route×role 矩阵覆盖)
+        # 驳回不受冷静期限制;角色门由 route×role 矩阵覆盖
         admin = await admin_headers(sm, client)
         reject = await client.post(
             f"/api/admin/v1/deletion-requests/{req_id}/reject",

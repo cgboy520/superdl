@@ -16,7 +16,7 @@ from app.core.timeutil import now_utc
 
 
 async def test_enqueue_same_transaction_rollback(sm: async_sessionmaker[AsyncSession]):
-    """业务事务回滚时,outbox 任务必须一并消失 —— 事务性 outbox 的根本保证。"""
+    """业务事务回滚时 outbox 任务一并消失。"""
     async with sm() as session:
         enqueue(session, "noop", {"k": 1})
         await session.rollback()
@@ -48,8 +48,7 @@ async def test_process_success(sm: async_sessionmaker[AsyncSession], monkeypatch
 async def test_enqueue_carries_request_id_into_handler_context(
     sm: async_sessionmaker[AsyncSession], monkeypatch
 ):
-    """跨进程请求链:enqueue 把当前 contextvar 的 request_id 写进 payload
-    (_request_id 键);执行时回填日志上下文(handler 内可见),执行完解绑不残留。"""
+    """enqueue 把 request_id 写进 payload(_request_id);执行时回填日志上下文,执行完解绑。"""
     import structlog
 
     seen: list[object] = []
@@ -73,7 +72,7 @@ async def test_enqueue_carries_request_id_into_handler_context(
 
 
 async def test_enqueue_without_request_id_keeps_payload(sm: async_sessionmaker[AsyncSession]):
-    """无 request_id 上下文(如 worker 内部入队):payload 原样,不画蛇添足。"""
+    """无 request_id 上下文:payload 原样。"""
     async with sm() as session:
         task = enqueue(session, "noop_plain", {"x": 1})
         assert task.payload == {"x": 1}
@@ -143,13 +142,13 @@ async def test_reaper_requeues_stuck_running(sm: async_sessionmaker[AsyncSession
         task = (await session.execute(select(OutboxTask))).scalar_one()
         assert task.status == "pending"
         assert task.locked_by is None
-        # 复活必须计一次失败并退避:杀进程的任务不计数会被 5 分钟无限重投,永不进 dead
+        # 复活计一次失败并退避
         assert task.retries == 1
         assert task.next_retry_at > now_utc()
 
 
 async def test_reaper_dead_letter_after_budget_exhausted(sm: async_sessionmaker[AsyncSession]):
-    """崩溃循环的任务:重试预算耗尽后必须进 dead(触发告警与管理端可见),而非无限重投。"""
+    """崩溃循环的任务重试预算耗尽后进 dead。"""
     async with sm() as session:
         task = OutboxTask(
             type="t_stuck",
@@ -172,14 +171,14 @@ async def test_reaper_dead_letter_after_budget_exhausted(sm: async_sessionmaker[
 
 class TestRetryPolicy:
     async def test_per_type_budget_overrides_default(self, sm):
-        """「等外部作业完成」型任务(disk.wipe)必须有更长的重试预算,否则盘卡 deleting。"""
+        """disk.wipe 有更长的重试预算。"""
         from app.core.outbox import DEFAULT_RETRY_POLICY, retry_policy_for
         from app.modules.orchestrator import handlers as _handlers  # noqa: F401 注册重试预算
 
         assert retry_policy_for("instance.create") is DEFAULT_RETRY_POLICY
         wipe = retry_policy_for("disk.wipe")
         assert wipe.max_retries > DEFAULT_RETRY_POLICY.max_retries
-        # 预算总时长(退避封顶后)必须够擦一块大盘:> 30 分钟
+        # 预算总时长 > 30 分钟
         total = sum(
             min(wipe.backoff_base_seconds * 2**i, wipe.backoff_max_seconds)
             for i in range(wipe.max_retries)
@@ -189,10 +188,7 @@ class TestRetryPolicy:
 
 class TestTaskTimeout:
     async def test_hung_handler_is_timed_out_and_retried(self, sm, monkeypatch):
-        """队列是全局串行 FIFO 且单副本:一个挂死的调用会把所有人的关机请求排在后面。
-
-        超时把「队头卡死」变成一次可重试的失败,而不是无限期占住队头等 reaper 兜底。
-        """
+        """handler 超时按失败退避,不占住队头。"""
         import asyncio
 
         from app.core import outbox as outbox_mod
@@ -202,8 +198,7 @@ class TestTaskTimeout:
         async def _hang(session, task):
             await asyncio.sleep(5)
 
-        # 与同文件其它用例同规:setitem 注入(monkeypatch 收尾回滚);
-        # @outbox_handler 会永久写进全局 _registry,污染全量测试会话里其它模块的断言
+        # setitem 注入(monkeypatch 收尾回滚),不用 @outbox_handler 永久注册
         monkeypatch.setitem(outbox_mod._registry, "test.hang", _hang)
 
         async with sm() as session:
@@ -223,7 +218,7 @@ class TestClaimOrder:
     async def test_prefers_earliest_next_retry_at(
         self, sm: async_sessionmaker[AsyncSession], monkeypatch
     ):
-        """领取按 (next_retry_at, id) 排序:到期最早优先,不是纯 id FIFO。"""
+        """领取按 (next_retry_at, id) 排序。"""
         calls: list[str] = []
 
         async def handler(_session: AsyncSession, task: OutboxTask) -> None:
@@ -232,7 +227,7 @@ class TestClaimOrder:
         monkeypatch.setitem(outbox._registry, "t_order", handler)
 
         async with sm() as session:
-            # late 先入库(id 更小)但更晚到期;early 应被先领取
+            # late 先入库但更晚到期;early 先领取
             session.add(OutboxTask(type="t_order", payload={"k": "late"}, next_retry_at=now_utc()))
             session.add(
                 OutboxTask(
@@ -251,11 +246,7 @@ class TestConcurrency:
     async def test_concurrent_workers_claim_distinct_tasks(
         self, sm: async_sessionmaker[AsyncSession], monkeypatch
     ):
-        """SKIP LOCKED 下多个领取协程并发执行不同任务,消除全局串行 FIFO 的队头阻塞。
-
-        屏障模式:两路 handler 与主协程在 Barrier(3) 汇合后才放行;领取若退化为串行,
-        先跑的 handler 永远等不到汇合 → wait_for 超时判负,不靠 wall-clock。
-        """
+        """SKIP LOCKED 下多个领取协程并发执行不同任务(Barrier(3) 汇合,串行则超时判负)。"""
         import asyncio
 
         gate = asyncio.Barrier(3)
@@ -272,8 +263,7 @@ class TestConcurrency:
             enqueue(session, "t_gated", {"k": "b"})
             await session.commit()
 
-        # 超时只是「串行退化 → 屏障凑不齐」的判负兜底:Linux CI 毫秒级放行;
-        # Windows 本机第二条并发 claim 的 asyncpg 建联可能慢到十几秒,余量放宽
+        # 超时余量放宽(Windows 本机 asyncpg 建联可达十几秒)
         r0, r1, _ = await asyncio.wait_for(
             asyncio.gather(process_one(sm, "w-0"), process_one(sm, "w-1"), gate.wait()),
             timeout=60,
@@ -290,11 +280,11 @@ class TestTerminalWriteOwnership:
     async def test_ownership_lost_write_is_dropped(
         self, sm: async_sessionmaker[AsyncSession], monkeypatch
     ):
-        """执行期间被 reaper 回收(锁易主)→ 终态写必须放弃,不得覆盖接管者的状态。"""
+        """执行期间被 reaper 回收(锁易主)→ 终态写放弃。"""
         from sqlalchemy import update
 
         async def handler(_session: AsyncSession, task: OutboxTask) -> None:
-            # 模拟 reaper 在 handler 执行期回收本任务(独立事务)
+            # reaper 在 handler 执行期回收本任务(独立事务)
             async with sm() as s2:
                 await s2.execute(
                     update(OutboxTask)
@@ -317,13 +307,13 @@ class TestTerminalWriteOwnership:
 
 
 def test_running_timeout_is_double_task_timeout():
-    """reaper 打回 running 的窗口必须显著大于任务执行上限,否则正常执行中的任务会被双认领。"""
+    """reaper 打回 running 的窗口显著大于任务执行上限。"""
     assert timedelta(seconds=2 * outbox.TASK_TIMEOUT_SECONDS) <= outbox.RUNNING_TIMEOUT
 
 
 class TestPendingMetrics:
     async def test_tracks_oldest_pending_age(self, sm: async_sessionmaker[AsyncSession]):
-        """积压指标 = 最老 pending 任务年龄(挂了 = 消费停滞类静默停摆失去唯一可观测出口)。"""
+        """积压指标 = 最老 pending 任务年龄。"""
         async with sm() as session:
             task = enqueue(session, "t_metric", {})
             await session.flush()
@@ -337,7 +327,7 @@ class TestPendingMetrics:
         assert OUTBOX_PENDING_OLDEST_AGE._value.get() >= 7200
 
     async def test_zero_when_no_pending(self, sm: async_sessionmaker[AsyncSession]):
-        """队列排空后指标归零(告警 for 10m 能自动恢复,不残留陈旧值)。"""
+        """队列排空后指标归零。"""
         async with sm() as session:
             await session.execute(delete(OutboxTask))
             await session.commit()

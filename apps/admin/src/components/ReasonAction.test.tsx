@@ -1,7 +1,4 @@
-/** ReasonAction 状态机回归:
- *  - 第二步(二次确认)取消必须返回第一步且已填原因保留;
- *  - 提交飞行中禁止关闭(蒙层点击不关,防止用户误以为未提交而重试)。
- *  仓库不引入 @testing-library(admin 无此依赖),用 react-dom/client + act 直驱 jsdom。 */
+/** ReasonAction 状态机:二次确认取消回第一步且原因保留;提交在途禁止关闭。react-dom/client + act 直驱 jsdom。 */
 
 import { App, ConfigProvider } from "antd";
 import i18n from "i18next";
@@ -16,7 +13,7 @@ import { ReasonAction } from "./ReasonAction";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 beforeAll(async () => {
-  // 文案直接吃真实 locales:手抄副本会在文案调整时静默失真
+  // 文案取真实 locales
   await i18n.use(initReactI18next).init({
     lng: "zh-CN",
     resources: { "zh-CN": { admin: zhCNAdmin } },
@@ -48,7 +45,7 @@ async function flush() {
   });
 }
 
-/** rc-dialog 关闭动画要几百 ms:轮询等终态,不把断言绑死在固定时长上 */
+/** 轮询等终态 */
 async function waitFor(cond: () => boolean, timeoutMs = 3000): Promise<void> {
   const start = Date.now();
   for (;;) {
@@ -64,7 +61,7 @@ function renderAction(onSubmit: (reason: string) => Promise<string | void>) {
   act(() => {
     root.render(
       <I18nextProvider i18n={i18n}>
-        {/* jsdom 不跑 CSS transition,rc-dialog 开关动画永不完成;关掉 motion 让关闭即时落终态 */}
+        {/* 关掉 motion:jsdom 不跑 transition */}
         <ConfigProvider theme={{ token: { motion: false } }}>
           <App>
             <ReasonAction
@@ -115,10 +112,9 @@ describe("ReasonAction", () => {
     click(findButton("下一步")!);
     await flush();
     expect(document.body.textContent).toContain("下架后不可新租");
-    // 第一步 destroyOnHidden:关闭动画落完后原因输入框已卸载
+    // 第一步 destroyOnHidden,原因输入框已卸载
     await waitFor(() => document.body.querySelector("textarea") === null);
-    // 第二步取消 → 返回第一步,原因还在(form store 不随弹窗销毁)
-    // 取消钮 = 底部非主按钮(测试环境未配 antd 中文 locale,文案是 Cancel)
+    // 第二步取消 → 返回第一步,原因还在;取消钮文案是 Cancel(未配中文 locale)
     const cancelBtn = [...document.body.querySelectorAll(".ant-modal-footer button")].find(
       (b) => !b.classList.contains("ant-btn-primary"),
     );
@@ -146,14 +142,14 @@ describe("ReasonAction", () => {
     click(findButton("确认执行")!);
     await flush();
     expect(onSubmit).toHaveBeenCalledWith("滞销规格下架");
-    // 在途时点蒙层:不关(mask.closable=false)
+    // 在途时点蒙层不关
     const wrap = [...document.body.querySelectorAll<HTMLElement>(".ant-modal-wrap")].find((w) =>
       w.textContent?.includes("下架后不可新租"),
     );
     click(wrap!);
     await flush();
     expect(document.body.textContent).toContain("下架后不可新租");
-    // 请求完成 → 弹窗关闭(wrap 隐藏)
+    // 请求完成 → 弹窗关闭
     await act(async () => {
       resolveSubmit!();
       await new Promise((r) => setTimeout(r, 30));

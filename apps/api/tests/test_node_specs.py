@@ -23,7 +23,7 @@ async def test_patrol_converges_and_labels(sm, fake_auto_ready):
     assert rows["fake-hami-node-1"].gpu_model == "RTX4090"
     assert rows["fake-hami-node-1"].vram_gb == 24  # DEFAULT_VRAM_GB 兜底
     assert rows["fake-mig-node-1"].gpu_model == "H100"
-    # cpu 池是无卡机:0 卡、无型号,台账照样收敛(纯 CPU 规格的库存口径只看 vCPU/内存)
+    # cpu 池无卡机:0 卡、无型号,台账照样收敛
     assert rows["fake-cpu-node-1"].gpu_count == 0
     assert not rows["fake-cpu-node-1"].gpu_model
     # label 收敛已写入 fake
@@ -89,8 +89,7 @@ async def test_missing_then_removed(sm, fake_auto_ready):
 
 
 async def test_gfd_version_labels_fill_and_follow_upgrade(sm, fake_auto_ready):
-    """驱动/CUDA 两列以 GFD 标签为准:没有这条路径,收尾上报晚于对账器判 joined(终态,上报 404)
-    的节点两列恒空,且驱动升级后台账不跟随。"""
+    """驱动/CUDA 两列以 GFD 标签为准,驱动升级后台账跟随。"""
     fake_auto_ready.unlabeled_nodes.append(
         NodeInfo(
             name="gfd-node",
@@ -109,7 +108,7 @@ async def test_gfd_version_labels_fill_and_follow_upgrade(sm, fake_auto_ready):
             await session.execute(select(NodeSpec).where(NodeSpec.node_name == "gfd-node"))
         ).scalar_one()
     assert row.driver_version == "580.65" and row.cuda_version == "12.8"
-    # 节点升级驱动 → GFD 标签变 → 下一轮巡检跟随(装机快照永远停在首装那次)
+    # 节点升级驱动 → GFD 标签变 → 下一轮巡检跟随
     fake_auto_ready.unlabeled_nodes[-1] = replace(
         fake_auto_ready.unlabeled_nodes[-1],
         driver_version_label="610.57.04",
@@ -124,10 +123,8 @@ async def test_gfd_version_labels_fill_and_follow_upgrade(sm, fake_auto_ready):
 
 
 async def test_enrollment_report_wins_over_gfd(sm, fake_auto_ready):
-    """装机登记(bootstrap 的 nvidia-smi 全卡清单 + 收尾上报的驱动/CUDA 版本)优先于 GFD 型号标签;
-    显存取卡清单最大值。版本走 report_progress → 登记快照 → 巡检落台账整条链
-    (无 GFD 版本标签时的回落):
-    挂了 = 管理端节点页驱动/CUDA 两列恒空。"""
+    """装机登记(nvidia-smi 卡清单 + 上报的驱动/CUDA 版本)优先于 GFD 型号标签;
+    显存取卡清单最大值;无 GFD 版本标签时回落到登记快照。"""
     from app.modules.nodes import service
     from app.modules.nodes.reconciler import reconcile_enrollments_once
     from app.modules.nodes.schemas import EnrollmentCreate
@@ -173,7 +170,7 @@ async def test_enrollment_report_wins_over_gfd(sm, fake_auto_ready):
 
 
 async def _enroll_and_join_attempt(sm, *, hostname: str, pool: str) -> None:
-    """走完「签发令牌 → bootstrap → 对账」整条登记链,让登记行落到对账器判定的终态。"""
+    """走完「签发令牌 → bootstrap → 对账」登记链。"""
     from app.modules.nodes import service
     from app.modules.nodes.reconciler import reconcile_enrollments_once
     from app.modules.nodes.schemas import EnrollmentCreate
@@ -200,13 +197,7 @@ async def _enroll_and_join_attempt(sm, *, hostname: str, pool: str) -> None:
 
 
 async def test_pool_label_spoof_is_corrected_and_cordoned(sm, fake_auto_ready):
-    """冒名节点:登记为 cpu 池的机器把 config.yaml 改成 superdl.io/pool=kata,想吸走别人的
-    VM 隔离负载(落到攻击者宿主上,宿主 root 可读)。
-
-    刻意让登记行落在 failed(nodes/reconciler 把「标签与登记不符」判成 failed):
-    池事实源若只查 status='joined' 就查不到这一行,纠偏静默跳过、伪标签长期有效。
-    挂了 = 池标签纠偏对它唯一要防的攻击完全失效。
-    """
+    """冒名节点(登记 cpu 池、自声明 kata 池,登记行落 failed):池标签按登记纠回并 cordon。"""
     from app.modules.nodes.models import NodeEnrollment
 
     fake_auto_ready.inject_node(
@@ -226,7 +217,7 @@ async def test_pool_label_spoof_is_corrected_and_cordoned(sm, fake_auto_ready):
                 select(NodeEnrollment).where(NodeEnrollment.node_name == "spoofer-1")
             )
         ).scalar_one()
-        # 前提自检:登记行确实落在 failed 档(而非 joined)
+        # 登记行落在 failed
         assert enrollment.status == "failed" and enrollment.pool == "cpu"
 
     counts = await node_spec_patrol(sm)
@@ -234,28 +225,28 @@ async def test_pool_label_spoof_is_corrected_and_cordoned(sm, fake_auto_ready):
     # (a) 标签按登记纠回 cpu
     assert counts["pool_label_corrected"] == 1
     assert fake_auto_ready.node_labels["spoofer-1"]["superdl.io/pool"] == "cpu"
-    # (b) 同时停调度:纠标签有窗口(kubelet 重启会再次自声明),而调度器只看标签
+    # (b) 同时停调度
     assert counts["pool_mismatch_cordoned"] == 1
     async with sm() as session:
         row = (
             await session.execute(select(NodeSpec).where(NodeSpec.node_name == "spoofer-1"))
         ).scalar_one()
         assert row.desired_unschedulable is True
-        # 走与管理端手工 cordon 同一条路径:期望态落台账 + outbox 入队(请求路径不碰 K8s)
+        # 与管理端手工 cordon 同一条路径:期望态落台账 + outbox 入队
         tasks = (
             await session.execute(select(OutboxTask).where(OutboxTask.type == "node.cordon"))
         ).scalars()
         assert [t.payload["node_name"] for t in tasks] == ["spoofer-1"]
-    # 本轮巡检的阶段 D 已按期望态收敛,节点当轮就真的不可调度(不等 outbox)
+    # 本轮巡检阶段 D 已按期望态收敛
     assert "spoofer-1" in fake_auto_ready.cordoned_nodes
 
-    # 二轮不重复入队 cordon(期望态已是 True),但只要 fake 的自声明标签没变就继续纠偏
+    # 二轮不重复入队 cordon,自声明标签没变就继续纠偏
     counts2 = await node_spec_patrol(sm)
     assert counts2["pool_mismatch_cordoned"] == 0
 
 
 async def test_matching_pool_label_is_left_alone(sm, fake_auto_ready):
-    """登记与自声明一致的正常节点不能被误判:挂了 = 每轮巡检把好节点全 cordon 掉。"""
+    """登记与自声明一致的正常节点不被 cordon。"""
     fake_auto_ready.inject_node(
         NodeInfo(
             name="honest-1",

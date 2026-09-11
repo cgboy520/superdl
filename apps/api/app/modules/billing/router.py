@@ -39,7 +39,7 @@ router = APIRouter(tags=["billing"])
 
 @router.get("/policies")
 async def get_policies(session: DbSession) -> PoliciesOut:
-    """计费/回收策略。公开(未登录市场页也要展示盘价);env 默认 + DB 覆盖,管理端在线调整。"""
+    """计费/回收策略。公开;env 默认 + DB 覆盖,管理端在线调整。"""
     p = await get_effective_policies(session)
     cfg = await get_effective_platform_config(session)
     return PoliciesOut(
@@ -104,7 +104,7 @@ async def list_hourly_bills(
 async def bill_summary(
     user: CurrentUser, session: DbSession, month: str, tz_offset_minutes: int = TzOffset
 ) -> BillSummaryOut:
-    """月度汇总 + 按实例成本归因(消费概览环图数据源)。窗口按本地月界切。"""
+    """月度汇总 + 按实例成本归因。窗口按本地月界切。"""
     start, end = billing_month_range(month, tz_offset_minutes=tz_offset_minutes)
     s = await wallet.consumption_summary(session, user.id, start, end)
     return BillSummaryOut(
@@ -119,8 +119,8 @@ async def bill_daily_summary(
     date: str,
     tz_offset_minutes: int = TzOffset,
 ) -> DailySummaryOut:
-    """当日消费(实例列表「今日 ¥Y.YY」与费用中心数据源),本地日界经 tz_offset 折算。"""
-    # hour_start 为 UTC 整点,offset 为整分时窗口边界不会切开小时账单
+    """当日消费,本地日界经 tz_offset 折算。"""
+    # hour_start 为 UTC 整点,offset 为整分时窗口边界不切开小时账单
     start, end = parse_local_date(date, tz_offset_minutes)
     s = await wallet.consumption_summary(session, user.id, start, end)
     return DailySummaryOut(date=date, gpu_total=s.gpu_total, disk_total=s.disk_total, items=s.items)
@@ -140,8 +140,8 @@ async def export_billing(
     tz_offset_minutes: int = TzOffset,
     lang: Literal["zh-CN", "en-US"] = "zh-CN",
 ) -> StreamingResponse:
-    """账单 CSV 导出(流式)。month 仅作用于 hourly;行数硬上限,触顶在文件末尾
-    写 #SUPERDL_EXPORT_TRUNCATED# 标记行(前端据以提示已截断)。"""
+    """账单 CSV 导出(流式)。month 仅作用于 hourly;行数硬上限,触顶在文件末尾写
+    #SUPERDL_EXPORT_TRUNCATED# 标记行。"""
     if dataset == "hourly":
         stream = billing_export.stream_hourly_csv(
             session,
@@ -171,11 +171,11 @@ async def create_recharge(
     response: Response,
     idempotency_key: IdempotencyKey = None,
 ) -> RechargeOut:
-    # 实名闸门(统一实现,勿逐端点复制)
+    # 实名闸门(统一实现)
     await account_service.require_real_name_if_required(
         session, user, key="billing.realNameRequiredForRecharge"
     )
-    # 资金端点限流(每用户):每张充值单都占用渠道下单与对账资源
+    # 资金端点限流(每用户)
     await check_rate_limit(f"billing-recharge:{user.id}", max_attempts=10, window_seconds=3600.0)
     order, created = await payment_service.create_recharge(
         session, user.id, body.amount, body.channel, idempotency_key
@@ -197,7 +197,7 @@ async def get_recharge(order_no: str, user: CurrentUser, session: DbSession) -> 
 
 @router.get("/wallet/refunds/eligible-orders")
 async def list_refundable_orders(user: CurrentUser, session: DbSession) -> list[RefundableOrderOut]:
-    """退款表单候选集:最近充值订单逐单标注可否申请(不可申请的置灰并给出原因码)。"""
+    """退款表单候选集:最近充值订单逐单标注可否申请(不可申请的给出原因码)。"""
     rows = await refunds.refundable_orders(session, user.id)
     return [RefundableOrderOut.model_validate(r) for r in rows]
 
@@ -245,7 +245,7 @@ async def list_my_refunds(
 
 @router.get("/billing/invoices/eligible")
 async def list_invoice_eligible(user: CurrentUser, session: DbSession) -> list[InvoiceEligibleOut]:
-    """各账期可开票额度预览(仅 amount > 0 的已结束账期,申请弹窗的数据源)。"""
+    """各账期可开票额度预览(仅 amount > 0 的已结束账期)。"""
     return await invoices.eligible_periods(session, user.id)
 
 

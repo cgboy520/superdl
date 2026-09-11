@@ -1,7 +1,4 @@
-/**
- * 费用中心:余额卡 / 充值 Modal / 消费概览 / 账单与收支明细(服务端 CSV 导出)。
- * Tab 与月份入 URL;充值幂等键按 (amount, channel) 派生。
- */
+/** 费用中心:余额卡 / 充值 Modal / 消费概览 / 账单与收支明细(服务端 CSV 导出)。Tab 与月份入 URL;充值幂等键按 (amount, channel) 派生。 */
 
 import {
   exportBillingApiV1BillingExportGet,
@@ -72,14 +69,14 @@ type BillingTab = (typeof BILLING_TABS)[number];
 const LEDGER_FILTERS = ["recharge", "consume", "refund", "adjust"] as const;
 type LedgerFilter = (typeof LEDGER_FILTERS)[number];
 
-/** 充值档位与单笔限额:与后端口径一致(apps/api billing schemas),后端限额变更需同步。 */
+/** 充值档位与单笔限额:与后端 billing schemas 同口径,后端变更需同步。 */
 const PRESET_AMOUNTS = ["50.00", "100.00", "500.00"] as const;
 const RECHARGE_MIN_AMOUNT = "1";
 const RECHARGE_MAX_AMOUNT = "50000";
 
 export const Route = createFileRoute("/_console/billing")({
   beforeLoad: requireAuth,
-  // Tab/月份/流水类型入 URL:可分享、返回不丢;非法值丢弃回默认
+  // Tab/月份/流水类型入 URL;非法值回默认
   validateSearch: (
     search: Record<string, unknown>,
   ): { tab?: BillingTab; month?: string; ledger?: LedgerFilter } => {
@@ -101,11 +98,11 @@ export const Route = createFileRoute("/_console/billing")({
   component: BillingPage,
 });
 
-/** 进行中的充值订单号(sessionStorage):支付中途关窗后重开可恢复轮询。 */
+/** 进行中的充值订单号(sessionStorage):关窗重开可恢复轮询。 */
 const PENDING_ORDER_KEY = "superdl.web.pendingRecharge";
 
-/** 支付倒计时:把到期时刻渲染成剩余时长。 */
-/** 按月小时账单(带实例列):hook 必须在组件里调,不能塞进 Tabs 的 items 数组。 */
+/** 支付倒计时:到期时刻 → 剩余时长。 */
+/** 按月小时账单(带实例列);hook 须在组件里调,不塞进 Tabs 的 items 数组。 */
 function MonthlyBillsTab({ month, tzOffsetMinutes }: { month: string; tzOffsetMinutes: number }) {
   return (
     <HourlyBillsTable
@@ -131,7 +128,7 @@ function PayCountdown({ expiresAt }: { expiresAt: string }) {
   const m = Math.floor((total % 3600) / 60);
   const sec = total % 60;
   const pad = (n: number) => String(n).padStart(2, "0");
-  // 订单 TTL 2 小时:超过一小时必须显示时段,否则 "119:58" 会被读成 119 分钟
+  // 订单 TTL 2 小时:超过一小时显示时段
   const time = h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
   return <span>{t("billing.payCountdown", { time })}</span>;
 }
@@ -141,15 +138,15 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
   const { t } = useTranslation();
   const { message } = App.useApp();
   const queryClient = useQueryClient();
-  // 金额必须按字符串走(InputNumber stringMode),禁止经二进制浮点
+  // 金额按字符串走(InputNumber stringMode)
   const [amount, setAmount] = useState("100.00");
   const [order, setOrder] = useState<RechargeOut | null>(null);
-  // 幂等键按「下单序号 + (amount, channel)」派生:响应丢失后重提不会再开一单,序号 +1 才是新订单
+  // 幂等键按「下单序号 + (amount, channel)」派生,序号 +1 才是新订单
   const [orderSeq, setOrderSeq] = useState(0);
   const [pickedChannel, setPickedChannel] = useState<string | null>(null);
   const [resumedNo, setResumedNo] = useState(() => sessionStorage.getItem(PENDING_ORDER_KEY) ?? "");
 
-  // 渠道开关来自管理端·平台配置(site-config 公开端点)
+  // 渠道开关来自 site-config 公开端点
   const siteQ = useSiteConfig();
   const { data: site } = siteQ;
   const enabled = {
@@ -160,7 +157,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
   const firstEnabled = enabled.wechat ? "wechat" : enabled.alipay ? "alipay" : "mock";
   const channel = pickedChannel ?? firstEnabled;
   const anyEnabled = enabled.wechat || enabled.alipay || enabled.mock;
-  // mock 渠道关闭(正式环境)时,未开通渠道不引导用户去模拟支付
+  // mock 渠道关闭时不引导去模拟支付
   const channelTip = enabled.mock ? t("copy.channelComingSoon") : t("copy.channelPending");
 
   const create = useCreateRecharge({
@@ -175,25 +172,25 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
   const mockPay = useMockPay({ onSuccess: () => message.success(t("billing.mockPaySent")) });
   const activeNo = order?.order_no ?? resumedNo;
   const rechargeQ = useRecharge(activeNo, {
-    // 轮询仅在弹窗 open 时进行:关窗即停,重开经找回标记恢复
+    // 轮询仅在弹窗 open 时进行
     enabled: open && activeNo !== "",
-    // 到终态(paid/closed/failed)或出错即停,不空转打接口
+    // 到终态(paid/closed/failed)或出错即停
     refetchInterval: (q) => {
       if (q.state.status === "error") return false;
       return q.state.data && q.state.data.status !== "pending" ? false : 2_000;
     },
   });
   const { data: polled } = rechargeQ;
-  // 找回的单号已失效(关单/账号已切):清找回标记;shown 为 null 自然回表单态
+  // 找回的单号已失效时清找回标记;shown 为 null 回表单态
   useEffect(() => {
     if (rechargeQ.isError && !order) sessionStorage.removeItem(PENDING_ORDER_KEY);
   }, [rechargeQ.isError, order]);
-  // 恢复的订单没有本地创建快照,轮询结果就是订单本体
+  // 恢复的订单没有本地创建快照,轮询结果即订单本体
   const shown = polled ?? order;
   const status = shown?.status;
   const paid = status === "paid";
 
-  // 到终态即清找回标记;到账定向失效钱包与流水(不等 10s 轮询)
+  // 到终态即清找回标记;到账定向失效钱包与流水
   useEffect(() => {
     if (!status) return;
     if (status === "paid") {
@@ -217,7 +214,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
       open={open}
       onCancel={reset}
       footer={null}
-      // 中途关窗保留找回标记,重开时若本地无单就从 sessionStorage 捡回来
+      // 中途关窗保留找回标记,重开时从 sessionStorage 捡回
       afterOpenChange={(o) => {
         if (o && !order) setResumedNo(sessionStorage.getItem(PENDING_ORDER_KEY) ?? "");
       }}
@@ -225,7 +222,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
       {!shown ? (
         <Space orientation="vertical" size={12} style={{ width: "100%" }}>
           {siteQ.isError && (
-            // 渠道信息加载失败绝不伪装成「全部渠道未开通」
+            // 渠道信息加载失败不伪装成「全部渠道未开通」
             <DataErrorAlert onRetry={() => void siteQ.refetch()} />
           )}
           <Tabs
@@ -315,7 +312,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
             {shown.qr_url ? (
               <QRCode value={shown.qr_url} size={168} />
             ) : (
-              // qr_url 空串/缺失时绝不渲染一个扫不出来的码:错误态 + 重新获取(回表单重新下单)
+              // qr_url 空串/缺失时不渲染码:错误态 + 重新获取
               <Space orientation="vertical" size={12} align="center">
                 <Typography.Text type="danger">{t("billing.qrFailed")}</Typography.Text>
                 <Button
@@ -360,7 +357,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
   );
 }
 
-/** 资金流水:游标分页 + 「加载更多」;金额一律按字符串渲染,不过 Number。 */
+/** 资金流水:游标分页 + 「加载更多」;金额一律按字符串渲染。 */
 function LedgerTable() {
   const { t } = useTranslation(["web", "shared"]);
   const { formatMoney } = useFormat();
@@ -381,7 +378,7 @@ function LedgerTable() {
     () => (data?.pages ?? []).flatMap((p) => p.items),
     [data],
   );
-  // 类型筛选为客户端筛选:只作用于已加载页,未加载的旧页不受筛选影响
+  // 类型筛选为客户端筛选,只作用于已加载页
   const filtered = useMemo<LedgerEntryOut[]>(
     () => (ledgerFilter ? merged.filter((r) => r.type === ledgerFilter) : merged),
     [merged, ledgerFilter],
@@ -397,7 +394,7 @@ function LedgerTable() {
           void navigate({
             to: "/billing",
             search: (prev) => ({
-              // LedgerTable 挂在 /billing 下,prev 必带本页 search;tab 在此文件内联合类型收窄
+              // prev 必带本页 search;tab 在此文件内联合类型收窄
               tab: prev.tab as BillingTab | undefined,
               month: prev.month,
               ledger: v === "all" ? undefined : (v as LedgerFilter),
@@ -409,7 +406,7 @@ function LedgerTable() {
           { value: "all", label: t("billing.ledgerFilterAll") },
           ...LEDGER_FILTERS.map((f) => {
             const meta = metaOf(ledgerTypeMap, f);
-            // 裸类型码不进 t():extract 会把它当成新键收集
+            // 裸类型码不进 t()(extract 会当成新键)
             return { value: f, label: meta ? t(meta.labelKey) : f };
           }),
         ]}
@@ -440,7 +437,7 @@ function LedgerTable() {
           {
             title: t("billing.colAmount"),
             render: (_, r) => (
-              // 收入绿/支出红双色对称(antd colorSuccess/Error,暗色自适应)
+              // 收入绿/支出红(antd colorSuccess/Error)
               <span
                 style={{ color: r.amount.startsWith("-") ? token.colorError : token.colorSuccess }}
               >
@@ -493,7 +490,7 @@ function RefundTab() {
   const [orderNo, setOrderNo] = useState<string>();
   const [amount, setAmount] = useState("0");
   const [reason, setReason] = useState("");
-  // 幂等键按「提交序号 + 表单快照」派生:同一键重放返回既有单(双击/重试安全),成功后序号 +1 即新单
+  // 幂等键按「提交序号 + 表单快照」派生,成功后序号 +1 即新单
   const [submitSeq, setSubmitSeq] = useState(0);
   const selected = orders.find((o) => o.order_no === orderNo);
   const create = useCreateRefund({
@@ -519,7 +516,7 @@ function RefundTab() {
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Card size="small" title={t("billing.refundApply")}>
         {ordersQ.isError ? (
-          // 加载失败绝不能伪装成「无充值订单」
+          // 加载失败不伪装成「无充值订单」
           <DataErrorAlert onRetry={() => void ordersQ.refetch()} />
         ) : orders.length === 0 && !ordersQ.isLoading ? (
           <EmptyState scene="list" compact description={t("billing.refundNoOrders")} />
@@ -532,7 +529,7 @@ function RefundTab() {
               value={orderNo}
               onChange={(v: string) => {
                 setOrderNo(v);
-                // 默认退满上限:min(订单额, 当前余额),与服务端口径一致
+                // 默认退满上限:min(订单额, 当前余额),与服务端同口径
                 setAmount(orders.find((o) => o.order_no === v)?.max_amount ?? "0");
               }}
               options={orders.map((o) => ({
@@ -668,7 +665,7 @@ function InvoiceApplyModal({
   const [title, setTitle] = useState("");
   const [taxId, setTaxId] = useState("");
   const [email, setEmail] = useState("");
-  // 幂等键按「提交序号 + 表单快照」派生:同一键重放返回既有单(双击/重试安全),成功后序号 +1 即新单
+  // 幂等键按「提交序号 + 表单快照」派生,成功后序号 +1 即新单
   const [submitSeq, setSubmitSeq] = useState(0);
   const create = useCreateInvoice({
     onSuccess: () => {
@@ -790,7 +787,7 @@ function InvoiceTab() {
   const { formatMoney } = useFormat();
   const eligibleQ = useInvoiceEligible();
   const periods = useMemo<InvoiceEligibleOut[]>(() => eligibleQ.data ?? [], [eligibleQ.data]);
-  // 总额不过 Number:逐账期字符串相加(2 位小数)
+  // 总额逐账期字符串相加(2 位小数),不过 Number
   const total = useMemo(
     () => periods.reduce((acc, p) => addAmounts(acc, p.amount), "0.00"),
     [periods],
@@ -819,7 +816,7 @@ function InvoiceTab() {
           </Button>
         </Space>
         {eligibleQ.isError ? (
-          // 加载失败绝不能伪装成「无可开票账期」
+          // 加载失败不伪装成「无可开票账期」
           <DataErrorAlert onRetry={() => void eligibleQ.refetch()} />
         ) : periods.length > 0 ? (
           <Space wrap size={8} style={{ marginTop: 12 }}>
@@ -921,7 +918,7 @@ function BillingPage() {
       search: (prev: { tab?: string; month?: string; ledger?: LedgerFilter }) => ({
         tab: patch.tab ?? (prev.tab as BillingTab | undefined),
         month: patch.month ?? prev.month,
-        // 流水类型筛选跟 Tab/月份切换共存,不被清掉
+        // 流水类型筛选与 Tab/月份切换共存
         ledger: prev.ledger,
       }),
       replace: true,
@@ -945,7 +942,7 @@ function BillingPage() {
     }
     return [...byName.entries()].map(([name, total]) => ({
       name,
-      // 万分位整数做图值:占比与 compareAmounts 同口径,parseFloat 的浮点误差(0.1+0.2≠0.3)不进图表
+      // 万分位整数做图值,与 compareAmounts 同口径
       value: amountToScaledNumber(total),
     }));
   }, [summary, t]);
@@ -1058,7 +1055,7 @@ function BillingPage() {
           role="tablist" 内(axe aria-required-children,critical) */}
       <Card
         extra={
-          // CSV 导出仅覆盖账单/流水两个口径;退款/发票 Tab 不导出
+          // CSV 导出仅覆盖账单/流水两个 Tab
           activeTab === "bills" || activeTab === "ledger" ? (
             <Button size="small" loading={exporting} onClick={() => void exportCsv()}>
               {t("billing.exportCsv")}

@@ -1,8 +1,5 @@
 """测试共享助手:造用户/密钥/SKU/管理员/钱包,注册与登录,驱动 outbox 与 reconciler。
-
-跨用例复用的助手一律落在这里。测试模块之间不互相 import 助手 —— 那样为了一个
-两行的登录函数会连带 import 对方整个测试类树,还会绕出 helpers ↔ 测试模块的循环。
-"""
+跨用例复用的助手一律落在这里,测试模块之间不互相 import。"""
 
 import base64
 import json
@@ -34,17 +31,12 @@ from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent
 from app.modules.orchestrator.reconciler import reconcile_once
 from app.modules.orchestrator.service import _encode_token
 
-# 平台预置镜像(seed_skus 的 PlatformImage 同源):创建请求体里的统一 image_ref
+# 平台预置镜像(与 seed_skus 的 PlatformImage 同源)
 IMAGE_PYTORCH = "registry.superdl.local/pytorch:2.9.0-cu128"
 
 
 def use_kubeconfig(path: str) -> None:
-    """把 kubeconfig 路径喂给官方客户端(随后构造的 RealOrchestrator 即用此身份)。
-
-    kubernetes 客户端在 import 时就把 KUBECONFIG 固化进了模块常量,之后再改环境变量
-    对 load_kube_config() 无效 —— 只改环境变量的话,受限身份会静默退回默认(admin)
-    kubeconfig,RBAC 对齐闸变成空跑。两者同时改才真正切身份。
-    """
+    """把 kubeconfig 路径喂给官方客户端;环境变量与模块常量须同时改,只改环境变量不生效。"""
     os.environ["KUBECONFIG"] = path
     kube_config.KUBE_CONFIG_DEFAULT_LOCATION = path
 
@@ -55,11 +47,7 @@ async def drain(
     limit: int = 100,
     task_types: frozenset[str] | None = None,
 ) -> int:
-    """连续处理 outbox 直到队列空(或到 limit),返回处理个数。
-
-    只是测试驱动手段,生产 worker 关停不做冲刷。失败任务静默滑进重试;
-    要断言「全部成功」用 drain_strict。
-    """
+    """连续处理 outbox 直到队列空(或到 limit),返回处理个数;失败任务滑进重试。"""
     n = 0
     while n < limit and await outbox.process_one(sm, task_types=task_types):
         n += 1
@@ -69,8 +57,7 @@ async def drain(
 async def drain_strict(
     sm: async_sessionmaker[AsyncSession], *, limit: int = 100
 ) -> tuple[int, int]:
-    """drain 的严格变体:返回 (done_count, failed_count);任一任务未成功
-    (dead,或失败退避回 pending 等下轮)即抛 RuntimeError(消息含 done/failed 计数)。"""
+    """drain 的严格变体:返回 (done_count, failed_count);任一任务未成功即抛 RuntimeError。"""
     done = failed = 0
     while done + failed < limit:
         result = await outbox._process_one(sm)
@@ -86,7 +73,7 @@ async def drain_strict(
 
 
 def gen_ed25519_key(comment: str = "t@test") -> str:
-    """构造合法 ed25519 公钥(随机 32 字节),每次调用指纹唯一。"""
+    """构造合法 ed25519 公钥,每次指纹唯一。"""
     blob = struct.pack(">I", 11) + b"ssh-ed25519" + struct.pack(">I", 32) + secrets.token_bytes(32)
     return f"ssh-ed25519 {base64.b64encode(blob).decode()} {comment}"
 
@@ -117,11 +104,8 @@ async def create_user_with_key(
 
 
 async def create_test_sku(sm: async_sessionmaker[AsyncSession], **overrides) -> int:
-    """按业务唯一键 get-or-create,键与 catalog/models.py 的 uq_skus_business_key 一致。
-
-    同一用例内多次 provisioning 复用同一条而不是撞约束;同键但其余字段不同的请求直接报错。
-    键漏字段会让本该各建一条的两个 SKU 误判成同一条,报出误导性的断言。
-    """
+    """按业务唯一键 get-or-create(键与 catalog/models.py 的 uq_skus_business_key 一致);
+    同键异字段直接报错。"""
     async with sm() as session:
         wanted = make_sku(**overrides)
         existing = (
@@ -171,10 +155,7 @@ async def seed_node_spec(
     vram_gb: int = 0,
     disk_gb: int = 0,
 ) -> None:
-    """写一条节点台账(node_specs):市场近似库存与创建软准入的唯一数据源。
-
-    巡检(60s)在真实环境写这张表;测试里显式播种等价于「巡检已跑过一轮」。
-    """
+    """写一条节点台账(node_specs),等价于巡检已跑过一轮。"""
     from app.core.timeutil import now_utc
     from app.modules.nodes.models import NodeSpec
 
@@ -190,7 +171,7 @@ async def seed_node_spec(
                 gpu_count=gpu_count,
                 gpu_used=gpu_used,
                 vram_gb=vram_gb,
-                # vCPU/内存是 CPU 档库存口径的数据源(GPU 档不看这两列)
+                # CPU 档库存口径
                 vcpu=vcpu,
                 mem_gb=mem_gb,
                 disk_gb=disk_gb,
@@ -212,7 +193,7 @@ async def send_code(
 
 
 async def age_sms_codes(sm: async_sessionmaker[AsyncSession]) -> None:
-    """把既有验证码的 created_at 回拨,越过 60s 限频窗口(不影响有效期)。"""
+    """把既有验证码的 created_at 回拨,越过 60s 限频窗口。"""
     async with sm() as session:
         await session.execute(update(SmsCode).values(created_at=now_utc() - timedelta(minutes=2)))
         await session.commit()
@@ -230,13 +211,12 @@ async def register(
     return resp.json()
 
 
-# refresh token 的 cookie 名(非 prod;prod 为 __Host- 前缀,见 account/router.py)。
-# 响应体不含 refresh_token,测试从 cookie jar 取
+# refresh token 的 cookie 名(非 prod;prod 为 __Host- 前缀,见 account/router.py)
 REFRESH_COOKIE = "superdl_refresh"
 
 
 def current_refresh_token(client: AsyncClient) -> str:
-    """jar 里的当前 refresh token(注册/登录/刷新成功后由 Set-Cookie 种下)。"""
+    """jar 里的当前 refresh token。"""
     token = next(
         (c.value for c in client.cookies.jar if c.name == REFRESH_COOKIE),
         None,
@@ -246,16 +226,15 @@ def current_refresh_token(client: AsyncClient) -> str:
 
 
 async def refresh_via_cookie(client: AsyncClient, token: str | None = None) -> Response:
-    """cookie 通道刷新(强制 X-Requested-With 双提交头):给定 token 先覆写 jar
-    (重放/轮换测试)。并发多路刷新请各起一个 client(独立 jar,见 test_token_rotation):
-    共享 jar 会让「响应 Set-Cookie 先落 jar」与「请求取 cookie」形成竞态。"""
+    """cookie 通道刷新(带 X-Requested-With):给定 token 先覆写 jar。
+    并发多路刷新各起一个 client(共享 jar 有竞态)。"""
     if token is not None:
         client.cookies.set(REFRESH_COOKIE, token, path="/")
     return await client.post("/api/v1/auth/refresh", headers={"X-Requested-With": "fetch"})
 
 
 async def issue_code(sm, phone: str, purpose: str, code: str = "123456") -> None:
-    """直接落一条验证码(绕开 60s 发送间隔;注册助手刚发过码时不能再发)。"""
+    """直接落一条验证码(绕开 60s 发送间隔)。"""
     async with sm() as session:
         session.add(
             SmsCode(
@@ -297,7 +276,7 @@ async def seed_bill_hourly(
     unit_price: str = "1.0000",
     seconds: int = 3600,
 ) -> None:
-    """批量播种小时账单(bill_hourly):日聚合/CSV 导出类用例共用。"""
+    """批量播种小时账单(bill_hourly)。"""
     from app.modules.billing.models import BillHourly
 
     async with sm() as session:
@@ -354,17 +333,14 @@ async def seed_skus(sm: async_sessionmaker[AsyncSession]) -> None:
 
 
 async def admin_login(client: AsyncClient, username: str, password: str = "pass1234") -> Response:
-    """管理端密码登录(第一步):返回原始响应(按 status 分支:mfa_setup/mfa_required/ok)。"""
+    """管理端密码登录(第一步):返回原始响应(status:mfa_setup/mfa_required/ok)。"""
     return await client.post(
         "/api/admin/v1/auth/login", json={"username": username, "password": password}
     )
 
 
 async def complete_mfa_setup_with_secret(client: AsyncClient, ticket: str) -> tuple[str, str]:
-    """mfa_setup 票 → begin → confirm(当前 TOTP)→ (access token, TOTP secret)。
-
-    secret 供「同账号再次登录要走二要素验证」的用例登记(测试进程内保存)。
-    """
+    """mfa_setup 票 → begin → confirm(当前 TOTP)→ (access token, TOTP secret)。"""
     begin = await client.post("/api/admin/v1/auth/mfa/setup/begin", json={"ticket": ticket})
     assert begin.status_code == 200, begin.text
     secret = begin.json()["secret"]
@@ -389,8 +365,7 @@ async def admin_headers(
     *,
     username: str | None = None,
 ) -> dict[str, str]:
-    """建管理员(默认用户名 {role}-user)并登录到正式 token:全角色强制 TOTP,
-    登录只回绑定票,走完整绑定流。"""
+    """建管理员(默认用户名 {role}-user)并走完 TOTP 绑定流拿正式 token。"""
     name = username or f"{role}-user"
     async with sm() as session:
         await create_admin(session, name, "pass1234", role)
@@ -401,7 +376,7 @@ async def admin_headers(
 
 
 def _with_idem(headers: dict[str, str], idem: str | None) -> dict[str, str]:
-    """复制 headers 并按需并入 Idempotency-Key(不改调用方原 dict)。"""
+    """复制 headers 并按需并入 Idempotency-Key。"""
     h = dict(headers)
     if idem:
         h["Idempotency-Key"] = idem
@@ -455,7 +430,7 @@ async def user_headers(client: AsyncClient, phone: str = "13700000001") -> dict[
 
 
 async def user_headers_with_id(client: AsyncClient, phone: str) -> tuple[dict[str, str], int]:
-    """user_headers 的同路变体:连带返回 user_id(注册响应本就带,省一次 GET /me)。"""
+    """user_headers 的变体:连带返回 user_id。"""
     data = await register(client, phone)
     return {"Authorization": f"Bearer {data['access_token']}"}, data["user"]["id"]
 
@@ -515,10 +490,7 @@ async def create_disk(client, headers, name="data-1", size_gb=100) -> dict:
 async def backdate_running_event(
     sm: async_sessionmaker[AsyncSession], uuid: str, minutes: int
 ) -> int:
-    """把进入 running 的事件回拨(钳制在当前自然小时内,尾账只覆盖当前小时)。
-
-    返回预期已运行秒数(近似,断言时留余量)。
-    """
+    """把进入 running 的事件回拨(钳制在当前自然小时内),返回预期已运行秒数(近似)。"""
     from app.core.timeutil import hour_floor
 
     now = now_utc()
@@ -552,11 +524,8 @@ async def seed_instance(
     spec: dict | None = None,
     sku_id: int = 1,
 ) -> tuple[int, str]:
-    """直接落库实例 + 事件(合成时间戳),返回 (instance_id, uuid)。
-
-    events 元素:(ts, from, to) 或 (ts, from, to, metadata)。
-    wallet_credit=True 顺带预存 100.00(计费用例要余额);注销/列表类用例传 False。
-    """
+    """直接落库实例 + 事件,返回 (instance_id, uuid)。
+    events 元素:(ts, from, to) 或 (ts, from, to, metadata);wallet_credit=True 预存 100.00。"""
     async with sm() as session:
         inst = Instance(
             uuid=f"u{user_id}i{uuid4().hex[:12]}",
@@ -655,7 +624,7 @@ CREATE_BODY = {"pool": "hami", "hostname": "gpu-node-7", "note": "机柜 A3", "t
 
 
 async def set_platform_setting(sm: async_sessionmaker[AsyncSession], key: str, value: str) -> None:
-    """单行平台配置覆盖(走 set_platform_settings 的校验/加密,不裸 add PlatformSetting)。"""
+    """单行平台配置覆盖(走 set_platform_settings)。"""
     async with sm() as session:
         await set_platform_settings(session, {key: value}, updated_by=None)
         await session.commit()
@@ -721,11 +690,7 @@ def gpu_spec(tier: str, pool: str, **extra):
 
 
 def make_instance(**overrides) -> Instance:
-    """不落库构造 Instance(纯内存对象,供 build_pod_spec / reconciler 分支单测)。
-
-    默认值取既有调用方的交集;差异一律经 overrides 传入。
-    jupyter_token 默认按最终 uuid 现签,保证密文与 AAD 自洽。
-    """
+    """不落库构造 Instance(纯内存对象);差异经 overrides 传入,jupyter_token 按最终 uuid 现签。"""
     uuid = overrides.get("uuid") or f"inst-{uuid4().hex[:8]}"
     defaults: dict = {
         "user_id": 1,

@@ -12,8 +12,7 @@
   </head>
   <body>
     <script>
-      // 主题预置(FOUC 守护):与 stores/theme.ts 同一判定,先上底色与 color-scheme 再加载 bundle;
-      // CSS 变量与 packages/ui tokens.ts cssVars 同源(改动须三处同步:此处 / tokens.ts / CSP hash)
+      // 主题预置(FOUC 守护):与 stores/theme.ts 同一判定;CSS 变量与 packages/ui tokens.ts cssVars 同源(此处 / tokens.ts / CSP hash 三处同步)
       (function () {
         var m = localStorage.getItem("superdl.theme");
         var dark = m ? m === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;

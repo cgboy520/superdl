@@ -1,5 +1,4 @@
-/** 工单详情:对话流(用户/客服气泡区分)+ 关联实例链接 + [关闭工单]。
- *  resolved/closed 不可再回复(提示新建);关闭入口仅在 resolved 出现。 */
+/** 工单详情:对话流(用户/客服气泡)+ 关联实例链接 + [关闭工单]。resolved/closed 不可再回复;关闭入口仅在 resolved 出现。 */
 
 import { ArrowLeftOutlined } from "@ant-design/icons";
 import {
@@ -43,7 +42,7 @@ function TicketDetailPage() {
   const { t } = useTranslation(["web", "shared"]);
   const { ticketId } = Route.useParams();
   const id = Number(ticketId);
-  // 进行中 15s 轮询,resolved/closed 终态即停(不再空转打接口)
+  // 进行中 15s 轮询,resolved/closed 终态即停
   const detail = useTicketDetail(id, {
     refetchInterval: (q) => {
       const status = q.state.data?.status;
@@ -55,8 +54,7 @@ function TicketDetailPage() {
   const [draft, setDraft] = useState("");
   const reply = useAppendTicketMessage({ onSuccess: () => setDraft("") });
   const close = useCloseTicket();
-  // 对话容器贴底跟随(与实例详情 LogsTab 同模式):距底 ≤40px 视为贴底,
-  // 新消息到达仅在贴底时自动滚底;上滚阅读时不拽回
+  // 对话容器贴底跟随(同 LogsPanel):距底 ≤40px 视为贴底,新消息仅在贴底时自动滚底
   const scrollRef = useRef<HTMLDivElement>(null);
   const [pinned, setPinned] = useState(true);
 
@@ -154,7 +152,7 @@ function TicketDetailPage() {
                   onChange={(e) => setDraft(e.target.value)}
                   aria-label={t("support.replyPlaceholder")}
                   onKeyDown={(e) => {
-                    // Ctrl/Cmd+Enter 直接发送(与发送按钮同一提交条件)
+                    // Ctrl/Cmd+Enter 发送(与发送按钮同一提交条件)
                     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
                       e.preventDefault();
                       if (!reply.isPending && draft.trim().length >= 2) {

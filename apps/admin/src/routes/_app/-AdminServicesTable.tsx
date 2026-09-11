@@ -1,6 +1,4 @@
-/** 全局在线服务表(在线服务页与租户抽屉共用):服务 / 归属 / 端点 / 状态·就绪 / 当前实例 / 版本 / 节点 / 创建时间 / 操作。
- *  只读视图 + 唯一处置「强制停止」——委托当前版本实例的 force-stop(同一条审计与尾账路径,不另开服务级端点)。
- *  文件名 dash 前缀 = 非路由组件。 */
+/** 全局在线服务表(在线服务页与租户抽屉共用);唯一处置「强制停止」委托当前版本实例的 force-stop。 */
 
 import { fontSize, formatDateTime, metaOf, serviceStatusMap } from "@superdl/ui";
 import { HexTag, LoadMore, TableErrorEmpty } from "@superdl/ui/components";
@@ -27,7 +25,7 @@ export function AdminServicesTable({
   userId?: number;
   q?: string;
   includeReleased?: boolean;
-  /** 抽屉内:小表 + 固定高度 + 取前 100 条并明示截断,不出归属列 */
+  /** 抽屉内:小表 + 前 100 条明示截断,不出归属列 */
   compact?: boolean;
 }) {
   const { t } = useTranslation(["admin", "shared"]);
@@ -117,7 +115,7 @@ export function AdminServicesTable({
             },
           },
           {
-            // 当前版本实例:链到全局实例表按 uuid 前缀检索(那里才有节点 / 端口 / 强制回收)
+            // 链到全局实例表按 uuid 前缀检索
             title: t("services.colInstance"),
             width: 120,
             render: (_, r) => {

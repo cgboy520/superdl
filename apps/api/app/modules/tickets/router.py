@@ -61,7 +61,7 @@ async def list_my_tickets(
 
 @router.get("/tickets/{ticket_id}")
 async def get_my_ticket(ticket_id: int, user: CurrentUser, session: DbSession) -> TicketDetailOut:
-    """工单详情 + 消息流。owner 校验在 SQL WHERE(他人工单与不存在同回 404)。"""
+    """工单详情 + 消息流;他人工单与不存在同回 404。"""
     return await service.get_my_ticket(session, user.id, ticket_id)
 
 

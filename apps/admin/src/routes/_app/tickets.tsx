@@ -1,6 +1,4 @@
-/** 工单:status/category 筛选 + user_id/ticket_no 检索(游标分页)+ 详情抽屉(对话流 + 回复 + 标记解决/关闭)。
- * 读:全管理角色;写:ops/admin(canWriteOps),其余角色按钮置灰(后端 403 兜底)。
- */
+/** 工单:status/category 筛选 + user_id/ticket_no 检索(游标分页)+ 详情抽屉。读:全角色;写:ops/admin。 */
 
 import {
   formatDateTime,
@@ -50,7 +48,7 @@ const TICKET_STATUSES = Object.keys(ticketStatusMap);
 const TICKET_CATEGORIES = Object.keys(ticketCategoryMap);
 
 export const Route = createFileRoute("/_app/tickets")({
-  // status/category/user_id/ticket_no 筛选入 URL;id = 告警深链(自动开详情抽屉)
+  // 筛选入 URL;id = 告警深链(自动开详情抽屉)
   validateSearch: (search: Record<string, unknown>): {
     status?: string;
     category?: string;
@@ -157,7 +155,7 @@ function TicketDrawer({
         )
       }
     >
-      {/* 详情查询三态:在途骨架 / 失败明示可重试(绝不空白,失败会被读成「工单不存在」) */}
+      {/* 详情查询三态:骨架 / 失败可重试 */}
       {detail.isPending && ticketId !== null && <Skeleton active paragraph={{ rows: 6 }} />}
       {detail.isError && (
         <TableErrorEmpty
@@ -259,13 +257,12 @@ function TicketsPage() {
   const search = Route.useSearch();
   const status = search.status;
   const category = search.category;
-  // 文本检索 commit 制:只有回车/失焦/点搜索才回写 URL(逐键触发会把游标列表打回第一页 N 次);
-  // user_id/ticket_no 与状态筛选同入 URL(运营面转达的视图必须可还原)
+  // 文本检索 commit 制:回车/失焦/点搜索才回写 URL
   const userId = search.user_id ?? null;
   const ticketNo = search.ticket_no ?? "";
   const [userIdInput, setUserIdInput] = useState<number | null>(userId);
   const [ticketNoInput, setTicketNoInput] = useState(ticketNo);
-  // URL 变化(前进/后退/外部分享链接)回流进输入框:渲染期派生态
+  // URL 变化回流进输入框(渲染期派生态)
   const filterKey = `${search.user_id ?? ""}|${search.ticket_no ?? ""}`;
   const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
   if (filterKey !== prevFilterKey) {
@@ -280,11 +277,11 @@ function TicketsPage() {
     ...(ticketNo.trim() ? { ticket_no: ticketNo.trim() } : {}),
   });
   const { data, queryKey, isLoading, isError, error, refetch, hasNextPage, fetchNextPage, isFetchingNextPage, isFetchNextPageError } = ticketsQ;
-  // 待客服计数角标(60s 轻端点轮询);点击即按该口径过滤
+  // 待客服计数角标(60s 轮询);点击按该口径过滤
   const pendingQ = useTicketPendingCount();
   const rows: AdminTicketOut[] = (data?.pages ?? []).flatMap((p) => p.items);
   const [openId, setOpenId] = useState<number | null>(null);
-  // 告警深链(/tickets?id=<id>):自动开详情抽屉(URL→抽屉态走渲染期派生态)
+  // 告警深链(/tickets?id=<id>)自动开详情抽屉
   const [prevSearchId, setPrevSearchId] = useState(search.id);
   if (search.id !== prevSearchId) {
     setPrevSearchId(search.id);
@@ -408,7 +405,7 @@ function TicketsPage() {
           { title: t("tickets.colUpdatedAt"), dataIndex: "updated_at", width: 150, render: formatDateTime },
           { title: t("tickets.colCreatedAt"), dataIndex: "created_at", width: 150, render: formatDateTime },
           {
-            // 行点击没有键盘通路,补文字按钮兜底(Tab 可达,Enter 触发)
+            // 文字按钮保证键盘可达
             title: t("tickets.colActions"),
             width: 80,
             render: (_, r) => (

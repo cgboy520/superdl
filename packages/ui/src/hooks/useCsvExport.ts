@@ -1,6 +1,4 @@
-/** CSV 导出三件套(两端共用):loading 态 + 截断/成功/失败提示;导出函数由调用方给
- *  (admin 侧为 api.ts 的 export*Csv,web 侧为费用中心页内联的拉取+落盘)。
- *  时区偏移口径同 localToday:UTC 以东为正(-getTimezoneOffset)。 */
+/** CSV 导出:loading 态 + 截断/成功/失败提示;导出函数由调用方给。时区偏移 UTC 以东为正。 */
 import { App } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";

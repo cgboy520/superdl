@@ -1,5 +1,4 @@
-/** 快捷入口四宫格:快速开始 / GPU 选型 / 透明计费 / 数据无忧。
- * 信息型入口指向 /help 的 FAQ 锚点;GPU 选型页内滚动到排名区。 */
+/** 快捷入口四宫格:快速开始 / GPU 选型 / 透明计费 / 数据无忧。信息型入口指向 /help FAQ 锚点;GPU 选型页内滚动到排名区。 */
 
 import {
   AccountBookOutlined,
@@ -20,7 +19,7 @@ const ENTRIES: Array<{ key: "start" | "gpu" | "billing" | "data"; icon: ReactNod
   { key: "data", icon: <DatabaseOutlined /> },
 ];
 
-/** key → /help 的 FAQ 锚点(与 help.tsx FAQ_KEYS 的 id 一一对应) */
+/** key → /help 的 FAQ 锚点(与 help.tsx FAQ_KEYS 一一对应) */
 const FAQ_ANCHOR = {
   start: "faq-connectSsh",
   billing: "faq-billingStart",
@@ -69,7 +68,7 @@ export function QuickEntrySection() {
               onClick={() => go(e.key)}
               styles={{ body: { padding: 20 } }}
               style={{ height: "100%" }}
-              // Card 无原生键盘语义:快捷入口必须可 Tab 聚焦、Enter/Space 触发
+              // Card 无原生键盘语义:可 Tab 聚焦、Enter/Space 触发
               role="button"
               tabIndex={0}
               aria-label={`${TITLE[e.key]} — ${DESC[e.key]}`}

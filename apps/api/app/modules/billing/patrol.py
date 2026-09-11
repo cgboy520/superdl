@@ -1,10 +1,7 @@
 """余额巡检(5 分钟):预警 → 欠费停机 → 冻结 72h → 到期回收 → 充值解冻。
 
-每步落事件与通知。数据盘独立宽限,不随实例回收。
-
-全链路判据一律是**可用余额**(balance − frozen,`wallet.available_of`),与开机前置
-(`wallet.assert_can_afford`)同口径:渠道冲正冻结的钱可能被渠道拿回,不得继续买算力。
-拿裸余额判会让被冲正的账号一路跑到人工核销——而结算侧 allow_frozen=True 照扣不误。
+每步落事件与通知。数据盘独立宽限。全链路判据一律是可用余额(balance − frozen,
+`wallet.available_of`),与 `wallet.assert_can_afford` 同口径。
 """
 
 from datetime import datetime, timedelta
@@ -49,7 +46,7 @@ async def balance_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]
         await _patrol_running(sm, counts)
         await _patrol_frozen_and_arrears_stopped(sm, counts)
         await _patrol_disks(sm, counts)
-    # 无条件打 done:counts 全 0(如 reclaim 全败)时也要留本轮巡检的完成痕迹
+    # 无条件打 done:counts 全 0 也留完成痕迹
     logger.info("balance_patrol_done", **counts)
     return counts
 
@@ -57,11 +54,7 @@ async def balance_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]
 async def _patrol_frozen_tenants(
     sm: async_sessionmaker[AsyncSession], counts: dict[str, int]
 ) -> None:
-    """被冻结账号仍在跑的实例 → 停机。
-
-    兜的是冻结那一刻还在 creating/starting 的实例:状态机不允许它们直接进 stopping,
-    收敛到 running 后须再停一次。
-    """
+    """被冻结账号仍在跑的实例 → 停机(兜冻结时还在 creating/starting、随后收敛到 running 的实例)。"""
     from app.modules.orchestrator import service as orchestrator_service
 
     async with sm() as session:
@@ -84,17 +77,16 @@ async def _patrol_frozen_tenants(
 async def _unsettled_burn(
     session: AsyncSession, inst, now: datetime, settled_through: datetime | None
 ) -> Decimal:
-    """该实例「已跑未出账」的实时估算消耗(2 位小数)。估算只用于停机/预警判据,永不入账。
+    """该实例「已跑未出账」的实时估算消耗(2 位小数),只用于停机/预警判据,永不入账。
 
-    窗口下界取 min(当前自然小时, 水位线+1h):结算停摆时更早的未落账小时同样计入停机判据。
-    与结算同口径:事件重建窗口 running 秒数,减去窗口内已出账秒数,按单价折算。
+    窗口下界取 min(当前自然小时, 水位线+1h);与结算同口径:事件重建 running 秒数 − 已出账秒数。
     """
     from app.modules.orchestrator import service as orchestrator_service
 
     h0 = hour_floor(now)
     start = h0 if settled_through is None else min(h0, settled_through + timedelta(hours=1))
     events = await orchestrator_service.billing_events_before(session, inst.id, now)
-    # 巡检估算不截断失联宽限:按最保守(多估)口径驱动停机判据,估算永不入账
+    # 巡检估算不截断失联宽限(多估口径)
     seconds = running_seconds_in_window([(ts, f, t) for ts, f, t, _m in events], start, now)
     billed = (
         await session.execute(
@@ -104,7 +96,7 @@ async def _unsettled_burn(
         )
     ).scalar_one()
     unsettled_seconds = max(0, seconds - billed)
-    # 多小时估算口径(永不入账):上限放宽到 31 天,越界同样报错不截断
+    # 多小时估算口径:上限 31 天,越界报错不截断
     return bill_amount(
         inst.price_hourly, inst.gpu_count, unsettled_seconds, max_seconds=31 * 24 * 3600
     )
@@ -119,8 +111,8 @@ async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str
         settled_through = await get_watermark(session, "hourly")
 
     for user_id, all_instances in by_user.items():
-        # 包周期实例整段周期已预付:既不参与燃烧率,也不该被欠费停机。三处配套过滤之一
-        # (另两处:wallet.assert_can_afford、billing.edge_listener),漏了会误停包月实例
+        # 包周期实例不参与燃烧率与欠费停机。三处配套过滤之一
+        # (另两处:wallet.assert_can_afford、billing.edge_listener)
         instances = [i for i in all_instances if i.market != MARKET_SUBSCRIPTION]
         if not instances:
             continue
@@ -131,16 +123,14 @@ async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str
                     (hourly_cost(i.price_hourly, i.gpu_count) for i in instances),
                     Decimal("0.00"),
                 )
-                # 停机判据:可用余额 − 未结算消耗 ≤ 0。只看余额会有约 65 分钟的停机盲区
-                # (小时结算次小时 :02 才落账),实时估算把盲区压到巡检周期内
+                # 停机判据:可用余额 − 未结算消耗 ≤ 0
                 now = now_utc()
                 unsettled = Decimal("0.00")
                 for inst in instances:
                     unsettled += await _unsettled_burn(session, inst, now, settled_through)
                 effective = as_amount(available - unsettled)
                 if effective <= 0:
-                    # 必须锁内二次读:粗筛到提交停机之间用户可能刚充值(credit 与本锁互斥),
-                    # 不重读会按旧余额误停机。二次读同样走可用口径,否则冻结额在这里漏回来
+                    # 锁内二次读(credit 与本锁互斥),同样走可用口径
                     locked = await wallet.lock_wallet(session, user_id)
                     effective = as_amount(wallet.available_of(locked) - unsettled)
                 if effective <= 0:
@@ -160,8 +150,7 @@ async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str
                     await session.commit()
                 elif burn_per_hour > 0:
                     est_hours = float(effective / burn_per_hour)
-                    # 阈值只存 users.low_balance_warn_hours(NOT NULL);用户行只匿名化不删,
-                    # 巡检到的每个 user_id 必有阈值行
+                    # 阈值存 users.low_balance_warn_hours(NOT NULL),每个 user_id 必有阈值行
                     if est_hours < thresholds[user_id]:
                         await notify_service.send_low_balance_warning(
                             session, user_id, est_hours=est_hours, balance=money_str(available)
@@ -189,8 +178,8 @@ async def _patrol_frozen_and_arrears_stopped(
             session, orchestrator_service.FROZEN
         )
 
-    # 欠费用户的 stopped 实例 → 冻结。包周期实例不走这条:它的冻结条件是「周期到期」而非
-    # 「余额为 0」,由 subscriptions.subscription_patrol 写 frozen_deadline,回收仍归下面统一做
+    # 欠费用户的 stopped 实例 → 冻结。包周期的冻结由 subscriptions.subscription_patrol
+    # 写 frozen_deadline,回收归下面统一做
     for inst in (i for i in stopped if i.market != MARKET_SUBSCRIPTION):
         try:
             async with sm() as session:
@@ -221,10 +210,7 @@ async def _patrol_frozen_and_arrears_stopped(
                 fresh = await orchestrator_service.get_instance(session, inst.user_id, inst.uuid)
                 if fresh.status != orchestrator_service.FROZEN:
                     continue
-                # 解冻条件按购买模式分:按量看回款,包周期看续费。给包周期也按余额解冻会让
-                # 到期未续费但余额充足的用户无限解冻,等于免费续期。
-                # 回款只认可用余额:被渠道冲正冻结的那笔钱随时可能被拿回,拿它解冻等于
-                # 用一笔已在追回中的充值取消掉回收倒计时
+                # 解冻条件按购买模式分:按量看可用余额,包周期看续费
                 available = await wallet.get_available_balance(session, inst.user_id)
                 if available > 0 and fresh.market != MARKET_SUBSCRIPTION:
                     await orchestrator_service.unfreeze_instance(session, fresh)
@@ -247,8 +233,7 @@ async def _patrol_frozen_and_arrears_stopped(
 async def _patrol_disks(sm: async_sessionmaker[AsyncSession], counts: dict[str, int]) -> None:
     """数据盘欠费链路:欠费 → grace(只读,disk_grace_days)→ frozen(disk_frozen_days)→ 清除;
     回款即恢复。
-
-    巡检集合取「名下有欠费链路上的盘」的用户(见 disks.list_arrears_chain_user_ids)。
+    巡检集合见 disks.list_arrears_chain_user_ids。
     """
     from app.modules.orchestrator import service as orchestrator_service
 

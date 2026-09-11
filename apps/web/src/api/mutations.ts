@@ -1,7 +1,4 @@
-/**
- * 写操作统一封装:生成的 fetcher 函数 + useMutation。
- * 成功后按 invalidates 声明的域失效相关查询(每个 hook 显式声明,空数组 = 不失效)。
- */
+/** 写操作封装:生成 fetcher + useMutation;成功后按各 hook 声明的 invalidates 失效查询。 */
 
 import type { ApiError,
   SshKeyOut,
@@ -86,10 +83,10 @@ import { authStore } from "../stores/auth";
 interface MutationOpts<TData> {
   onSuccess?: (data: TData) => void;
   silentError?: boolean;
-  /** 成功后失效的查询键前缀;空数组 = 不失效任何查询 */
+  /** 成功后失效的查询键前缀;空数组 = 不失效 */
   invalidates: readonly string[];
 }
-/** 页面侧可传的项:失效域由各 hook 自己声明,不暴露给页面 */
+/** 页面侧可传的项;失效域由各 hook 声明 */
 type CallerOpts<TData = unknown> = Omit<MutationOpts<TData>, "invalidates">;
 
 export function useApiMutation<TVars, TData>(
@@ -102,7 +99,7 @@ export function useApiMutation<TVars, TData>(
   return useMutation<TData, ApiError, TVars>({
     mutationFn: fn,
     onSuccess: (data) => {
-      // 不 await:await 会让「改名成功」这类回调等到相关 refetch 完
+      // 不 await refetch
       for (const key of opts.invalidates) void queryClient.invalidateQueries({ queryKey: [key] });
       opts.onSuccess?.(data);
     },
@@ -112,40 +109,36 @@ export function useApiMutation<TVars, TData>(
   });
 }
 
-// auth
 export const useSendSmsCode = (o?: { onSuccess?: () => void; silentError?: boolean }) =>
   useApiMutation((body: SmsCodeRequest) => sendSmsCodeApiV1AuthSmsCodePost(body), { ...o, invalidates: [] });
 export const useRegister = (o?: CallerOpts) =>
   useApiMutation((body: RegisterRequest) => registerApiV1AuthRegisterPost(body), { ...o, invalidates: [] });
 export const useLogin = (o?: CallerOpts) =>
   useApiMutation((body: LoginRequest) => loginApiV1AuthLoginPost(body), { ...o, invalidates: [] });
-/** 设置/修改/找回密码(手机号 + 验证码);成功返回新 token 对,旧会话已被撤销。 */
+/** 设置/修改/找回密码(手机号 + 验证码);返回新 token 对。 */
 export const useResetPassword = (o?: CallerOpts) =>
   useApiMutation((body: PasswordResetRequest) => resetPasswordApiV1AuthPasswordResetPost(body), { ...o, invalidates: [] });
 
-/** 登出:current = 撤销本设备 refresh token(cookie 路径,服务端顺带清 Cookie);
- *  all = 服务端撤销该账号全部会话(token_version+1)。
- *  之后清本地并整页刷新;请求失败不阻断本地登出。 */
+/** 登出:current = 撤销本设备 refresh token;all = 撤销该账号全部会话。之后清本地并整页刷新,请求失败不阻断。 */
 export function useLogout() {
   return useCallback(async (scope: "current" | "all" = "current") => {
     try {
       if (scope === "all") {
         await logoutAllApiV1AuthLogoutAllPost();
       } else {
-        // cookie 路径必须带 CSRF 纵深头(服务端强制);不带请求体,服务端从 cookie 取
+        // cookie 路径必须带 CSRF 头,不带请求体
         await logoutApiV1AuthLogoutPost({ headers: { "X-Requested-With": "fetch" } });
       }
     } catch {
-      // 登出尽力而为,本地清理不依赖远端结果
+      // 登出尽力而为
     }
     authStore.getState().logout();
-    // 整页刷新:清干净全部内存态(查询缓存由 main.tsx 的 token 变更订阅兜底清理)
+    // 整页刷新清全部内存态
     window.location.assign("/login");
   }, []);
 }
 
-// instances
-// 实例写操作影响:实例域(列表/详情/事件/账单)与钱包余额(启停即结算)
+// instances:失效实例域与钱包余额
 const INSTANCE_INVALIDATES = ["instances", "wallet", "bills", "bill-daily-summary"] as const;
 export const useCreateInstance = (o?: { onSuccess?: (d: unknown) => void; silentError?: boolean }) =>
   useApiMutation(
@@ -176,16 +169,14 @@ export const useRenameInstance = () =>
       renameInstanceApiV1InstancesUuidPatch(uuid, { name }),
     { invalidates: ["instances"] },
   );
-/** 包周期续费必须带幂等键(响应丢失后重提不会扣两次钱,重放回 200 + X-Idempotent-Replay)。
- *  键由续费 modal 每次打开生成一个 uuid:同一次打开内改周期/数量不换键,关掉重开才是新单。 */
+/** 包周期续费带幂等键;键由 modal 每次打开生成,关掉重开才换。 */
 export const useRenewInstance = (uuid: string, o?: CallerOpts<RenewOut>) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: InstanceRenew; idempotencyKey: string }) =>
       renewInstanceApiV1InstancesUuidRenewPost(uuid, body, { "Idempotency-Key": idempotencyKey }),
     { ...o, invalidates: [...INSTANCE_INVALIDATES] },
   );
-/** 按量转包周期:与续费同一入参/响应形态,区别只在起点从现在起算。
- *  后端会先结清转换前那段按量账再翻 market,失效面必须连账单一起。 */
+/** 按量转包周期:入参/响应与续费同形,起点从现在起算;失效面含账单。 */
 export const useSubscribeInstance = (uuid: string, o?: CallerOpts<RenewOut>) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: InstanceRenew; idempotencyKey: string }) =>
@@ -194,14 +185,13 @@ export const useSubscribeInstance = (uuid: string, o?: CallerOpts<RenewOut>) =>
       }),
     { ...o, invalidates: [...INSTANCE_INVALIDATES] },
   );
-/** 竞价转按量(免被回收):不动 Pod、不重调度,只翻 market 与单价。不带幂等键(后端重放天然安全)。
- *  转换会把当前整点小时整体改按按量价重算,失效面必须连账单一起。 */
+/** 竞价转按量:只翻 market 与单价,不带幂等键;失效面含账单。 */
 export const useConvertToOnDemand = (uuid: string, o?: CallerOpts<InstanceOut>) =>
   useApiMutation(
     (_v: void) => convertToOnDemandApiV1InstancesUuidToOnDemandPost(uuid),
     { ...o, invalidates: [...INSTANCE_INVALIDATES] },
   );
-/** 自动续费开关:只改订阅行,不动实例状态,失效面只有实例域。 */
+/** 自动续费开关:只改订阅行,失效面只有实例域。 */
 export const useSetAutoRenew = (uuid: string, o?: CallerOpts<InstanceOut>) =>
   useApiMutation(
     (enabled: boolean) => setAutoRenewApiV1InstancesUuidAutoRenewPost(uuid, { enabled }),
@@ -212,17 +202,16 @@ export const useResetJupyterToken = () =>
     invalidates: ["instances"],
   });
 
-// 在线服务
-// 服务写操作影响:服务域(列表 / 详情 / 事件 / 账单)与钱包余额(启停即结算)
+// 在线服务:失效服务域与钱包余额
 const SERVICE_INVALIDATES = ["services", "wallet", "bills", "bill-daily-summary"] as const;
-/** 部署服务:必须带幂等键(按表单快照派生,重放回同一个服务而不是再部署一个)。 */
+/** 部署服务:幂等键按表单快照派生。 */
 export const useCreateService = (o?: { onSuccess?: (d: ServiceOut) => void; silentError?: boolean }) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: ServiceCreate; idempotencyKey: string }) =>
       createServiceApiV1ServicesPost(body, { "Idempotency-Key": idempotencyKey }),
     { ...o, invalidates: [...SERVICE_INVALIDATES, "skus", "disks"] },
   );
-/** 版本更新(重建):必须带幂等键(重放回同一个新版本,不再起第三版)。 */
+/** 版本更新(重建):幂等键按表单快照派生。 */
 export const useCreateRevision = (
   slug: string,
   o?: { onSuccess?: (d: ServiceOut) => void; silentError?: boolean },
@@ -247,27 +236,25 @@ export const useDeleteService = (o?: CallerOpts<ServiceOut>) =>
     ...o,
     invalidates: [...SERVICE_INVALIDATES, "skus", "disks"],
   });
-/** 改名 / 鉴权开关:只改 services 行,失效面只有服务域。 */
+/** 改名 / 鉴权开关:失效面只有服务域。 */
 export const useUpdateService = (slug: string, o?: CallerOpts<ServiceOut>) =>
   useApiMutation((body: ServicePatch) => patchServiceApiV1ServicesSlugPatch(slug, body), {
     ...o,
     invalidates: ["services"],
   });
-/** 新建服务访问 Key:响应里的明文 key 只露面这一次(库里只有 HMAC 摘要),
- *  调用方必须把它交给一次性展示的成功态,禁止入缓存或日志。 */
+/** 新建服务访问 Key:明文 key 只在响应露面一次,只交给一次性展示的成功态,禁止入缓存或日志。 */
 export const useCreateServiceApiKey = (slug: string, o?: CallerOpts<ApiKeyCreateOut>) =>
   useApiMutation((name: string) => createApiKeyApiV1ServicesSlugApiKeysPost(slug, { name }), {
     ...o,
     invalidates: ["services"],
   });
-/** 吊销 Key:写 revoked_at 不删行,列表仍看得到这把 Key 存在过。 */
+/** 吊销 Key:写 revoked_at 不删行。 */
 export const useRevokeServiceApiKey = (slug: string, o?: CallerOpts) =>
   useApiMutation((keyId: number) => revokeApiKeyApiV1ServicesSlugApiKeysKeyIdDelete(slug, keyId), {
     ...o,
     invalidates: ["services"],
   });
 
-// wallet / billing
 export const useCreateRecharge = (o?: { onSuccess?: (d: unknown) => void }) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: RechargeCreate; idempotencyKey: string }) =>
@@ -280,14 +267,14 @@ export const useMockPay = (o?: { onSuccess?: () => void }) =>
       mockWebhookApiV1WebhooksMockPost({ body: JSON.stringify(vars) }),
     { ...o, invalidates: ["wallet", "recharge", "ledger"] },
   );
-/** 申请退款:必须带幂等键(按表单快照派生,重放返回既有单)。 */
+/** 申请退款:幂等键按表单快照派生。 */
 export const useCreateRefund = (o?: { onSuccess?: () => void }) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: RefundCreate; idempotencyKey: string }) =>
       createRefundApiV1WalletRefundsPost(body, { "Idempotency-Key": idempotencyKey }),
     { ...o, invalidates: ["refunds", "refundable-orders", "wallet", "ledger"] },
   );
-/** 申请开票:金额由服务端按账期计算(客户端不提交金额);幂等键重放返回既有单。 */
+/** 申请开票:金额由服务端按账期计算;幂等键重放返回既有单。 */
 export const useCreateInvoice = (o?: { onSuccess?: () => void }) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: InvoiceCreate; idempotencyKey: string }) =>
@@ -305,8 +292,7 @@ export const useSetWarnThreshold = (o?: { onSuccess?: () => void }) =>
     { ...o, invalidates: ["me"] },
   );
 
-// 账号注销
-/** 申请注销:服务端按 (user_id, pending) 幂等,重复提交返回既有申请。 */
+/** 申请注销:服务端按 (user_id, pending) 幂等。 */
 export const useCreateDeletionRequest = (o?: { onSuccess?: () => void }) =>
   useApiMutation(
     (body: DeletionRequestCreate) => createDeletionRequestApiV1MeDeletionRequestPost(body),
@@ -318,8 +304,7 @@ export const useCancelDeletionRequest = (o?: { onSuccess?: () => void }) =>
     invalidates: ["deletion-request"],
   });
 
-// disks
-/** 建盘同样要幂等键:响应丢失后重提不会多出一块按日计费的盘。 */
+/** 建盘带幂等键。 */
 export const useCreateDisk = (o?: { onSuccess?: () => void }) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: DiskCreate; idempotencyKey: string }) =>
@@ -337,7 +322,6 @@ export const useDeleteDisk = (o?: { onSuccess?: () => void }) =>
     invalidates: ["disks", "wallet", "instances", "services"],
   });
 
-// ssh keys / notify
 export const useAddSshKey = (o?: { onSuccess?: (key: SshKeyOut) => void }) =>
   useApiMutation(
     (body: { name: string; public_key: string }) => addSshKeyApiV1SshKeysPost(body),
@@ -356,8 +340,7 @@ export const useMarkAllNotificationsRead = () =>
     invalidates: ["notifications"],
   });
 
-// tickets
-/** 新建工单:必须带幂等键(按表单快照派生,重放返回既有单)。 */
+/** 新建工单:幂等键按表单快照派生。 */
 export const useCreateTicket = (o?: { onSuccess?: (d: TicketOut) => void }) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: TicketCreate; idempotencyKey: string }) =>

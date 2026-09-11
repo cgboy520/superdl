@@ -1,10 +1,4 @@
-/**
- * 全宽品牌顶栏(56px,渐变靛蓝)。
- * public:中部锚点导航 + 右侧 登录/免费注册(已登录换「进入控制台」)。
- * console:右区(余额/通知/用户)由壳经 right 注入。
- * 窄屏(≤768px)中部导航收进汉堡 Drawer;console 变体的 Drawer 置顶控制台 7 页分段,
- * 保持控制台页窄屏可达(侧栏在 lg 断点整体消失)。
- */
+/** 全宽品牌顶栏(56px,渐变靛蓝)。public:中部锚点导航 + 右侧登录/免费注册(已登录换「进入控制台」);console:右区(余额/通知/用户)由壳经 right 注入。窄屏(≤768px)中部导航收进汉堡 Drawer,console 变体的 Drawer 置顶控制台 7 页分段。 */
 
 import { MenuOutlined, MoonOutlined, SunOutlined } from "@ant-design/icons";
 import { brand, colorPrimary, fontSize } from "@superdl/ui";

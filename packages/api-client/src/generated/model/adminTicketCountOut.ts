@@ -6,7 +6,7 @@
  */
 
 /**
- * 工单计数轻端点(待办角标轮询):DB count,不拉列表全页。
+ * 工单计数轻端点(待办角标轮询)。
  */
 export interface AdminTicketCountOut {
   count: number;

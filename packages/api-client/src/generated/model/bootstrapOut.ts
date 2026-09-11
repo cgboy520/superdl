@@ -6,7 +6,7 @@
  */
 
 /**
- * 装机参数下发 —— 含 join token 明文,仅经 Bearer POST 响应体,严禁入日志。
+ * 装机参数下发,含 join token 明文,不入日志。
  */
 export interface BootstrapOut {
   cluster_agent_version: string;

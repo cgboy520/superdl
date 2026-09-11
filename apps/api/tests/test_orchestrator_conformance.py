@@ -1,11 +1,5 @@
-"""编排协议 Fake/Real 契约一致性:同一组用例参数化跑两个后端。
-
-Fake 恒跑;Real 由 SUPERDL_TEST_KUBECONFIG 门控(与 test_k8s_real_smoke.py 一致,
-CI kind job 驱动;未设置时 real 参数跳过、fake 照常)。
-
-kind 上 JuiceFS 作业永不完成(无 SC/PVC):Real 侧「完成返回」路径用 patch Job status 注入
-成功态 —— conformance 只关心协议状态机(进行中抛错/完成返回/幂等)。Job 命名规则取自
-real.py(wipe-/quota-set-/quota-del-),改名即红,属有意为之的契约钉死。
+"""编排协议 Fake/Real 契约一致性:同一组用例参数化跑两个后端;Real 由 SUPERDL_TEST_KUBECONFIG 门控。
+Real 侧「完成返回」用 patch Job status 注入;Job 命名规则(wipe-/quota-set-/quota-del-)取自 real.py。
 """
 
 import os
@@ -52,7 +46,7 @@ async def backend(request: pytest.FixtureRequest) -> AsyncIterator[Backend]:
     real = RealOrchestrator()
     ns = f"tenant-conf-{uuid.uuid4().hex[:8]}"
     await real.ensure_namespace(ns)
-    # 平台 ns + metaurl secret:quota Job 的创建前提(kind 上作业不会成功,仅验协议状态机)
+    # 平台 ns + metaurl secret:quota Job 的创建前提
     platform_ns: str = real.settings.k8s_platform_namespace
     try:
         real.core.create_namespace(
@@ -80,7 +74,7 @@ async def backend(request: pytest.FixtureRequest) -> AsyncIterator[Backend]:
             raise
 
 
-# ---------- Real 侧注入助手(Job 命名规则镜像 real.py,见文件头注释) ----------
+# ---------- Real 侧注入助手 ----------
 
 
 def _wipe_job_name(subpath: str) -> str:
@@ -92,13 +86,12 @@ def _quota_job_name(subpath: str, is_set: bool) -> str:
 
 
 def _mark_job_succeeded(real: Any, namespace: str, name: str) -> None:
-    """kind 上存储类作业永不成功:patch status 注入完成态,走「完成返回」协议分支。"""
+    """patch Job status 注入完成态。"""
     real.batch.patch_namespaced_job_status(name, namespace, {"status": {"succeeded": 1}})
 
 
 def _bind_juicefs_pvc(real: Any, tenant_ns: str) -> None:
-    """kind 无 JuiceFS SC,PVC 永不绑定:手工建 CSI PV 并把 PVC 绑上,
-    走通配额路径解析(real._juicefs_fs_base_sync 依赖 PV volumeAttributes.subPath)。"""
+    """手工建 CSI PV 并绑上 PVC(real._juicefs_fs_base_sync 读 PV volumeAttributes.subPath)。"""
     from app.core.k8s.base import JUICEFS_PVC_NAME
 
     pv_name = f"pvc-conf-{uuid.uuid4().hex[:8]}"
@@ -175,10 +168,8 @@ class TestDiskQuotaContract:
 
 
 class TestReadInstanceLogsContract:
-    """read_instance_logs:成功路径的形状契约(str、行数受 tail_lines 约束、参数透传)。
-
-    Fake 对不存在的 Pod 也合成日志(见 fake.py),Real 直通 K8s 错误 —— 有意的行为差,分别钉死。
-    """
+    """read_instance_logs 形状契约(str、行数受 tail_lines 约束);
+    Fake 对不存在的 Pod 合成日志,Real 直通 K8s 错误。"""
 
     async def test_logs_shape(self, backend: Backend) -> None:
         if backend.kind == "fake":
@@ -191,7 +182,7 @@ class TestReadInstanceLogsContract:
             assert 0 < len(lines) <= 3
             assert backend.fake.log_calls[-1] == (backend.namespace, "conf-pod", 3)
         else:
-            # Pod 不存在:Real 直通 apiserver 404,不合成空串
+            # Pod 不存在:Real 直通 apiserver 404
             with pytest.raises(k8s_client.ApiException):
                 await backend.impl.read_instance_logs(
                     backend.namespace, "no-such-pod", tail_lines=10

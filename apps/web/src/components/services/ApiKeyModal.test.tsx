@@ -1,8 +1,4 @@
-/**
- * ApiKeyModal 一次性展示的守护:明文 Key 只在创建响应里出现一次,库里只有 HMAC 摘要。
- * 这几条挂了 = 用户能在没保存 Key 的情况下把窗口关掉,而 Key 再也取不回来(只能吊销重建)。
- * 写操作 hook 全 mock,不走网络。
- */
+/** ApiKeyModal 一次性展示守护。挂了说明:用户能在没保存 Key 时关掉窗口。写操作 hook 全 mock。 */
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "antd";
@@ -29,7 +25,7 @@ beforeEach(() => {
   onSuccessRef.current = undefined;
 });
 
-/** 走一遍「填名称 → 创建 → 服务端回明文」,停在成功态 */
+/** 「填名称 → 创建 → 服务端回明文」,停在成功态 */
 async function openSuccessState(onClose = vi.fn()) {
   const user = userEvent.setup();
   render(
@@ -73,7 +69,7 @@ describe("ApiKeyModal", () => {
     const { user, onClose, dialog } = await openSuccessState();
     const closeBtn = within(dialog).getByRole("button", { name: /已保存,关\s*闭/ });
     expect(closeBtn).toBeDisabled();
-    // closable=false:成功态不给右上角 X,避免手滑关掉丢明文
+    // closable=false:成功态不给右上角 X
     expect(within(dialog).queryByRole("button", { name: /close/i })).toBeNull();
 
     await user.click(within(dialog).getByRole("checkbox"));

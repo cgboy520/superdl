@@ -1,7 +1,4 @@
-/**
- * 存储(差异化统一页):挂载全景图 + 数据盘列表(计费快照价/到期回收倒计时/扩容抽屉/多级删除防护)。
- * 盘价与宽限/冻结天数一律来自 /policies(禁止前端硬编码);列表「计费」列显示每盘创建时快照价。
- */
+/** 存储:挂载全景图 + 数据盘列表(计费快照价 / 到期回收倒计时 / 扩容抽屉 / 多级删除防护)。盘价与宽限/冻结天数来自 /policies;「计费」列显示每盘创建时快照价。 */
 
 import { type DiskOut } from "@superdl/api-client";
 import { colorPrimary, diskDailyEstimate, fontSize, formatDateTime, formatSizeGb, idemKeyOf, statusColors } from "@superdl/ui";
@@ -40,13 +37,13 @@ export const Route = createFileRoute("/_console/storage")({
   component: StoragePage,
 });
 
-/** 扩容抽屉打开时的默认步进(GB):默认目标 = 当前 +50,给价格感知的常规增量;滑块仍可自由调。 */
+/** 扩容抽屉默认步进(GB):默认目标 = 当前 +50;滑块可自由调。 */
 const EXPAND_DEFAULT_STEP_GB = 50;
 
 function MountOverview({ priceText }: { priceText: string }) {
   const { t } = useTranslation();
   const { token } = theme.useToken();
-  // 窄屏两段 flex:1 会互相挤压:md 以下改竖排
+  // md 以下改竖排
   const screens = Grid.useBreakpoint();
   const seg = (title: string, desc: string, color: string) => (
     <div
@@ -83,7 +80,7 @@ function DeleteDiskModal({ disk, onClose }: { disk: DiskOut | null; onClose: () 
       onClose();
     },
   });
-  // 破坏确认只有键入盘名一道闸;取消键复用 create.cancel(与 ConsentModal 同款)
+  // 破坏确认只有键入盘名一道闸;取消键复用 create.cancel
   return (
     <TypeConfirmModal
       open={Boolean(disk)}
@@ -105,7 +102,7 @@ function DeleteDiskModal({ disk, onClose }: { disk: DiskOut | null; onClose: () 
   );
 }
 
-/** 到期/回收列:active 按日扣费;grace/frozen 用起点 + /policies 天数算天级倒计时 */
+/** 到期/回收列:active 按日扣费;grace/frozen 用起点 + /policies 天数算倒计时 */
 function ExpiryCell({
   disk,
   graceDays,
@@ -117,7 +114,7 @@ function ExpiryCell({
 }) {
   const { formatDaysLeft } = useFormat();
   const { t } = useTranslation();
-  // 宽限/冻结天数读 /policies;未就绪用无数字兜底句,绝不渲染占位符或硬编码数字
+  // 宽限/冻结天数读 /policies;未就绪用无数字兜底句
   const policyTip =
     graceDays != null && frozenDays != null
       ? t("copy.diskExpirePolicy", { graceDays, frozenDays })
@@ -150,7 +147,7 @@ function ExpiryCell({
 function StoragePage() {
   const { t } = useTranslation();
   const { message } = App.useApp();
-  // 数据盘状态由欠费巡检驱动(小时级):稳态 30s 单档,不挂快档
+  // 数据盘状态由欠费巡检驱动(小时级):稳态 30s 单档
   const { data: disks, isLoading, isError, refetch } = useDisks({ refetchInterval: 30_000 });
   const { data: instances } = useInstances();
   const { data: policies } = usePolicies();
@@ -166,7 +163,7 @@ function StoragePage() {
   const graceDays = policies?.disk_grace_days;
   const frozenDays = policies?.disk_frozen_days;
 
-  // 幂等键按「提交序号 + 盘名 + 容量」派生:响应丢失后重提不会多出一块盘;建成了才递增序号
+  // 幂等键按「提交序号 + 盘名 + 容量」派生;建成才递增序号
   const [submitSeq, setSubmitSeq] = useState(0);
   const createDisk = useCreateDisk({
     onSuccess: () => {

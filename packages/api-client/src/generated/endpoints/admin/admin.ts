@@ -198,8 +198,7 @@ export const getAdminCreateAdjustmentApiAdminV1AdjustmentsPostUrl = () => {
 }
 
 /**
- * 发起调账(双人复核前置)。支持 Idempotency-Key:重放返回已受理的单
- * (200 + X-Idempotent-Replay)。
+ * 发起调账(双人复核前置)。Idempotency-Key 重放返回已受理的单(200 + X-Idempotent-Replay)。
  * @summary Admin Create Adjustment
  */
 export const adminCreateAdjustmentApiAdminV1AdjustmentsPost = async (adjustmentCreate: AdjustmentCreate,
@@ -232,7 +231,7 @@ export const getAdminAdjustmentsExportApiAdminV1AdjustmentsExportGetUrl = (param
 
 /**
  * 调账单 CSV(流式):筛选口径与 GET /adjustments 一致;行数硬上限 + 截断标记行。
- * 注册在 /adjustments/{adjustment_id} 动态路由之前,export 不被当 id 解析。
+ * 须注册在 /adjustments/{adjustment_id} 之前。
  * @summary Admin Adjustments Export
  */
 export const adminAdjustmentsExportApiAdminV1AdjustmentsExportGet = async (params?: AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetParams, options?: Parameters<typeof customFetch>[1]): Promise<unknown | string> => {
@@ -327,7 +326,7 @@ export const getAdminUpdateAdminApiAdminV1AdminsAdminIdPatchUrl = (adminId: numb
 }
 
 /**
- * 改角色 / 停用。停用即刻生效(deps 每请求实时查库 + 比对 token_version)。
+ * 改角色 / 停用。停用即刻生效(deps 每请求比对 token_version)。
  * @summary Admin Update Admin
  */
 export const adminUpdateAdminApiAdminV1AdminsAdminIdPatch = async (adminId: number,
@@ -352,7 +351,7 @@ export const getMfaResetApiAdminV1AdminsAdminIdMfaResetPostUrl = (adminId: numbe
 }
 
 /**
- * 超管为他人重置 TOTP(锁死救援):清空绑定并踢掉全部会话,下次登录重新强制绑定。
+ * 超管为他人重置 TOTP:清空绑定并踢掉全部会话,下次登录重新绑定。
  * @summary Mfa Reset
  */
 export const mfaResetApiAdminV1AdminsAdminIdMfaResetPost = async (adminId: number,
@@ -408,7 +407,7 @@ export const getAdminAlertsApiAdminV1AlertsGetUrl = (params?: AdminAlertsApiAdmi
 }
 
 /**
- * 管理端告警流(总览右栏数据源)。severity 精确过滤(可选)。
+ * 管理端告警流。severity 精确过滤(可选)。
  * @summary Admin Alerts
  */
 export const adminAlertsApiAdminV1AlertsGet = async (params?: AdminAlertsApiAdminV1AlertsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminAlertOut[]> => {
@@ -432,7 +431,7 @@ export const getAdminAlertsUnreadCountApiAdminV1AlertsUnreadCountGetUrl = () => 
 }
 
 /**
- * 未确认告警计数(顶栏铃铛角标;独立计数端点)。critical_count 供总览 KPI 红色高亮。
+ * 未确认告警计数(独立计数端点);critical_count 供总览 KPI。
  * @summary Admin Alerts Unread Count
  */
 export const adminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<AlertUnreadCountOut> => {
@@ -480,7 +479,7 @@ export const getAdminListAnnouncementsApiAdminV1AnnouncementsGetUrl = () => {
 }
 
 /**
- * 公告历史(含已撤回;固定截断 200,前端 ListCapNote 提示)。
+ * 公告历史(含已撤回;固定截断 200)。
  * @summary Admin List Announcements
  */
 export const adminListAnnouncementsApiAdminV1AnnouncementsGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<AnnouncementOut[]> => {
@@ -504,8 +503,8 @@ export const getAdminPublishAnnouncementApiAdminV1AnnouncementsPostUrl = () => {
 }
 
 /**
- * 公告群发(站内信 announcement 类型,全部 active 用户);落公告级记录供历史/撤回。
- * Idempotency-Key 重放不新建公告(否则全员收到重复站内信),回 200 + X-Idempotent-Replay。
+ * 公告群发(站内信 announcement 类型,全部 active 用户);落公告级记录。
+ * Idempotency-Key 重放不新建公告,回 200 + X-Idempotent-Replay。
  * @summary Admin Publish Announcement
  */
 export const adminPublishAnnouncementApiAdminV1AnnouncementsPost = async (announcementCreate: AnnouncementCreate,
@@ -530,7 +529,7 @@ export const getAdminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevo
 }
 
 /**
- * 撤回公告(原因必填,入审计):撤回后全部租户的站内信公告不再可见。重复撤回 409。
+ * 撤回公告(原因必填):撤回后租户侧公告不再可见。重复撤回 409。
  * @summary Admin Revoke Announcement
  */
 export const adminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost = async (announcementId: number,
@@ -562,7 +561,7 @@ export const getAdminAuditLogApiAdminV1AuditGetUrl = (params?: AdminAuditLogApiA
 }
 
 /**
- * 审计检索:actor_id / 动作前缀 / 时间区间;cursor 向前翻页(响应保持数组,满页即还有更早)。
+ * 审计检索:actor_id / 动作前缀 / 时间区间;cursor 向前翻页(满页即还有更早)。
  * @summary Admin Audit Log
  */
 export const adminAuditLogApiAdminV1AuditGet = async (params?: AdminAuditLogApiAdminV1AuditGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AuditLogOut[]> => {
@@ -594,7 +593,7 @@ export const getAdminAuditExportApiAdminV1AuditExportGetUrl = (params?: AdminAud
 
 /**
  * 审计检索 CSV(流式):筛选口径与 GET /audit 一致;行数硬上限 + 截断标记行。
- * 审计本身的批量导出是敏感读,落一条检索审计(只记筛选参数,不复制内容)。
+ * 落一条检索审计(只记筛选参数)。
  * @summary Admin Audit Export
  */
 export const adminAuditExportApiAdminV1AuditExportGet = async (params?: AdminAuditExportApiAdminV1AuditExportGetParams, options?: Parameters<typeof customFetch>[1]): Promise<unknown | string> => {
@@ -618,9 +617,8 @@ export const getAdminLoginApiAdminV1AuthLoginPostUrl = () => {
 }
 
 /**
- * 密码校验。安全策略 admin_mfa_enabled 开启(默认)时只返回二要素挑战票:未绑定发绑定票、
- * 已绑定发验证票,正式 access token 由 /auth/mfa/setup/confirm 或 /auth/login/mfa 签发;
- * 关闭时直接返回 {status: ok, access_token, admin}。
+ * 密码校验。admin_mfa_enabled 开启时只返回二要素挑战票(未绑定发绑定票、已绑定发验证票),
+ * access token 由 /auth/mfa/setup/confirm 或 /auth/login/mfa 签发;关闭时直接返回 access_token。
  * @summary Admin Login
  */
 export const adminLoginApiAdminV1AuthLoginPost = async (adminLoginRequest: AdminLoginRequest, options?: Parameters<typeof customFetch>[1]): Promise<MfaChallengeOut | AdminLoginTokenOut> => {
@@ -668,7 +666,7 @@ export const getAdminLogoutApiAdminV1AuthLogoutPostUrl = () => {
 }
 
 /**
- * 服务端登出:token_version+1,该管理员全部在外会话即刻失效(含其它标签页/机器)。
+ * 服务端登出:token_version+1,该管理员全部在外会话失效。
  * @summary Admin Logout
  */
 export const adminLogoutApiAdminV1AuthLogoutPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<void> => {
@@ -740,8 +738,8 @@ export const getAdminRefreshApiAdminV1AuthRefreshPostUrl = () => {
 }
 
 /**
- * 静默续期:有效或刚过期(15 分钟宽限)的 access token 换新;
- * 自首次签发(iat)起 12 小时绝对会话上限,到点须重新登录。高频自动调用,不落审计。
+ * 静默续期:有效或刚过期(15 分钟宽限)的 access token 换新;自 iat 起 12 小时绝对上限。
+ * 不落审计。
  * @summary Admin Refresh
  */
 export const adminRefreshApiAdminV1AuthRefreshPost = async (adminRefreshRequest: AdminRefreshRequest, options?: Parameters<typeof customFetch>[1]): Promise<AdminRefreshOut> => {
@@ -765,7 +763,7 @@ export const getAdminGpuModelAggregatesApiAdminV1ClusterGpuModelsGetUrl = () => 
 }
 
 /**
- * 台账按 canonical×池聚合(SKU 表单「从集群资源创建」下拉;None 型号=未识别桶)。
+ * 台账按 canonical×池聚合(None 型号 = 未识别桶)。
  * @summary Admin Gpu Model Aggregates
  */
 export const adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<GpuModelAggregateOut[]> => {
@@ -813,7 +811,7 @@ export const getAdminClusterTestConnectionApiAdminV1ClusterTestConnectionPostUrl
 }
 
 /**
- * 同步只读探测并落缓存(对齐 SmsTestCard 先例);不可达/超时 → 502。
+ * 同步只读探测并落缓存;不可达/超时 → 502。
  * @summary Admin Cluster Test Connection
  */
 export const adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<ClusterStatusOut> => {
@@ -844,7 +842,7 @@ export const getAdminListDeletionRequestsApiAdminV1DeletionRequestsGetUrl = (par
 }
 
 /**
- * 注销申请列表(固定截断 200)。行内附执行前校验计数(实例/盘/余额)。
+ * 注销申请列表(固定截断 200),行内附执行前校验计数。
  * @summary Admin List Deletion Requests
  */
 export const adminListDeletionRequestsApiAdminV1DeletionRequestsGet = async (params?: AdminListDeletionRequestsApiAdminV1DeletionRequestsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminDeletionRequestOut[]> => {
@@ -869,7 +867,7 @@ export const getAdminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePo
 
 /**
  * 执行注销:冷静期未满 409;残留实例/数据盘或余额非零 → 自动驳回 + 409(detail 清单);
- * 全通过则同事务匿名化(手机号改写为随机占位串、实名清空、全撤登录态)。
+ * 全通过则同事务匿名化。
  * @summary Admin Approve Deletion
  */
 export const adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost = async (requestId: number, options?: Parameters<typeof customFetch>[1]): Promise<AdminDeletionRequestOut> => {
@@ -893,7 +891,7 @@ export const getAdminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost
 }
 
 /**
- * 驳回注销申请(理由必填,不受冷静期限制);驳回后用户可重新申请。
+ * 驳回注销申请(理由必填,不受冷静期限制)。
  * @summary Admin Reject Deletion
  */
 export const adminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost = async (requestId: number,
@@ -942,8 +940,8 @@ export const getAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostUrl 
 }
 
 /**
- * 人工补单:服务端实时向渠道核验已支付且金额一致才入账。同幂等键重放回当前状态
- * (X-Idempotent-Replay 头区分)。审计行与入账同事务(write_audit_sync)。
+ * 人工补单:实时向渠道核验已支付且金额一致才入账。同幂等键重放回当前状态(X-Idempotent-Replay)。
+ * 审计行与入账同事务(write_audit_sync)。
  * @summary Admin Backfill Order
  */
 export const adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost = async (orderNo: string,
@@ -969,7 +967,7 @@ export const getAdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPostUrl = (o
 }
 
 /**
- * 向渠道核验订单状态与金额(补单前置;渠道结果是唯一事实源)。
+ * 向渠道核验订单状态与金额(补单前置)。
  * @summary Admin Verify Order
  */
 export const adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost = async (orderNo: string, options?: Parameters<typeof customFetch>[1]): Promise<OrderVerifyOut> => {
@@ -993,8 +991,7 @@ export const getAdminResolveReversalApiAdminV1FinanceReversalsOrderNoResolvePost
 }
 
 /**
- * 核销渠道冲正(异常清单 channel_reversed 分桶):解冻或解冻+等额扣回,
- * 审计行与核销同事务。
+ * 核销渠道冲正(channel_reversed 分桶):解冻或解冻+等额扣回,审计行与核销同事务。
  * @summary Admin Resolve Reversal
  */
 export const adminResolveReversalApiAdminV1FinanceReversalsOrderNoResolvePost = async (orderNo: string,
@@ -1026,8 +1023,7 @@ export const getAdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetUrl = (
 }
 
 /**
- * 缺口列表(游标分页,降序):默认只看未核销——缺口闭环前需要持续曝光,
- * 配套持续告警 superdl_settlement_gap_unresolved(DB 口径)。
+ * 缺口列表(游标分页,降序):默认只看未核销。
  * @summary Admin List Settlement Gaps
  */
 export const adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet = async (params?: AdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageAdminSettlementGapOut> => {
@@ -1051,8 +1047,8 @@ export const getAdminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdRepl
 }
 
 /**
- * 重放缺口窗口的幂等入账原语(人工触发,不自动改账):成功回写 resolved_at。
- * grace_overlap 缺口拒重放(409,走人工核销);对象已不存在 409(同样走人工核销)。
+ * 重放缺口窗口的幂等入账原语(人工触发):成功回写 resolved_at。
+ * grace_overlap 缺口与对象已不存在均 409,走人工核销。
  * @summary Admin Replay Settlement Gap
  */
 export const adminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost = async (gapId: number, options?: Parameters<typeof customFetch>[1]): Promise<AdminSettlementGapOut> => {
@@ -1076,7 +1072,7 @@ export const getAdminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdRes
 }
 
 /**
- * 人工核销(不重放):对象已不存在/grace_overlap 确认无账时的出口。说明必填。
+ * 人工核销(不重放)。说明必填。
  * @summary Admin Resolve Settlement Gap
  */
 export const adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost = async (gapId: number,
@@ -1148,7 +1144,7 @@ export const getAdminDeleteImageApiAdminV1ImagesImageIdDeleteUrl = (imageId: num
 }
 
 /**
- * 删除目录条目(cache 行 CASCADE;运行中实例存 image_ref 快照不受影响)。reason 必填。
+ * 删除目录条目(cache 行 CASCADE;运行中实例的 image_ref 快照不受影响)。reason 必填。
  * @summary Admin Delete Image
  */
 export const adminDeleteImageApiAdminV1ImagesImageIdDelete = async (imageId: number,
@@ -1221,7 +1217,7 @@ export const getAdminPrewarmImageApiAdminV1ImagesImageIdPrewarmPostUrl = (imageI
 }
 
 /**
- * 立即预热:非 cached 行置 pending 并同事务入队(请求路径零 K8s 调用)。
+ * 立即预热:非 cached 行置 pending 并同事务入队。
  * @summary Admin Prewarm Image
  */
 export const adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost = async (imageId: number, options?: Parameters<typeof customFetch>[1]): Promise<PrewarmEnqueuedOut> => {
@@ -1284,7 +1280,7 @@ export const getAdminListInstanceEventsApiAdminV1InstancesUuidEventsGetUrl = (uu
 }
 
 /**
- * 管理端实例事件时间线(排障):与用户端同一实现,降序游标分页;不限租户。
+ * 管理端实例事件时间线:与用户端同一实现,降序游标分页;不限租户。
  * @summary Admin List Instance Events
  */
 export const adminListInstanceEventsApiAdminV1InstancesUuidEventsGet = async (uuid: string,
@@ -1334,8 +1330,7 @@ export const getAdminPreemptApiAdminV1InstancesUuidPreemptPostUrl = (uuid: strin
 }
 
 /**
- * 强制回收一台竞价实例(腾容量;原因必填)。走与自动抢占同一条路径:
- * 宽限窗内 Pod 仍在、用户已收到通知,尾账按实际运行秒数结算。
+ * 强制回收一台竞价实例(原因必填)。与自动抢占同一条路径:宽限窗 + 通知 + 尾账按实际秒数结算。
  * @summary Admin Preempt
  */
 export const adminPreemptApiAdminV1InstancesUuidPreemptPost = async (uuid: string,
@@ -1369,7 +1364,7 @@ export const getAdminListInvoicesApiAdminV1InvoicesGetUrl = (params?: AdminListI
 /**
  * 发票申请列表(固定截断 200)。status/period(YYYY-MM)精确过滤。
  *
- * 抬头与邮箱默认脱敏;明文是逐次显式动作(reveal=true + reason 必填),按条数与事由落审计。
+ * 抬头与邮箱默认脱敏;reveal=true + reason 回明文,按条数与事由落审计。
  * @summary Admin List Invoices
  */
 export const adminListInvoicesApiAdminV1InvoicesGet = async (params?: AdminListInvoicesApiAdminV1InvoicesGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminInvoiceOut[]> => {
@@ -1401,10 +1396,7 @@ export const getAdminInvoicesExportApiAdminV1InvoicesExportGetUrl = (params?: Ad
 
 /**
  * 发票申请 CSV(流式):筛选口径与 GET /invoices 一致;行数硬上限 + 截断标记行。
- * 注册在 /invoices/{invoice_id} 动态路由之前,export 不被当 id 解析。
- *
- * 单次最多 50000 行的抬头/税号/邮箱是全站最集中的一处 PII 出口:默认脱敏,
- * 明文要 reveal + 事由,且**每一次导出**(不论是否明文)都落一条审计,带实际吐出的行数。
+ * 须注册在 /invoices/{invoice_id} 之前。默认脱敏,明文要 reveal + 事由;每次导出都落审计。
  * @summary Admin Invoices Export
  */
 export const adminInvoicesExportApiAdminV1InvoicesExportGet = async (params?: AdminInvoicesExportApiAdminV1InvoicesExportGetParams, options?: Parameters<typeof customFetch>[1]): Promise<unknown | string> => {
@@ -1428,7 +1420,7 @@ export const getAdminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePostUrl = (invo
 }
 
 /**
- * 开票:回填发票号(人工开票,发票经邮箱送达),站内信告知用户。
+ * 开票:回填发票号,站内信告知用户。
  * @summary Admin Issue Invoice
  */
 export const adminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost = async (invoiceId: number,
@@ -1453,7 +1445,7 @@ export const getAdminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPostUrl = (in
 }
 
 /**
- * 驳回(理由必填):站内信告知用户;驳回后同账期可重新申请。
+ * 驳回(理由必填):站内信告知用户;同账期可重新申请。
  * @summary Admin Reject Invoice
  */
 export const adminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost = async (invoiceId: number,
@@ -1478,7 +1470,7 @@ export const getAdminListLegalDocsApiAdminV1LegalDocsGetUrl = () => {
 }
 
 /**
- * 法务文档总览:doc_key × locale 状态格(当前 published + 最新 draft;均空 = 缺失)。
+ * 法务文档总览:doc_key × locale 状态格(当前 published + 最新 draft)。
  * @summary Admin List Legal Docs
  */
 export const adminListLegalDocsApiAdminV1LegalDocsGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<LegalDocCellOut[]> => {
@@ -1527,7 +1519,7 @@ export const getAdminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdA
 }
 
 /**
- * 归档草稿(draft → archived,原因必填入审计);published 不可直接归档(409)。
+ * 归档草稿(draft → archived,原因必填);published 不可直接归档(409)。
  * @summary Admin Archive Legal Doc Version
  */
 export const adminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost = async (versionId: number,
@@ -1811,7 +1803,7 @@ export const getAdminListNodesApiAdminV1NodesGetUrl = () => {
 }
 
 /**
- * 节点视图(台账口径,60s 巡检刷新):含 Missing/未打池标签节点。首轮巡检前为空列表。
+ * 节点视图(台账口径,60s 巡检刷新):含 Missing/未打池标签节点。
  * @summary Admin List Nodes
  */
 export const adminListNodesApiAdminV1NodesGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<NodeOut[]> => {
@@ -1835,7 +1827,7 @@ export const getAdminPortPoolStatsApiAdminV1NodesPortPoolGetUrl = () => {
 }
 
 /**
- * SSH 端口池水位:blocked=被集群对象撞占(周期复检自动放回),计数持续上涨要查孤儿端点。
+ * SSH 端口池水位:blocked=被集群对象撞占(周期复检自动放回)。
  * @summary Admin Port Pool Stats
  */
 export const adminPortPoolStatsApiAdminV1NodesPortPoolGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<PortPoolStatsOut> => {
@@ -1884,9 +1876,8 @@ export const getAdminDecommissionNodeApiAdminV1NodesNodeNameDecommissionPostUrl 
 }
 
 /**
- * 节点退役(不可逆):停止调度 + 作废该机全部注册令牌 + 经 outbox 从集群删除 Node 对象。
- *
- * 善后不在本端点内:集群 join token 轮换与 kubelet 证书吊销是控制面动作。
+ * 节点退役(不可逆):停止调度 + 作废该机全部注册令牌 + 经 outbox 删除 Node 对象。
+ * 集群 join token 轮换与 kubelet 证书吊销不在本端点内。
  * @summary Admin Decommission Node
  */
 export const adminDecommissionNodeApiAdminV1NodesNodeNameDecommissionPost = async (nodeName: string,
@@ -1920,8 +1911,7 @@ export const getAdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetUrl = (nodeName
 
 /**
  * 节点每卡曲线(DCGM per-GPU)+ 24h XID 计数;断源 available=false(200)。
- *
- * 节点存在性不做强校验,不存在的节点返回空序列。响应附 grafana_url(可选深挖外链)。
+ * 不存在的节点返回空序列。响应附 grafana_url。
  * @summary Admin Node Metrics
  */
 export const adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet = async (nodeName: string,
@@ -1978,8 +1968,7 @@ export const getAdminListOrdersApiAdminV1OrdersGetUrl = (params?: AdminListOrder
 }
 
 /**
- * 充值订单列表(游标分页,降序)。order_no 精确匹配,是 verify / backfill 两个补救端点的
- * 入参来源;day=YYYY-MM-DD 按下单日过滤(UTC 日,与对账口径一致)。
+ * 充值订单列表(游标分页,降序)。order_no 精确匹配;day=YYYY-MM-DD 按下单日(UTC)过滤。
  * @summary Admin List Orders
  */
 export const adminListOrdersApiAdminV1OrdersGet = async (params?: AdminListOrdersApiAdminV1OrdersGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageAdminOrderOut> => {
@@ -2034,7 +2023,7 @@ export const getAdminListDeadTasksApiAdminV1OutboxDeadGetUrl = () => {
 }
 
 /**
- * 死信任务列表:重试耗尽的编排任务在此可见(另有 outbox_dead_total 指标接告警)。
+ * 死信任务列表(另有 outbox_dead_total 指标接告警)。
  * @summary Admin List Dead Tasks
  */
 export const adminListDeadTasksApiAdminV1OutboxDeadGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<DeadTaskOut[]> => {
@@ -2058,7 +2047,7 @@ export const getAdminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPostUrl = (task
 }
 
 /**
- * 忽略死信(需原因):确认该任务不再需要执行(如实例已人工处理)。
+ * 忽略死信(需原因)。
  * @summary Admin Discard Dead Task
  */
 export const adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost = async (taskId: number,
@@ -2083,7 +2072,7 @@ export const getAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPostUrl = (taskId: 
 }
 
 /**
- * 重放死信(需原因,与忽略对齐):置回 pending 交还 worker(handler 幂等,重放安全)。
+ * 重放死信(需原因):置回 pending 交还 worker(handler 幂等)。
  * @summary Admin Retry Dead Task
  */
 export const adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost = async (taskId: number,
@@ -2108,9 +2097,7 @@ export const getAdminOverviewApiAdminV1OverviewGetUrl = () => {
 }
 
 /**
- * 值班首屏聚合:实例分状态 COUNT、付费租户 COUNT、池级 GPU(含非 Ready)台账。
- *
- * 全是精确计数,不从截断列表(200/500 条)推算。
+ * 值班首屏聚合:实例分状态 COUNT、付费租户 COUNT、池级 GPU 台账。全是精确计数。
  * @summary Admin Overview
  */
 export const adminOverviewApiAdminV1OverviewGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<OverviewOut> => {
@@ -2134,8 +2121,7 @@ export const getAdminGetPlatformConfigApiAdminV1PlatformConfigGetUrl = () => {
 }
 
 /**
- * 分组配置项:生效值 + 来源(env 默认/DB 覆盖)+ 服务端计算的配置风险 warnings。
- * secret 永不回明文,只回尾 4 位预览。
+ * 分组配置项:生效值 + 来源(env 默认/DB 覆盖)+ 配置风险 warnings。secret 只回尾 4 位预览。
  * @summary Admin Get Platform Config
  */
 export const adminGetPlatformConfigApiAdminV1PlatformConfigGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<PlatformConfigOut> => {
@@ -2161,9 +2147,7 @@ export const getAdminUpdatePlatformConfigApiAdminV1PlatformConfigPutUrl = () => 
 /**
  * 在线配置渠道凭据与合规信息(空串=清除覆盖,回退 env 默认)。
  *
- * 审计落键名与动作类型(set/clear),不落值:secret 键的值永远不进审计;
- * 动作类型必须落——「清除覆盖」会把开关回落到部署层取值,对合规开关而言
- * 与「写入弱值」同为降防操作,只记键名无法在审计里区分。
+ * 审计落键名与动作类型(set/clear),不落值。
  * @summary Admin Update Platform Config
  */
 export const adminUpdatePlatformConfigApiAdminV1PlatformConfigPut = async (platformConfigUpdateRequest: PlatformConfigUpdateRequest, options?: Parameters<typeof customFetch>[1]): Promise<UpdatedKeysOut> => {
@@ -2187,8 +2171,8 @@ export const getAdminTestRegistryApiAdminV1PlatformConfigTestRegistryPostUrl = (
 }
 
 /**
- * 按当前生效镜像仓库配置探测 Harbor:health(DNS/TLS/CA)→ 机器人鉴权读平台项目仓库列表。
- * 只读、有限流、过审计(detail 只落 host)。
+ * 按当前生效镜像仓库配置探测 Harbor:health → 机器人鉴权读项目仓库列表。
+ * 只读、有限流、过审计。
  * @summary Admin Test Registry
  */
 export const adminTestRegistryApiAdminV1PlatformConfigTestRegistryPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<RegistryTestOut> => {
@@ -2236,7 +2220,7 @@ export const getAdminGetPoliciesApiAdminV1PoliciesGetUrl = () => {
 }
 
 /**
- * 当前生效策略 + 取值范围(供设置屏渲染)+ DB 覆盖项。
+ * 当前生效策略 + 取值范围 + DB 覆盖项。
  * @summary Admin Get Policies
  */
 export const adminGetPoliciesApiAdminV1PoliciesGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<PoliciesAdminOut> => {
@@ -2260,8 +2244,7 @@ export const getAdminUpdatePoliciesApiAdminV1PoliciesPutUrl = () => {
 }
 
 /**
- * 在线调整策略参数(即时生效,GET /policies 与计费/回收同步跟随)。
- * 审计 detail 记变更前后值与原因。
+ * 在线调整策略参数(即时生效)。审计 detail 记变更前后值与原因。
  * @summary Admin Update Policies
  */
 export const adminUpdatePoliciesApiAdminV1PoliciesPut = async (policyUpdateRequest: PolicyUpdateRequest, options?: Parameters<typeof customFetch>[1]): Promise<UpdatedKeysOut> => {
@@ -2386,7 +2369,7 @@ export const getAdminRefundsExportApiAdminV1RefundsExportGetUrl = (params?: Admi
 
 /**
  * 退款单 CSV(流式):筛选口径与 GET /refunds 一致;行数硬上限 + 截断标记行。
- * 注册在 /refunds/{refund_id} 动态路由之前,export 不被当 id 解析。
+ * 须注册在 /refunds/{refund_id} 之前。
  * @summary Admin Refunds Export
  */
 export const adminRefundsExportApiAdminV1RefundsExportGet = async (params?: AdminRefundsExportApiAdminV1RefundsExportGetParams, options?: Parameters<typeof customFetch>[1]): Promise<unknown | string> => {
@@ -2410,7 +2393,7 @@ export const getAdminCancelRefundApiAdminV1RefundsRefundIdCancelPostUrl = (refun
 }
 
 /**
- * 取消退款单(仅 pending/approved;余额不足无法核销时的出口)。不动钱包。
+ * 取消退款单(仅 pending/approved)。不动钱包。
  * @summary Admin Cancel Refund
  */
 export const adminCancelRefundApiAdminV1RefundsRefundIdCancelPost = async (refundId: number,
@@ -2435,10 +2418,9 @@ export const getAdminPayoutRefundApiAdminV1RefundsRefundIdPayoutPostUrl = (refun
 }
 
 /**
- * 登记打款(唯一出金点):强制双人(与审批人相同则 409);余额不足 409,可取消。
- * 审计行与出金同事务(write_audit_sync):审计写失败即出金失败回滚。
- * 支持 Idempotency-Key:同键同参重放返回 200 + X-Idempotent-Replay(不重复出金),
- * 同键异参 409;出金动作的防重保护与调账/补单同口径。
+ * 登记打款(唯一出金点):强制双人(与审批人相同则 409);余额不足 409。
+ * 审计行与出金同事务(write_audit_sync)。Idempotency-Key:同键同参重放 200 + X-Idempotent-Replay,
+ * 同键异参 409。
  * @summary Admin Payout Refund
  */
 export const adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost = async (refundId: number,
@@ -2520,7 +2502,7 @@ export const getRevenueReportApiAdminV1ReportsRevenueGetUrl = (params?: RevenueR
 }
 
 /**
- * 今日/本月消费额(营收口径 = ledger consume 绝对值)与新注册数。本地日界经 tz_offset。
+ * 今日/本月消费额(ledger consume 绝对值)与新注册数。本地日界经 tz_offset。
  * @summary Revenue Report
  */
 export const revenueReportApiAdminV1ReportsRevenueGet = async (params?: RevenueReportApiAdminV1ReportsRevenueGetParams, options?: Parameters<typeof customFetch>[1]): Promise<RevenueReportOut> => {
@@ -2576,7 +2558,7 @@ export const getAdminListSkusApiAdminV1SkusGetUrl = () => {
 }
 
 /**
- * SKU 列表,组装台账容量与占用列(catalog+nodes+orchestrator 三 service 汇合点)。
+ * SKU 列表,组装台账容量与占用列。
  * @summary Admin List Skus
  */
 export const adminListSkusApiAdminV1SkusGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<SkuAdminOut[]> => {
@@ -2630,10 +2612,9 @@ export const getSkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetUrl = (params:
 }
 
 /**
- * SKU 表单实时容量预览(纯台账;创建仍软校验,上架才硬校验)。
+ * SKU 表单实时容量预览(纯台账)。
  *
- * gpu_model 留空 = CPU 规格预览:只按池匹配节点,可售数走 vCPU/内存上限口径
- * (`catalog.sellable_cpu_slots`,与市场库存同一份算法),不报「型号未识别」。
+ * gpu_model 留空 = CPU 规格预览:只按池匹配节点,可售数走 `catalog.sellable_cpu_slots`。
  * @summary Sku Capacity Preview
  */
 export const skuCapacityPreviewApiAdminV1SkusCapacityPreviewGet = async (params: SkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetParams, options?: Parameters<typeof customFetch>[1]): Promise<CapacityPreviewOut> => {
@@ -2721,15 +2702,10 @@ export const getAdminListTenantsApiAdminV1TenantsGetUrl = (params?: AdminListTen
 }
 
 /**
- * 租户列表(游标分页)。q = 手机号(完整号码精确,短串按后缀);纯数字额外按租户 id 精确命中。
- *
- * id 命中行插在首页最前,手机号后缀命中行保持原序随后。手机号只回掩码。
- * 按号码/id 检索是敏感读,显式落一条审计(中间件默认只审计写操作)。
- * order = 注册先后(id)正/倒序;聚合列(余额/消费/实例数)按页拼装,不支持排序。
- *
- * 实名信息默认全角色脱敏;明文查看是逐次显式动作:reveal=true 且 reason 必填
- * (ops/finance;readonly 不可 reveal),每次明文读按条数+事由落审计——
- * 「客服日常浏览列表」不再批量接触明文 PII。
+ * 租户列表(游标分页)。q = 手机号(完整号码精确,短串按后缀);纯数字额外按租户 id 精确命中,
+ * 插在首页最前。手机号只回掩码;按号码/id 检索显式落一条审计。
+ * order = id 正/倒序;聚合列按页拼装,不支持排序。
+ * 实名信息默认脱敏;reveal=true 且 reason 必填回明文(readonly 不可),每次按条数+事由落审计。
  * @summary Admin List Tenants
  */
 export const adminListTenantsApiAdminV1TenantsGet = async (params?: AdminListTenantsApiAdminV1TenantsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageTenantOut> => {
@@ -2753,7 +2729,7 @@ export const getAdminAdjustContextApiAdminV1TenantsUserIdAdjustContextGetUrl = (
 }
 
 /**
- * 调账前置上下文(只读):回显掩码手机号/当前余额/近 3 条流水。不存在 → 404。
+ * 调账前置上下文(只读):掩码手机号/当前余额/近 3 条流水。不存在 → 404。
  * @summary Admin Adjust Context
  */
 export const adminAdjustContextApiAdminV1TenantsUserIdAdjustContextGet = async (userId: number, options?: Parameters<typeof customFetch>[1]): Promise<AdjustContextOut> => {
@@ -2785,7 +2761,7 @@ export const getAdminTenantBillsApiAdminV1TenantsUserIdBillsGetUrl = (userId: nu
 }
 
 /**
- * 租户小时账单下钻(可按实例过滤;金额与用户端所见同源)。
+ * 租户小时账单下钻(可按实例过滤)。
  * @summary Admin Tenant Bills
  */
 export const adminTenantBillsApiAdminV1TenantsUserIdBillsGet = async (userId: number,
@@ -2900,7 +2876,7 @@ export const getAdminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGetUrl = (userId:
 }
 
 /**
- * 配额覆盖现状 + 生效值(抽屉「配额」Tab 数据源)。
+ * 配额覆盖现状 + 生效值。
  * @summary Admin Get Tenant Quota
  */
 export const adminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGet = async (userId: number, options?: Parameters<typeof customFetch>[1]): Promise<TenantQuotaOut> => {
@@ -2924,7 +2900,7 @@ export const getAdminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPutUrl = (userId:
 }
 
 /**
- * 写配额覆盖(三个数字可留空 = 该维走默认链;全空 = 清除覆盖)。note 必填,审计落前后值。
+ * 写配额覆盖(数字留空 = 该维走默认链;全空 = 清除覆盖)。note 必填,审计落前后值。
  * @summary Admin Set Tenant Quota
  */
 export const adminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut = async (userId: number,
@@ -3011,9 +2987,7 @@ export const getAdminTicketsCountApiAdminV1TicketsCountGetUrl = (params?: AdminT
 }
 
 /**
- * 待办工单计数轻端点(角标轮询替代全量列表轮询):默认 pending_staff 口径。
- *
- * 注意须注册在 /tickets/{ticket_id} 之前,否则 "count" 会被当 id 解析。
+ * 待办工单计数(默认 pending_staff 口径)。须注册在 /tickets/{ticket_id} 之前。
  * @summary Admin Tickets Count
  */
 export const adminTicketsCountApiAdminV1TicketsCountGet = async (params?: AdminTicketsCountApiAdminV1TicketsCountGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminTicketCountOut> => {

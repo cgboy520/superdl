@@ -39,7 +39,7 @@ function RootLayout() {
   );
 }
 
-/** 全局错误边界:渲染异常兜底,不白屏(Result 体与 web 共用 RouteErrorFallbackView)。 */
+/** 全局错误边界(与 web 共用 RouteErrorFallbackView)。 */
 function RouteErrorFallback({ error, reset }: ErrorComponentProps) {
   const { t } = useTranslation();
   return (

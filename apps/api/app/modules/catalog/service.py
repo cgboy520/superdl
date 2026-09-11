@@ -40,11 +40,8 @@ logger = get_logger(__name__)
 
 
 def sellable_per_gpu(pool_label: str, gpu_cores_pct: int, oversell_cores: Decimal) -> int:
-    """每张物理卡可售实例数:hami 池 = ⌊100 × oversell_cores ÷ gpu_cores_pct⌋(Decimal 整除,
-    至少 1),kata / mig 池恒 1 —— 超卖只发生在 HAMi 软切分上,是池的属性而非档位的。
-
-    市场库存、创建软准入、管理端容量预览共用这一份口径;必须走 Decimal,float 会把
-    100 × 1.15 算成 114.999…,同一 SKU 在市场页与管理端相差一台。
+    """每张物理卡可售实例数:hami 池 = ⌊100 × oversell_cores ÷ gpu_cores_pct⌋(Decimal,至少 1),
+    kata / mig 池恒 1。市场库存、创建软准入、容量预览共用。
     """
     if pool_label != POOL_HAMI:
         return 1
@@ -54,17 +51,9 @@ def sellable_per_gpu(pool_label: str, gpu_cores_pct: int, oversell_cores: Decima
 def sellable_cpu_slots(
     vcpu: int, mem_gb: int, specs: Iterable["NodeSpec"], *, gpu_node_vcpu_cap: int
 ) -> int:
-    """CPU 规格的近似可售实例数:逐 Ready 节点取
-    min(⌊预算 vCPU ÷ vcpu⌋, ⌊预算内存 ÷ mem_gb⌋),跨节点求和。
-
-    收 (vcpu, mem_gb) 标量而非 Sku:管理端容量预览要为表单里还没提交的规格算这个数。
-
-    预算口径:cpu 池(无卡机)整机 vCPU 与内存都算;其它池每节点封顶
-    `gpu_node_cpu_instance_vcpu_cap` 核,内存按同一比例折算(不折算会把一台 16 核/512G
-    的实例判成落得下却吃光整机内存),cap=0 → 该节点一台都不卖。
-
-    这是上限估算不是实时余量:台账 `node_specs` 没有「已用 vCPU」一列,`instances.node_name`
-    又由 reconciler 事后回填,按节点扣减必然漏算。只挡「确定卖不出去」的单,真正裁决在调度器。
+    """CPU 规格的近似可售实例数:逐 Ready 节点取 min(⌊预算 vCPU ÷ vcpu⌋, ⌊预算内存 ÷ mem_gb⌋) 求和。
+    预算:cpu 池整机;其它池每节点封顶 `gpu_node_cpu_instance_vcpu_cap` 核,内存同比例,cap=0 不卖。
+    上限估算,不扣已用。
     """
     if vcpu <= 0 or mem_gb <= 0:
         return 0
@@ -82,12 +71,8 @@ def sellable_cpu_slots(
 
 
 def _check_tier_pool(tier: str, pool_label: str, mig_profile: str | None) -> None:
-    """档位与池必须配对,mig 切片与 mig 池必须同时有或同时无。
-
-    隔离机制的派发键是池(见 core/gpu_adapter),档位只是售卖名字——两者不配对时,
-    卖出去的隔离强度与实际跑的不是一回事。建 SKU 与改池两条路径共用本函数。
-    共享档再叠加运营开关(SUPERDL_SHARED_TIER_ALLOWED_POOLS):摘掉 hami 即
-    「共享档只卖 MIG 硬切分」,空值即停售共享档。
+    """档位与池必须配对(core/gpu_adapter),mig 切片与 mig 池同有同无;
+    共享档叠加 SUPERDL_SHARED_TIER_ALLOWED_POOLS(空即停售)。建 SKU 与改池共用。
     """
     allowed = TIER_POOLS.get(tier, ())
     if tier == TIER_SHARED:
@@ -152,14 +137,14 @@ async def list_images(session: AsyncSession) -> list[PlatformImage]:
 
 
 async def is_catalog_image(session: AsyncSession, image_ref: str) -> bool:
-    """该镜像引用是否属于平台镜像目录(创建实例的来源白名单判定之一)。"""
+    """该镜像引用是否属于平台镜像目录。"""
     return (
         await session.execute(select(PlatformImage.id).where(PlatformImage.image_ref == image_ref))
     ).scalar_one_or_none() is not None
 
 
 async def image_coverage(session: AsyncSession) -> dict[int, tuple[int, int, int]]:
-    """预热覆盖聚合:image_id → (cached 节点数, 总行数, failed 节点数)。纯 DB,不调 K8s。"""
+    """预热覆盖聚合:image_id → (cached 节点数, 总行数, failed 节点数)。"""
     rows = (
         await session.execute(
             select(
@@ -205,11 +190,8 @@ async def admin_list_skus(session: AsyncSession) -> list[Sku]:
 
 
 def _checked_price(value: Decimal) -> Decimal:
-    """单价统一走 money.as_price(4 位);量化后为 0 直接拒绝(numeric(12,4) 会静默舍成免费)。
-
-    按小时计费的 SKU 强制 2 位语义(price == as_amount(price)):4 位单价逐小时独立舍入
-    会产生单向漂移(1.2345 满月 720h 少收 ¥3.24),4 位精度只留给数据盘 GB·月价。
-    """
+    """单价走 money.as_price(4 位),量化后为 0 拒绝;
+    按小时计费的 SKU 强制 2 位(price == as_amount(price))。"""
     price = as_price(value)
     if price <= 0:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="catalog.priceTooSmall")
@@ -244,8 +226,7 @@ async def admin_update_sku(
     sku = await get_sku(session, sku_id)
     was_on_sale = sku.status == "on"
     updates = data.model_dump(exclude_unset=True, exclude={"reason"})
-    # 改池或改切片 = 换隔离方式 = 换商品,只在下架态放行(存量实例走 spec 快照,不受影响)。
-    # 必须放在应用更新之前:不碰 ORM 对象就退出,不依赖会话退出时的回滚
+    # 改池或改切片只在下架态放行;在应用更新之前判
     if was_on_sale and any(
         field in updates and updates[field] != getattr(sku, field)
         for field in ("pool_label", "mig_profile")
@@ -260,11 +241,10 @@ async def admin_update_sku(
         if old != value:
             before[field] = str(old) if isinstance(old, Decimal) else old
         setattr(sku, field, value)
-    # 池与切片成对可改,任一动了都复核配对(tier / gpu_model 不可改,SkuUpdate 无这两个字段)
+    # 池与切片任一动了都复核配对
     if "pool_label" in before or "mig_profile" in before:
         _check_tier_pool(sku.tier, sku.pool_label, sku.mig_profile)
-    # 「带不带卡」的跨字段规则按**合并后的终态**复核:部分更新单看本次入参判不了
-    # (只把 vram_gb 改成 0 的 GPU SKU,入参本身没有任何非法组合)
+    # 「带不带卡」规则按合并后的终态复核
     cpu_key = cpu_spec_error(
         tier=sku.tier,
         gpu_model=sku.gpu_model,
@@ -281,7 +261,7 @@ async def admin_update_sku(
         await _alert_large_price_change(
             session, sku, Decimal(before["price_hourly"]), updates["price_hourly"], data.reason
         )
-    # 业务唯一键的 7 列里有 5 列可改,改到与另一条重合时要给 409 而不是漏 500
+    # 业务唯一键冲突 → 409
     try:
         await session.commit()
     except IntegrityError as exc:
@@ -294,7 +274,7 @@ async def admin_update_sku(
 async def _alert_large_price_change(
     session: AsyncSession, sku: Sku, old: Decimal, new: Decimal, reason: str
 ) -> None:
-    """大幅改价落一条管理端告警,不阻断(old 经 _checked_price 落库,恒 > 0)。"""
+    """大幅改价落一条管理端告警,不阻断。"""
     ratio = abs(new - old) / old
     if ratio < PRICE_CHANGE_ALERT_RATIO:
         return
@@ -315,11 +295,7 @@ async def _alert_large_price_change(
 
 
 async def _ensure_sellable(session: AsyncSession, sku: Sku) -> None:
-    """上架硬校验:台账须有「型号×池」匹配的 Ready 节点。
-
-    未识别型号(canonical=None)恒不匹配 → 只能 force 上架。
-    CPU 档不带卡,只校验「池里有 Ready 节点」——按型号匹配对它恒不成立(gpu_model 是空串)。
-    """
+    """上架硬校验:台账须有「型号×池」匹配的 Ready 节点;未识别型号只能 force 上架;CPU 档只校验池。"""
     from app.modules.nodes import service as nodes_service
 
     specs = await nodes_service.ready_specs(session)
@@ -370,7 +346,7 @@ async def admin_update_image(
     img = await get_image(session, image_id)
     updates = data.model_dump(exclude_unset=True)
     if updates.get("image_ref") and updates["image_ref"] != img.image_ref:
-        # ref 变更 = 缓存作废:同事务清行,巡检按新 ref 重建
+        # ref 变更:同事务清缓存行
         await session.execute(delete(ImageNodeCache).where(ImageNodeCache.image_id == image_id))
     for field, value in updates.items():
         setattr(img, field, value)
@@ -383,15 +359,14 @@ async def admin_update_image(
 
 
 async def admin_delete_image(session: AsyncSession, image_id: int) -> None:
-    """删除目录条目(cache 行 FK CASCADE)。运行中实例存的是 image_ref 快照,不受影响。"""
+    """删除目录条目(cache 行 FK CASCADE);运行中实例不受影响。"""
     img = await get_image(session, image_id)
     await session.delete(img)
     await session.commit()
 
 
 async def admin_prewarm_image(session: AsyncSession, image_id: int) -> int:
-    """立即预热:非 cached 行置 pending 并同事务 enqueue。
-    不在请求路径调 K8s;新节点行由巡检铺(≤60s)。返回入队数。"""
+    """立即预热:非 cached 行置 pending 并同事务 enqueue,返回入队数。"""
     img = await get_image(session, image_id)
     if not img.prewarm_enabled:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="catalog.prewarmDisabled")

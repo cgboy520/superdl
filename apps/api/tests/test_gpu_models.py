@@ -29,7 +29,7 @@ class TestCanonical:
         )
 
     def test_cmp_mining_series(self):
-        """CMP 系列:nvidia-smi 只报通用名(不可归一),型号只能来自 lspci 方括号名或人工 SKU。"""
+        """CMP 系列:nvidia-smi 通用名不可归一,型号来自 lspci 方括号名或人工 SKU。"""
         assert canonical_gpu_model("NVIDIA Graphics Device") is None
         assert canonical_gpu_model("NVIDIA Corporation GA100 [CMP 170HX] (rev a1)") == "CMP170HX"
         assert canonical_gpu_model("CMP 170HX") == "CMP170HX"

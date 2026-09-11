@@ -75,7 +75,7 @@ class TestRealName:
         assert resp.json()["code"] == "REAL_NAME_MISMATCH"
 
     async def test_disabled_is_409_without_touching_provider(self, client: AsyncClient):
-        """开关关闭(默认):明确 409,渠道不被调用——挂了说明关闭没有短路提交路径。"""
+        """开关关闭(默认):409,渠道不被调用。"""
         set_realname_provider(_Provider(True))
         headers, _ = await user_headers_with_id(client, "13800000166")
         resp = await client.post(
@@ -87,8 +87,7 @@ class TestRealName:
         assert resp.json()["code"] == "REAL_NAME_DISABLED"
 
     async def test_enabled_without_credentials_is_502_not_500(self, client: AsyncClient, sm):
-        """开关开启但凭据未配置:取 provider 即抛 RealNameError,必须走设计好的 502
-        渠道故障(与 verify 失败同径),不能漏成 500。"""
+        """开关开启但凭据未配置:RealNameError → 502 渠道故障。"""
         await set_platform_setting(sm, "real_name_enabled", "true")
         headers, _ = await user_headers_with_id(client, "13800000164")
         resp = await client.post(
@@ -131,8 +130,7 @@ class TestRealName:
             settings.real_name_enabled = False
 
     async def test_create_instance_gate_when_required(self, client: AsyncClient, sm):
-        """强制实名开启时:算力开通同样拦截(监管对算力服务的要求不低于预收款);
-        只拦充值的话,匿名账号可绕过实名直接租 GPU。"""
+        """强制实名开启时算力开通同样拦截。"""
         settings = get_settings()
         settings.real_name_enabled = True
         settings.real_name_required_for_recharge = True
@@ -168,7 +166,7 @@ class TestRealName:
             settings.real_name_enabled = False
 
     async def test_start_and_disk_gates_when_required(self, client: AsyncClient, sm):
-        """闸门覆盖:开机与建盘同闸——只挂创建/充值则匿名用户可绕到存量资源。"""
+        """开机与建盘同闸。"""
         settings = get_settings()
         settings.real_name_enabled = True
         settings.real_name_required_for_recharge = True
@@ -184,7 +182,7 @@ class TestRealName:
             )
             assert resp.status_code == 403
             assert resp.json()["message_key"] == "disks.realNameRequired"
-            # 开机:未实名 403(实例由实名前的创建路径落库——直接 seed 一台 stopped)
+            # 开机:未实名 403(直接 seed 一台 stopped)
             _, uuid = await seed_instance(sm, user_id=user_id, status="stopped")
             resp = await client.post(f"/api/v1/instances/{uuid}/start", headers=headers)
             assert resp.status_code == 403

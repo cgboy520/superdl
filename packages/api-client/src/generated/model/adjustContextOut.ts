@@ -7,7 +7,7 @@
 import type { LedgerEntryOut } from './ledgerEntryOut';
 
 /**
- * 调账前置上下文:回显租户身份与资金现状,防止调错人。
+ * 调账前置上下文:回显租户身份与资金现状。
  */
 export interface AdjustContextOut {
   balance: string;

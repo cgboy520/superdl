@@ -1,4 +1,4 @@
-/** 数据访问层:消费 @superdl/api-client 的生成 fetcher(非手写 fetch),自建 TanStack Query hooks。 */
+/** 数据访问层:基于 @superdl/api-client 生成 fetcher 的 TanStack Query hooks。 */
 
 import {
   adminAckAlertApiAdminV1AlertsAlertIdAckPost,
@@ -188,7 +188,7 @@ export type {
   SkuUpdate,
 } from "@superdl/api-client";
 
-// 行类型:全部取自生成契约,禁止手写
+// 行类型取自生成契约
 
 export type {
   AdjustmentOut as AdjustmentRow,
@@ -217,22 +217,21 @@ export type {
   RefundPayout,
 } from "@superdl/api-client";
 
-// 查询 hooks
 
 type MutOpts<TData, TVars> = { mutation?: UseMutationOptions<TData, unknown, TVars> };
 
-/** 端点变更工厂:收敛「mutationFn + 透传 opts.mutation」的同构样板;TData 取箭头返回(即生成 fetcher 的契约类型)。 */
+/** 变更 hook 工厂:mutationFn + 透传 opts.mutation。 */
 function adminMutation<TData, TVars>(mutationFn: (v: TVars) => Promise<TData>) {
   return function useBoundMutation(opts?: MutOpts<TData, TVars>) {
     return useMutation({ mutationFn, ...opts?.mutation });
   };
 }
 
-/** 游标分页公共形状:params 带 limit/cursor,响应带 next_cursor(audit 的 base64 游标是特例,不走这里)。 */
+/** 游标分页公共形状:params 带 limit/cursor,响应带 next_cursor(audit 不走这里)。 */
 type CursorParams = { limit?: number; cursor?: string };
 type CursorPage = { next_cursor?: string | null };
 
-/** 游标分页骨架:收敛各列表 hook 的 useInfiniteQuery 同构样板(initialPageParam/getNextPageParam/limit+cursor 拼接)。 */
+/** 游标分页 useInfiniteQuery 骨架。 */
 function useCursorPages<TPage extends CursorPage, P extends CursorParams>(
   key: readonly unknown[],
   fetcher: (params?: P) => Promise<TPage>,
@@ -245,7 +244,6 @@ function useCursorPages<TPage extends CursorPage, P extends CursorParams>(
     enabled: opts?.enabled ?? true,
     refetchOnWindowFocus: opts?.refetchOnWindowFocus,
     initialPageParam: undefined as string | undefined,
-    // 组合对象即 P(页面参数 + limit/cursor);TS 证不出泛型展开,仅此处单点断言
     queryFn: ({ pageParam }) =>
       fetcher({ ...params, limit, ...(pageParam ? { cursor: pageParam } : {}) } as P),
     getNextPageParam: (last) => last.next_cursor ?? undefined,
@@ -283,7 +281,6 @@ export function useGpuModelAggregates(options?: { enabled?: boolean }) {
 }
 
 export function useSkuCapacityPreview(
-  // 入参类型取生成契约:端点增删 query 参数时编译期即报错
   params: SkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetParams | null,
 ) {
   return useQuery<CapacityPreviewOut>({
@@ -294,7 +291,7 @@ export function useSkuCapacityPreview(
   });
 }
 
-/** 管理端实例列表(游标分页):status/user_id/q/node_name 服务端过滤,「加载更多」向下翻页。 */
+/** 实例列表(游标分页):status/user_id/q/node_name 服务端过滤。 */
 export function useAdminInstances(
   params?: Omit<AdminListInstancesApiAdminV1InstancesGetParams, "cursor" | "limit">,
   options?: { enabled?: boolean; limit?: number },
@@ -304,7 +301,7 @@ export function useAdminInstances(
   return { ...q, queryKey };
 }
 
-/** 全局在线服务(不限租户);user_id 过滤时响应带 total(抽屉截断提示用)。 */
+/** 在线服务列表(不限租户);user_id 过滤时响应带 total。 */
 export function useAdminServices(
   params?: Omit<AdminListServicesApiAdminV1ServicesGetParams, "cursor" | "limit">,
   options?: { enabled?: boolean; limit?: number },
@@ -314,14 +311,14 @@ export function useAdminServices(
   return { ...q, queryKey };
 }
 
-/** 租户列表(游标分页)。q = 手机号(完整号码精确,短串按后缀);纯数字额外按 id 命中首页。 */
+/** 租户列表(游标分页)。q = 手机号(完整精确,短串后缀);纯数字另按 id 命中。 */
 export function useTenants(params?: Omit<AdminListTenantsApiAdminV1TenantsGetParams, "cursor" | "limit">) {
   const queryKey = ["admin", "tenants", params] as const;
   const q = useCursorPages(queryKey, adminListTenantsApiAdminV1TenantsGet, params, undefined);
   return { ...q, queryKey };
 }
 
-/** 租户账单下钻:资金流水与小时账单(游标分页,与用户端同源同实现)。 */
+/** 租户资金流水(游标分页)。 */
 export function useTenantLedger(userId: number | null) {
   const queryKey = ["admin", "tenant-ledger", userId] as const;
   const q = useCursorPages(
@@ -334,7 +331,7 @@ export function useTenantLedger(userId: number | null) {
   return { ...q, queryKey };
 }
 
-/** 租户小时账单;instanceId 非空时按实例过滤(排障:只盯一台机的账)。 */
+/** 租户小时账单;instanceId 非空时按实例过滤。 */
 export function useTenantBills(userId: number | null, instanceId?: number | null) {
   const queryKey = ["admin", "tenant-bills", userId, instanceId ?? null] as const;
   const q = useCursorPages(
@@ -362,7 +359,7 @@ export const useSetTenantQuota = adminMutation((v: { userId: number; data: Tenan
   adminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut(v.userId, v.data),
 );
 
-/** 实例事件时间线(排障;管理端不限租户,游标分页)。 */
+/** 实例事件时间线(不限租户,游标分页)。 */
 export function useInstanceEvents(uuid: string | null) {
   const queryKey = ["admin", "instance-events", uuid] as const;
   const q = useCursorPages(
@@ -439,7 +436,7 @@ export function useReconciliation(day: string) {
   });
 }
 
-/** 告警流:severity 服务端过滤。enabled 关停时不再取数(折叠 UI 不空转)。 */
+/** 告警流:severity 服务端过滤;enabled=false 不取数。 */
 export function useAlerts(
   params?: AdminAlertsApiAdminV1AlertsGetParams,
   options?: { refetchInterval?: number; enabled?: boolean },
@@ -454,7 +451,7 @@ export function useAlerts(
   return { ...q, queryKey };
 }
 
-/** 未确认告警数(顶栏铃铛角标;独立计数端点,不用当页长度推算)。 */
+/** 未确认告警数(顶栏铃铛角标)。 */
 export function useAlertUnreadCount(options?: { refetchInterval?: number }) {
   return useQuery({
     queryKey: ["admin", "alerts", "unread-count"],
@@ -467,7 +464,7 @@ export const useAckAlert = adminMutation((v: { alertId: number }) =>
   adminAckAlertApiAdminV1AlertsAlertIdAckPost(v.alertId),
 );
 
-/** 充值订单(游标分页)。order_no 精确;day=YYYY-MM-DD 按下单日(UTC)过滤。 */
+/** 充值订单(游标分页)。order_no 精确;day=YYYY-MM-DD 按 UTC 下单日过滤。 */
 export function useOrders(
   params?: Omit<AdminListOrdersApiAdminV1OrdersGetParams, "cursor" | "limit">,
   options?: { enabled?: boolean },
@@ -486,7 +483,7 @@ export function useAdjustments(
   return { ...q, queryKey };
 }
 
-/** 退款单列表(游标分页)。status 服务端过滤;day=YYYY-MM-DD(UTC 日,与对账口径一致)。 */
+/** 退款单列表(游标分页)。status 服务端过滤;day=YYYY-MM-DD(UTC 日)。 */
 export function useRefunds(
   params?: Omit<AdminListRefundsApiAdminV1RefundsGetParams, "cursor" | "limit">,
 ) {
@@ -512,9 +509,7 @@ export const useCancelRefund = adminMutation((v: { refundId: number; data: Refun
   adminCancelRefundApiAdminV1RefundsRefundIdCancelPost(v.refundId, v.data),
 );
 
-/** 发票申请列表(角色:finance/admin)。status/period(YYYY-MM)服务端过滤;
- *  抬头与邮箱默认脱敏,reveal=true + reason 才回明文(后端按条数与事由落审计),
- *  两者进 queryKey:换档位即换缓存条目,脱敏与明文不会互相覆盖。 */
+/** 发票申请列表(finance/admin)。status/period(YYYY-MM)服务端过滤;抬头与邮箱默认脱敏,reveal=true + reason 回明文(进 queryKey)。 */
 export function useInvoices(params?: AdminListInvoicesApiAdminV1InvoicesGetParams) {
   const queryKey = ["admin", "invoices", params] as const;
   const q = useQuery({
@@ -532,8 +527,7 @@ export const useRejectInvoice = adminMutation((v: { invoiceId: number; data: Inv
   adminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost(v.invoiceId, v.data),
 );
 
-/** 结算缺口列表(游标分页):kind/reason 服务端过滤,unresolved 默认 true(未核销持续曝光)。
- *  不挂 refetchInterval(infinite 轮询 = 每轮 N 页全拉):新鲜度靠焦点重取 + 表上方手动刷新。 */
+/** 结算缺口列表(游标分页):kind/reason 服务端过滤,unresolved 默认 true;不挂 refetchInterval。 */
 export function useSettlementGaps(
   params?: Omit<AdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetParams, "cursor" | "limit">,
 ) {
@@ -556,8 +550,7 @@ export const useResolveSettlementGap = adminMutation(
     adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost(v.gapId, v.data),
 );
 
-/** 工单列表(游标分页):status/category 过滤,user_id/ticket_no 检索。
- *  不挂 refetchInterval(infinite 轮询 = 每轮 N 页全拉):新鲜度靠焦点重取 + 表上方手动刷新。 */
+/** 工单列表(游标分页):status/category 过滤,user_id/ticket_no 检索;不挂 refetchInterval。 */
 export function useTickets(
   params?: Omit<AdminListTicketsApiAdminV1TicketsGetParams, "cursor" | "limit">,
 ) {
@@ -568,7 +561,7 @@ export function useTickets(
   return { ...q, queryKey };
 }
 
-/** 待客服工单计数(60s 轮询):轻量 count 端点,不拉行。 */
+/** 待客服工单计数(60s 轮询)。 */
 export function useTicketPendingCount() {
   const queryKey = ["admin", "tickets-count"] as const;
   const q = useQuery({
@@ -589,7 +582,7 @@ export function useDeletionRequests(params?: AdminListDeletionRequestsApiAdminV1
   return { ...q, queryKey };
 }
 
-/** 执行注销(仅超管):校验不过 → 409(申请被自动驳回,detail 含残留清单)。 */
+/** 执行注销(仅超管):校验不过 → 409,detail 含残留清单。 */
 export const useApproveDeletion = adminMutation((v: { requestId: number }) =>
   adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost(v.requestId),
 );
@@ -598,7 +591,7 @@ export const useRejectDeletion = adminMutation((v: { requestId: number; data: Ad
   adminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost(v.requestId, v.data),
 );
 
-/** 工单详情 + 消息流(详情抽屉数据源;开启时 15s 轮询新回复)。 */
+/** 工单详情 + 消息流(开启时 15s 轮询)。 */
 export function useTicketDetail(ticketId: number | null) {
   const queryKey = ["admin", "ticket", ticketId] as const;
   const q = useQuery({
@@ -663,7 +656,7 @@ export const useUpdateTicketStatus = adminMutation(
     adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost(v.ticketId, v.data),
 );
 
-/** 审计检索:游标翻页(响应是数组;满页即还有更早,游标=末行 id 的 base64)。 */
+/** 审计检索:响应是数组,游标 = 末行 id 的 base64。 */
 type AuditFilters = Omit<AdminAuditLogApiAdminV1AuditGetParams, "cursor">;
 
 export const AUDIT_DEFAULT_LIMIT = 100;
@@ -680,7 +673,6 @@ export function useAuditLog(filters: AuditFilters) {
         limit,
         ...(pageParam ? { cursor: pageParam } : {}),
       }),
-    // 满页视为还有更早,游标取末行 id
     getNextPageParam: (last) =>
       last.length >= limit ? btoa(String(last[last.length - 1]!.id)) : undefined,
   });
@@ -689,12 +681,12 @@ export function useAuditLog(filters: AuditFilters) {
 
 // 变更 hooks
 
-/** 登录只返回二要素挑战票(全角色强制 TOTP);正式 token 经 useMfaSetupConfirm / useMfaVerify。 */
+/** 登录返回二要素挑战票;正式 token 经 useMfaSetupConfirm / useMfaVerify。 */
 export const useAdminLogin = adminMutation((v: { data: AdminLoginRequest }) =>
   adminLoginApiAdminV1AuthLoginPost(v.data),
 );
 
-// TOTP MFA(全部管理角色强制)
+// TOTP MFA
 export const useMfaSetupBegin = adminMutation((v: { ticket: string }) =>
   mfaSetupBeginApiAdminV1AuthMfaSetupBeginPost({ ticket: v.ticket }),
 );
@@ -785,12 +777,12 @@ export const useForceStop = adminMutation((v: { uuid: string; data: AdminForceSt
   adminForceStopApiAdminV1InstancesUuidForceStopPost(v.uuid, v.data),
 );
 
-/** 强制回收一台竞价实例(腾容量)。与强制停止是两条后端路径,时间线 reason 与竞价可靠性统计据此区分。 */
+/** 强制回收一台竞价实例(与强制停止是两条后端路径)。 */
 export const usePreemptInstance = adminMutation((v: { uuid: string; data: AdminForceStopRequest }) =>
   adminPreemptApiAdminV1InstancesUuidPreemptPost(v.uuid, v.data),
 );
 
-/** 冻结(原因必填)。响应含 instances_stopped:本次一并停掉的 running 实例台数。 */
+/** 冻结(原因必填);响应 instances_stopped = 一并停掉的 running 实例数。 */
 export const useFreezeTenant = adminMutation((v: { userId: number; data: TenantFreezeRequest }) =>
   adminFreezeTenantApiAdminV1TenantsUserIdFreezePost(v.userId, v.data),
 );
@@ -866,7 +858,7 @@ export const useBackfillOrder = adminMutation(
     ),
 );
 
-/** 重放死信:需原因(与忽略对齐,handler 幂等)。 */
+/** 重放死信(原因必填)。 */
 export const useRetryDeadTask = adminMutation((v: { taskId: number; data: OutboxRetryRequest }) =>
   adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost(v.taskId, v.data),
 );
@@ -883,7 +875,7 @@ export const usePublishAnnouncement = adminMutation(
     ),
 );
 
-/** 公告历史(含已撤回;固定截断 200,页面用 ListCapNote 提示)。 */
+/** 公告历史(含已撤回;固定截断 200)。 */
 export function useAnnouncements() {
   const queryKey = ["admin", "announcements"] as const;
   const q = useQuery({
@@ -902,16 +894,15 @@ export const useUpdatePolicies = adminMutation((v: { data: PolicyUpdateRequest }
   adminUpdatePoliciesApiAdminV1PoliciesPut(v.data),
 );
 
-// 平台配置(渠道凭据与合规;仅 admin 角色)
+// 平台配置(仅 admin 角色)
 
 export function usePlatformConfig(options?: { enabled?: boolean }) {
   const queryKey = ["admin", "platform-config"] as const;
   const q = useQuery({
     queryKey,
     queryFn: () => adminGetPlatformConfigApiAdminV1PlatformConfigGet(),
-    // 非 admin 角色读它必 403:调用方按角色传 enabled
+    // 非 admin 角色 403,调用方按角色传 enabled
     enabled: options?.enabled ?? true,
-    // 关掉焦点重取:避免后台重取覆盖编辑中的表单
     refetchOnWindowFocus: false,
     retry: false,
   });
@@ -955,14 +946,14 @@ export const useChangeOwnPassword = adminMutation((v: { data: AdminSelfPasswordR
   adminChangeOwnPasswordApiAdminV1MePasswordPost(v.data),
 );
 
-// 总览/上下文(全部走生成 fetcher;类型即契约)
+// 总览/上下文
 
-/** 路由守卫用:/me 校准角色(角色只信服务端响应)。 */
+/** /me 校准角色(路由守卫用)。 */
 export function fetchAdminMe(): Promise<AdminOut> {
   return adminMeApiAdminV1MeGet();
 }
 
-/** 总览聚合:精确 COUNT(全角色可读),替代在截断列表里数数。 */
+/** 总览聚合(精确 COUNT,全角色可读)。 */
 export function useOverview() {
   const queryKey = ["admin", "overview"] as const;
   const q = useQuery({
@@ -973,7 +964,7 @@ export function useOverview() {
   return { ...q, queryKey };
 }
 
-/** 调账前置上下文:回显租户身份与资金现状;不存在 → 404(调用方据 error 阻止提交)。 */
+/** 调账前置上下文:租户身份与资金现状;不存在 → 404。 */
 export function useAdjustContext(userId: number | null) {
   return useQuery({
     queryKey: ["admin", "adjust-context", userId],
@@ -994,11 +985,11 @@ export function useSkuImpact(skuId: number | null) {
   });
 }
 
-// CSV 导出(生成 fetcher,文本响应;截断判定见 @superdl/ui downloadCsvChecked)
+// CSV 导出(截断判定见 @superdl/ui downloadCsvChecked)
 
 type CsvLang = "zh-CN" | "en-US";
 
-/** CSV 导出工厂:fetcher 取文本响应 → downloadCsvChecked 落盘;name 为串或按入参派生文件名。 */
+/** CSV 导出工厂:fetcher 文本响应 → downloadCsvChecked;name 为串或按入参派生。 */
 function makeCsvExporter<A extends unknown[]>(
   fetcher: (...args: A) => Promise<unknown>,
   name: string | ((...args: A) => string),
@@ -1009,7 +1000,7 @@ function makeCsvExporter<A extends unknown[]>(
   };
 }
 
-/** 列表类导出的参数合并:当前筛选 + 时区 + 语言(导出参数类型已含可选 tz_offset_minutes/lang)。 */
+/** 导出参数合并:当前筛选 + 时区 + 语言。 */
 const withTzLang = <P extends object>(params: P | undefined, tz: number, lang: CsvLang): P =>
   ({ ...params, tz_offset_minutes: tz, lang }) as P;
 
@@ -1035,8 +1026,7 @@ export const exportRefundsCsv = makeCsvExporter(
   "superdl-refunds.csv",
 );
 
-/** 发票导出:跟随当前筛选(status/period)与当前明文档位(reveal/reason),
- *  CSV 不是绕开表格明文事由的第二条出口。 */
+/** 发票导出:跟随当前筛选(status/period)与明文档位(reveal/reason)。 */
 export const exportInvoicesCsv = makeCsvExporter(
   (params: AdminInvoicesExportApiAdminV1InvoicesExportGetParams | undefined, tz: number, lang: CsvLang) =>
     adminInvoicesExportApiAdminV1InvoicesExportGet(withTzLang(params, tz, lang)),

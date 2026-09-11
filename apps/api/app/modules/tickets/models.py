@@ -7,10 +7,8 @@ from app.core.db import Base
 
 
 class Ticket(Base):
-    """工单。状态机:open → pending_staff(用户回复)→ pending_user(客服回复)
-    → resolved(任一方标记解决)→ closed(仅 resolved 后可关);resolved/closed 不可再回复。
-
-    (user_id, idempotency_key) 唯一:创建幂等,重放返回既有单(NULL 互不冲突)。
+    """工单。状态机:open → pending_staff(用户回复)→ pending_user(客服回复)→ resolved
+    → closed(仅 resolved 后);resolved/closed 不可再回复。(user_id, idempotency_key) 唯一。
     """
 
     __tablename__ = "tickets"
@@ -26,7 +24,7 @@ class Ticket(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    # T+yyyymmdd+两位日内序列(如 T20260823-01);序列由服务层当日计数+唯一冲突重试生成
+    # T+yyyymmdd+两位日内序列(如 T20260823-01)
     ticket_no: Mapped[str] = mapped_column(String(20), unique=True)
     user_id: Mapped[int] = mapped_column(index=True)
     category: Mapped[str] = mapped_column(String(16))

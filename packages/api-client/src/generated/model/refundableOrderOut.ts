@@ -6,11 +6,10 @@
  */
 
 /**
- * 可申请退款口径的充值订单(用户端退款表单的数据源)。
+ * 可申请退款口径的充值订单。
  *
- * refundable=False 时 reason_code 说明置灰原因:
- * not_paid(未支付)/ already_applied(已有进行中的申请)/ fully_refunded(已全额退完)/
- * invoiced(已开票,先红冲)/ no_balance(当前余额为 0,无款可退)。
+ * refundable=False 时 reason_code:not_paid / already_applied / fully_refunded / invoiced
+ * / no_balance。
  * 同单可多次部分退款:max_amount = min(订单剩余可退, 当前余额),剩余可退 = 订单额 − Σ已打款。
  */
 export interface RefundableOrderOut {

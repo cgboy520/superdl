@@ -1,21 +1,10 @@
-"""GPU 资源申请抽象层:device-plugin 语法(HAMi 软切分 / MIG / 整卡直通)。
+"""GPU 资源申请抽象层:按节点池派发 device-plugin 语法(档位只表达售卖分类)。
 
-**派发键是节点池,不是档位。** 池标签装机时定死、是隔离机制的物理事实源;档位(`skus.tier`)
-只表达售卖分类。
-
-分池铁律:
-- kata → Kata(RuntimeClass=kata-qemu)+ VFIO 整卡直通,不叠 userns(VM 级隔离)
-- mig  → runc + MIG device plugin + userns 加固(hostUsers=false);MIG 为 GPU 硬件强制隔离,
-  租户无法绕过,是安全边界
-- hami → runc + HAMi 软切分 + userns 加固(hostUsers=false);HAMi 通过 LD_PRELOAD 拦截
-  CUDA runtime API 实现显存/算力软限额,但容器内 root 可通过 unset LD_PRELOAD、静态链接 CUDA、
-  直接调用 CUDA Driver API 绕过配额(HAMi 官方 troubleshooting 明确列出)。因此 hami 池是
-  **软件限额/性能隔离**,不是安全边界,不适合需要强隔离的多租户场景。详见 docs/reference/security.md。
-- cpu  → runc + userns 加固,不申请任何 nvidia.com/* 资源
-Kata 与 HAMi 永不混布同一节点池。
-
-**gpu_count == 0(CPU 实例)先于池分支判定**:CPU 档允许挂 hami 池跑 GPU 机的空闲
-CPU,走池分支会替无卡实例申请 nvidia.com/gpu,占掉真正卖卡的名额。
+- kata → RuntimeClass=kata-qemu + VFIO 整卡直通,不叠 userns
+- mig  → runc + MIG device plugin + hostUsers=false(硬件隔离)
+- hami → runc + HAMi 软切分 + hostUsers=false(软件限额,非安全边界,见 docs/reference/security.md)
+- cpu  → runc + hostUsers=false,不申请 nvidia.com/*
+Kata 与 HAMi 不混布同一节点池;gpu_count == 0 先于池分支判定。
 """
 
 from dataclasses import dataclass, field
@@ -23,25 +12,23 @@ from typing import Any
 
 from app.core.k8s.base import GPU_MODEL_NODE_LABEL, POOL_NODE_LABEL
 
-# HAMi 型号白名单 annotation,值须为 HAMi 登记的原文串(nvidia-smi 名),canonical 不同构
+# HAMi 型号白名单 annotation,值为 HAMi 登记的原文串(nvidia-smi 名)
 HAMI_USE_GPUTYPE_ANNOTATION = "nvidia.com/use-gputype"
 
-# 节点池(隔离机制的事实源)
+# 节点池
 POOL_KATA = "kata"
 POOL_MIG = "mig"
 POOL_HAMI = "hami"
 POOL_CPU = "cpu"  # 无卡节点池(纯 CPU 实例;GPU 节点的空闲 CPU 走 hami 池)
 
-# 售卖档位(纯商业分类;标准/经济由所在池派生,不单列枚举值)
+# 售卖档位(标准/经济由所在池派生)
 TIER_DEDICATED = "dedicated"  # 专用整卡 → kata 池
 TIER_SHARED = "shared"  # 共享切分 → mig 池(标准,硬切分)或 hami 池(经济,软切分超卖)
 TIER_CPU = "cpu"  # 纯 CPU,不带卡 → cpu 池(无卡机)或 hami 池(GPU 机的空闲 CPU)
 TIERS = (TIER_DEDICATED, TIER_SHARED, TIER_CPU)
 
-# 档位 → 允许落的池:「档位承诺的隔离强度」与「实际跑在哪」之间的唯一约束,
-# 建 SKU 与改池两条路径都过 catalog 的同一处校验。
-# cpu 档允许挂 hami 池:CPU 实例不申请 nvidia.com/*,只吃 GPU 节点的空闲 CPU,
-# 吃多少由策略 gpu_node_cpu_instance_vcpu_cap 封顶(0 = 不许)。
+# 档位 → 允许落的池(catalog 建 SKU 与改池同一处校验);cpu 档挂 hami 池由
+# gpu_node_cpu_instance_vcpu_cap 封顶
 TIER_POOLS: dict[str, tuple[str, ...]] = {
     TIER_DEDICATED: (POOL_KATA,),
     TIER_SHARED: (POOL_MIG, POOL_HAMI),
@@ -55,7 +42,7 @@ class GpuRequest:
     runtime_class: str | None  # RuntimeClass 名称
     host_users: bool  # False → pod.spec.hostUsers=false(userns)
     node_selector: dict[str, str]
-    # HAMi 池必须显式走 hami-scheduler:其 mutating webhook failurePolicy=Ignore,不可依赖
+    # HAMi 池显式走 hami-scheduler(不依赖其 mutating webhook)
     scheduler_name: str | None = None
     annotations: dict[str, str] = field(default_factory=dict)  # pod metadata.annotations 增量
 
@@ -71,14 +58,11 @@ def build_gpu_request(
     hami_gputype: str | None = None,
     distro: str | None = None,
 ) -> GpuRequest:
-    """gpu_count=0 即 CPU 实例(不申请任何 nvidia.com/*,不钉型号),判定先于池分支;
-    gpu_model 为 canonical 型号(节点巡检打的 label 值),有值则全池钉型号;
-    hami_gputype 为原文串,仅 hami 池注 use-gputype annotation;
-    distro=k3s 时 hami 池必须显式 runtimeClassName=nvidia(k3s 不设默认运行时;
-    RKE2+gpu-operator 默认已是 nvidia,故为 None)。"""
+    """gpu_count=0 即 CPU 实例(不申请 nvidia.com/*,不钉型号);gpu_model 有值则钉型号;
+    hami_gputype 仅 hami 池注 annotation;distro=k3s 时 hami 池显式 runtimeClassName=nvidia。"""
     node_selector = {POOL_NODE_LABEL: pool_label}
     if gpu_count == 0:
-        # 不钉 superdl.io/gpu-model:无卡节点没有该标签,钉了必然 Pending
+        # 不钉 superdl.io/gpu-model(无卡节点没有该标签)
         return GpuRequest(
             resources={},
             runtime_class=None,

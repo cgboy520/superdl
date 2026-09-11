@@ -1,9 +1,4 @@
-"""worker 组件划分的结构性护栏:
-
-- 分片完备性:每个 outbox handler 与定时任务必须恰好归属一个组件。
-  漏登记的任务在生产没有任何 Deployment 领取/执行,静默停摆——本文件是防漂移锚点。
-- 领取过滤:组件进程在查询层就看不到其它组件的任务(不阻塞、不误领)。
-"""
+"""worker 组件划分:每个 outbox handler 与定时任务恰好归属一个组件;组件进程只领自己的任务。"""
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -31,7 +26,7 @@ class TestPartition:
                 seen[task_type] = component
 
     def test_outbox_types_cover_all_registered_handlers(self):
-        """_registry 全量 == 各组件并集:新增 handler 不登记即红(生产静默停摆的前兆)。"""
+        """_registry 全量 == 各组件并集。"""
         from app.core.outbox import _registry
         from app.wiring import wire_modules
 
@@ -44,10 +39,8 @@ class TestPartition:
         )
 
     async def test_scheduled_jobs_disjoint_and_match_scheduler(self, pg_url):
-        """定时任务分片:各组件互不重叠,且并集 == register_scheduled_jobs 实际注册的 id 集。
-        新增任务未登记组件 / 登记了不存在的任务 / 误删注册——两向漂移都红
-        (未登记的任务在生产没有任何 Deployment 执行,静默停摆)。
-        pg_url:register_scheduled_jobs 会创建 sessionmaker/engine,须先指向测试库。"""
+        """定时任务分片:各组件互不重叠,并集 == register_scheduled_jobs 注册的 id 集。
+        依赖 pg_url:register_scheduled_jobs 会创建 engine,须先指向测试库。"""
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
         from app.workers.main import register_scheduled_jobs
@@ -72,7 +65,7 @@ class TestPartition:
 
 class TestComponentEnv:
     def test_invalid_component_fails_closed(self, monkeypatch):
-        # 组件身份走 Settings(lru_cache 缓存):patch 缓存实例属性,monkeypatch env 对缓存不可见
+        # patch 缓存的 Settings 实例属性(monkeypatch env 对 lru_cache 不可见)
         monkeypatch.setattr(get_settings(), "worker_component", "typo-worker")
         with pytest.raises(RuntimeError, match="SUPERDL_WORKER_COMPONENT"):
             current_component()
@@ -80,8 +73,7 @@ class TestComponentEnv:
 
 class TestClaimFilter:
     async def test_component_only_claims_own_types(self, sm: async_sessionmaker[AsyncSession]):
-        """两个类型的任务在队列里:node-mgr 一个也领不到;tenant-mgr 领走 instance.create
-        后 notify.sms 仍留在队列(core 的活,不被排序阻塞也不被误领)。"""
+        """node-mgr 一个也领不到;tenant-mgr 领走 instance.create,notify.sms 留给 core。"""
         from sqlalchemy import select
 
         from app.core.outbox import OutboxTask, enqueue, process_one
@@ -95,11 +87,11 @@ class TestClaimFilter:
 
         # node-mgr 的类型集合对这两个任务都不可见
         assert await process_one(sm, "w-node", outbox_types_for(WorkerComponent.NODE_MGR)) is False
-        # tenant-mgr 领走 instance.create(实例不存在,handler 幂等消化为 done)
+        # tenant-mgr 领走 instance.create
         assert (
             await process_one(sm, "w-tenant", outbox_types_for(WorkerComponent.TENANT_MGR)) is True
         )
-        # 再次领取:notify.sms 对 tenant-mgr 不可见,不会被误领
+        # notify.sms 对 tenant-mgr 不可见
         assert (
             await process_one(sm, "w-tenant", outbox_types_for(WorkerComponent.TENANT_MGR)) is False
         )

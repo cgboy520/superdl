@@ -1,5 +1,4 @@
-"""billing 对外服务门面。其他模块只许 import 本文件(与 schemas),不许碰内部实现;
-只导出有跨模块消费者的名字,模块内部与同模块 router 直接 import 实现文件。"""
+"""billing 对外服务门面:只导出有跨模块消费者的名字;模块内部直接 import 实现文件。"""
 
 from app.modules.billing.export import (
     stream_admin_invoices_csv,

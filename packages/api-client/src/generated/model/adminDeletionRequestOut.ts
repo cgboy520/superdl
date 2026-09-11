@@ -6,7 +6,7 @@
  */
 
 /**
- * 管理端注销申请视图:附租户标识与执行前校验计数(确认弹窗直接渲染)。
+ * 管理端注销申请视图:附租户标识与执行前校验计数。
  */
 export interface AdminDeletionRequestOut {
   balance: string;

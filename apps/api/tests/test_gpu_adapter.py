@@ -15,7 +15,7 @@ from tests.helpers import gpu_spec, make_instance
 
 
 def test_gpu_model_pins_node_selector():
-    """有 canonical 型号即钉 superdl.io/gpu-model(型号约束在分池之前,与池无关)。"""
+    """有 canonical 型号即钉 superdl.io/gpu-model,与池无关。"""
     req = build_gpu_request(
         gpu_count=1,
         gpu_cores_pct=100,
@@ -68,7 +68,7 @@ def test_build_pod_spec_carries_selector_and_annotations(monkeypatch):
 
 
 def test_build_pod_spec_multi_gpu_scales_cpu_mem():
-    """N 卡实例 Pod limits = N × SKU(收 N 倍价即给 N 份资源);系统盘不放大。"""
+    """N 卡实例 Pod limits = N × SKU;系统盘不放大。"""
     inst = make_instance(spec=gpu_spec("dedicated", "kata"))
     inst.gpu_count = 8
     pod = build_pod_spec(inst)
@@ -93,10 +93,7 @@ def test_userns_hardening_by_pool(pool: str, host_users: bool):
 
 
 def test_unknown_pool_is_fail_closed():
-    """池标签认不出就不下发 —— 宁可 500 也不建出无 GPU 资源请求的 Pod。
-
-    spec 快照里的未知档位值走到这里即抛错,不留别名兜底。
-    """
+    """未知池/档位即抛错,不下发。"""
     with pytest.raises(ValueError, match="unknown pool"):
         build_gpu_request(
             gpu_count=1,

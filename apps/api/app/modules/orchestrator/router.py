@@ -34,11 +34,11 @@ async def create_instance(
     response: Response,
     idempotency_key: IdempotencyKey = None,
 ) -> InstanceOut:
-    # 实名闸门(统一实现):创建/开机/续费/转包周期/建盘同口径,勿逐端点复制
+    # 实名闸门(创建/开机/续费/转包周期/建盘同口径)
     await account_service.require_real_name_if_required(
         session, user, key="orchestrator.realNameRequired"
     )
-    # 资源创建按用户限流:额度只管总量,不管刷接口(每张单都是一次调度+计费事件)
+    # 资源创建按用户限流
     await check_rate_limit(f"instance-create:{user.id}", max_attempts=30, window_seconds=3600.0)
     instance, created = await service.create_instance(
         session,
@@ -69,21 +69,21 @@ async def list_instances(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[InstanceOut]:
-    """实例列表(只列开发机;在线服务的版本实例走 /services):降序游标分页;
-    status 精确过滤,name 模糊匹配(含 uuid 前缀)。"""
+    """实例列表(只列开发机;服务版本实例走 /services):降序游标分页,status 精确,
+    name 模糊(含 uuid 前缀)。"""
     return await service.list_instances_page(
         session, user.id, status=status, name=name, cursor=cursor, limit=limit
     )
 
 
-# 必须在 /instances/{uuid} 之前注册:否则 "expiring" 会被当 uuid 吃掉
+# 必须在 /instances/{uuid} 之前注册
 @router.get("/instances/expiring")
 async def list_expiring_instances(
     user: CurrentUser,
     session: DbSession,
     within_days: int = Query(default=7, ge=1, le=90),
 ) -> list[InstanceOut]:
-    """临期包周期实例(到期横幅专用):active 订阅且到期时刻 ≤ now+within_days,升序,不分页。"""
+    """临期包周期实例:active 订阅且到期时刻 ≤ now+within_days,升序,不分页。"""
     return await service.list_expiring_instances(session, user.id, within_days=within_days)
 
 
@@ -114,7 +114,7 @@ async def stop_instance(
 async def start_instance(
     uuid: str, user: CurrentUser, session: DbSession, request: Request
 ) -> InstanceOut:
-    # 实名闸门:开机=重新开通算力,与创建同一条强制实名开关
+    # 实名闸门(与创建同一开关)
     await account_service.require_real_name_if_required(
         session, user, key="orchestrator.realNameRequired"
     )
@@ -142,10 +142,7 @@ async def renew_instance(
     response: Response,
     idempotency_key: IdempotencyKey = None,
 ) -> RenewOut:
-    """包周期续费:按新周期的折扣重新报价并即时扣款(不足即 402/400,不进欠费)。
-
-    冻结中的实例续费即解冻(回到 stopped,由用户自己开机)。
-    """
+    """包周期续费:按新周期折扣重新报价并即时扣款(不足即 402/400);冻结中续费即解冻回 stopped。"""
     await account_service.require_real_name_if_required(
         session, user, key="orchestrator.realNameRequired"
     )
@@ -177,11 +174,7 @@ async def subscribe_instance(
     response: Response,
     idempotency_key: IdempotencyKey = None,
 ) -> RenewOut:
-    """按量转包周期:结清转换前的按量账,再按周期折扣一次性预扣。
-
-    与 `/renew` 同一个入参与响应形态(都是「给这台机器买一段周期」),区别只在起点:
-    这里从现在起算,续费从老周期到期时刻接上。
-    """
+    """按量转包周期:结清转换前的按量账,再按周期折扣一次性预扣;入参与响应同 `/renew`,从现在起算。"""
     await account_service.require_real_name_if_required(
         session, user, key="orchestrator.realNameRequired"
     )
@@ -207,10 +200,7 @@ async def subscribe_instance(
 async def convert_to_on_demand(
     uuid: str, user: CurrentUser, session: DbSession, request: Request
 ) -> InstanceOut:
-    """竞价实例转按量(免被回收)。已经是按量则原样返回,重试不报错。
-
-    当前整点小时会整体改按按量价结算(一小时一价,以结算时的实例单价为准)。
-    """
+    """竞价实例转按量;已是按量则原样返回。当前整点小时整体改按按量价结算。"""
     instance = await service.convert_to_on_demand(session, user.id, uuid)
     set_audit_target(request, f"instance:{uuid}")
     return await service.instance_view(session, instance)
@@ -229,7 +219,7 @@ async def set_auto_renew(
 async def release_instance(
     uuid: str, user: CurrentUser, session: DbSession, request: Request
 ) -> InstanceOut:
-    """释放实例(清除实例盘,数据盘不受影响)。前端多级确认后调用。"""
+    """释放实例(清除实例盘,数据盘不受影响)。"""
     instance = await service.release_instance(session, user.id, uuid)
     set_audit_target(request, f"instance:{uuid}")
     return await service.instance_view(session, instance)
@@ -243,7 +233,7 @@ async def list_instance_events(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[InstanceEventOut]:
-    """状态时间线(计费依据)。降序(最新在前)游标分页。"""
+    """状态时间线(计费依据),降序游标分页。"""
     instance = await service.get_instance(session, user.id, uuid)
     return await service.list_events(session, instance.id, cursor=cursor, limit=limit)
 
@@ -252,7 +242,7 @@ async def list_instance_events(
 async def get_instance_access(
     uuid: str, user: CurrentUser, session: DbSession
 ) -> InstanceAccessOut:
-    """接入信息。字段按形态出现:dev 给 SSH + Jupyter,服务版本实例给端点 URL(开了 SSH 就都有)。"""
+    """接入信息,字段按形态出现:dev 给 SSH + Jupyter,服务版本实例给端点 URL(开了 SSH 都有)。"""
     return InstanceAccessOut.model_validate(await service.get_access(session, user.id, uuid))
 
 
@@ -263,10 +253,8 @@ async def get_instance_logs(
     session: DbSession,
     tail_lines: int = Query(default=200, ge=1),
 ) -> InstanceLogsOut:
-    """容器日志。四要素:只读、owner 校验(非属主 404)、限流 20/h/user、K8s 读 5s 超时。
-
-    仅 running/stopping 状态的实例可取(其余状态 409);tail_lines 默认 200、超 2000 按
-    2000 截断。不记审计。"""
+    """容器日志(只读,不记审计):非属主 404;限流 20/h/user;仅 running/stopping,否则 409;
+    tail_lines 默认 200,超 2000 截断。"""
     return await service.read_instance_logs(session, user.id, uuid, tail_lines=tail_lines)
 
 

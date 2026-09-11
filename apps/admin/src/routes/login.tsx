@@ -13,7 +13,7 @@ import { authStore } from "../stores/auth";
 
 export const Route = createFileRoute("/login")({
   validateSearch: (search: Record<string, unknown>): { returnTo?: string } => {
-    // 仅接受站内路径(/ 开头且非 //),防 open redirect
+    // 仅接受站内路径(/ 开头且非 //)
     const r = search.returnTo;
     return { returnTo: typeof r === "string" && r.startsWith("/") && !r.startsWith("//") ? r : undefined };
   },
@@ -68,7 +68,7 @@ function MfaVerifyForm({ ticket }: { ticket: string }) {
       <Button type="primary" htmlType="submit" block loading={verify.isPending}>
         {t("login.mfaVerify")}
       </Button>
-      {/* 切换码型清空已输入:6 位动态码残留进恢复码框(或反之)必校验失败,还是用户的错 */}
+      {/* 切换码型清空已输入 */}
       <Button
         type="link"
         block
@@ -98,7 +98,7 @@ function MfaSetupForm({ ticket }: { ticket: string }) {
       onError: (e) => message.error(errText(e, t("login.failed"))),
     },
   });
-  // 进入绑定步即取密钥(服务端复用进行中密钥,StrictMode 重入/刷新二维码不变)
+  // 进入绑定步即取密钥(服务端复用进行中密钥)
   const { mutate: beginSetup } = begin;
   useEffect(() => {
     beginSetup({ ticket });
@@ -144,7 +144,7 @@ function MfaSetupForm({ ticket }: { ticket: string }) {
         {begin.data ? (
           <QRCode value={begin.data.otpauth_uri} size={168} />
         ) : begin.isError ? (
-          // 失败必明示(全站纪律):密钥下发失败给重试,不能停在永久「加载中」
+          // 密钥下发失败给重试
           <Space orientation="vertical" size={8}>
             <Typography.Text type="danger">{errText(begin.error, t("login.failed"))}</Typography.Text>
             <Button size="small" onClick={() => beginSetup({ ticket })}>
@@ -188,7 +188,7 @@ function LoginPage() {
   const [challenge, setChallenge] = useState<{ status: "mfa_setup" | "mfa_required"; ticket: string } | null>(null);
   const login = useAdminLogin({
     mutation: {
-      // 开启两步验证时只回挑战票(正式 token 由 setup/confirm 或 login/mfa 签发),关闭时直接拿到 token
+      // MFA 开启时只回挑战票,关闭时直接拿 token
       onSuccess: (data) => {
         if (data.status === "ok") finishLogin(data.access_token, data.admin);
         else setChallenge({ status: data.status, ticket: data.ticket });
@@ -210,7 +210,7 @@ function LoginPage() {
         position: "relative",
       }}
     >
-      {/* en 用户登录页不该只能跟随浏览器语言;深底页用 dark 变体 */}
+      {/* 语言切换,dark 变体 */}
       <div style={{ position: "absolute", top: 16, insetInlineEnd: 24 }}>
         <LangSwitcher variant="dark" />
       </div>
@@ -231,7 +231,7 @@ function LoginPage() {
             ) : (
               <MfaVerifyForm ticket={challenge.ticket} />
             )}
-            {/* 挑战票不可跨账号复用:换号/放弃 MFA 必须清挑战回登录表单 */}
+            {/* 换号/放弃 MFA 清挑战票 */}
             <Button type="link" block onClick={() => setChallenge(null)}>
               {t("login.backToLogin")}
             </Button>

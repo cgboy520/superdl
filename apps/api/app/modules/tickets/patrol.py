@@ -1,7 +1,5 @@
-"""工单滞留巡检(30 分钟):pending_staff 超 24h 的工单 → admin_alerts warning 级。
-
-dedup_key = ticket-stale:{ticket_id}:唯一约束兜底,同一工单整个生命周期只报一次
-(强于「24h 内不重复」);告警确认后若仍滞留,值班在工单页跟进,不靠重复告警提醒。
+"""工单滞留巡检(30 分钟):pending_staff 超 24h → admin_alerts warning;
+dedup_key = ticket-stale:{ticket_id},同一工单只报一次。
 """
 
 from datetime import timedelta

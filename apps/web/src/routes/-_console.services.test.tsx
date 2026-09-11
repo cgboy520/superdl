@@ -1,7 +1,4 @@
-/**
- * 三条服务路由的 URL 状态往返:非法值必须剥离回默认,否则会渲染出无选中态的 Tabs / 筛选,
- * 或把旧链接的 ?tab=service 当成合法 Tab。
- */
+/** 三条服务路由的 URL 状态往返:非法值(含旧链接的 ?tab=service)必须剥离回默认。 */
 import { describe, expect, it } from "vitest";
 
 import { servicesValidateSearch } from "./_console.services";

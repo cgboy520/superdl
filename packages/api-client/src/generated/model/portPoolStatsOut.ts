@@ -6,7 +6,7 @@
  */
 
 /**
- * SSH 端口池水位(管理端)。blocked=被集群其它对象撞占的端口,周期复检会放回。
+ * SSH 端口池水位(管理端);blocked = 被集群其它对象占用的端口。
  */
 export interface PortPoolStatsOut {
   assigned: number;

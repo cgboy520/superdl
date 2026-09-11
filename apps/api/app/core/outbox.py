@@ -1,11 +1,7 @@
-"""事务性 outbox:改 DB + 动外部系统(K8s 等)时,业务写入与 enqueue() 必须同一
-PostgreSQL 事务提交;worker 异步领取执行,失败指数退避,超限进 dead 并告警。
+"""事务性 outbox:业务写入与 enqueue() 同事务提交;worker 领取执行,失败指数退避,超限进 dead。
 
-领取协议(短事务三段式,免长锁):
-  1. claim:FOR UPDATE SKIP LOCKED 选中 pending 且到期的任务 → status=running,commit
-  2. 执行 handler(独立事务;handler 必须幂等)
-  3. 成功 → done;失败 → retries+1、指数退避回 pending,超过 max_retries → dead
-崩溃遗留的 running 行由 reaper 按 locked_at 超时打回 pending。
+领取三段式:claim(FOR UPDATE SKIP LOCKED → running,commit)→ 执行 handler(独立事务,须幂等)
+→ done / 退避回 pending / dead。崩溃遗留的 running 行由 reaper 按 locked_at 超时打回 pending。
 """
 
 import asyncio
@@ -30,14 +26,11 @@ logger = get_logger(__name__)
 MAX_RETRIES = 5
 BACKOFF_BASE_SECONDS = 10
 BACKOFF_MAX_SECONDS = 600  # 退避上限
-# 单个 handler 的执行上限;超时取消的只是协程 —— 底层同步线程(如 K8s 客户端调用)
-# 无法被中途杀死,会跑完但结果被丢弃;操作幂等,退避重试是安全的
+# 单个 handler 的执行上限(只取消协程,底层同步线程会跑完但结果丢弃)
 TASK_TIMEOUT_SECONDS = 600.0
-# reaper:running 超时打回 pending。必须显著大于 TASK_TIMEOUT_SECONDS,
-# 任务还在正常执行时绝不允许被别的副本认领(否则同一任务双写终态),取 2 倍
+# reaper 把超时 running 打回 pending;须显著大于 TASK_TIMEOUT_SECONDS,取 2 倍
 RUNNING_TIMEOUT = timedelta(seconds=2 * TASK_TIMEOUT_SECONDS)
-# 按任务类型的执行超时覆盖(秒):纯删除/通知类快操作不该占满全局上限。
-# 未列出的类型用 TASK_TIMEOUT_SECONDS;handler 仍在各模块,超时映射集中在 core 层
+# 按任务类型的执行超时覆盖(秒);未列出的用 TASK_TIMEOUT_SECONDS
 TASK_TIMEOUT_OVERRIDES: dict[str, float] = {
     "instance.stop": 180.0,
     "instance.release": 300.0,
@@ -50,10 +43,7 @@ TASK_TIMEOUT_OVERRIDES: dict[str, float] = {
 
 @dataclass(frozen=True)
 class RetryPolicy:
-    """按任务类型的重试预算。默认 5 次 × 10s 指数退避 ≈ 5 分钟。
-
-    「等外部作业完成」型任务(如 disk.wipe 轮询集群 Job)须显式放宽预算。
-    """
+    """按任务类型的重试预算;默认 5 次 × 10s 指数退避。"""
 
     max_retries: int = MAX_RETRIES
     backoff_base_seconds: int = BACKOFF_BASE_SECONDS
@@ -86,7 +76,7 @@ class OutboxTask(Base):
     )  # pending / running / done / dead / discarded(管理端人工忽略)
     retries: Mapped[int] = mapped_column(default=0)
     next_retry_at: Mapped[datetime] = mapped_column(server_default=func.now(), index=True)
-    # 128:lane_id 定长上限(见 workers/main.make_worker_id 的长度预算),改列宽须两处同步
+    # 与 workers/main.make_worker_id 的长度预算同步
     locked_by: Mapped[str | None] = mapped_column(String(128))
     locked_at: Mapped[datetime | None]
     last_error: Mapped[str | None] = mapped_column(Text)
@@ -96,12 +86,12 @@ class OutboxTask(Base):
 
 Handler = Callable[[AsyncSession, "OutboxTask"], Awaitable[None]]
 
-# 单次执行的结局:done 成功;retry 失败但预算未尽、退避回 pending;dead 预算耗尽
+# 单次执行结局:done / retry(退避回 pending)/ dead
 Outcome = Literal["done", "retry", "dead"]
 
 _registry: dict[str, Handler] = {}
 
-# payload 内的请求链键:enqueue 时把发起请求的 request_id 带进来,执行时回填日志上下文
+# payload 内的请求链键:发起请求的 request_id
 REQUEST_ID_KEY = "_request_id"
 
 
@@ -128,13 +118,7 @@ def enqueue(
     *,
     delay_seconds: int = 0,
 ) -> OutboxTask:
-    """入队。不 commit —— 调用方必须把它放进业务事务。
-
-    跨进程请求链:当前 contextvar 的 request_id 随 payload 落库(_request_id 键),
-    worker 执行 handler 时回填日志上下文(API 请求与异步执行日志可按同一 id 串联)。
-
-    delay_seconds:推迟到期时刻(领取条件即 `next_retry_at <= now`);竞价抢占的宽限窗用它。
-    """
+    """入队,不 commit(调用方放进业务事务);request_id 随 payload 落库;delay_seconds 推迟到期。"""
     if REQUEST_ID_KEY not in payload and (request_id := current_request_id()):
         payload = {**payload, REQUEST_ID_KEY: request_id}
     task = OutboxTask(type=task_type, payload=payload)
@@ -147,8 +131,7 @@ def enqueue(
 async def _claim_one(
     session: AsyncSession, worker_id: str, task_types: frozenset[str] | None = None
 ) -> OutboxTask | None:
-    """领取一个到期任务。task_types 非空时按组件过滤:过滤是取数层语义,
-    其它组件的任务对本查询不可见(不会被误领,也不会被排序阻塞)。"""
+    """领取一个到期任务;task_types 非空时按组件过滤。"""
     stmt = (
         select(OutboxTask)
         .where(OutboxTask.status == "pending", OutboxTask.next_retry_at <= now_utc())
@@ -173,10 +156,7 @@ async def _process_one(
     worker_id: str = "worker-0",
     task_types: frozenset[str] | None = None,
 ) -> Outcome | None:
-    """领取并执行一个任务。返回执行结局;无任务可领返回 None。
-
-    结局粒度只给 tests/helpers 的冲刷驱动用(断言「全部成功」而非「被处理」);
-    worker 循环走 process_one 只关心有没有任务。"""
+    """领取并执行一个任务,返回执行结局;无任务可领返回 None。"""
     async with sm() as session:
         task = await _claim_one(session, worker_id, task_types)
     if task is None:
@@ -187,8 +167,7 @@ async def _process_one(
     will_retry = attempt <= policy.max_retries
     timeout = TASK_TIMEOUT_OVERRIDES.get(task.type, TASK_TIMEOUT_SECONDS)
     error: str | None = None
-    # 回填发起请求的 request_id(handler 内日志与 API 侧同一请求链);
-    # contextvar 按 asyncio 任务隔离,并发 lane 互不污染,执行完即解绑
+    # 回填发起请求的 request_id 到日志上下文,执行完解绑
     request_id = task.payload.get(REQUEST_ID_KEY)
     try:
         handler = _registry.get(task.type)
@@ -209,7 +188,7 @@ async def _process_one(
         error = f"TimeoutError: handler exceeded {timeout:.0f}s"
         OUTBOX_TASK_TIMEOUT_TOTAL.labels(task_type=task.type).inc()
         if will_retry:
-            # 预期内重试(队头卡死退化为一次可重试失败):warning,不带 traceback
+            # 超时按可重试失败处理:warning,不带 traceback
             logger.warning(
                 "outbox_task_timeout_retry",
                 task_id=task.id,
@@ -225,8 +204,7 @@ async def _process_one(
     except Exception as exc:
         error = f"{type(exc).__name__}: {exc}"
         if will_retry:
-            # 「还没完成」型任务(disk.wipe 轮询、restart 跨优雅期)用抛错表达重试,
-            # 属正常控制流:warning 不带 traceback;预算耗尽的最后一次才记 ERROR
+            # 「还没完成」型任务用抛错表达重试:warning 不带 traceback,预算耗尽才记 ERROR
             logger.warning(
                 "outbox_task_retry",
                 task_id=task.id,
@@ -252,8 +230,7 @@ async def _process_one(
         new_values = {"status": "dead", "retries": attempt, "last_error": error}
 
     async with sm() as session:
-        # 终态/回退写都必须仍由本 worker 持有该任务:执行期 reaper 可能已回收并交给
-        # 其它副本;rowcount==0 = 已有主副本接管,本次结果直接放弃,不得覆盖
+        # 终态/回退写按 locked_by 校验归属;rowcount==0 = 已被 reaper 回收,放弃本次结果
         result = cast(
             CursorResult[Any],
             await session.execute(
@@ -287,11 +264,7 @@ async def process_one(
 
 
 async def reap_stuck_running(sm: async_sessionmaker[AsyncSession]) -> int:
-    """把超时的 running 任务打回 pending(worker 崩溃遗留)。定时任务调用。
-
-    复活必须计一次失败(retries+1 + 指数退避,预算耗尽进 dead):不计数则杀进程的任务
-    (OOM、段错误)每 5 分钟被无限重投,永远进不了死信、不触发 OUTBOX_DEAD_TOTAL。
-    """
+    """把超时的 running 任务打回 pending(定时任务);复活计一次失败,预算耗尽进 dead。"""
     async with sm() as session:
         rows = list(
             (
@@ -327,12 +300,7 @@ async def reap_stuck_running(sm: async_sessionmaker[AsyncSession]) -> int:
 
 
 async def report_pending_metrics(sm: async_sessionmaker[AsyncSession]) -> None:
-    """上报积压指标(定时任务,60s):最老 pending 任务年龄。
-
-    消费停滞(worker 活着但领不动任务,如 locked_by 列溢出致 claim commit 抛错)时
-    任务滞留 pending:reaper 只收 running,OUTBOX_DEAD_TOTAL 不触发,心跳照常——
-    本指标是这类静默停摆唯一的可观测出口,告警按持续 >600s 判。
-    """
+    """上报积压指标(定时任务,60s):最老 pending 任务年龄;告警按持续 >600s 判。"""
     async with sm() as session:
         oldest = (
             await session.execute(

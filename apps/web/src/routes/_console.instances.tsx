@@ -1,9 +1,4 @@
-/**
- * 容器实例列表(默认落地页):策略提示条 + 动作行 + 密集表格。
- * 列表走服务端游标分页 + status/name 过滤(状态入 URL);access/events 只在行展开时按需加载,
- * 不在行内预取;infinite 查询不挂 refetchInterval(轮询三律③),过渡态实例由
- * useTransientInstanceRefresh 逐台 5s 轻轮询、检测到 status 迁移即失效列表回刷。
- */
+/** 容器实例列表(默认落地页):策略提示条 + 动作行 + 密集表格。服务端游标分页 + status/name 过滤(状态入 URL);access/events 只在行展开时按需加载;列表不挂 refetchInterval,过渡态由 useTransientInstanceRefresh 逐台 5s 轮询并在迁移时失效列表。 */
 
 import { CodeOutlined, CloseOutlined, DownOutlined, ReloadOutlined, SearchOutlined, UpOutlined } from "@ant-design/icons";
 import { type InstanceMetricsSummaryOut, type InstanceOut } from "@superdl/api-client";
@@ -66,7 +61,7 @@ import { GpuSparkline } from "../components/GpuSparkline";
 import { InstanceActions } from "../components/InstanceActions";
 import { requireAuth } from "../lib/guard";
 
-/** 可过滤的状态(released 终态不出列表,过滤项同步不给) */
+/** 可过滤的状态(released 终态不出列表) */
 const FILTER_STATUSES = [
   "creating",
   "running",
@@ -80,7 +75,7 @@ const FILTER_STATUSES = [
 
 export const Route = createFileRoute("/_console/instances")({
   beforeLoad: requireAuth,
-  // 列表状态入 URL:可分享/返回不丢;非法值丢弃回默认
+  // 列表状态入 URL;非法值回默认
   validateSearch: (search: Record<string, unknown>): { q?: string; status?: string } => {
     const out: { q?: string; status?: string } = {};
     if (typeof search.q === "string" && search.q.trim()) out.q = search.q;
@@ -95,8 +90,7 @@ export const Route = createFileRoute("/_console/instances")({
   component: InstancesPage,
 });
 
-/** 展开行(running):SSH / Jupyter 快捷工具,access 仅在展开时拉取;
- *  接入信息的字段可空,必须按「拿到什么渲染什么」写。 */
+/** 展开行(running):SSH / Jupyter 快捷工具,access 仅在展开时拉取;接入信息字段可空,拿到什么渲染什么。 */
 function ExpandedTools({ instance }: { instance: InstanceOut }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -142,7 +136,7 @@ function ExpandedTools({ instance }: { instance: InstanceOut }) {
   );
 }
 
-/** 展开行(failed):事件按需加载,给失败原因 + 未扣费/重新创建闭环。 */
+/** 展开行(failed):事件按需加载,给失败原因 + 未扣费 / 重新创建闭环。 */
 function ExpandedFailed({ instance }: { instance: InstanceOut }) {
   const { t } = useTranslation();
   const reasonText = useEventReasonText();
@@ -150,7 +144,7 @@ function ExpandedFailed({ instance }: { instance: InstanceOut }) {
   if (isError) {
     return <TableErrorEmpty compact isError onRetry={() => void refetch()} />;
   }
-  // 服务端降序(最新在前):最新一次 failed 原因取首元素
+  // 服务端降序,最新一次 failed 原因取首元素
   const failedEvents = (events?.items ?? []).filter((e) => e.to_status === "failed");
   const reason = failedEvents[0]?.reason;
   const everRan = (events?.items ?? []).some((e) => e.to_status === "running");
@@ -240,9 +234,7 @@ function ExpiryBannerBody({
   );
 }
 
-/** 到期提醒:名下有临期(active 且剩余 ≤ period_expire_warn_days)的包周期实例时出。
- *  数据源是 /instances/expiring 专用轻端点(服务端过滤,不分页)——
- *  列表筛选/翻页/首页截断都不会把临期实例藏掉。 */
+/** 到期提醒:名下有临期(active 且剩余 ≤ period_expire_warn_days)的包周期实例时出;数据源 /instances/expiring(服务端过滤,不分页)。 */
 function ExpiryBanner({ onRenew }: { onRenew: (i: InstanceOut) => void }) {
   const { data: policies } = usePolicies();
   const warnDays = policies?.period_expire_warn_days;
@@ -282,7 +274,7 @@ function UtilCell({
   );
 }
 
-/** 状态列(表格与移动卡片共用):stopped 时 tooltip 给冻结策略,与策略提示条同口径。 */
+/** 状态列(表格与移动卡片共用):stopped 时 tooltip 给冻结策略。 */
 function StatusCell({
   instance,
   freezeGraceHours,
@@ -308,8 +300,7 @@ function StatusCell({
   );
 }
 
-/** 计费列(表格与移动卡片共用):包周期 = 档位标 + 周期价 + 续费入口;按量/竞价 = 标记 + 时价 + 今日消费。
- *  到期信息内联在 InstanceOut.subscription 里,不逐行再打接口。 */
+/** 计费列(表格与移动卡片共用):包周期 = 档位标 + 周期价 + 续费入口;按量/竞价 = 标记 + 时价 + 今日消费。到期信息取 InstanceOut.subscription。 */
 function BillingCell({
   instance,
   todayByInstance,
@@ -317,9 +308,9 @@ function BillingCell({
   onRenew,
 }: {
   instance: InstanceOut;
-  /** instance_id → 当日已出账金额(后端金额是十进制串) */
+  /** instance_id → 当日已出账金额(十进制串) */
   todayByInstance: ReadonlyMap<number, string>;
-  /** 日消费查询是否就绪(失败时 moneyOr 显「—」,不渲染假 ¥0.00) */
+  /** 日消费查询是否就绪(失败时显「—」) */
   dailyReady: boolean;
   onRenew: (i: InstanceOut) => void;
 }) {
@@ -346,7 +337,7 @@ function BillingCell({
       </Button>
     </Space>
   ) : (
-    // 竞价与按量共用这一支,差别只在标记;price_hourly 在竞价实例上已是折后价,不能再折一次
+    // 竞价与按量共用;price_hourly 在竞价实例上已是折后价
     <Space orientation="vertical" size={0}>
       <Space size={6}>
         {r.market === "spot" ? (
@@ -409,7 +400,7 @@ function NameCell({ instance, onDetail }: { instance: InstanceOut; onDetail: () 
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(instance.name);
-  // Esc 取消标记:取消后紧接着的 blur 不能再走保存
+  // Esc 取消标记:随后的 blur 不再保存
   const cancelRef = useRef(false);
   const rename = useRenameInstance();
   const { message } = App.useApp();
@@ -430,7 +421,7 @@ function NameCell({ instance, onDetail }: { instance: InstanceOut; onDetail: () 
       message.success(t("instances.renamed"));
       setEditing(false);
     } catch {
-      // 错误提示由 useApiMutation 统一弹出;保持编辑态不丢输入
+      // 错误提示由 useApiMutation 统一弹出;保持编辑态
     }
   };
   if (editing) {
@@ -438,14 +429,14 @@ function NameCell({ instance, onDetail }: { instance: InstanceOut; onDetail: () 
       <Input
         size="small"
         autoFocus
-        // 与创建页名称框同一上限(后端 64 字符校验前的前端一致反馈)
+        // 与创建页名称框同一上限(后端 64 字符)
         maxLength={64}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onBlur={() => void save()}
         onPressEnter={() => void save()}
         onKeyDown={(e) => {
-          // Esc 恢复原值不提交(blur 保存由 cancelRef 拦下)
+          // Esc 恢复原值不提交
           if (e.key === "Escape") {
             cancelRef.current = true;
             setValue(instance.name);
@@ -511,9 +502,7 @@ const NameCellMemo = memo(
   (prev, next) => prev.instance.uuid === next.instance.uuid && prev.instance.name === next.instance.name,
 );
 
-/** 移动端实例卡片(<md 替代表格):与表格共用 NameCell/StatusCell/SpecCell/UtilCell/BillingCell,
- *  不复制渲染逻辑;running 的快捷工具、failed 的失败原因折叠在卡内,展开才按需拉 access/events
- *  (与表格 rowExpandable 同口径,折叠时不打请求)。 */
+/** 移动端实例卡片(<md 替代表格):与表格共用 NameCell/StatusCell/SpecCell/UtilCell/BillingCell;running 的快捷工具、failed 的失败原因折叠在卡内,展开才拉 access/events。 */
 function InstanceCard({
   instance,
   summary,
@@ -584,19 +573,19 @@ function InstanceCard({
   );
 }
 
-/** 「双击行查看详情」的一次性提示(localStorage 标记,关闭后不再显示) */
+/** 「双击行查看详情」的一次性提示(localStorage 标记) */
 const DBLCLICK_HINT_KEY = "superdl.dblclickHintSeen";
 
 function InstancesPage() {
   const { t } = useTranslation(["web", "shared"]);
   const navigate = useNavigate();
-  // <md 表格换卡片流(横向 960px 密集表在手机上只能横滑);数据同源同游标
+  // <md 表格换卡片流;数据同源同游标
   const narrow = !Grid.useBreakpoint().md;
-  // 横幅与「计费」列的续费入口共用一个 modal(每行各挂一个只会让 DOM 里多出 N 个隐藏弹窗)
+  // 横幅与「计费」列的续费入口共用一个 modal
   const [renewTarget, setRenewTarget] = useState<InstanceOut | null>(null);
   const { q, status } = Route.useSearch();
   const [keyword, setKeyword] = useState(q ?? "");
-  // 搜索输入防抖走共享 useDebouncedValue(300ms):击键不直接打服务端/写 URL
+  // 搜索输入防抖走共享 useDebouncedValue(300ms)
   const debouncedKeyword = useDebouncedValue(keyword, 300);
   const deferredQ = debouncedKeyword.trim();
   const [dblclickHintSeen, setDblclickHintSeen] = useState(
@@ -627,7 +616,7 @@ function InstancesPage() {
     [daily],
   );
 
-  // 首页轮询替换 + 已加载旧页之间可能短暂重叠:按 uuid 去重(首页新数据优先)
+  // 首页轮询替换与已加载旧页可能短暂重叠:按 uuid 去重(首页优先)
   const rows = useMemo<InstanceOut[]>(() => {
     const seen = new Set<string>();
     const out: InstanceOut[] = [];
@@ -640,7 +629,7 @@ function InstancesPage() {
     }
     return out;
   }, [data]);
-  // 过渡态实例逐台轻轮询(5s,终态即停):status 迁移时失效上面的列表查询回刷
+  // 过渡态实例逐台轻轮询(5s,终态即停),迁移时失效列表查询
   useTransientInstanceRefresh(rows);
 
   const setSearch = (patch: { q?: string; status?: string }) =>
@@ -656,7 +645,7 @@ function InstancesPage() {
       replace: true,
     });
 
-  // 列表状态入 URL(replace,不产生历史垃圾):可分享、详情返回不丢
+  // 列表状态入 URL(replace)
   useEffect(() => {
     if ((q ?? "") === deferredQ) return;
     void navigate({
@@ -673,7 +662,7 @@ function InstancesPage() {
       search: tab ? { tab } : undefined,
     });
 
-  // 空态表格/卡片共用:查询失败绝不伪装成空数据(错误态 > 筛选无结果 > 真空态一句话+一个动作)
+  // 空态表格/卡片共用:错误态 > 筛选无结果 > 真空态
   const emptyText = isError ? (
     <TableErrorEmpty isError onRetry={() => void refetch()} />
   ) : keyword || status ? (
@@ -736,7 +725,7 @@ function InstancesPage() {
             onChange={(v: string | null) => setSearch({ status: v ?? undefined })}
             options={FILTER_STATUSES.map((s) => {
               const meta = metaOf(instanceStatusMap, s);
-              // 裸状态码不进 t():extract 会把它当成新键收集
+              // 裸状态码不进 t()(extract 会当成新键)
               return { value: s, label: meta ? t(meta.labelKey) : s };
             })}
           />
@@ -753,7 +742,7 @@ function InstancesPage() {
         </Space>
       </Space>
       {!narrow && !dblclickHintSeen && (
-        // 双击行进详情的一次性可发现性提示:关闭后写 localStorage,不再显示;窄屏是卡片流,无「行」可双击
+        // 双击行进详情的一次性提示:关闭后写 localStorage;窄屏卡片流不出
         <Space size={4}>
           <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
             {t("instances.dblclickHint")}
@@ -806,7 +795,7 @@ function InstancesPage() {
         pagination={false}
         scroll={{ x: 960 }}
         expandable={{
-          // access/events 行展开按需加载:仅 running(工具)/failed(原因)可展开
+          // 行展开按需加载:仅 running(工具)/ failed(原因)可展开
           rowExpandable: (r) => r.status === "running" || r.status === "failed",
           expandedRowRender: (r) =>
             r.status === "failed" ? <ExpandedFailed instance={r} /> : <ExpandedTools instance={r} />,

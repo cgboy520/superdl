@@ -77,9 +77,9 @@ async def admin_list_instances(
         limit=limit,
     )
     items = [AdminInstanceOut.model_validate(i) for i in page.items]
-    # 与用户端列表同一条回填路径:管理端也要看得见端点 slug 与包周期到期日
+    # 与用户端列表同一条回填路径(端点 slug 与包周期到期日)
     await orchestrator_service.attach_instance_details(session, items)
-    # total 仅租户视角(service 层只在 user_id 过滤时算):抽屉区分「正好 N 条」与「被截断」
+    # total 仅租户视角(service 层只在 user_id 过滤时算)
     return Page[AdminInstanceOut](items=items, next_cursor=page.next_cursor, total=page.total)
 
 
@@ -118,8 +118,7 @@ async def admin_force_stop(
 async def admin_preempt(
     uuid: str, body: AdminForceStopRequest, session: DbSession, request: Request
 ) -> InstanceOut:
-    """强制回收一台竞价实例(腾容量;原因必填)。走与自动抢占同一条路径:
-    宽限窗内 Pod 仍在、用户已收到通知,尾账按实际运行秒数结算。"""
+    """强制回收一台竞价实例(原因必填)。与自动抢占同一条路径:宽限窗 + 通知 + 尾账按实际秒数结算。"""
     instance = await orchestrator_service.admin_preempt(session, uuid, reason=body.reason)
     set_audit_target(request, f"instance:{uuid}", detail={"reason": body.reason})
     return await orchestrator_service.instance_view(session, instance)
@@ -132,7 +131,7 @@ async def admin_list_instance_events(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[InstanceEventOut]:
-    """管理端实例事件时间线(排障):与用户端同一实现,降序游标分页;不限租户。"""
+    """管理端实例事件时间线:与用户端同一实现,降序游标分页;不限租户。"""
     instance = await orchestrator_service.admin_get_instance(session, uuid)
     return await orchestrator_service.list_events(session, instance.id, cursor=cursor, limit=limit)
 
@@ -146,7 +145,7 @@ class EnrollmentRevokeRequest(BaseModel):
 
 class EnrollmentRegenerateRequest(BaseModel):
     ttl_hours: int = Field(default=24, ge=1, le=168)
-    # 可选原因(只落审计 detail;换令牌会让旧命令立即失效,留痕便于追溯)
+    # 可选原因,只落审计 detail
     reason: str | None = Field(default=None, max_length=200)
 
 
@@ -229,8 +228,7 @@ async def admin_node_metrics(
     node_name: str, session: DbSession, range: str = "1h"
 ) -> NodeMetricsOut:
     """节点每卡曲线(DCGM per-GPU)+ 24h XID 计数;断源 available=false(200)。
-
-    节点存在性不做强校验,不存在的节点返回空序列。响应附 grafana_url(可选深挖外链)。
+    不存在的节点返回空序列。响应附 grafana_url。
     """
     out = await metering_service.node_gpu_metrics(node_name, range)
     cfg = await get_effective_platform_config(session)
@@ -239,7 +237,7 @@ async def admin_node_metrics(
 
 @router.get("/nodes", dependencies=[require_roles("ops", "readonly")])
 async def admin_list_nodes(session: DbSession) -> list[NodeOut]:
-    """节点视图(台账口径,60s 巡检刷新):含 Missing/未打池标签节点。首轮巡检前为空列表。"""
+    """节点视图(台账口径,60s 巡检刷新):含 Missing/未打池标签节点。"""
     rows = await nodes_service.list_node_specs(session)
     return [
         NodeOut(
@@ -266,24 +264,18 @@ async def admin_list_nodes(session: DbSession) -> list[NodeOut]:
 
 @router.get("/nodes/port-pool", dependencies=[require_roles("ops", "readonly")])
 async def admin_port_pool_stats(session: DbSession) -> PortPoolStatsOut:
-    """SSH 端口池水位:blocked=被集群对象撞占(周期复检自动放回),计数持续上涨要查孤儿端点。"""
+    """SSH 端口池水位:blocked=被集群对象撞占(周期复检自动放回)。"""
     return await orchestrator_service.port_pool_stats(session)
 
 
 def _helmfile(distro: str | None, release: str) -> str:
-    """修复命令按实测发行版给出档位:照抄即可执行,不留 <full|light> 让人自己挑。
-
-    走 apply.sh 而非裸 helmfile:两个必带开关漏一个 apply 就中途失败(见该脚本头注释)。
-    """
+    """修复命令按实测发行版给出档位;走 apply.sh 而非裸 helmfile。"""
     env = {"k3s": "light", "rke2": "full"}.get(distro or "", "<full|light>")
     return f"deploy/cluster/apply.sh {env} -l name={release}"
 
 
-def _cluster_components(row: Any) -> list[ClusterComponentOut]:  # nodes.ClusterStatus 行或 None
-    """组件体检:每项红了都能一句话答出「哪条用户可见链路断了」,按链路顺序排。
-
-    detail 只写实况(数量、名字),不写「预期如此」这类判断。
-    """
+def _cluster_components(row: Any) -> list[ClusterComponentOut]:
+    """组件体检,按用户可见链路顺序排;detail 只写实况。"""
     hami_ok = bool(row and row.hami_ready)
     kps_ok = bool(row and row.kps_present)
     dcgm_ok = bool(row and row.dcgm_present)
@@ -297,14 +289,13 @@ def _cluster_components(row: Any) -> list[ClusterComponentOut]:  # nodes.Cluster
     pools: dict[str, int] = dict(row.pools or {}) if row else {}
     scs = set(row.storage_classes or []) if row else set()
     distro = row.distro if row else None
-    # 实例盘 SC 是两档的强制依赖(每个租户 Pod 都要挂),缺它才算红;
-    # 数据盘的 JuiceFS 是可选项(light 默认不装),缺它只是数据盘不可售,不该把整项判红
+    # 实例盘 SC 是两档强制依赖,缺它判红;JuiceFS 可选(light 默认不装),缺它不判红
     instance_disk_ok = INSTANCE_DISK_STORAGE_CLASS in scs
     data_disk_ok = JUICEFS_STORAGE_CLASS in scs
     return [
         ClusterComponentOut(
             key="nodes",
-            # 可调度面为 0 = 在售 SKU 全部无货;不可调度的那部分(NotReady/cordon)要看得见
+            # 不可调度的那部分(NotReady/cordon)要看得见
             ok=nodes_ready > 0 and nodes_ready == nodes_total,
             detail=f"{nodes_ready}/{nodes_total} 可调度",
         ),
@@ -317,7 +308,7 @@ def _cluster_components(row: Any) -> list[ClusterComponentOut]:  # nodes.Cluster
         ClusterComponentOut(
             key="gpu_operator",
             ok=gpu_op_ok,
-            # 两档都装(light 只是关掉 toolkit,见 values/light/gpu-operator-light.yaml)
+            # 两档都装(light 只关掉 toolkit,见 values/light/gpu-operator-light.yaml)
             detail=None if gpu_op_ok else "gpu-operator 未发现(GFD/DCGM/MIG/VFIO 均缺位)",
             fix_hint=None if gpu_op_ok else _helmfile(distro, "gpu-operator"),
         ),
@@ -330,7 +321,7 @@ def _cluster_components(row: Any) -> list[ClusterComponentOut]:  # nodes.Cluster
         ClusterComponentOut(
             key="nvidia_runtimeclass",
             ok=nvidia_rc_ok,
-            # k3s 不设默认运行时,租户 Pod 靠这个 RuntimeClass 见到卡;缺它是整档下发失败
+            # 租户 Pod 靠这个 RuntimeClass 见到卡
             detail=None if nvidia_rc_ok else "RuntimeClass nvidia 不存在(租户 Pod 看不到 GPU)",
             fix_hint=None if nvidia_rc_ok else "节点装 nvidia-container-toolkit 后重启 k3s/rke2",
         ),
@@ -342,8 +333,7 @@ def _cluster_components(row: Any) -> list[ClusterComponentOut]:  # nodes.Cluster
         ),
         ClusterComponentOut(
             key="storage",
-            # 按名核对,与下发门禁 require_storage_classes 同一口径:
-            # 只判「有任意 SC」会在实例盘 SC 缺位时给出绿灯,而用户创建时才 409
+            # 按名核对,与下发门禁 require_storage_classes 同一口径
             ok=instance_disk_ok,
             detail=_storage_detail(instance_disk_ok, data_disk_ok, scs),
             fix_hint=None if instance_disk_ok else _helmfile(distro, "topolvm"),
@@ -351,8 +341,7 @@ def _cluster_components(row: Any) -> list[ClusterComponentOut]:  # nodes.Cluster
         ClusterComponentOut(
             key="gateway",
             ok=gateway_ok,
-            # 判据是 Gateway 对象的 Programmed 条件而非控制器活着:证书 Secret 缺失或
-            # hostname 撞车时控制器一切正常,而实例入口一条流量都进不来
+            # 判据是 Gateway 对象的 Programmed 条件
             detail=None if gateway_ok else "Gateway 未 Programmed(实例入口不可达)",
             fix_hint=None if gateway_ok else _helmfile(distro, "envoy-gateway"),
         ),
@@ -379,7 +368,7 @@ def _storage_detail(instance_disk_ok: bool, data_disk_ok: bool, scs: set[str]) -
 
 
 def _kata_detail(kata_ok: bool, kata_nodes: int) -> str | None:
-    """RuntimeClass 在但 kata 池没节点,dedicated 一样开不了机——绿灯不能只看 RuntimeClass。"""
+    """RuntimeClass 在但 kata 池没节点,dedicated 一样开不了机。"""
     if not kata_ok:
         return "RuntimeClass kata-qemu 不存在(独享档不可用)"
     if kata_nodes == 0:
@@ -421,7 +410,7 @@ async def admin_cluster_status(session: DbSession) -> ClusterStatusOut:
 
 @router.post("/cluster/test-connection", dependencies=[require_roles("ops")])
 async def admin_cluster_test_connection(session: DbSession, request: Request) -> ClusterStatusOut:
-    """同步只读探测并落缓存(对齐 SmsTestCard 先例);不可达/超时 → 502。"""
+    """同步只读探测并落缓存;不可达/超时 → 502。"""
     set_audit_target(request, "cluster:test-connection")
     try:
         probe = await asyncio.wait_for(get_orchestrator().probe_cluster(), timeout=5.0)
@@ -441,7 +430,7 @@ async def admin_cluster_test_connection(session: DbSession, request: Request) ->
 
 @router.get("/cluster/gpu-models", dependencies=[require_roles("ops", "readonly")])
 async def admin_gpu_model_aggregates(session: DbSession) -> list[GpuModelAggregateOut]:
-    """台账按 canonical×池聚合(SKU 表单「从集群资源创建」下拉;None 型号=未识别桶)。"""
+    """台账按 canonical×池聚合(None 型号 = 未识别桶)。"""
     aggs = await nodes_service.gpu_model_aggregates(session)
     return [GpuModelAggregateOut(**vars(a)) for a in aggs]
 
@@ -453,14 +442,13 @@ class NodeCordonRequest(BaseModel):
 class NodeCordonOut(BaseModel):
     node_name: str
     unschedulable: bool
-    queued: bool = True  # 经 outbox 异步执行,列表轮询看生效
+    queued: bool = True  # 经 outbox 异步执行
 
 
 async def _cordon(
     node_name: str, body: NodeCordonRequest, session: DbSession, request: Request, on: bool
 ) -> NodeCordonOut:
-    # 读台账(node_specs,巡检 60s 粒度)而非请求路径直连 K8s:
-    # 集群不稳时恰是运维最需要 cordon 的时刻,不能硬 500
+    # 读台账(node_specs)而非请求路径直连 K8s
     names = {n.node_name for n in await nodes_service.list_node_specs(session)}
     if node_name not in names:
         raise not_found("节点不存在或未打池标签")
@@ -487,16 +475,13 @@ async def admin_uncordon_node(
     return await _cordon(node_name, body, session, request, on=False)
 
 
-# 角色沿用 ops:与 cordon / force-stop / 强制回收同档 —— 都是运维对集群资源的处置动作,
-# 单独抬到 admin 会让「机器已卖出/被扣押」这类必须立刻执行的场景卡在超管在不在线上。
-# 不可逆性由必填 reason + 审计留痕承担,不由角色门槛承担。
+# 角色沿用 ops(与 cordon / force-stop / 强制回收同档);不可逆性由必填 reason + 审计承担
 @router.post("/nodes/{node_name}/decommission", dependencies=[require_roles("ops")])
 async def admin_decommission_node(
     node_name: str, body: NodeDecommissionRequest, session: DbSession, request: Request
 ) -> NodeDecommissionOut:
-    """节点退役(不可逆):停止调度 + 作废该机全部注册令牌 + 经 outbox 从集群删除 Node 对象。
-
-    善后不在本端点内:集群 join token 轮换与 kubelet 证书吊销是控制面动作。
+    """节点退役(不可逆):停止调度 + 作废该机全部注册令牌 + 经 outbox 删除 Node 对象。
+    集群 join token 轮换与 kubelet 证书吊销不在本端点内。
     """
     revoked = await nodes_service.decommission_node(session, node_name, reason=body.reason)
     set_audit_target(
@@ -510,7 +495,7 @@ async def admin_decommission_node(
 @router.get("/reports/oversell", dependencies=[require_roles("ops", "finance", "readonly")])
 async def oversell_report(session: DbSession) -> list[OversellPoolOut]:
     """超卖报表:各池 已售份额 / 实际超卖率(已售 ÷ Ready 物理卡数)/ 近 24h 真实利用率。"""
-    # 台账口径(node_specs,Ready 节点),不直连 K8s:集群不可达时报表仍可用
+    # 台账口径(node_specs,Ready 节点),不直连 K8s
     nodes = await nodes_service.list_node_specs(session)
     physical: dict[str, int] = {}
     for n in nodes:
@@ -518,7 +503,7 @@ async def oversell_report(session: DbSession) -> list[OversellPoolOut]:
             continue
         physical[n.pool_label] = physical.get(n.pool_label, 0) + n.gpu_count
     sold = await orchestrator_service.running_gpu_share_by_pool(session)
-    # 按池加权平均:实例小时数据在 metering,池归属在 orchestrator,此处组装
+    # 按池加权平均:实例小时数据在 metering,池归属在 orchestrator
     util_by_instance = await metering_service.gpu_util_last_24h_by_instance(session)
     pool_of = await orchestrator_service.pool_by_instance(session, util_by_instance.keys())
     util_sum: dict[str, float] = {}

@@ -1,8 +1,4 @@
-/**
- * 幂等键派生:同一表单快照 → 同一键(双击/重试/网络丢响应安全重放),快照变更 → 新键。
- * 失败一律不轮换,否则「已创建成功但响应丢失」的重试会再建一单。
- * 同一表单成功后要再开新单的场景,调用方把提交序号/挂载 nonce 放进 parts。
- */
+/** 幂等键派生:同一表单快照 → 同一键,失败不轮换;成功后再开新单由调用方把序号/nonce 放进 parts。 */
 export function idemKeyOf(
   scope: string,
   parts: ReadonlyArray<string | number | null | undefined>,

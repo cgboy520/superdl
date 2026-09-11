@@ -77,16 +77,13 @@ alloy:
           url = "http://loki.monitoring.svc:3100/loki/api/v1/push"
         }
       }
-  # 采集 agent 每节点一只,按 kps-light 的 node-exporter 量级(20m/32Mi)留一倍余量
+  # 每节点一只
   resources:
     requests: {cpu: 50m, memory: 128Mi}
     limits: {memory: 256Mi}
   mounts:
     extra:
-      # 只挂 apiserver 审计日志目录(server/logs),不挂整棵 /var/lib/rancher:
-      # 后者含 node-token、cluster-admin kubeconfig、集群 CA 与 etcd 快照,
-      # 「只读」挡不住「读到即拥有」的凭据泄漏。rke2/k3s 路径分开挂,
-      # DirectoryOrCreate 对不存在的发行版建空目录,file_match 自然无目标。
+      # 只挂 apiserver 审计日志目录(server/logs),不挂整棵 /var/lib/rancher;rke2/k3s 路径分开挂
       - name: rke2-audit-logs
         mountPath: /host-logs/rke2/server/logs
         readOnly: true
@@ -94,8 +91,7 @@ alloy:
         mountPath: /host-logs/k3s/server/logs
         readOnly: true
 controller:
-  # DaemonSet 每节点一只;控制面节点的 apiserver 审计文件也要采,必须容忍 server 侧 taint
-  # (full 档 CriticalAddonsOnly + 标准 control-plane 污点)
+  # 控制面节点的审计文件也要采,容忍 server 侧 taint
   tolerations:
     - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
     - {key: node-role.kubernetes.io/control-plane, operator: Exists, effect: NoSchedule}

@@ -54,9 +54,7 @@ export const getInstancesMetricsSummaryApiV1MetricsInstancesGetUrl = () => {
 }
 
 /**
- * 本人 running 实例近 1h gpu_util 批量摘要(列表 sparkline)。
- *
- * 断源降级为 available=false(200),详情端点维持 503 语义。
+ * 本人 running 实例近 1h gpu_util 批量摘要(列表 sparkline);断源 available=false(200)。
  * @summary Instances Metrics Summary
  */
 export const instancesMetricsSummaryApiV1MetricsInstancesGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<InstanceMetricsSummaryOut> => {

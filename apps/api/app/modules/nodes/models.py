@@ -9,10 +9,7 @@ from app.core.db import Base
 
 
 class NodeEnrollment(Base):
-    """GPU 服务器注册令牌与加入进度。
-
-    一节点一令牌;token 明文只在创建/重生成响应出现一次,
-    库中仅存 HMAC-SHA256(core/crypto.hash_node_token)。
+    """GPU 服务器注册令牌与加入进度。一节点一令牌,库中只存 HMAC-SHA256。
     状态机:pending → installing → rebooting ⇆ installing → joining → joined,
     旁路终态 failed / expired / revoked;迁移集中在 service.transition_enrollment。
     """
@@ -22,8 +19,7 @@ class NodeEnrollment(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)  # HMAC-SHA256 hex
-    # 首次 bootstrap 消费注册令牌后换发的窄权限令牌(仅 /progress 上报),同只存 HMAC 摘要;
-    # NULL = 尚未 bootstrap(pending)或注册令牌已轮换作废
+    # bootstrap 换发的窄权限令牌(仅 /progress),只存 HMAC 摘要;NULL = 尚未 bootstrap 或已轮换
     progress_token_hash: Mapped[str | None] = mapped_column(String(64), unique=True)
     pool: Mapped[str] = mapped_column(String(8))  # kata / hami / mig / cpu(分池铁律)
     hostname: Mapped[str | None] = mapped_column(String(253))  # 期望主机名(签发时必填,防令牌串用)
@@ -32,7 +28,6 @@ class NodeEnrollment(Base):
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     phase: Mapped[str | None] = mapped_column(String(32))  # 脚本细粒度进度
     error: Mapped[str | None] = mapped_column(Text)
-    # bootstrap 查行一律走 token_hash/progress_token_hash,node_name 无查询使用,不建索引
     node_name: Mapped[str | None] = mapped_column(String(253))  # bootstrap 上报
     reported_ip: Mapped[str | None] = mapped_column(String(64))
     os_info: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
@@ -49,18 +44,14 @@ class NodeEnrollment(Base):
 
 
 class NodeSpec(Base):
-    """节点规格台账:巡检(nodes/patrol.py,60s)从 K8s 实况 + 装机登记收敛的单一事实源。
-
-    业务读它,不实时调 K8s:SKU 上架校验/容量预览/管理端节点页。
-    节点从 K8s 消失先置 status=Missing(管理端可见"失联"),last_seen 超 7 天才删行;
-    上架校验只认 Ready。未打池标签节点也入账(unlabeled=True)并在管理端标异常。
+    """节点规格台账:巡检(nodes/patrol.py,60s)从 K8s 实况 + 装机登记收敛;业务只读它。
+    节点消失先置 Missing,last_seen 超 7 天删行;上架校验只认 Ready;未打池标签节点 unlabeled=True。
     """
 
     __tablename__ = "node_specs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     node_name: Mapped[str] = mapped_column(String(253), unique=True)
-    # 池/型号只在 Python 侧聚合(gpu_model_aggregates 全量读),无按列过滤查询,不建索引
     pool_label: Mapped[str | None] = mapped_column(String(32))
     unlabeled: Mapped[bool] = mapped_column(default=False)  # 无 superdl.io/pool 标签
     gpu_model_raw: Mapped[str | None] = mapped_column(String(128))  # nvidia-smi/GFD 原文
@@ -72,11 +63,11 @@ class NodeSpec(Base):
     vcpu: Mapped[int] = mapped_column(default=0)
     mem_gb: Mapped[int] = mapped_column(default=0)
     disk_gb: Mapped[int] = mapped_column(default=0)
-    # 装机脚本收尾上报(nvidia-smi)→ 登记快照 os_info → 巡检落表;节点未经本平台装机则为空
+    # 来自装机登记快照 os_info;未经本平台装机则为空
     driver_version: Mapped[str | None] = mapped_column(String(32))
     cuda_version: Mapped[str | None] = mapped_column(String(16))
     status: Mapped[str] = mapped_column(String(16), index=True)  # Ready/NotReady/Cordoned/Missing
-    # cordon 期望态:管理端操作写入,handler/巡检按它收敛(outbox 乱序重试不读 payload)
+    # cordon 期望态:管理端写入,handler/巡检按它收敛
     desired_unschedulable: Mapped[bool | None]
     last_seen: Mapped[datetime]  # 最近一次 K8s 可见
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
@@ -84,10 +75,7 @@ class NodeSpec(Base):
 
 
 class ClusterStatus(Base):
-    """集群能力缓存(单行 id=1):巡检探测落库,门禁与管理端集群页只读表不实时探测。
-
-    probed_at 超过门禁陈旧窗(10min)视为未知 → shared 档下发拒绝并引导查 worker。
-    """
+    """集群能力缓存(单行 id=1):巡检探测落库,门禁与集群页只读;probed_at 超 10min 视为未知。"""
 
     __tablename__ = "cluster_status"
 
@@ -101,7 +89,7 @@ class ClusterStatus(Base):
     gpu_operator_present: Mapped[bool] = mapped_column(default=False)
     kata_runtimeclass: Mapped[bool] = mapped_column(default=False)
     nvidia_runtimeclass: Mapped[bool] = mapped_column(default=False, server_default="false")
-    # 网关就绪 = Gateway 对象 status 的 Programmed=True(不是控制器 Deployment 活着)
+    # Gateway 对象 status Programmed=True
     gateway_ready: Mapped[bool] = mapped_column(default=False, server_default="false")
     cert_manager_ready: Mapped[bool] = mapped_column(default=False, server_default="false")
     nodes_ready: Mapped[int] = mapped_column(default=0, server_default="0")

@@ -32,7 +32,7 @@ class TestSshKeys:
         assert resp.status_code == 204
         resp = await client.get("/api/v1/ssh-keys", headers=headers)
         assert resp.json() == []
-        # 删除是硬删除:删过的指纹可直接重新添加(无恢复语义)
+        # 硬删除:删过的指纹可直接重新添加
         resp = await client.post(
             "/api/v1/ssh-keys",
             json={"name": "laptop-2", "public_key": ED25519_KEY},
@@ -70,8 +70,7 @@ class TestSshKeys:
         assert resp.json()["code"] == "SSH_KEY_INVALID"
 
     async def test_same_key_allowed_across_users(self, client: AsyncClient):
-        """指纹唯一性收窄为 (user_id, fingerprint):全局唯一是跨租户枚举面
-        (可探测/占位阻断他租户添加自己的钥匙)。挂了 = 枚举面重新打开。"""
+        """指纹唯一性是 (user_id, fingerprint),不是全局唯一。"""
         h1 = await auth_client(client)
         data = await register(client, "13800000010")
         h2 = {"Authorization": f"Bearer {data['access_token']}"}
@@ -82,8 +81,7 @@ class TestSshKeys:
             assert resp.status_code == 201, resp.text
 
     async def test_delete_strips_key_from_live_instances(self, client: AsyncClient, sm):
-        """删除公钥同步摘除未释放实例的 authorized_keys 快照(重启不复活);
-        已释放实例不动(其快照是历史留痕);运行中 Pod 待下次重启生效(无 exec 通道)。"""
+        """删除公钥同步摘除未释放实例的 authorized_keys 快照;已释放实例不动。"""
         from app.modules.orchestrator.models import Instance
 
         data = await register(client, "13800000011")

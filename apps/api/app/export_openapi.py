@@ -1,4 +1,4 @@
-"""导出 openapi.json 到 packages/api-client/(orval 的输入)。CI 校验其与代码一致。"""
+"""导出 openapi.json 到 packages/api-client/(orval 输入)。"""
 
 import json
 from pathlib import Path

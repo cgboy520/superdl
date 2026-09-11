@@ -6,7 +6,7 @@
  */
 
 /**
- * 用户端工单视图(列表项)。不透出 sender_id 等内部字段。
+ * 用户端工单视图(列表项)。
  */
 export interface TicketOut {
   category: string;

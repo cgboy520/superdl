@@ -1,5 +1,4 @@
-/** 手输原因校验(finance 调账驳回等):必填、trim 后 ≥2 字、≤200 字。
- *  挂了 = 驳回可以空理由/常量理由进审计,「为什么驳回」答不上来。 */
+/** 手输原因校验:必填、trim 后 2~200 字。挂了 = 空理由进审计。 */
 import { describe, expect, it } from "vitest";
 
 import { isValidReason } from "./validators";

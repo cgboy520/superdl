@@ -4,20 +4,14 @@ on:
   push:
     branches: [main]
   pull_request:
-  # release.yml 以 workflow_call 复用本流水线作发布闸门:
-  # tag 构建前 api/frontend/security 必须重跑全绿
+  # release.yml 以 workflow_call 复用本流水线作发布闸门
   workflow_call:
 
-# environment 是 fail-closed 必填项(app/core/config.py),CI 的干净检出没有 apps/api/.env,
-# 凡构造 Settings() 的步骤(alembic / openapi 导出 / RealOrchestrator 冒烟)都要它。
-# 放 workflow 级而非逐 step,新增 job 不会再漏配。
-# 必须是非 prod:/api/v1/webhooks/mock 只在非 prod 注册(billing/webhooks_router.py),
-# 而该路径已在 packages/api-client/openapi.json 里,设成 prod 会让「契约无 diff」闸门红。
+# Settings() 必填(app/core/config.py),workflow 级统一配。须为非 prod(/api/v1/webhooks/mock 只在非 prod 注册,已在 openapi.json 里)
 env:
   SUPERDL_ENVIRONMENT: dev
 
-# 顶层只读基线:缺省 GITHUB_TOKEN 拿到的是过大权限,CI 任务全是读操作;
-# 需要写权限的 job 在自己名下单独声明(最小权限,一行都不多给)
+# 顶层只读基线;需要写权限的 job 单独声明
 permissions:
   contents: read
 
@@ -38,12 +32,9 @@ jobs:
       - run: uv run ruff check .
       - run: uv run pyright
       - run: uv run lint-imports
-      # not real_k8s:真实集群用例由 k8s-real-smoke job 跑;此处再跑会让 conformance 的
-      # fake 侧(恒跑参数)与 kind job 重复,real 侧则只能靠 skipif 空转收集
+      # real_k8s 用例归 k8s-real-smoke job
       - run: uv run pytest -m "not real_k8s"
-      # schema 一致性把关:单测基建走 create_all(tests/conftest.py),它与迁移链的一致性
-      # 由此步把关——upgrade head 后 alembic check 以 Base.metadata 为基准做 autogenerate diff,
-      # 模型 ≠ 迁移即非零退出。
+      # 模型与迁移一致性:upgrade head 后 alembic check
       - name: alembic check (migrations match models)
         run: |
           docker run -d --name pg -e POSTGRES_PASSWORD=superdl -e POSTGRES_USER=superdl -e POSTGRES_DB=superdl -p 5432:5432 postgres:18
@@ -72,10 +63,9 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm i18n
       - run: pnpm test
-      # CSP 内联脚本 hash 闸门:index.html 防 FOUC 脚本改动必须同步 CSP 的 sha256
+      # index.html 内联脚本 hash 与 CSP 的 sha256 一致
       - run: pnpm csp-check
-      # orval 生成物必须与入库的 openapi.json 一致(契约漂移即 fail)。
-      # openapi.json 本身的新鲜度由 api job 的导出 diff 把关,两个 job 相互印证。
+      # orval 生成物与入库 openapi.json 一致(openapi.json 新鲜度由 api job 的导出 diff 把关)
       - run: pnpm api-client
       - name: orval 生成物无 diff
         run: git diff --exit-code packages/api-client
@@ -92,8 +82,7 @@ jobs:
       - run: shellcheck apps/api/app/modules/nodes/assets/node-join.sh
       - run: bats deploy/node-join/tests
 
-  # 文档引用闸门:Markdown 相对链接与反引号仓库路径必须存在(stdlib 零依赖,秒级)。
-  # 它红了说明有文档引用了已改名/删除的文件;文档与代码同提交是提交约定(CLAUDE.md #16)。
+  # 文档引用闸门:Markdown 相对链接与反引号仓库路径必须存在
   docs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -120,8 +109,7 @@ jobs:
           uvx pip-audit -r /tmp/reqs.txt --progress-spinner off
       - name: pnpm audit(前端生产依赖,HIGH+ 阻断)
         run: pnpm audit --prod --audit-level=high
-      # 只扫当前工作树,不扫历史:历史 commit 里的误报不会让之后每次 push 都红。
-      # 已复核误报的行级放行见 .github/gitleaks.toml;镜像按 digest 钉死。
+      # 只扫当前工作树;行级放行见 .github/gitleaks.toml
       - name: gitleaks(secret 泄漏扫描)
         run: |
           docker run --rm -v "$PWD:/repo" \
@@ -133,21 +121,16 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      # kind 起一次性集群;kind-action 不导出 KUBECONFIG 环境变量,kind 默认写 ~/.kube/config,
-      # 下方解析 SUPERDL_TEST_KUBECONFIG 时的 fallback 即指向它
+      # kind-action 不导出 KUBECONFIG,kind 默认写 ~/.kube/config(下方 fallback 指向它)
       - uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3 # v1.12.0
       - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
         with:
           python-version: "3.13"
-      # 租户 Jupyter 入口是 HTTPRoute:kind 裸集群没有 Gateway API CRD,不装则 create_instance
-      # 直接 404。复用发布脚本装,顺带在 CI 里验证它可执行;只装 CRD 不装 Envoy Gateway 控制器,
-      # 本冒烟断言的是「apiserver 接受我们拼的对象规约」,不需要真有数据面接管路由。
+      # 装 Gateway API CRD(HTTPRoute 所需),复用发布脚本;不装 Envoy Gateway 控制器
       - name: 装 Gateway API CRD
         run: bash deploy/cluster/gateway-api-crds.sh
-      # RBAC 与代码对齐闸:kind 默认给的是 cluster-admin kubeconfig,直接冒烟永远
-      # 发现不了 01-rbac.yaml 缺动词。这里先 apply 生产 RBAC,再静态断言动词面,最后
-      # 用 superdl-tenant-mgr 的 SA token 造受限 kubeconfig 供冒烟里的受限身份用例
-      # (test_ensure_namespace_under_tenant_mgr_sa)使用。
+      # RBAC 与代码对齐:apply 生产 RBAC → 静态断言动词面 → 用 superdl-tenant-mgr SA token 造受限 kubeconfig
+      # 供 test_ensure_namespace_under_tenant_mgr_sa 使用
       - name: 应用生产 RBAC 并静态断言各 SA 动词面
         run: |
           kubectl create namespace superdl
@@ -168,8 +151,7 @@ jobs:
             fi
           }
 
-          # ── tenant-mgr:ensure_namespace 的 _create_or_patch 收敛路径需要的最小动词面
-          #    (与 real.py 一一对应)
+          # ── tenant-mgr:ensure_namespace 收敛路径的最小动词面(与 real.py 一一对应)
           for pair in "patch namespaces" "patch networkpolicies" "patch resourcequotas" \
                       "get limitranges" "create limitranges" "patch limitranges" \
                       "patch services" "create roles" "patch rolebindings" \
@@ -177,8 +159,7 @@ jobs:
             # shellcheck disable=SC2086
             need superdl-tenant-mgr $pair
           done
-          # 反向面:刻意不授的动词必须保持不授(最小权限回归闸)
-          # escalate/bind 只开到命名空间级 roles:clusterroles 一旦可 escalate/bind 就是集群级提权
+          # 反向面:刻意不授的动词保持不授;escalate/bind 只开到命名空间级 roles
           for pair in "delete namespaces" "patch nodes" "delete nodes" "list secrets" \
                       "escalate clusterroles" "bind clusterroles"; do
             # shellcheck disable=SC2086
@@ -190,7 +171,7 @@ jobs:
             # shellcheck disable=SC2086
             need superdl-node-mgr $pair
           done
-          # nodes 之外一律不许写;尤其 create nodes(伪造节点对象)与 secrets
+          # nodes 之外一律不许写
           for pair in "create nodes" "list secrets" "get secrets" "create pods" \
                       "create namespaces" "escalate roles" "bind roles" \
                       "escalate clusterroles" "bind clusterroles"; do
@@ -198,23 +179,17 @@ jobs:
             deny superdl-node-mgr $pair
           done
 
-          # ── nodes:delete 只有 node-mgr 一家:退役是不可逆动作,而 nodes 是集群级资源
-          #    (resourceNames 对 delete 无效),多授一个身份就多一条「删控制面节点」的路。
-          #    对象白名单(只准删 GPU 工作节点)由 VAP 策略⑦ 兜,那条在下一个 step 断言。
+          # ── nodes:delete 只有 node-mgr;对象白名单由 VAP 策略⑦ 兜(下一个 step 断言)
           for sa in superdl-api superdl-worker superdl-tenant-mgr superdl-prewarm superdl-disk-ops; do
             deny "$sa" delete nodes
             deny "$sa" patch nodes
           done
-      # 准入策略反向断言:RBAC 不给 secrets 动词**不等于**读不到 Secret ——
-      # 命名空间内的 pods:create / batch/jobs:create 就等价于该 ns 的 secrets:get
-      # (kubelet 代创建者解析 secretKeyRef / envFrom / secret 卷,不查任何 secrets 授权)。
-      # 上一步的静态动词面断言看不出这件事,只有真拿三个 SA 的身份去建对象才看得出。
-      # 本 step 结束即删掉策略,后面的 RealOrchestrator 冒烟仍在无准入面的裸 kind 上跑。
+      # 准入策略断言:以三个 SA 的身份 dry-run 建对象(pods:create / jobs:create 等价于 ns 内 secrets:get)。
+      # step 结束即删策略,后续冒烟在裸 kind 上跑
       - name: 准入策略:平台 SA 读不到 superdl-auth/superdl-crypto
         run: |
           kubectl apply -f deploy/cluster/admission/tenant-restrictions.yaml
-          # apply 成功 ≠ 生效:CEL 写错时 apiserver 只拒 Policy 而 Binding 照建,
-          # 集群里就成了「装了但全放行」。逐条回读——这是本 step 最要紧的一项断言。
+          # 逐条回读 Policy(CEL 写错时 apiserver 只拒 Policy、Binding 照建)
           for b in superdl-platform-sa-scope superdl-tenant-pod-baseline superdl-node-field-scope \
                    superdl-global-pod-guard superdl-platform-pod-secret-scope \
                    superdl-platform-job-secret-scope superdl-node-delete-scope; do
@@ -225,7 +200,7 @@ jobs:
             kubectl get validatingadmissionpolicybinding "$b" > /dev/null
           done
 
-          # server 端 dry-run:走完整准入链但不落对象,也不需要被引用的 Secret 真实存在
+          # server 端 dry-run:走完整准入链不落对象
           deny_check() { # <说明> <impersonate 身份> < 清单(stdin)
             local what="$1" as="$2" out
             if out=$(kubectl --as="$as" create --dry-run=server -f - 2>&1); then
@@ -235,7 +210,7 @@ jobs:
             fi
             case "$out" in
               *ValidatingAdmissionPolicy*) echo "  ✓ 拒绝:${what}" ;;
-              # 被 RBAC 403 挡下也算「没通过」,但那说明测的不是准入策略这一层,同样判红
+              # RBAC 403 同样判红(测的不是准入层)
               *) echo "::error::${what} 被拒但原因不是准入策略(as=${as}):${out}"; exit 1 ;;
             esac
           }
@@ -248,7 +223,7 @@ jobs:
             echo "  ✓ 放行:${what}"
           }
 
-          # ── 反向:三个持 create 动词的 SA,各按自己真实的那条路径试读 superdl-auth ──
+          # ── 反向:三个持 create 动词的 SA 各按自己的路径试读 superdl-auth ──
           # tenant-mgr 持 pods:create
           deny_check "tenant-mgr 建 Pod 取 superdl-auth 的 JWT 签发密钥" \
             system:serviceaccount:superdl:superdl-tenant-mgr <<'EOF'
@@ -264,7 +239,7 @@ jobs:
                   - name: LEAK
                     valueFrom: {secretKeyRef: {name: superdl-auth, key: SUPERDL_JWT_SECRET}}
           EOF
-          # prewarm 持 batch/jobs:create(没有 pods:create,越权面在 Job 模板上)
+          # prewarm 持 batch/jobs:create
           deny_check "prewarm 建 Job 整份注入 superdl-auth" \
             system:serviceaccount:superdl:superdl-prewarm <<'EOF'
           apiVersion: batch/v1
@@ -281,7 +256,7 @@ jobs:
                     envFrom:
                       - secretRef: {name: superdl-auth}
           EOF
-          # disk-ops 同样只有 batch/jobs:create;换成 Secret 卷这条路
+          # disk-ops 持 batch/jobs:create;走 Secret 卷
           deny_check "disk-ops 建 Job 把 superdl-crypto 挂成卷" \
             system:serviceaccount:superdl:superdl-disk-ops <<'EOF'
           apiVersion: batch/v1
@@ -299,8 +274,7 @@ jobs:
                     command: ["sleep", "1"]
                     volumeMounts: [{name: s, mountPath: /s}]
           EOF
-          # Job 派生 Pod 由 kube-system:job-controller 创建,策略①按 username 匹配对它完全
-          # 不适用;这条断言的就是「Job 模板那层被绕过时,Pod 那层还在」
+          # job-controller 建 Pod 的路径(策略⑤)
           deny_check "job-controller 建 Pod 整份注入 superdl-auth" \
             system:serviceaccount:kube-system:job-controller <<'EOF'
           apiVersion: v1
@@ -315,7 +289,7 @@ jobs:
                   - secretRef: {name: superdl-auth}
           EOF
 
-          # ── 正向:合法引用必须仍然放行(只测 deny 的话,一条「全拒」的策略也会全绿)──
+          # ── 正向:合法引用必须放行 ──
           allow_check "配额 Job 取 superdl-db 的 juicefs-metaurl" \
             system:serviceaccount:superdl:superdl-disk-ops <<'EOF'
           apiVersion: batch/v1
@@ -348,8 +322,7 @@ jobs:
                     image: busybox:1.36
                     command: ["sleep", "1"]
           EOF
-          # 迁移 Job / 备份 CronJob 的 Pod 也由 job-controller 建,整份注入 superdl-db /
-          # superdl-pg-backup 是它们的正常形态,拦下它们 = 发布与备份当场停摆
+          # 迁移 Job / 备份 CronJob 的整份注入 superdl-db / superdl-pg-backup 必须放行
           allow_check "迁移 Job 的 Pod 整份注入 superdl-db" \
             system:serviceaccount:kube-system:job-controller <<'EOF'
           apiVersion: v1
@@ -364,10 +337,7 @@ jobs:
                   - secretRef: {name: superdl-db}
           EOF
 
-          # ── 策略⑦:node.decommission 的 nodes:delete 只能落在 GPU 工作节点上 ──
-          # RBAC 给的是「删任意 Node」,收窄只能在准入层。删控制面 Node 的后果在本仓库尤其重:
-          # kubelet 会重新注册,但 node-restriction.kubernetes.io/superdl-infra 不会跟着回来
-          # (NodeRestriction 正是禁止 kubelet 自打该前缀),平台组件会全部 Pending。
+          # ── 策略⑦:nodes:delete 只能落在 GPU 工作节点上 ──
           deny_delete() { # <说明> <impersonate 身份> <node 名>
             local what="$1" as="$2" node="$3" out
             if out=$(kubectl --as="$as" delete node "$node" --dry-run=server 2>&1); then
@@ -380,10 +350,10 @@ jobs:
             esac
           }
           NODE_MGR=system:serviceaccount:superdl:superdl-node-mgr
-          # kind 的控制面节点(真实对象,带 node-role.kubernetes.io/control-plane)
+          # kind 控制面节点(带 node-role.kubernetes.io/control-plane)
           CP_NODE=$(kubectl get nodes -l node-role.kubernetes.io/control-plane -o name | head -1)
           deny_delete "node-mgr 删控制面节点" "$NODE_MGR" "${CP_NODE#node/}"
-          # 造两台探针节点:一台带 infra 落点标签(必须拒),一台干净的 GPU 工作节点(必须放行)
+          # 两台探针节点:带 infra 标签(必须拒)/ 干净 GPU 工作节点(必须放行)
           kubectl create -f - <<'EOF'
           apiVersion: v1
           kind: Node
@@ -414,8 +384,7 @@ jobs:
           cp "$admin_kubeconfig" /tmp/restricted.kubeconfig
           kubectl config set-credentials tenant-mgr --token="$TOKEN" --kubeconfig=/tmp/restricted.kubeconfig
           kubectl config set-context --current --user=tenant-mgr --kubeconfig=/tmp/restricted.kubeconfig
-          # 管理面 kubeconfig 的路径在这里由 shell 展开后传下去:workflow 的 env: 不展开 $HOME,
-          # 写成字面量会让用例拿到一个不存在的路径
+          # workflow 的 env: 不展开 $HOME,路径在 shell 里展开后传下去
           echo "SUPERDL_TEST_KUBECONFIG=$admin_kubeconfig" >> "$GITHUB_ENV"
       - name: RealOrchestrator 冒烟(kind)
         working-directory: apps/api
@@ -424,9 +393,7 @@ jobs:
         run: |
           uv sync --frozen
           uv run pytest tests/test_k8s_real_smoke.py -v
-          # 编排协议契约一致性套件的 Real 侧(同 SUPERDL_TEST_KUBECONFIG 门控):
-          # kind 上 JuiceFS 作业永不完成,完成分支由套件 patch Job status 注入(见文件头注释)。
-          # -m real_k8s:只跑 real 参数;fake 侧归 api job 的全量 pytest,此处不重复
+          # 编排契约一致性套件 real 侧(-m real_k8s);fake 侧归 api job
           uv run pytest -m real_k8s tests/test_orchestrator_conformance.py -v
 
   e2e:
@@ -437,7 +404,7 @@ jobs:
       - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
         with:
           python-version: "3.13"
-          # nohup 起的 API/worker 活到 job 结束;post 步的 uv cache prune 会与之抢缓存目录而非零退出
+          # nohup 起的 API/worker 活到 job 结束,关掉 post 步的 uv cache prune
           prune-cache: false
       - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -453,7 +420,7 @@ jobs:
         env:
           SUPERDL_ENVIRONMENT: dev
           SUPERDL_DATABASE_URL: postgresql+asyncpg://superdl:superdl@localhost:5432/superdl
-          # seed_dev.py 环境闸后默认随机口令;CI 一次性隔离库显式固定,与 e2e 默认对齐
+          # 固定 seed 管理员口令,与 e2e 默认对齐
           SUPERDL_SEED_ADMIN_PASSWORD: admin123-dev
         run: |
           uv sync --frozen
@@ -464,8 +431,7 @@ jobs:
           for _ in $(seq 1 30); do curl -sf localhost:8000/healthz && break; sleep 1; done
       - name: Playwright smoke
         env:
-          # 管理端冒烟(登录→MFA 现算→调账双人复核→冻结租户):
-          # 本 job 有浏览器(下行装 chromium)故开门;无浏览器环境/本地不想跑时不设此变量即跳过
+          # 管理端冒烟(登录 → MFA → 调账双人复核 → 冻结租户);不设此变量即跳过
           SUPERDL_ADMIN_E2E: "1"
         run: |
           pnpm install --frozen-lockfile
@@ -475,8 +441,7 @@ jobs:
         if: failure()
         run: tail -n 80 /tmp/api.log /tmp/worker.log
 
-  # k8s 清单 schema 校验(kubeconform):deploy/app/k8s 全部清单过 k8s OpenAPI schema。
-  # (compose.yaml 是 docker-compose 格式,非 k8s 清单,不在 kubeconform 适用范围)
+  # kubeconform:deploy/app/k8s 全部清单过 k8s OpenAPI schema
   k8s-manifest-validate:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -484,19 +449,14 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: kubeconform(deploy/app/k8s)
         run: |
-          # -skip:CRD 类(cert-manager/prometheus-operator/Gateway API/Envoy Gateway)
-          # 不在内置 schema;Kustomization 是 kustomize 配置而非 k8s 清单,同样无 schema;
+          # -skip:CRD 类与 Kustomization 无内置 schema(网关对象由下一步按真实 CRD 校验);
           # -ignore-filename-pattern:10-migrate-job.yaml 的 name 含 CHANGE_TAG 占位
-          # (非法 DNS 名,由 scripts/release.sh 渲染后 create),不做静态校验。
-          # 被 skip 掉的 7 种网关对象改由下一步按真实 CRD 校验,不是不校验
           docker run --rm -v "$PWD:/work" \
             ghcr.io/yannh/kubeconform:v0.8.0@sha256:faffaf43f95aa6425306e1ab8d6fcad72acb9049158f38e574c085ea1ec0f64e \
             -skip Certificate,ClusterIssuer,ServiceMonitor,PodMonitor,Kustomization,GatewayClass,Gateway,HTTPRoute,EnvoyProxy,SecurityPolicy,BackendTrafficPolicy,ClientTrafficPolicy \
             -ignore-filename-pattern '10-migrate-job' \
             -summary /work/deploy/app/k8s
-      # 网关清单按 helmfile 钉死那版 Envoy Gateway chart 里的真实 CRD 校验:04-gateway.yaml 是
-      # 「写错不报错、策略静默失效」的重灾区,最坏的一种(SecurityPolicy 被 apiserver 单独拒收
-      # → 管理端白名单没了)恰好只在 apply 时暴露。细节见脚本头注释
+      # 04-gateway.yaml 按 helmfile 钉死那版 Envoy Gateway chart 的 CRD 校验
       - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
         with:
           python-version: "3.13"

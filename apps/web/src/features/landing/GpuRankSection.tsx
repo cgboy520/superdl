@@ -1,4 +1,4 @@
-/** GPU 算力排名:gpuSpecs 静态表驱动(理论峰值口径,脚注声明);在售型号标记联动价格墙。 */
+/** GPU 算力排名:gpuSpecs 静态表驱动(理论峰值口径);在售型号标记联动价格墙。 */
 
 import { chartAccentColors, colorPrimary, fontSize, gpuSpecs, layout, medalColors, normalizeGpuModel } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 
 import { useSkus } from "../../api/queries";
 
-// 深底白字(WCAG AA):取值收敛在 packages/ui medalColors
+// 深底白字(WCAG AA):取值在 packages/ui medalColors
 const MEDALS = medalColors;
 
 export function GpuRankSection() {
@@ -16,7 +16,7 @@ export function GpuRankSection() {
   const { token } = theme.useToken();
   const [metric, setMetric] = useState<"fp16" | "fp32">("fp16");
   const { data: skus } = useSkus();
-  // 窄屏紧凑模式:收缩定宽列,避免整行把页面撑出横向滚动
+  // 窄屏紧凑模式:收缩定宽列
   const wide = Grid.useBreakpoint().md;
 
   const onSale = useMemo(

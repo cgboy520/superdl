@@ -1,11 +1,6 @@
-"""创建类接口的幂等键重放:按 (归属列, 键) 查已有行,窗内则重放。
-
-重放的响应形态(200 + X-Idempotent-Replay)由路由经 core/http.mark_idempotent_replay 统一;
-并发同键由各表 UNIQUE(归属列, idempotency_key) 兜底,撞约束后再以本函数回查胜出方。
-
-异参检测(对齐 Stripe 惯例):调用方传入 fingerprint(request_fingerprint() 对全部
-业务形态参数取 sha256),命中重放且指纹不符抛 409 —— 弱键被复用到不同请求时得到
-显式拒绝,而不是静默返回上一单(那会把「金额/规格改了」的重试错当成重放)。
+"""创建类接口的幂等键重放:按 (归属列, 键) 查已有行,窗内重放(200 + X-Idempotent-Replay,
+core/http.mark_idempotent_replay);并发同键由 UNIQUE(归属列, idempotency_key) 兜底后回查胜出方;
+fingerprint 不符抛 409。
 """
 
 import hashlib
@@ -20,7 +15,7 @@ from sqlalchemy.orm import InstrumentedAttribute, Mapped
 from app.core.errors import conflict
 from app.core.timeutil import ensure_utc, now_utc
 
-# 幂等键有效期(实例 / 数据盘):窗口内重放返回既有资源;窗口外同一键按新单处理
+# 幂等键有效期(实例 / 数据盘):窗内重放,窗外按新单
 IDEMPOTENCY_WINDOW = timedelta(hours=24)
 
 
@@ -30,18 +25,13 @@ class _HasIdempotencyKey(Protocol):
 
 
 class _HasRequestFingerprint(_HasIdempotencyKey, Protocol):
-    """落库了请求指纹的创建类表(orders/instances/data_disks/refund_requests/
-    invoice_requests 与 adminapi 调账单)——只有它们能走带 fingerprint 的重放比对。"""
+    """落库了 request_fingerprint 的创建类表。"""
 
     request_fingerprint: Mapped[str | None]
 
 
 def request_fingerprint(*parts: object) -> str:
-    """异参检测指纹:对「决定本单业务形态的全部请求参数」取 sha256。
-
-    调用方按固定顺序给出参数(先归属列,后业务参数);repr 区分 None 与空串、
-    数字与字符串,dict 请先排序成 items 再传入保证确定性。
-    """
+    """异参检测指纹:全部业务形态参数按固定顺序取 sha256(dict 先排序成 items)。"""
     return hashlib.sha256("|".join(repr(p) for p in parts).encode()).hexdigest()
 
 
@@ -81,12 +71,8 @@ async def find_replay(
     window: timedelta | None = None,
     fingerprint: str | None = None,
 ) -> Any | None:
-    """返回同 (owner, key) 的已有行,没有则 None。
-
-    owner_col 为 None 表示键全局唯一(公告)。window 给定时只认 created_at 在窗内的行:
-    窗外的行先释放键位(UNIQUE(归属列, idempotency_key) 不再挡新单)再按无既有行处理。
-    fingerprint 给定时做异参检测:行上指纹与本次不符(含老行 NULL)即抛 409。
-    """
+    """返回同 (owner, key) 的已有行,没有则 None。owner_col=None 键全局唯一;window 给定时窗外行
+    先释放键位;fingerprint 给定时不符(含 NULL)抛 409。"""
     stmt = select(model).where(model.idempotency_key == key)
     if owner_col is not None:
         stmt = stmt.where(owner_col == owner_id)
@@ -97,7 +83,6 @@ async def find_replay(
         existing.idempotency_key = None
         await session.flush()
         return None
-    # 一律严格比对:行上指纹与本次不符(含老行 NULL)即 409
     if fingerprint is not None and existing.request_fingerprint != fingerprint:
         raise conflict(key="common.idempotencyKeyMismatch")
     return existing
@@ -115,12 +100,8 @@ async def insert_idempotent[RowT: _HasIdempotencyKey](
     fingerprint: str | None = None,
     commit: bool = False,
 ) -> RowT:
-    """幂等插入的收敛骨架:add + flush/commit,撞 (归属列, key) 唯一约束时回滚并回查胜出方。
-
-    返回对象 `is row` 即新插入;否则为同键并发的胜出方(调用方按幂等重放处理)。
-    撞的是幂等键以外的约束(如日内单号序列、业务部分唯一索引)时重抛 IntegrityError,
-    由调用方决定换序列重试或转 409。key 为 None 时等价于普通插入。
-    """
+    """幂等插入:add + flush/commit,撞 (归属列, key) 唯一约束时回滚并回查胜出方(返回值 `is row`
+    即新插入);撞其它约束重抛 IntegrityError;key=None 等价普通插入。"""
     session.add(row)
     try:
         if commit:
@@ -131,8 +112,7 @@ async def insert_idempotent[RowT: _HasIdempotencyKey](
         await session.rollback()
         if key is not None:
             if fingerprint is not None:
-                # 带指纹路径要求 model 落库了 request_fingerprint 列(调用方契约),
-                # RowT 静态绑定表达不了该约束,经 Any 过桥到指纹版 overload
+                # 带指纹路径要求 model 有 request_fingerprint 列,经 Any 过桥到指纹版 overload
                 winner = await find_replay(
                     session,
                     cast(type[Any], model),

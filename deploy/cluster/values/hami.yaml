@@ -1,19 +1,15 @@
-# HAMi v2.9:仅共享池,libvgpu 在 CUDA 层限额。
-# 安全定位:HAMi 通过 LD_PRELOAD 拦截 CUDA runtime API 实现显存/算力软限额,但容器内 root 可通过
-# unset LD_PRELOAD、静态链接 CUDA、直接调用 CUDA Driver API 绕过配额(HAMi 官方 troubleshooting
-# 明确列出)。因此 HAMi 池是软件限额/性能隔离,不是安全边界,不适合需要强隔离的多租户场景。
-# 详见 docs/reference/security.md 隔离级别分级表。
+# HAMi v2.9:仅共享池,libvgpu 在 CUDA 层软限额(不是安全边界,见 docs/reference/security.md 隔离级别分级表)
 scheduler:
   defaultSchedulerPolicy:
     nodeSchedulerPolicy: binpack
     gpuSchedulerPolicy: binpack
 devicePlugin:
   runtimeClassName: ""               # 共享池 runc(HAMi 与 Kata 互斥)
-  # chart 键是 nvidiaNodeSelector(默认 gpu: "on");写成 nodeSelector 会被忽略,插件永远调度不到我们的节点
+  # chart 键是 nvidiaNodeSelector(默认 gpu: "on"),不是 nodeSelector
   nvidiaNodeSelector:
     gpu: null                        # 删掉 chart 默认的 gpu: "on"(helm 合并 map 不会覆盖整段,null 才能删键)
     superdl.io/pool: hami            # 只接管 hami 池,与官方 device plugin 互斥
 devices:
   nvidia:
     gpuCorePolicy: force             # 算力份额硬限
-    # 显存超卖谨慎 ≤1.2:由 SKU 参数控制售卖,节点层不再放大
+    # 显存超卖 ≤1.2;售卖由 SKU 参数控制

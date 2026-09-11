@@ -1,4 +1,4 @@
-# 平台组件(版本锁定,升级须走变更评审)。双档:
+# 平台组件(版本锁定)。双档:
 #   helmfile -e full apply    # RKE2 生产全组件
 #   helmfile -e light apply   # k3s 单机/小规模(组件集同 full,k3s 侧 values 覆盖见 values/light/)
 # 前置检查:./preflight.sh <full|light>
@@ -43,23 +43,19 @@ releases:
     condition: gpuOperator.enabled
     namespace: gpu-operator
     chart: nvidia/gpu-operator
-    # 不得低于 v26.3.3:更低版本 device-plugin 会误注 ibverbs 设备。
-    # (见 values/gpu-operator.yaml 头注释);升版前复核 release notes 的 labels/ClusterPolicy 字段变化。
+    # 不得低于 v26.3.3(见 values/gpu-operator.yaml);升版前复核 labels/ClusterPolicy 字段变化
     version: "v26.3.3"
     values:
       - values/gpu-operator.yaml
       {{- if eq .Environment.Name "light" }}
       - values/light/gpu-operator-light.yaml
       {{- end }}
-    # values 开了 ServiceMonitor:CRD 来自 kube-prometheus-stack,新集群首装必须排在它之后,
-    # 且首装 diff 不做 API 校验
+    # 开了 ServiceMonitor:排在 kube-prometheus-stack 之后,首装 diff 不做 API 校验
     needs: [monitoring/kube-prometheus-stack]
     disableValidationOnInstall: true
 
-  # Kata(dedicated 档运行时):chart 装 shim 二进制、写 containerd drop-in、建 RuntimeClass kata-qemu。
-  # k8sDistribution 决定往哪个 containerd 配置目录写,写错 = 装在没人读的地方
-  # (chart 侧会因与节点自检不符直接拒装)。
-  # 只装 kata 池节点;kata 池为空时 DaemonSet 0 副本,RuntimeClass 照建。
+  # Kata(dedicated 档运行时):装 shim、写 containerd drop-in、建 RuntimeClass kata-qemu。
+  # k8sDistribution 决定 containerd 配置目录;只装 kata 池节点
   - name: kata-deploy
     condition: kataDeploy.enabled
     namespace: kube-system
@@ -92,8 +88,7 @@ releases:
       {{- if eq .Environment.Name "light" }}
       - values/light/kps-light.yaml
       {{- end }}
-    # chart 的 CRD 在 crds/ 目录,但 helm diff 只干跑渲染不装 CRD,
-    # 新集群首装的 diff 阶段必然校验失败
+    # helm diff 不装 crds/ 目录的 CRD,首装 diff 免校验
     disableValidationOnInstall: true
 
   - name: juicefs-csi-driver
@@ -129,31 +124,25 @@ releases:
     set:
       - name: crds.enabled
         value: "true"
-    # values 开了 ServiceMonitor:新集群首装必须排在 kps 之后,且首装 diff 不做 API 校验
+    # 开了 ServiceMonitor:排在 kps 之后,首装 diff 不做 API 校验
     needs: [monitoring/kube-prometheus-stack]
     disableValidationOnInstall: true
     {{- if .Values.acmeDns.enabled }}
     hooks:
-      # acme-dns(DNS01 中转)与 cert-manager 同 ns,先于此 chart 落地。
-      # 只在 acmeDns.enabled 的档位应用:它的 LoadBalancer 53 在 k3s(klipper-lb)上会变成节点
-      # hostPort 53,把节点自己发往 127.0.0.53 的查询也劫进 acme-dns(只认 auth 子域,
-      # 其余 NXDOMAIN),节点从此解析不了任何域名(Harbor 拉取、节点回连全断)。
-      # light 档因此不装,泛域名证书由运维手工灌入现成通配证书
+      # acme-dns(DNS01 中转)与 cert-manager 同 ns,先于此 chart 落地;只在 acmeDns.enabled 的档位应用
+      # (k3s klipper-lb 会把 LoadBalancer 53 变成节点 hostPort 53,light 档不装,通配证书手工灌入)
       - events: ["presync"]
         showlogs: true
         command: "kubectl"
         args: ["apply", "-f", "acme-dns.yaml"]
     {{- end }}
 
-  # 北向唯一入口:Envoy Gateway(Gateway API 实现)。数据面 Envoy 与控制面同 ns
-  # (不开 Gateway Namespace Mode),凡是按 ns 名认入口的地方(NetworkPolicy 来源、
-  # 准入豁免名单)都必须写 envoy-gateway-system,漏一处就是网关起不来。
+  # 北向唯一入口:Envoy Gateway。数据面与控制面同 ns envoy-gateway-system(NetworkPolicy 来源、准入豁免名单按此 ns 名)
   - name: envoy-gateway
     condition: envoyGateway.enabled
     namespace: envoy-gateway-system
     chart: oci://docker.io/envoyproxy/gateway-helm
-    # chart v1.9.0 = 控制面 v1.9.0 + 内置 Envoy distroless-v1.39.0,对齐 Gateway API v1.6.1;
-    # 升版前先跑 ./gateway-api-crds.sh 升 CRD(本 chart 不管 CRD),再 helm diff 复核
+    # chart v1.9.0 = 控制面 v1.9.0 + Envoy distroless-v1.39.0,对齐 Gateway API v1.6.1;升版前先跑 ./gateway-api-crds.sh 升 CRD
     version: "v1.9.0"
     values:
       - values/envoy-gateway.yaml
@@ -161,20 +150,16 @@ releases:
       - values/light/envoy-gateway-light.yaml
       {{- end }}
     set:
-      # chart 自带的 CRD 子 chart 走 helm 的 crds/ 目录,该目录在 helm upgrade 时永不更新:
-      # 跟着 chart 装,CRD 会永远停在首装那一版。CRD 由下面的 presync 钩子单点管理。
+      # CRD 由下面的 presync 钩子单点管理(helm 的 crds/ 目录 upgrade 时不更新)
       - name: crds.enabled
         value: "false"
     hooks:
-      # CRD 必须先于 chart 存在:控制面一起来就 list/watch GatewayClass/Gateway,缺 CRD 时它
-      # 反复重启,且本 release 的 diff 阶段先一步失败。channel 首装即定、事后换不回去
-      # (safe-upgrades 策略拒绝 standard→experimental),见脚本头注释。
+      # CRD 必须先于 chart 存在;channel 首装即定,事后换不回去(见脚本头注释)
       - events: ["presync"]
         showlogs: true
         command: "./gateway-api-crds.sh"
 
-  # CloudNativePG:平台库进 K8s 时的唯一受支持形态(见 ../README.md「生产数据库要求」)。
-  # 默认关闭(cnpg.enabled=false);启用时 operator 与业务集群两个 release 一起进。
+  # CloudNativePG:平台库进 K8s 的唯一受支持形态(见 ../README.md「生产数据库要求」)。默认关闭
   - name: cloudnative-pg
     condition: cnpg.enabled
     namespace: cnpg-system
@@ -193,8 +178,7 @@ releases:
     disableValidationOnInstall: true   # Cluster/ScheduledBackup 的 CRD 来自 operator release,首装 diff 免校验
     values: [values/cnpg-cluster.yaml]
 
-  # 日志栈:Loki 单副本 + Alloy 采集(全 Pod 日志 + 控制面 apiserver 审计文件)。
-  # light 档同开(资源已收紧);磁盘紧张可在 environments/light.yaml 整栈关掉。
+  # 日志栈:Loki 单副本 + Alloy 采集(全 Pod 日志 + apiserver 审计文件);可在 environments/light.yaml 整栈关掉
   - name: loki
     condition: loki.enabled
     namespace: monitoring
@@ -206,11 +190,11 @@ releases:
       {{- if eq .Environment.Name "light" }}
       - values/light/loki-light.yaml
       {{- end }}
-    # values 开了 ServiceMonitor:同 cert-manager,排在 kps 之后、首装免校验
+    # 开了 ServiceMonitor:排在 kps 之后,首装免校验
     needs: [monitoring/kube-prometheus-stack]
     disableValidationOnInstall: true
     hooks:
-      # Loki 访问边界:需在 monitoring ns 已存在(kps 先行)后 apply;幂等,每次 sync 重放
+      # Loki 访问边界:monitoring ns 存在后 apply;幂等
       - events: ["presync"]
         showlogs: true
         command: "kubectl"
@@ -226,7 +210,5 @@ releases:
       - monitoring/loki
     values: [values/alloy.yaml]
 
-# 注:admission/tenant-restrictions.yaml(ValidatingAdmissionPolicy)不是 helm release,
-# 由 ./apply.sh 在 helmfile 之前先 kubectl apply(它是本目录唯一的 apply 入口),
-# preflight.sh 与 scripts/release.sh 双向校验集群内七个 Binding 存在且 validationActions 含 Deny。
-# 别绕过 apply.sh 直接跑 helmfile:准入策略缺失是静默 fail-open。
+# admission/tenant-restrictions.yaml 不是 helm release,由 ./apply.sh(本目录唯一 apply 入口)在 helmfile 之前 kubectl apply;
+# preflight.sh 与 scripts/release.sh 校验七个 Binding 含 Deny。不要绕过 apply.sh 直接跑 helmfile

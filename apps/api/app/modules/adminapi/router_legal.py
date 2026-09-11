@@ -21,7 +21,7 @@ router = APIRouter(tags=["admin"])
 
 
 class LegalDocVersionArchive(BaseModel):
-    """归档草稿的请求体:原因必填(审计落库,与 ReasonAction 全站口径一致)。"""
+    """归档草稿的请求体:原因必填。"""
 
     reason: str = Field(min_length=2, max_length=REASON_MAX_LENGTH)
 
@@ -31,7 +31,7 @@ class LegalDocVersionArchive(BaseModel):
 
 @router.get("/legal-docs", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_list_legal_docs(session: DbSession) -> list[LegalDocCellOut]:
-    """法务文档总览:doc_key × locale 状态格(当前 published + 最新 draft;均空 = 缺失)。"""
+    """法务文档总览:doc_key × locale 状态格(当前 published + 最新 draft)。"""
     from app.modules.legal import service as legal_service
 
     return await legal_service.admin_overview(session)
@@ -124,7 +124,7 @@ async def admin_archive_legal_doc_version(
     request: Request,
     admin: AdminUser = require_roles(),
 ) -> LegalDocVersionOut:
-    """归档草稿(draft → archived,原因必填入审计);published 不可直接归档(409)。"""
+    """归档草稿(draft → archived,原因必填);published 不可直接归档(409)。"""
     from app.modules.legal import service as legal_service
 
     row = await legal_service.admin_archive(session, version_id)

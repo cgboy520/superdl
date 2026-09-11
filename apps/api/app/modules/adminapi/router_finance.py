@@ -100,7 +100,7 @@ def _alert_out(r: Any, usernames: dict[int, str]) -> AdminAlertOut:
 
 
 async def _ack_usernames(session: AsyncSession, rows: list[Any]) -> dict[int, str]:
-    """确认人 id → 用户名(管理端回显「由谁确认」)。"""
+    """确认人 id → 用户名。"""
     from sqlalchemy import select as sa_select
 
     ids = {r.acked_by for r in rows if r.acked_by is not None}
@@ -116,7 +116,7 @@ async def _ack_usernames(session: AsyncSession, rows: list[Any]) -> dict[int, st
 
 @router.get("/alerts", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_alerts(session: DbSession, severity: str | None = None) -> list[AdminAlertOut]:
-    """管理端告警流(总览右栏数据源)。severity 精确过滤(可选)。"""
+    """管理端告警流。severity 精确过滤(可选)。"""
     from app.modules.notify import service as notify_service
 
     rows = await notify_service.admin_alert_stream(session, severity=severity)
@@ -126,7 +126,7 @@ async def admin_alerts(session: DbSession, severity: str | None = None) -> list[
 
 @router.get("/alerts/unread-count", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_alerts_unread_count(session: DbSession) -> AlertUnreadCountOut:
-    """未确认告警计数(顶栏铃铛角标;独立计数端点)。critical_count 供总览 KPI 红色高亮。"""
+    """未确认告警计数(独立计数端点);critical_count 供总览 KPI。"""
     from app.modules.notify import service as notify_service
 
     total, critical = await notify_service.unread_alert_count(session)
@@ -151,9 +151,7 @@ async def admin_ack_alert(
 
 class AdjustmentCreate(BaseModel):
     user_id: int
-    # 带符号金额字符串:严格十进制(禁科学计数法/前导零填充歧义/超 2 位小数),
-    # 契约层挡下 Decimal("1e2") 这类合法但非预期的解析
-    # (pydantic pattern 是 search 语义,必须自带 ^$ 锚)
+    # 带符号金额字符串:严格十进制,禁科学计数法/前导零/超 2 位小数;pattern 自带 ^$ 锚
     amount: str = Field(pattern=r"^-?(0|[1-9]\d{0,11})(\.\d{1,2})?$")
     reason: str = Field(min_length=2, max_length=256)
 
@@ -206,7 +204,7 @@ async def admin_adjustments_export(
     lang: Literal["zh-CN", "en-US"] = ExportLang,
 ) -> StreamingResponse:
     """调账单 CSV(流式):筛选口径与 GET /adjustments 一致;行数硬上限 + 截断标记行。
-    注册在 /adjustments/{adjustment_id} 动态路由之前,export 不被当 id 解析。"""
+    须注册在 /adjustments/{adjustment_id} 之前。"""
     return csv_response(
         admin_export.stream_adjustments_csv(
             session,
@@ -229,9 +227,8 @@ async def admin_create_adjustment(
     idempotency_key: IdempotencyKey = None,
     admin: AdminUser = require_roles("finance"),
 ) -> AdjustmentStatusOut:
-    """发起调账(双人复核前置)。支持 Idempotency-Key:重放返回已受理的单
-    (200 + X-Idempotent-Replay)。"""
-    # 资金端点限流(每管理员):调账发起即占复核资源
+    """发起调账(双人复核前置)。Idempotency-Key 重放返回已受理的单(200 + X-Idempotent-Replay)。"""
+    # 资金端点限流(每管理员)
     await check_rate_limit(f"admin-adjust:{admin.id}", max_attempts=20, window_seconds=3600.0)
     adj, created = await service.create_adjustment(
         session,
@@ -276,8 +273,7 @@ async def admin_resolve_reversal(
     request: Request,
     admin: AdminUser = require_roles("finance"),
 ) -> dict[str, str]:
-    """核销渠道冲正(异常清单 channel_reversed 分桶):解冻或解冻+等额扣回,
-    审计行与核销同事务。"""
+    """核销渠道冲正(channel_reversed 分桶):解冻或解冻+等额扣回,审计行与核销同事务。"""
     set_audit_target(
         request, f"reversal:{order_no}", detail={"action": body.action, "reason": body.reason}
     )
@@ -326,7 +322,7 @@ async def admin_refunds_export(
     lang: Literal["zh-CN", "en-US"] = ExportLang,
 ) -> StreamingResponse:
     """退款单 CSV(流式):筛选口径与 GET /refunds 一致;行数硬上限 + 截断标记行。
-    注册在 /refunds/{refund_id} 动态路由之前,export 不被当 id 解析。"""
+    须注册在 /refunds/{refund_id} 之前。"""
     from app.modules.billing import service as billing_service
 
     return csv_response(
@@ -373,10 +369,9 @@ async def admin_payout_refund(
     idempotency_key: IdempotencyKey = None,
     admin: AdminUser = require_roles("finance"),
 ) -> AdminRefundOut:
-    """登记打款(唯一出金点):强制双人(与审批人相同则 409);余额不足 409,可取消。
-    审计行与出金同事务(write_audit_sync):审计写失败即出金失败回滚。
-    支持 Idempotency-Key:同键同参重放返回 200 + X-Idempotent-Replay(不重复出金),
-    同键异参 409;出金动作的防重保护与调账/补单同口径。"""
+    """登记打款(唯一出金点):强制双人(与审批人相同则 409);余额不足 409。
+    审计行与出金同事务(write_audit_sync)。Idempotency-Key:同键同参重放 200 + X-Idempotent-Replay,
+    同键异参 409。"""
     from app.modules.billing import service as billing_service
 
     set_audit_target(
@@ -384,7 +379,7 @@ async def admin_payout_refund(
         f"refund:{refund_id}",
         detail={"channel": body.channel, "ref": body.ref},
     )
-    # audit_writer 总是要传:service 重放路径在调用它之前就已返回,重放不会重复写审计
+    # audit_writer 总是要传:重放路径在调用它之前返回,不重复写审计
     req, replayed = await billing_service.payout_refund(
         session,
         refund_id,
@@ -407,7 +402,7 @@ async def admin_cancel_refund(
     request: Request,
     admin: AdminUser = require_roles("finance"),
 ) -> AdminRefundOut:
-    """取消退款单(仅 pending/approved;余额不足无法核销时的出口)。不动钱包。"""
+    """取消退款单(仅 pending/approved)。不动钱包。"""
     from app.modules.billing import service as billing_service
 
     req = await billing_service.cancel_refund(session, refund_id)
@@ -418,15 +413,7 @@ async def admin_cancel_refund(
 
 
 # ---------- 发票(人工开票;读写均限 finance/admin) ----------
-#
-# 读的角色门从 ops/finance/readonly 收窄到 finance,两条理由:
-# - readonly:同一份自然人 PII 在 /tenants 已明确不给它明文(见 ensure_reveal_allowed),
-#   却能从这里整表拉走抬头与邮箱——同一份数据换个出口就换一套口径,不成立;
-# - ops:管理端菜单里 /finance 本就不含 ops(apps/admin/src/lib/menu.ts),开票与驳回也是
-#   finance 专属的写动作,ops 的这份读权限没有任何工作流消费,是纯敞口。
-#
-# 脱敏只覆盖抬头与邮箱:个人票抬头即自然人姓名(个人票无税号,schema 强制置空),
-# 公司票税号是工商公开信息且是财务核对的主键,不脱敏。
+# 脱敏只覆盖抬头与邮箱;公司票税号不脱敏。
 
 
 def _invoice_reveal(admin: AdminUser, reveal: bool, reason: str | None) -> str:
@@ -446,10 +433,9 @@ async def admin_list_invoices(
 ) -> list[AdminInvoiceOut]:
     """发票申请列表(固定截断 200)。status/period(YYYY-MM)精确过滤。
 
-    抬头与邮箱默认脱敏;明文是逐次显式动作(reveal=true + reason 必填),按条数与事由落审计。
+    抬头与邮箱默认脱敏;reveal=true + reason 回明文,按条数与事由落审计。
     """
-    # 脱敏用与 CSV 导出同一个实现(billing/export.mask_invoice_identity 也走它),
-    # 两个出口的档位不会各写各的
+    # 脱敏与 CSV 导出同一实现(billing/export.mask_invoice_identity)
     from app.modules.account import service as account_service
     from app.modules.billing import service as billing_service
 
@@ -498,16 +484,12 @@ async def admin_invoices_export(
     admin: AdminUser = require_roles("finance"),
 ) -> StreamingResponse:
     """发票申请 CSV(流式):筛选口径与 GET /invoices 一致;行数硬上限 + 截断标记行。
-    注册在 /invoices/{invoice_id} 动态路由之前,export 不被当 id 解析。
-
-    单次最多 50000 行的抬头/税号/邮箱是全站最集中的一处 PII 出口:默认脱敏,
-    明文要 reveal + 事由,且**每一次导出**(不论是否明文)都落一条审计,带实际吐出的行数。
+    须注册在 /invoices/{invoice_id} 之前。默认脱敏,明文要 reveal + 事由;每次导出都落审计。
     """
     from app.modules.billing import service as billing_service
 
     reveal_reason = _invoice_reveal(admin, reveal, reason)
-    # 行数只有生成器边吐边记才数得准(流式响应返回时一行都还没生成)。审计 detail 本身就是
-    # 那个计数器:中间件在响应写完后才构建审计行,读到的即最终值(客户端中断则是已送出的行数)
+    # 行数由生成器边吐边记;审计 detail 即计数器,中间件在响应写完后读到最终值
     detail: dict[str, Any] = {
         "rows": 0,
         "reveal": reveal,
@@ -535,7 +517,7 @@ async def admin_invoices_export(
 async def _count_revealed_rows(
     stream: AsyncIterator[str], detail: dict[str, Any]
 ) -> AsyncIterator[str]:
-    """明文导出的行数进指标(流跑完/被中断都记一次,记的是实际送出的行数)。"""
+    """明文导出的行数进指标(记实际送出的行数)。"""
     try:
         async for chunk in stream:
             yield chunk
@@ -551,7 +533,7 @@ async def admin_issue_invoice(
     request: Request,
     admin: AdminUser = require_roles("finance"),
 ) -> AdminInvoiceOut:
-    """开票:回填发票号(人工开票,发票经邮箱送达),站内信告知用户。"""
+    """开票:回填发票号,站内信告知用户。"""
     from app.modules.billing import service as billing_service
 
     req = await billing_service.issue_invoice(
@@ -571,7 +553,7 @@ async def admin_reject_invoice(
     request: Request,
     admin: AdminUser = require_roles("finance"),
 ) -> AdminInvoiceOut:
-    """驳回(理由必填):站内信告知用户;驳回后同账期可重新申请。"""
+    """驳回(理由必填):站内信告知用户;同账期可重新申请。"""
     from app.modules.billing import service as billing_service
 
     req = await billing_service.reject_invoice(
@@ -596,8 +578,7 @@ async def admin_list_orders(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[AdminOrderOut]:
-    """充值订单列表(游标分页,降序)。order_no 精确匹配,是 verify / backfill 两个补救端点的
-    入参来源;day=YYYY-MM-DD 按下单日过滤(UTC 日,与对账口径一致)。"""
+    """充值订单列表(游标分页,降序)。order_no 精确匹配;day=YYYY-MM-DD 按下单日(UTC)过滤。"""
     from app.modules.billing import service as billing_service
 
     page = await billing_service.admin_list_orders(
@@ -653,7 +634,7 @@ async def admin_orders_export(
 
 @router.get("/reports/revenue", dependencies=[require_roles("ops", "finance", "readonly")])
 async def revenue_report(session: DbSession, tz_offset_minutes: int = TzOffset) -> RevenueReportOut:
-    """今日/本月消费额(营收口径 = ledger consume 绝对值)与新注册数。本地日界经 tz_offset。"""
+    """今日/本月消费额(ledger consume 绝对值)与新注册数。本地日界经 tz_offset。"""
     from app.modules.account import service as account_service
     from app.modules.billing import service as billing_service
 
@@ -673,7 +654,7 @@ async def admin_payment_anomalies(session: DbSession) -> list[PaymentAnomalyOut]
 
 @router.post("/finance/orders/{order_no}/verify", dependencies=[require_roles("finance")])
 async def admin_verify_order(order_no: str, session: DbSession, request: Request) -> OrderVerifyOut:
-    """向渠道核验订单状态与金额(补单前置;渠道结果是唯一事实源)。"""
+    """向渠道核验订单状态与金额(补单前置)。"""
     from app.modules.billing import service as billing_service
 
     result = await billing_service.verify_order(session, order_no)
@@ -696,8 +677,8 @@ async def admin_backfill_order(
     response: Response,
     idempotency_key: IdempotencyKey = None,
 ) -> OrderBackfillOut:
-    """人工补单:服务端实时向渠道核验已支付且金额一致才入账。同幂等键重放回当前状态
-    (X-Idempotent-Replay 头区分)。审计行与入账同事务(write_audit_sync)。"""
+    """人工补单:实时向渠道核验已支付且金额一致才入账。同幂等键重放回当前状态(X-Idempotent-Replay)。
+    审计行与入账同事务(write_audit_sync)。"""
     from app.modules.billing import service as billing_service
 
     set_audit_target(request, f"order:{order_no}", detail={"reason": body.reason})
@@ -712,7 +693,7 @@ async def admin_backfill_order(
     return OrderBackfillOut(order_no=order.order_no, status=order.status)
 
 
-# ---------- 结算缺口(水位线被越过但账未结清的窗口留痕;角色:finance 读/写) ----------
+# ---------- 结算缺口(角色:finance 读/写) ----------
 
 
 @router.get("/finance/settlement-gaps", dependencies=[require_roles("finance", "readonly")])
@@ -724,8 +705,7 @@ async def admin_list_settlement_gaps(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[AdminSettlementGapOut]:
-    """缺口列表(游标分页,降序):默认只看未核销——缺口闭环前需要持续曝光,
-    配套持续告警 superdl_settlement_gap_unresolved(DB 口径)。"""
+    """缺口列表(游标分页,降序):默认只看未核销。"""
     from app.modules.billing import service as billing_service
 
     return await billing_service.admin_list_gaps(
@@ -739,8 +719,8 @@ async def admin_replay_settlement_gap(
     request: Request,
     admin: AdminUser = require_roles("finance"),
 ) -> AdminSettlementGapOut:
-    """重放缺口窗口的幂等入账原语(人工触发,不自动改账):成功回写 resolved_at。
-    grace_overlap 缺口拒重放(409,走人工核销);对象已不存在 409(同样走人工核销)。"""
+    """重放缺口窗口的幂等入账原语(人工触发):成功回写 resolved_at。
+    grace_overlap 缺口与对象已不存在均 409,走人工核销。"""
     from app.core.db import get_sessionmaker
     from app.modules.billing import service as billing_service
 
@@ -761,7 +741,7 @@ async def admin_resolve_settlement_gap(
     request: Request,
     admin: AdminUser = require_roles("finance"),
 ) -> AdminSettlementGapOut:
-    """人工核销(不重放):对象已不存在/grace_overlap 确认无账时的出口。说明必填。"""
+    """人工核销(不重放)。说明必填。"""
     from app.modules.billing import service as billing_service
 
     gap = await billing_service.resolve_gap(session, gap_id, note=body.note, operator_id=admin.id)

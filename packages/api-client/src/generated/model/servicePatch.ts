@@ -6,7 +6,7 @@
  */
 
 /**
- * 改名与鉴权开关:两者都只改 services 行,不重新部署。
+ * 改名与鉴权开关:只改 services 行。
  */
 export interface ServicePatch {
   name?: string | null;

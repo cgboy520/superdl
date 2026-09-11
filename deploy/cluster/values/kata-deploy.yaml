@@ -1,17 +1,10 @@
 # kata-deploy(dedicated 档)。k8sDistribution 由 helmfile 按档位注入(light=k3s / full=rke2)。
-#
-# 分池铁律:DaemonSet 只落 kata 池节点(下面的 nodeSelector),RuntimeClass 再兜一层
-# scheduling.nodeSelector —— 即便有人手写 runtimeClassName: kata-qemu,也调度不到别的池。
-# kata 池为空时 DaemonSet 0 副本、RuntimeClass 照建;平台的 dedicated 下发门禁只认
-# RuntimeClass 存在 + 该池有 Ready 节点(见 apps/api/app/modules/nodes/service.py)。
-#
-# GPU 直通由 gpu-operator 侧负责(kata 池节点打 nvidia.com/gpu.workload.config=vm-passthrough
-# → vfio-manager + kata-sandbox-device-plugin),本 chart 只管运行时本身。
+# DaemonSet 只落 kata 池节点,RuntimeClass 再带 scheduling.nodeSelector;dedicated 下发门禁见 apps/api/app/modules/nodes/service.py。
+# GPU 直通由 gpu-operator 侧负责(vm-passthrough 标签)
 nodeSelector:
   superdl.io/pool: kata
 
-# 只要 qemu 一种 shim:平台 gpu_adapter 申请的 runtime_class 恒为 kata-qemu
-# (apps/api/app/core/gpu_adapter),多装的 shim 只是多一份节点上的二进制与配置面。
+# 只装 qemu 一种 shim(平台申请的 runtime_class 恒为 kata-qemu,apps/api/app/core/gpu_adapter)
 shims:
   disableAll: true
   qemu:
@@ -27,6 +20,6 @@ runtimeClasses:
   enabled: true
   createDefault: false         # 只要 kata-qemu 这一个具名类,不建裸 "kata" 别名
 
-# NFD 已由 gpu-operator 提供:两份 NFD 会互相覆盖节点上的 feature.node.kubernetes.io/* 标签
+# NFD 已由 gpu-operator 提供
 node-feature-discovery:
   enabled: false

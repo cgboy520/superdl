@@ -1,12 +1,11 @@
-# 行尾统一 LF,与 .editorconfig 的 end_of_line = lf 一致。带 CR 会让 bash -n / shellcheck / bats 失败、
-# 镜像内 entrypoint.sh 的 shebang 找不到解释器、openapi.json 的「契约无 diff」闸门必红。
+# 行尾统一 LF(与 .editorconfig 一致)
 * text=auto eol=lf
 
-# shell 脚本显式约束:Linux 节点/CI/容器内执行,blob 必须是 LF
+# shell 脚本 blob 必须 LF
 *.sh text eol=lf
 *.bats text eol=lf
 
-# 二进制:任何情况下不做行尾转换
+# 二进制不做行尾转换
 *.png  binary
 *.jpg  binary
 *.jpeg binary

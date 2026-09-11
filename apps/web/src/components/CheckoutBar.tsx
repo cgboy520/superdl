@@ -11,7 +11,7 @@ import { useTranslation } from "react-i18next";
 import { useFormat } from "@superdl/ui";
 import { useThemeMode } from "../stores/theme";
 
-/** 选中变更淡入过渡(motion token fast 档;装饰性动效在 reducedMotion 下归零,见根 MotionConfig) */
+/** 选中变更淡入过渡(motion token fast 档;reducedMotion 下归零,见根 MotionConfig) */
 const FADE_TRANSITION = {
   duration: motionToken.fast,
   ease: [...motionToken.easeOut] as [number, number, number, number],
@@ -40,17 +40,17 @@ export function CheckoutBar({
   detail?: ReactNode;
   /** 余额(未登录不传) */
   balance?: string | null;
-  /** 余额是否已就绪。false 时必须渲染 "—" 而不是假 ¥0.00(查询失败时 data 恒为 undefined)。 */
+  /** 余额是否已就绪;false 时渲染 "—"。 */
   balanceReady?: boolean;
   actions: ReactNode;
-  /** 选中变更标识(如 规格id+计费方式):变化时汇总/费用数字淡入;不传则无动效 */
+  /** 选中变更标识(如 规格id+计费方式):变化时数字淡入;不传则无动效 */
   changeKey?: string;
 }) {
   const { token } = theme.useToken();
   const { t } = useTranslation();
   const { formatMoney } = useFormat();
   const dark = useThemeMode() === "dark";
-  // <sm 断点:两个动作按钮竖排整行(走类,内联样式选不到子代 button)
+  // <sm 断点动作按钮竖排整行(走类)
   const narrow = !Grid.useBreakpoint().sm;
   return (
     <div
@@ -72,7 +72,7 @@ export function CheckoutBar({
       {summary && (
         <div
           style={{
-            // 暗色下浅靛块脱节:换暗色「菜单选中」配对(menuSelectedBg/Color 是 tokens.test 回归的 AA 对)
+            // 暗色下换「菜单选中」配对(menuSelectedBg/Color,tokens.test 回归的 AA 对)
             background: dark ? webDarkColors.menuSelectedBg : brand.indigo50,
             color: dark ? webDarkColors.menuSelectedColor : colorPrimary,
             padding: `${space.sm}px 14px`,
@@ -124,7 +124,7 @@ export function CheckoutBar({
         ))}
         {detail && (
           <Popover content={detail} title={t("common.costDetail")} placement="topLeft">
-            {/* 纯动作触发器用 Button 不用 Typography.Link:无 href 的链接不可聚焦、无键盘语义 */}
+            {/* 纯动作触发器用 Button 不用 Typography.Link(键盘语义) */}
             <Button type="link" size="small">
               {t("common.costDetail")}
             </Button>

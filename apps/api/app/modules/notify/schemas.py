@@ -1,4 +1,4 @@
-"""notify 对外 schema(模块边界:其他模块只许 import 本文件与 service)。"""
+"""notify 对外 schema。"""
 
 from datetime import datetime
 
@@ -20,6 +20,6 @@ class NotificationOut(BaseModel):
 
 
 class UnreadCountOut(BaseModel):
-    """未读角标轻端点:顶栏 30s 轮询用,不拉通知列表全页。"""
+    """未读角标轻端点(顶栏 30s 轮询)。"""
 
     unread_count: int

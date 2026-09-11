@@ -1,5 +1,4 @@
-/** 通知行点击的统一行为(通知中心与顶栏 Popover 同一条路径,两处不许再分叉):
- *  标已读 → 结构化 target_id 精确深链(实例详情/工单对话)→ 按类型落列表页。 */
+/** 通知行点击的统一行为(通知中心与顶栏 Popover 同一条路径):标已读 → 结构化 target_id 深链(实例详情/工单对话)→ 按类型落列表页。 */
 
 import type { NotificationOut } from "@superdl/api-client";
 import { useNavigate } from "@tanstack/react-router";
@@ -34,7 +33,7 @@ function fallbackOf(type: string): "/billing" | "/instances" | "/services" | "/s
   }
 }
 
-/** 返回通知行点击处理器;afterNavigate 供调用方在跳转后收尾(如关闭 Popover)。 */
+/** 通知行点击处理器;afterNavigate 供调用方在跳转后收尾。 */
 export function useNotificationOpen(afterNavigate?: () => void) {
   const navigate = useNavigate();
   const markRead = useMarkNotificationRead();

@@ -48,7 +48,7 @@ class TestInstanceLogs:
         assert body["truncated"] is True
 
     async def test_stopped_409(self, client, sm, fake):
-        """已关机实例无 Pod 日志:409 + 明确文案键(running/stopping 之外的状态同一道守卫)。"""
+        """running/stopping 之外的状态取日志 → 409。"""
         headers, uuid, _user_id = await provision_running(client, sm, fake)
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)  # 删 Pod
@@ -59,7 +59,7 @@ class TestInstanceLogs:
 
     @pytest.mark.parametrize("kind", ["missing", "idor"])
     async def test_404_not_found_and_not_owner(self, client, sm, fake, kind: str):
-        """不存在与他人实例一律 404(不暴露存在性,IDOR 参数化)。"""
+        """不存在与他人实例一律 404。"""
         headers, uuid, _user_id = await provision_running(client, sm, fake)
         if kind == "missing":
             resp = await _get_logs(client, headers, "0" * 32)

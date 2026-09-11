@@ -1,20 +1,14 @@
-"""GPU 型号归一化:五种来源格式 → canonical 短名(调度 label 与 SKU 匹配的单一口径)。
+"""GPU 型号归一化:SKU 手填 / nvidia-smi / lspci / GFD label / fake 注入 → canonical 短名,
+未识别返回 None。
 
-来源格式:SKU 手填(RTX4090)/ nvidia-smi(NVIDIA GeForce RTX 4090)/ lspci 尾段
-(NVIDIA Corporation AD102 [GeForce RTX 4090] (rev a1))/ GFD label
-(NVIDIA-GeForce-RTX-4090)/ fake 注入。未识别返回 None(台账保留 raw,SKU 下拉不出现)。
-
-canonical 规则:RTX 消费卡 = RTX<数字><后缀>(4090 仅 24G,不带显存);
-数据中心同名多容量家族(A100/A800/H100/H800/H200/V100)带 -{显存}G 后缀;
-T4/L4/L40S/A10 等单容量卡取家族名(GB10 = DGX Spark 统一内存 SoC,同此);
-CMP 矿卡系列(CMP 170HX / 90HX 等,nvidia-smi 只报
-"NVIDIA Graphics Device",型号来自 lspci 方括号名)取 CMP<数字>HX。巡检将 canonical 写入
-节点 label `superdl.io/gpu-model`,gpu_adapter 以 nodeSelector 依赖它。
+规则:RTX 消费卡 = RTX<数字><后缀>;多容量家族(A100/A800/H100/H800/H200/V100)带 -{显存}G;
+单容量卡(T4/L4/L40S/A10/GB10 等)取家族名;CMP 矿卡取 CMP<数字>HX。
+巡检写入节点 label `superdl.io/gpu-model`。
 """
 
 import re
 
-# 同名多容量家族:canonical 追加 -{n}G;无显存信息时退家族名(匹配语义见 model_matches)
+# 多容量家族:canonical 追加 -{n}G;无显存信息退家族名(见 model_matches)
 _MULTI_VRAM_FAMILIES = frozenset({"A100", "A800", "H100", "H800", "H200", "V100"})
 
 # 单容量/免后缀白名单(数据中心与推理卡)
@@ -26,7 +20,7 @@ _PLAIN_FAMILIES = frozenset(
 _NOISE = frozenset({"NVIDIA", "CORPORATION", "GEFORCE", "TESLA", "QUADRO", "GRAPHICS", "DEVICE"})
 _FORM = frozenset({"SXM", "SXM2", "SXM4", "SXM5", "PCIE", "NVL", "HBM2", "HBM2E", "HBM3", "OEM"})
 
-# 常见卡型默认单卡显存(GB):bootstrap 未上报 memory.total 时的兜底,未知=0
+# 常见卡型默认单卡显存(GB),bootstrap 未上报时兜底;未知=0
 DEFAULT_VRAM_GB: dict[str, int] = {
     "RTX3090": 24,
     "RTX4090": 24,
@@ -47,7 +41,7 @@ DEFAULT_VRAM_GB: dict[str, int] = {
     "V100-16G": 16,
     "V100-32G": 32,
     "CMP170HX": 8,
-    # 统一内存(nvidia-smi 显存报 N/A):按 HAMi preConfiguredDeviceMemory 的纳管口径计,给 CPU 侧留余量
+    # 统一内存(nvidia-smi 显存 N/A):按 HAMi preConfiguredDeviceMemory 口径
     "GB10": 96,
 }
 
@@ -66,7 +60,7 @@ def canonical_gpu_model(raw: str | None) -> str | None:
     m = re.search(r"\[([^\]]+)\]", text)
     if m:
         text = m.group(1)
-    # 统一分隔与大小写(吃掉 GFD 的连字符)
+    # 统一分隔与大小写
     text = re.sub(r"[-_]", " ", text).upper()
     text = re.sub(r"\(.*?\)", " ", text)  # (rev a1) 之类
     tokens = [t for t in text.split() if t and t not in _NOISE]
@@ -100,10 +94,7 @@ def canonical_gpu_model(raw: str | None) -> str | None:
 
 
 def model_matches(sku_model: str | None, node_model: str | None) -> bool:
-    """SKU 与节点 canonical 匹配:相等,或节点带显存后缀而 SKU 只写家族(A100 匹配 A100-80G)。
-
-    反向不成立:SKU 指明 A100-80G 时不匹配裸 A100 节点(显存不确定不许卖)。
-    """
+    """canonical 匹配:相等,或 SKU 只写家族而节点带显存后缀(A100 匹配 A100-80G);反向不成立。"""
     if not sku_model or not node_model:
         return False
     if sku_model == node_model:

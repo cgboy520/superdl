@@ -65,8 +65,7 @@ class TestAliyunChannel:
 
 class TestSmsCodeGate:
     async def test_disabled_skips_verification(self, client: AsyncClient, sm):
-        """开关关闭(默认):不带 token 直接发码,渠道根本不被调用——
-        挂了说明「关闭」没有跳过校验,dev/e2e 又得回到放行串时代。"""
+        """开关关闭(默认):不带 token 直接发码,渠道不被调用。"""
         set_captcha_channel(_FailingChannel())
         resp = await client.post(
             "/api/v1/auth/sms-code", json={"phone": "13800000094", "purpose": "register"}
@@ -74,7 +73,7 @@ class TestSmsCodeGate:
         assert resp.status_code == 204, resp.text
 
     async def test_enabled_requires_token(self, client: AsyncClient, sm):
-        """开关开启:缺 token 即 400 CAPTCHA_REQUIRED——挂了说明开关没接到发码路径。"""
+        """开关开启:缺 token 即 400 CAPTCHA_REQUIRED。"""
         await set_platform_setting(sm, "captcha_enabled", "true")
         set_captcha_channel(_RejectingChannel())
         resp = await client.post(
@@ -94,7 +93,7 @@ class TestSmsCodeGate:
         assert resp.json()["code"] == "CAPTCHA_VERIFY_FAILED"
 
     async def test_channel_failure_is_fail_closed(self, client: AsyncClient, sm):
-        """渠道故障 → 502(fail-closed):宁停发码服务,不向轰炸敞开。"""
+        """渠道故障 → 502。"""
         from sqlalchemy import select
 
         from app.modules.account.models import SmsCode
@@ -114,7 +113,7 @@ class TestSmsCodeGate:
             assert row is None  # 未落库:闸门在写库之前
 
     async def test_enabled_without_credentials_is_fail_closed(self, client: AsyncClient, sm):
-        """开启但凭据未配:按配置构造渠道即失败 → 502,不静默放行。"""
+        """开启但凭据未配 → 502。"""
         await set_platform_setting(sm, "captcha_enabled", "true")
         resp = await client.post(
             "/api/v1/auth/sms-code",
@@ -124,7 +123,7 @@ class TestSmsCodeGate:
         assert resp.json()["code"] == "CAPTCHA_CHANNEL_ERROR"
 
     async def test_captcha_config_public(self, client: AsyncClient, sm):
-        """前端初始化配置:免鉴权;开关即时跟随 DB 覆盖(前端据 enabled 决定是否加载 SDK)。"""
+        """前端初始化配置:免鉴权;开关即时跟随 DB 覆盖。"""
         resp = await client.get("/api/v1/auth/captcha-config")
         assert resp.status_code == 200
         assert resp.json() == {"enabled": False, "scene_id": None, "prefix": None}

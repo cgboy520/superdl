@@ -1,7 +1,4 @@
-"""GET /api/v1/bills/daily-summary:本地日界折 UTC 窗口的当日消费聚合。
-
-覆盖:跨日界归属 / Decimal 精度 / 空数据 / 盘费计入 / 多实例分组 / 租户隔离 / 日月口径一致。
-"""
+"""GET /api/v1/bills/daily-summary:本地日界折 UTC 窗口的当日消费聚合。"""
 
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -70,7 +67,7 @@ class TestDailySummary:
     async def test_decimal_sum_precision(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """0.01 级金额累加 10 次无浮点误差(0.10 而非 0.09999…)。"""
+        """0.01 级金额累加 10 次 = 0.10。"""
         headers, uid = await user_headers_with_id(client, "13900010002")
         await seed_bill_hourly(
             sm,
@@ -92,7 +89,7 @@ class TestDailySummary:
     async def test_disk_daily_counted(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """当日窗口内的数据盘日结计入 disk_total(UTC 零点落在东八区当日窗口内)。"""
+        """当日窗口内的数据盘日结计入 disk_total。"""
         headers, uid = await user_headers_with_id(client, "13900010005")
         await seed_disk_daily(sm, uid, datetime(2026, 8, 19, 0, 0, tzinfo=UTC), "3.50")
         await seed_disk_daily(sm, uid, datetime(2026, 8, 20, 0, 0, tzinfo=UTC), "3.50")
@@ -129,9 +126,9 @@ class TestMonthMatchesDays:
     async def test_daily_summaries_sum_to_month_summary(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """把整月的日账单加起来必须等于月账单:两个接口的日界口径必须一致。"""
+        """整月的日账单相加等于月账单。"""
         headers, uid = await user_headers_with_id(client, "13900010009")
-        # 边界四点(东八区):本地 7-31 23:00 在 8 月之外;8-01 00:00 与 8-31 23:00 在内
+        # 边界(东八区):7-31 23:00 在 8 月之外;8-01 00:00 与 8-31 23:00 在内
         await seed_bill_hourly(
             sm,
             uid,

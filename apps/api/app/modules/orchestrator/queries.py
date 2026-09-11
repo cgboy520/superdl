@@ -1,8 +1,4 @@
-"""编排查询聚合(由 service.py 门面再导出):
-
-billing 结算/对账只读接口(事件是计费主依据,经 service 层暴露)、
-管理端/巡检聚合查询、数据盘门面(模块边界)。
-"""
+"""编排查询聚合(由 service.py 再导出):billing 结算/对账只读接口、管理端/巡检聚合、数据盘门面。"""
 
 from collections.abc import Iterable
 from typing import Any
@@ -17,18 +13,11 @@ from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent
 
 
 async def lock_instance_for_billing(session: AsyncSession, instance_id: int) -> None:
-    """结算前先拿实例行锁,再读事件。同事务内重复加锁是 no-op。
-
-    transition() 首步 `UPDATE instances` 持该行写锁到提交,事件 created_at 在拿锁后生成。
-    先拿锁则:在飞的迁移已提交(读得到),或迁移被挡住(其事件落进下一个小时窗口)。
-    锁序 instance → bill_hourly → wallet,与 transition 一致。
-    """
+    """结算前 FOR UPDATE 锁实例行再读事件;锁序 instance → bill_hourly → wallet。"""
     await session.execute(
         select(Instance.id)
         .where(Instance.id == instance_id)
-        # FOR UPDATE(而非 FOR KEY SHARE):transition() 的普通 UPDATE 持 FOR NO KEY UPDATE,
-        # 与 KEY SHARE 在 PG 锁矩阵里互不冲突——只有 FOR UPDATE 才挡得住它,docstring
-        # 上面那段「迁移被挡住」的语义才成立
+        # 必须 FOR UPDATE(FOR KEY SHARE 挡不住 transition 的 UPDATE)
         .with_for_update()
     )
 
@@ -36,11 +25,8 @@ async def lock_instance_for_billing(session: AsyncSession, instance_id: int) -> 
 async def billing_events_before(
     session: AsyncSession, instance_id: int, before: Any
 ) -> list[tuple[Any, str | None, str, Any]]:
-    """实例截至某时刻的事件 (created_at, from_status, to_status, event_metadata),按发生序。
-
-    metadata 随行返回:node_lost/pod_lost 的退出边带 unready_since,结算据此把
-    计费截断到 Pod 首次不可用时点(平台责任时段不向用户计费)。
-    """
+    """实例截至某时刻的事件 (created_at, from_status, to_status, event_metadata),按发生序;
+    node_lost/pod_lost 边的 metadata 带 unready_since 供结算截断。"""
     return list(
         (
             await session.execute(
@@ -65,14 +51,8 @@ async def billing_events_before(
 async def billing_candidates(
     session: AsyncSession, window_start: Any, window_end: Any
 ) -> list[tuple[int, int, Any, int]]:
-    """小时结算候选:(instance_id, user_id, price_hourly, gpu_count)。
-
-    候选 = 当前 running 的实例 ∪ 自窗口起点以来离开过 running 的实例;每个已结束的
-    running 区间都有一条 from_status='running' 的离开事件,两条腿都走索引。
-
-    包周期实例在这里、也只在这里被跳过:它下单时已一次性预扣整段周期,再走小时结算
-    就是二次收费。
-    """
+    """小时结算候选:(instance_id, user_id, price_hourly, gpu_count) =
+    当前 running ∪ 窗口起点以来离开过 running 的实例;包周期实例只在此处跳过。"""
     running_now = select(Instance.id.label("iid")).where(Instance.status == sm_def.RUNNING)
     exited = (
         select(InstanceEvent.instance_id.label("iid"))
@@ -95,7 +75,7 @@ def _billing_row(i: Instance) -> tuple[int, int, Any, int]:
 
 
 async def instances_by_ids(session: AsyncSession, instance_ids: Iterable[int]) -> list[Instance]:
-    """按 id 精确取实例(不限状态,不走列表截断);下面各投影都从这一份取。"""
+    """按 id 批量取实例(不限状态);下面各投影都从这一份取。"""
     ids = list(instance_ids)
     if not ids:
         return []
@@ -141,9 +121,7 @@ async def list_running_instances_by_user(session: AsyncSession) -> dict[int, lis
 
 
 async def running_instances_of_user(session: AsyncSession, user_id: int) -> list[Instance]:
-    """单用户 running 实例。assert_can_afford 持钱包行锁期间调用:
-    全平台分组扫描(list_running_instances_by_user)会把锁持有时间拖到全表规模,
-    并发开户在钱包行上排队 × 全表扫描 = 雪崩。"""
+    """单用户 running 实例(钱包锁内路径,不扫全平台)。"""
     return list(
         (
             await session.execute(
@@ -158,7 +136,7 @@ async def running_instances_of_user(session: AsyncSession, user_id: int) -> list
 
 
 async def billable_disks_of_user(session: AsyncSession, user_id: int) -> list[DataDisk]:
-    """单用户计费态盘(口径同 disks.BILLABLE_STATUSES;锁内路径不扫全平台)。"""
+    """单用户计费态盘(口径同 disks.BILLABLE_STATUSES)。"""
     return list(
         (
             await session.execute(
@@ -179,7 +157,7 @@ async def list_instances_by_status(session: AsyncSession, status: str) -> list[I
 async def instance_disk_stats_by_user(
     session: AsyncSession, user_ids: list[int]
 ) -> dict[int, dict[str, int]]:
-    """管理端租户表:user_id → {instances, disk_gb},只聚合给定(本页)用户,不做全表 GROUP BY。"""
+    """管理端租户表:user_id → {instances, disk_gb},只聚合给定用户。"""
     if not user_ids:
         return {}
     inst_stmt = (
@@ -203,8 +181,7 @@ async def instance_disk_stats_by_user(
 
 
 async def deletion_leftovers(session: AsyncSession, user_id: int) -> dict[str, list[str]]:
-    """注销前置校验:未释放实例(status 不在 released/failed 终态)与
-    未删除数据盘(status != deleted)的 uuid 清单。空清单 = 资源已清空。"""
+    """注销前置校验:未释放实例(非 released/failed)与未删除数据盘的 uuid 清单。"""
     instances = (
         (
             await session.execute(
@@ -292,13 +269,9 @@ async def running_gpu_share_by_pool(session: AsyncSession) -> dict[str, float]:
 
 
 async def running_spot_gpus_by_pool(session: AsyncSession) -> dict[str, int]:
-    """池 → 正在跑的竞价实例占用的卡数合计(总览的「其中竞价(可回收)」那一段)。
-
-    与节点台账的 `gpu_used` 同一单位(device 计数)。但超卖档下这个数可能大于 gpu_used ——
-    多个共享实例共用一张卡时台账只记一张,调用方必须按「不超过已租」截断。
-    """
-    # 在 Python 侧聚合而不是 GROUP BY:PG 不认「SELECT spec ->> $1 … GROUP BY spec ->> $1」
-    # 里的参数化表达式相等(GroupingError),而竞价 running 实例是小集合
+    """池 → running 竞价实例占用卡数合计(device 计数);
+    超卖档可能大于台账 gpu_used,调用方按已租截断。"""
+    # Python 侧聚合(参数化 JSONB 表达式不能进 GROUP BY)
     rows = (
         (
             await session.execute(
@@ -319,7 +292,7 @@ async def running_spot_gpus_by_pool(session: AsyncSession) -> dict[str, int]:
 
 
 async def pool_by_instance(session: AsyncSession, instance_ids: Iterable[int]) -> dict[int, str]:
-    """实例 → 池标签(不限状态,已释放实例也算:超卖报表按池聚合近 24h 利用率用)。"""
+    """实例 → 池标签(不限状态,含已释放)。"""
     return {i.id: i.spec["pool_label"] for i in await instances_by_ids(session, instance_ids)}
 
 
@@ -329,8 +302,7 @@ async def pool_by_instance(session: AsyncSession, instance_ids: Iterable[int]) -
 async def instance_billing_snapshot(
     session: AsyncSession, instance_id: int
 ) -> tuple[int, int, Any, int] | None:
-    """单实例计费快照:(id, user_id, price_hourly, gpu_count);不存在返回 None。
-    缺口重放按 object_id 精确取价(结算缺口的补结必须是当时落库的快照价,非 SKU 现价)。"""
+    """单实例计费快照:(id, user_id, price_hourly, gpu_count);不存在返回 None(缺口重放用)。"""
     rows = await instances_by_ids(session, [instance_id])
     return _billing_row(rows[0]) if rows else None
 

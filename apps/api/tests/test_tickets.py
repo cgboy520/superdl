@@ -52,7 +52,7 @@ class TestCreate:
         assert detail["messages"][0]["body"] == "开机一直卡在 creating,请帮忙看看"
 
     async def test_idempotent_replay_returns_same(self, client: AsyncClient, sm):
-        """同 Idempotency-Key 重放返回同一单,不产生第二行,也不耗限流配额。"""
+        """同 Idempotency-Key 重放返回同一单,不产生第二行、不耗限流配额。"""
         headers = await user_headers(client, "13700000302")
         r1 = await create_ticket(client, headers, idem="tk-1")
         r2 = await create_ticket(client, headers, idem="tk-1")
@@ -66,7 +66,7 @@ class TestCreate:
     async def test_open_limit_10_conflict(self, client: AsyncClient, sm):
         """进行中(open/pending_staff/pending_user)工单 >10 时第 11 单 409。"""
         headers, uid = await user_headers_with_id(client, "13700000303")
-        # 直接播种 10 张进行中工单(绕过 5/h 限流:上限校验独立于限流)
+        # 直接播种 10 张进行中工单
         async with sm() as session:
             for i in range(10):
                 session.add(
@@ -94,7 +94,7 @@ class TestCreate:
         assert resp.json()["code"] == "RATE_LIMITED"
 
     async def test_new_ticket_triggers_admin_alert(self, client: AsyncClient, sm):
-        """新工单 → admin_alerts info 级告警(管理端总览告警流)。"""
+        """新工单 → admin_alerts info 级告警。"""
         headers = await user_headers(client, "13700000305")
         resp = await create_ticket(client, headers)
         assert resp.status_code == 201
@@ -207,7 +207,7 @@ class TestConversation:
         assert ticket["ticket_no"] in ticket_notes[0]["content"]
 
     async def test_user_reply_triggers_admin_alert(self, client: AsyncClient, sm):
-        """用户回复 → admin_alerts info(值班能看到待办)。"""
+        """用户回复 → admin_alerts info。"""
         headers, ticket = await self._open_ticket(client, "13700000314")
         resp = await client.post(
             f"/api/v1/tickets/{ticket['id']}/messages",
@@ -227,7 +227,7 @@ class TestConversation:
 class TestIdor:
     @pytest.mark.parametrize("probe", ["get", "message", "close"])
     async def test_other_users_ticket_invisible(self, client: AsyncClient, sm, probe: str):
-        """用户 B 对用户 A 的工单:GET / POST messages / close 全部 404(不暴露存在性)。"""
+        """用户 B 对用户 A 的工单:GET / POST messages / close 全部 404。"""
         ha = await user_headers(client, "13700000321")
         resp = await create_ticket(client, ha)
         assert resp.status_code == 201
@@ -274,12 +274,12 @@ class TestAdmin:
         assert [r["id"] for r in rows] == [t2["id"]]
 
     async def test_count_endpoint(self, client: AsyncClient, sm):
-        """待办计数轻端点(角标轮询):默认 pending_staff 口径,支持 status/category 过滤。"""
+        """待办计数端点:默认 pending_staff 口径,支持 status/category 过滤。"""
         headers = await user_headers(client, "13700000337")
         t1 = (await create_ticket(client, headers, category="instance")).json()
         await create_ticket(client, headers, category="billing", subject="发票咨询")
         ops = await admin_headers(sm, client, role="ops")
-        # 新建工单默认 open(待用户/客服动作前);计数口径随 status 参数
+        # 新建工单默认 open;计数口径随 status 参数
         open_count = (
             await client.get("/api/admin/v1/tickets/count", params={"status": "open"}, headers=ops)
         ).json()["count"]
@@ -299,14 +299,14 @@ class TestAdmin:
         default_count = (await client.get("/api/admin/v1/tickets/count", headers=ops)).json()[
             "count"
         ]
-        # 回复 → pending_user,不在待客服口径;另一条仍 open 也不在 pending_staff
+        # 回复 → pending_user,不在待客服口径
         assert default_count == 0
-        # "count" 不被当 ticket_id 解析(路由注册顺序守护)
+        # "count" 不被当 ticket_id 解析
         resp = await client.get("/api/admin/v1/tickets/count", headers=ops)
         assert resp.status_code == 200
 
     async def test_search_by_user_id_and_ticket_no(self, client: AsyncClient, sm):
-        """user_id/ticket_no 检索:替代固定截断 200 的翻找式定位。"""
+        """user_id/ticket_no 检索。"""
         headers = await user_headers(client, "13700000335")
         t1 = (await create_ticket(client, headers, category="instance")).json()
         t2 = (await create_ticket(client, headers, category="billing", subject="账单咨询")).json()
@@ -364,7 +364,7 @@ class TestStaleTicketPatrol:
         assert len(stale) == 1
         assert stale[0].severity == "warning"
         assert stale[0].user_id is None  # 平台级告警
-        # 24h 内第二次巡检不重复(dedup_key 唯一约束兜底,整个生命周期只报一次)
+        # 第二次巡检不重复(dedup_key)
         assert await stale_ticket_patrol(sm) == 0
 
     async def test_fresh_pending_staff_not_alerted(self, client: AsyncClient, sm):

@@ -116,7 +116,7 @@ _ORDER_CHANNEL_LABEL: dict[str, dict[str, str]] = {
     "en-US": {"wechat": "WeChat Pay", "alipay": "Alipay", "mock": "Mock"},
 }
 
-# 状态/渠道文案与 packages/ui shared.json 同一口径(管理端列表页标签)
+# 状态/渠道文案与 packages/ui shared.json 同一口径
 _REFUND_STATUS_LABEL: dict[str, dict[str, str]] = {
     "zh-CN": {
         "pending": "待审批",
@@ -305,11 +305,7 @@ def stream_admin_refunds_csv(
 
 
 def mask_invoice_identity(value: str) -> str:
-    """发票抬头/邮箱的默认脱敏(复用管理端实名脱敏 mask_id_name:留首字符,其余打星)。
-
-    抬头在个人票上就是自然人姓名,邮箱是可直接触达的联系方式;两者的明文批量读取
-    必须是显式动作(reveal + 事由 + 审计),不能是打开列表页/点一次导出的副作用。
-    """
+    """发票抬头/邮箱的默认脱敏(复用 mask_id_name:留首字符,其余打星)。"""
     from app.modules.account import service as account_service
 
     return account_service.mask_id_name(value) if value else value
@@ -327,9 +323,7 @@ def stream_admin_invoices_csv(
 ) -> AsyncIterator[str]:
     """管理端发票申请 CSV(降序;筛选口径与 GET /admin/v1/invoices 一致)。
 
-    reveal=False(默认)下抬头与邮箱脱敏;明文导出由调用方以 reveal + 必填事由开闸并落审计。
-    row_counter 给调用方回读**实际吐出的行数**(审计里要落条数):流是懒的,函数返回时
-    一行都还没生成,只能由 row() 边吐边记,审计行在响应写完后才构建,读到的即最终值。
+    reveal=False(默认)脱敏抬头与邮箱;row_counter 由 row() 边吐边记实际行数,供调用方落审计。
     """
     stmt = select(InvoiceRequest)
     if status:

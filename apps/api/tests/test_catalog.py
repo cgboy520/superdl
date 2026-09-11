@@ -32,8 +32,7 @@ class TestMarket:
 
 class TestSellablePerGpu:
     def test_decimal_floor_division(self):
-        """每卡可售数必须走 Decimal 整除:float 会把 100×1.15 算成 114.999…→ 22,
-        同一 SKU 市场库存与管理端容量预览各差一台(挂了 = 两处口径分叉)。"""
+        """每卡可售数走 Decimal 整除,市场库存与管理端容量预览同口径。"""
         from app.modules.catalog.service import sellable_per_gpu
 
         assert sellable_per_gpu("hami", 5, Decimal("1.15")) == 23
@@ -61,7 +60,7 @@ class TestAdminSku:
         sku_id = resp.json()["id"]
         assert resp.json()["status"] == "off"  # 默认不上架
 
-        # 台账无匹配节点:force 上架(硬校验 409 见 test_sku_capacity.TestSellableGate)
+        # 台账无匹配节点:force 上架
         resp = await client.patch(
             f"/api/admin/v1/skus/{sku_id}?force=true",
             json={"status": "on", "price_hourly": "2.8000", "reason": "上架调价"},
@@ -73,11 +72,7 @@ class TestAdminSku:
         assert any(s["id"] == sku_id for s in market)
 
     async def test_isolation_change_only_when_off_sale(self, client: AsyncClient, sm):
-        """在售规格不许改池、也不许改 MIG 切片;下架后两者可一起改。
-
-        挂了说明:在售 SKU 的池与切片能被静默改掉(展示名、规格列与性能承诺随之变),
-        新下单的人拿到的不是市场页上那件商品。
-        """
+        """在售规格不许改池与 MIG 切片;下架后两者可一起改。"""
         await seed_node_spec(sm, pool_label="mig", gpu_model="H100")
         headers = await admin_headers(sm, client)
         body = {
@@ -93,14 +88,14 @@ class TestAdminSku:
         }
         resp = await client.post("/api/admin/v1/skus", json=body, headers=headers)
         sku_id = resp.json()["id"]
-        # 台账有 mig × H100 Ready:直接上架成功(无需 force)
+        # 台账有 mig × H100 Ready:直接上架
         resp = await client.patch(
             f"/api/admin/v1/skus/{sku_id}",
             json={"status": "on", "reason": "上架"},
             headers=headers,
         )
         assert resp.status_code == 200, resp.text
-        # 在售改池 → 409,force 也不放行(这不是「容量不足」而是「换了商品」)
+        # 在售改池 → 409,force 也不放行
         for qs in ("", "?force=true"):
             resp = await client.patch(
                 f"/api/admin/v1/skus/{sku_id}{qs}",
@@ -109,7 +104,7 @@ class TestAdminSku:
             )
             assert resp.status_code == 409, resp.text
             assert resp.json()["message_key"] == "catalog.isolationChangeNeedsOffSale"
-        # 在售改切片同样 409:切片名就是市场页规格列展示的内容
+        # 在售改切片同样 409
         resp = await client.patch(
             f"/api/admin/v1/skus/{sku_id}",
             json={"mig_profile": "2g.20gb", "reason": "换切片"},
@@ -124,7 +119,7 @@ class TestAdminSku:
             headers=headers,
         )
         assert resp.status_code == 200, resp.text
-        # 下架后可改池,但必须连切片一起改:只改池会被「切片与池不符」拦下
+        # 下架后可改池,须连切片一起改
         resp = await client.patch(
             f"/api/admin/v1/skus/{sku_id}",
             json={"status": "off", "reason": "下架"},
@@ -147,11 +142,7 @@ class TestAdminSku:
         assert resp.json()["pool_label"] == "hami" and resp.json()["mig_profile"] is None
 
     async def test_update_colliding_business_key_is_409(self, client: AsyncClient, sm):
-        """改 SKU 撞到另一条的业务唯一键给 409,不是漏出 500。
-
-        挂了说明:唯一键的七列里有五列(池 / 切片 / 算力份额 / vCPU / 内存)可改,
-        运营把 A 改成与 B 同规格时会看到「服务器错误」而不是「该规格已存在」。
-        """
+        """改 SKU 撞到另一条的业务唯一键 → 409。"""
         headers = await admin_headers(sm, client)
         base = {
             "gpu_model": "L40S",
@@ -182,11 +173,7 @@ class TestAdminSku:
         assert resp.json()["message_key"] == "catalog.skuBusinessKeyExists"
 
     async def test_tier_pool_must_pair(self, client: AsyncClient, sm):
-        """档位与池必须配对。
-
-        挂了说明:能建出 tier=dedicated 却挂 hami 池的 SKU —— 卖的是整卡直通,
-        跑的是软切分超卖(隔离机制的派发键是池,见 core/gpu_adapter)。
-        """
+        """档位与池必须配对。"""
         headers = await admin_headers(sm, client)
         base = {
             "gpu_model": "RTX4090",
@@ -233,8 +220,7 @@ class TestAdminSku:
         assert resp.json()["message_key"] == "catalog.migProfileMismatch"
 
     async def test_shared_tier_allowed_pools_switch(self, client: AsyncClient, sm, monkeypatch):
-        """过渡开关:shared_tier_allowed_pools 摘掉 hami 后,共享档只能建 MIG 池 SKU;
-        置空则共享档整体停售。挂了说明:HAMi 软切分池在运营已禁售后仍能开出来卖。"""
+        """shared_tier_allowed_pools 摘掉 hami 后共享档只能建 MIG 池 SKU;置空则整体停售。"""
         from app.core.config import get_settings
 
         monkeypatch.setattr(get_settings(), "shared_tier_allowed_pools", "mig")
@@ -283,7 +269,7 @@ class TestAdminSku:
 
 
 class TestPriceFloor:
-    """时价必须满足 2 位小数语义:入账恒舍成 ¥0.00 的「免费价」与会漂移的 4 位价都拦在上架/改价。"""
+    """时价上架/改价拦免费价与超 2 位小数价。"""
 
     def test_min_billable_price_accepted(self):
         from app.modules.catalog.service import _checked_price
@@ -292,8 +278,7 @@ class TestPriceFloor:
         assert _checked_price(Decimal("1.6800")) == Decimal("1.6800")
 
     def test_sub_cent_precision_rejected(self):
-        """按小时计费的 SKU 超过 2 位小数即拒:逐小时独立舍入会单向漂移
-        (0.0051 被按 0.01/时近翻倍收;1.2345 满月少收 0.36%)。"""
+        """按小时计费的 SKU 超过 2 位小数即拒。"""
         from app.modules.catalog.service import _checked_price
 
         with pytest.raises(AppError) as exc:

@@ -63,7 +63,7 @@ async def _cpu_capacity_preview(
 
 @router.get("/skus", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_list_skus(session: DbSession) -> list[SkuAdminOut]:
-    """SKU 列表,组装台账容量与占用列(catalog+nodes+orchestrator 三 service 汇合点)。"""
+    """SKU 列表,组装台账容量与占用列。"""
     skus = await catalog_service.admin_list_skus(session)
     specs = await nodes_service.ready_specs(session)
     sold = await orchestrator_service.active_gpu_counts_by_sku(session)
@@ -75,7 +75,7 @@ async def admin_list_skus(session: DbSession) -> list[SkuAdminOut]:
             sp.gpu_count for sp in nodes_service.matching_specs(specs, sku.pool_label, wanted)
         )
         if item.capacity_gpus:
-            # 已售名义算力(卡×pct/100)对物理与对可售(×超卖)的两个比值,2 位小数
+            # 已售名义算力(卡×pct/100)对物理与对可售(×超卖)的比值,2 位小数
             nominal = Decimal(sold.get(sku.id, 0)) * Decimal(sku.gpu_cores_pct) / Decimal(100)
             cap = Decimal(item.capacity_gpus)
             item.actual_oversell = str(
@@ -101,10 +101,9 @@ async def sku_capacity_preview(
     vcpu: int | None = None,
     mem_gb: int | None = None,
 ) -> CapacityPreviewOut:
-    """SKU 表单实时容量预览(纯台账;创建仍软校验,上架才硬校验)。
+    """SKU 表单实时容量预览(纯台账)。
 
-    gpu_model 留空 = CPU 规格预览:只按池匹配节点,可售数走 vCPU/内存上限口径
-    (`catalog.sellable_cpu_slots`,与市场库存同一份算法),不报「型号未识别」。
+    gpu_model 留空 = CPU 规格预览:只按池匹配节点,可售数走 `catalog.sellable_cpu_slots`。
     """
     if not gpu_model:
         return await _cpu_capacity_preview(session, pool_label, vcpu, mem_gb)
@@ -149,7 +148,7 @@ async def admin_sku_impact(sku_id: int, session: DbSession) -> SkuImpactOut:
 @router.post("/skus", dependencies=[require_roles("ops")], status_code=201)
 async def admin_create_sku(body: SkuCreate, session: DbSession, request: Request) -> SkuAdminOut:
     sku = await catalog_service.admin_create_sku(session, body)
-    # 记完整初始值(尤其单价),供后续改价对照
+    # 记完整初始值,供后续改价对照
     set_audit_target(
         request,
         f"sku:{sku.id}",
@@ -233,7 +232,7 @@ async def admin_update_image(
 async def admin_delete_image(
     image_id: int, body: ImageDeleteRequest, session: DbSession, request: Request
 ) -> None:
-    """删除目录条目(cache 行 CASCADE;运行中实例存 image_ref 快照不受影响)。reason 必填。"""
+    """删除目录条目(cache 行 CASCADE;运行中实例的 image_ref 快照不受影响)。reason 必填。"""
     img = await catalog_service.get_image(session, image_id)
     set_audit_target(
         request, f"image:{image_id}", detail={"image_ref": img.image_ref, "reason": body.reason}
@@ -245,7 +244,7 @@ async def admin_delete_image(
 async def admin_prewarm_image(
     image_id: int, session: DbSession, request: Request
 ) -> PrewarmEnqueuedOut:
-    """立即预热:非 cached 行置 pending 并同事务入队(请求路径零 K8s 调用)。"""
+    """立即预热:非 cached 行置 pending 并同事务入队。"""
     enqueued = await catalog_service.admin_prewarm_image(session, image_id)
     set_audit_target(request, f"image:{image_id}", detail={"enqueued": enqueued})
     return PrewarmEnqueuedOut(enqueued=enqueued)

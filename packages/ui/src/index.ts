@@ -1,6 +1,6 @@
 export * from "./tokens";
 export * from "./status";
-// format 显式点名:SharedT(t 签名收窄类型)与模块内私有的 currencySymbol/tzSuffix 不进包面
+// format 显式点名,currencySymbol/tzSuffix 不进包面
 export {
   formatMoney,
   formatHourlyPrice,
@@ -30,7 +30,7 @@ export {
   maskPhone,
 } from "./format";
 export type { PeriodQuote, Formatters } from "./format";
-// apiError 只暴露入口函数:ApiErrorLike/LooseT 是实现细节(应用侧经 useApiErrorText 单点收窄)
+// apiError 只暴露入口函数
 export { apiErrorText } from "./apiError";
 export * from "./gpuSpecs";
 export * from "./idemKey";

@@ -1,5 +1,4 @@
-/** 联系方式卡(site-config support 组驱动):/help 与 /support 两处共用。
- *  加载失败绝不伪装成「联系方式未配置」;首响未就绪不闪「未配置」。 */
+/** 联系方式卡(site-config support 组驱动):/help 与 /support 共用。加载失败不伪装成「未配置」;未就绪不闪「未配置」。 */
 
 import { fontSize } from "@superdl/ui";
 import { DataErrorAlert } from "@superdl/ui/components";
@@ -31,7 +30,7 @@ export function ContactCard({
   return (
     <Card title={title} style={style}>
       {siteQ.isError ? (
-        // 加载失败绝不伪装成「联系方式未配置」
+        // 加载失败不伪装成「联系方式未配置」
         <DataErrorAlert onRetry={() => void siteQ.refetch()} />
       ) : email || wechat ? (
         <Space orientation="vertical" size={12} style={{ width: "100%" }}>

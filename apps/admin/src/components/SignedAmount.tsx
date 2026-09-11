@@ -1,4 +1,4 @@
-/** 带正负色的金额:正数绿;负数默认红(流水表传 highlightNegative={false} 保持默认色)。 */
+/** 带正负色的金额:正数绿;负数默认红(highlightNegative={false} 保持默认色)。 */
 
 import { adminColors } from "@superdl/ui";
 

@@ -34,21 +34,20 @@ async def _load(session: AsyncSession, task: OutboxTask) -> Instance | None:
 async def _create_with_port_recovery(session: AsyncSession, instance: Instance) -> None:
     """建 Pod/Service/路由;NodePort 被集群其它对象占用时把端口标 blocked 后重试。"""
     orch = get_orchestrator()
-    # 不开 SSH 的实例不进端口池:端口池只有 30000–32767 一段(与 K8s NodePort 同段),
-    # 是全平台硬上限
+    # 不开 SSH 的实例不进端口池
     if instance.with_ssh:
         instance.ssh_port = await ensure_port(session, instance)
     await orch.ensure_namespace(instance.k8s_namespace)
-    # Harbor 拉取凭据:按生效配置托管到租户 ns(指纹相同不覆写),未配机器人则 Pod 不引用
+    # Harbor 拉取凭据托管到租户 ns(指纹相同不覆写);未配机器人则 Pod 不引用
     pull_secret = await ensure_registry_pull_secret(session, instance.k8s_namespace)
     try:
         await orch.create_instance(
             await build_pod_spec_with_cluster(session, instance, image_pull_secret=pull_secret)
         )
     except NodePortTaken as exc:
-        # 先取 id 再回滚:rollback 后对象过期,访问属性会触发异步上下文外的懒加载
+        # 先取 id 再回滚(rollback 后对象过期)
         instance_id = instance.id
-        # 先回滚再标记:本事务未提交的同主键 PortAllocation 会锁死 block_port 的独立事务
+        # 先回滚再标记(block_port 走独立事务)
         await session.rollback()
         await block_port(
             get_sessionmaker(),
@@ -60,14 +59,12 @@ async def _create_with_port_recovery(session: AsyncSession, instance: Instance) 
 
 
 async def _provision(session: AsyncSession, task: OutboxTask, expected: str) -> None:
-    """create/start 同体:建 Pod/Service/路由;状态推进交给 reconciler
-    (Pod Ready → running / 超时 → failed)。"""
+    """create/start 同体:建 Pod/Service/路由;状态推进交给 reconciler。"""
     instance = await _load(session, task)
     if instance is None or instance.status != expected:
         return  # 已失败/已推进,幂等跳过
     await _create_with_port_recovery(session, instance)
-    # 建 Pod 耗时可能跨过超时线:FOR UPDATE 重读,已被 reconciler 推进(超时 failed +
-    # 端口已回收)则回滚本事务——failed 实例不能占端口;已建出的 Pod 由泄漏回收收敛
+    # FOR UPDATE 重读:已被 reconciler 推进则回滚本事务,Pod 由泄漏回收收敛
     fresh = await session.get(Instance, instance.id, with_for_update=True)
     if fresh is None or fresh.status != expected:
         await session.rollback()
@@ -84,8 +81,7 @@ async def handle_start(session: AsyncSession, task: OutboxTask) -> None:
 
 
 async def _delete_pod(session: AsyncSession, task: OutboxTask, expected: str) -> None:
-    """stop/release 同体:删 Pod/Service/Ingress;后续边(stopped 的尾账 / released 的
-    端口回收与实例盘回收入队)由 reconciler 观察到 Pod 消失后完成。"""
+    """stop/release 同体:删 Pod/Service/Ingress;后续边由 reconciler 观察到 Pod 消失后完成。"""
     instance = await _load(session, task)
     if instance is None or instance.status != expected:
         return
@@ -97,14 +93,11 @@ async def handle_stop(session: AsyncSession, task: OutboxTask) -> None:
     await _delete_pod(session, task, sm_def.STOPPING)
 
 
-# 重启要跨过 Pod 的优雅删除期(terminationGracePeriodSeconds=30),期间靠抛错退避重试;
-# 预算放宽到 8 次 ≈ 40 分钟
+# 重试预算 8 次 ≈ 40 分钟,覆盖 Pod 优雅删除期
 @outbox_handler("instance.restart", retry=RetryPolicy(max_retries=8))
 async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
-    """重启:stopping → 删 Pod → 等对象真正消失 → stopped(尾账) → 余额校验 → starting → 建 Pod。
-
-    单事务内推进多个边,每个边都留事件;崩溃重试按当前状态续跑。
-    """
+    """重启:stopping → 删 Pod → 等对象消失 → stopped(尾账)→ 余额校验 → starting → 建 Pod;
+    崩溃重试按当前状态续跑。"""
     instance = await _load(session, task)
     if instance is None:
         return
@@ -113,17 +106,13 @@ async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
         await orch.delete_instance(instance.k8s_namespace, instance.uuid)
         st = await orch.get_status(instance.k8s_namespace, instance.uuid)
         if st.exists:
-            # 优雅删除期内对象仍在 etcd,同名重建必撞 409。
-            # 抛错回滚:实例留在 stopping,由 outbox 退避重试续跑。
+            # 对象仍在:抛错回滚,outbox 退避重试
             raise RuntimeError(f"pod {instance.uuid} still terminating; restart resumes on retry")
         await transition(session, instance, sm_def.STOPPED, reason="restart", actor="system")
-        # 尾账与 stopped 边先单独落库:后续建 Pod 撞 NodePortTaken 会 rollback 本事务,
-        # 不分开提交会把已完成的迁移和尾账一起回滚掉(尾账丢失 = 少计停机前费用)
+        # 尾账与 stopped 边先单独提交
         await session.commit()
     if instance.status == sm_def.STOPPED:
-        # 锁序 instance → wallet:余额校验(钱包锁)后还有 transition(实例写锁),
-        # 先钱包后实例会与停机尾账/结算链路(instance→bill→wallet)交叉成死锁对。
-        # 锁内重读:等锁期间 reconciler 可能已推进本实例
+        # 锁序 instance → wallet;锁内重读
         fresh_stopped = await session.get(
             Instance, instance.id, with_for_update=True, populate_existing=True
         )
@@ -132,8 +121,7 @@ async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
         instance = fresh_stopped
         try:
             if instance.market == MARKET_SUBSCRIPTION:
-                # 与开机同口径(service.start_instance):包周期已预付整段周期,重启不看余额;
-                # 但周期已过不能再开,否则已到期实例可借重启绕过开机门禁继续运行
+                # 与 service.start_instance 同口径:包周期不看余额,只看周期未过
                 await billing_service.assert_subscription_active(session, instance.id)
             else:
                 estimate = hourly_cost(instance.price_hourly, instance.gpu_count)
@@ -142,7 +130,7 @@ async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
                 )
         except AppError as exc:
             if exc.code is ErrorCode.INSUFFICIENT_BALANCE:
-                # 余额不足不走重试:实例停在 stopped,发通知说明,充值后由用户自行开机
+                # 余额不足不重试:停在 stopped 并通知
                 logger.warning("restart_aborted_insufficient_balance", instance_id=instance.id)
                 await notify_service.notify(
                     session,
@@ -159,7 +147,7 @@ async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
                 )
                 return
             if exc.code is ErrorCode.SUBSCRIPTION_EXPIRED:
-                # 包周期到期同样不走重试:实例停在 stopped,续费后由用户自行开机
+                # 包周期到期不重试:停在 stopped 并通知
                 logger.warning("restart_aborted_subscription_expired", instance_id=instance.id)
                 await notify_service.notify(
                     session,
@@ -174,13 +162,12 @@ async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
                 return
             raise
         await transition(session, instance, sm_def.STARTING, reason="restart", actor="system")
-        instance.unready_since = None  # 新一轮就绪观察从零起算(同 start_instance)
-        # STARTING 先落库再建 Pod:建 Pod 期间 DB 已是 starting,泄漏回收对在途状态
-        # 有宽限,不会在「DB stopped + Pod 已建」窗口把实例当泄漏强删
+        instance.unready_since = None  # 同 start_instance
+        # STARTING 先落库再建 Pod
         await session.commit()
         await _create_with_port_recovery(session, instance)
     elif instance.status == sm_def.STARTING:
-        # 承接分支:上次在建 Pod 前/中崩溃,任务重试时状态已是 starting——直接续建
+        # 重试承接:已是 starting,直接续建
         await _create_with_port_recovery(session, instance)
 
 
@@ -189,13 +176,11 @@ async def handle_release(session: AsyncSession, task: OutboxTask) -> None:
     await _delete_pod(session, task, sm_def.RELEASING)
 
 
-# 等 Pod 消失再删实例盘:预算 12×30s ≈ 1.5h,覆盖长 Terminating
+# 等 Pod 消失再删实例盘:预算 12×30s ≈ 1.5h
 @outbox_handler("instance.disk_cleanup", retry=RetryPolicy(max_retries=12, backoff_base_seconds=30))
 async def handle_instance_disk_cleanup(session: AsyncSession, task: OutboxTask) -> None:
-    """实例盘延迟回收(first_boot 失败的 FAILED 实例 / 释放收尾的 RELEASED 实例入队)。
-
-    delete_instance_disk 的前置条件是 Pod 已消失(pvc-protection 会挂起 LV 回收),Pod 还在
-    就抛错退避重试;死信后由 reconciler 的死信重派兜底,不会残留孤儿 LV。"""
+    """实例盘延迟回收(first_boot 失败的 FAILED / 释放收尾的 RELEASED):Pod 还在就抛错重试;
+    死信由 reconciler 重派。"""
     instance = await _load(session, task)
     if instance is None or instance.status not in (sm_def.FAILED, sm_def.RELEASED):
         return  # 已被恢复等路径推进,无需再清
@@ -208,8 +193,7 @@ async def handle_instance_disk_cleanup(session: AsyncSession, task: OutboxTask) 
 
 @outbox_handler("disk.quota", retry=RetryPolicy(max_retries=8, backoff_base_seconds=30))
 async def handle_disk_quota(session: AsyncSession, task: OutboxTask) -> None:
-    """下发 JuiceFS 目录硬配额(CLI Job,纯元数据)。成功置 quota_synced;
-    预算耗尽转死信后由 reconciler 周期重派(配额永不留缺口)。"""
+    """下发 JuiceFS 目录硬配额(CLI Job),成功置 quota_synced;死信由 reconciler 重派。"""
     from app.core.config import get_settings
     from app.modules.orchestrator.models import DataDisk
 
@@ -222,12 +206,11 @@ async def handle_disk_quota(session: AsyncSession, task: OutboxTask) -> None:
     logger.info("disk_quota_synced", disk_id=disk.id, capacity_gb=disk.size_gb)
 
 
-# 擦盘是轮询集群 Job 完成而非一次性调用,预算放宽到约 1.5 小时
+# 轮询集群 Job 完成,预算约 1.5 小时
 @outbox_handler("disk.wipe", retry=RetryPolicy(max_retries=12, backoff_base_seconds=30))
 async def handle_disk_wipe(session: AsyncSession, task: OutboxTask) -> None:
-    """真实擦除 JuiceFS 子路径(集群侧 Job)后置 deleted。
-    wipe_disk 幂等:Job 未完成抛错 → outbox 退避重试,完成后本 handler 收尾状态。
-    擦除前先摘除目录配额(失败仅告警:残留配额条目指向将被擦除的目录,无实际影响)。"""
+    """擦除 JuiceFS 子路径(集群侧 Job,未完成抛错重试)后置 deleted;
+    擦除前摘除目录配额(失败仅告警)。"""
     from app.core.config import get_settings
     from app.modules.orchestrator.models import DataDisk
 
@@ -242,8 +225,7 @@ async def handle_disk_wipe(session: AsyncSession, task: OutboxTask) -> None:
     try:
         await get_orchestrator().wipe_disk(namespace, disk.juicefs_subpath)
     except Exception as exc:
-        # 租户 ns 不存在(从未建过实例即删盘):无物可擦,视为完成而非死信。
-        # ApiException 不能 import(业务代码不碰 kubernetes 客户端),按 status 属性鸭子判定。
+        # 租户 ns 不存在(404)视为完成;按 status 属性鸭子判定,不 import kubernetes
         if getattr(exc, "status", None) != 404:
             raise
         logger.warning("disk_wipe_namespace_missing", disk_id=disk.id, namespace=namespace)

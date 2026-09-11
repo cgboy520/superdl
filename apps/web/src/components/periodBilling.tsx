@@ -1,8 +1,4 @@
-/**
- * 包周期(预付)共用件:折扣读取、本地报价、量词与费用明细三行。
- * 市场页、创建页、续费 modal 三处共用一份折扣与口径(与后端 core/pricing.py 同源)。
- * 本地报价只用于下单前的预览,成交金额一律以接口返回的 quote 为准,明细区必须挂 hint 说清这点。
- */
+/** 包周期(预付)共用件:折扣读取、本地报价、量词与费用明细三行;市场页 / 创建页 / 续费 modal 共用,与后端 core/pricing.py 同源。本地报价只作预览,成交金额以接口 quote 为准,明细区须挂 hint。 */
 
 import {
   fontSize,
@@ -18,7 +14,7 @@ import { useTranslation } from "react-i18next";
 import { usePolicies } from "../api/queries";
 import { useFormat } from "@superdl/ui";
 
-/** 四个周期的折扣百分数(80 = 8 折);policies 未就绪时返回 undefined,调用方不出报价。 */
+/** 四个周期的折扣百分数(80 = 8 折);policies 未就绪返回 undefined。 */
 export function usePeriodDiscounts(): Record<BillingPeriod, number> | undefined {
   const { data: policies } = usePolicies();
   return useMemo(
@@ -40,7 +36,7 @@ export function discountOff(pct: number): number {
   return 100 - pct;
 }
 
-/** 本地报价:折扣未就绪就不报价,不按硬编码折扣估算。 */
+/** 本地报价:折扣未就绪不报价。 */
 export function periodQuoteOf(
   baseHourly: string | null | undefined,
   opts: { units: number; period: BillingPeriod; periodCount: number },
@@ -86,7 +82,7 @@ export function PeriodQuoteRows({
   /** GPU 卡数;CPU 规格传 0 并置 cpu */
   gpuCount: number;
   cpu?: boolean;
-  /** 「以创建页最终报价为准」这类口径提示,由调用方按场景给 */
+  /** 口径提示(「以创建页最终报价为准」),由调用方按场景给 */
   hint?: string;
 }) {
   const { t } = useTranslation(["web", "shared"]);

@@ -6,7 +6,7 @@
  */
 
 /**
- * 归档草稿的请求体:原因必填(审计落库,与 ReasonAction 全站口径一致)。
+ * 归档草稿的请求体:原因必填。
  */
 export interface LegalDocVersionArchive {
   /**

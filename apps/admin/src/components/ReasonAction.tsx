@@ -15,11 +15,11 @@ interface Props {
   confirmText: string;
   danger?: boolean;
   disabled?: boolean;
-  /** 禁用原因(tooltip)。无权限/状态不符时必填 */
+  /** 禁用原因(tooltip) */
   disabledReason: string;
-  /** 触发按钮尺寸(表格内默认 small;卡片 extra 等场景传 middle) */
+  /** 触发按钮尺寸(默认 small) */
   size?: ButtonProps["size"];
-  /** 返回字符串则作为成功提示(用于回显影响面,如「已停 N 台」),否则用通用文案 */
+  /** 返回字符串作成功提示,否则用通用文案 */
   onSubmit: (reason: string) => Promise<string | void>;
 }
 
@@ -39,7 +39,7 @@ export function ReasonAction({
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [loading, setLoading] = useState(false);
-  // 原因快照:第一步弹窗 destroyOnHidden 销毁后 getFieldsValue 只回已挂载字段,第二步提交须从快照取
+  // 原因快照:第二步提交从快照取
   const [reasonSnapshot, setReasonSnapshot] = useState("");
   const [form] = Form.useForm<{ reason: string }>();
 
@@ -80,7 +80,7 @@ export function ReasonAction({
           } catch {
             return;
           }
-          // 先关原因弹窗再开二次确认:两层 Modal 叠开时 ESC/蒙层会误关底下那层
+          // 先关原因弹窗再开二次确认
           setReasonSnapshot(form.getFieldValue("reason") as string);
           setOpen(false);
           setConfirming(true);
@@ -101,12 +101,12 @@ export function ReasonAction({
       <Modal
         title={t("common.secondConfirm")}
         open={confirming}
-        // 提交飞行中禁止关闭:蒙层/ESC 关弹窗而请求仍在途,用户会误以为没提交而重试
+        // 提交在途禁止关闭
         mask={{ closable: !loading }}
         keyboard={!loading}
         onCancel={() => {
           if (loading) return;
-          // 取消返回第一步重开原因弹窗(原因留在 form store,不丢),而非终结整个流程
+          // 取消返回第一步(原因保留)
           setConfirming(false);
           setOpen(true);
         }}

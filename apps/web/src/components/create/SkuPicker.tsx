@@ -1,6 +1,4 @@
-/** 紧凑版规格选择器(部署页内嵌):已选时折叠成一行回显 + GPU 数量,点「更换规格」展开
- *  GPU / CPU 分栏 + 型号 / 档位 chips + SKU 表 radio(与市场页同一套列与库存口径)。
- *  库存不足所选卡数的行灰置不隐藏。 */
+/** 紧凑版规格选择器(部署页内嵌):已选时折叠成一行回显 + GPU 数量,「更换规格」展开 GPU / CPU 分栏 + chips + SKU 表 radio(与市场页同一套列与库存口径);库存不足所选卡数的行灰置不隐藏。 */
 
 import type { SkuMarketOut } from "@superdl/api-client";
 import { fontSize, GPU_COUNT_STEPS, skuTierMap, skuVariant, useFormat } from "@superdl/ui";
@@ -36,7 +34,7 @@ export function SkuPicker({
   onChange: (sku: SkuMarketOut | undefined) => void;
   gpuCount: number;
   onGpuCount: (n: number) => void;
-  /** 竞价档选中时传入:表格价格列改显折后价 */
+  /** 竞价档选中时传入:价格列改显折后价 */
   spot?: SpotPolicy;
 }) {
   const { t } = useTranslation(["web", "shared"]);
@@ -124,7 +122,7 @@ export function SkuPicker({
           { value: "cpu", label: t("market.kindCpu") },
         ]}
         onChange={(v) => {
-          // 换栏必须清选中:上一栏的行不在本栏表里
+          // 换栏清选中
           setKind(v);
           onChange(undefined);
         }}

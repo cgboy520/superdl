@@ -1,18 +1,12 @@
 """发票闭环:用户按账期申请 → 财务人工开票(填发票号)/驳回 → 站内信告知。
 
-关键不变量:
-- 金额只由服务端计算:某账期可开票额 = Σ(该账期 paid 充值订单,不含渠道冲正)
-  − Σ(该账期订单的退款:已打款 + 在途 pending/approved,一律按关联订单 paid_at 归属,不按打款时间)
-  − Σ(该账期 submitted + issued 申请)。客户端只提交账期与抬头,提交金额无效。
-- 按账期合并开具,一个自然月一张;仅可申请 < 当前北京月的账期(本月 paid 订单
-  还可能变,不当月开票)。
-- 同一 (user_id, period) 仅一条非 rejected 申请(部分唯一索引兜底并发);
-  rejected 后同账期可重新申请。
-- 与退款联动(两道闸):
-  已开票(issued)账期的 paid 订单不可申请退款,须先红冲(refunds._order_has_issued_invoice,
-  申请时对该账期的活跃申请行 FOR UPDATE,与本模块 issue_invoice 的行锁串行);
-  开票(issue_invoice)行锁内按当前口径重算金额(在途退款已预扣),申请到开票之间发生退款
-  即 409 驳回重申。登记打款不复查账期是否已开票:能走到打款的退款早已从票额里扣掉。
+不变量:
+- 金额只由服务端计算:可开票额 = Σ(账期 paid 订单,不含渠道冲正) − Σ(账期订单退款:已打款 + 在途,
+  按订单 paid_at 归属) − Σ(账期 submitted + issued 申请)。
+- 按北京自然月合并开具,一月一张;仅可申请 < 当前月的账期。
+- 同一 (user_id, period) 仅一条非 rejected 申请(部分唯一索引);rejected 后可重新申请。
+- 与退款两道闸:issued 账期的 paid 订单不可申请退款(refunds._order_has_issued_invoice,
+  与 issue_invoice 行锁串行);开票行锁内按当前口径重算金额,不符即 409。
 """
 
 from datetime import datetime
@@ -36,12 +30,12 @@ from app.modules.notify import service as notify_service
 logger = get_logger(__name__)
 
 ACTIVE_STATUSES = ("submitted", "issued")
-# 从可开票额扣除的退款状态:已打款 + 在途(pending/approved);rejected/cancelled 不扣
+# 从可开票额扣除的退款状态:已打款 + 在途;rejected/cancelled 不扣
 REFUND_WITHHELD_STATUSES = ("pending", "approved", "paid")
 
 
 def beijing_period(dt: datetime) -> str:
-    """UTC 时刻所属的北京账期(YYYY-MM)。北京无夏令时,固定 +8 偏移。"""
+    """UTC 时刻所属的北京账期(YYYY-MM,固定 +8)。"""
     return f"{dt + BILLING_DAY_OFFSET:%Y-%m}"
 
 
@@ -50,8 +44,7 @@ def current_beijing_period() -> str:
 
 
 async def _period_paid_sum(session: AsyncSession, user_id: int, period: str) -> Decimal:
-    """该用户该账期(北京月界)已支付充值订单总额(不含已被渠道冲正的订单——
-    冲正意味着钱已被渠道划回,对其开票等于为未收到的款纳税)。"""
+    """该用户该账期(北京月界)已支付充值订单总额,不含已被渠道冲正的订单。"""
     start, end = billing_month_range(period)
     total = (
         await session.execute(
@@ -68,13 +61,7 @@ async def _period_paid_sum(session: AsyncSession, user_id: int, period: str) -> 
 
 
 async def _period_refund_sum(session: AsyncSession, user_id: int, period: str) -> Decimal:
-    """该账期订单的退款总额(已打款 + 在途 pending/approved),按关联订单的支付账期归属。
-
-    开票口径为净实收:当期已退的款不能再开票,在途退款也预扣——否则「先申请退款 →
-    再申请发票 → 开票 → 打款」时序下发票与退款双重兑现。归属一律看订单 paid_at 而非
-    打款时间:按打款时间归属会让退款在 pending→paid 跨月时从订单账期挪走,订单账期
-    重算即可全额开票,打款账期又被扣一次。
-    """
+    """该账期订单的退款总额(已打款 + 在途 pending/approved),按关联订单 paid_at 归属。"""
     start, end = billing_month_range(period)
     total = (
         await session.execute(
@@ -108,8 +95,8 @@ async def _period_active_sum(session: AsyncSession, user_id: int, period: str) -
 async def _period_billable_amount(
     session: AsyncSession, user_id: int, period: str, *, excluding: Decimal = Decimal("0")
 ) -> Decimal:
-    """账期当前可开票额 = Σpaid − Σ退款(已打款 + 在途) − Σ(submitted + issued 已占用)。
-    预览 / 申请 / 开票重算三处同一口径;excluding 为开票重算时从已占用额里剔除的本单金额。"""
+    """账期当前可开票额 = Σpaid − Σ退款(已打款 + 在途) − Σ(submitted + issued)。
+    预览 / 申请 / 开票重算同一口径;excluding 为开票重算时剔除的本单金额。"""
     paid = await _period_paid_sum(session, user_id, period)
     refunded = await _period_refund_sum(session, user_id, period)
     active = await _period_active_sum(session, user_id, period)
@@ -131,10 +118,8 @@ async def _active_of_period(
 
 
 async def eligible_periods(session: AsyncSession, user_id: int) -> list[InvoiceEligibleOut]:
-    """各账期可开票额度预览:有 paid 订单的已结束账期逐期按 _period_billable_amount 计算
-    (预览 = 申请 = 开票重算同一组 helper),仅返回 > 0 的账期,倒序。"""
-    # 按北京月分组:timezone() 显式指定 Asia/Shanghai(=固定 +8,无夏令时),
-    # 不受会话 TimeZone 设置影响
+    """各账期可开票额度预览:有 paid 订单的已结束账期逐期计算,仅返回 > 0 的账期,倒序。"""
+    # 按北京月分组:timezone('Asia/Shanghai'),不受会话 TimeZone 影响
     period_col = func.to_char(func.timezone("Asia/Shanghai", Order.paid_at), "YYYY-MM")
     periods = (
         (
@@ -156,7 +141,7 @@ async def eligible_periods(session: AsyncSession, user_id: int) -> list[InvoiceE
     out: list[InvoiceEligibleOut] = []
     for period in periods:
         if period >= current:
-            continue  # 当月账期不可开:paid 订单还可能变
+            continue  # 当月账期不可开
         remaining = await _period_billable_amount(session, user_id, period)
         if remaining > 0:
             out.append(InvoiceEligibleOut(period=period, amount=remaining))
@@ -174,9 +159,9 @@ async def create_invoice(
     email: str,
     idempotency_key: str | None,
 ) -> tuple[InvoiceRequest, bool]:
-    """申请开票。幂等:Idempotency-Key 重放返回既有单(唯一约束兜底并发)。
+    """申请开票。幂等:Idempotency-Key 重放返回既有单。
     返回 (申请单, created):created=False = 幂等重放,路由回 200 + X-Idempotent-Replay。"""
-    # 异参检测指纹:金额由服务端按账期计算,客户端参数即「账期 + 抬头三要素 + 邮箱」
+    # 异参检测指纹:账期 + 抬头三要素 + 邮箱
     fingerprint = request_fingerprint(user_id, period, title_type, title, tax_id, email)
     if idempotency_key:
         existing = await find_replay(
@@ -198,8 +183,7 @@ async def create_invoice(
         )
     if await _active_of_period(session, user_id, period) is not None:
         raise conflict(key="billing.invoicePeriodAlreadyApplied", params={"period": period})
-    # 金额服务端计算(客户端提交金额无效):
-    # Σpaid − Σ退款(已打款 + 在途,防票款双重兑现) − Σ(submitted+issued)
+    # 金额服务端计算:Σpaid − Σ退款(已打款 + 在途) − Σ(submitted+issued)
     amount = await _period_billable_amount(session, user_id, period)
     if amount <= 0:
         raise conflict(key="billing.invoiceNothingToBill", params={"period": period})
@@ -227,12 +211,12 @@ async def create_invoice(
             commit=True,
         )
     except IntegrityError:
-        # 撞的是部分唯一索引(并发重复申请同一账期)
+        # 撞部分唯一索引(并发重复申请同一账期)
         raise conflict(
             key="billing.invoicePeriodAlreadyApplied", params={"period": period}
         ) from None
     if result is not req:
-        return result, False  # 同键并发:返回胜出方的单
+        return result, False  # 同键并发:返回胜出方
     logger.info("invoice_created", invoice_id=req.id, user_id=user_id, period=period)
     return req, True
 
@@ -240,7 +224,7 @@ async def create_invoice(
 async def list_my_invoices(
     session: AsyncSession, user_id: int, *, cursor: str | None = None, limit: int | None = None
 ) -> Page[InvoiceOut]:
-    """本人发票申请(游标分页,语义与退款单/资金流水一致)。"""
+    """本人发票申请(游标分页)。"""
     stmt = (
         select(InvoiceRequest)
         .where(InvoiceRequest.user_id == user_id)
@@ -284,8 +268,7 @@ async def issue_invoice(
     req = await _get_for_update(session, invoice_id)
     if req.status != "submitted":
         raise conflict(key="billing.invoiceStateNotIssuable", params={"status": req.status})
-    # 必须行锁内按当前口径重算:申请到开票之间若发生退款,按旧额开票 = 票款双重兑现;
-    # 不符即 409,由用户按新额重新申请
+    # 行锁内按当前口径重算,不符即 409
     current = await _period_billable_amount(session, req.user_id, req.period, excluding=req.amount)
     if current != req.amount:
         raise conflict(

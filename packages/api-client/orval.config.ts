@@ -9,11 +9,11 @@ export default defineConfig({
       mode: "tags-split",
       target: "src/generated/endpoints",
       schemas: "src/generated/model",
-      // 只生成裸 fetcher 与 model 类型;TanStack Query hooks 由两端在各自 api 层自建
+      // 只生成 fetcher 与 model 类型;hooks 两端自建
       client: "fetch",
       clean: true,
       indexFiles: true,
-      // 把 spec 的 header 参数(Idempotency-Key 等)生成进函数签名,免调用方手搓 options.headers
+      // header 参数(Idempotency-Key 等)生成进函数签名
       headers: true,
       override: {
         mutator: {

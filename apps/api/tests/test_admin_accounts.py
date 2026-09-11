@@ -18,13 +18,12 @@ async def _create_admin(sm: async_sessionmaker[AsyncSession], username: str) -> 
         await create_admin(session, username, "pass1234", "admin")
 
 
-# TOTP 密钥注册表(进程级):同一账号多次 login_headers(绑定后重登录)共享密钥
+# TOTP 密钥注册表(进程级):同一账号多次 login_headers 共享密钥
 _TOTP_SECRETS: dict[str, str] = {}
 
 
 async def login_headers(client: AsyncClient, username: str, password: str) -> dict[str, str]:
-    """登录并拿到 token:全角色强制 TOTP 后,首次绑定走 setup 流并记下密钥,
-    已绑定账号走二要素验证流(密钥见 _TOTP_SECRETS)。"""
+    """登录并拿到 token:首次绑定走 setup 流并记下密钥,已绑定账号走二要素验证流。"""
     import pyotp
 
     resp = await admin_login(client, username, password)
@@ -34,7 +33,7 @@ async def login_headers(client: AsyncClient, username: str, password: str) -> di
         token, secret = await complete_mfa_setup_with_secret(client, body["ticket"])
         _TOTP_SECRETS[username] = secret
     else:  # mfa_required:已绑定账号的二要素登录
-        # 防重放后同一枚码只能用一次:绑定已用当前步,登录用下一枚(valid_window=1 接受)
+        # 绑定已用当前步,登录用下一枚(valid_window=1)
         import time
 
         verify = await client.post(
@@ -53,7 +52,7 @@ class TestAdminAccounts:
     async def test_create_list_and_login(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """建号接口不回密码/token_version,建出来的账号能真的登录。"""
+        """建号接口不回密码/token_version,建出来的账号能登录。"""
         h = await admin_headers(sm, client)
         resp = await client.post(
             "/api/admin/v1/admins",
@@ -78,8 +77,7 @@ class TestAdminAccounts:
     async def test_long_password_create_then_login(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """65~72 字符口令:创建(字节校验 ≤72B 放行)后能登录(挂了 = 登录上限 64 <
-        创建上限,该区间口令的管理员被 422 永久锁死;>72 字节由 _check_password_bytes 拦在创建侧)。"""
+        """65~72 字符口令:创建后能登录。"""
         h = await admin_headers(sm, client)
         long_pw = "Lp" + "x9" * 34  # 70 字符 = 70 字节,落在 65~72 区间
         resp = await client.post(
@@ -124,7 +122,7 @@ class TestAdminAccounts:
             headers=h,
         )
         assert resp.status_code == 200, resp.text
-        # 停用即刻生效,不等 2 小时 TTL
+        # 停用即刻生效
         assert (await client.get("/api/admin/v1/me", headers=h2)).status_code == 401
         assert (await admin_login(client, "ops01", STRONG)).status_code == 403
 
@@ -140,7 +138,7 @@ class TestAdminAccounts:
         tid = created.json()["id"]
         h2 = await login_headers(client, "ops02", STRONG)
 
-        # 改角色 → 旧 token 失效(权限变了,旧 token 不能继续按旧角色用)
+        # 改角色 → 旧 token 失效
         await client.patch(
             f"/api/admin/v1/admins/{tid}", json={"role": "readonly", "reason": "转岗"}, headers=h
         )
@@ -186,8 +184,7 @@ class TestAdminAccounts:
     async def test_cannot_disable_or_demote_yourself(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """自停用/自降权一律 409:最常见的一键把自己锁在门外。
-        (没有「最后一个超管」保护:另一位超管可以停用你,常备第二个超管是运维纪律。)"""
+        """自停用/自降权一律 409;无「最后一个超管」保护。"""
         h = await admin_headers(sm, client)
         me = (await client.get("/api/admin/v1/me", headers=h)).json()
         for body in (
@@ -201,7 +198,7 @@ class TestAdminAccounts:
     async def test_require_roles_no_arg_has_own_message(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """require_roles() 无参(仅超管)的拒绝文案单独成键,不拼成半截话「需要角色:」。"""
+        """require_roles() 无参(仅超管)的拒绝文案单独成键。"""
         h_ops = await admin_headers(sm, client, role="ops")
         resp = await client.get("/api/admin/v1/admins", headers=h_ops)
         assert resp.status_code == 403
@@ -221,14 +218,10 @@ class TestAdminLoginLockout:
     async def test_daily_account_bucket_never_locks_out_the_real_password(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession], monkeypatch
     ):
-        """日窗账号桶只计数,不封禁:打满之后拿正确口令仍能登录。
-
-        挂了 = 任何人用 N 个错口令就能把一个具名管理员锁死 24 小时(日桶不清零、
-        管理端没有短信/找回这类第二条通路),救援只能进库删限流行。
-        """
+        """日窗账号桶只计数,不封禁:打满之后正确口令仍能登录。"""
         from app.modules.adminapi import service as admin_service
 
-        # 只留日桶做闸:其余三桶放宽,压力全落在被测的那一个上
+        # 只留日桶做闸,其余三桶放宽
         monkeypatch.setattr(admin_service, "LOGIN_ACCT_DAILY_MAX_ATTEMPTS", 3)
         monkeypatch.setattr(admin_service, "LOGIN_IP_MAX_ATTEMPTS", 10_000)
         monkeypatch.setattr(admin_service, "LOGIN_MAX_ATTEMPTS", 10_000)
@@ -241,20 +234,20 @@ class TestAdminLoginLockout:
                 json={"username": "lockout-admin", "password": "wrong-password"},
             )
             assert resp.status_code in (400, 429), resp.text
-        # 越阈之后错口令继续被限速(信号还在)
+        # 越阈之后错口令继续被限速
         blocked = await client.post(
             "/api/admin/v1/auth/login",
             json={"username": "lockout-admin", "password": "wrong-password"},
         )
         assert blocked.status_code == 429
-        # 但正确口令照常放行:预检不看日桶
+        # 正确口令照常放行
         ok = await admin_login(client, "lockout-admin")
         assert ok.status_code == 200, ok.text
         assert ok.json()["status"] == "mfa_setup"
 
 
 class TestAdminPasswordByteLimit:
-    """bcrypt 上限 72 字节:schema 按字符计,多字节口令在服务层按字节拦成 400,不进哈希层炸 500。"""
+    """多字节口令在服务层按字节拦 72 上限(400)。"""
 
     async def test_create_admin_multibyte_password(self, client, sm):
         h = await admin_headers(sm, client)

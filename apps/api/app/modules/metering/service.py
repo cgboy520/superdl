@@ -27,11 +27,7 @@ RANGES = {"1h": 3600, "6h": 6 * 3600, "24h": 24 * 3600}
 async def instance_metrics(
     ns: str, pod: str, range_key: str, *, pool_label: str | None = None
 ) -> dict[str, Any]:
-    """代理查询实例监控曲线。断源报 503(前端提示"监控暂不可用,不影响计费")。
-
-    hami 池的 gpu_util/vram 走 HAMi 容器维指标(软切分下 DCGM per-pod 归属不可靠),
-    查空自动回落 DCGM;cpu/mem 恒 cAdvisor。
-    """
+    """代理查询实例监控曲线,断源 503。hami 池 gpu_util/vram 走 HAMi 容器维指标,查空回落 DCGM。"""
     if range_key not in RANGES:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="metering.badRange")
     end = now_utc().timestamp()
@@ -56,10 +52,8 @@ SUMMARY_CAP = 20  # 列表 sparkline 最多取前 N 台 running,防批量放大 
 
 
 async def instances_gpu_summary(targets: list[tuple[str, str]]) -> InstanceMetricsSummaryOut:
-    """批量取各实例近 1h gpu_util 稀疏序列(targets: [(uuid, ns)])。
-
-    Prometheus 断源返回 available=false 而非抛错;单实例查询失败仅跳过该台。
-    """
+    """批量取各实例近 1h gpu_util 稀疏序列(targets: [(uuid, ns)]);
+    断源 available=false,单实例失败跳过。"""
     end = now_utc().timestamp()
     start = end - RANGES["1h"]
     items: list[InstanceGpuSeries] = []
@@ -77,10 +71,7 @@ async def instances_gpu_summary(targets: list[tuple[str, str]]) -> InstanceMetri
 async def aggregate_previous_hour(
     sm: async_sessionmaker[AsyncSession], *, at: datetime | None = None
 ) -> int:
-    """每小时 :05 聚合上一小时用量入 usage_hourly。幂等(UNIQUE DO NOTHING)。
-
-    Prometheus 不可用时静默跳过(指标不参与计费)。
-    """
+    """每小时 :05 聚合上一小时用量入 usage_hourly,幂等(UNIQUE DO NOTHING);Prometheus 不可用跳过。"""
     from app.modules.orchestrator import service as orchestrator_service
 
     window_start, window_end = prev_hour_range(at or now_utc())
@@ -107,7 +98,7 @@ async def aggregate_previous_hour(
                     step="60s",
                 )
             except prom.PrometheusUnavailable:
-                # 单次抖动只丢该实例该小时:continue 保住整轮其它实例
+                # 单实例失败不拖垮整轮
                 failed += 1
                 logger.warning("usage_aggregation_prom_down", instance_id=inst_id)
                 continue
@@ -125,8 +116,7 @@ async def aggregate_previous_hour(
                 await session.commit()
                 written += 1
         if failed:
-            # 记缺口:该小时对这些实例永久缺失(任务只聚合上一小时),不自动回填
-            # (指标不参与计费),需要时按 hour_start 人工补跑
+            # 缺口不自动回填,需要时按 hour_start 人工补跑
             logger.warning(
                 "usage_aggregation_partial",
                 hour_start=window_start.isoformat(),
@@ -137,10 +127,8 @@ async def aggregate_previous_hour(
 
 
 async def reconciliation_report(session: AsyncSession, day: datetime) -> dict[str, Any]:
-    """日对账:事件计费合计 vs 指标估算合计 + diff%。diff>2% 列差异实例。
-
-    指标估算 = usage_hourly 有数据的小时数 × 单价(存在性估算,粗对账抓大漏)。
-    """
+    """日对账:事件计费合计 vs 指标估算(usage_hourly 有数据小时数 × 单价)+ diff%;
+    diff>2% 列差异实例。"""
     from app.modules.billing import service as billing_service
     from app.modules.orchestrator import service as orchestrator_service
 
@@ -165,7 +153,7 @@ async def reconciliation_report(session: AsyncSession, day: datetime) -> dict[st
     est_total = Decimal("0.00")
     diffs: list[dict[str, Any]] = []
     all_ids = set(billed) | set(usage_by_instance)
-    # 按 id 精确取价:走管理端 LIMIT 200 列表会把截断外的实例按单价 0 估算,凭空造出差异
+    # 按 id 精确取价
     price_by_id = await orchestrator_service.instance_hourly_prices(session, all_ids)
     for iid in all_ids:
         est = as_amount(price_by_id.get(iid, Decimal("0")) * usage_by_instance.get(iid, 0))
@@ -195,11 +183,7 @@ async def reconciliation_report(session: AsyncSession, day: datetime) -> dict[st
 
 
 async def gpu_util_last_24h_by_instance(session: AsyncSession) -> dict[int, tuple[float, int]]:
-    """近 24h 各实例 GPU 利用率聚合:instance_id → (sum(小时均值), 小时数)。
-
-    供超卖报表按池加权平均(池归属在 orchestrator 侧,此处不跨模块查表);
-    无数据返回空 dict。
-    """
+    """近 24h 各实例 GPU 利用率聚合:instance_id → (sum(小时均值), 小时数);无数据返回空 dict。"""
     since = now_utc() - timedelta(hours=24)
     rows = (
         await session.execute(
@@ -213,15 +197,12 @@ async def gpu_util_last_24h_by_instance(session: AsyncSession) -> dict[int, tupl
 
 NODE_METRIC_KEYS = ("util", "mem_used_mb", "temp")
 
-# K8s 节点名(RFC1123 子域)。node_name 是 format 进 PromQL 的,不校验则可注入标签选择器
+# K8s 节点名(RFC1123 子域);node_name 进 PromQL 前必须校验
 _NODE_NAME_RE = re.compile(r"^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$")
 
 
 async def node_gpu_metrics(node_name: str, range_key: str) -> dict[str, Any]:
-    """管理端节点每卡曲线(DCGM per-GPU 多序列)+ 24h XID 计数。
-
-    断源降级为 available=False(200),对齐列表 sparkline 端点语义。
-    """
+    """管理端节点每卡曲线(DCGM per-GPU 多序列)+ 24h XID 计数;断源 available=False(200)。"""
     if range_key not in RANGES:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="metering.badRange")
     if not _NODE_NAME_RE.match(node_name):

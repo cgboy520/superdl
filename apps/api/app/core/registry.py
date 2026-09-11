@@ -1,9 +1,5 @@
-"""镜像仓库(Harbor)接入的纯函数与探测:拉取凭据 dockerconfigjson 与指纹、镜像来源白名单、
-代理缓存映射解析、Harbor API 连通性探测。
-
-不依赖 K8s 客户端:编排层只消费这里产出的字符串(Secret 内容/指纹),节点侧只消费 registries.yaml。
-探测走 httpx,transport 参数供测试注入 MockTransport(与 core/aliyun.rpc_call 同构)。
-"""
+"""镜像仓库(Harbor)接入:拉取凭据 dockerconfigjson 与指纹、镜像来源白名单、代理缓存映射解析、
+Harbor API 探测(httpx,transport 参数供测试注入)。不依赖 K8s 客户端。"""
 
 import base64
 import hashlib
@@ -17,8 +13,7 @@ from typing import Literal
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
-# 平台托管的拉取凭据 Secret 名:superdl ns(平台镜像 + 预热 Job)与每个租户 ns 各一份,
-# 内容由配置中心 registry_* 生成,指纹变了才覆写
+# 拉取凭据 Secret 名:superdl ns 与每个租户 ns 各一份,由配置中心 registry_* 生成
 PULL_SECRET_NAME = "superdl-registry-pull"
 PULL_SECRET_FINGERPRINT_ANNOTATION = "superdl.io/pull-secret-fingerprint"
 
@@ -33,8 +28,7 @@ def dockerconfigjson(host: str, username: str, password: str) -> str:
 
 
 def pull_secret_fingerprint(host: str, username: str, password: str) -> str:
-    """凭据指纹(sha256 前 16 位):写在 Secret annotation 上,轮换后指纹变化才触发覆写;
-    不可逆,可安全出现在日志与 UI。"""
+    """凭据指纹(sha256 前 16 位),写在 Secret annotation 上;可出现在日志与 UI。"""
     return hashlib.sha256(f"{host}\n{username}\n{password}".encode()).hexdigest()[:16]
 
 
@@ -51,9 +45,7 @@ def parse_proxy_projects(text: str) -> dict[str, str]:
     return out
 
 
-# 容器镜像引用形态(域名[:端口]/路径[:tag][@sha256:...]);拒绝空格、大写等非法串。
-# tag 与 digest 必须允许同时出现:平台镜像目录的 image_ref 就是 <repo>:<tag>@sha256:...
-# (按 tag 拉会经 Spegel 命中节点缓存的旧 digest,见 docs/decisions.md)。
+# 镜像引用形态:域名[:端口]/路径[:tag][@sha256:...];tag 与 digest 允许同时出现
 _IMAGE_REF_RE = re.compile(
     r"^[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[0-9]+)?"
     r"(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*"
@@ -68,20 +60,12 @@ def is_valid_image_ref(image_ref: str) -> bool:
 
 
 def is_pinned_image_ref(image_ref: str) -> bool:
-    """引用是否钉死到一个具体版本(带 digest,或带一个不是 latest 的 tag)。
-
-    只对**服务型实例**要求(orchestrator.create_instance):服务容器 restartPolicy=Always,
-    kubelet 原地重启时可变 tag 会换掉镜像版本,而实例状态、事件流水、账单均无变化;
-    开发机是 Never + 用户手动重开,无此路径。
-
-    不写 tag = 隐含 latest,与 `:latest` 一起拒;只挡显式可变的一类,`:v1` 同样可被重新
-    推送,绝对可复现只能用 digest(建议,非硬闸)。
-    """
+    """引用是否钉到具体版本(带 digest,或带非 latest 的 tag;无 tag 视为 latest)。"""
     if not is_valid_image_ref(image_ref):
         return False
     if "@sha256:" in image_ref:
         return True
-    # 冒号可能出现在仓库主机的端口里(registry:5000/img),tag 只看最后一段路径
+    # tag 只看最后一段路径(主机可带端口)
     last = image_ref.rsplit("/", 1)[-1]
     if ":" not in last:
         return False  # 无 tag = 隐含 latest
@@ -89,16 +73,8 @@ def is_pinned_image_ref(image_ref: str) -> bool:
 
 
 def effective_image_allowlist(cfg: Mapping[str, str]) -> list[str]:
-    """创建实例的镜像来源白名单:配置行(换行/逗号分隔的仓库前缀)∪ Harbor 地址前缀。
-    空列表 = 不限制。平台镜像目录内的引用由调用方另行放行。
-
-    每条前缀一律补成以 `/` 结尾:匹配方是裸 `image_ref.startswith(prefix)`
-    (orchestrator/service._check_image),不补斜杠的 `docker.io` 会顺带放行
-    `docker.io.attacker.example/evil:1` —— 攻击者注册一个以白名单项开头的域名就绕过了
-    整道闸门。补上 `/` 后前缀只能停在路径分隔处,`docker.io/library/...` 照常命中。
-    不改成「解析出仓库主机后相等比较」:运营录入的前缀常带项目路径
-    (`harbor.internal/superdl/`),按主机相等会把这种「只许本项目」的意图放宽成整台仓库。
-    """
+    """镜像来源白名单:配置行(换行/逗号分隔的仓库前缀)∪ Harbor 地址前缀,每条补成 `/` 结尾;
+    空列表 = 不限制。平台镜像目录内的引用由调用方放行。"""
     raw = (cfg.get("image_allowed_registries") or "").replace(",", "\n")
     prefixes: list[str] = []
     for line in raw.splitlines():
@@ -112,12 +88,7 @@ def effective_image_allowlist(cfg: Mapping[str, str]) -> list[str]:
 
 
 async def ensure_registry_pull_secret(session: AsyncSession, namespace: str) -> str | None:
-    """按生效配置在 namespace 托管拉取凭据 Secret:凭据齐全返回 Secret 名(Pod / Job 以
-    imagePullSecrets 引用),未配机器人(项目 public)返回 None。
-
-    只在 worker 侧调用(outbox 建 Pod / 预热 Job 之前),请求路径不碰 K8s;指纹相同时
-    编排层跳过写入,轮换 = 配置中心保存新 Secret,下一次建 Pod 自动覆写,节点不落凭据。
-    """
+    """在 namespace 托管拉取凭据 Secret,返回 Secret 名;未配机器人返回 None。只在 worker 侧调用。"""
     from app.core.k8s import get_orchestrator
     from app.core.platform_config import get_effective_platform_config
 
@@ -160,9 +131,8 @@ async def probe_harbor(
     ca_pem: str,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> HarborProbe:
-    """两步探测:① GET /api/v2.0/health(免鉴权:验 DNS/TLS/CA 与 Harbor 自检);
-    ② GET /api/v2.0/projects/{project}/repositories?page_size=1(机器人 Basic 鉴权:
-    401 = 凭据错、403 = 无 List Repository 权限、404 = 项目不存在)。"""
+    """两步探测:GET /api/v2.0/health(免鉴权)→ GET /api/v2.0/projects/{project}/repositories
+    (机器人 Basic 鉴权:401 凭据错、403 无权限、404 项目不存在)。"""
     base = f"https://{host}/api/v2.0"
     try:
         async with httpx.AsyncClient(

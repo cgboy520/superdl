@@ -6,8 +6,7 @@
  */
 
 /**
- * 前端初始化验证码 SDK 所需的公开信息(身份标/场景非密)。enabled=false(安全策略
- * captcha_enabled 关闭)时前端不加载 SDK,发码不带 token。
+ * 验证码 SDK 初始化公开信息。enabled=false 时前端不加载 SDK,发码不带 token。
  */
 export interface CaptchaConfigOut {
   enabled: boolean;

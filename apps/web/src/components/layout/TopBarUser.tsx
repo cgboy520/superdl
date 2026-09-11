@@ -46,7 +46,7 @@ function NotificationBell() {
       onOpenChange={setOpen}
       content={
         pagesQ.isError ? (
-          // 失败绝不渲染成「无通知」
+          // 失败不渲染成「无通知」
           <div style={{ width: 360 }}>
             <TableErrorEmpty isError onRetry={() => void pagesQ.refetch()} />
           </div>

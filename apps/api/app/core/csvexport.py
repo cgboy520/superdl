@@ -1,10 +1,6 @@
-"""CSV 导出原语(用户端 billing 与管理端 adminapi 共用;core 层,不含任何业务查询)。
-
-- 转义规则:BOM 头、含 ",\\n\\r 的字段加引号、公式前导字符(= + @ 制表/回车,
-  或 - 开头且非纯数字)置 ' 文本化;
-- 金额列保持 numeric 字符串原样,不做任何浮点运算;
-- 时间按调用方时区偏移折算成墙钟并带 (UTC+x) 后缀,与 packages/ui formatDateTime 同口径;
-- 单响应行数硬上限:触顶在文件末尾写截断标记行(前端据标记给「已截断」提示)。
+"""CSV 导出原语(billing 与 adminapi 共用,不含业务查询)。BOM 头;含 ",\\n\\r 的字段加引号;
+公式前导字符(= + @ 制表/回车,或 - 开头非纯数字)置 ' 文本化;金额保持 numeric 字符串;
+时间按调用方时区偏移折算并带 (UTC+x) 后缀;单响应行数硬上限,触顶在末尾写截断标记行。
 """
 
 import re
@@ -25,7 +21,7 @@ TRUNCATED_MARKER = "#SUPERDL_EXPORT_TRUNCATED#"
 # 单次导出批拉粒度
 EXPORT_BATCH = 1_000
 
-# 触顶截断提示(双语,billing 用户端与 adminapi 管理端导出共用)
+# 触顶截断提示(双语)
 TRUNCATED_NOTES: dict[str, str] = {
     "zh-CN": "已达单次导出上限({limit} 行),仅导出前 {limit} 行;请缩小范围分次导出",
     "en-US": (
@@ -36,7 +32,7 @@ TRUNCATED_NOTES: dict[str, str] = {
 
 
 def csv_response(stream: AsyncIterator[str], filename: str) -> StreamingResponse:
-    """CSV 流式响应:Content-Disposition 附件;截断标记行由流内部在触顶时追加。"""
+    """CSV 流式响应(Content-Disposition 附件)。"""
     return StreamingResponse(
         stream,
         media_type="text/csv; charset=utf-8",
@@ -86,11 +82,8 @@ async def stream_rows(
     *,
     truncated_note: str,
 ) -> AsyncIterator[str]:
-    """流式 CSV 骨架:BOM + 表头,按 id 降序(最新在前)分批拉 stmt 的 ORM 行,
-    单响应最多 EXPORT_MAX_ROWS 行;每批多取一行探测是否仍有剩余,触顶且有剩余即在
-    文件末尾写截断标记行(truncated_note 用 {limit} 占位上限)。stmt 只带过滤条件,
-    排序/游标/limit 由本函数施加。
-    """
+    """流式 CSV:BOM + 表头,按 id 降序分批拉 stmt 的 ORM 行,最多 EXPORT_MAX_ROWS 行,触顶且有剩余
+    则在末尾写截断标记行(truncated_note 用 {limit} 占位)。stmt 只带过滤条件。"""
     yield "\ufeff" + csv_line(headers)  # BOM:防 Excel 中文乱码
     sent = 0
     last_id: int | None = None

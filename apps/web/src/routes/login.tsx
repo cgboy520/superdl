@@ -1,8 +1,4 @@
-/**
- * 登录/注册:左品牌渐变区(口号+卖点,lg 以下隐藏),右三态表单。
- * e2e 契约:placeholder「手机号」「短信验证码」、按钮「获取验证码」「注册并登录」、
- * Segmented「注册」exact 文本;页面不得出现第二个裸「注册」文本节点。
- */
+/** 登录/注册:左品牌渐变区(lg 以下隐藏),右三态表单。e2e 契约:placeholder「手机号」「短信验证码」、按钮「获取验证码」「注册并登录」、Segmented「注册」exact 文本;页面不得出现第二个裸「注册」文本节点。 */
 
 import { CheckCircleOutlined } from "@ant-design/icons";
 import type { TokenPairOut } from "@superdl/api-client";
@@ -31,7 +27,7 @@ export const Route = createFileRoute("/login")({
           out.redirect = `${u.pathname}${u.search}${u.hash}`;
         }
       } catch {
-        // 非法 redirect 直接丢弃
+        // 非法 redirect 丢弃
       }
     }
     if (search.mode === "register") out.mode = "register";
@@ -55,7 +51,7 @@ function passwordStrengthOf(pw: string): PasswordStrength {
   return "weak";
 }
 
-/** 密码强度实时反馈(注册/重置模式):细进度条 + 分档文案,颜色走 antd token */
+/** 密码强度实时反馈(注册/重置模式):细进度条 + 分档文案 */
 function PasswordStrengthHint({ password }: { password: string }) {
   const { t } = useTranslation();
   const { token } = theme.useToken();
@@ -142,7 +138,7 @@ function LoginPage() {
 
   const onLoggedIn = (data: unknown) => {
     const pair = data as TokenPairOut;
-    // refresh token 已由服务端经 HttpOnly Cookie 下发,JS 只留 access token
+    // refresh token 由服务端经 HttpOnly Cookie 下发,JS 只留 access token
     authStore.getState().login(pair.access_token);
     if (redirectTo) {
       router.history.push(redirectTo);
@@ -198,7 +194,7 @@ function LoginPage() {
       <div
         style={{
           flex: 1,
-          // 容器底色走 token(暗色主题为深靛灰)
+          // 容器底色走 token
           background: token.colorBgContainer,
           display: "flex",
           alignItems: "center",
@@ -251,8 +247,7 @@ function LoginPage() {
               />
             </Form.Item>
             {needsSms && (
-              // 校验挂内层 Form.Item(唯一控件是 Input):挂外层会把 id/aria-required 注到
-              // Space.Compact 的 div 上,div 不支持该 ARIA 属性(axe aria-allowed-attr,critical)
+              // 校验挂内层 Form.Item(唯一控件是 Input),不挂 Space.Compact 的 div(axe aria-allowed-attr)
               <Form.Item>
                 <Space.Compact style={{ width: "100%", alignItems: "flex-start" }}>
                   <Form.Item
@@ -291,7 +286,7 @@ function LoginPage() {
                 }
                 {...(mode !== "password" && watchedPassword !== ""
                   ? {
-                      // 强度实时反馈挂在 extra:不占校验错误位
+                      // 强度实时反馈挂在 extra
                       extra: <PasswordStrengthHint password={watchedPassword} />,
                     }
                   : {})}

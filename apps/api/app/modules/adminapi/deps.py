@@ -26,7 +26,7 @@ async def get_current_admin(
     admin = await session.get(AdminUser, int(payload["sub"]))
     if admin is None or admin.status != "active":
         raise unauthorized()
-    # 撤销闸,见 AdminUser.token_version;签发点恒带 ver,缺失不给默认值(None ≠ 任何版本 → 401)
+    # 撤销闸(AdminUser.token_version):ver 缺失不给默认值(None ≠ 任何版本 → 401)
     if payload.get("ver") != admin.token_version:
         raise unauthorized()
     request.state.audit_actor = AuditActor("admin", str(admin.id))
@@ -43,12 +43,11 @@ def require_roles(*roles: str):
         admin: Annotated[AdminUser, Depends(get_current_admin)],
     ) -> AdminUser:
         if admin.role != "admin" and admin.role not in roles:
-            # 全站唯一的角色拒绝汇聚点:越权探测(拿低权 token 逐个端点试)在这里才有信号,
-            # 应用层其余 403 都是业务前置条件不满足,混进来会淹掉这条曲线
+            # 全站唯一的角色拒绝汇聚点(越权探测指标)
             AUTHZ_DENIED_TOTAL.labels(actor_type="admin").inc()
             if roles:
                 raise forbidden(key="adminapi.roleRequired", params={"roles": "/".join(roles)})
-            # 无参分支单独给文案:空串拼接会留下半截话(「需要角色:」)
+            # 无参分支单独给文案
             raise forbidden(key="adminapi.roleRequiredAdmin")
         return admin
 

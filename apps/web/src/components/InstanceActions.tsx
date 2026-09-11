@@ -1,12 +1,4 @@
-/**
- * 实例操作组:开机/关机/更多(重启·事件·续费·自动续费·预留项·释放)。
- * 条目永不隐藏,灰置用 Tooltip 说明前置条件;预留项可见但禁用并注「即将上线」(ui-ux-spec 规则 2)。
- * 计费方式相关的几项按对象形态出,不出即「对这台实例不存在」:按量实例(running / stopped)出
- * 「转包周期」,包周期实例出「续费」与「自动续费」,竞价实例出「转按量」。
- * 转包周期是支付动作(后端先结清转换前那段按量账再翻 market,一次性预扣整段周期),
- * 确认在 RenewModal 里做,菜单点开即弹。
- * 释放走多级防护:键入实例名 + 勾选盘数据清除确认,两道都满足才解锁红按钮(ui-ux-spec 规则 4)。
- */
+/** 实例操作组:开机/关机/更多(重启·事件·续费·自动续费·预留项·释放)。条目永不隐藏,灰置用 Tooltip 说明前置条件;预留项禁用并注「即将上线」(ui-ux-spec 规则 2)。按形态出计费项:按量出「转包周期」,包周期出「续费 / 自动续费」,竞价出「转按量」;转包周期确认在 RenewModal 里做。释放走多级防护:键入实例名 + 勾选盘数据清除(ui-ux-spec 规则 4)。 */
 
 import { DownOutlined } from "@ant-design/icons";
 import type { InstanceOut } from "@superdl/api-client";
@@ -27,7 +19,7 @@ import {
 } from "../api/mutations";
 import { RenewModal } from "./RenewModal";
 
-// creating 也可释放:调度长期不满足(如资源不足)时用户可主动取消
+// creating 也可释放
 export function canReleaseStatus(s: string): boolean {
   return s === "stopped" || s === "frozen" || s === "failed" || s === "creating";
 }
@@ -45,10 +37,9 @@ export function ReleaseModal({
 }) {
   const { t } = useTranslation();
   const { message } = App.useApp();
-  // creating 尚未落盘,只过键入这道闸,不出清盘勾选;两道闸状态由共享件在关闭后自动重置
+  // creating 尚未落盘,只过键入这道闸,不出清盘勾选
   const creating = instance.status === "creating";
-  // 包周期释放额外写明「预付不退款、剩余天数作废」(ui-ux-spec §3.5):天数由订阅到期时刻算;
-  // 「现在」在挂载时定一次(与 RenewModal 同款),渲染期取 Date.now() 违反 purity
+  // 包周期释放额外写明「预付不退款、剩余天数作废」(ui-ux-spec §3.5);「现在」在挂载时定一次
   const [mountedAt] = useState(() => Date.now());
   const subExpiresAt = instance.subscription?.expires_at;
   const subDaysLeft =
@@ -111,7 +102,7 @@ export function InstanceActions({
   onShowEvents?: () => void;
 }) {
   const { t } = useTranslation();
-  // 「包周期已到期,请先续费再开机」的事实源在后端 messages.py,前端不另写一份
+  // 「包周期已到期,请先续费再开机」文案事实源在后端 messages.py
   const { t: tErr } = useTranslation("errors");
   const { message } = App.useApp();
   const confirm = useConfirm();
@@ -136,10 +127,10 @@ export function InstanceActions({
   const isSpot = instance.market === "spot";
   const expired = isSubscriptionExpired(instance.market, sub);
 
-  // 转包周期只对按量实例出;状态不合适时灰置带原因(与后端 subscribe_instance 同款判据)
+  // 转包周期只对按量实例出;状态不合适时灰置带原因(与后端 subscribe_instance 同判据)
   const canConvert = instance.market === "on_demand";
   const convertBlocked = canConvert && s !== "running" && s !== "stopped";
-  // 转按量与转包周期同款状态判据(后端 convert_to_on_demand 也只收 running / stopped)
+  // 转按量同款状态判据(后端 convert_to_on_demand 只收 running / stopped)
   const toOnDemandBlocked = isSpot && s !== "running" && s !== "stopped";
 
   const canStart = s === "stopped" && !expired;
@@ -156,8 +147,7 @@ export function InstanceActions({
   const confirmStop = () =>
     confirm({
       title: t("instances.actions.stopConfirmTitle"),
-      // 包周期与按量是两件不同的事:按量强调「再开机可能没库存」,包周期恰好相反——
-      // 周期内关机不退费,但平台替他留着这台的库存(ui-ux-spec §3.5)
+      // 按量强调「再开机可能没库存」;包周期关机不退费但保留库存(ui-ux-spec §3.5)
       consequences: [t(isSubscription ? "copy.stopConfirmSubscription" : "copy.stopConfirm")],
       okText: t("instances.actions.stopOk"),
       onOk: async () => {
@@ -193,7 +183,7 @@ export function InstanceActions({
             },
             { key: "events", label: t("instances.actions.eventsLog") },
             { type: "divider" },
-            // 计费方式项按形态分化:按量出「转包周期」,包周期出「续费 / 自动续费」
+            // 按形态分化:按量出「转包周期」,包周期出「续费 / 自动续费」
             ...(isSubscription
               ? [
                   { key: "renew", label: t("period.renewMenu") },

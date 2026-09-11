@@ -7,8 +7,7 @@
 import type { ServiceContainerOutEnv } from './serviceContainerOutEnv';
 
 /**
- * 当前版本的容器配置回显(创建那一版时写入,之后不可改;要改请更新版本)。
- * env 只回明文项,密文项只回键名:回值就等于给了一个把密文变量读回明文的端点。
+ * 当前版本的容器配置回显(不可改,要改请更新版本);env 只回明文项,密文项只回键名。
  */
 export interface ServiceContainerOut {
   container_args: string[] | null;

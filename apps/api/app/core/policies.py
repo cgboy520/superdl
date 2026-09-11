@@ -1,4 +1,4 @@
-"""运营策略参数:env 默认值 + DB 覆盖,管理端在线调整免重启发版。"""
+"""运营策略参数:env 默认值 + DB 覆盖。"""
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -33,25 +33,23 @@ POLICY_SPECS: dict[str, tuple[Literal["decimal", "int"], Decimal, Decimal]] = {
     "afford_cover_hours": ("int", Decimal(1), Decimal(24)),
     "prewarm_min_coverage_pct": ("int", Decimal(1), Decimal(100)),
     "prewarm_recheck_hours": ("int", Decimal(1), Decimal(168)),
-    # 每用户配额:校验链 用户级覆盖 → 本层 → env 默认(Settings 同名字段)
+    # 每用户配额:用户级覆盖 → 本层 → env 默认
     "max_instances_per_user": ("int", Decimal(1), Decimal(1000)),
     "max_gpus_per_user": ("int", Decimal(1), Decimal(1024)),
     "max_vcpus_per_user": ("int", Decimal(1), Decimal(4096)),
     "max_disks_per_user": ("int", Decimal(1), Decimal(1000)),
-    # 每个 GPU 节点最多让 CPU 实例吃掉多少 vCPU(近似库存口径,见 catalog/service)。
-    # 0 = 不许 CPU 实例落 GPU 节点:pool != cpu 的 CPU SKU 一律判无容量。
+    # 每个 GPU 节点让给 CPU 实例的 vCPU 上限(catalog/service);0 = 不许 CPU 实例落 GPU 节点
     "gpu_node_cpu_instance_vcpu_cap": ("int", Decimal(0), Decimal(1024)),
-    # 包周期折扣(百分数,80 = 8 折)。上界 100 = 不打折,不设 >100 的「加价」档
+    # 包周期折扣(百分数,80 = 8 折;100 = 不打折)
     "period_discount_day": ("int", Decimal(50), Decimal(100)),
     "period_discount_week": ("int", Decimal(50), Decimal(100)),
     "period_discount_month": ("int", Decimal(50), Decimal(100)),
     "period_discount_year": ("int", Decimal(50), Decimal(100)),
-    # 包周期到期前多少天开始预警(短信 + 站内信,每个到期时刻至多一条)
+    # 包周期到期前预警天数(每个到期时刻至多一条)
     "period_expire_warn_days": ("int", Decimal(1), Decimal(30)),
-    # 竞价价 = 按量价 × pct/100。上界 90:竞价的对价是「可被回收」,必须让出折扣
+    # 竞价价 = 按量价 × pct/100(上界 90)
     "spot_discount_pct": ("int", Decimal(10), Decimal(90)),
-    # 抢占通知到真删 Pod 的宽限窗(秒)。与 creating_timeout_seconds 有时间预算耦合,
-    # 调之前先读 docs/reference/limits.md 那一段
+    # 抢占通知到真删 Pod 的宽限窗(秒);与 creating_timeout_seconds 耦合,见 docs/reference/limits.md
     "spot_grace_seconds": ("int", Decimal(30), Decimal(600)),
 }
 
@@ -81,13 +79,12 @@ class EffectivePolicies:
     spot_grace_seconds: int
 
 
-# 抢占宽限窗之外必须留给「删 Pod → 释放卡 → 调度请求方 → 拉起」的时间余量(秒):
-# 宽限窗吃掉整个 creating 超时预算时,请求方会在 victim 的 Pod 删完之前就超时转 failed
+# creating 超时预算里宽限窗之外须留给「删 Pod → 释放卡 → 调度 → 拉起」的余量(秒)
 PREEMPT_TIME_RESERVE_SECONDS = 120
 
 
 def validate_policy_value(key: str, value: str) -> str:
-    """校验并归一化。未知键或越界抛 ValueError(调用方转 AppError)。"""
+    """校验并归一化;未知键或越界抛 ValueError。"""
     spec = POLICY_SPECS.get(key)
     if spec is None:
         raise ValueError(f"未知策略键:{key}")
@@ -101,7 +98,7 @@ def validate_policy_value(key: str, value: str) -> str:
     if not lo <= num <= hi:
         raise ValueError(f"{key} 取值须在 {lo}~{hi} 之间")
     if key == "spot_grace_seconds":
-        # 跨键约束,静态区间表达不了:宽限窗必须给「删 Pod + 调度请求方」留够余量
+        # 跨键约束:宽限窗 + 余量 ≤ creating 超时
         budget = get_settings().creating_timeout_seconds - PREEMPT_TIME_RESERVE_SECONDS
         if num > budget:
             raise ValueError(
@@ -118,7 +115,7 @@ async def get_effective_policies(session: AsyncSession) -> EffectivePolicies:
     for row in (await session.execute(select(PolicyOverride))).scalars():
         if row.key in eff:
             eff[row.key] = row.value
-    # 按 POLICY_SPECS 的类型列统一转换:新增策略键只需动 SPECS 与 dataclass 两处
+    # 按 POLICY_SPECS 的类型列转换
     converted: dict[str, Any] = {
         k: (Decimal(v) if POLICY_SPECS[k][0] == "decimal" else int(v)) for k, v in eff.items()
     }
@@ -126,7 +123,7 @@ async def get_effective_policies(session: AsyncSession) -> EffectivePolicies:
 
 
 async def set_policy_overrides(session: AsyncSession, updates: dict[str, str]) -> None:
-    """写覆盖(不 commit,由调用方与审计同事务提交)。"""
+    """写覆盖(不 commit)。"""
     for key, raw in updates.items():
         value = validate_policy_value(key, raw)
         await session.execute(

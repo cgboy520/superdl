@@ -58,10 +58,7 @@ router = APIRouter(tags=["admin"])
 
 @router.get("/overview", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_overview(session: DbSession) -> OverviewOut:
-    """值班首屏聚合:实例分状态 COUNT、付费租户 COUNT、池级 GPU(含非 Ready)台账。
-
-    全是精确计数,不从截断列表(200/500 条)推算。
-    """
+    """值班首屏聚合:实例分状态 COUNT、付费租户 COUNT、池级 GPU 台账。全是精确计数。"""
     return OverviewOut.model_validate(await service.overview(session))
 
 
@@ -98,10 +95,7 @@ async def admin_tickets_count(
     status: str = "pending_staff",
     category: str | None = None,
 ) -> AdminTicketCountOut:
-    """待办工单计数轻端点(角标轮询替代全量列表轮询):默认 pending_staff 口径。
-
-    注意须注册在 /tickets/{ticket_id} 之前,否则 "count" 会被当 id 解析。
-    """
+    """待办工单计数(默认 pending_staff 口径)。须注册在 /tickets/{ticket_id} 之前。"""
     from app.modules.tickets import service as tickets_service
 
     return AdminTicketCountOut(
@@ -163,13 +157,13 @@ async def admin_audit_log(
     limit: int = Query(default=100, ge=1, le=500),
     cursor: str | None = None,
 ) -> list[AuditLogOut]:
-    """审计检索:actor_id / 动作前缀 / 时间区间;cursor 向前翻页(响应保持数组,满页即还有更早)。"""
+    """审计检索:actor_id / 动作前缀 / 时间区间;cursor 向前翻页(满页即还有更早)。"""
     from sqlalchemy import select as sa_select
 
     from app.core.audit import AuditLog
     from app.core.pagination import decode_cursor_int
 
-    # 筛选条件与审计 CSV 导出同一函数:两处口径不会各自漂移
+    # 筛选条件与审计 CSV 导出同一函数
     stmt = admin_export.audit_filters(
         sa_select(AuditLog).order_by(AuditLog.id.desc()).limit(limit),
         actor_type=actor_type,
@@ -217,7 +211,7 @@ async def admin_audit_export(
     lang: Literal["zh-CN", "en-US"] = ExportLang,
 ) -> StreamingResponse:
     """审计检索 CSV(流式):筛选口径与 GET /audit 一致;行数硬上限 + 截断标记行。
-    审计本身的批量导出是敏感读,落一条检索审计(只记筛选参数,不复制内容)。"""
+    落一条检索审计(只记筛选参数)。"""
     mark_audited_read(
         request,
         "audit:export",
@@ -243,7 +237,7 @@ async def admin_audit_export(
 
 @router.get("/policies", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_get_policies(session: DbSession) -> PoliciesAdminOut:
-    """当前生效策略 + 取值范围(供设置屏渲染)+ DB 覆盖项。"""
+    """当前生效策略 + 取值范围 + DB 覆盖项。"""
     from dataclasses import asdict
 
     from app.core.policies import POLICY_SPECS, get_effective_policies, list_policy_overrides
@@ -270,8 +264,7 @@ class PolicyUpdateRequest(BaseModel):
 async def admin_update_policies(
     body: PolicyUpdateRequest, session: DbSession, request: Request
 ) -> UpdatedKeysOut:
-    """在线调整策略参数(即时生效,GET /policies 与计费/回收同步跟随)。
-    审计 detail 记变更前后值与原因。"""
+    """在线调整策略参数(即时生效)。审计 detail 记变更前后值与原因。"""
     from dataclasses import asdict
 
     from app.core.policies import get_effective_policies, set_policy_overrides
@@ -295,13 +288,12 @@ async def admin_update_policies(
     return UpdatedKeysOut(updated=sorted(body.updates))
 
 
-# ---------- 平台配置:支付/短信/实名/合规(角色:仅 admin —— 渠道凭据不下放 ops) ----------
+# ---------- 平台配置:支付/短信/实名/合规(角色:仅 admin) ----------
 
 
 @router.get("/platform-config", dependencies=[require_roles()])
 async def admin_get_platform_config(session: DbSession) -> PlatformConfigOut:
-    """分组配置项:生效值 + 来源(env 默认/DB 覆盖)+ 服务端计算的配置风险 warnings。
-    secret 永不回明文,只回尾 4 位预览。"""
+    """分组配置项:生效值 + 来源(env 默认/DB 覆盖)+ 配置风险 warnings。secret 只回尾 4 位预览。"""
     from app.core.platform_config import (
         SETTING_SPECS,
         compute_config_warnings,
@@ -350,9 +342,7 @@ async def admin_update_platform_config(
 ) -> UpdatedKeysOut:
     """在线配置渠道凭据与合规信息(空串=清除覆盖,回退 env 默认)。
 
-    审计落键名与动作类型(set/clear),不落值:secret 键的值永远不进审计;
-    动作类型必须落——「清除覆盖」会把开关回落到部署层取值,对合规开关而言
-    与「写入弱值」同为降防操作,只记键名无法在审计里区分。
+    审计落键名与动作类型(set/clear),不落值。
     """
     from app.core.platform_config import set_platform_settings
 
@@ -386,7 +376,7 @@ async def admin_test_sms(body: SmsTestRequest, session: DbSession, request: Requ
     from app.core.sms import SmsError, ensure_sms_platform_quota, get_sms_channel
 
     await check_rate_limit("admin:test-sms", max_attempts=10, window_seconds=3600.0)
-    await ensure_sms_platform_quota()  # 实发同样消耗平台预算池,与其他发送点同一闸门
+    await ensure_sms_platform_quota()  # 实发同样消耗平台预算池
     cfg = await get_effective_platform_config(session)
     channel = await get_sms_channel(session)
     code = f"{secrets.randbelow(10**6):06d}"
@@ -405,8 +395,8 @@ async def admin_test_sms(body: SmsTestRequest, session: DbSession, request: Requ
 
 @router.post("/platform-config/test-registry", dependencies=[require_roles()])
 async def admin_test_registry(session: DbSession, request: Request) -> RegistryTestOut:
-    """按当前生效镜像仓库配置探测 Harbor:health(DNS/TLS/CA)→ 机器人鉴权读平台项目仓库列表。
-    只读、有限流、过审计(detail 只落 host)。"""
+    """按当前生效镜像仓库配置探测 Harbor:health → 机器人鉴权读项目仓库列表。
+    只读、有限流、过审计。"""
     from app.core.ratelimit import check_rate_limit
 
     await check_rate_limit("admin:test-registry", max_attempts=10, window_seconds=3600.0)
@@ -465,8 +455,8 @@ async def admin_publish_announcement(
     response: Response,
     idempotency_key: IdempotencyKey = None,
 ) -> AnnouncementResultOut:
-    """公告群发(站内信 announcement 类型,全部 active 用户);落公告级记录供历史/撤回。
-    Idempotency-Key 重放不新建公告(否则全员收到重复站内信),回 200 + X-Idempotent-Replay。"""
+    """公告群发(站内信 announcement 类型,全部 active 用户);落公告级记录。
+    Idempotency-Key 重放不新建公告,回 200 + X-Idempotent-Replay。"""
     from app.modules.notify import service as notify_service
 
     reached, created = await notify_service.publish_announcement(
@@ -484,7 +474,7 @@ async def admin_publish_announcement(
 
 @router.get("/announcements", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_list_announcements(session: DbSession) -> list[AnnouncementOut]:
-    """公告历史(含已撤回;固定截断 200,前端 ListCapNote 提示)。"""
+    """公告历史(含已撤回;固定截断 200)。"""
     from app.modules.notify import service as notify_service
 
     return [_announcement_out(a) for a in await notify_service.admin_list_announcements(session)]
@@ -498,7 +488,7 @@ async def admin_revoke_announcement(
     session: DbSession,
     request: Request,
 ) -> AnnouncementOut:
-    """撤回公告(原因必填,入审计):撤回后全部租户的站内信公告不再可见。重复撤回 409。"""
+    """撤回公告(原因必填):撤回后租户侧公告不再可见。重复撤回 409。"""
     from app.modules.notify import service as notify_service
 
     announcement = await notify_service.revoke_announcement(
@@ -513,7 +503,7 @@ async def admin_revoke_announcement(
 
 @router.get("/outbox/dead", dependencies=[require_roles("ops", "readonly")])
 async def admin_list_dead_tasks(session: DbSession) -> list[DeadTaskOut]:
-    """死信任务列表:重试耗尽的编排任务在此可见(另有 outbox_dead_total 指标接告警)。"""
+    """死信任务列表(另有 outbox_dead_total 指标接告警)。"""
     from sqlalchemy import select as sa_select
 
     rows = (
@@ -551,7 +541,7 @@ class OutboxRetryRequest(BaseModel):
 
 
 async def _load_dead_task(session: AsyncSession, task_id: int, *, conflict_key: str) -> OutboxTask:
-    """重放/忽略共用前奏:任务不存在 404;非 dead 状态报 CONFLICT(conflict_key 区分两种文案)。"""
+    """重放/忽略共用前奏:任务不存在 404;非 dead 状态 CONFLICT(conflict_key 区分文案)。"""
     task = await session.get(OutboxTask, task_id)
     if task is None:
         raise AppError(ErrorCode.NOT_FOUND, key="adminapi.taskNotFound", http_status=404)
@@ -564,7 +554,7 @@ async def _load_dead_task(session: AsyncSession, task_id: int, *, conflict_key: 
 async def admin_retry_dead_task(
     task_id: int, body: OutboxRetryRequest, session: DbSession, request: Request
 ) -> OutboxTaskStatusOut:
-    """重放死信(需原因,与忽略对齐):置回 pending 交还 worker(handler 幂等,重放安全)。"""
+    """重放死信(需原因):置回 pending 交还 worker(handler 幂等)。"""
     task = await _load_dead_task(session, task_id, conflict_key="adminapi.taskStateNotReplayable")
     task.status = "pending"
     task.retries = 0
@@ -582,7 +572,7 @@ async def admin_retry_dead_task(
 async def admin_discard_dead_task(
     task_id: int, body: OutboxDiscardRequest, session: DbSession, request: Request
 ) -> OutboxTaskStatusOut:
-    """忽略死信(需原因):确认该任务不再需要执行(如实例已人工处理)。"""
+    """忽略死信(需原因)。"""
     task = await _load_dead_task(session, task_id, conflict_key="adminapi.taskStateNotIgnorable")
     task.status = "discarded"
     await session.commit()

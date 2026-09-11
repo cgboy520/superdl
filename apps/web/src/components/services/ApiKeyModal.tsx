@@ -1,8 +1,4 @@
-/**
- * 新建服务访问 Key 的弹窗。成功态是一次性展示:明文只在创建响应里出现一次,库里只有 HMAC 摘要。
- * 与管理端 TOTP 恢复码同一套:大号等宽全值 + 复制 + 红字警告 + 必须勾「我已保存」才能关,
- * X 与遮罩关闭一并封掉(手滑关掉就只能吊销后重建)。
- */
+/** 新建服务访问 Key 弹窗。成功态一次性展示:大号等宽全值 + 复制 + 红字警告 + 必须勾「我已保存」才能关,X 与遮罩关闭封掉(与管理端 TOTP 恢复码同一套)。 */
 
 import type { ApiKeyCreateOut } from "@superdl/api-client";
 import { fontSize } from "@superdl/ui";
@@ -39,7 +35,7 @@ export function ApiKeyModal({
       <Modal
         open={open}
         title={t("services.keys.created")}
-        // 明文只此一次:X 与遮罩关闭全部封掉,只留勾选后的那个按钮
+        // X 与遮罩关闭封掉,只留勾选后的按钮
         closable={false}
         mask={{ closable: false }}
         keyboard={false}

@@ -1,5 +1,4 @@
-/** 脏表单离开防护:路由跳走(侧栏 / 前进后退)由 useBlocker 拦,刷新与关标签由 beforeunload 兜底;
- *  提交成功或「取消」已确认后调 bypass() 放行,避免同一动作二次确认。 */
+/** 脏表单离开防护:路由跳走由 useBlocker 拦,刷新与关标签由 beforeunload 兜底;提交成功或「取消」已确认后调 bypass() 放行。 */
 
 import { useBlocker } from "@tanstack/react-router";
 import { Modal } from "antd";

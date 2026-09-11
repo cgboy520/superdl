@@ -1,5 +1,4 @@
-/** 告警跳转目标(总览告警流与顶栏铃铛共用,后端按现有字段派生 target_kind/target_id):
- *  无 target 不可点;node/ticket 深链带目标 id,由目标页消费(选中高亮/自动开抽屉)。 */
+/** 告警跳转目标(后端派生 target_kind/target_id):无 target 不可点;node/ticket 深链带目标 id。 */
 
 import { useQueryClient } from "@tanstack/react-query";
 import { App } from "antd";
@@ -9,14 +8,14 @@ import { adminColors, useApiErrorText } from "@superdl/ui";
 
 import { type AlertRow, useAckAlert } from "../api";
 
-/** 级别码 → 文案键(静态表:admin 的 t() 是严格键类型);总览告警流与告警中心共用。 */
+/** 级别码 → 文案键 */
 export const SEVERITY_LABEL_KEY = {
   info: "overview.severityInfo",
   warning: "overview.severityWarning",
   critical: "overview.severityCritical",
 } as const;
 
-/** 级别码 → 徽标色(三档表,铃铛/总览告警流/告警中心统一口径);未知级别回落中性灰蓝。 */
+/** 级别码 → 徽标色;未知级别回落灰蓝。 */
 export function severityColor(severity: string): string {
   switch (severity) {
     case "critical":
@@ -30,8 +29,7 @@ export function severityColor(severity: string): string {
   }
 }
 
-/** 告警确认闭环(铃铛/总览告警流/告警中心同一范式):成功文案 + 失效 ["admin","alerts"] 前缀
- *  (前缀同时覆盖告警列表各参数化 queryKey 与 unread-count 角标);错误文案走后端 message_key。 */
+/** 告警确认闭环:成功文案 + 失效 ["admin","alerts"] 前缀;错误文案走后端 message_key。 */
 export function useAckAlertWithFeedback() {
   const { t } = useTranslation();
   const errText = useApiErrorText();

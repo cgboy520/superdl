@@ -1,7 +1,4 @@
-/** ⌘K / Ctrl+K 命令面板壳(web/admin 两端共用):全局热键 + 事件总线开合 + Modal/cmdk 骨架与样式。
- *  两端薄封装只负责数据组装(groups);事件总线常量两端各自不同,作 openEventName 传入,
- *  顶栏触发器派发同名 CustomEvent。键盘导航/过滤由 cmdk 承担;视觉用 antd token
- *  (bg=colorBgElevated,选中行走各端全局 CSS 的品牌色浅底)。 */
+/** ⌘K / Ctrl+K 命令面板壳(两端共用):全局热键 + 事件总线开合 + Modal/cmdk 骨架。两端只组装 groups,openEventName 各自传入。 */
 
 import { QuestionCircleOutlined, SearchOutlined } from "@ant-design/icons";
 import { Modal, theme, Typography } from "antd";
@@ -14,13 +11,13 @@ export function isMacPlatform(): boolean {
   return typeof navigator !== "undefined" && /mac/i.test(navigator.platform);
 }
 
-/** 顶栏 kbd 提示徽标(两端同一判定) */
+/** 顶栏 kbd 提示徽标 */
 export const COMMAND_KBD_HINT = isMacPlatform() ? "⌘K" : "Ctrl K";
 
 export interface CommandPaletteItem {
   key: string;
   label: ReactNode;
-  /** 双语关键词:中文标签与英文/拼音检索都能命中 */
+  /** 双语检索关键词 */
   keywords?: string[];
   /** cmdk 过滤值:label 为字符串时默认取 `${label} ${key}`;label 为复合节点(如实例行)时必传 */
   value?: string;
@@ -37,11 +34,11 @@ export interface CommandPaletteShellProps {
   onOpenChange: (open: boolean) => void;
   /** 顶栏触发器与面板之间的事件总线名(两端各自不同) */
   openEventName: string;
-  /** aria label 与输入框占位(= 各端 t("command.trigger")) */
+  /** aria label 与输入框占位 */
   label: string;
   noResultsText: string;
   hintText: string;
-  /** 底部第二条快捷键提示(web 端有,admin 无则不传) */
+  /** 底部第二条快捷键提示(可选) */
   hintExtraText?: string;
   groups: CommandPaletteGroup[];
 }

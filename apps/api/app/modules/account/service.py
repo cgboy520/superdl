@@ -51,18 +51,16 @@ logger = get_logger(__name__)
 
 MOCK_SMS_CODE = "123456"
 
-# 单条验证码最多允许失败次数,达到即作废
+# 单条验证码失败次数上限,达到即作废
 MAX_SMS_CODE_ATTEMPTS = 5
 
-# 同号发送退避的指数上限:连续第 N 条未消费验证码的间隔 = 基础间隔 × 2^min(N-1, 上限)
-# (60s 基础间隔 → 60s/120s/240s,封顶 480s);验证码被正常消费后连续计数归零。
+# 同号发送退避指数上限:第 N 条未消费验证码的间隔 = 60s × 2^min(N-1, 上限);消费后归零
 SMS_SEND_BACKOFF_MAX_EXPONENT = 3
 
-# 验证码日配额,按「消费」计(见 _consume_sms_code):只有真正读到码并完成登录/注册/重置的
-# 一方才计数,替他人请求验证码耗不到该配额
+# 验证码日配额,按「消费」计(见 _consume_sms_code)
 SMS_CONSUME_DAILY_MAX = 10
 
-# 同 jti 重放宽限窗:窗内视为并发重试,按正常轮换处理;窗外判泄露并撤销全部会话
+# 同 jti 重放宽限窗:窗内按并发重试回同一对 token;窗外判泄露,撤销全部会话
 REFRESH_REPLAY_GRACE_SECONDS = 10.0
 
 
@@ -75,13 +73,12 @@ async def send_sms_code(
     captcha_token: str | None = None,
 ) -> None:
     settings = get_settings()
-    # 发送尝试只按 IP 限流;手机号日配额在消费侧计(见 SMS_CONSUME_DAILY_MAX)。
+    # 发送尝试只按 IP 限流;手机号日配额在消费侧计(SMS_CONSUME_DAILY_MAX)
     await check_rate_limit(
         f"sms-send-ip:{client_ip or '-'}", max_attempts=20, window_seconds=3600.0
     )
     cfg = await get_effective_platform_config(session)
-    # 人机校验(安全策略 captcha_enabled):分布式脚本可轮换 IP/号码池绕过全部单点限流,
-    # 行为验证码是唯一纵深。闸门 fail-closed:渠道故障一律 502,宁停服务不放轰炸。
+    # 人机校验(captcha_enabled),fail-closed:渠道故障一律 502
     if cfg["captcha_enabled"] == "true":
         if not captcha_token:
             raise AppError(ErrorCode.CAPTCHA_REQUIRED, key="account.captchaRequired")
@@ -97,13 +94,11 @@ async def send_sms_code(
             ) from exc
         if not captcha_ok:
             raise AppError(ErrorCode.CAPTCHA_VERIFY_FAILED, key="account.captchaVerifyFailed")
-    # 平台级闸门:分布式 IP/号码池可绕过单点限流,预算池兜底(计数即准入,不落库无效验证码)
+    # 平台级短信预算池:计数即准入,不落库无效验证码
     await ensure_sms_platform_quota()
-    # 同号串行化:退避「先查后写」跨请求 TOCTOU——并发请求可双双通过检查各发一条
-    # (短信轰炸/成本攻击)。事务级咨询锁把「查最近→退避判定→落新码」串行到手机号粒度,
-    # 随下方 commit/rollback 释放;渠道发送在 commit 之后,不占锁。
+    # 同号事务级咨询锁:「查最近→退避判定→落新码」按手机号串行;渠道发送在 commit 之后,不占锁
     await session.execute(text("SELECT pg_advisory_xact_lock(hashtext(:phone))"), {"phone": phone})
-    # 同号递增退避:连续未消费的验证码越多,下一条允许发送的间隔越长;消费一条即归零。
+    # 同号递增退避:连续未消费越多间隔越长,消费一条即归零
     recent = list(
         (
             await session.execute(
@@ -134,7 +129,7 @@ async def send_sms_code(
     code = MOCK_SMS_CODE if cfg["sms_provider"] == "mock" else f"{secrets.randbelow(10**6):06d}"
     row = SmsCode(
         phone=phone,
-        code_hash=hash_sms_code(phone, purpose, code),  # 明文只活在这个局部变量里
+        code_hash=hash_sms_code(phone, purpose, code),
         purpose=purpose,
         expires_at=now_utc() + timedelta(seconds=settings.sms_code_ttl_seconds),
     )
@@ -147,7 +142,6 @@ async def send_sms_code(
         # 渠道失败:作废刚落库的验证码
         row.used_at = now_utc()
         await session.commit()
-        # 手机号由 logging._mask_sensitive_processor 按键名打码(前 3 后 4),不在这里重复
         logger.error("sms_send_failed", phone=phone, error=str(exc))
         raise AppError(
             ErrorCode.SMS_SEND_FAILED,
@@ -159,8 +153,7 @@ async def send_sms_code(
 async def _consume_sms_code(session: AsyncSession, phone: str, code: str, purpose: str) -> None:
     """校验并一次性消费验证码。同事务内调用,失败抛 SMS_CODE_INVALID。
 
-    失败计次先 commit 再抛(调用方 rollback 不抹掉计次);
-    最新一条达到 MAX_SMS_CODE_ATTEMPTS 即作废,正确码也不再放行。
+    失败计次先 commit 再抛;最新一条达到 MAX_SMS_CODE_ATTEMPTS 即作废。
     """
     row = (
         await session.execute(
@@ -186,11 +179,11 @@ async def _consume_sms_code(session: AsyncSession, phone: str, code: str, purpos
     if not any(matched):
         row.attempts += 1
         if row.attempts >= MAX_SMS_CODE_ATTEMPTS:
-            # 达上限即作废:否则 used_at 恒空,这条已烧毁的码会被反复选中
+            # 达上限即作废
             row.used_at = now_utc()
         await session.commit()
         raise AppError(ErrorCode.SMS_CODE_INVALID, key="account.smsCodeInvalid")
-    # 日配额按「消费」计:放在成功分支、标 used_at 之前,失败尝试与超额请求都不消耗配额
+    # 日配额按「消费」计:只在成功分支、标 used_at 之前计数
     await check_rate_limit(
         f"sms-consume-phone:{phone}", max_attempts=SMS_CONSUME_DAILY_MAX, window_seconds=86400.0
     )
@@ -204,8 +197,8 @@ def _issue_tokens(
     access_jti: str | None = None,
     iat: datetime | None = None,
 ) -> TokenPair:
-    """签发 token 对。jti/iat 仅 refresh 轮换链使用:首消费显式生成并落库,
-    宽限窗重放按落库值重编码出同一对 token。"""
+    """签发 token 对。jti/iat 仅 refresh 轮换链使用:首消费生成并落库,
+    宽限窗重放按落库值重编码。"""
     extra = {"ver": user.token_version}
     return TokenPair(
         access_token=create_token(
@@ -232,12 +225,11 @@ async def register(
     await check_rate_limit(
         f"user-register:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0
     )
-    # 先验码再判重:反过来就是手机号枚举 oracle。码行 FOR UPDATE 也把同号并发注册串行化:
-    # 后到者在前者提交后选不到未消费的码,走不到 INSERT
+    # 先验码再判重(防手机号枚举);码行 FOR UPDATE 把同号并发注册串行化
     await _consume_sms_code(session, phone, sms_code, "register")
     existing = (await session.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
     if existing is not None:
-        # 已注册号被反复拿去注册 = 号段探测/接管尝试,与登录失败同一条留痕线
+        # 已注册号重复注册,与登录失败同一条留痕线
         logger.warning(
             "user_register_failed",
             account=mask_phone_value(phone),
@@ -247,10 +239,10 @@ async def register(
         raise AppError(ErrorCode.PHONE_TAKEN, key="account.phoneTaken")
     user = User(phone=phone, password_hash=await hash_password(password) if password else None)
     session.add(user)
-    # 注册必勾落证(合规举证):terms/privacy 各一条,版本=当前 published,与建号同事务
+    # 注册同意存证:terms/privacy 各一条,版本 = 当前 published,与建号同事务
     from app.modules.legal import service as legal_service
 
-    await session.flush()  # 取 user.id 供同意存证
+    await session.flush()  # 取 user.id
     await legal_service.record_registration_consents(session, user.id, client_ip)
     await session.commit()
     await session.refresh(user)
@@ -258,18 +250,9 @@ async def register(
     return _issue_tokens(user)
 
 
-# 登录限流桶(键模板, max_attempts, window_seconds),四维防线:
-# - ip 桶:只按 IP 切分,兜住「遍历号段换桶」的分布式撞库;
-# - ip+phone 桶:单账号单源的最严闸;
-# - acct 桶(15min)/acct-daily 桶:纯账号维度——撞库可以换 IP 但换不了目标账号,
-#   只按 IP+账号的桶在 N 个源地址下是 5×N 次/5 分钟,必须有账号级阶梯锁定。
-# 预检(bcrypt 前拦封禁,不付哈希成本)/计数(只计失败)/清零/异常判定四处遍历同一张表,
-# 改一处即全链路生效。
-#
-# acct-daily 桶在**用户端**仍参与预检(与管理端相反,管理端见 adminapi/service._login_buckets):
-# 打满 30 次只封口令登录这一条路,验证码登录与找回密码都不经这里的预检,用户自己有出口;
-# 而管理端只有口令一条通路,封死即需进库改数据。代价对称地也不同:手机号面是 1.9e9 量级,
-# 30/日 的账号级封顶是慢速撞库唯一挡得住的一层,拆掉换来的是每账号 960 次/日。
+# 登录限流桶(键模板, max_attempts, window_seconds),四层:ip / ip+phone / acct 15min / acct-daily。
+# 预检(bcrypt 前拦封禁)/ 计数(只计失败)/ 清零 / 异常判定四处遍历同一张表。
+# acct-daily 桶在用户端参与预检(管理端不参与,见 adminapi/service._login_buckets)。
 _LOGIN_BUCKETS: tuple[tuple[str, int, float], ...] = (
     ("user-login-ip:{ip}", 60, 3600.0),
     ("user-login:{ip}:{phone}", 5, 300.0),
@@ -277,8 +260,7 @@ _LOGIN_BUCKETS: tuple[tuple[str, int, float], ...] = (
     ("user-login-acct-daily:{phone}", 30, 86400.0),
 )
 
-# 成功登录后立即清零的桶(IP 桶不清:撞库不会产生成功登录);
-# acct 15min 桶兼作异常判定数据源,必须先读后清(见 login 尾部)
+# 成功登录后清零的桶(IP 桶不清);acct 15min 桶兼作异常判定数据源,先读后清
 _LOGIN_CLEAR_BUCKETS = ("user-login:{ip}:{phone}",)
 _LOGIN_ANOMALY_BUCKET = ("user-login-acct:{phone}", 900.0)
 
@@ -297,8 +279,8 @@ async def login(
 ) -> TokenPair:
     user = (await session.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
     try:
-        # 「未注册」与「已注册但凭证错」不可区分:文案统一 loginFailed,
-        # 时序也拉平(未注册路径照付 bcrypt 的 ~200ms);密码与验证码两条路径同限流
+        # 「未注册」与「凭证错」不可区分:文案统一 loginFailed,时序拉平;
+        # 密码与验证码两条路径同限流
         if sms_code is not None:
             try:
                 await _consume_sms_code(session, phone, sms_code, "login")
@@ -308,8 +290,7 @@ async def login(
                 raise AppError(ErrorCode.LOGIN_FAILED, key="account.loginFailed")
             await session.commit()
         elif password is not None:
-            # 已封禁的桶在 bcrypt(~200ms CPU/次)之前拦下:封禁期内的撞库请求
-            # 不付哈希成本(只读预检,不计数,不影响正常登录的配额语义)
+            # 封禁桶在 bcrypt 之前拦下(只读预检,不计数)
             for key, (_, max_attempts, window_seconds) in zip(
                 _login_bucket_keys(phone, client_ip), _LOGIN_BUCKETS, strict=True
             ):
@@ -328,17 +309,14 @@ async def login(
             raise AppError(ErrorCode.VALIDATION_ERROR, key="account.credentialRequired")
     except AppError as exc:
         if exc.code == ErrorCode.LOGIN_FAILED:
-            # 只在失败后计数,成功登录不消耗配额
+            # 只在失败后计数
             for key, (_, max_attempts, window_seconds) in zip(
                 _login_bucket_keys(phone, client_ip), _LOGIN_BUCKETS, strict=True
             ):
                 await check_rate_limit(
                     key, max_attempts=max_attempts, window_seconds=window_seconds
                 )
-            # 失败登录留痕(与管理端 admin_login_failed 同口径):路由的 set_audit_target
-            # 排在 login 返回之后,失败请求的审计行没有 target,「哪个账号被打」只能从这里答。
-            # 号码显式打码后再落,键名不用 phone(否则日志处理器会对已打码值二次打码成
-            # ******,反而丢掉可关联性);与管理端的 username= 位置对应
+            # 失败登录留痕(与管理端 admin_login_failed 同口径);号码显式打码,键名不用 phone
             LOGIN_FAILED_TOTAL.labels(actor_type="user").inc()
             logger.warning(
                 "user_login_failed",
@@ -348,11 +326,10 @@ async def login(
                 registered=user is not None,
             )
         raise
-    # 凭据正确即清零该账号桶的失败计数
+    # 凭据正确即清零账号桶
     for tmpl in _LOGIN_CLEAR_BUCKETS:
         await clear_rate_limit(tmpl.format(ip=client_ip or "-", phone=phone))
-    # 异常登录通知:账号桶在窗口内有失败记录而本次成功——疑似被撞库,通知本人;
-    # 随后清零账号桶(正常用户的预算不被攻击者的失败计数拖垮)
+    # 异常登录通知:账号桶窗口内有失败记录而本次成功 → 通知本人,再清零账号桶
     if password is not None:
         anomaly_tmpl, anomaly_window = _LOGIN_ANOMALY_BUCKET
         acct_hits = await read_hits(
@@ -373,10 +350,10 @@ async def login(
                 severity="warning",
                 dedup_key=f"login-anomaly:{user.id}:{now_utc():%Y%m%d}",
             )
-            await session.commit()  # 通知落库(password 路径无其它提交点)
-        # 异常判定完成后才清零账号桶(先读 hits 再清,顺序不可换)
+            await session.commit()
+        # 先读 hits 再清,顺序不可换
         await clear_rate_limit(_LOGIN_ANOMALY_BUCKET[0].format(ip=client_ip or "-", phone=phone))
-    # 已注销账号的 phone 已改写为 del:…,按手机号查不到,不必再判 deleted(持凭证路径见 deps/refresh)
+    # 已注销账号的 phone 已改写为 del:…,按手机号查不到
     if user.status == "frozen":
         raise AppError(
             ErrorCode.USER_FROZEN, key="account.userFrozen", http_status=status.HTTP_403_FORBIDDEN
@@ -394,19 +371,18 @@ async def reset_password(
 ) -> TokenPair:
     """凭手机号 + 验证码设置新密码(首次设置、修改、找回同一条路径)。
 
-    先验码再查账号:反过来是手机号枚举 oracle。
-    成功后 token_version+1 撤销全部在外会话,并给调用方发一对新 token。
+    先验码再查账号;成功后 token_version+1 撤销全部在外会话并发新 token 对。
     """
     await check_rate_limit(
         f"password-reset:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0
     )
     await _consume_sms_code(session, phone, sms_code, "reset_password")
-    # 行锁:token_version 读-改-写与 refresh 重放撤销/登出全部互斥,防并发丢更新
+    # 行锁:token_version 读-改-写与 refresh 重放撤销/登出互斥
     user = (
         await session.execute(select(User).where(User.phone == phone).with_for_update())
     ).scalar_one_or_none()
     if user is None:
-        # 验码已过但号不存在:号段探测(拿别人的号发码再试改密),留痕同登录失败线
+        # 验码已过但号不存在,留痕同登录失败线
         logger.warning(
             "password_reset_failed",
             account=mask_phone_value(phone),
@@ -429,17 +405,16 @@ async def reset_password(
 async def refresh_tokens(session: AsyncSession, refresh_token: str) -> TokenPair:
     """轮换式刷新:refresh 一次性消费(jti 落库),重放视为泄露 → 撤销全部在外 token。
 
-    宽限窗:同 jti 在 REFRESH_REPLAY_GRACE_SECONDS 内被重复消费视为并发重试,回首消费
-    事务登记的同一对 token,不为同一旧 token 另开第二条长期有效的轮换链。
+    宽限窗内同 jti 重放视为并发重试,回首消费登记的同一对 token。
     """
     payload = decode_token(refresh_token, "user", expected_type="refresh")
-    # 行锁:token_version 读-改-写与改密/登出全部/并发刷新互斥,防并发丢更新
+    # 行锁:token_version 读-改-写与改密/登出全部/并发刷新互斥
     user = await session.get(User, int(payload["sub"]), with_for_update=True)
     if user is None or user.status == "frozen":
         raise unauthorized()
     if user.status == "deleted":
         raise unauthorized(key="account.accountDeleted")
-    # 撤销闸:签发点恒带 ver,缺失不给默认值(None ≠ 任何版本 → 401)
+    # 撤销闸:ver 缺失不给默认值(None ≠ 任何版本 → 401)
     if payload.get("ver") != user.token_version:
         raise unauthorized()
     jti = str(payload.get("jti", ""))
@@ -461,33 +436,30 @@ async def refresh_tokens(session: AsyncSession, refresh_token: str) -> TokenPair
             seconds=REFRESH_REPLAY_GRACE_SECONDS
         ):
             if used.consumed_via == "logout":
-                # 登出消费的重放:一律拒绝,但不 bump token_version——
-                # 登出与并发首刷竞态时首刷方可能已合法轮换出新对,
-                # 全撤会误伤那条在线会话(登出本就不是即时全局失效)
+                # 登出消费的重放:拒绝但不 bump token_version
                 logger.warning("logout_consumed_token_replayed", user_id=user.id)
                 raise unauthorized()
             if used.consumed_via == "refresh":
                 if used.replaced_refresh_jti is not None and used.replaced_iat is not None:
-                    # 宽限窗内的重放 = 并发重试:回首次轮换的同一对 token,不另开有效链
+                    # 宽限窗内重放 = 并发重试:回同一对 token
                     return _issue_tokens(
                         user,
                         refresh_jti=used.replaced_refresh_jti,
                         access_jti=used.replaced_access_jti,
                         iat=ensure_utc(used.replaced_iat),
                     )
-                # refresh 消费但未落替代对(首消费与登记替代对两笔提交之间崩溃):
-                # 维持原补发语义
+                # 已消费但未落替代对(两笔提交之间崩溃):维持原补发语义
                 return _issue_tokens(user)
         user.token_version += 1
         await session.commit()
         logger.warning("refresh_token_replayed", user_id=user.id)
         raise unauthorized()
-    # 首消费:轮换结果登记到消费记录,宽限窗重放据此回同一对 token
+    # 首消费:轮换结果登记到消费记录
     new_refresh_jti = secrets.token_hex(16)
     new_access_jti = secrets.token_hex(16)
     issued_at = now_utc()
     consumed = await session.get(UsedRefreshToken, jti)
-    assert consumed is not None  # 本事务刚插入
+    assert consumed is not None
     consumed.replaced_refresh_jti = new_refresh_jti
     consumed.replaced_access_jti = new_access_jti
     consumed.replaced_iat = issued_at
@@ -498,13 +470,9 @@ async def refresh_tokens(session: AsyncSession, refresh_token: str) -> TokenPair
 
 
 async def logout(session: AsyncSession, refresh_token: str) -> None:
-    """登出当前会话:refresh token 落 used_refresh_tokens(与轮换同一条一次性消费位,
-    consumed_via='logout'——该 jti 的重放一律 401,不再按并发重试补发新对)。
+    """登出当前会话:refresh token 落 used_refresh_tokens(consumed_via='logout',重放一律 401)。
 
-    token 无效/过期/已登出也静默成功(调用方恒回 204),不构成 token 有效性探测口。
-    已知竞态:登出与同 jti 的并发首刷撞在宽限窗内时,首刷方已合法轮换出新对,
-    重放方按登出拒绝且不全撤(见 refresh_tokens 的 consumed_via 分支);
-    登出本就不是即时全局失效(access token 尚有短 TTL),要即时全撤用 logout_all。
+    token 无效/过期/已登出也静默成功(恒回 204)。要即时全撤用 logout_all。
     """
     try:
         payload = decode_token(refresh_token, "user", expected_type="refresh")
@@ -527,7 +495,7 @@ async def logout(session: AsyncSession, refresh_token: str) -> None:
 
 async def logout_all(session: AsyncSession, user_id: int) -> None:
     """登出全部会话:token_version+1,已签发的 access/refresh 全部失效。"""
-    # 行锁:与改密/refresh 重放撤销的 token_version 读-改-写互斥(同 _get_admin 写法)
+    # 行锁:与改密/refresh 重放撤销的 token_version 读-改-写互斥
     user = await session.get(User, user_id, with_for_update=True)
     if user is None:
         raise not_found()
@@ -543,10 +511,7 @@ async def get_user(session: AsyncSession, user_id: int) -> User:
 
 
 async def submit_real_name(session: AsyncSession, user: User, name: str, id_number: str) -> User:
-    """实名认证:三要素核验(姓名+身份证+账号手机号)。核验通过即 verified。
-
-    身份证号只存脱敏串(PIPL:原文即用即弃,不落库不打日志)。
-    """
+    """实名认证:三要素核验,通过即 verified。身份证号只存脱敏串,原文不落库不打日志。"""
     from app.modules.account.realname import (
         RealNameError,
         get_realname_provider,
@@ -557,7 +522,7 @@ async def submit_real_name(session: AsyncSession, user: User, name: str, id_numb
         raise conflict(key="account.realNameDone")
     cfg = await get_effective_platform_config(session)
     if cfg["real_name_enabled"] != "true":
-        # 安全策略未开通实名:明确 409,而不是让用户撞到凭据缺失的 502
+        # 安全策略未开通实名:409
         raise AppError(
             ErrorCode.REAL_NAME_DISABLED,
             key="account.realNameDisabled",
@@ -565,7 +530,7 @@ async def submit_real_name(session: AsyncSession, user: User, name: str, id_numb
         )
     await check_rate_limit(f"real-name:{user.id}", max_attempts=5, window_seconds=3600.0)
     try:
-        # 取 provider 也可能失败(凭据未配置):与渠道故障同属 502,不能漏成 500
+        # provider 构造失败(凭据未配置)与渠道故障同属 502
         provider = await get_realname_provider(session)
         ok = await provider.verify(name, id_number, user.phone)
     except RealNameError as exc:
@@ -610,7 +575,7 @@ async def add_ssh_key(session: AsyncSession, user_id: int, name: str, public_key
         normalized, fingerprint = parse_public_key(public_key)
     except ValueError as exc:
         raise AppError(ErrorCode.SSH_KEY_INVALID, str(exc)) from exc
-    # 查重按本用户口径:同一把钥匙不同租户各自可添加,同一用户重复添加才拒绝。
+    # 查重按本用户口径
     dup = (
         await session.execute(
             select(SshKey).where(SshKey.user_id == user_id, SshKey.fingerprint == fingerprint)
@@ -630,10 +595,7 @@ async def delete_ssh_key(session: AsyncSession, user_id: int, key_id: int) -> No
     if key is None or key.user_id != user_id:
         raise not_found()
     await session.delete(key)
-    # 同步摘除该用户未释放实例上的 authorized_keys 快照(实例行是开机下发源,
-    # 不摘则「删了钥匙、重启又回来」)。运行中 Pod 容器内的 authorized_keys 由
-    # entrypoint 在建 Pod 时写定,平台无 exec 通道——运行实例下次重启才生效,
-    # 前端文案按此口径提示(重启即失效)。
+    # 同步摘除该用户未释放实例上的 authorized_keys 快照(实例行是开机下发源);运行中实例下次重启才生效
     from app.modules.orchestrator import service as orchestrator_service
 
     stripped = await orchestrator_service.strip_ssh_key_from_instances(
@@ -645,15 +607,14 @@ async def delete_ssh_key(session: AsyncSession, user_id: int, key_id: int) -> No
 
 
 async def is_active_user(session: AsyncSession, user_id: int) -> bool:
-    """归属校验(告警租户映射等):user_id 存在且 active(deleted/frozen 不投递)。"""
+    """归属校验:user_id 存在且 active。"""
     status = await session.scalar(select(User.status).where(User.id == user_id))
     return status == "active"
 
 
 async def require_real_name_if_required(session: AsyncSession, user: User, *, key: str) -> None:
-    """实名闸门(充值与算力/存储开通面共用):real_name_required_for_recharge=true 时
-    未实名一律 403。挂点清单:充值、创建实例、开机、续费、转包周期、建数据盘——
-    漏挂一处即绕开合规闸(别按端点复制粘贴,一律经本函数)。"""
+    """实名闸门:real_name_required_for_recharge=true 时未实名一律 403。
+    挂点:充值、创建实例、开机、续费、转包周期、建数据盘,一律经本函数。"""
     cfg = await get_effective_platform_config(session)
     if cfg["real_name_required_for_recharge"] == "true" and user.verification_status != "verified":
         raise AppError(ErrorCode.REAL_NAME_REQUIRED, key=key, http_status=403)
@@ -708,10 +669,9 @@ async def admin_list_users(
     limit: int | None = None,
     order: str = "desc",
 ) -> RawPage[User]:
-    """租户列表(游标分页)。q = 手机号:完整 11 位精确匹配走唯一索引,短串按后缀匹配。
+    """租户列表(游标分页)。q = 手机号:完整 11 位精确匹配,短串按后缀匹配。
 
-    order = id(= 注册先后)正/倒序;游标语义随方向翻转(asc 时 cursor 之后取 id 更大者)。
-    余额/消费等聚合列在 Python 侧按页拼装,不在 SQL 层,故不支持以其排序(假排序比没有更糟)。
+    order = id 正/倒序,游标语义随方向翻转。聚合列在 Python 侧按页拼装,不支持以其排序。
     """
     from app.core.pagination import clamp_limit, decode_cursor_int, slice_page
 
@@ -725,7 +685,7 @@ async def admin_list_users(
         if len(q) >= 11:
             stmt = stmt.where(User.phone == q)
         else:
-            # LIKE 元字符转义:q="%" / "_" 不匹配任意字符(否则一个 % 即拖全表)
+            # LIKE 元字符转义
             stmt = stmt.where(User.phone.like(f"%{like_escape(q)}", escape="\\"))
     last_id = decode_cursor_int(cursor)
     if last_id is not None:
@@ -741,11 +701,11 @@ async def frozen_user_ids(session: AsyncSession) -> list[int]:
 
 
 async def admin_set_user_status(session: AsyncSession, user_id: int, status_: str) -> User:
-    """只管 users 表(账号模块的边界)。不 commit:调用方把「停机」编排进同一事务。"""
+    """只管 users 表。不 commit,调用方把「停机」编排进同一事务。"""
     user = await get_user(session, user_id)
     user.status = status_
     if status_ == "frozen":
-        user.token_version += 1  # 冻结即撤销全部在外 token(含 refresh)
+        user.token_version += 1  # 冻结即撤销全部在外 token
     await session.flush()
     return user
 
@@ -764,9 +724,7 @@ class UserLimits:
 
 async def get_user_limits(session: AsyncSession, user_id: int) -> UserLimits:
     """配额校验链:用户级覆盖(user_quota_overrides)→ 平台策略(policy_overrides)→ env 默认。
-
-    编排建实例与建盘统一经这里读,不要在调用点散读 settings。
-    """
+    编排建实例与建盘统一经这里读。"""
     from app.core.policies import get_effective_policies
 
     policies = await get_effective_policies(session)
@@ -806,7 +764,7 @@ async def set_quota_override(
     note: str,
     updated_by: int,
 ) -> UserQuotaOverride | None:
-    """写覆盖(upsert);三项全 None = 清除覆盖恢复默认链。不 commit,由调用方与审计同事务提交。"""
+    """写覆盖(upsert);三项全 None = 清除覆盖。不 commit,由调用方与审计同事务提交。"""
     await get_user(session, user_id)  # 幽灵 id → 404
     row = await session.get(UserQuotaOverride, user_id)
     if max_gpus is None and max_instances is None and max_disks is None:
@@ -827,8 +785,7 @@ async def set_quota_override(
 
 
 def realname_view(user: User, *, masked: bool) -> tuple[str, str | None]:
-    """实名信息透出:masked=True 脱敏(全角色默认);False 明文(仅 reveal 显式动作,
-    调用方须对本次敏感读落审计,见 adminapi/router_tenants.admin_list_tenants)。"""
+    """实名信息透出:masked=True 脱敏(默认);False 明文(仅 reveal 显式动作,调用方须落审计)。"""
     if not masked:
         return user.verification_status, user.id_name
     return user.verification_status, mask_id_name(user.id_name) if user.id_name else None
@@ -853,9 +810,9 @@ async def _pending_deletion_of_user(
 async def request_deletion(
     session: AsyncSession, user: User, *, phone: str, reason: str
 ) -> AccountDeletionRequest:
-    """申请注销(进 7 天冷静期)。幂等:已有 pending 直接返回既有(并发双击由部分唯一索引兜底)。"""
+    """申请注销(7 天冷静期)。幂等:已有 pending 直接返回既有(部分唯一索引兜底并发)。"""
     if user.phone != phone:
-        # 键入手机号须与账号一致:防误触/防会话劫持者直接销号
+        # 键入手机号须与账号一致
         raise AppError(ErrorCode.VALIDATION_ERROR, key="account.deletionPhoneMismatch")
     existing = await _pending_deletion_of_user(session, user.id)
     if existing is not None:
@@ -871,7 +828,7 @@ async def request_deletion(
 async def get_my_deletion_request(
     session: AsyncSession, user_id: int
 ) -> AccountDeletionRequest | None:
-    """当前 pending;无则最近一条(卡片据此展示驳回原因/已完成/冷静期倒计时)。"""
+    """当前 pending;无则最近一条。"""
     pending = await _pending_deletion_of_user(session, user_id)
     if pending is not None:
         return pending
@@ -886,7 +843,7 @@ async def get_my_deletion_request(
 
 
 async def cancel_deletion_request(session: AsyncSession, user_id: int) -> AccountDeletionRequest:
-    """冷静期内撤销。仅 pending 可撤;终态(rejected/completed/cancelled)409。"""
+    """冷静期内撤销。仅 pending 可撤;终态 409。"""
     req = (
         await session.execute(
             select(AccountDeletionRequest)
@@ -935,7 +892,7 @@ def _deletion_out(
 async def admin_list_deletion_requests(
     session: AsyncSession, status_: str | None = None
 ) -> list[AdminDeletionRequestOut]:
-    """注销申请列表(固定截断)。行内附执行前校验计数,确认弹窗直接渲染。"""
+    """注销申请列表(固定截断),行内附执行前校验计数。"""
     # 延迟 import 防循环:orchestrator.service → account.service
     from app.modules.billing import service as billing_service
     from app.modules.orchestrator import service as orchestrator_service
@@ -970,7 +927,7 @@ async def admin_list_deletion_requests(
 
 
 async def admin_get_deletion_out(session: AsyncSession, request_id: int) -> AdminDeletionRequestOut:
-    """单条注销申请的管理端视图(approve/reject 响应复用,实时校验计数)。"""
+    """单条注销申请的管理端视图(approve/reject 响应复用)。"""
     # 延迟 import 防循环:orchestrator.service → account.service
     from app.modules.billing import service as billing_service
     from app.modules.orchestrator import service as orchestrator_service
@@ -999,7 +956,7 @@ async def _get_deletion_for_update(
 
 
 def _auto_reject_deletion(req: AccountDeletionRequest, *, admin_id: int, note: str) -> None:
-    """执行前校验不过的自动驳回:残留清单/余额引导写进 note,用户端可见。"""
+    """执行前校验不过的自动驳回:残留清单/余额写进 note。"""
     req.status = "rejected"
     req.processed_by = admin_id
     req.processed_at = now_utc()
@@ -1009,7 +966,7 @@ def _auto_reject_deletion(req: AccountDeletionRequest, *, admin_id: int, note: s
 async def approve_deletion(
     session: AsyncSession, request_id: int, *, admin_id: int
 ) -> AccountDeletionRequest:
-    """执行注销(仅超管)。冷静期未满 409;残留资源/余额非零 → 自动驳回 + 409(清单);
+    """执行注销(仅超管)。冷静期未满 409;残留资源/余额非零 → 自动驳回 + 409;
     全通过则同事务匿名化:手机号改写为随机占位串、实名字段清空、token_version+1、status=deleted。
     """
     # 延迟 import 防循环:orchestrator.service → account.service
@@ -1021,7 +978,7 @@ async def approve_deletion(
         raise conflict(key="account.deletionNotPending", params={"status": req.status})
     remaining = req.cooldown_ends_at - now_utc()
     if remaining.total_seconds() > 0:
-        # 冷静期未满:不可执行但不驳回(用户可能还想用满这段时间/撤销)
+        # 冷静期未满:不可执行但不驳回
         raise conflict(
             key="account.deletionCooldown",
             params={"hours": math.ceil(remaining.total_seconds() / 3600)},
@@ -1063,14 +1020,8 @@ async def approve_deletion(
             params={"balance": money_str(balance)},
             detail={"balance": money_str(balance)},
         )
-    # 匿名化:手机号替换为随机不可逆令牌(释放唯一约束,原号码可再注册)、身份字段清空、
-    # 全撤登录态。账本 balance_ledger/账单按法定义务保留,不动。
-    #
-    # 令牌与原号码**无任何函数关系**:11 位手机号的keyspace 只有约 1.9e9,任何摘要
-    # (哪怕带密钥)一旦泄漏就能离线穷举比对。这里没有任何读路径需要从占位串反查号码,
-    # 只需「唯一 + 已注销可辨识」,故直接取随机数(注销即销毁映射,PIPL 删除义务才真正履行)。
-    # 长度 = 4 + len(id) + 1 + 16(token_hex(8) 为 16 hex 字符),int32 的 id 下最长 31,
-    # 仍在 users.phone 的 40 列宽内。
+    # 匿名化:手机号替换为随机占位串(与原号码无函数关系,最长 31 字符)、身份字段清空、全撤登录态;
+    # balance_ledger/账单保留不动
     user.phone = f"del:{user.id}:{secrets.token_hex(8)}"
     user.id_name = None
     user.id_number = None
@@ -1088,7 +1039,7 @@ async def approve_deletion(
 async def reject_deletion(
     session: AsyncSession, request_id: int, *, admin_id: int, note: str
 ) -> AccountDeletionRequest:
-    """驳回注销申请(理由必填,不受冷静期限制)。驳回后用户可重新申请。"""
+    """驳回注销申请(理由必填,不受冷静期限制)。"""
     req = await _get_deletion_for_update(session, request_id)
     if req.status != "pending":
         raise conflict(key="account.deletionNotPending", params={"status": req.status})

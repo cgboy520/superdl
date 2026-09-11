@@ -1,49 +1,37 @@
-# 初始控制面装机:[servers] 组的 rke2/k3s server 安装(本文件唯一的 play):
+# 初始控制面装机:[servers] 组的 rke2/k3s server 安装。
 #   ansible-playbook -i inventory.ini site.yml                        # rke2(full 档)
 #   ansible-playbook -i inventory.ini site.yml -e cluster_distro=k3s  # k3s(light 档)
-# 覆盖:apiserver 审计策略分发、server config 渲染(仓库模板 + 占位符替换,无 CHANGE_ME 残留才落盘)、
-# 安装器落盘 + sha256 校验后安装、enable + start。
-# GPU 节点不走 ansible:一律用管理端「添加节点」生成的一键命令(node-join.sh 覆盖内核参数、
-# NVIDIA 驱动与 container toolkit、NVMe VG、registries.yaml 与 agent 加入)。
-# 镜像预热由平台 outbox/巡检驱动,不在装机层做。
-# OS 基线与变量清单见本目录 README.md。
+# 覆盖:审计策略分发、server config 渲染、安装器 sha256 校验后安装、enable + start。
+# GPU 节点不走 ansible,用管理端「添加节点」的 node-join.sh。变量清单见本目录 README.md
 
 # ───────────────────────── 控制面:初始 server 节点 ─────────────────────────
-# 幂等:已装跳过安装,config 变更才重启。
+# 幂等:已装跳过,config 变更才重启
 - hosts: servers
   become: true
   vars:
     cluster_distro: rke2            # rke2(full 档)/ k3s(light 档)
     rke2_channel: latest
-    # 安装器 sha256 pin(与 node-join.sh 同一信任模型:先落盘、校验、再执行,不裸 curl|sh)。
-    # 上游安装器更新会校验失败,核对上游后同步更新本值与 node-join.sh 的 PIN_*_CN。
+    # 安装器 sha256 pin;上游更新后同步改本值与 node-join.sh 的 PIN_*_CN
     rke2_installer_sha256: "5541410b86d4d19d927d820be85156e787be3fdb24be72507af52932a1d12de1"
     k3s_installer_sha256: "3944aa467eb945b5ff2151a8e4f8d4a5f3a210d31ab39aec81f37606936d0863"
-    # 控制面敏感值(etcd 快照上传凭据、agent token)一律经 group_vars/servers.yml(不入 git)
-    # 或 -e 注入;留空由 tasks 开头的「输入变量完备性」断言直接拦截,不装半残控制面
-    # (断言必须在渲染【前】:replace 会抹掉占位符,渲染后再搜 CHANGE_ME 恒通过)。
+    # 敏感值(etcd 快照凭据、agent token)经 group_vars/servers.yml(不入 git)或 -e 注入;留空由渲染前断言拦截
     etcd_snapshot_bucket: ""
     etcd_s3_region: ""
     etcd_s3_endpoint: ""
     etcd_s3_access_key: ""
     etcd_s3_secret_key: ""
     agent_token: ""
-    # 控制面 HA:定义 api_vip 即为 3 server 堆叠 etcd 集群渲染 tls-san(apiserver 证书覆盖
-    # VIP + 全部 server IP,首台与后续 server 渲染产物一致)。
-    # 单 server 集群保持空值,server-config.yaml 的 tls-san 块维持注释。
+    # HA:定义 api_vip 即渲染 tls-san(VIP + 全部 server IP);单 server 保持空值
     api_vip: ""
     server_ips: []                # 逐台 server IP,如 ["10.0.0.11","10.0.0.12","10.0.0.13"]
     server_hostnames: []          # 可选:主机名 SAN,便于绕过 VIP 直连排障
-    # Harbor 自签/私有 CA(PEM 全文):非空即落 /etc/rancher/<distro>/harbor-ca.crt,
-    # 与 ../cluster/rke2/registries.yaml 的 configs.tls.ca_file 配套;公信证书留空
+    # Harbor 私有 CA(PEM):非空即落 /etc/rancher/<distro>/harbor-ca.crt(配 ../cluster/rke2/registries.yaml 的 ca_file)
     harbor_ca_pem: ""
-    # 装机后打平台落点标签用(见文末「控制面节点打平台组件落点标签」)
+    # 平台落点标签(见文末)
     kubectl_bin: "{{ '/var/lib/rancher/rke2/bin/kubectl' if cluster_distro == 'rke2' else '/usr/local/bin/kubectl' }}"
     kubeconfig_path: "/etc/rancher/{{ cluster_distro }}/{{ 'rke2.yaml' if cluster_distro == 'rke2' else 'k3s.yaml' }}"
   tasks:
-    # 渲染【前】断言输入:replace() 无条件执行会把占位符直接抹掉,事后搜 CHANGE_ME
-    # 的断言恒通过。agent token 缺失时节点回落使用 server token——那是能把新机器
-    # 拉进 etcd 成员的凭据。
+    # 渲染前断言输入(渲染后搜 CHANGE_ME 恒通过)
     - name: 输入变量完备性(渲染前断言,而非断言渲染产物)
       assert:
         that:
@@ -77,8 +65,7 @@
         state: directory
         mode: "0755"
 
-    # podPidsLimit 是 KubeletConfiguration 字段而非 kubelet flag(写进 kubelet-arg 会让 server 拒启),
-    # 走 drop-in;与 node-join.sh 写给 GPU 节点的同值
+    # podPidsLimit 走 kubelet 配置 drop-in(非 kubelet-arg);与 node-join.sh 同值
     - name: 分发 kubelet 配置 drop-in(单 Pod PID 上限)
       copy:
         src: ../cluster/rke2/kubelet-superdl.conf
@@ -92,9 +79,7 @@
         dest: "/etc/rancher/{{ cluster_distro }}/audit-policy.yaml"
         mode: "0644"
 
-    # server 节点的 registries.yaml(Spegel P2P;Harbor 代理缓存 / CA 段按需打开,与平台配置·
-    # 镜像仓库一致)。GPU 节点由 node-join.sh 自动生成,不经 ansible;不含凭据,拉取凭据经
-    # imagePullSecrets 托管
+    # server 节点 registries.yaml(Spegel;Harbor 代理缓存 / CA 段按需打开);不含凭据
     - name: 分发 registries.yaml
       copy:
         src: ../cluster/rke2/registries.yaml
@@ -111,13 +96,7 @@
       notify: restart-server
 
     # rke2:模板含 etcd-s3/agent-token 占位;渲染 + 无残留校验,一次落盘。
-    #
-    # 两条硬要求,改这几个 task 时不要退回去:
-    #   1. no_log: true —— 渲染产物含 agent token 与 etcd-s3 密钥。少了它,一次 -v / --diff
-    #      就把两把凭据原样打进控制台与 callback 日志(CI/堡垒机的 job 日志通常长期留存)。
-    #   2. 值一律经 | to_json 注入,不再手工拼引号:to_json 产出的是带完整转义的 JSON 字符串
-    #      字面量(YAML 1.2 的合法子集)。裸拼 '"' + token + '"' 时,凭据里一个双引号或换行
-    #      就能闭合字符串并往 server config 里注入任意指令(例如再开一个 kube-apiserver-arg)。
+    # 硬要求:no_log: true(产物含凭据);值一律经 | to_json 注入,不手工拼引号
     - name: 渲染 rke2 server config
       no_log: true
       set_fact:
@@ -151,8 +130,7 @@
           单 server 集群请把 api_vip 留空(tls-san 维持注释)
       when: cluster_distro == 'rke2' and (api_vip | length > 0 or server_ips | length > 0)
 
-    # HA(rke2 且定义 api_vip):tls-san 实块追加到配置末尾(模板内只是注释示例),
-    # 渲染一次成型,首台与后续 server 拿到逐字节一致的产物
+    # HA(rke2 且定义 api_vip):tls-san 实块追加到配置末尾
     - name: HA 集群渲染 tls-san(api_vip + 全部 server 地址入 apiserver 证书)
       no_log: true   # server_config 此时已含 agent token 与 etcd-s3 密钥
       set_fact:
@@ -239,13 +217,7 @@
         enabled: true
         state: started
 
-    # ── 平台组件落点标签:装机后用管理凭据打,**不能**退回节点自述的 node-label ──
-    # node-label 写在节点自己的 /etc/rancher/<distro>/config.yaml 里,任何一台加进来的机器
-    # 都能自称 infra,把带库连接串 / JWT 签发密钥 / 配置主密钥 / 支付渠道凭据的 API 与 worker
-    # 吸到攻击者持 root 的硬件上。node-restriction.kubernetes.io/ 前缀被 NodeRestriction 准入
-    # 插件拉黑(rke2/k3s server-config.yaml 的 kube-apiserver-arg 显式钉了该插件),
-    # kubelet 用自己的凭据既打不上也改不掉;平台 SA 同样无权(admission 策略③只放行
-    # superdl.io/*),即平台 SA 失陷也搬不动落点。
+    # ── 平台组件落点标签:用管理凭据打,不能退回节点自述的 node-label(node-restriction.kubernetes.io/ 前缀 kubelet 打不上)──
     - name: 等待 kube-apiserver 就绪(打标签的前提)
       command: "{{ kubectl_bin }} --kubeconfig {{ kubeconfig_path }} get --raw=/readyz"
       register: apiserver_ready
@@ -255,8 +227,7 @@
       changed_when: false
 
     - name: 控制面节点打平台组件落点标签(--overwrite:幂等,可反复跑)
-      # 选择器按 control-plane 角色而非主机名:节点名与 inventory 主机名不保证一致。
-      # 为何必须在这里用管理凭据打、不能退回 node-label,见上方块注释。
+      # 按 control-plane 角色选,不按主机名
       command: >-
         {{ kubectl_bin }} --kubeconfig {{ kubeconfig_path }}
         label nodes -l node-role.kubernetes.io/control-plane

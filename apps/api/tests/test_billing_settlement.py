@@ -26,7 +26,7 @@ def ev(minute: float, from_s: str | None, to_s: str) -> tuple[datetime, str | No
 def evm(
     minute: float, from_s: str | None, to_s: str, meta: dict
 ) -> tuple[datetime, str | None, str, dict]:
-    """带 metadata 的事件(失联截断用例用)。"""
+    """带 metadata 的事件。"""
     return (H + timedelta(minutes=minute), from_s, to_s, meta)
 
 
@@ -65,23 +65,22 @@ class TestRunningSeconds:
         assert running_seconds_in_window(events, H, H_END) == 3000
 
     def test_subsecond_rounds_half_even_not_truncates(self):
-        """微秒级事件:整数微秒累加 + HALF_EVEN 舍入(不做 int() 截断)。
-        0.6s 进 1;0.5s 恰半向偶(0);1.5s 恰半向偶(2)。"""
+        """微秒级事件:整数微秒累加 + HALF_EVEN 舍入。"""
         us = timedelta(microseconds=1)
-        # 0.6 秒:进入 running 后 0.6s 离开
+        # 0.6 秒 → 1
         events = [
             (H, None, "creating"),
             (H, "creating", "running"),
             (H + 600_000 * us, "running", "stopping"),
         ]
         assert running_seconds_in_window(events, H, H_END) == 1
-        # 0.5 秒:恰半向偶 → 0(截断口径也是 0,区分点在 1.5s)
+        # 0.5 秒:恰半向偶 → 0
         events[2] = (H + 500_000 * us, "running", "stopping")
         assert running_seconds_in_window(events, H, H_END) == 0
-        # 1.5 秒:截断给 1,HALF_EVEN 给 2(向偶)
+        # 1.5 秒:恰半向偶 → 2
         events[2] = (H + 1_500_000 * us, "running", "stopping")
         assert running_seconds_in_window(events, H, H_END) == 2
-        # 2.5 秒:截断给 2,HALF_EVEN 向偶给 2
+        # 2.5 秒:恰半向偶 → 2
         events[2] = (H + 2_500_000 * us, "running", "stopping")
         assert running_seconds_in_window(events, H, H_END) == 2
 
@@ -92,15 +91,12 @@ class TestBillAmount:
         assert bill_amount(Decimal("1.6800"), 2, 1800) == Decimal("1.68")
 
     def test_half_even(self):
-        """真正的分位 tie(第三位小数恰好是 5),才分得开三种 half 模式。
-
-        入参必须落在 tie 上,否则三种 half 模式结果相同,用例形同虚设。
-        """
-        # 0.5000 × 1 × 900 / 3600 = 0.1250 → 向偶 → 0.12(HALF_UP 会给 0.13)
+        """分位 tie(第三位小数恰好是 5)按 HALF_EVEN 舍入;入参必须落在 tie 上。"""
+        # 0.5000 × 1 × 900 / 3600 = 0.1250 → 0.12
         assert bill_amount(Decimal("0.5000"), 1, 900) == Decimal("0.12")
-        # 0.5400 × 1 × 900 / 3600 = 0.1350 → 向偶 → 0.14(HALF_DOWN 会给 0.13)
+        # 0.5400 × 1 × 900 / 3600 = 0.1350 → 0.14
         assert bill_amount(Decimal("0.5400"), 1, 900) == Decimal("0.14")
-        # 非 tie 的两侧仍要覆盖,排除 ROUND_UP / ROUND_DOWN
+        # 非 tie 两侧
         assert bill_amount(Decimal("3.0000"), 1, 3) == Decimal("0.00")  # 0.0025
         assert bill_amount(Decimal("9.0000"), 1, 3) == Decimal("0.01")  # 0.0075
 
@@ -108,7 +104,7 @@ class TestBillAmount:
         assert bill_amount(Decimal("9.9900"), 1, 0) == Decimal("0.00")
 
     def test_out_of_range_raises(self):
-        # 窗口计算 bug 必须炸出来,不允许静默截断少扣/多扣
+        # 非法窗口抛错
         with pytest.raises(ValueError):
             bill_amount(Decimal("1.0000"), 1, 3601)
         with pytest.raises(ValueError):
@@ -162,7 +158,7 @@ class TestUpsertIdempotency:
             await session.commit()
         assert first == Decimal("0.84")
 
-        # 后续又跑了 20 分钟(30~50 重新 running)
+        # 30~50 重新 running
         async with sm() as session:
             session.add_all(
                 [
@@ -217,7 +213,7 @@ class TestUpsertIdempotency:
     async def test_concurrent_settlement_single_charge(self, sm):
         inst_id, _ = await seed_instance(sm, events=[ev(0, "creating", "running")])
 
-        # 屏障对齐起跑线:三路同时冲出,把撞唯一约束的窗口拉到最大,不靠调度器碰巧交错
+        # 屏障对齐起跑线:三路同时冲出
         gate = asyncio.Barrier(4)
 
         async def run():
@@ -243,7 +239,7 @@ class TestUpsertIdempotency:
         assert w.balance == Decimal("98.00")  # 100 - 2.00,并发只扣一次
 
     async def test_concurrent_growth_tops_up_delta_once(self, sm):
-        """已 charged 的账单行并发增量补足(先尾账后续跑):差价只加一次(重复执行零重复扣款)。"""
+        """已 charged 的账单行并发增量补足:差价只加一次。"""
         inst_id, _ = await seed_instance(sm, events=[ev(0, "creating", "running")])
         async with sm() as session:  # 先按半小时入账(1.00)并标记 charged
             await upsert_hour_bill(
@@ -277,7 +273,7 @@ class TestUpsertIdempotency:
                 return charged
 
         results = await asyncio.gather(topup(), topup(), topup(), gate.wait())
-        # 三个并发里只有一个真的补扣了差价 1.00(行锁串行:后到者见 seconds 已 3600 → no-op)
+        # 三个并发里只有一个补扣差价 1.00
         assert sorted(results[:3]) == [Decimal("0.00"), Decimal("0.00"), Decimal("1.00")]
         async with sm() as session:
             bill = (await session.execute(select(BillHourly))).scalar_one()
@@ -287,18 +283,14 @@ class TestUpsertIdempotency:
         assert w.balance == Decimal("98.00")  # 100 − 2.00(1.00 首扣 + 1.00 补足,只此一次)
 
     async def test_settlement_waits_for_inflight_transition(self, sm):
-        """在飞的尾账事务对无锁读不可见 → 结算会把「已经停了的那半小时」算成满小时。
-
-        upsert_hour_bill 单调只增,高估值回不去,所以结算读事件前必须先拿实例行锁。
-        """
+        """结算读事件前先拿实例行锁,在飞的关机事务提交后才算秒数。"""
         inst_id, _ = await seed_instance(sm, events=[ev(-30, "creating", "running")])
         started = asyncio.Event()
         release = asyncio.Event()
 
         async def inflight_stop() -> None:
-            """模拟用户 10:59:30 关机的事务:transition() 同款非键列 UPDATE
-            (持 FOR NO KEY UPDATE 行锁,与结算的 KEY SHARE 不互斥、与 FOR UPDATE 互斥),
-            再写 stopping 事件,迟迟不提交。"""
+            """10:59:30 关机的事务:非键列 UPDATE(FOR NO KEY UPDATE 行锁)+ stopping 事件,
+            迟迟不提交。"""
             async with sm() as session:
                 await session.execute(
                     update(Instance)
@@ -322,7 +314,7 @@ class TestUpsertIdempotency:
 
         async def settle() -> Decimal:
             await started.wait()
-            # 让结算真的先撞上锁,再放行关机事务
+            # 结算先撞锁,再放行关机事务
             asyncio.get_running_loop().call_later(0.2, release.set)
             async with sm() as session:
                 charged = await settle_instance_window(
@@ -344,7 +336,7 @@ class TestUpsertIdempotency:
 
         async with sm() as session:
             bill = (await session.execute(select(BillHourly))).scalar_one()
-        # 3570 秒 × 3.60/时 = 3.57,而不是按满 3600 秒的 3.60
+        # 3570 秒 × 3.60/时 = 3.57
         assert bill.seconds_used == 3570
         assert charged == Decimal("3.57")
 
@@ -384,7 +376,7 @@ class TestHourlySettlementJob:
         assert w.balance == Decimal("99.16")
 
     async def test_long_running_instance_without_window_events(self, sm):
-        """跨小时持续 running(窗口内无事件)也必须被结算。"""
+        """跨小时持续 running(窗口内无事件)也被结算。"""
         await seed_instance(
             sm, events=[(H - timedelta(hours=5), "creating", "running")], status="running"
         )
@@ -428,7 +420,7 @@ class TestHourlySettlementJob:
 
 class TestTinyDurationTail:
     async def test_seconds_rounding_to_zero_amount_no_crash(self, sm):
-        """运行数秒即关机:金额舍入 0.00 → 留账单行不扣款,后续补差从 0 起算。"""
+        """金额舍入 0.00 → 留账单行不扣款,后续补差从 0 起算。"""
         inst_id, _ = await seed_instance(
             sm, events=[ev(0, "creating", "running"), ev(5 / 60, "running", "stopping")]
         )
@@ -490,7 +482,7 @@ class TestTinyDurationTail:
 
 
 class TestCatchUpSettlement:
-    """停机跨整点后的追平:漏掉的小时必须补上,金额与连续运行一致。"""
+    """停机跨整点后的追平:漏掉的小时补上,金额与连续运行一致。"""
 
     async def test_missed_hours_are_caught_up(self, sm):
         # 持续 running 3 小时;worker 只在最后一个整点后跑了一轮
@@ -510,12 +502,11 @@ class TestCatchUpSettlement:
             w = (await session.execute(select(Wallet))).scalar_one()
         assert [b.hour_start.hour for b in bills] == [12, 13, 14, 15]
         assert all(b.seconds_used == 3600 for b in bills)
-        # 4 个整点 × 1.68,与「连续运行、每小时准时结算」完全一致
+        # 4 个整点 × 1.68
         assert w.balance == Decimal("100.00") - Decimal("1.68") * 4
 
     async def test_watermark_missing_records_gap(self, sm):
-        """无水位线(误删/库回退)必须与其余跳窗路径同口径登记 settlement_gaps,
-        让未核销缺口 gauge 持续告警——否则小时窗静默烧掉,账务无迹。"""
+        """无水位线时登记 settlement_gaps(watermark_missing)。"""
         from app.modules.billing.models import SettlementGap
 
         await seed_instance(
@@ -545,13 +536,13 @@ class TestCatchUpSettlement:
         assert count == 1
 
     async def test_clock_skew_refuses_round(self, sm, monkeypatch):
-        """worker 时钟前跳超阈值:本轮结算拒绝执行(单调水位线推进后烧掉的账期无 gap 无恢复)。"""
+        """worker 时钟前跳超阈值:本轮结算拒绝执行。"""
         from app.modules.billing import settlement as st
 
         await seed_instance(
             sm, events=[(H - timedelta(hours=1), "creating", "running")], status="running"
         )
-        # worker 时钟比 DB 快 1 小时(模拟时钟前跳)
+        # worker 时钟比 DB 快 1 小时
         monkeypatch.setattr(st, "now_utc", lambda: datetime.now(UTC) + timedelta(hours=1))
         assert await settle_due_hours(sm) == 0
         async with sm() as session:
@@ -567,13 +558,10 @@ class TestCatchUpSettlement:
     ],
 )
 class TestWindowBoundaries:
-    """结算追平跨月末/闰日。
-
-    锁住「按 aware-UTC 做 timedelta 递推」这一实现:换成 replace(day=...) 之类会算错账期。
-    """
+    """结算追平跨月末/闰日(aware-UTC timedelta 递推)。"""
 
     async def test_catchup_walks_over_boundary(self, sm, anchor):
-        """水位线追平必须能连续跨过午夜/月末,而不是停在边界上。"""
+        """水位线追平连续跨过午夜/月末。"""
         inst_id, _ = await seed_instance(
             sm, events=[(anchor - timedelta(hours=2), "creating", "running")], status="running"
         )
@@ -594,11 +582,7 @@ class TestWindowBoundaries:
 
 
 class TestOverdraftRefusal:
-    """allow_negative=False 的拒绝路径。
-
-    结算扣款必须允许透支(服务已消费完),但拒绝路径本身要能工作:任何「先付后用」的
-    同步扣款都靠它。
-    """
+    """allow_negative=False 的拒绝路径。"""
 
     async def test_refusal_leaves_wallet_and_ledger_untouched(self, sm):
         from app.core.errors import AppError, ErrorCode
@@ -625,11 +609,7 @@ class TestOverdraftRefusal:
 
 
 class TestNodeLostBillingTruncation:
-    """节点失联/Pod 丢失(node_lost/pod_lost):宽限观察期不计费。
-
-    计费截断到 Pod 首次 not-ready 的时刻(metadata.unready_since)而非判定时刻。
-    挂了 = 节点断电后宽限期照收 GPU 时费,或尾账截断了而整点结算又把秒数补扣回来。
-    """
+    """node_lost/pod_lost:计费截断到 metadata.unready_since,宽限观察期不计费。"""
 
     async def test_reconstruction_truncates_at_unready_since(self, sm):
         unready = H + timedelta(minutes=5)
@@ -692,7 +672,7 @@ class TestNodeLostBillingTruncation:
         assert bill.detail["truncate_reason"] == "node_lost"
         assert bill.detail["truncated_at"] == unready.isoformat()
 
-        # 整点结算同小时:口径一致,宽限期秒数不会被补扣回来
+        # 整点结算同口径,不补扣宽限期秒数
         async with sm() as session:
             topup = await settle_instance_window(
                 session,
@@ -708,8 +688,7 @@ class TestNodeLostBillingTruncation:
         assert topup == Decimal("0.00")
 
     async def test_pod_lost_without_unready_bills_to_event(self, sm):
-        """pod_lost 但从未观测到 not-ready(unready_since 为空):无法知道何时不可用,
-        维持按事件时刻结算 —— 截断只发生在有依据时。"""
+        """pod_lost 但 unready_since 为空:按事件时刻结算,不截断。"""
         from app.modules.billing.edge_listener import on_instance_transition
 
         inst_id, _ = await seed_instance(
@@ -737,8 +716,7 @@ class TestNodeLostBillingTruncation:
 
 
 class TestGapClosure:
-    """结算缺口闭环:登记 → 管理端可见 → 重放补结/人工核销 → resolved_at 回写。
-    挂了 = 缺口只进不出,截断窗口永久漏收。"""
+    """结算缺口闭环:登记 → 管理端可见 → 重放补结/人工核销 → resolved_at 回写。"""
 
     async def _make_gap(
         self, sm, *, kind="hourly", window_start=H, object_id=0, reason="dead_letter"
@@ -810,13 +788,13 @@ class TestGapClosure:
         assert exc_info.value.message_key == "billing.settlementGapObjectGone"
 
     async def test_unresolved_gauge_reflects_db(self, sm):
-        """DB 口径持续告警:缺口未核销 gauge>0,人工核销回写 resolved_at 后归零(进程重启不丢)。"""
+        """缺口未核销 gauge>0,核销后归零。"""
         from app.core.metrics import SETTLEMENT_GAP_UNRESOLVED
         from app.modules.billing.settlement import resolve_gap
 
         gap_id = await self._make_gap(sm)
         async with sm() as session:
-            # 任意 session 触发刷新(结算任务每轮末同款调用)
+            # 触发刷新
             from app.modules.billing.settlement import _refresh_gap_gauge
 
             await _refresh_gap_gauge(session)
@@ -895,7 +873,7 @@ class TestGapEndpoints:
         assert rows["items"] == []
 
     async def test_readonly_can_list(self, client, sm):
-        """readonly 可读缺口列表(矩阵只断言「非 401/403」,这里钉住 200;写路径 403 由矩阵覆盖)。"""
+        """readonly 可读缺口列表(200)。"""
         ro = await admin_headers(sm, client, role="readonly")
         assert (
             await client.get("/api/admin/v1/finance/settlement-gaps", headers=ro)

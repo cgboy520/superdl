@@ -25,7 +25,7 @@ def _settings(key: str | None = _KEY_A, prev: str | None = None) -> SimpleNamesp
 
 @pytest.fixture
 def set_keys(monkeypatch: pytest.MonkeyPatch):
-    """钉住 crypto 看到的钥匙串(绕过 lru_cache 的全局 Settings)。"""
+    """钉住 crypto 看到的钥匙串。"""
 
     def _set(key: str | None = _KEY_A, prev: str | None = None) -> None:
         monkeypatch.setattr(crypto, "get_settings", lambda: _settings(key, prev))
@@ -46,7 +46,7 @@ class TestV2Format:
         assert parts[2] == hashlib.sha256(_raw_key(_KEY_A)).hexdigest()[:12]
 
     def test_ciphertext_key_differs_from_master(self, set_keys):
-        """HKDF 派生:v2 密文不能用裸主密钥直接解开(用钥分离)。"""
+        """v2 密文不能用裸主密钥直接解开(HKDF 派生)。"""
         set_keys()
         token = crypto.encrypt_str("plain", aad="k")
         blob = base64.b64decode(token.split(":", 3)[3])
@@ -90,7 +90,7 @@ class TestDecryptDualRead:
         set_keys()
         with pytest.raises(ValueError, match="版本前缀"):
             crypto.decrypt_str("not-a-token", aad="k")
-        # 非当前版本的 enc: 前缀一律按缺版本前缀拒绝,不做任何解密尝试
+        # 非当前版本的 enc: 前缀一律拒绝
         with pytest.raises(ValueError, match="版本前缀"):
             crypto.decrypt_str("enc:v9:AAAA", aad="k")
         with pytest.raises(ValueError, match="kid"):
@@ -99,7 +99,7 @@ class TestDecryptDualRead:
 
 class TestDigestGenerations:
     def test_write_uses_hkdf_current_generation(self, set_keys):
-        """写入世代 = HKDF(当前主密钥);与裸主密钥 HMAC 输出不同(用钥分离)。"""
+        """写入世代 = HKDF(当前主密钥),与裸主密钥 HMAC 输出不同。"""
         set_keys()
         digest = crypto.hash_api_key("sk-test")
         hkdf_gen = hmac.new(
@@ -131,14 +131,14 @@ class TestDigestGenerations:
         assert prev_gen in rotated
 
     def test_domain_separation_holds_per_generation(self, set_keys):
-        """同一明文不同域的摘要每个世代都不同(域分离不被 candidates 稀释)。"""
+        """同一明文不同域的摘要每个世代都不同。"""
         set_keys()
         assert crypto.hash_sms_code("13800000000", "login", "123456") != crypto.hash_node_token(
             "13800000000|login|123456"
         )
 
     def test_dev_fallback_key_derivation_still_works(self, set_keys):
-        """dev/test 未配主密钥时从 jwt_secret 派生(与生产格式无关,行为不回退)。"""
+        """dev/test 未配主密钥时从 jwt_secret 派生。"""
         set_keys(None)
         token = crypto.encrypt_str("plain", aad="k")
         assert crypto.decrypt_str(token, aad="k") == "plain"

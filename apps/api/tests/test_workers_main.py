@@ -1,5 +1,4 @@
-"""worker 入口组件:metrics Bearer 门禁与定时任务耗时观测(不启动整个 worker 进程)。
-定时任务注册清单由 test_workers_components 与组件分片表双向锁定。"""
+"""worker 入口组件:worker_id 定长化、metrics Bearer 门禁、定时任务耗时观测。"""
 
 import hashlib
 from typing import Any
@@ -40,8 +39,7 @@ def _call_wsgi(app: Any, authorization: str | None) -> tuple[str, bytes]:
 
 
 class TestMakeWorkerId:
-    """worker_id 定长化:locked_by 列宽是硬约束,超长 = claim commit 抛错 =
-    该组件 outbox 整体静默停摆(任务滞留 pending,心跳/探针/死信指标全部正常)。"""
+    """worker_id 定长化(locked_by 列宽 128)。"""
 
     def test_short_hostname_passes_through(self, monkeypatch):
         monkeypatch.setattr("app.workers.main.socket.gethostname", lambda: "pod-abc")
@@ -55,12 +53,11 @@ class TestMakeWorkerId:
         wid = make_worker_id()
         assert len(wid) <= MAX_WORKER_ID_LEN
         assert wid.endswith("-7")
-        # 不是纯截断:中段有全名哈希,保住同前缀 Pod 名之间的区分度
+        # 中段有全名哈希
         assert hashlib.sha256(long_name.encode()).hexdigest()[:8] in wid
 
     def test_truncated_ids_stay_unique_across_same_prefix_hosts(self, monkeypatch):
-        """同前缀长 Pod 名 + 容器内同 pid:只截前缀会撞 worker_id(挂了 = 双副本
-        互相覆盖终态写,ownership 校验形同虚设)。"""
+        """同前缀长 Pod 名 + 同 pid 不撞 worker_id。"""
         monkeypatch.setattr("app.workers.main.os.getpid", lambda: 1)
         prefix = "superdl-worker-tenant-mgr-7f9c8d4b5"
         monkeypatch.setattr("app.workers.main.socket.gethostname", lambda: prefix + "a" * 100)
@@ -69,7 +66,7 @@ class TestMakeWorkerId:
         assert wid_a != make_worker_id()
 
     def test_lane_suffix_fits_locked_by_column(self, monkeypatch):
-        """lane 后缀叠加后仍 ≤ locked_by 列宽 128(挂了 = 静默停摆复发)。"""
+        """lane 后缀叠加后仍 ≤ 128。"""
         monkeypatch.setattr("app.workers.main.socket.gethostname", lambda: "h" * 200)
         monkeypatch.setattr("app.workers.main.os.getpid", lambda: 12345)
         assert len(f"{make_worker_id()}-{OUTBOX_CONCURRENCY - 1}") <= 128
@@ -92,16 +89,14 @@ class TestWorkerMetricsAuth:
         assert b"superdl_" in body or b"go_" in body or b"python_" in body
 
     def test_no_token_configured_is_open(self):
-        # dev/test 未配 SUPERDL_METRICS_TOKEN 时与 API 侧一致:不要求鉴权(prod 强制配置)
+        # dev/test 未配 SUPERDL_METRICS_TOKEN 时不要求鉴权
         status, _ = _call_wsgi(_metrics_wsgi_app(None), None)
         assert status.startswith("200")
 
 
 class TestTimedJob:
     async def test_slow_tick_warns(self):
-        """单轮耗时超过周期 80% 必须打 warning(coalesce/misfire 静默丢轮的前兆)。
-        用 structlog 事件捕获而非 capsys:日志管道在套件早期已绑定原始 stdout,
-        全量跑时 capsys 抓不到(顺序相关 flake)。"""
+        """单轮耗时超过周期 80% 打 warning;用 structlog 事件捕获(capsys 全量跑时抓不到)。"""
         from structlog.testing import capture_logs
 
         async def slow() -> None:

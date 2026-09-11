@@ -1,13 +1,4 @@
-/**
- * 管理端最小冒烟:登录页能打开、seed admin 首登强制 MFA 绑定(TOTP 由 e2e 现算)后进控制台。
- * 调账双人复核、冻结租户、两步验证开关等链路已由后端测试覆盖,不在浏览器层重测。
- *
- * 门控(无浏览器 CI 环境默认跳过;本地可跑):
- *   SUPERDL_ADMIN_E2E=1 pnpm --filter @superdl/e2e exec playwright test admin
- * 前置:API(8000,已迁移 + seed_dev)在跑;admin dev server(5174)由 playwright.config
- * 在门控开启时自动拉起。可用环境变量:SUPERDL_ADMIN_BASE /
- * SUPERDL_ADMIN_USER / SUPERDL_ADMIN_PASSWORD(默认对齐 scripts/seed_dev.py)。
- */
+/** 管理端最小冒烟:登录页能打开、seed admin 首登强制 MFA 绑定(TOTP 由 e2e 现算)后进控制台。门控 `SUPERDL_ADMIN_E2E=1 pnpm --filter @superdl/e2e exec playwright test admin`;前置 API(8000,已迁移 + seed_dev)在跑,admin dev server(5174)由 playwright.config 拉起;环境变量 SUPERDL_ADMIN_BASE / SUPERDL_ADMIN_USER / SUPERDL_ADMIN_PASSWORD(默认对齐 scripts/seed_dev.py)。 */
 import { expect, test, type Page } from "@playwright/test";
 
 import { fillTotp } from "./totp";
@@ -23,8 +14,8 @@ const SEED_ADMIN = {
   password: process.env.SUPERDL_ADMIN_PASSWORD ?? "admin123-dev",
 };
 
-// antd 给恰好两个汉字的按钮自动插空格(登录 → "登 录"),两字按钮一律用 /^X\s*Y$/ 匹配。
-/** 登录 → 首登强制绑定 TOTP:读取页面手动密钥,现算动态码完成绑定,进入控制台。 */
+// antd 两字按钮会插空格,用 /^X\s*Y$/ 匹配
+/** 登录 → 首登强制绑定 TOTP:读页面手动密钥,现算动态码完成绑定,进入控制台。 */
 async function loginAndBindMfa(page: Page, username: string, password: string): Promise<void> {
   await page.goto(`${ADMIN}/login`);
   await page.getByLabel("用户名").fill(username);
@@ -44,10 +35,10 @@ async function loginAndBindMfa(page: Page, username: string, password: string): 
 }
 
 test("管理端冒烟:登录页能打开、seed admin 能进控制台", async ({ page }) => {
-  // ── 登录页能打开
+  // 登录页能打开
   await page.goto(`${ADMIN}/login`);
   await expect(page.getByRole("button", { name: /^登\s*录$/ })).toBeVisible({ timeout: 15_000 });
 
-  // ── seed admin 首登:强制 MFA 绑定(TOTP 现算)→ 进入控制台
+  // seed admin 首登:强制 MFA 绑定 → 进入控制台
   await loginAndBindMfa(page, SEED_ADMIN.username, SEED_ADMIN.password);
 });

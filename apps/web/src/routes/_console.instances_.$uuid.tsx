@@ -1,6 +1,4 @@
-/** 实例详情:监控(降级文案)/连接/日志/事件时间线(=计费依据)/账单 + 危险区释放。
- *  事件/账单两 Tab 走游标分页;面包屑返回列表不丢筛选态。
- *  在线服务的版本实例不进列表,但直链可达:「连接」按 with_ssh 决定出不出 SSH 卡,Jupyter 卡不出。 */
+/** 实例详情:监控(降级文案)/ 连接 / 日志 / 事件时间线(= 计费依据)/ 账单 + 危险区释放。事件/账单 Tab 游标分页;面包屑返回列表不丢筛选态。服务的版本实例不进列表但直链可达:「连接」按 with_ssh 出 SSH 卡,Jupyter 卡不出。 */
 
 import { type InstanceEventOut, type InstanceOut } from "@superdl/api-client";
 import { formatDateTime, isTransientInstanceStatus, localToday } from "@superdl/ui";
@@ -48,13 +46,13 @@ import { MetricsPanel } from "../components/instance/MetricsPanel";
 import { InstanceActions, ReleaseModal, canReleaseStatus } from "../components/InstanceActions";
 import { requireAuth } from "../lib/guard";
 
-// 旧链接的 ?tab=service 不在白名单里,validateSearch 剥离后回默认 Tab
+// 旧链接的 ?tab=service 不在白名单,回默认 Tab
 const DETAIL_TABS = ["metrics", "access", "logs", "events", "bills"] as const;
 
 export const Route = createFileRoute("/_console/instances_/$uuid")({
   beforeLoad: requireAuth,
   validateSearch: (search: Record<string, unknown>): { tab?: string } => {
-    // tab 白名单:非法值回退默认 Tab,不渲染无选中态的 Tabs
+    // tab 白名单:非法值回默认 Tab
     const tab = search["tab"];
     return typeof tab === "string" && (DETAIL_TABS as readonly string[]).includes(tab)
       ? { tab }
@@ -63,8 +61,7 @@ export const Route = createFileRoute("/_console/instances_/$uuid")({
   component: InstanceDetail,
 });
 
-/** 连接:SSH 卡按 with_ssh 出,Jupyter 卡只对开发机出。
- *  接入信息的每个字段都可空,必须按「拿到什么渲染什么」写。 */
+/** 连接:SSH 卡按 with_ssh 出,Jupyter 卡只对开发机出;接入信息字段可空,拿到什么渲染什么。 */
 function AccessTab({ instance, running }: { instance: InstanceOut; running: boolean }) {
   const { t } = useTranslation();
   const { message } = App.useApp();
@@ -75,7 +72,7 @@ function AccessTab({ instance, running }: { instance: InstanceOut; running: bool
   if (!running) {
     return <Alert type="info" showIcon title={t("instances.accessNotRunning")} />;
   }
-  // 服务型 + 不开 SSH:这个 Tab 没有任何入口,直接把人指到「服务」Tab,不留一张空卡
+  // 服务型 + 不开 SSH:指到「服务」Tab
   if (isService && !instance.with_ssh) {
     return <Alert type="info" showIcon title={t("instances.accessServiceOnly")} />;
   }
@@ -133,7 +130,7 @@ function LogsTab({ uuid, viewable }: { uuid: string; viewable: boolean }) {
   const { data, error, refetch } = useInstanceLogs(
     uuid,
     { tail_lines: tail },
-    // 页面不可见时间隔轮询自动暂停(react-query 默认,未开 refetchIntervalInBackground)
+    // 页面不可见时间隔轮询自动暂停(未开 refetchIntervalInBackground)
     { enabled: viewable, refetchInterval: autoRefresh ? 10_000 : false, retry: 0 },
   );
   const lines = useMemo(() => data?.lines ?? [], [data]);
@@ -155,10 +152,7 @@ function LogsTab({ uuid, viewable }: { uuid: string; viewable: boolean }) {
 
 function EventsTab({ uuid, status }: { uuid: string; status?: string }) {
   const queryClient = useQueryClient();
-  // 时间线即计费依据:过渡态必须跟着状态一起刷新;游标分页 + 加载更多。
-  // 轮询三律③:infinite 查询不挂 refetchInterval;事件只在状态迁移时产生,
-  // 外层实例轮询(过渡态 5s)检测到 status 迁移后失效事件查询 —— 立即 + 3s 延迟各刷一次,
-  // 覆盖「事件行落库略晚于实例行状态翻转」的窗口。
+  // 事件时间线游标分页,不挂 refetchInterval;外层实例轮询检测到 status 迁移后失效事件查询(立即 + 3s 延迟各一次)
   const prevStatus = useRef(status);
   useEffect(() => {
     if (prevStatus.current === status) return;
@@ -225,7 +219,7 @@ function InstanceDetail() {
   if (instanceError && !instance) {
     return <DataErrorAlert onRetry={() => void refetchInstance()} />;
   }
-  // 首载骨架,不留白屏
+  // 首载骨架
   if (!instance) {
     return (
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
@@ -244,7 +238,7 @@ function InstanceDetail() {
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-      {/* 面包屑:列表筛选态在 URL 上,返回列表不丢 */}
+      {/* 面包屑:列表筛选态在 URL 上 */}
       <Breadcrumb
         items={[
           {
@@ -279,7 +273,7 @@ function InstanceDetail() {
                 },
                 {
                   label: t("instances.labelBilling"),
-                  // 包周期实例的时价是折后价、且不出小时账,报「¥X/时 × N 卡」会让人以为在按小时扣
+                  // 包周期实例时价是折后价且不出小时账,不报「¥X/时 × N 卡」
                   children: instance.subscription
                     ? formatPeriodPrice(
                         instance.subscription.amount_paid,
@@ -305,7 +299,7 @@ function InstanceDetail() {
               ]}
             />
           </Space>
-          {/* 详情页的「事件日志」跳到本页事件 Tab(不传 onShowEvents 即死按钮) */}
+          {/* 「事件日志」跳到本页事件 Tab */}
           <InstanceActions
             instance={instance}
             onShowEvents={() =>
@@ -318,7 +312,7 @@ function InstanceDetail() {
       <Tabs
         activeKey={activeTab}
         onChange={(k) =>
-          // Tab activeKey 入 URL 用 replace(ui-ux-spec §1-8):连点六个 Tab 后退一次就该回列表
+          // Tab activeKey 入 URL 用 replace(ui-ux-spec §1-8)
           navigate({ to: "/instances/$uuid", params: { uuid }, search: { tab: k }, replace: true })
         }
         items={[
@@ -360,8 +354,7 @@ function InstanceDetail() {
           <Typography.Text type="secondary">
             {t("instances.dangerNote")}
           </Typography.Text>
-          {/* 禁用原因走 Tooltip 不用原生 title:disabled 按钮在部分浏览器不触发 mouse 事件,
-              title 不可达(全站其它禁用项同一处理) */}
+          {/* 禁用原因走 Tooltip 不用原生 title(全站禁用项同一处理) */}
           <Tooltip title={canRelease ? undefined : t("copy.releaseNeedsStopped")}>
             <Button danger disabled={!canRelease} onClick={() => setReleaseOpen(true)}>
               {t("instances.release")}

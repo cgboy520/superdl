@@ -17,9 +17,7 @@ import time
 from jupyter_server.auth import User
 from jupyter_server.base.handlers import JupyterHandler
 
-# 基类 = jupyter_server 的默认身份提供者(PasswordIdentityProvider,token 鉴权内建于其父类
-# IdentityProvider);jupyter_server 2.x 并没有 TokenIdentityProvider——写错基类会让整个扩展
-# import 失败、entrypoint 静默回落 stock 鉴权,入场 URL 一律 404(实机首次开机才暴露)
+# 基类 = PasswordIdentityProvider(jupyter_server 2.x 没有 TokenIdentityProvider)
 try:
     from jupyter_server.auth.identity import TokenIdentityProvider as _BaseIdentityProvider
 except ImportError:  # jupyter_server 2.x
@@ -28,8 +26,7 @@ from jupyter_server.utils import url_path_join
 from tornado import web
 
 COOKIE_NAME = "__Host-superdl_jupyter"
-# 单次核销记录(进程内存):code → 核销时刻;票据 TTL 60s,记录保留 120s 即失去重放意义,
-# 每次核销顺手清扫过期项,防长寿命实例无限增长;进程重启造成的极小重放窗口可接受
+# 单次核销记录(进程内存):code → 核销时刻;票据 TTL 60s,记录保留 120s,每次核销清扫过期项
 _used_codes: dict[str, float] = {}
 _USED_CODE_KEEP_SECONDS = 120.0
 
@@ -65,8 +62,7 @@ class SuperDLBootstrapHandler(JupyterHandler):
         if not token or code in _used_codes or not _ticket_valid(token, code, exp, sig):
             raise web.HTTPError(403)
         _used_codes[code] = time.time()
-        # 第一方 cookie:__Host- 前缀(Secure + Path=/ + 无 Domain 才合法)
-        # + HttpOnly + SameSite=Lax,仅本实例域名可见
+        # __Host- cookie(Secure + Path=/ + 无 Domain)+ HttpOnly + SameSite=Lax
         self.set_cookie(
             COOKIE_NAME, token, secure=True, httponly=True, samesite="lax", path="/"
         )
@@ -85,7 +81,7 @@ def _user_from_cookie(provider: _BaseIdentityProvider, handler: JupyterHandler):
     return None
 
 
-# jupyter_server 不同版本 get_user 有同步/异步两形,按基类形态适配,避免版本钉死
+# get_user 按基类的同步/异步形态适配
 if inspect.iscoroutinefunction(_BaseIdentityProvider.get_user):
 
     class SuperDLIdentityProvider(_BaseIdentityProvider):

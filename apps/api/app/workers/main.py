@@ -1,8 +1,5 @@
-"""worker 入口:同一镜像的第二入口。outbox worker 循环 + APScheduler 定时任务。
-
-除三个对并发天然幂等的任务外,定时任务全部先抢 pg advisory lock,多副本单实例执行
-(例外:outbox_reaper/close_expired_orders/cleanup_expired_rows 均为条件 UPDATE/DELETE,
-并发同跑只是其中一个副本更新 0 行,不抢锁也安全)。
+"""worker 入口:outbox 循环 + APScheduler 定时任务。定时任务先抢 pg advisory lock 单实例执行
+(例外:outbox_reaper / close_expired_orders / cleanup_expired_rows 为条件 UPDATE/DELETE,不抢锁)。
 """
 
 import asyncio
@@ -30,23 +27,15 @@ logger = get_logger(__name__)
 
 POLL_INTERVAL_SECONDS = 1.0
 HEARTBEAT_INTERVAL_SECONDS = 10.0
-# 并发领取协程数:claim 是 FOR UPDATE SKIP LOCKED,多协程不会重复领取;
-# 消除全局串行 FIFO 的队头阻塞(一个慢任务不挡住排在后面的关机请求)
+# 并发领取协程数(claim 是 FOR UPDATE SKIP LOCKED)
 OUTBOX_CONCURRENCY = get_settings().worker_outbox_concurrency
 
-# worker_id 长度预算:outbox_tasks.locked_by 为 String(128),lane 后缀(-N)至多再占几位。
-# 超长会在 claim 的 commit 抛 StringDataRightTruncation,且所有 lane 共享同一前缀 →
-# 该组件 outbox 整体静默停摆(任务滞留 pending,心跳/探针/死信指标全部正常)
+# worker_id 长度预算:outbox_tasks.locked_by 为 String(128),留出 lane 后缀(-N)
 MAX_WORKER_ID_LEN = 120
 
 
 def make_worker_id() -> str:
-    """worker 标识:`<hostname>-<pid>`,保证最长 MAX_WORKER_ID_LEN。
-
-    K8s 里 hostname 即 Pod 名(DNS label 上限 63 字符,长 release 名可逼近),
-    裸拼接再叠 lane 后缀会突破 locked_by 列宽。只截前缀会撞「同前缀 Pod 名 +
-    容器内恒为小数字 pid」的组合,故超预算时保留可读前缀 + 全名哈希兜底唯一性。
-    """
+    """worker 标识 `<hostname>-<pid>`,最长 MAX_WORKER_ID_LEN;超预算时保留可读前缀 + 全名哈希。"""
     hostname = socket.gethostname()
     pid = str(os.getpid())
     budget = MAX_WORKER_ID_LEN - len(pid) - 1
@@ -56,12 +45,10 @@ def make_worker_id() -> str:
     return f"{hostname[: budget - 9]}-{digest}-{pid}"
 
 
-# K8s liveness:exec 探针检查该文件 mtime。心跳由独立协程触碰,不挂在 outbox 循环上
-# (挂在循环里长任务会让活着的 worker 被 SIGKILL)。
+# K8s liveness 心跳文件(exec 探针查 mtime),由独立协程触碰
 HEARTBEAT_FILE = Path(get_settings().worker_heartbeat or "/tmp/superdl-worker-heartbeat")
 
-# /metrics 端口:结算/死信/reconciler 指标产生在 worker 进程内,单独暴露给 PodMonitor 直抓
-# (无 Ingress 路由,仅集群内可达)
+# worker 进程内 /metrics 端口(PodMonitor 直抓)
 METRICS_PORT = get_settings().worker_metrics_port
 
 _stop = asyncio.Event()
@@ -82,11 +69,8 @@ async def heartbeat_loop() -> None:
 
 
 async def outbox_loop(worker_id: str, task_types: frozenset[str] | None = None) -> None:
-    """N 条并发领取协程(SKIP LOCKED 保证不重复);领取按 next_retry_at, id 公平排序。
-
-    task_types 非空时按组件过滤:其它组件的任务在查询层不可见,不阻塞也不误领。"""
-    # fail-fast 双保险:make_worker_id 已截断,这里挡住任何绕过它构造的长 id——
-    # lane_id 超出 locked_by 列宽 = claim commit 抛错 = 本组件 outbox 静默停摆
+    """N 条并发领取协程,按 next_retry_at, id 排序;task_types 非空时按组件过滤。"""
+    # lane_id 不得超出 locked_by 列宽
     longest_lane_id = f"{worker_id}-{OUTBOX_CONCURRENCY - 1}"
     if len(longest_lane_id) > 128:
         raise RuntimeError(
@@ -101,7 +85,7 @@ async def outbox_loop(worker_id: str, task_types: frozenset[str] | None = None) 
     )
 
     async def claim_loop(lane: int) -> None:
-        # 终态写按 locked_by 校验归属,各 lane 的 worker_id 必须互不相同
+        # 各 lane 的 worker_id 互不相同(终态写按 locked_by 校验归属)
         lane_id = f"{worker_id}-{lane}"
         while not _stop.is_set():
             try:
@@ -167,11 +151,11 @@ async def cleanup_expired_rows(sm) -> dict[str, int]:
             "DELETE FROM outbox_tasks WHERE status IN ('done', 'discarded') "
             "AND updated_at < now() - interval '7 days'"
         ),
-        # 保留期走绑定参数(make_interval):字符串插值拼 SQL 的写法即使来源是配置也不留
+        # 保留期走绑定参数(make_interval)
         "audit_log": (
             "DELETE FROM audit_log WHERE created_at < now() - make_interval(days => :days)"
         ),
-        # 限流计数:窗口最长 24h(发码日限),留 2 天余量后即为死行
+        # 限流计数窗口最长 24h,留 2 天余量
         "rate_limit_counters": (
             "DELETE FROM rate_limit_counters WHERE updated_at < now() - interval '2 days'"
         ),
@@ -191,10 +175,7 @@ async def cleanup_expired_rows(sm) -> dict[str, int]:
 def _timed_job(
     job_id: str, fn: Callable[..., Awaitable[Any]], period_seconds: float
 ) -> Callable[..., Awaitable[Any]]:
-    """包一层耗时观测:单轮超过周期 80% 打 warning。
-
-    APScheduler 的 coalesce/misfire 会静默丢弃整轮,耗时逼近周期是唯一可观测前兆。
-    """
+    """包一层耗时观测:单轮超过周期 80% 打 warning。"""
 
     async def wrapped(*args: Any) -> Any:
         started = time.monotonic()
@@ -214,10 +195,7 @@ def _timed_job(
 
 
 def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
-    """各模块定时任务注册(结算/巡检/聚合)。callable 一律经 _timed_job 包耗时观测。
-
-    按 SUPERDL_WORKER_COMPONENT 过滤:组件进程只注册自己的任务,
-    组件映射集中在 workers/components.py;ALL(默认)全量注册。"""
+    """各模块定时任务注册,经 _timed_job 包耗时观测;按 SUPERDL_WORKER_COMPONENT 过滤。"""
     from app.modules.billing.patrol import balance_patrol
     from app.modules.billing.payment_service import close_expired_orders, reconcile_pending_orders
     from app.modules.billing.reconcile import reconcile_funds
@@ -246,7 +224,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         args=[sm],
         id="outbox_reaper",
     )
-    # 积压可观测:消费停滞(领不动任务)时任务滞留 pending,死信指标与心跳都不暴露
+    # 积压指标
     add_job(
         _timed_job("outbox_metrics", report_pending_metrics, 60),
         "interval",
@@ -264,7 +242,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         max_instances=1,
         coalesce=True,
     )
-    # misfire 宽限:APScheduler 默认只有 1 秒,事件循环稍有阻塞就整轮跳过
+    # misfire 宽限(APScheduler 默认 1 秒)
     add_job(
         _timed_job("hourly_settlement", settle_due_hours, 3600),
         "cron",
@@ -284,7 +262,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         coalesce=True,
         misfire_grace_time=3600,
     )
-    # 排在日结之后:先出完账,再对「出账 vs 流水」与「余额 vs 流水累计」
+    # 排在日结之后
     add_job(
         _timed_job("fund_reconcile", reconcile_funds, 86400),
         "cron",
@@ -403,7 +381,7 @@ async def main() -> None:
     _start_metrics_server(METRICS_PORT, get_settings().metrics_token)
     logger.info("worker_metrics_listening", port=METRICS_PORT)
 
-    # SIGTERM/SIGINT 优雅停机:停调度器 → 让 outbox 循环收尾当前任务后退出
+    # SIGTERM/SIGINT 优雅停机:停调度器 → outbox 循环收尾当前任务后退出
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         with contextlib.suppress(NotImplementedError):  # pragma: no cover - win 兜底

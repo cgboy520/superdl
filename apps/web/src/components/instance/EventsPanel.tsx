@@ -1,5 +1,4 @@
-/** 事件时间线面板(纯展示):顶部常驻「此记录即计费依据」,running 两侧的边标「计费边界」;
- *  游标分页「加载更多」。查询与状态迁移触发的失效由调用方负责;实例详情页与服务详情页共用。 */
+/** 事件时间线面板(纯展示):顶部常驻「此记录即计费依据」,running 两侧的边标「计费边界」;游标分页。失效由调用方负责;实例详情页与服务详情页共用。 */
 
 import type { InstanceEventOut } from "@superdl/api-client";
 import { fontSize, formatDateTime } from "@superdl/ui";
@@ -34,7 +33,7 @@ export function EventsPanel({
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Alert type="info" showIcon title={t("copy.eventsAreBilling")} />
       {isError && <DataErrorAlert onRetry={onRetry} />}
-      {/* 无事件渲染空白会把「尚无状态变更」读成加载失败:给一句话空态 */}
+      {/* 无事件给一句话空态 */}
       {!isError && !isLoading && events.length === 0 && (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("instances.eventsEmpty")} />
       )}

@@ -1,12 +1,7 @@
-"""开发环境种子数据:SKU 五条(整卡 / MIG / HAMi 两档 / 纯 CPU)+ 平台镜像 + 管理员。
+"""dev 种子:五条 SKU(整卡 / MIG / HAMi 两档 / 纯 CPU)+ 平台镜像 + 管理员。幂等;仅 dev/test 可跑
+(prod 用 scripts/bootstrap_admin.py)。管理员口令随机生成只打印一次,或取 SUPERDL_SEED_ADMIN_PASSWORD
 
-用法(需 PG 已迁移):cd apps/api && uv run python scripts/seed_dev.py
-幂等:已存在同名数据则跳过。
-环境闸:仅 dev/test 可跑——本脚本直调 ensure_bootstrap_admin,绕过生产配置校验,
-误指向生产库会创建弱/随机口令 admin,非 dev/test 一律拒绝执行
-(prod 的首个管理员用 scripts/bootstrap_admin.py)。
-管理员口令:默认 secrets 随机生成且只打印一次;CI/演示需固定口令时显式设
-SUPERDL_SEED_ADMIN_PASSWORD(CI 一次性隔离环境,弱口令可接受)。
+用法:cd apps/api && uv run python scripts/seed_dev.py
 """
 
 import asyncio
@@ -27,8 +22,7 @@ from app.modules.adminapi.models import AdminUser
 from app.modules.adminapi.service import ensure_bootstrap_admin
 from app.modules.catalog.models import PlatformImage, Sku
 
-# dev 种子里**全部 SKU 都开竞价档**(生产默认是关的,见 catalog/models.spot_enabled):
-# 竞价链路的浏览器冒烟需要一条可竞价的规格,靠人手工去库里改一下就成了「换台机器跑不起来」
+# dev 种子全部 SKU 开竞价档(生产默认关,见 catalog/models.spot_enabled)
 SKUS = [
     {
         "name": "RTX4090-FULL",
@@ -78,8 +72,7 @@ SKUS = [
         "status": "on",
     },
     {
-        # 纯 CPU 规格:不带卡(gpu_model 空串,算力份额/显存/单实例卡数全 0),
-        # price_hourly 是**整机**时价而非单卡价(计费份数见 core/money.billing_units)
+        # 纯 CPU 规格:gpu_model 空串,算力/显存/卡数全 0,price_hourly 为整机时价
         "name": "CPU-8C16G",
         "gpu_model": "",
         "tier": "cpu",
@@ -113,9 +106,7 @@ SKUS = [
 ]
 
 IMAGES = [
-    # 平台默认镜像目录:选版规则与构建命令见 deploy/instance-images/README.md。
-    # dev 用 Fake 编排不真拉取,host 是占位符,这里只写 tag;生产目录的 image_ref 必须钉
-    # digest(<repo>:<tag>@sha256:...),别照抄这张表去建生产条目。
+    # 平台默认镜像目录(见 deploy/instance-images/README.md);dev 只写 tag,生产 image_ref 须钉 digest
     # (framework, framework_version, python, cuda, image_ref, sort)
     (
         "PyTorch",

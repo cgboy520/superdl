@@ -1,18 +1,10 @@
-"""结算引擎:事件驱动,幂等。计费依据是 instance_events,不依赖 Prometheus。
+"""结算引擎:事件驱动,幂等。计费依据是 instance_events。
 
-三条入口:
-1. settle_due_hours(sm) —— 每小时 :02 定时任务(advisory lock),从水位线追平到上一整点
-2. 计费边监听器(edge_listener) —— 离开 running 即时尾账(与状态迁移同事务)
-3. upsert_hour_bill(...) —— 共用的幂等入账原语
-
-幂等设计:UNIQUE(instance_id, hour_start) + 秒数单调递增补差价。
-同一小时先尾账后整点结算、重复执行、并发执行,都只补不重扣。
-事件读取一律经 orchestrator.service 只读接口(模块边界)。
-
-追平设计:结算窗口由 settlement_watermarks 水位线推进而非只结上一个窗口,worker 停机
-跨过整点/日结时刻时漏掉的窗口下一轮自动补上。水位线被越过但账未结清的窗口一律登记
-settlement_gaps(追平截断 catchup_truncated / 单对象连续失败死信 dead_letter),
-未核销数经 SETTLEMENT_GAP_UNRESOLVED(DB 口径)持续告警 —— 缺口不自愈,由补结任务或人工处理。
+三条入口:settle_due_hours(每小时 :02,advisory lock,从水位线追平到上一整点)、
+计费边监听器 edge_listener(离开 running 即时尾账)、upsert_hour_bill(幂等入账原语)。
+幂等:UNIQUE(instance_id, hour_start) + 秒数单调递增补差价。事件读取一律经 orchestrator.service。
+追平:水位线越过但账未结清的窗口登记 settlement_gaps(catchup_truncated / dead_letter),
+未核销数经 SETTLEMENT_GAP_UNRESOLVED 持续告警,缺口不自愈。
 """
 
 from collections.abc import Awaitable, Callable
@@ -50,29 +42,23 @@ logger = get_logger(__name__)
 
 RUNNING = "running"
 
-# 追平上限:超出即记缺口表并只结最近这些窗口,防停机数月后一轮拖垮 worker
+# 追平上限:超出即记缺口表并只结最近这些窗口
 MAX_CATCHUP_HOURS = 72
 MAX_CATCHUP_DAYS = 14
-# 同一 (窗口, 对象) 连续失败这么多轮即死信:记缺口后水位线允许越过,
-# 防一个坏对象永久卡住水位线(进而在追平上限外触发整段截断)
+# 同一 (窗口, 对象) 连续失败这么多轮即死信:记缺口后水位线允许越过
 DEAD_LETTER_AFTER = 3
-# worker/DB 时钟允许的最大偏差:计费时间线跑 worker 时钟、流水落 DB 时钟,水位线严格
-# 单调,worker 时钟前跳一次就永久烧掉那几个小时的窗(无 gap 无恢复),超阈值本轮不结算
+# worker/DB 时钟允许的最大偏差,超阈值本轮不结算
 CLOCK_SKEW_MAX_SECONDS = 30.0
 
-# (kind, window_start, object_id) → 连续失败轮数。放进程内存:worker 重启只是多验几轮
-# (方向安全),多副本由 advisory lock 串行
+# (kind, window_start, object_id) → 连续失败轮数。进程内存;多副本由 advisory lock 串行
 _failure_streaks: dict[tuple[str, datetime, int], int] = {}
 
 
 def _billing_view(
     events: list[tuple[datetime, str | None, str, Any]],
 ) -> list[tuple[datetime, str | None, str]]:
-    """事件流水 → 计费视图(3 元组)。
-
-    node_lost/pod_lost 的退出边带 metadata.unready_since(Pod 首次 not-ready 时刻),属平台
-    责任时段,计费截断到该时刻而非判定时刻。截断写在事件重建层,尾账/整点/追平三条结算
-    路径口径天然一致。
+    """事件流水 → 计费视图(3 元组)。node_lost/pod_lost 的退出边带 metadata.unready_since,
+    计费截断到该时刻;尾账/整点/追平三条路径同口径。
     """
     out: list[tuple[datetime, str | None, str]] = []
     for created_at, from_status, to_status, meta in events:
@@ -111,14 +97,14 @@ def running_seconds_in_window(
     if running_since is not None:
         periods.append((running_since, window_end))
 
-    total_us = 0  # 整数微秒累加(计费链路禁 float 中间态);timedelta 三元组精确无舍入
+    total_us = 0  # 整数微秒累加(禁 float 中间态)
     for start, end in periods:
         s = max(start, window_start)
         e = min(end, window_end)
         if e > s:
             delta = e - s
             total_us += (delta.days * 86400 + delta.seconds) * 1_000_000 + delta.microseconds
-    # 微秒 → 秒:整数 HALF_EVEN(与金额 as_amount 同一舍入族,不截断也不经 float)
+    # 微秒 → 秒:整数 HALF_EVEN
     q, r = divmod(total_us, 1_000_000)
     if r > 500_000 or (r == 500_000 and q % 2 == 1):
         q += 1
@@ -128,12 +114,9 @@ def running_seconds_in_window(
 def bill_amount(
     unit_price: Decimal, gpu_count: int, seconds: int, *, max_seconds: int = 3600
 ) -> Decimal:
-    """入账 2 位 HALF_EVEN。seconds ∈ [0, max_seconds](默认单整点小时窗口);越界即窗口计算
-    有 bug,报错不截断。max_seconds 只供巡检的多小时估算口径放宽(估算永不入账),
-    入账一律逐窗按默认上限。
-
+    """入账 2 位 HALF_EVEN。seconds ∈ [0, max_seconds](默认单整点小时窗口),越界报错不截断;
+    max_seconds 只供巡检的多小时估算口径放宽。
     份数走 money.billing_units:GPU 实例 = 卡数,CPU 实例(gpu_count=0)= 1 份整机。
-    账单行照实存 gpu_count(CPU 实例存 0),对账时按同一函数还原份数即可复算 amount。
     """
     if not 0 <= seconds <= max_seconds:
         raise ValueError(f"seconds out of range: {seconds}")
@@ -157,12 +140,8 @@ async def upsert_hour_bill(
 ) -> Decimal:
     """幂等入账原语。返回本次实际扣款金额(0 = 无新增)。
 
-    - 无账单行 → 插入(RETURNING 判定新行,与 charge_disk_day 同款)+ 全额扣款
-    - 已有行且 seconds 增长 → 行锁内更新 + 扣差价(同小时先尾账后续跑的场景)
-    - seconds 未增长 → no-op(重放安全)
-    账单行只由本函数写入且与扣款同事务,已存在的行即已入账,不另设标记。
-    detail_extra:入账依据的附加留痕(如失联截断的 unready_since),合并进 detail。
-    调用方负责 commit。
+    无账单行 → 插入(RETURNING 判定新行)+ 全额扣款;已有行且 seconds 增长 → 行锁内更新 + 扣差价;
+    seconds 未增长 → no-op。detail_extra 合并进 detail。调用方负责 commit。
     """
     if seconds <= 0:
         return Decimal("0.00")
@@ -208,7 +187,7 @@ async def upsert_hour_bill(
         row_id, charged = row.id, delta
 
     if charged <= 0:
-        return Decimal("0.00")  # 秒数过少舍入为 0:留账单行(0.00),不产生扣款
+        return Decimal("0.00")  # 秒数过少舍入为 0:留账单行,不产生扣款
     await wallet.debit(
         session,
         user_id,
@@ -217,8 +196,8 @@ async def upsert_hour_bill(
         ref_type="bill_hourly",
         ref_id=str(row_id),
         remark=f"实例 GPU 时费({source})",
-        allow_negative=True,  # 结算扣款允许透支
-        allow_frozen=True,  # 对已发生消费的收款:冻结只拦新消费,不赖旧账
+        allow_negative=True,
+        allow_frozen=True,  # 对已发生消费的收款
     )
     return charged
 
@@ -236,8 +215,7 @@ async def settle_instance_window(
     detail_extra: dict[str, Any] | None = None,
 ) -> Decimal:
     """按事件重建窗口秒数并入账。窗口必须落在单一自然小时内。
-
-    读事件前先拿实例行锁(见 orchestrator.service.lock_instance_for_billing)。
+    读事件前先拿实例行锁(orchestrator.service.lock_instance_for_billing)。
     """
     from app.modules.orchestrator import service as orchestrator_service
 
@@ -257,8 +235,7 @@ async def settle_instance_window(
     )
 
 
-# 转包周期前允许结清的最大滞后小时数。正常运行下水位线至多落后 1 小时(整点 :02 结算);
-# 超过两天说明结算本身出了事:此时翻 market 会把那段真实消费永久免掉,故拒绝转换
+# 转包周期前允许结清的最大滞后小时数,超过即拒绝转换
 MAX_CONVERT_SETTLE_HOURS = 48
 
 
@@ -272,10 +249,7 @@ async def settle_on_demand_up_to(
     at: datetime,
 ) -> Decimal:
     """把该实例截至 `at` 的按量账逐小时结清(水位线之后的第一个小时起)。返回本次扣款合计。
-
-    转包周期前必须调它:`billing_candidates` 按实例当前的 market 挑候选,market 一旦翻成
-    subscription,水位线之后没出账的小时就再也没人管。逐小时切分的依据是 `bills_hourly`
-    的幂等键 (instance_id, hour_start)。滞后超过 MAX_CONVERT_SETTLE_HOURS 直接抛 CONFLICT。
+    转包周期前必须调它。滞后超过 MAX_CONVERT_SETTLE_HOURS 抛 CONFLICT。
     """
     watermark = await get_watermark(session, "hourly")
     last_hour = hour_floor(at)
@@ -316,13 +290,8 @@ async def reprice_current_hour(
     gpu_count: int,
     at: datetime,
 ) -> Decimal:
-    """把当前自然小时**已出的**账单行改按新单价重算,补扣差价。返回补扣金额。
-
-    口径是「一小时一价,以结算时的实例单价为准」:`bills_hourly` 一小时只有一个 unit_price,
-    转换把当前整点小时整体改按新价。不改的话后续整点结算只更新 amount 不更新 unit_price,
-    留下一行 `unit_price × seconds ≠ amount` 的账。
-
-    只在涨价时动这一行:降价时整行不动(退款走人工流程,结算原语不写负数流水)。
+    """把当前自然小时已出的账单行改按新单价重算,补扣差价。返回补扣金额。
+    口径「一小时一价,以结算时的实例单价为准」;只在涨价时动这一行,降价时整行不动。
     """
     row = (
         await session.execute(
@@ -331,12 +300,12 @@ async def reprice_current_hour(
             .with_for_update()
         )
     ).scalar_one_or_none()
-    if row is None:  # 常见路径:本小时还没出过账(整点结算在次小时 :02),什么都不用做
+    if row is None:  # 本小时还没出过账
         return Decimal("0.00")
     amount = bill_amount(new_price, gpu_count, row.seconds_used)
     delta = as_amount(amount - row.amount)
     if delta <= 0:
-        return Decimal("0.00")  # 降价:整行不动(理由见 docstring)
+        return Decimal("0.00")  # 降价:整行不动
     row.unit_price = new_price
     row.amount = amount
     row.detail = {**(row.detail or {}), "repriced": True}
@@ -349,7 +318,7 @@ async def reprice_current_hour(
         ref_id=str(row.id),
         remark="实例 GPU 时费(转按量补差价)",
         allow_negative=True,
-        allow_frozen=True,  # 对已发生消费的收款:冻结只拦新消费,不赖旧账
+        allow_frozen=True,  # 对已发生消费的收款
     )
     return delta
 
@@ -360,8 +329,7 @@ async def get_watermark(session: AsyncSession, key: str) -> datetime | None:
 
 
 async def _clock_skew_exceeded(sm: async_sessionmaker[AsyncSession]) -> bool:
-    """worker/DB 时钟比对:偏差超阈值时拒绝本轮结算并告警(返回 True)。口径见
-    CLOCK_SKEW_MAX_SECONDS。"""
+    """worker/DB 时钟比对:偏差超 CLOCK_SKEW_MAX_SECONDS 时拒绝本轮结算并告警(返回 True)。"""
     async with sm() as session:
         db_now = ensure_utc((await session.execute(select(func.now()))).scalar_one())
     skew = abs((db_now - now_utc()).total_seconds())
@@ -379,7 +347,7 @@ async def _clock_skew_exceeded(sm: async_sessionmaker[AsyncSession]) -> bool:
 async def _advance_watermark(
     sm: async_sessionmaker[AsyncSession], key: str, value: datetime
 ) -> None:
-    """水位线只前进不后退(多副本/补跑并存时的兜底)。"""
+    """水位线只前进不后退。"""
     async with sm() as session:
         await session.execute(
             pg_insert(SettlementWatermark)
@@ -401,7 +369,7 @@ async def _record_gaps(
     object_id: int,
     reason: str,
 ) -> None:
-    """缺口登记(幂等,独立事务):同一 (kind, window, object) 只留一行;告警走 DB 口径 gauge。"""
+    """缺口登记(幂等,独立事务):同一 (kind, window, object) 只留一行。"""
     if not windows:
         return
     async with sm() as session:
@@ -415,8 +383,7 @@ async def _record_gaps(
 
 
 async def _refresh_gap_gauge(session: AsyncSession) -> None:
-    """未核销缺口 Gauge 全量刷新(DB 口径):结算任务每轮末与重放/核销后调用,
-    保证 worker 重启后告警持续(缺口不自愈,必须重放或人工核销闭环)。"""
+    """未核销缺口 Gauge 全量刷新(DB 口径):结算任务每轮末与重放/核销后调用。"""
     rows = (
         (
             await session.execute(
@@ -444,9 +411,7 @@ async def _settle_window_objects(
     attempts: list[tuple[int, SettleAttempt]],
 ) -> tuple[int, list[int]]:
     """逐对象独立事务结算一个窗口。返回 (入账数, 仍失败且未死信的对象 id 列表)。
-
-    单对象失败不拖垮整窗;连续 DEAD_LETTER_AFTER 轮失败记缺口(dead_letter)后放过,
-    水位线得以越过 —— 缺口表是后续补结的依据。
+    单对象失败不拖垮整窗;连续 DEAD_LETTER_AFTER 轮失败记缺口(dead_letter)后放过。
     """
     settled = 0
     failed: list[int] = []
@@ -504,9 +469,7 @@ async def _catchup_settle(
     settle_window: Callable[[datetime, datetime], Awaitable[tuple[int, list[int]]]],
 ) -> int:
     """追平主循环(小时/日结共用):水位线 → 截断记缺口 → 逐窗结算 → 连续推进水位线 → lag。
-
-    水位线只能连续推进:某窗有未解决失败即停在它之前,下轮重试(入账幂等,不重扣);
-    截断与死信的跳窗都登记 settlement_gaps(告警按未核销缺口数持续判,不自愈)。
+    水位线只能连续推进:某窗有未解决失败即停在它之前;截断与死信的跳窗都登记 settlement_gaps。
     """
     settled = 0
     async with advisory_lock(sm, lock_key) as got:
@@ -515,9 +478,7 @@ async def _catchup_settle(
         async with sm() as session:
             watermark = await get_watermark(session, kind)
         if watermark is None:
-            # 无水位线两种来源不可区分:首次部署引导 / 水位线行被误删或库回退。两种情形都
-            # 只结最近窗口并登记 settlement_gaps(watermark_missing),首次部署那行由验收人工
-            # 核销;此后该 reason 再出现即水位线丢失事故
+            # 无水位线(首次部署 / 水位线行丢失):只结最近窗口并登记 watermark_missing 缺口
             logger.warning(
                 f"{kind}_watermark_missing",
                 hint="无结算水位线:首次部署属正常引导;若非首次部署则水位线已丢失,"
@@ -545,7 +506,7 @@ async def _catchup_settle(
             )
             first_start = floor_start
         window_start = first_start
-        contiguous_ok = True  # 水位线只能连续推进:中间某窗失败即停在它之前
+        contiguous_ok = True  # 水位线只能连续推进
         while window_start <= target_start:
             window_end = window_start + step
             charged, failed = await settle_window(window_start, window_end)
@@ -610,10 +571,7 @@ async def settle_due_hours(
     sm: async_sessionmaker[AsyncSession], *, at: datetime | None = None
 ) -> int:
     """从水位线追平结算到上一自然小时(相对 at,默认现在)。返回入账实例数合计。
-
-    首次运行(无水位线)只结上一小时;此后每轮把 worker 停机期间漏掉的小时逐个补上。
-    某小时内有实例结算失败时水位线停在它之前(下一轮重试),后续小时照常结算——
-    入账是幂等的,重复结算不会重扣;连续失败超限的 (实例, 小时) 死信进 settlement_gaps。
+    首次运行(无水位线)只结上一小时;某小时内有实例失败时水位线停在它之前,后续小时照常结算。
     """
     if await _clock_skew_exceeded(sm):
         return 0
@@ -647,14 +605,12 @@ async def charge_disk_day(
     day: datetime,
 ) -> Decimal:
     """单盘单日入账原语。UNIQUE(disk_id, day) 幂等,返回本次扣款(0 = 该日已出过账)。
-
     插入与扣款同一事务(RETURNING 判定新行);调用方负责 commit。
     """
     from app.modules.billing.models import BillDailyDisk
 
     day = billing_day_floor(day)
     # 累积差分公式按月内第几天取值,须传该计费日的北京日历日
-    # (billing_day_floor 折回 UTC 后 .day 会差一天)
     beijing_date = (day + BILLING_DAY_OFFSET).date()
     amount = disk_daily_charge(price_gb_month, size_gb, beijing_date)
     inserted = (
@@ -683,8 +639,8 @@ async def charge_disk_day(
             ref_type="bill_daily_disk",
             ref_id=str(inserted),
             remark="数据盘日常费用",
-            allow_negative=True,  # 结算扣款允许透支
-            allow_frozen=True,  # 对已发生消费的收款:冻结只拦新消费,不赖旧账
+            allow_negative=True,
+            allow_frozen=True,  # 对已发生消费的收款
         )
     return amount
 
@@ -700,11 +656,7 @@ async def settle_disk_pending_days(
     at: datetime | None = None,
 ) -> Decimal:
     """结清该盘截至今日、尚未出账的自然日(同事务调用,不 commit)。返回扣款合计。
-
-    删盘与扩容前必须调用:日结只对结算时点仍存活的盘、按结算时点容量出账。
-    下界取日结水位线而非建盘日,欠费冻结期这类有意不计费的日子不补回来。
-    水位线缺失(全新部署的引导窗口)时以建盘日为下界:否则引导窗口内删盘只结当日,
-    之前的日子静默免单(少收);「不补」仅限追平截断/死信这类人工认定的 gap。
+    删盘与扩容前必须调用。下界取日结水位线,水位线缺失时以建盘日为下界。
     """
     target_day = billing_day_floor(at or now_utc())
     watermark = await get_watermark(session, "daily_disk")
@@ -782,9 +734,8 @@ async def _daily_disk_window_attempts(
         if created_at >= window_end:
             continue  # 该日之后创建的盘不出账
         if grace_started is not None:
-            # 追平跨过 grace 的日子按「grace 不计费」跳过区间内部日(登记缺口人工核查)。
-            # 边界日(进入/恢复当日)照常出账:进入时已结清、恢复日应计;UNIQUE(disk_id, day)
-            # 幂等兜底,不会重复扣款
+            # 追平跨过 grace 的日子跳过区间内部日(登记缺口);边界日照常出账,
+            # UNIQUE(disk_id, day) 幂等兜底
             g_start = billing_day_floor(grace_started)
             g_end = billing_day_floor(grace_ended) if grace_ended is not None else None
             if g_start < window_start and (g_end is None or window_start < g_end):
@@ -804,9 +755,7 @@ async def settle_daily_disks(
     sm: async_sessionmaker[AsyncSession], *, at: datetime | None = None
 ) -> int:
     """数据盘日结:从水位线追平到上一自然日。UNIQUE(disk_id, day) 幂等,关机也扣。
-
-    返回本轮实际扣款的「盘×日」数。停机跨过 00:10 的日子由水位线在下一轮补上;
-    截断/死信的跳窗登记 settlement_gaps。
+    返回本轮实际扣款的「盘×日」数;截断/死信的跳窗登记 settlement_gaps。
     """
     if await _clock_skew_exceeded(sm):
         return 0
@@ -819,7 +768,7 @@ async def settle_daily_disks(
     async def settle_window(window_start: datetime, window_end: datetime) -> tuple[int, list[int]]:
         nonlocal disk_rows
         if disk_rows is None:
-            # 首个窗口才拉盘清单(此时已持 advisory lock),轮内不变
+            # 首个窗口才拉盘清单,轮内不变
             async with sm() as session:
                 disk_rows = await _billable_disk_rows(session)
         attempts = await _daily_disk_window_attempts(sm, disk_rows, window_start, window_end)
@@ -851,7 +800,7 @@ async def admin_list_gaps(
     cursor: str | None = None,
     limit: int | None = None,
 ) -> Page[AdminSettlementGapOut]:
-    """缺口列表(游标分页,降序)。默认只看未核销(缺口闭环前需要持续曝光)。"""
+    """缺口列表(游标分页,降序)。默认只看未核销。"""
     stmt = select(SettlementGap).order_by(SettlementGap.id.desc())
     if kind:
         stmt = stmt.where(SettlementGap.kind == kind)
@@ -874,15 +823,13 @@ async def replay_gap(
     *,
     operator_id: int,
 ) -> AdminSettlementGapOut:
-    """重放缺口窗口的幂等入账原语,成功回写 resolved_at。
+    """重放缺口窗口的幂等入账原语(管理端人工触发),成功回写 resolved_at。
 
-    - dead_letter(object_id>0):按 (kind, window, object) 精确补结(实例/盘行取价快照);
-    - catchup_truncated / watermark_missing(object_id=0,整窗):对该窗全量候选重放
-      (daily_disk 整窗按当前可计费盘口径:已删除盘的当日账不在其列,残留差异人工核销);
-    - grace_overlap:欠费宽限期有意不计费,拒绝重放(409,走人工核销出口)。
-    入账原语全部幂等(UNIQUE + 秒数单调补差):重放安全,重复调用只补不重扣;
-    不自动重放(自动改账违反资金审慎),由管理端人工触发。
-    返回 schema 而非 ORM 行:本函数自建 session,ORM 出作用域即 detached。
+    - dead_letter(object_id>0):按 (kind, window, object) 精确补结;
+    - catchup_truncated / watermark_missing(object_id=0):对该窗全量候选重放
+      (daily_disk 按当前可计费盘口径,已删除盘的当日账不在其列);
+    - grace_overlap:拒绝重放(409,走人工核销)。
+    返回 schema 而非 ORM 行(本函数自建 session)。
     """
     from app.modules.orchestrator import service as orchestrator_service
 
@@ -893,7 +840,7 @@ async def replay_gap(
                 ErrorCode.NOT_FOUND, key="billing.settlementGapNotFound", http_status=404
             )
         if gap.resolved_at is not None:
-            return AdminSettlementGapOut.model_validate(gap)  # 幂等:已核销直接返回
+            return AdminSettlementGapOut.model_validate(gap)  # 已核销直接返回
         if gap.reason == "grace_overlap":
             raise conflict(key="billing.settlementGapNotReplayable", params={"reason": gap.reason})
         kind, window_start, object_id = gap.kind, ensure_utc(gap.window_start), gap.object_id
@@ -955,7 +902,7 @@ async def replay_gap(
     else:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="common.validation")
 
-    # 重放完成:回写 resolved_at(行锁内;并发重放天然幂等)
+    # 回写 resolved_at(行锁内)
     async with sm() as session:
         gap = await session.get(SettlementGap, gap_id, with_for_update=True)
         if gap is None:
@@ -978,7 +925,7 @@ async def resolve_gap(
     note: str,
     operator_id: int,
 ) -> SettlementGap:
-    """人工核销(不重放):对象已不存在/grace_overlap 确认无账时的出口。说明必填,写审计。"""
+    """人工核销(不重放)。说明必填,写审计。"""
     gap = await session.get(SettlementGap, gap_id, with_for_update=True)
     if gap is None:
         raise AppError(ErrorCode.NOT_FOUND, key="billing.settlementGapNotFound", http_status=404)

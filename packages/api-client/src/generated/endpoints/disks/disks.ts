@@ -69,7 +69,7 @@ export const getDeleteDiskApiV1DisksUuidDeleteUrl = (uuid: string,) => {
 }
 
 /**
- * 删除数据盘(不可恢复,前端多级确认)。挂载中禁止。
+ * 删除数据盘(不可恢复);挂载中禁止。
  * @summary Delete Disk
  */
 export const deleteDiskApiV1DisksUuidDelete = async (uuid: string, options?: Parameters<typeof customFetch>[1]): Promise<DiskOut> => {

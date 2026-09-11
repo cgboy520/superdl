@@ -6,7 +6,7 @@
  */
 
 /**
- * 未读角标轻端点:顶栏 30s 轮询用,不拉通知列表全页。
+ * 未读角标轻端点(顶栏 30s 轮询)。
  */
 export interface UnreadCountOut {
   unread_count: number;

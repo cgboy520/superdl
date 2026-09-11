@@ -21,8 +21,7 @@ from tests.helpers import admin_headers, user_headers
 
 class TestSpecValidation:
     def test_unknown_key_and_javascript_url_rejected(self):
-        """白名单是防线:未知键一律拒;亮照链接会被页脚渲染成 <a href>,只收 http(s) 绝对 URL
-        (留空走「清除覆盖」分支不经此校验);值一律 strip 后落库。"""
+        """未知键拒;亮照链接只收 http(s) 绝对 URL(留空走清除覆盖);值 strip 后落库。"""
         with pytest.raises(ValueError, match="未知配置键"):
             validate_setting_value("jwt_secret", "x")
         with pytest.raises(ValueError):
@@ -34,11 +33,7 @@ class TestSpecValidation:
 
 
 class TestProdDegradeForbidden:
-    """降防开关(人机验证/管理端 MFA/实名)在 prod 禁止在线关闭。
-
-    单管理员一次请求即降防的口子必须堵死 —— 关掉 MFA 连 MFA 自身的保护也一并消失
-    (自我解除);env/部署层保留(env 层 prod 关闭启动时只告警),在线写库层一律禁。
-    """
+    """降防开关(人机验证/管理端 MFA/实名)在 prod 禁止在线关闭。"""
 
     @pytest.mark.parametrize("key", ["captcha_enabled", "admin_mfa_enabled", "real_name_enabled"])
     def test_security_switches_cannot_be_disabled_in_prod(self, key, monkeypatch):
@@ -48,7 +43,7 @@ class TestProdDegradeForbidden:
         )
         with pytest.raises(ValueError, match="生产环境禁止"):
             validate_setting_value(key, "false")
-        # 开启(升防)不受限
+        # 开启不受限
         assert validate_setting_value(key, "true") == "true"
 
     @pytest.mark.parametrize("key", ["captcha_enabled", "admin_mfa_enabled", "real_name_enabled"])
@@ -61,19 +56,14 @@ class TestProdDegradeForbidden:
 
 
 class TestClearOverrideFallbackGuard:
-    """清除覆盖 = 回落到部署层(env)取值,不是「没有配置」。
-
-    回落值是 prod 禁止取值时,「清除」与「写入弱值」同为降防,必须同拦——否则单次
-    请求即可绕过 prod_forbidden 写入门禁,且回落值会让下次启动的合规闸拒启,
-    一次 API 调用埋下一个全平台 fail-to-start。
-    """
+    """清除覆盖 = 回落到部署层(env)取值;回落值是 prod 禁止取值时同拦。"""
 
     async def test_clear_rejected_when_env_fallback_is_prod_forbidden(
         self, client: AsyncClient, sm, monkeypatch
     ):
         """部署层 real_name_enabled=false(prod 禁止值)→ 清除覆盖被拒。"""
         ah = await admin_headers(sm, client, role="admin")
-        # 先取令牌再换桩:登录链路会读平台配置,残缺桩只作用于 PUT 处理期
+        # 先取令牌再换桩
         monkeypatch.setattr(
             "app.core.platform_config.get_settings",
             lambda: SimpleNamespace(environment="prod", real_name_enabled=False),
@@ -85,7 +75,7 @@ class TestClearOverrideFallbackGuard:
         )
         assert resp.status_code == 400
         assert "不允许清除覆盖" in resp.json()["message"]
-        # 拒绝即不落库:覆盖不存在,且同批请求不留痕迹
+        # 拒绝即不落库
         async with sm() as session:
             row = (
                 await session.execute(
@@ -97,7 +87,7 @@ class TestClearOverrideFallbackGuard:
     async def test_clear_allowed_when_env_fallback_is_compliant(
         self, client: AsyncClient, sm, monkeypatch
     ):
-        """部署层已是合规值(captcha_enabled=true)→ 清除覆盖正常放行(回落不降防)。"""
+        """部署层已是合规值(captcha_enabled=true)→ 清除覆盖放行。"""
         ah = await admin_headers(sm, client, role="admin")
         monkeypatch.setattr(
             "app.core.platform_config.get_settings",
@@ -111,7 +101,7 @@ class TestClearOverrideFallbackGuard:
         assert resp.status_code == 200, resp.text
 
     async def test_clear_guard_inactive_outside_prod(self, client: AsyncClient, sm, monkeypatch):
-        """非 prod 环境不受清除守卫约束(dev/test 允许自由回落)。"""
+        """非 prod 环境不受清除守卫约束。"""
         ah = await admin_headers(sm, client, role="admin")
         monkeypatch.setattr(
             "app.core.platform_config.get_settings",
@@ -125,8 +115,7 @@ class TestClearOverrideFallbackGuard:
         assert resp.status_code == 200, resp.text
 
     async def test_audit_records_clear_vs_set(self, client: AsyncClient, sm):
-        """审计落键名 + 动作类型(clear/set),不落值:清除覆盖对合规开关等同降防,
-        只记键名无法在审计轨迹里区分两种操作。"""
+        """审计落键名 + 动作类型(clear/set),不落值。"""
         from app.core.audit import AuditLog
 
         ah = await admin_headers(sm, client, role="admin")
@@ -157,12 +146,12 @@ class TestClearOverrideFallbackGuard:
         assert len(rows) >= 2
         assert rows[-2].detail["keys"] == {"icp_number": "set"}
         assert rows[-1].detail["keys"] == {"icp_number": "clear"}
-        # 值不落审计(纪律保留)
+        # 值不落审计
         assert "京ICP备" not in str(rows[-2].detail)
 
 
 class TestProdComplianceGates:
-    """启动 fail-fast(兜 env/部署层;在线写库层由上面的 prod_forbidden 禁关)。"""
+    """启动合规闸 fail-fast(env/部署层)。"""
 
     def test_prod_refuses_boot_with_switches_off(self):
         from app.core.platform_config import assert_prod_compliance_gates
@@ -174,7 +163,7 @@ class TestProdComplianceGates:
         }
         with pytest.raises(RuntimeError, match="合规开关未全开"):
             assert_prod_compliance_gates(off, "prod")
-        # 只开一部分同样拒(报错带缺项键名)
+        # 只开一部分同样拒
         with pytest.raises(RuntimeError, match="real_name_enabled"):
             assert_prod_compliance_gates(dict(off, captcha_enabled="true"), "prod")
 
@@ -193,8 +182,7 @@ class TestProdComplianceGates:
 
 class TestAdminApi:
     async def test_get_masks_secret_and_put_overrides(self, client: AsyncClient, sm):
-        """管理端写入 → GET 脱敏回读 → 公开 site-config 透出(备案号与经营主体四项,
-        《电子商务法》第十五条公示)→ 空串清除覆盖回退 env 默认。"""
+        """管理端写入 → GET 脱敏回读 → 公开 site-config 透出 → 空串清除覆盖回退 env 默认。"""
         ah = await admin_headers(sm, client, role="admin")
         resp = await client.put(
             "/api/admin/v1/platform-config",
@@ -219,14 +207,14 @@ class TestAdminApi:
         assert items["icp_number"]["value"] == "京ICP备2026012345号-1"
         assert items["icp_number"]["source"] == "override"
         assert items["company_name"]["group"] == "compliance"
-        # secret:GET 永不回明文,只回状态与尾 4 位预览
+        # secret:GET 只回状态与尾 4 位预览
         secret_item = items["sms_access_key_secret"]
         assert secret_item["value"] is None
         assert secret_item["configured"] is True
         assert secret_item["preview"] == "****9876"
         assert "PLAINTEXT-SECRET-9876" not in str(data)
 
-        # DB 落的是密文,不是明文
+        # DB 落密文
         async with sm() as session:
             row = (
                 await session.execute(
@@ -245,7 +233,7 @@ class TestAdminApi:
         assert site["business_license_url"] == "https://example.com/license.png"
         assert site["payment_channels"] == {"wechat": False, "alipay": False, "mock": True}
 
-        # 空串 = 清除覆盖,回退 env 默认(None → 页脚不显示该行)
+        # 空串 = 清除覆盖,回退 env 默认
         await client.put(
             "/api/admin/v1/platform-config",
             json={
@@ -259,7 +247,7 @@ class TestAdminApi:
         assert site["business_license_url"] is None
 
     async def test_unknown_key_rejected_via_api(self, client: AsyncClient, sm):
-        """白名单是防线:管理端拿不到写任意配置(如 JWT 密钥)的口子。"""
+        """白名单外的键(如 JWT 密钥)不可写。"""
         ah = await admin_headers(sm, client, role="admin")
         resp = await client.put(
             "/api/admin/v1/platform-config",
@@ -270,8 +258,7 @@ class TestAdminApi:
         assert resp.json()["code"] == "VALIDATION_ERROR"
 
     async def test_required_real_name_needs_enabled_in_any_env(self, client: AsyncClient, sm):
-        """「充值强制实名」必须伴随「实名认证已开启」,test 环境同样拦(不是 prod 专属):
-        实名未开通时用户永远完不成实名,充值会被永久卡住。两个方向都拦;同一批一起开则放行。"""
+        """「充值强制实名」必须伴随「实名认证已开启」,任何环境两个方向都拦;同一批一起开放行。"""
         ah = await admin_headers(sm, client, role="admin")
 
         async def put(updates: dict[str, str]):
@@ -285,14 +272,14 @@ class TestAdminApi:
         assert resp.status_code == 400, resp.text
         assert resp.json()["code"] == "VALIDATION_ERROR"
         assert "real_name_enabled" in resp.json()["message"]
-        # 同一批一起开:组合终态合法
+        # 同一批一起开:放行
         resp = await put({"real_name_required_for_recharge": "true", "real_name_enabled": "true"})
         assert resp.status_code == 200, resp.text
-        # 反向:强制实名开着,再关实名认证同样被拒
+        # 反向:强制实名开着,再关实名认证被拒
         assert (await put({"real_name_enabled": "false"})).status_code == 400
 
     async def test_real_name_flag_flows_to_policies_and_gate(self, client: AsyncClient, sm):
-        """开关走平台配置:公开 policies 即时跟随,充值门禁即时生效(免重启)。"""
+        """开关走平台配置:公开 policies 与充值门禁即时生效。"""
         ah = await admin_headers(sm, client, role="admin")
         base = (await client.get("/api/v1/policies")).json()
         assert base["real_name_enabled"] is False
@@ -323,7 +310,7 @@ class TestAdminApi:
 
 class TestChannelGate:
     async def test_disabled_channel_rejected(self, client: AsyncClient, sm):
-        """渠道开关默认关:未开通渠道下单被拒;开通但凭据不全同样拒(不产生脏单)。"""
+        """渠道开关默认关:未开通渠道下单被拒;开通但凭据不全同样拒。"""
         headers = await user_headers(client, "13700000202")
         resp = await client.post(
             "/api/v1/wallet/recharges",
@@ -374,8 +361,7 @@ class TestAliyunRealNameProvider:
             await provider.verify("张三", "110101199001011234", "13800000000")
 
     async def test_factory_builds_aliyun_from_config(self, client: AsyncClient, sm):
-        """凭据经管理端录入后,工厂按生效配置构造阿里云渠道
-        (无凭据时抛 RealNameError,见 test_realname)。"""
+        """凭据经管理端录入后,工厂按生效配置构造阿里云渠道。"""
         ah = await admin_headers(sm, client, role="admin")
         await client.put(
             "/api/admin/v1/platform-config",
@@ -395,8 +381,7 @@ class TestAliyunRealNameProvider:
 
 class TestRegistrySpecsAndProbeEndpoint:
     def test_registry_key_validation(self):
-        """host 不带 scheme、机器人名带 robot$ 前缀、代理映射逐行 <上游>=<项目>:
-        格式错在录入时就拒。"""
+        """host 不带 scheme、机器人名带 robot$ 前缀、代理映射逐行 <上游>=<项目>;格式错即拒。"""
         assert (
             validate_setting_value("registry_host", " harbor.example.com:8443 ")
             == "harbor.example.com:8443"
@@ -419,8 +404,7 @@ class TestRegistrySpecsAndProbeEndpoint:
             validate_setting_value("registry_ca_pem", "not a pem")
 
     def test_multiline_specs_reject_evil_line_and_linear_time(self):
-        """多行 text 配置逐行锚定校验:非法行被拒;超长对抗输入必须线性时间返回
-        (回归:嵌套量词整串匹配曾使 ~40 字符的输入即可挂死事件循环,ReDoS)。"""
+        """多行 text 配置逐行锚定校验:非法行被拒;超长对抗输入线性时间返回。"""
         import time
 
         assert validate_setting_value(
@@ -428,7 +412,7 @@ class TestRegistrySpecsAndProbeEndpoint:
         )
         with pytest.raises(ValueError, match="含非法行"):
             validate_setting_value("image_allowed_registries", "docker.io/\nBAD HOST!!")
-        # 对抗输入:全部合法字符 + 一个非法尾字符(旧正则在此外爆)
+        # 对抗输入:全部合法字符 + 一个非法尾字符
         evil = "a" * 4000 + "!"
         t0 = time.perf_counter()
         with pytest.raises(ValueError):
@@ -468,7 +452,7 @@ class TestRegistrySpecsAndProbeEndpoint:
             "harbor_version": "v2.12.0",
             "repositories": 3,
         }
-        # 非 admin 角色不可探测(凭据不下放 ops)
+        # 非 admin 角色不可探测
         ops = await admin_headers(sm, client, role="ops")
         assert (
             await client.post("/api/admin/v1/platform-config/test-registry", headers=ops)
@@ -477,8 +461,7 @@ class TestRegistrySpecsAndProbeEndpoint:
 
 class TestConfigWarnings:
     def test_rules_by_switch_and_credentials(self):
-        """每条规则一例:挂了说明配置页红牌 / 启动告警与实际风险漂移
-        (开关关了没人提醒、开了没凭据在 502 却显示正常)。"""
+        """warnings 每条规则一例。"""
         from app.core.platform_config import SETTING_SPECS, compute_config_warnings
 
         base = dict.fromkeys(SETTING_SPECS, "")
@@ -489,7 +472,7 @@ class TestConfigWarnings:
             registry_host="harbor.example.com",  # Harbor 地址自动进白名单,不触发规则 6
         )
         assert compute_config_warnings(base, "test") == []
-        # 镜像仓库规则:填了机器人未填 Secret → error;prod 下无白名单且无 Harbor 地址 → warning
+        # 镜像仓库:填了机器人未填 Secret → error;prod 无白名单且无 Harbor 地址 → warning
         robot_only = dict(base, registry_robot_name="robot$superdl+pull")
         assert [(w.key, w.level) for w in compute_config_warnings(robot_only, "test")] == [
             ("registry_robot_name", "error")
@@ -527,7 +510,7 @@ class TestConfigWarnings:
         assert compute_config_warnings(dict(full, admin_mfa_enabled="true"), "prod") == []
 
     async def test_api_exposes_warnings(self, client: AsyncClient, sm):
-        """开启人机验证而未录凭据:GET /platform-config 的 warnings 立即带 error 级提示。"""
+        """开启人机验证而未录凭据:warnings 带 error 级提示。"""
         ah = await admin_headers(sm, client, role="admin")
         assert (await client.get("/api/admin/v1/platform-config", headers=ah)).json()[
             "warnings"
@@ -546,8 +529,7 @@ class TestConfigWarnings:
 
 class TestEffectiveConfig:
     async def test_corrupt_secret_row_fails_closed(self, sm):
-        """单行密文损坏(主密钥换错/手工改库)fail-closed:抛错而不是静默回落 env——
-        轮换窗口里回落等于悄悄用回旧值。"""
+        """单行密文损坏:抛错,不回落 env。"""
         from app.core.platform_config import PlatformSetting, get_effective_platform_config
 
         async with sm() as session:

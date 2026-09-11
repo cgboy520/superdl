@@ -8,30 +8,25 @@ warn() { echo "warn: $*" >&2; }
 : "${JUPYTER_TOKEN:?required(平台经 Pod env 注入,缺失说明编排层装配错误)}"
 
 export HOME=/root
-# Jupyter 终端跟 SHELL 走(jupyter_server_terminals:未设则回落 sh;非 tty 下自动加 -l 走登录 shell,
-# 与 SSH 会话同源读 /etc/profile.d/superdl-env.sh);不设就是 sh,没有补全与历史
+# Jupyter 终端跟 SHELL 走(非 tty 下自动 -l 走登录 shell,与 SSH 同源读 /etc/profile.d/superdl-env.sh)
 export SHELL=/bin/bash
 export JUPYTER_RUNTIME_DIR="${JUPYTER_RUNTIME_DIR:-/run/jupyter}"   # 该目录下的文件含 token,不能落实例盘
 export JUPYTER_DATA_DIR="${JUPYTER_DATA_DIR:-/root/.local/share/jupyter}"
-# 配置目录同样不能落实例盘(/root 是 PVC):放进去的 jupyter_server_config.py 会跨 Pod
-# 重建长期存活,而配置文件的 traitlets 优先级高于环境变量默认值 —— 一行
-# `c.IdentityProvider.token = ""` 就把整台实例变成免鉴权的 root 代码执行入口
-# (任何一个恶意 pip 包都能顺手写下,用户自己并不知情)。放容器可写层:Pod 重建即消失。
+# 配置目录不能落实例盘(实例盘上的 jupyter_server_config.py 可关掉鉴权且跨 Pod 存活),放容器可写层
 export JUPYTER_CONFIG_DIR="${JUPYTER_CONFIG_DIR:-/run/jupyter-config}"
 mkdir -p "$JUPYTER_RUNTIME_DIR" "$JUPYTER_CONFIG_DIR" /root/.cache
 chmod 700 "$JUPYTER_RUNTIME_DIR" "$JUPYTER_CONFIG_DIR" 2>/dev/null || true
 rm -f /root/.local/share/jupyter/runtime/jpserver-* 2>/dev/null || true   # 清残留(含 token)
 
-# 用户装的包落到实例盘(/opt/conda、/opt/julia 在容器可写层,Pod 重建即丢)
+# 用户装的包落到实例盘
 export PYTHONUSERBASE=/root/.local
 export PIP_USER=1
 if [[ -n "${JULIA_DEPOT_PATH:-}" ]]; then
   julia_base="${JULIA_DEPOT_PATH%%:*}"
   export JULIA_DEPOT_PATH="/root/.julia:${JULIA_DEPOT_PATH}"
-  # 活动环境取 DEPOT_PATH 里第一个已存在的 environments/vX.Y:不把镜像那份复制到实例盘,
-  # Pkg.add 就会去写只读的镜像 depot
+  # 活动环境取 DEPOT_PATH 里第一个已存在的 environments/vX.Y,复制到实例盘
   if [[ -d "$julia_base/environments" && ! -d /root/.julia/environments ]]; then
-    # 用 cp -r 而非 -a:没有 CAP_CHOWN 时保留属主会失败并返回非零(文件其实已复制)
+    # cp -r 不用 -a(无 CAP_CHOWN 时保留属主返回非零)
     { mkdir -p /root/.julia && cp -r "$julia_base/environments" /root/.julia/; } 2>/dev/null \
       || warn "Julia 环境未能复制到实例盘,Pkg.add 会失败"
   fi
@@ -133,8 +128,7 @@ write_session_env() {
       printf 'export %s=%s\n' "$name" "$(printf '%q' "$value")"
     done < <(env_lines)
     [[ -f /opt/conda/etc/profile.d/conda.sh ]] && echo '. /opt/conda/etc/profile.d/conda.sh'
-    # PIP_USER=1 在已激活的 venv 里会让 pip 直接报错(user site 在 venv 中不可见),
-    # 进 venv 就关掉它:venv 自己就是隔离环境,不需要再往实例盘装
+    # venv 内关掉 PIP_USER(pip 在 venv 里会报错)
     cat <<'PIPFN'
 pip() { if [ -n "${VIRTUAL_ENV:-}" ]; then PIP_USER=0 command pip "$@"; else command pip "$@"; fi; }
 PIPFN
@@ -143,9 +137,7 @@ PIPFN
 }
 write_session_env || warn "会话环境未能落盘(SSH 进来可能缺 PATH)"
 
-# AUTHORIZED_KEYS 由平台恒定注入(可能是空串),这里**无条件覆写**:空值必须把文件清空。
-# 加 `[[ -n ... ]]` 守卫会让「删掉最后一把公钥」变成空操作 —— /root 是持久实例盘,
-# 旧 authorized_keys 原样留着,公钥泄漏的用户永远吊销不掉攻击者的访问。
+# AUTHORIZED_KEYS 由平台恒定注入(可能空串),无条件覆写:空值必须清空文件(/root 是持久实例盘)
 mkdir -p /root/.ssh
 chmod 700 /root/.ssh
 printf '%s\n' "${AUTHORIZED_KEYS:-}" > /root/.ssh/authorized_keys
@@ -174,8 +166,7 @@ else
   warn "Lab 默认设置缺失,界面语言回落 en"
 fi
 
-# jupyter-ai:模型提供方白名单 + 默认 persona。persona id 必须钉死:上游默认值写的是
-# ::jupyter_ai::,实际类在 ::jupyter_ai_jupyternaut::,不钉就没有应答者
+# jupyter-ai:模型提供方白名单 + 默认 persona(id 必须钉 ::jupyter_ai_jupyternaut::)
 ai_args=(
   --PersonaManager.default_persona_id=jupyter-ai-personas::jupyter_ai_jupyternaut::JupyternautPersona
 )
@@ -189,7 +180,7 @@ if [[ -n "${JUPYTER_ALLOW_ORIGIN:-}" ]]; then
   origin_args+=(--ServerApp.allow_origin="$JUPYTER_ALLOW_ORIGIN")
 fi
 
-# 一次性票据扩展(见 superdl_jupyter_auth.py);import 失败要打日志,否则入场 URL 静默 404
+# 一次性票据扩展(见 superdl_jupyter_auth.py);import 失败打日志
 ext_args=()
 export PYTHONPATH="/opt/superdl${PYTHONPATH:+:$PYTHONPATH}"
 if ext_import_err="$(python -c "import superdl_jupyter_auth" 2>&1)"; then
@@ -216,9 +207,7 @@ trap on_term TERM INT
 fast_failures=0
 while true; do
   start_ts=$SECONDS
-  # token 必须显式上 argv:只靠 JUPYTER_TOKEN 时它是 traitlets 的**默认值**(优先级最低,
-  # 配置文件可覆盖),命令行才是最高优先级 —— 这条是「配置文件关不掉鉴权」的兜底,
-  # 与上面把 JUPYTER_CONFIG_DIR 挪出实例盘互为两道。
+  # token 必须显式上 argv(命令行优先级最高,配置文件关不掉鉴权)
   jupyter lab \
     --ip=0.0.0.0 \
     --port=8888 \

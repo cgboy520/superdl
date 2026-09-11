@@ -43,7 +43,7 @@ export function PublicAccessFields({
         </Space>
         <Space orientation="vertical" size={4}>
           <Typography.Text type="secondary">{t("services.form.protocolLabel")}</Typography.Text>
-          {/* TCP / gRPC 未上线:灰置并写明,不隐藏 */}
+          {/* TCP / gRPC 未上线:灰置不隐藏 */}
           <Radio.Group
             value="http"
             options={[

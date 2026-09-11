@@ -31,7 +31,7 @@ export const getCaptchaConfigApiV1AuthCaptchaConfigGetUrl = () => {
 }
 
 /**
- * 验证码 2.0 客户端初始化配置(免鉴权;prefix/scene_id 为公开信息)。
+ * 验证码 2.0 客户端初始化配置(免鉴权)。
  * @summary Captcha Config
  */
 export const captchaConfigApiV1AuthCaptchaConfigGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<CaptchaConfigOut> => {
@@ -78,7 +78,7 @@ export const getLogoutApiV1AuthLogoutPostUrl = () => {
 }
 
 /**
- * 登出当前会话(refresh token 一次性消费位撤销 + 清 Cookie)。token 无效也回 204,防枚举。
+ * 登出当前会话(消费 refresh token + 清 Cookie)。token 无效也回 204。
  * @summary Logout
  */
 export const logoutApiV1AuthLogoutPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<void> => {
@@ -150,8 +150,7 @@ export const getRefreshApiV1AuthRefreshPostUrl = () => {
 }
 
 /**
- * 轮换刷新:refresh 只经 HttpOnly Cookie 提交(X-Requested-With 双提交头强制);
- * 成功即轮换写回新 Cookie。
+ * 轮换刷新:refresh 只经 HttpOnly Cookie + X-Requested-With 头提交;成功写回新 Cookie。
  * @summary Refresh
  */
 export const refreshApiV1AuthRefreshPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<TokenPairOut> => {
@@ -244,7 +243,7 @@ export const getGetDeletionRequestApiV1MeDeletionRequestGetUrl = () => {
 }
 
 /**
- * 当前 pending 申请;无则最近一条(展示驳回原因/冷静期倒计时);从未申请回 null。
+ * 当前 pending 申请;无则最近一条;从未申请回 null。
  * @summary Get Deletion Request
  */
 export const getDeletionRequestApiV1MeDeletionRequestGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<DeletionRequestOut | null> => {

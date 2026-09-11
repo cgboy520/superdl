@@ -1,6 +1,4 @@
-/** 当前时刻 tick(两端共用):倒计时/到期天数类 UI 用挂载快照会随页面长开而过期,
- *  统一经此 hook 按间隔刷新。intervalMs<=0 或 undefined 时不 tick(静态快照)。
- */
+/** 当前时刻按间隔刷新(倒计时/到期天数用);intervalMs<=0 或 undefined 不 tick。 */
 
 import { useEffect, useState } from "react";
 

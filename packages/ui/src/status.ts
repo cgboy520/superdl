@@ -1,8 +1,4 @@
-/**
- * 状态枚举 → 徽标色 / 文案 key 的单一映射表。
- * 枚举值与后端 status 严格一致,新增状态先改后端再同步这里与两语言的 shared.json。
- * labelKey 内嵌 "shared:" 前缀,任意默认 ns 的 t() 均可直接解析;键集由 src/locales.test.ts 守护。
- */
+/** 状态枚举 → 徽标色 / 文案 key 映射表。枚举值与后端严格一致;labelKey 带 "shared:" 前缀,键集由 locales.test 守护。 */
 
 import { colorPrimary, statusColors } from "./tokens";
 
@@ -24,11 +20,11 @@ export interface StatusMeta {
   badge: "success" | "processing" | "default" | "warning" | "error";
   /** 是否显示动效(创建/启动中) */
   animated?: boolean;
-  /** 状态本身需要一句解释时(如服务「未就绪」不是故障)挂 Tooltip 的文案 key */
+  /** Tooltip 解释文案 key */
   hintKey?: string;
 }
 
-/** 按运行时字符串安全取表项:保留字面量 labelKey 联合类型,同时补回 undefined 防御。 */
+/** 按运行时字符串取表项,未知枚举返回 undefined。 */
 export function metaOf<M extends Record<string, unknown>>(map: M, key: string): M[keyof M] | undefined {
   return (map as Record<string, M[keyof M]>)[key];
 }
@@ -42,11 +38,10 @@ export const instanceStatusMap = {
   frozen: { labelKey: "shared:status.instance.frozen", color: statusColors.orange, badge: "warning" },
   releasing: { labelKey: "shared:status.instance.releasing", color: statusColors.red, badge: "error", animated: true },
   released: { labelKey: "shared:status.instance.released", color: statusColors.gray, badge: "default" },
-  // 中性文案:创建失败与运行中故障共用此状态(精确原因看事件时间线)
   failed: { labelKey: "shared:status.instance.failed", color: statusColors.red, badge: "error" },
 } as const satisfies Record<InstanceStatus, StatusMeta>;
 
-/** 过渡态(有后台流程在推进):列表/详情页据此决定是否高频轮询。 */
+/** 过渡态:列表/详情据此高频轮询。 */
 const TRANSIENT_INSTANCE_STATUSES: readonly string[] = [
   "creating",
   "starting",
@@ -58,14 +53,10 @@ export function isTransientInstanceStatus(status: string): boolean {
   return TRANSIENT_INSTANCE_STATUSES.includes(status);
 }
 
-/** 售卖档位,与 skus.tier 严格一致。标准/经济不是档位值,由所在池派生 —— 见 skuVariant。 */
+/** 售卖档位,与 skus.tier 严格一致;标准/经济由所在池派生,见 skuVariant。 */
 export type SkuTier = "dedicated" | "shared" | "cpu";
 
-/**
- * 用户可见的档位:tier × pool_label 的合并键。隔离机制的事实源是节点池(与后端 core/gpu_adapter 同口径)。
- * 「共享」在 mig 池是硬切分(标准)、在 hami 池是软切分超卖(经济),性能承诺不同必须分开展示;
- * cpu 档不申请 GPU,不按池分化。
- */
+/** 用户可见档位:tier × pool_label(与后端 core/gpu_adapter 同口径)。共享在 mig 池 = 标准,hami 池 = 经济;cpu 不按池分化。 */
 export type SkuVariant = "dedicated" | "shared_mig" | "shared_hami" | "cpu";
 
 export function skuVariant(tier: string, poolLabel?: string | null): SkuVariant {
@@ -76,26 +67,21 @@ export function skuVariant(tier: string, poolLabel?: string | null): SkuVariant 
 
 export const skuTierMap = {
   dedicated: { labelKey: "shared:status.tier.dedicated", color: "#4F46E5" },
-  // cyan 档取深:#0891B2 白字仅 3.7:1 不达标;#0E7490 ≈5.4:1(WCAG AA)
+  // 白字对比度 ≥4.5:1(WCAG AA)
   shared_mig: { labelKey: "shared:status.tier.shared_mig", color: "#0E7490", hintKey: "shared:status.tierHint.shared_mig" },
   shared_hami: { labelKey: "shared:status.tier.shared_hami", color: statusColors.orange, hintKey: "shared:status.tierHint.shared_hami" },
-  // 灰蓝:与三个 GPU 档的紫/青/橙拉开色相,读作「不带卡」;白字 ≈5.9:1(WCAG AA)
   cpu: { labelKey: "shared:status.tier.cpu", color: "#475569", hintKey: "shared:status.tierHint.cpu" },
 } as const satisfies Record<SkuVariant, { labelKey: string; color: string; hintKey?: string }>;
 
-/** 实例形态,与 instances.workload_type 严格一致。dev = SSH + JupyterLab 开发机(默认形态,列表不挂标记),
- *  service = 对外 HTTPS 服务容器(端点 + API Key)。 */
+/** 实例形态,与 instances.workload_type 严格一致:dev = SSH + JupyterLab 开发机(默认,列表不挂标记),service = 对外 HTTPS 服务容器。 */
 export type WorkloadType = "dev" | "service";
 
 export const workloadTypeMap = {
   dev: { labelKey: "shared:status.workload.dev", color: statusColors.gray },
-  // 与档位徽标的紫/青/橙/灰蓝拉开:取品牌靛蓝,白字 ≈7.0:1(WCAG AA)
   service: { labelKey: "shared:status.workload.service", color: colorPrimary },
 } as const satisfies Record<WorkloadType, { labelKey: string; color: string }>;
 
-/** 在线服务的派生状态(后端 services/state.py::derive_status,不落库):由 desired_state 与当前 / 候选实例的
- *  状态与就绪位推导。unready 不是故障:容器在跑、照常计费,就绪与否由用户自己的健康检查决定;
- *  released 译作「已删除」——服务的终态动词是删除,不是实例的释放。 */
+/** 在线服务派生状态(后端 services/state.py::derive_status,不落库)。unready = 容器在跑但健康检查未过,照常计费;released 译作「已删除」。 */
 export type ServiceStatus =
   | "deploying"
   | "running"
@@ -124,8 +110,7 @@ export const serviceStatusMap = {
   released: { labelKey: "shared:status.service.released", color: statusColors.gray, badge: "default" },
 } as const satisfies Record<ServiceStatus, StatusMeta>;
 
-/** 服务的过渡态(有后台流程在推进):列表 / 详情据此决定是否高频轮询。
- *  unready 不算过渡态 —— 它可能永远不就绪,新鲜度靠常规轮询与手动刷新。 */
+/** 服务过渡态:列表 / 详情据此高频轮询;unready 不算过渡态。 */
 const TRANSIENT_SERVICE_STATUSES: readonly string[] = ["deploying", "stopping", "releasing"];
 
 export function isTransientServiceStatus(status: string): boolean {
@@ -136,13 +121,12 @@ export function isServiceStatus(value: unknown): value is ServiceStatus {
   return typeof value === "string" && Object.hasOwn(serviceStatusMap, value);
 }
 
-/** 列表状态筛选项:已删除的服务默认不列,只在明确要求时才查。 */
+/** 列表状态筛选项(不含 released)。 */
 export const SERVICE_FILTER_STATUSES: readonly ServiceStatus[] = (
   Object.keys(serviceStatusMap) as ServiceStatus[]
 ).filter((s) => s !== "released");
 
-/** 购买模式,与 instances.market 严格一致(后端 core/pricing.py 的 MARKETS)。
- *  与 tier 正交:同一条 SKU 可以按量买也可以包周期买,不是新档位。 */
+/** 购买模式,与 instances.market 严格一致(后端 core/pricing.py MARKETS);与 tier 正交。 */
 export type Market = "on_demand" | "spot" | "subscription";
 
 export const marketMap = {
@@ -155,18 +139,14 @@ export const marketMap = {
   subscription: { labelKey: "shared:status.market.subscription", color: colorPrimary },
 } as const satisfies Record<Market, { labelKey: string; color: string; hintKey?: string }>;
 
-/** 竞价实例的「可回收」行内标记(两端共用),与 `marketMap.spot` 同色。 */
+/** 竞价实例「可回收」行内标记,与 `marketMap.spot` 同色。 */
 export const spotReclaimTag = {
   labelKey: "shared:status.market.spotReclaimable",
   hintKey: "shared:status.marketHint.spot",
   color: statusColors.orange,
 } as const satisfies { labelKey: string; hintKey: string; color: string };
 
-/**
- * 实例事件 `reason` → 文案。值与后端 `transition(reason=...)` 传的字面量严格一致。
- * 后端还有少量自由文本 reason,调用方一律走
- * `metaOf(instanceEventReasonMap, e.reason)?.labelKey ?? e.reason` 以便取不到时原样渲染。
- */
+/** 实例事件 `reason` → 文案,值与后端 `transition(reason=...)` 字面量一致;自由文本 reason 由调用方经 metaOf 回退原样渲染。 */
 export const instanceEventReasonMap = {
   create: { labelKey: "shared:status.eventReason.create" },
   pod_ready: { labelKey: "shared:status.eventReason.pod_ready" },
@@ -190,9 +170,9 @@ export const instanceEventReasonMap = {
   recharge_unfreeze: { labelKey: "shared:status.eventReason.recharge_unfreeze" },
   admin_force_stop: { labelKey: "shared:status.eventReason.admin_force_stop" },
   tenant_frozen: { labelKey: "shared:status.eventReason.tenant_frozen" },
-  // 竞价回收(preempt.py 的 REASON_PREEMPTED):自动腾容量与管理端强制回收共用这一条
+  // preempt.py REASON_PREEMPTED
   preempted: { labelKey: "shared:status.eventReason.preempted" },
-  // 在线服务版本更新(services/service.py):旧版本关机 / 旧版本释放
+  // services/service.py 版本更新:旧版本关机 / 释放
   rollout: { labelKey: "shared:status.eventReason.rollout" },
   rollout_retire: { labelKey: "shared:status.eventReason.rollout_retire" },
 } as const satisfies Record<string, { labelKey: string }>;
@@ -213,8 +193,7 @@ export const periodMap = {
   year: { labelKey: "shared:status.period.year" },
 } as const satisfies Record<BillingPeriod, { labelKey: string }>;
 
-/** 「怎么买的」这一格显示什么:包周期按周期分化成 包日/包周/包月/包年,其余取 market。
- *  两端列表列统一取这里;未知 market 返回 undefined,调用方回退渲染原始值。 */
+/** 购买方式列文案 key:包周期按周期分化成 包日/包周/包月/包年,其余取 market;未知 market 返回 undefined。 */
 export function marketLabelKey(market: string, period?: string | null) {
   if (market === "subscription" && isBillingPeriod(period)) return periodMap[period].labelKey;
   return metaOf(marketMap, market)?.labelKey;
@@ -229,8 +208,7 @@ export const subscriptionStatusMap = {
   cancelled: { labelKey: "shared:status.subscription.cancelled", color: statusColors.gray, badge: "default" },
 } as const satisfies Record<SubscriptionStatus, StatusMeta>;
 
-/** 包周期已到期(开机门禁的前端判据,与后端 subscriptions.assert_active 同口径)。非包周期实例恒为 false;
- *  缺 subscription 字段的包周期实例必须判为已到期(与后端同样 fail-closed)。 */
+/** 包周期已到期(与后端 subscriptions.assert_active 同口径)。非包周期恒 false;缺 subscription 字段判已到期(fail-closed)。 */
 export function isSubscriptionExpired(
   market: string,
   subscription: { status: string; expires_at: string } | null | undefined,
@@ -299,7 +277,7 @@ export const paymentChannelMap = {
   mock: { labelKey: "shared:status.channel.mock" },
 } as const satisfies Record<PaymentChannel, { labelKey: string }>;
 
-/** 调账单状态(与后端调账单 status 严格一致;管理端财务页用) */
+/** 调账单状态(与后端严格一致) */
 export type AdjustmentStatus = "pending" | "approved" | "rejected";
 
 export const adjustmentStatusMap = {
@@ -308,7 +286,7 @@ export const adjustmentStatusMap = {
   rejected: { labelKey: "shared:status.adjustment.rejected", color: statusColors.red },
 } as const satisfies Record<AdjustmentStatus, { labelKey: string; color: string }>;
 
-/** 法务文档版本状态(与后端法务文档版本 status 严格一致;管理端法务 Tab 用) */
+/** 法务文档版本状态(与后端严格一致) */
 export type LegalDocStatus = "draft" | "published" | "archived";
 
 export const legalDocStatusMap = {
@@ -346,7 +324,7 @@ export const invoiceStatusMap = {
   rejected: { labelKey: "shared:status.invoice.rejected", color: statusColors.red },
 } as const satisfies Record<InvoiceStatus, { labelKey: string; color: string }>;
 
-/** 工单状态(与 tickets.status 严格一致);用户/管理端共用同一套中性文案 */
+/** 工单状态(与 tickets.status 严格一致);两端共用 */
 export type TicketStatus = "open" | "pending_staff" | "pending_user" | "resolved" | "closed";
 
 export const ticketStatusMap = {
@@ -357,7 +335,7 @@ export const ticketStatusMap = {
   closed: { labelKey: "shared:status.ticket.closed", color: statusColors.gray, badge: "default" },
 } as const satisfies Record<TicketStatus, StatusMeta>;
 
-/** resolved/closed 终态不可再回复(服务端同口径 409,前端只是不渲染输入框);用户/管理端共用。 */
+/** 可回复的工单状态(resolved/closed 不可回复,服务端同口径 409)。 */
 const REPLIABLE_TICKET_STATUSES: readonly string[] = ["open", "pending_staff", "pending_user"];
 
 export function isTicketRepliable(status: string): boolean {

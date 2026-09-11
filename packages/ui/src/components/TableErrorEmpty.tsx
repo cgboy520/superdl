@@ -1,19 +1,5 @@
-/** 表格错误/空态(两端共用):查询失败绝不能渲染成「没有数据」——
- *  值班/用户会把故障误判为空数据,财务页误判代价最高。
- *
- *  用法(react-query):
- *    <Table
- *      loading={q.isLoading}
- *      locale={{ emptyText: (
- *        <TableErrorEmpty isError={q.isError} isForbidden={is403(q.error)} onRetry={() => void q.refetch()} />
- *      ) }}
- *    />
- *
- *  - isForbidden:403 与网络故障分开表达(无权限 ≠ 加载失败);
- *  - isError=false 时渲染空态;业务空态文案经 children、空态 CTA 经 action 传入
- *    (文案规范:空态 = 一句话 + 一个动作);
- *  - compact:表格行内紧凑形态(小字 + 小按钮),默认大 Result。
- */
+/** 表格错误/空态(两端共用),作 Table locale.emptyText;查询失败明示错误,不渲染成「没有数据」。
+ *  isForbidden = 403;isError=false 渲染空态(文案经 children,CTA 经 action);compact = 行内紧凑形态。 */
 
 import { Button, Empty, Result, Space, Typography } from "antd";
 import type { ReactNode } from "react";
@@ -28,14 +14,14 @@ export function TableErrorEmpty({
   children,
 }: {
   isError: boolean;
-  /** 403 无权(与故障区分);优先级高于 isError */
+  /** 403 无权;优先级高于 isError */
   isForbidden?: boolean;
   onRetry?: () => void;
-  /** 非错误空态的引导动作(如「新建」按钮) */
+  /** 空态引导动作 */
   action?: ReactNode;
-  /** 行内紧凑形态(替代大 Result) */
+  /** 行内紧凑形态 */
   compact?: boolean;
-  /** 非错误时的业务空态文案(缺省 = antd 默认空态) */
+  /** 业务空态文案(缺省 antd 默认) */
   children?: ReactNode;
 }) {
   const { t } = useTranslation("shared");

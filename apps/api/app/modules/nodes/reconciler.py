@@ -1,7 +1,4 @@
-"""节点加入对账器:enrollment 声称的进度 ↔ K8s 实际,每 30s 收敛。
-
-joined 的唯一判据是 K8s 侧出现该节点、Ready、且池标签与登记一致(脚本自报不算数)。
-"""
+"""节点加入对账器(30s):joined 的唯一判据是 K8s 侧节点 Ready 且池标签与登记一致。"""
 
 from datetime import timedelta
 
@@ -23,7 +20,7 @@ ACTIVE_STATUSES = ("pending", "installing", "rebooting", "joining")
 
 
 async def reconcile_enrollments_once(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]:
-    """单轮对账。advisory lock 保证多副本单实例执行。返回动作计数(测试/日志用)。"""
+    """单轮对账(advisory lock 单实例执行),返回动作计数。"""
     counts = {"joined": 0, "failed": 0, "expired": 0}
     async with advisory_lock(sm, LockKey.NODE_ENROLL_RECONCILER) as got:
         if not got:
@@ -31,8 +28,7 @@ async def reconcile_enrollments_once(sm: async_sessionmaker[AsyncSession]) -> di
         nodes = {n.name: n for n in await get_orchestrator().list_nodes()}
         now = now_utc()
         async with sm() as session:
-            # FOR UPDATE + skip_locked:与请求路径的 revoke/report 并发时,
-            # 被锁行本轮跳过(下轮自愈),避免无条件 UPDATE 覆盖刚提交的吊销
+            # FOR UPDATE + skip_locked:被请求路径锁住的行本轮跳过
             rows = list(
                 (
                     await session.execute(
@@ -43,7 +39,7 @@ async def reconcile_enrollments_once(sm: async_sessionmaker[AsyncSession]) -> di
                 ).scalars()
             )
             for row in rows:
-                # 绝对过期:心跳只刷新 last_report_at,不延长 expires_at
+                # 绝对过期(心跳不延长 expires_at)
                 if row.expires_at < now:
                     transition_enrollment(row, "expired")
                     counts["expired"] += 1
@@ -53,7 +49,7 @@ async def reconcile_enrollments_once(sm: async_sessionmaker[AsyncSession]) -> di
                 node = nodes.get(row.node_name or "")
                 if node is not None and node.status == "Ready":
                     if node.pool_label == row.pool:
-                        # joined 即终态,令牌随之作废;预热由巡检自动纳入新节点
+                        # joined 即终态,令牌作废
                         transition_enrollment(row, "joined", phase="joined")
                         counts["joined"] += 1
                     else:

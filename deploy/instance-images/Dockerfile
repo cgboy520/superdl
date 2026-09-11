@@ -6,22 +6,19 @@
 #      conda / ssh / jupyter 层直接复用父镜像的 layer,推送时只上传框架 wheel 那一层。
 #   ③ 第三方框架基座(如 PaddlePaddle 官方镜像)→ 平台镜像:BASE_IMAGE=<厂商镜像>,只给 JUPYTER_PACKAGES,
 #      用基座自带的 python/pip(不装 conda,也不动 PATH)。
-# BASE_IMAGE 不给默认值,漏传即构建失败(顶部 check 指令为此跳过校验器告警)。
+# BASE_IMAGE 无默认值,漏传即构建失败
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 
 USER root
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
-# ARG 而非 ENV:noninteractive 只该在构建期生效,泄漏到运行时会让用户在实例里 apt install 拿不到交互提示
+# ARG 而非 ENV:noninteractive 只在构建期生效
 ARG DEBIAN_FRONTEND=noninteractive
 
-# ---------- ① Miniconda(仅 CUDA 基座那一步传;第三方基座与框架镜像留空跳过)----------
-# CONDA_PATH_PREFIX 与 MINICONDA_INSTALLER 同批传:PATH 无条件前置会让没有 conda 的厂商基座
-# 带上一条不存在的目录,也会让框架镜像把 /opt/conda/bin 重复一遍。
+# ---------- ① Miniconda(仅 CUDA 基座那一步传)----------
+# CONDA_PATH_PREFIX 与 MINICONDA_INSTALLER 同批传
 ARG MINICONDA_INSTALLER=""
-# 供应链完整性:安装包的 SHA-256(与 MINICONDA_INSTALLER 同批传;值取自
-# repo.anaconda.com 对应版本的官方哈希,或本地下载后 sha256 自算)。装 conda 就必须钉:
-# 否则上游 CDN 被污染/劫持时,恶意 installer 会静默进全部实例镜像。
+# 安装包 SHA-256(与 MINICONDA_INSTALLER 同批传,取 repo.anaconda.com 官方哈希);装 conda 必须钉
 ARG MINICONDA_SHA256=""
 ARG CONDA_PATH_PREFIX=""
 ENV PATH=${CONDA_PATH_PREFIX}$PATH
@@ -39,9 +36,8 @@ RUN if [[ -n "$MINICONDA_INSTALLER" ]]; then \
       && /opt/conda/bin/conda clean -afy; \
     fi
 
-# ---------- ② sshd(平台契约:仅密钥登录的 22 端口)----------
-# 只在「从外部基座起步」的两种用法里跑(①③):框架镜像的父镜像已装好,再跑一遍只会白生一层。
-# 基座自带 sshd 时也要走一次 --only-upgrade,否则厂商基座里的 openssh 停在打包那天的补丁级。
+# ---------- ② sshd(仅密钥登录的 22 端口)----------
+# 只在用法①③跑;基座自带 sshd 时也走一次 --only-upgrade
 ARG JUPYTER_PACKAGES=""
 RUN if [[ -n "${MINICONDA_INSTALLER}${JUPYTER_PACKAGES}" ]]; then \
       apt-get update; \
@@ -59,9 +55,8 @@ RUN if [[ -n "${MINICONDA_INSTALLER}${JUPYTER_PACKAGES}" ]]; then \
         || sed -i '1i Include /etc/ssh/sshd_config.d/*.conf' /etc/ssh/sshd_config; \
     fi
 
-# ---------- ③ Jupyter 套件(版本钉死在 README 的构建命令里)----------
-# ipykernel 必装:jupyterlab 不依赖它,少了它实例里没有 Python 内核。
-# jupyter-ai 必须带 [jupyternaut,magics] extra:裸装只有聊天壳子,没有任何模型提供方。
+# ---------- ③ Jupyter 套件(版本钉在 README 的构建命令里)----------
+# ipykernel 必装;jupyter-ai 必须带 [jupyternaut,magics] extra
 RUN if [[ -n "$JUPYTER_PACKAGES" ]]; then \
       pip install --no-cache-dir --root-user-action=ignore ${JUPYTER_PACKAGES} \
       && jupyter lab --version; \
@@ -77,17 +72,15 @@ RUN if [[ -n "$FRAMEWORK_PIP" ]]; then \
     fi
 
 # ---------- ⑤ 打齐系统补丁 ----------
-# 装完所有东西后再升,发行版的安全回补(含 openssh)一次到位。
 RUN apt-get update \
     && apt-get -y -o APT::Install-Recommends=false full-upgrade \
     && apt-get -y autoremove \
     && rm -rf /var/lib/apt/lists/*
 
-# 平台契约:HOME 一律 /root(实例盘挂载点)。jupyter docker-stacks 系基座默认 HOME=/home/jovyan,
-# 而共享池 userns 下那个目录不可写,ssh / kubectl exec 进去会刷 .bash_profile Permission denied。
+# 平台契约:HOME 一律 /root(实例盘挂载点)
 ENV HOME=/root
 
-# 平台文件放最后:改 entrypoint / 鉴权扩展 / Lab 默认设置只失效这几层,不触发上面的重装。
+# 平台文件放最后一层
 COPY entrypoint.sh /usr/local/bin/superdl-entrypoint.sh
 COPY superdl_jupyter_auth.py /opt/superdl/superdl_jupyter_auth.py
 COPY lab-overrides.json /opt/superdl/labsettings/overrides.json

@@ -1,8 +1,6 @@
 /**
- * 常见加速卡公开规格静态表(主页算力排名/价格墙 TFLOPS 标注用)。
- * 口径为厂商公开白皮书理论峰值:FP32 为 shader 单精,FP16 为 Tensor 稠密半精(FP32 累加,不含稀疏)。
- * 展示处必须带「理论峰值」脚注(landing.ranking.footnote)。
- * key 与后端 `gpu_model` 串一致(无空格),查询用 getGpuSpec 做归一。
+ * 加速卡公开规格静态表(厂商白皮书理论峰值:FP32 shader 单精,FP16 Tensor 稠密)。
+ * 展示处带「理论峰值」脚注(landing.ranking.footnote);key 与后端 `gpu_model` 一致,查询经 getGpuSpec 归一。
  */
 
 export interface GpuSpec {
@@ -27,15 +25,15 @@ export const gpuSpecs: Record<string, GpuSpec> = {
   V100: { label: "V100", vramGb: 32, fp32Tflops: 15.7, fp16Tflops: 125, arch: "Volta" },
 };
 
-/** 可选卡数档位(市场筛选 chip 与创建页卡数选择共用);SKU 上限不在档位内时创建页额外补一档。 */
+/** 可选卡数档位(市场筛选与创建页共用);SKU 上限不在档位内时创建页补一档。 */
 export const GPU_COUNT_STEPS: readonly number[] = [1, 2, 4, 8];
 
-/** 型号串归一:去空格/连字符,大写(getGpuSpec 查询键与市场「在售」标记分组同口径)。 */
+/** 型号串归一:去空格/连字符,大写。 */
 export function normalizeGpuModel(model: string): string {
   return model.replace(/[\s-]/g, "").toUpperCase();
 }
 
-/** 归一后查表;查不到返回 undefined(调用方自行隐藏该行)。 */
+/** 归一后查表;查不到返回 undefined。 */
 export function getGpuSpec(model: string | null | undefined): GpuSpec | undefined {
   if (!model) return undefined;
   return gpuSpecs[normalizeGpuModel(model)];

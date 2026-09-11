@@ -1,6 +1,4 @@
-/** 告警中心:全量告警列表(顶栏 AlertBell Popover 的完整版)。
- *  severity 服务端过滤、确认状态客户端过滤,全部入 URL(运营面转达的视图必须可还原);
- *  深链目标与 AlertBell/总览告警流共用 alertLink;确认闭环与两者同一范式(ops/admin 可写)。 */
+/** 告警中心:severity 服务端过滤、确认状态客户端过滤,入 URL;深链与确认闭环走 alertLink(ops/admin 可写)。 */
 
 import { fontSize, formatDateTime, space } from "@superdl/ui";
 import { EmptyState, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
@@ -35,12 +33,12 @@ function AlertsPage() {
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const { severity, acked } = Route.useSearch();
-  // severity 走服务端参数;确认状态为客户端过滤(端点无 acked 参数,200 条窗口内本地过滤)
+  // severity 服务端参数;确认状态客户端过滤(200 条窗口)
   const alertsQ = useAlerts(severity ? { severity } : undefined, { refetchInterval: 30_000 });
   const rows = (alertsQ.data ?? []).filter((a) =>
     acked === "acked" ? a.acked_at != null : acked === "unacked" ? a.acked_at == null : true,
   );
-  // 确认闭环同 AlertBell/总览告警流范式(见 lib/alertLink)
+  // 确认闭环见 lib/alertLink
   const ack = useAckAlertWithFeedback();
   const setFilters = (next: { severity?: string; acked?: string }) =>
     void navigate({ to: "/alerts", replace: true, search: (prev) => ({ ...prev, ...next }) });

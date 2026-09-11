@@ -8,13 +8,11 @@ from app.core.db import Base
 
 
 class Sku(Base):
-    """商品规格。超卖参数是 SKU 属性;变更仅影响新实例(实例落库时快照)。"""
+    """商品规格;变更仅影响新实例(实例落库时快照)。"""
 
     __tablename__ = "skus"
-    # 业务唯一键:同一 (型号, 档位, 池, MIG 切片, 算力份额, vCPU, 内存) 只允许一条,
-    # mig_profile 为空也算相等(NULLS NOT DISTINCT),防重试建出同义 SKU 把库存口径搅浑。
-    # 必须用唯一索引而非 UniqueConstraint:后者的 ADD CONSTRAINT 要全表校验锁,
-    # 唯一索引可以 CONCURRENTLY 在线建
+    # 业务唯一键 (型号, 档位, 池, MIG 切片, 算力份额, vCPU, 内存),NULLS NOT DISTINCT;
+    # 用唯一索引不用 UniqueConstraint
     __table_args__ = (
         Index(
             "uq_skus_business_key",
@@ -33,8 +31,7 @@ class Sku(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(64))
     gpu_model: Mapped[str] = mapped_column(String(32), index=True)  # e.g. RTX4090 / A100
-    # dedicated(专用整卡)/ shared(共享切分)/ cpu(纯 CPU 不带卡);标准 vs 经济由
-    # pool_label 派生(mig 池 = 硬切分标准档,hami 池 = 软切分经济档),不单列枚举值
+    # dedicated / shared / cpu;标准 vs 经济由 pool_label 派生(mig = 标准,hami = 经济)
     tier: Mapped[str] = mapped_column(String(16), index=True)
     mig_profile: Mapped[str | None] = mapped_column(String(32))  # e.g. 1g.10gb(仅 mig 档)
     gpu_cores_pct: Mapped[int] = mapped_column(default=100)  # 算力份额 %(共享档 <100)
@@ -47,10 +44,9 @@ class Sku(Base):
     price_hourly: Mapped[Decimal] = mapped_column(Numeric(12, 4))
     max_gpus_per_instance: Mapped[int] = mapped_column(default=1)
     cuda_max: Mapped[str | None] = mapped_column(String(16))  # 支持的最高 CUDA 版本
-    # 这条 SKU 是否接受包周期(预付)下单。默认开;关掉是例外(稀缺型号不想被人一次锁一年)
+    # 是否接受包周期下单,默认开
     period_enabled: Mapped[bool] = mapped_column(default=True, server_default="true")
-    # 这条 SKU 是否上竞价档。**默认关**(与 period_enabled 相反):竞价的对价是「可被回收」,
-    # 属下单前须讲清的承诺,只能逐条显式开启
+    # 是否上竞价档,默认关,逐条显式开启
     spot_enabled: Mapped[bool] = mapped_column(default=False, server_default="false")
     status: Mapped[str] = mapped_column(String(8), default="off", index=True)  # on / off
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
@@ -72,8 +68,8 @@ class PlatformImage(Base):
 
 
 class ImageNodeCache(Base):
-    """每镜像×每节点的缓存状态。由 prewarm_patrol 巡检铺行/收敛,
-    image.prewarm outbox handler 置 pulling;是 is_prewarmed 计算值的数据源。"""
+    """每镜像×每节点的缓存状态:prewarm_patrol 铺行/收敛,image.prewarm handler 置 pulling;
+    is_prewarmed 的数据源。"""
 
     __tablename__ = "image_node_cache"
     __table_args__ = (UniqueConstraint("image_id", "node_name"),)
@@ -83,8 +79,7 @@ class ImageNodeCache(Base):
     node_name: Mapped[str] = mapped_column(String(255))
     # pending(待预热)/ pulling(Job 进行中)/ cached(已缓存)/ failed(拉取失败)
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
-    # 这一行缓存的是哪个 ref。与镜像当前 image_ref 不符即由巡检作废重拉:
-    # admin_update_image 改 ref 时会同事务删行,但 SQL 直改 / 数据修复脚本绕不过这条兜底。
+    # 这一行缓存的 ref;与镜像当前 image_ref 不符即由巡检作废重拉
     cached_ref: Mapped[str | None] = mapped_column(String(256))
     last_error: Mapped[str | None] = mapped_column(Text)
     checked_at: Mapped[datetime | None]  # 最近确认 cached 的时刻,复检窗口依据

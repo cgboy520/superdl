@@ -24,32 +24,27 @@ class Instance(Base):
     __tablename__ = "instances"
     __table_args__ = (
         UniqueConstraint("user_id", "idempotency_key"),
-        # 状态枚举兜底(手工 SQL 旁路防护);合法迁移见 statemachine.TRANSITIONS。
-        # 约束名声明短名,naming convention 自动补 ck_<表>_ 前缀
+        # 状态枚举兜底;合法迁移见 statemachine.TRANSITIONS。约束名由 naming convention 补前缀
         CheckConstraint(
             "status IN ('creating', 'running', 'stopping', 'stopped', 'starting', 'frozen',"
             " 'releasing', 'released', 'failed')",
             name="status",
         ),
-        # CPU 实例 gpu_count=0 合法,负数会算出负账单(计费份数 = billing_units(gpu_count));
-        # 应用层已拦,这里兜住手工 SQL
+        # CPU 实例 gpu_count=0 合法
         CheckConstraint("gpu_count >= 0", name="gpu_count_nonneg"),
-        # 形态枚举兜底:dev = SSH + JupyterLab 开发机,service = 在线服务的一个版本。
-        # Pod spec 分叉在 build_pod_spec,写错值会落到「跑着、计费照走、没有任何入口」的哑状态
+        # 形态枚举兜底:dev = SSH + JupyterLab 开发机,service = 在线服务的一个版本
         CheckConstraint("workload_type IN ('dev', 'service')", name="workload_type"),
-        # 形态与服务归属同真同假:workload_type 只决定 Pod 形态,service_id 才是产品归属
+        # 形态与服务归属同真同假
         CheckConstraint(
             "(workload_type = 'service') = (service_id IS NOT NULL)", name="service_shape"
         ),
-        # 平台占用端口:22 = sshd,8888 = JupyterLab,用户服务落上去会与其 targetPort 撞车。
-        # 应用层已拦,这里兜手工 SQL
+        # 22 / 8888 为平台占用端口(sshd / JupyterLab)
         CheckConstraint(
             "service_port IS NULL OR (service_port BETWEEN 1 AND 65535"
             " AND service_port NOT IN (22, 8888))",
             name="service_port",
         ),
-        # 购买模式枚举兜底:小时结算按 `market != 'subscription'` 挑候选,拼错的值会让
-        # 预付过的实例再被按小时扣一遍
+        # 购买模式枚举兜底
         CheckConstraint(
             "market IN ('on_demand', 'spot', 'subscription')",
             name="market",
@@ -66,55 +61,49 @@ class Instance(Base):
     price_hourly: Mapped[Decimal] = mapped_column(Numeric(12, 4))
     gpu_count: Mapped[int] = mapped_column(default=1)
     image_ref: Mapped[str] = mapped_column(String(256))
-    # 购买模式:on_demand(按量)/ subscription(包周期,已预付)/ spot(竞价);
-    # 与 skus.tier 正交(tier 是买什么档,market 是怎么买)。不建索引:没有查询按它单独过滤
+    # 购买模式:on_demand / subscription(已预付)/ spot;与 skus.tier 正交
     market: Mapped[str] = mapped_column(
         String(16), default=MARKET_ON_DEMAND, server_default=MARKET_ON_DEMAND
     )
-    # 实例形态:dev(SSH + JupyterLab)/ service(在线服务的一个版本);只决定 Pod 形态,
-    # 状态机、计费、配额、回收、reconciler、监控全套复用
+    # 实例形态:dev(SSH + JupyterLab)/ service(在线服务的一个版本);只决定 Pod 形态
     workload_type: Mapped[str] = mapped_column(String(8), default="dev", server_default="dev")
-    # 归属的在线服务(services.id)与在该服务里的版本号;dev 恒空。实例即服务的一个不可变版本
+    # 归属的在线服务(services.id)与版本号;dev 恒空
     service_id: Mapped[int | None] = mapped_column(index=True)
     service_revision: Mapped[int | None]
-    # 服务暴露规格的快照(随版本走):slug 拼 HTTPRoute hostname,端口与健康路径进 Pod spec。
-    # orchestrator 不查 services 表,建 Pod 只读这几列
+    # 服务暴露规格快照(随版本走);建 Pod 只读这几列,不查 services 表
     service_slug: Mapped[str | None] = mapped_column(String(32))
     service_port: Mapped[int | None]
-    # 非空 → Pod 上挂 readinessProbe + startupProbe;空 = 容器起来即就绪
+    # 非空 → readinessProbe + startupProbe;空 = 容器起来即就绪
     health_path: Mapped[str | None] = mapped_column(String(128))
-    # 用户覆盖镜像 ENTRYPOINT/CMD;None = 用镜像自带的(dev 形态恒为 None)
+    # 覆盖镜像 ENTRYPOINT/CMD;None = 镜像自带(dev 恒 None)
     container_command: Mapped[list[str] | None] = mapped_column(JSONB)
     container_args: Mapped[list[str] | None] = mapped_column(JSONB)
-    # 是否给这台开 SSH。dev 恒 True,service 默认 False(端口池只有 30000–32767 一段,是硬上限)。
-    # 独立成列而不是从 ssh_port 反推:端口是 outbox handler 建 Pod 时才分配的
+    # 是否开 SSH:dev 恒 True,service 默认 False;不从 ssh_port 反推
     with_ssh: Mapped[bool] = mapped_column(default=True, server_default="true")
-    # 用户环境变量整包密文(AES-GCM,AAD 绑实例 uuid),明文形如
-    # {"plain": {...}, "secret": {...}};明文项一起加密,分列存会泄漏「哪些键是密文」
+    # 用户环境变量整包密文(AES-GCM,AAD 绑实例 uuid),明文形如 {"plain": {...}, "secret": {...}}
     env_encrypted: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(16), index=True)
     version: Mapped[int] = mapped_column(default=0)  # 乐观锁
     k8s_namespace: Mapped[str] = mapped_column(String(64))
     node_name: Mapped[str | None] = mapped_column(String(253))  # 与 node_specs 同宽(K8s 上限 253)
     ssh_port: Mapped[int | None]
-    # AES-GCM 密文(enc:v2:<kid>: 前缀,约 103 字符),AAD 绑定实例 uuid;重置后随重启轮换
+    # AES-GCM 密文(enc:v2:<kid>: 前缀,约 103 字符),AAD 绑实例 uuid
     jupyter_token: Mapped[str] = mapped_column(String(160))
     authorized_keys: Mapped[list[str]] = mapped_column(JSONB, default=list)
     data_disk_id: Mapped[int | None]
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
-    # 请求体指纹 sha256(下单参数全集,见 service.create_instance):同键异参重放 409
+    # 请求体指纹 sha256(见 service.instance_fingerprint):同键异参 409
     request_fingerprint: Mapped[str | None] = mapped_column(String(64))
-    # 冻结回收截止:进入 frozen 时按策略 freeze_grace_hours 写入(见 billing/patrol.py)
+    # 冻结回收截止:进入 frozen 时按 freeze_grace_hours 写入(billing/patrol.py)
     frozen_deadline: Mapped[datetime | None]
-    # running 实例 Pod 首次 not-ready 的时刻,持续超过宽限即判节点失联(见 reconciler);
-    # 节点失联时 Pod 停在 phase=Running 而 Ready 转 False,只能看这个字段
+    # running 实例 Pod 首次 not-ready 的时刻;超宽限判失联(reconciler)
     unready_since: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
 
 class InstanceEvent(Base):
-    """状态迁移流水:计费主依据 + 用户可见时间线。追加式不可改。"""
+    """状态迁移流水:计费主依据 + 用户时间线,追加式。"""
 
     __tablename__ = "instance_events"
 
@@ -129,13 +118,10 @@ class InstanceEvent(Base):
 
 
 class PortAllocation(Base):
-    """SSH 端口池。instance_id 为空即空闲;blocked=True 表示该端口被集群其它对象占用。
-
-    端口池 30000–32767 与 K8s NodePort 同段,被占端口须标 blocked 让分配器跳过。
-    """
+    """SSH 端口池(30000–32767):instance_id 空即空闲;blocked = 被集群其它对象占用,分配器跳过。"""
 
     __tablename__ = "port_allocations"
-    # 一台实例至多占一个端口(部分唯一:空闲行 instance_id 为 NULL,不参与约束)
+    # 一台实例至多占一个端口(部分唯一)
     __table_args__ = (
         Index(
             "uq_port_allocations_instance",
@@ -153,11 +139,10 @@ class PortAllocation(Base):
 
 
 class DataDisk(Base):
-    """数据盘:独立于实例生命周期(留存抓手)。JuiceFS 子路径,挂载点 /root/data。"""
+    """数据盘:独立于实例生命周期;JuiceFS 子路径,挂载点 /root/data。"""
 
     __tablename__ = "data_disks"
-    # 幂等键:响应丢失后重试不会开出第二块盘;
-    # 部分唯一索引:一台实例至多挂一块盘(与 instances.data_disk_id 的 1:1 模型一致)
+    # 一台实例至多挂一块盘(部分唯一)
     __table_args__ = (
         UniqueConstraint("user_id", "idempotency_key"),
         Index(
@@ -176,17 +161,15 @@ class DataDisk(Base):
     juicefs_subpath: Mapped[str] = mapped_column(String(128), unique=True)
     price_gb_month: Mapped[Decimal] = mapped_column(Numeric(12, 4))  # 创建时快照
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
-    # 请求体指纹 sha256(user_id|name|size_gb):同键异参重放 409
+    # 请求体指纹 sha256(user_id|name|size_gb):同键异参 409
     request_fingerprint: Mapped[str | None] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(16), default="active", index=True)
     # active / grace(欠费宽限,只读) / frozen / deleting / deleted
     mounted_instance_id: Mapped[int | None] = mapped_column(index=True)
     grace_started_at: Mapped[datetime | None]
-    # 最近一次回款恢复(离开 grace/frozen)的时刻:日结追平按 [grace_started, grace_ended)
-    # 区间判定宽限日;grace_started_at 为欠费倒计时语义保持 sticky,不混用
+    # 最近一次离开 grace/frozen 的时刻;日结按 [grace_started, grace_ended) 判宽限日
     grace_ended_at: Mapped[datetime | None]
     frozen_started_at: Mapped[datetime | None]
-    # JuiceFS 目录硬配额是否已按 size_gb 下发(创建/扩容后置 false 并同事务入队 disk.quota,
-    # handler 成功才置 true;死信由 reconciler 重派)。false ≠ 不可用,仅配额未强制、不可挂载
+    # JuiceFS 目录配额是否已按 size_gb 下发(创建/扩容置 false 并入队 disk.quota);false 时不可挂载
     quota_synced: Mapped[bool] = mapped_column(default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

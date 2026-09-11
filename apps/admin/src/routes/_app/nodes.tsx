@@ -47,7 +47,7 @@ import { ReasonAction } from "../../components/ReasonAction";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 export const Route = createFileRoute("/_app/nodes")({
-  // node:告警深链(/nodes?node=<name>)定位目标行
+  // node:告警深链(/nodes?node=<name>)目标行
   validateSearch: (search: Record<string, unknown>): { node?: string } => ({
     node: typeof search.node === "string" && search.node ? search.node : undefined,
   }),
@@ -72,10 +72,10 @@ const PHASE_LABEL = {
   joined: "nodes.phase.joined",
 } as const;
 
-// 热力格深底浅字(WCAG AA):取值收敛在 packages/ui heatColors,白字对比度 ≥4.5:1
+// 热力格取色 packages/ui heatColors
 const HEAT_COLORS = { idle: adminColors.gridLine, ...heatColors };
 
-// 图例档 → 文案键(静态表:admin 的 t() 是严格键类型,动态拼键过不了 tsc)
+// 图例档 → 文案键
 const HEAT_LEGEND_KEY = {
   idle: "nodes.heatLegend.idle",
   low: "nodes.heatLegend.low",
@@ -95,8 +95,7 @@ function last(points?: [number, number][] | null): number | null {
   return p ? p[1] : null;
 }
 
-/** 每卡热力格:有指标时按 util 染色(tooltip 给 util/显存/温度);断源回落「已租/空闲」两态。
- *  断源空闲格用斜纹底,与「util<10%」纯色空闲格区分(同色会把断源误读成低载)。 */
+/** 每卡热力格:有指标按 util 染色(tooltip 给 util/显存/温度);断源回落「已租/空闲」两态,断源空闲格斜纹底。 */
 function GpuGrid({ node, metrics }: { node: NodeRow; metrics: NodeMetricsOut | undefined }) {
   const { t } = useTranslation();
   const byIndex = new Map((metrics?.gpus ?? []).map((g) => [String(g.index), g]));
@@ -141,7 +140,7 @@ function GpuGrid({ node, metrics }: { node: NodeRow; metrics: NodeMetricsOut | u
                 fontSize: fontSize.caption,
                 lineHeight: 1.2,
                 background: bg,
-                // 字色随底:深底(热力档/空闲格)浅字;亮青(断源已租)反压深字;断源空闲格深底浅字
+                // 字色随底:深底浅字,亮青(断源已租)深字
                 color: !live
                   ? used
                     ? adminColors.bgBase
@@ -159,7 +158,7 @@ function GpuGrid({ node, metrics }: { node: NodeRow; metrics: NodeMetricsOut | u
         );
       })}
     </div>
-    {/* 色阶图例:idle/low/mid/high 四档 + 断源两态(斜纹=断源空闲) */}
+    {/* 色阶图例:四档 + 断源两态 */}
     <Space size={12} wrap style={{ marginTop: 12 }}>
       {(Object.keys(HEAT_LEGEND_KEY) as (keyof typeof HEAT_LEGEND_KEY)[]).map((key) => (
         <Space key={key} size={4}>
@@ -211,7 +210,7 @@ function NodeMetricsPanel({
   const gpus = metrics?.gpus ?? [];
   const chart = (key: "util" | "mem_used_mb", title: string, unit: string) => (
     <Card size="small" title={title}>
-      {/* 深色 NOC:轴/图例/tooltip 与 series 色板全走 noc 主题(adminColors 同源),深底上才读得清 */}
+      {/* 轴/图例/tooltip 与 series 色板走 noc 主题 */}
       <EChart
         style={{ height: 200 }}
         theme="noc"
@@ -313,7 +312,7 @@ interface EnrollFormValues {
   ttl_hours: number;
 }
 
-// 与后端 nodes/schemas.py HOSTNAME_PATTERN 对齐(签发时强制绑定主机名,防令牌串用)
+// 与后端 nodes/schemas.py HOSTNAME_PATTERN 对齐
 const HOSTNAME_PATTERN =
   /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/;
 
@@ -322,7 +321,7 @@ function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => void })
   const errText = useApiErrorText();
   const { message } = App.useApp();
   const [form] = Form.useForm<EnrollFormValues>();
-  // 新建草稿(sessionStorage):误关弹窗不丢;生成命令成功后清除
+  // 新建草稿(sessionStorage),生成命令成功后清除
   const draft = useFormDraft<EnrollFormValues>("node-new");
   const [result, setResult] = useState<EnrollmentCommandOut | null>(null);
   const [idemKey, setIdemKey] = useState(() => crypto.randomUUID());
@@ -339,7 +338,7 @@ function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => void })
   const close = () => {
     setResult(null);
     form.resetFields();
-    // 幂等键必须随「下一次注册」轮换:不换会让本页注册的第二个节点拿到第一个节点的加入命令
+    // 幂等键随下一次注册轮换
     setIdemKey(crypto.randomUUID());
     onClose();
   };
@@ -363,7 +362,7 @@ function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => void })
                 const values = await form.validateFields();
                 create.mutate({ data: values, idempotencyKey: idemKey });
               } catch {
-                // 校验失败:antd 已在字段下给出红字反馈,静默停留
+                // 校验失败:antd 已给红字
               }
             }}
           >
@@ -419,7 +418,7 @@ function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => void })
 function EnrollmentsCard({ writable }: { writable: boolean }) {
   const { t } = useTranslation(["admin", "shared"]);
   const qc = useQueryClient();
-  // 进行中=活跃行(5s 轮询);全部=含 joined/expired/revoked 的历史装机记录
+  // 进行中 = 活跃行(5s 轮询);全部 = 含 joined/expired/revoked
   const [scope, setScope] = useState<"active" | "all">("active");
   const { data, queryKey, isLoading, isError, error, refetch } = useEnrollments({
     active: scope === "active" ? true : undefined,
@@ -427,7 +426,7 @@ function EnrollmentsCard({ writable }: { writable: boolean }) {
   });
   const rows: EnrollmentRow[] = data ?? [];
   const [regenResult, setRegenResult] = useState<EnrollmentCommandOut | null>(null);
-  // 不带 onError:错误提示统一由 ReasonAction 弹出(避免与 mutation 回调双提示)
+  // 错误提示统一由 ReasonAction 弹出
   const regenerate = useRegenerateEnrollment({
     mutation: {
       onSuccess: (r) => {
@@ -440,8 +439,7 @@ function EnrollmentsCard({ writable }: { writable: boolean }) {
     mutation: { onSuccess: () => void qc.invalidateQueries({ queryKey }) },
   });
 
-  // scope 切换不随数据有无消失:无进行中注册时卡片照常渲染空态,「全部」Tab 永远可达;
-  // 查询失败也要露出(进行中注册被误判为「没有」会误导装机值班),错误态由表内空态明示
+  // 无数据照常渲染空态;查询失败由表内空态明示
   return (
     <Card
       title={scope === "active" ? t("nodes.pendingTitle") : t("nodes.allEnrollmentsTitle")}
@@ -513,7 +511,7 @@ function EnrollmentsCard({ writable }: { writable: boolean }) {
           {
             title: t("nodes.colHeartbeat"),
             dataIndex: "last_report_at",
-            // 秒级精度:进行中注册 5s 轮询,靠秒级心跳分辨「卡住」与「存活」(formatDateTime 只到分)
+            // 秒级精度(formatDateTime 只到分)
             render: (v: string | null) => (v ? dayjs(v).format("MM-DD HH:mm:ss") : "-"),
           },
           {
@@ -536,7 +534,7 @@ function EnrollmentsCard({ writable }: { writable: boolean }) {
             width: 190,
             render: (_, r) => (
               <Space>
-                {/* 重新生成会让旧命令立即失效,先收原因并复述后果再执行 */}
+                {/* 重新生成:旧命令立即失效,先收原因 */}
                 <ReasonAction
                   label={t("nodes.regenerate")}
                   title={t("nodes.regenerateConfirmTitle")}
@@ -593,23 +591,20 @@ function NodesPage() {
   const writable = canWriteOps(role);
   const qc = useQueryClient();
   const { data, isLoading, isError, error, refetch } = useNodes();
-  // useMemo 稳定引用:data 未就绪时 ?? [] 每次渲染都是新数组,会拖垮下游 filteredNodes 的依赖比较
   const nodes: NodeRow[] = useMemo(() => data ?? [], [data]);
   const { data: portPool } = usePortPool();
   const nodeParam = Route.useSearch({ select: (s) => s.node });
   const [selected, setSelected] = useState<string | null>(null);
   const [range, setRange] = useState("1h");
   const [addOpen, setAddOpen] = useState(false);
-  // 节点名过滤(commit 制,与租户检索同口径):输入只改 kwInput,Enter/点搜索/清空才提交;
-  // 节点表是 useNodes 全量小表(无服务端分页),客户端过滤即可,不为它加检索参数
+  // 节点名过滤(commit 制,客户端过滤全量小表)
   const [kwInput, setKwInput] = useState("");
   const [kw, setKw] = useState("");
   const filteredNodes = useMemo(
     () => (kw ? nodes.filter((n) => n.name.toLowerCase().includes(kw)) : nodes),
     [nodes, kw],
   );
-  // 深链目标校验(列表就绪后判定):?node= 目标不存在时顶部提示而不静默落在首节点
-  // (那会把「目标节点已移除」误读成「一切正常」)
+  // ?node= 目标不存在时顶部提示
   const deepLinkMissing =
     nodeParam !== undefined && data !== undefined && !nodes.some((n) => n.name === nodeParam);
   const node =
@@ -617,8 +612,7 @@ function NodesPage() {
       ? undefined
       : (nodes.find((n) => n.name === selected) ?? nodes[0]);
   const { data: nodeMetrics } = useNodeMetrics(node?.name ?? null, range);
-  // 告警深链(/nodes?node=<name>):选中目标行并滚动到可视区;行经 data-row-key 定位
-  // (URL→选中态走渲染期派生态,与 tenants 的 prevUrlQ 同款,不进 effect)
+  // 告警深链:选中目标行并滚动到可视区(data-row-key 定位;渲染期派生态)
   const [prevNodeParam, setPrevNodeParam] = useState(nodeParam);
   if (nodeParam !== prevNodeParam) {
     setPrevNodeParam(nodeParam);
@@ -629,7 +623,7 @@ function NodesPage() {
     const row = document.querySelector(`[data-row-key="${CSS.escape(nodeParam)}"]`);
     row?.scrollIntoView({ block: "center" });
   }, [nodeParam, nodes.length]);
-  // cordon 经 outbox 异步生效:3s 后补拉一次;组件卸载时清定时器
+  // cordon 经 outbox 异步生效,3s 后补拉一次
   const cordonTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
@@ -646,7 +640,7 @@ function NodesPage() {
           }),
         );
         void qc.invalidateQueries({ queryKey: ["admin", "nodes"] });
-        // queued=true:经 outbox 异步执行,3s 后补拉一次看生效
+        // queued=true:3s 后补拉一次
         if ((r as { queued?: boolean }).queued) {
           cordonTimer.current = setTimeout(
             () => void qc.invalidateQueries({ queryKey: ["admin", "nodes"] }),
@@ -710,7 +704,7 @@ function NodesPage() {
           value={kwInput}
           onChange={(e) => {
             setKwInput(e.target.value);
-            // 清空(allowClear)是显式动作:立即提交回到未筛选列表
+            // 清空立即提交
             if (e.target.value === "") setKw("");
           }}
           onSearch={(v) => setKw(v.trim().toLowerCase())}
@@ -731,9 +725,7 @@ function NodesPage() {
             ),
           }}
           dataSource={filteredNodes}
-          // 规模化取舍:>200 行不上 react-virtual 自绘行(antd Table body 虚拟化要替换
-          // components.body,排序/筛选/行高亮都得跟着适配,代价大);改 100/页分页——
-          // 小集群 hideOnSinglePage 无感知,大集群一屏只渲染一页不卡
+          // >200 行改 100/页分页,不上虚拟化
           pagination={
             filteredNodes.length > 200
               ? { pageSize: 100, showSizeChanger: false, hideOnSinglePage: true }
@@ -741,7 +733,7 @@ function NodesPage() {
           }
           onRow={(r) => ({
             onClick: () => setSelected(r.name),
-            // 键盘可达:整行即按钮(Enter/Space 选中),选中行给主色底/边框高亮
+            // 整行即按钮(Enter/Space 选中)
             tabIndex: 0,
             onKeyDown: (e) => {
               if (e.key === "Enter" || e.key === " ") {
@@ -818,7 +810,7 @@ function NodesPage() {
               dataIndex: "last_seen",
               width: 130,
               sorter: (a, b) => dayjs(a.last_seen || 0).valueOf() - dayjs(b.last_seen || 0).valueOf(),
-              // 相对时间直读,hover 给绝对时间;空 = 尚无台账行
+              // 相对时间,hover 给绝对时间;空 = 尚无台账行
               render: (v: string) =>
                 v ? (
                   <Tooltip title={formatDateTime(v)}>
@@ -878,7 +870,7 @@ function NodesPage() {
                         });
                       }}
                     />
-                    {/* 占位项与全站同形态:可见但禁用 + tooltip 说明(纯文本不可聚焦,灰置语义不统一) */}
+                    {/* 占位项:可见但禁用 + tooltip */}
                     <Tooltip title={t("nodes.drainDeferred")}>
                       <Button size="small" disabled>
                         {t("nodes.drainBtn")}

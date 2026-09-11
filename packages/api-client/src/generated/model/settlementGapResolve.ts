@@ -6,7 +6,7 @@
  */
 
 /**
- * 人工核销(不重放):对象已不存在/grace_overlap 确认无账时的出口。说明必填。
+ * 人工核销(不重放)。说明必填。
  */
 export interface SettlementGapResolve {
   /**

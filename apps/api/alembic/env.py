@@ -20,15 +20,12 @@ target_metadata = Base.metadata
 
 
 def get_url() -> str:
-    # 迁移只需要数据库地址:prod 迁移 Job 只挂 superdl-db(最小凭据面),
-    # 若构造完整 Settings 会被 prod 必填校验(jwt/metrics/edge/crypto)拒掉。
-    # env 未设时回落 Settings(本地开发 .env 路径)
+    # 优先读 env(prod 迁移 Job 只挂 superdl-db,不构造完整 Settings);未设时回落 Settings
     return os.environ.get("SUPERDL_DATABASE_URL") or get_settings().database_url
 
 
 def get_url_and_connect_args() -> tuple[str, dict[str, str]]:
-    """asyncpg 不认 libpq 的 sslmode 参数名:与 app.core.db 同一条翻译(必须同口径,
-    否则 prod 的 sslmode=require 连接串在迁移侧 TypeError)。"""
+    """sslmode → asyncpg ssl 参数,与 app.core.db._split_db_tls 同口径。"""
     return _split_db_tls(get_url())
 
 

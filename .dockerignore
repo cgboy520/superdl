@@ -1,5 +1,4 @@
-# 前端镜像构建上下文 = 仓库根(deploy/app/frontend.Dockerfile 用 COPY . .):
-# 排除敏感与无关内容,防止 .git/.env 被打进镜像层
+# 前端镜像构建上下文 = 仓库根(deploy/app/frontend.Dockerfile)
 .git
 .github
 **/.env

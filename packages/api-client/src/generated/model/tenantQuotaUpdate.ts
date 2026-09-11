@@ -6,7 +6,7 @@
  */
 
 /**
- * 写覆盖:三个数字可留空(=该维走默认);全空 = 清除覆盖恢复默认。note 必填(留痕)。
+ * 写覆盖:数字可留空(=该维走默认);全空 = 清除覆盖。note 必填。
  */
 export interface TenantQuotaUpdate {
   max_disks?: number | null;

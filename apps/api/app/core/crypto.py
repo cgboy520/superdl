@@ -1,18 +1,11 @@
-"""敏感配置落库加密(AES-256-GCM)与带密钥摘要(HMAC-SHA256)。
+"""敏感配置加密(AES-256-GCM)与带密钥摘要(HMAC-SHA256)。
 
-主密钥只走 env(SUPERDL_CONFIG_ENCRYPTION_KEY,urlsafe-base64 的 32 字节),
-dev/test 未配置时从 jwt_secret 派生。轮换走双密钥读迁移期:旧密钥挂到
-SUPERDL_CONFIG_ENCRYPTION_KEY_PREVIOUS(只参与解密/摘要回读),新密钥负责全部写入;
-操作步骤见 deploy/cluster/runbooks/key-rotation.md。
-
-密文格式(加密用钥经 HKDF 独立派生,与摘要用钥、JWT 密钥相互分离):
-`enc:v2:<kid>:<b64(nonce+ct)>`,kid = 主密钥指纹(SHA-256 前 12 hex)。
-解密按 kid 选钥,未知 kid 直接拒(不逐把试,伪造 kid 不放大计算面)。
-AAD 绑定配置键名,防止密文在字段间搬运复用。
-
-摘要(API Key / 节点令牌 / 短信验证码)是单向的,轮换后无法离线重算,读路径走
-candidates:当前 HKDF 子密钥(写入世代)在前;挂了 previous 时旧钥匙派生世代一并回读,
-轮换窗口内既有 API Key / 节点令牌不失效。写路径永远只写当前世代。
+主密钥只走 env(SUPERDL_CONFIG_ENCRYPTION_KEY,urlsafe-base64 32 字节),dev/test 未配置时
+从 jwt_secret 派生;轮换期旧密钥挂 SUPERDL_CONFIG_ENCRYPTION_KEY_PREVIOUS(只读),
+见 deploy/cluster/runbooks/key-rotation.md。
+密文 `enc:v2:<kid>:<b64(nonce+ct)>`,kid = 主密钥指纹(SHA-256 前 12 hex),未知 kid 拒;
+AAD 绑定配置键名。摘要读路径走 candidates(当前世代在前,previous 派生世代随后),
+写路径只写当前世代。
 """
 
 import base64
@@ -24,8 +17,7 @@ from app.core.config import decode_master_key, get_settings
 
 _PREFIX_V2 = "enc:v2:"
 
-# HKDF 域分离:加密子密钥与摘要子密钥从同一主密钥独立派生,
-# 任一侧泄漏(如 GCM 实现缺陷)不直接送出另一侧的用钥
+# HKDF 域分离:加密子密钥与摘要子密钥独立派生
 _ENC_INFO = b"superdl/enc/v2"
 _MAC_INFO = b"superdl/mac/v2"
 _KDF_SALT = b"superdl-crypto"
@@ -39,7 +31,7 @@ def _active_key() -> bytes:
     settings = get_settings()
     raw = settings.config_encryption_key
     if not raw:
-        # dev/test 兜底派生;prod 下 Settings 校验已拒绝缺省
+        # dev/test 兜底派生
         return hashlib.sha256(f"{settings.jwt_secret}:platform-config".encode()).digest()
     return _decode_key(raw, env_name="SUPERDL_CONFIG_ENCRYPTION_KEY")
 
@@ -53,7 +45,7 @@ def _previous_key() -> bytes | None:
 
 
 def _kid_of(key: bytes) -> str:
-    """密钥指纹:12 hex(48 bit)足够区分轮换窗口内的 ≤2 把钥匙,不泄密钥本身。"""
+    """密钥指纹(12 hex)。"""
     return hashlib.sha256(key).hexdigest()[:12]
 
 
@@ -97,14 +89,12 @@ def decrypt_str(token: str, *, aad: str) -> str:
 
 
 def _hmac_hex(mac_key: bytes, domain_msg: str) -> str:
-    """带密钥摘要的单一定义点(HMAC-SHA256, hex):不可退回裸 sha256,
-    库 dump 不应用来做离线批量比对;调用方以固定前缀做域分离(各表摘要不可互相比对)。"""
+    """带密钥摘要(HMAC-SHA256, hex);调用方以固定前缀做域分离。"""
     return hmac.new(mac_key, domain_msg.encode(), hashlib.sha256).hexdigest()
 
 
 def _mac_candidates() -> list[bytes]:
-    """摘要用钥读候选:当前 HKDF 子密钥(写入世代)在前;轮换窗口内追加 previous 派生。
-    按值去重(兜底派生与显式配置撞 key 时不重复)。"""
+    """摘要用钥读候选:当前世代在前,轮换窗口内追加 previous 派生;按值去重。"""
     out: list[bytes] = []
     for master in dict.fromkeys(k for k in (_active_key(), _previous_key()) if k is not None):
         mac_key = _derive(master, _MAC_INFO)
@@ -119,8 +109,7 @@ def _hmac_candidates(domain_msg: str) -> list[str]:
 
 
 def hash_sms_code(phone: str, purpose: str, code: str) -> str:
-    """短信验证码的带密钥摘要(写路径);phone 与 purpose 混进消息做域分离。
-    6 位数字码的无密钥摘要对拿到库 dump 的人等同明文。"""
+    """短信验证码的带密钥摘要(写路径);phone 与 purpose 混进消息做域分离。"""
     return _hmac_candidates(f"smscode|{phone}|{purpose}|{code}")[0]
 
 
@@ -135,7 +124,7 @@ def hash_api_key(key: str) -> str:
 
 
 def hash_api_key_candidates(key: str) -> list[str]:
-    """API Key 的读路径候选:摘要即鉴权查询键,轮换窗口内必须兼读旧世代。"""
+    """API Key 的读路径候选(轮换窗口内兼读旧世代)。"""
     return _hmac_candidates(f"service-api-key|{key}")
 
 

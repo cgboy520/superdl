@@ -1,4 +1,4 @@
-/** 错误文案 hook(两端共用):typed-t 收窄为 LooseT 的唯一 cast 点(server key 天然动态)。 */
+/** 错误文案 hook(两端共用):typed-t → LooseT 的 cast 点。 */
 import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 

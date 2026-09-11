@@ -1,5 +1,4 @@
-/** 市场页 validateSearch:10 个筛选/选中参数的 URL 往返序列化。
- *  挂了说明什么坏了:刷新/分享/返回丢筛选(转化路径状态断裂),或默认值把 URL 弄脏。 */
+/** 市场页 validateSearch:10 个筛选/选中参数的 URL 往返。挂了说明:刷新/分享/返回丢筛选,或默认值把 URL 弄脏。 */
 import { describe, expect, it } from "vitest";
 
 import { marketValidateSearch } from "./_console.market";

@@ -14,28 +14,18 @@ spec:
       labels: {app: superdl-api}
     spec:
       serviceAccountName: superdl-api   # 只读身份(见 01-rbac.yaml;写权限全在 worker)
-      # Harbor 拉取凭据:首装按 ../secrets.example.yaml 手建,之后由平台按配置中心的机器人凭据
-      # 按指纹覆写(docs/reference/images.md);Harbor 项目 public 时缺它只是 kubelet 告警
+      # Harbor 拉取凭据:首装按 ../secrets.example.yaml 手建,之后由平台覆写(docs/reference/images.md)
       imagePullSecrets:
         - {name: superdl-registry-pull}
-      # 优先级压过租户 Pod:节点资源紧张时不与租户同级被驱逐
       priorityClassName: system-cluster-critical
       nodeSelector:
-        # 平台组件落点统一锚点。**必须用 node-restriction.kubernetes.io/ 前缀**:该前缀被
-        # apiserver 的 NodeRestriction 准入插件拉黑,kubelet 无论如何都不能给自己打上它
-        # (rke2/k3s server-config.yaml 显式钉了这个插件)。不许换成发行版 node-label 自打的键
-        # (如 node-role.superdl.io/infra):那是节点写在自己 config.yaml 里的自声明,任何一台
-        # 加进来的 GPU 机器都能自称 infra,把带库连接串/JWT 签发密钥/配置主密钥的 API 与 worker 吸过去。
-        # 标签由 deploy/ansible/site.yml 装机后用管理凭据打在控制面节点上;平台 SA 无权改
-        # 这个前缀(admission 策略③只放行 superdl.io/*),失陷的平台 SA 同样搬不动落点。
-        # GPU 节点严禁打此标签。
+        # 平台组件落点锚点:必须用 node-restriction.kubernetes.io/ 前缀(kubelet 不可自打),不许换成节点可自述的键;
+        # 由 deploy/ansible/site.yml 装机后用管理凭据打;GPU 节点禁止打
         node-restriction.kubernetes.io/superdl-infra: "true"
       tolerations:
-        # 必须与 nodeSelector 成对:server 带 CriticalAddonsOnly=true:NoExecute
-        # (rke2/server-config.yaml node-taint),只钉标签不容忍污点 = Pod 永远 Pending
+        # 与 nodeSelector 成对(server 带 CriticalAddonsOnly=true:NoExecute,rke2/server-config.yaml)
         - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
       topologySpreadConstraints:
-        # 2 副本尽量跨节点/跨可用区摊开;小集群不满足时仍可调度(ScheduleAnyway)
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
           whenUnsatisfiable: ScheduleAnyway
@@ -56,7 +46,7 @@ spec:
           imagePullPolicy: IfNotPresent
           envFrom:
             - configMapRef: {name: superdl-api-config}
-            # 按爆炸半径分域引用(secrets.example.yaml 头部的消费矩阵是唯一事实源)
+            # 分域引用(消费矩阵见 secrets.example.yaml)
             - secretRef: {name: superdl-db}
             - secretRef: {name: superdl-auth}
             - secretRef: {name: superdl-crypto}
@@ -76,12 +66,11 @@ spec:
             timeoutSeconds: 5   # /readyz 含 DB 探测:默认 1s 在 DB 抖动时易误判摘流;放宽到 5s,超时即失败摘流
             failureThreshold: 3
           lifecycle:
-            # 滚动/缩容先摘流再退出:preStop 等 Endpoints 摘除传播到 Envoy Gateway/iptables,
-            # 否则在途请求被 SIGTERM 直接掐断
+            # preStop 等 Endpoints 摘除传播后再退出
             preStop:
               exec:
                 command: ["sh", "-c", "sleep 10"]
-          # requests==limits → Guaranteed
+          # requests==limits(Guaranteed)
           resources:
             requests: {cpu: "1", memory: 1Gi}
             limits: {cpu: "1", memory: 1Gi}

@@ -138,7 +138,7 @@ class TestTierSource:
 
 
 def prom_mock_malformed():
-    """返回 200 但缺 data 键的畸形响应(上游故障/代理截断)。"""
+    """返回 200 但缺 data 键的畸形响应。"""
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text=json.dumps({"status": "success"}))
@@ -148,7 +148,7 @@ def prom_mock_malformed():
 
 class TestMalformedResponse:
     async def test_instance_metrics_503_not_500(self, client, sm, fake):
-        """Prometheus 响应缺 data 键:KeyError 不能击穿成 500,必须走 503 降级语义。"""
+        """Prometheus 响应缺 data 键:503 降级。"""
         headers, uuid, _user_id = await provision_running(client, sm, fake)
         prom.set_client(prom_mock_malformed())
         resp = await client.get(f"/api/v1/instances/{uuid}/metrics", headers=headers)
@@ -191,7 +191,7 @@ class TestAggregationPartialFailure:
 
 class TestNodeNameValidation:
     async def test_injection_rejected_with_400(self):
-        """node_name 是 format 进 PromQL 的路径参数:非法名必须 400,不能进查询模板。"""
+        """非法 node_name → 400,不进 PromQL 模板。"""
         from app.core.errors import AppError
         from app.modules.metering.service import node_gpu_metrics
 

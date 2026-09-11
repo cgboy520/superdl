@@ -6,7 +6,7 @@
  */
 
 /**
- * 台账按 canonical×池聚合(SKU「从集群资源创建」下拉数据源)。gpu_model=None 为未识别桶。
+ * 台账按 canonical×池聚合。gpu_model=None 为未识别桶。
  */
 export interface GpuModelAggregateOut {
   gpu_model: string | null;

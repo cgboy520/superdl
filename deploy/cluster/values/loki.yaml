@@ -2,11 +2,7 @@
 # chart 版本钉在 ../helmfile.yaml.gotmpl;仓库必须是 grafana-community/loki。
 deploymentMode: Monolithic
 loki:
-  # 多租户:X-Scope-OrgID 由 Alloy 按 namespace 打(平台组件+控制面审计 =
-  # platform;tenant-* 租户工作负载 = tenant)。注意它不是鉴权——头是自声明的,
-  # 真正的边界是 monitoring-netpol.yaml:只有 alloy/grafana 能到 loki:3100)。
-  # 隔离收益:租户日志洪峰只烧 tenant 租户的配额,platform(含 apiserver 审计)不受挤兑;
-  # 查询侧按租户 datasource 分开(Grafana 两个 Loki 源,见 kps.yaml)。
+  # 多租户:X-Scope-OrgID 由 Alloy 按 namespace 打(platform / tenant);网络边界见 monitoring-netpol.yaml,查询侧两个 Grafana 数据源(kps.yaml)
   auth_enabled: true
   commonConfig:
     replication_factor: 1        # 单副本必须为 1,否则写入被拒(官方 Monolithic 安装文档明示)
@@ -36,13 +32,11 @@ singleBinary:
   replicas: 1
   persistence:
     enabled: true
-    # RWX 共享卷(同 Prometheus):节点死后可跨节点重调度重挂;
-    # light 档无 JuiceFS,由 values/light/loki-light.yaml 回落 topolvm。
+    # JuiceFS RWX;light 档由 values/light/loki-light.yaml 回落 topolvm
     storageClass: superdl-juicefs
     accessModes: ["ReadWriteMany"]
     size: 50Gi
-  # 与 kps-light.yaml 的 Prometheus 同量级(100m/512Mi 起步,只限内存);
-  # 日志量上涨后先升 memory limit,再考虑拆 SimpleScalable。
+  # 只限内存;日志量上涨先升 memory limit
   resources:
     requests: {cpu: 100m, memory: 512Mi}
     limits: {memory: 1Gi}        # 只限内存:CPU 限速拖慢摄入/查询,OOMKill 反而更可见

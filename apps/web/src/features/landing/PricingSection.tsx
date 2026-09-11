@@ -1,8 +1,4 @@
-/**
- * GPU 价格墙:实时 /skus 数据(公开端点);按型号分组取代表 SKU(组内最低价;库存口径见
- * lib/inventory:同 (池, 型号) 互斥档位取 max、跨池求和),CTA 即库存。卡片列数随宽度自适应。
- * 接口失败整区降级为「前往算力市场」入口。
- */
+/** GPU 价格墙:实时 /skus(公开端点);按型号分组取代表 SKU(组内最低价;库存口径见 lib/inventory),CTA 即库存;列数随宽度自适应;接口失败整区降级为「前往算力市场」。 */
 
 import { compareAmounts, fontSize, getGpuSpec, layout, metaOf, skuTierMap, skuVariant } from "@superdl/ui";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -20,10 +16,10 @@ import type { SkuMarketOut } from "@superdl/api-client";
 /** 型号分组代表:价格最低的为展示卡;CTA 优先指向「有货且最便宜」的 SKU。 */
 interface ModelGroup {
   model: string;
-  representative: SkuMarketOut; // 展示用:组内最低价
-  rentTarget: SkuMarketOut; // CTA 用:有货最低价,全组无货回落 representative
-  available: number; // 组内可售数(同 (池, 型号) 取 max,跨池求和)
-  tiers: string[]; // 组内覆盖的展示档位(tier × pool 的变体,型号下多档展示)
+  representative: SkuMarketOut; // 组内最低价
+  rentTarget: SkuMarketOut; // 有货最低价,全组无货回落 representative
+  available: number; // 组内可售数(去重口径见 lib/inventory)
+  tiers: string[]; // 组内覆盖的展示档位
 }
 
 export function PricingSection() {
@@ -35,7 +31,7 @@ export function PricingSection() {
   const { data: skus, isLoading, isError } = useSkus({ refetchInterval: 60_000 });
 
   const groups = useMemo<ModelGroup[]>(() => {
-    // 价格墙只排 GPU 规格:CPU 档没有型号,按型号分组会多出一张空名字的卡
+    // 只排 GPU 规格,CPU 档跳过
     const inTab = (skus ?? []).filter((s) => s.tier === tab);
     const freeByModel = dedupAvailableByModel(inTab);
     const byModel = new Map<string, SkuMarketOut[]>();
@@ -103,7 +99,7 @@ export function PricingSection() {
               { key: "shared", label: t("landing.pricing.tabShared") },
             ]}
           />
-          {/* 自适应列数:卡片 ≥260px,行内个数随容器宽度伸缩(不写死断点列数) */}
+          {/* 自适应列数:卡片 ≥260px */}
           <div
             style={{
               display: "grid",

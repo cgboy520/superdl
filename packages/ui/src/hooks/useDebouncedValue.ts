@@ -1,4 +1,4 @@
-/** 尾随防抖(两端共用):搜索输入等高频值延迟回写 URL query,避免每个按键都触发路由/请求。 */
+/** 尾随防抖(两端共用)。 */
 
 import { useEffect, useState } from "react";
 

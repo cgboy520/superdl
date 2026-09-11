@@ -48,8 +48,7 @@ const TENANTS_TABS = ["tenants", "instances", "deletions"] as const;
 type TenantsTab = (typeof TENANTS_TABS)[number];
 
 export const Route = createFileRoute("/_app/tenants")({
-  // q:从其他页的 user_id 链接跳入,按 id 精确找人;tab/dtab:页内与抽屉 Tab 入 URL;
-  // istatus/inode/iq:全局实例 Tab 的服务端筛选与实例名检索入 URL;tstatus:租户状态筛选;order:注册先后排序
+  // q:检索;tab/dtab:页内与抽屉 Tab;istatus/inode/iq:实例 Tab 筛选;tstatus:租户状态;order:注册排序
   validateSearch: (search: Record<string, unknown>): {
     q?: string;
     tab?: TenantsTab;
@@ -84,11 +83,10 @@ function TenantsTab() {
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();
-  // 手机号可检索但列表仍只回掩码;纯数字额外按租户 id 精确命中。
-  // 检索是落审计的敏感读,必须提交才触发:input=输入框即时值,已提交的查询 = URL 的 q
+  // 检索落审计,提交才触发:input = 输入框即时值,已提交查询 = URL 的 q
   const urlQ = Route.useSearch({ select: (s) => s.q });
   const [input, setInput] = useState(urlQ ?? "");
-  // URL q 变化(user_id 链接跳入)时同步进输入框:渲染期派生态,不进 effect
+  // URL q 变化同步进输入框(渲染期派生态)
   const [prevUrlQ, setPrevUrlQ] = useState(urlQ);
   if (urlQ !== prevUrlQ) {
     setPrevUrlQ(urlQ);
@@ -96,11 +94,10 @@ function TenantsTab() {
       setInput(urlQ);
     }
   }
-  // 输入 300ms 防抖回写 ?q=(双向同步:控件→URL,共享 useDebouncedValue);防抖期间不触发查询,
-  // 已提交查询态以 URL 为唯一事实源(useTenants 直接读 urlQ,不再有中间 state)
+  // 输入 300ms 防抖回写 ?q=;已提交查询以 URL 为事实源
   const debouncedInput = useDebouncedValue(input, 300);
   useEffect(() => {
-    // 与 URL 已一致(初载/深链跳入/回车立即提交后的回声)不再回写,避免多余导航
+    // 与 URL 已一致不回写
     if (debouncedInput === (urlQ ?? "")) return;
     void navigate({
       to: "/tenants",
@@ -108,7 +105,7 @@ function TenantsTab() {
       search: (prev) => ({ ...prev, q: debouncedInput || undefined }),
     });
   }, [debouncedInput, urlQ, navigate]);
-  // 状态筛选与注册排序:服务端参数入 URL(游标分页下客户端 filters/sorter 只作用于已加载页,是假筛选/假排序)
+  // 状态筛选与注册排序:服务端参数入 URL
   const statusFilter = Route.useSearch({ select: (s) => s.tstatus });
   const order = Route.useSearch({ select: (s) => s.order });
   const setStatusFilter = (v: string | undefined) =>
@@ -117,7 +114,7 @@ function TenantsTab() {
       replace: true,
       search: (prev) => ({ ...prev, tstatus: v }),
     });
-  // 抽屉 Tab 入 URL(?dtab=):刷新/分享后回到同一子页
+  // 抽屉 Tab 入 URL(?dtab=)
   const dtab = Route.useSearch({ select: (s) => s.dtab });
   const onDrawerTabChange = (key: DrawerTab) =>
     void navigate({
@@ -125,8 +122,7 @@ function TenantsTab() {
       replace: true,
       search: (prev) => ({ ...prev, dtab: key === "bills" ? undefined : key }),
     });
-  // 实名明文查看(全角色默认脱敏):逐次显式动作,必填事由,每次明文读落审计;
-  // readonly 不可 reveal(后端 403,这里直接不渲染入口)
+  // 实名明文查看:必填事由,落审计;readonly 不渲染入口(后端 403)
   const canReveal = role === "ops" || role === "finance" || role === "admin";
   const [revealReason, setRevealReason] = useState<string | null>(null);
   const [revealOpen, setRevealOpen] = useState(false);
@@ -155,7 +151,7 @@ function TenantsTab() {
       value={input}
       onChange={(e) => setInput(e.target.value)}
       onSearch={(v) => {
-        // 回车/点按钮立即提交(不等防抖),与防抖回写同一条路径(随后的防抖回声因与 URL 一致被跳过)
+        // 回车/点按钮立即提交
         setInput(v);
         void navigate({
           to: "/tenants",
@@ -229,7 +225,7 @@ function TenantsTab() {
       onChange={(_p, _f, sorter) => {
         const s = Array.isArray(sorter) ? sorter[0] : sorter;
         if (s?.columnKey !== "created_at") return;
-        // ascend → asc;descend 与取消排序都回默认 desc(默认值剥离出 URL)
+        // ascend → asc;descend 与取消都回默认 desc
         void navigate({
           to: "/tenants",
           replace: true,
@@ -276,8 +272,7 @@ function TenantsTab() {
           title: tt("tenants.colCreatedAt"),
           dataIndex: "created_at",
           key: "created_at",
-          // 服务端排序(注册先后 = id 单调):唯一与游标分页兼容的排序键;
-          // 余额/消费等聚合列按页拼装,不提供排序(假排序比没有更糟)
+          // 服务端排序仅注册先后;聚合列不提供排序
           sorter: true,
           sortOrder: order === "asc" ? "ascend" : "descend",
           render: formatDateTime,
@@ -311,7 +306,7 @@ function TenantsTab() {
                 onSubmit={async (reason) => {
                   const r = await freeze.mutateAsync({ userId: t.id, data: { reason } });
                   refresh();
-                  // 回显后端实停台数(创建/启动中的由巡检收敛,不在此计数)
+                  // 回显后端实停台数
                   return tt("tenants.freezeDone", { count: r.instances_stopped ?? 0 });
                 }}
               />
@@ -353,7 +348,7 @@ function InstancesTab() {
   const navigate = useNavigate({ from: "/tenants" });
   const role = useAdminRole();
   const writable = canWriteOps(role);
-  // status/node_name/实例名检索全部入 URL(commit 制);输入框经渲染期派生回流
+  // status/node_name/实例名检索入 URL(commit 制)
   const status = Route.useSearch({ select: (s) => s.istatus });
   const nodeName = Route.useSearch({ select: (s) => s.inode });
   const instQ = Route.useSearch({ select: (s) => s.iq });
@@ -457,7 +452,7 @@ function InstancesTab() {
             },
           },
           {
-            // 形态:开发机 / 在线服务;服务行链到在线服务页按 slug 找服务
+            // 形态列;服务行链到在线服务页
             title: t("tenants.colWorkload"),
             width: 110,
             render: (_, r) => {
@@ -473,7 +468,7 @@ function InstancesTab() {
             },
           },
           {
-            // 购买模式:标签取 packages/ui 的同一份映射,不在管理端另拼一遍
+            // 购买模式标签取 packages/ui 映射
             title: t("tenants.colMarket"),
             dataIndex: "market",
             width: 110,
@@ -505,8 +500,7 @@ function InstancesTab() {
                       refresh();
                     }}
                   />
-                  {/* 强制回收:腾容量用,走与自动抢占同一条路径(通知 + 宽限窗,不是立即删 Pod)。
-                      必须与强制停止分成两个按钮:合并会让「被处置」与「被回收」在时间线上分不开 */}
+                  {/* 强制回收:走自动抢占同一路径(通知 + 宽限窗);与强制停止分开 */}
                   <ReasonAction
                     label={t("tenants.preempt")}
                     danger
@@ -572,7 +566,7 @@ function TenantsPage() {
   );
 }
 
-/** 注销申请:列表 + 处理。执行仅超管;确认弹窗列出校验计数,全 0 且过冷静期才可点。 */
+/** 注销申请:列表 + 处理。执行仅超管;校验计数全 0 且过冷静期才可点。 */
 function DeletionsTab() {
   const { t } = useTranslation(["admin", "shared"]);
   const { message } = App.useApp();
@@ -589,7 +583,7 @@ function DeletionsTab() {
   const refresh = () => void qc.invalidateQueries({ queryKey });
   const [approving, setApproving] = useState<DeletionRow | null>(null);
   const [approveLoading, setApproveLoading] = useState(false);
-  // 冷静期倒计时按 30s tick 刷新(挂载快照会随页面长开而过期,按钮解禁/倒计时都需要活的时间)
+  // 冷静期倒计时 30s tick
   const nowTs = useNow(30_000);
 
   const runApprove = async () => {
@@ -600,7 +594,7 @@ function DeletionsTab() {
       message.success(t("tenants.deletion.executed"));
       setApproving(null);
     } catch (e) {
-      // 校验不过 → 409(申请已被自动驳回);冷静期未满 → 409
+      // 校验不过 / 冷静期未满 → 409
       message.error(errText(e, t("common.actionFailed", { action: t("tenants.deletion.approveTitle") })));
     } finally {
       setApproveLoading(false);

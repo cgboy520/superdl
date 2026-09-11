@@ -22,8 +22,7 @@ pytestmark = pytest.mark.usefixtures("fake")
 
 class TestWalletFirstCreate:
     async def test_concurrent_first_credit_creates_single_row(self, sm):
-        """无钱包行的用户被并发入账:首建撞 user_id 唯一约束不抛错、不污染外层事务,
-        只留一行且每笔入账都落账(挂了 = 并发首建 500,或负方事务被撞键污染丢掉一笔)。"""
+        """无钱包行的用户被并发入账:只留一行且每笔入账都落账。"""
         gate = asyncio.Barrier(5)
 
         async def credit_once() -> None:
@@ -61,7 +60,7 @@ class TestTailBilling:
         assert len(bills["items"]) == 1
 
     async def test_pod_lost_also_charges_tail(self, client, sm, fake):
-        """故障停费:running→failed 同样是计费边,尾账照出。"""
+        """running→failed 同样是计费边,尾账照出。"""
         _headers, uuid, user_id = await provision_running(client, sm, fake)
         expected = await backdate_running_event(sm, uuid, 15)
         fake.kill_pod(f"tenant-{user_id}", uuid)
@@ -146,8 +145,7 @@ class TestArrearsChain:
         assert data["frozen_deadline"] is None
 
     async def test_arrears_stop_rereads_balance_in_lock(self, client, sm, fake, monkeypatch):
-        """停机判定前锁内二次读余额:无锁粗筛为负,锁内读到「窗口内」刚充值的
-        余额 → 不误停机(挂了 = 读余额到提交停机之间充值的竞态窗口复现)。"""
+        """停机判定前锁内二次读余额:窗口内刚充值 → 不停机。"""
         from app.modules.billing import patrol as patrol_mod
 
         headers, uuid, user_id = await provision_running(client, sm, fake)
@@ -158,8 +156,7 @@ class TestArrearsChain:
             )
             await session.commit()
 
-        # 模拟竞态窗口:无锁粗筛 get_available_balance 看到旧值 0;
-        # 随后充值落库,锁内 lock_wallet 读到真值
+        # 无锁粗筛看到旧值 0;随后充值落库,锁内读到真值
         async def stale_get_balance(session, uid):
             return Decimal("0.00")
 
@@ -170,7 +167,7 @@ class TestArrearsChain:
         counts = await balance_patrol(sm)
         assert counts["stopped"] == 0  # 锁内读到 50,不停机
         assert (await get_instance(client, headers, uuid))["status"] == "running"
-        # 对照:锁内真值仍为负时照常停机(monkeypatch 恢复后,余额被扣光)
+        # 对照:锁内真值仍为负时照常停机
         async with sm() as session:
             await wallet.debit(
                 session, user_id, Decimal("50.00"), type_="adjust", allow_negative=True
@@ -182,8 +179,7 @@ class TestArrearsChain:
 
 class TestBillingApiEdges:
     async def test_ledger_cursor_pagination(self, client, sm):
-        """游标续页的唯一全程走查:limit 截断 → 拿 next_cursor 续 → 两页无重叠。
-        其余列表端点只钉自己的筛选口径,不再各走一遍同一套 Page 包装。"""
+        """游标续页全程走查:limit 截断 → 拿 next_cursor 续 → 两页无重叠。"""
         data = await register(client, "13900000701")
         headers, user_id = {"Authorization": f"Bearer {data['access_token']}"}, data["user"]["id"]
         async with sm() as session:
@@ -223,7 +219,7 @@ class TestBillingApiEdges:
             )
         ).json()
         assert len(bills["items"]) == 1
-        # 月度汇总按实例归因并补实例名(消费概览环图按名展示,缺名会回落成 #id)
+        # 月度汇总按实例归因并补实例名
         summary = (
             await client.get("/api/v1/bills/summary", params={"month": month}, headers=headers)
         ).json()

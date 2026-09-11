@@ -6,9 +6,8 @@
  */
 
 /**
- * 收入口径:`*_revenue` = 计量出账(按量 + 盘费,按账单归属期)+ 包周期预付(按收款当日)。
- *
- * `*_prepaid` 是其中的预付部分,单列以便看环比时拆走预付尖峰(一笔包年集中在收款当日)。
+ * 收入口径:`*_revenue` = 计量出账(按量 + 盘费,按账单归属期)+ 包周期预付(按收款当日);
+ * `*_prepaid` 是其中的预付部分。
  */
 export interface RevenueReportOut {
   month_prepaid: string;

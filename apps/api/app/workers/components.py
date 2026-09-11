@@ -1,12 +1,6 @@
-"""worker 组件划分:单 Pod 单 SA 的前提是 outbox 按任务组件拆 Deployment。
-
-outbox 任务类型与定时任务按组件分片:每个 Deployment 经 SUPERDL_WORKER_COMPONENT
-声明身份,只领/只跑本组件的活,K8s 写权限随之按组件收窄(01-rbac.yaml 的
-superdl-tenant-mgr / -node-mgr / -prewarm / -disk-ops)。
-ALL 是 dev/test 单进程的全量模式,生产各 Deployment 必须显式声明组件。
-
-分片的完备性由 tests/test_workers_components.py 锚定:新增 outbox handler /
-定时任务必须登记到某个组件,否则测试红(未登记的任务在生产会静默停摆)。
+"""worker 组件划分:outbox 任务类型与定时任务按组件分片,每个 Deployment 经 SUPERDL_WORKER_COMPONENT
+声明身份(K8s 权限随组件收窄,见 deploy/app/k8s/01-rbac.yaml);ALL 为 dev/test 单进程全量。
+新增 outbox handler / 定时任务必须登记到某个组件(tests/test_workers_components.py 锚定)。
 """
 
 from enum import StrEnum
@@ -23,7 +17,7 @@ class WorkerComponent(StrEnum):
     DISK_OPS = "disk-ops"  # 数据盘配额下发/擦除 Job(superdl + tenant ns)
 
 
-# outbox 任务类型 → 组件。handler 归属模块不改,映射集中在这里
+# outbox 任务类型 → 组件
 COMPONENT_OUTBOX_TYPES: dict[WorkerComponent, frozenset[str]] = {
     WorkerComponent.CORE: frozenset({"notify.sms"}),
     WorkerComponent.TENANT_MGR: frozenset(
@@ -33,9 +27,7 @@ COMPONENT_OUTBOX_TYPES: dict[WorkerComponent, frozenset[str]] = {
             "instance.stop",
             "instance.restart",
             "instance.release",
-            # Pod 消失确认 + 删实例盘 PVC,是 instance 生命周期的收尾段,同属租户编排面
             "instance.disk_cleanup",
-            # 服务版本更新收尾:释放旧版本实例,同属租户编排面
             "service.retire",
         }
     ),
@@ -44,8 +36,7 @@ COMPONENT_OUTBOX_TYPES: dict[WorkerComponent, frozenset[str]] = {
     WorkerComponent.DISK_OPS: frozenset({"disk.quota", "disk.wipe"}),
 }
 
-# 定时任务 id → 组件(与 workers/main.register_scheduled_jobs 的注册清单由
-# tests/test_workers_components.py 双向锁定)
+# 定时任务 id → 组件(与 register_scheduled_jobs 由 tests/test_workers_components.py 双向锁定)
 COMPONENT_SCHEDULED_JOBS: dict[WorkerComponent, frozenset[str]] = {
     WorkerComponent.CORE: frozenset(
         {
@@ -71,8 +62,7 @@ COMPONENT_SCHEDULED_JOBS: dict[WorkerComponent, frozenset[str]] = {
 
 
 def current_component() -> WorkerComponent:
-    """SUPERDL_WORKER_COMPONENT 解析。缺省 ALL(dev/test);非法值 fail-closed:
-    起错组件 = 该组件队列静默停摆,立即报错远比带病运行安全。"""
+    """SUPERDL_WORKER_COMPONENT 解析;缺省 ALL,非法值拒启。"""
     raw = get_settings().worker_component.strip() or "all"
     try:
         return WorkerComponent(raw)

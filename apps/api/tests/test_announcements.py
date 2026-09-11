@@ -37,8 +37,7 @@ class TestAnnouncementAdmin:
         assert all(r["reached"] == 0 for r in rows)  # 无注册用户时触达 0
 
     async def test_publish_idempotent_replay_no_duplicate_fanout(self, client: AsyncClient, sm):
-        """HTTP 层重试(网络丢响应):同 Idempotency-Key 重放不新建公告,
-        否则 dedup 域随新 id 更换,全体租户收到重复站内信。"""
+        """同 Idempotency-Key 重放不新建公告。"""
         uh = await user_headers(client, "13700000402")
         ops = await admin_headers(sm, client, role="ops")
         h = {**ops, "Idempotency-Key": "ann-idem-1"}
@@ -77,7 +76,7 @@ class TestAnnouncementAdmin:
         assert resp.status_code == 200, resp.text
         assert resp.json()["status"] == "revoked"
 
-        # 用户端不再展示(未读/全部两个口径都收回)
+        # 用户端不再展示(未读/全部)
         notes = (await client.get("/api/v1/notifications", headers=uh)).json()["items"]
         assert [n for n in notes if n["type"] == "announcement"] == []
         unread = (

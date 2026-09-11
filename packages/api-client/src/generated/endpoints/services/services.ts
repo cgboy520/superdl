@@ -44,7 +44,7 @@ export const getListServicesApiV1ServicesGetUrl = (params?: ListServicesApiV1Ser
 }
 
 /**
- * 服务列表:降序游标分页;name 模糊匹配(含 slug 前缀),status 按派生状态过滤;已删除的不列。
+ * 服务列表:降序游标分页;name 模糊(含 slug 前缀),status 按派生状态过滤;已删除不列。
  * @summary List Services
  */
 export const listServicesApiV1ServicesGet = async (params?: ListServicesApiV1ServicesGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageServiceOut> => {
@@ -141,7 +141,7 @@ export const getPatchServiceApiV1ServicesSlugPatchUrl = (slug: string,) => {
 }
 
 /**
- * 改名 / 访问鉴权开关。开关只改网关回调的判定,几秒内生效,不重新部署。
+ * 改名 / 访问鉴权开关;不重新部署。
  * @summary Patch Service
  */
 export const patchServiceApiV1ServicesSlugPatch = async (slug: string,
@@ -166,7 +166,7 @@ export const getListApiKeysApiV1ServicesSlugApiKeysGetUrl = (slug: string,) => {
 }
 
 /**
- * 访问密钥列表(含已吊销)。不含明文——库里就没有明文。
+ * 访问密钥列表(含已吊销),不含明文。
  * @summary List Api Keys
  */
 export const listApiKeysApiV1ServicesSlugApiKeysGet = async (slug: string, options?: Parameters<typeof customFetch>[1]): Promise<ApiKeyOut[]> => {
@@ -190,9 +190,7 @@ export const getCreateApiKeyApiV1ServicesSlugApiKeysPostUrl = (slug: string,) =>
 }
 
 /**
- * 新建访问密钥。响应里的 key 是明文,且只在这一次出现。
- *
- * 不收 Idempotency-Key:重放要回同一份明文就得把明文留在库里,与「只存摘要」冲突。
+ * 新建访问密钥;响应里的 key 是明文,只在这一次出现。不收 Idempotency-Key。
  * @summary Create Api Key
  */
 export const createApiKeyApiV1ServicesSlugApiKeysPost = async (slug: string,

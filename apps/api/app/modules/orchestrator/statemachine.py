@@ -1,8 +1,4 @@
-"""实例状态机。
-
-running↔非 running 的边就是计费边。任何状态变更必须经 service.transition()
-(同事务写 instance_events),禁止直接 UPDATE status。
-"""
+"""实例状态机:running↔非 running 的边即计费边;状态变更只经 service.transition()。"""
 
 from app.core.errors import AppError, ErrorCode
 
@@ -16,10 +12,8 @@ RELEASING = "releasing"
 RELEASED = "released"
 FAILED = "failed"
 
-# from → 允许的 to。RELEASED 是唯一终态;RUNNING→FAILED 仅系统使用(pod_lost);
-# CREATING→RELEASING 为用户取消;FAILED→RELEASING 为用户清理失败实例;
-# FAILED→STOPPED 为故障恢复(复用实例盘重开机,见 service.start_instance);
-# STOPPING→RELEASING 为关机悬挂时用户直接放弃(见 reconciler 超时处理)。
+# from → 允许的 to。RELEASED 唯一终态;RUNNING→FAILED 仅系统(pod_lost);CREATING→RELEASING 用户取消;
+# FAILED→RELEASING 清理失败实例;FAILED→STOPPED 故障恢复;STOPPING→RELEASING 关机悬挂时放弃
 TRANSITIONS: dict[str, frozenset[str]] = {
     CREATING: frozenset({RUNNING, FAILED, RELEASING}),
     RUNNING: frozenset({STOPPING, FAILED}),

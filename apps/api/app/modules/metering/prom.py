@@ -1,7 +1,4 @@
-"""Prometheus 查询客户端。查询模板集中于此,按租户 namespace 注入,禁止任意 PromQL。
-
-标签名与 dcgm-exporter / kube-prometheus-stack 默认配置对齐,实机部署时如有出入只改这里。
-"""
+"""Prometheus 查询客户端:查询模板集中于此,按租户 namespace 注入,禁止任意 PromQL。"""
 
 from typing import Any
 
@@ -11,11 +8,10 @@ from app.core.config import get_settings
 from app.core.gpu_adapter import POOL_HAMI
 
 # ---- 标签常量 ----
-# dcgm-exporter 4.x 的节点标签是小写 hostname(3.x 为 Hostname;gpu-operator v26 与独立 chart
-# 均为 4.x)
+# dcgm-exporter 4.x 的节点标签是小写 hostname
 DCGM_NODE_LABEL = "hostname"
 DCGM_GPU_LABEL = "gpu"  # dcgm-exporter 的卡序号标签
-# HAMi 2.9 vGPUmonitor 容器维标签(2.9 起指标全部改为 hami_* 命名,标签 namespace/pod/container)
+# HAMi 2.9 vGPUmonitor 容器维标签(指标 hami_* 命名)
 HAMI_NS_LABEL = "namespace"
 HAMI_POD_LABEL = "pod"
 
@@ -33,9 +29,7 @@ QUERIES = {
     ),
 }
 
-# 共享档实例级:HAMi 软切分下 DCGM 的 per-pod 归属不可靠,改用 vGPUmonitor 容器维指标
-# (HAMi 2.9 命名:hami_container_device_utilization_ratio 为 0-100 的百分数,
-# hami_vgpu_memory_used_bytes 为字节)。查空时调用方回落 DCGM 模板。
+# hami 池实例级用 vGPUmonitor 容器维指标(utilization_ratio 0-100,memory_used 字节);查空回落 DCGM
 HAMI_QUERIES = {
     "gpu_util": (
         "sum(hami_container_device_utilization_ratio"
@@ -47,15 +41,14 @@ HAMI_QUERIES = {
     ),
 }
 
-# 管理端节点级模板:{node} 注入;不聚合,按卡多序列返回(query_range_multi)。节点标签从常量派生
+# 管理端节点级模板:{node} 注入;按卡多序列返回(query_range_multi)
 _NODE_SEL = f'{{{{{DCGM_NODE_LABEL}="{{node}}"}}}}'
 NODE_QUERIES = {
     "util": f"DCGM_FI_DEV_GPU_UTIL{_NODE_SEL}",
     "mem_used_mb": f"DCGM_FI_DEV_FB_USED{_NODE_SEL}",
     "temp": f"DCGM_FI_DEV_GPU_TEMP{_NODE_SEL}",
 }
-# XID 指标是「最近一次 XID 码」的 gauge(不是计数器):按值变化次数近似 24h 事件数,
-# increase() 会把错误码差值当增量累加成无意义的数
+# XID 指标是「最近一次 XID 码」的 gauge:按值变化次数近似 24h 事件数
 NODE_XID_QUERY = f"sum(changes(DCGM_FI_DEV_XID_ERRORS{_NODE_SEL}[24h]))"
 
 RANGE_STEPS = {"1h": "60s", "6h": "300s", "24h": "1200s"}
@@ -80,7 +73,7 @@ def set_client(client: httpx.AsyncClient | None) -> None:
 
 
 async def close_client() -> None:
-    """lifespan 收尾调用:显式关闭全局客户端连接池,不放任 socket 泄漏。"""
+    """lifespan 收尾:关闭全局客户端连接池。"""
     global _client
     if _client is not None:
         await _client.aclose()
@@ -92,8 +85,7 @@ class PrometheusUnavailable(Exception):
 
 
 def _extract_result(data: dict[str, Any]) -> list[dict[str, Any]]:
-    """校验并取出 data.result;响应形态异常(缺键/类型错)统一归 PrometheusUnavailable,
-    不能让 KeyError 击穿成 500 —— 上游抖动对调用方必须是 503/降级语义。"""
+    """校验并取出 data.result;形态异常统一归 PrometheusUnavailable。"""
     if data.get("status") != "success":
         raise PrometheusUnavailable(str(data))
     try:
@@ -179,11 +171,7 @@ async def query_instant(promql: str) -> float | None:
 async def query_instance_metric(
     metric: str, ns: str, pod: str, *, pool_label: str | None, start: float, end: float, step: str
 ) -> list[tuple[float, float]]:
-    """实例级单指标:hami 池 gpu_util/vram 优先 HAMi 容器维指标,查空回落 DCGM。
-
-    判据是池不是档位:HAMi 容器维指标只有 HAMi device plugin 产出,mig 池同属「共享」
-    但走 DCGM per-instance(MIG 设备维归属可靠)。
-    """
+    """实例级单指标:hami 池 gpu_util/vram 优先 HAMi 容器维指标,查空回落 DCGM;判据是池不是档位。"""
     if pool_label == POOL_HAMI and metric in HAMI_QUERIES:
         promql = HAMI_QUERIES[metric].format(ns=ns, pod=pod)
         results = await query_range_raw(promql, start=start, end=end, step=step)

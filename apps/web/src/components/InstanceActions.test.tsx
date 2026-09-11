@@ -1,5 +1,4 @@
-/** InstanceActions / ReleaseModal 组件测试:状态驱动的禁用态、关机确认弹窗、释放多级防护。
- *  写操作 hooks 全部 mock,不走网络。 */
+/** InstanceActions / ReleaseModal:状态驱动的禁用态、关机确认弹窗、释放多级防护。写操作 hooks 全 mock。 */
 import type { InstanceOut } from "@superdl/api-client";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -31,12 +30,12 @@ vi.mock("../api/mutations", () => ({
   useReleaseInstance: () => ({ mutate: releaseMutate, isPending: false }),
   useSetAutoRenew: () => ({ mutate: autoRenewMutate, isPending: false }),
   useConvertToOnDemand: () => ({ mutateAsync: toOnDemandMutateAsync, isPending: false }),
-  // RenewModal 在菜单点开后挂载,它自己的两个提交 hook 也要有桩
+  // RenewModal 的两个提交 hook 也要有桩
   useRenewInstance: () => ({ mutate: vi.fn(), isPending: false }),
   useSubscribeInstance: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
-// RenewModal 会拉钱包与策略;这里只验菜单,给最小可用数据即可
+// RenewModal 会拉钱包与策略,给最小数据
 vi.mock("../api/queries", () => ({
   useWallet: () => ({ data: { balance: "3000.00" } }),
   usePolicies: () => ({
@@ -63,7 +62,7 @@ function makeInstance(status: string): InstanceOut {
   } as InstanceOut;
 }
 
-/** 竞价实例:price_hourly 已是折后价(后端建实例时锁定),前端不再折一次 */
+/** 竞价实例:price_hourly 已是折后价 */
 function makeSpot(status: string): InstanceOut {
   return {
     uuid: "u-3",
@@ -75,7 +74,7 @@ function makeSpot(status: string): InstanceOut {
   } as InstanceOut;
 }
 
-/** 包周期实例:market 与 subscription 两个字段一起给,缺一后端与前端都判它不是包周期 */
+/** 包周期实例:market 与 subscription 一起给,缺一不判包周期 */
 function makeSubscription(
   status: string,
   sub: { expiresAt: string; subStatus?: string; autoRenew?: boolean },
@@ -107,12 +106,12 @@ function renderWithApp(ui: React.ReactElement) {
   return render(<App>{ui}</App>);
 }
 
-// hoisted mock 的调用历史跨用例保留,逐用例清零防串扰
+// hoisted mock 调用历史逐用例清零
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
-// antd Button 对两字中文自动插空(autoInsertSpace),可访问名是「开 机」而非「开机」
+// antd 两字按钮插空格,可访问名是「开 机」
 const BTN_START = /开\s*机/;
 const BTN_STOP = /关\s*机/;
 const BTN_MORE = /更\s*多/;
@@ -149,7 +148,7 @@ describe("InstanceActions", () => {
     const dialog = await screen.findByRole("dialog");
     const confirm = within(dialog).getByRole("button", { name: "确认释放" });
     expect(confirm).toBeDisabled();
-    // 两道闸缺一不可(ui-ux-spec 规则 4):只键入名字仍锁着
+    // 两道闸缺一不可(ui-ux-spec 规则 4)
     await user.type(within(dialog).getByPlaceholderText("demo-vm"), "demo-vm");
     expect(confirm).toBeDisabled();
     await user.click(within(dialog).getByRole("checkbox"));
@@ -203,7 +202,7 @@ describe("InstanceActions · 包周期", () => {
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getAllByText(/转包周期 · demo-vm/).length).toBeGreaterThan(0);
     expect(within(dialog).getByRole("button", { name: "支付并转为包周期" })).toBeEnabled();
-    // 转换从现在起算,不是接在某个周期之后
+    // 转换从现在起算
     expect(within(dialog).getByText("从现在起算")).toBeInTheDocument();
   });
 

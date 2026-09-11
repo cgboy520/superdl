@@ -1,7 +1,6 @@
 # /etc/rancher/rke2/audit-policy.yaml —— apiserver 审计策略
-# server-config.yaml 的 audit-policy-file 指向本文件:两个文件必须一起拷到
-# /etc/rancher/rke2/,缺失时 kube-apiserver 起不来(fail-fast)。
-# 取向:租户隔离与凭据访问全留痕,高频只读噪声降级或丢弃,控制日志量。
+# server-config.yaml 的 audit-policy-file 指向本文件,两个文件一起拷到 /etc/rancher/rke2/。
+# 取向:租户隔离与凭据访问全留痕,高频只读噪声降级或丢弃
 apiVersion: audit.k8s.io/v1
 kind: Policy
 # 认证阶段失败(RequestReceived 之外)不重复记
@@ -12,9 +11,7 @@ rules:
   - level: None
     users: ["system:kube-proxy", "system:apiserver", "system:kube-scheduler", "system:kube-controller-manager"]
     verbs: ["get", "list", "watch"]
-  # Secret/ConfigMap/Token 必须先于 system:nodes 降噪规则:审计策略首条匹配即生效,
-  # 若 nodes 的 None 在前,流氓节点批量读各租户 Secret 的唯一检测信号会被静默抹掉。
-  # 只记元数据。
+  # Secret/ConfigMap/Token 必须先于 system:nodes 降噪规则(首条匹配即生效);只记元数据
   - level: Metadata
     resources:
       - group: ""
@@ -30,7 +27,7 @@ rules:
     resources:
       - group: "coordination.k8s.io"
         resources: ["leases"]
-  # 平台与租户命名空间内的写操作:记请求体(排查「谁改了租户 Pod/NetPol」)
+  # 平台与租户命名空间内的写操作:记请求体
   - level: Request
     verbs: ["create", "update", "patch", "delete", "deletecollection"]
     resources:
@@ -42,22 +39,15 @@ rules:
   # 其余资源的写操作:记元数据
   - level: Metadata
     verbs: ["create", "update", "patch", "delete", "deletecollection"]
-  # ↓ 以下三条必须在最后的 None 兜底之前:兜底把**全部读**丢掉,而下面这些读正是
-  #   失陷后唯一能回答「攻击者看了什么」的记录。
-  # 租户容器输出与进出容器的通道:pods/log 是 get,被兜底丢掉等于任何人(运维凭据被盗、
-  # 或平台 SA 失陷)可以读遍所有租户的容器输出而零留痕;exec/attach/portforward 同理。
-  # nodes/proxy 是经 apiserver 打 kubelet API 的入口,也只有元数据值得记。
+  # 以下三条必须在最后的 None 兜底之前:pods/log、exec/attach/portforward、nodes/proxy 记元数据
   - level: Metadata
     resources:
       - group: ""
         resources: ["pods/log", "pods/exec", "pods/attach", "pods/portforward", "nodes/proxy"]
-  # 匿名与未认证主体的任何请求(含读):正常流量里不该出现,出现即侦察信号。
+  # 匿名与未认证主体的任何请求(含读)
   - level: Metadata
     users: ["system:anonymous"]
   - level: Metadata
     userGroups: ["system:unauthenticated"]
-  # 兜底:其余读操作不记。
-  # ⚠ 这条同时吃掉了「被拒绝的读」——RBAC 403 与准入拒绝在审计里仍是一次读请求,
-  #   于是凭据探测/SA token 枚举没有信号。apiserver 无法按 responseStatus 过滤规则,
-  #   要补这一面只能整体抬到 Metadata(日志量按集群规模评估)或在 Loki 侧按 403 抽取。
+  # 兜底:其余读操作不记(含被拒绝的读;要补这一面只能整体抬到 Metadata 或在 Loki 侧按 403 抽取)
   - level: None

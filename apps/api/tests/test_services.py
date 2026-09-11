@@ -1,14 +1,4 @@
-"""在线服务聚合根:部署 / 视图 / 生命周期 / 密钥 / 幂等 / 契约 / 与实例层的边界。
-
-每条用例对应一处不变量:
-- 部署落库形态:挂了说明服务与版本实例的归属断了(实例不知道自己属于哪个服务),
-  或内部 uuid 漏进了公网域名
-- 端口池 / env 密文 / Pod spec 分叉:挂了说明服务的版本实例白占 NodePort、密钥落进 etcd,
-  或开发机的 Pod spec 被服务分支改坏
-- 实例层边界:挂了说明 DELETE /instances 能把服务打成悬空,或服务实例混进实例列表
-- 幂等:挂了说明响应丢失后重提会部署出第二个服务(两份 GPU 时费)
-- 派生状态表:挂了说明前端对着错的状态给按钮(对已删除的服务显示「停止」)
-"""
+"""在线服务聚合根:部署 / 视图 / 生命周期 / 密钥 / 幂等 / 契约 / 与实例层的边界。"""
 
 import asyncio
 from typing import Any
@@ -56,8 +46,7 @@ async def load_service(sm, slug: str) -> Service:
 
 class TestDeploy:
     async def test_service_row_and_instance_snapshot(self, client, sm, fake):
-        """部署落一行 services + 一台版本实例;slug 是随机 base32 而非实例 uuid;
-        暴露规格快照在实例行上(建 Pod 只读它)。"""
+        """部署落一行 services + 一台版本实例;slug 是随机 base32;暴露规格快照在实例行上。"""
         _headers, svc, _ = await provision_service(client, sm, fake, health_path="/health")
         assert svc["slug"].startswith("svc-") and len(svc["slug"]) == 14
         inst = svc["current_instance"]
@@ -74,11 +63,11 @@ class TestDeploy:
         assert instance.service_slug == svc["slug"]
         assert instance.service_port == 8000 and instance.health_path == "/health"
         assert instance.workload_type == "service"
-        # 实例与服务同名:账单 / 管理端实例表里认得出这台是谁
+        # 实例与服务同名
         assert instance.name == svc["name"] == inst["name"]
 
     async def test_no_ssh_means_no_port_pool_slot(self, client, sm, fake):
-        """with_ssh=False 不进端口池:端口池 30000–32767 是全平台硬上限。"""
+        """with_ssh=False 不进端口池。"""
         _headers, svc, user_id = await provision_service(client, sm, fake)
         uuid = svc["current_instance"]["uuid"]
         instance = await load_instance(sm, uuid)
@@ -90,7 +79,7 @@ class TestDeploy:
         assert spec.authorized_keys == ()
 
     async def test_with_ssh_still_allocates_port(self, client, sm, fake):
-        """勾了 SSH 的服务照旧占端口池:两条分支必须都活着。"""
+        """勾了 SSH 的服务照旧占端口池。"""
         _headers, svc, user_id = await provision_service(
             client, sm, fake, phone="13900000302", with_ssh=True
         )
@@ -103,8 +92,7 @@ class TestDeploy:
         assert svc["container"]["with_ssh"] is True
 
     async def test_pod_spec_service_fork(self, client, sm, fake):
-        """服务版本实例的 Pod spec:Always 重启 + 用户启动命令 + 对外 Service + 探针。
-        restartPolicy 写成 Never 时,用户容器崩一次就把实例判终结。"""
+        """服务版本实例的 Pod spec:Always 重启 + 用户启动命令 + 对外 Service + 探针。"""
         _headers, svc, user_id = await provision_service(
             client,
             sm,
@@ -120,7 +108,7 @@ class TestDeploy:
         assert spec.args == ("--port", "8000")
         assert spec.service_port == 8000 and spec.health_path == "/health"
         assert spec.service_host == f"{svc['slug']}.{get_settings().service_domain_suffix}"
-        # 服务容器不跑 Jupyter:token 不进 Secret,也不注入 JUPYTER_ALLOW_ORIGIN
+        # 服务容器无 Jupyter token 与 JUPYTER_ALLOW_ORIGIN
         assert "JUPYTER_TOKEN" not in spec.secret_env
         assert "JUPYTER_ALLOW_ORIGIN" not in spec.env
 
@@ -144,7 +132,7 @@ class TestDeploy:
         assert "JUPYTER_TOKEN" in spec.secret_env and "JUPYTER_ALLOW_ORIGIN" in spec.env
 
     async def test_other_users_service_is_404(self, client, sm, fake):
-        """非属主一律 404(不暴露存在性),不是 403。"""
+        """非属主一律 404。"""
         _, svc, _ = await provision_service(client, sm, fake, phone="13900000342")
         other, *_ = await new_user(client, sm, "13900000343")
         slug = svc["slug"]
@@ -159,19 +147,19 @@ class TestDeploy:
 
 
 class TestInstanceBoundary:
-    """服务的版本实例由服务驱动:实例层看得见,但改不了它的生命周期。"""
+    """服务的版本实例:实例层看得见,改不了生命周期。"""
 
     async def test_instance_list_excludes_service_instances(self, client, sm, fake):
         headers, svc, _ = await provision_service(client, sm, fake, phone="13900000470")
         uuid = svc["current_instance"]["uuid"]
         listed = (await client.get("/api/v1/instances", headers=headers)).json()["items"]
         assert uuid not in [i["uuid"] for i in listed]
-        # 只读端点仍可达(账单 / 监控按实例查)
+        # 只读端点仍可达
         detail = await client.get(f"/api/v1/instances/{uuid}", headers=headers)
         assert detail.status_code == 200 and detail.json()["service_slug"] == svc["slug"]
 
     async def test_instance_lifecycle_endpoints_reject_service_instance(self, client, sm, fake):
-        """DELETE / stop / start / restart 打到服务实例一律 409:否则服务会被打成悬空。"""
+        """DELETE / stop / start / restart 打到服务实例一律 409。"""
         headers, svc, _ = await provision_service(client, sm, fake, phone="13900000471")
         uuid = svc["current_instance"]["uuid"]
         for call in (
@@ -185,7 +173,7 @@ class TestInstanceBoundary:
             assert resp.json()["message_key"] == "orchestrator.serviceInstanceLifecycle"
 
     async def test_dev_create_rejects_service_fields(self, client, sm, fake):
-        """POST /instances 不再收服务字段:静默忽略会让用户以为「启动命令已生效」。"""
+        """POST /instances 不收服务字段(422)。"""
         headers, _user_id, key_id, sku_id = await new_user(client, sm, "13900000472")
         for extra in ({"service_port": 8000}, {"workload_type": "service"}, {"env": {"A": "1"}}):
             resp = await client.post(
@@ -227,7 +215,7 @@ class TestEnvHandling:
         assert svc["container"]["env_secret_keys"] == ["HF_TOKEN"]
 
     async def test_env_is_ciphertext_in_db(self, client, sm, fake):
-        """env 整包落密文,键名与值都不出现在库里的那一列;AAD 绑实例 uuid。"""
+        """env 整包落密文;AAD 绑实例 uuid。"""
         _headers, svc, _ = await provision_service(
             client,
             sm,
@@ -251,7 +239,7 @@ class TestEnvHandling:
 
 
 class TestPinnedImage:
-    """服务镜像必须钉死版本:restartPolicy=Always 下一次原地重启就会换成另一个版本。"""
+    """服务镜像必须钉死版本。"""
 
     @pytest.mark.parametrize(
         "image", ["registry.example.com/vllm:latest", "registry.example.com/vllm"]
@@ -286,7 +274,7 @@ class TestPinnedImage:
 
 
 class TestCreateContract:
-    """契约矩阵(纯 schema):每条挂了都意味着一类错误配置能被部署出来。"""
+    """契约矩阵(纯 schema)。"""
 
     def test_service_requires_port(self):
         body = service_body(1)
@@ -333,7 +321,7 @@ class TestCreateContract:
             ServiceCreate(**service_body(1, market="subscription"))
 
     def test_dev_still_requires_ssh_key(self):
-        """开发机只有密钥登录:一把公钥都不选 = 建出一台谁也登不上去的实例。"""
+        """开发机至少选一把公钥。"""
         with pytest.raises(ValidationError):
             InstanceCreate(sku_id=1, image_ref=IMAGE, ssh_key_ids=[])
 
@@ -366,7 +354,7 @@ class TestIdempotency:
         assert again.status_code == 409, again.text
 
     async def test_concurrent_same_key_deploys_once(self, client, sm, fake):
-        """并发同键只落一个服务、无孤儿 services 行(撞库那一路连同自己的服务行一起回滚)。"""
+        """并发同键只落一个服务、无孤儿 services 行。"""
         _headers, user_id, _key_id, sku_id = await new_user(client, sm, "13900000482")
         spec = ServiceCreate(**service_body(sku_id))
 
@@ -433,7 +421,7 @@ class TestServiceApi:
 
 class TestLifecycle:
     async def test_stop_start_keeps_slug_and_instance(self, client, sm, fake):
-        """停止 / 启动只动当前实例:slug 与 API Key 是用户贴出去的地址,换一次等于服务下线。"""
+        """停止 / 启动只动当前实例,slug 与 API Key 不变。"""
         headers, svc, user_id = await provision_service(client, sm, fake, phone="13900000350")
         slug = svc["slug"]
         stopped = await client.post(f"/api/v1/services/{slug}/stop", headers=headers)
@@ -445,7 +433,7 @@ class TestLifecycle:
         await reconcile_once(sm)
         svc2 = (await client.get(f"/api/v1/services/{slug}", headers=headers)).json()
         assert svc2["status"] == "stopped" and svc2["ready"] is False
-        # 停机时再停 → 409(实例守卫的语言)
+        # 停机时再停 → 409
         assert (
             await client.post(f"/api/v1/services/{slug}/stop", headers=headers)
         ).status_code == 400
@@ -506,8 +494,8 @@ class TestLifecycle:
 
 class TestAdminList:
     async def test_admin_sees_all_tenants_with_owner_and_filters(self, client, sm, fake):
-        """管理端全局服务表跨租户、带归属;q 按 slug 前缀命中;user_id 过滤附 total;
-        已删除默认不列、include_released 才列。挂了说明运营看不到谁在对外放服务。"""
+        """管理端全局服务表跨租户、带归属;q 按 slug 前缀;user_id 过滤附 total;
+        已删除默认不列、include_released 才列。"""
         headers, svc, user_id = await provision_service(client, sm, fake, phone="13900000360")
         _, other, other_user = await provision_service(client, sm, fake, phone="13900000361")
         ah = await admin_headers(sm, client, role="readonly")
@@ -549,7 +537,7 @@ class TestAdminList:
 
 
 class TestDeriveStatus:
-    """派生状态表:每一格挂了 = 前端对着错的状态给按钮。"""
+    """派生状态表。"""
 
     class _Svc:
         def __init__(self, released_at=None):
@@ -638,7 +626,7 @@ class TestApiKeyCrud:
 
 
 class TestSlugHostParsing:
-    """Host → slug 反解。它是鉴权链路的第一环,解错等于整条链路对不上号。"""
+    """Host → slug 反解。"""
 
     def test_matches_service_suffix_only(self):
         suffix = get_settings().service_domain_suffix

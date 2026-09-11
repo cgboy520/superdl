@@ -26,10 +26,10 @@ declare module "@tanstack/react-router" {
 
 configureApiClient({
   baseUrl: "",
-  // 请求路径读 localStorage 而非 store 快照:别的标签页刚续期的 token 立即生效
+  // 请求路径读 localStorage 而非 store 快照
   getToken: () => readAccessToken(),
   refreshToken: async () => {
-    // refresh 走 HttpOnly Cookie(服务端轮换并回写新 Cookie),JS 只接住新 access token
+    // refresh 走 HttpOnly Cookie,JS 只接新 access token
     const pair = await requestTokenRefresh();
     if (!pair) return false;
     authStore.getState().login(pair.access_token);
@@ -39,13 +39,13 @@ configureApiClient({
     authStore.getState().logout();
     const { pathname, href } = router.state.location;
     if (!pathname.startsWith("/login")) {
-      // 回跳地址带完整 query/hash(如 /instances?tab=events),走路由跳转而非整页刷新
+      // 回跳地址带完整 query/hash,走路由跳转
       void router.navigate({ to: "/login", search: { redirect: href } });
     }
   },
 });
 
-// 登出即清查询缓存(静默续期不清,见 authCacheGuard 注释)
+// 登出即清查询缓存(静默续期不清,见 authCacheGuard)
 setupAuthCacheGuard(queryClient);
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

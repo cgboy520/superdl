@@ -13,7 +13,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    # 注销匿名化后改写为 del:{id}:{随机 16 hex}(释放原手机号占用的唯一约束),故宽于 20
+    # 注销匿名化后改写为 del:{id}:{随机 16 hex},故宽于 20
     phone: Mapped[str] = mapped_column(String(40), unique=True)
     password_hash: Mapped[str | None] = mapped_column(String(128))
     status: Mapped[str] = mapped_column(String(16), default="active")  # active / frozen / deleted
@@ -46,7 +46,7 @@ class UserQuotaOverride(Base):
 
 class SshKey(Base):
     __tablename__ = "ssh_keys"
-    # 指纹按 (用户, 指纹) 唯一:全局唯一会变成跨租户枚举面(探测/占位阻断他租户添加同名钥匙)
+    # 指纹按 (用户, 指纹) 唯一,不做全局唯一
     __table_args__ = (UniqueConstraint("user_id", "fingerprint"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -58,19 +58,16 @@ class SshKey(Base):
 
 
 class UsedRefreshToken(Base):
-    """refresh token 一次性消费记录(轮换):jti 重放 = 疑似泄露,触发全量撤销。"""
+    """refresh token 一次性消费记录(轮换):jti 重放触发全量撤销。"""
 
     __tablename__ = "used_refresh_tokens"
 
     jti: Mapped[str] = mapped_column(String(32), primary_key=True)
-    # 读取只按 jti 主键;清理按 expires_at
-    expires_at: Mapped[datetime] = mapped_column(index=True)  # 过期即可清理
+    expires_at: Mapped[datetime] = mapped_column(index=True)  # 清理依据
     used_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    # 消费途径:refresh(轮换)/ logout(登出)。登出消费的重放一律 401 且不全撤
-    # (登出与并发首刷竞态时,首刷方可能已合法轮换,bump 会误撤在线会话)
+    # 消费途径:refresh(轮换)/ logout(登出)。登出消费的重放只回 401,不全撤
     consumed_via: Mapped[str | None] = mapped_column(String(16))
-    # 首消费事务登记的轮换结果:宽限窗内同 jti 重放须回同一对 token(不另开有效链);
-    # 登出产生的消费记录无替代对(NULL)
+    # 首消费登记的轮换结果:宽限窗内同 jti 重放回同一对 token;登出消费为 NULL
     replaced_refresh_jti: Mapped[str | None] = mapped_column(String(32))
     replaced_access_jti: Mapped[str | None] = mapped_column(String(32))
     replaced_iat: Mapped[datetime | None]
@@ -79,10 +76,9 @@ class UsedRefreshToken(Base):
 class AccountDeletionRequest(Base):
     """账号注销申请。
 
-    状态机:pending →(冷静期满 + 校验通过,执行匿名化)completed
-                  →(用户冷静期内撤销)cancelled
-                  →(管理端驳回,或执行前校验不过自动驳回)rejected。
-    部分唯一索引:每用户至多一条 pending(重放/双击返回既有,不占位后可再申请)。
+    状态机:pending → completed(冷静期满且校验通过)/ cancelled(用户撤销)
+    / rejected(驳回或执行前校验不过)。
+    部分唯一索引:每用户至多一条 pending。
     """
 
     __tablename__ = "account_deletion_requests"
@@ -106,7 +102,7 @@ class AccountDeletionRequest(Base):
     requested_at: Mapped[datetime] = mapped_column(server_default=func.now())
     processed_by: Mapped[int | None]  # admin_users.id
     processed_at: Mapped[datetime | None]
-    note: Mapped[str | None] = mapped_column(String(512))  # 驳回理由/自动驳回的残留清单
+    note: Mapped[str | None] = mapped_column(String(512))  # 驳回理由 / 自动驳回的残留清单
 
     @property
     def cooldown_ends_at(self) -> datetime:

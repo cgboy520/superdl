@@ -14,7 +14,7 @@ export function WarnThresholdField({ size, style }: { size?: "small" | "middle";
   const { message } = App.useApp();
   const { data: me } = useMe();
   const [warnHours, setWarnHours] = useState<number>();
-  // 保存成功短暂「已保存」视觉态(同 CopyButton 图标切换模式):1.5s 后回落;卸载清定时器
+  // 保存成功 1.5s「已保存」视觉态;卸载清定时器
   const [saved, setSaved] = useState(false);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(

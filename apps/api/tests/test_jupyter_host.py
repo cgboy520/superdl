@@ -1,9 +1,5 @@
-"""实例 Jupyter 的主机名/origin 与端点 slug 反解 —— 域名与端口布局的单一口径。
-
-挂了说明其中之一:
-- 入场 URL / HTTPRoute hostname / JUPYTER_ALLOW_ORIGIN 三处各拼各的(前缀或端口对不齐);
-- 两类入口共用一个域名后缀时,Jupyter 域名成了鉴权端点的别名。
-"""
+"""实例 Jupyter 的主机名/origin 与端点 slug 反解:入场 URL / HTTPRoute hostname /
+JUPYTER_ALLOW_ORIGIN 同一口径。"""
 
 import base64
 
@@ -36,7 +32,7 @@ def test_prefix_makes_one_level_host_under_shared_zone():
 
 
 class TestOrigin:
-    """origin 是给浏览器看的,主机名是给 Gateway 与 SSH 看的 —— 端口只能出现在前者。"""
+    """端口只出现在 origin,不出现在主机名。"""
 
     def test_default_port_stays_out_of_the_url(self):
         assert jupyter_origin("abc-123", _settings()) == "https://abc-123.app.superdl.cn"
@@ -48,11 +44,11 @@ class TestOrigin:
             jupyter_url_port=8443,
         )
         assert jupyter_origin("abc-123", s) == "https://jupyter-abc-123.xiaocg.xyz:8443"
-        # 主机名本身不许带端口:它要去当 HTTPRoute 的 hostname(带端口会被 CRD 拒收)
+        # 主机名不带端口(HTTPRoute hostname)
         assert jupyter_host("abc-123", s) == "jupyter-abc-123.xiaocg.xyz"
 
     def test_entry_ticket_carries_the_port(self, monkeypatch):
-        """票据 URL 少一个端口号,页面能打开而内核 WebSocket 被自己的 CORS 全挡掉。"""
+        """票据 URL 带端口。"""
         monkeypatch.setenv("SUPERDL_JUPYTER_DOMAIN_SUFFIX", "xiaocg.xyz")
         monkeypatch.setenv("SUPERDL_JUPYTER_HOST_PREFIX", "jupyter-")
         monkeypatch.setenv("SUPERDL_JUPYTER_URL_PORT", "8443")
@@ -65,10 +61,7 @@ class TestOrigin:
 
 
 class TestSlugParsingUnderSharedSuffix:
-    """两类入口靠端口分开(见 config.jupyter_url_port)时,两个后缀是同一个字符串。
-
-    此时后缀比对不再能把 Jupyter 域与端点域分开,把关的只剩 svc- 前缀这一条。
-    """
+    """两类入口按端口分(config.jupyter_url_port)、后缀相同时,靠 svc- 前缀区分。"""
 
     @pytest.fixture
     def shared_suffix(self, monkeypatch):

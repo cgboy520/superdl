@@ -1,4 +1,4 @@
-/** 概览:轻量首屏 —— 实例数/余额/今日消费/未读通知 + 快捷入口。 */
+/** 概览:实例数 / 余额 / 今日消费 / 未读通知 + 快捷入口。 */
 
 import { addAmounts, localToday } from "@superdl/ui";
 import { DataErrorAlert, KpiGrid, moneyOr } from "@superdl/ui/components";
@@ -26,8 +26,7 @@ export const Route = createFileRoute("/_console/dashboard")({
 
 const ONBOARDING_DISMISS_KEY = "superdl.web.onboardingDismissed";
 
-/** 逐卡 KPI 骨架:各卡只等自己的 query——整体 loading 会让先就绪的卡先出「—」再跳数,
- *  也会被最慢的一张拖住;失败语义留在各卡内(DataErrorAlert 或 moneyOr 「—」,不伪装成数据)。 */
+/** 逐卡 KPI 骨架:各卡只等自己的 query;失败语义留在各卡内(DataErrorAlert 或 moneyOr 「—」)。 */
 function KpiCard({ pending, children }: { pending: boolean; children?: ReactNode }) {
   if (pending) {
     return (
@@ -39,8 +38,7 @@ function KpiCard({ pending, children }: { pending: boolean; children?: ReactNode
   return <Card>{children}</Card>;
 }
 
-/** 新用户引导:无实例且无已支付充值时显示 充值→选规格→开机 三步卡;
- * 有实例即永久隐藏(后端状态派生),手动关闭记 localStorage。 */
+/** 新用户引导:无实例且无已支付充值时显示 充值→选规格→开机 三步卡;有实例即隐藏,手动关闭记 localStorage。 */
 function OnboardingCard() {
   const { t } = useTranslation();
   const [dismissed, setDismissed] = useState(

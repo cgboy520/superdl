@@ -1,9 +1,4 @@
-/**
- * 系统设置:
- * - 策略参数:env 默认 + DB 覆盖,保存需原因,即时生效并同步 GET /policies
- * - 公告发布:announcement 站内信群发全体 active 租户
- * - 管理员账号:建号/改角色/停用/重置密码 + 自助改密
- */
+/** 系统设置:策略参数(env 默认 + DB 覆盖,保存需原因)/ 公告发布(群发 active 租户)/ 管理员账号。 */
 
 import { adminColors, announcementStatusMap, fontSize, formatDateTime, idemKeyOf, metaOf } from "@superdl/ui";
 import { HexTag, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
@@ -48,7 +43,7 @@ const SETTINGS_TABS = ["policies", "announcement", "legal", "admins"] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 export const Route = createFileRoute("/_app/settings")({
-  // Tab 入 URL:白名单校验,非法值回落默认 Tab
+  // Tab 入 URL,非法值回落默认
   validateSearch: (search: Record<string, unknown>): { tab?: SettingsTab } => ({
     tab: SETTINGS_TABS.includes(search.tab as SettingsTab)
       ? (search.tab as SettingsTab)
@@ -57,7 +52,7 @@ export const Route = createFileRoute("/_app/settings")({
   component: SettingsPage,
 });
 
-// i18n-exempt: 策略参数名与单位为运营域术语,随渠道字段表一并豁免(admin CJK 闸门白名单)
+// i18n-exempt: 策略参数名与单位
 const POLICY_LABELS: Record<string, { label: string; unit: string; hint?: string }> = {
   disk_price_gb_month: { label: "数据盘单价", unit: "元/GB·月", hint: "建盘时快照,调价只影响新盘" },
   disk_min_gb: { label: "数据盘最小容量", unit: "GB" },
@@ -124,7 +119,7 @@ function PoliciesTab() {
         style={{ marginBottom: 12 }}
         title={t("settings.instantEffect")}
       />
-      {/* 静态行 + 查询填值:查询失败时「生效值」列全空,必须明示错误而非伪装成无覆盖 */}
+      {/* 查询失败明示错误 */}
       {isError && (
         <Alert
           type="error"
@@ -170,7 +165,7 @@ function PoliciesTab() {
                 style={{ width: 140 }}
                 disabled={!writable}
                 stringMode
-                // 范围列展示的 min~max 必须落到输入约束上,否则越界只能等服务端驳回
+                // min~max 同时落到输入约束
                 min={r.spec?.min}
                 max={r.spec?.max}
                 placeholder={r.effective}
@@ -203,7 +198,7 @@ function PoliciesTab() {
             const { reason } = await reasonForm.validateFields();
             update.mutate({ data: { updates: Object.fromEntries(changed), reason } });
           } catch {
-            /* 校验失败:antd 已在字段下给出红字 */
+            /* 校验失败:antd 已给红字 */
           }
         }}
       >
@@ -236,12 +231,12 @@ function AnnouncementTab() {
   const writable = canWriteOps(role);
   const qc = useQueryClient();
   const [form] = Form.useForm<{ title: string; content: string }>();
-  // 公告草稿(sessionStorage):刷新/误关不丢;发布成功清除
+  // 公告草稿(sessionStorage),发布成功清除
   const draft = useFormDraft<{ title: string; content: string }>("announcement-new");
   const { data, queryKey, isLoading, isError, error, refetch } = useAnnouncements();
   const revoke = useRevokeAnnouncement();
   const rows: AnnouncementRow[] = data ?? [];
-  // 「上次发布」读接口而非本地缓存:最新一条仍处 published 的公告
+  // 「上次发布」= 最新一条 published 公告
   const lastPublished = rows.find((r) => r.status === "published");
   const refresh = () => void qc.invalidateQueries({ queryKey });
 
@@ -293,7 +288,7 @@ function AnnouncementTab() {
           loading={publish.isPending}
           disabled={!writable}
           onClick={() => {
-            // 复述影响面 + 公告标题,确认后才真正群发
+            // 二次确认后群发
             modal.confirm({
               title: t("settings.confirmAnnounce"),
               content: t("settings.confirmAnnounceDetail", {
@@ -305,11 +300,11 @@ function AnnouncementTab() {
                   const values = await form.validateFields();
                   publish.mutate({
                     data: values,
-                    // 幂等键从表单快照派生:重试/网络丢响应不会给全体租户重复推送
+                    // 幂等键从表单快照派生
                     idempotencyKey: idemKeyOf("ann", [values.title, values.content]),
                   });
                 } catch {
-                  /* 校验失败:antd 已在字段下给出红字 */
+                  /* 校验失败:antd 已给红字 */
                 }
               },
             });

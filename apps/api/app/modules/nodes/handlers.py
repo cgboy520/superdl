@@ -13,12 +13,8 @@ logger = get_logger(__name__)
 
 @outbox_handler("node.cordon")
 async def handle_node_cordon(session: AsyncSession, task: OutboxTask) -> None:
-    """cordon/uncordon:执行台账里的期望态(desired_unschedulable),不是 payload。
-
-    outbox 多 lane 并发领取 + 失败退避会让执行乱序:先发的 cordon 重试晚于后发的
-    uncordon 成功时,按 payload 执行会把节点打回 cordoned(与管理员最终意图相反)。
-    期望态只有最新一份,乱序重试是幂等收敛。节点不存在时 K8s 报 404,退避重试后进死信。
-    """
+    """cordon/uncordon:执行台账期望态(desired_unschedulable),不读 payload(乱序重试幂等收敛)。
+    节点不存在 404,退避重试后进死信。"""
     node_name = task.payload["node_name"]
     row = (
         await session.execute(select(NodeSpec).where(NodeSpec.node_name == node_name))
@@ -37,13 +33,8 @@ async def handle_node_cordon(session: AsyncSession, task: OutboxTask) -> None:
 
 @outbox_handler("node.decommission")
 async def handle_node_decommission(session: AsyncSession, task: OutboxTask) -> None:
-    """节点退役的 K8s 侧:cordon 后删 Node 对象(编排层内一并完成,见 delete_node)。
-
-    与 node.cordon 不同,这里读 payload 而非台账期望态:退役是单向终态,不存在
-    「后发的相反意图」把它盖回去的可能,节点名就是全部输入。
-    节点已不在集群时按成功返回(退役的目标态就是它不在),重放不会进死信。
-    令牌作废与停调度期望态在请求路径已同事务落库,本任务失败不影响这两件事。
-    """
+    """节点退役的 K8s 侧:cordon 后删 Node 对象(delete_node);读 payload(单向终态);
+    节点已不在集群按成功返回。"""
     node_name = task.payload["node_name"]
     await get_orchestrator().delete_node(node_name)
     logger.warning("node_decommission_applied", node=node_name, reason=task.payload.get("reason"))

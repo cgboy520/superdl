@@ -26,7 +26,7 @@ import {
   type SharedT,
 } from "./format";
 
-/** 真实 i18next 实例渲染 shared.json,量词键与复数边界一并被本测试锁死。 */
+/** 真实 i18next 实例渲染 shared.json。 */
 function makeT(lng: "zh-CN" | "en-US"): SharedT {
   const inst = createInstance({
     lng,
@@ -68,7 +68,6 @@ describe("compareAmounts", () => {
     expect(compareAmounts("0.30", "0.3000")).toBe(0);
     expect(compareAmounts("100.00", "99.9999")).toBe(1);
     expect(compareAmounts("1.6799", "1.68")).toBe(-1);
-    // 0.1+0.2 场景:字符串比较仍然精确
     expect(compareAmounts("0.3000", "0.2999")).toBe(1);
   });
   it("负数与空值", () => {
@@ -198,7 +197,7 @@ describe("formatDateTime 时区后缀", () => {
   it("输出带 (UTC±x) 后缀,与运行时偏移一致", () => {
     const out = formatDateTime("2026-08-19T02:30:00Z");
     expect(out).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2} \(UTC[+-]\d+(:\d{2})?\)$/);
-    // tzSuffix 模块内私有:黑盒断言 —— 用同一时刻的运行时偏移现算期望后缀
+    // 用同一时刻的运行时偏移现算期望后缀
     const d = new Date("2026-08-19T02:30:00Z");
     const offsetMin = -d.getTimezoneOffset();
     const sign = offsetMin >= 0 ? "+" : "-";
@@ -220,11 +219,11 @@ describe("diskDailyEstimate", () => {
     expect(diskDailyEstimate("1.2345", 30)).toBe("1.23"); // 37.035/30=1.2345→1.23
   });
   it("分位 tie 向偶,与后端 as_amount 同语义", () => {
-    // 0.0350 × 30 / 30 = 0.035 恰为分位 tie:HALF_UP 会给 0.04,HALF_EVEN 给 0.04(4 是偶)
+    // 0.035 分位 tie → 0.04
     expect(diskDailyEstimate("0.0350", 30)).toBe("0.04");
-    // 0.0350 × 90 / 30 = 0.105 恰为分位 tie:HALF_UP 给 0.11,HALF_EVEN 给 0.10
+    // 0.105 分位 tie → 0.10
     expect(diskDailyEstimate("0.0350", 90)).toBe("0.10");
-    // 0.0500 × 15 / 30 = 0.025 → 向偶 → 0.02(HALF_UP 会给 0.03)
+    // 0.025 → 0.02
     expect(diskDailyEstimate("0.0500", 15)).toBe("0.02");
   });
   it("边界:空价/0GB/非整数 GB 返回 0.00", () => {
@@ -237,7 +236,7 @@ describe("diskDailyEstimate", () => {
 
 describe("quoteSubscription", () => {
   it("逐步量化与后端 quote_subscription 对齐(折后时价先到 4 位,再乘份数与小时到分)", () => {
-    // UI 稿那一单:¥3.99/时 × 1 卡 × 720 小时,包月 8 折
+    // ¥3.99/时 × 1 卡 × 720 小时,包月 8 折
     const q = quoteSubscription("3.9900", { units: 1, period: "month", periodCount: 1, discountPct: 80 });
     expect(q.hours).toBe(720);
     expect(q.unitPrice).toBe("3.1920");
@@ -303,11 +302,10 @@ describe("spotHourlyPrice", () => {
     expect(spotHourlyPrice(null, 40)).toBe("0.0000");
   });
   it("恰好半个万分位时向偶进(与 quoteSubscription 的折后时价同一条舍入规则)", () => {
-    // 0.0010 × 45% = 0.00045 → 万分位恰好 4.5 个:向偶 = 0.0004(不是 0.0005)
+    // 0.00045 → 0.0004
     expect(spotHourlyPrice("0.0010", 45)).toBe("0.0004");
-    // 0.0030 × 45% = 0.00135 → 恰好 13.5 个:向偶 = 0.0014
+    // 0.00135 → 0.0014
     expect(spotHourlyPrice("0.0030", 45)).toBe("0.0014");
-    // 半个以下照常舍去
     expect(spotHourlyPrice("0.0001", 45)).toBe("0.0000");
   });
   it("与 quoteSubscription 的 unitPrice 逐值一致(同一个折扣算法,不能有两套)", () => {

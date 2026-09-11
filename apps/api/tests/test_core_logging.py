@@ -14,7 +14,7 @@ from app.core.logging import get_logger, setup_logging
 
 @pytest.fixture
 def restore_logging() -> Iterator[None]:
-    """setup_logging 改全局(root handler/structlog 配置):快照恢复,防顺序相关污染。"""
+    """快照并恢复 setup_logging 改的全局配置。"""
     root = logging.getLogger()
     old_handlers, old_level = root.handlers[:], root.level
     old_cfg = structlog.get_config()
@@ -40,7 +40,7 @@ def test_stdlib_logs_enter_structlog_pipeline(restore_logging: None, monkeypatch
         structlog.contextvars.unbind_contextvars("request_id")
 
     out = buf.getvalue()
-    # 两侧事件都进同一输出;stdlib 侧同样合并 contextvars(request_id 串联)
+    # 两侧事件同一输出,stdlib 侧同样合并 contextvars
     assert "evt_struct_side" in out
     assert "evt_stdlib_side" in out
     assert "rid-bridge-1" in out
@@ -70,8 +70,7 @@ def test_log_level_config_filters_both_sides(restore_logging: None, monkeypatch)
 
 
 def test_exception_traceback_rendered(restore_logging: None, monkeypatch):
-    """prod(JSON):logger.exception 渲染成结构化栈帧,而非只剩一行 event。
-    dev 的 ConsoleRenderer 自己渲染 exc_info(不能叠结构化栈帧渲染器,见其 TypeError)。"""
+    """prod(JSON):logger.exception 渲染成结构化栈帧;dev 的 ConsoleRenderer 自己渲染 exc_info。"""
     from app.core.config import get_settings
 
     get_settings.cache_clear()
@@ -93,8 +92,7 @@ def test_exception_traceback_rendered(restore_logging: None, monkeypatch):
 
 
 def test_sensitive_fields_masked(restore_logging: None, monkeypatch):
-    """PII/凭据全局兜底:phone/id_number/token/secret/password/code 键名命中即打码
-    (挂了 = 新增日志点忘脱敏,手机号/凭据明文进 Loki 180 天)。"""
+    """phone/id_number/token/secret/password/code 键名命中即打码。"""
     from app.core.config import get_settings
 
     get_settings.cache_clear()
@@ -122,12 +120,7 @@ def test_sensitive_fields_masked(restore_logging: None, monkeypatch):
 
 
 def test_exception_traceback_never_carries_frame_locals(restore_logging: None, monkeypatch):
-    """prod 的结构化栈帧**不带局部变量**。
-
-    挂了 = 生产日志把每个栈帧的局部变量原样写出去,数据库口令与 JWT 密钥直接落进日志后端。
-    `_mask_sensitive_processor` 的按键名打码拦不住它:打码跑在 shared_processors 里,
-    栈帧字典是它跑完之后才生成的。
-    """
+    """prod 的结构化栈帧不带局部变量。"""
     from app.core.config import get_settings
 
     get_settings.cache_clear()
@@ -138,7 +131,7 @@ def test_exception_traceback_never_carries_frame_locals(restore_logging: None, m
     setup_logging()
 
     def _raise_holding_a_secret() -> None:
-        # 与真实调用栈同形:帧里握着一个含凭据的对象
+        # 帧里握着一个含凭据的对象
         leaky_config = {"database_url": "postgresql://u:hunter2-marker@h/db"}
         assert leaky_config
         raise ValueError("boom-marker")

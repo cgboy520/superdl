@@ -1,20 +1,18 @@
-/** 可用量去重聚合:同一 (池, 型号) 物理池上的互斥规格可售数不可相加,直接 sum 会成倍高估。
- *  口径:按 (pool_label, gpu_model) 分组取 max,再跨组求和。 */
+/** 可用量去重聚合:按 (pool_label, gpu_model) 分组取 max,再跨组求和。 */
 
 import type { SkuMarketOut } from "@superdl/api-client";
 
-/** 入参即 SkuMarketOut(市场/落地页全部调用方同源),只取去重所需三字段。 */
+/** 入参即 SkuMarketOut,只取去重所需三字段。 */
 export type SkuAvailabilityLike = Pick<SkuMarketOut, "pool_label" | "gpu_model" | "available_count">;
 
-/** 全局可售上限(去重后):首页/CTA 横幅的对外数字。 */
+/** 全局可售上限(去重后):首页/CTA 横幅数字。 */
 export function dedupAvailableTotal(skus: readonly SkuAvailabilityLike[]): number {
   let total = 0;
   for (const v of dedupAvailableByModel(skus).values()) total += v;
   return total;
 }
 
-/** 按型号聚合的可售数(市场页型号筛选 chip):组内 (池, 型号) 取 max,同型号跨池求和。
- *  CPU 规格(gpu_model 空串)必须整条跳过,否则会多出空名字的 chip 并把不带卡的实例算进卡数。 */
+/** 按型号聚合的可售数(市场页型号 chip):组内 (池, 型号) 取 max,同型号跨池求和;CPU 规格(gpu_model 空串)整条跳过。 */
 export function dedupAvailableByModel(skus: readonly SkuAvailabilityLike[]): Map<string, number> {
   const byGroup = new Map<string, { model: string; free: number }>();
   for (const s of skus) {

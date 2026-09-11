@@ -1,5 +1,4 @@
-/** SSH 公钥选择块:查询失败可重试(绝不伪装成「你还没有密钥」)/ 无密钥时行内添加并自动选中 / 多选。
- *  开发机的 SSH 卡与服务的「同时开放 SSH」共用同一块 UI。 */
+/** SSH 公钥选择块:查询失败可重试(不伪装成「你还没有密钥」)/ 无密钥时行内添加并自动选中 / 多选。开发机 SSH 卡与服务「同时开放 SSH」共用。 */
 
 import { DataErrorAlert } from "@superdl/ui/components";
 import { Alert, App, Button, Checkbox, Form, Input, Space } from "antd";

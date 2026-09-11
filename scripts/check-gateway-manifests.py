@@ -1,15 +1,8 @@
 #!/usr/bin/env python3
-"""北向入口清单的 CRD schema 校验(CI 调用)。
+"""`deploy/app/k8s/04-gateway.yaml` 的 CRD schema 校验(CI 调用):schema 取自 helmfile 钉死的
+Envoy Gateway chart(CHART_VERSION)。挂了说明:清单里有字段名/取值不被 apiserver 接受。
 
-`deploy/app/k8s/04-gateway.yaml` 里的 7 种对象全是 CRD,kubeconform 的内置 schema 没有它们
-只能 -skip 掉,而这个文件恰是「写错了不报错、只是策略静默失效」的重灾区(管理端源 IP
-白名单、边缘限流、Jupyter 的 WebSocket 超时都在里面)。
-
-schema 直接取自 helmfile 钉死的那版 Envoy Gateway chart(CHART_VERSION),校验的就是集群里
-真正装着的那套 CRD。挂了说明:清单里有字段名/取值不被 apiserver 接受,apply 会被拒
-(可能只拒其中一个对象,其余照常生效)。
-
-依赖(不进仓库依赖树,CI 用 `uv run --with` 临时装):PyYAML、jsonschema。
+依赖 PyYAML、jsonschema(不进仓库依赖树)。
 用法: uv run --with pyyaml --with jsonschema python3 scripts/check-gateway-manifests.py
 """
 
@@ -21,8 +14,7 @@ import tempfile
 import jsonschema
 import yaml
 
-# 必须与 deploy/cluster/helmfile.yaml.gotmpl 里 envoy-gateway release 的 version 一致。
-# 对不上就等于拿另一版的 schema 校验现网清单,校验通过也不说明什么。
+# 必须与 deploy/cluster/helmfile.yaml.gotmpl 里 envoy-gateway release 的 version 一致
 CHART_VERSION = "v1.9.0"
 CHART = "oci://docker.io/envoyproxy/gateway-helm"
 REPO = pathlib.Path(__file__).resolve().parent.parent
@@ -77,7 +69,7 @@ def main() -> int:
             key = (doc.get("apiVersion", ""), doc.get("kind", ""))
             schema = schemas.get(key)
             if schema is None:
-                # 内置资源(Service/ConfigMap…)由 kubeconform 管,这里只认 CRD
+                # 内置资源由 kubeconform 管,这里只认 CRD
                 continue
             checked += 1
             name = doc.get("metadata", {}).get("name", "?")

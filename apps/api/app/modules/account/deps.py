@@ -1,4 +1,4 @@
-"""鉴权依赖:Bearer token → User。同时把 actor 写入 request.state 供审计中间件。"""
+"""鉴权依赖:Bearer token → User;actor 写入 request.state 供审计中间件。"""
 
 from typing import Annotated
 
@@ -26,7 +26,7 @@ async def get_current_user(
     if user is None:
         raise unauthorized()
     if user.status == "deleted":
-        # 已注销:全部在外凭证一律 401(含 token_version 尚未推进前签发的旧 token)
+        # 已注销:全部在外凭证一律 401
         raise AppError(
             ErrorCode.UNAUTHORIZED,
             key="account.accountDeleted",
@@ -36,9 +36,9 @@ async def get_current_user(
         raise AppError(
             ErrorCode.FORBIDDEN, key="account.userFrozen", http_status=status.HTTP_403_FORBIDDEN
         )
-    # 撤销闸:签发点恒带 ver,缺失不给默认值(None ≠ 任何版本 → 401)
+    # 撤销闸:ver 缺失不给默认值(None ≠ 任何版本 → 401)
     if payload.get("ver") != user.token_version:
-        raise unauthorized()  # 已被撤销(冻结期版本推进/refresh 重放触发)
+        raise unauthorized()
     request.state.audit_actor = AuditActor("user", str(user.id))
     return user
 

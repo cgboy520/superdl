@@ -1,11 +1,4 @@
-"""网关鉴权回调 /api/internal/v1/endpoint-auth 的鉴权矩阵与响应纪律。
-
-这条端点是在线服务的全部访问控制:它放行谁,谁就能打到用户容器。
-- 鉴权矩阵挂了 = 平台在替用户漏钥匙(别人的 Key 能开你的门,或同一用户的 Key 串服务)
-- 响应纪律挂了 = 拒绝响应把平台内部信息透给任意第三方(响应体会原样回给调用方)
-- 审计豁免挂了 = 按服务 QPS 往 audit_log 灌行,真正要查的写操作被埋掉
-- catch-all 路径挂了 = extAuth 把 path 当前缀时整条链路 404 → fail-close 全站不可用
-"""
+"""网关鉴权回调 /api/internal/v1/endpoint-auth:鉴权矩阵、响应纪律、审计豁免、精确路由。"""
 
 import pytest
 from sqlalchemy import func, select
@@ -43,7 +36,7 @@ async def call_auth(client, *, slug: str, key: str | None = None, path: str = ""
 
 class TestAuthMatrix:
     async def test_valid_key_passes_with_identity_headers(self, client, sm, fake):
-        """合法 Key 放行,并回归属头。两个头必须恒回:headersToBackend 是覆盖语义。"""
+        """合法 Key 放行,两个归属头恒回。"""
         headers, svc, _ = await provision_service(client, sm, fake, phone="13900000401")
         key = await issue_key(client, headers, svc["slug"])
         resp = await call_auth(client, slug=svc["slug"], key=key)
@@ -70,7 +63,7 @@ class TestAuthMatrix:
         assert (await call_auth(client, slug=svc["slug"])).status_code == 401
 
     async def test_revoked_key_denied(self, client, sm, fake):
-        """吊销即刻生效:缓存条目被主动失效,不靠等 TTL。"""
+        """吊销即刻生效(缓存条目主动失效)。"""
         headers, svc, _ = await provision_service(client, sm, fake, phone="13900000405")
         slug = svc["slug"]
         resp = await client.post(
@@ -82,14 +75,14 @@ class TestAuthMatrix:
         assert (await call_auth(client, slug=slug, key=key)).status_code == 401
 
     async def test_cross_tenant_key_denied(self, client, sm, fake):
-        """A 用户的 Key 打 B 用户的服务必须 401:Key 是全局唯一高熵串,「查得到」不等于「用得上」。"""
+        """A 用户的 Key 打 B 用户的服务 → 401。"""
         a_headers, a_svc, _ = await provision_service(client, sm, fake, phone="13900000406")
         _b_headers, b_svc, _ = await provision_service(client, sm, fake, phone="13900000407")
         a_key = await issue_key(client, a_headers, a_svc["slug"])
         assert (await call_auth(client, slug=b_svc["slug"], key=a_key)).status_code == 401
 
     async def test_same_user_other_service_denied(self, client, sm, fake):
-        """同一用户的 Key 也不能跨服务:归属是服务级,不是账号级。"""
+        """同一用户的 Key 不能跨服务。"""
         headers, first, _ = await provision_service(client, sm, fake, phone="13900000412")
         second = await client.post(
             "/api/v1/services",
@@ -103,12 +96,12 @@ class TestAuthMatrix:
         )
         assert second.status_code == 202, second.text
         key = await issue_key(client, headers, first["slug"])
-        # 第二个服务还没就绪也一样 401:归属不对是第一道就拦下的
+        # 第二个服务未就绪也 401
         assert (await call_auth(client, slug=second.json()["slug"], key=key)).status_code == 401
         assert (await call_auth(client, slug=first["slug"], key=key)).status_code == 200
 
     async def test_public_endpoint_needs_no_key(self, client, sm, fake):
-        """require_api_key=false 的服务无 Key 也放行,但归属头照回;PATCH 翻回去即刻要 Key。"""
+        """require_api_key=false 无 Key 也放行,归属头照回;PATCH 翻回去即刻要 Key。"""
         headers, svc, _ = await provision_service(
             client, sm, fake, phone="13900000408", require_api_key=False
         )
@@ -116,7 +109,7 @@ class TestAuthMatrix:
         resp = await call_auth(client, slug=slug)
         assert resp.status_code == 200, resp.text
         assert resp.headers["x-superdl-endpoint"] == slug
-        # 匿名也必须显式回 key-id:省略这个头 = 客户端伪造值原样透传
+        # 匿名也显式回 key-id
         assert resp.headers["x-superdl-key-id"] == "anonymous"
         patched = await client.patch(
             f"/api/v1/services/{slug}", json={"require_api_key": True}, headers=headers
@@ -125,7 +118,7 @@ class TestAuthMatrix:
         assert (await call_auth(client, slug=slug)).status_code == 401
 
     async def test_unknown_slug_denied(self, client, sm, fake):
-        """服务不存在与密钥不对同码同文案:区分开就是一个枚举平台端点的预言机。"""
+        """服务不存在与密钥不对同码同文案。"""
         headers, svc, _ = await provision_service(client, sm, fake, phone="13900000409")
         key = await issue_key(client, headers, svc["slug"])
         resp = await call_auth(client, slug="svc-doesnotex", key=key)
@@ -141,7 +134,7 @@ class TestAuthMatrix:
         assert resp.status_code == 401
 
     async def test_stopped_service_denied(self, client, sm, fake):
-        """当前实例非 running 一律拒:Pod 可能还在优雅删除期活着,光删 HTTPRoute 有窗口。"""
+        """当前实例非 running 一律拒。"""
         headers, svc, user_id = await provision_service(client, sm, fake, phone="13900000411")
         slug = svc["slug"]
         key = await issue_key(client, headers, slug)
@@ -170,7 +163,7 @@ class TestAuthMatrix:
 
 class TestLastUsed:
     async def test_last_used_written_on_first_origin(self, client, sm, fake):
-        """last_used_at 首次回源即落库:它是排查「这把钥匙还在被谁用」的唯一线索。"""
+        """last_used_at 首次回源即落库。"""
         headers, svc, _ = await provision_service(client, sm, fake, phone="13900000420")
         key = await issue_key(client, headers, svc["slug"])
         assert (await call_auth(client, slug=svc["slug"], key=key)).status_code == 200
@@ -192,7 +185,7 @@ class TestLastUsed:
 
 class TestAuthCache:
     async def test_cache_hit_skips_db(self, client, sm, fake):
-        """缓存命中不回源:首次鉴权后直改库吊销(模拟另一副本),窗口内仍放行,TTL 到期后拒。"""
+        """缓存命中不回源:直改库吊销后窗口内仍放行,TTL 到期后拒。"""
         headers, svc, _ = await provision_service(client, sm, fake, phone="13900000422")
         key = await issue_key(client, headers, svc["slug"])
         assert (await call_auth(client, slug=svc["slug"], key=key)).status_code == 200
@@ -260,7 +253,7 @@ class TestResponseDiscipline:
 
 
 class TestPathShapes:
-    """鉴权回调是**一条精确路由**,不是 catch-all(pathOverride 与 path 互斥)。"""
+    """鉴权回调是一条精确路由,不是 catch-all。"""
 
     async def test_exact_path_accepted(self, client, sm, fake):
         headers, svc, _ = await provision_service(client, sm, fake, phone="13900000440")
@@ -286,7 +279,7 @@ class TestPathShapes:
 
 class TestApiKeyQuotaRace:
     async def test_concurrent_create_cannot_exceed_quota(self, client, sm, fake, monkeypatch):
-        """count-then-insert 必须在服务行锁内:并发建钥不越过上限(否则 20 把形同虚设)。"""
+        """count-then-insert 在服务行锁内:并发建钥不越过上限。"""
         import asyncio
 
         from app.core.errors import AppError, ErrorCode

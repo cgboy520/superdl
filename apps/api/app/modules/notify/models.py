@@ -28,16 +28,12 @@ class Notification(Base):
     # 告警闭环:管理端告警流确认留痕;非告警行恒空
     acked_by: Mapped[int | None]  # admin_users.id
     acked_at: Mapped[datetime | None]
-    # 翻页/排序一律走主键 id,created_at 无查询使用,不建索引
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class Announcement(Base):
-    """公告:管理端发布/撤回的公告级记录;用户端触达走 Notification fanout。
-
-    fanout 行 dedup_key = f"ann:{id}:{user_id}":撤回按此前缀精确收回,发布重试逐用户幂等。
-    idempotency_key:发布接口的幂等键(唯一约束兜底并发)——不带它时 HTTP 重试会产生
-    新公告 id(新 dedup 前缀),全体租户收到重复公告。
+    """公告记录;用户端触达走 Notification fanout,fanout 行 dedup_key = f"ann:{id}:{user_id}"。
+    idempotency_key 为发布接口幂等键。
     """
 
     __tablename__ = "announcements"

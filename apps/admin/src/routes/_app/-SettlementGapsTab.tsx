@@ -1,6 +1,4 @@
-/** 结算缺口:水位线被越过但账未结清的窗口留痕(重放补结 / 人工核销闭环)。
- * 未核销缺口由 DB 口径告警 superdl_settlement_gap_unresolved 持续曝光,本页是处理入口。
- */
+/** 结算缺口:重放补结 / 人工核销入口(告警 superdl_settlement_gap_unresolved)。 */
 
 import { formatDateTime } from "@superdl/ui";
 import { LoadMore, TableErrorEmpty } from "@superdl/ui/components";
@@ -29,7 +27,7 @@ const REASON_LABEL_KEY = {
 } as const;
 type GapReason = keyof typeof REASON_LABEL_KEY;
 
-// 缺口类型 → 文案键(静态表:admin 的 t() 是严格键类型)
+// 缺口类型 → 文案键
 const KIND_LABEL_KEY = {
   hourly: "finance.gapKindHourly",
   daily_disk: "finance.gapKindDailyDisk",
@@ -77,7 +75,7 @@ export function SettlementGapsTab() {
           <Switch checked={unresolvedOnly} onChange={setUnresolvedOnly} />
           <Typography.Text type="secondary">{t("finance.gapUnresolvedOnly")}</Typography.Text>
         </Space>
-        {/* 游标列表不挂轮询:手动刷新重置回第一页 */}
+        {/* 手动刷新重置回第一页 */}
         <Button onClick={() => void qc.resetQueries({ queryKey })}>{t("common.refresh")}</Button>
       </Space>
       <Table<AdminSettlementGapOut>
@@ -148,8 +146,7 @@ export function SettlementGapsTab() {
             render: (_, row) =>
               row.resolved_at ? null : (
                 <Space size={4}>
-                  {/* 重放用 Popconfirm 而非 ReasonAction:该端点无 reason 负载;
-                      审计由服务端落操作者与缺口原因(replay_gap + set_audit_target) */}
+                  {/* 重放端点无 reason 负载,用 Popconfirm */}
                   <Popconfirm
                     title={t("finance.gapReplayConfirm")}
                     onConfirm={async () => {
@@ -162,7 +159,6 @@ export function SettlementGapsTab() {
                       }
                     }}
                   >
-                    {/* 纯动作触发器用 Button 不用 Typography.Link(eslint 强制):无 href 的链接不可聚焦 */}
                     <Button type="link" size="small" disabled={!writable} style={{ whiteSpace: "nowrap" }}>
                       {t("finance.gapReplay")}
                     </Button>

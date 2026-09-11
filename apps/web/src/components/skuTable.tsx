@@ -1,4 +1,4 @@
-/** 市场页与创建页共用的 SKU 表列与「计费方式」卡,两处列定义与文案同源。 */
+/** 市场页与创建页共用的 SKU 表列与「计费方式」卡。 */
 
 import type { SkuMarketOut } from "@superdl/api-client";
 import {
@@ -24,12 +24,12 @@ import { TierTag } from "./common";
 import { discountOff, PeriodCountUnit, usePeriodDiscounts } from "./periodBilling";
 import { SpotOffLabel, SpotPriceInline, useSpotPolicy, type SpotPolicy } from "./spotBilling";
 
-/** GPU / 显存列文案:共享档报算力份额,MIG 档报切分规格,其余为整卡;CPU 档报「不带 GPU」。 */
+/** GPU / 显存列文案:共享档报算力份额,MIG 档报切分规格,其余整卡;CPU 档报「不带 GPU」。 */
 function formatSkuGpu(s: SkuMarketOut, t: TFunction<readonly ["web", "shared"]>): string {
-  // 按展示档位派发:「共享」既可能是 MIG 硬切分也可能是 HAMi 份额,两者的规格描述不同
+  // 按展示档位派发:「共享」可能是 MIG 硬切分或 HAMi 份额
   const variant = skuVariant(s.tier, s.pool_label);
   if (variant === "cpu") {
-    // 型号与显存对 CPU 规格恒为空;这一列改报整机 CPU/内存,不要渲染成「 · 0G · 整卡」
+    // CPU 规格型号与显存恒为空,改报整机 CPU/内存
     return t("sku.gpuCpuNone", { vcpu: s.vcpu, mem: s.mem_gb });
   }
   if (variant === "shared_mig") {
@@ -41,17 +41,16 @@ function formatSkuGpu(s: SkuMarketOut, t: TFunction<readonly ["web", "shared"]>)
   return t("sku.gpuDedicated", { model: s.gpu_model, vram: s.vram_gb });
 }
 
-/** SKU 表列。availability=true 时插入「空闲 GPU」列(市场页用,创建页规格已定不需要);
- *  priceFontSize 控制价格字号。 */
+/** SKU 表列。availability=true 时插入「空闲 GPU」列(市场页用);priceFontSize 控制价格字号。 */
 export function skuColumns(
   opts: {
     fmt: Formatters;
     t: TFunction<readonly ["web", "shared"]>;
     availability?: boolean;
     priceFontSize?: number;
-    /** CPU 规格表:价格是整机时价,表头不能写「单卡」 */
+    /** CPU 规格表:价格是整机时价,表头不写「单卡」 */
     cpu?: boolean;
-    /** 竞价档选中时传入:上了竞价的规格价格列改显「原价划线 + 折后价」,没上的原样显示原价并挂标。 */
+    /** 竞价档选中时传入:上了竞价的规格价格列显「原价划线 + 折后价」,没上的显原价并挂标。 */
     spot?: SpotPolicy;
   },
 ): NonNullable<ComponentProps<typeof Table<SkuMarketOut>>["columns"]> {
@@ -74,7 +73,7 @@ export function skuColumns(
   return [
     {
       title: t("sku.colSpec"),
-      // fixed 价格列使整表 table-layout:fixed;规格列不声明宽度会被档位徽标(不换行)压成逐字竖排
+      // fixed 价格列使整表 table-layout:fixed;规格列须声明宽度
       width: 220,
       render: (_: unknown, s: SkuMarketOut) => (
         <Space>
@@ -93,7 +92,7 @@ export function skuColumns(
       render: (_: unknown, s: SkuMarketOut) => t("sku.hostShort", { vcpu: s.vcpu, mem: s.mem_gb }),
     },
     { title: t("sku.colDisk"), render: (_: unknown, s: SkuMarketOut) => t("sku.diskWithBase", { disk: s.disk_gb }) },
-    // 最高 CUDA 只对带卡的规格有意义:CPU 分栏整列恒为「-」
+    // 最高 CUDA 只对带卡规格有意义,CPU 分栏恒为「-」
     ...(opts.cpu
       ? []
       : [
@@ -108,12 +107,12 @@ export function skuColumns(
         ]),
     {
       title: opts.cpu ? t("sku.colPriceCpu") : t("sku.colPrice"),
-      // 钉右:窄屏(≤1024)下表格横滚,价格不能被滚出视口
+      // 钉右:窄屏(≤1024)表格横滚时价格不滚出视口
       fixed: "right" as const,
       align: "right" as const,
-      // 竞价档一格里放两个价(原价划线 + 折后价),150 放不下会把划线价挤成竖排
+      // 竞价档一格放两个价,150 放不下
       width: opts.spot ? 210 : 150,
-      // 金额不过 Number(BigInt 万分位比较),浮点精度不进排序
+      // 金额比较用 BigInt 万分位,不过 Number
       sorter: (a: SkuMarketOut, b: SkuMarketOut) => compareAmounts(a.price_hourly, b.price_hourly),
       render: (_: unknown, s: SkuMarketOut) =>
         opts.spot && !s.spot_enabled ? (
@@ -136,12 +135,10 @@ export function skuColumns(
   ];
 }
 
-/** 计费方式:按量 + 竞价 + 四个包周期,与档位正交。竞价与包周期互斥(market 是单值),故同行单选。 */
+/** 计费方式:按量 + 竞价 + 四个包周期,与档位正交;竞价与包周期互斥(market 单值),同行单选。 */
 export type BillingMode = "on_demand" | "spot" | BillingPeriod;
 
-/** 计费方式卡(市场页与创建页共用)。折扣角标与竞价折扣从 `/policies` 读,禁止前端硬编码。
- *  规格不接受包周期 / 未上竞价时对应项灰置 + tooltip 说明,不隐藏。
- *  数量选择器只在创建/续费这类真要提交的场景出(传 count + onCountChange)。 */
+/** 计费方式卡(市场页与创建页共用)。折扣角标与竞价折扣从 `/policies` 读,禁止硬编码;规格不接受包周期 / 未上竞价时对应项灰置 + tooltip,不隐藏;数量选择器只在传 count + onCountChange 时出。 */
 export function BillingModeCard({
   value,
   onChange,
@@ -160,7 +157,7 @@ export function BillingModeCard({
   extra?: ReactNode;
 }) {
   const { t } = useTranslation(["web", "shared"]);
-  // 「该规格暂不支持包周期 / 暂未上竞价档」的事实源在后端 messages.py,前端不另写一份
+  // 「该规格暂不支持包周期 / 暂未上竞价档」文案事实源在后端 messages.py
   const { t: tErr } = useTranslation("errors");
   const discounts = usePeriodDiscounts();
   const spotPolicy = useSpotPolicy();
@@ -182,7 +179,7 @@ export function BillingModeCard({
                   <SpotOffLabel policy={spotPolicy} />
                 </span>
               ),
-              // 策略没回来就不放行:折扣算不出
+              // 策略没回来不放行
               disabled: !spotEnabled || spotPolicy == null,
               disabledReason: !spotEnabled
                 ? tErr("orchestrator.spotNotEnabled")
@@ -212,7 +209,7 @@ export function BillingModeCard({
           extra={extra}
         />
         {showCount && (
-          // 与 ChipRow 同款标签栏(CHIP_LABEL_WIDTH 右对齐),数量与周期 chips 上下对齐
+          // 与 ChipRow 同款标签栏(CHIP_LABEL_WIDTH 右对齐)
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <Typography.Text
               type="secondary"

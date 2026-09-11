@@ -1,6 +1,4 @@
-/** 服务设置 Tab:改名 / 访问鉴权开关 / 调试 SSH / 危险区。
- *  改名与鉴权只 PATCH services 行,几秒内生效、不重新部署;关鉴权走 L2 确认(端点从此人人可调且照常计费);
- *  开着鉴权却没有可用 Key 时常驻提醒,否则端点建好了却谁也调不通。SSH 随版本固定,这里只回显不改。 */
+/** 服务设置 Tab:改名 / 访问鉴权开关 / 调试 SSH / 危险区。改名与鉴权只 PATCH services 行,不重新部署;关鉴权走 L2 确认;开着鉴权却没有可用 Key 时常驻提醒;SSH 随版本固定,只回显。 */
 
 import type { ServiceOut } from "@superdl/api-client";
 import { useConfirm } from "@superdl/ui/components";

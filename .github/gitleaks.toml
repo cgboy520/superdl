@@ -1,7 +1,5 @@
-# SuperDL gitleaks 配置:默认规则集 + 已复核误报的行级放行。
-# CI 只扫当前工作树(gitleaks dir),不扫历史:历史 commit 里的误报不会让之后每次 push 都红。
-# 放行语义:condition="AND" + regexTarget="line" = path 命中且命中行内容匹配 regexes 才放行,
-# 同文件其他行混入真 secret 仍会告警。
+# gitleaks:默认规则集 + 已复核误报的行级放行(condition="AND" + regexTarget="line":path 与行内容同时命中才放行)。
+# CI 只扫当前工作树(gitleaks dir)
 [extend]
 useDefault = true
 
@@ -47,7 +45,7 @@ regexTarget = "line"
 paths = ['''apps/api/tests/test_k8s_real_units\.py''']
 regexes = ['''secret_key_ref\.name == "jupyter-inst-1"''']
 
-# 该 bcrypt hash(集群内 registry 曾用的 CHANGE_ME 占位口令)已泄漏,禁止以任何形式入库。
+# 该 bcrypt hash 已泄漏,禁止入库
 [[rules]]
 id = "superdl-leaked-registry-htpasswd"
 description = "已泄漏的 registry htpasswd bcrypt hash"

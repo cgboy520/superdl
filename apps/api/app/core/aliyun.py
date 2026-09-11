@@ -1,5 +1,4 @@
-"""阿里云 RPC 风格 OpenAPI:HMAC-SHA1 签名与 POST 调用。
-dysmsapi(短信)、captcha(验证码 2.0)与 cloudauth(实名)三条渠道共用。"""
+"""阿里云 RPC 风格 OpenAPI:HMAC-SHA1 签名与 POST 调用(dysmsapi / captcha / cloudauth 共用)。"""
 
 import base64
 import hashlib
@@ -13,7 +12,7 @@ from app.core.timeutil import now_utc
 
 
 def percent_encode(value: str) -> str:
-    # 阿里云 RPC 签名要求 RFC3986:仅 A-Za-z0-9-_.~ 不编码,空格 %20,* %2A
+    # RFC3986:仅 A-Za-z0-9-_.~ 不编码,空格 %20,* %2A
     return urllib.parse.quote(value, safe="")
 
 
@@ -52,11 +51,7 @@ async def rpc_call(
     transport: httpx.AsyncBaseTransport | None,
     error_cls: type[Exception],
 ) -> dict:
-    """签名业务参数、POST form 到 endpoint,返回解析后的 JSON 体。
-
-    网络 / 超时 / 非 JSON 响应等请求层异常统一转成 error_cls(渠道故障);
-    业务结果码(Code / BizCode / VerifyResult)由各渠道自行判定。
-    """
+    """签名并 POST form 到 endpoint,返回 JSON 体;请求层异常转 error_cls,业务结果码由渠道判定。"""
     signed = rpc_signed_params(
         params,
         access_key_id=access_key_id,

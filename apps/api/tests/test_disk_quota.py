@@ -80,8 +80,7 @@ class TestQuotaFailureAndReconcile:
             assert fake.disk_quotas[(f"tenant-{user_id}", row.juicefs_subpath)] == 100
 
     async def test_discarded_dead_letter_not_revived(self, client: AsyncClient, sm, fake):
-        """管理端人工 discarded 的 disk.quota 不会被对账环复活:reconciler 只重派 dead,
-        不按 quota_synced=false 补发(挂了 = 人工忽略失效,死信每轮被重新入队)。"""
+        """人工 discarded 的 disk.quota 不被对账环复活:reconciler 只重派 dead。"""
         from app.modules.orchestrator.reconciler import reconcile_once
 
         headers, user_id, _key = await create_user_with_key(client)

@@ -1,10 +1,7 @@
-# light 档(k3s 单机/小规模):用法 helmfile -e light apply。组件集与 full 基本一致,
-# 差异在 k3s 侧的 values 覆盖(values/light/)。CNI 用 k3s 内置 flannel,不装 Cilium。
-# TopoLVM 是实例盘的强制依赖(每个租户 Pod 都要挂),前提是该机已建出 VG superdl-nvme;
-# JuiceFS 只有数据盘用,可选。
+# light 档(k3s 单机/小规模):helmfile -e light apply。差异在 values/light/ 覆盖;CNI 用 k3s 内置 flannel。
+# TopoLVM 必装(实例盘,需 VG superdl-nvme);JuiceFS 可选(数据盘)
 cilium: {enabled: false}
-# GPU 栈与 full 同源:gpu-operator 一家提供 NFD/GFD/DCGM/MIG/VFIO;
-# k3s 侧覆盖见 values/light/gpu-operator-light.yaml(不由 operator 改 containerd)。
+# GPU 栈同 full;k3s 覆盖见 values/light/gpu-operator-light.yaml
 gpuOperator: {enabled: true}
 hami: {enabled: true}
 kataDeploy: {enabled: true}   # dedicated 档运行时;chart 按 k8sDistribution=k3s 写 k3s 的 containerd 配置
@@ -12,14 +9,11 @@ kps: {enabled: true}
 juicefs: {enabled: false}
 topolvm: {enabled: true}
 certManager: {enabled: true}
-# acme-dns 不装:其 LoadBalancer 53 在 k3s klipper-lb 上会占节点 hostPort 53、劫持节点自身 DNS
-# (见 helmfile 注释)。泛域名证书改由运维把现成通配证书手工灌成 superdl 命名空间下的
-# superdl-jupyter-wildcard-tls 与 superdl-svc-wildcard-tls,ClusterIssuer 与 Certificate 一并不用
+# acme-dns 不装(见 helmfile 注释);通配证书手工灌成 superdl/superdl-jupyter-wildcard-tls 与 superdl-svc-wildcard-tls
 acmeDns: {enabled: false}
 envoyGateway: {enabled: true}   # 北向唯一入口(Gateway API);light 覆盖见 values/light/envoy-gateway-light.yaml
-# 平台库进 K8s(CloudNativePG)时打开;默认关闭 = 用托管 PG(见 deploy/README.md「生产数据库要求」)
+# 平台库进 K8s(CloudNativePG)时打开;默认用托管 PG(deploy/README.md「生产数据库要求」)
 cnpg: {enabled: false}
-# 日志栈同开(资源已收紧,见 values/light/loki-light.yaml);单机盘紧张可置 false 整栈关掉,
-# 但 API 审计日志 ≥6 个月的留存义务随之只剩 DB audit_log 一路
+# 日志栈(values/light/loki-light.yaml);置 false 整栈关掉后 API 审计日志留存只剩 DB audit_log
 loki: {enabled: true}
 logCollector: {enabled: true}

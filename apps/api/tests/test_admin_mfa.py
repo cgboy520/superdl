@@ -1,5 +1,5 @@
-"""管理端 TOTP MFA:安全策略 admin_mfa_enabled(默认开)下全部管理角色强制绑定,二要素登录,
-恢复码,重置救援;关闭时全员密码即登录。"""
+"""管理端 TOTP MFA:admin_mfa_enabled 开时全角色强制绑定与二要素登录、恢复码、重置救援;
+关闭时密码即登录。"""
 
 import asyncio
 from typing import get_args
@@ -23,8 +23,7 @@ async def _create(client, sm, username: str, role: str) -> None:
 
 class TestMfaEnforcement:
     async def test_every_role_gets_setup_challenge(self, client: AsyncClient, sm):
-        """登录只回绑定票、不直发 token,契约里的每个角色无一例外
-        (ops 可签节点接入令牌、readonly 可导出流水/审计,免 MFA 即口令泄漏直通车)。"""
+        """未绑定时登录只回绑定票、不直发 token,每个角色无一例外。"""
         for role in get_args(AdminRole):
             await _create(client, sm, f"mfa-{role}", role)
             body = (await admin_login(client, f"mfa-{role}")).json()
@@ -33,9 +32,8 @@ class TestMfaEnforcement:
             assert body["ticket"]
 
     async def test_switch_off_skips_mfa_for_everyone_and_on_restores(self, client: AsyncClient, sm):
-        """安全策略 admin_mfa_enabled=false:未绑定者与已绑定者都直发 token(status=ok);
-        重新开启后已绑定者回到二要素、未绑定者回到绑定票——挂了说明开关没接到登录路径,
-        或关闭后已绑定者仍被挑战(与「关 = 全员免」的契约不符)。"""
+        """admin_mfa_enabled=false:未绑定者与已绑定者都直发 token;
+        重新开启后已绑定者回到二要素、未绑定者回到绑定票。"""
         from sqlalchemy import delete
 
         from app.core.platform_config import PlatformSetting
@@ -64,9 +62,7 @@ class TestMfaEnforcement:
 
 class TestSetupFlow:
     async def test_concurrent_begin_returns_the_stored_secret(self, client: AsyncClient, sm):
-        """并发 begin(双发/双击/多标签页)只能落一枚密钥,且页面拿到的就是库里那枚。
-        挂了说明:两路各生成一枚、后写者覆盖前者,用户照二维码输的首个动态码必然验不过。
-        """
+        """并发 begin 只落一枚密钥,页面拿到的就是库里那枚。"""
         await _create(client, sm, "race-admin", "admin")
         ticket = (await admin_login(client, "race-admin")).json()["ticket"]
         a, b = await asyncio.gather(
@@ -75,7 +71,7 @@ class TestSetupFlow:
         )
         assert a.json()["secret"] == b.json()["secret"]
         assert a.json()["otpauth_uri"].startswith("otpauth://totp/")
-        # 真正的判据不是两路自洽,而是「返回的密钥能绑定成功」= 与库里存的是同一枚
+        # 判据:返回的密钥能绑定成功
         resp = await client.post(
             "/api/admin/v1/auth/mfa/setup/confirm",
             json={"ticket": ticket, "code": pyotp.TOTP(a.json()["secret"]).now()},
@@ -92,7 +88,7 @@ class TestSetupFlow:
         assert resp.json()["code"] == "MFA_CODE_INVALID"
 
     async def test_bind_raises_platform_alert(self, client: AsyncClient, sm):
-        """TOTP 绑定成功即落平台告警(检测闭环:绑定只靠口令,抢先绑定必须可见)。"""
+        """TOTP 绑定成功即落平台告警。"""
         from sqlalchemy import select
 
         from app.modules.notify.models import Notification
@@ -115,28 +111,20 @@ class TestSetupFlow:
         assert rows[0].severity == "warning"
 
     async def test_setup_ticket_dies_at_bind(self, client: AsyncClient, sm):
-        """绑定成功即作废那张 setup 票(token_version+1)。
-
-        挂了说明票在剩余有效期(至多 600s)里还能用:谁截到它,只要在管理员绑完之后
-        再 begin 一次,就把**长期有效**的 TOTP 种子领走了,此后可以一直自造第二要素。
-        """
+        """绑定成功即作废 setup 票(token_version+1)。"""
         await _create(client, sm, "onetime-admin", "admin")
         ticket = (await admin_login(client, "onetime-admin")).json()["ticket"]
         await complete_mfa_setup(client, ticket)
         again = await client.post("/api/admin/v1/auth/mfa/setup/begin", json={"ticket": ticket})
         assert again.json()["code"] == "MFA_TICKET_INVALID", again.text
-        # confirm 侧同样不认这张票(重复绑定不得重发恢复码)
+        # confirm 侧同样不认这张票
         reconfirm = await client.post(
             "/api/admin/v1/auth/mfa/setup/confirm", json={"ticket": ticket, "code": "000000"}
         )
         assert reconfirm.json()["code"] == "MFA_TICKET_INVALID"
 
     async def test_begin_refuses_already_bound_account(self, client: AsyncClient, sm):
-        """已绑定账号不再吐种子,哪怕手上是一张**当前版本**的合法 setup 票。
-
-        票据作废之外的第二道闸:少了它,任何能拿到 setup 票的路径(截获、日志、
-        管理员误转发)都等于一把永久的第二要素钥匙。
-        """
+        """已绑定账号不再吐种子,哪怕持有当前版本的合法 setup 票。"""
         from sqlalchemy import select
 
         from app.core.security import create_token
@@ -164,7 +152,7 @@ class TestSetupFlow:
         assert "secret" not in resp.json()
 
     async def test_ticket_cannot_cross_stage(self, client: AsyncClient, sm):
-        """setup 票不能拿去登录验证口(typ 校验),反之亦然。"""
+        """setup 票与登录票 typ 互不通用。"""
         await _create(client, sm, "cross-admin", "admin")
         ticket = (await admin_login(client, "cross-admin")).json()["ticket"]
         resp = await client.post(
@@ -201,8 +189,7 @@ class TestVerifyLogin:
         codes = confirm.json()["recovery_codes"]
         assert len(codes) == 10
 
-        # 重新登录:TOTP 直过(绑定已用当前步,登录用下一枚——valid_window=1 接受相邻步;
-        # 真实用户绑定与重登录间隔远大于 30s,不会遇到同码场景)
+        # 重新登录:绑定已用当前步,登录用下一枚(valid_window=1)
         ticket2 = (await admin_login(client, "totp-admin")).json()["ticket"]
         resp = await client.post(
             "/api/admin/v1/auth/login/mfa",
@@ -225,8 +212,7 @@ class TestVerifyLogin:
         assert reuse.json()["code"] == "MFA_CODE_INVALID"
 
     async def test_same_totp_code_replay_rejected(self, client: AsyncClient, sm):
-        """防重放(RFC 6238 §5.2):同一枚动态码第二次验证即拒,窗口内不能批量领 token
-        (挂了 = 截获一枚码可在约 90s 窗口内无限重放,MFA 形同虚设)。"""
+        """防重放(RFC 6238 §5.2):同一枚动态码第二次验证即拒。"""
         import pyotp
 
         await _create(client, sm, "replay-admin", "admin")
@@ -238,8 +224,7 @@ class TestVerifyLogin:
             "/api/admin/v1/auth/mfa/setup/confirm", json={"ticket": ticket, "code": code}
         )
         assert confirm.status_code == 200
-        # 同码重放:绑定路径与登录路径都必须拒。绑定路径上先撞的是「票已一次性作废」
-        # (绑定即 token_version+1),比 timestep 防重放更早一层,同样是拒
+        # 同码重放:绑定路径与登录路径都拒
         again = await client.post(
             "/api/admin/v1/auth/mfa/setup/confirm", json={"ticket": ticket, "code": code}
         )
@@ -253,7 +238,7 @@ class TestVerifyLogin:
     async def test_mfa_rate_limited_after_5_failures(self, client: AsyncClient, sm):
         await self._bound_admin(client, sm, "brute-admin")  # 绑定成功验证计 1 次配额
         ticket = (await admin_login(client, "brute-admin")).json()["ticket"]
-        # 成功也计配额(防窗口内批量领 token):5 次/10min 中绑定已耗 1,剩 4 次失败配额
+        # 成功也计配额:5 次/10min 中绑定已耗 1,剩 4 次
         for _ in range(4):
             resp = await client.post(
                 "/api/admin/v1/auth/login/mfa", json={"ticket": ticket, "code": "000000"}

@@ -22,8 +22,7 @@ def hour_floor(dt: datetime) -> datetime:
     return dt.replace(minute=0, second=0, microsecond=0)
 
 
-# 计费日界按北京时间(UTC+8):面向中国用户,「3 月 1 日」的盘费应覆盖北京 3/1 全天,
-# 而非 UTC 日(北京 3/1 08:00 – 3/2 08:00)
+# 计费日界按北京时间(UTC+8)
 BILLING_TZ_OFFSET_MINUTES = 480
 BILLING_DAY_OFFSET = timedelta(minutes=BILLING_TZ_OFFSET_MINUTES)
 
@@ -38,11 +37,7 @@ def billing_day_floor(dt: datetime) -> datetime:
 def billing_month_range(
     month: str, *, tz_offset_minutes: int = BILLING_TZ_OFFSET_MINUTES
 ) -> tuple[datetime, datetime]:
-    """YYYY-MM 本地自然月对应的 UTC [start, end) 窗口(默认北京时间,即发票账期口径)。
-
-    月窗口按本地月初/次月初切,与日账单同口径(按 UTC 切会让日账单加总 ≠ 月账单);
-    格式非法报 VALIDATION_ERROR(billing.badMonthFormat)。
-    """
+    """YYYY-MM 本地自然月的 UTC [start, end) 窗口(默认北京时间);格式非法报 VALIDATION_ERROR。"""
     try:
         local_start = datetime.strptime(month, "%Y-%m").replace(tzinfo=UTC)
     except ValueError as exc:
@@ -65,8 +60,7 @@ def prev_hour_range(dt: datetime) -> tuple[datetime, datetime]:
 def local_day_range(
     tz_offset_minutes: int, *, at: datetime | None = None
 ) -> tuple[datetime, datetime]:
-    """本地自然日 [start, end)(以 UTC 时刻表示)。tz_offset_minutes 为本地相对 UTC 的
-    偏移分钟(东八区 480);at 缺省取 now_utc()。注册统计/营收概览的「今日」口径。"""
+    """本地自然日 [start, end)(UTC 时刻);tz_offset_minutes 东八区为 480,at 缺省 now_utc()。"""
     offset = timedelta(minutes=tz_offset_minutes)
     ref = ensure_utc(at) if at is not None else now_utc()
     day_start = (ref + offset).replace(hour=0, minute=0, second=0, microsecond=0) - offset
@@ -74,8 +68,7 @@ def local_day_range(
 
 
 def parse_local_date(date: str, tz_offset_minutes: int) -> tuple[datetime, datetime]:
-    """YYYY-MM-DD 本地自然日对应的 UTC [start, end) 窗口(日账单汇总口径);
-    格式非法报 VALIDATION_ERROR(billing.badDateFormat)。"""
+    """YYYY-MM-DD 本地自然日的 UTC [start, end) 窗口;格式非法报 VALIDATION_ERROR。"""
     try:
         local_midnight = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=UTC)
     except ValueError as exc:

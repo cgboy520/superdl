@@ -9,7 +9,7 @@ from app.modules.billing.schemas import LedgerEntryOut, RechargeOut
 
 class AdminLoginRequest(BaseModel):
     username: str = Field(min_length=1, max_length=64)
-    # 与创建/重置同标准(128):更短的登录上限会把 65~128 字符口令的管理员永久锁在门外
+    # 与创建/重置同标准(128)
     password: str = Field(min_length=1, max_length=128)
 
 
@@ -23,8 +23,7 @@ class AdminOut(BaseModel):
 
 AdminRole = Literal["admin", "ops", "finance", "readonly"]
 
-# 只含 reason 的高危操作请求体共用的原因长度上限。不合并成一个 ReasonBody:orval 按
-# schema 名生成前端类型,各自的名字有页面在引用
+# 只含 reason 的请求体共用的原因长度上限。不合并成一个 ReasonBody:orval 按 schema 名生成前端类型
 REASON_MAX_LENGTH = 256
 
 
@@ -65,17 +64,17 @@ class AdminSelfPasswordRequest(BaseModel):
 
 
 class MfaChallengeOut(BaseModel):
-    """登录响应·挑战分支(安全策略 admin_mfa_enabled 开启时,不直发 token):
-    mfa_setup=首次绑定(绑定票 10min);mfa_required=已绑定验证(二要素票 5min)。"""
+    """登录响应·挑战分支(admin_mfa_enabled 开启时):mfa_setup=首次绑定(绑定票 10min);
+    mfa_required=已绑定验证(二要素票 5min)。"""
 
     status: Literal["mfa_setup", "mfa_required"]
     ticket: str
 
 
 class AdminLoginTokenOut(BaseModel):
-    """登录响应·直发分支(安全策略 admin_mfa_enabled 关闭时):密码校验通过即签发 access token。"""
+    """登录响应·直发分支(admin_mfa_enabled 关闭时)。"""
 
-    status: Literal["ok"]  # 必填:前端按 status 判别联合类型(可选字段无法收窄)
+    status: Literal["ok"]  # 前端按 status 判别联合类型
     access_token: str
     admin: AdminOut
 
@@ -97,7 +96,7 @@ class MfaCodeRequest(BaseModel):
 
 
 class MfaSetupConfirmOut(BaseModel):
-    """绑定成功:恢复码仅此一次返回,10 个,须离线保存。"""
+    """绑定成功:恢复码仅此一次返回,10 个。"""
 
     access_token: str
     admin: AdminOut
@@ -105,7 +104,7 @@ class MfaSetupConfirmOut(BaseModel):
 
 
 class MfaLoginOut(BaseModel):
-    """二要素验证通过。用了恢复码时 recovery_codes_left 骤减,≤2 提示重新生成。"""
+    """二要素验证通过。recovery_codes_left ≤2 提示重新生成。"""
 
     access_token: str
     admin: AdminOut
@@ -129,7 +128,7 @@ class AdminRefreshOut(BaseModel):
 
 
 # ---------- 管理端响应模型 ----------
-# 金额一律 str(numeric 序列化,禁 float);时间为 isoformat 字符串。
+# 金额一律 str(禁 float);时间为 isoformat 字符串。
 
 
 class TenantOut(BaseModel):
@@ -141,7 +140,7 @@ class TenantOut(BaseModel):
     instances: int
     disk_gb: int
     created_at: str
-    # 实名信息透出:readonly 角色脱敏;ops/finance/admin 明文(敏感读,响应含实名字段即落审计)
+    # 实名信息透出:readonly 角色脱敏;ops/finance/admin 明文(响应含实名字段即落审计)
     verification_status: str = "unverified"
     id_name: str | None = None
 
@@ -162,7 +161,7 @@ class TenantQuotaOut(BaseModel):
 
 
 class TenantQuotaUpdate(BaseModel):
-    """写覆盖:三个数字可留空(=该维走默认);全空 = 清除覆盖恢复默认。note 必填(留痕)。"""
+    """写覆盖:数字可留空(=该维走默认);全空 = 清除覆盖。note 必填。"""
 
     max_gpus: int | None = Field(default=None, ge=1, le=100000)
     max_instances: int | None = Field(default=None, ge=1, le=100000)
@@ -173,29 +172,28 @@ class TenantQuotaUpdate(BaseModel):
 class TenantStatusOut(BaseModel):
     id: int
     status: str
-    # 仅冻结时返回:本次一并停掉的 running 实例台数(前端回显用)
+    # 仅冻结时返回:本次一并停掉的 running 实例台数
     instances_stopped: int | None = None
 
 
 class OverviewPoolOut(BaseModel):
-    """池级 GPU 台账:总量含非 Ready 节点(前端单独画第三段)。"""
+    """池级 GPU 台账:总量含非 Ready 节点。"""
 
     pool: str
     gpu_total: int
     gpu_used: int
-    # 已租的那段里属于竞价实例的卡数(可回收容量),必须按 gpu_used 截断:超卖档下多个
-    # 共享实例共用一张卡,台账只记一张,不截断会画出一段比它所在容器还长的堆叠条
+    # 已租中属于竞价实例的卡数,按 gpu_used 截断
     gpu_spot_used: int
     ready_gpu_total: int
 
 
 class OverviewOut(BaseModel):
-    """总览聚合:全部精确计数,不从截断列表推算。"""
+    """总览聚合:全部精确计数。"""
 
     instances_by_status: dict[str, int]  # 非终态分状态计数(不含 released)
     tenants_total: int  # active 用户口径
     paying_tenants: int  # ledger consume > 0 的精确人数
-    subscriptions_active: int  # 在保(未到期)的包周期实例数,精确 COUNT
+    subscriptions_active: int  # 在保(未到期)的包周期实例数
     nodes_total: int
     nodes_ready: int
     nodes_missing: int
@@ -203,7 +201,7 @@ class OverviewOut(BaseModel):
 
 
 class AdjustContextOut(BaseModel):
-    """调账前置上下文:回显租户身份与资金现状,防止调错人。"""
+    """调账前置上下文:回显租户身份与资金现状。"""
 
     user_id: int
     phone_masked: str
@@ -225,7 +223,7 @@ class SkuImpactOut(BaseModel):
 class NodeOut(BaseModel):
     name: str
     pool_label: str
-    gpu_model: str  # canonical;未识别时为 "GPU"(展示兜底)
+    gpu_model: str  # canonical;未识别时为 "GPU"
     gpu_total: int
     gpu_used: int
     status: str  # Ready / NotReady / Cordoned / Missing(台账口径)
@@ -243,7 +241,7 @@ class NodeOut(BaseModel):
 
 
 class GpuModelAggregateOut(BaseModel):
-    """台账按 canonical×池聚合(SKU「从集群资源创建」下拉数据源)。gpu_model=None 为未识别桶。"""
+    """台账按 canonical×池聚合。gpu_model=None 为未识别桶。"""
 
     gpu_model: str | None
     gpu_model_raw: str | None
@@ -321,7 +319,7 @@ class AdminAlertOut(BaseModel):
     content: str
     severity: str
     created_at: str
-    # 告警闭环:确认留痕 + 跳转目标(无 target 前端不可点)
+    # 告警闭环:确认留痕 + 跳转目标
     acked_by: int | None = None
     acked_by_username: str | None = None
     acked_at: str | None = None
@@ -330,8 +328,7 @@ class AdminAlertOut(BaseModel):
 
 
 class AlertUnreadCountOut(BaseModel):
-    """未确认告警数(顶栏铃铛角标)。critical_count 单独给出:
-    总览「告警(总)」卡的红色高亮要用精确口径,不能从截断的告警流列表推导。"""
+    """未确认告警数;critical_count 单独给出(精确口径)。"""
 
     count: int
     critical_count: int = 0
@@ -374,16 +371,14 @@ class AuditLogOut(BaseModel):
     target: str | None
     ip: str | None
     result: int
-    # 原因、变更前后值、金额都在这里。
-    # 约束:set_audit_target 的 detail 禁止落凭据明文(平台配置只落键名不落值)。
+    # 原因、变更前后值、金额都在这里。detail 禁止落凭据明文(平台配置只落键名不落值)。
     detail: dict[str, Any] | None = None
     created_at: str
 
 
 class RevenueReportOut(BaseModel):
-    """收入口径:`*_revenue` = 计量出账(按量 + 盘费,按账单归属期)+ 包周期预付(按收款当日)。
-
-    `*_prepaid` 是其中的预付部分,单列以便看环比时拆走预付尖峰(一笔包年集中在收款当日)。
+    """收入口径:`*_revenue` = 计量出账(按量 + 盘费,按账单归属期)+ 包周期预付(按收款当日);
+    `*_prepaid` 是其中的预付部分。
     """
 
     today_revenue: str
@@ -441,7 +436,7 @@ class SmsTestOut(BaseModel):
 
 
 class RegistryTestOut(BaseModel):
-    """Harbor 连通性探测结果:step 指出失败发生在哪一步(health=DNS/TLS/CA 或 Harbor 自检,
+    """Harbor 连通性探测结果:step 指出失败步骤(health=DNS/TLS/CA 或 Harbor 自检,
     project=机器人鉴权/权限/项目存在性)。"""
 
     ok: bool
@@ -508,10 +503,10 @@ class CapacityWarningOut(BaseModel):
 
 
 class CapacityPreviewOut(BaseModel):
-    """SKU 表单容量预览(纯台账推算,不做库存预占)。"""
+    """SKU 表单容量预览(纯台账推算)。"""
 
     matching_nodes: int
-    ready_gpus: int  # CPU 规格恒 0(不带卡)
+    ready_gpus: int  # CPU 规格恒 0
     total_gpus: int  # 同上
     # 共享档 = ready_gpus × ⌊100×oversell/pct⌋;dedicated/mig = ready_gpus;
     # CPU 规格 = 按节点 vCPU/内存上限折算(catalog.sellable_cpu_slots)
@@ -540,13 +535,13 @@ class ClusterComponentOut(BaseModel):
 
 
 class ClusterConfigStateOut(BaseModel):
-    """配置就绪位(不回明文):集群页据此指引去平台配置页补键。"""
+    """配置就绪位(不回明文)。"""
 
     server_url_set: bool
     join_token_set: bool
     prometheus_url_set: bool
     grafana_url: str | None
-    # 镜像仓库地址与平台项目(非密):镜像页新建表单的默认前缀,ops/readonly 可读
+    # 镜像仓库地址与平台项目(非密),ops/readonly 可读
     registry_host: str | None
     registry_project: str | None
 

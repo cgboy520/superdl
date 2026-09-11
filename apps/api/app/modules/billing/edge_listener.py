@@ -1,7 +1,4 @@
-"""计费边监听器:实例离开 running 的瞬间,与状态迁移同事务出尾账。
-
-由 wire_modules() 注册到 orchestrator 的 transition 监听器,尾账与状态迁移原子提交。
-"""
+"""计费边监听器:实例离开 running 时与状态迁移同事务出尾账(wire_modules() 注册)。"""
 
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -20,8 +17,7 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-# 平台责任失联(节点失联/Pod 丢失):计费截断到 Pod 首次 not-ready 的时刻,
-# 判定前的宽限观察期不向用户计费。pod_unready(节点正常,负载自身问题)不在此列。
+# 平台责任失联(node_lost/pod_lost):计费截断到 Pod 首次 not-ready 时刻。pod_unready 不在此列
 _TRUNCATE_REASONS = ("node_lost", "pod_lost")
 
 
@@ -29,22 +25,20 @@ async def on_instance_transition(
     session: AsyncSession, instance: "Instance", event: "InstanceEvent"
 ) -> None:
     if event.to_status == RELEASING and instance.market == MARKET_SUBSCRIPTION:
-        # 中途释放不退款(预付语义),但订阅必须作废:留着 active 会让软准入替一台已不存在的
-        # 实例预留容量。挂在迁移监听器上是为了一次覆盖用户释放/欠费回收/到期回收/强制回收
+        # 中途释放不退款,订阅转 cancelled;挂在迁移监听器上覆盖用户释放/欠费回收/到期回收/强制回收
         await subscriptions.cancel_for_instance(session, instance.id)
     if event.from_status != RUNNING:
         return
     if instance.market == MARKET_SUBSCRIPTION:
-        # 包周期离开 running 不出尾账(整段周期的钱已收过)。三处配套过滤之一
-        # (另两处:wallet.assert_can_afford、billing.patrol 的停机判据),漏一处即二次收费
+        # 包周期离开 running 不出尾账。三处配套过滤之一
+        # (另两处:wallet.assert_can_afford、billing.patrol)
         return
     at = ensure_utc(event.created_at)
     detail_extra = None
     meta = event.event_metadata or {}
     if event.reason in _TRUNCATE_REASONS and meta.get("unready_since"):
-        # 与 settlement._billing_view 同口径:截断到 Pod 首次 not-ready 时刻。截断必须在此
-        # 自行做——本次退出边不在 billing_events_before(严格 < 窗口末)的返回里,重建层
-        # 看不到它的 metadata
+        # 与 settlement._billing_view 同口径:截断到 Pod 首次 not-ready 时刻;
+        # 本次退出边的 metadata 只有这里能读到
         unready_at = ensure_utc(datetime.fromisoformat(str(meta["unready_since"])))
         if unready_at < at:
             at = unready_at

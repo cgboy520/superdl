@@ -1,11 +1,6 @@
 """节点注册匿名侧:脚本下发 + 令牌换参数 + 进度回报。
-
-鉴权模型(同 billing/webhooks_router 的「凭证即鉴权」):
-- /script 无鉴权 —— 内容零密钥(静态脚本,仅替换 API 地址占位符),轻限流防刷;
-- /bootstrap 走 Bearer 注册令牌(256-bit 只存哈希),一次性:首跑即消费并换发
-  窄权限 progress 令牌(仅可 /progress);无效/过期/吊销/终态一律统一 404
-  (service 层保证,防探测),外加按 IP 限流。
-join token 明文只出现在 bootstrap 响应体,严禁入日志(本文件不打印响应)。
+/script 无鉴权(零密钥,轻限流);/bootstrap 走 Bearer 注册令牌,一次性,换发窄权限 progress 令牌;
+无效/过期/吊销/终态统一 404,按 IP 限流。join token 明文只在 bootstrap 响应体,不入日志。
 """
 
 import hashlib
@@ -35,8 +30,7 @@ def _script_body() -> str:
 
 
 def _served_script() -> str:
-    """实际下发的脚本正文:只替换第一次出现(赋值行);
-    脚本内另一处 __API_BASE__ 是护栏的比较字面量,须原样保留。"""
+    """实际下发的脚本正文:只替换第一次出现的 __API_BASE__(另一处是护栏比较字面量)。"""
     return _script_body().replace("__API_BASE__", get_settings().public_base_url.rstrip("/"), 1)
 
 
@@ -66,8 +60,7 @@ async def enroll_bootstrap(
     request: Request,
     authorization: Annotated[str | None, Header()] = None,
 ) -> BootstrapOut:
-    """令牌换装机参数(含 join token,仅经本响应体下发)。注册令牌一次性:首跑即消费并换发
-    progress 令牌,脚本重跑/重启续跑只用后者上报,不再 bootstrap。"""
+    """令牌换装机参数(含 join token)。注册令牌一次性,首跑即消费并换发 progress 令牌。"""
     await check_rate_limit(f"node-enroll:{_client_ip(request)}", max_attempts=30, window_seconds=60)
     token = _bearer_token(authorization)
     enrollment, cfg, progress_token = await service.bootstrap(
@@ -101,7 +94,7 @@ async def enroll_progress(
     request: Request,
     authorization: Annotated[str | None, Header()] = None,
 ) -> None:
-    """进度上报。无响应体:脚本不读响应,状态以管理端「待加入节点」列表为准。"""
+    """进度上报,无响应体。"""
     await check_rate_limit(f"node-enroll:{_client_ip(request)}", max_attempts=60, window_seconds=60)
     token = _bearer_token(authorization)
     await service.report_progress(

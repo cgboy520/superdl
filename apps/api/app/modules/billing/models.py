@@ -20,8 +20,8 @@ from app.core.db import Base
 class Wallet(Base):
     """余额。更新必须 SELECT FOR UPDATE + 同事务写 ledger。
 
-    frozen:渠道冲正冻结额(已入账充值被渠道反转时等额冻结)。可用余额 = balance - frozen;
-    冻结不记 ledger(不动 balance),核销时 release(解冻)或 chargeback(解冻+等额扣减)。"""
+    frozen:渠道冲正冻结额;可用余额 = balance - frozen;冻结不记 ledger,
+    核销时 release 或 chargeback。"""
 
     __tablename__ = "wallets"
     __table_args__ = (CheckConstraint("frozen >= 0", name="frozen_nonneg"),)
@@ -37,7 +37,7 @@ class BalanceLedger(Base):
     """追加式资金流水,对账基准。amount 带符号;balance_after 为扣/入账后的快照。"""
 
     __tablename__ = "balance_ledger"
-    # amount <> 0:零额流水无业务含义。刻意不加 balance >= 0:透支是设计内的(先消费后结算)
+    # amount <> 0;不加 balance >= 0(允许透支)
     __table_args__ = (CheckConstraint("amount <> 0", name="amount_nonzero"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -48,7 +48,7 @@ class BalanceLedger(Base):
     ref_type: Mapped[str | None] = mapped_column(String(32))  # bill_hourly / order / adjustment...
     ref_id: Mapped[str | None] = mapped_column(String(64))
     remark: Mapped[str | None] = mapped_column(String(256))
-    # 翻页/对账一律走主键 id,created_at 无查询使用,不建索引
+    # 翻页/对账走主键 id,created_at 不建索引
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -58,13 +58,13 @@ class BillHourly(Base):
     __tablename__ = "bills_hourly"
     __table_args__ = (
         UniqueConstraint("instance_id", "hour_start"),
-        # 单个自然小时窗口最多 3600 秒;应用层已拦,这里兜住手工 SQL 等旁路写入
+        # 单个自然小时窗口最多 3600 秒(兜住旁路写入)
         CheckConstraint("seconds_used >= 0 AND seconds_used <= 3600", name="seconds_range"),
         CheckConstraint("amount >= 0", name="amount_nonneg"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    # 查询走 UniqueConstraint(instance_id, hour_start) 前导列,不建冗余单列索引
+    # 查询走 UniqueConstraint(instance_id, hour_start) 前导列
     instance_id: Mapped[int]
     user_id: Mapped[int] = mapped_column(index=True)
     hour_start: Mapped[datetime] = mapped_column(index=True)
@@ -77,7 +77,7 @@ class BillHourly(Base):
 
 
 class BillDailyDisk(Base):
-    """数据盘日结。UNIQUE(disk_id, day) 幂等;关机也扣(「日常费用」)。"""
+    """数据盘日结。UNIQUE(disk_id, day) 幂等;关机也扣。"""
 
     __tablename__ = "bills_daily_disk"
     __table_args__ = (
@@ -87,7 +87,7 @@ class BillDailyDisk(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    disk_id: Mapped[int]  # 查询走 UniqueConstraint(disk_id, day) 前导列,不建冗余单列索引
+    disk_id: Mapped[int]  # 查询走 UniqueConstraint(disk_id, day) 前导列
     user_id: Mapped[int] = mapped_column(index=True)
     day: Mapped[datetime]
     size_gb: Mapped[int]
@@ -97,9 +97,8 @@ class BillDailyDisk(Base):
 
 
 class SettlementWatermark(Base):
-    """结算水位线:已结清的最后一个窗口起点(key='hourly' 存小时,'daily_disk' 存自然日)。
-
-    结算口径是「从水位线追平到当前」而非只结上一个窗口,worker 停机跨整点/跨日可自动补上。
+    """结算水位线:已结清的最后一个窗口起点(key='hourly' 小时,'daily_disk' 自然日)。
+    结算口径是「从水位线追平到当前」。
     """
 
     __tablename__ = "settlement_watermarks"
@@ -110,12 +109,10 @@ class SettlementWatermark(Base):
 
 
 class SettlementGap(Base):
-    """结算缺口登记:水位线越过但账未结清的窗口,一律在此留痕。
+    """结算缺口登记:水位线越过但账未结清的窗口。
 
-    四种来源:追平截断(catchup_truncated,整窗跳过,object_id=0)、死信
-    (dead_letter,单对象连续失败超限)、水位线缺失(watermark_missing,整窗)、
-    欠费宽限跳日(grace_overlap,单盘,有意不计费)。只登记不自动补:由补结任务
-    或人工按 (kind, window_start, object_id) 追溯,处理后标记 resolved_at。
+    四种来源:catchup_truncated(整窗,object_id=0)/ dead_letter(单对象)/ watermark_missing(整窗)
+    / grace_overlap(单盘)。只登记不自动补,处理后标记 resolved_at。
     """
 
     __tablename__ = "settlement_gaps"
@@ -124,7 +121,7 @@ class SettlementGap(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     kind: Mapped[str] = mapped_column(String(16))  # hourly / daily_disk
     window_start: Mapped[datetime]  # 缺口窗口起点(小时/自然日)
-    object_id: Mapped[int] = mapped_column(BigInteger, default=0)  # 实例/盘 id;0 = 整窗截断
+    object_id: Mapped[int] = mapped_column(BigInteger, default=0)  # 实例/盘 id;0 = 整窗
     # catchup_truncated / dead_letter / watermark_missing / grace_overlap
     reason: Mapped[str] = mapped_column(String(32))
     resolved_at: Mapped[datetime | None]
@@ -132,10 +129,8 @@ class SettlementGap(Base):
 
 
 class ReconcileCheckpoint(Base):
-    """钱包-流水链式核对的增量游标:该用户已验到的最后一笔流水。
-
-    balance_after 为该笔提交后的钱包快照;updated_at 为本轮扫描开始的库时钟,
-    与 wallets.updated_at 比较决定下轮是否需重验(只扫增量流水)。
+    """钱包-流水链式核对的增量游标:该用户已验到的最后一笔流水及其钱包快照。
+    updated_at 与 wallets.updated_at 比较决定下轮是否需重验。
     """
 
     __tablename__ = "reconcile_checkpoints"
@@ -152,7 +147,7 @@ class Order(Base):
     __tablename__ = "orders"
     __table_args__ = (
         UniqueConstraint("user_id", "idempotency_key"),
-        # 人工补单幂等键 DB 兜底:同键只可能落在一笔订单上(应用层先判重放,约束兜并发)
+        # 人工补单幂等键 DB 兜底
         UniqueConstraint("backfill_idempotency_key"),
         CheckConstraint("amount > 0", name="amount_positive"),
     )
@@ -166,24 +161,22 @@ class Order(Base):
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     # pending / paid / closed / failed
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
-    # 请求体指纹 sha256(user_id|amount|channel):同键异参重放 409,防弱键复用静默错单
+    # 请求体指纹 sha256(user_id|amount|channel):同键异参重放 409
     request_fingerprint: Mapped[str | None] = mapped_column(String(64))
-    # 管理端人工补单的幂等键:同键重放直接回当前状态,不报「已入账」409
+    # 管理端人工补单的幂等键:同键重放回当前状态
     backfill_idempotency_key: Mapped[str | None] = mapped_column(String(64))
     qr_url: Mapped[str | None] = mapped_column(String(512))
     paid_at: Mapped[datetime | None]
-    # 渠道侧对已入账订单的关单/退款通知到达时刻(不自动冲账,人工核销;异常清单分桶依据)
+    # 渠道侧对已入账订单的关单/退款通知到达时刻(人工核销;异常清单分桶依据)
     channel_reversed_at: Mapped[datetime | None]
     expires_at: Mapped[datetime]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class InvoiceRequest(Base):
-    """发票申请单。按账期合并开具:一个自然月一张;amount 由服务端按账期计算
-    (Σ 该账期 paid 充值 − Σ 该账期 submitted+issued 申请),客户端只提交账期与抬头。
-
+    """发票申请单。按北京自然月合并开具;amount 由服务端按账期计算。
     部分唯一索引 uq_invoice_requests_active_period:同一 (user_id, period) 只允许一条
-    非 rejected 申请(rejected 不占位,用户可修改抬头后重新申请)。
+    非 rejected 申请。
     """
 
     __tablename__ = "invoice_requests"
@@ -207,13 +200,13 @@ class InvoiceRequest(Base):
     title_type: Mapped[str] = mapped_column(String(16))  # personal / company
     title: Mapped[str] = mapped_column(String(128))  # 发票抬头
     tax_id: Mapped[str | None] = mapped_column(String(32))  # 税号(企业抬头必填,个人为空)
-    email: Mapped[str] = mapped_column(String(128))  # 接收邮箱(人工开票后发送至该邮箱)
+    email: Mapped[str] = mapped_column(String(128))  # 接收邮箱
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     status: Mapped[str] = mapped_column(String(16), default="submitted", index=True)
     # submitted → issued / rejected
     invoice_no: Mapped[str | None] = mapped_column(String(64))  # 发票号(开票时填)
     reject_reason: Mapped[str | None] = mapped_column(String(256))
-    issued_by: Mapped[int | None]  # 开票操作人(admin_users.id,finance/admin)
+    issued_by: Mapped[int | None]  # 开票操作人(admin_users.id)
     issued_at: Mapped[datetime | None]
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
     # 请求体指纹 sha256(user_id|period|抬头三要素|email):同键异参重放 409
@@ -222,13 +215,10 @@ class InvoiceRequest(Base):
 
 
 class RefundRequest(Base):
-    """退款申请单。审批通过 ≠ 出金:登记打款成功才同事务钱包负向调账,
-    并回写 wallet_entry_id 关联 balance_ledger。
+    """退款申请单。审批通过 ≠ 出金:登记打款成功才同事务钱包负向调账,回写 wallet_entry_id。
 
-    双人制衡硬约束:DB CHECK 兜底 payout_by <> review_by(应用层同样拦截给 409 文案)。
-    部分唯一索引 uq_refund_requests_active_order:同一订单只允许一条「进行中」申请
-    (pending/approved;已打款不占位——同单可多次部分退款,累计不超过订单额,
-    由申请/打款两处按 Σpaid 复核;rejected/cancelled 后用户可重新申请)。
+    DB CHECK payout_by <> review_by。部分唯一索引 uq_refund_requests_active_order:同一订单只允许一条
+    pending/approved 申请;同单可多次部分退款,累计不超过订单额。
     """
 
     __tablename__ = "refund_requests"
@@ -251,7 +241,7 @@ class RefundRequest(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    # R+yyyymmdd+两位日内序列(如 R20260823-01);序列由服务层当日计数+唯一冲突重试生成
+    # R+yyyymmdd+两位日内序列(如 R20260823-01)
     refund_no: Mapped[str] = mapped_column(String(20), unique=True)
     user_id: Mapped[int] = mapped_column(index=True)
     order_no: Mapped[str] = mapped_column(String(40))  # 原充值订单号
@@ -259,11 +249,11 @@ class RefundRequest(Base):
     reason: Mapped[str] = mapped_column(String(256))
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     # pending → approved / rejected → paid / cancelled
-    review_by: Mapped[int | None]  # 审批人(admin_users.id,finance/admin)
+    review_by: Mapped[int | None]  # 审批人(admin_users.id)
     review_at: Mapped[datetime | None]
     review_comment: Mapped[str | None] = mapped_column(String(256))
     payout_channel: Mapped[str | None] = mapped_column(String(32))
-    # offline / alipay_transfer / wechat_transfer(线下打款;不做渠道原路退回)
+    # offline / alipay_transfer / wechat_transfer(线下打款)
     payout_ref: Mapped[str | None] = mapped_column(String(128))  # 线下打款凭证号
     payout_by: Mapped[int | None]  # 打款登记人,强制 ≠ review_by
     payout_at: Mapped[datetime | None]
@@ -271,23 +261,17 @@ class RefundRequest(Base):
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
     # 请求体指纹 sha256(user_id|order_no|amount|reason):同键异参重放 409
     request_fingerprint: Mapped[str | None] = mapped_column(String(64))
-    # 打款登记(管理端出金)的幂等键,与上方申请键分开:申请键已被用户创建占用。
-    # 重放命中(同键同参且已 paid)返回 200 + X-Idempotent-Replay;同键异参 409;
-    # 无键的重复打款走原有状态机 409(refundStateNotPayable)
+    # 打款登记的幂等键,与申请键分开。同键同参且已 paid 回 200 + X-Idempotent-Replay;同键异参 409
     payout_idempotency_key: Mapped[str | None] = mapped_column(String(64))
     payout_request_fingerprint: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class Subscription(Base):
-    """包周期订单:一次性预扣的「实例使用权」凭证。
+    """包周期订单:一次性预扣的实例使用权凭证。与 `bills_hourly` 分开,包周期只在候选查询里被跳过
+    (见 orchestrator/queries.billing_candidates)。
 
-    与小时账单分开:`bills_hourly` 的结构、幂等键、水位线、缺口机制不涉及包周期,
-    包周期只在候选查询里被跳过(见 orchestrator/queries.billing_candidates)。
-
-    续费链:每次续费**新开一行**并把 renewed_from_id 指向上一行,老行转 expired。
-    不在原行上累加 expires_at:账期归属(哪笔钱属于哪个月的收入)要看得见,
-    跨月续费时老周期与新周期的金额分别落在各自的行上。
+    续费链:每次续费新开一行,renewed_from_id 指向上一行,老行转 expired。
     """
 
     __tablename__ = "subscriptions"
@@ -300,13 +284,12 @@ class Subscription(Base):
             "status IN ('active', 'expired', 'cancelled')",
             name="status",
         ),
-        Index(  # 巡检取「到期在即 / 已到期」的活跃订阅,一条索引服务两种谓词
+        Index(  # 巡检取「到期在即 / 已到期」的活跃订阅
             "ix_subscriptions_active_expiry",
             "expires_at",
             postgresql_where=text("status = 'active'"),
         ),
-        # DB 兜底:一实例仅一行 active。应用层由「钱包锁 + 续费行锁」串行化(见
-        # subscriptions.renew docstring),本索引兜住任何绕过该路径的写入(修数/新 worker)
+        # DB 兜底:一实例仅一行 active(应用层由钱包锁 + 续费行锁串行化)
         Index(
             "uq_subscriptions_active_instance",
             "instance_id",
@@ -321,22 +304,19 @@ class Subscription(Base):
     sku_id: Mapped[int]
     period: Mapped[str] = mapped_column(String(8))  # day / week / month / year
     period_count: Mapped[int] = mapped_column(default=1)
-    # 下单时的 SKU 原价时价快照(未打折),续费按它重新报价:SKU 涨价不追已购用户。
-    # 折后时价在 instances.price_hourly 上(见 core/pricing.price_for)
+    # 下单时的 SKU 原价时价快照(未打折),续费按它重新报价;折后时价在 instances.price_hourly
     unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 4))
     amount_paid: Mapped[Decimal] = mapped_column(Numeric(14, 2))  # 实扣(已含折扣)
     started_at: Mapped[datetime]
     expires_at: Mapped[datetime] = mapped_column(index=True)
     status: Mapped[str] = mapped_column(String(16), default="active", index=True)
-    # 到期自动续费。默认关:可无限重复的扣款授权必须由用户主动开启
+    # 到期自动续费,默认关
     auto_renew: Mapped[bool] = mapped_column(default=False, server_default="false")
-    renewed_from_id: Mapped[int | None]  # 续费链上一环,便于账期追溯
-    # 到期预警的去重锚点。存「最近一次已发预警对应的到期时刻」而不是布尔:续费后
-    # expires_at 变了,新周期的预警自然重新可发,不需要额外清位
+    renewed_from_id: Mapped[int | None]  # 续费链上一环
+    # 到期预警去重锚点:最近一次已发预警对应的到期时刻
     warned_for_expiry: Mapped[datetime | None]
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
-    # 同键重放须过 request_fingerprint 比对,不一致 409(对齐 Stripe 惯例)。
-    # 转换与续费共用 UNIQUE(user_id, idempotency_key) 一个命名空间:没有指纹,
-    # 一把键换台实例复用就会拿回**另一台**实例的订阅 + 200,而目标实例既没转也没扣款
+    # 同键重放须过 request_fingerprint 比对,不一致 409;
+    # 转换与续费共用 UNIQUE(user_id, idempotency_key)
     request_fingerprint: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

@@ -1,9 +1,5 @@
-"""错误文案目录:AppError(key=...) 的单一事实源。
-
-- 键命名 `<模块>.<camelCase 语义槽>`,wire 上不带 namespace 前缀(前端固定查 errors ns)。
-- 占位符用 str.format 形式 `{name}`;导出脚本转为 i18next 的 `{{name}}`。
-- 生成链:scripts/export_error_messages.py 读本表写 packages/ui/locales/zh-CN/errors.json
-  (CI no-diff 锁);en 手译,键集与占位符 parity 由 packages/ui 的 locales.test 锁。
+"""错误文案目录:AppError(key=...) 的单一事实源。键 `<模块>.<camelCase>`;占位符 `{name}`(导出转
+`{{name}}`);scripts/export_error_messages.py 生成 packages/ui/locales/zh-CN/errors.json,en 手译。
 """
 
 from collections.abc import Mapping
@@ -25,7 +21,7 @@ MESSAGES: dict[str, str] = {
     "account.deletionNotCancellable": "注销申请状态为 {status},不可撤销",
     "account.deletionNotPending": "注销申请状态为 {status},不可处理",
     "account.deletionPhoneMismatch": "手机号与当前账号不一致,请核对后重试",
-    # 密码错、验证码错、未注册三种情况共用本条,不可区分
+    # 密码错 / 验证码错 / 未注册共用本条
     "account.loginFailed": "手机号或凭证错误",
     "account.phoneTaken": "该手机号已注册,请直接登录",
     "account.realNameChannelError": "实名核验服务暂不可用,请稍后重试",
@@ -175,7 +171,7 @@ MESSAGES: dict[str, str] = {
     "catalog.skuBusinessKeyExists": (
         "相同型号、档位、池、切片、算力份额与 vCPU/内存的规格已存在,请直接编辑该规格"
     ),
-    # 通用兜底(errors.py 三个 helper 与 422/500 handler 使用)
+    # 通用兜底
     "common.forbidden": "无权访问",
     "common.httpError": "请求失败({status})",
     "common.internal": "服务器内部错误,请稍后重试",
@@ -231,8 +227,7 @@ MESSAGES: dict[str, str] = {
     "nodes.storageClassMissing": "集群存储未就绪(缺少 {names}),暂时无法开通;请联系平台运维",
     # 实例编排
     "orchestrator.accessNeedsRunning": "实例运行中才能获取接入信息",
-    # 网关 extAuth 回调的统一拒绝文案:它会原样回给服务的调用方(可能是任意第三方),
-    # 所以不区分「密钥错」「已吊销」「不属这个端点」「实例没在跑」——区分了就是探测口子
+    # 网关 extAuth 回调的统一拒绝文案(不区分密钥错 / 已吊销 / 不属端点 / 实例未运行)
     "orchestrator.envKeyInvalid": (
         "环境变量名「{name}」不合法:只能用字母、数字和下划线,且不能以数字开头"
     ),
@@ -315,7 +310,7 @@ MESSAGES: dict[str, str] = {
 
 
 def render_message(key: str, params: Mapping[str, Any] | None) -> str:
-    """按目录渲染中文兜底文案。缺键/缺参回落并留痕,绝不因此 500。"""
+    """按目录渲染中文文案;缺键/缺参回落并留痕。"""
     template = MESSAGES.get(key)
     if template is None:
         get_logger("app.messages").warning("message_key_missing", key=key)

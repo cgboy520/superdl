@@ -1,13 +1,9 @@
-# HAMi light(k3s)叠加值:在 values/hami.yaml 之上生效。
-# 安全定位同 hami.yaml:HAMi 为软件限额/性能隔离,不是安全边界,详见 docs/reference/security.md。
+# HAMi light(k3s)叠加值(在 values/hami.yaml 之上)
 scheduler:
   kubeScheduler:
-    # k3s 的 kube-scheduler 不作为独立镜像存在,HAMi 用上游 scheduler 镜像:chart 会按集群版本
-    # 自动去掉 +k3s 后缀取 tag,这里仍显式钉死与集群同版本(键是 image.tag,不是 imageTag),
-    # 升级 k3s 时必须同步改这里
+    # 上游 scheduler 镜像,钉与集群同版本(键是 image.tag);升级 k3s 时同步改
     image:
       tag: "v1.36.3"
 devicePlugin:
-  # k3s 只探测出 nvidia containerd runtime、不设默认 → device plugin 与租户 Pod
-  # 都必须显式 runtimeClassName(租户侧由 gpu_adapter 按 distro=k3s 下发)
+  # k3s 不设默认运行时:device plugin 与租户 Pod 都显式 runtimeClassName(租户侧由 gpu_adapter 按 distro=k3s 下发)
   runtimeClassName: "nvidia"

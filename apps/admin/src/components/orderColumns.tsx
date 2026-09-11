@@ -1,4 +1,4 @@
-/** 充值订单列(财务·充值流水 与 租户抽屉·订单 Tab 共用);withTenant 决定是否带「租户」列。 */
+/** 充值订单列(两处共用);withTenant 决定是否带「租户」列。 */
 
 import { formatDateTime, metaOf, orderStatusMap, paymentChannelMap } from "@superdl/ui";
 import { HexTag } from "@superdl/ui/components";

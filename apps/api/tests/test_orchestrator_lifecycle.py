@@ -33,7 +33,7 @@ pytestmark = pytest.mark.usefixtures("fake")
 
 class TestCreateLifecycle:
     async def test_idem_key_param_mismatch_409(self, client, sm, fake):
-        """同键异参(改了 GPU 数):显式 409,绝不静默返回上一台实例(弱键复用防线)。"""
+        """同键异参(改了 GPU 数):409,不返回上一台实例。"""
         headers, user_id, key_id = await create_user_with_key(client, "13900000031")
         await fund_wallet(sm, user_id)
         sku_id = await create_test_sku(sm)
@@ -61,7 +61,7 @@ class TestCreateLifecycle:
         assert data["status"] == "creating"
         uuid = data["uuid"]
 
-        # outbox worker 建 Pod(drain_strict:断言任务成功而非仅被处理)
+        # outbox worker 建 Pod(drain_strict 断言任务成功)
         assert await drain_strict(sm) == (1, 0)
         assert (f"tenant-{user_id}", uuid) in fake.pods
         data = await get_instance(client, headers, uuid)
@@ -86,7 +86,7 @@ class TestCreateLifecycle:
             (None, "creating"),
         ]
 
-        # 接入信息:jupyter_url 是一次性 bootstrap 票据(不含 token 本体)
+        # jupyter_url 是一次性 bootstrap 票据(不含 token 本体)
         access = (await client.get(f"/api/v1/instances/{uuid}/access", headers=headers)).json()
         assert access["ssh_command"].startswith("ssh root@")
         assert uuid in access["jupyter_url"]
@@ -161,7 +161,7 @@ class TestStopStartRestart:
         # 端口保留(关机不释放端口)
         port_before = (await get_instance(client, headers, uuid))["ssh_port"]
 
-        # 实例盘活过关机:关机=删 Pod,盘是平台自管生命周期的具名 PVC,不随 Pod 走
+        # 实例盘活过关机(具名 PVC 不随 Pod 走)
         disk_before = fake.instance_disks[(f"tenant-{user_id}", uuid)]
 
         resp = await client.post(f"/api/v1/instances/{uuid}/start", headers=headers)
@@ -175,8 +175,7 @@ class TestStopStartRestart:
         assert fake.instance_disks[(f"tenant-{user_id}", uuid)] == disk_before
 
     async def test_restart_waits_for_pod_to_actually_disappear(self, client, sm, fake):
-        """重启必须等对象真正消失再同名重建,否则撞 409 被当幂等跳过 = Pod 没建出来。
-        Fake 默认把删除建模成同步瞬时,本用例显式打开 graceful_delete。"""
+        """重启等对象真正消失再同名重建;Fake 显式打开 graceful_delete。"""
         from app.core.outbox import OutboxTask
 
         headers, uuid, user_id = await provision_running(client, sm, fake)
@@ -185,7 +184,7 @@ class TestStopStartRestart:
 
         await client.post(f"/api/v1/instances/{uuid}/restart", headers=headers)
         await drain(sm)
-        # 优雅期内不许推进:实例留在 stopping,任务退避重试(不是 done、也不是 dead)
+        # 优雅期内实例留在 stopping,任务退避重试
         assert (await get_instance(client, headers, uuid))["status"] == "stopping"
         async with sm() as session:
             task = (
@@ -197,7 +196,7 @@ class TestStopStartRestart:
             task.next_retry_at = now_utc()  # 快进退避
             await session.commit()
 
-        # 优雅期结束、对象真正消失 → 下一次重试续跑完整条链
+        # 优雅期结束 → 下一次重试续跑完整条链
         fake.finish_delete(ns, uuid)
         fake.graceful_delete = False
         await drain(sm)
@@ -206,7 +205,7 @@ class TestStopStartRestart:
         fake.mark_ready(ns, uuid)
         await reconcile_once(sm)
         assert (await get_instance(client, headers, uuid))["status"] == "running"
-        # 完整链路每个边都留事件:stopping → stopped(尾账边)→ starting → running
+        # 每个边都留事件:stopping → stopped → starting → running
         events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
             "items"
         ]
@@ -224,20 +223,20 @@ class TestStopStartRestart:
 
 class TestFailureModes:
     async def test_pod_lost_marks_failed_and_stops_billing(self, client, sm, fake):
-        """验收:kill pod 后(一轮 reconcile 内)DB 转 failed 并停止计费。"""
+        """kill pod 后一轮 reconcile 内 DB 转 failed 并停止计费。"""
         headers, uuid, user_id = await provision_running(client, sm, fake)
         fake.kill_pod(f"tenant-{user_id}", uuid)
         counts = await reconcile_once(sm)
         assert counts["to_failed"] == 1
         data = await get_instance(client, headers, uuid)
         assert data["status"] == "failed"
-        # 计费边:running→failed 事件在案(结算按此停费)
+        # running→failed 事件在案(结算据此停费)
         events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
             "items"
         ]  # 降序:items[0] 是最新事件
         assert events[0]["from_status"] == "running"
         assert events[0]["to_status"] == "failed"
-        # 盘不动:pod_lost 是故障不是终结,用户释放前数据必须还在
+        # 盘不动(pod_lost 不是终结)
         assert (f"tenant-{user_id}", uuid) in fake.instance_disks
         # 端口已回收
         async with sm() as session:
@@ -245,13 +244,12 @@ class TestFailureModes:
         assert all(p is None for p in ports)
 
     async def test_node_lost_stops_billing_and_notifies(self, client, sm, fake):
-        """节点失联时 Pod 停在 phase=Running 只有 Ready 转 False:RUNNING 分支若只看
-        exists 与 phase,实例会一直显示运行中并持续计费。"""
+        """节点失联时 Pod phase=Running 只有 Ready=False:RUNNING 分支必须看 Ready。"""
         headers, uuid, user_id = await provision_running(client, sm, fake)
         ns = f"tenant-{user_id}"
         fake.mark_unready(ns, uuid)
 
-        # 宽限期内不误杀(容器重启、镜像层重挂这类抖动)
+        # 宽限期内不误杀
         assert (await reconcile_once(sm))["to_failed"] == 0
         assert (await get_instance(client, headers, uuid))["status"] == "running"
         # 恢复即清零计时
@@ -277,17 +275,17 @@ class TestFailureModes:
 
         data = await get_instance(client, headers, uuid)
         assert data["status"] == "failed"
-        # 计费边闭合:running→failed 事件在案,结算据此停费
+        # running→failed 事件在案
         events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
             "items"
         ]  # 降序:items[0] 是最新事件
         assert (events[0]["from_status"], events[0]["to_status"]) == ("running", "failed")
         assert events[0]["reason"] == "node_lost"
-        # 截断依据在事件里:计费按 unready_since 截断(宽限观察期不计费)
+        # 计费按 unready_since 截断
         assert events[0]["event_metadata"]["unready_since"] is not None
-        # 强删:失联节点上的 Pod 只有 grace=0 才会从 etcd 消失
+        # 强删:grace=0
         assert (ns, uuid) not in fake.pods
-        # 用户拿到了通知,而不是自己发现 SSH 连不上
+        # 用户收到通知
         notes = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
         assert any("节点失联" in n["title"] for n in notes)
 
@@ -299,8 +297,7 @@ class TestFailureModes:
         uuid = data["uuid"]
         await drain(sm)  # Pod 已建但永不 Ready(auto_ready=False)
 
-        # 回拨「进入 creating」的事件时刻超过 5 分钟超时线
-        # (超时基准是事件时刻而非 updated_at:后者被 handler 回填字段重置)
+        # 「进入 creating」事件时刻回拨超过 5 分钟超时线(超时基准是事件时刻,不是 updated_at)
         async with sm() as session:
             inst_id = (
                 await session.execute(select(Instance.id).where(Instance.uuid == uuid))
@@ -319,17 +316,16 @@ class TestFailureModes:
         assert counts["to_failed"] == 1
         assert (await get_instance(client, headers, uuid))["status"] == "failed"
         assert (f"tenant-{user_id}", uuid) not in fake.pods  # 已清理
-        # 首开就没起来 = 盘从未承载数据,一并回收不留孤儿 LV;
-        # Pod 刚消失/将消失时经 outbox disk_cleanup 延迟回收(pvc-protection)
+        # 首开失败:盘一并回收(Pod 未消失时经 outbox disk_cleanup 延迟回收)
         await drain(sm)
         await reconcile_once(sm)
         assert (f"tenant-{user_id}", uuid) not in fake.instance_disks
-        # 创建失败主动通知用户(未计费),不必等用户刷新才发现
+        # 创建失败通知用户
         notes = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
         assert any("调度超时" in n["title"] for n in notes)
 
     async def test_leaked_pod_reclaimed(self, client, sm, fake):
-        """验收:DB 无主的泄漏 Pod 被回收(泄漏的 Pod 占着算力却无账可计)。"""
+        """DB 无主的泄漏 Pod 被回收。"""
         headers, uuid, user_id = await provision_running(client, sm, fake)
         ns = f"tenant-{user_id}"
         leaked_spec = fake.pods[(ns, uuid)].spec
@@ -342,7 +338,7 @@ class TestFailureModes:
 
 
 class _Clock:
-    """可推进的假时钟(注入 reconciler 的 now_utc):跨轮次拉开宽限窗,不碰任何 DB 字段。"""
+    """可推进的假时钟(注入 reconciler 的 now_utc)。"""
 
     def __init__(self) -> None:
         self.offset = timedelta()
@@ -352,12 +348,8 @@ class _Clock:
 
 
 class TestUnreadyTimer:
-    """not-ready 计时器必须跨轮次累积(reconciler.unready_since)。
-
-    它挂了说明:计时器被写入后又在同一事务里抹掉,超时分支成死代码——卡在
-    Running-but-not-ready 的 Pod 永不判故障、按小时一直计费,平台责任的计费截断
-    (settlement._TRUNCATE_REASONS)与失联通知也一并失效。
-    """
+    """not-ready 计时器跨轮次累积(reconciler.unready_since);
+    挂了 = 超时分支成死代码,失联实例永远计费。"""
 
     @staticmethod
     async def _unready_since(sm, uuid: str):
@@ -368,7 +360,7 @@ class TestUnreadyTimer:
 
     @staticmethod
     def _pin(monkeypatch, clock: _Clock) -> None:
-        """宽限窗钉死 600s(不受 .env 影响),时钟交给用例推进。"""
+        """宽限窗钉死 600s,时钟由用例推进。"""
         from app.core.config import get_settings
         from app.modules.orchestrator import reconciler as reconciler_mod
 
@@ -376,23 +368,19 @@ class TestUnreadyTimer:
         monkeypatch.setattr(reconciler_mod, "now_utc", clock)
 
     async def test_timer_accumulates_across_rounds_then_fails(self, client, sm, fake, monkeypatch):
-        """两轮巡检跨过宽限窗即判失联:第一轮起表、第二轮到点。
-
-        全程只动假时钟与 Pod 就绪态——直接 UPDATE unready_since 的写法会让本用例
-        对着自己塞的值断言,恰好绕开这个缺陷。
-        """
+        """两轮巡检跨过宽限窗即判失联:第一轮起表、第二轮到点。"""
         headers, uuid, user_id = await provision_running(client, sm, fake, phone="13900000045")
         ns = f"tenant-{user_id}"
         clock = _Clock()
         self._pin(monkeypatch, clock)
 
-        # 第一轮:观测到 not-ready,只起表不判故障
+        # 第一轮:起表不判故障
         fake.mark_unready(ns, uuid)
         assert (await reconcile_once(sm))["to_failed"] == 0
         first_seen = await self._unready_since(sm, uuid)
         assert first_seen is not None  # 计时器必须留在库里,下一轮才有得比
 
-        # 第二轮:同一个 not-ready 持续到宽限窗外 → 判失联
+        # 第二轮:持续到宽限窗外 → 判失联
         clock.offset = timedelta(seconds=601)
         assert (await reconcile_once(sm))["to_failed"] == 1
         assert (await get_instance(client, headers, uuid))["status"] == "failed"
@@ -402,18 +390,14 @@ class TestUnreadyTimer:
         ]  # 降序:items[0] 是最新事件
         assert (events[0]["from_status"], events[0]["to_status"]) == ("running", "failed")
         assert events[0]["reason"] == "node_lost"
-        # 首次不就绪的时刻进了事件 metadata:结算据此把宽限观察期从账单里截掉
+        # 首次不就绪时刻进事件 metadata
         assert events[0]["event_metadata"]["unready_since"] == ensure_utc(first_seen).isoformat()
-        # 失联要主动告知用户,不是等他自己发现 SSH 连不上
+        # 失联通知用户
         notes = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
         assert any("节点失联" in n["title"] for n in notes)
 
     async def test_recovery_restarts_the_timer(self, client, sm, fake, monkeypatch):
-        """抖动恢复要真的重新计时:ready 那一轮清表,之后重新不就绪从零起算。
-
-        挂了 = 计时器只清不写(实例再不就绪也不判故障),或只写不清
-        (一次抖动过后累计到窗外,把健康实例误打成 failed)。
-        """
+        """抖动恢复重新计时:ready 那轮清表,再次不就绪从零起算。"""
         headers, uuid, user_id = await provision_running(client, sm, fake, phone="13900000046")
         ns = f"tenant-{user_id}"
         clock = _Clock()
@@ -430,7 +414,7 @@ class TestUnreadyTimer:
         assert (await reconcile_once(sm))["to_failed"] == 0
         assert await self._unready_since(sm, uuid) is None
 
-        # 再次不就绪:已越过「首次不就绪 + 宽限」,但计时从这一轮重新起算 → 不判故障
+        # 再次不就绪:计时从这一轮重新起算 → 不判故障
         fake.mark_unready(ns, uuid)
         clock.offset = timedelta(seconds=660)
         assert (await reconcile_once(sm))["to_failed"] == 0
@@ -439,7 +423,7 @@ class TestUnreadyTimer:
         assert ensure_utc(restarted) - ensure_utc(first_seen) > timedelta(seconds=600)
         assert (await get_instance(client, headers, uuid))["status"] == "running"
 
-        # 新一轮计时到点才判故障,截断依据用的是重启后的时刻
+        # 新一轮计时到点才判故障,截断依据是重启后的时刻
         clock.offset = timedelta(seconds=1262)
         assert (await reconcile_once(sm))["to_failed"] == 1
         events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
@@ -469,7 +453,7 @@ class TestRelease:
         instances = (await client.get("/api/v1/instances", headers=headers)).json()["items"]
         assert uuid not in [i["uuid"] for i in instances]
 
-        # 盘真的被销毁了(两阶段:盘删除走 instance.disk_cleanup outbox,drain 后落终态)
+        # 盘销毁(instance.disk_cleanup outbox,drain 后终态)
         await drain(sm)
         events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
             "items"
@@ -490,7 +474,7 @@ class TestRelease:
         assert resp.json()["code"] == "INSTANCE_NOT_STOPPED"
 
     async def test_release_is_idempotent(self, client, sm, fake):
-        """重复 DELETE 不报 400:releasing/released 态直接回当前状态(照 delete_disk 写法)。"""
+        """重复 DELETE:releasing/released 态回当前状态,不报 400。"""
         headers, uuid, _user_id = await provision_running(client, sm, fake)
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
@@ -498,7 +482,7 @@ class TestRelease:
 
         resp = await client.delete(f"/api/v1/instances/{uuid}", headers=headers)
         assert resp.json()["status"] == "releasing"
-        # 响应丢失后重试/双击:回当前状态而非 INSTANCE_NOT_STOPPED
+        # 重试/双击回当前状态
         resp = await client.delete(f"/api/v1/instances/{uuid}", headers=headers)
         assert resp.status_code == 200
         assert resp.json()["status"] == "releasing"
@@ -532,11 +516,11 @@ class TestRelease:
         ids = [e["id"] for e in page1["items"] + page2["items"]]
         assert ids == sorted(ids, reverse=True)  # 全局降序
         assert page2["next_cursor"] is None
-        # 事件总数与全量一致(creating→running→stopping→stopped 共 4 条)
+        # 事件总数 4 条(creating→running→stopping→stopped)
         assert len(ids) == 4
 
     async def test_release_failed_instance_leaves_list(self, client, sm, fake):
-        """失败实例可被释放并出清列表(failed 若无出边,用户永远删不掉它)。"""
+        """失败实例可被释放并出清列表。"""
         headers, uuid, user_id = await provision_running(client, sm, fake)
         fake.kill_pod(f"tenant-{user_id}", uuid)  # 故障 → failed
         await reconcile_once(sm)
@@ -556,7 +540,7 @@ class TestRelease:
         assert [e["to_status"] for e in events][:3] == ["released", "releasing", "failed"]
 
     async def test_cancel_creating_instance(self, client, sm, fake):
-        """调度长期不满足时用户可主动取消 creating(不必干等超时);creating 未计费,零扣费。"""
+        """creating 可被用户主动取消,零扣费。"""
         headers, user_id, key_id = await create_user_with_key(client, "13900000041")
         await fund_wallet(sm, user_id)
         sku_id = await create_test_sku(sm)
@@ -570,7 +554,7 @@ class TestRelease:
         counts = await reconcile_once(sm)
         assert counts["to_released"] == 1
 
-        # 列表不再出现;事件链 creating → releasing → released,且从未进入 running(零 GPU 时费)
+        # 列表不再出现;事件链 creating → releasing → released,从未进入 running
         instances = (await client.get("/api/v1/instances", headers=headers)).json()["items"]
         assert uuid not in [i["uuid"] for i in instances]
         events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
@@ -601,8 +585,7 @@ class TestPortPool:
         assert data["ssh_port"] is None
 
     async def test_excluded_port_is_skipped(self, client, sm, fake, monkeypatch):
-        """已知被集群其它对象占用的 NodePort 一开始就不分配。
-        (分配是段内随机的;断言不落 excluded、不低于 start,不钉具体端口)"""
+        """已知被占用的 NodePort 不分配(分配段内随机,只断言不落 excluded、不低于 start)。"""
         from app.core.config import get_settings
 
         settings = get_settings()
@@ -618,9 +601,7 @@ class TestPortPool:
         assert port not in (31500, 31501) and 31500 < port <= 32767
 
     async def test_taken_node_port_is_blocked_and_recovered(self, client, sm, fake, monkeypatch):
-        """撞上被占 NodePort 后必须能自愈(端口标 blocked 并换一个重试),否则撞占端口
-        反复被分出,此后所有命中的新建实例全部失败。
-        (分配是段内随机的:首个分出端口动态拦截,不再钉死 31800)"""
+        """撞上被占 NodePort 后自愈:端口标 blocked 并换一个重试(首个分出端口动态拦截)。"""
         from app.core.config import get_settings
         from app.core.k8s import NodePortTaken
 
@@ -632,7 +613,7 @@ class TestPortPool:
         original = fake.create_instance
 
         async def guarded(spec):
-            # 首个分出的端口模拟被集群其它对象硬占(只撞这一次),之后放行
+            # 首个分出的端口只撞这一次,之后放行
             if not taken:
                 taken.add(spec.ssh_node_port)
                 raise NodePortTaken(spec.ssh_node_port)
@@ -646,7 +627,7 @@ class TestPortPool:
         data = await create_instance_api(client, headers, sku_id, key_id)
         await drain(sm)
 
-        # 第一次撞上 → 端口被标 blocked(独立事务,不随失败事务回滚)
+        # 端口标 blocked(独立事务)
         assert len(taken) == 1
         taken_port = next(iter(taken))
         async with sm() as session:
@@ -657,7 +638,7 @@ class TestPortPool:
             ).scalar_one()
         assert row.blocked is True and row.instance_id is None
 
-        # 重试:分配器绕开被标记的端口,实例正常起来
+        # 重试绕开被标记端口
         async with sm() as session:
             await session.execute(
                 update(OutboxTask)
@@ -706,7 +687,7 @@ class TestAdminOps:
 
 class TestInventoryProvider:
     async def test_market_inventory_reflects_fake_capacity(self, client, sm, fake):
-        """市场库存按 (池, canonical 型号) 从节点台账估算(请求路径不碰 K8s)。"""
+        """市场库存按 (池, canonical 型号) 从节点台账估算。"""
         await create_test_sku(sm)  # hami 池,50% 算力,超卖 1.5
         await seed_node_spec(sm)  # 台账:hami 池 32 张 RTX4090 全空闲
         skus = (await client.get("/api/v1/skus")).json()
@@ -714,7 +695,7 @@ class TestInventoryProvider:
         assert skus[0]["available_count"] == 96
 
     async def test_market_inventory_excludes_not_ready_nodes(self, client, sm, fake):
-        """台账里 NotReady / Cordoned 节点的卡不计入可售库存(防止卖出调度不上的卡)。"""
+        """NotReady / Cordoned 节点的卡不计入可售库存。"""
         await create_test_sku(sm)
         await seed_node_spec(sm, node_name="nr", status="NotReady")
         skus = (await client.get("/api/v1/skus")).json()
@@ -723,8 +704,7 @@ class TestInventoryProvider:
 
 class TestImageRefValidation:
     def test_digest_pinned_ref_accepted(self):
-        """形态校验必须同时收 tag + digest:钉不了 digest 就只能按 tag 拉,会经 Spegel 拿到
-        节点缓存的旧镜像,重推的修复永远到不了实例。"""
+        """镜像形态校验同时收 tag + digest。"""
         from app.core.registry import is_valid_image_ref
 
         d = "a" * 64
@@ -734,13 +714,13 @@ class TestImageRefValidation:
         assert is_valid_image_ref(f"harbor.example.com:10031/superdl/pytorch:2.13.0@sha256:{d}")
         assert is_valid_image_ref(f"harbor.example.com/superdl/pytorch@sha256:{d}")  # 纯 digest
         assert is_valid_image_ref("harbor.example.com/superdl/pytorch:2.13.0-cu132-py313")  # 纯 tag
-        # 手抄错一位不能放过:长度不足、大写十六进制、算法名写错
+        # 长度不足、大写十六进制、算法名写错都拒
         assert not is_valid_image_ref(f"harbor.example.com/superdl/pytorch:t@sha256:{'a' * 63}")
         assert not is_valid_image_ref(f"harbor.example.com/superdl/pytorch:t@sha256:{'A' * 64}")
         assert not is_valid_image_ref(f"harbor.example.com/superdl/pytorch:t@sha512:{d}")
 
     def test_admin_image_schema_rejects_malformed_ref(self):
-        """管理端写入路径也要挡:抄错的 ref 若能入库,要等用户创建实例才报错。"""
+        """管理端写入路径同样校验 ref 形态。"""
         import pytest as _pytest
         from pydantic import ValidationError
 
@@ -818,11 +798,8 @@ class TestImageRefValidation:
 
 
 class TestServiceWorkloadUnreadyExemption:
-    """服务型实例持续 not-ready 时不判故障(reconciler._running_pod_lost_reason)。
-
-    它挂了说明:平台把用户容器自己的问题(readinessProbe 不过)判成实例故障。豁免只针对
-    「节点好好的、就是这个容器不就绪」,pod_lost 与 node_lost 两支对两种形态一视同仁。
-    """
+    """服务型实例持续 not-ready 不判故障(reconciler._running_pod_lost_reason);
+    节点失联不豁免。"""
 
     @staticmethod
     async def _reason(
@@ -842,7 +819,7 @@ class TestServiceWorkloadUnreadyExemption:
                 status="running",
                 jupyter_token="enc:v2:x",
                 workload_type=workload_type,
-                # 已经超过下面传入的宽限窗
+                # 已超过传入的宽限窗
                 unready_since=now_utc() - timedelta(hours=1),
             ),
             st,
@@ -861,7 +838,7 @@ class TestServiceWorkloadUnreadyExemption:
         assert reason is None
 
     async def test_service_still_fails_when_node_lost(self):
-        """节点真失联时不豁免:那不是用户容器的问题,实例已不可用,继续计费才是错的。"""
+        """节点真失联时不豁免。"""
         reason = await self._reason("service", self._UNREADY, node_not_ready=True)
         assert reason == "node_lost"
 
@@ -870,7 +847,7 @@ class TestServiceWorkloadUnreadyExemption:
         assert reason == "pod_lost"
 
     async def test_service_still_fails_when_pod_evicted(self):
-        """running 态的删除一定不是我们发起的(被驱逐/被外部删除)。"""
+        """running 态的删除一定是外部发起(被驱逐/外部删除)。"""
         reason = await self._reason(
             "service",
             PodStatus(exists=True, ready=False, phase="Running", deleting=True),

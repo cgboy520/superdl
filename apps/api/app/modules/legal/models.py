@@ -16,10 +16,8 @@ from app.core.db import Base
 
 
 class LegalDocVersion(Base):
-    """法务文档版本。(doc_key, locale, version) 唯一;
-    部分唯一索引保证每 (doc_key, locale) 至多一条 published(发布事务把旧版转 archived)。
-
-    published_by/published_at 仅 published 落;预置版本发布人留空(系统预置)。
+    """法务文档版本。(doc_key, locale, version) 唯一;每 (doc_key, locale) 至多一条 published。
+    published_by/published_at 仅 published 落;预置版本发布人留空。
     """
 
     __tablename__ = "legal_doc_versions"

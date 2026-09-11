@@ -1,21 +1,7 @@
-# 租户与平台 SA 的准入约束(ValidatingAdmissionPolicy,API Server 内置,无 webhook 依赖)。
-#
-# 先决条件:K8s ≥ 1.30(VAP GA)。非 helm release(helmfile.yaml.gotmpl 末尾有说明),
-# 由 ../apply.sh 在 helmfile 之前无条件 apply:本文件全是 cluster-scoped 对象,归集群层
-# 流水线;不放进 deploy/app/k8s/kustomization.yaml —— 那份是 namespace-scoped 应用清单,
-# 发布流水线(scripts/release.sh)不该因此需要集群级 VAP 写权限。手工等价:
-#   kubectl apply -f admission/tenant-restrictions.yaml
-# 两道强制:preflight.sh(apply 前)与 scripts/release.sh(滚动前)都断言七个 Binding 存在
-# 且 validationActions 含 Deny。缺 Binding 是**静默 fail-open**:failurePolicy: Fail 只在策略
-# 被求值时才拦得住,策略/Binding 压根没装的集群等于全放行,而 tenant-mgr 手里的
-# `pods:create` 是全命名空间的、`roles:escalate,bind` 也是 —— 少了①,它约等于 cluster-admin。
-# 回滚:`kubectl delete -f admission/tenant-restrictions.yaml`(先删 Binding 即失效)。
-#
-# 规则与平台实际行为对齐,不会误伤正常编排:
-#   - worker 只写 superdl/tenant-* 命名空间 + nodes(patch);namespace 只建 tenant-*;
-#   - 租户 Pod 本身即 automountServiceAccountToken: false、无 hostPath/host*、
-#     hostUsers 仅 shared/mig 档显式 false(dedicated/Kata 档不传,VM 级隔离不叠 userns)。
-# 本文件只约束创建/更新/删除,读(get/list)不经过准入层,无需在此放行。
+# 租户与平台 SA 的准入约束(ValidatingAdmissionPolicy,K8s ≥ 1.30)。cluster-scoped,非 helm release,
+# 由 ../apply.sh 在 helmfile 之前 apply(手工:kubectl apply -f admission/tenant-restrictions.yaml);
+# preflight.sh 与 scripts/release.sh 都断言七个 Binding 存在且 validationActions 含 Deny(缺 Binding = fail-open)。
+# 回滚:kubectl delete -f admission/tenant-restrictions.yaml。只约束 CREATE/UPDATE/DELETE,读不经准入层。
 #
 # 策略清单:
 #   ① superdl-platform-sa-scope          平台 SA 写操作范围(superdl/tenant-* ns + nodes)[Deny]
@@ -27,14 +13,8 @@
 #   ⑦ superdl-node-delete-scope          平台 SA 只能删 GPU 工作节点,控制面/infra 节点锁死 [Deny]
 
 ---
-# 策略一:平台 SA 的写操作范围钉死(superdl ns 全部 ServiceAccount,按前缀匹配)。
-# RBAC 因 tenant-* 动态创建只能给 ClusterRole(见 deploy/app/k8s/01-rbac.yaml),
-# 本策略把 ClusterRole 的实际可达面收窄到目标命名空间,二者叠加才是完整最小权限。
-#
-# ⚠ 本策略只按 `request.userInfo.username` 匹配,故只覆盖平台 SA **直接**发起的写:
-# 平台 SA 建的 Job 派生出的 Pod,创建者是 system:serviceaccount:kube-system:job-controller,
-# 不进本策略。命名空间维度没有漏洞(Job 落哪个 ns 已在本策略被卡死,Pod 只能同 ns),
-# 但「Pod 能引用哪些 Secret」必须另外覆盖 job-controller —— 那是策略⑤⑥的事。
+# 策略一:平台 SA(superdl ns 全部 SA,按前缀)的写操作范围,把 01-rbac.yaml 的 ClusterRole 收窄到目标 ns。
+# 只按 request.userInfo.username 匹配:Job 派生 Pod 的创建者是 kube-system:job-controller,由策略⑤⑥覆盖。
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -46,32 +26,29 @@ spec:
       - apiGroups: ["*"]
         apiVersions: ["*"]
         resources: ["*"]
-        # VAP 的 operations 只认 CREATE/UPDATE/DELETE/CONNECT/*:PATCH 请求在准入层以 UPDATE 呈现,
-        # 写 "PATCH" 会被 apiserver 拒绝整条策略(binding 建了、policy 缺失 = 静默失效)
+        # operations 不能写 PATCH(准入层以 UPDATE 呈现)
         operations: ["CREATE", "UPDATE", "DELETE"]
         scope: "*"
   matchConditions:
-    # 全部平台 SA(api / core worker / tenant-mgr / node-mgr / prewarm / disk-ops;
-    # 新增 SA 由前缀自动纳入,无需改本策略)
+    # 全部平台 SA,新增 SA 由前缀自动纳入
     - name: platform-sa-only
       expression: "request.userInfo.username.startsWith('system:serviceaccount:superdl:')"
   validations:
-    # namespace 对象本身:只允许创建/删除 tenant-*(平台从不删 ns,删除也仅放行 tenant-*)
+    # namespace 对象:只允许创建/删除 tenant-*
     - expression: >-
         !(request.resource.group == '' && request.resource.resource == 'namespaces') ||
         (request.operation == 'DELETE'
           ? oldObject.metadata.name.startsWith('tenant-')
           : object.metadata.name.startsWith('tenant-'))
       message: "平台 SA 只能创建/删除 tenant-* 命名空间"
-    # namespace 创建必须携带 superdl.io/managed=true(策略二的 namespaceSelector 锚点):
-    # 不打标的 tenant-*(注入或 bug 建出)会让整个 Pod 基线被静默绕过
+    # namespace 创建必须带 superdl.io/managed=true(策略二的 namespaceSelector 锚点)
     - expression: >-
         !(request.resource.group == '' && request.resource.resource == 'namespaces') ||
         request.operation != 'CREATE' ||
         (has(object.metadata.labels) && 'superdl.io/managed' in object.metadata.labels &&
          object.metadata.labels['superdl.io/managed'] == 'true')
       message: "创建 tenant-* 命名空间必须携带 superdl.io/managed=true 标签(Pod 基线锚点)"
-    # tenant-* 的 managed 标签不可摘除(摘除即基线失效;平台收敛 patch 恒带标签,不受影响)
+    # tenant-* 的 managed 标签不可摘除
     - expression: >-
         !(request.resource.group == '' && request.resource.resource == 'namespaces') ||
         request.operation != 'UPDATE' ||
@@ -79,29 +56,21 @@ spec:
         (has(object.metadata.labels) && 'superdl.io/managed' in object.metadata.labels &&
          object.metadata.labels['superdl.io/managed'] == 'true')
       message: "tenant-* 命名空间的 superdl.io/managed=true 标签不可摘除"
-    # 其余资源:命名空间内只能写 superdl 或 tenant-*;集群级只放行 nodes(cordon/标签 patch)。
-    # 集群级请求的 request 里**没有 namespace 键**(不是空串):不加 has() 守卫,CEL 求值报
-    # no such key 而按 failurePolicy: Fail 拒绝,现象是节点标签/cordon 全部 422、实例永远调度不上
+    # 其余资源:命名空间内只能写 superdl 或 tenant-*;集群级只放行 nodes。
+    # 集群级请求没有 namespace 键,必须 has() 守卫
     - expression: >-
         (request.resource.group == '' && request.resource.resource == 'namespaces') ||
         (has(request.namespace) &&
          (request.namespace == 'superdl' || request.namespace.startsWith('tenant-'))) ||
         (!has(request.namespace) && request.resource.group == '' && request.resource.resource == 'nodes')
       message: "平台 SA 的写操作仅限 superdl/tenant-* 命名空间与 nodes"
-    # roles/rolebindings 再收窄一档到 tenant-*:tenant-mgr 持有 escalate/bind
-    # (不持有集群级 secrets 却要下发租户 ns 内的 secrets Role,否则 apiserver 提权防护 403),
-    # 放开 superdl ns 等于允许它给自己授出平台 ns 的 secrets —— 恰好是不授集群级 secrets 要防的事
+    # roles/rolebindings 只许写 tenant-*(tenant-mgr 持有 escalate/bind)
     - expression: >-
         !(request.resource.group == 'rbac.authorization.k8s.io' &&
           (request.resource.resource == 'roles' || request.resource.resource == 'rolebindings')) ||
         (has(request.namespace) && request.namespace.startsWith('tenant-'))
       message: "平台 SA 只能在 tenant-* 命名空间写 roles/rolebindings"
-    # Secret 类型收窄:平台只建 kubernetes.io/dockerconfigjson(拉取凭据,real.py
-    # _ensure_pull_secret_sync)与不带 type 的 Opaque(per-instance env)。
-    # kubernetes.io/service-account-token 类型由 token 控制器自动灌入 annotation 指定
-    # SA 的长期令牌 —— 允许平台 SA 建这种 Secret,等于允许它为任意 SA 铸出一个令牌载体;
-    # prewarm 在 superdl ns 恰好持有 secrets:get(resourceNames 白名单 superdl-registry-pull),
-    # 该名字尚不存在时即可用这条路把自己升成别的 SA。平台侧零使用,直接禁掉。
+    # 禁建 kubernetes.io/service-account-token 类型 Secret;平台只建 dockerconfigjson(real.py _ensure_pull_secret_sync)与 Opaque
     - expression: >-
         !(request.resource.group == '' && request.resource.resource == 'secrets') ||
         request.operation == 'DELETE' ||
@@ -115,13 +84,10 @@ metadata:
   name: superdl-platform-sa-scope
 spec:
   policyName: superdl-platform-sa-scope
-  validationActions: [Deny]   # 七条恒为 Deny,无 Audit 观察档(preflight.sh 与 release.sh 均断言含 Deny)
+  validationActions: [Deny]   # 七条恒为 Deny,无 Audit 档
 
 ---
-# 策略二:租户命名空间(平台打标 superdl.io/managed=true)内的 Pod 安全基线,
-# 防的是平台被注入/编排逻辑出 bug 时创建出越权 Pod;正常租户 Pod 全部满足。
-# 含 NVIDIA_* env 禁入(伪造 GPU 可见性 = 看到同机全部显卡;device-plugin 注入
-# 不经 apiserver,零误伤)。
+# 策略二:租户命名空间(superdl.io/managed=true)内的 Pod 安全基线;正常租户 Pod 全部满足。
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -139,8 +105,7 @@ spec:
         operations: ["CREATE", "UPDATE"]
         scope: "Namespaced"
   validations:
-    # 可选列表字段必须先 has() 再 exists():CEL 访问未设置字段会报错,在 failurePolicy: Fail
-    # 下等同于拒绝(租户 Pod 恰好没有 initContainers/ephemeralContainers)。
+    # 可选列表字段必须先 has() 再 exists()
     - expression: >-
         !object.spec.containers.exists(c, has(c.securityContext) && has(c.securityContext.privileged) && c.securityContext.privileged) &&
         (!has(object.spec.initContainers) || !object.spec.initContainers.exists(c, has(c.securityContext) && has(c.securityContext.privileged) && c.securityContext.privileged)) &&
@@ -153,18 +118,15 @@ spec:
         (!has(object.spec.hostPID) || object.spec.hostPID == false) &&
         (!has(object.spec.hostIPC) || object.spec.hostIPC == false)
       message: "租户 Pod 禁止 hostNetwork/hostPID/hostIPC"
-    # dedicated(Kata)档不传 hostUsers(VM 级隔离,hostUsers 与 Kata 互斥);
-    # 共享路径(shared/mig/cpu,runc)必须显式 false:userns 是容器 root 与宿主 root
-    # 之间唯一的边界,字段缺失 = 静默退回共享宿主 uid 命名空间,比显式 true 更隐蔽。
+    # Kata 档不传 hostUsers;runc 路径(shared/mig/cpu)必须显式 false
     - expression: >-
         (has(object.spec.runtimeClassName) && object.spec.runtimeClassName == 'kata-qemu') ||
         (has(object.spec.hostUsers) && object.spec.hostUsers == false)
       message: "非 Kata 租户 Pod 必须显式 hostUsers: false(userns 隔离);Kata 档由 VM 隔离,不传该字段"
-    # 平台创建租户 Pod 时恒为 false;禁止任何 SA token 挂进租户容器
+    # 禁止 SA token 挂进租户容器
     - expression: "has(object.spec.automountServiceAccountToken) && object.spec.automountServiceAccountToken == false"
       message: "租户 Pod 必须 automountServiceAccountToken: false"
-    # 以下三条把 pod builder 的加固(real.py tenant_security_context)从「约定」升级为
-    # 「准入强制」:编排逻辑出 bug 或被注入时,缺加固的 Pod 在创建时即被拒。
+    # 以下三条与 real.py tenant_security_context 同口径
     - expression: >-
         object.spec.containers.all(c, has(c.securityContext) && has(c.securityContext.allowPrivilegeEscalation) && c.securityContext.allowPrivilegeEscalation == false)
       message: "租户容器必须显式 allowPrivilegeEscalation: false"
@@ -177,26 +139,17 @@ spec:
         object.spec.containers.all(c, has(c.securityContext) && has(c.securityContext.seccompProfile) &&
           has(c.securityContext.seccompProfile.type) && c.securityContext.seccompProfile.type == 'RuntimeDefault')
       message: "租户容器必须 seccompProfile: RuntimeDefault"
-    # 租户 Pod 一律走 nodeSelector(独享池经标签绑节点):nodeName 是调度器旁路,
-    # 平台创建路径从不设置(real.py 仅 node_selector),CREATE 时出现即异常。
-    # UPDATE 必须放行「已绑定且未变」的 nodeName:调度器 Bind 之后 Pod 天然带 nodeName,
-    # kubelet Allocate 阶段 HAMi device plugin 回写 hami.io/* 注解就是一次 UPDATE,
-    # 一刀切 !has() 会让所有共享档 Pod 在 Allocate 时被拒(UnexpectedAdmissionError,实测)
+    # CREATE 禁 nodeName(平台只用 node_selector);UPDATE 必须放行已绑定且未变的 nodeName(HAMi Allocate 阶段回写注解)
     - expression: >-
         !has(object.spec.nodeName) ||
         (request.operation == 'UPDATE' && has(oldObject.spec.nodeName) && object.spec.nodeName == oldObject.spec.nodeName)
       message: "租户 Pod 禁止指定/改动 spec.nodeName 绕过调度器"
-    # RuntimeClass 白名单:kata-qemu(dedicated 档 VM 隔离)与 nvidia(light 档 HAMi
-    # devicePlugin 注入)之外皆非法;危险 RuntimeClass 是容器逃逸的直达通道
+    # RuntimeClass 白名单:kata-qemu(dedicated 档)/ nvidia(light 档 HAMi)
     - expression: >-
         !has(object.spec.runtimeClassName) ||
         object.spec.runtimeClassName in ['kata-qemu', 'nvidia']
       message: "租户 Pod 的 runtimeClassName 仅允许 kata-qemu / nvidia"
-    # NVIDIA_* 环境变量禁入:kubelet 合并 env 时 pod spec 中的重复键后写胜出,租户声明
-    # NVIDIA_VISIBLE_DEVICES=all 会覆盖 device-plugin 的分配结果,看到节点上全部物理卡
-    # (含分给他租户的卡)。本规则是唯一不依赖运行时行为的权威控制:device-plugin 注入
-    # 发生在 kubelet Allocate 阶段,不经 apiserver 准入,故此规则对正常分配零误伤;
-    # 应用层(orchestrator/schemas.py _RESERVED_ENV_PREFIXES)另有同口径前置拦截。
+    # NVIDIA_* 环境变量禁入(device-plugin 注入不经准入层,零误伤);应用层 orchestrator/schemas.py _RESERVED_ENV_PREFIXES 同口径
     - expression: >-
         object.spec.containers.all(c, !has(c.env) || !c.env.exists(e, e.name.startsWith('NVIDIA_'))) &&
         (!has(object.spec.initContainers) ||
@@ -212,10 +165,7 @@ spec:
   validationActions: [Deny]
 
 ---
-# 策略三:平台 SA 对 Node 的字段级写白名单。K8s RBAC 无法限字段,而 nodes:patch 全字段可写
-# 等于能改 taints 驱逐任意节点负载、改寻址字段伪装节点身份;这里收窄到平台真实使用的两项:
-# spec.unschedulable(cordon)与 superdl.io/* 标签。CEL 对 typed 字段无 map 宏,spec 侧按危险
-# 字段显式锁,labels/annotations 用白名单收敛。
+# 策略三:平台 SA 对 Node 的字段级写白名单:只许 spec.unschedulable(cordon)与 superdl.io/* 标签。
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -227,13 +177,13 @@ spec:
       - apiGroups: [""]
         apiVersions: ["*"]
         resources: ["nodes"]
-        operations: ["UPDATE"]   # PATCH(cordon / label)在准入层即 UPDATE
+        operations: ["UPDATE"]   # PATCH 在准入层即 UPDATE
         scope: "Cluster"
   matchConditions:
     - name: superdl-sa-only
       expression: "request.userInfo.username.startsWith('system:serviceaccount:superdl:')"
   variables:
-    # 可选字段两边都缺省时直接相等;一边缺省一边存在即变更
+    # 可选字段:两边都缺省视为相等
     - name: taintsSame
       expression: >-
         (!has(object.spec.taints) && !has(oldObject.spec.taints)) ||
@@ -261,10 +211,10 @@ spec:
         (has(object.metadata.finalizers) && has(oldObject.metadata.finalizers) &&
          object.metadata.finalizers == oldObject.metadata.finalizers)
   validations:
-    # spec 仅 unschedulable 可变:taints(驱逐武器)/podCIDR/providerID(寻址身份)锁死
+    # spec 仅 unschedulable 可变
     - expression: "variables.taintsSame && variables.podCIDRSame && variables.podCIDRsSame && variables.providerIDSame"
       message: "平台 SA 对 Node spec 仅允许变更 unschedulable(cordon);taints/podCIDR/providerID 锁死"
-    # labels 仅 superdl.io/* 键可增删改;其余键(含 kubernetes.io/*)原样
+    # labels 仅 superdl.io/* 键可增删改
     - expression: >-
         has(object.metadata.labels) && has(oldObject.metadata.labels) &&
         object.metadata.labels.all(k, k.startsWith('superdl.io/') ||
@@ -272,7 +222,7 @@ spec:
         oldObject.metadata.labels.all(k, k.startsWith('superdl.io/') ||
           (k in object.metadata.labels && oldObject.metadata.labels[k] == object.metadata.labels[k]))
       message: "平台 SA 对 Node labels 仅允许变更 superdl.io/* 键"
-    # annotations(注解驱动的控制器行为是常见跳板)与 finalizers(卡删除)平台从不写
+    # annotations 与 finalizers 锁死
     - expression: "variables.annotationsSame && variables.finalizersSame"
       message: "平台 SA 禁止变更 Node annotations/finalizers"
 ---
@@ -285,10 +235,7 @@ spec:
   validationActions: [Deny]
 
 ---
-# 策略四:全局 Pod 安全兜底。策略二只覆盖 tenant-*(标签锚定),其余命名空间无基线,
-# 任何被突破的写凭据都能在非豁免 ns 种特权 Pod。豁免 ns 只放确实需要特权/host 面的基础设施栈,
-# 新增成员前先评估。superdl ns 不放豁免:平台 Pod 全部满足基线,预热 Job 的 nodeName 由标签
-# 白名单单独放行。与策略二在 tenant-* 上重叠属纵深防御,规则语义一致无冲突。
+# 策略四:全局 Pod 安全兜底(非豁免 ns 同策略二基线 + RuntimeClass 白名单)。superdl ns 不豁免,预热 Job 的 nodeName 按标签放行。
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -298,12 +245,8 @@ spec:
   matchConstraints:
     namespaceSelector:
       matchExpressions:
-        # 豁免:cilium/hami/juicefs-csi(kube-system)、gpu-operator、node-exporter+alloy
-        # (monitoring)、envoy-gateway-system(北向入口)、topolvm node plugin(topolvm-system)——
-        # 这些栈的 DaemonSet 合法需要 privileged/hostPath/hostNetwork。
-        # ⚠ 名单按 ns 名匹配:入口 ns 改名而名单没跟着改,Envoy 数据面立刻落进本策略覆盖面。
-        # 数据面 Deployment 由 EG 控制器动态生成(仓库里没有它的清单),命中任一条基线就是整个
-        # 网关起不来,拒绝信息只出现在 EG 控制器日志里,kubectl 只能看到「Gateway 一直不 Ready」。
+        # 豁免需要特权/host 面的基础设施 ns:cilium/hami/juicefs-csi(kube-system)、gpu-operator、node-exporter+alloy(monitoring)、
+        # Envoy 数据面(envoy-gateway-system)、topolvm node plugin(topolvm-system)。按 ns 名匹配,改 ns 名须同步
         - key: kubernetes.io/metadata.name
           operator: NotIn
           values: ["kube-system", "gpu-operator", "monitoring", "envoy-gateway-system", "topolvm-system"]
@@ -328,8 +271,7 @@ spec:
       message: "非豁免命名空间禁止 hostNetwork/hostPID/hostIPC"
     - expression: "!has(object.spec.hostUsers) || object.spec.hostUsers == false"
       message: "非豁免命名空间禁止 hostUsers: true"
-    # 仅 superdl ns 的镜像预热 Job(定点拉取,平台镜像)放行;
-    # DaemonSet 控制器建 Pod 自带 nodeName——非豁免 ns 新增 DaemonSet 前须先扩豁免
+    # nodeName 只放行 superdl ns 的预热 Job;非豁免 ns 新增 DaemonSet 前须先扩豁免
     - expression: >-
         !has(object.spec.nodeName) ||
         (request.operation == 'UPDATE' && has(oldObject.spec.nodeName) && object.spec.nodeName == oldObject.spec.nodeName) ||
@@ -348,44 +290,14 @@ metadata:
   name: superdl-global-pod-guard
 spec:
   policyName: superdl-global-pod-guard
-  # 本仓库会创建 Pod 的**全部**非豁免命名空间均满足基线(新增命名空间前照此核对):
-  #   superdl        api/worker/前端/migrate Job/pg-backup CronJob 均无 privileged/hostPath/
-  #                  host*/runtimeClassName;预热 Job 的 nodeName 由 superdl.io/prewarm 标签放行
-  #   cert-manager   controller/webhook/cainjector 与 acme-dns(../acme-dns.yaml)都是普通
-  #                  Deployment + Service,不占 hostPort、不挂 hostPath
-  #   cnpg-system    CloudNativePG operator;其在 superdl ns 拉起的 PG 实例/bootstrap Job
-  #                  用 PVC 与 projected Secret 卷,不碰本策略任一项
-  # 需要特权/host 面的栈(cilium/hami/juicefs-csi/kata、gpu-operator、node-exporter+alloy、
-  # Envoy 数据面、topolvm node plugin)全部落在下面的豁免 ns 里。
-  # ⚠ 已知会被拦下的运维动作:`kubectl debug node/<node>`(hostPID + hostPath 的调试 Pod,
-  # 默认建在 default ns)。改用 `--namespace kube-system` 或临时把目标 ns 加进豁免名单。
+  # 非豁免 ns(superdl / cert-manager / cnpg-system)的 Pod 均满足基线,新增 ns 前照此核对。
+  # `kubectl debug node/<node>` 会被拦,改用 `--namespace kube-system`
   validationActions: [Deny]
 
 ---
-# 策略五:superdl 命名空间内 Pod 的 Secret 引用白名单。
-#
-# 这条堵的是 K8s 里最容易被 RBAC 直觉骗过去的一件事:**在某命名空间里能 create pods
-# (或 batch/jobs),就等于能读该命名空间里的每一个 Secret**。kubelet 代创建者解析
-# secretKeyRef / envFrom.secretRef / secret 卷 / imagePullSecrets,这条路径**不做任何
-# secrets:get 授权检查**。deploy/app/k8s/01-rbac.yaml 刻意不给编排 SA secrets 权限,
-# 但 tenant-mgr(pods:create)、prewarm、disk-ops(batch/jobs:create)三个身份仍可拼一个
-# `sleep + env` 的 Pod 把 superdl-auth(JWT 签发密钥)、superdl-crypto(配置中心主密钥,
-# 解得开全部支付渠道凭据与集群 join token)读出来 —— 且完全满足 PSA restricted,
-# 满足策略②④的全部基线。唯一能挡住的就是「引用了哪个 Secret」这一层。
-#
-# 只覆盖 superdl 命名空间:平台的要害 Secret 全在这里;tenant-* 里只有 per-instance 的
-# JUPYTER_TOKEN 与拉取凭据,那本就是 tenant-mgr 的全权域。
-#
-# 匹配两类创建者,缺一不可:
-#   - system:serviceaccount:superdl:*      直接建 Pod(tenant-mgr 的 pods:create)
-#   - system:serviceaccount:kube-system:job-controller
-#       Job 派生 Pod。策略①按 username 匹配,对这条路径完全不适用,而 prewarm/disk-ops
-#       的越权面恰恰是 batch/jobs:create。
-# 两类的白名单**不同**:job-controller 建的 Pod 无法溯源到建 Job 的身份,superdl ns 里
-# 合法存在的 Job(10-migrate-job.yaml 的 envFrom superdl-db、06-pg-backup.yaml 的 envFrom
-# superdl-pg-backup)必须放行,否则发布与备份当场停摆。因此对 job-controller 只收窄
-# `superdl-*` 前缀内的引用(平台自己的 Secret 命名域),CNPG 那类第三方 Secret 不干涉;
-# 平台 SA 走 Job 这条路的收口在策略⑥ —— 那里能拿到真实身份,是不可伪造的一层。
+# 策略五:superdl 命名空间内 Pod 的 Secret 引用白名单(pods:create 即可经 kubelet 读到 ns 内任意 Secret)。
+# 匹配两类创建者:superdl:* SA(strict 白名单)与 kube-system:job-controller(只收窄 superdl-* 前缀,
+# 放行 10-migrate-job.yaml 的 superdl-db 与 06-pg-backup.yaml 的 superdl-pg-backup)。平台 SA 建 Job 的收口在策略⑥。
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -407,14 +319,11 @@ spec:
         request.userInfo.username.startsWith('system:serviceaccount:superdl:') ||
         request.userInfo.username == 'system:serviceaccount:kube-system:job-controller'
   variables:
-    # strict = 平台 SA 直接建的 Pod:平台**从不**在 superdl ns 里直接建 Pod(real.py 的
-    # _create_pod_sync 只建租户 ns 的实例 Pod),白名单按「Job 那条路的合法引用」给,
-    # 已远超实际所需
+    # strict = 平台 SA 直接建的 Pod(平台在 superdl ns 从不直接建 Pod)
     - name: strict
       expression: "request.userInfo.username.startsWith('system:serviceaccount:superdl:')"
   validations:
-    # ① imagePullSecrets:平台托管的 Harbor 拉取凭据一个名字(core/registry.PULL_SECRET_NAME)。
-    # 值不会进容器(kubelet 自己用),但仍按同一套白名单收口,避免留一条无人看的引用面。
+    # ① imagePullSecrets:只许 core/registry.PULL_SECRET_NAME
     - expression: >-
         !has(object.spec.imagePullSecrets) ||
         object.spec.imagePullSecrets.all(s,
@@ -422,10 +331,7 @@ spec:
           (s.name == 'superdl-registry-pull' ||
            (!variables.strict && !s.name.startsWith('superdl-'))))
       message: "superdl 命名空间内平台/Job 建的 Pod 只允许 imagePullSecrets: superdl-registry-pull"
-    # ② env[].valueFrom.secretKeyRef:唯一合法的是配额 Job 取 juicefs 元数据 URL
-    # (real.py _disk_quota_sync)。按 name/key 成对比对 —— 只比 name 等于把 superdl-db 里
-    # 的 PG 连接串也一并放出去。
-    # name 在 schema 里可选(LocalObjectReference),缺失即拒(fail-closed)。
+    # ② secretKeyRef:只许 superdl-db/juicefs-metaurl(real.py _disk_quota_sync),按 name/key 成对比对;name 缺失即拒
     - expression: >-
         object.spec.containers.all(c, !has(c.env) || c.env.all(e,
           !has(e.valueFrom) || !has(e.valueFrom.secretKeyRef) ||
@@ -443,9 +349,7 @@ spec:
            ((e.valueFrom.secretKeyRef.name + '/' + e.valueFrom.secretKeyRef.key) == 'superdl-db/juicefs-metaurl' ||
             (!variables.strict && !e.valueFrom.secretKeyRef.name.startsWith('superdl-')))))))
       message: "superdl 命名空间内只允许 secretKeyRef superdl-db/juicefs-metaurl(配额 Job)"
-    # ③ envFrom[].secretRef:整份 Secret 注入,平台 SA 一个都不给。
-    # job-controller 侧放行 superdl-db(迁移 Job)与 superdl-pg-backup(备份 CronJob)——
-    # 这两个是 superdl ns 里既有的合法整份注入;平台 SA 借 Job 走这条路由策略⑥堵死。
+    # ③ envFrom.secretRef:平台 SA 全禁;job-controller 放行 superdl-db(迁移 Job)与 superdl-pg-backup(备份 CronJob)
     - expression: >-
         object.spec.containers.all(c, !has(c.envFrom) || c.envFrom.all(f,
           !has(f.secretRef) ||
@@ -463,10 +367,7 @@ spec:
            (f.secretRef.name in ['superdl-db', 'superdl-pg-backup'] ||
             !f.secretRef.name.startsWith('superdl-'))))))
       message: "superdl 命名空间内 envFrom.secretRef 仅限迁移/备份 Job 的 superdl-db、superdl-pg-backup"
-    # ④ Secret 卷(直挂 / projected 子源 / CSI nodePublishSecretRef):平台侧零使用
-    # (migrate 与 pg-backup 只挂 emptyDir,预热/配额/擦除 Job 不挂 Secret)。
-    # CNPG 的 PG 实例与 bootstrap Job 会挂它自己的 TLS Secret,名字不带 superdl- 前缀,
-    # 走 job-controller 分支放行。
+    # ④ Secret 卷(secret / projected / csi):平台 SA 全禁;job-controller 只禁 superdl-* 前缀
     - expression: >-
         !has(object.spec.volumes) || object.spec.volumes.all(v,
           (!has(v.secret) ||
@@ -488,17 +389,7 @@ spec:
   validationActions: [Deny]
 
 ---
-# 策略六:平台 SA 创建 Job 时,Pod 模板里的 Secret 引用白名单。
-#
-# 与策略⑤是同一件事的两端,两条都要:
-#   ⑤ 看到的是 Pod,但 Job 派生的 Pod 创建者是 job-controller,溯不到真实身份,
-#     只能按「superdl ns 里合法存在的引用」放行(含整份注入 superdl-db);
-#   ⑥ 看到的是 Job,创建者就是 prewarm / disk-ops 本人,可以按真实身份收到最紧 ——
-#     job-controller 逐字段复制 spec.template 建 Pod,校验模板即校验它派生出的全部 Pod,
-#     且模板不可伪造(prewarm/disk-ops 只有 jobs 的 get/list/create/delete,没有
-#     patch/update,Job 的 spec.template 本身也是 immutable)。
-# 只覆盖 superdl:tenant-* 里的擦除 Job(real.py _wipe_disk_sync)只挂 JuiceFS PVC,
-# 且租户 ns 里没有平台要害 Secret。
+# 策略六:平台 SA 在 superdl ns 建 Job 时 Pod 模板的 Secret 引用白名单(与策略⑤配对;模板 immutable,校验模板即校验全部派生 Pod)。
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -515,8 +406,7 @@ spec:
   matchConditions:
     - name: superdl-namespace-only
       expression: "request.namespace == 'superdl'"
-    # 只匹配平台 SA:10-migrate-job.yaml 由发布者(人/CI 的管理身份)create,
-    # 它的 envFrom superdl-db 合法且那个身份本来就能直接读 Secret,不在本策略射程内。
+    # 只匹配平台 SA(10-migrate-job.yaml 由发布者身份 create,不在射程内)
     - name: platform-sa-only
       expression: "request.userInfo.username.startsWith('system:serviceaccount:superdl:')"
   variables:
@@ -527,7 +417,7 @@ spec:
         !has(variables.podSpec.imagePullSecrets) ||
         variables.podSpec.imagePullSecrets.all(s, has(s.name) && s.name == 'superdl-registry-pull')
       message: "平台 SA 建的 Job 只允许 imagePullSecrets: superdl-registry-pull(预热 Job)"
-    # 唯一合法的 secretKeyRef:配额 Job 的 juicefs 元数据 URL(real.py _disk_quota_sync)
+    # 唯一合法 secretKeyRef:superdl-db/juicefs-metaurl(real.py _disk_quota_sync)
     - expression: >-
         variables.podSpec.containers.all(c, !has(c.env) || c.env.all(e,
           !has(e.valueFrom) || !has(e.valueFrom.secretKeyRef) ||
@@ -538,7 +428,7 @@ spec:
           (has(e.valueFrom.secretKeyRef.name) &&
            (e.valueFrom.secretKeyRef.name + '/' + e.valueFrom.secretKeyRef.key) == 'superdl-db/juicefs-metaurl'))))
       message: "平台 SA 建的 Job 只允许 secretKeyRef superdl-db/juicefs-metaurl(配额 Job)"
-    # 整份注入与 Secret 卷:平台的两类 Job(预热/配额)一个都不用,全禁
+    # envFrom.secretRef 与 Secret 卷全禁
     - expression: >-
         variables.podSpec.containers.all(c, !has(c.envFrom) || c.envFrom.all(f, !has(f.secretRef))) &&
         (!has(variables.podSpec.initContainers) ||
@@ -560,24 +450,8 @@ spec:
   validationActions: [Deny]
 
 ---
-# 策略七:平台 SA 删 Node 的对象白名单(node.decommission 只退役 GPU 工作节点)。
-#
-# nodes:delete 是 node-mgr 唯一不可逆的动词,而 nodes 是集群级资源 —— RBAC 的
-# resourceNames 对 delete 同样帮不上忙(它按名字匹配,而节点名是运营时才产生的),
-# 策略③又只匹配 operations: ["UPDATE"](cordon / 标签 patch),对 DELETE 完全不适用。
-# 于是「退役某台 GPU 机器」的权限,在 RBAC 层等于「删除集群里任意一个 Node 对象」。
-#
-# 为什么这件事在本仓库比通常更严重:平台组件的落点标签是
-# node-restriction.kubernetes.io/superdl-infra,由 deploy/ansible/site.yml 用管理凭据打上,
-# 而 NodeRestriction 禁止 kubelet 自己打该前缀。删掉一个控制面 Node 对象后 kubelet 会重新
-# 注册,但**标签不会跟着回来** —— api / 5 个 worker / 前端 / Envoy 数据面一起 Pending,
-# 而集群表面上「只是少了一个标签」。(节点自述的标签会随重新注册自动补回;
-# node-restriction.* 正因 kubelet 打不上,才补不回来,所以删除必须在准入层堵死。)
-#
-# 判据用 oldObject(DELETE 时 object 为 null):带控制面角色、etcd 角色或任一 infra 标签的
-# 节点一律不可删。GPU 工作节点不带这些标签,退役链路不受影响。
-# 人工运维不受本策略约束:它只匹配 system:serviceaccount:superdl:*,管理员用自己的凭据
-# 该删还能删。
+# 策略七:平台 SA 只能删 GPU 工作节点;带控制面/etcd 角色或 infra 标签的节点不可删(判据用 oldObject)。
+# 只匹配 superdl:* SA,人工运维不受约束。
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -595,8 +469,7 @@ spec:
     - name: platform-sa-only
       expression: "request.userInfo.username.startsWith('system:serviceaccount:superdl:')"
   variables:
-    # 无标签的 Node 不存在(kubelet 注册即带 kubernetes.io/*),但缺省仍按空 map 处理:
-    # 直接下标未设置字段在 CEL 里是求值错误,failurePolicy: Fail 下会变成「谁都删不了」
+    # labels 缺省按空 map 处理
     - name: labels
       expression: "has(oldObject.metadata.labels) ? oldObject.metadata.labels : {}"
   validations:
@@ -605,9 +478,7 @@ spec:
         !('node-role.kubernetes.io/master' in variables.labels) &&
         !('node-role.kubernetes.io/etcd' in variables.labels)
       message: "平台 SA 禁止删除控制面/etcd 节点(node.decommission 只退役 GPU 工作节点)"
-    # 两个 infra 标签都锁:node-restriction.* 是权威锚点(仓库内落点全部用它);
-    # node-role.superdl.io/infra 仓库内已无引用,锁它是给仍带该标签的存量节点兜底——
-    # 那些节点同样删不得。
+    # node-restriction.* 是权威锚点;node-role.superdl.io/infra 为存量节点兜底
     - expression: >-
         !('node-restriction.kubernetes.io/superdl-infra' in variables.labels) &&
         !('node-role.superdl.io/infra' in variables.labels)

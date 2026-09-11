@@ -1,10 +1,7 @@
 """管理端 CSV 导出:审计检索 / 日对账 / 调账单。
 
-- 转义/上限/截断标记/流式骨架与用户端账单导出同一套(app.core.csvexport);
-  时间按调用方时区偏移折算并带 (UTC+x) 后缀;
-- 审计导出的筛选口径与 GET /admin/v1/audit 完全一致(actor_type/actor_id/q/since/until);
-- 对账导出 = GET /admin/v1/reconciliation 同一报告(已整体在内存,不分批不截断):
-  首行合计,随后为 diff 超阈实例明细。
+转义/上限/截断标记/流式骨架同 app.core.csvexport;时间按调用方时区偏移折算并带 (UTC+x) 后缀。
+审计导出筛选口径与 GET /admin/v1/audit 一致;对账导出 = GET /admin/v1/reconciliation 同一报告。
 """
 
 import json
@@ -68,7 +65,7 @@ _HEADERS: dict[tuple[str, str], list[str]] = {
     ],
 }
 
-# 状态文案与 packages/ui shared.json 同一口径(管理端列表页标签)
+# 状态文案与 packages/ui shared.json 同一口径
 _ADJUSTMENT_STATUS_LABEL: dict[str, dict[str, str]] = {
     "zh-CN": {"pending": "待复核", "approved": "已生效", "rejected": "已驳回"},
     "en-US": {"pending": "Pending review", "approved": "Effective", "rejected": "Rejected"},
@@ -78,8 +75,7 @@ _TOTAL_LABEL = {"zh-CN": "合计", "en-US": "TOTAL"}
 
 
 def audit_filters(stmt, *, actor_type, actor_id, q, since, until):
-    """GET /admin/v1/audit 与审计 CSV 导出共用的 where 条件
-    (含 LIKE 元字符转义:q 里的 %/_ 按字面匹配,不当通配符)。"""
+    """GET /admin/v1/audit 与审计 CSV 导出共用的 where 条件(q 的 %/_ 按字面匹配)。"""
     if actor_type:
         stmt = stmt.where(AuditLog.actor_type == actor_type)
     if actor_id:
@@ -141,7 +137,7 @@ async def stream_reconciliation_csv(
     *,
     lang: str = "zh-CN",
 ) -> AsyncIterator[str]:
-    """日对账 CSV:首行合计(实例列标「合计」),随后 diff 超阈实例明细(报告已整体在内存)。"""
+    """日对账 CSV:首行合计,随后 diff 超阈实例明细。"""
     yield "\ufeff" + csv_line(_HEADERS[("reconciliation", lang)])
     yield csv_line(
         [

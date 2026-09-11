@@ -1,11 +1,6 @@
-"""竞价抢占:按量/包周期请求容量不足时,回收最晚创建的竞价实例腾位置。
-
-三条硬规矩,每条都对应知情同意里的一句承诺:只在同池同型号内选;按 `created_at DESC`
-(最晚创建先回收,不得改成按用量或价格排序);凑不够就一台都不动。
-
-抢占必须与请求方的建实例同事务:请求方后续任何一步失败都会把回收一起回滚。
-宽限窗靠 outbox 延迟投递实现:状态机立刻迁 stopping,`instance.stop` 推迟
-`spot_grace_seconds` 才执行,期间 Pod 还在、SSH 还能登。
+"""竞价抢占:按量/包周期请求容量不足时回收竞价实例腾位置。
+规则(知情同意承诺):只在同池同型号内选;按 `created_at DESC`;凑不够一台都不动。
+与请求方的建实例同事务;状态机立刻迁 stopping,`instance.stop` 推迟 `spot_grace_seconds` 执行。
 """
 
 import math
@@ -36,11 +31,8 @@ async def pick_victims(
     gpu_model_selector: str | None,
     need_cards: int,
 ) -> list[Instance]:
-    """选出够腾 `need_cards` 张卡的竞价实例(最晚创建的先选)。凑不够返回空列表。
-
-    「一台实例腾出 gpu_count 张卡」是近似口径(与 `_sku_free_capacity` 同源):共享档实例
-    只占一张卡的一部分,近似偏乐观的后果由 creating 超时转 failed、全额不出账兜底。
-    """
+    """选出够腾 `need_cards` 张卡的竞价实例(最晚创建先选);凑不够返回空列表。
+    「一台腾出 gpu_count 张卡」是近似口径,与 `_sku_free_capacity` 同源。"""
     if need_cards <= 0:
         return []
     rows = list(
@@ -84,12 +76,8 @@ async def preempt(
     requested_by: int,
     admin_reason: str | None = None,
 ) -> None:
-    """回收选中的竞价实例。不 commit —— 必须与请求方的建实例同事务。
-
-    迁 stopping 触发计费边监听器出尾账,按到此刻为止的实际运行秒数结算,宽限窗不计费;
-    结算引擎对「抢占」无感知,走的仍是 `edge_listener` 的通用尾账路径。
-    """
-    # 延迟 import 防循环:service → preempt → service
+    """回收选中的竞价实例,不 commit(与请求方建实例同事务);迁 stopping 即出尾账,宽限窗不计费。"""
+    # 延迟 import 防循环
     from app.modules.notify import service as notify_service
     from app.modules.orchestrator.service import transition
 
@@ -140,7 +128,7 @@ async def try_free_capacity(
     grace_seconds: int,
     requested_by: int,
 ) -> bool:
-    """尝试靠抢占补齐缺口。腾得出返回 True(已在本事务内下发回收),否则 False。"""
+    """尝试靠抢占补齐缺口;腾得出返回 True(已在本事务下发回收),否则 False。"""
     from app.core.gpu_models import canonical_gpu_model
 
     need = cards_needed(deficit_slots=deficit_slots, slots_per_card=slots_per_card)

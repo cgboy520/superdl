@@ -1,46 +1,34 @@
-# GPU Operator:驱动由 Ansible 预装(driver.enabled=false,避免与 HAMi/Kata 池互扰)
-#
-# 分池靠【节点标签】而非本文件:ClusterPolicy 不接受各组件的 nodeSelector(写了静默忽略),
-# operand DaemonSet 一律按 `nvidia.com/gpu.deploy.<组件>=true` 标签调度;operator 依据节点的
-# `nvidia.com/gpu.workload.config`(container 默认 / vm-passthrough / vm-vgpu)自动打这套标签,
-# 已存在的标签值不被覆盖。
+# GPU Operator:驱动由 node-join.sh 预装(driver.enabled=false)。
+# 分池靠节点标签(ClusterPolicy 不接受 nodeSelector):operand 按 `nvidia.com/gpu.deploy.<组件>=true` 调度,
+# operator 依据 `nvidia.com/gpu.workload.config` 自动打这套标签,已存在的值不覆盖。
 #   kata 池: kubectl label node <节点> nvidia.com/gpu.workload.config=vm-passthrough
-#           (operator 随即在该池部署 kata-sandbox-device-plugin + vfio-manager,
-#            并撤掉普通 device-plugin;nvidia.com/gpu 由 kata 沙箱插件注册)
+#           (部署 kata-sandbox-device-plugin + vfio-manager,撤掉普通 device-plugin)
 #   hami 池: kubectl label node <节点> nvidia.com/gpu.deploy.device-plugin=false
-#           (禁掉官方 device-plugin,避免与 HAMi 插件抢注 nvidia.com/gpu;
-#            toolkit/dcgm-exporter 等其他组件照常部署)
+#           (禁掉官方 device-plugin;其他组件照常)
 #   mig 池: 无需标签(container 默认;MIG 机型自动获得 mig-manager)。
 #           切分按需:kubectl label node <节点> nvidia.com/mig.config=all-1g.10gb --overwrite
-# MIG 切分与 Kata 开机必须实机验证(runbooks/cluster-validation.md 三池全流程),
-# 未验证前管理端禁止上架 dedicated/mig 档 SKU。
+# MIG 切分与 Kata 开机须实机验证(runbooks/cluster-validation.md),未验证前不上架 dedicated/mig 档 SKU
 driver:
   enabled: false           # 装机基线已装宿主驱动
 toolkit:
   enabled: true
 devicePlugin:
   enabled: true
-  # 整卡(kata)与 MIG(mig)两池都由它服务:落点由上述节点标签决定,不在此设 selector。
-  # HAMi 池节点须打 nvidia.com/gpu.deploy.device-plugin=false 与其互斥(见头注释)。
+  # 服务 kata 与 mig 两池;HAMi 池节点打 nvidia.com/gpu.deploy.device-plugin=false 与其互斥
 migManager:
   enabled: true             # 自动落在 MIG 机型节点(container 负载),无需 selector
 mig:
-  # 必须 mixed:平台 gpu_adapter 申请的是 nvidia.com/mig-{profile} 资源
-  # (apps/api/app/core/gpu_adapter),只有 mixed 策略才注册该资源名;
-  # single 会把切片注册成 nvidia.com/gpu,与整卡语义冲突且平台永远调度不上。
+  # 必须 mixed:平台申请 nvidia.com/mig-{profile} 资源(apps/api/app/core/gpu_adapter)
   strategy: mixed
 dcgmExporter:
   enabled: true            # DCGM 指标 → usage_hourly 聚合 + 大盘 24450
-  # 版本钉死:该 exporter 的节点维标签是小写 hostname,而平台侧 prom.py 的 DCGM_NODE_LABEL
-  # 与 values/kps.yaml 两条 GPU 告警的 {{ $labels.hostname }} 都按小写写死。跟着 chart 默认走
-  # 会让节点页曲线与 GPU 告警静默失效(指标在,选择器选不中)。升版前先核对该标签。
+  # 版本钉死:节点维标签是小写 hostname(prom.py DCGM_NODE_LABEL 与 values/kps.yaml 按此写死),升版前核对
   version: 4.6.0-4.8.3-distroless
   serviceMonitor:
     enabled: true
 sandboxWorkloads:
   enabled: true
-  # kata 模式:vm-passthrough 节点(kata 池)部署 kata-sandbox-device-plugin
-  # (默认 kubevirt 模式部署的是 kubevirt 插件,与 kata-qemu 不匹配)
+  # kata 模式:vm-passthrough 节点部署 kata-sandbox-device-plugin
   mode: kata
 vfioManager:
   enabled: true            # kata 池 VFIO 直通;落点由 workload 标签驱动(vm-passthrough)

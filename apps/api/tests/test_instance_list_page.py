@@ -30,7 +30,7 @@ class TestInstanceListPage:
             await client.get("/api/v1/instances", params={"status": "stopped"}, headers=headers)
         ).json()["items"]
         assert [i["name"] for i in items] == ["stop-1"]
-        # released 永不出列表(不带过滤时也不出现)
+        # released 永不出列表
         all_items = (await client.get("/api/v1/instances", headers=headers)).json()["items"]
         assert "gone" not in [i["name"] for i in all_items]
 
@@ -59,7 +59,7 @@ class TestInstanceListPage:
     async def test_name_filter_like_metachars_are_literal(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """name/q 的 LIKE 元字符转义:"%" / "_" 按字面匹配,不当通配符(防一个 % 拖全表)。"""
+        """name/q 的 LIKE 元字符 "%" / "_" 按字面匹配。"""
         headers, user_id, _ = await create_user_with_key(client, "13900000208")
         await _insert_instance(sm, user_id, name="100%cotton")
         await _insert_instance(sm, user_id, name="1000jobs")

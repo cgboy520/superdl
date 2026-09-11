@@ -42,8 +42,8 @@ export const getListInstancesApiV1InstancesGetUrl = (params?: ListInstancesApiV1
 }
 
 /**
- * 实例列表(只列开发机;在线服务的版本实例走 /services):降序游标分页;
- * status 精确过滤,name 模糊匹配(含 uuid 前缀)。
+ * 实例列表(只列开发机;服务版本实例走 /services):降序游标分页,status 精确,
+ * name 模糊(含 uuid 前缀)。
  * @summary List Instances
  */
 export const listInstancesApiV1InstancesGet = async (params?: ListInstancesApiV1InstancesGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageInstanceOut> => {
@@ -98,7 +98,7 @@ export const getListExpiringInstancesApiV1InstancesExpiringGetUrl = (params?: Li
 }
 
 /**
- * 临期包周期实例(到期横幅专用):active 订阅且到期时刻 ≤ now+within_days,升序,不分页。
+ * 临期包周期实例:active 订阅且到期时刻 ≤ now+within_days,升序,不分页。
  * @summary List Expiring Instances
  */
 export const listExpiringInstancesApiV1InstancesExpiringGet = async (params?: ListExpiringInstancesApiV1InstancesExpiringGetParams, options?: Parameters<typeof customFetch>[1]): Promise<InstanceOut[]> => {
@@ -122,7 +122,7 @@ export const getReleaseInstanceApiV1InstancesUuidDeleteUrl = (uuid: string,) => 
 }
 
 /**
- * 释放实例(清除实例盘,数据盘不受影响)。前端多级确认后调用。
+ * 释放实例(清除实例盘,数据盘不受影响)。
  * @summary Release Instance
  */
 export const releaseInstanceApiV1InstancesUuidDelete = async (uuid: string, options?: Parameters<typeof customFetch>[1]): Promise<InstanceOut> => {
@@ -193,7 +193,7 @@ export const getGetInstanceAccessApiV1InstancesUuidAccessGetUrl = (uuid: string,
 }
 
 /**
- * 接入信息。字段按形态出现:dev 给 SSH + Jupyter,服务版本实例给端点 URL(开了 SSH 就都有)。
+ * 接入信息,字段按形态出现:dev 给 SSH + Jupyter,服务版本实例给端点 URL(开了 SSH 都有)。
  * @summary Get Instance Access
  */
 export const getInstanceAccessApiV1InstancesUuidAccessGet = async (uuid: string, options?: Parameters<typeof customFetch>[1]): Promise<InstanceAccessOut> => {
@@ -249,7 +249,7 @@ export const getListInstanceEventsApiV1InstancesUuidEventsGetUrl = (uuid: string
 }
 
 /**
- * 状态时间线(计费依据)。降序(最新在前)游标分页。
+ * 状态时间线(计费依据),降序游标分页。
  * @summary List Instance Events
  */
 export const listInstanceEventsApiV1InstancesUuidEventsGet = async (uuid: string,
@@ -282,10 +282,8 @@ export const getGetInstanceLogsApiV1InstancesUuidLogsGetUrl = (uuid: string,
 }
 
 /**
- * 容器日志。四要素:只读、owner 校验(非属主 404)、限流 20/h/user、K8s 读 5s 超时。
- *
- * 仅 running/stopping 状态的实例可取(其余状态 409);tail_lines 默认 200、超 2000 按
- * 2000 截断。不记审计。
+ * 容器日志(只读,不记审计):非属主 404;限流 20/h/user;仅 running/stopping,否则 409;
+ * tail_lines 默认 200,超 2000 截断。
  * @summary Get Instance Logs
  */
 export const getInstanceLogsApiV1InstancesUuidLogsGet = async (uuid: string,
@@ -310,9 +308,7 @@ export const getRenewInstanceApiV1InstancesUuidRenewPostUrl = (uuid: string,) =>
 }
 
 /**
- * 包周期续费:按新周期的折扣重新报价并即时扣款(不足即 402/400,不进欠费)。
- *
- * 冻结中的实例续费即解冻(回到 stopped,由用户自己开机)。
+ * 包周期续费:按新周期折扣重新报价并即时扣款(不足即 402/400);冻结中续费即解冻回 stopped。
  * @summary Renew Instance
  */
 export const renewInstanceApiV1InstancesUuidRenewPost = async (uuid: string,
@@ -430,10 +426,7 @@ export const getSubscribeInstanceApiV1InstancesUuidSubscribePostUrl = (uuid: str
 }
 
 /**
- * 按量转包周期:结清转换前的按量账,再按周期折扣一次性预扣。
- *
- * 与 `/renew` 同一个入参与响应形态(都是「给这台机器买一段周期」),区别只在起点:
- * 这里从现在起算,续费从老周期到期时刻接上。
+ * 按量转包周期:结清转换前的按量账,再按周期折扣一次性预扣;入参与响应同 `/renew`,从现在起算。
  * @summary Subscribe Instance
  */
 export const subscribeInstanceApiV1InstancesUuidSubscribePost = async (uuid: string,
@@ -459,9 +452,7 @@ export const getConvertToOnDemandApiV1InstancesUuidToOnDemandPostUrl = (uuid: st
 }
 
 /**
- * 竞价实例转按量(免被回收)。已经是按量则原样返回,重试不报错。
- *
- * 当前整点小时会整体改按按量价结算(一小时一价,以结算时的实例单价为准)。
+ * 竞价实例转按量;已是按量则原样返回。当前整点小时整体改按按量价结算。
  * @summary Convert To On Demand
  */
 export const convertToOnDemandApiV1InstancesUuidToOnDemandPost = async (uuid: string, options?: Parameters<typeof customFetch>[1]): Promise<InstanceOut> => {

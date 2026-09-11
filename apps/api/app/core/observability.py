@@ -1,9 +1,5 @@
-"""请求可观测性(纯 ASGI):request-id 贯穿 + HTTP 时延直方图。
-
-- 入站带 X-Request-ID 则沿用(网关生成),否则生成;响应回带同名头;
-- structlog contextvars 绑定 request_id,一次请求的全部日志可串联;
-- 直方图 route 取路由模板(scope["route"]),未命中记 "unmatched",避免高基数。
-"""
+"""请求可观测性(纯 ASGI):X-Request-ID 沿用或生成并回带,绑定 structlog contextvars;
+HTTP 时延直方图 route 取路由模板,未命中记 "unmatched"。"""
 
 import time
 from uuid import uuid4
@@ -16,11 +12,7 @@ from app.core.metrics import HTTP_REQUEST_DURATION
 
 
 def _full_route_template(scope: Scope) -> str:
-    """完整路由模板:include_router 下 route.path 不含前缀,用 path_params 反推。
-
-    例:path=/api/v1/instances/abc + route.path=/instances/{uuid} + {"uuid": "abc"}
-    → /api/v1/instances/{uuid}。
-    """
+    """完整路由模板(含 include_router 前缀),用 path_params 反推:/api/v1/instances/{uuid}。"""
     template = getattr(scope.get("route"), "path", None)
     if not template:
         return "unmatched"

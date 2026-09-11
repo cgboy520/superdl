@@ -1,8 +1,5 @@
-"""业务指标(prometheus_client)。/metrics 暴露,kps 侧配套告警规则。
-
-命名遵循 superdl_<domain>_<event>_total。每个指标都要有消费方(deploy/cluster/values/kps.yaml
-的告警规则或管理端);没人看的指标不保留。
-"""
+"""业务指标(prometheus_client),/metrics 暴露。命名 superdl_<domain>_<event>_total;每个指标都要有
+消费方(deploy/cluster/values/kps.yaml 告警规则或管理端)。"""
 
 from prometheus_client import Counter, Gauge, Histogram
 
@@ -74,7 +71,7 @@ AUDIT_WRITE_FAILED_TOTAL = Counter(
     "superdl_audit_write_failed_total",
     "审计行写入失败次数(fail-open 独立 session 路径;资金域动作为同事务同步审计,不受影响)",
 )
-# 安全域计数(kps 侧配套告警;失败登录/越权/提权/PII 明文读四条线各自成表)
+# 安全域计数(失败登录 / 越权 / 提权 / PII 明文读)
 LOGIN_FAILED_TOTAL = Counter(
     "superdl_login_failed_total",
     "登录失败次数(凭据错/账号不存在;actor_type 区分用户端与管理端)",
@@ -105,7 +102,7 @@ PAYMENT_CHANNEL_REVERSED_TOTAL = Counter(
     "superdl_payment_channel_reversed_total",
     "已入账订单收到渠道关单/退款类通知的次数(不自动冲账,人工核销;告警 PaymentChannelReversed)",
 )
-# WorkerDown 告警据此判活:带 label 的 Counter 在首次 inc 前无序列,absent() 不可用
+# WorkerDown 告警据此判活(无 label,首次 inc 前也有序列)
 WORKER_HEARTBEAT_TS = Gauge(
     "superdl_worker_heartbeat_timestamp_seconds",
     "worker 主循环最近一次心跳的 Unix 时间戳",
@@ -121,9 +118,7 @@ HTTP_REQUEST_DURATION = Histogram(
     "HTTP 请求时延(route 为路由模板,避免高基数)",
     ["method", "route", "status"],
 )
-# 生效的加固面进指标:environment 漂移(prod 跑成 dev 口径)、mock 支付误开等,
-# 没有它只能等审计时发现。告警口径:environment="prod" 且 payment_mock="true" 即事故;
-# environment 必须非空(fail-closed 必填项,见 config.Settings)
+# 生效的加固面进指标;告警口径:environment="prod" 且 payment_mock="true"
 RUNTIME_CONFIG = Gauge(
     "superdl_runtime_config",
     "生效的运行时加固面(恒 1;标签即生效值:environment/k8s_backend/payment_mock)",

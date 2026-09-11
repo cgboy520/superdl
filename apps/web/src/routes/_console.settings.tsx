@@ -63,7 +63,7 @@ function SettingsPage() {
     },
   });
   const delKey = useDeleteSshKey();
-  // /settings#ssh 深链:滚动到 SSH 卡并高亮 2s(实例列表「密钥设置」入口)
+  // /settings#ssh 深链:滚动到 SSH 卡并高亮 2s
   useHashScroll({ highlight: true });
 
   return (
@@ -163,7 +163,7 @@ function SettingsPage() {
 
       <Card title={t("settings.accountCard")}>
         <Space orientation="vertical" size={12}>
-          {/* 手机号未就绪渲染骨架,不留一行空白 */}
+          {/* 手机号未就绪渲染骨架 */}
           {me ? (
             <Typography.Text>{t("settings.phoneLine", { phone: maskPhone(me.phone) })}</Typography.Text>
           ) : (
@@ -219,7 +219,7 @@ function PasswordModal({
   const reset = useResetPassword({
     onSuccess: (data) => {
       const pair = data as TokenPairOut;
-      // 改密会撤销全部在外会话,本设备用返回的新 token 继续(refresh 经 Cookie 下发)
+      // 改密撤销全部在外会话,本设备用返回的新 token 继续
       authStore.getState().login(pair.access_token);
       message.success(t("settings.passwordChanged"));
       form.resetFields();
@@ -245,8 +245,7 @@ function PasswordModal({
         <Typography.Paragraph type="secondary">
           {t("settings.changePasswordDesc", { phone })}
         </Typography.Paragraph>
-        {/* 校验挂内层 Form.Item(唯一控件是 Input):挂外层会把 id/aria-required 注到
-            Space.Compact 的 div 上,div 不支持该 ARIA 属性(axe aria-allowed-attr,critical) */}
+        {/* 校验挂内层 Form.Item(唯一控件是 Input),不挂 Space.Compact 的 div(axe aria-allowed-attr) */}
         <Form.Item>
           <Space.Compact style={{ width: "100%", alignItems: "flex-start" }}>
             <Form.Item
@@ -277,8 +276,7 @@ function PasswordModal({
   );
 }
 
-/** 危险区·账号注销:申请(原因必填 + 键入手机号,走共享 TypeConfirmModal)/
- *  冷静期倒计时 + 撤销。 */
+/** 危险区·账号注销:申请(原因必填 + 键入手机号,走共享 TypeConfirmModal)/ 冷静期倒计时 + 撤销。 */
 function DeletionZone({ phone }: { phone: string }) {
   const { t } = useTranslation(["web", "shared"]);
   const { message } = App.useApp();
@@ -303,7 +301,7 @@ function DeletionZone({ phone }: { phone: string }) {
 
   const pending = req?.status === "pending";
   const statusMeta = req ? metaOf(deletionStatusMap, req.status) : undefined;
-  // 冷静期截止由服务端给出(cooldown_ends_at),前端不自行加 7 天
+  // 冷静期截止由服务端给出(cooldown_ends_at)
   const countdown = pending ? formatDaysUntil(req.cooldown_ends_at) : null;
 
   return (
@@ -403,8 +401,7 @@ function DeletionZone({ phone }: { phone: string }) {
   );
 }
 
-/** 实名卡四态:未就绪骨架 / 错误可重试(绝不把「没查到」渲染成「未认证」) / 已认证 / 未认证;
- *  平台未开通实名(安全策略 real_name_enabled=false)时表单可见但禁用 + 说明(不藏功能)。 */
+/** 实名卡四态:未就绪骨架 / 错误可重试 / 已认证 / 未认证;平台未开通实名(real_name_enabled=false)时表单可见但禁用 + 说明。 */
 function RealNameCard({
   me,
   enabled,

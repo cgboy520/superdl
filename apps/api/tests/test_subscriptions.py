@@ -1,14 +1,4 @@
-"""包周期(预付)全链路。
-
-每条用例要能答出「它挂了说明什么坏了」:
-
-- 折扣算术:页面显示的原价/优惠/应付三行对不上实扣金额。
-- 零重复扣款:同一个 Idempotency-Key 重放会二次扣一整个月的钱。
-- 结算跳过:预付过的实例又被按小时扣了一遍(二次收费)。
-- 三处配套过滤:包月用户余额为 0 时被欠费巡检误停机 / 开不出新机 / 关机时被出尾账。
-- 库存预留:包月用户关机一晚,早上开不了机(容量被别人买走)。
-- 到期链路:到期不停机(免费继续跑)或停机后永不回收(实例盘泄漏)。
-"""
+"""包周期(预付)全链路:折扣算术、幂等零重复扣款、结算跳过、配套过滤、库存预留、到期链路。"""
 
 import asyncio
 from datetime import timedelta
@@ -53,8 +43,8 @@ IMAGE = IMAGE_PYTORCH
 
 class TestExpiringEndpoint:
     async def test_expiring_lists_only_horizon_hits_sorted(self, client, sm, fake):
-        """到期横幅轻端点:只回临期(active 且 ≤ within_days)实例,升序,不分页;
-        路由注册顺序守护:/instances/expiring 不被 /instances/{uuid} 吃掉。"""
+        """到期横幅端点:只回临期(active 且 ≤ within_days)实例,升序,不分页;
+        /instances/expiring 不被 /instances/{uuid} 吃掉。"""
         headers, uuid, _user_id, _sku, _key = await provision_subscription(
             client, sm, fake, "13910000101"
         )
@@ -85,14 +75,10 @@ async def _policies(sm) -> EffectivePolicies:
 
 
 class TestQuoteArithmetic:
-    """报价三件套:前端逐行渲染的那三个数必须与实扣金额自洽。"""
+    """报价三件套与实扣金额自洽。"""
 
     def test_month_matches_hand_math(self):
-        """¥3.99/时 × 720 时 × 8 折 = ¥2298.24 —— UI 稿上写死的那个数。
-
-        挂了说明折扣口径变了(或周期小时数不再是 720),市场页与续费 modal 上
-        用户看到的价格会和实扣对不上。
-        """
+        """¥3.99/时 × 720 时 × 8 折 = ¥2298.24;挂了说明折扣口径或周期小时数变了。"""
         policies = EffectivePolicies(
             **{
                 **{
@@ -131,11 +117,11 @@ class TestQuoteArithmetic:
         )
         assert q.hours == PERIOD_HOURS["year"] * 2
         assert q.discount_amount == q.list_amount - q.amount
-        # 应付 = 折后时价 × 份数 × 小时数,与前端能看到的口径逐字一致
+        # 应付 = 折后时价 × 份数 × 小时数
         assert q.amount == (q.unit_price * 2 * q.hours).quantize(Decimal("0.01"))
 
     def test_cpu_instance_bills_one_unit(self):
-        """CPU 实例 gpu_count=0 收 1 份(billing_units),不是 0 份 —— 收 0 份即整档免费。"""
+        """CPU 实例 gpu_count=0 按 1 份(billing_units)收。"""
         policies = EffectivePolicies(
             **{
                 **{
@@ -155,10 +141,7 @@ class TestQuoteArithmetic:
 
 class TestOrderAndIdempotency:
     async def test_order_debits_once_and_snapshots_discounted_price(self, client, sm, fake):
-        """下单即扣整段周期的钱,实例落的是**折后**时价。
-
-        挂了说明预扣没走通(用户白拿一个月)或时价快照错(列表页价格失真)。
-        """
+        """下单即扣整段周期,实例落折后时价;挂了说明预扣或时价快照坏了。"""
         _headers, uuid, user_id, _, _ = await provision_subscription(
             client, sm, fake, "13911100001"
         )
@@ -187,14 +170,11 @@ class TestOrderAndIdempotency:
         assert len(ledger) == 1
         assert ledger[0].amount == -sub.amount_paid
         assert ledger[0].ref_id == str(sub.id)
-        # 到期时刻与定价同源:720 小时,不是自然月
+        # 到期时刻 = 720 小时
         assert sub.expires_at - sub.started_at == timedelta(hours=720)
 
     async def test_replayed_key_charges_once(self, client, sm, fake):
-        """同一个 Idempotency-Key 重放:**零重复扣款**、零重复订阅行。
-
-        挂了说明用户点两次「确认」会被扣两个月的钱 —— 计费面最贵的一类 bug。
-        """
+        """同一 Idempotency-Key 重放:零重复扣款、零重复订阅行。"""
         headers, user_id, key_id = await create_user_with_key(client, "13911100002")
         await fund_wallet(sm, user_id, "5000.00")
         sku_id = await create_test_sku(sm)
@@ -217,7 +197,7 @@ class TestOrderAndIdempotency:
         assert balance == Decimal("5000.00") - subs[0].amount_paid
 
     async def test_insufficient_balance_never_reaches_creating(self, client, sm, fake):
-        """余额不够买一个月:直接 400,不留半台 creating 实例、不扣钱。"""
+        """余额不够买一个月:400,不留 creating 实例、不扣钱。"""
         headers, user_id, key_id = await create_user_with_key(client, "13911100003")
         await fund_wallet(sm, user_id, "10.00")
         sku_id = await create_test_sku(sm)
@@ -236,7 +216,7 @@ class TestOrderAndIdempotency:
         assert count == 0
 
     async def test_period_field_rejected_on_on_demand(self, client, sm):
-        """按量单里带 period 一律 422:静默忽略会让用户以为自己买的是包月。"""
+        """按量单带 period 一律 422。"""
         headers, user_id, key_id = await create_user_with_key(client, "13911100004")
         await fund_wallet(sm, user_id)
         sku_id = await create_test_sku(sm)
@@ -254,7 +234,7 @@ class TestOrderAndIdempotency:
         assert resp.status_code == 422
 
     async def test_sku_with_period_disabled_refuses_subscription(self, client, sm, fake):
-        """运营关掉这条 SKU 的包周期后,直调接口也买不到(前端只是把 chips 置灰)。"""
+        """SKU 关闭包周期后直调接口也买不到。"""
         headers, user_id, key_id = await create_user_with_key(client, "13911100005")
         await fund_wallet(sm, user_id, "5000.00")
         sku_id = await create_test_sku(sm, gpu_cores_pct=45, vcpu=7)
@@ -269,10 +249,7 @@ class TestOrderAndIdempotency:
 
 class TestSettlementSkip:
     async def test_no_hourly_bill_for_subscription(self, client, sm, fake):
-        """包周期实例跑一整段、再关机,都不产生任何 bills_hourly 行。
-
-        挂了 = 二次收费:用户先付了一个月,又被按小时扣了一遍。
-        """
+        """包周期实例整段运行与关机都不产生 bills_hourly 行;挂了 = 二次收费。"""
         from app.core.timeutil import hour_floor
         from app.modules.billing.settlement import settle_due_hours
         from app.modules.orchestrator.models import InstanceEvent
@@ -282,7 +259,7 @@ class TestSettlementSkip:
         )
         async with sm() as s:
             inst = (await s.execute(select(Instance).where(Instance.uuid == uuid))).scalar_one()
-            # 把进入 running 的事件回拨到上一个自然小时,让整点结算有窗口可算
+            # 进入 running 的事件回拨到上一自然小时
             await s.execute(
                 update(InstanceEvent)
                 .where(InstanceEvent.instance_id == inst.id)
@@ -291,7 +268,7 @@ class TestSettlementSkip:
             await s.commit()
             instance_id = inst.id
         await settle_due_hours(sm)
-        # 关机的尾账同样不出
+        # 关机尾账同样不出
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
         await reconcile_once(sm)
@@ -306,10 +283,7 @@ class TestSettlementSkip:
 
 class TestCompanionFilters:
     async def test_zero_balance_subscriber_is_not_stopped(self, client, sm, fake):
-        """余额清零的包月用户不被欠费巡检停机 —— 他已经付过钱了。
-
-        挂了 = 包月用户在周期中途被平台停机,最难解释的一类事故。
-        """
+        """余额清零的包月用户不被欠费巡检停机。"""
         _headers, uuid, user_id, _, _ = await provision_subscription(
             client, sm, fake, "13911100020"
         )
@@ -323,7 +297,7 @@ class TestCompanionFilters:
         assert inst.status == "running"
 
     async def test_subscription_does_not_block_new_on_demand_instance(self, client, sm, fake):
-        """包月实例不进在途燃烧率:否则把余额几乎买光的用户**开不出任何新机**。"""
+        """包月实例不进在途燃烧率。"""
         headers, _uuid, user_id, sku_id, key_id = await provision_subscription(
             client, sm, fake, "13911100021"
         )
@@ -344,7 +318,7 @@ class TestCompanionFilters:
         assert resp.status_code == 202, resp.text
 
     async def test_stopped_subscription_is_not_frozen_by_arrears(self, client, sm, fake):
-        """周期内关机 + 余额 0:不进欠费冻结链(冻结条件是「到期」不是「没钱」)。"""
+        """周期内关机 + 余额 0:不进欠费冻结链。"""
         headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100022")
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
@@ -362,10 +336,7 @@ class TestCompanionFilters:
 
 class TestCapacityReservation:
     async def test_stopped_subscription_still_holds_capacity(self, client, sm, fake):
-        """未到期的包周期实例即使已停机,库存仍算它占着。
-
-        挂了 = 包月用户关机一晚,早上开不了机(卡被别人买走了)。
-        """
+        """未到期的包周期实例即使已停机仍占库存。"""
         headers, uuid, _user_id, sku_id, _key_id = await provision_subscription(
             client, sm, fake, "13911100030", sku={"gpu_cores_pct": 100, "vcpu": 16, "mem_gb": 64}
         )
@@ -393,17 +364,14 @@ class TestCapacityReservation:
         )
         assert resp.status_code == 409
         assert resp.json()["code"] == "NO_CAPACITY"
-        # 市场页的可开数必须与软准入同源:一个说有货、一个 409,用户只能靠试错才知道真相
+        # 市场页可开数与软准入同源
         market = (await client.get("/api/v1/skus")).json()
         assert next(s["available_count"] for s in market if s["id"] == sku_id) == 0
 
 
 class TestRenewal:
     async def test_renew_extends_from_old_expiry_and_chains(self, client, sm, fake):
-        """提前续费从**老到期时刻**起算,并串上 renewed_from_id。
-
-        挂了 = 提前续费的用户白丢手上剩余的天数。
-        """
+        """提前续费从老到期时刻起算,串上 renewed_from_id。"""
         headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100040")
         async with sm() as s:
             old = (
@@ -439,7 +407,7 @@ class TestRenewal:
         assert rows[1].expires_at == old_expiry + timedelta(hours=1440)
 
     async def test_renew_prices_from_original_snapshot_not_current_sku(self, client, sm, fake):
-        """SKU 涨价不追已购用户:续费按 subscriptions.unit_price(下单时的原价快照)算。"""
+        """续费按 subscriptions.unit_price(下单时原价快照)算,不追 SKU 现价。"""
         headers, uuid, user_id, sku_id, _ = await provision_subscription(
             client, sm, fake, "13911100041"
         )
@@ -501,15 +469,10 @@ class TestRenewal:
 
 
 class TestIdempotencyFingerprint:
-    """订阅的幂等键必须带请求指纹:转换与续费共用 UNIQUE(user_id, idempotency_key) 一个
-    命名空间,没有指纹,一把键换个目标就会静默重放**另一条**单。"""
+    """订阅幂等键带请求指纹:同键异参 409,不静默重放另一条单。"""
 
     async def test_same_key_on_another_instance_is_409(self, client, sm, fake):
-        """同一把键打向另一台实例 → 409,而不是回另一台的订阅。
-
-        挂了 = 用户收到 200 + X-Idempotent-Replay 和一份别的实例的订阅详情,被告知
-        「续上了」;而这台目标实例既没续期也没扣款 —— 计费面最难被投诉发现的一类错。
-        """
+        """同一把键打向另一台实例 → 409。"""
         headers, uuid_a, user_id, sku_id, key_id = await provision_subscription(
             client, sm, fake, "13911100050", fund="20000.00"
         )
@@ -545,8 +508,7 @@ class TestIdempotencyFingerprint:
             assert await wallet.get_balance(s, user_id) == balance_before  # 也没被扣款
 
     async def test_same_key_with_another_period_is_409(self, client, sm, fake):
-        """同一台实例、同一把键,但换了周期 → 409:指纹覆盖的是「决定这单形态的全部参数」,
-        不只是实例 id。挂了说明改完周期重试会拿回旧周期的单,用户以为买的是新周期。"""
+        """同一台实例、同一把键、换周期 → 409:指纹覆盖决定单形态的全部参数。"""
         headers, uuid, _, _, _ = await provision_subscription(
             client, sm, fake, "13911100051", fund="20000.00"
         )
@@ -566,13 +528,7 @@ class TestIdempotencyFingerprint:
         assert swapped.json()["message_key"] == "common.idempotencyKeyMismatch"
 
     async def test_convert_replay_lookup_rejects_another_instance(self, client, sm, fake):
-        """转换路径的重放查询(find_replay_row):给全目标参数时同键异参即 409,给对了才回重放行。
-
-        转换的重放查询排在 orchestrator.subscribe_instance 的最前面(必须最先问,见 convert
-        的 docstring),调用点要把目标实例与周期一起传下来才做得了异参检测。本用例直接压
-        billing 侧的守卫:挂了说明指纹比对没接上——那时一把键换台实例就会拿回别人的订阅单,
-        用户被告知转成功了,而目标实例既没转也没扣款。
-        """
+        """转换路径的重放查询(find_replay_row):同键异参 409,参数全对才回重放行。"""
         from app.core.errors import AppError
         from app.modules.billing import subscriptions
 
@@ -619,10 +575,7 @@ class TestIdempotencyFingerprint:
 
 class TestExpiryChain:
     async def test_expire_stops_then_freezes_then_reclaims(self, client, sm, fake):
-        """到期 → 停机 → 冻结 → 回收全链路。
-
-        挂在第一步 = 到期后仍免费在跑;挂在后两步 = 实例盘永远收不回来。
-        """
+        """到期 → 停机 → 冻结 → 回收全链路。"""
         _headers, uuid, user_id, _, _ = await provision_subscription(
             client, sm, fake, "13911100050"
         )
@@ -642,7 +595,7 @@ class TestExpiryChain:
             inst = (await s.execute(select(Instance).where(Instance.uuid == uuid))).scalar_one()
         assert inst.status == "stopped"
 
-        # 停稳后的下一轮把它送进 frozen 并起 72h 倒计时
+        # 停稳后下一轮进 frozen,起 72h 倒计时
         counts = await subscription_patrol(sm)
         assert counts["frozen"] == 1
         async with sm() as s:
@@ -655,17 +608,14 @@ class TestExpiryChain:
             )
             await s.commit()
 
-        # 回收仍由 balance_patrol 的既有分支做(状态机只有一处实现)
+        # 回收由 balance_patrol 既有分支做
         await balance_patrol(sm)
         async with sm() as s:
             inst = (await s.execute(select(Instance).where(Instance.uuid == uuid))).scalar_one()
         assert inst.status in ("releasing", "released")
 
     async def test_frozen_subscription_is_not_unfrozen_by_balance(self, client, sm, fake):
-        """到期冻结的实例不会因为「余额充足」被解冻 —— 解冻条件是续费。
-
-        挂了 = 余额充足的用户到期后被无限解冻,冻结倒计时永远走不到头(免费续期)。
-        """
+        """到期冻结的实例不因余额充足解冻;解冻条件是续费。"""
         _headers, uuid, user_id, _, _ = await provision_subscription(
             client, sm, fake, "13911100051"
         )
@@ -686,7 +636,7 @@ class TestExpiryChain:
         assert inst.status == "frozen"
 
     async def test_expired_subscription_cannot_start(self, client, sm, fake):
-        """到期后开机被拒(先续费):放行等于到期后免费续跑。"""
+        """到期后开机被拒(先续费)。"""
         headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100052")
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
@@ -785,10 +735,7 @@ class TestExpiryChain:
         assert rows[0].status == "expired"
 
     async def test_renew_rejected_when_balance_is_frozen(self, client, sm, fake):
-        """渠道冲正冻结额不得用于手动续费:余额看着够、可用余额(余额-冻结)不够 → 拒。
-
-        挂了 = 冻结款被续费吃掉,渠道核销时平台才发现钱已不在。
-        """
+        """手动续费按可用余额(余额-冻结)判,冲正冻结额不可用。"""
         headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100057")
         async with sm() as s:
             paid = (
@@ -797,7 +744,7 @@ class TestExpiryChain:
                 .amount_paid
             )
             w = await wallet.lock_wallet(s, user_id)
-            # 冻结到「余额够但可用差一分钱」:裸余额口径会放行,可用余额口径必须拦
+            # 冻结到「余额够但可用差一分钱」
             w.frozen = w.balance - paid + Decimal("0.01")
             await s.commit()
         resp = await client.post(
@@ -808,7 +755,7 @@ class TestExpiryChain:
         assert resp.status_code == 400
         assert resp.json()["message_key"] == "billing.insufficientAvailableFrozen"
         async with sm() as s:
-            # 老订阅行不被改坏(请求级事务回滚):仍只有一条 active
+            # 老订阅行不变:仍只有一条 active
             rows = (
                 (await s.execute(select(Subscription).where(Subscription.user_id == user_id)))
                 .scalars()
@@ -817,8 +764,7 @@ class TestExpiryChain:
             assert [r.status for r in rows] == ["active"]
 
     async def test_auto_renew_with_frozen_balance_falls_back_to_stop(self, client, sm, fake):
-        """自动续费撞上全额冻结:预检按可用余额口径落 renew_failed 走到期停机,
-        而不是把冻结款扣掉(平台 30 分钟巡检自动跑,无需任何攻击者)。"""
+        """自动续费撞上全额冻结:预检按可用余额落 renew_failed 走到期停机。"""
         headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100058")
         await client.post(
             f"/api/v1/instances/{uuid}/auto-renew", json={"enabled": True}, headers=headers
@@ -848,7 +794,7 @@ class TestExpiryChain:
         assert rows[0].status == "expired"
 
     async def test_expiring_warning_is_sent_once(self, client, sm, fake):
-        """临期预警每个到期时刻只发一条(巡检 30 分钟一轮,不去重就是每半小时一条短信)。"""
+        """临期预警每个到期时刻只发一条。"""
         from app.modules.notify.models import Notification
 
         _headers, _uuid, user_id, _, _ = await provision_subscription(
@@ -879,11 +825,7 @@ class TestExpiryChain:
 
 
 class TestRenewConcurrency:
-    """续费并发(手动 × 自动)的零重复扣款纪律。
-
-    挂了 = 两条路径产出第二条 active 订阅行,
-    或同一周期(同一 renewed_from_id)被续出两行、二次扣款。
-    """
+    """续费并发(手动 × 自动)零重复扣款。"""
 
     async def test_concurrent_manual_and_auto_renew_never_double_charges(self, client, sm, fake):
         """无论谁先赢:一实例仅一行 active,同一周期不被续两次,余额与链上实扣自洽。"""
@@ -921,10 +863,7 @@ class TestRenewConcurrency:
             assert await wallet.get_balance(s, user_id) == balance_before - charged
 
     async def test_auto_renew_after_manual_renew_is_noop(self, client, sm, fake):
-        """手动续费已完成后再跑到期巡检:自动续费不重复扣款(等锁后复核命中)。
-
-        挂了 = 巡检把已续过的周期再续一遍(老行 expired 仍被 UPDATE、插入第二条 active)。
-        """
+        """手动续费完成后再跑到期巡检:自动续费不重复扣款。"""
         headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100097")
         async with sm() as s:
             await s.execute(
@@ -955,15 +894,10 @@ class TestRenewConcurrency:
 
 
 class TestRestartGate:
-    """重启的资金门禁与开机同口径:包周期看订阅有效期,按量看余额。
-
-    挂在第一例 = 已预付整周期的包月用户余额为 0(正常态)时重启被余额门禁拦下,
-    付费资产须充值才能恢复;挂在第二例 = 已到期实例借重启绕过开机有效期门禁,
-    重建 Pod 免费续跑;挂在第三例 = 按量余额不足分支被顺带改坏。
-    """
+    """重启资金门禁与开机同口径:包周期看订阅有效期,按量看余额。"""
 
     async def test_subscription_restart_ignores_balance(self, client, sm, fake):
-        """包月实例余额为 0 重启照常:整周期已预付,余额门禁不该拦。"""
+        """包月实例余额为 0 重启照常。"""
         headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100090")
         async with sm() as s:
             await s.execute(update(Wallet).where(Wallet.user_id == user_id).values(balance=0))
@@ -977,7 +911,7 @@ class TestRestartGate:
         assert (await get_instance(client, headers, uuid))["status"] == "running"
 
     async def test_expired_subscription_restart_aborts_at_stopped(self, client, sm, fake):
-        """到期包月实例重启:停在 stopped 并发通知,不能重建 Pod 绕过有效期门禁。"""
+        """到期包月实例重启:停在 stopped 并发通知。"""
         headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100091")
         async with sm() as s:
             await s.execute(
@@ -1025,7 +959,7 @@ class TestRestartGate:
 
 class TestRelease:
     async def test_release_cancels_subscription_without_refund(self, client, sm, fake):
-        """中途释放:订阅转 cancelled、**不退款**(预付语义),库存预留同时解除。"""
+        """中途释放:订阅转 cancelled、不退款,库存预留解除。"""
         headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100060")
         async with sm() as s:
             balance_before = await wallet.get_balance(s, user_id)
@@ -1044,7 +978,7 @@ class TestRelease:
 
 class TestListView:
     async def test_list_inlines_subscription_summary(self, client, sm, fake):
-        """列表页内联到期信息:一次批量查询,不逐行打接口(web.md 的硬规矩)。"""
+        """列表页内联到期信息:一次批量查询。"""
         headers, uuid, _user_id, _, _ = await provision_subscription(
             client, sm, fake, "13911100070"
         )
@@ -1059,11 +993,7 @@ class TestListView:
 
 class TestReconcileAndReporting:
     async def test_prepaid_is_reconciled_and_counted_as_revenue(self, client, sm, fake):
-        """预付这段钱必须被对账覆盖、也必须计进收入。
-
-        对账挂了 = `ref_type='subscription'` 的扣款成了全无核对的一段钱(写错/写重/写漏
-        都没有任何机制会发现);收入挂了 = 运营看到的「今日收入」把包周期全漏掉。
-        """
+        """预付扣款(ref_type='subscription')进对账与收入统计。"""
         from app.modules.billing.reconcile import bills_vs_consume, dangling_consume_refs
         from app.modules.billing.wallet import revenue_summary
 
@@ -1078,14 +1008,14 @@ class TestReconcileAndReporting:
             billed, consumed = await bills_vs_consume(s, since, now_utc() + timedelta(minutes=1))
             dangling = await dangling_consume_refs(s)
             revenue = await revenue_summary(s)
-        # 出账侧(subscriptions.amount_paid)与消费侧(ledger)逐分相等
+        # subscriptions.amount_paid 与 ledger 逐分相等
         assert billed == consumed == paid
         assert dangling == 0
         assert Decimal(revenue["today_prepaid"]) == paid
         assert Decimal(revenue["month_revenue"]) >= paid
 
     async def test_overview_counts_active_subscriptions(self, client, sm, fake):
-        """总览的「包周期在保数」按订阅行数,不按实例状态 —— 停机的包月实例仍在保。"""
+        """总览「包周期在保数」按订阅行数,停机的包月实例仍在保。"""
         from app.modules.adminapi.service import overview
 
         headers, uuid, _, _, _ = await provision_subscription(client, sm, fake, "13911100081")
@@ -1097,7 +1027,7 @@ class TestReconcileAndReporting:
 
 
 class TestConvertToSubscription:
-    """按量转包周期。要害只有一个:转换那一刀两侧的账,不重复也不留缝。"""
+    """按量转包周期:转换点两侧的账不重复、不留缝。"""
 
     async def _on_demand_running(self, client, sm, fake, phone: str):
         headers, uuid, user_id = await provision_running(client, sm, fake, phone=phone)
@@ -1105,11 +1035,7 @@ class TestConvertToSubscription:
         return headers, uuid, user_id
 
     async def test_pre_conversion_hours_are_settled_not_forgiven(self, client, sm, fake):
-        """转换前那段按量时间必须先出账。
-
-        挂了 = 用户开着按量机跑一整天,临睡前转包月,那一天的钱平台永远收不到
-        —— `billing_candidates` 按**当前** market 挑候选,market 一翻就再也没人管那些小时了。
-        """
+        """转换前的按量时段先出账。"""
         from app.core.timeutil import hour_floor
         from app.modules.orchestrator.models import InstanceEvent
 
@@ -1140,17 +1066,17 @@ class TestConvertToSubscription:
             inst = (
                 await s.execute(select(Instance).where(Instance.id == instance_id))
             ).scalar_one()
-        # 转换前那一段有账单行,且用的是**转换前**的按量时价
+        # 转换前一段有账单行,用转换前的按量时价
         assert len(bills) == 1
         assert bills[0].unit_price == unit
         assert bills[0].detail["source"] == "convert"
         assert bills[0].seconds_used > 0
-        # 转换后 market 翻了、时价换成折后价
+        # 转换后 market 翻了,时价换成折后价
         assert inst.market == "subscription"
         assert inst.price_hourly < unit
 
     async def test_after_conversion_settlement_skips_the_instance(self, client, sm, fake):
-        """转换后小时结算不碰它:两段口径互斥,不能又收包月又收小时。"""
+        """转换后小时结算不碰它。"""
         from app.core.timeutil import hour_floor
         from app.modules.billing.settlement import settle_due_hours
         from app.modules.orchestrator.models import InstanceEvent
@@ -1228,7 +1154,7 @@ class TestConvertToSubscription:
         assert second.json()["message_key"] == "orchestrator.convertNotOnDemand"
 
     async def test_convert_keeps_locked_in_price_not_current_sku_price(self, client, sm, fake):
-        """转换按**建实例时**的价格快照报价:SKU 涨价不追已有实例。"""
+        """转换按建实例时的价格快照报价。"""
         headers, uuid, _user_id = await self._on_demand_running(client, sm, fake, "13911100094")
         async with sm() as s:
             inst = (await s.execute(select(Instance).where(Instance.uuid == uuid))).scalar_one()
@@ -1246,7 +1172,7 @@ class TestConvertToSubscription:
         assert Decimal(resp.json()["quote"]["base_hourly"]) == snapshot
 
     async def test_stopped_instance_converts_without_extra_bill(self, client, sm, fake):
-        """已关机的实例转包周期:没有在跑的时间要结,不该凭空多出账单行。"""
+        """已关机实例转包周期不多出账单行。"""
         headers, uuid, _user_id = await self._on_demand_running(client, sm, fake, "13911100095")
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
@@ -1275,10 +1201,7 @@ class TestConvertToSubscription:
         assert after == before
 
     async def test_convert_refused_when_settlement_is_far_behind(self, client, sm, fake):
-        """结算严重滞后时拒绝转换。
-
-        挂了 = 结算出故障期间转包周期,会把那段真实消费永久免掉,而且没有任何痕迹。
-        """
+        """结算严重滞后时拒绝转换。"""
         from app.core.timeutil import hour_floor
         from app.modules.billing.models import SettlementWatermark
 

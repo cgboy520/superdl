@@ -1,10 +1,8 @@
 """实名认证 provider seam(三要素核验:姓名 + 身份证号 + 手机号)。
 
-能否提交核验由平台配置·安全策略的 `real_name_enabled` 决定(account.service 读开关);
-渠道只有阿里云实人认证·手机号三要素核验简版(Cloudauth 2019-03-07 Mobile3MetaSimpleVerify),
-凭据走平台配置中心(env 为默认值层)。没有 mock 渠道:关闭即 409,测试经 set_realname_provider 注入。
-PIPL 约束:身份证号不落明文,只存脱敏展示串(前 4 + 后 2);
-核验结果即时返回,原文不留存、不进日志。
+开关 `real_name_enabled`(平台配置·安全策略);渠道只有阿里云 Mobile3MetaSimpleVerify,
+凭据走平台配置中心。无 mock 渠道:关闭即 409,测试经 set_realname_provider 注入。
+身份证号只存脱敏串(前 4 + 后 2),原文不留存、不进日志。
 """
 
 from typing import Protocol
@@ -16,7 +14,7 @@ from app.core.aliyun import rpc_call
 
 
 class RealNameError(RuntimeError):
-    """渠道故障(网络/签名/欠费)。调用方转 AppError(REAL_NAME_CHANNEL_ERROR)。"""
+    """渠道故障。调用方转 AppError(REAL_NAME_CHANNEL_ERROR)。"""
 
 
 class RealNameProvider(Protocol):
@@ -67,7 +65,7 @@ class AliyunRealNameProvider:
         biz_code = (body.get("ResultObject") or {}).get("BizCode")
         if biz_code == "1":
             return True
-        if biz_code in ("2", "3"):  # 不一致 / 运营商无记录,均视为核验未通过
+        if biz_code in ("2", "3"):  # 不一致 / 无记录 = 未通过
             return False
         raise RealNameError(f"realname unexpected BizCode: {biz_code}")
 
@@ -95,7 +93,7 @@ async def get_realname_provider(session: AsyncSession) -> RealNameProvider:
 
 
 def mask_id_number(id_number: str) -> str:
-    """脱敏:前 4 + 后 2,中间打星(仅此形态入库)。"""
+    """脱敏:前 4 + 后 2,中间打星。"""
     return f"{id_number[:4]}{'*' * (len(id_number) - 6)}{id_number[-2:]}"
 
 

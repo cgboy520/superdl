@@ -1,14 +1,11 @@
-# worker 组件部署:单 Pod 单 SA,outbox 任务类型与定时任务按组件分片
-# (workers/components.py 为唯一事实源;SUPERDL_WORKER_COMPONENT 声明身份,非法值 fail-closed)。
-#
-# 组件矩阵(副本/权限按职责定;全部 app=superdl-worker 标签,NetworkPolicy 与 PodMonitor 不变):
+# worker 组件部署:单 Pod 单 SA,任务分片见 workers/components.py(SUPERDL_WORKER_COMPONENT 声明身份)。
+# 组件矩阵(全部 app=superdl-worker 标签):
 #   core        2 副本  计费/通知/保洁       SA superdl-worker(零 K8s 权限)
 #   tenant-mgr  2 副本  租户编排 instance.*  SA superdl-tenant-mgr
 #   node-mgr    1 副本  cordon/巡检/注册收敛  SA superdl-node-mgr
 #   prewarm     1 副本  镜像预热 Job         SA superdl-prewarm
 #   disk-ops    1 副本  配额下发/擦除 Job    SA superdl-disk-ops
-# 单副本组件按需直接加副本,无需改代码:巡检靠 advisory lock 单 leader,outbox 领取 SKIP LOCKED。
-# liveness 用心跳文件 mtime(worker 循环每轮触碰,2 分钟未更新即重启)。
+# 副本数可直接加(巡检 advisory lock 单 leader,outbox 领取 SKIP LOCKED)。liveness 用心跳文件 mtime(2 分钟未更新即重启)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -18,8 +15,6 @@ metadata:
 spec:
   replicas: 2
   strategy:
-    # 滚动期间新旧副本并存不会重复执行:定时任务由 PG advisory lock 保证单 leader,
-    # outbox 领取走 SELECT ... FOR UPDATE SKIP LOCKED。
     type: RollingUpdate
   selector:
     matchLabels: {app: superdl-worker, superdl.io/component: core}
@@ -28,24 +23,18 @@ spec:
       labels: {app: superdl-worker, superdl.io/component: core}
     spec:
       serviceAccountName: superdl-worker   # core:纯 DB + 外部渠道,零 K8s 权限(01-rbac.yaml)
-      # Harbor 拉取凭据:首装按 ../secrets.example.yaml 手建,之后由平台按配置中心的机器人凭据
-      # 按指纹覆写(docs/reference/images.md);Harbor 项目 public 时缺它只是 kubelet 告警
+      # Harbor 拉取凭据:首装按 ../secrets.example.yaml 手建,之后由平台覆写(docs/reference/images.md)
       imagePullSecrets:
         - {name: superdl-registry-pull}
-      # 优先级压过租户 Pod:节点资源紧张时不与租户同级被驱逐
       priorityClassName: system-cluster-critical
       nodeSelector:
-        # 平台组件落点统一锚点。前缀 node-restriction.kubernetes.io/ 被 NodeRestriction 准入
-        # 插件拉黑,kubelet 不能自打(理由与不可自打的完整说明见 02-api.yaml 同处注释);
-        # 标签由 deploy/ansible/site.yml 装机后用管理凭据打在控制面节点上。
-        # GPU 节点严禁打此标签。
+        # 平台组件落点锚点(见 02-api.yaml 同处注释)
         node-restriction.kubernetes.io/superdl-infra: "true"
       tolerations:
-        # 必须与 nodeSelector 成对:server 带 CriticalAddonsOnly=true:NoExecute
-        # (rke2/server-config.yaml node-taint),只钉标签不容忍污点 = Pod 永远 Pending
+        # 与 nodeSelector 成对(server 带 CriticalAddonsOnly=true:NoExecute)
         - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
       topologySpreadConstraints:
-        # 2 副本尽量跨节点/跨可用区摊开(对齐 02-api);小集群不满足时仍可调度(ScheduleAnyway)
+        # 对齐 02-api
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
           whenUnsatisfiable: ScheduleAnyway
@@ -68,7 +57,7 @@ spec:
           command: ["python", "-m", "app.workers.main"]
           envFrom:
             - configMapRef: {name: superdl-api-config}
-            # core:计费/通知/保洁——DB + 配置解密 + 短信渠道 + 支付渠道(对账/查单)
+            # core:DB + 配置解密 + 短信渠道 + 支付渠道
             - secretRef: {name: superdl-db}
             - secretRef: {name: superdl-crypto}
             - secretRef: {name: superdl-metrics}
@@ -88,7 +77,7 @@ spec:
                 - test $(( $(date +%s) - $(stat -c %Y /tmp/superdl-worker-heartbeat) )) -lt 120
             initialDelaySeconds: 30
             periodSeconds: 30
-          # requests==limits → Guaranteed:结算/巡检是计费要害,不得先被 evict
+          # requests==limits(Guaranteed)
           resources:
             requests: {cpu: 500m, memory: 512Mi}
             limits: {cpu: 500m, memory: 512Mi}
@@ -147,7 +136,7 @@ spec:
           command: ["python", "-m", "app.workers.main"]
           envFrom:
             - configMapRef: {name: superdl-api-config}
-            # tenant-mgr:租户编排——DB + 配置解密 + Harbor 机器人(拉取凭据托管到租户 ns)
+            # tenant-mgr:DB + 配置解密 + Harbor 机器人
             - secretRef: {name: superdl-db}
             - secretRef: {name: superdl-crypto}
             - secretRef: {name: superdl-metrics}
@@ -213,7 +202,7 @@ spec:
           command: ["python", "-m", "app.workers.main"]
           envFrom:
             - configMapRef: {name: superdl-api-config}
-            # node-mgr:cordon/巡检/注册收敛——DB + 配置解密(集群接入凭据)
+            # node-mgr:DB + 配置解密
             - secretRef: {name: superdl-db}
             - secretRef: {name: superdl-crypto}
             - secretRef: {name: superdl-metrics}
@@ -278,7 +267,7 @@ spec:
           command: ["python", "-m", "app.workers.main"]
           envFrom:
             - configMapRef: {name: superdl-api-config}
-            # prewarm:镜像预热 Job——DB + 配置解密 + Harbor 机器人
+            # prewarm:DB + 配置解密 + Harbor 机器人
             - secretRef: {name: superdl-db}
             - secretRef: {name: superdl-crypto}
             - secretRef: {name: superdl-metrics}
@@ -344,8 +333,7 @@ spec:
           command: ["python", "-m", "app.workers.main"]
           envFrom:
             - configMapRef: {name: superdl-api-config}
-            # disk-ops:配额下发/擦除——仅 DB + 指标;JuiceFS metaurl 不进 worker 进程,
-            # 由配额 Job 按 key 引用 superdl-db(core/k8s/real.py set_disk_quota)
+            # disk-ops:仅 DB + 指标;JuiceFS metaurl 由配额 Job 按 key 引用 superdl-db(core/k8s/real.py set_disk_quota)
             - secretRef: {name: superdl-db}
             - secretRef: {name: superdl-metrics}
           env:

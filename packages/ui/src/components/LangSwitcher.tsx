@@ -1,5 +1,4 @@
-/** 语言切换(两端共用):与两端 i18n.ts 的 SUPPORTED_LANGS 对齐,共享层不反向依赖 app 模块。
- *  浅色面(登录页等)须传 variant="light",默认按顶栏深底渲染;width 按各端顶栏密度传入。 */
+/** 语言切换(两端共用),与两端 i18n.ts SUPPORTED_LANGS 对齐;浅色面传 variant="light"。 */
 
 import { GlobalOutlined } from "@ant-design/icons";
 import { Select } from "antd";

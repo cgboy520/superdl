@@ -1,15 +1,7 @@
 # superdl 命名空间网络边界:入向默认拒绝 + 按服务放行;出向默认拒绝 + 按端点精确放行。
-#
-# 出向端点:PG 5432 / 对象存储 443 / 支付·短信网关 443 / K8s API 6443 /
-# monitoring 9090(API/worker 查 Prometheus:用量聚合、节点热力图、对账报表、用户 GPU 曲线)
-# (DNS 由 allow-dns-egress 统一放行)。CHANGE_ME_* 均为占位——apply 前必须替换为真实
-# 端点(preflight.sh 有提示性检查),外部端点变更时同步改本文件并重新 apply。
-# 网关类端点以域名给出(微信支付 api.mch.weixin.qq.com、支付宝 openapi.alipay.com、
-# 短信服务商 API 域名等):apply 时解析为 CIDR 写入,域名 IP 漂移时同步更新。
-#
-# 新增 Pod 必须补对应放行规则,否则双不通。
-# light 档 k3s 自带 netpol 控制器(内嵌 kube-router),规则同样被执行,不必依赖外层防火墙兜底。
-# kubelet 探针来自节点 host,不受 NetworkPolicy 影响。
+# 出向端点:PG 5432 / 对象存储 443 / 支付·短信网关 443 / K8s API 6443 / monitoring 9090;DNS 由 allow-dns-egress 统一放行。
+# CHANGE_ME_* 为占位,apply 前替换为真实端点(preflight.sh 有检查);网关类域名 apply 时解析为 CIDR,IP 漂移时同步更新。
+# 新增 Pod 必须补放行规则。kubelet 探针不受 NetworkPolicy 影响
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -19,7 +11,7 @@ spec:
   podSelector: {}
   policyTypes: ["Ingress", "Egress"]
 ---
-# 全命名空间放行 DNS:CoreDNS 在 kube-system;没有它所有 Pod 域名解析全挂。
+# 全命名空间放行 DNS(CoreDNS 在 kube-system)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -36,9 +28,7 @@ spec:
         - {protocol: UDP, port: 53}
         - {protocol: TCP, port: 53}
 ---
-# 前端入向:仅 Envoy Gateway 数据面转发来的外部流量。
-# 来源 ns 必须写 envoy-gateway-system 而非 superdl:Gateway 对象虽在 superdl ns,扛流量的
-# Envoy Pod 跟 EG 控制面同 ns(未开 Gateway Namespace Mode),写错即双不通。
+# 前端入向:仅 Envoy 数据面(ns envoy-gateway-system,不是 superdl)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -56,7 +46,7 @@ spec:
       ports:
         - {protocol: TCP, port: 8080}
 ---
-# 前端出向:只做 /api 反代(见 ../nginx.web.conf / nginx.admin.conf),目标仅 superdl-api。
+# 前端出向:/api 反代(../nginx.web.conf / nginx.admin.conf),目标仅 superdl-api
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -74,8 +64,7 @@ spec:
       ports:
         - {protocol: TCP, port: 8000}
 ---
-# API 入向:Envoy Gateway 数据面(外部 API 流量,ns 同上)、monitoring(Prometheus 抓 /metrics、
-# Alertmanager 告警 webhook)、前端 nginx(/api 反代)。
+# API 入向:Envoy 数据面、monitoring(Prometheus 抓 /metrics、Alertmanager webhook)、前端 nginx
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -97,9 +86,7 @@ spec:
       ports:
         - {protocol: TCP, port: 8000}
 ---
-# API 出向:PG / 对象存储 / 支付·短信网关 / K8s API(只读身份;发短信验证码、下单直连渠道)。
-# K8s API 必须按控制面子网 CIDR 放行(VIP + 全部 server IP 都在其内,apiserver 后端切换/
-# 重建不断连);给宽 ipBlock 加 except 私网段会把它一起断掉。
+# API 出向:PG / 对象存储 / 支付·短信网关 / K8s API。K8s API 按控制面子网 CIDR 放行(含 VIP 与全部 server IP)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -119,24 +106,23 @@ spec:
       ports:
         - {protocol: TCP, port: 443}
     - to:
-        # 支付/短信网关域名(微信支付/支付宝/短信服务商)apply 时解析为 CIDR;漂移时同步更新
+        # 支付/短信网关域名 apply 时解析为 CIDR
         - ipBlock: {cidr: "CHANGE_ME_GATEWAY_CIDR"}
       ports:
         - {protocol: TCP, port: 443}
     - to:
-        # 控制面子网 CIDR(含 VIP 与全部 server IP;apiserver 后端是任一 server,
-        # 写 /32 单 IP 会在控制面主备切换/节点重建后断连)
+        # 控制面子网 CIDR(含 VIP 与全部 server IP,不写 /32)
         - ipBlock: {cidr: "CHANGE_ME_K8S_API_CIDR"}
       ports:
         - {protocol: TCP, port: 6443}
     - to:
-        # Prometheus(用量聚合/节点热力图/对账报表/用户 GPU 曲线,00-namespace-config.yaml SUPERDL_PROMETHEUS_URL)
+        # Prometheus(00-namespace-config.yaml SUPERDL_PROMETHEUS_URL)
         - namespaceSelector:
             matchLabels: {kubernetes.io/metadata.name: monitoring}
       ports:
         - {protocol: TCP, port: 9090}
 ---
-# worker 入向:仅 Prometheus(PodMonitor 直抓 Pod :9000,不走 Service)。
+# worker 入向:仅 Prometheus(PodMonitor 直抓 Pod :9000)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -153,9 +139,7 @@ spec:
       ports:
         - {protocol: TCP, port: 9000}
 ---
-# worker 出向:PG / 对象存储 / 支付·短信网关(查单、回调补单)/ K8s API(编排写)。
-# 短信/支付网关域名同 api-egress:apply 时解析为 CIDR,漂移时同步更新。
-# preset(按需启用):平台若开 SMTP 发信,追加一条 465/587 到邮件服务商 CIDR 的规则。
+# worker 出向:PG / 对象存储 / 支付·短信网关 / K8s API。开 SMTP 发信时追加 465/587 到邮件服务商 CIDR
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -175,25 +159,24 @@ spec:
       ports:
         - {protocol: TCP, port: 443}
     - to:
-        # 支付/短信网关域名(微信支付/支付宝/短信服务商)apply 时解析为 CIDR;漂移时同步更新
+        # 支付/短信网关域名 apply 时解析为 CIDR
         - ipBlock: {cidr: "CHANGE_ME_GATEWAY_CIDR"}
       ports:
         - {protocol: TCP, port: 443}
     - to:
-        # 控制面子网 CIDR(同 api-egress:VIP + 全部 server IP;编排写后端可是任一 server)
+        # 控制面子网 CIDR(同 api-egress)
         - ipBlock: {cidr: "CHANGE_ME_K8S_API_CIDR"}
       ports:
         - {protocol: TCP, port: 6443}
     - to:
-        # Prometheus(用量聚合/对账任务查询,同 api-egress)
+        # Prometheus(同 api-egress)
         - namespaceSelector:
             matchLabels: {kubernetes.io/metadata.name: monitoring}
       ports:
         - {protocol: TCP, port: 9090}
 ---
-# 一次性 Job(迁移 / PG 备份 / 数据盘配额下发)出向:PG + 对象存储(备份上传);无入向。
-# 标签在 10-migrate-job.yaml / 06-pg-backup.yaml 的 Pod 模板上;
-# superdl-disk-quota 是 worker 创建的 JuiceFS CLI Job。
+# 一次性 Job(迁移 / PG 备份 / 数据盘配额)出向:PG + 对象存储;无入向。
+# 标签在 10-migrate-job.yaml / 06-pg-backup.yaml 的 Pod 模板与 worker 建的 superdl-disk-quota Job 上
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

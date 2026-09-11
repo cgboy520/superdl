@@ -83,7 +83,7 @@ export const getGetMyTicketApiV1TicketsTicketIdGetUrl = (ticketId: number,) => {
 }
 
 /**
- * 工单详情 + 消息流。owner 校验在 SQL WHERE(他人工单与不存在同回 404)。
+ * 工单详情 + 消息流;他人工单与不存在同回 404。
  * @summary Get My Ticket
  */
 export const getMyTicketApiV1TicketsTicketIdGet = async (ticketId: number, options?: Parameters<typeof customFetch>[1]): Promise<TicketDetailOut> => {

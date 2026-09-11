@@ -1,5 +1,4 @@
-/** 环境变量行编辑器:变量名 + 值 + 密文勾选 + 删除,行内即时报名字问题;批量粘贴 KEY=VALUE 跳过非法行并报条数。
- *  勾了密文的值创建后不再回显,只能整条覆盖(说明写在卡尾)。 */
+/** 环境变量行编辑器:变量名 + 值 + 密文勾选 + 删除,行内即时报名字问题;批量粘贴 KEY=VALUE 跳过非法行并报条数。密文值创建后不回显,只能整条覆盖。 */
 
 import { fontSize } from "@superdl/ui";
 import { Button, Checkbox, Flex, Input, Modal, Space, Typography } from "antd";
@@ -25,7 +24,7 @@ export function EnvRowsEditor({
   const [lastId, setLastId] = useState<string | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkText, setBulkText] = useState("");
-  // 最近一次批量解析跳过的条数:有跳过行时留在 Modal 内报数,全部有效才直接关窗
+  // 最近一次批量解析跳过的条数:有跳过留在 Modal 内报数
   const [bulkSkipped, setBulkSkipped] = useState<number | null>(null);
 
   const issueText = (issue: EnvNameIssue): string => {

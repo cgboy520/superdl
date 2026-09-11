@@ -1,6 +1,4 @@
-/** 在线服务列表:名称 / 状态 / 服务端点 / 规格 / 版本 / 费用 / 创建时间 / 操作;筛选与搜索入 URL(replace)。
- *  列表本身不轮询(游标分页);deploying / stopping / releasing 逐条 5s 轻轮询,状态迁移即回刷列表。
- *  unready 不算过渡态(可能永远未就绪),新鲜度靠窗口聚焦重拉与手动刷新。 */
+/** 在线服务列表:名称 / 状态 / 服务端点 / 规格 / 版本 / 费用 / 创建时间 / 操作;筛选与搜索入 URL(replace)。列表不轮询;deploying / stopping / releasing 逐条 5s 轮询,迁移即回刷;unready 不算过渡态。 */
 
 import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import type { ServiceOut } from "@superdl/api-client";
@@ -40,7 +38,7 @@ import { requireAuth } from "../lib/guard";
 
 export type ServicesSearch = { q?: string; status?: string };
 
-/** 列表状态入 URL:可分享 / 返回不丢;非法值丢弃回默认(已删除的服务不在筛选项里)。 */
+/** 列表状态入 URL;非法值回默认(已删除不在筛选项里)。 */
 export function servicesValidateSearch(search: Record<string, unknown>): ServicesSearch {
   const out: ServicesSearch = {};
   if (typeof search.q === "string" && search.q.trim()) out.q = search.q;
@@ -222,7 +220,7 @@ function ServicesPage() {
             onChange={(v: string | null) => setSearch({ status: v ?? undefined })}
             options={SERVICE_FILTER_STATUSES.map((s) => {
               const meta = metaOf(serviceStatusMap, s);
-              // 裸状态码不进 t():extract 会把它当成新键收集
+              // 裸状态码不进 t()(extract 会当成新键)
               return { value: s, label: meta ? t(meta.labelKey) : s };
             })}
           />

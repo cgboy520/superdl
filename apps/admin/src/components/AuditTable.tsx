@@ -1,4 +1,4 @@
-/** 审计检索。detail(JSONB)承载各「原因必填」弹窗收上来的原因、变更前后值与金额。 */
+/** 审计检索。detail(JSONB)承载原因、变更前后值与金额。 */
 
 import { adminColors, fontSize, formatDateTime, useCsvExport } from "@superdl/ui";
 import { LoadMore, TableErrorEmpty } from "@superdl/ui/components";
@@ -28,7 +28,7 @@ export interface AuditFilters {
   actor_type?: string;
   actor_id?: string;
   q?: string;
-  /** 时间窗(ISO,分钟级);与 limit 一并入 URL */
+  /** 时间窗(ISO,分钟级) */
   since?: string;
   until?: string;
   limit?: number;
@@ -38,9 +38,9 @@ export function AuditTable({
   initial,
   onCommit,
 }: {
-  /** 路由 search 预筛(跳审计链接);变化时回流进筛选框。 */
+  /** 路由 search 预筛;变化时回流进筛选框。 */
   initial?: AuditFilters;
-  /** 筛选提交后回写 URL(/audit 页传入,replace 不产生历史垃圾);不传则纯本地状态 */
+  /** 筛选提交后回写 URL;不传则纯本地状态 */
   onCommit?: (filters: AuditFilters) => void;
 }) {
   const { t } = useTranslation();
@@ -55,7 +55,7 @@ export function AuditTable({
       ? [initial.since ? dayjs(initial.since) : null, initial.until ? dayjs(initial.until) : null]
       : null,
   );
-  // URL 预筛变化(外部跳入)回流进受控/输入框:渲染期派生态,不进 effect
+  // URL 预筛变化回流进输入框(渲染期派生态)
   const initialKey = `${initial?.actor_type ?? ""} ${initial?.actor_id ?? ""} ${initial?.q ?? ""} ${initial?.since ?? ""} ${initial?.until ?? ""} ${initial?.limit ?? ""}`;
   const [prevKey, setPrevKey] = useState(initialKey);
   if (initialKey !== prevKey) {
@@ -77,7 +77,7 @@ export function AuditTable({
     ...(actorType ? { actor_type: actorType } : {}),
     ...(actorId ? { actor_id: actorId } : {}),
     ...(q ? { q } : {}),
-    // showTime:分钟级窗口,不强制整天(startOf/endOf 会把边界外的记录吞掉)
+    // 分钟级窗口,不强制整天
     ...(range?.[0] ? { since: range[0].toISOString() } : {}),
     ...(range?.[1] ? { until: range[1].toISOString() } : {}),
     limit,
@@ -199,7 +199,7 @@ export function AuditTable({
             dataIndex: "detail",
             render: (d: Record<string, unknown> | null) => {
               const text = detailSummary(d);
-              // 长 JSON 一行截断 + 悬浮看全文;完整结构化仍在下方展开行
+              // 一行截断 + 悬浮看全文
               return text ? (
                 <Tooltip title={text}>
                   <Typography.Text

@@ -39,7 +39,7 @@ class TicketMessageOut(BaseModel):
 
 
 class TicketOut(BaseModel):
-    """用户端工单视图(列表项)。不透出 sender_id 等内部字段。"""
+    """用户端工单视图(列表项)。"""
 
     id: int
     ticket_no: str
@@ -86,6 +86,6 @@ class AdminTicketStatusUpdate(BaseModel):
 
 
 class AdminTicketCountOut(BaseModel):
-    """工单计数轻端点(待办角标轮询):DB count,不拉列表全页。"""
+    """工单计数轻端点(待办角标轮询)。"""
 
     count: int

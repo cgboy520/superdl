@@ -13,10 +13,7 @@ def like_escape(q: str) -> str:
 async def next_daily_seq(
     session: AsyncSession, no_col: InstrumentedAttribute[str], prefix: str
 ) -> int:
-    """日内单号下一序列(count("{prefix}-%") + 1)。
-
-    并发同序列由列上的唯一约束兜底,撞车由调用方换下一序列重试(见 tickets/refunds)。
-    """
+    """日内单号下一序列(count("{prefix}-%") + 1);并发撞车由唯一约束兜底,调用方换序列重试。"""
     count = (
         await session.execute(select(func.count()).where(no_col.like(f"{prefix}-%")))
     ).scalar_one()

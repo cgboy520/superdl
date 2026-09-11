@@ -39,32 +39,28 @@ class _FakePod:
 @dataclass
 class FakeOrchestrator:
     auto_ready: bool = True
-    # 模拟真实 K8s 的优雅删除:对象在 etcd 里再留 terminationGracePeriodSeconds,期间
-    # read 仍 200、phase 仍 Running。默认关,复现「删了又立刻同名重建」的时序问题时打开。
+    # 优雅删除:删除后对象再留 terminationGracePeriodSeconds(read 200、phase Running);默认关
     graceful_delete: bool = False
-    # 池 → 该池合成节点的 GPU 数。cpu 池恒 0 卡(有此节点 dev/e2e 才有纯 CPU 档库存)
+    # 池 → 该池合成节点的 GPU 数;cpu 池恒 0 卡
     pool_capacity: dict[str, int] = field(
         default_factory=lambda: {"kata": 16, "hami": 32, "mig": 16, "cpu": 0}
     )
     pods: dict[tuple[str, str], _FakePod] = field(default_factory=dict)
     namespaces: set[str] = field(default_factory=set)
-    # 实例盘 PVC:(ns, name) -> 盘标记。独立于 Pod 生命周期,只有释放/回收才删;
-    # 标记值用于断言「还是原来那块盘」。
+    # 实例盘 PVC:(ns, name) -> 盘标记;只有释放/回收才删,标记值供断言同一块盘
     instance_disks: dict[tuple[str, str], str] = field(default_factory=dict)
     wiped_disks: list[tuple[str, str]] = field(default_factory=list)
     # 数据盘目录配额:subpath -> capacity_gb;fail_next_quota 注入一次下发失败
     disk_quotas: dict[tuple[str, str], int] = field(default_factory=dict)  # (namespace, subpath)
     fail_next_quota: bool = False
-    # 擦除异步语义:auto_wipe=False 时 wipe_disk 进入「进行中」(抛错,对齐真实 Job),
-    # finish_wipe 标记完成后调用返回
+    # auto_wipe=False 时 wipe_disk 抛错(进行中),finish_wipe 后返回
     auto_wipe: bool = True
     wipe_completed: set[tuple[str, str]] = field(default_factory=set)
-    # 受管 Job(wipe)运行中的 Pod:(ns, pod_name) -> labels。独立于 self.pods,且必须登记:
-    # real 里它带 MANAGED_LABEL 会被全量 LIST 命中,不登记就复现不了「泄漏回收误杀擦盘 Job」
+    # 受管 Job(wipe)运行中的 Pod:(ns, pod_name) -> labels(全量 LIST 会命中,对齐 real)
     job_pods: dict[tuple[str, str], dict[str, str]] = field(default_factory=dict)
     # 预热:(node_name, image_ref) -> state;auto_prewarm=True 时创建即 succeeded
     prewarm_jobs: dict[tuple[str, str], str] = field(default_factory=dict)
-    # 预热 Job 引用的拉取凭据 Secret 名(None = 未配机器人),测试据此断言凭据链路
+    # 预热 Job 引用的拉取凭据 Secret 名(None = 未配机器人)
     prewarm_pull_secrets: dict[tuple[str, str], str | None] = field(default_factory=dict)
     # 平台托管的拉取凭据 Secret:ns -> 指纹(对齐 real 的 annotation 语义)
     pull_secrets: dict[str, str] = field(default_factory=dict)
@@ -75,16 +71,13 @@ class FakeOrchestrator:
     node_labels: dict[str, dict[str, str]] = field(default_factory=dict)  # set_node_labels 落点
     # cordon 状态:节点名集合,list_nodes 反映为 Cordoned
     cordoned_nodes: set[str] = field(default_factory=set)
-    # 退役已删除的节点名:delete_node 落点,list_nodes 里不再出现(对齐真实集群)
+    # 退役已删除的节点名:list_nodes 不再出现
     deleted_nodes: set[str] = field(default_factory=set)
     # Service/Ingress 端点(create 注册/delete 移除);测试可手工注入孤儿端点
     endpoints: set[tuple[str, str]] = field(default_factory=set)
-    # 外部占用的 NodePort(非平台对象的 Service):撞占时 create_instance 抛 NodePortTaken
-    # (对齐 real 的 422 归一化);used_node_ports 必须看得见它,否则 blocked 端口复检会把
-    # 真占用误判为已释放
+    # 外部占用的 NodePort:撞占时 create_instance 抛 NodePortTaken;used_node_ports 含它
     external_node_ports: set[int] = field(default_factory=set)
-    # per-instance 敏感 env 的「Secret」(对齐 real 的 instance_env_secret_name 生命周期):
-    # 测试据此断言 token 不落 Pod spec,而是走 secretKeyRef
+    # per-instance 敏感 env 的「Secret」(对齐 real 的 instance_env_secret_name)
     instance_secrets: dict[tuple[str, str], dict[str, str]] = field(default_factory=dict)
     # 能力探测:默认健康 RKE2;fail_probe 模拟断连
     probe_hami_ready: bool = True
@@ -130,15 +123,14 @@ class FakeOrchestrator:
     async def wipe_disk(self, namespace: str, subpath: str) -> None:
         key = (namespace, subpath)
         if key in self.wipe_completed:
-            # 真实语义:Job 已成功 → 清理并返回(擦除只记录这一次)
+            # Job 已成功 → 清理并返回
             self.wipe_completed.discard(key)
             self.wiped_disks.append(key)
             return
         if self.auto_wipe:
             self.wiped_disks.append(key)
             return
-        # 进行中:抛错交 outbox 退避重试(对齐 real._run_managed_job_sync);
-        # 同时登记 wipe Job 的 Pod(real 里 Job 创建后 Pod 即存在直至成功清理)
+        # 进行中:抛错交 outbox 重试(对齐 real._run_managed_job_sync),同时登记 wipe Job 的 Pod
         self.job_pods[(namespace, f"wipe-{subpath}")] = {
             MANAGED_LABEL: "true",
             JOB_NAME_LABEL: f"wipe-{subpath}",
@@ -172,12 +164,12 @@ class FakeOrchestrator:
         key = (spec.namespace, spec.name)
         if spec.secret_env:
             self.instance_secrets[key] = dict(spec.secret_env)
-        # 实例盘已存在即复用(重新开机不重建盘);首次创建才落一个新 token
+        # 实例盘已存在即复用;首次创建才落新 token
         self.instance_disks.setdefault(key, f"lv-{spec.name}")
         existing = self.pods.get(key)
         if existing is not None:
             if existing.deleting:
-                # 真实集群里同名对象 Terminating 时 create 返回 409,不可当幂等跳过
+                # 同名对象 Terminating 时 409,不当幂等跳过(对齐 real)
                 raise RuntimeError(f"fake: pod {spec.name} is terminating, create must wait")
             return  # 幂等
         self.pods[key] = _FakePod(
@@ -204,7 +196,7 @@ class FakeOrchestrator:
         return sorted(self.endpoints)
 
     async def used_node_ports(self) -> set[int]:
-        # 与 real 同口径:平台 Pod 占用 + 外部对象占用(不带平台标签的 Service 也算)
+        # 平台 Pod 占用 + 外部对象占用(对齐 real)
         return {
             p.spec.ssh_node_port for p in self.pods.values() if p.spec.ssh_node_port is not None
         } | set(self.external_node_ports)
@@ -231,9 +223,7 @@ class FakeOrchestrator:
         )
 
     async def read_instance_logs(self, namespace: str, name: str, *, tail_lines: int) -> str:
-        """合成日志:带时间戳的固定几行(含实例名),不按 Pod 存在性报错——
-        dev 下 API 与 worker 是两个进程,内存态 Pod 不同步,存在性报错会让前端联调恒失败。
-        失败路径由 fail_next_logs 注入覆盖。"""
+        """合成日志(带时间戳的固定几行),不按 Pod 存在性报错;失败路径由 fail_next_logs 注入。"""
         if self.fail_next_logs:
             self.fail_next_logs = False
             raise RuntimeError("fake: read_instance_logs failed (injected)")
@@ -283,7 +273,7 @@ class FakeOrchestrator:
         self, node_name: str, image_ref: str, *, image_pull_secret: str | None = None
     ) -> None:
         self.prewarm_pull_secrets[(node_name, image_ref)] = image_pull_secret
-        # setdefault = 幂等:已有 Job(任意状态)不重建
+        # 已有 Job(任意状态)不重建
         self.prewarm_jobs.setdefault(
             (node_name, image_ref), "succeeded" if self.auto_prewarm else "running"
         )

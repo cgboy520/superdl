@@ -1,4 +1,4 @@
-/** WCAG 对比度回归:状态徽标/热力格/奖牌/次级文本 token 必须 ≥4.5:1(AA)。 */
+/** WCAG AA 对比度回归:状态徽标/热力格/奖牌/次级文本 token ≥4.5:1。 */
 
 import { describe, expect, it } from "vitest";
 
@@ -27,7 +27,7 @@ function relLuminance(hex: string): number {
   return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
 }
 
-/** 非透明 hex 直接取;rgba(0,0,0,a) 先按通道与白底合成(亮度不可线性混合)再取 */
+/** hex 直接取;rgba(0,0,0,a) 先与白底合成 */
 function luminanceOf(color: string): number {
   const m = /^rgba\(\s*0\s*,\s*0\s*,\s*0\s*,\s*([\d.]+)\s*\)$/.exec(color);
   const alpha = m?.[1];

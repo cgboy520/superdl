@@ -20,8 +20,7 @@ class TestWalletLedgerInvariant:
         assert counts == {"wallet_mismatch": 0, "bill_mismatch": 0}
 
     async def test_balance_drift_detected_and_not_written_back(self, sm):
-        """手工改一笔余额(模拟坏写/半提交事务)必须被发现并告警;只报不改:
-        自动纠正会把一个可查的差异变成一个不可查的差异。"""
+        """手工改一笔余额被发现并告警;只报不改。"""
         await fund_wallet(sm, 1)
         async with sm() as session:
             await session.execute(update(Wallet).values(balance=Decimal("999.00")))
@@ -77,7 +76,7 @@ class TestBillsVsConsume:
 
 class TestMoneyTableConstraints:
     async def test_overdraft_is_still_allowed(self, sm):
-        """刻意不加 balance >= 0:透支是设计内的(服务已消费完才结算)。"""
+        """不加 balance >= 0 约束(透支是设计内的)。"""
         async with sm() as session:
             await wallet.debit(
                 session,

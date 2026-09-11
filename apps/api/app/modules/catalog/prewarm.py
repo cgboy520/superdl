@@ -1,12 +1,7 @@
-"""镜像预热:outbox handler + 巡检,让 is_prewarmed 成为真实状态。
-
-分工:
-- 巡检 prewarm_patrol(worker 60s):铺行(期望集 = enabled 镜像 × Ready/Cordoned 节点,
-  插行与 enqueue 同事务)、收敛 pulling(问 K8s Job 状态)、失败退避重试、
-  cached 复检(防 kubelet 镜像 GC 后状态失真)、清理(节点消失/镜像禁用)。
-- handler image.prewarm:确保该(镜像,节点)的定点拉取 Job 存在,行置 pulling。
-  Job 创建即返回不等待,完成态由巡检收敛(大镜像拉取可达数十分钟)。
-新节点 Ready 后由巡检自动纳入(≤60s)。
+"""镜像预热:outbox handler + 巡检。
+巡检 prewarm_patrol(60s):铺行(enabled 镜像 × Ready/Cordoned 节点)、收敛 pulling、失败重试、
+cached 复检、清理;
+handler image.prewarm:确保定点拉取 Job 存在,行置 pulling,完成态由巡检收敛。
 """
 
 from datetime import timedelta
@@ -27,11 +22,11 @@ from app.modules.catalog.models import ImageNodeCache, PlatformImage
 
 logger = get_logger(__name__)
 
-# failed 行自动重试的节流窗口(管理员手动预热不受此限)
+# failed 行自动重试的节流窗口
 FAILED_RETRY_INTERVAL = timedelta(minutes=30)
-# pending 行卡死(outbox 死信/worker 长期停机)后的重派超时
+# pending 行卡死后的重派超时
 PENDING_REQUEUE_TIMEOUT = timedelta(minutes=10)
-# 预热覆盖的节点状态:Cordoned 会回役,继续维护缓存;NotReady 保留行但不派新任务
+# 预热覆盖的节点状态;NotReady 保留行但不派新任务
 TARGET_NODE_STATUSES = ("Ready", "Cordoned")
 
 
@@ -52,7 +47,7 @@ async def handle_image_prewarm(session: AsyncSession, task: OutboxTask) -> None:
     image = await session.get(PlatformImage, image_id)
     if image is None or not image.prewarm_enabled:
         return  # 行由巡检清理
-    # 预热 Job 落平台 ns:拉取凭据同样由平台托管到该 ns(未配机器人 = 项目 public,不引用)
+    # 预热 Job 落平台 ns,拉取凭据托管到该 ns
     pull_secret = await ensure_registry_pull_secret(session, get_settings().k8s_platform_namespace)
     await get_orchestrator().prewarm_image(
         node_name, image.image_ref, image_pull_secret=pull_secret
@@ -62,7 +57,7 @@ async def handle_image_prewarm(session: AsyncSession, task: OutboxTask) -> None:
 
 
 async def prewarm_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]:
-    """单轮巡检。advisory lock 保证多副本单实例执行。返回动作计数(测试/日志用)。"""
+    """单轮巡检(advisory lock 单实例执行),返回动作计数。"""
     counts = {"planned": 0, "cached": 0, "failed": 0, "requeued": 0, "removed": 0}
     async with advisory_lock(sm, LockKey.PREWARM_PATROL) as got:
         if not got:
@@ -70,8 +65,7 @@ async def prewarm_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]
         orch = get_orchestrator()
         nodes = await orch.list_nodes()
         known_nodes = {n.name for n in nodes}
-        # cpu 池不预热:平台镜像目录整体是 CUDA 镜像,无卡机用不上其中的 GPU 栈。
-        # 代价是 CPU 实例首次启动现拉镜像,创建页对 CPU 规格不承诺秒级启动
+        # cpu 池不预热
         target_nodes = {
             n.name for n in nodes if n.status in TARGET_NODE_STATUSES and n.pool_label != POOL_CPU
         }
@@ -101,17 +95,17 @@ async def _plan(
         now = now_utc()
         alive: set[tuple[int, str]] = set()
         for row in rows:
-            # 清理:节点已消失 / 镜像已禁用(镜像删除由 FK CASCADE 兜底)
+            # 清理:节点已消失 / 镜像已禁用
             if row.node_name not in known_nodes or row.image_id not in enabled:
                 await session.delete(row)
                 counts["removed"] += 1
                 continue
             alive.add((row.image_id, row.node_name))
-            # NotReady 节点保留行但不派新任务(回 Ready/Cordoned 后由下列分支自然续派)
+            # NotReady 节点保留行但不派新任务
             if row.node_name not in target_nodes:
                 continue
             if row.cached_ref is not None and row.cached_ref != ref_by_id.get(row.image_id):
-                # ref 变了(重推后换 digest):这行缓存的是旧镜像,作废重拉
+                # ref 变了:作废重拉
                 row.status = "pending"
                 row.cached_ref = None
                 row.checked_at = None
@@ -126,8 +120,7 @@ async def _plan(
                 )
                 counts["requeued"] += 1
             elif row.status == "pending" and row.updated_at < now - PENDING_REQUEUE_TIMEOUT:
-                # 任务死信/丢失后行永远停在 pending:超时重派(幂等,Job IfNotPresent)。
-                # 拨 updated_at 节流,最多每 PENDING_REQUEUE_TIMEOUT 补一次
+                # pending 超时重派;拨 updated_at 节流
                 row.updated_at = now
                 enqueue(
                     session, "image.prewarm", {"image_id": row.image_id, "node_name": row.node_name}
@@ -189,7 +182,7 @@ async def _converge_pulling(
                     await orch.delete_prewarm_job(row.node_name, ref)  # 重试时重建
                     counts["failed"] += 1
                 elif status.state == "absent":
-                    # Job 被 TTL 清理或创建丢失:回 pending 重派
+                    # Job 不存在:回 pending 重派
                     row.status = "pending"
                     enqueue(
                         session,

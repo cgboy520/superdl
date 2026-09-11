@@ -1,6 +1,5 @@
 #!/usr/bin/env bats
-# node-join.sh 单测:PATH shim 伪造系统命令,不触碰真实系统。
-# 运行:bats deploy/node-join/tests(需 apt install bats)
+# node-join.sh 单测:PATH shim 伪造系统命令。运行:bats deploy/node-join/tests
 
 SCRIPT="$BATS_TEST_DIRNAME/../../../apps/api/app/modules/nodes/assets/node-join.sh"
 
@@ -11,7 +10,7 @@ setup() {
   export SUPERDL_JOIN_ETC_DIR="$TMP/etc"
   export SUPERDL_JOIN_LVM_DIR="$TMP/lvm"
   export SUPERDL_JOIN_RANCHER_STATE_DIR="$TMP/rancher"
-  # IOMMU 分组非空 = 直通已生效(默认场景);要测「未生效需重启」的用例自行清空该目录
+  # IOMMU 分组非空 = 直通已生效;「未生效需重启」用例自行清空该目录
   export SUPERDL_JOIN_IOMMU_DIR="$TMP/iommu_groups"
   mkdir -p "$TMP/iommu_groups/0"
   export CURL_LOG="$TMP/curl.log"
@@ -19,9 +18,9 @@ setup() {
   export BOOTSTRAP_FIXTURE="$TMP/bootstrap-fixture.json"
   export NVIDIA_OK=1
   export DPKG_INSTALLED=0
-  # 注册令牌经文件传入(与生成命令同形态),不进进程 argv
+  # 注册令牌经文件传入
   printf 'sdln_testtoken' > "$TMP/token"
-  # 假安装器内容固定,pin 经 env 覆盖指向其真实 sha256(脚本内置 pin 是真上游的)
+  # 假安装器内容固定,pin 经 env 覆盖为其 sha256
   export FAKE_SCRIPT_SHA256="$(printf '#!/bin/bash\n' | sha256sum | awk '{print $1}')"
   local fake_installer_sha256
   fake_installer_sha256="$(printf 'fake-installer\n' | sha256sum | awk '{print $1}')"
@@ -109,14 +108,11 @@ fi
 [[ "$DPKG_INSTALLED" == "1" ]] && { echo "ii  nvidia-driver-580-server"; exit 0; }
 exit 1
 EOF
-  # dpkg-query:nvidia-container-toolkit 版本查询(DPKG_NVCTK_VERSION 控制,空 = 未安装走安装分支;
-  # 安装分支里第二次查询返回 DPKG_NVCTK_VERSION_AFTER,模拟装完仍低于下限的失败路径。
-  # 判定锚点是精确的 toolkit 安装行——驱动安装(apt-get install nvidia-driver-*)在 toolkit 之前,
-  # 粗配 '^apt-get install' 会让首次查询就误判为「装后复查」)
+  # dpkg-query:toolkit 版本由 DPKG_NVCTK_VERSION 控制(空 = 未安装);toolkit 安装行之后返回 DPKG_NVCTK_VERSION_AFTER
   cat > "$TMP/bin/dpkg-query" <<'EOF'
 #!/usr/bin/env bash
 echo "dpkg-query $*" >> "$SHIM_CALLS"
-# 不带冒号的 ${VAR-默认值}:显式 export 空串 = 未安装(走安装分支),unset 才取默认
+# ${VAR-默认值}:显式空串 = 未安装,unset 取默认
 v="${DPKG_NVCTK_VERSION-1.17.8}"
 if grep -q '^apt-get install -y -qq nvidia-container-toolkit' "$SHIM_CALLS" 2>/dev/null; then
   v="${DPKG_NVCTK_VERSION_AFTER:-$v}"
@@ -148,8 +144,7 @@ EOF
 #!/usr/bin/env bash
 echo "rke2 version v1.36.2+rke2r1"
 EOF
-  # sh:安装器执行入口(sh <落盘文件>);记录安装器 env(如 INSTALL_K3S_MIRROR)。
-  # 注意不可读 stdin:管道执行本脚本时 stdin 是脚本本体,偷读会吃掉未执行部分
+  # sh:安装器执行入口,记录安装器 env;不可读 stdin
   cat > "$TMP/bin/sh" <<'EOF'
 #!/usr/bin/env bash
 [[ -n "${INSTALL_K3S_MIRROR:-}" ]] && echo "sh INSTALL_K3S_MIRROR=$INSTALL_K3S_MIRROR" >> "$SHIM_CALLS"
@@ -246,19 +241,19 @@ run_script() { run bash "$SCRIPT" --token-file "$TMP/token" --api-base http://fa
   grep -q "nvidia.com/gpu.deploy.device-plugin=false" "$TMP/etc/rancher/rke2/config.yaml"
   grep -q "K10fixture::server:secret" "$TMP/etc/rancher/rke2/config.yaml"
   [ "$(stat -c %a "$TMP/etc/rancher/rke2/config.yaml")" = "600" ]
-  # registries.yaml 落位;含仓库认证凭据(configs.auth),与 config.yaml 同口径 600
+  # registries.yaml 落位,600
   grep -q 'mirrors:' "$TMP/etc/rancher/rke2/registries.yaml"
   [ "$(stat -c %a "$TMP/etc/rancher/rke2/registries.yaml")" = "600" ]
-  # umask 前置:状态目录 0700、日志显式放宽 0644(运维 tail 无需 root),无先宽后窄窗口
+  # 状态目录 0700、日志 0644
   [ "$(stat -c %a "$SUPERDL_JOIN_STATE_DIR")" = "700" ]
   [ "$(stat -c %a "$TMP/join.log")" = "644" ]
   # markers 齐全(含 bootstrap 与完成标记)
   for m in bootstrap precheck nouveau sysctl iommu driver nvidia_toolkit nvme_vg registries agent_config agent_install agent_start completed; do
     [ -f "$SUPERDL_JOIN_STATE_DIR/done.d/$m" ]
   done
-  # NVIDIA Container Toolkit:版本 ≥ 下限,走跳过分支(dpkg-query shim 报 1.17.8)
+  # toolkit 版本 ≥ 下限走跳过分支
   [[ "$output" == *"nvidia-container-toolkit 1.17.8 ≥ 1.17.8,跳过"* ]]
-  # kubelet 单 Pod PID 上限落 kubelet 配置 drop-in(不是 kubelet-arg:那不是 flag,agent 会拒启)
+  # podPidsLimit 落 kubelet 配置 drop-in,不落 kubelet-arg
   grep -q 'podPidsLimit: 4096' "$TMP/rancher/rke2/agent/etc/kubelet.conf.d/50-superdl.conf"
   ! grep -q 'podPidsLimit' "$TMP/etc/rancher/rke2/config.yaml"
   # 进度上报含关键阶段与收尾
@@ -268,7 +263,7 @@ run_script() { run bash "$SCRIPT" --token-file "$TMP/token" --api-base http://fa
   [ ! -f "$TMP/etc/default/grub.d/99-superdl.cfg" ]
   # bootstrap 上报全卡清单(名称+显存 MiB)
   grep -q '"gpu_details": \[{"name": "NVIDIA GeForce RTX 4090", "memory_mib": 24564}\]' "$CURL_LOG"
-  # 驱动/CUDA 版本在驱动已加载的收尾上报附带(首装需重启,bootstrap 时采不到)
+  # 驱动/CUDA 版本随收尾上报
   grep -q '"phase":"waiting_node","state":"ok".*"driver_version":"580.65.06","cuda_version":"12.8"' "$CURL_LOG"
 }
 
@@ -306,7 +301,7 @@ run_script() { run bash "$SCRIPT" --token-file "$TMP/token" --api-base http://fa
 }
 
 @test "断点续跑:bootstrap 已有 marker 时跳过并用盘上 progress 令牌上报" {
-  # 首轮在 agent_start 处人为失败(agent 启动失败):保留 bootstrap marker/已下发配置/令牌落盘
+  # 首轮在 agent_start 处失败:保留 bootstrap marker / 已下发配置 / 令牌落盘
   cat > "$TMP/bin/systemctl" <<'EOF'
 #!/usr/bin/env bash
 echo "systemctl $*" >> "$SHIM_CALLS"
@@ -367,7 +362,7 @@ EOF
   export NVIDIA_OK=0
   run bash -s -- --token-file "$TMP/token" --api-base http://fake.local < "$SCRIPT"
   [ "$status" -eq 0 ]
-  # 重拉副本过了指纹校验(fixture 的 script_sha256 即假脚本正文的 sha256)才会走到重启
+  # 重拉副本过指纹校验后才重启
   grep -q "systemctl reboot" "$SHIM_CALLS"
 }
 
@@ -543,7 +538,7 @@ PYEOF
 @test "--uninstall:停 agent、删本脚本写入的全部配置、清状态目录,不碰 VG 与驱动" {
   run_script
   [ "$status" -eq 0 ]
-  # 断言用动作行都是 uninstall 独有的,不截断 SHIM_CALLS(安装期 tee 仍在收尾,截断会竞态)
+  # 不截断 SHIM_CALLS,断言只用 uninstall 独有的动作行
   run bash "$SCRIPT" --uninstall --token-file "$TMP/token" --api-base http://fake.local
   [ "$status" -eq 0 ]
   grep -q "systemctl disable --now rke2-agent.service" "$SHIM_CALLS"
@@ -554,7 +549,7 @@ PYEOF
   [ ! -f "$TMP/etc/rancher/rke2/harbor-ca.crt" ]
   [ ! -f "$TMP/etc/sysctl.d/99-superdl.conf" ]
   [ ! -f "$TMP/etc/modprobe.d/blacklist-nouveau.conf" ]
-  # 业务数据与驱动不动:绝不出现 vgremove / apt-get remove
+  # 业务数据与驱动不动
   ! grep -q "vgremove" "$SHIM_CALLS"
   ! grep -q "apt-get remove" "$SHIM_CALLS"
   [[ "$output" == *"kubectl delete node"* ]]
@@ -573,13 +568,13 @@ EOF
   run_script
   [ "$status" -eq 0 ]
   [ ! -e "$TMP/etc/rancher/k3s/config.yaml" ]
-  # 池标签与 GPU Operator 落点标签同一条命令落下(hami 池须排斥官方 device-plugin)
+  # 池标签与 GPU Operator 落点标签同一条命令落下
   grep -q "k3s kubectl label node $(hostname) superdl.io/pool=hami nvidia.com/gpu.deploy.device-plugin=false --overwrite" "$SHIM_CALLS"
-  # 驱动版本在打标签前已随 agent_config 上报(对账器判 joined 后上报即 404)
+  # 驱动版本在打标签前随 agent_config 上报
   grep -q '"phase":"agent_config".*"driver_version":"580.65.06"' "$CURL_LOG"
   ! grep -q "k3s-install.sh" "$CURL_LOG"
   ! grep -q "systemctl enable --now k3s-agent.service" "$SHIM_CALLS"
-  # 收尾上报的是 server 单元,且 marker 齐全可重跑直退
+  # 收尾上报 server 单元,marker 齐全
   grep -q "waiting_node" "$CURL_LOG"
   [[ "$output" == *"节点已启动 k3s"* ]]
   [ -f "$SUPERDL_JOIN_STATE_DIR/done.d/completed" ]

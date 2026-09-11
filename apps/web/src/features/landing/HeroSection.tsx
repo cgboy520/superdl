@@ -1,6 +1,4 @@
-/** 主页 Hero:单帧深靛渐变 + 网格纹理 + 右侧玻璃拟态实时数据卡。
- *  数据卡三态:未就绪骨架 / 失败降级为「前往算力市场」CTA(与价格墙同口径) / 实时数据。
- *  库存/底价绝不在查询失败时渲染成假 0。 */
+/** 主页 Hero:单帧深靛渐变 + 网格纹理 + 右侧玻璃拟态实时数据卡。数据卡三态:未就绪骨架 / 失败降级为「前往算力市场」CTA / 实时数据;失败时不渲染假 0。 */
 
 import { brand, colorPrimary, compareAmounts, fontSize, layout } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
@@ -41,7 +39,7 @@ export function HeroSection() {
   const { data: skus } = skusQ;
 
   const minPrice = (skus ?? []).reduce<string | null>(
-    // 金额比较走 compareAmounts(BigInt 万分位):价格墙排序不受浮点精度影响
+    // 金额比较走 compareAmounts(BigInt 万分位)
     (min, s) => (min === null || compareAmounts(s.price_hourly, min) < 0 ? s.price_hourly : min),
     null,
   );
@@ -50,7 +48,7 @@ export function HeroSection() {
   return (
     <section
       style={{
-        // 多重背景:网格纹理叠在渐变上(渐变即 background-image)
+        // 多重背景:网格纹理叠在渐变上
         backgroundImage: `${GRID_TEXTURE}, ${brand.heroBg}`,
         padding: "88px 24px 96px",
       }}
@@ -77,7 +75,7 @@ export function HeroSection() {
             {t("landing.hero.subtitle")}
           </Typography.Paragraph>
           <Space size={16}>
-            {/* 未登录的主 CTA 是注册意图:直达注册态,别让陌生人进登录表单再被拒 */}
+            {/* 未登录主 CTA 直达注册态 */}
             <Link to={loggedIn ? "/instances" : "/login"} search={loggedIn ? {} : { mode: "register" }}>
               <Button
                 size="large"
@@ -102,7 +100,7 @@ export function HeroSection() {
         {screens.lg && (
           <Space orientation="vertical" size={16}>
             {skusQ.isError ? (
-              // 实时数据查询失败:整卡降级为市场入口,不渲染假 0 库存
+              // 实时数据查询失败:整卡降级为市场入口
               <Link to="/market">
                 <Button size="large" ghost>
                   {t("landing.pricing.fallbackCta")}

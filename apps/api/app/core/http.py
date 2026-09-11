@@ -14,12 +14,10 @@ def mark_idempotent_replay(response: Response) -> None:
 
 
 def client_ip(request: Request) -> str | None:
-    """直连对端 IP(单一定义点;用于限流键/合规存证,信任边界为直连,不读 X-Forwarded-For)。"""
+    """直连对端 IP(限流键/合规存证;不读 X-Forwarded-For)。"""
     return request.client.host if request.client else None
 
 
 def bearer_matches(authorization: str | None, token: str) -> bool:
-    """Authorization 头与期望 Bearer token 的常量时间比较(防计时探测出 token 前缀)。
-
-    必须先 encode 成 bytes:compare_digest 的 str 入参遇非 ASCII(畸形头)会抛 TypeError。"""
+    """Authorization 头与期望 Bearer token 的常量时间比较(先 encode 成 bytes)。"""
     return secrets.compare_digest((authorization or "").encode(), f"Bearer {token}".encode())

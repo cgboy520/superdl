@@ -6,7 +6,7 @@
  */
 
 /**
- * 管理端结算缺口视图:水位线被越过但账未结清的窗口留痕。
+ * 管理端结算缺口视图。
  */
 export interface AdminSettlementGapOut {
   created_at: string;

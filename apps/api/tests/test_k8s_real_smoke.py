@@ -1,16 +1,5 @@
-"""真实 K8s 编排冒烟(默认跳过,CI 由 kind job 驱动)。
-
-门控:环境变量 SUPERDL_TEST_KUBECONFIG 指向可用 kubeconfig(CI 的 kind 集群);未设置时
-整文件 skip。这里直接构造 RealOrchestrator,与 conftest 强制的 fake 后端互不干扰。
-
-覆盖 fake 后端够不着的两条安全路径:
-- 租户 namespace 的引导件经 apiserver 落库(PSA 标签、NetworkPolicy、配额、共享 PVC);
-  NetPol 的结构在 test_k8s_real_units 离线钉死,这里只验 apiserver 接受 endPort/except
-- 实例盘生命周期:删除实例不动盘,仅显式 delete_instance_disk(释放/回收)才删盘
-
-kind 默认 CNI 不执行 NetworkPolicy,断言落在对象规约而非实际流量;JuiceFS/TopoLVM 在
-kind 不存在,PVC 停留 Pending 属预期 —— 冒烟只验证对象生命周期。
-"""
+"""真实 K8s 编排冒烟:SUPERDL_TEST_KUBECONFIG 未设置时整文件 skip(CI 由 kind job 驱动)。
+覆盖租户 ns 引导件经 apiserver 落库、实例盘生命周期;只验对象规约,PVC Pending 属预期。"""
 
 import asyncio
 import os
@@ -45,7 +34,7 @@ pytestmark = [
 ]
 
 POD_GONE_TIMEOUT = 30.0  # force 删除通常秒级,留足余量防 CI 抖动
-# PVC 删除是异步的(pvc-protection finalizer 清掉才真消失),不能删完立刻断言 404
+# PVC 删除异步(pvc-protection finalizer)
 PVC_GONE_TIMEOUT = 30.0
 
 
@@ -58,11 +47,7 @@ def orch() -> RealOrchestrator:
 
 @pytest.fixture(scope="module")
 def orch_restricted() -> RealOrchestrator:
-    """受限身份(superdl-tenant-mgr SA token)的编排器:CI kind job 注入
-    SUPERDL_TEST_KUBECONFIG_RESTRICTED(缺失时对应用例 skip,本地开发不强制)。
-
-    客户端在构造时即加载 kubeconfig,与 orch fixture 各自持有独立会话,互不干扰。
-    """
+    """受限身份(superdl-tenant-mgr SA)的编排器:SUPERDL_TEST_KUBECONFIG_RESTRICTED 缺失即 skip。"""
     path = os.environ.get("SUPERDL_TEST_KUBECONFIG_RESTRICTED")
     if not path:
         pytest.skip("SUPERDL_TEST_KUBECONFIG_RESTRICTED 未设置(仅 CI kind job 注入受限身份)")
@@ -72,7 +57,7 @@ def orch_restricted() -> RealOrchestrator:
 
 @pytest.fixture
 async def namespace(orch: RealOrchestrator) -> AsyncIterator[str]:
-    """每用例一只独立租户 ns(带前缀,与 list_instance_pods 的口径一致),结束即删。"""
+    """每用例一只独立租户 ns,结束即删。"""
     ns = f"tenant-smoke-{uuid.uuid4().hex[:8]}"
     await orch.ensure_namespace(ns)
     yield ns
@@ -95,7 +80,7 @@ async def _wait_pod_gone(orch: RealOrchestrator, namespace: str, name: str) -> N
 
 
 async def _wait_pvc_gone(orch: RealOrchestrator, namespace: str, pvc_name: str) -> None:
-    """删盘同样等对象真消失:apiserver 先打 deletionTimestamp,finalizer 清完才 404。"""
+    """等 PVC 真消失(finalizer 清完才 404)。"""
     deadline = asyncio.get_running_loop().time() + PVC_GONE_TIMEOUT
     while True:
         try:
@@ -113,16 +98,14 @@ async def test_namespace_security_baseline(orch: RealOrchestrator, namespace: st
     """租户 ns 引导件:PSA 标签 + 默认 NetPol 隔离 + 配额 + 共享数据盘 PVC;重复下发幂等。"""
     await orch.ensure_namespace(namespace)  # 幂等:fixture 已建,重复下发不得报错
 
-    # 官方客户端方法为动态生成,pyright 推不出返回类型,断言侧一律 Any(同 real.py 惯例)
+    # 官方客户端返回类型推不出,断言侧一律 Any
     ns: Any = orch.core.read_namespace(namespace)
     assert ns.metadata.labels[MANAGED_LABEL] == "true"
-    # PSA:enforce 只到 baseline(平台镜像以 root 运行,restricted 会拒绝全部租户 Pod);
-    # audit/warn 打 restricted 留审计轨迹
+    # PSA:enforce=baseline,audit/warn=restricted
     assert ns.metadata.labels["pod-security.kubernetes.io/enforce"] == "baseline"
     assert ns.metadata.labels["pod-security.kubernetes.io/audit"] == "restricted"
 
-    # NetPol 经 apiserver 落库:只验集群接受 endPort 区间与 ipBlock.except(旧版本 / 部分
-    # CNI 会拒收或丢弃这两项),规约结构由 test_k8s_real_units 离线钉死
+    # NetPol:只验 apiserver 接受 endPort 与 ipBlock.except,结构由 test_k8s_real_units 钉
     netpol: Any = orch.net.read_namespaced_network_policy("tenant-default", namespace)
     spec = netpol.spec
     assert spec is not None and set(spec.policy_types) == {"Ingress", "Egress"}
@@ -131,15 +114,13 @@ async def test_namespace_security_baseline(orch: RealOrchestrator, namespace: st
     assert tcp_rule.ports is not None and any(p.end_port for p in tcp_rule.ports)
     assert tcp_rule.to is not None and tcp_rule.to[0].ip_block is not None
     assert set(tcp_rule.to[0].ip_block._except or []) == set(PRIVATE_CIDRS)
-    # SSH(22)入方向排掉 Pod 网段:租户互扫 22 被挡,而节点 SNAT 后的来源不在该网段。
-    # 这一项与 CNI 的 masquerade 行为强相关(见 _tenant_netpol docstring),集群侧必须验它
-    # 真的被 apiserver 收下 —— 结构本身由 test_k8s_real_units 离线钉死
+    # SSH(22)入方向排掉 Pod 网段
     assert spec.ingress is not None and len(spec.ingress) == 2
     ssh_block = spec.ingress[1]._from[0].ip_block
     assert ssh_block is not None and ssh_block.cidr == "0.0.0.0/0"
     assert ssh_block._except == [get_settings().tenant_pod_cidr]
 
-    # 配额兜底(对象数 + 资源总量)与共享数据盘 PVC 就位(Pending 即可,kind 无对应 SC)
+    # 配额(对象数 + 资源总量)与共享数据盘 PVC 就位(Pending 即可)
     quota: Any = orch.core.read_namespaced_resource_quota("tenant-quota", namespace)
     assert quota.spec is not None and "pods" in quota.spec.hard
     assert "requests.cpu" in quota.spec.hard and "limits.ephemeral-storage" in quota.spec.hard
@@ -147,17 +128,14 @@ async def test_namespace_security_baseline(orch: RealOrchestrator, namespace: st
 
 
 async def test_ensure_namespace_under_tenant_mgr_sa(orch_restricted: RealOrchestrator) -> None:
-    """RBAC 与代码对齐闸:用 superdl-tenant-mgr 的真实受限身份跑 ensure_namespace 全链路
-    (含第二遍的 409→patch 收敛路径——缺 patch 动词时正是这条路在生产 403)。
-
-    挂了 = 01-rbac.yaml 与 real.py 的 _ensure_* 漂移,且 admin kubeconfig 跑的冒烟发现不了。
-    """
+    """RBAC 对齐闸:用 superdl-tenant-mgr 受限身份跑 ensure_namespace 两遍(含 409→patch);
+    挂了 = 01-rbac.yaml 与 real.py 的 _ensure_* 漂移。"""
     from kubernetes import config as k8s_config
 
     ns = f"tenant-rbac-{uuid.uuid4().hex[:8]}"
     await orch_restricted.ensure_namespace(ns)
     try:
-        # 第二遍:全部对象已存在,逐一走 patch 收敛——RBAC 缺 patch 动词时在这里炸 403
+        # 第二遍:全部对象已存在,走 patch 收敛
         await orch_restricted.ensure_namespace(ns)
         ns_obj: Any = orch_restricted.core.read_namespace(ns)
         assert ns_obj.metadata.labels[MANAGED_LABEL] == "true"
@@ -165,8 +143,7 @@ async def test_ensure_namespace_under_tenant_mgr_sa(orch_restricted: RealOrchest
         orch_restricted.core.read_namespaced_limit_range("tenant-defaults", ns)
         orch_restricted.net.read_namespaced_network_policy("tenant-default", ns)
     finally:
-        # ns 删除超出租户 SA 权限面(delete namespaces 未授,刻意保持最小权限),
-        # 用管理面 kubeconfig 清理
+        # ns 删除超出租户 SA 权限面,用管理面 kubeconfig 清理
         k8s_config.load_kube_config(config_file=os.environ["SUPERDL_TEST_KUBECONFIG"])
         await asyncio.to_thread(k8s_client.CoreV1Api().delete_namespace, ns)
 
@@ -177,7 +154,7 @@ async def test_instance_lifecycle_and_disk_reclaim(orch: RealOrchestrator, names
     spec = InstancePodSpec(
         namespace=namespace,
         name=name,
-        # 故意不可拉取的镜像:Pod 停 Pending,冒烟不依赖外网镜像仓库
+        # 不可拉取的镜像:Pod 停 Pending
         image="registry.invalid/smoke:0",
         gpu_resources={},
         runtime_class=None,
@@ -200,25 +177,23 @@ async def test_instance_lifecycle_and_disk_reclaim(orch: RealOrchestrator, names
 
     pod: Any = orch.core.read_namespaced_pod(name, namespace)
     assert pod.spec is not None
-    # JUPYTER_TOKEN 必须以 secretKeyRef 引用 per-instance Secret,明文不进 Pod spec
-    # (spec 进 etcd/审计快照,任何 pods:get/list 身份都能读)
+    # JUPYTER_TOKEN 以 secretKeyRef 引用 per-instance Secret,明文不进 Pod spec
     token_env = next(e for e in pod.spec.containers[0].env if e.name == "JUPYTER_TOKEN")
     assert token_env.value is None
     assert token_env.value_from is not None
     assert token_env.value_from.secret_key_ref.name == f"jupyter-{name}"
     secret: Any = orch.core.read_namespaced_secret(f"jupyter-{name}", namespace)
     assert secret is not None
-    # 租户容器加固基线必须无条件下发(real.py tenant_security_context)
+    # 租户容器加固基线(real.py tenant_security_context)
     sc = pod.spec.containers[0].security_context
     assert sc is not None
     assert sc.allow_privilege_escalation is False
     assert sc.capabilities is not None and sc.capabilities.drop == ["ALL"]
-    # 这三个是 SSH 的硬前置(OpenSSH 预认证特权分离要 chroot + setgid/setuid),
-    # 少任何一个,平台承诺的 ssh root@ 入口在密钥交换阶段就断;多给别的则是加固回退
+    # SSH 硬前置的三个 capability,不多不少
     assert set(sc.capabilities.add or []) == {"SYS_CHROOT", "SETUID", "SETGID"}
     assert sc.seccomp_profile is not None and sc.seccomp_profile.type == "RuntimeDefault"
     assert pod.spec.automount_service_account_token is False
-    # ephemeral-storage 限额(可写层+日志):防写爆节点盘连坐整节点
+    # ephemeral-storage 限额
     res = pod.spec.containers[0].resources
     assert res is not None
     assert res.limits is not None and res.limits.get("ephemeral-storage")
@@ -229,23 +204,22 @@ async def test_instance_lifecycle_and_disk_reclaim(orch: RealOrchestrator, names
     svc: Any = orch.core.read_namespaced_service(name, namespace)
     assert svc.spec is not None and svc.spec.ports[0].node_port == 31999
     orch.core.read_namespaced_service(jupyter_service_name(name), namespace)
-    # 验 apiserver 真的接受我们拼的 parentRefs/hostnames/backendRefs 形状:fake 后端只记
-    # (ns, name) 二元组,拼错字段名它一样通过,只有真 CRD 校验能挡下
+    # apiserver 接受 parentRefs/hostnames/backendRefs 形状
     route: Any = orch.custom.get_namespaced_custom_object(
         GATEWAY_API_GROUP, GATEWAY_API_VERSION, namespace, HTTPROUTE_PLURAL, name
     )
     parent = route["spec"]["parentRefs"][0]
     assert parent["name"] == GATEWAY_NAME and parent["sectionName"] == GATEWAY_APP_LISTENER
 
-    # 删实例:Pod/SVC/HTTPRoute/Secret 清除,实例盘必须保留(数据活过关机,见 base.py 契约)
+    # 删实例:Pod/SVC/HTTPRoute/Secret 清除,实例盘保留(base.py 契约)
     await orch.delete_instance(namespace, name, force=True)
     await _wait_pod_gone(orch, namespace, name)
     orch.core.read_namespaced_persistent_volume_claim(pvc_name, namespace)  # 盘还在
-    # token Secret 随实例一并摘除(不留凭据残骸)
+    # token Secret 随实例摘除
     with pytest.raises(k8s_client.ApiException) as exc_secret:
         orch.core.read_namespaced_secret(f"jupyter-{name}", namespace)
     assert exc_secret.value.status == 404
 
-    # 显式回收(释放/回收路径唯一允许的删盘入口):盘删除成功
+    # 显式回收:盘删除成功
     await orch.delete_instance_disk(namespace, name)
     await _wait_pvc_gone(orch, namespace, pvc_name)

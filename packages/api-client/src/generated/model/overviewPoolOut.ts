@@ -6,7 +6,7 @@
  */
 
 /**
- * 池级 GPU 台账:总量含非 Ready 节点(前端单独画第三段)。
+ * 池级 GPU 台账:总量含非 Ready 节点。
  */
 export interface OverviewPoolOut {
   gpu_spot_used: number;

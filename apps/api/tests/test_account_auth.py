@@ -26,10 +26,7 @@ class TestRegister:
         assert resp.json()["phone"] == PHONE
 
     async def test_password_byte_boundary(self, client: AsyncClient):
-        """bcrypt 上限 72 字节:多字节口令按字符数会绕过 max_length,必须按字节拦成 422。
-
-        72 字节(24 个汉字)可注册;73 字节(25 个汉字)在 schema 层拒掉,不得到哈希层炸 500。
-        """
+        """口令按字节拦 72 上限:24 个汉字可注册,25 个汉字 422。"""
         await send_code(client, "13800000071", "register")
         ok = await client.post(
             "/api/v1/auth/register",
@@ -129,10 +126,7 @@ class TestLogin:
         assert resp.json()["access_token"]
 
     async def test_login_failure_is_indistinguishable(self, client: AsyncClient):
-        """未注册的号 与 已注册但密码错,响应必须逐字节相同。
-
-        可区分即是一个免登录的手机号枚举 oracle(request_id 每请求随机,比对时剔除)。
-        """
+        """未注册的号与已注册但密码错,响应逐字节相同(剔除 request_id)。"""
         await register(client, password="secret123456")
         registered = await client.post(
             "/api/v1/auth/login", json={"phone": PHONE, "password": "wrong-pass"}
@@ -184,8 +178,7 @@ class TestLogin:
     async def test_failure_counter_reset_then_lock_blocks_even_correct_password(
         self, client: AsyncClient
     ):
-        """失败才计数、成功一次清零;桶满后连正确密码也 429 —— 封禁期请求在 bcrypt
-        之前被拦下,不为撞库流量支付哈希成本。"""
+        """失败才计数、成功一次清零;桶满后正确密码也 429。"""
         phone = "13800000082"
         await register(client, phone, password="secret123456")
         for _ in range(4):
@@ -197,13 +190,13 @@ class TestLogin:
             "/api/v1/auth/login", json={"phone": phone, "password": "secret123456"}
         )
         assert ok.status_code == 200, ok.text
-        # 计数已清零:再错 5 次仍是 LOGIN_FAILED(若没清零,第 2 次就该 429 了),桶满 5/5
+        # 计数已清零:再错 5 次仍是 LOGIN_FAILED,桶满 5/5
         for _ in range(5):
             resp = await client.post(
                 "/api/v1/auth/login", json={"phone": phone, "password": "wrong-pass"}
             )
             assert resp.json()["code"] == "LOGIN_FAILED"
-        # 桶已满:正确密码同样 429 —— 证明廉价准入先于凭据校验
+        # 桶已满:正确密码同样 429
         resp = await client.post(
             "/api/v1/auth/login", json={"phone": phone, "password": "secret123456"}
         )
@@ -253,7 +246,7 @@ class TestPasswordReset:
         assert resp.status_code == 200, resp.text
         new_pair = resp.json()
 
-        # 旧 access token 因 token_version 变更立即失效
+        # 旧 access token 立即失效
         assert (
             await client.get("/api/v1/me", headers={"Authorization": f"Bearer {old_access}"})
         ).status_code == 401
@@ -269,7 +262,7 @@ class TestPasswordReset:
         assert resp.status_code == 200, resp.text
 
     async def test_unknown_phone_needs_code_first(self, client: AsyncClient):
-        """未注册手机号:先要过验证码那关,不构成「这个号存不存在」的探测口。"""
+        """未注册手机号:先过验证码。"""
         resp = await client.post(
             "/api/v1/auth/password/reset",
             json={"phone": "13800000092", "sms_code": "123456", "new_password": "newpass123456"},
@@ -281,11 +274,7 @@ class TestSmsQuotaAndBackoff:
     async def test_unconsumed_sends_do_not_burn_victim_daily_quota(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """代耗回归:攻击者替受害者请求验证码,耗不到受害者的 10 次/日配额。
-
-        日配额只按「消费」计(攻击者读不到码,永远计不上),发送侧由 IP 限流与同号递增
-        退避兜底。挂了 = 受害者当日收不到码也登不上。
-        """
+        """替受害者请求验证码耗不到其 10 次/日配额(日配额只按消费计)。"""
         phone = "13800000096"
         async with sm() as session:
             # 同号已有 10 条未消费验证码
@@ -300,13 +289,13 @@ class TestSmsQuotaAndBackoff:
                     )
                 )
             await session.commit()
-        # 受害者自己请求:不被日配额挡(退避上限 480s,最近一条在 2h 前 → 放行)
+        # 受害者自己请求:不被日配额挡
         resp = await client.post(
             "/api/v1/auth/sms-code",
             json={"phone": phone, "purpose": "register"},
         )
         assert resp.status_code == 204, resp.text
-        # 消费(注册)同样不受那 10 条未消费记录影响
+        # 消费(注册)不受未消费记录影响
         resp = await client.post(
             "/api/v1/auth/register",
             json={"phone": phone, "sms_code": "123456", "accept_terms": True},

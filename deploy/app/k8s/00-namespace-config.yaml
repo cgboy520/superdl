@@ -1,16 +1,11 @@
-# 平台自身部署清单(kubectl apply -f deploy/app/k8s/ 按序应用)。
-# Secret 不放在本目录:模板见 ../secrets.example.yaml,必须留在整目录 apply 路径之外,
-# 否则日常 apply 会把生产凭据覆盖成占位值。真实值经外部 Secret 管理注入,禁止提交明文。
+# 平台自身部署清单(kubectl apply -f deploy/app/k8s/ 按序应用)。Secret 不放本目录,模板见 ../secrets.example.yaml
 apiVersion: v1
 kind: Namespace
 metadata:
   name: superdl
   labels:
     app.kubernetes.io/part-of: superdl
-    # PSA enforce=restricted:平台 Deployment/Job 本已合规;动态 Job 已同步加固——
-    # 预热/配额 Job 显式 runAsNonRoot(real.py platform_job_security_context),
-    # 擦除 Job 在租户 ns(enforce=baseline)执行,不经过本 ns 的准入。
-    # 无 enforce 时任何失陷的平台 SA 都能在本 ns 种 privileged/hostPath Pod 直上节点 root。
+    # PSA enforce=restricted:预热/配额 Job runAsNonRoot(real.py platform_job_security_context);擦除 Job 在租户 ns(baseline)
     pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: restricted
@@ -28,39 +23,29 @@ data:
   SUPERDL_K8S_BACKEND: "real"
   SUPERDL_K8S_NAMESPACE_PREFIX: "tenant-"
   SUPERDL_PROMETHEUS_URL: "http://kube-prometheus-stack-prometheus.monitoring.svc:9090"
-  # 日志级别(structlog 与 stdlib 桥接同受此控,大写);日志经 Alloy 进 Loki(见 cluster/runbooks/loki-logging.md)
+  # 日志级别(大写);日志经 Alloy 进 Loki(cluster/runbooks/loki-logging.md)
   SUPERDL_LOG_LEVEL: "INFO"
-  # 域名按实际环境改(prod 配置校验会拒绝 example.com 占位)
+  # 域名按实际环境改(prod 拒绝 example.com 占位)
   SUPERDL_PUBLIC_BASE_URL: "https://api.superdl.example.com"
-  # 实例域名 <uuid>.<后缀>:Jupyter 与 SSH 共用(SSH 靠 NodePort 区分实例,无单独入口域名)。
-  # 泛域名解析到的地址须同时转发 80/443 与 NodePort 30000-32767。
+  # 实例域名 <uuid>.<后缀>:Jupyter 与 SSH 共用;泛域名解析地址须转发 80/443 与 NodePort 30000-32767
   SUPERDL_JUPYTER_DOMAIN_SUFFIX: "app.superdl.example.com"
-  # 服务型实例的对外端点域 <slug>.<后缀>(prod 配置校验同样会拒绝 example.com 占位)。
-  # 必须与 jupyter 后缀不同:只有服务这个 listener 挂了 SecurityPolicy.extAuth 做 API Key 鉴权,
-  # 写成同一后缀会让服务端点落到不鉴权的 listener 上,且照样返回 200 不报错。
-  # 泛域名解析到网关入口,只需 80/443。
+  # 服务型实例端点域 <slug>.<后缀>,必须与 jupyter 后缀不同(只有 svc listener 挂 extAuth);泛域名只需 80/443
   SUPERDL_SERVICE_DOMAIN_SUFFIX: "svc.superdl.example.com"
   SUPERDL_CORS_ORIGINS: '["https://console.superdl.example.com","https://admin.superdl.example.com"]'
-  # 管理端域:prod 下 /api/admin/* 只放行 Host 命中本项的请求(占位域名会被拒绝启动)
+  # 管理端域:prod 下 /api/admin/* 只放行 Host 命中本项的请求
   SUPERDL_ADMIN_HOST: "admin.superdl.example.com"
-  # 镜像仓库(Harbor)默认值层,推荐经 管理端·平台配置·镜像仓库 在线维护(机器人 Secret 加密落库)
+  # 镜像仓库(Harbor)默认值层,经 管理端·平台配置·镜像仓库 在线维护
   SUPERDL_REGISTRY_HOST: "harbor.superdl.example.com"
   SUPERDL_REGISTRY_PROJECT: "superdl"
-  # 人机校验(阿里云验证码 2.0)默认值层:开关 captcha_enabled 在 管理端·平台配置·安全策略 切换;
-  # scene_id / prefix 是客户端初始化用的公开信息,AccessKey 对在 ../secrets.example.yaml
+  # 人机校验(阿里云验证码 2.0)默认值层;scene_id / prefix 为公开信息,AccessKey 在 ../secrets.example.yaml
   SUPERDL_CAPTCHA_ENABLED: "true"
-  # 实名认证开关(env 层即开:prod 的 D-4 启动合规闸要求 real_name/captcha/充值强制实名全开;
-  # env 层不开 = 只能靠 DB 覆盖满足启动闸,而清除该覆盖会静默回落到这里——合规开关的
-  # 安全默认必须在部署层就位)。渠道凭据(ACCESS_KEY 对)在 secrets.example.yaml 的
-  # superdl-cloud / 管理端·平台配置补录,缺失时发码/核验接口 fail-closed 502。
+  # 实名认证开关(prod 启动合规闸要求 real_name / captcha / 充值强制实名全开,env 层即开);凭据在 secrets.example.yaml 的 superdl-cloud
   SUPERDL_REAL_NAME_ENABLED: "true"
-  # 充值前强制实名(境内合规):未实名用户不能充值、不能开通实例;前置是实名已开(上一条)
+  # 充值前强制实名:未实名用户不能充值、不能开通实例;前置是实名已开
   SUPERDL_REAL_NAME_REQUIRED_FOR_RECHARGE: "true"
-  # 管理端两步验证(TOTP)总开关(默认值层;关闭属高危运营动作,管理端·平台配置·安全策略可切换)
+  # 管理端两步验证(TOTP)总开关(默认值层;管理端·平台配置·安全策略可切换)
   SUPERDL_ADMIN_MFA_ENABLED: "true"
   SUPERDL_CAPTCHA_SCENE_ID: "CHANGE_ME"
   SUPERDL_CAPTCHA_PREFIX: "CHANGE_ME"
-  # uvicorn 信任的前置代理来源(--proxy-headers 白名单,不在名单内则忽略 X-Forwarded-For)。
-  # 默认值是 RKE2/k3s 的 Pod CIDR(请求经 Envoy Gateway 数据面 / 前端 nginx 转发,源地址是其 Pod IP)。
-  # 集群 Pod CIDR 不同按实际改;禁止写 "*",那等于允许伪造源 IP。
+  # uvicorn 信任的前置代理来源(--proxy-headers 白名单);默认 RKE2/k3s Pod CIDR,按实际改;禁止 "*"
   FORWARDED_ALLOW_IPS: "10.42.0.0/16"

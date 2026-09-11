@@ -1,4 +1,4 @@
-/** 三栏页脚(仅公开页;控制台保持单行合规页脚)。备案号等走后端 site-config。 */
+/** 三栏页脚(仅公开页;控制台单行合规页脚)。备案号等走后端 site-config。 */
 
 import { fontSize, layout } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 
 import { useSiteConfig } from "../../api/queries";
 
-/** 站内路径(单 `/` 开头)走 SPA Link 避免整页刷新;锚点/mailto/外链保持 <a>。 */
+/** 站内路径(单 `/` 开头)走 SPA Link;锚点/mailto/外链保持 <a>。 */
 function isInternal(to: string): boolean {
   return to.startsWith("/") && !to.startsWith("/#");
 }

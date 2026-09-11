@@ -1,27 +1,15 @@
 #!/usr/bin/env bash
-# Gateway API + Envoy Gateway 的 CRD 安装/升级。helmfile 的 envoy-gateway release 在 presync
-# 调它;升 Envoy Gateway 版本时也要先单独跑一遍,再 ./apply.sh(chart 侧 crds.enabled=false,
-# 不会替你升 CRD)。
+# Gateway API + Envoy Gateway 的 CRD 安装/升级(helmfile envoy-gateway release 的 presync 调用;升版时先单独跑再 ./apply.sh)。
 #
-# 用法:./gateway-api-crds.sh [--dry-run]   (在 deploy/cluster/ 下执行)
-#   --dry-run 走 kubectl apply --dry-run=server:在 apiserver 上真校验一遍但不落盘,需要能连集群。
+# 用法:./gateway-api-crds.sh [--dry-run]   (在 deploy/cluster/ 下执行;--dry-run 走 kubectl apply --dry-run=server)
 #
-# 约束:
-# - 装法必须是 `helm template | kubectl apply`:gateway-crds-helm 把 CRD 放在 templates/ 而不是
-#   crds/,这是官方给出的管线。CRD 生命周期在本脚本单点管理,helmfile 侧一律 crds.enabled=false。
-# - 必须 --server-side --force-conflicts:清单近 4 MB,客户端 apply 会撞上
-#   last-applied-configuration 注解体积上限(报错只说 "metadata.annotations: Too long");
-#   --force-conflicts 接管上次由别的客户端写下的字段所有权,否则升级时每个字段都报 conflict。
-# - channel 只有一次机会:必须 experimental(BackendTrafficPolicy 的每源 IP 本地限流落在这一档)。
-#   装成 standard 后换不回来——随 CRD 一起装的 safe-upgrades VAP 用 CEL 拒绝
-#   standard→experimental,只能删净 CRD 重来,而删 CRD 会连带删掉集群里全部 Gateway/HTTPRoute。
-#   下面的前置闸门在 channel 不符时直接停手。
+# 约束:装法 `helm template | kubectl apply --server-side --force-conflicts`(CRD 在 chart 的 templates/,清单近 4 MB);
+# channel 必须 experimental,首装即定(safe-upgrades VAP 拒绝 standard→experimental,只能删净 CRD 重来)
 set -euo pipefail
 
-# EG_VERSION 必须与 helmfile.yaml.gotmpl 里 envoy-gateway release 的 version 一致:
-# 控制面 chart 与 CRD chart 同版本发布,错版会装出控制面读不懂的 CRD。
+# EG_VERSION 必须与 helmfile.yaml.gotmpl 里 envoy-gateway release 的 version 一致
 EG_VERSION="v1.9.0"
-# 该 EG 版本对齐的 Gateway API 版本;只用于装完自检与人工核对(preflight.sh 也按它卡)。
+# 该 EG 版本对齐的 Gateway API 版本(装完自检;preflight.sh 也按它卡)
 GATEWAY_API_VERSION="v1.6.1"
 CRDS_CHART="oci://docker.io/envoyproxy/gateway-crds-helm"
 CHANNEL="experimental"
@@ -47,8 +35,7 @@ for bin in helm kubectl; do
   }
 done
 
-# 读注解而不是 `helm list`:CRD 不属于任何 release,集群里的 channel 事实只写在注解上。
-# CRD 不存在时 kubectl 返回非零,吞掉——那是首装,不是错。
+# channel 事实只在 CRD 注解上;CRD 不存在 = 首装
 crd_annotation() { # <注解名>
   kubectl get crd "$GW_CRD" -o "go-template={{index .metadata.annotations \"$1\"}}" 2>/dev/null || true
 }
@@ -60,8 +47,7 @@ if [[ -z "$existing_channel" || "$existing_channel" == "<no value>" ]]; then
 elif [[ "$existing_channel" == "$CHANNEL" ]]; then
   echo "    已是 channel=$existing_channel,bundle-version=$(crd_annotation "$BUNDLE_ANNOTATION")"
 else
-  # 必须停手:继续 apply 只会被 safe-upgrades 策略拒掉,而它的报错指向 CEL 表达式,
-  # 第一眼读不出「channel 不兼容」。
+  # channel 不符即停
   echo "::error::集群里的 $GW_CRD 是 channel=$existing_channel,本脚本要装的是 $CHANNEL。" >&2
   echo "         safe-upgrades ValidatingAdmissionPolicy 拒绝 standard→experimental,换不回去。" >&2
   echo "         唯一出路是删净 Gateway API CRD 重装,而删 CRD 会连带删掉集群内全部" >&2
@@ -86,8 +72,7 @@ fi
 echo "==> 2/2 apply --server-side --force-conflicts"
 render | kubectl apply --server-side --force-conflicts -f -
 
-# 装完立刻回读注解:apply 成功不等于装对了 channel,而错的 channel 要到某条 experimental
-# 策略静默失效时才会暴露。
+# 装完回读 channel 注解
 installed_channel="$(crd_annotation "$CHANNEL_ANNOTATION")"
 installed_bundle="$(crd_annotation "$BUNDLE_ANNOTATION")"
 echo "==> 完成:$GW_CRD channel=$installed_channel bundle-version=$installed_bundle"

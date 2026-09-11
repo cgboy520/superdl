@@ -1,12 +1,8 @@
-"""跨模块运行时接线:outbox handlers + 库存 provider + 计费边监听。serve / worker 双入口共用。
-
-独立成模块而非挂在 app.main:worker 入口只需接线,不应 import 整个 FastAPI app
-(经 app.main 引入会在 worker 进程里触发模块级 create_app())。
-"""
+"""跨模块运行时接线:outbox handlers + 库存 provider + 计费边监听;serve / worker 双入口共用。"""
 
 
 def wire_modules() -> None:
-    """跨模块运行时接线:outbox handlers + 库存 provider + 计费边监听。双入口共用。"""
+    """执行接线(幂等)。"""
     from app.modules.billing.edge_listener import register_billing_edge_listener
     from app.modules.catalog import prewarm as _prewarm  # noqa: F401 注册 image.prewarm handler
     from app.modules.catalog.inventory import register_inventory_provider

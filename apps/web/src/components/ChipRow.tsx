@@ -1,4 +1,4 @@
-/** 筛选链 chip 行(市场/创建页)。单选,禁用项可见但灰置 + tooltip 原因;聚合项由调用方用哨兵值表达。 */
+/** 筛选链 chip 行(市场/创建页)。单选,禁用项灰置 + tooltip 原因;聚合项由调用方用哨兵值表达。 */
 
 import { brand, colorPrimary, fontWeight, webDarkColors } from "@superdl/ui";
 import { Button, Space, theme, Tooltip, Typography } from "antd";
@@ -13,7 +13,7 @@ export interface ChipOption<T extends string | number> {
   disabledReason?: string;
 }
 
-/** chip 行左侧标签栏宽度(BillingModeCard 的数量选择器行同款对齐,唯一事实源) */
+/** chip 行左侧标签栏宽度(BillingModeCard 数量选择器行同款对齐) */
 export const CHIP_LABEL_WIDTH = 72;
 
 export function ChipRow<T extends string | number>({
@@ -31,7 +31,7 @@ export function ChipRow<T extends string | number>({
 }) {
   const { token } = theme.useToken();
   const labelId = useId();
-  // 选中态配色:浅色走品牌浅靛对;暗色浅靛块脱节,换 tokens.test 回归的 AA 配对
+  // 选中态配色:浅色走品牌浅靛对;暗色换 tokens.test 回归的 AA 配对
   const dark = useThemeMode() === "dark";
   const selectedStyle = dark
     ? {

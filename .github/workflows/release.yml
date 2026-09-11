@@ -1,8 +1,7 @@
 name: Release
 
-# 一次构建 → Trivy 扫描(可修复的 HIGH/CRITICAL 阻断)→ 同一镜像推 Harbor(平台项目,默认 superdl)并 cosign 签名。
-# 仓库 secrets:HARBOR_HOST / HARBOR_ROBOT_NAME(robot$<项目>+push,Push + Pull)/ HARBOR_ROBOT_SECRET;
-# variables:HARBOR_PROJECT(缺省 superdl)。部署侧 scripts/release.sh 以同一前缀替换清单占位并跑迁移 Job。
+# 构建 → Trivy 扫描(可修复的 HIGH/CRITICAL 阻断)→ 推 Harbor 并 cosign 签名。
+# 仓库 secrets:HARBOR_HOST / HARBOR_ROBOT_NAME / HARBOR_ROBOT_SECRET;variables:HARBOR_PROJECT(缺省 superdl)
 on:
   push:
     tags: ["v*"]
@@ -12,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  # 发布闸门:tag 构建前重跑 CI 全部 job(经 workflow_call 复用 ci.yml,不维护第二份定义)
+  # 发布闸门:tag 构建前重跑 CI 全部 job(workflow_call 复用 ci.yml)
   ci-gates:
     uses: ./.github/workflows/ci.yml
     permissions:
@@ -22,8 +21,7 @@ jobs:
     needs: ci-gates
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    # 人工审批闸:须在 GitHub 仓库设置 → Environments → production 配 required reviewers,
-    # 并把 HARBOR_* secrets 放到该 environment 下;否则本行只是给运行打标签,不构成门。
+    # 人工审批闸:GitHub 仓库设置 → Environments → production 配 required reviewers,HARBOR_* secrets 放该 environment 下
     environment: production
     permissions:
       contents: read
@@ -53,7 +51,7 @@ jobs:
           build-args: ${{ matrix.build_args }}
           load: true
           tags: release-target:latest
-      # 只拦可修复的 HIGH/CRITICAL:上游未修复的 CVE 没有可升级版本,拦它等于让发布被上游节奏绑架
+      # 只拦可修复的 HIGH/CRITICAL
       - name: Trivy(可修复的 HIGH/CRITICAL 阻断)
         uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
         with:
@@ -84,7 +82,7 @@ jobs:
           registry: ${{ secrets.HARBOR_HOST }}
           username: ${{ secrets.HARBOR_ROBOT_NAME }}
           password: ${{ secrets.HARBOR_ROBOT_SECRET }}
-      # tag 串经 env 传入再引用:直接把 ${{ }} 展开进 shell 串,内容里一个单引号就能拼出任意命令
+      # tag 串经 env 传入,不直接把 ${{ }} 展开进 shell
       - name: 打 tag 并推送
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
@@ -95,7 +93,7 @@ jobs:
             docker push "$t"
           done <<< "$TAGS"
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-      # 签 digest 而非可变 tag;下发侧 scripts/release.sh 也按 digest 渲染清单。集群侧验签准入尚未部署。
+      # 签 digest(scripts/release.sh 也按 digest 渲染清单);集群侧验签准入未部署
       - name: cosign 签名(按 digest,签进 Rekor)
         env:
           TAGS: ${{ steps.meta.outputs.tags }}

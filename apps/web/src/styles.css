@@ -1,4 +1,4 @@
-/* 全局基线:reset / 等宽数字 / 顶栏链接 / 滚动条。业务样式一律走 antd token,禁止堆积于此。 */
+/* 全局基线:reset / 等宽数字 / 顶栏链接 / 滚动条。业务样式一律走 antd token。 */
 
 html,
 body,
@@ -16,26 +16,25 @@ body {
   width: 8px;
   height: 8px;
 }
-/* 滚动条色走 CSS 变量桥(--sdl-scroll-thumb 由 index.html 内联脚本预置、__root.tsx 随主题切换),
-   浅/暗两套取值都在 packages/ui tokens.ts cssVars,此处与暗色分支一律不硬编码 */
+/* 滚动条色走 CSS 变量桥(--sdl-scroll-thumb 由 index.html 内联脚本预置、__root.tsx 随主题切换;取值在 packages/ui tokens.ts cssVars) */
 *::-webkit-scrollbar-thumb {
   background: var(--sdl-scroll-thumb);
   border-radius: 4px;
 }
 * {
   scrollbar-width: thin;
-  /* Firefox 双值:thumb / track,同源变量 */
+  /* Firefox 双值:thumb / track */
   scrollbar-color: var(--sdl-scroll-thumb) transparent;
 }
 
-/* 品牌顶栏(AppTopBar)内导航:布局在类里定义,窄屏媒体查询才能生效 */
+/* 品牌顶栏(AppTopBar)内导航:布局在类里定义 */
 .topbar-nav-center {
   display: flex;
   gap: 4px;
   align-items: center;
 }
 
-/* 品牌顶栏(AppTopBar)内导航链接:深底白字,不走 antd Menu */
+/* 品牌顶栏内导航链接:深底白字,不走 antd Menu */
 .topbar-link {
   color: rgba(255, 255, 255, 0.85);
   padding: 6px 12px;
@@ -51,7 +50,7 @@ body {
   color: #fff;
   background: rgba(255, 255, 255, 0.2);
 }
-/* 顶栏在品牌靛蓝渐变底上,焦点框用白色才可见 */
+/* 顶栏渐变底上焦点框用白色 */
 .topbar-link:focus-visible {
   outline: 2px solid #fff;
   outline-offset: 2px;
@@ -63,7 +62,7 @@ body {
   }
 }
 
-/* 品牌顶栏本体:sticky + 横向内边距(窄屏收紧,防右侧溢出) */
+/* 品牌顶栏本体:sticky + 横向内边距(窄屏收紧) */
 .app-topbar {
   position: sticky;
   top: 0;
@@ -82,7 +81,7 @@ body {
   }
 }
 
-/* 顶栏右区(语言/余额/用户):内联样式会压住媒体查询,走类 */
+/* 顶栏右区(语言/余额/用户):走类 */
 .app-topbar-right {
   margin-left: auto;
   display: flex;
@@ -94,16 +93,14 @@ body {
   .app-topbar-right {
     gap: 6px;
   }
-  /* 窄屏右区防溢出:⌘K 提示徽章与独立帮助入口隐藏(帮助收进用户菜单;断点 = breakpoint.md token) */
+  /* 窄屏右区:⌘K 提示徽章与独立帮助入口隐藏(断点 = breakpoint.md token) */
   .topbar-kbd-hint,
   .topbar-help-link {
     display: none;
   }
 }
 
-/* 移动端抽屉导航链接:颜色在组件内走 antd token(暗色主题自适应,见 AppTopBar);
-   此处只保留状态层 —— hover 底色由文字色 color-mix 派生,两主题通用;
-   焦点框 = colorPrimary(取值同步见 packages/ui tokens.ts) */
+/* 移动端抽屉导航链接:颜色在组件内走 antd token(见 AppTopBar);此处只留状态层,hover 底色由文字色 color-mix 派生,焦点框 = colorPrimary(同步见 packages/ui tokens.ts) */
 .drawer-link:hover {
   background: color-mix(in srgb, currentColor 8%, transparent);
 }
@@ -112,13 +109,13 @@ body {
   outline-offset: 2px;
 }
 
-/* 结算条(CheckoutBar)窄屏(<sm):两个动作按钮整行竖排 */
+/* 结算条(CheckoutBar)窄屏(<sm):动作按钮整行竖排 */
 .checkout-bar-actions-block .ant-space-item,
 .checkout-bar-actions-block .ant-space-item button {
   width: 100%;
 }
 
-/* Cmd+K 命令面板(cmdk):选中行底色 = 主色 12% 透明(主色经 --sdl-color-primary 注入,见 packages/ui tokens.ts cssVars) */
+/* Cmd+K 命令面板(cmdk):选中行底色 = 主色 12% 透明(--sdl-color-primary,见 packages/ui tokens.ts cssVars) */
 .command-palette [cmdk-item][data-selected="true"] {
   background: color-mix(in srgb, var(--sdl-color-primary) 12%, transparent);
 }

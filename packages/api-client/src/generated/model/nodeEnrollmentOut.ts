@@ -6,7 +6,7 @@
  */
 
 /**
- * 列表/进度视图 —— 永不含 token。
+ * 列表/进度视图,不含 token。
  */
 export interface NodeEnrollmentOut {
   created_at: string;

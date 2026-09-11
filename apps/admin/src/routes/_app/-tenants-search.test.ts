@@ -1,5 +1,4 @@
-/** tenants 路由 validateSearch:tab/q/dtab/istatus/inode 白名单与序列化往返。
- *  挂了 = Tab/检索词不再落 URL(刷新/分享丢状态),或非法值污染查询参数。 */
+/** tenants 路由 validateSearch:tab/q/dtab/istatus/inode 白名单与往返。挂了 = Tab/检索词不再落 URL,或非法值污染查询参数。 */
 import { describe, expect, it } from "vitest";
 
 import { Route } from "./tenants";

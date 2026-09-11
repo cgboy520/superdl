@@ -61,7 +61,7 @@ function ClusterPage() {
   return (
     <PageContainer title={t("menu.cluster")}>
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-      {/* 查询失败必须明示:四卡静默全空会被值班读成「接口就没数据」,全站「失败必明示」纪律 */}
+      {/* 查询失败明示 */}
       {isError && <DataErrorAlert onRetry={() => void refetch()} />}
       {isK3s && <Alert type="warning" showIcon title={t("cluster.lightWarning")} />}
       {data && !data.api_reachable && data.error && (
@@ -90,7 +90,7 @@ function ClusterPage() {
           >
             <Space orientation="vertical" size={8}>
               <Space size={8}>
-                {/* 首响未到不闪「不可达」(假阴性):加载期渲染探测中,数据到达后按真实值 */}
+                {/* 加载期渲染探测中 */}
                 <Badge status={isLoading ? "processing" : data?.api_reachable ? "success" : "error"} />
                 <Typography.Text strong>
                   {isLoading
@@ -151,7 +151,7 @@ function ClusterPage() {
         <Col xs={24} lg={12}>
           <Card title={t("cluster.healthCard")}>
             <Space orientation="vertical" size={10} style={{ width: "100%" }}>
-              {/* 空数组渲染空白会被读成「探测缺失/加载失败」:数据已到但无组件时给一句话空态 */}
+              {/* 无组件时给一句话空态 */}
               {data && (data.components ?? []).length === 0 && (
                 <Typography.Text type="secondary">{t("cluster.noComponents")}</Typography.Text>
               )}

@@ -1,9 +1,5 @@
-"""编排器加固回归套件。
-
-覆盖:failed 恢复边、starting 超时边、stopping/releasing 悬挂两档超时逃逸、泄漏回收
-熔断与 force、并发开户临界区、幂等键并发与 24h 窗、(池,型号) 软准入、结算候选
-完备性、保留期 GC、欠费盘 grace 停计费与计时累计、重启撞端口不丢尾账。
-"""
+"""编排器加固:恢复边与超时边、悬挂逃逸、泄漏回收熔断、并发开户、幂等键、软准入、
+结算候选、保留期 GC、欠费盘 grace、重启撞端口。"""
 
 import asyncio
 from datetime import timedelta
@@ -56,7 +52,7 @@ async def _raw_create(client, headers, sku_id, key_id, *, idem=None):
 
 
 async def _backdate_status(sm, uuid: str, to_status: str, age: timedelta) -> None:
-    """把「进入某状态」的事件时刻回拨 age(悬挂/超时用例的时间快进)。"""
+    """把「进入某状态」的事件时刻回拨 age。"""
     async with sm() as session:
         inst_id = (
             await session.execute(select(Instance.id).where(Instance.uuid == uuid))
@@ -70,7 +66,7 @@ async def _backdate_status(sm, uuid: str, to_status: str, age: timedelta) -> Non
 
 
 async def _backdate_created(sm, uuid: str, age: timedelta) -> None:
-    """把实例 created_at 回拨 age(GC 用例:retention 扫描的 SQL 年龄下推按它过滤)。"""
+    """把实例 created_at 回拨 age。"""
     async with sm() as session:
         await session.execute(
             update(Instance).where(Instance.uuid == uuid).values(created_at=now_utc() - age)
@@ -80,8 +76,7 @@ async def _backdate_created(sm, uuid: str, age: timedelta) -> None:
 
 class TestEnsurePortRace:
     async def test_concurrent_segment_extension_self_heals(self, sm):
-        """空池并发扩段:on_conflict_do_nothing + 函数内重试消化唯一冲突,
-        不抛 IntegrityError、不拖累外层事务(挂了 = 败方整笔建实例事务进 outbox 退避)。"""
+        """空池并发扩段:on_conflict_do_nothing + 函数内重试,不抛 IntegrityError。"""
         import asyncio
 
         from app.modules.orchestrator.ports import ensure_port
@@ -101,8 +96,7 @@ class TestEnsurePortRace:
 
 class TestBlockedPortRecheck:
     async def test_external_occupant_stays_blocked(self, sm, fake):
-        """外部对象(无平台标签的 Service)占用的端口:复检必须看得见占用者。
-        误放回池 → 再撞 → 再封的振荡会把新建实例推过创建超时(creating_timeout)。"""
+        """外部对象(无平台标签的 Service)占用的端口:复检看得见占用者,不放回池。"""
         from app.modules.orchestrator.models import PortAllocation
 
         fake.inject_external_port(31234)
@@ -118,7 +112,7 @@ class TestBlockedPortRecheck:
             assert row.blocked is True
 
     async def test_vacated_port_is_recovered(self, sm, fake):
-        """占用消失(外部 Service 已删)的 blocked 端口必须放回池,防单向蚕食。"""
+        """占用消失的 blocked 端口放回池。"""
         from app.modules.orchestrator.models import PortAllocation
 
         async with sm() as session:
@@ -135,8 +129,7 @@ class TestBlockedPortRecheck:
 
 class TestStartingTimeout:
     async def test_starting_timeout_fails_and_keeps_disk(self, client, sm, fake):
-        """starting 超时走 starting→failed 边:清 Pod、回收端口,但实例盘保留
-        (实例停过机,盘里有上一轮数据;只有 creating 超时才回收盘)。"""
+        """starting 超时走 starting→failed 边:清 Pod、回收端口,实例盘保留。"""
         headers, uuid, user_id = await provision_running(client, sm, fake, "13900000115")
         ns = f"tenant-{user_id}"
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
@@ -161,7 +154,7 @@ class TestStartingTimeout:
 
 class TestFailedRecovery:
     async def test_start_from_failed_reuses_instance_disk(self, client, sm, fake):
-        """failed → start 恢复边:复用同一块实例盘重开机(挂了 = 用户只能销毁数据重开)。"""
+        """failed → start 恢复边:复用同一块实例盘重开机。"""
         headers, uuid, user_id = await provision_running(client, sm, fake, "13900000101")
         ns = f"tenant-{user_id}"
         disk_marker = fake.instance_disks[(ns, uuid)]
@@ -176,7 +169,7 @@ class TestFailedRecovery:
         fake.mark_ready(ns, uuid)
         await reconcile_once(sm)
         assert (await get_instance(client, headers, uuid))["status"] == "running"
-        # 同一块盘(fake 的标记值不变),事件链留下恢复轨迹
+        # 同一块盘,事件链留下恢复轨迹
         assert fake.instance_disks[(ns, uuid)] == disk_marker
         events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
             "items"
@@ -186,8 +179,7 @@ class TestFailedRecovery:
         assert ("stopped", "starting") in chain
 
     async def test_start_from_failed_rejects_unsynced_disk(self, client, sm, fake):
-        """failed 恢复开机走与创建同一道挂载门禁:数据盘配额未下发(quota_synced=false)→ 409,
-        实例留在 failed(挂了 = 恢复开机绕过配额门禁,挂上创建时会被拒的盘)。"""
+        """failed 恢复开机走挂载门禁:数据盘 quota_synced=false → 409,实例留在 failed。"""
         headers, user_id, key_id = await create_user_with_key(client, "13900000109")
         await fund_wallet(sm, user_id, "500.00")
         sku_id = await create_test_sku(sm)
@@ -212,7 +204,7 @@ class TestFailedRecovery:
         fake.kill_pod(ns, uuid)
         await reconcile_once(sm)
         assert (await get_instance(client, headers, uuid))["status"] == "failed"
-        # 扩容:配额重下发前 quota_synced 回落 false(不 drain,任务在途)
+        # 扩容:quota_synced 回落 false(不 drain)
         resp = await client.patch(
             f"/api/v1/disks/{disk['uuid']}", json={"size_gb": 200}, headers=headers
         )
@@ -225,11 +217,11 @@ class TestFailedRecovery:
         assert (await get_instance(client, headers, uuid))["status"] == "failed"
 
     async def test_release_from_stuck_stopping(self, client, sm, fake):
-        """关机悬挂时用户可直接释放(stopping → releasing 边;挂了 = 悬挂实例永远删不掉)。"""
+        """关机悬挂时用户可直接释放(stopping → releasing 边)。"""
         headers, uuid, _user_id = await provision_running(client, sm, fake, "13900000102")
         resp = await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         assert resp.json()["status"] == "stopping"
-        # 不 drain:删除任务在途,Pod 仍在 —— 此时用户选择直接释放
+        # 不 drain:删除任务在途,Pod 仍在
         resp = await client.delete(f"/api/v1/instances/{uuid}", headers=headers)
         assert resp.status_code == 200, resp.text
         assert resp.json()["status"] == "releasing"
@@ -240,8 +232,7 @@ class TestFailedRecovery:
 
 class TestReadyWithoutPort:
     async def test_ready_pod_without_port_not_promoted(self, client, sm, fake):
-        """Pod 已 Ready 但 ssh_port 未落库:不推进 running(/access 与重启都依赖端口,
-        补发的端口未必等于 Service 已建的 nodePort),留在 creating 等超时转 failed 清理。"""
+        """Pod 已 Ready 但 ssh_port 未落库:不推进 running,留在 creating 等超时转 failed。"""
         headers, user_id, key_id = await create_user_with_key(client, "13900000110")
         await fund_wallet(sm, user_id)
         sku_id = await create_test_sku(sm)
@@ -266,10 +257,7 @@ class TestReadyWithoutPort:
 
 class TestStuckEscape:
     async def test_stopping_two_tier_escape(self, client, sm, fake):
-        """stopping 悬挂:一档超时重发删除任务,二档超时 force 强删后正常收敛 stopped。
-
-        挂了 = 删除任务死信/丢失时实例永远卡在 stopping,尾账永远合不上。
-        """
+        """stopping 悬挂:一档超时重发删除任务,二档超时 force 强删后收敛 stopped。"""
         headers, uuid, user_id = await provision_running(client, sm, fake, "13900000103")
         ns = f"tenant-{user_id}"
         fake.graceful_delete = True  # 优雅期内对象仍在 etcd
@@ -277,7 +265,7 @@ class TestStuckEscape:
         await drain(sm)
         assert (ns, uuid) in fake.pods  # 优雅期,Pod 还在
 
-        # 一档(> stopping_timeout_seconds,默认 10min):经 outbox 重发删除
+        # 一档(> stopping_timeout_seconds):经 outbox 重发删除
         await _backdate_status(sm, uuid, "stopping", timedelta(minutes=11))
         counts = await reconcile_once(sm)
         assert counts["delete_requeued"] == 1
@@ -297,7 +285,7 @@ class TestStuckEscape:
             )
         assert len(pending) == 1  # 重发一次,不堆重复任务
 
-        # 二档(> 2×):force 强删,失联节点上的优雅删除永远完不成
+        # 二档(> 2×):force 强删
         await _backdate_status(sm, uuid, "stopping", timedelta(minutes=21))
         counts = await reconcile_once(sm)
         assert counts["force_deleted"] == 1
@@ -305,7 +293,7 @@ class TestStuckEscape:
         counts = await reconcile_once(sm)
         assert counts["to_stopped"] == 1
         assert (await get_instance(client, headers, uuid))["status"] == "stopped"
-        # 端口保留:停机不回收 SSH 端口
+        # 停机不回收 SSH 端口
         assert (await get_instance(client, headers, uuid))["ssh_port"] is not None
 
     async def test_releasing_two_tier_escape(self, client, sm, fake):
@@ -314,7 +302,7 @@ class TestStuckEscape:
         ns = f"tenant-{user_id}"
         fake.graceful_delete = True
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
-        # 不经 stopped:直接在 stopping 释放(覆盖悬挂释放链路)
+        # 直接在 stopping 释放
         await client.delete(f"/api/v1/instances/{uuid}", headers=headers)
         await drain(sm)
         assert (ns, uuid) in fake.pods
@@ -329,14 +317,13 @@ class TestStuckEscape:
         assert (ns, uuid) not in fake.instance_disks  # 实例盘已销毁
 
     async def test_stopping_reenqueue_ignores_expired_lease(self, client, sm, fake):
-        """running 删除任务的 locked_at 租约过期(执行 worker 已死)不算在途,
-        悬挂判定照常重发(挂了 = 收敛要等 reaper 5 分钟轮次才把死任务打回 pending)。"""
+        """running 删除任务 locked_at 租约过期不算在途,悬挂判定照常重发。"""
         headers, uuid, _user_id = await provision_running(client, sm, fake, "13900000107")
         fake.graceful_delete = True
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
 
-        # 模拟 worker 领到删除任务后崩溃:running 行,locked_at 已超 RUNNING_TIMEOUT
+        # running 行,locked_at 已超 RUNNING_TIMEOUT
         async with sm() as session:
             inst_id = (
                 await session.execute(select(Instance.id).where(Instance.uuid == uuid))
@@ -356,7 +343,7 @@ class TestStuckEscape:
         assert counts["delete_requeued"] == 1
 
     async def test_stopping_reenqueue_skips_fresh_lease(self, client, sm, fake):
-        """对照:running 行 locked_at 在租约内 = 真在途,不堆重复任务。"""
+        """running 行 locked_at 在租约内 = 在途,不堆重复任务。"""
         headers, uuid, _user_id = await provision_running(client, sm, fake, "13900000108")
         fake.graceful_delete = True
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
@@ -383,7 +370,7 @@ class TestStuckEscape:
 
 class TestLeakReclaim:
     async def test_unknown_pod_ratio_trips_breaker(self, client, sm, fake):
-        """未知 Pod 占比超阈 → 本轮回收熔断(挂了 = 接错集群/标签漂移时按陌生清单批量强删)。"""
+        """未知 Pod 占比超阈 → 本轮回收熔断。"""
         _headers, uuid, user_id = await provision_running(client, sm, fake, "13900000105")
         ns = f"tenant-{user_id}"
         spec = fake.pods[(ns, uuid)].spec
@@ -394,9 +381,7 @@ class TestLeakReclaim:
         assert len(fake.pods) == 5  # 一个没动
 
     async def test_stopped_instance_leftover_pod_force_reclaimed(self, client, sm, fake):
-        """已 stopped 实例的残留 Pod 过了宽限期被强删回收
-        (挂了 = 停机后泄漏的 Pod 继续占算力且无账可计)。
-        宽限覆盖 restart 建 Pod 窗口(DB stopped、Pod 已建),宽限内不动。"""
+        """已 stopped 实例的残留 Pod 过宽限期被强删;宽限内不动。"""
         headers, uuid, user_id = await provision_running(client, sm, fake, "13900000106")
         ns = f"tenant-{user_id}"
         spec = fake.pods[(ns, uuid)].spec
@@ -414,9 +399,7 @@ class TestLeakReclaim:
         assert (await get_instance(client, headers, uuid))["status"] == "stopped"
 
     async def test_wipe_job_pod_not_counted_in_breaker_ratio(self, client, sm, fake):
-        """wipe Job Pod 不进 unknown 占比:1 实例 + 1 wipe Pod + 1 真泄漏 = 1/2 = 50% 不熔断,
-        真泄漏照删(挂了 = Job Pod 计入占比,实例少时把回收推过熔断线放跑真泄漏);
-        wipe Pod 带 MANAGED_LABEL 但名字非实例 uuid,靠 job-name 豁免,多轮对账都不被误杀。"""
+        """wipe Job Pod 不进 unknown 占比(靠 job-name 豁免),真泄漏照删。"""
         _headers, uuid, user_id = await provision_running(client, sm, fake, "13900000114")
         ns = f"tenant-{user_id}"
         spec = fake.pods[(ns, uuid)].spec
@@ -434,10 +417,7 @@ class TestLeakReclaim:
 
 class TestCreateCriticalSection:
     async def test_concurrent_create_second_rejected(self, client, sm, fake):
-        """并发开户临界区:余额只够一台时,两台并发创建必须一台成功一台余额不足。
-
-        挂了 = 钱包锁/在途统计任一失守,串行开户可以绕过余额护栏透支多台。
-        """
+        """余额只够一台时,两台并发创建一台成功一台余额不足。"""
         headers, user_id, key_id = await create_user_with_key(client, "13900000111")
         await fund_wallet(sm, user_id, "1.68")  # 恰好一台一小时
         sku_id = await create_test_sku(sm)  # 1.68/时
@@ -453,8 +433,7 @@ class TestCreateCriticalSection:
         assert len(instances) == 1
 
     async def test_concurrent_same_idempotency_key_single_instance(self, client, sm, fake):
-        """同幂等键并发重放:只开一台,两个请求拿到同一台(挂了 = 唯一约束竞争变 500)。
-        新建方 202,重放方 200 + X-Idempotent-Replay(谁先谁后不定)。"""
+        """同幂等键并发重放:只开一台;新建方 202,重放方 200 + X-Idempotent-Replay。"""
         headers, user_id, key_id = await create_user_with_key(client, "13900000112")
         await fund_wallet(sm, user_id, "500.00")
         sku_id = await create_test_sku(sm)
@@ -470,10 +449,7 @@ class TestCreateCriticalSection:
         assert len(instances) == 1
 
     async def test_idempotency_key_expires_after_24h(self, client, sm, fake):
-        """幂等键 24h 窗口:窗外同一键按新单处理,旧记录让出键位。
-
-        挂了 = 键位永久占用,隔天重试同键拿到的是昨天那台(或撞唯一约束 500)。
-        """
+        """幂等键 24h 窗口:窗外同一键按新单处理。"""
         headers, user_id, key_id = await create_user_with_key(client, "13900000113")
         await fund_wallet(sm, user_id, "500.00")
         sku_id = await create_test_sku(sm)
@@ -494,10 +470,7 @@ class TestCreateCriticalSection:
         assert old.idempotency_key is None  # 旧记录已让出键位
 
     async def test_soft_admission_no_capacity(self, client, sm, fake):
-        """软准入:台账明确 (池,型号) 可分配量为 0 → 409 NO_CAPACITY,不放进调度干等超时。
-
-        挂了 = 售罄池的创建请求全部 creating 5 分钟后转 failed,且占着配额。
-        """
+        """软准入:(池,型号) 可分配量为 0 → 409 NO_CAPACITY。"""
         headers, user_id, key_id = await create_user_with_key(client, "13900000114")
         await fund_wallet(sm, user_id)
         sku_id = await create_test_sku(sm)
@@ -509,11 +482,7 @@ class TestCreateCriticalSection:
 
 class TestBillingCandidatesCompleteness:
     async def test_candidates_cover_all_running_segments(self, sm):
-        """结算候选 = 当前 running ∪ 窗口内/后离开 running 的实例。
-
-        覆盖「窗口末仍 running、之后才停机」:这类实例靠 from_status='running' 事件命中,
-        漏了就是少结账。
-        """
+        """结算候选 = 当前 running ∪ 窗口内/后离开 running 的实例。"""
         a, _ = await seed_instance(  # 窗口前进入,至今仍 running
             sm,
             user_id=1,
@@ -558,7 +527,7 @@ class TestBillingCandidatesCompleteness:
 
 class TestRetentionGC:
     async def test_failed_instance_gc_after_retention(self, client, sm, fake):
-        """failed 超保留期(默认 7 天)自动释放并通知(挂了 = 失败实例盘 PVC 永久泄漏)。"""
+        """failed 超保留期(默认 7 天)自动释放并通知。"""
         headers, uuid, user_id = await provision_running(client, sm, fake, "13900000121")
         ns = f"tenant-{user_id}"
         fake.kill_pod(ns, uuid)
@@ -579,10 +548,7 @@ class TestRetentionGC:
         assert (ns, uuid) not in fake.instance_disks
 
     async def test_stopped_instance_gc_warn_then_reclaim(self, client, sm, fake):
-        """stopped 保留期(默认 30 天):先预警(默认提前 7 天)再自动释放。
-
-        挂了 = 有偿用户停机盘无限免费占用,或未预警直接删数据。
-        """
+        """stopped 保留期(默认 30 天):先预警(默认提前 7 天)再自动释放。"""
         headers, uuid, _user_id = await provision_running(client, sm, fake, "13900000122")
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
@@ -613,10 +579,7 @@ class TestDiskArrearsHardening:
             await session.commit()
 
     async def test_grace_days_not_billed(self, client, sm, fake):
-        """grace(欠费宽限)停计费:宽限日子不出账,回款恢复后也不补回。
-
-        挂了 = 欠费用户的盘继续累计欠费(grace 计费),或水位线越过宽限日后被追回补回。
-        """
+        """grace 停计费:宽限日不出账,回款恢复后也不补回。"""
         headers, user_id, _key = await create_user_with_key(client, "13900000131")
         await fund_wallet(sm, user_id)
         disk = await create_disk(client, headers)
@@ -635,9 +598,9 @@ class TestDiskArrearsHardening:
         billing_t0 = (billing_day_floor(t0) + BILLING_DAY_OFFSET).date()
         assert billing_t0 in billed_days  # 进 grace 当日已结清
 
-        # 宽限中推进两天日结:grace 盘不在计费集合,不出账
+        # 宽限中推进两天日结:不出账
         await settle_daily_disks(sm, at=t0 + timedelta(days=3))
-        # 回款恢复 active,再推进两天:只结恢复后的日子,宽限日不补回
+        # 回款恢复 active,再推进两天:只结恢复后的日子
         async with sm() as session:
             await wallet.credit(session, user_id, Decimal("10.00"), type_="recharge")
             await session.commit()
@@ -667,8 +630,7 @@ class TestDiskArrearsHardening:
         await create_disk(client, headers)
         t0 = now_utc()
         t_day = billing_day_floor(t0)
-        # 构造现场:盘创建于 4 个计费日前;grace 区间 [T-3, T-1](T-2 为纯宽限日);
-        # 日结水位线停在 T-4(停摆),当前盘已恢复 active
+        # 盘创建于 4 个计费日前;grace 区间 [T-3, T-1];水位线停在 T-4;盘已恢复 active
         async with sm() as session:
             await session.execute(
                 update(DataDisk).values(
@@ -716,7 +678,7 @@ class TestDiskArrearsHardening:
         assert len(gaps2) == 1
 
     async def test_grace_clock_not_reset_by_recharge(self, client, sm, fake):
-        """宽限钟累计:充值恢复不清零 grace_started_at(挂了 = 欠费-充值循环永远不到 frozen)。"""
+        """充值恢复不清零 grace_started_at。"""
         headers, user_id, _key = await create_user_with_key(client, "13900000133")
         await fund_wallet(sm, user_id)
         disk = await create_disk(client, headers)
@@ -744,7 +706,7 @@ class TestDiskArrearsHardening:
             assert d2.grace_started_at == first_grace_at
 
     async def test_wipe_namespace_missing_is_done(self, client, sm, fake, monkeypatch):
-        """租户 ns 不存在(从未建过实例)时擦盘视为完成(挂了 = 这类删盘任务全进死信)。"""
+        """租户 ns 不存在时擦盘视为完成。"""
 
         class _Api404(Exception):
             status = 404
@@ -763,10 +725,7 @@ class TestDiskArrearsHardening:
 
 class TestRestartPortConflict:
     async def test_port_conflict_keeps_tail_bill(self, client, sm, fake, monkeypatch):
-        """重启撞 NodePortTaken:stopping→stopped 与尾账已独立提交,不被端口补偿回滚吞掉。
-
-        挂了 = 尾账丢失(少计停机前费用)且实例卡在 stopping 无法自愈。
-        """
+        """重启撞 NodePortTaken:stopping→stopped 与尾账已独立提交,不被回滚吞掉。"""
         headers, uuid, user_id = await provision_running(client, sm, fake, "13900000141")
         await backdate_running_event(sm, uuid, 30)  # 已跑约 30 分钟,尾账非零
         original = fake.create_instance
@@ -783,8 +742,7 @@ class TestRestartPortConflict:
         await drain(sm)  # 第一次:STOPPED 落库 → STARTING 落库 → 撞端口回滚
 
         data = await get_instance(client, headers, uuid)
-        # STARTING 先落库再建 Pod:撞端口回滚后停在 starting,重试由承接分支续建;
-        # 关键是不回退到 stopping(尾账不丢、泄漏回收对在途状态有宽限)
+        # 撞端口回滚后停在 starting(不回退到 stopping),重试续建
         assert data["status"] == "starting"
         events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
             "items"

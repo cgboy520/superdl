@@ -1,8 +1,4 @@
-/**
- * 服务操作组:停止 / 启动 常显互斥,更多 ▾ 里放访问密钥 / 设置直达与删除;条目永不隐藏,灰置用 Tooltip 说明前置条件。
- * 停止是二次确认(端点 503、GPU 计费停止、端点与 Key 保留);删除走键入名称 + 勾选的多级防护,
- * 且运行中的服务必须先停(后端 409 同判据)。
- */
+/** 服务操作组:停止 / 启动 互斥常显,更多 ▾ 放访问密钥 / 设置直达与删除;条目永不隐藏,灰置用 Tooltip。停止二次确认;删除走键入名称 + 勾选的多级防护,运行中须先停(后端 409 同判据)。 */
 
 import { DownOutlined } from "@ant-design/icons";
 import type { ServiceOut } from "@superdl/api-client";
@@ -84,7 +80,7 @@ export function ServiceActions({
 }: {
   service: ServiceOut;
   onDeleted?: () => void;
-  /** 详情页头部给:出「更新版本」按钮(列表不出,抽屉只挂在详情) */
+  /** 详情页头部给:出「更新版本」按钮 */
   onRollout?: () => void;
 }) {
   const { t } = useTranslation();

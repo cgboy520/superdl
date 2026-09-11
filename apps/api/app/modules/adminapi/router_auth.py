@@ -32,9 +32,8 @@ router = APIRouter(tags=["admin"])
 async def admin_login(
     body: AdminLoginRequest, session: DbSession, request: Request
 ) -> MfaChallengeOut | AdminLoginTokenOut:
-    """密码校验。安全策略 admin_mfa_enabled 开启(默认)时只返回二要素挑战票:未绑定发绑定票、
-    已绑定发验证票,正式 access token 由 /auth/mfa/setup/confirm 或 /auth/login/mfa 签发;
-    关闭时直接返回 {status: ok, access_token, admin}。"""
+    """密码校验。admin_mfa_enabled 开启时只返回二要素挑战票(未绑定发绑定票、已绑定发验证票),
+    access token 由 /auth/mfa/setup/confirm 或 /auth/login/mfa 签发;关闭时直接返回 access_token。"""
     result, admin = await service.login(
         session, body.username, body.password, client_ip=client_ip(request)
     )
@@ -94,7 +93,7 @@ async def mfa_regenerate_recovery_codes(
 async def mfa_reset(
     admin_id: int, body: MfaResetRequest, admin: CurrentAdmin, session: DbSession, request: Request
 ) -> AdminAccountOut:
-    """超管为他人重置 TOTP(锁死救援):清空绑定并踢掉全部会话,下次登录重新强制绑定。"""
+    """超管为他人重置 TOTP:清空绑定并踢掉全部会话,下次登录重新绑定。"""
     target = await service.reset_totp(session, admin, admin_id)
     set_audit_target(
         request, f"admin:{target.id}", detail={"action": "mfa_reset", "reason": body.reason}
@@ -104,8 +103,8 @@ async def mfa_reset(
 
 @router.post("/auth/refresh")
 async def admin_refresh(body: AdminRefreshRequest, session: DbSession) -> AdminRefreshOut:
-    """静默续期:有效或刚过期(15 分钟宽限)的 access token 换新;
-    自首次签发(iat)起 12 小时绝对会话上限,到点须重新登录。高频自动调用,不落审计。"""
+    """静默续期:有效或刚过期(15 分钟宽限)的 access token 换新;自 iat 起 12 小时绝对上限。
+    不落审计。"""
     token = await service.renew_access_token(session, body.access_token)
     return AdminRefreshOut(access_token=token)
 
@@ -117,7 +116,7 @@ async def admin_me(admin: CurrentAdmin) -> AdminOut:
 
 @router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def admin_logout(admin: CurrentAdmin, session: DbSession, request: Request) -> Response:
-    """服务端登出:token_version+1,该管理员全部在外会话即刻失效(含其它标签页/机器)。"""
+    """服务端登出:token_version+1,该管理员全部在外会话失效。"""
     await service.logout(session, admin.id)
     set_audit_target(request, f"admin:{admin.id}", detail={"action": "logout"})
     return Response(status_code=status.HTTP_204_NO_CONTENT)

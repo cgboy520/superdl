@@ -1,8 +1,4 @@
-"""把 core/messages.py 的中文目录导出为前端 errors namespace(zh 基准)。
-
-产物 packages/ui/locales/zh-CN/errors.json 入库,CI 以 no-diff 校验单一事实源不漂移;
-en-US/errors.json 手译,键集/占位符一致性由 packages/ui 的 locales.test 锁定。
-"""
+"""把 core/messages.py 导出为 packages/ui/locales/zh-CN/errors.json(CI no-diff 校验);en-US 手译。"""
 
 import json
 import re

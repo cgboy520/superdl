@@ -1,5 +1,4 @@
-# 迁移 Job:每次发布前跑(generateName 不支持 apply,用带 tag 后缀的 name)。
-# 顺序不可颠倒:create 本 Job → kubectl wait --for=condition=complete → 再滚动 api/worker。
+# 迁移 Job:每次发布前跑(name 带 tag 后缀)。顺序:create → kubectl wait --for=condition=complete → 滚动 api/worker
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -14,8 +13,7 @@ spec:
     spec:
       restartPolicy: Never
       automountServiceAccountToken: false   # 只连 PG,不访问 K8s API
-      # Harbor 拉取凭据:首装按 ../secrets.example.yaml 手建,之后由平台按配置中心的机器人凭据
-      # 按指纹覆写(docs/reference/images.md);Harbor 项目 public 时缺它只是 kubelet 告警
+      # Harbor 拉取凭据(见 02-api.yaml 同处注释)
       imagePullSecrets:
         - {name: superdl-registry-pull}
       securityContext:
@@ -29,10 +27,10 @@ spec:
           command: ["alembic", "upgrade", "head"]
           envFrom:
             - configMapRef: {name: superdl-api-config}
-            # 迁移只需要 DB:不拿 JWT/渠道/云凭据(爆炸半径最小化)
+            # 只拿 DB 域
             - secretRef: {name: superdl-db}
           env:
-            # 迁移兜底超时:DDL 等锁超 3s 即失败;单条语句 60s 上限。大数据量变更须走分批小迁移。
+            # lock_timeout 3s / statement_timeout 60s;大数据量变更走分批小迁移
             - {name: PGOPTIONS, value: "-c lock_timeout=3s -c statement_timeout=60s"}
           resources:
             requests: {cpu: 100m, memory: 256Mi}

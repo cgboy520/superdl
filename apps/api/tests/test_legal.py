@@ -123,7 +123,7 @@ class TestVersionFlow:
         )
         assert resp.status_code == 409
 
-        # 发布:旧 published 自动 archived,部分唯一索引生效,审计 detail 含 sha256
+        # 发布:旧 published 自动 archived,审计 detail 含 sha256
         resp = await client.post(
             f"/api/admin/v1/legal-docs/versions/{draft['id']}/publish", headers=headers
         )
@@ -161,7 +161,7 @@ class TestVersionFlow:
         assert resp.json()["version"] == 2
         assert resp.json()["content_md"] == NEW_CONTENT
 
-        # 再发布回滚验证:发新版后旧版 archived,公开端点读新版
+        # 再发布:旧版 archived,公开端点读新版
         draft3 = await _create_draft(client, headers)
         assert draft3["version"] == 3
         resp = await client.put(
@@ -201,7 +201,7 @@ class TestVersionFlow:
             json={"reason": "清理废弃草稿"},
         )
         assert resp.status_code == 409
-        # 原因必填:空体 422(ReasonAction 全站口径)
+        # 原因必填:空体 422
         resp = await client.post(
             f"/api/admin/v1/legal-docs/versions/{draft['id']}/archive", headers=headers
         )

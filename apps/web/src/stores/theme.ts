@@ -1,8 +1,4 @@
-/**
- * 主题模式(light/dark):localStorage("superdl.theme") 持久化,
- * 初值 = 存储值 ?? prefers-color-scheme。index.html 的内联脚本用同一判定
- * 预置底色/color-scheme,防暗色首帧白闪(FOUC)。
- */
+/** 主题模式(light/dark):localStorage("superdl.theme") 持久化,初值 = 存储值 ?? prefers-color-scheme;index.html 内联脚本用同一判定预置底色/color-scheme。 */
 
 import { createStore } from "zustand/vanilla";
 import { useStore } from "zustand";

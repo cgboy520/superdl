@@ -1,8 +1,4 @@
-"""真实收款渠道的验签路径。
-
-`/webhooks/wechatpay` 与 `/webhooks/alipay` 无 JWT、无用户鉴权,「验签即鉴权」是唯一防线,
-必须用真实签名而非 MockChannel 覆盖。测试内现生成密钥即可:凭据只有下单与查单才需要。
-"""
+"""真实收款渠道的验签路径(/webhooks/wechatpay、/webhooks/alipay),用测试内现生成的密钥真实签名。"""
 
 import base64
 import json
@@ -20,7 +16,7 @@ from app.modules.billing.payment_channels import AlipayChannel, WechatChannel
 
 @pytest.fixture(scope="module")
 def keypair() -> tuple[str, str]:
-    """(私钥 PEM, 公钥 PEM)。2048 位生成一次,module 级复用。"""
+    """(私钥 PEM, 公钥 PEM),module 级复用。"""
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     priv = key.private_bytes(
         serialization.Encoding.PEM,
@@ -58,7 +54,7 @@ def _alipay_channel(keypair: tuple[str, str]) -> AlipayChannel:
 
 
 def _alipay_notify(private_pem: str, **overrides: str) -> bytes:
-    """按官方异步通知的加签口径构造一条通知体:去 sign/sign_type 与空值,按 key 排序,k=v 用 & 连。"""
+    """按官方加签口径构造通知体:去 sign/sign_type 与空值,按 key 排序,k=v 用 & 连。"""
     notify_time = (datetime.now(UTC) + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")
     params = {
         "app_id": APP_ID,
@@ -71,8 +67,7 @@ def _alipay_notify(private_pem: str, **overrides: str) -> bytes:
         "notify_time": notify_time,
         **overrides,
     }
-    # 加签口径是**解码后**的值,而真实通知是 application/x-www-form-urlencoded:
-    # 不 urlencode 的话 parse_qsl 会把签名里的 + 解成空格,合法通知也会验签失败。
+    # 加签口径是解码后的值,发送体须 urlencode
     message = "&".join(f"{k}={v}" for k, v in sorted(params.items()))
     params["sign_type"] = "RSA2"
     params["sign"] = _sign(private_pem, message.encode())
@@ -89,7 +84,7 @@ class TestAlipayCallbackSignature:
         assert result.success is True
 
     async def test_tampered_amount_rejected(self, keypair):
-        """改金额 = 最直接的攻击:签名对不上必须拒,而不是按篡改后的金额入账。"""
+        """篡改金额签名对不上 → 拒。"""
         priv, _pub = keypair
         body = _alipay_notify(priv).replace(b"total_amount=100.00", b"total_amount=99999.00")
         assert b"total_amount=99999.00" in body
@@ -98,7 +93,7 @@ class TestAlipayCallbackSignature:
         assert exc.value.code.name == "PAYMENT_CHANNEL_ERROR"
 
     async def test_foreign_app_id_rejected(self, keypair):
-        """官方通知校验清单里的 app_id 核对(纵深防御)。"""
+        """app_id 核对。"""
         priv, _pub = keypair
         with pytest.raises(AppError) as exc:
             await _alipay_channel(keypair).parse_callback(
@@ -122,12 +117,12 @@ class TestAlipayCallbackSignature:
         assert result.success is False
 
     async def test_blank_value_param_still_verifies(self, keypair):
-        """官方口径剔除空值参数:通知里带空字段(如 body=)不应误判验签失败。"""
+        """通知里带空字段(如 body=)不误判验签失败。"""
         from urllib.parse import parse_qsl
 
         priv, _pub = keypair
         body = _alipay_notify(priv) + b"&body=&extend="
-        # sanity:解析侧确实会丢掉这两个空值参数
+        # 解析侧丢掉空值参数
         assert dict(parse_qsl(body.decode())).get("body") is None
         result = await _alipay_channel(keypair).parse_callback({}, body)
         assert result.success is True
@@ -202,7 +197,7 @@ def _wx_resource(**overrides) -> dict:
 
 class TestWechatCallbackSignature:
     async def test_missing_public_key_fails_closed(self, keypair):
-        """公钥模式是唯一验签模式:公钥/公钥 ID 缺失即渠道不可用,没有证书模式回退。"""
+        """公钥模式是唯一验签模式:公钥/公钥 ID 缺失即渠道不可用。"""
         priv, pub = keypair
         for overrides in (
             {"wechat_public_key": "", "wechat_public_key_id": ""},
@@ -231,7 +226,7 @@ class TestWechatCallbackSignature:
         assert result.success is True
 
     async def test_foreign_currency_rejected(self, keypair):
-        """币种是官方验证清单上的一行:外币通知的金额会被按 CNY 入账,必须拒收。"""
+        """外币通知拒收。"""
         priv, _pub = keypair
         headers, body = _wechat_notify(
             priv, _wx_resource(amount={"total": 10000, "currency": "USD"})
@@ -248,7 +243,7 @@ class TestWechatCallbackSignature:
         assert exc.value.code.name == "PAYMENT_CHANNEL_ERROR"
 
     async def test_unsigned_probe_is_app_error_not_500(self, keypair):
-        """未签名的探测请求会让 SDK 抛裸 Exception —— 必须归一化成 AppError,而不是 500。"""
+        """未签名请求归一化成 AppError,不是 500。"""
         priv, _pub = keypair
         headers, body = _wechat_notify(priv, _wx_resource())
         headers.pop("Wechatpay-Signature-Type")
@@ -257,7 +252,7 @@ class TestWechatCallbackSignature:
             await _wechat_channel(keypair).parse_callback(headers, body)
 
     async def test_foreign_merchant_rejected(self, keypair):
-        """签名可能来自一条合法的微信通知,但收款商户不是我们 —— 官方清单要求核对。"""
+        """收款商户不符 → 拒。"""
         priv, _pub = keypair
         headers, body = _wechat_notify(priv, _wx_resource(mchid="1900009999"))
         with pytest.raises(AppError) as exc:
@@ -265,7 +260,7 @@ class TestWechatCallbackSignature:
         assert exc.value.message_key == "billing.wechatCallbackMerchantMismatch"
 
     async def test_missing_mchid_rejected(self, keypair):
-        """通知不带 mchid/appid 即判失败:缺失不放行,否则等于没核对。"""
+        """通知不带 mchid/appid 即判失败。"""
         priv, _pub = keypair
         resource = _wx_resource()
         del resource["mchid"]
@@ -275,7 +270,7 @@ class TestWechatCallbackSignature:
         assert exc.value.message_key == "billing.wechatCallbackMerchantMismatch"
 
     async def test_lowercase_header_names_accepted(self, keypair):
-        """生产路径 dict(request.headers) 的键是小写:时间戳读取必须大小写不敏感。"""
+        """头字段读取大小写不敏感。"""
         priv, _pub = keypair
         headers, body = _wechat_notify(priv, _wx_resource())
         lowered = {k.lower(): v for k, v in headers.items()}

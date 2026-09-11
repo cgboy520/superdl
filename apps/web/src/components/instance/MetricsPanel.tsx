@@ -1,6 +1,4 @@
-/** 实例监控面板:四条序列(GPU / 显存 / CPU / 内存)按 1h / 6h / 24h 拉取。
- *  指标只做展示与对账,不参与计费;503 = 监控源未接入 / 断源(专用文案),其余错误绝不静默渲染成空图。
- *  实例详情页与服务详情页(当前版本实例)共用。 */
+/** 实例监控面板:GPU / 显存 / CPU / 内存 按 1h / 6h / 24h 拉取。指标只做展示,不参与计费;503 = 监控源未接入 / 断源(专用文案),其余错误不渲染成空图。实例详情页与服务详情页共用。 */
 
 import { isApiError } from "@superdl/api-client";
 import { DataErrorAlert, EChart } from "@superdl/ui/components";

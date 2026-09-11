@@ -9,7 +9,7 @@ from app.core.db import Base
 
 
 class AdminUser(Base):
-    """管理端账号,与租户体系完全隔离(独立登录与 JWT audience)。"""
+    """管理端账号,与租户体系隔离(独立登录与 JWT audience)。"""
 
     __tablename__ = "admin_users"
 
@@ -18,26 +18,22 @@ class AdminUser(Base):
     password_hash: Mapped[str] = mapped_column(String(128))
     role: Mapped[str] = mapped_column(String(16))  # admin / ops / finance / readonly
     status: Mapped[str] = mapped_column(String(16), default="active")
-    # 撤销闸:停用、改角色、改密都 +1,已签发的 token 立即失效
+    # 撤销闸:停用、改角色、改密都 +1
     token_version: Mapped[int] = mapped_column(default=0, server_default="0")
-    # TOTP(全部管理角色强制):secret AES-GCM 加密(aad=f"totp:{id}");
-    # recovery 为恢复码 bcrypt 哈希列表,用后作废
+    # TOTP(全部管理角色强制):secret AES-GCM 加密(aad=f"totp:{id}");recovery 为恢复码 bcrypt 哈希列表
     totp_secret: Mapped[str | None] = mapped_column(String(255))
     totp_enabled: Mapped[bool] = mapped_column(default=False, server_default="false")
     totp_recovery: Mapped[list[str] | None] = mapped_column(JSONB)
-    # TOTP 防重放(RFC 6238 §5.2):已通过验证的最大 timestep(30s 步长),
-    # 行锁内单调推进;≤ 此步的码一律拒绝。NULL = 从未成功验证过
+    # TOTP 防重放:已通过验证的最大 timestep(30s),行锁内单调推进;≤ 此步的码拒绝。NULL = 从未验证
     last_totp_timestep: Mapped[int | None] = mapped_column(BigInteger)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class AdminAdjustment(Base):
-    """调账单:发起 → 第二管理员复核 → 生效。全程留痕。"""
+    """调账单:发起 → 第二管理员复核 → 生效。"""
 
     __tablename__ = "admin_adjustments"
-    # 幂等键:响应丢失后重试不会开出第二张调账单。
-    # 作用域 (发起人, 租户, 键):弱键(如按日期生成)跨租户复用不会被误判重放;
-    # 同键重放须过 request_fingerprint 比对,不一致 409(对齐 Stripe 惯例)
+    # 幂等键作用域 (发起人, 租户, 键);同键重放须过 request_fingerprint 比对,不一致 409
     __table_args__ = (
         UniqueConstraint(
             "created_by", "user_id", "idempotency_key", name="uq_admin_adjustments_idem_scope"
@@ -54,7 +50,7 @@ class AdminAdjustment(Base):
     reviewed_by: Mapped[int | None]
     review_comment: Mapped[str | None] = mapped_column(String(256))
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
-    # 请求体 SHA256(user_id|amount|reason):同键重放比对用,防弱键冲突静默错单
+    # 请求体 SHA256(user_id|amount|reason):同键重放比对用
     request_fingerprint: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     reviewed_at: Mapped[datetime | None]

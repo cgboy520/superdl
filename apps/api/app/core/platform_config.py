@@ -1,8 +1,5 @@
-"""平台配置中心:支付/短信/实名/合规配置,env 默认 + DB 覆盖,管理端在线配置免发版。
-
-SETTING_SPECS 是键白名单,未知键一律拒绝。敏感项经 crypto.py AES-GCM 加密落库,
-adminapi 只回配置状态与尾 4 位预览,永不回明文。
-"""
+"""平台配置中心:env 默认 + DB 覆盖。SETTING_SPECS 是键白名单;敏感项经 crypto.py AES-GCM 加密落库,
+adminapi 只回状态与尾 4 位预览。"""
 
 import re
 from collections.abc import Mapping
@@ -63,10 +60,9 @@ class SettingSpec:
     hint: str = ""  # 校验失败时的人话提示
 
 
-# key 与 Settings 同名字段一一对应(env 即默认值层;K8s Secret 注入仍有效)
+# key 与 Settings 同名字段一一对应(env 为默认值层)
 SETTING_SPECS: dict[str, SettingSpec] = {
-    # ---- 安全策略(开关 ≠ 替身:关闭即跳过;凭据在各渠道组;在线写库层 prod 一律禁关——
-    # 单管理员一次请求即降防的口子必须堵死;人机验证/实名再叠加 prod 启动 fail-fast) ----
+    # ---- 安全策略(开关:关闭即跳过;凭据在各渠道组;prod 在线禁关) ----
     "captcha_enabled": SettingSpec(
         "security",
         "bool",
@@ -95,7 +91,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         hint="开启后未实名用户不能充值、不能开通实例;须先开启实名认证(任意环境都拦这个组合);"
         "prod 在线关闭已禁且启动 fail-fast(境内合规要求)",
     ),
-    # ---- 微信支付(APIv3;验签仅微信支付公钥模式,公钥与公钥 ID 必填) ----
+    # ---- 微信支付(APIv3,公钥模式) ----
     "payment_wechat_enabled": SettingSpec("payment_wechat", "bool"),
     "wechat_mchid": SettingSpec(
         "payment_wechat", "str", pattern=r"\d{8,12}", hint="商户号为 8~12 位数字"
@@ -127,7 +123,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         must_contain="-----BEGIN PUBLIC KEY-----",
         hint="需粘贴完整微信支付公钥 PEM(pub_key.pem 内容)",
     ),
-    # ---- 支付宝(开放平台当面付;普通公钥模式,RSA2) ----
+    # ---- 支付宝(当面付,RSA2 公钥模式) ----
     "payment_alipay_enabled": SettingSpec("payment_alipay", "bool"),
     "alipay_app_id": SettingSpec(
         "payment_alipay", "str", pattern=r"\d{13,16}", hint="应用 APPID 为 13~16 位数字"
@@ -144,8 +140,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         forbid_contains="-----",
         hint="粘贴纯 base64 支付宝公钥体(开放平台·接口加签方式·支付宝公钥)",
     ),
-    # 收款方 PID(2088 开头 16 位)。异步通知除验签外还要核对 app_id 与 seller_id;
-    # prod 启用支付宝渠道时必填(渠道构造期 fail-fast),缺失 seller_id 的回调一律拒收
+    # 收款方 PID(2088 开头 16 位);prod 启用支付宝时必填
     "alipay_seller_id": SettingSpec(
         "payment_alipay",
         "str",
@@ -171,12 +166,12 @@ SETTING_SPECS: dict[str, SettingSpec] = {
     "sms_template_notice": SettingSpec(
         "sms", "str", pattern=r"SMS_[0-9A-Za-z]+", hint="通知模板码,形如 SMS_123456789(变量 title)"
     ),
-    # ---- 实名认证(阿里云实人认证·手机号三要素核验;开关在 security 组) ----
+    # ---- 实名认证(阿里云手机号三要素;开关在 security 组) ----
     "real_name_access_key_id": SettingSpec(
         "real_name", "str", pattern=r"[0-9A-Za-z]{16,30}", hint="AccessKey ID(建议独立 RAM 子账号)"
     ),
     "real_name_access_key_secret": SettingSpec("real_name", "secret", max_len=128),
-    # ---- 人机校验(阿里云验证码 2.0,/auth/sms-code 前置闸;防分布式脚本刷码) ----
+    # ---- 人机校验(阿里云验证码 2.0,/auth/sms-code 前置闸) ----
     "captcha_scene_id": SettingSpec(
         "captcha", "str", max_len=64, hint="场景 ID(控制台·场景管理;服务端验签强制写入防篡改)"
     ),
@@ -190,14 +185,14 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         hint="AccessKey ID(建议独立 RAM 子账号,仅授 AliyunYundunAFSFullAccess)",
     ),
     "captcha_access_key_secret": SettingSpec("captcha", "secret", max_len=128),
-    # ---- 合规备案(站点页脚展示) ----
+    # ---- 合规备案(页脚) ----
     "icp_number": SettingSpec(
         "compliance", "str", max_len=64, hint="ICP 备案号,形如 京ICP备2026012345号-1"
     ),
     "police_record_number": SettingSpec(
         "compliance", "str", max_len=64, hint="公安备案号,形如 京公网安备11010502000000号"
     ),
-    # 经营主体信息(《电子商务法》第十五条:首页显著位置持续公示;页脚展示,留空即不展示)
+    # 经营主体信息(页脚;留空不展示)
     "company_name": SettingSpec(
         "compliance", "str", max_len=128, hint="营业执照上的公司全称,如 某某科技(北京)有限公司"
     ),
@@ -214,7 +209,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         max_len=256,
         hint="营业执照电子版链接(亮照);留空则不展示",
     ),
-    # ---- 客服联系方式(页脚与帮助页;留空即不展示对应入口) ----
+    # ---- 客服联系方式(页脚与帮助页;留空不展示) ----
     "support_email": SettingSpec(
         "support",
         "str",
@@ -262,7 +257,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         choices=("cn", "official"),
         hint="装机安装源:cn=国内镜像(rancher-mirror.rancher.cn),official=官方源",
     ),
-    # ---- 镜像仓库(Harbor):平台镜像与租户实例镜像的权威源;拉取凭据由平台托管为 K8s Secret ----
+    # ---- 镜像仓库(Harbor);拉取凭据托管为 K8s Secret ----
     "registry_host": SettingSpec(
         "registry",
         "str",
@@ -315,16 +310,14 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         hint="创建实例的镜像来源白名单,每行一个仓库前缀(如 docker.io/);留空 = 不限制;"
         "Harbor 地址自动放行,平台镜像目录内的引用恒放行",
     ),
-    # ---- 可观测性(管理端自绘为主;Grafana 仅作可选深挖外链,不做 iframe) ----
+    # ---- 可观测性(Grafana 仅作外链) ----
     "grafana_url": SettingSpec(
         "observability",
         "str",
         pattern=r"https?://\S+",
         hint="可选:Grafana 地址,配置后管理端节点页显示「在 Grafana 打开」外链",
     ),
-    # 值班手机号:critical 平台告警短信直发(不依赖平台自身通知流;复用阿里云短信通道)
-    # 注:pattern 为「空串或手机号」的 alternation,fullmatch 语义下不能带 ^/$ 锚点,
-    # 故不直接引用 app.core.regex.PHONE_RE(含锚点),保留内联写法
+    # 值班手机号:critical 告警短信直发;pattern 为「空串或手机号」,fullmatch 语义不带锚点
     "oncall_phone": SettingSpec(
         "observability",
         "str",
@@ -410,13 +403,12 @@ def compute_config_warnings(cfg: Mapping[str, str], environment: str) -> list[Co
     return out
 
 
-# 合规闸门(prod 启动 fail-fast;在线写库层由 prod_forbidden 禁关,这里兜 env/部署层)
+# 合规闸门(prod 启动 fail-fast;在线写库层由 prod_forbidden 禁关)
 PROD_REQUIRED_SWITCHES = ("captcha_enabled", "real_name_enabled", "real_name_required_for_recharge")
 
 
 def assert_prod_compliance_gates(cfg: Mapping[str, str], environment: str) -> None:
-    """prod 下人机验证/实名/充值强制实名必须全开(境内合规),否则拒绝启动。
-    首次部署经 env 满足(SUPERDL_CAPTCHA_ENABLED=true 等),渠道凭据可后在配置中心补录。"""
+    """prod 下人机验证/实名/充值强制实名必须全开,否则拒绝启动。"""
     if environment != "prod":
         return
     gated_off = [k for k in PROD_REQUIRED_SWITCHES if cfg.get(k) != "true"]
@@ -450,8 +442,7 @@ def validate_setting_value(key: str, value: str) -> str:
     if spec.pattern and not re.fullmatch(spec.pattern, value):
         raise ValueError(f"{key} 格式不符{suffix}")
     if spec.line_pattern is not None:
-        # 逐行锚定校验:多行 text 不许用嵌套量词整串匹配(指数回溯 → 事件循环停摆)。
-        # 逗号与换行同为分隔符(与读取侧 effective_image_allowlist 的归一化同口径)。
+        # 逐行锚定校验(不整串匹配);逗号与换行同为分隔符,与 effective_image_allowlist 同口径
         for line in value.replace(",", "\n").splitlines():
             line = line.strip()
             if line and not re.fullmatch(spec.line_pattern, line):
@@ -477,9 +468,7 @@ def _env_layer() -> dict[str, str]:
 
 
 def _decrypt_row(key: str, value: str, *, aad: str) -> str:
-    """单行解密,fail-closed:密文损坏/主密钥不配套即抛,禁止静默回落 env——
-    轮换窗口里回落等于悄悄用回旧值,且故障被埋成「配置莫名没生效」。
-    (轮换时旧密钥挂 SUPERDL_CONFIG_ENCRYPTION_KEY_PREVIOUS,见 crypto.py 头注释)"""
+    """单行解密,fail-closed:密文损坏/主密钥不配套即抛,不回落 env。"""
     try:
         return crypto.decrypt_str(value, aad=aad)
     except Exception as exc:
@@ -488,10 +477,7 @@ def _decrypt_row(key: str, value: str, *, aad: str) -> str:
 
 
 async def get_effective_platform_config(session: AsyncSession) -> dict[str, str]:
-    """生效配置全量映射(secret 已解密,仅进程内使用,严禁整体入日志/响应)。
-
-    每次直接全量读,不做进程内缓存:表只有几十行,一趟 SELECT + 少量 AES-GCM 解密是微秒级。
-    """
+    """生效配置全量映射(secret 已解密,禁止整体入日志/响应);每次全量读,不缓存。"""
     eff = _env_layer()
     for row in (await session.execute(select(PlatformSetting))).scalars():
         spec = SETTING_SPECS.get(row.key)
@@ -512,10 +498,7 @@ async def set_platform_settings(
         if key not in SETTING_SPECS:
             raise ValueError(f"未知配置键:{key}")
         if raw.strip() == "":
-            # 清除覆盖不是「删除配置」而是「回落到 env 层」:env 层值本身可能是 prod 禁止的
-            # 取值(如 real_name_enabled 的部署默认 false)。prod_forbidden 守卫必须覆盖
-            # 清除路径,否则单次请求即可绕过「禁止在线降防」的写入门禁,且下一次启动的
-            # 合规闸会因回落值拒启——一次 API 调用埋下一个全平台 fail-to-start。
+            # 清除 = 回落 env 层,prod_forbidden 守卫同样覆盖清除路径
             spec = SETTING_SPECS[key]
             fallback = _env_default(key)
             if (
@@ -537,7 +520,7 @@ async def set_platform_settings(
             .values(key=key, value=value, updated_by=updated_by)
             .on_conflict_do_update(
                 index_elements=["key"],
-                # updated_at 显式 bump:onupdate 只在 ORM 路径生效,upsert 语句要自己写
+                # upsert 语句里 onupdate 不生效,updated_at 显式 bump
                 set_={"value": value, "updated_by": updated_by, "updated_at": func.now()},
             )
         )
@@ -545,11 +528,7 @@ async def set_platform_settings(
 
 
 async def _check_real_name_invariant(session: AsyncSession, updates: dict[str, str]) -> None:
-    """与 Settings._validate_invariants 同口径的写入侧守卫(任意环境):
-
-    real_name_required_for_recharge=true 必须伴随 real_name_enabled=true——实名未开通时
-    用户永远完不成实名,充值与开通实例会被永久卡住。
-    """
+    """写入侧守卫(与 Settings._validate_invariants 同口径):required=true ⇒ enabled=true。"""
     if not (updates.keys() & {"real_name_enabled", "real_name_required_for_recharge"}):
         return
     rows = await list_platform_overrides(session)

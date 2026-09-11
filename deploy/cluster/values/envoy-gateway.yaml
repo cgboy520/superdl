@@ -1,45 +1,24 @@
-# Envoy Gateway 控制面:北向唯一入口(Gateway API 实现)。
-#
-# 本文件只配【控制面】——把 Gateway/HTTPRoute 翻译成 xDS 的 envoy-gateway Deployment,
-# 它自己不过一个字节的业务流量。真正扛流量的 Envoy 数据面(副本/资源/落点/Service 类型)
-# 在 EnvoyProxy CR 里(deploy/app/k8s/04-gateway.yaml 的 superdl-proxy)。两处键名相近,
-# 改错地方的表现是「值写了但完全没生效」,没有任何报错。
-#
-# CRD 不由本 chart 装(helmfile 侧 crds.enabled=false),由 presync 的 ../gateway-api-crds.sh
-# 单点负责:chart 的 CRD 在 helm 的 crds/ 目录,而该目录在 helm upgrade 时永不更新。
+# Envoy Gateway 控制面参数(数据面参数在 deploy/app/k8s/04-gateway.yaml 的 EnvoyProxy superdl-proxy)。
+# CRD 由 presync 的 ../gateway-api-crds.sh 单点管(helmfile 侧 crds.enabled=false)
 
 deployment:
-  # 控制面挂了不立刻断流(数据面按最后一份 xDS 继续转发),但期间 Gateway/HTTPRoute 的变更
-  # 都不生效——租户新开实例的 Jupyter 域名一直 404,且现象随控制面恢复时机呈「偶发」。
-  # 2 副本(热备选主)保证滚动升级/节点驱逐时始终有一个在 reconcile。
+  # 2 副本热备选主
   replicas: 2
-  # Guaranteed 只防同优先级驱逐,priorityClass 才保证资源紧张时先于租户 Pod 被保。
   priorityClassName: system-cluster-critical
   envoyGateway:
-    # 控制面内存随 HTTPRoute 条数涨(一实例一条),要跟着规模按实测复核,写死后升 chart 版本
-    # 也不会被默认值变动改掉。
-    # 只限内存不限 CPU:批量 HTTPRoute 变更时 reconcile 会短时打满,卡 CPU limit 只会把收敛
-    # 时间拖长,表现为「新实例的 Jupyter 域名要等很久才通」。
+    # 内存随 HTTPRoute 条数涨,按实测复核;只限内存不限 CPU
     resources:
       requests: {cpu: 100m, memory: 256Mi}
       limits: {memory: 1024Mi}
   pod:
     nodeSelector:
-      # 平台组件落点统一锚点(与 deploy/app/k8s 各清单一致);GPU 节点严禁打此标签。
-      # node-restriction.kubernetes.io/* 是 NodeRestriction 准入插件禁止 kubelet 自签的前缀,
-      # 不许换成节点可自己声明的键(node-label 自打)——持 join token 的机器把那种键写进
-      # 自己的 config.yaml 就能把控制面吸到攻击者 root 的机器上。标签由
-      # deploy/ansible/site.yml 用管理凭据在装机后打,平台 SA 也无权改(VAP 策略③只放行 superdl.io/*)。
+      # 平台组件落点锚点(与 deploy/app/k8s 一致,由 deploy/ansible/site.yml 打);不许换成节点可自述的键;GPU 节点禁止打
       node-restriction.kubernetes.io/superdl-infra: "true"
     tolerations:
-      # 必配:infra 标签落在 RKE2 server 上,而 server 带 CriticalAddonsOnly=true:NoExecute
-      # (rke2/server-config.yaml)。只写 nodeSelector 不写容忍 = 控制面 Pod 永远 Pending,
-      # Gateway 的 status 一直停在空白,看上去像 CRD 没装好。
+      # 与 nodeSelector 成对(server 带 CriticalAddonsOnly=true:NoExecute,rke2/server-config.yaml)
       - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
     topologySpreadConstraints:
-      # 2 副本落同一台 infra 节点等于没有 HA;小集群不满足时仍可调度(ScheduleAnyway)。
-      # 选择器只用 chart 恒定的两个标签(control-plane / app.kubernetes.io/name),
-      # 别用 instance:它跟 release 名走,改名即静默失配。
+      # 选择器只用 chart 恒定的 control-plane / app.kubernetes.io/name 标签,不用 instance
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
         whenUnsatisfiable: ScheduleAnyway
@@ -56,13 +35,11 @@ deployment:
             app.kubernetes.io/name: gateway-helm
 
 podDisruptionBudget:
-  # chart 默认 0 = PDB 形同虚设,一次 drain 可以带走全部副本。
+  # chart 默认 0
   minAvailable: 1
 
 certgen:
-  # pre-install/pre-upgrade 钩子 Job,生成控制面自签的 webhook/xDS 服务证书。
-  # 私钥材料在这个 Pod 里过一遍,不能落到跑租户负载的 GPU 节点上,故与控制面同落 infra。
-  # 钉了 nodeSelector 就必须一并给容忍,否则 Job 永远 Pending,helm install 卡在钩子上不返回。
+  # pre-install/pre-upgrade 钩子 Job(生成控制面自签证书),与控制面同落 infra;nodeSelector 与容忍成对
   job:
     nodeSelector:
       node-restriction.kubernetes.io/superdl-infra: "true"
@@ -73,6 +50,5 @@ config:
   envoyGateway:
     logging:
       level:
-        # 控制面日志是排查「路由不生效」的唯一入口:sectionName 写错、certificateRefs 指向
-        # 不存在的 Secret 都不会阻断 apply,只在这里和策略对象的 status 里留痕。
+        # 路由不生效(sectionName / certificateRefs 写错)只在控制面日志与策略 status 里留痕
         default: info

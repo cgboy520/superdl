@@ -1,8 +1,5 @@
-/** 空态(两端统一):品牌线稿插画 + 一句话 + 至多两个动作。
- *  「错误」不归这里 —— 查询失败用 TableErrorEmpty/DataErrorAlert,绝不渲染成空数据。
- *  插画为自绘线稿 SVG,stroke=currentColor 随 antd colorTextDescription 自适应浅/暗/深色三主题;
- *  scene 决定插画与默认文案(shared:empty.*,可被 description 覆盖)。
- */
+/** 空态(两端统一):线稿插画 + 一句话 + 至多两个动作;查询失败用 TableErrorEmpty/DataErrorAlert。
+ *  插画 stroke=currentColor 随主题;scene 决定插画与默认文案(shared:empty.*)。 */
 
 import { theme, Typography } from "antd";
 import type { CSSProperties, ReactNode } from "react";
@@ -81,14 +78,14 @@ export function EmptyState({
   compact,
   style,
 }: {
-  /** 场景(决定插画与默认文案);description 传入则覆盖默认文案 */
+  /** 场景(决定插画与默认文案) */
   scene?: EmptyScene;
   description?: ReactNode;
-  /** 主动作(空态规范:一句话 + 一个动作) */
+  /** 主动作 */
   action?: ReactNode;
   /** 次动作(如「清空筛选」) */
   secondaryAction?: ReactNode;
-  /** 卡内/表内紧凑形态(插画 80,纵距收紧) */
+  /** 紧凑形态 */
   compact?: boolean;
   style?: CSSProperties;
 }) {

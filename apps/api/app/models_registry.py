@@ -1,7 +1,5 @@
-"""聚合全部 SQLAlchemy 模型,供 alembic autogenerate 与测试 create_all 使用。
-
-新增模块的 models.py 必须在这里 import,否则迁移看不见。
-"""
+"""聚合全部 SQLAlchemy 模型(alembic autogenerate 与测试 create_all)。
+新增模块的 models.py 须在此 import。"""
 
 from app.core import audit, outbox, platform_config, policies, ratelimit
 from app.core.db import Base
@@ -38,9 +36,8 @@ __all__ = [
 ]
 
 
-# ---------- 跨模块索引声明(元数据登记点) ----------
-# alembic check 要求 DB 里的每个索引都在 metadata 有声明;下列索引落在其他模块拥有的表上,
-# 统一登记在这里,与各表迁移保持同一事实源。
+# ---------- 跨模块索引声明 ----------
+# 落在其他模块表上的索引统一登记在此(alembic check 要求每个索引在 metadata 有声明)
 from sqlalchemy import CheckConstraint, Index, text
 
 Index(
@@ -70,9 +67,8 @@ Index(  # 用户盘账单页按 (user_id, day) 翻页
     billing_models.BillDailyDisk.__table__.c.day,
 )
 
-# CHECK 兜底:同一迁移 NOT VALID + VALIDATE 落库,谓词文本与迁移保持一致;
-# alembic 按名字比对,naming convention 自动补 ck_<表>_ 前缀,故声明短名。
-# instances.status 的同款声明在 orchestrator/models.py。
+# CHECK 约束:谓词文本与迁移一致,声明短名(naming convention 补 ck_<表>_ 前缀);
+# instances.status 的同款在 orchestrator/models.py
 _EXTRA_CHECKS: list[tuple[CheckConstraint, str]] = [
     (
         CheckConstraint(

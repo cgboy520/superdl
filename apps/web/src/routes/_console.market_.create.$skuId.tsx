@@ -1,8 +1,4 @@
-/**
- * 创建实例(开发机):单栏卡片流 + 底部结算条;经济档需知情同意。
- * 数据盘「新建」为行内直建:提交时先建盘再建实例,建盘成功而实例失败必须提示盘已计费。
- * 部署在线服务走独立的 /services/new。
- */
+/** 创建实例(开发机):单栏卡片流 + 底部结算条;经济档需知情同意。数据盘「新建」为行内直建:先建盘再建实例,建盘成功而实例失败须提示盘已计费。部署在线服务走 /services/new。 */
 
 import { isApiError, type DiskOut, type InstanceOut, type SkuMarketOut } from "@superdl/api-client";
 import {
@@ -65,7 +61,7 @@ export const Route = createFileRoute("/_console/market_/create/$skuId")({
     market?: "spot";
     count?: number;
   } => {
-    // 竞价与包周期互斥,两个都带进来时必须以 period 为准
+    // 竞价与包周期互斥,以 period 为准
     const g = Number(search.gpus);
     const out: {
       gpus?: number;
@@ -76,7 +72,7 @@ export const Route = createFileRoute("/_console/market_/create/$skuId")({
     if (Number.isInteger(g) && g >= 1 && g <= 8) out.gpus = g;
     if (typeof search.period === "string" && isBillingPeriod(search.period)) {
       out.period = search.period;
-      // 市场页购买时长选择器透传(1~36,与市场页 URL 同一口径)
+      // 市场页购买时长透传(1~36)
       const c = Number(search.count);
       if (Number.isInteger(c) && c >= 1 && c <= MAX_PERIOD_COUNT) out.count = c;
     } else if (search.market === "spot") out.market = "spot";
@@ -88,7 +84,7 @@ export const Route = createFileRoute("/_console/market_/create/$skuId")({
 
 function CreatePage() {
   const { t } = useTranslation(["web", "shared"]);
-  // 「镜像必须钉死版本」这句话的事实源在后端 messages.py,前端不另写一份
+  // 「镜像必须钉死版本」文案事实源在后端 messages.py
   const { t: tErr } = useTranslation("errors");
   const fmt = useFormat();
   const { formatHourlyPrice } = fmt;
@@ -128,17 +124,17 @@ function CreatePage() {
   const [ecoOpen, setEcoOpen] = useState(false);
   const [spotOpen, setSpotOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  // 幂等键 = 本次挂载的 nonce + 参数快照:同参数重放同键;新进入本页才是新单
+  // 幂等键 = 本次挂载的 nonce + 参数快照
   const [formNonce] = useState(() => crypto.randomUUID());
   const [mountedAt] = useState(() => Date.now());
-  // 「取消」脏判定的挂载快照:与初始值逐项比对,任一字段非默认即脏
+  // 「取消」脏判定的挂载快照
   const [mountSnapshot] = useState(() => ({ gpuCount, billingMode, newDiskName }));
 
   // 表单脏 = 任一字段非挂载初值
   const formDirty =
     gpuCount !== mountSnapshot.gpuCount ||
     billingMode !== mountSnapshot.billingMode ||
-    // 市场页可透传时长(countFromMarket):初值不是 1,不能一进来就判脏
+    // 市场页透传时长时初值不是 1
     periodCount !== (countFromMarket ?? 1) ||
     imageTab !== "platform" ||
     platformImage != null ||
@@ -155,7 +151,7 @@ function CreatePage() {
   const cascade = useMemo(() => {
     const tree: Record<string, Record<string, Record<string, Record<string, string>>>> = {};
     for (const img of images ?? []) {
-      // CPU 向镜像(如 DataScience)的 cuda_version 不是版本号,直接原样显示,别拼成「CUDA CPU」
+      // CPU 向镜像的 cuda_version 不是版本号,原样显示
       const cudaLabel = /^\d/.test(img.cuda_version)
         ? `CUDA ${img.cuda_version}`
         : img.cuda_version;
@@ -181,7 +177,7 @@ function CreatePage() {
   const pageTitle = t("create.title");
   const errText = useApiErrorText();
   const create = useCreateInstance({
-    // 错误统一在本页 doCreate 的 catch 里出(避免 NO_CAPACITY 引导与全局错误弹两条)
+    // 错误统一在 doCreate 的 catch 里出
     silentError: true,
     onSuccess: (data) => {
       const inst = data as InstanceOut;
@@ -192,7 +188,7 @@ function CreatePage() {
   });
   const createDisk = useCreateDisk();
 
-  // 规格三态:加载中骨架 / 加载失败可重试(绝不能渲染成「已下架」) / 真不存在才提示下架
+  // 规格三态:加载中骨架 / 加载失败可重试 / 真不存在才提示下架
   if (skusError && !skus) {
     return (
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
@@ -235,7 +231,7 @@ function CreatePage() {
     );
   }
 
-  // CPU 规格:不带卡,提交 gpu_count: 0;价格是整机时价,不乘卡数
+  // CPU 规格:gpu_count: 0,价格是整机时价
   const isCpu = sku.tier === "cpu";
   const gpus = isCpu ? 0 : gpuCount;
   const priceUnits = isCpu ? 1 : gpuCount;
@@ -247,10 +243,10 @@ function CreatePage() {
       : diskMode === "existing"
         ? ((disks ?? []).find((d) => d.id === existingDiskId)?.size_gb ?? 0)
         : 0;
-  // 「约 ¥X/日」为展示层估算(月价/30,BigInt 禁浮点);入账以后端日结为准
+  // 「约 ¥X/日」为展示层估算(月价/30,BigInt);入账以后端日结为准
   const diskDaily = diskDailyEstimate(diskPriceGbMonth, diskGb);
 
-  // 该规格未开包周期 / 未上竞价时按量兜底:提交体不能还带 period 或 market=spot,否则后端 400
+  // 未开包周期 / 未上竞价时按量兜底,提交体不带 period 或 market=spot
   const periodBlocked = !sku.period_enabled;
   const spotBlocked = !sku.spot_enabled || spotPolicy == null;
   const mode: BillingMode =
@@ -262,7 +258,7 @@ function CreatePage() {
   // 竞价单价 = SKU 现价 × spot_discount_pct / 100,与后端 pricing.effective_price_hourly 同算法
   const unitHourly = (isSpot ? spotPriceOf(sku.price_hourly, spotPolicy) : null) ?? sku.price_hourly;
   const hourlyTotal = mulPrice(unitHourly, priceUnits);
-  // 创建页的 base 就是 SKU 现价,与后端下单用的是同一个数
+  // base = SKU 现价,与后端下单同一个数
   const quote = period
     ? periodQuoteOf(
         sku.price_hourly,
@@ -270,13 +266,12 @@ function CreatePage() {
         discounts,
       )
     : undefined;
-  // 「现在」在挂载时定一次(mountedAt):每次重渲染都取一遍属于渲染期副作用
+  // 「现在」在挂载时定一次(mountedAt)
   const expiresAt = period
     ? new Date(mountedAt + PERIOD_HOURS[period] * periodCount * 3_600_000).toISOString()
     : null;
 
-  // BigInt 比较禁浮点:按量门槛 = 1 小时费用(同后端 require_balance_at_least),包周期 = 应付全额;
-  // 报价未就绪必须不放行,否则会按 0 元判够。
+  // BigInt 比较:按量门槛 = 1 小时费用(同后端 require_balance_at_least),包周期 = 应付全额;报价未就绪不放行
   const needAmount = period ? quote?.amount : hourlyTotal;
   const balanceReady = wallet != null && (!period || quote != null);
   const enough =
@@ -284,7 +279,7 @@ function CreatePage() {
 
   const imageRef = imageTab === "platform" ? platformImage?.[3] : customImage.trim();
 
-  // 后端同判 pinned 硬闸(等 400 才知道太迟),前端同样拦截并即时红框
+  // pinned 硬闸与后端同判,前端即时红框
   const canSubmit =
     imageRef != null && imageRef !== "" && isPinnedImageRef(imageRef) && keyIds.length > 0;
 
@@ -307,15 +302,15 @@ function CreatePage() {
   };
 
   const doCreate = async () => {
-    // canSubmit 已保证有镜像;这里再挡一次是把类型收窄到 string
+    // 类型收窄到 string
     if (!imageRef) return;
     setSubmitting(true);
-    // 幂等键由参数派生且失败不轮换:响应丢失后重提不会开出第二台,改了参数才是新单
+    // 幂等键由参数派生且失败不轮换
     const idempotencyKey = idemKeyOf("inst", [
       formNonce,
       sku.id,
       gpus,
-      // 计费方式进快照:同一台机器按量买和包月买是两张不同的单
+      // 计费方式进快照
       mode,
       period ? periodCount : null,
       imageRef,
@@ -336,11 +331,11 @@ function CreatePage() {
               name: newDiskName.trim() || defaultDiskName(),
               size_gb: newDiskGb,
             },
-            // 与实例同一个参数快照派生:建盘成功但建实例失败时重提,不会再多一块盘
+            // 与实例同一个参数快照派生
             idempotencyKey,
           })) as DiskOut;
         } catch {
-          return; // 建盘失败:useApiMutation 已弹错误,直接终止
+          return; // 建盘失败,错误已由 useApiMutation 弹出
         }
         diskId = disk.id;
       }
@@ -377,7 +372,7 @@ function CreatePage() {
     }
   };
 
-  /** 竞价同意之后的下一道闸:经济档 = 落 hami 池的共享(软切分超卖);mig 池是硬切分,不弹。 */
+  /** 竞价同意之后的下一道闸:经济档 = hami 池共享(软切分超卖);mig 池不弹。 */
   const afterSpotConsent = () => {
     if (skuVariant(sku.tier, sku.pool_label) === "shared_hami") {
       setEcoOpen(true);
@@ -386,7 +381,7 @@ function CreatePage() {
     void doCreate();
   };
 
-  // 两道知情同意串起来:竞价(可被回收)在前、经济档(性能可能波动)在后;同一台机器可能两条都占
+  // 两道知情同意串起来:竞价在前、经济档在后
   const submit = () => {
     if (isSpot) {
       setSpotOpen(true);
@@ -404,7 +399,7 @@ function CreatePage() {
   const submitLabel = period ? t("create.payAndCreate") : t("create.createAndStart");
 
   return (
-    // 不用 Space:其 ant-space-item 包装会让 sticky 结算条的包含块只剩自身高度
+    // 不用 Space(ant-space-item 包装会破坏 sticky 结算条的包含块)
     <div style={{ display: "flex", flexDirection: "column", gap: 16, width: "100%" }}>
       <Typography.Title level={4} style={{ margin: 0 }}>
         {pageTitle}
@@ -479,7 +474,7 @@ function CreatePage() {
               children: (
                 <Space orientation="vertical" style={{ width: "100%" }}>
                   {imagesQ.isError ? (
-                    // 镜像清单加载失败绝不伪装成「没有可用镜像」(购买路径硬停)
+                    // 镜像清单加载失败不伪装成「没有可用镜像」
                     <DataErrorAlert onRetry={() => void imagesQ.refetch()} />
                   ) : (
                     <>
@@ -573,7 +568,7 @@ function CreatePage() {
         items={
           period && quote
             ? [
-                // 包周期不出「日常费用(按量口径)」;数据盘仍按日计费,只在真挂了盘时才提这一栏
+                // 包周期不出「日常费用(按量口径)」;数据盘一栏只在真挂了盘时出
                 ...(diskGb > 0 && diskPriceGbMonth
                   ? [
                       {
@@ -646,14 +641,14 @@ function CreatePage() {
               {t("create.cancel")}
             </Button>
             {walletQ.isError ? (
-              // 余额查询失败:CTA 普通禁用态 + 原因提示(重试入口在上方错误条)
+              // 余额查询失败:CTA 普通禁用态 + 原因提示
               <Tooltip title={t("create.walletQueryFailedRetry")}>
                 <Button type="primary" size="large" disabled>
                   {submitLabel}
                 </Button>
               </Tooltip>
             ) : !balanceReady ? (
-              // 余额未就绪:主 CTA 保持 primary + loading,不出现红色文案
+              // 余额未就绪:主 CTA 保持 primary + loading
               <Button type="primary" size="large" loading disabled>
                 {submitLabel}
               </Button>

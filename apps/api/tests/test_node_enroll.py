@@ -18,7 +18,7 @@ from tests.helpers import CREATE_BODY, admin_headers, drain, drain_strict
 
 
 async def set_cluster_config(sm: async_sessionmaker[AsyncSession]) -> None:
-    """写入节点接入所需的集群配置(server_url + join_token);仅本文件使用。"""
+    """写入节点接入的集群配置(server_url + join_token)。"""
     async with sm() as session:
         await set_platform_settings(
             session,
@@ -83,8 +83,7 @@ class TestAdminEnrollments:
         assert r1.json()["token"] != r2.json()["token"]
 
     async def test_idempotency_replay_guarded_when_inflight(self, client, sm) -> None:
-        """重放轮换令牌与 regenerate 同守卫:bootstrap 后(installing)重放 → 409,
-        否则重放会掐断正在装机的脚本。"""
+        """重放轮换令牌与 regenerate 同守卫:installing 重放 → 409。"""
         await set_cluster_config(sm)
         ah = await admin_headers(sm, client, role="ops")
         headers = {**ah, "Idempotency-Key": "idem-node-2"}
@@ -186,7 +185,7 @@ class TestEnrollmentStateMachine:
                 created_by=1,
                 idempotency_key=None,
             )
-        # 正常 bootstrap:pending→installing,拿到 join 参数与换发的 progress 令牌
+        # bootstrap:pending→installing,拿到 join 参数与 progress 令牌
         async with sm() as session:
             row, cfg, progress = await nodes_service.bootstrap(
                 session,
@@ -198,11 +197,11 @@ class TestEnrollmentStateMachine:
             )
             assert row.status == "installing"
             assert cfg["cluster_join_token"].endswith("secrettoken")
-            # 窄化键面:支付/短信等敏感键绝不出注册链路
+            # 敏感键不出注册链路
             assert "wechat_private_key" not in cfg and "sms_access_key_secret" not in cfg
             assert progress is not None and progress.startswith("sdlp_")
 
-        # 主机名不符 → failed + 409,令牌随即作废(后续统一 404)
+        # 主机名不符 → failed + 409,令牌作废(后续 404)
         async with sm() as session:
             _e2, token2 = await nodes_service.create_enrollment(
                 session,
@@ -234,8 +233,7 @@ class TestEnrollmentStateMachine:
             assert exc.value.http_status == 404
 
     async def test_absolute_expiry_kills_inflight_token(self, sm) -> None:
-        """令牌绝对过期:installing 也受 expires_at 约束(心跳不续命),过期即 404;
-        落 expired 由对账器清扫(TestEnrollReconciler)。"""
+        """令牌绝对过期:installing 也受 expires_at 约束,过期即 404。"""
         await set_cluster_config(sm)
         async with sm() as session:
             _e, token = await nodes_service.create_enrollment(
@@ -278,7 +276,7 @@ class TestEnrollmentStateMachine:
                 session, token, hostname="mig-node-1", os_info={}, gpu_details=[], client_ip=None
             )
             assert progress is not None
-        # 需要重启 → rebooting;续跑第一条进度 → installing(agent_start → joining 见 HTTP 流用例)
+        # 需要重启 → rebooting;续跑第一条进度 → installing
         async with sm() as session:
             row = await nodes_service.report_progress(
                 session, progress, phase="reboot", state="rebooting", message=None
@@ -321,7 +319,7 @@ class TestEnrollRouterAnonymous:
         resp = await client.get("/api/v1/node-enroll/script")
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/x-shellscript")
-        # 赋值行替换为真实地址;护栏比较用的字面量原样保留(只替换第一次出现)
+        # 只替换第一次出现(赋值行)
         base = get_settings().public_base_url.rstrip("/")
         assert f'API_BASE="{base}"' in resp.text
         assert resp.text.count("__API_BASE__") == 1  # 仅剩护栏比较字面量
@@ -367,7 +365,7 @@ class TestEnrollRouterAnonymous:
         assert body["cluster_join_token"].endswith("secrettoken")
         assert body["pool"] == "hami"
         assert body["cluster_server_url"] == "https://10.0.0.10:9345"
-        # 首次 bootstrap 换发窄权限 progress 令牌,并下发脚本指纹
+        # 首次 bootstrap 换发 progress 令牌,下发脚本指纹
         assert body["progress_token"].startswith("sdlp_")
         assert len(body["script_sha256"]) == 64
         progress_bearer = {"Authorization": f"Bearer {body['progress_token']}"}
@@ -563,8 +561,7 @@ class TestEnrollReconciler:
             set_orchestrator(None)
 
     async def test_skip_locked_row_never_clobbers_concurrent_revoke(self, client, sm) -> None:
-        """对账器 SELECT ... FOR UPDATE SKIP LOCKED:行被并发事务(如 revoke)持锁时
-        本轮跳过(下轮自愈);吊销提交后不得被对账的旧读数覆盖回非终态。"""
+        """对账器 FOR UPDATE SKIP LOCKED:被锁行本轮跳过;吊销提交后不被覆盖回非终态。"""
         from app.core.k8s import set_orchestrator
         from app.core.k8s.fake import FakeOrchestrator
         from app.modules.nodes.reconciler import reconcile_enrollments_once
@@ -586,7 +583,7 @@ class TestEnrollReconciler:
                 json={"hostname": "lock-node"},
                 headers={"Authorization": f"Bearer {created['token']}"},
             )
-            # 让其满足「绝对过期 → expired」条件:若对账器读到该行就一定会迁移它
+            # 满足「绝对过期 → expired」条件
             async with sm() as session:
                 await session.execute(
                     update(NodeEnrollment)
@@ -595,7 +592,7 @@ class TestEnrollReconciler:
                 )
                 await session.commit()
 
-            # 会话 A 持行锁并写入 revoked(模拟并发 revoke 未提交)
+            # 会话 A 持行锁并写入 revoked,未提交
             async with sm() as locker:
                 row = (
                     await locker.execute(
@@ -603,12 +600,12 @@ class TestEnrollReconciler:
                     )
                 ).scalar_one()
                 row.status = "revoked"
-                # skip_locked:对账器跳过被锁行,不阻塞也不迁移
+                # 对账器跳过被锁行
                 counts = await reconcile_enrollments_once(sm)
                 assert counts == {"joined": 0, "failed": 0, "expired": 0}
                 await locker.commit()
 
-            # 吊销提交后:revoked 是终态,对账器不再选中,更不得覆盖成 expired
+            # 吊销提交后:revoked 不被覆盖成 expired
             counts = await reconcile_enrollments_once(sm)
             assert counts == {"joined": 0, "failed": 0, "expired": 0}
             rows = (await client.get("/api/admin/v1/node-enrollments", headers=ah)).json()
@@ -637,7 +634,7 @@ class TestNodeCordon:
                 )
             ).status_code == 404
 
-            # cordon:请求只入队,drain 后 K8s 侧生效,列表可见 Cordoned
+            # cordon:入队,drain 后 K8s 侧生效
             resp = await client.post(
                 "/api/admin/v1/nodes/fake-hami-node-1/cordon",
                 json={"reason": "巡检维护"},
@@ -668,13 +665,12 @@ class TestNodeCordon:
             )
             await drain(sm)
             assert "fake-hami-node-1" not in fake.cordoned_nodes
-            # readonly 写节点 403 由 route×role 矩阵(test_admin_route_role_matrix)覆盖
+            # readonly 403 由 test_admin_route_role_matrix 覆盖
         finally:
             set_orchestrator(None)
 
     async def test_out_of_order_replay_converges_to_latest_intent(self, client, sm) -> None:
-        """乱序安全:先发的 cordon 因退避晚于后发的 uncordon 执行,handler 读台账期望态而非
-        payload,最终仍是 uncordon(管理员最后意图)。挂了 = 按 payload 派发,重放把节点打回。"""
+        """乱序安全:handler 按台账期望态而非 payload 执行,最终仍是 uncordon。"""
         from app.core.k8s import set_orchestrator
         from app.core.k8s.fake import FakeOrchestrator
         from app.core.outbox import OutboxTask
@@ -691,7 +687,7 @@ class TestNodeCordon:
                 json={"reason": "维护"},
                 headers=ah,
             )
-            # 模拟 cordon 任务失败退避:拨到未来,让后发的 uncordon 先被领取执行
+            # cordon 任务退避到未来,uncordon 先执行
             async with sm() as session:
                 cordon_task = (
                     await session.execute(
@@ -708,7 +704,7 @@ class TestNodeCordon:
             )
             assert await drain(sm) == 1  # 只有 uncordon 到期
             assert "fake-hami-node-1" not in fake.cordoned_nodes
-            # 退避到期,先发的 cordon 才重放:按台账期望态(False)执行,不把节点打回 cordoned
+            # cordon 重放:按台账期望态(False)执行
             async with sm() as session:
                 await session.execute(
                     update(OutboxTask)
@@ -730,12 +726,11 @@ class TestNodeCordon:
 
 
 class TestNodeDecommission:
-    """节点退役:cordon 只是不再接新活,kubelet 证书仍有效、仍能读走已调度到本机的
-    每个 Pod 的 Secret。卖掉/被扣押/报废的机器必须能被彻底摘掉,且令牌永不可复用。"""
+    """节点退役:彻底摘掉节点,令牌不可复用。"""
 
     @staticmethod
     async def _joined_node(client, sm, *, hostname: str, pool: str = "hami") -> dict:
-        """走完整条登记链让节点进 joined,并让台账收录它。"""
+        """走完登记链让节点进 joined 并入台账。"""
         from app.core.k8s import get_orchestrator
         from app.core.k8s.base import NodeInfo
         from app.modules.nodes.reconciler import reconcile_enrollments_once
@@ -768,9 +763,7 @@ class TestNodeDecommission:
         return {"headers": ah, "progress_token": boot.json()["progress_token"]}
 
     async def test_decommission_revokes_token_and_deletes_node(self, client, sm) -> None:
-        """退役三件事必须一起发生:停调度期望态落台账、令牌作废、经 outbox 从集群删 Node。
-        挂了 = 卖掉的机器重装一次就能拿旧命令再加回来,或者它的 kubelet 还留在集群里
-        继续读别的租户的 Pod Secret。"""
+        """退役:停调度期望态落台账、令牌作废、经 outbox 从集群删 Node。"""
         from app.core.k8s import get_orchestrator, set_orchestrator
         from app.core.k8s.fake import FakeOrchestrator
         from app.core.outbox import OutboxTask
@@ -795,7 +788,7 @@ class TestNodeDecommission:
                 "revoked_enrollments": 1,
                 "queued": True,
             }
-            # 请求路径零 K8s 调用(规范 3):删除排到 outbox
+            # 删除排到 outbox
             assert "sold-node-1" not in fake.deleted_nodes
             async with sm() as session:
                 enrollment = (
@@ -814,7 +807,7 @@ class TestNodeDecommission:
                 types = [t.type for t in (await session.execute(select(OutboxTask))).scalars()]
                 assert "node.decommission" in types
 
-            # 令牌当场失效(不等 outbox):progress 上报一律 404
+            # 令牌当场失效:progress 上报 404
             assert (
                 await client.post(
                     "/api/v1/node-enroll/progress",
@@ -830,8 +823,7 @@ class TestNodeDecommission:
             set_orchestrator(None)
 
     async def test_decommission_replay_on_absent_node_succeeds(self, client, sm) -> None:
-        """outbox 至少一次:节点已不在集群时重放必须成功而非进死信 ——
-        退役的目标态就是它不在。挂了 = 每次退役都在死信队列里留一条假故障。"""
+        """节点已不在集群时重放删除成功,不进死信。"""
         from app.core.k8s import set_orchestrator
         from app.core.k8s.fake import FakeOrchestrator
         from app.core.outbox import enqueue
@@ -848,7 +840,7 @@ class TestNodeDecommission:
                 headers=ctx["headers"],
             )
             assert await drain_strict(sm) == (1, 0)
-            # 手工重放同一任务(模拟 worker 崩在 commit 之前)
+            # 手工重放同一任务
             async with sm() as session:
                 enqueue(session, "node.decommission", {"node_name": "seized-node-1"})
                 await session.commit()
@@ -857,7 +849,7 @@ class TestNodeDecommission:
             set_orchestrator(None)
 
     async def test_decommission_unknown_node_404(self, client, sm) -> None:
-        """台账里没有的节点名不该产出一条无人认领的删除任务。"""
+        """台账里没有的节点名不产出删除任务。"""
         from app.core.k8s import set_orchestrator
         from app.core.k8s.fake import FakeOrchestrator
 
@@ -876,8 +868,7 @@ class TestNodeDecommission:
             set_orchestrator(None)
 
     async def test_manual_revoke_still_rejects_terminal(self, client, sm) -> None:
-        """放开「终态 → revoked」是给退役开的专用口子:管理端手工吊销对终态仍须 409,
-        否则 joined 的节点会被误当成「还能吊销的待加入行」。"""
+        """「终态 → revoked」只给退役用:管理端手工吊销终态仍 409。"""
         from app.core.k8s import set_orchestrator
         from app.core.k8s.fake import FakeOrchestrator
 

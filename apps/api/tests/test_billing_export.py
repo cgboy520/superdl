@@ -15,7 +15,7 @@ def _hour(y: int, m: int, d: int, h: int) -> datetime:
 
 
 class TestEscaping:
-    """CSV 转义/时区后缀原语(app.core.csvexport,用户端与管理端导出共用)的纯单测(无 DB)。"""
+    """CSV 转义/时区后缀原语(app.core.csvexport)纯单测。"""
 
     def test_formula_lead_prefixed(self):
         assert csvexport.csv_line(["=1+1"]) == "'=1+1\r\n"
@@ -65,9 +65,9 @@ class TestHourlyExport:
         text = resp.text
         assert text.startswith("\ufeff小时,实例ID,运行秒数,单价(元/时),卡数,金额(元)\r\n")
         lines = [ln for ln in text.removeprefix("\ufeff").split("\r\n") if ln]
-        # 8 月窗口(UTC+8):8/1 00:00、8/1 01:00 UTC 两行;7/31 20:00 UTC = 8/1 04:00 本地也在月内
+        # 8 月窗口(UTC+8):7/31 20:00 UTC = 8/1 04:00 本地也在月内
         assert len(lines) == 1 + 3
-        # 行按 id 降序(最新写入在前);时间按 UTC+8 折算并带后缀
+        # 行按 id 降序;时间按 UTC+8 折算并带后缀
         hours = {ln.split(",", 1)[0] for ln in lines[1:]}
         assert hours == {
             "2026-08-01 08:00 (UTC+8)",

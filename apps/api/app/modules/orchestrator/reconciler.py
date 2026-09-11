@@ -1,18 +1,13 @@
 """reconciler:每 30s 全量比对「DB 期望 ↔ K8s 实际」并收敛。
 
-- creating/starting + Pod Ready → running(计费开始)
-- creating/starting 超时未 Ready → failed(全额退=无账)+ 清理
-- running + Pod 消失/异常/持续 not-ready → failed(停止计费)+ 告警 + 通知用户
-- stopping + Pod 消失 → stopped(计费边,尾账监听器触发)
-- releasing + Pod 消失 → released(擦盘事件 + 端口回收)
-- K8s 存在但 DB 已终态的 Pod → 超过宽限期后强删(清理泄漏;未知 Pod 占比超阈即熔断)
-- 长期 stopped / failed 的实例盘保留期 GC(先预警,到期 releasing;数据盘不受影响)
+- creating/starting + Pod Ready → running;超时未 Ready → failed + 清理
+- running + Pod 消失/异常/持续 not-ready → failed + 告警 + 通知
+- stopping + Pod 消失 → stopped;releasing + Pod 消失 → released
+- K8s 存在但 DB 已终态的 Pod → 超宽限期强删(未知 Pod 占比超阈即熔断)
+- 长期 stopped / failed 的实例盘保留期 GC(先预警,到期 releasing)
 
-K8s 读放大控制:每轮一次 list_instance_pods 即状态源(ready/phase/node_name/deleting),
-不逐实例 get_status —— 单查会占满执行器线程,让建/删 Pod 排队。
-
-stopping/releasing 悬挂两档超时:一档经 outbox 重发删除任务,二档 force=True 强删
-(失联节点上的优雅删除永远完不成);强删后下一轮按正常边收敛(端口回池/实例盘销毁)。
+每轮一次 list_instance_pods 即状态源,不逐实例 get_status。
+stopping/releasing 悬挂两档:一档 outbox 重发删除,二档 force 强删。
 """
 
 from collections.abc import Iterable
@@ -53,7 +48,7 @@ ACTIVE_STATUSES = (
 
 
 async def reconcile_once(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]:
-    """单轮对账。advisory lock 保证多副本单实例执行。返回动作计数(测试/指标用)。"""
+    """单轮对账(advisory lock 单实例执行),返回动作计数。"""
     counts = {
         "to_running": 0,
         "to_failed": 0,
@@ -89,11 +84,8 @@ def _status_keys(instances: Iterable[Instance]) -> list[tuple[int, str, Any]]:
 async def _entered_status_map(
     session: AsyncSession, keys: Iterable[tuple[int, str, Any]]
 ) -> dict[int, Any]:
-    """批量取「进入当前状态的时刻」:instance_id → 该状态最后一条事件的时刻,一次分组查询。
-
-    不用 updated_at:它带 onupdate,handler 回填任何字段都会重置计时。
-    无对应事件的行(直插的测试数据)回落 created_at。
-    """
+    """批量取「进入当前状态的时刻」:该状态最后一条事件的时刻(不用 updated_at),
+    无事件回落 created_at。"""
     keys = list(keys)
     if not keys:
         return {}
@@ -122,19 +114,9 @@ async def _running_pod_lost_reason(
     unready_timeout: timedelta,
     node_not_ready: bool | None,
 ) -> str | None:
-    """running 实例是否已经不可用了。返回迁移 reason,None = 还活着。
-
-    节点失联时 phase 仍是 Running、对象仍在 etcd,只有 Ready condition 转 False,
-    故 exists 与 phase 之外还要看 ready。持续 not-ready 超宽限后按节点 Ready 状况分流:
-    节点也失联 → node_lost(通知用户),节点正常 → pod_unready;node_not_ready=None
-    表示节点视图本轮不可用,按失联处理。
-
-    服务型实例不走 pod_unready 这一支:它的 not-ready 判据是用户自己声明的 readinessProbe,
-    长期不过属用户容器问题,判 failed 会把一台付费实例误标成故障。
-
-    unready_since 的清零只有 st.ready 这一处:返回 None 不等于「恢复了」——宽限期内、
-    以及服务型实例的 pod_unready 豁免都返回 None,由调用方按 None 清零会把计时器每轮
-    抹平,超时分支永不可达(Pod 卡在 Running-not-ready 就永远不判故障、一直计费)。
+    """running 实例是否已不可用:返回迁移 reason,None = 还活着。
+    持续 not-ready 超宽限后分流:节点失联(或节点视图不可用)→ node_lost,节点正常 → pod_unready;
+    服务型实例不判 pod_unready。unready_since 只在 st.ready 分支清零,调用方不得按 None 清零。
     """
     if not st.exists or st.phase in ("Failed", "Succeeded"):
         return "pod_lost"
@@ -145,7 +127,7 @@ async def _running_pod_lost_reason(
             instance.unready_since = None  # 抖动恢复,重新计时
             await session.flush()
         return None
-    # not-ready 给一段宽限,容忍容器重启、镜像层重挂这类抖动
+    # not-ready 宽限
     if instance.unready_since is None:
         instance.unready_since = now_utc()
         await session.flush()
@@ -158,11 +140,8 @@ async def _running_pod_lost_reason(
 
 
 async def _reenqueue_delete(session: AsyncSession, task_type: str, instance_id: int) -> bool:
-    """悬挂恢复第一档:重发删除任务。已有在途同型任务则跳过(不堆重复任务)。
-
-    在途判定:running 行仅在 locked_at 租约未超 RUNNING_TIMEOUT 时算在途;租约过期即
-    执行 worker 已死(终态写按 locked_by 校验),不等 reaper 打回 pending 就补发新任务。
-    """
+    """悬挂恢复第一档:重发删除任务;已有在途同型任务(pending,或 running 且租约未超
+    RUNNING_TIMEOUT)则跳过。"""
     pending = (
         await session.execute(
             select(func.count())
@@ -197,8 +176,8 @@ async def _escalate_stuck(
     stuck: dict[str, int],
     post_commit: list[tuple[str, Any]],
 ) -> None:
-    """stopping/releasing 悬挂两档:一档(> stuck_after)经 outbox 重发删除任务;
-    二档(> 2×stuck_after)事务外 force 强删(实例仍在 ACTIVE,强删失败下轮本分支重试)。"""
+    """stopping/releasing 悬挂两档:> stuck_after 经 outbox 重发删除;
+    > 2×stuck_after 事务外 force 强删。"""
     status = instance.status
     age_s = int(age.total_seconds())
     if age > stuck_after * 2:
@@ -224,22 +203,20 @@ _MISSING_POD = PodStatus(exists=False)
 def _statuses_from_listing(
     rows: list[tuple[int, str, str, str, Any]], listing: list[PodStatus]
 ) -> list[PodStatus]:
-    """全量 LIST 即状态源,与 get_status 同口径(ready/phase/node_name/deleting)。
-    逐实例单查会占满 RealOrchestrator 的线程执行器,让建/删 Pod 排队。"""
+    """全量 LIST 即状态源,与 get_status 同口径(ready/phase/node_name/deleting)。"""
     by_key = {(e.namespace, e.name): e for e in listing}
     return [by_key.get((ns, uuid), _MISSING_POD) for _id, _status, ns, uuid, _created in rows]
 
 
-# 上一轮看到的节点集合(进程内);变化即把在册租户 ns 的 NetPol 重下发
+# 上一轮看到的节点集合(进程内);变化即重下发租户 ns 的 NetPol
 _known_nodes: frozenset[str] | None = None
 
 
 async def _resync_tenant_netpols_on_node_change(
     orch: Any, readiness: dict[str, bool] | None, namespaces: Iterable[str]
 ) -> None:
-    """节点入池/退役(或本进程首轮)时重跑 ensure_namespace:租户 NetPol 的 SSH 入方向按节点
-    逐个放行 Pod 子网网关(core/k8s/real.py pod_cidr_gateways),新节点不重下发就永远进不来。
-    节点视图本轮不可用则跳过,不动已知集合。"""
+    """节点集合变化(或首轮)时重跑 ensure_namespace(租户 NetPol 按节点放行 Pod 子网网关);
+    节点视图不可用则跳过。"""
     global _known_nodes
     if readiness is None:
         return
@@ -256,7 +233,7 @@ async def _resync_tenant_netpols_on_node_change(
 
 
 async def _node_readiness() -> dict[str, bool] | None:
-    """节点 → 是否 NotReady。本轮节点视图不可用返回 None(node_lost 判定回落旧口径)。"""
+    """节点 → 是否 NotReady;节点视图不可用返回 None。"""
     try:
         nodes = await get_orchestrator().list_nodes()
     except Exception:
@@ -291,7 +268,7 @@ async def _reconcile_instances(
             .tuples()
             .all()
         )
-        # 超时/悬挂判定的基准时刻一次批量算好;逐实例事务里状态一变即跳过,不会用到过期值
+        # 超时/悬挂判定基准时刻一次批量算好
         entered_at = await _entered_status_map(
             session, [(iid, status, created) for iid, status, _ns, _uuid, created in rows]
         )
@@ -300,10 +277,10 @@ async def _reconcile_instances(
         RECONCILE_STUCK_INSTANCES.labels(status=sm_def.RELEASING).set(0)
         return
     try:
-        # 一次全量 LIST 建状态索引(替代每实例一次 get_status 的读放大)
+        # 一次全量 LIST 建状态索引
         listing = await orch.list_instance_pods()
     except Exception:
-        # 拿不到状态索引宁可本轮全跳过:误判「Pod 消失」会把健康实例打成 failed
+        # 拿不到状态索引本轮全跳过
         logger.exception("reconcile_list_pods_failed")
         return
     statuses = _statuses_from_listing(rows, listing)
@@ -314,10 +291,9 @@ async def _reconcile_instances(
     stuck = {sm_def.STOPPING: 0, sm_def.RELEASING: 0}
 
     for (instance_id, row_status, _ns, _uuid, _created), st in zip(rows, statuses, strict=True):
-        # 每实例独立事务:单个失败不拖垮整轮
+        # 每实例独立事务,单个失败不拖垮整轮
         try:
-            # K8s 清理动作必须在 commit 后执行:事务内只做状态迁移/标记/enqueue,
-            # DB 行锁不跨 K8s RT;动作失败仅记日志,重试/兜底语义见各分支
+            # K8s 清理动作在 commit 后执行;事务内只做状态迁移/标记/enqueue
             post_commit: list[tuple[str, Any]] = []
             async with sm() as session:
                 instance = await session.get(Instance, instance_id)
@@ -326,8 +302,7 @@ async def _reconcile_instances(
 
                 if instance.status in (sm_def.CREATING, sm_def.STARTING):
                     ready = st.exists and st.ready
-                    # 端口就位只对开了 SSH 的实例有意义:服务型实例不进端口池,拿「端口非空」
-                    # 当推进 running 的前置会让它停在 creating 直到超时转 failed
+                    # 端口就位只对开了 SSH 的实例要求
                     port_ok = instance.ssh_port is not None or not instance.with_ssh
                     if ready and port_ok:
                         instance.node_name = st.node_name
@@ -350,8 +325,7 @@ async def _reconcile_instances(
                         )
                         await free_port(session, instance.id)
                         await detach_for_instance(session, instance.id)
-                        # delete_instance 404 容错,顺带清残留的 Service/Ingress(防孤儿端点占
-                        # NodePort);事务外执行,失败由泄漏回收宽限期后强删兜底
+                        # 事务外删 Pod/Service/Ingress(404 容错);失败由泄漏回收兜底
                         ns, uuid = instance.k8s_namespace, instance.uuid
                         post_commit.append(
                             (
@@ -360,8 +334,7 @@ async def _reconcile_instances(
                             )
                         )
                         if first_boot:
-                            # creating 超时的盘从未承载数据,可回收;starting 超时不删盘
-                            # (盘里有上一轮数据)。交 outbox 让 handler 等 Pod 消失再删
+                            # 只有 creating 超时删实例盘;交 outbox 等 Pod 消失再删
                             enqueue(
                                 session,
                                 "instance.disk_cleanup",
@@ -369,7 +342,6 @@ async def _reconcile_instances(
                             )
                         counts["to_failed"] += 1
                         logger.warning("instance_schedule_timeout", instance_id=instance.id)
-                        # 对齐 node_lost:创建失败必须主动告知(未计费),不是等用户刷新发现
                         await notify_service.notify(
                             session,
                             instance.user_id,
@@ -385,8 +357,7 @@ async def _reconcile_instances(
                             target_id=instance.uuid,
                         )
                     elif ready:
-                        # 开了 SSH 却没有端口落库:不推进 running(/access 与重启都依赖 ssh_port,
-                        # 补发的端口未必等于 Service 已建的 nodePort),留着等超时转 failed
+                        # 开了 SSH 却无端口落库:不推进 running,等超时转 failed
                         logger.warning("instance_ready_without_port", instance_id=instance.id)
 
                 elif instance.status == sm_def.RUNNING:
@@ -398,11 +369,9 @@ async def _reconcile_instances(
                     lost = await _running_pod_lost_reason(
                         session, instance, st, unready_timeout, node_not_ready
                     )
-                    # lost is None 时不动 unready_since:清零只由 _running_pod_lost_reason
-                    # 在 st.ready 分支做。在这里按 None 清零 = 与写入同事务擦掉,计时永不累积
+                    # lost is None 时不动 unready_since(清零只在 _running_pod_lost_reason)
                     if lost is not None:
-                        # 平台责任失联(node_lost/pod_lost):unready_since 写进事件 metadata,
-                        # 计费据此截断到 Pod 首次不可用时点;pod_unready 不截断,照常计费
+                        # node_lost/pod_lost:unready_since 写进事件 metadata 供计费截断
                         meta: dict[str, Any] = {
                             "phase": st.phase if st.exists else "Missing",
                             "ready": st.ready,
@@ -419,8 +388,7 @@ async def _reconcile_instances(
                         )
                         await free_port(session, instance.id)
                         await detach_for_instance(session, instance.id)
-                        # 失联节点上的 Pod 只有强删才会从 etcd 消失;事务外执行,
-                        # 失败由泄漏回收宽限期后强删兜底
+                        # node_lost 强删;事务外执行,失败由泄漏回收兜底
                         ns, uuid = instance.k8s_namespace, instance.uuid
                         force = lost == "node_lost"
                         post_commit.append(
@@ -486,8 +454,7 @@ async def _reconcile_instances(
                         )
                         await free_port(session, instance.id)
                         await detach_for_instance(session, instance.id)
-                        # 释放是实例盘唯一的销毁时点:统一交 outbox(handler 等 Pod 消失再删,
-                        # at-least-once + 死信重派兜底,事务内零 K8s 调用)
+                        # 实例盘唯一销毁时点:交 outbox 等 Pod 消失再删
                         enqueue(session, "instance.disk_cleanup", {"instance_id": instance.id})
                         counts["to_released"] += 1
                     else:
@@ -503,8 +470,7 @@ async def _reconcile_instances(
                         )
 
                 await session.commit()
-            # 事务已提交,K8s 清理在锁外执行;失败仅记日志不中断:Pod 残留由泄漏回收兜底,
-            # 强删失败下轮同分支重试,盘删除走 outbox 重派
+            # commit 后执行 K8s 清理;失败仅记日志,由泄漏回收 / 下轮 / outbox 兜底
             for action_label, action in post_commit:
                 try:
                     await action()
@@ -524,17 +490,13 @@ async def _reconcile_instances(
 async def _reclaim_leaked_pods(
     sm: async_sessionmaker[AsyncSession], counts: dict[str, int]
 ) -> None:
-    """K8s 里存在、但 DB 已终态/无记录的 Pod → 强删(宽限期内的在途删除不动)。
-
-    强删(force=True)是有意的:泄漏 Pod 在白送算力,失联节点上优雅删除永远完不成。
-    必须豁免带 batch.kubernetes.io/job-name 标签的 Pod:它们是受管 Job(wipe/quota)的
-    子孙,DB 必然无记录,误删会让擦盘陷入「建-杀死」循环(Job 泄漏由 TTL 兜底)。
-    熔断:未知 Pod 占比超阈即中止本轮并告警,不按陌生对象清单批量强删。
+    """K8s 存在但 DB 已终态/无记录的 Pod → 宽限期后 force 强删。
+    豁免带 batch.kubernetes.io/job-name 标签的 Pod(受管 Job 子孙);未知 Pod 占比超阈即熔断。
     """
     settings = get_settings()
     orch = get_orchestrator()
     entries = await orch.list_instance_pods()
-    # Job 子孙 Pod 既不计入 unknown 分子也不计入分母:否则 wipe Pod 会把占比推向熔断线
+    # Job 子孙 Pod 不计入熔断占比
     pods = [e for e in entries if JOB_NAME_LABEL not in e.labels]
     by_uuid, entered_at = await _instances_by_object_name(sm, [e.name for e in pods])
     unknown = sum(1 for e in pods if e.name not in by_uuid)
@@ -547,7 +509,6 @@ async def _reclaim_leaked_pods(
     for e in pods:
         instance = by_uuid.get(e.name)
         db_status = instance.status if instance is not None else None
-        # Pod 应该存在的状态:creating/starting/running
         if db_status in (sm_def.CREATING, sm_def.STARTING, sm_def.RUNNING):
             continue
         if instance is not None and db_status in (
@@ -556,13 +517,13 @@ async def _reclaim_leaked_pods(
             sm_def.STOPPED,
             sm_def.FAILED,
         ):
-            # 在途删除与 restart 建 Pod 窗口都给宽限,超时由本函数强删(与主对账同阈值)
+            # 在途删除与 restart 窗口给宽限(与主对账同阈值)
             grace = release_grace if db_status == sm_def.RELEASING else stop_grace
             if now_utc() - entered_at[instance.id] <= grace:
                 continue
         await _reclaim(orch, e.namespace, e.name, "leaked_pod_reclaimed", db_status, counts)
 
-    # 孤儿 Service/Ingress(Pod 已消失但端点残留)会继续占 NodePort,同一熔断比例下清理
+    # 孤儿 Service/Ingress 同一熔断比例下清理
     try:
         endpoints = await orch.list_instance_endpoints()
     except Exception:
@@ -587,8 +548,7 @@ async def _reclaim_leaked_pods(
 async def _instances_by_object_name(
     sm: async_sessionmaker[AsyncSession], names: Iterable[str]
 ) -> tuple[dict[str, Instance], dict[int, Any]]:
-    """K8s 对象名(= 实例 uuid)→ 实例,并为非活跃态实例算「进入状态时刻」(宽限判定用);
-    活跃态的对象本就该存在,不需要时刻。"""
+    """K8s 对象名(= 实例 uuid)→ 实例,并为非活跃态实例算「进入状态时刻」。"""
     uuids = list(names)
     if not uuids:
         return {}, {}
@@ -606,8 +566,7 @@ async def _instances_by_object_name(
 
 
 def _breaker_tripped(unknown: int, total: int, *, label: str) -> bool:
-    """未知(DB 无记录)对象占比超阈 → 中止本轮并计指标:LIST 与 DB 大面积不一致
-    (接错集群/标签漂移)时不能按陌生清单批量强删。"""
+    """未知(DB 无记录)对象占比超阈 → 中止本轮并计指标。"""
     ratio = get_settings().leak_reclaim_abort_ratio
     if unknown and unknown / total > ratio:
         RECONCILE_LEAK_ABORTED_TOTAL.inc()
@@ -619,7 +578,7 @@ def _breaker_tripped(unknown: int, total: int, *, label: str) -> bool:
 async def _reclaim(
     orch: Any, ns: str, name: str, label: str, db_status: str | None, counts: dict[str, int]
 ) -> None:
-    """强删泄漏对象(404 容错,幂等清 Pod/Service/Ingress)并计数。"""
+    """强删泄漏对象(404 容错,清 Pod/Service/Ingress)并计数。"""
     logger.error(label, namespace=ns, name=name, db_status=db_status)
     RECONCILE_LEAKED_TOTAL.inc()
     await orch.delete_instance(ns, name, force=True)
@@ -629,7 +588,7 @@ async def _reclaim(
 async def _recheck_blocked_ports(
     sm: async_sessionmaker[AsyncSession], counts: dict[str, int]
 ) -> None:
-    """blocked 端口周期复检:集群侧占用已消失(孤儿端点已清)即放回池,防单向蚕食。"""
+    """blocked 端口周期复检:集群侧占用已消失即放回池。"""
     from app.modules.orchestrator.models import PortAllocation
 
     orch = get_orchestrator()
@@ -658,8 +617,7 @@ async def _recheck_blocked_ports(
 async def _redrive_dead_disk_wipes(
     sm: async_sessionmaker[AsyncSession], counts: dict[str, int]
 ) -> None:
-    """disk.wipe 死信重派:预算耗尽后没有收敛环,JuiceFS 子目录永不擦除(合规/留存风险)。
-    死信行保留给管理端审计,这里只补发新任务(无在途同盘任务时)。"""
+    """disk.wipe 死信重派:死信行保留,无在途同盘任务时补发新任务。"""
     from app.modules.orchestrator.models import DataDisk
 
     async with sm() as session:
@@ -702,8 +660,7 @@ async def _redrive_dead_disk_wipes(
 async def _reconcile_disk_quotas(
     sm: async_sessionmaker[AsyncSession], counts: dict[str, int]
 ) -> None:
-    """disk.quota 死信超 1 小时重派并计指标(配额未强制是计费完整性与防滥用缺口)。
-    只看死信不按 quota_synced=false 补发:后者会把管理端人工 discarded 的死信每轮复活。"""
+    """disk.quota 死信超 1 小时重派并计指标;只看死信,不按 quota_synced=false 补发。"""
     from app.core.metrics import JUICEFS_QUOTA_FAILED_TOTAL
     from app.modules.orchestrator.models import DataDisk
 
@@ -750,19 +707,15 @@ async def _reconcile_disk_quotas(
 
 
 async def _gc_retention(sm: async_sessionmaker[AsyncSession], counts: dict[str, int]) -> None:
-    """长期 stopped / failed 实例的实例盘保留期 GC(停机盘不无限免费占用)。
-
-    stopped:先预警(保留期 - stopped_retention_warn_days)再转 releasing;
-    failed:直接到期转 releasing(实例盘从未被收费但也留不住,配额外的泄漏由此收口)。
-    两条路径都经 outbox 走正常释放链路(数据盘不受影响)。
+    """长期 stopped / failed 实例盘保留期 GC:stopped 先预警(保留期 - warn_days)再转 releasing,
+    failed 到期直接转 releasing;都经 outbox 走正常释放链路,数据盘不受影响。
     """
     settings = get_settings()
     now = now_utc()
     stop_after = timedelta(days=settings.stopped_retention_days)
     warn_after = stop_after - timedelta(days=settings.stopped_retention_warn_days)
     fail_after = timedelta(days=settings.failed_retention_days)
-    # 年龄条件下推到 SQL:进入当前状态不早于创建时刻,created_at 比最小阈值还新的行
-    # 不可能到期(超集过滤,不漏不错)
+    # 按 created_at 超集过滤(进入当前状态不早于创建时刻)
     oldest_relevant = now - min(warn_after, fail_after)
     async with sm() as session:
         instances = list(

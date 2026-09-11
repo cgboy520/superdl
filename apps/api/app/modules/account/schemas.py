@@ -10,13 +10,12 @@ PhoneStr = Field(pattern=PHONE_RE, description="中国大陆手机号")
 
 
 def _within_bcrypt_limit(v: str) -> str:
-    # bcrypt 只认前 72 字节,超长会在哈希层抛错;
-    # max_length 按字符计,中文等多字节口令必须再按字节数拦一道
+    # bcrypt 只认前 72 字节;max_length 按字符计,须再按字节数拦一道
     check_password_bytes(v)
     return v
 
 
-# 常见弱口令黑名单(不区分大小写):只收 ≥12 位的条目,更短的口令已被 min_length 拦下
+# 常见弱口令黑名单(不区分大小写),只收 ≥12 位的条目
 WEAK_PASSWORDS = frozenset(
     {
         "111111111111",
@@ -49,8 +48,7 @@ PasswordStr = Annotated[str, AfterValidator(_password_strength)]
 class SmsCodeRequest(BaseModel):
     phone: str = PhoneStr
     purpose: Literal["register", "login", "reset_password"]
-    # 人机校验 token(验证码 2.0 的 CaptchaVerifyParam):安全策略 captcha_enabled 开启时必填
-    # (缺失 400 CAPTCHA_REQUIRED),关闭时忽略
+    # 人机校验 token:captcha_enabled 开启时必填(缺失 400 CAPTCHA_REQUIRED),关闭时忽略
     captcha_token: str | None = Field(default=None, max_length=4096)
 
 
@@ -58,7 +56,7 @@ class RegisterRequest(BaseModel):
     phone: str = PhoneStr
     sms_code: str = Field(min_length=4, max_length=8)
     password: PasswordStr | None = Field(default=None, min_length=12, max_length=64)
-    accept_terms: bool = False  # 必须显式同意用户协议与隐私政策(服务端强校验)
+    accept_terms: bool = False  # 必须显式同意用户协议与隐私政策
 
 
 class LoginRequest(BaseModel):
@@ -95,7 +93,7 @@ class TokenPair(BaseModel):
 
 
 class TokenPairOut(BaseModel):
-    """认证响应:refresh token 全程只走 HttpOnly Cookie,不出现在 JS 可读面。"""
+    """认证响应:refresh token 只走 HttpOnly Cookie,不进响应体。"""
 
     access_token: str
     user: UserOut
@@ -138,7 +136,7 @@ class DeletionRequestCreate(BaseModel):
 
 
 class DeletionRequestOut(BaseModel):
-    """用户端注销申请视图。cooldown_ends_at = requested_at + 7 天(冷静期截止)。"""
+    """用户端注销申请视图。cooldown_ends_at = requested_at + 7 天。"""
 
     id: int
     status: str
@@ -152,17 +150,17 @@ class DeletionRequestOut(BaseModel):
 
 
 class AdminDeletionRequestOut(DeletionRequestOut):
-    """管理端注销申请视图:附租户标识与执行前校验计数(确认弹窗直接渲染)。"""
+    """管理端注销申请视图:附租户标识与执行前校验计数。"""
 
     user_id: int
     phone_masked: str
     processed_by: int | None
-    instances_active: int  # 未释放实例数(status 不在 released/failed 终态)
-    disks_active: int  # 未删除数据盘数(status != deleted)
+    instances_active: int  # 未释放实例数
+    disks_active: int  # 未删除数据盘数
     balance: str  # 当前余额(Decimal 字符串)
 
 
 class AdminDeletionReject(BaseModel):
-    """驳回注销申请(理由必填,回写 note 展示给用户)。"""
+    """驳回注销申请(理由必填,回写 note)。"""
 
     note: str = Field(min_length=2, max_length=512)

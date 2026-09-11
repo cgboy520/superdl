@@ -1,7 +1,4 @@
-"""通知服务:站内信 + 短信(outbox 异步发送)+ 告警接入。
-
-同类型预警 24h 去重(dedup_key 唯一约束,幂等)。
-"""
+"""通知服务:站内信 + 短信(outbox 异步)+ 告警接入;同类型预警 24h 去重(dedup_key 唯一约束)。"""
 
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -45,13 +42,8 @@ async def notify(
     target_id: str | None = None,
     sms: bool = False,
 ) -> bool:
-    """写站内信(可选发短信)。dedup_key 冲突 = 已通知过,返回 False。不 commit。
-
-    短信不在本事务里发:同事务 enqueue 一条 notify.sms,由 outbox worker 异步投递
-    (渠道网络调用可能秒级,持锁/持连接期间调外部渠道会放大故障面)。
-
-    target_id: 结构化跳转目标(instance 类 = 实例 uuid,ticket 类 = 工单 id),
-    通知中心行点击精确深链用;无目标的类型(balance/account/announcement)留空。
+    """写站内信(可选短信,同事务 enqueue notify.sms)。dedup_key 冲突返回 False。不 commit。
+    target_id:跳转目标(instance 类 = 实例 uuid,ticket 类 = 工单 id),无目标留空。
     """
     result = (
         await session.execute(
@@ -81,10 +73,8 @@ SMS_TASK_TYPE = "notify.sms"
 
 @outbox_handler(SMS_TASK_TYPE)
 async def handle_notify_sms(session: AsyncSession, task: OutboxTask) -> None:
-    """通知短信发送(outbox 执行)。站内信已落库,短信尽力而为:失败退避重试,超预算进死信。
-
-    幂等说明:SMS 通道侧无法去重,at-least-once 下同一通知可能投递多条短信,接受。
-    收件人两形态:{"user_id": N}(站内用户)或 {"phone": "1xx"}(值班手机等直发)。
+    """通知短信发送(outbox 执行,尽力而为,at-least-once)。
+    收件人两形态:{"user_id": N} 或 {"phone": "1xx"}。
     """
     from app.modules.account.service import get_user
 
@@ -105,8 +95,7 @@ async def handle_notify_sms(session: AsyncSession, task: OutboxTask) -> None:
     try:
         await ensure_sms_platform_quota()
     except AppError:
-        # 平台预算池耗尽(唯一可能的 AppError 是 RATE_LIMITED):通知短信 best-effort,
-        # 消化不重试(重试只会反复撞墙至死信)
+        # 平台预算池耗尽(RATE_LIMITED):消化不重试
         logger.warning("sms_platform_quota_exhausted", task_id=task.id)
         return
     await channel.send(phone, cfg["sms_template_notice"] or "", {"title": task.payload["title"]})
@@ -147,7 +136,7 @@ async def send_arrears_notice(
         dedup_key=f"arrears:{action}:{user_id}:{_day_bucket(now_utc())}",
         sms=True,
     )
-    # patrol 的事务里调用,由调用方 commit;此处不强制
+    # 由调用方 commit
 
 
 async def send_subscription_notice(
@@ -159,13 +148,7 @@ async def send_subscription_notice(
     dedup_suffix: str,
     target_id: str | None = None,
 ) -> None:
-    """包周期到期链路通知(站内信 + 短信)。
-
-    dedup_key 带 subscription/instance id 而不是只按天分桶:同一天名下两台实例先后到期时,
-    只按天去重会吞掉第二条。日桶仍在,防的是巡检每 30 分钟重复发同一条
-    (自动续费失败会连着几轮都失败)。
-    target_id 传实例 uuid:通知中心可直接跳到该实例详情。
-    """
+    """包周期到期链路通知(站内信 + 短信);dedup_key 带 subscription/instance id + 日桶。"""
     titles = {
         "expiring": "包周期即将到期",
         "expired": "包周期已到期,实例已停机",
@@ -183,7 +166,7 @@ async def send_subscription_notice(
         target_id=target_id,
         sms=True,
     )
-    # 巡检的事务里调用,由调用方 commit;与 send_arrears_notice 同口径
+    # 由调用方 commit
 
 
 async def send_preemption_notice(
@@ -195,13 +178,7 @@ async def send_preemption_notice(
     instance_id: int,
     instance_uuid: str,
 ) -> None:
-    """竞价实例被抢占的通知(站内信 + 短信)。
-
-    dedup_key 带 instance_id 且**不按天分桶**:同一台实例一天内可能被抢占、用户重开、
-    再被抢占,按天去重会把第二次吞掉。
-    去重靠 dedup_key 里的实例 id + 当前时刻分钟位:同一次抢占的重试不会重复发,
-    不同次抢占各发各的。
-    """
+    """竞价实例被抢占的通知(站内信 + 短信);dedup_key = 实例 id + 分钟位,不按天分桶。"""
     await notify(
         session,
         user_id,
@@ -218,20 +195,16 @@ async def send_preemption_notice(
     )
 
 
-# 群发的单语句行数上限:PG 单条语句 65535 个绑定参数,按 5 列 × 1000 行留足余量
+# 群发的单语句行数上限(PG 单条语句 65535 个绑定参数)
 _ANNOUNCEMENT_CHUNK = 1000
 
 
 async def publish_announcement(
     session: AsyncSession, *, title: str, content: str, created_by: int, idempotency_key: str | None
 ) -> tuple[int, bool]:
-    """公告群发:先落 announcements 记录,再对全部 active 用户写 announcement 站内信。
-    返回 (触达人数, created):created=False = 幂等重放(路由回 200 + X-Idempotent-Replay)。
-
-    fanout 行 dedup_key = ann:{公告id}:{user_id}:撤回按前缀精确收回,
-    且发布中途失败重试逐用户幂等(on_conflict_do_nothing)。分块批量 INSERT
-    替代逐用户 INSERT 的 N+1;单事务内仅 ⌈N/1000⌉ 条语句。
-    幂等键必须带:不带键的 HTTP 重试会产生新公告 id(新 dedup 前缀),全员重复触达。
+    """公告群发:落 announcements 行,再对全部 active 用户分块批量写 announcement 站内信
+    (dedup_key = ann:{公告id}:{user_id},on_conflict_do_nothing)。
+    返回 (触达人数, created);created=False = 幂等重放。
     """
     from app.modules.account.service import list_active_user_ids
 
@@ -298,9 +271,7 @@ async def admin_list_announcements(session: AsyncSession) -> list[Announcement]:
 async def revoke_announcement(
     session: AsyncSession, announcement_id: int, *, revoked_by: int, reason: str
 ) -> Announcement:
-    """撤回公告(行锁内状态迁移):公告置 revoked,同事务把 fanout 站内信全部收回
-    (status=revoked,用户端列表只读 published,即对全部租户不可见)。重复撤回 → 409。
-    """
+    """撤回公告(行锁内):公告置 revoked,同事务把 fanout 站内信置 revoked;重复撤回 409。"""
     announcement = await session.get(Announcement, announcement_id, with_for_update=True)
     if announcement is None:
         raise not_found()
@@ -333,8 +304,7 @@ async def list_notifications(
     cursor: str | None = None,
     limit: int | None = None,
 ) -> "Page[NotificationOut]":
-    """站内信列表:降序(最新在前)游标分页,与流水/账单同一套分页语义。
-    只读 published:被撤回公告(status=revoked)对用户不可见。"""
+    """站内信列表:降序游标分页,只读 published。"""
     from app.core.pagination import Page, paginate_by_id
     from app.modules.notify.schemas import NotificationOut
 
@@ -354,7 +324,7 @@ async def list_notifications(
 
 
 async def unread_count(session: AsyncSession, user_id: int) -> int:
-    """未读站内信条数(顶栏角标):DB count,与列表游标分页解耦。"""
+    """未读站内信条数(顶栏角标)。"""
     return int(
         (
             await session.execute(
@@ -398,7 +368,7 @@ ALERT_STREAM_TYPES = ("admin_alert", "gpu_fault")
 async def admin_alert_stream(
     session: AsyncSession, *, severity: str | None = None
 ) -> list[Notification]:
-    """管理端告警流(平台级 + 各租户 gpu_fault),最近 50 条。severity 精确过滤(可选)。"""
+    """管理端告警流(平台级 + 各租户 gpu_fault),最近 50 条;severity 可选精确过滤。"""
     stmt = (
         select(Notification)
         .where(Notification.type.in_(ALERT_STREAM_TYPES))
@@ -411,13 +381,8 @@ async def admin_alert_stream(
 
 
 def alert_link_target(row: Notification) -> tuple[str | None, str | None]:
-    """告警跳转目标(从现有 type/user_id/title/dedup_key 派生):(kind, id)。
-
-    - gpu_fault(带 user_id)→ tenant:受影响租户;
-    - GPU 硬件类告警(title 为 alertname,GPU 前缀)→ node:节点页;
-    - 工单联动告警(dedup_key 为 ticket:* 前缀)→ ticket:工单页;
-    - 其余无 target,前端不可点。
-    """
+    """告警跳转目标 (kind, id):gpu_fault 带 user_id → tenant;title GPU 前缀 → node;
+    dedup_key ticket:* → ticket;其余无 target。"""
     if row.type == "gpu_fault" and row.user_id is not None:
         return "tenant", str(row.user_id)
     if row.dedup_key is not None and row.dedup_key.startswith("ticket"):
@@ -443,8 +408,7 @@ async def ack_admin_alert(session: AsyncSession, alert_id: int, *, acked_by: int
 
 
 async def unread_alert_count(session: AsyncSession) -> tuple[int, int]:
-    """未确认告警计数(顶栏铃铛角标):(总数, 其中 critical)。
-    critical 单列:总览 KPI 红色高亮要精确口径,不能从截断的告警流列表推导。"""
+    """未确认告警计数(顶栏铃铛角标):(总数, 其中 critical)。"""
     row = (
         await session.execute(
             select(
@@ -457,11 +421,8 @@ async def unread_alert_count(session: AsyncSession) -> tuple[int, int]:
 
 
 async def ingest_alertmanager(session: AsyncSession, payload: dict) -> int:
-    """Alertmanager webhook:按 fingerprint+startsAt 幂等;GPU 告警映射到受影响租户。
-
-    critical 平台告警额外短信直发值班手机(平台配置 oncall_phone):
-    平台自身故障时站内信流可能无人刷页面,触达通道不得依赖平台自身可用性。
-    短信随站内信同一 dedup_key 幂等:重复 firing 不重复发短信。
+    """Alertmanager webhook:按 fingerprint+startsAt 幂等;GPU 告警映射到受影响租户;
+    critical 平台告警短信直发值班手机(oncall_phone),同 dedup_key 幂等。
     """
     cfg = await get_effective_platform_config(session)
     oncall_phone = cfg.get("oncall_phone", "")
@@ -503,8 +464,7 @@ async def ingest_alertmanager(session: AsyncSession, payload: dict) -> int:
                 user_id = int(ns.removeprefix(prefix))
             except ValueError:
                 continue
-            # label 是提交方写的:归属必须查库核实(存在且活跃),否则伪造 namespace
-            # 可向任意 user_id 发短信;再按用户限流,伪造刷屏烧不了短信预算
+            # namespace 归属查库核实(存在且活跃),再按用户限流
             from app.modules.account import service as account_service
 
             if not await account_service.is_active_user(session, user_id):

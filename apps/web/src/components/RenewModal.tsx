@@ -1,15 +1,4 @@
-/**
- * 「给这台机器买一段周期」的 modal,两种模式共用一套 UI,差别只在起点、标题/说明、提交端点:
- * - `renew`   续费:接在当前周期之后,基准取 `subscription.unit_price`
- * - `subscribe` 按量转包周期:从现在起算,基准取 `instance.price_hourly`(建实例时锁定的 SKU 原价)
- *
- * 明细三个数必须是精确值:基准只能取后端下单时用的那个数,不能拿 SKU 现价也不能从折后时价反推,
- * 本地量化顺序与 pricing.quote_subscription 逐步对齐;成功后用响应里的 quote 出扣款回执。
- * 两种模式都是支付动作:一次性预扣整段周期,中途释放不退款。
- *
- * 幂等键每次打开 modal 生成一个:同一次打开内改周期/数量不换键,关掉重开才是新单。
- * 调用方按需挂载(关掉即卸载),「重开 = 新单」由挂载本身保证,不在 effect 里回填状态。
- */
+/** 「给这台机器买一段周期」的 modal,两种模式共用:`renew` 续费(接在当前周期之后,基准 `subscription.unit_price`);`subscribe` 按量转包周期(从现在起算,基准 `instance.price_hourly`)。明细三个数取精确值,量化顺序与 pricing.quote_subscription 对齐;成功后用响应 quote 出扣款回执。幂等键每次打开生成一个,关掉重开才是新单;调用方按需挂载。 */
 
 import type { InstanceOut, RenewOut } from "@superdl/api-client";
 import {
@@ -60,7 +49,7 @@ export function RenewModal({
   const { message } = App.useApp();
   const isConvert = mode === "subscribe";
   const sub = instance.subscription;
-  // 转换没有当前周期,默认给包月(四档里最常买的一档);续费默认跟着当前周期
+  // 转换默认包月;续费默认跟当前周期
   const current = isBillingPeriod(sub?.period) ? sub.period : "month";
   const [period, setPeriod] = useState(current);
   const [count, setCount] = useState(1);
@@ -78,7 +67,7 @@ export function RenewModal({
     );
     onClose();
   };
-  // 两个 hook 都要无条件调用(hook 规则),按模式取其一提交
+  // 两个 hook 都无条件调用,按模式取其一提交
   const renew = useRenewInstance(instance.uuid, { onSuccess: onPaid });
   const subscribe = useSubscribeInstance(instance.uuid, { onSuccess: onPaid });
   const submit = isConvert ? subscribe : renew;

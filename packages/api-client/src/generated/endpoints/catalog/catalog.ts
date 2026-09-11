@@ -22,8 +22,7 @@ export const getListImagesApiV1ImagesGetUrl = () => {
 }
 
 /**
- * 平台镜像目录(框架→版本→Python→CUDA 级联数据源)。
- * is_prewarmed 为真实计算值(节点覆盖率达标才标「预热镜像,秒级启动」)。
+ * 平台镜像目录;is_prewarmed 为计算值(节点覆盖率达标)。
  * @summary List Images
  */
 export const listImagesApiV1ImagesGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<ImageOut[]> => {
@@ -47,7 +46,7 @@ export const getGetSiteConfigApiV1SiteConfigGetUrl = () => {
 }
 
 /**
- * 站点公开配置:备案号 + 可用支付渠道(页脚/充值弹窗动态渲染;免登录)。
+ * 站点公开配置:备案号 + 可用支付渠道(免登录)。
  * @summary Get Site Config
  */
 export const getSiteConfigApiV1SiteConfigGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<SiteConfigOut> => {
@@ -78,7 +77,7 @@ export const getListSkusApiV1SkusGetUrl = (params?: ListSkusApiV1SkusGetParams,)
 }
 
 /**
- * 算力市场:仅在架 SKU,含近似库存(每请求按节点台账直接算)。未登录可访问。
+ * 算力市场:仅在架 SKU,含近似库存。未登录可访问。
  * @summary List Skus
  */
 export const listSkusApiV1SkusGet = async (params?: ListSkusApiV1SkusGetParams, options?: Parameters<typeof customFetch>[1]): Promise<SkuMarketOut[]> => {

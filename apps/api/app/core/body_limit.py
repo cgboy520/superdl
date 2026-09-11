@@ -1,20 +1,12 @@
-"""请求体硬上限(纯 ASGI;内层防御,外层为 Envoy requestBuffer,见 04-gateway.yaml)。
-
-- Content-Length 已超限:不读 body 直接 413(挡「声明巨大长度」的廉价攻击);
-- 无/伪造 Content-Length:流式计数缓冲,超限即 413 短路,剩余流不再消费。
-
-缓冲重放不改变行为:本应用没有任何请求方向流式端点(全仓无 request.stream()/
-UploadFile),上限即单连接内存上限。不用 BaseHTTPMiddleware:它先把整个 body
-读进内存再进路由,上限形同虚设。
-"""
+"""请求体硬上限(纯 ASGI;外层另有 Envoy requestBuffer,见 04-gateway.yaml):Content-Length 超限直接
+413;否则流式计数缓冲,超限 413 短路。"""
 
 from starlette.datastructures import Headers
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.errors import payload_too_large_response
 
-# 平台 API 最大合法载荷是 SSH 公钥/平台配置文本(数 KB),1MiB 裕量已很宽;
-# 收紧它先查真实流量分位数。匿名 webhook 在边缘另有更严的 256Ki(04-gateway.yaml)。
+# 匿名 webhook 在边缘另有更严的 256Ki(04-gateway.yaml)
 MAX_REQUEST_BODY_BYTES = 1024 * 1024
 
 

@@ -25,7 +25,7 @@ class TestPriceQuantize:
 
 class TestDiskDailyCharge:
     def test_basic(self):
-        # 不带 day = 均摊日费(展示与余额预估口径):0.03 元/GB·月 × 100GB / 30 = 0.10/日
+        # 不带 day = 均摊日费:0.03 元/GB·月 × 100GB / 30 = 0.10/日
         assert disk_daily_charge(Decimal("0.0300"), 100) == Decimal("0.10")
 
     def test_rounding(self):
@@ -35,10 +35,7 @@ class TestDiskDailyCharge:
     @pytest.mark.parametrize("year,month,days", [(2026, 2, 28), (2026, 4, 30), (2026, 7, 31)])
     @pytest.mark.parametrize("size_gb", [10, 30, 100, 500, 4096])
     def test_month_total_matches_list_price(self, year, month, days, size_gb):
-        """整月累计 == 名义月费 × 当月天数 / 30,一分不差。
-
-        改成逐日单独舍分即不成立:误差每天朝同一方向累积,整月可达 ±14%。
-        """
+        """整月累计 == 名义月费 × 当月天数 / 30,一分不差。"""
         price = Decimal("0.0350")
         total = sum(
             (disk_daily_charge(price, size_gb, date(year, month, d)) for d in range(1, days + 1)),
@@ -47,7 +44,7 @@ class TestDiskDailyCharge:
         assert total == as_amount(price * size_gb * days / 30)
 
     def test_daily_amount_never_negative(self):
-        """差分不能算出负数 —— 否则 DB 的 amount >= 0 约束会拦住结算。"""
+        """差分不为负(DB 的 amount >= 0 约束)。"""
         price = Decimal("0.0350")
         for d in range(1, 32):
             assert disk_daily_charge(price, 10, date(2026, 7, d)) >= 0

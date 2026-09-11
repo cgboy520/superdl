@@ -5,32 +5,24 @@ cni: none                    # 禁内置 CNI,由 helmfile 装 Cilium 1.20(CNI + 
 disable:
   - rke2-ingress-nginx       # 北向入口统一走 helmfile 装的 Envoy Gateway(Gateway API)
   - rke2-canal
-# 控制面 HA(3 server 堆叠 etcd):apiserver 证书 SAN 必须覆盖 VIP 与全部 server 地址,
-# 否则 agent/kubectl 经 VIP 连接时 TLS 校验失败,任一 server 重建后其余成员也失连。
-# 首台与后续 server 的本项必须逐字节一致;单 server 集群保持注释。
-# ansible 在定义 api_vip/server_ips 时自动渲染本块(deploy/ansible/site.yml),
-# 手工部署照此格式填真实值:
+# 控制面 HA(3 server 堆叠 etcd):tls-san 覆盖 VIP 与全部 server 地址,各 server 逐字节一致;单 server 保持注释。
+# ansible 定义 api_vip/server_ips 时自动渲染(deploy/ansible/site.yml),手工部署照此格式填:
 #tls-san:
 #  - "<api-vip>"                # 控制面 VIP(kube-vip/keepalived/SLB 任一)
-#  - "<server1-ip>"             # 逐台 server 的 IP(证书签出后增删 server 需重签并滚动重启)
+#  - "<server1-ip>"             # 逐台 server 的 IP(增删 server 需重签并滚动重启)
 #  - "<server2-ip>"
 #  - "<server3-ip>"
-#  - "<server1-hostname>"       # 主机名 SAN(可选,便于绕过 VIP 直连排障)
+#  - "<server1-hostname>"       # 主机名 SAN(可选)
 #  - "<server2-hostname>"
 #  - "<server3-hostname>"
-# 平台组件落点标签**刻意不在这里打**:node-label 是节点自己写进自己 config.yaml 的,
-# 任何一台加入的机器都能声称自己是 infra,把带库连接串/JWT 签发密钥/配置主密钥的 API 与
-# worker 吸到攻击者有 root 的硬件上。落点锚点改用 node-restriction.kubernetes.io/superdl-infra
-# (该前缀被 NodeRestriction 拉黑,kubelet 自己打不上),由 deploy/ansible/site.yml 在装机后
-# 用管理凭据打到控制面节点上。平台 SA 也无权改它(admission 策略③只放行 superdl.io/*)。
+# 平台组件落点标签 node-restriction.kubernetes.io/superdl-infra 不在这里打(node-label 节点可自述),
+# 由 deploy/ansible/site.yml 装机后用管理凭据打
 secrets-encryption: true     # etcd 静态加密(Secret Encryption at Rest)。存量集群开启时
-                             # RKE2 启动自动重写加密既有 Secret,滚动重启 server 逐台做。
+                             # RKE2 启动自动重写加密既有 Secret
 etcd-snapshot-schedule-cron: "0 */6 * * *"
 etcd-snapshot-retention: 12
-# etcd 快照异地保存(见 deploy/cluster/README.md「etcd 快照托管」):控制面快照含全部集群
-# 状态与 token 材料,必须异地加密保存(对象存储开服务端加密,建议另一机房或独立账号),
-# 禁止只留 server 本机 /var/lib/rancher。开启后定时快照自动上传;access/secret key 来自密管
-# 下发,仓库内只留 CHANGE_ME 占位,真实值禁止提交(ansible/装机脚本落盘时替换)。
+# etcd 快照异地加密保存(见 deploy/cluster/README.md「etcd 快照托管」);access/secret key 仓库内只留 CHANGE_ME 占位,
+# ansible 落盘时替换
 etcd-s3: true
 etcd-s3-bucket: "CHANGE_ME_ETCD_SNAPSHOT_BUCKET"      # 来自密管/对象存储控制台
 etcd-s3-region: "CHANGE_ME_ETCD_S3_REGION"            # 如 cn-hangzhou
@@ -38,35 +30,24 @@ etcd-s3-endpoint: "CHANGE_ME_ETCD_S3_ENDPOINT"        # 对象存储 endpoint(�
 etcd-s3-access-key: "CHANGE_ME_ETCD_S3_ACCESS_KEY"  # 来自密管
 etcd-s3-secret-key: "CHANGE_ME_ETCD_S3_SECRET_KEY"  # 来自密管
 etcd-s3-folder: "etcd-snapshots"
-# 节点加入用专用 agent token,禁止把 server token(node-token)下发到 GPU 节点/平台库:
-# server token 可再拉 server 入环(etcd 成员),被泄 = 集群控制面沦陷;agent token 只能拉 agent。
-# **本项恒开**:注释掉它 agent 就回落用 server token 认证,而「回落」不报错也不告警,
-# 唯一现象是新加的 GPU 机器有能力把自己拉成 etcd 成员。占位由 ansible 渲染
-# (deploy/ansible/site.yml,值经 group_vars/servers.yml 或 -e 注入,openssl rand -hex 32 生成);
-# preflight.sh 反向校验模板占位完好 + 集群侧 agent token ≠ server node-token。
+# 节点加入用专用 agent token,禁止下发 server token(node-token)到 GPU 节点/平台库。本项恒开(注释掉即回落 server token)。
+# 占位由 deploy/ansible/site.yml 渲染(值经 group_vars/servers.yml 或 -e 注入,openssl rand -hex 32);preflight.sh 校验
 agent-token: "CHANGE_ME_AGENT_TOKEN"
 # 平台「集群接入」配置项 cluster_join_token 录这个值;轮换步骤见 deploy/cluster/README.md。
 embedded-registry: true      # Spegel P2P 镜像共享:节点间互拉已缓存镜像(TCP 5001/9345 内网互通)
-                             # 需配套 registries.yaml 分发到全部节点;latest tag 不参与 P2P
+                             # 配套 registries.yaml 分发到全部节点
 supervisor-metrics: true     # 暴露 spegel/supervisor 指标供 kps 抓取
 kube-apiserver-arg:
-  # NodeRestriction 显式钉死(与 RKE2 当前默认同值,写出来是为了让它成为被评审的配置项而不是
-  # 上游默认的副产品):它是唯一让 kubelet 不能给自己打 node-restriction.kubernetes.io/* 标签、
-  # 不能改别的节点对象的东西,而平台组件的 nodeSelector 正建立在这条上(deploy/app/k8s)。
-  # ⚠ RKE2 的 kube-apiserver-arg 同名 flag 是**覆盖**不是追加(要追加得写 `key+:`),
-  # 所以这里必须列全需要的插件;--enable-admission-plugins 本身相对 K8s 默认开启集是增量的,
-  # 不会关掉 PodSecurity / ValidatingAdmissionPolicy 等默认项。
+  # NodeRestriction 显式钉死(平台组件 nodeSelector 依赖它)。kube-apiserver-arg 同名 flag 是覆盖不是追加,
+  # 插件须列全;--enable-admission-plugins 相对默认集是增量
   - enable-admission-plugins=NodeRestriction
   - audit-policy-file=/etc/rancher/rke2/audit-policy.yaml
   - audit-log-path=/var/lib/rancher/rke2/server/logs/audit.log
   - audit-log-maxage=30
-  # maxsize/maxbackup 不设就是不限:单文件无上限、轮转份数无上限,30 天窗口内的审计日志
-  # 会把控制面根分区吃光——那个分区上还有 etcd。100MiB × 10 份封顶。
+  # 100MiB × 10 份封顶(不设即不限)
   - audit-log-maxsize=100
   - audit-log-maxbackup=10
-# 单 Pod PID 上限(podPidsLimit,默认 -1 = 无限):是 KubeletConfiguration 字段而非 kubelet flag,
-# 写进 kubelet-arg 会让 server 拒启(unknown flag)。由 ansible 落 kubelet 配置 drop-in
-# /var/lib/rancher/rke2/agent/etc/kubelet.conf.d/50-superdl.conf(模板 kubelet-superdl.conf,
-# 与 node-join.sh 写给 GPU 节点的同值)。
+# podPidsLimit 是 KubeletConfiguration 字段(非 kubelet-arg),由 ansible 落 drop-in
+# /var/lib/rancher/rke2/agent/etc/kubelet.conf.d/50-superdl.conf(模板 kubelet-superdl.conf,与 node-join.sh 同值)
 node-taint:
   - "CriticalAddonsOnly=true:NoExecute"   # server 不跑业务负载

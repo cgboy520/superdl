@@ -1,13 +1,4 @@
-"""审计行的字段级不变量:超长请求不得毒死审计闸,每行都要有可与日志对上的 request_id。
-
-- action/target 由请求路径拼出,长度不受控。不截断则 INSERT 抛
-  StringDataRightTruncation,该行丢失且推进 fail-closed 闸的连续失败计数:
-  连打 AUDIT_FAIL_CLOSED_THRESHOLD 次就把全站写操作变成 503,而
-  AUDIT_WRITE_FAILED_TOTAL 被永久顶死,那条告警从此失去信号。
-- request_id 是审计行与结构化日志之间唯一的连接键(AuditMiddleware 注册在
-  ObservabilityMiddleware 之外,它的 finally 跑在 contextvar 解绑之后,
-  值只能在响应头落定的一瞬间抄下)。
-"""
+"""审计行字段级不变量:action/target 按列宽截断,每行带 request_id。"""
 
 import pytest
 from httpx import AsyncClient
@@ -22,10 +13,7 @@ pytestmark = pytest.mark.usefixtures("fake")
 
 class TestOverLongPath:
     async def test_long_path_does_not_poison_the_audit_gate(self, client: AsyncClient, sm):
-        """400 字符路径的写请求:审计行照落(截断到列宽),闸门计数不动。
-
-        挂了说明截断没做:每 10 个这样的匿名请求就把写操作打成 503,谁都能触发。
-        """
+        """400 字符路径的写请求:审计行照落(截断到列宽),闸门计数不动。"""
         audit.reset_audit_gate()
         long_path = "/api/v1/" + "z" * 400
         for _ in range(audit.AUDIT_FAIL_CLOSED_THRESHOLD + 2):
@@ -47,7 +35,7 @@ class TestOverLongPath:
         assert all(len(r.action) <= ACTION_MAX_LENGTH for r in rows)
 
     async def test_long_audit_target_is_clipped(self, client: AsyncClient, sm):
-        """业务侧标注的 target 同样按列宽截断(它也来自请求侧的可变长度输入)。"""
+        """业务侧标注的 target 同样按列宽截断。"""
         assert audit._clip("x" * (TARGET_MAX_LENGTH + 50), TARGET_MAX_LENGTH) == (
             "x" * TARGET_MAX_LENGTH
         )
@@ -56,11 +44,7 @@ class TestOverLongPath:
 
 class TestFailedCredentialAttempts:
     async def test_failed_login_names_the_targeted_account_masked(self, client: AsyncClient, sm):
-        """失败登录的审计行必须指出**哪个账号**被打(号码掩码),不能是匿名无目标行。
-
-        挂了 = 事后回答不了「谁被撞库」:审计目标只在 service 成功返回后才标注,
-        而失败请求走不到那一步。号码若以明文入库,审计表自己就成了新的 PII 面。
-        """
+        """失败登录的审计行带掩码号码目标。"""
         await create_user_with_key(client, "13800000230")
         resp = await client.post(
             "/api/v1/auth/login", json={"phone": "13800000230", "password": "not-my-password"}
@@ -80,7 +64,7 @@ class TestFailedCredentialAttempts:
         assert row.detail == {"action": "login"}
 
     async def test_successful_login_target_is_the_user_id(self, client: AsyncClient, sm):
-        """成功后目标被覆盖成 user:{id}(预标注不能污染成功行的口径)。"""
+        """成功后目标被覆盖成 user:{id}。"""
         _, user_id, _ = await create_user_with_key(client, "13800000231")
         await client.post(
             "/api/v1/auth/sms-code", json={"phone": "13800000231", "purpose": "login"}
@@ -104,11 +88,7 @@ class TestRequestIdJoin:
     async def test_row_carries_the_request_id_from_the_response_header(
         self, client: AsyncClient, sm
     ):
-        """审计行的 request_id == 该次响应的 X-Request-ID。
-
-        挂了说明中间件顺序又把它读没了(Observability 在内层,审计的 finally 跑在它
-        解绑 contextvar 之后):没有这个键,一条审计行永远对不上它那次请求的日志。
-        """
+        """审计行的 request_id == 该次响应的 X-Request-ID。"""
         headers, user_id, _ = await create_user_with_key(client, "13800000220")
         resp = await client.post(
             "/api/v1/tickets",
@@ -129,7 +109,7 @@ class TestRequestIdJoin:
         assert row.actor_type == "user" and row.actor_id == str(user_id)
 
     async def test_inbound_request_id_is_carried_through(self, client: AsyncClient, sm):
-        """网关给的 X-Request-ID 沿用到审计行(全链路追踪只有一个 id)。"""
+        """网关给的 X-Request-ID 沿用到审计行。"""
         headers, _, _ = await create_user_with_key(client, "13800000221")
         resp = await client.post(
             "/api/v1/tickets",

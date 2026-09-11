@@ -14,23 +14,15 @@ spec:
       labels: {app: superdl-web}
     spec:
       automountServiceAccountToken: false   # 纯静态托管 + 反代,不访问 K8s API
-      # Harbor 拉取凭据:首装按 ../secrets.example.yaml 手建,之后由平台按配置中心的机器人凭据
-      # 按指纹覆写(docs/reference/images.md);Harbor 项目 public 时缺它只是 kubelet 告警
+      # 拉取凭据 / 优先级 / 落点 / 容忍 / 摊开:见 02-api.yaml 同处注释
       imagePullSecrets:
         - {name: superdl-registry-pull}
-      # 优先级压过租户 Pod:节点资源紧张时不与租户同级被驱逐
       priorityClassName: system-cluster-critical
       nodeSelector:
-        # 平台组件落点统一锚点;前缀 node-restriction.kubernetes.io/ 被 NodeRestriction 准入
-        # 插件拉黑,kubelet 不可自打(见 02-api.yaml 同处注释),标签由 deploy/ansible/site.yml
-        # 用管理凭据打在控制面节点上。GPU 节点严禁打此标签。
         node-restriction.kubernetes.io/superdl-infra: "true"
       tolerations:
-        # 必须与 nodeSelector 成对:server 带 CriticalAddonsOnly=true:NoExecute
-        # (rke2/server-config.yaml node-taint),只钉标签不容忍污点 = Pod 永远 Pending
         - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
       topologySpreadConstraints:
-        # 2 副本尽量跨节点/跨可用区摊开(对齐 02-api);小集群不满足时仍可调度(ScheduleAnyway)
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
           whenUnsatisfiable: ScheduleAnyway
@@ -50,12 +42,11 @@ spec:
           image: CHANGE_IMAGE_PREFIX/superdl-web:CHANGE_TAG
           imagePullPolicy: IfNotPresent
           env:
-            # conf 走 envsubst 模板:只放行 ADMIN_EDGE_TOKEN(web 未引用,输出与原 conf 一致),
-            # 防 $host/$request_id 等 nginx 变量被替换掉
+            # envsubst 只放行 ADMIN_EDGE_TOKEN(web 未引用),不替换 nginx 变量
             - {name: NGINX_ENVSUBST_FILTER, value: "ADMIN_EDGE_TOKEN"}
           ports:
             - {containerPort: 8080, name: http}
-          # liveness 与 readiness 同探 /(nginx 静态首页,进程僵死即重启)
+          # liveness 与 readiness 同探 /
           livenessProbe:
             httpGet: {path: /, port: http}
             periodSeconds: 10
@@ -111,23 +102,15 @@ spec:
       labels: {app: superdl-admin}
     spec:
       automountServiceAccountToken: false   # 纯静态托管 + 反代,不访问 K8s API
-      # Harbor 拉取凭据:首装按 ../secrets.example.yaml 手建,之后由平台按配置中心的机器人凭据
-      # 按指纹覆写(docs/reference/images.md);Harbor 项目 public 时缺它只是 kubelet 告警
+      # 拉取凭据 / 优先级 / 落点 / 容忍 / 摊开:见 02-api.yaml 同处注释
       imagePullSecrets:
         - {name: superdl-registry-pull}
-      # 优先级压过租户 Pod:节点资源紧张时不与租户同级被驱逐
       priorityClassName: system-cluster-critical
       nodeSelector:
-        # 平台组件落点统一锚点;前缀 node-restriction.kubernetes.io/ 被 NodeRestriction 准入
-        # 插件拉黑,kubelet 不可自打(见 02-api.yaml 同处注释),标签由 deploy/ansible/site.yml
-        # 用管理凭据打在控制面节点上。GPU 节点严禁打此标签。
         node-restriction.kubernetes.io/superdl-infra: "true"
       tolerations:
-        # 必须与 nodeSelector 成对:server 带 CriticalAddonsOnly=true:NoExecute
-        # (rke2/server-config.yaml node-taint),只钉标签不容忍污点 = Pod 永远 Pending
         - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
       topologySpreadConstraints:
-        # 2 副本尽量跨节点/跨可用区摊开(对齐 02-api);小集群不满足时仍可调度(ScheduleAnyway)
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
           whenUnsatisfiable: ScheduleAnyway
@@ -147,9 +130,9 @@ spec:
           image: CHANGE_IMAGE_PREFIX/superdl-admin:CHANGE_TAG
           imagePullPolicy: IfNotPresent
           env:
-            # envsubst 只放行边缘密钥这一个变量(防 $host 等 nginx 变量被替换)
+            # envsubst 只放行边缘密钥这一个变量
             - {name: NGINX_ENVSUBST_FILTER, value: "ADMIN_EDGE_TOKEN"}
-            # 边缘共享密钥(edge_guard 双闸):按 key 引用而非 envFrom,其它 Secret 不进 admin Pod
+            # 边缘共享密钥(edge_guard):按 key 引用,其它 Secret 不进 admin Pod
             - name: ADMIN_EDGE_TOKEN
               valueFrom:
                 secretKeyRef: {name: superdl-edge, key: SUPERDL_ADMIN_EDGE_TOKEN}

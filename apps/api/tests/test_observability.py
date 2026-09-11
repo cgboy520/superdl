@@ -18,12 +18,12 @@ class TestRequestId:
         assert resp.headers["x-request-id"] == "gw-abc123"
 
     async def test_cors_exposes_request_id(self, client: AsyncClient):
-        """浏览器跨域 fetch 默认读不到自定义响应头:必须经 expose_headers 放行。"""
+        """X-Request-ID 经 expose_headers 放行。"""
         resp = await client.get("/healthz", headers={"Origin": "http://localhost:5173"})
         assert "x-request-id" in resp.headers.get("access-control-expose-headers", "").lower()
 
     async def test_error_body_carries_request_id(self, client: AsyncClient):
-        """错误响应体回带 request_id:用户报错时凭单号即可串联日志。"""
+        """错误响应体回带 request_id。"""
         resp = await client.get("/api/v1/no-such-route", headers={"X-Request-ID": "gw-err-1"})
         assert resp.status_code == 404
         assert resp.json()["request_id"] == "gw-err-1"
@@ -36,7 +36,7 @@ class TestHealthEndpoints:
         assert resp.json()["status"] == "ready"
 
     async def test_schema_mismatch_not_ready(self, client: AsyncClient, sm):
-        """DB 版本与代码 head 不一致 = 部署事故(迁移漏跑/未 stamp):503 摘流。"""
+        """DB 版本与代码 head 不一致:503。"""
         from app.core.db import code_schema_head
 
         async with sm() as session:
@@ -55,7 +55,7 @@ class TestHealthEndpoints:
                 await session.commit()
 
     async def test_ahead_or_unknown_revision_not_ready(self, client: AsyncClient, sm):
-        """停机发布模型没有合法的版本偏差窗口:DB 领先/未知版本同样 503 摘流。"""
+        """DB 领先/未知版本同样 503。"""
         from app.core.db import code_schema_head
 
         async with sm() as session:
@@ -83,9 +83,7 @@ class TestBusinessMetrics:
 
 class TestUnhandledException:
     async def test_500_keeps_security_headers_and_request_id(self, sm):
-        """未捕获异常 → 统一 500 错误体且不泄露内部细节;500 在中间件链内层渲染(Uniform500):
-        安全响应头与 x-request-id 必须还在——这是最需要对外的凭单排障响应。
-        若退回 ServerErrorMiddleware 渲染则两皆丢。"""
+        """未捕获异常 → 统一 500 错误体,安全响应头与 x-request-id 仍在(Uniform500)。"""
         from app.main import create_app
 
         app = create_app()
@@ -123,7 +121,7 @@ class TestCleanup:
                 UsedRefreshToken(jti="deadbeef" * 4, expires_at=now_utc() - timedelta(hours=1))
             )
             await session.commit()
-            # created_at 由 server_default 生成,需回拨越过 7 天窗口
+            # created_at 回拨越过 7 天窗口
             await session.execute(
                 update(SmsCode)
                 .where(SmsCode.phone == "13800000150")

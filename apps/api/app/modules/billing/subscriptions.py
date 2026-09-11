@@ -1,11 +1,8 @@
 """包周期(预付)订阅:下单预扣、续费、到期巡检。
 
-与小时结算分离:包周期不进 `bills_hourly`,包周期实例只在结算候选里被跳过
-(orchestrator/queries.billing_candidates 一处)。
-
-预付语义的三个后果:中途释放不退款(订阅转 cancelled,确需退款走人工 `refund_requests`);
-到期不自动转按量,到期即停机;余额为零不停机 —— 停机判据、燃烧率、在途预留、冻结链
-四处都要把它排除,漏一处就是「包月用户被欠费巡检误停机」。
+包周期不进 `bills_hourly`,只在结算候选里被跳过(orchestrator/queries.billing_candidates)。
+预付语义:中途释放不退款(订阅转 cancelled);到期不自动转按量,到期即停机;余额为零不停机——
+停机判据、燃烧率、在途预留、冻结链四处都排除包周期实例。
 """
 
 from datetime import datetime, timedelta
@@ -42,15 +39,13 @@ STATUS_ACTIVE = "active"
 STATUS_EXPIRED = "expired"
 STATUS_CANCELLED = "cancelled"
 
-# 到期未续费的处置理由(instance_events.reason)。与欠费链路的 arrears_* 分开命名:
-# 时间线上「包周期到期」和「欠费」对用户是两件不同的事
+# 到期未续费的处置理由(instance_events.reason),与欠费链路的 arrears_* 分开命名
 REASON_EXPIRED_STOP = "subscription_expired"
 REASON_EXPIRED_FREEZE = "subscription_freeze"
 
 _PERIOD_LABELS = {"day": "日", "week": "周", "month": "月", "year": "年"}
 
-# 幂等指纹的动作名:转换/首单与续费共用 UNIQUE(user_id, idempotency_key) 一个命名空间,
-# 动作名进指纹,跨动作复用同一把键也得到显式 409 而不是静默重放另一条单
+# 幂等指纹的动作名:转换/首单与续费共用 UNIQUE(user_id, idempotency_key),动作名进指纹
 _ACT_NEW = "subscription:new"
 _ACT_RENEW = "subscription:renew"
 
@@ -60,10 +55,7 @@ def period_label(period: str) -> str:
 
 
 def _fingerprint(action: str, user_id: int, instance_id: int, period: str, count: int) -> str:
-    """订阅单的请求指纹:决定这单业务形态的全部参数(动作 + 归属 + 目标实例 + 周期)。
-
-    实例 id 必须在内 —— 它正是「同一把键换台实例」时唯一变化的东西,漏了指纹就白做。
-    """
+    """订阅单的请求指纹:动作 + 归属 + 目标实例 + 周期。"""
     return request_fingerprint(action, user_id, instance_id, period, count)
 
 
@@ -75,7 +67,7 @@ async def quote(
     period: str,
     period_count: int,
 ) -> SubscriptionQuote:
-    """报价(不落库)。市场页、创建预估、续费 modal 都经这里,不各算各的。"""
+    """报价(不落库)。市场页、创建预估、续费 modal 都经这里。"""
     policies = await get_effective_policies(session)
     return quote_subscription(
         base_hourly,
@@ -99,11 +91,8 @@ async def charge_new(
     period_count: int,
     idempotency_key: str | None,
 ) -> tuple[Subscription, SubscriptionQuote]:
-    """下单预扣:写 subscriptions 行 + 扣款 + 流水。**不 commit**,由调用方并入建实例事务。
-
-    扣款用 allow_negative=False —— 包周期是「先付后用」,不允许透支买断一个月。
-    余额不够时抛的就是 debit 自己的 INSUFFICIENT_BALANCE,文案直指余额不足;
-    「买得起、但买完就付不起在途按量实例」由调用方随后的 assert_can_afford 分开报。
+    """下单预扣:写 subscriptions 行 + 扣款 + 流水。不 commit,由调用方并入建实例事务。
+    扣款 allow_negative=False(先付后用);余额不够抛 INSUFFICIENT_BALANCE。
     """
     quoted = await quote(
         session,
@@ -138,7 +127,7 @@ async def charge_new(
         ref_id=str(row.id),
         remark=f"{instance_name} 包{period_label(period)}×{period_count}",
         allow_negative=False,
-        # 先付后用:默认 allow_frozen=False,冻结额(渠道冲正待核销)不得用于购买
+        # 先付后用:allow_frozen=False
     )
     return row, quoted
 
@@ -146,8 +135,7 @@ async def charge_new(
 async def list_expiring_active(
     session: AsyncSession, user_id: int, *, within_days: int
 ) -> list[Subscription]:
-    """临期 active 订阅(到期横幅数据源):expires_at ≤ now+within_days,按到期时刻升序。
-    50 是防御性上限(用户配额下正常远够;横幅只展示最早一条 + 计数)。"""
+    """临期 active 订阅:expires_at ≤ now+within_days,按到期时刻升序,上限 50。"""
     horizon = now_utc() + timedelta(days=within_days)
     return list(
         (
@@ -174,15 +162,9 @@ async def find_replay_row(
     period: str | None = None,
     period_count: int | None = None,
 ) -> Subscription | None:
-    """幂等窗口内同 (user_id, key) 的订阅行。转换/续费的**第一步**就要问它。
-
-    转换尤其不能晚问:market 一旦翻成 subscription,重放请求会先撞上「只有按量实例
-    可以转」这条守卫拿到 400;守卫若排在结算之后,重放还会用折后价再补一次转换前
-    那个小时的账。
-
-    给全 instance_id/period/period_count 时做异参检测:同键但打向另一台实例(或另一种
-    周期)即 409,而不是把**别人那单**当作本次的重放返回 —— 后者会告诉用户「买好了」,
-    可目标实例既没转成包周期也没扣过钱。三个参数缺一即退化为纯按键重放(老调用方)。
+    """幂等窗口内同 (user_id, key) 的订阅行。转换/续费的第一步先问它。
+    给全 instance_id/period/period_count 时做异参检测:同键不同实例或周期即 409;
+    三个参数缺一即退化为纯按键重放。
     """
     fingerprint = (
         _fingerprint(_ACT_NEW, user_id, instance_id, period, period_count)
@@ -212,7 +194,7 @@ async def find_replay_row(
 async def quote_of_row(
     session: AsyncSession, row: Subscription, gpu_count: int
 ) -> SubscriptionQuote:
-    """按已落库的订阅行反算报价(幂等重放的响应体要和首次一致)。"""
+    """按已落库的订阅行反算报价(幂等重放的响应体与首次一致)。"""
     return await _quote_of(session, row, gpu_count)
 
 
@@ -224,18 +206,14 @@ async def convert(
     period_count: int,
     idempotency_key: str | None,
 ) -> tuple[Subscription, SubscriptionQuote, bool]:
-    """按量实例转包周期:开出这台实例的第一张订阅单。**不 commit**。
+    """按量实例转包周期:开出这台实例的第一张订阅单。不 commit。
 
-    与 `renew` 的差别只在起点:续费从老周期到期时刻接上,转换从**现在**起算 —— 转换前那段
-    按量时间由调用方先结清(orchestrator.subscribe_instance → settle_on_demand_up_to),
-    两段各按各的口径收费,既不重复也不留缝。
-
-    报价基准是 `instance.price_hourly`(按量实例上它就是建实例时的 SKU 原价快照),
-    不是 SKU 现价:与「变更 SKU 仅影响新实例」同一条口径,用户锁定的价格延续到包周期。
+    从现在起算(转换前那段按量时间由调用方先结清:orchestrator.subscribe_instance →
+    settle_on_demand_up_to)。报价基准是 `instance.price_hourly`(SKU 原价快照),不是 SKU 现价。
     """
     current = await current_for_instance(session, instance.id)
     if current is not None and current.status == STATUS_ACTIVE:
-        # 已经在保还来转,多半是重复提交没带幂等键。放行会开出第二张单、扣两份钱
+        # 已在保不可再转
         raise AppError(
             ErrorCode.SUBSCRIPTION_NOT_RENEWABLE, key="billing.subscriptionAlreadyActive"
         )
@@ -271,19 +249,11 @@ async def renew(
     idempotency_key: str | None,
     actor: str = "user",
 ) -> tuple[Subscription, SubscriptionQuote, bool]:
-    """续费:老行转 expired,新开一行并串 renewed_from_id。**不 commit**。
-
+    """续费:老行转 expired,新开一行并串 renewed_from_id。不 commit。
     返回 (新订阅, 报价, created);created=False = 幂等重放。
 
-    新周期从**老周期的到期时刻**起算,不是从「现在」(否则提前续费会丢掉手上剩余天数)。
-    只有老周期已过(到期后才来续)才从现在起算,否则会续出一个开局就少几天的周期。
-
-    重新定价的基准是 `subscriptions.unit_price`(下单时的 SKU **原价**快照),不是 SKU 现价:
-    与「变更 SKU 仅影响新实例」同一条口径,涨价不追已购用户。
-
-    并发纪律:调用前必须先持钱包行锁(lock_wallet;两条入口——手动 renew_instance 与
-    自动 _try_auto_renew——都遵守),老订阅行在锁内经 FOR UPDATE 重读。
-    锁序 wallet → subscriptions,与 debit 内的钱包锁重入一致,不会成环。
+    新周期从 max(老周期到期时刻, 现在) 起算。定价基准是 `subscriptions.unit_price`(SKU 原价快照)。
+    调用前必须先持钱包行锁(lock_wallet),老订阅行在锁内 FOR UPDATE 重读;锁序 wallet → subscriptions。
     """
     fingerprint = _fingerprint(_ACT_RENEW, instance.user_id, instance.id, period, period_count)
     if idempotency_key:
@@ -303,7 +273,7 @@ async def renew(
     if current is None:
         raise AppError(ErrorCode.SUBSCRIPTION_NOT_RENEWABLE, key="billing.subscriptionMissing")
     if current.status == STATUS_CANCELLED:
-        # 与「压根没买过」分开报:作废只可能是实例被释放过,续费不会复活这台机器
+        # 与「压根没买过」分开报
         raise AppError(ErrorCode.SUBSCRIPTION_NOT_RENEWABLE, key="billing.subscriptionCancelled")
     quoted = await quote(
         session,
@@ -341,8 +311,8 @@ async def renew(
             fingerprint=fingerprint,
         )
         if result is not row:
-            # 并发同幂等键:UNIQUE(user_id, idempotency_key) 兜住,胜出方按重放返回。
-            # insert_idempotent 内部 rollback 同时撤掉上面对 current 的改动
+            # 并发同幂等键由 UNIQUE(user_id, idempotency_key) 兜住,胜出方按重放返回;
+            # insert_idempotent 内部 rollback 同时撤掉对 current 的改动
             return result, await _quote_of(session, result, instance.gpu_count), False
     else:
         try:
@@ -350,8 +320,7 @@ async def renew(
                 session, row, model=Subscription, owner_col=None, owner_id=None, key=None
             )
         except IntegrityError:
-            # 理论不可达(钱包锁 + 行锁已串行化):部分唯一索引
-            # uq_subscriptions_active_instance 兜住第二条 active 行即冲突
+            # 理论不可达(钱包锁 + 行锁已串行化):部分唯一索引 uq_subscriptions_active_instance 兜底
             raise conflict(key="common.retryableConflict") from None
     await wallet.debit(
         session,
@@ -376,7 +345,7 @@ async def renew(
 
 
 async def _quote_of(session: AsyncSession, row: Subscription, gpu_count: int) -> SubscriptionQuote:
-    """按已落库的订阅行反算报价(幂等重放的响应体要和首次一致)。"""
+    """按已落库的订阅行反算报价(幂等重放的响应体与首次一致)。"""
     return await quote(
         session,
         base_hourly=row.unit_price,
@@ -393,12 +362,7 @@ async def current_for_instance(
     session: AsyncSession, instance_id: int, *, for_update: bool = False
 ) -> Subscription | None:
     """该实例当前生效(或最后一期)的订阅行:取 id 最大的一行。
-
-    续费链上永远只有一行 active,但到期未续时全链都是 expired —— 取最后一行才能回答
-    「什么时候到的期」,那正是到期横幅和续费 modal 要显示的东西。
-
-    for_update=True 给续费路径:行锁把「老行转 expired + 新行插入」串行化,
-    调用前必须先持钱包行锁(锁序 wallet → subscriptions,与 debit 一致)。
+    for_update=True 给续费路径,调用前必须先持钱包行锁(锁序 wallet → subscriptions)。
     """
     stmt = (
         select(Subscription)
@@ -414,7 +378,7 @@ async def current_for_instance(
 async def latest_by_instance(
     session: AsyncSession, instance_ids: list[int]
 ) -> dict[int, Subscription]:
-    """批量版 current_for_instance(列表页一次查完,不逐行打接口)。"""
+    """批量版 current_for_instance。"""
     if not instance_ids:
         return {}
     rows = (
@@ -428,7 +392,7 @@ async def latest_by_instance(
         .scalars()
         .all()
     )
-    # 按 id 升序遍历,后写的覆盖先写的 → 每个实例留下 id 最大的那行
+    # 按 id 升序遍历,后写覆盖先写 → 每个实例留 id 最大的那行
     return {row.instance_id: row for row in rows}
 
 
@@ -436,9 +400,7 @@ async def reserved_instance_ids(
     session: AsyncSession, instance_ids: list[int] | None = None
 ) -> set[int]:
     """仍在保(active 且未到期)的包周期实例 id;给了 instance_ids 就只在其中筛。
-
-    软准入据此把「已停机但周期未满」的实例仍计为占用:平台承诺了整个周期。
-    创建路径每次都要问一遍,故支持先按候选集收窄,不整表扫。
+    软准入据此把「已停机但周期未满」的实例计为占用。
     """
     if instance_ids is not None and not instance_ids:
         return set()
@@ -451,7 +413,7 @@ async def reserved_instance_ids(
 
 
 async def expired_instance_ids(session: AsyncSession) -> set[int]:
-    """最后一期已到期(且未被释放)的包周期实例 id —— 到期冻结链路的候选。"""
+    """最后一期已到期(且未被释放)的包周期实例 id(到期冻结链路候选)。"""
     expired = set(
         (
             await session.execute(
@@ -464,17 +426,12 @@ async def expired_instance_ids(session: AsyncSession) -> set[int]:
         .scalars()
         .all()
     )
-    # 减去在保集合:续过费的实例在链上既有 expired 的老行、也有 active 的新行,
-    # 只看 expired 会把刚续过费的实例也送进冻结候选
+    # 减去在保集合(续过费的实例链上同时有 expired 老行与 active 新行)
     return expired - await reserved_instance_ids(session)
 
 
 async def assert_active(session: AsyncSession, instance_id: int) -> Subscription:
-    """包周期实例的开机门禁:周期内才让开机。
-
-    行缺失也判过期(fail-closed):market='subscription' 却查不到订阅行是数据不一致,
-    放行等于白送一台机器。
-    """
+    """包周期实例的开机门禁:周期内才让开机。行缺失也判过期(fail-closed)。"""
     row = await current_for_instance(session, instance_id)
     if row is None or row.status != STATUS_ACTIVE or ensure_utc(row.expires_at) <= now_utc():
         raise AppError(
@@ -499,11 +456,7 @@ async def set_auto_renew(
 
 
 async def cancel_for_instance(session: AsyncSession, instance_id: int) -> None:
-    """实例进入 releasing 时作废订阅(预付不退款)。**不 commit**。
-
-    只动 active 行:已 expired 的历史行是账期凭证,把它改成 cancelled 会让财务口径
-    多出一类「被追溯改写的收入」。
-    """
+    """实例进入 releasing 时作废订阅(预付不退款)。不 commit。只动 active 行,expired 历史行不动。"""
     for row in (
         (
             await session.execute(
@@ -523,11 +476,8 @@ async def cancel_for_instance(session: AsyncSession, instance_id: int) -> None:
 
 
 async def subscription_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]:
-    """包周期到期链路(每 30 分钟):预警 → 自动续费 → 到期停机 → 冻结。
-
-    **回收那一步刻意不在这里** —— frozen 到期回收由 balance_patrol 既有的
-    `_patrol_frozen_and_arrears_stopped` 统一做,状态机与回收逻辑仍只有一处实现。
-    这里只负责把实例送进 frozen 并写好 frozen_deadline。
+    """包周期到期链路(每 30 分钟):预警 → 自动续费 → 到期停机 → 冻结(写 frozen_deadline)。
+    frozen 到期回收由 balance_patrol 的 `_patrol_frozen_and_arrears_stopped` 统一做。
     """
     counts = {"warned": 0, "renewed": 0, "renew_failed": 0, "stopped": 0, "frozen": 0}
     async with advisory_lock(sm, LockKey.SUBSCRIPTION_PATROL) as got:
@@ -540,7 +490,7 @@ async def subscription_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str,
 
 
 async def _patrol_due(sm: async_sessionmaker[AsyncSession], counts: dict[str, int]) -> None:
-    """临期预警 + 到期处置。逐条独立事务:一条炸了不拖累其它条。"""
+    """临期预警 + 到期处置。逐条独立事务。"""
     async with sm() as session:
         policies = await get_effective_policies(session)
         horizon = now_utc() + timedelta(days=policies.period_expire_warn_days)
@@ -572,7 +522,7 @@ async def _handle_due(session: AsyncSession, subscription_id: int, counts: dict[
     row = (
         await session.execute(select(Subscription).where(Subscription.id == subscription_id))
     ).scalar_one_or_none()
-    # 取快照到现在之间,用户可能已经自己续费或释放了
+    # 取快照到现在之间,用户可能已自己续费或释放
     if row is None or row.status != STATUS_ACTIVE:
         return
     expires = ensure_utc(row.expires_at)
@@ -583,20 +533,16 @@ async def _handle_due(session: AsyncSession, subscription_id: int, counts: dict[
         return
 
     instance = await orchestrator_service.instance_by_id(session, row.instance_id)
-    # 锁序 instance → wallet → subscription:_try_auto_renew 先锁钱包再动订阅行,
-    # 不先锁实例则本事务是 wallet → instance,与停机/结算链路
-    # (instance → bill → wallet)交叉成死锁对。
-    # 锁后 refresh:锁函数只锁不刷属性,transition 的乐观锁要新鲜 version
+    # 锁序 instance → wallet → subscription(与停机/结算链路 instance → bill → wallet 一致)。
+    # 锁后 refresh:transition 的乐观锁要新鲜 version
     await orchestrator_service.lock_instance_for_billing(session, instance.id)
     await session.refresh(instance)
     if row.auto_renew:
         if await _try_auto_renew(session, row, instance, counts):
             return
-        # 续费失败(余额不足):先提交释放钱包锁——到期停机的尾账要拿账单行锁,
-        # 持钱包锁进 expire 会留下 wallet → bill 边(与小时结算 bill → wallet 成环)。
-        # 停机链路在下一事务按 instance → bill → wallet 重新持锁
+        # 续费失败:先提交释放钱包锁,停机链路在下一事务按 instance → bill → wallet 重新持锁
         await session.commit()
-        await session.refresh(row)  # 等锁/提交期间用户可能已手动续费(老行转 expired)
+        await session.refresh(row)  # 等锁/提交期间用户可能已手动续费
         if row.status != STATUS_ACTIVE:
             return
     row.status = STATUS_EXPIRED
@@ -606,13 +552,12 @@ async def _handle_due(session: AsyncSession, subscription_id: int, counts: dict[
 async def _warn_expiring(
     session: AsyncSession, row: Subscription, expires: datetime, now: datetime
 ) -> bool:
-    """到期预警。warned_for_expiry 存「已预警到哪个到期时刻」而不是布尔:
-    续费后 expires_at 变了,新周期自然重新可预警,不需要额外清位。"""
+    """到期预警。warned_for_expiry 存「已预警到哪个到期时刻」。"""
     if row.warned_for_expiry is not None and ensure_utc(row.warned_for_expiry) == expires:
         return False
     row.warned_for_expiry = expires
     days = max(0, round((expires - now).total_seconds() / 86400))
-    # 深链目标(实例 uuid):临期订阅量小,逐条按主键取代价可忽略
+    # 深链目标(实例 uuid)
     from app.modules.orchestrator import service as orchestrator_service
 
     instance = await orchestrator_service.instance_by_id(session, row.instance_id)
@@ -633,21 +578,13 @@ async def _warn_expiring(
 async def _try_auto_renew(
     session: AsyncSession, row: Subscription, instance: "Instance", counts: dict[str, int]
 ) -> bool:
-    """自动续费。余额不够就返回 False 走到期停机链路,绝不透支。
-
-    先算价再比余额,而不是让 `renew` 的 debit 抛 INSUFFICIENT_BALANCE 兜底:
-    debit 抛错时 `renew` 已经把老订阅行改成了 expired,ORM 里那个改动还在,
-    捕获异常继续用同一个 session 就会把它一起提交(老周期凭空作废)。
-
-    并发纪律:与手动续费同一锁序——先 lock_wallet 再动订阅行(手动路径
-    orchestrator.service.renew_instance 同款)。等锁期间可能已被手动续费
-    (老行已 expired、新周期已开),refresh 复核后放弃,否则就是重复扣款。
+    """自动续费。可用余额不够返回 False 走到期停机链路,绝不透支;先算价再比余额。
+    与手动续费同一锁序:先 lock_wallet 再动订阅行;等锁期间可能已被手动续费,refresh 复核后放弃。
     """
     await wallet.lock_wallet(session, row.user_id)
     await session.refresh(row)
     if row.status != STATUS_ACTIVE:
-        # 等钱包锁期间已被并发续费(手动路径已把老行转 expired):视为已处理,
-        # 不再续也不走到期停机
+        # 等钱包锁期间已被并发续费:视为已处理
         return True
     quoted = await quote(
         session,
@@ -656,9 +593,7 @@ async def _try_auto_renew(
         period=row.period,
         period_count=row.period_count,
     )
-    # 预检口径与 debit 的冻结闸同线:可用余额(balance - frozen)不够即落 renew_failed
-    # 并通知,而不是让 renew 的 debit 在改完老订阅行之后才炸(冻结款是渠道冲正待核销
-    # 的钱,不得用于续费)
+    # 预检口径与 debit 的冻结闸同线:可用余额(balance - frozen)不够即落 renew_failed 并通知
     if await wallet.get_available_balance(session, row.user_id) < quoted.amount:
         counts["renew_failed"] += 1
         await notify_service.send_subscription_notice(
@@ -695,8 +630,8 @@ async def _try_auto_renew(
 async def _expire_instance(
     session: AsyncSession, instance: "Instance", counts: dict[str, int]
 ) -> None:
-    """到期处置:running → 停机(停稳后由 _patrol_freeze_expired 接着冻结);
-    stopped → 直接冻结起回收倒计时;其余状态本轮不动,下轮再来。"""
+    """到期处置:running → 停机(停稳后由 _patrol_freeze_expired 冻结);stopped → 直接冻结;
+    其余状态本轮不动。"""
     from app.modules.orchestrator import service as orchestrator_service
 
     if instance.status == orchestrator_service.RUNNING:
@@ -706,8 +641,7 @@ async def _expire_instance(
         await _freeze(session, instance)
         counts["frozen"] += 1
     else:
-        # creating/starting/stopping/frozen/releasing:本轮动不了(状态机不允许),
-        # 收敛到终态后由下一轮接手。订阅行已置 expired,不会重复计费
+        # creating/starting/stopping/frozen/releasing:本轮动不了,下一轮接手。订阅行已置 expired
         return
     await notify_service.send_subscription_notice(
         session,
@@ -720,8 +654,7 @@ async def _expire_instance(
 
 
 async def _freeze(session: AsyncSession, instance: "Instance") -> None:
-    """冻结窗口复用 `freeze_grace_hours`(欠费同款):两条链路对用户是同一句承诺
-    ——「停机后 72 小时内还能救回来」。"""
+    """冻结窗口复用 `freeze_grace_hours`(欠费同款)。"""
     from app.modules.orchestrator import service as orchestrator_service
 
     policies = await get_effective_policies(session)
@@ -737,10 +670,7 @@ async def _patrol_freeze_expired(
     sm: async_sessionmaker[AsyncSession], counts: dict[str, int]
 ) -> None:
     """已到期且已停稳的包周期实例 → 冻结(起回收倒计时,时长见 _freeze)。
-
-    单独一趟而不是接在停机后面:停机是异步的(outbox 删 Pod → reconciler 确认),
-    到期那一刻实例还在 stopping,当场冻不了。欠费链路的同一步在 balance_patrol 里,
-    但那一步的进入条件是「余额 ≤ 0」—— 包周期用户余额可能很充足,套不上。
+    单独一趟:停机是异步的,到期那一刻实例还在 stopping。
     """
     from app.modules.orchestrator import service as orchestrator_service
 

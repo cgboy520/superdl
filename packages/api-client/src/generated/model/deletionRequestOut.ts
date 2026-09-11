@@ -6,7 +6,7 @@
  */
 
 /**
- * 用户端注销申请视图。cooldown_ends_at = requested_at + 7 天(冷静期截止)。
+ * 用户端注销申请视图。cooldown_ends_at = requested_at + 7 天。
  */
 export interface DeletionRequestOut {
   cooldown_ends_at: string;

@@ -6,7 +6,7 @@
  */
 
 /**
- * 用户端发票申请视图。不透出 issued_by(操作人 id 对用户无意义)。
+ * 用户端发票申请视图。不透出 issued_by。
  */
 export interface InvoiceOut {
   amount: string;

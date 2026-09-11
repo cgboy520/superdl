@@ -45,8 +45,7 @@ export function AdminsTab() {
   const { admin: me, logout } = useAuth();
   const isSuperAdmin = me?.role === "admin";
   const { data, queryKey, isLoading, isError, error, refetch } = useAdminAccounts();
-  // 安全策略 admin_mfa_enabled(仅超管可读;读不到按「开启」处理,不误标)
-  // 非超管不发该请求(注定 403)
+  // admin_mfa_enabled 仅超管可读,读不到按「开启」处理
   const mfaEnabled =
     usePlatformConfig({ enabled: isSuperAdmin }).data?.items.find((i) => i.key === "admin_mfa_enabled")?.value !== "false";
 
@@ -103,7 +102,7 @@ export function AdminsTab() {
         </Space>
       ),
       key: "mfa",
-      // 开关开启时四个角色一律强制 TOTP;关闭时列头标「已关闭」,行内仍只区分已绑定/待绑定
+      // MFA 关闭时列头标「已关闭」,行内仍区分已绑定/待绑定
       render: (_: unknown, row: AdminAccountOut) =>
         row.totp_enabled ? (
           <Tag color={adminColors.positive}>{t("admins.mfaBound")}</Tag>
@@ -121,7 +120,7 @@ export function AdminsTab() {
     {
       title: t("admins.colActions"),
       key: "actions",
-      // 操作列 = 角色 Select + 3~4 个按钮,全站最挤的单元格:定宽 + wrap,窄屏经表格横滚保住完整可点
+      // 操作列定宽 + wrap
       width: 420,
       render: (_: unknown, row: AdminAccountOut) => {
         const isSelf = row.id === me?.id;
@@ -136,7 +135,7 @@ export function AdminsTab() {
               disabled={!isSuperAdmin || isSelf}
               options={ALL_ROLES.map((r) => ({ value: r, label: t(ROLE_LABEL_KEY[r]) }))}
               onChange={(role: Role) => {
-                // 改角色必须手输原因(入审计):弹表单收集
+                // 改角色收原因(入审计)
                 setRoleTarget({ row, role });
               }}
             />
@@ -148,7 +147,7 @@ export function AdminsTab() {
               }
               danger={row.status === "active"}
               disabled={!isSuperAdmin || isSelf}
-              // 禁用时 noPerm/selfNote 必有一个(disabled 条件即两者之一);兜底与 noPerm 同文案
+              // 禁用时 noPerm/selfNote 必有一个
               disabledReason={noPerm ?? selfNote ?? t("admins.superAdminOnly")}
               onSubmit={async (reason) => {
                 await update.mutateAsync({
@@ -198,7 +197,7 @@ export function AdminsTab() {
           {(data ?? []).find((a) => a.id === me?.id)?.totp_enabled && (
             <Button
               onClick={() =>
-                // 重新生成后旧恢复码立即失效,先复述后果再执行
+                // 重新生成:旧恢复码立即失效
                 modal.confirm({
                   title: t("admins.regenCodesConfirmTitle"),
                   content: t("admins.regenCodesConfirmDesc"),
@@ -391,7 +390,7 @@ export function AdminsTab() {
             await changeOwn.mutateAsync({ data: v });
             message.success(t("admins.ownPasswordChanged"));
             setSelfOpen(false);
-            // 改密会撤销全部在外会话(含当前这个),登出后回登录页重登
+            // 改密撤销全部会话,回登录页
             logout();
             void navigate({ to: "/login" });
           } catch (e) {

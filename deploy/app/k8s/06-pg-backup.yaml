@@ -1,13 +1,7 @@
-# PostgreSQL 逻辑备份(每日 02:30 北京 = 18:30 UTC)。
-# 保留策略:对象存储桶生命周期管理——建议 daily/ 前缀 30 天滚动删除 + 每月 1 日转低频/归档层
-# 留存 12 个月(在桶控制台/IaC 配置,不在本清单);恢复演练每季度一次,见 runbooks/pg-backup-restore.md。
-# 这是 RPO=24h 的最低保障;钱包/账本库的 PITR 方案见 runbooks/pg-backup-restore.md。
-# 上传前在 dump 容器内经 gpg 对称加密(AES256,密钥 = superdl-pg-backup 的 BACKUP_ENCRYPT_KEY):
-# 备份是钱包/账本的全量拷贝,客户端加密让「对象存储失陷 ≠ 资金库失陷」,不依赖桶策略正确性。
-# 上传后内置 restore 冒烟(解密 + 恢复到 Pod 内临时库,断言 pg_restore 成功且要害表可查询;
-# 行数只打印不判定,新库为 0 属正常):失败则 Job 非零退出 → PgBackupFailed 告警。
-# 未验证的备份视为不存在。
-# 凭据 Secret(superdl-pg-backup)模板见 ../secrets.example.yaml,不在整目录 apply 路径内。
+# PostgreSQL 逻辑备份(每日 02:30 北京 = 18:30 UTC),RPO=24h;PITR 与恢复演练见 runbooks/pg-backup-restore.md。
+# 保留策略在对象存储桶生命周期配置(建议 daily/ 30 天 + 月初归档 12 个月)。
+# dump 经 gpg AES256 客户端加密(密钥 superdl-pg-backup 的 BACKUP_ENCRYPT_KEY),上传后回读做 restore 冒烟,失败 → PgBackupFailed 告警。
+# 凭据 Secret 模板见 ../secrets.example.yaml
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -27,16 +21,14 @@ spec:
         spec:
           restartPolicy: Never
           automountServiceAccountToken: false   # 只连 PG 与对象存储,不访问 K8s API
-          # 非 root 运行;fsGroup 让两个容器都能读写交接用的 emptyDir
+          # 非 root;fsGroup 让各容器可读写交接 emptyDir
           securityContext:
             runAsNonRoot: true
             runAsUser: 999
             runAsGroup: 999
             fsGroup: 999
             seccompProfile: {type: RuntimeDefault}
-          # 转储与上传各用官方镜像、经 emptyDir 交接;禁止在运行期 apt-get 装工具。
-          # 不走 `pg_dump | aws s3 cp -` 流式:两个官方镜像各缺对方的工具,流式需自制镜像;
-          # 落盘 + sizeLimit 已兜住磁盘打满风险。
+          # 转储与上传各用官方镜像,经 emptyDir 交接;运行期不装工具
           initContainers:
             - name: dump
               image: postgres:18
@@ -52,9 +44,7 @@ spec:
                 - -ec
                 - |
                   set -e
-                  # 备份是钱包/账本的全量拷贝:落盘即客户端加密(AES256,密钥在
-                  # superdl-pg-backup 的 BACKUP_ENCRYPT_KEY),明文 dump 不进卷、
-                  # 不进对象存储——bucket 策略是否正确不再影响「泄 backups ≠ 泄资金库」
+                  # 落盘即客户端加密,明文 dump 不进卷
                   [ -n "$BACKUP_ENCRYPT_KEY" ] || { echo "BACKUP_ENCRYPT_KEY 未配置" >&2; exit 1; }
                   ts=$(date -u +%Y%m%dT%H%M%SZ)
                   pg_dump "$PGURL" -Fc -f /backup/superdl-$ts.dump
@@ -68,9 +58,7 @@ spec:
               resources:
                 requests: {cpu: 100m, memory: 256Mi}
                 limits: {cpu: "1", memory: 1Gi}
-            # upload 必须是 initContainer 而不是 restore-smoke 的兄弟容器:同 Pod 的多个
-            # containers 是并发起的,冒烟会与上传赛跑,可能在对象还没传完时就「验」完了。
-            # initContainers 顺序执行,dump → upload → (containers) restore-smoke 才是真的串行。
+            # upload 必须是 initContainer(与 restore-smoke 串行)
             - name: upload
               image: amazon/aws-cli:2.32.0
               imagePullPolicy: IfNotPresent
@@ -89,15 +77,13 @@ spec:
                   aws s3 cp /backup/ "s3://$S3_BUCKET/daily/" --recursive \
                     --exclude "*" --include "superdl-*.dump.gpg" --endpoint-url "$S3_ENDPOINT"
                   echo "upload done"
-                  # 回读:冒烟必须验**对象存储里的那一份**,不是本地待上传的文件。
-                  # 只验本地文件时,截断上传 / SSE 配错 / 桶策略拒绝 / endpoint 指错
-                  # 全部照样「验证通过」——备份看着有,真要恢复时才发现取不回来。
+                  # 回读对象存储里的那一份供冒烟
                   local_dump=$(ls -t /backup/superdl-*.dump.gpg | head -1)
                   key="daily/$(basename "$local_dump")"
                   mkdir -p /backup/verify
                   aws s3 cp "s3://$S3_BUCKET/$key" /backup/verify/roundtrip.dump.gpg \
                     --endpoint-url "$S3_ENDPOINT"
-                  # 字节数必须一致:S3 分段上传失败可能留下长度不足的对象且不报错
+                  # 字节数必须一致
                   want=$(wc -c < "$local_dump")
                   got=$(wc -c < /backup/verify/roundtrip.dump.gpg)
                   [ "$want" = "$got" ] || {
@@ -110,9 +96,7 @@ spec:
                 requests: {cpu: 100m, memory: 256Mi}
                 limits: {cpu: "1", memory: 512Mi}
           containers:
-            # restore 冒烟:解密**从对象存储回读的**那一份 dump 并恢复进 Pod 内一次性 PG 实例,
-            # pg_restore 成功且三张资金要害表 SELECT count(*) 可执行即计成功;任一环节失败非零
-            # 退出 → Job Failed → PgBackupFailed 告警(kps.yaml)。镜像复用 dump 容器,不新增镜像。
+            # restore 冒烟:解密回读的 dump 恢复进 Pod 内一次性 PG,pg_restore 成功且三张资金表可查询即成功
             - name: restore-smoke
               image: postgres:18
               imagePullPolicy: IfNotPresent
@@ -126,22 +110,20 @@ spec:
                 - sh
                 - -ec
                 - |
-                  # 固定读 upload 回读下来的那一份(见上一个 initContainer):验的是对象
-                  # 存储里真实存在、可取回、可解密的备份,而不是本地那个还没离开 Pod 的文件
+                  # 读 upload 回读下来的那一份
                   dump=/backup/verify/roundtrip.dump.gpg
                   echo "smoke restore (from object storage roundtrip): $dump"
                   printf '%s' "$BACKUP_ENCRYPT_KEY" | gpg --batch --yes --decrypt \
                     --passphrase-fd 0 -o /tmp/smoke.dump "$dump"
-                  # 临时实例:仅 unix socket;数据落 /backup 卷(只恢复 3 张要害表,体积可控,
-                  # sizeLimit 按 库体积×2 预估已覆盖)
+                  # 临时实例仅 unix socket,数据落 /backup 卷
                   initdb -D /backup/smoke-data -U postgres --auth=trust >/dev/null
                   pg_ctl -D /backup/smoke-data -o "-k /tmp -p 55432 -c listen_addresses=''" -w start >/dev/null
                   trap 'pg_ctl -D /backup/smoke-data stop -m immediate >/dev/null 2>&1 || true' EXIT
                   createdb -h /tmp -p 55432 -U postgres smoke
-                  # 只取要害表:全量恢复慢且体积大;-t 无匹配时 pg_restore 报错退出(兜底)
+                  # 只恢复要害表;-t 无匹配时 pg_restore 报错退出
                   pg_restore -h /tmp -p 55432 -U postgres -d smoke --no-owner \
                     -t wallets -t balance_ledger -t settlement_watermarks /tmp/smoke.dump
-                  # 表缺失/不可查询时 psql 非零退出(set -e 即失败);行数只打印不判定
+                  # 表不可查询时 psql 非零退出;行数只打印不判定
                   for t in wallets balance_ledger settlement_watermarks; do
                     n=$(psql -h /tmp -p 55432 -U postgres -d smoke -v ON_ERROR_STOP=1 -tAc "SELECT count(*) FROM $t")
                     echo "smoke: $t rows=$n"
@@ -154,6 +136,6 @@ spec:
                 requests: {cpu: 100m, memory: 512Mi}
                 limits: {cpu: "1", memory: 1Gi}
           volumes:
-            # sizeLimit 兜住「dump 把节点磁盘打满」:按 库体积×2 预估并随增长上调
+            # sizeLimit 按库体积×2 预估,随增长上调
             - {name: backup, emptyDir: {sizeLimit: 20Gi}}
             - {name: tmp, emptyDir: {sizeLimit: 1Gi}}

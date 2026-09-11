@@ -35,7 +35,7 @@ AM_PAYLOAD = {
 
 
 def am_payload_for(user_id: int) -> dict:
-    """AM_PAYLOAD 的租户归属版:namespace 指向一个真实注册用户(归属查库核实后必须如此)。"""
+    """AM_PAYLOAD 的租户归属版:namespace 指向真实注册用户。"""
     import copy
 
     payload = copy.deepcopy(AM_PAYLOAD)
@@ -45,7 +45,7 @@ def am_payload_for(user_id: int) -> dict:
 
 class TestBalanceWarnNotification:
     async def test_unread_count_endpoint(self, client, sm, fake):
-        """未读数轻端点:DB count 与列表分页解耦,标记已读后减少。"""
+        """未读数端点:标记已读后减少。"""
         headers, user_id = await user_headers_with_id(client, "13700000061")
         async with sm() as session:
             for i in range(3):
@@ -68,7 +68,7 @@ class TestBalanceWarnNotification:
         assert resp.json()["unread_count"] == 2
 
     async def test_target_id_round_trip(self, client, sm, fake):
-        """结构化跳转目标:写入 target_id 的行列表原样返回(深链用),未写的为 null。"""
+        """target_id 原样返回,未写的为 null。"""
         headers, user_id = await user_headers_with_id(client, "13700000062")
         async with sm() as session:
             session.add(
@@ -107,7 +107,7 @@ class TestBalanceWarnNotification:
         warns = [r for r in rows if r["type"] == "balance_warn"]
         assert len(warns) == 1
         assert "小时" in warns[0]["content"]
-        # 预警只是提醒:实例不停机
+        # 实例不停机
         assert (await get_instance(client, headers, uuid))["status"] == "running"
 
     async def test_read_flow(self, client, sm, fake):
@@ -129,7 +129,7 @@ class TestBalanceWarnNotification:
         assert unread == []
 
     async def test_read_all_marks_everything_and_is_idempotent(self, client, sm, fake):
-        """全部已读:多条未读一次清零;重复调用幂等(仍 204,不再改动任何行)。"""
+        """全部已读:多条未读一次清零;重复调用幂等 204。"""
         headers, user_id = await user_headers_with_id(client, "13700000064")
         async with sm() as session:
             for i in range(3):
@@ -150,7 +150,7 @@ class TestBalanceWarnNotification:
             await client.get("/api/v1/notifications", params={"unread": True}, headers=headers)
         ).json()["items"]
         assert unread == []
-        # 重复调用幂等;全部列表仍可见(已读不消失)
+        # 重复调用幂等;已读不消失
         resp = await client.post("/api/v1/notifications/read-all", headers=headers)
         assert resp.status_code == 204
         all_items = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
@@ -184,7 +184,7 @@ class TestBalanceWarnNotification:
         assert by_title["other"].read_at is None
 
     async def test_list_pagination_beyond_50(self, client, sm, fake):
-        """站内信不封顶条数:limit/cursor 游标翻页,降序不重不漏。"""
+        """站内信 limit/cursor 游标翻页,降序不重不漏。"""
         headers, user_id = await user_headers_with_id(client, "13700000066")
         async with sm() as session:
             for i in range(60):
@@ -219,7 +219,7 @@ class TestBalanceWarnNotification:
 
 class TestAlertmanagerWebhook:
     async def test_critical_alert_sms_to_oncall(self, client, sm, fake):
-        """critical 平台告警:配置值班手机号后经 outbox 短信直发(不依赖站内信流),重放幂等。"""
+        """critical 平台告警:配置值班手机号后经 outbox 短信直发,重放幂等。"""
         from app.core.outbox import OutboxTask
 
         await set_platform_setting(sm, "oncall_phone", "13900001111")
@@ -248,7 +248,7 @@ class TestAlertmanagerWebhook:
                     await session.execute(select(OutboxTask).where(OutboxTask.type == "notify.sms"))
                 ).scalars()
             )
-        # 重放(同 fingerprint+startsAt)→ 幂等:不再投递,也不再补发短信任务
+        # 重放(同 fingerprint+startsAt)幂等
         resp = await client.post("/api/v1/webhooks/alertmanager", json=AM_PAYLOAD)
         assert resp.json()["ingested"] == 0
         async with sm() as session:
@@ -318,8 +318,7 @@ class TestAlertAck:
         user = await register(client, "13900000991")
         await client.post("/api/v1/webhooks/alertmanager", json=am_payload_for(user["user"]["id"]))
         ops = await admin_headers(sm, client, role="ops")
-        # 告警流 3 行:平台 admin_alert + 租户 gpu_fault(均 critical)+ 管理员绑定 TOTP
-        # 检测告警(warning)。ack 掉 gpu 行后剩 2
+        # 告警流 3 行:admin_alert + gpu_fault(critical)+ 管理员绑定 TOTP(warning);ack 后剩 2
         body = (await client.get("/api/admin/v1/alerts/unread-count", headers=ops)).json()
         assert body["count"] == 3
         assert body["critical_count"] == 2
@@ -334,8 +333,7 @@ class TestAlertAck:
         assert body["critical_count"] == 1
 
     async def test_forged_namespace_without_real_user_no_tenant_notify(self, client, sm, fake):
-        """伪造 namespace=tenant-<不存在的用户>:平台流照落,租户短信/站内信一行都不许出
-        (归属必须查库核实,label 由提交方任意填写)。"""
+        """namespace=tenant-<不存在的用户>:平台流照落,租户短信/站内信不出。"""
         await client.post("/api/v1/webhooks/alertmanager", json=AM_PAYLOAD)  # tenant-1 无此用户
         async with sm() as session:
             rows = (await session.execute(select(Notification))).scalars().all()
@@ -350,14 +348,14 @@ class TestAlertAck:
         ).json()
         assert len(critical) == 2
         assert all(a["severity"] == "critical" for a in critical)
-        # warning 桶里只有管理员绑定 TOTP 的检测告警,AM 报文不产生 warning
+        # warning 桶里只有管理员绑定 TOTP 的告警
         warning = (
             await client.get("/api/admin/v1/alerts", params={"severity": "warning"}, headers=ops)
         ).json()
         assert [a["title"] for a in warning] == ["管理员完成二要素(TOTP)绑定"]
 
     async def test_ack_non_alert_404(self, client, sm, fake):
-        """普通站内信(非告警流类型)不可确认:404,不暴露存在性之外的写面。"""
+        """普通站内信不可确认:404。"""
         ops = await admin_headers(sm, client, role="ops")
         async with sm() as session:
             row = Notification(user_id=None, type="announcement", title="t", content="c")
@@ -373,7 +371,7 @@ class TestAlertAck:
 
 class TestAlertmanagerAuthHardening:
     async def test_dev_without_token_rejected(self, client, sm, fake, monkeypatch):
-        """安全:除 test 外,未配置 token 一律拒绝接入。"""
+        """除 test 外,未配置 token 一律拒绝接入。"""
         from app.core.config import get_settings
 
         monkeypatch.setattr(get_settings(), "environment", "dev")
@@ -383,7 +381,7 @@ class TestAlertmanagerAuthHardening:
 
 class TestAlertmanagerWebhookHardening:
     async def test_oversized_body_rejected(self, client, sm, fake):
-        """报文体积上限:畸形/恶意大报文不能撑爆解析与写库。"""
+        """报文体积上限。"""
         body = b'{"alerts": []}' + b" " * (1024 * 1024)
         resp = await client.post(
             "/api/v1/webhooks/alertmanager",
@@ -402,7 +400,7 @@ class TestAlertmanagerWebhookHardening:
         assert resp.json()["code"] == "VALIDATION_ERROR"
 
     async def test_long_strings_truncated(self, client, sm, fake):
-        """外部提交的 summary 等字段长度不受信:入库前截断。"""
+        """summary 等字段入库前截断。"""
         payload = {
             "alerts": [
                 {
@@ -423,7 +421,7 @@ class TestAlertmanagerWebhookHardening:
         assert len(row.content) == 1024
 
     async def test_alerts_list_capped(self, client, sm, fake, monkeypatch):
-        """单次报文的 alerts 条数封顶:防一条报文灌入上万条通知。"""
+        """单次报文的 alerts 条数封顶。"""
         from app.modules.notify import router as notify_router
 
         monkeypatch.setattr(notify_router, "ALERT_MAX_ALERTS", 3)
@@ -435,7 +433,7 @@ class TestAlertmanagerWebhookHardening:
         assert resp.json()["ingested"] == 3
 
     async def test_ip_rate_limited(self, client, sm, fake, monkeypatch):
-        """IP 限流兜底;阈值远在 Alertmanager 重试节奏之上,正常重试不受阻。"""
+        """IP 限流;阈值在 Alertmanager 重试节奏之上。"""
         from app.modules.notify import router as notify_router
 
         monkeypatch.setattr(notify_router, "ALERT_RATE_LIMIT", 2)

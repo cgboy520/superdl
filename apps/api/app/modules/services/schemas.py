@@ -16,26 +16,25 @@ from app.modules.orchestrator.schemas import (
 
 
 class ServiceSpecIn(BaseModel):
-    """一个版本的完整规格:部署与版本更新共用。每个字段都快照到那一版的实例上,之后不可改。"""
+    """一个版本的完整规格(部署与版本更新共用),快照到那一版的实例上,之后不可改。"""
 
     sku_id: int
-    # 0 = CPU 实例(SKU 的 max_gpus_per_instance 也为 0);配对在 orchestrator 判
+    # 0 = CPU 实例;与 SKU 形态的配对在 orchestrator 判
     gpu_count: int = Field(default=1, ge=0, le=8)
     image_ref: str = Field(min_length=1, max_length=256)
-    # 不开 SSH 的服务没有公钥可选;with_ssh 时必须非空(下面的 validator)
+    # with_ssh 时必须非空(validator)
     ssh_key_ids: list[int] = Field(default_factory=list)
     data_disk_id: int | None = None
-    # 服务默认不开 SSH:开了就要占一个 NodePort,而服务容器通常连 sshd 都没有
+    # 服务默认不开 SSH
     with_ssh: bool = False
     container_command: list[str] | None = None
     container_args: list[str] | None = None
-    # 用户环境变量。整包加密落库,其中 env_secret_keys 列出的键在 Pod 侧走 Secret,
-    # 其余进 Pod spec 的明文 env
+    # 用户环境变量,整包加密落库;env_secret_keys 列出的键在 Pod 侧走 Secret
     env: dict[str, str] | None = None
     env_secret_keys: list[str] | None = None
     service_port: int = Field(ge=1, le=65535)
     health_path: str | None = Field(default=None, max_length=128)
-    # spot 与 subscription 互斥(market 是单值):可被回收与买断一段时间没有自洽的合并语义
+    # 购买模式(单值,spot 与 subscription 互斥)
     market: Literal["on_demand", "subscription", "spot"] = MARKET_ON_DEMAND
     period: Literal["day", "week", "month", "year"] | None = None
     period_count: int = Field(default=1, ge=1, le=MAX_PERIOD_COUNT)
@@ -49,7 +48,7 @@ class ServiceSpecIn(BaseModel):
             )
         validate_health_path(self.health_path)
         validate_user_env(self.env, self.env_secret_keys)
-        # 开了 SSH 却一把公钥都不选 = 建出一台谁也登不上去的实例(镜像不收口令登录)
+        # 开了 SSH 至少一把公钥
         if self.with_ssh and not self.ssh_key_ids:
             raise ValueError(render_message("orchestrator.sshKeyRequired", None))
         return self
@@ -62,23 +61,21 @@ class ServiceCreate(ServiceSpecIn):
 
 
 class ServiceRevisionCreate(ServiceSpecIn):
-    """版本更新的完整规格(与部署同一形态,规格 / 计费也可换)。
-    env_secret_keep:沿用当前版本密文值的键名 —— 明文从不回给前端,「不改」只能靠键名表达;
-    同名键若同时出现在 env 里,以 env 的新值为准。"""
+    """版本更新的完整规格(与部署同一形态)。env_secret_keep = 沿用当前版本密文值的键名;
+    同名键同时出现在 env 里以 env 为准。"""
 
     env_secret_keep: list[str] = Field(default_factory=list, max_length=64)
 
 
 class ServicePatch(BaseModel):
-    """改名与鉴权开关:两者都只改 services 行,不重新部署。"""
+    """改名与鉴权开关:只改 services 行。"""
 
     name: str | None = Field(default=None, min_length=1, max_length=64)
     require_api_key: bool | None = None
 
 
 class ServiceContainerOut(BaseModel):
-    """当前版本的容器配置回显(创建那一版时写入,之后不可改;要改请更新版本)。
-    env 只回明文项,密文项只回键名:回值就等于给了一个把密文变量读回明文的端点。"""
+    """当前版本的容器配置回显(不可改,要改请更新版本);env 只回明文项,密文项只回键名。"""
 
     image_ref: str
     container_command: list[str] | None
@@ -98,7 +95,7 @@ class ServiceOut(BaseModel):
     protocol: str
     require_api_key: bool
     desired_state: str
-    # 派生状态(state.py),不落库;ready 是「服务起来没有」的唯一真相,不能拿 status 代替
+    # 派生状态(state.py),不落库
     status: str
     ready: bool
     revision: int
@@ -111,14 +108,14 @@ class ServiceOut(BaseModel):
 
 
 class AdminServiceOut(ServiceOut):
-    """管理端全局服务视图:含租户与当前版本实例的调度节点(不暴露给用户端)。"""
+    """管理端全局服务视图:含租户与当前版本实例的调度节点。"""
 
     user_id: int
     node_name: str | None = None
 
 
 class ServiceEventOut(InstanceEventOut):
-    """服务级时间线 = 全部版本实例的事件并集,标出事件属于哪一版。"""
+    """服务级时间线:全部版本实例的事件并集,标出所属版本。"""
 
     instance_uuid: str
     revision: int | None
@@ -140,6 +137,6 @@ class ApiKeyOut(BaseModel):
 
 
 class ApiKeyCreateOut(ApiKeyOut):
-    """创建响应:明文 key 只在这一次出现,库里只有 HMAC 摘要,关掉就找不回来。"""
+    """创建响应:明文 key 只在这一次出现。"""
 
     key: str

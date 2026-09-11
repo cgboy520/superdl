@@ -1,10 +1,6 @@
-# cert-manager ClusterIssuer(cert-manager 本体经 helm 安装,见 deploy/cluster/helmfile.yaml.gotmpl)。
-# 只适用于 acmeDns.enabled=true 的档位(full):两张泛域名证书必须 DNS-01,solver 走
-# deploy/cluster/acme-dns.yaml 的集群内 acme-dns,凭据只能改自己子域的 TXT,不是全域 DNS 权限。
-# 公网委托与账户注册见 deploy/cluster/runbooks/acme-dns.md。
-# light 档 acmeDns.enabled=false(k3s 的 klipper-lb 会让 acme-dns 占节点 hostPort 53、劫持节点
-# 自身 DNS),不装 acme-dns 也不用本 Issuer:泛域名证书由运维把现成通配证书手工灌成
-# superdl/superdl-jupyter-wildcard-tls 与 superdl-svc-wildcard-tls,下面几个 Certificate 一并跳过。
+# cert-manager ClusterIssuer(本体经 helm 安装,见 deploy/cluster/helmfile.yaml.gotmpl)。只适用于 acmeDns.enabled=true 的档位(full):
+# 泛域名证书 DNS-01,solver 走 deploy/cluster/acme-dns.yaml 的集群内 acme-dns;委托与账户注册见 deploy/cluster/runbooks/acme-dns.md。
+# light 档不用本文件,通配证书手工灌成 superdl/superdl-jupyter-wildcard-tls 与 superdl-svc-wildcard-tls
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
@@ -18,22 +14,15 @@ spec:
     solvers:
       - dns01:
           acmeDNS:
-            # 集群内 acme-dns 的注册/更新 API(ClusterIP,不出集群)
+            # 集群内 acme-dns 的注册/更新 API(ClusterIP)
             host: http://acme-dns-api.cert-manager.svc.cluster.local:8080
-            # 账户 JSON 以**被验证的域**为键(泛域名 *.app.<域> 的挑战名是 app.<域>),值含
-            # username/password/fulldomain/subdomain/allowfrom;建法见 runbooks/acme-dns.md。
-            # 每张泛域名证书各要一个键,preflight.sh 按 app / svc 两个前缀校验
+            # 账户 JSON 以被验证的域为键(app.<域> / svc.<域> 各一个键),建法见 runbooks/acme-dns.md;preflight.sh 校验
             accountSecretRef:
               name: acme-dns-account
               key: acmedns.json
 ---
-# 三张平台域证书显式声明,不走 cert-manager 的 gateway-shim(那要给 cert-manager 开
-# --enable-gateway-api 特性开关,配错了到期才发现)。
-# 04-gateway.yaml 的 certificateRefs 直接引这里产出的 Secret(同 ns,不需要 ReferenceGrant)。
-#
-# 首装顺序不可颠倒:先 apply 本文件、等**全部** Certificate Ready
-# (kubectl get certificate -n superdl),再切 DNS 到 Gateway。未签发完时对应 listener 不
-# Programmed,该域 TLS 握手直接失败,且没有任何兜底证书。
+# 三张平台域证书显式声明(不走 gateway-shim);04-gateway.yaml 的 certificateRefs 引这里的 Secret。
+# 首装顺序:先 apply 本文件、等全部 Certificate Ready(kubectl get certificate -n superdl),再切 DNS 到 Gateway
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -56,7 +45,7 @@ spec:
   dnsNames:
     - console.superdl.example.com
 ---
-# 管理端独立一张:访问边界、证书轮换、故障影响面都要能与用户端分开处理
+# 管理端独立一张
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -80,14 +69,8 @@ spec:
   dnsNames:
     - "*.app.superdl.example.com"
 ---
-# 泛域名证书:服务型实例的对外端点(svc-<slug>.svc.<域>)共用一张,给 04-gateway.yaml 的
-# svc-https listener 用。与 *.app 分开两张,不合并:两者各自要一个 acme-dns 账户与一条 CNAME
-# 委托,合成一张会把两个入口的签发失败绑成一件事。
-#
-# ⚠ 首装前先把本域的 acme-dns 前置做完(注册账户、`_acme-challenge.svc.<域> CNAME <fulldomain>`
-# 委托、往 acmedns.json 追加 `svc.<域>` 键;步骤见 cluster/runbooks/acme-dns.md)。
-# 缺任一步本证书永远 Ready=False,svc-https listener 不 Programmed,全部服务端点 TLS 握手
-# 直接失败且无兜底证书。
+# 泛域名证书:服务型实例端点(svc-<slug>.svc.<域>)共用一张,给 04-gateway.yaml 的 svc-https listener;与 *.app 不合并。
+# 首装前完成本域 acme-dns 前置(注册账户、`_acme-challenge.svc.<域> CNAME <fulldomain>`、acmedns.json 追加 `svc.<域>` 键;见 cluster/runbooks/acme-dns.md)
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:

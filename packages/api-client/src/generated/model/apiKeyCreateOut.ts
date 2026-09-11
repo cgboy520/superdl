@@ -6,7 +6,7 @@
  */
 
 /**
- * 创建响应:明文 key 只在这一次出现,库里只有 HMAC 摘要,关掉就找不回来。
+ * 创建响应:明文 key 只在这一次出现。
  */
 export interface ApiKeyCreateOut {
   created_at: string;

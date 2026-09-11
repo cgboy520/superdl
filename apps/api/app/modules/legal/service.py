@@ -16,7 +16,7 @@ from app.modules.legal.schemas import (
 
 logger = get_logger(__name__)
 
-# 预置正文由迁移内联写入(published v1);键面在此登记,新增文档要先加迁移
+# 预置正文由迁移写入(published v1);新增文档要先加迁移
 VALID_DOC_KEYS: tuple[str, ...] = ("terms", "privacy", "deletion_notice")
 SUPPORTED_LOCALES: tuple[str, ...] = ("zh-CN", "en-US")
 DEFAULT_LOCALE = "zh-CN"
@@ -69,10 +69,8 @@ async def get_public_doc(
 async def record_registration_consents(
     session: AsyncSession, user_id: int, client_ip: str | None
 ) -> None:
-    """注册成功同事务落 terms/privacy 同意存证(版本=当前 zh-CN published)。
-
-    无 published 时跳过并告警(迁移预置保证生产必有;不因此阻断注册)。
-    """
+    """注册成功同事务落 terms/privacy 同意存证(版本 = 当前 zh-CN published);
+    无 published 跳过并告警。"""
     for doc_key in CONSENT_DOC_KEYS:
         row = await _published(session, doc_key, DEFAULT_LOCALE)
         if row is None:
@@ -143,8 +141,8 @@ async def admin_list_versions(
 async def admin_create_draft(
     session: AsyncSession, doc_key: str, locale: str, *, admin_id: int
 ) -> LegalDocVersion:
-    """基于当前 published 复制出新 draft(version=max+1);同语言无 published 时以
-    zh-CN published 为底稿(翻译起点)。每 (doc_key, locale) 同时仅允许一个 draft。"""
+    """基于当前 published 复制新 draft(version=max+1),同语言无 published 时以 zh-CN 为底稿;
+    每 (doc_key, locale) 同时仅一个 draft。"""
     _validate_doc_key(doc_key)
     _validate_locale(locale)
     existing_draft = (
@@ -241,7 +239,7 @@ async def admin_publish(
     try:
         await session.commit()
     except IntegrityError as exc:
-        # 并发发布同 (doc_key, locale):部分唯一索引兜底,后手按冲突处理而非 500
+        # 并发发布同 (doc_key, locale):部分唯一索引兜底 → 409
         await session.rollback()
         raise conflict(key="common.retryableConflict") from exc
     await session.refresh(row)

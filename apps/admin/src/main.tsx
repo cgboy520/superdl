@@ -15,9 +15,9 @@ import { authStore, readAdminToken } from "./stores/auth";
 
 configureApiClient({
   baseUrl: "",
-  // 读 localStorage 而非 store 快照:别的标签页刚续期的 token 立即生效
+  // 读 localStorage(跨标签页续期即时生效)
   getToken: () => readAdminToken(),
-  // 静默续期(Web Locks 跨标签页互斥在 mutator 内):滑动换发 access token,12h 绝对会话上限在服务端
+  // 静默续期(Web Locks 互斥在 mutator 内)
   refreshToken: async () => {
     const token = readAdminToken();
     if (!token) return false;
@@ -29,24 +29,23 @@ configureApiClient({
   onUnauthorized: () => {
     authStore.getState().logout();
     if (!window.location.pathname.startsWith("/login")) {
-      // 硬跳转到登录页并保留回跳地址(站内路径由登录页白名单校验)
+      // 硬跳转登录页并保留回跳地址
       const returnTo = window.location.pathname + window.location.search;
       window.location.href = `/login?returnTo=${encodeURIComponent(returnTo)}`;
     }
   },
 });
 
-// 底色三处拷贝收敛:global.css 的 var(--admin-bg)/var(--admin-chart-neutral) 在运行时由这里注入,
-// 单一事实源是 packages/ui tokens.ts adminColors(index.html 的静态防 FOUC 值需手动同步)
+// global.css 的 var(--admin-bg)/var(--admin-chart-neutral) 由这里注入,取 packages/ui tokens.ts adminColors(index.html 静态值手动同步)
 document.documentElement.style.setProperty("--admin-bg", adminColors.bgBase);
 document.documentElement.style.setProperty("--admin-chart-neutral", adminColors.chartNeutral);
-// 命令面板选中行底色(global.css .command-palette):主色经变量注入,CSS 不硬编码
+// 命令面板选中行底色(global.css .command-palette)经变量注入
 document.documentElement.style.setProperty("--admin-accent", adminColors.dataAccent);
 
 const router = createRouter({
   routeTree,
   defaultPreload: "intent",
-  // beforeLoad(/me) 未完成时的等待反馈:居中 Spin,避免白屏无响应
+  // beforeLoad(/me) 等待态
   defaultPendingComponent: () => (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <Spin size="large" />
@@ -63,7 +62,7 @@ declare module "@tanstack/react-router" {
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      {/* 全局动效策略:尊重系统减弱动态效果设置(NOC 端仅保留状态变更淡入) */}
+      {/* 尊重系统减弱动态效果设置 */}
       <MotionConfig reducedMotion="user">
         <RouterProvider router={router} />
       </MotionConfig>

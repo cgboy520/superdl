@@ -6,7 +6,7 @@
  */
 
 /**
- * 用户端退款单视图。不透出 review_by/payout_by(操作人 id 对用户无意义)。
+ * 用户端退款单视图。不透出 review_by/payout_by。
  */
 export interface RefundOut {
   amount: string;

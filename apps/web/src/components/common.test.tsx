@@ -1,5 +1,4 @@
-/** HexTag 渲染回归:深/浅主题下档位/竞价/包周期 Tag 的底色必须是 token 原值(深底白字),
- *  不被 antd dark algorithm 调亮(调亮后白字对比度不达标,暗色下近白底白字)。 */
+/** HexTag 渲染回归:深/浅主题下档位/竞价/包周期 Tag 底色必须是 token 原值,不被 antd dark algorithm 调亮。 */
 import type { InstanceSubscriptionOut } from "@superdl/api-client";
 import { colorPrimary, statusColors, webDarkTheme, webTheme } from "@superdl/ui";
 import { ConfigProvider, theme as antdTheme } from "antd";
@@ -19,7 +18,7 @@ function renderThemed(node: ReactElement, dark: boolean) {
   );
 }
 
-/** 未过期包月订阅(走 colorPrimary 分支) */
+/** 未过期包月订阅(colorPrimary 分支) */
 const SUB: InstanceSubscriptionOut = {
   period: "month",
   period_count: 1,

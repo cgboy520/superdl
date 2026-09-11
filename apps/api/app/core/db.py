@@ -21,12 +21,7 @@ if TYPE_CHECKING:
 
 
 def _split_db_tls(url: str) -> tuple[str, dict[str, str]]:
-    """摘下 URL 查询串里的 sslmode,翻译成 asyncpg 的 ssl 连接参。
-
-    asyncpg 没有 libpq 的 sslmode 参数(其 ssl 直接接受同款字符串:
-    require/verify-ca/verify-full/...);留在 URL 里会被 SQLAlchemy 透传成
-    connect(sslmode=...) → TypeError。返回 (干净 url, connect_args 增补)。
-    """
+    """摘下 URL 里的 sslmode 翻译成 asyncpg ssl 连接参;返回 (干净 url, connect_args 增补)。"""
     from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
     parsed = urlparse(url)
@@ -65,9 +60,7 @@ def get_engine() -> AsyncEngine:
             url,
             pool_size=settings.db_pool_size,
             pool_pre_ping=True,
-            # 三个 timeout 必须都有:卡住的 SELECT FOR UPDATE 会耗尽连接池 → 双副本
-            # readiness 同时超时 → 全站 503(DB 其实活着)。
-            # 迁移 Job 另有更严的 PGOPTIONS(lock_timeout=3s),不受此影响
+            # 三个 timeout 都要有;迁移 Job 另有更严的 PGOPTIONS
             connect_args={
                 **tls_args,
                 "server_settings": {
@@ -88,7 +81,7 @@ def get_sessionmaker() -> async_sessionmaker[AsyncSession]:
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
-    """请求级 session。路由/服务内自行 commit;异常自动 rollback。"""
+    """请求级 session;调用方自行 commit,异常自动 rollback。"""
     async with get_sessionmaker()() as session:
         yield session
 
@@ -106,7 +99,7 @@ async def dispose_engine() -> None:
 
 @cache
 def _script_directory() -> "ScriptDirectory":
-    """镜像/仓库内 alembic 脚本目录(进程内解析一次;容器内代码不可变,缓存安全)。"""
+    """alembic 脚本目录(进程内解析一次)。"""
     from alembic.script import ScriptDirectory
 
     api_root = Path(__file__).resolve().parents[2]  # app/core/db.py → apps/api
@@ -114,7 +107,7 @@ def _script_directory() -> "ScriptDirectory":
 
 
 def code_schema_head() -> str:
-    """代码侧 schema head(单一事实源:alembic/versions)。多 head 视为仓库事故。"""
+    """代码侧 schema head(alembic/versions);多 head 视为仓库事故。"""
     heads = _script_directory().get_heads()
     if len(heads) != 1:
         raise RuntimeError(f"alembic 多 head:{heads}——须保持线性历史,先 merge 出单 head")
@@ -122,13 +115,8 @@ def code_schema_head() -> str:
 
 
 def schema_state(db_revisions: list[str]) -> str:
-    """比对 DB alembic_version 与代码 head,返回 readyz 判定。
-
-    发布模型是停机发布(stop → alembic upgrade head → start),不存在合法的版本偏差窗口:
-    - ready:仅当 DB 恰为单行且等于代码 head;
-    - 其余 503:never_migrated(库从未迁移)/ multi_head(仓库事故)/
-      schema_mismatch(落后/领先/未知版本 = 部署事故)——不得带病接流量。
-    """
+    """比对 DB alembic_version 与代码 head:单行且相等 → ready;否则 never_migrated / multi_head /
+    schema_mismatch → 503。"""
     try:
         head = code_schema_head()
     except RuntimeError:

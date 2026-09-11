@@ -1,6 +1,4 @@
-/** 更新版本抽屉(基于当前版本预填):容器配置 / 服务配置 / 高级配置可改,规格与计费沿用、鉴权在「设置」改。
- *  密文 env 不回显:每个密文键默认「沿用当前值」(键名进 env_secret_keep),可「覆盖为新值」或「删除」。
- *  重建更新:提交前 L2 确认(旧版本立即停止、端点 503 到新版本就绪);幂等键按表单快照派生,失败不轮换。 */
+/** 更新版本抽屉(基于当前版本预填):容器 / 服务 / 高级配置可改,规格与计费沿用,鉴权在「设置」改。密文 env 不回显:每个密文键默认「沿用」(进 env_secret_keep),可覆盖或删除。提交前 L2 确认;幂等键按表单快照派生,失败不轮换。 */
 
 import { isApiError, type ServiceOut, type ServiceRevisionCreate } from "@superdl/api-client";
 import { idemKeyOf, marketLabelKey, useApiErrorText } from "@superdl/ui";
@@ -42,7 +40,7 @@ export function RevisionDrawer({
       destroyOnHidden
       title={t("services.revision.title", { no: service.revision })}
     >
-      {/* 每次打开都从当前版本重新预填 */}
+      {/* 每次打开从当前版本重新预填 */}
       {open && <RevisionForm key={service.revision} service={service} onClose={onClose} />}
     </Drawer>
   );
@@ -123,7 +121,7 @@ function RevisionForm({ service, onClose }: { service: ServiceOut; onClose: () =
       title: t("services.revision.confirmTitle", { no: nextNo }),
       consequences: [t("services.revision.confirmBody"), t("services.revision.confirmKeep")],
       onOk: async () => {
-        // 幂等键 = 抽屉 nonce + 表单快照:响应丢失后重提回同一个新版本,改了参数才是又一版
+        // 幂等键 = 抽屉 nonce + 表单快照
         const idempotencyKey = idemKeyOf("svc-rev", [
           nonce,
           service.slug,

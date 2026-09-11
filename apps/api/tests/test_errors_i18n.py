@@ -43,10 +43,7 @@ def test_params_mismatch_falls_back_to_template() -> None:
 
 
 def test_export_script_matches_checked_in_catalog(tmp_path: Path) -> None:
-    """生成链 no-diff:入库的 zh errors.json 必须与 MESSAGES 同步(CI 同款校验)。
-
-    导出目标改指 tmp_path:漂移时只 fail,不污染工作区文件。
-    """
+    """入库的 zh errors.json 与 MESSAGES 同步(导出到 tmp_path 比对)。"""
     import importlib.util
 
     repo = Path(__file__).resolve().parents[3]

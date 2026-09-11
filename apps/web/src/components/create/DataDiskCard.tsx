@@ -1,5 +1,4 @@
-/** 数据盘卡:「不需要 / 新建 / 挂载已有盘」。新建为行内直建(名称 + 容量滑块,单价来自 /policies 折日展示),
- *  实际建盘动作在提交时由页面执行;盘清单加载失败绝不伪装成「没有可挂载的盘」。 */
+/** 数据盘卡:「不需要 / 新建 / 挂载已有盘」。新建为行内直建(名称 + 容量滑块,单价来自 /policies 折日展示),建盘动作由页面在提交时执行;盘清单加载失败不伪装成「没有可挂载的盘」。 */
 
 import { diskDailyEstimate, formatSizeGb } from "@superdl/ui";
 import { DataErrorAlert } from "@superdl/ui/components";
@@ -39,7 +38,7 @@ export function DataDiskCard({
   const disksQ = useDisks();
   const { data: policies } = usePolicies();
   const diskPriceGbMonth = policies?.disk_price_gb_month;
-  // 「约 ¥X/日」为展示层估算(月价/30,BigInt 禁浮点);入账以后端日结为准
+  // 「约 ¥X/日」为展示层估算(月价/30,BigInt);入账以后端日结为准
   const diskDaily = diskDailyEstimate(diskPriceGbMonth, newGb);
 
   return (
@@ -66,7 +65,7 @@ export function DataDiskCard({
                 onChange={(e) => onNewNameChange(e.target.value)}
               />
             </Space>
-            {/* 容量:Slider 与 InputNumber 联动同值(与存储页新建盘同一录入体验) */}
+            {/* 容量:Slider 与 InputNumber 联动同值 */}
             <Flex gap={12} align="center">
               <Slider
                 style={{ flex: 1 }}

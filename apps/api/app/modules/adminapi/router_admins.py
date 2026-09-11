@@ -45,7 +45,7 @@ async def admin_update_admin(
     session: DbSession,
     request: Request,
 ) -> AdminAccountOut:
-    """改角色 / 停用。停用即刻生效(deps 每请求实时查库 + 比对 token_version)。"""
+    """改角色 / 停用。停用即刻生效(deps 每请求比对 token_version)。"""
     updated, before = await service.update_admin(
         session, admin_id, role=body.role, new_status=body.status, actor_id=admin.id
     )

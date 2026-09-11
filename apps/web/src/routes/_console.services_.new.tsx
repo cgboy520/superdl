@@ -1,8 +1,4 @@
-/**
- * 部署服务:分段单页(① 基本信息 → ② 容器配置 → ③ 服务配置 → ④ 高级配置)+ 左侧步骤锚点 + 底部结算条。
- * 结构照 DaoCloud 的四步向导、字段照 Verda 的部署表单;不用 antd Form(条件挂载的公钥块 / 盘子表单未挂载时
- * validateFields 会静默放行),全部受控 state + 派生 issue。数据盘「新建」先建盘再部署,建盘成功而部署失败须提示盘已计费。
- */
+/** 部署服务:分段单页(① 基本信息 → ② 容器配置 → ③ 服务配置 → ④ 高级配置)+ 左侧步骤锚点 + 底部结算条。不用 antd Form,全部受控 state + 派生 issue。数据盘「新建」先建盘再部署,建盘成功而部署失败须提示盘已计费。 */
 
 import { isApiError, type DiskOut, type SkuMarketOut } from "@superdl/api-client";
 import {
@@ -74,7 +70,7 @@ export interface DeploySearch {
   count?: number;
 }
 
-/** 深链预填:规格 / 卡数 / 计费方式;竞价与包周期互斥,两个都带进来时以 period 为准。 */
+/** 深链预填:规格 / 卡数 / 计费方式;竞价与包周期互斥,以 period 为准。 */
 export function deployValidateSearch(search: Record<string, unknown>): DeploySearch {
   const out: DeploySearch = {};
   const sku = Number(search.sku_id);
@@ -150,7 +146,7 @@ function DeployPage() {
   const [ecoOpen, setEcoOpen] = useState(false);
   const [spotOpen, setSpotOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  // 幂等键 = 本次挂载的 nonce + 参数快照:同参数重放同键;新进入本页才是新单
+  // 幂等键 = 本次挂载的 nonce + 参数快照
   const [formNonce] = useState(() => crypto.randomUUID());
   const [mountedAt] = useState(() => Date.now());
   const [mountSnapshot] = useState(() => ({ skuId, gpuCount, billingMode, newDiskName }));
@@ -178,7 +174,7 @@ function DeployPage() {
 
   const errText = useApiErrorText();
   const createService = useCreateService({
-    // 错误统一在 doCreate 的 catch 里出(避免 NO_CAPACITY 引导与全局错误弹两条)
+    // 错误统一在 doCreate 的 catch 里出
     silentError: true,
     onSuccess: (svc) => {
       message.success(t("services.deploying", { name: svc.name }));
@@ -219,7 +215,7 @@ function DeployPage() {
         ? ((disks ?? []).find((d) => d.id === existingDiskId)?.size_gb ?? 0)
         : 0;
   const diskDaily = diskDailyEstimate(diskPriceGbMonth, diskGb);
-  // BigInt 比较禁浮点:按量门槛 = 1 小时费用,包周期 = 应付全额;报价未就绪必须不放行
+  // BigInt 比较:按量门槛 = 1 小时费用,包周期 = 应付全额;报价未就绪不放行
   const needAmount = period ? quote?.amount : hourlyTotal;
   const balanceReady = wallet != null && (!period || quote != null);
   const enough =
@@ -232,7 +228,7 @@ function DeployPage() {
   const commandList = commandToList(command);
   const argList = argRows.map((r) => r.value.trim()).filter((v) => v !== "");
 
-  /** 每段的第一个问题(挂在禁用主按钮的 tooltip 与左侧步骤条上);顺序即用户该先填哪一格。 */
+  /** 每段的第一个问题(禁用主按钮的 tooltip 与左侧步骤条用);顺序即填写顺序。 */
   const sectionIssues: (string | null)[] = [
     sku ? null : t("services.form.specNeeded"),
     (() => {
@@ -284,7 +280,7 @@ function DeployPage() {
   const doCreate = async () => {
     if (!sku || !imageRef || servicePort == null) return;
     setSubmitting(true);
-    // 幂等键由参数派生且失败不轮换:响应丢失后重提不会部署出第二个服务,改了参数才是新单
+    // 幂等键由参数派生且失败不轮换
     const idempotencyKey = idemKeyOf("svc", [
       formNonce,
       sku.id,
@@ -314,11 +310,11 @@ function DeployPage() {
         try {
           disk = (await createDisk.mutateAsync({
             body: { name: newDiskName.trim() || defaultDiskName(), size_gb: newDiskGb },
-            // 与服务同一个参数快照派生:建盘成功但部署失败时重提,不会再多一块盘
+            // 与服务同一个参数快照派生
             idempotencyKey,
           })) as DiskOut;
         } catch {
-          return; // 建盘失败:useApiMutation 已弹错误,直接终止
+          return; // 建盘失败,错误已由 useApiMutation 弹出
         }
         diskId = disk.id;
       }
@@ -362,7 +358,7 @@ function DeployPage() {
     }
   };
 
-  /** 竞价同意之后的下一道闸:经济档 = 落 hami 池的共享(软切分超卖);mig 池是硬切分,不弹。 */
+  /** 竞价同意之后的下一道闸:经济档 = hami 池共享(软切分超卖);mig 池不弹。 */
   const afterSpotConsent = () => {
     if (sku && skuVariant(sku.tier, sku.pool_label) === "shared_hami") {
       setEcoOpen(true);
@@ -406,7 +402,7 @@ function DeployPage() {
 
   const sections = (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* ① 基本信息:名称 + 算力规格 + 计费方式(名称与算力放第一段,与 Verda / DaoCloud 同序) */}
+      {/* ① 基本信息:名称 + 算力规格 + 计费方式 */}
       <Card id={SECTION_IDS[0]} title={t("services.form.section1")}>
         <Space orientation="vertical" size={16} style={{ width: "100%" }}>
           <Space orientation="vertical" size={4} style={{ width: "100%" }}>
@@ -449,7 +445,7 @@ function DeployPage() {
           {sku && !sku.spot_enabled && billingMode === "spot" && (
             <Alert type="info" showIcon title={t("market.spotFallbackToHourly")} />
           )}
-          {/* 竞价只警示不禁止,但被回收会断掉对外地址,这一句必须在下单前出现 */}
+          {/* 竞价只警示不禁止;回收会断对外地址,下单前必须出现 */}
           {isSpot && <Alert type="warning" showIcon title={t("copy.spotNotForService")} />}
         </Space>
       </Card>
@@ -498,7 +494,7 @@ function DeployPage() {
               {t("services.form.withSsh")}
             </Checkbox>
             <Typography.Text type="secondary">{t("services.form.withSshHint")}</Typography.Text>
-            {/* 勾了才要公钥:后端对 with_ssh 的服务同样要求 ssh_key_ids 非空 */}
+            {/* 勾了才要公钥:后端对 with_ssh 服务要求 ssh_key_ids 非空 */}
             {withSsh && <SshKeyPicker value={keyIds} onChange={setKeyIds} />}
           </Space>
           <Space orientation="vertical" size={4} style={{ width: "100%" }}>
@@ -558,7 +554,7 @@ function DeployPage() {
   );
 
   return (
-    // 不用 Space:其 ant-space-item 包装会让 sticky 结算条的包含块只剩自身高度
+    // 不用 Space(ant-space-item 包装会破坏 sticky 结算条的包含块)
     <div style={{ display: "flex", flexDirection: "column", gap: 16, width: "100%" }}>
       <Typography.Title level={4} style={{ margin: 0 }}>
         {t("services.deploy")}

@@ -1,5 +1,4 @@
-/** 短信发码三件套:人机校验 → 发码 → 60s 重发倒计时(登录页与改密弹窗共用)。
- *  倒计时递减只走 updater 纯函数,清零与卸载的清 timer 都在 effect 里(StrictMode 双调安全)。 */
+/** 短信发码三件套:人机校验 → 发码 → 60s 重发倒计时(登录页与改密弹窗共用)。倒计时递减走 updater 纯函数,清 timer 在 effect 里。 */
 import type { SmsCodeRequest } from "@superdl/api-client";
 import { App } from "antd";
 import { useEffect, useRef, useState } from "react";
@@ -35,7 +34,7 @@ export function useSmsCode(purpose: SmsCodeRequest["purpose"], sentText: string)
       timer.current = setInterval(() => setCountdown((c) => (c > 0 ? c - 1 : 0)), 1000);
     },
   });
-  /** 人机校验先行(安全策略开启时):拿到一次性 token 才发码;关闭时 token 为空直接发码;SDK 不可用提示刷新。 */
+  /** 人机校验先行(安全策略开启时):拿到一次性 token 才发码;关闭时直接发码;SDK 不可用提示刷新。 */
   const send = (phone: string): void => {
     void (async () => {
       try {

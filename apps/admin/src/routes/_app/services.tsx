@@ -1,5 +1,4 @@
-/** 在线服务:全局服务表(不限租户),检索与「含已删除」入 URL(replace);处置只有强制停止(委托当前实例)。
- *  独立菜单项而非租户页第四 Tab:NOC 要直达,筛选参数也不与实例表打架。 */
+/** 在线服务:全局服务表(不限租户),检索与「含已删除」入 URL;处置只有强制停止。 */
 
 import { PageContainer } from "@superdl/ui/components";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
@@ -12,7 +11,7 @@ import { AdminServicesTable } from "./-AdminServicesTable";
 
 export type ServicesSearch = { q?: string; user_id?: number; released?: "1" };
 
-/** q:名称或 slug 前缀;user_id:从租户抽屉「查看全部」跳入;released=1:含已删除。非法值剥离。 */
+/** q:名称或 slug 前缀;user_id:租户过滤;released=1:含已删除。 */
 export function servicesValidateSearch(search: Record<string, unknown>): ServicesSearch {
   const out: ServicesSearch = {};
   if (typeof search.q === "string" && search.q.trim()) out.q = search.q;
@@ -33,7 +32,7 @@ function ServicesPage() {
   const qc = useQueryClient();
   const { q, user_id: userId, released } = Route.useSearch();
   const [input, setInput] = useState(q ?? "");
-  // URL 变化(后退 / 抽屉跳入)时回流输入框
+  // URL 变化回流输入框
   const [prevQ, setPrevQ] = useState(q);
   if (q !== prevQ) {
     setPrevQ(q);

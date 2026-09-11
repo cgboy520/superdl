@@ -1,14 +1,5 @@
-/** echarts 按需注册封装(两端共用)。
- *  新增图型在此登记,禁止在页面里直接 import echarts。
- *
- *  基于 echarts 原生实例的薄封装(echarts-for-react 已停更于 echarts 5 时代):
- *  - option 变更整量 setOption(notMerge),避免旧 series 残留;
- *  - 容器尺寸变化经 ResizeObserver 自动 resize;
- *  - aria.enabled 常开,ariaLabel 作为图表的可访问名称(读屏替代文本)。
- *
- *  theme="noc":管理端深色图表预设(轴/网格/提示框默认色取自 adminColors),
- *  调用方 option 里的显式色仍优先(theme 只作默认值兜底,不改变既有手写配色)。
- */
+/** echarts 按需注册封装(两端共用);新增图型在此登记,页面禁止直接 import echarts。
+ *  option 整量 setOption(notMerge);ResizeObserver 自动 resize;aria.enabled 常开。theme="noc" 为管理端深色预设,option 显式色优先。 */
 
 import { BarChart, LineChart, PieChart } from "echarts/charts";
 import {
@@ -70,7 +61,7 @@ echarts.registerTheme("noc", {
   },
 });
 
-/** 用户端浅色图表预设(实例监控/费用环图):轴/网格/提示框色取自浅色板 */
+/** 用户端浅色图表预设 */
 echarts.registerTheme("web-light", {
   color: [
     colorPrimary,
@@ -102,7 +93,7 @@ echarts.registerTheme("web-light", {
   },
 });
 
-/** 用户端暗色图表预设(「开发者夜间工作台」):色板与 webDarkColors 同源 */
+/** 用户端暗色图表预设(色板同 webDarkColors) */
 echarts.registerTheme("web-dark", {
   color: [
     webDarkColors.menuSelectedColor,
@@ -140,13 +131,13 @@ export interface EChartProps {
   className?: string;
   /** 已注册主题名(如 "noc") */
   theme?: string;
-  /** 图表的可访问名称:读屏时作为整图替代描述(aria.enabled 常开) */
+  /** 图表可访问名称(读屏) */
   ariaLabel?: string;
   /** 加载中:图表区盖 Spin */
   loading?: boolean;
-  /** 无数据空态:true 渲染默认空态文案,ReactNode 自定义(图表保留挂载但不可见) */
+  /** 无数据空态:true 默认文案,ReactNode 自定义 */
   empty?: boolean | ReactNode;
-  /** 断源降级(如监控 503「监控暂不可用」):ReactNode 自定义内容;true 用默认文案 */
+  /** 断源降级:true 默认文案,ReactNode 自定义 */
   degraded?: boolean | ReactNode;
 }
 
@@ -164,7 +155,7 @@ export default function EChart({
   const chartRef = useRef<echarts.ECharts | null>(null);
   const { t } = useTranslation("shared");
 
-  // 实例生命周期与主题绑定(theme 运行期不变;变化则整体重建)
+  // theme 变化整体重建实例
   useEffect(() => {
     if (!ref.current) return;
     const chart = echarts.init(ref.current, theme);
@@ -185,7 +176,7 @@ export default function EChart({
     );
   }, [option, ariaLabel]);
 
-  // 三态盖层:图表 div 始终挂载(visibility 切换),避免空态→有数据时图表不重建、布局不跳高
+  // 三态盖层:图表 div 始终挂载(visibility 切换)
   const covered = Boolean(loading || empty || degraded);
   const overlay = loading ? (
     <Spin />

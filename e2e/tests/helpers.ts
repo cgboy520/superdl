@@ -1,16 +1,8 @@
-/** 跨 spec 文件共用的小工具与「同款前置」步骤。
- *
- * UI 前置(registerViaUi/rechargeViaUi/addSshKeyViaUi)只由 smoke 使用,守住 UI 链路本身;
- * 其余 spec 用 API 直达版(loginViaApi/rechargeViaApi/addSshKeyViaApi)跳过 UI 步骤,
- * 省下每条几十秒,也消掉与用例无关的失败点。 */
+/** 跨 spec 共用工具与前置。UI 前置(registerViaUi/rechargeViaUi/addSshKeyViaUi)只由 smoke 使用;其余 spec 用 API 直达版(loginViaApi/rechargeViaApi/addSshKeyViaApi)。 */
 
 import { expect, type Locator, type Page } from "@playwright/test";
 
-/**
- * 生成一个本轮唯一的测试手机号(139 + 8 位)。
- * 必须带随机位而不能只用 Date.now():playwright 按文件并行,同毫秒起跑的两个 spec 会拿到同一个号。
- * 毫秒后 5 位 + 3 位随机:保留时间前缀便于按时间找出测试用户。
- */
+/** 本轮唯一的测试手机号(139 + 毫秒后 5 位 + 3 位随机;spec 并行,不能只用 Date.now())。 */
 export function uniquePhone(): string {
   const ms = String(Date.now()).slice(-5);
   const rand = String(Math.floor(Math.random() * 1000)).padStart(3, "0");
@@ -46,11 +38,10 @@ export async function registerViaUi(page: Page, phone: string): Promise<void> {
   await expect(page).not.toHaveURL(/login/, { timeout: 15_000 });
 }
 
-/** 经 API 建号并注入登录态:access token 由 addInitScript 在应用脚本前写入 localStorage,
- *  refresh cookie 经 context 共享的 cookie jar 由浏览器托管。返回 access token 供后续 API 前置用。 */
+/** 经 API 建号并注入登录态:access token 由 addInitScript 写入 localStorage,refresh cookie 由浏览器托管;返回 access token。 */
 export async function loginViaApi(page: Page, phone: string): Promise<string> {
   const code = await page.request.post("/api/v1/auth/sms-code", {
-    // dev 环境安全策略 captcha_enabled 默认关闭:发码不带人机校验 token
+    // dev 的 captcha_enabled 默认关闭,发码不带人机校验 token
     data: { phone, purpose: "register" },
   });
   expect(code.status(), await code.text()).toBe(204);
@@ -59,7 +50,7 @@ export async function loginViaApi(page: Page, phone: string): Promise<string> {
   });
   expect(resp.status(), await resp.text()).toBe(201);
   const data = (await resp.json()) as { access_token: string };
-  // 键名对齐 apps/web stores/auth.ts 的 TOKEN_KEY(函数体序列化进浏览器,无法引用本模块常量)
+  // 键名对齐 apps/web stores/auth.ts 的 TOKEN_KEY(函数体序列化进浏览器,不能引用常量)
   await page.addInitScript(
     (token) => window.localStorage.setItem("superdl.web.accessToken", token),
     data.access_token,
@@ -67,7 +58,7 @@ export async function loginViaApi(page: Page, phone: string): Promise<string> {
   return data.access_token;
 }
 
-/** mock 渠道经 API 充值:建单 → mock 回调标记支付成功(需 dev 的 payment_mock 开启,同 UI 链路)。 */
+/** mock 渠道经 API 充值:建单 → mock 回调标记支付成功(需 dev 的 payment_mock 开启)。 */
 export async function rechargeViaApi(page: Page, token: string, amount: string): Promise<void> {
   const order = await page.request.post("/api/v1/wallet/recharges", {
     headers: { Authorization: `Bearer ${token}` },
@@ -81,7 +72,7 @@ export async function rechargeViaApi(page: Page, token: string, amount: string):
   expect(paid.status(), await paid.text()).toBe(200);
 }
 
-/** 经 API 添加一把 e2e 公钥(开发机形态创建时必须选一把)。 */
+/** 经 API 添加一把 e2e 公钥(开发机创建必须选一把)。 */
 export async function addSshKeyViaApi(page: Page, token: string): Promise<void> {
   const resp = await page.request.post("/api/v1/ssh-keys", {
     headers: { Authorization: `Bearer ${token}` },
@@ -90,8 +81,7 @@ export async function addSshKeyViaApi(page: Page, token: string): Promise<void> 
   expect(resp.status(), await resp.text()).toBe(201);
 }
 
-/** mock 渠道充值并关掉弹窗。amount 省略 = 用弹窗默认额(¥100);
- *  包周期一次性预扣整段周期,默认额不够,须显式给大额。 */
+/** mock 渠道充值并关掉弹窗。amount 省略 = 弹窗默认额(¥100);包周期须显式给大额。 */
 export async function rechargeViaUi(page: Page, amount?: string): Promise<void> {
   await page.goto("/billing");
   await page
@@ -105,7 +95,7 @@ export async function rechargeViaUi(page: Page, amount?: string): Promise<void> 
   await page.keyboard.press("Escape");
 }
 
-/** 添加一把 SSH 公钥(开发机形态创建时必须选一把)。 */
+/** 添加一把 SSH 公钥(开发机创建必须选一把)。 */
 export async function addSshKeyViaUi(page: Page): Promise<void> {
   await page.goto("/settings");
   await page.getByLabel("名称").fill("e2e-key");
@@ -114,7 +104,7 @@ export async function addSshKeyViaUi(page: Page): Promise<void> {
   await expect(page.getByText("公钥已添加")).toBeVisible({ timeout: 10_000 });
 }
 
-/** 市场页选中「共享·标准」那条 SKU;计费方式与形态分叉由各 spec 自己接。 */
+/** 市场页选中「共享·标准」SKU;计费方式与形态分叉由各 spec 自己接。 */
 export async function pickSharedStandardSku(page: Page): Promise<void> {
   await page.goto("/market");
   const skuRow = page.locator(".ant-table-row", { hasText: "共享·标准" }).first();
@@ -122,8 +112,7 @@ export async function pickSharedStandardSku(page: Page): Promise<void> {
   await skuRow.getByRole("radio").check();
 }
 
-/** 创建页「自定义镜像」表单块:切自定义镜像 + 填 e2e 镜像 + 勾选 e2e 公钥。
- *  提交按钮文案随计费方式分叉(创建并开机/支付并创建),由各 spec 自己点。 */
+/** 创建页「自定义镜像」表单块:切自定义镜像 + 填 e2e 镜像 + 勾选 e2e 公钥;提交按钮由各 spec 自己点。 */
 export async function fillCustomImageForm(page: Page): Promise<void> {
   await page.getByText("自定义镜像").click();
   await page
@@ -132,7 +121,7 @@ export async function fillCustomImageForm(page: Page): Promise<void> {
   await page.getByRole("checkbox", { name: /e2e-key/ }).check();
 }
 
-/** 实例列表等首行进入「运行中」(worker+reconciler 推进),返回首行供后续行内断言。 */
+/** 实例列表等首行进入「运行中」,返回首行。 */
 export async function waitFirstRowRunning(page: Page): Promise<Locator> {
   await expect(page).toHaveURL(/instances/, { timeout: 20_000 });
   const row = page.locator(".ant-table-row").first();

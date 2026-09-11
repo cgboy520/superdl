@@ -1,11 +1,10 @@
-"""资金账实核对(只报不改;资金侧只写自己的核对游标 reconcile_checkpoints)。
+"""资金账实核对(只报不改;只写核对游标 reconcile_checkpoints)。
 
-核对三个不变式:
-1. 每个用户 wallets.balance == balance_ledger 逐笔链式累计(增量扫描,断链可定位);
-2. 窗口内 bills_* 出账合计 == ledger consume 合计(两侧都按账单归属期切窗);
-3. consume 流水的 ref_id 必须能回连到账单行(悬挂消费 = 有扣款无出账)。
-
-只报不改:发现差异打 error 日志 + 指标 + 管理端告警,不自动纠正账。
+三个不变式:
+1. 每个用户 wallets.balance == balance_ledger 逐笔链式累计(增量扫描);
+2. 窗口内 bills_* 出账合计 == ledger consume 合计(两侧按账单归属期切窗);
+3. consume 流水的 ref_id 必须能回连到账单行。
+差异打 error 日志 + 指标 + 管理端告警。
 """
 
 from dataclasses import dataclass
@@ -34,7 +33,7 @@ logger = get_logger(__name__)
 
 @dataclass
 class WalletMismatch:
-    """钱包核对差异。kind: chain_break(逐笔断链) / balance_drift(末端快照≠余额)。"""
+    """钱包核对差异。kind: chain_break(逐笔断链)/ balance_drift(末端快照≠余额)。"""
 
     user_id: int
     kind: str
@@ -46,11 +45,8 @@ class WalletMismatch:
 async def _scan_user_chain(
     session: AsyncSession, wallet_row: Wallet, checkpoint: ReconcileCheckpoint | None
 ) -> tuple[WalletMismatch | None, int, Decimal]:
-    """扫一个用户 checkpoint 之后的增量流水,逐笔验链。
-
-    链式不变式:按 id 序,e.balance_after == 前一笔 balance_after + e.amount
-    (无 checkpoint 时以 0.00 起算,等价于「首笔必须自洽」)。
-    返回 (差异|None, 新的游标 last_ledger_id, 新的游标 balance_after)。
+    """扫一个用户 checkpoint 之后的增量流水,逐笔验链:按 id 序,e.balance_after == 前一笔 + e.amount
+    (无 checkpoint 以 0.00 起算)。返回 (差异|None, 新游标 last_ledger_id, 新游标 balance_after)。
     """
     last_id = checkpoint.last_ledger_id if checkpoint else 0
     prev = checkpoint.balance_after if checkpoint else Decimal("0.00")
@@ -81,7 +77,7 @@ async def _scan_user_chain(
                 prev,
             )
         prev = e.balance_after
-    # 末端快照必须等于钱包余额(钱包被直接改/流水被删都会在这里现形)
+    # 末端快照必须等于钱包余额
     if prev != wallet_row.balance:
         return (
             WalletMismatch(
@@ -103,17 +99,17 @@ async def _scan_user_chain(
 async def _verify_user_once(
     sm: async_sessionmaker[AsyncSession], user_id: int
 ) -> WalletMismatch | None:
-    """验一次;自洽则推进游标(同事务),有差异不动游标(下一轮重验,直至人工处理)。"""
+    """验一次;自洽则推进游标(同事务),有差异不动游标。"""
     async with sm() as session:
-        # t0 取库时钟、先于一切读取:之后提交的变动 wallet.updated_at > t0,下轮必被重新选中
+        # t0 取库时钟、先于一切读取
         t0 = (await session.execute(select(func.now()))).scalar_one()
-        # 候选集出自 wallets 表且行从不删,按 user_id 必命中
+        # 候选集出自 wallets 表且行从不删
         wallet_row = (
             await session.execute(select(Wallet).where(Wallet.user_id == user_id))
         ).scalar_one()
         checkpoint = await session.get(ReconcileCheckpoint, user_id)
         if checkpoint is not None:
-            # 游标边界行复核:被删/被改则链无法续接,直接报差(候选集的尾部探测已选中)
+            # 游标边界行复核:被删/被改则直接报差
             boundary = await session.get(BalanceLedger, checkpoint.last_ledger_id)
             if (
                 boundary is None
@@ -155,10 +151,8 @@ async def _verify_user_once(
 
 async def _candidate_user_ids(session: AsyncSession) -> list[int]:
     """本轮需要核实的用户:从未核过的钱包,或游标之后钱包/流水尾部有变动的用户。
-
-    流水尾部用 LATERAL 取各用户 id 最大一行(user_id 索引回扫,不聚合全表):
-    尾部 id 大于游标 = 有新流水;小于/缺失 = 尾部行被删;balance_after 不符 = 尾行被改。
-    只改流水不碰钱包的篡改因此同样会被选中核实。
+    流水尾部用 LATERAL 取各用户 id 最大一行:尾部 id 大于游标 / 小于或缺失 / balance_after
+    不符均选中。
     """
     tail = (
         select(
@@ -190,11 +184,7 @@ async def _candidate_user_ids(session: AsyncSession) -> list[int]:
 
 
 async def wallet_ledger_chain_check(sm: async_sessionmaker[AsyncSession]) -> list[WalletMismatch]:
-    """增量链式核对:只扫候选用户游标之后的新增流水,逐笔验 balance_after 链。
-
-    在飞事务可能造成快照错位(读钱包与读流水之间有新扣款提交):首轮报差的用户
-    换会话复核一次,两轮都差才上报 —— 正常扣款不会在两轮间给出同一个差异。
-    """
+    """增量链式核对:只扫候选用户游标之后的新增流水。首轮报差的用户换会话复核一次,两轮都差才上报。"""
     async with sm() as session:
         candidates = await _candidate_user_ids(session)
     mismatches: list[WalletMismatch] = []
@@ -202,7 +192,7 @@ async def wallet_ledger_chain_check(sm: async_sessionmaker[AsyncSession]) -> lis
         mismatch = await _verify_user_once(sm, user_id)
         if mismatch is None:
             continue
-        mismatch = await _verify_user_once(sm, user_id)  # 复核:排除在飞事务的瞬态错位
+        mismatch = await _verify_user_once(sm, user_id)  # 复核
         if mismatch is not None:
             mismatches.append(mismatch)
     return mismatches
@@ -213,13 +203,8 @@ async def bills_vs_consume(
 ) -> tuple[Decimal, Decimal]:
     """窗口内 (出账合计, 消费流水合计的绝对值)。两者必须相等。
 
-    两侧都按账单**归属期**切窗:bills 用 hour_start/day,ledger 经 ref_id 回连账单取
-    归属期 —— 与入账时间(created_at)解耦。BillHourly.amount 会被补差价原地更新、
-    追平补账的 created_at 落在后来某天,按 created_at 切窗在跨日/追平场景必误报。
-
-    包周期预付是第三条腿:它不产生账单行,「出账」侧取 `subscriptions.amount_paid`,切窗用
-    `subscriptions.created_at`(下单与扣款同一事务)。漏了它,`ref_type='subscription'` 的
-    consume 流水就成了全无对账的一段钱。
+    两侧都按账单归属期切窗:bills 用 hour_start/day,ledger 经 ref_id 回连账单取归属期。
+    包周期预付「出账」侧取 `subscriptions.amount_paid`,切窗用 `subscriptions.created_at`。
     """
     billed_hourly = (
         await session.execute(
@@ -274,7 +259,7 @@ async def bills_vs_consume(
 
 
 async def dangling_consume_refs(session: AsyncSession) -> int:
-    """ref_id 回连不到账单的 consume 流水数(有扣款无出账;理论为零,手工改账除外)。"""
+    """ref_id 回连不到账单的 consume 流水数(理论为零)。"""
     hourly_dangling = (
         await session.execute(
             select(func.count())
@@ -379,7 +364,7 @@ async def _raise_admin_alert(
     async with sm() as session:
         await notify_service.notify(
             session,
-            None,  # 平台告警流
+            None,
             type_="admin_alert",
             title="资金账实核对发现差异",
             content=";".join(parts) + "。请勿自行改账,先按 balance_ledger 追溯来源。",

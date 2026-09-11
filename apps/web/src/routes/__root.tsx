@@ -15,13 +15,12 @@ export const Route = createRootRoute({
   notFoundComponent: NotFoundPage,
 });
 
-/** locale + 主题联动的唯一 Provider:主树/错误边界/404 共用(后两者渲染在主树之外,须自带)。
- *  暗色 = darkAlgorithm + webDarkTheme 覆写(浅色系 token 与组件覆盖全部继承)。 */
+/** locale + 主题联动的唯一 Provider:主树/错误边界/404 共用。暗色 = darkAlgorithm + webDarkTheme 覆写。 */
 function AppProviders({ children }: { children: ReactNode }) {
   const antdLocale = useAppLocale();
   const mode = useThemeMode();
   useEffect(() => {
-    // CSS 变量面(抽屉链接/滚动条/focus 描边/命令面板选中底等非 token 覆盖区)与 color-scheme 随动
+    // CSS 变量面(抽屉链接/滚动条/focus 描边/命令面板选中底)与 color-scheme 随主题
     document.documentElement.dataset.theme = mode;
     document.documentElement.style.colorScheme = mode;
     document.body.style.background = mode === "dark" ? webDarkColors.bgBase : brand.pageBg;
@@ -37,7 +36,7 @@ function AppProviders({ children }: { children: ReactNode }) {
         mode === "dark" ? { algorithm: antdTheme.darkAlgorithm, ...webDarkTheme } : webTheme
       }
     >
-      {/* 全局动效策略:尊重系统减弱动态效果设置(transform/layout 动效自动禁用) */}
+      {/* 全局动效策略:尊重系统减弱动态效果 */}
       <MotionConfig reducedMotion="user">
         <AntApp>{children}</AntApp>
       </MotionConfig>
@@ -53,7 +52,7 @@ function RootLayout() {
   );
 }
 
-/** 全局错误边界:渲染异常兜底为可恢复页面,不白屏(Result 体与 admin 共用 RouteErrorFallbackView)。 */
+/** 全局错误边界:渲染异常兜底为可恢复页面(Result 体与 admin 共用 RouteErrorFallbackView)。 */
 function RouteErrorFallback({ error, reset }: ErrorComponentProps) {
   const { t } = useTranslation();
   return (
@@ -70,7 +69,7 @@ function NotFoundPage() {
       <NotFoundView
         homeTo="/dashboard"
         homeLabel={t("common.backConsole")}
-        // 404 文案已收敛进 packages/ui shared ns(errorPage/notFound 两端共用)
+        // 404 文案在 packages/ui shared ns(errorPage/notFound)
         subtitle={t("notFound.subtitle", { ns: "shared" })}
       />
     </AppProviders>

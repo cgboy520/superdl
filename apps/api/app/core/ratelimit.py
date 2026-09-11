@@ -1,8 +1,4 @@
-"""限流计数:固定窗口,计数落 PostgreSQL(多副本共享)。
-
-窗口内命中数超过 max_attempts 即拒绝,窗口到期整体重置。
-计数走独立 session 并即时 commit,不随业务事务回滚。
-"""
+"""限流计数:固定窗口,计数落 PostgreSQL;独立 session 即时 commit,不随业务事务回滚。"""
 
 from datetime import datetime
 from typing import Any
@@ -26,8 +22,7 @@ class RateLimitCounter(Base):
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
 
-# 单条原子语句:窗口过期即重置为 1,否则自增。
-# RETURNING 给出本次命中后的计数与窗口剩余秒数(DB 侧计算,回避应用/库时钟与列时区差异)。
+# 单条原子语句:窗口过期重置为 1,否则自增;RETURNING 计数与窗口剩余秒数(DB 侧计算)
 _HIT_SQL = text("""
     INSERT INTO rate_limit_counters AS c (key, window_start, hits, updated_at)
     VALUES (:key, now(), 1, now())
@@ -56,7 +51,7 @@ def _raise_429(retry_after: int) -> None:
 
 
 async def _fetch_window_row(key: str, window_seconds: float) -> Row[Any] | None:
-    """只读预检取窗口行(不命中不建行、不计数),供 ensure_not_rate_limited/read_hits 共用。"""
+    """只读取窗口行,不建行不计数。"""
     async with get_sessionmaker()() as session:
         return (
             await session.execute(_BLOCKED_SQL, {"key": key[:128], "window": window_seconds})
@@ -74,13 +69,13 @@ async def check_rate_limit(key: str, *, max_attempts: int, window_seconds: float
 
 
 async def clear_rate_limit(key: str) -> None:
-    """清零该键的计数(登录成功后的失败桶清零;独立事务,不随业务 session 回滚)。"""
+    """清零该键的计数(独立事务)。"""
     async with get_sessionmaker()() as session:
         await session.execute(delete(RateLimitCounter).where(RateLimitCounter.key == key))
         await session.commit()
 
 
-# 只读预检:不命中不建行、不计数,专供昂贵校验(如 bcrypt)之前的廉价准入
+# 只读预检:不建行、不计数
 _BLOCKED_SQL = text("""
     SELECT hits,
         GREATEST(
@@ -100,6 +95,6 @@ async def ensure_not_rate_limited(key: str, *, max_attempts: int, window_seconds
 
 
 async def read_hits(key: str, *, window_seconds: float) -> int:
-    """窗口内当前命中数(只读,不计数):用于「成功登录前是否有失败记录」类判定。"""
+    """窗口内当前命中数(只读,不计数)。"""
     row = await _fetch_window_row(key, window_seconds)
     return 0 if row is None else int(row.hits)

@@ -1,15 +1,9 @@
 """工单闭环:用户创建 → 客服/用户交替回复 → 标记解决 → 关闭。
-
-关键不变量:
-- 用户侧一切按 id 的操作,owner 校验都在 SQL WHERE(id + user_id 同条件),
-  查不到即 404——不先查后比,不暴露他人工单存在性(IDOR 防线)。
-- 状态迁移只在行锁(SELECT FOR UPDATE)内做:open → pending_staff(用户回复)
-  → pending_user(客服回复)→ resolved(任一方)→ closed(仅 resolved 后可)。
-  resolved/closed 不可再回复(不做重开,提示新建)。
-- 创建幂等:Idempotency-Key 重放返回既有单((user_id, idempotency_key) 唯一兜底并发)。
-- 创建约束:每用户进行中(open/pending_staff/pending_user)工单 ≤ 10;创建限流 5/h。
-- 联动:客服回复 → 用户站内信(notify,dedup_key 防重);新工单/用户回复 →
-  admin_alerts info 级告警(管理端总览告警流)。
+- 用户侧 owner 校验在 SQL WHERE(id + user_id),查不到即 404。
+- 状态迁移只在行锁内:open → pending_staff → pending_user → resolved → closed(仅 resolved 后);
+  resolved/closed 不可再回复。
+- 创建幂等((user_id, idempotency_key) 唯一);每用户进行中 ≤ 10;创建限流 5/h。
+- 联动:客服回复 → 用户站内信;新工单/用户回复 → admin_alerts info。
 """
 
 from datetime import datetime
@@ -60,7 +54,7 @@ async def list_stale_pending_staff(session: AsyncSession, *, older_than: datetim
 
 
 async def _admin_alert(session: AsyncSession, *, title: str, content: str, dedup_key: str) -> None:
-    """管理端告警流落一条 info(admin_alerts = notify 表 type='admin_alert',user_id=NULL)。"""
+    """管理端告警流落一条 info(notify 表 type='admin_alert',user_id=NULL)。"""
     await notify_service.notify(
         session,
         None,
@@ -82,8 +76,7 @@ async def create_ticket(
     instance_uuid: str | None,
     idempotency_key: str | None,
 ) -> tuple[Ticket, bool]:
-    """创建工单(首条消息同单落)。幂等:Idempotency-Key 重放返回既有单(不耗限流配额)。
-    返回 (工单, created):created=False = 幂等重放,路由回 200 + X-Idempotent-Replay。"""
+    """创建工单(首条消息同单落)。返回 (工单, created);created=False = 幂等重放。"""
     if idempotency_key:
         existing = await find_replay(
             session, Ticket, owner_col=Ticket.user_id, owner_id=user_id, key=idempotency_key
@@ -106,7 +99,7 @@ async def create_ticket(
     if open_count >= MAX_OPEN_TICKETS:
         raise conflict(key="tickets.openLimitReached", params={"max": MAX_OPEN_TICKETS})
 
-    # ticket_no = T+yyyymmdd+两位日内序列。并发同序列由唯一索引兜底,撞车换下一个序列重试
+    # ticket_no = T+yyyymmdd+两位日内序列;撞唯一索引换下一个序列重试
     prefix = f"T{now_utc():%Y%m%d}"
     for _ in range(8):
         ticket = Ticket(
@@ -130,7 +123,7 @@ async def create_ticket(
             continue  # 按 ticket_no 序列撞车处理:重试下一序列
         if result is not ticket:
             return result, False  # 同键并发:返回胜出方的单
-        # insert_idempotent 只 flush 出 ticket.id;首条消息照旧同单 commit
+        # 首条消息同单 commit
         session.add(
             TicketMessage(ticket_id=ticket.id, sender_kind="user", sender_id=user_id, body=body)
         )
@@ -153,7 +146,7 @@ async def create_ticket(
 async def list_my_tickets(
     session: AsyncSession, user_id: int, *, cursor: str | None = None, limit: int | None = None
 ) -> Page[TicketOut]:
-    """本人工单(游标分页,语义与退款单/发票一致)。"""
+    """本人工单(游标分页)。"""
     stmt = select(Ticket).where(Ticket.user_id == user_id).order_by(Ticket.id.desc())
     page_items, next_cursor = await paginate_by_id(
         session, stmt, id_col=Ticket.id, cursor=cursor, limit=limit
@@ -175,7 +168,7 @@ async def _messages_of(session: AsyncSession, ticket_id: int) -> list[TicketMess
 
 
 async def get_my_ticket(session: AsyncSession, user_id: int, ticket_id: int) -> TicketDetailOut:
-    """工单详情(本人)。owner 校验在 WHERE:他人工单与不存在同回 404。"""
+    """工单详情(本人);他人工单与不存在同回 404。"""
     ticket = (
         await session.execute(
             select(Ticket).where(Ticket.id == ticket_id, Ticket.user_id == user_id)
@@ -275,7 +268,7 @@ async def admin_list_tickets(
 async def admin_count_tickets(
     session: AsyncSession, status: str | None = None, category: str | None = None
 ) -> int:
-    """工单计数(待办角标轻端点):与列表同一过滤口径的 DB count,不拉行。"""
+    """工单计数(待办角标轻端点),与列表同一过滤口径。"""
     stmt = select(func.count()).select_from(Ticket)
     if status:
         stmt = stmt.where(Ticket.status == status)

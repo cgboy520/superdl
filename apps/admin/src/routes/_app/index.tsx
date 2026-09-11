@@ -110,11 +110,10 @@ function OversellChart({ rows }: { rows: OversellRow[] }) {
 function PoolOccupancy({ pools }: { pools: OverviewOut["pools"] }) {
   const { t } = useTranslation();
   const names = pools.map((p) => p.pool);
-  // 「已租」拆两段:竞价那段与空闲一起才是真正的可调度余量。
-  // gpu_spot_used 服务端已按 gpu_used 截断,前端不许 clamp 第二遍,否则会吃掉后端口径的变化
+  // 「已租」拆竞价与非竞价两段;gpu_spot_used 服务端已截断,前端不再 clamp
   const spotUsed = pools.map((p) => p.gpu_spot_used);
   const usedOther = pools.map((p) => p.gpu_used - p.gpu_spot_used);
-  // 空闲只算 Ready 节点的卡;非 Ready 节点的物理卡画成第三段,不混进「空闲」
+  // 空闲只算 Ready 节点的卡;非 Ready 单独一段
   const free = pools.map((p) => Math.max(0, p.ready_gpu_total - p.gpu_used));
   const notReady = pools.map((p) => Math.max(0, p.gpu_total - p.ready_gpu_total));
   const usedTotal = pools.reduce((n, p) => n + p.gpu_used, 0);
@@ -128,7 +127,7 @@ function PoolOccupancy({ pools }: { pools: OverviewOut["pools"] }) {
     yAxis: { type: "category", data: names, axisLabel: { color: adminColors.textSecondary } },
     series: [
       { name: t("overview.rented"), type: "bar", stack: "t", data: usedOther, itemStyle: { color: statusColors.green } },
-      // 竞价段紧挨已租段,取 marketMap.spot 的橙:两端「竞价」是同一个颜色
+      // 竞价段取 marketMap.spot 色
       { name: t("overview.rentedSpot"), type: "bar", stack: "t", data: spotUsed, itemStyle: { color: statusColors.orange } },
       { name: t("overview.idle"), type: "bar", stack: "t", data: free, itemStyle: { color: adminColors.chartNeutral } },
       { name: t("overview.notReady"), type: "bar", stack: "t", data: notReady, itemStyle: { color: adminColors.alertAccent } },
@@ -137,7 +136,6 @@ function PoolOccupancy({ pools }: { pools: OverviewOut["pools"] }) {
   return (
     <>
       <EChart option={option} style={{ height: 220 }} theme="noc" ariaLabel={t("overview.poolOccupancy")} />
-      {/* 图例里两段是并排的,合计只能靠这句话讲清楚:与收入卡「其中包周期预付」同一写法 */}
       <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
         {t("overview.spotReclaimable", { used: usedTotal, spot: spotTotal })}
       </Typography.Text>
@@ -145,13 +143,13 @@ function PoolOccupancy({ pools }: { pools: OverviewOut["pools"] }) {
   );
 }
 
-/** 值班首屏第二排:任务死信(重放/忽略都需原因 + 二次确认,handler 幂等)。 */
+/** 任务死信卡(重放/忽略需原因 + 二次确认)。 */
 function DeadTasksCard() {
   const { t, i18n } = useTranslation(["admin", "shared"]);
   const qc = useQueryClient();
   const role = useAdminRole();
   const writable = canWriteOps(role);
-  // 读死信需 ops/readonly:finance 看不到这张卡,也不发会 403 的轮询
+  // 读死信需 ops/readonly
   const canRead = canWriteOps(role) || role === "readonly";
   const { data, queryKey, isLoading, isError, error, refetch } = useDeadTasks({ enabled: canRead });
   const rows: DeadTaskRow[] = data ?? [];
@@ -159,8 +157,7 @@ function DeadTasksCard() {
   const discard = useDiscardDeadTask();
   const refresh = () => void qc.invalidateQueries({ queryKey });
 
-  // 查询失败也要露出(值班首屏「没有死信」是最危险的误判),错误态由表内空态明示;
-  // 首响未到先渲染一行骨架占位(卡片 pop-in 会把下方图表顶下去)
+  // 查询失败由表内空态明示;首响未到渲染骨架占位
   if (!canRead) return null;
   if (!isError && !isLoading && rows.length === 0) return null;
   return (
@@ -181,7 +178,7 @@ function DeadTasksCard() {
               {!isLoading && (
                 <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                   {t("overview.deadTasksSummary", {
-                    // 列表串联走 Intl.ListFormat(随界面语言给「、」/「, 」,en 界面不出 CJK 顿号)
+                    // Intl.ListFormat 随界面语言给分隔符
                     types: new Intl.ListFormat(i18n.resolvedLanguage ?? "zh-CN", {
                       style: "narrow",
                       type: "conjunction",
@@ -224,7 +221,7 @@ function DeadTasksCard() {
           {
             title: t("overview.colLastError"),
             dataIndex: "last_error",
-            // 原始堆栈可能上千字符,必须一行截断 + 悬浮看全文,否则会撑开整张表
+            // 一行截断 + 悬浮看全文
             render: (v: string | null) => (
               <Tooltip title={<span style={{ whiteSpace: "pre-wrap" }}>{v ?? "-"}</span>}>
                 <span
@@ -286,7 +283,7 @@ function DeadTasksCard() {
   );
 }
 
-/** 实时告警流:severity 过滤、确认闭环(留确认人+时间)、点击跳受影响节点/租户(深链与顶栏铃铛共用 lib/alertLink)。 */
+/** 实时告警流:severity 过滤、确认闭环、深链跳受影响节点/租户(lib/alertLink)。 */
 function AlertStreamCard() {
   const { t } = useTranslation();
   const role = useAdminRole();
@@ -315,7 +312,7 @@ function AlertStreamCard() {
       }
       styles={{ body: { maxHeight: 560, overflow: "auto" } }}
     >
-      {/* 查询失败绝不能渲染成「暂无告警」(值班会把故障误读成天下太平) */}
+      {/* 查询失败不渲染成「暂无告警」 */}
       {isError ? (
         <TableErrorEmpty compact isError onRetry={() => void refetch()} />
       ) : (
@@ -370,7 +367,7 @@ function AlertStreamCard() {
   );
 }
 
-/** 取数失败要显式说:渲染成「暂无数据」等于把集群不可达伪装成没数据(总览端点全角色可读,无 403 分支)。 */
+/** 取数失败显式提示,不渲染成「暂无数据」。 */
 function LoadFailed({ onRetry }: { onRetry: () => void }) {
   const { t } = useTranslation();
   return (
@@ -391,10 +388,10 @@ function Overview() {
   const { t } = useTranslation();
   const { formatMoney } = useFormat();
   const oversellQ = useOversellReport();
-  // 总览聚合:全部精确 COUNT(全角色可读),不从截断列表推算
+  // 总览聚合:精确 COUNT
   const ovQ = useOverview();
   const revenueQ = useRevenueReport();
-  // 「告警(总)」 = 未确认告警精确计数(独立计数端点;截断的告警流长度会低估)
+  // 「告警(总)」 = 未确认告警精确计数
   const unreadQ = useAlertUnreadCount();
   const { data: oversell, isError: oversellError, refetch: refetchOversell } = oversellQ;
   const { data: ov, isError: ovError, refetch: refetchOv } = ovQ;
@@ -406,7 +403,7 @@ function Overview() {
   const activeInstances =
     (byStatus.creating ?? 0) + (byStatus.starting ?? 0) + (byStatus.running ?? 0);
   const signupDelta = revenue ? revenue.today_signups - revenue.yesterday_signups : 0;
-  // KPI 查询失败必须嵌错误条而非 "—" 假阴性;按数据源分卡归属
+  // KPI 查询失败嵌错误条;按数据源分卡归属
   const revenueErr = <DataErrorAlert onRetry={() => void revenueQ.refetch()} />;
   const ovErr = <DataErrorAlert onRetry={() => void ovQ.refetch()} />;
   const unreadErr = <DataErrorAlert onRetry={() => void unreadQ.refetch()} />;
@@ -425,7 +422,7 @@ function Overview() {
                   <Typography.Text type="secondary" style={{ fontSize: fontSize.caption, display: "block" }}>
                     {t("overview.yesterdayPrefix", { amount: moneyOr(formatMoney(revenue?.yesterday_revenue), revenue != null) })}
                   </Typography.Text>
-                  {/* 收入已含包周期预付,必须摊开单列:一笔包年当天就是尖峰,不标出来昨日环比会被读成异常 */}
+                  {/* 收入含包周期预付,单列摊开 */}
                   <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                     {t("overview.prepaidPart", { amount: moneyOr(formatMoney(revenue?.today_prepaid), revenue != null) })}
                   </Typography.Text>
@@ -460,7 +457,7 @@ function Overview() {
                   title={t("overview.alertsTotal")}
                   value={unread?.count ?? "—"}
                   styles={{
-                    // 红色高亮用精确计数端点的 critical 口径:截断的告警流列表会漏报
+                    // 红色高亮取精确计数端点的 critical
                     content: (unread?.critical_count ?? 0) > 0
                       ? { color: adminColors.negative }
                       : undefined,
@@ -484,7 +481,7 @@ function Overview() {
             <Card key="subs">
               {ovQ.isError ? ovErr : (
                 <>
-                  {/* 按订阅行数而非实例状态数:停机的包月实例仍在保仍占库存,这个数可以大于活跃实例数 */}
+                  {/* 按订阅行数计,可大于活跃实例数 */}
                   <Statistic
                     title={t("overview.subscriptionsActive")}
                     value={ov ? ov.subscriptions_active : "—"}

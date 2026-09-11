@@ -1,7 +1,5 @@
-"""统一错误体 {code, message, message_key, params, detail, request_id}。
-
-message 恒为渲染后的中文;message_key/params 供前端查多语言目录
-(core/messages.py 为单一事实源)。ErrorCode 是程序化分支依据。"""
+"""统一错误体 {code, message, message_key, params, detail, request_id};message 为渲染后的中文,
+message_key/params 供前端查多语言目录(core/messages.py)。"""
 
 from collections.abc import Mapping
 from enum import StrEnum
@@ -57,8 +55,7 @@ class ErrorCode(StrEnum):
     INSTANCE_NOT_STOPPED = "INSTANCE_NOT_STOPPED"
     INSTANCE_FROZEN = "INSTANCE_FROZEN"
     NO_CAPACITY = "NO_CAPACITY"
-    # 网关 extAuth 回调的唯一拒绝码:密钥错/已吊销/不属该服务/实例未运行一律同码同文案,
-    # 调用方(可能是任意第三方)据此分不出被拒的具体原因
+    # 网关 extAuth 回调的唯一拒绝码:密钥错/已吊销/不属该服务/实例未运行同码同文案
     API_KEY_INVALID = "API_KEY_INVALID"
     # 计费
     INSUFFICIENT_BALANCE = "INSUFFICIENT_BALANCE"
@@ -177,8 +174,7 @@ def _error_body(
     }
 
 
-# 框架层 HTTPException → 统一错误体的状态码映射;业务侧只抛 AppError,
-# 框架自身只产生路由 404 与方法 405
+# 框架层 HTTPException(路由 404 / 方法 405)→ 统一错误体
 _HTTP_STATUS_MAP: dict[int, tuple[ErrorCode, str]] = {
     status.HTTP_404_NOT_FOUND: (ErrorCode.NOT_FOUND, "common.notFound"),
     status.HTTP_405_METHOD_NOT_ALLOWED: (ErrorCode.METHOD_NOT_ALLOWED, "common.methodNotAllowed"),
@@ -186,9 +182,7 @@ _HTTP_STATUS_MAP: dict[int, tuple[ErrorCode, str]] = {
 
 
 def _unhandled_response(exc: Exception, *, path: str, method: str) -> JSONResponse:
-    """未捕获异常的统一渲染(结构化留痕 + 统一错误体);exception handler 与
-    Uniform500Middleware 共用同一出口。留痕经 structlog 进 Loki
-    (见 deploy/cluster/runbooks/loki-logging.md),异常告警由 Loki 侧规则承接。"""
+    """未捕获异常的统一渲染(structlog 留痕 + 统一错误体)。"""
     get_logger("app.errors").exception("unhandled_exception", path=path, method=method)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -203,9 +197,7 @@ def _unhandled_response(exc: Exception, *, path: str, method: str) -> JSONRespon
 
 
 class Uniform500Middleware:
-    """中间件链内层的未捕获异常兜底:500 必须在此渲染并沿链返回,才保得住安全响应头
-    (SecurityHeaders)与 request_id(Observability)—— @app.exception_handler(Exception)
-    由最外层 ServerErrorMiddleware 承接,跑在两者之外。"""
+    """中间件链内层的未捕获异常兜底:在此渲染 500 沿链返回,保住安全响应头与 request_id。"""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -287,7 +279,7 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def validation_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
-        # 只回位置/原因/类型:pydantic errors() 的 input 是提交原值,回显即泄露凭据
+        # 只回位置/原因/类型,不回显 input
         detail = [
             {"loc": e.get("loc"), "msg": e.get("msg"), "type": e.get("type")} for e in exc.errors()
         ]
@@ -304,7 +296,5 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def unhandled_handler(request: Request, exc: Exception) -> JSONResponse:
-        """未捕获异常兜底:结构化留痕 + 统一错误体。
-        正常路径的 500 已被 Uniform500Middleware 在内层渲染(安全头/request_id 不丢);
-        本 handler 只兜中间件自身的异常。"""
+        """最外层兜底,只兜中间件自身的异常(正常路径 500 由 Uniform500Middleware 渲染)。"""
         return _unhandled_response(exc, path=request.url.path, method=request.method)

@@ -1,5 +1,4 @@
-/** 支持:自助排查(FAQ 锚点)+ 联系客服(平台配置 support 组)+ 我的工单。
- *  新建工单走 Modal,详情为独立对话页。 */
+/** 支持:自助排查(FAQ 锚点)+ 联系客服(平台配置 support 组)+ 我的工单。新建工单走 Modal,详情为独立对话页。 */
 
 import { fontSize, formatDateTime, idemKeyOf, metaOf, ticketCategoryMap, ticketStatusMap, type TicketStatus } from "@superdl/ui";
 import { LoadMore, TableErrorEmpty } from "@superdl/ui/components";
@@ -32,8 +31,7 @@ import { requireAuth } from "../lib/guard";
 
 export const Route = createFileRoute("/_console/support")({
   beforeLoad: requireAuth,
-  // ?new=1:命令面板「新建工单」深链,到达即开创建弹窗(消费后清掉);
-  // ?status=:状态筛选入 URL(白名单=后端状态枚举,非法值剥离)
+  // ?new=1:命令面板「新建工单」深链,到达即开创建弹窗(消费后清掉);?status=:状态筛选入 URL(白名单 = 后端状态枚举)
   validateSearch: (search: Record<string, unknown>): { new?: "1"; status?: TicketStatus } => ({
     ...(search.new === "1" ? { new: "1" as const } : {}),
     ...(typeof search.status === "string" && search.status in ticketStatusMap
@@ -43,7 +41,7 @@ export const Route = createFileRoute("/_console/support")({
   component: SupportPage,
 });
 
-/** 自助排查:静态锚点直达 /help 现有 FAQ(条目键与 help.tsx 的 FAQ_KEYS 对齐)。 */
+/** 自助排查:静态锚点直达 /help FAQ(条目键与 help.tsx 的 FAQ_KEYS 对齐)。 */
 const SELF_HELP_KEYS = ["createFailed", "billingStart", "dataPersist", "arrears"] as const;
 
 function SelfHelpCard() {
@@ -55,7 +53,7 @@ function SelfHelpCard() {
         dataSource={[...SELF_HELP_KEYS]}
         renderItem={(k) => (
           <List.Item style={{ paddingInline: 0 }}>
-            {/* 锚点直达对应 FAQ 并展开滚动(/help 已实现 faq-<key> 锚);裸跳页首等于没链 */}
+            {/* 锚点直达对应 FAQ 并展开滚动(/help 的 faq-<key> 锚) */}
             <Link to="/help" hash={`faq-${k}`}>
               {t(`support.selfHelp.${k}` as "support.selfHelp.createFailed")}
             </Link>
@@ -73,7 +71,7 @@ function CreateTicketModal({ open, onClose }: { open: boolean; onClose: () => vo
   const navigate = useNavigate();
   const [form] = Form.useForm<TicketCreate>();
   const { data: instances } = useInstances();
-  // 幂等键按「提交序号 + 表单快照」派生:同一键重放返回既有单(双击/重试安全),成功后序号 +1 即新单
+  // 幂等键按「提交序号 + 表单快照」派生,成功后序号 +1 即新单
   const [submitSeq, setSubmitSeq] = useState(0);
   const create = useCreateTicket({
     onSuccess: (ticket) => {
@@ -157,7 +155,7 @@ function SupportPage() {
   const navigate = useNavigate();
   const { new: openNew, status: statusFilter } = Route.useSearch();
   const [creating, setCreating] = useState(false);
-  // ?new=1 到达即开创建弹窗:渲染期派生态(同 help.tsx 锚点模式,防 set-state-in-effect)
+  // ?new=1 到达即开创建弹窗:渲染期派生态(同 help.tsx 锚点模式)
   const [prevNew, setPrevNew] = useState(openNew);
   if (openNew !== prevNew) {
     setPrevNew(openNew);
@@ -165,7 +163,7 @@ function SupportPage() {
   }
   const closeCreate = () => {
     setCreating(false);
-    // 深链参数消费后清掉,刷新不再自动开弹窗;状态筛选保留(prev 为跨路由合并类型,status 在本文件内收窄)
+    // 深链参数消费后清掉;状态筛选保留(status 在本文件内收窄)
     if (openNew === "1")
       void navigate({
         to: "/support",
@@ -178,7 +176,7 @@ function SupportPage() {
     () => (tickets.data?.pages ?? []).flatMap((p) => p.items),
     [tickets.data],
   );
-  // 状态筛选为客户端筛选:只作用于已加载页,未加载的旧页不受筛选影响(与费用中心流水类型筛选同口径)
+  // 状态筛选为客户端筛选,只作用于已加载页
   const filtered = useMemo<TicketOut[]>(
     () => (statusFilter ? rows.filter((r) => r.status === statusFilter) : rows),
     [rows, statusFilter],
@@ -225,7 +223,7 @@ function SupportPage() {
               }
               options={[
                 { value: "all", label: t("support.filterAll") },
-                // 状态枚举以共享映射表为准;裸状态码不进 t()(extract 会当成新键收集)
+                // 状态枚举以共享映射表为准;裸状态码不进 t()
                 ...Object.keys(ticketStatusMap).map((s) => {
                   const meta = metaOf(ticketStatusMap, s);
                   return { value: s, label: meta ? t(meta.labelKey) : s };
@@ -243,10 +241,10 @@ function SupportPage() {
           dataSource={filtered}
           locale={{
             emptyText: tickets.isError ? (
-              // 失败绝不伪装成「暂无工单」
+              // 失败不伪装成「暂无工单」
               <TableErrorEmpty isError onRetry={() => void tickets.refetch()} />
             ) : statusFilter ? (
-              // 筛选态空 ≠ 没有工单:只说明该状态暂无匹配
+              // 筛选态空 ≠ 没有工单
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
                 description={t("support.noneWithStatus")}
@@ -271,7 +269,7 @@ function SupportPage() {
               <List.Item
                 style={{ cursor: "pointer" }}
                 onClick={open}
-                // 整行点击必须有键盘语义(同落地页快捷入口卡)
+                // 整行点击须有键盘语义
                 role="button"
                 tabIndex={0}
                 onKeyDown={(e) => {

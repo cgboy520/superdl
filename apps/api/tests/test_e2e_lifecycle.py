@@ -1,8 +1,5 @@
-"""E2E 演练:一条脚本跑通全生命周期(FakeOrchestrator + mock 支付)。
-
-注册 → 充值 → 建数据盘 → 买共享档实例(挂盘)→ SSH/Jupyter 接入 → 停机(尾账)→
-账单与事件时间线 → 释放(擦盘)→ 数据盘保留 → 全程资金自洽(充值 - 消费 = 余额)。
-"""
+"""E2E 演练(FakeOrchestrator + mock 支付):注册 → 充值 → 建数据盘 → 买实例 → 接入 → 停机 →
+账单与事件 → 释放 → 数据盘保留 → 资金自洽。"""
 
 from decimal import Decimal
 
@@ -90,7 +87,7 @@ async def test_full_lifecycle_drill(client, sm, fake):
     pod = fake.pods[(f"tenant-{user_id}", uuid)]
     assert "JUPYTER_TOKEN" not in pod.spec.env
     assert fake.instance_secrets[(f"tenant-{user_id}", uuid)]["JUPYTER_TOKEN"]
-    # 未配 Harbor 机器人(项目 public):不托管拉取凭据、Pod 不引用 imagePullSecrets
+    # 未配 Harbor 机器人:Pod 不引用 imagePullSecrets
     assert pod.spec.image_pull_secret is None and f"tenant-{user_id}" not in fake.pull_secrets
     fake.mark_ready(f"tenant-{user_id}", uuid)
     await reconcile_once(sm)
@@ -103,7 +100,7 @@ async def test_full_lifecycle_drill(client, sm, fake):
         access["ssh_command"].startswith("ssh root@")
         and str(access["ssh_port"]) in access["ssh_command"]
     )
-    # 一次性 bootstrap 票据:token 不出现在 URL(访问日志/浏览器历史不沉淀长效凭据)
+    # 一次性 bootstrap 票据:token 不出现在 URL
     assert access["jupyter_url"].startswith("https://")
     assert "/superdl-bootstrap?" in access["jupyter_url"]
     assert "token=" not in access["jupyter_url"]
@@ -166,9 +163,8 @@ async def test_full_lifecycle_drill(client, sm, fake):
 
 
 async def test_pull_secret_managed_per_tenant_when_registry_configured(client, sm, fake):
-    """配了 Harbor 机器人:建 Pod 前把拉取凭据 Secret 按指纹托管到租户 ns,
-    Pod 以 imagePullSecrets 引用;
-    改 Secret 后指纹变化(轮换靠它触发覆写)。挂了说明私有项目的镜像会拉不下来,或轮换不生效。"""
+    """配了 Harbor 机器人:拉取凭据 Secret 按指纹托管到租户 ns,Pod 以 imagePullSecrets 引用;
+    改 Secret 后指纹变化。"""
     from app.core.platform_config import set_platform_settings
     from app.core.registry import PULL_SECRET_NAME, pull_secret_fingerprint
 
@@ -210,12 +206,8 @@ async def test_pull_secret_managed_per_tenant_when_registry_configured(client, s
 
 
 async def test_service_container_drill(client, sm, fake):
-    """E2E 演练二:部署服务 → 建 Key → 经端点鉴权调用 → 吊销 → 401 → 停止 → 删除。
-
-    与 test_endpoint_auth.py 的矩阵不重合:那边逐条钉鉴权判据,这里跑一条脚本走完全程,
-    守住只有在整链路里才看得见的事 —— 服务的版本实例不占 SSH 端口池、不建 Jupyter 入口、
-    密文 env 不落 Pod spec、不进实例列表、删除后服务落终态,全程资金自洽。
-    """
+    """E2E 演练二:部署服务 → 建 Key → 经端点鉴权调用 → 吊销 → 401 → 停止 → 删除;
+    版本实例不占 SSH 端口池、不建 Jupyter 入口、密文 env 不落 Pod spec、不进实例列表。"""
     phone = "13411113333"
     await client.post("/api/v1/auth/sms-code", json={"phone": phone, "purpose": "register"})
     reg = await client.post(
@@ -264,7 +256,7 @@ async def test_service_container_drill(client, sm, fake):
     svc = (await client.get(f"/api/v1/services/{slug}", headers=h)).json()
     assert svc["status"] == "running" and svc["ready"] is True
 
-    # 不占 SSH 端口池:端口段 30000–32767 是全平台硬上限,白占一个名额就少一台带 SSH 的实例
+    # 不占 SSH 端口池
     async with sm() as session:
         assigned = (
             await session.execute(
@@ -273,7 +265,7 @@ async def test_service_container_drill(client, sm, fake):
         ).scalars()
         assert list(assigned) == []
 
-    # 密文 env 不落 Pod spec(spec 进 etcd/审计快照,任何 pods:get 身份都读得到)
+    # 密文 env 不落 Pod spec
     pod_spec = fake.pods[(f"tenant-{user_id}", uuid)].spec
     assert "hf_drill_secret" not in str(pod_spec.env)
     assert pod_spec.secret_env["HF_TOKEN"] == "hf_drill_secret"
@@ -282,7 +274,7 @@ async def test_service_container_drill(client, sm, fake):
     assert pod_spec.restart_policy == "Always"
     assert pod_spec.service_port == 8000 and pod_spec.with_ssh is False
 
-    # 版本实例不进实例列表(它由服务驱动),但实例级只读端点仍可达
+    # 版本实例不进实例列表,实例级只读端点仍可达
     listed = (await client.get("/api/v1/instances", headers=h)).json()["items"]
     assert [i["uuid"] for i in listed] == []
     assert (await client.get(f"/api/v1/instances/{uuid}", headers=h)).status_code == 200
@@ -299,7 +291,7 @@ async def test_service_container_drill(client, sm, fake):
     ).json()
     plain = created["key"]
     assert plain.startswith("sk-")
-    # 明文只此一次:列表接口再也拿不到它
+    # 明文只此一次
     listed_keys = (await client.get(f"/api/v1/services/{slug}/api-keys", headers=h)).json()
     assert plain not in str(listed_keys)
 
@@ -308,7 +300,7 @@ async def test_service_container_drill(client, sm, fake):
     host = {"host": f"{slug}.{get_settings().service_domain_suffix}"}
     ok = await client.post(auth_url, headers={**host, "authorization": f"Bearer {plain}"})
     assert ok.status_code == 200
-    # 平台注入头必须回全:没回的头会被客户端伪造值原样透传给用户容器
+    # 平台注入头回全
     assert ok.headers["x-superdl-endpoint"] == slug
     assert ok.headers["x-superdl-key-id"] == str(created["id"])
 
@@ -350,7 +342,7 @@ async def test_service_container_drill(client, sm, fake):
     ).status_code == 200
     uuid = uuid_v2
 
-    # ── 吊销 → 立即 401(网关侧无缓存,吊销即时生效)──────────
+    # ── 吊销 → 立即 401 ──────────────────────────────────────
     assert (
         await client.delete(f"/api/v1/services/{slug}/api-keys/{created['id']}", headers=h)
     ).status_code == 200
@@ -377,7 +369,7 @@ async def test_service_container_drill(client, sm, fake):
     assert svc["status"] == "released" and svc["released_at"] is not None
     assert (await client.get("/api/v1/services", headers=h)).json()["items"] == []
 
-    # 充值 - 消费 = 余额:服务的版本实例与开发机共用同一套计费,没有第二条账路
+    # 充值 - 消费 = 余额
     async with sm() as session:
         entries = list(
             (
@@ -398,12 +390,7 @@ async def test_service_container_drill(client, sm, fake):
 
 
 async def test_subscription_drill(client, sm, fake):
-    """包周期主链路:充值 → 买包月 → 运行 → 到期 → 停机 → 冻结 → 回收,全程资金自洽。
-
-    与按量演练分开一条:那条跑「跑多久算多少钱」,这条跑「先付一整段、结算完全不参与」。
-    挂在中段(到期不停机)= 到期后仍免费在跑;挂在末段(冻结不回收)= 实例盘收不回来;
-    挂在资金断言 = 预扣与流水对不上,财务侧无法对账。
-    """
+    """包周期主链路:充值 → 买包月 → 运行 → 到期 → 停机 → 冻结 → 回收,全程资金自洽。"""
     from datetime import timedelta
 
     from sqlalchemy import update
@@ -466,7 +453,7 @@ async def test_subscription_drill(client, sm, fake):
     )
     assert resp.status_code == 202, resp.text
     uuid = resp.json()["uuid"]
-    # ¥3.99/时 × 720 时 × 8 折 —— 与 UI 稿上的数字逐字相同
+    # ¥3.99/时 × 720 时 × 8 折
     assert Decimal((await client.get("/api/v1/wallet", headers=h)).json()["balance"]) == Decimal(
         "701.76"
     )

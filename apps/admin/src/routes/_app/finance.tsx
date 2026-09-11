@@ -78,7 +78,7 @@ import { SettlementGapsTab } from "./-SettlementGapsTab";
 const FINANCE_TABS = ["orders", "refunds", "invoices", "adjustments", "gaps", "anomalies", "audit"] as const;
 type FinanceTab = (typeof FINANCE_TABS)[number];
 
-// 筛选入 URL 的白名单口径:状态枚举以共享映射表为准,日期 YYYY-MM-DD / 账期 YYYY-MM 卡格式,租户 id 收正整数
+// URL 筛选白名单:状态取共享映射表,日期 YYYY-MM-DD,账期 YYYY-MM,租户 id 正整数
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const PERIOD_RE = /^\d{4}-\d{2}$/;
 
@@ -102,7 +102,7 @@ interface FinanceSearch {
 }
 
 export const Route = createFileRoute("/_app/finance")({
-  // Tab 与订单/退款/发票/调账四个 Tab 的筛选条件入 URL:白名单校验,非法值剥离
+  // 筛选条件入 URL,非法值剥离
   validateSearch: (search: Record<string, unknown>): FinanceSearch => ({
     tab: FINANCE_TABS.includes(search.tab as FinanceTab) ? (search.tab as FinanceTab) : undefined,
     o_status:
@@ -146,7 +146,7 @@ export const Route = createFileRoute("/_app/finance")({
   component: FinancePage,
 });
 
-/** 各 Tab 共用的 URL 筛选读写:replace:true 不堆历史记录,prev 展开保留他项。 */
+/** 各 Tab 共用的 URL 筛选读写(replace,保留他项)。 */
 function useFinanceFilters() {
   const navigate = useNavigate({ from: "/finance" });
   const search = Route.useSearch();
@@ -159,7 +159,7 @@ function useFinanceFilters() {
   return { search, setFilters };
 }
 
-// 对账 diff 告警阈值(%):事件计费与指标估算的相对偏差超过该值时 diff% 列标红提示人工复核
+// 对账 diff 标红阈值(%)
 const RECONCILE_DIFF_WARN_PCT = 2;
 
 function ReconciliationCard() {
@@ -177,7 +177,7 @@ function ReconciliationCard() {
       title={t("finance.reconTitle")}
       extra={
         <Space>
-          {/* 对账是历史口径:禁选未来日期 */}
+          {/* 禁选未来日期 */}
           <DatePicker
             value={day}
             onChange={(d) => d && setDay(d)}
@@ -190,7 +190,7 @@ function ReconciliationCard() {
         </Space>
       }
     >
-      {/* 查询失败时三个 Statistic 会全显示「—」,必须明示错误而非伪装成当日无数据 */}
+      {/* 查询失败明示错误 */}
       {isError && (
         <Alert
           type="error"
@@ -213,7 +213,7 @@ function ReconciliationCard() {
             value={report ? report.diff_pct : "—"}
             suffix={report ? "%" : undefined}
             styles={{
-              // 无数据(reconcile 为 null)不染任何色:"—" 套绿色会被读成「对账正常」
+              // 无数据不染色
               content:
                 report == null
                   ? undefined
@@ -250,12 +250,11 @@ function ReconciliationCard() {
 function OrdersTab() {
   const { t } = useTranslation(["admin", "shared"]);
   const orderColumns = useOrderColumns({ withTenant: true });
-  // 筛选条件入 URL(status/订单号/下单日);导出与当前筛选同口径
+  // 筛选条件入 URL(status/订单号/下单日)
   const { search, setFilters } = useFinanceFilters();
   const status = search.o_status;
   const orderNo = search.o_no ?? "";
-  // 检索 commit 制(同工单页):输入只改本地值,回车/点搜索/清空才写 URL;
-  // URL 值变化(前进/后退)回流输入框走渲染期派生态
+  // 检索 commit 制:回车/点搜索/清空才写 URL;URL 回流走渲染期派生态
   const [orderNoInput, setOrderNoInput] = useState(orderNo);
   const [prevOrderNo, setPrevOrderNo] = useState(orderNo);
   if (orderNo !== prevOrderNo) {
@@ -326,10 +325,10 @@ function OrdersTab() {
   );
 }
 
-// 与 adminapi/service.ADJUST_MAX_ABS 对齐:单笔绝对值上限,超出走对公/线下流程
+// 单笔绝对值上限,与 adminapi/service.ADJUST_MAX_ABS 对齐
 const ADJUST_MAX_ABS = 100000;
 
-/** 复核确认框:列出租户/当前余额/调账后余额/发起人/原因;驳回必须手输理由(入审计,回显给用户)。 */
+/** 复核确认框:租户/当前余额/调账后余额/发起人/原因;驳回必填理由(入审计)。 */
 function ReviewConfirmModal({
   target,
   onClose,
@@ -353,13 +352,12 @@ function ReviewConfirmModal({
         onReviewed();
         onClose();
       },
-      // 统一走 message_key 目录映射,不直接展示 e.message
       onError: (e) => message.error(errText(e, t("finance.reviewFailed"))),
     },
   });
   if (!target) return null;
   const { adj, approve } = target;
-  // 复核预览的事后余额:BigInt 分级精确相加(禁浮点),与服务端 Numeric(14,2) 同口径
+  // 事后余额:BigInt 相加(禁浮点)
   const after = ctx.data ? addAmounts(ctx.data.balance, adj.amount) : null;
   return (
     <Modal
@@ -449,7 +447,7 @@ function AdjustmentsTab() {
   const { search, setFilters } = useFinanceFilters();
   const status = search.a_status;
   const day = search.a_day ? dayjs(search.a_day) : null;
-  // 租户 id commit 制(同工单页):逐键触发会把游标列表打回第一页 N 次;URL 回流走渲染期派生态
+  // 租户 id commit 制;URL 回流走渲染期派生态
   const [uidInput, setUidInput] = useState<number | null>(search.a_uid ?? null);
   const [prevUid, setPrevUid] = useState(search.a_uid);
   if (search.a_uid !== prevUid) {
@@ -460,7 +458,7 @@ function AdjustmentsTab() {
   const [creating, setCreating] = useState(false);
   const [reviewTarget, setReviewTarget] = useState<{ adj: AdjustmentRow; approve: boolean } | null>(null);
   const [form] = Form.useForm<{ user_id: number; amount: string; reason: string }>();
-  // 新建草稿(sessionStorage):误关弹窗不丢;发起成功后清除
+  // 新建草稿(sessionStorage),发起成功后清除
   const draft = useFormDraft<{ user_id: number; amount: string; reason: string }>("adjustment-new");
   const refresh = () => void qc.invalidateQueries({ queryKey });
   const params = {
@@ -473,7 +471,7 @@ function AdjustmentsTab() {
   const { doExport, exporting } = useCsvExport((tz, lang) => exportAdjustmentsCsv(params, tz, lang));
   const rows: AdjustmentRow[] = data?.pages.flatMap((p) => p.items) ?? [];
 
-  // 输入 user_id 即时回显租户身份与资金现状;不存在则阻止提交
+  // 输入 user_id 回显租户身份与资金现状;不存在阻止提交
   const wUserId = Form.useWatch("user_id", form);
   const ctxId = typeof wUserId === "number" && Number.isInteger(wUserId) && wUserId > 0 ? wUserId : null;
   const ctx = useAdjustContext(creating ? ctxId : null);
@@ -527,7 +525,7 @@ function AdjustmentsTab() {
             disabled={!writable}
             onClick={() => {
               setCreating(true);
-              // 打开时复活草稿(若有),让误关的未提交内容回来
+              // 打开时复活草稿
               const d = draft.load();
               if (d) form.setFieldsValue(d);
             }}
@@ -632,7 +630,7 @@ function AdjustmentsTab() {
         onCancel={() => setCreating(false)}
         onOk={async () => {
           const values = await form.validateFields();
-          // 上下文必须已确认(不存在/查询失败都阻止提交;服务端再拦一道)
+          // 上下文未确认(不存在/查询失败)阻止提交
           if (!ctx.data) return;
           create.mutate({
             data: {
@@ -640,7 +638,7 @@ function AdjustmentsTab() {
               amount: values.amount,
               reason: values.reason,
             },
-            // 幂等键从表单快照派生且失败不轮换:双击/重试安全重放,改掉任一字段才是新调账
+            // 幂等键从表单快照派生,失败不轮换
             idempotencyKey: idemKeyOf("adj", [values.user_id, values.amount, values.reason]),
           });
         }}
@@ -704,7 +702,7 @@ function AdjustmentsTab() {
             label={t("finance.amountLabel")}
             rules={[{ required: true }]}
           >
-            {/* stringMode:调账金额直接以字符串提交,不经二进制浮点;上限与后端 ADJUST_MAX_ABS 对齐 */}
+            {/* stringMode:金额以字符串提交;上限与后端 ADJUST_MAX_ABS 对齐 */}
             <InputNumber
               step="0.01"
               precision={2}
@@ -852,7 +850,7 @@ function AnomaliesTab() {
             await backfill.mutateAsync({
               orderNo: backfillTarget!.order_no!,
               data: { reason },
-              // 同上调账:快照派生幂等键,重试不重复入账(后端唯一约束兜底)
+              // 幂等键从快照派生
               idempotencyKey: idemKeyOf("backfill", [backfillTarget!.order_no!, reason]),
             });
             message.success(t("finance.backfilled"));
@@ -883,7 +881,7 @@ function AnomaliesTab() {
   );
 }
 
-/** 登记打款弹窗:渠道下拉 + 凭证号。出金只发生在这里(审批通过不动钱包)。 */
+/** 登记打款弹窗:渠道 + 凭证号;出金只发生在这里。 */
 function PayoutModal({
   target,
   onClose,
@@ -897,7 +895,7 @@ function PayoutModal({
   const { formatMoney } = useFormat();
   const [form] = Form.useForm<RefundPayout>();
   const payout = usePayoutRefund();
-  // 幂等键随目标单生成(渲染期派生):同一轮表单重试同键重放不出金,换单即换键
+  // 幂等键随目标单派生
   const [idemFor, setIdemFor] = useState<{ id: number; key: string } | null>(null);
   if (target && idemFor?.id !== target.id) {
     setIdemFor({ id: target.id, key: crypto.randomUUID() });
@@ -946,12 +944,12 @@ function RefundsTab() {
   const { admin } = useAuth();
   const writable = canWriteFinance(role);
   const qc = useQueryClient();
-  // 筛选条件入 URL(status/发起日/渠道);渠道过滤在客户端做(接口口径只有 status/day;对已加载页生效)
+  // 筛选条件入 URL(status/发起日/渠道);渠道在客户端过滤已加载页
   const { search, setFilters } = useFinanceFilters();
   const status = search.r_status;
   const day = search.r_day ? dayjs(search.r_day) : null;
   const channel = search.r_channel;
-  // 渠道是客户端过滤,不进导出参数
+  // 渠道不进导出参数
   const params = {
     ...(status ? { status } : {}),
     ...(search.r_day ? { day: search.r_day } : {}),
@@ -1148,8 +1146,7 @@ function RefundsTab() {
         hasNextPage={Boolean(hasNextPage)}
         loading={isFetchingNextPage}
         isError={isFetchNextPageError}
-        // 渠道客户端过滤激活时,收尾计数取「已加载」(与表内行数对不上)或「筛选后」(把未加载伪装成不存在)
-        // 都会误导,此时不再展示 LoadMore 自带计数,由下方一行把两个口径并列说明;未过滤时维持原口径
+        // 渠道过滤激活时不展示 LoadMore 计数,由下方一行并列两个口径
         loadedCount={channel ? undefined : all.length}
         onLoadMore={() => void fetchNextPage()}
       />
@@ -1170,7 +1167,7 @@ function RefundsTab() {
   );
 }
 
-/** 开票弹窗:填发票号(人工开票,发票经邮箱送达用户;提交即站内信通知)。 */
+/** 开票弹窗:填发票号;提交即站内信通知。 */
 function IssueInvoiceModal({
   target,
   onClose,
@@ -1223,18 +1220,16 @@ function InvoicesTab() {
   const { search, setFilters } = useFinanceFilters();
   const status = search.i_status;
   const urlPeriod = search.i_period ?? "";
-  // 账期 commit 制检索:输入只改本地值,回车/点搜索/清空才写 URL;URL 回流走渲染期派生态
+  // 账期 commit 制;URL 回流走渲染期派生态
   const [periodInput, setPeriodInput] = useState(urlPeriod);
   const [prevPeriod, setPrevPeriod] = useState(urlPeriod);
   if (urlPeriod !== prevPeriod) {
     setPrevPeriod(urlPeriod);
     setPeriodInput(urlPeriod);
   }
-  // 宽松校验:非 YYYY-MM 格式标红提示,但不阻止提交(后端对非法账期只会回空,不会误操作)
+  // 非 YYYY-MM 标红提示,不阻止提交
   const periodBad = periodInput.trim() !== "" && !PERIOD_RE.test(periodInput.trim());
-  // 抬头与邮箱默认脱敏;明文是逐次显式动作(reveal=true + 必填事由),后端按条数与事由落审计。
-  // 授权绑定「授权时的筛选口径」:换状态/换账期即撤销,一条事由不会顺着后续筛选把整表解锁。
-  // 撤销是真删授权而非只藏标签——只比对不清空的话,筛选绕一圈回来会无声地重新解锁。
+  // 抬头与邮箱默认脱敏;reveal=true + 必填事由回明文,授权绑定当时筛选口径,换筛选即删授权
   const filterKey = `${status ?? ""}|${urlPeriod}`;
   const [reveal, setReveal] = useState<{ reason: string; filterKey: string } | null>(null);
   const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
@@ -1251,7 +1246,7 @@ function InvoicesTab() {
     ...(revealReason !== null ? { reveal: true, reason: revealReason } : {}),
   };
   const { data, queryKey, isLoading, isError, error, refetch } = useInvoices(params);
-  // 导出与表格共用同一份 params:CSV 拿不到表格没解锁的明文,明文事由是两个出口的同一道闸
+  // 导出与表格共用同一份 params
   const { doExport, exporting } = useCsvExport((tz, lang) => exportInvoicesCsv(params, tz, lang));
   const rows: InvoiceRow[] = data ?? [];
   const [issueTarget, setIssueTarget] = useState<InvoiceRow | null>(null);
@@ -1446,8 +1441,7 @@ function FinancePage() {
   const anomaliesQ = useAnomalies();
   const { data: anomalies, isError: anomaliesError } = anomaliesQ;
   const anomalyCount = anomalies?.length ?? 0;
-  // 发票读门只剩 finance/admin(抬头与邮箱是自然人 PII):无权角色不给 Tab,也就不会挂上必 403 的查询。
-  // 书签直达 ?tab=invoices 时回落充值流水并明示原因——静默换 Tab 会被读成「发票没了」
+  // 发票 Tab 只给 finance/admin;无权直达 ?tab=invoices 回落订单 Tab 并明示原因
   const showInvoices = canReadInvoices(role);
   const activeTab = tab ?? "orders";
   const invoicesDenied = activeTab === "invoices" && !showInvoices;
@@ -1485,7 +1479,7 @@ function FinancePage() {
               label: (
                 <Space size={6}>
                   {t("finance.tabAnomalies")}
-                  {/* 计数查询失败绝不静默为 0(无红 Tag 会被读成「没有异常」):警示图标顶替,红 Tag 仅成功时按真实计数显示(同 AlertBell「失败显示 ?」) */}
+                  {/* 计数查询失败显示警示图标,不静默为 0 */}
                   {anomaliesError ? (
                     <Tooltip title={t("common.loadFailed", { ns: "shared" })}>
                       <WarningOutlined style={{ color: adminColors.alertAccent }} />

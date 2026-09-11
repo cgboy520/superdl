@@ -1,11 +1,4 @@
-"""纯 CPU 实例(tier=cpu / gpu_count=0)的资源申请、计费份数、容量与配额。
-
-这一档与 GPU 档的差别集中在四个「0 是合法值」的位置,每处坏掉的后果都不一样:
-- 资源申请:漏判会替不用卡的实例申请 nvidia.com/gpu,占掉真正卖卡的名额
-- 计费份数:漏判会按 单价 × 0 卡 算出 ¥0.00,整档免费
-- Pod 规格:漏判会把 0 卡当 1 卡「放大」,结果碰巧对、语义全错
-- 配额:漏判会拿 0 去比 GPU 上限,等于没有闸门
-"""
+"""纯 CPU 实例(tier=cpu / gpu_count=0):资源申请、计费份数、Pod 规格、容量与配额。"""
 
 from decimal import Decimal
 
@@ -76,10 +69,7 @@ def _cpu_spec(pool: str = "cpu", **extra) -> dict:
 
 class TestGpuRequest:
     def test_cpu_instance_requests_no_gpu_resource(self):
-        """CPU 实例不申请任何 nvidia.com/*,且走 runc + userns。
-
-        挂了 = 不用卡的实例也会占一张卡的 device-plugin 名额。
-        """
+        """CPU 实例不申请任何 nvidia.com/*,走 runc + userns。"""
         req = build_gpu_request(
             pool_label="cpu", gpu_count=0, gpu_cores_pct=0, vram_gb=0, mig_profile=None
         )
@@ -90,11 +80,7 @@ class TestGpuRequest:
         assert req.node_selector == {POOL_NODE_LABEL: "cpu"}
 
     async def test_cpu_on_hami_pool_not_gated_on_hami(self, sm, fake):
-        """HAMi 未就绪时,挂 hami 池的 CPU 实例仍可下发。
-
-        挂了说明:门禁按池判而非按「要不要卡」判 —— HAMi 一挂,连根本不申请 GPU 的
-        CPU 实例也开不出来。门禁判据必须与 build_gpu_request 同源:先看要不要卡,再看落哪个池。
-        """
+        """HAMi 未就绪时,挂 hami 池的 CPU 实例仍可下发(门禁与 build_gpu_request 同源)。"""
         from app.core.errors import AppError, ErrorCode
         from app.modules.nodes import service as nodes_service
         from app.modules.orchestrator.service import _require_cluster_for_pool
@@ -112,11 +98,7 @@ class TestGpuRequest:
             await _require_cluster_for_pool(session, "hami", 0)
 
     def test_cpu_on_hami_pool_still_requests_no_gpu(self):
-        """gpu_count==0 的判定必须在池分支**之前**。
-
-        挂了 = CPU 档挂 hami 池时会照 HAMi 语法申请 gpu/gpucores/gpumem,
-        把 GPU 机上一张真卡判给一台不用卡的实例(本档允许挂 hami 正是为了吃空闲 CPU)。
-        """
+        """gpu_count==0 的判定在池分支之前:CPU 档挂 hami 池不申请 gpu/gpucores/gpumem。"""
         req = build_gpu_request(
             pool_label="hami",
             gpu_count=0,
@@ -129,7 +111,7 @@ class TestGpuRequest:
         assert not any(k.startswith("nvidia.com/") for k in req.resources)
         assert req.resources == {}
         assert req.scheduler_name is None
-        # 不钉型号:无卡节点没有 superdl.io/gpu-model 标签,钉了必然 Pending
+        # 不钉型号
         assert req.node_selector == {POOL_NODE_LABEL: "hami"}
         assert GPU_MODEL_NODE_LABEL not in req.node_selector
 
@@ -140,10 +122,7 @@ class TestGpuRequest:
 
 class TestPodSpec:
     def test_cpu_instance_does_not_scale_vcpu_mem(self):
-        """CPU 档倍率恒 1(不是「把 0 卡当 1 卡放大」)。
-
-        挂了 = 倍率跟着 gpu_count 走,给 CPU 档加多份规格时会照着 0 卡乘。
-        """
+        """CPU 档倍率恒 1。"""
         pod = build_pod_spec(make_instance(spec=_cpu_spec(), gpu_count=0))
         assert pod.vcpu == 8 and pod.mem_gb == 16
         assert pod.gpu_resources == {}
@@ -157,10 +136,7 @@ class TestPodSpec:
 
 class TestBillingUnits:
     def test_zero_gpu_bills_one_unit(self):
-        """CPU 实例按「整机一份」收,不是 单价 × 0 卡 = ¥0。
-
-        挂了 = 纯 CPU 实例全平台免费,且余额护栏/停机判据一并归零(燃烧率恒 0)。
-        """
+        """CPU 实例按「整机一份」收。"""
         assert billing_units(0) == 1
         assert billing_units(1) == 1
         assert billing_units(8) == 8
@@ -233,10 +209,7 @@ class TestCpuSkuValidation:
         assert resp.json()["message_key"] == "catalog.tierPoolMismatch"
 
     async def test_update_checks_merged_final_state(self, client: AsyncClient, sm):
-        """部分更新只看终态:单改 vram_gb=0 的 GPU SKU 也要被拒。
-
-        挂了 = 运营能把在售 GPU 规格改成「0 显存」,下发即 Pending 到超时。
-        """
+        """部分更新只看终态:单改 vram_gb=0 的 GPU SKU 被拒。"""
         sku_id = await create_test_sku(sm)
         headers = await admin_headers(sm, client)
         resp = await client.patch(
@@ -269,10 +242,7 @@ class TestCapacity:
         assert row["available_count"] == 4  # min(32//8, 64//16)
 
     async def test_cpu_on_gpu_node_capped_by_policy(self, client: AsyncClient, sm):
-        """挂 hami 池时每节点只让出 gpu_node_cpu_instance_vcpu_cap 核;0 = 一台不卖。
-
-        挂了 = CPU 实例会把 GPU 机的 CPU 吃光,卡还在却没有 CPU 可配,GPU 档跟着卖不动。
-        """
+        """挂 hami 池时每节点只让出 gpu_node_cpu_instance_vcpu_cap 核;0 = 一台不卖。"""
         await seed_node_spec(sm, node_name="gpu-1", pool_label="hami")
         await self._set_node_size(sm, "gpu-1", vcpu=64, mem_gb=256)
         sku_id = await self._cpu_sku(sm, pool_label="hami")
@@ -288,7 +258,7 @@ class TestCapacity:
         assert await free() == 0
 
     async def test_no_capacity_rejects_create(self, client: AsyncClient, sm, fake):
-        """cap=0 时创建即 409(不是放行后 Pending 到超时)。"""
+        """cap=0 时创建即 409。"""
         await seed_node_spec(sm, node_name="gpu-1", pool_label="hami")
         sku_id = await self._cpu_sku(sm, pool_label="hami")
         async with sm() as session:
@@ -325,7 +295,7 @@ class TestCapacity:
 
 class TestSellableGate:
     async def test_cpu_sku_listing_checks_pool_only(self, client: AsyncClient, sm):
-        """CPU 规格上架只看「池里有 Ready 节点」——按型号匹配对它恒不成立。"""
+        """CPU 规格上架只看「池里有 Ready 节点」。"""
         async with sm() as session:
             sku = Sku(**{**CPU_SKU, "status": "off"})
             session.add(sku)
@@ -347,10 +317,7 @@ class TestSellableGate:
 
 class TestFullChain:
     async def test_cpu_instance_creates_bills_and_frees_quota(self, client: AsyncClient, sm, fake):
-        """gpu_count=0 全链路:创建 → Pod 无 GPU 资源 → running → 尾账非 0。
-
-        挂了 = CPU 档要么下发时抢卡,要么整档免费(单价 × 0 卡)。
-        """
+        """gpu_count=0 全链路:创建 → Pod 无 GPU 资源 → running → 尾账非 0。"""
         await seed_node_spec(sm, node_name="cpu-1", pool_label="cpu", gpu_model=None, gpu_count=0)
         async with sm() as session:
             sku = Sku(**{**CPU_SKU, "status": "on"})
@@ -387,7 +354,7 @@ class TestFullChain:
             "status"
         ] == "running"
 
-        # 跑 30 分钟后停机 → 尾账必须 > 0(0.49/时 × 0.5h ≈ 0.25)
+        # 跑 30 分钟后停机 → 尾账 > 0(0.49/时 × 0.5h ≈ 0.25)
         await backdate_running_event(sm, uuid, 30)
         assert (await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)).status_code
         async with sm() as session:
@@ -403,7 +370,7 @@ class TestFullChain:
             )
         assert bills, "CPU 实例必须出账单行"
         assert sum(b.amount for b in bills) > Decimal("0.00")
-        # 账单行照实存 gpu_count=0:份数由 billing_units 还原,不靠往列里塞 1 来自洽
+        # 账单行照实存 gpu_count=0,份数由 billing_units 还原
         assert all(b.gpu_count == 0 for b in bills)
 
     async def test_gpu_count_must_be_zero_for_cpu_sku(self, client: AsyncClient, sm, fake):
@@ -429,10 +396,7 @@ class TestFullChain:
         assert resp.json()["message_key"] == "orchestrator.cpuSkuNoGpu"
 
     async def test_gpu_sku_rejects_zero_gpu_count(self, client: AsyncClient, sm, fake):
-        """契约层允许 gpu_count ge=0,GPU 规格的「0 卡实例」必须被服务层挡住。
-
-        挂了 = 用户能以 0 卡下单 GPU 规格,拿到一台不带卡却按整机价计费的机器。
-        """
+        """GPU 规格的「0 卡实例」由服务层挡住。"""
         await seed_node_spec(sm)
         sku_id = await create_test_sku(sm)
         headers, user_id, key_id = await create_user_with_key(client, "13900000304")
@@ -453,10 +417,7 @@ class TestFullChain:
 
 class TestVcpuQuota:
     async def test_vcpu_capped_and_freed_on_release(self, client: AsyncClient, sm, fake):
-        """max_vcpus_per_user 封顶 CPU 实例的 vCPU 合计,释放后名额归还。
-
-        挂了 = 单个用户可以无限开 CPU 实例(GPU 维的闸门对 gpu_count=0 恒不触发)。
-        """
+        """max_vcpus_per_user 封顶 CPU 实例的 vCPU 合计,释放后名额归还。"""
         await seed_node_spec(sm, node_name="cpu-1", pool_label="cpu", gpu_model=None, gpu_count=0)
         async with sm() as session:
             sku = Sku(**{**CPU_SKU, "status": "on"})
@@ -486,8 +447,7 @@ class TestVcpuQuota:
 
         second = await create()
         assert second.status_code == 400, second.text
-        # 三个同族配额同码不同 message_key:前端按 message_key 分文案(reference/i18n.md),
-        # 给 vCPU 单开一个 ErrorCode 只会让三兄弟长出两种码
+        # 三个同族配额同码不同 message_key(reference/i18n.md)
         assert second.json()["code"] == "VALIDATION_ERROR"
         assert second.json()["message_key"] == "orchestrator.vcpuQuota"
 
@@ -506,7 +466,7 @@ class TestVcpuQuota:
         assert third.status_code == 202, third.text
 
     async def test_gpu_instance_does_not_consume_vcpu_quota(self, client: AsyncClient, sm, fake):
-        """两维互不相交:GPU 实例不吃 vCPU 额度(否则 8 卡户会被 CPU 额度先卡死)。"""
+        """GPU 实例不吃 vCPU 额度。"""
         await seed_node_spec(sm)
         sku_id = await create_test_sku(sm)
         async with sm() as session:
@@ -528,7 +488,7 @@ class TestVcpuQuota:
 
 
 class TestSellableCpuSlots:
-    """纯函数口径:预算按池分化,内存维与 vCPU 维取小。"""
+    """预算按池分化,内存维与 vCPU 维取小。"""
 
     @staticmethod
     def _node(pool: str, vcpu: int, mem_gb: int, status: str = "Ready") -> NodeSpec:
@@ -551,7 +511,7 @@ class TestSellableCpuSlots:
         assert catalog_service.sellable_cpu_slots(8, 16, nodes, gpu_node_vcpu_cap=16) == 2
 
     def test_gpu_node_capped_and_memory_prorated(self):
-        """GPU 节点按 cap 折算,内存按同比例折算(否则一台就把整机内存吃光)。"""
+        """GPU 节点按 cap 折算,内存按同比例折算。"""
         nodes = [self._node("hami", 64, 256)]
         # cap=16 → vCPU 预算 16(2 台),内存预算 256×16//64=64(1 台)→ 取 1
         assert catalog_service.sellable_cpu_slots(8, 64, nodes, gpu_node_vcpu_cap=16) == 1

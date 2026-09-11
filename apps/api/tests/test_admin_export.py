@@ -1,4 +1,4 @@
-"""管理端 CSV 导出:订单/租户流水/审计/日对账 —— 口径(截断标记统一由 test_billing_export 覆盖)。"""
+"""管理端 CSV 导出:订单/租户流水/审计/日对账(截断标记见 test_billing_export)。"""
 
 from datetime import timedelta
 from decimal import Decimal
@@ -160,12 +160,10 @@ class TestInvoicesExport:
 
 
 class TestInvoicePiiGate:
-    """发票抬头/税号/邮箱是全站最集中的 PII 出口(单次导出封顶 5 万行):
-    只给财务、默认脱敏、明文要事由、每次导出都留痕。"""
+    """发票导出:只给财务、默认脱敏、明文要事由、每次导出留痕。"""
 
     async def test_readonly_is_refused(self, client: AsyncClient, sm):
-        """readonly 一律 403 —— /tenants 已明确不给它明文实名,这里放它整表拉走
-        抬头+邮箱是同一份 PII 换个出口。挂了说明角色门又被放宽回 _ANY_READ。"""
+        """readonly 一律 403。"""
         await _make_invoices(sm)
         ro = await admin_headers(sm, client, role="readonly", username="ro-exp-iv")
         for path in ("/api/admin/v1/invoices", "/api/admin/v1/invoices/export"):
@@ -181,7 +179,7 @@ class TestInvoicePiiGate:
         assert "示例科技(深圳)有限公司0号" not in csv_text
         assert "ap0@example.com" not in csv_text
         assert "示***********" in csv_text  # 留首字符掩其余(与租户实名同一档)
-        # 税号与金额不脱敏:财务核对要用,且不是自然人标识
+        # 税号与金额不脱敏
         assert "91440300MA5F000000" in csv_text
 
         rows = (await client.get("/api/admin/v1/invoices", headers=fin)).json()
@@ -197,10 +195,7 @@ class TestInvoicePiiGate:
         }
 
     async def test_reveal_with_reason_is_audited_with_row_count(self, client: AsyncClient, sm):
-        """明文导出 = 一次显式动作:CSV 里是明文,同时落一条带筛选条件与**实际行数**的审计。
-
-        挂了说明 5 万行 PII 可以被拉走而没有任何一行记录说明谁、为什么、拉了多少。
-        """
+        """明文导出落一条带筛选条件与实际行数的审计。"""
         from app.core.audit import AuditLog
 
         await _make_invoices(sm)
@@ -232,7 +227,7 @@ class TestInvoicePiiGate:
         assert row.request_id == resp.headers["x-request-id"]
 
     async def test_json_reveal_is_audited(self, client: AsyncClient, sm):
-        """JSON 列表与 CSV 同一档:明文同样要事由 + 审计(否则绕开导出就白设闸)。"""
+        """JSON 列表与 CSV 同一档:明文同样要事由 + 审计。"""
         from app.core.audit import AuditLog
 
         await _make_invoices(sm)
@@ -320,7 +315,7 @@ class TestAuditExport:
 
         h = await admin_headers(sm, client)
         await register(client, "13688880002")
-        # 造一条已知审计:按手机号检索租户(敏感读显式留痕)
+        # 造一条已知审计:按手机号检索租户
         await client.get("/api/admin/v1/tenants", params={"q": "13688880002"}, headers=h)
 
         resp = await client.get(
@@ -353,7 +348,7 @@ class TestReconciliationExport:
             "/api/admin/v1/reconciliation/export", params={"day": day}, headers=fin
         )
         assert resp.status_code == 200
-        # 表头之后第一行 = 合计行(空库:两侧均为 0.00,diff 0)
+        # 表头之后第一行 = 合计行
         assert resp.text.splitlines()[1].startswith("合计,")
         # 非法日期 → 400(与 GET /reconciliation 同一 parse_day)
         bad = await client.get(

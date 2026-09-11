@@ -83,7 +83,7 @@ class TestRecharge:
         assert len(orders) == 1
 
     async def test_idempotency_key_param_mismatch_409(self, client: AsyncClient, sm):
-        """同键异参(改了金额):显式 409,绝不静默返回上一单(弱键复用防线)。"""
+        """同键异参(改了金额):409。"""
         headers = {**(await user_headers(client, "13700000045")), "Idempotency-Key": "recharge-mix"}
         a = await create_order(client, headers, "20.00")
         resp = await client.post(
@@ -98,9 +98,7 @@ class TestRecharge:
         assert [o.order_no for o in orders] == [a["order_no"]]
 
     async def test_concurrent_same_key_first_request(self, client: AsyncClient, sm):
-        """同键并发首请求(双击/超时重试):负方回查返回同一订单,不许 500。
-        冒烟性质:两路是否真撞到「先 SELECT 后 INSERT」的唯一约束兜底分支取决于调度,
-        断言只锁最终结果(一单、一 201 一 200 重放)。"""
+        """同键并发首请求:一单、一 201 一 200 重放,不 500。"""
         import asyncio
 
         headers = {**(await user_headers(client, "13700000039")), "Idempotency-Key": "race-1"}
@@ -138,15 +136,14 @@ class TestRecharge:
         assert w["balance"] == "0.00"
 
     async def test_reversal_on_paid_order_flagged_not_debited(self, client: AsyncClient, sm):
-        """已入账订单收到渠道关单/退款通知:不自动冲账,落 channel_reversed_at 标记,
-        进异常清单 channel_reversed 分桶供人工核销。"""
+        """已入账订单收到渠道关单/退款通知:不自动冲账,落 channel_reversed_at,进异常清单。"""
         headers = await user_headers(client, "13700000044")
         order = await create_order(client, headers, "20.00")
         resp = await pay_mock(client, order["order_no"], "20.00")
         assert resp.status_code == 200
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "20.00"
-        # 渠道侧反转(商户后台退款/关单)通知到达
+        # 渠道侧反转通知到达
         resp = await client.post(
             "/api/v1/webhooks/mock",
             json={"order_no": order["order_no"], "amount": "20.00", "success": False},
@@ -168,8 +165,7 @@ class TestRecharge:
         )
 
     async def test_amount_bounds_rejected_at_contract_layer(self, client: AsyncClient):
-        """充值金额上下限只在契约层校验:低于下限、超大(1e30)、负数一律 422
-        (1e30 若先量化会在 as_amount 抛 InvalidOperation 漏成 500)。"""
+        """充值金额低于下限、超大(1e30)、负数一律 422。"""
         headers = await user_headers(client, "13700000045")
         for amount in ("0.50", "1e30", "-5"):
             resp = await client.post(
@@ -182,8 +178,7 @@ class TestRecharge:
 
 
 class TestMockCallbackParsing:
-    """mock 回调的畸形报文(非 JSON 对象 / 缺字段 / 金额非数值走同一 except 分支):
-    一律 400 PAYMENT_CHANNEL_ERROR,不许漏成 500。"""
+    """mock 回调的畸形报文一律 400 PAYMENT_CHANNEL_ERROR。"""
 
     async def test_malformed_body_400(self, client: AsyncClient):
         resp = await client.post(
@@ -297,7 +292,7 @@ class TestRealChannelWebhookRoutes:
     async def test_alipay_webhook_plain_text_success(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession], monkeypatch
     ):
-        """支付宝应答必须是纯文本 success(JSON 会被渠道判失败并重试 8 次)。"""
+        """支付宝应答是纯文本 success。"""
         from app.modules.billing.payment_channels import MockChannel
 
         async def fake_get_channel(name, session):
@@ -350,7 +345,7 @@ class TestRealChannelWebhookRoutes:
 
 class TestChannelFactory:
     async def test_real_channel_fingerprint_cache(self, sm, monkeypatch):
-        """渠道实例指纹缓存:配置不变命中缓存,凭据轮换立即重建(免重启)。"""
+        """渠道实例指纹缓存:配置不变命中缓存,凭据轮换立即重建。"""
         import app.modules.billing.payment_channels as pc
 
         cfg = dict.fromkeys(pc.WECHAT_CFG_KEYS, "") | {
@@ -376,8 +371,7 @@ class TestChannelFactory:
 
 class TestMockChannelGuard:
     async def test_mock_channel_refused_when_disabled(self, sm, monkeypatch):
-        """payment_mock=false 时无验签的 mock 渠道不可用(prod 下 payment_mock 必为 false 由
-        Settings 校验保证,渠道层只看这一个开关)。"""
+        """payment_mock=false 时 mock 渠道不可用。"""
         from app.core.config import get_settings
         from app.core.errors import AppError
         from app.modules.billing.payment_channels import get_channel

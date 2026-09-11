@@ -7,7 +7,7 @@
 import type { ServiceEventOutEventMetadata } from './serviceEventOutEventMetadata';
 
 /**
- * 服务级时间线 = 全部版本实例的事件并集,标出事件属于哪一版。
+ * 服务级时间线:全部版本实例的事件并集,标出所属版本。
  */
 export interface ServiceEventOut {
   actor: string;

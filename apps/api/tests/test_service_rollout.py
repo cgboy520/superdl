@@ -1,14 +1,5 @@
-"""在线服务版本更新(recreate):每条用例对应一处不变量。
-
-- happy path:挂了说明翻转 / 释放链断了 —— 端点会指着已停的旧版本,或旧实例永远不释放(白付 GPU 时费)
-- slug / URL / Key 不变:挂了说明用户贴出去的地址与凭据随更新失效(等于服务下线)
-- 密文沿用:挂了说明前端拿不到明文却也无法「不改」密文,每次更新都得重填密钥
-- 零重复扣款:挂了说明旧版本尾账出了两次
-- 在途 / 未落定 / 包周期 409:挂了说明能叠着起两个候选版本,或包周期预付款被白丢
-- 失败回退:挂了说明新版本起不来时服务卡在「部署中」,用户连回滚(启动上一版本)都不行
-- 配额:挂了说明 max_instances=1 的用户永远换不了版本
-- 幂等:挂了说明响应丢失后重提会起第三个版本
-"""
+"""在线服务版本更新(recreate):翻转与释放、slug/URL/Key 不变、密文沿用、零重复扣款、
+在途/未落定/包周期 409、失败回退、配额、幂等。"""
 
 import pytest
 from sqlalchemy import func, select
@@ -99,7 +90,7 @@ class TestRecreate:
         assert rollout["current_instance"]["uuid"] == old_uuid
         new_uuid = rollout["rollout_instance"]["uuid"]
         assert new_uuid != old_uuid
-        # 旧版本同事务关机,事件 reason 是 rollout 而不是 user_stop
+        # 旧版本同事务关机,事件 reason=rollout
         old = await _instance(sm, old_uuid)
         assert old.status == "stopping"
         async with sm() as session:
@@ -128,13 +119,13 @@ class TestRecreate:
         assert final["revision"] == 2 and final["rollout_instance"] is None
         assert final["current_instance"]["uuid"] == new_uuid
         assert final["slug"] == slug and final["url"] == svc["url"]
-        # 密文沿用:新 Pod 的 Secret 里是 v1 的值;明文项是新值;回显仍只给键名
+        # 密文沿用:新 Pod 的 Secret 里是 v1 的值;明文项是新值
         pod_spec = fake.pods[(f"tenant-{user_id}", new_uuid)].spec
         assert pod_spec.secret_env["HF_TOKEN"] == "hf_secret_v1"
         assert pod_spec.env["MAX_MODEL_LEN"] == "8192"
         assert final["container"]["env_secret_keys"] == ["HF_TOKEN"]
         assert final["container"]["image_ref"] == V2_IMAGE
-        # Key 跨版本存活:网关回调仍 200,且指向同一个 slug
+        # Key 跨版本存活
         ok = await client.post(AUTH_URL, headers=bearer)
         assert ok.status_code == 200 and ok.headers["x-superdl-endpoint"] == slug
         # 旧版本已释放,reason 是 rollout_retire
@@ -160,7 +151,7 @@ class TestRecreate:
         assert old_reasons[-2:] == ["rollout_retire", "released"]
         assert (old_bills or 0) <= 1
         assert svc_row.current_instance_id != old.id and svc_row.released_at is None
-        # 版本历史两条(含已释放),降序;事件并集标出版本;实例列表仍不含服务实例
+        # 版本历史两条,降序;实例列表不含服务实例
         revisions = (await client.get(f"/api/v1/services/{slug}/revisions", headers=headers)).json()
         assert [r["uuid"] for r in revisions["items"]] == [new_uuid, old_uuid]
         events = (await client.get(f"/api/v1/services/{slug}/events", headers=headers)).json()
@@ -168,7 +159,7 @@ class TestRecreate:
         assert (await client.get("/api/v1/instances", headers=headers)).json()["items"] == []
 
     async def test_retire_replay_is_noop(self, client, sm, fake):
-        """service.retire 至少一次投递:旧版本已释放后再来一条,不能报错也不能动当前版本。"""
+        """service.retire 重放:旧版本已释放后再来一条是 no-op。"""
         headers, svc, _ = await _provision(client, sm, fake, "13900000402")
         rollout = (
             await client.post(
@@ -186,7 +177,7 @@ class TestRecreate:
             ).scalar_one()
             old = await _instance(sm, svc["current_instance"]["uuid"])
             enqueue(session, "service.retire", {"service_id": svc_row.id, "instance_id": old.id})
-            # 指向当前版本的 retire 也必须是 no-op(翻转被回滚时会出现这种任务)
+            # 指向当前版本的 retire 也是 no-op
             enqueue(
                 session,
                 "service.retire",
@@ -227,7 +218,7 @@ class TestGuards:
             headers=headers,
         )
         assert bad.status_code == 400 and bad.json()["message_key"] == "services.envKeepUnknown"
-        # 停机的旧版本可以直接更新:不用先开机
+        # 停机的旧版本可以直接更新
         ok = await client.post(
             f"/api/v1/services/{slug}/revisions", json=revision_body(svc), headers=headers
         )

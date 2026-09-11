@@ -1,5 +1,4 @@
-/** 两端 i18n 运行时初始化的共用壳(web/admin 薄封装只传各自 ns 与语言包):
- *  共享 shared/errors 目录由 ui 提供;语言探测 localStorage("superdl.lang") → navigator,缺译回落 zh-CN(基准语言)。 */
+/** 两端 i18n 初始化共用壳:shared/errors 由 ui 提供;语言探测 localStorage("superdl.lang") → navigator,缺译回落 zh-CN。 */
 
 import i18n, { type i18n as I18nInstance, type Resource } from "i18next";
 import LanguageDetector from "i18next-browser-languagedetector";
@@ -14,7 +13,7 @@ export const SUPPORTED_LANGS = ["zh-CN", "en-US"] as const;
 export type AppLang = (typeof SUPPORTED_LANGS)[number];
 
 export function initAppI18n(opts: {
-  /** 端默认 ns(同时是端语言包挂的 ns 名,如 "web" / "admin") */
+  /** 端默认 ns("web" / "admin") */
   appNs: string;
   appResources: { "zh-CN": unknown; "en-US": unknown };
 }): I18nInstance {

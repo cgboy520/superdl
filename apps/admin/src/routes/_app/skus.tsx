@@ -52,8 +52,7 @@ export const Route = createFileRoute("/_app/skus")({
 interface SkuFormValues {
   name: string;
   gpu_model: string;
-  /** 表单只让运营选「展示档位」,提交时派生出 tier 与 pool_label。
-   *  tier 不做表单字段:antd validateFields() 只回已挂载 Form.Item 的值,setFieldsValue 塞进去的会静默漏。 */
+  /** 表单只选展示档位,提交时派生 tier 与 pool_label;tier 不做表单字段。 */
   variant: SkuVariant;
   mig_profile?: string | null;
   gpu_cores_pct: number;
@@ -66,32 +65,30 @@ interface SkuFormValues {
   price_hourly: string;  // stringMode:单价 4 位小数,不经二进制浮点
   max_gpus_per_instance: number;
   cuda_max?: string | null;
-  /** 是否接受包周期(预付)下单。与档位正交,是同一条 SKU 的另一种买法 */
+  /** 是否接受包周期下单(与档位正交) */
   period_enabled: boolean;
-  /** 是否上竞价档(可被平台回收换取折扣)。与包周期同级,仍是另一种买法 */
+  /** 是否上竞价档(与档位正交) */
   spot_enabled: boolean;
-  /** 编辑必填(入审计);新建端点不接受 reason,提交时不带 */
+  /** 编辑必填(入审计);新建端点不接受 */
   reason?: string;
 }
 
-// 展示档位 →(落库档位, 节点池):隔离机制的事实源是池,运营只选档位;后端 catalog._check_tier_pool 同款约束。
+// 展示档位 →(落库档位, 节点池);与后端 catalog._check_tier_pool 同款约束
 const VARIANT_SPEC: Record<SkuVariant, { tier: SkuTier; pool: string }> = {
   dedicated: { tier: "dedicated", pool: "kata" },
   shared_mig: { tier: "shared", pool: "mig" },
   shared_hami: { tier: "shared", pool: "hami" },
-  // CPU 档默认落 cpu 池(无卡机);改挂 hami 是去吃 GPU 机的空闲 CPU,后端 TIER_POOLS 两者都放行
+  // CPU 档默认 cpu 池,可改挂 hami(后端 TIER_POOLS 两者放行)
   cpu: { tier: "cpu", pool: "cpu" },
 };
 const POOL_VARIANTS: Record<string, SkuVariant[]> = {
   kata: ["dedicated"],
   mig: ["shared_mig"],
-  // hami 池上既能卖共享卡,也能卖只吃空闲 CPU 的 CPU 规格
   hami: ["shared_hami", "cpu"],
   cpu: ["cpu"],
 };
 const ALL_VARIANTS = Object.keys(VARIANT_SPEC) as SkuVariant[];
-/** CPU 规格必须落库的值(后端 catalog.cpu_spec_error 的镜像:GPU 三项任一非 0 即被拒)。
- *  超卖一并钉成 1:那个输入框在 cpu 档不挂载,不显式覆盖会把切档前的旧值带进库。 */
+/** CPU 规格提交时补零的 GPU 字段(镜像后端 catalog.cpu_spec_error);超卖钉成 1。 */
 const CPU_ZERO_FIELDS = {
   gpu_model: "",
   mig_profile: null,
@@ -125,20 +122,19 @@ function SkusPage() {
   const { t } = useTranslation(["admin", "shared"]);
   const errText = useApiErrorText();
   const { formatHourlyPrice } = useFormat();
-  // 深色主题下必须走 useApp 实例:静态 message 拿不到 ConfigProvider token
   const { message, modal } = App.useApp();
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();
   const { data: skus, queryKey, isLoading, isError, error, refetch } = useAdminSkus();
-  // 聚合端点只放 ops/readonly:finance 可看 SKU 页但拉它会 403,按角色关停查询
+  // 聚合端点只放 ops/readonly,按角色关停查询
   const { data: aggregates } = useGpuModelAggregates({
     enabled: canWriteOps(role) || role === "readonly",
   });
   const [editing, setEditing] = useState<SkuAdminOut | "new" | null>(null);
   const [clusterPick, setClusterPick] = useState<GpuModelAggregate | null>(null);
   const [form] = Form.useForm<SkuFormValues>();
-  // 新建草稿(sessionStorage):误关抽屉/刷新不丢;编辑态不写草稿(避免跨记录串值)
+  // 新建草稿(sessionStorage);编辑态不写草稿
   const draft = useFormDraft<SkuFormValues>("sku-new");
 
   const clusterOptions = useMemo(
@@ -168,11 +164,11 @@ function SkusPage() {
       onError: (e) => message.error(errText(e, t("common.saveFailed"))),
     },
   });
-  // 不带 onError:错误提示统一由 ReasonAction 弹出(避免双提示)
+  // 错误提示统一由 ReasonAction 弹出
   const onSale = useUpdateSku({
     mutation: { onSuccess: refresh },
   });
-  // 强制上架独立 mutation:modal.confirm 流程自带成功/失败提示(与 ReasonAction 流程并行)
+  // 强制上架:modal.confirm 流程自带提示
   const forceOnSale = useUpdateSku({
     mutation: {
       onSuccess: refresh,
@@ -180,14 +176,14 @@ function SkusPage() {
     },
   });
 
-  // 下架独立 mutation:不带 onError,错误提示统一由 ReasonAction 弹出(避免与 mutation 回调双提示)
+  // 下架:错误提示统一由 ReasonAction 弹出
   const offSale = useUpdateSku({
     mutation: { onSuccess: refresh },
   });
 
-  // 表单联动:实时容量预览参数(编辑态型号/档位不在表单里,取自记录)
+  // 容量预览参数(编辑态型号/档位取自记录)
   const record = editing !== null && editing !== "new" ? editing : null;
-  // 改价影响面(编辑态才查;新建无存量实例)
+  // 改价影响面(编辑态才查)
   const impact = useSkuImpact(record?.id ?? null);
   const wModel = Form.useWatch("gpu_model", form);
   const wVariant = Form.useWatch("variant", form);
@@ -200,8 +196,7 @@ function SkusPage() {
   const isCpuVariant = (wVariant ?? (record ? skuVariant(record.tier, record.pool_label) : undefined)) === "cpu";
   const pModel = wModel ?? record?.gpu_model;
   const pPool = wPool ?? record?.pool_label;
-  // 折算口径只看池(超卖只发生在 HAMi),端点不收 tier。
-  // CPU 规格必须留空 gpu_model 让端点走 vCPU/内存上限口径,否则会被报「未识别型号」
+  // 折算口径只看池,端点不收 tier;CPU 规格 gpu_model 留空
   const previewParams = useMemo(() => {
     if (editing === null || !pPool) return null;
     if (isCpuVariant) {
@@ -223,7 +218,7 @@ function SkusPage() {
   const preview = useSkuCapacityPreview(previewParams);
 
   const applyRecommend = (agg: GpuModelAggregate, variant: SkuVariant, pct: number) => {
-    // 只有 HAMi 软切分按算力份额折规格;整卡与 MIG 硬切分都拿整份(MIG 的份额由切片名定)
+    // 只有 HAMi 按算力份额折规格;整卡与 MIG 拿整份
     const shared = variant === "shared_hami";
     const factor = shared ? pct / 100 : 1;
     form.setFieldsValue({
@@ -252,7 +247,7 @@ function SkusPage() {
     const variant = current && variants.includes(current) ? current : variants[0];
     if (!variant) return;
     onVariantChange(variant);
-    // CPU 规格没有型号/显存可推荐:套上去会把 onVariantChange 刚清零的 GPU 字段再填回来
+    // CPU 规格不套型号推荐
     if (variant !== "cpu") {
       applyRecommend(agg, variant, form.getFieldValue("gpu_cores_pct") ?? 50);
     } else {
@@ -264,13 +259,13 @@ function SkusPage() {
     const { pool } = VARIANT_SPEC[variant];
     form.setFieldsValue({
       variant,
-      // cpu 档在 cpu / hami 两池都合法,默认取 cpu 池;挂 hami 会挤占 GPU 实例的配套 CPU,需运营显式改
+      // cpu 档默认 cpu 池,hami 需运营显式改
       pool_label: pool,
-      // 切片只属于 mig 池:换走时必须清掉,否则后端 _check_tier_pool 会以「切片与池不符」驳回
+      // 切片只属于 mig 池,换走时清掉
       ...(variant === "shared_mig" ? {} : { mig_profile: null }),
     });
     if (variant === "cpu") {
-      // GPU 字段一律清零:留着旧值提交会被后端 cpu_spec_error 拒掉,而那几个输入框此时已隐藏
+      // GPU 字段清零
       form.setFieldsValue(CPU_ZERO_FIELDS);
       return;
     }
@@ -289,11 +284,11 @@ function SkusPage() {
       form.setFieldsValue({
         variant: "shared_hami", gpu_cores_pct: 50, oversell_cores: 1.5,
         disk_gb: 100, max_gpus_per_instance: 1, pool_label: "hami", vcpu: 8, mem_gb: 32,
-        // 默认开:与后端 SkuCreate.period_enabled 默认值一致
+        // 与后端 SkuCreate.period_enabled 默认值一致
         period_enabled: true,
-        // 默认关:与后端 SkuCreate.spot_enabled 默认值一致
+        // 与后端 SkuCreate.spot_enabled 默认值一致
         spot_enabled: false,
-        // 草稿覆盖默认值(仅新建):误关抽屉后重开不丢
+        // 草稿覆盖默认值(仅新建)
         ...draft.load(),
       });
     } else {
@@ -308,15 +303,13 @@ function SkusPage() {
 
   const submit = async () => {
     await form.validateFields();
-    // 取值必须用 getFieldsValue(true) 而非 validateFields() 的返回值:后者只回已挂载 Form.Item 的字段,
-    // 而本表单按档位隐藏大半输入框,漏掉的会变成 undefined 混进 payload(String(undefined) 即 "undefined")而 422。
+    // 取值用 getFieldsValue(true):validateFields() 只回已挂载 Form.Item 的字段
     const values = form.getFieldsValue(true) as SkuFormValues;
-    // tier / pool_label 派生而非读表单:tier 没有 Form.Item,池的输入框只是只读回显,事实源都是 variant
+    // tier / pool_label 由 variant 派生
     const { tier, pool: derivedPool } = VARIANT_SPEC[values.variant];
-    // 只有 cpu 档的池运营可选,其余三档恒由档位派生;池的 Form.Item 一直挂载(禁用不等于不挂载),
-    // 写成 `values.pool_label || derivedPool` 那个 || 永远不会触发
+    // 只有 cpu 档的池可选,其余由档位派生
     const pool = values.variant === "cpu" ? values.pool_label : derivedPool;
-    // CPU 规格的 GPU 字段必须显式补零:那几个 Form.Item 在 cpu 档不挂载,不补就会漏字段
+    // CPU 规格 GPU 字段补零
     const gpuFields =
       tier === "cpu"
         ? CPU_ZERO_FIELDS
@@ -346,7 +339,7 @@ function SkusPage() {
         };
         create.mutate({ data: createPayload });
       } else if (editing) {
-        // 型号不可改(SkuUpdate 无该字段),从 gpuFields 里摘掉
+        // 型号不可改(SkuUpdate 无该字段)
         const { gpu_model, ...gpuUpdatable } = gpuFields;
         void gpu_model;
         const updatePayload: SkuUpdate = {
@@ -366,7 +359,7 @@ function SkusPage() {
         update.mutate({ skuId: editing.id, data: updatePayload });
       }
     };
-    // 改价二次确认(带影响预览:当前在跑台数/涉及用户)
+    // 改价二次确认(带影响预览)
     if (record === null || Number(values.price_hourly) === Number(record.price_hourly)) {
       doSubmit();
       return;
@@ -396,18 +389,18 @@ function SkusPage() {
         </Space>
       ),
       okText: t("skus.confirmSubmit"),
-      // 影响面查询在途时禁点确认:影响数字未到就放行,二次确认形同虚设
+      // 影响面查询在途时禁点确认
       okButtonProps: { disabled: impact.isPending },
       onOk: doSubmit,
     });
   };
 
   const isNew = editing === "new";
-  // 新建按选中的集群资源限定池;编辑只放行同 tier 的变体(tier 不可改,SkuUpdate 无该字段)
+  // 新建按选中集群资源限定池;编辑只放行同 tier 变体
   const variantOptions: SkuVariant[] = isNew
     ? (clusterPick?.pool_label ? (POOL_VARIANTS[clusterPick.pool_label] ?? ALL_VARIANTS) : ALL_VARIANTS)
     : ALL_VARIANTS.filter((v) => VARIANT_SPEC[v].tier === record?.tier);
-  // 改档位就是改池,在售规格后端 409(换池 = 换商品);这里先灰置并说明
+  // 在售规格改池后端 409,先灰置并说明
   const variantLocked = !isNew && record?.status === "on";
 
   return (
@@ -458,7 +451,7 @@ function SkusPage() {
                   : t("skus.sliceShared", { pct: r.gpu_cores_pct, vram: r.vram_gb }),
           },
           {
-            // 容量列口径是「匹配型号×池的物理卡数」:CPU 规格不带卡,0 不是告警而是无此概念
+            // 容量 = 匹配型号×池的物理卡数;CPU 规格不带卡
             title: t("skus.colCapacity"),
             dataIndex: "capacity_gpus",
             render: (v: number, r) =>
@@ -480,7 +473,6 @@ function SkusPage() {
           { title: t("skus.colOversellCores"), dataIndex: "oversell_cores", render: (v: string) => `${v}×` },
           { title: t("skus.colPrice"), dataIndex: "price_hourly", render: (v: string) => formatHourlyPrice(v) },
           {
-            // 与档位正交,单独成列而不塞进档位标签
             title: t("skus.colPeriod"),
             dataIndex: "period_enabled",
             width: 100,
@@ -488,7 +480,6 @@ function SkusPage() {
               v ? <Tag color="blue">{t("skus.periodOn")}</Tag> : <Tag>{t("skus.periodOff")}</Tag>,
           },
           {
-            // 与包周期同一口径,竞价档单独成列
             title: t("skus.colSpot"),
             dataIndex: "spot_enabled",
             width: 100,
@@ -500,7 +491,6 @@ function SkusPage() {
             dataIndex: "status",
             render: (v: string, r) =>
               v === "on" ? (
-                // 下架收原因 + 影响说明
                 <ReasonAction
                   label={t("skus.offSale")}
                   danger
@@ -516,7 +506,7 @@ function SkusPage() {
                   }}
                 />
               ) : (
-                // 上架与下架同范式(手输原因);规格缺要素被后端拒绝时给「强制上架」出口
+                // 上架:规格缺要素被拒时给「强制上架」出口
                 <ReasonAction
                   label={t("skus.onSale")}
                   title={t("skus.onSaleTitle")}
@@ -530,8 +520,7 @@ function SkusPage() {
                         data: { status: "on", reason },
                       });
                     } catch (e) {
-                      // SKU_NOT_SELLABLE:后端给出缺要素清单,确认后带 force 重放(沿用本次手输原因);
-                      // 错误继续抛出,由 ReasonAction 弹统一错误提示
+                      // SKU_NOT_SELLABLE:确认后带 force 重放;其他错误继续抛给 ReasonAction
                       if (isApiError(e) && e.code === "SKU_NOT_SELLABLE") {
                         modal.confirm({
                           title: t("skus.notSellableTitle"),
@@ -614,7 +603,7 @@ function SkusPage() {
             <Form.Item name="name" label={t("skus.colName")} rules={[{ required: true }]}>
               <Input />
             </Form.Item>
-            {/* 型号不可改(SkuUpdate 无该字段),只在新建时出现;CPU 规格不带型号 */}
+            {/* 型号只在新建时出现;CPU 规格不带型号 */}
             {isNew && !isCpuVariant && (
               <Form.Item
                 name="gpu_model"
@@ -627,7 +616,7 @@ function SkusPage() {
                 />
               </Form.Item>
             )}
-            {/* 档位与切片编辑态也必须挂载:关进 isNew 会让改池不可达,且 mig_profile 不挂载 = 提交被抹成 null */}
+            {/* 档位与切片编辑态也挂载 */}
             <Form.Item
               name="variant"
               label={t("skus.colTier")}
@@ -658,7 +647,7 @@ function SkusPage() {
                 />
               </Form.Item>
             )}
-            {/* 池恒由档位派生,各改各的会卖错隔离强度;唯一例外是 CPU 档,cpu / hami 两池都合法交由运营选 */}
+            {/* 池由档位派生;CPU 档可选 cpu / hami */}
             <Form.Item
               name="pool_label"
               label={t("nodes.poolLabel")}
@@ -672,7 +661,7 @@ function SkusPage() {
                   .map(([value, labelKey]) => ({ value, label: t(labelKey) }))}
               />
             </Form.Item>
-            {/* 算力份额/显存/超卖是卡的属性:CPU 规格整块不挂载,提交时由 CPU_ZERO_FIELDS 补零 */}
+            {/* CPU 规格不挂载,提交时由 CPU_ZERO_FIELDS 补零 */}
             {!isCpuVariant && (
               <>
                 <Form.Item
@@ -736,7 +725,7 @@ function SkusPage() {
             <Form.Item name="price_hourly" label={t("skus.priceLabel")} rules={[{ required: true }]}>
               <InputNumber min="0.0001" step="0.01" precision={4} stringMode style={{ width: "100%" }} />
             </Form.Item>
-            {/* 包周期开关是定价的一部分,跟着单价放。关掉只挡新单,已在保的实例到期前仍占库存 */}
+            {/* 包周期开关:关掉只挡新单 */}
             <Form.Item
               name="period_enabled"
               label={t("skus.periodEnabledLabel")}
@@ -745,7 +734,7 @@ function SkusPage() {
             >
               <Switch />
             </Form.Item>
-            {/* 竞价档同理。关掉只挡新单,已在跑的竞价实例仍可被回收、也仍可自行转按量 */}
+            {/* 竞价开关:关掉只挡新单 */}
             <Form.Item
               name="spot_enabled"
               label={t("skus.spotEnabledLabel")}
@@ -754,7 +743,7 @@ function SkusPage() {
             >
               <Switch />
             </Form.Item>
-            {/* 编辑必填原因:新实例会永久快照当时单价,审计只记新值就答不出「从多少改到多少」 */}
+            {/* 编辑必填原因(入审计) */}
             {editing !== "new" && (
               <Form.Item
                 name="reason"
@@ -769,7 +758,7 @@ function SkusPage() {
                 <InputNumber min={1} max={8} style={{ width: "100%" }} />
               </Form.Item>
             )}
-            {/* 最高 CUDA 只对带卡的规格有意义,CPU 档不出现 */}
+            {/* 最高 CUDA:CPU 档不出现 */}
             {!isCpuVariant && (
               <Form.Item name="cuda_max" label={t("skus.cudaMaxLabel")}>
                 <Input placeholder={t("images.cudaPlaceholder")} />

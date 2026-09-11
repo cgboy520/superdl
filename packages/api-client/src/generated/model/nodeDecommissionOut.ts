@@ -6,8 +6,7 @@
  */
 
 /**
- * 退役受理回执。DB 侧(停调度期望态 + 令牌作废)在响应返回时已生效;
- * 删 Node 对象经 outbox 异步执行,节点列表轮询看它转 Missing。
+ * 退役受理回执:停调度期望态 + 令牌作废已生效;删 Node 对象经 outbox 异步。
  */
 export interface NodeDecommissionOut {
   node_name: string;

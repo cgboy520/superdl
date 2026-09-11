@@ -47,7 +47,7 @@ export function InstanceStatusBadge({
   );
 }
 
-/** 在线服务的派生状态徽标;unready 带解释 tooltip(它不是故障:容器在跑、照常计费)。 */
+/** 在线服务的派生状态徽标;unready 带解释 tooltip(不是故障态)。 */
 export function ServiceStatusBadge({
   status,
   frozenDeadline,

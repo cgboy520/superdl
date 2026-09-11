@@ -25,7 +25,7 @@ class LockKey(IntEnum):
 
 @asynccontextmanager
 async def try_advisory_lock(session: AsyncSession, key: LockKey) -> AsyncIterator[bool]:
-    """会话级 try-lock。yield 是否拿到,未拿到调用方应跳过本轮;锁随 session 存续,退出时释放。"""
+    """会话级 try-lock,yield 是否拿到;锁随 session 存续,退出时释放。"""
     got = (
         await session.execute(text("SELECT pg_try_advisory_lock(:key)"), {"key": int(key)})
     ).scalar_one()
@@ -38,6 +38,6 @@ async def try_advisory_lock(session: AsyncSession, key: LockKey) -> AsyncIterato
 
 @asynccontextmanager
 async def advisory_lock(sm: async_sessionmaker[AsyncSession], key: LockKey) -> AsyncIterator[bool]:
-    """定时任务标准锁骨架:开独立会话拿 try-lock,yield 是否拿到(未拿到调用方 return 跳过本轮)。"""
+    """定时任务锁骨架:独立会话拿 try-lock,yield 是否拿到。"""
     async with sm() as lock_session, try_advisory_lock(lock_session, key) as got:
         yield got

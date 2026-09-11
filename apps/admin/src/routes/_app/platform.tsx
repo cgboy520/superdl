@@ -1,8 +1,6 @@
 /**
- * 平台配置:左侧分组导航(安全 / 第三方渠道 / 基础设施 / 站点信息)+ 顶部服务端配置风险告警 + 右侧分组表单。
- * 安全策略页是开关行(开关 / 依赖凭据状态 / 风险);其余分组沿用字段表单。
- * 仅超级管理员可读写;env 为默认值层,DB 覆盖即时生效(免重启发版)。
- * secret 类永不回显明文:只显示"已配置 + 尾 4 位",输入留空 = 保持不变。
+ * 平台配置:左侧分组导航 + 顶部配置风险告警 + 右侧分组表单;安全策略页是开关行。
+ * 仅超级管理员可读写;env 为默认值层,DB 覆盖即时生效。secret 只显示「已配置 + 尾 4 位」,留空 = 不变。
  */
 
 import { ArrowLeftOutlined } from "@ant-design/icons";
@@ -46,7 +44,7 @@ export const Route = createFileRoute("/_app/platform")({
   component: PlatformConfigPage,
 });
 
-// i18n-exempt(至 GROUP_INTRO 为止):中国渠道(微信/支付宝/阿里云/工信部)字段名与操作指引,决策不译
+// i18n-exempt(至 GROUP_INTRO 为止):中国渠道字段名与操作指引不译
 const FIELD_LABELS: Record<string, string> = {
   admin_mfa_enabled: "启用管理端两步验证(TOTP)",
   captcha_enabled: "启用人机验证(阿里云验证码 2.0)",
@@ -101,9 +99,7 @@ const FIELD_LABELS: Record<string, string> = {
   image_allowed_registries: "镜像来源白名单(每行一个前缀)",
 };
 
-// 指引性 prose 入 locale(platform.fieldExtra.*,双语);字段名表(FIELD_LABELS/
-// PROVIDER_LABELS/RISK_OFF)维持 i18n-exempt 豁免(中国渠道运营域术语,不译)。
-// as const 保留字面量键类型:admin 的 t() 是严格键类型,字符串键表过不了 tsc
+// 指引 prose 入 locale(platform.fieldExtra.*);FIELD_LABELS/PROVIDER_LABELS/RISK_OFF 维持 i18n-exempt
 const FIELD_EXTRA_KEYS = {
   admin_mfa_enabled: "platform.fieldExtra.admin_mfa_enabled",
   captcha_enabled: "platform.fieldExtra.captcha_enabled",
@@ -245,7 +241,7 @@ function GroupPanel({
   setDraft: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   disabled: boolean;
   extraContent?: React.ReactNode;
-  /** 从安全组开关「前往」跳入时带来源分组,渲染返回回链 */
+  /** 安全组「前往」跳入的来源分组(渲染回链) */
   origin?: { group: Group; onBack: () => void };
 }) {
   const { t } = useTranslation();
@@ -398,7 +394,7 @@ function RegistryTestCard({ disabled }: { disabled: boolean }) {
 type Group = PlatformConfigItem["group"];
 type ConfigWarning = { key: string; level: "error" | "warning"; message: string };
 
-/** 左侧分组导航:业务分组 → 配置组;顺序即展示顺序(新增配置组必须归入某个分组,否则 TS 报缺键)。 */
+/** 左侧分组导航:业务分组 → 配置组;顺序即展示顺序,新增配置组须归入某分组。 */
 const NAV = [
   { labelKey: "platform.navSecurity", groups: ["security"] },
   {
@@ -435,7 +431,7 @@ const SWITCH_DEPS: Record<string, { keys: string[]; group: Group }> = {
 const SWITCH_REQUIRES: Record<string, string> = {
   real_name_required_for_recharge: "real_name_enabled",
 };
-// i18n-exempt:关闭安全开关时弹窗复述的风险(与 FIELD_EXTRA 同约定,决策不译)
+// i18n-exempt:关闭安全开关时弹窗复述的风险
 const RISK_OFF: Record<string, string> = {
   captcha_enabled: "关闭后 /auth/sms-code 不做人机校验,仅剩 IP/手机号限流",
   admin_mfa_enabled: "关闭后管理端仅凭口令即可登录,已绑定的 TOTP 也不再校验",
@@ -635,12 +631,11 @@ function PlatformConfigPage() {
   const items = data?.items ?? [];
   const warnings: ConfigWarning[] = data?.warnings ?? [];
   const byKey = new Map(items.map((i) => [i.key, i]));
-  // 非 secret 字段变更草稿(sessionStorage):页面卸载/刷新后回来能恢复;
-  // secret 凭据禁入(会话级存储也是泄露面,见 formDraft 注释约定)
+  // 非 secret 字段变更草稿(sessionStorage);secret 禁入草稿
   const configDraft = useFormDraft<Record<string, string>>("platform-config");
   const [draftState, setDraftState] = useState<Record<string, string>>(() => {
     const d = configDraft.load();
-    // load() 的 Partial 只是宽限标记:本处草稿值一律为 string,收窄回 Record
+    // 草稿值收窄回 Record<string, string>
     return d
       ? Object.fromEntries(
           Object.entries(d).filter((e): e is [string, string] => typeof e[1] === "string"),
@@ -649,10 +644,10 @@ function PlatformConfigPage() {
   });
   const [reasonOpen, setReasonOpen] = useState(false);
   const [active, setActive] = useState<Group>("security");
-  // 安全组开关「前往」跳入的来源分组:目标分组页显示「返回安全组」回链
+  // 「前往」跳入的来源分组(回链)
   const [originGroup, setOriginGroup] = useState<Group | null>(null);
   const [reasonForm] = Form.useForm<{ reason: string }>();
-  // 配置项到达后清洗一次恢复出的草稿:剔除 secret 字段与已下线的键(渲染期派生态,不进 effect)
+  // 配置项到达后清洗草稿:剔除 secret 字段与已下线的键
   const [draftSanitized, setDraftSanitized] = useState(false);
   if (!draftSanitized && items.length > 0) {
     setDraftSanitized(true);
@@ -665,7 +660,7 @@ function PlatformConfigPage() {
       ),
     );
   }
-  // 包装 setState:每次变更同步写草稿(只落非 secret 字段;空草稿直接移除存储键)
+  // 每次变更同步写草稿(只落非 secret 字段)
   const setDraft: React.Dispatch<React.SetStateAction<Record<string, string>>> = (updater) => {
     setDraftState((prev) => {
       const next = typeof updater === "function" ? updater(prev) : updater;
@@ -741,7 +736,7 @@ function PlatformConfigPage() {
         disabled={disabled}
         byKey={byKey}
         warnings={warnings}
-        // 开关「前往」带出来源分组:目标分组页显示「返回安全组」回链
+        // 「前往」带出来源分组
         onGoTo={(g) => {
           setOriginGroup("security");
           setActive(g);
@@ -814,7 +809,7 @@ function PlatformConfigPage() {
           ))}
         </Space>
       )}
-      {/* 窄屏(lg 以下)左 Menu 改顶部横排,上下折行;桌面左竖排右表单 */}
+      {/* 窄屏左 Menu 改顶部横排 */}
       <div
         style={{
           display: "flex",
@@ -827,7 +822,7 @@ function PlatformConfigPage() {
           mode={screens.lg ? "inline" : "horizontal"}
           selectedKeys={[active]}
           items={menuItems}
-          // 手动切分组即作废来源回链,避免回链指去过时的入口
+          // 手动切分组作废来源回链
           onClick={(e) => {
             setOriginGroup(null);
             setActive(e.key as Group);
@@ -850,7 +845,7 @@ function PlatformConfigPage() {
             const { reason } = await reasonForm.validateFields();
             update.mutate({ data: { updates: Object.fromEntries(changed), reason } });
           } catch {
-            /* 校验失败:antd 已在字段下给出红字 */
+            /* 校验失败:antd 已给红字 */
           }
         }}
       >
