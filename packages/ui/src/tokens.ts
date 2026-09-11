@@ -57,6 +57,14 @@ export const adminColors = {
 /** 实心底徽标/热力格文字色(白字,tokens.test.ts 回归) */
 export const textOnAccent = "#FFFFFF";
 
+/** 品牌渐变底上的反白 CTA(顶栏「免费注册」/ Hero / CTA 横幅共用) */
+export const brandInverseButtonStyle = {
+  background: textOnAccent,
+  color: colorPrimary,
+  borderColor: "transparent",
+  fontWeight: 600,
+} as const;
+
 /** 状态语义色(两端同一套);白字对比度 ≥4.5:1,tokens.test.ts 回归。 */
 export const statusColors = {
   green: "#15803D",

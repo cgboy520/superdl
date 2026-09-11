@@ -29,7 +29,7 @@ export function genEd25519Key(): string {
 /** 注册一个新号并落到已登录态。 */
 export async function registerViaUi(page: Page, phone: string): Promise<void> {
   await page.goto("/login");
-  await page.getByText("注册", { exact: true }).click();
+  await page.getByRole("button", { name: "免费注册" }).click();
   await page.getByPlaceholder("手机号").fill(phone);
   await page.getByRole("button", { name: "获取验证码" }).click();
   await page.getByPlaceholder("短信验证码").fill("123456");

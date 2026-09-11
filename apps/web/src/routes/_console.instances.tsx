@@ -58,7 +58,9 @@ import {
 } from "../components/common";
 import { RenewModal } from "../components/RenewModal";
 import { GpuSparkline } from "../components/GpuSparkline";
+import { AttentionBar, useNotificationAttention } from "../components/AttentionBar";
 import { InstanceActions } from "../components/InstanceActions";
+import { OnboardingSteps } from "../components/OnboardingSteps";
 import { requireAuth } from "../lib/guard";
 import { listSearchStore } from "../stores/listSearch";
 
@@ -593,6 +595,8 @@ function InstancesPage() {
     () => localStorage.getItem(DBLCLICK_HINT_KEY) === "1",
   );
   const { data: policies } = usePolicies();
+  // 公告 / 余额预警 / 欠费聚合成一条横幅
+  const attention = useNotificationAttention();
   const pagesQ = useInstancePages({
     status,
     name: deferredQ || undefined,
@@ -668,27 +672,15 @@ function InstancesPage() {
       search: tab ? { tab } : undefined,
     });
 
-  // 空态表格/卡片共用:错误态 > 筛选无结果 > 真空态
+  // 空态表格/卡片共用:错误态 > 筛选无结果 > 真空态(新手引导三步)
   const emptyText = isError ? (
     <TableErrorEmpty isError onRetry={() => void refetch()} />
   ) : keyword || status ? (
     t("instances.noMatch")
   ) : (
-    <TableErrorEmpty
-      isError={false}
-      action={
-        <Link to="/market">
-          <Button type="primary">{t("instances.goMarket")}</Button>
-        </Link>
-      }
-    >
-      <Space orientation="vertical" size={4}>
-        <Typography.Text strong>{t("instances.emptyTitle")}</Typography.Text>
-        <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-          {t("instances.emptyHint")}
-        </Typography.Text>
-      </Space>
-    </TableErrorEmpty>
+    <div style={{ display: "flex", justifyContent: "center", padding: `${space.xl}px 0` }}>
+      <OnboardingSteps />
+    </div>
   );
 
   return (
@@ -696,6 +688,7 @@ function InstancesPage() {
       <Typography.Title level={4} style={{ margin: 0 }}>
         {t("instances.title")}
       </Typography.Title>
+      <AttentionBar items={attention} />
       <ExpiryBanner onRenew={setRenewTarget} />
       <Alert
         type="info"

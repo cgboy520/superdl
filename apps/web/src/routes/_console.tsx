@@ -1,15 +1,15 @@
-/** 控制台布局:全宽品牌顶栏(56px)压可折叠侧栏(200px,lg 断点收起);market 未登录可看。 */
+/** 控制台布局:中性色顶栏(56px)压可折叠侧栏(200px,lg 断点收起;窄屏导航走顶栏汉堡 Drawer);market 未登录可看。
+ *  <main id="main"> 地标 + 跳转链接给键盘用户;合规声明只在公开页脚与市场页脚,控制台不再常驻。 */
 
-import { fontSize, layout, space } from "@superdl/ui";
+import { layout, space } from "@superdl/ui";
 import { PageContainer } from "@superdl/ui/components";
-import { createFileRoute, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
+import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { Badge, Grid, Layout, Menu, theme, Typography } from "antd";
+import { Grid, Layout, theme } from "antd";
 
-import { useUnreadCount } from "../api/queries";
 import { CommandPalette } from "../components/CommandPalette";
 import { AppTopBar } from "../components/layout/AppTopBar";
-import { CONSOLE_NAV, consoleNavSelected } from "../components/layout/consoleNav";
+import { ConsoleNavMenu } from "../components/layout/ConsoleNavMenu";
 import { TopBarUser } from "../components/layout/TopBarUser";
 import { useGlobalHotkeys } from "../lib/useGlobalHotkeys";
 import { useThemeMode } from "../stores/theme";
@@ -20,61 +20,41 @@ export const Route = createFileRoute("/_console")({
 
 function ConsoleLayout() {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const { token } = theme.useToken();
   const mode = useThemeMode();
   const screens = Grid.useBreakpoint();
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const selected = consoleNavSelected(pathname);
   useGlobalHotkeys();
-  const { data: unread } = useUnreadCount({ refetchInterval: 30_000 });
-  const unreadCount = unread?.unread_count ?? 0;
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+      <a href="#main" className="skip-link">
+        {t("common.skipToMain")}
+      </a>
       <AppTopBar variant="console" right={<TopBarUser />} />
       <Layout style={{ flex: 1 }}>
-        <Layout.Sider
-          width={200}
-          theme={mode === "dark" ? "dark" : "light"}
-          collapsible
-          breakpoint="lg"
-          collapsedWidth={0}
-          // 窄屏导航只走顶栏汉堡 Drawer,不出 Sider 的零宽触发条(避免两套并行导航)
-          trigger={screens.lg ? undefined : null}
-          style={{ borderRight: `1px solid ${token.colorBorderSecondary}` }}
-        >
-          <Menu
-            mode="inline"
+        {/* 窄屏不渲染 Sider(导航走 Drawer),避免两套并行 */}
+        {screens.lg && (
+          <Layout.Sider
+            width={200}
             theme={mode === "dark" ? "dark" : "light"}
-            selectedKeys={[selected]}
-            items={CONSOLE_NAV.map((n) => ({
-              key: n.key,
-              icon: n.icon,
-              label:
-                n.key === "/notifications" && unreadCount > 0 ? (
-                  <Badge count={unreadCount} size="small" offset={[6, 0]}>
-                    {t(n.labelKey)}
-                  </Badge>
-                ) : (
-                  t(n.labelKey)
-                ),
-            }))}
-            onClick={({ key }) => void navigate({ to: key })}
-            style={{ borderInlineEnd: "none", paddingTop: 8 }}
-          />
-        </Layout.Sider>
+            style={{ borderRight: `1px solid ${token.colorBorderSecondary}` }}
+          >
+            <nav aria-label={t("nav.primary")}>
+              <ConsoleNavMenu />
+            </nav>
+          </Layout.Sider>
+        )}
         <Layout>
-          <Layout.Content style={{ padding: screens.md ? layout.contentPadding : space.lg }}>
+          {/* antd Layout.Content 即 <main>;id 供 skip-link 定位 */}
+          <Layout.Content
+            id="main"
+            tabIndex={-1}
+            style={{ padding: screens.md ? layout.contentPadding : space.lg, outline: "none" }}
+          >
             <PageContainer>
               <Outlet />
             </PageContainer>
           </Layout.Content>
-          <Layout.Footer style={{ textAlign: "center", paddingBlock: 16 }}>
-            <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-              {t("copy.antiMiningNotice")}
-            </Typography.Text>
-          </Layout.Footer>
         </Layout>
       </Layout>
       <CommandPalette />

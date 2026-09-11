@@ -1,6 +1,8 @@
 # 用户控制台
 
-`apps/web`:公开层 + 控制台八屏。视觉规格见 `docs/ui-ux-spec.md`。
+`apps/web`:公开层 + 控制台。视觉规格见 `docs/ui-ux-spec.md`。
+
+主导航事实源 `apps/web/src/components/layout/consoleNav.tsx`(`CONSOLE_NAV_GROUPS`:资源 / 购买与账务 / 支持;侧栏、窄屏抽屉、命令面板共用);`/notifications` 与 `/settings` 不在主导航,经顶栏铃铛与用户菜单到达。
 
 ## 契约
 
@@ -9,13 +11,12 @@
 | `/` | 公开 | 营销主页:Hero / 四宫格 / 实时价格墙 / 算力排名 / CTA / 三栏页脚 |
 | `/login` | 公开 | 左品牌右表单分屏,支持 `?redirect=` 回跳 |
 | `/legal/terms` `/legal/privacy` `/legal/deletion-notice` `/help` | 公开 | 合规与帮助;正文取后端当前 published 版,en-US 缺失回落 zh-CN |
-| `/dashboard` | 登录 | 概览 |
 | `/market` | 公开可浏览 | 筛选链 + SKU 表格单选 + 底部结算条;CTA 即库存;「计费方式」= 按量 / 包日 / 包周 / 包月 / 包年 / 竞价,后五者带折扣角标(从 `/policies` 读)。选中周期后结算条显示周期总价并把 `?period=` 带进创建页;选中竞价后结算条显示折后时价 + 原价划线,常驻「竞价实例在容量紧张时会被平台回收」提示 |
 | `/market/create/:skuId` | 登录 | 只建开发机。单栏卡片流:规格/镜像级联/数据盘(可行内直建)/SSH 公钥(可行内添加)/名称 + 结算条;经济档知情同意。`?period=` 承接计费方式,选了周期即提交 `market/period/period_count`;**选了竞价则在提交前弹竞价知情同意 modal**,提交 `market='spot'`、不带 `period` |
 | `/services/new` | 登录 | 部署服务:分段单页(基本信息 / 容器配置 / 服务配置 / 高级配置)+ 左侧步骤锚点 + 结算条;规格在页内选(入口只有 `/services` 与命令面板);深链 `?sku_id=&gpus=&period=&market=spot&count=` 预填(period 压过 spot);主按钮「部署服务」(包周期「支付并部署」),提交 `POST /services` 并跳 `/services/:slug` |
 | `/services` | 登录 | 在线服务列表:名称 / 派生状态 / 服务端点(复制)/ 规格 / 版本 / 费用 / 创建时间 / 操作(停止 · 启动 · 删除);`?status=`、`?q=` 入 URL;列表不轮询,deploying / stopping / releasing 逐条 5s 轻轮询 |
 | `/services/:slug` | 登录 | 服务详情:头部(状态 / 版本 / 操作)+ 常驻服务端点卡(URL、就绪、鉴权方式)+ Tab `概览 / 访问密钥 / 监控 / 日志 / 版本 / 事件 / 账单 / 设置`(`?tab=` 直达;版本 = 全部版本实例表;设置 = 改名 / 鉴权开关(PATCH,几秒内生效)/ 调试 SSH 回显 / 危险区删除)+ 头部「更新版本」抽屉(基于当前版本预填,密文键默认沿用,提交 `POST /services/:slug/revisions`;部署中 / 包周期灰置);只有一条服务轮询(过渡态 5s、运行中 30s、已删除停),监控与日志打当前版本实例 |
-| `/instances` | 登录 | 登录后默认落地页;只列开发机;表格含状态徽标(冻结倒计时)、利用率 sparkline、今日消费/包周期到期、SSH 复制、Jupyter 直达;包周期实例在「更多」里多「续费」(modal)与「自动续费」开关,按量实例多「转包周期」,竞价实例多「转按量」,页头有临期横幅 |
+| `/instances` | 登录 | 登录后默认落地页(`CONSOLE_HOME`;无概览页,新手引导三步落在真空态,公告 / 余额预警 / 欠费聚合成页顶一条 `AttentionBar`);只列开发机;表格含状态徽标(冻结倒计时)、利用率 sparkline、今日消费/包周期到期、SSH 复制、Jupyter 直达;包周期实例在「更多」里多「续费」(modal)与「自动续费」开关,按量实例多「转包周期」,竞价实例多「转按量」,页头有临期横幅 |
 | `/instances/:uuid` | 登录 | 监控 / 连接 / 日志 / 事件时间线 / 账单 Tab + 危险区释放;包周期实例页头多到期标签,已到期时开机按钮禁用并提示先续费;在线服务的版本实例直链可达,**连接** Tab 按 `with_ssh` 决定是否出 SSH 卡片、不出 Jupyter 卡片;旧链接 `?tab=service` 由白名单剥离回默认 Tab |
 | `/billing` | 登录 | 余额卡 + 充值 modal(二维码轮询)+ 消费概览 + 账单/收支明细/退款/发票 + CSV 导出 |
 | `/storage` | 登录 | 挂载全景图 + 数据盘列表(扩容抽屉、到期倒计时、多级删除防护) |

@@ -1,4 +1,5 @@
-/** 登录/注册:左品牌渐变区(lg 以下隐藏),右三态表单。e2e 契约:placeholder「手机号」「短信验证码」、按钮「获取验证码」「注册并登录」、Segmented「注册」exact 文本;页面不得出现第二个裸「注册」文本节点。 */
+/** 登录/注册:左品牌渐变区(lg 以下隐藏),右侧表单。登录方式(验证码 / 密码)用 Segmented 二选一;注册与登录分离,经底部「免费注册」/「去登录」链接切换。
+ *  e2e 契约:placeholder「手机号」「短信验证码」、按钮「获取验证码」「注册并登录」「免费注册」。 */
 
 import { CheckCircleOutlined } from "@ant-design/icons";
 import type { TokenPairOut } from "@superdl/api-client";
@@ -217,9 +218,14 @@ function LoginPage() {
             </div>
           )}
           <Typography.Title level={3} style={{ marginTop: 0 }}>
-            {mode === "reset" ? t("login.resetTitle") : t("login.title")}
+            {mode === "reset"
+              ? t("login.resetTitle")
+              : mode === "register"
+                ? t("login.registerTitle")
+                : t("login.title")}
           </Typography.Title>
-          {mode !== "reset" && (
+          {/* 登录方式二选一;注册与登录分离,经底部链接切换 */}
+          {(mode === "sms" || mode === "password") && (
             <Segmented
               block
               value={mode}
@@ -227,7 +233,6 @@ function LoginPage() {
               options={[
                 { label: t("login.modeSms"), value: "sms" },
                 { label: t("login.modePassword"), value: "password" },
-                { label: t("login.modeRegister"), value: "register" },
               ]}
               style={{ marginBottom: 16 }}
             />
@@ -346,17 +351,47 @@ function LoginPage() {
                   : t("login.submitLogin")}
             </Button>
           </Form>
-          <div style={{ marginTop: 12, textAlign: "right" }}>
-            {mode === "password" && (
-              <Button type="link" size="small" onClick={() => switchMode("reset")}>
-                {t("login.forgotPassword")}
-              </Button>
-            )}
-            {mode === "reset" && (
-              <Button type="link" size="small" onClick={() => switchMode("password")}>
-                {t("login.backToLogin")}
-              </Button>
-            )}
+          <div
+            style={{
+              marginTop: 12,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 8,
+            }}
+          >
+            {/* 左:登录 ↔ 注册切换;右:忘记密码 / 返回登录 */}
+            <span>
+              {(mode === "sms" || mode === "password") && (
+                <Typography.Text type="secondary">
+                  {t("login.noAccount")}{" "}
+                  <Button type="link" size="small" style={{ paddingInline: 0 }} onClick={() => switchMode("register")}>
+                    {t("login.goRegister")}
+                  </Button>
+                </Typography.Text>
+              )}
+              {mode === "register" && (
+                <Typography.Text type="secondary">
+                  {t("login.hasAccount")}{" "}
+                  <Button type="link" size="small" style={{ paddingInline: 0 }} onClick={() => switchMode("sms")}>
+                    {t("login.goLogin")}
+                  </Button>
+                </Typography.Text>
+              )}
+            </span>
+            <span>
+              {mode === "password" && (
+                <Button type="link" size="small" onClick={() => switchMode("reset")}>
+                  {t("login.forgotPassword")}
+                </Button>
+              )}
+              {mode === "reset" && (
+                <Button type="link" size="small" onClick={() => switchMode("password")}>
+                  {t("login.backToLogin")}
+                </Button>
+              )}
+            </span>
           </div>
         </div>
       </div>

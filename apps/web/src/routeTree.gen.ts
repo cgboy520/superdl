@@ -14,7 +14,6 @@ import { Route as ConsoleRouteImport } from './routes/_console'
 import { Route as HelpRouteImport } from './routes/help'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ConsoleBillingRouteImport } from './routes/_console.billing'
-import { Route as ConsoleDashboardRouteImport } from './routes/_console.dashboard'
 import { Route as ConsoleInstancesRouteImport } from './routes/_console.instances'
 import { Route as ConsoleMarketRouteImport } from './routes/_console.market'
 import { Route as ConsoleNotificationsRouteImport } from './routes/_console.notifications'
@@ -53,11 +52,6 @@ const LoginRoute = LoginRouteImport.update({
 const ConsoleBillingRoute = ConsoleBillingRouteImport.update({
   id: '/billing',
   path: '/billing',
-  getParentRoute: () => ConsoleRoute,
-} as any)
-const ConsoleDashboardRoute = ConsoleDashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
   getParentRoute: () => ConsoleRoute,
 } as any)
 const ConsoleInstancesRoute = ConsoleInstancesRouteImport.update({
@@ -142,7 +136,6 @@ export interface FileRoutesByFullPath {
   '/help': typeof HelpRoute
   '/login': typeof LoginRoute
   '/billing': typeof ConsoleBillingRoute
-  '/dashboard': typeof ConsoleDashboardRoute
   '/instances': typeof ConsoleInstancesRoute
   '/market': typeof ConsoleMarketRoute
   '/notifications': typeof ConsoleNotificationsRoute
@@ -164,7 +157,6 @@ export interface FileRoutesByTo {
   '/help': typeof HelpRoute
   '/login': typeof LoginRoute
   '/billing': typeof ConsoleBillingRoute
-  '/dashboard': typeof ConsoleDashboardRoute
   '/instances': typeof ConsoleInstancesRoute
   '/market': typeof ConsoleMarketRoute
   '/notifications': typeof ConsoleNotificationsRoute
@@ -188,7 +180,6 @@ export interface FileRoutesById {
   '/help': typeof HelpRoute
   '/login': typeof LoginRoute
   '/_console/billing': typeof ConsoleBillingRoute
-  '/_console/dashboard': typeof ConsoleDashboardRoute
   '/_console/instances': typeof ConsoleInstancesRoute
   '/_console/market': typeof ConsoleMarketRoute
   '/_console/notifications': typeof ConsoleNotificationsRoute
@@ -212,7 +203,6 @@ export interface FileRouteTypes {
     | '/help'
     | '/login'
     | '/billing'
-    | '/dashboard'
     | '/instances'
     | '/market'
     | '/notifications'
@@ -234,7 +224,6 @@ export interface FileRouteTypes {
     | '/help'
     | '/login'
     | '/billing'
-    | '/dashboard'
     | '/instances'
     | '/market'
     | '/notifications'
@@ -257,7 +246,6 @@ export interface FileRouteTypes {
     | '/help'
     | '/login'
     | '/_console/billing'
-    | '/_console/dashboard'
     | '/_console/instances'
     | '/_console/market'
     | '/_console/notifications'
@@ -320,13 +308,6 @@ declare module '@tanstack/react-router' {
       path: '/billing'
       fullPath: '/billing'
       preLoaderRoute: typeof ConsoleBillingRouteImport
-      parentRoute: typeof ConsoleRoute
-    }
-    '/_console/dashboard': {
-      id: '/_console/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof ConsoleDashboardRouteImport
       parentRoute: typeof ConsoleRoute
     }
     '/_console/instances': {
@@ -439,7 +420,6 @@ declare module '@tanstack/react-router' {
 
 interface ConsoleRouteChildren {
   ConsoleBillingRoute: typeof ConsoleBillingRoute
-  ConsoleDashboardRoute: typeof ConsoleDashboardRoute
   ConsoleInstancesRoute: typeof ConsoleInstancesRoute
   ConsoleMarketRoute: typeof ConsoleMarketRoute
   ConsoleNotificationsRoute: typeof ConsoleNotificationsRoute
@@ -456,7 +436,6 @@ interface ConsoleRouteChildren {
 
 const ConsoleRouteChildren: ConsoleRouteChildren = {
   ConsoleBillingRoute: ConsoleBillingRoute,
-  ConsoleDashboardRoute: ConsoleDashboardRoute,
   ConsoleInstancesRoute: ConsoleInstancesRoute,
   ConsoleMarketRoute: ConsoleMarketRoute,
   ConsoleNotificationsRoute: ConsoleNotificationsRoute,

@@ -19,6 +19,7 @@ export default defineConfig({
       "help.faq*",
       "support.selfHelp.*",
       "billing.refundOrder*",
+      "nav.group*",
     ],
     ignoreNamespaces: ["shared", "errors"], // shared/errors ns 属 packages/ui
     primaryLanguage: "zh-CN",

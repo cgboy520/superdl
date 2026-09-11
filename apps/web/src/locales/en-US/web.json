@@ -2,6 +2,17 @@
   "app": {
     "title": "SuperDL · GPU Cloud"
   },
+  "attention": {
+    "announcement": "Announcement: {{title}}",
+    "arrears": "Your account is in arrears; instances will be stopped and instance disks reclaimed after the grace period",
+    "balanceWarn": "Balance is below your alert threshold. Top up soon.",
+    "collapse": "Collapse",
+    "expand": "Expand",
+    "goRecharge": "Top up",
+    "summary_one": "{{count}} item needs attention",
+    "summary_other": "{{count}} items need attention",
+    "viewNotifications": "View notifications"
+  },
   "billing": {
     "alipay": "Alipay",
     "availableBalance": "Available balance",
@@ -121,7 +132,8 @@
     "gbMonthPrice": "CN¥{{price}}/GB·mo",
     "goRent": "Rent now",
     "hostSpec": "{{vcpu}} vCPU / {{mem}}G RAM / {{disk}}G instance disk",
-    "jupyter": "JupyterLab"
+    "jupyter": "JupyterLab",
+    "skipToMain": "Skip to main content"
   },
   "copy": {
     "antiMiningNotice": "Crypto mining is strictly prohibited; violators are banned without refund (see Terms)",
@@ -256,31 +268,6 @@
     "title": "Create instance",
     "walletQueryFailedRetry": "Balance query failed. Retry before creating."
   },
-  "dashboard": {
-    "announcementPrefix": "Notice: {{title}}",
-    "balanceWarn": "Balance or arrears warnings pending — check notifications and top up",
-    "dataDisks": "Data disks",
-    "goRecharge": "Top up",
-    "manageInstances": "Manage instances",
-    "manageServices": "Services",
-    "onboardingDismiss": "Got it",
-    "onboardingStep1": "Top up",
-    "onboardingStep1Action": "Go to billing",
-    "onboardingStep2": "Pick a spec",
-    "onboardingStep2Action": "Go to marketplace",
-    "onboardingStep3": "Launch",
-    "onboardingStep3Desc": "Choose an image and SSH key on the spec page, then create the instance",
-    "onboardingTitle": "Three steps to your first instance",
-    "quickEntries": "Quick links",
-    "runningCount_one": "{{count}} running",
-    "runningCount_other": "{{count}} running",
-    "servicesRunning_one": "{{count}} running",
-    "servicesRunning_other": "{{count}} running",
-    "title": "Overview",
-    "totalInstances": "Instances",
-    "totalServices": "Services",
-    "unread": "Unread notifications"
-  },
   "footer": {
     "complianceTitle": "Compliance",
     "copyright": "© {{year}} SuperDL",
@@ -385,8 +372,6 @@
     "dangerZone": "Danger zone",
     "dblclickHint": "Double-click a row to view instance details",
     "detail": "Details",
-    "emptyHint": "Pay-as-you-go — no GPU charges while stopped; data disks persist",
-    "emptyTitle": "No instances yet",
     "eventMetaLine": "{{time}} · {{reason}} · by {{actor}}",
     "eventsEmpty": "No status change events yet",
     "failedRanNote": "Runtime failure — billing stopped; charged for actual runtime only",
@@ -527,9 +512,12 @@
     "codeSent": "Code sent",
     "forgotPassword": "Forgot password?",
     "getCode": "Send code",
+    "goLogin": "Sign in",
+    "goRegister": "Sign up free",
+    "hasAccount": "Already have an account?",
     "modePassword": "Password",
-    "modeRegister": "Sign up",
     "modeSms": "SMS code",
+    "noAccount": "No account yet?",
     "passwordMin": "At least 12 characters",
     "passwordPlaceholder": "Password",
     "passwordRequired": "Enter your password",
@@ -540,6 +528,7 @@
     "passwordStrengthWeak": "Strength: weak",
     "phoneInvalid": "Enter a valid phone number",
     "phonePlaceholder": "Phone number",
+    "registerTitle": "Create your SuperDL account",
     "resetDone": "Password updated",
     "resetTitle": "Reset your password",
     "slogan": "Pay only while it runs",
@@ -582,12 +571,29 @@
     "vcpuUnit_one": "{{count}} vCPU",
     "vcpuUnit_other": "{{count}} vCPU"
   },
+  "nav": {
+    "groupCommerce": "Purchase & billing",
+    "groupResources": "Resources",
+    "groupSupport": "Support",
+    "primary": "Console navigation",
+    "site": "Site navigation"
+  },
   "notifications": {
     "empty": "No notifications yet",
     "emptyUnread": "No unread notifications",
     "filterAll": "All",
     "filterUnread": "Unread",
     "title": "Notifications"
+  },
+  "onboarding": {
+    "step1": "Top up",
+    "step1Action": "Go to billing",
+    "step1Done": "Done",
+    "step2": "Pick a spec",
+    "step2Action": "Go to the market",
+    "step3": "Start",
+    "step3Desc": "Choose an image and an SSH key on the create page, then create the instance",
+    "title": "Three steps to your first instance"
   },
   "period": {
     "autoRenewOff": "Auto-renew turned off",
@@ -1058,7 +1064,6 @@
     "title": "Support"
   },
   "topbar": {
-    "consoleSection": "Console",
     "help": "Help",
     "login": "Log in",
     "loginRegister": "Log in / Sign up",
@@ -1070,9 +1075,9 @@
     "pricing": "GPU Pricing",
     "ranking": "Compute Ranking",
     "register": "Sign up free",
-    "siteSection": "Site",
     "themeToDark": "Switch to dark theme",
     "themeToLight": "Switch to light theme",
+    "userMenu": "User menu",
     "viewAllNotifications": "View all notifications"
   }
 }

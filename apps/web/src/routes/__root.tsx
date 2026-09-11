@@ -67,7 +67,7 @@ function NotFoundPage() {
   return (
     <AppProviders>
       <NotFoundView
-        homeTo="/dashboard"
+        homeTo="/instances"
         homeLabel={t("common.backConsole")}
         // 404 文案在 packages/ui shared ns(errorPage/notFound)
         subtitle={t("notFound.subtitle", { ns: "shared" })}

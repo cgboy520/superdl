@@ -62,7 +62,7 @@ body {
   }
 }
 
-/* 品牌顶栏本体:sticky + 横向内边距(窄屏收紧) */
+/* 顶栏本体:sticky + 横向内边距(窄屏收紧);底色由变体决定(public 品牌渐变 / console 中性,见 AppTopBar) */
 .app-topbar {
   position: sticky;
   top: 0;
@@ -72,6 +72,49 @@ body {
   align-items: center;
   gap: 20px;
   padding-inline: 24px;
+}
+
+/* 中性顶栏里的余额入口:文字色随主题(--sdl-color-text),hover 浅底 */
+.topbar-balance {
+  color: var(--sdl-color-text);
+  padding: 4px 10px;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: background 0.2s;
+}
+.topbar-balance:hover {
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+.topbar-balance:focus-visible {
+  outline: 2px solid var(--sdl-color-primary);
+  outline-offset: 2px;
+}
+
+/* 跳到主内容(键盘用户):默认移出视口,聚焦时出现在顶栏左上 */
+.skip-link {
+  position: absolute;
+  left: 12px;
+  top: -48px;
+  z-index: 200;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--sdl-color-primary);
+  color: #fff;
+  text-decoration: none;
+  transition: top 0.15s;
+}
+.skip-link:focus-visible {
+  top: 8px;
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+/* 手写 role="button" / tabIndex 元素的统一焦点框(与 drawer-link 同色) */
+[role="button"][tabindex]:focus-visible,
+.focus-ring:focus-visible {
+  outline: 2px solid var(--sdl-color-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 @media (max-width: 768px) {
@@ -93,9 +136,8 @@ body {
   .app-topbar-right {
     gap: 6px;
   }
-  /* 窄屏右区:⌘K 提示徽章与独立帮助入口隐藏(断点 = breakpoint.md token) */
-  .topbar-kbd-hint,
-  .topbar-help-link {
+  /* 窄屏右区:⌘K 提示徽章隐藏(断点 = breakpoint.md token) */
+  .topbar-kbd-hint {
     display: none;
   }
 }

@@ -33,6 +33,19 @@ export function CommandPalette() {
           keywords: [n.key.slice(1)],
           run: () => void navigate({ to: n.key }),
         })),
+        // 不在主导航的页面也可经命令面板直达
+        {
+          key: "/notifications",
+          label: t("notifications.title"),
+          keywords: ["notifications", "tongzhi", "xiaoxi"],
+          run: () => void navigate({ to: "/notifications" }),
+        },
+        {
+          key: "/settings",
+          label: t("settings.title"),
+          keywords: ["settings", "shezhi", "ssh", "account"],
+          run: () => void navigate({ to: "/settings" }),
+        },
         {
           key: "/help",
           label: t("topbar.help"),

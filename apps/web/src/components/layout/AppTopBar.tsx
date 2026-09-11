@@ -1,18 +1,20 @@
-/** 全宽品牌顶栏(56px,渐变靛蓝)。public:中部锚点导航 + 右侧登录/免费注册(已登录换「进入控制台」);console:右区(余额/通知/用户)由壳经 right 注入。窄屏(≤768px)中部导航收进汉堡 Drawer,console 变体的 Drawer 置顶控制台 7 页分段。 */
+/** 顶栏(56px)。public:品牌渐变底,中部锚点导航 + 右侧登录 / 免费注册(已登录换「进入控制台」);
+ *  console:中性底(与侧栏同色 + 下边线),只留 logo 与右区(余额 / ⌘K / 通知 / 主题 / 用户菜单,由壳经 right 注入)。
+ *  窄屏(<lg)左侧出汉堡:console 打开控制台导航 Drawer,public 打开锚点导航 Drawer。 */
 
 import { MenuOutlined, MoonOutlined, SunOutlined } from "@ant-design/icons";
-import { brand, colorPrimary, fontSize } from "@superdl/ui";
+import { brand, brandInverseButtonStyle, fontSize, layout } from "@superdl/ui";
 import { LangSwitcher } from "@superdl/ui/components";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Badge, Button, Drawer, Grid, Space, theme } from "antd";
+import { Button, Drawer, Grid, Space, theme } from "antd";
 import { useTranslation } from "react-i18next";
 import { useState, type CSSProperties, type ReactNode } from "react";
 
-import { useUnreadCount } from "../../api/queries";
 import { useIsLoggedIn } from "../../stores/auth";
 import { useThemeMode, useThemeToggle } from "../../stores/theme";
 import { BrandLogo } from "./BrandLogo";
-import { CONSOLE_NAV, consoleNavSelected } from "./consoleNav";
+import { CONSOLE_HOME } from "./consoleNav";
+import { ConsoleNavMenu } from "./ConsoleNavMenu";
 
 export function ThemeToggle({ variant = "brand" }: { variant?: "brand" | "plain" }) {
   const { t } = useTranslation();
@@ -48,12 +50,10 @@ export function AppTopBar({
   const loggedIn = useIsLoggedIn();
   const screens = Grid.useBreakpoint();
   const { token } = theme.useToken();
+  const mode = useThemeMode();
   const [menuOpen, setMenuOpen] = useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const navSelected = consoleNavSelected(pathname);
-  // 与侧栏/铃铛同一缓存键;未登录或公开变体不发请求
-  const { data: unread } = useUnreadCount({ enabled: variant === "console" && loggedIn });
-  const unreadCount = unread?.unread_count ?? 0;
+  const isPublic = variant === "public";
   const drawerLinkStyle = (active: boolean): CSSProperties => ({
     display: "block",
     padding: "10px 12px",
@@ -64,67 +64,62 @@ export function AppTopBar({
     textDecoration: "none",
     fontSize: fontSize.sectionTitle,
   });
-  const drawerSectionStyle: CSSProperties = {
-    padding: "4px 12px",
-    fontSize: fontSize.caption,
-    color: token.colorTextSecondary,
-    letterSpacing: "0.04em",
-  };
+  const barStyle: CSSProperties = isPublic
+    ? { background: brand.topBarBg }
+    : {
+        background: token.colorBgContainer,
+        borderBottom: `1px solid ${token.colorBorderSecondary}`,
+      };
+  const iconColor = isPublic ? "#fff" : token.colorText;
   return (
-    <header className="app-topbar" style={{ background: brand.topBarBg }}>
+    <header
+      className={`app-topbar ${isPublic ? "app-topbar--brand" : "app-topbar--neutral"}`}
+      style={{ ...barStyle, height: layout.topBarHeight }}
+    >
       {!screens.lg && (
         <Button
           type="text"
           aria-label={t("topbar.openMenu")}
-          icon={<MenuOutlined style={{ color: "#fff", fontSize: fontSize.pageTitle }} />}
+          icon={<MenuOutlined style={{ color: iconColor, fontSize: fontSize.pageTitle }} />}
           onClick={() => setMenuOpen(true)}
         />
       )}
-      <Link to="/" style={{ display: "inline-flex", textDecoration: "none" }}>
-        <BrandLogo variant="light" />
+      <Link to={isPublic ? "/" : CONSOLE_HOME} style={{ display: "inline-flex", textDecoration: "none" }}>
+        <BrandLogo variant={isPublic || mode === "dark" ? "light" : "dark"} />
       </Link>
-      <nav className="topbar-nav-center">
-        <Link to="/market" className="topbar-link">
-          {t("topbar.market")}
-        </Link>
-        {variant === "public" && (
-          <>
-            <Link to="/" hash="pricing" className="topbar-link">
-              {t("topbar.pricing")}
-            </Link>
-            <Link to="/" hash="ranking" className="topbar-link">
-              {t("topbar.ranking")}
-            </Link>
-          </>
-        )}
-      </nav>
+      {isPublic && (
+        <nav className="topbar-nav-center" aria-label={t("nav.site")}>
+          <Link to="/market" className="topbar-link">
+            {t("topbar.market")}
+          </Link>
+          <Link to="/" hash="pricing" className="topbar-link">
+            {t("topbar.pricing")}
+          </Link>
+          <Link to="/" hash="ranking" className="topbar-link">
+            {t("topbar.ranking")}
+          </Link>
+        </nav>
+      )}
       <div className="app-topbar-right">
-        <ThemeToggle />
-        <LangSwitcher />
-        {variant === "public" ? (
-          loggedIn ? (
-            <Link to="/instances">
-              <Button ghost>{t("common.enterConsole")}</Button>
-            </Link>
-          ) : (
-            <Space size={8}>
-              <Link to="/login" className="topbar-link">
-                {t("topbar.login")}
+        {isPublic ? (
+          <>
+            <ThemeToggle />
+            <LangSwitcher />
+            {loggedIn ? (
+              <Link to={CONSOLE_HOME}>
+                <Button ghost>{t("common.enterConsole")}</Button>
               </Link>
-              <Link to="/login" search={{ mode: "register" }}>
-                <Button
-                  style={{
-                    background: "#fff",
-                    color: colorPrimary,
-                    borderColor: "transparent",
-                    fontWeight: 600,
-                  }}
-                >
-                  {t("topbar.register")}
-                </Button>
-              </Link>
-            </Space>
-          )
+            ) : (
+              <Space size={8}>
+                <Link to="/login" className="topbar-link">
+                  {t("topbar.login")}
+                </Link>
+                <Link to="/login" search={{ mode: "register" }}>
+                  <Button style={brandInverseButtonStyle}>{t("topbar.register")}</Button>
+                </Link>
+              </Space>
+            )}
+          </>
         ) : (
           right
         )}
@@ -135,62 +130,34 @@ export function AppTopBar({
         size={260}
         open={menuOpen}
         onClose={() => setMenuOpen(false)}
+        styles={{ body: { padding: isPublic ? undefined : 0 } }}
       >
-        {variant === "console" && loggedIn && (
-          <>
-            <div style={drawerSectionStyle}>{t("topbar.consoleSection")}</div>
-            <nav style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
-              {CONSOLE_NAV.map((n) => (
-                <Link
-                  key={n.key}
-                  to={n.key}
-                  className="drawer-link"
-                  style={drawerLinkStyle(navSelected === n.key)}
-                  aria-current={navSelected === n.key ? "page" : undefined}
-                  onClick={() => setMenuOpen(false)}
-                >
-                  {/* 未读角标与侧栏同源 */}
-                  {n.key === "/notifications" && unreadCount > 0 ? (
-                    <Badge count={unreadCount} size="small" offset={[6, 0]}>
-                      {t(n.labelKey)}
-                    </Badge>
-                  ) : (
-                    t(n.labelKey)
-                  )}
-                </Link>
-              ))}
-            </nav>
-            <div style={drawerSectionStyle}>{t("topbar.siteSection")}</div>
-          </>
+        {isPublic ? (
+          <nav style={{ display: "flex", flexDirection: "column", gap: 4 }} aria-label={t("nav.site")}>
+            {(
+              [
+                { to: "/market", hash: undefined, label: t("topbar.market") },
+                { to: "/", hash: "pricing", label: t("topbar.pricing") },
+                { to: "/", hash: "ranking", label: t("topbar.ranking") },
+              ] as const
+            ).map((l) => (
+              <Link
+                key={`${l.to}#${l.hash ?? ""}`}
+                to={l.to}
+                hash={l.hash}
+                className="drawer-link"
+                style={drawerLinkStyle(l.hash === undefined && pathname.startsWith(l.to))}
+                onClick={() => setMenuOpen(false)}
+              >
+                {l.label}
+              </Link>
+            ))}
+          </nav>
+        ) : (
+          <nav aria-label={t("nav.primary")}>
+            <ConsoleNavMenu onNavigate={() => setMenuOpen(false)} />
+          </nav>
         )}
-        <nav style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <Link
-            to="/market"
-            className="drawer-link"
-            style={drawerLinkStyle(false)}
-            onClick={() => setMenuOpen(false)}
-          >
-            {t("topbar.market")}
-          </Link>
-          <Link
-            to="/"
-            hash="pricing"
-            className="drawer-link"
-            style={drawerLinkStyle(false)}
-            onClick={() => setMenuOpen(false)}
-          >
-            {t("topbar.pricing")}
-          </Link>
-          <Link
-            to="/"
-            hash="ranking"
-            className="drawer-link"
-            style={drawerLinkStyle(false)}
-            onClick={() => setMenuOpen(false)}
-          >
-            {t("topbar.ranking")}
-          </Link>
-        </nav>
       </Drawer>
     </header>
   );

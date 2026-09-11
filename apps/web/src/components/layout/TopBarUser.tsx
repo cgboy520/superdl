@@ -1,8 +1,10 @@
-/** 控制台顶栏右区:余额入口 + 通知铃 + 用户菜单(深底白字适配)。未登录(公开市场页)显示登录入口。 */
+/** 控制台顶栏右区(中性底,图标走 antd token 色):余额入口 · ⌘K · 通知铃 · 主题切换 · 用户菜单(账户设置 / 通知中心 / 帮助 / 语言 / 退出)。
+ *  语言与帮助收进用户菜单以精简顶栏;窄屏(<md)只留余额 / 铃 / 用户。未登录(公开市场页)显示登录入口。 */
 
 import {
   BellOutlined,
   ExclamationCircleFilled,
+  GlobalOutlined,
   LogoutOutlined,
   QuestionCircleOutlined,
   SearchOutlined,
@@ -10,12 +12,11 @@ import {
   UserOutlined,
   WalletOutlined,
 } from "@ant-design/icons";
-import { adminColors, colorPrimary, fontSize, maskPhone } from "@superdl/ui";
+import { adminColors, fontSize, maskPhone, SUPPORTED_LANGS } from "@superdl/ui";
 import { LoadMore, moneyOr, TableErrorEmpty } from "@superdl/ui/components";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Badge, Button, Dropdown, List, Popover, Space, theme } from "antd";
+import { Badge, Button, Dropdown, Grid, List, Popover, Space, theme, type MenuProps } from "antd";
 import { useState } from "react";
-
 import { useTranslation } from "react-i18next";
 
 import { useFormat } from "@superdl/ui";
@@ -25,8 +26,7 @@ import { useNotificationOpen } from "../notificationNav";
 import { useLogout, useMarkAllNotificationsRead } from "../../api/mutations";
 import { useMe, useNotificationPages, useUnreadCount, useWallet } from "../../api/queries";
 import { useIsLoggedIn } from "../../stores/auth";
-
-const WHITE = { color: "#fff" } as const;
+import { ThemeToggle } from "./AppTopBar";
 
 function NotificationBell() {
   const { t } = useTranslation();
@@ -97,11 +97,11 @@ function NotificationBell() {
           count={<ExclamationCircleFilled style={{ color: adminColors.alertAccent }} />}
           title={t("query.loadFailed")}
         >
-          <Button type="text" aria-label={t("topbar.notifications")} icon={<BellOutlined style={WHITE} />} />
+          <Button type="text" aria-label={t("topbar.notifications")} icon={<BellOutlined />} />
         </Badge>
       ) : (
         <Badge count={unreadCount} size="small">
-          <Button type="text" aria-label={t("topbar.notifications")} icon={<BellOutlined style={WHITE} />} />
+          <Button type="text" aria-label={t("topbar.notifications")} icon={<BellOutlined />} />
         </Badge>
       )}
     </Popover>
@@ -109,76 +109,91 @@ function NotificationBell() {
 }
 
 export function TopBarUser() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation(["web", "shared"]);
   const { formatMoney } = useFormat();
+  const { token } = theme.useToken();
   const navigate = useNavigate();
   const loggedIn = useIsLoggedIn();
   const logout = useLogout();
+  const screens = Grid.useBreakpoint();
   const { data: me } = useMe({ enabled: loggedIn });
   const { data: wallet } = useWallet({ enabled: loggedIn });
 
   if (!loggedIn) {
     return (
-      <Button
-        style={{ background: "#fff", color: colorPrimary, borderColor: "transparent", fontWeight: 600 }}
-        onClick={() => navigate({ to: "/login" })}
-      >
+      <Button type="primary" onClick={() => navigate({ to: "/login" })}>
         {t("topbar.loginRegister")}
       </Button>
     );
   }
+  const currentLang = i18n.resolvedLanguage === "en-US" ? "en-US" : "zh-CN";
+  const langLabel: Record<(typeof SUPPORTED_LANGS)[number], string> = {
+    "zh-CN": t("lang.zh", { ns: "shared" }),
+    "en-US": t("lang.en", { ns: "shared" }),
+  };
+  const menuItems: NonNullable<MenuProps["items"]> = [
+    { key: "settings", icon: <SettingOutlined />, label: t("settings.title") },
+    { key: "notifications", icon: <BellOutlined />, label: t("notifications.title") },
+    { key: "help", icon: <QuestionCircleOutlined />, label: t("topbar.help") },
+    {
+      key: "lang",
+      icon: <GlobalOutlined />,
+      label: t("lang.switchLabel", { ns: "shared" }),
+      children: SUPPORTED_LANGS.map((l) => ({
+        key: `lang:${l}`,
+        label: langLabel[l],
+        disabled: l === currentLang,
+      })),
+    },
+    { type: "divider" },
+    { key: "logout", icon: <LogoutOutlined />, label: t("settings.logout"), danger: true },
+  ];
   return (
-    <Space size={12}>
-      <Link to="/billing" className="topbar-link">
+    <Space size={4}>
+      <Link to="/billing" className="topbar-balance" aria-label={t("common.balance")}>
         <Space size={4}>
           <WalletOutlined />
-          <span>{moneyOr(formatMoney(wallet?.balance), wallet != null)}</span>
+          <span style={{ fontWeight: 600 }}>{moneyOr(formatMoney(wallet?.balance), wallet != null)}</span>
         </Space>
       </Link>
-      <Button
-        type="text"
-        aria-label={t("command.trigger")}
-        title={t("command.trigger")}
-        icon={<SearchOutlined style={WHITE} />}
-        style={WHITE}
-        onClick={() => window.dispatchEvent(new CustomEvent(COMMAND_PALETTE_OPEN_EVENT))}
-      >
-        <span
-          className="topbar-kbd-hint"
-          style={{
-            border: "1px solid rgba(255,255,255,0.45)",
-            borderRadius: 4,
-            padding: "0 4px",
-            fontSize: fontSize.caption,
-          }}
+      {screens.md && (
+        <Button
+          type="text"
+          aria-label={t("command.trigger")}
+          title={t("command.trigger")}
+          icon={<SearchOutlined />}
+          onClick={() => window.dispatchEvent(new CustomEvent(COMMAND_PALETTE_OPEN_EVENT))}
         >
-          {COMMAND_KBD_HINT}
-        </span>
-      </Button>
+          <span
+            className="topbar-kbd-hint"
+            style={{
+              border: `1px solid ${token.colorBorderSecondary}`,
+              borderRadius: 4,
+              padding: "0 4px",
+              fontSize: fontSize.caption,
+              color: token.colorTextSecondary,
+            }}
+          >
+            {COMMAND_KBD_HINT}
+          </span>
+        </Button>
+      )}
       <NotificationBell />
-      <Link to="/help" aria-label={t("topbar.help")} className="topbar-help-link">
-        <Button type="text" icon={<QuestionCircleOutlined style={WHITE} />} />
-      </Link>
+      {screens.md && <ThemeToggle variant="plain" />}
       <Dropdown
         menu={{
-          items: [
-            { key: "settings", icon: <SettingOutlined />, label: t("settings.title") },
-            { key: "help", icon: <QuestionCircleOutlined />, label: t("topbar.help") },
-            { key: "logout", icon: <LogoutOutlined />, label: t("settings.logout") },
-          ],
+          items: menuItems,
           onClick: ({ key }) => {
-            if (key === "logout") {
-              void logout();
-            } else if (key === "help") {
-              void navigate({ to: "/help" });
-            } else {
-              void navigate({ to: "/settings" });
-            }
+            if (key === "logout") void logout();
+            else if (key === "help") void navigate({ to: "/help" });
+            else if (key === "notifications") void navigate({ to: "/notifications" });
+            else if (key === "settings") void navigate({ to: "/settings" });
+            else if (key.startsWith("lang:")) void i18n.changeLanguage(key.slice(5));
           },
         }}
       >
-        <Button type="text" icon={<UserOutlined style={WHITE} />} style={WHITE}>
-          {me ? maskPhone(me.phone) : ""}
+        <Button type="text" icon={<UserOutlined />} aria-label={t("topbar.userMenu")}>
+          {screens.md && me ? maskPhone(me.phone) : ""}
         </Button>
       </Dropdown>
     </Space>
