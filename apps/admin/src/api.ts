@@ -114,6 +114,7 @@ import type {
   AdminAlertsApiAdminV1AlertsGetParams,
   AdminAuditExportApiAdminV1AuditExportGetParams,
   AdminAuditLogApiAdminV1AuditGetParams,
+  AdminDeletionApprove,
   AdminDeletionReject,
   AdminInvoicesExportApiAdminV1InvoicesExportGetParams,
   AdminListAdjustmentsApiAdminV1AdjustmentsGetParams,
@@ -581,8 +582,8 @@ export function useDeletionRequests(params?: AdminListDeletionRequestsApiAdminV1
 }
 
 /** 执行注销(仅超管):校验不过 → 409,detail 含残留清单。 */
-export const useApproveDeletion = adminMutation((v: { requestId: number }) =>
-  adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost(v.requestId),
+export const useApproveDeletion = adminMutation((v: { requestId: number; data: AdminDeletionApprove }) =>
+  adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost(v.requestId, v.data),
 );
 
 export const useRejectDeletion = adminMutation((v: { requestId: number; data: AdminDeletionReject }) =>

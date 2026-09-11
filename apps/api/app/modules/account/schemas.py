@@ -164,3 +164,9 @@ class AdminDeletionReject(BaseModel):
     """驳回注销申请(理由必填,回写 note)。"""
 
     note: str = Field(min_length=2, max_length=512)
+
+
+class AdminDeletionApprove(BaseModel):
+    """执行注销(操作原因必填,回写 note 并进审计 detail;不可逆操作一律留痕)。"""
+
+    note: str = Field(min_length=2, max_length=512)

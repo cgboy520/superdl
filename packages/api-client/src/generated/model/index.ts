@@ -23,6 +23,7 @@ export * from './adminCreateAdjustmentApiAdminV1AdjustmentsPostHeaders';
 export * from './adminCreateEnrollmentApiAdminV1NodeEnrollmentsPostHeaders';
 export * from './adminCreateRequest';
 export * from './adminCreateRequestRole';
+export * from './adminDeletionApprove';
 export * from './adminDeletionReject';
 export * from './adminDeletionRequestOut';
 export * from './adminForceStopRequest';

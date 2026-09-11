@@ -881,9 +881,12 @@
     "colWorkload": "Type",
     "deletion": {
       "approve": "Execute deletion",
+      "approveAck": "I confirm this account will be anonymized and cannot be restored",
       "approveBlocked": "Some pre-checks failed: 0 instances, 0 disks, and zero balance are required",
       "approveCheckLine": "Pre-check: {{instances}} unreleased instances · {{disks}} undeleted disks · balance {{balance}}",
       "approveConfirmText": "Execution anonymizes the account immediately: phone number hashed, real-name info wiped, all sessions revoked — irreversible. If checks fail, the request is auto-rejected and the leftover list is sent to the user.",
+      "approveNotePlaceholder": "Reason (required; recorded in the audit log and on the request)",
+      "approveTarget": "Target: user #{{id}} ({{phone}})",
       "approveTitle": "Execute account deletion",
       "colCooldownEnd": "Cooldown ends",
       "colPrecheck": "Pre-checks",

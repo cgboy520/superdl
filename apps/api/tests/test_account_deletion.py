@@ -115,7 +115,11 @@ class TestCooldown:
         headers, _, _ = await create_user_with_key(client, PHONE)
         req_id = (await _create_request(client, headers)).json()["id"]
         admin = await admin_headers(sm, client)
-        resp = await client.post(f"/api/admin/v1/deletion-requests/{req_id}/approve", headers=admin)
+        resp = await client.post(
+            f"/api/admin/v1/deletion-requests/{req_id}/approve",
+            json={"note": "已核对身份与资源清单"},
+            headers=admin,
+        )
         assert resp.status_code == 409
         assert resp.json()["message_key"] == "account.deletionCooldown"
         # 冷静期内拦截,申请仍 pending
@@ -144,7 +148,11 @@ class TestApproveGuards:
         _, uuid = await seed_instance(sm, user_id, status="running", wallet_credit=False)
         await _backdate_request(sm, user_id, days=8)
         admin = await admin_headers(sm, client)
-        resp = await client.post(f"/api/admin/v1/deletion-requests/{req_id}/approve", headers=admin)
+        resp = await client.post(
+            f"/api/admin/v1/deletion-requests/{req_id}/approve",
+            json={"note": "已核对身份与资源清单"},
+            headers=admin,
+        )
         assert resp.status_code == 409
         body = resp.json()
         assert body["message_key"] == "account.deletionLeftovers"
@@ -164,7 +172,11 @@ class TestApproveGuards:
         await seed_disk(sm, user_id, status="deleted")
         await _backdate_request(sm, user_id, days=8)
         admin = await admin_headers(sm, client)
-        resp = await client.post(f"/api/admin/v1/deletion-requests/{req_id}/approve", headers=admin)
+        resp = await client.post(
+            f"/api/admin/v1/deletion-requests/{req_id}/approve",
+            json={"note": "已核对身份与资源清单"},
+            headers=admin,
+        )
         assert resp.status_code == 200, resp.text
 
     async def test_active_disk_blocks(self, client: AsyncClient, sm):
@@ -173,7 +185,11 @@ class TestApproveGuards:
         _, uuid = await seed_disk(sm, user_id, status="active")
         await _backdate_request(sm, user_id, days=8)
         admin = await admin_headers(sm, client)
-        resp = await client.post(f"/api/admin/v1/deletion-requests/{req_id}/approve", headers=admin)
+        resp = await client.post(
+            f"/api/admin/v1/deletion-requests/{req_id}/approve",
+            json={"note": "已核对身份与资源清单"},
+            headers=admin,
+        )
         assert resp.status_code == 409
         body = resp.json()
         assert body["message_key"] == "account.deletionLeftovers"
@@ -185,7 +201,11 @@ class TestApproveGuards:
         req_id = (await _create_request(client, headers)).json()["id"]
         await _backdate_request(sm, user_id, days=8)
         admin = await admin_headers(sm, client)
-        resp = await client.post(f"/api/admin/v1/deletion-requests/{req_id}/approve", headers=admin)
+        resp = await client.post(
+            f"/api/admin/v1/deletion-requests/{req_id}/approve",
+            json={"note": "已核对身份与资源清单"},
+            headers=admin,
+        )
         assert resp.status_code == 409
         body = resp.json()
         assert body["message_key"] == "account.deletionBalanceRemaining"
@@ -225,9 +245,15 @@ class TestApproveSuccess:
         req_id = (await _create_request(client, headers)).json()["id"]
         await _backdate_request(sm, user_id, days=8)
         admin = await admin_headers(sm, client)
-        resp = await client.post(f"/api/admin/v1/deletion-requests/{req_id}/approve", headers=admin)
+        resp = await client.post(
+            f"/api/admin/v1/deletion-requests/{req_id}/approve",
+            json={"note": "已核对身份与资源清单"},
+            headers=admin,
+        )
         assert resp.status_code == 200, resp.text
         assert resp.json()["status"] == "completed"
+        # 执行原因回写 note(不可逆操作留痕)
+        assert resp.json()["note"] == "已核对身份与资源清单"
 
         async with sm() as session:
             user = await session.get(User, user_id)
@@ -283,7 +309,9 @@ class TestApproveSuccess:
             req_id = (await _create_request(client, headers)).json()["id"]
             await _backdate_request(sm, user_id, days=8)
             resp = await client.post(
-                f"/api/admin/v1/deletion-requests/{req_id}/approve", headers=admin
+                f"/api/admin/v1/deletion-requests/{req_id}/approve",
+                json={"note": "已核对身份与资源清单"},
+                headers=admin,
             )
             assert resp.status_code == 200, resp.text
             async with sm() as session:
@@ -321,7 +349,11 @@ class TestApproveSuccess:
         req_id = (await _create_request(client, headers)).json()["id"]
         await _backdate_request(sm, user_id, days=8)
         admin = await admin_headers(sm, client)
-        resp = await client.post(f"/api/admin/v1/deletion-requests/{req_id}/approve", headers=admin)
+        resp = await client.post(
+            f"/api/admin/v1/deletion-requests/{req_id}/approve",
+            json={"note": "已核对身份与资源清单"},
+            headers=admin,
+        )
         assert resp.status_code == 200, resp.text
         async with sm() as session:
             after = (

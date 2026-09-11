@@ -16,7 +16,11 @@ from app.core.metrics import PII_REVEAL_ROWS_TOTAL
 from app.core.money import as_amount, money_str
 from app.core.pagination import Page
 from app.core.params import Cursor, Limit, TzOffset
-from app.modules.account.schemas import AdminDeletionReject, AdminDeletionRequestOut
+from app.modules.account.schemas import (
+    AdminDeletionApprove,
+    AdminDeletionReject,
+    AdminDeletionRequestOut,
+)
 from app.modules.adminapi import service
 from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.models import AdminUser
@@ -317,19 +321,22 @@ async def admin_list_deletion_requests(
 @router.post("/deletion-requests/{request_id}/approve")
 async def admin_approve_deletion(
     request_id: int,
+    body: AdminDeletionApprove,
     session: DbSession,
     request: Request,
     admin: AdminUser = require_roles(),
 ) -> AdminDeletionRequestOut:
-    """执行注销:冷静期未满 409;残留实例/数据盘或余额非零 → 自动驳回 + 409(detail 清单);
-    全通过则同事务匿名化。"""
+    """执行注销(操作原因必填):冷静期未满 409;残留实例/数据盘或余额非零 → 自动驳回 + 409
+    (detail 清单);全通过则同事务匿名化并把原因回写 note。"""
     from app.modules.account import service as account_service
 
-    req = await account_service.approve_deletion(session, request_id, admin_id=admin.id)
+    req = await account_service.approve_deletion(
+        session, request_id, admin_id=admin.id, note=body.note
+    )
     set_audit_target(
         request,
         f"user:{req.user_id}",
-        detail={"action": "account_deletion_approve", "request_id": req.id},
+        detail={"action": "account_deletion_approve", "request_id": req.id, "note": body.note},
     )
     return await account_service.admin_get_deletion_out(session, req.id)
 

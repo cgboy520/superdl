@@ -49,7 +49,7 @@
 | `GET /api/admin/v1/tickets/count?status=&category=` | ops/finance/readonly | 待办工单计数(默认 `pending_staff`;列表页角标 60s 轮询) |
 | `GET/POST/PUT /api/admin/v1/legal-docs*` | 读全角色,写仅 admin | 法务文档草稿 → 发布 → 归档(归档 `{reason}` 必填);每 (doc_key, locale) 仅一条 published |
 | `GET/PUT /api/admin/v1/tenants/{user_id}/quota` | 读全角色,写 ops | 用户级配额覆盖(留空 = 走 policy → env 默认链) |
-| `GET /api/admin/v1/deletion-requests` `POST .../{request_id}/approve` `/reject` | 读 ops/finance/readonly,执行仅 admin | 账号注销:满冷静期且前置校验全过才可执行 |
+| `GET /api/admin/v1/deletion-requests` `POST .../{request_id}/approve` `/reject` | 读 ops/finance/readonly,执行仅 admin | 账号注销:满冷静期且前置校验全过才可执行;执行与驳回均带必填 `note`(2~512 字),回写申请单并进审计 detail;管理端执行走 L3 确认(键入用户 ID + 勾选 + 原因) |
 | `GET /api/admin/v1/alerts` `/alerts/unread-count` `POST .../{alert_id}/ack` | 读 ops/finance/readonly,写 ops | 告警流与确认闭环;unread-count 回 `{count, critical_count}` |
 | `GET /api/admin/v1/nodes/port-pool` | ops/readonly | SSH 端口池水位 `{total, assigned, blocked}`;blocked = 被集群其它对象撞占(周期复检自动放回) |
 | `GET /api/admin/v1/audit?actor_type=&actor_id=&q=&since=&until=` `/audit/export` | readonly/ops/finance | 审计检索(actor / 动作前缀 / 时间区间,游标);export 流式 CSV,导出动作本身落一条检索审计(只记筛选参数) |

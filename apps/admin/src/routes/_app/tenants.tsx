@@ -14,7 +14,7 @@ import {
   workloadTypeMap,
   type InstanceStatus,
 } from "@superdl/ui";
-import { HexTag, LoadMore, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
+import { HexTag, LoadMore, PageContainer, TableErrorEmpty, TypeConfirmModal } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { App, Badge, Button, Card, Input, Modal, Select, Space, Table, Tabs, Tag, Tooltip, Typography } from "antd";
@@ -582,17 +582,22 @@ function DeletionsTab() {
   const reject = useRejectDeletion();
   const refresh = () => void qc.invalidateQueries({ queryKey });
   const [approving, setApproving] = useState<DeletionRow | null>(null);
+  const [approveNote, setApproveNote] = useState("");
   const [approveLoading, setApproveLoading] = useState(false);
   // 冷静期倒计时 30s tick
   const nowTs = useNow(30_000);
 
+  const closeApprove = () => {
+    setApproving(null);
+    setApproveNote("");
+  };
   const runApprove = async () => {
     if (!approving) return;
     setApproveLoading(true);
     try {
-      await approve.mutateAsync({ requestId: approving.id });
+      await approve.mutateAsync({ requestId: approving.id, data: { note: approveNote.trim() } });
       message.success(t("tenants.deletion.executed"));
-      setApproving(null);
+      closeApprove();
     } catch (e) {
       // 校验不过 / 冷静期未满 → 409
       message.error(errText(e, t("common.actionFailed", { action: t("tenants.deletion.approveTitle") })));
@@ -738,45 +743,60 @@ function DeletionsTab() {
       />
       <ListCapNote rows={rows.length} cap={LIST_CAPS.deletions} />
 
-      <Modal
-        title={t("tenants.deletion.approveTitle")}
-        open={approving !== null}
-        onCancel={() => setApproving(null)}
-        okText={t("tenants.deletion.approve")}
-        okButtonProps={{
-          danger: true,
-          loading: approveLoading,
-          disabled: !approving || !precheckClear(approving) || !cooldownOver(approving),
-        }}
-        onOk={() => void runApprove()}
-      >
-        {approving && (
-          <Space orientation="vertical" size={8}>
-            <Typography.Text>
-              {t("tenants.deletion.approveCheckLine", {
-                instances: approving.instances_active,
-                disks: approving.disks_active,
-                balance: formatMoney(approving.balance),
-              })}
-            </Typography.Text>
-            {!precheckClear(approving) && (
-              <Typography.Text type="danger">
-                {t("tenants.deletion.approveBlocked")}
-              </Typography.Text>
-            )}
-            {!cooldownOver(approving) && (
-              <Typography.Text type="warning">
-                {t("tenants.deletion.cooldownRemaining", {
-                  countdown: cooldownLeft(approving) ?? "",
+      {/* L3 确认:键入用户 ID + 必填操作原因;校验未过 / 冷静期未满时按钮保持禁用(ui-ux-spec §1 规则 7) */}
+      {approving && (
+        <TypeConfirmModal
+          open
+          title={t("tenants.deletion.approveTitle")}
+          targetName={String(approving.user_id)}
+          body={
+            <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+              <Typography.Text strong>
+                {t("tenants.deletion.approveTarget", {
+                  id: approving.user_id,
+                  phone: approving.phone_masked,
                 })}
               </Typography.Text>
-            )}
-            <Typography.Text type="secondary">
-              {t("tenants.deletion.approveConfirmText")}
-            </Typography.Text>
-          </Space>
-        )}
-      </Modal>
+              <Typography.Text>
+                {t("tenants.deletion.approveCheckLine", {
+                  instances: approving.instances_active,
+                  disks: approving.disks_active,
+                  balance: formatMoney(approving.balance),
+                })}
+              </Typography.Text>
+              {!precheckClear(approving) && (
+                <Typography.Text type="danger">{t("tenants.deletion.approveBlocked")}</Typography.Text>
+              )}
+              {!cooldownOver(approving) && (
+                <Typography.Text type="warning">
+                  {t("tenants.deletion.cooldownRemaining", {
+                    countdown: cooldownLeft(approving) ?? "",
+                  })}
+                </Typography.Text>
+              )}
+              <Typography.Text type="secondary">{t("tenants.deletion.approveConfirmText")}</Typography.Text>
+              <Input.TextArea
+                rows={2}
+                maxLength={REASON_MAX_LEN}
+                showCount
+                value={approveNote}
+                onChange={(e) => setApproveNote(e.target.value)}
+                placeholder={t("tenants.deletion.approveNotePlaceholder")}
+                aria-label={t("tenants.deletion.approveNotePlaceholder")}
+              />
+            </Space>
+          }
+          checkboxLabel={t("tenants.deletion.approveAck")}
+          confirmLabel={t("tenants.deletion.approve")}
+          cancelLabel={t("common.cancel", { ns: "shared" })}
+          loading={approveLoading}
+          extraDisabled={
+            !precheckClear(approving) || !cooldownOver(approving) || approveNote.trim().length < 2
+          }
+          onConfirm={() => void runApprove()}
+          onCancel={closeApprove}
+        />
+      )}
     </>
   );
 }

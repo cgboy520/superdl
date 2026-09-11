@@ -1,5 +1,6 @@
 {
   "common": {
+    "cancel": "Cancel",
     "loadFailed": "Failed to load. Please try again.",
     "retry": "Retry",
     "loadMore": "Load more",

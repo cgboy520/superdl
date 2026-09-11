@@ -868,9 +868,12 @@ export default interface Resources {
       "colWorkload": "形态",
       "deletion": {
         "approve": "执行注销",
+        "approveAck": "我确认该账号将被匿名化且不可恢复",
         "approveBlocked": "存在未通过的校验项:须实例 0 台、数据盘 0 块、余额为零才可执行",
         "approveCheckLine": "校验结果:未释放实例 {{instances}} 台 · 未删除数据盘 {{disks}} 块 · 余额 {{balance}}",
         "approveConfirmText": "执行后立即匿名化该账号:手机号哈希化、实名信息清空、撤销全部登录态,不可恢复;校验不过将自动驳回并把残留清单写给用户。",
+        "approveNotePlaceholder": "操作原因(必填,记入审计与申请单)",
+        "approveTarget": "目标:用户 #{{id}}({{phone}})",
         "approveTitle": "执行账号注销",
         "colCooldownEnd": "冷静期到期",
         "colPrecheck": "执行前校验",
@@ -1244,6 +1247,7 @@ export default interface Resources {
       "empty": "暂无数据"
     },
     "common": {
+      "cancel": "取消",
       "forbidden": "无权限查看",
       "forbiddenDesc": "当前角色无权查看该数据,如需访问请联系管理员。",
       "loadFailed": "加载失败,请重试",

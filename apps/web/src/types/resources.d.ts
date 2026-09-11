@@ -249,6 +249,7 @@ export default interface Resources {
       "empty": "暂无数据"
     },
     "common": {
+      "cancel": "取消",
       "forbidden": "无权限查看",
       "forbiddenDesc": "当前角色无权查看该数据,如需访问请联系管理员。",
       "loadFailed": "加载失败,请重试",

@@ -19,6 +19,7 @@ import type {
   AdminCreateAdjustmentApiAdminV1AdjustmentsPostHeaders,
   AdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostHeaders,
   AdminCreateRequest,
+  AdminDeletionApprove,
   AdminDeletionReject,
   AdminDeletionRequestOut,
   AdminForceStopRequest,
@@ -866,18 +867,19 @@ export const getAdminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePo
 }
 
 /**
- * 执行注销:冷静期未满 409;残留实例/数据盘或余额非零 → 自动驳回 + 409(detail 清单);
- * 全通过则同事务匿名化。
+ * 执行注销(操作原因必填):冷静期未满 409;残留实例/数据盘或余额非零 → 自动驳回 + 409
+ * (detail 清单);全通过则同事务匿名化并把原因回写 note。
  * @summary Admin Approve Deletion
  */
-export const adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost = async (requestId: number, options?: Parameters<typeof customFetch>[1]): Promise<AdminDeletionRequestOut> => {
+export const adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost = async (requestId: number,
+    adminDeletionApprove: AdminDeletionApprove, options?: Parameters<typeof customFetch>[1]): Promise<AdminDeletionRequestOut> => {
 
   return customFetch<AdminDeletionRequestOut>(getAdminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePostUrl(requestId),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminDeletionApprove)
   }
 );}
 

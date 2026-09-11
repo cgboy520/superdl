@@ -42,5 +42,5 @@
 - 密码登录:四层桶预检 → 查用户 → **先提交只读事务还连接** → bcrypt(专属 4 线程池 `core/security._BCRYPT_EXECUTOR`);注册成功计 `superdl_user_signup_total`,发码成功计 `superdl_sms_sent_total{purpose}`。
 - SSH 公钥:每用户 50 把、添加 20 次/小时(`MAX_SSH_KEYS_PER_USER`);创建实例按 id 集合下推 SQL 取键(`ssh_keys_by_ids`)。
 - 注册必勾条款,同事务按当前 published 版落 terms/privacy 各一条同意存证。
-- 注销执行为匿名化:手机号替换为随机不可逆令牌 `del:{user_id}:{16 位 hex}`(不取摘要,与原号无函数关系)、身份字段清空、全撤登录态;`balance_ledger` 与账单按法定义务保留。
+- 注销执行为匿名化:手机号替换为随机不可逆令牌 `del:{user_id}:{16 位 hex}`(不取摘要,与原号无函数关系)、身份字段清空、全撤登录态;`balance_ledger` 与账单按法定义务保留。执行请求体必带操作原因 `note`,回写 `account_deletion_requests.note`(与驳回理由同列)。
 - 所有写操作过审计中间件(actor/ip/result)。

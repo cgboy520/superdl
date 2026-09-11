@@ -353,6 +353,22 @@
         "title": "AdminCreateRequest",
         "type": "object"
       },
+      "AdminDeletionApprove": {
+        "description": "执行注销(操作原因必填,回写 note 并进审计 detail;不可逆操作一律留痕)。",
+        "properties": {
+          "note": {
+            "maxLength": 512,
+            "minLength": 2,
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "note"
+        ],
+        "title": "AdminDeletionApprove",
+        "type": "object"
+      },
       "AdminDeletionReject": {
         "description": "驳回注销申请(理由必填,回写 note)。",
         "properties": {
@@ -10993,7 +11009,7 @@
     },
     "/api/admin/v1/deletion-requests/{request_id}/approve": {
       "post": {
-        "description": "执行注销:冷静期未满 409;残留实例/数据盘或余额非零 → 自动驳回 + 409(detail 清单);\n全通过则同事务匿名化。",
+        "description": "执行注销(操作原因必填):冷静期未满 409;残留实例/数据盘或余额非零 → 自动驳回 + 409\n(detail 清单);全通过则同事务匿名化并把原因回写 note。",
         "operationId": "admin_approve_deletion_api_admin_v1_deletion_requests__request_id__approve_post",
         "parameters": [
           {
@@ -11006,6 +11022,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminDeletionApprove"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {

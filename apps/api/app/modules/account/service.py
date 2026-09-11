@@ -1006,9 +1006,9 @@ def _auto_reject_deletion(req: AccountDeletionRequest, *, admin_id: int, note: s
 
 
 async def approve_deletion(
-    session: AsyncSession, request_id: int, *, admin_id: int
+    session: AsyncSession, request_id: int, *, admin_id: int, note: str
 ) -> AccountDeletionRequest:
-    """执行注销(仅超管)。冷静期未满 409;残留资源/余额非零 → 自动驳回 + 409;
+    """执行注销(仅超管,操作原因必填回写 note)。冷静期未满 409;残留资源/余额非零 → 自动驳回 + 409;
     全通过则同事务匿名化:手机号改写为随机占位串、实名字段清空、token_version+1、status=deleted。
     """
     # 必须延迟 import:orchestrator.service 与本模块循环依赖
@@ -1073,6 +1073,7 @@ async def approve_deletion(
     req.status = "completed"
     req.processed_by = admin_id
     req.processed_at = now_utc()
+    req.note = note
     await session.commit()
     logger.info("account_deleted", user_id=user.id)
     return req

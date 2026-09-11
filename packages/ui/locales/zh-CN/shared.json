@@ -1,5 +1,6 @@
 {
   "common": {
+    "cancel": "取消",
     "loadFailed": "加载失败,请重试",
     "retry": "重试",
     "loadMore": "加载更多",
