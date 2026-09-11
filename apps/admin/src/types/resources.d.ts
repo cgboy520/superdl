@@ -1220,9 +1220,12 @@ export default interface Resources {
       "apiKeyNotFound": "访问密钥不存在",
       "apiKeyQuota": "单个服务的访问密钥已达上限({{max}} 把),请先吊销不用的密钥",
       "deleteNeedsStopped": "请先停止服务,再删除",
+      "envKeepUnknown": "要沿用的密文变量在当前版本里不存在:{{keys}}",
       "notFound": "服务不存在",
       "released": "服务已删除,不能再操作",
-      "rolloutInFlight": "服务正在更新版本,完成后再试"
+      "rolloutInFlight": "服务正在更新版本,完成后再试",
+      "rolloutNeedsSettled": "当前版本正在变更中(部署 / 停止 / 释放),稳定后再更新版本",
+      "rolloutSubscriptionUnsupported": "包周期服务暂不支持更新版本"
     },
     "tickets": {
       "notFound": "工单不存在",
@@ -1357,6 +1360,8 @@ export default interface Resources {
         "released": "释放完成",
         "restart": "重启",
         "retention_reclaim": "留存到期回收",
+        "rollout": "版本更新:旧版本关机",
+        "rollout_retire": "版本更新:旧版本释放",
         "schedule_timeout": "调度超时",
         "subscription_expired": "包周期到期停机",
         "subscription_freeze": "包周期到期冻结",
