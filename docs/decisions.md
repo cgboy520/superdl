@@ -14,6 +14,16 @@
 - **orval 只生成 fetcher 与 model 类型,不生成 TanStack Query hooks。** `packages/api-client` 用 `client: "fetch"`;两端在 `apps/web/src/api/*.ts`、`apps/admin/src/api.ts` 用 useQuery/useMutation 包 fetcher。约束:`client` 保持 `"fetch"`,不加 `query` 块。
 - **UI 占位项的去留有判据。** 只有「已排期、按当前设计确定要做」的能力留 disabled 占位并注「即将上线」。约束:变动时 `docs/ui-ux-spec.md` 占位清单与 `docs/reference/web.md` 同提交更新。
 
+## 界面
+
+- **用户端没有独立概览页,首页 = 实例列表。** 与 GPU 租赁产品惯例一致(登录后直接落到资源列表);KPI 由顶栏余额与费用中心承接,公告 / 余额预警 / 欠费聚合成实例列表页顶一条 `AttentionBar`,新手引导落在真空态。约束:不再新增「仪表盘」类汇总页;新的全站提醒一律并入 `AttentionBar`,不另开横幅。
+- **控制台顶栏中性色,品牌渐变只在公开层与登录页。** 渐变条在暗色下与基板明度落差过大,且顶栏是每页常驻元素,不该与内容争夺注意力。约束:渐变底上的反白 CTA 走 `brandInverseButtonStyle`;控制台内不再出现 `brand.topBarBg`。
+- **主导航分组且只放资源与购买类页面。** web:资源 / 购买与账务 / 支持;admin:总览 / 资源 / 业务 / 治理。通知与账户设置经顶栏铃铛与用户菜单到达。约束:分组事实源分别是 `consoleNav.tsx` 与 `lib/menu.ts`,侧栏 / 抽屉 / 命令面板只许读这一份。
+- **常驻提示有准入判据:有时效、可行动。** 政策与口径说明不做常驻 `Alert`,进 tooltip / 规则弹窗 / 卡内脚注。约束:一页至多一条横幅,多项聚合;合规声明只在公开页脚与市场页脚。
+- **确认强度组件两端强制,`Popconfirm` 禁用。** L1 / L2 `useConfirm`、L3 `TypeConfirmModal`、管理端审计型 `ReasonAction`;危险确认按钮一律红色。约束:新增确认不许手搓 `modal.confirm`;确认文案 = 标题问句(含目标)+ 后果正文。
+- **管理端密度「紧凑」、用户端「舒适」,分档写死在 token。** 管理端表格 13px / `cellPaddingBlock 8`,宽表固定列 + sticky 表头 + 全宽页;用户端保持 antd 默认密度。约束:两端不互相借用密度;宽表判据 `scroll.x ≥ 1000`。
+- **轮询周期只有一份(`POLL`),轮询页必须可见新鲜度。** 约束:新轮询不写裸毫秒数;页头用 `PageHeader.freshness` 给「更新于 / 自动刷新 / 暂停」。
+
 ## 计费与资金
 
 - **余额归零即回收,判据一律取可用余额(balance − frozen)。** 解冻判据 `available > 0`,停机判据 `effective <= 0`。约束:欠费巡检六处判据(粗筛 / 锁内二次读 / 低余额预警 payload / stopped→frozen / frozen→解冻 / 数据盘欠费链)不许退回裸余额。由 `apps/api/tests/test_billing_flow.py::test_zero_balance_stops_then_freezes_then_reclaims` 与 `apps/api/tests/test_patrol_arrears_frozen.py` 锁定。

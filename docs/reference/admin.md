@@ -57,7 +57,8 @@
 ## 规则与不变量
 
 - 管理端与用户端 API 物理分离,token 不通用;侧栏菜单按角色过滤(`lib/menu.ts` 与后端 `require_roles` 逐端点对齐),直接输 URL 由后端 403 兜底。
-- 菜单项事实源 `lib/menu.ts` 的 `MENU`(侧栏与 ⌘K 共用),可见性由 `MENU_ROLES` 过滤;键集一致性由 `lib/menu.test.ts` 守护。
+- 菜单项事实源 `lib/menu.ts` 的 `MENU`(侧栏与 ⌘K 共用;`group` 分四组:总览 / 资源 / 业务 / 治理,顺序 `MENU_GROUP_ORDER`),可见性由 `MENU_ROLES` 过滤;键集一致性由 `lib/menu.test.ts` 守护。
+- 表格密度与固定列:`adminThemeComponents.Table` 统一 13px / `cellPaddingBlock 8`;`scroll.x ≥ 1000` 的表固定标识列与操作列并 `sticky`(顶栏高度 `layout.topBarHeight`);宽表页 `PageContainer width="full"`;轮询页页头挂新鲜度条(`useAutoRefresh` + `PageHeader.freshness`)。
 - `src/routes/` 下的非路由文件以 `-` 开头(tanstack router 的 routeFileIgnorePrefix)。
 - 管理端登录限流只计失败,四层桶:`admin-login:{ip}:{username}` 与 `admin-login-acct:{username}` 成功即清零,`admin-login-ip:{ip}` 与 `admin-login-acct-daily:{username}` 不清零;TOTP 校验走 `admin-mfa:{admin_id}`。限额见 [limits.md](./limits.md)。
 - 日窗账号桶只在失败后计数,不参与 bcrypt 前的准入预检(其余三层桶参与)。

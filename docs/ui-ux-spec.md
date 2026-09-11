@@ -4,24 +4,20 @@
 
 ## 1. 全站交互规则
 
-1. **CTA 即库存**:主页价格墙卡片主按钮直接写「可开实例 N」/「已租完」(禁用态);市场表格用「可开实例」列 + 售罄行灰置。
-   SKU `available_count` 是近似可开实例数(共享档含超卖系数),**不是物理空闲卡数**;页面一律用「可开实例/台」表述,禁止换算成「卡」。
-2. **条件操作一律可见但禁用 + tooltip 说明原因**:操作菜单永不隐藏条目;tooltip 写清前置条件。
-   **占位项的去留有判据**:只有「已排期、按当前设计确定要做」的能力留 disabled 占位并注「即将上线」。兑现或删除时,[`reference/web.md`](./reference/web.md) 与本节占位清单同提交更新。
-3. **价格公式摊开**:计费项 × 单价 × 数量逐行列出;**「日常费用」单独一栏**(关机也扣的钱:数据盘)。
-4. **关机 ≠ 释放,多级删除防护**:释放需**键入实例名称** + 勾选「我确认将清除实例盘全部数据(数据盘不受影响)」两道闸才解锁红色按钮。`creating` 态入口文案「取消创建」,只过键入这道。
-5. **风险商品知情同意**:下单「共享·经济档」(hami 池)弹 modal 逐条列明软件限额共享(HAMi LD_PRELOAD CUDA 拦截)、算力为均值保障、性能可能波动、容器内 root 可绕过配额、跨租户显存残留风险、可能被重调度,确认才放行。
-   **竞价实例复用同一 modal 形态**,在**创建页提交前**弹,五条 + 必勾复选框「☐ 我已知悉竞价实例可能被回收」:
-   ① 竞价价为按量价的 `{spot_discount_pct}`%,但实例可被平台回收;
-   ② 按量或包周期用户需要容量时,平台按创建时间从新到旧回收;
-   ③ 回收前提前 `{spot_grace_seconds}` 秒发短信与站内信,请自行保存进度;
-   ④ 回收即关机,实例盘保留;已运行时长按实际秒数正常结算;
-   ⑤ 有容量时可自行开机;不适合线上服务与不可中断的长任务。
-   ②③④ 逐条对应 `apps/api/app/modules/orchestrator/preempt.py` 的三条硬规矩与结算口径,**改代码等于改文案,两边同提交**;两个数从 `/policies` 读,不硬编码。
-6. **给等待路径,不给死胡同**:库存不足给「换个档位」引导;创建失败给「重新创建」按钮与失败原因。
-7. **确认强度分级(L0~L3)**:L3 = 键入名称 + 勾选确认(释放实例、删除数据盘);L2 = `modal.confirm` 或 ReasonAction,后果前置 + 影响说明(关机、重启、SKU 上下架、群发公告、重新生成注册命令、重新生成恢复码、调账驳回、改管理员角色);L1 = `Popconfirm` 或同强度 Modal,可逆且影响面 = 1(删 SSH key、解决/关闭工单、归档法务草稿);L0 = 无确认(开关类可逆操作)。禁止倒挂;审计型原因一律手输。
-8. **URL 即状态**:列表筛选、搜索词、Tab activeKey、深链目标(节点名/工单 id)一律入 URL(`validateSearch` 白名单 + 默认值剥离 + `replace: true`);控件与 URL 双向同步。抽屉/弹窗态可不入 URL,运营面需互相转达的视图(告警 → 节点/工单)必须有深链参数。
-9. **轮询三律**:① 只经 react-query `refetchInterval`,禁止原生 `setInterval`;② 一律函数式:过渡态快档、稳态慢档、终态即停(false);③ `useInfiniteQuery` 上禁止轮询,列表新鲜度靠 `refetchOnWindowFocus` + 手动刷新;折叠/未打开的 UI 对应查询挂 `enabled`。
+1. **决定优先于说明**:常驻横幅(`Alert`)只放「有时效、可行动」的事:到期 / 冻结 / 失败 / 低余额 / 欠费 / 公告 / 部分数据加载失败;一页至多一条,多项时聚合为「N 件需要处理」+ 展开列表(web `AttentionBar`),严重度取最高。政策与口径说明进标题旁 `?` tooltip、「计费规则」弹窗或卡内脚注(≤30 字),不做常驻条。合规声明(禁挖矿)只在公开页脚与市场页脚。
+2. **一处一主动作**:每页一个 primary CTA;表格行内至多 2 个高频动作 + 「更多 ▾」,更多里高危项标 `danger`;主动作随状态变(实例 running → 连接 ▾,stopped → 开机,failed → 重新创建)。进详情走名称链接,不靠双击行。
+3. **CTA 即库存**:主页价格墙卡片主按钮直接写「可开实例 N」/「已租完」(禁用态);市场表格用「可开实例」列 + 售罄行弱化底色(不用 opacity)并排到末尾。SKU `available_count` 是近似可开实例数(共享档含超卖系数),**不是物理空闲卡数**;页面一律用「可开实例/台」表述,禁止换算成「卡」。
+4. **条件操作一律可见但禁用 + tooltip 说明原因**:操作菜单永不隐藏条目;tooltip 写清前置条件;禁用按钮保持可聚焦(`aria-disabled` + 拦截点击),键盘用户也能读到原因。**占位项的去留有判据**:只有「已排期、按当前设计确定要做」的能力留 disabled 占位并注「即将上线」;兑现或删除时,[`reference/web.md`](./reference/web.md) 与本节占位清单同提交更新。
+5. **价格口径显性化**:表头写清「单卡 ¥/时」或「整机 ¥/时」;卡数 >1 时行内副行给 `× N = 总价`;结算条大字带 `× N 卡` 后缀;包周期「原价 / 优惠 / 应付」直接摊在结算条上,不进 Popover;非金额项(到期时间)降级为正文字号。「数据盘费用(按日)」单独一栏(关机也扣的钱),无盘不出;与「今日消费」严格分词。
+6. **风险前置、同意一次**:选中「共享·经济」或「竞价」的那一刻,在 chip 下方给 ≤3 行风险摘要;提交时只弹**一个**分节知情同意弹窗(`ConsentGate`:竞价一节 / 经济一节,命中几节出几节),每节 ≤3 条 + 「完整说明」链接,一次勾选;创建失败重试不重置勾选。竞价五条与经济四条的完整文案见 §3.4,②③④ 逐条对应 `apps/api/app/modules/orchestrator/preempt.py` 的三条硬规矩与结算口径,**改代码等于改文案,两边同提交**;折扣与宽限秒数从 `/policies` 读,不硬编码。
+7. **关机 ≠ 释放,多级删除防护**:释放需**键入实例名称** + 勾选「我确认将清除实例盘全部数据(数据盘不受影响)」两道闸才解锁红色按钮。`creating` 态入口文案「取消创建」,只过键入这道。
+8. **确认强度分级(L0~L3),两端强制组件化**:L3 = `TypeConfirmModal`(键入目标名 + 勾选;释放实例、删除数据盘、注销账号、管理端执行注销);L2 = `useConfirm`(后果前置 + 影响说明;关机、重启、SKU 改价、群发公告、重新生成注册命令、重新生成恢复码、改管理员角色)或管理端 `ReasonAction`(原因必填 → 二次确认 → 审计;两步都显示目标标识);L1 = `useConfirm` 轻量(可逆且影响面 = 1:删 SSH key、解决 / 关闭工单、归档法务草稿);L0 = 无确认(开关类可逆操作)。**`Popconfirm` 全站禁用**;危险动作的确认按钮一律 `danger`;禁止倒挂;审计型原因一律手输。确认文案 = 「标题问句(含目标)+ 后果正文」。
+9. **给等待路径,不给死胡同**:库存不足给「换个规格」引导;创建失败给「重新创建」按钮与失败原因;建盘成功而建实例失败,用页内不自动消失的 `Alert` + 「去存储页」按钮,不用 toast。
+10. **URL 即状态**:列表筛选、搜索词、Tab activeKey、深链目标(节点名 / 工单 id / 租户 id / 配置分组)一律入 URL(`validateSearch` 白名单 + 默认值剥离 + `replace: true`);控件与 URL 双向同步;抽屉开合若承载可转达视图(租户抽屉)也入 URL。详情页「返回列表」带回列表最近筛选态(web `stores/listSearch`)。
+11. **轮询三律 + 新鲜度可见**:① 只经 react-query `refetchInterval`,周期取 `packages/ui/src/polling.ts` 的 `POLL`,禁止裸数字与原生 `setInterval`;② 一律函数式:过渡态 `POLL.transient`、稳态 `POLL.steady`、终态即停(false);③ `useInfiniteQuery` 上禁止轮询,列表新鲜度靠 `refetchOnWindowFocus` + 手动刷新;折叠 / 未打开的 UI 对应查询挂 `enabled`。轮询页在页头给「更新于 · 每 N 秒自动刷新 · 暂停 / 立即刷新」(`PageHeader.freshness` + `useAutoRefresh`)。
+12. **密度分级**:web「舒适」(表格 `cellPaddingBlock 12`、正文 14);admin「紧凑」(表格 13px / `cellPaddingBlock 8`,嵌套表 `size="small"`;全站 `tabular-nums`;标识符列 `.mono` 等宽);`scroll.x ≥ 1000` 的表**必须**固定标识列(左)与操作列(右)+ `sticky={{ offsetHeader: layout.topBarHeight }}`;宽表页用 `PageContainer width="full"`。
+13. **尺寸与容器分档**:输入框 / 下拉宽度取 `controlWidth`(xs 96 / sm 160 / md 260 / lg 320);Modal 宽度取 `modalWidth`(sm 480 / md 560 / lg 720),≥2 张卡或需滚动的编辑表单改 Drawer(`drawerWidth`,提交按钮进 `footer`,挂 `useLeaveGuard`);按钮尺寸「页主 CTA large / 卡内 middle / 行内 small」;锚点滚动目标加 `scroll-margin-top: layout.scrollMarginTop`。
+14. **可访问性底线**:`<main id="main">` 地标 + 跳转链接;导航当前项 `aria-current="page"`;手写 `role="button"` 元素统一焦点框;Popover 信息触屏可点开(`trigger` 含 click);快捷键在可编辑元素聚焦时不抢。
 
 ## 2. 视觉与主题
 
@@ -29,18 +25,19 @@
 |---|---|---|
 | 基调 | 浅色(默认)/ 暗色(深靛灰 `#0F1420` 系,顶栏图标钮切换,`localStorage("superdl.theme")` 持久化,初值跟系统) | 深色 NOC 风 |
 | 主色 | 靛蓝 `#4F46E5` | 同主色;亮青 `#22D3EE` 数据强调、琥珀 `#F59E0B` 告警 |
-| 实现 | antd 6 ConfigProvider token + components 级 token + brand 渐变常量;暗色 = `theme.darkAlgorithm` + `webDarkTheme` 覆写,定义在 `packages/ui/src/tokens.ts`;全局 reset/工具类在 `apps/web/src/styles.css`;`index.html` 内联脚本预置底色防 FOUC | antd `theme.darkAlgorithm` + 自定义背景 `#0B1220` 系(色值集中在 `adminColors`) |
-| 字体 | 系统栈(`tokens.fontFamily`)+ body 级 tabular-nums | 同左 |
-| 布局 | 全宽品牌渐变顶栏 56px(logo / 顶级入口 / 主题切换 / 语言 / 余额 / 通知 / 用户菜单)+ 可折叠侧栏 200px(lg 断点收起,窄屏进顶栏汉堡 Drawer) | 左侧可折叠侧栏 200px(按角色过滤;lg 断点收为 0 宽)+ 56px 顶栏(环境徽标、语言、全局告警铃、用户名与角色 + 退出登录) |
+| 品牌渐变 | 只用于公开层(主页 Hero / 公开顶栏 / CTA 横幅)与登录页左栏;控制台顶栏**中性色**(与侧栏同底 + 下边线),渐变底上的反白 CTA 走 `brandInverseButtonStyle` | 不用渐变 |
+| 实现 | antd 6 ConfigProvider token + components 级 token;暗色 = `theme.darkAlgorithm` + `webDarkTheme` 覆写,定义在 `packages/ui/src/tokens.ts`;全局 reset / 工具类在 `apps/web/src/styles.css`;`index.html` 内联脚本预置底色防 FOUC | antd `theme.darkAlgorithm` + 自定义背景 `#0B1220` 系(色值集中在 `adminColors`);表格密度由 `adminThemeComponents.Table` 统一 |
+| 字体 | 系统栈(`tokens.fontFamily`)+ body 级 tabular-nums | 同左;标识符列 `.mono` |
+| 布局 | 中性顶栏 56px(logo | 余额 · ⌘K · 通知铃 · 主题切换 · 用户菜单)+ 侧栏 200px(lg 以上常显;窄屏不渲染侧栏,导航走顶栏汉堡 Drawer,与侧栏共用 `ConsoleNavMenu`)+ `<main>` 内容区(`PageContainer` 1280) | 侧栏 200px(分组;按角色过滤;桌面可手动收成 80px 图标轨,收起态点图标导航;窄屏收为 0 宽走汉堡)+ 56px sticky 顶栏(环境徽标 | ⌘K 触发器 · 语言 · 告警铃 · 用户名与角色 ▾ 退出) |
 | 状态色 | running 绿 / creating·starting 蓝(动效)/ stopped 灰 / frozen 橙 / failed·releasing 红 | 同一套语义色,深色版调亮 |
 
 **设计 token 纪律**:`packages/ui/src/tokens.ts` 是唯一事实源。
-① 色值走 token(`webTheme`/`webDarkTheme`/`adminColors`/`statusColors` 等),禁止硬编码 hex;
-② 新代码布局尺寸走 `space`(4 阶梯)与 `layout`,字号走 `fontSize` 五档;
-③ 高频模式组件化:`PageContainer`(页宽三档 default 1280 / wide 1200 / narrow 880)/ `KpiGrid` / `TableErrorEmpty`(含 isForbidden 403 区分)/ `HexTag` / `LoadMore` / `DataErrorAlert` / `EChart`(`packages/ui` `src/components/`);
-④ 确认强度组件化:L2 用 `useConfirm`,L3 用 `TypeConfirmModal`;
-⑤ 动效走 `motion` token(fast 0.15 / normal 0.2 / slow 0.25 + easeOut):仅透明度/位移,路由切换不动效;自绘浮层 zIndex 走 `zIndex` token;
-⑥ CSS 覆盖区一律 `var(--sdl-*)`,取值经 `cssVars` 桥由 `__root.tsx` 注入;admin 端走 `var(--admin-*)`(`main.tsx` 从 `adminColors` 注入,见 `global.css`);存量 inline style 按「碰到的文件顺手收敛」推进;
+① 色值走 token(`webTheme` / `webDarkTheme` / `adminColors` / `statusColors` 等),禁止硬编码 hex;
+② 布局尺寸走 `space`(4 阶梯)与 `layout`(含 `topBarHeight` / `scrollMarginTop`),字号走 `fontSize` 五档,控件 / Modal / Drawer 宽度走 `controlWidth` / `modalWidth` / `drawerWidth`;
+③ 高频模式组件化(`packages/ui` `src/components/`):`PageContainer`(页宽四档 default 1280 / wide 1200 / narrow 880 / full)/ `PageHeader`(面包屑 / 返回 / 描述 / 右侧动作 / 新鲜度条)/ `KpiGrid`(CSS grid 自适应)/ `TableErrorEmpty`(含 isForbidden 403 区分)/ `DataErrorAlert`(`description={null}` 单行形态)/ `EmptyState` / `HexTag` / `LoadMore` / `EChart`;
+④ 确认强度组件化:L1 / L2 用 `useConfirm`(支持 `danger` / `okDisabled`),L3 用 `TypeConfirmModal`,管理端审计型用 `ReasonAction`;
+⑤ 动效走 `motion` token(fast 0.15 / normal 0.2 / slow 0.25 + easeOut):仅透明度 / 位移,路由切换不动效;自绘浮层 zIndex 走 `zIndex` token;
+⑥ CSS 覆盖区一律 `var(--sdl-*)`,取值经 `cssVars` 桥由 `__root.tsx` 注入;admin 端走 `var(--admin-*)`(`main.tsx` 从 `adminColors` 注入,见 `global.css`);新代码不写 inline 尺寸魔法数,存量按「碰到的文件顺手收敛」推进;
 ⑦ 对比度底线 WCAG AA ≥4.5:1,新增色值在 `tokens.test.ts` 补回归;
 ⑧ 底色类 token 改动按 tokens.ts 顶部同步清单核对防 FOUC 位置(两端 index.html、`__root.tsx`);web 端 index.html 内联脚本任何改动同步重算 CSP sha256(`scripts/check-csp-hash.sh`)。
 
@@ -50,20 +47,28 @@
 
 ```
 公开层    /(首页)· /login · /help · /legal/terms · /legal/privacy · /legal/deletion-notice
-控制台(全宽顶栏 + 浅色侧栏)
-├─ 概览      /dashboard   # 实例数/余额/今日消费/未读通知 + 公告与预警横幅 + 快捷入口
-├─ 算力市场  /market      ← 未登录可看,下单跳登录
-├─ 容器实例  /instances   ← 登录后默认落地页;只列开发机
-├─ 在线服务  /services    # /services/new 部署,/services/:slug 详情(?tab=)
-├─ 存储      /storage     # 数据盘 + 挂载全景
-├─ 费用中心  /billing     # 余额/充值/账单/收支明细/退款/发票
-├─ 支持      /support     # FAQ / 联系客服 / 我的工单(/support/:ticketId 对话流)
-├─ 通知      /notifications # 全部/未读筛选 + 行点击已读并跳转 + 全部已读
-└─ 账户设置  /settings    # SSH 公钥 / 通知阈值 / 实名 / 账号(改密·登出·注销)
-创建实例     /market/create/:skuId   ← 全页路由
+控制台(中性顶栏 + 分组侧栏;事实源 apps/web/src/components/layout/consoleNav.tsx)
+├─ 资源
+│  ├─ 容器实例  /instances   ← 登录后默认落地页(CONSOLE_HOME);只列开发机;真空态 = 新手引导三步;页顶 AttentionBar
+│  ├─ 在线服务  /services    # /services/new 部署,/services/:slug 详情(?tab=)
+│  └─ 存储      /storage     # 数据盘 + 挂载全景
+├─ 购买与账务
+│  ├─ 算力市场  /market      ← 未登录可看,下单跳登录
+│  └─ 费用中心  /billing     # 余额/充值/账单/收支明细/退款/发票
+└─ 支持        /support     # FAQ / 联系客服 / 我的工单(/support/:ticketId 对话流)
+不在主导航(经顶栏到达)
+   通知中心    /notifications # 铃铛 → 「查看全部」/ 用户菜单;全部/未读筛选 + 行点击已读并跳转 + 全部已读
+   账户设置    /settings      # 用户菜单;SSH 公钥 / 通知阈值 / 实名 / 账号(改密·登出·注销)
+创建实例     /market/create/:skuId   ← 全页路由(侧栏高亮「算力市场」)
 ```
 
-**命令面板(Cmd+K / Ctrl+K)**:顶栏触发器 + 全局快捷键;命中范围 = 控制台页面导航 / 实例(列表缓存前 100 条,名称与 uuid 模糊)/ 快捷动作(租用新实例、充值、新建工单);双语关键词;无实例缓存时不渲染实例分组。
+无独立概览页:KPI 由顶栏余额与费用中心承接,公告 / 余额预警 / 欠费聚合进实例列表页顶的 `AttentionBar`,新手引导三步落在实例列表真空态。
+
+**顶栏右区**(`TopBarUser`):余额(→ 费用中心)· ⌘K(带 kbd 徽标,md 以上)· 通知铃(Popover:最近通知 + 全部已读 + 查看全部)· 主题切换(md 以上)· 用户菜单(账户设置 / 通知中心 / 帮助 / 语言子菜单 / 退出)。窄屏(<md)只留余额 / 铃 / 用户。
+
+**侧栏**(`ConsoleNavMenu`):多项分组出组标题(资源 / 购买与账务),单项分组前出分隔;条目 label 是 Link(可中键开新标签,`aria-current="page"`);选中态为最长前缀匹配,`/settings` `/notifications` `/help` 不高亮任何项。
+
+**命令面板(Cmd+K / Ctrl+K)**:顶栏触发器 + 全局快捷键;命中范围 = 控制台页面导航(含不在主导航的通知中心 / 账户设置 / 帮助)/ 实例(列表缓存前 100 条,名称与 uuid 模糊)/ 在线服务 / 快捷动作(部署服务、租用新实例、充值、新建工单);双语关键词;无实例缓存时不渲染实例分组。**全局快捷键**:`/` 聚焦当前页搜索框;`g i` / `g s` / `g b` / `g m` 两键导航到实例 / 服务 / 费用 / 市场;输入框聚焦时不触发。
 
 ### 3.2 首页与登录
 
@@ -195,14 +200,24 @@ Tab 固定 `概览 / 访问密钥 / 监控 / 日志 / 版本 / 事件 / 账单 /
 
 ### 4.1 信息架构与角色
 
-导航:运营总览 `/` · 节点与 GPU `/nodes` · 集群 `/cluster` · SKU 与定价 `/skus` · 镜像与预热 `/images` · 租户与实例 `/tenants` · 在线服务 `/services` · 财务对账 `/finance` · 工单 `/tickets` · 审计日志 `/audit` · 平台配置 `/platform` · 告警中心 `/alerts` · 系统设置 `/settings`。
-菜单项事实源 `apps/admin/src/lib/menu.ts` 的 `MENU`(侧栏与命令面板共用),可见性由 `MENU_ROLES` 按角色过滤;`/alerts` 对 finance 不可见。
+导航分四组(事实源 `apps/admin/src/lib/menu.ts` 的 `MENU` + `group`,侧栏与命令面板共用;可见性由 `MENU_ROLES` 按角色过滤):
 
-**命令面板(Cmd+K / Ctrl+K)**:与 web 端同范式;命中范围 = 按角色过滤后的页面导航 / 快捷动作(未确认告警深链 `/alerts?acked=unacked`、刷新当前页数据);双语关键词;选中行底色走 `global.css` 的 `--admin-accent`。
+```
+总览   运营总览 `/`
+资源   节点与 GPU `/nodes` · 集群 `/cluster` · SKU 与定价 `/skus` · 镜像与预热 `/images`
+业务   租户与实例 `/tenants` · 在线服务 `/services` · 财务对账 `/finance` · 工单 `/tickets`
+治理   告警中心 `/alerts` · 审计日志 `/audit` · 平台配置 `/platform` · 系统设置 `/settings`
+```
 
-角色:admin(全部)/ ops(资源+实例)/ finance(财务区可写:调账发起与复核、订单核验与补单、退款审批与打款登记、发票开具与驳回、结算缺口重放与核销,其余只读)/ readonly(全站只读)。逐端点角色见 [`reference/admin.md`](./reference/admin.md)。
+侧栏组标题只在展开态渲染;桌面可手动收成 80px 图标轨(`localStorage("superdl.adminSider")`),收起态点图标由 `Menu.onClick` 导航;`/alerts` 对 finance 不可见。顶栏 sticky(`layout.topBarHeight`),左环境徽标,右 ⌘K 触发器 · 语言 · 告警铃(Popover 前 20 条 + 确认)· 用户名与角色 ▾ 退出;md 以下三者收进用户下拉。
 
-高危与不可逆操作统一走 `ReasonAction`(原因必填 → 二次确认 → 审计):强制停止、强制回收、冻结·解冻租户、cordon·uncordon、吊销注册令牌、重新生成注册命令、SKU 上下架、死信重放与忽略、删除镜像、撤回公告、注销申请驳回、退款与发票驳回、结算缺口核销、管理员停用与重置两步验证。调账另加双人复核,发起人不能自审。
+**页面骨架**:`PageContainer`(宽表页 `width="full"`:节点 / SKU / 租户与实例 / 财务 / 在线服务 / 镜像)+ `PageHeader`(标题 · 右侧动作 · 轮询页带新鲜度条:节点 / 镜像 / 告警);首屏 KPI 用 `KpiGrid` + 逐卡骨架(各卡只等自己的 query)。
+
+**命令面板(Cmd+K / Ctrl+K)**:与 web 端同范式;页面按侧栏分组分节 + 快捷动作(未确认告警深链 `/alerts?acked=unacked`、刷新当前页数据);双语关键词;选中行底色走 `global.css` 的 `--admin-accent`。
+
+角色:admin(全部)/ ops(资源 + 实例)/ finance(财务区可写:调账发起与复核、订单核验与补单、退款审批与打款登记、发票开具与驳回、结算缺口重放与核销,其余只读)/ readonly(全站只读)。逐端点角色见 [`reference/admin.md`](./reference/admin.md)。
+
+高危与不可逆操作统一走 `ReasonAction`(原因必填 → 二次确认 → 审计):强制停止、强制回收、冻结·解冻租户、cordon·uncordon、吊销注册令牌、重新生成注册命令、SKU 上下架、死信重放与忽略、删除镜像、撤回公告、注销申请驳回、退款与发票驳回、结算缺口核销、管理员停用与重置两步验证。账号注销执行走 L3(`TypeConfirmModal`:键入用户 ID + 勾选 + 必填原因,原因回写申请单并进审计)。SKU 改价与强制上架走 `useConfirm`(变更行 + 影响面 + 范围说明;影响面查询在途时确认禁用)。调账另加双人复核,发起人不能自审。
 
 ### 4.2 逐屏要点
 
