@@ -678,6 +678,7 @@ function CreatePage() {
         open={spotOpen}
         policy={spotPolicy}
         loading={submitting || create.isPending}
+        confirmLabel={t("create.spotConfirm")}
         onCancel={() => setSpotOpen(false)}
         onConfirm={() => {
           setSpotOpen(false);

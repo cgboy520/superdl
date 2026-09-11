@@ -712,6 +712,7 @@ function DeployPage() {
         open={spotOpen}
         policy={spotPolicy}
         loading={pending}
+        confirmLabel={t("services.form.ecoConfirm")}
         onCancel={() => setSpotOpen(false)}
         onConfirm={() => {
           setSpotOpen(false);

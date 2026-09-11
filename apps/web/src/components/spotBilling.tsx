@@ -74,12 +74,15 @@ export function SpotConsentModal({
   open,
   policy,
   loading,
+  confirmLabel,
   onCancel,
   onConfirm,
 }: {
   open: boolean;
   policy: SpotPolicy | undefined;
   loading?: boolean;
+  /** 确认按钮文案由调用方给(创建页「继续创建」/ 部署页「继续部署」),与后续经济档同意弹窗动词一致 */
+  confirmLabel: string;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -97,7 +100,7 @@ export function SpotConsentModal({
         t("copy.spotConsent.c5"),
       ]}
       agreeLabel={t("create.spotAgree")}
-      confirmLabel={t("create.spotConfirm")}
+      confirmLabel={confirmLabel}
       loading={loading}
       onCancel={onCancel}
       onConfirm={onConfirm}
