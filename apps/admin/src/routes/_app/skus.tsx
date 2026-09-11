@@ -1,5 +1,5 @@
-import { adminColors, fontSize, metaOf, skuTierMap, skuVariant, type SkuTier, type SkuVariant } from "@superdl/ui";
-import { HexTag, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
+import { adminColors, metaOf, skuTierMap, skuVariant, type SkuTier, type SkuVariant } from "@superdl/ui";
+import { HexTag, PageContainer, TableErrorEmpty, useConfirm } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -12,7 +12,6 @@ import {
   Input,
   InputNumber,
   Select,
-  Space,
   Spin,
   Switch,
   Table,
@@ -122,7 +121,8 @@ function SkusPage() {
   const { t } = useTranslation(["admin", "shared"]);
   const errText = useApiErrorText();
   const { formatHourlyPrice } = useFormat();
-  const { message, modal } = App.useApp();
+  const { message } = App.useApp();
+  const confirm = useConfirm();
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();
@@ -361,33 +361,27 @@ function SkusPage() {
       doSubmit();
       return;
     }
-    modal.confirm({
+    // L2 确认(useConfirm):变更行 + 影响面 + 范围说明;影响面查询在途时禁点确认
+    confirm({
       title: t("skus.submitConfirmTitle"),
-      content: (
-        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-          <span>
-            {t("skus.priceChangeLine", {
-              from: formatHourlyPrice(record.price_hourly),
-              to: formatHourlyPrice(values.price_hourly),
-            })}
-          </span>
-          <span style={{ color: adminColors.alertAccent }}>
-            {impact.data
-              ? t("skus.priceChangeImpact", {
-                  instances: impact.data.active_instances,
-                  users: impact.data.active_users,
-                  gpus: impact.data.active_gpus,
-                })
-              : t("skus.priceChangeImpactPending")}
-          </span>
-          <span style={{ color: adminColors.textSecondary, fontSize: fontSize.caption }}>
-            {t("skus.priceChangeScope")}
-          </span>
-        </Space>
-      ),
+      consequences: [
+        t("skus.priceChangeLine", {
+          from: formatHourlyPrice(record.price_hourly),
+          to: formatHourlyPrice(values.price_hourly),
+        }),
+        <span key="impact" style={{ color: adminColors.alertAccent }}>
+          {impact.data
+            ? t("skus.priceChangeImpact", {
+                instances: impact.data.active_instances,
+                users: impact.data.active_users,
+                gpus: impact.data.active_gpus,
+              })
+            : t("skus.priceChangeImpactPending")}
+        </span>,
+      ],
+      impact: t("skus.priceChangeScope"),
       okText: t("skus.confirmSubmit"),
-      // 影响面查询在途时禁点确认
-      okButtonProps: { disabled: impact.isPending },
+      okDisabled: impact.isPending,
       onOk: doSubmit,
     });
   };
@@ -519,11 +513,11 @@ function SkusPage() {
                     } catch (e) {
                       // SKU_NOT_SELLABLE:确认后带 force 重放;其他错误继续抛给 ReasonAction
                       if (isApiError(e) && e.code === "SKU_NOT_SELLABLE") {
-                        modal.confirm({
+                        confirm({
                           title: t("skus.notSellableTitle"),
-                          content: errText(e, t("skus.toggleFailed")),
+                          consequences: [errText(e, t("skus.toggleFailed"))],
                           okText: t("skus.forceOn"),
-                          okButtonProps: { danger: true },
+                          danger: true,
                           onOk: () =>
                             forceOnSale.mutate({
                               skuId: r.id,

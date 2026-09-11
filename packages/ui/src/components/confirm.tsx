@@ -15,6 +15,8 @@ export interface ConfirmOptions {
   cancelText?: string;
   /** 危险动作(红色按钮) */
   danger?: boolean;
+  /** 确认按钮禁用(如影响面查询在途) */
+  okDisabled?: boolean;
   onOk: () => void | Promise<void>;
 }
 
@@ -39,7 +41,10 @@ export function useConfirm() {
         ),
         okText: opts.okText,
         cancelText: opts.cancelText,
-        okButtonProps: opts.danger ? { danger: true } : undefined,
+        okButtonProps: {
+          ...(opts.danger ? { danger: true } : {}),
+          ...(opts.okDisabled ? { disabled: true } : {}),
+        },
         onOk: opts.onOk,
       });
     },
