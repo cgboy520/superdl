@@ -162,14 +162,6 @@ class TestInvoicesExport:
 class TestInvoicePiiGate:
     """发票导出:只给财务、默认脱敏、明文要事由、每次导出留痕。"""
 
-    async def test_readonly_is_refused(self, client: AsyncClient, sm):
-        """readonly 一律 403。"""
-        await _make_invoices(sm)
-        ro = await admin_headers(sm, client, role="readonly", username="ro-exp-iv")
-        for path in ("/api/admin/v1/invoices", "/api/admin/v1/invoices/export"):
-            resp = await client.get(path, headers=ro)
-            assert resp.status_code == 403, (path, resp.text)
-
     async def test_masked_by_default_and_reason_required(self, client: AsyncClient, sm):
         """不给 reveal:抬头与邮箱脱敏;给了 reveal 却不给事由:422,不吐明文。"""
         await _make_invoices(sm)

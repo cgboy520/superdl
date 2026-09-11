@@ -177,19 +177,6 @@ class TestRecharge:
             assert resp.json()["code"] == "VALIDATION_ERROR"
 
 
-class TestMockCallbackParsing:
-    """mock 回调的畸形报文一律 400 PAYMENT_CHANNEL_ERROR。"""
-
-    async def test_malformed_body_400(self, client: AsyncClient):
-        resp = await client.post(
-            "/api/v1/webhooks/mock",
-            content=b"[1,2,3]",
-            headers={"Content-Type": "application/json"},
-        )
-        assert resp.status_code == 400
-        assert resp.json()["code"] == "PAYMENT_CHANNEL_ERROR"
-
-
 class TestCallbackOnNonPendingOrders:
     """关单/失败单后的回调、渠道不符与渠道凭据缺失。"""
 

@@ -159,13 +159,14 @@ describe("InstanceActions", () => {
 });
 
 describe("InstanceActions · 包周期", () => {
-  it("按量 running 实例:出「转包周期」,不出续费/自动续费(那两项对它不存在)", async () => {
+  it("按量 running 实例:出「转包周期」,不出续费/自动续费/转按量(那三项对它不存在)", async () => {
     const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeInstance("running")} />);
     await user.hover(screen.getByRole("button", { name: BTN_MORE }));
     expect(await screen.findByText("转包周期")).toBeInTheDocument();
     expect(screen.queryByText("续费")).toBeNull();
     expect(screen.queryByText("开启自动续费")).toBeNull();
+    expect(screen.queryByText("转按量")).toBeNull();
   });
 
   it("按量 stopped 实例:「转包周期」照常可用(后端两种状态都收)", async () => {
@@ -266,14 +267,6 @@ describe("InstanceActions · 竞价", () => {
     await user.hover(screen.getByRole("button", { name: BTN_MORE }));
     expect(await screen.findByText("转按量")).toBeInTheDocument();
     expect(screen.queryByText("转包周期")).toBeNull();
-  });
-
-  it("按量实例不出「转按量」(它已经是按量,那一项对它不存在)", async () => {
-    const user = userEvent.setup();
-    renderWithApp(<InstanceActions instance={makeInstance("running")} />);
-    await user.hover(screen.getByRole("button", { name: BTN_MORE }));
-    await screen.findByText("转包周期");
-    expect(screen.queryByText("转按量")).toBeNull();
   });
 
   it("竞价在途实例:「转按量」可见但灰置(后端只收 running / stopped)", async () => {

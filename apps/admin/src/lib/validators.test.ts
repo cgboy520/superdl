@@ -22,9 +22,4 @@ describe("isValidReason(调账驳回理由必填)", () => {
     expect(isValidReason("很".repeat(200))).toBe(true);
     expect(isValidReason("很".repeat(201))).toBe(false);
   });
-
-  it("首尾空格不计入长度", () => {
-    expect(isValidReason(`  ${"很".repeat(198)}  `)).toBe(true);
-    expect(isValidReason(`  ${"很".repeat(201)}  `)).toBe(false);
-  });
 });

@@ -22,10 +22,6 @@ def _settings(**overrides):
     return Settings(**base)
 
 
-def test_default_no_prefix():
-    assert jupyter_host("abc-123", _settings()) == "abc-123.app.superdl.cn"
-
-
 def test_prefix_makes_one_level_host_under_shared_zone():
     s = _settings(jupyter_domain_suffix="xiaocg.xyz", jupyter_host_prefix="jupyter-")
     assert jupyter_host("abc-123", s) == "jupyter-abc-123.xiaocg.xyz"

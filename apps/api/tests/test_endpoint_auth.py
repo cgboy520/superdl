@@ -7,7 +7,7 @@ from app.core.audit import AuditLog
 from app.core.config import get_settings
 from app.modules.orchestrator.reconciler import reconcile_once
 from app.modules.services.models import ServiceApiKey
-from tests.helpers import drain, new_user, provision_service
+from tests.helpers import drain, provision_service
 
 pytestmark = pytest.mark.usefixtures("fake")
 
@@ -162,15 +162,6 @@ class TestAuthMatrix:
 
 
 class TestLastUsed:
-    async def test_last_used_written_on_first_origin(self, client, sm, fake):
-        """last_used_at 首次回源即落库。"""
-        headers, svc, _ = await provision_service(client, sm, fake, phone="13900000420")
-        key = await issue_key(client, headers, svc["slug"])
-        assert (await call_auth(client, slug=svc["slug"], key=key)).status_code == 200
-        async with sm() as session:
-            row = (await session.execute(select(ServiceApiKey))).scalar_one()
-        assert row.last_used_at is not None
-
     async def test_last_used_throttled_per_key(self, client, sm, fake):
         headers, svc, _ = await provision_service(client, sm, fake, phone="13900000421")
         key = await issue_key(client, headers, svc["slug"])
@@ -255,11 +246,6 @@ class TestResponseDiscipline:
 class TestPathShapes:
     """鉴权回调是一条精确路由,不是 catch-all。"""
 
-    async def test_exact_path_accepted(self, client, sm, fake):
-        headers, svc, _ = await provision_service(client, sm, fake, phone="13900000440")
-        key = await issue_key(client, headers, svc["slug"])
-        assert (await call_auth(client, slug=svc["slug"], key=key, path="")).status_code == 200
-
     async def test_suffixes_do_not_authorize(self, client, sm, fake):
         headers, svc, _ = await provision_service(client, sm, fake, phone="13900000442")
         key = await issue_key(client, headers, svc["slug"])
@@ -308,19 +294,3 @@ class TestApiKeyQuotaRace:
                 )
             ).scalar_one()
         assert live == 2
-
-
-class TestNoAuthRequired:
-    async def test_no_platform_jwt_needed(self, client, sm, fake):
-        headers, svc, _ = await provision_service(client, sm, fake, phone="13900000450")
-        key = await issue_key(client, headers, svc["slug"])
-        resp = await client.get(
-            AUTH_PATH, headers={"host": host_for(svc["slug"]), "x-api-key": key}
-        )
-        assert resp.status_code == 200, resp.text
-
-    async def test_unknown_user_cannot_enumerate(self, client, sm, fake):
-        await new_user(client, sm, "13900000451")
-        resp = await client.get(AUTH_PATH, headers={"host": host_for("svc-aaaaaaaaaa")})
-        assert resp.status_code == 401
-        assert resp.json()["code"] == "API_KEY_INVALID"

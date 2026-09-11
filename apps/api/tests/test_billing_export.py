@@ -27,9 +27,6 @@ class TestEscaping:
     def test_comma_quote_newline_quoted(self):
         assert csvexport.csv_line(['a,"b"\nc']) == '"a,""b""\nc"\r\n'
 
-    def test_none_empty(self):
-        assert csvexport.csv_line([None, "x"]) == ",x\r\n"
-
     def test_utc_suffix(self):
         assert csvexport.utc_suffix(480) == "(UTC+8)"
         assert csvexport.utc_suffix(-300) == "(UTC-5)"

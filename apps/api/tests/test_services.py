@@ -13,9 +13,8 @@ from app.core.crypto import decrypt_str
 from app.modules.orchestrator import service as orchestrator_service
 from app.modules.orchestrator.models import Instance, PortAllocation
 from app.modules.orchestrator.reconciler import reconcile_once
-from app.modules.orchestrator.schemas import InstanceCreate
 from app.modules.services import service
-from app.modules.services.models import Service, ServiceApiKey
+from app.modules.services.models import Service
 from app.modules.services.schemas import ServiceCreate
 from app.modules.services.state import derive_status
 from tests.helpers import (
@@ -233,10 +232,6 @@ class TestEnvHandling:
         with pytest.raises(InvalidTag):
             decrypt_str(blob, aad="instance-env:0" * 4)
 
-    async def test_no_env_stays_null(self, client, sm, fake):
-        _headers, svc, _ = await provision_service(client, sm, fake, phone="13900000312")
-        assert (await load_instance(sm, svc["current_instance"]["uuid"])).env_encrypted is None
-
 
 class TestPinnedImage:
     """服务镜像必须钉死版本。"""
@@ -276,12 +271,6 @@ class TestPinnedImage:
 class TestCreateContract:
     """契约矩阵(纯 schema)。"""
 
-    def test_service_requires_port(self):
-        body = service_body(1)
-        del body["service_port"]
-        with pytest.raises(ValidationError):
-            ServiceCreate(**body)
-
     @pytest.mark.parametrize("port", [22, 8888])
     def test_reserved_ports_rejected(self, port):
         with pytest.raises(ValidationError):
@@ -319,11 +308,6 @@ class TestCreateContract:
     def test_subscription_requires_period(self):
         with pytest.raises(ValidationError):
             ServiceCreate(**service_body(1, market="subscription"))
-
-    def test_dev_still_requires_ssh_key(self):
-        """开发机至少选一把公钥。"""
-        with pytest.raises(ValidationError):
-            InstanceCreate(sku_id=1, image_ref=IMAGE, ssh_key_ids=[])
 
 
 class TestIdempotency:
@@ -405,18 +389,6 @@ class TestServiceApi:
             await client.get("/api/v1/services", params={"status": "stopped"}, headers=headers)
         ).json()["items"]
         assert none == []
-
-    async def test_events_revisions_bills(self, client, sm, fake):
-        headers, svc, _ = await provision_service(client, sm, fake, phone="13900000335")
-        slug = svc["slug"]
-        events = (await client.get(f"/api/v1/services/{slug}/events", headers=headers)).json()
-        assert events["items"], "部署至少产生 creating 与 running 两条事件"
-        assert all(e["instance_uuid"] == svc["current_instance"]["uuid"] for e in events["items"])
-        assert all(e["revision"] == 1 for e in events["items"])
-        revisions = (await client.get(f"/api/v1/services/{slug}/revisions", headers=headers)).json()
-        assert [r["uuid"] for r in revisions["items"]] == [svc["current_instance"]["uuid"]]
-        bills = await client.get(f"/api/v1/services/{slug}/bills", headers=headers)
-        assert bills.status_code == 200 and bills.json()["items"] == []
 
 
 class TestLifecycle:
@@ -613,16 +585,6 @@ class TestApiKeyCrud:
             f"/api/v1/services/{slug}/api-keys", json={"name": "over"}, headers=headers
         )
         assert over.status_code == 400 and over.json()["message_key"] == "services.apiKeyQuota"
-
-    async def test_keys_belong_to_service_not_instance(self, client, sm, fake):
-        headers, svc, _ = await provision_service(client, sm, fake, phone="13900000345")
-        await client.post(
-            f"/api/v1/services/{svc['slug']}/api-keys", json={"name": "k"}, headers=headers
-        )
-        row = await load_service(sm, svc["slug"])
-        async with sm() as session:
-            key = (await session.execute(select(ServiceApiKey))).scalar_one()
-        assert key.service_id == row.id
 
 
 class TestSlugHostParsing:

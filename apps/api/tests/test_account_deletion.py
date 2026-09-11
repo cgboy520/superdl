@@ -335,18 +335,6 @@ class TestApproveSuccess:
 
 
 class TestAdminRoles:
-    async def test_admin_can_reject(self, client: AsyncClient, sm):
-        headers, _, _ = await create_user_with_key(client, PHONE)
-        req_id = (await _create_request(client, headers)).json()["id"]
-        # 驳回不受冷静期限制;角色门由 route×role 矩阵覆盖
-        admin = await admin_headers(sm, client)
-        reject = await client.post(
-            f"/api/admin/v1/deletion-requests/{req_id}/reject",
-            json={"note": "超管驳回"},
-            headers=admin,
-        )
-        assert reject.status_code == 200, reject.text
-
     async def test_admin_list_status_filter(self, client: AsyncClient, sm):
         headers, _, _ = await create_user_with_key(client, PHONE)
         assert (await _create_request(client, headers)).status_code == 201

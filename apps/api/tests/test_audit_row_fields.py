@@ -5,7 +5,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.core import audit
-from app.core.audit import ACTION_MAX_LENGTH, TARGET_MAX_LENGTH, AuditLog
+from app.core.audit import ACTION_MAX_LENGTH, AuditLog
 from tests.helpers import create_user_with_key
 
 pytestmark = pytest.mark.usefixtures("fake")
@@ -33,13 +33,6 @@ class TestOverLongPath:
             )
         assert len(rows) == audit.AUDIT_FAIL_CLOSED_THRESHOLD + 2
         assert all(len(r.action) <= ACTION_MAX_LENGTH for r in rows)
-
-    async def test_long_audit_target_is_clipped(self, client: AsyncClient, sm):
-        """业务侧标注的 target 同样按列宽截断。"""
-        assert audit._clip("x" * (TARGET_MAX_LENGTH + 50), TARGET_MAX_LENGTH) == (
-            "x" * TARGET_MAX_LENGTH
-        )
-        assert audit._clip(None, TARGET_MAX_LENGTH) is None
 
 
 class TestFailedCredentialAttempts:

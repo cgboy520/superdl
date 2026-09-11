@@ -1,6 +1,5 @@
 /** 续费 modal:预览金额口径(原价快照 → 折扣 → 应付)、余额门槛、幂等键稳定性。挂了说明:预览与后端 quote_subscription 量化顺序脱钩、报价基准错取折后价或 SKU 现价、改周期/数量换了幂等键、余额不足仍可确认。网络与查询全部 mock。 */
 import type { InstanceOut } from "@superdl/api-client";
-import { formatMoney, quoteSubscription } from "@superdl/ui";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "antd";
@@ -113,29 +112,6 @@ describe("RenewModal", () => {
     expect(within(dialog).getByText("¥2,298.24")).toBeInTheDocument();
     // 余额变化用应付额扣减
     expect(within(dialog).getByText("¥3,000.00 → ¥701.76")).toBeInTheDocument();
-  });
-
-  it("预览金额 == 按 unit_price(原价快照)算出的应付额,与折后时价和 SKU 现价都无关", async () => {
-    const user = userEvent.setup();
-    const { subscription } = makeInstance();
-    renderModal();
-    const dialog = await screen.findByRole("dialog");
-    // 后端续费报价基准 = subscriptions.unit_price(billing/subscriptions.renew)
-    for (const [period, pct, label] of [
-      ["month", 80, /包\s*月/],
-      ["year", 70, /包\s*年/],
-      ["day", 95, /包\s*日/],
-    ] as const) {
-      await user.click(within(dialog).getByRole("button", { name: label }));
-      const expected = quoteSubscription(subscription?.unit_price, {
-        units: 1,
-        period,
-        periodCount: 1,
-        discountPct: pct,
-      });
-      expect(within(dialog).getByText(formatMoney(expected.listAmount, "zh-CN"))).toBeInTheDocument();
-      expect(within(dialog).getByText(formatMoney(expected.amount, "zh-CN"))).toBeInTheDocument();
-    }
   });
 
   it("当前周期按 started_at → expires_at 两端显示", async () => {

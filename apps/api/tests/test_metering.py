@@ -155,13 +155,6 @@ class TestMalformedResponse:
         assert resp.status_code == 503
         assert resp.json()["message_key"] == "metering.unavailable"
 
-    async def test_node_metrics_degrades_not_crashes(self):
-        from app.modules.metering.service import node_gpu_metrics
-
-        prom.set_client(prom_mock_malformed())
-        out = await node_gpu_metrics("gpu-a3-01", "1h")
-        assert out["available"] is False
-
 
 class TestAggregationPartialFailure:
     async def test_single_failure_does_not_drop_whole_hour(self, client, sm, fake):

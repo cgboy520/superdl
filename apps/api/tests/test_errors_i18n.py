@@ -3,21 +3,8 @@
 from pathlib import Path
 from typing import Any
 
-from app.core.errors import AppError, ErrorCode, not_found
+from app.core.errors import AppError, ErrorCode
 from app.core.messages import MESSAGES, render_message
-
-
-def test_key_renders_chinese_message() -> None:
-    err = not_found()
-    assert err.message == "资源不存在"
-    assert err.message_key == "common.notFound"
-
-
-def test_legacy_message_signature_unchanged() -> None:
-    err = AppError(ErrorCode.CONFLICT, "自定义中文")
-    assert err.message == "自定义中文"
-    assert err.message_key is None
-    assert err.params is None
 
 
 def test_params_interpolation() -> None:

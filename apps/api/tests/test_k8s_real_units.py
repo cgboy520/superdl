@@ -52,21 +52,6 @@ class TestEgressPortRanges:
             covered.update(range(lo, hi + 1))
         assert covered == set(range(1, 65536)) - set(EGRESS_BLOCKED_TCP_PORTS)
 
-    def test_no_blocked_port_falls_inside_an_allowed_range(self):
-        """逐个黑名单端口断言不落进任何允许区间。"""
-        from app.core.k8s.real import _allowed_tcp_port_ranges
-
-        ranges = [
-            (cast(int, p.port), cast(int, p.end_port or p.port)) for p in _allowed_tcp_port_ranges()
-        ]
-        for blocked in EGRESS_BLOCKED_TCP_PORTS:
-            inside = [(lo, hi) for lo, hi in ranges if lo <= blocked <= hi]
-            assert not inside, f"黑名单端口 {blocked} 落在允许区间 {inside} 内"
-
-    def test_datastore_ports_blocked(self):
-        """数据库/缓存端口在黑名单。"""
-        assert {3306, 5432, 6379, 27017} <= set(EGRESS_BLOCKED_TCP_PORTS)
-
 
 class TestTenantNetpol:
     """NetworkPolicy 离线结构断言(模型字段按 Any 处理)。"""

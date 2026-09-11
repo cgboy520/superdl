@@ -243,52 +243,6 @@ class TestFailureModes:
             ports = (await session.execute(select(PortAllocation.instance_id))).scalars().all()
         assert all(p is None for p in ports)
 
-    async def test_node_lost_stops_billing_and_notifies(self, client, sm, fake):
-        """节点失联时 Pod phase=Running 只有 Ready=False:RUNNING 分支必须看 Ready。"""
-        headers, uuid, user_id = await provision_running(client, sm, fake)
-        ns = f"tenant-{user_id}"
-        fake.mark_unready(ns, uuid)
-
-        # 宽限期内不误杀
-        assert (await reconcile_once(sm))["to_failed"] == 0
-        assert (await get_instance(client, headers, uuid))["status"] == "running"
-        # 恢复即清零计时
-        fake.mark_ready(ns, uuid)
-        await reconcile_once(sm)
-        async with sm() as session:
-            inst = (
-                await session.execute(select(Instance).where(Instance.uuid == uuid))
-            ).scalar_one()
-            assert inst.unready_since is None
-
-        # 持续 not-ready 超过宽限 → 判失联
-        fake.mark_unready(ns, uuid)
-        await reconcile_once(sm)
-        async with sm() as session:
-            await session.execute(
-                update(Instance)
-                .where(Instance.uuid == uuid)
-                .values(unready_since=now_utc() - timedelta(minutes=10))
-            )
-            await session.commit()
-        assert (await reconcile_once(sm))["to_failed"] == 1
-
-        data = await get_instance(client, headers, uuid)
-        assert data["status"] == "failed"
-        # running→failed 事件在案
-        events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
-            "items"
-        ]  # 降序:items[0] 是最新事件
-        assert (events[0]["from_status"], events[0]["to_status"]) == ("running", "failed")
-        assert events[0]["reason"] == "node_lost"
-        # 计费按 unready_since 截断
-        assert events[0]["event_metadata"]["unready_since"] is not None
-        # 强删:grace=0
-        assert (ns, uuid) not in fake.pods
-        # 用户收到通知
-        notes = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
-        assert any("节点失联" in n["title"] for n in notes)
-
     async def test_creating_timeout_fails_and_cleans(self, client, sm, fake):
         headers, user_id, key_id = await create_user_with_key(client, "13900000021")
         await fund_wallet(sm, user_id)
@@ -392,6 +346,8 @@ class TestUnreadyTimer:
         assert events[0]["reason"] == "node_lost"
         # 首次不就绪时刻进事件 metadata
         assert events[0]["event_metadata"]["unready_since"] == ensure_utc(first_seen).isoformat()
+        # 强删:grace=0
+        assert (ns, uuid) not in fake.pods
         # 失联通知用户
         notes = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
         assert any("节点失联" in n["title"] for n in notes)

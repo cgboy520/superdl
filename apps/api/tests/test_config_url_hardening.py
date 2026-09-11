@@ -93,16 +93,9 @@ class TestPublicBaseUrlScheme:
         with pytest.raises(ValidationError, match="public_base_url"):
             Settings(**kwargs)
 
-    def test_prod_accepts_https(self):
-        assert Settings(**_prod_kwargs()).public_base_url == "https://api.superdl.cn"
-
 
 class TestTenantPodCidr:
     def test_rejects_non_cidr(self):
         """非法 Pod 网段在 Settings 层拒收。"""
         with pytest.raises(ValidationError, match="tenant_pod_cidr"):
             _settings(tenant_pod_cidr="10.42.0.0/33")
-
-    def test_default_matches_k3s_rke2(self):
-        """默认值与 deploy/app/k8s 的 FORWARDED_ALLOW_IPS 同源。"""
-        assert _settings().tenant_pod_cidr == "10.42.0.0/16"

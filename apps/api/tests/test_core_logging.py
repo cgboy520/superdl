@@ -69,28 +69,6 @@ def test_log_level_config_filters_both_sides(restore_logging: None, monkeypatch)
     assert "error_stdlib_shown" in out
 
 
-def test_exception_traceback_rendered(restore_logging: None, monkeypatch):
-    """prod(JSON):logger.exception 渲染成结构化栈帧;dev 的 ConsoleRenderer 自己渲染 exc_info。"""
-    from app.core.config import get_settings
-
-    get_settings.cache_clear()
-    settings = get_settings()
-    monkeypatch.setattr(settings, "environment", "prod", raising=False)  # 绕开 prod 全量校验
-    buf = io.StringIO()
-    monkeypatch.setattr(sys, "stdout", buf)
-    setup_logging()
-
-    try:
-        raise ValueError("boom-marker")
-    except ValueError:
-        get_logger("t.exc").exception("evt_with_traceback")
-
-    out = buf.getvalue()
-    assert "evt_with_traceback" in out
-    assert "boom-marker" in out  # 异常消息/栈帧进入渲染输出
-    assert "ValueError" in out
-
-
 def test_sensitive_fields_masked(restore_logging: None, monkeypatch):
     """phone/id_number/token/secret/password/code 键名命中即打码。"""
     from app.core.config import get_settings

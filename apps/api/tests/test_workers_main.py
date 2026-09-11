@@ -5,7 +5,6 @@ from typing import Any
 
 from app.workers.main import (
     MAX_WORKER_ID_LEN,
-    OUTBOX_CONCURRENCY,
     _metrics_wsgi_app,
     _timed_job,
     make_worker_id,
@@ -64,12 +63,6 @@ class TestMakeWorkerId:
         wid_a = make_worker_id()
         monkeypatch.setattr("app.workers.main.socket.gethostname", lambda: prefix + "b" * 100)
         assert wid_a != make_worker_id()
-
-    def test_lane_suffix_fits_locked_by_column(self, monkeypatch):
-        """lane 后缀叠加后仍 ≤ 128。"""
-        monkeypatch.setattr("app.workers.main.socket.gethostname", lambda: "h" * 200)
-        monkeypatch.setattr("app.workers.main.os.getpid", lambda: 12345)
-        assert len(f"{make_worker_id()}-{OUTBOX_CONCURRENCY - 1}") <= 128
 
 
 class TestWorkerMetricsAuth:

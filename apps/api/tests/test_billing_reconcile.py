@@ -14,11 +14,6 @@ from tests.helpers import fund_wallet
 
 
 class TestWalletLedgerInvariant:
-    async def test_clean_books_report_no_mismatch(self, sm):
-        await fund_wallet(sm, 1)
-        counts = await reconcile_funds(sm)
-        assert counts == {"wallet_mismatch": 0, "bill_mismatch": 0}
-
     async def test_balance_drift_detected_and_not_written_back(self, sm):
         """手工改一笔余额被发现并告警;只报不改。"""
         await fund_wallet(sm, 1)

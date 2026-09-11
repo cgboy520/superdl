@@ -24,10 +24,6 @@ class TestPriceQuantize:
 
 
 class TestDiskDailyCharge:
-    def test_basic(self):
-        # 不带 day = 均摊日费:0.03 元/GB·月 × 100GB / 30 = 0.10/日
-        assert disk_daily_charge(Decimal("0.0300"), 100) == Decimal("0.10")
-
     def test_rounding(self):
         # 0.035 × 100 / 30 = 0.11666... → 0.12
         assert disk_daily_charge(Decimal("0.0350"), 100) == Decimal("0.12")

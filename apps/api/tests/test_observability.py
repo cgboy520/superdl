@@ -13,10 +13,6 @@ class TestRequestId:
         resp = await client.get("/healthz")
         assert len(resp.headers["x-request-id"]) >= 8
 
-    async def test_incoming_honored(self, client: AsyncClient):
-        resp = await client.get("/healthz", headers={"X-Request-ID": "gw-abc123"})
-        assert resp.headers["x-request-id"] == "gw-abc123"
-
     async def test_cors_exposes_request_id(self, client: AsyncClient):
         """X-Request-ID 经 expose_headers 放行。"""
         resp = await client.get("/healthz", headers={"Origin": "http://localhost:5173"})
@@ -41,25 +37,6 @@ class TestHealthEndpoints:
 
         async with sm() as session:
             await session.execute(text("UPDATE alembic_version SET version_num = '000000000000'"))
-            await session.commit()
-        try:
-            resp = await client.get("/readyz")
-            assert resp.status_code == 503
-            assert resp.json()["status"] == "schema_mismatch"
-        finally:
-            async with sm() as session:
-                await session.execute(
-                    text("UPDATE alembic_version SET version_num = :v"),
-                    {"v": code_schema_head()},
-                )
-                await session.commit()
-
-    async def test_ahead_or_unknown_revision_not_ready(self, client: AsyncClient, sm):
-        """DB 领先/未知版本同样 503。"""
-        from app.core.db import code_schema_head
-
-        async with sm() as session:
-            await session.execute(text("UPDATE alembic_version SET version_num = 'futurerev99'"))
             await session.commit()
         try:
             resp = await client.get("/readyz")

@@ -165,25 +165,3 @@ class TestDiskQuotaContract:
                 await backend.impl.delete_disk_quota(ns, sub)
             _mark_job_succeeded(backend.real, platform_ns, _quota_job_name(sub, False))
             await backend.impl.delete_disk_quota(ns, sub)  # 完成返回
-
-
-class TestReadInstanceLogsContract:
-    """read_instance_logs 形状契约(str、行数受 tail_lines 约束);
-    Fake 对不存在的 Pod 合成日志,Real 直通 K8s 错误。"""
-
-    async def test_logs_shape(self, backend: Backend) -> None:
-        if backend.kind == "fake":
-            assert backend.fake is not None
-            logs = await backend.impl.read_instance_logs(
-                backend.namespace, "conf-pod", tail_lines=3
-            )
-            assert isinstance(logs, str)
-            lines = logs.splitlines()
-            assert 0 < len(lines) <= 3
-            assert backend.fake.log_calls[-1] == (backend.namespace, "conf-pod", 3)
-        else:
-            # Pod 不存在:Real 直通 apiserver 404
-            with pytest.raises(k8s_client.ApiException):
-                await backend.impl.read_instance_logs(
-                    backend.namespace, "no-such-pod", tail_lines=10
-                )

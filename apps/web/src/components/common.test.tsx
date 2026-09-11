@@ -1,6 +1,6 @@
-/** HexTag 渲染回归:深/浅主题下档位/竞价/包周期 Tag 底色必须是 token 原值,不被 antd dark algorithm 调亮。 */
+/** HexTag 渲染回归:暗色主题下档位/竞价/包周期 Tag 底色必须是 token 原值,不被 antd dark algorithm 调亮。 */
 import type { InstanceSubscriptionOut } from "@superdl/api-client";
-import { colorPrimary, statusColors, webDarkTheme, webTheme } from "@superdl/ui";
+import { webDarkTheme, webTheme } from "@superdl/ui";
 import { ConfigProvider, theme as antdTheme } from "antd";
 import { render } from "@testing-library/react";
 import type { ReactElement } from "react";
@@ -31,26 +31,7 @@ const SUB: InstanceSubscriptionOut = {
 } as InstanceSubscriptionOut;
 
 describe("HexTag 替换后的 Tag 渲染", () => {
-  it("浅色主题:TierTag/SpotTag/SubscriptionTag 底色为 token 原值,白字", () => {
-    const { container } = renderThemed(
-      <>
-        <TierTag tier="dedicated" pool={null} />
-        <SpotTag market="spot" />
-        <SubscriptionTag market="subscription" subscription={SUB} />
-      </>,
-      false,
-    );
-    const styles = [...container.querySelectorAll(".ant-tag")].map((el) => getComputedStyle(el));
-    expect(styles).toHaveLength(3);
-    expect(styles[0]?.backgroundColor).toBe("rgb(79, 70, 229)"); // skuTierMap.dedicated #4F46E5
-    expect(styles[1]?.backgroundColor).toBe("rgb(194, 65, 12)"); // statusColors.orange #C2410C
-    expect(styles[2]?.backgroundColor).toBe("rgb(79, 70, 229)"); // colorPrimary
-    for (const s of styles) {
-      expect(s.color).toBe("rgb(255, 255, 255)");
-    }
-  });
-
-  it("暗色主题:底色不被 algorithm 调亮,与浅色同一 token 原值", () => {
+  it("暗色主题:TierTag/SpotTag/SubscriptionTag 底色不被 algorithm 调亮,白字", () => {
     const { container } = renderThemed(
       <>
         <TierTag tier="dedicated" pool={null} />
@@ -61,9 +42,9 @@ describe("HexTag 替换后的 Tag 渲染", () => {
     );
     const styles = [...container.querySelectorAll(".ant-tag")].map((el) => getComputedStyle(el));
     expect(styles).toHaveLength(3);
-    expect(styles[0]?.backgroundColor).toBe("rgb(79, 70, 229)");
-    expect(styles[1]?.backgroundColor).toBe("rgb(194, 65, 12)");
-    expect(styles[2]?.backgroundColor).toBe("rgb(79, 70, 229)");
+    expect(styles[0]?.backgroundColor).toBe("rgb(79, 70, 229)"); // skuTierMap.dedicated #4F46E5
+    expect(styles[1]?.backgroundColor).toBe("rgb(194, 65, 12)"); // statusColors.orange #C2410C
+    expect(styles[2]?.backgroundColor).toBe("rgb(79, 70, 229)"); // colorPrimary
     for (const s of styles) {
       expect(s.color).toBe("rgb(255, 255, 255)");
     }
@@ -81,7 +62,5 @@ describe("HexTag 替换后的 Tag 渲染", () => {
       // statusColors.orange 原值,暗色下不调亮
       `rgb(${[194, 65, 12].join(", ")})`,
     );
-    expect(statusColors.orange).toBe("#C2410C");
-    expect(colorPrimary).toBe("#4F46E5");
   });
 });

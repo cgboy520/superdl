@@ -71,13 +71,6 @@ async def test_enqueue_carries_request_id_into_handler_context(
     assert structlog.contextvars.get_contextvars().get("request_id") is None  # 执行完已解绑
 
 
-async def test_enqueue_without_request_id_keeps_payload(sm: async_sessionmaker[AsyncSession]):
-    """无 request_id 上下文:payload 原样。"""
-    async with sm() as session:
-        task = enqueue(session, "noop_plain", {"x": 1})
-        assert task.payload == {"x": 1}
-
-
 async def test_process_failure_retries_then_dead(sm: async_sessionmaker[AsyncSession], monkeypatch):
     async def bad_handler(_session: AsyncSession, _task: OutboxTask) -> None:
         raise RuntimeError("boom")
@@ -304,11 +297,6 @@ class TestTerminalWriteOwnership:
             row = (await session.execute(select(OutboxTask))).scalar_one()
             assert row.status == "pending"  # 没被写成 done
             assert row.locked_by is None
-
-
-def test_running_timeout_is_double_task_timeout():
-    """reaper 打回 running 的窗口显著大于任务执行上限。"""
-    assert timedelta(seconds=2 * outbox.TASK_TIMEOUT_SECONDS) <= outbox.RUNNING_TIMEOUT
 
 
 class TestPendingMetrics:

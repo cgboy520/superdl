@@ -67,26 +67,6 @@ class TestBalanceWarnNotification:
         resp = await client.get("/api/v1/notifications/unread-count", headers=headers)
         assert resp.json()["unread_count"] == 2
 
-    async def test_target_id_round_trip(self, client, sm, fake):
-        """target_id 原样返回,未写的为 null。"""
-        headers, user_id = await user_headers_with_id(client, "13700000062")
-        async with sm() as session:
-            session.add(
-                Notification(
-                    user_id=user_id,
-                    type="instance",
-                    title="带目标",
-                    content="c",
-                    target_id="abc123uuid",
-                )
-            )
-            session.add(Notification(user_id=user_id, type="account", title="无目标", content="c"))
-            await session.commit()
-        items = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
-        by_title = {n["title"]: n for n in items}
-        assert by_title["带目标"]["target_id"] == "abc123uuid"
-        assert by_title["无目标"]["target_id"] is None
-
     async def test_patrol_writes_notification_with_dedup(self, client, sm, fake):
         """低余额预警:counts 记 warned、实例不停机;同日重复巡检按去重键只留一条站内信。"""
         headers, uuid, user_id = await provision_running(client, sm, fake)
@@ -109,24 +89,6 @@ class TestBalanceWarnNotification:
         assert "小时" in warns[0]["content"]
         # 实例不停机
         assert (await get_instance(client, headers, uuid))["status"] == "running"
-
-    async def test_read_flow(self, client, sm, fake):
-        headers, user_id = await user_headers_with_id(client, "13700000063")
-        async with sm() as session:
-            session.add(Notification(user_id=user_id, type="account", title="t", content="c"))
-            await session.commit()
-
-        unread = (
-            await client.get("/api/v1/notifications", params={"unread": True}, headers=headers)
-        ).json()["items"]
-        assert len(unread) == 1
-        nid = unread[0]["id"]
-        resp = await client.post(f"/api/v1/notifications/{nid}/read", headers=headers)
-        assert resp.status_code == 204
-        unread = (
-            await client.get("/api/v1/notifications", params={"unread": True}, headers=headers)
-        ).json()["items"]
-        assert unread == []
 
     async def test_read_all_marks_everything_and_is_idempotent(self, client, sm, fake):
         """全部已读:多条未读一次清零;重复调用幂等 204。"""

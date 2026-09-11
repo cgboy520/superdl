@@ -12,7 +12,6 @@ import {
   heatColors,
   medalColors,
   statusColors,
-  textOnAccent,
   webDarkColors,
   webTheme,
 } from "./tokens";
@@ -93,13 +92,11 @@ describe("tokens 对比度(WCAG AA ≥4.5:1)", () => {
     expect(contrast(webDarkColors.text, webDarkColors.bgElevated)).toBeGreaterThanOrEqual(AA);
     expect(contrast(webDarkColors.textSecondary, webDarkColors.bgBase)).toBeGreaterThanOrEqual(AA);
     expect(contrast(webDarkColors.textSecondary, webDarkColors.bgContainer)).toBeGreaterThanOrEqual(AA);
+    expect(contrast(webDarkColors.textSecondary, webDarkColors.bgElevated))
+      .toBeGreaterThanOrEqual(AA);
     expect(
       contrast(webDarkColors.menuSelectedColor, webDarkColors.menuSelectedBg)
     ).toBeGreaterThanOrEqual(AA);
-  });
-
-  it("实心徽标文字色恒白(与各状态底配对已在上覆盖,此处锁白值)", () => {
-    expect(textOnAccent).toBe("#FFFFFF");
   });
 
   it("CSS 变量桥:主色/文本在各自底色上(focus 描边与选中态按文本级 AA)", () => {
@@ -146,11 +143,5 @@ describe("tokens 对比度(WCAG AA ≥4.5:1)", () => {
       expect(contrast(v, webDarkColors.bgBase), `chartSeriesColors.dark.${k}`)
         .toBeGreaterThanOrEqual(3);
     }
-  });
-
-  it("用户端暗色:描述文本显式取值(不依赖算法派生)在两种深底上", () => {
-    expect(contrast(webDarkColors.textSecondary, webDarkColors.bgBase)).toBeGreaterThanOrEqual(AA);
-    expect(contrast(webDarkColors.textSecondary, webDarkColors.bgElevated))
-      .toBeGreaterThanOrEqual(AA);
   });
 });

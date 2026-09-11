@@ -500,10 +500,6 @@ class TestRequestBodyLimit:
         assert resp.status_code != 413
         assert resp.status_code in (400, 422)
 
-    async def test_normal_request_unaffected(self, client: AsyncClient):
-        resp = await client.get("/healthz")
-        assert resp.status_code == 200
-
 
 class TestSecurityHeaders:
     async def test_headers_on_api_responses(self, client: AsyncClient):

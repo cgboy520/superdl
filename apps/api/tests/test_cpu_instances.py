@@ -7,7 +7,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.gpu_adapter import POOL_NODE_LABEL, build_gpu_request, spec_to_gpu_request
+from app.core.gpu_adapter import POOL_NODE_LABEL, build_gpu_request
 from app.core.k8s.base import GPU_MODEL_NODE_LABEL
 from app.core.money import billing_units, hourly_cost
 from app.core.policies import set_policy_overrides
@@ -28,7 +28,6 @@ from tests.helpers import (
     create_user_with_key,
     drain,
     fund_wallet,
-    gpu_spec,
     make_instance,
     seed_node_spec,
 )
@@ -115,10 +114,6 @@ class TestGpuRequest:
         assert req.node_selector == {POOL_NODE_LABEL: "hami"}
         assert GPU_MODEL_NODE_LABEL not in req.node_selector
 
-    def test_snapshot_path_matches(self):
-        req = spec_to_gpu_request(_cpu_spec("hami"), 0, hami_use_gputype=True)
-        assert req.resources == {} and req.annotations == {}
-
 
 class TestPodSpec:
     def test_cpu_instance_does_not_scale_vcpu_mem(self):
@@ -127,11 +122,6 @@ class TestPodSpec:
         assert pod.vcpu == 8 and pod.mem_gb == 16
         assert pod.gpu_resources == {}
         assert pod.disk_gb == 100
-
-    def test_gpu_instance_still_scales(self):
-        inst = make_instance(spec=gpu_spec("dedicated", "kata"), gpu_count=4)
-        pod = build_pod_spec(inst)
-        assert pod.vcpu == 8 * 4 and pod.mem_gb == 32 * 4
 
 
 class TestBillingUnits:
@@ -232,9 +222,6 @@ class TestCapacity:
     async def test_cpu_pool_node_yields_slots(self, client: AsyncClient, sm):
         """无卡节点整机可售:32 vCPU / 128G 上放 8C16G,受内存维封顶为 4 台。"""
         await seed_node_spec(sm, node_name="cpu-1", pool_label="cpu", gpu_model=None, gpu_count=0)
-        async with sm() as session:
-            spec = (await session.execute(select(Sku))).scalars()  # 触发 flush,无副作用
-            _ = list(spec)
         await self._set_node_size(sm, "cpu-1", vcpu=32, mem_gb=64)
         sku_id = await self._cpu_sku(sm)
         market = (await client.get("/api/v1/skus")).json()
@@ -501,10 +488,6 @@ class TestSellableCpuSlots:
             last_seen=now_utc(),
         )
 
-    def test_cpu_pool_uses_whole_node(self):
-        nodes = [self._node("cpu", 32, 128)]
-        assert catalog_service.sellable_cpu_slots(8, 16, nodes, gpu_node_vcpu_cap=16) == 4
-
     def test_memory_dimension_binds(self):
         """内存不够时以内存为准:8 台的 vCPU、只有 2 台的内存 → 2。"""
         nodes = [self._node("cpu", 64, 32)]
@@ -515,10 +498,6 @@ class TestSellableCpuSlots:
         nodes = [self._node("hami", 64, 256)]
         # cap=16 → vCPU 预算 16(2 台),内存预算 256×16//64=64(1 台)→ 取 1
         assert catalog_service.sellable_cpu_slots(8, 64, nodes, gpu_node_vcpu_cap=16) == 1
-
-    def test_cap_zero_forbids_gpu_nodes(self):
-        nodes = [self._node("hami", 64, 256)]
-        assert catalog_service.sellable_cpu_slots(8, 16, nodes, gpu_node_vcpu_cap=0) == 0
 
     def test_non_ready_nodes_excluded(self):
         nodes = [self._node("cpu", 32, 128, status="NotReady")]

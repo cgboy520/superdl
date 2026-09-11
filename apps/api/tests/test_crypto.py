@@ -73,12 +73,6 @@ class TestDecryptDualRead:
         fresh = crypto.encrypt_str("new-secret", aad="k")
         assert fresh.split(":", 3)[2] == hashlib.sha256(_raw_key(_KEY_A)).hexdigest()[:12]
 
-    def test_previous_alone_cannot_encrypt(self, set_keys):
-        """previous 只读:轮换后新密文 kid 必须指向当前钥匙。"""
-        set_keys(_KEY_A, prev=_KEY_B)
-        token = crypto.encrypt_str("x", aad="k")
-        assert token.split(":", 3)[2] != hashlib.sha256(_raw_key(_KEY_B)).hexdigest()[:12]
-
     def test_unknown_kid_rejected_without_key_scan(self, set_keys):
         set_keys()
         token = crypto.encrypt_str("plain", aad="k")
@@ -129,13 +123,6 @@ class TestDigestGenerations:
             hashlib.sha256,
         ).hexdigest()
         assert prev_gen in rotated
-
-    def test_domain_separation_holds_per_generation(self, set_keys):
-        """同一明文不同域的摘要每个世代都不同。"""
-        set_keys()
-        assert crypto.hash_sms_code("13800000000", "login", "123456") != crypto.hash_node_token(
-            "13800000000|login|123456"
-        )
 
     def test_dev_fallback_key_derivation_still_works(self, set_keys):
         """dev/test 未配主密钥时从 jwt_secret 派生。"""

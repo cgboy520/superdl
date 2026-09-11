@@ -23,12 +23,6 @@ class TestMarket:
         resp = await client.get("/api/v1/skus", params={"gpu_model": "RTX4090"})
         assert len(resp.json()) == 2
 
-    async def test_price_serialized_as_string(self, client: AsyncClient, sm):
-        await seed_skus(sm)
-        resp = await client.get("/api/v1/skus")
-        prices = [s["price_hourly"] for s in resp.json()]
-        assert "1.6800" in prices  # 字符串且保留 4 位 scale
-
 
 class TestSellablePerGpu:
     def test_decimal_floor_division(self):

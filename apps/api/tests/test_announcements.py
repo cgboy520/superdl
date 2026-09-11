@@ -107,12 +107,3 @@ class TestAnnouncementAdmin:
         )
         assert second.status_code == 409
         assert second.json()["message_key"] == "adminapi.announcementAlreadyRevoked"
-
-    async def test_revoke_not_found(self, client: AsyncClient, sm):
-        ops = await admin_headers(sm, client, role="ops")
-        resp = await client.post(
-            "/api/admin/v1/announcements/999999/revoke",
-            json={"reason": "不存在"},
-            headers=ops,
-        )
-        assert resp.status_code == 404

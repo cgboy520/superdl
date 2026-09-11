@@ -10,12 +10,6 @@ describe("menu 单一事实源", () => {
     expect(menuKeys).toEqual(roleKeys);
   });
 
-  it("MENU 每项都有非空 labelKey(i18n 键,命令面板与侧栏共用)", () => {
-    for (const m of MENU) {
-      expect(m.labelKey).toMatch(/^menu\.\w+$/);
-    }
-  });
-
   it("canSeeMenu:finance 无节点/告警权限,告警页 admin/ops/readonly 可见", () => {
     expect(canSeeMenu("/nodes", "finance")).toBe(false);
     expect(canSeeMenu("/alerts", "finance")).toBe(false);

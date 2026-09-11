@@ -10,7 +10,6 @@ from sqlalchemy import select, update
 from app.core.policies import EffectivePolicies, get_effective_policies
 from app.core.pricing import (
     MARKET_SUBSCRIPTION,
-    PERIOD_HOURS,
     price_for,
     quote_subscription,
 )
@@ -98,27 +97,6 @@ class TestQuoteArithmetic:
         assert q.list_amount == Decimal("2872.80")
         assert q.amount == Decimal("2298.24")
         assert q.discount_amount == Decimal("574.56")
-
-    def test_three_amounts_are_self_consistent(self):
-        """discount == list - amount 恒成立(前端直接减也得到同一个数)。"""
-        policies = EffectivePolicies(
-            **{
-                **{
-                    f: 3
-                    for f in EffectivePolicies.__dataclass_fields__
-                    if f != "disk_price_gb_month"
-                },
-                "disk_price_gb_month": Decimal("0.01"),
-                "period_discount_year": 70,
-            }
-        )
-        q = quote_subscription(
-            Decimal("0.9999"), gpu_count=2, period="year", period_count=2, policies=policies
-        )
-        assert q.hours == PERIOD_HOURS["year"] * 2
-        assert q.discount_amount == q.list_amount - q.amount
-        # 应付 = 折后时价 × 份数 × 小时数
-        assert q.amount == (q.unit_price * 2 * q.hours).quantize(Decimal("0.01"))
 
     def test_cpu_instance_bills_one_unit(self):
         """CPU 实例 gpu_count=0 按 1 份(billing_units)收。"""

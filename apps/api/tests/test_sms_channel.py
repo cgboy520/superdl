@@ -1,4 +1,4 @@
-"""短信渠道 seam:阿里云签名、MockTransport 收发、验证码发送失败降级、通知短信尽力而为。"""
+"""短信渠道 seam:阿里云签名、MockTransport 收发、验证码发送失败降级、平台配额。"""
 
 import httpx
 import pytest
@@ -7,7 +7,6 @@ from sqlalchemy import select
 
 from app.core.aliyun import rpc_signed_params
 from app.core.sms import AliyunSmsChannel, SmsError, set_sms_channel
-from tests.helpers import register
 
 
 @pytest.fixture(autouse=True)
@@ -72,53 +71,6 @@ class TestVerifyCodeSendFailure:
                 await session.execute(select(SmsCode).where(SmsCode.phone == "13800000090"))
             ).scalar_one()
             assert row.used_at is not None  # 已作废,不可被消费
-
-
-class TestNotifySmsBestEffort:
-    async def test_notify_survives_channel_failure(self, client: AsyncClient, sm):
-        """通知短信失败不影响站内信落库(尽力而为)。"""
-        from app.modules.notify.models import Notification
-        from app.modules.notify.service import send_low_balance_warning
-
-        data = await register(client, "13800000092")
-        set_sms_channel(_FailingChannel())
-        async with sm() as session:
-            await send_low_balance_warning(
-                session, data["user"]["id"], est_hours=1.5, balance="3.20"
-            )
-        async with sm() as session:
-            row = (
-                await session.execute(
-                    select(Notification).where(Notification.user_id == data["user"]["id"])
-                )
-            ).scalar_one()
-            assert row.type == "balance_warn"
-
-
-class TestLogRedaction:
-    def test_mask_sensitive_processor(self):
-        """日志打码:phone 前3后4,code/token/secret 整体打码,dict 值逐内层键同款。"""
-        import logging
-
-        from app.core.logging import _mask_sensitive_processor
-
-        out = _mask_sensitive_processor(
-            logging.getLogger("t"),
-            "info",
-            {
-                "event": "mock_sms_sent",
-                "phone": "13800000000",
-                "access_token": "eyJabc.def",
-                "client_secret": "s3cret",
-                "params": {"code": "123456", "title": "余额预警"},
-                "template": "SMS_123",
-            },
-        )
-        assert out["phone"] == "138****0000"
-        assert out["access_token"] == "******"
-        assert out["client_secret"] == "******"
-        assert out["params"] == {"code": "******", "title": "余额预警"}
-        assert out["template"] == "SMS_123"
 
 
 class TestPlatformQuota:

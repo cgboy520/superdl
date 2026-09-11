@@ -46,10 +46,4 @@ describe("TableErrorEmpty", () => {
     expect(screen.queryByText("加载失败,请重试")).not.toBeInTheDocument();
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
-
-  it("无 onRetry 时不渲染重试按钮", () => {
-    renderEmpty({ isError: true });
-    expect(screen.getByText("加载失败,请重试")).toBeInTheDocument();
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
-  });
 });

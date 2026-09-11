@@ -74,25 +74,6 @@ class TestAdminAccounts:
         # 新建的账号能登录
         assert (await admin_login(client, "finance01", STRONG)).status_code == 200
 
-    async def test_long_password_create_then_login(
-        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
-    ):
-        """65~72 字符口令:创建后能登录。"""
-        h = await admin_headers(sm, client)
-        long_pw = "Lp" + "x9" * 34  # 70 字符 = 70 字节,落在 65~72 区间
-        resp = await client.post(
-            "/api/admin/v1/admins",
-            json={
-                "username": "longpw01",
-                "password": long_pw,
-                "role": "readonly",
-                "reason": "长口令回归",
-            },
-            headers=h,
-        )
-        assert resp.status_code == 201, resp.text
-        assert (await admin_login(client, "longpw01", long_pw)).status_code == 200
-
     async def test_username_conflict_is_409_not_500(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):

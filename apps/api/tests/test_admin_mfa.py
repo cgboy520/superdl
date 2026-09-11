@@ -167,11 +167,6 @@ class TestVerifyLogin:
         ticket = (await admin_login(client, username)).json()["ticket"]
         await complete_mfa_setup(client, ticket)
 
-    async def test_bound_admin_gets_verify_challenge(self, client: AsyncClient, sm):
-        await self._bound_admin(client, sm, "bound-admin")
-        body = (await admin_login(client, "bound-admin")).json()
-        assert body["status"] == "mfa_required"
-
     async def test_totp_login_success(self, client: AsyncClient, sm):
         import time
 

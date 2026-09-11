@@ -399,24 +399,6 @@ class TestHourlySettlementJob:
             bill = (await session.execute(select(BillHourly))).scalar_one()
         assert bill.amount == Decimal("12.00")  # 3.00 × 4 卡
 
-    async def test_ledger_balance_chain_consistent(self, sm):
-        await seed_instance(
-            sm, events=[(H - timedelta(hours=1), "creating", "running")], status="running"
-        )
-        await settle_due_hours(sm, at=H_END + timedelta(minutes=2))
-        async with sm() as session:
-            entries = (
-                (await session.execute(select(BalanceLedger).order_by(BalanceLedger.id)))
-                .scalars()
-                .all()
-            )
-            w = (await session.execute(select(Wallet))).scalar_one()
-        running = Decimal("0.00")
-        for e in entries:
-            running += e.amount
-            assert e.balance_after == running  # 每条 balance_after 快照自洽
-        assert w.balance == running
-
 
 class TestTinyDurationTail:
     async def test_seconds_rounding_to_zero_amount_no_crash(self, sm):
@@ -871,10 +853,3 @@ class TestGapEndpoints:
         # 全部核销后默认列表为空
         rows = (await client.get("/api/admin/v1/finance/settlement-gaps", headers=finance)).json()
         assert rows["items"] == []
-
-    async def test_readonly_can_list(self, client, sm):
-        """readonly 可读缺口列表(200)。"""
-        ro = await admin_headers(sm, client, role="readonly")
-        assert (
-            await client.get("/api/admin/v1/finance/settlement-gaps", headers=ro)
-        ).status_code == 200

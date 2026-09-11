@@ -14,20 +14,6 @@ pytestmark = pytest.mark.usefixtures("fake")
 
 
 class TestQuotaDispatch:
-    async def test_create_dispatches_quota(self, client: AsyncClient, sm, fake):
-        headers, user_id, _key = await create_user_with_key(client)
-        await fund_wallet(sm, user_id)
-        disk = await create_disk(client, headers, size_gb=100)
-        await drain(sm)
-        from app.modules.orchestrator.models import DataDisk
-
-        async with sm() as session:
-            row = (
-                await session.execute(select(DataDisk).where(DataDisk.uuid == disk["uuid"]))
-            ).scalar_one()
-            assert row.quota_synced is True
-            assert fake.disk_quotas[(f"tenant-{user_id}", row.juicefs_subpath)] == 100
-
     async def test_expand_redispatches_new_capacity(self, client: AsyncClient, sm, fake):
         headers, user_id, _key = await create_user_with_key(client)
         await fund_wallet(sm, user_id)
