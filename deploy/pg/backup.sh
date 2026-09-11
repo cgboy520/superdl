@@ -36,8 +36,11 @@ docker compose -f "$COMPOSE" exec -T postgres psql -U superdl -d postgres -qc "D
 rm -f "$B/.smoke.dump"
 date -u +%s > "$B/.last-success"
 if [[ -d "$TEXTFILE_DIR" ]]; then
+  # node-exporter 以 nobody 读:目录与文件必须可读(与其余 0600 产物不同)
+  chmod 0755 "$TEXTFILE_DIR"
   printf '# HELP superdl_pg_backup_last_success_timestamp_seconds 自建 PG 每日备份(含异地同步与恢复冒烟)最近一次成功的 Unix 时间\n# TYPE superdl_pg_backup_last_success_timestamp_seconds gauge\nsuperdl_pg_backup_last_success_timestamp_seconds %s\n' "$(cat "$B/.last-success")" \
     > "$TEXTFILE_DIR/superdl_pg_backup.prom.tmp"
+  chmod 0644 "$TEXTFILE_DIR/superdl_pg_backup.prom.tmp"
   mv "$TEXTFILE_DIR/superdl_pg_backup.prom.tmp" "$TEXTFILE_DIR/superdl_pg_backup.prom"
 fi
 echo "backup ok: superdl-$ts.dump.gpg"

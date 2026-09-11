@@ -91,6 +91,7 @@ kind: Service
 metadata:
   name: superdl-api
   namespace: superdl
+  labels: {app: superdl-api}   # 08-monitoring.yaml 的 ServiceMonitor 按此标签选 Service;缺了指标永远抓不到
 spec:
   selector: {app: superdl-api}
   ports:

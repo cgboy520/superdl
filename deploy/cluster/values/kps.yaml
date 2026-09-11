@@ -17,6 +17,8 @@ prometheus:
     replicas: 1
     ruleSelectorNilUsesHelmValues: false
     serviceMonitorSelectorNilUsesHelmValues: false
+    # worker 无 Service,08-monitoring.yaml 用 PodMonitor 直抓;不放开则只选带 release 标签的 PodMonitor,worker 指标与 WorkerDown 全失效
+    podMonitorSelectorNilUsesHelmValues: false
     resources:
       requests: {cpu: 500m, memory: 2Gi}
       limits: {memory: 4Gi}    # 只限内存,不限 CPU
