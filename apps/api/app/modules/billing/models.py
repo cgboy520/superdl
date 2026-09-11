@@ -150,6 +150,11 @@ class Order(Base):
         # 人工补单幂等键 DB 兜底
         UniqueConstraint("backfill_idempotency_key"),
         CheckConstraint("amount > 0", name="amount_positive"),
+        CheckConstraint(
+            "channel_reversal_action IS NULL "
+            "OR channel_reversal_action IN ('release', 'chargeback')",
+            name="reversal_action",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -167,10 +172,23 @@ class Order(Base):
     backfill_idempotency_key: Mapped[str | None] = mapped_column(String(64))
     qr_url: Mapped[str | None] = mapped_column(String(512))
     paid_at: Mapped[datetime | None]
-    # 渠道侧对已入账订单的关单/退款通知到达时刻(人工核销;异常清单分桶依据)
+    # 渠道侧对已入账订单的关单/退款通知首次到达时刻(异常清单分桶依据);人工处置后写 resolved_at +
+    # action,标记本身不清(清了会被重放的同一通知再冻一次)
     channel_reversed_at: Mapped[datetime | None]
+    channel_reversal_resolved_at: Mapped[datetime | None]
+    channel_reversal_action: Mapped[str | None] = mapped_column(String(16))  # release / chargeback
     expires_at: Mapped[datetime]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+def reversal_pending(order: "Order") -> bool:
+    """渠道冲正待处置:已收到反向通知且尚未核销。"""
+    return order.channel_reversed_at is not None and order.channel_reversal_resolved_at is None
+
+
+def reversal_blocks_refund(order: "Order") -> bool:
+    """待处置或已坐实(chargeback)的冲正都禁止平台侧再出金;release 过的订单恢复资格。"""
+    return order.channel_reversed_at is not None and order.channel_reversal_action != "release"
 
 
 class InvoiceRequest(Base):

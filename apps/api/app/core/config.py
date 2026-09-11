@@ -155,7 +155,7 @@ class Settings(BaseSettings):
     # 计费参数
     freeze_grace_hours: int = 72  # 欠费冻结时长
     afford_cover_hours: int = 1  # 开机前余额须覆盖「在途+新增」实例的小时数(护栏,非预占)
-    creating_timeout_seconds: int = 300  # creating 超时 → failed 退款
+    creating_timeout_seconds: int = 300  # creating 超时 → failed(订阅预付同事务退回)
     # running 实例 Pod 持续 not-ready 判不可用的时长;须宽于 K8s unreachable tolerationSeconds(300)
     running_unready_timeout_seconds: int = 600
     # stopping/releasing 悬挂超时:一档 outbox 重发删除,二档 force 强删

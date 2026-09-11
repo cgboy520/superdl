@@ -4,7 +4,7 @@
 
 ## 数据模型
 
-- `orders`:order_no 唯一、user_id、amount numeric(14,2) >0、channel(wechat/alipay/mock)、channel_txn_id 唯一?、status(pending/paid/closed/failed)、idempotency_key(与 user_id 联合唯一)、qr_url、paid_at、expires_at
+- `orders`:order_no 唯一、user_id、amount numeric(14,2) >0、channel(wechat/alipay/mock)、channel_txn_id 唯一?、status(pending/paid/closed/failed)、idempotency_key(与 user_id 联合唯一)、qr_url、paid_at、expires_at、channel_reversed_at?(渠道反向通知首次到达)、channel_reversal_resolved_at? / channel_reversal_action?(release / chargeback,人工处置;CHECK)
 - `refund_requests`:refund_no 唯一、user_id、order_no、amount numeric(12,2) >0、reason、status(pending/approved/paid/rejected/cancelled)、review_by/review_at/review_comment、payout_channel(offline/alipay_transfer/wechat_transfer)/payout_ref/payout_at、idempotency_key(与 user_id 联合唯一);部分唯一索引保证同一订单至多一条活跃(pending/approved/paid)申请
 - `invoice_requests`:user_id、period(YYYY-MM,北京月界)、title_type(personal/company)、title、tax_id?、email、amount numeric(12,2)(服务端按账期计算)、status(submitted/issued/rejected)、invoice_no?、reject_reason?、issued_by/issued_at、idempotency_key(与 user_id 联合唯一);部分唯一索引保证同一 (user_id, period) 至多一条非 rejected 申请
 
@@ -30,13 +30,16 @@
 
 - 微信支付走 APIv3(wechatpayv3),验签仅支持微信支付公钥模式(`PUB_KEY_ID_*`;公钥与公钥 ID 为渠道必填);支付宝走当面付(alipay-sdk-python):precreate + RSA2 普通公钥模式,含查单。
 - `PaymentChannel.query_order` 是统一查单 seam,mock 渠道自带渠道侧账本。
-- 渠道构造(PEM/RSA 加载)经 `asyncio.to_thread`,实例按配置指纹缓存。
+- 渠道 SDK 全部阻塞调用(构造、下单、查单、回调验签)走专属线程池 `payment_channels.run_in_sdk_pool`(8 线程),不与 bcrypt 等共用默认执行器;微信 `timeout=(5, 10)`、支付宝 `timeout=10`。实例按配置指纹缓存。
 - 渠道凭据与开关在管理端配置,见 [platform-config.md](./platform-config.md)。
 
 ### 回调与查单
 
 - 回调靠 `channel_txn_id` 唯一约束幂等;金额不匹配的回调拒绝并告警。
-- 回调带时间戳新鲜度窗口 ±24h(微信 `Wechatpay-Timestamp` / 支付宝 `notify_time`)。
+- 回调时间戳新鲜度窗口 ±15 分钟(`CALLBACK_FRESHNESS_SECONDS`;微信 `Wechatpay-Timestamp` / 支付宝 `notify_time` 北京时间),超窗或缺失即验签失败;渠道重试每次重新签名带新时间戳,不受影响。
+- 微信回调进 SDK 之前先核对 `Wechatpay-Serial == wechat_public_key_id`:陌生序列号直接拒,不让未验签的外部请求触发 SDK 拉平台证书的出网请求。
+- 支付宝通知带非空 `refund_fee`(部分退款,`trade_status` 仍是 TRADE_SUCCESS)按反向通知处理(`CallbackResult.refund_amount`),不当成功回调。
+- 已入账订单收到反向通知:只对首次置标那一次等额冻结;人工处置(`/finance/reversals/{order_no}/resolve`)写 `channel_reversal_resolved_at` + `channel_reversal_action`,**不清 `channel_reversed_at`**,同一通知重放只留痕计数(`superdl_payment_channel_reversed_total`)不再冻结。release 过的订单恢复退款与开票资格,chargeback 的不恢复。release 单操作人,每次都告警(`PaymentReversalReleased`,`superdl_payment_reversal_resolved_total{action}`)。
 - 微信回调核对 resource 的 mchid/appid 为己方商户;支付宝验签串按官方口径剔除空值参数。
 - **支付宝回调应答必须是纯文本 `success`**。
 - 下单向渠道传过期时间(微信 `time_expire` RFC3339 / 支付宝 `timeout_express` 分钟),与本地关单时间同步。

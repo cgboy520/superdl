@@ -24,14 +24,16 @@
 - **结算缺口只登记不自愈。** 追平截断 / 死信 / 水位线丢失落 `settlement_gaps` 并持续告警,人工重放或核销。见 `docs/reference/billing.md`。
 - **包周期走独立订阅单一次性预扣,不摊成零元小时账。** `bills_hourly` 结构、幂等键、水位线与缺口机制不动。约束:跳过点只有 `apps/api/app/modules/orchestrator/queries.py::billing_candidates` 一处;购买模式在四处配套过滤同时排除(燃烧率 / 停机判据 / 冻结与解冻 / 尾账),逐条列在 `docs/reference/billing.md`,各有用例锁住。
 - **周期取定长小时,不取自然月。** day=24 / week=168 / month=720 / year=8760,到期时刻与定价同一个数。约束:`PERIOD_HOURS` 是常量、不进策略参数。
-- **预付不退款,中途释放只作废订阅。** 实例进入 `releasing` 时把 active 订阅转 `cancelled`,不生成退款流水;确需退款走人工 `refund_requests`。约束:作废挂在状态迁移监听器上,覆盖用户释放、欠费回收、到期回收、管理端强制回收四条路径;已 `expired` 的历史行不动。
+- **预付不退款,中途释放只作废订阅;从未运行即 failed 的例外原额退回。** 实例进入 `releasing` 时把 active 订阅转 `cancelled`,不生成退款流水;确需退款走人工 `refund_requests`。约束:作废挂在状态迁移监听器上,覆盖用户释放、欠费回收、到期回收、管理端强制回收四条路径;已 `expired` 的历史行不动。首次 creating 调度超时(Pod 从未 ready)不属于「中途释放」:reconciler 同事务退回预付并作废订阅。
 - **到期不自动转按量。** 到期即停机 → 冻结 → 72 小时后回收(与欠费共用 `freeze_grace_hours`)。配套:到期前 3 天预警、可开自动续费(默认关)、冻结窗口内续费即解冻。
 - **续费按下单时的原价快照重新定价。** 基准是 `subscriptions.unit_price`,不是 SKU 现价(换周期续按新周期取折扣)。起算时刻 `max(老到期时刻, 现在)`。约束:续费**新开一行**并用 `renewed_from_id` 串链,不在原行累加。
 - **未到期的包周期实例即使已停机也仍占库存。** 软准入的 `_reserved_slots` 把同一条 SKU 上「stopped / frozen 且仍在保」的实例计为占用。**只在平台层预留,物理层不预留**,创建页与续费入口的说明里必须写。只算同一条 SKU。
 - **按量可以就地转包周期,转换点两侧各结各的账。** `POST /api/v1/instances/{uuid}/subscribe` 同事务**先结后翻**:先 `settle_on_demand_up_to` 用转换前的按量时价结清到当前自然小时,再落订阅行、预扣、翻 `market`、刷 `price_hourly`。约束:顺序不可颠倒;**幂等重放在全部守卫之前判**;**结算滞后超 48 小时拒绝转换(409)**。反向不开。`subscribe_instance` 是唯一会改 `market` 为 subscription 的路径。见 `docs/reference/billing.md`、`docs/reference/orchestrator.md`。
 - **竞价被抢占照常结算,不免单;结算引擎零改动。** 迁 `stopping` 时由既有 `edge_listener` 出尾账。约束:`billing_candidates` 跳过条件仍只有 `market != 'subscription'`;折扣只落 `instances.price_hourly`,由 `apps/api/app/core/pricing.py` 的 `price_for` 单点算。见 `docs/reference/billing.md`。
-- **竞价转按量按「一小时一价」处理跨价的那个小时。** `bills_hourly` 一小时一行一个 `unit_price`,以结算时的实例单价为准:`settlement.reprice_current_hour` 在钱包行锁内改写 `unit_price`、按新价重算 `amount`、补扣差价并打 `detail.repriced`。约束:只补扣、不退款(`spot_discount_pct` 上界 90);必须写进转换确认弹窗。见 `docs/reference/billing.md`。
-- **微信支付验签只走微信支付公钥模式,不做平台证书模式。** `wechat_public_key` 与 `wechat_public_key_id` 为渠道必填,缺一即 `PAYMENT_CHANNEL_ERROR`。见 `docs/reference/payment.md`。
+- **竞价转按量按「一小时一价」处理跨价的那个小时,滞后小时先按竞价价结清。** `bills_hourly` 一小时一行一个 `unit_price`,以结算时的实例单价为准:先 `settle_on_demand_up_to`(与转包周期同款)把水位线之后未结的整点按竞价价结掉,再由 `settlement.reprice_current_hour` 在钱包行锁内改写当前小时的 `unit_price`、按新价重算 `amount`、补扣差价并打 `detail.repriced`。约束:只补扣、不退款(`spot_discount_pct` 上界 90);必须写进转换确认弹窗。见 `docs/reference/billing.md`。
+- **微信支付验签只走微信支付公钥模式,不做平台证书模式。** `wechat_public_key` 与 `wechat_public_key_id` 为渠道必填,缺一即 `PAYMENT_CHANNEL_ERROR`;回调 `Wechatpay-Serial` 不等于公钥 ID 直接拒,不进 SDK。见 `docs/reference/payment.md`。
+- **渠道反向通知的处置标记只写不清。** `channel_reversed_at` 是「收到过」,`channel_reversal_resolved_at` + `channel_reversal_action` 是「处置过」;release 不清标记,同一通知重放不再二次冻结。回调新鲜度窗口 ±15 分钟。约束:release 单操作人但条条告警;收款验签根(payment / crypto 配置组)任何写入条条告警(`PaymentConfigWritten`),不做双人制衡。见 `docs/reference/payment.md`。
+- **结算引导不登记缺口。** 无水位线且窗口前没有任何可计费对象 = 首次部署,只建水位线;有历史才登记 `watermark_missing`。见 `docs/reference/billing.md`。
 
 ## 安全
 

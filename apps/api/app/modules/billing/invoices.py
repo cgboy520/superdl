@@ -12,7 +12,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -51,7 +51,11 @@ async def _period_paid_sum(session: AsyncSession, user_id: int, period: str) -> 
             select(func.coalesce(func.sum(Order.amount), 0)).where(
                 Order.user_id == user_id,
                 Order.status == "paid",
-                Order.channel_reversed_at.is_(None),
+                # 待处置/已坐实的冲正不计入可开票额;人工 release 的恢复
+                or_(
+                    Order.channel_reversed_at.is_(None),
+                    Order.channel_reversal_action == "release",
+                ),
                 Order.paid_at >= start,
                 Order.paid_at < end,
             )

@@ -8,9 +8,12 @@
 """
 
 import asyncio
-from collections.abc import Mapping
+import functools
+from collections.abc import Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
-from typing import TYPE_CHECKING, ClassVar, Literal, Protocol
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,13 +26,55 @@ if TYPE_CHECKING:
 
 
 class CallbackResult:
-    """验签解析后的回调结果。"""
+    """验签解析后的回调结果。refund_amount:渠道侧(部分)退款金额,有值即视为反向通知(success=False)。"""
 
-    def __init__(self, order_no: str, channel_txn_id: str, amount: Decimal, success: bool) -> None:
+    def __init__(
+        self,
+        order_no: str,
+        channel_txn_id: str,
+        amount: Decimal,
+        success: bool,
+        refund_amount: Decimal | None = None,
+    ) -> None:
         self.order_no = order_no
         self.channel_txn_id = channel_txn_id
         self.amount = amount
         self.success = success
+        self.refund_amount = refund_amount
+
+
+# 渠道 SDK 全是阻塞 HTTP:专属线程池 + 连接/读超时,不与 bcrypt 等共用默认执行器;
+# 回调携带的时间戳超窗即拒(渠道重试每次重新签名带新时间戳,不受影响)
+SDK_TIMEOUT = (5, 10)  # requests 口径 (connect, read) 秒
+SDK_TIMEOUT_SECONDS = 10  # 支付宝 SDK 单值超时(秒)
+CALLBACK_FRESHNESS_SECONDS = 15 * 60
+_SDK_EXECUTOR = ThreadPoolExecutor(max_workers=8, thread_name_prefix="payment-sdk")
+
+
+async def run_in_sdk_pool(fn: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Any:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_SDK_EXECUTOR, functools.partial(fn, *args, **kwargs))
+
+
+def header_value(headers: Mapping[str, str], name: str) -> str:
+    """大小写无关取头(Starlette 传小写,SDK 兼容两种)。"""
+    lowered = name.lower()
+    for k, v in headers.items():
+        if k.lower() == lowered:
+            return v
+    return ""
+
+
+def assert_callback_fresh(ts: datetime | None, *, key: str) -> None:
+    """回调时间戳须在 ±CALLBACK_FRESHNESS_SECONDS 内;缺失/不可解析同拒。"""
+    if ts is None or abs((now_utc_() - ts).total_seconds()) > CALLBACK_FRESHNESS_SECONDS:
+        raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key=key)
+
+
+def now_utc_() -> datetime:
+    from app.core.timeutil import now_utc
+
+    return now_utc()
 
 
 class QueryResult:
@@ -160,15 +205,15 @@ class WechatChannel:
             notify_url=f"{get_settings().public_base_url}/api/v1/webhooks/wechatpay",
             public_key=cfg["wechat_public_key"],
             public_key_id=cfg["wechat_public_key_id"],
+            timeout=SDK_TIMEOUT,
         )
         self._mchid = cfg["wechat_mchid"]
         self._appid = cfg["wechat_appid"]
+        self._public_key_id = cfg["wechat_public_key_id"]
 
     async def create_payment(self, order: "Order") -> str:  # pragma: no cover - 需真实商户凭据
-        import asyncio
-
         # time_expire:渠道侧与本地 expires_at 同步过期(RFC3339)
-        code, message = await asyncio.to_thread(
+        code, message = await run_in_sdk_pool(
             self._wxpay.pay,
             description=f"SuperDL 充值 {order.order_no}",
             out_trade_no=order.order_no,
@@ -186,12 +231,20 @@ class WechatChannel:
         return json.loads(message)["code_url"]
 
     async def parse_callback(self, headers: dict[str, str], body: bytes) -> CallbackResult:
-        """验签 + AES-GCM 解密 + 核对商户身份。SDK 的裸 Exception 在此归一化。"""
-        import asyncio
-        from typing import Any
-
+        """验签 + AES-GCM 解密 + 核对商户身份。SDK 的裸 Exception 在此归一化。
+        进 SDK 前先核对 Wechatpay-Serial == 公钥 ID(否则 SDK 会去微信拉平台证书,未验签的外部请求
+        不许触发出网)与时间戳新鲜度。"""
+        if header_value(headers, "Wechatpay-Serial") != self._public_key_id:
+            raise AppError(
+                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackVerifyFailed"
+            )
         try:
-            result: Any = await asyncio.to_thread(self._wxpay.callback, headers, body)
+            ts = datetime.fromtimestamp(int(header_value(headers, "Wechatpay-Timestamp")), UTC)
+        except (ValueError, OverflowError, OSError):
+            ts = None
+        assert_callback_fresh(ts, key="billing.wechatCallbackVerifyFailed")
+        try:
+            result: Any = await run_in_sdk_pool(self._wxpay.callback, headers, body)
         except AppError:
             raise
         except Exception as exc:
@@ -236,10 +289,9 @@ class WechatChannel:
         )
 
     async def query_order(self, order: "Order") -> QueryResult:  # pragma: no cover - 需真实商户
-        import asyncio
         import json
 
-        code, message = await asyncio.to_thread(self._wxpay.query, out_trade_no=order.order_no)
+        code, message = await run_in_sdk_pool(self._wxpay.query, out_trade_no=order.order_no)
         if code != 200:
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR,
@@ -288,6 +340,7 @@ class AlipayChannel:
         client_cfg.app_id = cfg["alipay_app_id"]
         client_cfg.app_private_key = cfg["alipay_private_key"]
         client_cfg.alipay_public_key = cfg["alipay_public_key"]
+        client_cfg.timeout = SDK_TIMEOUT_SECONDS
         self._client = DefaultAlipayClient(alipay_client_config=client_cfg)
         self._public_key = cfg["alipay_public_key"]
         self._app_id = cfg["alipay_app_id"]
@@ -298,7 +351,6 @@ class AlipayChannel:
         self._notify_url = f"{get_settings().public_base_url}/api/v1/webhooks/alipay"
 
     async def create_payment(self, order: "Order") -> str:  # pragma: no cover - 需真实商户凭据
-        import asyncio
         import json
 
         from alipay.aop.api.domain.AlipayTradePrecreateModel import (  # type: ignore[import-untyped]
@@ -320,7 +372,7 @@ class AlipayChannel:
         req = AlipayTradePrecreateRequest(biz_model=model)
         req.notify_url = self._notify_url
         try:
-            resp = json.loads(await asyncio.to_thread(self._client.execute, req))
+            resp = json.loads(await run_in_sdk_pool(self._client.execute, req))
         except Exception as exc:
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR,
@@ -367,15 +419,36 @@ class AlipayChannel:
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCallbackMerchantMismatch"
             )
+        # notify_time 为北京时间 yyyy-MM-dd HH:mm:ss
+        try:
+            ts: datetime | None = datetime.strptime(
+                params.get("notify_time", ""), "%Y-%m-%d %H:%M:%S"
+            ).replace(tzinfo=timezone(timedelta(hours=8)))
+        except ValueError:
+            ts = None
+        assert_callback_fresh(ts, key="billing.alipayCallbackVerifyFailed")
+        # 部分退款通知:trade_status 仍是 TRADE_SUCCESS,退款额在 refund_fee(gmt_refund 同批出现)
+        refund_amount: Decimal | None = None
+        refund_fee = params.get("refund_fee", "")
+        if refund_fee:
+            try:
+                refund_amount = Decimal(refund_fee)
+            except InvalidOperation as exc:
+                raise AppError(
+                    ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCallbackVerifyFailed"
+                ) from exc
+            if refund_amount <= 0:
+                refund_amount = None
         return CallbackResult(
             order_no=params.get("out_trade_no", ""),
             channel_txn_id=params.get("trade_no", ""),
             amount=Decimal(params.get("total_amount", "0")),
-            success=params.get("trade_status") in ("TRADE_SUCCESS", "TRADE_FINISHED"),
+            success=refund_amount is None
+            and params.get("trade_status") in ("TRADE_SUCCESS", "TRADE_FINISHED"),
+            refund_amount=refund_amount,
         )
 
     async def query_order(self, order: "Order") -> QueryResult:  # pragma: no cover - 需真实商户
-        import asyncio
         import json
 
         from alipay.aop.api.domain.AlipayTradeQueryModel import (  # type: ignore[import-untyped]
@@ -389,7 +462,7 @@ class AlipayChannel:
         model.out_trade_no = order.order_no
         req = AlipayTradeQueryRequest(biz_model=model)
         try:
-            resp = json.loads(await asyncio.to_thread(self._client.execute, req))
+            resp = json.loads(await run_in_sdk_pool(self._client.execute, req))
         except Exception as exc:
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR,
@@ -438,7 +511,7 @@ async def get_channel(name: str, session: AsyncSession) -> PaymentChannel:
     if cached is not None and cached[0] == fingerprint:
         return cached[1]
     # 构造函数同步解析 PEM,出让事件循环
-    channel: PaymentChannel = await asyncio.to_thread(
+    channel: PaymentChannel = await run_in_sdk_pool(
         WechatChannel if name == "wechat" else AlipayChannel, cfg
     )
     _real_channel_cache[name] = (fingerprint, channel)

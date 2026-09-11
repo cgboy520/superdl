@@ -6,20 +6,21 @@
 
 from datetime import datetime, timedelta
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
-from app.core.metrics import PATROL_FAILED_TOTAL
+from app.core.metrics import PATROL_FAILED_TOTAL, WALLET_NEGATIVE_COUNT, WALLET_NEGATIVE_SUM
 from app.core.money import as_amount, hourly_cost, money_str
 from app.core.policies import get_effective_policies
 from app.core.pricing import MARKET_SUBSCRIPTION
 from app.core.timeutil import hour_floor, now_utc
 from app.modules.account import service as account_service
 from app.modules.billing import wallet
-from app.modules.billing.models import BillHourly
+from app.modules.billing.models import BillHourly, Wallet
 from app.modules.billing.settlement import (
     bill_amount,
     get_watermark,
@@ -46,9 +47,24 @@ async def balance_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]
         await _patrol_running(sm, counts)
         await _patrol_frozen_and_arrears_stopped(sm, counts)
         await _patrol_disks(sm, counts)
+        await _refresh_negative_balance_gauges(sm)
     # 无条件打 done:counts 全 0 也留完成痕迹
     logger.info("balance_patrol_done", **counts)
     return counts
+
+
+async def _refresh_negative_balance_gauges(sm: async_sessionmaker[AsyncSession]) -> None:
+    """透支敞口进指标(结算允许透支,巡检 5 分钟才停机;敞口要看得见)。"""
+    async with sm() as session:
+        count, total = (
+            await session.execute(
+                select(func.count(), func.coalesce(func.sum(-Wallet.balance), 0)).where(
+                    Wallet.balance < 0
+                )
+            )
+        ).one()
+    WALLET_NEGATIVE_COUNT.set(int(count))
+    WALLET_NEGATIVE_SUM.set(float(total))
 
 
 async def _patrol_frozen_tenants(
@@ -129,13 +145,18 @@ async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str
                 for inst in instances:
                     unsettled += await _unsettled_burn(session, inst, now, settled_through)
                 effective = as_amount(available - unsettled)
+                fresh_instances: list[Any] = []
                 if effective <= 0:
+                    # 锁序 instance → wallet,与结算(instance → bill → wallet)同向,避免 ABBA 死锁;
                     # 锁内二次读(credit 与本锁互斥),同样走可用口径
+                    for inst in sorted(instances, key=lambda i: i.id):
+                        fresh = await orchestrator_service.lock_instance(session, inst.id)
+                        if fresh is not None:
+                            fresh_instances.append(fresh)
                     locked = await wallet.lock_wallet(session, user_id)
                     effective = as_amount(wallet.available_of(locked) - unsettled)
                 if effective <= 0:
-                    for inst in instances:
-                        fresh = await orchestrator_service.get_instance(session, user_id, inst.uuid)
+                    for fresh in fresh_instances:
                         if fresh.status == orchestrator_service.RUNNING:
                             await orchestrator_service.system_stop(
                                 session, fresh, reason="arrears_stop"

@@ -37,6 +37,7 @@ from app.core.timeutil import (
 from app.modules.billing import wallet
 from app.modules.billing.models import BillHourly, SettlementGap, SettlementWatermark
 from app.modules.billing.schemas import AdminSettlementGapOut
+from app.modules.orchestrator import service as orchestrator_service
 
 logger = get_logger(__name__)
 
@@ -478,15 +479,22 @@ async def _catchup_settle(
         async with sm() as session:
             watermark = await get_watermark(session, kind)
         if watermark is None:
-            # 无水位线(首次部署 / 水位线行丢失):只结最近窗口并登记 watermark_missing 缺口
-            logger.warning(
-                f"{kind}_watermark_missing",
-                hint="无结算水位线:首次部署属正常引导;若非首次部署则水位线已丢失,"
-                "只结最近窗口,更早窗口需人工核查补结",
-            )
-            await _record_gaps(
-                sm, kind=kind, windows=[target_start], object_id=0, reason="watermark_missing"
-            )
+            # 无水位线:首次部署(窗口前没有任何可计费对象)只引导不登记缺口;
+            # 有历史却无水位线 = 水位线行丢失,只结最近窗口并登记 watermark_missing 缺口
+            async with sm() as session:
+                has_history = await orchestrator_service.billing_history_exists_before(
+                    session, kind, target_start
+                )
+            if has_history:
+                logger.warning(
+                    f"{kind}_watermark_missing",
+                    hint="无结算水位线但存在历史对象:水位线已丢失,只结最近窗口,更早窗口需人工核查补结",
+                )
+                await _record_gaps(
+                    sm, kind=kind, windows=[target_start], object_id=0, reason="watermark_missing"
+                )
+            else:
+                logger.info(f"{kind}_watermark_bootstrap", window_start=target_start.isoformat())
         first_start = target_start if watermark is None else floor_fn(watermark) + step
         floor_start = target_start - (max_catchup - 1) * step
         if first_start < floor_start:

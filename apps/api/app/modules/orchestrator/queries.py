@@ -48,6 +48,15 @@ async def billing_events_before(
     )
 
 
+async def billing_history_exists_before(session: AsyncSession, kind: str, before: Any) -> bool:
+    """结算引导判据:窗口起点之前是否存在过可计费对象(hourly 看实例事件,daily_disk 看数据盘)。"""
+    if kind == "daily_disk":
+        stmt = select(DataDisk.id).where(DataDisk.created_at < before).limit(1)
+    else:
+        stmt = select(InstanceEvent.id).where(InstanceEvent.created_at < before).limit(1)
+    return (await session.execute(stmt)).first() is not None
+
+
 async def billing_candidates(
     session: AsyncSession, window_start: Any, window_end: Any
 ) -> list[tuple[int, int, Any, int]]:
@@ -146,6 +155,14 @@ async def billable_disks_of_user(session: AsyncSession, user_id: int) -> list[Da
         .scalars()
         .all()
     )
+
+
+async def count_instances_by_status(session: AsyncSession) -> dict[str, int]:
+    """各状态实例数(GROUP BY,一条 SQL,不物化行)。"""
+    rows = (
+        await session.execute(select(Instance.status, func.count()).group_by(Instance.status))
+    ).all()
+    return {str(status): int(n) for status, n in rows}
 
 
 async def list_instances_by_status(session: AsyncSession, status: str) -> list[Instance]:

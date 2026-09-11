@@ -24,7 +24,7 @@ from app.core.pagination import Page, paginate_by_id
 from app.core.sqlutil import next_daily_seq
 from app.core.timeutil import now_utc
 from app.modules.billing import invoices, wallet
-from app.modules.billing.models import InvoiceRequest, Order, RefundRequest
+from app.modules.billing.models import InvoiceRequest, Order, RefundRequest, reversal_blocks_refund
 from app.modules.billing.schemas import AdminRefundOut, RefundOut
 
 logger = get_logger(__name__)
@@ -122,8 +122,8 @@ async def create_refund(
         raise AppError(ErrorCode.ORDER_NOT_FOUND, key="billing.orderNotFound", http_status=404)
     if order.status != "paid":
         raise conflict(key="billing.refundOrderNotPaid")
-    # 渠道冲正后禁止平台侧二次退款出金
-    if order.channel_reversed_at is not None:
+    # 渠道冲正(待处置/已坐实)后禁止平台侧二次退款出金;人工 release 的恢复资格
+    if reversal_blocks_refund(order):
         raise conflict(key="billing.refundChannelReversed")
     if await _order_has_issued_invoice(session, order, lock=True):
         raise conflict(key="billing.refundInvoiceIssued")
@@ -354,7 +354,7 @@ async def payout_refund(
     order = (
         await session.execute(select(Order).where(Order.order_no == req.order_no))
     ).scalar_one_or_none()
-    if order is not None and order.channel_reversed_at is not None:
+    if order is not None and reversal_blocks_refund(order):
         raise conflict(key="billing.refundChannelReversed")
     # 原路退回:打款渠道须与订单支付渠道同源;offline 是唯一例外;mock 不映射,放行
     if order is not None:

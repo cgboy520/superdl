@@ -1198,3 +1198,59 @@ class TestConvertToSubscription:
         )
         assert resp.status_code == 409
         assert resp.json()["message_key"] == "billing.settlementBehind"
+
+
+class TestUnstartedPrepay:
+    async def test_schedule_timeout_refunds_prepay(self, client, sm, fake):
+        """挂了说明:包周期实例从未跑起来(调度超时 failed),预付被吞、通知还说「未产生任何费用」。"""
+        from app.core.config import get_settings
+        from app.modules.billing.models import BalanceLedger, Subscription
+        from app.modules.notify.models import Notification
+
+        headers, user_id, key_id = await create_user_with_key(client, "13911100099")
+        await fund_wallet(sm, user_id, "5000.00")
+        sku_id = await create_test_sku(sm)
+        await seed_node_spec(sm, node_name="node-timeout")
+        code, data = await buy_subscription(client, headers, sku_id, key_id)
+        assert code == 202, data
+        await drain(sm)
+        async with sm() as s:
+            paid = (
+                await s.execute(select(Subscription).where(Subscription.user_id == user_id))
+            ).scalar_one()
+            amount_paid = paid.amount_paid
+            assert await wallet.get_balance(s, user_id) == Decimal("5000.00") - amount_paid
+        settings = get_settings()
+        saved = settings.creating_timeout_seconds
+        settings.creating_timeout_seconds = 0
+        try:
+            await reconcile_once(sm)  # Pod 从未 ready → schedule_timeout → failed
+        finally:
+            settings.creating_timeout_seconds = saved
+        async with sm() as s:
+            inst = (
+                await s.execute(select(Instance).where(Instance.uuid == data["uuid"]))
+            ).scalar_one()
+            assert inst.status == "failed"
+            assert await wallet.get_balance(s, user_id) == Decimal("5000.00")
+            sub = (
+                await s.execute(select(Subscription).where(Subscription.user_id == user_id))
+            ).scalar_one()
+            assert sub.status == "cancelled"
+            refund = (
+                await s.execute(
+                    select(BalanceLedger).where(
+                        BalanceLedger.user_id == user_id, BalanceLedger.type == "refund"
+                    )
+                )
+            ).scalar_one()
+            assert refund.amount == amount_paid and refund.ref_type == "subscription"
+            note = (
+                await s.execute(
+                    select(Notification).where(
+                        Notification.user_id == user_id,
+                        Notification.dedup_key == f"schedule_timeout:{inst.id}",
+                    )
+                )
+            ).scalar_one()
+            assert "退回" in note.content and "未产生任何费用" not in note.content

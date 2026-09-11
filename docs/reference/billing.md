@@ -123,7 +123,7 @@ frozen 到期回收那一支不过滤,回收由余额巡检统一做。创建路
 
 ### 预付语义的三条硬规矩
 
-- 中途释放不退款。实例进入 `releasing` 时由计费边监听器把 active 订阅转 `cancelled`,不生成退款流水;确需退款走人工 `refund_requests`(见 [payment.md](./payment.md))。挂在迁移监听器上,覆盖用户释放、欠费回收、到期回收、管理端强制回收四条路径。已 `expired` 的历史行不动。
+- 中途释放不退款。实例进入 `releasing` 时由计费边监听器把 active 订阅转 `cancelled`,不生成退款流水;确需退款走人工 `refund_requests`(见 [payment.md](./payment.md))。挂在迁移监听器上,覆盖用户释放、欠费回收、到期回收、管理端强制回收四条路径。已 `expired` 的历史行不动。**唯一例外:从未运行即 failed**(首次 creating 调度超时,reconciler `schedule_timeout`)——同事务作废 active 订阅并把 `amount_paid` 原额退回余额(ledger type=refund / ref_type=subscription,`subscriptions.refund_unstarted`),通知写明退回金额。
 - 到期不自动转按量,到期即停机。
 - 余额为零不停机:停机判据、燃烧率、冻结与解冻四处都排除(见上表)。
 
@@ -133,6 +133,10 @@ frozen 到期回收那一支不过滤,回收由余额巡检统一做。创建路
 - 营收报表与日终资金核对各加包周期一条腿(见「规则与不变量」),切窗用 `subscriptions.created_at`。管理端总览另有 `subscriptions_active`(在保订阅数),见 [admin.md](./admin.md)。
 - 数据盘不在包周期覆盖范围内:仍按日出 `bills_daily_disk`,余额为 0 时照走数据盘欠费链。
 - 未到期的包周期实例即使已停机也仍占软准入库存,见 [orchestrator.md](./orchestrator.md)。
+
+### 结算引导
+
+无水位线时先看窗口起点之前有没有可计费对象(hourly 看 `instance_events`,daily_disk 看 `data_disks`,`orchestrator_service.billing_history_exists_before`):没有 = 首次部署,只建水位线不登记缺口;有 = 水位线行丢失,只结最近窗口并登记 `watermark_missing` 缺口。
 
 ## 竞价(spot)
 
@@ -146,7 +150,7 @@ frozen 到期回收那一支不过滤,回收由余额巡检统一做。创建路
 
 ### 转按量:一小时一价
 
-`POST /api/v1/instances/{uuid}/to-on-demand` 把 `market` 翻成 `on_demand`、单价还原成 `spec.base_price_hourly`(不从折后价反推)。`bills_hourly` 一小时只有一行、一个 `unit_price`,口径是「一小时一价,以结算时的实例单价为准」:转换把当前整点小时整体改按按量价。`settlement.reprice_current_hour` 在钱包行锁内 `FOR UPDATE` 取当前小时那一行:
+`POST /api/v1/instances/{uuid}/to-on-demand` 把 `market` 翻成 `on_demand`、单价还原成 `spec.base_price_hourly`(不从折后价反推)。翻价前先 `settle_on_demand_up_to` 用竞价价把滞后未结的整点小时结清(与转包周期同一口径,48h 滞后熔断同款),只有当前小时改按量价。`bills_hourly` 一小时只有一行、一个 `unit_price`,口径是「一小时一价,以结算时的实例单价为准」:转换把当前整点小时整体改按按量价。`settlement.reprice_current_hour` 在钱包行锁内 `FOR UPDATE` 取当前小时那一行:
 
 - 这一行不存在(常见路径):什么都不做,之后的整点结算按新单价出账;
 - 已出过账且新价更高:按新单价重算 `amount`、改写 `unit_price`、补扣差价、`detail` 打 `repriced`;三件事一起做。

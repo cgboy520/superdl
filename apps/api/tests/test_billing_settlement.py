@@ -487,6 +487,16 @@ class TestCatchUpSettlement:
         # 4 个整点 × 1.68
         assert w.balance == Decimal("100.00") - Decimal("1.68") * 4
 
+    async def test_first_deploy_without_history_records_no_gap(self, sm):
+        """挂了说明:全新部署首轮结算就登记 watermark_missing 缺口,SettlementGapUnresolved 误报。"""
+        from app.modules.billing.models import SettlementGap
+        from app.modules.billing.settlement import get_watermark
+
+        await settle_due_hours(sm, at=H_END + timedelta(minutes=2))
+        async with sm() as session:
+            assert (await session.execute(select(SettlementGap))).scalars().all() == []
+            assert await get_watermark(session, "hourly") == H  # 水位线照常建立
+
     async def test_watermark_missing_records_gap(self, sm):
         """无水位线时登记 settlement_gaps(watermark_missing)。"""
         from app.modules.billing.models import SettlementGap

@@ -4,6 +4,7 @@ import base64
 import json
 import time
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from urllib.parse import urlencode
 
 import pytest
@@ -115,6 +116,27 @@ class TestAlipayCallbackSignature:
             {}, _alipay_notify(priv, trade_status="TRADE_CLOSED")
         )
         assert result.success is False
+
+    async def test_partial_refund_is_a_reversal(self, keypair):
+        """挂了说明:部分退款通知(trade_status 仍 TRADE_SUCCESS,refund_fee 有值)被当成功回调放过。"""
+        priv, _pub = keypair
+        result = await _alipay_channel(keypair).parse_callback(
+            {}, _alipay_notify(priv, refund_fee="30.00", gmt_refund="2026-08-19 12:00:00")
+        )
+        assert result.success is False
+        assert result.refund_amount == Decimal("30.00")
+
+    async def test_stale_notify_time_rejected(self, keypair):
+        """挂了说明:回调没有新鲜度窗口,截获的通知可无限期重放。"""
+        priv, _pub = keypair
+        stale = (datetime.now(UTC) + timedelta(hours=8) - timedelta(hours=2)).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        with pytest.raises(AppError) as exc:
+            await _alipay_channel(keypair).parse_callback(
+                {}, _alipay_notify(priv, notify_time=stale)
+            )
+        assert exc.value.message_key == "billing.alipayCallbackVerifyFailed"
 
     async def test_blank_value_param_still_verifies(self, keypair):
         """通知里带空字段(如 body=)不误判验签失败。"""
@@ -268,6 +290,26 @@ class TestWechatCallbackSignature:
         with pytest.raises(AppError) as exc:
             await _wechat_channel(keypair).parse_callback(headers, body)
         assert exc.value.message_key == "billing.wechatCallbackMerchantMismatch"
+
+    async def test_unknown_serial_never_reaches_sdk(self, keypair, monkeypatch):
+        """挂了说明:陌生 Wechatpay-Serial 会让 SDK 去微信拉平台证书,未验签的外部请求触发出网。"""
+        priv, _pub = keypair
+        channel = _wechat_channel(keypair)
+        called = []
+        monkeypatch.setattr(channel._wxpay, "callback", lambda *a, **k: called.append(1))
+        headers, body = _wechat_notify(priv, _wx_resource())
+        headers["Wechatpay-Serial"] = "ABCDEF0123456789ABCDEF0123456789ABCDEF99"
+        with pytest.raises(AppError):
+            await channel.parse_callback(headers, body)
+        assert called == []
+
+    async def test_stale_timestamp_rejected(self, keypair):
+        """挂了说明:回调没有新鲜度窗口,截获的通知可无限期重放。"""
+        priv, _pub = keypair
+        headers, body = _wechat_notify(priv, _wx_resource())
+        headers["Wechatpay-Timestamp"] = str(int(time.time()) - 3600)
+        with pytest.raises(AppError):
+            await _wechat_channel(keypair).parse_callback(headers, body)
 
     async def test_lowercase_header_names_accepted(self, keypair):
         """头字段读取大小写不敏感。"""

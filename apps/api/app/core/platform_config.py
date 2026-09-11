@@ -16,6 +16,7 @@ from app.core import crypto
 from app.core.config import get_settings
 from app.core.db import Base
 from app.core.logging import get_logger
+from app.core.metrics import PLATFORM_CONFIG_WRITE_TOTAL
 from app.core.registry import effective_image_allowlist
 
 logger = get_logger(__name__)
@@ -512,6 +513,7 @@ async def set_platform_settings(
     for key, raw in updates.items():
         if key not in SETTING_SPECS:
             raise ValueError(f"未知配置键:{key}")
+        PLATFORM_CONFIG_WRITE_TOTAL.labels(domain=SETTING_SPECS[key].group).inc()
         if raw.strip() == "":
             # 清除 = 回落 env 层,prod_forbidden 守卫同样覆盖清除路径
             spec = SETTING_SPECS[key]

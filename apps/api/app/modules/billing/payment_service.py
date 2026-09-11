@@ -163,7 +163,16 @@ async def handle_callback(session: AsyncSession, channel_name: str, result: Call
     if order is None:
         raise not_found("订单不存在")
     if order.status == "paid":
-        if not result.success and order.channel_reversed_at is None:
+        if not result.success and order.channel_reversed_at is not None:
+            # 同一冲正的重放(含人工处置之后):不再冻结,只留痕 + 计数(PaymentChannelReversed 告警)
+            logger.error(
+                "channel_reversal_replayed",
+                order_no=order.order_no,
+                channel=channel_name,
+                resolved_action=order.channel_reversal_action,
+            )
+            PAYMENT_CHANNEL_REVERSED_TOTAL.inc()
+        elif not result.success:
             # 渠道侧对已入账订单的关单/退款通知:不自动冲账,等额冻结钱包;解冻/扣回走管理端
             # /finance/reversals/{order_no}/resolve。幂等:只对首次置标的那一次冻结
             order.channel_reversed_at = now_utc()
@@ -181,6 +190,7 @@ async def handle_callback(session: AsyncSession, channel_name: str, result: Call
                 channel=channel_name,
                 channel_txn_id=result.channel_txn_id,
                 frozen=str(order.amount),
+                refund_amount=str(result.refund_amount) if result.refund_amount else None,
             )
             PAYMENT_CHANNEL_REVERSED_TOTAL.inc()
         return "ok"  # 重放
@@ -452,7 +462,10 @@ async def list_payment_anomalies(session: AsyncSession) -> list[dict]:
     reversed_recent = (
         await session.execute(
             select(Order)
-            .where(Order.channel_reversed_at > now - timedelta(hours=48))
+            .where(
+                Order.channel_reversed_at > now - timedelta(hours=48),
+                Order.channel_reversal_resolved_at.is_(None),
+            )
             .order_by(Order.id.desc())
             .limit(100)
         )

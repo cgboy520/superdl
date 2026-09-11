@@ -8,7 +8,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.timeutil import now_utc
-from app.modules.billing.models import BalanceLedger, Order
+from app.modules.billing.models import BalanceLedger, Order, Wallet
 from app.modules.billing.payment_service import close_expired_orders
 from tests.helpers import admin_headers, create_order, pay_mock, user_headers
 
@@ -163,6 +163,58 @@ class TestRecharge:
             a["kind"] == "channel_reversed" and a["order_no"] == order["order_no"]
             for a in anomalies
         )
+
+    async def test_reversal_release_then_replay_does_not_refreeze(self, client: AsyncClient, sm):
+        """挂了说明:财务 release 解冻后,重放同一条渠道反向通知又把钱包冻住(反复可用)。"""
+        headers = await user_headers(client, "13700000046")
+        order = await create_order(client, headers, "20.00")
+        assert (await pay_mock(client, order["order_no"], "20.00")).status_code == 200
+        reversal = {"order_no": order["order_no"], "amount": "20.00", "success": False}
+        assert (await client.post("/api/v1/webhooks/mock", json=reversal)).status_code == 200
+
+        async def frozen_of(user_id: int) -> Decimal:
+            async with sm() as session:
+                return (
+                    await session.execute(select(Wallet.frozen).where(Wallet.user_id == user_id))
+                ).scalar_one()
+
+        async with sm() as session:
+            uid = (
+                await session.execute(
+                    select(Order.user_id).where(Order.order_no == order["order_no"])
+                )
+            ).scalar_one()
+        assert await frozen_of(uid) == Decimal("20.00")
+        ah = await admin_headers(sm, client, role="finance")
+        resp = await client.post(
+            f"/api/admin/v1/finance/reversals/{order['order_no']}/resolve",
+            json={"action": "release", "reason": "渠道误报"},
+            headers=ah,
+        )
+        assert resp.status_code == 200, resp.text
+        # 同一通知重放:不再冻结,订单也不回到待处置桶
+        assert (await client.post("/api/v1/webhooks/mock", json=reversal)).status_code == 200
+        assert await frozen_of(uid) == Decimal("0.00")
+        w = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert w["balance"] == "20.00"
+        async with sm() as session:
+            row = (
+                await session.execute(select(Order).where(Order.order_no == order["order_no"]))
+            ).scalar_one()
+            assert row.channel_reversed_at is not None
+            assert row.channel_reversal_action == "release"
+        anomalies = (await client.get("/api/admin/v1/finance/anomalies", headers=ah)).json()
+        assert not any(
+            a["kind"] == "channel_reversed" and a["order_no"] == order["order_no"]
+            for a in anomalies
+        )
+        # 二次核销 409(已处置)
+        resp = await client.post(
+            f"/api/admin/v1/finance/reversals/{order['order_no']}/resolve",
+            json={"action": "chargeback", "reason": "重复核销:应被拒"},
+            headers=ah,
+        )
+        assert resp.status_code == 409
 
     async def test_amount_bounds_rejected_at_contract_layer(self, client: AsyncClient):
         """充值金额低于下限、超大(1e30)、负数一律 422。"""

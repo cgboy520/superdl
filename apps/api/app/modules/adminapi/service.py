@@ -14,6 +14,7 @@ from app.core.metrics import (
     ADMIN_PRIVILEGE_CHANGE_TOTAL,
     AUTHZ_DENIED_TOTAL,
     LOGIN_FAILED_TOTAL,
+    PAYMENT_REVERSAL_RESOLVED_TOTAL,
 )
 from app.core.money import money_str
 from app.core.pagination import Page
@@ -696,9 +697,10 @@ async def resolve_reversal(
 ) -> None:
     """核销渠道冲正(channel_reversed 分桶的唯一出口)。
 
-    - release:解冻等额冻结额,清标记(订单恢复退款资格);
-    - chargeback:解冻 + 等额扣减(ledger adjust,允许透支;订单标记保留)。
-    单操作人 + 同步审计。
+    - release:解冻等额冻结额,订单恢复退款资格;
+    - chargeback:解冻 + 等额扣减(ledger adjust,允许透支)。
+    两种都只写 resolved_at + action,不清 channel_reversed_at(同一通知重放不再二次冻结)。
+    单操作人 + 同步审计 + 计数(release 条条告警 PaymentReversalReleased)。
     """
     from app.modules.billing import service as billing_service
 
@@ -711,12 +713,12 @@ async def resolve_reversal(
     ).scalar_one_or_none()
     if order is None:
         raise not_found("订单不存在")
-    if order.channel_reversed_at is None:
+    if not billing_service.reversal_pending(order):
         raise conflict(key="adminapi.reversalNotPending")
     await billing_service.release_freeze(session, order.user_id, order.amount)
-    if action == "release":
-        order.channel_reversed_at = None
-    else:
+    order.channel_reversal_resolved_at = now_utc()
+    order.channel_reversal_action = action
+    if action != "release":
         await billing_service.debit(
             session,
             order.user_id,
@@ -730,6 +732,7 @@ async def resolve_reversal(
     if audit_writer is not None:
         await audit_writer(session)  # 与核销同事务
     await session.commit()
+    PAYMENT_REVERSAL_RESOLVED_TOTAL.labels(action=action).inc()
     logger.info(
         "reversal_resolved",
         order_no=order_no,

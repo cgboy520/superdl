@@ -12,6 +12,8 @@ from app.modules.billing.invoices import (
     reject_invoice,
 )
 from app.modules.billing.models import Order as Order
+from app.modules.billing.models import reversal_blocks_refund as reversal_blocks_refund
+from app.modules.billing.models import reversal_pending as reversal_pending
 from app.modules.billing.payment_service import (
     backfill_order,
     list_payment_anomalies,
@@ -51,6 +53,9 @@ from app.modules.billing.subscriptions import (
 )
 from app.modules.billing.subscriptions import (
     quote_of_row as quote_of_subscription_row,
+)
+from app.modules.billing.subscriptions import (
+    refund_unstarted as refund_unstarted_subscription,
 )
 from app.modules.billing.subscriptions import (
     renew as renew_subscription,
@@ -108,6 +113,7 @@ __all__ = [
     "lock_wallet",
     "payout_refund",
     "quote_of_subscription_row",
+    "refund_unstarted_subscription",
     "reject_invoice",
     "release_freeze",
     "renew_subscription",
@@ -116,6 +122,8 @@ __all__ = [
     "reserved_subscription_instance_ids",
     "resolve_gap",
     "revenue_summary",
+    "reversal_blocks_refund",
+    "reversal_pending",
     "review_refund",
     "set_subscription_auto_renew",
     "settle_disk_pending_days",

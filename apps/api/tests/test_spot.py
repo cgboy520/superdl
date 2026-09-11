@@ -387,6 +387,48 @@ class TestConvertToOnDemand:
         assert row.amount == bill_amount(base, 1, row.seconds_used)  # 行内自洽
         assert before - after == bill_amount(base, 1, 600) - bill_amount(spot_price, 1, 600)
 
+    async def test_lagged_hours_settle_at_spot_price_before_repricing(self, client, sm, fake):
+        """挂了说明:转按量前滞后未结的整点小时被按按量价补扣(应按当时的竞价价,与转包周期同口径)。"""
+        from app.modules.billing.models import SettlementWatermark
+
+        sku_id = await spot_sku(sm)
+        await seed_node_spec(sm, node_name="node-c4", pool_label="kata")
+        headers, uuid, _user_id = await running_spot(client, sm, fake, "13922200024", sku_id)
+        h0 = hour_floor(now_utc())
+        async with sm() as s:
+            inst = (await s.execute(select(Instance).where(Instance.uuid == uuid))).scalar_one()
+            instance_id, spot_price = inst.id, inst.price_hourly
+            # 整条事件流挪到 2 小时前,水位线停在 3 小时前:h0-2、h0-1 两个整点滞后未结
+            await s.execute(
+                update(InstanceEvent)
+                .where(InstanceEvent.instance_id == instance_id)
+                .values(created_at=InstanceEvent.created_at - timedelta(hours=2))
+            )
+            s.add(SettlementWatermark(key="hourly", settled_through=h0 - timedelta(hours=3)))
+            await s.commit()
+
+        assert (
+            await client.post(f"/api/v1/instances/{uuid}/to-on-demand", headers=headers)
+        ).status_code == 200
+
+        async with sm() as s:
+            rows = (
+                (
+                    await s.execute(
+                        select(BillHourly)
+                        .where(BillHourly.instance_id == instance_id)
+                        .order_by(BillHourly.hour_start)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        lagged = [r for r in rows if r.hour_start < h0]
+        assert [r.hour_start for r in lagged] == [h0 - timedelta(hours=2), h0 - timedelta(hours=1)]
+        # 两个滞后小时都按竞价价结;h0-2 从事件时刻起算(小时内部分秒),h0-1 整小时
+        assert all(r.unit_price == spot_price and r.seconds_used > 0 for r in lagged)
+        assert lagged[1].seconds_used == 3600
+
     async def test_on_demand_instance_refuses(self, client, sm, fake):
         """包周期实例不可转按量。"""
         headers, uuid, _, _, _ = await provision_subscription(client, sm, fake, "13922200023")

@@ -87,6 +87,12 @@ from app.modules.orchestrator.queries import (
     billing_events_before as billing_events_before,
 )
 from app.modules.orchestrator.queries import (
+    billing_history_exists_before as billing_history_exists_before,
+)
+from app.modules.orchestrator.queries import (
+    count_instances_by_status as count_instances_by_status,
+)
+from app.modules.orchestrator.queries import (
     deletion_leftover_counts as deletion_leftover_counts,
 )
 from app.modules.orchestrator.queries import (
@@ -1261,6 +1267,15 @@ async def convert_to_on_demand(session: AsyncSession, user_id: int, uuid: str) -
             http_status=http_status.HTTP_409_CONFLICT,
         )
     base = Decimal(str(instance.spec.get("base_price_hourly") or instance.price_hourly))
+    # 翻价前把滞后的整点小时先按竞价价结清(与转包周期同一口径),只有当前小时整体改按量价
+    await billing_service.settle_on_demand_up_to(
+        session,
+        instance_id=instance.id,
+        user_id=user_id,
+        unit_price=instance.price_hourly,
+        gpu_count=instance.gpu_count,
+        at=now_utc(),
+    )
     if instance.status == sm_def.RUNNING:
         await billing_service.reprice_current_hour(
             session,

@@ -1,6 +1,7 @@
 """密码哈希(bcrypt)与 JWT。用户端与管理端 audience 隔离,token 不可互用。"""
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from functools import cache
 from typing import Any, Literal
@@ -46,19 +47,21 @@ def verify_password_sync(plain: str, hashed: str) -> bool:
         return False
 
 
-# bcrypt 专属线程池,并发数取固定小上限
+# bcrypt 专属线程池(固定小上限),不与默认执行器共用:渠道 SDK 等阻塞调用打满默认池时登录不受牵连
 _BCRYPT_MAX_PARALLEL = 4
-_bcrypt_permits = asyncio.Semaphore(_BCRYPT_MAX_PARALLEL)
+_BCRYPT_EXECUTOR = ThreadPoolExecutor(max_workers=_BCRYPT_MAX_PARALLEL, thread_name_prefix="bcrypt")
 
 
 async def hash_password(plain: str) -> str:
-    async with _bcrypt_permits:
-        return await asyncio.to_thread(hash_password_sync, plain)
+    return await asyncio.get_running_loop().run_in_executor(
+        _BCRYPT_EXECUTOR, hash_password_sync, plain
+    )
 
 
 async def verify_password(plain: str, hashed: str) -> bool:
-    async with _bcrypt_permits:
-        return await asyncio.to_thread(verify_password_sync, plain, hashed)
+    return await asyncio.get_running_loop().run_in_executor(
+        _BCRYPT_EXECUTOR, verify_password_sync, plain, hashed
+    )
 
 
 def _audience(scope: TokenScope) -> str:

@@ -472,6 +472,42 @@ async def cancel_for_instance(session: AsyncSession, instance_id: int) -> None:
         row.status = STATUS_CANCELLED
 
 
+async def refund_unstarted(session: AsyncSession, instance_id: int, user_id: int) -> Decimal | None:
+    """实例从未运行即 failed(首次 creating 调度超时):作废 active 订阅并把预付原额退回余额
+    (ledger type=refund / ref_type=subscription)。不 commit。返回退回合计;无 active 行返回 None。"""
+    rows = (
+        (
+            await session.execute(
+                select(Subscription)
+                .where(
+                    Subscription.instance_id == instance_id,
+                    Subscription.status == STATUS_ACTIVE,
+                )
+                .with_for_update()
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not rows:
+        return None
+    total = Decimal("0.00")
+    for row in rows:
+        row.status = STATUS_CANCELLED
+        if row.amount_paid > 0:
+            await wallet.credit(
+                session,
+                user_id,
+                row.amount_paid,
+                type_="refund",
+                ref_type="subscription",
+                ref_id=str(row.id),
+                remark="实例调度超时未启动,包周期预付原额退回",
+            )
+            total += row.amount_paid
+    return total
+
+
 # ---------- 到期巡检 ----------
 
 

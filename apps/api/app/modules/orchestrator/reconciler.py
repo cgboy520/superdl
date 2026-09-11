@@ -12,6 +12,7 @@ stopping/releasing 悬挂两档:一档 outbox 重发删除,二档 force 强删�
 
 from collections.abc import Iterable
 from datetime import timedelta
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import and_, func, or_, select
@@ -29,8 +30,11 @@ from app.core.metrics import (
     RECONCILE_STUCK_INSTANCES,
     SSH_PORT_POOL,
 )
+from app.core.money import money_str
 from app.core.outbox import RUNNING_TIMEOUT, OutboxTask, enqueue
+from app.core.pricing import MARKET_SUBSCRIPTION
 from app.core.timeutil import ensure_utc, now_utc
+from app.modules.billing import service as billing_service
 from app.modules.notify import service as notify_service
 from app.modules.orchestrator import statemachine as sm_def
 from app.modules.orchestrator.disks import detach_for_instance
@@ -342,6 +346,12 @@ async def _reconcile_instances(
                         )
                         await free_port(session, instance.id)
                         await detach_for_instance(session, instance.id)
+                        # 包周期实例从未运行:预付同事务原额退回(中途释放不退款的规矩不适用于此)
+                        refunded: Decimal | None = None
+                        if first_boot and instance.market == MARKET_SUBSCRIPTION:
+                            refunded = await billing_service.refund_unstarted_subscription(
+                                session, instance.id, instance.user_id
+                            )
                         # 事务外删 Pod/Service/Ingress(404 容错);失败由泄漏回收兜底
                         ns, uuid = instance.k8s_namespace, instance.uuid
                         post_commit.append(
@@ -366,8 +376,12 @@ async def _reconcile_instances(
                             title="实例创建失败:调度超时",
                             content=(
                                 f"实例「{instance.name}」调度或镜像拉取超时,已自动终止,"
-                                "未产生任何费用。可换个档位重试,或稍后再试;"
-                                "多次失败请联系客服。"
+                                + (
+                                    f"包周期预付 {money_str(refunded)} 元已原额退回余额。"
+                                    if refunded
+                                    else "未产生任何费用。"
+                                )
+                                + "可换个档位重试,或稍后再试;多次失败请联系客服。"
                             ),
                             severity="warning",
                             dedup_key=f"schedule_timeout:{instance.id}",
