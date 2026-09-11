@@ -14,7 +14,7 @@ export interface ChipOption<T extends string | number> {
 }
 
 /** chip 行左侧标签栏宽度(BillingModeCard 数量选择器行同款对齐) */
-export const CHIP_LABEL_WIDTH = 72;
+export const CHIP_LABEL_WIDTH = 84;
 
 export function ChipRow<T extends string | number>({
   label,

@@ -298,12 +298,16 @@ export const cssVars = {
     "--sdl-color-primary": colorPrimary,
     "--sdl-color-bg": brand.pageBg,
     "--sdl-color-text": "rgba(0,0,0,0.88)",
+    "--sdl-color-text-secondary": "rgba(0,0,0,0.60)",
+    "--sdl-color-required": statusColors.red,
     "--sdl-scroll-thumb": "rgba(0,0,0,0.25)",
   },
   dark: {
     "--sdl-color-primary": webDarkColors.menuSelectedColor,
     "--sdl-color-bg": webDarkColors.bgBase,
     "--sdl-color-text": webDarkColors.text,
+    "--sdl-color-text-secondary": webDarkColors.textSecondary,
+    "--sdl-color-required": adminColors.negative,
     "--sdl-scroll-thumb": "rgba(255,255,255,0.25)",
   },
 } as const;

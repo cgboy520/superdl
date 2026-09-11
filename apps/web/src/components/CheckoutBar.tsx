@@ -21,6 +21,10 @@ export interface CheckoutItem {
   label: string;
   value: ReactNode;
   hint?: string;
+  /** 大字后的口径后缀(「× 2 卡」/「整机」),正文字号 */
+  suffix?: string;
+  /** 非金额项(到期时间等)降级为正文字号与默认文字色 */
+  muted?: boolean;
 }
 
 export function CheckoutBar({
@@ -31,6 +35,8 @@ export function CheckoutBar({
   balanceReady = true,
   actions,
   changeKey,
+  breakdown,
+  notice,
 }: {
   /** 左侧规格汇总(靛蓝底块) */
   summary?: ReactNode;
@@ -45,6 +51,10 @@ export function CheckoutBar({
   actions: ReactNode;
   /** 选中变更标识(如 规格id+计费方式):变化时数字淡入;不传则无动效 */
   changeKey?: string;
+  /** 摊开在条内第二行的明细(包周期「原价 / 优惠 / 应付」直接可见,不进 Popover) */
+  breakdown?: ReactNode;
+  /** 条上方的提示(未完成项清单 / 建盘失败告知),不随内容滚走 */
+  notice?: ReactNode;
 }) {
   const { token } = theme.useToken();
   const { t } = useTranslation();
@@ -64,11 +74,12 @@ export function CheckoutBar({
         borderRadius: `${token.borderRadiusLG}px ${token.borderRadiusLG}px 0 0`,
         padding: `${space.md}px ${space.xl}px`,
         display: "flex",
-        alignItems: "center",
-        gap: space.xl,
-        flexWrap: "wrap",
+        flexDirection: "column",
+        gap: space.sm,
       }}
     >
+      {notice}
+      <div style={{ display: "flex", alignItems: "center", gap: space.xl, flexWrap: "wrap" }}>
       {summary && (
         <div
           style={{
@@ -111,13 +122,20 @@ export function CheckoutBar({
                 animate={{ opacity: 1, y: 0 }}
                 transition={FADE_TRANSITION}
                 style={{
-                  display: "inline-block",
-                  fontSize: fontSize.pageTitle,
-                  fontWeight: fontWeight.semibold,
-                  color: colorPrimary,
+                  display: "inline-flex",
+                  alignItems: "baseline",
+                  gap: space.xs,
+                  fontSize: it.muted ? fontSize.body : fontSize.pageTitle,
+                  fontWeight: it.muted ? fontWeight.regular : fontWeight.semibold,
+                  color: it.muted ? token.colorText : colorPrimary,
                 }}
               >
                 {it.value}
+                {it.suffix && (
+                  <Typography.Text type="secondary" style={{ fontSize: fontSize.body }}>
+                    {it.suffix}
+                  </Typography.Text>
+                )}
               </motion.span>
             </AnimatePresence>
           </div>
@@ -145,6 +163,10 @@ export function CheckoutBar({
       >
         {actions}
       </Space>
+      </div>
+      {breakdown && (
+        <div style={{ borderTop: `1px dashed ${token.colorBorderSecondary}`, paddingTop: space.sm }}>{breakdown}</div>
+      )}
     </div>
   );
 }

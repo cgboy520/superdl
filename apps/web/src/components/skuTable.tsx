@@ -4,9 +4,11 @@ import type { SkuMarketOut } from "@superdl/api-client";
 import {
   BILLING_PERIODS,
   compareAmounts,
+  fontSize,
   isBillingPeriod,
   marketMap,
   MAX_PERIOD_COUNT,
+  mulPrice,
   periodMap,
   statusColors,
   type BillingPeriod,
@@ -22,7 +24,7 @@ import { skuVariant } from "@superdl/ui";
 
 import { TierTag } from "./common";
 import { discountOff, PeriodCountUnit, usePeriodDiscounts } from "./periodBilling";
-import { SpotOffLabel, SpotPriceInline, useSpotPolicy, type SpotPolicy } from "./spotBilling";
+import { SpotOffLabel, SpotPriceInline, spotPriceOf, useSpotPolicy, type SpotPolicy } from "./spotBilling";
 
 /** GPU / 显存列文案:共享档报算力份额,MIG 档报切分规格,其余整卡;CPU 档报「不带 GPU」。 */
 function formatSkuGpu(s: SkuMarketOut, t: TFunction<readonly ["web", "shared"]>): string {
@@ -41,35 +43,71 @@ function formatSkuGpu(s: SkuMarketOut, t: TFunction<readonly ["web", "shared"]>)
   return t("sku.gpuDedicated", { model: s.gpu_model, vram: s.vram_gb });
 }
 
-/** SKU 表列。availability=true 时插入「空闲 GPU」列(市场页用);priceFontSize 控制价格字号。 */
+/** SKU 表列。availability=true 时插入「可开实例」列(市场页用;needed>1 时库存不足所选卡数的行给「不足 N 卡」标);
+ *  priceFontSize 控制价格字号;units>1 时价格列副行给「× N 卡 = 总价」(价格口径显性化,ui-ux-spec §1 规则 5)。 */
 export function skuColumns(
   opts: {
     fmt: Formatters;
     t: TFunction<readonly ["web", "shared"]>;
     availability?: boolean;
     priceFontSize?: number;
-    /** CPU 规格表:价格是整机时价,表头不写「单卡」 */
+    /** CPU 规格表:价格是整机时价,表头写「整机」 */
     cpu?: boolean;
     /** 竞价档选中时传入:上了竞价的规格价格列显「原价划线 + 折后价」,没上的显原价并挂标。 */
     spot?: SpotPolicy;
+    /** 所选卡数(GPU 栏);>1 时价格列出总价副行,可开实例列按此判「不足」 */
+    units?: number;
   },
 ): NonNullable<ComponentProps<typeof Table<SkuMarketOut>>["columns"]> {
   const { t } = opts;
+  const units = opts.cpu ? 1 : Math.max(1, opts.units ?? 1);
   const availability = [
     {
       title: t("sku.colFree"),
-      width: 110,
+      width: 120,
       sorter: (a: SkuMarketOut, b: SkuMarketOut) => (a.available_count ?? 0) - (b.available_count ?? 0),
       render: (_: unknown, s: SkuMarketOut) => {
         const n = s.available_count ?? 0;
-        return n > 0 ? (
-          <span style={{ color: statusColors.green, fontWeight: 600 }}>{n}</span>
-        ) : (
-          <Tag>{opts.t("copy.outOfStock")}</Tag>
-        );
+        if (n === 0) return <Tag>{opts.t("copy.outOfStock")}</Tag>;
+        if (n < units) {
+          return (
+            <Tooltip title={t("copy.noStockForGpuCount")}>
+              <Tag color="orange">{t("sku.shortOfCards", { count: units })}</Tag>
+            </Tooltip>
+          );
+        }
+        return <span style={{ color: statusColors.green, fontWeight: 600 }}>{n}</span>;
       },
     },
   ];
+  const priceCell = (s: SkuMarketOut) => {
+    const unit = opts.spot && s.spot_enabled ? (
+      <SpotPriceInline baseHourly={s.price_hourly} units={1} policy={opts.spot} />
+    ) : (
+      opts.fmt.formatHourlyPrice(s.price_hourly)
+    );
+    return (
+      <Space orientation="vertical" size={0} align="end">
+        <Space size={6} align="baseline">
+          <span style={{ fontSize: opts.priceFontSize, fontWeight: 700 }}>{unit}</span>
+          {opts.spot && !s.spot_enabled && <Tag style={{ marginInlineEnd: 0 }}>{t("sku.spotUnavailable")}</Tag>}
+        </Space>
+        {units > 1 && (
+          <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+            {t("sku.priceTimesUnits", {
+              count: units,
+              total: opts.fmt.formatHourlyPrice(
+                mulPrice(
+                  opts.spot && s.spot_enabled ? (spotPriceOf(s.price_hourly, opts.spot) ?? s.price_hourly) : s.price_hourly,
+                  units,
+                ),
+              ),
+            })}
+          </Typography.Text>
+        )}
+      </Space>
+    );
+  };
   return [
     {
       title: t("sku.colSpec"),
@@ -111,29 +149,34 @@ export function skuColumns(
       fixed: "right" as const,
       align: "right" as const,
       // 竞价档一格放两个价,150 放不下
-      width: opts.spot ? 210 : 150,
+      width: opts.spot ? 210 : 160,
       // 金额比较用 BigInt 万分位,不过 Number
       sorter: (a: SkuMarketOut, b: SkuMarketOut) => compareAmounts(a.price_hourly, b.price_hourly),
-      render: (_: unknown, s: SkuMarketOut) =>
-        opts.spot && !s.spot_enabled ? (
-          <Space size={6} align="baseline">
-            <span style={{ fontSize: opts.priceFontSize, fontWeight: 700 }}>
-              {opts.fmt.formatHourlyPrice(s.price_hourly)}
-            </span>
-            <Tag style={{ marginInlineEnd: 0 }}>{t("sku.spotUnavailable")}</Tag>
-          </Space>
-        ) : (
-          <span style={{ fontSize: opts.priceFontSize, fontWeight: 700 }}>
-            {opts.spot ? (
-              <SpotPriceInline baseHourly={s.price_hourly} units={1} policy={opts.spot} />
-            ) : (
-              opts.fmt.formatHourlyPrice(s.price_hourly)
-            )}
-          </span>
-        ),
+      render: (_: unknown, s: SkuMarketOut) => priceCell(s),
     },
   ];
 }
+
+/** 行级可选判据:库存够所选卡数,且(竞价档下)该规格上了竞价。 */
+export function skuSelectable(s: SkuMarketOut, needed: number, spot: boolean): boolean {
+  return (s.available_count ?? 0) >= needed && (!spot || s.spot_enabled);
+}
+
+/** 不可选行的原因文案(tooltip / 空态用)。 */
+export function skuDisabledReason(
+  s: SkuMarketOut,
+  needed: number,
+  spot: boolean,
+  t: TFunction<readonly ["web", "shared"]>,
+): string | undefined {
+  if ((s.available_count ?? 0) === 0) return t("copy.outOfStock");
+  if ((s.available_count ?? 0) < needed) return t("copy.noStockForGpuCount");
+  if (spot && !s.spot_enabled) return t("sku.spotUnavailable");
+  return undefined;
+}
+
+/** 表格行 class:不可选行弱化(底色 + 次要文字色),不用 opacity(对比度纪律)。 */
+export const SKU_ROW_DISABLED_CLASS = "sku-row--disabled";
 
 /** 计费方式:按量 + 竞价 + 四个包周期,与档位正交;竞价与包周期互斥(market 单值),同行单选。 */
 export type BillingMode = "on_demand" | "spot" | BillingPeriod;
@@ -230,7 +273,17 @@ export function BillingModeCard({
             </Space>
           </div>
         )}
-        <Typography.Text type="secondary">{t("copy.periodPrepaid")}</Typography.Text>
+        {/* 与当前选择直接相关的一句说明(≤30 字);风险摘要贴在 chip 下方(ui-ux-spec §1 规则 6) */}
+        {isBillingPeriod(value) && (
+          <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+            {t("copy.periodPrepaid")}
+          </Typography.Text>
+        )}
+        {value === "spot" && spotPolicy && (
+          <Typography.Text type="warning" style={{ fontSize: fontSize.caption }}>
+            {t("copy.spotReclaimNotice", { seconds: spotPolicy.graceSeconds })}
+          </Typography.Text>
+        )}
       </Space>
     </Card>
   );

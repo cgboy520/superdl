@@ -1,4 +1,4 @@
-/** 竞价(spot)共用件:策略读取、折后时价、折扣角标与知情同意 modal;市场页 / 创建页 / 实例列表与详情共用。折扣与宽限窗一律从 `/policies` 读。 */
+/** 竞价(spot)共用件:策略读取、折后时价、折扣角标;市场页 / 创建页 / 实例列表与详情共用。知情同意在 ConsentGate。折扣与宽限窗一律从 `/policies` 读。 */
 
 import { fontSize, mulPrice, spotHourlyPrice } from "@superdl/ui";
 import { Space, Typography } from "antd";
@@ -7,7 +7,6 @@ import { useTranslation } from "react-i18next";
 
 import { usePolicies } from "../api/queries";
 import { useFormat } from "@superdl/ui";
-import { ConsentModal } from "./ConsentModal";
 
 export interface SpotPolicy {
   /** 竞价价占按量价的百分数(40 = 4 折) */
@@ -67,43 +66,5 @@ export function SpotOffLabel({ policy }: { policy: SpotPolicy | undefined }) {
     <Typography.Text type="secondary" style={{ marginInlineStart: 4 }}>
       {t("market.spotOff", { discount: formatSpotDiscount(policy.discountPct) })}
     </Typography.Text>
-  );
-}
-
-export function SpotConsentModal({
-  open,
-  policy,
-  loading,
-  confirmLabel,
-  onCancel,
-  onConfirm,
-}: {
-  open: boolean;
-  policy: SpotPolicy | undefined;
-  loading?: boolean;
-  /** 确认按钮文案由调用方给(创建页「继续创建」/ 部署页「继续部署」),与后续经济档同意弹窗动词一致 */
-  confirmLabel: string;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  const { t } = useTranslation();
-  if (!policy) return null;
-  return (
-    <ConsentModal
-      open={open}
-      title={t("create.spotModalTitle")}
-      lines={[
-        t("copy.spotConsent.c1", { pct: policy.discountPct }),
-        t("copy.spotConsent.c2"),
-        t("copy.spotConsent.c3", { seconds: policy.graceSeconds }),
-        t("copy.spotConsent.c4"),
-        t("copy.spotConsent.c5"),
-      ]}
-      agreeLabel={t("create.spotAgree")}
-      confirmLabel={confirmLabel}
-      loading={loading}
-      onCancel={onCancel}
-      onConfirm={onConfirm}
-    />
   );
 }

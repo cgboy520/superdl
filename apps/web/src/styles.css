@@ -114,6 +114,16 @@ body {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
 
+/* 规格表不可选行(库存不足 / 未上竞价):弱化底色 + 次要文字色,不用 opacity(对比度纪律) */
+.sku-row--disabled > td {
+  background: color-mix(in srgb, var(--sdl-color-text) 4%, transparent);
+  color: var(--sdl-color-text-secondary);
+}
+.sku-row--disabled > td .ant-typography,
+.sku-row--disabled > td .ant-tag {
+  color: var(--sdl-color-text-secondary);
+}
+
 /* 行内次级动作(改名铅笔):行 hover 或键盘聚焦时才出现 */
 .row-hover-only {
   opacity: 0;

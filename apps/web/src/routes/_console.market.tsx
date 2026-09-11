@@ -1,38 +1,37 @@
-/** 算力市场:GPU / CPU 分栏 + 筛选链 chips + 表格 radio 单选 + 底部结算条,数据行 = SKU。CTA 即库存,售罄行灰置不隐藏;未登录可看,CTA 变「登录后租用」。GPU 按「型号 / 档位 / 显存 / 卡数」筛,CPU 按「vCPU / 内存」筛且价格是整机时价。 */
+/** 算力市场:规格选择(SkuPicker full,筛选入 URL)在上 → 计费方式在下(可选项依赖已选规格)→ 底部结算条。CTA 即库存,不可选行灰置排末不隐藏;
+ *  未登录可看,CTA「登录后租用」带回完整筛选态。规格不支持所选计费方式时用 message 明示并切回按量,不让 chip 静默跳动。 */
 
+import type { SkuMarketOut } from "@superdl/api-client";
 import {
   billingUnits,
   fontSize,
-  GPU_COUNT_STEPS,
   isBillingPeriod,
   MAX_PERIOD_COUNT,
   mulPrice,
   periodMap,
+  POLL,
   skuTierMap,
   skuVariant,
+  space,
 } from "@superdl/ui";
-import type { SkuMarketOut } from "@superdl/api-client";
-import { TableErrorEmpty } from "@superdl/ui/components";
+import { PageHeader } from "@superdl/ui/components";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Alert, Button, Card, Modal, Segmented, Space, Table, Tooltip, Typography } from "antd";
+import { App, Button, Card, Modal, Space, Tooltip, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useFormat } from "@superdl/ui";
-import { dedupAvailableByModel } from "../lib/inventory";
 import { usePolicies, useSkus } from "../api/queries";
-import { ChipRow, type ChipOption } from "../components/ChipRow";
 import { CheckoutBar } from "../components/CheckoutBar";
+import { DEFAULT_SKU_FILTERS, SkuPicker, type SkuFilters } from "../components/create/SkuPicker";
 import { PeriodQuoteRows, periodQuoteOf, usePeriodDiscounts } from "../components/periodBilling";
-import { BillingModeCard, skuColumns, type BillingMode } from "../components/skuTable";
+import { BillingModeCard, type BillingMode } from "../components/skuTable";
 import { SpotOffLabel, SpotPriceInline, spotPriceOf, useSpotPolicy } from "../components/spotBilling";
 import { useIsLoggedIn } from "../stores/auth";
 
-const ALL = "";
-
 type Kind = "gpu" | "cpu";
 
-/** 市场页 URL 状态:10 个筛选/选中参数,默认值一律剥离(kind=gpu / mode=on_demand / chips 空档 / gpus=1 / count=1);非法值回默认。 */
+/** 市场页 URL 状态:筛选 / 选中 / 计费 10 个参数,默认值一律剥离(kind=gpu / mode=on_demand / chips 空档 / gpus=1 / count=1);非法值回默认。 */
 export interface MarketSearch {
   kind?: Kind;
   mode?: BillingMode;
@@ -90,91 +89,62 @@ export const Route = createFileRoute("/_console/market")({
   component: MarketPage,
 });
 
+/** URL 参数 → SkuPicker 筛选态(默认值补齐) */
+function filtersOf(s: MarketSearch): SkuFilters {
+  return {
+    kind: s.kind ?? "gpu",
+    model: s.model ?? DEFAULT_SKU_FILTERS.model,
+    tier: s.tier ?? DEFAULT_SKU_FILTERS.tier,
+    vram: s.vram ?? 0,
+    gpus: s.gpus ?? 1,
+    vcpu: s.vcpu ?? 0,
+    mem: s.mem ?? 0,
+  };
+}
+
+/** SkuPicker 筛选态 → URL 参数(默认值剥离) */
+function searchOfFilters(f: SkuFilters, prev: MarketSearch): MarketSearch {
+  return {
+    ...prev,
+    kind: f.kind === "cpu" ? "cpu" : undefined,
+    model: f.model || undefined,
+    tier: f.tier || undefined,
+    vram: f.vram || undefined,
+    gpus: f.gpus > 1 ? f.gpus : undefined,
+    vcpu: f.vcpu || undefined,
+    mem: f.mem || undefined,
+  };
+}
+
 function MarketPage() {
   const { t } = useTranslation(["web", "shared"]);
   const fmt = useFormat();
   const { formatHourlyPrice } = fmt;
   const navigate = useNavigate();
+  const { message } = App.useApp();
   const loggedIn = useIsLoggedIn();
   const [rulesOpen, setRulesOpen] = useState(false);
   // 筛选/选中全部入 URL(replace)
   const search = Route.useSearch();
-  const kind: Kind = search.kind ?? "gpu";
+  const filters = filtersOf(search);
+  const isCpu = filters.kind === "cpu";
+  const gpuCount = filters.gpus;
   const billingMode: BillingMode = search.mode ?? "on_demand";
-  const gpuModel = search.model ?? ALL;
-  const tier = search.tier ?? ALL;
-  const vram = search.vram ?? 0;
-  const gpuCount = search.gpus ?? 1;
-  const vcpu = search.vcpu ?? 0;
-  const memGb = search.mem ?? 0;
   const selectedId = search.sku;
   // 购买时长(1~36 个周期):入 URL 并透传创建页
   const periodCount = search.count ?? 1;
-  const update = (next: MarketSearch) =>
-    void navigate({ to: "/market", search: next, replace: true });
+  const update = (next: MarketSearch) => void navigate({ to: "/market", search: next, replace: true });
 
-  const {
-    data: allSkus,
-    isLoading,
-    isError,
-    refetch,
-  } = useSkus({ refetchInterval: 30_000 });
+  const { data: allSkus, isLoading, isError, refetch } = useSkus({ refetchInterval: POLL.steady });
   // 冻结宽限小时数读 /policies;未就绪用无数字兜底句
   const { data: policies } = usePolicies();
   const discounts = usePeriodDiscounts();
   const spotPolicy = useSpotPolicy();
 
-  const isCpu = kind === "cpu";
-  // 分栏先切分数据源:两栏 chip 取值域各自从本栏 SKU 聚合
-  const kindSkus = (allSkus ?? []).filter((s) => (s.tier === "cpu") === isCpu);
-  const freeByModel = dedupAvailableByModel(kindSkus);
-
-  const kindOptions = [
-    { value: "gpu" as const, label: t("market.kindGpu") },
-    { value: "cpu" as const, label: t("market.kindCpu") },
-  ];
-  const numOptions = (values: number[], unit: (v: number) => string): ChipOption<number>[] => [
-    { value: 0, label: t("market.all") },
-    ...Array.from(new Set(values))
-      .sort((a, b) => a - b)
-      .map((v) => ({ value: v, label: unit(v) })),
-  ];
-
-  const modelOptions: ChipOption<string>[] = [
-    { value: ALL, label: t("market.all") },
-    ...Array.from(freeByModel.entries()).map(([m, free]) => ({
-      value: m,
-      label: (
-        <span>
-          {m} <Typography.Text type="secondary">{t("market.freeSuffix", { count: free })}</Typography.Text>
-        </span>
-      ),
-    })),
-  ];
-  const tierOptions: ChipOption<string>[] = [
-    { value: ALL, label: t("market.all") },
-    ...Object.entries(skuTierMap)
-      .filter(([value]) => value !== "cpu")
-      .map(([value, meta]) => ({ value, label: t(meta.labelKey) })),
-  ];
-  const vramOptions = numOptions(kindSkus.map((s) => s.vram_gb), (v) => `${v} GB`);
-  const vcpuOptions = numOptions(kindSkus.map((s) => s.vcpu), (v) => t("market.vcpuUnit", { count: v }));
-  const memOptions = numOptions(kindSkus.map((s) => s.mem_gb), (v) => `${v} GB`);
-
-  const skus = kindSkus.filter((s) =>
-    isCpu
-      ? (!vcpu || s.vcpu === vcpu) && (!memGb || s.mem_gb === memGb)
-      : (!gpuModel || s.gpu_model === gpuModel) &&
-        (!tier || skuVariant(s.tier, s.pool_label) === tier) &&
-        (!vram || s.vram_gb === vram) &&
-        s.max_gpus_per_instance >= gpuCount,
-  );
-
-  const selected = skus.find((s) => s.id === selectedId);
+  const selected = (allSkus ?? []).find((s) => s.id === selectedId);
   const needed = isCpu ? 1 : gpuCount;
-  const rentable = (s: SkuMarketOut) => (s.available_count ?? 0) >= needed;
 
-  // 选中规格不接受包周期 / 未上竞价时按量兜底
+  // 选中规格不接受包周期 / 未上竞价:URL 里已是按量(选中时即切回并提示),这里只做兜底
   const periodBlocked = selected != null && !selected.period_enabled;
   const spotUnavailable = selected != null && !selected.spot_enabled;
   const spotBlocked = spotUnavailable || spotPolicy == null;
@@ -184,39 +154,84 @@ function MarketPage() {
       : billingMode;
   const isSpot = mode === "spot";
   const period = isBillingPeriod(mode) ? mode : null;
-  // 竞价档选中时,没上竞价的规格整行灰置不过滤
-  const selectable = (s: SkuMarketOut) => rentable(s) && (!isSpot || s.spot_enabled);
+
+  /** 选中规格:若当前计费方式对它不可用,明示并切回按量(不让 chip 静默跳动) */
+  const onSelectSku = (s: SkuMarketOut | undefined) => {
+    let nextMode: BillingMode | undefined = search.mode;
+    if (s) {
+      if (isBillingPeriod(billingMode) && !s.period_enabled) {
+        message.info(t("market.modeFallback", { mode: t(periodMap[billingMode].labelKey) }));
+        nextMode = undefined;
+      } else if (billingMode === "spot" && !s.spot_enabled) {
+        message.info(t("market.modeFallback", { mode: t("shared:status.market.spot") }));
+        nextMode = undefined;
+      }
+    }
+    update({ ...search, sku: s?.id, mode: nextMode });
+  };
+
   // 明细区单价:竞价档报折后价,其余报 SKU 原价
   const unitPrice =
     selected && isSpot
       ? (spotPriceOf(selected.price_hourly, spotPolicy) ?? selected.price_hourly)
       : selected?.price_hourly;
 
-  const columns = skuColumns({
-    fmt,
-    t,
-    availability: true,
-    priceFontSize: fontSize.pageTitle,
-    cpu: isCpu,
-    ...(isSpot && spotPolicy ? { spot: spotPolicy } : {}),
-  });
   // 市场页无报价端点,按 policies 折扣本地估算(展示值,创建页报价为准)
   const quote =
     selected && period
-      ? periodQuoteOf(
-          selected.price_hourly,
-          { units: billingUnits(isCpu ? 0 : gpuCount), period, periodCount },
-          discounts,
-        )
+      ? periodQuoteOf(selected.price_hourly, { units: billingUnits(isCpu ? 0 : gpuCount), period, periodCount }, discounts)
       : undefined;
+
+  const selectedVariant = selected ? skuVariant(selected.tier, selected.pool_label) : null;
+  const createSearch = {
+    ...(isCpu ? {} : { gpus: gpuCount }),
+    ...(period ? { period } : {}),
+    ...(period && periodCount > 1 ? { count: periodCount } : {}),
+    ...(isSpot ? { market: "spot" as const } : {}),
+  };
+  /** 未登录去登录:带回完整市场筛选态 */
+  const marketHref = () => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(search)) if (v !== undefined) qs.set(k, String(v));
+    const s = qs.toString();
+    return s ? `/market?${s}` : "/market";
+  };
 
   return (
     // 不用 Space(ant-space-item 包装会破坏 sticky 结算条的包含块)
-    <div style={{ display: "flex", flexDirection: "column", gap: 16, width: "100%" }}>
-      <Typography.Title level={4} style={{ margin: 0 }}>
-        {t("market.title")}
-      </Typography.Title>
-      <Alert type="warning" showIcon title={t("copy.antiMiningNotice")} />
+    <div style={{ display: "flex", flexDirection: "column", gap: space.lg, width: "100%" }}>
+      <PageHeader
+        title={t("market.title")}
+        extra={
+          <Button type="link" size="small" onClick={() => setRulesOpen(true)}>
+            {t("market.billingRulesLink")}
+          </Button>
+        }
+      />
+
+      <Card title={t("market.selectSpec")} styles={{ body: { paddingBlock: 16 } }}>
+        <SkuPicker
+          variant="full"
+          skus={allSkus}
+          isLoading={isLoading}
+          isError={isError}
+          onRetry={() => void refetch()}
+          value={selected}
+          onChange={onSelectSku}
+          gpuCount={gpuCount}
+          onGpuCount={(n) => update({ ...search, gpus: n > 1 ? n : undefined })}
+          filters={filters}
+          onFiltersChange={(f) => update({ ...searchOfFilters(f, search), sku: undefined })}
+          priceFontSize={fontSize.pageTitle}
+          {...(isSpot && spotPolicy ? { spot: spotPolicy } : {})}
+        />
+        {/* 选中共享·经济时,在选择处就地给风险摘要(完整条款在创建页提交前的知情同意里) */}
+        {selectedVariant === "shared_hami" && (
+          <Typography.Text type="warning" style={{ display: "block", marginTop: space.md, fontSize: fontSize.caption }}>
+            {t("market.ecoRiskSummary")}
+          </Typography.Text>
+        )}
+      </Card>
 
       <BillingModeCard
         value={mode}
@@ -225,110 +240,11 @@ function MarketPage() {
         spotEnabled={!spotUnavailable}
         count={periodCount}
         onCountChange={(n) => update({ ...search, count: n > 1 ? n : undefined })}
-        extra={
-          <Button type="link" size="small" onClick={() => setRulesOpen(true)}>
-            {t("market.billingRulesLink")}
-          </Button>
-        }
       />
-      {periodBlocked && isBillingPeriod(billingMode) && (
-        <Alert type="info" showIcon title={t("period.fallbackToHourly")} />
-      )}
-      {spotUnavailable && billingMode === "spot" && (
-        <Alert type="info" showIcon title={t("market.spotFallbackToHourly")} />
-      )}
-      {/* 竞价档常驻提示;宽限秒数与通知渠道从 /policies 读,策略未就绪不出 */}
-      {isSpot && spotPolicy && (
-        <Alert
-          type="warning"
-          showIcon
-          title={t("copy.spotReclaimNotice", { seconds: spotPolicy.graceSeconds })}
-        />
-      )}
-
-      <Card title={t("market.selectSpec")} styles={{ body: { paddingBlock: 16 } }}>
-        <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-          <Segmented<Kind>
-            value={kind}
-            options={kindOptions}
-            onChange={(v) => {
-              // 换栏清选中,其余筛选保留
-              update({ ...search, kind: v === "cpu" ? "cpu" : undefined, sku: undefined });
-            }}
-          />
-          {isCpu ? (
-            <>
-              <ChipRow
-                label={t("market.chipVcpu")}
-                value={vcpu}
-                onChange={(v) => update({ ...search, vcpu: v || undefined })}
-                options={vcpuOptions}
-              />
-              <ChipRow
-                label={t("market.chipMem")}
-                value={memGb}
-                onChange={(v) => update({ ...search, mem: v || undefined })}
-                options={memOptions}
-              />
-            </>
-          ) : (
-            <>
-              <ChipRow
-                label={t("market.chipGpuModel")}
-                value={gpuModel}
-                onChange={(v) => update({ ...search, model: v || undefined })}
-                options={modelOptions}
-              />
-              <ChipRow
-                label={t("market.chipTier")}
-                value={tier}
-                onChange={(v) => update({ ...search, tier: v || undefined })}
-                options={tierOptions}
-              />
-              <ChipRow
-                label={t("market.chipVram")}
-                value={vram}
-                onChange={(v) => update({ ...search, vram: v || undefined })}
-                options={vramOptions}
-              />
-              <ChipRow
-                label={t("market.chipGpuCount")}
-                value={gpuCount}
-                onChange={(v) => update({ ...search, gpus: v > 1 ? v : undefined })}
-                options={GPU_COUNT_STEPS.map((n) => ({ value: n, label: String(n) }))}
-              />
-            </>
-          )}
-          <Table<SkuMarketOut>
-            size="middle"
-            rowKey="id"
-            loading={isLoading}
-            scroll={{ x: 880 }}
-            dataSource={skus}
-            columns={columns}
-            pagination={false}
-            locale={{
-              emptyText: isError ? (
-                <TableErrorEmpty isError onRetry={() => void refetch()} />
-              ) : (
-                t("market.noMatch")
-              ),
-            }}
-            rowSelection={{
-              type: "radio",
-              selectedRowKeys: selected ? [selected.id] : [],
-              onChange: (keys) => update({ ...search, sku: keys[0] as number | undefined }),
-              getCheckboxProps: (s) => ({ disabled: !selectable(s) }),
-            }}
-            onRow={(s) => ({
-              style: selectable(s) ? { cursor: "pointer" } : { opacity: 0.5 },
-              onClick: () => {
-                if (selectable(s)) update({ ...search, sku: s.id });
-              },
-            })}
-          />
-        </Space>
-      </Card>
+      {/* 合规声明只在市场页脚(ui-ux-spec §1 规则 1) */}
+      <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+        {t("copy.antiMiningNotice")}
+      </Typography.Text>
 
       <CheckoutBar
         // 选中规格/计费方式/时长变化时汇总数字淡入
@@ -336,11 +252,7 @@ function MarketPage() {
         summary={
           selected
             ? isCpu
-              ? t("market.summaryCpu", {
-                  vcpu: selected.vcpu,
-                  mem: selected.mem_gb,
-                  disk: selected.disk_gb,
-                })
+              ? t("market.summaryCpu", { vcpu: selected.vcpu, mem: selected.mem_gb, disk: selected.disk_gb })
               : t("market.summary", {
                   model: selected.gpu_model,
                   count: gpuCount,
@@ -365,7 +277,8 @@ function MarketPage() {
               }
             : {
                 label: t("create.configCostLabel"),
-                // CPU 规格 price_hourly 已是整机时价,不乘卡数
+                // 大字带「× N 卡」/「整机」后缀(价格口径显性化);CPU 规格 price_hourly 已是整机时价
+                suffix: !selected ? undefined : isCpu ? t("sku.wholeMachine") : t("sku.timesCards", { count: gpuCount }),
                 value: !selected ? (
                   "--"
                 ) : isSpot ? (
@@ -381,80 +294,52 @@ function MarketPage() {
         detail={
           selected ? (
             period && quote ? (
-              <PeriodQuoteRows
-                quote={quote}
-                gpuCount={gpuCount}
-                cpu={isCpu}
-                hint={t("period.hintFinalOnCreate")}
-              />
+              <PeriodQuoteRows quote={quote} gpuCount={gpuCount} cpu={isCpu} hint={t("period.hintFinalOnCreate")} />
             ) : (
               <Space orientation="vertical" size={4}>
                 <span>
                   {isCpu
                     ? t("instances.pricePerInstance", { price: formatHourlyPrice(unitPrice) })
-                    : t("instances.pricePerCard", {
-                        price: formatHourlyPrice(unitPrice),
-                        count: gpuCount,
-                      })}
+                    : t("instances.pricePerCard", { price: formatHourlyPrice(unitPrice), count: gpuCount })}
                 </span>
-                <Typography.Text type="secondary">
-                  {isCpu ? t("copy.billingBasisCpu") : t("copy.billingBasis")}
-                </Typography.Text>
+                <Typography.Text type="secondary">{isCpu ? t("copy.billingBasisCpu") : t("copy.billingBasis")}</Typography.Text>
                 {isSpot && <Typography.Text type="secondary">{t("copy.spotBillingBasis")}</Typography.Text>}
               </Space>
             )
           ) : undefined
         }
         actions={
-          loggedIn ? (
-            <Tooltip title={selected ? undefined : t("market.selectFirst")}>
-              <Button
-                type="primary"
-                size="large"
-                disabled={!selected}
-                onClick={() => {
-                  if (!selected) return;
-                  void navigate({
-                    to: "/market/create/$skuId",
-                    params: { skuId: String(selected.id) },
-                    search: {
-                      ...(isCpu ? {} : { gpus: gpuCount }),
-                      ...(period ? { period } : {}),
-                      ...(period && periodCount > 1 ? { count: periodCount } : {}),
-                      ...(isSpot ? { market: "spot" as const } : {}),
-                    },
-                  });
-                }}
-              >
-                {t("market.next")}
-              </Button>
-            </Tooltip>
-          ) : (
+          <Tooltip title={selected ? undefined : t("market.selectFirst")}>
             <Button
               type="primary"
               size="large"
-              onClick={() => void navigate({ to: "/login", search: { redirect: "/market" } })}
+              disabled={!selected}
+              onClick={() => {
+                if (!selected) return;
+                if (!loggedIn) {
+                  void navigate({ to: "/login", search: { redirect: marketHref() } });
+                  return;
+                }
+                void navigate({
+                  to: "/market/create/$skuId",
+                  params: { skuId: String(selected.id) },
+                  search: createSearch,
+                });
+              }}
             >
-              {t("market.loginToRent")}
+              {loggedIn ? t("market.next") : t("market.loginToRent")}
             </Button>
-          )
+          </Tooltip>
         }
       />
 
-      <Modal
-        open={rulesOpen}
-        onCancel={() => setRulesOpen(false)}
-        footer={null}
-        title={t("market.billingRulesLink")}
-      >
+      <Modal open={rulesOpen} onCancel={() => setRulesOpen(false)} footer={null} title={t("market.billingRulesLink")}>
         <ul style={{ paddingInlineStart: 20, margin: 0 }}>
           {[
             t("copy.billingRules.r1"),
             t("copy.billingRules.r2"),
             t("copy.billingRules.r3"),
-            policies
-              ? t("copy.billingRules.r4", { hours: policies.freeze_grace_hours })
-              : t("copy.billingRules.r4Fallback"),
+            policies ? t("copy.billingRules.r4", { hours: policies.freeze_grace_hours }) : t("copy.billingRules.r4Fallback"),
             t("copy.billingRules.r5"),
           ].map((r) => (
             <li key={r} style={{ marginBottom: 8 }}>

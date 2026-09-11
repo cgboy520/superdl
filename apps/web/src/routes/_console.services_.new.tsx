@@ -41,7 +41,7 @@ import { useApiErrorText } from "@superdl/ui";
 import { useCreateDisk, useCreateService } from "../api/mutations";
 import { useDisks, usePolicies, useSkus, useWallet } from "../api/queries";
 import { CheckoutBar } from "../components/CheckoutBar";
-import { ConsentModal } from "../components/ConsentModal";
+import { useConsentGate } from "../components/ConsentGate";
 import { DataDiskCard, defaultDiskName, type DiskMode } from "../components/create/DataDiskCard";
 import { SkuPicker } from "../components/create/SkuPicker";
 import { SshKeyPicker } from "../components/create/SshKeyPicker";
@@ -49,7 +49,7 @@ import { PeriodQuoteRows, periodQuoteOf, usePeriodDiscounts } from "../component
 import { ContainerFields } from "../components/services/ContainerCard";
 import { PublicAccessFields } from "../components/services/PublicAccessCard";
 import { BillingModeCard, type BillingMode } from "../components/skuTable";
-import { SpotConsentModal, SpotPriceInline, spotPriceOf, useSpotPolicy } from "../components/spotBilling";
+import { SpotPriceInline, spotPriceOf, useSpotPolicy } from "../components/spotBilling";
 import { requireAuth } from "../lib/guard";
 import {
   commandToList,
@@ -143,8 +143,6 @@ function DeployPage() {
   // ④ 高级配置
   const [withSsh, setWithSsh] = useState(false);
   const [keyIds, setKeyIds] = useState<number[]>([]);
-  const [ecoOpen, setEcoOpen] = useState(false);
-  const [spotOpen, setSpotOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   // 幂等键 = 本次挂载的 nonce + 参数快照
   const [formNonce] = useState(() => crypto.randomUUID());
@@ -358,24 +356,18 @@ function DeployPage() {
     }
   };
 
-  /** 竞价同意之后的下一道闸:经济档 = hami 池共享(软切分超卖);mig 池不弹。 */
-  const afterSpotConsent = () => {
-    if (sku && skuVariant(sku.tier, sku.pool_label) === "shared_hami") {
-      setEcoOpen(true);
-      return;
-    }
-    void doCreate();
-  };
-  const submit = () => {
-    if (isSpot) {
-      setSpotOpen(true);
-      return;
-    }
-    afterSpotConsent();
-  };
-
   const submitLabel = period ? t("services.payAndDeploy") : t("services.deploy");
   const pending = submitting || createService.isPending;
+  // 知情同意合并为一个分节 modal:竞价 / 共享·经济(hami 池)命中几节出几节
+  const gate = useConsentGate({
+    spot: isSpot,
+    eco: sku != null && skuVariant(sku.tier, sku.pool_label) === "shared_hami",
+    spotPolicy,
+    confirmLabel: t("services.form.ecoConfirm"),
+    loading: pending,
+    onProceed: () => void doCreate(),
+  });
+  const submit = gate.submit;
 
   const steps = (
     <Steps
@@ -708,35 +700,7 @@ function DeployPage() {
         }
       />
 
-      <SpotConsentModal
-        open={spotOpen}
-        policy={spotPolicy}
-        loading={pending}
-        confirmLabel={t("services.form.ecoConfirm")}
-        onCancel={() => setSpotOpen(false)}
-        onConfirm={() => {
-          setSpotOpen(false);
-          afterSpotConsent();
-        }}
-      />
-      <ConsentModal
-        open={ecoOpen}
-        title={t("create.ecoModalTitle")}
-        lines={[
-          t("copy.ecoTierConsent.c1"),
-          t("copy.ecoTierConsent.c2"),
-          t("copy.ecoTierConsent.c3"),
-          t("copy.ecoTierConsent.c4"),
-        ]}
-        agreeLabel={t("create.ecoAgree")}
-        confirmLabel={t("services.form.ecoConfirm")}
-        loading={pending}
-        onCancel={() => setEcoOpen(false)}
-        onConfirm={() => {
-          setEcoOpen(false);
-          void doCreate();
-        }}
-      />
+      {gate.modal}
       {leave.modal}
     </div>
   );
