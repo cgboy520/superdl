@@ -1,9 +1,9 @@
 /** 结算缺口:重放补结 / 人工核销入口(告警 superdl_settlement_gap_unresolved)。 */
 
 import { formatDateTime } from "@superdl/ui";
-import { LoadMore, TableErrorEmpty } from "@superdl/ui/components";
+import { LoadMore, TableErrorEmpty, useConfirm } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
-import { App, Button, Popconfirm, Select, Space, Switch, Table, Tag, Typography } from "antd";
+import { App, Button, Select, Space, Switch, Table, Tag, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -53,6 +53,7 @@ export function SettlementGapsTab() {
 
   const replay = useReplaySettlementGap();
   const resolve = useResolveSettlementGap();
+  const confirm = useConfirm();
 
   const items: AdminSettlementGapOut[] = (data?.pages ?? []).flatMap((p) => p.items);
 
@@ -145,23 +146,33 @@ export function SettlementGapsTab() {
             render: (_, row) =>
               row.resolved_at ? null : (
                 <Space size={4}>
-                  {/* 重放端点无 reason 负载,用 Popconfirm */}
-                  <Popconfirm
-                    title={t("finance.gapReplayConfirm")}
-                    onConfirm={async () => {
-                      try {
-                        await replay.mutateAsync({ gapId: row.id });
-                        message.success(t("finance.gapReplayed"));
-                        refresh();
-                      } catch (e) {
-                        message.error(errText(e, t("common.actionFailed", { action: t("finance.gapReplay") })));
-                      }
-                    }}
+                  {/* 重放端点无 reason 负载:L2 useConfirm,目标 = 缺口 id */}
+                  <Button
+                    type="link"
+                    size="small"
+                    disabled={!writable}
+                    style={{ whiteSpace: "nowrap" }}
+                    onClick={() =>
+                      confirm({
+                        title: t("finance.gapReplayTitle", { id: row.id }),
+                        consequences: [t("finance.gapReplayConfirm")],
+                        okText: t("finance.gapReplay"),
+                        onOk: async () => {
+                          try {
+                            await replay.mutateAsync({ gapId: row.id });
+                            message.success(t("finance.gapReplayed"));
+                            refresh();
+                          } catch (e) {
+                            message.error(
+                              errText(e, t("common.actionFailed", { action: t("finance.gapReplay") })),
+                            );
+                          }
+                        },
+                      })
+                    }
                   >
-                    <Button type="link" size="small" disabled={!writable} style={{ whiteSpace: "nowrap" }}>
-                      {t("finance.gapReplay")}
-                    </Button>
-                  </Popconfirm>
+                    {t("finance.gapReplay")}
+                  </Button>
                   <ReasonAction
                     label={t("finance.gapResolve")}
                     title={t("finance.gapResolveTitle")}

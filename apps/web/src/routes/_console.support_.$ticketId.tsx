@@ -9,7 +9,7 @@ import {
   ticketCategoryMap,
   ticketStatusMap,
 } from "@superdl/ui";
-import { DataErrorAlert, isMacPlatform, TicketBubble } from "@superdl/ui/components";
+import { DataErrorAlert, isMacPlatform, TicketBubble, useConfirm } from "@superdl/ui/components";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import {
@@ -18,7 +18,6 @@ import {
   Button,
   Card,
   Input,
-  Popconfirm,
   Skeleton,
   Space,
   Tag,
@@ -54,6 +53,7 @@ function TicketDetailPage() {
   const [draft, setDraft] = useState("");
   const reply = useAppendTicketMessage({ onSuccess: () => setDraft("") });
   const close = useCloseTicket();
+  const confirm = useConfirm();
   // 对话容器贴底跟随(同 LogsPanel):距底 ≤40px 视为贴底,新消息仅在贴底时自动滚底
   const scrollRef = useRef<HTMLDivElement>(null);
   const [pinned, setPinned] = useState(true);
@@ -99,14 +99,23 @@ function TicketDetailPage() {
         }
         extra={
           ticket.status === "resolved" && (
-            <Popconfirm
-              title={t("support.closeConfirm")}
-              onConfirm={() => close.mutate(id)}
+            // L1 确认(可逆性低但影响面 = 1)
+            <Button
+              size="small"
+              loading={close.isPending}
+              onClick={() =>
+                confirm({
+                  title: t("support.closeConfirm"),
+                  consequences: [t("support.closeBody")],
+                  okText: t("support.closeTicket"),
+                  onOk: async () => {
+                    await close.mutateAsync(id);
+                  },
+                })
+              }
             >
-              <Button size="small" loading={close.isPending}>
-                {t("support.closeTicket")}
-              </Button>
-            </Popconfirm>
+              {t("support.closeTicket")}
+            </Button>
           )
         }
       >

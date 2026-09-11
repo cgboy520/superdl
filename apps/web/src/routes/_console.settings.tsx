@@ -2,7 +2,7 @@
 
 import type { TokenPairOut } from "@superdl/api-client";
 import { deletionStatusMap, fontSize, formatDateTime, maskPhone, metaOf } from "@superdl/ui";
-import { DataErrorAlert, TableErrorEmpty, TypeConfirmModal } from "@superdl/ui/components";
+import { DataErrorAlert, TableErrorEmpty, TypeConfirmModal, useConfirm } from "@superdl/ui/components";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import {
@@ -13,7 +13,6 @@ import {
   Form,
   Input,
   Modal,
-  Popconfirm,
   Skeleton,
   Space,
   Table,
@@ -55,6 +54,7 @@ function SettingsPage() {
   const [form] = Form.useForm();
   const [pwdOpen, setPwdOpen] = useState(false);
   const logout = useLogout();
+  const confirm = useConfirm();
 
   const addKey = useAddSshKey({
     onSuccess: () => {
@@ -102,14 +102,24 @@ function SettingsPage() {
               {
                 title: t("storage.colActions"),
                 render: (_, r) => (
-                  <Popconfirm
-                    title={t("settings.deleteKeyConfirm")}
-                    onConfirm={() => delKey.mutate(r.id)}
+                  // L1 确认(可逆、影响面 = 1),危险按钮配红色确认
+                  <Button
+                    size="small"
+                    danger
+                    onClick={() =>
+                      confirm({
+                        title: t("settings.deleteKeyConfirm"),
+                        consequences: [t("settings.deleteKeyBody", { name: r.name })],
+                        okText: t("storage.delete"),
+                        danger: true,
+                        onOk: async () => {
+                          await delKey.mutateAsync(r.id);
+                        },
+                      })
+                    }
                   >
-                    <Button size="small" danger>
-                      {t("storage.delete")}
-                    </Button>
-                  </Popconfirm>
+                    {t("storage.delete")}
+                  </Button>
                 ),
               },
             ]}
@@ -175,24 +185,38 @@ function SettingsPage() {
             </Typography.Text>
           </Space>
           <Space>
-            <Popconfirm
-              title={t("settings.logoutAllConfirm")}
-              okText={t("settings.logoutAll")}
-              onConfirm={() => void logout("all")}
+            <Button
+              danger
+              onClick={() =>
+                confirm({
+                  title: t("settings.logoutAllConfirm"),
+                  consequences: [t("settings.logoutAllBody")],
+                  okText: t("settings.logoutAll"),
+                  danger: true,
+                  onOk: () => logout("all"),
+                })
+              }
             >
-              <Button danger>{t("settings.logoutAll")}</Button>
-            </Popconfirm>
+              {t("settings.logoutAll")}
+            </Button>
             <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
               {t("settings.logoutAllHint")}
             </Typography.Text>
           </Space>
-          <Popconfirm
-            title={t("settings.logoutConfirm")}
-            okText={t("settings.logout")}
-            onConfirm={() => void logout()}
+          <Button
+            danger
+            onClick={() =>
+              confirm({
+                title: t("settings.logoutConfirm"),
+                consequences: [t("settings.logoutBody")],
+                okText: t("settings.logout"),
+                danger: true,
+                onOk: () => logout(),
+              })
+            }
           >
-            <Button danger>{t("settings.logout")}</Button>
-          </Popconfirm>
+            {t("settings.logout")}
+          </Button>
           <DeletionZone phone={me?.phone ?? ""} />
         </Space>
       </Card>
@@ -297,6 +321,7 @@ function DeletionZone({ phone }: { phone: string }) {
   const cancel = useCancelDeletionRequest({
     onSuccess: () => message.success(t("settings.deletion.cancelled")),
   });
+  const confirm = useConfirm();
 
   const pending = req?.status === "pending";
   const statusMeta = req ? metaOf(deletionStatusMap, req.status) : undefined;
@@ -317,15 +342,22 @@ function DeletionZone({ phone }: { phone: string }) {
             date: formatDateTime(req.cooldown_ends_at),
           })}
           action={
-            <Popconfirm
-              title={t("settings.deletion.cancelConfirm")}
-              okText={t("settings.deletion.cancel")}
-              onConfirm={() => cancel.mutate()}
+            <Button
+              size="small"
+              loading={cancel.isPending}
+              onClick={() =>
+                confirm({
+                  title: t("settings.deletion.cancelConfirm"),
+                  consequences: [t("settings.deletion.cancelBody")],
+                  okText: t("settings.deletion.cancel"),
+                  onOk: async () => {
+                    await cancel.mutateAsync();
+                  },
+                })
+              }
             >
-              <Button size="small" loading={cancel.isPending}>
-                {t("settings.deletion.cancel")}
-              </Button>
-            </Popconfirm>
+              {t("settings.deletion.cancel")}
+            </Button>
           }
         />
       ) : (

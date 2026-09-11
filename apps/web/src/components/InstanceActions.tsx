@@ -150,6 +150,7 @@ export function InstanceActions({
       // 按量强调「再开机可能没库存」;包周期关机不退费但保留库存(ui-ux-spec §3.5)
       consequences: [t(isSubscription ? "copy.stopConfirmSubscription" : "copy.stopConfirm")],
       okText: t("instances.actions.stopOk"),
+      danger: true,
       onOk: async () => {
         await stop.mutateAsync(instance.uuid);
         message.success(t("instances.actions.stopped"));
@@ -246,6 +247,7 @@ export function InstanceActions({
               confirm({
                 title: t("instances.actions.restartConfirmTitle"),
                 consequences: [t("instances.actions.restartConfirmBody")],
+                danger: true,
                 onOk: async () => {
                   await restart.mutateAsync(instance.uuid);
                 },

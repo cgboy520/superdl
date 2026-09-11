@@ -7,7 +7,14 @@ import {
   ticketCategoryMap,
   ticketStatusMap,
 } from "@superdl/ui";
-import { HexTag, LoadMore, PageContainer, TableErrorEmpty, TicketBubble } from "@superdl/ui/components";
+import {
+  HexTag,
+  LoadMore,
+  PageContainer,
+  TableErrorEmpty,
+  TicketBubble,
+  useConfirm,
+} from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
@@ -19,7 +26,6 @@ import {
   Drawer,
   Input,
   InputNumber,
-  Popconfirm,
   Select,
   Skeleton,
   Space,
@@ -99,6 +105,7 @@ function TicketDrawer({
   const [draft, setDraft] = useState("");
   const reply = useReplyTicket();
   const updateStatus = useUpdateTicketStatus();
+  const confirm = useConfirm();
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: ["admin", "tickets"] });
     void qc.invalidateQueries({ queryKey: ["admin", "ticket", ticketId] });
@@ -223,23 +230,43 @@ function TicketDrawer({
             <Alert type="info" showIcon title={t("tickets.terminalHint")} />
           )}
           <Space wrap>
+            {/* L1 确认(useConfirm):后果前置,目标 = 当前工单号 */}
             {ticket.status !== "resolved" && ticket.status !== "closed" && (
-              <Popconfirm title={t("tickets.resolveConfirm")} onConfirm={() => setStatus("resolve")}>
-                <Tooltip title={writable ? "" : noPerm}>
-                  <Button type="primary" disabled={!writable} loading={updateStatus.isPending}>
-                    {t("tickets.resolve")}
-                  </Button>
-                </Tooltip>
-              </Popconfirm>
+              <Tooltip title={writable ? "" : noPerm}>
+                <Button
+                  type="primary"
+                  disabled={!writable}
+                  loading={updateStatus.isPending}
+                  onClick={() =>
+                    confirm({
+                      title: t("tickets.resolveConfirm", { no: ticket.ticket_no }),
+                      consequences: [t("tickets.resolveBody")],
+                      okText: t("tickets.resolve"),
+                      onOk: () => setStatus("resolve"),
+                    })
+                  }
+                >
+                  {t("tickets.resolve")}
+                </Button>
+              </Tooltip>
             )}
             {ticket.status === "resolved" && (
-              <Popconfirm title={t("tickets.closeConfirm")} onConfirm={() => setStatus("close")}>
-                <Tooltip title={writable ? "" : noPerm}>
-                  <Button disabled={!writable} loading={updateStatus.isPending}>
-                    {t("tickets.close")}
-                  </Button>
-                </Tooltip>
-              </Popconfirm>
+              <Tooltip title={writable ? "" : noPerm}>
+                <Button
+                  disabled={!writable}
+                  loading={updateStatus.isPending}
+                  onClick={() =>
+                    confirm({
+                      title: t("tickets.closeConfirm", { no: ticket.ticket_no }),
+                      consequences: [t("tickets.closeBody")],
+                      okText: t("tickets.close"),
+                      onOk: () => setStatus("close"),
+                    })
+                  }
+                >
+                  {t("tickets.close")}
+                </Button>
+              </Tooltip>
             )}
           </Space>
         </Space>
