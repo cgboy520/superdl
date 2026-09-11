@@ -134,12 +134,16 @@ export const adminThemeToken = {
   borderRadius: 6,
 } as const;
 
-/** 管理端组件级覆写(与 adminThemeToken 搭配传入 ConfigProvider) */
+/** 管理端组件级覆写(与 adminThemeToken 搭配传入 ConfigProvider)。密度取「紧凑」档:表格 13px / 行内边距 8,见 docs/ui-ux-spec.md §2。 */
 export const adminThemeComponents = {
   Table: {
     headerBg: adminColors.gridLine,
     headerColor: adminColors.textSecondary,
-    cellPaddingBlock: 12,
+    cellFontSize: 13,
+    cellFontSizeSM: 13,
+    cellPaddingBlock: 8,
+    cellPaddingBlockSM: 6,
+    cellPaddingInline: 12,
   },
   Menu: {
     itemSelectedBg: adminColors.menuSelectedBg,
@@ -197,7 +201,7 @@ export const lineHeight = {
 /** 断点(与 antd Grid 同值);CSS 媒体查询一律走这里 */
 export const breakpoint = { xs: 480, sm: 576, md: 768, lg: 992, xl: 1200 } as const;
 
-/** 版式常量:页容器与卡片网格;页宽三档:控制台 / 落地页 section / 长文页 */
+/** 版式常量:页容器与卡片网格;页宽四档:控制台 / 落地页 section / 长文页 / 全宽(管理端宽表) */
 export const layout = {
   pageMaxWidth: 1280,
   pageMaxWidthWide: 1200,
@@ -207,7 +211,20 @@ export const layout = {
   cardRadius: 10,
   /** 落地页 section 纵向留白 */
   sectionPaddingY: 48,
+  /** 顶栏高度(两端一致);sticky 表头 offset 与锚点滚动补偿由此派生 */
+  topBarHeight: 56,
+  /** 锚点滚动目标的 scroll-margin-top(顶栏 + 一格留白) */
+  scrollMarginTop: 56 + 16,
 } as const;
+
+/** 控件宽度四档:短码 / 短文本 / 常规 / 长文本;输入框、下拉一律取这里,不写裸数字 */
+export const controlWidth = { xs: 96, sm: 160, md: 260, lg: 320 } as const;
+
+/** Modal 宽度三档:确认 / 表单 / 复杂表单(再大用 Drawer,见 docs/ui-ux-spec.md §1) */
+export const modalWidth = { sm: 480, md: 560, lg: 720 } as const;
+
+/** Drawer 宽度两档(CSS 值,窄屏自动收到 100vw) */
+export const drawerWidth = { md: "min(640px, 100vw)", lg: "min(760px, 100vw)" } as const;
 
 /** 动效常量三档(与 MotionConfig reducedMotion="user" 配合);用法见 docs/ui-ux-spec.md §2。 */
 export const motion = {

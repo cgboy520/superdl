@@ -311,6 +311,16 @@ export default interface Resources {
       },
       "spotDiscount": "{{off}} 折"
     },
+    "freshness": {
+      "autoRefresh": "每 {{seconds}} 秒自动刷新",
+      "noData": "尚未加载",
+      "pause": "暂停自动刷新",
+      "paused": "自动刷新已暂停",
+      "refresh": "立即刷新",
+      "resume": "恢复自动刷新",
+      "updatedAt": "更新于 {{time}}",
+      "updatedSecondsAgo": "{{count}} 秒前更新"
+    },
     "lang": {
       "en": "English",
       "switchLabel": "切换语言",

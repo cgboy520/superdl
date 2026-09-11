@@ -85,6 +85,17 @@
   "confirm": {
     "typeNameToConfirm": "Type {{name}} to confirm"
   },
+  "freshness": {
+    "autoRefresh": "Auto-refresh every {{seconds}}s",
+    "noData": "Not loaded yet",
+    "pause": "Pause auto-refresh",
+    "paused": "Auto-refresh paused",
+    "refresh": "Refresh now",
+    "resume": "Resume auto-refresh",
+    "updatedAt": "Updated at {{time}}",
+    "updatedSecondsAgo_one": "Updated {{count}} second ago",
+    "updatedSecondsAgo_other": "Updated {{count}} seconds ago"
+  },
   "status": {
     "announcement": {
       "published": "Published",

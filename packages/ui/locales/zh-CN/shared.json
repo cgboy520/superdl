@@ -79,6 +79,16 @@
   "confirm": {
     "typeNameToConfirm": "键入 {{name}} 以确认"
   },
+  "freshness": {
+    "autoRefresh": "每 {{seconds}} 秒自动刷新",
+    "noData": "尚未加载",
+    "pause": "暂停自动刷新",
+    "paused": "自动刷新已暂停",
+    "refresh": "立即刷新",
+    "resume": "恢复自动刷新",
+    "updatedAt": "更新于 {{time}}",
+    "updatedSecondsAgo": "{{count}} 秒前更新"
+  },
   "status": {
     "announcement": {
       "published": "已发布",

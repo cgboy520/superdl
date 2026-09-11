@@ -1,47 +1,33 @@
-/** 页面容器:最大宽度居中 + 标题行。width 三档:default 1280 / wide 1200 / narrow 880。 */
+/** 页面容器:最大宽度居中 + 可选页头(PageHeader)。width 四档:default 1280 / wide 1200 / narrow 880 / full(不限宽,管理端宽表页)。 */
 
-import { Typography } from "antd";
 import type { ReactNode } from "react";
 
-import { fontSize, layout, space } from "../tokens";
+import { layout } from "../tokens";
+import { PageHeader, type PageHeaderProps } from "./PageHeader";
 
 const widthMap = {
   default: layout.pageMaxWidth,
   wide: layout.pageMaxWidthWide,
   narrow: layout.pageMaxWidthNarrow,
+  full: undefined,
 } as const;
+
+export type PageWidth = keyof typeof widthMap;
 
 export function PageContainer({
   title,
-  extra,
   width = "default",
   children,
-}: {
-  title?: ReactNode;
-  extra?: ReactNode;
+  ...header
+}: Partial<PageHeaderProps> & {
   /** 页宽档位 */
-  width?: keyof typeof widthMap;
+  width?: PageWidth;
   children: ReactNode;
 }) {
+  const maxWidth = widthMap[width];
   return (
-    <div style={{ maxWidth: widthMap[width], margin: "0 auto" }}>
-      {title !== undefined && (
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: space.md,
-            marginBottom: space.lg,
-          }}
-        >
-          <Typography.Title level={4} style={{ margin: 0, fontSize: fontSize.pageTitle }}>
-            {title}
-          </Typography.Title>
-          {extra}
-        </div>
-      )}
+    <div style={{ maxWidth, margin: maxWidth ? "0 auto" : undefined, minWidth: 0 }}>
+      {title !== undefined && <PageHeader title={title} {...header} />}
       {children}
     </div>
   );
