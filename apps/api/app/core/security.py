@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import datetime, timedelta
+from functools import cache
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -27,12 +28,15 @@ def check_password_bytes(plain: str) -> None:
 
 
 def hash_password_sync(plain: str) -> str:
-    """同步版本,只给模块级常量用;请求路径用异步版。"""
-    return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
+    """同步版本;请求路径用异步版。cost 取 settings.bcrypt_rounds。"""
+    salt = bcrypt.gensalt(rounds=get_settings().bcrypt_rounds)
+    return bcrypt.hashpw(plain.encode(), salt).decode()
 
 
-# 不存在的账号也走一次哈希校验(拉平时序)
-DUMMY_PASSWORD_HASH = hash_password_sync("dummy-timing-equalizer")
+@cache
+def dummy_password_hash() -> str:
+    """不存在的账号也走一次哈希校验(拉平时序);惰性生成,cost 与真实哈希一致。"""
+    return hash_password_sync("dummy-timing-equalizer")
 
 
 def verify_password_sync(plain: str, hashed: str) -> bool:

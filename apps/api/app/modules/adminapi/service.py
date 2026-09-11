@@ -20,11 +20,11 @@ from app.core.pagination import Page
 from app.core.platform_config import get_effective_platform_config
 from app.core.ratelimit import check_rate_limit, clear_rate_limit, ensure_not_rate_limited
 from app.core.security import (
-    DUMMY_PASSWORD_HASH,
     PASSWORD_MAX_BYTES,
     check_password_bytes,
     create_token,
     decode_token,
+    dummy_password_hash,
     hash_password,
     verify_password,
 )
@@ -152,7 +152,7 @@ async def login(
                 b.key, max_attempts=b.max_attempts, window_seconds=b.window_seconds
             )
     password_ok = await verify_password(
-        password, admin.password_hash if admin else DUMMY_PASSWORD_HASH
+        password, admin.password_hash if admin else dummy_password_hash()
     )
     if admin is None or not password_ok:
         # 只在失败后计数,四层同计

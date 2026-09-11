@@ -190,6 +190,7 @@ class TestProdConfigValidation:
             "metrics_token": "mtoken",
             "config_encryption_key": base64.urlsafe_b64encode(b"k" * 32).decode(),
             "image_allowed_registries": "registry.superdl.internal/",
+            "bcrypt_rounds": 12,  # conftest 给测试环境压到 4,prod 基线要显式压回
         }
 
     def test_prod_rejects_dev_defaults(self):
@@ -233,6 +234,18 @@ class TestProdConfigValidation:
         assert s.environment == "prod"
         assert s.real_name_enabled is False
         assert s.sms_access_key_id is None
+
+    def test_prod_rejects_weak_bcrypt_cost(self):
+        """prod 下 bcrypt cost <12 拒启;非 prod 允许降到 4 换速度。"""
+        import pytest
+        from pydantic import ValidationError
+
+        from app.core.config import Settings
+
+        with pytest.raises(ValidationError, match="bcrypt_rounds"):
+            Settings(**{**self._complete_prod_kwargs(), "bcrypt_rounds": 11})
+        fast = {"_env_file": None, "environment": "test", "bcrypt_rounds": 4}
+        assert Settings(**fast).bcrypt_rounds == 4
 
     def test_prod_worker_role_skips_api_only_secrets(self):
         """worker 按角色跳过 jwt_secret 与 admin_edge_token 校验;
