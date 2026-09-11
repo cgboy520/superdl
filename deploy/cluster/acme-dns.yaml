@@ -63,10 +63,25 @@ spec:
       labels:
         app: acme-dns
     spec:
+      # 公网 53 端口进程:不给 SA token、非 root、零 capability(53 靠 net.ipv4.ip_unprivileged_port_start 默认 1024
+      # 以下由 kubelet sysctl 放行:hostPort 不用,Service 端口映射到容器 53 由 CNI 转发,进程绑定 53 需 NET_BIND_SERVICE)
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile: {type: RuntimeDefault}
       containers:
         - name: acme-dns
           # digest 钉死(preflight 扫 CHANGE_ME 拦截)
           image: joohoi/acme-dns:v1.0@sha256:CHANGE_ME_ACME_DNS_DIGEST
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+              add: ["NET_BIND_SERVICE"]
           ports:
             - {containerPort: 53, protocol: UDP}
             - {containerPort: 53, protocol: TCP}

@@ -79,6 +79,9 @@ RUN apt-get update \
 
 # 平台契约:HOME 一律 /root(实例盘挂载点)
 ENV HOME=/root
+# nvidia/cuda 基座自带 NVIDIA_VISIBLE_DEVICES=all:覆盖成 void,可见卡只来自平台分配链
+# (HAMi/device-plugin 在容器 env 里注入单卡 UUID,优先级高于镜像 ENV);CPU 档或默认运行时为 nvidia 的节点上也看不到整机显卡
+ENV NVIDIA_VISIBLE_DEVICES=void
 
 # 平台文件放最后一层
 COPY entrypoint.sh /usr/local/bin/superdl-entrypoint.sh

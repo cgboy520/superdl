@@ -1,5 +1,5 @@
 # 北向唯一入口:Gateway API + Envoy Gateway(控制面与数据面由 helmfile 装在 envoy-gateway-system,见 deploy/cluster/)。
-# 本文件:GatewayClass / 数据面参数 / 6 个监听器 / 5 条路由 / 7 条策略。TLS 证书见 05-cert-manager.yaml(同 ns,不需要 ReferenceGrant)。
+# 本文件:GatewayClass / 数据面参数 / 6 个监听器 / 6 条路由(含一条边缘 404)/ 1 个路由过滤器 / 7 条策略。TLS 证书见 05-cert-manager.yaml(同 ns,不需要 ReferenceGrant)。
 apiVersion: gateway.networking.k8s.io/v1
 kind: GatewayClass
 metadata:
@@ -177,6 +177,44 @@ spec:
         - {name: superdl-api, port: 80}
 ---
 # 匿名支付回调独立路由:更严请求体上限;最长前缀优先,不吃 superdl-api 的策略,边缘限流在 superdl-api-webhooks 策略同款重写
+# 公网 API 域上不该出现的前缀在边缘直接 404(管理端 API / 内部鉴权回调 / 指标),不再只靠应用层 edge_guard。
+# 最长前缀优先于 superdl-api 的 / 兜底;extAuth 鉴权请求由 Envoy 直连 Service,不经 HTTPRoute,不受影响;
+# Prometheus 从集群内抓 Service,同样不经网关。
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: HTTPRouteFilter
+metadata:
+  name: superdl-edge-not-found
+  namespace: superdl
+spec:
+  directResponse:
+    statusCode: 404
+    body:
+      type: Inline
+      inline: "not found"
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: superdl-api-edge-deny
+  namespace: superdl
+spec:
+  parentRefs:
+    - {name: superdl, sectionName: api-https}
+  rules:
+    - matches:
+        - path: {type: PathPrefix, value: /api/admin}
+        - path: {type: PathPrefix, value: /api/internal}
+        - path: {type: PathPrefix, value: /metrics}
+        - path: {type: Exact, value: /docs}
+        - path: {type: Exact, value: /redoc}
+        - path: {type: Exact, value: /openapi.json}
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: gateway.envoyproxy.io
+            kind: HTTPRouteFilter
+            name: superdl-edge-not-found
+---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:

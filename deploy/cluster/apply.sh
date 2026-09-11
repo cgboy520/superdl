@@ -28,5 +28,14 @@ for _b in superdl-platform-sa-scope superdl-tenant-pod-baseline superdl-node-fie
   kubectl get validatingadmissionpolicybinding "$_b" > /dev/null
 done
 
+# cert-manager ns(持有 ACME 账户与平台 TLS Secret;full 档 acme-dns 公网 53 端口也在此)打 PSA 标签:
+# baseline 强制、restricted 审计/告警,与租户 ns 同款;ns 由 helmfile createNamespace 建,首次 apply 前不存在则跳过
+if kubectl get namespace cert-manager > /dev/null 2>&1; then
+  kubectl label namespace cert-manager --overwrite \
+    pod-security.kubernetes.io/enforce=baseline \
+    pod-security.kubernetes.io/audit=restricted \
+    pod-security.kubernetes.io/warn=restricted
+fi
+
 exec env HELM_DIFF_USE_UPGRADE_DRY_RUN=true \
   helmfile -f helmfile.yaml.gotmpl -e "$env_name" apply --skip-diff-on-install "$@"

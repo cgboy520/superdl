@@ -20,17 +20,32 @@ if TYPE_CHECKING:
     from alembic.script import ScriptDirectory
 
 
-def _split_db_tls(url: str) -> tuple[str, dict[str, str]]:
-    """摘下 URL 里的 sslmode 翻译成 asyncpg ssl 连接参;返回 (干净 url, connect_args 增补)。"""
+def _split_db_tls(url: str) -> tuple[str, dict[str, Any]]:
+    """摘下 URL 里的 sslmode / sslrootcert 翻译成 asyncpg ssl 连接参;返回 (干净 url, connect_args)。
+    带 sslrootcert 时构造 SSLContext:verify-full 校验主机名,verify-ca / require 只校验证书链;
+    CA 文件缺失即抛错。"""
+    import ssl
     from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
     parsed = urlparse(url)
     query = parse_qs(parsed.query)
     sslmode = query.pop("sslmode", [None])[0]
+    sslrootcert = query.pop("sslrootcert", [None])[0]
     if sslmode is None:
+        if sslrootcert is not None:
+            raise ValueError("database_url 带 sslrootcert 却无 sslmode")
         return url, {}
     clean = urlunparse(parsed._replace(query=urlencode(query, doseq=True)))
-    return clean, {"ssl": sslmode}
+    if sslrootcert is None:
+        return clean, {"ssl": sslmode}
+    if sslmode not in ("require", "verify-ca", "verify-full"):
+        raise ValueError(
+            f"sslrootcert 只配合 require / verify-ca / verify-full,当前 sslmode={sslmode}"
+        )
+    ctx = ssl.create_default_context(cafile=sslrootcert)
+    ctx.check_hostname = sslmode == "verify-full"
+    ctx.verify_mode = ssl.CERT_REQUIRED
+    return clean, {"ssl": ctx}
 
 
 NAMING_CONVENTION = {

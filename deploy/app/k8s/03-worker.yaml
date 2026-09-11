@@ -87,8 +87,11 @@ spec:
             capabilities: {drop: ["ALL"]}
           volumeMounts:
             - {name: tmp, mountPath: /tmp}
+            - {name: db-ca, mountPath: /etc/superdl/db-ca, readOnly: true}
       volumes:
         - {name: tmp, emptyDir: {}}
+        # 库 CA(自签/私有 CA 时由运维建 ConfigMap superdl-db-ca;公共 CA 可缺省)
+        - {name: db-ca, configMap: {name: superdl-db-ca, optional: true}}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -164,8 +167,11 @@ spec:
             capabilities: {drop: ["ALL"]}
           volumeMounts:
             - {name: tmp, mountPath: /tmp}
+            - {name: db-ca, mountPath: /etc/superdl/db-ca, readOnly: true}
       volumes:
         - {name: tmp, emptyDir: {}}
+        # 库 CA(自签/私有 CA 时由运维建 ConfigMap superdl-db-ca;公共 CA 可缺省)
+        - {name: db-ca, configMap: {name: superdl-db-ca, optional: true}}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -229,8 +235,11 @@ spec:
             capabilities: {drop: ["ALL"]}
           volumeMounts:
             - {name: tmp, mountPath: /tmp}
+            - {name: db-ca, mountPath: /etc/superdl/db-ca, readOnly: true}
       volumes:
         - {name: tmp, emptyDir: {}}
+        # 库 CA(自签/私有 CA 时由运维建 ConfigMap superdl-db-ca;公共 CA 可缺省)
+        - {name: db-ca, configMap: {name: superdl-db-ca, optional: true}}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -295,8 +304,11 @@ spec:
             capabilities: {drop: ["ALL"]}
           volumeMounts:
             - {name: tmp, mountPath: /tmp}
+            - {name: db-ca, mountPath: /etc/superdl/db-ca, readOnly: true}
       volumes:
         - {name: tmp, emptyDir: {}}
+        # 库 CA(自签/私有 CA 时由运维建 ConfigMap superdl-db-ca;公共 CA 可缺省)
+        - {name: db-ca, configMap: {name: superdl-db-ca, optional: true}}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -359,5 +371,8 @@ spec:
             capabilities: {drop: ["ALL"]}
           volumeMounts:
             - {name: tmp, mountPath: /tmp}
+            - {name: db-ca, mountPath: /etc/superdl/db-ca, readOnly: true}
       volumes:
         - {name: tmp, emptyDir: {}}
+        # 库 CA(自签/私有 CA 时由运维建 ConfigMap superdl-db-ca;公共 CA 可缺省)
+        - {name: db-ca, configMap: {name: superdl-db-ca, optional: true}}

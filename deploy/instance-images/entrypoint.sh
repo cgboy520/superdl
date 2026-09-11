@@ -203,6 +203,9 @@ on_term() {
 }
 trap on_term TERM INT
 
+# 容器日志进中央日志管道:本进程及子进程输出里的 token= 一律抹掉(Jupyter 启动横幅带 ?token=)
+exec > >(sed -u 's/token=[^&[:space:]]*/token=<redacted>/g') 2>&1
+
 # 守护循环:jupyter 崩了自动拉起;连续秒退 5 次放弃,让 Pod 失败收敛
 fast_failures=0
 while true; do

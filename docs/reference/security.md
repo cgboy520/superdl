@@ -61,6 +61,8 @@
 - **「不给 `secrets` 动词」不等于「读不到 Secret」**:命名空间内 `pods:create` 或 `batch/jobs:create` 等价于该 ns 的 `secrets:get`(kubelet 代创建者解析 `secretKeyRef` / `envFrom` / secret 卷 / `imagePullSecrets`,不做 secrets 授权检查,PSA `restricted` 也不约束)。真正的防线是策略⑤⑥的「能引用哪个 Secret」白名单;⑤ 另覆盖 Job 派生 Pod 的创建者 `system:serviceaccount:kube-system:job-controller`。
 - 服务端点的 API Key 摘要、鉴权链路与网关策略约束见 [services.md](./services.md)。
 - 合规:前端 `/legal/terms` 与 `/legal/privacy` 为模板页,注册勾选前后端强校验,备案号运行期下发。
+- 公网 API 域上 `/api/admin`、`/api/internal`、`/metrics`、`/docs`、`/redoc`、`/openapi.json` 在边缘直接 404(`04-gateway.yaml` 的 `HTTPRoute superdl-api-edge-deny` + `HTTPRouteFilter superdl-edge-not-found`),应用层 `edge_guard` 是第二道。
+- 平台库:api / worker 以无 DDL 的应用角色连接(`deploy/pg/roles.sql`;`balance_ledger` 只追加、`audit_log` 不可改),owner 连接串只给迁移 Job(`superdl-db-migrate`);非本机 PG 连接串 `sslmode=verify-full&sslrootcert=...`(自签 CA 经 ConfigMap `superdl-db-ca` 挂载,`db._split_db_tls` 翻成校验主机名的 SSLContext)。
 - 部署层(env)进入平台配置的值同样过 `SETTING_SPECS` 格式白名单(`platform_config.env_layer_problems`,prod 不合格拒启);`cluster_join_token` 字符集锁死 `[A-Za-z0-9:._~+/=-]{16,512}`,node-join.sh 写 agent config.yaml 前再校验一次并用双引号标量。
 
 ### 限流分层

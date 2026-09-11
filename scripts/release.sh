@@ -64,7 +64,7 @@ render() {
     -e "s#CHANGE_TAG#${TAG}#g"
 }
 
-# 渲染后自检:占位符零残留 + 平台镜像一律带 @sha256
+# 渲染后自检:占位符零残留 + 清单里全部镜像一律带 @sha256
 render_checked() {
   local out
   out="$(render)"
@@ -72,8 +72,10 @@ render_checked() {
     echo "::error::渲染后仍有 CHANGE_* 占位符残留(清单新增了未登记的占位?)" >&2
     return 1
   fi
-  if printf '%s\n' "$out" | grep -E '^[[:space:]]*image:.*superdl-' | grep -qv '@sha256:'; then
-    echo "::error::有平台镜像仍按可变 tag 渲染(应为 @sha256:...),拒绝下发" >&2
+  # 平台镜像与第三方镜像(postgres / aws-cli 等)一律 @sha256,可变 tag 一个都不许
+  if printf '%s\n' "$out" | grep -E '^[[:space:]]*(- )?image:' | grep -qv '@sha256:'; then
+    echo "::error::有镜像仍按可变 tag 渲染(应为 @sha256:...),拒绝下发:" >&2
+    printf '%s\n' "$out" | grep -E '^[[:space:]]*(- )?image:' | grep -v '@sha256:' >&2
     return 1
   fi
   printf '%s\n' "$out"

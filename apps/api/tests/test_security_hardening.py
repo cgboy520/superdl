@@ -366,6 +366,54 @@ class TestDbTlsTranslate:
         url = "postgresql+asyncpg://u:p@localhost:5432/d"
         assert _split_db_tls(url) == (url, {})
 
+    def test_sslrootcert_builds_verifying_context(self, tmp_path):
+        """挂了说明:自签 CA 的 verify-full 不再校验主机名 / 证书链,或 CA 路径没从 URL 摘干净。"""
+        import ssl
+
+        from app.core.db import _split_db_tls
+
+        ca = tmp_path / "ca.crt"
+        ca.write_text(_SELF_SIGNED_CA_PEM)
+        url, args = _split_db_tls(
+            f"postgresql+asyncpg://u:p@h:5432/d?sslmode=verify-full&sslrootcert={ca}"
+        )
+        assert "sslrootcert" not in url and "sslmode" not in url
+        ctx = args["ssl"]
+        assert isinstance(ctx, ssl.SSLContext)
+        assert ctx.check_hostname is True and ctx.verify_mode == ssl.CERT_REQUIRED
+        _, args_ca = _split_db_tls(
+            f"postgresql+asyncpg://u:p@h:5432/d?sslmode=verify-ca&sslrootcert={ca}"
+        )
+        assert args_ca["ssl"].check_hostname is False
+
+    def test_sslrootcert_missing_file_or_mode_rejected(self, tmp_path):
+        """挂了说明:CA 文件缺失被静默降级成不校验,或 sslrootcert 脱离 sslmode 被放过。"""
+        import pytest
+
+        from app.core.db import _split_db_tls
+
+        missing = tmp_path / "nope.crt"
+        with pytest.raises(FileNotFoundError):
+            _split_db_tls(
+                f"postgresql+asyncpg://u:p@h:5432/d?sslmode=verify-full&sslrootcert={missing}"
+            )
+        with pytest.raises(ValueError):
+            _split_db_tls("postgresql+asyncpg://u:p@h:5432/d?sslrootcert=/x.crt")
+        with pytest.raises(ValueError):
+            _split_db_tls("postgresql+asyncpg://u:p@h:5432/d?sslmode=disable&sslrootcert=/x.crt")
+
+
+_SELF_SIGNED_CA_PEM = """-----BEGIN CERTIFICATE-----
+MIIBNTCB3KADAgECAgEBMAoGCCqGSM49BAMCMBoxGDAWBgNVBAMMD3N1cGVyZGwt
+dGVzdC1jYTAeFw0yNjAxMDEwMDAwMDBaFw00NjAxMDEwMDAwMDBaMBoxGDAWBgNV
+BAMMD3N1cGVyZGwtdGVzdC1jYTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABCor
+Pniz2MHG9QNcaxiIULX4rcd/ehKn+oqNzT+f8fn+QBYgdrbugUP6GcPG01VlVe/l
+Cl4YZQWGNBDgWWdcVtajEzARMA8GA1UdEwEB/wQFMAMBAf8wCgYIKoZIzj0EAwID
+SAAwRQIhAIsr0B/4GdQaf+shsLLIAIYqAWAbsC3BgHPlm2r6pUwvAiAL0aLDMcSx
+ci/CD07b8GiOmkvrCRzH8hYgmTyYF+XT9g==
+-----END CERTIFICATE-----
+"""
+
 
 class TestSmsCodeBruteForce:
     async def test_code_burned_after_max_attempts(self, client: AsyncClient, sm):

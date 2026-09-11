@@ -546,7 +546,7 @@ jobs:
           # -ignore-filename-pattern:10-migrate-job.yaml 的 name 含 CHANGE_TAG 占位
           docker run --rm -v "$PWD:/work" \
             ghcr.io/yannh/kubeconform:v0.8.0@sha256:faffaf43f95aa6425306e1ab8d6fcad72acb9049158f38e574c085ea1ec0f64e \
-            -skip Certificate,ClusterIssuer,ServiceMonitor,PodMonitor,Kustomization,GatewayClass,Gateway,HTTPRoute,EnvoyProxy,SecurityPolicy,BackendTrafficPolicy,ClientTrafficPolicy \
+            -skip Certificate,ClusterIssuer,ServiceMonitor,PodMonitor,Kustomization,GatewayClass,Gateway,HTTPRoute,HTTPRouteFilter,EnvoyProxy,SecurityPolicy,BackendTrafficPolicy,ClientTrafficPolicy \
             -ignore-filename-pattern '10-migrate-job' \
             -summary /work/deploy/app/k8s
       # 04-gateway.yaml 按 helmfile 钉死那版 Envoy Gateway chart 的 CRD 校验

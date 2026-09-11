@@ -13,13 +13,13 @@
 唯一入口 `SUPERDL_IMAGE_PREFIX=harbor.<域>/superdl scripts/release.sh <tag>`,禁止绕过脚本手改清单 tag:
 准入策略断言 → 迁移 Job → kustomize 渲染后替换占位 `CHANGE_IMAGE_PREFIX`、平台镜像钉**不可变 digest** 再 apply → rollout status → 经网关从集群外 GET `/readyz`;任一步失败即非零退出。
 
-1. `helmfile -e <full|light> apply`(cluster/,先 `./preflight.sh`;双档见 `cluster/README.md`)→ 按 `app/secrets.example.yaml` 建分域 Secret(`superdl-db`/`superdl-auth`/`superdl-crypto`/`superdl-metrics`/`superdl-edge`/`superdl-cloud`/`superdl-payment`/`superdl-registry`/`superdl-pg-backup`)与 `superdl-registry-pull`(Harbor 拉取机器人;项目 public 可省)。字段清单见 `app/k8s/00-namespace-config.yaml`(非密)与 `app/secrets.example.yaml`(密),prod 必配项以 `docs/reference/security.md` 的 `_validate_prod` 清单为准
+1. `helmfile -e <full|light> apply`(cluster/,先 `./preflight.sh`;双档见 `cluster/README.md`)→ 按 `app/secrets.example.yaml` 建分域 Secret(`superdl-db`(应用角色)/`superdl-db-migrate`(库 owner,仅迁移 Job)/`superdl-auth`/`superdl-crypto`/`superdl-metrics`/`superdl-edge`/`superdl-cloud`/`superdl-payment`/`superdl-registry`/`superdl-pg-backup`)与 `superdl-registry-pull`(Harbor 拉取机器人;项目 public 可省);库用自签/私有 CA 时另建 ConfigMap `superdl-db-ca`(key `ca.crt`,各 Deployment 以 optional 卷挂到 `/etc/superdl/db-ca`)。字段清单见 `app/k8s/00-namespace-config.yaml`(非密)与 `app/secrets.example.yaml`(密),prod 必配项以 `docs/reference/security.md` 的 `_validate_prod` 清单为准
 2. 打 tag:`gh release create vX.Y.Z --generate-notes`(不维护 CHANGELOG)。tag 触发 `.github/workflows/release.yml`:CI 闸门复跑 → 构建 api/web/admin 三镜像 + Trivy 扫描 + 推 Harbor(仓库 secrets `HARBOR_HOST` / `HARBOR_ROBOT_NAME` / `HARBOR_ROBOT_SECRET`,variables `HARBOR_PROJECT` 缺省 superdl)。api 镜像三环境同一产物;mock 支付回调路由仅在非 prod 注册
 3. `SUPERDL_IMAGE_PREFIX=harbor.<域>/superdl scripts/release.sh vX.Y.Z`(前置工具:`kubectl` + `crane` / `skopeo` / `docker buildx` 三选一,需对 Harbor 有读权限且已 `docker login`;三个都没有即拒绝发布):
    - 第 0 步断言七条准入策略的 Policy 与 Binding 都在且 `validationActions` 含 Deny;
    - 第 1 步检查 `superdl-registry-pull`(仅告警不阻断);
    - 第 2 步建迁移 Job(`k8s/10-migrate-job.yaml`,单独 create)并 `wait complete`,先于滚动;`/readyz` 比对 DB `alembic_version` 与代码 head,不一致 503 `schema_mismatch`,从未迁移 503 `never_migrated`;
-   - 第 3 步 `kubectl kustomize` 渲染后 apply:tag 解析成 digest,三条平台镜像整串换成 `<前缀>/superdl-<name>@sha256:...`;渲染后自检 `CHANGE_*` 占位零残留 + 平台镜像一律带 `@sha256:`,任一不满足即拒绝下发(`CHANGE_TAG` 保留给迁移 Job 的 Job 名);
+   - 第 3 步 `kubectl kustomize` 渲染后 apply:tag 解析成 digest,三条平台镜像整串换成 `<前缀>/superdl-<name>@sha256:...`;渲染后自检 `CHANGE_*` 占位零残留 + 清单里**全部**镜像(含 postgres / aws-cli 等第三方)一律带 `@sha256:`,任一不满足即拒绝下发(`CHANGE_TAG` 保留给迁移 Job 的 Job 名);
    - 第 4 步等全部 Deployment(api + 5 个 worker 组件 + web/admin)滚动完成(readinessProbe 即 `/readyz`);
    - 第 5 步经网关从集群外 `curl -fsS https://<api-domain>/readyz`:域名取环境变量 `SUPERDL_API_BASE_URL`,缺省读 ConfigMap `superdl-api-config` 的 `SUPERDL_PUBLIC_BASE_URL`,取不到或仍是占位则跳过并提示。失败先查迁移 Job 与网关链路,修复后重新发布,不回滚。
 4. 首个管理员(库迁移后、仅首发一次):`cd apps/api && uv run python scripts/bootstrap_admin.py`(`seed_dev.py` 只允许 dev/test),口令只打印一次,首次登录强制绑定 TOTP

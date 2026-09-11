@@ -21,6 +21,11 @@ spec:
         spec:
           restartPolicy: Never
           automountServiceAccountToken: false   # 只连 PG 与对象存储,不访问 K8s API
+          # 与 02-api.yaml 同锚点:备份账号与加密口令只能落在 infra 节点
+          nodeSelector:
+            node-restriction.kubernetes.io/superdl-infra: "true"
+          tolerations:
+            - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
           # 非 root;fsGroup 让各容器可读写交接 emptyDir
           securityContext:
             runAsNonRoot: true
@@ -31,7 +36,7 @@ spec:
           # 转储与上传各用官方镜像,经 emptyDir 交接;运行期不装工具
           initContainers:
             - name: dump
-              image: postgres:18
+              image: postgres:18@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
               imagePullPolicy: IfNotPresent
               securityContext:
                 allowPrivilegeEscalation: false
@@ -60,7 +65,7 @@ spec:
                 limits: {cpu: "1", memory: 1Gi}
             # upload 必须是 initContainer(与 restore-smoke 串行)
             - name: upload
-              image: amazon/aws-cli:2.32.0
+              image: amazon/aws-cli:2.32.0@sha256:bb82c6ce5c78cd8aad48d0003ab097c858cda14f9ce389c2345c50cce0104efd
               imagePullPolicy: IfNotPresent
               securityContext:
                 allowPrivilegeEscalation: false
@@ -98,7 +103,7 @@ spec:
           containers:
             # restore 冒烟:解密回读的 dump 恢复进 Pod 内一次性 PG,pg_restore 成功且三张资金表可查询即成功
             - name: restore-smoke
-              image: postgres:18
+              image: postgres:18@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
               imagePullPolicy: IfNotPresent
               securityContext:
                 allowPrivilegeEscalation: false

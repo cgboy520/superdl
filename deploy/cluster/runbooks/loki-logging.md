@@ -3,7 +3,7 @@
 组件:helmfile 的 `loki`(grafana-community/loki,Monolithic 单副本)+ `alloy`(grafana/alloy)。
 采集面:全部命名空间的容器日志(discovery.kubernetes)+ 控制面节点 apiserver 审计文件(`/var/lib/rancher/{rke2,k3s}/server/logs/audit.log`)。
 
-多租户(`auth_enabled: true`):Alloy 按 namespace 打租户,平台组件与 apiserver 审计进 `platform`,`tenant-*` 工作负载进 `tenant`;摄入限流按租户独立计。租户头自声明,网络边界是 `../monitoring-netpol.yaml`(仅 alloy/grafana/prometheus 可到 loki:3100)。
+多租户(`auth_enabled: true`):Alloy 按 namespace 打租户,平台组件与 apiserver 审计进 `platform`,`tenant-*` 工作负载进 `tenant`;摄入限流按租户独立计。入库前 `stage.replace` 把日志行里 `token=` 的值抹成 `<redacted>`(租户 Jupyter 启动横幅带实例 token)。租户头自声明,网络边界是 `../monitoring-netpol.yaml`(仅 alloy/grafana/prometheus 可到 loki:3100)。
 
 ## 留存口径(合规基线)
 

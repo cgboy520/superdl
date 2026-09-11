@@ -297,7 +297,7 @@ spec:
 ---
 # 策略五:superdl 命名空间内 Pod 的 Secret 引用白名单(pods:create 即可经 kubelet 读到 ns 内任意 Secret)。
 # 匹配两类创建者:superdl:* SA(strict 白名单)与 kube-system:job-controller(只收窄 superdl-* 前缀,
-# 放行 10-migrate-job.yaml 的 superdl-db 与 06-pg-backup.yaml 的 superdl-pg-backup)。平台 SA 建 Job 的收口在策略⑥。
+# 放行 10-migrate-job.yaml 的 superdl-db-migrate 与 06-pg-backup.yaml 的 superdl-pg-backup)。平台 SA 建 Job 的收口在策略⑥。
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -349,24 +349,24 @@ spec:
            ((e.valueFrom.secretKeyRef.name + '/' + e.valueFrom.secretKeyRef.key) == 'superdl-db/juicefs-metaurl' ||
             (!variables.strict && !e.valueFrom.secretKeyRef.name.startsWith('superdl-')))))))
       message: "superdl 命名空间内只允许 secretKeyRef superdl-db/juicefs-metaurl(配额 Job)"
-    # ③ envFrom.secretRef:平台 SA 全禁;job-controller 放行 superdl-db(迁移 Job)与 superdl-pg-backup(备份 CronJob)
+    # ③ envFrom.secretRef:平台 SA 全禁;job-controller 放行 superdl-db-migrate(迁移 Job,库 owner)与 superdl-pg-backup(备份 CronJob)
     - expression: >-
         object.spec.containers.all(c, !has(c.envFrom) || c.envFrom.all(f,
           !has(f.secretRef) ||
           (!variables.strict && has(f.secretRef.name) &&
-           (f.secretRef.name in ['superdl-db', 'superdl-pg-backup'] ||
+           (f.secretRef.name in ['superdl-db-migrate', 'superdl-pg-backup'] ||
             !f.secretRef.name.startsWith('superdl-'))))) &&
         (!has(object.spec.initContainers) || object.spec.initContainers.all(c, !has(c.envFrom) || c.envFrom.all(f,
           !has(f.secretRef) ||
           (!variables.strict && has(f.secretRef.name) &&
-           (f.secretRef.name in ['superdl-db', 'superdl-pg-backup'] ||
+           (f.secretRef.name in ['superdl-db-migrate', 'superdl-pg-backup'] ||
             !f.secretRef.name.startsWith('superdl-')))))) &&
         (!has(object.spec.ephemeralContainers) || object.spec.ephemeralContainers.all(c, !has(c.envFrom) || c.envFrom.all(f,
           !has(f.secretRef) ||
           (!variables.strict && has(f.secretRef.name) &&
-           (f.secretRef.name in ['superdl-db', 'superdl-pg-backup'] ||
+           (f.secretRef.name in ['superdl-db-migrate', 'superdl-pg-backup'] ||
             !f.secretRef.name.startsWith('superdl-'))))))
-      message: "superdl 命名空间内 envFrom.secretRef 仅限迁移/备份 Job 的 superdl-db、superdl-pg-backup"
+      message: "superdl 命名空间内 envFrom.secretRef 仅限迁移/备份 Job 的 superdl-db-migrate、superdl-pg-backup"
     # ④ Secret 卷(secret / projected / csi):平台 SA 全禁;job-controller 只禁 superdl-* 前缀
     - expression: >-
         !has(object.spec.volumes) || object.spec.volumes.all(v,

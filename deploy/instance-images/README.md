@@ -34,7 +34,8 @@
 | SSH 公钥 | 读环境变量 `AUTHORIZED_KEYS`(多行)**无条件覆写** `~/.ssh/authorized_keys`(空值也要清空文件),sshd 监听 `22`,仅密钥登录 |
 | 工作目录 | 用户数据放 `/root`(实例盘挂载点);数据盘挂 `/root/data` |
 | HOME 与运行目录 | `HOME=/root`,Jupyter 的 data 目录落在 `/root` 下。**runtime 与 config 两个目录放容器可写层**:`JUPYTER_RUNTIME_DIR=/run/jupyter`(含 token 明文)、`JUPYTER_CONFIG_DIR=/run/jupyter-config`(配置文件可改鉴权,不落实例盘) |
-| 基础镜像 | 与 SKU 的 `cuda_max` 兼容的 CUDA 运行时 |
+| 基础镜像 | 与 SKU 的 `cuda_max` 兼容的 CUDA 运行时;Dockerfile 末尾 `ENV NVIDIA_VISIBLE_DEVICES=void` 覆盖 nvidia/cuda 基座的 `all`,可见卡只来自 HAMi / device-plugin 注入的容器 env |
+| 容器日志 | entrypoint 把自身与 Jupyter 的 stdout/stderr 经 `sed` 抹掉 `token=` 值再落容器日志(Jupyter 启动横幅带 `?token=`);日志管道侧 Alloy 再抹一次 |
 
 ## 默认镜像矩阵(平台自带目录)
 

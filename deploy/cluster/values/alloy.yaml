@@ -64,9 +64,14 @@ alloy:
         forward_to = [loki.process.tenant.receiver]
       }
 
-      // 按 tenant 标签打 X-Scope-OrgID(Loki auth_enabled=true 必需)
+      // 按 tenant 标签打 X-Scope-OrgID(Loki auth_enabled=true 必需);入库前抹掉 URL 里的 token
+      // (Jupyter 启动横幅带 ?token=,该 token 在实例内等价 root)
       loki.process "tenant" {
         forward_to = [loki.write.default.receiver]
+        stage.replace {
+          expression = "(?i)(token=)[A-Za-z0-9_\\-]+"
+          replace    = "${1}<redacted>"
+        }
         stage.tenant {
           source = "tenant"
         }
