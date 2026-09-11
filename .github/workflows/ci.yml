@@ -16,7 +16,48 @@ permissions:
   contents: read
 
 jobs:
+  # 改动面探测:重 job 按需跑;workflow_call(发布闸门)、PR、push 基线不可用时一律全量
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      api: ${{ steps.f.outputs.api }}
+      frontend: ${{ steps.f.outputs.frontend }}
+      e2e: ${{ steps.f.outputs.e2e }}
+      k8s: ${{ steps.f.outputs.k8s }}
+      manifest: ${{ steps.f.outputs.manifest }}
+      nodejoin: ${{ steps.f.outputs.nodejoin }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - id: f
+        run: |
+          set -euo pipefail
+          base="${{ github.event.before }}"
+          if [ "${{ github.event_name }}" != "push" ] || [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+            echo "api=true" >> "$GITHUB_OUTPUT"
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+            echo "e2e=true" >> "$GITHUB_OUTPUT"
+            echo "k8s=true" >> "$GITHUB_OUTPUT"
+            echo "manifest=true" >> "$GITHUB_OUTPUT"
+            echo "nodejoin=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --name-only "$base" HEAD > /tmp/changed
+          hit() { if grep -qE "$1" /tmp/changed; then echo true; else echo false; fi }
+          {
+            echo "api=$(hit '^(apps/api/|packages/api-client/openapi\.json$|pyrightconfig\.json$|\.python-version$|\.github/workflows/ci\.yml$)')"
+            echo "frontend=$(hit '^(apps/web/|apps/admin/|packages/|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|package\.json$|turbo\.json$|eslint\.config\.mjs$|scripts/check-cjk\.sh$|scripts/check-copy-banned\.sh$|scripts/check-csp-hash\.sh$|\.github/workflows/ci\.yml$)')"
+            echo "e2e=$(hit '^(apps/|packages/|e2e/|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|package\.json$|turbo\.json$|\.python-version$|\.github/workflows/ci\.yml$)')"
+            echo "k8s=$(hit '^(apps/api/|deploy/|\.python-version$|\.github/workflows/ci\.yml$)')"
+            echo "manifest=$(hit '^(deploy/app/k8s/|scripts/check-gateway-manifests\.py$|\.github/workflows/ci\.yml$)')"
+            echo "nodejoin=$(hit '^(deploy/node-join/|apps/api/app/modules/nodes/assets/node-join\.sh$|\.github/workflows/ci\.yml$)')"
+          } >> "$GITHUB_OUTPUT"
+
   api:
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30   # pytest 全量挂死时由 job 级超时兜底(不引入 pytest-timeout 依赖)
     defaults:
@@ -49,6 +90,8 @@ jobs:
           git diff --exit-code ../../packages/api-client/openapi.json
 
   frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -72,6 +115,8 @@ jobs:
       - run: pnpm build
 
   node-join-script:
+    needs: changes
+    if: needs.changes.outputs.nodejoin == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -117,6 +162,8 @@ jobs:
             dir /repo --config /repo/.github/gitleaks.toml --verbose
 
   k8s-real-smoke:
+    needs: changes
+    if: needs.changes.outputs.k8s == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -414,6 +461,8 @@ jobs:
           uv run pytest -m real_k8s tests/test_orchestrator_conformance.py -v
 
   e2e:
+    needs: changes
+    if: needs.changes.outputs.e2e == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -460,6 +509,8 @@ jobs:
 
   # kubeconform:deploy/app/k8s 全部清单过 k8s OpenAPI schema
   k8s-manifest-validate:
+    needs: changes
+    if: needs.changes.outputs.manifest == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
