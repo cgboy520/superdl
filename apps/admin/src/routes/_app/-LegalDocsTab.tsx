@@ -1,7 +1,7 @@
 /** 法务文档 Tab:doc_key × locale 状态格 + 左编辑右预览 + 版本历史;写仅 admin;发布确认带行级 diff 统计。 */
 
 import { adminColors, formatDateTime, legalDocStatusMap, metaOf, useApiErrorText, useFormDraft } from "@superdl/ui";
-import { HexTag, LegalMarkdown, TableErrorEmpty } from "@superdl/ui/components";
+import { DataErrorAlert, HexTag, LegalMarkdown, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -78,11 +78,10 @@ export function LegalDocsTab() {
     <Space orientation="vertical" size={12} style={{ width: "100%" }}>
       {!writable && <Alert type="info" showIcon title={t("settings.legal.adminOnlyTip")} />}
       {overview.isError && (
-        <Alert
-          type="error"
-          showIcon
+        <DataErrorAlert
           title={t("common.loadFailed", { ns: "shared" })}
-          action={<Button size="small" onClick={() => void overview.refetch()}>{t("common.retry", { ns: "shared" })}</Button>}
+          description={null}
+          onRetry={() => void overview.refetch()}
         />
       )}
       <Table

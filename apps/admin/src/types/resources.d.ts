@@ -553,7 +553,6 @@ export default interface Resources {
       "replayConfirmMeta": "确认重放任务 #{{id}}({{type}})?将置回队列重新执行。",
       "replayTitle": "重放死信",
       "requeued": "已置回队列",
-      "retry": "重试",
       "seriesOversell": "实际超卖率",
       "seriesUtil": "真实利用率(24h)",
       "severityCritical": "严重",

@@ -3,7 +3,6 @@ import { moneyOr, DataErrorAlert, EChart, KpiGrid, PageContainer, TableErrorEmpt
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import {
-  Alert,
   Badge,
   Button,
   Card,
@@ -367,23 +366,6 @@ function AlertStreamCard() {
   );
 }
 
-/** 取数失败显式提示,不渲染成「暂无数据」。 */
-function LoadFailed({ onRetry }: { onRetry: () => void }) {
-  const { t } = useTranslation();
-  return (
-    <Alert
-      type="error"
-      showIcon
-      title={t("overview.loadFailed")}
-      action={
-        <Button size="small" onClick={onRetry}>
-          {t("overview.retry")}
-        </Button>
-      }
-    />
-  );
-}
-
 function Overview() {
   const { t } = useTranslation();
   const { formatMoney } = useFormat();
@@ -529,7 +511,7 @@ function Overview() {
           extra={<Typography.Text type="secondary">{t("overview.oversellHint")}</Typography.Text>}
         >
           {oversellError ? (
-            <LoadFailed onRetry={() => void refetchOversell()} />
+            <DataErrorAlert title={t("overview.loadFailed")} description={null} onRetry={() => void refetchOversell()} />
           ) : oversellRows.length ? (
             <OversellChart rows={oversellRows} />
           ) : (
@@ -538,7 +520,7 @@ function Overview() {
         </Card>
         <Card title={t("overview.poolOccupancy")} style={{ marginTop: 16 }}>
           {ovError ? (
-            <LoadFailed onRetry={() => void refetchOv()} />
+            <DataErrorAlert title={t("overview.loadFailed")} description={null} onRetry={() => void refetchOv()} />
           ) : ov && ov.pools.length ? (
             <PoolOccupancy pools={ov.pools} />
           ) : (

@@ -1,6 +1,6 @@
 import { WarningOutlined } from "@ant-design/icons";
 import { addAmounts, adjustmentStatusMap, adminColors, fontSize, formatDateTime, idemKeyOf, invoiceStatusMap, ledgerTypeMap, metaOf, orderStatusMap, payoutChannelMap, refundStatusMap } from "@superdl/ui";
-import { moneyOr, HexTag, LoadMore, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
+import { DataErrorAlert, moneyOr, HexTag, LoadMore, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
@@ -190,12 +190,11 @@ function ReconciliationCard() {
       }
     >
       {isError && (
-        <Alert
-          type="error"
-          showIcon
+        <DataErrorAlert
           style={{ marginBottom: 12 }}
           title={t("common.loadFailed", { ns: "shared" })}
-          action={<Button size="small" onClick={() => void refetch()}>{t("common.retry", { ns: "shared" })}</Button>}
+          description={null}
+          onRetry={() => void refetch()}
         />
       )}
       <Row gutter={16}>

@@ -1,7 +1,7 @@
 /** 系统设置:策略参数(env 默认 + DB 覆盖,保存需原因)/ 公告发布(群发 active 租户)/ 法务文档 / 管理员账号。 */
 
 import { adminColors, announcementStatusMap, fontSize, formatDateTime, idemKeyOf, metaOf } from "@superdl/ui";
-import { HexTag, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
+import { DataErrorAlert, HexTag, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
@@ -120,12 +120,11 @@ function PoliciesTab() {
         title={t("settings.instantEffect")}
       />
       {isError && (
-        <Alert
-          type="error"
-          showIcon
+        <DataErrorAlert
           style={{ marginBottom: 12 }}
           title={t("common.loadFailed", { ns: "shared" })}
-          action={<Button size="small" onClick={() => void refetch()}>{t("common.retry", { ns: "shared" })}</Button>}
+          description={null}
+          onRetry={() => void refetch()}
         />
       )}
       <Table

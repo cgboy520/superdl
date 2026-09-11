@@ -561,7 +561,6 @@
     "replayConfirmMeta": "Replay task #{{id}} ({{type}})? It is put back on the queue.",
     "replayTitle": "Replay dead letter",
     "requeued": "Requeued",
-    "retry": "Retry",
     "seriesOversell": "Actual oversell",
     "seriesUtil": "Real utilization (24h)",
     "severityCritical": "Critical",
