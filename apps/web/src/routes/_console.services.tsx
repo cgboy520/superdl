@@ -1,8 +1,9 @@
 /** 在线服务列表:名称 / 状态 / 服务端点 / 规格 / 版本 / 费用 / 创建时间 / 操作;筛选与搜索入 URL(replace)。列表不轮询;deploying / stopping / releasing 逐条 5s 轮询,迁移即回刷;unready 不算过渡态。 */
 
-import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { QuestionCircleOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import type { ServiceOut } from "@superdl/api-client";
 import {
+  controlWidth,
   fontSize,
   formatDateTime,
   isServiceStatus,
@@ -13,9 +14,9 @@ import {
   useDebouncedValue,
   useFormat,
 } from "@superdl/ui";
-import { LoadMore, moneyOr, TableErrorEmpty } from "@superdl/ui/components";
+import { LoadMore, moneyOr, PageHeader, TableErrorEmpty } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Alert, Button, Input, Select, Space, Table, Tag, Typography } from "antd";
+import { Button, Input, Select, Space, Table, Tag, theme, Tooltip, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -113,6 +114,7 @@ function BillingCell({
 
 function ServicesPage() {
   const { t } = useTranslation(["web", "shared"]);
+  const { token } = theme.useToken();
   const navigate = useNavigate();
   const { q, status } = Route.useSearch();
   const [keyword, setKeyword] = useState(q ?? "");
@@ -186,56 +188,57 @@ function ServicesPage() {
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-      <Typography.Title level={4} style={{ margin: 0 }}>
-        {t("services.title")}
-      </Typography.Title>
-      <Alert
-        type="info"
-        showIcon
-        title={
-          policies?.freeze_grace_hours !== undefined
-            ? t("services.policyBanner", { hours: policies.freeze_grace_hours })
-            : t("services.policyBannerFallback")
+      {/* 停机 / 冻结策略不做常驻条:放标题旁 tooltip(ui-ux-spec §1 规则 1) */}
+      <PageHeader
+        title={t("services.title")}
+        tags={
+          <Tooltip
+            title={
+              policies?.freeze_grace_hours !== undefined
+                ? t("services.policyBanner", { hours: policies.freeze_grace_hours })
+                : t("services.policyBannerFallback")
+            }
+          >
+            <QuestionCircleOutlined style={{ color: token.colorTextSecondary, cursor: "help" }} />
+          </Tooltip>
+        }
+        extra={
+          <>
+            <Select
+              allowClear
+              style={{ width: controlWidth.sm }}
+              placeholder={t("services.statusFilter")}
+              aria-label={t("services.statusFilter")}
+              value={status ?? null}
+              onChange={(v: string | null) => setSearch({ status: v ?? undefined })}
+              options={SERVICE_FILTER_STATUSES.map((s) => {
+                const meta = metaOf(serviceStatusMap, s);
+                // 裸状态码不进 t()(extract 会当成新键)
+                return { value: s, label: meta ? t(meta.labelKey) : s };
+              })}
+            />
+            <Input
+              allowClear
+              prefix={<SearchOutlined />}
+              placeholder={t("services.searchPlaceholder")}
+              aria-label={t("services.searchPlaceholder")}
+              data-search-input
+              style={{ width: controlWidth.md }}
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+            />
+            <Button
+              icon={<ReloadOutlined />}
+              aria-label={t("instances.refreshList")}
+              loading={isRefetching}
+              onClick={() => void refetch()}
+            />
+            <Link to="/services/new">
+              <Button type="primary">{t("services.deploy")}</Button>
+            </Link>
+          </>
         }
       />
-      <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
-        <Space>
-          <Link to="/services/new">
-            <Button type="primary">{t("services.deploy")}</Button>
-          </Link>
-          <Button
-            icon={<ReloadOutlined />}
-            aria-label={t("instances.refreshList")}
-            loading={isRefetching}
-            onClick={() => void refetch()}
-          />
-        </Space>
-        <Space size={12}>
-          <Select
-            allowClear
-            style={{ width: 140 }}
-            placeholder={t("services.statusFilter")}
-            aria-label={t("services.statusFilter")}
-            value={status ?? null}
-            onChange={(v: string | null) => setSearch({ status: v ?? undefined })}
-            options={SERVICE_FILTER_STATUSES.map((s) => {
-              const meta = metaOf(serviceStatusMap, s);
-              // 裸状态码不进 t()(extract 会当成新键)
-              return { value: s, label: meta ? t(meta.labelKey) : s };
-            })}
-          />
-          <Input
-            allowClear
-            prefix={<SearchOutlined />}
-            placeholder={t("services.searchPlaceholder")}
-            aria-label={t("services.searchPlaceholder")}
-            data-search-input
-            style={{ width: 220 }}
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-          />
-        </Space>
-      </Space>
       <Table<ServiceOut>
         rowKey="slug"
         loading={isLoading}

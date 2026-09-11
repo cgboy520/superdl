@@ -44,7 +44,8 @@ test("部署在线服务并拿到端点与 API Key", async ({ page }) => {
     .click();
   await expect(page.getByText("v2", { exact: true }).first()).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText("运行中").first()).toBeVisible({ timeout: 90_000 });
-  await page.getByRole("tab", { name: "版本" }).click();
+  // 版本与事件合成「历史」Tab
+  await page.getByRole("tab", { name: "历史" }).click();
   await expect(page.locator("tbody").getByText("v2")).toBeVisible({ timeout: 15_000 });
   await expect(page.locator("tbody").getByText("当前")).toBeVisible();
 
