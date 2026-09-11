@@ -1332,6 +1332,16 @@ async def release_instance(
 # ---------- K8s spec 构造 ----------
 
 
+def bandwidth_annotations(settings: Settings) -> dict[str, str]:
+    """CNI bandwidth 插件识别的限速注解(k3s flannel 与 Cilium bandwidthManager 同口径);0 = 不加。"""
+    out: dict[str, str] = {}
+    if settings.tenant_egress_bandwidth_mbps > 0:
+        out["kubernetes.io/egress-bandwidth"] = f"{settings.tenant_egress_bandwidth_mbps}M"
+    if settings.tenant_ingress_bandwidth_mbps > 0:
+        out["kubernetes.io/ingress-bandwidth"] = f"{settings.tenant_ingress_bandwidth_mbps}M"
+    return out
+
+
 def build_pod_spec(
     instance: Instance,
     *,
@@ -1388,7 +1398,7 @@ def build_pod_spec(
         node_selector=gpu_req.node_selector,
         data_disk_subpath=data_disk_subpath,
         scheduler_name=gpu_req.scheduler_name,
-        annotations=gpu_req.annotations,
+        annotations={**gpu_req.annotations, **bandwidth_annotations(settings)},
         image_pull_secret=image_pull_secret,
         # 服务容器 Always 原地重启(Pod 名 = 实例 uuid 不可变)
         restart_policy="Always" if is_service else "Never",

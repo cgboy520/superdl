@@ -40,9 +40,9 @@
 - 请求路径不许调 K8s:业务写入与 `outbox_tasks` 同事务。唯一例外是日志端点只读直读,由 owner / 限流 / 超时三道闸兜住。
 - **购买模式变更不写 `instance_events`**(`subscribe_instance` 与 `convert_to_on_demand`);变更痕迹在审计日志与资金流水。
 - K8s 访问收敛在 `app/core/k8s`,`K8sOrchestrator` 协议是唯一接口面(`app/core/k8s/base.py`)。FakeOrchestrator 与 RealOrchestrator 同步实现协议全部方法。
-- RealOrchestrator 每租户:独立 namespace(PSA enforce=baseline + audit=restricted)、ResourceQuota 兜底、Egress 隔离 NetworkPolicy、JuiceFS PVC;`disk.wipe` 为真实擦除 Job(幂等 + 退避)。ns/NetPol/Quota 已存在时 patch 收敛;K8s list 一律分页(limit=500 + continue),同步调用走专属有界执行器。
+- RealOrchestrator 每租户:独立 namespace(PSA enforce=baseline + audit=restricted)、ResourceQuota 兜底、Egress 隔离 NetworkPolicy、JuiceFS PVC;`disk.wipe` 为真实擦除 Job(幂等 + 退避,模板显式 `hostUsers: false`,镜像 digest 钉死 `WIPE_IMAGE`)。ns/NetPol/Quota 已存在时 patch 收敛;K8s list 一律分页(limit=500 + continue),同步调用走专属有界执行器。对象构造是纯函数(`build_instance_pod` / `build_managed_job` / `build_disk_quota_container` / `build_prewarm_job`),`scripts/render_admission_probes.py` 用它们渲染成清单供 CI 在准入策略下 `--dry-run=server` 对账。
 - 镜像拉取凭据不落节点、不进 Pod spec 明文:outbox 建 Pod 前在 `ensure_namespace` 之后调 `core/registry.ensure_registry_pull_secret`,把 `superdl-registry-pull` 托管到租户 ns(annotation 指纹相同跳过),Pod spec 以 `imagePullSecrets` 引用;未配机器人 `image_pull_secret=None`。预热 Job 同一条链。
-- 端口从 `port_allocations` 池分配,释放回池;池耗尽创建失败并给明确错误。
+- 端口从 `port_allocations` 池分配,释放/失败回池(停机不回);池耗尽创建失败并给明确错误;水位每轮 reconciler 刷进 `superdl_ssh_port_pool_ports{state}`。
 - 每用户实例数、GPU 数与 CPU 实例 vCPU 数三维互不相交;数值见 [limits.md](./limits.md)。
 - 实例释放后触发擦盘任务;数据盘独立,见 [disks.md](./disks.md)。
 
@@ -57,7 +57,7 @@
 
 ### reconciler 与保留期
 
-- reconciler(30s,advisory lock)是唯一收敛点:Pod Ready 而 DB creating/starting → running;Pod 消失而 DB running → failed;Pod 存在而 DB 终态 → 强删;creating 超 5min → failed 并退款。每轮一次 `list_instance_pods` 即状态源,不逐实例 `get_status`。
+- reconciler(30s,advisory lock)是唯一收敛点:Pod Ready 而 DB creating/starting → running;Pod 消失而 DB running → failed;Pod 存在而 DB 终态 → 强删;creating 超 5min → failed(包周期实例首次 creating 超时同事务退回预付)。每轮一次 `list_instance_pods` 即状态源,不逐实例 `get_status`。节点集合变化触发的租户 NetPol 重下发逐 ns 记账(`_netpol_synced_nodes`):成功的 ns 下轮不重跑,失败的单独重试,一个 ns 出错不阻塞其余。
 - stopping/releasing 悬挂两档超时(`stopping_timeout_seconds`/`releasing_timeout_seconds`):一档经 outbox 重发删除,二档 force 强删后按正常边收敛。悬挂实例数见 `superdl_reconcile_stuck_instances`。
 - 泄漏回收熔断:未知 Pod 占比超 `leak_reclaim_abort_ratio` 即中止本轮并计 `superdl_reconcile_leak_aborted_total`;在途删除宽限同两档超时,其余 force 强删。
 - 保留期 GC 在 reconciler 内:failed 超 `failed_retention_days` → 通知并转 releasing;stopped 超 `stopped_retention_days` → 转 releasing,提前 `stopped_retention_warn_days` 预警。数据盘不受影响。阈值见 [limits.md](./limits.md)。

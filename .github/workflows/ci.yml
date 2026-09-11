@@ -439,8 +439,33 @@ jobs:
           fi
           echo "  ✓ 放行:node-mgr 退役 GPU 工作节点"
           kubectl delete node vap-probe-infra vap-probe-gpu
-
-          kubectl delete -f deploy/cluster/admission/tenant-restrictions.yaml
+      # 平台自己生成的对象必须全部能过自家准入:按 real.py 的构造器渲染租户实例五种形态、擦除/配额/预热 Job
+      # 及其派生 Pod,以真实创建者身份 dry-run=server(策略仍在集群里)。挂了说明:平台会建出永远被拒的对象
+      - name: 准入策略:平台生成对象全部可准入(dry-run)
+        working-directory: apps/api
+        run: |
+          uv sync --frozen
+          kubectl create namespace tenant-probe
+          kubectl label namespace tenant-probe superdl.io/managed=true \
+            pod-security.kubernetes.io/enforce=baseline pod-security.kubernetes.io/audit=restricted \
+            pod-security.kubernetes.io/warn=restricted
+          kubectl label namespace superdl pod-security.kubernetes.io/enforce=restricted --overwrite
+          uv run python scripts/render_admission_probes.py /tmp/admission-probes
+          fail=0
+          for f in /tmp/admission-probes/*.yaml; do
+            as_user="$(cat "${f%.yaml}.as")"
+            if out=$(kubectl create --dry-run=server -f "$f" ${as_user:+--as="$as_user"} 2>&1); then
+              echo "  ✓ 准入:$(basename "$f" .yaml)"
+            else
+              echo "::error::平台生成对象被准入拒绝:$(basename "$f" .yaml)(--as=${as_user:-<admin>}):${out}"
+              fail=1
+            fi
+          done
+          kubectl delete namespace tenant-probe --wait=false
+          exit "$fail"
+      # 后续冒烟在裸 kind 上跑(kind 无 userns,租户 Pod 的 hostUsers=false 起不来)
+      - name: 删准入策略
+        run: kubectl delete -f deploy/cluster/admission/tenant-restrictions.yaml
       - name: 生成 superdl-tenant-mgr 受限 kubeconfig
         run: |
           TOKEN=$(kubectl create token superdl-tenant-mgr -n superdl --duration=1h)

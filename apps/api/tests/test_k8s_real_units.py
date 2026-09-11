@@ -611,3 +611,40 @@ class TestServiceWorkloadObjects:
     def test_no_health_path_yields_no_probes(self):
         c = self._pod(self._svc()).spec.containers[0]
         assert c.startup_probe is None and c.readiness_probe is None
+
+
+class TestManagedJobAdmission:
+    """受管 Job 的 Pod 模板显式 hostUsers=false。挂了说明:租户 ns 的准入策略
+    (superdl-tenant-pod-baseline)会拒掉擦除 Job 的 Pod,数据盘永远擦不掉。"""
+
+    def test_wipe_job_template_sets_host_users_false(self):
+        from app.core.k8s.real import build_managed_job
+
+        container = RealOrchestrator._batch_container("wipe", "busybox:1.36", ["true"], env=[])
+        job = build_managed_job("tenant-1", "wipe-x", container, volumes=[], pod_labels={})
+        pod_spec = cast(Any, job.spec).template.spec
+        assert pod_spec.host_users is False
+        assert pod_spec.automount_service_account_token is False
+
+    def test_quota_container_password_stays_env_indirect(self):
+        from app.core.k8s.real import build_disk_quota_container
+
+        c = build_disk_quota_container("juicedata/juicefs-ce:v1.3.0", "pvc-x", "sub-1", 5, True)
+        assert "sub-1" not in " ".join(c.command)
+        metaurl = next(e for e in c.env if e.name == "JUICEFS_METAURL")
+        assert metaurl.value_from.secret_key_ref.key == "juicefs-metaurl"
+
+
+class TestInstancePodBandwidth:
+    """带宽注解随 spec.annotations 落到 Pod。挂了说明:限速注解丢了,租户出向无上限。"""
+
+    def test_annotations_reach_pod_metadata(self):
+        from app.core.k8s.real import build_instance_pod
+
+        spec = _spec()
+        spec = InstancePodSpec(
+            **{**spec.__dict__, "annotations": {"kubernetes.io/egress-bandwidth": "200M"}}
+        )
+        pod = cast(Any, build_instance_pod(spec))
+        assert pod.metadata.annotations["kubernetes.io/egress-bandwidth"] == "200M"
+        assert pod.spec.host_users is None  # host_users=True 的样板不写该字段

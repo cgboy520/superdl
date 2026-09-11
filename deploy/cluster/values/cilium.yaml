@@ -9,6 +9,10 @@ gatewayAPI:
 l2announcements:
   enabled: true            # 裸金属 LB 通告(或按机房改 BGP)
 # 不开 externalIPs(SSH 走 NodePort+LB 池)
+# 租户 Pod 带宽上限靠 kubernetes.io/egress-bandwidth 注解(orchestrator/service.bandwidth_annotations);
+# light 档 k3s 的 flannel conflist 自带 bandwidth 插件,full 档要开 Cilium 的带宽管理器
+bandwidthManager:
+  enabled: true
 hubble:
   enabled: true
   relay:

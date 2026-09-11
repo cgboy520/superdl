@@ -14,13 +14,16 @@
 | 单实例 GPU 数 | 按 SKU `max_gpus_per_instance`(UI 给 1/2/4/8;CPU 规格为 0) | — | `skus` |
 | 单个 GPU 节点让给 CPU 实例的 vCPU | 16 | 0~1024 | 策略 `gpu_node_cpu_instance_vcpu_cap`;0 = 不许 CPU 实例落 GPU 节点。近似库存口径,见 [catalog.md](./catalog.md) |
 | 进行中工单 | 10 | — | `tickets/service.py` `MAX_OPEN_TICKETS` |
-| SSH 公钥 | 不限;同用户指纹唯一 | — | `ssh_keys` |
-| 容器临时存储 | 请求 2Gi,上限 64Gi | — | `core/k8s/real.py` |
+| SSH 公钥 | 50;同用户指纹唯一;添加 20 次/小时 | — | `account/service.py` `MAX_SSH_KEYS_PER_USER` / `ssh-key-add:{user_id}` |
+| 单工单回复 | 200 条;30 次/10 分钟 | — | `tickets/service.py` `MAX_MESSAGES_PER_TICKET` / `ticket-reply:{user_id}` |
+| 同一证件绑定账号 | 3 | env | `SUPERDL_REAL_NAME_MAX_ACCOUNTS_PER_IDENTITY`(实名通过时按 `users.id_number_hmac` 计) |
+| 容器临时存储 | 请求 10Gi,上限 64Gi | — | `core/k8s/real.py` |
+| 租户 Pod 带宽 | 出向 200 Mbit/s,入向不限 | env | `SUPERDL_TENANT_EGRESS_BANDWIDTH_MBPS` / `SUPERDL_TENANT_INGRESS_BANDWIDTH_MBPS`(0 = 不限;CNI bandwidth 注解) |
 | 单服务活跃 API Key | 20 | — | `services/service.py` `MAX_API_KEYS_PER_SERVICE`;吊销的不计 |
 | 单服务在途版本更新 | 1 | — | `services/service.py` `create_revision`:`rollout_instance_id` 非空即 409;包周期服务不开放 |
 | 对外服务端点限流 | 20 rps/端点 | — | 生效在网关本地令牌桶(挂 `svc-https` listener 的 `BackendTrafficPolicy`,桶按路由分),限额手工写在 `deploy/app/k8s/04-gateway.yaml`,改值 = 改清单重新下发。见 [services.md](./services.md) |
 
-集群级:SSH NodePort 端口池 30000~32767(排除 30500),即单集群最多约 2767 台**带 SSH 的**实例(服务型实例默认 `with_ssh=false`,不进池;`SUPERDL_SSH_PORT_RANGE_START` / `SUPERDL_SSH_PORT_RANGE_END`,排除集 `SUPERDL_SSH_PORT_EXCLUDED` 默认 `{30500}`;撞占的端口标 blocked 并周期复检放回,水位见 `GET /api/admin/v1/nodes/port-pool`)。分配在段内**随机**。
+集群级:SSH NodePort 端口池 30000~32767(排除 30500),即单集群最多约 2767 台**带 SSH 的**实例(服务型实例默认 `with_ssh=false`,不进池;`SUPERDL_SSH_PORT_RANGE_START` / `SUPERDL_SSH_PORT_RANGE_END`,排除集 `SUPERDL_SSH_PORT_EXCLUDED` 默认 `{30500}`;撞占的端口标 blocked 并周期复检放回,水位见 `GET /api/admin/v1/nodes/port-pool` 与指标 `superdl_ssh_port_pool_ports{state}`,空闲 <10% 告警 `SshPortPoolLow`、<20 个 `SshPortPoolExhausted`)。分配在段内**随机**;停机不释放端口(重启后端口不变),释放/失败才回池。
 
 ## 计费与回收时钟
 

@@ -138,6 +138,9 @@ class Settings(BaseSettings):
     max_disks_per_user: int = 20
     # 单个 GPU 节点让给 CPU 实例的 vCPU 上限;0 = 不许 CPU 实例落 GPU 节点
     gpu_node_cpu_instance_vcpu_cap: int = 16
+    # 租户 Pod 带宽上限(Mbit/s,CNI bandwidth 插件按 kubernetes.io/*-bandwidth 注解限速);0 = 不限
+    tenant_egress_bandwidth_mbps: int = 200
+    tenant_ingress_bandwidth_mbps: int = 0
 
     # 包周期折扣(百分数,80 = 8 折)
     period_discount_day: int = 95

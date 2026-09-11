@@ -64,7 +64,10 @@ def test_build_pod_spec_carries_selector_and_annotations(monkeypatch):
         make_instance(spec=gpu_spec("shared", "hami", gpu_model_selector="RTX4090"))
     )
     assert pod.node_selector[GPU_MODEL_NODE_LABEL] == "RTX4090"
-    assert pod.annotations == {HAMI_USE_GPUTYPE_ANNOTATION: "NVIDIA GeForce RTX 4090"}
+    assert pod.annotations[HAMI_USE_GPUTYPE_ANNOTATION] == "NVIDIA GeForce RTX 4090"
+    # 带宽上限注解与 HAMi 注解并存(默认只限出向)
+    assert pod.annotations["kubernetes.io/egress-bandwidth"] == "200M"
+    assert "kubernetes.io/ingress-bandwidth" not in pod.annotations
 
 
 def test_build_pod_spec_multi_gpu_scales_cpu_mem():

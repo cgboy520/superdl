@@ -181,8 +181,11 @@ EGRESS_BLOCKED_TCP_PORTS = (
 # 公网 UDP 白名单:53 / 443(QUIC);其余走工单白名单
 EGRESS_ALLOWED_UDP_PORTS = (53, 443)
 
-# 租户容器 ephemeral-storage(可写层 + 日志 + emptyDir);超 limit 即驱逐
-TENANT_EPHEMERAL_REQUEST = "2Gi"
+# 数据盘擦除 Job 镜像:digest 钉死(与 scripts/release.sh 的清单镜像同规矩)
+WIPE_IMAGE = "busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662"
+# 租户容器 ephemeral-storage(可写层 + 日志 + emptyDir);超 limit 即驱逐。
+# request 是调度器预留量:每节点超卖比 = limit/request,压到 6.4 倍(ns 配额 500Gi 同时约束总量)
+TENANT_EPHEMERAL_REQUEST = "10Gi"
 TENANT_EPHEMERAL_LIMIT = "64Gi"
 
 
@@ -248,6 +251,128 @@ class _TimeoutApi:
 
 
 logger = get_logger(__name__)
+
+
+def build_instance_pod(spec: InstancePodSpec) -> "client.V1Pod":
+    """实例 Pod 对象(纯构造,不触 API);CI 用它对准入策略做 dry-run 对账
+    (scripts/render_admission_probes.py)。"""
+    requests = {
+        "cpu": str(spec.vcpu),
+        "memory": f"{spec.mem_gb}Gi",
+        "ephemeral-storage": TENANT_EPHEMERAL_REQUEST,
+        **spec.gpu_resources,
+    }
+    limits = {**requests, "ephemeral-storage": TENANT_EPHEMERAL_LIMIT}
+    env = [client.V1EnvVar(name=k, value=v) for k, v in spec.env.items()]
+    # 敏感值以 secretKeyRef 引用 per-instance Secret
+    secret_name = instance_env_secret_name(spec.name)
+    for key in spec.secret_env:
+        env.append(
+            client.V1EnvVar(
+                name=key,
+                value_from=client.V1EnvVarSource(
+                    secret_key_ref=client.V1SecretKeySelector(name=secret_name, key=key)
+                ),
+            )
+        )
+    env.append(client.V1EnvVar(name="AUTHORIZED_KEYS", value="\n".join(spec.authorized_keys)))
+    volumes: list[client.V1Volume] = [
+        client.V1Volume(
+            name="instance-disk",
+            persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
+                claim_name=instance_disk_pvc_name(spec.name)
+            ),
+        )
+    ]
+    mounts = [client.V1VolumeMount(name="instance-disk", mount_path="/root")]
+    if spec.data_disk_subpath:
+        volumes.append(
+            client.V1Volume(
+                name="data-disk",
+                persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
+                    claim_name=JUICEFS_PVC_NAME
+                ),
+            )
+        )
+        mounts.append(
+            client.V1VolumeMount(
+                name="data-disk", mount_path="/root/data", sub_path=spec.data_disk_subpath
+            )
+        )
+    return client.V1Pod(
+        metadata=client.V1ObjectMeta(
+            name=spec.name,
+            namespace=spec.namespace,
+            labels={INSTANCE_LABEL: spec.name, MANAGED_LABEL: "true"},
+            annotations=spec.annotations or None,
+        ),
+        spec=client.V1PodSpec(
+            runtime_class_name=spec.runtime_class,
+            scheduler_name=spec.scheduler_name,  # HAMi 池 = hami-scheduler(不赖 webhook)
+            # 共享池 hostUsers: false(userns);独享 Kata 走默认
+            host_users=False if spec.host_users is False else None,
+            # dev Never;service Always(kubelet 原地重启容器)
+            restart_policy=spec.restart_policy,
+            node_selector=spec.node_selector or None,
+            termination_grace_period_seconds=30,
+            automount_service_account_token=False,
+            enable_service_links=False,
+            # Harbor 拉取凭据(未配机器人则不引用)
+            image_pull_secrets=(
+                [client.V1LocalObjectReference(name=spec.image_pull_secret)]
+                if spec.image_pull_secret
+                else None
+            ),
+            containers=[
+                client.V1Container(
+                    name="workspace",
+                    image=spec.image,
+                    resources=client.V1ResourceRequirements(limits=limits, requests=requests),
+                    env=env,
+                    command=list(spec.command) if spec.command else None,
+                    args=list(spec.args) if spec.args else None,
+                    ports=_container_ports(spec),
+                    volume_mounts=mounts,
+                    security_context=tenant_security_context(),
+                    startup_probe=_health_probe(spec, failure_threshold=90),
+                    readiness_probe=_health_probe(spec, failure_threshold=3),
+                )
+            ],
+            volumes=volumes,
+        ),
+    )
+
+
+def build_managed_job(
+    namespace: str,
+    job_name: str,
+    container: Any,
+    volumes: list[Any],
+    pod_labels: dict[str, str],
+) -> "client.V1Job":
+    """受管 Job 对象(wipe/quota 共用,纯构造)。hostUsers=false 显式写出:租户 ns 的准入策略
+    (superdl-tenant-pod-baseline)要求非 Kata Pod 必须带它,缺了 Job 会被建出而 Pod 永远被拒。"""
+    return client.V1Job(
+        metadata=client.V1ObjectMeta(
+            name=job_name,
+            namespace=namespace,
+            labels={MANAGED_LABEL: "true", **pod_labels},
+        ),
+        spec=client.V1JobSpec(
+            backoff_limit=1,
+            ttl_seconds_after_finished=3600,
+            template=client.V1PodTemplateSpec(
+                metadata=client.V1ObjectMeta(labels={MANAGED_LABEL: "true", **pod_labels}),
+                spec=client.V1PodSpec(
+                    restart_policy="Never",
+                    automount_service_account_token=False,
+                    host_users=False,
+                    containers=[container],
+                    volumes=volumes,
+                ),
+            ),
+        ),
+    )
 
 
 class RealOrchestrator:
@@ -603,91 +728,7 @@ class RealOrchestrator:
         )
 
     def _create_pod_sync(self, spec: InstancePodSpec) -> None:
-        requests = {
-            "cpu": str(spec.vcpu),
-            "memory": f"{spec.mem_gb}Gi",
-            "ephemeral-storage": TENANT_EPHEMERAL_REQUEST,
-            **spec.gpu_resources,
-        }
-        limits = {**requests, "ephemeral-storage": TENANT_EPHEMERAL_LIMIT}
-        env = [client.V1EnvVar(name=k, value=v) for k, v in spec.env.items()]
-        # 敏感值以 secretKeyRef 引用 per-instance Secret
-        secret_name = instance_env_secret_name(spec.name)
-        for key in spec.secret_env:
-            env.append(
-                client.V1EnvVar(
-                    name=key,
-                    value_from=client.V1EnvVarSource(
-                        secret_key_ref=client.V1SecretKeySelector(name=secret_name, key=key)
-                    ),
-                )
-            )
-        env.append(client.V1EnvVar(name="AUTHORIZED_KEYS", value="\n".join(spec.authorized_keys)))
-        volumes: list[client.V1Volume] = [
-            client.V1Volume(
-                name="instance-disk",
-                persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
-                    claim_name=instance_disk_pvc_name(spec.name)
-                ),
-            )
-        ]
-        mounts = [client.V1VolumeMount(name="instance-disk", mount_path="/root")]
-        if spec.data_disk_subpath:
-            volumes.append(
-                client.V1Volume(
-                    name="data-disk",
-                    persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
-                        claim_name=JUICEFS_PVC_NAME
-                    ),
-                )
-            )
-            mounts.append(
-                client.V1VolumeMount(
-                    name="data-disk", mount_path="/root/data", sub_path=spec.data_disk_subpath
-                )
-            )
-        pod = client.V1Pod(
-            metadata=client.V1ObjectMeta(
-                name=spec.name,
-                namespace=spec.namespace,
-                labels={INSTANCE_LABEL: spec.name, MANAGED_LABEL: "true"},
-                annotations=spec.annotations or None,
-            ),
-            spec=client.V1PodSpec(
-                runtime_class_name=spec.runtime_class,
-                scheduler_name=spec.scheduler_name,  # HAMi 池 = hami-scheduler(不赖 webhook)
-                # 共享池 hostUsers: false(userns);独享 Kata 走默认
-                host_users=False if spec.host_users is False else None,
-                # dev Never;service Always(kubelet 原地重启容器)
-                restart_policy=spec.restart_policy,
-                node_selector=spec.node_selector or None,
-                termination_grace_period_seconds=30,
-                automount_service_account_token=False,
-                enable_service_links=False,
-                # Harbor 拉取凭据(未配机器人则不引用)
-                image_pull_secrets=(
-                    [client.V1LocalObjectReference(name=spec.image_pull_secret)]
-                    if spec.image_pull_secret
-                    else None
-                ),
-                containers=[
-                    client.V1Container(
-                        name="workspace",
-                        image=spec.image,
-                        resources=client.V1ResourceRequirements(limits=limits, requests=requests),
-                        env=env,
-                        command=list(spec.command) if spec.command else None,
-                        args=list(spec.args) if spec.args else None,
-                        ports=_container_ports(spec),
-                        volume_mounts=mounts,
-                        security_context=tenant_security_context(),
-                        startup_probe=_health_probe(spec, failure_threshold=90),
-                        readiness_probe=_health_probe(spec, failure_threshold=3),
-                    )
-                ],
-                volumes=volumes,
-            ),
-        )
+        pod = build_instance_pod(spec)
         try:
             self.core.create_namespaced_pod(spec.namespace, pod)
         except client.ApiException as exc:
@@ -1019,26 +1060,7 @@ class RealOrchestrator:
                 )
                 raise RuntimeError(f"job failed, recreated next retry: {job_name}")
             raise RuntimeError(f"job still running: {job_name}")
-        job = client.V1Job(
-            metadata=client.V1ObjectMeta(
-                name=job_name,
-                namespace=namespace,
-                labels={MANAGED_LABEL: "true", **pod_labels},
-            ),
-            spec=client.V1JobSpec(
-                backoff_limit=1,
-                ttl_seconds_after_finished=3600,
-                template=client.V1PodTemplateSpec(
-                    metadata=client.V1ObjectMeta(labels={MANAGED_LABEL: "true", **pod_labels}),
-                    spec=client.V1PodSpec(
-                        restart_policy="Never",
-                        automount_service_account_token=False,
-                        containers=[container],
-                        volumes=volumes,
-                    ),
-                ),
-            ),
-        )
+        job = build_managed_job(namespace, job_name, container, volumes, pod_labels)
         _ignore(lambda: self.batch.create_namespaced_job(namespace, job), 409)
         raise RuntimeError(f"job created, awaiting completion: {job_name}")
 
@@ -1070,7 +1092,7 @@ class RealOrchestrator:
         """租户 ns 内起 Job 挂 JuiceFS PVC 删除子目录(幂等,见 _run_managed_job_sync)。"""
         _check_subpath(subpath)
         container = self._batch_container(
-            "wipe", "busybox:1.36", ["rm", "-rf", f"/data/{subpath}"], env=[]
+            "wipe", WIPE_IMAGE, ["rm", "-rf", f"/data/{subpath}"], env=[]
         )
         container.volume_mounts = [client.V1VolumeMount(name="juicefs", mount_path="/data")]
         self._run_managed_job_sync(
@@ -1116,41 +1138,9 @@ class RealOrchestrator:
         metaurl 经 secretKeyRef 注入;subpath/capacity 走 env;密码拆到 META_PASSWORD,不进 argv。"""
         _check_subpath(subpath)
         fs_base = self._juicefs_fs_base_sync(namespace)
-        # 密码拆分在容器内 shell 完成;metaurl 密码段约定不含 @
-        split = (
-            'export META_PASSWORD="$(printf \'%s\' "$JUICEFS_METAURL"'
-            " | sed -n 's|^[^:]*://[^:]*:\\([^@]*\\)@.*|\\1|p')\"; "
-            'METAURL_NOPASS="$(printf \'%s\' "$JUICEFS_METAURL"'
-            " | sed 's|^\\([^:]*://[^:]*\\):[^@]*@|\\1@|')\"; "
+        container = build_disk_quota_container(
+            self.settings.juicefs_cli_image, fs_base, subpath, capacity_gb, is_set
         )
-        if is_set:
-            script = (
-                split + 'juicefs quota set "$METAURL_NOPASS" --path "/$QUOTA_BASE/$QUOTA_SUBPATH"'
-                ' --capacity "$QUOTA_CAPACITY_GB" --create'
-            )
-        else:
-            # 删盘链路:无配额记录不算失败
-            script = (
-                split
-                + 'juicefs quota delete "$METAURL_NOPASS" --path "/$QUOTA_BASE/$QUOTA_SUBPATH"'
-                " || true"
-            )
-        container = self._batch_container(
-            "quota", self.settings.juicefs_cli_image, ["sh", "-c", script], env=[], non_root=True
-        )
-        container.env = [
-            client.V1EnvVar(
-                name="JUICEFS_METAURL",
-                value_from=client.V1EnvVarSource(
-                    secret_key_ref=client.V1SecretKeySelector(
-                        name="superdl-db", key="juicefs-metaurl"
-                    )
-                ),
-            ),
-            client.V1EnvVar(name="QUOTA_BASE", value=fs_base),
-            client.V1EnvVar(name="QUOTA_SUBPATH", value=subpath),
-            client.V1EnvVar(name="QUOTA_CAPACITY_GB", value=str(capacity_gb)),
-        ]
         action = "set" if is_set else "del"
         self._run_managed_job_sync(
             self.settings.k8s_platform_namespace,
@@ -1475,40 +1465,8 @@ class RealOrchestrator:
             404,
         ):
             return  # 幂等:任意状态的既有 Job 都交巡检收敛
-        # 纯拉取触发(命令为 true),restricted 非 root 上下文;镜像缺 sh 由巡检记 failed
-        container = self._batch_container(
-            "prewarm", image_ref, ["/bin/sh", "-c", "true"], env=[], non_root=True
-        )
-        # IfNotPresent;换版本靠目录 image_ref 钉 digest,见 deploy/instance-images/README.md
-        container.image_pull_policy = "IfNotPresent"
-        job = client.V1Job(
-            metadata=client.V1ObjectMeta(
-                name=job_name,
-                namespace=self.settings.k8s_platform_namespace,
-                labels={PREWARM_LABEL: "true"},
-                annotations={"superdl.io/node": node_name, "superdl.io/image": image_ref},
-            ),
-            spec=client.V1JobSpec(
-                backoff_limit=0,  # 失败不原地重试,由巡检删 Job 后重建(带退避节流)
-                ttl_seconds_after_finished=600,
-                active_deadline_seconds=1800,  # 20GB 级镜像上限
-                template=client.V1PodTemplateSpec(
-                    metadata=client.V1ObjectMeta(labels={PREWARM_LABEL: "true"}),
-                    spec=client.V1PodSpec(
-                        node_name=node_name,  # 绕过调度器定点拉取
-                        restart_policy="Never",
-                        automount_service_account_token=False,
-                        image_pull_secrets=(
-                            [client.V1LocalObjectReference(name=image_pull_secret)]
-                            if image_pull_secret
-                            else None
-                        ),
-                        # 容忍一切污点(预热覆盖 cordon 节点)
-                        tolerations=[client.V1Toleration(operator="Exists")],
-                        containers=[container],
-                    ),
-                ),
-            ),
+        job = build_prewarm_job(
+            self.settings.k8s_platform_namespace, job_name, node_name, image_ref, image_pull_secret
         )
         _ignore(
             lambda: self.batch.create_namespaced_job(self.settings.k8s_platform_namespace, job), 409
@@ -1560,3 +1518,88 @@ class RealOrchestrator:
             ),
             404,
         )
+
+
+def build_disk_quota_container(
+    image: str, fs_base: str, subpath: str, capacity_gb: int, is_set: bool
+) -> Any:
+    """配额 Job 容器(纯构造):metaurl 经 secretKeyRef 注入;subpath/capacity 走 env;
+    密码拆到 META_PASSWORD,不进 argv。"""
+    # 密码拆分在容器内 shell 完成;metaurl 密码段约定不含 @
+    split = (
+        'export META_PASSWORD="$(printf \'%s\' "$JUICEFS_METAURL"'
+        " | sed -n 's|^[^:]*://[^:]*:\\([^@]*\\)@.*|\\1|p')\"; "
+        'METAURL_NOPASS="$(printf \'%s\' "$JUICEFS_METAURL"'
+        " | sed 's|^\\([^:]*://[^:]*\\):[^@]*@|\\1@|')\"; "
+    )
+    if is_set:
+        script = (
+            split + 'juicefs quota set "$METAURL_NOPASS" --path "/$QUOTA_BASE/$QUOTA_SUBPATH"'
+            ' --capacity "$QUOTA_CAPACITY_GB" --create'
+        )
+    else:
+        # 删盘链路:无配额记录不算失败
+        script = (
+            split + 'juicefs quota delete "$METAURL_NOPASS" --path "/$QUOTA_BASE/$QUOTA_SUBPATH"'
+            " || true"
+        )
+    container = RealOrchestrator._batch_container(
+        "quota", image, ["sh", "-c", script], env=[], non_root=True
+    )
+    container.env = [
+        client.V1EnvVar(
+            name="JUICEFS_METAURL",
+            value_from=client.V1EnvVarSource(
+                secret_key_ref=client.V1SecretKeySelector(name="superdl-db", key="juicefs-metaurl")
+            ),
+        ),
+        client.V1EnvVar(name="QUOTA_BASE", value=fs_base),
+        client.V1EnvVar(name="QUOTA_SUBPATH", value=subpath),
+        client.V1EnvVar(name="QUOTA_CAPACITY_GB", value=str(capacity_gb)),
+    ]
+    return container
+
+
+def build_prewarm_job(
+    platform_namespace: str,
+    job_name: str,
+    node_name: str,
+    image_ref: str,
+    image_pull_secret: str | None,
+) -> "client.V1Job":
+    """预热 Job 对象(纯构造):nodeName 定点、纯拉取触发(命令为 true)、restricted 非 root 上下文;
+    镜像缺 sh 由巡检记 failed。"""
+    container = RealOrchestrator._batch_container(
+        "prewarm", image_ref, ["/bin/sh", "-c", "true"], env=[], non_root=True
+    )
+    # IfNotPresent;换版本靠目录 image_ref 钉 digest,见 deploy/instance-images/README.md
+    container.image_pull_policy = "IfNotPresent"
+    return client.V1Job(
+        metadata=client.V1ObjectMeta(
+            name=job_name,
+            namespace=platform_namespace,
+            labels={PREWARM_LABEL: "true"},
+            annotations={"superdl.io/node": node_name, "superdl.io/image": image_ref},
+        ),
+        spec=client.V1JobSpec(
+            backoff_limit=0,  # 失败不原地重试,由巡检删 Job 后重建(带退避节流)
+            ttl_seconds_after_finished=600,
+            active_deadline_seconds=1800,  # 20GB 级镜像上限
+            template=client.V1PodTemplateSpec(
+                metadata=client.V1ObjectMeta(labels={PREWARM_LABEL: "true"}),
+                spec=client.V1PodSpec(
+                    node_name=node_name,  # 绕过调度器定点拉取
+                    restart_policy="Never",
+                    automount_service_account_token=False,
+                    image_pull_secrets=(
+                        [client.V1LocalObjectReference(name=image_pull_secret)]
+                        if image_pull_secret
+                        else None
+                    ),
+                    # 容忍一切污点(预热覆盖 cordon 节点)
+                    tolerations=[client.V1Toleration(operator="Exists")],
+                    containers=[container],
+                ),
+            ),
+        ),
+    )

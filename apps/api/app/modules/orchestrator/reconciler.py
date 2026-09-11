@@ -27,6 +27,7 @@ from app.core.metrics import (
     RECONCILE_LEAK_ABORTED_TOTAL,
     RECONCILE_LEAKED_TOTAL,
     RECONCILE_STUCK_INSTANCES,
+    SSH_PORT_POOL,
 )
 from app.core.outbox import RUNNING_TIMEOUT, OutboxTask, enqueue
 from app.core.timeutil import ensure_utc, now_utc
@@ -73,7 +74,19 @@ async def reconcile_once(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]
         await _redrive_dead_disk_wipes(sm, counts)
         await _reconcile_disk_quotas(sm, counts)
         await _gc_retention(sm, counts)
+        await _refresh_port_pool_gauge(sm)
     return counts
+
+
+async def _refresh_port_pool_gauge(sm: async_sessionmaker[AsyncSession]) -> None:
+    """SSH 端口池水位进指标(停机实例不释放端口,池被占满前要看得见)。"""
+    from app.modules.orchestrator.ports import port_pool_stats
+
+    async with sm() as session:
+        stats = await port_pool_stats(session)
+    SSH_PORT_POOL.labels(state="assigned").set(stats.assigned)
+    SSH_PORT_POOL.labels(state="blocked").set(stats.blocked)
+    SSH_PORT_POOL.labels(state="free").set(max(0, stats.total - stats.assigned - stats.blocked))
 
 
 def _status_keys(instances: Iterable[Instance]) -> list[tuple[int, str, Any]]:
@@ -208,28 +221,32 @@ def _statuses_from_listing(
     return [by_key.get((ns, uuid), _MISSING_POD) for _id, _status, ns, uuid, _created in rows]
 
 
-# 上一轮看到的节点集合(进程内);变化即重下发租户 ns 的 NetPol
-_known_nodes: frozenset[str] | None = None
+# 各租户 ns 最近一次成功下发 NetPol 时的节点集合(进程内);集合变化即重下发该 ns
+_netpol_synced_nodes: dict[str, frozenset[str]] = {}
 
 
 async def _resync_tenant_netpols_on_node_change(
     orch: Any, readiness: dict[str, bool] | None, namespaces: Iterable[str]
 ) -> None:
     """节点集合变化(或首轮)时重跑 ensure_namespace(租户 NetPol 按节点放行 Pod 子网网关);
-    节点视图不可用则跳过。"""
-    global _known_nodes
+    逐 ns 记账:成功的 ns 下一轮不再重跑,失败的单独重试;节点视图不可用则跳过。"""
     if readiness is None:
         return
     current = frozenset(readiness)
-    if current == _known_nodes:
-        return
-    for ns in sorted(set(namespaces)):
+    active = set(namespaces)
+    for stale in set(_netpol_synced_nodes) - active:
+        _netpol_synced_nodes.pop(stale, None)
+    pending = [ns for ns in sorted(active) if _netpol_synced_nodes.get(ns) != current]
+    failed = 0
+    for ns in pending:
         try:
             await orch.ensure_namespace(ns)
+            _netpol_synced_nodes[ns] = current
         except Exception:
+            failed += 1
             logger.exception("tenant_netpol_resync_failed", namespace=ns)
-            return  # 下一轮再试,已知集合不推进
-    _known_nodes = current
+    if failed:
+        logger.warning("tenant_netpol_resync_partial", failed=failed, total=len(pending))
 
 
 async def _node_readiness() -> dict[str, bool] | None:
