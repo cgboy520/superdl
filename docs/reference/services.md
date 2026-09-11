@@ -43,7 +43,7 @@
 | `POST /api/v1/services/{slug}/api-keys` | user | 新建;**明文只在本次响应出现一次**;单服务活跃密钥上限见 [limits.md](./limits.md);已删除的服务 409 |
 | `DELETE /api/v1/services/{slug}/api-keys/{key_id}` | user | 吊销:写 `revoked_at`,不删行 |
 | `GET /api/admin/v1/services` | admin/ops/finance/readonly | 管理端全局列表(`user_id` / `q` / `include_released`),见 [admin.md](./admin.md) |
-| `/api/internal/v1/endpoint-auth` | 无(集群内) | 网关 `SecurityPolicy.extAuth` 回调,**不对公网开放**;接受全部 HTTP 方法 |
+| `/api/internal/v1/endpoint-auth` | 无(集群内) | 网关 `SecurityPolicy.extAuth` 回调,**不对公网开放**(边缘 404 + edge_guard);接受全部 HTTP 方法;每次拒绝计 `superdl_endpoint_auth_denied_total`(`EndpointAuthDenialSustained` 告警) |
 
 实例层对服务的版本实例只开放只读端点与购买模式类端点;stop / start / restart / DELETE / 重置 token 一律 409 `orchestrator.serviceInstanceLifecycle`,`GET /instances` 默认不列它们。`POST /instances` 不接受服务容器参数。
 

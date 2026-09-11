@@ -66,6 +66,32 @@ Index(  # 用户盘账单页按 (user_id, day) 翻页
     billing_models.BillDailyDisk.__table__.c.user_id,
     billing_models.BillDailyDisk.__table__.c.day,
 )
+# 租户列表页一律 WHERE user_id = ? ORDER BY id DESC 游标翻页:等值列 + 排序列成对建索引
+Index(
+    "ix_instances_user_id_id",
+    orchestrator_models.Instance.__table__.c.user_id,
+    orchestrator_models.Instance.__table__.c.id,
+)
+Index(
+    "ix_instance_events_instance_id_id",
+    orchestrator_models.InstanceEvent.__table__.c.instance_id,
+    orchestrator_models.InstanceEvent.__table__.c.id,
+)
+Index(
+    "ix_bills_hourly_user_id_id",
+    billing_models.BillHourly.__table__.c.user_id,
+    billing_models.BillHourly.__table__.c.id,
+)
+Index(
+    "ix_balance_ledger_user_id_id",
+    billing_models.BalanceLedger.__table__.c.user_id,
+    billing_models.BalanceLedger.__table__.c.id,
+)
+Index(
+    "ix_services_user_id_id",
+    services_models.Service.__table__.c.user_id,
+    services_models.Service.__table__.c.id,
+)
 
 # CHECK 约束:谓词文本与迁移一致,声明短名(naming convention 补 ck_<表>_ 前缀);
 # instances.status 的同款在 orchestrator/models.py

@@ -22,7 +22,9 @@ class User(Base):
     verification_status: Mapped[str] = mapped_column(String(16), default="unverified")
     # 实名字段
     id_name: Mapped[str | None] = mapped_column(String(64))
-    id_number: Mapped[str | None] = mapped_column(String(32))
+    id_number: Mapped[str | None] = mapped_column(String(32))  # 脱敏串
+    # 证件号带密钥摘要(crypto.hash_id_number):同证件绑定账号数上限的判据;原文不落库
+    id_number_hmac: Mapped[str | None] = mapped_column(String(64), index=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     @property

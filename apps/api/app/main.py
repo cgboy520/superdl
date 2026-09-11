@@ -56,6 +56,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         from app.core.db import get_sessionmaker
         from app.core.platform_config import (
             assert_prod_compliance_gates,
+            assert_prod_image_allowlist,
             compute_config_warnings,
             env_layer_problems,
             get_effective_platform_config,
@@ -75,8 +76,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             (log.error if w.level == "error" else log.warning)(
                 "config_warning", key=w.key, hint=w.message
             )
-        # 合规闸门 fail-fast(platform_config.assert_prod_compliance_gates)
+        # 合规闸门 fail-fast(platform_config 的两条 assert_prod_*)
         assert_prod_compliance_gates(cfg, settings.environment)
+        assert_prod_image_allowlist(cfg, settings.environment)
         # env 层取值同样过格式白名单(如 SUPERDL_CLUSTER_JOIN_TOKEN 带换行);prod 拒启,其余环境记错
         env_problems = env_layer_problems()
         if env_problems:

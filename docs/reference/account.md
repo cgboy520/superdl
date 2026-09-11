@@ -4,7 +4,7 @@
 
 ## 数据模型
 
-- `users`:phone 唯一、password_hash(可空)、status(active/frozen/deleted)、low_balance_warn_hours、token_version、verification_status、实名字段(id_name/id_number,可空)
+- `users`:phone 唯一、password_hash(可空)、status(active/frozen/deleted)、low_balance_warn_hours、token_version、verification_status、实名字段(id_name/id_number 脱敏串/id_number_hmac 带密钥摘要,可空)
 - `ssh_keys`:user_id、name、public_key、fingerprint(SHA256,唯一)
 - `sms_codes`:phone、code_hash(带密钥摘要)、purpose(register/login/reset_password)、expires_at、used_at、attempts
 - `used_refresh_tokens`:jti(PK)、expires_at、used_at
@@ -38,7 +38,9 @@
 - 验证码失败计次 `attempts` 达上限即作废(置 `used_at`)。同 phone 连续未消费的第 N 条发码间隔 `SUPERDL_SMS_SEND_INTERVAL_SECONDS` × 2^(N-1)(指数封顶 3),报 `SMS_TOO_FREQUENT`;手机号日配额按「验证码被消费」计。
 - 短信发送失败必须作废已落库的验证码并返 502。
 - 公钥须为 ssh-ed25519 / ssh-rsa / ecdsa-*;唯一性按 (user_id, fingerprint),重复报 `SSH_KEY_DUPLICATE`,非法报 `SSH_KEY_INVALID`;删除为硬删除。
-- 身份证号只存脱敏值;`real_name_enabled` 控制能否提交实名,`real_name_required_for_recharge` 控制充值/开通实例是否强制已实名。不变量:后者开启要求前者开启。
+- 身份证号只存脱敏值 + 带密钥摘要(`crypto.hash_id_number`,原文不落库);同摘要的非注销账号数达 `real_name_max_accounts_per_identity`(默认 3)即 409 `account.realNameIdentityLimit`。`real_name_enabled` 控制能否提交实名,`real_name_required_for_recharge` 控制充值/开通实例是否强制已实名。不变量:后者开启要求前者开启。
+- 密码登录:四层桶预检 → 查用户 → **先提交只读事务还连接** → bcrypt(专属 4 线程池 `core/security._BCRYPT_EXECUTOR`);注册成功计 `superdl_user_signup_total`,发码成功计 `superdl_sms_sent_total{purpose}`。
+- SSH 公钥:每用户 50 把、添加 20 次/小时(`MAX_SSH_KEYS_PER_USER`);创建实例按 id 集合下推 SQL 取键(`ssh_keys_by_ids`)。
 - 注册必勾条款,同事务按当前 published 版落 terms/privacy 各一条同意存证。
 - 注销执行为匿名化:手机号替换为随机不可逆令牌 `del:{user_id}:{16 位 hex}`(不取摘要,与原号无函数关系)、身份字段清空、全撤登录态;`balance_ledger` 与账单按法定义务保留。
 - 所有写操作过审计中间件(actor/ip/result)。

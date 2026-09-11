@@ -21,6 +21,7 @@ async def instances_metrics_summary(
     targets = [
         (i.uuid, i.k8s_namespace) for i in instances if i.status == orchestrator_service.RUNNING
     ]
+    await session.commit()  # 先还连接:下面最多 20 次 Prometheus 往返,不占池
     return await service.instances_gpu_summary(targets)
 
 
@@ -31,6 +32,7 @@ async def get_instance_metrics(
     """实例监控曲线(代理 Prometheus,按租户隔离)。断源 503,不影响计费。"""
     instance = await orchestrator_service.get_instance(session, user.id, uuid)
     pool_label = instance.spec.get("pool_label")
+    await session.commit()  # 先还连接再代理 Prometheus
     return await service.instance_metrics(
         instance.k8s_namespace, instance.uuid, range, pool_label=pool_label
     )

@@ -1126,3 +1126,39 @@ class TestAdminListPagination:
             await client.get("/api/admin/v1/adjustments", params={"user_id": 999999}, headers=fin)
         ).json()["items"]
         assert ghost == []
+
+
+class TestRealNameIdentityCap:
+    async def test_same_id_number_bound_accounts_capped(self, client, sm, monkeypatch):
+        """挂了说明:同一证件可无限开号(只存脱敏串无法去重),每个号都带满额配额。"""
+        from app.core.config import get_settings
+        from app.modules.account import service as account_service
+        from app.modules.account.realname import set_realname_provider
+
+        class _Pass:
+            async def verify(self, name: str, id_number: str, phone: str) -> bool:
+                return True
+
+        monkeypatch.setattr(get_settings(), "real_name_max_accounts_per_identity", 1)
+        a = (await register(client, "13655550101"))["user"]["id"]
+        b = (await register(client, "13655550102"))["user"]["id"]
+        set_realname_provider(_Pass())
+        try:
+            await set_platform_setting(sm, "real_name_enabled", "true")
+            async with sm() as session:
+                ua = await account_service.get_user(session, a)
+                await account_service.submit_real_name(session, ua, "张三", "110101199001011234")
+                assert ua.id_number_hmac and ua.id_number == "1101************34"
+            async with sm() as session:
+                ub = await account_service.get_user(session, b)
+                with pytest.raises(AppError) as exc:
+                    await account_service.submit_real_name(
+                        session, ub, "李四", "110101199001011234"
+                    )
+                assert exc.value.message_key == "account.realNameIdentityLimit"
+            async with sm() as session:
+                assert (
+                    await account_service.get_user(session, b)
+                ).verification_status != "verified"
+        finally:
+            set_realname_provider(None)

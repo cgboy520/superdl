@@ -35,6 +35,8 @@ MESSAGES: dict[str, str] = {
     "account.captchaVerifyFailed": "人机校验未通过,请重新完成验证后再试",
     "account.captchaChannelError": "人机校验服务暂不可用,请稍后重试",
     "account.sshKeyDuplicate": "该公钥已添加过",
+    "account.sshKeyLimitReached": "SSH 公钥已达上限({max} 个),请删除不用的公钥后再添加",
+    "account.realNameIdentityLimit": "该证件已绑定 {max} 个账号,不能再绑定新账号",
     "account.termsNotAccepted": "请先阅读并同意《用户协议》与《隐私政策》",
     "account.userFrozen": "账号已被冻结,请联系客服",
     # 管理端
@@ -302,6 +304,7 @@ MESSAGES: dict[str, str] = {
     "services.envKeepUnknown": "要沿用的密文变量在当前版本里不存在:{keys}",
     # 工单
     "tickets.notFound": "工单不存在",
+    "tickets.messageLimitReached": "本工单回复已达上限({max} 条),请新建工单继续",
     "tickets.openLimitReached": "进行中的工单已达上限({max} 个),请等待客服处理或关闭后再提交",
     "tickets.stateNotClosable": "工单状态 {status} 不可关闭",
     "tickets.stateNotRepliable": "工单已解决或关闭,不可再回复;如问题未解决请新建工单",

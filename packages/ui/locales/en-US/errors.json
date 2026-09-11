@@ -16,11 +16,13 @@
     "realNameChannelError": "Identity verification service is unavailable — try again later",
     "realNameDisabled": "Identity verification is not available yet",
     "realNameDone": "Identity already verified — no need to resubmit",
+    "realNameIdentityLimit": "This ID is already linked to {{max}} accounts and cannot be linked to another",
     "realNameMismatch": "Identity details do not match carrier records — check and retry",
     "smsCodeInvalid": "SMS code is wrong or expired",
     "smsSendFailed": "Failed to send SMS — try again later",
     "smsTooFrequent": "Too frequent — retry in {{seconds}} seconds",
     "sshKeyDuplicate": "This public key was already added",
+    "sshKeyLimitReached": "You have reached the limit of {{max}} SSH keys — delete unused keys before adding more",
     "termsNotAccepted": "Please read and accept the Terms of Service and Privacy Policy first",
     "userFrozen": "Account frozen — contact support"
   },
@@ -231,6 +233,7 @@
     "rolloutSubscriptionUnsupported": "Subscription services do not support revision updates yet"
   },
   "tickets": {
+    "messageLimitReached": "This ticket has reached the limit of {{max}} replies — please open a new ticket to continue",
     "notFound": "Ticket not found",
     "openLimitReached": "You have reached the limit of {{max}} open tickets — wait for a reply or close some before submitting a new one",
     "stateNotClosable": "A ticket in status {{status}} cannot be closed",

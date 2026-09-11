@@ -16,11 +16,13 @@
     "realNameChannelError": "实名核验服务暂不可用,请稍后重试",
     "realNameDisabled": "实名认证暂未开通",
     "realNameDone": "已完成实名认证,无需重复提交",
+    "realNameIdentityLimit": "该证件已绑定 {{max}} 个账号,不能再绑定新账号",
     "realNameMismatch": "实名信息与运营商记录不一致,请核对后重试",
     "smsCodeInvalid": "验证码错误或已过期",
     "smsSendFailed": "短信发送失败,请稍后重试",
     "smsTooFrequent": "发送过于频繁,请 {{seconds}} 秒后再试",
     "sshKeyDuplicate": "该公钥已添加过",
+    "sshKeyLimitReached": "SSH 公钥已达上限({{max}} 个),请删除不用的公钥后再添加",
     "termsNotAccepted": "请先阅读并同意《用户协议》与《隐私政策》",
     "userFrozen": "账号已被冻结,请联系客服"
   },
@@ -231,6 +233,7 @@
     "rolloutSubscriptionUnsupported": "包周期服务暂不支持更新版本"
   },
   "tickets": {
+    "messageLimitReached": "本工单回复已达上限({{max}} 条),请新建工单继续",
     "notFound": "工单不存在",
     "openLimitReached": "进行中的工单已达上限({{max}} 个),请等待客服处理或关闭后再提交",
     "stateNotClosable": "工单状态 {{status}} 不可关闭",

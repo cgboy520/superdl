@@ -27,7 +27,7 @@
 
 ## 规则与不变量
 
-- 每用户进行中(open/pending_*)工单数与创建频次有上限(`MAX_OPEN_TICKETS` 与 `ticket-create:{user_id}` 限流键,见 [limits.md](./limits.md));幂等重放不计数。
+- 每用户进行中(open/pending_*)工单数与创建频次有上限(`MAX_OPEN_TICKETS` 与 `ticket-create:{user_id}` 限流键,见 [limits.md](./limits.md));幂等重放不计数。单工单回复数上限 `MAX_MESSAGES_PER_TICKET`(200)与 `ticket-reply:{user_id}` 限流(30/10 分钟),详情读取按上限截断。
 - 所有状态迁移在行锁(`FOR UPDATE`)内进行。
 - 用户回复落一条 admin_alert(info)进管理端告警流;客服回复落用户站内信。
 - 滞留巡检(30 分钟一轮,advisory lock):pending_staff 超 24h 的单落一条 admin_alert(warning),`dedup_key = ticket-stale:{ticket_id}` 整个生命周期只报一次。

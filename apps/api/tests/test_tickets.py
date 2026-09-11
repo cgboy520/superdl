@@ -373,3 +373,26 @@ class TestStaleTicketPatrol:
         assert [
             a for a in await admin_alerts(sm) if a.dedup_key == f"ticket-stale:{ticket_id}"
         ] == []
+
+
+class TestMessageCap:
+    async def test_replies_per_ticket_capped(self, client: AsyncClient, sm, monkeypatch):
+        """挂了说明:单工单回复无上限、无限流,未计量写入喂出无界详情响应。"""
+        from app.modules.tickets import service as tickets_service
+
+        monkeypatch.setattr(tickets_service, "MAX_MESSAGES_PER_TICKET", 1)  # 首条是开单正文
+        headers = await user_headers(client, "13700000399")
+        resp = await create_ticket(client, headers)
+        assert resp.status_code == 201, resp.text
+        tid = resp.json()["id"]
+        ops = await admin_headers(sm, client, role="ops")
+        assert (
+            await client.post(
+                f"/api/admin/v1/tickets/{tid}/reply", json={"body": "已处理"}, headers=ops
+            )
+        ).status_code == 200
+        resp = await client.post(
+            f"/api/v1/tickets/{tid}/messages", json={"body": "追加"}, headers=headers
+        )
+        assert resp.status_code == 409, resp.text
+        assert resp.json()["message_key"] == "tickets.messageLimitReached"

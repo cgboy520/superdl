@@ -399,11 +399,20 @@ def compute_config_warnings(cfg: Mapping[str, str], environment: str) -> list[Co
         out.append(
             ConfigWarning(
                 "image_allowed_registries",
-                "warning",
+                "error",
                 "生产环境镜像来源白名单为空且未配 Harbor 地址:租户可把任意仓库的镜像拉进集群",
             )
         )
     return out
+
+
+def assert_prod_image_allowlist(cfg: Mapping[str, str], environment: str) -> None:
+    """prod 下生效镜像白名单(配置行 ∪ Harbor 地址)不得为空,否则拒绝启动。"""
+    if environment == "prod" and not effective_image_allowlist(cfg):
+        raise RuntimeError(
+            "生产环境镜像来源白名单为空且未配 Harbor 地址,拒绝启动:"
+            "填 registry_host 或 image_allowed_registries(env 或平台配置中心)"
+        )
 
 
 # 合规闸门(prod 启动 fail-fast;在线写库层由 prod_forbidden 禁关)

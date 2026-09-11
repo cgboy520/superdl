@@ -156,12 +156,16 @@ async def list_my_tickets(
     )
 
 
+MAX_MESSAGES_PER_TICKET = 200
+
+
 async def _messages_of(session: AsyncSession, ticket_id: int) -> list[TicketMessageOut]:
     rows = (
         await session.execute(
             select(TicketMessage)
             .where(TicketMessage.ticket_id == ticket_id)
             .order_by(TicketMessage.id.asc())
+            .limit(MAX_MESSAGES_PER_TICKET + 1)
         )
     ).scalars()
     return [TicketMessageOut.model_validate(r) for r in rows]
@@ -204,8 +208,14 @@ async def append_message(
     session: AsyncSession, user_id: int, ticket_id: int, *, body: str
 ) -> TicketMessage:
     """用户追加回复(行锁内状态迁移 → pending_staff);admin_alerts info 告知值班。"""
+    await check_rate_limit(f"ticket-reply:{user_id}", max_attempts=30, window_seconds=600.0)
     ticket = await _get_my_for_update(session, user_id, ticket_id)
     _ensure_repliable(ticket)
+    count = (
+        await session.execute(select(func.count()).where(TicketMessage.ticket_id == ticket.id))
+    ).scalar_one()
+    if count >= MAX_MESSAGES_PER_TICKET:
+        raise conflict(key="tickets.messageLimitReached", params={"max": MAX_MESSAGES_PER_TICKET})
     msg = TicketMessage(ticket_id=ticket.id, sender_kind="user", sender_id=user_id, body=body)
     session.add(msg)
     ticket.status = "pending_staff"

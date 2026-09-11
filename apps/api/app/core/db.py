@@ -59,6 +59,8 @@ def get_engine() -> AsyncEngine:
         _engine = create_async_engine(
             url,
             pool_size=settings.db_pool_size,
+            max_overflow=settings.db_max_overflow,
+            pool_timeout=settings.db_pool_timeout_seconds,
             pool_pre_ping=True,
             # 三个 timeout 都要有;迁移 Job 另有更严的 PGOPTIONS
             connect_args={

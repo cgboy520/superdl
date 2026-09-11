@@ -20,6 +20,7 @@ from app.core.config import get_settings
 from app.core.crypto import hash_api_key, hash_api_key_candidates
 from app.core.errors import AppError, ErrorCode, conflict, not_found
 from app.core.logging import get_logger
+from app.core.metrics import ENDPOINT_AUTH_DENIED_TOTAL
 from app.core.outbox import enqueue
 from app.core.pagination import Page, paginate_by_id
 from app.core.pricing import MARKET_SUBSCRIPTION
@@ -716,6 +717,7 @@ _endpoint_key_last_write: dict[int, float] = {}
 
 
 def _endpoint_denied() -> AppError:
+    ENDPOINT_AUTH_DENIED_TOTAL.inc()
     return AppError(
         ErrorCode.API_KEY_INVALID,
         key="services.apiKeyInvalid",

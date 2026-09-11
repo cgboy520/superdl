@@ -108,3 +108,32 @@ class TestSshKeys:
             released = await session.get(Instance, released_id)
         assert live is not None and live.authorized_keys == []
         assert released is not None and released.authorized_keys == [stored_key]
+
+
+class TestSshKeyCap:
+    async def test_limit_per_user(self, client: AsyncClient, monkeypatch):
+        """挂了说明:公钥数量无上限,未计量写入喂出无界列表(创建实例热路径也读它)。"""
+        from app.modules.account import service as account_service
+
+        monkeypatch.setattr(account_service, "MAX_SSH_KEYS_PER_USER", 1)
+        data = await register(client, "13800000019")
+        headers = {"Authorization": f"Bearer {data['access_token']}"}
+        assert (
+            await client.post(
+                "/api/v1/ssh-keys", json={"name": "a", "public_key": ED25519_KEY}, headers=headers
+            )
+        ).status_code == 201
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import ed25519
+
+        second = (
+            ed25519.Ed25519PrivateKey.generate()
+            .public_key()
+            .public_bytes(serialization.Encoding.OpenSSH, serialization.PublicFormat.OpenSSH)
+            .decode()
+        )
+        resp = await client.post(
+            "/api/v1/ssh-keys", json={"name": "b", "public_key": second}, headers=headers
+        )
+        assert resp.status_code == 409, resp.text
+        assert resp.json()["message_key"] == "account.sshKeyLimitReached"

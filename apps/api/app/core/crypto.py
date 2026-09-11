@@ -128,6 +128,16 @@ def hash_api_key_candidates(key: str) -> list[str]:
     return _hmac_candidates(f"service-api-key|{key}")
 
 
+def hash_id_number(id_number: str) -> str:
+    """实名证件号的带密钥摘要(写路径;域分离前缀 id-number|):只用于同证件跨账号去重,原文不落库。"""
+    return _hmac_candidates(f"id-number|{id_number.strip().upper()}")[0]
+
+
+def hash_id_number_candidates(id_number: str) -> list[str]:
+    """证件号摘要的读路径候选(轮换窗口内兼读旧世代)。"""
+    return _hmac_candidates(f"id-number|{id_number.strip().upper()}")
+
+
 def hash_node_token(token: str) -> str:
     """节点注册/进度令牌的带密钥摘要(写路径;域分离前缀 node-enroll|)。"""
     return _hmac_candidates(f"node-enroll|{token}")[0]

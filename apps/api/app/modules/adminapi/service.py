@@ -800,9 +800,8 @@ async def overview(session: AsyncSession) -> dict[str, Any]:
     from app.modules.nodes import service as nodes_service
     from app.modules.orchestrator import service as orchestrator_service
 
-    status_counts: dict[str, int] = {}
-    for st in NON_TERMINAL_STATUSES:
-        status_counts[st] = len(await orchestrator_service.list_instances_by_status(session, st))
+    counted = await orchestrator_service.count_instances_by_status(session)
+    status_counts: dict[str, int] = {st: counted.get(st, 0) for st in NON_TERMINAL_STATUSES}
 
     consumed = await billing_service.consumed_by_user(session)
     active_user_ids = await account_service.list_active_user_ids(session)

@@ -56,6 +56,10 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+asyncpg://superdl:superdl@localhost:5432/superdl"
     db_pool_size: int = 10
+    db_max_overflow: int = (
+        10  # 进程峰值连接 = pool_size + max_overflow(deploy/README 连接数对齐公式)
+    )
+    db_pool_timeout_seconds: int = 10  # 等连接超时即报错,不让请求无限排队占着事件循环
 
     # JWT:用户端与管理端 audience 分离;prod 上限 access ≤1h、refresh ≤7d(_validate_prod)
     jwt_secret: str = _DEV_JWT_SECRET
@@ -92,6 +96,7 @@ class Settings(BaseSettings):
     # 均可被配置中心覆盖;不变量 required=true ⇒ enabled=true(platform_config 写入侧同口径)
     real_name_enabled: bool = False
     real_name_required_for_recharge: bool = False
+    real_name_max_accounts_per_identity: int = 3  # 同一证件号可绑定的账号数上限
     real_name_access_key_id: str | None = None
     real_name_access_key_secret: str | None = None
 

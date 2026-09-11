@@ -44,6 +44,7 @@
 - **租户 SSH 入方向只排 Pod 网段,不排整段私网。** 22 端口的 from 是 `0.0.0.0/0` except `tenant_pod_cidr`(默认 `10.42.0.0/16`)。约束:改 CNI 网段必须同步改 `tenant_pod_cidr`;留空只作排障临时回退。见 `docs/reference/security.md`。
 - **安全功能是开关,不是 mock 提供方。** 人机验证、实名、管理端 MFA 用 `*_enabled` 布尔开关(平台配置·安全策略组);只有流程无它完不成的第三方各保留唯一替身(`sms_provider=mock` / `payment_mock` / `k8s_backend=fake`),prod 拒绝。prod 在线写库层禁关安全开关;人机验证 / 实名 / 充值强制实名另有启动合规闸(`PROD_REQUIRED_SWITCHES`)。约束:`/auth/sms-code` 的 `captcha_token` 可选(开启时缺失 400)。
 - **停机实例保留 SSH NodePort,池水位进指标。** 停机不释放端口(用户重启后端口不变);`superdl_ssh_port_pool_ports{state}` 由 reconciler 每轮刷新,`SshPortPoolLow` / `SshPortPoolExhausted` 告警;长期停机实例由保留期回收释放。见 `docs/reference/limits.md`。
+- **同一证件绑定账号数有上限。** 实名通过时落带密钥摘要 `users.id_number_hmac`(`crypto.hash_id_number`,原文仍不落库),同摘要的非注销账号数 ≥ `real_name_max_accounts_per_identity`(默认 3)即 409;注册计数 `superdl_user_signup_total` 与短信计数 `superdl_sms_sent_total` 进滥用告警组。见 `docs/reference/account.md`。
 - **平台自己生成的 K8s 对象必须能过自家准入。** 受管 Job(擦盘/配额)模板显式 `hostUsers: false`;CI 在准入策略仍在集群里时用 `scripts/render_admission_probes.py` 渲染实例五种形态与三类 Job 及其派生 Pod 做 `--dry-run=server`,之后才删策略跑裸 kind 冒烟。见 `docs/reference/orchestrator.md`。
 - **prod 启动校验只管 provider,不管凭据齐全性;真实集群不绑定 prod。** `_validate_prod` 只拒 sms / payment 的 mock provider 与基础设施占位值,凭据齐全性交给运行期渠道工厂 fail-closed。组合约束 `real_name_required_for_recharge ⇒ real_name_enabled` 任意环境生效(`_validate_invariants` 与写入侧 `_check_real_name_invariant` 同口径);`alertmanager_token` 缺失与 `prometheus_url` 指向本地是启动 WARNING;dev + real 允许共存。约束:边缘收口 `edge_guard` 在 prod 恒开、无开关,类生产环境一律以 prod 运行。
 

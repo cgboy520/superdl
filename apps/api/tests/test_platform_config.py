@@ -511,7 +511,7 @@ class TestConfigWarnings:
             registry_host="harbor.example.com",  # Harbor 地址自动进白名单,不触发规则 6
         )
         assert compute_config_warnings(base, "test") == []
-        # 镜像仓库:填了机器人未填 Secret → error;prod 无白名单且无 Harbor 地址 → warning
+        # 镜像仓库:填了机器人未填 Secret → error;prod 无白名单且无 Harbor 地址 → error(启动闸另拒启)
         robot_only = dict(base, registry_robot_name="robot$superdl+pull")
         assert [(w.key, w.level) for w in compute_config_warnings(robot_only, "test")] == [
             ("registry_robot_name", "error")
@@ -525,7 +525,7 @@ class TestConfigWarnings:
             captcha_access_key_secret="k",
         )
         assert [(w.key, w.level) for w in compute_config_warnings(no_registry, "prod")] == [
-            ("image_allowed_registries", "warning")
+            ("image_allowed_registries", "error")
         ]
         assert [(w.key, w.level) for w in compute_config_warnings(base, "prod")] == [
             ("captcha_enabled", "error")
@@ -583,3 +583,18 @@ class TestEffectiveConfig:
         async with sm() as session:
             with pytest.raises(ValueError, match="解密失败"):
                 await get_effective_platform_config(session)
+
+
+class TestProdImageAllowlistGate:
+    def test_empty_allowlist_refuses_prod_start(self):
+        """挂了说明:prod 下镜像白名单为空只给告警,租户可拉任意仓库镜像。"""
+        from app.core.platform_config import assert_prod_image_allowlist
+
+        with pytest.raises(RuntimeError, match="镜像来源白名单"):
+            assert_prod_image_allowlist(
+                {"registry_host": "", "image_allowed_registries": ""}, "prod"
+            )
+        assert_prod_image_allowlist(
+            {"registry_host": "harbor.example.com", "image_allowed_registries": ""}, "prod"
+        )
+        assert_prod_image_allowlist({"registry_host": "", "image_allowed_registries": ""}, "dev")

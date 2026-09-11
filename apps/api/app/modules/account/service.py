@@ -5,17 +5,17 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from fastapi import status
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.captcha import CaptchaError, get_captcha_channel
 from app.core.config import get_settings
 from app.core.constants import ADMIN_LIST_CAP
-from app.core.crypto import hash_sms_code, hash_sms_code_candidates
+from app.core.crypto import hash_id_number_candidates, hash_sms_code, hash_sms_code_candidates
 from app.core.errors import AppError, ErrorCode, conflict, not_found, unauthorized
 from app.core.logging import get_logger, mask_phone_value
-from app.core.metrics import LOGIN_FAILED_TOTAL
+from app.core.metrics import LOGIN_FAILED_TOTAL, SMS_SENT_TOTAL, USER_SIGNUP_TOTAL
 from app.core.money import money_str
 from app.core.pagination import RawPage
 from app.core.platform_config import get_effective_platform_config
@@ -138,6 +138,7 @@ async def send_sms_code(
     try:
         channel = await get_sms_channel(session)
         await channel.send(phone, cfg["sms_template_verify"] or "", {"code": code})
+        SMS_SENT_TOTAL.labels(purpose=purpose).inc()
     except SmsError as exc:
         # 渠道失败:作废刚落库的验证码
         row.used_at = now_utc()
@@ -245,6 +246,7 @@ async def register(
     await legal_service.record_registration_consents(session, user.id, client_ip)
     await session.commit()
     await session.refresh(user)
+    USER_SIGNUP_TOTAL.inc()
     logger.info("user_registered", user_id=user.id)
     return _issue_tokens(user)
 
@@ -276,10 +278,19 @@ async def login(
     *,
     client_ip: str | None = None,
 ) -> TokenPair:
-    user = (await session.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
+    user: User | None = None
     try:
         # 「未注册」与「凭证错」不可区分:文案统一 loginFailed,时序拉平;
         # 密码与验证码两条路径同限流
+        if password is not None:
+            # 封禁桶在查库与 bcrypt 之前拦下(只读预检,不计数)
+            for key, (_, max_attempts, window_seconds) in zip(
+                _login_bucket_keys(phone, client_ip), _LOGIN_BUCKETS, strict=True
+            ):
+                await ensure_not_rate_limited(
+                    key, max_attempts=max_attempts, window_seconds=window_seconds
+                )
+        user = (await session.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
         if sms_code is not None:
             try:
                 await _consume_sms_code(session, phone, sms_code, "login")
@@ -289,13 +300,8 @@ async def login(
                 raise AppError(ErrorCode.LOGIN_FAILED, key="account.loginFailed")
             await session.commit()
         elif password is not None:
-            # 封禁桶在 bcrypt 之前拦下(只读预检,不计数)
-            for key, (_, max_attempts, window_seconds) in zip(
-                _login_bucket_keys(phone, client_ip), _LOGIN_BUCKETS, strict=True
-            ):
-                await ensure_not_rate_limited(
-                    key, max_attempts=max_attempts, window_seconds=window_seconds
-                )
+            # 先结束只读事务把连接还给池:bcrypt 期间不占连接(expire_on_commit=False,user 属性仍在)
+            await session.commit()
             stored = (
                 user.password_hash
                 if (user is not None and user.password_hash)
@@ -541,8 +547,24 @@ async def submit_real_name(session: AsyncSession, user: User, name: str, id_numb
         ) from exc
     if not ok:
         raise AppError(ErrorCode.REAL_NAME_MISMATCH, key="account.realNameMismatch")
+    # 同证件绑定账号数上限(按带密钥摘要比对,兼读轮换旧世代)
+    digest_candidates = hash_id_number_candidates(id_number)
+    bound = (
+        await session.execute(
+            select(func.count()).where(
+                User.id_number_hmac.in_(digest_candidates),
+                User.id != user.id,
+                User.status != "deleted",
+            )
+        )
+    ).scalar_one()
+    max_accounts = get_settings().real_name_max_accounts_per_identity
+    if bound >= max_accounts:
+        logger.warning("real_name_identity_limit", user_id=user.id, bound=bound)
+        raise conflict(key="account.realNameIdentityLimit", params={"max": max_accounts})
     user.id_name = name
     user.id_number = mask_id_number(id_number)
+    user.id_number_hmac = digest_candidates[0]
     user.verification_status = "verified"
     await session.commit()
     logger.info("real_name_verified", user_id=user.id)
@@ -568,7 +590,26 @@ async def list_ssh_keys(session: AsyncSession, user_id: int) -> list[SshKey]:
     )
 
 
+async def ssh_keys_by_ids(session: AsyncSession, user_id: int, ids: list[int]) -> list[SshKey]:
+    """本用户名下、给定 id 集合内的公钥(创建实例热路径:过滤下推到 SQL)。"""
+    if not ids:
+        return []
+    return list(
+        (
+            await session.execute(
+                select(SshKey)
+                .where(SshKey.user_id == user_id, SshKey.id.in_(ids))
+                .order_by(SshKey.id)
+            )
+        ).scalars()
+    )
+
+
+MAX_SSH_KEYS_PER_USER = 50
+
+
 async def add_ssh_key(session: AsyncSession, user_id: int, name: str, public_key: str) -> SshKey:
+    await check_rate_limit(f"ssh-key-add:{user_id}", max_attempts=20, window_seconds=3600.0)
     try:
         normalized, fingerprint = parse_public_key(public_key)
     except ValueError as exc:
@@ -581,6 +622,11 @@ async def add_ssh_key(session: AsyncSession, user_id: int, name: str, public_key
     ).scalar_one_or_none()
     if dup is not None:
         raise AppError(ErrorCode.SSH_KEY_DUPLICATE, key="account.sshKeyDuplicate")
+    count = (
+        await session.execute(select(func.count()).where(SshKey.user_id == user_id))
+    ).scalar_one()
+    if count >= MAX_SSH_KEYS_PER_USER:
+        raise conflict(key="account.sshKeyLimitReached", params={"max": MAX_SSH_KEYS_PER_USER})
     key = SshKey(user_id=user_id, name=name, public_key=normalized, fingerprint=fingerprint)
     session.add(key)
     await session.commit()
