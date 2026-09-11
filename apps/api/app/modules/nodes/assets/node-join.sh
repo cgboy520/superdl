@@ -537,16 +537,26 @@ step_agent_config() {
   fi
   mkdir -p "$RANCHER_DIR"
   # join token 必须非空
-  local join_token
+  local join_token server_url
   join_token="$(cfg_get cluster_join_token)"
+  server_url="$(cfg_get cluster_server_url)"
   if [[ -z "$join_token" ]]; then
     echo "!! bootstrap 下发的 cluster_join_token 为空:拒绝写 agent 配置。" \
          "检查管理端「平台配置 · 集群接入」与 ansible agent_token(site.yml 有渲染前断言)" >&2
     return 1
   fi
+  # 两个值原样进 YAML:字符集锁死(与 platform_config 的 pattern 同口径),换行/引号 = 注入任意 agent 参数
+  if [[ ! "$join_token" =~ ^[A-Za-z0-9:._~+/=-]{16,512}$ ]]; then
+    echo "!! cluster_join_token 含非法字符(只许 [A-Za-z0-9:._~+/=-]):拒绝写 agent 配置" >&2
+    return 1
+  fi
+  if [[ ! "$server_url" =~ ^https://[][0-9A-Za-z.:-]+:[0-9]{1,5}$ ]]; then
+    echo "!! cluster_server_url 格式非法:拒绝写 agent 配置" >&2
+    return 1
+  fi
   {
-    echo "server: $(cfg_get cluster_server_url)"
-    echo "token: $join_token"
+    echo "server: \"$server_url\""
+    echo "token: \"$join_token\""
     echo "node-label:"
     echo "  - \"superdl.io/pool=$pool\""
     local l

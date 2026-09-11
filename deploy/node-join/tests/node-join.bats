@@ -44,7 +44,7 @@ data = {
     "pool": sys.argv[1],
     "cluster_agent_version": "v1.36.2+rke2r1" if distro == "rke2" else "v1.36.3+k3s1",
     "cluster_server_url": "https://10.0.0.10:9345" if distro == "rke2" else "https://10.0.0.10:6443",
-    "cluster_join_token": "K10fixture::server:secret",
+    "cluster_join_token": os.environ.get("FIXTURE_JOIN_TOKEN", "K10fixture::server:secret"),
     "driver_version": "580",
     "nvme_devices": [],
     # 平台生成正文(Spegel / Harbor 代理缓存 / CA,不含凭据);CA 用例经 env 注入
@@ -224,6 +224,15 @@ run_script() { run bash "$SCRIPT" --token-file "$TMP/token" --api-base http://fa
   [ "$(stat -c %a "$TMP/etc/rancher/rke2/harbor-ca.crt")" = "644" ]
   grep -q "ca_file: \"$TMP/etc/rancher/rke2/harbor-ca.crt\"" "$TMP/etc/rancher/rke2/registries.yaml"
   ! grep -q '__RANCHER_DIR__' "$TMP/etc/rancher/rke2/registries.yaml"
+}
+
+@test "join token 含换行(YAML 注入)时拒绝写 agent config.yaml" {
+  export FIXTURE_JOIN_TOKEN=$'K10fixture::server:secret\nkubelet-arg:\n  - "anonymous-auth=true"'
+  _write_fixture hami
+  run_script
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"cluster_join_token 含非法字符"* ]]
+  [ ! -f "$TMP/etc/rancher/rke2/config.yaml" ]
 }
 
 @test "无 CA:不落 harbor-ca.crt,registries.yaml 只有 Spegel 段" {

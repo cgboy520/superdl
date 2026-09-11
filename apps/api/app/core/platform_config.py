@@ -230,6 +230,8 @@ SETTING_SPECS: dict[str, SettingSpec] = {
     "cluster_join_token": SettingSpec(
         "cluster",
         "secret",
+        # 原样写进节点 agent config.yaml(node-join.sh),字符集锁死:换行/引号即 YAML 注入
+        pattern=r"[A-Za-z0-9:._~+/=\-]{16,512}",
         max_len=512,
         hint="专用 agent token(server 的 .../server/agent-token;禁止填 node-token)",
     ),
@@ -465,6 +467,19 @@ def _env_default(key: str) -> str:
 
 def _env_layer() -> dict[str, str]:
     return {key: _env_default(key) for key in SETTING_SPECS}
+
+
+def env_layer_problems() -> list[str]:
+    """部署层(env)取值也过白名单格式校验(写库路径之外唯一的进值口);返回不合格项描述。"""
+    problems: list[str] = []
+    for key, value in _env_layer().items():
+        if value == "":
+            continue
+        try:
+            validate_setting_value(key, value)
+        except ValueError as exc:
+            problems.append(str(exc))
+    return problems
 
 
 def _decrypt_row(key: str, value: str, *, aad: str) -> str:

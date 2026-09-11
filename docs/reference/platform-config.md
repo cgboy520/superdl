@@ -20,7 +20,7 @@
 
 ## 规则与不变量
 
-- `SETTING_SPECS` 是白名单:未知键一律拒绝。取值为 env 默认 + DB 覆盖。
+- `SETTING_SPECS` 是白名单:未知键一律拒绝。取值为 env 默认 + DB 覆盖;env 层非空值在启动时同样过格式校验(`env_layer_problems`,prod 不合格拒启)。每次写入按配置组计数 `superdl_platform_config_write_total{domain}`,payment / crypto 组条条告警 `PaymentConfigWritten`(单 admin 即可换收款验签公钥,告警是唯一的第二双眼)。
 - 生效配置不做进程内缓存(`get_effective_platform_config`):每次全量 SELECT + 解密,写入即生效;单行密文解密失败 fail-closed 抛错,禁止静默回落 env。
 - 敏感项以 AES-256-GCM 加密落库(`app/core/crypto.py`),AAD 绑定行的键名;密文带 kid,加密用钥经 HKDF 从主密钥派生。
 - **AAD 绑定键名,直接 UPDATE 行键名会毁掉密文**:secret 键改名须由迁移按旧 key 解密后以新 key 重加密写入(或让运营重录)。

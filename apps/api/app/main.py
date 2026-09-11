@@ -57,6 +57,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         from app.core.platform_config import (
             assert_prod_compliance_gates,
             compute_config_warnings,
+            env_layer_problems,
             get_effective_platform_config,
         )
 
@@ -76,6 +77,12 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             )
         # 合规闸门 fail-fast(platform_config.assert_prod_compliance_gates)
         assert_prod_compliance_gates(cfg, settings.environment)
+        # env 层取值同样过格式白名单(如 SUPERDL_CLUSTER_JOIN_TOKEN 带换行);prod 拒启,其余环境记错
+        env_problems = env_layer_problems()
+        if env_problems:
+            if settings.environment == "prod":
+                raise RuntimeError("部署层平台配置格式不合格,拒绝启动:" + ";".join(env_problems))
+            log.error("config_env_invalid", problems=env_problems)
     yield
     # 关闭 Prometheus 代理客户端单例
     from app.modules.metering import prom as metering_prom

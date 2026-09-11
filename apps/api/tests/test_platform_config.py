@@ -32,6 +32,45 @@ class TestSpecValidation:
         )
 
 
+class TestClusterJoinTokenShape:
+    """挂了说明:join token 带换行/引号能进库,node-join.sh 会把它原样写进 agent config.yaml。"""
+
+    @pytest.mark.parametrize(
+        "token",
+        [
+            "K10abcdef0123456789::server:secrettoken",
+            "b9134731929da2d82187d52e83d7c6ab726fb0bed612005b3382f5d0e61ac300",
+        ],
+    )
+    def test_real_shapes_accepted(self, token):
+        assert validate_setting_value("cluster_join_token", token) == token
+
+    @pytest.mark.parametrize(
+        "token",
+        [
+            'K10abc::server:s\nkubelet-arg:\n  - "anonymous-auth=true"',
+            'K10abc::server:s" kubelet-arg: "x',
+            "short",
+            "K10abc::server:se cret1234567890",
+        ],
+    )
+    def test_injection_shapes_rejected(self, token):
+        with pytest.raises(ValueError, match="格式不符"):
+            validate_setting_value("cluster_join_token", token)
+
+    def test_env_layer_is_validated(self, monkeypatch):
+        """部署层(env)取值绕不过格式白名单。"""
+        from app.core import platform_config
+
+        monkeypatch.setattr(
+            platform_config,
+            "_env_layer",
+            lambda: {"cluster_join_token": "K10abc::server:s\nkubelet-arg: x"},
+        )
+        problems = platform_config.env_layer_problems()
+        assert problems and "cluster_join_token" in problems[0]
+
+
 class TestProdDegradeForbidden:
     """降防开关(人机验证/管理端 MFA/实名)在 prod 禁止在线关闭。"""
 
