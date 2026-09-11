@@ -69,7 +69,8 @@ def setup_logging() -> None:
     if settings.environment == "prod":
         renderer: structlog.typing.Processor = structlog.processors.JSONRenderer()
     else:
-        renderer = structlog.dev.ConsoleRenderer()
+        # 默认异常渲染在装了 rich 时带局部变量(含凭据,且深栈一次渲染几十秒),铉成纯文本栈
+        renderer = structlog.dev.ConsoleRenderer(exception_formatter=structlog.dev.plain_traceback)
 
     # structlog 侧:处理链末端交回 ProcessorFormatter 渲染
     structlog.configure(

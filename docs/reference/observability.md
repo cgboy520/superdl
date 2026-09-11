@@ -24,7 +24,7 @@
 - `superdl_authz_denied_total` 只在 `adminapi/deps.require_roles`(及共用它的 PII 明文闸)计数;用户端 403 不计。
 - request-id 贯穿全链路(contextvars + 响应头);未捕获异常统一 500 错误体。异常告警经日志栈(Loki 查询见 `deploy/cluster/runbooks/loki-logging.md`)。
 - 日志:structlog + stdlib 桥接(ProcessorFormatter);prod=JSON、dev/test=Console;级别 `SUPERDL_LOG_LEVEL`(默认 INFO);outbox payload 带 `_request_id`,worker 执行时回填日志上下文。
-- **异常栈不带局部变量**:prod 结构化栈帧渲染显式关 `show_locals`。
+- **异常栈不带局部变量**:prod 结构化栈帧渲染显式关 `show_locals`;dev/test 的 Console 渲染钉纯文本栈(`plain_traceback`),不让 structlog 自动切到 rich 的带局部变量渲染。
 - worker 自起 `/metrics` 端口(默认 9000,`SUPERDL_WORKER_METRICS_PORT`,同 `SUPERDL_METRICS_TOKEN` Bearer)。抓取配置 `deploy/app/k8s/08-monitoring.yaml` = API ServiceMonitor + worker PodMonitor(均带 Bearer)。
 - 定时任务单轮超过周期 80% 时 worker 打 warning(`scheduled_tick_slow`)。
 - WorkerDown 告警按心跳 Gauge 判定,不用 `absent()`。

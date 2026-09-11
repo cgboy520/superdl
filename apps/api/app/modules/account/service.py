@@ -26,9 +26,9 @@ from app.core.ratelimit import (
     read_hits,
 )
 from app.core.security import (
-    DUMMY_PASSWORD_HASH,
     create_token,
     decode_token,
+    dummy_password_hash,
     hash_password,
     verify_password,
 )
@@ -299,7 +299,7 @@ async def login(
             stored = (
                 user.password_hash
                 if (user is not None and user.password_hash)
-                else DUMMY_PASSWORD_HASH
+                else dummy_password_hash()
             )
             password_ok = await verify_password(password, stored)
             if user is None or user.password_hash is None or not password_ok:

@@ -5,7 +5,7 @@ import re
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _DEV_JWT_SECRET = "dev-secret-change-me"
@@ -64,6 +64,8 @@ class Settings(BaseSettings):
     jwt_admin_audience: str = "superdl:admin"
     access_token_ttl_seconds: int = 3600
     refresh_token_ttl_seconds: int = 7 * 24 * 3600
+    # 口令 bcrypt cost(prod 下限 12,_validate_prod);测试降到 4 换速度,哈希自带 cost 可互认
+    bcrypt_rounds: int = Field(default=12, ge=4, le=31)
     # 管理端 TOTP 总开关:开 = 全角色强制绑定并二要素登录;关 = 口令即签发。可被配置中心覆盖;
     # prod 关闭只告警
     admin_mfa_enabled: bool = True
@@ -334,6 +336,8 @@ class Settings(BaseSettings):
             problems.append("access_token_ttl_seconds 超过 1 小时上限")
         if self.refresh_token_ttl_seconds > 7 * 24 * 3600:
             problems.append("refresh_token_ttl_seconds 超过 7 天上限")
+        if self.bcrypt_rounds < 12:
+            problems.append("bcrypt_rounds 低于 12(口令哈希强度不足)")
         # 只校验本组件挂载的 Secret 域
         domains = self._secret_domains()
         if "cloud" in domains and self.sms_provider == "mock":
