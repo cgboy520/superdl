@@ -83,14 +83,22 @@ async def reconcile_once(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]
 
 
 async def _refresh_port_pool_gauge(sm: async_sessionmaker[AsyncSession]) -> None:
-    """SSH 端口池水位进指标(停机实例不释放端口,池被占满前要看得见)。"""
+    """SSH 端口池水位进指标(停机实例不释放端口,池被占满前要看得见)。
+    port_allocations 只在分配时扩行,容量按配置段算:段长 − 段内排除端口。"""
     from app.modules.orchestrator.ports import port_pool_stats
 
+    settings = get_settings()
+    excluded_in_range = sum(
+        1
+        for p in settings.ssh_port_excluded
+        if settings.ssh_port_range_start <= p <= settings.ssh_port_range_end
+    )
+    capacity = settings.ssh_port_range_end - settings.ssh_port_range_start + 1 - excluded_in_range
     async with sm() as session:
         stats = await port_pool_stats(session)
     SSH_PORT_POOL.labels(state="assigned").set(stats.assigned)
     SSH_PORT_POOL.labels(state="blocked").set(stats.blocked)
-    SSH_PORT_POOL.labels(state="free").set(max(0, stats.total - stats.assigned - stats.blocked))
+    SSH_PORT_POOL.labels(state="free").set(max(0, capacity - stats.assigned - stats.blocked))
 
 
 def _status_keys(instances: Iterable[Instance]) -> list[tuple[int, str, Any]]:

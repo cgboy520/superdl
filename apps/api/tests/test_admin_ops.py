@@ -1162,3 +1162,17 @@ class TestRealNameIdentityCap:
                 ).verification_status != "verified"
         finally:
             set_realname_provider(None)
+
+
+class TestPortPoolGauge:
+    async def test_free_is_capacity_minus_used(self, client, sm, fake):
+        """挂了说明:free 按 port_allocations 行数算(行只在分配时扩),空池报 0 触发误报。"""
+        from app.core.config import get_settings
+        from app.core.metrics import SSH_PORT_POOL
+        from app.modules.orchestrator.reconciler import _refresh_port_pool_gauge
+
+        s = get_settings()
+        capacity = s.ssh_port_range_end - s.ssh_port_range_start + 1 - len(s.ssh_port_excluded)
+        await _refresh_port_pool_gauge(sm)
+        assert SSH_PORT_POOL.labels(state="free")._value.get() == capacity
+        assert SSH_PORT_POOL.labels(state="assigned")._value.get() == 0

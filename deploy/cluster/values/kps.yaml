@@ -546,8 +546,12 @@ additionalPrometheusRulesMap:
             for: 15m
             labels: {severity: warning}
             annotations: {summary: "租户 {{ $labels.namespace }} 出向 {{ $value | humanize }}B/s 持续 15 分钟:扫描/外发/中继特征,管理端查该租户实例,必要时冻结"}
-# node-exporter textfile 采集目录:自建单实例 PG 的备份脚本(deploy/pg/backup.sh)往里写最近成功时间戳
+# node-exporter:控制面节点带 CriticalAddonsOnly=true:NoExecute(server 污点),不容忍就没有 server 的节点指标,
+# 自建 PG 的备份时间戳(textfile)也正好写在 server 上;textfile 目录由 deploy/pg/backup.sh 写
 prometheus-node-exporter:
+  tolerations:
+    - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
+    - {key: node-role.kubernetes.io/control-plane, operator: Exists, effect: NoSchedule}
   extraArgs:
     - --collector.textfile.directory=/host/textfile
   extraHostVolumeMounts:
