@@ -1,4 +1,4 @@
-import { adminColors, metaOf, skuTierMap, skuVariant, type SkuTier, type SkuVariant } from "@superdl/ui";
+import { adminColors, layout, metaOf, skuTierMap, skuVariant, type SkuTier, type SkuVariant } from "@superdl/ui";
 import { HexTag, PageContainer, TableErrorEmpty, useConfirm } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
@@ -396,6 +396,7 @@ function SkusPage() {
 
   return (
     <PageContainer
+      width="full"
       title={t("menu.skus")}
       extra={
         <Tooltip title={writable ? "" : t("common.readonlyNoCreate")}>
@@ -408,6 +409,7 @@ function SkusPage() {
     <Card>
       <Table<SkuAdminOut>
         scroll={{ x: 1440 }}
+        sticky={{ offsetHeader: layout.topBarHeight }}
         rowKey="id"
         loading={isLoading}
         locale={{
@@ -422,7 +424,7 @@ function SkusPage() {
         dataSource={skus ?? []}
         pagination={false}
         columns={[
-          { title: t("skus.colName"), dataIndex: "name" },
+          { title: t("skus.colName"), dataIndex: "name", fixed: "left", width: 200 },
           { title: t("skus.colGpuModel"), dataIndex: "gpu_model" },
           {
             title: t("skus.colTier"),
@@ -534,6 +536,8 @@ function SkusPage() {
           },
           {
             title: t("skus.colActions"),
+            fixed: "right",
+            width: 90,
             render: (_, r) => (
               <Tooltip title={writable ? "" : t("common.readonlyNoEdit")}>
                 <Button size="small" disabled={!writable} onClick={() => openEdit(r)}>

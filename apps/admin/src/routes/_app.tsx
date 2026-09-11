@@ -1,6 +1,6 @@
 import { AlertOutlined, LogoutOutlined, MenuOutlined, SearchOutlined } from "@ant-design/icons";
 import { adminLogoutApiAdminV1AuthLogoutPost } from "@superdl/api-client";
-import { adminColors, fontSize, formatDateTime, metaOf } from "@superdl/ui";
+import { adminColors, fontSize, formatDateTime, layout, metaOf } from "@superdl/ui";
 import { LangSwitcher } from "@superdl/ui/components";
 import {
   Link,
@@ -17,6 +17,7 @@ import {
   Grid,
   Layout,
   Menu,
+  type MenuProps,
   Popover,
   Space,
   Tag,
@@ -34,7 +35,7 @@ import {
   CommandPalette,
 } from "../components/CommandPalette";
 import { alertLink, severityColor, useAckAlertWithFeedback } from "../lib/alertLink";
-import { MENU, ROLE_LABEL_KEY, canSeeMenu } from "../lib/menu";
+import { MENU, MENU_GROUP_LABEL_KEY, MENU_GROUP_ORDER, ROLE_LABEL_KEY, canSeeMenu } from "../lib/menu";
 import { queryClient } from "../lib/queryClient";
 import { authStore, canWriteOps, useAdminRole, useAuth } from "../stores/auth";
 
@@ -210,15 +211,29 @@ function AppLayout() {
   // 窄屏 Sider 收为 0 宽,Header 出汉堡钮;默认收
   const [mobileOpen, setMobileOpen] = useState(false);
   const siderCollapsed = screens.lg ? manualCollapsed : !mobileOpen;
-  const menuItems = MENU.filter((m) => canSeeMenu(m.key, admin?.role ?? "readonly")).map((m) => ({
-    key: m.key,
-    icon: <m.icon />,
-    label: <Link to={m.key}>{t(m.labelKey)}</Link>,
-  }));
-  const selected = menuItems
+  const visible = MENU.filter((m) => canSeeMenu(m.key, admin?.role ?? "readonly"));
+  const selected = visible
     .map((m) => m.key)
     .filter((k) => (k === "/" ? pathname === "/" : pathname.startsWith(k)))
     .slice(-1);
+  // 分组渲染:overview 单项直出;其余组出组标题(type: group)。展开态 label 是 Link(可中键 / 新标签、带 aria-current);
+  // 收起成 80px 图标轨时 label 不可见,由 Menu.onClick 兜底导航
+  const menuItems: NonNullable<MenuProps["items"]> = MENU_GROUP_ORDER.flatMap((g) => {
+    const items = visible.filter((m) => m.group === g);
+    if (items.length === 0) return [];
+    const children: NonNullable<MenuProps["items"]> = items.map((m) => ({
+      key: m.key,
+      icon: <m.icon />,
+      label: (
+        <Link to={m.key} aria-current={selected[0] === m.key ? "page" : undefined}>
+          {t(m.labelKey)}
+        </Link>
+      ),
+    }));
+    // 收起态不出组标题(antd 在收起时不渲染 group label,只留缝隙)
+    if (g === "overview" || siderCollapsed) return children;
+    return [{ key: `group:${g}`, type: "group" as const, label: t(MENU_GROUP_LABEL_KEY[g]), children }];
+  });
   const isProd = import.meta.env.MODE === "production";
 
   return (
@@ -254,27 +269,38 @@ function AppLayout() {
         >
           SuperDL · NOC
         </div>
-        <Menu
-          mode="inline"
-          selectedKeys={selected}
-          items={menuItems}
-          style={{ borderRight: 0 }}
-          // 窄屏点选即收
-          onClick={() => {
-            if (!screens.lg) setMobileOpen(false);
-          }}
-        />
+        <nav aria-label={t("shell.primaryNav")}>
+          <Menu
+            mode="inline"
+            selectedKeys={selected}
+            items={menuItems}
+            style={{ borderRight: 0 }}
+            onClick={({ key }) => {
+              // 收起态 label(Link)不可见:点图标由这里导航;展开态 Link 自己处理,避免重复 push
+              if (siderCollapsed && screens.lg && typeof key === "string" && key.startsWith("/")) {
+                void navigate({ to: key });
+              }
+              // 窄屏点选即收
+              if (!screens.lg) setMobileOpen(false);
+            }}
+          />
+        </nav>
       </Layout.Sider>
       <Layout>
+        {/* 顶栏 sticky:表格 sticky 表头以 layout.topBarHeight 为 offset */}
         <Layout.Header
           style={{
+            position: "sticky",
+            top: 0,
+            zIndex: 100,
             background: token.colorBgContainer,
+            borderBottom: `1px solid ${adminColors.divider}`,
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
             paddingInline: 24,
-            height: 56,
-            lineHeight: "56px",
+            height: layout.topBarHeight,
+            lineHeight: `${layout.topBarHeight}px`,
           }}
         >
           <Space size={12}>

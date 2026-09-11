@@ -125,7 +125,6 @@
     "actionRefresh": "Refresh current page data",
     "actionUnackedAlerts": "View unacknowledged alerts",
     "groupActions": "Actions",
-    "groupPages": "Pages",
     "hint": "↑↓ navigate · ↵ open · esc close",
     "noResults": "No results",
     "refreshDone": "Refresh triggered",
@@ -381,6 +380,10 @@
     "audit": "Audit log",
     "cluster": "Cluster",
     "finance": "Finance",
+    "groupBusiness": "Business",
+    "groupGovernance": "Governance",
+    "groupOverview": "Overview",
+    "groupResources": "Resources",
     "images": "Images & prewarm",
     "nodes": "Nodes & GPUs",
     "overview": "Overview",
@@ -770,7 +773,8 @@
     "envProd": "Production",
     "logout": "Log out",
     "noAlerts": "No alerts",
-    "openMenu": "Open navigation menu"
+    "openMenu": "Open navigation menu",
+    "primaryNav": "Admin navigation"
   },
   "skus": {
     "clusterEmptyHint": "Node inventory is empty, so the model must be entered manually. Connect a cluster and wait for the patrol to enable cluster-based creation",

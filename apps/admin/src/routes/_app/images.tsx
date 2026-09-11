@@ -1,4 +1,13 @@
-import { imageCacheStatusMap, fontSize, formatDateTime, metaOf, type ImageCacheStatus } from "@superdl/ui";
+import {
+  imageCacheStatusMap,
+  fontSize,
+  formatDateTime,
+  layout,
+  metaOf,
+  POLL,
+  useAutoRefresh,
+  type ImageCacheStatus,
+} from "@superdl/ui";
 import { PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
@@ -121,7 +130,18 @@ function ImagesPage() {
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();
-  const { data: images, queryKey, isLoading, isError, error, refetch } = useAdminImages({ refetchInterval: 15_000 });
+  // 镜像清单轮询(拉取进度在变),可暂停;页头出新鲜度条
+  const autoRefresh = useAutoRefresh(POLL.ticket);
+  const {
+    data: images,
+    queryKey,
+    dataUpdatedAt,
+    isLoading,
+    isError,
+    isRefetching,
+    error,
+    refetch,
+  } = useAdminImages({ refetchInterval: autoRefresh.refetchInterval });
   const [editing, setEditing] = useState<ImageRow | "new" | null>(null);
   // 新建镜像默认仓库前缀:取平台配置的 Harbor 地址与项目
   const { data: cluster } = useClusterStatus();
@@ -192,7 +212,16 @@ function ImagesPage() {
 
   return (
     <PageContainer
+      width="full"
       title={t("menu.images")}
+      freshness={{
+        updatedAt: dataUpdatedAt,
+        intervalMs: autoRefresh.intervalMs,
+        paused: autoRefresh.paused,
+        onTogglePause: autoRefresh.toggle,
+        onRefresh: () => void refetch(),
+        refreshing: isRefetching,
+      }}
       extra={
         <Tooltip title={writable ? "" : t("common.readonlyNoCreate")}>
           <Button type="primary" disabled={!writable} onClick={() => openEdit("new")}>
@@ -211,6 +240,7 @@ function ImagesPage() {
       />
       <Table<ImageRow>
         scroll={{ x: 1100 }}
+        sticky={{ offsetHeader: layout.topBarHeight }}
         rowKey="id"
         loading={isLoading}
         locale={{
@@ -230,6 +260,8 @@ function ImagesPage() {
         columns={[
           {
             title: t("images.colFramework"),
+            fixed: "left",
+            width: 180,
             render: (_, r) => `${r.framework} ${r.framework_version}`,
           },
           { title: "Python", dataIndex: "python_version" },
@@ -285,6 +317,7 @@ function ImagesPage() {
           {
             title: t("skus.colActions"),
             width: 240,
+            fixed: "right",
             render: (_, r) => (
               <Space>
                 <Tooltip title={writable ? t("images.prewarmTip") : t("nodes.readonlyNoOp")}>

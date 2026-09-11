@@ -1,6 +1,6 @@
 /** 告警中心:severity 服务端过滤、确认状态客户端过滤,入 URL;深链与确认闭环走 alertLink(ops/admin 可写)。 */
 
-import { fontSize, formatDateTime, space } from "@superdl/ui";
+import { controlWidth, fontSize, formatDateTime, POLL, space, useAutoRefresh } from "@superdl/ui";
 import { EmptyState, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Badge, Button, List, Select, Space, Tooltip, Typography } from "antd";
@@ -34,7 +34,10 @@ function AlertsPage() {
   const writable = canWriteOps(role);
   const { severity, acked } = Route.useSearch();
   // severity 服务端参数;确认状态客户端过滤(200 条窗口)
-  const alertsQ = useAlerts(severity ? { severity } : undefined, { refetchInterval: 30_000 });
+  const autoRefresh = useAutoRefresh(POLL.steady);
+  const alertsQ = useAlerts(severity ? { severity } : undefined, {
+    refetchInterval: autoRefresh.refetchInterval,
+  });
   const rows = (alertsQ.data ?? []).filter((a) =>
     acked === "acked" ? a.acked_at != null : acked === "unacked" ? a.acked_at == null : true,
   );
@@ -46,12 +49,20 @@ function AlertsPage() {
   return (
     <PageContainer
       title={t("alerts.title")}
+      freshness={{
+        updatedAt: alertsQ.dataUpdatedAt,
+        intervalMs: autoRefresh.intervalMs,
+        paused: autoRefresh.paused,
+        onTogglePause: autoRefresh.toggle,
+        onRefresh: () => void alertsQ.refetch(),
+        refreshing: alertsQ.isRefetching,
+      }}
       extra={
         <Space wrap>
           <Select
             allowClear
             placeholder={t("overview.severityFilter")}
-            style={{ width: 140 }}
+            style={{ width: controlWidth.sm }}
             value={severity}
             onChange={(v) => setFilters({ severity: v })}
             options={SEVERITIES.map((s) => ({
@@ -62,7 +73,7 @@ function AlertsPage() {
           <Select
             allowClear
             placeholder={t("alerts.ackFilter")}
-            style={{ width: 140 }}
+            style={{ width: controlWidth.sm }}
             value={acked}
             onChange={(v) => setFilters({ acked: v })}
             options={[
@@ -70,9 +81,6 @@ function AlertsPage() {
               { value: "acked", label: t("alerts.ackAcked") },
             ]}
           />
-          <Button onClick={() => void alertsQ.refetch()} loading={alertsQ.isRefetching}>
-            {t("common.refresh")}
-          </Button>
         </Space>
       }
     >

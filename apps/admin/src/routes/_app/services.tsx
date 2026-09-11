@@ -43,6 +43,7 @@ function ServicesPage() {
 
   return (
     <PageContainer
+      width="full"
       title={t("menu.services")}
       extra={
         <Space wrap>

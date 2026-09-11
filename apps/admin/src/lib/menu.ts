@@ -1,4 +1,4 @@
-/** 侧栏菜单可见性(与后端 require_roles 对齐);key 收窄到 MenuKey。 */
+/** 侧栏菜单可见性(与后端 require_roles 对齐);key 收窄到 MenuKey。分组(总览 / 资源 / 业务 / 治理)是侧栏与命令面板共用的事实源。 */
 
 import {
   AlertOutlined,
@@ -52,19 +52,39 @@ export function canSeeMenu(key: MenuKey, role: string): boolean {
   return (MENU_ROLES[key] as readonly string[]).includes(role);
 }
 
-/** 侧栏菜单项:_app.tsx 侧栏与 CommandPalette 共用;icon 存组件引用。 */
+/** 菜单分组:overview 单项不出组标题;其余三组出标题。 */
+export const MENU_GROUP_LABEL_KEY = {
+  overview: "menu.groupOverview",
+  resources: "menu.groupResources",
+  business: "menu.groupBusiness",
+  governance: "menu.groupGovernance",
+} as const;
+
+export type MenuGroup = keyof typeof MENU_GROUP_LABEL_KEY;
+
+/** 侧栏菜单项:_app.tsx 侧栏与 CommandPalette 共用;icon 存组件引用;group 决定侧栏分组与命令面板分组。 */
 export const MENU = [
-  { key: "/", icon: DashboardOutlined, labelKey: "menu.overview" },
-  { key: "/nodes", icon: ClusterOutlined, labelKey: "menu.nodes" },
-  { key: "/cluster", icon: DeploymentUnitOutlined, labelKey: "menu.cluster" },
-  { key: "/skus", icon: TagsOutlined, labelKey: "menu.skus" },
-  { key: "/images", icon: CloudDownloadOutlined, labelKey: "menu.images" },
-  { key: "/tenants", icon: TeamOutlined, labelKey: "menu.tenants" },
-  { key: "/services", icon: CloudServerOutlined, labelKey: "menu.services" },
-  { key: "/finance", icon: PayCircleOutlined, labelKey: "menu.finance" },
-  { key: "/tickets", icon: CustomerServiceOutlined, labelKey: "menu.tickets" },
-  { key: "/audit", icon: AuditOutlined, labelKey: "menu.audit" },
-  { key: "/platform", icon: ApiOutlined, labelKey: "menu.platform" },
-  { key: "/alerts", icon: AlertOutlined, labelKey: "menu.alerts" },
-  { key: "/settings", icon: SettingOutlined, labelKey: "menu.settings" },
-] as const satisfies readonly { key: MenuKey; icon: ComponentType; labelKey: string }[];
+  { key: "/", icon: DashboardOutlined, labelKey: "menu.overview", group: "overview" },
+  { key: "/nodes", icon: ClusterOutlined, labelKey: "menu.nodes", group: "resources" },
+  { key: "/cluster", icon: DeploymentUnitOutlined, labelKey: "menu.cluster", group: "resources" },
+  { key: "/skus", icon: TagsOutlined, labelKey: "menu.skus", group: "resources" },
+  { key: "/images", icon: CloudDownloadOutlined, labelKey: "menu.images", group: "resources" },
+  { key: "/tenants", icon: TeamOutlined, labelKey: "menu.tenants", group: "business" },
+  { key: "/services", icon: CloudServerOutlined, labelKey: "menu.services", group: "business" },
+  { key: "/finance", icon: PayCircleOutlined, labelKey: "menu.finance", group: "business" },
+  { key: "/tickets", icon: CustomerServiceOutlined, labelKey: "menu.tickets", group: "business" },
+  { key: "/alerts", icon: AlertOutlined, labelKey: "menu.alerts", group: "governance" },
+  { key: "/audit", icon: AuditOutlined, labelKey: "menu.audit", group: "governance" },
+  { key: "/platform", icon: ApiOutlined, labelKey: "menu.platform", group: "governance" },
+  { key: "/settings", icon: SettingOutlined, labelKey: "menu.settings", group: "governance" },
+] as const satisfies readonly {
+  key: MenuKey;
+  icon: ComponentType;
+  labelKey: string;
+  group: MenuGroup;
+}[];
+
+export type MenuItem = (typeof MENU)[number];
+
+/** 分组顺序(侧栏渲染顺序) */
+export const MENU_GROUP_ORDER: readonly MenuGroup[] = ["overview", "resources", "business", "governance"];

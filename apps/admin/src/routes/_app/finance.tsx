@@ -1,5 +1,19 @@
 import { WarningOutlined } from "@ant-design/icons";
-import { addAmounts, adjustmentStatusMap, adminColors, fontSize, formatDateTime, idemKeyOf, invoiceStatusMap, ledgerTypeMap, metaOf, orderStatusMap, payoutChannelMap, refundStatusMap } from "@superdl/ui";
+import {
+  addAmounts,
+  adjustmentStatusMap,
+  adminColors,
+  fontSize,
+  formatDateTime,
+  idemKeyOf,
+  invoiceStatusMap,
+  layout,
+  ledgerTypeMap,
+  metaOf,
+  orderStatusMap,
+  payoutChannelMap,
+  refundStatusMap,
+} from "@superdl/ui";
 import { DataErrorAlert, moneyOr, HexTag, LoadMore, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
@@ -531,6 +545,7 @@ function AdjustmentsTab() {
       </Space>
       <Table<AdjustmentRow>
         scroll={{ x: 1000 }}
+        sticky={{ offsetHeader: layout.topBarHeight }}
         rowKey="id"
         loading={isLoading}
         locale={{
@@ -544,7 +559,7 @@ function AdjustmentsTab() {
         }}
         dataSource={rows}
         columns={[
-          { title: t("finance.colAdjustId"), dataIndex: "id", width: 70 },
+          { title: t("finance.colAdjustId"), dataIndex: "id", width: 70, fixed: "left" },
           tenantColumn(t("finance.colTenant")),
           {
             title: t("finance.colAmount"),
@@ -995,6 +1010,7 @@ function RefundsTab() {
       </Space>
       <Table<RefundRow>
         scroll={{ x: 1100 }}
+        sticky={{ offsetHeader: layout.topBarHeight }}
         rowKey="id"
         loading={isLoading}
         locale={{
@@ -1008,7 +1024,13 @@ function RefundsTab() {
         }}
         dataSource={rows}
         columns={[
-          { title: t("finance.colRefundNo"), dataIndex: "refund_no", width: 130 },
+          {
+            title: t("finance.colRefundNo"),
+            dataIndex: "refund_no",
+            width: 150,
+            fixed: "left",
+            render: (v: string) => <span className="mono">{v}</span>,
+          },
           tenantColumn(t("finance.colTenant")),
           { title: t("finance.colOrderNo"), dataIndex: "order_no", width: 190 },
           {
@@ -1058,6 +1080,7 @@ function RefundsTab() {
           {
             title: t("finance.colAction"),
             width: 230,
+            fixed: "right",
             render: (_, r) => {
               if (r.status !== "pending" && r.status !== "approved") return null;
               const isReviewer = admin?.id === r.review_by;
@@ -1315,6 +1338,7 @@ function InvoicesTab() {
       </Modal>
       <Table<InvoiceRow>
         scroll={{ x: 1100 }}
+        sticky={{ offsetHeader: layout.topBarHeight }}
         rowKey="id"
         loading={isLoading}
         locale={{
@@ -1328,7 +1352,7 @@ function InvoicesTab() {
         }}
         dataSource={rows}
         columns={[
-          { title: t("finance.colPeriod"), dataIndex: "period", width: 90 },
+          { title: t("finance.colPeriod"), dataIndex: "period", width: 90, fixed: "left" },
           tenantColumn(t("finance.colTenant")),
           {
             title: t("finance.colAmount"),
@@ -1384,6 +1408,7 @@ function InvoicesTab() {
           {
             title: t("finance.colAction"),
             width: 150,
+            fixed: "right",
             render: (_, r) => {
               if (r.status !== "submitted") return null;
               return (
@@ -1440,7 +1465,7 @@ function FinancePage() {
   const activeTab = tab ?? "orders";
   const invoicesDenied = activeTab === "invoices" && !showInvoices;
   return (
-    <PageContainer title={t("menu.finance")}>
+    <PageContainer width="full" title={t("menu.finance")}>
       <ReconciliationCard />
       <Card style={{ marginTop: 16 }}>
         {invoicesDenied && (

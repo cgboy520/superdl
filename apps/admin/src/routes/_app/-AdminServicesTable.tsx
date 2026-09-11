@@ -1,6 +1,6 @@
 /** 全局在线服务表(在线服务页与租户抽屉共用);唯一处置「强制停止」委托当前版本实例的 force-stop。 */
 
-import { fontSize, formatDateTime, metaOf, serviceStatusMap } from "@superdl/ui";
+import { fontSize, formatDateTime, layout, metaOf, serviceStatusMap } from "@superdl/ui";
 import { HexTag, LoadMore, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -66,6 +66,7 @@ export function AdminServicesTable({
         loading={isLoading}
         pagination={false}
         scroll={compact ? { x: 900, y: 420 } : { x: 1240 }}
+        sticky={compact ? undefined : { offsetHeader: layout.topBarHeight }}
         locale={{
           emptyText: (
             <TableErrorEmpty
@@ -79,6 +80,8 @@ export function AdminServicesTable({
         columns={[
           {
             title: t("services.colService"),
+            fixed: compact ? undefined : "left",
+            width: 200,
             render: (_, r) => (
               <Space orientation="vertical" size={0}>
                 <span>{r.name}</span>
@@ -140,6 +143,7 @@ export function AdminServicesTable({
           {
             title: t("services.colActions"),
             width: 110,
+            fixed: compact ? undefined : "right",
             render: (_, r) => {
               const inst = r.current_instance;
               const stoppable = inst != null && (r.status === "running" || r.status === "unready");

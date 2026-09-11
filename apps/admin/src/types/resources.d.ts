@@ -125,7 +125,6 @@ export default interface Resources {
       "actionRefresh": "刷新当前页数据",
       "actionUnackedAlerts": "查看未确认告警",
       "groupActions": "操作",
-      "groupPages": "页面",
       "hint": "↑↓ 移动 · ↵ 打开 · esc 关闭",
       "noResults": "无匹配结果",
       "refreshDone": "已触发刷新",
@@ -377,6 +376,10 @@ export default interface Resources {
       "audit": "审计日志",
       "cluster": "集群",
       "finance": "财务对账",
+      "groupBusiness": "业务",
+      "groupGovernance": "治理",
+      "groupOverview": "总览",
+      "groupResources": "资源",
       "images": "镜像与预热",
       "nodes": "节点与 GPU",
       "overview": "运营总览",
@@ -757,7 +760,8 @@ export default interface Resources {
       "envProd": "生产环境",
       "logout": "退出登录",
       "noAlerts": "暂无告警",
-      "openMenu": "打开导航菜单"
+      "openMenu": "打开导航菜单",
+      "primaryNav": "管理台导航"
     },
     "skus": {
       "clusterEmptyHint": "节点台账暂无数据,型号需手动填写;接入集群并等待巡检后可从集群资源创建",

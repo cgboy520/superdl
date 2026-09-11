@@ -1,4 +1,17 @@
-import { adminColors, fontSize, formatDateTime, heatColors, metaOf, nodeEnrollStatusMap, space, textOnAccent, type NodeEnrollStatus } from "@superdl/ui";
+import {
+  adminColors,
+  fontSize,
+  formatDateTime,
+  heatColors,
+  layout,
+  metaOf,
+  nodeEnrollStatusMap,
+  POLL,
+  space,
+  textOnAccent,
+  useAutoRefresh,
+  type NodeEnrollStatus,
+} from "@superdl/ui";
 import { EChart, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
@@ -587,7 +600,17 @@ function NodesPage() {
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();
-  const { data, isLoading, isError, error, refetch } = useNodes();
+  // 节点台账稳态轮询(可暂停),页头出新鲜度条
+  const autoRefresh = useAutoRefresh(POLL.steady);
+  const {
+    data,
+    dataUpdatedAt: nodesUpdatedAt,
+    isLoading,
+    isError,
+    isRefetching,
+    error,
+    refetch,
+  } = useNodes({ refetchInterval: autoRefresh.refetchInterval });
   const nodes: NodeRow[] = useMemo(() => data ?? [], [data]);
   const { data: portPool } = usePortPool();
   const nodeParam = Route.useSearch({ select: (s) => s.node });
@@ -658,7 +681,16 @@ function NodesPage() {
 
   return (
     <PageContainer
+      width="full"
       title={t("nodes.title")}
+      freshness={{
+        updatedAt: nodesUpdatedAt,
+        intervalMs: autoRefresh.intervalMs,
+        paused: autoRefresh.paused,
+        onTogglePause: autoRefresh.toggle,
+        onRefresh: () => void refetch(),
+        refreshing: isRefetching,
+      }}
       extra={
         <Space size={12}>
           {portPool && (
@@ -706,7 +738,8 @@ function NodesPage() {
           onSearch={(v) => setKw(v.trim().toLowerCase())}
         />
         <Table<NodeRow>
-          scroll={{ x: 1000 }}
+          scroll={{ x: 1200 }}
+          sticky={{ offsetHeader: layout.topBarHeight }}
           rowKey="name"
           loading={isLoading}
           locale={{
@@ -748,7 +781,10 @@ function NodesPage() {
             {
               title: t("nodes.colNode"),
               dataIndex: "name",
+              fixed: "left",
+              width: 180,
               sorter: (a, b) => a.name.localeCompare(b.name),
+              render: (v: string) => <span className="mono">{v}</span>,
             },
             {
               title: t("nodes.colPool"),
@@ -843,6 +879,7 @@ function NodesPage() {
             {
               title: t("nodes.colActions"),
               width: 170,
+              fixed: "right",
               render: (_, r) => {
                 const cordoned = r.status === "Cordoned";
                 return (

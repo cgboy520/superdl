@@ -175,7 +175,7 @@ import type {
 } from "@superdl/api-client";
 import { useInfiniteQuery, useMutation, useQuery, type UseMutationOptions } from "@tanstack/react-query";
 
-import { downloadCsvChecked } from "@superdl/ui";
+import { downloadCsvChecked, POLL } from "@superdl/ui";
 
 export { isApiError } from "@superdl/api-client";
 export type {
@@ -384,11 +384,12 @@ export function useNodeMetrics(nodeName: string | null, range: string) {
   });
 }
 
-export function useNodes() {
+/** 节点台账;轮询周期由页面给(可暂停),默认 POLL.steady。 */
+export function useNodes(options?: { refetchInterval?: number | false }) {
   return useQuery({
     queryKey: ["admin", "nodes"],
     queryFn: () => adminListNodesApiAdminV1NodesGet(),
-    refetchInterval: 30_000,
+    refetchInterval: options?.refetchInterval ?? POLL.steady,
   });
 }
 
@@ -400,7 +401,7 @@ export function usePortPool() {
   });
 }
 
-export function useAdminImages(options?: { refetchInterval?: number }) {
+export function useAdminImages(options?: { refetchInterval?: number | false }) {
   const queryKey = ["admin", "images"] as const;
   const q = useQuery({
     queryKey,
@@ -438,7 +439,7 @@ export function useReconciliation(day: string) {
 /** 告警流:severity 服务端过滤;enabled=false 不取数。 */
 export function useAlerts(
   params?: AdminAlertsApiAdminV1AlertsGetParams,
-  options?: { refetchInterval?: number; enabled?: boolean },
+  options?: { refetchInterval?: number | false; enabled?: boolean },
 ) {
   const queryKey = ["admin", "alerts", params] as const;
   const q = useQuery({

@@ -4,6 +4,7 @@ import {
   fontSize,
   formatDateTime,
   instanceStatusMap,
+  layout,
   marketLabelKey,
   marketMap,
   metaOf,
@@ -207,6 +208,7 @@ function TenantsTab() {
     </Modal>
     <Table<TenantRow>
       scroll={{ x: 1000 }}
+      sticky={{ offsetHeader: layout.topBarHeight }}
       rowKey="id"
       loading={isLoading}
       locale={{
@@ -237,13 +239,14 @@ function TenantsTab() {
           title: "ID",
           dataIndex: "id",
           width: 80,
+          fixed: "left",
           render: (v: number) => (
             <span onClick={(e) => e.stopPropagation()}>
               <TenantLink id={v} />
             </span>
           ),
         },
-        { title: tt("tenants.colPhone"), dataIndex: "phone_masked" },
+        { title: tt("tenants.colPhone"), dataIndex: "phone_masked", fixed: "left", width: 130 },
         {
           title: tt("tenants.colBalance"),
           dataIndex: "balance",
@@ -279,6 +282,8 @@ function TenantsTab() {
         },
         {
           title: tt("tenants.colActions"),
+          fixed: "right",
+          width: 170,
           render: (_, t) => (
             <Space>
               <Button
@@ -408,6 +413,7 @@ function InstancesTab() {
       </Space>
       <Table<AdminInstanceOut>
         scroll={{ x: 1250 }}
+        sticky={{ offsetHeader: layout.topBarHeight }}
         rowKey="uuid"
         loading={isLoading}
         locale={{
@@ -421,7 +427,7 @@ function InstancesTab() {
         }}
         dataSource={instances}
         columns={[
-          { title: t("tenants.colInstance"), dataIndex: "name" },
+          { title: t("tenants.colInstance"), dataIndex: "name", fixed: "left", width: 180 },
           tenantColumn(t("tenants.colOwner"), 90),
           {
             title: t("tenants.colNode"),
@@ -485,6 +491,8 @@ function InstancesTab() {
           { title: t("tenants.colCreatedAt"), dataIndex: "created_at", render: formatDateTime },
           {
             title: t("tenants.colActions"),
+            fixed: "right",
+            width: 190,
             render: (_, r) => {
               return (
                 <Space>
@@ -544,7 +552,7 @@ function TenantsPage() {
   const navigate = useNavigate({ from: "/tenants" });
   const tab = Route.useSearch({ select: (s) => s.tab });
   return (
-    <PageContainer title={t("menu.tenants")}>
+    <PageContainer width="full" title={t("menu.tenants")}>
       <Card>
         <Tabs
           activeKey={tab ?? "tenants"}
@@ -630,6 +638,7 @@ function DeletionsTab() {
       </Space>
       <Table<DeletionRow>
         scroll={{ x: 1100 }}
+        sticky={{ offsetHeader: layout.topBarHeight }}
         rowKey="id"
         loading={isLoading}
         locale={{
@@ -643,9 +652,11 @@ function DeletionsTab() {
         }}
         dataSource={rows}
         columns={[
-          { title: "ID", dataIndex: "id", width: 70 },
+          { title: "ID", dataIndex: "id", width: 70, fixed: "left" },
           {
             title: t("tenants.deletion.colUser"),
+            fixed: "left",
+            width: 170,
             render: (_, r) => (
               <Space size={8}>
                 <TenantLink id={r.user_id} />
@@ -712,6 +723,8 @@ function DeletionsTab() {
           },
           {
             title: t("tenants.colActions"),
+            fixed: "right",
+            width: 170,
             render: (_, r) =>
               r.status === "pending" ? (
                 <Space>

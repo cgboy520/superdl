@@ -19,7 +19,7 @@ import {
   Tooltip,
   Typography,
 } from "antd";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useFormat } from "@superdl/ui";
@@ -366,6 +366,18 @@ function AlertStreamCard() {
   );
 }
 
+/** 逐卡骨架:各卡只等自己的 query,失败语义留在卡内。 */
+function KpiCard({ pending, children }: { pending: boolean; children: ReactNode }) {
+  if (pending) {
+    return (
+      <Card>
+        <Skeleton active title={{ width: "40%" }} paragraph={{ rows: 1, width: "70%" }} />
+      </Card>
+    );
+  }
+  return <Card>{children}</Card>;
+}
+
 function Overview() {
   const { t } = useTranslation();
   const { formatMoney } = useFormat();
@@ -392,11 +404,11 @@ function Overview() {
   return (
     <PageContainer title={t("menu.overview")}>
     <Row gutter={[16, 16]}>
+      {/* KPI 分两行:资金与租户 / 运行与风险;各卡独立等待 */}
       <Col span={24}>
         <KpiGrid
-          loading={revenueQ.isLoading || ovQ.isLoading}
           items={[
-            <Card key="rev-today">
+            <KpiCard key="rev-today" pending={revenueQ.isLoading}>
               {revenueQ.isError ? revenueErr : (
                 <>
                   <Statistic title={t("overview.todayRevenue")} value={moneyOr(formatMoney(revenue?.today_revenue), revenue != null)} />
@@ -409,8 +421,8 @@ function Overview() {
                   </Typography.Text>
                 </>
               )}
-            </Card>,
-            <Card key="rev-month">
+            </KpiCard>,
+            <KpiCard key="rev-month" pending={revenueQ.isLoading}>
               {revenueQ.isError ? revenueErr : (
                 <>
                   <Statistic title={t("overview.monthRevenue")} value={moneyOr(formatMoney(revenue?.month_revenue), revenue != null)} />
@@ -419,8 +431,8 @@ function Overview() {
                   </Typography.Text>
                 </>
               )}
-            </Card>,
-            <Card key="signup">
+            </KpiCard>,
+            <KpiCard key="signup" pending={revenueQ.isLoading}>
               {revenueQ.isError ? revenueErr : (
                 <>
                   <Statistic title={t("overview.todaySignups")} value={revenue ? revenue.today_signups : "—"} />
@@ -431,22 +443,22 @@ function Overview() {
                   </Typography.Text>
                 </>
               )}
-            </Card>,
-            <Card key="alerts">
-              {unreadQ.isError ? unreadErr : (
+            </KpiCard>,
+            <KpiCard key="paying" pending={ovQ.isLoading}>
+              {ovQ.isError ? ovErr : (
                 <Statistic
-                  title={t("overview.alertsTotal")}
-                  value={unread?.count ?? "—"}
-                  styles={{
-                    // 红色高亮取精确计数端点的 critical
-                    content: (unread?.critical_count ?? 0) > 0
-                      ? { color: adminColors.negative }
-                      : undefined,
-                  }}
+                  title={t("overview.payingTenants")}
+                  value={ov ? `${ov.paying_tenants} / ${ov.tenants_total}` : "—"}
                 />
               )}
-            </Card>,
-            <Card key="active">
+            </KpiCard>,
+          ]}
+        />
+      </Col>
+      <Col span={24}>
+        <KpiGrid
+          items={[
+            <KpiCard key="active" pending={ovQ.isLoading}>
               {ovQ.isError ? ovErr : (
                 <>
                   <Statistic title={t("overview.activeInstances")} value={ov ? activeInstances : "—"} />
@@ -458,8 +470,8 @@ function Overview() {
                   </Typography.Text>
                 </>
               )}
-            </Card>,
-            <Card key="subs">
+            </KpiCard>,
+            <KpiCard key="subs" pending={ovQ.isLoading}>
               {ovQ.isError ? ovErr : (
                 <>
                   {/* 按订阅行数计,可大于活跃实例数 */}
@@ -472,16 +484,8 @@ function Overview() {
                   </Typography.Text>
                 </>
               )}
-            </Card>,
-            <Card key="paying">
-              {ovQ.isError ? ovErr : (
-                <Statistic
-                  title={t("overview.payingTenants")}
-                  value={ov ? `${ov.paying_tenants} / ${ov.tenants_total}` : "—"}
-                />
-              )}
-            </Card>,
-            <Card key="nodes">
+            </KpiCard>,
+            <KpiCard key="nodes" pending={ovQ.isLoading}>
               {ovQ.isError ? ovErr : (
                 <>
                   <Statistic
@@ -498,7 +502,21 @@ function Overview() {
                   </Typography.Text>
                 </>
               )}
-            </Card>,
+            </KpiCard>,
+            <KpiCard key="alerts" pending={unreadQ.isLoading}>
+              {unreadQ.isError ? unreadErr : (
+                <Statistic
+                  title={t("overview.alertsTotal")}
+                  value={unread?.count ?? "—"}
+                  styles={{
+                    // 红色高亮取精确计数端点的 critical
+                    content: (unread?.critical_count ?? 0) > 0
+                      ? { color: adminColors.negative }
+                      : undefined,
+                  }}
+                />
+              )}
+            </KpiCard>,
           ]}
         />
       </Col>
