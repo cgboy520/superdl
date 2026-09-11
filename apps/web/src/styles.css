@@ -109,6 +109,22 @@ body {
   outline-offset: 2px;
 }
 
+/* 标识符(UUID / 订单号)等宽 */
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+/* 行内次级动作(改名铅笔):行 hover 或键盘聚焦时才出现 */
+.row-hover-only {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.ant-table-row:hover .row-hover-only,
+.ant-card:hover .row-hover-only,
+.row-hover-only:focus-visible {
+  opacity: 1;
+}
+
 /* 手写 role="button" / tabIndex 元素的统一焦点框(与 drawer-link 同色) */
 [role="button"][tabindex]:focus-visible,
 .focus-ring:focus-visible {

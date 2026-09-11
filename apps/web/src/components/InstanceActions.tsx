@@ -1,10 +1,10 @@
-/** 实例操作组:开机/关机/更多(重启·事件·续费·自动续费·预留项·释放)。条目永不隐藏,灰置用 Tooltip 说明前置条件;预留项禁用并注「即将上线」(ui-ux-spec 规则 2)。按形态出计费项:按量出「转包周期」,包周期出「续费 / 自动续费」,竞价出「转按量」;转包周期确认在 RenewModal 里做。释放走多级防护:键入实例名 + 勾选盘数据清除(ui-ux-spec 规则 4)。 */
+/** 实例操作组:主动作随状态变(running 连接 ▾ / failed 重新创建 / 其余 开机)+ 关机 + 更多(重启·事件·续费·自动续费·转换·释放)。条目永不隐藏,灰置用 Tooltip 说明前置条件。按形态出计费项:按量出「转包周期」,包周期出「续费 / 自动续费」,竞价出「转按量」;转包周期确认在 RenewModal 里做。释放走多级防护:键入实例名 + 勾选盘数据清除(ui-ux-spec §1 规则 7)。 */
 
 import { DownOutlined } from "@ant-design/icons";
 import type { InstanceOut } from "@superdl/api-client";
 import { isSubscriptionExpired } from "@superdl/ui";
 import { TypeConfirmModal, useConfirm } from "@superdl/ui/components";
-
+import { Link } from "@tanstack/react-router";
 import { App, Button, Dropdown, Space, Tooltip, Typography } from "antd";
 import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
@@ -17,6 +17,7 @@ import {
   useStartInstance,
   useStopInstance,
 } from "../api/mutations";
+import { ConnectMenu } from "./ConnectMenu";
 import { RenewModal } from "./RenewModal";
 
 // creating 也可释放
@@ -97,9 +98,12 @@ function tipped(label: string, tip?: string) {
 export function InstanceActions({
   instance,
   onShowEvents,
+  size = "small",
 }: {
   instance: InstanceOut;
   onShowEvents?: () => void;
+  /** 行内 small / 详情页头 middle */
+  size?: "small" | "middle";
 }) {
   const { t } = useTranslation();
   // 「包周期已到期,请先续费再开机」文案事实源在后端 messages.py
@@ -157,11 +161,21 @@ export function InstanceActions({
       },
     });
 
-  return (
-    <Space size={4}>
+  // 主动作随状态变(ui-ux-spec §1 规则 2):running → 连接 ▾;failed → 重新创建;其余 → 开机(不可用时灰置带原因)
+  const primary =
+    s === "running" ? (
+      <ConnectMenu instance={instance} size={size} />
+    ) : s === "failed" ? (
+      <Link to="/market/create/$skuId" params={{ skuId: String(instance.sku_id) }}>
+        <Button type="primary" size={size}>
+          {t("instances.recreate")}
+        </Button>
+      </Link>
+    ) : (
       <Tooltip title={canStart ? undefined : startTip}>
         <Button
-          size="small"
+          type="primary"
+          size={size}
           disabled={!canStart}
           loading={start.isPending}
           onClick={() => start.mutate(instance.uuid)}
@@ -169,8 +183,13 @@ export function InstanceActions({
           {t("instances.actions.start")}
         </Button>
       </Tooltip>
+    );
+
+  return (
+    <Space size={4}>
+      {primary}
       <Tooltip title={canStop ? undefined : t("copy.stopNeedsRunning")}>
-        <Button size="small" disabled={!canStop} loading={stop.isPending} onClick={confirmStop}>
+        <Button size={size} disabled={!canStop} loading={stop.isPending} onClick={confirmStop}>
           {t("instances.actions.stop")}
         </Button>
       </Tooltip>
@@ -227,12 +246,6 @@ export function InstanceActions({
                 ]
               : []),
             {
-              key: "cardless",
-              label: tipped(t("instances.actions.cardless"), t("copy.comingSoon")),
-              disabled: true,
-            },
-            { type: "divider" },
-            {
               key: "release",
               danger: true,
               label: tipped(
@@ -279,7 +292,7 @@ export function InstanceActions({
           },
         }}
       >
-        <Button size="small">
+        <Button size={size}>
           {t("instances.actions.more")} <DownOutlined />
         </Button>
       </Dropdown>

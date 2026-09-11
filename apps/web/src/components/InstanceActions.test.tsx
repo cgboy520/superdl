@@ -3,6 +3,7 @@ import type { InstanceOut } from "@superdl/api-client";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "antd";
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { InstanceActions, ReleaseModal } from "./InstanceActions";
@@ -35,8 +36,20 @@ vi.mock("../api/mutations", () => ({
   useSubscribeInstance: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
-// RenewModal 会拉钱包与策略,给最小数据
+// 无 Router 上下文:Link 降级为原生 <a>,navigate 为空实现
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ to, children }: { to: string; children: ReactNode }) => <a href={to}>{children}</a>,
+  useNavigate: () => vi.fn(),
+}));
+
+// RenewModal 会拉钱包与策略,给最小数据;ConnectMenu 打开后拉 access
 vi.mock("../api/queries", () => ({
+  useInstanceAccess: () => ({
+    data: { ssh_command: "ssh -p 30022 root@gpu.example.com", jupyter_url: "https://j.example.com" },
+    isPending: false,
+    isError: false,
+    refetch: vi.fn(),
+  }),
   useWallet: () => ({ data: { balance: "3000.00" } }),
   usePolicies: () => ({
     data: {
@@ -121,6 +134,21 @@ describe("InstanceActions", () => {
     renderWithApp(<InstanceActions instance={makeInstance("stopped")} />);
     expect(screen.getByRole("button", { name: BTN_START })).toBeEnabled();
     expect(screen.getByRole("button", { name: BTN_STOP })).toBeDisabled();
+  });
+
+  it("running 实例:主动作是「连接 ▾」而不是开机;菜单里有复制 SSH / 打开 JupyterLab", async () => {
+    const user = userEvent.setup();
+    renderWithApp(<InstanceActions instance={makeInstance("running")} />);
+    expect(screen.queryByRole("button", { name: BTN_START })).toBeNull();
+    await user.click(screen.getByRole("button", { name: /连\s*接/ }));
+    expect(await screen.findByText("复制 SSH 命令")).toBeInTheDocument();
+    expect(screen.getByText("打开 JupyterLab")).toBeInTheDocument();
+  });
+
+  it("failed 实例:主动作是「重新创建」并链到该规格的创建页", () => {
+    renderWithApp(<InstanceActions instance={{ ...makeInstance("failed"), sku_id: 7 } as InstanceOut} />);
+    const link = screen.getByRole("link", { name: /重新创建/ });
+    expect(link).toHaveAttribute("href", "/market/create/$skuId");
   });
 
   it("running 实例点关机:弹确认框,确认后触发 stop", async () => {
