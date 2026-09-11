@@ -1,6 +1,8 @@
 /** GPU 价格墙:实时 /skus(公开端点);按型号分组取代表 SKU(组内最低价;库存口径见 lib/inventory),CTA 即库存;列数随宽度自适应;接口失败整区降级为「前往算力市场」。 */
 
-import { compareAmounts, fontSize, getGpuSpec, layout, metaOf, skuTierMap, skuVariant } from "@superdl/ui";
+import { LandingSection } from "./LandingSection";
+import { POLL } from "@superdl/ui";
+import { compareAmounts, fontSize, getGpuSpec, metaOf, skuTierMap, skuVariant } from "@superdl/ui";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Button, Card, Skeleton, Tabs, Typography } from "antd";
 import { useMemo, useState } from "react";
@@ -28,7 +30,7 @@ export function PricingSection() {
   const navigate = useNavigate();
   const loggedIn = useIsLoggedIn();
   const [tab, setTab] = useState<"dedicated" | "shared">("dedicated");
-  const { data: skus, isLoading, isError } = useSkus({ refetchInterval: 60_000 });
+  const { data: skus, isLoading, isError } = useSkus({ refetchInterval: POLL.daily });
 
   const groups = useMemo<ModelGroup[]>(() => {
     // tab 只有 dedicated/shared 两档,CPU 规格不进
@@ -66,20 +68,7 @@ export function PricingSection() {
   };
 
   return (
-    <section
-      id="pricing"
-      style={{
-        maxWidth: layout.pageMaxWidthWide,
-        margin: "0 auto",
-        padding: `${layout.sectionPaddingY}px 24px`,
-      }}
-    >
-      <Typography.Title level={2} style={{ textAlign: "center", marginBottom: 4 }}>
-        {t("landing.pricing.title")}
-      </Typography.Title>
-      <Typography.Paragraph type="secondary" style={{ textAlign: "center", marginBottom: 24 }}>
-        {t("landing.pricing.subtitle")}
-      </Typography.Paragraph>
+    <LandingSection id="pricing" title={t("landing.pricing.title")} subtitle={t("landing.pricing.subtitle")}>
       {isError ? (
         <div style={{ textAlign: "center", padding: 32 }}>
           <Link to="/market">
@@ -182,6 +171,6 @@ export function PricingSection() {
           </div>
         </>
       )}
-    </section>
+    </LandingSection>
   );
 }

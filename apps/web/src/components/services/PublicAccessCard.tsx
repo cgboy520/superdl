@@ -6,6 +6,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { RESERVED_SERVICE_PORTS } from "../../lib/serviceSpec";
+import { Field } from "../Field";
 
 export function PublicAccessFields({
   port,
@@ -39,8 +40,7 @@ export function PublicAccessFields({
   return (
     <Space orientation="vertical" size={12} style={{ width: "100%" }}>
       <Space size={24} wrap align="start">
-        <Space orientation="vertical" size={4}>
-          <Typography.Text type="secondary">{t("services.form.portLabel")}</Typography.Text>
+        <Field label={t("services.form.portLabel")} required error={portError}>
           <InputNumber
             min={1}
             max={65535}
@@ -52,12 +52,7 @@ export function PublicAccessFields({
             onChange={(v) => onPort(typeof v === "number" ? v : null)}
             onBlur={() => setPortTouched(true)}
           />
-          {portError && (
-            <Typography.Text type="danger" style={{ fontSize: fontSize.caption }}>
-              {portError}
-            </Typography.Text>
-          )}
-        </Space>
+        </Field>
         <Space orientation="vertical" size={4}>
           <Typography.Text type="secondary">{t("services.form.protocolLabel")}</Typography.Text>
           {/* TCP / gRPC 未上线:灰置不隐藏 */}
@@ -75,8 +70,7 @@ export function PublicAccessFields({
         </Space>
       </Space>
       <Typography.Text type="secondary">{t("services.form.portHint")}</Typography.Text>
-      <Space orientation="vertical" size={4} style={{ width: "100%" }}>
-        <Typography.Text type="secondary">{t("services.form.healthLabel")}</Typography.Text>
+      <Field label={t("services.form.healthLabel")} error={healthError} hint={t("services.form.healthHint")}>
         <Input
           style={{ width: "100%", maxWidth: controlWidth.lg }}
           placeholder="/healthz"
@@ -85,14 +79,9 @@ export function PublicAccessFields({
           value={healthPath}
           onChange={(e) => onHealthPath(e.target.value)}
           onBlur={() => setHealthTouched(true)}
+          className="mono"
         />
-        {healthError && (
-          <Typography.Text type="danger" style={{ fontSize: fontSize.caption }}>
-            {healthError}
-          </Typography.Text>
-        )}
-        <Typography.Text type="secondary">{t("services.form.healthHint")}</Typography.Text>
-      </Space>
+      </Field>
       {!hideAuth && (
       <Space orientation="vertical" size={4} style={{ width: "100%" }}>
         <Typography.Text type="secondary">{t("services.form.authLabel")}</Typography.Text>

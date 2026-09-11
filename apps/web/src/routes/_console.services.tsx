@@ -1,5 +1,6 @@
 /** 在线服务列表:名称 / 状态 / 服务端点 / 规格 / 版本 / 费用 / 创建时间 / 操作;筛选与搜索入 URL(replace)。列表不轮询;deploying / stopping / releasing 逐条 5s 轮询,迁移即回刷;unready 不算过渡态。 */
 
+import { POLL } from "@superdl/ui";
 import { QuestionCircleOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import type { ServiceOut } from "@superdl/api-client";
 import {
@@ -133,7 +134,7 @@ function ServicesPage() {
     fetchNextPage,
   } = useServicePages({ status, name: deferredQ || undefined });
   const { date, tzOffsetMinutes } = localToday();
-  const { data: daily } = useDailySummary(date, tzOffsetMinutes, { refetchInterval: 60_000 });
+  const { data: daily } = useDailySummary(date, tzOffsetMinutes, { refetchInterval: POLL.daily });
   const todayByInstance = useMemo(
     () => new Map((daily?.items ?? []).map((it) => [it.instance_id, it.total_amount])),
     [daily],

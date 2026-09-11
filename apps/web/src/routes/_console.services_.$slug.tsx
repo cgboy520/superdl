@@ -1,5 +1,6 @@
 /** 服务详情:头部(名称 / 状态 / 版本 / 操作)+ 常驻服务端点卡 + Tab `概览(含小时账单)/ 访问密钥(公开访问时不出)/ 监控 / 日志 / 历史(版本 + 事件)/ 设置`(危险区在设置里);「更新版本」是抽屉。只有一条服务轮询(过渡态 / 运行中 / 已删除停);监控与日志打当前版本实例。旧链接 ?tab=revisions|events → history、?tab=bills → overview。 */
 
+import { POLL } from "@superdl/ui";
 import type { InstanceEventOut, InstanceOut, ServiceOut } from "@superdl/api-client";
 import {
   fontSize,
@@ -209,7 +210,7 @@ function LogsTab({ service }: { service: ServiceOut }) {
   const { data, error, refetch } = useServiceLogs(
     service.slug,
     { tail_lines: tail },
-    { enabled: viewable, refetchInterval: autoRefresh ? 10_000 : false, retry: 0 },
+    { enabled: viewable, refetchInterval: autoRefresh ? POLL.logs : false, retry: 0 },
   );
   const lines = useMemo(() => data?.lines ?? [], [data]);
   return (
@@ -350,11 +351,11 @@ function ServiceDetail() {
     refetchInterval: (q) => {
       const s = q.state.data?.status;
       if (!s || s === "released") return false;
-      return isTransientServiceStatus(s) ? 5_000 : 30_000;
+      return isTransientServiceStatus(s) ? POLL.transient : POLL.steady;
     },
   });
   const { date, tzOffsetMinutes } = localToday();
-  const { data: daily } = useDailySummary(date, tzOffsetMinutes, { refetchInterval: 60_000 });
+  const { data: daily } = useDailySummary(date, tzOffsetMinutes, { refetchInterval: POLL.daily });
 
   if (serviceError && !service) {
     return <DataErrorAlert onRetry={() => void refetchService()} />;

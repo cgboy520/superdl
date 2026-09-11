@@ -1,4 +1,5 @@
 import { AlertOutlined, LogoutOutlined, MenuOutlined, SearchOutlined } from "@ant-design/icons";
+import { POLL } from "@superdl/ui";
 import { adminLogoutApiAdminV1AuthLogoutPost } from "@superdl/api-client";
 import { adminColors, fontSize, formatDateTime, layout, metaOf } from "@superdl/ui";
 import { LangSwitcher } from "@superdl/ui/components";
@@ -68,7 +69,7 @@ function AlertBell() {
   const [popoverOpen, setPopoverOpen] = useState(false);
   // 告警列表只在 Popover 打开时取数;角标 = 未确认告警数(30s 轮询)
   const alertsQ = useAlerts(undefined, { enabled: popoverOpen });
-  const { data: unread, isError: unreadError } = useAlertUnreadCount({ refetchInterval: 30_000 });
+  const { data: unread, isError: unreadError } = useAlertUnreadCount({ refetchInterval: POLL.steady });
   // 确认闭环见 lib/alertLink
   const ack = useAckAlertWithFeedback();
   const alerts: AlertRow[] = alertsQ.data ?? [];

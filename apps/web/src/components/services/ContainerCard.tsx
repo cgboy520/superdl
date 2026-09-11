@@ -1,9 +1,10 @@
 /** 容器配置段:镜像地址(钉版本)/ 启动命令 / 启动参数 / 环境变量(含密文)。部署页与创建页共用;镜像可变 tag 即时红框(后端是硬闸)。 */
 
-import { Input, Space, Typography } from "antd";
+import { Input, Space } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { isPinnedImageRef, type ArgRow, type EnvRow } from "../../lib/serviceSpec";
+import { Field } from "../Field";
 import { ArgRowsEditor } from "../create/ArgRowsEditor";
 import { EnvRowsEditor } from "../create/EnvRowsEditor";
 
@@ -34,30 +35,30 @@ export function ContainerFields({
   const pinned = image.trim() === "" || isPinnedImageRef(image.trim());
   return (
     <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-      <Space orientation="vertical" size={4} style={{ width: "100%" }}>
-        <Typography.Text type="secondary">{t("services.form.imageLabel")}</Typography.Text>
+      <Field
+        label={t("services.form.imageLabel")}
+        required
+        error={pinned ? undefined : tErr("orchestrator.imageRefNotPinned")}
+        hint={t("copy.serviceImagePinned")}
+      >
         <Input
           placeholder="registry.example.com/your/image:v1.2.0"
           aria-label={t("services.form.imageLabel")}
           value={image}
           onChange={(e) => onImage(e.target.value)}
           status={pinned ? undefined : "error"}
+          className="mono"
         />
-        {!pinned && (
-          <Typography.Text type="danger">{tErr("orchestrator.imageRefNotPinned")}</Typography.Text>
-        )}
-        <Typography.Text type="secondary">{t("copy.serviceImagePinned")}</Typography.Text>
-      </Space>
-      <Space orientation="vertical" size={4} style={{ width: "100%" }}>
-        <Typography.Text type="secondary">{t("services.form.commandLabel")}</Typography.Text>
+      </Field>
+      <Field label={t("services.form.commandLabel")} hint={t("services.form.commandHint")}>
         <Input
           placeholder={t("services.form.commandPlaceholder")}
           aria-label={t("services.form.commandLabel")}
           value={command}
           onChange={(e) => onCommand(e.target.value)}
+          className="mono"
         />
-        <Typography.Text type="secondary">{t("services.form.commandHint")}</Typography.Text>
-      </Space>
+      </Field>
       <ArgRowsEditor rows={argRows} onChange={onArgRows} />
       <EnvRowsEditor rows={envRows} onChange={onEnvRows} collapsible={collapsibleEnv} />
     </Space>

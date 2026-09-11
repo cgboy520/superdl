@@ -1,5 +1,6 @@
 /** 工单详情:对话流(用户/客服气泡)+ 关联实例链接 + [关闭工单]。resolved/closed 不可再回复;关闭入口仅在 resolved 出现。 */
 
+import { POLL } from "@superdl/ui";
 import { ArrowLeftOutlined } from "@ant-design/icons";
 import {
   fontSize,
@@ -46,7 +47,7 @@ function TicketDetailPage() {
     refetchInterval: (q) => {
       const status = q.state.data?.status;
       return status === "open" || status === "pending_staff" || status === "pending_user"
-        ? 15_000
+        ? POLL.ticket
         : false;
     },
   });

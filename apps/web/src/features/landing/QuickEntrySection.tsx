@@ -1,12 +1,13 @@
 /** 快捷入口四宫格:快速开始 / GPU 选型 / 透明计费 / 数据无忧。信息型入口指向 /help FAQ 锚点;GPU 选型页内滚动到排名区。 */
 
+import { LandingSection } from "./LandingSection";
 import {
   AccountBookOutlined,
   AimOutlined,
   DatabaseOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
-import { colorPrimary, fontSize, layout } from "@superdl/ui";
+import { colorPrimary, fontSize } from "@superdl/ui";
 import { useNavigate } from "@tanstack/react-router";
 import { Card, Col, Row, Typography } from "antd";
 import type { ReactNode } from "react";
@@ -53,13 +54,7 @@ export function QuickEntrySection() {
   } as const;
 
   return (
-    <section
-      style={{
-        maxWidth: layout.pageMaxWidthWide,
-        margin: "0 auto",
-        padding: `${layout.sectionPaddingY}px 24px 16px`,
-      }}
-    >
+    <LandingSection paddingBottom={16}>
       <Row gutter={[16, 16]}>
         {ENTRIES.map((e) => (
           <Col key={e.key} xs={12} md={6}>
@@ -92,6 +87,6 @@ export function QuickEntrySection() {
           </Col>
         ))}
       </Row>
-    </section>
+    </LandingSection>
   );
 }

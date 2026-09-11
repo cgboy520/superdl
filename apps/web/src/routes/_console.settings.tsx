@@ -36,6 +36,7 @@ import { WarnThresholdField } from "../components/WarnThresholdField";
 import { useFormat } from "@superdl/ui";
 import { requireAuth } from "../lib/guard";
 import { useHashScroll } from "../lib/useHashScroll";
+import { SmsCodeField } from "../components/SmsCodeField";
 import { useSmsCode } from "../lib/useSmsCode";
 import { authStore } from "../stores/auth";
 
@@ -268,26 +269,13 @@ function PasswordModal({
         <Typography.Paragraph type="secondary">
           {t("settings.changePasswordDesc", { phone })}
         </Typography.Paragraph>
-        {/* 校验挂内层 Form.Item(唯一控件是 Input),不挂 Space.Compact 的 div(axe aria-allowed-attr) */}
-        <Form.Item>
-          <Space.Compact style={{ width: "100%", alignItems: "flex-start" }}>
-            <Form.Item
-              name="sms_code"
-              rules={[{ required: true, message: t("settings.codeRequired") }]}
-              style={{ flex: 1, marginBottom: 0 }}
-            >
-              <Input
-                placeholder={t("settings.codePlaceholder")}
-                maxLength={6}
-                autoComplete="one-time-code"
-                aria-label={t("settings.codePlaceholder")}
-              />
-            </Form.Item>
-            <Button disabled={sms.countdown > 0} loading={sms.sending} onClick={() => sms.send(phone)}>
-              {sms.countdown > 0 ? `${sms.countdown}s` : t("settings.getCode")}
-            </Button>
-          </Space.Compact>
-        </Form.Item>
+        <SmsCodeField
+          sms={sms}
+          placeholder={t("settings.codePlaceholder")}
+          requiredMessage={t("settings.codeRequired")}
+          getCodeLabel={t("settings.getCode")}
+          onSend={() => sms.send(phone)}
+        />
         <Form.Item
           name="new_password"
           rules={[{ required: true, min: 12, message: t("settings.passwordMin") }]}

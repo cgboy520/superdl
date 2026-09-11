@@ -1,5 +1,6 @@
 /** 读查询层:生成 fetcher + useQuery,查询键与轮询选项集中在此。 */
 
+import { POLL } from "@superdl/ui";
 import {
   getDeletionRequestApiV1MeDeletionRequestGet,
   getLegalDocApiV1LegalDocKeyGet,
@@ -160,7 +161,7 @@ export function useTransientInstanceRefresh(rows: InstanceOut[]) {
       queryFn: () => getInstanceApiV1InstancesUuidGet(uuid),
       // 到终态即停
       refetchInterval: (q: { state: { data: InstanceOut | undefined } }) =>
-        q.state.data && isTransientInstanceStatus(q.state.data.status) ? 5_000 : false,
+        q.state.data && isTransientInstanceStatus(q.state.data.status) ? POLL.transient : false,
     })),
   });
   const statusesKey = results.map((r) => r.data?.status ?? "").join(",");
@@ -232,7 +233,7 @@ export function useTransientServiceRefresh(rows: ServiceOut[]) {
       queryKey: ["services", slug] as const,
       queryFn: () => getServiceApiV1ServicesSlugGet(slug),
       refetchInterval: (q: { state: { data: ServiceOut | undefined } }) =>
-        q.state.data && isTransientServiceStatus(q.state.data.status) ? 5_000 : false,
+        q.state.data && isTransientServiceStatus(q.state.data.status) ? POLL.transient : false,
     })),
   });
   const statusesKey = results.map((r) => r.data?.status ?? "").join(",");

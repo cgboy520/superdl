@@ -260,7 +260,7 @@ export function useClusterStatus() {
   const q = useQuery({
     queryKey,
     queryFn: () => adminClusterStatusApiAdminV1ClusterStatusGet(),
-    refetchInterval: 30_000,
+    refetchInterval: POLL.steady,
   });
   return { ...q, queryKey };
 }
@@ -379,7 +379,7 @@ export function useNodeMetrics(nodeName: string | null, range: string) {
         range,
       }),
     enabled: Boolean(nodeName),
-    refetchInterval: 30_000,
+    refetchInterval: POLL.steady,
     retry: 0,
   });
 }
@@ -397,7 +397,7 @@ export function usePortPool() {
   return useQuery({
     queryKey: ["admin", "port-pool"],
     queryFn: () => adminPortPoolStatsApiAdminV1NodesPortPoolGet(),
-    refetchInterval: 60_000,
+    refetchInterval: POLL.daily,
   });
 }
 
@@ -424,7 +424,7 @@ export function useOversellReport() {
   const q = useQuery({
     queryKey,
     queryFn: () => oversellReportApiAdminV1ReportsOversellGet(),
-    refetchInterval: 60_000,
+    refetchInterval: POLL.daily,
   });
   return { ...q, queryKey };
 }
@@ -567,7 +567,7 @@ export function useTicketPendingCount() {
   const q = useQuery({
     queryKey,
     queryFn: () => adminTicketsCountApiAdminV1TicketsCountGet({ status: "pending_staff" }),
-    refetchInterval: 60_000,
+    refetchInterval: POLL.daily,
   });
   return { ...q, queryKey };
 }
@@ -597,7 +597,7 @@ export function useTicketDetail(ticketId: number | null) {
   const q = useQuery({
     queryKey,
     enabled: ticketId !== null,
-    refetchInterval: 15_000,
+    refetchInterval: POLL.ticket,
     queryFn: () => adminGetTicketApiAdminV1TicketsTicketIdGet(ticketId as number),
   });
   return { ...q, queryKey };
@@ -811,7 +811,7 @@ export function useAnomalies() {
   const q = useQuery({
     queryKey,
     queryFn: () => adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet(),
-    refetchInterval: 60_000,
+    refetchInterval: POLL.daily,
   });
   return { ...q, queryKey };
 }
@@ -822,7 +822,7 @@ export function useDeadTasks(options?: { enabled?: boolean }) {
     queryKey,
     queryFn: () => adminListDeadTasksApiAdminV1OutboxDeadGet(),
     enabled: options?.enabled ?? true,
-    refetchInterval: 60_000,
+    refetchInterval: POLL.daily,
   });
   return { ...q, queryKey };
 }
@@ -832,7 +832,7 @@ export function useRevenueReport() {
   return useQuery({
     queryKey: ["admin", "revenue", tz],
     queryFn: () => revenueReportApiAdminV1ReportsRevenueGet({ tz_offset_minutes: tz }),
-    refetchInterval: 60_000,
+    refetchInterval: POLL.daily,
   });
 }
 
@@ -959,7 +959,7 @@ export function useOverview() {
   const q = useQuery({
     queryKey,
     queryFn: () => adminOverviewApiAdminV1OverviewGet(),
-    refetchInterval: 60_000,
+    refetchInterval: POLL.daily,
   });
   return { ...q, queryKey };
 }

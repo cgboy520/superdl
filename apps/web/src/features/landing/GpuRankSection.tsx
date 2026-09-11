@@ -1,6 +1,7 @@
 /** GPU 算力排名:gpuSpecs 静态表驱动(理论峰值口径);在售型号标记联动价格墙。 */
 
-import { chartAccentColors, colorPrimary, fontSize, gpuSpecs, layout, medalColors, normalizeGpuModel } from "@superdl/ui";
+import { LandingSection } from "./LandingSection";
+import { chartAccentColors, colorPrimary, fontSize, gpuSpecs, medalColors, normalizeGpuModel } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
 import { Grid, Tabs, Tag, theme, Typography } from "antd";
 import { useMemo, useState } from "react";
@@ -33,20 +34,12 @@ export function GpuRankSection() {
   const max = rows[0]?.value ?? 1;
 
   return (
-    <section id="ranking" style={{ background: token.colorBgContainer }}>
-      <div
-        style={{
-          maxWidth: layout.pageMaxWidthWide,
-          margin: "0 auto",
-          padding: `${layout.sectionPaddingY}px 24px`,
-        }}
-      >
-        <Typography.Title level={2} style={{ textAlign: "center", marginBottom: 4 }}>
-          {t("landing.ranking.title")}
-        </Typography.Title>
-        <Typography.Paragraph type="secondary" style={{ textAlign: "center", marginBottom: 24 }}>
-          {t("landing.ranking.subtitle")}
-        </Typography.Paragraph>
+    <LandingSection
+      id="ranking"
+      background={token.colorBgContainer}
+      title={t("landing.ranking.title")}
+      subtitle={t("landing.ranking.subtitle")}
+    >
         <Tabs
           centered
           activeKey={metric}
@@ -127,7 +120,6 @@ export function GpuRankSection() {
         >
           {t("landing.ranking.footnote")}
         </Typography.Paragraph>
-      </div>
-    </section>
+    </LandingSection>
   );
 }

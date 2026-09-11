@@ -1,5 +1,6 @@
 /** 费用中心:余额卡 / 充值 Modal / 消费概览 / 账单与收支明细(服务端 CSV 导出)。Tab 与月份入 URL;充值幂等键按 (amount, channel) 派生。 */
 
+import { POLL } from "@superdl/ui";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import dayjs from "dayjs";
@@ -56,7 +57,7 @@ function BillingPage() {
   const { tab, month: monthParam } = Route.useSearch();
   const [rechargeOpen, setRechargeOpen] = useState(false);
   const activeTab: BillingTab = tab ?? "bills";
-  const walletQ = useWallet({ refetchInterval: 10_000 });
+  const walletQ = useWallet({ refetchInterval: POLL.logs });
   const { data: wallet } = walletQ;
   const { data: me } = useMe();
   const { data: policies } = usePolicies();

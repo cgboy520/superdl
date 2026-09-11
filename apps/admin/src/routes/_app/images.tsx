@@ -70,7 +70,7 @@ interface ImageFormValues {
 /** 行展开:每节点缓存明细(展开期间 30s 轮询) */
 function ImageNodesPanel({ imageId }: { imageId: number }) {
   const { t } = useTranslation(["admin", "shared"]);
-  const { data, isError, error, refetch } = useImageNodes(imageId, { refetchInterval: 30_000 });
+  const { data, isError, error, refetch } = useImageNodes(imageId, { refetchInterval: POLL.steady });
   return (
     <Table<ImageNodeRow>
       size="small"

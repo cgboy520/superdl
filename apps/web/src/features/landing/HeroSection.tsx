@@ -1,5 +1,6 @@
 /** 主页 Hero:单帧深靛渐变 + 网格纹理 + 右侧玻璃拟态实时数据卡。数据卡三态:未就绪骨架 / 失败降级为「前往算力市场」CTA / 实时数据;失败时不渲染假 0。 */
 
+import { POLL } from "@superdl/ui";
 import { brand, brandInverseButtonStyle, compareAmounts, fontSize, layout } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
 import { Button, Grid, Skeleton, Space, Typography } from "antd";
@@ -35,7 +36,7 @@ export function HeroSection() {
   const { formatHourlyPrice } = useFormat();
   const loggedIn = useIsLoggedIn();
   const screens = Grid.useBreakpoint();
-  const skusQ = useSkus({ refetchInterval: 60_000 });
+  const skusQ = useSkus({ refetchInterval: POLL.daily });
   const { data: skus } = skusQ;
 
   const minPrice = (skus ?? []).reduce<string | null>(

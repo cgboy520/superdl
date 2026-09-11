@@ -1,5 +1,6 @@
 /** 存储:挂载全景图 + 数据盘列表(计费快照价 / 到期回收倒计时 / 扩容抽屉 / 多级删除防护)。盘价与宽限/冻结天数来自 /policies;「计费」列显示每盘创建时快照价。 */
 
+import { POLL } from "@superdl/ui";
 import { type DiskOut } from "@superdl/api-client";
 import { colorPrimary, diskDailyEstimate, fontSize, formatDateTime, formatSizeGb, idemKeyOf, statusColors } from "@superdl/ui";
 import { TableErrorEmpty, TypeConfirmModal } from "@superdl/ui/components";
@@ -148,7 +149,7 @@ function StoragePage() {
   const { t } = useTranslation();
   const { message } = App.useApp();
   // 数据盘状态由欠费巡检驱动(小时级):稳态 30s 单档
-  const { data: disks, isLoading, isError, refetch } = useDisks({ refetchInterval: 30_000 });
+  const { data: disks, isLoading, isError, refetch } = useDisks({ refetchInterval: POLL.steady });
   const { data: instances } = useInstances();
   const { data: policies } = usePolicies();
   const [createOpen, setCreateOpen] = useState(false);

@@ -14,6 +14,7 @@ import { useLogin, useRegister, useResetPassword } from "../api/mutations";
 import { GRID_TEXTURE } from "../components/gridTexture";
 import { BrandLogo } from "../components/layout/BrandLogo";
 import { ThemeToggle } from "../components/layout/AppTopBar";
+import { SmsCodeField } from "../components/SmsCodeField";
 import { useSmsCode } from "../lib/useSmsCode";
 import { authStore } from "../stores/auth";
 
@@ -251,32 +252,15 @@ function LoginPage() {
               />
             </Form.Item>
             {needsSms && (
-              // 校验挂内层 Form.Item(唯一控件是 Input),不挂 Space.Compact 的 div(axe aria-allowed-attr)
-              <Form.Item>
-                <Space.Compact style={{ width: "100%", alignItems: "flex-start" }}>
-                  <Form.Item
-                    name="sms_code"
-                    rules={[{ required: true, message: t("login.smsRequired") }]}
-                    style={{ flex: 1, marginBottom: 0 }}
-                  >
-                    <Input
-                      placeholder={t("login.smsPlaceholder")}
-                      maxLength={6}
-                      autoComplete="one-time-code"
-                      aria-label={t("login.smsPlaceholder")}
-                    />
-                  </Form.Item>
-                  <Button
-                    disabled={sms.countdown > 0}
-                    loading={sms.sending}
-                    onClick={() => {
-                      void form.validateFields(["phone"]).then(({ phone }) => sms.send(phone));
-                    }}
-                  >
-                    {sms.countdown > 0 ? `${sms.countdown}s` : t("login.getCode")}
-                  </Button>
-                </Space.Compact>
-              </Form.Item>
+              <SmsCodeField
+                sms={sms}
+                placeholder={t("login.smsPlaceholder")}
+                requiredMessage={t("login.smsRequired")}
+                getCodeLabel={t("login.getCode")}
+                onSend={() => {
+                  void form.validateFields(["phone"]).then(({ phone }) => sms.send(phone));
+                }}
+              />
             )}
             {mode !== "sms" && (
               <Form.Item

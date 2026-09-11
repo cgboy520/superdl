@@ -1,6 +1,7 @@
 /** 控制台顶栏右区(中性底,图标走 antd token 色):余额入口 · ⌘K · 通知铃 · 主题切换 · 用户菜单(账户设置 / 通知中心 / 帮助 / 语言 / 退出)。
  *  语言与帮助收进用户菜单以精简顶栏;窄屏(<md)只留余额 / 铃 / 用户。未登录(公开市场页)显示登录入口。 */
 
+import { POLL } from "@superdl/ui";
 import {
   BellOutlined,
   ExclamationCircleFilled,
@@ -31,7 +32,7 @@ import { ThemeToggle } from "./AppTopBar";
 function NotificationBell() {
   const { t } = useTranslation();
   const { token } = theme.useToken();
-  const countQ = useUnreadCount({ refetchInterval: 30_000 });
+  const countQ = useUnreadCount({ refetchInterval: POLL.steady });
   const pagesQ = useNotificationPages();
   const items = (pagesQ.data?.pages ?? []).flatMap((p) => p.items);
   const unreadCount = countQ.data?.unread_count ?? 0;
