@@ -4,10 +4,11 @@ import { MenuOutlined, MoonOutlined, SunOutlined } from "@ant-design/icons";
 import { brand, colorPrimary, fontSize } from "@superdl/ui";
 import { LangSwitcher } from "@superdl/ui/components";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Button, Drawer, Grid, Space, theme } from "antd";
+import { Badge, Button, Drawer, Grid, Space, theme } from "antd";
 import { useTranslation } from "react-i18next";
 import { useState, type CSSProperties, type ReactNode } from "react";
 
+import { useUnreadCount } from "../../api/queries";
 import { useIsLoggedIn } from "../../stores/auth";
 import { useThemeMode, useThemeToggle } from "../../stores/theme";
 import { BrandLogo } from "./BrandLogo";
@@ -50,6 +51,9 @@ export function AppTopBar({
   const [menuOpen, setMenuOpen] = useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navSelected = consoleNavSelected(pathname);
+  // 与侧栏/铃铛同一缓存键;未登录或公开变体不发请求
+  const { data: unread } = useUnreadCount({ enabled: variant === "console" && loggedIn });
+  const unreadCount = unread?.unread_count ?? 0;
   const drawerLinkStyle = (active: boolean): CSSProperties => ({
     display: "block",
     padding: "10px 12px",
@@ -142,9 +146,17 @@ export function AppTopBar({
                   to={n.key}
                   className="drawer-link"
                   style={drawerLinkStyle(navSelected === n.key)}
+                  aria-current={navSelected === n.key ? "page" : undefined}
                   onClick={() => setMenuOpen(false)}
                 >
-                  {t(n.labelKey)}
+                  {/* 未读角标与侧栏同源 */}
+                  {n.key === "/notifications" && unreadCount > 0 ? (
+                    <Badge count={unreadCount} size="small" offset={[6, 0]}>
+                      {t(n.labelKey)}
+                    </Badge>
+                  ) : (
+                    t(n.labelKey)
+                  )}
                 </Link>
               ))}
             </nav>

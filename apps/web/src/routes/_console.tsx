@@ -40,6 +40,8 @@ function ConsoleLayout() {
           collapsible
           breakpoint="lg"
           collapsedWidth={0}
+          // 窄屏导航只走顶栏汉堡 Drawer,不出 Sider 的零宽触发条(避免两套并行导航)
+          trigger={screens.lg ? undefined : null}
           style={{ borderRight: `1px solid ${token.colorBorderSecondary}` }}
         >
           <Menu
