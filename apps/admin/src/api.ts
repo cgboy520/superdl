@@ -188,8 +188,6 @@ export type {
   SkuUpdate,
 } from "@superdl/api-client";
 
-// 行类型取自生成契约
-
 export type {
   AdjustmentOut as AdjustmentRow,
   AdminAlertOut as AlertRow,

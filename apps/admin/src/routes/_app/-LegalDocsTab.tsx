@@ -77,7 +77,6 @@ export function LegalDocsTab() {
   return (
     <Space orientation="vertical" size={12} style={{ width: "100%" }}>
       {!writable && <Alert type="info" showIcon title={t("settings.legal.adminOnlyTip")} />}
-      {/* 查询失败明示错误 */}
       {overview.isError && (
         <Alert
           type="error"
@@ -184,7 +183,6 @@ function CellEditor({
     setContent(saved?.content ?? draft?.content_md ?? published?.content_md ?? "");
     setNote(saved?.note ?? draft?.effective_note ?? "");
   }
-  // 编辑即存草稿
   useEffect(() => {
     if (loadedKey !== "") localDraft.save({ title, content, note });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- localDraft 引用稳定(纯 storage 封装)

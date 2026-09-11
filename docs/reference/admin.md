@@ -11,21 +11,21 @@
 
 | 路由/端点 | 角色/鉴权 | 说明 |
 |---|---|---|
-| `POST /api/admin/v1/auth/login` | 匿名 | JWT audience 与用户端隔离。`admin_mfa_enabled`(默认开)开启时全角色强制 TOTP,响应为挑战票 `{status: mfa_setup | mfa_required, ticket}`(绑定票 10 分钟、二要素票 5 分钟),正式 token 由 `/auth/mfa/setup/confirm` 或 `/auth/login/mfa` 签发;关闭时密码校验通过即 `{status: ok, access_token, admin}`(审计 detail 记 `login_without_mfa`) |
-| `POST /api/admin/v1/auth/mfa/setup/begin` `/setup/confirm` `/auth/login/mfa` | 短时票据 | TOTP 绑定与二要素校验;恢复码用后作废。`begin` 对**已绑定**账号拒 `MFA_TICKET_INVALID`,与 confirm/verify 共用 `admin-mfa:{admin_id}` 桶;`confirm` 成功即 `token_version+1`,绑定票一次性 |
+| `POST /api/admin/v1/auth/login` | 匿名 | JWT audience 与用户端隔离。`admin_mfa_enabled`(默认开)开启时全角色强制 TOTP,响应为挑战票 `{status: mfa_setup \| mfa_required, ticket}`(绑定票 10 分钟、二要素票 5 分钟),正式 token 由 `/auth/mfa/setup/confirm` 或 `/auth/login/mfa` 签发;关闭时密码校验通过即 `{status: ok, access_token, admin}`(审计 detail 记 `login_without_mfa`) |
+| `POST /api/admin/v1/auth/mfa/setup/begin` `/setup/confirm` `/auth/login/mfa` | 短时票据 | TOTP 绑定与二要素校验;恢复码用后作废。`begin` 对已绑定账号拒 `MFA_TICKET_INVALID`,与 confirm/verify 共用 `admin-mfa:{admin_id}` 桶;`confirm` 成功即 `token_version+1`,绑定票一次性 |
 | `POST /api/admin/v1/me/mfa/recovery-codes` | 全角色(本人) | 重新生成恢复码,旧码作废,明文仅此一次;审计 |
 | `GET /api/admin/v1/me` | 全角色 | 路由守卫每次进入/切换受保护路由调用:角色只信服务端响应,token 失效直跳登录(带 returnTo) |
-| `GET /api/admin/v1/overview` | 全角色 | 总览只读聚合:实例分状态 COUNT(非终态)、付费租户 COUNT、`subscriptions_active`(**在保订阅数**)、池级 GPU 台账(每池另带 `gpu_spot_used`,**已按 `gpu_used` 截断**)、节点 Ready/Missing 计数 |
+| `GET /api/admin/v1/overview` | 全角色 | 只读聚合:实例分状态 COUNT(非终态)、付费租户 COUNT、`subscriptions_active`(在保订阅数)、池级 GPU 台账(每池另带 `gpu_spot_used`,已按 `gpu_used` 截断)、节点 Ready/Missing 计数 |
 | `/` 运营总览 | 全角色 | KPI 行 + 「实际超卖率 vs 真实利用率」双曲线 + GPU 池占用条 + 告警流 + 收入 KPI(计量出账 + 包周期预付之和,`today_prepaid` / `month_prepaid` 拆出预付,口径见 [billing.md](./billing.md))+ 死信卡 |
 | `/nodes` 节点与 GPU | ops/readonly | 节点表(台账)+ 每卡热力网格 + 添加节点 + 注册记录 |
-| `/skus` SKU 与定价 | ops 可写 | SKU 表 + 编辑抽屉(改价必填原因 + 二次确认 + 影响预览;`period_enabled` / `spot_enabled` 开关,后者**新建默认关**)+ 从集群资源创建 + 容量预览 |
+| `/skus` SKU 与定价 | ops 可写 | SKU 表 + 编辑抽屉(改价必填原因 + 二次确认 + 影响预览;`period_enabled` / `spot_enabled` 开关,后者新建默认关)+ 从集群资源创建 + 容量预览 |
 | `GET /api/admin/v1/skus/{sku_id}/impact` | ops/finance/readonly | 改价影响面:活跃实例数/涉及用户数/占用卡数 |
-| `/tenants` 租户与实例 | ops 可写 | 租户表(q 纯数字按 id 精确 + 手机号后缀;`order=asc|desc` 注册先后服务端排序;冻结响应回显 instances_stopped)+ 账单下钻侧滑 + 全局实例表(强制停止;**强制回收**只对 `market='spot'` 且 running;**购买模式**列;**形态**列 = 开发机 / 在线服务,服务行链到 `/services?q=<slug>`)+ 租户抽屉「在线服务」Tab(前 100 条并明示截断);user_id 单元格链接到 `/tenants?q=<id>` |
+| `/tenants` 租户与实例 | ops 可写 | 租户表(q 纯数字按 id 精确 + 手机号后缀;`order=asc\|desc` 注册先后服务端排序;冻结响应回显 instances_stopped)+ 账单下钻侧滑 + 全局实例表(强制停止;强制回收只对 `market='spot'` 且 running;购买模式列;形态列 = 开发机 / 在线服务,服务行链到 `/services?q=<slug>`)+ 租户抽屉「在线服务」Tab(前 100 条并明示截断);user_id 单元格链接到 `/tenants?q=<id>` |
 | `/services` 在线服务 | 全角色只读;强制停止 ops | 全局服务表;`q` 匹配名称与 slug 前缀、「含已删除」开关入 URL;唯一处置「强制停止」委托当前版本实例的 `force-stop` |
 | `GET /api/admin/v1/services?user_id=&q=&include_released=&cursor=&limit=` | ops/finance/readonly | 不限租户的服务列表(`AdminServiceOut` = `ServiceOut` + `user_id` + 当前实例 `node_name`);默认不列已删除;`total` 只在 `user_id` 过滤时算 |
 | `POST /api/admin/v1/tenants/{user_id}/freeze` `/unfreeze` | ops | `{reason}` 必填;冻结与 status 变更同事务对全部实例下发停机(经 outbox),回显 `instances_stopped`(creating/starting 由巡检收敛);解冻不自动开机,站内信告知 |
 | `POST /api/admin/v1/instances/{uuid}/force-stop` | ops | `{reason}` 必填;仅 running(其余 409),下发关机并结算尾账 |
-| `POST /api/admin/v1/instances/{uuid}/preempt` | ops | `{reason}` 必填;**强制回收一台竞价实例**。仅 `market='spot'`(否则 `orchestrator.preemptNotSpot`)且 running。与自动抢占**同一条**路径:reason `preempted`、同样宽限窗与通知,尾账按实际秒数结算 |
+| `POST /api/admin/v1/instances/{uuid}/preempt` | ops | `{reason}` 必填;强制回收一台竞价实例,仅 `market='spot'`(否则 `orchestrator.preemptNotSpot`)且 running。与自动抢占同一条路径:reason `preempted`、同样宽限窗与通知,尾账按实际秒数结算 |
 | `GET /api/admin/v1/tenants/{user_id}/adjust-context` | ops/finance/readonly | 调账前置上下文(敏感读落审计):掩码手机号/当前余额/近 3 条流水/在跑台数;不存在 404 |
 | `/finance` 财务对账 | finance 可写 | 日对账卡(diff% >2% 标红)+ 充值流水 + 小时账单 + 调账(单笔绝对值上限 `ADJUST_MAX_ABS`;复核框列出租户/余额/调账后余额/发起人/原因)+ 异常清单 |
 | `/images` `/cluster` `/tickets` `/platform` `/alerts` `/settings` `/audit` | 见各页 | 镜像与预热、集群、工单(读全角色/写 ops·admin)、平台配置(左侧分组导航;顶部配置风险告警;安全策略页为开关行)、告警中心(severity 服务端过滤 + acked 客户端过滤入 URL;读 ops/readonly,写 ops·admin,finance 无入口)、系统设置(策略参数 / 公告 / 法务文档 / 管理员账号)、审计(limit + 游标翻页 + 分钟级时间窗) |
@@ -43,7 +43,7 @@
 | `POST /api/admin/v1/finance/orders/{order_no}/verify` `/backfill` | finance | 渠道核验与补单 |
 | `POST /api/admin/v1/adjustments` `/{adjustment_id}/review` | finance 发起,复核双人 | 调账双管理员复核;发起支持 Idempotency-Key(重放 200 + X-Idempotent-Replay) |
 | `GET /api/admin/v1/refunds` `POST .../{refund_id}/review` `/payout` `/cancel` `/refunds/export` | finance/admin | 审批与登记打款分人:审批不动钱包,登记打款成功才负向核销;payout 支持 Idempotency-Key(同键异参 409);export 流式 CSV |
-| `GET /api/admin/v1/invoices` `POST .../{invoice_id}/issue` `/reject` `/invoices/export` | finance/admin | 人工开票 / 驳回,站内信告知;**抬头与邮箱默认脱敏**,明文需 `reveal=true` + `reason`,按行数与事由落审计;export 流式 CSV,**每次导出落一条审计**,行数是实际送出值 |
+| `GET /api/admin/v1/invoices` `POST .../{invoice_id}/issue` `/reject` `/invoices/export` | finance/admin | 人工开票 / 驳回,站内信告知;抬头与邮箱默认脱敏,明文需 `reveal=true` + `reason`,按行数与事由落审计;export 流式 CSV,每次导出落一条审计,行数是实际送出值 |
 | `GET /api/admin/v1/adjustments/export` | finance/readonly | 调账流式 CSV(status/user_id/day),行数硬上限 + 截断标记行 |
 | `GET /api/admin/v1/tickets` `/{ticket_id}` `POST .../reply` `/status` | 读 ops/finance/readonly,写 ops/admin | 工单对话流与状态流转 |
 | `GET /api/admin/v1/tickets/count?status=&category=` | ops/finance/readonly | 待办工单计数(默认 `pending_staff`;列表页角标 60s 轮询) |
@@ -60,23 +60,23 @@
 - 菜单项事实源 `lib/menu.ts` 的 `MENU`(侧栏与 ⌘K 共用),可见性由 `MENU_ROLES` 过滤;键集一致性由 `lib/menu.test.ts` 守护。
 - `src/routes/` 下的非路由文件以 `-` 开头(tanstack router 的 routeFileIgnorePrefix)。
 - 管理端登录限流只计失败,四层桶:`admin-login:{ip}:{username}` 与 `admin-login-acct:{username}` 成功即清零,`admin-login-ip:{ip}` 与 `admin-login-acct-daily:{username}` 不清零;TOTP 校验走 `admin-mfa:{admin_id}`。限额见 [limits.md](./limits.md)。
-- **日窗账号桶只在失败后计数,不参与 bcrypt 前的准入预检**(其余三层桶参与)。
+- 日窗账号桶只在失败后计数,不参与 bcrypt 前的准入预检(其余三层桶参与)。
 - readonly 全站只读;finance 只在财务区可写。
-- **PII 明文读取只有一道闸**(`adminapi/service.ensure_reveal_allowed`,租户实名与发票抬头/邮箱共用):readonly 永不给明文,`reason` 必填(≥2 字符),返回规范化事由进审计;新开明文出口一律过它。脱敏实现共用 `account.mask_id_name`(留首字符、其余打星,单字全掩),列表页与 CSV 导出档位一致。
-- **发票的 `tax_id` 不脱敏**:个人票无税号(schema 强制置空),公司票税号是工商公开信息;脱敏只覆盖抬头与邮箱。
+- PII 明文读取只有一道闸(`adminapi/service.ensure_reveal_allowed`,租户实名与发票抬头/邮箱共用):readonly 永不给明文,`reason` 必填(≥2 字符),规范化事由进审计;新开明文出口一律过它。脱敏实现共用 `account.mask_id_name`(留首字符、其余打星,单字全掩),列表页与 CSV 导出档位一致。
+- 发票 `tax_id` 不脱敏(个人票 schema 强制置空);脱敏只覆盖抬头与邮箱。
 - 调账复核以 `with_for_update` 行锁读取:并发复核后到者见非 pending 即 409,ledger 只有一条 adjust。复核人不得是发起人,且必须是调账发起前已创建的账号。
 - 调账发起与人工补单支持 Idempotency-Key(调账落 `(created_by, idempotency_key)` 唯一约束;补单落 `orders.backfill_idempotency_key`,同键重放回当前状态)。
 - 公告群发为分块批量 INSERT(单事务 ⌈N/1000⌉ 条语句),只触达 active 用户。
 - 补单为渠道核验制:服务端实时查渠道,已支付且金额一致才入账。
 - 「超卖率 vs 利用率」按池加权聚合(metering 出 per-instance 小时聚合,orchestrator 出实例→池映射,adminapi 组装);无数据的池返 `null`。
 - 管理端所见账单与用户所见同源。
-- 策略参数页含包周期五键(`period_discount_day` / `_week` / `_month` / `_year` 与 `period_expire_warn_days`)与竞价两键(`spot_discount_pct` / `spot_grace_seconds`),取值范围见 [limits.md](./limits.md)。改动即时生效,只作用于**之后**的报价;竞价两键另经 `GET /api/v1/policies` 下发用户端。
-- **`spot_grace_seconds` 另有跨键上限**(不超过 `creating_timeout_seconds` 减调度余量),越界时后端回带具体上限的错误文案,**前端原样展示、不自己算**。
+- 策略参数页含包周期五键(`period_discount_day` / `_week` / `_month` / `_year` 与 `period_expire_warn_days`)与竞价两键(`spot_discount_pct` / `spot_grace_seconds`),取值范围见 [limits.md](./limits.md)。改动即时生效,只作用于之后的报价;竞价两键另经 `GET /api/v1/policies` 下发用户端。
+- `spot_grace_seconds` 另有跨键上限(不超过 `creating_timeout_seconds` 减调度余量),越界时后端回带具体上限的错误文案,前端必须原样展示、不自己算。
 - 日对账卡覆盖包周期:出账侧含 `subscriptions.amount_paid`,消费侧含 `ref_type='subscription'` 的流水,两侧同一切窗(见 [billing.md](./billing.md))。
-- 全局实例表「购买模式」取 `AdminInstanceOut.market`,到期日取 `AdminInstanceOut.subscription.expires_at`;管理端与用户端**走同一条批量回填路径**(`attach_instance_details`);按量实例 `subscription` 为 null,渲染「—」。
-- **`OverviewPoolOut.gpu_spot_used` 是 `gpu_used` 的子段,不是可相减的独立口径。** `gpu_used` 来自节点台账,`gpu_spot_used` 来自实例侧(`orchestrator/queries.py::running_spot_gpus_by_pool`),service 组装时按 `min(spot, gpu_used)` **截断**。**不要拿 `gpu_used − gpu_spot_used` 当「非竞价已租」精确值**。
-- `running_spot_gpus_by_pool` 在 **Python 侧聚合**(PG 不认参数化的 `spec ->> $1` 在 GROUP BY 里与 SELECT 列相等),与 `running_gpu_share_by_pool` 同一写法。
-- 总览的 `subscriptions_active` 是**在保订阅数,不是实例状态计数**(停机的包月实例周期未满仍在保)。
+- 全局实例表「购买模式」取 `AdminInstanceOut.market`,到期日取 `AdminInstanceOut.subscription.expires_at`;管理端与用户端走同一条批量回填路径(`attach_instance_details`);按量实例 `subscription` 为 null,渲染「—」。
+- `OverviewPoolOut.gpu_spot_used` 来自实例侧(`orchestrator/queries.py::running_spot_gpus_by_pool`),是 `gpu_used`(节点台账)的子段,组装时按 `min(spot, gpu_used)` 截断;不可拿 `gpu_used − gpu_spot_used` 当「非竞价已租」精确值。
+- `running_spot_gpus_by_pool` 必须在 Python 侧聚合(PG 不支持参数化的 `spec ->> $1` 与 GROUP BY 列做相等比较),与 `running_gpu_share_by_pool` 同写法。
+- 总览的 `subscriptions_active` 是在保订阅数,不是实例状态计数(停机的包月实例周期未满仍在保)。
 - adminapi 端点全部声明响应模型(kind/group/source 用 Literal);前端行类型从生成契约再导出,不手写。
-- **「强制回收」与「强制停止」两个入口不合并**:不同 reason。两者都走 `ReasonAction`,回收另走抢占路径(宽限窗 + 通知,见 [orchestrator.md](./orchestrator.md));强制回收终态 stopped、实例盘保留。
+- 「强制回收」与「强制停止」两个入口不合并:不同 reason。两者都走 `ReasonAction`,回收另走抢占路径(宽限窗 + 通知,见 [orchestrator.md](./orchestrator.md));强制回收终态 stopped、实例盘保留。
 - 高危操作原因必填 → 二次确认 → 审计;色值集中在 `adminColors`,message 走 `App.useApp()`。

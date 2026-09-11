@@ -43,7 +43,7 @@ releases:
     condition: gpuOperator.enabled
     namespace: gpu-operator
     chart: nvidia/gpu-operator
-    # 不得低于 v26.3.3(见 values/gpu-operator.yaml);升版前复核 labels/ClusterPolicy 字段变化
+    # 不得低于 v26.3.3;升版前复核 labels/ClusterPolicy 字段变化
     version: "v26.3.3"
     values:
       - values/gpu-operator.yaml

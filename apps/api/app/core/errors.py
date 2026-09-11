@@ -262,7 +262,7 @@ def install_error_handlers(app: FastAPI) -> None:
     async def http_exception_handler(
         _request: Request, exc: StarletteHTTPException
     ) -> JSONResponse:
-        """路由层 404/405 等框架异常也渲染统一错误体(否则前端拿到的是另一种形状)。"""
+        """路由层 404/405 等框架异常渲染统一错误体。"""
         code, key = _HTTP_STATUS_MAP.get(
             exc.status_code,
             (ErrorCode.VALIDATION_ERROR, "common.validation")

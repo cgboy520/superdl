@@ -33,7 +33,6 @@ export function EventsPanel({
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Alert type="info" showIcon title={t("copy.eventsAreBilling")} />
       {isError && <DataErrorAlert onRetry={onRetry} />}
-      {/* 无事件给一句话空态 */}
       {!isError && !isLoading && events.length === 0 && (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("instances.eventsEmpty")} />
       )}

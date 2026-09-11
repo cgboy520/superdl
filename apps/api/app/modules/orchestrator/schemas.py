@@ -17,7 +17,7 @@ NON_TERMINAL_STATUSES: tuple[str, ...] = tuple(sm_def.TRANSITIONS)
 WORKLOAD_DEV = "dev"
 WORKLOAD_SERVICE = "service"
 
-# 平台在容器内占用的端口:22 = sshd,8888 = JupyterLab;与 DB CHECK(models.ServiceEndpoint)同源
+# 平台在容器内占用的端口:22 = sshd,8888 = JupyterLab;与 DB CHECK(models.Instance)同源
 RESERVED_SERVICE_PORTS: tuple[int, ...] = (22, 8888)
 
 # 用户环境变量禁用的名段:平台注入的 JUPYTER_* / SUPERDL_* / AUTHORIZED_KEYS,以及 NVIDIA_*

@@ -7,7 +7,7 @@ const HEIGHT = 28;
 
 export function GpuSparkline({ points }: { points: readonly (readonly [number, number])[] }) {
   const first = points[0];
-  if (!first) return null; // 首元素判空收窄
+  if (!first) return null;
   const t0 = first[0];
   const t1 = (points[points.length - 1] ?? first)[0];
   const span = Math.max(t1 - t0, 1);

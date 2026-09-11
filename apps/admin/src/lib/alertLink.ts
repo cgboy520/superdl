@@ -8,7 +8,6 @@ import { adminColors, useApiErrorText } from "@superdl/ui";
 
 import { type AlertRow, useAckAlert } from "../api";
 
-/** 级别码 → 文案键 */
 export const SEVERITY_LABEL_KEY = {
   info: "overview.severityInfo",
   warning: "overview.severityWarning",

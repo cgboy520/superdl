@@ -1,4 +1,4 @@
-"""测试共享助手:造用户/密钥/SKU/管理员/钱包,注册与登录,驱动 outbox 与 reconciler。
+"""测试共享助手:造用户/密钥/SKU/管理员/钱包,注册登录,驱动 outbox 与 reconciler。
 跨用例复用的助手一律落在这里,测试模块之间不互相 import。"""
 
 import base64
@@ -353,7 +353,7 @@ async def complete_mfa_setup_with_secret(client: AsyncClient, ticket: str) -> tu
 
 
 async def complete_mfa_setup(client: AsyncClient, ticket: str) -> str:
-    """mfa_setup 票 → begin → confirm(当前 TOTP)→ access token。供管理端测试复用。"""
+    """mfa_setup 票 → begin → confirm(当前 TOTP)→ access token。"""
     token, _secret = await complete_mfa_setup_with_secret(client, ticket)
     return token
 

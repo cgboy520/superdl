@@ -71,7 +71,7 @@ class TestBillsVsConsume:
 
 class TestMoneyTableConstraints:
     async def test_overdraft_is_still_allowed(self, sm):
-        """不加 balance >= 0 约束(透支是设计内的)。"""
+        """wallets 表无 balance >= 0 约束,透支必须放行。"""
         async with sm() as session:
             await wallet.debit(
                 session,

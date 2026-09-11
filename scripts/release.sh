@@ -35,7 +35,7 @@ resolve_digest() { # <完整镜像引用> → sha256:...
   elif command -v skopeo > /dev/null 2>&1; then
     out="$(skopeo inspect --format '{{.Digest}}' "docker://$ref" 2> /dev/null || true)"
   elif command -v docker > /dev/null 2>&1; then
-    # --raw 取顶层 manifest 原文,digest 即其 sha256(--format '{{.Manifest.Digest}}' 对单 manifest 镜像输出默认文本)
+    # digest = 顶层 manifest 原文的 sha256;必须 --raw 取原文,--format 对单 manifest 镜像会输出默认文本
     out="$(docker buildx imagetools inspect --raw "$ref" 2> /dev/null | sha256sum | awk 'NF && $1 ~ /^[0-9a-f]{64}$/ {print "sha256:" $1}' || true)"
   else
     echo "::error::找不到可解析 digest 的工具(crane / skopeo / docker buildx),拒绝按可变 tag 发布" >&2

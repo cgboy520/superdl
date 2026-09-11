@@ -217,7 +217,7 @@ class TestProdConfigValidation:
         from app.core.config import Settings
 
         for bad in (
-            "CHANGE_ME_32_CHARS_MINIMUM_______",  # 仓库模板的历史占位
+            "CHANGE_ME_32_CHARS_MINIMUM_______",  # 占位符形态
             "CHANGE_ME",
             "x" * 40,  # 长度足够但唯一字符 1 个
         ):

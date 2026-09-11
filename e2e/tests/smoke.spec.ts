@@ -14,14 +14,12 @@ import {
 test("全生命周期冒烟", async ({ page }) => {
   const phone = uniquePhone();
 
-  // 注册
   await registerViaUi(page, phone);
 
   // 充值 100(mock 渠道)
   await rechargeViaUi(page);
   await expect(page.getByText("¥100.00").first()).toBeVisible({ timeout: 10_000 });
 
-  // 添加 SSH 公钥
   await addSshKeyViaUi(page);
 
   // 市场:筛选链 + SKU 表格单选 → 结算条下一步

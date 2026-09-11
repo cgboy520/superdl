@@ -809,7 +809,6 @@ function PlatformConfigPage() {
           ))}
         </Space>
       )}
-      {/* 窄屏左 Menu 改顶部横排 */}
       <div
         style={{
           display: "flex",

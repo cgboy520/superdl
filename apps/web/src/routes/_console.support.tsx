@@ -155,7 +155,7 @@ function SupportPage() {
   const navigate = useNavigate();
   const { new: openNew, status: statusFilter } = Route.useSearch();
   const [creating, setCreating] = useState(false);
-  // ?new=1 到达即开创建弹窗:渲染期派生态(同 help.tsx 锚点模式)
+  // 渲染期派生态(同 help.tsx 锚点模式)
   const [prevNew, setPrevNew] = useState(openNew);
   if (openNew !== prevNew) {
     setPrevNew(openNew);

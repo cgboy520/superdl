@@ -37,9 +37,7 @@ def _load_schemas(crd_dir: pathlib.Path) -> dict[tuple[str, str], dict]:
 
 
 def _strip_kube(node):
-    """剥掉 x-kubernetes-*:CEL 校验(x-kubernetes-validations)与 int-or-string
-    等扩展关键字不是 JSON Schema,jsonschema 认不了。剥掉后仍能校验字段名、类型、
-    枚举与 pattern —— 静默失效的那类错误全在这几项里。"""
+    """剥掉 x-kubernetes-* 扩展关键字(jsonschema 不认);保留字段名、类型、枚举与 pattern 校验。"""
     if isinstance(node, dict):
         return {k: _strip_kube(v) for k, v in node.items() if not k.startswith("x-kubernetes")}
     if isinstance(node, list):

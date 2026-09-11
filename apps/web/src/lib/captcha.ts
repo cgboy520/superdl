@@ -67,7 +67,7 @@ async function initAliyun(cfg: CaptchaConfigOut): Promise<void> {
   window.initAliyunCaptcha({
     SceneId: cfg.scene_id,
     prefix: cfg.prefix,
-    mode: "popup", // 弹窗形态
+    mode: "popup",
     element: `#${BOX_ID}`,
     button: `#${TRIGGER_ID}`,
     captchaVerifyParam: (param: string) => {
@@ -101,6 +101,6 @@ export async function requestCaptchaToken(): Promise<string | undefined> {
       pendingTimer = null;
       reject(new Error("captcha verify timeout"));
     }, CAPTCHA_TIMEOUT_MS);
-    document.getElementById(TRIGGER_ID)?.click(); // 拉起验证码弹窗
+    document.getElementById(TRIGGER_ID)?.click();
   });
 }

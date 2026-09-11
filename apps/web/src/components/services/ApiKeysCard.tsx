@@ -48,7 +48,6 @@ export function ApiKeysCard({
           pagination={false}
           loading={keysQ.isLoading}
           dataSource={keys}
-          // 窄屏横向滚动
           scroll={{ x: 640 }}
           locale={{
             emptyText: keysQ.isError ? (

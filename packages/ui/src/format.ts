@@ -58,13 +58,11 @@ function scaled4(value: string | null | undefined): bigint {
   return BigInt(int + (frac + "0000").slice(0, 4));
 }
 
-/** 万分位 BigInt → "X.XXXX" */
 function unscale4(scaled: bigint): string {
   const s = scaled.toString().padStart(5, "0");
   return `${s.slice(0, -4)}.${s.slice(-4)}`;
 }
 
-/** 分 BigInt → "X.XX" */
 function unscale2(cents: bigint): string {
   const s = cents.toString().padStart(3, "0");
   return `${s.slice(0, -2)}.${s.slice(-2)}`;
@@ -149,7 +147,7 @@ export function quoteSubscription(
   };
 }
 
-/** 竞价时价 = 按量时价 × `spot_discount_pct` / 100(HALF_EVEN 到 4 位,与后端 `pricing.effective_price_hourly` 一致)。折扣只从 `/policies` 取。 */
+/** 竞价时价 = 按量时价 × `spot_discount_pct` / 100(HALF_EVEN 到 4 位,与后端 `pricing.price_for` 一致)。折扣只从 `/policies` 取。 */
 export function spotHourlyPrice(
   baseHourly: string | null | undefined,
   discountPct: number,
@@ -355,7 +353,7 @@ export function formatSizeGb(gb: number): string {
   return `${gb} GB`;
 }
 
-/** 手机号脱敏:前 3 + 后 4,短串全掩(与后端 account.realname.mask_phone 同口径)。 */
+/** 手机号脱敏:前 3 + 后 4,短串全掩(与后端 core/logging.py mask_phone_value 同口径)。 */
 export function maskPhone(phone: string): string {
   return phone.length >= 7 ? `${phone.slice(0, 3)}****${phone.slice(-4)}` : "***";
 }

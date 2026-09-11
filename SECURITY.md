@@ -16,4 +16,4 @@
 - 安全设计、租户隔离、限流分层与已接受取舍:`docs/reference/security.md`。
 - 生产启动校验(密钥、渠道、域名占位 fail-fast):同上「规则与不变量」首条。
 - 凭据不入 git:只经环境变量或平台配置中心注入,模板一律 `CHANGE_ME`(`deploy/app/secrets.example.yaml`)。
-- 供应链:CI 跑 gitleaks(全历史)、pip-audit、pnpm audit(HIGH+ 阻断);发布镜像经 Trivy 扫描并附 SBOM。
+- 供应链:CI 跑 gitleaks(当前工作树)、pip-audit、pnpm audit(HIGH+ 阻断);发布镜像经 Trivy 扫描并附 SBOM。

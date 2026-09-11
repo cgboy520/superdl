@@ -475,7 +475,6 @@ async def admin_uncordon_node(
     return await _cordon(node_name, body, session, request, on=False)
 
 
-# 角色沿用 ops(与 cordon / force-stop / 强制回收同档);不可逆性由必填 reason + 审计承担
 @router.post("/nodes/{node_name}/decommission", dependencies=[require_roles("ops")])
 async def admin_decommission_node(
     node_name: str, body: NodeDecommissionRequest, session: DbSession, request: Request

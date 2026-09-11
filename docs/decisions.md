@@ -8,10 +8,10 @@
 - **本地闸门是事实源,CI 是复跑。** 闸门按改动范围跑,红了不提交。依赖漏洞、gitleaks、kubeconform、kind 冒烟只在 CI 跑。
 - **不设覆盖率阈值。** 用例必须能回答「它挂了说明什么坏了」。
 - **命令清单只有一份**:CLAUDE.md「常用命令」;README 只放快速开始。
-- **停机发布,不留兼容窗口、不支持回滚。** 顺序恒为「先 `alembic upgrade head`,后替换代码」;`/readyz` 只认 DB == 代码 head,落后/领先/未知版本一律摘流。破坏性 DDL 允许,提交说明写明数据影响;downgrade 一律 raise。约束:alembic 历史为单条基线 `20260901_1620c05976ce`,一致性由 `alembic check` 把关。
+- **停机发布,不留兼容窗口、不支持回滚。** 顺序恒为「先 `alembic upgrade head`,后替换代码」;`/readyz` 只认 DB == 代码 head,落后/领先/未知版本一律摘流。破坏性 DDL 允许,提交说明写明数据影响;downgrade 一律 raise;alembic 历史以单条基线 `20260901_1620c05976ce` 起线性追加,`alembic check` 把关。
 - **私有仓库,不放 LICENSE。** 转公开或对外交付前先定许可证。
 - **release notes 不手维护。** `gh release create --generate-notes`,不设 CHANGELOG。
-- **orval 只生成 fetcher 与 model 类型,不生成 TanStack Query hooks。** `packages/api-client` 用 `client: "fetch"`;两端在 `apps/web/src/api/*.ts`、`apps/admin/src/api.ts` 用 useQuery/useMutation 包 fetcher。约束:不把 `client` 改回 `react-query`、不加 `query` 块。
+- **orval 只生成 fetcher 与 model 类型,不生成 TanStack Query hooks。** `packages/api-client` 用 `client: "fetch"`;两端在 `apps/web/src/api/*.ts`、`apps/admin/src/api.ts` 用 useQuery/useMutation 包 fetcher。约束:`client` 保持 `"fetch"`,不加 `query` 块。
 - **UI 占位项的去留有判据。** 只有「已排期、按当前设计确定要做」的能力留 disabled 占位并注「即将上线」。约束:变动时 `docs/ui-ux-spec.md` 占位清单与 `docs/reference/web.md` 同提交更新。
 
 ## 计费与资金
@@ -36,7 +36,7 @@
 ## 安全
 
 - **安全取舍集中在一处。** token 存 localStorage、固定窗口限流、用户端无 2FA、仅 +86、双人制衡残余等,见 `docs/reference/security.md`「已接受取舍」,勿再单独立项。
-- **管理端全角色强制 TOTP。** 开关 `admin_mfa_enabled`(默认开),只有全员开 / 全员关两档;关闭是运营决定(prod 在线禁关,只可经部署层变更),代价是配置中心告警 + 审计 reason;登录限流四层桶保留。见 `docs/reference/admin.md`。
+- **管理端全角色强制 TOTP。** 开关 `admin_mfa_enabled`(默认开),只有全员开 / 全员关两档;关闭是运营决定(prod 在线禁关,只可经部署层变更),关闭时产生配置中心告警并记审计 reason;登录限流四层桶保留。见 `docs/reference/admin.md`。
 - **日志 PII / 凭据全局脱敏。** `apps/api/app/core/logging.py` 按键名(phone / id_number / token / secret / password / code)兜底打码。
 - **账号级登录锁定。** 账号维 15 分钟窗 + 日窗阶梯锁定,与 IP 维桶叠加。约束:**管理端的日窗账号桶只在失败后计数,不进 bcrypt 前的准入预检**(用户端仍进)。见 `docs/reference/admin.md`。
 - **租户 SSH 入方向只排 Pod 网段,不排整段私网。** 22 端口的 from 是 `0.0.0.0/0` except `tenant_pod_cidr`(默认 `10.42.0.0/16`)。约束:改 CNI 网段必须同步改 `tenant_pod_cidr`;留空只作排障临时回退。见 `docs/reference/security.md`。
@@ -46,7 +46,7 @@
 ## 编排与平台
 
 - **reconciler 两阶段。** 事务内只做状态迁移 / 标记 / enqueue,K8s 动作在 commit 后或经 outbox 执行;失败由泄漏回收宽限后强删兜底。见 `apps/api/app/modules/orchestrator/reconciler.py`。
-- **抢占排序只按创建时间。** `created_at` 从新到旧(同刻 `id` 降序),配套**只在同池同型号内选**、**凑不够一台都不动**。约束:`preempt.pick_victims` 的排序与候选谓词改动**等同于改用户可见文案**,两边同提交;偏乐观的后果由 creating 超时转 failed、全额不出账兜底。见 `docs/reference/orchestrator.md`。
+- **抢占排序只按创建时间。** `created_at` 从新到旧(同刻 `id` 降序),配套**只在同池同型号内选**、**凑不够一台都不动**。约束:`preempt.pick_victims` 的排序与候选谓词改动**等同于改用户可见文案**,两边同提交。见 `docs/reference/orchestrator.md`。
 - **抢占宽限窗用 outbox 的延迟投递实现。** `apps/api/app/core/outbox.py` 的 `enqueue` 带 `delay_seconds`;状态机立刻迁 `stopping`、Pod 到期才删。约束:`spot_grace_seconds` 真实上限是 `creating_timeout_seconds − PREEMPT_TIME_RESERVE_SECONDS`,由 `validate_policy_value` 跨键校验拦住。见 `docs/reference/limits.md`。
 - **worker 拆成 5 个组件 Deployment**(core / tenant-mgr / node-mgr / prewarm / disk-ops),RBAC 按组件最小化。约束:发布必须成组。见 `deploy/README.md`、`deploy/app/k8s/03-worker.yaml`。
 - **控制面 HA 与平台组件落点。** 公众生产强制 3 台 server 堆叠 etcd + VIP;平台组件以 `node-restriction.kubernetes.io/superdl-infra` 标签选址。**前缀取 kubelet 打不上的那一族**(`node-restriction.kubernetes.io/*` 被 NodeRestriction 拉黑,两份 server-config 的 `kube-apiserver-arg` 显式钉住该插件),标签由 `deploy/ansible/site.yml` 装机后用管理凭据打,平台 SA 无权改(准入策略③只放行 `superdl.io/*`)。约束:light 档(k3s 单机)只做试点与联调,禁止公众生产。见 `deploy/cluster/README.md`。
@@ -67,7 +67,7 @@
 - **HAMi 池不是安全边界,是成本优化手段。** hami 池定位是**软件限额/性能隔离**,不作多租户安全隔离。运营方可用 `SUPERDL_SHARED_TIER_ALLOWED_POOLS` 把共享档限制为仅 MIG,或以前端知情同意 modal 告知用户。同写进 `reference/security.md` 隔离级别分级表。
 - **纯 CPU 实例是第三档 `tier=cpu`,允许挂 hami 池。** 每个 GPU 节点由策略 `gpu_node_cpu_instance_vcpu_cap`(默认 16,0 = 禁止)封顶,只是**库存口径**,不下发调度。约束:① `build_gpu_request` 里 `gpu_count == 0` 的判定**先于池分支**,且下发门禁同一判据(CPU 实例 `schedulerName` 为空);② `build_pod_spec` 显式写「GPU 档按卡数放大、CPU 档倍率恒 1」,不写 `max(1, gpu_count)`。
 - **CPU 实例的计费份数收口到 `apps/api/app/core/money.py` 的 `billing_units`,不动 `price_hourly` 语义。** 金额 = `单价 × 份数 × 秒 / 3600`,`billing_units(gpu_count) = gpu_count or 1`。约束:所有「单价 × 份数」只经 `billing_units` 与 `hourly_cost`;`price_hourly` 语义写进 `docs/reference/catalog.md`(GPU 规格 = 单卡时价,CPU 规格 = 整机时价);账单行照实存 `gpu_count=0`。
-- **DNS01 走 acme-dns 中转,按档位启用。** 集群内只持有能改 `_acme-challenge` 子域 TXT 的账户。约束:light 档 `acmeDns.enabled=false`,泛域名证书手工灌入 `superdl/superdl-jupyter-wildcard-tls`。见 `deploy/cluster/runbooks/acme-dns.md`。
+- **DNS01 走 acme-dns 中转,按档位启用。** 集群内只持有能改 `_acme-challenge` 子域 TXT 的账户。约束:light 档 `acmeDns.enabled=false`,泛域名证书(`superdl-jupyter-wildcard-tls` 与 `superdl-svc-wildcard-tls`)手工灌入 `superdl` ns。见 `deploy/cluster/runbooks/acme-dns.md`。
 - **集群配置键中性化。** 键统一 `cluster_*`,发行版由平台探测 gitVersion 派生,无 `k8s_distro` 键。
 - **不引 Sentry 类 SaaS。** 未捕获异常统一 500 留痕并经 Loki / Prometheus 告警。
 - **管理端监控自绘,Grafana 只作外链。** 不做 iframe,`grafana_url` 未配置只显示一行提示。

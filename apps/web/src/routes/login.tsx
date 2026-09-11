@@ -194,7 +194,6 @@ function LoginPage() {
       <div
         style={{
           flex: 1,
-          // 容器底色走 token
           background: token.colorBgContainer,
           display: "flex",
           alignItems: "center",
@@ -286,7 +285,6 @@ function LoginPage() {
                 }
                 {...(mode !== "password" && watchedPassword !== ""
                   ? {
-                      // 强度实时反馈挂在 extra
                       extra: <PasswordStrengthHint password={watchedPassword} />,
                     }
                   : {})}

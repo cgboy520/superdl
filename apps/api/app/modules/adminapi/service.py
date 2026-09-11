@@ -578,7 +578,7 @@ async def create_adjustment(
     fingerprint = request_fingerprint(user_id, amount, reason)
 
     if idempotency_key:
-        # 归属是 (created_by, user_id) 双列,find_replay 只支持单列,不并入
+        # 幂等归属为 (created_by, user_id) 双列,不可用 find_replay(仅支持单列)
         existing = (
             await session.execute(
                 select(AdminAdjustment).where(
@@ -593,7 +593,6 @@ async def create_adjustment(
                 raise conflict(key="common.idempotencyKeyMismatch")
             return existing, False  # 幂等重放
 
-    # 用户必须存在
     await account_service.get_user(session, user_id)
     if amount == 0:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="adminapi.adjustNotZero")

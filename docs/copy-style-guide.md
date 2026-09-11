@@ -25,7 +25,7 @@
 ## i18n 配套
 
 - 新增文案同时提交 zh-CN 与 en-US;en 语序独立重写(复数走 `_one/_other`)。
-- 带 `count` 参数的键 en 侧会生成复数变体,提交前跑 `pnpm i18n:write` 补全。
+- 带 `count` 参数的键 en 侧会生成复数变体,提交前在 `apps/web` / `apps/admin` 下跑 `pnpm i18n:write` 补全。
 - 中国渠道运营域文案(platform 渠道字段/指引、settings 策略参数名)不译,以 `i18n-exempt` 标记。
 
 ## 术语表

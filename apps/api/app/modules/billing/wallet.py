@@ -218,7 +218,7 @@ async def assert_can_afford(
     「待燃」= creating/starting 实例(orchestrator.pending_hourly,内部并入)。
     不足抛 INSUFFICIENT_BALANCE,params 含 balance / required / inflight。只校验不扣款。
     """
-    # 延迟 import 防循环:orchestrator.service → billing.service → wallet
+    # 必须延迟 import:orchestrator.service 与本模块循环依赖
     from app.modules.orchestrator import service as orchestrator_service
 
     locked = await lock_wallet(session, user_id)  # 先锁再统计

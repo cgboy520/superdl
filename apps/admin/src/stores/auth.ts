@@ -39,7 +39,6 @@ export const authStore = createStore<AuthState>()((set) => ({
   setAdmin: (admin) => set({ admin }),
   logout: () => {
     localStorage.removeItem(TOKEN_KEY);
-    // 清查询缓存
     queryClient.clear();
     set({ accessToken: null, admin: null });
   },

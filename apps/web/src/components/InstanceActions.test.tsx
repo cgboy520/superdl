@@ -203,7 +203,6 @@ describe("InstanceActions · 包周期", () => {
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getAllByText(/转包周期 · demo-vm/).length).toBeGreaterThan(0);
     expect(within(dialog).getByRole("button", { name: "支付并转为包周期" })).toBeEnabled();
-    // 转换从现在起算
     expect(within(dialog).getByText("从现在起算")).toBeInTheDocument();
   });
 

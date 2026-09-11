@@ -27,7 +27,6 @@ const REASON_LABEL_KEY = {
 } as const;
 type GapReason = keyof typeof REASON_LABEL_KEY;
 
-// 缺口类型 → 文案键
 const KIND_LABEL_KEY = {
   hourly: "finance.gapKindHourly",
   daily_disk: "finance.gapKindDailyDisk",

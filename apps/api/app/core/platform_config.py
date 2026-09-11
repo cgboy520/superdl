@@ -341,7 +341,7 @@ def _all(cfg: Mapping[str, str], *keys: str) -> bool:
 
 
 def compute_config_warnings(cfg: Mapping[str, str], environment: str) -> list[ConfigWarning]:
-    """安全开关与凭据的组合风险。开关允许在 prod 关闭(运营决定),但必须看得见。"""
+    """安全开关与凭据的组合风险。"""
     prod = environment == "prod"
     out: list[ConfigWarning] = []
     if prod and cfg.get("captcha_enabled") != "true":

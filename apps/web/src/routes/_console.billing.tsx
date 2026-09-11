@@ -437,7 +437,7 @@ function LedgerTable() {
           {
             title: t("billing.colAmount"),
             render: (_, r) => (
-              // 收入绿/支出红(antd colorSuccess/Error)
+              // 收入绿/支出红
               <span
                 style={{ color: r.amount.startsWith("-") ? token.colorError : token.colorSuccess }}
               >
@@ -740,7 +740,7 @@ function InvoiceApplyModal({
           status={title !== "" && title.trim().length < 2 ? "error" : undefined}
           aria-label={t("billing.invoiceTitleLabel")}
         />
-        {/* 红框必须配文字:只变色不说原因,用户不知道错在哪(与税号字段同一标准) */}
+        {/* 红框必须配文字说明(与税号字段同一标准) */}
         {title !== "" && title.trim().length < 2 ? (
           <Typography.Text type="danger" style={{ fontSize: fontSize.caption }}>
             {t("billing.invoiceTitleInvalid")}
@@ -1051,8 +1051,7 @@ function BillingPage() {
         </Col>
       </Row>
 
-      {/* 导出按钮放 Card 的 extra 而非 Tabs 的 tabBarExtraContent:后者会把 button 放进
-          role="tablist" 内(axe aria-required-children,critical) */}
+      {/* 导出按钮必须放 Card 的 extra:tabBarExtraContent 会把 button 放进 role="tablist"(axe aria-required-children) */}
       <Card
         extra={
           // CSV 导出仅覆盖账单/流水两个 Tab

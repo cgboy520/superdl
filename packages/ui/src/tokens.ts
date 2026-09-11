@@ -6,7 +6,6 @@
 
 export const colorPrimary = "#4F46E5";
 
-/** 系统字体栈 */
 export const fontFamily =
   '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", ' +
   '"Microsoft YaHei", "Helvetica Neue", Arial, sans-serif';

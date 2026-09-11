@@ -92,7 +92,6 @@ export function TenantDrawer({
 
   return (
     <Drawer
-      // 桌面 880,窄屏吃满视口宽
       width="min(880px, 100vw)"
       open={tenant !== null}
       onClose={onClose}
@@ -463,7 +462,6 @@ function QuotaTab({ userId }: { userId: number }) {
   }>();
 
   if (quota.isLoading) return <Skeleton active paragraph={{ rows: 3 }} />;
-  // 查询失败明示错误
   if (quota.isError) return <DataErrorAlert onRetry={() => void quota.refetch()} />;
   const q = quota.data;
   if (!q) return null;

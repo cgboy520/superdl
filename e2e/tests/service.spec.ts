@@ -1,4 +1,4 @@
-/** 在线服务冒烟:在线服务页「部署服务」→ 部署页(页内选规格)→ 容器与服务配置 → 部署 → 服务详情 → 运行中 → 端点卡拿到 URL → 更新版本(v2)→ 新建 API Key(一次性展示)→ 吊销 → 停止服务 → 设置里改名与关鉴权。挂了说明:部署入口 / 规格选择器 / POST /services 与跳转 / 端点卡与状态派生 / 一次性 Key 保存闸 / 设置 PATCH 之一断了。 */
+/** 在线服务冒烟:在线服务页「部署服务」→ 部署页(页内选规格)→ 容器与服务配置 → 部署 → 服务详情 → 运行中 → 端点卡拿到 URL → 更新版本(v2)→ 新建 API Key(一次性展示)→ 吊销 → 停止服务 → 设置里改名与关鉴权。 */
 import { expect, test } from "@playwright/test";
 
 import { setupUser } from "./helpers";
@@ -63,12 +63,10 @@ test("部署在线服务并拿到端点与 API Key", async ({ page }) => {
   await expect(page.getByText("关闭后无法再查看")).toBeHidden({ timeout: 10_000 });
   await expect(page.locator("tbody").getByText("e2e")).toBeVisible({ timeout: 15_000 });
 
-  // 吊销
   await page
     .getByRole("button", { name: /^吊\s*销$/ })
     .first()
     .click();
-  // 确认弹窗用 antd 默认 okText(「确 定」)
   await page
     .locator(".ant-modal-confirm-btns")
     .getByRole("button", { name: /^确\s*定$/ })

@@ -90,8 +90,7 @@ describe("customFetch 401 静默续期", () => {
   });
 
   it("token 已被别的标签页换掉时不再续期,直接重放", async () => {
-    // 模拟:请求发出用的是 old,进入临界区时 localStorage 里已是别的标签页续期后的 new。
-    // 若此时仍调 refresh,就是拿已消费的 refresh token 重放 → 后端撤销该用户全部会话。
+    // 请求以 old 发出,进入临界区时 token 已被别的标签页续成 new;此时再 refresh = 重放已消费 token,后端撤销全部会话。
     const tokens = ["old", "new", "new"];
     let i = 0;
     const refresh = vi.fn(() => Promise.resolve(true));

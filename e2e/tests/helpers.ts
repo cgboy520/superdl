@@ -2,7 +2,7 @@
 
 import { expect, type Locator, type Page } from "@playwright/test";
 
-/** 本轮唯一的测试手机号(139 + 毫秒后 5 位 + 3 位随机;spec 并行,不能只用 Date.now())。 */
+/** 本轮唯一的测试手机号;spec 并行,必须带随机分量。 */
 export function uniquePhone(): string {
   const ms = String(Date.now()).slice(-5);
   const rand = String(Math.floor(Math.random() * 1000)).padStart(3, "0");

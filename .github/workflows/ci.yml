@@ -59,7 +59,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30   # pytest 全量挂死时由 job 级超时兜底(不引入 pytest-timeout 依赖)
+    timeout-minutes: 30   # pytest 挂死时由 job 级超时兜底
     defaults:
       run:
         working-directory: apps/api

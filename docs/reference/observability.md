@@ -19,12 +19,12 @@
 
 ## 规则与不变量
 
-- **故障类指标都有对应告警规则**(`deploy/cluster/values/kps.yaml`),没有消费方的指标不保留。唯一不配告警的是 `superdl_spot_preempted_total`(设计内行为,消费方是运维侧 PromQL);该计数在事务内自增、请求方回滚时不退回,是**上界**;对账以 `instance_events` 里 `reason='preempted'` 为准。
+- **故障类指标都有对应告警规则**(`deploy/cluster/values/kps.yaml`),没有消费方的指标不保留。唯一不配告警的是 `superdl_spot_preempted_total`(消费方是运维侧 PromQL);该计数在事务内自增、回滚不退回,是**上界**;对账以 `instance_events` 里 `reason='preempted'` 为准。
 - 安全域告警在 kps 的 `superdl-security` 规则组(`superdl.security`):`LoginFailureSpike`(warning,按 actor_type,5 分钟失败 > 50)、`AdminLoginFailureSpike`(critical,10 分钟失败 > 10)、`AuthzDenialSustained`(warning,10 分钟速率 > 0.5/s 持续 15 分钟)、`AdminPrivilegeChanged`(critical,5 分钟 > 0)、`PiiRevealVolumeHigh`(warning,按 kind,1 小时 > 200 行)、`PiiRevealBurst`(critical,5 分钟 > 500 行)、`ApiUnauthorizedRateHigh`(warning,401/403 占比 > 30% 持续 10 分钟)。七条 runbook 指向 Loki 查询(`deploy/cluster/runbooks/loki-logging.md`),排查入口按 `request_id` 串全链。
 - `superdl_authz_denied_total` 只在 `adminapi/deps.require_roles`(及共用它的 PII 明文闸)计数;用户端 403 不计。
-- request-id 贯穿全链路(contextvars + 响应头);未捕获异常统一 500 错误体。异常告警经日志栈(不引 Sentry;Loki 查询见 `deploy/cluster/runbooks/loki-logging.md`)。
+- request-id 贯穿全链路(contextvars + 响应头);未捕获异常统一 500 错误体。异常告警经日志栈(Loki 查询见 `deploy/cluster/runbooks/loki-logging.md`)。
 - 日志:structlog + stdlib 桥接(ProcessorFormatter);prod=JSON、dev/test=Console;级别 `SUPERDL_LOG_LEVEL`(默认 INFO);outbox payload 带 `_request_id`,worker 执行时回填日志上下文。
-- **异常栈不带局部变量**:prod 结构化栈帧渲染显式关 `show_locals`(不用 structlog 的 `dict_tracebacks` 快捷方式)。
+- **异常栈不带局部变量**:prod 结构化栈帧渲染显式关 `show_locals`。
 - worker 自起 `/metrics` 端口(默认 9000,`SUPERDL_WORKER_METRICS_PORT`,同 `SUPERDL_METRICS_TOKEN` Bearer)。抓取配置 `deploy/app/k8s/08-monitoring.yaml` = API ServiceMonitor + worker PodMonitor(均带 Bearer)。
 - 定时任务单轮超过周期 80% 时 worker 打 warning(`scheduled_tick_slow`)。
 - WorkerDown 告警按心跳 Gauge 判定,不用 `absent()`。

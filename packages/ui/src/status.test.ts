@@ -1,4 +1,4 @@
-/** 服务过渡态集合与状态白名单。挂了 = 列表对未就绪服务空转轮询,或 URL 上的非法状态被放进查询。 */
+/** 服务过渡态集合与 isServiceStatus 白名单回归。 */
 import { describe, expect, it } from "vitest";
 
 import {

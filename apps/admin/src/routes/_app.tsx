@@ -104,7 +104,6 @@ function AlertBell() {
                       color={severityColor(a.severity)}
                       text={
                         <Typography.Text style={{ fontSize: fontSize.body }} delete={a.acked_at != null}>
-                          {/* 点击后关闭 Popover */}
                           {link ? (
                             <Link to={link.to} search={link.search} onClick={() => setPopoverOpen(false)}>
                               {a.title}
@@ -155,7 +154,6 @@ function AlertBell() {
         </div>
       }
     >
-      {/* 计数端点失败角标显「?」 */}
       <Badge count={unreadError ? "?" : (unread?.count ?? 0)} size="small" title={t("shell.alertsBadgeHint")}>
         <Button
           type="text"
@@ -280,7 +278,6 @@ function AppLayout() {
           }}
         >
           <Space size={12}>
-            {/* 窄屏菜单入口 */}
             {!screens.lg && (
               <Button
                 type="text"

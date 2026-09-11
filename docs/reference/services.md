@@ -54,7 +54,7 @@
 - 部署走 `create_instance_row(service=ServiceBinding(...))`:形态 service、镜像必须钉版本(`:latest` 与不写 tag 拒)、暴露规格快照到实例行、按 `with_ssh` 决定 SSH 入口;实例与服务同名。
 - 幂等指纹不含 slug / service_id;并发同键撞库时 `insert_idempotent` 连同未提交的 `services` 行一起回滚。
 - `services` 行的唯一非请求写入点是迁移监听器(`register_service_listeners`):RUNNING 迁出即失效鉴权缓存;当前实例 released 即写 `released_at`(覆盖用户删除、欠费回收、保留期 GC)。监听器在 transition 的实例行锁之后才碰 `services` 行(锁序 instance → service),不再锁另一台实例。
-- 版本更新 v1 只做 recreate 且不对包周期服务开放;HTTPRoute 仍每实例一条,`rollout_instance_id` 为蓝绿预留。
+- 版本更新只做 recreate,不对包周期服务开放;HTTPRoute 每实例一条。
 
 ### 版本更新(recreate)
 
@@ -87,7 +87,7 @@
 ```
 
 - slug **从 `Host` 头取,不从 path 取**:清单用 `extAuth.http.pathOverride` 把鉴权请求 path 改写成静态值(同位置的 `path` 是前缀语义,与 `pathOverride` 互斥)。
-- **extAuth 策略挂在 `svc-https` listener 上,服务全部端点(对象数 O(1))。** 公开端点(`require_api_key=false`)同样经过回调,由回调匿名放行并回 `x-superdl-key-id: anonymous`;**控制面是全部对外服务的同步依赖,挂了就是全部 503**(ext_authz 不缓存)。取舍见 [decisions.md](../decisions.md)。
+- **extAuth 策略挂在 `svc-https` listener 上,服务全部端点(对象数 O(1))。** 公开端点(`require_api_key=false`)同样经过回调,由回调匿名放行并回 `x-superdl-key-id: anonymous`;**控制面是全部对外服务的同步依赖,挂了就是全部 503**(ext_authz 不缓存)。
 - 回源侧进程内缓存正向结果 5s(负结果不缓存);吊销 / 鉴权开关翻转 / 删除服务主动失效本进程条目,停机经迁移监听器失效,跨副本最坏一个 TTL 收敛;`last_used_at` 每 key 每 60s 至多一写。
 - **Key 的归属是服务级,不是账号级。** 校验链完整走「服务未删除 → 当前实例 running → 未吊销 → 归属该服务」。用例在 `tests/test_endpoint_auth.py`。
 - **API Key 明文只出现一次。** 库里只有 HMAC-SHA256 摘要(`crypto.hash_api_key`,主密钥只走 env)。遗失只能吊销后新建;吊销写 `revoked_at` 不删行。

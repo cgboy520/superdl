@@ -45,10 +45,8 @@ export function assertLocaleParity(
     for (const [k, v] of zhFlat) if (!v.trim()) problems.push(`zh 空值 ${k}`);
     for (const [k, v] of enFlat) if (!v.trim()) problems.push(`en 空值 ${k}`);
   }
-  // 值 = 展平键路径
   for (const [k, v] of zhFlat) if (v === k) problems.push(`zh 值等于键名 ${k}`);
   for (const [k, v] of enFlat) if (v === k) problems.push(`en 值等于键名 ${k}`);
-  // en 文案含 Han 字符(豁免键经 allowCjkInEn 登记)
   const cjkAllowed = new Set(opts.allowCjkInEn ?? []);
   for (const [k, v] of enFlat) {
     if (!cjkAllowed.has(k) && /[\u4e00-\u9fff]/.test(v)) problems.push(`en 含中文字符 ${k}`);

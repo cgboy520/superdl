@@ -40,7 +40,6 @@ export function HourlyBillsTable({
         rowKey="id"
         size="small"
         pagination={false}
-        // 窄屏横向滚动
         scroll={showInstance ? { x: 760 } : undefined}
         loading={isLoading}
         dataSource={rows}

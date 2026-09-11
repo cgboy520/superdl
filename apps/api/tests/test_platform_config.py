@@ -417,7 +417,7 @@ class TestRegistrySpecsAndProbeEndpoint:
         t0 = time.perf_counter()
         with pytest.raises(ValueError):
             validate_setting_value("image_allowed_registries", evil)
-        assert time.perf_counter() - t0 < 1.0  # 线性;旧实现为指数级(数十分钟级)
+        assert time.perf_counter() - t0 < 1.0  # 线性时间
         # 合法长输入同样线性放行
         t0 = time.perf_counter()
         assert validate_setting_value("image_allowed_registries", "a" * 4000)

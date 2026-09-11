@@ -265,7 +265,6 @@ function SkusPage() {
       ...(variant === "shared_mig" ? {} : { mig_profile: null }),
     });
     if (variant === "cpu") {
-      // GPU 字段清零
       form.setFieldsValue(CPU_ZERO_FIELDS);
       return;
     }
@@ -305,11 +304,9 @@ function SkusPage() {
     await form.validateFields();
     // 取值用 getFieldsValue(true):validateFields() 只回已挂载 Form.Item 的字段
     const values = form.getFieldsValue(true) as SkuFormValues;
-    // tier / pool_label 由 variant 派生
     const { tier, pool: derivedPool } = VARIANT_SPEC[values.variant];
     // 只有 cpu 档的池可选,其余由档位派生
     const pool = values.variant === "cpu" ? values.pool_label : derivedPool;
-    // CPU 规格 GPU 字段补零
     const gpuFields =
       tier === "cpu"
         ? CPU_ZERO_FIELDS

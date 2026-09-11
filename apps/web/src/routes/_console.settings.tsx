@@ -163,7 +163,6 @@ function SettingsPage() {
 
       <Card title={t("settings.accountCard")}>
         <Space orientation="vertical" size={12}>
-          {/* 手机号未就绪渲染骨架 */}
           {me ? (
             <Typography.Text>{t("settings.phoneLine", { phone: maskPhone(me.phone) })}</Typography.Text>
           ) : (

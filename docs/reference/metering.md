@@ -19,7 +19,7 @@ Prometheus 代理查询、`usage_hourly` 聚合、事件计费与指标估算对
 
 - 指标只做展示与对账,不参与计费;Prometheus 停机时计费不受影响。
 - 租户只能查自己实例的指标:namespace 由服务端注入,禁止接受任意 PromQL。
-- 批量端点路径避开 `/instances/*` 前缀(会被 `{uuid}` 路由吞掉)。
+- 批量端点路径必须避开 `/instances/*` 前缀,否则被 `{uuid}` 路由吞掉。
 - `usage_hourly` 聚合幂等(UNIQUE + ON CONFLICT);单实例查询失败只跳过该实例该小时;缺口实例记 `usage_aggregation_partial` 日志,不自动回填。对账 diff >2% 的实例进差异清单。
 - Prometheus 响应形态异常统一归 `PrometheusUnavailable`:详情端点 503,批量/节点端点 `available=false`,不击穿成 500。
 - 指标源按实例 spec 的 `pool_label` 选:hami 池用 HAMi vGPUmonitor per-container 指标,查空回落 DCGM;kata / mig 池恒用 DCGM。判据是池不是档位。

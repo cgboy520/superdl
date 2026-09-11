@@ -1,8 +1,8 @@
-"""基线迁移:全量 schema(等价于既往迁移链终态)+ 必备预置数据。
+"""基线迁移:全量 schema + 必备预置数据。
 
-预置数据(fresh DB 必需,seed 脚本不种):legal_doc_versions 三条 zh-CN published v1
-(terms/privacy/deletion_notice,正文内联)与 port_allocations 的 30500 封禁行;
-另设 rate_limit_counters / outbox_tasks 的 fillfactor(存储参数不入 metadata)。
+预置数据(seed 脚本不种):legal_doc_versions 三条 zh-CN published v1
+(terms/privacy/deletion_notice,正文内联)与 port_allocations 30500 封禁行;
+另设 rate_limit_counters / outbox_tasks 的 fillfactor(不入 SQLAlchemy metadata)。
 
 Revision ID: 1620c05976ce
 Revises:
@@ -1335,10 +1335,10 @@ def upgrade() -> None:
     )
     # ### end Alembic commands ###
 
-    # —— 以下为手工维护的预置数据与存储参数(autogenerate 不产出)——
+    # —— 手工维护段:预置数据与存储参数(autogenerate 不产出)——
 
-    # 法务文档预置:zh-CN published v1(发布人留空 = 系统预置;
-    # legal/service.py 依赖「生产必有 published 行」,seed 脚本不种)
+    # 法务文档预置:zh-CN published v1(发布人留空 = 系统预置)
+    # 不可删除:legal/service.py 要求生产必有 published 行;seed 脚本不种
     versions = sa.table(
         "legal_doc_versions",
         sa.column("doc_key", sa.String),
@@ -1371,13 +1371,13 @@ def upgrade() -> None:
         ],
     )
 
-    # 端口池已知占用先入库(与 Settings.ssh_port_excluded 同源;运行期跳过 + 数据兜底)
+    # 已知占用端口预置封禁,必须与 Settings.ssh_port_excluded 同源
     op.execute(
         "INSERT INTO port_allocations (port, instance_id, blocked) VALUES (30500, NULL, true) "
         "ON CONFLICT (port) DO UPDATE SET blocked = true"
     )
 
-    # HOT 更新友好的填充因子(存储参数不入 SQLAlchemy metadata)
+    # fillfactor 存储参数(不入 SQLAlchemy metadata)
     op.execute("ALTER TABLE rate_limit_counters SET (fillfactor=80)")
     op.execute("ALTER TABLE outbox_tasks SET (fillfactor=85)")
 

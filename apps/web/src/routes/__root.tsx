@@ -36,7 +36,7 @@ function AppProviders({ children }: { children: ReactNode }) {
         mode === "dark" ? { algorithm: antdTheme.darkAlgorithm, ...webDarkTheme } : webTheme
       }
     >
-      {/* 全局动效策略:尊重系统减弱动态效果 */}
+      {/* 跟随系统「减弱动态效果」 */}
       <MotionConfig reducedMotion="user">
         <AntApp>{children}</AntApp>
       </MotionConfig>

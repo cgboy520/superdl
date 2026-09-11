@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """文档引用检查(stdlib 零依赖):Markdown 相对链接与反引号仓库路径必须存在。
 
-范围:仓库内全部 *.md(排除 node_modules/.venv/.git/.claude/dist/generated)。检查:
+范围:仓库内全部 *.md(排除 node_modules/.venv/.git/.claude/.trae/dist/generated/.turbo/.pytest_cache)。检查:
 1. Markdown 链接 `[text](target)`:非 http(s)/mailto/纯锚点时按所在目录解析,去掉 `#anchor` 后必须存在。
 2. 反引号内的仓库路径:依次按「文档所在目录 → 仓库根 → apps/api」解析,任一命中即通过;只检查首段是
    仓库顶层目录(apps/packages/deploy/docs/e2e/scripts/.github)或 apps/api 内部目录(app/alembic/tests/scripts)
@@ -14,7 +14,6 @@
 退出码:0 通过;1 有断链(逐条打印 file:line: 说明)。
 """
 
-# ruff: noqa: T201
 from __future__ import annotations
 
 import glob

@@ -26,7 +26,6 @@ async def get_current_user(
     if user is None:
         raise unauthorized()
     if user.status == "deleted":
-        # 已注销:全部在外凭证一律 401
         raise AppError(
             ErrorCode.UNAUTHORIZED,
             key="account.accountDeleted",
@@ -36,7 +35,7 @@ async def get_current_user(
         raise AppError(
             ErrorCode.FORBIDDEN, key="account.userFrozen", http_status=status.HTTP_403_FORBIDDEN
         )
-    # 撤销闸:ver 缺失不给默认值(None ≠ 任何版本 → 401)
+    # 撤销闸:ver 缺失一律视为不匹配(401),不得给默认值
     if payload.get("ver") != user.token_version:
         raise unauthorized()
     request.state.audit_actor = AuditActor("user", str(user.id))

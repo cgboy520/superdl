@@ -7,7 +7,6 @@ export default defineConfig({
   testDir: "./tests",
   // 重链路用例等 worker+reconciler(周期 30s)推进,统一 5min
   timeout: 300_000,
-  // CI 给一次重试;本地 0
   retries: process.env.CI ? 1 : 0,
   use: {
     baseURL: "http://localhost:5173",

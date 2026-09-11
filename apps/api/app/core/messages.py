@@ -1,6 +1,6 @@
 """错误文案目录:AppError(key=...) 的单一事实源。键 `<模块>.<camelCase>`;占位符 `{name}`(导出转
-`{{name}}`);scripts/export_error_messages.py 生成 packages/ui/locales/zh-CN/errors.json,en 手译。
-"""
+`{{name}}`);apps/api/scripts/export_error_messages.py 生成
+packages/ui/locales/zh-CN/errors.json,en 手译。"""
 
 from collections.abc import Mapping
 from typing import Any
@@ -227,7 +227,6 @@ MESSAGES: dict[str, str] = {
     "nodes.storageClassMissing": "集群存储未就绪(缺少 {names}),暂时无法开通;请联系平台运维",
     # 实例编排
     "orchestrator.accessNeedsRunning": "实例运行中才能获取接入信息",
-    # 网关 extAuth 回调的统一拒绝文案(不区分密钥错 / 已吊销 / 不属端点 / 实例未运行)
     "orchestrator.envKeyInvalid": (
         "环境变量名「{name}」不合法:只能用字母、数字和下划线,且不能以数字开头"
     ),
@@ -290,6 +289,7 @@ MESSAGES: dict[str, str] = {
         "CPU 实例的 vCPU 总数将超过上限({max} 核),请释放后再创建或联系客服提额"
     ),
     # 在线服务
+    # 网关 extAuth 回调的统一拒绝文案(不区分密钥错 / 已吊销 / 不属端点 / 实例未运行)
     "services.apiKeyInvalid": "访问密钥无效",
     "services.apiKeyNotFound": "访问密钥不存在",
     "services.apiKeyQuota": "单个服务的访问密钥已达上限({max} 把),请先吊销不用的密钥",

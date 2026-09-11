@@ -63,7 +63,7 @@ spec:
           readinessProbe:
             httpGet: {path: /readyz, port: http}
             periodSeconds: 5
-            timeoutSeconds: 5   # /readyz 含 DB 探测:默认 1s 在 DB 抖动时易误判摘流;放宽到 5s,超时即失败摘流
+            timeoutSeconds: 5   # /readyz 含 DB 探测;超时即失败摘流
             failureThreshold: 3
           lifecycle:
             # preStop 等 Endpoints 摘除传播后再退出

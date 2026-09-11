@@ -1,6 +1,6 @@
 # acme-dns(DNS01 中转)部署与轮换 Runbook
 
-**适用范围:full 档**(`environments/full.yaml` `acmeDns.enabled=true`)。**light 档不启用**(`environments/light.yaml` `acmeDns.enabled=false`):把现成通配证书手工灌成 `superdl/superdl-jupyter-wildcard-tls`,不签发、不续签,本文步骤不适用。
+**适用范围:full 档**(`environments/full.yaml` `acmeDns.enabled=true`)。**light 档不启用**(`environments/light.yaml` `acmeDns.enabled=false`):把现成通配证书手工灌成 `superdl/superdl-jupyter-wildcard-tls` 与 `superdl/superdl-svc-wildcard-tls`,不签发、不续签,本文步骤不适用。
 
 两张泛域名证书(Jupyter `*.app.<域>`、服务端点 `*.svc.<域>`,见 `../../app/k8s/05-cert-manager.yaml`)走 DNS-01:cert-manager 内置 acmeDNS solver(HTTP 注册/更新 API 写 TXT)→ acme-dns(凭据仅可更新自己子域的 TXT)→ 主域 DNS 一次性 CNAME 委托。
 

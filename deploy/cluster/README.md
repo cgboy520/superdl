@@ -36,7 +36,7 @@ full 档另需 `cert-manager/acme-dns-account`(DNS01 账户,见 `runbooks/acme-d
 
 **升级 Envoy Gateway**:`helmfile.yaml.gotmpl`、`gateway-api-crds.sh` 与 `scripts/check-gateway-manifests.py` 三处版本号一起改,再**先 `./gateway-api-crds.sh` 升 CRD,后 `./apply.sh <full|light> -l name=envoy-gateway` 升控制面**。
 
-入口的**配置**在 `../app/k8s/04-gateway.yaml`(GatewayClass / 6 个 listener / 4 条平台路由 / 7 条策略;数据面 Envoy 的副本与资源在那里的 `EnvoyProxy`);本目录 `values/envoy-gateway.yaml` 只管**控制面**。
+入口的**配置**在 `../app/k8s/04-gateway.yaml`(GatewayClass / 6 个 listener / 5 条路由 / 7 条策略;数据面 Envoy 的副本与资源在那里的 `EnvoyProxy`);本目录 `values/envoy-gateway.yaml` 只管**控制面**。
 
 **light 档单机**:租户 Jupyter 一实例一条 HTTPRoute,给足 `EnvoyProxy` 的 memory limit 或对单机实例数设硬上限,取值实机压过再定。
 

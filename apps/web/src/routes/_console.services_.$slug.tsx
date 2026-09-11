@@ -141,7 +141,6 @@ function OverviewTab({ service }: { service: ServiceOut }) {
               {
                 label: t("services.detail.argsLabel"),
                 span: { xs: 1, sm: 2 },
-                // 一行一个参数
                 children:
                   c?.container_args && c.container_args.length > 0 ? (
                     <Space orientation="vertical" size={2}>

@@ -352,7 +352,7 @@ function BillingCell({
       <Space size={6}>
         <SpotReclaimTag market={r.market} />
         <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-          {/* 日消费查询失败时每行显示假 ¥0.00,与详情页同口径走 moneyOr */}
+          {/* 查询未就绪走 moneyOr 显「—」,不显假 ¥0.00(与详情页同口径) */}
           {t("instances.todayCost", {
             amount: moneyOr(formatMoney(todayByInstance.get(r.id)), dailyReady),
           })}

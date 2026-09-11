@@ -18,7 +18,7 @@ GPU 算力租赁平台:租户按量租用整卡 / MIG / 共享 GPU 容器实例(
 
 ## 快速开始
 
-前置:Docker、uv、Python 3.13、Node 24、pnpm 11(版本见 `.python-version` / `.node-version` / `package.json`)。
+前置:Docker、uv、Python 3.13、Node 24、pnpm 11(版本见 `.python-version`、`package.json` 与 CI workflow)。
 
 ```bash
 # 1. 本地依赖(PostgreSQL 18 + mock 短信/支付)

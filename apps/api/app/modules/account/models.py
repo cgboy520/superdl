@@ -13,7 +13,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    # 注销匿名化后改写为 del:{id}:{随机 16 hex},故宽于 20
+    # 注销匿名化后改写为 del:{id}:{随机 16 hex}
     phone: Mapped[str] = mapped_column(String(40), unique=True)
     password_hash: Mapped[str | None] = mapped_column(String(128))
     status: Mapped[str] = mapped_column(String(16), default="active")  # active / frozen / deleted
@@ -39,7 +39,7 @@ class UserQuotaOverride(Base):
     max_gpus: Mapped[int | None]
     max_instances: Mapped[int | None]
     max_disks: Mapped[int | None]
-    note: Mapped[str] = mapped_column(String(200))  # 覆盖原因(必填,运营留痕)
+    note: Mapped[str] = mapped_column(String(200))  # 覆盖原因(必填)
     updated_by: Mapped[int]  # admin_users.id
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 

@@ -102,7 +102,7 @@
 | Alertmanager webhook | IP | 120 次/分;报文 ≤1 MiB;≤500 条;字符串截 1024 | `notify/router.py` |
 | 节点注册脚本 / bootstrap / progress | IP | 30 / 30 / 60 次/分 | `nodes/enroll_router.py` |
 | 工单创建 | 用户 | 5 次/时 | |
-| 实例日志 | 用户 | 20 次/时;tail 默认 200、≤2000 行;since ≤86400s;K8s 读 5s 超时 | `orchestrator/service.py` |
+| 实例日志 | 用户 | 20 次/时;tail 默认 200、≤2000 行;K8s 读 5s 超时 | `orchestrator/service.py` |
 | 指标批量端点 | 用户 | 前 20 台 running 实例 | `metering/service.py` |
 
 ## 分页与批量上限

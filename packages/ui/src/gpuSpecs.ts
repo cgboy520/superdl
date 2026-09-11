@@ -28,7 +28,6 @@ export const gpuSpecs: Record<string, GpuSpec> = {
 /** 可选卡数档位(市场筛选与创建页共用);SKU 上限不在档位内时创建页补一档。 */
 export const GPU_COUNT_STEPS: readonly number[] = [1, 2, 4, 8];
 
-/** 型号串归一:去空格/连字符,大写。 */
 export function normalizeGpuModel(model: string): string {
   return model.replace(/[\s-]/g, "").toUpperCase();
 }

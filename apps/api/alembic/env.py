@@ -20,7 +20,7 @@ target_metadata = Base.metadata
 
 
 def get_url() -> str:
-    # 优先读 env(prod 迁移 Job 只挂 superdl-db,不构造完整 Settings);未设时回落 Settings
+    # 必须优先读 SUPERDL_DATABASE_URL:prod 迁移 Job 只注入该变量;未设时回落 Settings
     return os.environ.get("SUPERDL_DATABASE_URL") or get_settings().database_url
 
 

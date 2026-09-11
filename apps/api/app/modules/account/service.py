@@ -54,7 +54,7 @@ MOCK_SMS_CODE = "123456"
 # 单条验证码失败次数上限,达到即作废
 MAX_SMS_CODE_ATTEMPTS = 5
 
-# 同号发送退避指数上限:第 N 条未消费验证码的间隔 = 60s × 2^min(N-1, 上限);消费后归零
+# 同号发送退避指数上限:第 N 条未消费验证码的间隔 = 基础间隔 × 2^min(N-1, 上限);消费后归零
 SMS_SEND_BACKOFF_MAX_EXPONENT = 3
 
 # 验证码日配额,按「消费」计(见 _consume_sms_code)
@@ -179,7 +179,6 @@ async def _consume_sms_code(session: AsyncSession, phone: str, code: str, purpos
     if not any(matched):
         row.attempts += 1
         if row.attempts >= MAX_SMS_CODE_ATTEMPTS:
-            # 达上限即作废
             row.used_at = now_utc()
         await session.commit()
         raise AppError(ErrorCode.SMS_CODE_INVALID, key="account.smsCodeInvalid")
@@ -414,7 +413,7 @@ async def refresh_tokens(session: AsyncSession, refresh_token: str) -> TokenPair
         raise unauthorized()
     if user.status == "deleted":
         raise unauthorized(key="account.accountDeleted")
-    # 撤销闸:ver 缺失不给默认值(None ≠ 任何版本 → 401)
+    # 撤销闸:ver 缺失一律视为不匹配(401),不得给默认值
     if payload.get("ver") != user.token_version:
         raise unauthorized()
     jti = str(payload.get("jti", ""))
@@ -522,7 +521,6 @@ async def submit_real_name(session: AsyncSession, user: User, name: str, id_numb
         raise conflict(key="account.realNameDone")
     cfg = await get_effective_platform_config(session)
     if cfg["real_name_enabled"] != "true":
-        # 安全策略未开通实名:409
         raise AppError(
             ErrorCode.REAL_NAME_DISABLED,
             key="account.realNameDisabled",
@@ -685,7 +683,6 @@ async def admin_list_users(
         if len(q) >= 11:
             stmt = stmt.where(User.phone == q)
         else:
-            # LIKE 元字符转义
             stmt = stmt.where(User.phone.like(f"%{like_escape(q)}", escape="\\"))
     last_id = decode_cursor_int(cursor)
     if last_id is not None:
@@ -812,7 +809,6 @@ async def request_deletion(
 ) -> AccountDeletionRequest:
     """申请注销(7 天冷静期)。幂等:已有 pending 直接返回既有(部分唯一索引兜底并发)。"""
     if user.phone != phone:
-        # 键入手机号须与账号一致
         raise AppError(ErrorCode.VALIDATION_ERROR, key="account.deletionPhoneMismatch")
     existing = await _pending_deletion_of_user(session, user.id)
     if existing is not None:
@@ -893,7 +889,7 @@ async def admin_list_deletion_requests(
     session: AsyncSession, status_: str | None = None
 ) -> list[AdminDeletionRequestOut]:
     """注销申请列表(固定截断),行内附执行前校验计数。"""
-    # 延迟 import 防循环:orchestrator.service → account.service
+    # 必须延迟 import:orchestrator.service 与本模块循环依赖
     from app.modules.billing import service as billing_service
     from app.modules.orchestrator import service as orchestrator_service
 
@@ -928,7 +924,7 @@ async def admin_list_deletion_requests(
 
 async def admin_get_deletion_out(session: AsyncSession, request_id: int) -> AdminDeletionRequestOut:
     """单条注销申请的管理端视图(approve/reject 响应复用)。"""
-    # 延迟 import 防循环:orchestrator.service → account.service
+    # 必须延迟 import:orchestrator.service 与本模块循环依赖
     from app.modules.billing import service as billing_service
     from app.modules.orchestrator import service as orchestrator_service
 
@@ -969,7 +965,7 @@ async def approve_deletion(
     """执行注销(仅超管)。冷静期未满 409;残留资源/余额非零 → 自动驳回 + 409;
     全通过则同事务匿名化:手机号改写为随机占位串、实名字段清空、token_version+1、status=deleted。
     """
-    # 延迟 import 防循环:orchestrator.service → account.service
+    # 必须延迟 import:orchestrator.service 与本模块循环依赖
     from app.modules.billing import service as billing_service
     from app.modules.orchestrator import service as orchestrator_service
 

@@ -388,7 +388,6 @@ function Overview() {
   const { t } = useTranslation();
   const { formatMoney } = useFormat();
   const oversellQ = useOversellReport();
-  // 总览聚合:精确 COUNT
   const ovQ = useOverview();
   const revenueQ = useRevenueReport();
   // 「告警(总)」 = 未确认告警精确计数

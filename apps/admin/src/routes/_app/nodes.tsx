@@ -72,10 +72,8 @@ const PHASE_LABEL = {
   joined: "nodes.phase.joined",
 } as const;
 
-// 热力格取色 packages/ui heatColors
 const HEAT_COLORS = { idle: adminColors.gridLine, ...heatColors };
 
-// 图例档 → 文案键
 const HEAT_LEGEND_KEY = {
   idle: "nodes.heatLegend.idle",
   low: "nodes.heatLegend.low",
@@ -210,7 +208,6 @@ function NodeMetricsPanel({
   const gpus = metrics?.gpus ?? [];
   const chart = (key: "util" | "mem_used_mb", title: string, unit: string) => (
     <Card size="small" title={title}>
-      {/* 轴/图例/tooltip 与 series 色板走 noc 主题 */}
       <EChart
         style={{ height: 200 }}
         theme="noc"
@@ -640,7 +637,6 @@ function NodesPage() {
           }),
         );
         void qc.invalidateQueries({ queryKey: ["admin", "nodes"] });
-        // queued=true:3s 后补拉一次
         if ((r as { queued?: boolean }).queued) {
           cordonTimer.current = setTimeout(
             () => void qc.invalidateQueries({ queryKey: ["admin", "nodes"] }),

@@ -126,7 +126,7 @@ export const SERVICE_FILTER_STATUSES: readonly ServiceStatus[] = (
   Object.keys(serviceStatusMap) as ServiceStatus[]
 ).filter((s) => s !== "released");
 
-/** 购买模式,与 instances.market 严格一致(后端 core/pricing.py MARKETS);与 tier 正交。 */
+/** 购买模式,与 instances.market 严格一致(后端 core/pricing.py MARKET_* 常量);与 tier 正交。 */
 export type Market = "on_demand" | "spot" | "subscription";
 
 export const marketMap = {

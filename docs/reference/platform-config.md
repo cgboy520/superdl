@@ -28,6 +28,5 @@
 - 读取接口只回配置状态与尾 4 位预览;审计 detail 只落键名与 reason。
 - 凭据不下放 ops:平台配置三端点仅 `admin`;ops 生成注册命令时由服务端代读。
 - 不入配置中心:`payment_mock`、prod 下 `sms_provider≠mock`、JWT/DB/域名等基础设施配置只走 env 且保留 prod fail-fast;写入侧拒绝 prod 下 `sms_provider=mock`(`prod_forbidden`)。环境无关不变量 `real_name_required_for_recharge=true ⇒ real_name_enabled=true`(`_check_real_name_invariant`,与 `Settings._validate_invariants` 同口径)。
-- K8s Secret 注入的 env 是默认值层,DB 覆盖用于运营自助与轮转。
 - 渠道工厂异步取生效配置:`get_channel(name, session)` / `get_sms_channel(session)` / `get_realname_provider(session)`;微信与支付宝渠道实例按配置指纹缓存。
 - 备案号由 `site-config` 运行期下发,不进构建期 env。

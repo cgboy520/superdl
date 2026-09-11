@@ -2,10 +2,10 @@
 
 两件事:
 1. `/superdl-bootstrap` handler:一次性票据(code + exp + sig,验签密钥 = Jupyter token
-   本体)核销 → Set-Cookie 第一方会话 cookie → 302 进 Jupyter。token 因此不出现在
-   URL(访问日志/浏览器历史/Referer 不沉淀长效凭据);票据单次、短 TTL,泄漏窗口极小。
+   本体)核销 → Set-Cookie 第一方会话 cookie → 302 进 Jupyter。token 不进 URL;
+   票据单次、短 TTL。
 2. `SuperDLIdentityProvider`:stock 的 ?token=/Authorization 之外,接受上述 cookie。
-   任一环节异常一律回落 stock token 鉴权(?token= 链接依旧可用),不造成可用性回退。
+   任一环节异常一律回落 stock token 鉴权(?token= 链接依旧可用)。
 """
 
 import hashlib

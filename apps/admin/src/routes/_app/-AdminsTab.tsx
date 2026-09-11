@@ -120,7 +120,6 @@ export function AdminsTab() {
     {
       title: t("admins.colActions"),
       key: "actions",
-      // 操作列定宽 + wrap
       width: 420,
       render: (_: unknown, row: AdminAccountOut) => {
         const isSelf = row.id === me?.id;

@@ -177,7 +177,6 @@ function ReconciliationCard() {
       title={t("finance.reconTitle")}
       extra={
         <Space>
-          {/* 禁选未来日期 */}
           <DatePicker
             value={day}
             onChange={(d) => d && setDay(d)}
@@ -190,7 +189,6 @@ function ReconciliationCard() {
         </Space>
       }
     >
-      {/* 查询失败明示错误 */}
       {isError && (
         <Alert
           type="error"
@@ -213,7 +211,6 @@ function ReconciliationCard() {
             value={report ? report.diff_pct : "—"}
             suffix={report ? "%" : undefined}
             styles={{
-              // 无数据不染色
               content:
                 report == null
                   ? undefined
@@ -525,7 +522,6 @@ function AdjustmentsTab() {
             disabled={!writable}
             onClick={() => {
               setCreating(true);
-              // 打开时复活草稿
               const d = draft.load();
               if (d) form.setFieldsValue(d);
             }}
@@ -1146,7 +1142,7 @@ function RefundsTab() {
         hasNextPage={Boolean(hasNextPage)}
         loading={isFetchingNextPage}
         isError={isFetchNextPageError}
-        // 渠道过滤激活时不展示 LoadMore 计数,由下方一行并列两个口径
+        // 渠道过滤时隐藏计数,改由下方汇总行展示
         loadedCount={channel ? undefined : all.length}
         onLoadMore={() => void fetchNextPage()}
       />
@@ -1246,7 +1242,6 @@ function InvoicesTab() {
     ...(revealReason !== null ? { reveal: true, reason: revealReason } : {}),
   };
   const { data, queryKey, isLoading, isError, error, refetch } = useInvoices(params);
-  // 导出与表格共用同一份 params
   const { doExport, exporting } = useCsvExport((tz, lang) => exportInvoicesCsv(params, tz, lang));
   const rows: InvoiceRow[] = data ?? [];
   const [issueTarget, setIssueTarget] = useState<InvoiceRow | null>(null);

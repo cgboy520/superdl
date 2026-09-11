@@ -1,4 +1,4 @@
-/** 系统设置:策略参数(env 默认 + DB 覆盖,保存需原因)/ 公告发布(群发 active 租户)/ 管理员账号。 */
+/** 系统设置:策略参数(env 默认 + DB 覆盖,保存需原因)/ 公告发布(群发 active 租户)/ 法务文档 / 管理员账号。 */
 
 import { adminColors, announcementStatusMap, fontSize, formatDateTime, idemKeyOf, metaOf } from "@superdl/ui";
 import { HexTag, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
@@ -119,7 +119,6 @@ function PoliciesTab() {
         style={{ marginBottom: 12 }}
         title={t("settings.instantEffect")}
       />
-      {/* 查询失败明示错误 */}
       {isError && (
         <Alert
           type="error"
@@ -165,7 +164,6 @@ function PoliciesTab() {
                 style={{ width: 140 }}
                 disabled={!writable}
                 stringMode
-                // min~max 同时落到输入约束
                 min={r.spec?.min}
                 max={r.spec?.max}
                 placeholder={r.effective}
@@ -288,7 +286,6 @@ function AnnouncementTab() {
           loading={publish.isPending}
           disabled={!writable}
           onClick={() => {
-            // 二次确认后群发
             modal.confirm({
               title: t("settings.confirmAnnounce"),
               content: t("settings.confirmAnnounceDetail", {

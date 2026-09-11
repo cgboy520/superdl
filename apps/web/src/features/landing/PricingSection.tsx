@@ -31,7 +31,7 @@ export function PricingSection() {
   const { data: skus, isLoading, isError } = useSkus({ refetchInterval: 60_000 });
 
   const groups = useMemo<ModelGroup[]>(() => {
-    // 只排 GPU 规格,CPU 档跳过
+    // tab 只有 dedicated/shared 两档,CPU 规格不进
     const inTab = (skus ?? []).filter((s) => s.tier === tab);
     const freeByModel = dedupAvailableByModel(inTab);
     const byModel = new Map<string, SkuMarketOut[]>();

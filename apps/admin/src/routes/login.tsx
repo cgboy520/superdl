@@ -68,7 +68,6 @@ function MfaVerifyForm({ ticket }: { ticket: string }) {
       <Button type="primary" htmlType="submit" block loading={verify.isPending}>
         {t("login.mfaVerify")}
       </Button>
-      {/* 切换码型清空已输入 */}
       <Button
         type="link"
         block
@@ -144,7 +143,6 @@ function MfaSetupForm({ ticket }: { ticket: string }) {
         {begin.data ? (
           <QRCode value={begin.data.otpauth_uri} size={168} />
         ) : begin.isError ? (
-          // 密钥下发失败给重试
           <Space orientation="vertical" size={8}>
             <Typography.Text type="danger">{errText(begin.error, t("login.failed"))}</Typography.Text>
             <Button size="small" onClick={() => beginSetup({ ticket })}>
@@ -210,7 +208,6 @@ function LoginPage() {
         position: "relative",
       }}
     >
-      {/* 语言切换,dark 变体 */}
       <div style={{ position: "absolute", top: 16, insetInlineEnd: 24 }}>
         <LangSwitcher variant="dark" />
       </div>
@@ -231,7 +228,6 @@ function LoginPage() {
             ) : (
               <MfaVerifyForm ticket={challenge.ticket} />
             )}
-            {/* 换号/放弃 MFA 清挑战票 */}
             <Button type="link" block onClick={() => setChallenge(null)}>
               {t("login.backToLogin")}
             </Button>

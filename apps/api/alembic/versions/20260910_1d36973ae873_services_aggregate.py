@@ -1,9 +1,9 @@
 """在线服务聚合根:services 表、instances 服务快照列、密钥归属改服务、删 service_endpoints。
 
-数据影响:service_endpoints 每行升格为一条 services(含已释放实例的端点,作已删除服务保留,
-账单与密钥归属可查);instances 的 service_* 快照列从端点行回填;service_api_keys.instance_id
-改为 service_id 后删列;service_endpoints 整表删除。create_instance 的幂等指纹因参数集变化
-而变形,发布前 24h 内带 Idempotency-Key 建过实例的重试会 409(同键异参)。
+数据影响:service_endpoints 每行升格为一条 services(含已释放实例,作已删除服务保留归属);
+instances 的 service_* 快照列从端点行回填;service_api_keys.instance_id 改为 service_id
+后删列;service_endpoints 整表删除。create_instance 幂等指纹随参数集变形:发布前 24h 内
+带 Idempotency-Key 的建实例重试会 409(同键异参)。
 
 Revision ID: 1d36973ae873
 Revises: 1620c05976ce
@@ -103,7 +103,7 @@ def upgrade() -> None:
             """
         )
     )
-    # 找不到归属服务的密钥行(端点行缺失的孤儿)随端点表一起消失
+    # 删除孤儿密钥行(无端点归属)
     op.execute(sa.text("DELETE FROM service_api_keys WHERE service_id IS NULL"))
 
     op.alter_column("service_api_keys", "service_id", nullable=False)

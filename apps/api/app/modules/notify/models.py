@@ -14,8 +14,9 @@ class Notification(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     user_id: Mapped[int | None] = mapped_column(index=True)
     type: Mapped[str] = mapped_column(String(32), index=True)
-    # account / instance / balance_warn / arrears / gpu_fault / announcement / admin_alert
-    # / subscription / preempted / ticket / invoice / refund
+    # account / adjust / admin_alert / announcement / arrears / balance_warn / consume
+    # / gpu_fault / instance / invoice / preempted / recharge / refund / service
+    # / subscription / ticket
     title: Mapped[str] = mapped_column(String(128))
     content: Mapped[str] = mapped_column(Text)
     # 结构化跳转目标(通知中心深链):instance 类 = 实例 uuid,ticket 类 = 工单 id;无目标恒空

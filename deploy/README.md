@@ -13,7 +13,7 @@
 唯一入口 `SUPERDL_IMAGE_PREFIX=harbor.<域>/superdl scripts/release.sh <tag>`,禁止绕过脚本手改清单 tag:
 准入策略断言 → 迁移 Job → kustomize 渲染后替换占位 `CHANGE_IMAGE_PREFIX`、平台镜像钉**不可变 digest** 再 apply → rollout status → 经网关从集群外 GET `/readyz`;任一步失败即非零退出。
 
-1. `helmfile -e <full|light> apply`(cluster/,先 `./preflight.sh`;双档见 `cluster/README.md`)→ 按 `app/secrets.example.yaml` 建分域 Secret(`superdl-db`/`superdl-auth`/`superdl-crypto`/`superdl-metrics`/`superdl-edge`/`superdl-cloud`/`superdl-payment`/`superdl-registry`)与 `superdl-registry-pull`(Harbor 拉取机器人;项目 public 可省)。字段清单见 `app/k8s/00-namespace-config.yaml`(非密)与 `app/secrets.example.yaml`(密),prod 必配项以 `docs/reference/security.md` 的 `_validate_prod` 清单为准
+1. `helmfile -e <full|light> apply`(cluster/,先 `./preflight.sh`;双档见 `cluster/README.md`)→ 按 `app/secrets.example.yaml` 建分域 Secret(`superdl-db`/`superdl-auth`/`superdl-crypto`/`superdl-metrics`/`superdl-edge`/`superdl-cloud`/`superdl-payment`/`superdl-registry`/`superdl-pg-backup`)与 `superdl-registry-pull`(Harbor 拉取机器人;项目 public 可省)。字段清单见 `app/k8s/00-namespace-config.yaml`(非密)与 `app/secrets.example.yaml`(密),prod 必配项以 `docs/reference/security.md` 的 `_validate_prod` 清单为准
 2. 打 tag:`gh release create vX.Y.Z --generate-notes`(不维护 CHANGELOG)。tag 触发 `.github/workflows/release.yml`:CI 闸门复跑 → 构建 api/web/admin 三镜像 + Trivy 扫描 + 推 Harbor(仓库 secrets `HARBOR_HOST` / `HARBOR_ROBOT_NAME` / `HARBOR_ROBOT_SECRET`,variables `HARBOR_PROJECT` 缺省 superdl)。api 镜像三环境同一产物;mock 支付回调路由仅在非 prod 注册
 3. `SUPERDL_IMAGE_PREFIX=harbor.<域>/superdl scripts/release.sh vX.Y.Z`(前置工具:`kubectl` + `crane` / `skopeo` / `docker buildx` 三选一,需对 Harbor 有读权限且已 `docker login`;三个都没有即拒绝发布):
    - 第 0 步断言七条准入策略的 Policy 与 Binding 都在且 `validationActions` 含 Deny;

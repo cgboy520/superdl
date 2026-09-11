@@ -302,7 +302,6 @@ function CreatePage() {
   };
 
   const doCreate = async () => {
-    // 类型收窄到 string
     if (!imageRef) return;
     setSubmitting(true);
     // 幂等键由参数派生且失败不轮换
@@ -487,7 +486,7 @@ function CreatePage() {
                         showSearch
                       />
                       <Typography.Text type="secondary">
-                        {/* CPU 规格落无卡机,平台镜像不在那儿预热,不能对它承诺秒级启动 */}
+                        {/* CPU 规格无预热镜像,不承诺秒级启动 */}
                         {isCpu ? t("create.prewarmedNotForCpu") : t("create.prewarmed")}
                       </Typography.Text>
                     </>
@@ -613,7 +612,7 @@ function CreatePage() {
               <PeriodQuoteRows quote={quote} gpuCount={gpuCount} cpu={isCpu} />
             ) : (
               <span>
-                {/* 竞价档摊开的是折后单价:结算条大字与明细报两个不同的数,只会让人以为算错了 */}
+                {/* 竞价档摊开折后单价,与结算条大字同数 */}
                 {isCpu
                   ? t("create.detailInstanceLineCpu", { total: formatHourlyPrice(hourlyTotal) })
                   : t("create.detailInstanceLine", {

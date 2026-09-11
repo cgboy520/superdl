@@ -94,7 +94,7 @@ metadata:
   namespace: superdl
   labels: {app: superdl-admin}
 spec:
-  replicas: 2   # 与 web 对齐:单副本时节点维护即管理端中断(应急处理入口,可用性要求不低于用户端)
+  replicas: 2   # 与 web 对齐:管理端是应急处理入口,可用性要求不低于用户端
   selector:
     matchLabels: {app: superdl-admin}
   template:
