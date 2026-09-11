@@ -1,48 +1,46 @@
 # 配额、限流与保留期
 
-平台对用户与运维施加的全部数字型限制,按「哪里能改」分层。数值以代码为准,这里给出承载它的位置;
-改默认值时同步本页。三层配置链:用户级覆盖(`user_quota_overrides`)→ 策略参数(`policy_overrides`,管理端在线改)
-→ env 默认(`SUPERDL_*`,`app/core/config.py`);未标注的即代码常量。
+平台对用户与运维施加的全部数字型限制,按「哪里能改」分层。数值以代码为准,这里给出承载位置;改默认值时同步本页。三层配置链:用户级覆盖(`user_quota_overrides`)→ 策略参数(`policy_overrides`,管理端在线改)→ env 默认(`SUPERDL_*`,`app/core/config.py`);未标注的即代码常量。
 
 ## 每用户配额
 
 | 项 | 默认 | 可调范围 | 承载 |
 |---|---|---|---|
 | 实例数 | 10 | 1~1000 | 用户覆盖 → 策略 `max_instances_per_user` → env |
-| GPU 总数 | 8 | 1~1024 | 同上 `max_gpus_per_user`(只计 GPU 实例;CPU 实例 gpu_count=0,不计入这一维) |
-| CPU 实例 vCPU 总数 | 64 | 1~4096 | 策略 `max_vcpus_per_user`(无用户级覆盖列;只计 `gpu_count=0` 的实例,GPU 实例不计入)。超限报 `orchestrator.vcpuQuota`(ErrorCode 为 `VALIDATION_ERROR`) |
+| GPU 总数 | 8 | 1~1024 | 同上 `max_gpus_per_user`(只计 GPU 实例) |
+| CPU 实例 vCPU 总数 | 64 | 1~4096 | 策略 `max_vcpus_per_user`(无用户级覆盖;只计 `gpu_count=0` 的实例)。超限报 `orchestrator.vcpuQuota`(ErrorCode `VALIDATION_ERROR`) |
 | 数据盘数 | 20 | 1~1000 | 同上 `max_disks_per_user` |
 | 单盘容量 | 10~4096 GB | 下限 1~1024,上限 10~65536 | 策略 `disk_min_gb` / `disk_max_gb` |
-| 单实例 GPU 数 | 按 SKU `max_gpus_per_instance`(UI 给 1/2/4/8;CPU 规格为 0,只收 `gpu_count=0`) | — | `skus` |
-| 单个 GPU 节点让给 CPU 实例的 vCPU | 16 | 0~1024 | 策略 `gpu_node_cpu_instance_vcpu_cap`;0 = 不许 CPU 实例落 GPU 节点(pool≠cpu 的 CPU 规格一律判无容量)。近似库存口径,见 [catalog.md](./catalog.md) |
+| 单实例 GPU 数 | 按 SKU `max_gpus_per_instance`(UI 给 1/2/4/8;CPU 规格为 0) | — | `skus` |
+| 单个 GPU 节点让给 CPU 实例的 vCPU | 16 | 0~1024 | 策略 `gpu_node_cpu_instance_vcpu_cap`;0 = 不许 CPU 实例落 GPU 节点。近似库存口径,见 [catalog.md](./catalog.md) |
 | 进行中工单 | 10 | — | `tickets/service.py` `MAX_OPEN_TICKETS` |
 | SSH 公钥 | 不限;同用户指纹唯一 | — | `ssh_keys` |
 | 容器临时存储 | 请求 2Gi,上限 64Gi | — | `core/k8s/real.py` |
 | 单服务活跃 API Key | 20 | — | `services/service.py` `MAX_API_KEYS_PER_SERVICE`;吊销的不计 |
 | 单服务在途版本更新 | 1 | — | `services/service.py` `create_revision`:`rollout_instance_id` 非空即 409;包周期服务不开放 |
-| 对外服务端点限流 | 20 rps/端点 | — | **生效在网关的本地令牌桶里**(挂 `svc-https` listener 的 `BackendTrafficPolicy`,桶按路由分),限额手工渲染进 `deploy/app/k8s/04-gateway.yaml` 清单,不回源平台配置 —— 改值 = 改清单重新下发。见 [services.md](./services.md) |
+| 对外服务端点限流 | 20 rps/端点 | — | 生效在网关本地令牌桶(挂 `svc-https` listener 的 `BackendTrafficPolicy`,桶按路由分),限额手工写在 `deploy/app/k8s/04-gateway.yaml`,改值 = 改清单重新下发。见 [services.md](./services.md) |
 
-集群级:SSH NodePort 端口池 30000~32767(排除 30500),即单集群最多约 2767 台**带 SSH 的**实例 —— 服务型实例默认 `with_ssh=false`,不进这个池,不占这段名额(`SUPERDL_SSH_PORT_RANGE_START` / `SUPERDL_SSH_PORT_RANGE_END`,排除集 `SUPERDL_SSH_PORT_EXCLUDED` 默认 `{30500}`;运行期撞占的端口标 blocked 并周期复检放回,水位见 `GET /api/admin/v1/nodes/port-pool`)。分配在段内**随机**(复用与扩段都不按升序):顺序分配会让在用 SSH 入口恒聚低段、可枚举。
+集群级:SSH NodePort 端口池 30000~32767(排除 30500),即单集群最多约 2767 台**带 SSH 的**实例(服务型实例默认 `with_ssh=false`,不进池;`SUPERDL_SSH_PORT_RANGE_START` / `SUPERDL_SSH_PORT_RANGE_END`,排除集 `SUPERDL_SSH_PORT_EXCLUDED` 默认 `{30500}`;撞占的端口标 blocked 并周期复检放回,水位见 `GET /api/admin/v1/nodes/port-pool`)。分配在段内**随机**。
 
 ## 计费与回收时钟
 
 | 项 | 默认 | 承载 |
 |---|---|---|
 | 开户前余额须覆盖的小时数 | 1h | 策略 `afford_cover_hours`(1~24) |
-| 低余额预警阈值 | 预估可用 <24h | 只存 `users.low_balance_warn_hours`(用户在 1~168h 内自设,默认 24);不设平台级策略键 |
+| 低余额预警阈值 | 预估可用 <24h | `users.low_balance_warn_hours`(用户 1~168h 自设,默认 24);无平台级策略键 |
 | 欠费冻结到回收 | 72h | 策略 `freeze_grace_hours`(1~720) |
-| 包周期到期冻结到回收 | 72h | 复用同一个 `freeze_grace_hours`,与欠费同款 |
-| 包日 / 包周 / 包月 / 包年折扣 | 95 / 90 / 80 / 70(百分数,80 = 8 折) | 策略 `period_discount_day` / `period_discount_week` / `period_discount_month` / `period_discount_year`(各 50~100)。**上界 100 = 不打折,不设加价档**。经 `GET /api/v1/policies` 下发,前端禁止硬编码 |
+| 包周期到期冻结到回收 | 72h | 复用 `freeze_grace_hours` |
+| 包日 / 包周 / 包月 / 包年折扣 | 95 / 90 / 80 / 70(百分数,80 = 8 折) | 策略 `period_discount_day` / `period_discount_week` / `period_discount_month` / `period_discount_year`(各 50~100)。经 `GET /api/v1/policies` 下发,前端禁止硬编码 |
 | 包周期到期预警 | 到期前 3 天 | 策略 `period_expire_warn_days`(1~30);短信 + 站内信,每个到期时刻至多一条(去重锚点 `subscriptions.warned_for_expiry`) |
-| 包周期定长小时 | 日 24 / 周 168 / 月 720 / 年 8760 | `core/pricing.py` `PERIOD_HOURS`,常量不可在线改:到期时刻与定价同源,改它等于同时改价与改到期口径 |
-| 单次下单 / 续费的周期数 | 1~36 | `core/pricing.py` `MAX_PERIOD_COUNT`;契约层同值。用户可控的乘数,不封顶一次请求就能算出溢出 `numeric(14,2)` 的应付额 |
-| 竞价折扣 | 40(百分数,40 = 4 折) | 策略 `spot_discount_pct`(10~90)。**上界 90 = 至少打九折**。经 `GET /api/v1/policies` 下发,前端禁止硬编码 |
-| 抢占宽限窗 | 60s | 策略 `spot_grace_seconds`(静态区间 30~600),**另有比它更紧的跨键上限,见下**;同样经 `/policies` 下发(知情同意里那句「提前 N 秒通知」取它) |
-| 包周期到期巡检 | 30min 一轮 | `workers/main.py` `subscription_patrol`(worker `core` 组件) |
+| 包周期定长小时 | 日 24 / 周 168 / 月 720 / 年 8760 | `core/pricing.py` `PERIOD_HOURS`,常量 |
+| 单次下单 / 续费的周期数 | 1~36 | `core/pricing.py` `MAX_PERIOD_COUNT`;契约层同值 |
+| 竞价折扣 | 40(百分数,40 = 4 折) | 策略 `spot_discount_pct`(10~90)。经 `GET /api/v1/policies` 下发 |
+| 抢占宽限窗 | 60s | 策略 `spot_grace_seconds`(静态区间 30~600),**另有跨键上限,见下**;经 `/policies` 下发 |
+| 包周期到期巡检 | 30min | `workers/main.py` `subscription_patrol`(worker `core` 组件) |
 | 数据盘欠费宽限 / 冻结 | 7 天 / 30 天 | 策略 `disk_grace_days` / `disk_frozen_days`(各 1~365) |
 | 数据盘单价 | 0.0350 元/GB·月 | 策略 `disk_price_gb_month`(0.0010~1.0000),建盘时快照 |
 | failed 实例保留 | 7 天后回收 | env `failed_retention_days` |
-| stopped 实例保留 | 30 天后回收,提前 7 天预警(停机的在线服务同受此约束:版本实例被回收即服务删除) | env `stopped_retention_days` / `stopped_retention_warn_days` |
+| stopped 实例保留 | 30 天后回收,提前 7 天预警(停机的在线服务同受此约束) | env `stopped_retention_days` / `stopped_retention_warn_days` |
 | creating 超时 | 300s → failed 退款 | env `creating_timeout_seconds` |
 | running 持续 not-ready 判失联 | 600s(须宽于 unreachable toleration 300s) | env `running_unready_timeout_seconds` |
 | stopping / releasing 悬挂 | 各 600s,一档重发删除、二档强删 | env `stopping_timeout_seconds` / `releasing_timeout_seconds` |
@@ -50,8 +48,8 @@
 | 小时结算追平上限 | 72h / 14 天,超出登记缺口 | `billing/settlement.py` |
 | 单对象结算连续失败 | 3 轮进死信缺口 | 同上 `DEAD_LETTER_AFTER` |
 | 充值单有效期 | 2h | env `recharge_order_ttl_seconds` |
-| 查单 poller 扫描窗 | 60s ~ 48h 内的 pending / failed / closed 单(closed 按关单时刻界定),每轮 50 条 | `billing/payment_service.py` |
-| 创建类幂等键窗口 | 24h(实例 / 数据盘;窗外同键按新单) | `core/idempotency.py` `IDEMPOTENCY_WINDOW`(`find_replay` 供各创建入口共用) |
+| 查单 poller 扫描窗 | 60s ~ 48h 内的 pending / failed / closed 单(closed 按关单时刻),每轮 50 条 | `billing/payment_service.py` |
+| 创建类幂等键窗口 | 24h(实例 / 数据盘;窗外同键按新单) | `core/idempotency.py` `IDEMPOTENCY_WINDOW`(`find_replay` 共用) |
 | 镜像预热覆盖率门槛 / 复检 | 90% / 24h | 策略 `prewarm_min_coverage_pct` / `prewarm_recheck_hours` |
 | Jupyter 一次性票据 | 60s | env `jupyter_ticket_ttl_seconds` |
 | 账号注销冷静期 | 7 天 | `account/service.py` |
@@ -59,13 +57,7 @@
 | 装机无心跳判失败 | 2h | `nodes/reconciler.py` |
 | 节点 Missing 后删行 | 7 天 | `nodes/patrol.py` `MISSING_RETENTION` |
 
-**抢占宽限窗与 creating 超时共用同一段时间预算。** 被抢占的实例迁 `stopping` 后,`instance.stop` 经 outbox
-延迟 `spot_grace_seconds` 才到期执行;触发这次抢占的请求方此刻已在 `creating` 里等着,
-`creating_timeout_seconds` 一到就转 failed。宽限窗之外还要留给「删 Pod → terminationGracePeriod → 释放卡 →
-调度请求方 → 拉起」,这段余量是 `core/policies.py` 的常量 `PREEMPT_TIME_RESERVE_SECONDS = 120`。
-所以 `spot_grace_seconds` 的**真实上限是 `creating_timeout_seconds − 120`**(默认 **180s**),比静态区间的 600 紧得多。
-这是静态区间表达不了的跨键约束,由 `validate_policy_value` 在保存时拦下,错误文案带出当时的具体上限
-(前端原样展示,不自己再算一遍)。要调大宽限窗就先调大 `creating_timeout_seconds`。
+**抢占宽限窗与 creating 超时共用同一段时间预算。** 余量常量 `core/policies.py` `PREEMPT_TIME_RESERVE_SECONDS = 120`,`spot_grace_seconds` **真实上限 = `creating_timeout_seconds − 120`**(默认 **180s**),由 `validate_policy_value` 保存时拦下,错误文案带具体上限(前端原样展示)。要调大宽限窗先调大 `creating_timeout_seconds`。
 
 ## 会话与凭据
 
@@ -81,11 +73,11 @@
 
 ## 应用层限流
 
-固定窗口,计数落 PG(`rate_limit_counters`),多副本共享;429 带 `Retry-After`。边缘层(Envoy Gateway)对公网 API 域另有**每源 IP** 20 rps / 600 rpm 兜底(`deploy/app/k8s/04-gateway.yaml` 的 `BackendTrafficPolicy`,`sourceCIDR.type: Distinct` 才是每 IP 一个桶);管理面不配边缘限流,靠源 IP 白名单。
+固定窗口,计数落 PG(`rate_limit_counters`),多副本共享;429 带 `Retry-After`。边缘层(Envoy Gateway)对公网 API 域另有**每源 IP** 20 rps / 600 rpm 兜底(`deploy/app/k8s/04-gateway.yaml` 的 `BackendTrafficPolicy`,`sourceCIDR.type: Distinct`);管理面不配边缘限流,靠源 IP 白名单。
 
-**没有每源 IP 并发连接限制**:Envoy Gateway 无此原语,`ClientTrafficPolicy.connection.connectionLimit` 是每个 Envoy 实例的连接总量,现配 10000 只作防内存耗尽的兜底。取舍见 [security.md](./security.md)「限流分层」。
+**没有每源 IP 并发连接限制**:`ClientTrafficPolicy.connection.connectionLimit` 是每个 Envoy 实例的连接总量,现配 10000。见 [security.md](./security.md)「限流分层」。
 
-**请求体硬上限(双层)**:边缘层 `BackendTrafficPolicy.requestBuffer` 对平台 API 限 1 MiB、匿名支付回调(`/api/v1/webhooks`,独立路由)限 256 KiB,超限 413;应用层 `RequestBodyLimitMiddleware`(纯 ASGI 流式计数,`app/core/body_limit.py`)统一兜底 1 MiB,防边缘被绕过(集群内直连)。uvicorn 另有 `--limit-concurrency 1024` 兜底在途连接内存。全平台无请求方向流式端点,缓冲不改变的语义;`requestHeadersReceivedTimeout: 10s` / `requestReceivedTimeout: 60s`(慢头/慢体攻击)在 `ClientTrafficPolicy superdl-gateway`。
+**请求体硬上限(双层)**:边缘层 `BackendTrafficPolicy.requestBuffer` 对平台 API 限 1 MiB、匿名支付回调(`/api/v1/webhooks`)限 256 KiB,超限 413;应用层 `RequestBodyLimitMiddleware`(`app/core/body_limit.py`)兜底 1 MiB。uvicorn `--limit-concurrency 1024`。`requestHeadersReceivedTimeout: 10s` / `requestReceivedTimeout: 60s` 在 `ClientTrafficPolicy superdl-gateway`。
 
 | 动作 | 维度 | 限额 | 备注 |
 |---|---|---|---|
@@ -97,8 +89,8 @@
 | 发码(消费) | 手机号 | 10 次/日 | 按验证码被消费计 |
 | 发码(平台) | 全局 | 1000 次/时,5000 次/日 | `core/sms.py` |
 | 管理端登录 | IP+账号 / 账号 | 5 次/5min / 10 次/15min | 只计失败,成功清零 |
-| 管理端登录 | IP / 账号日窗 | 30 次/时 / 30 次/日 | 只计失败,不清零;**账号日窗不进 bcrypt 前的准入预检**,理由见 [admin.md](./admin.md) |
-| 管理端 TOTP 绑定与校验 | 账号 | 5 次/10min | `setup/begin`、`setup/confirm`、`login/mfa` 共用一个桶(begin 也是拿票据换敏感物料,不免检) |
+| 管理端登录 | IP / 账号日窗 | 30 次/时 / 30 次/日 | 只计失败,不清零;**账号日窗不进 bcrypt 前的准入预检**,见 [admin.md](./admin.md) |
+| 管理端 TOTP 绑定与校验 | 账号 | 5 次/10min | `setup/begin`、`setup/confirm`、`login/mfa` 共用一个桶 |
 | 管理端试发短信 | 全局 | 10 次/时 | |
 | 支付回调 | IP | 120 次/分 | `webhooks_router.py` |
 | 充值创建 | 用户 | 10 次/时 | `billing/router.py` |
@@ -141,4 +133,4 @@
 | 容器与 apiserver 审计日志(Loki) | 180 天(full / light 同) | `deploy/cluster/values/loki.yaml` |
 | Prometheus | full 15 天 / 40GB;light 3 天 / 3GB | `values/kps.yaml`、`values/light/kps-light.yaml` |
 | etcd 快照 | 每 6h 一份,留 12 份 | `deploy/cluster/rke2/server-config.yaml` |
-| PG 逻辑备份 | 每日一次(RPO 24h);连续归档 RPO 分钟级;恢复目标 RTO <30 分钟 | `deploy/app/k8s/06-pg-backup.yaml`、`deploy/cluster/runbooks/pg-backup-restore.md` |
+| PG 逻辑备份 | 每日一次(RPO 24h);连续归档 RPO 分钟级;RTO <30 分钟 | `deploy/app/k8s/06-pg-backup.yaml`、`deploy/cluster/runbooks/pg-backup-restore.md` |

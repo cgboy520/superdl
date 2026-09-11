@@ -3,115 +3,92 @@
 | 目录 | 内容 |
 |---|---|
 | `app/` | 平台自身部署:本地 compose(PG18)+ 生产 K8s 清单(`k8s/`:API/worker/前端/网关与 TLS/RBAC/迁移 Job/PG 备份 CronJob)+ 前端镜像(`frontend.Dockerfile`+nginx) |
-| `ansible/` | 初始控制面装机([servers] 组 rke2/k3s server:审计策略、server config 渲染、安装器 sha256 校验后安装)。GPU 节点一律走管理端「添加节点」一键命令(node-join.sh),不走 ansible |
-| `cluster/` | 集群组件 helmfile(RKE2/k3s + Cilium + GPU Operator + HAMi + kube-prometheus-stack + JuiceFS CSI + TopoLVM + Envoy Gateway 北向入口 + Loki/Alloy 日志栈),full/light 双档与版本锁定见 `cluster/README.md`;Gateway API CRD 不跟 chart 走,由 `cluster/gateway-api-crds.sh` 单点管(helmfile presync 调用);`cluster/admission/` 为准入策略(七条 VAP,非 helm release,由 `cluster/apply.sh` 在 helmfile 之前自动 apply 并回读,`cluster/preflight.sh` 与 `scripts/release.sh` 各再断言一次全部为 Deny) |
+| `ansible/` | 初始控制面装机([servers] 组 rke2/k3s server:审计策略、server config 渲染、安装器 sha256 校验后安装)。GPU 节点走管理端「添加节点」一键命令(node-join.sh),不走 ansible |
+| `cluster/` | 集群组件 helmfile(RKE2/k3s + Cilium + GPU Operator + HAMi + kube-prometheus-stack + JuiceFS CSI + TopoLVM + Envoy Gateway + Loki/Alloy),full/light 双档与版本锁定见 `cluster/README.md`;Gateway API CRD 由 `cluster/gateway-api-crds.sh` 单点管(helmfile presync 调用);`cluster/admission/` 为七条 VAP 准入策略(非 helm release,`cluster/apply.sh` 在 helmfile 之前 apply 并回读,`cluster/preflight.sh` 与 `scripts/release.sh` 各再断言一次全部为 Deny) |
 
 平台代码不依赖真实集群:K8s 走 `app/core/k8s` 抽象层,dev/test 用 FakeOrchestrator。
 
 ## 生产发布流程(deploy/app/k8s)
 
-发布走 `SUPERDL_IMAGE_PREFIX=harbor.<域>/superdl scripts/release.sh <tag>` 一个入口,禁止绕过脚本手改各清单 tag:
-准入策略断言 → 迁移 Job → kustomize 渲染后替换占位 `CHANGE_IMAGE_PREFIX`(Harbor 项目前缀)、平台镜像按
-**不可变 digest** 钉死再 apply → rollout status → 经网关从集群外 GET `/readyz`;任一步失败即非零退出。
+唯一入口 `SUPERDL_IMAGE_PREFIX=harbor.<域>/superdl scripts/release.sh <tag>`,禁止绕过脚本手改清单 tag:
+准入策略断言 → 迁移 Job → kustomize 渲染后替换占位 `CHANGE_IMAGE_PREFIX`、平台镜像钉**不可变 digest** 再 apply → rollout status → 经网关从集群外 GET `/readyz`;任一步失败即非零退出。
 
-1. `helmfile -e <full|light> apply`(cluster/,先 `./preflight.sh`;双档见 `cluster/README.md`)→ 按 `app/secrets.example.yaml` 建分域 Secret(`superdl-db`/`superdl-auth`/`superdl-crypto`/`superdl-metrics`/`superdl-edge`/`superdl-cloud`/`superdl-payment`/`superdl-registry`)与 `superdl-registry-pull`(Harbor 拉取机器人;项目 public 可省)。值不入库;字段清单见 `app/k8s/00-namespace-config.yaml`(非密)与 `app/secrets.example.yaml`(密),prod 必配项以 `docs/reference/security.md` 的 `_validate_prod` 清单为准
-2. 打 tag:`gh release create vX.Y.Z --generate-notes`(一步建 tag 与 GitHub Release,release notes 由提交信息生成,不维护 CHANGELOG 文件)。tag 触发 `.github/workflows/release.yml`:CI 闸门(api/frontend/security 复跑)→ 构建 api/web/admin 三镜像 + Trivy 扫描 + 推 Harbor(仓库 secrets `HARBOR_HOST` / `HARBOR_ROBOT_NAME`(push 机器人)/ `HARBOR_ROBOT_SECRET`,variables `HARBOR_PROJECT` 缺省 superdl)。api 镜像三环境同一产物;mock 支付回调路由仅在非 prod 注册
-3. `SUPERDL_IMAGE_PREFIX=harbor.<域>/superdl scripts/release.sh vX.Y.Z`(前置工具:`kubectl` + `crane` / `skopeo` / `docker buildx` 三选一,需对 Harbor 有读权限且已 `docker login` —— 三个都没有就拒绝发布,不按可变 tag 下发):
-   - 第 0 步断言集群里七条准入策略的 Policy 与 Binding 都在且 `validationActions` 含 Deny。缺 Binding 是**静默 fail-open**(`failurePolicy: Fail` 只在策略被求值时生效),而 tenant-mgr 的 `pods:create` 与 `roles:escalate/bind` 是全命名空间的;策略本身由 `cluster/apply.sh` 下发,这里在滚动前再断言一次,免得集群层与应用层各发各的、谁也不知道准入面已经没了;
-   - 第 1 步检查 `superdl-registry-pull`(Harbor 拉取机器人;private 项目缺它则新 Pod 一律 ImagePullBackOff,仅告警不阻断);
-   - 第 2 步建迁移 Job(`k8s/10-migrate-job.yaml`,Job 不可 apply 复用故单独 create)并 `wait complete`,**必须先于滚动**:`/readyz` 比对 DB `alembic_version` 与代码 head,迁移未跑(503 `schema_mismatch`)或库从未迁移(503 `never_migrated`)时新 Pod 不接流量,漏跑/乱序都在这一关现形;
-   - 第 3 步 `kubectl kustomize` 渲染后 apply:tag 先解析成**不可变 digest**,三条平台镜像整串换成 `<前缀>/superdl-<name>@sha256:...`。Harbor 默认不开 immutable rule,同名 tag 重推之后已在跑的节点仍用旧镜像(`imagePullPolicy: IfNotPresent`)而新调度的 Pod 拉到新内容 —— 两个版本同时在线且无任何提示;`release.yml` 的 cosign 也按 digest 签名,按 digest 下发才让「签了名的那份」与「跑起来的那份」是同一个东西。渲染后自检:`CHANGE_*` 占位零残留 + 平台镜像一律带 `@sha256:`,任一不满足即拒绝下发(`CHANGE_TAG` 仍保留给迁移 Job 的 Job 名,那不是镜像);
-   - 第 4 步等全部 Deployment(api + 5 个 worker 组件 + web/admin)滚动完成(readinessProbe 即 `/readyz`,Pod 内不重复探测);
-   - 第 5 步经网关从集群外 `curl -fsS https://<api-domain>/readyz`,验 DNS / TLS / 网关路由:域名取环境变量 `SUPERDL_API_BASE_URL`,缺省读 ConfigMap `superdl-api-config` 的 `SUPERDL_PUBLIC_BASE_URL`,取不到或仍是占位则跳过并提示。失败先查迁移 Job 与网关链路,修复后重新发布(不回滚)。
-4. 首个管理员(库迁移后、仅首发一次):`cd apps/api && uv run python scripts/bootstrap_admin.py`(prod 可跑;`seed_dev.py` 只允许 dev/test),口令只打印一次,首次登录强制绑定 TOTP
+1. `helmfile -e <full|light> apply`(cluster/,先 `./preflight.sh`;双档见 `cluster/README.md`)→ 按 `app/secrets.example.yaml` 建分域 Secret(`superdl-db`/`superdl-auth`/`superdl-crypto`/`superdl-metrics`/`superdl-edge`/`superdl-cloud`/`superdl-payment`/`superdl-registry`)与 `superdl-registry-pull`(Harbor 拉取机器人;项目 public 可省)。字段清单见 `app/k8s/00-namespace-config.yaml`(非密)与 `app/secrets.example.yaml`(密),prod 必配项以 `docs/reference/security.md` 的 `_validate_prod` 清单为准
+2. 打 tag:`gh release create vX.Y.Z --generate-notes`(不维护 CHANGELOG)。tag 触发 `.github/workflows/release.yml`:CI 闸门复跑 → 构建 api/web/admin 三镜像 + Trivy 扫描 + 推 Harbor(仓库 secrets `HARBOR_HOST` / `HARBOR_ROBOT_NAME` / `HARBOR_ROBOT_SECRET`,variables `HARBOR_PROJECT` 缺省 superdl)。api 镜像三环境同一产物;mock 支付回调路由仅在非 prod 注册
+3. `SUPERDL_IMAGE_PREFIX=harbor.<域>/superdl scripts/release.sh vX.Y.Z`(前置工具:`kubectl` + `crane` / `skopeo` / `docker buildx` 三选一,需对 Harbor 有读权限且已 `docker login`;三个都没有即拒绝发布):
+   - 第 0 步断言七条准入策略的 Policy 与 Binding 都在且 `validationActions` 含 Deny;
+   - 第 1 步检查 `superdl-registry-pull`(仅告警不阻断);
+   - 第 2 步建迁移 Job(`k8s/10-migrate-job.yaml`,单独 create)并 `wait complete`,先于滚动;`/readyz` 比对 DB `alembic_version` 与代码 head,不一致 503 `schema_mismatch`,从未迁移 503 `never_migrated`;
+   - 第 3 步 `kubectl kustomize` 渲染后 apply:tag 解析成 digest,三条平台镜像整串换成 `<前缀>/superdl-<name>@sha256:...`;渲染后自检 `CHANGE_*` 占位零残留 + 平台镜像一律带 `@sha256:`,任一不满足即拒绝下发(`CHANGE_TAG` 保留给迁移 Job 的 Job 名);
+   - 第 4 步等全部 Deployment(api + 5 个 worker 组件 + web/admin)滚动完成(readinessProbe 即 `/readyz`);
+   - 第 5 步经网关从集群外 `curl -fsS https://<api-domain>/readyz`:域名取环境变量 `SUPERDL_API_BASE_URL`,缺省读 ConfigMap `superdl-api-config` 的 `SUPERDL_PUBLIC_BASE_URL`,取不到或仍是占位则跳过并提示。失败先查迁移 Job 与网关链路,修复后重新发布,不回滚。
+4. 首个管理员(库迁移后、仅首发一次):`cd apps/api && uv run python scripts/bootstrap_admin.py`(`seed_dev.py` 只允许 dev/test),口令只打印一次,首次登录强制绑定 TOTP
 5. 备份:`06-pg-backup.yaml` 每日逻辑备份;恢复演练见 `cluster/runbooks/pg-backup-restore.md`
 
 ### 发布与迁移约定
 
-- **停机发布**:迁移与代码同 tag,顺序恒为「先 `alembic upgrade head`,后替换代码」(release.sh 保证迁移 Job 先于滚动);
-  `/readyz` 只认 DB == 代码 head,含迁移的发布在迁移完成到滚动完成之间旧 Pod 短暂 503 摘流(无兼容窗口,已知且接受)。
-- **不支持发布回滚**:fix-forward —— 失败修复后重新发一版;迁移不回退(基线迁移 downgrade 一律 raise)。
-- 迁移无需向前兼容,破坏性 DDL 允许(提交说明写明数据影响);迁移 Job 的 `PGOPTIONS`
-  (`lock_timeout=3s` / `statement_timeout=60s`)仍然生效,超预算的大表改动放维护窗口手工执行。
+- **停机发布**:迁移与代码同 tag,顺序恒为「先 `alembic upgrade head`,后替换代码」;`/readyz` 只认 DB == 代码 head,迁移完成到滚动完成之间旧 Pod 503 摘流。
+- **不支持发布回滚**:fix-forward;基线迁移 downgrade 一律 raise。
+- 迁移无需向前兼容,破坏性 DDL 允许(提交说明写明数据影响);迁移 Job 带 `PGOPTIONS`(`lock_timeout=3s` / `statement_timeout=60s`),超预算的大表改动放维护窗口手工执行。
 
 上线硬性核查项(每次首发/变更发布通道后必过):
 
-- [ ] `curl -s https://<api-domain>/api/v1/webhooks/mock -X POST` 返回 404(mock 回调路由仅非 prod 注册)
-- [ ] `curl -s https://<api-domain>/api/admin/v1/auth/login -X POST` 返回 404(管理端 API 不经公网 api 域暴露)
-- [ ] `curl -s https://<api-domain>/metrics` 返回 404 或 401(不带集群内 Bearer 不得取到指标)
-- [ ] Alertmanager critical 告警端到端实测一次(管理端告警流与值班邮箱必须到人;启用了钉钉 sidecar 或 `oncall_phone` 值班短信的一并验证)
-- [ ] `superdl-db` 含 `juicefs-metaurl` 键(值同 kube-system/superdl-juicefs-secret 的 metaurl):缺失则数据盘配额 Job 永远死信(管理端死信页 + `superdl_juicefs_quota_failed_total` 可见),容量上限不被强制
+- [ ] `curl -s https://<api-domain>/api/v1/webhooks/mock -X POST` 返回 404
+- [ ] `curl -s https://<api-domain>/api/admin/v1/auth/login -X POST` 返回 404
+- [ ] `curl -s https://<api-domain>/metrics` 返回 404 或 401
+- [ ] Alertmanager critical 告警端到端实测一次(管理端告警流与值班邮箱到人;启用了钉钉 sidecar 或 `oncall_phone` 的一并验证)
+- [ ] `superdl-db` 含 `juicefs-metaurl` 键(值同 kube-system/superdl-juicefs-secret 的 metaurl);缺失则数据盘配额 Job 死信(`superdl_juicefs_quota_failed_total`)
 
 ## 生产数据库要求(必读)
 
-**`app/k8s/` 的清单不含任何 PostgreSQL 对象**:平台库(钱包/账本)不以清单内起容器的方式进生产。
-生产数据库二选一:
+`app/k8s/` 的清单不含任何 PostgreSQL 对象。生产数据库二选一:
 
-1. **托管 PG**(云 RDS/裸金属自建主备):PG ≥ 18(与 dev/test 对齐),开自动备份 + PITR(WAL 归档);
-   `SUPERDL_DATABASE_URL` 经 `secrets.example.yaml` 注入。
-2. **CloudNativePG 集群**(进 K8s 时唯一受支持形态):3 实例 + `backup` 到对象存储(持续 WAL 归档,RPO 分钟级)
-   + 定时备份校验;禁止单实例 cnpg 上生产。
+1. **托管 PG**(云 RDS/裸金属自建主备):PG ≥ 18,开自动备份 + PITR(WAL 归档);`SUPERDL_DATABASE_URL` 经 `secrets.example.yaml` 注入。
+2. **CloudNativePG 集群**(进 K8s 时唯一受支持形态):3 实例 + `backup` 到对象存储(持续 WAL 归档)+ 定时备份校验;禁止单实例 cnpg 上生产。
 
-两条硬性要求(备份分层见 `cluster/runbooks/pg-backup-restore.md`):
+硬性要求(备份分层见 `cluster/runbooks/pg-backup-restore.md`):
 
-- **WAL 归档必须开**:每日 `pg_dump` 逻辑备份只有 RPO=24h,资金库不能只靠它;
-- **定期 restore 校验**:每季度按 runbook 做一次恢复演练(含 ledger 链抽检),未演练过的备份视为不存在。
+- **WAL 归档必须开**;每日 `pg_dump` 只有 RPO=24h。
+- **每季度按 runbook 做一次恢复演练**(含 ledger 链抽检)。
 
-连接数对齐(改副本数或 `SUPERDL_DB_POOL_SIZE` 时必须复核):
+连接数对齐(改副本数或 `SUPERDL_DB_POOL_SIZE` 时复核):
 
 ```
 max_connections ≥ 进程数 × (db_pool_size + max_overflow) + 迁移/运维预留
               = (api 2 + worker 2+2+1+1+1) × (10 + 10) + 20 = 200
 ```
 
-- SQLAlchemy 异步引擎默认 `max_overflow=10`:每进程峰值是 pool_size **+10**,不是 pool_size;
+- SQLAlchemy 异步引擎默认 `max_overflow=10`:每进程峰值是 pool_size **+10**;
 - 五个 worker Deployment 各自建池,副本数按 `app/k8s/03-worker.yaml` 计入;
-- PG 默认 `max_connections=100` 装不下,生产按上式取值并留余量;
-  超配症状为 `FATAL: remaining connection slots` 伴随批量 500 与 readiness 抖动;
-- api/worker 进程内已带 `statement_timeout=30s / lock_timeout=5s / idle_in_transaction_session_timeout=60s`,
-  卡死语句不会无限占连接。
+- PG 默认 `max_connections=100` 不够,生产按上式取值并留余量;
+- api/worker 进程内带 `statement_timeout=30s / lock_timeout=5s / idle_in_transaction_session_timeout=60s`。
 
 ## 前端可用性与 HPA 结论
 
 web/admin 前端:各 2 副本 + PDB `minAvailable: 1` + liveness/readiness 同探 `/`(见 `app/k8s/07-frontends.yaml`)。
-**不配置 HPA**:双端 `requests == limits`(Guaranteed QoS),CPU 型 HPA 依赖 requests 基线计算利用率,
-与 Guaranteed 语义冲突;静态 nginx 无 CPU 弹性需求(单副本 50m 请求即远够,瓶颈在 API 不在静态托管)。
-若未来引入 SSR/BFF 再重估。
+**不配置 HPA**:双端 `requests == limits`(Guaranteed QoS)。引入 SSR/BFF 再重估。
 
 ## 独立环境副本(预发/演示)
 
-仓库只定义 full/light 双档,不含预发 overlay。自建:复制 `cluster/environments/full.yaml` 改名,叠加层把副本数降到 1、
-换域名、关 SMTP 第二通道;`app/k8s/` 侧用 kustomize overlay 或独立 secrets + ConfigMap。
-`SUPERDL_ENVIRONMENT` 只接受 `dev` / `test` / `prod`,预发**仍以 `prod` 运行**(管理端边缘收口在 prod 恒开,无单独开关),
-只是 secrets/ConfigMap/域名独立于生产;其 PG 同样适用上节备份要求。
+仓库只定义 full/light 双档,不含预发 overlay。自建:复制 `cluster/environments/full.yaml` 改名,叠加层把副本数降到 1、换域名、关 SMTP 第二通道;`app/k8s/` 侧用 kustomize overlay 或独立 secrets + ConfigMap。
+`SUPERDL_ENVIRONMENT` 只接受 `dev` / `test` / `prod`,预发**仍以 `prod` 运行**,只是 secrets/ConfigMap/域名独立;其 PG 同样适用上节备份要求。
 
 ## 部署变体:平台跑在集群外
 
 平台自身(api / web / admin)跑在宿主机(systemd + nginx)、集群里只有租户负载时:
 
-- `app/k8s/04-gateway.yaml` 里平台的三个 listener、四条平台 HTTPRoute 与
-  `superdl-admin-allowlist` / `superdl-api-ratelimit` / `superdl-api-webhooks` 一律不下发(backend 不存在)。
-- `SecurityPolicy.extAuth` 的 `backendRefs` 指向的 `superdl-api` Service 需自建:
-  **无 selector 的 Service + 手写 EndpointSlice**,地址指向宿主机。
-- 宿主机另开一个内部 server 承接该回调,必须:只监听内网/隧道地址、只放行网关节点、
-  只放行 `/api/internal/` 与 `/healthz`(后者供 `backendSettings.healthCheck.active` 探)、
-  **绝不设 `X-Forwarded-For`**(`core/edge_guard` 见到它一律 404,fail-closed 之下全部端点 503)、
-  原样透传 `Host`(平台从 Host 取 slug,改写即全部 401)。
+- `app/k8s/04-gateway.yaml` 里平台的三个 listener、四条平台 HTTPRoute 与 `superdl-admin-allowlist` / `superdl-api-ratelimit` / `superdl-api-webhooks` 一律不下发。
+- `SecurityPolicy.extAuth` 的 `backendRefs` 指向的 `superdl-api` Service 自建:**无 selector 的 Service + 手写 EndpointSlice**,地址指向宿主机。
+- 宿主机另开一个内部 server 承接该回调:只监听内网/隧道地址、只放行网关节点、只放行 `/api/internal/` 与 `/healthz`(供 `backendSettings.healthCheck.active` 探)、**不设 `X-Forwarded-For`**(`core/edge_guard` 见到即 404)、原样透传 `Host`。
 
-只有一张一级通配证书 `*.<域>` 时,两类入口只能按端口分而不能按 hostname 分,见 `docs/reference/services.md`「域名规则」。
+只有一张一级通配证书 `*.<域>` 时,两类入口按端口分,见 `docs/reference/services.md`「域名规则」。
 
 ## 管理端访问边界
 
-- 管理端 API 在公网 api 域下不可达(API 侧边缘收口:prod 下 Host 非 admin 域一律 404,恒开、无开关,见 `docs/reference/security.md`);
-  `admin.superdl.example.com` 本身仅 TLS + 管理端 JWT + TOTP(全角色强制)。
-- 生产必须再叠加一层网络边界:`app/k8s/04-gateway.yaml` 的 `SecurityPolicy superdl-admin-allowlist`
-  (挂在 `superdl-admin` 这条 HTTPRoute 上)**默认启用**源 IP 白名单 —— `authorization.defaultAction: Deny`
-  加一条 `action: Allow` 的 `principal.clientCIDRs`,填办公网/跳板机出口 CIDR(多个就多写几条)。
-  VPN 或身份感知代理(oauth2-proxy 等)可替代之。
-- 占位符是 `192.0.2.0/24`(RFC 5737 文档专用网段)而非 `CHANGE_ME_*`:`clientCIDRs` 有 CRD 正则校验,
-  非法串会让这一个对象被 apiserver 拒收而其余照常生效(fail-open)。`preflight.sh` 按这个网段扫描,未替换不予放行。
-- 漏写 `defaultAction: Deny` 会让规则从白名单退化成一条毫无作用的显式放行。
-- 源 IP 的真实性依赖 `EnvoyProxy` 的 `envoyService.externalTrafficPolicy: Local`;改成 `Cluster` 后 Envoy 看到的源 IP
-  全是节点 IP,白名单把所有人算成同一个源、当场失效且不报错。
-- 应急通道:白名单误伤时用 `kubectl port-forward`,勿直接放开 0.0.0.0/0。
+- 管理端 API 在公网 api 域下不可达(prod 下 Host 非 admin 域一律 404,恒开、无开关,见 `docs/reference/security.md`);`admin.superdl.example.com` 本身仅 TLS + 管理端 JWT + TOTP(全角色强制)。
+- 生产必须再叠加网络边界:`app/k8s/04-gateway.yaml` 的 `SecurityPolicy superdl-admin-allowlist`(挂在 `superdl-admin` HTTPRoute 上)**默认启用**源 IP 白名单:`authorization.defaultAction: Deny` 加一条 `action: Allow` 的 `principal.clientCIDRs`,填办公网/跳板机出口 CIDR(多个多写几条)。VPN 或身份感知代理(oauth2-proxy 等)可替代。
+- 占位符是 `192.0.2.0/24`(`clientCIDRs` 有 CRD 正则校验);`preflight.sh` 按这个网段扫描,未替换不予放行。
+- `defaultAction: Deny` 不可漏写。
+- 源 IP 真实性依赖 `EnvoyProxy` 的 `envoyService.externalTrafficPolicy: Local`,不可改 `Cluster`。
+- 应急通道:白名单误伤时用 `kubectl port-forward`,勿放开 0.0.0.0/0。
 - Grafana 等其他管理面只走内网或 port-forward,勿经网关暴露。

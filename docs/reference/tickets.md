@@ -4,10 +4,10 @@
 
 ## 数据模型
 
-- `tickets`:ticket_no 唯一(`T` + yyyymmdd + 两位日内序列,如 `T20260823-01`)、user_id、category(instance/billing/data/account/other)、subject(≤128)、status(open/pending_staff/pending_user/resolved/closed)、instance_uuid?(关联实例快照)、idempotency_key(与 user_id 联合唯一)、closed_at(仅 closed 落)
+- `tickets`:ticket_no 唯一(`T` + yyyymmdd + 两位日内序列,如 `T20260823-01`)、user_id、category(instance/billing/data/account/other)、subject(≤128)、status(open/pending_staff/pending_user/resolved/closed)、instance_uuid?、idempotency_key(与 user_id 联合唯一)、closed_at(仅 closed 落)
 - `ticket_messages`:ticket_id、sender_kind(user/staff)、sender_id(按 sender_kind 解读为 users.id 或 admin_users.id,不建外键)、body(≤4000)
 
-状态机:open → pending_staff(用户回复)/ pending_user(客服回复);任一方标记 → resolved;resolved → closed(用户或客服关闭)。resolved / closed 不可再回复。
+状态机:open → pending_staff(用户回复)/ pending_user(客服回复);任一方标记 → resolved;resolved → closed。resolved / closed 不可再回复。
 
 ## 契约
 
@@ -23,13 +23,13 @@
 | `POST /api/admin/v1/tickets/{ticket_id}/reply` | ops/admin | 客服回复 → pending_user,站内信告知用户(dedup_key 防重);审计 |
 | `POST /api/admin/v1/tickets/{ticket_id}/status` | ops/admin | `{action: resolve \| close}`;close 仅 resolved 后可;审计 |
 
-前端:用户端 `/support`(自助排查 FAQ + 我的工单)与 `/support/:ticketId`;管理端 `/tickets`。
+前端:用户端 `/support`(FAQ + 我的工单)与 `/support/:ticketId`;管理端 `/tickets`。
 
 ## 规则与不变量
 
-- 每用户进行中(open/pending_*)工单数与创建频次有上限(`MAX_OPEN_TICKETS` 与 `ticket-create:{user_id}` 限流键,数值见 [limits.md](./limits.md));幂等重放不计数。
-- 所有状态迁移在行锁(`FOR UPDATE`)内进行,并发回复不会把 resolved 单改活。
+- 每用户进行中(open/pending_*)工单数与创建频次有上限(`MAX_OPEN_TICKETS` 与 `ticket-create:{user_id}` 限流键,见 [limits.md](./limits.md));幂等重放不计数。
+- 所有状态迁移在行锁(`FOR UPDATE`)内进行。
 - 用户回复落一条 admin_alert(info)进管理端告警流;客服回复落用户站内信。
-- 滞留巡检(30 分钟一轮,advisory lock):pending_staff 超 24h 的单落一条 admin_alert(warning),`dedup_key = ticket-stale:{ticket_id}` 保证整个生命周期只报一次。
-- ticket_no 的日内序列由服务层计数 + 唯一冲突重试生成,不依赖序列对象。
+- 滞留巡检(30 分钟一轮,advisory lock):pending_staff 超 24h 的单落一条 admin_alert(warning),`dedup_key = ticket-stale:{ticket_id}` 整个生命周期只报一次。
+- ticket_no 日内序列由服务层计数 + 唯一冲突重试生成,不依赖序列对象。
 - 管理端写操作过审计中间件;工单正文不进审计 detail。

@@ -1,7 +1,6 @@
 # Runbook 索引
 
-值班处置手册与集群运维 SOP,按类型区分:**事件处置**(触发条件 → 处置步骤(带判据)→ 验收 / 演练)、
-**SOP**(一次性或周期性操作流程)、**清单**(逐项勾选的验证与发布检查)、**参考**(查询方式与口径)。
+按类型区分:**事件处置**(触发条件 → 处置步骤 → 验收 / 演练)、**SOP**(一次性或周期性操作)、**清单**(逐项勾选)、**参考**(查询方式与口径)。
 新增事件处置类 runbook 照该结构写,并在对应告警规则上加 `runbook_url`。
 
 | 文件 | 类型 | 场景 |
@@ -14,13 +13,12 @@
 | [key-rotation.md](./key-rotation.md) | SOP | 平台主密钥(crypto)双密钥读轮换与 PREVIOUS 摘除条件 |
 | [cluster-validation.md](./cluster-validation.md) | 清单 | CI 覆盖不到的实机验证清单与每次上线的发布检查单 |
 
-发布在 [`../../README.md`](../../README.md)(不支持发布回滚,fix-forward);集群装机与 token 轮换在 [`../README.md`](../README.md)。
+发布在 [`../../README.md`](../../README.md);集群装机与 token 轮换在 [`../README.md`](../README.md)。
 
 ## 告警 → 第一步
 
-告警规则在 `deploy/cluster/values/kps.yaml`(`superdl.platform` 与 GPU 规则组),critical 必走 webhook + 外部 SMTP 双通道,可选钉钉与值班短信通道见 `docs/reference/observability.md`。
-有专属 runbook 的告警在规则里带 `runbook_url` 注解(指向本目录);其余告警的第一步写在 summary 与下表里。
-平台指标含义见 `docs/reference/observability.md`。
+告警规则在 `deploy/cluster/values/kps.yaml`(`superdl.platform` 与 GPU 规则组),critical 走 webhook + 外部 SMTP 双通道,可选钉钉与值班短信见 `docs/reference/observability.md`。
+有专属 runbook 的告警在规则里带 `runbook_url` 注解;其余告警的第一步在 summary 与下表。
 
 | 告警 | 含义 | 第一步 | 文档 |
 |---|---|---|---|

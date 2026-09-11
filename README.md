@@ -7,12 +7,12 @@ GPU 算力租赁平台:租户按量租用整卡 / MIG / 共享 GPU 容器实例(
 
 ## 文档地图
 
-完整索引在 [docs/README.md](docs/README.md)。最常用的几处:
+完整索引 [docs/README.md](docs/README.md)。常用:
 
 - [docs/architecture.md](docs/architecture.md) —— 架构、模块边界、数据模型、核心流程与硬约束
-- [docs/reference/](docs/README.md) —— 各模块契约与不变量(按模块一份)
-- [docs/decisions.md](docs/decisions.md) —— 跨模块决策与它们施加的约束
-- [CLAUDE.md](CLAUDE.md) —— 工程规范、闸门、提交约定(人与 AI 代理共用);上手见 [CONTRIBUTING.md](CONTRIBUTING.md)
+- [docs/reference/](docs/README.md) —— 各模块契约与不变量
+- [docs/decisions.md](docs/decisions.md) —— 跨模块决策与约束
+- [CLAUDE.md](CLAUDE.md) —— 工程规范、闸门、提交约定;上手见 [CONTRIBUTING.md](CONTRIBUTING.md)
 - [deploy/README.md](deploy/README.md) —— 部署、发布、集群装机与 runbook
 - [SECURITY.md](SECURITY.md) —— 报告安全漏洞
 
@@ -29,7 +29,7 @@ cd apps/api
 cp .env.example .env                        # SUPERDL_ENVIRONMENT=dev 等
 uv sync
 uv run alembic upgrade head
-uv run python scripts/seed_dev.py           # 五条 SKU + 平台镜像 + 管理员(口令只打印这一次;固定口令用 SUPERDL_SEED_ADMIN_PASSWORD)
+uv run python scripts/seed_dev.py           # SKU + 平台镜像 + 管理员(口令只打印一次;固定口令用 SUPERDL_SEED_ADMIN_PASSWORD)
 uv run uvicorn app.main:app --reload        # http://localhost:8000/docs
 uv run python -m app.workers.main           # 另开终端:outbox worker + 定时任务
 
@@ -39,17 +39,17 @@ pnpm --filter web dev                       # 用户控制台 http://localhost:5
 pnpm --filter admin dev                     # 管理控制台 http://localhost:5174(seed 的 admin 账号)
 ```
 
-K8s 默认是 `FakeOrchestrator`(进程内存态),不需要真实集群;接真实集群把 `SUPERDL_K8S_BACKEND` 设为 `real`,与 `SUPERDL_ENVIRONMENT` 无关(prod 下则不允许为 `fake`)。
+K8s 默认 `FakeOrchestrator`(进程内存态);接真实集群把 `SUPERDL_K8S_BACKEND` 设为 `real`,与 `SUPERDL_ENVIRONMENT` 无关(prod 不允许 `fake`)。
 
 ## 闸门
 
-按改动范围跑,红了不提交。命令清单只有一份:见 [CLAUDE.md](CLAUDE.md)「常用命令」与「提交约定」。
+按改动范围跑,红了不提交。命令清单只有一份:[CLAUDE.md](CLAUDE.md)「常用命令」与「提交约定」。
 
 ## 工程结构
 
 | 目录 | 说明 |
 |---|---|
-| `apps/api` | FastAPI 模块化单体(account / catalog / orchestrator / billing / metering / notify / nodes / legal / tickets / adminapi),同镜像双入口 serve / worker |
+| `apps/api` | FastAPI 模块化单体(account / catalog / orchestrator / services / billing / metering / notify / nodes / legal / tickets / adminapi),同镜像双入口 serve / worker |
 | `apps/web` | 用户控制台(React 19 + antd 6,浅色) |
 | `apps/admin` | 管理控制台(同栈,深色 NOC 风) |
 | `packages/api-client` | orval 从 `openapi.json` 生成的 fetcher 与 model 类型(禁止手改) |
