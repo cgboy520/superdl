@@ -73,16 +73,6 @@ web/admin 前端:各 2 副本 + PDB `minAvailable: 1` + liveness/readiness 同�
 仓库只定义 full/light 双档,不含预发 overlay。自建:复制 `cluster/environments/full.yaml` 改名,叠加层把副本数降到 1、换域名、关 SMTP 第二通道;`app/k8s/` 侧用 kustomize overlay 或独立 secrets + ConfigMap。
 `SUPERDL_ENVIRONMENT` 只接受 `dev` / `test` / `prod`,预发**仍以 `prod` 运行**,只是 secrets/ConfigMap/域名独立;其 PG 同样适用上节备份要求。
 
-## 部署变体:平台跑在集群外
-
-平台自身(api / web / admin)跑在宿主机(systemd + nginx)、集群里只有租户负载时:
-
-- `app/k8s/04-gateway.yaml` 里平台的三个 listener、四条平台 HTTPRoute 与 `superdl-admin-allowlist` / `superdl-api-ratelimit` / `superdl-api-webhooks` 一律不下发。
-- `SecurityPolicy.extAuth` 的 `backendRefs` 指向的 `superdl-api` Service 自建:**无 selector 的 Service + 手写 EndpointSlice**,地址指向宿主机。
-- 宿主机另开一个内部 server 承接该回调:只监听内网/隧道地址、只放行网关节点、只放行 `/api/internal/` 与 `/healthz`(供 `backendSettings.healthCheck.active` 探)、**不设 `X-Forwarded-For`**(`core/edge_guard` 见到即 404)、原样透传 `Host`。
-
-只有一张一级通配证书 `*.<域>` 时,两类入口按端口分,见 `docs/reference/services.md`「域名规则」。
-
 ## 管理端访问边界
 
 - 管理端 API 在公网 api 域下不可达(prod 下 Host 非 admin 域一律 404,恒开、无开关,见 `docs/reference/security.md`);`admin.superdl.example.com` 本身仅 TLS + 管理端 JWT + TOTP(全角色强制)。
