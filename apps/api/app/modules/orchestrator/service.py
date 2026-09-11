@@ -631,8 +631,8 @@ async def create_instance_row(
 
     selected: list[str] = []
     if wants_ssh:
-        keys = await account_service.list_ssh_keys(session, user_id)
-        selected = [k.public_key for k in keys if k.id in set(ssh_key_ids)]
+        keys = await account_service.ssh_keys_by_ids(session, user_id, list(ssh_key_ids))
+        selected = [k.public_key for k in keys]
         if not selected:
             raise AppError(ErrorCode.SSH_KEY_INVALID, key="orchestrator.sshKeyRequired")
 
