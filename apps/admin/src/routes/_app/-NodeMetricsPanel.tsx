@@ -1,0 +1,91 @@
+/** 节点指标面板:选中节点的 GPU / CPU / 内存时序(1h / 6h / 24h)。 */
+
+import { Radio, Button, Card, Space, Tag, Typography } from "antd";
+import { useTranslation } from "react-i18next";
+
+import { fontSize } from "@superdl/ui";
+import { EChart } from "@superdl/ui/components";
+
+import { type NodeMetricsOut, type NodeRow } from "../../api";
+
+/** 节点级历史曲线(per-GPU util / 显存)+ XID 徽标 + 可选 Grafana 外链。 */
+export function NodeMetricsPanel({
+  node,
+  metrics,
+  range,
+  onRangeChange,
+}: {
+  node: NodeRow;
+  metrics: NodeMetricsOut | undefined;
+  range: string;
+  onRangeChange: (r: string) => void;
+}) {
+  const { t } = useTranslation();
+  const gpus = metrics?.gpus ?? [];
+  const chart = (key: "util" | "mem_used_mb", title: string, unit: string) => (
+    <Card size="small" title={title}>
+      <EChart
+        style={{ height: 200 }}
+        theme="noc"
+        ariaLabel={title}
+        option={{
+          grid: { left: 48, right: 16, top: 28, bottom: 24 },
+          legend: { top: 0, textStyle: { fontSize: fontSize.caption } },
+          xAxis: { type: "time" },
+          yAxis: { type: "value", axisLabel: { formatter: `{value}${unit}` } },
+          tooltip: { trigger: "axis" },
+          series: gpus.map((g) => ({
+            name: `GPU ${g.index}`,
+            type: "line",
+            showSymbol: false,
+            data: (g[key] ?? []).map(([ts, v]) => [ts * 1000, v]),
+          })),
+        }}
+      />
+    </Card>
+  );
+  const xid = metrics?.xid_count_24h ?? 0;
+  const grafanaUrl = metrics?.grafana_url;
+  return (
+    <Card
+      title={t("nodes.historyTitle")}
+      style={{ marginTop: 16 }}
+      extra={
+        <Space size={12}>
+          {xid > 0 && <Tag color="red">{t("nodes.xidBadge", { count: xid })}</Tag>}
+          <Radio.Group
+            size="small"
+            value={range}
+            onChange={(e) => onRangeChange(e.target.value as string)}
+            optionType="button"
+            options={[
+              { value: "1h", label: t("nodes.range1h") },
+              { value: "6h", label: t("nodes.range6h") },
+              { value: "24h", label: t("nodes.range24h") },
+            ]}
+          />
+          {grafanaUrl && (
+            <Button
+              size="small"
+              onClick={() => window.open(grafanaUrl, "_blank", "noopener,noreferrer")}
+            >
+              {t("nodes.openGrafana")}
+            </Button>
+          )}
+        </Space>
+      }
+    >
+      {metrics?.available && gpus.length > 0 ? (
+        <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+          {chart("util", t("nodes.utilChart"), "%")}
+          {chart("mem_used_mb", t("nodes.vramChart"), "MB")}
+        </Space>
+      ) : (
+        <Typography.Text type="secondary">
+          {t("nodes.historyPending")} · {node.name}
+        </Typography.Text>
+      )}
+    </Card>
+  );
+}
+

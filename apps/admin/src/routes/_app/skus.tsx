@@ -1,5 +1,5 @@
-import { adminColors, layout, metaOf, skuTierMap, skuVariant, type SkuTier, type SkuVariant } from "@superdl/ui";
-import { HexTag, PageContainer, TableErrorEmpty, useConfirm } from "@superdl/ui/components";
+/** SKU 与定价:列表(上下架 / 改价确认带影响面)+ 新建 / 编辑抽屉(集群资源联动容量预览);表单常量与档位映射在 -skuForm。 */
+
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -22,100 +22,22 @@ import {
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import {
-  type CapacityWarning,
-  type GpuModelAggregate,
-  type SkuAdminOut,
-  type SkuCreate,
-  type SkuUpdate,
-  isApiError,
-  useAdminSkus,
-  useCreateSku,
-  useGpuModelAggregates,
-  useSkuCapacityPreview,
-  useSkuImpact,
-  useUpdateSku,
-} from "../../api";
+import { adminColors, layout, metaOf, skuTierMap, skuVariant, type SkuVariant } from "@superdl/ui";
+import { HexTag, PageContainer, TableErrorEmpty, useConfirm } from "@superdl/ui/components";
 import { useFormat } from "@superdl/ui";
 import { useApiErrorText } from "@superdl/ui";
 import { useFormDraft } from "@superdl/ui";
+
+import { type GpuModelAggregate, type SkuAdminOut, type SkuCreate, type SkuUpdate, isApiError, useAdminSkus, useCreateSku, useGpuModelAggregates, useSkuCapacityPreview, useSkuImpact, useUpdateSku } from "../../api";
 import { POOL_LABEL_KEY } from "../../lib/pools";
 import { REASON_MAX_LEN } from "../../lib/validators";
 import { ReasonAction } from "../../components/ReasonAction";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
+import { ALL_VARIANTS, CPU_ZERO_FIELDS, POOL_VARIANTS, SkuFormValues, VARIANT_SPEC, warnText } from "./-skuForm";
 
 export const Route = createFileRoute("/_app/skus")({
   component: SkusPage,
 });
-
-interface SkuFormValues {
-  name: string;
-  gpu_model: string;
-  /** 表单只选展示档位,提交时派生 tier 与 pool_label;tier 不做表单字段。 */
-  variant: SkuVariant;
-  mig_profile?: string | null;
-  gpu_cores_pct: number;
-  vram_gb: number;
-  oversell_cores: number;
-  pool_label: string;
-  vcpu: number;
-  mem_gb: number;
-  disk_gb: number;
-  price_hourly: string;  // stringMode:单价 4 位小数,不经二进制浮点
-  max_gpus_per_instance: number;
-  cuda_max?: string | null;
-  /** 是否接受包周期下单(与档位正交) */
-  period_enabled: boolean;
-  /** 是否上竞价档(与档位正交) */
-  spot_enabled: boolean;
-  /** 编辑必填(入审计);新建端点不接受 */
-  reason?: string;
-}
-
-// 展示档位 →(落库档位, 节点池);与后端 catalog._check_tier_pool 同款约束
-const VARIANT_SPEC: Record<SkuVariant, { tier: SkuTier; pool: string }> = {
-  dedicated: { tier: "dedicated", pool: "kata" },
-  shared_mig: { tier: "shared", pool: "mig" },
-  shared_hami: { tier: "shared", pool: "hami" },
-  // CPU 档默认 cpu 池,可改挂 hami(后端 TIER_POOLS 两者放行)
-  cpu: { tier: "cpu", pool: "cpu" },
-};
-const POOL_VARIANTS: Record<string, SkuVariant[]> = {
-  kata: ["dedicated"],
-  mig: ["shared_mig"],
-  hami: ["shared_hami", "cpu"],
-  cpu: ["cpu"],
-};
-const ALL_VARIANTS = Object.keys(VARIANT_SPEC) as SkuVariant[];
-/** CPU 规格提交时补零的 GPU 字段(镜像后端 catalog.cpu_spec_error);超卖钉成 1。 */
-const CPU_ZERO_FIELDS = {
-  gpu_model: "",
-  mig_profile: null,
-  gpu_cores_pct: 0,
-  vram_gb: 0,
-  max_gpus_per_instance: 0,
-  oversell_cores: 1,
-} as const;
-
-type TFn = ReturnType<typeof useTranslation<["admin", "shared"]>>["t"];
-
-function warnText(t: TFn, w: CapacityWarning): string {
-  const p = w.params ?? {};
-  switch (w.code) {
-    case "unrecognized_model":
-      return t("skus.warnUnrecognizedModel", { model: String(p.model ?? "") });
-    case "no_ready_node":
-      return t("skus.warnNoReadyNode", {
-        model: String(p.model ?? ""),
-        pool: String(p.pool ?? ""),
-      });
-    case "vram_exceeds_node":
-      return t("skus.warnVramExceedsNode", {
-        vram: Number(p.vram_gb ?? 0),
-        nodeVram: Number(p.node_vram_gb ?? 0),
-      });
-  }
-}
 
 function SkusPage() {
   const { t } = useTranslation(["admin", "shared"]);
@@ -807,3 +729,4 @@ function SkusPage() {
     </PageContainer>
   );
 }
+
