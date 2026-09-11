@@ -34,7 +34,7 @@
 **设计 token 纪律**:`packages/ui/src/tokens.ts` 是唯一事实源。
 ① 色值走 token(`webTheme` / `webDarkTheme` / `adminColors` / `statusColors` 等),禁止硬编码 hex;
 ② 布局尺寸走 `space`(4 阶梯)与 `layout`(含 `topBarHeight` / `scrollMarginTop`),字号走 `fontSize` 五档,控件 / Modal / Drawer 宽度走 `controlWidth` / `modalWidth` / `drawerWidth`;
-③ 高频模式组件化(`packages/ui` `src/components/`):`PageContainer`(页宽四档 default 1280 / wide 1200 / narrow 880 / full)/ `PageHeader`(面包屑 / 返回 / 描述 / 右侧动作 / 新鲜度条)/ `KpiGrid`(CSS grid 自适应)/ `TableErrorEmpty`(含 isForbidden 403 区分)/ `DataErrorAlert`(`description={null}` 单行形态)/ `EmptyState` / `HexTag` / `LoadMore` / `EChart`;
+③ 高频模式组件化(`packages/ui` `src/components/`):`PageContainer`(页宽四档 default 1280 / wide 1200 / narrow 880 / full)/ `PageHeader`(面包屑 / 返回 / 描述 / 右侧动作 / 新鲜度条)/ `KpiGrid`(CSS grid 自适应)/ `TableErrorEmpty`(含 isForbidden 403 区分)/ `DataErrorAlert`(`description={null}` 单行形态)/ `EmptyState` / `HexTag` / `LoadMore` / `EChart`(三态 + `group` 联动)/ `DangerZone` / 排版原语 `VStack` / `Caption`;用户端另有 `Field`(受控字段骨架)/ `SmsCodeField` / `LandingSection` / `AttentionBar` / `ConsentGate`,管理端另有 `ReasonAction` / `RowMoreMenu` / `BulkBar` / `FilterBar` / `StatusTag`;
 ④ 确认强度组件化:L1 / L2 用 `useConfirm`(支持 `danger` / `okDisabled`),L3 用 `TypeConfirmModal`,管理端审计型用 `ReasonAction`;
 ⑤ 动效走 `motion` token(fast 0.15 / normal 0.2 / slow 0.25 + easeOut):仅透明度 / 位移,路由切换不动效;自绘浮层 zIndex 走 `zIndex` token;
 ⑥ CSS 覆盖区一律 `var(--sdl-*)`,取值经 `cssVars` 桥由 `__root.tsx` 注入;admin 端走 `var(--admin-*)`(`main.tsx` 从 `adminColors` 注入,见 `global.css`);新代码不写 inline 尺寸魔法数,存量按「碰到的文件顺手收敛」推进;
@@ -198,8 +198,11 @@ Tab 固定 `概览 / 访问密钥 / 监控 / 日志 / 历史 / 设置`(白名单
 
 ### 3.12 状态与文案体系(两端共用,收进 `packages/ui`)
 
-- 状态枚举 → 徽标色 / antd Badge 语义 / 文案 key 的单一映射表(`status.ts`);倒计时 `剩 Xh`(天级 `formatDaysLeft`);金额 `¥1,234.56`;时长 `X 小时 Y 分`(`format.ts`)。
-- 文案走 i18n,namespace 划分与闸门见 [`reference/i18n.md`](./reference/i18n.md);GPU 公开规格静态表 `gpuSpecs.ts`。
+- **状态枚举 → 徽标色 / antd Badge 语义 / 文案 key 的单一映射表**(`status.ts`:实例 / 服务 / 订阅 / 镜像缓存 / 节点注册 / 订单 / 调账 / 法务 / 退款 / 发票 / 工单 / 注销 / 数据盘 / 公告 / 购买模式 / 周期 / 事件原因)。页面禁止裸输出状态码:用户端经 `InstanceStatusBadge` / `ServiceStatusBadge` / `metaOf + t()`,管理端经 `StatusTag`(只接受这些表);未知值原样回显灰标,不进 `t()`。
+- **格式化只有一份**(`format.ts`,经 `useFormat` 拿到带 locale 的版本):金额 `¥1,234.56`(`formatMoney`,BigInt 万分位,禁浮点)、时价 `¥X.XX/时`(`formatHourlyPrice`,单价 × 份数走 `mulPrice`)、周期价 `¥X/月` 与 `¥X/3 月`(`formatPeriodPrice`)、时长 `X 小时 Y 分`、倒计时 `剩 Xh` / `剩 X 天` / `X 后回收`(`formatCountdown` / `formatDaysLeft` / `formatReclaimCountdown`)、容量 `formatSizeGb`、时间 `formatDateTime`(带时区后缀)。查询未就绪的金额走 `moneyOr(…, ready)` 显「—」,不显假 `¥0.00`。
+- **文案分层**:后端 `core/messages.py` 是错误与状态文案事实源(经 `errors` namespace 同步到两端,组件里用 `useTranslation("errors")` 直接引用,如「包周期已到期,请先续费」「镜像必须钉版本」);两端页面文案在各自 `locales/*/web.json` / `admin.json`;共享状态 / 格式 / 通用件文案在 `packages/ui/locales/*/shared.json`(`common.cancel` / `freshness.*` / `confirm.*` / `empty.*` / `status.*`)。namespace 划分与闸门见 [`reference/i18n.md`](./reference/i18n.md);GPU 公开规格静态表 `gpuSpecs.ts`。
+- **确认文案 = 标题问句(含目标)+ 后果正文**(`useConfirm` 的 `title` / `consequences`);高危双步(`ReasonAction`)两步都回显目标,第二步再回显原因;知情同意条目与后端硬规矩同源(§1 规则 6)。
+- **禁词与语气**见 [`copy-style-guide.md`](./copy-style-guide.md):按钮动宾 ≤6 字、空态一句话 + 一个动作、禁用 tooltip 只写前置条件、不用「您」/ 感叹号 / emoji;CI 强制禁词表(`scripts/check-copy-banned.sh`)。
 
 ## 4. 管理端
 
@@ -226,11 +229,17 @@ Tab 固定 `概览 / 访问密钥 / 监控 / 日志 / 历史 / 设置`(白名单
 
 ### 4.2 逐屏要点
 
-- **运营总览**:KPI 行(今日收入含昨日对照 / 本月收入 / 今日新注册环比 / 活跃实例 / 付费租户 / 告警数);主图表「实际超卖率 vs 真实利用率」按池并置(60%/85% 阈值线);GPU 池占用堆叠条(按节点池分组,已租 / 空闲,已租段内分出「其中竞价(可回收)」);右栏实时告警流(查询失败如实显示错误态;条目按 `target_kind` 深链:`node` → `/nodes?node=<名称>`、`ticket` → `/tickets?id=<id>`);有死信时展开任务死信卡(重放 / 忽略)。
-- **节点与 GPU**:待入网节点卡(池/主机名/备注/状态/阶段/心跳/错误 + 重新生成加入命令 / 吊销)与「添加节点」生成一次性加入命令;节点表(名称/池标签/GPU 型号×数量/显存/已用/驱动/CUDA/vCPU/内存/磁盘/状态/操作 `cordon`·`uncordon`,经 outbox;`drain` 灰置占位 + tooltip 说明经集群 Runbook 执行);点节点行 → 每卡热力网格 + 节点级 ECharts 曲线(1h/6h/24h,24h XID 计数红标),配了 `grafana_url` 才多一个外链按钮。
-- **SKU 与定价**:SKU 表(名称/卡型/档位/切分规格/容量卡数/已售/实际超卖/算力超卖×/单价/上架开关/编辑),在架而容量为 0、实际超卖达上限时标红;编辑抽屉全参数表单(含 `包周期` 与 `竞价档` Switch,后者**新建默认关**,说明「开启后该规格可按竞价价售卖;竞价实例在容量紧张时会被平台回收」)+ 超卖风险提示(「变更仅影响新实例」)+ 编辑必填原因,右侧实时容量预览;新建可「从集群资源创建」。
-- **租户与实例**:两个 Tab。租户表(ID/手机脱敏/余额/累计消费/实例数/数据盘 GB/状态/注册时间;手机号可检索,`冻结`/`解冻`)+ 点行开账单下钻侧滑(`小时账单`/`资金流水`);全局实例表按状态/实例名/节点名过滤(形态 = 开发机 / 在线服务,服务行链到 `/services?q=<slug>`),操作 `强制停止` 与 `强制回收` 两个入口不合并。租户抽屉多一个「在线服务」Tab(按租户过滤,取前 100 条并明示截断)。
-- **在线服务**:全局服务表(服务名 + slug / 归属 / 服务端点主机名(可复制完整 URL)/ 状态徽标 + 就绪副行 / 当前实例(链到全局实例表按 uuid 检索)/ 版本 / 节点 / 创建时间 / 操作),检索(名称或 slug 前缀)与「含已删除」入 URL;只读 + 唯一处置 `强制停止`(`ReasonAction`,委托当前版本实例 force-stop,仅 running / unready)。独立菜单项。
-- **平台配置**(仅超管):左侧分组导航(安全 / 第三方渠道 / 基础设施 / 站点信息,导航项带状态点:红 = error、琥珀 = warning、绿 = 开关已开、灰 = 关闭或未配置)+ 顶部服务端配置风险告警(「前往」跳到对应分组)+ 右侧分组表单;「安全策略」页为开关行;全局「保存变更」+ 原因必填,含关闭安全开关时弹窗红色复述风险。
-- **财务对账**:日对账卡(可选日期)`事件计费合计` vs `指标估算合计` + diff%,>2% 标红并列差异实例;Tab 充值流水 | 调账(发起 → 双人复核 → 入账)| 异常清单(丢回调 / 关单 / 负余额,可渠道核验与补单;负余额只给提示)| 审计。
-- **告警中心**:AlertBell Popover 的完整版。`severity` 服务端过滤、`确认状态` 在 200 条窗口内客户端过滤,两个筛选入 URL;条目深链与 AlertBell/总览告警流共用 `alertLink`;确认闭环同一范式(写限 ops/admin,成功后 `["admin","alerts"]` 前缀失效);已确认条目显示确认人与时刻,错误态用 `TableErrorEmpty` 如实显示。
+通用骨架:`PageContainer`(宽表页 `width="full"`)+ `PageHeader`(标题 · 右侧动作 · 轮询页新鲜度条);首屏 KPI `KpiGrid` 逐卡骨架;宽表固定标识列 + 操作列 + sticky 表头;行内 ≤2 动作 + `RowMoreMenu`;多选行出 `BulkBar`;筛选走 `FilterBar`(清除筛选 + 服务端 total);检索框 ↔ URL 走 `useUrlCommittedInput`;截断表挂 `ListCapNote`(可带「缩小筛选」动作);状态标 `StatusTag`;错误 / 403 走 `TableErrorEmpty`(抽屉内 `compact`),取数失败条走 `DataErrorAlert`;图表三态(loading / empty / degraded)在 `EChart` 内。
+
+- **运营总览**:KPI **两行**——资金与租户(今日收入含昨日对照 / 本月收入 / 今日新注册环比 / 付费租户)、运行与风险(活跃实例 / 有效订阅 / 节点健康 / 告警数),各卡只等自己的 query;主图表「实际超卖率 vs 真实利用率」按池并置(60%/85% 阈值线);GPU 池占用堆叠条(按节点池分组,已租 / 空闲,已租段内分出「其中竞价(可回收)」);右栏实时告警流(查询失败如实显示错误态;条目按 `target_kind` 深链:`tenant` → `/tenants?tenant=<id>` 直开抽屉、`node` → `/nodes?node=<名称>`、`ticket` → `/tickets?id=<id>`);有死信时展开任务死信卡(单条 / **勾选批量**重放 · 忽略,一条原因作用于全部所选)。
+- **节点与 GPU**(全宽;页头新鲜度条,`POLL.steady` 可暂停):待入网节点卡(池 / 主机名 / 备注 / 状态 / 阶段 / 心跳 / 错误 + 重新生成加入命令 / 吊销,确认文案带主机名)与「添加节点」生成一次性加入命令;节点表(名称(等宽,固定左)/ 池标签 / GPU 型号×数量 / 显存 / **已用(链到 `/tenants?tab=instances&inode=<节点>`)** / 驱动 / CUDA / vCPU / 内存 / 磁盘 / 状态 / 操作(固定右)`cordon`·`uncordon`,经 outbox;**勾选多节点批量 cordon / uncordon**;`drain` 灰置占位 + tooltip 说明经集群 Runbook 执行);点节点行(整行可键盘选中)→ 每卡热力网格 + 节点级 ECharts 曲线(1h/6h/24h,24h XID 计数红标),配了 `grafana_url` 才多一个外链按钮。子文件:`-GpuGrid` / `-NodeMetricsPanel` / `-AddNodeModal` / `-EnrollmentsCard`。
+- **SKU 与定价**(全宽):SKU 表(名称(固定左)/ 卡型 / 档位 / 切分规格 / 容量卡数 / 已售 / 实际超卖 / 算力超卖× / 单价 / 上架开关 / 编辑(固定右)),在架而容量为 0、实际超卖达上限时标红;**改价走 `useConfirm`**(变更行 + 影响面 + 范围说明,影响面查询在途时确认禁用),规格缺要素被拒时给「强制上架」出口(红色确认);编辑抽屉全参数表单(含 `包周期` 与 `竞价档` Switch,后者**新建默认关**,说明「开启后该规格可按竞价价售卖;竞价实例在容量紧张时会被平台回收」)+ 超卖风险提示(「变更仅影响新实例」)+ 编辑必填原因,右侧实时容量预览;新建可「从集群资源创建」。表单常量在 `-skuForm`。
+- **租户与实例**(全宽;三个 Tab,拆在 `-TenantsTab` / `-InstancesTab` / `-DeletionsTab`):租户表(ID / 手机脱敏(固定左)/ 余额 / 累计消费 / 实例数 / 数据盘 GB / 状态 / 注册时间 / 操作(固定右):查看账务 + `冻结`·`解冻`;检索落审计,输入框 ↔ `?q=` 经 `useUrlCommittedInput`)+ 点行开租户抽屉(**`?tenant=<id>` 入 URL**,`TenantLink` 与告警都直开;Tab `小时账单` / `资金流水` / `在线服务` / 实例,`?dtab=`;嵌套表 403 用 compact 空态);全局实例表(`FilterBar`:状态 / 实例名 / 节点名,带清除与 total)按形态标(开发机 / 在线服务,服务行链到 `/services?q=<slug>`),操作 `强制停止` 与 `强制回收` 两个入口不合并(目标 = 实例名 · uuid 前缀);注销申请表:执行走 L3(键入用户 ID + 勾选 + 必填原因),驳回走 `ReasonAction`。
+- **在线服务**(全宽):全局服务表(服务名 + slug(固定左)/ 归属 / 服务端点主机名(可复制完整 URL)/ 状态徽标 + 就绪副行 / 当前实例(链到全局实例表按 uuid 检索)/ 版本 / 节点 / 创建时间 / 操作(固定右)),检索(名称或 slug 前缀)与「含已删除」入 URL;只读 + 唯一处置 `强制停止`(`ReasonAction`,目标 = 名称 · slug,委托当前版本实例 force-stop,仅 running / unready)。独立菜单项。
+- **镜像与预热**(全宽;页头新鲜度条,`POLL.ticket` 可暂停):镜像表(框架(固定左)/ Python / CUDA / 镜像地址 / 预热开关 / 覆盖率 / 操作(固定右):立即预热 · 编辑 + 更多(删除));**关闭预热走 L1 确认**;覆盖率里的「N 台失败」可点,展开该行节点缓存面板(`?image=<id>` 入 URL,可直链)。
+- **平台配置**(仅超管):左侧分组导航(安全 / 第三方渠道 / 基础设施 / 站点信息,导航项带状态点:红 = error、琥珀 = warning、绿 = 开关已开、灰 = 关闭或未配置;**当前分组 `?group=` 入 URL**)+ 顶部服务端配置风险告警(「前往」跳到对应分组,带回链)+ 右侧分组表单;「安全策略」页为开关行;全局「保存变更」+ 原因必填,含关闭安全开关时弹窗红色复述风险。子文件:`-platformNav` / `-platformFields` / `-platformSecurity` / `-platformTestCards`。
+- **财务对账**(全宽;Tab 拆在 `-OrdersTab` / `-RefundsTab` / `-InvoicesTab` / `-AdjustmentsTab` / `-SettlementGapsTab` / `-AnomaliesTab`,筛选态在 `-financeFilters`):日对账卡(可选日期)`事件计费合计` vs `指标估算合计` + diff%,>2% 标红并列差异实例;充值流水(核验 / 补单);退款(退款单号固定左,行内 `批准` / `驳回` 或 `打款登记`,`取消` 收进更多;确认文案带退款单号与金额;打款不能是审批人)| 发票(开具 / 驳回,文案带 #id 与金额)| 调账(发起 → 双人复核:**批准需勾选「已核对租户与金额」**,驳回需理由;发起人不能自审)| 结算缺口(单条 / **勾选批量**重放,核销走 `ReasonAction` 带缺口 #id)| 异常清单(丢回调 / 关单 / 负余额,可渠道核验与补单;负余额只给提示)| 审计。
+- **工单**:状态 / 分类筛选 + user_id / 工单号检索(游标分页)+ 详情抽屉(对话流 + 回复;`标记解决` / `关闭工单` 走 `useConfirm`,标题带工单号);读全角色,写 ops / admin。
+- **告警中心**(页头新鲜度条):AlertBell Popover 的完整版。`severity` 服务端过滤、`确认状态` 在 200 条窗口内客户端过滤,两个筛选入 URL;未确认项带复选框,「全选未确认」+ **批量确认**;条目深链与 AlertBell / 总览告警流共用 `alertLink`;确认闭环同一范式(写限 ops/admin,成功后 `["admin","alerts"]` 前缀失效);已确认条目显示确认人与时刻,错误态用 `TableErrorEmpty` 如实显示。
+- **系统设置**:策略参数(表格 + 即时生效提示)/ 公告(发布 / 撤回走 `ReasonAction`,目标 = 标题)/ 法务文档(草稿 → 发布 → 归档,归档走 `ReasonAction`)/ 管理员账号(建号 / 改角色 / 停用 / **重置密码二次确认(目标 = 用户名,踢全部登录态)** / 重置两步验证走 `ReasonAction` 带用户名;自助改密与恢复码重新生成)。
+- **审计**:limit + 游标翻页 + 分钟级时间窗;财务页内嵌同一 `AuditTable`。
