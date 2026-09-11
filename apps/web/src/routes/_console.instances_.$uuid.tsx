@@ -45,6 +45,7 @@ import { LogsPanel } from "../components/instance/LogsPanel";
 import { MetricsPanel } from "../components/instance/MetricsPanel";
 import { InstanceActions, ReleaseModal, canReleaseStatus } from "../components/InstanceActions";
 import { requireAuth } from "../lib/guard";
+import { useRememberedListSearch } from "../stores/listSearch";
 
 // 旧链接的 ?tab=service 不在白名单,回默认 Tab
 const DETAIL_TABS = ["metrics", "access", "logs", "events", "bills"] as const;
@@ -203,6 +204,7 @@ function InstanceDetail() {
   const { tab } = Route.useSearch();
   const navigate = useNavigate();
   const [releaseOpen, setReleaseOpen] = useState(false);
+  const listSearch = useRememberedListSearch("/instances") as { q?: string; status?: string };
   const {
     data: instance,
     isError: instanceError,
@@ -238,11 +240,15 @@ function InstanceDetail() {
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-      {/* 面包屑:列表筛选态在 URL 上 */}
+      {/* 面包屑:带回列表页最近一次筛选态(stores/listSearch) */}
       <Breadcrumb
         items={[
           {
-            title: <Link to="/instances">{t("instances.title")}</Link>,
+            title: (
+              <Link to="/instances" search={listSearch}>
+                {t("instances.title")}
+              </Link>
+            ),
           },
           { title: instance.name },
         ]}
@@ -366,7 +372,7 @@ function InstanceDetail() {
         instance={instance}
         open={releaseOpen}
         onClose={() => setReleaseOpen(false)}
-        onReleased={() => navigate({ to: "/instances" })}
+        onReleased={() => navigate({ to: "/instances", search: listSearch })}
       />
     </Space>
   );

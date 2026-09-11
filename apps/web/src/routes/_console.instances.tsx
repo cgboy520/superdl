@@ -60,6 +60,7 @@ import { RenewModal } from "../components/RenewModal";
 import { GpuSparkline } from "../components/GpuSparkline";
 import { InstanceActions } from "../components/InstanceActions";
 import { requireAuth } from "../lib/guard";
+import { listSearchStore } from "../stores/listSearch";
 
 /** 可过滤的状态(released 终态不出列表) */
 const FILTER_STATUSES = [
@@ -644,6 +645,11 @@ function InstancesPage() {
       },
       replace: true,
     });
+
+  // 记住当前筛选态,详情页「返回列表」带回
+  useEffect(() => {
+    listSearchStore.getState().remember("/instances", { q, status });
+  }, [q, status]);
 
   // 列表状态入 URL(replace)
   useEffect(() => {
