@@ -289,9 +289,10 @@ function AppLayout() {
             <Tag color={isProd ? "red" : "cyan"}>{isProd ? t("shell.envProd") : t("shell.envDev")}</Tag>
           </Space>
           <Space size={24}>
-            {/* md 以下语言切换/铃铛收入用户下拉 */}
+            {/* md 以下命令面板触发器/语言切换/铃铛收入用户下拉 */}
             {screens.md && (
               <>
+                <CommandTrigger />
                 <LangSwitcher width={110} />
                 <AlertBell />
               </>
