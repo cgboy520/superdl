@@ -23,7 +23,7 @@
    - 第 4 步等全部 Deployment(api + 5 个 worker 组件 + web/admin)滚动完成(readinessProbe 即 `/readyz`);
    - 第 5 步经网关从集群外 `curl -fsS https://<api-domain>/readyz`:域名取环境变量 `SUPERDL_API_BASE_URL`,缺省读 ConfigMap `superdl-api-config` 的 `SUPERDL_PUBLIC_BASE_URL`,取不到或仍是占位则跳过并提示。失败先查迁移 Job 与网关链路,修复后重新发布,不回滚。
 4. 首个管理员(库迁移后、仅首发一次):`cd apps/api && uv run python scripts/bootstrap_admin.py`(`seed_dev.py` 只允许 dev/test),口令只打印一次,首次登录强制绑定 TOTP
-5. 备份:`06-pg-backup.yaml` 每日逻辑备份;恢复演练见 `cluster/runbooks/pg-backup-restore.md`
+5. 备份:`06-pg-backup.yaml` 每日逻辑备份(自建单实例 PG 形态用 `pg/backup.sh` + `pg/wal-sync.sh`);恢复演练见 `cluster/runbooks/pg-backup-restore.md`
 
 ### 发布与迁移约定
 
@@ -41,10 +41,13 @@
 
 ## 生产数据库要求(必读)
 
-`app/k8s/` 的清单不含任何 PostgreSQL 对象。生产数据库二选一:
+`app/k8s/` 的清单不含任何 PostgreSQL 对象。生产数据库三选一:
 
 1. **托管 PG**(云 RDS/裸金属自建主备):PG ≥ 18,开自动备份 + PITR(WAL 归档);`SUPERDL_DATABASE_URL` 经 `secrets.example.yaml` 注入。
 2. **CloudNativePG 集群**(进 K8s 时唯一受支持形态):3 实例 + `backup` 到对象存储(持续 WAL 归档)+ 定时备份校验;禁止单实例 cnpg 上生产。
+3. **自建单实例 PG(控制面宿主机 Docker)**:小规模集群无托管 PG 时的形态,文件与备份/PITR 链在 `pg/README.md`;宿主机是库的单点,RPO 由每日 dump(24h)+ WAL 异地同步(5 分钟)兜。
+
+三种形态都分两个库角色:owner(跑迁移,Secret `superdl-db-migrate`)与应用角色(api / worker,Secret `superdl-db`,无 DDL,`balance_ledger` 只追加、`audit_log` 不可改;建法 `pg/roles.sql`)。
 
 硬性要求(备份分层见 `cluster/runbooks/pg-backup-restore.md`):
 

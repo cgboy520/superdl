@@ -11,6 +11,7 @@
 |---|---|---|
 | 逻辑备份 | `deploy/app/k8s/06-pg-backup.yaml` 每日 `pg_dump -Fc` → **gpg AES256 客户端加密**(口令 = `superdl-pg-backup` 的 `BACKUP_ENCRYPT_KEY`)→ 对象存储;上传后 restore 冒烟(解密 + pg_restore + 要害表可查询),失败即 Job Failed 告警 | 24h |
 | 连续归档 | CloudNativePG barmanObjectStore S3 WAL 归档 + 每日基础备份(`values/cnpg-cluster.yaml`,cnpg 档);托管 PG 时用 RDS 自动备份 + PITR | 分钟级 |
+| 自建单实例(`deploy/pg/`) | `backup.sh` 每日 dump → gpg → 镜像机 + 恢复冒烟;`wal-sync.sh` 每 5 分钟同步 WAL 归档、每周 `pg_basebackup`;指标 `superdl_pg_backup_last_success_timestamp_seconds`(node-exporter textfile),告警 `PgBackupStandaloneStale` | dump 24h / WAL 5 分钟 |
 | 集群元数据 | RKE2 etcd 快照(每 6h,留 12 份,`rke2/server-config.yaml`) | 6h |
 
 对账:`balance_ledger` 追加式且每行带 `balance_after`,恢复后用 `GET /api/admin/v1/reconciliation` 与流水链校验资金一致性。
@@ -63,7 +64,7 @@ kubectl -n superdl scale deploy superdl-worker-node-mgr superdl-worker-prewarm \
 - [ ] 日常冒烟在线:近 7 日 `pg-backup-daily` Job 全部成功(含 restore 冒烟),`PgBackupFailed` / `PgBackupStale` 无触发
 - [ ] 完整恢复计时:从对象存储取最近一次备份,按「恢复步骤」恢复到隔离库并计时,结果填入下方 RTO 记录表
 - [ ] 资金一致性:抽 3 个用户核对 余额 = 流水链尾部 `balance_after`;`alembic check` 通过
-- [ ] PITR 抽检:从 WAL 归档恢复到指定时间点(cnpg 档用 recovery 模式集群;托管 PG 用控制台时间点恢复)
+- [ ] PITR 抽检:从 WAL 归档恢复到指定时间点(cnpg 档用 recovery 模式集群;托管 PG 用控制台时间点恢复;自建单实例按 `deploy/pg/README.md`「PITR」用镜像机上的 base + wal)
 - [ ] 告警链路:手工 fail 一次备份(如临时改错 S3 凭据)确认 `PgBackupFailed` 触达值班,随后恢复
 - [ ] 记录归档:RTO 记录表更新 + 演练结论写入运维周报
 
