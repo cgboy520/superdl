@@ -102,6 +102,36 @@ PAYMENT_CHANNEL_REVERSED_TOTAL = Counter(
     "superdl_payment_channel_reversed_total",
     "已入账订单收到渠道关单/退款类通知的次数(不自动冲账,人工核销;告警 PaymentChannelReversed)",
 )
+PAYMENT_REVERSAL_RESOLVED_TOTAL = Counter(
+    "superdl_payment_reversal_resolved_total",
+    "渠道反向通知人工处置次数(action=release 解冻 / chargeback 坐实);release 条条告警",
+    ["action"],
+)
+PLATFORM_CONFIG_WRITE_TOTAL = Counter(
+    "superdl_platform_config_write_total",
+    "平台配置写入次数(domain 为配置组;payment/crypto 组改动会改变收款验签根,条条告警)",
+    ["domain"],
+)
+ENDPOINT_AUTH_DENIED_TOTAL = Counter(
+    "superdl_endpoint_auth_denied_total",
+    "服务端点网关鉴权回调拒绝次数(key 不存在/已吊销/服务未就绪);持续非零 = 有人在猜 key",
+)
+USER_SIGNUP_TOTAL = Counter("superdl_user_signup_total", "用户注册成功次数(注册速率告警据此)")
+SMS_SENT_TOTAL = Counter(
+    "superdl_sms_sent_total",
+    "短信发送次数(purpose 区分验证码/通知;费用与滥用告警据此)",
+    ["purpose"],
+)
+SSH_PORT_POOL = Gauge(
+    "superdl_ssh_port_pool_ports",
+    "SSH NodePort 端口池水位(state=assigned 已分配 / blocked 封禁 / free 空闲);reconciler 每轮刷新",
+    ["state"],
+)
+WALLET_NEGATIVE_COUNT = Gauge("superdl_wallet_negative_count", "余额为负的钱包数(余额巡检每轮刷新)")
+WALLET_NEGATIVE_SUM = Gauge(
+    "superdl_wallet_negative_sum_yuan",
+    "负余额绝对值合计(元,展示口径;结算允许透支,此处只看敞口)",
+)
 # WorkerDown 告警据此判活(无 label,首次 inc 前也有序列)
 WORKER_HEARTBEAT_TS = Gauge(
     "superdl_worker_heartbeat_timestamp_seconds",

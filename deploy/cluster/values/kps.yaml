@@ -384,10 +384,16 @@ additionalPrometheusRulesMap:
             labels: {severity: critical}
             annotations: {summary: "PG 每日备份 Job 失败:资金库 RPO 正在拉长,立即处理", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
           - alert: PgBackupStale
-            expr: (time() - max(kube_job_status_completion_time{namespace="superdl", job_name=~"pg-backup-daily-.*"})) > 100800 or absent(kube_job_status_completion_time{namespace="superdl", job_name=~"pg-backup-daily-.*"})
+            # CronJob 形态;自建单实例形态(deploy/pg,指标 superdl_pg_backup_last_success_timestamp_seconds 存在)不按 CronJob 缺失判
+            expr: (time() - max(kube_job_status_completion_time{namespace="superdl", job_name=~"pg-backup-daily-.*"})) > 100800 or (absent(kube_job_status_completion_time{namespace="superdl", job_name=~"pg-backup-daily-.*"}) and absent(superdl_pg_backup_last_success_timestamp_seconds))
             for: 5m
             labels: {severity: warning}
             annotations: {summary: "PG 备份超 28h 无成功记录(CronJob 未跑或历史被清)", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
+          - alert: PgBackupStandaloneStale
+            expr: (time() - max(superdl_pg_backup_last_success_timestamp_seconds)) > 100800
+            for: 5m
+            labels: {severity: critical}
+            annotations: {summary: "自建 PG 每日备份(dump + 异地同步 + 恢复冒烟)超 28h 无成功:查控制面宿主机 cron 邮件与 /var/lib/superdl/pg/backup", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
           # 资金/结算/巡检/查单/编排收尾(指标定义见 apps/api/app/core/metrics.py)
           - alert: FundReconcileMismatch
             expr: increase(superdl_fund_reconcile_mismatch_total[5m]) > 0
@@ -430,6 +436,27 @@ additionalPrometheusRulesMap:
             expr: increase(superdl_reconcile_leak_aborted_total[15m]) > 0
             labels: {severity: warning}
             annotations: {summary: "泄漏回收被熔断中止(未知 Pod 占比超阈):本轮泄漏未回收,人工核对节点残留"}
+          # SSH 端口池(停机实例不释放端口;耗尽表现为所有人开机 schedule 超时转 failed)
+          - alert: SshPortPoolLow
+            expr: superdl_ssh_port_pool_ports{state="free"} < 0.1 * sum(superdl_ssh_port_pool_ports)
+            for: 10m
+            labels: {severity: warning}
+            annotations: {summary: "SSH NodePort 端口池空闲 {{ $value }} 个(<10%):清理长期停机实例或扩端口段,见 docs/reference/limits.md"}
+          - alert: SshPortPoolExhausted
+            expr: superdl_ssh_port_pool_ports{state="free"} < 20
+            for: 5m
+            labels: {severity: critical}
+            annotations: {summary: "SSH NodePort 端口池即将耗尽(空闲 {{ $value }}):新建带 SSH 的实例将失败,立即处理"}
+          # 透支敞口(结算允许透支;巡检 5 分钟停机,敞口持续上涨 = 停机链路失效)
+          - alert: WalletNegativeExposure
+            expr: superdl_wallet_negative_sum_yuan > 1000
+            for: 30m
+            labels: {severity: warning}
+            annotations: {summary: "负余额敞口合计 {{ $value }} 元持续 30 分钟(钱包数见 superdl_wallet_negative_count):核对欠费停机巡检是否在跑,管理端财务 › 异常清单"}
+          - alert: PaymentReversalReleased
+            expr: increase(superdl_payment_reversal_resolved_total{action="release"}[10m]) > 0
+            labels: {severity: critical}
+            annotations: {summary: "渠道反向通知被人工解冻({{ $value }} 次):单操作人动作,逐条与渠道退款记录核对"}
           - alert: CertNotReady
             expr: certmanager_certificate_ready_status{condition="False"} == 1
             for: 10m
@@ -481,3 +508,49 @@ additionalPrometheusRulesMap:
             for: 10m
             labels: {severity: warning}
             annotations: {summary: "API 401/403 占比 >30% 持续 10 分钟:大概率是自动化探测,而不是用户在误操作", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
+          # 收款验签根变更:支付/加密配置组任一写入都告警(单 admin 即可换验签公钥,告警是唯一的第二双眼)
+          - alert: PaymentConfigWritten
+            expr: increase(superdl_platform_config_write_total{domain=~"payment|crypto"}[5m]) > 0
+            labels: {severity: critical}
+            annotations: {summary: "平台配置 {{ $labels.domain }} 组被写入({{ $value }} 次):换掉验签公钥/商户号即可自签回调充值,逐条与变更单核对,非计划内按失陷处置", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
+          # 服务端点 key 猜测(回调不过审计与通用限流,此计数是唯一信号)
+          - alert: EndpointAuthDenialSustained
+            expr: rate(superdl_endpoint_auth_denied_total[10m]) > 1
+            for: 15m
+            labels: {severity: warning}
+            annotations: {summary: "服务端点网关鉴权拒绝持续 {{ $value }}/s 超 15 分钟:有人在猜 x-api-key,按 slug 查 Loki 后临时冻结该服务", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
+  # 滥用域(注册速率 / 短信 / 限流 / 租户出向)。租户出向流量取 cAdvisor 网卡计数
+  superdl-abuse:
+    groups:
+      - name: superdl.abuse
+        rules:
+          - alert: SignupVelocityHigh
+            expr: increase(superdl_user_signup_total[1h]) > 100
+            labels: {severity: warning}
+            annotations: {summary: "1 小时内注册 {{ $value }} 个账号:批量注册特征,核对实名通过率与同 IP/同证件分布,必要时临时提高注册限流"}
+          - alert: SmsBurst
+            expr: sum by (purpose) (increase(superdl_sms_sent_total[10m])) > 300
+            labels: {severity: warning}
+            annotations: {summary: "10 分钟内发出短信 {{ $value }} 条({{ $labels.purpose }}):短信轰炸或撞库,先核对人机校验开关再看源 IP"}
+          # 应用层 429(边缘 Envoy 本地限流的 429 不经应用,不在此口径)
+          - alert: ApiRateLimitedHigh
+            expr: sum(rate(superdl_http_request_duration_seconds_count{status="429"}[5m])) > 5
+            for: 10m
+            labels: {severity: warning}
+            annotations: {summary: "应用层限流 429 持续 {{ $value }}/s 超 10 分钟:单点被打,按 route/源 IP 查 Loki", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
+          # 单租户 ns 出向 >40 MB/s 持续 15 分钟(Pod 级已限 200 Mbit/s,多实例叠加仍可达此值)
+          - alert: TenantEgressHigh
+            expr: sum by (namespace) (rate(container_network_transmit_bytes_total{namespace=~"tenant-.*"}[10m])) > 40e6
+            for: 15m
+            labels: {severity: warning}
+            annotations: {summary: "租户 {{ $labels.namespace }} 出向 {{ $value | humanize }}B/s 持续 15 分钟:扫描/外发/中继特征,管理端查该租户实例,必要时冻结"}
+# node-exporter textfile 采集目录:自建单实例 PG 的备份脚本(deploy/pg/backup.sh)往里写最近成功时间戳
+prometheus-node-exporter:
+  extraArgs:
+    - --collector.textfile.directory=/host/textfile
+  extraHostVolumeMounts:
+    - name: textfile
+      hostPath: /var/lib/node_exporter/textfile
+      mountPath: /host/textfile
+      readOnly: true
+      mountPropagation: None
