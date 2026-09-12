@@ -5,7 +5,13 @@ import { useTranslation } from "react-i18next";
 
 import { type SkuTier, type SkuVariant } from "@superdl/ui";
 
-import { type CapacityWarning } from "../../api";
+import {
+  type CapacityWarning,
+  type GpuModelAggregate,
+  type SkuAdminOut,
+  type SkuCreate,
+  type SkuUpdate,
+} from "../../api";
 
 /** antd useWatch 的类型不含「字段未初始化」的 undefined,运行时会拿到;这里统一收窄出真实类型。 */
 export function useWatchSkuField<K extends keyof SkuFormValues>(
@@ -63,6 +69,59 @@ export const CPU_ZERO_FIELDS = {
   max_gpus_per_instance: 0,
   oversell_cores: 1,
 } as const;
+
+/** 「从集群资源创建」的推荐填表值:只有 HAMi 按算力份额折规格(pct%),整卡与 MIG 拿整份;agg 不带 vcpu/mem 时不写。 */
+export function recommendFields(agg: GpuModelAggregate, variant: SkuVariant, pct: number): Partial<SkuFormValues> {
+  const shared = variant === "shared_hami";
+  const factor = shared ? pct / 100 : 1;
+  return {
+    gpu_model: agg.gpu_model ?? "",
+    pool_label: agg.pool_label ?? "",
+    gpu_cores_pct: shared ? pct : 100,
+    vram_gb: Math.max(1, Math.floor(agg.vram_gb * factor)),
+    ...(agg.vcpu_per_gpu ? { vcpu: Math.max(1, Math.round(agg.vcpu_per_gpu * factor)) } : {}),
+    ...(agg.mem_gb_per_gpu ? { mem_gb: Math.max(1, Math.round(agg.mem_gb_per_gpu * factor)) } : {}),
+  };
+}
+
+/** 提交负载派生:档位 →(tier, 池)(只有 cpu 档的池可选,其余由档位派生);CPU 档 GPU 字段补零;新建端点不接受 reason,编辑不带 gpu_model(型号不可改)。 */
+export function buildSkuPayload(
+  values: SkuFormValues,
+  editing: SkuAdminOut | "new" | null,
+): { kind: "create"; data: SkuCreate } | { kind: "update"; skuId: number; data: SkuUpdate } | null {
+  if (editing === null) return null;
+  const { tier, pool: derivedPool } = VARIANT_SPEC[values.variant];
+  const pool = values.variant === "cpu" ? values.pool_label : derivedPool;
+  const gpuFields =
+    tier === "cpu"
+      ? CPU_ZERO_FIELDS
+      : {
+          gpu_model: values.gpu_model,
+          mig_profile: values.mig_profile ?? null,
+          gpu_cores_pct: values.gpu_cores_pct,
+          vram_gb: values.vram_gb,
+          max_gpus_per_instance: values.max_gpus_per_instance,
+        };
+  const base = {
+    name: values.name,
+    oversell_cores: String(values.oversell_cores),
+    pool_label: pool,
+    vcpu: values.vcpu,
+    mem_gb: values.mem_gb,
+    disk_gb: values.disk_gb,
+    price_hourly: values.price_hourly,
+    cuda_max: values.cuda_max ?? null,
+    period_enabled: values.period_enabled,
+    spot_enabled: values.spot_enabled,
+  };
+  if (editing === "new") {
+    return { kind: "create", data: { tier, ...gpuFields, ...base } };
+  }
+  // 型号不可改(SkuUpdate 无该字段)
+  const { gpu_model, ...gpuUpdatable } = gpuFields;
+  void gpu_model;
+  return { kind: "update", skuId: editing.id, data: { ...base, ...gpuUpdatable, reason: values.reason ?? "" } };
+}
 
 export type TFn = ReturnType<typeof useTranslation<["admin", "shared"]>>["t"];
 
