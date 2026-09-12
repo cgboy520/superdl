@@ -463,7 +463,7 @@ class TestSettlementGaps:
 
     async def test_dead_letter_after_consecutive_failures(self, sm, monkeypatch):
         """单实例连续失败 N 轮 → 死信记缺口,水位线越过。"""
-        from app.modules.orchestrator import service as orchestrator_service
+        from app.modules.orchestrator import queries as orchestrator_queries
 
         good, _ = await seed_instance(
             sm,
@@ -478,14 +478,14 @@ class TestSettlementGaps:
             status="running",
         )
 
-        real_lock = orchestrator_service.lock_instance_for_billing
+        real_lock = orchestrator_queries.lock_instance_for_billing
 
         async def flaky_lock(session, instance_id):
             if instance_id == bad:
                 raise RuntimeError("seeded persistent failure")
             await real_lock(session, instance_id)
 
-        monkeypatch.setattr(orchestrator_service, "lock_instance_for_billing", flaky_lock)
+        monkeypatch.setattr(orchestrator_queries, "lock_instance_for_billing", flaky_lock)
 
         at = H_END + timedelta(minutes=2)
         for round_ in range(1, DEAD_LETTER_AFTER + 1):
@@ -514,7 +514,7 @@ class TestSettlementGaps:
     async def test_persistent_failure_keeps_other_instances_billed(self, sm, monkeypatch):
         """坏实例逐窗死信记缺口,好实例每个窗口的账不丢。"""
         from app.modules.billing.settlement import _advance_watermark
-        from app.modules.orchestrator import service as orchestrator_service
+        from app.modules.orchestrator import queries as orchestrator_queries
 
         good, _ = await seed_instance(
             sm,
@@ -534,7 +534,7 @@ class TestSettlementGaps:
             if instance_id == bad:
                 raise RuntimeError("seeded persistent failure")
 
-        monkeypatch.setattr(orchestrator_service, "lock_instance_for_billing", always_fail_lock)
+        monkeypatch.setattr(orchestrator_queries, "lock_instance_for_billing", always_fail_lock)
 
         # 3 个窗口(H+1h..H+3h):坏实例每窗连败 DEAD_LETTER_AFTER 轮才死信,最后水位线追平到 H+3h
         at = H_END + timedelta(hours=3, minutes=2)

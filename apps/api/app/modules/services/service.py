@@ -28,7 +28,12 @@ from app.core.sqlutil import like_escape
 from app.core.timeutil import now_utc
 from app.modules.billing import service as billing_service
 from app.modules.notify import service as notify_service
-from app.modules.orchestrator import service as orchestrator_service
+from app.modules.orchestrator import (
+    queries as orchestrator_queries,
+    service as orchestrator_service,
+    statemachine as sm_def,
+    transitions as orchestrator_transitions,
+)
 from app.modules.orchestrator.schemas import WORKLOAD_SERVICE, InstanceOut
 from app.modules.services.models import DESIRED_RUNNING, DESIRED_STOPPED, Service, ServiceApiKey
 from app.modules.services.schemas import (
@@ -191,9 +196,9 @@ async def create_service(
 RETIRE_TASK_TYPE = "service.retire"
 # 版本更新允许的旧版本状态
 _ROLLOUT_SETTLED = (
-    orchestrator_service.RUNNING,
-    orchestrator_service.STOPPED,
-    orchestrator_service.FAILED,
+    sm_def.RUNNING,
+    sm_def.STOPPED,
+    sm_def.FAILED,
 )
 
 
@@ -276,7 +281,7 @@ async def create_revision(
     svc.revision += 1
     svc.rollout_instance_id = new.id
     svc.desired_state = DESIRED_RUNNING
-    if old.status == orchestrator_service.RUNNING:
+    if old.status == sm_def.RUNNING:
         await orchestrator_service.stop_instance_row(session, old, reason="rollout")
     await session.commit()
     logger.info(
@@ -318,7 +323,7 @@ async def _instances_of(
     session: AsyncSession, services: Sequence[Service]
 ) -> dict[int, "Instance"]:
     ids = {i for s in services for i in (s.current_instance_id, s.rollout_instance_id) if i}
-    rows = await orchestrator_service.instances_by_ids(session, ids)
+    rows = await orchestrator_queries.instances_by_ids(session, ids)
     return {r.id: r for r in rows}
 
 
@@ -469,7 +474,7 @@ async def _lock_current(session: AsyncSession, svc: Service) -> tuple["Instance"
     """锁序 instance → service:先锁当前实例,再锁服务行重读守卫。"""
     if svc.current_instance_id is None:
         raise conflict(key="services.released")
-    instance = await orchestrator_service.lock_instance(session, svc.current_instance_id)
+    instance = await orchestrator_queries.lock_instance(session, svc.current_instance_id)
     if instance is None:
         raise conflict(key="services.released")
     locked = await session.get(Service, svc.id, with_for_update=True, populate_existing=True)
@@ -526,7 +531,7 @@ async def delete_service(session: AsyncSession, user_id: int, slug: str) -> Serv
     if svc.rollout_instance_id is not None:
         raise conflict(key="services.rolloutInFlight")
     instance, svc = await _lock_current(session, svc)
-    if instance.status == orchestrator_service.RUNNING:
+    if instance.status == sm_def.RUNNING:
         raise AppError(
             ErrorCode.INSTANCE_NOT_STOPPED,
             key="services.deleteNeedsStopped",
@@ -586,7 +591,7 @@ async def read_service_logs(
     shown = svc.rollout_instance_id or svc.current_instance_id
     if shown is None:
         raise conflict(key="orchestrator.logsNeedsRunning")
-    rows = await orchestrator_service.instances_by_ids(session, [shown])
+    rows = await orchestrator_queries.instances_by_ids(session, [shown])
     if not rows:
         raise conflict(key="orchestrator.logsNeedsRunning")
     return await orchestrator_service.read_instance_logs(
@@ -805,7 +810,7 @@ async def verify_endpoint_key(
     if svc is None or svc.current_instance_id is None:
         raise _endpoint_denied()
     # 非 running 一律拒;主键级读且不抛
-    if await orchestrator_service.instance_status(session, svc.current_instance_id) != "running":
+    if await orchestrator_queries.instance_status(session, svc.current_instance_id) != "running":
         raise _endpoint_denied()
     expires = time.monotonic() + _ENDPOINT_AUTH_CACHE_TTL_SECONDS
     if not svc.require_api_key:
@@ -854,19 +859,19 @@ def register_service_listeners() -> None:
     ) -> None:
         if instance.service_id is None:
             return
-        if event.from_status == orchestrator_service.RUNNING:
+        if event.from_status == sm_def.RUNNING:
             invalidate_endpoint_auth_cache(instance_id=instance.id)
         to = event.to_status
         if to not in (
-            orchestrator_service.RUNNING,
-            orchestrator_service.FAILED,
+            sm_def.RUNNING,
+            sm_def.FAILED,
             RELEASED,
         ):
             return
         svc = await session.get(Service, instance.service_id, with_for_update=True)
         if svc is None:
             return
-        if to == orchestrator_service.RUNNING and svc.rollout_instance_id == instance.id:
+        if to == sm_def.RUNNING and svc.rollout_instance_id == instance.id:
             old_id = svc.current_instance_id
             svc.current_instance_id = instance.id
             svc.rollout_instance_id = None
@@ -875,7 +880,7 @@ def register_service_listeners() -> None:
             if old_id is not None and old_id != instance.id:
                 enqueue(session, RETIRE_TASK_TYPE, {"service_id": svc.id, "instance_id": old_id})
             await session.flush()
-        elif to == orchestrator_service.FAILED and svc.rollout_instance_id == instance.id:
+        elif to == sm_def.FAILED and svc.rollout_instance_id == instance.id:
             svc.rollout_instance_id = None
             await notify_service.notify(
                 session,
@@ -900,5 +905,5 @@ def register_service_listeners() -> None:
             svc.released_at = event.created_at
             await session.flush()
 
-    orchestrator_service.register_transition_listener(_on_transition)
+    orchestrator_transitions.register_transition_listener(_on_transition)
     _listener_registered = True

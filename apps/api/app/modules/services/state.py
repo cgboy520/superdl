@@ -2,6 +2,8 @@
 
 from typing import TYPE_CHECKING
 
+from app.modules.orchestrator import statemachine as sm_def
+
 if TYPE_CHECKING:
     from app.modules.orchestrator.models import Instance
     from app.modules.services.models import Service
@@ -17,28 +19,16 @@ FAILED = "failed"
 RELEASING = "releasing"
 RELEASED = "released"
 
-SERVICE_STATUSES: tuple[str, ...] = (
-    DEPLOYING,
-    RUNNING,
-    UNREADY,
-    STOPPING,
-    STOPPED,
-    FROZEN,
-    FAILED,
-    RELEASING,
-    RELEASED,
-)
-
-# 实例状态 → 服务状态(字面量与 orchestrator/statemachine 一致;creating/starting 归并为部署中)
+# 实例状态 → 服务状态(creating/starting 归并为部署中;running 另按就绪位分 RUNNING / UNREADY)
 _BY_INSTANCE_STATUS: dict[str, str] = {
-    "creating": DEPLOYING,
-    "starting": DEPLOYING,
-    "stopping": STOPPING,
-    "stopped": STOPPED,
-    "frozen": FROZEN,
-    "failed": FAILED,
-    "releasing": RELEASING,
-    "released": RELEASED,
+    sm_def.CREATING: DEPLOYING,
+    sm_def.STARTING: DEPLOYING,
+    sm_def.STOPPING: STOPPING,
+    sm_def.STOPPED: STOPPED,
+    sm_def.FROZEN: FROZEN,
+    sm_def.FAILED: FAILED,
+    sm_def.RELEASING: RELEASING,
+    sm_def.RELEASED: RELEASED,
 }
 
 

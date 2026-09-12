@@ -273,7 +273,7 @@ class TestTenantAggregations:
 class TestNodesAndReports:
     async def test_port_pool_stats(self, client, sm, fake):
         """端口池水位:assigned=已分配实例数;blocked=撞占标记(周期复检会放回)。"""
-        from app.modules.orchestrator.service import block_port
+        from app.modules.orchestrator.ports import block_port
 
         _headers, _uuid, _user_id = await provision_running(client, sm, fake)  # 占 1 端口
         await block_port(sm, 31999, reason="test_orphan_endpoint", expected_instance_id=None)

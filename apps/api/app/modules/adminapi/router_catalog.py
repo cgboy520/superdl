@@ -30,7 +30,7 @@ from app.modules.catalog.schemas import (
     SkuUpdate,
 )
 from app.modules.nodes import service as nodes_service
-from app.modules.orchestrator import service as orchestrator_service
+from app.modules.orchestrator import ports as orchestrator_ports
 
 router = APIRouter(tags=["admin"])
 
@@ -66,7 +66,7 @@ async def admin_list_skus(session: DbSession) -> list[SkuAdminOut]:
     """SKU 列表,组装台账容量与占用列。"""
     skus = await catalog_service.admin_list_skus(session)
     specs = await nodes_service.ready_specs(session)
-    sold = await orchestrator_service.active_gpu_counts_by_sku(session)
+    sold = await orchestrator_ports.active_gpu_counts_by_sku(session)
     out: list[SkuAdminOut] = []
     for sku in skus:
         item = SkuAdminOut.model_validate(sku)

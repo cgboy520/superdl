@@ -54,7 +54,7 @@ python3 scripts/check-docs-links.py      # 文档相对链接、反引号路径�
 3. **改 DB + 动 K8s 走 outbox**:业务写入与 `outbox_tasks` 同事务;请求路径禁止直接调 K8s(唯一例外:实例日志只读直读,见 `docs/reference/orchestrator.md`)。worker 侧巡检可直连 K8s。
 4. **钱包更新 `SELECT ... FOR UPDATE`**,同事务写 `balance_ledger`(带 balance_after)。
 5. **计费主依据 `instance_events`**(running↔非 running 边);Prometheus 指标只做展示与对账。
-6. **模块边界**:`app/modules/*` 之间只许 import 对方 `service.py` 与 `schemas.py`;唯一例外 `account/deps.py`。import-linter 强制。
+6. **模块边界**:`app/modules/*` 之间只许 import 对方的公开面:`service.py`、`schemas.py`,以及 `account/deps.py`、`account/deletion.py`;`orchestrator` 另开放 `queries.py`(只读)、`transitions.py`(系统侧迁移)、`statemachine.py`(状态常量)、`ports.py`(端口池),它们不依赖 billing,是 billing 结算与巡检访问编排的唯一通道。`billing` 禁止 import `orchestrator/service.py`(后者依赖 `billing/service.py`,反向即环)。函数内 import 只许出现在 `wiring.py` / 进程入口 / 第三方 SDK 按需加载(ruff PLC0415 强制),模块环一律靠调整归属打破。import-linter 强制。
 7. **API 契约**:OpenAPI-first。改路由/schema 后重导 openapi.json 并跑 `pnpm api-client`;前端禁止手写 fetch,用生成 fetcher(hooks 在 `apps/web/src/api/*.ts` / `apps/admin/src/api.ts` 自建)。
 8. **统一错误体** `{code, message, message_key, params, detail, request_id}`(`app/core/errors.py` AppError);创建类 POST 支持 `Idempotency-Key`。
 9. **所有写操作过审计中间件**;管理端与用户端 API 物理分离(JWT audience `user` / `admin`)。

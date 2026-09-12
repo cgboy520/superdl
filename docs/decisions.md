@@ -61,6 +61,8 @@
 
 ## 编排与平台
 
+- **模块公开面显式列出,依赖单向。** `orchestrator/service.py` 依赖 `billing/service.py`(建实例扣款、转换结算);billing 反向只经 `orchestrator/queries.py`(只读查询)与 `orchestrator/transitions.py`(`transition` 原语、`system_stop` / `freeze_instance` / `unfreeze_instance` / `reclaim_frozen` / `stop_all_for_user`、数据盘欠费链 `arrears_transition_disks`),二者不 import billing。约束:新增「billing 需要编排做的事」放 `transitions.py` 并以回调注入结算(如 `settle_pending`),不许在 billing 里函数内 import `orchestrator.service`;`account/deletion.py` 与 `account/sshkeys.py` 因依赖 billing / orchestrator 而独立于 `account/service.py`(后者被 billing 依赖)。见 `apps/api/pyproject.toml` 的 import-linter 契约与 `tests/test_import_order.py`。
+
 - **reconciler 两阶段。** 事务内只做状态迁移 / 标记 / enqueue,K8s 动作在 commit 后或经 outbox 执行;失败由泄漏回收宽限后强删兜底。见 `apps/api/app/modules/orchestrator/reconciler.py`。
 - **抢占排序只按创建时间。** `created_at` 从新到旧(同刻 `id` 降序),配套**只在同池同型号内选**、**凑不够一台都不动**。约束:`preempt.pick_victims` 的排序与候选谓词改动**等同于改用户可见文案**,两边同提交。见 `docs/reference/orchestrator.md`。
 - **抢占宽限窗用 outbox 的延迟投递实现。** `apps/api/app/core/outbox.py` 的 `enqueue` 带 `delay_seconds`;状态机立刻迁 `stopping`、Pod 到期才删。约束:`spot_grace_seconds` 真实上限是 `creating_timeout_seconds − PREEMPT_TIME_RESERVE_SECONDS`,由 `validate_policy_value` 跨键校验拦住。见 `docs/reference/limits.md`。

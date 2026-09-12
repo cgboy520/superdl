@@ -8,6 +8,7 @@
 """
 
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -37,6 +38,7 @@ from app.core.timeutil import (
 from app.modules.billing import wallet
 from app.modules.billing.models import BillDailyDisk, BillHourly, SettlementGap, SettlementWatermark
 from app.modules.billing.schemas import AdminSettlementGapOut
+from app.modules.orchestrator import queries as orchestrator_queries
 
 logger = get_logger(__name__)
 
@@ -217,10 +219,8 @@ async def settle_instance_window(
     """按事件重建窗口秒数并入账。窗口必须落在单一自然小时内。
     读事件前先拿实例行锁(orchestrator.service.lock_instance_for_billing)。
     """
-    from app.modules.orchestrator import service as orchestrator_service
-
-    await orchestrator_service.lock_instance_for_billing(session, instance_id)
-    rows = await orchestrator_service.billing_events_before(session, instance_id, window_end)
+    await orchestrator_queries.lock_instance_for_billing(session, instance_id)
+    rows = await orchestrator_queries.billing_events_before(session, instance_id, window_end)
     seconds = running_seconds_in_window(_billing_view(rows), window_start, window_end)
     return await upsert_hour_bill(
         session,
@@ -480,10 +480,8 @@ async def _catchup_settle(
         if watermark is None:
             # 无水位线:首次部署(窗口前没有任何可计费对象)只引导不登记缺口;
             # 有历史却无水位线 = 水位线行丢失,只结最近窗口并登记 watermark_missing 缺口
-            from app.modules.orchestrator import service as orchestrator_service
-
             async with sm() as session:
-                has_history = await orchestrator_service.billing_history_exists_before(
+                has_history = await orchestrator_queries.billing_history_exists_before(
                     session, kind, target_start
                 )
             if has_history:
@@ -566,10 +564,8 @@ async def _hourly_window_attempts(
     sm: async_sessionmaker[AsyncSession], window_start: datetime, window_end: datetime
 ) -> list[tuple[int, SettleAttempt]]:
     """构造一个小时窗口内全部计费候选实例的入账闭包(整点结算与整窗重放共用)。"""
-    from app.modules.orchestrator import service as orchestrator_service
-
     async with sm() as session:
-        instances = await orchestrator_service.billing_candidates(session, window_start)
+        instances = await orchestrator_queries.billing_candidates(session, window_start)
     return [
         (inst_id, _hourly_attempt(inst_id, user_id, price, gpu_count, window_start, window_end))
         for inst_id, user_id, price, gpu_count in instances
@@ -652,27 +648,31 @@ async def charge_disk_day(
     return amount
 
 
+@dataclass(frozen=True)
+class DiskBillingInput:
+    """结清在账天数所需的盘字段;由 orchestrator 侧从 DataDisk 行构造(本模块不 import 该模型)。"""
+
+    id: int
+    user_id: int
+    price_gb_month: Decimal
+    size_gb: int
+    created_at: datetime
+
+
 async def settle_disk_pending_days(
-    session: AsyncSession,
-    *,
-    disk_id: int,
-    user_id: int,
-    price_gb_month: Decimal,
-    size_gb: int,
-    created_at: datetime,
-    at: datetime | None = None,
+    session: AsyncSession, disk: DiskBillingInput, *, at: datetime | None = None
 ) -> Decimal:
     """结清该盘截至今日、尚未出账的自然日(同事务调用,不 commit)。返回扣款合计。
-    删盘与扩容前必须调用。下界取日结水位线,水位线缺失时以建盘日为下界。
+    删盘、扩容与进入欠费宽限前必须调用。下界取日结水位线,水位线缺失时以建盘日为下界。
     """
     target_day = billing_day_floor(at or now_utc())
     watermark = await get_watermark(session, "daily_disk")
     if watermark is None:
-        first_day = billing_day_floor(ensure_utc(created_at))
+        first_day = billing_day_floor(ensure_utc(disk.created_at))
     else:
         first_day = max(
             billing_day_floor(watermark) + timedelta(days=1),
-            billing_day_floor(ensure_utc(created_at)),
+            billing_day_floor(ensure_utc(disk.created_at)),
         )
     first_day = max(first_day, target_day - timedelta(days=MAX_CATCHUP_DAYS - 1))
     total = Decimal("0.00")
@@ -680,10 +680,10 @@ async def settle_disk_pending_days(
     while day <= target_day:
         total += await charge_disk_day(
             session,
-            disk_id=disk_id,
-            user_id=user_id,
-            price_gb_month=price_gb_month,
-            size_gb=size_gb,
+            disk_id=disk.id,
+            user_id=disk.user_id,
+            price_gb_month=disk.price_gb_month,
+            size_gb=disk.size_gb,
             day=day,
         )
         day += timedelta(days=1)
@@ -712,9 +712,7 @@ async def _billable_disk_rows(
     session: AsyncSession,
 ) -> list[tuple[int, int, Decimal, int, datetime, datetime | None, datetime | None]]:
     """当前可计费盘的入账参数行(日结与整窗重放共用)。"""
-    from app.modules.orchestrator import service as orchestrator_service
-
-    disks = await orchestrator_service.billable_disks(session)
+    disks = await orchestrator_queries.billable_disks(session)
     return [
         (
             d.id,
@@ -838,8 +836,6 @@ async def replay_gap(
     - grace_overlap:拒绝重放(409,走人工核销)。
     返回 schema 而非 ORM 行(本函数自建 session)。
     """
-    from app.modules.orchestrator import service as orchestrator_service
-
     async with sm() as session:
         gap = await session.get(SettlementGap, gap_id, with_for_update=True)
         if gap is None:
@@ -856,7 +852,7 @@ async def replay_gap(
         window_end = window_start + timedelta(hours=1)
         if object_id:
             async with sm() as session:
-                row = await orchestrator_service.instance_billing_snapshot(session, object_id)
+                row = await orchestrator_queries.instance_billing_snapshot(session, object_id)
             if row is None:
                 raise conflict(
                     key="billing.settlementGapObjectGone", params={"objectId": str(object_id)}
@@ -884,7 +880,7 @@ async def replay_gap(
         day = billing_day_floor(window_start)
         if object_id:
             async with sm() as session:
-                disk_row = await orchestrator_service.disk_billing_snapshot(session, object_id)
+                disk_row = await orchestrator_queries.disk_billing_snapshot(session, object_id)
                 if disk_row is None:
                     raise conflict(
                         key="billing.settlementGapObjectGone", params={"objectId": str(object_id)}

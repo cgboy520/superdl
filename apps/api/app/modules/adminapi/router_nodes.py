@@ -39,7 +39,11 @@ from app.modules.nodes.schemas import (
     NodeDecommissionRequest,
     NodeEnrollmentOut,
 )
-from app.modules.orchestrator import service as orchestrator_service
+from app.modules.orchestrator import (
+    ports as orchestrator_ports,
+    queries as orchestrator_queries,
+    service as orchestrator_service,
+)
 from app.modules.orchestrator.schemas import (
     AdminForceStopRequest,
     AdminInstanceOut,
@@ -265,7 +269,7 @@ async def admin_list_nodes(session: DbSession) -> list[NodeOut]:
 @router.get("/nodes/port-pool", dependencies=[require_roles("ops", "readonly")])
 async def admin_port_pool_stats(session: DbSession) -> PortPoolStatsOut:
     """SSH 端口池水位:blocked=被集群对象撞占(周期复检自动放回)。"""
-    return await orchestrator_service.port_pool_stats(session)
+    return await orchestrator_ports.port_pool_stats(session)
 
 
 def _helmfile(distro: str | None, release: str) -> str:
@@ -501,10 +505,10 @@ async def oversell_report(session: DbSession) -> list[OversellPoolOut]:
         if n.status != "Ready" or not n.pool_label:
             continue
         physical[n.pool_label] = physical.get(n.pool_label, 0) + n.gpu_count
-    sold = await orchestrator_service.running_gpu_share_by_pool(session)
+    sold = await orchestrator_queries.running_gpu_share_by_pool(session)
     # 按池加权平均:实例小时数据在 metering,池归属在 orchestrator
     util_by_instance = await metering_service.gpu_util_last_24h_by_instance(session)
-    pool_of = await orchestrator_service.pool_by_instance(session, util_by_instance.keys())
+    pool_of = await orchestrator_queries.pool_by_instance(session, util_by_instance.keys())
     util_sum: dict[str, float] = {}
     util_hours: dict[str, int] = {}
     for iid, (total_util, hours) in util_by_instance.items():

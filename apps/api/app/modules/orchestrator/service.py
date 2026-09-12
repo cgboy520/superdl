@@ -1,5 +1,5 @@
-"""编排服务门面:状态变更只走 transition(),改 DB + 动 K8s 一律 outbox。
-再导出 transitions.py / ports.py / queries.py,跨模块只经本文件访问。
+"""编排服务:用户 / 管理端发起的实例操作与 Pod spec 构造。状态变更只走 transition(),
+改 DB + 动 K8s 一律 outbox。只读查询在 queries.py,系统侧迁移在 transitions.py,端口池在 ports.py。
 """
 
 import hashlib
@@ -60,39 +60,7 @@ from app.modules.orchestrator import (
     statemachine as sm_def,
 )
 from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent
-from app.modules.orchestrator.ports import (
-    active_gpu_counts_by_sku as active_gpu_counts_by_sku,
-    block_port as block_port,
-    ensure_port as ensure_port,
-    free_port as free_port,
-    port_pool_stats as port_pool_stats,
-)
-from app.modules.orchestrator.queries import (
-    arrears_chain_disk_user_ids as arrears_chain_disk_user_ids,
-    billable_disks as billable_disks,
-    billable_disks_of_user as billable_disks_of_user,
-    billing_candidates as billing_candidates,
-    billing_events_before as billing_events_before,
-    billing_history_exists_before as billing_history_exists_before,
-    count_instances_by_status as count_instances_by_status,
-    deletion_leftover_counts as deletion_leftover_counts,
-    deletion_leftovers as deletion_leftovers,
-    disk_billing_snapshot as disk_billing_snapshot,
-    disks_arrears_transition as disks_arrears_transition,
-    instance_billing_snapshot as instance_billing_snapshot,
-    instance_disk_stats_by_user as instance_disk_stats_by_user,
-    instance_hourly_prices as instance_hourly_prices,
-    instance_locations as instance_locations,
-    instance_names as instance_names,
-    instances_by_ids as instances_by_ids,
-    list_instances_by_status as list_instances_by_status,
-    list_running_instances_by_user as list_running_instances_by_user,
-    lock_instance_for_billing as lock_instance_for_billing,
-    pool_by_instance as pool_by_instance,
-    running_gpu_share_by_pool as running_gpu_share_by_pool,
-    running_instances_of_user as running_instances_of_user,
-    running_spot_gpus_by_pool as running_spot_gpus_by_pool,
-)
+from app.modules.orchestrator.queries import get_instance
 from app.modules.orchestrator.schemas import (
     WORKLOAD_DEV,
     WORKLOAD_SERVICE,
@@ -101,24 +69,11 @@ from app.modules.orchestrator.schemas import (
     InstanceOut,
     InstanceSubscriptionOut,
 )
-from app.modules.orchestrator.statemachine import (
-    FAILED as FAILED,
-    FROZEN as FROZEN,
-    RELEASED as RELEASED,
-    RELEASING as RELEASING,
-    RUNNING as RUNNING,
-    STOPPED as STOPPED,
-    STOPPING as STOPPING,
-)
-from app.modules.orchestrator.transitions import (
-    register_transition_listener as register_transition_listener,
-    transition as transition,
-)
+from app.modules.orchestrator.transitions import transition
 
 if TYPE_CHECKING:
     from app.modules.catalog.models import Sku
     from app.modules.nodes.models import NodeSpec
-    from app.modules.orchestrator.schemas import InstanceLogsOut, InstanceOut
 
 logger = get_logger(__name__)
 
@@ -431,25 +386,6 @@ async def _reserved_slots(session: AsyncSession, sku: "Sku") -> int:
     return (await _reserved_slots_by_sku(session, [sku.id])).get(sku.id, 0)
 
 
-async def pending_hourly(session: AsyncSession, user_id: int) -> Decimal:
-    """该用户 creating/starting 实例的时费合计,由 wallet.assert_can_afford 内部并入。"""
-    rows = (
-        (
-            await session.execute(
-                select(Instance.price_hourly, Instance.gpu_count).where(
-                    Instance.user_id == user_id,
-                    Instance.status.in_((sm_def.CREATING, sm_def.STARTING)),
-                    # 包周期实例已预付,不计
-                    Instance.market != MARKET_SUBSCRIPTION,
-                )
-            )
-        )
-        .tuples()
-        .all()
-    )
-    return sum((hourly_cost(price, count) for price, count in rows), Decimal("0.00"))
-
-
 async def create_instance_row(
     session: AsyncSession,
     user_id: int,
@@ -727,11 +663,6 @@ async def find_instance_replay(
     )
 
 
-async def lock_instance(session: AsyncSession, instance_id: int) -> Instance | None:
-    """FOR UPDATE 锁实例行并重读;不存在返回 None。"""
-    return await session.get(Instance, instance_id, with_for_update=True, populate_existing=True)
-
-
 async def instances_of_service(session: AsyncSession, service_id: int) -> list[Instance]:
     """某在线服务的全部版本实例(含已释放),版本号降序。"""
     return list(
@@ -770,28 +701,6 @@ async def create_instance(
         await session.commit()
         logger.info("instance_create_accepted", instance_id=instance.id, user_id=user_id)
     return instance, created
-
-
-async def instance_by_id(session: AsyncSession, instance_id: int) -> Instance:
-    """按主键取实例(不限归属与状态);系统侧用,用户请求走 get_instance。"""
-    return (await session.execute(select(Instance).where(Instance.id == instance_id))).scalar_one()
-
-
-async def instance_status(session: AsyncSession, instance_id: int) -> str | None:
-    """按主键取实例状态;不存在返回 None(不抛)。"""
-    instance = await session.get(Instance, instance_id)
-    return None if instance is None else instance.status
-
-
-async def get_instance(session: AsyncSession, user_id: int, uuid: str) -> Instance:
-    instance = (
-        await session.execute(
-            select(Instance).where(Instance.uuid == uuid, Instance.user_id == user_id)
-        )
-    ).scalar_one_or_none()
-    if instance is None:
-        raise not_found("实例不存在")
-    return instance
 
 
 async def list_instances(session: AsyncSession, user_id: int) -> list[Instance]:
@@ -1577,54 +1486,3 @@ async def admin_preempt(session: AsyncSession, instance_uuid: str, *, reason: st
     )
     await session.commit()
     return instance
-
-
-async def system_stop(session: AsyncSession, instance: Instance, *, reason: str) -> None:
-    """平台侧停机(actor=system):同事务落事件 + outbox,不 commit;reason 由调用方给。"""
-    await transition(session, instance, sm_def.STOPPING, reason=reason, actor="system")
-    enqueue(session, "instance.stop", {"instance_id": instance.id})
-
-
-async def freeze_instance(
-    session: AsyncSession, instance: Instance, deadline: Any, *, reason: str = "arrears_freeze"
-) -> None:
-    await transition(
-        session,
-        instance,
-        sm_def.FROZEN,
-        reason=reason,
-        actor="system",
-        metadata={"deadline": deadline.isoformat()},
-    )
-    instance.frozen_deadline = deadline
-
-
-async def unfreeze_instance(session: AsyncSession, instance: Instance) -> None:
-    await transition(session, instance, sm_def.STOPPED, reason="recharge_unfreeze", actor="system")
-    instance.frozen_deadline = None
-
-
-async def reclaim_frozen(session: AsyncSession, instance: Instance) -> None:
-    await transition(session, instance, sm_def.RELEASING, reason="arrears_reclaim", actor="system")
-    instance.frozen_deadline = None
-    enqueue(session, "instance.release", {"instance_id": instance.id})
-
-
-async def stop_all_for_user(session: AsyncSession, user_id: int, *, reason: str) -> int:
-    """停掉该用户全部 running 实例(封禁用):同事务落事件 + outbox,不 commit,返回台数;
-    creating/starting 由 billing.patrol 后续兜住。"""
-    rows = list(
-        (
-            await session.execute(
-                select(Instance).where(
-                    Instance.user_id == user_id, Instance.status == sm_def.RUNNING
-                )
-            )
-        ).scalars()
-    )
-    for inst in rows:
-        await transition(session, inst, sm_def.STOPPING, reason=reason, actor="admin")
-        enqueue(session, "instance.stop", {"instance_id": inst.id})
-    if rows:
-        logger.warning("tenant_frozen_instances_stopped", user_id=user_id, count=len(rows))
-    return len(rows)

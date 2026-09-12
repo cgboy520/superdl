@@ -40,8 +40,8 @@ from app.modules.notify import service as notify_service
 from app.modules.orchestrator import statemachine as sm_def
 from app.modules.orchestrator.disks import detach_for_instance
 from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent, PortAllocation
-from app.modules.orchestrator.ports import port_pool_stats
-from app.modules.orchestrator.service import free_port, transition
+from app.modules.orchestrator.ports import free_port, port_pool_stats
+from app.modules.orchestrator.transitions import transition
 
 logger = get_logger(__name__)
 

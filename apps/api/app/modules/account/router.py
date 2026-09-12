@@ -8,7 +8,7 @@ from app.core.errors import AppError, ErrorCode
 from app.core.http import client_ip
 from app.core.logging import mask_phone_value
 from app.core.platform_config import get_effective_platform_config
-from app.modules.account import service
+from app.modules.account import deletion, service, sshkeys
 from app.modules.account.deps import CurrentUser
 from app.modules.account.schemas import (
     DeletionRequestCreate,
@@ -200,7 +200,7 @@ async def create_deletion_request(
     body: DeletionRequestCreate, user: CurrentUser, session: DbSession, request: Request
 ) -> DeletionRequestOut:
     """申请注销(7 天冷静期)。须键入与账号一致的完整手机号;已有 pending 返回既有(幂等)。"""
-    req = await service.request_deletion(session, user, phone=body.phone, reason=body.reason)
+    req = await deletion.request_deletion(session, user, phone=body.phone, reason=body.reason)
     set_audit_target(request, f"user:{user.id}", detail={"action": "account_deletion_request"})
     return DeletionRequestOut.model_validate(req)
 
@@ -208,7 +208,7 @@ async def create_deletion_request(
 @router.get("/me/deletion-request")
 async def get_deletion_request(user: CurrentUser, session: DbSession) -> DeletionRequestOut | None:
     """当前 pending 申请;无则最近一条;从未申请回 null。"""
-    req = await service.get_my_deletion_request(session, user.id)
+    req = await deletion.get_my_deletion_request(session, user.id)
     return DeletionRequestOut.model_validate(req) if req is not None else None
 
 
@@ -217,14 +217,14 @@ async def cancel_deletion_request(
     user: CurrentUser, session: DbSession, request: Request
 ) -> DeletionRequestOut:
     """冷静期内撤销注销申请(仅 pending 可撤)。"""
-    req = await service.cancel_deletion_request(session, user.id)
+    req = await deletion.cancel_deletion_request(session, user.id)
     set_audit_target(request, f"user:{user.id}", detail={"action": "account_deletion_cancel"})
     return DeletionRequestOut.model_validate(req)
 
 
 @router.get("/ssh-keys")
 async def list_ssh_keys(user: CurrentUser, session: DbSession) -> list[SshKeyOut]:
-    keys = await service.list_ssh_keys(session, user.id)
+    keys = await sshkeys.list_ssh_keys(session, user.id)
     return [SshKeyOut.model_validate(k) for k in keys]
 
 
@@ -232,7 +232,7 @@ async def list_ssh_keys(user: CurrentUser, session: DbSession) -> list[SshKeyOut
 async def add_ssh_key(
     body: SshKeyCreate, user: CurrentUser, session: DbSession, request: Request
 ) -> SshKeyOut:
-    key = await service.add_ssh_key(session, user.id, body.name, body.public_key)
+    key = await sshkeys.add_ssh_key(session, user.id, body.name, body.public_key)
     set_audit_target(request, f"ssh_key:{key.id}")
     return SshKeyOut.model_validate(key)
 
@@ -241,6 +241,6 @@ async def add_ssh_key(
 async def delete_ssh_key(
     key_id: int, user: CurrentUser, session: DbSession, request: Request
 ) -> Response:
-    await service.delete_ssh_key(session, user.id, key_id)
+    await sshkeys.delete_ssh_key(session, user.id, key_id)
     set_audit_target(request, f"ssh_key:{key_id}")
     return Response(status_code=status.HTTP_204_NO_CONTENT)

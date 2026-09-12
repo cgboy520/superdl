@@ -19,7 +19,7 @@ from app.modules.billing import service as billing_service
 from app.modules.metering import prom
 from app.modules.metering.models import UsageHourly
 from app.modules.metering.schemas import InstanceGpuSeries, InstanceMetricsSummaryOut
-from app.modules.orchestrator import service as orchestrator_service
+from app.modules.orchestrator import queries as orchestrator_queries
 
 logger = get_logger(__name__)
 
@@ -80,8 +80,8 @@ async def aggregate_previous_hour(
         if not got:
             return 0
         async with sm() as session:
-            candidates = await orchestrator_service.billing_candidates(session, window_start)
-            loc = await orchestrator_service.instance_locations(session, [c[0] for c in candidates])
+            candidates = await orchestrator_queries.billing_candidates(session, window_start)
+            loc = await orchestrator_queries.instance_locations(session, [c[0] for c in candidates])
         failed = 0
         for inst_id, _user_id, _price, _gpus in candidates:
             ns, pod, pool_label = loc[inst_id]
@@ -149,7 +149,7 @@ async def reconciliation_report(session: AsyncSession, day: datetime) -> dict[st
     diffs: list[dict[str, Any]] = []
     all_ids = set(billed) | set(usage_by_instance)
     # 按 id 精确取价
-    price_by_id = await orchestrator_service.instance_hourly_prices(session, all_ids)
+    price_by_id = await orchestrator_queries.instance_hourly_prices(session, all_ids)
     for iid in all_ids:
         est = as_amount(price_by_id.get(iid, Decimal("0")) * usage_by_instance.get(iid, 0))
         est_total += est

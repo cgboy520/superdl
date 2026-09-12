@@ -68,7 +68,7 @@ apps/api/app/
 └─ workers/         # 同一镜像的第二入口:outbox worker + APScheduler 定时任务
 ```
 
-模块之间只许 import 对方 `service.py` 与 `schemas.py`;唯一例外 `account/deps.py`。import-linter 契约 `app.modules.** -> app.modules.*.service|schemas`。
+模块之间只许 import 对方的公开面(`service.py` / `schemas.py`;`account/deps.py`、`account/deletion.py`;`orchestrator` 的 `queries.py` / `transitions.py` / `statemachine.py` / `ports.py`)。依赖方向:`orchestrator/service.py → billing/service.py`;billing 的结算与巡检只经 `orchestrator/queries.py`(只读)与 `orchestrator/transitions.py`(系统侧停机 / 冻结 / 回收、数据盘欠费链)反向访问编排,二者不依赖 billing。三条 import-linter 契约(`apps/api/pyproject.toml`)锁定;函数内 import 只在 `wiring.py` 与进程入口出现。
 
 OpenAPI-first:FastAPI schema 导出 `openapi.json`,orval 生成 `packages/api-client`。用户 API `/api/v1/*` 与管理 API `/api/admin/v1/*` 物理分离,独立 JWT audience、限流与审计动作前缀。
 

@@ -47,7 +47,7 @@ from app.modules.adminapi.schemas import (
 from app.modules.billing import service as billing_service
 from app.modules.nodes import service as nodes_service
 from app.modules.notify import service as notify_service
-from app.modules.orchestrator import service as orchestrator_service
+from app.modules.orchestrator import queries as orchestrator_queries
 from app.modules.orchestrator.schemas import NON_TERMINAL_STATUSES
 
 logger = get_logger(__name__)
@@ -776,7 +776,7 @@ async def overview(session: AsyncSession) -> dict[str, Any]:
     包周期在保数 = 未到期的订阅行数;节点/GPU 取台账全量(含 NotReady/Missing),
     竞价占用按台账 gpu_used 截断。
     """
-    counted = await orchestrator_service.count_instances_by_status(session)
+    counted = await orchestrator_queries.count_instances_by_status(session)
     status_counts: dict[str, int] = {st: counted.get(st, 0) for st in NON_TERMINAL_STATUSES}
 
     consumed = await billing_service.consumed_by_user(session)
@@ -785,7 +785,7 @@ async def overview(session: AsyncSession) -> dict[str, Any]:
     pools: dict[str, dict[str, int]] = {}
     nodes_ready = nodes_missing = 0
     specs = await nodes_service.list_node_specs(session)
-    spot_by_pool = await orchestrator_service.running_spot_gpus_by_pool(session)
+    spot_by_pool = await orchestrator_queries.running_spot_gpus_by_pool(session)
     for r in specs:
         if r.status == "Ready":
             nodes_ready += 1
@@ -825,7 +825,7 @@ async def adjust_context(session: AsyncSession, user_id: int) -> dict[str, Any]:
     user = await account_service.get_user(session, user_id)
     balance = await billing_service.get_balance(session, user_id)
     recent = await billing_service.ledger_page(session, user_id, limit=3)
-    running_by_user = await orchestrator_service.list_running_instances_by_user(session)
+    running_by_user = await orchestrator_queries.list_running_instances_by_user(session)
     return {
         "user_id": user.id,
         "phone_masked": mask_phone_value(user.phone),
@@ -840,7 +840,7 @@ async def sku_impact(session: AsyncSession, sku_id: int) -> dict[str, Any]:
     """改价影响面(只读):该 SKU 当前活跃(creating/starting/running)实例数/用户数/卡数。"""
     active = []
     for st in ("creating", "starting", "running"):
-        active.extend(await orchestrator_service.list_instances_by_status(session, st))
+        active.extend(await orchestrator_queries.list_instances_by_status(session, st))
     mine = [i for i in active if i.sku_id == sku_id]
     return {
         "sku_id": sku_id,

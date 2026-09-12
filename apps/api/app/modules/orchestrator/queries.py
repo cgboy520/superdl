@@ -1,15 +1,69 @@
-"""编排查询聚合(由 service.py 再导出):billing 结算/对账只读接口、管理端/巡检聚合、数据盘门面。"""
+"""编排只读查询:实例 / 事件 / 数据盘的读取与聚合。
+不依赖 billing;billing 与各巡检直接 import 本模块。"""
 
 from collections.abc import Iterable
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import func, select, union
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import not_found
 from app.core.money import hourly_cost
 from app.core.pricing import MARKET_SPOT, MARKET_SUBSCRIPTION
-from app.modules.orchestrator import disks as disks_service, statemachine as sm_def
+from app.modules.orchestrator import statemachine as sm_def
 from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent
+
+# 数据盘计费态 / 欠费链状态:日结、燃烧率与欠费巡检据此选盘;grace(欠费宽限)停计费,frozen 不计费
+DISK_BILLABLE_STATUSES: tuple[str, ...] = ("active",)
+DISK_ARREARS_CHAIN_STATUSES: tuple[str, ...] = ("active", "grace", "frozen")
+
+
+async def lock_instance(session: AsyncSession, instance_id: int) -> Instance | None:
+    """FOR UPDATE 锁实例行并重读;不存在返回 None。"""
+    return await session.get(Instance, instance_id, with_for_update=True, populate_existing=True)
+
+
+async def instance_by_id(session: AsyncSession, instance_id: int) -> Instance:
+    """按主键取实例(不限归属与状态);系统侧用,用户请求走 get_instance。"""
+    return (await session.execute(select(Instance).where(Instance.id == instance_id))).scalar_one()
+
+
+async def instance_status(session: AsyncSession, instance_id: int) -> str | None:
+    """按主键取实例状态;不存在返回 None(不抛)。"""
+    instance = await session.get(Instance, instance_id)
+    return None if instance is None else instance.status
+
+
+async def get_instance(session: AsyncSession, user_id: int, uuid: str) -> Instance:
+    """按 (owner, uuid) 取实例;不存在或非属主 → 404。"""
+    instance = (
+        await session.execute(
+            select(Instance).where(Instance.uuid == uuid, Instance.user_id == user_id)
+        )
+    ).scalar_one_or_none()
+    if instance is None:
+        raise not_found("实例不存在")
+    return instance
+
+
+async def pending_hourly(session: AsyncSession, user_id: int) -> Decimal:
+    """该用户 creating/starting 实例的时费合计,由 wallet.assert_can_afford 内部并入。"""
+    rows = (
+        (
+            await session.execute(
+                select(Instance.price_hourly, Instance.gpu_count).where(
+                    Instance.user_id == user_id,
+                    Instance.status.in_((sm_def.CREATING, sm_def.STARTING)),
+                    # 包周期实例已预付,不计
+                    Instance.market != MARKET_SUBSCRIPTION,
+                )
+            )
+        )
+        .tuples()
+        .all()
+    )
+    return sum((hourly_cost(price, count) for price, count in rows), Decimal("0.00"))
 
 
 async def lock_instance_for_billing(session: AsyncSession, instance_id: int) -> None:
@@ -145,11 +199,13 @@ async def running_instances_of_user(session: AsyncSession, user_id: int) -> list
 
 
 async def billable_disks_of_user(session: AsyncSession, user_id: int) -> list[DataDisk]:
-    """单用户计费态盘(口径同 disks.BILLABLE_STATUSES)。"""
+    """单用户计费态盘(DISK_BILLABLE_STATUSES)。"""
     return list(
         (
             await session.execute(
-                select(DataDisk).where(DataDisk.user_id == user_id, DataDisk.status == "active")
+                select(DataDisk).where(
+                    DataDisk.user_id == user_id, DataDisk.status.in_(DISK_BILLABLE_STATUSES)
+                )
             )
         )
         .scalars()
@@ -313,7 +369,7 @@ async def pool_by_instance(session: AsyncSession, instance_ids: Iterable[int]) -
     return {i.id: i.spec["pool_label"] for i in await instances_by_ids(session, instance_ids)}
 
 
-# ---------- 数据盘门面(billing/巡检经此访问,模块边界) ----------
+# ---------- 数据盘(计费与巡检的读取面) ----------
 
 
 async def instance_billing_snapshot(
@@ -341,13 +397,25 @@ async def disk_billing_snapshot(
     )
 
 
-async def billable_disks(session: AsyncSession) -> list[Any]:
-    return await disks_service.list_billable_disks(session)
+async def billable_disks(session: AsyncSession) -> list[DataDisk]:
+    """全平台计费态盘(日结与整窗重放共用)。"""
+    return list(
+        (
+            await session.execute(
+                select(DataDisk).where(DataDisk.status.in_(DISK_BILLABLE_STATUSES))
+            )
+        ).scalars()
+    )
 
 
 async def arrears_chain_disk_user_ids(session: AsyncSession) -> list[int]:
-    return await disks_service.list_arrears_chain_user_ids(session)
-
-
-async def disks_arrears_transition(session: AsyncSession, user_id: int, in_arrears: bool) -> int:
-    return await disks_service.arrears_transition_disks(session, user_id, in_arrears)
+    """欠费巡检的用户集合:名下有任何一块 active/grace/frozen 盘。"""
+    return list(
+        (
+            await session.execute(
+                select(DataDisk.user_id)
+                .where(DataDisk.status.in_(DISK_ARREARS_CHAIN_STATUSES))
+                .distinct()
+            )
+        ).scalars()
+    )

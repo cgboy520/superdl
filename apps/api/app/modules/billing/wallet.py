@@ -28,6 +28,7 @@ from app.modules.billing.models import (
     Wallet,
 )
 from app.modules.billing.schemas import BillHourlyOut, BillSummaryItem, LedgerEntryOut
+from app.modules.orchestrator import queries as orchestrator_queries
 
 logger = get_logger(__name__)
 
@@ -219,14 +220,12 @@ async def assert_can_afford(
     不足抛 INSUFFICIENT_BALANCE,params 含 balance / required / inflight。只校验不扣款。
     """
     # 必须延迟 import:orchestrator.service 与本模块循环依赖
-    from app.modules.orchestrator import service as orchestrator_service
-
     locked = await lock_wallet(session, user_id)  # 先锁再统计
     policies = await get_effective_policies(session)
 
     # 锁内只查本用户
-    running = await orchestrator_service.running_instances_of_user(session, user_id)
-    pending = await orchestrator_service.pending_hourly(session, user_id)
+    running = await orchestrator_queries.running_instances_of_user(session, user_id)
+    pending = await orchestrator_queries.pending_hourly(session, user_id)
     inflight_hourly = (
         sum(
             # 包周期实例不进燃烧率
@@ -242,7 +241,7 @@ async def assert_can_afford(
     inflight_daily = sum(
         (
             disk_daily_charge(d.price_gb_month, d.size_gb)
-            for d in await orchestrator_service.billable_disks_of_user(session, user_id)
+            for d in await orchestrator_queries.billable_disks_of_user(session, user_id)
         ),
         Decimal("0.00"),
     )
@@ -310,9 +309,7 @@ async def hourly_bills_page(
         session, stmt, id_col=BillHourly.id, cursor=cursor, limit=limit
     )
     # 补实例名供账单页展示(实例行释放后仍保留)
-    from app.modules.orchestrator import service as orchestrator_service
-
-    names = await orchestrator_service.instance_names(session, [r.instance_id for r in page_items])
+    names = await orchestrator_queries.instance_names(session, [r.instance_id for r in page_items])
     items = []
     for r in page_items:
         out = BillHourlyOut.model_validate(r)
@@ -334,8 +331,6 @@ async def consumption_summary(
     """[start, end) 窗口内的消费汇总:GPU 时费按实例归因 + 数据盘日费合计。
     月度汇总与当日消费共用同一口径;items 补实例名。
     """
-    from app.modules.orchestrator import service as orchestrator_service
-
     gpu_rows = (
         (
             await session.execute(
@@ -364,7 +359,7 @@ async def consumption_summary(
             )
         )
     ).scalar_one()
-    names = await orchestrator_service.instance_names(session, [iid for iid, _a, _s in gpu_rows])
+    names = await orchestrator_queries.instance_names(session, [iid for iid, _a, _s in gpu_rows])
     items = [
         BillSummaryItem(
             instance_id=iid,

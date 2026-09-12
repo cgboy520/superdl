@@ -64,13 +64,6 @@ combine-as-imports = true
 "app/workers/main.py" = ["PLC0415"]
 # 第三方支付 SDK 无 stub 且构造期加载,按需 import
 "app/modules/billing/payment_channels.py" = ["PLC0415"]
-# billing / account ↔ orchestrator 仍有模块环,打破后移除
-"app/modules/billing/settlement.py" = ["PLC0415"]
-"app/modules/billing/subscriptions.py" = ["PLC0415"]
-"app/modules/billing/wallet.py" = ["PLC0415"]
-"app/modules/billing/patrol.py" = ["PLC0415"]
-"app/modules/billing/edge_listener.py" = ["PLC0415"]
-"app/modules/account/service.py" = ["PLC0415"]
 "tests/*" = ["PLC0415", "ARG"]
 
 [tool.pyright]
@@ -119,9 +112,9 @@ source_modules = ["app.core"]
 forbidden_modules = ["app.modules", "app.workers"]
 
 [[tool.importlinter.contracts]]
-name = "业务模块跨模块访问只经 service/schemas(认证依赖经 account.deps)"
+name = "业务模块跨模块访问只经各模块的公开面(service/schemas;orchestrator 另开放 queries/transitions/statemachine/ports;认证依赖经 account.deps)"
 type = "independence"
-# independence 对列出模块两两断言无依赖;ignore 通配表达「只经 service/schemas」的例外
+# independence 对列出模块两两断言无依赖;ignore 通配逐条列出允许跨模块 import 的公开面
 modules = [
     "app.modules.account",
     "app.modules.catalog",
@@ -139,5 +132,24 @@ ignore_imports = [
     "app.modules.** -> app.modules.*.service",
     "app.modules.** -> app.modules.*.schemas",
     "app.modules.** -> app.modules.account.deps",
+    "app.modules.** -> app.modules.account.deletion",
+    # orchestrator 的只读查询 / 系统侧迁移 / 状态机常量 / 端口池不依赖 billing,
+    # billing 结算与巡检直接 import 它们(service.py 依赖 billing,反向只能走这里)
+    "app.modules.** -> app.modules.orchestrator.queries",
+    "app.modules.** -> app.modules.orchestrator.transitions",
+    "app.modules.** -> app.modules.orchestrator.statemachine",
+    "app.modules.** -> app.modules.orchestrator.ports",
 ]
 unmatched_ignore_imports_alerting = "warn"
+
+[[tool.importlinter.contracts]]
+name = "billing 不依赖 orchestrator.service(orchestrator.service 依赖 billing.service,反向即环)"
+type = "forbidden"
+source_modules = ["app.modules.billing"]
+forbidden_modules = [
+    "app.modules.orchestrator.service",
+    "app.modules.orchestrator.disks",
+    "app.modules.orchestrator.preempt",
+    "app.modules.orchestrator.handlers",
+    "app.modules.orchestrator.reconciler",
+]

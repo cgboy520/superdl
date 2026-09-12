@@ -29,6 +29,11 @@ from app.core.timeutil import ensure_utc, now_utc
 from app.modules.billing import wallet
 from app.modules.billing.models import Subscription
 from app.modules.notify import service as notify_service
+from app.modules.orchestrator import (
+    queries as orchestrator_queries,
+    statemachine as sm_def,
+    transitions as orchestrator_transitions,
+)
 
 if TYPE_CHECKING:
     from app.modules.orchestrator.models import Instance
@@ -553,8 +558,6 @@ async def _patrol_due(sm: async_sessionmaker[AsyncSession], counts: dict[str, in
 
 
 async def _handle_due(session: AsyncSession, subscription_id: int, counts: dict[str, int]) -> None:
-    from app.modules.orchestrator import service as orchestrator_service
-
     row = (
         await session.execute(select(Subscription).where(Subscription.id == subscription_id))
     ).scalar_one_or_none()
@@ -568,10 +571,10 @@ async def _handle_due(session: AsyncSession, subscription_id: int, counts: dict[
             counts["warned"] += 1
         return
 
-    instance = await orchestrator_service.instance_by_id(session, row.instance_id)
+    instance = await orchestrator_queries.instance_by_id(session, row.instance_id)
     # 锁序 instance → wallet → subscription(与停机/结算链路 instance → bill → wallet 一致)。
     # 锁后 refresh:transition 的乐观锁要新鲜 version
-    await orchestrator_service.lock_instance_for_billing(session, instance.id)
+    await orchestrator_queries.lock_instance_for_billing(session, instance.id)
     await session.refresh(instance)
     if row.auto_renew:
         if await _try_auto_renew(session, row, instance, counts):
@@ -594,9 +597,7 @@ async def _warn_expiring(
     row.warned_for_expiry = expires
     days = max(0, round((expires - now).total_seconds() / 86400))
     # 深链目标(实例 uuid)
-    from app.modules.orchestrator import service as orchestrator_service
-
-    instance = await orchestrator_service.instance_by_id(session, row.instance_id)
+    instance = await orchestrator_queries.instance_by_id(session, row.instance_id)
     await notify_service.send_subscription_notice(
         session,
         row.user_id,
@@ -668,12 +669,10 @@ async def _expire_instance(
 ) -> None:
     """到期处置:running → 停机(停稳后由 _patrol_freeze_expired 冻结);stopped → 直接冻结;
     其余状态本轮不动。"""
-    from app.modules.orchestrator import service as orchestrator_service
-
-    if instance.status == orchestrator_service.RUNNING:
-        await orchestrator_service.system_stop(session, instance, reason=REASON_EXPIRED_STOP)
+    if instance.status == sm_def.RUNNING:
+        await orchestrator_transitions.system_stop(session, instance, reason=REASON_EXPIRED_STOP)
         counts["stopped"] += 1
-    elif instance.status == orchestrator_service.STOPPED:
+    elif instance.status == sm_def.STOPPED:
         await _freeze(session, instance)
         counts["frozen"] += 1
     else:
@@ -691,10 +690,8 @@ async def _expire_instance(
 
 async def _freeze(session: AsyncSession, instance: "Instance") -> None:
     """冻结窗口复用 `freeze_grace_hours`(欠费同款)。"""
-    from app.modules.orchestrator import service as orchestrator_service
-
     policies = await get_effective_policies(session)
-    await orchestrator_service.freeze_instance(
+    await orchestrator_transitions.freeze_instance(
         session,
         instance,
         now_utc() + timedelta(hours=policies.freeze_grace_hours),
@@ -708,21 +705,19 @@ async def _patrol_freeze_expired(
     """已到期且已停稳的包周期实例 → 冻结(起回收倒计时,时长见 _freeze)。
     单独一趟:停机是异步的,到期那一刻实例还在 stopping。
     """
-    from app.modules.orchestrator import service as orchestrator_service
-
     async with sm() as session:
         expired = await expired_instance_ids(session)
         if not expired:
             return
         candidates = [
             inst
-            for inst in await orchestrator_service.list_instances_by_status(session, "stopped")
+            for inst in await orchestrator_queries.list_instances_by_status(session, "stopped")
             if inst.id in expired
         ]
     for inst in candidates:
         try:
             async with sm() as session:
-                fresh = await orchestrator_service.instance_by_id(session, inst.id)
+                fresh = await orchestrator_queries.instance_by_id(session, inst.id)
                 if fresh.status != "stopped":
                     continue
                 await _freeze(session, fresh)

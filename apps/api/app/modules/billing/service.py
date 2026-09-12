@@ -28,6 +28,7 @@ from app.modules.billing.refunds import (
     review_refund,
 )
 from app.modules.billing.settlement import (
+    DiskBillingInput,
     admin_list_gaps,
     replay_gap,
     reprice_current_hour,
@@ -67,6 +68,7 @@ from app.modules.billing.wallet import (
 )
 
 __all__ = [
+    "DiskBillingInput",
     "Order",
     "admin_list_gaps",
     "admin_list_invoices",

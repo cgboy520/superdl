@@ -14,7 +14,7 @@
 | 单实例 GPU 数 | 按 SKU `max_gpus_per_instance`(UI 给 1/2/4/8;CPU 规格为 0) | — | `skus` |
 | 单个 GPU 节点让给 CPU 实例的 vCPU | 16 | 0~1024 | 策略 `gpu_node_cpu_instance_vcpu_cap`;0 = 不许 CPU 实例落 GPU 节点。近似库存口径,见 [catalog.md](./catalog.md) |
 | 进行中工单 | 10 | — | `tickets/service.py` `MAX_OPEN_TICKETS` |
-| SSH 公钥 | 50;同用户指纹唯一;添加 20 次/小时 | — | `account/service.py` `MAX_SSH_KEYS_PER_USER` / `ssh-key-add:{user_id}` |
+| SSH 公钥 | 50;同用户指纹唯一;添加 20 次/小时 | — | `account/sshkeys.py` `MAX_SSH_KEYS_PER_USER` / `ssh-key-add:{user_id}` |
 | 单工单回复 | 200 条;30 次/10 分钟 | — | `tickets/service.py` `MAX_MESSAGES_PER_TICKET` / `ticket-reply:{user_id}` |
 | 同一证件绑定账号 | 3 | env | `SUPERDL_REAL_NAME_MAX_ACCOUNTS_PER_IDENTITY`(实名通过时按 `users.id_number_hmac` 计) |
 | 容器临时存储 | 请求 10Gi,上限 64Gi | — | `core/k8s/real.py` |
@@ -55,7 +55,7 @@
 | 创建类幂等键窗口 | 24h(实例 / 数据盘;窗外同键按新单) | `core/idempotency.py` `IDEMPOTENCY_WINDOW`(`find_replay` 共用) |
 | 镜像预热覆盖率门槛 / 复检 | 90% / 24h | 策略 `prewarm_min_coverage_pct` / `prewarm_recheck_hours` |
 | Jupyter 一次性票据 | 60s | env `jupyter_ticket_ttl_seconds` |
-| 账号注销冷静期 | 7 天 | `account/service.py` |
+| 账号注销冷静期 | 7 天 | `account/deletion.py` |
 | 节点注册令牌 | 默认 24h,1~168h | 创建时指定 |
 | 装机无心跳判失败 | 2h | `nodes/reconciler.py` |
 | 节点 Missing 后删行 | 7 天 | `nodes/patrol.py` `MISSING_RETENTION` |

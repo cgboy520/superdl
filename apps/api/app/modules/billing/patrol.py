@@ -6,7 +6,7 @@
 
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -22,11 +22,21 @@ from app.modules.account import service as account_service
 from app.modules.billing import wallet
 from app.modules.billing.models import BillHourly, Wallet
 from app.modules.billing.settlement import (
+    DiskBillingInput,
     bill_amount,
     get_watermark,
     running_seconds_in_window,
+    settle_disk_pending_days,
 )
 from app.modules.notify import service as notify_service
+from app.modules.orchestrator import (
+    queries as orchestrator_queries,
+    statemachine as sm_def,
+    transitions as orchestrator_transitions,
+)
+
+if TYPE_CHECKING:
+    from app.modules.orchestrator.models import DataDisk
 
 logger = get_logger(__name__)
 
@@ -71,8 +81,6 @@ async def _patrol_frozen_tenants(
     sm: async_sessionmaker[AsyncSession], counts: dict[str, int]
 ) -> None:
     """被冻结账号仍在跑的实例 → 停机(兜冻结时还在 creating/starting、随后收敛到 running 的实例)。"""
-    from app.modules.orchestrator import service as orchestrator_service
-
     async with sm() as session:
         frozen_user_ids = await account_service.frozen_user_ids(session)
     if not frozen_user_ids:
@@ -80,7 +88,7 @@ async def _patrol_frozen_tenants(
     for user_id in frozen_user_ids:
         try:
             async with sm() as session:
-                stopped = await orchestrator_service.stop_all_for_user(
+                stopped = await orchestrator_transitions.stop_all_for_user(
                     session, user_id, reason="tenant_frozen"
                 )
                 await session.commit()
@@ -97,11 +105,9 @@ async def _unsettled_burn(
 
     窗口下界取 min(当前自然小时, 水位线+1h);与结算同口径:事件重建 running 秒数 − 已出账秒数。
     """
-    from app.modules.orchestrator import service as orchestrator_service
-
     h0 = hour_floor(now)
     start = h0 if settled_through is None else min(h0, settled_through + timedelta(hours=1))
-    events = await orchestrator_service.billing_events_before(session, inst.id, now)
+    events = await orchestrator_queries.billing_events_before(session, inst.id, now)
     # 巡检估算不截断失联宽限(多估口径)
     seconds = running_seconds_in_window([(ts, f, t) for ts, f, t, _m in events], start, now)
     billed = (
@@ -119,10 +125,8 @@ async def _unsettled_burn(
 
 
 async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str, int]) -> None:
-    from app.modules.orchestrator import service as orchestrator_service
-
     async with sm() as session:
-        by_user = await orchestrator_service.list_running_instances_by_user(session)
+        by_user = await orchestrator_queries.list_running_instances_by_user(session)
         thresholds = await account_service.get_warn_thresholds(session, list(by_user))
         settled_through = await get_watermark(session, "hourly")
 
@@ -150,15 +154,15 @@ async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str
                     # 锁序 instance → wallet,与结算(instance → bill → wallet)同向,避免 ABBA 死锁;
                     # 锁内二次读(credit 与本锁互斥),同样走可用口径
                     for inst in sorted(instances, key=lambda i: i.id):
-                        fresh = await orchestrator_service.lock_instance(session, inst.id)
+                        fresh = await orchestrator_queries.lock_instance(session, inst.id)
                         if fresh is not None:
                             fresh_instances.append(fresh)
                     locked = await wallet.lock_wallet(session, user_id)
                     effective = as_amount(wallet.available_of(locked) - unsettled)
                 if effective <= 0:
                     for fresh in fresh_instances:
-                        if fresh.status == orchestrator_service.RUNNING:
-                            await orchestrator_service.system_stop(
+                        if fresh.status == sm_def.RUNNING:
+                            await orchestrator_transitions.system_stop(
                                 session, fresh, reason="arrears_stop"
                             )
                             counts["stopped"] += 1
@@ -185,19 +189,13 @@ async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str
 async def _patrol_frozen_and_arrears_stopped(
     sm: async_sessionmaker[AsyncSession], counts: dict[str, int]
 ) -> None:
-    from app.modules.orchestrator import service as orchestrator_service
-
     async with sm() as policy_session:
         policies = await get_effective_policies(policy_session)
     now = now_utc()
 
     async with sm() as session:
-        stopped = await orchestrator_service.list_instances_by_status(
-            session, orchestrator_service.STOPPED
-        )
-        frozen = await orchestrator_service.list_instances_by_status(
-            session, orchestrator_service.FROZEN
-        )
+        stopped = await orchestrator_queries.list_instances_by_status(session, sm_def.STOPPED)
+        frozen = await orchestrator_queries.list_instances_by_status(session, sm_def.FROZEN)
 
     # 欠费用户的 stopped 实例 → 冻结。包周期的冻结由 subscriptions.subscription_patrol
     # 写 frozen_deadline,回收归下面统一做
@@ -207,11 +205,11 @@ async def _patrol_frozen_and_arrears_stopped(
                 available = await wallet.get_available_balance(session, inst.user_id)
                 if available > 0:
                     continue
-                fresh = await orchestrator_service.get_instance(session, inst.user_id, inst.uuid)
-                if fresh.status != orchestrator_service.STOPPED:
+                fresh = await orchestrator_queries.get_instance(session, inst.user_id, inst.uuid)
+                if fresh.status != sm_def.STOPPED:
                     continue
                 deadline = now + timedelta(hours=policies.freeze_grace_hours)
-                await orchestrator_service.freeze_instance(session, fresh, deadline)
+                await orchestrator_transitions.freeze_instance(session, fresh, deadline)
                 await notify_service.send_arrears_notice(
                     session,
                     inst.user_id,
@@ -228,16 +226,16 @@ async def _patrol_frozen_and_arrears_stopped(
     for inst in frozen:
         try:
             async with sm() as session:
-                fresh = await orchestrator_service.get_instance(session, inst.user_id, inst.uuid)
-                if fresh.status != orchestrator_service.FROZEN:
+                fresh = await orchestrator_queries.get_instance(session, inst.user_id, inst.uuid)
+                if fresh.status != sm_def.FROZEN:
                     continue
                 # 解冻条件按购买模式分:按量看可用余额,包周期看续费
                 available = await wallet.get_available_balance(session, inst.user_id)
                 if available > 0 and fresh.market != MARKET_SUBSCRIPTION:
-                    await orchestrator_service.unfreeze_instance(session, fresh)
+                    await orchestrator_transitions.unfreeze_instance(session, fresh)
                     counts["unfrozen"] += 1
                 elif fresh.frozen_deadline is not None and fresh.frozen_deadline <= now:
-                    await orchestrator_service.reclaim_frozen(session, fresh)
+                    await orchestrator_transitions.reclaim_frozen(session, fresh)
                     await notify_service.send_arrears_notice(
                         session,
                         inst.user_id,
@@ -251,21 +249,33 @@ async def _patrol_frozen_and_arrears_stopped(
             logger.exception("patrol_frozen_failed", instance_id=inst.id)
 
 
+async def _settle_disk_pending(session: AsyncSession, disk: "DataDisk") -> None:
+    """进入欠费宽限前结清在账天数(与删盘 / 扩容前同一函数)。"""
+    await settle_disk_pending_days(
+        session,
+        DiskBillingInput(
+            id=disk.id,
+            user_id=disk.user_id,
+            price_gb_month=disk.price_gb_month,
+            size_gb=disk.size_gb,
+            created_at=disk.created_at,
+        ),
+    )
+
+
 async def _patrol_disks(sm: async_sessionmaker[AsyncSession], counts: dict[str, int]) -> None:
     """数据盘欠费链路:欠费 → grace(只读,disk_grace_days)→ frozen(disk_frozen_days)→ 清除;
     回款即恢复。
-    巡检集合见 disks.list_arrears_chain_user_ids。
+    巡检集合见 orchestrator.queries.arrears_chain_disk_user_ids。
     """
-    from app.modules.orchestrator import service as orchestrator_service
-
     async with sm() as session:
-        user_ids = await orchestrator_service.arrears_chain_disk_user_ids(session)
+        user_ids = await orchestrator_queries.arrears_chain_disk_user_ids(session)
     for user_id in user_ids:
         try:
             async with sm() as session:
                 available = await wallet.get_available_balance(session, user_id)
-                changed = await orchestrator_service.disks_arrears_transition(
-                    session, user_id, available <= 0
+                changed = await orchestrator_transitions.arrears_transition_disks(
+                    session, user_id, available <= 0, settle_pending=_settle_disk_pending
                 )
                 await session.commit()
                 counts["disks"] += changed

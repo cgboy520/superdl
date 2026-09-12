@@ -16,7 +16,7 @@ from app.core.metrics import PII_REVEAL_ROWS_TOTAL
 from app.core.money import as_amount, money_str
 from app.core.pagination import Page
 from app.core.params import Cursor, Limit, TzOffset
-from app.modules.account import service as account_service
+from app.modules.account import deletion as account_deletion, service as account_service
 from app.modules.account.schemas import (
     AdminDeletionApprove,
     AdminDeletionReject,
@@ -40,7 +40,10 @@ from app.modules.billing.schemas import (
     LedgerEntryOut,
 )
 from app.modules.notify import service as notify_service
-from app.modules.orchestrator import service as orchestrator_service
+from app.modules.orchestrator import (
+    queries as orchestrator_queries,
+    transitions as orchestrator_transitions,
+)
 
 router = APIRouter(tags=["admin"])
 
@@ -96,7 +99,7 @@ async def admin_list_tenants(
     page_user_ids = [u.id for u in users]
     balances = await billing_service.balances_by_user(session, page_user_ids)
     consumed = await billing_service.consumed_by_user(session, page_user_ids)
-    stats = await orchestrator_service.instance_disk_stats_by_user(session, page_user_ids)
+    stats = await orchestrator_queries.instance_disk_stats_by_user(session, page_user_ids)
     mask_realname = not reveal
     realname_hits = 0
     out = []
@@ -260,7 +263,9 @@ async def admin_freeze_tenant(
 ) -> TenantStatusOut:
     user = await account_service.admin_set_user_status(session, user_id, "frozen")
     # 封禁同时停机,与 status 变更同一事务;K8s 动作走 outbox
-    stopped = await orchestrator_service.stop_all_for_user(session, user_id, reason="tenant_frozen")
+    stopped = await orchestrator_transitions.stop_all_for_user(
+        session, user_id, reason="tenant_frozen"
+    )
     await session.commit()
     set_audit_target(
         request, f"user:{user_id}", detail={"reason": body.reason, "instances_stopped": stopped}
@@ -297,7 +302,7 @@ async def admin_list_deletion_requests(
     session: DbSession, status: str | None = None
 ) -> list[AdminDeletionRequestOut]:
     """注销申请列表(固定截断 200),行内附执行前校验计数。"""
-    return await account_service.admin_list_deletion_requests(session, status)
+    return await account_deletion.admin_list_deletion_requests(session, status)
 
 
 @router.post("/deletion-requests/{request_id}/approve")
@@ -310,7 +315,7 @@ async def admin_approve_deletion(
 ) -> AdminDeletionRequestOut:
     """执行注销(操作原因必填):冷静期未满 409;残留实例/数据盘或余额非零 → 自动驳回 + 409
     (detail 清单);全通过则同事务匿名化并把原因回写 note。"""
-    req = await account_service.approve_deletion(
+    req = await account_deletion.approve_deletion(
         session, request_id, admin_id=admin.id, note=body.note
     )
     set_audit_target(
@@ -318,7 +323,7 @@ async def admin_approve_deletion(
         f"user:{req.user_id}",
         detail={"action": "account_deletion_approve", "request_id": req.id, "note": body.note},
     )
-    return await account_service.admin_get_deletion_out(session, req.id)
+    return await account_deletion.admin_get_deletion_out(session, req.id)
 
 
 @router.post("/deletion-requests/{request_id}/reject")
@@ -330,7 +335,7 @@ async def admin_reject_deletion(
     admin: AdminUser = require_roles(),
 ) -> AdminDeletionRequestOut:
     """驳回注销申请(理由必填,不受冷静期限制)。"""
-    req = await account_service.reject_deletion(
+    req = await account_deletion.reject_deletion(
         session, request_id, admin_id=admin.id, note=body.note
     )
     set_audit_target(
@@ -338,4 +343,4 @@ async def admin_reject_deletion(
         f"user:{req.user_id}",
         detail={"action": "account_deletion_reject", "request_id": req.id, "note": body.note},
     )
-    return await account_service.admin_get_deletion_out(session, req.id)
+    return await account_deletion.admin_get_deletion_out(session, req.id)

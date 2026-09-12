@@ -113,9 +113,9 @@ class TestSshKeys:
 class TestSshKeyCap:
     async def test_limit_per_user(self, client: AsyncClient, monkeypatch):
         """挂了说明:公钥数量无上限,未计量写入喂出无界列表(创建实例热路径也读它)。"""
-        from app.modules.account import service as account_service
+        from app.modules.account import sshkeys as account_sshkeys
 
-        monkeypatch.setattr(account_service, "MAX_SSH_KEYS_PER_USER", 1)
+        monkeypatch.setattr(account_sshkeys, "MAX_SSH_KEYS_PER_USER", 1)
         data = await register(client, "13800000019")
         headers = {"Authorization": f"Bearer {data['access_token']}"}
         assert (

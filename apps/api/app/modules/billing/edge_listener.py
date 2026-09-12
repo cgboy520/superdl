@@ -10,7 +10,8 @@ from app.core.pricing import MARKET_SUBSCRIPTION
 from app.core.timeutil import ensure_utc, hour_floor
 from app.modules.billing import subscriptions
 from app.modules.billing.settlement import settle_instance_window
-from app.modules.orchestrator.service import RELEASING, RUNNING
+from app.modules.orchestrator import statemachine as sm_def
+from app.modules.orchestrator.transitions import register_transition_listener
 
 if TYPE_CHECKING:
     from app.modules.orchestrator.models import Instance, InstanceEvent
@@ -24,10 +25,10 @@ _TRUNCATE_REASONS = ("node_lost", "pod_lost")
 async def on_instance_transition(
     session: AsyncSession, instance: "Instance", event: "InstanceEvent"
 ) -> None:
-    if event.to_status == RELEASING and instance.market == MARKET_SUBSCRIPTION:
+    if event.to_status == sm_def.RELEASING and instance.market == MARKET_SUBSCRIPTION:
         # 中途释放不退款,订阅转 cancelled;挂在迁移监听器上覆盖用户释放/欠费回收/到期回收/强制回收
         await subscriptions.cancel_for_instance(session, instance.id)
-    if event.from_status != RUNNING:
+    if event.from_status != sm_def.RUNNING:
         return
     if instance.market == MARKET_SUBSCRIPTION:
         # 包周期离开 running 不出尾账。三处配套过滤之一
@@ -70,7 +71,5 @@ def register_billing_edge_listener() -> None:
     global _registered
     if _registered:
         return
-    from app.modules.orchestrator.service import register_transition_listener
-
     register_transition_listener(on_instance_transition)
     _registered = True

@@ -14,12 +14,9 @@ from app.modules.billing import service as billing_service
 from app.modules.notify import service as notify_service
 from app.modules.orchestrator import statemachine as sm_def
 from app.modules.orchestrator.models import DataDisk, Instance
-from app.modules.orchestrator.service import (
-    block_port,
-    build_pod_spec_with_cluster,
-    ensure_port,
-    transition,
-)
+from app.modules.orchestrator.ports import block_port, ensure_port
+from app.modules.orchestrator.service import build_pod_spec_with_cluster
+from app.modules.orchestrator.transitions import transition
 
 logger = get_logger(__name__)
 

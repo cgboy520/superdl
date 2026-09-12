@@ -1,6 +1,5 @@
 """数据盘服务:创建/扩容/删除/挂载管理,独立于实例生命周期。"""
 
-from datetime import timedelta
 from uuid import uuid4
 
 from sqlalchemy import func, select, update
@@ -17,17 +16,13 @@ from app.core.logging import get_logger
 from app.core.money import as_price, disk_daily_charge
 from app.core.outbox import enqueue
 from app.core.policies import get_effective_policies
-from app.core.timeutil import now_utc
 from app.modules.account import service as account_service
 from app.modules.billing import service as billing_service
 from app.modules.nodes import service as nodes_service
 from app.modules.orchestrator.models import DataDisk, Instance
+from app.modules.orchestrator.queries import DISK_BILLABLE_STATUSES
 
 logger = get_logger(__name__)
-
-BILLABLE_STATUSES = ("active",)  # grace(欠费宽限)停计费,frozen 不计费
-# 欠费链路上的全部状态(list_arrears_chain_user_ids 用)
-ARREARS_CHAIN_STATUSES = ("active", "grace", "frozen")
 
 
 async def create_disk(
@@ -133,18 +128,22 @@ async def list_disks(session: AsyncSession, user_id: int) -> list[DataDisk]:
     )
 
 
-async def _settle_pending_days(session: AsyncSession, disk: DataDisk) -> None:
-    """按变更前容量结清未出账的自然日(同事务)。非计费态的盘不补账。"""
-    if disk.status not in BILLABLE_STATUSES:
-        return
-    await billing_service.settle_disk_pending_days(
-        session,
-        disk_id=disk.id,
+def disk_billing_input(disk: DataDisk) -> billing_service.DiskBillingInput:
+    """DataDisk 行 → 结算入参(与 billing 巡检的欠费链共用同一构造)。"""
+    return billing_service.DiskBillingInput(
+        id=disk.id,
         user_id=disk.user_id,
         price_gb_month=disk.price_gb_month,
         size_gb=disk.size_gb,
         created_at=disk.created_at,
     )
+
+
+async def _settle_pending_days(session: AsyncSession, disk: DataDisk) -> None:
+    """按变更前容量结清未出账的自然日(同事务)。非计费态的盘不补账。"""
+    if disk.status not in DISK_BILLABLE_STATUSES:
+        return
+    await billing_service.settle_disk_pending_days(session, disk_billing_input(disk))
 
 
 async def expand_disk(session: AsyncSession, user_id: int, uuid: str, new_size_gb: int) -> DataDisk:
@@ -234,81 +233,6 @@ async def detach_for_instance(session: AsyncSession, instance_id: int) -> None:
     ).scalar_one_or_none()
     if disk is not None:
         disk.mounted_instance_id = None
-
-
-async def list_arrears_chain_user_ids(session: AsyncSession) -> list[int]:
-    """欠费巡检的用户集合:名下有任何一块 active/grace/frozen 盘。"""
-    return list(
-        (
-            await session.execute(
-                select(DataDisk.user_id)
-                .where(DataDisk.status.in_(ARREARS_CHAIN_STATUSES))
-                .distinct()
-            )
-        ).scalars()
-    )
-
-
-async def list_billable_disks(session: AsyncSession) -> list[DataDisk]:
-    return list(
-        (
-            await session.execute(select(DataDisk).where(DataDisk.status.in_(BILLABLE_STATUSES)))
-        ).scalars()
-    )
-
-
-async def arrears_transition_disks(session: AsyncSession, user_id: int, in_arrears: bool) -> int:
-    """欠费巡检钩子:active↔grace→frozen→deleting 链路,返回变更数。
-    grace_started_at 首次进入宽限后不清零;frozen_started_at 每次进入 frozen 重新起算。
-    """
-    policies = await get_effective_policies(session)
-    now = now_utc()
-    changed = 0
-    disks = list(
-        (
-            await session.execute(
-                select(DataDisk).where(
-                    DataDisk.user_id == user_id,
-                    DataDisk.status.in_(ARREARS_CHAIN_STATUSES),
-                )
-            )
-        ).scalars()
-    )
-    for disk in disks:
-        if not in_arrears:
-            if disk.status in ("grace", "frozen"):
-                disk.status = "active"
-                # grace_started_at 保留;frozen_started_at 清零;grace_ended_at 记恢复时刻
-                disk.frozen_started_at = None
-                disk.grace_ended_at = now
-                changed += 1
-            continue
-        if disk.status == "active":
-            await _settle_pending_days(session, disk)  # 进 grace 即停计费:先结清在账天数
-            disk.status = "grace"
-            if disk.grace_started_at is None:
-                disk.grace_started_at = now
-            disk.grace_ended_at = None  # 新一段宽限开始,上一段区间作废
-            changed += 1
-        elif disk.status == "grace" and disk.grace_started_at is not None:
-            if now - disk.grace_started_at > timedelta(days=policies.disk_grace_days):
-                disk.status = "frozen"
-                disk.frozen_started_at = now
-                changed += 1
-        elif disk.status == "frozen" and disk.frozen_started_at is not None:
-            if now - disk.frozen_started_at > timedelta(days=policies.disk_frozen_days):
-                disk.status = "deleting"
-                enqueue(session, "disk.wipe", {"disk_id": disk.id})
-                changed += 1
-                logger.warning("disk_arrears_wipe_scheduled", disk_id=disk.id)
-    return changed
-
-
-async def get_disk_by_id_for_user(session: AsyncSession, user_id: int, disk_id: int) -> DataDisk:
-    disk = await session.get(DataDisk, disk_id)
-    if disk is None or disk.user_id != user_id or disk.status == "deleted":
-        raise not_found("数据盘不存在")
-    return disk
 
 
 async def lock_disk_for_attach(session: AsyncSession, user_id: int, disk_id: int) -> DataDisk:

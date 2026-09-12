@@ -6,7 +6,11 @@ from app.core.db import DbSession
 from app.modules.account.deps import CurrentUser
 from app.modules.metering import service
 from app.modules.metering.schemas import InstanceMetricsSummaryOut
-from app.modules.orchestrator import service as orchestrator_service
+from app.modules.orchestrator import (
+    queries as orchestrator_queries,
+    service as orchestrator_service,
+    statemachine as sm_def,
+)
 
 router = APIRouter(tags=["metering"])
 
@@ -18,9 +22,7 @@ async def instances_metrics_summary(
 ) -> InstanceMetricsSummaryOut:
     """本人 running 实例近 1h gpu_util 批量摘要(列表 sparkline);断源 available=false(200)。"""
     instances = await orchestrator_service.list_instances(session, user.id)
-    targets = [
-        (i.uuid, i.k8s_namespace) for i in instances if i.status == orchestrator_service.RUNNING
-    ]
+    targets = [(i.uuid, i.k8s_namespace) for i in instances if i.status == sm_def.RUNNING]
     await session.commit()  # 先还连接:下面最多 20 次 Prometheus 往返,不占池
     return await service.instances_gpu_summary(targets)
 
@@ -30,7 +32,7 @@ async def get_instance_metrics(
     uuid: str, user: CurrentUser, session: DbSession, range: str = "1h"
 ) -> dict[str, Any]:
     """实例监控曲线(代理 Prometheus,按租户隔离)。断源 503,不影响计费。"""
-    instance = await orchestrator_service.get_instance(session, user.id, uuid)
+    instance = await orchestrator_queries.get_instance(session, user.id, uuid)
     pool_label = instance.spec.get("pool_label")
     await session.commit()  # 先还连接再代理 Prometheus
     return await service.instance_metrics(
