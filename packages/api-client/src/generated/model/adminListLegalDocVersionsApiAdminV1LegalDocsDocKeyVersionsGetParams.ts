@@ -4,7 +4,8 @@
  * SuperDL API
  * OpenAPI spec version: 0.1.0
  */
+import type { AdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetLocale } from './adminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetLocale';
 
 export type AdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetParams = {
-locale: string;
+locale: AdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetLocale;
 };

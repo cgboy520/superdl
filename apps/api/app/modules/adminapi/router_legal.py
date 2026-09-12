@@ -16,6 +16,7 @@ from app.modules.legal.schemas import (
     LegalDocVersionCreate,
     LegalDocVersionOut,
     LegalDocVersionUpdate,
+    Locale,
 )
 
 router = APIRouter(tags=["admin"])
@@ -40,7 +41,7 @@ async def admin_list_legal_docs(session: DbSession) -> list[LegalDocCellOut]:
     "/legal-docs/{doc_key}/versions", dependencies=[require_roles("ops", "finance", "readonly")]
 )
 async def admin_list_legal_doc_versions(
-    doc_key: str, session: DbSession, locale: str = Query(...)
+    doc_key: str, session: DbSession, locale: Locale = Query(...)
 ) -> list[LegalDocVersionOut]:
     """某 (doc_key, locale) 的版本历史(version 倒序)。"""
     rows = await legal_service.admin_list_versions(session, doc_key, locale)

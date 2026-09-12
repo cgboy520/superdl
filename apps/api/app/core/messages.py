@@ -206,7 +206,6 @@ MESSAGES: dict[str, str] = {
     "legal.draftExists": "该文档与语言已存在草稿,请先处理现有草稿",
     "legal.versionNotDraft": "版本状态为 {status},仅草稿可执行该操作",
     "legal.publishedNotArchivable": "已发布版本不可直接归档",
-    "legal.localeUnsupported": "语言 {locale} 不受支持",
     # 计量/监控
     "metering.badNodeName": "节点名不合法",
     "metering.badRange": "range 须为 1h/6h/24h",

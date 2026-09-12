@@ -1,10 +1,12 @@
 """法务文档:公开读取(回落 zh-CN)+ 注册同意存证 + 管理端版本流(draft → published → archived)。"""
 
+from typing import get_args
+
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import AppError, ErrorCode, conflict, not_found
+from app.core.errors import conflict, not_found
 from app.core.logging import get_logger
 from app.core.timeutil import now_utc
 from app.modules.legal.models import LegalDocVersion, UserConsent
@@ -12,13 +14,14 @@ from app.modules.legal.schemas import (
     LegalDocCellOut,
     LegalDocVersionBrief,
     LegalDocVersionUpdate,
+    Locale,
 )
 
 logger = get_logger(__name__)
 
 # 预置正文由迁移写入(published v1);新增文档要先加迁移
 VALID_DOC_KEYS: tuple[str, ...] = ("terms", "privacy", "deletion_notice")
-SUPPORTED_LOCALES: tuple[str, ...] = ("zh-CN", "en-US")
+SUPPORTED_LOCALES: tuple[str, ...] = get_args(Locale)
 DEFAULT_LOCALE = "zh-CN"
 # 注册必勾落证的两份文档
 CONSENT_DOC_KEYS: tuple[str, ...] = ("terms", "privacy")
@@ -27,15 +30,6 @@ CONSENT_DOC_KEYS: tuple[str, ...] = ("terms", "privacy")
 def _validate_doc_key(doc_key: str) -> None:
     if doc_key not in VALID_DOC_KEYS:
         raise not_found(key="legal.docNotFound")
-
-
-def _validate_locale(locale: str) -> None:
-    if locale not in SUPPORTED_LOCALES:
-        raise AppError(
-            ErrorCode.VALIDATION_ERROR,
-            key="legal.localeUnsupported",
-            params={"locale": locale},
-        )
 
 
 async def _published(session: AsyncSession, doc_key: str, locale: str) -> LegalDocVersion | None:
@@ -116,12 +110,12 @@ async def admin_overview(session: AsyncSession) -> list[LegalDocCellOut]:
             draft=_brief(drafts[key]) if key in drafts else None,
         )
         for key in sorted(grid)
-        for doc_key, locale in [key]
+        for doc_key, locale in (key,)
     ]
 
 
 async def admin_list_versions(
-    session: AsyncSession, doc_key: str, locale: str
+    session: AsyncSession, doc_key: str, locale: Locale
 ) -> list[LegalDocVersion]:
     _validate_doc_key(doc_key)
     return list(
@@ -139,12 +133,11 @@ async def admin_list_versions(
 
 
 async def admin_create_draft(
-    session: AsyncSession, doc_key: str, locale: str, *, admin_id: int
+    session: AsyncSession, doc_key: str, locale: Locale, *, admin_id: int
 ) -> LegalDocVersion:
     """基于当前 published 复制新 draft(version=max+1),同语言无 published 时以 zh-CN 为底稿;
     每 (doc_key, locale) 同时仅一个 draft。"""
     _validate_doc_key(doc_key)
-    _validate_locale(locale)
     existing_draft = (
         await session.execute(
             select(LegalDocVersion.id).where(

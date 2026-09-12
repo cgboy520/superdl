@@ -1,6 +1,10 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+# 法务文档支持的语言;公开端点 lang 不在此列即回落 zh-CN
+Locale = Literal["zh-CN", "en-US"]
 
 
 class LegalDocOut(BaseModel):
@@ -50,7 +54,7 @@ class LegalDocVersionOut(BaseModel):
 
 
 class LegalDocVersionCreate(BaseModel):
-    locale: str = Field(min_length=2, max_length=16)
+    locale: Locale
 
 
 class LegalDocVersionUpdate(BaseModel):

@@ -29,12 +29,13 @@ import {
   useUpdateLegalDocVersion,
   type LegalDocCell,
   type LegalDocVersion,
+  type LegalLocale,
 } from "../../api";
 import { ReasonAction } from "../../components/ReasonAction";
 import { useAdminRole } from "../../stores/auth";
 
 const DOC_KEYS = ["terms", "privacy", "deletion_notice"] as const;
-const LOCALES = ["zh-CN", "en-US"] as const;
+const LOCALES: readonly LegalLocale[] = ["zh-CN", "en-US"];
 
 /** 行级 diff 统计(LCS):+added/−removed。 */
 function diffStats(oldText: string, newText: string): { added: number; removed: number } {
@@ -59,7 +60,7 @@ export function LegalDocsTab() {
   const writable = role === "admin";
   const qc = useQueryClient();
   const overview = useLegalDocs();
-  const [selected, setSelected] = useState<{ docKey: string; locale: string } | null>(null);
+  const [selected, setSelected] = useState<{ docKey: string; locale: LegalLocale } | null>(null);
 
   const cells = useMemo(() => {
     const map = new Map<string, LegalDocCell>();
@@ -149,7 +150,7 @@ function CellEditor({
   errText,
 }: {
   docKey: string;
-  locale: string;
+  locale: LegalLocale;
   docLabel: string;
   writable: boolean;
   onChanged: () => void;

@@ -111,6 +111,7 @@ import {
 import type {
   AdjustmentCreate,
   AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetParams,
+  LegalDocVersionCreateLocale as LegalLocale,
   AdminAlertsApiAdminV1AlertsGetParams,
   AdminAuditExportApiAdminV1AuditExportGetParams,
   AdminAuditLogApiAdminV1AuditGetParams,
@@ -605,7 +606,11 @@ export function useTicketDetail(ticketId: number | null) {
 
 // 法务文档(读全角色,写仅 admin)
 
-export type { LegalDocCellOut as LegalDocCell, LegalDocVersionOut as LegalDocVersion } from "@superdl/api-client";
+export type {
+  LegalDocCellOut as LegalDocCell,
+  LegalDocVersionOut as LegalDocVersion,
+  LegalDocVersionCreateLocale as LegalLocale,
+} from "@superdl/api-client";
 
 /** 法务文档总览:doc_key × locale 状态格(当前 published + 最新 draft)。 */
 export function useLegalDocs() {
@@ -615,14 +620,14 @@ export function useLegalDocs() {
 }
 
 /** 某 (doc_key, locale) 的版本历史(version 倒序)。 */
-export function useLegalDocVersions(docKey: string | null, locale: string | null) {
+export function useLegalDocVersions(docKey: string | null, locale: LegalLocale | null) {
   const queryKey = ["admin", "legal-doc-versions", docKey, locale] as const;
   const q = useQuery({
     queryKey,
     enabled: docKey !== null && locale !== null,
     queryFn: () =>
       adminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGet(docKey as string, {
-        locale: locale as string,
+        locale: locale as LegalLocale,
       }),
   });
   return { ...q, queryKey };

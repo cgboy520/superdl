@@ -155,7 +155,6 @@
   "legal": {
     "docNotFound": "The legal document does not exist or has not been published",
     "draftExists": "A draft already exists for this document and locale — handle it first",
-    "localeUnsupported": "Locale {{locale}} is not supported",
     "publishedNotArchivable": "A published version cannot be archived directly",
     "versionNotDraft": "Version is in status {{status}} — only drafts allow this operation"
   },

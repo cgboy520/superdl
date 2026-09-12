@@ -155,7 +155,6 @@
   "legal": {
     "docNotFound": "法务文档不存在或尚未发布",
     "draftExists": "该文档与语言已存在草稿,请先处理现有草稿",
-    "localeUnsupported": "语言 {{locale}} 不受支持",
     "publishedNotArchivable": "已发布版本不可直接归档",
     "versionNotDraft": "版本状态为 {{status}},仅草稿可执行该操作"
   },

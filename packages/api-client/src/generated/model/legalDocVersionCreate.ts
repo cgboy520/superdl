@@ -4,11 +4,8 @@
  * SuperDL API
  * OpenAPI spec version: 0.1.0
  */
+import type { LegalDocVersionCreateLocale } from './legalDocVersionCreateLocale';
 
 export interface LegalDocVersionCreate {
-  /**
-     * @minLength 2
-     * @maxLength 16
-     */
-  locale: string;
+  locale: LegalDocVersionCreateLocale;
 }
