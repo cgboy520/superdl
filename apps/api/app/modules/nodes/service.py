@@ -32,7 +32,7 @@ from app.core.platform_config import RuntimeConfig, get_runtime_config
 from app.core.registry import parse_proxy_projects
 from app.core.timeutil import now_utc
 from app.modules.nodes.models import ClusterStatus, NodeEnrollment, NodeSpec
-from app.modules.nodes.schemas import EnrollmentCreate
+from app.modules.nodes.schemas import ClusterComponentOut, ComponentKey, EnrollmentCreate
 
 logger = get_logger(__name__)
 
@@ -586,3 +586,115 @@ async def require_storage_classes(session: AsyncSession, *, with_data_disk: bool
             http_status=http_status.HTTP_409_CONFLICT,
             detail={"reason": "storage_class_missing", "missing": missing},
         )
+
+
+# ---------- 集群页组件体检 ----------
+
+
+def _helmfile(distro: str | None, release: str) -> str:
+    """修复命令按实测发行版给出档位;走 apply.sh 而非裸 helmfile。"""
+    env = {"k3s": "light", "rke2": "full"}.get(distro or "", "<full|light>")
+    return f"deploy/cluster/apply.sh {env} -l name={release}"
+
+
+# 就绪位直接来自 cluster_status 列的组件:(key, 列名, 未就绪说明, helm release;None = 自定义修复提示)
+_FLAG_COMPONENTS: tuple[tuple[ComponentKey, str, str, str | None], ...] = (
+    ("hami", "hami_ready", "hami-scheduler Deployment 未就绪(共享档不可开机)", "hami"),
+    # 两档都装(light 只关掉 toolkit,见 values/light/gpu-operator-light.yaml)
+    (
+        "gpu_operator",
+        "gpu_operator_present",
+        "gpu-operator 未发现(GFD/DCGM/MIG/VFIO 均缺位)",
+        "gpu-operator",
+    ),
+    ("dcgm", "dcgm_present", "dcgm-exporter DaemonSet 未发现(节点 GPU 曲线不可用)", "gpu-operator"),
+    # 租户 Pod 靠这个 RuntimeClass 见到卡
+    (
+        "nvidia_runtimeclass",
+        "nvidia_runtimeclass",
+        "RuntimeClass nvidia 不存在(租户 Pod 看不到 GPU)",
+        None,
+    ),
+    # 判据是 Gateway 对象的 Programmed 条件
+    ("gateway", "gateway_ready", "Gateway 未 Programmed(实例入口不可达)", "envoy-gateway"),
+    (
+        "cert_manager",
+        "cert_manager_ready",
+        "cert-manager 未就绪(泛域名证书签发与续期停摆)",
+        "cert-manager",
+    ),
+    (
+        "monitoring",
+        "kps_present",
+        "kube-prometheus-stack 未发现(监控曲线降级显示)",
+        "kube-prometheus-stack",
+    ),
+)
+_NVIDIA_RC_FIX = "节点装 nvidia-container-toolkit 后重启 k3s/rke2"
+
+
+def cluster_components(row: ClusterStatus | None) -> list[ClusterComponentOut]:
+    """组件体检,按用户可见链路顺序排;detail 只写实况。"""
+    distro = row.distro if row else None
+    flags = {key: bool(row and getattr(row, attr)) for key, attr, _d, _r in _FLAG_COMPONENTS}
+    details = {key: (None if flags[key] else missing) for key, _a, missing, _r in _FLAG_COMPONENTS}
+    fixes = {
+        key: (None if flags[key] else (_helmfile(distro, release) if release else _NVIDIA_RC_FIX))
+        for key, _a, _m, release in _FLAG_COMPONENTS
+    }
+
+    def flag(key: ComponentKey) -> ClusterComponentOut:
+        return ClusterComponentOut(key=key, ok=flags[key], detail=details[key], fix_hint=fixes[key])
+
+    nodes_ready = int(row.nodes_ready) if row else 0
+    nodes_total = int(row.nodes_total) if row else 0
+    pools: dict[str, int] = dict(row.pools or {}) if row else {}
+    scs = set(row.storage_classes or []) if row else set()
+    # 实例盘 SC 是两档强制依赖,缺它判红;JuiceFS 可选(light 默认不装),缺它不判红
+    instance_disk_ok = INSTANCE_DISK_STORAGE_CLASS in scs
+    data_disk_ok = JUICEFS_STORAGE_CLASS in scs
+    kata_ok = bool(row and row.kata_runtimeclass)
+    return [
+        ClusterComponentOut(
+            key="nodes",
+            # 不可调度的那部分(NotReady/cordon)要看得见
+            ok=nodes_ready > 0 and nodes_ready == nodes_total,
+            detail=f"{nodes_ready}/{nodes_total} 可调度",
+        ),
+        flag("hami"),
+        flag("gpu_operator"),
+        flag("dcgm"),
+        flag("nvidia_runtimeclass"),
+        ClusterComponentOut(
+            key="kata_runtimeclass",
+            ok=kata_ok,
+            detail=_kata_detail(kata_ok, pools.get("kata", 0)),
+            fix_hint=None if kata_ok else _helmfile(distro, "kata-deploy"),
+        ),
+        ClusterComponentOut(
+            key="storage",
+            # 按名核对,与下发门禁 require_storage_classes 同一口径
+            ok=instance_disk_ok,
+            detail=_storage_detail(instance_disk_ok, data_disk_ok, scs),
+            fix_hint=None if instance_disk_ok else _helmfile(distro, "topolvm"),
+        ),
+        flag("gateway"),
+        flag("cert_manager"),
+        flag("monitoring"),
+    ]
+
+
+def _storage_detail(instance_disk_ok: bool, data_disk_ok: bool, scs: set[str]) -> str:
+    if not instance_disk_ok:
+        return f"缺 {INSTANCE_DISK_STORAGE_CLASS}(实例盘不可用,全站开不了机)"
+    listed = ", ".join(sorted(scs))
+    return listed if data_disk_ok else f"{listed}(无 {JUICEFS_STORAGE_CLASS},数据盘不可售)"
+
+
+def _kata_detail(kata_ok: bool, kata_nodes: int) -> str | None:
+    """RuntimeClass 在但 kata 池没节点,dedicated 一样开不了机。"""
+    if not kata_ok:
+        return "RuntimeClass kata-qemu 不存在(独享档不可用)"
+    if kata_nodes == 0:
+        return "RuntimeClass 就绪,kata 池无节点(独享档暂无库存)"
+    return f"kata 池 {kata_nodes} 节点"

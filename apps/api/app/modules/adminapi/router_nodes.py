@@ -1,7 +1,6 @@
 """管理端路由(全局实例/节点注册/节点与集群/超卖报表)。"""
 
 import asyncio
-from typing import Any
 
 from fastapi import APIRouter, Request, status
 from pydantic import BaseModel, Field
@@ -12,8 +11,6 @@ from app.core.db import DbSession
 from app.core.errors import AppError, ErrorCode, not_found
 from app.core.k8s import get_orchestrator
 from app.core.k8s.base import (
-    INSTANCE_DISK_STORAGE_CLASS,
-    JUICEFS_STORAGE_CLASS,
     ClusterProbe,
 )
 from app.core.pagination import Page
@@ -22,9 +19,6 @@ from app.core.platform_config import get_runtime_config
 from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.schemas import (
     REASON_MAX_LENGTH,
-    ClusterComponentOut,
-    ClusterConfigStateOut,
-    ClusterStatusOut,
     GpuModelAggregateOut,
     NodeOut,
     OversellPoolOut,
@@ -33,6 +27,8 @@ from app.modules.metering import service as metering_service
 from app.modules.metering.schemas import NodeMetricsOut
 from app.modules.nodes import service as nodes_service
 from app.modules.nodes.schemas import (
+    ClusterConfigStateOut,
+    ClusterStatusOut,
     EnrollmentCommandOut,
     EnrollmentCreate,
     NodeDecommissionOut,
@@ -272,114 +268,6 @@ async def admin_port_pool_stats(session: DbSession) -> PortPoolStatsOut:
     return await orchestrator_ports.port_pool_stats(session)
 
 
-def _helmfile(distro: str | None, release: str) -> str:
-    """修复命令按实测发行版给出档位;走 apply.sh 而非裸 helmfile。"""
-    env = {"k3s": "light", "rke2": "full"}.get(distro or "", "<full|light>")
-    return f"deploy/cluster/apply.sh {env} -l name={release}"
-
-
-def _cluster_components(row: Any) -> list[ClusterComponentOut]:
-    """组件体检,按用户可见链路顺序排;detail 只写实况。"""
-    hami_ok = bool(row and row.hami_ready)
-    kps_ok = bool(row and row.kps_present)
-    dcgm_ok = bool(row and row.dcgm_present)
-    gpu_op_ok = bool(row and row.gpu_operator_present)
-    kata_ok = bool(row and row.kata_runtimeclass)
-    nvidia_rc_ok = bool(row and row.nvidia_runtimeclass)
-    gateway_ok = bool(row and row.gateway_ready)
-    cert_ok = bool(row and row.cert_manager_ready)
-    nodes_ready = int(row.nodes_ready) if row else 0
-    nodes_total = int(row.nodes_total) if row else 0
-    pools: dict[str, int] = dict(row.pools or {}) if row else {}
-    scs = set(row.storage_classes or []) if row else set()
-    distro = row.distro if row else None
-    # 实例盘 SC 是两档强制依赖,缺它判红;JuiceFS 可选(light 默认不装),缺它不判红
-    instance_disk_ok = INSTANCE_DISK_STORAGE_CLASS in scs
-    data_disk_ok = JUICEFS_STORAGE_CLASS in scs
-    return [
-        ClusterComponentOut(
-            key="nodes",
-            # 不可调度的那部分(NotReady/cordon)要看得见
-            ok=nodes_ready > 0 and nodes_ready == nodes_total,
-            detail=f"{nodes_ready}/{nodes_total} 可调度",
-        ),
-        ClusterComponentOut(
-            key="hami",
-            ok=hami_ok,
-            detail=None if hami_ok else "hami-scheduler Deployment 未就绪(共享档不可开机)",
-            fix_hint=None if hami_ok else _helmfile(distro, "hami"),
-        ),
-        ClusterComponentOut(
-            key="gpu_operator",
-            ok=gpu_op_ok,
-            # 两档都装(light 只关掉 toolkit,见 values/light/gpu-operator-light.yaml)
-            detail=None if gpu_op_ok else "gpu-operator 未发现(GFD/DCGM/MIG/VFIO 均缺位)",
-            fix_hint=None if gpu_op_ok else _helmfile(distro, "gpu-operator"),
-        ),
-        ClusterComponentOut(
-            key="dcgm",
-            ok=dcgm_ok,
-            detail=None if dcgm_ok else "dcgm-exporter DaemonSet 未发现(节点 GPU 曲线不可用)",
-            fix_hint=None if dcgm_ok else _helmfile(distro, "gpu-operator"),
-        ),
-        ClusterComponentOut(
-            key="nvidia_runtimeclass",
-            ok=nvidia_rc_ok,
-            # 租户 Pod 靠这个 RuntimeClass 见到卡
-            detail=None if nvidia_rc_ok else "RuntimeClass nvidia 不存在(租户 Pod 看不到 GPU)",
-            fix_hint=None if nvidia_rc_ok else "节点装 nvidia-container-toolkit 后重启 k3s/rke2",
-        ),
-        ClusterComponentOut(
-            key="kata_runtimeclass",
-            ok=kata_ok,
-            detail=_kata_detail(kata_ok, pools.get("kata", 0)),
-            fix_hint=None if kata_ok else _helmfile(distro, "kata-deploy"),
-        ),
-        ClusterComponentOut(
-            key="storage",
-            # 按名核对,与下发门禁 require_storage_classes 同一口径
-            ok=instance_disk_ok,
-            detail=_storage_detail(instance_disk_ok, data_disk_ok, scs),
-            fix_hint=None if instance_disk_ok else _helmfile(distro, "topolvm"),
-        ),
-        ClusterComponentOut(
-            key="gateway",
-            ok=gateway_ok,
-            # 判据是 Gateway 对象的 Programmed 条件
-            detail=None if gateway_ok else "Gateway 未 Programmed(实例入口不可达)",
-            fix_hint=None if gateway_ok else _helmfile(distro, "envoy-gateway"),
-        ),
-        ClusterComponentOut(
-            key="cert_manager",
-            ok=cert_ok,
-            detail=None if cert_ok else "cert-manager 未就绪(泛域名证书签发与续期停摆)",
-            fix_hint=None if cert_ok else _helmfile(distro, "cert-manager"),
-        ),
-        ClusterComponentOut(
-            key="monitoring",
-            ok=kps_ok,
-            detail=None if kps_ok else "kube-prometheus-stack 未发现(监控曲线降级显示)",
-            fix_hint=None if kps_ok else _helmfile(distro, "kube-prometheus-stack"),
-        ),
-    ]
-
-
-def _storage_detail(instance_disk_ok: bool, data_disk_ok: bool, scs: set[str]) -> str:
-    if not instance_disk_ok:
-        return f"缺 {INSTANCE_DISK_STORAGE_CLASS}(实例盘不可用,全站开不了机)"
-    listed = ", ".join(sorted(scs))
-    return listed if data_disk_ok else f"{listed}(无 {JUICEFS_STORAGE_CLASS},数据盘不可售)"
-
-
-def _kata_detail(kata_ok: bool, kata_nodes: int) -> str | None:
-    """RuntimeClass 在但 kata 池没节点,dedicated 一样开不了机。"""
-    if not kata_ok:
-        return "RuntimeClass kata-qemu 不存在(独享档不可用)"
-    if kata_nodes == 0:
-        return "RuntimeClass 就绪,kata 池无节点(独享档暂无库存)"
-    return f"kata 池 {kata_nodes} 节点"
-
-
 async def _cluster_status_out(session: DbSession) -> ClusterStatusOut:
     row = await nodes_service.get_cluster_status(session)
     cfg = await get_runtime_config(session)
@@ -393,7 +281,7 @@ async def _cluster_status_out(session: DbSession) -> ClusterStatusOut:
         distro=row.distro if row else None,
         probed_at=row.probed_at if row else None,
         pools=dict(row.pools or {}) if row else {},
-        components=_cluster_components(row),
+        components=nodes_service.cluster_components(row),
         config=ClusterConfigStateOut(
             server_url_set=bool(cfg.cluster_server_url),
             join_token_set=bool(cfg.cluster_join_token),

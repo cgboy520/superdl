@@ -95,3 +95,54 @@ class ProgressRequest(BaseModel):
     # 驱动/CUDA 版本:收尾上报(waiting_node)附带,写进登记快照 os_info
     driver_version: str | None = Field(default=None, max_length=32)
     cuda_version: str | None = Field(default=None, max_length=16)
+
+
+# ---------- 集群页(管理端) ----------
+
+
+ComponentKey = Literal[
+    "nodes",
+    "hami",
+    "gpu_operator",
+    "dcgm",
+    "nvidia_runtimeclass",
+    "kata_runtimeclass",
+    "storage",
+    "gateway",
+    "cert_manager",
+    "monitoring",
+]
+
+
+class ClusterComponentOut(BaseModel):
+    """组件体检项:key 由前端映射文案;fix_hint 为可复制修复命令(不随语言)。"""
+
+    key: ComponentKey
+    ok: bool
+    detail: str | None = None
+    fix_hint: str | None = None
+
+
+class ClusterConfigStateOut(BaseModel):
+    """配置就绪位(不回明文)。"""
+
+    server_url_set: bool
+    join_token_set: bool
+    prometheus_url_set: bool
+    grafana_url: str | None
+    # 镜像仓库地址与平台项目(非密),ops/readonly 可读
+    registry_host: str | None
+    registry_project: str | None
+
+
+class ClusterStatusOut(BaseModel):
+    """集群页数据(纯 DB 读能力缓存;「测试连接」同步探测后返回同形)。"""
+
+    api_reachable: bool
+    k8s_version: str | None
+    distro: str | None
+    probed_at: datetime | None
+    pools: dict[str, int]
+    components: list[ClusterComponentOut]
+    config: ClusterConfigStateOut
+    error: str | None

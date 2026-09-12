@@ -27,6 +27,7 @@ from app.core.metrics import (
 )
 from app.core.money import as_amount, as_price, billing_units, disk_daily_charge
 from app.core.pagination import Page, paginate_by_id
+from app.core.sqlutil import get_for_update_or_404
 from app.core.timeutil import (
     BILLING_DAY_OFFSET,
     billing_day_floor,
@@ -837,81 +838,28 @@ async def replay_gap(
     返回 schema 而非 ORM 行(本函数自建 session)。
     """
     async with sm() as session:
-        gap = await session.get(SettlementGap, gap_id, with_for_update=True)
-        if gap is None:
-            raise AppError(
-                ErrorCode.NOT_FOUND, key="billing.settlementGapNotFound", http_status=404
-            )
+        gap = await get_for_update_or_404(
+            session, SettlementGap, gap_id, key="billing.settlementGapNotFound"
+        )
         if gap.resolved_at is not None:
             return AdminSettlementGapOut.model_validate(gap)  # 已核销直接返回
         if gap.reason == "grace_overlap":
             raise conflict(key="billing.settlementGapNotReplayable", params={"reason": gap.reason})
         kind, window_start, object_id = gap.kind, ensure_utc(gap.window_start), gap.object_id
 
+    replay_detail = {"gap_id": gap_id, "replayed_by": operator_id}
     if kind == "hourly":
-        window_end = window_start + timedelta(hours=1)
-        if object_id:
-            async with sm() as session:
-                row = await orchestrator_queries.instance_billing_snapshot(session, object_id)
-            if row is None:
-                raise conflict(
-                    key="billing.settlementGapObjectGone", params={"objectId": str(object_id)}
-                )
-            inst_id, user_id, price, gpu_count = row
-            async with sm() as session:
-                await settle_instance_window(
-                    session,
-                    instance_id=inst_id,
-                    user_id=user_id,
-                    unit_price=price,
-                    gpu_count=gpu_count,
-                    window_start=window_start,
-                    window_end=window_end,
-                    source="gap_replay",
-                    detail_extra={"gap_id": gap_id, "replayed_by": operator_id},
-                )
-                await session.commit()
-        else:
-            attempts = await _hourly_window_attempts(sm, window_start, window_end)
-            await _settle_window_objects(
-                sm, kind="hourly", window_start=window_start, attempts=attempts
-            )
+        await _replay_hourly_gap(sm, window_start, object_id, detail_extra=replay_detail)
     elif kind == "daily_disk":
-        day = billing_day_floor(window_start)
-        if object_id:
-            async with sm() as session:
-                disk_row = await orchestrator_queries.disk_billing_snapshot(session, object_id)
-                if disk_row is None:
-                    raise conflict(
-                        key="billing.settlementGapObjectGone", params={"objectId": str(object_id)}
-                    )
-                disk_id, disk_user_id, disk_price, disk_size = disk_row
-                await charge_disk_day(
-                    session,
-                    disk_id=disk_id,
-                    user_id=disk_user_id,
-                    price_gb_month=disk_price,
-                    size_gb=disk_size,
-                    day=day,
-                )
-                await session.commit()
-        else:
-            async with sm() as session:
-                disk_rows = await _billable_disk_rows(session)
-            attempts = await _daily_disk_window_attempts(
-                sm, disk_rows, day, day + timedelta(days=1)
-            )
-            await _settle_window_objects(sm, kind="daily_disk", window_start=day, attempts=attempts)
+        await _replay_daily_disk_gap(sm, billing_day_floor(window_start), object_id)
     else:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="common.validation")
 
     # 回写 resolved_at(行锁内)
     async with sm() as session:
-        gap = await session.get(SettlementGap, gap_id, with_for_update=True)
-        if gap is None:
-            raise AppError(
-                ErrorCode.NOT_FOUND, key="billing.settlementGapNotFound", http_status=404
-            )
+        gap = await get_for_update_or_404(
+            session, SettlementGap, gap_id, key="billing.settlementGapNotFound"
+        )
         if gap.resolved_at is None:
             gap.resolved_at = now_utc()
             await session.commit()
@@ -919,6 +867,69 @@ async def replay_gap(
         out = AdminSettlementGapOut.model_validate(gap)
         await _refresh_gap_gauge(session)
     return out
+
+
+async def _replay_hourly_gap(
+    sm: async_sessionmaker[AsyncSession],
+    window_start: datetime,
+    object_id: int,
+    *,
+    detail_extra: dict[str, Any],
+) -> None:
+    """小时缺口:object_id>0 精确补结一台;=0 对该窗全量候选重放。"""
+    window_end = window_start + timedelta(hours=1)
+    if not object_id:
+        attempts = await _hourly_window_attempts(sm, window_start, window_end)
+        await _settle_window_objects(
+            sm, kind="hourly", window_start=window_start, attempts=attempts
+        )
+        return
+    async with sm() as session:
+        row = await orchestrator_queries.instance_billing_snapshot(session, object_id)
+    if row is None:
+        raise conflict(key="billing.settlementGapObjectGone", params={"objectId": str(object_id)})
+    inst_id, user_id, price, gpu_count = row
+    async with sm() as session:
+        await settle_instance_window(
+            session,
+            instance_id=inst_id,
+            user_id=user_id,
+            unit_price=price,
+            gpu_count=gpu_count,
+            window_start=window_start,
+            window_end=window_end,
+            source="gap_replay",
+            detail_extra=detail_extra,
+        )
+        await session.commit()
+
+
+async def _replay_daily_disk_gap(
+    sm: async_sessionmaker[AsyncSession], day: datetime, object_id: int
+) -> None:
+    """盘日结缺口:object_id>0 精确补结一块盘;=0 按当前可计费盘全量重放该日。"""
+    if not object_id:
+        async with sm() as session:
+            disk_rows = await _billable_disk_rows(session)
+        attempts = await _daily_disk_window_attempts(sm, disk_rows, day, day + timedelta(days=1))
+        await _settle_window_objects(sm, kind="daily_disk", window_start=day, attempts=attempts)
+        return
+    async with sm() as session:
+        disk_row = await orchestrator_queries.disk_billing_snapshot(session, object_id)
+        if disk_row is None:
+            raise conflict(
+                key="billing.settlementGapObjectGone", params={"objectId": str(object_id)}
+            )
+        disk_id, disk_user_id, disk_price, disk_size = disk_row
+        await charge_disk_day(
+            session,
+            disk_id=disk_id,
+            user_id=disk_user_id,
+            price_gb_month=disk_price,
+            size_gb=disk_size,
+            day=day,
+        )
+        await session.commit()
 
 
 async def resolve_gap(
@@ -929,9 +940,9 @@ async def resolve_gap(
     operator_id: int,
 ) -> SettlementGap:
     """人工核销(不重放)。说明必填,写审计。"""
-    gap = await session.get(SettlementGap, gap_id, with_for_update=True)
-    if gap is None:
-        raise AppError(ErrorCode.NOT_FOUND, key="billing.settlementGapNotFound", http_status=404)
+    gap = await get_for_update_or_404(
+        session, SettlementGap, gap_id, key="billing.settlementGapNotFound"
+    )
     if gap.resolved_at is None:
         gap.resolved_at = now_utc()
         await session.commit()

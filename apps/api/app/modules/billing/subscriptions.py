@@ -171,12 +171,7 @@ async def find_replay_row(
     给全 instance_id/period/period_count 时做异参检测:同键不同实例或周期即 409;
     三个参数缺一即退化为纯按键重放。
     """
-    fingerprint = (
-        _fingerprint(_ACT_NEW, user_id, instance_id, period, period_count)
-        if instance_id is not None and period is not None and period_count is not None
-        else None
-    )
-    if fingerprint is None:
+    if instance_id is not None and period is not None and period_count is not None:
         return await find_replay(
             session,
             Subscription,
@@ -184,6 +179,7 @@ async def find_replay_row(
             owner_id=user_id,
             key=key,
             window=IDEMPOTENCY_WINDOW,
+            fingerprint=_fingerprint(_ACT_NEW, user_id, instance_id, period, period_count),
         )
     return await find_replay(
         session,
@@ -192,7 +188,6 @@ async def find_replay_row(
         owner_id=user_id,
         key=key,
         window=IDEMPOTENCY_WINDOW,
-        fingerprint=fingerprint,
     )
 
 
@@ -200,7 +195,13 @@ async def quote_of_row(
     session: AsyncSession, row: Subscription, gpu_count: int
 ) -> SubscriptionQuote:
     """按已落库的订阅行反算报价(幂等重放的响应体与首次一致)。"""
-    return await _quote_of(session, row, gpu_count)
+    return await quote(
+        session,
+        base_hourly=row.unit_price,
+        gpu_count=gpu_count,
+        period=row.period,
+        period_count=row.period_count,
+    )
 
 
 async def convert(
@@ -272,7 +273,7 @@ async def renew(
             fingerprint=fingerprint,
         )
         if existing is not None:
-            return existing, await _quote_of(session, existing, instance.gpu_count), False
+            return existing, await quote_of_row(session, existing, instance.gpu_count), False
 
     current = await current_for_instance(session, instance.id, for_update=True)
     if current is None:
@@ -287,46 +288,22 @@ async def renew(
         period=period,
         period_count=period_count,
     )
-    started = max(ensure_utc(current.expires_at), now_utc())
-    row = Subscription(
-        user_id=instance.user_id,
-        instance_id=instance.id,
-        sku_id=current.sku_id,
+    row = _next_period_row(
+        current,
+        quoted,
         period=period,
         period_count=period_count,
-        unit_price=current.unit_price,
-        amount_paid=quoted.amount,
-        started_at=started,
-        expires_at=started + period_delta(period, period_count),
-        status=STATUS_ACTIVE,
-        auto_renew=current.auto_renew,
-        renewed_from_id=current.id,
         idempotency_key=idempotency_key,
-        request_fingerprint=fingerprint,
+        fingerprint=fingerprint,
     )
     current.status = STATUS_EXPIRED
-    if idempotency_key:
-        result = await insert_idempotent(
-            session,
-            row,
-            model=Subscription,
-            owner_col=Subscription.user_id,
-            owner_id=instance.user_id,
-            key=idempotency_key,
-            fingerprint=fingerprint,
-        )
-        if result is not row:
-            # 并发同幂等键由 UNIQUE(user_id, idempotency_key) 兜住,胜出方按重放返回;
-            # insert_idempotent 内部 rollback 同时撤掉对 current 的改动
-            return result, await _quote_of(session, result, instance.gpu_count), False
-    else:
-        try:
-            await insert_idempotent(
-                session, row, model=Subscription, owner_col=None, owner_id=None, key=None
-            )
-        except IntegrityError:
-            # 理论不可达(钱包锁 + 行锁已串行化):部分唯一索引 uq_subscriptions_active_instance 兜底
-            raise conflict(key="common.retryableConflict") from None
+    winner = await _insert_renewal(
+        session, row, idempotency_key=idempotency_key, fingerprint=fingerprint
+    )
+    if winner is not row:
+        # 并发同幂等键由 UNIQUE(user_id, idempotency_key) 兜住,胜出方按重放返回;
+        # insert_idempotent 内部 rollback 同时撤掉对 current 的改动
+        return winner, await quote_of_row(session, winner, instance.gpu_count), False
     await wallet.debit(
         session,
         instance.user_id,
@@ -349,18 +326,59 @@ async def renew(
     return row, quoted, True
 
 
-async def _quote_of(session: AsyncSession, row: Subscription, gpu_count: int) -> SubscriptionQuote:
-    """按已落库的订阅行反算报价(幂等重放的响应体与首次一致)。"""
-    return await quote(
-        session,
-        base_hourly=row.unit_price,
-        gpu_count=gpu_count,
-        period=row.period,
-        period_count=row.period_count,
+def _next_period_row(
+    current: Subscription,
+    quoted: SubscriptionQuote,
+    *,
+    period: str,
+    period_count: int,
+    idempotency_key: str | None,
+    fingerprint: str,
+) -> Subscription:
+    """续费新行:沿用老行的 SKU / 原价 / 自动续费开关,从 max(老到期时刻, 现在) 起算,
+    串 renewed_from_id。"""
+    started = max(ensure_utc(current.expires_at), now_utc())
+    return Subscription(
+        user_id=current.user_id,
+        instance_id=current.instance_id,
+        sku_id=current.sku_id,
+        period=period,
+        period_count=period_count,
+        unit_price=current.unit_price,
+        amount_paid=quoted.amount,
+        started_at=started,
+        expires_at=started + period_delta(period, period_count),
+        status=STATUS_ACTIVE,
+        auto_renew=current.auto_renew,
+        renewed_from_id=current.id,
+        idempotency_key=idempotency_key,
+        request_fingerprint=fingerprint,
     )
 
 
-# ---------- 查询 ----------
+async def _insert_renewal(
+    session: AsyncSession, row: Subscription, *, idempotency_key: str | None, fingerprint: str
+) -> Subscription:
+    """落续费行:带幂等键时同键并发返回胜出方;无键时并发撞部分唯一索引
+    (同实例至多一条 active)转 409。"""
+    if idempotency_key:
+        return await insert_idempotent(
+            session,
+            row,
+            model=Subscription,
+            owner_col=Subscription.user_id,
+            owner_id=row.user_id,
+            key=idempotency_key,
+            fingerprint=fingerprint,
+        )
+    try:
+        await insert_idempotent(
+            session, row, model=Subscription, owner_col=None, owner_id=None, key=None
+        )
+    except IntegrityError:
+        # DB 层最后防线(钱包锁 + 行锁已串行化):部分唯一索引 uq_subscriptions_active_instance
+        raise conflict(key="common.retryableConflict") from None
+    return row
 
 
 async def current_for_instance(

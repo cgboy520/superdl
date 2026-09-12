@@ -17,11 +17,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.constants import ADMIN_LIST_CAP
-from app.core.errors import AppError, ErrorCode, conflict, not_found
+from app.core.errors import AppError, ErrorCode, conflict
 from app.core.idempotency import find_replay, insert_idempotent, request_fingerprint
 from app.core.logging import get_logger
 from app.core.money import as_amount, money_str
 from app.core.pagination import Page, paginate_by_id
+from app.core.sqlutil import get_for_update_or_404
 from app.core.timeutil import BILLING_DAY_OFFSET, billing_month_range, now_utc
 from app.modules.billing.models import InvoiceRequest, Order, RefundRequest
 from app.modules.billing.schemas import AdminInvoiceOut, InvoiceEligibleOut, InvoiceOut
@@ -258,18 +259,13 @@ async def admin_list_invoices(
     return [AdminInvoiceOut.model_validate(r) for r in rows]
 
 
-async def _get_for_update(session: AsyncSession, invoice_id: int) -> InvoiceRequest:
-    req = await session.get(InvoiceRequest, invoice_id, with_for_update=True)
-    if req is None:
-        raise not_found(key="billing.invoiceNotFound")
-    return req
-
-
 async def issue_invoice(
     session: AsyncSession, invoice_id: int, *, invoice_no: str, operator_id: int
 ) -> InvoiceRequest:
     """开票(行锁内状态迁移):金额重算闸 + 回填发票号 + 操作人,站内信告知用户。"""
-    req = await _get_for_update(session, invoice_id)
+    req = await get_for_update_or_404(
+        session, InvoiceRequest, invoice_id, key="billing.invoiceNotFound"
+    )
     if req.status != "submitted":
         raise conflict(key="billing.invoiceStateNotIssuable", params={"status": req.status})
     # 行锁内按当前口径重算,不符即 409
@@ -303,7 +299,9 @@ async def reject_invoice(
     session: AsyncSession, invoice_id: int, *, reason: str, operator_id: int
 ) -> InvoiceRequest:
     """驳回(行锁内状态迁移):理由必填,站内信告知用户;驳回后同账期可重新申请。"""
-    req = await _get_for_update(session, invoice_id)
+    req = await get_for_update_or_404(
+        session, InvoiceRequest, invoice_id, key="billing.invoiceNotFound"
+    )
     if req.status != "submitted":
         raise conflict(key="billing.invoiceStateNotRejectable", params={"status": req.status})
     req.status = "rejected"

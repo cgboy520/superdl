@@ -4,7 +4,7 @@ import time
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Any, Literal, NamedTuple
+from typing import Any, Literal
 
 import pyotp
 from fastapi import status
@@ -16,6 +16,7 @@ from app.core.crypto import decrypt_str, encrypt_str
 from app.core.errors import AppError, ErrorCode, conflict, not_found, unauthorized
 from app.core.idempotency import request_fingerprint
 from app.core.logging import get_logger, mask_phone_value
+from app.core.loginguard import LoginBucket, login_failed, login_preflight, login_succeeded
 from app.core.metrics import (
     ADMIN_PRIVILEGE_CHANGE_TOTAL,
     AUTHZ_DENIED_TOTAL,
@@ -25,7 +26,7 @@ from app.core.metrics import (
 from app.core.money import as_amount, money_str
 from app.core.pagination import Page, paginate_by_id
 from app.core.platform_config import get_runtime_config
-from app.core.ratelimit import check_rate_limit, clear_rate_limit, ensure_not_rate_limited
+from app.core.ratelimit import check_rate_limit, ensure_not_rate_limited
 from app.core.security import (
     PASSWORD_MAX_BYTES,
     check_password_bytes,
@@ -108,42 +109,29 @@ def _check_password_bytes(password: str) -> None:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="common.validation") from None
 
 
-class LoginBucket(NamedTuple):
-    """登录限流桶。preflight:是否参与 bcrypt 前的准入预检;clear_on_success:凭据正确后是否清零。
-    全部桶都只计失败。"""
-
-    key: str
-    max_attempts: int
-    window_seconds: float
-    clear_on_success: bool
-    preflight: bool
-
-
 def _login_buckets(client_ip: str | None, username: str) -> list[LoginBucket]:
-    """四层登录桶,全部只计失败。IP 桶与日桶不清零;日窗账号桶 preflight=False(只在失败后计数)。
-    每次调用重读阈值常量(测试可 monkeypatch)。
-    """
+    """四层登录桶,全部只计失败。IP 桶与日桶不清零;日窗账号桶不进 bcrypt 前的准入预检
+    (只在失败后计数)。每次调用重读阈值常量(测试可 monkeypatch)。"""
     ip = client_ip or "-"
     return [
+        LoginBucket(f"admin-login-ip:{ip}", LOGIN_IP_MAX_ATTEMPTS, LOGIN_IP_WINDOW_SECONDS),
         LoginBucket(
-            f"admin-login-ip:{ip}", LOGIN_IP_MAX_ATTEMPTS, LOGIN_IP_WINDOW_SECONDS, False, True
-        ),
-        LoginBucket(
-            f"admin-login:{ip}:{username}", LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_SECONDS, True, True
+            f"admin-login:{ip}:{username}",
+            LOGIN_MAX_ATTEMPTS,
+            LOGIN_WINDOW_SECONDS,
+            clear_on_success=True,
         ),
         LoginBucket(
             f"admin-login-acct:{username}",
             LOGIN_ACCT_MAX_ATTEMPTS,
             LOGIN_ACCT_WINDOW_SECONDS,
-            True,
-            True,
+            clear_on_success=True,
         ),
         LoginBucket(
             f"admin-login-acct-daily:{username}",
             LOGIN_ACCT_DAILY_MAX_ATTEMPTS,
             LOGIN_ACCT_DAILY_WINDOW_SECONDS,
-            False,
-            False,
+            preflight=False,
         ),
     ]
 
@@ -158,20 +146,12 @@ async def login(
     ).scalar_one_or_none()
     buckets = _login_buckets(client_ip, username)
     # 已封禁的桶在 bcrypt 之前拦下;日窗账号桶不进预检(见 _login_buckets)
-    for b in buckets:
-        if b.preflight:
-            await ensure_not_rate_limited(
-                b.key, max_attempts=b.max_attempts, window_seconds=b.window_seconds
-            )
+    await login_preflight(buckets)
     password_ok = await verify_password(
         password, admin.password_hash if admin else dummy_password_hash()
     )
     if admin is None or not password_ok:
-        # 只在失败后计数,四层同计
-        for b in buckets:
-            await check_rate_limit(
-                b.key, max_attempts=b.max_attempts, window_seconds=b.window_seconds
-            )
+        await login_failed(buckets)
         LOGIN_FAILED_TOTAL.labels(actor_type="admin").inc()
         logger.warning("admin_login_failed", username=username, ip=client_ip)
         raise AppError(ErrorCode.LOGIN_FAILED, key="adminapi.loginFailed")
@@ -181,10 +161,7 @@ async def login(
             key="adminapi.userDisabled",
             http_status=status.HTTP_403_FORBIDDEN,
         )
-    # 凭据正确即清零 clear_on_success 的桶
-    for b in buckets:
-        if b.clear_on_success:
-            await clear_rate_limit(b.key)
+    await login_succeeded(buckets)
     # 两步验证关闭:密码即登录
     cfg = await get_runtime_config(session)
     if not cfg.admin_mfa_enabled:

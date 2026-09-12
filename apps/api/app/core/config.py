@@ -335,10 +335,23 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_prod(self) -> "Settings":
-        """prod 配置 fail-fast:只管 provider 与基础设施项;渠道凭据由渠道工厂运行期 fail-closed。"""
+        """prod 配置 fail-fast:只管 provider 与基础设施项;渠道凭据由渠道工厂运行期 fail-closed。
+        分四组:进程凭据 / 替身 provider(只校验本组件挂载的 Secret 域)/ 数据库 / 对外地址。"""
         if self.environment != "prod":
             return self
-        problems: list[str] = []
+        problems = [
+            *self._prod_secret_problems(),
+            *self._prod_provider_problems(),
+            *self._prod_database_problems(),
+            *self._prod_endpoint_problems(),
+        ]
+        if problems:
+            raise ValueError("生产配置校验失败:" + ";".join(problems))
+        return self
+
+    def _prod_secret_problems(self) -> list[str]:
+        out: list[str] = []
+        domains = self._secret_domains()
         # 占位符与低熵串都拒:长度 ≥32 且唯一字符 ≥16
         if self.process_role == "api" and (
             self.jwt_secret == _DEV_JWT_SECRET
@@ -346,39 +359,61 @@ class Settings(BaseSettings):
             or len(self.jwt_secret) < 32
             or len(set(self.jwt_secret)) < 16
         ):
-            problems.append(
+            out.append(
                 "jwt_secret 仍为开发默认值/占位符/低熵串"
                 "(需 ≥32 字符且唯一字符 ≥16;生成:openssl rand -hex 32)"
             )
         if self.access_token_ttl_seconds > 3600:
-            problems.append("access_token_ttl_seconds 超过 1 小时上限")
+            out.append("access_token_ttl_seconds 超过 1 小时上限")
         if self.refresh_token_ttl_seconds > 7 * 24 * 3600:
-            problems.append("refresh_token_ttl_seconds 超过 7 天上限")
+            out.append("refresh_token_ttl_seconds 超过 7 天上限")
         if self.bcrypt_rounds < 12:
-            problems.append("bcrypt_rounds 低于 12(口令哈希强度不足)")
-        # 只校验本组件挂载的 Secret 域
+            out.append("bcrypt_rounds 低于 12(口令哈希强度不足)")
+        if not self.metrics_token:
+            out.append("metrics_token 未配置(/metrics 将无鉴权暴露)")
+        if self.process_role == "api" and not self.admin_edge_token:
+            out.append("admin_edge_token 未配置(管理端边缘共享密钥:/api/admin 双闸的其中一闸)")
+        if "crypto" in domains and not self.config_encryption_key:
+            out.append("config_encryption_key 未配置(平台配置敏感项加密主密钥)")
+        return out
+
+    def _prod_provider_problems(self) -> list[str]:
+        out: list[str] = []
         domains = self._secret_domains()
         if "cloud" in domains and self.sms_provider == "mock":
-            problems.append("sms_provider 不得为 mock(验证码将是固定值)")
+            out.append("sms_provider 不得为 mock(验证码将是固定值)")
         if self.k8s_backend == "fake":
-            problems.append("k8s_backend 不得为 fake")
+            out.append("k8s_backend 不得为 fake")
         if "payment" in domains and self.payment_mock:
-            problems.append("payment_mock 必须为 false")
-        if "superdl:superdl@localhost" in self.database_url:
-            problems.append("database_url 仍为本地开发默认")
-        # 非本机 PG 必须 TLS(db._split_db_tls 翻译成 asyncpg ssl 参数)
+            out.append("payment_mock 必须为 false")
+        if self.payment_alipay_enabled and not self.alipay_seller_id:
+            # 渠道构造期(payment_channels.AlipayChannel)对 effective 配置再拦一次
+            out.append(
+                "payment_alipay_enabled=true 时 alipay_seller_id 必填"
+                "(收款方 PID,2088 开头;缺失则回调无法核对收款账号)"
+            )
+        return out
 
-        db_host = urlparse(self.database_url).hostname or ""
-        if db_host not in ("localhost", "127.0.0.1", "::1"):
-            sslmode = parse_qs(urlparse(self.database_url).query).get("sslmode", [""])[0]
+    def _prod_database_problems(self) -> list[str]:
+        out: list[str] = []
+        if "superdl:superdl@localhost" in self.database_url:
+            out.append("database_url 仍为本地开发默认")
+        # 非本机 PG 必须 TLS(db._split_db_tls 翻译成 asyncpg ssl 参数)
+        parsed = urlparse(self.database_url)
+        if (parsed.hostname or "") not in ("localhost", "127.0.0.1", "::1"):
+            sslmode = parse_qs(parsed.query).get("sslmode", [""])[0]
             if sslmode not in ("require", "verify-ca", "verify-full"):
-                problems.append(
+                out.append(
                     "database_url 指向非本机 PG 但无 TLS:"
                     "加 ?sslmode=require(或 verify-ca/verify-full)"
                 )
+        return out
+
+    def _prod_endpoint_problems(self) -> list[str]:
+        out: list[str] = []
         if any("localhost" in o or "127.0.0.1" in o for o in self.cors_origins):
-            problems.append("cors_origins 含 localhost")
-        problems.extend(
+            out.append("cors_origins 含 localhost")
+        out.extend(
             f"{name} 仍为占位域名"
             for name in (
                 "jupyter_domain_suffix",
@@ -390,22 +425,8 @@ class Settings(BaseSettings):
         )
         # public_base_url 承载装机脚本与注册令牌,必须 https
         if not self.public_base_url.startswith("https://"):
-            problems.append("public_base_url 必须是 https://(装机脚本与注册令牌走这条链路)")
-        if self.payment_alipay_enabled and not self.alipay_seller_id:
-            # 渠道构造期(payment_channels.AlipayChannel)对 effective 配置再拦一次
-            problems.append(
-                "payment_alipay_enabled=true 时 alipay_seller_id 必填"
-                "(收款方 PID,2088 开头;缺失则回调无法核对收款账号)"
-            )
-        if not self.metrics_token:
-            problems.append("metrics_token 未配置(/metrics 将无鉴权暴露)")
-        if self.process_role == "api" and not self.admin_edge_token:
-            problems.append("admin_edge_token 未配置(管理端边缘共享密钥:/api/admin 双闸的其中一闸)")
-        if "crypto" in domains and not self.config_encryption_key:
-            problems.append("config_encryption_key 未配置(平台配置敏感项加密主密钥)")
-        if problems:
-            raise ValueError("生产配置校验失败:" + ";".join(problems))
-        return self
+            out.append("public_base_url 必须是 https://(装机脚本与注册令牌走这条链路)")
+        return out
 
 
 @lru_cache

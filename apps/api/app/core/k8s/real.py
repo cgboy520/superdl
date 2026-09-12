@@ -9,6 +9,7 @@ import ipaddress
 import math
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from typing import Any, cast
 
 from kubernetes import client, config
@@ -373,6 +374,17 @@ def build_managed_job(
             ),
         ),
     )
+
+
+@dataclass
+class _Workloads:
+    """能力探测里的平台工作负载存在性 / 就绪位。"""
+
+    hami_ready: bool = False
+    dcgm: bool = False
+    kps: bool = False
+    gpu_operator: bool = False
+    cert_manager_ready: bool = False
 
 
 class RealOrchestrator:
@@ -1329,98 +1341,107 @@ class RealOrchestrator:
         return await self._run(self._probe_cluster_sync)
 
     def _probe_cluster_sync(self) -> ClusterProbe:
-        # 版本失败 = API 不可达,整体判不可用;组件清点逐项容错
+        # 版本失败 = API 不可达,后续列不再试;其余逐项独立探测,单项 ApiException 只记进 error
         try:
             version: Any = self._version.get_code()
             git_version = getattr(version, "git_version", None)
         except Exception as exc:
             return ClusterProbe(api_reachable=False, error=str(exc))
         errors: list[str] = []
-        apps = self._apps
-        hami_ready = dcgm = kps = gpu_operator = False
-        gateway_ready = cert_manager_ready = False
-        try:
-            deployments: Any = apps.list_deployment_for_all_namespaces()
-            for d in deployments.items:
-                name = d.metadata.name or ""
-                if name == "hami-scheduler":
-                    hami_ready = bool(d.status.ready_replicas)
-                if "gpu-operator" in name:
-                    gpu_operator = True
-                if "kube-prometheus-stack" in name:
-                    kps = True
-                # 租户入口 TLS 证书
-                if name == "cert-manager":
-                    cert_manager_ready = bool(d.status.ready_replicas)
-            daemonsets: Any = apps.list_daemon_set_for_all_namespaces()
-            for ds in daemonsets.items:
-                if "dcgm" in (ds.metadata.name or ""):
-                    dcgm = True
-            if not kps:
-                statefulsets: Any = apps.list_stateful_set_for_all_namespaces()
-                kps = any(
-                    (st.metadata.name or "").startswith("prometheus-") for st in statefulsets.items
-                )
-        except client.ApiException as exc:
-            errors.append(f"apps: {exc.status}")
-        # 网关就绪看 Gateway 对象的 Programmed 条件;404(CRD 未装 / 未下发)算没就绪,不记 error
-        try:
-            gw: Any = self.custom.get_namespaced_custom_object(
-                GATEWAY_API_GROUP,
-                GATEWAY_API_VERSION,
-                GATEWAY_NAMESPACE,
-                GATEWAY_PLURAL,
-                GATEWAY_NAME,
-            )
-            gateway_ready = any(
-                c.get("type") == "Programmed" and c.get("status") == "True"
-                for c in ((gw.get("status") or {}).get("conditions") or [])
-            )
-        except client.ApiException as exc:
-            if exc.status != 404:
-                errors.append(f"gateway: {exc.status}")
-        runtime_classes: tuple[str, ...] = ()
-        try:
-            rcs: Any = self._node.list_runtime_class()
-            runtime_classes = tuple(rc.metadata.name for rc in rcs.items)
-        except client.ApiException as exc:
-            errors.append(f"runtimeclasses: {exc.status}")
-        storage_classes: tuple[str, ...] = ()
-        try:
-            scs: Any = self._storage.list_storage_class()
-            storage_classes = tuple(sc.metadata.name for sc in scs.items)
-        except client.ApiException as exc:
-            errors.append(f"storageclasses: {exc.status}")
-        pools: dict[str, int] = {}
-        nodes_ready = nodes_total = 0
-        try:
-            # 只数池标签与就绪面,不走 _list_nodes_sync
-            for node in self._list_all(self.core.list_node):
-                key = (node.metadata.labels or {}).get(POOL_NODE_LABEL, "unlabeled")
-                pools[key] = pools.get(key, 0) + 1
-                nodes_total += 1
-                if _ready_condition(node) and not node.spec.unschedulable:
-                    nodes_ready += 1
-        except client.ApiException as exc:
-            errors.append(f"nodes: {exc.status}")
+
+        def step[T](
+            label: str, fn: Callable[[], T], default: T, *, ignore: tuple[int, ...] = ()
+        ) -> T:
+            try:
+                return fn()
+            except client.ApiException as exc:
+                if exc.status not in ignore:
+                    errors.append(f"{label}: {exc.status}")
+                return default
+
+        workloads = step("apps", self._probe_workloads_sync, _Workloads())
+        # 网关就绪 = Gateway 对象的 Programmed 条件;404(CRD 未装 / 未下发)是没就绪,不算 error
+        gateway_ready = step("gateway", self._probe_gateway_sync, False, ignore=(404,))
+        runtime_classes = step("runtimeclasses", self._runtime_class_names_sync, ())
+        storage_classes = step("storageclasses", self._storage_class_names_sync, ())
+        pools, nodes_ready, nodes_total = step("nodes", self._probe_nodes_sync, ({}, 0, 0))
         return ClusterProbe(
             api_reachable=True,
             k8s_version=git_version,
             distro=derive_distro(git_version),
-            hami_ready=hami_ready,
-            dcgm_present=dcgm,
-            kps_present=kps,
-            gpu_operator_present=gpu_operator,
+            hami_ready=workloads.hami_ready,
+            dcgm_present=workloads.dcgm,
+            kps_present=workloads.kps,
+            gpu_operator_present=workloads.gpu_operator,
             kata_runtimeclass="kata-qemu" in runtime_classes,
             nvidia_runtimeclass="nvidia" in runtime_classes,
             gateway_ready=gateway_ready,
-            cert_manager_ready=cert_manager_ready,
+            cert_manager_ready=workloads.cert_manager_ready,
             nodes_ready=nodes_ready,
             nodes_total=nodes_total,
             storage_classes=storage_classes,
             pools=pools,
             error="; ".join(errors) or None,
         )
+
+    def _probe_workloads_sync(self) -> "_Workloads":
+        """平台组件存在性 / 就绪位:hami-scheduler、gpu-operator、kube-prometheus-stack、dcgm、
+        cert-manager。"""
+        out = _Workloads()
+        deployments: Any = self._apps.list_deployment_for_all_namespaces()
+        for d in deployments.items:
+            name = d.metadata.name or ""
+            if name == "hami-scheduler":
+                out.hami_ready = bool(d.status.ready_replicas)
+            if "gpu-operator" in name:
+                out.gpu_operator = True
+            if "kube-prometheus-stack" in name:
+                out.kps = True
+            # 租户域名 TLS 证书
+            if name == "cert-manager":
+                out.cert_manager_ready = bool(d.status.ready_replicas)
+        daemonsets: Any = self._apps.list_daemon_set_for_all_namespaces()
+        out.dcgm = any("dcgm" in (ds.metadata.name or "") for ds in daemonsets.items)
+        if not out.kps:
+            statefulsets: Any = self._apps.list_stateful_set_for_all_namespaces()
+            out.kps = any(
+                (st.metadata.name or "").startswith("prometheus-") for st in statefulsets.items
+            )
+        return out
+
+    def _runtime_class_names_sync(self) -> tuple[str, ...]:
+        rcs: Any = self._node.list_runtime_class()
+        return tuple(rc.metadata.name for rc in rcs.items)
+
+    def _storage_class_names_sync(self) -> tuple[str, ...]:
+        scs: Any = self._storage.list_storage_class()
+        return tuple(sc.metadata.name for sc in scs.items)
+
+    def _probe_gateway_sync(self) -> bool:
+        gw: Any = self.custom.get_namespaced_custom_object(
+            GATEWAY_API_GROUP,
+            GATEWAY_API_VERSION,
+            GATEWAY_NAMESPACE,
+            GATEWAY_PLURAL,
+            GATEWAY_NAME,
+        )
+        return any(
+            c.get("type") == "Programmed" and c.get("status") == "True"
+            for c in ((gw.get("status") or {}).get("conditions") or [])
+        )
+
+    def _probe_nodes_sync(self) -> tuple[dict[str, int], int, int]:
+        """(池 → 节点数,含 unlabeled;Ready 且可调度数;总数)。只按池标签粗略分组,
+        不走 _list_nodes_sync。"""
+        pools: dict[str, int] = {}
+        nodes_ready = nodes_total = 0
+        for node in self._list_all(self.core.list_node):
+            key = (node.metadata.labels or {}).get(POOL_NODE_LABEL, "unlabeled")
+            pools[key] = pools.get(key, 0) + 1
+            nodes_total += 1
+            if _ready_condition(node) and not node.spec.unschedulable:
+                nodes_ready += 1
+        return pools, nodes_ready, nodes_total
 
     async def set_node_unschedulable(self, node_name: str, unschedulable: bool) -> None:
         await self._run(self._set_node_unschedulable_sync, node_name, unschedulable)

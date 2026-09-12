@@ -13,15 +13,11 @@ from app.core.config import get_settings
 from app.core.crypto import hash_id_number_candidates, hash_sms_code, hash_sms_code_candidates
 from app.core.errors import AppError, ErrorCode, conflict, not_found, unauthorized
 from app.core.logging import get_logger, mask_phone_value
+from app.core.loginguard import LoginBucket, login_failed, login_preflight, login_succeeded
 from app.core.metrics import LOGIN_FAILED_TOTAL, SMS_SENT_TOTAL, USER_SIGNUP_TOTAL
 from app.core.pagination import RawPage, clamp_limit, decode_cursor_int, slice_page
 from app.core.platform_config import get_runtime_config
-from app.core.ratelimit import (
-    check_rate_limit,
-    clear_rate_limit,
-    ensure_not_rate_limited,
-    read_hits,
-)
+from app.core.ratelimit import check_rate_limit, clear_rate_limit, read_hits
 from app.core.security import (
     create_token,
     decode_token,
@@ -252,22 +248,90 @@ async def register(
 
 
 # 登录限流桶(键模板, max_attempts, window_seconds),四层:ip / ip+phone / acct 15min / acct-daily。
-# 预检(bcrypt 前拦封禁)/ 计数(只计失败)/ 清零 / 异常判定四处遍历同一张表。
-# acct-daily 桶在用户端参与预检(管理端不参与,见 adminapi/service._login_buckets)。
-_LOGIN_BUCKETS: tuple[tuple[str, int, float], ...] = (
-    ("user-login-ip:{ip}", 60, 3600.0),
-    ("user-login:{ip}:{phone}", 5, 300.0),
-    ("user-login-acct:{phone}", 10, 900.0),
-    ("user-login-acct-daily:{phone}", 30, 86400.0),
-)
-
-# 成功登录后清零的桶(IP 桶不清);acct 15min 桶兼作异常判定数据源,先读后清
-_LOGIN_CLEAR_BUCKETS = ("user-login:{ip}:{phone}",)
-_LOGIN_ANOMALY_BUCKET = ("user-login-acct:{phone}", 900.0)
+# 四层登录桶(阈值):IP / IP+账号 / 账号 15 分钟窗 / 账号日窗;机制在 core/loginguard。
+# 账号 15 分钟窗兼作异常登录判定的数据源(先读命中数再清),不走 clear_on_success。
+LOGIN_IP_MAX, LOGIN_IP_WINDOW = 60, 3600.0
+LOGIN_PAIR_MAX, LOGIN_PAIR_WINDOW = 5, 300.0
+LOGIN_ACCT_MAX, LOGIN_ACCT_WINDOW = 10, 900.0
+LOGIN_ACCT_DAILY_MAX, LOGIN_ACCT_DAILY_WINDOW = 30, 86400.0
 
 
-def _login_bucket_keys(phone: str, client_ip: str | None) -> list[str]:
-    return [tmpl.format(ip=client_ip or "-", phone=phone) for tmpl, _, _ in _LOGIN_BUCKETS]
+def _acct_bucket_key(phone: str) -> str:
+    return f"user-login-acct:{phone}"
+
+
+def _login_buckets(phone: str, client_ip: str | None) -> list[LoginBucket]:
+    ip = client_ip or "-"
+    return [
+        LoginBucket(f"user-login-ip:{ip}", LOGIN_IP_MAX, LOGIN_IP_WINDOW),
+        LoginBucket(
+            f"user-login:{ip}:{phone}", LOGIN_PAIR_MAX, LOGIN_PAIR_WINDOW, clear_on_success=True
+        ),
+        LoginBucket(_acct_bucket_key(phone), LOGIN_ACCT_MAX, LOGIN_ACCT_WINDOW),
+        LoginBucket(
+            f"user-login-acct-daily:{phone}", LOGIN_ACCT_DAILY_MAX, LOGIN_ACCT_DAILY_WINDOW
+        ),
+    ]
+
+
+class _LoginFailed(AppError):
+    """凭据错误(「未注册」与「凭证错」对外不可区分);registered 只进日志。"""
+
+    def __init__(self, *, registered: bool) -> None:
+        super().__init__(ErrorCode.LOGIN_FAILED, key="account.loginFailed")
+        self.registered = registered
+
+
+async def _verify_credentials(
+    session: AsyncSession, phone: str, *, sms_code: str | None, password: str | None
+) -> User:
+    """验证码或密码二选一;两条路径时序拉平,失败一律 _LoginFailed。"""
+    user = (await session.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
+    if sms_code is not None:
+        try:
+            await _consume_sms_code(session, phone, sms_code, "login")
+        except AppError as exc:
+            raise _LoginFailed(registered=user is not None) from exc
+        if user is None:
+            raise _LoginFailed(registered=False)
+        await session.commit()
+        return user
+    if password is None:
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="account.credentialRequired")
+    # 先结束只读事务把连接还给池:bcrypt 期间不占连接(expire_on_commit=False,user 属性仍在)
+    await session.commit()
+    stored = (
+        user.password_hash if (user is not None and user.password_hash) else dummy_password_hash()
+    )
+    password_ok = await verify_password(password, stored)
+    if user is None or user.password_hash is None or not password_ok:
+        raise _LoginFailed(registered=user is not None)
+    return user
+
+
+async def _notify_login_anomaly(session: AsyncSession, user: User) -> None:
+    """账号 15 分钟窗内有失败记录而本次密码登录成功 → 通知本人;之后清零该桶
+    (先读后清,顺序不可换)。"""
+    key = _acct_bucket_key(user.phone)
+    acct_hits = await read_hits(key, window_seconds=LOGIN_ACCT_WINDOW)
+    if acct_hits > 0:
+        # notify.service 顶层依赖本模块(取手机号 / 活跃用户),此处只能延迟 import
+        from app.modules.notify import service as notify_service  # noqa: PLC0415
+
+        await notify_service.notify(
+            session,
+            user.id,
+            type_="account",
+            title="检测到异常登录尝试",
+            content=(
+                f"您的账号近 15 分钟内有 {acct_hits} 次登录失败记录,本次登录成功。"
+                "若非本人操作,请立即修改密码并检查账号安全。"
+            ),
+            severity="warning",
+            dedup_key=f"login-anomaly:{user.id}:{now_utc():%Y%m%d}",
+        )
+        await session.commit()
+    await clear_rate_limit(key)
 
 
 async def login(
@@ -278,87 +342,27 @@ async def login(
     *,
     client_ip: str | None = None,
 ) -> TokenPair:
-    user: User | None = None
-    try:
-        # 「未注册」与「凭证错」不可区分:文案统一 loginFailed,时序拉平;
-        # 密码与验证码两条路径同限流
-        if password is not None:
-            # 封禁桶在查库与 bcrypt 之前拦下(只读预检,不计数)
-            for key, (_, max_attempts, window_seconds) in zip(
-                _login_bucket_keys(phone, client_ip), _LOGIN_BUCKETS, strict=True
-            ):
-                await ensure_not_rate_limited(
-                    key, max_attempts=max_attempts, window_seconds=window_seconds
-                )
-        user = (await session.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
-        if sms_code is not None:
-            try:
-                await _consume_sms_code(session, phone, sms_code, "login")
-            except AppError as exc:
-                raise AppError(ErrorCode.LOGIN_FAILED, key="account.loginFailed") from exc
-            if user is None:
-                raise AppError(ErrorCode.LOGIN_FAILED, key="account.loginFailed")
-            await session.commit()
-        elif password is not None:
-            # 先结束只读事务把连接还给池:bcrypt 期间不占连接(expire_on_commit=False,user 属性仍在)
-            await session.commit()
-            stored = (
-                user.password_hash
-                if (user is not None and user.password_hash)
-                else dummy_password_hash()
-            )
-            password_ok = await verify_password(password, stored)
-            if user is None or user.password_hash is None or not password_ok:
-                raise AppError(ErrorCode.LOGIN_FAILED, key="account.loginFailed")
-        else:
-            raise AppError(ErrorCode.VALIDATION_ERROR, key="account.credentialRequired")
-    except AppError as exc:
-        if exc.code == ErrorCode.LOGIN_FAILED:
-            # 只在失败后计数
-            for key, (_, max_attempts, window_seconds) in zip(
-                _login_bucket_keys(phone, client_ip), _LOGIN_BUCKETS, strict=True
-            ):
-                await check_rate_limit(
-                    key, max_attempts=max_attempts, window_seconds=window_seconds
-                )
-            # 失败登录留痕(与管理端 admin_login_failed 同口径);号码显式打码,键名不用 phone
-            LOGIN_FAILED_TOTAL.labels(actor_type="user").inc()
-            logger.warning(
-                "user_login_failed",
-                account=mask_phone_value(phone),
-                ip=client_ip,
-                via="sms" if sms_code is not None else "password",
-                registered=user is not None,
-            )
-        raise
-    # 凭据正确即清零账号桶
-    for tmpl in _LOGIN_CLEAR_BUCKETS:
-        await clear_rate_limit(tmpl.format(ip=client_ip or "-", phone=phone))
-    # 异常登录通知:账号桶窗口内有失败记录而本次成功 → 通知本人,再清零账号桶
+    """密码或验证码登录。密码路径先过封禁预检;失败四层同计并留痕;成功清零配对桶并判异常登录。"""
+    buckets = _login_buckets(phone, client_ip)
     if password is not None:
-        anomaly_tmpl, anomaly_window = _LOGIN_ANOMALY_BUCKET
-        acct_hits = await read_hits(
-            anomaly_tmpl.format(ip=client_ip or "-", phone=phone), window_seconds=anomaly_window
+        await login_preflight(buckets)
+    try:
+        user = await _verify_credentials(session, phone, sms_code=sms_code, password=password)
+    except _LoginFailed as exc:
+        await login_failed(buckets)
+        # 失败登录留痕(与管理端 admin_login_failed 同口径);号码显式打码,键名不用 phone
+        LOGIN_FAILED_TOTAL.labels(actor_type="user").inc()
+        logger.warning(
+            "user_login_failed",
+            account=mask_phone_value(phone),
+            ip=client_ip,
+            via="sms" if sms_code is not None else "password",
+            registered=exc.registered,
         )
-        if acct_hits > 0:
-            # notify.service 顶层依赖本模块(取手机号 / 活跃用户),此处只能延迟 import
-            from app.modules.notify import service as notify_service  # noqa: PLC0415
-
-            await notify_service.notify(
-                session,
-                user.id,
-                type_="account",
-                title="检测到异常登录尝试",
-                content=(
-                    f"您的账号近 15 分钟内有 {acct_hits} 次登录失败记录,本次登录成功。"
-                    "若非本人操作,请立即修改密码并检查账号安全。"
-                ),
-                severity="warning",
-                dedup_key=f"login-anomaly:{user.id}:{now_utc():%Y%m%d}",
-            )
-            await session.commit()
-        # 先读 hits 再清,顺序不可换
-        await clear_rate_limit(_LOGIN_ANOMALY_BUCKET[0].format(ip=client_ip or "-", phone=phone))
+        raise
+    await login_succeeded(buckets)
+    if password is not None:
+        await _notify_login_anomaly(session, user)
     # 已注销账号的 phone 已改写为 del:…,按手机号查不到
     if user.status == "frozen":
         raise AppError(
