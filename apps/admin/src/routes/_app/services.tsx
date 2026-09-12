@@ -2,9 +2,10 @@
 
 import { PageContainer } from "@superdl/ui/components";
 import { adminKeys } from "../../api";
+import { useUrlCommittedInput } from "../../lib/useUrlCommittedInput";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Button, Card, Checkbox, Input, Space } from "antd";
-import { useState } from "react";
+import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -36,13 +37,12 @@ function ServicesPage() {
   const navigate = useNavigate({ from: "/services" });
   const qc = useQueryClient();
   const { q, user_id: userId, released } = Route.useSearch();
-  const [input, setInput] = useState(q ?? "");
-  // URL 变化回流输入框
-  const [prevQ, setPrevQ] = useState(q);
-  if (q !== prevQ) {
-    setPrevQ(q);
-    setInput(q ?? "");
-  }
+  const commitQ = useCallback(
+    (next: string | undefined) =>
+      void navigate({ to: "/services", replace: true, search: (prev) => ({ ...prev, q: next }) }),
+    [navigate],
+  );
+  const { value: input, setValue: setInput } = useUrlCommittedInput(q, commitQ);
   const setUrl = (next: Partial<ServicesSearch>) =>
     void navigate({ to: "/services", replace: true, search: (prev) => ({ ...prev, ...next }) });
 
@@ -58,7 +58,7 @@ function ServicesPage() {
             style={{ width: 240 }}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onSearch={(v) => setUrl({ q: v || undefined })}
+            onSearch={(v) => commitQ(v || undefined)}
           />
           <Checkbox
             checked={released === "1"}

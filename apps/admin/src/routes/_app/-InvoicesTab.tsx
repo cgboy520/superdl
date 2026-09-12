@@ -2,7 +2,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { Button, Form, Input, Modal, Select, Space, Table, Tag, Tooltip, Typography } from "antd";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { adminColors, fontSize, formatDateTime, invoiceStatusMap, layout } from "@superdl/ui";
@@ -21,6 +21,7 @@ import {
 import { LIST_CAPS, ListCapNote } from "../../components/ListCapNote";
 import { ReasonAction } from "../../components/ReasonAction";
 import { StatusTag } from "../../components/StatusTag";
+import { useUrlCommittedInput } from "../../lib/useUrlCommittedInput";
 import { isValidReason, REASON_MAX_LEN } from "../../lib/validators";
 import { RowActionModal } from "../../components/RowActionModal";
 import { tenantColumn } from "../../components/TenantLink";
@@ -79,14 +80,10 @@ export function InvoicesTab() {
   // 筛选条件入 URL(status/账期)
   const { search, setFilters } = useFinanceFilters();
   const status = search.i_status;
-  const urlPeriod = search.i_period ?? "";
+  const urlPeriod = search.i_period;
   // 账期 commit 制;URL 回流走渲染期派生态
-  const [periodInput, setPeriodInput] = useState(urlPeriod);
-  const [prevPeriod, setPrevPeriod] = useState(urlPeriod);
-  if (urlPeriod !== prevPeriod) {
-    setPrevPeriod(urlPeriod);
-    setPeriodInput(urlPeriod);
-  }
+  const commitPeriod = useCallback((next: string | undefined) => setFilters({ i_period: next }), [setFilters]);
+  const { value: periodInput, setValue: setPeriodInput } = useUrlCommittedInput(urlPeriod, commitPeriod);
   // 非 YYYY-MM 标红提示,不阻止提交
   const periodBad = periodInput.trim() !== "" && !PERIOD_RE.test(periodInput.trim());
   // 抬头与邮箱默认脱敏;reveal=true + 必填事由回明文,授权绑定当时筛选口径,换筛选即删授权
@@ -138,7 +135,7 @@ export function InvoicesTab() {
             style={{ width: 200 }}
             value={periodInput}
             onChange={(e) => setPeriodInput(e.target.value)}
-            onSearch={(v) => setFilters({ i_period: v.trim() || undefined })}
+            onSearch={(v) => commitPeriod(v.trim() || undefined)}
           />
         </Form.Item>
         <Tooltip title={revealReason !== null ? t("finance.exportRevealNote") : ""}>

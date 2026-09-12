@@ -96,14 +96,7 @@ export function AuditTable({
           value={actorType}
           onChange={(v) => {
             setActorType(v);
-            commit({
-              actor_type: v,
-              actor_id: actorId || undefined,
-              q: q || undefined,
-              since: filters.since,
-              until: filters.until,
-              limit,
-            });
+            commit({ ...filters, actor_type: v });
           }}
           options={[
             { value: "user", label: t("audit.actorUser") },
@@ -119,14 +112,7 @@ export function AuditTable({
           onChange={(e) => setActorIdInput(e.target.value)}
           onSearch={(v) => {
             setActorId(v);
-            commit({
-              actor_type: actorType,
-              actor_id: v || undefined,
-              q: q || undefined,
-              since: filters.since,
-              until: filters.until,
-              limit,
-            });
+            commit({ ...filters, actor_id: v || undefined });
           }}
         />
         <Input.Search
@@ -137,14 +123,7 @@ export function AuditTable({
           onChange={(e) => setQInput(e.target.value)}
           onSearch={(v) => {
             setQ(v);
-            commit({
-              actor_type: actorType,
-              actor_id: actorId || undefined,
-              q: v || undefined,
-              since: filters.since,
-              until: filters.until,
-              limit,
-            });
+            commit({ ...filters, q: v || undefined });
           }}
         />
         <DatePicker.RangePicker
@@ -154,12 +133,9 @@ export function AuditTable({
             const next = v;
             setRange(next);
             commit({
-              actor_type: actorType,
-              actor_id: actorId || undefined,
-              q: q || undefined,
+              ...filters,
               since: next?.[0]?.toISOString(),
               until: next?.[1]?.toISOString(),
-              limit,
             });
           }}
         />
@@ -168,14 +144,7 @@ export function AuditTable({
           style={{ width: 130 }}
           onChange={(v) => {
             setLimit(v);
-            commit({
-              actor_type: actorType,
-              actor_id: actorId || undefined,
-              q: q || undefined,
-              since: filters.since,
-              until: filters.until,
-              limit: v,
-            });
+            commit({ ...filters, limit: v });
           }}
           options={[50, 100, 200, 500].map((v) => ({
             value: v,

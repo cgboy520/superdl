@@ -17,9 +17,11 @@ export function useUrlCommittedInput(
     if (urlValue !== undefined) setValue(urlValue);
   }
   const debounced = useDebouncedValue(value, debounceMs);
+  // 空白即缺省:trim 后空串 → undefined(与 web useCursorList 同口径)
+  const committed = debounced.trim() || undefined;
   useEffect(() => {
-    if (debounced === (urlValue ?? "")) return;
-    commit(debounced || undefined);
-  }, [debounced, urlValue, commit]);
+    if ((committed ?? "") === (urlValue ?? "")) return;
+    commit(committed);
+  }, [committed, urlValue, commit]);
   return { value, setValue, committed: urlValue };
 }
