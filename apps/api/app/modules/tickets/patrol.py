@@ -39,6 +39,8 @@ async def stale_ticket_patrol(sm: async_sessionmaker[AsyncSession]) -> int:
                     ),
                     severity="warning",
                     dedup_key=f"ticket-stale:{ticket.id}",
+                    target_id=str(ticket.id),
+                    target_kind="ticket",
                 )
                 if ok:
                     alerted += 1

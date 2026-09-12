@@ -44,10 +44,12 @@ async def notify(
     severity: str = "info",
     dedup_key: str | None = None,
     target_id: str | None = None,
+    target_kind: str | None = None,
     sms: bool = False,
 ) -> bool:
     """写站内信(可选短信,同事务 enqueue notify.sms)。dedup_key 冲突返回 False。不 commit。
-    target_id:跳转目标(instance 类 = 实例 uuid,ticket 类 = 工单 id),无目标留空。
+    target_id:跳转目标(instance 类 = 实例 uuid,ticket 类 = 工单 id),无目标留空;
+    target_kind 只给管理端告警流(tenant / node / ticket),决定深链去向。
     """
     result = (
         await session.execute(
@@ -60,6 +62,7 @@ async def notify(
                 severity=severity,
                 dedup_key=dedup_key,
                 target_id=target_id,
+                target_kind=target_kind,
             )
             .on_conflict_do_nothing(index_elements=["dedup_key"])
             .returning(Notification.id)
@@ -377,18 +380,6 @@ async def admin_alert_stream(
     return list((await session.execute(stmt)).scalars())
 
 
-def alert_link_target(row: Notification) -> tuple[str | None, str | None]:
-    """告警跳转目标 (kind, id):gpu_fault 带 user_id → tenant;title GPU 前缀 → node;
-    dedup_key ticket:* → ticket;其余无 target。"""
-    if row.type == "gpu_fault" and row.user_id is not None:
-        return "tenant", str(row.user_id)
-    if row.dedup_key is not None and row.dedup_key.startswith("ticket"):
-        return "ticket", None
-    if row.title.startswith("GPU"):
-        return "node", None
-    return None, None
-
-
 async def ack_admin_alert(session: AsyncSession, alert_id: int, *, acked_by: int) -> Notification:
     """确认告警(行锁内):落确认人/时间。非告警流行 404;重复确认 409。"""
     row = await session.get(Notification, alert_id, with_for_update=True)
@@ -433,6 +424,8 @@ async def ingest_alertmanager(session: AsyncSession, payload: dict) -> int:
         alertname = labels.get("alertname", "unknown")
         summary = annotations.get("summary") or annotations.get("description") or alertname
         dedup = f"am:{fingerprint}:{starts_at}"
+        # 节点维告警(DCGM 等带小写 hostname 标签)深链到节点页
+        node_name = labels.get("hostname") or None
 
         # 平台级告警流
         ok = await notify(
@@ -443,6 +436,8 @@ async def ingest_alertmanager(session: AsyncSession, payload: dict) -> int:
             content=summary,
             severity="critical" if severity == "critical" else "warning",
             dedup_key=dedup,
+            target_id=node_name,
+            target_kind="node" if node_name else None,
         )
         if ok:
             written += 1
@@ -482,6 +477,8 @@ async def ingest_alertmanager(session: AsyncSession, payload: dict) -> int:
                 ),
                 severity="critical",
                 dedup_key=f"{dedup}:tenant:{user_id}",
+                target_id=str(user_id),
+                target_kind="tenant",
                 sms=True,
             )
     await session.commit()

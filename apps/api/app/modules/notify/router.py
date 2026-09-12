@@ -74,19 +74,18 @@ async def alertmanager_webhook(
     session: DbSession,
     authorization: str | None = Header(default=None),
 ) -> dict[str, int]:
-    """Alertmanager 告警接入。除 test 环境外必须配置并携带 Bearer token。"""
+    """Alertmanager 告警接入:必须配置 SUPERDL_ALERTMANAGER_TOKEN 并携带 Bearer token。"""
     client_ip = http_client_ip(request)
     await check_rate_limit(
         f"am-webhook:{client_ip or '-'}",
         max_attempts=ALERT_RATE_LIMIT,
         window_seconds=ALERT_RATE_WINDOW,
     )
-    settings = get_settings()
-    if settings.alertmanager_token:
-        if not bearer_matches(authorization, settings.alertmanager_token):
-            raise unauthorized("告警 token 无效")
-    elif settings.environment != "test":
+    token = get_settings().alertmanager_token
+    if not token:
         raise unauthorized("必须配置 SUPERDL_ALERTMANAGER_TOKEN 后才能接入告警")
+    if not bearer_matches(authorization, token):
+        raise unauthorized("告警 token 无效")
     body = await request.body()
     if len(body) > ALERT_MAX_BODY_BYTES:
         raise AppError(

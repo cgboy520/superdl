@@ -1,7 +1,7 @@
 """管理端路由(对账/告警/调账/退款/发票/订单/收入/补单)。"""
 
 from collections.abc import AsyncIterator
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import StreamingResponse
@@ -50,6 +50,9 @@ from app.modules.billing.schemas import (
 from app.modules.metering import service as metering_service
 from app.modules.notify import service as notify_service
 
+if TYPE_CHECKING:
+    from app.modules.notify.models import Notification
+
 router = APIRouter(tags=["admin"])
 
 
@@ -83,8 +86,7 @@ async def reconciliation_export(
     )
 
 
-def _alert_out(r: Any, usernames: dict[int, str]) -> AdminAlertOut:
-    kind, target_id = notify_service.alert_link_target(r)
+def _alert_out(r: "Notification", usernames: dict[int, str]) -> AdminAlertOut:
     return AdminAlertOut(
         id=r.id,
         type=r.type,
@@ -95,12 +97,12 @@ def _alert_out(r: Any, usernames: dict[int, str]) -> AdminAlertOut:
         acked_by=r.acked_by,
         acked_by_username=usernames.get(r.acked_by) if r.acked_by is not None else None,
         acked_at=r.acked_at.isoformat() if r.acked_at else None,
-        target_kind=kind,
-        target_id=target_id,
+        target_kind=r.target_kind,
+        target_id=r.target_id,
     )
 
 
-async def _ack_usernames(session: AsyncSession, rows: list[Any]) -> dict[int, str]:
+async def _ack_usernames(session: AsyncSession, rows: "list[Notification]") -> dict[int, str]:
     """确认人 id → 用户名。"""
     ids = {r.acked_by for r in rows if r.acked_by is not None}
     if not ids:

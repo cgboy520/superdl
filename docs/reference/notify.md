@@ -4,7 +4,7 @@
 
 ## 数据模型
 
-- `notifications`:user_id、type(account/instance/service/balance_warn/arrears/subscription/preempted/gpu_fault/ticket/announcement/admin_alert 及资金类 recharge/consume/adjust/refund/invoice)、title、content、severity、dedup_key?、read_at?
+- `notifications`:user_id、type(account/instance/service/balance_warn/arrears/subscription/preempted/gpu_fault/ticket/announcement/admin_alert 及资金类 recharge/consume/adjust/refund/invoice)、title、content、severity、dedup_key?、read_at?、target_id?(跳转目标)、target_kind?(管理端告警流深链种类 tenant / node / ticket,写入时给全,不由标题反推)
 - 预警阈值存 `users.low_balance_warn_hours`
 
 ## 契约
@@ -15,7 +15,7 @@
 | `POST /api/v1/notifications/{notification_id}/read` | user | 标记已读 → 204 |
 | `GET /api/v1/notifications/unread-count` | user | 未读数:DB count |
 | `POST /api/v1/notifications/read-all` | user | 全部已读(幂等)→ 204 |
-| `POST /api/v1/webhooks/alertmanager` | Bearer token | GPU XID 致命告警 → 通知受影响租户 + 进管理端告警流 |
+| `POST /api/v1/webhooks/alertmanager` | Bearer token(`SUPERDL_ALERTMANAGER_TOKEN` 未配置一律 401,无环境后门) | GPU XID 致命告警 → 通知受影响租户(target tenant)+ 进管理端告警流(带 `hostname` 标签的告警 target node) |
 
 ## 规则与不变量
 

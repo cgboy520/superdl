@@ -24,6 +24,8 @@ os.environ["SUPERDL_CREATING_TIMEOUT_SECONDS"] = "300"
 os.environ["SUPERDL_JWT_SECRET"] = "test-jwt-secret-32-bytes-minimum!!"
 # bcrypt 取最低 cost:一次管理员建号+登录+TOTP 绑定要跑 12 次哈希,cost 12 下约 3s
 os.environ["SUPERDL_BCRYPT_ROUNDS"] = "4"
+# Alertmanager webhook 固定 token(端点无 token 一律 401,测试用例带 AM_HEADERS)
+os.environ["SUPERDL_ALERTMANAGER_TOKEN"] = "test-alertmanager-token"
 
 # 测试库不要持久化保证:每次 commit / TRUNCATE 都免 fsync
 _PG_TEST_CMD = "postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off"

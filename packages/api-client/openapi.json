@@ -4233,8 +4233,10 @@
       "LegalDocVersionCreate": {
         "properties": {
           "locale": {
-            "maxLength": 16,
-            "minLength": 2,
+            "enum": [
+              "zh-CN",
+              "en-US"
+            ],
             "title": "Locale",
             "type": "string"
           }
@@ -12736,6 +12738,10 @@
             "name": "locale",
             "required": true,
             "schema": {
+              "enum": [
+                "zh-CN",
+                "en-US"
+              ],
               "title": "Locale",
               "type": "string"
             }
@@ -20653,7 +20659,7 @@
     },
     "/api/v1/webhooks/alertmanager": {
       "post": {
-        "description": "Alertmanager 告警接入。除 test 环境外必须配置并携带 Bearer token。",
+        "description": "Alertmanager 告警接入:必须配置 SUPERDL_ALERTMANAGER_TOKEN 并携带 Bearer token。",
         "operationId": "alertmanager_webhook_api_v1_webhooks_alertmanager_post",
         "parameters": [
           {

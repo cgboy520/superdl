@@ -18,6 +18,8 @@ from tests.helpers import (
 pytestmark = pytest.mark.usefixtures("fake")
 
 
+AM_HEADERS = {"Authorization": "Bearer test-alertmanager-token"}
+
 AM_PAYLOAD = {
     "alerts": [
         {
@@ -27,6 +29,7 @@ AM_PAYLOAD = {
                 "alertname": "GPUXidCriticalError",
                 "severity": "critical",
                 "namespace": "tenant-1",
+                "hostname": "gpu-01",
             },
             "annotations": {"summary": "GPU Xid 79 fatal error on node gpu-01"},
         }
@@ -185,7 +188,9 @@ class TestAlertmanagerWebhook:
         from app.core.outbox import OutboxTask
 
         await set_platform_setting(sm, "oncall_phone", "13900001111")
-        resp = await client.post("/api/v1/webhooks/alertmanager", json=AM_PAYLOAD)
+        resp = await client.post(
+            "/api/v1/webhooks/alertmanager", json=AM_PAYLOAD, headers=AM_HEADERS
+        )
         assert resp.status_code == 200
         assert resp.json()["ingested"] == 1
 
@@ -201,7 +206,9 @@ class TestAlertmanagerWebhook:
         from app.core.outbox import OutboxTask
 
         headers, _uuid, _user_id = await provision_running(client, sm, fake)  # user_id=1
-        resp = await client.post("/api/v1/webhooks/alertmanager", json=AM_PAYLOAD)
+        resp = await client.post(
+            "/api/v1/webhooks/alertmanager", json=AM_PAYLOAD, headers=AM_HEADERS
+        )
         assert resp.status_code == 200
         assert resp.json()["ingested"] == 1
         async with sm() as session:
@@ -211,7 +218,9 @@ class TestAlertmanagerWebhook:
                 ).scalars()
             )
         # 重放(同 fingerprint+startsAt)幂等
-        resp = await client.post("/api/v1/webhooks/alertmanager", json=AM_PAYLOAD)
+        resp = await client.post(
+            "/api/v1/webhooks/alertmanager", json=AM_PAYLOAD, headers=AM_HEADERS
+        )
         assert resp.json()["ingested"] == 0
         async with sm() as session:
             again = list(
@@ -234,7 +243,9 @@ class TestAlertmanagerWebhook:
         from app.core.config import get_settings
 
         monkeypatch.setattr(get_settings(), "alertmanager_token", "s3cret")
-        resp = await client.post("/api/v1/webhooks/alertmanager", json=AM_PAYLOAD)
+        resp = await client.post(
+            "/api/v1/webhooks/alertmanager", json=AM_PAYLOAD, headers=AM_HEADERS
+        )
         assert resp.status_code == 401
         resp = await client.post(
             "/api/v1/webhooks/alertmanager",
@@ -259,12 +270,13 @@ class TestAlertAck:
     """告警闭环:ack 落确认人/时间、重复 ack 409、unread-count 准确、severity 过滤、角色门。"""
 
     async def test_ack_records_actor_and_time(self, client, sm, fake):
-        await client.post("/api/v1/webhooks/alertmanager", json=AM_PAYLOAD)
+        await client.post("/api/v1/webhooks/alertmanager", json=AM_PAYLOAD, headers=AM_HEADERS)
         ops = await admin_headers(sm, client, role="ops")
         alerts = (await client.get("/api/admin/v1/alerts", headers=ops)).json()
         target = next(a for a in alerts if a["title"] == "GPUXidCriticalError")
         assert target["acked_at"] is None
-        assert target["target_kind"] == "node"  # GPU 前缀 alertname → 节点页
+        # 节点维告警按 hostname 标签深链到节点页
+        assert target["target_kind"] == "node" and target["target_id"] == "gpu-01"
 
         resp = await client.post(f"/api/admin/v1/alerts/{target['id']}/ack", headers=ops)
         assert resp.status_code == 200, resp.text
@@ -278,7 +290,11 @@ class TestAlertAck:
 
     async def test_unread_count_tracks_ack(self, client, sm, fake):
         user = await register(client, "13900000991")
-        await client.post("/api/v1/webhooks/alertmanager", json=am_payload_for(user["user"]["id"]))
+        await client.post(
+            "/api/v1/webhooks/alertmanager",
+            json=am_payload_for(user["user"]["id"]),
+            headers=AM_HEADERS,
+        )
         ops = await admin_headers(sm, client, role="ops")
         # 告警流 3 行:admin_alert + gpu_fault(critical)+ 管理员绑定 TOTP(warning);ack 后剩 2
         body = (await client.get("/api/admin/v1/alerts/unread-count", headers=ops)).json()
@@ -296,14 +312,20 @@ class TestAlertAck:
 
     async def test_forged_namespace_without_real_user_no_tenant_notify(self, client, sm, fake):
         """namespace=tenant-<不存在的用户>:平台流照落,租户短信/站内信不出。"""
-        await client.post("/api/v1/webhooks/alertmanager", json=AM_PAYLOAD)  # tenant-1 无此用户
+        await client.post(
+            "/api/v1/webhooks/alertmanager", json=AM_PAYLOAD, headers=AM_HEADERS
+        )  # tenant-1 无此用户
         async with sm() as session:
             rows = (await session.execute(select(Notification))).scalars().all()
         assert [r.type for r in rows] == ["admin_alert"]
 
     async def test_severity_filter(self, client, sm, fake):
         user = await register(client, "13900000992")
-        await client.post("/api/v1/webhooks/alertmanager", json=am_payload_for(user["user"]["id"]))
+        await client.post(
+            "/api/v1/webhooks/alertmanager",
+            json=am_payload_for(user["user"]["id"]),
+            headers=AM_HEADERS,
+        )
         ops = await admin_headers(sm, client, role="ops")
         critical = (
             await client.get("/api/admin/v1/alerts", params={"severity": "critical"}, headers=ops)
@@ -332,11 +354,17 @@ class TestAlertAck:
 
 
 class TestAlertmanagerAuthHardening:
-    async def test_dev_without_token_rejected(self, client, sm, fake, monkeypatch):
-        """除 test 外,未配置 token 一律拒绝接入。"""
+    async def test_unconfigured_token_rejects_all(self, client, sm, fake, monkeypatch):
+        """未配置 token 时任何环境一律 401(不存在测试后门)。"""
         from app.core.config import get_settings
 
-        monkeypatch.setattr(get_settings(), "environment", "dev")
+        monkeypatch.setattr(get_settings(), "alertmanager_token", None)
+        resp = await client.post(
+            "/api/v1/webhooks/alertmanager", json=AM_PAYLOAD, headers=AM_HEADERS
+        )
+        assert resp.status_code == 401
+
+    async def test_missing_bearer_rejected(self, client, sm, fake):
         resp = await client.post("/api/v1/webhooks/alertmanager", json=AM_PAYLOAD)
         assert resp.status_code == 401
 
@@ -348,7 +376,7 @@ class TestAlertmanagerWebhookHardening:
         resp = await client.post(
             "/api/v1/webhooks/alertmanager",
             content=body,
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", **AM_HEADERS},
         )
         assert resp.status_code == 413
 
@@ -356,7 +384,7 @@ class TestAlertmanagerWebhookHardening:
         resp = await client.post(
             "/api/v1/webhooks/alertmanager",
             content=b"not-json",
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", **AM_HEADERS},
         )
         assert resp.status_code == 400
         assert resp.json()["code"] == "VALIDATION_ERROR"
@@ -372,7 +400,7 @@ class TestAlertmanagerWebhookHardening:
                 }
             ]
         }
-        resp = await client.post("/api/v1/webhooks/alertmanager", json=payload)
+        resp = await client.post("/api/v1/webhooks/alertmanager", json=payload, headers=AM_HEADERS)
         assert resp.status_code == 200
         async with sm() as session:
             row = (
@@ -390,7 +418,7 @@ class TestAlertmanagerWebhookHardening:
         payload = {
             "alerts": [{**AM_PAYLOAD["alerts"][0], "fingerprint": f"cap{i}"} for i in range(5)]
         }
-        resp = await client.post("/api/v1/webhooks/alertmanager", json=payload)
+        resp = await client.post("/api/v1/webhooks/alertmanager", json=payload, headers=AM_HEADERS)
         assert resp.status_code == 200
         assert resp.json()["ingested"] == 3
 
@@ -400,8 +428,12 @@ class TestAlertmanagerWebhookHardening:
 
         monkeypatch.setattr(notify_router, "ALERT_RATE_LIMIT", 2)
         for _ in range(2):
-            resp = await client.post("/api/v1/webhooks/alertmanager", json={"alerts": []})
+            resp = await client.post(
+                "/api/v1/webhooks/alertmanager", json={"alerts": []}, headers=AM_HEADERS
+            )
             assert resp.status_code == 200
-        resp = await client.post("/api/v1/webhooks/alertmanager", json={"alerts": []})
+        resp = await client.post(
+            "/api/v1/webhooks/alertmanager", json={"alerts": []}, headers=AM_HEADERS
+        )
         assert resp.status_code == 429
         assert resp.headers["retry-after"].isdigit()

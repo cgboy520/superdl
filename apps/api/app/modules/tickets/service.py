@@ -53,8 +53,10 @@ async def list_stale_pending_staff(session: AsyncSession, *, older_than: datetim
     )
 
 
-async def _admin_alert(session: AsyncSession, *, title: str, content: str, dedup_key: str) -> None:
-    """管理端告警流落一条 info(notify 表 type='admin_alert',user_id=NULL)。"""
+async def _admin_alert(
+    session: AsyncSession, *, title: str, content: str, dedup_key: str, ticket_id: int
+) -> None:
+    """管理端告警流落一条 info(notify 表 type='admin_alert',user_id=NULL),深链到该工单。"""
     await notify_service.notify(
         session,
         None,
@@ -63,6 +65,8 @@ async def _admin_alert(session: AsyncSession, *, title: str, content: str, dedup
         content=content,
         severity="info",
         dedup_key=dedup_key,
+        target_id=str(ticket_id),
+        target_kind="ticket",
     )
 
 
@@ -138,6 +142,7 @@ async def create_ticket(
         title="新工单",
         content=f"{ticket.ticket_no} [{category}] {subject}",
         dedup_key=f"ticket:created:{ticket.id}",
+        ticket_id=ticket.id,
     )
     await session.commit()
     return ticket, True
@@ -226,6 +231,7 @@ async def append_message(
         title="工单有新回复",
         content=f"{ticket.ticket_no} {ticket.subject}",
         dedup_key=f"ticket:user-reply:{msg.id}",
+        ticket_id=ticket.id,
     )
     await session.commit()
     return msg
