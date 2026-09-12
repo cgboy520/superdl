@@ -201,17 +201,22 @@ def _checked_price(value: Decimal) -> Decimal:
     return price
 
 
+async def _commit_or_conflict(session: AsyncSession, *, key: str) -> None:
+    """提交;业务唯一键冲突回滚并转 409(session 回到可用态)。"""
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise conflict(key=key) from exc
+
+
 async def admin_create_sku(session: AsyncSession, data: SkuCreate) -> Sku:
     values = data.model_dump()
     values["price_hourly"] = _checked_price(values["price_hourly"])
     _check_tier_pool(values["tier"], values["pool_label"], values.get("mig_profile"))
     sku = Sku(**values)
     session.add(sku)
-    try:
-        await session.commit()
-    except IntegrityError as exc:
-        await session.rollback()
-        raise conflict(key="catalog.skuBusinessKeyExists") from exc
+    await _commit_or_conflict(session, key="catalog.skuBusinessKeyExists")
     await session.refresh(sku)
     return sku
 
@@ -262,12 +267,7 @@ async def admin_update_sku(
         await _alert_large_price_change(
             session, sku, Decimal(before["price_hourly"]), updates["price_hourly"], data.reason
         )
-    # 业务唯一键冲突 → 409
-    try:
-        await session.commit()
-    except IntegrityError as exc:
-        await session.rollback()
-        raise conflict(key="catalog.skuBusinessKeyExists") from exc
+    await _commit_or_conflict(session, key="catalog.skuBusinessKeyExists")
     await session.refresh(sku)
     return sku, before
 
@@ -330,10 +330,7 @@ async def get_image(session: AsyncSession, image_id: int) -> PlatformImage:
 async def admin_create_image(session: AsyncSession, data: ImageCreate) -> PlatformImage:
     img = PlatformImage(**data.model_dump())
     session.add(img)
-    try:
-        await session.commit()
-    except IntegrityError as exc:
-        raise conflict(key="catalog.imageRefExists") from exc
+    await _commit_or_conflict(session, key="catalog.imageRefExists")
     await session.refresh(img)
     return img
 
@@ -348,10 +345,7 @@ async def admin_update_image(
         await session.execute(delete(ImageNodeCache).where(ImageNodeCache.image_id == image_id))
     for field, value in updates.items():
         setattr(img, field, value)
-    try:
-        await session.commit()
-    except IntegrityError as exc:
-        raise conflict(key="catalog.imageRefExists") from exc
+    await _commit_or_conflict(session, key="catalog.imageRefExists")
     await session.refresh(img)
     return img
 
