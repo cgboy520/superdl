@@ -1,5 +1,8 @@
 """真实收款渠道的验签路径(/webhooks/wechatpay、/webhooks/alipay),用测试内现生成的密钥真实签名。"""
 
+# 白盒用例:直探模块内部
+# pyright: reportPrivateUsage=false
+
 import base64
 import json
 import time

@@ -12,7 +12,7 @@ _KEY = base64.urlsafe_b64encode(b"k" * 32).decode()
 
 def _settings(**overrides) -> Settings:
     return Settings(
-        **{  # type: ignore[arg-type]
+        **{
             "_env_file": None,
             "environment": "test",
             "config_encryption_key": _KEY,

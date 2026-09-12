@@ -1,5 +1,8 @@
 """计费与钱包:燃烧率开户校验、巡检实时估算停机、结算缺口、增量核对、营收归属。"""
 
+# 白盒用例:直探模块内部
+# pyright: reportPrivateUsage=false
+
 import asyncio
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal

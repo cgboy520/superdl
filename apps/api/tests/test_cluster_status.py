@@ -1,5 +1,8 @@
 """probe_cluster(fake)、distro 派生、cluster_status 单行 upsert。"""
 
+# 白盒用例:直探模块内部
+# pyright: reportPrivateUsage=false
+
 import pytest
 from sqlalchemy import func, select
 

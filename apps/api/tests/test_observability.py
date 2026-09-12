@@ -66,7 +66,7 @@ class TestUnhandledException:
         app = create_app()
 
         @app.get("/boom2", include_in_schema=False)
-        async def boom2() -> dict:  # pyright: ignore[reportUnusedFunction]
+        async def boom2() -> dict:
             raise RuntimeError("kaboom")
 
         transport = ASGITransport(app=app, raise_app_exceptions=False)

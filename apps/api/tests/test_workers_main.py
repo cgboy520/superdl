@@ -1,5 +1,8 @@
 """worker 入口组件:worker_id 定长化、metrics Bearer 门禁、定时任务耗时观测。"""
 
+# 白盒用例:直探模块内部
+# pyright: reportPrivateUsage=false
+
 import hashlib
 from typing import Any
 

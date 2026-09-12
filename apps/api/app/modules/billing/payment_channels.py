@@ -180,7 +180,7 @@ class WechatChannel:
     def __init__(self, cfg: RuntimeConfig) -> None:  # pragma: no cover - 需真实商户凭据
         if not all(getattr(cfg, k) for k in WECHAT_CFG_KEYS):
             raise channel_error("billing.wechatCredentialsIncomplete")
-        from wechatpayv3 import WeChatPay, WeChatPayType  # type: ignore[import-untyped]
+        from wechatpayv3 import WeChatPay, WeChatPayType
 
         self._wxpay = WeChatPay(
             wechatpay_type=WeChatPayType.NATIVE,
@@ -300,10 +300,10 @@ class AlipayChannel:
         if not (cfg.alipay_app_id and cfg.alipay_private_key and cfg.alipay_public_key):
             raise channel_error("billing.alipayCredentialsIncomplete")
         from alipay.aop.api.AlipayClientConfig import (
-            AlipayClientConfig,  # type: ignore[import-untyped]
+            AlipayClientConfig,
         )
         from alipay.aop.api.DefaultAlipayClient import (
-            DefaultAlipayClient,  # type: ignore[import-untyped]
+            DefaultAlipayClient,
         )
 
         client_cfg = AlipayClientConfig()
@@ -324,10 +324,10 @@ class AlipayChannel:
     async def create_payment(self, order: "Order") -> str:  # pragma: no cover - 需真实商户凭据
         import json
 
-        from alipay.aop.api.domain.AlipayTradePrecreateModel import (  # type: ignore[import-untyped]
+        from alipay.aop.api.domain.AlipayTradePrecreateModel import (
             AlipayTradePrecreateModel,
         )
-        from alipay.aop.api.request.AlipayTradePrecreateRequest import (  # type: ignore[import-untyped]
+        from alipay.aop.api.request.AlipayTradePrecreateRequest import (
             AlipayTradePrecreateRequest,
         )
 
@@ -361,7 +361,7 @@ class AlipayChannel:
     async def parse_callback(self, headers: dict[str, str], body: bytes) -> CallbackResult:  # noqa: ARG002 支付宝验签不看头
         from urllib.parse import parse_qsl
 
-        from alipay.aop.api.util.SignatureUtils import (  # type: ignore[import-untyped]
+        from alipay.aop.api.util.SignatureUtils import (
             verify_with_rsa,
         )
 
@@ -412,10 +412,10 @@ class AlipayChannel:
     async def query_order(self, order: "Order") -> QueryResult:  # pragma: no cover - 需真实商户
         import json
 
-        from alipay.aop.api.domain.AlipayTradeQueryModel import (  # type: ignore[import-untyped]
+        from alipay.aop.api.domain.AlipayTradeQueryModel import (
             AlipayTradeQueryModel,
         )
-        from alipay.aop.api.request.AlipayTradeQueryRequest import (  # type: ignore[import-untyped]
+        from alipay.aop.api.request.AlipayTradeQueryRequest import (
             AlipayTradeQueryRequest,
         )
 

@@ -1,5 +1,8 @@
 """主密钥版本化:v2 密文带 kid、HKDF 子密钥分离、双密钥读迁移、解密 fail-closed。"""
 
+# 白盒用例:直探模块内部
+# pyright: reportPrivateUsage=false
+
 import base64
 import hashlib
 import hmac

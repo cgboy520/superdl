@@ -1,3 +1,5 @@
+# 白盒用例:直探模块内部
+# pyright: reportPrivateUsage=false
 from datetime import timedelta
 
 from sqlalchemy import delete, select, update

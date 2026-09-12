@@ -1,6 +1,9 @@
 """测试共享助手:造用户/密钥/SKU/管理员/钱包,注册登录,驱动 outbox 与 reconciler。
 跨用例复用的助手一律落在这里,测试模块之间不互相 import。"""
 
+# 白盒用例:直探模块内部
+# pyright: reportPrivateUsage=false
+
 import base64
 import json
 import os

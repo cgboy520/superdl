@@ -162,60 +162,10 @@ async def _process_one(
         task = await _claim_one(session, worker_id, task_types)
     if task is None:
         return None
-
     policy = retry_policy_for(task.type)
     attempt = task.retries + 1
     will_retry = attempt <= policy.max_retries
-    timeout = policy.timeout_seconds or TASK_TIMEOUT_SECONDS
-    error: str | None = None
-    # 回填发起请求的 request_id 到日志上下文,执行完解绑
-    request_id = task.payload.get(REQUEST_ID_KEY)
-    try:
-        handler = _registry.get(task.type)
-        if handler is None:
-            raise RuntimeError(f"no handler for outbox task type: {task.type}")
-
-        if request_id:
-            structlog.contextvars.bind_contextvars(request_id=str(request_id))
-        try:
-            async with sm() as session:
-                await asyncio.wait_for(handler(session, task), timeout=timeout)
-                await session.commit()
-        finally:
-            if request_id:
-                structlog.contextvars.unbind_contextvars("request_id")
-    except TimeoutError as exc:
-        error = f"TimeoutError: handler exceeded {timeout:.0f}s"
-        OUTBOX_TASK_TIMEOUT_TOTAL.labels(task_type=task.type).inc()
-        if will_retry:
-            # 超时按可重试失败处理:warning,不带 traceback
-            logger.warning(
-                "outbox_task_timeout_retry",
-                task_id=task.id,
-                task_type=task.type,
-                attempt=attempt,
-                max_retries=policy.max_retries,
-                error=error,
-            )
-        else:
-            logger.error(
-                "outbox_task_timeout", task_id=task.id, task_type=task.type, error=str(exc)
-            )
-    except Exception as exc:
-        error = f"{type(exc).__name__}: {exc}"
-        if will_retry:
-            # 「还没完成」型任务用抛错表达重试:warning 不带 traceback,预算耗尽才记 ERROR
-            logger.warning(
-                "outbox_task_retry",
-                task_id=task.id,
-                task_type=task.type,
-                attempt=attempt,
-                max_retries=policy.max_retries,
-                error=error,
-            )
-        else:
-            logger.exception("outbox_task_failed", task_id=task.id, task_type=task.type)
-
+    error = await _run_handler(sm, task, policy, attempt=attempt, will_retry=will_retry)
     outcome: Outcome = "done" if error is None else ("retry" if will_retry else "dead")
     if outcome == "done":
         new_values: dict[str, Any] = {"status": "done"}
@@ -252,6 +202,62 @@ async def _process_one(
         logger.error("outbox_task_dead", task_id=task.id, task_type=task.type, error=error)
         OUTBOX_DEAD_TOTAL.labels(task_type=task.type).inc()
     return outcome
+
+
+async def _run_handler(
+    sm: async_sessionmaker[AsyncSession],
+    task: OutboxTask,
+    policy: RetryPolicy,
+    *,
+    attempt: int,
+    will_retry: bool,
+) -> str | None:
+    """在独立事务里执行 handler(带超时,回填发起请求的 request_id 到日志上下文);
+    返回错误摘要(None = 成功)。「还没完成」型任务用抛错表达重试:预算内 warning 不带 traceback,
+    耗尽才记 ERROR。"""
+    timeout = policy.timeout_seconds or TASK_TIMEOUT_SECONDS
+    request_id = task.payload.get(REQUEST_ID_KEY)
+    try:
+        handler = _registry.get(task.type)
+        if handler is None:
+            raise RuntimeError(f"no handler for outbox task type: {task.type}")
+        if request_id:
+            structlog.contextvars.bind_contextvars(request_id=str(request_id))
+        try:
+            async with sm() as session:
+                await asyncio.wait_for(handler(session, task), timeout=timeout)
+                await session.commit()
+        finally:
+            if request_id:
+                structlog.contextvars.unbind_contextvars("request_id")
+    except TimeoutError:
+        error = f"TimeoutError: handler exceeded {timeout:.0f}s"
+        OUTBOX_TASK_TIMEOUT_TOTAL.labels(task_type=task.type).inc()
+        _log_failure("outbox_task_timeout", task, policy, attempt, will_retry, error)
+        return error
+    except Exception as exc:
+        error = f"{type(exc).__name__}: {exc}"
+        _log_failure("outbox_task", task, policy, attempt, will_retry, error)
+        return error
+    return None
+
+
+def _log_failure(
+    event: str, task: OutboxTask, policy: RetryPolicy, attempt: int, will_retry: bool, error: str
+) -> None:
+    if will_retry:
+        logger.warning(
+            f"{event}_retry",
+            task_id=task.id,
+            task_type=task.type,
+            attempt=attempt,
+            max_retries=policy.max_retries,
+            error=error,
+        )
+    elif event == "outbox_task_timeout":
+        logger.error(event, task_id=task.id, task_type=task.type, error=error)
+    else:
+        logger.exception("outbox_task_failed", task_id=task.id, task_type=task.type)
 
 
 async def process_one(
@@ -306,6 +312,6 @@ async def report_pending_metrics(sm: async_sessionmaker[AsyncSession]) -> None:
             await session.execute(
                 select(func.min(OutboxTask.created_at)).where(OutboxTask.status == "pending")
             )
-        ).scalar_one()
+        ).scalar_one_or_none()  # 无 pending 行时 min() 为 NULL
     age = 0.0 if oldest is None else (now_utc() - ensure_utc(oldest)).total_seconds()
     OUTBOX_PENDING_OLDEST_AGE.set(max(age, 0.0))

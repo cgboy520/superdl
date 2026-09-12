@@ -1,6 +1,9 @@
 """编排器加固:恢复边与超时边、悬挂逃逸、泄漏回收熔断、并发开户、幂等键、软准入、
 结算候选、保留期 GC、欠费盘 grace、重启撞端口。"""
 
+# 白盒用例:直探模块内部
+# pyright: reportPrivateUsage=false
+
 import asyncio
 from datetime import timedelta
 from decimal import Decimal

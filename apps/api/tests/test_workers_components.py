@@ -1,5 +1,8 @@
 """worker 组件划分:每个 outbox handler 与定时任务恰好归属一个组件;组件进程只领自己的任务。"""
 
+# 白盒用例:直探模块内部
+# pyright: reportPrivateUsage=false
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 

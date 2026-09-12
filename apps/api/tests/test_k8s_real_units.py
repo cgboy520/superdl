@@ -1,6 +1,9 @@
 """RealOrchestrator 离线单测(不连集群):单位换算、端口区间、NetPol 结构、分页、
 节点容量与份额归账、Service 409/422 核对。真实集群见 test_k8s_real_smoke.py。"""
 
+# 白盒用例:直探模块内部
+# pyright: reportPrivateUsage=false
+
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -620,7 +623,7 @@ class TestManagedJobAdmission:
     def test_wipe_job_template_sets_host_users_false(self):
         from app.core.k8s.real import build_managed_job
 
-        container = RealOrchestrator._batch_container("wipe", "busybox:1.36", ["true"], env=[])
+        container = RealOrchestrator.batch_container("wipe", "busybox:1.36", ["true"], env=[])
         job = build_managed_job("tenant-1", "wipe-x", container, volumes=[], pod_labels={})
         pod_spec = cast(Any, job.spec).template.spec
         assert pod_spec.host_users is False

@@ -1,3 +1,5 @@
+# 白盒用例:直探模块内部
+# pyright: reportPrivateUsage=false
 import base64
 
 from httpx import AsyncClient
@@ -883,7 +885,7 @@ class TestAuditOnUnhandledException:
         app = create_app()
 
         @app.post("/api/v1/__boom", include_in_schema=False)
-        async def _boom() -> None:  # pyright: ignore[reportUnusedFunction]
+        async def _boom() -> None:
             raise RuntimeError("boom")
 
         transport = ASGITransport(app=app)

@@ -1078,7 +1078,7 @@ class RealOrchestrator:
         raise RuntimeError(f"job created, awaiting completion: {job_name}")
 
     @staticmethod
-    def _batch_container(
+    def batch_container(
         name: str, image: str, command: list[str], env: list[Any], *, non_root: bool = False
     ) -> Any:
         """一次性 Job 容器基座(wipe/quota/prewarm 共用):资源声明 + 安全上下文;
@@ -1107,7 +1107,7 @@ class RealOrchestrator:
         _check_subpath(subpath)
         if _ignore(lambda: self.core.read_namespace(namespace), 404) is None:
             raise NamespaceMissing(namespace)
-        container = self._batch_container(
+        container = self.batch_container(
             "wipe", WIPE_IMAGE, ["rm", "-rf", f"/data/{subpath}"], env=[]
         )
         container.volume_mounts = [client.V1VolumeMount(name="juicefs", mount_path="/data")]
@@ -1565,7 +1565,7 @@ def build_disk_quota_container(
             split + 'juicefs quota delete "$METAURL_NOPASS" --path "/$QUOTA_BASE/$QUOTA_SUBPATH"'
             " || true"
         )
-    container = RealOrchestrator._batch_container(
+    container = RealOrchestrator.batch_container(
         "quota", image, ["sh", "-c", script], env=[], non_root=True
     )
     container.env = [
@@ -1591,7 +1591,7 @@ def build_prewarm_job(
 ) -> "client.V1Job":
     """预热 Job 对象(纯构造):nodeName 定点、纯拉取触发(命令为 true)、restricted 非 root 上下文;
     镜像缺 sh 由巡检记 failed。"""
-    container = RealOrchestrator._batch_container(
+    container = RealOrchestrator.batch_container(
         "prewarm", image_ref, ["/bin/sh", "-c", "true"], env=[], non_root=True
     )
     # IfNotPresent;换版本靠目录 image_ref 钉 digest,见 deploy/instance-images/README.md

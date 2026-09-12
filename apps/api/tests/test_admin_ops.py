@@ -1,5 +1,8 @@
 """管理端运营 API:租户/调账双复核/节点与超卖报表/审计检索/死信重放/收入报表/公告。"""
 
+# 白盒用例:直探模块内部
+# pyright: reportPrivateUsage=false
+
 import asyncio
 from datetime import timedelta
 from decimal import Decimal

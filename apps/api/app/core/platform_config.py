@@ -610,7 +610,6 @@ def validate_setting_value(key: str, value: str) -> str:
     if spec is None:
         raise ValueError(f"未知配置键:{key}")
     value = value.strip()
-    suffix = f"({spec.hint})" if spec.hint else ""
     if len(value) > spec.max_len:
         raise ValueError(f"{key} 超长(最多 {spec.max_len} 字符)")
     if spec.kind == "bool" and value not in ("true", "false"):
@@ -624,7 +623,18 @@ def validate_setting_value(key: str, value: str) -> str:
         and get_settings().environment == "prod"
         and value in spec.prod_forbidden
     ):
-        raise ValueError(f"{key} 生产环境禁止取值 {value}{suffix}")
+        raise ValueError(f"{key} 生产环境禁止取值 {value}{_hint_suffix(spec)}")
+    _validate_shape(key, value, spec)
+    return value
+
+
+def _hint_suffix(spec: SettingSpec) -> str:
+    return f"({spec.hint})" if spec.hint else ""
+
+
+def _validate_shape(key: str, value: str, spec: SettingSpec) -> None:
+    """形态白名单:整串 fullmatch / 逐行 fullmatch / 必含子串 / 禁含子串。"""
+    suffix = _hint_suffix(spec)
     if spec.pattern and not re.fullmatch(spec.pattern, value):
         raise ValueError(f"{key} 格式不符{suffix}")
     if spec.line_pattern is not None:
@@ -637,7 +647,6 @@ def validate_setting_value(key: str, value: str) -> str:
         raise ValueError(f"{key} 格式不符{suffix}")
     if spec.forbid_contains and spec.forbid_contains in value:
         raise ValueError(f"{key} 格式不符{suffix}")
-    return value
 
 
 def _validate_number(key: str, value: str, spec: SettingSpec) -> str:

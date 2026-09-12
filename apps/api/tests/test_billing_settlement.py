@@ -1,3 +1,5 @@
+# 白盒用例:直探模块内部
+# pyright: reportPrivateUsage=false
 import asyncio
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal

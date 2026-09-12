@@ -78,6 +78,7 @@ python3 scripts/check-docs-links.py      # 文档相对链接、反引号路径�
 - 一个提交一件事,自身过全部闸门、可单独回滚。纯机械改动单独成提交;契约再生成(openapi.json / orval 产物 / errors 文案 / i18n 类型)随引发它的改动同一提交。
 - 闸门按改动范围跑,带红不提交,以本地为准:
   - 后端:ruff format/check → pyright → import-linter → pytest;动模型/迁移加 `alembic check`,动路由/schema 加 openapi.json 无 diff
+    - ruff 复杂度上限(圈复杂度 12 / 分支 14 / 语句 60,`apps/api/pyproject.toml`)超了拆函数,不加 noqa;pyright 配置只认仓库根 `pyrightconfig.json`(standard + 多余 ignore / 多余比较 / 私有访问报错),白盒测试直探模块内部时文件头声明 `# pyright: reportPrivateUsage=false`
   - 前端:eslint → tsc → vitest;动文案/locale 加 `pnpm i18n`,动构建配置加 build
   - 脚本:bash -n → shellcheck → bats
   - 文档:`python3 scripts/check-docs-links.py`;只改文档或注释不跑测试

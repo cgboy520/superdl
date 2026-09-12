@@ -1,6 +1,9 @@
 """实例 Jupyter 的主机名/origin 与端点 slug 反解:入场 URL / HTTPRoute hostname /
 JUPYTER_ALLOW_ORIGIN 同一口径。"""
 
+# 白盒用例:直探模块内部
+# pyright: reportPrivateUsage=false
+
 import base64
 
 import pytest

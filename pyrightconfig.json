@@ -4,5 +4,9 @@
   "venvPath": "apps/api",
   "venv": ".venv",
   "typeCheckingMode": "standard",
-  "reportMissingTypeStubs": false
+  "reportMissingTypeStubs": false,
+  "reportUnnecessaryTypeIgnoreComment": true,
+  "reportUnnecessaryComparison": true,
+  "reportUnnecessaryIsInstance": true,
+  "reportPrivateUsage": true
 }

@@ -1,5 +1,8 @@
 """纯 CPU 实例(tier=cpu / gpu_count=0):资源申请、计费份数、Pod 规格、容量与配额。"""
 
+# 白盒用例:直探模块内部
+# pyright: reportPrivateUsage=false
+
 from decimal import Decimal
 
 import pytest
