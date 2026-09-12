@@ -33,6 +33,8 @@ import {
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { StatusTag } from "../../components/StatusTag";
+
 import {
   type AdminInstanceOut,
   type InstanceEvent,
@@ -272,8 +274,7 @@ function LedgerTab({ userId }: { userId: number }) {
             dataIndex: "type",
             width: 90,
             render: (v: string) => {
-              const m = metaOf(ledgerTypeMap, v);
-              return <HexTag color={m?.color}>{m ? t(m.labelKey) : v}</HexTag>;
+              return <StatusTag map={ledgerTypeMap} value={v} />;
             },
           },
           {
@@ -371,8 +372,7 @@ function TenantInstancesTab({ instances, total }: { instances: AdminInstanceOut[
             dataIndex: "status",
             width: 110,
             render: (v: string) => {
-              const m = metaOf(instanceStatusMap, v);
-              return <HexTag color={m?.color}>{m ? t(m.labelKey) : v}</HexTag>;
+              return <StatusTag map={instanceStatusMap} value={v} />;
             },
           },
           {

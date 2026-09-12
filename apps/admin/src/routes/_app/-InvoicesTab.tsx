@@ -5,8 +5,8 @@ import { Button, Form, Input, Modal, Select, Space, Table, Tag, Tooltip, Typogra
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { adminColors, fontSize, formatDateTime, invoiceStatusMap, layout, metaOf } from "@superdl/ui";
-import { HexTag, TableErrorEmpty } from "@superdl/ui/components";
+import { adminColors, fontSize, formatDateTime, invoiceStatusMap, layout } from "@superdl/ui";
+import { TableErrorEmpty } from "@superdl/ui/components";
 import { useCsvExport } from "@superdl/ui";
 import { useFormat } from "@superdl/ui";
 
@@ -20,6 +20,7 @@ import {
 } from "../../api";
 import { LIST_CAPS, ListCapNote } from "../../components/ListCapNote";
 import { ReasonAction } from "../../components/ReasonAction";
+import { StatusTag } from "../../components/StatusTag";
 import { isValidReason, REASON_MAX_LEN } from "../../lib/validators";
 import { RowActionModal } from "../../components/RowActionModal";
 import { tenantColumn } from "../../components/TenantLink";
@@ -222,8 +223,7 @@ export function InvoicesTab() {
             dataIndex: "status",
             width: 90,
             render: (v: string) => {
-              const m = metaOf(invoiceStatusMap, v);
-              return <HexTag color={m?.color}>{m ? t(m.labelKey) : v}</HexTag>;
+              return <StatusTag map={invoiceStatusMap} value={v} />;
             },
           },
           {

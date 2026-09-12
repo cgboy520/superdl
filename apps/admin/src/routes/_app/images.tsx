@@ -3,7 +3,6 @@ import {
   fontSize,
   formatDateTime,
   layout,
-  metaOf,
   POLL,
   useAutoRefresh,
   type ImageCacheStatus,
@@ -14,7 +13,6 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   Alert,
   App,
-  Badge,
   Button,
   Card,
   Drawer,
@@ -47,6 +45,7 @@ import {
 import { useApiErrorText } from "@superdl/ui";
 import { ReasonAction } from "../../components/ReasonAction";
 import { RowMoreMenu } from "../../components/RowMoreMenu";
+import { StatusTag } from "../../components/StatusTag";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 export const Route = createFileRoute("/_app/images")({
@@ -94,8 +93,7 @@ function ImageNodesPanel({ imageId }: { imageId: number }) {
           title: t("images.colCacheStatus"),
           dataIndex: "status",
           render: (v: ImageCacheStatus) => {
-            const meta = metaOf(imageCacheStatusMap, v);
-            return meta ? <Badge status={meta.badge} text={t(meta.labelKey)} /> : v;
+            return <StatusTag map={imageCacheStatusMap} value={v} variant="badge" />;
           },
         },
         {

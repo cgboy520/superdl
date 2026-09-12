@@ -35,7 +35,7 @@ import {
   ledgerTypeMap,
   metaOf,
 } from "@superdl/ui";
-import { moneyOr, HexTag, LoadMore, TableErrorEmpty } from "@superdl/ui/components";
+import { moneyOr, LoadMore, TableErrorEmpty } from "@superdl/ui/components";
 import { useApiErrorText } from "@superdl/ui";
 import { useCsvExport, useFormDraft } from "@superdl/ui";
 import { useFormat } from "@superdl/ui";
@@ -51,6 +51,7 @@ import {
 } from "../../api";
 import { isValidReason, REASON_MAX_LEN } from "../../lib/validators";
 import { SignedAmount } from "../../components/SignedAmount";
+import { StatusTag } from "../../components/StatusTag";
 import { tenantColumn } from "../../components/TenantLink";
 import { canWriteFinance, useAdminRole, useAuth } from "../../stores/auth";
 import { useFinanceFilters } from "./-financeFilters";
@@ -295,8 +296,7 @@ export function AdjustmentsTab() {
             title: t("finance.colStatus"),
             dataIndex: "status",
             render: (v: string) => {
-              const m = metaOf(adjustmentStatusMap, v);
-              return <HexTag color={m?.color}>{m ? t(m.labelKey) : v}</HexTag>;
+              return <StatusTag map={adjustmentStatusMap} value={v} />;
             },
           },
           { title: t("finance.colCreatedBy"), dataIndex: "created_by", width: 80 },

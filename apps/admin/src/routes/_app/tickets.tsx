@@ -41,6 +41,7 @@ import {
   useTickets,
   useUpdateTicketStatus,
 } from "../../api";
+import { StatusTag } from "../../components/StatusTag";
 import { TenantLink } from "../../components/TenantLink";
 import { useApiErrorText } from "@superdl/ui";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
@@ -422,8 +423,7 @@ function TicketsPage() {
               dataIndex: "status",
               width: 110,
               render: (v: string) => {
-                const m = metaOf(ticketStatusMap, v);
-                return <Badge status={m?.badge ?? "default"} text={m ? t(m.labelKey) : v} />;
+                return <StatusTag map={ticketStatusMap} value={v} variant="badge" />;
               },
             },
             { title: t("tickets.colUpdatedAt"), dataIndex: "updated_at", width: 150, render: formatDateTime },

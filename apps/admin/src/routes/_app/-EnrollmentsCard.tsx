@@ -1,13 +1,15 @@
 /** 待加入节点卡:注册记录表(阶段 / 心跳 / 失败原因)+ 重新生成 / 吊销。 */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { Radio, Badge, Button, Card, Modal, Space, Table, Tag, Tooltip, Typography } from "antd";
+import { Radio, Button, Card, Modal, Space, Table, Tag, Tooltip, Typography } from "antd";
 import dayjs from "dayjs";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { formatDateTime, metaOf, nodeEnrollStatusMap, type NodeEnrollStatus } from "@superdl/ui";
 import { TableErrorEmpty } from "@superdl/ui/components";
+
+import { StatusTag } from "../../components/StatusTag";
 
 import {
   type EnrollmentCommandOut,
@@ -121,8 +123,7 @@ export function EnrollmentsCard({ writable }: { writable: boolean }) {
             title: t("nodes.colStatus"),
             dataIndex: "status",
             render: (v: NodeEnrollStatus) => {
-              const meta = metaOf(nodeEnrollStatusMap, v);
-              return meta ? <Badge status={meta.badge} text={t(meta.labelKey)} /> : v;
+              return <StatusTag map={nodeEnrollStatusMap} value={v} variant="badge" />;
             },
           },
           {

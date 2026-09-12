@@ -22,12 +22,13 @@ import {
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { adminColors, layout, metaOf, skuTierMap, skuVariant, type SkuVariant } from "@superdl/ui";
-import { HexTag, PageContainer, TableErrorEmpty, useConfirm } from "@superdl/ui/components";
+import { adminColors, layout, skuTierMap, skuVariant, type SkuVariant } from "@superdl/ui";
+import { PageContainer, TableErrorEmpty, useConfirm } from "@superdl/ui/components";
 import { useFormat } from "@superdl/ui";
 import { useApiErrorText } from "@superdl/ui";
 import { useFormDraft } from "@superdl/ui";
 
+import { StatusTag } from "../../components/StatusTag";
 import {
   type GpuModelAggregate,
   type SkuAdminOut,
@@ -378,8 +379,7 @@ function SkusPage() {
               title: t("skus.colTier"),
               render: (_, r) => {
                 const v = skuVariant(r.tier, r.pool_label);
-                const m = metaOf(skuTierMap, v);
-                return <HexTag color={m?.color}>{m ? t(m.labelKey) : v}</HexTag>;
+                return <StatusTag map={skuTierMap} value={v} />;
               },
             },
             {

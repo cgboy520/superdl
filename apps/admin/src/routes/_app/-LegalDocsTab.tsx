@@ -1,7 +1,7 @@
 /** 法务文档 Tab:doc_key × locale 状态格 + 左编辑右预览 + 版本历史;写仅 admin;发布确认带行级 diff 统计。 */
 
-import { adminColors, formatDateTime, legalDocStatusMap, metaOf, useApiErrorText, useFormDraft } from "@superdl/ui";
-import { DataErrorAlert, HexTag, LegalMarkdown, TableErrorEmpty } from "@superdl/ui/components";
+import { adminColors, formatDateTime, legalDocStatusMap, useApiErrorText, useFormDraft } from "@superdl/ui";
+import { DataErrorAlert, LegalMarkdown, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { Alert, App, Button, Card, Collapse, Input, Modal, Space, Table, Tooltip, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
@@ -20,6 +20,7 @@ import {
   type LegalLocale,
 } from "../../api";
 import { ReasonAction } from "../../components/ReasonAction";
+import { StatusTag } from "../../components/StatusTag";
 import { useAdminRole } from "../../stores/auth";
 
 const DOC_KEYS = ["terms", "privacy", "deletion_notice"] as const;
@@ -343,8 +344,7 @@ function CellEditor({
                     dataIndex: "status",
                     width: 100,
                     render: (s: string) => {
-                      const m = metaOf(legalDocStatusMap, s);
-                      return <HexTag color={m?.color}>{m ? t(m.labelKey) : s}</HexTag>;
+                      return <StatusTag map={legalDocStatusMap} value={s} />;
                     },
                   },
                   {

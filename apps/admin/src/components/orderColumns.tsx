@@ -1,12 +1,12 @@
 /** 充值订单列(两处共用);withTenant 决定是否带「租户」列。 */
 
 import { formatDateTime, metaOf, orderStatusMap, paymentChannelMap } from "@superdl/ui";
-import { HexTag } from "@superdl/ui/components";
 import type { TableColumnsType } from "antd";
 import { useTranslation } from "react-i18next";
 
 import type { OrderRow } from "../api";
 import { useFormat } from "@superdl/ui";
+import { StatusTag } from "./StatusTag";
 import { tenantColumn } from "./TenantLink";
 
 export function useOrderColumns({ withTenant }: { withTenant: boolean }): TableColumnsType<OrderRow> {
@@ -28,8 +28,7 @@ export function useOrderColumns({ withTenant }: { withTenant: boolean }): TableC
       title: t("finance.colStatus"),
       dataIndex: "status",
       render: (v: string) => {
-        const m = metaOf(orderStatusMap, v);
-        return <HexTag color={m?.color}>{m ? t(m.labelKey) : v}</HexTag>;
+        return <StatusTag map={orderStatusMap} value={v} />;
       },
     },
     { title: t("finance.colCreatedAt"), dataIndex: "created_at", render: formatDateTime },

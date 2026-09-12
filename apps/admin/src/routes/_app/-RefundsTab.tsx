@@ -16,7 +16,7 @@ import {
   payoutChannelMap,
   refundStatusMap,
 } from "@superdl/ui";
-import { HexTag, LoadMore, TableErrorEmpty } from "@superdl/ui/components";
+import { LoadMore, TableErrorEmpty } from "@superdl/ui/components";
 import { useCsvExport } from "@superdl/ui";
 import { useFormat } from "@superdl/ui";
 
@@ -31,6 +31,7 @@ import {
   useReviewRefund,
 } from "../../api";
 import { ReasonAction } from "../../components/ReasonAction";
+import { StatusTag } from "../../components/StatusTag";
 import { RowMoreMenu } from "../../components/RowMoreMenu";
 import { RowActionModal } from "../../components/RowActionModal";
 import { tenantColumn } from "../../components/TenantLink";
@@ -199,8 +200,7 @@ export function RefundsTab() {
             dataIndex: "status",
             width: 90,
             render: (v: string) => {
-              const m = metaOf(refundStatusMap, v);
-              return <HexTag color={m?.color}>{m ? t(m.labelKey) : v}</HexTag>;
+              return <StatusTag map={refundStatusMap} value={v} />;
             },
           },
           { title: t("finance.colReason"), dataIndex: "reason", ellipsis: true },
