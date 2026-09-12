@@ -7,7 +7,7 @@ from app.core.db import DbSession
 from app.core.errors import AppError, ErrorCode
 from app.core.http import client_ip
 from app.core.logging import mask_phone_value
-from app.core.platform_config import get_effective_platform_config
+from app.core.platform_config import get_runtime_config
 from app.modules.account import deletion, service, sshkeys
 from app.modules.account.deps import CurrentUser
 from app.modules.account.schemas import (
@@ -89,11 +89,11 @@ class CaptchaConfigOut(BaseModel):
 @router.get("/auth/captcha-config")
 async def captcha_config(session: DbSession) -> CaptchaConfigOut:
     """验证码 2.0 客户端初始化配置(免鉴权)。"""
-    cfg = await get_effective_platform_config(session)
+    cfg = await get_runtime_config(session)
     return CaptchaConfigOut(
-        enabled=cfg["captcha_enabled"] == "true",
-        scene_id=cfg["captcha_scene_id"] or None,
-        prefix=cfg["captcha_prefix"] or None,
+        enabled=cfg.captcha_enabled,
+        scene_id=cfg.captcha_scene_id or None,
+        prefix=cfg.captcha_prefix or None,
     )
 
 

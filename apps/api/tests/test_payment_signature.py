@@ -12,6 +12,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from app.core.errors import AppError
+from app.core.platform_config import runtime_config_from_strings as rc
 from app.modules.billing.payment_channels import AlipayChannel, WechatChannel
 
 
@@ -45,12 +46,14 @@ SELLER_ID = "2088123412341234"
 def _alipay_channel(keypair: tuple[str, str]) -> AlipayChannel:
     priv, pub = keypair
     return AlipayChannel(
-        {
-            "alipay_app_id": APP_ID,
-            "alipay_private_key": priv,
-            "alipay_public_key": pub,
-            "alipay_seller_id": SELLER_ID,
-        }
+        rc(
+            {
+                "alipay_app_id": APP_ID,
+                "alipay_private_key": priv,
+                "alipay_public_key": pub,
+                "alipay_seller_id": SELLER_ID,
+            }
+        )
     )
 
 
@@ -158,15 +161,17 @@ WX_APPID = "wx0123456789abcdef"
 def _wechat_channel(keypair: tuple[str, str]) -> WechatChannel:
     priv, pub = keypair
     return WechatChannel(
-        {
-            "wechat_mchid": MCHID,
-            "wechat_appid": WX_APPID,
-            "wechat_private_key": priv,
-            "wechat_cert_serial_no": "ABCDEF0123456789ABCDEF0123456789ABCDEF01",
-            "wechat_apiv3_key": APIV3_KEY,
-            "wechat_public_key": pub,
-            "wechat_public_key_id": "PUB_KEY_ID_0000000000000000000000000000",
-        }
+        rc(
+            {
+                "wechat_mchid": MCHID,
+                "wechat_appid": WX_APPID,
+                "wechat_private_key": priv,
+                "wechat_cert_serial_no": "ABCDEF0123456789ABCDEF0123456789ABCDEF01",
+                "wechat_apiv3_key": APIV3_KEY,
+                "wechat_public_key": pub,
+                "wechat_public_key_id": "PUB_KEY_ID_0000000000000000000000000000",
+            }
+        )
     )
 
 
@@ -236,7 +241,7 @@ class TestWechatCallbackSignature:
                 **overrides,
             }
             with pytest.raises(AppError) as exc:
-                WechatChannel(cfg)
+                WechatChannel(rc(cfg))
             assert exc.value.message_key == "billing.wechatCredentialsIncomplete"
 
     async def test_valid_signature_accepted(self, keypair):

@@ -21,7 +21,7 @@ from app.core.gpu_models import canonical_gpu_model
 from app.core.logging import get_logger
 from app.core.money import as_amount, as_price
 from app.core.outbox import enqueue
-from app.core.policies import get_effective_policies
+from app.core.platform_config import get_runtime_config
 from app.modules.catalog import inventory
 from app.modules.catalog.models import ImageNodeCache, PlatformImage, Sku
 from app.modules.catalog.schemas import (
@@ -164,7 +164,7 @@ async def list_images_out(session: AsyncSession) -> list[ImageOut]:
     prewarm_enabled 且(零 cache 行回落旧语义 / 覆盖率 ≥ prewarm_min_coverage_pct)。"""
     images = await list_images(session)
     coverage = await image_coverage(session)
-    threshold = (await get_effective_policies(session)).prewarm_min_coverage_pct
+    threshold = (await get_runtime_config(session)).prewarm_min_coverage_pct
     out: list[ImageOut] = []
     for img in images:
         cached, total, _failed = coverage.get(img.id, (0, 0, 0))

@@ -15,7 +15,7 @@ from app.core.idempotency import (
 from app.core.logging import get_logger
 from app.core.money import as_price, disk_daily_charge
 from app.core.outbox import enqueue
-from app.core.policies import get_effective_policies
+from app.core.platform_config import get_runtime_config
 from app.modules.account import service as account_service
 from app.modules.billing import service as billing_service
 from app.modules.nodes import service as nodes_service
@@ -49,7 +49,7 @@ async def create_disk(
             return existing, False
     # JuiceFS SC 缺位先拦
     await nodes_service.require_storage_classes(session, with_data_disk=True)
-    policies = await get_effective_policies(session)
+    policies = await get_runtime_config(session)
     if not policies.disk_min_gb <= size_gb <= policies.disk_max_gb:
         raise AppError(
             ErrorCode.VALIDATION_ERROR,
@@ -161,7 +161,7 @@ async def expand_disk(session: AsyncSession, user_id: int, uuid: str, new_size_g
         raise AppError(ErrorCode.VALIDATION_ERROR, key="disks.expandNeedsActive")
     if new_size_gb <= disk.size_gb:
         raise AppError(ErrorCode.DISK_SHRINK_FORBIDDEN, key="disks.shrinkForbidden")
-    max_gb = (await get_effective_policies(session)).disk_max_gb
+    max_gb = (await get_runtime_config(session)).disk_max_gb
     if new_size_gb > max_gb:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="disks.sizeMax", params={"max": max_gb})
     await _settle_pending_days(session, disk)  # 先按旧容量结清

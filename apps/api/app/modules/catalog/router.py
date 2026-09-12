@@ -2,7 +2,7 @@ from fastapi import APIRouter
 
 from app.core.config import get_settings
 from app.core.db import DbSession
-from app.core.platform_config import get_effective_platform_config
+from app.core.platform_config import get_runtime_config
 from app.modules.catalog import service
 from app.modules.catalog.schemas import (
     ImageOut,
@@ -17,20 +17,20 @@ router = APIRouter(tags=["catalog"])
 @router.get("/site-config")
 async def get_site_config(session: DbSession) -> SiteConfigOut:
     """站点公开配置:备案号 + 可用支付渠道(免登录)。"""
-    cfg = await get_effective_platform_config(session)
+    cfg = await get_runtime_config(session)
     s = get_settings()
     return SiteConfigOut(
-        icp_number=cfg["icp_number"] or None,
-        police_record_number=cfg["police_record_number"] or None,
-        support_email=cfg["support_email"] or None,
-        support_wechat=cfg["support_wechat"] or None,
-        company_name=cfg["company_name"] or None,
-        company_address=cfg["company_address"] or None,
-        company_phone=cfg["company_phone"] or None,
-        business_license_url=cfg["business_license_url"] or None,
+        icp_number=cfg.icp_number or None,
+        police_record_number=cfg.police_record_number or None,
+        support_email=cfg.support_email or None,
+        support_wechat=cfg.support_wechat or None,
+        company_name=cfg.company_name or None,
+        company_address=cfg.company_address or None,
+        company_phone=cfg.company_phone or None,
+        business_license_url=cfg.business_license_url or None,
         payment_channels=PaymentChannelsOut(
-            wechat=cfg["payment_wechat_enabled"] == "true",
-            alipay=cfg["payment_alipay_enabled"] == "true",
+            wechat=cfg.payment_wechat_enabled,
+            alipay=cfg.payment_alipay_enabled,
             mock=s.payment_mock,
         ),
     )

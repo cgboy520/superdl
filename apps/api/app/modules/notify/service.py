@@ -14,7 +14,7 @@ from app.core.idempotency import find_replay, insert_idempotent
 from app.core.logging import get_logger
 from app.core.outbox import OutboxTask, enqueue, outbox_handler
 from app.core.pagination import Page, paginate_by_id
-from app.core.platform_config import get_effective_platform_config
+from app.core.platform_config import get_runtime_config
 from app.core.ratelimit import check_rate_limit
 from app.core.sms import ensure_sms_platform_quota, get_sms_channel
 from app.core.timeutil import now_utc
@@ -95,7 +95,7 @@ async def handle_notify_sms(session: AsyncSession, task: OutboxTask) -> None:
     if not phone:
         logger.warning("sms_no_recipient", task_id=task.id)
         return  # 无收件人:配置错误,无重试价值
-    cfg = await get_effective_platform_config(session)
+    cfg = await get_runtime_config(session)
     channel = await get_sms_channel(session)
     try:
         await ensure_sms_platform_quota()
@@ -103,7 +103,7 @@ async def handle_notify_sms(session: AsyncSession, task: OutboxTask) -> None:
         # 平台预算池耗尽(RATE_LIMITED):消化不重试
         logger.warning("sms_platform_quota_exhausted", task_id=task.id)
         return
-    await channel.send(phone, cfg["sms_template_notice"] or "", {"title": task.payload["title"]})
+    await channel.send(phone, cfg.sms_template_notice or "", {"title": task.payload["title"]})
 
 
 async def send_low_balance_warning(
@@ -412,8 +412,8 @@ async def ingest_alertmanager(session: AsyncSession, payload: dict) -> int:
     """Alertmanager webhook:按 fingerprint+startsAt 幂等;GPU 告警映射到受影响租户;
     critical 平台告警短信直发值班手机(oncall_phone),同 dedup_key 幂等。
     """
-    cfg = await get_effective_platform_config(session)
-    oncall_phone = cfg.get("oncall_phone", "")
+    cfg = await get_runtime_config(session)
+    oncall_phone = cfg.oncall_phone
     written = 0
     for alert in payload.get("alerts", []):
         fingerprint = alert.get("fingerprint", "")

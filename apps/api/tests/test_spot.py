@@ -103,14 +103,14 @@ async def running_spot(client, sm, fake, phone, sku_id, *, cards=1):
 class TestSpotPricing:
     async def test_spot_price_is_discounted_snapshot(self, client, sm, fake):
         """竞价实例落折后时价,原价另存 spec.base_price_hourly。"""
-        from app.core.policies import get_effective_policies
+        from app.core.platform_config import get_runtime_config
 
         sku_id = await spot_sku(sm)
         await seed_node_spec(sm, node_name="node-spot-1", pool_label="kata")
         _, uuid, _ = await running_spot(client, sm, fake, "13922200001", sku_id)
         async with sm() as s:
             inst = (await s.execute(select(Instance).where(Instance.uuid == uuid))).scalar_one()
-            policies = await get_effective_policies(s)
+            policies = await get_runtime_config(s)
         base = Decimal(inst.spec["base_price_hourly"])
         assert inst.market == MARKET_SPOT
         assert inst.price_hourly == price_for(base, market=MARKET_SPOT, policies=policies)
@@ -481,11 +481,11 @@ class TestAdminPreempt:
 class TestGraceWindowGuard:
     def test_grace_cannot_eat_the_creating_timeout(self):
         """宽限窗小于 creating 超时预算。"""
-        from app.core.policies import validate_policy_value
+        from app.core.platform_config import validate_setting_value
 
-        assert validate_policy_value("spot_grace_seconds", "60") == "60"
+        assert validate_setting_value("spot_grace_seconds", "60") == "60"
         with pytest.raises(ValueError, match="不得超过"):
-            validate_policy_value("spot_grace_seconds", "600")
+            validate_setting_value("spot_grace_seconds", "600")
 
 
 class TestPreemptedBillingEqualsNormalStop:

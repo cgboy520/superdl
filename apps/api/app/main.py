@@ -59,12 +59,12 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             assert_prod_image_allowlist,
             compute_config_warnings,
             env_layer_problems,
-            get_effective_platform_config,
+            get_runtime_config,
         )
 
         async with get_sessionmaker()() as session:
-            cfg = await get_effective_platform_config(session)
-        missing = [k for k in ("cluster_server_url", "cluster_join_token") if not cfg.get(k)]
+            cfg = await get_runtime_config(session)
+        missing = [k for k in ("cluster_server_url", "cluster_join_token") if not getattr(cfg, k)]
         if missing:
             log.error(
                 "cluster_config_missing",

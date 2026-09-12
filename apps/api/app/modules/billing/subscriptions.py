@@ -23,7 +23,7 @@ from app.core.idempotency import (
 from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.metrics import PATROL_FAILED_TOTAL
-from app.core.policies import get_effective_policies
+from app.core.platform_config import get_runtime_config
 from app.core.pricing import SubscriptionQuote, period_delta, quote_subscription
 from app.core.timeutil import ensure_utc, now_utc
 from app.modules.billing import wallet
@@ -73,7 +73,7 @@ async def quote(
     period_count: int,
 ) -> SubscriptionQuote:
     """报价(不落库)。市场页、创建预估、续费 modal 都经这里。"""
-    policies = await get_effective_policies(session)
+    policies = await get_runtime_config(session)
     return quote_subscription(
         base_hourly,
         gpu_count=gpu_count,
@@ -533,7 +533,7 @@ async def subscription_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str,
 async def _patrol_due(sm: async_sessionmaker[AsyncSession], counts: dict[str, int]) -> None:
     """临期预警 + 到期处置。逐条独立事务。"""
     async with sm() as session:
-        policies = await get_effective_policies(session)
+        policies = await get_runtime_config(session)
         horizon = now_utc() + timedelta(days=policies.period_expire_warn_days)
         due_ids = list(
             (
@@ -690,7 +690,7 @@ async def _expire_instance(
 
 async def _freeze(session: AsyncSession, instance: "Instance") -> None:
     """冻结窗口复用 `freeze_grace_hours`(欠费同款)。"""
-    policies = await get_effective_policies(session)
+    policies = await get_runtime_config(session)
     await orchestrator_transitions.freeze_instance(
         session,
         instance,

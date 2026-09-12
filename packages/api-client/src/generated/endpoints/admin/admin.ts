@@ -2222,7 +2222,7 @@ export const getAdminGetPoliciesApiAdminV1PoliciesGetUrl = () => {
 }
 
 /**
- * 当前生效策略 + 取值范围 + DB 覆盖项。
+ * 当前生效策略 + 取值范围 + DB 覆盖项(平台配置里 policy 组的切片)。
  * @summary Admin Get Policies
  */
 export const adminGetPoliciesApiAdminV1PoliciesGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<PoliciesAdminOut> => {
@@ -2246,7 +2246,7 @@ export const getAdminUpdatePoliciesApiAdminV1PoliciesPutUrl = () => {
 }
 
 /**
- * 在线调整策略参数(即时生效)。审计 detail 记变更前后值与原因。
+ * 在线调整策略参数(即时生效;只收 policy 组的键)。审计 detail 记变更前后值与原因。
  * @summary Admin Update Policies
  */
 export const adminUpdatePoliciesApiAdminV1PoliciesPut = async (policyUpdateRequest: PolicyUpdateRequest, options?: Parameters<typeof customFetch>[1]): Promise<UpdatedKeysOut> => {

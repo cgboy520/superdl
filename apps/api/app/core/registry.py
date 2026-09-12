@@ -6,7 +6,6 @@ import hashlib
 import json
 import re
 import ssl
-from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
@@ -71,16 +70,16 @@ def is_pinned_image_ref(image_ref: str) -> bool:
     return last.rsplit(":", 1)[1] != "latest"
 
 
-def effective_image_allowlist(cfg: Mapping[str, str]) -> list[str]:
+def effective_image_allowlist(*, allowed_registries: str, registry_host: str) -> list[str]:
     """镜像来源白名单:配置行(换行/逗号分隔的仓库前缀)∪ Harbor 地址前缀,每条补成 `/` 结尾;
     空列表 = 不限制。平台镜像目录内的引用由调用方放行。"""
-    raw = (cfg.get("image_allowed_registries") or "").replace(",", "\n")
+    raw = allowed_registries.replace(",", "\n")
     prefixes: list[str] = []
     for line in raw.splitlines():
         prefix = line.strip().rstrip("/")
         if prefix and f"{prefix}/" not in prefixes:
             prefixes.append(f"{prefix}/")
-    host = (cfg.get("registry_host") or "").strip().rstrip("/")
+    host = registry_host.strip().rstrip("/")
     if host and f"{host}/" not in prefixes:
         prefixes.insert(0, f"{host}/")
     return prefixes

@@ -23,7 +23,7 @@ from app.core.metrics import (
     PAYMENT_RECOVER_FAILED_TOTAL,
 )
 from app.core.money import as_amount
-from app.core.platform_config import get_effective_platform_config
+from app.core.platform_config import get_runtime_config
 from app.core.timeutil import now_utc
 from app.modules.billing import wallet
 from app.modules.billing.models import Order, Wallet
@@ -59,8 +59,12 @@ async def create_recharge(
     """创建充值单。返回 (订单, created):created=False = 幂等重放(含补拉支付码),
     路由回 200 + X-Idempotent-Replay。"""
     amount = as_amount(amount)  # 上下限由 RechargeCreate 契约层校验
-    cfg = await get_effective_platform_config(session)
-    if channel_name in ("wechat", "alipay") and cfg[f"payment_{channel_name}_enabled"] != "true":
+    cfg = await get_runtime_config(session)
+    channel_enabled = {
+        "wechat": cfg.payment_wechat_enabled,
+        "alipay": cfg.payment_alipay_enabled,
+    }
+    if channel_name in channel_enabled and not channel_enabled[channel_name]:
         raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.channelNotEnabled")
     channel = await get_channel(channel_name, session)
 

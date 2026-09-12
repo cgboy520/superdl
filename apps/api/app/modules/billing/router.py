@@ -9,8 +9,7 @@ from app.core.db import DbSession
 from app.core.http import mark_idempotent_replay
 from app.core.pagination import Page
 from app.core.params import Cursor, IdempotencyKey, Limit, TzOffset
-from app.core.platform_config import get_effective_platform_config
-from app.core.policies import get_effective_policies
+from app.core.platform_config import get_runtime_config
 from app.core.ratelimit import check_rate_limit
 from app.core.timeutil import billing_month_range, parse_local_date
 from app.modules.account import service as account_service
@@ -39,8 +38,8 @@ router = APIRouter(tags=["billing"])
 @router.get("/policies")
 async def get_policies(session: DbSession) -> PoliciesOut:
     """计费/回收策略。公开;env 默认 + DB 覆盖,管理端在线调整。"""
-    p = await get_effective_policies(session)
-    cfg = await get_effective_platform_config(session)
+    p = await get_runtime_config(session)
+    cfg = await get_runtime_config(session)
     return PoliciesOut(
         disk_price_gb_month=p.disk_price_gb_month,
         disk_min_gb=p.disk_min_gb,
@@ -55,8 +54,8 @@ async def get_policies(session: DbSession) -> PoliciesOut:
         period_expire_warn_days=p.period_expire_warn_days,
         spot_discount_pct=p.spot_discount_pct,
         spot_grace_seconds=p.spot_grace_seconds,
-        real_name_enabled=cfg["real_name_enabled"] == "true",
-        real_name_required_for_recharge=cfg["real_name_required_for_recharge"] == "true",
+        real_name_enabled=cfg.real_name_enabled,
+        real_name_required_for_recharge=cfg.real_name_required_for_recharge,
     )
 
 

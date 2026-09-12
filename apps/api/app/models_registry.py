@@ -1,7 +1,7 @@
 """聚合全部 SQLAlchemy 模型(alembic autogenerate 与测试 create_all)。
 新增模块的 models.py 须在此 import。"""
 
-from app.core import audit, outbox, platform_config, policies, ratelimit
+from app.core import audit, outbox, platform_config, ratelimit
 from app.core.db import Base
 from app.modules.account import models as account_models
 from app.modules.adminapi import models as adminapi_models
@@ -29,7 +29,6 @@ __all__ = [
     "orchestrator_models",
     "outbox",
     "platform_config",
-    "policies",
     "ratelimit",
     "services_models",
     "tickets_models",

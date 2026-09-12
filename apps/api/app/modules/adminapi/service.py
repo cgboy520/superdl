@@ -24,7 +24,7 @@ from app.core.metrics import (
 )
 from app.core.money import as_amount, money_str
 from app.core.pagination import Page, paginate_by_id
-from app.core.platform_config import get_effective_platform_config
+from app.core.platform_config import get_runtime_config
 from app.core.ratelimit import check_rate_limit, clear_rate_limit, ensure_not_rate_limited
 from app.core.security import (
     PASSWORD_MAX_BYTES,
@@ -186,8 +186,8 @@ async def login(
         if b.clear_on_success:
             await clear_rate_limit(b.key)
     # 两步验证关闭:密码即登录
-    cfg = await get_effective_platform_config(session)
-    if cfg["admin_mfa_enabled"] != "true":
+    cfg = await get_runtime_config(session)
+    if not cfg.admin_mfa_enabled:
         token = create_token(
             str(admin.id), "admin", token_type="access", extra={"ver": admin.token_version}
         )

@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from app.core.audit import set_audit_target
 from app.core.db import DbSession
 from app.core.gpu_models import canonical_gpu_model
-from app.core.policies import get_effective_policies
+from app.core.platform_config import get_runtime_config
 from app.modules.adminapi import service
 from app.modules.adminapi.deps import require_roles
 from app.modules.adminapi.schemas import (
@@ -47,7 +47,7 @@ async def _cpu_capacity_preview(
         )
     est = 0
     if vcpu and mem_gb:
-        cap = (await get_effective_policies(session)).gpu_node_cpu_instance_vcpu_cap
+        cap = (await get_runtime_config(session)).gpu_node_cpu_instance_vcpu_cap
         est = catalog_service.sellable_cpu_slots(vcpu, mem_gb, ready, gpu_node_vcpu_cap=cap)
     return CapacityPreviewOut(
         matching_nodes=len(specs),

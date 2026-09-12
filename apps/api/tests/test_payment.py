@@ -385,25 +385,30 @@ class TestRealChannelWebhookRoutes:
 class TestChannelFactory:
     async def test_real_channel_fingerprint_cache(self, sm, monkeypatch):
         """渠道实例指纹缓存:配置不变命中缓存,凭据轮换立即重建。"""
-        import app.modules.billing.payment_channels as pc
+        from dataclasses import replace
 
-        cfg = dict.fromkeys(pc.WECHAT_CFG_KEYS, "") | {
-            "alipay_app_id": "app-1",
-            "alipay_private_key": "key-1",
-            "alipay_public_key": "pub-1",
-            "alipay_seller_id": "",
-        }
+        import app.modules.billing.payment_channels as pc
+        from app.core.platform_config import runtime_config_from_strings
+
+        cfg = runtime_config_from_strings(
+            {
+                "alipay_app_id": "app-1",
+                "alipay_private_key": "key-1",
+                "alipay_public_key": "pub-1",
+                "alipay_seller_id": "",
+            }
+        )
 
         async def fake_cfg(session):
-            return dict(cfg)
+            return cfg
 
-        monkeypatch.setattr(pc, "get_effective_platform_config", fake_cfg)
+        monkeypatch.setattr(pc, "get_runtime_config", fake_cfg)
         monkeypatch.setattr(pc, "_real_channel_cache", {})
         async with sm() as session:
             c1 = await pc.get_channel("alipay", session)
             c2 = await pc.get_channel("alipay", session)
             assert c1 is c2
-            cfg["alipay_private_key"] = "key-2"
+            cfg = replace(cfg, alipay_private_key="key-2")
             c3 = await pc.get_channel("alipay", session)
             assert c3 is not c1
 

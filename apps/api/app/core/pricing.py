@@ -6,7 +6,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from app.core.money import as_amount, as_price, billing_units
-from app.core.policies import EffectivePolicies
+from app.core.platform_config import RuntimeConfig
 
 # 购买模式(instances.market)
 MARKET_ON_DEMAND = "on_demand"  # 按量:小时结算,唯一进 bills_hourly 的模式
@@ -27,14 +27,6 @@ PERIOD_HOURS: dict[str, int] = {
     PERIOD_YEAR: 24 * 365,
 }
 
-# 周期 → 折扣策略键(EffectivePolicies 上的字段名)
-_PERIOD_DISCOUNT_KEYS: dict[str, str] = {
-    PERIOD_DAY: "period_discount_day",
-    PERIOD_WEEK: "period_discount_week",
-    PERIOD_MONTH: "period_discount_month",
-    PERIOD_YEAR: "period_discount_year",
-}
-
 # 单次下单/续费的周期数上限
 MAX_PERIOD_COUNT = 36
 
@@ -53,19 +45,25 @@ def period_delta(period: str, count: int = 1) -> timedelta:
     return timedelta(hours=period_hours(period, count))
 
 
-def period_discount_pct(policies: EffectivePolicies, period: str) -> int:
-    """周期折扣(百分数,80 = 8 折)。"""
-    key = _PERIOD_DISCOUNT_KEYS.get(period)
-    if key is None:
-        raise ValueError(f"unknown period: {period!r}")
-    return int(getattr(policies, key))
+def period_discount_pct(policies: RuntimeConfig, period: str) -> int:
+    """周期折扣(百分数,80 = 8 折);未知周期抛 ValueError。"""
+    match period:
+        case "day":
+            return policies.period_discount_day
+        case "week":
+            return policies.period_discount_week
+        case "month":
+            return policies.period_discount_month
+        case "year":
+            return policies.period_discount_year
+    raise ValueError(f"unknown period: {period!r}")
 
 
 def price_for(
     base_hourly: Decimal,
     *,
     market: str,
-    policies: EffectivePolicies,
+    policies: RuntimeConfig,
     period: str | None = None,
 ) -> Decimal:
     """该购买模式下的有效时价(4 位小数),即 `instances.price_hourly`;base_hourly 为 SKU 原价。"""
@@ -100,7 +98,7 @@ def quote_subscription(
     gpu_count: int,
     period: str,
     period_count: int,
-    policies: EffectivePolicies,
+    policies: RuntimeConfig,
 ) -> SubscriptionQuote:
     """包周期报价。gpu_count 经 billing_units 折算份数(CPU 实例恒 1 份)。"""
     hours = period_hours(period, period_count)

@@ -16,7 +16,7 @@ from app.core.errors import AppError, ErrorCode
 from app.core.logging import get_logger
 from app.core.money import as_amount, disk_daily_charge, hourly_cost, money_str
 from app.core.pagination import Page, RawPage, paginate_by_id
-from app.core.policies import get_effective_policies
+from app.core.platform_config import get_runtime_config
 from app.core.pricing import MARKET_SUBSCRIPTION
 from app.core.timeutil import now_utc
 from app.modules.billing.models import (
@@ -221,7 +221,7 @@ async def assert_can_afford(
     """
     # 必须延迟 import:orchestrator.service 与本模块循环依赖
     locked = await lock_wallet(session, user_id)  # 先锁再统计
-    policies = await get_effective_policies(session)
+    policies = await get_runtime_config(session)
 
     # 锁内只查本用户
     running = await orchestrator_queries.running_instances_of_user(session, user_id)

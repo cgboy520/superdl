@@ -285,11 +285,11 @@ class TestAffordGuard:
 
     async def test_cover_hours_policy_tunable(self, sm):
         """afford_cover_hours 经 policies 在线可调。"""
-        from app.core.policies import PolicyOverride
+        from app.core.platform_config import PlatformSetting
 
         await seed_instance(sm, user_id=1, price="1.6800", status="running")
         async with sm() as session:
-            session.add(PolicyOverride(key="afford_cover_hours", value="2"))
+            session.add(PlatformSetting(key="afford_cover_hours", value="2", updated_by=None))
             await session.execute(
                 update(Wallet).where(Wallet.user_id == 1).values(balance=Decimal("3.36"))
             )

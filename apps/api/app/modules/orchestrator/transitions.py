@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import conflict
 from app.core.logging import get_logger
 from app.core.outbox import enqueue
-from app.core.policies import get_effective_policies
+from app.core.platform_config import get_runtime_config
 from app.core.timeutil import now_utc
 from app.modules.orchestrator import statemachine as sm_def
 from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent
@@ -135,7 +135,7 @@ async def arrears_transition_disks(
     """欠费巡检钩子:按可用余额推进 / 回退该用户数据盘的欠费链,返回变更数。
     grace_started_at 首次进入宽限后不清零;frozen_started_at 每次进入 frozen 重新起算。
     """
-    policies = await get_effective_policies(session)
+    policies = await get_runtime_config(session)
     now = now_utc()
     changed = 0
     disks = list(

@@ -15,7 +15,7 @@ from app.core.k8s import ensure_registry_pull_secret, get_orchestrator
 from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.outbox import OutboxTask, enqueue, outbox_handler
-from app.core.policies import get_effective_policies
+from app.core.platform_config import get_runtime_config
 from app.core.timeutil import now_utc
 from app.modules.catalog.models import ImageNodeCache, PlatformImage
 
@@ -84,7 +84,7 @@ async def _plan(
 ) -> dict[int, str]:
     """铺行/清理/重试,全部 DB 写与 enqueue 同一事务。返回 image_id → image_ref。"""
     async with sm() as session:
-        policies = await get_effective_policies(session)
+        policies = await get_runtime_config(session)
         recheck = timedelta(hours=policies.prewarm_recheck_hours)
         images = list((await session.execute(select(PlatformImage))).scalars())
         enabled = {img.id for img in images if img.prewarm_enabled}

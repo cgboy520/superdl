@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.aliyun import rpc_call
 from app.core.logging import get_logger
-from app.core.platform_config import get_effective_platform_config
+from app.core.platform_config import get_runtime_config
 
 logger = get_logger(__name__)
 
@@ -82,13 +82,9 @@ async def get_captcha_channel(session: AsyncSession) -> CaptchaChannel:
     if _channel is not None:
         return _channel
 
-    cfg = await get_effective_platform_config(session)
-    if not (
-        cfg["captcha_access_key_id"]
-        and cfg["captcha_access_key_secret"]
-        and cfg["captcha_scene_id"]
-    ):
+    cfg = await get_runtime_config(session)
+    if not (cfg.captcha_access_key_id and cfg.captcha_access_key_secret and cfg.captcha_scene_id):
         raise CaptchaError("阿里云验证码凭据/场景未配置(管理端·平台配置,或 SUPERDL_CAPTCHA_*)")
     return AliyunCaptchaChannel(
-        cfg["captcha_access_key_id"], cfg["captcha_access_key_secret"], cfg["captcha_scene_id"]
+        cfg.captcha_access_key_id, cfg.captcha_access_key_secret, cfg.captcha_scene_id
     )

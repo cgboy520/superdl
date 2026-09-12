@@ -12,7 +12,7 @@
 - `settlement_watermarks`:key(PK)、settled_through、updated_at
 - `settlement_gaps`:kind、window_start、object_id、reason(catchup_truncated / dead_letter / watermark_missing / grace_overlap)、resolved_at,UNIQUE(kind, window_start, object_id)。缺口不自愈,闭环是管理端「财务 › 结算缺口」人工重放(成功回写 resolved_at;grace_overlap 拒重放走人工核销)+ 告警 `superdl_settlement_gap_unresolved`
 - `reconcile_checkpoints`:user_id(PK)、last_ledger_id、balance_after、updated_at —— 资金核对增量游标
-- `policy_overrides`:策略参数在线覆盖层,`GET /api/v1/policies` 读生效值
+- 策略参数:平台配置中心 `policy` 组(`platform_settings`),`GET /api/v1/policies` 读生效值
 
 ## 契约
 

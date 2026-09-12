@@ -26,6 +26,16 @@ _HOSTNAME_RE = re.compile(
 )
 
 
+def check_real_name_invariant(*, enabled: bool, required_for_recharge: bool) -> None:
+    """环境无关的组合约束:required_for_recharge=true ⇒ enabled=true。
+    Settings 启动校验与平台配置中心写入侧共用同一实现。"""
+    if required_for_recharge and not enabled:
+        raise ValueError(
+            "real_name_required_for_recharge=true 需要 real_name_enabled=true"
+            "(实名未开通时用户无法完成实名,充值与开通实例会被永久卡住)"
+        )
+
+
 def decode_master_key(raw: str, *, label: str) -> bytes:
     """主密钥解码(urlsafe-base64,解码后 32 字节);label 进错误消息。"""
     try:
@@ -267,12 +277,11 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_invariants(self) -> "Settings":
-        """环境无关的组合约束(平台配置写入侧 _check_real_name_invariant 同口径)。"""
-        if self.real_name_required_for_recharge and not self.real_name_enabled:
-            raise ValueError(
-                "real_name_required_for_recharge=true 需要 real_name_enabled=true"
-                "(实名未开通时用户无法完成实名,充值与开通实例会被永久卡住)"
-            )
+        """环境无关的组合约束(平台配置写入侧同一函数)。"""
+        check_real_name_invariant(
+            enabled=self.real_name_enabled,
+            required_for_recharge=self.real_name_required_for_recharge,
+        )
         if "*" in self.cors_origins:
             raise ValueError("cors_origins 不允许通配符 *(allow_credentials=true 下等于全网放行)")
         bad_pools = set(self.parsed_shared_tier_pools()) - {"mig", "hami"}

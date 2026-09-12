@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.aliyun import rpc_call
 from app.core.logging import get_logger
-from app.core.platform_config import get_effective_platform_config
+from app.core.platform_config import get_runtime_config
 from app.core.ratelimit import check_rate_limit
 
 logger = get_logger(__name__)
@@ -100,11 +100,9 @@ async def get_sms_channel(session: AsyncSession) -> SmsChannel:
     if _channel is not None:
         return _channel
 
-    cfg = await get_effective_platform_config(session)
-    if cfg["sms_provider"] == "mock":
+    cfg = await get_runtime_config(session)
+    if cfg.sms_provider == "mock":
         return MockSmsChannel()
-    if not (cfg["sms_access_key_id"] and cfg["sms_access_key_secret"] and cfg["sms_sign_name"]):
+    if not (cfg.sms_access_key_id and cfg.sms_access_key_secret and cfg.sms_sign_name):
         raise SmsError("阿里云短信凭据未配置(管理端·平台配置,或 SUPERDL_SMS_*)")
-    return AliyunSmsChannel(
-        cfg["sms_access_key_id"], cfg["sms_access_key_secret"], cfg["sms_sign_name"]
-    )
+    return AliyunSmsChannel(cfg.sms_access_key_id, cfg.sms_access_key_secret, cfg.sms_sign_name)

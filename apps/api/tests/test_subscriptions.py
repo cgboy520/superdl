@@ -7,7 +7,11 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select, update
 
-from app.core.policies import EffectivePolicies, get_effective_policies
+from app.core.platform_config import (
+    RuntimeConfig,
+    get_runtime_config,
+    runtime_config_from_strings,
+)
 from app.core.pricing import (
     MARKET_SUBSCRIPTION,
     price_for,
@@ -68,9 +72,9 @@ class TestExpiringEndpoint:
         assert resp.json() == []
 
 
-async def _policies(sm) -> EffectivePolicies:
+async def _policies(sm) -> RuntimeConfig:
     async with sm() as session:
-        return await get_effective_policies(session)
+        return await get_runtime_config(session)
 
 
 class TestQuoteArithmetic:
@@ -78,17 +82,7 @@ class TestQuoteArithmetic:
 
     def test_month_matches_hand_math(self):
         """¥3.99/时 × 720 时 × 8 折 = ¥2298.24;挂了说明折扣口径或周期小时数变了。"""
-        policies = EffectivePolicies(
-            **{
-                **{
-                    f: 1
-                    for f in EffectivePolicies.__dataclass_fields__
-                    if f != "disk_price_gb_month"
-                },
-                "disk_price_gb_month": Decimal("0.01"),
-                "period_discount_month": 80,
-            }
-        )
+        policies = runtime_config_from_strings({"period_discount_month": "80"})
         q = quote_subscription(
             Decimal("3.9900"), gpu_count=1, period="month", period_count=1, policies=policies
         )
@@ -100,17 +94,7 @@ class TestQuoteArithmetic:
 
     def test_cpu_instance_bills_one_unit(self):
         """CPU 实例 gpu_count=0 按 1 份(billing_units)收。"""
-        policies = EffectivePolicies(
-            **{
-                **{
-                    f: 1
-                    for f in EffectivePolicies.__dataclass_fields__
-                    if f != "disk_price_gb_month"
-                },
-                "disk_price_gb_month": Decimal("0.01"),
-                "period_discount_day": 100,
-            }
-        )
+        policies = runtime_config_from_strings({"period_discount_day": "100"})
         q = quote_subscription(
             Decimal("0.5000"), gpu_count=0, period="day", period_count=1, policies=policies
         )

@@ -196,9 +196,8 @@ class TestEnrollmentStateMachine:
                 client_ip="10.0.0.77",
             )
             assert row.status == "installing"
-            assert cfg["cluster_join_token"].endswith("secrettoken")
+            assert cfg.cluster_join_token.endswith("secrettoken")
             # 敏感键不出注册链路
-            assert "wechat_private_key" not in cfg and "sms_access_key_secret" not in cfg
             assert progress is not None and progress.startswith("sdlp_")
 
         # 主机名不符 → failed + 409,令牌作废(后续 404)

@@ -18,7 +18,7 @@ from app.core.k8s.base import (
 )
 from app.core.pagination import Page
 from app.core.params import Cursor, IdempotencyKey, Limit
-from app.core.platform_config import get_effective_platform_config
+from app.core.platform_config import get_runtime_config
 from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.schemas import (
     REASON_MAX_LENGTH,
@@ -235,8 +235,8 @@ async def admin_node_metrics(
     不存在的节点返回空序列。响应附 grafana_url。
     """
     out = await metering_service.node_gpu_metrics(node_name, range)
-    cfg = await get_effective_platform_config(session)
-    return NodeMetricsOut(**out, grafana_url=cfg.get("grafana_url") or None)
+    cfg = await get_runtime_config(session)
+    return NodeMetricsOut(**out, grafana_url=cfg.grafana_url or None)
 
 
 @router.get("/nodes", dependencies=[require_roles("ops", "readonly")])
@@ -382,7 +382,7 @@ def _kata_detail(kata_ok: bool, kata_nodes: int) -> str | None:
 
 async def _cluster_status_out(session: DbSession) -> ClusterStatusOut:
     row = await nodes_service.get_cluster_status(session)
-    cfg = await get_effective_platform_config(session)
+    cfg = await get_runtime_config(session)
     settings = get_settings()
     prom_set = not (
         "localhost" in settings.prometheus_url or "127.0.0.1" in settings.prometheus_url
@@ -395,12 +395,12 @@ async def _cluster_status_out(session: DbSession) -> ClusterStatusOut:
         pools=dict(row.pools or {}) if row else {},
         components=_cluster_components(row),
         config=ClusterConfigStateOut(
-            server_url_set=bool(cfg.get("cluster_server_url")),
-            join_token_set=bool(cfg.get("cluster_join_token")),
+            server_url_set=bool(cfg.cluster_server_url),
+            join_token_set=bool(cfg.cluster_join_token),
             prometheus_url_set=prom_set,
-            grafana_url=cfg.get("grafana_url") or None,
-            registry_host=cfg.get("registry_host") or None,
-            registry_project=cfg.get("registry_project") or None,
+            grafana_url=cfg.grafana_url or None,
+            registry_host=cfg.registry_host or None,
+            registry_project=cfg.registry_project or None,
         ),
         error=row.error if row else None,
     )

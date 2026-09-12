@@ -14045,7 +14045,7 @@
     },
     "/api/admin/v1/policies": {
       "get": {
-        "description": "当前生效策略 + 取值范围 + DB 覆盖项。",
+        "description": "当前生效策略 + 取值范围 + DB 覆盖项(平台配置里 policy 组的切片)。",
         "operationId": "admin_get_policies_api_admin_v1_policies_get",
         "responses": {
           "200": {
@@ -14070,7 +14070,7 @@
         ]
       },
       "put": {
-        "description": "在线调整策略参数(即时生效)。审计 detail 记变更前后值与原因。",
+        "description": "在线调整策略参数(即时生效;只收 policy 组的键)。审计 detail 记变更前后值与原因。",
         "operationId": "admin_update_policies_api_admin_v1_policies_put",
         "requestBody": {
           "content": {

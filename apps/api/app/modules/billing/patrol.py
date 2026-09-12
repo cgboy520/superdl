@@ -15,7 +15,7 @@ from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.metrics import PATROL_FAILED_TOTAL, WALLET_NEGATIVE_COUNT, WALLET_NEGATIVE_SUM
 from app.core.money import as_amount, hourly_cost, money_str
-from app.core.policies import get_effective_policies
+from app.core.platform_config import get_runtime_config
 from app.core.pricing import MARKET_SUBSCRIPTION
 from app.core.timeutil import hour_floor, now_utc
 from app.modules.account import service as account_service
@@ -190,7 +190,7 @@ async def _patrol_frozen_and_arrears_stopped(
     sm: async_sessionmaker[AsyncSession], counts: dict[str, int]
 ) -> None:
     async with sm() as policy_session:
-        policies = await get_effective_policies(policy_session)
+        policies = await get_runtime_config(policy_session)
     now = now_utc()
 
     async with sm() as session:

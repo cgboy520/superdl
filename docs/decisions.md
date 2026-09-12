@@ -52,7 +52,7 @@
 - **日志 PII / 凭据全局脱敏。** `apps/api/app/core/logging.py` 按键名(phone / id_number / token / secret / password / code)兜底打码。
 - **账号级登录锁定。** 账号维 15 分钟窗 + 日窗阶梯锁定,与 IP 维桶叠加。约束:**管理端的日窗账号桶只在失败后计数,不进 bcrypt 前的准入预检**(用户端仍进)。见 `docs/reference/admin.md`。
 - **租户 SSH 入方向只排 Pod 网段,不排整段私网。** 22 端口的 from 是 `0.0.0.0/0` except `tenant_pod_cidr`(默认 `10.42.0.0/16`)。约束:改 CNI 网段必须同步改 `tenant_pod_cidr`;留空只作排障临时回退。见 `docs/reference/security.md`。
-- **安全功能是开关,不是 mock 提供方。** 人机验证、实名、管理端 MFA 用 `*_enabled` 布尔开关(平台配置·安全策略组);只有流程无它完不成的第三方各保留唯一替身(`sms_provider=mock` / `payment_mock` / `k8s_backend=fake`),prod 拒绝。prod 在线写库层禁关安全开关;人机验证 / 实名 / 充值强制实名另有启动合规闸(`PROD_REQUIRED_SWITCHES`)。约束:`/auth/sms-code` 的 `captcha_token` 可选(开启时缺失 400)。
+- **安全功能是开关,不是 mock 提供方。** 人机验证、实名、管理端 MFA 用 `*_enabled` 布尔开关(平台配置·安全策略组);只有流程无它完不成的第三方各保留唯一替身(`sms_provider=mock` / `payment_mock` / `k8s_backend=fake`),prod 拒绝。prod 在线写库层禁关安全开关(`SettingSpec.prod_forbidden`);人机验证 / 实名 / 充值强制实名另有启动合规闸(同一 spec 上的 `prod_gate=True`,配置页红牌、启动 fail-fast 与写入守卫都从这一处派生)。约束:`/auth/sms-code` 的 `captcha_token` 可选(开启时缺失 400)。
 - **停机实例保留 SSH NodePort,池水位进指标。** 停机不释放端口(用户重启后端口不变);`superdl_ssh_port_pool_ports{state}` 由 reconciler 每轮刷新,`SshPortPoolLow` / `SshPortPoolExhausted` 告警;长期停机实例由保留期回收释放。见 `docs/reference/limits.md`。
 - **同一证件绑定账号数有上限。** 实名通过时落带密钥摘要 `users.id_number_hmac`(`crypto.hash_id_number`,原文仍不落库),同摘要的非注销账号数 ≥ `real_name_max_accounts_per_identity`(默认 3)即 409;注册计数 `superdl_user_signup_total` 与短信计数 `superdl_sms_sent_total` 进滥用告警组。见 `docs/reference/account.md`。
 - **库应用角色与 owner 分离,连接串 verify-full。** api / worker 用无 DDL 的 `superdl_app`(`balance_ledger` 只追加、`audit_log` 不可改),迁移 Job 单独挂 `superdl-db-migrate`(owner);自签 CA 经 ConfigMap `superdl-db-ca` 挂进 Pod,`sslrootcert` 在连接串里由 `db._split_db_tls` 翻成 SSLContext。约束:迁移 Job 与备份 CronJob 与其它平台组件同锚点钉 infra 节点。见 `deploy/pg/README.md`、`deploy/app/secrets.example.yaml`。
@@ -61,6 +61,7 @@
 
 ## 编排与平台
 
+- **策略参数与平台配置同一注册表,读取面强类型。** 运营策略(盘价 / 宽限天数 / 配额 / 折扣 / 抢占宽限等)是平台配置中心的 `policy` 组,与渠道凭据、安全开关同一份 `SETTING_SPECS`、同一张 `platform_settings` 表;`get_runtime_config(session)` 返回 `RuntimeConfig`(bool / int / Decimal / str 按 kind 定型),业务代码不再拿字符串字典比较 `"true"`。约束:新增配置项 = 加一条 `SettingSpec` + `RuntimeConfig` 一个字段 + `Settings` 同名默认值(单测锁定三者一致);`/policies`(ops)只收 policy 组、`/platform-config`(admin)不收 policy 组;prod 禁止取值、启动合规闸、配置页红牌全部由 spec 的 `prod_forbidden` / `prod_gate` 派生,不另写清单。
 - **模块公开面显式列出,依赖单向。** `orchestrator/service.py` 依赖 `billing/service.py`(建实例扣款、转换结算);billing 反向只经 `orchestrator/queries.py`(只读查询)与 `orchestrator/transitions.py`(`transition` 原语、`system_stop` / `freeze_instance` / `unfreeze_instance` / `reclaim_frozen` / `stop_all_for_user`、数据盘欠费链 `arrears_transition_disks`),二者不 import billing。约束:新增「billing 需要编排做的事」放 `transitions.py` 并以回调注入结算(如 `settle_pending`),不许在 billing 里函数内 import `orchestrator.service`;`account/deletion.py` 与 `account/sshkeys.py` 因依赖 billing / orchestrator 而独立于 `account/service.py`(后者被 billing 依赖)。见 `apps/api/pyproject.toml` 的 import-linter 契约与 `tests/test_import_order.py`。
 
 - **reconciler 两阶段。** 事务内只做状态迁移 / 标记 / enqueue,K8s 动作在 commit 后或经 outbox 执行;失败由泄漏回收宽限后强删兜底。见 `apps/api/app/modules/orchestrator/reconciler.py`。

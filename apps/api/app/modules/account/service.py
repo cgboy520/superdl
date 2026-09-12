@@ -15,8 +15,7 @@ from app.core.errors import AppError, ErrorCode, conflict, not_found, unauthoriz
 from app.core.logging import get_logger, mask_phone_value
 from app.core.metrics import LOGIN_FAILED_TOTAL, SMS_SENT_TOTAL, USER_SIGNUP_TOTAL
 from app.core.pagination import RawPage, clamp_limit, decode_cursor_int, slice_page
-from app.core.platform_config import get_effective_platform_config
-from app.core.policies import get_effective_policies
+from app.core.platform_config import get_runtime_config
 from app.core.ratelimit import (
     check_rate_limit,
     clear_rate_limit,
@@ -79,9 +78,9 @@ async def send_sms_code(
     await check_rate_limit(
         f"sms-send-ip:{client_ip or '-'}", max_attempts=20, window_seconds=3600.0
     )
-    cfg = await get_effective_platform_config(session)
+    cfg = await get_runtime_config(session)
     # 人机校验(captcha_enabled),fail-closed:渠道故障一律 502
-    if cfg["captcha_enabled"] == "true":
+    if cfg.captcha_enabled:
         if not captcha_token:
             raise AppError(ErrorCode.CAPTCHA_REQUIRED, key="account.captchaRequired")
         try:
@@ -128,7 +127,7 @@ async def send_sms_code(
                 params={"seconds": math.ceil(required - elapsed)},
                 http_status=status.HTTP_429_TOO_MANY_REQUESTS,
             )
-    code = MOCK_SMS_CODE if cfg["sms_provider"] == "mock" else f"{secrets.randbelow(10**6):06d}"
+    code = MOCK_SMS_CODE if cfg.sms_provider == "mock" else f"{secrets.randbelow(10**6):06d}"
     row = SmsCode(
         phone=phone,
         code_hash=hash_sms_code(phone, purpose, code),
@@ -139,7 +138,7 @@ async def send_sms_code(
     await session.commit()
     try:
         channel = await get_sms_channel(session)
-        await channel.send(phone, cfg["sms_template_verify"] or "", {"code": code})
+        await channel.send(phone, cfg.sms_template_verify or "", {"code": code})
         SMS_SENT_TOTAL.labels(purpose=purpose).inc()
     except SmsError as exc:
         # 渠道失败:作废刚落库的验证码
@@ -521,8 +520,8 @@ async def submit_real_name(session: AsyncSession, user: User, name: str, id_numb
     """实名认证:三要素核验,通过即 verified。身份证号只存脱敏串,原文不落库不打日志。"""
     if user.verification_status == "verified":
         raise conflict(key="account.realNameDone")
-    cfg = await get_effective_platform_config(session)
-    if cfg["real_name_enabled"] != "true":
+    cfg = await get_runtime_config(session)
+    if not cfg.real_name_enabled:
         raise AppError(
             ErrorCode.REAL_NAME_DISABLED,
             key="account.realNameDisabled",
@@ -600,8 +599,8 @@ async def is_active_user(session: AsyncSession, user_id: int) -> bool:
 async def require_real_name_if_required(session: AsyncSession, user: User, *, key: str) -> None:
     """实名闸门:real_name_required_for_recharge=true 时未实名一律 403。
     挂点:充值、创建实例、开机、续费、转包周期、建数据盘,一律经本函数。"""
-    cfg = await get_effective_platform_config(session)
-    if cfg["real_name_required_for_recharge"] == "true" and user.verification_status != "verified":
+    cfg = await get_runtime_config(session)
+    if cfg.real_name_required_for_recharge and user.verification_status != "verified":
         raise AppError(ErrorCode.REAL_NAME_REQUIRED, key=key, http_status=403)
 
 
@@ -705,7 +704,7 @@ class UserLimits:
 async def get_user_limits(session: AsyncSession, user_id: int) -> UserLimits:
     """配额校验链:用户级覆盖(user_quota_overrides)→ 平台策略(policy_overrides)→ env 默认。
     编排建实例与建盘统一经这里读。"""
-    policies = await get_effective_policies(session)
+    policies = await get_runtime_config(session)
     override = await session.get(UserQuotaOverride, user_id)
     return UserLimits(
         max_instances=(

@@ -28,7 +28,7 @@ from app.core.k8s.base import (
 )
 from app.core.logging import get_logger
 from app.core.outbox import enqueue
-from app.core.platform_config import get_effective_platform_config
+from app.core.platform_config import RuntimeConfig, get_runtime_config
 from app.core.registry import parse_proxy_projects
 from app.core.timeutil import now_utc
 from app.modules.nodes.models import ClusterStatus, NodeEnrollment, NodeSpec
@@ -105,30 +105,12 @@ def enrollment_commands(token: str) -> tuple[str, str]:
     return curl_cmd, wget_cmd
 
 
-# bootstrap 下发的最小键面,注册链路只允许这些键出 service 层;机器人 Secret 不出注册链路
-_CLUSTER_CONFIG_KEYS = (
-    "cluster_server_url",
-    "cluster_join_token",
-    "cluster_agent_version",
-    "node_driver_version",
-    "node_install_mirror",
-    "node_registries_yaml",
-    "registry_host",
-    "registry_ca_pem",
-    "registry_proxy_projects",
-)
-
-
-def _narrow_cluster_config(cfg: dict[str, str]) -> dict[str, str]:
-    return {k: cfg.get(k, "") for k in _CLUSTER_CONFIG_KEYS}
-
-
-async def require_cluster_config(session: AsyncSession) -> dict[str, str]:
+async def require_cluster_config(session: AsyncSession) -> RuntimeConfig:
     """创建注册令牌的前置:cluster 组必须已配置,否则 409。"""
-    cfg = await get_effective_platform_config(session)
-    if not cfg.get("cluster_server_url") or not cfg.get("cluster_join_token"):
+    cfg = await get_runtime_config(session)
+    if not cfg.cluster_server_url or not cfg.cluster_join_token:
         raise conflict(key="nodes.clusterNotConfigured")
-    return _narrow_cluster_config(cfg)
+    return cfg
 
 
 async def create_enrollment(
@@ -325,7 +307,7 @@ async def bootstrap(
     os_info: dict[str, Any],
     gpu_details: list[dict[str, Any]],
     client_ip: str | None,
-) -> tuple[NodeEnrollment, dict[str, str], str]:
+) -> tuple[NodeEnrollment, RuntimeConfig, str]:
     """令牌换装机参数,返回 (enrollment, cluster 最小配置, progress 令牌)。
     只有 pending 行能 bootstrap,首跑即消费并迁 installing。
     """
@@ -346,7 +328,7 @@ async def bootstrap(
     row.last_report_at = now_utc()
     progress_token, row.progress_token_hash = _new_token(PROGRESS_TOKEN_PREFIX)
     transition_enrollment(row, "installing", phase="bootstrap")
-    cfg = _narrow_cluster_config(await get_effective_platform_config(session))
+    cfg = await get_runtime_config(session)
     await session.commit()
     await session.refresh(row)
     return row, cfg, progress_token
@@ -504,18 +486,18 @@ async def get_cluster_status(session: AsyncSession) -> ClusterStatus | None:
 REGISTRY_CA_PATH_TEMPLATE = "__RANCHER_DIR__/harbor-ca.crt"
 
 
-def render_registries_yaml(cfg: dict[str, str]) -> str:
+def render_registries_yaml(cfg: RuntimeConfig) -> str:
     """生成节点 registries.yaml(RKE2 / k3s 同格式):`mirrors "*"` Spegel P2P;
     `registry_proxy_projects` 每行 <上游>=<Harbor 代理项目>;`registry_ca_pem` 非空则配 ca_file。
     不含 auth;`node_registries_yaml` 有值即原样下发。
     """
-    override = (cfg.get("node_registries_yaml") or "").strip()
+    override = cfg.node_registries_yaml.strip()
     if override:
         return override
-    host = (cfg.get("registry_host") or "").strip()
+    host = cfg.registry_host.strip()
     lines = ["mirrors:", '  "*": {}']
     if host:
-        proxies = parse_proxy_projects(cfg.get("registry_proxy_projects") or "")
+        proxies = parse_proxy_projects(cfg.registry_proxy_projects)
         for upstream, project in proxies.items():
             lines += [
                 f"  {upstream}:",
@@ -524,7 +506,7 @@ def render_registries_yaml(cfg: dict[str, str]) -> str:
                 "    rewrite:",
                 f'      "^(.*)$": "{project}/$1"',
             ]
-        if (cfg.get("registry_ca_pem") or "").strip():
+        if cfg.registry_ca_pem.strip():
             lines += [
                 "configs:",
                 f'  "{host}":',
@@ -534,12 +516,12 @@ def render_registries_yaml(cfg: dict[str, str]) -> str:
     return "\n".join(lines) + "\n"
 
 
-async def derive_node_distro(session: AsyncSession, cfg: dict[str, str]) -> str:
+async def derive_node_distro(session: AsyncSession, cfg: RuntimeConfig) -> str:
     """装机发行版派生:探测缓存 > agent 版本后缀 > rke2。"""
     row = await get_cluster_status(session)
     if row and row.distro:
         return row.distro
-    return derive_distro(cfg.get("cluster_agent_version")) or "rke2"
+    return derive_distro(cfg.cluster_agent_version) or "rke2"
 
 
 HAMI_GATE_MAX_AGE = timedelta(minutes=10)  # 能力缓存陈旧窗:超时视为未知,拒绝下发

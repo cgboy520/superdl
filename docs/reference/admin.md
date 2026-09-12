@@ -34,7 +34,7 @@
 | `POST /api/admin/v1/announcements` | ops | 公告群发 |
 | `GET/POST /api/admin/v1/admins` `PATCH .../{admin_id}` `POST .../{admin_id}/reset-password` | admin | 管理员账号 CRUD;改角色/停用/重置密码即 token_version+1 |
 | `POST /api/admin/v1/me/password` | 全角色 | 自助改密,撤销本人全部在外会话 |
-| `GET/PUT /api/admin/v1/policies` | 读 ops/finance/readonly,写 ops | 策略参数,落 `policy_overrides` |
+| `GET/PUT /api/admin/v1/policies` | 读 ops/finance/readonly,写 ops | 策略参数(平台配置中心 `policy` 组的切片),落 `platform_settings`;只收 policy 组的键 |
 | `GET /api/admin/v1/reports/revenue` `/reports/oversell` | ops/finance/readonly | 收入报表、超卖率报表 |
 | `GET /api/admin/v1/finance/anomalies` | finance/readonly | 丢回调/关单/负余额异常清单 |
 | `GET /api/admin/v1/orders?status=&order_no=&user_id=&day=` `/orders/export` | finance/readonly | 充值订单列表;export 流式 CSV,同筛选口径 |

@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode
-from app.core.platform_config import get_effective_platform_config
+from app.core.platform_config import RuntimeConfig, get_runtime_config
 
 if TYPE_CHECKING:
     from app.modules.billing.models import Order
@@ -179,17 +179,8 @@ class WechatChannel:
 
     name = "wechat"
 
-    def __init__(self, cfg: Mapping[str, str]) -> None:  # pragma: no cover - 需真实商户凭据
-        required = (
-            "wechat_mchid",
-            "wechat_appid",
-            "wechat_private_key",
-            "wechat_cert_serial_no",
-            "wechat_apiv3_key",
-            "wechat_public_key",
-            "wechat_public_key_id",
-        )
-        if not all(cfg[k] for k in required):
+    def __init__(self, cfg: RuntimeConfig) -> None:  # pragma: no cover - 需真实商户凭据
+        if not all(getattr(cfg, k) for k in WECHAT_CFG_KEYS):
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCredentialsIncomplete"
             )
@@ -197,19 +188,19 @@ class WechatChannel:
 
         self._wxpay = WeChatPay(
             wechatpay_type=WeChatPayType.NATIVE,
-            mchid=cfg["wechat_mchid"],
-            private_key=cfg["wechat_private_key"],
-            cert_serial_no=cfg["wechat_cert_serial_no"],
-            apiv3_key=cfg["wechat_apiv3_key"],
-            appid=cfg["wechat_appid"],
+            mchid=cfg.wechat_mchid,
+            private_key=cfg.wechat_private_key,
+            cert_serial_no=cfg.wechat_cert_serial_no,
+            apiv3_key=cfg.wechat_apiv3_key,
+            appid=cfg.wechat_appid,
             notify_url=f"{get_settings().public_base_url}/api/v1/webhooks/wechatpay",
-            public_key=cfg["wechat_public_key"],
-            public_key_id=cfg["wechat_public_key_id"],
+            public_key=cfg.wechat_public_key,
+            public_key_id=cfg.wechat_public_key_id,
             timeout=SDK_TIMEOUT,
         )
-        self._mchid = cfg["wechat_mchid"]
-        self._appid = cfg["wechat_appid"]
-        self._public_key_id = cfg["wechat_public_key_id"]
+        self._mchid = cfg.wechat_mchid
+        self._appid = cfg.wechat_appid
+        self._public_key_id = cfg.wechat_public_key_id
 
     async def create_payment(self, order: "Order") -> str:  # pragma: no cover - 需真实商户凭据
         # time_expire:渠道侧与本地 expires_at 同步过期(RFC3339)
@@ -323,8 +314,8 @@ class AlipayChannel:
 
     GATEWAY = "https://openapi.alipay.com/gateway.do"
 
-    def __init__(self, cfg: Mapping[str, str]) -> None:  # pragma: no cover - 需真实商户凭据
-        if not (cfg["alipay_app_id"] and cfg["alipay_private_key"] and cfg["alipay_public_key"]):
+    def __init__(self, cfg: RuntimeConfig) -> None:  # pragma: no cover - 需真实商户凭据
+        if not (cfg.alipay_app_id and cfg.alipay_private_key and cfg.alipay_public_key):
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCredentialsIncomplete"
             )
@@ -337,14 +328,14 @@ class AlipayChannel:
 
         client_cfg = AlipayClientConfig()
         client_cfg.server_url = self.GATEWAY
-        client_cfg.app_id = cfg["alipay_app_id"]
-        client_cfg.app_private_key = cfg["alipay_private_key"]
-        client_cfg.alipay_public_key = cfg["alipay_public_key"]
+        client_cfg.app_id = cfg.alipay_app_id
+        client_cfg.app_private_key = cfg.alipay_private_key
+        client_cfg.alipay_public_key = cfg.alipay_public_key
         client_cfg.timeout = SDK_TIMEOUT_SECONDS
         self._client = DefaultAlipayClient(alipay_client_config=client_cfg)
-        self._public_key = cfg["alipay_public_key"]
-        self._app_id = cfg["alipay_app_id"]
-        self._seller_id = cfg.get("alipay_seller_id") or ""
+        self._public_key = cfg.alipay_public_key
+        self._app_id = cfg.alipay_app_id
+        self._seller_id = cfg.alipay_seller_id or ""
         # prod 强制 seller_id:回调须核对收款方身份
         if get_settings().environment == "prod" and not self._seller_id:
             raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipaySellerIdRequired")
@@ -504,9 +495,9 @@ async def get_channel(name: str, session: AsyncSession) -> PaymentChannel:
         raise AppError(
             ErrorCode.VALIDATION_ERROR, key="billing.unknownChannel", params={"name": name}
         )
-    cfg = await get_effective_platform_config(session)
+    cfg = await get_runtime_config(session)
     keys = WECHAT_CFG_KEYS if name == "wechat" else ALIPAY_CFG_KEYS
-    fingerprint = tuple(cfg[k] for k in keys)
+    fingerprint = tuple(getattr(cfg, k) for k in keys)
     cached = _real_channel_cache.get(name)
     if cached is not None and cached[0] == fingerprint:
         return cached[1]

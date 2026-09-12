@@ -3,6 +3,7 @@ bootstrap 下发 registry_ca_pem。"""
 
 import yaml
 
+from app.core.platform_config import runtime_config_from_strings as rc
 from app.modules.nodes.service import render_registries_yaml
 from tests.helpers import CREATE_BODY, admin_headers, set_platform_setting
 
@@ -11,7 +12,7 @@ CA = "-----BEGIN CERTIFICATE-----\nMIIBfake\n-----END CERTIFICATE-----"
 
 def test_default_is_spegel_only_without_harbor():
     """未配 Harbor:只剩 Spegel P2P。"""
-    out = render_registries_yaml({})
+    out = render_registries_yaml(rc({}))
     assert yaml.safe_load(out) == {"mirrors": {"*": {}}}
     assert "30500" not in out
 
@@ -19,11 +20,13 @@ def test_default_is_spegel_only_without_harbor():
 def test_proxy_cache_mirrors_and_ca_without_auth():
     """代理缓存:每个上游 mirror 到 Harbor 并 rewrite 到代理项目;CA 非空才有 configs.tls;无 auth。"""
     out = render_registries_yaml(
-        {
-            "registry_host": "harbor.example.com",
-            "registry_proxy_projects": "docker.io=dockerhub\nghcr.io=ghcr",
-            "registry_ca_pem": CA,
-        }
+        rc(
+            {
+                "registry_host": "harbor.example.com",
+                "registry_proxy_projects": "docker.io=dockerhub\nghcr.io=ghcr",
+                "registry_ca_pem": CA,
+            }
+        )
     )
     data = yaml.safe_load(out)
     assert data["mirrors"]["*"] == {}
@@ -39,10 +42,12 @@ def test_proxy_cache_mirrors_and_ca_without_auth():
 
 
 def test_no_ca_no_configs_and_override_verbatim():
-    out = render_registries_yaml({"registry_host": "harbor.example.com"})
+    out = render_registries_yaml(rc({"registry_host": "harbor.example.com"}))
     assert "configs" not in out and "ca_file" not in out
     assert (
-        render_registries_yaml({"registry_host": "h", "node_registries_yaml": " mirrors: {}\n "})
+        render_registries_yaml(
+            rc({"registry_host": "h", "node_registries_yaml": " mirrors: {}\n "})
+        )
         == "mirrors: {}"
     )
 

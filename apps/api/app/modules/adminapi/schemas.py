@@ -3,7 +3,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from app.core.platform_config import SettingGroup, SettingKind
+from app.core.platform_config import PlatformConfigGroup, PlatformConfigKind
 from app.modules.billing.schemas import LedgerEntryOut, RechargeOut
 
 
@@ -408,8 +408,8 @@ class UpdatedKeysOut(BaseModel):
 
 class PlatformConfigItemOut(BaseModel):
     key: str
-    group: SettingGroup
-    kind: SettingKind
+    group: PlatformConfigGroup
+    kind: PlatformConfigKind
     choices: list[str]
     hint: str
     source: Literal["override", "env", "unset"]

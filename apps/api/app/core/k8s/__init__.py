@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.k8s.base import InstancePodSpec, K8sOrchestrator, NodePortTaken, PodStatus
 from app.core.k8s.fake import FakeOrchestrator
-from app.core.platform_config import get_effective_platform_config
+from app.core.platform_config import get_runtime_config
 from app.core.registry import PULL_SECRET_NAME, dockerconfigjson, pull_secret_fingerprint
 
 __all__ = [
@@ -45,11 +45,11 @@ def set_orchestrator(orch: K8sOrchestrator | None) -> None:
 
 async def ensure_registry_pull_secret(session: AsyncSession, namespace: str) -> str | None:
     """在 namespace 托管拉取凭据 Secret,返回 Secret 名;未配机器人返回 None。只在 worker 侧调用。"""
-    cfg = await get_effective_platform_config(session)
+    cfg = await get_runtime_config(session)
     host, robot, secret = (
-        cfg["registry_host"],
-        cfg["registry_robot_name"],
-        cfg["registry_robot_secret"],
+        cfg.registry_host,
+        cfg.registry_robot_name,
+        cfg.registry_robot_secret,
     )
     if not (host and robot and secret):
         return None

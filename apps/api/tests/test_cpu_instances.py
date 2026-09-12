@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.gpu_adapter import POOL_NODE_LABEL, build_gpu_request
 from app.core.k8s.base import GPU_MODEL_NODE_LABEL
 from app.core.money import billing_units, hourly_cost
-from app.core.policies import set_policy_overrides
+from app.core.platform_config import set_platform_settings
 from app.core.timeutil import now_utc
 from app.modules.billing.models import BillHourly
 from app.modules.billing.settlement import bill_amount
@@ -240,7 +240,9 @@ class TestCapacity:
 
         assert await free() == 2  # 默认 cap=16 → 16//8=2,内存按同比例折算 64//16=4
         async with sm() as session:
-            await set_policy_overrides(session, {"gpu_node_cpu_instance_vcpu_cap": "0"})
+            await set_platform_settings(
+                session, {"gpu_node_cpu_instance_vcpu_cap": "0"}, updated_by=None
+            )
             await session.commit()
         assert await free() == 0
 
@@ -249,7 +251,9 @@ class TestCapacity:
         await seed_node_spec(sm, node_name="gpu-1", pool_label="hami")
         sku_id = await self._cpu_sku(sm, pool_label="hami")
         async with sm() as session:
-            await set_policy_overrides(session, {"gpu_node_cpu_instance_vcpu_cap": "0"})
+            await set_platform_settings(
+                session, {"gpu_node_cpu_instance_vcpu_cap": "0"}, updated_by=None
+            )
             await session.commit()
         headers, user_id, key_id = await create_user_with_key(client, "13900000301")
         await fund_wallet(sm, user_id)
@@ -409,7 +413,9 @@ class TestVcpuQuota:
         async with sm() as session:
             sku = Sku(**{**CPU_SKU, "status": "on"})
             session.add(sku)
-            await set_policy_overrides(session, {"max_vcpus_per_user": "8"})  # 只放得下一台
+            await set_platform_settings(
+                session, {"max_vcpus_per_user": "8"}, updated_by=None
+            )  # 只放得下一台
             await session.commit()
             sku_id = sku.id
 
@@ -457,7 +463,7 @@ class TestVcpuQuota:
         await seed_node_spec(sm)
         sku_id = await create_test_sku(sm)
         async with sm() as session:
-            await set_policy_overrides(session, {"max_vcpus_per_user": "1"})
+            await set_platform_settings(session, {"max_vcpus_per_user": "1"}, updated_by=None)
             await session.commit()
         headers, user_id, key_id = await create_user_with_key(client, "13900000306")
         await fund_wallet(sm, user_id)

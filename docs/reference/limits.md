@@ -1,6 +1,6 @@
 # 配额、限流与保留期
 
-平台对用户与运维施加的全部数字型限制,按「哪里能改」分层。数值以代码为准,这里给出承载位置;改默认值时同步本页。三层配置链:用户级覆盖(`user_quota_overrides`)→ 策略参数(`policy_overrides`,管理端在线改)→ env 默认(`SUPERDL_*`,`app/core/config.py`);未标注的即代码常量。
+平台对用户与运维施加的全部数字型限制,按「哪里能改」分层。数值以代码为准,这里给出承载位置;改默认值时同步本页。三层配置链:用户级覆盖(`user_quota_overrides`)→ 平台配置中心(`platform_settings`,策略参数是其 `policy` 组,管理端 `/policies` 在线改)→ env 默认(`SUPERDL_*`,`app/core/config.py`);未标注的即代码常量。生效值一律经 `platform_config.get_runtime_config` 读取(强类型 `RuntimeConfig`)。
 
 ## 每用户配额
 
@@ -60,7 +60,7 @@
 | 装机无心跳判失败 | 2h | `nodes/reconciler.py` |
 | 节点 Missing 后删行 | 7 天 | `nodes/patrol.py` `MISSING_RETENTION` |
 
-**抢占宽限窗与 creating 超时共用同一段时间预算。** 余量常量 `core/policies.py` `PREEMPT_TIME_RESERVE_SECONDS = 120`,`spot_grace_seconds` **真实上限 = `creating_timeout_seconds − 120`**(默认 **180s**),由 `validate_policy_value` 保存时拦下,错误文案带具体上限(前端原样展示)。要调大宽限窗先调大 `creating_timeout_seconds`。
+**抢占宽限窗与 creating 超时共用同一段时间预算。** 余量常量 `core/platform_config.py` `PREEMPT_TIME_RESERVE_SECONDS = 120`,`spot_grace_seconds` **真实上限 = `creating_timeout_seconds − 120`**(默认 **180s**),由 `validate_setting_value` 保存时拦下,错误文案带具体上限(前端原样展示)。要调大宽限窗先调大 `creating_timeout_seconds`。
 
 ## 会话与凭据
 

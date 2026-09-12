@@ -11,7 +11,7 @@ import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.aliyun import rpc_call
-from app.core.platform_config import get_effective_platform_config
+from app.core.platform_config import get_runtime_config
 
 
 class RealNameError(RuntimeError):
@@ -84,12 +84,10 @@ async def get_realname_provider(session: AsyncSession) -> RealNameProvider:
     if _provider is not None:
         return _provider
 
-    cfg = await get_effective_platform_config(session)
-    if not (cfg["real_name_access_key_id"] and cfg["real_name_access_key_secret"]):
+    cfg = await get_runtime_config(session)
+    if not (cfg.real_name_access_key_id and cfg.real_name_access_key_secret):
         raise RealNameError("阿里云实名认证凭据未配置(管理端·平台配置)")
-    return AliyunRealNameProvider(
-        cfg["real_name_access_key_id"], cfg["real_name_access_key_secret"]
-    )
+    return AliyunRealNameProvider(cfg.real_name_access_key_id, cfg.real_name_access_key_secret)
 
 
 def mask_id_number(id_number: str) -> str:

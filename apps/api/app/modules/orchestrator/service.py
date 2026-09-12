@@ -33,8 +33,7 @@ from app.core.logging import get_logger
 from app.core.money import hourly_cost, money_str
 from app.core.outbox import enqueue
 from app.core.pagination import Page, RawPage, paginate_by_id
-from app.core.platform_config import get_effective_platform_config
-from app.core.policies import get_effective_policies
+from app.core.platform_config import get_runtime_config
 from app.core.pricing import (
     MARKET_ON_DEMAND,
     MARKET_SPOT,
@@ -42,11 +41,7 @@ from app.core.pricing import (
     price_for,
 )
 from app.core.ratelimit import check_rate_limit
-from app.core.registry import (
-    effective_image_allowlist,
-    is_pinned_image_ref,
-    is_valid_image_ref,
-)
+from app.core.registry import is_pinned_image_ref, is_valid_image_ref
 from app.core.sqlutil import like_escape
 from app.core.timeutil import now_utc
 from app.modules.account import service as account_service
@@ -207,7 +202,7 @@ async def _validate_image_ref(
     # 服务型实例镜像必须钉版本
     if require_pinned and not is_pinned_image_ref(image_ref):
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.imageRefNotPinned")
-    allowed = effective_image_allowlist(await get_effective_platform_config(session))
+    allowed = (await get_runtime_config(session)).image_allowlist()
     if not allowed:
         return
     if any(image_ref.startswith(prefix) for prefix in allowed):
@@ -233,7 +228,7 @@ async def _check_user_quota(
     GPU 实例只计 GPU 维、CPU 实例只计 vCPU 维;exclude_instance_id(即将被替换的旧实例)不占名额。
     """
     limits = await account_service.get_user_limits(session, user_id)
-    policies = await get_effective_policies(session)
+    policies = await get_runtime_config(session)
     stmt = select(
         func.count(),
         func.coalesce(func.sum(Instance.gpu_count), 0),
@@ -310,7 +305,7 @@ async def _soft_admit_capacity(
     """创建软准入:台账可分配量不足 → 先抢占竞价实例,仍不足则 409;无数据一律放行。
     抢占只对 GPU 档非竞价请求生效;freeing_slots = 同一请求里即将腾出的槽位,先加回可售数。
     """
-    policies = await get_effective_policies(session)
+    policies = await get_runtime_config(session)
     specs = await nodes_service.list_node_specs(session)
     matching_free, sellable = _sku_free_capacity(
         sku, specs, gpu_node_vcpu_cap=policies.gpu_node_cpu_instance_vcpu_cap
@@ -480,7 +475,7 @@ async def create_instance_row(
     if is_subscription and not sku.period_enabled:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.periodNotEnabled")
     # 有效时价:唯一折扣计算点在 core/pricing
-    policies = await get_effective_policies(session)
+    policies = await get_runtime_config(session)
     unit_price = price_for(sku.price_hourly, market=market, policies=policies, period=period)
 
     disk_id_validated: int | None = None
@@ -988,7 +983,7 @@ async def renew_instance(
     if not created:
         # 幂等重放:手上的 instance 已在 billing 侧 rollback,重新取
         return await get_instance(session, user_id, uuid), quoted, False
-    policies = await get_effective_policies(session)
+    policies = await get_runtime_config(session)
     instance.price_hourly = price_for(
         row.unit_price, market=MARKET_SUBSCRIPTION, policies=policies, period=period
     )
@@ -1066,7 +1061,7 @@ async def subscribe_instance(
     )
     if not created:
         return await get_instance(session, user_id, uuid), quoted, False
-    policies = await get_effective_policies(session)
+    policies = await get_runtime_config(session)
     instance.market = MARKET_SUBSCRIPTION
     instance.price_hourly = price_for(
         row.unit_price, market=MARKET_SUBSCRIPTION, policies=policies, period=period
@@ -1385,7 +1380,7 @@ async def estimate_available_many(session: AsyncSession, skus: list["Sku"]) -> d
     """市场近似库存(批量):sku_id → 可售实例数。数据源节点台账,无数据 → 0;
     减掉包周期预留(与软准入同源)。"""
     specs = await nodes_service.list_node_specs(session)
-    cap = (await get_effective_policies(session)).gpu_node_cpu_instance_vcpu_cap
+    cap = (await get_runtime_config(session)).gpu_node_cpu_instance_vcpu_cap
     reserved = await _reserved_slots_by_sku(session, [s.id for s in skus])
     return {
         sku.id: max(
@@ -1476,7 +1471,7 @@ async def admin_preempt(session: AsyncSession, instance_uuid: str, *, reason: st
         raise AppError(
             ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.forceStopNeedsRunning"
         )
-    policies = await get_effective_policies(session)
+    policies = await get_runtime_config(session)
     await preempt_mod.preempt(
         session,
         [instance],

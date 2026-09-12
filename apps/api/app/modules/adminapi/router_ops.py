@@ -1,7 +1,6 @@
 """管理端路由(总览/工单/审计/策略/平台配置/公告/outbox 死信)。"""
 
 import secrets
-from dataclasses import asdict
 from datetime import datetime
 from typing import Any, Literal
 
@@ -21,18 +20,17 @@ from app.core.outbox import OutboxTask
 from app.core.pagination import Page, decode_cursor_int
 from app.core.params import Cursor, IdempotencyKey, Limit, TzOffset
 from app.core.platform_config import (
+    PLATFORM_CONFIG_GROUPS,
+    POLICY_GROUP,
+    POLICY_KEYS,
     SETTING_SPECS,
     compute_config_warnings,
-    get_effective_platform_config,
+    effective_strings,
+    get_runtime_config,
     list_platform_overrides,
+    runtime_config_from_strings,
     secret_preview,
     set_platform_settings,
-)
-from app.core.policies import (
-    POLICY_SPECS,
-    get_effective_policies,
-    list_policy_overrides,
-    set_policy_overrides,
 )
 from app.core.ratelimit import check_rate_limit
 from app.core.regex import PHONE_RE_LOOSE
@@ -55,6 +53,7 @@ from app.modules.adminapi.schemas import (
     PlatformConfigOut,
     PlatformConfigWarningOut,
     PoliciesAdminOut,
+    PolicySpecOut,
     RegistryTestOut,
     SmsTestOut,
     UpdatedKeysOut,
@@ -241,17 +240,20 @@ async def admin_audit_export(
 
 @router.get("/policies", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_get_policies(session: DbSession) -> PoliciesAdminOut:
-    """当前生效策略 + 取值范围 + DB 覆盖项。"""
-    effective = await get_effective_policies(session)
-    return PoliciesAdminOut.model_validate(
-        {
-            "effective": {k: str(v) for k, v in asdict(effective).items()},
-            "overrides": await list_policy_overrides(session),
-            "specs": {
-                k: {"kind": v[0], "min": str(v[1]), "max": str(v[2])}
-                for k, v in POLICY_SPECS.items()
-            },
-        }
+    """当前生效策略 + 取值范围 + DB 覆盖项(平台配置里 policy 组的切片)。"""
+    effective = await effective_strings(session)
+    overrides = await list_platform_overrides(session)
+    return PoliciesAdminOut(
+        effective={k: effective[k] for k in POLICY_KEYS},
+        overrides={k: overrides[k].value for k in POLICY_KEYS if k in overrides},
+        specs={
+            k: PolicySpecOut(
+                kind=SETTING_SPECS[k].kind,
+                min=str(SETTING_SPECS[k].lo),
+                max=str(SETTING_SPECS[k].hi),
+            )
+            for k in POLICY_KEYS
+        },
     )
 
 
@@ -264,11 +266,12 @@ class PolicyUpdateRequest(BaseModel):
 async def admin_update_policies(
     body: PolicyUpdateRequest, session: DbSession, request: Request
 ) -> UpdatedKeysOut:
-    """在线调整策略参数(即时生效)。审计 detail 记变更前后值与原因。"""
-    effective = await get_effective_policies(session)
-    before_all = {k: str(v) for k, v in asdict(effective).items()}
+    """在线调整策略参数(即时生效;只收 policy 组的键)。审计 detail 记变更前后值与原因。"""
+    before_all = await effective_strings(session)
     try:
-        await set_policy_overrides(session, body.updates)
+        await set_platform_settings(
+            session, body.updates, updated_by=None, allowed_groups=frozenset({POLICY_GROUP})
+        )
     except ValueError as exc:
         raise AppError(ErrorCode.VALIDATION_ERROR, str(exc)) from exc
     await session.commit()
@@ -290,10 +293,12 @@ async def admin_update_policies(
 @router.get("/platform-config", dependencies=[require_roles()])
 async def admin_get_platform_config(session: DbSession) -> PlatformConfigOut:
     """分组配置项:生效值 + 来源(env 默认/DB 覆盖)+ 配置风险 warnings。secret 只回尾 4 位预览。"""
-    eff = await get_effective_platform_config(session)
+    eff = await effective_strings(session)
     overrides = await list_platform_overrides(session)
     items = []
     for key, spec in SETTING_SPECS.items():
+        if spec.group == "policy" or spec.kind in ("int", "decimal"):
+            continue  # 策略参数走 /policies
         value = eff[key]
         row = overrides.get(key)
         items.append(
@@ -312,7 +317,9 @@ async def admin_get_platform_config(session: DbSession) -> PlatformConfigOut:
         )
     warnings = [
         PlatformConfigWarningOut(key=w.key, level=w.level, message=w.message)
-        for w in compute_config_warnings(eff, get_settings().environment)
+        for w in compute_config_warnings(
+            runtime_config_from_strings(eff), get_settings().environment
+        )
     ]
     return PlatformConfigOut(items=items, warnings=warnings)
 
@@ -334,7 +341,12 @@ async def admin_update_platform_config(
     审计落键名与动作类型(set/clear),不落值。
     """
     try:
-        await set_platform_settings(session, body.updates, updated_by=admin.id)
+        await set_platform_settings(
+            session,
+            body.updates,
+            updated_by=admin.id,
+            allowed_groups=frozenset(PLATFORM_CONFIG_GROUPS),
+        )
     except ValueError as exc:
         raise AppError(ErrorCode.VALIDATION_ERROR, str(exc)) from exc
     await session.commit()
@@ -358,11 +370,11 @@ async def admin_test_sms(body: SmsTestRequest, session: DbSession, request: Requ
     """按当前生效短信配置实发一条验证码短信(有限流,过审计)。"""
     await check_rate_limit("admin:test-sms", max_attempts=10, window_seconds=3600.0)
     await ensure_sms_platform_quota()  # 实发同样消耗平台预算池
-    cfg = await get_effective_platform_config(session)
+    cfg = await get_runtime_config(session)
     channel = await get_sms_channel(session)
     code = f"{secrets.randbelow(10**6):06d}"
     try:
-        await channel.send(body.phone, cfg["sms_template_verify"] or "", {"code": code})
+        await channel.send(body.phone, cfg.sms_template_verify, {"code": code})
     except SmsError as exc:
         raise AppError(
             ErrorCode.SMS_SEND_FAILED,
@@ -371,7 +383,7 @@ async def admin_test_sms(body: SmsTestRequest, session: DbSession, request: Requ
             http_status=502,
         ) from exc
     set_audit_target(request, f"test-sms:{body.phone}")
-    return SmsTestOut(ok=True, provider=cfg["sms_provider"])
+    return SmsTestOut(ok=True, provider=cfg.sms_provider)
 
 
 @router.post("/platform-config/test-registry", dependencies=[require_roles()])
@@ -379,17 +391,17 @@ async def admin_test_registry(session: DbSession, request: Request) -> RegistryT
     """按当前生效镜像仓库配置探测 Harbor:health → 机器人鉴权读项目仓库列表。
     只读、有限流、过审计。"""
     await check_rate_limit("admin:test-registry", max_attempts=10, window_seconds=3600.0)
-    cfg = await get_effective_platform_config(session)
-    if not cfg["registry_host"]:
+    cfg = await get_runtime_config(session)
+    if not cfg.registry_host:
         raise AppError(ErrorCode.VALIDATION_ERROR, "请先填写并保存 Harbor 地址(registry_host)")
     probe = await probe_harbor(
-        host=cfg["registry_host"],
-        project=cfg["registry_project"] or "superdl",
-        robot=cfg["registry_robot_name"],
-        secret=cfg["registry_robot_secret"],
-        ca_pem=cfg["registry_ca_pem"],
+        host=cfg.registry_host,
+        project=cfg.registry_project or "superdl",
+        robot=cfg.registry_robot_name,
+        secret=cfg.registry_robot_secret,
+        ca_pem=cfg.registry_ca_pem,
     )
-    set_audit_target(request, f"test-registry:{cfg['registry_host']}")
+    set_audit_target(request, f"test-registry:{cfg.registry_host}")
     return RegistryTestOut(
         ok=probe.ok,
         step=probe.step,

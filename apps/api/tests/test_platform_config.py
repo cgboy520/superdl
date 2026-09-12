@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from app.core.platform_config import (
     PlatformSetting,
+    runtime_config_from_strings as rc,
     validate_setting_value,
 )
 from app.modules.account.realname import (
@@ -16,7 +17,7 @@ from app.modules.account.realname import (
     RealNameError,
     get_realname_provider,
 )
-from tests.helpers import admin_headers, user_headers
+from tests.helpers import admin_headers, create_order, pay_mock, user_headers
 
 
 class TestSpecValidation:
@@ -144,7 +145,9 @@ class TestClearOverrideFallbackGuard:
         ah = await admin_headers(sm, client, role="admin")
         monkeypatch.setattr(
             "app.core.platform_config.get_settings",
-            lambda: SimpleNamespace(environment="test", real_name_enabled=False),
+            lambda: SimpleNamespace(
+                environment="test", real_name_enabled=False, real_name_required_for_recharge=False
+            ),
         )
         resp = await client.put(
             "/api/admin/v1/platform-config",
@@ -201,10 +204,10 @@ class TestProdComplianceGates:
             "real_name_required_for_recharge": "false",
         }
         with pytest.raises(RuntimeError, match="合规开关未全开"):
-            assert_prod_compliance_gates(off, "prod")
+            assert_prod_compliance_gates(rc(off), "prod")
         # 只开一部分同样拒
         with pytest.raises(RuntimeError, match="real_name_enabled"):
-            assert_prod_compliance_gates(dict(off, captcha_enabled="true"), "prod")
+            assert_prod_compliance_gates(rc(dict(off, captcha_enabled="true")), "prod")
 
     def test_prod_boots_with_all_on_and_non_prod_unaffected(self):
         from app.core.platform_config import assert_prod_compliance_gates
@@ -214,9 +217,9 @@ class TestProdComplianceGates:
             "real_name_enabled": "true",
             "real_name_required_for_recharge": "true",
         }
-        assert_prod_compliance_gates(on, "prod")  # 不抛
-        assert_prod_compliance_gates({}, "dev")  # 非 prod 一律放行
-        assert_prod_compliance_gates({}, "test")
+        assert_prod_compliance_gates(rc(on), "prod")  # 不抛
+        assert_prod_compliance_gates(rc({"captcha_enabled": "false"}), "dev")  # 非 prod 一律放行
+        assert_prod_compliance_gates(rc({"captcha_enabled": "false"}), "test")
 
 
 class TestAdminApi:
@@ -500,7 +503,8 @@ class TestRegistrySpecsAndProbeEndpoint:
 
 class TestConfigWarnings:
     def test_rules_by_switch_and_credentials(self):
-        """warnings 每条规则一例。"""
+        """warnings 每条规则一例;prod 禁止取值的红牌从 SettingSpec.prod_forbidden 派生,
+        合规闸键(prod_gate)为 error、其余为 warning。"""
         from app.core.platform_config import SETTING_SPECS, compute_config_warnings
 
         base = dict.fromkeys(SETTING_SPECS, "")
@@ -508,35 +512,49 @@ class TestConfigWarnings:
             captcha_enabled="false",
             admin_mfa_enabled="true",
             real_name_enabled="false",
+            real_name_required_for_recharge="false",
             registry_host="harbor.example.com",  # Harbor 地址自动进白名单,不触发规则 6
         )
-        assert compute_config_warnings(base, "test") == []
+        assert compute_config_warnings(rc(base), "test") == []
         # 镜像仓库:填了机器人未填 Secret → error;prod 无白名单且无 Harbor 地址 → error(启动闸另拒启)
         robot_only = dict(base, registry_robot_name="robot$superdl+pull")
-        assert [(w.key, w.level) for w in compute_config_warnings(robot_only, "test")] == [
+        assert [(w.key, w.level) for w in compute_config_warnings(rc(robot_only), "test")] == [
             ("registry_robot_name", "error")
         ]
-        no_registry = dict(
+        compliant = dict(
             base,
-            registry_host="",
             captcha_enabled="true",
+            real_name_enabled="true",
+            real_name_required_for_recharge="true",
+        )
+        no_registry = dict(
+            compliant,
+            registry_host="",
             captcha_scene_id="s",
             captcha_access_key_id="LTAI5tTESTTESTTEST",
             captcha_access_key_secret="k",
+            real_name_access_key_id="LTAI5tTESTTESTTEST",
+            real_name_access_key_secret="k",
         )
-        assert [(w.key, w.level) for w in compute_config_warnings(no_registry, "prod")] == [
+        assert [(w.key, w.level) for w in compute_config_warnings(rc(no_registry), "prod")] == [
             ("image_allowed_registries", "error")
         ]
-        assert [(w.key, w.level) for w in compute_config_warnings(base, "prod")] == [
-            ("captcha_enabled", "error")
+        # 三个合规闸开关全关:三条 error,顺序同 SETTING_SPECS 声明
+        assert [(w.key, w.level) for w in compute_config_warnings(rc(base), "prod")] == [
+            ("captcha_enabled", "error"),
+            ("real_name_enabled", "error"),
+            ("real_name_required_for_recharge", "error"),
         ]
-        on = dict(base, captcha_enabled="true", admin_mfa_enabled="false", real_name_enabled="true")
-        keys = {(w.key, w.level) for w in compute_config_warnings(on, "prod")}
+        # 开关开了凭据没录 → 组合规则 error;MFA 关闭只 warning;sms 切回 mock 也进红牌
+        on = dict(compliant, admin_mfa_enabled="false", sms_provider="mock")
+        keys = {(w.key, w.level) for w in compute_config_warnings(rc(on), "prod")}
         assert keys == {
             ("captcha_enabled", "error"),
             ("admin_mfa_enabled", "warning"),
             ("real_name_enabled", "error"),
+            ("sms_provider", "warning"),
         }
+        on["sms_provider"] = ""
         full = dict(
             on,
             captcha_scene_id="scene",
@@ -545,8 +563,8 @@ class TestConfigWarnings:
             real_name_access_key_id="LTAI5tTESTTESTTEST",
             real_name_access_key_secret="sk",
         )
-        assert [w.key for w in compute_config_warnings(full, "prod")] == ["admin_mfa_enabled"]
-        assert compute_config_warnings(dict(full, admin_mfa_enabled="true"), "prod") == []
+        assert [w.key for w in compute_config_warnings(rc(full), "prod")] == ["admin_mfa_enabled"]
+        assert compute_config_warnings(rc(dict(full, admin_mfa_enabled="true")), "prod") == []
 
     async def test_api_exposes_warnings(self, client: AsyncClient, sm):
         """开启人机验证而未录凭据:warnings 带 error 级提示。"""
@@ -569,7 +587,7 @@ class TestConfigWarnings:
 class TestEffectiveConfig:
     async def test_corrupt_secret_row_fails_closed(self, sm):
         """单行密文损坏:抛错,不回落 env。"""
-        from app.core.platform_config import PlatformSetting, get_effective_platform_config
+        from app.core.platform_config import PlatformSetting, get_runtime_config
 
         async with sm() as session:
             session.add(
@@ -582,7 +600,7 @@ class TestEffectiveConfig:
             await session.commit()
         async with sm() as session:
             with pytest.raises(ValueError, match="解密失败"):
-                await get_effective_platform_config(session)
+                await get_runtime_config(session)
 
 
 class TestProdImageAllowlistGate:
@@ -592,9 +610,119 @@ class TestProdImageAllowlistGate:
 
         with pytest.raises(RuntimeError, match="镜像来源白名单"):
             assert_prod_image_allowlist(
-                {"registry_host": "", "image_allowed_registries": ""}, "prod"
+                rc({"registry_host": "", "image_allowed_registries": ""}), "prod"
             )
         assert_prod_image_allowlist(
-            {"registry_host": "harbor.example.com", "image_allowed_registries": ""}, "prod"
+            rc({"registry_host": "harbor.example.com", "image_allowed_registries": ""}), "prod"
         )
-        assert_prod_image_allowlist({"registry_host": "", "image_allowed_registries": ""}, "dev")
+        assert_prod_image_allowlist(
+            rc({"registry_host": "", "image_allowed_registries": ""}), "dev"
+        )
+
+
+class TestSpecsMatchSettingsAndRuntimeConfig:
+    """挂了说明:SETTING_SPECS / RuntimeConfig / Settings 三处的键或类型对不上,某个配置项要么读不到
+    env 默认,要么在线覆盖后类型转换会炸。"""
+
+    def test_every_key_has_env_default_with_matching_type(self):
+        from decimal import Decimal
+
+        from app.core.config import Settings
+        from app.core.platform_config import RUNTIME_CONFIG_FIELDS, SETTING_SPECS, RuntimeConfig
+
+        assert set(RUNTIME_CONFIG_FIELDS) == set(SETTING_SPECS)
+        assert set(SETTING_SPECS) <= set(Settings.model_fields)
+        expected = {"bool": bool, "int": int, "decimal": Decimal}
+        hints = RuntimeConfig.__dataclass_fields__
+        for key, spec in SETTING_SPECS.items():
+            assert hints[key].type is expected.get(spec.kind, str), key
+            if spec.kind in ("int", "decimal"):
+                assert spec.lo is not None and spec.hi is not None, key
+                assert spec.group == "policy", key
+
+    def test_env_defaults_round_trip(self):
+        """env 默认值全部能过自己的白名单校验并转成目标类型。"""
+        from app.core.platform_config import (
+            RuntimeConfig,
+            env_layer_problems,
+            runtime_config_from_strings,
+        )
+
+        assert env_layer_problems() == []
+        assert isinstance(runtime_config_from_strings({}), RuntimeConfig)
+
+
+class TestPolicyOverrides:
+    """策略参数(policy 组):/policies 端点、公开出参口径、越界拒绝、盘价快照跟随、组隔离。"""
+
+    async def test_default_then_override_flows_to_public_endpoint(self, client: AsyncClient, sm):
+        base = (await client.get("/api/v1/policies")).json()
+        assert base["disk_price_gb_month"] == "0.0350"  # env 默认
+
+        ah = await admin_headers(sm, client, role="ops")
+        resp = await client.put(
+            "/api/admin/v1/policies",
+            json={"updates": {"disk_price_gb_month": "0.0500"}, "reason": "季度调价"},
+            headers=ah,
+        )
+        assert resp.status_code == 200, resp.text
+
+        updated = (await client.get("/api/v1/policies")).json()
+        assert updated["disk_price_gb_month"] == "0.0500"
+
+        admin_view = (await client.get("/api/admin/v1/policies", headers=ah)).json()
+        assert admin_view["overrides"]["disk_price_gb_month"] == "0.0500"
+        assert admin_view["effective"]["disk_price_gb_month"] == "0.0500"
+        assert "specs" in admin_view
+
+    async def test_new_disk_snapshots_overridden_price(self, client: AsyncClient, sm):
+        """盘价是建盘时快照:覆盖后新盘用新价。"""
+        ah = await admin_headers(sm, client, role="ops")
+        await client.put(
+            "/api/admin/v1/policies",
+            json={"updates": {"disk_price_gb_month": "0.0700"}, "reason": "测试调价"},
+            headers=ah,
+        )
+        headers = await user_headers(client, "13700000031")
+        order = await create_order(client, headers, "100.00")
+        await pay_mock(client, order["order_no"], "100.00")
+        resp = await client.post(
+            "/api/v1/disks", json={"name": "d1", "size_gb": 50}, headers=headers
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["price_gb_month"] == "0.0700"
+
+    async def test_platform_config_endpoint_rejects_policy_keys(self, client: AsyncClient, sm):
+        """两组端点按配置组隔离:/platform-config 不收 policy 键,/policies 不收其它组的键。"""
+        ah = await admin_headers(sm, client, role="admin")
+        resp = await client.put(
+            "/api/admin/v1/platform-config",
+            json={"updates": {"disk_min_gb": "20"}, "reason": "走错门"},
+            headers=ah,
+        )
+        assert resp.status_code == 400
+        resp = await client.put(
+            "/api/admin/v1/policies",
+            json={"updates": {"icp_number": "x"}, "reason": "走错门"},
+            headers=ah,
+        )
+        assert resp.status_code == 400
+        items = (await client.get("/api/admin/v1/platform-config", headers=ah)).json()["items"]
+        assert all(i["group"] != "policy" for i in items)
+
+    async def test_invalid_updates_rejected(self, client: AsyncClient, sm):
+        ah = await admin_headers(sm, client, role="ops")
+        # 越界
+        resp = await client.put(
+            "/api/admin/v1/policies",
+            json={"updates": {"disk_price_gb_month": "9.99"}, "reason": "手滑"},
+            headers=ah,
+        )
+        assert resp.status_code == 400
+        # 未知键(非 ops 角色 403 由 route×role 矩阵覆盖)
+        resp = await client.put(
+            "/api/admin/v1/policies",
+            json={"updates": {"jwt_secret": "hack"}, "reason": "越权"},
+            headers=ah,
+        )
+        assert resp.status_code == 400

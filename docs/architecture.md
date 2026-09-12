@@ -109,7 +109,7 @@ worker 其余定时任务:outbox 卡单回收、小时结算、数据盘日结�
 | legal | `legal_doc_versions` `user_consents` |
 | tickets | `tickets` `ticket_messages` |
 | adminapi | `admin_users` `admin_adjustments` |
-| core | `outbox_tasks` `audit_log` `policy_overrides` `platform_settings` `rate_limit_counters` |
+| core | `outbox_tasks` `audit_log` `platform_settings` `rate_limit_counters` |
 
 - 金额列一律 `numeric`:单价 `numeric(12,4)`,入账 `numeric(14,2)`。
 - 结算幂等键:`bills_hourly` UNIQUE(instance_id, hour_start)、`bills_daily_disk` UNIQUE(disk_id, day)、`usage_hourly` UNIQUE(instance_id, hour_start)。
@@ -149,7 +149,7 @@ worker 其余定时任务:outbox 卡单回收、小时结算、数据盘日结�
 
 ### 7.4 欠费与回收
 
-余额巡检每 5 分钟:预估可用时长低于预警阈值 → 短信与站内预警;余额耗尽 → 停机出尾账 → `frozen` 倒计时 → `releasing` → 删 K8s 资源 → 实例盘 lvremove → `released`。数据盘走独立时钟:宽限(只读)→ 冻结 → 清除。天数与盘价是在线策略参数(`policy_overrides`),取值见 [`reference/billing.md`](./reference/billing.md) 与 [`reference/disks.md`](./reference/disks.md)。
+余额巡检每 5 分钟:预估可用时长低于预警阈值 → 短信与站内预警;余额耗尽 → 停机出尾账 → `frozen` 倒计时 → `releasing` → 删 K8s 资源 → 实例盘 lvremove → `released`。数据盘走独立时钟:宽限(只读)→ 冻结 → 清除。天数与盘价是在线策略参数(平台配置中心 `policy` 组),取值见 [`reference/billing.md`](./reference/billing.md) 与 [`reference/disks.md`](./reference/disks.md)。
 
 ### 7.5 包周期(预付订阅)
 
