@@ -1,12 +1,18 @@
+import asyncio
+import secrets
+import time
 from collections.abc import Awaitable, Callable
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Literal, NamedTuple
 
+import pyotp
 from fastapi import status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.crypto import decrypt_str, encrypt_str
 from app.core.errors import AppError, ErrorCode, conflict, not_found, unauthorized
 from app.core.idempotency import request_fingerprint
 from app.core.logging import get_logger, mask_phone_value
@@ -16,8 +22,8 @@ from app.core.metrics import (
     LOGIN_FAILED_TOTAL,
     PAYMENT_REVERSAL_RESOLVED_TOTAL,
 )
-from app.core.money import money_str
-from app.core.pagination import Page
+from app.core.money import as_amount, money_str
+from app.core.pagination import Page, paginate_by_id
 from app.core.platform_config import get_effective_platform_config
 from app.core.ratelimit import check_rate_limit, clear_rate_limit, ensure_not_rate_limited
 from app.core.security import (
@@ -30,6 +36,7 @@ from app.core.security import (
     verify_password,
 )
 from app.core.timeutil import ensure_utc, now_utc
+from app.modules.account import service as account_service
 from app.modules.adminapi.models import AdminAdjustment, AdminUser
 from app.modules.adminapi.schemas import (
     AdjustmentOut,
@@ -37,6 +44,10 @@ from app.modules.adminapi.schemas import (
     AdminOut,
     MfaChallengeOut,
 )
+from app.modules.billing import service as billing_service
+from app.modules.nodes import service as nodes_service
+from app.modules.notify import service as notify_service
+from app.modules.orchestrator import service as orchestrator_service
 from app.modules.orchestrator.schemas import NON_TERMINAL_STATUSES
 
 logger = get_logger(__name__)
@@ -197,8 +208,6 @@ SESSION_MAX_SECONDS = 12 * 3600
 async def renew_access_token(session: AsyncSession, token: str) -> str:
     """有效或刚过期(宽限内)的管理端 access token 换发新 token。
     token_version 变或超绝对会话上限即 401。"""
-    from datetime import UTC, datetime, timedelta
-
     payload = decode_token(token, "admin", leeway_seconds=RENEW_GRACE_SECONDS)
     # 绝对上限锚定首次登录时刻(sess_iat)
     session_iat = int(payload.get("sess_iat") or payload["iat"])
@@ -255,18 +264,12 @@ async def _count_mfa_attempt(admin_id: int) -> None:
 
 
 def _decrypt_totp_secret(admin: AdminUser) -> str:
-    from app.core.crypto import decrypt_str
-
     assert admin.totp_secret is not None
     return decrypt_str(admin.totp_secret, aad=f"totp:{admin.id}")
 
 
 def _match_totp_timestep(secret: str, code: str, *, window: int = 1) -> int | None:
     """手动窗口匹配:返回匹配的 timestep(30s 步长),不匹配返回 None。"""
-    import time
-
-    import pyotp
-
     totp = pyotp.TOTP(secret)
     now_step = int(time.time() // 30)
     for offset in range(-window, window + 1):
@@ -287,22 +290,16 @@ def _accept_totp_step(locked: AdminUser, matched_step: int) -> bool:
 
 def _gen_plain_recovery_codes() -> list[str]:
     """10 个 XXXXX-XXXXX 恢复码(40 bit/个)。落库只有 bcrypt 哈希。"""
-    import secrets
-
     return [f"{(raw := secrets.token_hex(5))[:5]}-{raw[5:]}" for _ in range(RECOVERY_CODE_COUNT)]
 
 
 async def _hash_recovery_codes(plain: list[str]) -> list[str]:
     """并发受 _bcrypt_permits(4)约束。"""
-    import asyncio
-
     return list(await asyncio.gather(*(hash_password(code) for code in plain)))
 
 
 async def _consume_recovery_code(admin: AdminUser, code: str) -> bool:
     """匹配即作废。bcrypt 逐个比对,并发受信号量约束。"""
-    import asyncio
-
     hashes = list(admin.totp_recovery or [])
     if not hashes:
         return False
@@ -317,10 +314,6 @@ async def begin_totp_setup(session: AsyncSession, ticket: str) -> tuple[str, str
     """生成(或复用进行中的)TOTP 密钥,返回 (secret, otpauth_uri)。
     行锁下读改写;已绑定即拒(MFA_TICKET_INVALID);确认绑定前 totp_enabled 恒为 false。
     """
-    import pyotp
-
-    from app.core.crypto import encrypt_str
-
     admin = await _admin_from_ticket(session, ticket, expected="mfa_setup")
     # 与 confirm/verify 同一配额桶
     await _check_mfa_rate(admin.id)
@@ -367,7 +360,6 @@ async def confirm_totp_setup(
     locked.totp_enabled = True
     locked.token_version += 1  # 绑定票即刻作废;access token 用 bump 后的版本
     # 绑定即告警(管理端告警流)
-    from app.modules.notify import service as notify_service
 
     await notify_service.notify(
         session,
@@ -452,8 +444,6 @@ async def reset_totp(session: AsyncSession, actor: AdminUser, target_id: int) ->
 
 
 async def create_admin(session: AsyncSession, username: str, password: str, role: str) -> AdminUser:
-    from sqlalchemy.exc import IntegrityError
-
     _check_password_bytes(password)
     admin = AdminUser(username=username, password_hash=await hash_password(password), role=role)
     session.add(admin)
@@ -572,9 +562,6 @@ async def create_adjustment(
 ) -> tuple["AdminAdjustment", bool]:
     """发起调账。返回 (调账单, created):created=False = 幂等重放,路由回 200 + 重放区分头。
     幂等键作用域为 (发起人,租户,键);同键重放比对请求体指纹,不一致 409。"""
-    from app.core.money import as_amount
-    from app.modules.account import service as account_service
-
     amount = as_amount(Decimal(str(amount)))
     fingerprint = request_fingerprint(user_id, amount, reason)
 
@@ -629,8 +616,6 @@ async def review_adjustment(
 ):
     """双人复核:复核人不得是发起人,且须为调账发起前已存在的账号;通过即生效(钱包+流水,同事务)。
     audit_writer 在 approve 分支 commit 前调用,写失败即整体回滚。"""
-    from app.modules.billing import service as billing_service
-
     # 行锁:后到者看到非 pending 即 409
     adj = await session.get(AdminAdjustment, adjustment_id, with_for_update=True)
     if adj is None:
@@ -702,8 +687,6 @@ async def resolve_reversal(
     两种都只写 resolved_at + action,不清 channel_reversed_at(同一通知重放不再二次冻结)。
     单操作人 + 同步审计 + 计数(release 条条告警 PaymentReversalReleased)。
     """
-    from app.modules.billing import service as billing_service
-
     order = (
         await session.execute(
             select(billing_service.Order)
@@ -752,8 +735,6 @@ async def list_adjustments(
     limit: int | None = None,
 ) -> Page[AdjustmentOut]:
     """调账单列表(游标分页,降序)。status/user_id 精确;day_range 按 created_at 过滤。"""
-    from app.core.pagination import paginate_by_id
-
     stmt = select(AdminAdjustment).order_by(AdminAdjustment.id.desc())
     if status:
         stmt = stmt.where(AdminAdjustment.status == status)
@@ -795,11 +776,6 @@ async def overview(session: AsyncSession) -> dict[str, Any]:
     包周期在保数 = 未到期的订阅行数;节点/GPU 取台账全量(含 NotReady/Missing),
     竞价占用按台账 gpu_used 截断。
     """
-    from app.modules.account import service as account_service
-    from app.modules.billing import service as billing_service
-    from app.modules.nodes import service as nodes_service
-    from app.modules.orchestrator import service as orchestrator_service
-
     counted = await orchestrator_service.count_instances_by_status(session)
     status_counts: dict[str, int] = {st: counted.get(st, 0) for st in NON_TERMINAL_STATUSES}
 
@@ -846,10 +822,6 @@ async def overview(session: AsyncSession) -> dict[str, Any]:
 
 async def adjust_context(session: AsyncSession, user_id: int) -> dict[str, Any]:
     """调账前置上下文(只读):租户身份 + 当前余额 + 近 3 条流水。用户不存在 → 404。"""
-    from app.modules.account import service as account_service
-    from app.modules.billing import service as billing_service
-    from app.modules.orchestrator import service as orchestrator_service
-
     user = await account_service.get_user(session, user_id)
     balance = await billing_service.get_balance(session, user_id)
     recent = await billing_service.ledger_page(session, user_id, limit=3)
@@ -866,8 +838,6 @@ async def adjust_context(session: AsyncSession, user_id: int) -> dict[str, Any]:
 
 async def sku_impact(session: AsyncSession, sku_id: int) -> dict[str, Any]:
     """改价影响面(只读):该 SKU 当前活跃(creating/starting/running)实例数/用户数/卡数。"""
-    from app.modules.orchestrator import service as orchestrator_service
-
     active = []
     for st in ("creating", "starting", "running"):
         active.extend(await orchestrator_service.list_instances_by_status(session, st))

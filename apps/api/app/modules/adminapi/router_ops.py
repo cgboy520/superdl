@@ -1,28 +1,45 @@
 """管理端路由(总览/工单/审计/策略/平台配置/公告/outbox 死信)。"""
 
+import secrets
+from dataclasses import asdict
 from datetime import datetime
 from typing import Any, Literal
 
 from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.audit import mark_audited_read, set_audit_target
+from app.core.audit import AuditLog, mark_audited_read, set_audit_target
 from app.core.config import get_settings
 from app.core.csvexport import csv_response
 from app.core.db import DbSession
 from app.core.errors import AppError, ErrorCode, conflict
 from app.core.http import mark_idempotent_replay
 from app.core.outbox import OutboxTask
-from app.core.pagination import Page
+from app.core.pagination import Page, decode_cursor_int
 from app.core.params import Cursor, IdempotencyKey, Limit, TzOffset
-from app.core.platform_config import get_effective_platform_config
+from app.core.platform_config import (
+    SETTING_SPECS,
+    compute_config_warnings,
+    get_effective_platform_config,
+    list_platform_overrides,
+    secret_preview,
+    set_platform_settings,
+)
+from app.core.policies import (
+    POLICY_SPECS,
+    get_effective_policies,
+    list_policy_overrides,
+    set_policy_overrides,
+)
+from app.core.ratelimit import check_rate_limit
 from app.core.regex import PHONE_RE_LOOSE
 from app.core.registry import probe_harbor
+from app.core.sms import SmsError, ensure_sms_platform_quota, get_sms_channel
 from app.core.timeutil import now_utc
-from app.modules.adminapi import export as admin_export
-from app.modules.adminapi import service
+from app.modules.adminapi import export as admin_export, service
 from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.models import AdminUser
 from app.modules.adminapi.router_shared import ExportLang
@@ -42,6 +59,8 @@ from app.modules.adminapi.schemas import (
     SmsTestOut,
     UpdatedKeysOut,
 )
+from app.modules.notify import service as notify_service
+from app.modules.tickets import service as tickets_service
 from app.modules.tickets.schemas import (
     AdminTicketCountOut,
     AdminTicketDetailOut,
@@ -76,8 +95,6 @@ async def admin_list_tickets(
     limit: int | None = Limit,
 ) -> Page[AdminTicketOut]:
     """工单列表(游标分页,降序):status/category 精确过滤,user_id/ticket_no 检索。"""
-    from app.modules.tickets import service as tickets_service
-
     return await tickets_service.admin_list_tickets(
         session,
         status=status,
@@ -96,8 +113,6 @@ async def admin_tickets_count(
     category: str | None = None,
 ) -> AdminTicketCountOut:
     """待办工单计数(默认 pending_staff 口径)。须注册在 /tickets/{ticket_id} 之前。"""
-    from app.modules.tickets import service as tickets_service
-
     return AdminTicketCountOut(
         count=await tickets_service.admin_count_tickets(session, status=status, category=category)
     )
@@ -106,8 +121,6 @@ async def admin_tickets_count(
 @router.get("/tickets/{ticket_id}", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_get_ticket(ticket_id: int, session: DbSession) -> AdminTicketDetailOut:
     """工单详情 + 消息流(时间升序)。"""
-    from app.modules.tickets import service as tickets_service
-
     return await tickets_service.admin_get_ticket(session, ticket_id)
 
 
@@ -120,8 +133,6 @@ async def admin_reply_ticket(
     admin: AdminUser = require_roles("ops"),
 ) -> AdminTicketDetailOut:
     """客服回复(→ pending_user),站内信告知用户;resolved/closed 不可再回复。"""
-    from app.modules.tickets import service as tickets_service
-
     await tickets_service.admin_reply(session, ticket_id, body=body.body, operator_id=admin.id)
     set_audit_target(request, f"ticket:{ticket_id}", detail={"action": "reply"})
     return await tickets_service.admin_get_ticket(session, ticket_id)
@@ -136,8 +147,6 @@ async def admin_update_ticket_status(
     admin: AdminUser = require_roles("ops"),
 ) -> AdminTicketOut:
     """标记解决/关闭(close 仅 resolved 后可;closed_at 仅 closed 落)。"""
-    from app.modules.tickets import service as tickets_service
-
     ticket = await tickets_service.admin_update_status(session, ticket_id, action=body.action)
     set_audit_target(request, f"ticket:{ticket_id}", detail={"action": body.action, "by": admin.id})
     return AdminTicketOut.model_validate(ticket)
@@ -158,11 +167,6 @@ async def admin_audit_log(
     cursor: str | None = None,
 ) -> list[AuditLogOut]:
     """审计检索:actor_id / 动作前缀 / 时间区间;cursor 向前翻页(满页即还有更早)。"""
-    from sqlalchemy import select as sa_select
-
-    from app.core.audit import AuditLog
-    from app.core.pagination import decode_cursor_int
-
     # 筛选条件与审计 CSV 导出同一函数
     stmt = admin_export.audit_filters(
         sa_select(AuditLog).order_by(AuditLog.id.desc()).limit(limit),
@@ -238,10 +242,6 @@ async def admin_audit_export(
 @router.get("/policies", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_get_policies(session: DbSession) -> PoliciesAdminOut:
     """当前生效策略 + 取值范围 + DB 覆盖项。"""
-    from dataclasses import asdict
-
-    from app.core.policies import POLICY_SPECS, get_effective_policies, list_policy_overrides
-
     effective = await get_effective_policies(session)
     return PoliciesAdminOut.model_validate(
         {
@@ -265,10 +265,6 @@ async def admin_update_policies(
     body: PolicyUpdateRequest, session: DbSession, request: Request
 ) -> UpdatedKeysOut:
     """在线调整策略参数(即时生效)。审计 detail 记变更前后值与原因。"""
-    from dataclasses import asdict
-
-    from app.core.policies import get_effective_policies, set_policy_overrides
-
     effective = await get_effective_policies(session)
     before_all = {k: str(v) for k, v in asdict(effective).items()}
     try:
@@ -294,13 +290,6 @@ async def admin_update_policies(
 @router.get("/platform-config", dependencies=[require_roles()])
 async def admin_get_platform_config(session: DbSession) -> PlatformConfigOut:
     """分组配置项:生效值 + 来源(env 默认/DB 覆盖)+ 配置风险 warnings。secret 只回尾 4 位预览。"""
-    from app.core.platform_config import (
-        SETTING_SPECS,
-        compute_config_warnings,
-        list_platform_overrides,
-        secret_preview,
-    )
-
     eff = await get_effective_platform_config(session)
     overrides = await list_platform_overrides(session)
     items = []
@@ -344,8 +333,6 @@ async def admin_update_platform_config(
 
     审计落键名与动作类型(set/clear),不落值。
     """
-    from app.core.platform_config import set_platform_settings
-
     try:
         await set_platform_settings(session, body.updates, updated_by=admin.id)
     except ValueError as exc:
@@ -369,12 +356,6 @@ class SmsTestRequest(BaseModel):
 @router.post("/platform-config/test-sms", dependencies=[require_roles()])
 async def admin_test_sms(body: SmsTestRequest, session: DbSession, request: Request) -> SmsTestOut:
     """按当前生效短信配置实发一条验证码短信(有限流,过审计)。"""
-    import secrets
-
-    from app.core.platform_config import get_effective_platform_config
-    from app.core.ratelimit import check_rate_limit
-    from app.core.sms import SmsError, ensure_sms_platform_quota, get_sms_channel
-
     await check_rate_limit("admin:test-sms", max_attempts=10, window_seconds=3600.0)
     await ensure_sms_platform_quota()  # 实发同样消耗平台预算池
     cfg = await get_effective_platform_config(session)
@@ -397,8 +378,6 @@ async def admin_test_sms(body: SmsTestRequest, session: DbSession, request: Requ
 async def admin_test_registry(session: DbSession, request: Request) -> RegistryTestOut:
     """按当前生效镜像仓库配置探测 Harbor:health → 机器人鉴权读项目仓库列表。
     只读、有限流、过审计。"""
-    from app.core.ratelimit import check_rate_limit
-
     await check_rate_limit("admin:test-registry", max_attempts=10, window_seconds=3600.0)
     cfg = await get_effective_platform_config(session)
     if not cfg["registry_host"]:
@@ -457,8 +436,6 @@ async def admin_publish_announcement(
 ) -> AnnouncementResultOut:
     """公告群发(站内信 announcement 类型,全部 active 用户);落公告级记录。
     Idempotency-Key 重放不新建公告,回 200 + X-Idempotent-Replay。"""
-    from app.modules.notify import service as notify_service
-
     reached, created = await notify_service.publish_announcement(
         session,
         title=body.title,
@@ -475,8 +452,6 @@ async def admin_publish_announcement(
 @router.get("/announcements", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_list_announcements(session: DbSession) -> list[AnnouncementOut]:
     """公告历史(含已撤回;固定截断 200)。"""
-    from app.modules.notify import service as notify_service
-
     return [_announcement_out(a) for a in await notify_service.admin_list_announcements(session)]
 
 
@@ -489,8 +464,6 @@ async def admin_revoke_announcement(
     request: Request,
 ) -> AnnouncementOut:
     """撤回公告(原因必填):撤回后租户侧公告不再可见。重复撤回 409。"""
-    from app.modules.notify import service as notify_service
-
     announcement = await notify_service.revoke_announcement(
         session, announcement_id, revoked_by=admin.id, reason=body.reason
     )
@@ -504,8 +477,6 @@ async def admin_revoke_announcement(
 @router.get("/outbox/dead", dependencies=[require_roles("ops", "readonly")])
 async def admin_list_dead_tasks(session: DbSession) -> list[DeadTaskOut]:
     """死信任务列表(另有 outbox_dead_total 指标接告警)。"""
-    from sqlalchemy import select as sa_select
-
     rows = (
         (
             await session.execute(

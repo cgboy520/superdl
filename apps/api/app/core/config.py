@@ -4,6 +4,7 @@ import os
 import re
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import parse_qs, urlparse
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -357,7 +358,6 @@ class Settings(BaseSettings):
         if "superdl:superdl@localhost" in self.database_url:
             problems.append("database_url 仍为本地开发默认")
         # 非本机 PG 必须 TLS(db._split_db_tls 翻译成 asyncpg ssl 参数)
-        from urllib.parse import parse_qs, urlparse
 
         db_host = urlparse(self.database_url).hostname or ""
         if db_host not in ("localhost", "127.0.0.1", "::1"):
@@ -369,14 +369,16 @@ class Settings(BaseSettings):
                 )
         if any("localhost" in o or "127.0.0.1" in o for o in self.cors_origins):
             problems.append("cors_origins 含 localhost")
-        for name in (
-            "jupyter_domain_suffix",
-            "service_domain_suffix",
-            "public_base_url",
-            "admin_host",
-        ):
-            if "example.com" in getattr(self, name):
-                problems.append(f"{name} 仍为占位域名")
+        problems.extend(
+            f"{name} 仍为占位域名"
+            for name in (
+                "jupyter_domain_suffix",
+                "service_domain_suffix",
+                "public_base_url",
+                "admin_host",
+            )
+            if "example.com" in getattr(self, name)
+        )
         # public_base_url 承载装机脚本与注册令牌,必须 https
         if not self.public_base_url.startswith("https://"):
             problems.append("public_base_url 必须是 https://(装机脚本与注册令牌走这条链路)")

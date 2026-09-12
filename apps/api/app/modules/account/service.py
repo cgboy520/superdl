@@ -17,8 +17,9 @@ from app.core.errors import AppError, ErrorCode, conflict, not_found, unauthoriz
 from app.core.logging import get_logger, mask_phone_value
 from app.core.metrics import LOGIN_FAILED_TOTAL, SMS_SENT_TOTAL, USER_SIGNUP_TOTAL
 from app.core.money import money_str
-from app.core.pagination import RawPage
+from app.core.pagination import RawPage, clamp_limit, decode_cursor_int, slice_page
 from app.core.platform_config import get_effective_platform_config
+from app.core.policies import get_effective_policies
 from app.core.ratelimit import (
     check_rate_limit,
     clear_rate_limit,
@@ -43,9 +44,15 @@ from app.modules.account.models import (
     User,
     UserQuotaOverride,
 )
-from app.modules.account.realname import mask_id_name
+from app.modules.account.realname import (
+    RealNameError,
+    get_realname_provider,
+    mask_id_name,
+    mask_id_number,
+)
 from app.modules.account.schemas import AdminDeletionRequestOut, TokenPair, UserOut
 from app.modules.account.sshkey_util import parse_public_key
+from app.modules.legal import service as legal_service
 
 logger = get_logger(__name__)
 
@@ -240,7 +247,6 @@ async def register(
     user = User(phone=phone, password_hash=await hash_password(password) if password else None)
     session.add(user)
     # 注册同意存证:terms/privacy 各一条,版本 = 当前 published,与建号同事务
-    from app.modules.legal import service as legal_service
 
     await session.flush()  # 取 user.id
     await legal_service.record_registration_consents(session, user.id, client_ip)
@@ -517,12 +523,6 @@ async def get_user(session: AsyncSession, user_id: int) -> User:
 
 async def submit_real_name(session: AsyncSession, user: User, name: str, id_number: str) -> User:
     """实名认证:三要素核验,通过即 verified。身份证号只存脱敏串,原文不落库不打日志。"""
-    from app.modules.account.realname import (
-        RealNameError,
-        get_realname_provider,
-        mask_id_number,
-    )
-
     if user.verification_status == "verified":
         raise conflict(key="account.realNameDone")
     cfg = await get_effective_platform_config(session)
@@ -687,8 +687,6 @@ async def list_active_user_ids(session: AsyncSession) -> list[int]:
 
 async def signup_counts(session: AsyncSession, *, tz_offset_minutes: int = 0) -> dict[str, int]:
     """今日/昨日新注册数(本地日界)。"""
-    from sqlalchemy import func
-
     day_start, _ = local_day_range(tz_offset_minutes)
     prev_day_start = day_start - timedelta(days=1)
 
@@ -717,8 +715,6 @@ async def admin_list_users(
 
     order = id 正/倒序,游标语义随方向翻转。聚合列在 Python 侧按页拼装,不支持以其排序。
     """
-    from app.core.pagination import clamp_limit, decode_cursor_int, slice_page
-
     lim = clamp_limit(limit)
     ascending = order == "asc"
     stmt = select(User).order_by(User.id.asc() if ascending else User.id.desc()).limit(lim + 1)
@@ -768,8 +764,6 @@ class UserLimits:
 async def get_user_limits(session: AsyncSession, user_id: int) -> UserLimits:
     """配额校验链:用户级覆盖(user_quota_overrides)→ 平台策略(policy_overrides)→ env 默认。
     编排建实例与建盘统一经这里读。"""
-    from app.core.policies import get_effective_policies
-
     policies = await get_effective_policies(session)
     override = await session.get(UserQuotaOverride, user_id)
     return UserLimits(

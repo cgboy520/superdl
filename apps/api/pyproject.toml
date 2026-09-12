@@ -44,12 +44,34 @@ line-length = 100
 target-version = "py313"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF", "ASYNC", "DTZ", "T20"]
+select = [
+    "E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF", "ASYNC", "DTZ", "T20",
+    "ARG", "PERF", "PIE",
+    # 函数内 import 只许出现在 wiring / lifespan 这类副作用注册点(per-file-ignores 放行)
+    "PLC0415",
+]
 # B008: FastAPI Depends() 默认参数;RUF001/2/3: 中文注释里的 ×、· 等符号
 ignore = ["SIM108", "B008", "RUF001", "RUF002", "RUF003"]
 
+[tool.ruff.lint.isort]
+combine-as-imports = true
+
 [tool.ruff.lint.per-file-ignores]
 "alembic/*" = ["I"]
+# 副作用注册 / 生命周期内的延迟 import
+"app/wiring.py" = ["PLC0415"]
+"app/main.py" = ["PLC0415"]
+"app/workers/main.py" = ["PLC0415"]
+# 第三方支付 SDK 无 stub 且构造期加载,按需 import
+"app/modules/billing/payment_channels.py" = ["PLC0415"]
+# billing / account ↔ orchestrator 仍有模块环,打破后移除
+"app/modules/billing/settlement.py" = ["PLC0415"]
+"app/modules/billing/subscriptions.py" = ["PLC0415"]
+"app/modules/billing/wallet.py" = ["PLC0415"]
+"app/modules/billing/patrol.py" = ["PLC0415"]
+"app/modules/billing/edge_listener.py" = ["PLC0415"]
+"app/modules/account/service.py" = ["PLC0415"]
+"tests/*" = ["PLC0415", "ARG"]
 
 [tool.pyright]
 include = ["app", "tests"]

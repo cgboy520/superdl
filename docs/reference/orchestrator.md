@@ -41,7 +41,7 @@
 - **购买模式变更不写 `instance_events`**(`subscribe_instance` 与 `convert_to_on_demand`);变更痕迹在审计日志与资金流水。
 - K8s 访问收敛在 `app/core/k8s`,`K8sOrchestrator` 协议是唯一接口面(`app/core/k8s/base.py`)。FakeOrchestrator 与 RealOrchestrator 同步实现协议全部方法。
 - RealOrchestrator 每租户:独立 namespace(PSA enforce=baseline + audit=restricted)、ResourceQuota 兜底、Egress 隔离 NetworkPolicy、JuiceFS PVC;`disk.wipe` 为真实擦除 Job(幂等 + 退避,模板显式 `hostUsers: false`,镜像 digest 钉死 `WIPE_IMAGE`)。ns/NetPol/Quota 已存在时 patch 收敛;K8s list 一律分页(limit=500 + continue),同步调用走专属有界执行器。对象构造是纯函数(`build_instance_pod` / `build_managed_job` / `build_disk_quota_container` / `build_prewarm_job`),`scripts/render_admission_probes.py` 用它们渲染成清单供 CI 在准入策略下 `--dry-run=server` 对账。
-- 镜像拉取凭据不落节点、不进 Pod spec 明文:outbox 建 Pod 前在 `ensure_namespace` 之后调 `core/registry.ensure_registry_pull_secret`,把 `superdl-registry-pull` 托管到租户 ns(annotation 指纹相同跳过),Pod spec 以 `imagePullSecrets` 引用;未配机器人 `image_pull_secret=None`。预热 Job 同一条链。
+- 镜像拉取凭据不落节点、不进 Pod spec 明文:outbox 建 Pod 前在 `ensure_namespace` 之后调 `core/k8s.ensure_registry_pull_secret`,把 `superdl-registry-pull` 托管到租户 ns(annotation 指纹相同跳过),Pod spec 以 `imagePullSecrets` 引用;未配机器人 `image_pull_secret=None`。预热 Job 同一条链。
 - 端口从 `port_allocations` 池分配,释放/失败回池(停机不回);池耗尽创建失败并给明确错误;水位每轮 reconciler 刷进 `superdl_ssh_port_pool_ports{state}`。
 - 每用户实例数、GPU 数与 CPU 实例 vCPU 数三维互不相交;数值见 [limits.md](./limits.md)。
 - 实例释放后触发擦盘任务;数据盘独立,见 [disks.md](./disks.md)。

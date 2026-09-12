@@ -15,9 +15,11 @@ from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.money import as_amount, money_str
 from app.core.timeutil import now_utc, prev_hour_range
+from app.modules.billing import service as billing_service
 from app.modules.metering import prom
 from app.modules.metering.models import UsageHourly
 from app.modules.metering.schemas import InstanceGpuSeries, InstanceMetricsSummaryOut
+from app.modules.orchestrator import service as orchestrator_service
 
 logger = get_logger(__name__)
 
@@ -72,17 +74,13 @@ async def aggregate_previous_hour(
     sm: async_sessionmaker[AsyncSession], *, at: datetime | None = None
 ) -> int:
     """每小时 :05 聚合上一小时用量入 usage_hourly,幂等(UNIQUE DO NOTHING);Prometheus 不可用跳过。"""
-    from app.modules.orchestrator import service as orchestrator_service
-
     window_start, window_end = prev_hour_range(at or now_utc())
     written = 0
     async with advisory_lock(sm, LockKey.USAGE_AGGREGATION) as got:
         if not got:
             return 0
         async with sm() as session:
-            candidates = await orchestrator_service.billing_candidates(
-                session, window_start, window_end
-            )
+            candidates = await orchestrator_service.billing_candidates(session, window_start)
             loc = await orchestrator_service.instance_locations(session, [c[0] for c in candidates])
         failed = 0
         for inst_id, _user_id, _price, _gpus in candidates:
@@ -129,9 +127,6 @@ async def aggregate_previous_hour(
 async def reconciliation_report(session: AsyncSession, day: datetime) -> dict[str, Any]:
     """日对账:事件计费合计 vs 指标估算(usage_hourly 有数据小时数 × 单价)+ diff%;
     diff>2% 列差异实例。"""
-    from app.modules.billing import service as billing_service
-    from app.modules.orchestrator import service as orchestrator_service
-
     day_start = day.replace(hour=0, minute=0, second=0, microsecond=0)
     day_end = day_start + timedelta(days=1)
 

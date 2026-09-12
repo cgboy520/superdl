@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Literal, cast
 
+import structlog
 from sqlalchemy import CursorResult, String, Text, func, select, update
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -173,7 +174,6 @@ async def _process_one(
         handler = _registry.get(task.type)
         if handler is None:
             raise RuntimeError(f"no handler for outbox task type: {task.type}")
-        import structlog
 
         if request_id:
             structlog.contextvars.bind_contextvars(request_id=str(request_id))

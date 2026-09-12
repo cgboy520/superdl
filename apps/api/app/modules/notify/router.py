@@ -1,3 +1,4 @@
+import json
 from typing import Any
 
 from fastapi import APIRouter, Header, Request, Response, status
@@ -5,8 +6,7 @@ from fastapi import APIRouter, Header, Request, Response, status
 from app.core.config import get_settings
 from app.core.db import DbSession
 from app.core.errors import AppError, ErrorCode, unauthorized
-from app.core.http import bearer_matches
-from app.core.http import client_ip as http_client_ip
+from app.core.http import bearer_matches, client_ip as http_client_ip
 from app.core.pagination import Page
 from app.core.params import Cursor, Limit
 from app.core.ratelimit import check_rate_limit
@@ -75,8 +75,6 @@ async def alertmanager_webhook(
     authorization: str | None = Header(default=None),
 ) -> dict[str, int]:
     """Alertmanager 告警接入。除 test 环境外必须配置并携带 Bearer token。"""
-    import json
-
     client_ip = http_client_ip(request)
     await check_rate_limit(
         f"am-webhook:{client_ip or '-'}",

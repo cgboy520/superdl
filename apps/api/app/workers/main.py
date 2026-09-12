@@ -126,7 +126,7 @@ def _start_metrics_server(port: int, token: str | None) -> None:
     from wsgiref.simple_server import WSGIRequestHandler, WSGIServer
 
     class _QuietHandler(WSGIRequestHandler):
-        def log_message(self, format: str, *args: Any) -> None:
+        def log_message(self, format: str, *args: Any) -> None:  # noqa: ARG002 覆写 stdlib 签名
             return  # 抓取高频,不打 stderr
 
     class _ThreadingWSGIServer(socketserver.ThreadingMixIn, WSGIServer):

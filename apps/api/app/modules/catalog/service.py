@@ -7,6 +7,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode, conflict, not_found
 from app.core.gpu_adapter import (
     POOL_CPU,
@@ -32,6 +33,8 @@ from app.modules.catalog.schemas import (
     SkuUpdate,
     cpu_spec_error,
 )
+from app.modules.nodes import service as nodes_service
+from app.modules.notify import service as notify_service
 
 if TYPE_CHECKING:
     from app.modules.nodes.models import NodeSpec
@@ -76,8 +79,6 @@ def _check_tier_pool(tier: str, pool_label: str, mig_profile: str | None) -> Non
     """
     allowed = TIER_POOLS.get(tier, ())
     if tier == TIER_SHARED:
-        from app.core.config import get_settings
-
         allowed = tuple(p for p in allowed if p in get_settings().parsed_shared_tier_pools())
     if pool_label not in allowed:
         raise AppError(
@@ -278,7 +279,6 @@ async def _alert_large_price_change(
     ratio = abs(new - old) / old
     if ratio < PRICE_CHANGE_ALERT_RATIO:
         return
-    from app.modules.notify import service as notify_service
 
     logger.warning(
         "sku_price_large_change", sku_id=sku.id, old=str(old), new=str(new), reason=reason
@@ -296,8 +296,6 @@ async def _alert_large_price_change(
 
 async def _ensure_sellable(session: AsyncSession, sku: Sku) -> None:
     """上架硬校验:台账须有「型号×池」匹配的 Ready 节点;未识别型号只能 force 上架;CPU 档只校验池。"""
-    from app.modules.nodes import service as nodes_service
-
     specs = await nodes_service.ready_specs(session)
     if sku.tier == TIER_CPU:
         if nodes_service.pool_specs(specs, sku.pool_label):

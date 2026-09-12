@@ -5,6 +5,7 @@
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, select, text, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -12,6 +13,7 @@ from app.core.errors import AppError, ErrorCode
 from app.core.logging import get_logger
 from app.modules.orchestrator import statemachine as sm_def
 from app.modules.orchestrator.models import Instance, PortAllocation
+from app.modules.orchestrator.schemas import PortPoolStatsOut
 
 if TYPE_CHECKING:
     from app.modules.orchestrator.schemas import PortPoolStatsOut
@@ -23,8 +25,6 @@ async def ensure_port(session: AsyncSession, instance: Instance) -> int:
     """分配一个 SSH NodePort;已分配则原样返回。
     扩段用 on_conflict_do_nothing,落空重试 8 次,超出回 NO_CAPACITY 由 outbox 退避兜底。
     """
-    from sqlalchemy.dialects.postgresql import insert as pg_insert
-
     settings = get_settings()
     mine = (
         await session.execute(
@@ -84,8 +84,6 @@ async def block_port(sm: Any, port: int, *, reason: str, expected_instance_id: i
     """把被集群其它对象占用的端口标 blocked,独立事务提交;调用方须先 rollback。
     仅当端口空闲或正分配给 expected_instance_id 时才落 blocked。
     """
-    from sqlalchemy.dialects.postgresql import insert as pg_insert
-
     condition = PortAllocation.instance_id.is_(None)
     if expected_instance_id is not None:
         condition = condition | (PortAllocation.instance_id == expected_instance_id)
@@ -113,8 +111,6 @@ async def free_port(session: AsyncSession, instance_id: int) -> None:
 
 async def port_pool_stats(session: AsyncSession) -> "PortPoolStatsOut":
     """端口池水位(管理端 /nodes 页)。"""
-    from app.modules.orchestrator.schemas import PortPoolStatsOut
-
     total, assigned, blocked = (
         await session.execute(
             select(

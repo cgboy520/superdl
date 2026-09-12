@@ -44,7 +44,9 @@ def _mask_value(key: str, value: object) -> object:
 
 
 def _mask_sensitive_processor(
-    logger: WrappedLogger, method: str, event_dict: EventDict
+    logger: WrappedLogger,  # noqa: ARG001 structlog processor 签名
+    method: str,  # noqa: ARG001
+    event_dict: EventDict,
 ) -> EventDict:
     """按键名打码:phone 前3后4,其余敏感键整体 ******;dict 值逐内层键检查;非字符串不动。"""
     for key, value in event_dict.items():

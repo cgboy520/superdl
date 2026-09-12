@@ -17,6 +17,7 @@ from app.modules.orchestrator.models import Instance, InstanceEvent
 from app.modules.orchestrator.reconciler import reconcile_once
 from tests.helpers import (
     IMAGE_PYTORCH,
+    admin_headers as make_admin_headers,
     create_test_sku,
     create_user_with_key,
     drain,
@@ -25,7 +26,6 @@ from tests.helpers import (
     provision_subscription,
     seed_node_spec,
 )
-from tests.helpers import admin_headers as make_admin_headers
 
 pytestmark = pytest.mark.usefixtures("fake")
 

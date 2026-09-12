@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.money import hourly_cost
 from app.core.pricing import MARKET_SPOT, MARKET_SUBSCRIPTION
-from app.modules.orchestrator import statemachine as sm_def
+from app.modules.orchestrator import disks as disks_service, statemachine as sm_def
 from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent
 
 
@@ -58,7 +58,7 @@ async def billing_history_exists_before(session: AsyncSession, kind: str, before
 
 
 async def billing_candidates(
-    session: AsyncSession, window_start: Any, window_end: Any
+    session: AsyncSession, window_start: Any
 ) -> list[tuple[int, int, Any, int]]:
     """小时结算候选:(instance_id, user_id, price_hourly, gpu_count) =
     当前 running ∪ 窗口起点以来离开过 running 的实例;包周期实例只在此处跳过。"""
@@ -342,18 +342,12 @@ async def disk_billing_snapshot(
 
 
 async def billable_disks(session: AsyncSession) -> list[Any]:
-    from app.modules.orchestrator import disks as disks_service
-
     return await disks_service.list_billable_disks(session)
 
 
 async def arrears_chain_disk_user_ids(session: AsyncSession) -> list[int]:
-    from app.modules.orchestrator import disks as disks_service
-
     return await disks_service.list_arrears_chain_user_ids(session)
 
 
 async def disks_arrears_transition(session: AsyncSession, user_id: int, in_arrears: bool) -> int:
-    from app.modules.orchestrator import disks as disks_service
-
     return await disks_service.arrears_transition_disks(session, user_id, in_arrears)

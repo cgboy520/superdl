@@ -128,7 +128,7 @@ class MockChannel:
     async def create_payment(self, order: "Order") -> str:
         return f"superdl-mock-pay://{order.order_no}?amount={order.amount}"
 
-    async def parse_callback(self, headers: dict[str, str], body: bytes) -> CallbackResult:
+    async def parse_callback(self, headers: dict[str, str], body: bytes) -> CallbackResult:  # noqa: ARG002 协议签名
         import json
 
         try:
@@ -387,7 +387,7 @@ class AlipayChannel:
             )
         return resp["qr_code"]
 
-    async def parse_callback(self, headers: dict[str, str], body: bytes) -> CallbackResult:
+    async def parse_callback(self, headers: dict[str, str], body: bytes) -> CallbackResult:  # noqa: ARG002 支付宝验签不看头
         from urllib.parse import parse_qsl
 
         from alipay.aop.api.util.SignatureUtils import (  # type: ignore[import-untyped]

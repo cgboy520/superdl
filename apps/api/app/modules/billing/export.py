@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.csvexport import TRUNCATED_NOTES, fmt_money, fmt_ts, stream_rows
 from app.core.timeutil import BILLING_TZ_OFFSET_MINUTES
+from app.modules.account import service as account_service
 from app.modules.billing.models import (
     BalanceLedger,
     BillHourly,
@@ -306,8 +307,6 @@ def stream_admin_refunds_csv(
 
 def mask_invoice_identity(value: str) -> str:
     """发票抬头/邮箱的默认脱敏(复用 mask_id_name:留首字符,其余打星)。"""
-    from app.modules.account import service as account_service
-
     return account_service.mask_id_name(value) if value else value
 
 

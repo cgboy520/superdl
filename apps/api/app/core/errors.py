@@ -181,7 +181,7 @@ _HTTP_STATUS_MAP: dict[int, tuple[ErrorCode, str]] = {
 }
 
 
-def _unhandled_response(exc: Exception, *, path: str, method: str) -> JSONResponse:
+def _unhandled_response(exc: Exception, *, path: str, method: str) -> JSONResponse:  # noqa: ARG001 异常已由 logger.exception 记录
     """未捕获异常的统一渲染(structlog 留痕 + 统一错误体)。"""
     get_logger("app.errors").exception("unhandled_exception", path=path, method=method)
     return JSONResponse(

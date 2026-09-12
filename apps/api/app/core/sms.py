@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.aliyun import rpc_call
 from app.core.logging import get_logger
+from app.core.platform_config import get_effective_platform_config
 from app.core.ratelimit import check_rate_limit
 
 logger = get_logger(__name__)
@@ -98,7 +99,6 @@ def set_sms_channel(channel: SmsChannel | None) -> None:
 async def get_sms_channel(session: AsyncSession) -> SmsChannel:
     if _channel is not None:
         return _channel
-    from app.core.platform_config import get_effective_platform_config
 
     cfg = await get_effective_platform_config(session)
     if cfg["sms_provider"] == "mock":

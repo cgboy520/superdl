@@ -27,6 +27,7 @@ from app.core.k8s.base import (
     derive_distro,
 )
 from app.core.logging import get_logger
+from app.core.outbox import enqueue
 from app.core.platform_config import get_effective_platform_config
 from app.core.registry import parse_proxy_projects
 from app.core.timeutil import now_utc
@@ -237,8 +238,6 @@ async def decommission_node(session: AsyncSession, node_name: str, *, reason: st
     该主机名全部登记置 revoked、outbox 入队 node.decommission。
     集群 join token 轮换与 kubelet 证书吊销需人工。
     """
-    from app.core.outbox import enqueue
-
     row = (
         await session.execute(select(NodeSpec).where(NodeSpec.node_name == node_name))
     ).scalar_one_or_none()
@@ -272,9 +271,6 @@ async def request_cordon(
     session: AsyncSession, node_name: str, *, unschedulable: bool, reason: str
 ) -> None:
     """cordon 期望态落台账 + outbox 入队;handler 读期望态而非 payload。"""
-    from app.core.outbox import enqueue
-    from app.modules.nodes.models import NodeSpec
-
     row = (
         await session.execute(select(NodeSpec).where(NodeSpec.node_name == node_name))
     ).scalar_one_or_none()

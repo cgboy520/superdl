@@ -25,6 +25,7 @@ from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.metrics import (
     INSTANCE_NODE_LOST_TOTAL,
+    JUICEFS_QUOTA_FAILED_TOTAL,
     RECONCILE_LEAK_ABORTED_TOTAL,
     RECONCILE_LEAKED_TOTAL,
     RECONCILE_STUCK_INSTANCES,
@@ -38,7 +39,8 @@ from app.modules.billing import service as billing_service
 from app.modules.notify import service as notify_service
 from app.modules.orchestrator import statemachine as sm_def
 from app.modules.orchestrator.disks import detach_for_instance
-from app.modules.orchestrator.models import Instance, InstanceEvent
+from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent, PortAllocation
+from app.modules.orchestrator.ports import port_pool_stats
 from app.modules.orchestrator.service import free_port, transition
 
 logger = get_logger(__name__)
@@ -85,8 +87,6 @@ async def reconcile_once(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]
 async def _refresh_port_pool_gauge(sm: async_sessionmaker[AsyncSession]) -> None:
     """SSH 端口池水位进指标(停机实例不释放端口,池被占满前要看得见)。
     port_allocations 只在分配时扩行,容量按配置段算:段长 − 段内排除端口。"""
-    from app.modules.orchestrator.ports import port_pool_stats
-
     settings = get_settings()
     excluded_in_range = sum(
         1
@@ -628,8 +628,6 @@ async def _recheck_blocked_ports(
     sm: async_sessionmaker[AsyncSession], counts: dict[str, int]
 ) -> None:
     """blocked 端口周期复检:集群侧占用已消失即放回池。"""
-    from app.modules.orchestrator.models import PortAllocation
-
     orch = get_orchestrator()
     try:
         used = await orch.used_node_ports()
@@ -657,8 +655,6 @@ async def _redrive_dead_disk_wipes(
     sm: async_sessionmaker[AsyncSession], counts: dict[str, int]
 ) -> None:
     """disk.wipe 死信重派:死信行保留,无在途同盘任务时补发新任务。"""
-    from app.modules.orchestrator.models import DataDisk
-
     async with sm() as session:
         dead = list(
             (
@@ -700,9 +696,6 @@ async def _reconcile_disk_quotas(
     sm: async_sessionmaker[AsyncSession], counts: dict[str, int]
 ) -> None:
     """disk.quota 死信超 1 小时重派并计指标;只看死信,不按 quota_synced=false 补发。"""
-    from app.core.metrics import JUICEFS_QUOTA_FAILED_TOTAL
-    from app.modules.orchestrator.models import DataDisk
-
     async with sm() as session:
         in_flight_ids = {
             int(r[0])

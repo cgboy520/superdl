@@ -13,6 +13,10 @@ import hashlib
 import hmac
 import os
 
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
 from app.core.config import decode_master_key, get_settings
 
 _PREFIX_V2 = "enc:v2:"
@@ -50,9 +54,6 @@ def _kid_of(key: bytes) -> str:
 
 
 def _derive(key: bytes, info: bytes) -> bytes:
-    from cryptography.hazmat.primitives import hashes
-    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-
     return HKDF(algorithm=hashes.SHA256(), length=32, salt=_KDF_SALT, info=info).derive(key)
 
 
@@ -61,8 +62,6 @@ def is_encrypted(value: str) -> bool:
 
 
 def encrypt_str(plaintext: str, *, aad: str) -> str:
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
     master = _active_key()
     nonce = os.urandom(12)
     ct = AESGCM(_derive(master, _ENC_INFO)).encrypt(nonce, plaintext.encode(), aad.encode())
@@ -70,8 +69,6 @@ def encrypt_str(plaintext: str, *, aad: str) -> str:
 
 
 def decrypt_str(token: str, *, aad: str) -> str:
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
     if not token.startswith(_PREFIX_V2):
         raise ValueError("密文缺少 enc: 版本前缀")
     kid, sep, b64 = token[len(_PREFIX_V2) :].partition(":")

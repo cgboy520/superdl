@@ -32,9 +32,7 @@ class EdgeGuardMiddleware:
                 if host != settings.admin_host.lower() or not token_ok:
                     await PlainTextResponse("not found", status_code=404)(scope, receive, send)
                     return
-            elif (
-                path.startswith("/metrics") or path.startswith("/api/internal")
-            ) and "x-forwarded-for" in headers:
+            elif (path.startswith(("/metrics", "/api/internal"))) and "x-forwarded-for" in headers:
                 await PlainTextResponse("not found", status_code=404)(scope, receive, send)
                 return
         await self.app(scope, receive, send)

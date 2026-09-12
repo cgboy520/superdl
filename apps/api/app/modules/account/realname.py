@@ -11,6 +11,7 @@ import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.aliyun import rpc_call
+from app.core.platform_config import get_effective_platform_config
 
 
 class RealNameError(RuntimeError):
@@ -82,7 +83,6 @@ def set_realname_provider(provider: RealNameProvider | None) -> None:
 async def get_realname_provider(session: AsyncSession) -> RealNameProvider:
     if _provider is not None:
         return _provider
-    from app.core.platform_config import get_effective_platform_config
 
     cfg = await get_effective_platform_config(session)
     if not (cfg["real_name_access_key_id"] and cfg["real_name_access_key_secret"]):

@@ -2,18 +2,18 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.db import get_sessionmaker
 from app.core.errors import AppError, ErrorCode
-from app.core.k8s import NodePortTaken, get_orchestrator
+from app.core.k8s import NodePortTaken, ensure_registry_pull_secret, get_orchestrator
 from app.core.logging import get_logger
 from app.core.money import hourly_cost
 from app.core.outbox import OutboxTask, RetryPolicy, outbox_handler
 from app.core.pricing import MARKET_SUBSCRIPTION
-from app.core.registry import ensure_registry_pull_secret
 from app.modules.billing import service as billing_service
 from app.modules.notify import service as notify_service
 from app.modules.orchestrator import statemachine as sm_def
-from app.modules.orchestrator.models import Instance
+from app.modules.orchestrator.models import DataDisk, Instance
 from app.modules.orchestrator.service import (
     block_port,
     build_pod_spec_with_cluster,
@@ -194,9 +194,6 @@ async def handle_instance_disk_cleanup(session: AsyncSession, task: OutboxTask) 
 @outbox_handler("disk.quota", retry=RetryPolicy(max_retries=8, backoff_base_seconds=30))
 async def handle_disk_quota(session: AsyncSession, task: OutboxTask) -> None:
     """下发 JuiceFS 目录硬配额(CLI Job),成功置 quota_synced;死信由 reconciler 重派。"""
-    from app.core.config import get_settings
-    from app.modules.orchestrator.models import DataDisk
-
     disk = await session.get(DataDisk, task.payload["disk_id"])
     if disk is None or disk.status in ("deleting", "deleted"):
         return  # 删除链路有自己的配额摘除步,不下发
@@ -211,9 +208,6 @@ async def handle_disk_quota(session: AsyncSession, task: OutboxTask) -> None:
 async def handle_disk_wipe(session: AsyncSession, task: OutboxTask) -> None:
     """擦除 JuiceFS 子路径(集群侧 Job,未完成抛错重试)后置 deleted;
     擦除前摘除目录配额(失败仅告警)。"""
-    from app.core.config import get_settings
-    from app.modules.orchestrator.models import DataDisk
-
     disk = await session.get(DataDisk, task.payload["disk_id"])
     if disk is None or disk.status != "deleting":
         return

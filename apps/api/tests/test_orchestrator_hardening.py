@@ -519,7 +519,7 @@ class TestBillingCandidatesCompleteness:
         from app.modules.orchestrator import service as orchestrator_service
 
         async with sm() as session:
-            candidates = await orchestrator_service.billing_candidates(session, H, H_END)
+            candidates = await orchestrator_service.billing_candidates(session, H)
         ids = {row[0] for row in candidates}
         assert ids == {a, b, c}
         assert d not in ids and e not in ids

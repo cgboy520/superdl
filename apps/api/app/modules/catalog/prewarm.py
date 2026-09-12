@@ -11,12 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
 from app.core.gpu_adapter import POOL_CPU
-from app.core.k8s import get_orchestrator
+from app.core.k8s import ensure_registry_pull_secret, get_orchestrator
 from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.outbox import OutboxTask, enqueue, outbox_handler
 from app.core.policies import get_effective_policies
-from app.core.registry import ensure_registry_pull_secret
 from app.core.timeutil import now_utc
 from app.modules.catalog.models import ImageNodeCache, PlatformImage
 

@@ -1,9 +1,12 @@
+import ssl
 from collections.abc import AsyncIterator
 from datetime import datetime
 from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, ClassVar
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
+from alembic.script import ScriptDirectory
 from fastapi import Depends
 from sqlalchemy import TIMESTAMP, MetaData
 from sqlalchemy.ext.asyncio import (
@@ -24,9 +27,6 @@ def _split_db_tls(url: str) -> tuple[str, dict[str, Any]]:
     """摘下 URL 里的 sslmode / sslrootcert 翻译成 asyncpg ssl 连接参;返回 (干净 url, connect_args)。
     带 sslrootcert 时构造 SSLContext:verify-full 校验主机名,verify-ca / require 只校验证书链;
     CA 文件缺失即抛错。"""
-    import ssl
-    from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
-
     parsed = urlparse(url)
     query = parse_qs(parsed.query)
     sslmode = query.pop("sslmode", [None])[0]
@@ -117,8 +117,6 @@ async def dispose_engine() -> None:
 @cache
 def _script_directory() -> "ScriptDirectory":
     """alembic 脚本目录(进程内解析一次)。"""
-    from alembic.script import ScriptDirectory
-
     api_root = Path(__file__).resolve().parents[2]  # app/core/db.py → apps/api
     return ScriptDirectory(str(api_root / "alembic"))
 

@@ -16,6 +16,7 @@ from app.core.metrics import PII_REVEAL_ROWS_TOTAL
 from app.core.money import as_amount, money_str
 from app.core.pagination import Page
 from app.core.params import Cursor, Limit, TzOffset
+from app.modules.account import service as account_service
 from app.modules.account.schemas import (
     AdminDeletionApprove,
     AdminDeletionReject,
@@ -33,10 +34,12 @@ from app.modules.adminapi.schemas import (
     TenantQuotaUpdate,
     TenantStatusOut,
 )
+from app.modules.billing import service as billing_service
 from app.modules.billing.schemas import (
     BillHourlyOut,
     LedgerEntryOut,
 )
+from app.modules.notify import service as notify_service
 from app.modules.orchestrator import service as orchestrator_service
 
 router = APIRouter(tags=["admin"])
@@ -67,9 +70,6 @@ async def admin_list_tenants(
     order = id 正/倒序;聚合列按页拼装,不支持排序。
     实名信息默认脱敏;reveal=true 且 reason 必填回明文(readonly 不可),每次按条数+事由落审计。
     """
-    from app.modules.account import service as account_service
-    from app.modules.billing import service as billing_service
-
     reveal_reason = service.ensure_reveal_allowed(role=admin.role, reason=reason) if reveal else ""
     if q:
         masked = mask_phone_value(q)
@@ -138,8 +138,6 @@ async def admin_tenant_ledger(
     limit: int | None = Limit,
 ) -> Page[LedgerEntryOut]:
     """租户资金流水下钻。与用户端同一实现,同一游标语义。"""
-    from app.modules.billing import service as billing_service
-
     return await billing_service.ledger_page(session, user_id, cursor=cursor, limit=limit)
 
 
@@ -157,8 +155,6 @@ async def admin_tenant_ledger_export(
     lang: Literal["zh-CN", "en-US"] = ExportLang,
 ) -> StreamingResponse:
     """租户资金流水 CSV(流式):与「流水」Tab 同一数据源,行数硬上限 + 截断标记行。"""
-    from app.modules.billing import service as billing_service
-
     return csv_response(
         billing_service.stream_ledger_csv(
             session, user_id, tz_offset_minutes=tz_offset_minutes, lang=lang
@@ -176,8 +172,6 @@ async def admin_tenant_bills(
     limit: int | None = Limit,
 ) -> Page[BillHourlyOut]:
     """租户小时账单下钻(可按实例过滤)。"""
-    from app.modules.billing import service as billing_service
-
     return await billing_service.hourly_bills_page(
         session, user_id, instance_id=instance_id, cursor=cursor, limit=limit
     )
@@ -187,8 +181,6 @@ async def admin_tenant_bills(
 
 
 async def _tenant_quota_out(session: AsyncSession, user_id: int) -> TenantQuotaOut:
-    from app.modules.account import service as account_service
-
     override = await account_service.get_quota_override(session, user_id)
     limits = await account_service.get_user_limits(session, user_id)
     return TenantQuotaOut(
@@ -216,8 +208,6 @@ async def admin_set_tenant_quota(
     user_id: int, body: TenantQuotaUpdate, session: DbSession, request: Request, admin: CurrentAdmin
 ) -> TenantQuotaOut:
     """写配额覆盖(数字留空 = 该维走默认链;全空 = 清除覆盖)。note 必填,审计落前后值。"""
-    from app.modules.account import service as account_service
-
     before = await account_service.get_quota_override(session, user_id)
     await account_service.set_quota_override(
         session,
@@ -268,9 +258,6 @@ async def admin_adjust_context(
 async def admin_freeze_tenant(
     user_id: int, body: TenantFreezeRequest, session: DbSession, request: Request
 ) -> TenantStatusOut:
-    from app.modules.account import service as account_service
-    from app.modules.orchestrator import service as orchestrator_service
-
     user = await account_service.admin_set_user_status(session, user_id, "frozen")
     # 封禁同时停机,与 status 变更同一事务;K8s 动作走 outbox
     stopped = await orchestrator_service.stop_all_for_user(session, user_id, reason="tenant_frozen")
@@ -286,9 +273,6 @@ async def admin_freeze_tenant(
 async def admin_unfreeze_tenant(
     user_id: int, body: TenantFreezeRequest, session: DbSession, request: Request
 ) -> TenantStatusOut:
-    from app.modules.account import service as account_service
-    from app.modules.notify import service as notify_service
-
     user = await account_service.admin_set_user_status(session, user_id, "active")
     # 解封不自动开机
     await notify_service.notify(
@@ -313,8 +297,6 @@ async def admin_list_deletion_requests(
     session: DbSession, status: str | None = None
 ) -> list[AdminDeletionRequestOut]:
     """注销申请列表(固定截断 200),行内附执行前校验计数。"""
-    from app.modules.account import service as account_service
-
     return await account_service.admin_list_deletion_requests(session, status)
 
 
@@ -328,8 +310,6 @@ async def admin_approve_deletion(
 ) -> AdminDeletionRequestOut:
     """执行注销(操作原因必填):冷静期未满 409;残留实例/数据盘或余额非零 → 自动驳回 + 409
     (detail 清单);全通过则同事务匿名化并把原因回写 note。"""
-    from app.modules.account import service as account_service
-
     req = await account_service.approve_deletion(
         session, request_id, admin_id=admin.id, note=body.note
     )
@@ -350,8 +330,6 @@ async def admin_reject_deletion(
     admin: AdminUser = require_roles(),
 ) -> AdminDeletionRequestOut:
     """驳回注销申请(理由必填,不受冷静期限制)。"""
-    from app.modules.account import service as account_service
-
     req = await account_service.reject_deletion(
         session, request_id, admin_id=admin.id, note=body.note
     )

@@ -266,15 +266,15 @@ def build_instance_pod(spec: InstancePodSpec) -> "client.V1Pod":
     env = [client.V1EnvVar(name=k, value=v) for k, v in spec.env.items()]
     # 敏感值以 secretKeyRef 引用 per-instance Secret
     secret_name = instance_env_secret_name(spec.name)
-    for key in spec.secret_env:
-        env.append(
-            client.V1EnvVar(
-                name=key,
-                value_from=client.V1EnvVarSource(
-                    secret_key_ref=client.V1SecretKeySelector(name=secret_name, key=key)
-                ),
-            )
+    env.extend(
+        client.V1EnvVar(
+            name=key,
+            value_from=client.V1EnvVarSource(
+                secret_key_ref=client.V1SecretKeySelector(name=secret_name, key=key)
+            ),
         )
+        for key in spec.secret_env
+    )
     env.append(client.V1EnvVar(name="AUTHORIZED_KEYS", value="\n".join(spec.authorized_keys)))
     volumes: list[client.V1Volume] = [
         client.V1Volume(

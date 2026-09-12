@@ -9,12 +9,15 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.gpu_models import canonical_gpu_model
 from app.core.logging import get_logger
 from app.core.metrics import SPOT_PREEMPTED_TOTAL
 from app.core.outbox import enqueue
 from app.core.pricing import MARKET_SPOT
+from app.modules.notify import service as notify_service
 from app.modules.orchestrator import statemachine as sm_def
 from app.modules.orchestrator.models import Instance
+from app.modules.orchestrator.transitions import transition
 
 if TYPE_CHECKING:
     from app.modules.catalog.models import Sku
@@ -77,10 +80,6 @@ async def preempt(
     admin_reason: str | None = None,
 ) -> None:
     """回收选中的竞价实例,不 commit(与请求方建实例同事务);迁 stopping 即出尾账,宽限窗不计费。"""
-    # 延迟 import 防循环
-    from app.modules.notify import service as notify_service
-    from app.modules.orchestrator.service import transition
-
     for inst in victims:
         await transition(
             session,
@@ -129,8 +128,6 @@ async def try_free_capacity(
     requested_by: int,
 ) -> bool:
     """尝试靠抢占补齐缺口;腾得出返回 True(已在本事务下发回收),否则 False。"""
-    from app.core.gpu_models import canonical_gpu_model
-
     need = cards_needed(deficit_slots=deficit_slots, slots_per_card=slots_per_card)
     victims = await pick_victims(
         session,

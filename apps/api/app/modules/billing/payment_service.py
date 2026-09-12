@@ -3,15 +3,18 @@
 import asyncio
 import secrets
 from collections.abc import Awaitable, Callable
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
+from typing import Any
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import ColumnElement, and_, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode, conflict, not_found
 from app.core.idempotency import find_replay, insert_idempotent, request_fingerprint
+from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.metrics import (
     PAYMENT_CALLBACK_MISMATCH_TOTAL,
@@ -23,7 +26,7 @@ from app.core.money import as_amount
 from app.core.platform_config import get_effective_platform_config
 from app.core.timeutil import now_utc
 from app.modules.billing import wallet
-from app.modules.billing.models import Order
+from app.modules.billing.models import Order, Wallet
 from app.modules.billing.payment_channels import (
     CallbackResult,
     PaymentChannel,
@@ -55,8 +58,6 @@ async def create_recharge(
 ) -> tuple[Order, bool]:
     """创建充值单。返回 (订单, created):created=False = 幂等重放(含补拉支付码),
     路由回 200 + X-Idempotent-Replay。"""
-    from app.core.config import get_settings
-
     amount = as_amount(amount)  # 上下限由 RechargeCreate 契约层校验
     cfg = await get_effective_platform_config(session)
     if channel_name in ("wechat", "alipay") and cfg[f"payment_{channel_name}_enabled"] != "true":
@@ -232,8 +233,6 @@ async def reconcile_pending_orders(sm: async_sessionmaker[AsyncSession]) -> int:
 
     advisory lock 防多副本重复;单轮 cap 50;渠道不可达跳过该单,下轮再试。
     """
-    from app.core.locks import LockKey, advisory_lock
-
     credited = 0
     async with advisory_lock(sm, LockKey.PAYMENT_RECONCILE) as got:
         if not got:
@@ -396,106 +395,84 @@ async def backfill_order(
     return order, False
 
 
-async def list_payment_anomalies(session: AsyncSession) -> list[dict]:
-    """异常清单:疑似丢回调(pending 超 10 分钟)、近 48h 被关单、近 48h 失败单、负余额钱包。"""
-    from app.modules.billing.models import Wallet
+ANOMALY_LIMIT_PER_KIND = 100
 
-    now = now_utc()
-    items: list[dict] = []
-    stale = (
-        await session.execute(
-            select(Order)
-            .where(Order.status == "pending", Order.created_at < now - timedelta(minutes=10))
-            .order_by(Order.id.desc())
-            .limit(100)
-        )
-    ).scalars()
-    for o in stale:
-        items.append(
-            {
-                "kind": "lost_callback",
-                "order_no": o.order_no,
-                "user_id": o.user_id,
-                "amount": str(o.amount),
-                "detail": f"{o.channel} 渠道 pending 超 10 分钟,疑似回调丢失",
-                "created_at": o.created_at,
-            }
-        )
-    closed_recent = (
-        await session.execute(
-            select(Order)
-            .where(Order.status == "closed", Order.expires_at > now - timedelta(hours=48))
-            .order_by(Order.id.desc())
-            .limit(100)
-        )
-    ).scalars()
-    for o in closed_recent:
-        items.append(
-            {
-                "kind": "closed_order",
-                "order_no": o.order_no,
-                "user_id": o.user_id,
-                "amount": str(o.amount),
-                "detail": "订单超时关闭;若用户声称已付,先核验渠道再补单",
-                "created_at": o.created_at,
-            }
-        )
-    failed_recent = (
-        await session.execute(
-            select(Order)
-            .where(Order.status == "failed", Order.created_at > now - timedelta(hours=48))
-            .order_by(Order.id.desc())
-            .limit(100)
-        )
-    ).scalars()
-    for o in failed_recent:
-        items.append(
-            {
-                "kind": "failed_order",
-                "order_no": o.order_no,
-                "user_id": o.user_id,
-                "amount": str(o.amount),
-                "detail": "渠道中间态/失败回调置 failed;查单收敛会自动救回已支付单,亦可人工补单",
-                "created_at": o.created_at,
-            }
-        )
-    reversed_recent = (
-        await session.execute(
-            select(Order)
-            .where(
+
+def _order_anomaly_specs(now: datetime) -> list[tuple[str, ColumnElement[bool], str, str]]:
+    """订单类异常分桶:(kind, 谓词, detail 模板, 时间列名)。detail 模板可引用 {channel}。"""
+    return [
+        (
+            "lost_callback",
+            and_(Order.status == "pending", Order.created_at < now - timedelta(minutes=10)),
+            "{channel} 渠道 pending 超 10 分钟,疑似回调丢失",
+            "created_at",
+        ),
+        (
+            "closed_order",
+            and_(Order.status == "closed", Order.expires_at > now - timedelta(hours=48)),
+            "订单超时关闭;若用户声称已付,先核验渠道再补单",
+            "created_at",
+        ),
+        (
+            "failed_order",
+            and_(Order.status == "failed", Order.created_at > now - timedelta(hours=48)),
+            "渠道中间态/失败回调置 failed;查单收敛会自动救回已支付单,亦可人工补单",
+            "created_at",
+        ),
+        (
+            "channel_reversed",
+            and_(
                 Order.channel_reversed_at > now - timedelta(hours=48),
                 Order.channel_reversal_resolved_at.is_(None),
+            ),
+            "已入账订单收到渠道关单/退款通知:钱包已等额冻结阻断消费;"
+            "核实后经 /finance/reversals/{{order_no}}/resolve 解冻(噪音单)或扣回(确认反转)",
+            "channel_reversed_at",
+        ),
+    ]
+
+
+async def list_payment_anomalies(session: AsyncSession) -> list[dict[str, Any]]:
+    """异常清单:疑似丢回调(pending 超 10 分钟)、近 48h 被关单、近 48h 失败单、
+    未处置的渠道冲正、负余额钱包。每桶最多 ANOMALY_LIMIT_PER_KIND 条。"""
+    now = now_utc()
+    items: list[dict[str, Any]] = []
+    for kind, predicate, detail, ts_attr in _order_anomaly_specs(now):
+        rows = (
+            await session.execute(
+                select(Order)
+                .where(predicate)
+                .order_by(Order.id.desc())
+                .limit(ANOMALY_LIMIT_PER_KIND)
             )
-            .order_by(Order.id.desc())
-            .limit(100)
-        )
-    ).scalars()
-    for o in reversed_recent:
-        items.append(
+        ).scalars()
+        items.extend(
             {
-                "kind": "channel_reversed",
+                "kind": kind,
                 "order_no": o.order_no,
                 "user_id": o.user_id,
                 "amount": str(o.amount),
-                "detail": "已入账订单收到渠道关单/退款通知:钱包已等额冻结阻断消费;"
-                "核实后经 /finance/reversals/{order_no}/resolve 解冻(噪音单)或扣回(确认反转)",
-                "created_at": o.channel_reversed_at,
+                "detail": detail.format(channel=o.channel),
+                "created_at": getattr(o, ts_attr),
             }
+            for o in rows
         )
     negative = (
-        await session.execute(select(Wallet).where(Wallet.balance < 0).limit(100))
-    ).scalars()
-    for w in negative:
-        items.append(
-            {
-                "kind": "negative_balance",
-                "order_no": None,
-                "user_id": w.user_id,
-                "amount": str(w.balance),
-                "detail": "钱包负余额(欠费回收后残留),可调账核销",
-                "created_at": w.updated_at,
-            }
+        await session.execute(
+            select(Wallet).where(Wallet.balance < 0).limit(ANOMALY_LIMIT_PER_KIND)
         )
+    ).scalars()
+    items.extend(
+        {
+            "kind": "negative_balance",
+            "order_no": None,
+            "user_id": w.user_id,
+            "amount": str(w.balance),
+            "detail": "钱包负余额(欠费回收后残留),可调账核销",
+            "created_at": w.updated_at,
+        }
+        for w in negative
+    )
     return items
 
 

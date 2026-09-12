@@ -35,7 +35,7 @@ from app.core.timeutil import (
     prev_hour_range,
 )
 from app.modules.billing import wallet
-from app.modules.billing.models import BillHourly, SettlementGap, SettlementWatermark
+from app.modules.billing.models import BillDailyDisk, BillHourly, SettlementGap, SettlementWatermark
 from app.modules.billing.schemas import AdminSettlementGapOut
 
 logger = get_logger(__name__)
@@ -569,7 +569,7 @@ async def _hourly_window_attempts(
     from app.modules.orchestrator import service as orchestrator_service
 
     async with sm() as session:
-        instances = await orchestrator_service.billing_candidates(session, window_start, window_end)
+        instances = await orchestrator_service.billing_candidates(session, window_start)
     return [
         (inst_id, _hourly_attempt(inst_id, user_id, price, gpu_count, window_start, window_end))
         for inst_id, user_id, price, gpu_count in instances
@@ -616,8 +616,6 @@ async def charge_disk_day(
     """单盘单日入账原语。UNIQUE(disk_id, day) 幂等,返回本次扣款(0 = 该日已出过账)。
     插入与扣款同一事务(RETURNING 判定新行);调用方负责 commit。
     """
-    from app.modules.billing.models import BillDailyDisk
-
     day = billing_day_floor(day)
     # 累积差分公式按月内第几天取值,须传该计费日的北京日历日
     beijing_date = (day + BILLING_DAY_OFFSET).date()

@@ -91,7 +91,10 @@ class FakeOrchestrator:
         self.namespaces.add(namespace)
 
     async def ensure_pull_secret(
-        self, namespace: str, dockerconfigjson: str, fingerprint: str
+        self,
+        namespace: str,
+        dockerconfigjson: str,  # noqa: ARG002 协议签名
+        fingerprint: str,
     ) -> None:
         self.pull_secrets[namespace] = fingerprint
 

@@ -13,11 +13,15 @@ from app.core.errors import AppError, conflict, not_found
 from app.core.idempotency import find_replay, insert_idempotent
 from app.core.logging import get_logger
 from app.core.outbox import OutboxTask, enqueue, outbox_handler
+from app.core.pagination import Page, paginate_by_id
 from app.core.platform_config import get_effective_platform_config
 from app.core.ratelimit import check_rate_limit
 from app.core.sms import ensure_sms_platform_quota, get_sms_channel
 from app.core.timeutil import now_utc
+from app.modules.account import service as account_service
+from app.modules.account.service import get_user, list_active_user_ids
 from app.modules.notify.models import Announcement, Notification
+from app.modules.notify.schemas import NotificationOut
 
 if TYPE_CHECKING:
     from app.core.pagination import Page
@@ -76,8 +80,6 @@ async def handle_notify_sms(session: AsyncSession, task: OutboxTask) -> None:
     """通知短信发送(outbox 执行,尽力而为,at-least-once)。
     收件人两形态:{"user_id": N} 或 {"phone": "1xx"}。
     """
-    from app.modules.account.service import get_user
-
     phone: str | None = task.payload.get("phone")
     user_id = task.payload.get("user_id")
     if phone is None and user_id is not None:
@@ -206,8 +208,6 @@ async def publish_announcement(
     (dedup_key = ann:{公告id}:{user_id},on_conflict_do_nothing)。
     返回 (触达人数, created);created=False = 幂等重放。
     """
-    from app.modules.account.service import list_active_user_ids
-
     if idempotency_key:
         existing = await find_replay(
             session, Announcement, owner_col=None, owner_id=None, key=idempotency_key
@@ -305,9 +305,6 @@ async def list_notifications(
     limit: int | None = None,
 ) -> "Page[NotificationOut]":
     """站内信列表:降序游标分页,只读 published。"""
-    from app.core.pagination import Page, paginate_by_id
-    from app.modules.notify.schemas import NotificationOut
-
     stmt = (
         select(Notification)
         .where(Notification.user_id == user_id, Notification.status == "published")
@@ -465,7 +462,6 @@ async def ingest_alertmanager(session: AsyncSession, payload: dict) -> int:
             except ValueError:
                 continue
             # namespace 归属查库核实(存在且活跃),再按用户限流
-            from app.modules.account import service as account_service
 
             if not await account_service.is_active_user(session, user_id):
                 continue

@@ -24,8 +24,7 @@ from app.core.platform_config import set_platform_settings
 from app.core.timeutil import now_utc
 from app.modules.account.models import SmsCode
 from app.modules.adminapi.service import create_admin
-from app.modules.billing import service as billing_service
-from app.modules.billing import wallet
+from app.modules.billing import service as billing_service, wallet
 from app.modules.catalog.models import PlatformImage, Sku
 from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent
 from app.modules.orchestrator.reconciler import reconcile_once

@@ -32,7 +32,7 @@ from app.core.k8s import InstancePodSpec, get_orchestrator
 from app.core.logging import get_logger
 from app.core.money import hourly_cost, money_str
 from app.core.outbox import enqueue
-from app.core.pagination import RawPage
+from app.core.pagination import Page, RawPage, paginate_by_id
 from app.core.platform_config import get_effective_platform_config
 from app.core.policies import get_effective_policies
 from app.core.pricing import (
@@ -54,124 +54,64 @@ from app.modules.billing import service as billing_service
 from app.modules.catalog import service as catalog_service
 from app.modules.nodes import service as nodes_service
 from app.modules.notify import service as notify_service
-from app.modules.orchestrator import statemachine as sm_def
+from app.modules.orchestrator import (
+    disks as disks_service,
+    preempt as preempt_mod,
+    statemachine as sm_def,
+)
 from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent
 from app.modules.orchestrator.ports import (
     active_gpu_counts_by_sku as active_gpu_counts_by_sku,
-)
-from app.modules.orchestrator.ports import (
     block_port as block_port,
-)
-from app.modules.orchestrator.ports import (
     ensure_port as ensure_port,
-)
-from app.modules.orchestrator.ports import (
     free_port as free_port,
-)
-from app.modules.orchestrator.ports import (
     port_pool_stats as port_pool_stats,
 )
 from app.modules.orchestrator.queries import (
     arrears_chain_disk_user_ids as arrears_chain_disk_user_ids,
-)
-from app.modules.orchestrator.queries import (
     billable_disks as billable_disks,
-)
-from app.modules.orchestrator.queries import (
     billable_disks_of_user as billable_disks_of_user,
-)
-from app.modules.orchestrator.queries import (
     billing_candidates as billing_candidates,
-)
-from app.modules.orchestrator.queries import (
     billing_events_before as billing_events_before,
-)
-from app.modules.orchestrator.queries import (
     billing_history_exists_before as billing_history_exists_before,
-)
-from app.modules.orchestrator.queries import (
     count_instances_by_status as count_instances_by_status,
-)
-from app.modules.orchestrator.queries import (
     deletion_leftover_counts as deletion_leftover_counts,
-)
-from app.modules.orchestrator.queries import (
     deletion_leftovers as deletion_leftovers,
-)
-from app.modules.orchestrator.queries import (
     disk_billing_snapshot as disk_billing_snapshot,
-)
-from app.modules.orchestrator.queries import (
     disks_arrears_transition as disks_arrears_transition,
-)
-from app.modules.orchestrator.queries import (
     instance_billing_snapshot as instance_billing_snapshot,
-)
-from app.modules.orchestrator.queries import (
     instance_disk_stats_by_user as instance_disk_stats_by_user,
-)
-from app.modules.orchestrator.queries import (
     instance_hourly_prices as instance_hourly_prices,
-)
-from app.modules.orchestrator.queries import (
     instance_locations as instance_locations,
-)
-from app.modules.orchestrator.queries import (
     instance_names as instance_names,
-)
-from app.modules.orchestrator.queries import (
     instances_by_ids as instances_by_ids,
-)
-from app.modules.orchestrator.queries import (
     list_instances_by_status as list_instances_by_status,
-)
-from app.modules.orchestrator.queries import (
     list_running_instances_by_user as list_running_instances_by_user,
-)
-from app.modules.orchestrator.queries import (
     lock_instance_for_billing as lock_instance_for_billing,
-)
-from app.modules.orchestrator.queries import (
     pool_by_instance as pool_by_instance,
-)
-from app.modules.orchestrator.queries import (
     running_gpu_share_by_pool as running_gpu_share_by_pool,
-)
-from app.modules.orchestrator.queries import (
     running_instances_of_user as running_instances_of_user,
-)
-from app.modules.orchestrator.queries import (
     running_spot_gpus_by_pool as running_spot_gpus_by_pool,
 )
 from app.modules.orchestrator.schemas import (
     WORKLOAD_DEV,
     WORKLOAD_SERVICE,
+    InstanceEventOut,
+    InstanceLogsOut,
+    InstanceOut,
+    InstanceSubscriptionOut,
 )
 from app.modules.orchestrator.statemachine import (
     FAILED as FAILED,
-)
-from app.modules.orchestrator.statemachine import (
     FROZEN as FROZEN,
-)
-from app.modules.orchestrator.statemachine import (
     RELEASED as RELEASED,
-)
-from app.modules.orchestrator.statemachine import (
     RELEASING as RELEASING,
-)
-from app.modules.orchestrator.statemachine import (
     RUNNING as RUNNING,
-)
-from app.modules.orchestrator.statemachine import (
     STOPPED as STOPPED,
-)
-from app.modules.orchestrator.statemachine import (
     STOPPING as STOPPING,
 )
 from app.modules.orchestrator.transitions import (
     register_transition_listener as register_transition_listener,
-)
-from app.modules.orchestrator.transitions import (
     transition as transition,
 )
 
@@ -337,7 +277,6 @@ async def _check_user_quota(
     """每用户配额(实例数 / GPU 总数 / CPU 实例 vCPU 总数),生效值走 account.get_user_limits。
     GPU 实例只计 GPU 维、CPU 实例只计 vCPU 维;exclude_instance_id(即将被替换的旧实例)不占名额。
     """
-
     limits = await account_service.get_user_limits(session, user_id)
     policies = await get_effective_policies(session)
     stmt = select(
@@ -427,10 +366,11 @@ async def _soft_admit_capacity(
     sellable += freeing_slots
     # GPU 实例按卡数占容量,CPU 实例占 1
     needed = gpu_count if gpu_count > 0 else 1
-    if sellable < needed and market != MARKET_SPOT and sku.tier != TIER_CPU:
-        from app.modules.orchestrator import preempt as preempt_mod
-
-        if await preempt_mod.try_free_capacity(
+    if (
+        sellable < needed
+        and market != MARKET_SPOT
+        and sku.tier != TIER_CPU
+        and await preempt_mod.try_free_capacity(
             session,
             sku=sku,
             deficit_slots=needed - sellable,
@@ -439,8 +379,9 @@ async def _soft_admit_capacity(
             ),
             grace_seconds=policies.spot_grace_seconds,
             requested_by=user_id or 0,
-        ):
-            return
+        )
+    ):
+        return
     if sellable < needed:
         raise AppError(
             ErrorCode.NO_CAPACITY,
@@ -608,8 +549,6 @@ async def create_instance_row(
 
     disk_id_validated: int | None = None
     if data_disk_id is not None:
-        from app.modules.orchestrator import disks as disks_service
-
         # 锁序 disk → wallet(与删盘/扩盘链路同向);attach 在下方同事务重入此锁
         disk = await disks_service.lock_disk_for_attach(session, user_id, data_disk_id)
         disk_id_validated = disk.id
@@ -701,8 +640,6 @@ async def create_instance_row(
         )
         await billing_service.assert_can_afford(session, user_id)
     if disk_id_validated is not None:
-        from app.modules.orchestrator import disks as disks_service
-
         await disks_service.attach_for_instance(session, user_id, disk_id_validated, instance.id)
     session.add(
         InstanceEvent(
@@ -882,9 +819,6 @@ async def list_instances_page(
 ):
     """用户端实例列表:降序游标分页,status 精确 / name 模糊(含 uuid 前缀)。
     默认只列开发机;给 service_id 即该服务的版本实例(版本号降序),include_released 含已释放。"""
-    from app.core.pagination import Page, paginate_by_id
-    from app.modules.orchestrator.schemas import InstanceOut
-
     stmt = select(Instance).where(Instance.user_id == user_id)
     if service_id is None:
         stmt = stmt.where(Instance.service_id.is_(None)).order_by(Instance.id.desc())
@@ -918,8 +852,6 @@ async def list_expiring_instances(
     session: AsyncSession, user_id: int, *, within_days: int
 ) -> "list[InstanceOut]":
     """临期包周期实例:active 订阅且 expires_at ≤ now+within_days,按到期升序,不分页。"""
-    from app.modules.orchestrator.schemas import InstanceOut
-
     subs = await billing_service.list_expiring_subscriptions(
         session, user_id, within_days=within_days
     )
@@ -942,8 +874,6 @@ async def list_expiring_instances(
 
 async def instance_view(session: AsyncSession, instance: Instance) -> "InstanceOut":
     """单实例出参,与列表项同形。"""
-    from app.modules.orchestrator.schemas import InstanceOut
-
     items = [InstanceOut.model_validate(instance)]
     await attach_instance_details(session, items)
     return items[0]
@@ -951,8 +881,6 @@ async def instance_view(session: AsyncSession, instance: Instance) -> "InstanceO
 
 async def _attach_subscriptions(session: AsyncSession, items: "Sequence[InstanceOut]") -> None:
     """给列表项回填包周期概要:一次查询。"""
-    from app.modules.orchestrator.schemas import InstanceSubscriptionOut
-
     ids = [i.id for i in items if i.market == MARKET_SUBSCRIPTION]
     if not ids:
         return
@@ -971,8 +899,6 @@ async def list_events_raw(
     limit: int | None = None,
 ) -> RawPage[InstanceEvent]:
     """多台实例的事件并集:降序游标分页的 ORM 行(服务级时间线用)。"""
-    from app.core.pagination import paginate_by_id
-
     if not instance_ids:
         return RawPage(items=[], next_cursor=None)
     stmt = (
@@ -990,9 +916,6 @@ async def list_events(
     session: AsyncSession, instance_id: int, *, cursor: str | None = None, limit: int | None = None
 ):
     """实例事件时间线:降序游标分页。"""
-    from app.core.pagination import Page
-    from app.modules.orchestrator.schemas import InstanceEventOut
-
     raw = await list_events_raw(session, [instance_id], cursor=cursor, limit=limit)
     return Page[InstanceEventOut](
         items=[InstanceEventOut.model_validate(e) for e in raw.items], next_cursor=raw.next_cursor
@@ -1046,7 +969,6 @@ async def _rebind_data_disk(session: AsyncSession, instance: Instance) -> None:
         instance.data_disk_id = None
         await session.flush()
         return
-    from app.modules.orchestrator import disks as disks_service
 
     await disks_service.attach_for_instance(session, instance.user_id, disk.id, instance.id)
 
@@ -1525,8 +1447,6 @@ async def read_instance_logs(
 ) -> "InstanceLogsOut":
     """读取实例容器日志(只读,不记审计):非属主 404;仅 running/stopping,否则 409;
     tail_lines 超上限截断。"""
-    from app.modules.orchestrator.schemas import InstanceLogsOut
-
     instance = await get_instance(session, user_id, uuid)
     if instance.status not in (sm_def.RUNNING, sm_def.STOPPING):
         raise conflict(key="orchestrator.logsNeedsRunning")
@@ -1580,8 +1500,6 @@ async def admin_list_instances(
     limit: int | None = None,
 ) -> RawPage[Instance]:
     """管理端实例列表(游标分页,降序):q 按实例名或 uuid 前缀,node_name 精确。"""
-    from app.core.pagination import paginate_by_id
-
     stmt = select(Instance).order_by(Instance.id.desc())
     if status_filter:
         stmt = stmt.where(Instance.status == status_filter)
@@ -1642,8 +1560,6 @@ async def admin_force_stop(session: AsyncSession, instance_uuid: str, *, reason:
 
 async def admin_preempt(session: AsyncSession, instance_uuid: str, *, reason: str) -> Instance:
     """管理端强制回收一台竞价实例,走与自动抢占同一条回收路径(reason 与 admin_force_stop 不同)。"""
-    from app.modules.orchestrator import preempt as preempt_mod
-
     instance = await admin_get_instance(session, instance_uuid)
     if instance.market != MARKET_SPOT:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.preemptNotSpot")

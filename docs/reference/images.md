@@ -34,5 +34,5 @@
 - 集群内 P2P 缓存用发行版内置 embedded registry mirror(Spegel);`latest` tag 不参与 P2P,平台镜像一律钉版本 tag。
 - 平台镜像 tag 允许同名重推,目录 `image_ref` 必须钉 digest。重推后把管理端该镜像 ref 换成新 digest:`admin_update_image` 同事务清 cache 行,巡检按新 ref 重新预热;绕过服务层直接改库由巡检比对 `cached_ref` 兜底作废,≤60s 自愈。
 - 平台镜像仓是 Harbor(接入参数在平台配置·镜像仓库组,见 [platform-config.md](./platform-config.md)):`image_ref` 一律全限定名 `<host>/<项目>/<名>:<tag>@sha256:<digest>`。形态校验事实源 `core/registry.is_valid_image_ref`,创建实例与管理端目录 CRUD 共用。
-- 拉取凭据由平台托管:worker 在建实例 Pod / 预热 Job 前按生效配置把 `superdl-registry-pull`(`kubernetes.io/dockerconfigjson`)按指纹写入 superdl 与租户 ns(`core/registry.ensure_registry_pull_secret` → `ensure_pull_secret`),Pod / Job 以 `imagePullSecrets` 引用;未配机器人账户则不生成。轮换 = 配置中心保存新 Secret。节点 registries.yaml 只承担 Spegel P2P / Harbor CA / 代理缓存 mirror,见 [nodes.md](./nodes.md);发布 SOP 见 `deploy/cluster/runbooks/image-prewarm.md`。
+- 拉取凭据由平台托管:worker 在建实例 Pod / 预热 Job 前按生效配置把 `superdl-registry-pull`(`kubernetes.io/dockerconfigjson`)按指纹写入 superdl 与租户 ns(`core/k8s.ensure_registry_pull_secret` → `ensure_pull_secret`),Pod / Job 以 `imagePullSecrets` 引用;未配机器人账户则不生成。轮换 = 配置中心保存新 Secret。节点 registries.yaml 只承担 Spegel P2P / Harbor CA / 代理缓存 mirror,见 [nodes.md](./nodes.md);发布 SOP 见 `deploy/cluster/runbooks/image-prewarm.md`。
 - 创建实例的镜像形态校验与来源白名单见 [security.md](./security.md)。

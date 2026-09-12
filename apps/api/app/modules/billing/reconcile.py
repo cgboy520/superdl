@@ -27,6 +27,7 @@ from app.modules.billing.models import (
     Subscription,
     Wallet,
 )
+from app.modules.notify import service as notify_service
 
 logger = get_logger(__name__)
 
@@ -354,8 +355,6 @@ async def _raise_admin_alert(
     billed: Decimal,
     consumed: Decimal,
 ) -> None:
-    from app.modules.notify import service as notify_service
-
     parts = []
     if counts["wallet_mismatch"]:
         parts.append(f"{counts['wallet_mismatch']} 个账号的余额与流水累计不符")

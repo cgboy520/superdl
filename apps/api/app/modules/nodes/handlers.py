@@ -32,7 +32,7 @@ async def handle_node_cordon(session: AsyncSession, task: OutboxTask) -> None:
 
 
 @outbox_handler("node.decommission")
-async def handle_node_decommission(session: AsyncSession, task: OutboxTask) -> None:
+async def handle_node_decommission(session: AsyncSession, task: OutboxTask) -> None:  # noqa: ARG001 handler 签名
     """节点退役的 K8s 侧:cordon 后删 Node 对象(delete_node);读 payload(单向终态);
     节点已不在集群按成功返回。"""
     node_name = task.payload["node_name"]
