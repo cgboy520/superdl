@@ -25,13 +25,7 @@ import { useTranslation } from "react-i18next";
 
 import { useFormat } from "@superdl/ui";
 
-export function InstanceStatusBadge({
-  status,
-  frozenDeadline,
-}: {
-  status: string;
-  frozenDeadline?: string | null;
-}) {
+export function InstanceStatusBadge({ status, frozenDeadline }: { status: string; frozenDeadline?: string | null }) {
   const { t } = useTranslation(["web", "shared"]);
   const { formatReclaimCountdown } = useFormat();
   const meta = metaOf(instanceStatusMap, status);
@@ -48,13 +42,7 @@ export function InstanceStatusBadge({
 }
 
 /** 在线服务的派生状态徽标;unready 带解释 tooltip(不是故障态)。 */
-export function ServiceStatusBadge({
-  status,
-  frozenDeadline,
-}: {
-  status: string;
-  frozenDeadline?: string | null;
-}) {
+export function ServiceStatusBadge({ status, frozenDeadline }: { status: string; frozenDeadline?: string | null }) {
   const { t } = useTranslation(["web", "shared"]);
   const { formatReclaimCountdown } = useFormat();
   const meta = metaOf(serviceStatusMap, status);
@@ -101,7 +89,9 @@ export function SubscriptionTag({
   const expired = isSubscriptionExpired(market, subscription);
   const statusMeta = metaOf(subscriptionStatusMap, subscription.status);
   const tail = expired
-    ? (statusMeta ? t(statusMeta.labelKey) : subscription.status)
+    ? statusMeta
+      ? t(statusMeta.labelKey)
+      : subscription.status
     : formatExpiry(subscription.expires_at);
   return (
     <HexTag color={expired ? statusColors.orange : colorPrimary}>

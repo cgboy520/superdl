@@ -7,9 +7,7 @@ function accountOf(token: string): string | null {
   try {
     const part = token.split(".")[1];
     if (!part) return null;
-    const payload: unknown = JSON.parse(
-      atob(part.replace(/-/g, "+").replace(/_/g, "/")),
-    );
+    const payload: unknown = JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/")));
     const sub = (payload as { sub?: unknown }).sub;
     return typeof sub === "string" ? sub : null;
   } catch {
@@ -25,10 +23,7 @@ export function setupAuthCacheGuard(queryClient: QueryClient): () => void {
     if (prev.accessToken !== null && state.accessToken !== null) {
       const before = accountOf(prev.accessToken);
       const after = accountOf(state.accessToken);
-      accountSwitched =
-        before === null || after === null
-          ? prev.accessToken !== state.accessToken
-          : before !== after;
+      accountSwitched = before === null || after === null ? prev.accessToken !== state.accessToken : before !== after;
     }
     if (loggedOut || accountSwitched) {
       void queryClient.cancelQueries().then(() => queryClient.clear());

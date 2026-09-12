@@ -32,9 +32,7 @@ function AppProviders({ children }: { children: ReactNode }) {
   return (
     <ConfigProvider
       locale={antdLocale}
-      theme={
-        mode === "dark" ? { algorithm: antdTheme.darkAlgorithm, ...webDarkTheme } : webTheme
-      }
+      theme={mode === "dark" ? { algorithm: antdTheme.darkAlgorithm, ...webDarkTheme } : webTheme}
     >
       {/* 跟随系统「减弱动态效果」 */}
       <MotionConfig reducedMotion="user">

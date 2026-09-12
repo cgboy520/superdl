@@ -2,7 +2,15 @@
 
 import { POLL } from "@superdl/ui";
 import { type DiskOut } from "@superdl/api-client";
-import { colorPrimary, diskDailyEstimate, fontSize, formatDateTime, formatSizeGb, idemKeyOf, statusColors } from "@superdl/ui";
+import {
+  colorPrimary,
+  diskDailyEstimate,
+  fontSize,
+  formatDateTime,
+  formatSizeGb,
+  idemKeyOf,
+  statusColors,
+} from "@superdl/ui";
 import { TableErrorEmpty, TypeConfirmModal } from "@superdl/ui/components";
 import { createFileRoute } from "@tanstack/react-router";
 import { Trans, useTranslation } from "react-i18next";
@@ -160,7 +168,9 @@ function StoragePage() {
   const sizeWatch = Form.useWatch<number>("size_gb", form);
   const { formatMoney } = useFormat();
 
-  const priceText = policies ? t("common.gbMonthPrice", { price: policies.disk_price_gb_month }) : t("storage.priceFallback");
+  const priceText = policies
+    ? t("common.gbMonthPrice", { price: policies.disk_price_gb_month })
+    : t("storage.priceFallback");
   const graceDays = policies?.disk_grace_days;
   const frozenDays = policies?.disk_frozen_days;
 
@@ -225,23 +235,24 @@ function StoragePage() {
                   </Space>
                 ),
               },
-              { title: t("storage.colStatus"), render: (_, r) => (
-                <Space size={4}>
-                  <DiskStatusBadge status={r.status} />
-                  {!r.quota_synced && r.status !== "deleting" && (
-                    <Tooltip title={t("storage.quotaPendingHint")}>
-                      <Tag color="gold" style={{ marginInlineEnd: 0 }}>
-                        {t("storage.quotaPending")}
-                      </Tag>
-                    </Tooltip>
-                  )}
-                </Space>
-              ) },
+              {
+                title: t("storage.colStatus"),
+                render: (_, r) => (
+                  <Space size={4}>
+                    <DiskStatusBadge status={r.status} />
+                    {!r.quota_synced && r.status !== "deleting" && (
+                      <Tooltip title={t("storage.quotaPendingHint")}>
+                        <Tag color="gold" style={{ marginInlineEnd: 0 }}>
+                          {t("storage.quotaPending")}
+                        </Tag>
+                      </Tooltip>
+                    )}
+                  </Space>
+                ),
+              },
               {
                 title: t("storage.colExpiry"),
-                render: (_, r) => (
-                  <ExpiryCell disk={r} graceDays={graceDays} frozenDays={frozenDays} />
-                ),
+                render: (_, r) => <ExpiryCell disk={r} graceDays={graceDays} frozenDays={frozenDays} />,
               },
               { title: t("storage.colMounted"), render: (_, r) => instanceName(r.mounted_instance_id) },
               { title: t("storage.colCreated"), render: (_, r) => formatDateTime(r.created_at) },
@@ -265,12 +276,7 @@ function StoragePage() {
                         </Button>
                       </Tooltip>
                       <Tooltip title={canDelete ? undefined : t("storage.deleteNeedsUnmounted")}>
-                        <Button
-                          size="small"
-                          danger
-                          disabled={!canDelete}
-                          onClick={() => setDeleteTarget(r)}
-                        >
+                        <Button size="small" danger disabled={!canDelete} onClick={() => setDeleteTarget(r)}>
                           {t("storage.delete")}
                         </Button>
                       </Tooltip>
@@ -301,7 +307,11 @@ function StoragePage() {
             })
           }
         >
-          <Form.Item name="name" label={t("storage.nameLabel")} rules={[{ required: true, message: t("storage.nameRequired") }]}>
+          <Form.Item
+            name="name"
+            label={t("storage.nameLabel")}
+            rules={[{ required: true, message: t("storage.nameRequired") }]}
+          >
             <Input maxLength={64} />
           </Form.Item>
           <Form.Item name="size_gb" label={t("storage.sizeLabel")} rules={[{ required: true }]}>
@@ -313,9 +323,7 @@ function StoragePage() {
               style={{ width: 200 }}
             />
           </Form.Item>
-          <Typography.Text type="secondary">
-            {t("storage.createNote", { price: priceText })}
-          </Typography.Text>
+          <Typography.Text type="secondary">{t("storage.createNote", { price: priceText })}</Typography.Text>
           <Typography.Text strong style={{ display: "block", marginTop: 8 }}>
             {t("storage.dailyEstimate", {
               size: sizeWatch ?? 0,
@@ -336,9 +344,7 @@ function StoragePage() {
             block
             loading={expand.isPending}
             disabled={!expandTarget || newSize <= expandTarget.size_gb}
-            onClick={() =>
-              expandTarget && expand.mutate({ uuid: expandTarget.uuid, body: { size_gb: newSize } })
-            }
+            onClick={() => expandTarget && expand.mutate({ uuid: expandTarget.uuid, body: { size_gb: newSize } })}
           >
             {t("storage.confirmExpandTo", { size: formatSizeGb(newSize) })}
           </Button>

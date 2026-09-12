@@ -118,9 +118,7 @@ export function InstanceActions({
   const restart = useRestartInstance();
   const autoRenew = useSetAutoRenew(instance.uuid, {
     onSuccess: (data) =>
-      message.success(
-        data.subscription?.auto_renew ? t("period.autoRenewOn") : t("period.autoRenewOff"),
-      ),
+      message.success(data.subscription?.auto_renew ? t("period.autoRenewOn") : t("period.autoRenewOff")),
   });
   const toOnDemand = useConvertToOnDemand(instance.uuid, {
     onSuccess: () => message.success(t("spot.toOnDemandOk"), 6),
@@ -209,23 +207,19 @@ export function InstanceActions({
                   { key: "renew", label: t("period.renewMenu") },
                   {
                     key: "auto-renew",
-                    label: sub?.auto_renew
-                      ? t("period.autoRenewOffMenu")
-                      : t("period.autoRenewOnMenu"),
+                    label: sub?.auto_renew ? t("period.autoRenewOffMenu") : t("period.autoRenewOnMenu"),
                     disabled: sub == null,
                   },
                   { type: "divider" as const },
                 ]
               : []),
-                  ...(isSpot
+            ...(isSpot
               ? [
                   {
                     key: "to-on-demand",
                     label: tipped(
                       t("spot.toOnDemandMenu"),
-                      toOnDemandBlocked
-                        ? tErr("orchestrator.convertNeedsRunningOrStopped")
-                        : undefined,
+                      toOnDemandBlocked ? tErr("orchestrator.convertNeedsRunningOrStopped") : undefined,
                     ),
                     disabled: toOnDemandBlocked,
                   },
@@ -297,16 +291,9 @@ export function InstanceActions({
         </Button>
       </Dropdown>
       <ReleaseModal instance={instance} open={releaseOpen} onClose={() => setReleaseOpen(false)} />
-      {isSubscription && renewOpen && (
-        <RenewModal instance={instance} open onClose={() => setRenewOpen(false)} />
-      )}
+      {isSubscription && renewOpen && <RenewModal instance={instance} open onClose={() => setRenewOpen(false)} />}
       {canConvert && convertOpen && (
-        <RenewModal
-          instance={instance}
-          mode="subscribe"
-          open
-          onClose={() => setConvertOpen(false)}
-        />
+        <RenewModal instance={instance} mode="subscribe" open onClose={() => setConvertOpen(false)} />
       )}
     </Space>
   );

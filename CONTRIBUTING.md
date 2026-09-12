@@ -4,14 +4,14 @@
 
 ## 前置工具
 
-| 工具 | 版本 | 用途 |
-|---|---|---|
-| Docker | 任意近期版本 | 本地 PG18 与 pytest(testcontainers) |
-| uv | 0.11+ | 后端依赖与命令 |
-| Python | 3.13(`.python-version`) | uv 自动选用 |
-| Node.js | 24(CI 钉版;`package.json` `engines` 为下限) | 前端 |
-| pnpm | 11(`package.json` `packageManager`,建议 `corepack enable`) | 前端 |
-| shellcheck、bats | 任意 | 改 `node-join.sh` 时 |
+| 工具             | 版本                                                       | 用途                                |
+| ---------------- | ---------------------------------------------------------- | ----------------------------------- |
+| Docker           | 任意近期版本                                               | 本地 PG18 与 pytest(testcontainers) |
+| uv               | 0.11+                                                      | 后端依赖与命令                      |
+| Python           | 3.13(`.python-version`)                                    | uv 自动选用                         |
+| Node.js          | 24(CI 钉版;`package.json` `engines` 为下限)                | 前端                                |
+| pnpm             | 11(`package.json` `packageManager`,建议 `corepack enable`) | 前端                                |
+| shellcheck、bats | 任意                                                       | 改 `node-join.sh` 时                |
 
 ## 上手
 

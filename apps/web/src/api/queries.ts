@@ -108,7 +108,6 @@ function useCursorPages<TPage extends CursorPage, P extends CursorParams>(
   });
 }
 
-
 export const useMe = (opts?: QueryOpts) => useApiQuery(["me"], () => meApiV1MeGet(), opts);
 /** 我的注销申请:pending 或最近一条;null = 从未申请。 */
 export const useMyDeletionRequest = (opts?: QueryOpts) =>
@@ -197,8 +196,7 @@ export const useInstanceEvents = (uuid: string, opts?: QueryOpts<PageInstanceEve
 export const useInstanceEventPages = (uuid: string) =>
   useCursorPages(
     ["instances", uuid, "events", "pages"],
-    (p?: ListInstanceEventsApiV1InstancesUuidEventsGetParams) =>
-      listInstanceEventsApiV1InstancesUuidEventsGet(uuid, p),
+    (p?: ListInstanceEventsApiV1InstancesUuidEventsGetParams) => listInstanceEventsApiV1InstancesUuidEventsGet(uuid, p),
     undefined,
     50,
   );
@@ -260,8 +258,7 @@ export const useService = (slug: string, opts?: QueryOpts<ServiceOut>) =>
 export const useServiceEventPages = (slug: string) =>
   useCursorPages(
     ["services", slug, "events", "pages"],
-    (p?: ListServiceEventsApiV1ServicesSlugEventsGetParams) =>
-      listServiceEventsApiV1ServicesSlugEventsGet(slug, p),
+    (p?: ListServiceEventsApiV1ServicesSlugEventsGetParams) => listServiceEventsApiV1ServicesSlugEventsGet(slug, p),
     undefined,
     50,
   );
@@ -277,12 +274,7 @@ export const useServiceLogs = (
   slug: string,
   params: GetServiceLogsApiV1ServicesSlugLogsGetParams,
   opts?: QueryOpts<InstanceLogsOut>,
-) =>
-  useApiQuery(
-    ["services", slug, "logs", params],
-    () => getServiceLogsApiV1ServicesSlugLogsGet(slug, params),
-    opts,
-  );
+) => useApiQuery(["services", slug, "logs", params], () => getServiceLogsApiV1ServicesSlugLogsGet(slug, params), opts);
 /** 服务 API Key 列表:只有前缀。 */
 export const useServiceApiKeys = (slug: string, opts?: QueryOpts<ApiKeyOut[]>) =>
   useApiQuery(["services", slug, "api-keys"], () => listApiKeysApiV1ServicesSlugApiKeysGet(slug), opts);
@@ -290,8 +282,7 @@ export const useServiceApiKeys = (slug: string, opts?: QueryOpts<ApiKeyOut[]>) =
 export const useServiceBillPages = (slug: string) =>
   useCursorPages(
     ["services", slug, "bills", "pages"],
-    (p?: ListServiceBillsApiV1ServicesSlugBillsGetParams) =>
-      listServiceBillsApiV1ServicesSlugBillsGet(slug, p),
+    (p?: ListServiceBillsApiV1ServicesSlugBillsGetParams) => listServiceBillsApiV1ServicesSlugBillsGet(slug, p),
     undefined,
     50,
   );
@@ -301,11 +292,7 @@ export const useInstanceLogs = (
   params: GetInstanceLogsApiV1InstancesUuidLogsGetParams,
   opts?: QueryOpts<InstanceLogsOut>,
 ) =>
-  useApiQuery(
-    ["instances", uuid, "logs", params],
-    () => getInstanceLogsApiV1InstancesUuidLogsGet(uuid, params),
-    opts,
-  );
+  useApiQuery(["instances", uuid, "logs", params], () => getInstanceLogsApiV1InstancesUuidLogsGet(uuid, params), opts);
 export const useInstanceMetrics = (
   uuid: string,
   params: GetInstanceMetricsApiV1InstancesUuidMetricsGetParams,

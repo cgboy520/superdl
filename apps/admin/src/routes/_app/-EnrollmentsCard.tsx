@@ -9,7 +9,14 @@ import { useTranslation } from "react-i18next";
 import { formatDateTime, metaOf, nodeEnrollStatusMap, type NodeEnrollStatus } from "@superdl/ui";
 import { TableErrorEmpty } from "@superdl/ui/components";
 
-import { type EnrollmentCommandOut, type EnrollmentRow, isApiError, useEnrollments, useRegenerateEnrollment, useRevokeEnrollment } from "../../api";
+import {
+  type EnrollmentCommandOut,
+  type EnrollmentRow,
+  isApiError,
+  useEnrollments,
+  useRegenerateEnrollment,
+  useRevokeEnrollment,
+} from "../../api";
 import { ReasonAction } from "../../components/ReasonAction";
 import { CommandPanel } from "./-AddNodeModal";
 
@@ -72,7 +79,9 @@ export function EnrollmentsCard({ writable }: { writable: boolean }) {
           ]}
         />
       }
-    >      <Table<EnrollmentRow>
+    >
+      {" "}
+      <Table<EnrollmentRow>
         size="small"
         rowKey="id"
         scroll={{ x: 900 }}
@@ -157,9 +166,7 @@ export function EnrollmentsCard({ writable }: { writable: boolean }) {
                   title={t("nodes.regenerateConfirmTitle")}
                   confirmText={t("nodes.regenerateConfirmDesc", { host: r.hostname ?? `#${r.id}` })}
                   disabled={!writable || !["pending", "expired", "failed"].includes(r.status)}
-                  disabledReason={
-                    !writable ? t("nodes.readonlyNoOp") : t("nodes.regenerateOnly")
-                  }
+                  disabledReason={!writable ? t("nodes.readonlyNoOp") : t("nodes.regenerateOnly")}
                   onSubmit={async (reason) => {
                     await regenerate.mutateAsync({ enrollmentId: r.id, data: { reason } });
                   }}
@@ -199,4 +206,3 @@ export function EnrollmentsCard({ writable }: { writable: boolean }) {
     </Card>
   );
 }
-

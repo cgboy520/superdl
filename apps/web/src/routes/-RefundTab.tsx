@@ -116,11 +116,7 @@ export function RefundTab() {
               maxLength={256}
             />
             <Space align="center" wrap>
-              <Tooltip
-                title={
-                  selected && reason.trim().length < 2 ? t("billing.refundReasonTooShort") : undefined
-                }
-              >
+              <Tooltip title={selected && reason.trim().length < 2 ? t("billing.refundReasonTooShort") : undefined}>
                 <Button
                   type="primary"
                   loading={create.isPending}
@@ -190,4 +186,3 @@ export function RefundTab() {
     </Space>
   );
 }
-

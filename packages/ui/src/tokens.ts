@@ -311,4 +311,3 @@ export const cssVars = {
     "--sdl-scroll-thumb": "rgba(255,255,255,0.25)",
   },
 } as const;
-

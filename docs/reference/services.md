@@ -12,38 +12,38 @@
 
 服务状态不落库,由 `services/state.py::derive_status(service, current, rollout)` 推导:
 
-| released_at | rollout_instance_id | current.status | unready_since | status | ready |
-|---|---|---|---|---|---|
-| 非空 | — | — | — | `released` | 否 |
-| 空 | 非空 | 任意 | — | `deploying` | 否 |
-| 空 | 空 | creating / starting | — | `deploying` | 否 |
-| 空 | 空 | running | 空 | `running` | **是** |
-| 空 | 空 | running | 非空 | `unready` | 否 |
-| 空 | 空 | stopping / stopped / frozen / failed / releasing | — | 同名 | 否 |
-| 空 | 空 | (无实例) | — | `stopped` | 否 |
+| released_at | rollout_instance_id | current.status                                   | unready_since | status      | ready  |
+| ----------- | ------------------- | ------------------------------------------------ | ------------- | ----------- | ------ |
+| 非空        | —                   | —                                                | —             | `released`  | 否     |
+| 空          | 非空                | 任意                                             | —             | `deploying` | 否     |
+| 空          | 空                  | creating / starting                              | —             | `deploying` | 否     |
+| 空          | 空                  | running                                          | 空            | `running`   | **是** |
+| 空          | 空                  | running                                          | 非空          | `unready`   | 否     |
+| 空          | 空                  | stopping / stopped / frozen / failed / releasing | —             | 同名        | 否     |
+| 空          | 空                  | (无实例)                                         | —             | `stopped`   | 否     |
 
 `unready` 不是故障(实例仍 running、照常计费);`desired_state` 随出参下发,前端据此区分「用户停的」与「欠费 / 管理员停的」。
 
 ## 契约
 
-| 端点 | 角色/鉴权 | 说明 |
-|---|---|---|
-| `GET /api/v1/services?status=&name=&cursor=&limit=` | user | 降序游标分页;`name` 模糊匹配名称与 slug 前缀;`status` 按派生态在本页内过滤;已删除不列 |
-| `POST /api/v1/services` | user | 部署(202):同事务写 `services` + 第 1 版实例(creating)+ 事件 + outbox;实名闸门与创建实例同款;`Idempotency-Key`(键落实例行,重放经实例反查服务;同键异参 409) |
-| `GET /api/v1/services/{slug}` | user | 详情:身份 + 派生 `status` / `ready` + `url` + 当前 / 候选实例(`InstanceOut`)+ 当前版本容器配置回显(`container`,env 只回明文项,密文项只回键名);非属主 404 |
-| `PATCH /api/v1/services/{slug}` | user | 改名 / `require_api_key`:只改 `services` 行并失效鉴权缓存(≤5s 生效),**不动 K8s** |
-| `POST /api/v1/services/{slug}/stop` `/start` | user | 委托当前实例的关机 / 开机(锁序 instance → service),写 `desired_state`;版本更新在途或已删除 409 |
-| `DELETE /api/v1/services/{slug}` | user | 释放当前实例 + 吊销全部密钥;运行中 409(`services.deleteNeedsStopped`);释放中 / 已删除幂等直回;slug 不复用 |
-| `GET /api/v1/services/{slug}/events` | user | 全部版本实例的 `instance_events` 并集(降序游标分页),每条带 `instance_uuid` 与 `revision` |
-| `GET /api/v1/services/{slug}/revisions` | user | 版本历史 = 该服务下全部实例(含已释放),版本号降序 |
-| `POST /api/v1/services/{slug}/revisions` | user | 版本更新(202,重建):同事务落新版本实例(creating,`revision+1`)+ 旧版本运行中即关机(reason `rollout`)+ `rollout_instance_id`;`Idempotency-Key`(键落新实例行);包周期服务 / 更新在途 / 旧版本变更中 409;`env_secret_keep` 沿用当前版本密文值 |
-| `GET /api/v1/services/{slug}/logs?tail_lines=` | user | 当前版本容器日志,复用实例日志四道闸(owner / 状态 / 限流 20/h/user / K8s 读 5s 超时) |
-| `GET /api/v1/services/{slug}/bills` | user | `bills_hourly` 按全部版本实例并集分页 |
-| `GET /api/v1/services/{slug}/api-keys` | user | 列表,只回 `key_prefix` |
-| `POST /api/v1/services/{slug}/api-keys` | user | 新建;**明文只在本次响应出现一次**;单服务活跃密钥上限见 [limits.md](./limits.md);已删除的服务 409 |
-| `DELETE /api/v1/services/{slug}/api-keys/{key_id}` | user | 吊销:写 `revoked_at`,不删行 |
-| `GET /api/admin/v1/services` | admin/ops/finance/readonly | 管理端全局列表(`user_id` / `q` / `include_released`),见 [admin.md](./admin.md) |
-| `/api/internal/v1/endpoint-auth` | 无(集群内) | 网关 `SecurityPolicy.extAuth` 回调,**不对公网开放**(边缘 404 + edge_guard);接受全部 HTTP 方法;每次拒绝计 `superdl_endpoint_auth_denied_total`(`EndpointAuthDenialSustained` 告警) |
+| 端点                                                | 角色/鉴权                  | 说明                                                                                                                                                                                                                                    |
+| --------------------------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/v1/services?status=&name=&cursor=&limit=` | user                       | 降序游标分页;`name` 模糊匹配名称与 slug 前缀;`status` 按派生态在本页内过滤;已删除不列                                                                                                                                                   |
+| `POST /api/v1/services`                             | user                       | 部署(202):同事务写 `services` + 第 1 版实例(creating)+ 事件 + outbox;实名闸门与创建实例同款;`Idempotency-Key`(键落实例行,重放经实例反查服务;同键异参 409)                                                                               |
+| `GET /api/v1/services/{slug}`                       | user                       | 详情:身份 + 派生 `status` / `ready` + `url` + 当前 / 候选实例(`InstanceOut`)+ 当前版本容器配置回显(`container`,env 只回明文项,密文项只回键名);非属主 404                                                                                |
+| `PATCH /api/v1/services/{slug}`                     | user                       | 改名 / `require_api_key`:只改 `services` 行并失效鉴权缓存(≤5s 生效),**不动 K8s**                                                                                                                                                        |
+| `POST /api/v1/services/{slug}/stop` `/start`        | user                       | 委托当前实例的关机 / 开机(锁序 instance → service),写 `desired_state`;版本更新在途或已删除 409                                                                                                                                          |
+| `DELETE /api/v1/services/{slug}`                    | user                       | 释放当前实例 + 吊销全部密钥;运行中 409(`services.deleteNeedsStopped`);释放中 / 已删除幂等直回;slug 不复用                                                                                                                               |
+| `GET /api/v1/services/{slug}/events`                | user                       | 全部版本实例的 `instance_events` 并集(降序游标分页),每条带 `instance_uuid` 与 `revision`                                                                                                                                                |
+| `GET /api/v1/services/{slug}/revisions`             | user                       | 版本历史 = 该服务下全部实例(含已释放),版本号降序                                                                                                                                                                                        |
+| `POST /api/v1/services/{slug}/revisions`            | user                       | 版本更新(202,重建):同事务落新版本实例(creating,`revision+1`)+ 旧版本运行中即关机(reason `rollout`)+ `rollout_instance_id`;`Idempotency-Key`(键落新实例行);包周期服务 / 更新在途 / 旧版本变更中 409;`env_secret_keep` 沿用当前版本密文值 |
+| `GET /api/v1/services/{slug}/logs?tail_lines=`      | user                       | 当前版本容器日志,复用实例日志四道闸(owner / 状态 / 限流 20/h/user / K8s 读 5s 超时)                                                                                                                                                     |
+| `GET /api/v1/services/{slug}/bills`                 | user                       | `bills_hourly` 按全部版本实例并集分页                                                                                                                                                                                                   |
+| `GET /api/v1/services/{slug}/api-keys`              | user                       | 列表,只回 `key_prefix`                                                                                                                                                                                                                  |
+| `POST /api/v1/services/{slug}/api-keys`             | user                       | 新建;**明文只在本次响应出现一次**;单服务活跃密钥上限见 [limits.md](./limits.md);已删除的服务 409                                                                                                                                        |
+| `DELETE /api/v1/services/{slug}/api-keys/{key_id}`  | user                       | 吊销:写 `revoked_at`,不删行                                                                                                                                                                                                             |
+| `GET /api/admin/v1/services`                        | admin/ops/finance/readonly | 管理端全局列表(`user_id` / `q` / `include_released`),见 [admin.md](./admin.md)                                                                                                                                                          |
+| `/api/internal/v1/endpoint-auth`                    | 无(集群内)                 | 网关 `SecurityPolicy.extAuth` 回调,**不对公网开放**(边缘 404 + edge_guard);接受全部 HTTP 方法;每次拒绝计 `superdl_endpoint_auth_denied_total`(`EndpointAuthDenialSustained` 告警)                                                       |
 
 实例层对服务的版本实例只开放只读端点与购买模式类端点;stop / start / restart / DELETE / 重置 token 一律 409 `orchestrator.serviceInstanceLifecycle`,`GET /instances` 默认不列它们。`POST /instances` 不接受服务容器参数。
 

@@ -25,10 +25,7 @@ export function PayCountdown({ expiresAt }: { expiresAt: string }) {
   const { t } = useTranslation();
   const [left, setLeft] = useState(() => Math.max(0, new Date(expiresAt).getTime() - Date.now()));
   useEffect(() => {
-    const timer = setInterval(
-      () => setLeft(Math.max(0, new Date(expiresAt).getTime() - Date.now())),
-      1000,
-    );
+    const timer = setInterval(() => setLeft(Math.max(0, new Date(expiresAt).getTime() - Date.now())), 1000);
     return () => clearInterval(timer);
   }, [expiresAt]);
   if (left <= 0) return <span>{t("billing.orderExpired")}</span>;
@@ -157,9 +154,7 @@ export function RechargeModal({ open, onClose }: { open: boolean; onClose: () =>
                 ),
                 disabled: !enabled.alipay,
               },
-              ...(enabled.mock
-                ? [{ key: "mock", label: t("billing.mockChannel") }]
-                : []),
+              ...(enabled.mock ? [{ key: "mock", label: t("billing.mockChannel") }] : []),
             ]}
           />
           <Radio.Group
@@ -213,9 +208,7 @@ export function RechargeModal({ open, onClose }: { open: boolean; onClose: () =>
               no: shown.order_no,
               time: formatDateTime(shown.expires_at),
             })}
-            description={
-              <PayCountdown expiresAt={shown.expires_at} />
-            }
+            description={<PayCountdown expiresAt={shown.expires_at} />}
           />
           <div style={{ display: "flex", justifyContent: "center" }}>
             {shown.qr_url ? (
@@ -250,9 +243,7 @@ export function RechargeModal({ open, onClose }: { open: boolean; onClose: () =>
             <Button
               block
               loading={mockPay.isPending}
-              onClick={() =>
-                mockPay.mutate({ order_no: shown.order_no, amount: shown.amount })
-              }
+              onClick={() => mockPay.mutate({ order_no: shown.order_no, amount: shown.amount })}
             >
               {t("billing.mockPayNow")}
             </Button>
@@ -265,4 +256,3 @@ export function RechargeModal({ open, onClose }: { open: boolean; onClose: () =>
     </Modal>
   );
 }
-

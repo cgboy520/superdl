@@ -157,16 +157,10 @@ export function InvoiceTab() {
   const eligibleQ = useInvoiceEligible();
   const periods = useMemo<InvoiceEligibleOut[]>(() => eligibleQ.data ?? [], [eligibleQ.data]);
   // 总额逐账期字符串相加(2 位小数),不过 Number
-  const total = useMemo(
-    () => periods.reduce((acc, p) => addAmounts(acc, p.amount), "0.00"),
-    [periods],
-  );
+  const total = useMemo(() => periods.reduce((acc, p) => addAmounts(acc, p.amount), "0.00"), [periods]);
   const [applyOpen, setApplyOpen] = useState(false);
   const invoices = useInvoicePages(20);
-  const rows = useMemo<InvoiceOut[]>(
-    () => (invoices.data?.pages ?? []).flatMap((p) => p.items),
-    [invoices.data],
-  );
+  const rows = useMemo<InvoiceOut[]>(() => (invoices.data?.pages ?? []).flatMap((p) => p.items), [invoices.data]);
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
@@ -176,11 +170,7 @@ export function InvoiceTab() {
             title={t("billing.invoiceEligibleTotal")}
             value={moneyOr(formatMoney(total), eligibleQ.data != null)}
           />
-          <Button
-            type="primary"
-            disabled={periods.length === 0}
-            onClick={() => setApplyOpen(true)}
-          >
+          <Button type="primary" disabled={periods.length === 0} onClick={() => setApplyOpen(true)}>
             {t("billing.invoiceApply")}
           </Button>
         </Space>
@@ -200,10 +190,7 @@ export function InvoiceTab() {
             </Typography.Text>
           )
         )}
-        <Typography.Text
-          type="secondary"
-          style={{ display: "block", marginTop: 8, fontSize: fontSize.caption }}
-        >
+        <Typography.Text type="secondary" style={{ display: "block", marginTop: 8, fontSize: fontSize.caption }}>
           {t("billing.invoiceEligibleHint")}
           {" · "}
           {t("billing.invoiceManualNote")}
@@ -259,4 +246,3 @@ export function InvoiceTab() {
     </Space>
   );
 }
-

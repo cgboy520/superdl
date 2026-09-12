@@ -8,12 +8,12 @@ Prometheus 代理查询、`usage_hourly` 聚合、事件计费与指标估算对
 
 ## 契约
 
-| 端点 | 角色/鉴权 | 说明 |
-|---|---|---|
-| `GET /api/v1/instances/{uuid}/metrics?range=1h\|6h\|24h` | user | 代理 PromQL,按租户 namespace 过滤;Prometheus 不可用 → 503 |
-| `GET /api/v1/metrics/instances` | user | 本人 running 实例(cap 20)近 1h gpu_util 稀疏序列;断源返 200 `{available:false}` |
-| `GET /api/admin/v1/reconciliation?day=` | finance/readonly | 事件计费合计 vs 指标估算合计 + diff% + 差异实例清单 |
-| `GET /api/admin/v1/reconciliation/export?day=&lang=` | finance/readonly | 同一报告的 CSV |
+| 端点                                                     | 角色/鉴权        | 说明                                                                            |
+| -------------------------------------------------------- | ---------------- | ------------------------------------------------------------------------------- |
+| `GET /api/v1/instances/{uuid}/metrics?range=1h\|6h\|24h` | user             | 代理 PromQL,按租户 namespace 过滤;Prometheus 不可用 → 503                       |
+| `GET /api/v1/metrics/instances`                          | user             | 本人 running 实例(cap 20)近 1h gpu_util 稀疏序列;断源返 200 `{available:false}` |
+| `GET /api/admin/v1/reconciliation?day=`                  | finance/readonly | 事件计费合计 vs 指标估算合计 + diff% + 差异实例清单                             |
+| `GET /api/admin/v1/reconciliation/export?day=&lang=`     | finance/readonly | 同一报告的 CSV                                                                  |
 
 ## 规则与不变量
 

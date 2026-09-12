@@ -31,9 +31,12 @@ describe("serviceDetailValidateSearch", () => {
 
 describe("deployValidateSearch", () => {
   it("sku_id 正整数、gpus 1~8、period 压过 market=spot、count 只在包周期下有效", () => {
-    expect(
-      deployValidateSearch({ sku_id: "3", gpus: "2", period: "month", market: "spot", count: "6" }),
-    ).toEqual({ sku_id: 3, gpus: 2, period: "month", count: 6 });
+    expect(deployValidateSearch({ sku_id: "3", gpus: "2", period: "month", market: "spot", count: "6" })).toEqual({
+      sku_id: 3,
+      gpus: 2,
+      period: "month",
+      count: 6,
+    });
     expect(deployValidateSearch({ sku_id: "0", gpus: "9", market: "spot", count: "6" })).toEqual({
       market: "spot",
     });

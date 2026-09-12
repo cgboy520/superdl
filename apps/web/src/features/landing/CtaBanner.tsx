@@ -17,9 +17,7 @@ export function CtaBanner() {
   const text = freeCards > 0 ? t("landing.cta.withStock", { count: freeCards }) : t("landing.cta.fallback");
 
   return (
-    <section
-      style={{ background: brand.heroBg, padding: `${layout.sectionPaddingY}px 24px`, textAlign: "center" }}
-    >
+    <section style={{ background: brand.heroBg, padding: `${layout.sectionPaddingY}px 24px`, textAlign: "center" }}>
       <Typography.Title level={3} style={{ color: "#fff", marginTop: 0, marginBottom: 24 }}>
         {text}
       </Typography.Title>

@@ -5,21 +5,7 @@ import { deletionStatusMap, fontSize, formatDateTime, maskPhone, metaOf } from "
 import { DataErrorAlert, TableErrorEmpty, TypeConfirmModal, useConfirm } from "@superdl/ui/components";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import {
-  App,
-  Alert,
-  Button,
-  Card,
-  Form,
-  Input,
-  Modal,
-  Skeleton,
-  Space,
-  Table,
-  Tag,
-  Tooltip,
-  Typography,
-} from "antd";
+import { App, Alert, Button, Card, Form, Input, Modal, Skeleton, Space, Table, Tag, Tooltip, Typography } from "antd";
 import { useState } from "react";
 
 import {
@@ -87,11 +73,7 @@ function SettingsPage() {
             scroll={{ x: 640 }}
             dataSource={keys ?? []}
             locale={{
-              emptyText: isError ? (
-                <TableErrorEmpty isError onRetry={() => void refetch()} />
-              ) : (
-                t("settings.noKeys")
-              ),
+              emptyText: isError ? <TableErrorEmpty isError onRetry={() => void refetch()} /> : t("settings.noKeys"),
             }}
             columns={[
               { title: t("storage.nameLabel"), dataIndex: "name" },
@@ -125,11 +107,7 @@ function SettingsPage() {
               },
             ]}
           />
-          <Form
-            form={form}
-            layout="vertical"
-            onFinish={(v: { name: string; public_key: string }) => addKey.mutate(v)}
-          >
+          <Form form={form} layout="vertical" onFinish={(v: { name: string; public_key: string }) => addKey.mutate(v)}>
             <Form.Item
               name="name"
               label={t("storage.nameLabel")}
@@ -148,10 +126,7 @@ function SettingsPage() {
                 },
               ]}
             >
-              <Input.TextArea
-                rows={3}
-                placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5… you@host"
-              />
+              <Input.TextArea rows={3} placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5… you@host" />
             </Form.Item>
             <Button type="primary" htmlType="submit" loading={addKey.isPending}>
               {t("create.addKey")}
@@ -227,15 +202,7 @@ function SettingsPage() {
 }
 
 /** 设置/修改密码:凭手机号 + 验证码,不要求旧密码。 */
-function PasswordModal({
-  open,
-  phone,
-  onClose,
-}: {
-  open: boolean;
-  phone: string;
-  onClose: () => void;
-}) {
+function PasswordModal({ open, phone, onClose }: { open: boolean; phone: string; onClose: () => void }) {
   const { t } = useTranslation();
   const { message } = App.useApp();
   const [form] = Form.useForm<{ sms_code: string; new_password: string }>();
@@ -259,16 +226,14 @@ function PasswordModal({
       okText={t("settings.savePassword")}
       confirmLoading={reset.isPending}
       onOk={() => {
-        void form.validateFields().then((v) =>
-          reset.mutate({ phone, sms_code: v.sms_code, new_password: v.new_password }),
-        );
+        void form
+          .validateFields()
+          .then((v) => reset.mutate({ phone, sms_code: v.sms_code, new_password: v.new_password }));
       }}
       destroyOnHidden
     >
       <Form form={form} layout="vertical">
-        <Typography.Paragraph type="secondary">
-          {t("settings.changePasswordDesc", { phone })}
-        </Typography.Paragraph>
+        <Typography.Paragraph type="secondary">{t("settings.changePasswordDesc", { phone })}</Typography.Paragraph>
         <SmsCodeField
           sms={sms}
           placeholder={t("settings.codePlaceholder")}
@@ -276,10 +241,7 @@ function PasswordModal({
           getCodeLabel={t("settings.getCode")}
           onSend={() => sms.send(phone)}
         />
-        <Form.Item
-          name="new_password"
-          rules={[{ required: true, min: 12, message: t("settings.passwordMin") }]}
-        >
+        <Form.Item name="new_password" rules={[{ required: true, min: 12, message: t("settings.passwordMin") }]}>
           <Input.Password placeholder={t("settings.newPasswordPlaceholder")} />
         </Form.Item>
       </Form>
@@ -471,10 +433,7 @@ function RealNameCard({
             disabled={!enabled}
             onFinish={(v) => submit.mutate({ name: v.name, id_number: v.id_number })}
           >
-            <Form.Item
-              name="name"
-              rules={[{ required: true, min: 2, message: t("settings.realNameNameRule") }]}
-            >
+            <Form.Item name="name" rules={[{ required: true, min: 2, message: t("settings.realNameNameRule") }]}>
               <Input
                 placeholder={t("settings.realNamePlaceholder")}
                 aria-label={t("settings.realNamePlaceholder")}

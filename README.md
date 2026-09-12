@@ -47,14 +47,14 @@ K8s 默认 `FakeOrchestrator`(进程内存态);接真实集群把 `SUPERDL_K8S_B
 
 ## 工程结构
 
-| 目录 | 说明 |
-|---|---|
-| `apps/api` | FastAPI 模块化单体(account / catalog / orchestrator / services / billing / metering / notify / nodes / legal / tickets / adminapi),同镜像双入口 serve / worker |
-| `apps/web` | 用户控制台(React 19 + antd 6,浅色) |
-| `apps/admin` | 管理控制台(同栈,深色 NOC 风) |
-| `packages/api-client` | orval 从 `openapi.json` 生成的 fetcher 与 model 类型(禁止手改) |
-| `packages/ui` | 两端共享的主题 token / 状态映射 / 格式化工具 / 共享文案 |
-| `deploy/` | ansible 控制面装机、集群 helmfile 与 runbook、平台 K8s 清单与本地 compose、node-join 测试、实例镜像 |
-| `e2e/` | Playwright 浏览器冒烟 |
-| `docs/` | 架构、模块参考、UI/UX 规格、文案规范、决策记录 |
-| `scripts/` | 发布脚本与仓库级闸门脚本(禁词、CJK、CSP hash、文档引用、网关清单) |
+| 目录                  | 说明                                                                                                                                                           |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/api`            | FastAPI 模块化单体(account / catalog / orchestrator / services / billing / metering / notify / nodes / legal / tickets / adminapi),同镜像双入口 serve / worker |
+| `apps/web`            | 用户控制台(React 19 + antd 6,浅色)                                                                                                                             |
+| `apps/admin`          | 管理控制台(同栈,深色 NOC 风)                                                                                                                                   |
+| `packages/api-client` | orval 从 `openapi.json` 生成的 fetcher 与 model 类型(禁止手改)                                                                                                 |
+| `packages/ui`         | 两端共享的主题 token / 状态映射 / 格式化工具 / 共享文案                                                                                                        |
+| `deploy/`             | ansible 控制面装机、集群 helmfile 与 runbook、平台 K8s 清单与本地 compose、node-join 测试、实例镜像                                                            |
+| `e2e/`                | Playwright 浏览器冒烟                                                                                                                                          |
+| `docs/`               | 架构、模块参考、UI/UX 规格、文案规范、决策记录                                                                                                                 |
+| `scripts/`            | 发布脚本与仓库级闸门脚本(禁词、CJK、CSP hash、文档引用、网关清单)                                                                                              |

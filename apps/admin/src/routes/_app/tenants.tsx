@@ -16,7 +16,9 @@ const TENANTS_TABS = ["tenants", "instances", "deletions"] as const;
 type TenantsTabKey = (typeof TENANTS_TABS)[number];
 export const Route = createFileRoute("/_app/tenants")({
   // q:检索;tab/dtab:页内与抽屉 Tab;istatus/inode/iq:实例 Tab 筛选;tstatus:租户状态;order:注册排序
-  validateSearch: (search: Record<string, unknown>): {
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): {
     q?: string;
     tab?: TenantsTabKey;
     dtab?: DrawerTab;
@@ -31,14 +33,10 @@ export const Route = createFileRoute("/_app/tenants")({
     q: typeof search.q === "string" && search.q ? search.q : undefined,
     tab: TENANTS_TABS.includes(search.tab as TenantsTabKey) ? (search.tab as TenantsTabKey) : undefined,
     dtab: DRAWER_TABS.includes(search.dtab as DrawerTab) ? (search.dtab as DrawerTab) : undefined,
-    istatus:
-      typeof search.istatus === "string" && search.istatus in instanceStatusMap
-        ? search.istatus
-        : undefined,
+    istatus: typeof search.istatus === "string" && search.istatus in instanceStatusMap ? search.istatus : undefined,
     inode: typeof search.inode === "string" && search.inode ? search.inode : undefined,
     iq: typeof search.iq === "string" && search.iq ? search.iq : undefined,
-    tstatus:
-      search.tstatus === "active" || search.tstatus === "frozen" ? search.tstatus : undefined,
+    tstatus: search.tstatus === "active" || search.tstatus === "frozen" ? search.tstatus : undefined,
     order: search.order === "asc" ? "asc" : undefined,
     tenant: Number.isInteger(Number(search.tenant)) && Number(search.tenant) > 0 ? Number(search.tenant) : undefined,
   }),
@@ -71,4 +69,3 @@ function TenantsPage() {
     </PageContainer>
   );
 }
-

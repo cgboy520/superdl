@@ -4,18 +4,18 @@ packages:
   - packages/*
   - e2e
 allowBuilds:
-  '@swc/core': true
+  "@swc/core": true
   esbuild: true
 overrides:
   # orval 8.24 精确钉 js-yaml 4.3.1(GHSA-2883-xcg3-v3hh);升 orval 会改生成产物,先只补补丁位
-  'orval>js-yaml': 4.3.2
+  "orval>js-yaml": 4.3.2
 minimumReleaseAgeExclude:
-  - '@turbo/darwin-64@2.10.11'
-  - '@turbo/darwin-arm64@2.10.11'
-  - '@turbo/linux-64@2.10.11'
-  - '@turbo/linux-arm64@2.10.11'
-  - '@turbo/windows-64@2.10.11'
-  - '@turbo/windows-arm64@2.10.11'
+  - "@turbo/darwin-64@2.10.11"
+  - "@turbo/darwin-arm64@2.10.11"
+  - "@turbo/linux-64@2.10.11"
+  - "@turbo/linux-arm64@2.10.11"
+  - "@turbo/windows-64@2.10.11"
+  - "@turbo/windows-arm64@2.10.11"
   - turbo@2.10.11
   - i18next@26.4.0
   - react-i18next@17.0.12

@@ -30,7 +30,15 @@ export interface SkuFilters {
   mem: number;
 }
 
-export const DEFAULT_SKU_FILTERS: SkuFilters = { kind: "gpu", model: ALL, tier: ALL, vram: 0, gpus: 1, vcpu: 0, mem: 0 };
+export const DEFAULT_SKU_FILTERS: SkuFilters = {
+  kind: "gpu",
+  model: ALL,
+  tier: ALL,
+  vram: 0,
+  gpus: 1,
+  vcpu: 0,
+  mem: 0,
+};
 
 function matches(s: SkuMarketOut, f: SkuFilters, ignore?: keyof SkuFilters): boolean {
   const isCpu = f.kind === "cpu";
@@ -116,7 +124,11 @@ export function SkuPicker({
       disabledReason: n === 0 ? t("market.noResultForChip") : undefined,
     };
   };
-  const numOptions = (key: "vram" | "vcpu" | "mem", values: number[], unit: (v: number) => string): ChipOption<number>[] => [
+  const numOptions = (
+    key: "vram" | "vcpu" | "mem",
+    values: number[],
+    unit: (v: number) => string,
+  ): ChipOption<number>[] => [
     { value: 0, label: t("market.all") },
     ...Array.from(new Set(values))
       .sort((a, b) => a - b)
@@ -145,15 +157,26 @@ export function SkuPicker({
       .filter(([v]) => v !== "cpu")
       .map(([v, meta]) => withCount("tier", v, t(meta.labelKey))),
   ];
-  const vramOptions = numOptions("vram", kindSkus.map((s) => s.vram_gb), (v) => `${v} GB`);
-  const vcpuOptions = numOptions("vcpu", kindSkus.map((s) => s.vcpu), (v) => t("market.vcpuUnit", { count: v }));
-  const memOptions = numOptions("mem", kindSkus.map((s) => s.mem_gb), (v) => `${v} GB`);
+  const vramOptions = numOptions(
+    "vram",
+    kindSkus.map((s) => s.vram_gb),
+    (v) => `${v} GB`,
+  );
+  const vcpuOptions = numOptions(
+    "vcpu",
+    kindSkus.map((s) => s.vcpu),
+    (v) => t("market.vcpuUnit", { count: v }),
+  );
+  const memOptions = numOptions(
+    "mem",
+    kindSkus.map((s) => s.mem_gb),
+    (v) => `${v} GB`,
+  );
 
   // 结果:可选行在前,不可选行(库存不足 / 未上竞价)排到末尾
   const filtered = all.filter((s) => matches(s, f));
   const rows = [...filtered].sort((a, b) => Number(selectable(b)) - Number(selectable(a)));
-  const hasFilter =
-    f.model !== ALL || f.tier !== ALL || f.vram !== 0 || f.gpus !== 1 || f.vcpu !== 0 || f.mem !== 0;
+  const hasFilter = f.model !== ALL || f.tier !== ALL || f.vram !== 0 || f.gpus !== 1 || f.vcpu !== 0 || f.mem !== 0;
 
   const columns = skuColumns({
     fmt,
@@ -217,17 +240,42 @@ export function SkuPicker({
       {isCpu ? (
         variant === "full" && (
           <>
-            <ChipRow label={t("market.chipVcpu")} value={f.vcpu} onChange={(v) => setF({ vcpu: v })} options={vcpuOptions} />
-            <ChipRow label={t("market.chipMem")} value={f.mem} onChange={(v) => setF({ mem: v })} options={memOptions} />
+            <ChipRow
+              label={t("market.chipVcpu")}
+              value={f.vcpu}
+              onChange={(v) => setF({ vcpu: v })}
+              options={vcpuOptions}
+            />
+            <ChipRow
+              label={t("market.chipMem")}
+              value={f.mem}
+              onChange={(v) => setF({ mem: v })}
+              options={memOptions}
+            />
           </>
         )
       ) : (
         <>
-          <ChipRow label={t("market.chipGpuModel")} value={f.model} onChange={(v) => setF({ model: v })} options={modelOptions} />
-          <ChipRow label={t("market.chipTier")} value={f.tier} onChange={(v) => setF({ tier: v })} options={tierOptions} />
+          <ChipRow
+            label={t("market.chipGpuModel")}
+            value={f.model}
+            onChange={(v) => setF({ model: v })}
+            options={modelOptions}
+          />
+          <ChipRow
+            label={t("market.chipTier")}
+            value={f.tier}
+            onChange={(v) => setF({ tier: v })}
+            options={tierOptions}
+          />
           {variant === "full" && (
             <>
-              <ChipRow label={t("market.chipVram")} value={f.vram} onChange={(v) => setF({ vram: v })} options={vramOptions} />
+              <ChipRow
+                label={t("market.chipVram")}
+                value={f.vram}
+                onChange={(v) => setF({ vram: v })}
+                options={vramOptions}
+              />
               <ChipRow
                 label={t("market.chipGpuCount")}
                 value={f.gpus}

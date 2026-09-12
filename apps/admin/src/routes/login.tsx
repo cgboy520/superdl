@@ -134,10 +134,7 @@ function MfaSetupForm({ ticket }: { ticket: string }) {
   }
 
   return (
-    <Form
-      layout="vertical"
-      onFinish={(v: { code: string }) => confirm.mutate({ ticket, code: v.code.trim() })}
-    >
+    <Form layout="vertical" onFinish={(v: { code: string }) => confirm.mutate({ ticket, code: v.code.trim() })}>
       <Typography.Paragraph type="secondary">{t("login.mfaSetupDesc")}</Typography.Paragraph>
       <div style={{ textAlign: "center", marginBottom: 12 }}>
         {begin.data ? (
@@ -235,9 +232,7 @@ function LoginPage() {
         ) : (
           <Form
             layout="vertical"
-            onFinish={(values: { username: string; password: string }) =>
-              login.mutate({ data: values })
-            }
+            onFinish={(values: { username: string; password: string }) => login.mutate({ data: values })}
           >
             <Form.Item name="username" label={t("login.username")} rules={[{ required: true }]}>
               <Input autoComplete="username" />

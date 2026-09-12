@@ -51,10 +51,7 @@ export async function loginViaApi(page: Page, phone: string): Promise<string> {
   expect(resp.status(), await resp.text()).toBe(201);
   const data = (await resp.json()) as { access_token: string };
   // 键名对齐 apps/web stores/auth.ts 的 TOKEN_KEY(函数体序列化进浏览器,不能引用常量)
-  await page.addInitScript(
-    (token) => window.localStorage.setItem("superdl.web.accessToken", token),
-    data.access_token,
-  );
+  await page.addInitScript((token) => window.localStorage.setItem("superdl.web.accessToken", token), data.access_token);
   return data.access_token;
 }
 
@@ -115,9 +112,7 @@ export async function pickSharedStandardSku(page: Page): Promise<void> {
 /** 创建页「自定义镜像」表单块:切自定义镜像 + 填 e2e 镜像 + 勾选 e2e 公钥;提交按钮由各 spec 自己点。 */
 export async function fillCustomImageForm(page: Page): Promise<void> {
   await page.getByText("自定义镜像").click();
-  await page
-    .getByPlaceholder("registry.example.com/your/image:tag")
-    .fill("registry.superdl.local/pytorch:2.9.0-cu128");
+  await page.getByPlaceholder("registry.example.com/your/image:tag").fill("registry.superdl.local/pytorch:2.9.0-cu128");
   await page.getByRole("checkbox", { name: /e2e-key/ }).check();
 }
 
@@ -135,4 +130,3 @@ export async function setupUser(page: Page, amount: string): Promise<string> {
   await addSshKeyViaApi(page, token);
   return token;
 }
-

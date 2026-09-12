@@ -49,103 +49,103 @@ export function DataDiskCard({
   const diskDaily = diskDailyEstimate(diskPriceGbMonth, newGb);
 
   const body = (
-      <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
-        <Radio.Group
-          value={mode}
-          onChange={(e) => onModeChange(e.target.value as DiskMode)}
-          options={[
-            { value: "none", label: t("create.diskNone") },
-            { value: "new", label: t("create.diskNew") },
-            { value: "existing", label: t("create.diskExisting") },
-          ]}
-        />
-        {mode === "new" && (
-          <>
-            {/* 容量:Slider 与 InputNumber 联动同值;min/max 取 /policies */}
-            <Flex gap={space.md} align="center">
-              <Slider
-                style={{ flex: 1, maxWidth: 480 }}
-                min={policies?.disk_min_gb}
-                max={policies?.disk_max_gb}
-                step={10}
-                value={newGb}
-                onChange={onNewGbChange}
-                disabled={!policies}
-              />
-              <InputNumber
-                min={policies?.disk_min_gb}
-                max={policies?.disk_max_gb}
-                step={10}
-                value={newGb}
-                onChange={(v) => {
-                  if (typeof v === "number") onNewGbChange(v);
-                }}
-                disabled={!policies}
-                style={{ width: controlWidth.xs + 14 }}
-                addonAfter="GB"
-                aria-label={t("create.diskSizeAria")}
-              />
-            </Flex>
-            <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-              {diskPriceGbMonth
-                ? t("create.diskNewSummary", {
-                    size: formatSizeGb(newGb),
-                    price: t("common.gbMonthPrice", { price: diskPriceGbMonth }),
-                    daily: t("common.dailyApprox", { amount: diskDaily }),
-                  })
-                : formatSizeGb(newGb)}
-            </Typography.Text>
-            <Collapse
-              ghost
-              size="small"
-              items={[
-                {
-                  key: "advanced",
-                  label: t("create.diskAdvanced"),
-                  children: (
-                    <Space size={space.md} align="center">
-                      <Typography.Text type="secondary">{t("storage.nameLabel")}</Typography.Text>
-                      <Input
-                        style={{ width: controlWidth.md }}
-                        maxLength={64}
-                        aria-label={t("storage.nameLabel")}
-                        value={newName}
-                        onChange={(e) => onNewNameChange(e.target.value)}
-                      />
-                    </Space>
-                  ),
-                },
-              ]}
+    <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
+      <Radio.Group
+        value={mode}
+        onChange={(e) => onModeChange(e.target.value as DiskMode)}
+        options={[
+          { value: "none", label: t("create.diskNone") },
+          { value: "new", label: t("create.diskNew") },
+          { value: "existing", label: t("create.diskExisting") },
+        ]}
+      />
+      {mode === "new" && (
+        <>
+          {/* 容量:Slider 与 InputNumber 联动同值;min/max 取 /policies */}
+          <Flex gap={space.md} align="center">
+            <Slider
+              style={{ flex: 1, maxWidth: 480 }}
+              min={policies?.disk_min_gb}
+              max={policies?.disk_max_gb}
+              step={10}
+              value={newGb}
+              onChange={onNewGbChange}
+              disabled={!policies}
             />
-          </>
-        )}
-        {mode === "existing" &&
-          (disksQ.isError ? (
-            <DataErrorAlert onRetry={() => void disksQ.refetch()} />
-          ) : (
-            <Select
-              style={{ width: "100%", maxWidth: controlWidth.lg }}
-              placeholder={t("create.selectDiskPlaceholder")}
-              value={existingId}
-              onChange={onExistingIdChange}
-              options={(disksQ.data ?? [])
-                .filter((d) => d.status === "active" && d.mounted_instance_id == null)
-                .map((d) => ({
-                  value: d.id,
-                  label: `${d.name}(${formatSizeGb(d.size_gb)})`,
-                }))}
-              notFoundContent={t("create.noMountableDisks")}
+            <InputNumber
+              min={policies?.disk_min_gb}
+              max={policies?.disk_max_gb}
+              step={10}
+              value={newGb}
+              onChange={(v) => {
+                if (typeof v === "number") onNewGbChange(v);
+              }}
+              disabled={!policies}
+              style={{ width: controlWidth.xs + 14 }}
+              addonAfter="GB"
+              aria-label={t("create.diskSizeAria")}
             />
-          ))}
-        <Space orientation="vertical" size={0}>
+          </Flex>
           <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-            {t("create.diskIndependentNote")}
+            {diskPriceGbMonth
+              ? t("create.diskNewSummary", {
+                  size: formatSizeGb(newGb),
+                  price: t("common.gbMonthPrice", { price: diskPriceGbMonth }),
+                  daily: t("common.dailyApprox", { amount: diskDaily }),
+                })
+              : formatSizeGb(newGb)}
           </Typography.Text>
-          <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-            {t("copy.instanceDiskLocalNotice")}
-          </Typography.Text>
-        </Space>
+          <Collapse
+            ghost
+            size="small"
+            items={[
+              {
+                key: "advanced",
+                label: t("create.diskAdvanced"),
+                children: (
+                  <Space size={space.md} align="center">
+                    <Typography.Text type="secondary">{t("storage.nameLabel")}</Typography.Text>
+                    <Input
+                      style={{ width: controlWidth.md }}
+                      maxLength={64}
+                      aria-label={t("storage.nameLabel")}
+                      value={newName}
+                      onChange={(e) => onNewNameChange(e.target.value)}
+                    />
+                  </Space>
+                ),
+              },
+            ]}
+          />
+        </>
+      )}
+      {mode === "existing" &&
+        (disksQ.isError ? (
+          <DataErrorAlert onRetry={() => void disksQ.refetch()} />
+        ) : (
+          <Select
+            style={{ width: "100%", maxWidth: controlWidth.lg }}
+            placeholder={t("create.selectDiskPlaceholder")}
+            value={existingId}
+            onChange={onExistingIdChange}
+            options={(disksQ.data ?? [])
+              .filter((d) => d.status === "active" && d.mounted_instance_id == null)
+              .map((d) => ({
+                value: d.id,
+                label: `${d.name}(${formatSizeGb(d.size_gb)})`,
+              }))}
+            notFoundContent={t("create.noMountableDisks")}
+          />
+        ))}
+      <Space orientation="vertical" size={0}>
+        <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+          {t("create.diskIndependentNote")}
+        </Typography.Text>
+        <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+          {t("copy.instanceDiskLocalNotice")}
+        </Typography.Text>
       </Space>
+    </Space>
   );
   if (variant === "section") {
     return (

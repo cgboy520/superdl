@@ -1,6 +1,14 @@
 /** 支持:自助排查(FAQ 锚点)+ 联系客服(平台配置 support 组)+ 我的工单。新建工单走 Modal,详情为独立对话页。 */
 
-import { fontSize, formatDateTime, idemKeyOf, metaOf, ticketCategoryMap, ticketStatusMap, type TicketStatus } from "@superdl/ui";
+import {
+  fontSize,
+  formatDateTime,
+  idemKeyOf,
+  metaOf,
+  ticketCategoryMap,
+  ticketStatusMap,
+  type TicketStatus,
+} from "@superdl/ui";
 import { LoadMore, TableErrorEmpty } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
@@ -126,24 +134,11 @@ function CreateTicketModal({ open, onClose }: { open: boolean; onClose: () => vo
             />
           </Form.Item>
         )}
-        <Form.Item
-          name="subject"
-          label={t("support.fieldSubject")}
-          rules={[{ required: true, min: 2, max: 128 }]}
-        >
+        <Form.Item name="subject" label={t("support.fieldSubject")} rules={[{ required: true, min: 2, max: 128 }]}>
           <Input maxLength={128} showCount placeholder={t("support.fieldSubjectPlaceholder")} />
         </Form.Item>
-        <Form.Item
-          name="body"
-          label={t("support.fieldBody")}
-          rules={[{ required: true, min: 2, max: 4000 }]}
-        >
-          <Input.TextArea
-            rows={5}
-            maxLength={4000}
-            showCount
-            placeholder={t("support.fieldBodyPlaceholder")}
-          />
+        <Form.Item name="body" label={t("support.fieldBody")} rules={[{ required: true, min: 2, max: 4000 }]}>
+          <Input.TextArea rows={5} maxLength={4000} showCount placeholder={t("support.fieldBodyPlaceholder")} />
         </Form.Item>
       </Form>
     </Modal>
@@ -172,10 +167,7 @@ function SupportPage() {
       });
   };
   const tickets = useTicketPages(20);
-  const rows = useMemo<TicketOut[]>(
-    () => (tickets.data?.pages ?? []).flatMap((p) => p.items),
-    [tickets.data],
-  );
+  const rows = useMemo<TicketOut[]>(() => (tickets.data?.pages ?? []).flatMap((p) => p.items), [tickets.data]);
   // 状态筛选为客户端筛选,只作用于已加载页
   const filtered = useMemo<TicketOut[]>(
     () => (statusFilter ? rows.filter((r) => r.status === statusFilter) : rows),
@@ -245,15 +237,9 @@ function SupportPage() {
               <TableErrorEmpty isError onRetry={() => void tickets.refetch()} />
             ) : statusFilter ? (
               // 筛选态空 ≠ 没有工单
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={t("support.noneWithStatus")}
-              />
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("support.noneWithStatus")} />
             ) : (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={t("support.none")}
-              >
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("support.none")}>
                 <Button type="primary" onClick={() => setCreating(true)}>
                   {t("support.create")}
                 </Button>
@@ -263,8 +249,7 @@ function SupportPage() {
           renderItem={(r) => {
             const sm = metaOf(ticketStatusMap, r.status);
             const cm = metaOf(ticketCategoryMap, r.category);
-            const open = () =>
-              void navigate({ to: "/support/$ticketId", params: { ticketId: String(r.id) } });
+            const open = () => void navigate({ to: "/support/$ticketId", params: { ticketId: String(r.id) } });
             return (
               <List.Item
                 style={{ cursor: "pointer" }}

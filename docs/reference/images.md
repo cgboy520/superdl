@@ -9,14 +9,14 @@
 
 ## 契约
 
-| 端点 | 角色/鉴权 | 说明 |
-|---|---|---|
-| `GET /api/admin/v1/images` | ops/readonly | 列表 + `coverage{cached,total,pct}` + `failed_nodes`,纯 DB 聚合 |
-| `POST /api/admin/v1/images` | ops | 创建;image_ref 冲突 409;审计 |
-| `PATCH /api/admin/v1/images/{image_id}` | ops | 含 prewarm_enabled;image_ref 变更同事务清该镜像 cache 行;审计 |
-| `DELETE /api/admin/v1/images/{image_id}` | ops | reason 必填;cache 行 CASCADE;审计 |
-| `POST /api/admin/v1/images/{image_id}/prewarm` | ops | 非 cached 行置 pending + 同事务 enqueue,返回 `{enqueued}`;请求路径零 K8s |
-| `GET /api/admin/v1/images/{image_id}/nodes` | ops/readonly | 每节点 status/last_error/checked_at |
+| 端点                                           | 角色/鉴权    | 说明                                                                     |
+| ---------------------------------------------- | ------------ | ------------------------------------------------------------------------ |
+| `GET /api/admin/v1/images`                     | ops/readonly | 列表 + `coverage{cached,total,pct}` + `failed_nodes`,纯 DB 聚合          |
+| `POST /api/admin/v1/images`                    | ops          | 创建;image_ref 冲突 409;审计                                             |
+| `PATCH /api/admin/v1/images/{image_id}`        | ops          | 含 prewarm_enabled;image_ref 变更同事务清该镜像 cache 行;审计            |
+| `DELETE /api/admin/v1/images/{image_id}`       | ops          | reason 必填;cache 行 CASCADE;审计                                        |
+| `POST /api/admin/v1/images/{image_id}/prewarm` | ops          | 非 cached 行置 pending + 同事务 enqueue,返回 `{enqueued}`;请求路径零 K8s |
+| `GET /api/admin/v1/images/{image_id}/nodes`    | ops/readonly | 每节点 status/last_error/checked_at                                      |
 
 ## 默认镜像目录(平台自带)
 

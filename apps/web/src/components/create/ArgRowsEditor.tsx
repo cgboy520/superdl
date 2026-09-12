@@ -31,7 +31,9 @@ export function ArgRowsEditor({ rows, onChange }: { rows: ArgRow[]; onChange: (r
         title: t("services.form.bulkAddArgsTitle"),
         hint: t("services.form.bulkAddArgsHint"),
         parse: (text) => ({ rows: parseArgBulk(text), skipped: 0 }),
-        previewColumns: [{ title: t("services.form.argsLabel"), render: (r) => <span className="mono">{r.value}</span> }],
+        previewColumns: [
+          { title: t("services.form.argsLabel"), render: (r) => <span className="mono">{r.value}</span> },
+        ],
       }}
     />
   );

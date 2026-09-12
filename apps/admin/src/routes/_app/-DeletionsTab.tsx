@@ -58,10 +58,8 @@ export function DeletionsTab() {
     }
   };
 
-  const cooldownLeft = (r: DeletionRow) =>
-    r.status === "pending" ? formatCountdown(r.cooldown_ends_at) : null;
-  const precheckClear = (r: DeletionRow) =>
-    r.instances_active === 0 && r.disks_active === 0 && Number(r.balance) === 0;
+  const cooldownLeft = (r: DeletionRow) => (r.status === "pending" ? formatCountdown(r.cooldown_ends_at) : null);
+  const precheckClear = (r: DeletionRow) => r.instances_active === 0 && r.disks_active === 0 && Number(r.balance) === 0;
   const cooldownOver = (r: DeletionRow) => new Date(r.cooldown_ends_at).getTime() <= nowTs;
 
   return (
@@ -124,9 +122,7 @@ export function DeletionsTab() {
             render: (v: string, r) => (
               <Space size={8}>
                 <span>{formatDateTime(v)}</span>
-                {r.status === "pending" && !cooldownOver(r) && (
-                  <Tag color="orange">{cooldownLeft(r)}</Tag>
-                )}
+                {r.status === "pending" && !cooldownOver(r) && <Tag color="orange">{cooldownLeft(r)}</Tag>}
               </Space>
             ),
           },
@@ -169,12 +165,7 @@ export function DeletionsTab() {
               r.status === "pending" ? (
                 <Space>
                   <Tooltip title={isAdmin ? undefined : t("tenants.deletion.noPermission")}>
-                    <Button
-                      size="small"
-                      danger
-                      disabled={!isAdmin}
-                      onClick={() => setApproving(r)}
-                    >
+                    <Button size="small" danger disabled={!isAdmin} onClick={() => setApproving(r)}>
                       {t("tenants.deletion.approve")}
                     </Button>
                   </Tooltip>
@@ -244,9 +235,7 @@ export function DeletionsTab() {
           confirmLabel={t("tenants.deletion.approve")}
           cancelLabel={t("common.cancel", { ns: "shared" })}
           loading={approveLoading}
-          extraDisabled={
-            !precheckClear(approving) || !cooldownOver(approving) || approveNote.trim().length < 2
-          }
+          extraDisabled={!precheckClear(approving) || !cooldownOver(approving) || approveNote.trim().length < 2}
           onConfirm={() => void runApprove()}
           onCancel={closeApprove}
         />
@@ -254,4 +243,3 @@ export function DeletionsTab() {
     </>
   );
 }
-

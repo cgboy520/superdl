@@ -65,15 +65,24 @@ export function TenantsTab() {
   const [revealReason, setRevealReason] = useState<string | null>(null);
   const [revealOpen, setRevealOpen] = useState(false);
   const [reasonInput, setReasonInput] = useState("");
-  const tenantsQ = useTenants(
-    {
-      ...(urlQ ? { q: urlQ } : {}),
-      ...(statusFilter ? { status: statusFilter } : {}),
-      ...(order ? { order } : {}),
-      ...(revealReason !== null ? { reveal: true, reason: revealReason } : {}),
-    },
-  );
-  const { data, queryKey, isLoading, isError, error, refetch, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = tenantsQ;
+  const tenantsQ = useTenants({
+    ...(urlQ ? { q: urlQ } : {}),
+    ...(statusFilter ? { status: statusFilter } : {}),
+    ...(order ? { order } : {}),
+    ...(revealReason !== null ? { reveal: true, reason: revealReason } : {}),
+  });
+  const {
+    data,
+    queryKey,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+    fetchNextPage,
+  } = tenantsQ;
   const tenants: TenantRow[] = data?.pages.flatMap((p) => p.items) ?? [];
   const drilldown = urlTenant != null ? (tenants.find((r) => r.id === urlTenant) ?? null) : null;
   const freeze = useFreezeTenant();
@@ -82,209 +91,212 @@ export function TenantsTab() {
 
   return (
     <>
-    <Space style={{ marginBottom: 12 }} wrap>
-    <Input.Search
-      allowClear
-      placeholder={tt("tenants.searchPhonePlaceholder")}
-      style={{ width: 280 }}
-      value={input}
-      onChange={(e) => setInput(e.target.value)}
-      onSearch={(v) => {
-        // 回车/点按钮立即提交
-        setInput(v);
-        void navigate({
-          to: "/tenants",
-          replace: true,
-          search: (prev) => ({ ...prev, q: v || undefined }),
-        });
-      }}
-    />
-    <Select
-      allowClear
-      placeholder={tt("common.statusFilter")}
-      style={{ width: 140 }}
-      value={statusFilter}
-      onChange={setStatusFilter}
-      options={[
-        { value: "active", label: tt("tenants.active") },
-        { value: "frozen", label: tt("tenants.frozen") },
-      ]}
-    />
-    {canReveal &&
-      (revealReason === null ? (
-        <Button size="small" onClick={() => setRevealOpen(true)}>
-          {tt("tenants.revealIdName")}
-        </Button>
-      ) : (
-        <Tag color="orange" closable onClose={() => setRevealReason(null)}>
-          {tt("tenants.revealActive", { reason: revealReason })}
-        </Tag>
-      ))}
-    </Space>
-    <Modal
-      title={tt("tenants.revealTitle")}
-      open={revealOpen}
-      onCancel={() => setRevealOpen(false)}
-      okText={tt("tenants.revealConfirm")}
-      okButtonProps={{ disabled: reasonInput.trim().length < 2 }}
-      onOk={() => {
-        setRevealReason(reasonInput.trim());
-        setRevealOpen(false);
-        setReasonInput("");
-      }}
-    >
-      <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-        <Typography.Text type="secondary">{tt("tenants.revealHint")}</Typography.Text>
-        <Input.TextArea
-          rows={2}
-          value={reasonInput}
-          onChange={(e) => setReasonInput(e.target.value)}
-          placeholder={tt("tenants.revealReasonPlaceholder")}
-          maxLength={REASON_MAX_LEN}
+      <Space style={{ marginBottom: 12 }} wrap>
+        <Input.Search
+          allowClear
+          placeholder={tt("tenants.searchPhonePlaceholder")}
+          style={{ width: 280 }}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onSearch={(v) => {
+            // 回车/点按钮立即提交
+            setInput(v);
+            void navigate({
+              to: "/tenants",
+              replace: true,
+              search: (prev) => ({ ...prev, q: v || undefined }),
+            });
+          }}
         />
+        <Select
+          allowClear
+          placeholder={tt("common.statusFilter")}
+          style={{ width: 140 }}
+          value={statusFilter}
+          onChange={setStatusFilter}
+          options={[
+            { value: "active", label: tt("tenants.active") },
+            { value: "frozen", label: tt("tenants.frozen") },
+          ]}
+        />
+        {canReveal &&
+          (revealReason === null ? (
+            <Button size="small" onClick={() => setRevealOpen(true)}>
+              {tt("tenants.revealIdName")}
+            </Button>
+          ) : (
+            <Tag color="orange" closable onClose={() => setRevealReason(null)}>
+              {tt("tenants.revealActive", { reason: revealReason })}
+            </Tag>
+          ))}
       </Space>
-    </Modal>
-    <Table<TenantRow>
-      scroll={{ x: 1000 }}
-      sticky={{ offsetHeader: layout.topBarHeight }}
-      rowKey="id"
-      loading={isLoading}
-      locale={{
-        emptyText: (
-          <TableErrorEmpty
-            isError={isError}
-            isForbidden={isApiError(error) && error.status === 403}
-            onRetry={() => void refetch()}
-          >
-            {tt("tenants.empty")}
-          </TableErrorEmpty>
-        ),
-      }}
-      dataSource={tenants}
-      onRow={(r) => ({ style: { cursor: "pointer" }, onClick: () => setDrilldown(r) })}
-      onChange={(_p, _f, sorter) => {
-        const s = Array.isArray(sorter) ? sorter[0] : sorter;
-        if (s?.columnKey !== "created_at") return;
-        // ascend → asc;descend 与取消都回默认 desc
-        void navigate({
-          to: "/tenants",
-          replace: true,
-          search: (prev) => ({ ...prev, order: s.order === "ascend" ? ("asc" as const) : undefined }),
-        });
-      }}
-      columns={[
-        {
-          title: "ID",
-          dataIndex: "id",
-          width: 80,
-          fixed: "left",
-          render: (v: number) => (
-            <span onClick={(e) => e.stopPropagation()}>
-              <TenantLink id={v} />
-            </span>
+      <Modal
+        title={tt("tenants.revealTitle")}
+        open={revealOpen}
+        onCancel={() => setRevealOpen(false)}
+        okText={tt("tenants.revealConfirm")}
+        okButtonProps={{ disabled: reasonInput.trim().length < 2 }}
+        onOk={() => {
+          setRevealReason(reasonInput.trim());
+          setRevealOpen(false);
+          setReasonInput("");
+        }}
+      >
+        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+          <Typography.Text type="secondary">{tt("tenants.revealHint")}</Typography.Text>
+          <Input.TextArea
+            rows={2}
+            value={reasonInput}
+            onChange={(e) => setReasonInput(e.target.value)}
+            placeholder={tt("tenants.revealReasonPlaceholder")}
+            maxLength={REASON_MAX_LEN}
+          />
+        </Space>
+      </Modal>
+      <Table<TenantRow>
+        scroll={{ x: 1000 }}
+        sticky={{ offsetHeader: layout.topBarHeight }}
+        rowKey="id"
+        loading={isLoading}
+        locale={{
+          emptyText: (
+            <TableErrorEmpty
+              isError={isError}
+              isForbidden={isApiError(error) && error.status === 403}
+              onRetry={() => void refetch()}
+            >
+              {tt("tenants.empty")}
+            </TableErrorEmpty>
           ),
-        },
-        { title: tt("tenants.colPhone"), dataIndex: "phone_masked", fixed: "left", width: 130 },
-        {
-          title: tt("tenants.colBalance"),
-          dataIndex: "balance",
-          render: (v: string) => (
-            <span style={{ color: Number(v) <= 0 ? adminColors.negative : undefined }}>{formatMoney(v)}</span>
-          ),
-        },
-        {
-          title: tt("tenants.colTotalConsumed"),
-          dataIndex: "total_consumed",
-          render: (v: string) => formatMoney(v),
-        },
-        {
-          title: tt("tenants.colInstances"),
-          dataIndex: "instances",
-          width: 70,
-        },
-        { title: tt("tenants.colDisk"), dataIndex: "disk_gb", render: (v: number) => `${v} GB`, width: 90 },
-        {
-          title: tt("tenants.colStatus"),
-          dataIndex: "status",
-          render: (v: string) =>
-            v === "active" ? <Tag color="green">{tt("tenants.active")}</Tag> : <Tag color="red">{tt("tenants.frozen")}</Tag>,
-        },
-        {
-          title: tt("tenants.colCreatedAt"),
-          dataIndex: "created_at",
-          key: "created_at",
-          // 服务端排序仅注册先后;聚合列不提供排序
-          sorter: true,
-          sortOrder: order === "asc" ? "ascend" : "descend",
-          render: formatDateTime,
-        },
-        {
-          title: tt("tenants.colActions"),
-          fixed: "right",
-          width: 170,
-          render: (_, t) => (
-            <Space>
-              <Button
-                size="small"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setDrilldown(t);
-                }}
-              >
-                {tt("tenants.viewBilling")}
-              </Button>
-              {t.status === "active" ? (
+        }}
+        dataSource={tenants}
+        onRow={(r) => ({ style: { cursor: "pointer" }, onClick: () => setDrilldown(r) })}
+        onChange={(_p, _f, sorter) => {
+          const s = Array.isArray(sorter) ? sorter[0] : sorter;
+          if (s?.columnKey !== "created_at") return;
+          // ascend → asc;descend 与取消都回默认 desc
+          void navigate({
+            to: "/tenants",
+            replace: true,
+            search: (prev) => ({ ...prev, order: s.order === "ascend" ? ("asc" as const) : undefined }),
+          });
+        }}
+        columns={[
+          {
+            title: "ID",
+            dataIndex: "id",
+            width: 80,
+            fixed: "left",
+            render: (v: number) => (
               <span onClick={(e) => e.stopPropagation()}>
-              <ReasonAction
-                label={tt("tenants.freeze")}
-                target={`#${t.id} · ${t.phone_masked}`}
-                danger
-                title={tt("tenants.freezeTitle")}
-                confirmText={tt("tenants.freezeConfirm", {
-                  id: t.id,
-                  phone: t.phone_masked,
-                  count: t.instances,
-                })}
-                disabled={!writable}
-                disabledReason={tt("tenants.noPermission")}
-                onSubmit={async (reason) => {
-                  const r = await freeze.mutateAsync({ userId: t.id, data: { reason } });
-                  refresh();
-                  // 回显后端实停台数
-                  return tt("tenants.freezeDone", { count: r.instances_stopped ?? 0 });
-                }}
-              />
+                <TenantLink id={v} />
               </span>
-            ) : (
-              <span onClick={(e) => e.stopPropagation()}>
-              <ReasonAction
-                label={tt("tenants.unfreeze")}
-                target={`#${t.id} · ${t.phone_masked}`}
-                title={tt("tenants.unfreezeTitle")}
-                confirmText={tt("tenants.unfreezeConfirm", { id: t.id })}
-                disabled={!writable}
-                disabledReason={tt("tenants.noPermission")}
-                onSubmit={async (reason) => {
-                  await unfreeze.mutateAsync({ userId: t.id, data: { reason } });
-                  refresh();
-                }}
-              />
-              </span>
-              )}
-            </Space>
-          ),
-        },
-      ]}
-    />
-    <LoadMore
-      hasNextPage={Boolean(hasNextPage)}
-      loading={isFetchingNextPage}
-      isError={isFetchNextPageError}
-      loadedCount={tenants.length}
-      onLoadMore={() => void fetchNextPage()}
-    />
-    <TenantDrawer tenant={drilldown} dtab={dtab} onTabChange={onDrawerTabChange} onClose={() => setDrilldown(null)} />
+            ),
+          },
+          { title: tt("tenants.colPhone"), dataIndex: "phone_masked", fixed: "left", width: 130 },
+          {
+            title: tt("tenants.colBalance"),
+            dataIndex: "balance",
+            render: (v: string) => (
+              <span style={{ color: Number(v) <= 0 ? adminColors.negative : undefined }}>{formatMoney(v)}</span>
+            ),
+          },
+          {
+            title: tt("tenants.colTotalConsumed"),
+            dataIndex: "total_consumed",
+            render: (v: string) => formatMoney(v),
+          },
+          {
+            title: tt("tenants.colInstances"),
+            dataIndex: "instances",
+            width: 70,
+          },
+          { title: tt("tenants.colDisk"), dataIndex: "disk_gb", render: (v: number) => `${v} GB`, width: 90 },
+          {
+            title: tt("tenants.colStatus"),
+            dataIndex: "status",
+            render: (v: string) =>
+              v === "active" ? (
+                <Tag color="green">{tt("tenants.active")}</Tag>
+              ) : (
+                <Tag color="red">{tt("tenants.frozen")}</Tag>
+              ),
+          },
+          {
+            title: tt("tenants.colCreatedAt"),
+            dataIndex: "created_at",
+            key: "created_at",
+            // 服务端排序仅注册先后;聚合列不提供排序
+            sorter: true,
+            sortOrder: order === "asc" ? "ascend" : "descend",
+            render: formatDateTime,
+          },
+          {
+            title: tt("tenants.colActions"),
+            fixed: "right",
+            width: 170,
+            render: (_, t) => (
+              <Space>
+                <Button
+                  size="small"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDrilldown(t);
+                  }}
+                >
+                  {tt("tenants.viewBilling")}
+                </Button>
+                {t.status === "active" ? (
+                  <span onClick={(e) => e.stopPropagation()}>
+                    <ReasonAction
+                      label={tt("tenants.freeze")}
+                      target={`#${t.id} · ${t.phone_masked}`}
+                      danger
+                      title={tt("tenants.freezeTitle")}
+                      confirmText={tt("tenants.freezeConfirm", {
+                        id: t.id,
+                        phone: t.phone_masked,
+                        count: t.instances,
+                      })}
+                      disabled={!writable}
+                      disabledReason={tt("tenants.noPermission")}
+                      onSubmit={async (reason) => {
+                        const r = await freeze.mutateAsync({ userId: t.id, data: { reason } });
+                        refresh();
+                        // 回显后端实停台数
+                        return tt("tenants.freezeDone", { count: r.instances_stopped ?? 0 });
+                      }}
+                    />
+                  </span>
+                ) : (
+                  <span onClick={(e) => e.stopPropagation()}>
+                    <ReasonAction
+                      label={tt("tenants.unfreeze")}
+                      target={`#${t.id} · ${t.phone_masked}`}
+                      title={tt("tenants.unfreezeTitle")}
+                      confirmText={tt("tenants.unfreezeConfirm", { id: t.id })}
+                      disabled={!writable}
+                      disabledReason={tt("tenants.noPermission")}
+                      onSubmit={async (reason) => {
+                        await unfreeze.mutateAsync({ userId: t.id, data: { reason } });
+                        refresh();
+                      }}
+                    />
+                  </span>
+                )}
+              </Space>
+            ),
+          },
+        ]}
+      />
+      <LoadMore
+        hasNextPage={Boolean(hasNextPage)}
+        loading={isFetchingNextPage}
+        isError={isFetchNextPageError}
+        loadedCount={tenants.length}
+        onLoadMore={() => void fetchNextPage()}
+      />
+      <TenantDrawer tenant={drilldown} dtab={dtab} onTabChange={onDrawerTabChange} onClose={() => setDrilldown(null)} />
     </>
   );
 }
-

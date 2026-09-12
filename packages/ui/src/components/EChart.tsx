@@ -2,13 +2,7 @@
  *  option 整量 setOption(notMerge);ResizeObserver 自动 resize;aria.enabled 常开。theme="noc" 为管理端深色预设,option 显式色优先。 */
 
 import { BarChart, LineChart, PieChart } from "echarts/charts";
-import {
-  AriaComponent,
-  GridComponent,
-  LegendComponent,
-  MarkLineComponent,
-  TooltipComponent,
-} from "echarts/components";
+import { AriaComponent, GridComponent, LegendComponent, MarkLineComponent, TooltipComponent } from "echarts/components";
 import * as echarts from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
 import { useEffect, useRef } from "react";
@@ -177,10 +171,7 @@ export default function EChart({
   }, [theme, group]);
 
   useEffect(() => {
-    chartRef.current?.setOption(
-      { ...option, aria: { enabled: true, label: { description: ariaLabel ?? "" } } },
-      true
-    );
+    chartRef.current?.setOption({ ...option, aria: { enabled: true, label: { description: ariaLabel ?? "" } } }, true);
   }, [option, ariaLabel]);
 
   // 三态盖层:图表 div 始终挂载(visibility 切换)
@@ -203,10 +194,7 @@ export default function EChart({
 
   return (
     <div className={className} style={{ position: "relative", ...style }}>
-      <div
-        ref={ref}
-        style={{ width: "100%", height: "100%", visibility: covered ? "hidden" : "visible" }}
-      />
+      <div ref={ref} style={{ width: "100%", height: "100%", visibility: covered ? "hidden" : "visible" }} />
       {covered && (
         <div
           style={{

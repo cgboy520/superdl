@@ -4,21 +4,7 @@ import { adminColors, announcementStatusMap, fontSize, formatDateTime, idemKeyOf
 import { DataErrorAlert, HexTag, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import {
-  Alert,
-  App,
-  Button,
-  Card,
-  Form,
-  Input,
-  InputNumber,
-  Modal,
-  Space,
-  Table,
-  Tabs,
-  Tag,
-  Tooltip,
-} from "antd";
+import { Alert, App, Button, Card, Form, Input, InputNumber, Modal, Space, Table, Tabs, Tag, Tooltip } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -45,9 +31,7 @@ type SettingsTab = (typeof SETTINGS_TABS)[number];
 export const Route = createFileRoute("/_app/settings")({
   // Tab 入 URL,非法值回落默认
   validateSearch: (search: Record<string, unknown>): { tab?: SettingsTab } => ({
-    tab: SETTINGS_TABS.includes(search.tab as SettingsTab)
-      ? (search.tab as SettingsTab)
-      : undefined,
+    tab: SETTINGS_TABS.includes(search.tab as SettingsTab) ? (search.tab as SettingsTab) : undefined,
   }),
   component: SettingsPage,
 });
@@ -60,7 +44,11 @@ const POLICY_LABELS: Record<string, { label: string; unit: string; hint?: string
   disk_grace_days: { label: "欠费宽限(数据盘)", unit: "天", hint: "宽限到期转冻结" },
   disk_frozen_days: { label: "冻结保留(数据盘)", unit: "天", hint: "冻结到期回收擦除" },
   freeze_grace_hours: { label: "欠费冻结时长(实例)", unit: "小时", hint: "冻结到期回收实例盘" },
-  afford_cover_hours: { label: "开户前余额须覆盖小时数", unit: "小时", hint: "余额须覆盖在途+新增实例的消耗,护栏非预占" },
+  afford_cover_hours: {
+    label: "开户前余额须覆盖小时数",
+    unit: "小时",
+    hint: "余额须覆盖在途+新增实例的消耗,护栏非预占",
+  },
   max_instances_per_user: { label: "每用户实例数上限", unit: "台", hint: "用户级覆盖优先于本项" },
   max_gpus_per_user: { label: "每用户 GPU 总数上限", unit: "卡", hint: "用户级覆盖优先于本项" },
   max_disks_per_user: { label: "每用户数据盘数上限", unit: "块", hint: "用户级覆盖优先于本项" },
@@ -72,7 +60,11 @@ const POLICY_LABELS: Record<string, { label: string; unit: string; hint?: string
   period_discount_year: { label: "包年折扣", unit: "%" },
   period_expire_warn_days: { label: "包周期到期预警", unit: "天", hint: "到期前几天开始推送预警,每天至多一条" },
   spot_discount_pct: { label: "竞价折扣", unit: "%", hint: "百分数:40 = 按量价的 4 折;调价只影响新建的竞价实例" },
-  spot_grace_seconds: { label: "抢占宽限窗", unit: "秒", hint: "回收通知发出到真删 Pod 的时间;实际上限还受实例创建超时(env 配置,不在本表)约束,越界时保存被驳回并给出具体上限" },
+  spot_grace_seconds: {
+    label: "抢占宽限窗",
+    unit: "秒",
+    hint: "回收通知发出到真删 Pod 的时间;实际上限还受实例创建超时(env 配置,不在本表)约束,越界时保存被驳回并给出具体上限",
+  },
 };
 
 function PoliciesTab() {
@@ -107,18 +99,11 @@ function PoliciesTab() {
     overridden: data?.overrides[key] != null,
     spec: data?.specs[key],
   }));
-  const changed = Object.entries(draft).filter(
-    ([k, v]) => v !== "" && v !== (data?.effective[k] ?? ""),
-  );
+  const changed = Object.entries(draft).filter(([k, v]) => v !== "" && v !== (data?.effective[k] ?? ""));
 
   return (
     <>
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 12 }}
-        title={t("settings.instantEffect")}
-      />
+      <Alert type="info" showIcon style={{ marginBottom: 12 }} title={t("settings.instantEffect")} />
       {isError && (
         <DataErrorAlert
           style={{ marginBottom: 12 }}
@@ -141,9 +126,7 @@ function PoliciesTab() {
               <>
                 {r.label}
                 {r.overridden && <Tag style={{ marginLeft: 8 }}>{t("settings.overridden")}</Tag>}
-                {r.hint && (
-                  <div style={{ color: adminColors.textSecondary, fontSize: fontSize.caption }}>{r.hint}</div>
-                )}
+                {r.hint && <div style={{ color: adminColors.textSecondary, fontSize: fontSize.caption }}>{r.hint}</div>}
               </>
             ),
           },
@@ -167,9 +150,7 @@ function PoliciesTab() {
                 max={r.spec?.max}
                 placeholder={r.effective}
                 value={draft[r.key] ?? null}
-                onChange={(v) =>
-                  setDraft((d) => ({ ...d, [r.key]: v == null ? "" : String(v) }))
-                }
+                onChange={(v) => setDraft((d) => ({ ...d, [r.key]: v == null ? "" : String(v) }))}
               />
             ),
           },
@@ -251,11 +232,7 @@ function AnnouncementTab() {
 
   return (
     <Space orientation="vertical" size={12} style={{ width: "100%", maxWidth: 860 }}>
-      <Alert
-        type="info"
-        showIcon
-        title={t("settings.announceScope")}
-      />
+      <Alert type="info" showIcon title={t("settings.announceScope")} />
       <Form
         form={form}
         layout="vertical"
@@ -313,7 +290,11 @@ function AnnouncementTab() {
         <Alert
           type="success"
           showIcon
-          title={t("settings.lastPublished", { title: lastPublished.title, time: formatDateTime(lastPublished.created_at), count: lastPublished.reached })}
+          title={t("settings.lastPublished", {
+            title: lastPublished.title,
+            time: formatDateTime(lastPublished.created_at),
+            count: lastPublished.reached,
+          })}
         />
       )}
       <Table<AnnouncementRow>

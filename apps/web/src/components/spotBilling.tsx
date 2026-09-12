@@ -20,18 +20,13 @@ export function useSpotPolicy(): SpotPolicy | undefined {
   const { data: policies } = usePolicies();
   return useMemo(
     () =>
-      policies
-        ? { discountPct: policies.spot_discount_pct, graceSeconds: policies.spot_grace_seconds }
-        : undefined,
+      policies ? { discountPct: policies.spot_discount_pct, graceSeconds: policies.spot_grace_seconds } : undefined,
     [policies],
   );
 }
 
 /** 竞价时价(单份);策略未就绪返回 undefined。 */
-export function spotPriceOf(
-  baseHourly: string | null | undefined,
-  policy: SpotPolicy | undefined,
-): string | undefined {
+export function spotPriceOf(baseHourly: string | null | undefined, policy: SpotPolicy | undefined): string | undefined {
   return policy ? spotHourlyPrice(baseHourly, policy.discountPct) : undefined;
 }
 

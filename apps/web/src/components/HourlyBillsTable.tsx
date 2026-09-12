@@ -22,16 +22,8 @@ export function HourlyBillsTable({
 }) {
   const { t } = useTranslation();
   const { formatDuration, formatHourlyPrice, formatMoney } = useFormat();
-  const {
-    data,
-    isLoading,
-    isError,
-    refetch,
-    isFetchingNextPage,
-    isFetchNextPageError,
-    hasNextPage,
-    fetchNextPage,
-  } = query;
+  const { data, isLoading, isError, refetch, isFetchingNextPage, isFetchNextPageError, hasNextPage, fetchNextPage } =
+    query;
   const rows = useMemo<BillHourlyOut[]>(() => (data?.pages ?? []).flatMap((p) => p.items), [data]);
 
   return (
@@ -56,8 +48,7 @@ export function HourlyBillsTable({
             ? [
                 {
                   title: t("billing.colInstance"),
-                  render: (_: unknown, r: BillHourlyOut) =>
-                    r.instance_name ?? `#${r.instance_id}`,
+                  render: (_: unknown, r: BillHourlyOut) => r.instance_name ?? `#${r.instance_id}`,
                 },
               ]
             : []),

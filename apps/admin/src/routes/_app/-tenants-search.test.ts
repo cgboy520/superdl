@@ -3,9 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { Route } from "./tenants";
 
-const validate = Route.options.validateSearch as (
-  search: Record<string, unknown>,
-) => Record<string, unknown>;
+const validate = Route.options.validateSearch as (search: Record<string, unknown>) => Record<string, unknown>;
 
 describe("tenants validateSearch", () => {
   it("tab/q 序列化往返:合法值原样保留", () => {

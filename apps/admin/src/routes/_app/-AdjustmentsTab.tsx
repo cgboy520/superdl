@@ -1,18 +1,53 @@
 /** 调账 Tab:发起(草稿)+ 双人复核(批准需核对勾选,驳回需理由)。 */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { Alert, App, Button, Checkbox, DatePicker, Descriptions, Form, Input, InputNumber, Modal, Select, Space, Spin, Table, Tooltip, Typography } from "antd";
+import {
+  Alert,
+  App,
+  Button,
+  Checkbox,
+  DatePicker,
+  Descriptions,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Select,
+  Space,
+  Spin,
+  Table,
+  Tooltip,
+  Typography,
+} from "antd";
 import dayjs from "dayjs";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { addAmounts, adjustmentStatusMap, adminColors, fontSize, formatDateTime, idemKeyOf, layout, ledgerTypeMap, metaOf } from "@superdl/ui";
+import {
+  addAmounts,
+  adjustmentStatusMap,
+  adminColors,
+  fontSize,
+  formatDateTime,
+  idemKeyOf,
+  layout,
+  ledgerTypeMap,
+  metaOf,
+} from "@superdl/ui";
 import { moneyOr, HexTag, LoadMore, TableErrorEmpty } from "@superdl/ui/components";
 import { useApiErrorText } from "@superdl/ui";
 import { useCsvExport, useFormDraft } from "@superdl/ui";
 import { useFormat } from "@superdl/ui";
 
-import { type AdjustmentRow, exportAdjustmentsCsv, isApiError, useAdjustContext, useAdjustments, useCreateAdjustment, useReviewAdjustment } from "../../api";
+import {
+  type AdjustmentRow,
+  exportAdjustmentsCsv,
+  isApiError,
+  useAdjustContext,
+  useAdjustments,
+  useCreateAdjustment,
+  useReviewAdjustment,
+} from "../../api";
 import { isValidReason, REASON_MAX_LEN } from "../../lib/validators";
 import { SignedAmount } from "../../components/SignedAmount";
 import { tenantColumn } from "../../components/TenantLink";
@@ -69,9 +104,7 @@ export function ReviewConfirmModal({
       onOk={() =>
         review.mutate({
           adjustmentId: adj.id,
-          data: approve
-            ? { approve: true }
-            : { approve: false, comment: rejectReason.trim() },
+          data: approve ? { approve: true } : { approve: false, comment: rejectReason.trim() },
         })
       }
     >
@@ -106,11 +139,7 @@ export function ReviewConfirmModal({
             label={t("finance.rejectReasonLabel")}
             required
             validateStatus={rejectReason !== "" && !isValidReason(rejectReason) ? "error" : undefined}
-            help={
-              rejectReason !== "" && !isValidReason(rejectReason)
-                ? t("common.reasonRule")
-                : undefined
-            }
+            help={rejectReason !== "" && !isValidReason(rejectReason) ? t("common.reasonRule") : undefined}
           >
             <Input.TextArea
               rows={2}
@@ -123,14 +152,7 @@ export function ReviewConfirmModal({
           </Form.Item>
         </Form>
       )}
-      {ctx.isError && (
-        <Alert
-          type="error"
-          showIcon
-          style={{ marginTop: 12 }}
-          title={t("finance.tenantNotFound")}
-        />
-      )}
+      {ctx.isError && <Alert type="error" showIcon style={{ marginTop: 12 }} title={t("finance.tenantNotFound")} />}
     </Modal>
   );
 }
@@ -167,8 +189,18 @@ export function AdjustmentsTab() {
     ...(search.a_day ? { day: search.a_day } : {}),
     ...(search.a_uid ? { user_id: search.a_uid } : {}),
   };
-  const { data, queryKey, isLoading, isError, error, refetch, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } =
-    useAdjustments(params);
+  const {
+    data,
+    queryKey,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+    fetchNextPage,
+  } = useAdjustments(params);
   const { doExport, exporting } = useCsvExport((tz, lang) => exportAdjustmentsCsv(params, tz, lang));
   const rows: AdjustmentRow[] = data?.pages.flatMap((p) => p.items) ?? [];
 
@@ -280,13 +312,7 @@ export function AdjustmentsTab() {
               const isCreator = admin?.id === r.created_by;
               return (
                 <Tooltip
-                  title={
-                    !writable
-                      ? t("finance.financeOnlyReview")
-                      : isCreator
-                        ? t("finance.noSelfReviewShort")
-                        : ""
-                  }
+                  title={!writable ? t("finance.financeOnlyReview") : isCreator ? t("finance.noSelfReviewShort") : ""}
                 >
                   <Space>
                     <Button
@@ -320,11 +346,7 @@ export function AdjustmentsTab() {
         loadedCount={rows.length}
         onLoadMore={() => void fetchNextPage()}
       />
-      <ReviewConfirmModal
-        target={reviewTarget}
-        onClose={() => setReviewTarget(null)}
-        onReviewed={refresh}
-      />
+      <ReviewConfirmModal target={reviewTarget} onClose={() => setReviewTarget(null)} onReviewed={refresh} />
       <Modal
         title={t("finance.createAdjustTitle")}
         open={creating}
@@ -345,20 +367,14 @@ export function AdjustmentsTab() {
         }}
         okButtonProps={{ loading: create.isPending, disabled: ctxId === null || !ctx.data }}
       >
-        <Form
-          form={form}
-          layout="vertical"
-          onValuesChange={() => draft.save(form.getFieldsValue(true))}
-        >
+        <Form form={form} layout="vertical" onValuesChange={() => draft.save(form.getFieldsValue(true))}>
           <Form.Item name="user_id" label={t("finance.tenantIdLabel")} rules={[{ required: true }]}>
             <InputNumber min={1} precision={0} style={{ width: "100%" }} />
           </Form.Item>
           {ctxId !== null && (
             <div style={{ marginTop: -8, marginBottom: 16 }}>
               {ctx.isLoading && <Spin size="small" />}
-              {ctx.isError && (
-                <Typography.Text type="danger">{t("finance.tenantNotFound")}</Typography.Text>
-              )}
+              {ctx.isError && <Typography.Text type="danger">{t("finance.tenantNotFound")}</Typography.Text>}
               {ctx.data && (
                 <Alert
                   type={ctx.data.status === "frozen" ? "warning" : "info"}
@@ -366,15 +382,11 @@ export function AdjustmentsTab() {
                   title={
                     <Space size={12} wrap>
                       <span>{ctx.data.phone_masked}</span>
-                      <span>
-                        {ctx.data.status === "frozen" ? t("tenants.frozen") : t("tenants.active")}
-                      </span>
+                      <span>{ctx.data.status === "frozen" ? t("tenants.frozen") : t("tenants.active")}</span>
                       <span>
                         {t("finance.ctxBalance")}:<b>{formatMoney(ctx.data.balance)}</b>
                       </span>
-                      <span>
-                        {t("finance.ctxRunning", { count: ctx.data.running_instances })}
-                      </span>
+                      <span>{t("finance.ctxRunning", { count: ctx.data.running_instances })}</span>
                     </Space>
                   }
                   description={
@@ -398,11 +410,7 @@ export function AdjustmentsTab() {
               )}
             </div>
           )}
-          <Form.Item
-            name="amount"
-            label={t("finance.amountLabel")}
-            rules={[{ required: true }]}
-          >
+          <Form.Item name="amount" label={t("finance.amountLabel")} rules={[{ required: true }]}>
             {/* stringMode:金额以字符串提交;上限与后端 ADJUST_MAX_ABS 对齐 */}
             <InputNumber
               step="0.01"
@@ -414,11 +422,7 @@ export function AdjustmentsTab() {
               placeholder={t("finance.amountPlaceholder")}
             />
           </Form.Item>
-          <Form.Item
-            name="reason"
-            label={t("common.reasonLabel")}
-            rules={[{ required: true, min: 2 }]}
-          >
+          <Form.Item name="reason" label={t("common.reasonLabel")} rules={[{ required: true, min: 2 }]}>
             <Input.TextArea rows={3} />
           </Form.Item>
         </Form>
@@ -426,4 +430,3 @@ export function AdjustmentsTab() {
     </>
   );
 }
-

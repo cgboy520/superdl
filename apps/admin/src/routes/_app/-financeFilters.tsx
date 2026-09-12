@@ -42,4 +42,3 @@ export function useFinanceFilters() {
     });
   return { search, setFilters };
 }
-

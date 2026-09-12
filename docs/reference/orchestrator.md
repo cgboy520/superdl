@@ -13,23 +13,23 @@
 
 ## 契约
 
-| 端点 | 角色/鉴权 | 说明 |
-|---|---|---|
-| `POST /api/v1/instances` | user | 只建开发机(拒收服务容器参数)。Idempotency-Key;软准入(台账无货 409)→ 钱包行锁(余额校验、配额)→ 事务写 instances(creating)+event+outbox → 202。`market` 默认 `on_demand`;`subscription` 时 `period` 必填、`period_count` 1~36,同事务预扣(见 [billing.md](./billing.md));`on_demand` 却带 `period`/`period_count` 422;`spot` 要求 SKU `spot_enabled`(否则 400 `orchestrator.spotNotEnabled`)且不带 `period`,软准入判无货时先抢占竞价实例,腾不出才 409 `NO_CAPACITY` |
-| `GET /api/v1/instances` | user | 降序游标分页 `?cursor=&limit=`;`status` 精确过滤,`name` 模糊(含 uuid 前缀);**只列开发机** |
-| `GET /api/v1/instances/{uuid}` | user | 详情 |
-| `PATCH /api/v1/instances/{uuid}` | user | 改名 |
-| `POST /api/v1/instances/{uuid}/stop\|start\|restart` | user | 均经 outbox;start 对 failed 放行 |
-| `POST /api/v1/instances/{uuid}/subscribe` | user | **按量转包周期**,入参与响应同 `/renew`;Idempotency-Key。前置:`market='on_demand'` 且 running / stopped(其余 409 `orchestrator.convertNeedsRunningOrStopped`)、SKU `period_enabled`;已在保报 `billing.subscriptionAlreadyActive`;结算滞后超 48h 报 409 `billing.settlementBehind` |
-| `POST /api/v1/instances/{uuid}/to-on-demand` | user | **竞价转按量**。无 body、**不需要 Idempotency-Key**(已是按量原样返回 200)。前置:`market='spot'`(否则 `orchestrator.toOnDemandNotSpot`)、running / stopped |
-| `POST /api/v1/instances/{uuid}/renew` | user | 包周期续费,body `{period, period_count}`;Idempotency-Key(重放 200 + `X-Idempotent-Replay`);返回 `{instance, quote}`。非包周期 / 已释放 `SUBSCRIPTION_NOT_RENEWABLE`(400),余额不足 `INSUFFICIENT_BALANCE`。冻结中续费即解冻(回 stopped) |
-| `POST /api/v1/instances/{uuid}/auto-renew` | user | body `{enabled}`;默认关 |
-| `DELETE /api/v1/instances/{uuid}` | user | 释放(stopped/frozen/failed/creating/stopping);releasing/released 重放回当前状态。**包周期实例释放不退款**,订阅转 cancelled |
-| `GET /api/v1/instances/{uuid}/events` | user | 事件时间线,即计费依据;降序游标分页 |
-| `GET /api/v1/instances/{uuid}/access` | user | SSH 指令 + Jupyter 一次性 bootstrap 票据 URL(单次、60s;核销后种第一方 cookie);非 running 报错 |
-| `GET /api/v1/instances/{uuid}/logs` | user | 容器日志:**只读**、**owner 校验**(非属主 404)、**限流 20/h/user**、**K8s 读 5s 超时**;仅 running/stopping(其余 409);`?tail_lines=` 默认 200、超 2000 截断;返回 `{lines, truncated}`;不记审计 |
-| `POST /api/v1/instances/{uuid}/reset-jupyter-token` | user | 轮换 token,旧票据与旧 URL 立即失效 |
-| `POST /api/admin/v1/instances/{uuid}/preempt` | ops | 强制回收一台竞价实例,reason 必填;非竞价 `orchestrator.preemptNotSpot`,非 running `orchestrator.forceStopNeedsRunning`(见 [admin.md](./admin.md)) |
+| 端点                                                 | 角色/鉴权 | 说明                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ---------------------------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/v1/instances`                             | user      | 只建开发机(拒收服务容器参数)。Idempotency-Key;软准入(台账无货 409)→ 钱包行锁(余额校验、配额)→ 事务写 instances(creating)+event+outbox → 202。`market` 默认 `on_demand`;`subscription` 时 `period` 必填、`period_count` 1~36,同事务预扣(见 [billing.md](./billing.md));`on_demand` 却带 `period`/`period_count` 422;`spot` 要求 SKU `spot_enabled`(否则 400 `orchestrator.spotNotEnabled`)且不带 `period`,软准入判无货时先抢占竞价实例,腾不出才 409 `NO_CAPACITY` |
+| `GET /api/v1/instances`                              | user      | 降序游标分页 `?cursor=&limit=`;`status` 精确过滤,`name` 模糊(含 uuid 前缀);**只列开发机**                                                                                                                                                                                                                                                                                                                                                                        |
+| `GET /api/v1/instances/{uuid}`                       | user      | 详情                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `PATCH /api/v1/instances/{uuid}`                     | user      | 改名                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `POST /api/v1/instances/{uuid}/stop\|start\|restart` | user      | 均经 outbox;start 对 failed 放行                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `POST /api/v1/instances/{uuid}/subscribe`            | user      | **按量转包周期**,入参与响应同 `/renew`;Idempotency-Key。前置:`market='on_demand'` 且 running / stopped(其余 409 `orchestrator.convertNeedsRunningOrStopped`)、SKU `period_enabled`;已在保报 `billing.subscriptionAlreadyActive`;结算滞后超 48h 报 409 `billing.settlementBehind`                                                                                                                                                                                 |
+| `POST /api/v1/instances/{uuid}/to-on-demand`         | user      | **竞价转按量**。无 body、**不需要 Idempotency-Key**(已是按量原样返回 200)。前置:`market='spot'`(否则 `orchestrator.toOnDemandNotSpot`)、running / stopped                                                                                                                                                                                                                                                                                                        |
+| `POST /api/v1/instances/{uuid}/renew`                | user      | 包周期续费,body `{period, period_count}`;Idempotency-Key(重放 200 + `X-Idempotent-Replay`);返回 `{instance, quote}`。非包周期 / 已释放 `SUBSCRIPTION_NOT_RENEWABLE`(400),余额不足 `INSUFFICIENT_BALANCE`。冻结中续费即解冻(回 stopped)                                                                                                                                                                                                                           |
+| `POST /api/v1/instances/{uuid}/auto-renew`           | user      | body `{enabled}`;默认关                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `DELETE /api/v1/instances/{uuid}`                    | user      | 释放(stopped/frozen/failed/creating/stopping);releasing/released 重放回当前状态。**包周期实例释放不退款**,订阅转 cancelled                                                                                                                                                                                                                                                                                                                                       |
+| `GET /api/v1/instances/{uuid}/events`                | user      | 事件时间线,即计费依据;降序游标分页                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `GET /api/v1/instances/{uuid}/access`                | user      | SSH 指令 + Jupyter 一次性 bootstrap 票据 URL(单次、60s;核销后种第一方 cookie);非 running 报错                                                                                                                                                                                                                                                                                                                                                                    |
+| `GET /api/v1/instances/{uuid}/logs`                  | user      | 容器日志:**只读**、**owner 校验**(非属主 404)、**限流 20/h/user**、**K8s 读 5s 超时**;仅 running/stopping(其余 409);`?tail_lines=` 默认 200、超 2000 截断;返回 `{lines, truncated}`;不记审计                                                                                                                                                                                                                                                                     |
+| `POST /api/v1/instances/{uuid}/reset-jupyter-token`  | user      | 轮换 token,旧票据与旧 URL 立即失效                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `POST /api/admin/v1/instances/{uuid}/preempt`        | ops       | 强制回收一台竞价实例,reason 必填;非竞价 `orchestrator.preemptNotSpot`,非 running `orchestrator.forceStopNeedsRunning`(见 [admin.md](./admin.md))                                                                                                                                                                                                                                                                                                                 |
 
 在线服务的全部端点见 [services.md](./services.md)。实例级生命周期端点(stop / start / restart / DELETE / 重置 token)对服务的版本实例一律 409 `orchestrator.serviceInstanceLifecycle`;只读端点与购买模式类端点照常。
 
@@ -68,11 +68,11 @@
 
 三种购买模式(`instances.market`),与 `skus.tier` 正交:一条 SKU 三种卖法。
 
-| 值 | 含义 |
-|---|---|
-| `on_demand` | 按量,进 `bills_hourly` |
-| `subscription` | 包周期,下单一次性预扣,小时结算在 `billing_candidates` 一处跳过(见 [billing.md](./billing.md)) |
-| `spot` | 竞价(按量价 × `spot_discount_pct`),容量紧张时**可被平台回收**。与按量同一条计费链,折扣只落 `price_hourly`。前置 SKU `spot_enabled`(见 [catalog.md](./catalog.md)) |
+| 值             | 含义                                                                                                                                                              |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `on_demand`    | 按量,进 `bills_hourly`                                                                                                                                            |
+| `subscription` | 包周期,下单一次性预扣,小时结算在 `billing_candidates` 一处跳过(见 [billing.md](./billing.md))                                                                     |
+| `spot`         | 竞价(按量价 × `spot_discount_pct`),容量紧张时**可被平台回收**。与按量同一条计费链,折扣只落 `price_hourly`。前置 SKU `spot_enabled`(见 [catalog.md](./catalog.md)) |
 
 - `market` 创建时定,**只有两条路径会改它**:`subscribe_instance`(按量 → 包周期)与 `convert_to_on_demand`(竞价 → 按量)。包周期 → 按量、按量 → 竞价不开。
 - **`instances.price_hourly` 是该购买模式下的有效时价**,由 `app/core/pricing.py` 的 `price_for` 单点算出。市场页报价、创建预估、续费报价共用同一组函数。
@@ -108,15 +108,15 @@
 
 两种形态(`instances.workload_type`),差别只在 `build_pod_spec` 分叉与建哪些 K8s 对象;状态机、计费、配额、回收、reconciler、监控、审计全部共用。`service` 形态的实例是某个在线服务的一个版本(`service_id` 反指),暴露规格(`service_slug` / `service_port` / `health_path`)快照在实例行上:
 
-| | `dev`(SSH + JupyterLab) | `service`(在线服务的版本) |
-|---|---|---|
-| `restartPolicy` | `Never` | `Always`(kubelet 原地重启容器,Pod 不重建;reconciler 建立在「Pod 名 = 实例 uuid」上) |
-| command / args | 不设 | 用户可覆盖(`container_command` / `container_args`) |
-| 用户 env | 无 | `env_encrypted`(整包 AES-GCM,AAD 绑实例 uuid);密文项经 per-instance Secret 以 `secretKeyRef` 引用 |
-| SSH NodePort Service | 恒建 | `with_ssh` 才建;为假时**不进端口池** |
-| Jupyter Service + HTTPRoute | 恒建 | 不建 |
-| 服务 Service + HTTPRoute | 无 | `<uuid>-svc` ClusterIP + 挂 `svc-https` listener 的 HTTPRoute |
-| 探针 | 无 | `health_path` 非空时 startupProbe(90 × 10s = 15 分钟)+ readinessProbe |
+|                             | `dev`(SSH + JupyterLab) | `service`(在线服务的版本)                                                                         |
+| --------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------- |
+| `restartPolicy`             | `Never`                 | `Always`(kubelet 原地重启容器,Pod 不重建;reconciler 建立在「Pod 名 = 实例 uuid」上)               |
+| command / args              | 不设                    | 用户可覆盖(`container_command` / `container_args`)                                                |
+| 用户 env                    | 无                      | `env_encrypted`(整包 AES-GCM,AAD 绑实例 uuid);密文项经 per-instance Secret 以 `secretKeyRef` 引用 |
+| SSH NodePort Service        | 恒建                    | `with_ssh` 才建;为假时**不进端口池**                                                              |
+| Jupyter Service + HTTPRoute | 恒建                    | 不建                                                                                              |
+| 服务 Service + HTTPRoute    | 无                      | `<uuid>-svc` ClusterIP + 挂 `svc-https` listener 的 HTTPRoute                                     |
+| 探针                        | 无                      | `health_path` 非空时 startupProbe(90 × 10s = 15 分钟)+ readinessProbe                             |
 
 在线服务的域名规则、鉴权链路、状态派生与 API Key 生命周期见 [services.md](./services.md)。
 

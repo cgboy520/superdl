@@ -16,15 +16,15 @@
 
 ## 契约
 
-| 端点 | 角色/鉴权 | 说明 |
-|---|---|---|
-| `GET /api/v1/policies` | 匿名 | 盘价(Decimal 串)、`disk_min_gb/disk_max_gb`、`disk_grace_days/disk_frozen_days`、`freeze_grace_hours`、`period_discount_day/week/month/year`(百分数,80 = 8 折)与 `period_expire_warn_days`、`spot_discount_pct`(40 = 4 折)与 `spot_grace_seconds`、`real_name_enabled`、`real_name_required_for_recharge`。折扣与宽限窗一律从这里读,前端禁止硬编码 |
-| `GET /api/v1/wallet` | user | 余额与冻结额 |
-| `GET /api/v1/wallet/ledger` | user | 资金流水,游标分页 |
-| `GET /api/v1/bills/hourly` | user | 小时账单,游标分页(含 instance_name 展示冗余) |
-| `GET /api/v1/bills/summary` | user | 消费概览与成本归因 |
-| `GET /api/v1/bills/daily-summary?date=YYYY-MM-DD&tz_offset_minutes=480` | user | 本地日界折 UTC 聚合小时账单(按实例)+ 当日数据盘日账 |
-| `GET /api/v1/billing/export?dataset=hourly\|ledger&month=YYYY-MM&tz_offset_minutes=480&lang=` | user | 小时账单 / 收支明细 CSV(流式);month 仅作用于 hourly;行数硬上限,触顶时文件末尾写 `#SUPERDL_EXPORT_TRUNCATED#` |
+| 端点                                                                                          | 角色/鉴权 | 说明                                                                                                                                                                                                                                                                                                                                               |
+| --------------------------------------------------------------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/v1/policies`                                                                        | 匿名      | 盘价(Decimal 串)、`disk_min_gb/disk_max_gb`、`disk_grace_days/disk_frozen_days`、`freeze_grace_hours`、`period_discount_day/week/month/year`(百分数,80 = 8 折)与 `period_expire_warn_days`、`spot_discount_pct`(40 = 4 折)与 `spot_grace_seconds`、`real_name_enabled`、`real_name_required_for_recharge`。折扣与宽限窗一律从这里读,前端禁止硬编码 |
+| `GET /api/v1/wallet`                                                                          | user      | 余额与冻结额                                                                                                                                                                                                                                                                                                                                       |
+| `GET /api/v1/wallet/ledger`                                                                   | user      | 资金流水,游标分页                                                                                                                                                                                                                                                                                                                                  |
+| `GET /api/v1/bills/hourly`                                                                    | user      | 小时账单,游标分页(含 instance_name 展示冗余)                                                                                                                                                                                                                                                                                                       |
+| `GET /api/v1/bills/summary`                                                                   | user      | 消费概览与成本归因                                                                                                                                                                                                                                                                                                                                 |
+| `GET /api/v1/bills/daily-summary?date=YYYY-MM-DD&tz_offset_minutes=480`                       | user      | 本地日界折 UTC 聚合小时账单(按实例)+ 当日数据盘日账                                                                                                                                                                                                                                                                                                |
+| `GET /api/v1/billing/export?dataset=hourly\|ledger&month=YYYY-MM&tz_offset_minutes=480&lang=` | user      | 小时账单 / 收支明细 CSV(流式);month 仅作用于 hourly;行数硬上限,触顶时文件末尾写 `#SUPERDL_EXPORT_TRUNCATED#`                                                                                                                                                                                                                                       |
 
 ## 规则与不变量
 
@@ -73,12 +73,12 @@
 
 `orchestrator/queries.py::billing_candidates` 里的 `market != 'subscription'` 是唯一跳过点;`upsert_hour_bill`、水位线、缺口机制、幂等键不动。竞价实例不在排除之列。
 
-| 位置 | 排除包周期实例 |
-|---|---|
-| `wallet.assert_can_afford` 的在途燃烧率 | 已预付的实例不计入护栏 |
-| `billing/patrol.py` `_patrol_running` 的停机判据 | `burn_per_hour` 与未结算实时估算的集合 |
+| 位置                                                            | 排除包周期实例                            |
+| --------------------------------------------------------------- | ----------------------------------------- |
+| `wallet.assert_can_afford` 的在途燃烧率                         | 已预付的实例不计入护栏                    |
+| `billing/patrol.py` `_patrol_running` 的停机判据                | `burn_per_hour` 与未结算实时估算的集合    |
 | `billing/patrol.py` `_patrol_frozen_and_arrears_stopped` 的两支 | stopped→frozen 与 frozen 的「充值即解冻」 |
-| `billing/edge_listener.py` 的尾账 | 离开 running 不出小时尾账 |
+| `billing/edge_listener.py` 的尾账                               | 离开 running 不出小时尾账                 |
 
 frozen 到期回收那一支不过滤,回收由余额巡检统一做。创建路径上 `_pending_hourly`(creating/starting 的待燃时费)同样排除包周期实例。
 

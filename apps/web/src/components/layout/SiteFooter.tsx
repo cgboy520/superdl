@@ -14,13 +14,7 @@ function isInternal(to: string): boolean {
 
 type FooterLink = { label: string; to: string; hash?: undefined } | { label: string; to: "/"; hash: string };
 
-function FooterCol({
-  title,
-  links,
-}: {
-  title: string;
-  links: readonly FooterLink[];
-}) {
+function FooterCol({ title, links }: { title: string; links: readonly FooterLink[] }) {
   const { token } = theme.useToken();
   return (
     <div style={{ minWidth: 160 }}>
@@ -65,9 +59,7 @@ export function SiteFooter() {
   ];
   const supportLinks: FooterLink[] = [
     { label: t("footer.linkHelp"), to: "/help" },
-    ...(site?.support_email
-      ? [{ label: t("footer.linkContact"), to: `mailto:${site.support_email}` as string }]
-      : []),
+    ...(site?.support_email ? [{ label: t("footer.linkContact"), to: `mailto:${site.support_email}` as string }] : []),
   ];
   const complianceLinks: FooterLink[] = [
     { label: t("footer.linkTerms"), to: "/legal/terms" },
@@ -119,12 +111,7 @@ export function SiteFooter() {
             {icp && (
               <>
                 {" · "}
-                <a
-                  href="https://beian.miit.gov.cn/"
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{ color: "inherit" }}
-                >
+                <a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer" style={{ color: "inherit" }}>
                   {icp}
                 </a>
               </>
@@ -132,12 +119,7 @@ export function SiteFooter() {
             {police && (
               <>
                 {" · "}
-                <a
-                  href="https://beian.mps.gov.cn/"
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{ color: "inherit" }}
-                >
+                <a href="https://beian.mps.gov.cn/" target="_blank" rel="noreferrer" style={{ color: "inherit" }}>
                   {police}
                 </a>
               </>

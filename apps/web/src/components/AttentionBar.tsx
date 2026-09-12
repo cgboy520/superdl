@@ -79,15 +79,7 @@ export function AttentionBar({ items }: { items: AttentionItem[] }) {
   const top = sorted[0];
   if (!top) return null;
   if (sorted.length === 1) {
-    return (
-      <Alert
-        type={top.severity}
-        showIcon
-        title={top.title}
-        description={top.description}
-        action={top.action}
-      />
-    );
+    return <Alert type={top.severity} showIcon title={top.title} description={top.description} action={top.action} />;
   }
   return (
     <Alert
@@ -98,7 +90,10 @@ export function AttentionBar({ items }: { items: AttentionItem[] }) {
           <span>{t("attention.summary", { count: sorted.length })}</span>
           {!expanded && (
             <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-              {sorted.map((i) => (typeof i.title === "string" ? i.title : null)).filter(Boolean).join(" · ")}
+              {sorted
+                .map((i) => (typeof i.title === "string" ? i.title : null))
+                .filter(Boolean)
+                .join(" · ")}
             </Typography.Text>
           )}
         </Space>

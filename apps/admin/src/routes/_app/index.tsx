@@ -98,14 +98,7 @@ function OversellChart({ rows }: { rows: OversellRow[] }) {
       },
     ],
   };
-  return (
-    <EChart
-      option={option}
-      style={{ height: 320 }}
-      theme="noc"
-      ariaLabel={t("overview.oversellChartTitle")}
-    />
-  );
+  return <EChart option={option} style={{ height: 320 }} theme="noc" ariaLabel={t("overview.oversellChartTitle")} />;
 }
 
 function PoolOccupancy({ pools }: { pools: OverviewOut["pools"] }) {
@@ -124,14 +117,36 @@ function PoolOccupancy({ pools }: { pools: OverviewOut["pools"] }) {
     tooltip: { trigger: "axis" },
     legend: { textStyle: { color: adminColors.textSecondary } },
     grid: { left: 80, right: 24, top: 32, bottom: 28 },
-    xAxis: { type: "value", axisLabel: { color: adminColors.textSecondary }, splitLine: { lineStyle: { color: adminColors.gridLine } } },
+    xAxis: {
+      type: "value",
+      axisLabel: { color: adminColors.textSecondary },
+      splitLine: { lineStyle: { color: adminColors.gridLine } },
+    },
     yAxis: { type: "category", data: names, axisLabel: { color: adminColors.textSecondary } },
     series: [
-      { name: t("overview.rented"), type: "bar", stack: "t", data: usedOther, itemStyle: { color: statusColors.green } },
+      {
+        name: t("overview.rented"),
+        type: "bar",
+        stack: "t",
+        data: usedOther,
+        itemStyle: { color: statusColors.green },
+      },
       // 竞价段取 marketMap.spot 色
-      { name: t("overview.rentedSpot"), type: "bar", stack: "t", data: spotUsed, itemStyle: { color: statusColors.orange } },
+      {
+        name: t("overview.rentedSpot"),
+        type: "bar",
+        stack: "t",
+        data: spotUsed,
+        itemStyle: { color: statusColors.orange },
+      },
       { name: t("overview.idle"), type: "bar", stack: "t", data: free, itemStyle: { color: adminColors.chartNeutral } },
-      { name: t("overview.notReady"), type: "bar", stack: "t", data: notReady, itemStyle: { color: adminColors.alertAccent } },
+      {
+        name: t("overview.notReady"),
+        type: "bar",
+        stack: "t",
+        data: notReady,
+        itemStyle: { color: adminColors.alertAccent },
+      },
     ],
   };
   return (
@@ -177,153 +192,153 @@ function DeadTasksCard() {
   if (!isError && !isLoading && rows.length === 0) return null;
   return (
     <Col span={24}>
-    <Collapse
-      items={[
-        {
-          key: "dead",
-          label: (
-            <Space size={8}>
-              <Badge status="error" />
-              <b>{t("overview.deadTasks")}</b>
-              {isError ? (
-                <Tag color="orange">{t("common.loadFailed", { ns: "shared" })}</Tag>
-              ) : isLoading ? null : (
-                <Tag color="red">{t("overview.pendingCount", { count: rows.length })}</Tag>
-              )}
-              {!isLoading && (
-                <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                  {t("overview.deadTasksSummary", {
-                    // Intl.ListFormat 随界面语言给分隔符
-                    types: new Intl.ListFormat(i18n.resolvedLanguage ?? "zh-CN", {
-                      style: "narrow",
-                      type: "conjunction",
-                    }).format([...new Set(rows.map((r) => r.type))]),
-                  })}
-                </Typography.Text>
-              )}
-            </Space>
-          ),
-          children: isLoading ? (
-            <Skeleton active title={false} paragraph={{ rows: 1 }} />
-          ) : (
-      <>
-      <BulkBar count={selected.length} onClear={() => setSelected([])}>
-        <ReasonAction
-          label={t("overview.replay")}
-          target={t("bulk.selected", { count: selected.length })}
-          title={t("overview.replayTitle")}
-          confirmText={t("bulk.replayConfirm", { count: selected.length })}
-          disabled={!writable}
-          disabledReason={t("overview.opsOnly")}
-          onSubmit={(reason) => bulk("retry", reason)}
-        />
-        <ReasonAction
-          label={t("overview.ignore")}
-          target={t("bulk.selected", { count: selected.length })}
-          title={t("overview.ignoreTitle")}
-          confirmText={t("bulk.ignoreConfirm", { count: selected.length })}
-          danger
-          disabled={!writable}
-          disabledReason={t("overview.opsOnly")}
-          onSubmit={(reason) => bulk("discard", reason)}
-        />
-      </BulkBar>
-      <Table<DeadTaskRow>
-        size="small"
-        rowKey="id"
-        pagination={false}
-        scroll={{ x: 860 }}
-        rowSelection={
-          writable
-            ? { selectedRowKeys: selected, onChange: (keys) => setSelected(keys.map(Number)) }
-            : undefined
-        }
-        locale={{
-          emptyText: (
-            <TableErrorEmpty
-              isError={isError}
-              isForbidden={isApiError(error) && error.status === 403}
-              onRetry={() => void refetch()}
-            >
-              {t("overview.noDeadTasks")}
-            </TableErrorEmpty>
-          ),
-        }}
-        dataSource={rows}
-        columns={[
-          { title: t("overview.colTask"), dataIndex: "type", width: 150 },
+      <Collapse
+        items={[
           {
-            title: t("overview.colPayload"),
-            dataIndex: "payload",
-            render: (v: Record<string, unknown>) => (
-              <code style={{ fontSize: fontSize.caption }}>{JSON.stringify(v)}</code>
-            ),
-          },
-          { title: t("overview.colRetries"), dataIndex: "retries", width: 70 },
-          {
-            title: t("overview.colLastError"),
-            dataIndex: "last_error",
-            // 一行截断 + 悬浮看全文
-            render: (v: string | null) => (
-              <Tooltip title={<span style={{ whiteSpace: "pre-wrap" }}>{v ?? "-"}</span>}>
-                <span
-                  style={{
-                    color: adminColors.negative,
-                    fontSize: fontSize.caption,
-                    display: "block",
-                    maxWidth: 360,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {v ?? "-"}
-                </span>
-              </Tooltip>
-            ),
-          },
-          { title: t("overview.colTime"), dataIndex: "updated_at", width: 150, render: formatDateTime },
-          {
-            title: t("overview.colActions"),
-            width: 170,
-            render: (_, r) => (
-              <Space>
-                <ReasonAction
-                  label={t("overview.replay")}
-                  target={`#${r.id} · ${r.type}`}
-                  title={t("overview.replayTitle")}
-                  confirmText={t("overview.replayConfirmMeta", { id: r.id, type: r.type })}
-                  disabled={!writable}
-                  disabledReason={t("overview.opsOnly")}
-                  onSubmit={async (reason) => {
-                    await retry.mutateAsync({ taskId: r.id, data: { reason } });
-                    refresh();
-                    return t("overview.requeued");
-                  }}
-                />
-                <ReasonAction
-                  label={t("overview.ignore")}
-                  target={`#${r.id} · ${r.type}`}
-                  title={t("overview.ignoreTitle")}
-                  confirmText={t("overview.ignoreConfirm", { id: r.id, type: r.type })}
-                  danger
-                  disabled={!writable}
-                  disabledReason={t("overview.opsOnly")}
-                  onSubmit={async (reason) => {
-                    await discard.mutateAsync({ taskId: r.id, data: { reason } });
-                    refresh();
-                  }}
-                />
+            key: "dead",
+            label: (
+              <Space size={8}>
+                <Badge status="error" />
+                <b>{t("overview.deadTasks")}</b>
+                {isError ? (
+                  <Tag color="orange">{t("common.loadFailed", { ns: "shared" })}</Tag>
+                ) : isLoading ? null : (
+                  <Tag color="red">{t("overview.pendingCount", { count: rows.length })}</Tag>
+                )}
+                {!isLoading && (
+                  <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                    {t("overview.deadTasksSummary", {
+                      // Intl.ListFormat 随界面语言给分隔符
+                      types: new Intl.ListFormat(i18n.resolvedLanguage ?? "zh-CN", {
+                        style: "narrow",
+                        type: "conjunction",
+                      }).format([...new Set(rows.map((r) => r.type))]),
+                    })}
+                  </Typography.Text>
+                )}
               </Space>
+            ),
+            children: isLoading ? (
+              <Skeleton active title={false} paragraph={{ rows: 1 }} />
+            ) : (
+              <>
+                <BulkBar count={selected.length} onClear={() => setSelected([])}>
+                  <ReasonAction
+                    label={t("overview.replay")}
+                    target={t("bulk.selected", { count: selected.length })}
+                    title={t("overview.replayTitle")}
+                    confirmText={t("bulk.replayConfirm", { count: selected.length })}
+                    disabled={!writable}
+                    disabledReason={t("overview.opsOnly")}
+                    onSubmit={(reason) => bulk("retry", reason)}
+                  />
+                  <ReasonAction
+                    label={t("overview.ignore")}
+                    target={t("bulk.selected", { count: selected.length })}
+                    title={t("overview.ignoreTitle")}
+                    confirmText={t("bulk.ignoreConfirm", { count: selected.length })}
+                    danger
+                    disabled={!writable}
+                    disabledReason={t("overview.opsOnly")}
+                    onSubmit={(reason) => bulk("discard", reason)}
+                  />
+                </BulkBar>
+                <Table<DeadTaskRow>
+                  size="small"
+                  rowKey="id"
+                  pagination={false}
+                  scroll={{ x: 860 }}
+                  rowSelection={
+                    writable
+                      ? { selectedRowKeys: selected, onChange: (keys) => setSelected(keys.map(Number)) }
+                      : undefined
+                  }
+                  locale={{
+                    emptyText: (
+                      <TableErrorEmpty
+                        isError={isError}
+                        isForbidden={isApiError(error) && error.status === 403}
+                        onRetry={() => void refetch()}
+                      >
+                        {t("overview.noDeadTasks")}
+                      </TableErrorEmpty>
+                    ),
+                  }}
+                  dataSource={rows}
+                  columns={[
+                    { title: t("overview.colTask"), dataIndex: "type", width: 150 },
+                    {
+                      title: t("overview.colPayload"),
+                      dataIndex: "payload",
+                      render: (v: Record<string, unknown>) => (
+                        <code style={{ fontSize: fontSize.caption }}>{JSON.stringify(v)}</code>
+                      ),
+                    },
+                    { title: t("overview.colRetries"), dataIndex: "retries", width: 70 },
+                    {
+                      title: t("overview.colLastError"),
+                      dataIndex: "last_error",
+                      // 一行截断 + 悬浮看全文
+                      render: (v: string | null) => (
+                        <Tooltip title={<span style={{ whiteSpace: "pre-wrap" }}>{v ?? "-"}</span>}>
+                          <span
+                            style={{
+                              color: adminColors.negative,
+                              fontSize: fontSize.caption,
+                              display: "block",
+                              maxWidth: 360,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {v ?? "-"}
+                          </span>
+                        </Tooltip>
+                      ),
+                    },
+                    { title: t("overview.colTime"), dataIndex: "updated_at", width: 150, render: formatDateTime },
+                    {
+                      title: t("overview.colActions"),
+                      width: 170,
+                      render: (_, r) => (
+                        <Space>
+                          <ReasonAction
+                            label={t("overview.replay")}
+                            target={`#${r.id} · ${r.type}`}
+                            title={t("overview.replayTitle")}
+                            confirmText={t("overview.replayConfirmMeta", { id: r.id, type: r.type })}
+                            disabled={!writable}
+                            disabledReason={t("overview.opsOnly")}
+                            onSubmit={async (reason) => {
+                              await retry.mutateAsync({ taskId: r.id, data: { reason } });
+                              refresh();
+                              return t("overview.requeued");
+                            }}
+                          />
+                          <ReasonAction
+                            label={t("overview.ignore")}
+                            target={`#${r.id} · ${r.type}`}
+                            title={t("overview.ignoreTitle")}
+                            confirmText={t("overview.ignoreConfirm", { id: r.id, type: r.type })}
+                            danger
+                            disabled={!writable}
+                            disabledReason={t("overview.opsOnly")}
+                            onSubmit={async (reason) => {
+                              await discard.mutateAsync({ taskId: r.id, data: { reason } });
+                              refresh();
+                            }}
+                          />
+                        </Space>
+                      ),
+                    },
+                  ]}
+                />
+              </>
             ),
           },
         ]}
       />
-      </>
-          ),
-        },
-      ]}
-    />
     </Col>
   );
 }
@@ -439,8 +454,7 @@ function Overview() {
 
   const oversellRows: OversellRow[] = oversell ?? [];
   const byStatus = ov?.instances_by_status ?? {};
-  const activeInstances =
-    (byStatus.creating ?? 0) + (byStatus.starting ?? 0) + (byStatus.running ?? 0);
+  const activeInstances = (byStatus.creating ?? 0) + (byStatus.starting ?? 0) + (byStatus.running ?? 0);
   const signupDelta = revenue ? revenue.today_signups - revenue.yesterday_signups : 0;
   // KPI 查询失败嵌错误条;按数据源分卡归属
   const revenueErr = <DataErrorAlert onRetry={() => void revenueQ.refetch()} />;
@@ -449,153 +463,183 @@ function Overview() {
 
   return (
     <PageContainer title={t("menu.overview")}>
-    <Row gutter={[16, 16]}>
-      {/* KPI 分两行:资金与租户 / 运行与风险;各卡独立等待 */}
-      <Col span={24}>
-        <KpiGrid
-          items={[
-            <KpiCard key="rev-today" pending={revenueQ.isLoading}>
-              {revenueQ.isError ? revenueErr : (
-                <>
-                  <Statistic title={t("overview.todayRevenue")} value={moneyOr(formatMoney(revenue?.today_revenue), revenue != null)} />
-                  <Typography.Text type="secondary" style={{ fontSize: fontSize.caption, display: "block" }}>
-                    {t("overview.yesterdayPrefix", { amount: moneyOr(formatMoney(revenue?.yesterday_revenue), revenue != null) })}
-                  </Typography.Text>
-                  {/* 收入含包周期预付,单列摊开 */}
-                  <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                    {t("overview.prepaidPart", { amount: moneyOr(formatMoney(revenue?.today_prepaid), revenue != null) })}
-                  </Typography.Text>
-                </>
-              )}
-            </KpiCard>,
-            <KpiCard key="rev-month" pending={revenueQ.isLoading}>
-              {revenueQ.isError ? revenueErr : (
-                <>
-                  <Statistic title={t("overview.monthRevenue")} value={moneyOr(formatMoney(revenue?.month_revenue), revenue != null)} />
-                  <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                    {t("overview.prepaidPart", { amount: moneyOr(formatMoney(revenue?.month_prepaid), revenue != null) })}
-                  </Typography.Text>
-                </>
-              )}
-            </KpiCard>,
-            <KpiCard key="signup" pending={revenueQ.isLoading}>
-              {revenueQ.isError ? revenueErr : (
-                <>
-                  <Statistic title={t("overview.todaySignups")} value={revenue ? revenue.today_signups : "—"} />
-                  <Typography.Text
-                    style={{ fontSize: fontSize.caption, color: signupDelta >= 0 ? adminColors.positive : adminColors.negative }}
-                  >
-                    {signupDelta >= 0 ? "▲" : "▼"} {t("overview.vsYesterday", { count: Math.abs(signupDelta) })}
-                  </Typography.Text>
-                </>
-              )}
-            </KpiCard>,
-            <KpiCard key="paying" pending={ovQ.isLoading}>
-              {ovQ.isError ? ovErr : (
-                <Statistic
-                  title={t("overview.payingTenants")}
-                  value={ov ? `${ov.paying_tenants} / ${ov.tenants_total}` : "—"}
-                />
-              )}
-            </KpiCard>,
-          ]}
-        />
-      </Col>
-      <Col span={24}>
-        <KpiGrid
-          items={[
-            <KpiCard key="active" pending={ovQ.isLoading}>
-              {ovQ.isError ? ovErr : (
-                <>
-                  <Statistic title={t("overview.activeInstances")} value={ov ? activeInstances : "—"} />
-                  <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                    {t("overview.instanceStatusHint", {
-                      stopped: byStatus.stopped ?? 0,
-                      failed: byStatus.failed ?? 0,
-                    })}
-                  </Typography.Text>
-                </>
-              )}
-            </KpiCard>,
-            <KpiCard key="subs" pending={ovQ.isLoading}>
-              {ovQ.isError ? ovErr : (
-                <>
-                  {/* 按订阅行数计,可大于活跃实例数 */}
+      <Row gutter={[16, 16]}>
+        {/* KPI 分两行:资金与租户 / 运行与风险;各卡独立等待 */}
+        <Col span={24}>
+          <KpiGrid
+            items={[
+              <KpiCard key="rev-today" pending={revenueQ.isLoading}>
+                {revenueQ.isError ? (
+                  revenueErr
+                ) : (
+                  <>
+                    <Statistic
+                      title={t("overview.todayRevenue")}
+                      value={moneyOr(formatMoney(revenue?.today_revenue), revenue != null)}
+                    />
+                    <Typography.Text type="secondary" style={{ fontSize: fontSize.caption, display: "block" }}>
+                      {t("overview.yesterdayPrefix", {
+                        amount: moneyOr(formatMoney(revenue?.yesterday_revenue), revenue != null),
+                      })}
+                    </Typography.Text>
+                    {/* 收入含包周期预付,单列摊开 */}
+                    <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                      {t("overview.prepaidPart", {
+                        amount: moneyOr(formatMoney(revenue?.today_prepaid), revenue != null),
+                      })}
+                    </Typography.Text>
+                  </>
+                )}
+              </KpiCard>,
+              <KpiCard key="rev-month" pending={revenueQ.isLoading}>
+                {revenueQ.isError ? (
+                  revenueErr
+                ) : (
+                  <>
+                    <Statistic
+                      title={t("overview.monthRevenue")}
+                      value={moneyOr(formatMoney(revenue?.month_revenue), revenue != null)}
+                    />
+                    <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                      {t("overview.prepaidPart", {
+                        amount: moneyOr(formatMoney(revenue?.month_prepaid), revenue != null),
+                      })}
+                    </Typography.Text>
+                  </>
+                )}
+              </KpiCard>,
+              <KpiCard key="signup" pending={revenueQ.isLoading}>
+                {revenueQ.isError ? (
+                  revenueErr
+                ) : (
+                  <>
+                    <Statistic title={t("overview.todaySignups")} value={revenue ? revenue.today_signups : "—"} />
+                    <Typography.Text
+                      style={{
+                        fontSize: fontSize.caption,
+                        color: signupDelta >= 0 ? adminColors.positive : adminColors.negative,
+                      }}
+                    >
+                      {signupDelta >= 0 ? "▲" : "▼"} {t("overview.vsYesterday", { count: Math.abs(signupDelta) })}
+                    </Typography.Text>
+                  </>
+                )}
+              </KpiCard>,
+              <KpiCard key="paying" pending={ovQ.isLoading}>
+                {ovQ.isError ? (
+                  ovErr
+                ) : (
                   <Statistic
-                    title={t("overview.subscriptionsActive")}
-                    value={ov ? ov.subscriptions_active : "—"}
+                    title={t("overview.payingTenants")}
+                    value={ov ? `${ov.paying_tenants} / ${ov.tenants_total}` : "—"}
                   />
-                  <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                    {t("overview.subscriptionsActiveHint")}
-                  </Typography.Text>
-                </>
-              )}
-            </KpiCard>,
-            <KpiCard key="nodes" pending={ovQ.isLoading}>
-              {ovQ.isError ? ovErr : (
-                <>
+                )}
+              </KpiCard>,
+            ]}
+          />
+        </Col>
+        <Col span={24}>
+          <KpiGrid
+            items={[
+              <KpiCard key="active" pending={ovQ.isLoading}>
+                {ovQ.isError ? (
+                  ovErr
+                ) : (
+                  <>
+                    <Statistic title={t("overview.activeInstances")} value={ov ? activeInstances : "—"} />
+                    <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                      {t("overview.instanceStatusHint", {
+                        stopped: byStatus.stopped ?? 0,
+                        failed: byStatus.failed ?? 0,
+                      })}
+                    </Typography.Text>
+                  </>
+                )}
+              </KpiCard>,
+              <KpiCard key="subs" pending={ovQ.isLoading}>
+                {ovQ.isError ? (
+                  ovErr
+                ) : (
+                  <>
+                    {/* 按订阅行数计,可大于活跃实例数 */}
+                    <Statistic title={t("overview.subscriptionsActive")} value={ov ? ov.subscriptions_active : "—"} />
+                    <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                      {t("overview.subscriptionsActiveHint")}
+                    </Typography.Text>
+                  </>
+                )}
+              </KpiCard>,
+              <KpiCard key="nodes" pending={ovQ.isLoading}>
+                {ovQ.isError ? (
+                  ovErr
+                ) : (
+                  <>
+                    <Statistic
+                      title={t("overview.nodesHealth")}
+                      value={ov ? `${ov.nodes_ready} / ${ov.nodes_total}` : "—"}
+                    />
+                    <Typography.Text
+                      style={{
+                        fontSize: fontSize.caption,
+                        color: ov && ov.nodes_missing > 0 ? adminColors.negative : adminColors.textSecondary,
+                      }}
+                    >
+                      {t("overview.nodesMissing", { count: ov?.nodes_missing ?? 0 })}
+                    </Typography.Text>
+                  </>
+                )}
+              </KpiCard>,
+              <KpiCard key="alerts" pending={unreadQ.isLoading}>
+                {unreadQ.isError ? (
+                  unreadErr
+                ) : (
                   <Statistic
-                    title={t("overview.nodesHealth")}
-                    value={ov ? `${ov.nodes_ready} / ${ov.nodes_total}` : "—"}
-                  />
-                  <Typography.Text
-                    style={{
-                      fontSize: fontSize.caption,
-                      color: ov && ov.nodes_missing > 0 ? adminColors.negative : adminColors.textSecondary,
+                    title={t("overview.alertsTotal")}
+                    value={unread?.count ?? "—"}
+                    styles={{
+                      // 红色高亮取精确计数端点的 critical
+                      content: (unread?.critical_count ?? 0) > 0 ? { color: adminColors.negative } : undefined,
                     }}
-                  >
-                    {t("overview.nodesMissing", { count: ov?.nodes_missing ?? 0 })}
-                  </Typography.Text>
-                </>
-              )}
-            </KpiCard>,
-            <KpiCard key="alerts" pending={unreadQ.isLoading}>
-              {unreadQ.isError ? unreadErr : (
-                <Statistic
-                  title={t("overview.alertsTotal")}
-                  value={unread?.count ?? "—"}
-                  styles={{
-                    // 红色高亮取精确计数端点的 critical
-                    content: (unread?.critical_count ?? 0) > 0
-                      ? { color: adminColors.negative }
-                      : undefined,
-                  }}
-                />
-              )}
-            </KpiCard>,
-          ]}
-        />
-      </Col>
+                  />
+                )}
+              </KpiCard>,
+            ]}
+          />
+        </Col>
 
-      <DeadTasksCard />
+        <DeadTasksCard />
 
-      <Col xs={24} xl={16}>
-        <Card
-          title={t("overview.oversellChartTitle")}
-          extra={<Typography.Text type="secondary">{t("overview.oversellHint")}</Typography.Text>}
-        >
-          {oversellError ? (
-            <DataErrorAlert title={t("overview.loadFailed")} description={null} onRetry={() => void refetchOversell()} />
-          ) : oversellRows.length ? (
-            <OversellChart rows={oversellRows} />
-          ) : (
-            <Empty description={t("overview.oversellEmpty")} />
-          )}
-        </Card>
-        <Card title={t("overview.poolOccupancy")} style={{ marginTop: 16 }}>
-          {ovError ? (
-            <DataErrorAlert title={t("overview.loadFailed")} description={null} onRetry={() => void refetchOv()} />
-          ) : ov && ov.pools.length ? (
-            <PoolOccupancy pools={ov.pools} />
-          ) : (
-            <Empty description={t("overview.poolEmpty")} />
-          )}
-        </Card>
-      </Col>
-      <Col xs={24} xl={8}>
-        <AlertStreamCard />
-      </Col>
-    </Row>
+        <Col xs={24} xl={16}>
+          <Card
+            title={t("overview.oversellChartTitle")}
+            extra={<Typography.Text type="secondary">{t("overview.oversellHint")}</Typography.Text>}
+          >
+            {oversellError ? (
+              <DataErrorAlert
+                title={t("overview.loadFailed")}
+                description={null}
+                onRetry={() => void refetchOversell()}
+              />
+            ) : oversellRows.length ? (
+              <OversellChart rows={oversellRows} />
+            ) : (
+              <Empty description={t("overview.oversellEmpty")} />
+            )}
+          </Card>
+          <Card title={t("overview.poolOccupancy")} style={{ marginTop: 16 }}>
+            {ovError ? (
+              <DataErrorAlert title={t("overview.loadFailed")} description={null} onRetry={() => void refetchOv()} />
+            ) : ov && ov.pools.length ? (
+              <PoolOccupancy pools={ov.pools} />
+            ) : (
+              <Empty description={t("overview.poolEmpty")} />
+            )}
+          </Card>
+        </Col>
+        <Col xs={24} xl={8}>
+          <AlertStreamCard />
+        </Col>
+      </Row>
     </PageContainer>
   );
 }

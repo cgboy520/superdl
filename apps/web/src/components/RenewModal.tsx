@@ -21,13 +21,7 @@ import { useRenewInstance, useSubscribeInstance } from "../api/mutations";
 import { useWallet } from "../api/queries";
 import { useFormat } from "@superdl/ui";
 import { ChipRow } from "./ChipRow";
-import {
-  discountOff,
-  PeriodCountUnit,
-  PeriodQuoteRows,
-  periodQuoteOf,
-  usePeriodDiscounts,
-} from "./periodBilling";
+import { discountOff, PeriodCountUnit, PeriodQuoteRows, periodQuoteOf, usePeriodDiscounts } from "./periodBilling";
 
 type PeriodPurchaseMode = "renew" | "subscribe";
 
@@ -75,16 +69,10 @@ export function RenewModal({
   const baseHourly = isConvert ? instance.price_hourly : sub?.unit_price;
   const quote =
     isConvert || sub
-      ? periodQuoteOf(
-          baseHourly,
-          { units: billingUnits(instance.gpu_count), period, periodCount: count },
-          discounts,
-        )
+      ? periodQuoteOf(baseHourly, { units: billingUnits(instance.gpu_count), period, periodCount: count }, discounts)
       : undefined;
 
-  const startFrom = isConvert
-    ? mountedAt
-    : Math.max(sub ? new Date(sub.expires_at).getTime() : mountedAt, mountedAt);
+  const startFrom = isConvert ? mountedAt : Math.max(sub ? new Date(sub.expires_at).getTime() : mountedAt, mountedAt);
   const newExpiry = new Date(startFrom + PERIOD_HOURS[period] * count * 3_600_000).toISOString();
 
   const balance = wallet?.balance ?? null;
@@ -95,9 +83,7 @@ export function RenewModal({
     <Modal
       open={open}
       title={
-        isConvert
-          ? t("period.convertTitle", { name: instance.name })
-          : t("period.renewTitle", { name: instance.name })
+        isConvert ? t("period.convertTitle", { name: instance.name }) : t("period.renewTitle", { name: instance.name })
       }
       onCancel={onClose}
       width={560}
@@ -115,9 +101,7 @@ export function RenewModal({
               type="primary"
               disabled={!enough}
               loading={submit.isPending}
-              onClick={() =>
-                submit.mutate({ body: { period, period_count: count }, idempotencyKey })
-              }
+              onClick={() => submit.mutate({ body: { period, period_count: count }, idempotencyKey })}
             >
               {isConvert ? t("period.convertConfirm") : t("period.renewConfirm")}
             </Button>
@@ -186,11 +170,7 @@ export function RenewModal({
         />
 
         {quote ? (
-          <PeriodQuoteRows
-            quote={quote}
-            gpuCount={instance.gpu_count}
-            cpu={instance.gpu_count === 0}
-          />
+          <PeriodQuoteRows quote={quote} gpuCount={instance.gpu_count} cpu={instance.gpu_count === 0} />
         ) : (
           <Typography.Text type="secondary">{t("period.quotePending")}</Typography.Text>
         )}

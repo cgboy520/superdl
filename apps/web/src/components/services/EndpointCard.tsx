@@ -29,12 +29,19 @@ export function EndpointCard({
             {service.url}
           </Typography.Text>
           <CopyButton text={service.url} label={t("services.copyEndpoint")} />
-          <Button size="small" disabled={!live} onClick={() => window.open(service.url, "_blank", "noopener,noreferrer")}>
+          <Button
+            size="small"
+            disabled={!live}
+            onClick={() => window.open(service.url, "_blank", "noopener,noreferrer")}
+          >
             {t("services.openEndpoint")}
           </Button>
         </Space>
         <Space wrap size={12}>
-          <Badge status={service.ready ? "success" : "default"} text={service.ready ? t("services.ready") : t("services.notReady")} />
+          <Badge
+            status={service.ready ? "success" : "default"}
+            text={service.ready ? t("services.ready") : t("services.notReady")}
+          />
           <Tag>{service.require_api_key ? t("services.authRequired") : t("services.authPublic")}</Tag>
           {c && (
             <Typography.Text type="secondary">

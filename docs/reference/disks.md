@@ -8,12 +8,12 @@ JuiceFS 子路径数据盘:独立生命周期、配额、扩容与日结。表�
 
 ## 契约
 
-| 端点 | 角色/鉴权 | 说明 |
-|---|---|---|
-| `POST /api/v1/disks` | user | `{name, size_gb}`;钱包行锁内校验余额(在途+新增日费)与数量配额 |
-| `GET /api/v1/disks` | user | 列表 |
-| `PATCH /api/v1/disks/{uuid}` | user | 扩容,只增不减;缩容报 `DISK_SHRINK_FORBIDDEN` |
-| `DELETE /api/v1/disks/{uuid}` | user | 挂载中(running/starting/creating/stopping/releasing 实例)报 `DISK_IN_USE`;挂载实例已 stopped/frozen/failed 时放行并自动解挂 |
+| 端点                          | 角色/鉴权 | 说明                                                                                                                        |
+| ----------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/v1/disks`          | user      | `{name, size_gb}`;钱包行锁内校验余额(在途+新增日费)与数量配额                                                               |
+| `GET /api/v1/disks`           | user      | 列表                                                                                                                        |
+| `PATCH /api/v1/disks/{uuid}`  | user      | 扩容,只增不减;缩容报 `DISK_SHRINK_FORBIDDEN`                                                                                |
+| `DELETE /api/v1/disks/{uuid}` | user      | 挂载中(running/starting/creating/stopping/releasing 实例)报 `DISK_IN_USE`;挂载实例已 stopped/frozen/failed 时放行并自动解挂 |
 
 ## 规则与不变量
 

@@ -45,20 +45,18 @@ function formatSkuGpu(s: SkuMarketOut, t: TFunction<readonly ["web", "shared"]>)
 
 /** SKU 表列。availability=true 时插入「可开实例」列(市场页用;needed>1 时库存不足所选卡数的行给「不足 N 卡」标);
  *  priceFontSize 控制价格字号;units>1 时价格列副行给「× N 卡 = 总价」(价格口径显性化,ui-ux-spec §1 规则 5)。 */
-export function skuColumns(
-  opts: {
-    fmt: Formatters;
-    t: TFunction<readonly ["web", "shared"]>;
-    availability?: boolean;
-    priceFontSize?: number;
-    /** CPU 规格表:价格是整机时价,表头写「整机」 */
-    cpu?: boolean;
-    /** 竞价档选中时传入:上了竞价的规格价格列显「原价划线 + 折后价」,没上的显原价并挂标。 */
-    spot?: SpotPolicy;
-    /** 所选卡数(GPU 栏);>1 时价格列出总价副行,可开实例列按此判「不足」 */
-    units?: number;
-  },
-): NonNullable<ComponentProps<typeof Table<SkuMarketOut>>["columns"]> {
+export function skuColumns(opts: {
+  fmt: Formatters;
+  t: TFunction<readonly ["web", "shared"]>;
+  availability?: boolean;
+  priceFontSize?: number;
+  /** CPU 规格表:价格是整机时价,表头写「整机」 */
+  cpu?: boolean;
+  /** 竞价档选中时传入:上了竞价的规格价格列显「原价划线 + 折后价」,没上的显原价并挂标。 */
+  spot?: SpotPolicy;
+  /** 所选卡数(GPU 栏);>1 时价格列出总价副行,可开实例列按此判「不足」 */
+  units?: number;
+}): NonNullable<ComponentProps<typeof Table<SkuMarketOut>>["columns"]> {
   const { t } = opts;
   const units = opts.cpu ? 1 : Math.max(1, opts.units ?? 1);
   const availability = [
@@ -81,11 +79,12 @@ export function skuColumns(
     },
   ];
   const priceCell = (s: SkuMarketOut) => {
-    const unit = opts.spot && s.spot_enabled ? (
-      <SpotPriceInline baseHourly={s.price_hourly} units={1} policy={opts.spot} />
-    ) : (
-      opts.fmt.formatHourlyPrice(s.price_hourly)
-    );
+    const unit =
+      opts.spot && s.spot_enabled ? (
+        <SpotPriceInline baseHourly={s.price_hourly} units={1} policy={opts.spot} />
+      ) : (
+        opts.fmt.formatHourlyPrice(s.price_hourly)
+      );
     return (
       <Space orientation="vertical" size={0} align="end">
         <Space size={6} align="baseline">
@@ -98,7 +97,9 @@ export function skuColumns(
               count: units,
               total: opts.fmt.formatHourlyPrice(
                 mulPrice(
-                  opts.spot && s.spot_enabled ? (spotPriceOf(s.price_hourly, opts.spot) ?? s.price_hourly) : s.price_hourly,
+                  opts.spot && s.spot_enabled
+                    ? (spotPriceOf(s.price_hourly, opts.spot) ?? s.price_hourly)
+                    : s.price_hourly,
                   units,
                 ),
               ),

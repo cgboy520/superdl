@@ -3,14 +3,7 @@ import { POLL } from "@superdl/ui";
 import { adminLogoutApiAdminV1AuthLogoutPost } from "@superdl/api-client";
 import { adminColors, fontSize, formatDateTime, layout, metaOf } from "@superdl/ui";
 import { LangSwitcher } from "@superdl/ui/components";
-import {
-  Link,
-  Outlet,
-  createFileRoute,
-  redirect,
-  useNavigate,
-  useRouterState,
-} from "@tanstack/react-router";
+import { Link, Outlet, createFileRoute, redirect, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   Badge,
   Button,
@@ -30,11 +23,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { type AlertRow, fetchAdminMe, useAlertUnreadCount, useAlerts } from "../api";
-import {
-  COMMAND_KBD_HINT,
-  COMMAND_PALETTE_OPEN_EVENT,
-  CommandPalette,
-} from "../components/CommandPalette";
+import { COMMAND_KBD_HINT, COMMAND_PALETTE_OPEN_EVENT, CommandPalette } from "../components/CommandPalette";
 import { alertLink, severityColor, useAckAlertWithFeedback } from "../lib/alertLink";
 import { MENU, MENU_GROUP_LABEL_KEY, MENU_GROUP_ORDER, ROLE_LABEL_KEY, canSeeMenu } from "../lib/menu";
 import { queryClient } from "../lib/queryClient";
@@ -92,16 +81,11 @@ function AlertBell() {
             </Space>
           ) : (
             <>
-              {alerts.length === 0 && (
-                <Typography.Text type="secondary">{t("shell.noAlerts")}</Typography.Text>
-              )}
+              {alerts.length === 0 && <Typography.Text type="secondary">{t("shell.noAlerts")}</Typography.Text>}
               {alerts.slice(0, 20).map((a) => {
                 const link = alertLink(a);
                 return (
-                  <div
-                    key={a.id}
-                    style={{ padding: "6px 0", borderBottom: `1px solid ${adminColors.divider}` }}
-                  >
+                  <div key={a.id} style={{ padding: "6px 0", borderBottom: `1px solid ${adminColors.divider}` }}>
                     <Badge
                       color={severityColor(a.severity)}
                       text={
@@ -160,9 +144,7 @@ function AlertBell() {
         <Button
           type="text"
           aria-label={t("shell.alertsTitle")}
-          icon={
-            <AlertOutlined style={{ fontSize: fontSize.sectionTitle, color: adminColors.alertAccent }} />
-          }
+          icon={<AlertOutlined style={{ fontSize: fontSize.sectionTitle, color: adminColors.alertAccent }} />}
         />
       </Badge>
     </Popover>
@@ -206,9 +188,7 @@ function AppLayout() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   // 收起态两份:桌面手动收起(localStorage)与窄屏汉堡开合(瞬态);断点收展由 screens.lg 派生
-  const [manualCollapsed, setManualCollapsed] = useState(
-    () => localStorage.getItem(SIDER_COLLAPSED_KEY) === "1",
-  );
+  const [manualCollapsed, setManualCollapsed] = useState(() => localStorage.getItem(SIDER_COLLAPSED_KEY) === "1");
   // 窄屏 Sider 收为 0 宽,Header 出汉堡钮;默认收
   const [mobileOpen, setMobileOpen] = useState(false);
   const siderCollapsed = screens.lg ? manualCollapsed : !mobileOpen;

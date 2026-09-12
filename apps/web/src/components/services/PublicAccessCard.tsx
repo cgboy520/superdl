@@ -36,7 +36,9 @@ export function PublicAccessFields({
         ? t("services.form.portRequired")
         : null;
   const healthError =
-    healthTouched && healthPath.trim() !== "" && !healthPath.trim().startsWith("/") ? t("services.form.healthPathSlash") : null;
+    healthTouched && healthPath.trim() !== "" && !healthPath.trim().startsWith("/")
+      ? t("services.form.healthPathSlash")
+      : null;
   return (
     <Space orientation="vertical" size={12} style={{ width: "100%" }}>
       <Space size={24} wrap align="start">
@@ -83,27 +85,25 @@ export function PublicAccessFields({
         />
       </Field>
       {!hideAuth && (
-      <Space orientation="vertical" size={4} style={{ width: "100%" }}>
-        <Typography.Text type="secondary">{t("services.form.authLabel")}</Typography.Text>
-        <Radio.Group
-          value={requireApiKey ? "key" : "public"}
-          onChange={(e) => onRequireApiKey(e.target.value === "key")}
-          options={[
-            { value: "key", label: t("services.form.authRequire") },
-            { value: "public", label: t("services.form.authPublic") },
-          ]}
-        />
-        {!requireApiKey && (
-          <Typography.Text type="warning">{t("services.form.authPublicHint")}</Typography.Text>
-        )}
-        <Typography.Text type="secondary">{t("copy.serviceGatewayAuth")}</Typography.Text>
-      </Space>
+        <Space orientation="vertical" size={4} style={{ width: "100%" }}>
+          <Typography.Text type="secondary">{t("services.form.authLabel")}</Typography.Text>
+          <Radio.Group
+            value={requireApiKey ? "key" : "public"}
+            onChange={(e) => onRequireApiKey(e.target.value === "key")}
+            options={[
+              { value: "key", label: t("services.form.authRequire") },
+              { value: "public", label: t("services.form.authPublic") },
+            ]}
+          />
+          {!requireApiKey && <Typography.Text type="warning">{t("services.form.authPublicHint")}</Typography.Text>}
+          <Typography.Text type="secondary">{t("copy.serviceGatewayAuth")}</Typography.Text>
+        </Space>
       )}
       {!hideAuth && (
-      <Space orientation="vertical" size={4}>
-        <Typography.Text type="secondary">{t("services.form.endpointLabel")}</Typography.Text>
-        <Typography.Text type="secondary">{t("services.form.endpointPending")}</Typography.Text>
-      </Space>
+        <Space orientation="vertical" size={4}>
+          <Typography.Text type="secondary">{t("services.form.endpointLabel")}</Typography.Text>
+          <Typography.Text type="secondary">{t("services.form.endpointPending")}</Typography.Text>
+        </Space>
       )}
     </Space>
   );

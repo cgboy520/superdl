@@ -1,11 +1,7 @@
 /** 服务过渡态集合与 isServiceStatus 白名单回归。 */
 import { describe, expect, it } from "vitest";
 
-import {
-  isServiceStatus,
-  isTransientServiceStatus,
-  serviceStatusMap,
-} from "./status";
+import { isServiceStatus, isTransientServiceStatus, serviceStatusMap } from "./status";
 
 describe("serviceStatusMap", () => {
   it("过渡态只有 deploying / stopping / releasing;unready 可能永远不就绪,不算过渡态", () => {

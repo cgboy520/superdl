@@ -74,10 +74,7 @@ export const Route = createFileRoute("/_console/instances")({
   validateSearch: (search: Record<string, unknown>): { q?: string; status?: string } => {
     const out: { q?: string; status?: string } = {};
     if (typeof search.q === "string" && search.q.trim()) out.q = search.q;
-    if (
-      typeof search.status === "string" &&
-      (FILTER_STATUSES as readonly string[]).includes(search.status)
-    ) {
+    if (typeof search.status === "string" && (FILTER_STATUSES as readonly string[]).includes(search.status)) {
       out.status = search.status;
     }
     return out;
@@ -158,13 +155,7 @@ function useInstanceAttention(rows: InstanceOut[], onRenew: (i: InstanceOut) => 
   return items;
 }
 
-function UtilCell({
-  instance,
-  summary,
-}: {
-  instance: InstanceOut;
-  summary: InstanceMetricsSummaryOut | undefined;
-}) {
+function UtilCell({ instance, summary }: { instance: InstanceOut; summary: InstanceMetricsSummaryOut | undefined }) {
   const { t } = useTranslation();
   if (instance.status !== "running") {
     return <Typography.Text type="secondary">-</Typography.Text>;
@@ -274,7 +265,11 @@ function SpecCell({ instance }: { instance: InstanceOut }) {
       }
     >
       <Space>
-        <Typography.Text tabIndex={0} className="focus-ring" style={{ textDecoration: "underline dotted", cursor: "help" }}>
+        <Typography.Text
+          tabIndex={0}
+          className="focus-ring"
+          style={{ textDecoration: "underline dotted", cursor: "help" }}
+        >
           {instance.spec["gpu_model"] as string} × {instance.gpu_count}
         </Typography.Text>
         <TierTag tier={instance.spec["tier"] as string} pool={instance.spec["pool_label"] as string} />
@@ -617,9 +612,7 @@ function InstancesPage() {
               title: t("instances.colActions"),
               fixed: "right",
               width: 260,
-              render: (_, r) => (
-                <InstanceActions instance={r} onShowEvents={() => void openDetail(r.uuid, "events")} />
-              ),
+              render: (_, r) => <InstanceActions instance={r} onShowEvents={() => void openDetail(r.uuid, "events")} />,
             },
           ]}
         />

@@ -9,13 +9,7 @@ import { useTranslation } from "react-i18next";
 
 import { useInstanceAccess } from "../api/queries";
 
-export function ConnectMenu({
-  instance,
-  size = "small",
-}: {
-  instance: InstanceOut;
-  size?: "small" | "middle";
-}) {
+export function ConnectMenu({ instance, size = "small" }: { instance: InstanceOut; size?: "small" | "middle" }) {
   const { t } = useTranslation(["web", "shared"]);
   const { message } = App.useApp();
   const navigate = useNavigate();

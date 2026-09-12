@@ -100,9 +100,7 @@ export async function requestTokenRefresh(): Promise<{
 }
 
 /** 管理端静默续期(滑动窗口,15 分钟过期宽限):access token 换新。失败返回 null。 */
-export async function requestAdminTokenRefresh(
-  accessToken: string,
-): Promise<{ access_token: string } | null> {
+export async function requestAdminTokenRefresh(accessToken: string): Promise<{ access_token: string } | null> {
   try {
     const resp = await fetch(`${config.baseUrl}/api/admin/v1/auth/refresh`, {
       method: "POST",

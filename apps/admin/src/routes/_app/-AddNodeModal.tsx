@@ -48,8 +48,7 @@ export interface EnrollFormValues {
 }
 
 // 与后端 nodes/schemas.py HOSTNAME_PATTERN 对齐
-export const HOSTNAME_PATTERN =
-  /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/;
+export const HOSTNAME_PATTERN = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/;
 
 export function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useTranslation();
@@ -134,11 +133,7 @@ export function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => 
           <Form.Item name="note" label={t("nodes.noteLabel")}>
             <Input placeholder={t("nodes.notePlaceholder")} maxLength={128} />
           </Form.Item>
-          <Form.Item
-            name="nvme_devices"
-            label={t("nodes.nvmeLabel")}
-            extra={t("nodes.nvmeExtra")}
-          >
+          <Form.Item name="nvme_devices" label={t("nodes.nvmeLabel")} extra={t("nodes.nvmeExtra")}>
             <Select mode="tags" placeholder={t("nodes.nvmePlaceholder")} open={false} />
           </Form.Item>
           <Form.Item name="ttl_hours" label={t("nodes.ttlLabel")} rules={[{ required: true }]}>
@@ -149,4 +144,3 @@ export function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => 
     </Modal>
   );
 }
-

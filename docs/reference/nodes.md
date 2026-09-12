@@ -12,21 +12,21 @@
 
 ## 契约
 
-| 端点 | 角色/鉴权 | 说明 |
-|---|---|---|
-| `GET /api/v1/node-enroll/script` | 匿名+限流 | 静态脚本,仅替换 `__API_BASE__`,零密钥 |
-| `POST /api/v1/node-enroll/bootstrap` | Bearer 注册令牌(一次性) | 上报 hostname/os/`gpu_details:[{name, memory_mib?}]` → 回 pool/发行版/agent 版本/server_url/join_token/驱动版本/nvme/registries_yaml/registry_ca_pem + `progress_token`(首跑换发) + `script_sha256`;首跑即消费注册令牌,之后 404;按 IP 限流 |
-| `POST /api/v1/node-enroll/progress` | Bearer progress 令牌 | `{phase, state: running\|ok\|failed\|rebooting, message?, driver_version?, cuda_version?}` 推进 phase/status/error/心跳;版本字段并进 `os_info`;注册令牌不能上报;响应 204 |
-| `GET /api/admin/v1/node-enrollments` | ops/readonly | `?active=true` 排除 revoked、joined、超 7d 的 expired |
-| `POST /api/admin/v1/node-enrollments` | ops | 响应含 token 明文与完整命令,仅此一次;Idempotency-Key 重放轮换该行 token(仅 pending/expired/failed,进行中 409);cluster 组未配 server_url/join_token → 409 |
-| `POST .../{enrollment_id}/regenerate` | ops | 仅 pending/expired/failed:换新 token 与有效期,状态回 pending |
-| `POST .../{enrollment_id}/revoke` | ops | reason 必填,非终态 → revoked |
-| `GET /api/admin/v1/nodes` | ops/readonly | 台账;含 `gpu_model_raw / unlabeled / label_synced / last_seen / vram_gb`,含未打标与 Missing |
-| `POST /api/admin/v1/nodes/{node_name}/cordon\|uncordon` | ops | reason 必填,只 enqueue `node.cordon` |
-| `POST /api/admin/v1/nodes/{node_name}/decommission` | ops | **不可逆**,reason 必填。同事务:停调度期望态落台账 + 该主机名下全部登记置 revoked + enqueue `node.decommission`(worker 删 Node 对象);台账无此节点 404 `nodes.nodeNotFound`。响应 `{node_name, revoked_enrollments, queued}` |
-| `GET /api/admin/v1/cluster/gpu-models` | ops/readonly | 台账聚合 `[{gpu_model, gpu_model_raw, pool_label, node_count, gpu_total, ready_gpu_total, vram_gb}]`,canonical×pool 分组,未识别入 `unrecognized` |
-| `GET /api/admin/v1/cluster/status` | ops/readonly | 纯 DB:`{api_reachable, distro, k8s_version, probed_at, components:[{key,label,ok,detail,fix_hint}], pools, config:{server_url_set, join_token_set, prometheus_url_set, grafana_url, registry_host, registry_project}}` |
-| `POST /api/admin/v1/cluster/test-connection` | ops | 同步只读探测,upsert `cluster_status` 后返回;超时 5s → 502 |
+| 端点                                                    | 角色/鉴权               | 说明                                                                                                                                                                                                                                       |
+| ------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /api/v1/node-enroll/script`                        | 匿名+限流               | 静态脚本,仅替换 `__API_BASE__`,零密钥                                                                                                                                                                                                      |
+| `POST /api/v1/node-enroll/bootstrap`                    | Bearer 注册令牌(一次性) | 上报 hostname/os/`gpu_details:[{name, memory_mib?}]` → 回 pool/发行版/agent 版本/server_url/join_token/驱动版本/nvme/registries_yaml/registry_ca_pem + `progress_token`(首跑换发) + `script_sha256`;首跑即消费注册令牌,之后 404;按 IP 限流 |
+| `POST /api/v1/node-enroll/progress`                     | Bearer progress 令牌    | `{phase, state: running\|ok\|failed\|rebooting, message?, driver_version?, cuda_version?}` 推进 phase/status/error/心跳;版本字段并进 `os_info`;注册令牌不能上报;响应 204                                                                   |
+| `GET /api/admin/v1/node-enrollments`                    | ops/readonly            | `?active=true` 排除 revoked、joined、超 7d 的 expired                                                                                                                                                                                      |
+| `POST /api/admin/v1/node-enrollments`                   | ops                     | 响应含 token 明文与完整命令,仅此一次;Idempotency-Key 重放轮换该行 token(仅 pending/expired/failed,进行中 409);cluster 组未配 server_url/join_token → 409                                                                                   |
+| `POST .../{enrollment_id}/regenerate`                   | ops                     | 仅 pending/expired/failed:换新 token 与有效期,状态回 pending                                                                                                                                                                               |
+| `POST .../{enrollment_id}/revoke`                       | ops                     | reason 必填,非终态 → revoked                                                                                                                                                                                                               |
+| `GET /api/admin/v1/nodes`                               | ops/readonly            | 台账;含 `gpu_model_raw / unlabeled / label_synced / last_seen / vram_gb`,含未打标与 Missing                                                                                                                                                |
+| `POST /api/admin/v1/nodes/{node_name}/cordon\|uncordon` | ops                     | reason 必填,只 enqueue `node.cordon`                                                                                                                                                                                                       |
+| `POST /api/admin/v1/nodes/{node_name}/decommission`     | ops                     | **不可逆**,reason 必填。同事务:停调度期望态落台账 + 该主机名下全部登记置 revoked + enqueue `node.decommission`(worker 删 Node 对象);台账无此节点 404 `nodes.nodeNotFound`。响应 `{node_name, revoked_enrollments, queued}`                 |
+| `GET /api/admin/v1/cluster/gpu-models`                  | ops/readonly            | 台账聚合 `[{gpu_model, gpu_model_raw, pool_label, node_count, gpu_total, ready_gpu_total, vram_gb}]`,canonical×pool 分组,未识别入 `unrecognized`                                                                                           |
+| `GET /api/admin/v1/cluster/status`                      | ops/readonly            | 纯 DB:`{api_reachable, distro, k8s_version, probed_at, components:[{key,label,ok,detail,fix_hint}], pools, config:{server_url_set, join_token_set, prometheus_url_set, grafana_url, registry_host, registry_project}}`                     |
+| `POST /api/admin/v1/cluster/test-connection`            | ops                     | 同步只读探测,upsert `cluster_status` 后返回;超时 5s → 502                                                                                                                                                                                  |
 
 ## 规则与不变量
 

@@ -61,12 +61,9 @@ function NodesPage() {
     [nodes, kw],
   );
   // ?node= 目标不存在时顶部提示
-  const deepLinkMissing =
-    nodeParam !== undefined && data !== undefined && !nodes.some((n) => n.name === nodeParam);
+  const deepLinkMissing = nodeParam !== undefined && data !== undefined && !nodes.some((n) => n.name === nodeParam);
   const node =
-    deepLinkMissing && selected === nodeParam
-      ? undefined
-      : (nodes.find((n) => n.name === selected) ?? nodes[0]);
+    deepLinkMissing && selected === nodeParam ? undefined : (nodes.find((n) => n.name === selected) ?? nodes[0]);
   const { data: nodeMetrics } = useNodeMetrics(node?.name ?? null, range);
   // 告警深链:选中目标行并滚动到可视区(data-row-key 定位;渲染期派生态)
   const [prevNodeParam, setPrevNodeParam] = useState(nodeParam);
@@ -97,17 +94,17 @@ function NodesPage() {
         );
         void qc.invalidateQueries({ queryKey: ["admin", "nodes"] });
         if ((r as { queued?: boolean }).queued) {
-          cordonTimer.current = setTimeout(
-            () => void qc.invalidateQueries({ queryKey: ["admin", "nodes"] }),
-            3_000,
-          );
+          cordonTimer.current = setTimeout(() => void qc.invalidateQueries({ queryKey: ["admin", "nodes"] }), 3_000);
         }
       },
       onError: (e, v) =>
         message.error(
-          errText(e, t("common.actionFailed", {
-            action: v.on ? t("nodes.actionCordon") : t("nodes.actionUncordon"),
-          })),
+          errText(
+            e,
+            t("common.actionFailed", {
+              action: v.on ? t("nodes.actionCordon") : t("nodes.actionUncordon"),
+            }),
+          ),
         ),
     },
   });
@@ -142,10 +139,7 @@ function NodesPage() {
         <Space size={12}>
           {portPool && (
             <Tooltip title={t("nodes.portPoolHint")}>
-              <Tag
-                color={portPool.blocked > 0 ? "red" : "default"}
-                style={{ marginInlineEnd: 0 }}
-              >
+              <Tag color={portPool.blocked > 0 ? "red" : "default"} style={{ marginInlineEnd: 0 }}>
                 {t("nodes.portPool", {
                   assigned: portPool.assigned,
                   total: portPool.total,
@@ -228,9 +222,7 @@ function NodesPage() {
           dataSource={filteredNodes}
           // >200 行改 100/页分页,不上虚拟化
           pagination={
-            filteredNodes.length > 200
-              ? { pageSize: 100, showSizeChanger: false, hideOnSinglePage: true }
-              : false
+            filteredNodes.length > 200 ? { pageSize: 100, showSizeChanger: false, hideOnSinglePage: true } : false
           }
           onRow={(r) => ({
             onClick: () => setSelected(r.name),
@@ -264,11 +256,7 @@ function NodesPage() {
               filters: poolFilters,
               onFilter: (v, r) => (r.unlabeled ? "" : r.pool_label) === v,
               render: (v: string, r) =>
-                r.unlabeled || !v ? (
-                  <Tag color="red">{t("nodes.unlabeledTag")}</Tag>
-                ) : (
-                  <Tag color="cyan">{v}</Tag>
-                ),
+                r.unlabeled || !v ? <Tag color="red">{t("nodes.unlabeledTag")}</Tag> : <Tag color="cyan">{v}</Tag>,
             },
             {
               title: t("nodes.colGpu"),
@@ -343,15 +331,7 @@ function NodesPage() {
               onFilter: (v, r) => r.status === v,
               render: (v: string) => (
                 <Tag
-                  color={
-                    v === "Ready"
-                      ? "green"
-                      : v === "Cordoned"
-                        ? "orange"
-                        : v === "Missing"
-                          ? "default"
-                          : "red"
-                  }
+                  color={v === "Ready" ? "green" : v === "Cordoned" ? "orange" : v === "Missing" ? "default" : "red"}
                 >
                   {v}
                 </Tag>
@@ -404,15 +384,9 @@ function NodesPage() {
           <Card title={t("nodes.gpuGridTitle", { name: node.name })} style={{ marginTop: 16 }}>
             <GpuGrid node={node} metrics={nodeMetrics} />
           </Card>
-          <NodeMetricsPanel
-            node={node}
-            metrics={nodeMetrics}
-            range={range}
-            onRangeChange={setRange}
-          />
+          <NodeMetricsPanel node={node} metrics={nodeMetrics} range={range} onRangeChange={setRange} />
         </>
       )}
     </PageContainer>
   );
 }
-

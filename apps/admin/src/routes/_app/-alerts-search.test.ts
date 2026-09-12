@@ -3,9 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { Route } from "./alerts";
 
-const validate = Route.options.validateSearch as (
-  search: Record<string, unknown>,
-) => Record<string, unknown>;
+const validate = Route.options.validateSearch as (search: Record<string, unknown>) => Record<string, unknown>;
 
 describe("alerts validateSearch", () => {
   it("severity/acked 合法值原样保留", () => {

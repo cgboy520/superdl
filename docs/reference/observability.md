@@ -4,14 +4,14 @@
 
 ## 契约
 
-| 端点 | 角色/鉴权 | 说明 |
-|---|---|---|
-| `GET /metrics` | Bearer `SUPERDL_METRICS_TOKEN` | Prometheus 抓取 |
-| `GET /healthz` | 匿名 | liveness:进程活着即 200,不探依赖;不进 openapi |
-| `GET /readyz` | 匿名 | readiness:探 DB 并比对 `alembic_version` 与代码 head,**必须完全一致**;落后/领先/未知(503 `schema_mismatch`)、从未迁移(503 `never_migrated`)、多 head(503 `multi_head`)不接流量;不进 openapi |
-| `GET /api/admin/v1/nodes/{node_name}/metrics?range=1h\|6h\|24h` | ops/readonly | `{available, gpus:[{index, util:[[ts,v]], mem_used_mb, temp}], xid_count_24h}`;断源 `available=false` 且 200 |
-| `GET /api/admin/v1/alerts` | ops/finance/readonly | 告警流 |
-| platform-config `observability` 组 | admin | `grafana_url`(`https?://`,可空)、`oncall_phone`(critical 平台告警额外经 outbox `notify.sms` 直发,留空不启用) |
+| 端点                                                            | 角色/鉴权                      | 说明                                                                                                                                                                                        |
+| --------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /metrics`                                                  | Bearer `SUPERDL_METRICS_TOKEN` | Prometheus 抓取                                                                                                                                                                             |
+| `GET /healthz`                                                  | 匿名                           | liveness:进程活着即 200,不探依赖;不进 openapi                                                                                                                                               |
+| `GET /readyz`                                                   | 匿名                           | readiness:探 DB 并比对 `alembic_version` 与代码 head,**必须完全一致**;落后/领先/未知(503 `schema_mismatch`)、从未迁移(503 `never_migrated`)、多 head(503 `multi_head`)不接流量;不进 openapi |
+| `GET /api/admin/v1/nodes/{node_name}/metrics?range=1h\|6h\|24h` | ops/readonly                   | `{available, gpus:[{index, util:[[ts,v]], mem_used_mb, temp}], xid_count_24h}`;断源 `available=false` 且 200                                                                                |
+| `GET /api/admin/v1/alerts`                                      | ops/finance/readonly           | 告警流                                                                                                                                                                                      |
+| platform-config `observability` 组                              | admin                          | `grafana_url`(`https?://`,可空)、`oncall_phone`(critical 平台告警额外经 outbox `notify.sms` 直发,留空不启用)                                                                                |
 
 业务指标在 `app/core/metrics.py`:死信、任务超时、结算失败与落后、未核销结算缺口(`superdl_settlement_gap_unresolved`,DB 口径 gauge,>0 持续 15 分钟告警)、资金账实差异、巡检分阶段失败、泄漏 Pod 与熔断、悬挂实例、节点失联、回调金额不符、关单后入账、渠道反向通知与人工处置(`superdl_payment_reversal_resolved_total{action}`)、查单单笔失败、JuiceFS 配额死信、审计写失败、worker 心跳、HTTP 直方图(完整路由模板)、竞价抢占计数、SSH 端口池水位(`superdl_ssh_port_pool_ports{state}`,reconciler 每轮)、负余额敞口(`superdl_wallet_negative_count` / `superdl_wallet_negative_sum_yuan`,余额巡检每轮)、平台配置写入(`superdl_platform_config_write_total{domain}`)。
 

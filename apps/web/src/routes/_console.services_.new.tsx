@@ -21,7 +21,21 @@ import {
 } from "@superdl/ui";
 import { DataErrorAlert, PageHeader, useConfirm } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { App, Button, Card, Checkbox, Col, Descriptions, Grid, Input, Row, Space, Steps, Tooltip, Typography } from "antd";
+import {
+  App,
+  Button,
+  Card,
+  Checkbox,
+  Col,
+  Descriptions,
+  Grid,
+  Input,
+  Row,
+  Space,
+  Steps,
+  Tooltip,
+  Typography,
+} from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -186,17 +200,13 @@ function DeployPage() {
       : billingMode;
   const isSpot = mode === "spot";
   const period = isBillingPeriod(mode) ? mode : null;
-  const unitHourly = sku
-    ? ((isSpot ? spotPriceOf(sku.price_hourly, spotPolicy) : null) ?? sku.price_hourly)
-    : null;
+  const unitHourly = sku ? ((isSpot ? spotPriceOf(sku.price_hourly, spotPolicy) : null) ?? sku.price_hourly) : null;
   const hourlyTotal = unitHourly ? mulPrice(unitHourly, priceUnits) : null;
   const quote =
     sku && period
       ? periodQuoteOf(sku.price_hourly, { units: billingUnits(gpus), period, periodCount }, discounts)
       : undefined;
-  const expiresAt = period
-    ? new Date(mountedAt + PERIOD_HOURS[period] * periodCount * 3_600_000).toISOString()
-    : null;
+  const expiresAt = period ? new Date(mountedAt + PERIOD_HOURS[period] * periodCount * 3_600_000).toISOString() : null;
   const diskPriceGbMonth = policies?.disk_price_gb_month;
   const diskGb =
     diskMode === "new"
@@ -208,8 +218,7 @@ function DeployPage() {
   // BigInt 比较:按量门槛 = 1 小时费用,包周期 = 应付全额;报价未就绪不放行
   const needAmount = period ? quote?.amount : hourlyTotal;
   const balanceReady = wallet != null && (!period || quote != null);
-  const enough =
-    balanceReady && needAmount != null && compareAmounts(wallet.balance, needAmount) >= 0;
+  const enough = balanceReady && needAmount != null && compareAmounts(wallet.balance, needAmount) >= 0;
 
   const imageRef = image.trim();
   const envEntries = envEntriesOf(envRows);
@@ -245,9 +254,7 @@ function DeployPage() {
   const canSubmit = firstIssue == null;
 
   const scrollTo = (i: number) =>
-    document
-      .getElementById(SECTION_IDS[i] ?? "")
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    document.getElementById(SECTION_IDS[i] ?? "")?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   const onCancel = () => {
     if (!formDirty) {
@@ -519,9 +526,7 @@ function DeployPage() {
               },
               {
                 label: t("services.form.summaryAuth"),
-                children: requireApiKey
-                  ? t("services.form.authRequire")
-                  : t("services.form.authPublic"),
+                children: requireApiKey ? t("services.form.authRequire") : t("services.form.authPublic"),
               },
               {
                 label: t("services.form.summarySsh"),
@@ -587,7 +592,13 @@ function DeployPage() {
               </Typography.Text>
               {sectionIssues.map((issue, i) =>
                 issue ? (
-                  <Button key={SECTION_IDS[i]} type="link" size="small" style={{ paddingInline: 0, fontSize: fontSize.caption }} onClick={() => scrollTo(i)}>
+                  <Button
+                    key={SECTION_IDS[i]}
+                    type="link"
+                    size="small"
+                    style={{ paddingInline: 0, fontSize: fontSize.caption }}
+                    onClick={() => scrollTo(i)}
+                  >
                     {issue}
                   </Button>
                 ) : null,
@@ -604,9 +615,19 @@ function DeployPage() {
                   value: fmt.formatPeriodPrice(quote.amount, period, periodCount),
                 },
                 ...(diskGb > 0 && diskPriceGbMonth
-                  ? [{ label: t("create.diskCostLabel"), hint: t("create.dailyCostHint"), value: t("common.dailyApprox", { amount: diskDaily }) }]
+                  ? [
+                      {
+                        label: t("create.diskCostLabel"),
+                        hint: t("create.dailyCostHint"),
+                        value: t("common.dailyApprox", { amount: diskDaily }),
+                      },
+                    ]
                   : []),
-                { label: t("create.expiresAtLabel"), value: t("create.expiresAtApprox", { date: formatDate(expiresAt) }), muted: true },
+                {
+                  label: t("create.expiresAtLabel"),
+                  value: t("create.expiresAtApprox", { date: formatDate(expiresAt) }),
+                  muted: true,
+                },
               ]
             : [
                 {
@@ -621,7 +642,13 @@ function DeployPage() {
                   ),
                 },
                 ...(diskGb > 0 && diskPriceGbMonth
-                  ? [{ label: t("create.diskCostLabel"), hint: t("create.dailyCostHint"), value: t("common.dailyApprox", { amount: diskDaily }) }]
+                  ? [
+                      {
+                        label: t("create.diskCostLabel"),
+                        hint: t("create.dailyCostHint"),
+                        value: t("common.dailyApprox", { amount: diskDaily }),
+                      },
+                    ]
                   : []),
               ]
         }
@@ -680,13 +707,7 @@ function DeployPage() {
               </Button>
             ) : enough ? (
               <Tooltip title={canSubmit ? undefined : (firstIssue ?? undefined)}>
-                <Button
-                  type="primary"
-                  size="large"
-                  disabled={!canSubmit}
-                  loading={pending}
-                  onClick={submit}
-                >
+                <Button type="primary" size="large" disabled={!canSubmit} loading={pending} onClick={submit}>
                   {submitLabel}
                 </Button>
               </Tooltip>

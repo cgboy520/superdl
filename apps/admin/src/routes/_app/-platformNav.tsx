@@ -53,11 +53,8 @@ export function groupDotColor(
 export function NavLabel({ color, text }: { color: string; text: string }) {
   return (
     <Space size={8}>
-      <span
-        style={{ display: "inline-block", width: 8, height: 8, borderRadius: 4, background: color }}
-      />
+      <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 4, background: color }} />
       {text}
     </Space>
   );
 }
-

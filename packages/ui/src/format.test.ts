@@ -179,9 +179,7 @@ describe.each([
     expect(formatReclaimCountdown(new Date("2026-08-19T00:30:00Z"), t, now)).toBe(
       zh ? "剩 30m后回收" : "reclaimed in 30m",
     );
-    expect(formatReclaimCountdown(new Date("2026-08-18T00:00:00Z"), t, now)).toBe(
-      zh ? "即将回收" : "reclaiming soon",
-    );
+    expect(formatReclaimCountdown(new Date("2026-08-18T00:00:00Z"), t, now)).toBe(zh ? "即将回收" : "reclaiming soon");
   });
 });
 
@@ -281,9 +279,7 @@ describe.each([
   const zh = lng === "zh-CN";
   const locale = lng;
   it("单个周期", () => {
-    expect(formatPeriodPrice("2298.24", "month", 1, t, locale)).toBe(
-      zh ? "¥2,298.24/月" : "CN¥2,298.24/month",
-    );
+    expect(formatPeriodPrice("2298.24", "month", 1, t, locale)).toBe(zh ? "¥2,298.24/月" : "CN¥2,298.24/month");
   });
   it("多个周期(en 走复数量词)", () => {
     expect(formatPeriodPrice("6894.72", "month", 3, t, locale)).toBe(

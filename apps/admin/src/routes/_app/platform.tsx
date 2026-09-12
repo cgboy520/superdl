@@ -49,9 +49,7 @@ function PlatformConfigPage() {
     const d = configDraft.load();
     // 草稿值收窄回 Record<string, string>
     return d
-      ? Object.fromEntries(
-          Object.entries(d).filter((e): e is [string, string] => typeof e[1] === "string"),
-        )
+      ? Object.fromEntries(Object.entries(d).filter((e): e is [string, string] => typeof e[1] === "string"))
       : {};
   });
   const [reasonOpen, setReasonOpen] = useState(false);
@@ -59,7 +57,11 @@ function PlatformConfigPage() {
   const navigate = useNavigate({ from: "/platform" });
   const active: Group = Route.useSearch({ select: (s) => s.group }) ?? "security";
   const setActive = (g: Group) =>
-    void navigate({ to: "/platform", replace: true, search: (prev) => ({ ...prev, group: g === "security" ? undefined : g }) });
+    void navigate({
+      to: "/platform",
+      replace: true,
+      search: (prev) => ({ ...prev, group: g === "security" ? undefined : g }),
+    });
   // 「前往」跳入的来源分组(回链)
   const [originGroup, setOriginGroup] = useState<Group | null>(null);
   const [reasonForm] = Form.useForm<{ reason: string }>();
@@ -81,9 +83,7 @@ function PlatformConfigPage() {
     setDraftState((prev) => {
       const next = typeof updater === "function" ? updater(prev) : updater;
       if (items.length > 0) {
-        const persistable = Object.fromEntries(
-          Object.entries(next).filter(([k]) => byKey.get(k)?.kind !== "secret"),
-        );
+        const persistable = Object.fromEntries(Object.entries(next).filter(([k]) => byKey.get(k)?.kind !== "secret"));
         if (Object.keys(persistable).length === 0) configDraft.clear();
         else configDraft.save(persistable);
       }
@@ -138,9 +138,7 @@ function PlatformConfigPage() {
     label: t(n.labelKey),
     children: n.groups.map((g) => ({
       key: g,
-      label: (
-        <NavLabel color={groupDotColor(g, items, warnings, byKey)} text={t(GROUP_LABEL_KEY[g])} />
-      ),
+      label: <NavLabel color={groupDotColor(g, items, warnings, byKey)} text={t(GROUP_LABEL_KEY[g])} />,
     })),
   }));
   const panel =
@@ -191,120 +189,111 @@ function PlatformConfigPage() {
       title={t("menu.platform")}
       extra={
         <Tooltip title={isAdmin ? "" : t("platform.adminOnlyEdit")}>
-          <Button
-            type="primary"
-            disabled={disabled || changed.length === 0}
-            onClick={() => setReasonOpen(true)}
-          >
+          <Button type="primary" disabled={disabled || changed.length === 0} onClick={() => setReasonOpen(true)}>
             {t("settings.saveChanges", { count: changed.length })}
           </Button>
         </Tooltip>
       }
     >
-    <Card loading={isLoading}>
-      {warnings.length > 0 && (
-        <Space orientation="vertical" size={8} style={{ width: "100%", marginBottom: 16 }}>
-          {warnings.map((w) => (
-            <Alert
-              key={`${w.key}:${w.message}`}
-              type={w.level}
-              showIcon
-              title={w.message}
-              action={
-                <Button
-                  size="small"
-                  onClick={() => {
-                    const g = byKey.get(w.key)?.group;
-                    if (g) setActive(g);
-                  }}
-                >
-                  {t("platform.goTo")}
-                </Button>
-              }
-            />
-          ))}
-        </Space>
-      )}
-      <div
-        style={{
-          display: "flex",
-          gap: 24,
-          alignItems: "flex-start",
-          flexDirection: screens.lg ? "row" : "column",
-        }}
-      >
-        <Menu
-          mode={screens.lg ? "inline" : "horizontal"}
-          selectedKeys={[active]}
-          items={menuItems}
-          // 手动切分组作废来源回链
-          onClick={(e) => {
-            setOriginGroup(null);
-            setActive(e.key as Group);
+      <Card loading={isLoading}>
+        {warnings.length > 0 && (
+          <Space orientation="vertical" size={8} style={{ width: "100%", marginBottom: 16 }}>
+            {warnings.map((w) => (
+              <Alert
+                key={`${w.key}:${w.message}`}
+                type={w.level}
+                showIcon
+                title={w.message}
+                action={
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      const g = byKey.get(w.key)?.group;
+                      if (g) setActive(g);
+                    }}
+                  >
+                    {t("platform.goTo")}
+                  </Button>
+                }
+              />
+            ))}
+          </Space>
+        )}
+        <div
+          style={{
+            display: "flex",
+            gap: 24,
+            alignItems: "flex-start",
+            flexDirection: screens.lg ? "row" : "column",
           }}
-          style={
-            screens.lg
-              ? { width: 220, flex: "none", background: "transparent" }
-              : { width: "100%", flex: "none", background: "transparent" }
-          }
-        />
-        <div style={{ flex: 1, minWidth: 0, width: "100%" }}>{panel}</div>
-      </div>
-      <Modal
-        title={t("platform.confirmTitle")}
-        open={reasonOpen}
-        onCancel={() => setReasonOpen(false)}
-        okButtonProps={{ loading: update.isPending }}
-        onOk={async () => {
-          try {
-            const { reason } = await reasonForm.validateFields();
-            update.mutate({ data: { updates: Object.fromEntries(changed), reason } });
-          } catch {
-            /* 校验失败:antd 已给红字 */
-          }
-        }}
-      >
-        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-          {changed.map(([k, v]) => {
-            const item = byKey.get(k);
-            const shown =
-              item?.kind === "secret" ? t("platform.secretMasked") : v === "" ? t("platform.clearOverride") : v;
-            return (
-              <div key={k}>
-                {FIELD_LABELS[k] ?? k} → <b>{shown}</b>
-              </div>
-            );
-          })}
-          {riskyOff.length > 0 && (
-            <Alert
-              type="error"
-              showIcon
-              title={t("platform.riskOffTitle")}
-              description={riskyOff.map(([k]) => (
-                <div key={k}>
-                  {FIELD_LABELS[k] ?? k}:{RISK_OFF[k]}
-                </div>
-              ))}
-            />
-          )}
-          <Alert
-            type="warning"
-            showIcon
-            title={t("platform.instantEffect")}
+        >
+          <Menu
+            mode={screens.lg ? "inline" : "horizontal"}
+            selectedKeys={[active]}
+            items={menuItems}
+            // 手动切分组作废来源回链
+            onClick={(e) => {
+              setOriginGroup(null);
+              setActive(e.key as Group);
+            }}
+            style={
+              screens.lg
+                ? { width: 220, flex: "none", background: "transparent" }
+                : { width: "100%", flex: "none", background: "transparent" }
+            }
           />
-          <Form form={reasonForm} layout="vertical">
-            <Form.Item
-              name="reason"
-              label={t("platform.reasonLabel")}
-              rules={[{ required: true, min: 2, message: t("common.reasonRule") }]}
-            >
-              <Input.TextArea rows={2} placeholder={t("platform.reasonPlaceholder")} />
-            </Form.Item>
-          </Form>
-        </Space>
-      </Modal>
-    </Card>
+          <div style={{ flex: 1, minWidth: 0, width: "100%" }}>{panel}</div>
+        </div>
+        <Modal
+          title={t("platform.confirmTitle")}
+          open={reasonOpen}
+          onCancel={() => setReasonOpen(false)}
+          okButtonProps={{ loading: update.isPending }}
+          onOk={async () => {
+            try {
+              const { reason } = await reasonForm.validateFields();
+              update.mutate({ data: { updates: Object.fromEntries(changed), reason } });
+            } catch {
+              /* 校验失败:antd 已给红字 */
+            }
+          }}
+        >
+          <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+            {changed.map(([k, v]) => {
+              const item = byKey.get(k);
+              const shown =
+                item?.kind === "secret" ? t("platform.secretMasked") : v === "" ? t("platform.clearOverride") : v;
+              return (
+                <div key={k}>
+                  {FIELD_LABELS[k] ?? k} → <b>{shown}</b>
+                </div>
+              );
+            })}
+            {riskyOff.length > 0 && (
+              <Alert
+                type="error"
+                showIcon
+                title={t("platform.riskOffTitle")}
+                description={riskyOff.map(([k]) => (
+                  <div key={k}>
+                    {FIELD_LABELS[k] ?? k}:{RISK_OFF[k]}
+                  </div>
+                ))}
+              />
+            )}
+            <Alert type="warning" showIcon title={t("platform.instantEffect")} />
+            <Form form={reasonForm} layout="vertical">
+              <Form.Item
+                name="reason"
+                label={t("platform.reasonLabel")}
+                rules={[{ required: true, min: 2, message: t("common.reasonRule") }]}
+              >
+                <Input.TextArea rows={2} placeholder={t("platform.reasonPlaceholder")} />
+              </Form.Item>
+            </Form>
+          </Space>
+        </Modal>
+      </Card>
     </PageContainer>
   );
 }
-

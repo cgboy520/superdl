@@ -89,74 +89,102 @@ export function AuditTable({
   return (
     <>
       <Space wrap style={{ marginBottom: 12 }}>
-      <Select
-        allowClear
-        placeholder={t("audit.actorTypePlaceholder")}
-        style={{ width: 140 }}
-        value={actorType}
-        onChange={(v) => {
-          setActorType(v);
-          commit({ actor_type: v, actor_id: actorId || undefined, q: q || undefined, since: filters.since, until: filters.until, limit });
-        }}
-        options={[
-          { value: "user", label: t("audit.actorUser") },
-          { value: "admin", label: t("audit.actorAdmin") },
-          { value: "anonymous", label: t("audit.actorAnonymous") },
-        ]}
-      />
-      <Input.Search
-        allowClear
-        placeholder={t("audit.actorIdPlaceholder")}
-        style={{ width: 150 }}
-        value={actorIdInput}
-        onChange={(e) => setActorIdInput(e.target.value)}
-        onSearch={(v) => {
-          setActorId(v);
-          commit({ actor_type: actorType, actor_id: v || undefined, q: q || undefined, since: filters.since, until: filters.until, limit });
-        }}
-      />
-      <Input.Search
-        allowClear
-        placeholder={t("audit.keywordPlaceholder")}
-        style={{ width: 200 }}
-        value={qInput}
-        onChange={(e) => setQInput(e.target.value)}
-        onSearch={(v) => {
-          setQ(v);
-          commit({ actor_type: actorType, actor_id: actorId || undefined, q: v || undefined, since: filters.since, until: filters.until, limit });
-        }}
-      />
-      <DatePicker.RangePicker
-        showTime={{ format: "HH:mm" }}
-        value={range}
-        onChange={(v) => {
-          const next = v as [Dayjs | null, Dayjs | null] | null;
-          setRange(next);
-          commit({
-            actor_type: actorType,
-            actor_id: actorId || undefined,
-            q: q || undefined,
-            since: next?.[0]?.toISOString(),
-            until: next?.[1]?.toISOString(),
-            limit,
-          });
-        }}
-      />
-      <Select<number>
-        value={limit}
-        style={{ width: 130 }}
-        onChange={(v) => {
-          setLimit(v);
-          commit({ actor_type: actorType, actor_id: actorId || undefined, q: q || undefined, since: filters.since, until: filters.until, limit: v });
-        }}
-        options={[50, 100, 200, 500].map((v) => ({
-          value: v,
-          label: t("audit.limitOption", { count: v }),
-        }))}
-      />
-      <Button onClick={() => void doExport()} loading={exporting}>
-        {t("common.exportCsv")}
-      </Button>
+        <Select
+          allowClear
+          placeholder={t("audit.actorTypePlaceholder")}
+          style={{ width: 140 }}
+          value={actorType}
+          onChange={(v) => {
+            setActorType(v);
+            commit({
+              actor_type: v,
+              actor_id: actorId || undefined,
+              q: q || undefined,
+              since: filters.since,
+              until: filters.until,
+              limit,
+            });
+          }}
+          options={[
+            { value: "user", label: t("audit.actorUser") },
+            { value: "admin", label: t("audit.actorAdmin") },
+            { value: "anonymous", label: t("audit.actorAnonymous") },
+          ]}
+        />
+        <Input.Search
+          allowClear
+          placeholder={t("audit.actorIdPlaceholder")}
+          style={{ width: 150 }}
+          value={actorIdInput}
+          onChange={(e) => setActorIdInput(e.target.value)}
+          onSearch={(v) => {
+            setActorId(v);
+            commit({
+              actor_type: actorType,
+              actor_id: v || undefined,
+              q: q || undefined,
+              since: filters.since,
+              until: filters.until,
+              limit,
+            });
+          }}
+        />
+        <Input.Search
+          allowClear
+          placeholder={t("audit.keywordPlaceholder")}
+          style={{ width: 200 }}
+          value={qInput}
+          onChange={(e) => setQInput(e.target.value)}
+          onSearch={(v) => {
+            setQ(v);
+            commit({
+              actor_type: actorType,
+              actor_id: actorId || undefined,
+              q: v || undefined,
+              since: filters.since,
+              until: filters.until,
+              limit,
+            });
+          }}
+        />
+        <DatePicker.RangePicker
+          showTime={{ format: "HH:mm" }}
+          value={range}
+          onChange={(v) => {
+            const next = v as [Dayjs | null, Dayjs | null] | null;
+            setRange(next);
+            commit({
+              actor_type: actorType,
+              actor_id: actorId || undefined,
+              q: q || undefined,
+              since: next?.[0]?.toISOString(),
+              until: next?.[1]?.toISOString(),
+              limit,
+            });
+          }}
+        />
+        <Select<number>
+          value={limit}
+          style={{ width: 130 }}
+          onChange={(v) => {
+            setLimit(v);
+            commit({
+              actor_type: actorType,
+              actor_id: actorId || undefined,
+              q: q || undefined,
+              since: filters.since,
+              until: filters.until,
+              limit: v,
+            });
+          }}
+          options={[50, 100, 200, 500].map((v) => ({
+            value: v,
+            label: t("audit.limitOption", { count: v }),
+          }))}
+        />
+        <Button onClick={() => void doExport()} loading={exporting}>
+          {t("common.exportCsv")}
+        </Button>
       </Space>
       <Table<AuditRow>
         scroll={{ x: 900 }}

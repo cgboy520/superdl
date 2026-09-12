@@ -47,7 +47,9 @@ export function AnomaliesTab() {
           <Space orientation="vertical" size={4}>
             <span>{t("finance.verifyOrderLine", { status: r.order_status, amount: formatMoney(r.order_amount) })}</span>
             <span>{t("finance.verifyChannelStatus", { status: r.channel_status })}</span>
-            <span>{t("finance.verifyChannelAmount", { amount: r.channel_amount ? formatMoney(r.channel_amount) : "—" })}</span>
+            <span>
+              {t("finance.verifyChannelAmount", { amount: r.channel_amount ? formatMoney(r.channel_amount) : "—" })}
+            </span>
             <span>{t("finance.verifyChannelTxn", { id: r.channel_txn_id ?? "—" })}</span>
             <b style={{ color: r.matches ? adminColors.positive : adminColors.negative }}>
               {r.matches ? t("finance.verifyMatch") : t("finance.verifyMismatch")}
@@ -83,9 +85,7 @@ export function AnomaliesTab() {
             title: t("finance.colKind"),
             dataIndex: "kind",
             width: 110,
-            render: (v: AnomalyRow["kind"]) => (
-              <Tag color={ANOMALY_META[v].color}>{t(ANOMALY_META[v].labelKey)}</Tag>
-            ),
+            render: (v: AnomalyRow["kind"]) => <Tag color={ANOMALY_META[v].color}>{t(ANOMALY_META[v].labelKey)}</Tag>,
           },
           {
             title: t("finance.colSubject"),
@@ -111,12 +111,7 @@ export function AnomaliesTab() {
                     {t("finance.verifyChannel")}
                   </Button>
                   <Tooltip title={writable ? "" : t("finance.financeOnlyBackfill")}>
-                    <Button
-                      size="small"
-                      type="primary"
-                      disabled={!writable}
-                      onClick={() => setBackfillTarget(r)}
-                    >
+                    <Button size="small" type="primary" disabled={!writable} onClick={() => setBackfillTarget(r)}>
                       {t("finance.backfill")}
                     </Button>
                   </Tooltip>
@@ -151,9 +146,7 @@ export function AnomaliesTab() {
         }}
       >
         <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-          <span style={{ color: adminColors.textSecondary }}>
-            {t("finance.backfillNote")}
-          </span>
+          <span style={{ color: adminColors.textSecondary }}>{t("finance.backfillNote")}</span>
           <Form form={reasonForm} layout="vertical">
             <Form.Item
               name="reason"
@@ -168,4 +161,3 @@ export function AnomaliesTab() {
     </>
   );
 }
-

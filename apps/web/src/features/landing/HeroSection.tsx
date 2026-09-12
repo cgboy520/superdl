@@ -65,9 +65,7 @@ export function HeroSection() {
         }}
       >
         <div>
-          <Typography.Title
-            style={{ color: "#fff", fontSize: fontSize.kpi, marginBottom: 12, marginTop: 0 }}
-          >
+          <Typography.Title style={{ color: "#fff", fontSize: fontSize.kpi, marginBottom: 12, marginTop: 0 }}>
             {t("landing.hero.title")}
           </Typography.Title>
           <Typography.Paragraph
@@ -105,12 +103,7 @@ export function HeroSection() {
               </>
             ) : (
               <>
-                {minPrice && (
-                  <GlassCard
-                    label={t("landing.hero.minPriceLabel")}
-                    value={formatHourlyPrice(minPrice)}
-                  />
-                )}
+                {minPrice && <GlassCard label={t("landing.hero.minPriceLabel")} value={formatHourlyPrice(minPrice)} />}
                 <GlassCard
                   label={t("landing.hero.freeLabel")}
                   value={t("landing.hero.freeCards", { count: freeCards })}

@@ -92,24 +92,17 @@ describe("tokens 对比度(WCAG AA ≥4.5:1)", () => {
     expect(contrast(webDarkColors.text, webDarkColors.bgElevated)).toBeGreaterThanOrEqual(AA);
     expect(contrast(webDarkColors.textSecondary, webDarkColors.bgBase)).toBeGreaterThanOrEqual(AA);
     expect(contrast(webDarkColors.textSecondary, webDarkColors.bgContainer)).toBeGreaterThanOrEqual(AA);
-    expect(contrast(webDarkColors.textSecondary, webDarkColors.bgElevated))
-      .toBeGreaterThanOrEqual(AA);
-    expect(
-      contrast(webDarkColors.menuSelectedColor, webDarkColors.menuSelectedBg)
-    ).toBeGreaterThanOrEqual(AA);
+    expect(contrast(webDarkColors.textSecondary, webDarkColors.bgElevated)).toBeGreaterThanOrEqual(AA);
+    expect(contrast(webDarkColors.menuSelectedColor, webDarkColors.menuSelectedBg)).toBeGreaterThanOrEqual(AA);
   });
 
   it("CSS 变量桥:主色/文本在各自底色上(focus 描边与选中态按文本级 AA)", () => {
     // 浅色:主色/文本于 pageBg
-    expect(contrast(cssVars.light["--sdl-color-primary"], cssVars.light["--sdl-color-bg"]))
-      .toBeGreaterThanOrEqual(AA);
-    expect(contrast(cssVars.light["--sdl-color-text"], cssVars.light["--sdl-color-bg"]))
-      .toBeGreaterThanOrEqual(AA);
+    expect(contrast(cssVars.light["--sdl-color-primary"], cssVars.light["--sdl-color-bg"])).toBeGreaterThanOrEqual(AA);
+    expect(contrast(cssVars.light["--sdl-color-text"], cssVars.light["--sdl-color-bg"])).toBeGreaterThanOrEqual(AA);
     // 暗色:提浅主色/文本于 bgBase
-    expect(contrast(cssVars.dark["--sdl-color-primary"], cssVars.dark["--sdl-color-bg"]))
-      .toBeGreaterThanOrEqual(AA);
-    expect(contrast(cssVars.dark["--sdl-color-text"], cssVars.dark["--sdl-color-bg"]))
-      .toBeGreaterThanOrEqual(AA);
+    expect(contrast(cssVars.dark["--sdl-color-primary"], cssVars.dark["--sdl-color-bg"])).toBeGreaterThanOrEqual(AA);
+    expect(contrast(cssVars.dark["--sdl-color-text"], cssVars.dark["--sdl-color-bg"])).toBeGreaterThanOrEqual(AA);
   });
 
   it("图表强调色在管理端深底上(非文本图形,AA 要求 ≥3:1)", () => {
@@ -131,7 +124,7 @@ describe("tokens 对比度(WCAG AA ≥4.5:1)", () => {
     expect(contrast(adminColors.dataAccent, adminColors.menuSelectedBg)).toBeGreaterThanOrEqual(AA);
     // 表头:次级文本于表头底
     expect(
-      contrast(adminThemeComponents.Table.headerColor, adminThemeComponents.Table.headerBg)
+      contrast(adminThemeComponents.Table.headerColor, adminThemeComponents.Table.headerBg),
     ).toBeGreaterThanOrEqual(AA);
   });
 
@@ -140,8 +133,7 @@ describe("tokens 对比度(WCAG AA ≥4.5:1)", () => {
       expect(contrast(v, "#FFFFFF"), `chartSeriesColors.light.${k}`).toBeGreaterThanOrEqual(3);
     }
     for (const [k, v] of Object.entries(chartSeriesColors.dark)) {
-      expect(contrast(v, webDarkColors.bgBase), `chartSeriesColors.dark.${k}`)
-        .toBeGreaterThanOrEqual(3);
+      expect(contrast(v, webDarkColors.bgBase), `chartSeriesColors.dark.${k}`).toBeGreaterThanOrEqual(3);
     }
   });
 });

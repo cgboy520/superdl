@@ -10,19 +10,19 @@
 
 ## 契约
 
-| 端点 | 角色/鉴权 | 说明 |
-|---|---|---|
-| `POST /api/v1/wallet/recharges` | user | `{amount, channel}` + Idempotency-Key → `{order_no, qr_url, expires_at}`;校验渠道开关 |
-| `GET /api/v1/wallet/recharges/{order_no}` | user | 状态轮询,到终态(paid/closed/failed)即停 |
-| `POST /api/v1/webhooks/wechatpay` | 渠道验签 | 验签 → channel_txn_id 幂等 → 事务{order.paid + 钱包入账 + ledger} |
-| `POST /api/v1/webhooks/alipay` | 渠道验签 | 同上;应答体纯文本 `success` |
-| `POST /api/v1/webhooks/mock` | 仅 dev/test | 直接标记支付成功 |
-| `GET /api/v1/wallet/refunds/eligible-orders` | user | 最近 50 笔充值订单逐单标注 `refundable` 与 `max_amount`(= min(订单额, 当前余额));不可申请的给 `reason_code`(not_paid / already_applied / invoiced / no_balance) |
-| `POST /api/v1/wallet/refunds` | user | `{order_no, amount, reason}` + Idempotency-Key → 201;重放回既有单(200 + `X-Idempotent-Replay`);订单非 paid / 已渠道冲正 / 账期已开票 / 已有活跃申请 409;amount 上限 = min(订单额, 当前余额) |
-| `GET /api/v1/wallet/refunds` | user | 本人退款单,降序游标分页 |
-| `GET /api/v1/billing/invoices/eligible` | user | 各账期可开票额度(仅 amount > 0 的已结束账期) |
-| `POST /api/v1/billing/invoices` | user | `{period, title_type, title, tax_id?, email}` + Idempotency-Key → 201;amount 由服务端算;同账期已有非 rejected 申请 409 |
-| `GET /api/v1/billing/invoices` | user | 本人发票申请,降序游标分页 |
+| 端点                                         | 角色/鉴权   | 说明                                                                                                                                                                                        |
+| -------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/v1/wallet/recharges`              | user        | `{amount, channel}` + Idempotency-Key → `{order_no, qr_url, expires_at}`;校验渠道开关                                                                                                       |
+| `GET /api/v1/wallet/recharges/{order_no}`    | user        | 状态轮询,到终态(paid/closed/failed)即停                                                                                                                                                     |
+| `POST /api/v1/webhooks/wechatpay`            | 渠道验签    | 验签 → channel_txn_id 幂等 → 事务{order.paid + 钱包入账 + ledger}                                                                                                                           |
+| `POST /api/v1/webhooks/alipay`               | 渠道验签    | 同上;应答体纯文本 `success`                                                                                                                                                                 |
+| `POST /api/v1/webhooks/mock`                 | 仅 dev/test | 直接标记支付成功                                                                                                                                                                            |
+| `GET /api/v1/wallet/refunds/eligible-orders` | user        | 最近 50 笔充值订单逐单标注 `refundable` 与 `max_amount`(= min(订单额, 当前余额));不可申请的给 `reason_code`(not_paid / already_applied / invoiced / no_balance)                             |
+| `POST /api/v1/wallet/refunds`                | user        | `{order_no, amount, reason}` + Idempotency-Key → 201;重放回既有单(200 + `X-Idempotent-Replay`);订单非 paid / 已渠道冲正 / 账期已开票 / 已有活跃申请 409;amount 上限 = min(订单额, 当前余额) |
+| `GET /api/v1/wallet/refunds`                 | user        | 本人退款单,降序游标分页                                                                                                                                                                     |
+| `GET /api/v1/billing/invoices/eligible`      | user        | 各账期可开票额度(仅 amount > 0 的已结束账期)                                                                                                                                                |
+| `POST /api/v1/billing/invoices`              | user        | `{period, title_type, title, tax_id?, email}` + Idempotency-Key → 201;amount 由服务端算;同账期已有非 rejected 申请 409                                                                      |
+| `GET /api/v1/billing/invoices`               | user        | 本人发票申请,降序游标分页                                                                                                                                                                   |
 
 ## 规则与不变量
 

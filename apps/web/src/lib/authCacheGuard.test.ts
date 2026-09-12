@@ -6,8 +6,7 @@ import { authStore } from "../stores/auth";
 
 /** 指定 sub 的伪 JWT(只塑形不签名:守卫只解 payload 不验签)。 */
 function fakeJwt(sub: string): string {
-  const b64 = (o: unknown) =>
-    btoa(JSON.stringify(o)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const b64 = (o: unknown) => btoa(JSON.stringify(o)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   return `${b64({ alg: "HS256", typ: "JWT" })}.${b64({ sub })}.sig`;
 }
 

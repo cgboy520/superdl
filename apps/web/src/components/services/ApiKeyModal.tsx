@@ -9,15 +9,7 @@ import { useTranslation } from "react-i18next";
 import { useCreateServiceApiKey } from "../../api/mutations";
 import { CopyButton } from "../common";
 
-export function ApiKeyModal({
-  slug,
-  open,
-  onClose,
-}: {
-  slug: string;
-  open: boolean;
-  onClose: () => void;
-}) {
+export function ApiKeyModal({ slug, open, onClose }: { slug: string; open: boolean; onClose: () => void }) {
   const { t } = useTranslation();
   const [name, setName] = useState("");
   const [created, setCreated] = useState<ApiKeyCreateOut | null>(null);

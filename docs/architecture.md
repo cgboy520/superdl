@@ -30,18 +30,18 @@ flowchart LR
 
 依赖版本事实源:`apps/api/pyproject.toml`、`package.json`、`deploy/cluster/helmfile.yaml.gotmpl`。
 
-| 组件 | 角色 |
-|---|---|
-| RKE2 / k3s | 容器平台,钉 v1.36 |
-| Cilium | 仅 full 档;light 档用 k3s 内置 flannel |
-| GPU Operator | 两档同装(NFD/GFD/DCGM/MIG/VFIO);light 档关 toolkit(宿主 toolkit 由装机基线装) |
-| kata-deploy | 两档同装,只落 kata 池节点 |
-| Kata | RuntimeClass `kata-qemu`,VFIO 整卡直通 |
-| HAMi | 共享档 CUDA 层软切分与限额 |
-| kube-prometheus-stack | Prometheus 本地留 15 天,长期数据进 PostgreSQL |
-| JuiceFS CSI | 数据盘;后端云 OSS 或自建 SeaweedFS |
-| TopoLVM | 实例盘本地 NVMe,销毁为 lvremove(擦盘需节点开 issue_discards) |
-| Envoy Gateway | 北向唯一入口(Gateway API,`GatewayClass superdl`):三个平台域 + 租户 Jupyter 泛域名 + 服务端点泛域名 |
+| 组件                    | 角色                                                                                                                              |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| RKE2 / k3s              | 容器平台,钉 v1.36                                                                                                                 |
+| Cilium                  | 仅 full 档;light 档用 k3s 内置 flannel                                                                                            |
+| GPU Operator            | 两档同装(NFD/GFD/DCGM/MIG/VFIO);light 档关 toolkit(宿主 toolkit 由装机基线装)                                                     |
+| kata-deploy             | 两档同装,只落 kata 池节点                                                                                                         |
+| Kata                    | RuntimeClass `kata-qemu`,VFIO 整卡直通                                                                                            |
+| HAMi                    | 共享档 CUDA 层软切分与限额                                                                                                        |
+| kube-prometheus-stack   | Prometheus 本地留 15 天,长期数据进 PostgreSQL                                                                                     |
+| JuiceFS CSI             | 数据盘;后端云 OSS 或自建 SeaweedFS                                                                                                |
+| TopoLVM                 | 实例盘本地 NVMe,销毁为 lvremove(擦盘需节点开 issue_discards)                                                                      |
+| Envoy Gateway           | 北向唯一入口(Gateway API,`GatewayClass superdl`):三个平台域 + 租户 Jupyter 泛域名 + 服务端点泛域名                                |
 | cert-manager + acme-dns | 平台三域与泛域名证书(DNS01 经 acme-dns);Gateway `certificateRefs` 引 `deploy/app/k8s/05-cert-manager.yaml` 显式声明的 Certificate |
 
 GPU 资源申请语法集中在 `app/core/gpu_adapter`;切 DRA 还需改 PodSpec 的 resourceClaims(`core/k8s/real.py`)。
@@ -82,13 +82,13 @@ worker 其余定时任务:outbox 卡单回收、小时结算、数据盘日结�
 
 ## 5. 接入层
 
-| 通道 | 机制 |
-|---|---|
-| SSH | 端口池表 `port_allocations`,每实例一个 NodePort;仅密钥登录。**SSH 与 Jupyter 拆成两个 Service**(合并后 `type=NodePort` 会给 Jupyter 端口也分配 NodePort) |
-| JupyterLab | Pod 内 8888,**每实例一条 HTTPRoute**(租户 ns,挂 `app-https` listener)按 host 路由到 ClusterIP Service,token 由控制面注入,泛域名证书一张 |
-| 对外服务端点 | 在线服务(`services`)公网入口 `<slug>.svc.<域名>`;服务持有一台 `workload_type='service'` 版本实例,**每实例一条 HTTPRoute** 挂 `svc-https` listener。API Key 在网关校验(一条 `SecurityPolicy.extAuth` 挂 listener),用户容器不实现鉴权;**鉴权结果无缓存**,控制面是全部端点的同步依赖,见 [reference/services.md](./reference/services.md) |
-| 租户 NetworkPolicy | 默认拒东西向。入方向只放行 `envoy-gateway-system`(Envoy 数据面 ns,不是 `superdl`)**不限端口**,以及 TCP 22(来源 `0.0.0.0/0` **排掉 Pod 网段**,不排整段私网)。出方向 DNS 收敛到 CoreDNS,公网 TCP 扣滥用端口与数据存储端口黑名单、UDP 白名单,私网与云元数据网段拒 |
-| 网关策略 | 源 IP 白名单(管理端)、边缘限流(API 域,匿名回调路由更严请求体上限)、服务端点鉴权与限流、租户 Jupyter listener 限流、全局超时与连接兜底,7 个策略对象挂 Gateway / HTTPRoute(`deploy/app/k8s/04-gateway.yaml`)。挂载点是 listener 的 `sectionName`,**写错不报错**,线索在策略对象 `status.ancestors[].conditions`;6 个 listener 名锁死 |
+| 通道               | 机制                                                                                                                                                                                                                                                                                                                                  |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SSH                | 端口池表 `port_allocations`,每实例一个 NodePort;仅密钥登录。**SSH 与 Jupyter 拆成两个 Service**(合并后 `type=NodePort` 会给 Jupyter 端口也分配 NodePort)                                                                                                                                                                              |
+| JupyterLab         | Pod 内 8888,**每实例一条 HTTPRoute**(租户 ns,挂 `app-https` listener)按 host 路由到 ClusterIP Service,token 由控制面注入,泛域名证书一张                                                                                                                                                                                               |
+| 对外服务端点       | 在线服务(`services`)公网入口 `<slug>.svc.<域名>`;服务持有一台 `workload_type='service'` 版本实例,**每实例一条 HTTPRoute** 挂 `svc-https` listener。API Key 在网关校验(一条 `SecurityPolicy.extAuth` 挂 listener),用户容器不实现鉴权;**鉴权结果无缓存**,控制面是全部端点的同步依赖,见 [reference/services.md](./reference/services.md) |
+| 租户 NetworkPolicy | 默认拒东西向。入方向只放行 `envoy-gateway-system`(Envoy 数据面 ns,不是 `superdl`)**不限端口**,以及 TCP 22(来源 `0.0.0.0/0` **排掉 Pod 网段**,不排整段私网)。出方向 DNS 收敛到 CoreDNS,公网 TCP 扣滥用端口与数据存储端口黑名单、UDP 白名单,私网与云元数据网段拒                                                                        |
+| 网关策略           | 源 IP 白名单(管理端)、边缘限流(API 域,匿名回调路由更严请求体上限)、服务端点鉴权与限流、租户 Jupyter listener 限流、全局超时与连接兜底,7 个策略对象挂 Gateway / HTTPRoute(`deploy/app/k8s/04-gateway.yaml`)。挂载点是 listener 的 `sectionName`,**写错不报错**,线索在策略对象 `status.ancestors[].conditions`;6 个 listener 名锁死     |
 
 控制面 ServiceAccount 按 worker 组件拆分;租户资源写权限是 ClusterRole,可达面由 `deploy/cluster/admission/tenant-restrictions.yaml` 的**七条 ValidatingAdmissionPolicy(全部 `Deny`)**收窄:平台 SA 写范围(`superdl` / `tenant-*` ns 与 nodes)、租户 Pod 安全基线、Node 字段级写白名单、全局 Pod 兜底、Pod 与 Job 模板各一条 Secret 引用白名单、Node 删除对象白名单。机制见 [`reference/security.md`](./reference/security.md)。HTTPRoute 条数随活跃实例线性增长,是 Envoy 数据面内存的主要变量。
 
@@ -96,20 +96,20 @@ worker 其余定时任务:outbox 卡单回收、小时结算、数据盘日结�
 
 `users` 一对多持有 `instances` / `data_disks` / `orders`,一对一持有 `wallets`;`skus` 定义规格;`services` 一对多持有 `instances`(每台是它的一个不可变版本);`instances` 派生 `instance_events`、`bills_hourly`、`usage_hourly`,可挂一块 `data_disks`(按日出 `bills_daily_disk`)。
 
-| 模块 | 表 |
-|---|---|
-| account | `users` `ssh_keys` `used_refresh_tokens` `sms_codes` `user_quota_overrides` `account_deletion_requests` |
-| catalog | `skus` `images` `image_node_cache` |
-| orchestrator | `instances` `instance_events` `port_allocations` `data_disks` |
-| services | `services` `service_api_keys` |
-| billing | `wallets` `balance_ledger` `bills_hourly` `bills_daily_disk` `subscriptions` `settlement_watermarks` `settlement_gaps` `reconcile_checkpoints` `orders` `invoice_requests` `refund_requests` |
-| metering | `usage_hourly` |
-| nodes | `node_enrollments` `node_specs` `cluster_status` |
-| notify | `notifications` `announcements` |
-| legal | `legal_doc_versions` `user_consents` |
-| tickets | `tickets` `ticket_messages` |
-| adminapi | `admin_users` `admin_adjustments` |
-| core | `outbox_tasks` `audit_log` `platform_settings` `rate_limit_counters` |
+| 模块         | 表                                                                                                                                                                                           |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| account      | `users` `ssh_keys` `used_refresh_tokens` `sms_codes` `user_quota_overrides` `account_deletion_requests`                                                                                      |
+| catalog      | `skus` `images` `image_node_cache`                                                                                                                                                           |
+| orchestrator | `instances` `instance_events` `port_allocations` `data_disks`                                                                                                                                |
+| services     | `services` `service_api_keys`                                                                                                                                                                |
+| billing      | `wallets` `balance_ledger` `bills_hourly` `bills_daily_disk` `subscriptions` `settlement_watermarks` `settlement_gaps` `reconcile_checkpoints` `orders` `invoice_requests` `refund_requests` |
+| metering     | `usage_hourly`                                                                                                                                                                               |
+| nodes        | `node_enrollments` `node_specs` `cluster_status`                                                                                                                                             |
+| notify       | `notifications` `announcements`                                                                                                                                                              |
+| legal        | `legal_doc_versions` `user_consents`                                                                                                                                                         |
+| tickets      | `tickets` `ticket_messages`                                                                                                                                                                  |
+| adminapi     | `admin_users` `admin_adjustments`                                                                                                                                                            |
+| core         | `outbox_tasks` `audit_log` `platform_settings` `rate_limit_counters`                                                                                                                         |
 
 - 金额列一律 `numeric`:单价 `numeric(12,4)`,入账 `numeric(14,2)`。
 - 结算幂等键:`bills_hourly` UNIQUE(instance_id, hour_start)、`bills_daily_disk` UNIQUE(disk_id, day)、`usage_hourly` UNIQUE(instance_id, hour_start)。
@@ -124,16 +124,16 @@ worker 其余定时任务:outbox 卡单回收、小时结算、数据盘日结�
 
 ### 7.1 实例状态机
 
-| 状态 | 允许迁移到 |
-|---|---|
-| creating | running(Pod Ready,计费开始)/ failed(调度或拉镜像超时,全额退)/ releasing(用户取消) |
-| running | stopping(关机 / 欠费 / 到期 / 竞价被回收)/ failed(pod_lost,仅系统) |
-| stopping | stopped(Pod 删除,出尾账)/ releasing(悬挂超时或用户放弃) |
-| stopped | starting(校验余额)/ frozen(欠费)/ releasing(用户释放) |
-| starting | running / failed(库存不足) |
-| frozen | stopped(充值解冻)/ releasing(宽限到期) |
-| failed | stopped(恢复重开,复用实例盘)/ releasing |
-| releasing | released(实例盘 LV 已删除) |
+| 状态      | 允许迁移到                                                                        |
+| --------- | --------------------------------------------------------------------------------- |
+| creating  | running(Pod Ready,计费开始)/ failed(调度或拉镜像超时,全额退)/ releasing(用户取消) |
+| running   | stopping(关机 / 欠费 / 到期 / 竞价被回收)/ failed(pod_lost,仅系统)                |
+| stopping  | stopped(Pod 删除,出尾账)/ releasing(悬挂超时或用户放弃)                           |
+| stopped   | starting(校验余额)/ frozen(欠费)/ releasing(用户释放)                             |
+| starting  | running / failed(库存不足)                                                        |
+| frozen    | stopped(充值解冻)/ releasing(宽限到期)                                            |
+| failed    | stopped(恢复重开,复用实例盘)/ releasing                                           |
+| releasing | released(实例盘 LV 已删除)                                                        |
 
 `released` 是唯一终态。迁移只经 `orchestrator/service.py` 的 transition 函数,同事务写 `instance_events`。`stopped` 保留实例盘(节点本地 LV,重开机 pin 回原节点),数据盘照常计费。
 

@@ -9,13 +9,13 @@
 
 ## 契约
 
-| 端点 | 角色/鉴权 | 说明 |
-|---|---|---|
-| `GET /api/v1/notifications?unread=&cursor=&limit=` | user | 降序游标分页 |
-| `POST /api/v1/notifications/{notification_id}/read` | user | 标记已读 → 204 |
-| `GET /api/v1/notifications/unread-count` | user | 未读数:DB count |
-| `POST /api/v1/notifications/read-all` | user | 全部已读(幂等)→ 204 |
-| `POST /api/v1/webhooks/alertmanager` | Bearer token(`SUPERDL_ALERTMANAGER_TOKEN` 未配置一律 401,无环境后门) | GPU XID 致命告警 → 通知受影响租户(target tenant)+ 进管理端告警流(带 `hostname` 标签的告警 target node) |
+| 端点                                                | 角色/鉴权                                                            | 说明                                                                                                   |
+| --------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `GET /api/v1/notifications?unread=&cursor=&limit=`  | user                                                                 | 降序游标分页                                                                                           |
+| `POST /api/v1/notifications/{notification_id}/read` | user                                                                 | 标记已读 → 204                                                                                         |
+| `GET /api/v1/notifications/unread-count`            | user                                                                 | 未读数:DB count                                                                                        |
+| `POST /api/v1/notifications/read-all`               | user                                                                 | 全部已读(幂等)→ 204                                                                                    |
+| `POST /api/v1/webhooks/alertmanager`                | Bearer token(`SUPERDL_ALERTMANAGER_TOKEN` 未配置一律 401,无环境后门) | GPU XID 致命告警 → 通知受影响租户(target tenant)+ 进管理端告警流(带 `hostname` 标签的告警 target node) |
 
 ## 规则与不变量
 

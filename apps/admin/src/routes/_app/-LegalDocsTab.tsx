@@ -3,19 +3,7 @@
 import { adminColors, formatDateTime, legalDocStatusMap, metaOf, useApiErrorText, useFormDraft } from "@superdl/ui";
 import { DataErrorAlert, HexTag, LegalMarkdown, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  Alert,
-  App,
-  Button,
-  Card,
-  Collapse,
-  Input,
-  Modal,
-  Space,
-  Table,
-  Tooltip,
-  Typography,
-} from "antd";
+import { Alert, App, Button, Card, Collapse, Input, Modal, Space, Table, Tooltip, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -114,9 +102,7 @@ export function LegalDocsTab() {
                     </div>
                   )}
                   {!cell?.published && !cell?.draft && (
-                    <span style={{ color: adminColors.textSecondary }}>
-                      {t("settings.legal.missing")}
-                    </span>
+                    <span style={{ color: adminColors.textSecondary }}>{t("settings.legal.missing")}</span>
                   )}
                 </Card>
               );
@@ -169,9 +155,7 @@ function CellEditor({
   const [note, setNote] = useState("");
   const [publishOpen, setPublishOpen] = useState(false);
   // 编辑器草稿(sessionStorage),保存/发布成功后清除
-  const localDraft = useFormDraft<{ title: string; content: string; note: string }>(
-    `legal-doc-${docKey}-${locale}`,
-  );
+  const localDraft = useFormDraft<{ title: string; content: string; note: string }>(`legal-doc-${docKey}-${locale}`);
   // 数据源切换时同步表单(渲染期派生态)
   const sourceKey = draft ? `d${draft.id}` : published ? `p${published.id}` : "none";
   const [loadedKey, setLoadedKey] = useState("");
@@ -231,8 +215,7 @@ function CellEditor({
     [published, draft, content],
   );
   const dirty =
-    draft !== null &&
-    (title !== draft.title || content !== draft.content_md || note !== (draft.effective_note ?? ""));
+    draft !== null && (title !== draft.title || content !== draft.content_md || note !== (draft.effective_note ?? ""));
 
   return (
     <Card
@@ -265,11 +248,7 @@ function CellEditor({
               >
                 {t("settings.legal.saveDraft")}
               </Button>
-              <Button
-                type="primary"
-                disabled={!writable}
-                onClick={() => setPublishOpen(true)}
-              >
+              <Button type="primary" disabled={!writable} onClick={() => setPublishOpen(true)}>
                 {t("settings.legal.publish")}
               </Button>
               <ReasonAction

@@ -64,8 +64,7 @@ export function ApiKeysCard({
             },
             {
               title: t("services.keys.colLastUsed"),
-              render: (_, r) =>
-                r.last_used_at ? formatDateTime(r.last_used_at) : t("services.keys.neverUsed"),
+              render: (_, r) => (r.last_used_at ? formatDateTime(r.last_used_at) : t("services.keys.neverUsed")),
             },
             { title: t("services.keys.colCreated"), render: (_, r) => formatDateTime(r.created_at) },
             {

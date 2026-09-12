@@ -39,13 +39,7 @@ export function ThemeToggle({ variant = "brand" }: { variant?: "brand" | "plain"
   );
 }
 
-export function AppTopBar({
-  variant,
-  right,
-}: {
-  variant: "public" | "console";
-  right?: ReactNode;
-}) {
+export function AppTopBar({ variant, right }: { variant: "public" | "console"; right?: ReactNode }) {
   const { t } = useTranslation();
   const loggedIn = useIsLoggedIn();
   const screens = Grid.useBreakpoint();

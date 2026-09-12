@@ -39,30 +39,30 @@ export function OrdersTab() {
   return (
     <>
       <Space wrap style={{ marginBottom: 12 }}>
-      <Select
-        allowClear
-        placeholder={t("common.statusFilter")}
-        style={{ width: 160 }}
-        value={status}
-        onChange={(v) => setFilters({ o_status: v })}
-        options={Object.entries(orderStatusMap).map(([v, m]) => ({ value: v, label: t(m.labelKey) }))}
-      />
-      <Input.Search
-        allowClear
-        placeholder={t("finance.searchOrderPlaceholder")}
-        style={{ width: 260 }}
-        value={orderNoInput}
-        onChange={(e) => setOrderNoInput(e.target.value)}
-        onSearch={(v) => setFilters({ o_no: v.trim() || undefined })}
-      />
-      <DatePicker
-        value={day}
-        onChange={(d) => setFilters({ o_day: d ? d.format("YYYY-MM-DD") : undefined })}
-        allowClear
-      />
-      <Button onClick={() => void doExport()} loading={exporting}>
-        {t("common.exportCsv")}
-      </Button>
+        <Select
+          allowClear
+          placeholder={t("common.statusFilter")}
+          style={{ width: 160 }}
+          value={status}
+          onChange={(v) => setFilters({ o_status: v })}
+          options={Object.entries(orderStatusMap).map(([v, m]) => ({ value: v, label: t(m.labelKey) }))}
+        />
+        <Input.Search
+          allowClear
+          placeholder={t("finance.searchOrderPlaceholder")}
+          style={{ width: 260 }}
+          value={orderNoInput}
+          onChange={(e) => setOrderNoInput(e.target.value)}
+          onSearch={(v) => setFilters({ o_no: v.trim() || undefined })}
+        />
+        <DatePicker
+          value={day}
+          onChange={(d) => setFilters({ o_day: d ? d.format("YYYY-MM-DD") : undefined })}
+          allowClear
+        />
+        <Button onClick={() => void doExport()} loading={exporting}>
+          {t("common.exportCsv")}
+        </Button>
       </Space>
       <Table<OrderRow>
         scroll={{ x: 900 }}
@@ -90,4 +90,3 @@ export function OrdersTab() {
     </>
   );
 }
-

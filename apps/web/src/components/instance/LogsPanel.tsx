@@ -135,9 +135,7 @@ export function LogsPanel({
           {t("instances.logsDownload")}
         </Button>
         {truncated && (
-          <Typography.Text type="secondary">
-            {t("instances.logsTruncatedNote", { lines: tail })}
-          </Typography.Text>
+          <Typography.Text type="secondary">{t("instances.logsTruncatedNote", { lines: tail })}</Typography.Text>
         )}
       </Space>
       {error ? (
@@ -177,9 +175,7 @@ export function LogsPanel({
               onClick={scrollToBottom}
               style={{ position: "absolute", right: 16, bottom: 12, boxShadow: token.boxShadow }}
             >
-              {newCount > 0
-                ? t("instances.logsBackToBottomNew", { count: newCount })
-                : t("instances.logsBackToBottom")}
+              {newCount > 0 ? t("instances.logsBackToBottomNew", { count: newCount }) : t("instances.logsBackToBottom")}
             </Button>
           )}
         </div>

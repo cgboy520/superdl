@@ -8,21 +8,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { InstanceActions, ReleaseModal } from "./InstanceActions";
 
-const {
-  startMutate,
-  stopMutateAsync,
-  restartMutateAsync,
-  releaseMutate,
-  autoRenewMutate,
-  toOnDemandMutateAsync,
-} = vi.hoisted(() => ({
-  startMutate: vi.fn(),
-  stopMutateAsync: vi.fn().mockResolvedValue(undefined),
-  restartMutateAsync: vi.fn().mockResolvedValue(undefined),
-  releaseMutate: vi.fn(),
-  autoRenewMutate: vi.fn(),
-  toOnDemandMutateAsync: vi.fn().mockResolvedValue(undefined),
-}));
+const { startMutate, stopMutateAsync, restartMutateAsync, releaseMutate, autoRenewMutate, toOnDemandMutateAsync } =
+  vi.hoisted(() => ({
+    startMutate: vi.fn(),
+    stopMutateAsync: vi.fn().mockResolvedValue(undefined),
+    restartMutateAsync: vi.fn().mockResolvedValue(undefined),
+    releaseMutate: vi.fn(),
+    autoRenewMutate: vi.fn(),
+    toOnDemandMutateAsync: vi.fn().mockResolvedValue(undefined),
+  }));
 
 vi.mock("../api/mutations", () => ({
   useStartInstance: () => ({ mutate: startMutate, isPending: false }),
@@ -215,9 +209,7 @@ describe("InstanceActions · 包周期", () => {
 
   it("包周期实例:不出「转包周期」(它已经在包周期里,该走续费)", async () => {
     const user = userEvent.setup();
-    renderWithApp(
-      <InstanceActions instance={makeSubscription("running", { expiresAt: FUTURE })} />,
-    );
+    renderWithApp(<InstanceActions instance={makeSubscription("running", { expiresAt: FUTURE })} />);
     await user.hover(screen.getByRole("button", { name: BTN_MORE }));
     await screen.findByText("续费");
     expect(screen.queryByText("转包周期")).toBeNull();
@@ -236,9 +228,7 @@ describe("InstanceActions · 包周期", () => {
 
   it("包周期实例:菜单出续费与自动续费,开关项按当前状态取反", async () => {
     const user = userEvent.setup();
-    renderWithApp(
-      <InstanceActions instance={makeSubscription("running", { expiresAt: FUTURE })} />,
-    );
+    renderWithApp(<InstanceActions instance={makeSubscription("running", { expiresAt: FUTURE })} />);
     await user.hover(screen.getByRole("button", { name: BTN_MORE }));
     expect(await screen.findByText("续费")).toBeInTheDocument();
     await user.click(screen.getByText("开启自动续费"));
@@ -247,11 +237,7 @@ describe("InstanceActions · 包周期", () => {
 
   it("已开自动续费的实例菜单项变成「关闭自动续费」,点它传 false", async () => {
     const user = userEvent.setup();
-    renderWithApp(
-      <InstanceActions
-        instance={makeSubscription("running", { expiresAt: FUTURE, autoRenew: true })}
-      />,
-    );
+    renderWithApp(<InstanceActions instance={makeSubscription("running", { expiresAt: FUTURE, autoRenew: true })} />);
     await user.hover(screen.getByRole("button", { name: BTN_MORE }));
     await user.click(await screen.findByText("关闭自动续费"));
     expect(autoRenewMutate).toHaveBeenCalledWith(false);
@@ -259,25 +245,19 @@ describe("InstanceActions · 包周期", () => {
 
   it("包周期已到期:开机灰置(后端 assert_active 会 409,按钮先拦一道)", () => {
     renderWithApp(
-      <InstanceActions
-        instance={makeSubscription("stopped", { expiresAt: PAST, subStatus: "expired" })}
-      />,
+      <InstanceActions instance={makeSubscription("stopped", { expiresAt: PAST, subStatus: "expired" })} />,
     );
     expect(screen.getByRole("button", { name: BTN_START })).toBeDisabled();
   });
 
   it("包周期在保且已关机:开机照常可用", () => {
-    renderWithApp(
-      <InstanceActions instance={makeSubscription("stopped", { expiresAt: FUTURE })} />,
-    );
+    renderWithApp(<InstanceActions instance={makeSubscription("stopped", { expiresAt: FUTURE })} />);
     expect(screen.getByRole("button", { name: BTN_START })).toBeEnabled();
   });
 
   it("包周期实例点关机:确认文案是「不退费但保留库存」,不是按量那句「再开机可能没库存」", async () => {
     const user = userEvent.setup();
-    renderWithApp(
-      <InstanceActions instance={makeSubscription("running", { expiresAt: FUTURE })} />,
-    );
+    renderWithApp(<InstanceActions instance={makeSubscription("running", { expiresAt: FUTURE })} />);
     await user.click(screen.getByRole("button", { name: BTN_STOP }));
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText(/周期内关机不退费/)).toBeInTheDocument();
@@ -344,11 +324,7 @@ describe("ReleaseModal", () => {
 
   it("包周期实例释放:正文额外写明「预付不退款、剩余天数作废」", async () => {
     renderWithApp(
-      <ReleaseModal
-        instance={makeSubscription("stopped", { expiresAt: FUTURE })}
-        open
-        onClose={() => {}}
-      />,
+      <ReleaseModal instance={makeSubscription("stopped", { expiresAt: FUTURE })} open onClose={() => {}} />,
     );
     const dialog = await screen.findByRole("dialog");
     // FUTURE = 20 天后到期

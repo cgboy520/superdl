@@ -49,7 +49,10 @@ export function alertLink(a: AlertRow): { to: string; search?: Record<string, st
   if (a.target_kind === "tenant" && a.target_id) {
     // 租户告警直接打开该租户抽屉(?tenant=),不只是检索到行
     const id = Number(a.target_id);
-    return { to: "/tenants", search: Number.isInteger(id) && id > 0 ? { q: a.target_id, tenant: id } : { q: a.target_id } };
+    return {
+      to: "/tenants",
+      search: Number.isInteger(id) && id > 0 ? { q: a.target_id, tenant: id } : { q: a.target_id },
+    };
   }
   if (a.target_kind === "node" && a.target_id) return { to: "/nodes", search: { node: a.target_id } };
   if (a.target_kind === "ticket" && a.target_id) {

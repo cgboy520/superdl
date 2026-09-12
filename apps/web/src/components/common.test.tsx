@@ -10,9 +10,7 @@ import { SpotTag, SubscriptionTag, TierTag } from "./common";
 
 function renderThemed(node: ReactElement, dark: boolean) {
   return render(
-    <ConfigProvider
-      theme={dark ? { algorithm: antdTheme.darkAlgorithm, ...webDarkTheme } : webTheme}
-    >
+    <ConfigProvider theme={dark ? { algorithm: antdTheme.darkAlgorithm, ...webDarkTheme } : webTheme}>
       {node}
     </ConfigProvider>,
   );
@@ -52,10 +50,7 @@ describe("HexTag 替换后的 Tag 渲染", () => {
 
   it("已过期的包周期标记转橙(statusColors.orange)", () => {
     const expired: InstanceSubscriptionOut = { ...SUB, expires_at: "2020-01-01T00:00:00Z" };
-    const { container } = renderThemed(
-      <SubscriptionTag market="subscription" subscription={expired} />,
-      true,
-    );
+    const { container } = renderThemed(<SubscriptionTag market="subscription" subscription={expired} />, true);
     const tag = container.querySelector(".ant-tag");
     expect(tag).not.toBeNull();
     expect(getComputedStyle(tag as Element).backgroundColor).toBe(

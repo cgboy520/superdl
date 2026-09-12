@@ -39,7 +39,10 @@ export function BulkBar({ count, onClear, children }: { count: number; onClear: 
 }
 
 /** 逐条并发执行,返回成败计数;调用方据此给一条汇总 message。 */
-export async function runBulk<T>(items: T[], fn: (item: T) => Promise<unknown>): Promise<{ ok: number; failed: number }> {
+export async function runBulk<T>(
+  items: T[],
+  fn: (item: T) => Promise<unknown>,
+): Promise<{ ok: number; failed: number }> {
   const results = await Promise.allSettled(items.map((it) => fn(it)));
   const ok = results.filter((r) => r.status === "fulfilled").length;
   return { ok, failed: results.length - ok };

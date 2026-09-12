@@ -5,7 +5,14 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Alert, Card, Space, Tabs, Tag, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
-import { adjustmentStatusMap, adminColors, invoiceStatusMap, orderStatusMap, payoutChannelMap, refundStatusMap } from "@superdl/ui";
+import {
+  adjustmentStatusMap,
+  adminColors,
+  invoiceStatusMap,
+  orderStatusMap,
+  payoutChannelMap,
+  refundStatusMap,
+} from "@superdl/ui";
 import { PageContainer } from "@superdl/ui/components";
 
 import { useAnomalies } from "../../api";
@@ -24,37 +31,18 @@ export const Route = createFileRoute("/_app/finance")({
   // 筛选条件入 URL,非法值剥离
   validateSearch: (search: Record<string, unknown>): FinanceSearch => ({
     tab: FINANCE_TABS.includes(search.tab as FinanceTab) ? (search.tab as FinanceTab) : undefined,
-    o_status:
-      typeof search.o_status === "string" && search.o_status in orderStatusMap
-        ? search.o_status
-        : undefined,
+    o_status: typeof search.o_status === "string" && search.o_status in orderStatusMap ? search.o_status : undefined,
     o_no: typeof search.o_no === "string" && search.o_no ? search.o_no : undefined,
-    o_day:
-      typeof search.o_day === "string" && DAY_RE.test(search.o_day) ? search.o_day : undefined,
-    r_status:
-      typeof search.r_status === "string" && search.r_status in refundStatusMap
-        ? search.r_status
-        : undefined,
-    r_day:
-      typeof search.r_day === "string" && DAY_RE.test(search.r_day) ? search.r_day : undefined,
+    o_day: typeof search.o_day === "string" && DAY_RE.test(search.o_day) ? search.o_day : undefined,
+    r_status: typeof search.r_status === "string" && search.r_status in refundStatusMap ? search.r_status : undefined,
+    r_day: typeof search.r_day === "string" && DAY_RE.test(search.r_day) ? search.r_day : undefined,
     r_channel:
-      typeof search.r_channel === "string" && search.r_channel in payoutChannelMap
-        ? search.r_channel
-        : undefined,
-    i_status:
-      typeof search.i_status === "string" && search.i_status in invoiceStatusMap
-        ? search.i_status
-        : undefined,
-    i_period:
-      typeof search.i_period === "string" && PERIOD_RE.test(search.i_period)
-        ? search.i_period
-        : undefined,
+      typeof search.r_channel === "string" && search.r_channel in payoutChannelMap ? search.r_channel : undefined,
+    i_status: typeof search.i_status === "string" && search.i_status in invoiceStatusMap ? search.i_status : undefined,
+    i_period: typeof search.i_period === "string" && PERIOD_RE.test(search.i_period) ? search.i_period : undefined,
     a_status:
-      typeof search.a_status === "string" && search.a_status in adjustmentStatusMap
-        ? search.a_status
-        : undefined,
-    a_day:
-      typeof search.a_day === "string" && DAY_RE.test(search.a_day) ? search.a_day : undefined,
+      typeof search.a_status === "string" && search.a_status in adjustmentStatusMap ? search.a_status : undefined,
+    a_day: typeof search.a_day === "string" && DAY_RE.test(search.a_day) ? search.a_day : undefined,
     a_uid:
       typeof search.a_uid === "number" && Number.isInteger(search.a_uid) && search.a_uid > 0
         ? search.a_uid
@@ -82,12 +70,7 @@ function FinancePage() {
       <ReconciliationCard />
       <Card style={{ marginTop: 16 }}>
         {invoicesDenied && (
-          <Alert
-            type="warning"
-            showIcon
-            style={{ marginBottom: 12 }}
-            title={t("finance.tabInvoicesDenied")}
-          />
+          <Alert type="warning" showIcon style={{ marginBottom: 12 }} title={t("finance.tabInvoicesDenied")} />
         )}
         <Tabs
           activeKey={invoicesDenied ? "orders" : activeTab}
@@ -101,9 +84,7 @@ function FinancePage() {
           items={[
             { key: "orders", label: t("finance.tabOrders"), children: <OrdersTab /> },
             { key: "refunds", label: t("finance.tabRefunds"), children: <RefundsTab /> },
-            ...(showInvoices
-              ? [{ key: "invoices", label: t("finance.tabInvoices"), children: <InvoicesTab /> }]
-              : []),
+            ...(showInvoices ? [{ key: "invoices", label: t("finance.tabInvoices"), children: <InvoicesTab /> }] : []),
             { key: "adjustments", label: t("finance.tabAdjustments"), children: <AdjustmentsTab /> },
             { key: "gaps", label: t("finance.tabSettlementGaps"), children: <SettlementGapsTab /> },
             {
@@ -130,4 +111,3 @@ function FinancePage() {
     </PageContainer>
   );
 }
-

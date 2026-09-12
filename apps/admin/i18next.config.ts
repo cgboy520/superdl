@@ -14,7 +14,22 @@ export default defineConfig({
     removeUnusedKeys: true,
     // 映射表动态取键的命名空间显式保护(menu/roles、overview.severity* 等)
     ignoreNamespaces: ["shared", "errors"],
-    preservePatterns: ["menu.*", "roles.*", "nodes.phase*", "nodes.pool*", "nodes.heatLegend*", "cluster.comp*", "cluster.cfg*", "finance.anomaly*", "platform.source*", "platform.nav*", "platform.tab*", "platform.groupIntro*", "platform.fieldExtra*", "overview.severity*"],
+    preservePatterns: [
+      "menu.*",
+      "roles.*",
+      "nodes.phase*",
+      "nodes.pool*",
+      "nodes.heatLegend*",
+      "cluster.comp*",
+      "cluster.cfg*",
+      "finance.anomaly*",
+      "platform.source*",
+      "platform.nav*",
+      "platform.tab*",
+      "platform.groupIntro*",
+      "platform.fieldExtra*",
+      "overview.severity*",
+    ],
     primaryLanguage: "zh-CN",
   },
   types: {

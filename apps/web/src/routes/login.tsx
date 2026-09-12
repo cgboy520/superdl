@@ -44,10 +44,7 @@ type Mode = "sms" | "password" | "register" | "reset";
 type PasswordStrength = "weak" | "medium" | "strong";
 
 function passwordStrengthOf(pw: string): PasswordStrength {
-  const classes = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].reduce(
-    (n, re) => n + (re.test(pw) ? 1 : 0),
-    0,
-  );
+  const classes = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].reduce((n, re) => n + (re.test(pw) ? 1 : 0), 0);
   if (pw.length >= 14 && classes >= 3) return "strong";
   if (pw.length >= 12 && classes >= 2) return "medium";
   return "weak";
@@ -107,12 +104,8 @@ function BrandPane() {
         <Space orientation="vertical" size={16}>
           {[t("login.bullets.b1"), t("login.bullets.b2"), t("login.bullets.b3")].map((b) => (
             <Space key={b} size={10}>
-              <CheckCircleOutlined
-                style={{ color: "rgba(255,255,255,0.9)", fontSize: fontSize.sectionTitle }}
-              />
-              <span style={{ color: "rgba(255,255,255,0.9)", fontSize: fontSize.sectionTitle }}>
-                {b}
-              </span>
+              <CheckCircleOutlined style={{ color: "rgba(255,255,255,0.9)", fontSize: fontSize.sectionTitle }} />
+              <span style={{ color: "rgba(255,255,255,0.9)", fontSize: fontSize.sectionTitle }}>{b}</span>
             </Space>
           ))}
         </Space>
@@ -162,12 +155,7 @@ function LoginPage() {
     },
   });
 
-  const submit = (values: {
-    phone: string;
-    sms_code?: string;
-    password?: string;
-    accept_terms?: boolean;
-  }) => {
+  const submit = (values: { phone: string; sms_code?: string; password?: string; accept_terms?: boolean }) => {
     if (mode === "reset") {
       resetPassword.mutate({
         phone: values.phone,
@@ -304,9 +292,7 @@ function LoginPage() {
                 rules={[
                   {
                     validator: (_, v) =>
-                      v === true
-                        ? Promise.resolve()
-                        : Promise.reject(new Error(t("login.termsRequired"))),
+                      v === true ? Promise.resolve() : Promise.reject(new Error(t("login.termsRequired"))),
                   },
                 ]}
               >

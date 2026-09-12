@@ -56,15 +56,7 @@ import { canWriteOps, useAdminRole } from "../../stores/auth";
 import { AdminServicesTable } from "./-AdminServicesTable";
 
 // 抽屉 Tab 白名单(tenants 路由 ?dtab= 校验共用)
-export const DRAWER_TABS = [
-  "bills",
-  "ledger",
-  "orders",
-  "instances",
-  "services",
-  "quota",
-  "events",
-] as const;
+export const DRAWER_TABS = ["bills", "ledger", "orders", "instances", "services", "quota", "events"] as const;
 export type DrawerTab = (typeof DRAWER_TABS)[number];
 
 export function TenantDrawer({
@@ -82,10 +74,10 @@ export function TenantDrawer({
   const { t } = useTranslation(["admin", "shared"]);
   const { formatMoney } = useFormat();
   // 抽屉级实例列表(前 100 条),三处复用
-  const tenantInstances = useAdminInstances(
-    tenant ? { user_id: tenant.id } : undefined,
-    { enabled: tenant !== null, limit: 100 },
-  );
+  const tenantInstances = useAdminInstances(tenant ? { user_id: tenant.id } : undefined, {
+    enabled: tenant !== null,
+    limit: 100,
+  });
   const instances = tenantInstances.data?.pages.flatMap((p) => p.items) ?? [];
   // 租户实例精确计数(判断是否截断)
   const instancesTotal = tenantInstances.data?.pages[0]?.total ?? null;
@@ -95,11 +87,7 @@ export function TenantDrawer({
       width="min(880px, 100vw)"
       open={tenant !== null}
       onClose={onClose}
-      title={
-        tenant
-          ? t("tenants.drawerTitle", { id: tenant.id, phone: tenant.phone_masked })
-          : undefined
-      }
+      title={tenant ? t("tenants.drawerTitle", { id: tenant.id, phone: tenant.phone_masked }) : undefined}
       extra={
         tenant && (
           <Link to="/audit" search={{ actor_type: "user", actor_id: String(tenant.id) }}>
@@ -350,96 +338,85 @@ function OrdersTab({ userId }: { userId: number }) {
 }
 
 /** 实例只读视图(前 100 条;写操作在「全局实例」Tab)。 */
-function TenantInstancesTab({
-  instances,
-  total,
-}: {
-  instances: AdminInstanceOut[];
-  total: number | null;
-}) {
+function TenantInstancesTab({ instances, total }: { instances: AdminInstanceOut[]; total: number | null }) {
   const { t } = useTranslation(["admin", "shared"]);
   return (
     <>
       {/* 超过 100 台明示截断 */}
       {total !== null && total > instances.length && (
-        <Typography.Text
-          type="warning"
-          style={{ display: "block", marginBottom: 8, fontSize: fontSize.caption }}
-        >
+        <Typography.Text type="warning" style={{ display: "block", marginBottom: 8, fontSize: fontSize.caption }}>
           {t("tenants.instancesCapped", { shown: instances.length, total })}
         </Typography.Text>
       )}
       <Table<AdminInstanceOut>
-      size="small"
-      rowKey="uuid"
-      pagination={false}
-      scroll={{ x: 840, y: 420 }}
-      dataSource={instances}
-      columns={[
-        {
-          title: t("tenants.colInstance"),
-          render: (_, r) => (
-            <Space size={8}>
-              <span>{r.name}</span>
-              <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                {r.uuid.slice(0, 8)}
-              </Typography.Text>
-            </Space>
-          ),
-        },
-        {
-          title: t("tenants.colStatus"),
-          dataIndex: "status",
-          width: 110,
-          render: (v: string) => {
-            const m = metaOf(instanceStatusMap, v);
-            return <HexTag color={m?.color}>{m ? t(m.labelKey) : v}</HexTag>;
-          },
-        },
-        {
-          // 购买模式标签取 packages/ui 映射;到期信息取内联 subscription
-          title: t("tenants.colMarket"),
-          width: 150,
-          render: (_, r) => {
-            const labelKey = marketLabelKey(r.market, r.subscription?.period);
-            const sub = r.subscription;
-            const subMeta = sub ? metaOf(subscriptionStatusMap, sub.status) : undefined;
-            const lapsed = sub != null && sub.status !== "active";
-            return (
-              <Space orientation="vertical" size={0}>
-                <HexTag color={metaOf(marketMap, r.market)?.color}>
-                  {labelKey ? t(labelKey) : r.market}
-                </HexTag>
-                {sub && (
-                  <Typography.Text
-                    type={lapsed ? undefined : "secondary"}
-                    style={{
-                      fontSize: fontSize.caption,
-                      whiteSpace: "nowrap",
-                      ...(lapsed && subMeta ? { color: subMeta.color } : {}),
-                    }}
-                  >
-                    {lapsed && subMeta
-                      ? t(subMeta.labelKey)
-                      : t("tenants.expiresAt", { date: formatDate(sub.expires_at) })}
-                  </Typography.Text>
-                )}
+        size="small"
+        rowKey="uuid"
+        pagination={false}
+        scroll={{ x: 840, y: 420 }}
+        dataSource={instances}
+        columns={[
+          {
+            title: t("tenants.colInstance"),
+            render: (_, r) => (
+              <Space size={8}>
+                <span>{r.name}</span>
+                <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                  {r.uuid.slice(0, 8)}
+                </Typography.Text>
               </Space>
-            );
+            ),
           },
-        },
-        {
-          title: t("tenants.colSpec"),
-          render: (_, r) => `${String(r.spec.gpu_model)} × ${r.gpu_count}`,
-        },
-        {
-          title: t("tenants.colNode"),
-          dataIndex: "node_name",
-          render: (v: string | null) => v ?? "—",
-        },
-        { title: t("tenants.colCreatedAt"), dataIndex: "created_at", render: formatDateTime },
-      ]}
-    />
+          {
+            title: t("tenants.colStatus"),
+            dataIndex: "status",
+            width: 110,
+            render: (v: string) => {
+              const m = metaOf(instanceStatusMap, v);
+              return <HexTag color={m?.color}>{m ? t(m.labelKey) : v}</HexTag>;
+            },
+          },
+          {
+            // 购买模式标签取 packages/ui 映射;到期信息取内联 subscription
+            title: t("tenants.colMarket"),
+            width: 150,
+            render: (_, r) => {
+              const labelKey = marketLabelKey(r.market, r.subscription?.period);
+              const sub = r.subscription;
+              const subMeta = sub ? metaOf(subscriptionStatusMap, sub.status) : undefined;
+              const lapsed = sub != null && sub.status !== "active";
+              return (
+                <Space orientation="vertical" size={0}>
+                  <HexTag color={metaOf(marketMap, r.market)?.color}>{labelKey ? t(labelKey) : r.market}</HexTag>
+                  {sub && (
+                    <Typography.Text
+                      type={lapsed ? undefined : "secondary"}
+                      style={{
+                        fontSize: fontSize.caption,
+                        whiteSpace: "nowrap",
+                        ...(lapsed && subMeta ? { color: subMeta.color } : {}),
+                      }}
+                    >
+                      {lapsed && subMeta
+                        ? t(subMeta.labelKey)
+                        : t("tenants.expiresAt", { date: formatDate(sub.expires_at) })}
+                    </Typography.Text>
+                  )}
+                </Space>
+              );
+            },
+          },
+          {
+            title: t("tenants.colSpec"),
+            render: (_, r) => `${String(r.spec.gpu_model)} × ${r.gpu_count}`,
+          },
+          {
+            title: t("tenants.colNode"),
+            dataIndex: "node_name",
+            render: (v: string | null) => v ?? "—",
+          },
+          { title: t("tenants.colCreatedAt"), dataIndex: "created_at", render: formatDateTime },
+        ]}
+      />
     </>
   );
 }

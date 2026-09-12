@@ -148,10 +148,7 @@ export function quoteSubscription(
 }
 
 /** 竞价时价 = 按量时价 × `spot_discount_pct` / 100(HALF_EVEN 到 4 位,与后端 `pricing.price_for` 一致)。折扣只从 `/policies` 取。 */
-export function spotHourlyPrice(
-  baseHourly: string | null | undefined,
-  discountPct: number,
-): string {
+export function spotHourlyPrice(baseHourly: string | null | undefined, discountPct: number): string {
   return unscale4(halfEvenDiv(scaled4(baseHourly) * BigInt(discountPct), 100n));
 }
 
@@ -232,11 +229,7 @@ export function formatPeriodPrice(
 }
 
 /** 包周期到期倒计时:"剩 23 天" / "今日到期" / "已到期";无到期时刻返回 null。 */
-export function formatExpiry(
-  expiresAt: string | null | undefined,
-  t: SharedT,
-  now: Date = new Date(),
-): string | null {
+export function formatExpiry(expiresAt: string | null | undefined, t: SharedT, now: Date = new Date()): string | null {
   return expiresAt ? formatDaysUntil(expiresAt, t, now) : null;
 }
 
@@ -281,10 +274,7 @@ function scaledAmount(s: string | null | undefined): bigint {
 }
 
 /** 金额字符串比较(BigInt 万分位):a<b → -1,a==b → 0,a>b → 1。 */
-export function compareAmounts(
-  a: string | null | undefined,
-  b: string | null | undefined,
-): number {
+export function compareAmounts(a: string | null | undefined, b: string | null | undefined): number {
   const d = scaledAmount(a) - scaledAmount(b);
   return d < 0n ? -1 : d > 0n ? 1 : 0;
 }

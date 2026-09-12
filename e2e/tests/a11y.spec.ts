@@ -9,10 +9,7 @@ async function expectNoCritical(page: Page, name: string) {
   const critical = results.violations.filter((v) => v.impact === "critical");
   const serious = results.violations.filter((v) => v.impact === "serious");
   if (serious.length > 0) {
-    console.warn(
-      `[a11y][${name}] serious 预警 ${serious.length} 条:`,
-      serious.map((v) => v.id).join(", "),
-    );
+    console.warn(`[a11y][${name}] serious 预警 ${serious.length} 条:`, serious.map((v) => v.id).join(", "));
   }
   expect(
     critical,

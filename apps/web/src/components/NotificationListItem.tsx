@@ -4,13 +4,7 @@ import type { NotificationOut } from "@superdl/api-client";
 import { fontSize, formatDateTime } from "@superdl/ui";
 import { Badge, List, Space, theme, Typography } from "antd";
 
-export function NotificationListItem({
-  n,
-  onOpen,
-}: {
-  n: NotificationOut;
-  onOpen: (n: NotificationOut) => void;
-}) {
+export function NotificationListItem({ n, onOpen }: { n: NotificationOut; onOpen: (n: NotificationOut) => void }) {
   const { token } = theme.useToken();
   const isUnread = n.read_at == null;
   return (

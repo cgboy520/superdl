@@ -40,8 +40,18 @@ export function AdminServicesTable({
     },
     compact ? { limit: 100 } : undefined,
   );
-  const { data, queryKey, isLoading, isError, error, refetch, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } =
-    servicesQ;
+  const {
+    data,
+    queryKey,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+    fetchNextPage,
+  } = servicesQ;
   const rows: AdminServiceOut[] = data?.pages.flatMap((p) => p.items) ?? [];
   const total = data?.pages[0]?.total ?? null;
   const forceStop = useForceStop();
@@ -50,10 +60,7 @@ export function AdminServicesTable({
   return (
     <>
       {compact && total !== null && total > rows.length && (
-        <Typography.Text
-          type="warning"
-          style={{ display: "block", marginBottom: 8, fontSize: fontSize.caption }}
-        >
+        <Typography.Text type="warning" style={{ display: "block", marginBottom: 8, fontSize: fontSize.caption }}>
           {t("services.capped", { shown: rows.length, total })}{" "}
           <Link to="/services" search={{ user_id: userId }}>
             {t("services.viewAll")}

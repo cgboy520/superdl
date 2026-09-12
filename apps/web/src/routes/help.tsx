@@ -85,8 +85,7 @@ function HelpPage() {
 
           <Typography.Paragraph style={{ marginTop: 24 }}>
             <Link to="/legal/terms">{t("footer.linkTerms")}</Link> ·{" "}
-            <Link to="/legal/privacy">{t("footer.linkPrivacy")}</Link> ·{" "}
-            <Link to="/">{t("common.backHome")}</Link>
+            <Link to="/legal/privacy">{t("footer.linkPrivacy")}</Link> · <Link to="/">{t("common.backHome")}</Link>
           </Typography.Paragraph>
         </PageContainer>
       </div>

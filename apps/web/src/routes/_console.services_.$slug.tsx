@@ -2,30 +2,11 @@
 
 import { POLL } from "@superdl/ui";
 import type { InstanceEventOut, InstanceOut, ServiceOut } from "@superdl/api-client";
-import {
-  fontSize,
-  formatDateTime,
-  instanceStatusMap,
-  isTransientServiceStatus,
-  localToday,
-  metaOf,
-} from "@superdl/ui";
+import { fontSize, formatDateTime, instanceStatusMap, isTransientServiceStatus, localToday, metaOf } from "@superdl/ui";
 import { DataErrorAlert, moneyOr, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import {
-  Alert,
-  Badge,
-  Breadcrumb,
-  Card,
-  Descriptions,
-  Skeleton,
-  Space,
-  Table,
-  Tabs,
-  Tag,
-  Typography,
-} from "antd";
+import { Alert, Badge, Breadcrumb, Card, Descriptions, Skeleton, Space, Table, Tabs, Tag, Typography } from "antd";
 import { useFormat } from "@superdl/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -39,13 +20,7 @@ import {
   useServiceLogs,
   useServiceRevisions,
 } from "../api/queries";
-import {
-  CopyButton,
-  ServiceStatusBadge,
-  SpotTag,
-  SubscriptionTag,
-  TierTag,
-} from "../components/common";
+import { CopyButton, ServiceStatusBadge, SpotTag, SubscriptionTag, TierTag } from "../components/common";
 import { HourlyBillsTable } from "../components/HourlyBillsTable";
 import { EventsPanel } from "../components/instance/EventsPanel";
 import { LogsPanel } from "../components/instance/LogsPanel";
@@ -87,9 +62,7 @@ function OverviewTab({ service }: { service: ServiceOut }) {
   const livePrefix = (keysQ.data ?? []).find((k) => k.revoked_at == null)?.key_prefix;
   const curl = [
     `curl ${service.url}`,
-    ...(service.require_api_key
-      ? [`  -H "Authorization: Bearer ${livePrefix ?? "sk-xxxxxxxx"}…"`]
-      : []),
+    ...(service.require_api_key ? [`  -H "Authorization: Bearer ${livePrefix ?? "sk-xxxxxxxx"}…"`] : []),
   ].join(" \\\n");
   const envRows = c
     ? [
@@ -114,9 +87,7 @@ function OverviewTab({ service }: { service: ServiceOut }) {
               },
               {
                 label: t("services.detail.authLabel"),
-                children: service.require_api_key
-                  ? t("services.authRequired")
-                  : t("services.authPublic"),
+                children: service.require_api_key ? t("services.authRequired") : t("services.authPublic"),
               },
               {
                 label: "SSH",
@@ -129,9 +100,7 @@ function OverviewTab({ service }: { service: ServiceOut }) {
                   c?.container_command && c.container_command.length > 0 ? (
                     <Typography.Text code>{c.container_command.join(" ")}</Typography.Text>
                   ) : (
-                    <Typography.Text type="secondary">
-                      {t("services.detail.commandDefault")}
-                    </Typography.Text>
+                    <Typography.Text type="secondary">{t("services.detail.commandDefault")}</Typography.Text>
                   ),
               },
               {
@@ -191,9 +160,7 @@ function OverviewTab({ service }: { service: ServiceOut }) {
           </pre>
           <CopyButton text={curl} label={t("instances.copyCommand")} />
           {service.require_api_key && (
-            <Typography.Text type="secondary">
-              {t("services.detail.curlKeyPlaceholderNote")}
-            </Typography.Text>
+            <Typography.Text type="secondary">{t("services.detail.curlKeyPlaceholderNote")}</Typography.Text>
           )}
         </Space>
       </Card>
@@ -205,8 +172,7 @@ function LogsTab({ service }: { service: ServiceOut }) {
   const [tail, setTail] = useState(200);
   const [autoRefresh, setAutoRefresh] = useState(true);
   // deploying / running / unready 都可读日志
-  const viewable =
-    service.status === "deploying" || service.status === "running" || service.status === "unready";
+  const viewable = service.status === "deploying" || service.status === "running" || service.status === "unready";
   const { data, error, refetch } = useServiceLogs(
     service.slug,
     { tail_lines: tail },
@@ -241,20 +207,9 @@ function EventsTab({ slug, status }: { slug: string; status: string }) {
     const timer = setTimeout(() => void queryClient.invalidateQueries({ queryKey: key }), 3_000);
     return () => clearTimeout(timer);
   }, [status, slug, queryClient]);
-  const {
-    data,
-    isLoading,
-    isError,
-    refetch,
-    hasNextPage,
-    isFetchingNextPage,
-    isFetchNextPageError,
-    fetchNextPage,
-  } = useServiceEventPages(slug);
-  const events = useMemo<InstanceEventOut[]>(
-    () => (data?.pages ?? []).flatMap((p) => p.items),
-    [data],
-  );
+  const { data, isLoading, isError, refetch, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } =
+    useServiceEventPages(slug);
+  const events = useMemo<InstanceEventOut[]>(() => (data?.pages ?? []).flatMap((p) => p.items), [data]);
   return (
     <EventsPanel
       events={events}
@@ -383,9 +338,7 @@ function ServiceDetail() {
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-      <Breadcrumb
-        items={[{ title: <Link to="/services">{t("services.title")}</Link> }, { title: service.name }]}
-      />
+      <Breadcrumb items={[{ title: <Link to="/services">{t("services.title")}</Link> }, { title: service.name }]} />
       <Card>
         <Space style={{ width: "100%", justifyContent: "space-between" }} align="start" wrap>
           <Space orientation="vertical" size={4}>
@@ -394,9 +347,7 @@ function ServiceDetail() {
                 {service.name}
               </Typography.Title>
               <ServiceStatusBadge status={service.status} frozenDeadline={inst?.frozen_deadline} />
-              {inst && (
-                <TierTag tier={inst.spec["tier"] as string} pool={inst.spec["pool_label"] as string} />
-              )}
+              {inst && <TierTag tier={inst.spec["tier"] as string} pool={inst.spec["pool_label"] as string} />}
               <Tag>{t("services.revisionTag", { no: service.revision })}</Tag>
               {inst && <SubscriptionTag market={inst.market} subscription={inst.subscription} />}
               {inst && <SpotTag market={inst.market} />}
@@ -452,7 +403,11 @@ function ServiceDetail() {
         </Space>
       </Card>
 
-      <EndpointCard service={service} onShowLogs={() => goTab("logs", false)} onShowEvents={() => goTab("history", false)} />
+      <EndpointCard
+        service={service}
+        onShowLogs={() => goTab("logs", false)}
+        onShowEvents={() => goTab("history", false)}
+      />
 
       <Tabs
         activeKey={activeTab}

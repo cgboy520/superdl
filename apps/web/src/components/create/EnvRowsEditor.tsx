@@ -22,7 +22,8 @@ export function EnvRowsEditor({
     if (issue === "reserved") return t("services.form.envNameReserved");
     return t("services.form.envNameDuplicate");
   };
-  const update = (id: string, patch: Partial<EnvRow>) => onChange(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  const update = (id: string, patch: Partial<EnvRow>) =>
+    onChange(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
 
   return (
     <RowsEditor<EnvRow>

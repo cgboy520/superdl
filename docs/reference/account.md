@@ -11,21 +11,21 @@
 
 ## 契约
 
-| 端点 | 角色/鉴权 | 说明 |
-|---|---|---|
-| `POST /api/v1/auth/sms-code` | 匿名+限流 | `{phone, purpose, captcha_token?}` → 204;`captcha_enabled` 开启时 token 必填(缺失 400 `CAPTCHA_REQUIRED`、验签失败 400、渠道故障 502);mock 渠道固定码 123456 |
-| `GET /api/v1/auth/captcha-config` | 匿名 | 验证码开关与 scene 配置 |
-| `POST /api/v1/auth/register` | 匿名 | `{phone, sms_code, password?}` → 201 `{access_token, user}`(refresh 只走 HttpOnly Cookie);条款勾选前后端强校验 |
-| `POST /api/v1/auth/login` | 匿名 | `{phone, sms_code \| password}`;冻结用户报 `USER_FROZEN` |
-| `POST /api/v1/auth/password/reset` | 匿名 | 验证码重置密码 |
-| `POST /api/v1/auth/refresh` | refresh cookie | 轮换发放新 token 对;不收 body,强制 `X-Requested-With: fetch` |
-| `POST /api/v1/auth/logout` | 匿名(带 refresh cookie) | refresh 落 `used_refresh_tokens` 并清 Cookie;token 无效也回 204 |
-| `POST /api/v1/auth/logout-all` | user | `token_version+1`,已签发 token 全失效 |
-| `GET /api/v1/me` | user | 用户资料 |
-| `PATCH /api/v1/me/warn-threshold` | user | 余额预警阈值 |
-| `POST /api/v1/me/real-name` | user | 三要素实名(阿里云实人 `Mobile3MetaSimpleVerify`,BizCode 1 一致 / 2 不一致 / 3 无记录);`real_name_enabled` 关闭时 409 `REAL_NAME_DISABLED`;无 mock 渠道,测试经 `set_realname_provider` 注入 |
-| `POST /api/v1/me/deletion-request` `GET` `POST .../cancel` | user | 账号注销:键入手机号确认 → 7 天冷静期(可撤销)→ 管理端执行 |
-| `GET/POST/DELETE /api/v1/ssh-keys` | user | 公钥 CRUD |
+| 端点                                                       | 角色/鉴权               | 说明                                                                                                                                                                                       |
+| ---------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `POST /api/v1/auth/sms-code`                               | 匿名+限流               | `{phone, purpose, captcha_token?}` → 204;`captcha_enabled` 开启时 token 必填(缺失 400 `CAPTCHA_REQUIRED`、验签失败 400、渠道故障 502);mock 渠道固定码 123456                               |
+| `GET /api/v1/auth/captcha-config`                          | 匿名                    | 验证码开关与 scene 配置                                                                                                                                                                    |
+| `POST /api/v1/auth/register`                               | 匿名                    | `{phone, sms_code, password?}` → 201 `{access_token, user}`(refresh 只走 HttpOnly Cookie);条款勾选前后端强校验                                                                             |
+| `POST /api/v1/auth/login`                                  | 匿名                    | `{phone, sms_code \| password}`;冻结用户报 `USER_FROZEN`                                                                                                                                   |
+| `POST /api/v1/auth/password/reset`                         | 匿名                    | 验证码重置密码                                                                                                                                                                             |
+| `POST /api/v1/auth/refresh`                                | refresh cookie          | 轮换发放新 token 对;不收 body,强制 `X-Requested-With: fetch`                                                                                                                               |
+| `POST /api/v1/auth/logout`                                 | 匿名(带 refresh cookie) | refresh 落 `used_refresh_tokens` 并清 Cookie;token 无效也回 204                                                                                                                            |
+| `POST /api/v1/auth/logout-all`                             | user                    | `token_version+1`,已签发 token 全失效                                                                                                                                                      |
+| `GET /api/v1/me`                                           | user                    | 用户资料                                                                                                                                                                                   |
+| `PATCH /api/v1/me/warn-threshold`                          | user                    | 余额预警阈值                                                                                                                                                                               |
+| `POST /api/v1/me/real-name`                                | user                    | 三要素实名(阿里云实人 `Mobile3MetaSimpleVerify`,BizCode 1 一致 / 2 不一致 / 3 无记录);`real_name_enabled` 关闭时 409 `REAL_NAME_DISABLED`;无 mock 渠道,测试经 `set_realname_provider` 注入 |
+| `POST /api/v1/me/deletion-request` `GET` `POST .../cancel` | user                    | 账号注销:键入手机号确认 → 7 天冷静期(可撤销)→ 管理端执行                                                                                                                                   |
+| `GET/POST/DELETE /api/v1/ssh-keys`                         | user                    | 公钥 CRUD                                                                                                                                                                                  |
 
 ## 规则与不变量
 

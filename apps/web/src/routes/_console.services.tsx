@@ -21,12 +21,7 @@ import { Button, Input, Select, Space, Table, Tag, theme, Tooltip, Typography } 
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import {
-  useDailySummary,
-  usePolicies,
-  useServicePages,
-  useTransientServiceRefresh,
-} from "../api/queries";
+import { useDailySummary, usePolicies, useServicePages, useTransientServiceRefresh } from "../api/queries";
 import {
   CopyButton,
   ServiceStatusBadge,
@@ -77,11 +72,7 @@ function BillingCell({
       <Space orientation="vertical" size={0} align="start">
         <SubscriptionTag market={inst.market} subscription={inst.subscription} />
         <span>
-          {formatPeriodPrice(
-            inst.subscription.amount_paid,
-            inst.subscription.period,
-            inst.subscription.period_count,
-          )}
+          {formatPeriodPrice(inst.subscription.amount_paid, inst.subscription.period, inst.subscription.period_count)}
         </span>
       </Space>
     );
@@ -264,10 +255,7 @@ function ServicesPage() {
           {
             title: t("services.colStatus"),
             render: (_, r) => (
-              <ServiceStatusBadge
-                status={r.status}
-                frozenDeadline={r.current_instance?.frozen_deadline}
-              />
+              <ServiceStatusBadge status={r.status} frozenDeadline={r.current_instance?.frozen_deadline} />
             ),
           },
           {
@@ -309,9 +297,7 @@ function ServicesPage() {
           },
           {
             title: t("services.colBilling"),
-            render: (_, r) => (
-              <BillingCell service={r} todayByInstance={todayByInstance} dailyReady={daily != null} />
-            ),
+            render: (_, r) => <BillingCell service={r} todayByInstance={todayByInstance} dailyReady={daily != null} />,
           },
           { title: t("services.colCreated"), render: (_, r) => formatDateTime(r.created_at) },
           {

@@ -73,9 +73,10 @@ export function RegistryTestCard({ disabled }: { disabled: boolean }) {
               : t("platform.registryFailed", { step: r.step, detail: r.detail })}
           </Typography.Text>
         )}
-        <div style={{ color: adminColors.textSecondary, fontSize: fontSize.caption }}>{t("platform.testRegistryNote")}</div>
+        <div style={{ color: adminColors.textSecondary, fontSize: fontSize.caption }}>
+          {t("platform.testRegistryNote")}
+        </div>
       </Space>
     </Card>
   );
 }
-

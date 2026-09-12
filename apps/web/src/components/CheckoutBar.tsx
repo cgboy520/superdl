@@ -1,6 +1,16 @@
 /** 底部通栏结算条(sticky,市场页与创建页共用):费用项逐项摊开,日常费用与配置费用分栏。 */
 
-import { brand, colorPrimary, fontSize, fontWeight, motion as motionToken, shadow, space, webDarkColors, zIndex } from "@superdl/ui";
+import {
+  brand,
+  colorPrimary,
+  fontSize,
+  fontWeight,
+  motion as motionToken,
+  shadow,
+  space,
+  webDarkColors,
+  zIndex,
+} from "@superdl/ui";
 import { moneyOr } from "@superdl/ui/components";
 import { Button, Grid, Popover, Space, theme, Typography } from "antd";
 import { AnimatePresence, motion } from "motion/react";
@@ -80,89 +90,86 @@ export function CheckoutBar({
     >
       {notice}
       <div style={{ display: "flex", alignItems: "center", gap: space.xl, flexWrap: "wrap" }}>
-      {summary && (
-        <div
-          style={{
-            // 暗色下换「菜单选中」配对(menuSelectedBg/Color,tokens.test 回归的 AA 对)
-            background: dark ? webDarkColors.menuSelectedBg : brand.indigo50,
-            color: dark ? webDarkColors.menuSelectedColor : colorPrimary,
-            padding: `${space.sm}px 14px`,
-            borderRadius: token.borderRadius,
-            fontSize: fontSize.caption,
-            fontWeight: fontWeight.medium,
-            maxWidth: 420,
-          }}
-        >
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              key={changeKey ?? "summary"}
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={FADE_TRANSITION}
-            >
-              {summary}
-            </motion.div>
-          </AnimatePresence>
-        </div>
-      )}
-      <Space size={24} style={{ flex: 1, flexWrap: "wrap" }}>
-        {items.map((it) => (
-          <div key={it.label}>
-            <Typography.Text
-              type="secondary"
-              style={{ fontSize: fontSize.caption, display: "block" }}
-            >
-              {it.label}
-              {it.hint ? `(${it.hint})` : ""}
-            </Typography.Text>
+        {summary && (
+          <div
+            style={{
+              // 暗色下换「菜单选中」配对(menuSelectedBg/Color,tokens.test 回归的 AA 对)
+              background: dark ? webDarkColors.menuSelectedBg : brand.indigo50,
+              color: dark ? webDarkColors.menuSelectedColor : colorPrimary,
+              padding: `${space.sm}px 14px`,
+              borderRadius: token.borderRadius,
+              fontSize: fontSize.caption,
+              fontWeight: fontWeight.medium,
+              maxWidth: 420,
+            }}
+          >
             <AnimatePresence mode="wait" initial={false}>
-              <motion.span
-                key={changeKey ?? it.label}
+              <motion.div
+                key={changeKey ?? "summary"}
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={FADE_TRANSITION}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "baseline",
-                  gap: space.xs,
-                  fontSize: it.muted ? fontSize.body : fontSize.pageTitle,
-                  fontWeight: it.muted ? fontWeight.regular : fontWeight.semibold,
-                  color: it.muted ? token.colorText : colorPrimary,
-                }}
               >
-                {it.value}
-                {it.suffix && (
-                  <Typography.Text type="secondary" style={{ fontSize: fontSize.body }}>
-                    {it.suffix}
-                  </Typography.Text>
-                )}
-              </motion.span>
+                {summary}
+              </motion.div>
             </AnimatePresence>
           </div>
-        ))}
-        {detail && (
-          <Popover content={detail} title={t("common.costDetail")} placement="topLeft">
-            {/* 纯动作触发器用 Button 不用 Typography.Link(键盘语义) */}
-            <Button type="link" size="small">
-              {t("common.costDetail")}
-            </Button>
-          </Popover>
         )}
-        {balance !== undefined && (
-          <Typography.Text type="secondary">
-            {t("common.balance")}{" "}
-            <span style={{ fontWeight: 600 }}>{moneyOr(formatMoney(balance), balanceReady)}</span>
-          </Typography.Text>
-        )}
-      </Space>
-      <Space
-        size={12}
-        orientation={narrow ? "vertical" : "horizontal"}
-        className={narrow ? "checkout-bar-actions-block" : undefined}
-        style={narrow ? { width: "100%" } : undefined}
-      >
-        {actions}
-      </Space>
+        <Space size={24} style={{ flex: 1, flexWrap: "wrap" }}>
+          {items.map((it) => (
+            <div key={it.label}>
+              <Typography.Text type="secondary" style={{ fontSize: fontSize.caption, display: "block" }}>
+                {it.label}
+                {it.hint ? `(${it.hint})` : ""}
+              </Typography.Text>
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={changeKey ?? it.label}
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={FADE_TRANSITION}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "baseline",
+                    gap: space.xs,
+                    fontSize: it.muted ? fontSize.body : fontSize.pageTitle,
+                    fontWeight: it.muted ? fontWeight.regular : fontWeight.semibold,
+                    color: it.muted ? token.colorText : colorPrimary,
+                  }}
+                >
+                  {it.value}
+                  {it.suffix && (
+                    <Typography.Text type="secondary" style={{ fontSize: fontSize.body }}>
+                      {it.suffix}
+                    </Typography.Text>
+                  )}
+                </motion.span>
+              </AnimatePresence>
+            </div>
+          ))}
+          {detail && (
+            <Popover content={detail} title={t("common.costDetail")} placement="topLeft">
+              {/* 纯动作触发器用 Button 不用 Typography.Link(键盘语义) */}
+              <Button type="link" size="small">
+                {t("common.costDetail")}
+              </Button>
+            </Popover>
+          )}
+          {balance !== undefined && (
+            <Typography.Text type="secondary">
+              {t("common.balance")}{" "}
+              <span style={{ fontWeight: 600 }}>{moneyOr(formatMoney(balance), balanceReady)}</span>
+            </Typography.Text>
+          )}
+        </Space>
+        <Space
+          size={12}
+          orientation={narrow ? "vertical" : "horizontal"}
+          className={narrow ? "checkout-bar-actions-block" : undefined}
+          style={narrow ? { width: "100%" } : undefined}
+        >
+          {actions}
+        </Space>
       </div>
       {breakdown && (
         <div style={{ borderTop: `1px dashed ${token.colorBorderSecondary}`, paddingTop: space.sm }}>{breakdown}</div>

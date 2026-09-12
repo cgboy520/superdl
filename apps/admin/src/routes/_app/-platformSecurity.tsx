@@ -159,9 +159,7 @@ export function SecurityPanel({
             key: "guide",
             label: t("platform.configGuide"),
             children: (
-              <Typography.Paragraph style={{ marginBottom: 0 }}>
-                {t(GROUP_INTRO_KEYS.security)}
-              </Typography.Paragraph>
+              <Typography.Paragraph style={{ marginBottom: 0 }}>{t(GROUP_INTRO_KEYS.security)}</Typography.Paragraph>
             ),
           },
         ]}
@@ -181,4 +179,3 @@ export function SecurityPanel({
     </Space>
   );
 }
-

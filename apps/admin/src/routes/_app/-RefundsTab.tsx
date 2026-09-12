@@ -11,7 +11,16 @@ import { HexTag, LoadMore, TableErrorEmpty } from "@superdl/ui/components";
 import { useCsvExport } from "@superdl/ui";
 import { useFormat } from "@superdl/ui";
 
-import { type RefundPayout, type RefundRow, exportRefundsCsv, isApiError, useCancelRefund, usePayoutRefund, useRefunds, useReviewRefund } from "../../api";
+import {
+  type RefundPayout,
+  type RefundRow,
+  exportRefundsCsv,
+  isApiError,
+  useCancelRefund,
+  usePayoutRefund,
+  useRefunds,
+  useReviewRefund,
+} from "../../api";
 import { ReasonAction } from "../../components/ReasonAction";
 import { RowMoreMenu } from "../../components/RowMoreMenu";
 import { RowActionModal } from "../../components/RowActionModal";
@@ -48,9 +57,7 @@ export function PayoutModal({
         reviewer: `#${target.review_by ?? "-"}`,
       })}
       form={form}
-      submit={(values) =>
-        payout.mutateAsync({ refundId: target.id, data: values, idempotencyKey: idemFor?.key })
-      }
+      submit={(values) => payout.mutateAsync({ refundId: target.id, data: values, idempotencyKey: idemFor?.key })}
       successText={t("finance.payoutDone")}
       failText={t("finance.payoutFailed")}
       onClose={onClose}
@@ -92,7 +99,18 @@ export function RefundsTab() {
     ...(status ? { status } : {}),
     ...(search.r_day ? { day: search.r_day } : {}),
   };
-  const { data, queryKey, isLoading, isError, error, refetch, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = useRefunds(params);
+  const {
+    data,
+    queryKey,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+    fetchNextPage,
+  } = useRefunds(params);
   const { doExport, exporting } = useCsvExport((tz, lang) => exportRefundsCsv(params, tz, lang));
   const all: RefundRow[] = data?.pages.flatMap((p) => p.items) ?? [];
   const rows = channel ? all.filter((r) => r.payout_channel === channel) : all;
@@ -182,9 +200,7 @@ export function RefundsTab() {
             width: 150,
             render: (_, r) =>
               r.review_by ? (
-                <span style={{ color: adminColors.textMuted }}>
-                  {`#${r.review_by} ${r.review_comment ?? ""}`}
-                </span>
+                <span style={{ color: adminColors.textMuted }}>{`#${r.review_by} ${r.review_comment ?? ""}`}</span>
               ) : (
                 "-"
               ),
@@ -238,7 +254,10 @@ export function RefundsTab() {
                         label={t("finance.refundReject")}
                         target={`${r.refund_no} · ${formatMoney(r.amount)}`}
                         title={t("finance.refundRejectTitle")}
-                        confirmText={t("finance.refundRejectConfirm", { no: r.refund_no, amount: formatMoney(r.amount) })}
+                        confirmText={t("finance.refundRejectConfirm", {
+                          no: r.refund_no,
+                          amount: formatMoney(r.amount),
+                        })}
                         danger
                         disabled={!writable}
                         disabledReason={noPerm}
@@ -253,15 +272,7 @@ export function RefundsTab() {
                     </>
                   )}
                   {r.status === "approved" && (
-                    <Tooltip
-                      title={
-                        !writable
-                          ? noPerm
-                          : isReviewer
-                            ? t("finance.refundNoSelfPayout")
-                            : ""
-                      }
-                    >
+                    <Tooltip title={!writable ? noPerm : isReviewer ? t("finance.refundNoSelfPayout") : ""}>
                       <Button
                         size="small"
                         type="primary"
@@ -304,19 +315,11 @@ export function RefundsTab() {
         onLoadMore={() => void fetchNextPage()}
       />
       {channel && !hasNextPage && !isFetchNextPageError && all.length > 0 && (
-        <Typography.Text
-          type="secondary"
-          style={{ display: "block", textAlign: "center", padding: "8px 0" }}
-        >
+        <Typography.Text type="secondary" style={{ display: "block", textAlign: "center", padding: "8px 0" }}>
           {t("finance.loadedFilteredNote", { loaded: all.length, shown: rows.length })}
         </Typography.Text>
       )}
-      <PayoutModal
-        target={payoutTarget}
-        onClose={() => setPayoutTarget(null)}
-        onDone={refresh}
-      />
+      <PayoutModal target={payoutTarget} onClose={() => setPayoutTarget(null)} onDone={refresh} />
     </>
   );
 }
-

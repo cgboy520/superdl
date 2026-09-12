@@ -217,7 +217,6 @@ export type {
   RefundPayout,
 } from "@superdl/api-client";
 
-
 type MutOpts<TData, TVars> = { mutation?: UseMutationOptions<TData, unknown, TVars> };
 
 /** 变更 hook 工厂:mutationFn + 透传 opts.mutation。 */
@@ -244,8 +243,7 @@ function useCursorPages<TPage extends CursorPage, P extends CursorParams>(
     enabled: opts?.enabled ?? true,
     refetchOnWindowFocus: opts?.refetchOnWindowFocus,
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
-      fetcher({ ...params, limit, ...(pageParam ? { cursor: pageParam } : {}) } as P),
+    queryFn: ({ pageParam }) => fetcher({ ...params, limit, ...(pageParam ? { cursor: pageParam } : {}) } as P),
     getNextPageParam: (last) => last.next_cursor ?? undefined,
   });
 }
@@ -266,8 +264,8 @@ export function useClusterStatus() {
   return { ...q, queryKey };
 }
 
-export const useTestClusterConnection = adminMutation(
-  (_: void) => adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost(),
+export const useTestClusterConnection = adminMutation((_: void) =>
+  adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost(),
 );
 
 export function useGpuModelAggregates(options?: { enabled?: boolean }) {
@@ -280,9 +278,7 @@ export function useGpuModelAggregates(options?: { enabled?: boolean }) {
   return { ...q, queryKey };
 }
 
-export function useSkuCapacityPreview(
-  params: SkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetParams | null,
-) {
+export function useSkuCapacityPreview(params: SkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetParams | null) {
   return useQuery<CapacityPreviewOut>({
     queryKey: ["admin", "sku-capacity-preview", params],
     queryFn: () => skuCapacityPreviewApiAdminV1SkusCapacityPreviewGet(params!),
@@ -476,18 +472,14 @@ export function useOrders(
 }
 
 /** 调账单(游标分页):status/user_id/day 服务端过滤。 */
-export function useAdjustments(
-  params?: Omit<AdminListAdjustmentsApiAdminV1AdjustmentsGetParams, "cursor" | "limit">,
-) {
+export function useAdjustments(params?: Omit<AdminListAdjustmentsApiAdminV1AdjustmentsGetParams, "cursor" | "limit">) {
   const queryKey = ["admin", "adjustments", params] as const;
   const q = useCursorPages(queryKey, adminListAdjustmentsApiAdminV1AdjustmentsGet, params, undefined);
   return { ...q, queryKey };
 }
 
 /** 退款单列表(游标分页)。status 服务端过滤;day=YYYY-MM-DD(UTC 日)。 */
-export function useRefunds(
-  params?: Omit<AdminListRefundsApiAdminV1RefundsGetParams, "cursor" | "limit">,
-) {
+export function useRefunds(params?: Omit<AdminListRefundsApiAdminV1RefundsGetParams, "cursor" | "limit">) {
   const queryKey = ["admin", "refunds", params] as const;
   const q = useCursorPages(queryKey, adminListRefundsApiAdminV1RefundsGet, params, undefined);
   return { ...q, queryKey };
@@ -497,13 +489,12 @@ export const useReviewRefund = adminMutation((v: { refundId: number; data: Refun
   adminReviewRefundApiAdminV1RefundsRefundIdReviewPost(v.refundId, v.data),
 );
 
-export const usePayoutRefund = adminMutation(
-  (v: { refundId: number; data: RefundPayout; idempotencyKey?: string }) =>
-    adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost(
-      v.refundId,
-      v.data,
-      v.idempotencyKey ? { "Idempotency-Key": v.idempotencyKey } : undefined,
-    ),
+export const usePayoutRefund = adminMutation((v: { refundId: number; data: RefundPayout; idempotencyKey?: string }) =>
+  adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost(
+    v.refundId,
+    v.data,
+    v.idempotencyKey ? { "Idempotency-Key": v.idempotencyKey } : undefined,
+  ),
 );
 
 export const useCancelRefund = adminMutation((v: { refundId: number; data: RefundCancel }) =>
@@ -533,12 +524,9 @@ export function useSettlementGaps(
   params?: Omit<AdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetParams, "cursor" | "limit">,
 ) {
   const queryKey = ["admin", "settlement-gaps", params] as const;
-  const q = useCursorPages(
-    queryKey,
-    adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet,
-    params,
-    { refetchOnWindowFocus: true },
-  );
+  const q = useCursorPages(queryKey, adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet, params, {
+    refetchOnWindowFocus: true,
+  });
   return { ...q, queryKey };
 }
 
@@ -546,15 +534,12 @@ export const useReplaySettlementGap = adminMutation((v: { gapId: number }) =>
   adminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost(v.gapId),
 );
 
-export const useResolveSettlementGap = adminMutation(
-  (v: { gapId: number; data: SettlementGapResolve }) =>
-    adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost(v.gapId, v.data),
+export const useResolveSettlementGap = adminMutation((v: { gapId: number; data: SettlementGapResolve }) =>
+  adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost(v.gapId, v.data),
 );
 
 /** 工单列表(游标分页):status/category 过滤,user_id/ticket_no 检索;不挂 refetchInterval。 */
-export function useTickets(
-  params?: Omit<AdminListTicketsApiAdminV1TicketsGetParams, "cursor" | "limit">,
-) {
+export function useTickets(params?: Omit<AdminListTicketsApiAdminV1TicketsGetParams, "cursor" | "limit">) {
   const queryKey = ["admin", "tickets", params] as const;
   const q = useCursorPages(queryKey, adminListTicketsApiAdminV1TicketsGet, params, {
     refetchOnWindowFocus: true,
@@ -633,32 +618,28 @@ export function useLegalDocVersions(docKey: string | null, locale: LegalLocale |
   return { ...q, queryKey };
 }
 
-export const useCreateLegalDocVersion = adminMutation(
-  (v: { docKey: string; data: LegalDocVersionCreate }) =>
-    adminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPost(v.docKey, v.data),
+export const useCreateLegalDocVersion = adminMutation((v: { docKey: string; data: LegalDocVersionCreate }) =>
+  adminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPost(v.docKey, v.data),
 );
 
-export const useUpdateLegalDocVersion = adminMutation(
-  (v: { versionId: number; data: LegalDocVersionUpdate }) =>
-    adminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPut(v.versionId, v.data),
+export const useUpdateLegalDocVersion = adminMutation((v: { versionId: number; data: LegalDocVersionUpdate }) =>
+  adminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPut(v.versionId, v.data),
 );
 
 export const usePublishLegalDocVersion = adminMutation((v: { versionId: number }) =>
   adminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPost(v.versionId),
 );
 
-export const useArchiveLegalDocVersion = adminMutation(
-  (v: { versionId: number; data: LegalDocVersionArchive }) =>
-    adminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost(v.versionId, v.data),
+export const useArchiveLegalDocVersion = adminMutation((v: { versionId: number; data: LegalDocVersionArchive }) =>
+  adminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost(v.versionId, v.data),
 );
 
 export const useReplyTicket = adminMutation((v: { ticketId: number; data: AdminTicketReply }) =>
   adminReplyTicketApiAdminV1TicketsTicketIdReplyPost(v.ticketId, v.data),
 );
 
-export const useUpdateTicketStatus = adminMutation(
-  (v: { ticketId: number; data: AdminTicketStatusUpdate }) =>
-    adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost(v.ticketId, v.data),
+export const useUpdateTicketStatus = adminMutation((v: { ticketId: number; data: AdminTicketStatusUpdate }) =>
+  adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost(v.ticketId, v.data),
 );
 
 /** 审计检索:响应是数组,游标 = 末行 id 的 base64。 */
@@ -678,8 +659,7 @@ export function useAuditLog(filters: AuditFilters) {
         limit,
         ...(pageParam ? { cursor: pageParam } : {}),
       }),
-    getNextPageParam: (last) =>
-      last.length >= limit ? btoa(String(last[last.length - 1]!.id)) : undefined,
+    getNextPageParam: (last) => (last.length >= limit ? btoa(String(last[last.length - 1]!.id)) : undefined),
   });
   return { ...q, queryKey };
 }
@@ -704,67 +684,52 @@ export const useMfaVerify = adminMutation((v: { ticket: string; code: string }) 
   mfaLoginVerifyApiAdminV1AuthLoginMfaPost({ ticket: v.ticket, code: v.code }),
 );
 
-export const useRegenerateRecoveryCodes = adminMutation(
-  (_: void) => mfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPost(),
+export const useRegenerateRecoveryCodes = adminMutation((_: void) =>
+  mfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPost(),
 );
 
 export const useResetAdminMfa = adminMutation((v: { id: number; reason: string }) =>
   mfaResetApiAdminV1AdminsAdminIdMfaResetPost(v.id, { reason: v.reason }),
 );
 
-export const useCreateSku = adminMutation((v: { data: SkuCreate }) =>
-  adminCreateSkuApiAdminV1SkusPost(v.data),
-);
+export const useCreateSku = adminMutation((v: { data: SkuCreate }) => adminCreateSkuApiAdminV1SkusPost(v.data));
 
-export const useUpdateSku = adminMutation(
-  (v: { skuId: number; data: SkuUpdate; force?: boolean }) =>
-    adminUpdateSkuApiAdminV1SkusSkuIdPatch(v.skuId, v.data, v.force ? { force: true } : undefined),
+export const useUpdateSku = adminMutation((v: { skuId: number; data: SkuUpdate; force?: boolean }) =>
+  adminUpdateSkuApiAdminV1SkusSkuIdPatch(v.skuId, v.data, v.force ? { force: true } : undefined),
 );
 
 export function useEnrollments(options?: { active?: boolean; refetchInterval?: number }) {
   const queryKey = ["admin", "node-enrollments", options?.active] as const;
   const q = useQuery({
     queryKey,
-    queryFn: () =>
-      adminListEnrollmentsApiAdminV1NodeEnrollmentsGet(
-        options?.active ? { active: true } : undefined,
-      ),
+    queryFn: () => adminListEnrollmentsApiAdminV1NodeEnrollmentsGet(options?.active ? { active: true } : undefined),
     refetchInterval: options?.refetchInterval,
   });
   return { ...q, queryKey };
 }
 
-export const useCreateEnrollment = adminMutation(
-  (v: { data: EnrollmentCreate; idempotencyKey?: string }) =>
-    adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost(
-      v.data,
-      v.idempotencyKey ? { "Idempotency-Key": v.idempotencyKey } : undefined,
-    ),
+export const useCreateEnrollment = adminMutation((v: { data: EnrollmentCreate; idempotencyKey?: string }) =>
+  adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost(
+    v.data,
+    v.idempotencyKey ? { "Idempotency-Key": v.idempotencyKey } : undefined,
+  ),
 );
 
-export const useRegenerateEnrollment = adminMutation(
-  (v: { enrollmentId: number; data: EnrollmentRegenerateRequest }) =>
-    adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost(
-      v.enrollmentId,
-      v.data,
-    ),
+export const useRegenerateEnrollment = adminMutation((v: { enrollmentId: number; data: EnrollmentRegenerateRequest }) =>
+  adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost(v.enrollmentId, v.data),
 );
 
-export const useRevokeEnrollment = adminMutation(
-  (v: { enrollmentId: number; data: EnrollmentRevokeRequest }) =>
-    adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost(v.enrollmentId, v.data),
+export const useRevokeEnrollment = adminMutation((v: { enrollmentId: number; data: EnrollmentRevokeRequest }) =>
+  adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost(v.enrollmentId, v.data),
 );
 
-export const useCordonNode = adminMutation(
-  (v: { nodeName: string; on: boolean; data: NodeCordonRequest }) =>
-    v.on
-      ? adminCordonNodeApiAdminV1NodesNodeNameCordonPost(v.nodeName, v.data)
-      : adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost(v.nodeName, v.data),
+export const useCordonNode = adminMutation((v: { nodeName: string; on: boolean; data: NodeCordonRequest }) =>
+  v.on
+    ? adminCordonNodeApiAdminV1NodesNodeNameCordonPost(v.nodeName, v.data)
+    : adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost(v.nodeName, v.data),
 );
 
-export const useCreateImage = adminMutation((v: { data: ImageCreate }) =>
-  adminCreateImageApiAdminV1ImagesPost(v.data),
-);
+export const useCreateImage = adminMutation((v: { data: ImageCreate }) => adminCreateImageApiAdminV1ImagesPost(v.data));
 
 export const useUpdateImage = adminMutation((v: { imageId: number; data: ImageUpdate }) =>
   adminUpdateImageApiAdminV1ImagesImageIdPatch(v.imageId, v.data),
@@ -796,17 +761,15 @@ export const useUnfreezeTenant = adminMutation((v: { userId: number; data: Tenan
   adminUnfreezeTenantApiAdminV1TenantsUserIdUnfreezePost(v.userId, v.data),
 );
 
-export const useCreateAdjustment = adminMutation(
-  (v: { data: AdjustmentCreate; idempotencyKey?: string }) =>
-    adminCreateAdjustmentApiAdminV1AdjustmentsPost(
-      v.data,
-      v.idempotencyKey ? { "Idempotency-Key": v.idempotencyKey } : undefined,
-    ),
+export const useCreateAdjustment = adminMutation((v: { data: AdjustmentCreate; idempotencyKey?: string }) =>
+  adminCreateAdjustmentApiAdminV1AdjustmentsPost(
+    v.data,
+    v.idempotencyKey ? { "Idempotency-Key": v.idempotencyKey } : undefined,
+  ),
 );
 
-export const useReviewAdjustment = adminMutation(
-  (v: { adjustmentId: number; data: AdjustmentReview }) =>
-    adminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPost(v.adjustmentId, v.data),
+export const useReviewAdjustment = adminMutation((v: { adjustmentId: number; data: AdjustmentReview }) =>
+  adminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPost(v.adjustmentId, v.data),
 );
 
 // 运营:死信重放 / 收入报表 / 公告
@@ -872,12 +835,11 @@ export const useDiscardDeadTask = adminMutation((v: { taskId: number; data: Outb
   adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost(v.taskId, v.data),
 );
 
-export const usePublishAnnouncement = adminMutation(
-  (v: { data: AnnouncementCreate; idempotencyKey?: string }) =>
-    adminPublishAnnouncementApiAdminV1AnnouncementsPost(
-      v.data,
-      v.idempotencyKey ? { "Idempotency-Key": v.idempotencyKey } : undefined,
-    ),
+export const usePublishAnnouncement = adminMutation((v: { data: AnnouncementCreate; idempotencyKey?: string }) =>
+  adminPublishAnnouncementApiAdminV1AnnouncementsPost(
+    v.data,
+    v.idempotencyKey ? { "Idempotency-Key": v.idempotencyKey } : undefined,
+  ),
 );
 
 /** 公告历史(含已撤回;固定截断 200)。 */
@@ -890,9 +852,8 @@ export function useAnnouncements() {
   return { ...q, queryKey };
 }
 
-export const useRevokeAnnouncement = adminMutation(
-  (v: { announcementId: number; data: AnnouncementRevoke }) =>
-    adminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost(v.announcementId, v.data),
+export const useRevokeAnnouncement = adminMutation((v: { announcementId: number; data: AnnouncementRevoke }) =>
+  adminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost(v.announcementId, v.data),
 );
 
 export const useUpdatePolicies = adminMutation((v: { data: PolicyUpdateRequest }) =>
@@ -918,9 +879,7 @@ export const useUpdatePlatformConfig = adminMutation((v: { data: PlatformConfigU
   adminUpdatePlatformConfigApiAdminV1PlatformConfigPut(v.data),
 );
 
-export const useTestRegistry = adminMutation(
-  (_: void) => adminTestRegistryApiAdminV1PlatformConfigTestRegistryPost(),
-);
+export const useTestRegistry = adminMutation((_: void) => adminTestRegistryApiAdminV1PlatformConfigTestRegistryPost());
 
 export const useTestSms = adminMutation((v: { data: SmsTestRequest }) =>
   adminTestSmsApiAdminV1PlatformConfigTestSmsPost(v.data),
@@ -942,9 +901,8 @@ export const useUpdateAdminAccount = adminMutation((v: { id: number; data: Admin
   adminUpdateAdminApiAdminV1AdminsAdminIdPatch(v.id, v.data),
 );
 
-export const useResetAdminPassword = adminMutation(
-  (v: { id: number; data: AdminResetPasswordRequest }) =>
-    adminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost(v.id, v.data),
+export const useResetAdminPassword = adminMutation((v: { id: number; data: AdminResetPasswordRequest }) =>
+  adminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost(v.id, v.data),
 );
 
 export const useChangeOwnPassword = adminMutation((v: { data: AdminSelfPasswordRequest }) =>
@@ -1057,7 +1015,6 @@ export const exportAuditCsv = makeCsvExporter(
 
 /** 对账导出(按日,无 tz 参数)。 */
 export const exportReconciliationCsv = makeCsvExporter(
-  (day: string, lang: CsvLang) =>
-    reconciliationExportApiAdminV1ReconciliationExportGet({ day, lang }),
+  (day: string, lang: CsvLang) => reconciliationExportApiAdminV1ReconciliationExportGet({ day, lang }),
   (day: string) => `superdl-reconciliation-${day}.csv`,
 );

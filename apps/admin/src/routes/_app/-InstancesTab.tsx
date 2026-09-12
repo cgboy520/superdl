@@ -6,7 +6,19 @@ import { Input, Select, Space, Table } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { controlWidth, formatDateTime, instanceStatusMap, layout, marketLabelKey, marketMap, metaOf, skuTierMap, skuVariant, workloadTypeMap, type InstanceStatus } from "@superdl/ui";
+import {
+  controlWidth,
+  formatDateTime,
+  instanceStatusMap,
+  layout,
+  marketLabelKey,
+  marketMap,
+  metaOf,
+  skuTierMap,
+  skuVariant,
+  workloadTypeMap,
+  type InstanceStatus,
+} from "@superdl/ui";
 import { HexTag, LoadMore, TableErrorEmpty } from "@superdl/ui/components";
 
 import { type AdminInstanceOut, isApiError, useAdminInstances, useForceStop, usePreemptInstance } from "../../api";
@@ -44,7 +56,18 @@ export function InstancesTab() {
     ...(instQ ? { q: instQ } : {}),
     ...(nodeName ? { node_name: nodeName } : {}),
   });
-  const { data, queryKey, isLoading, isError, error, refetch, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = instancesQ;
+  const {
+    data,
+    queryKey,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+    fetchNextPage,
+  } = instancesQ;
   const instances: AdminInstanceOut[] = data?.pages.flatMap((p) => p.items) ?? [];
   const forceStop = useForceStop();
   const preempt = usePreemptInstance();
@@ -153,11 +176,7 @@ export function InstancesTab() {
             width: 110,
             render: (v: string, r) => {
               const labelKey = marketLabelKey(v, r.subscription?.period);
-              return (
-                <HexTag color={metaOf(marketMap, v)?.color}>
-                  {labelKey ? t(labelKey) : v}
-                </HexTag>
-              );
+              return <HexTag color={metaOf(marketMap, v)?.color}>{labelKey ? t(labelKey) : v}</HexTag>;
             },
           },
           { title: t("tenants.colSshPort"), dataIndex: "ssh_port", width: 100 },
@@ -221,4 +240,3 @@ export function InstancesTab() {
     </>
   );
 }
-

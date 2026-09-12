@@ -1,12 +1,7 @@
 /** 快捷入口四宫格:快速开始 / GPU 选型 / 透明计费 / 数据无忧。信息型入口指向 /help FAQ 锚点;GPU 选型页内滚动到排名区。 */
 
 import { LandingSection } from "./LandingSection";
-import {
-  AccountBookOutlined,
-  AimOutlined,
-  DatabaseOutlined,
-  ThunderboltOutlined,
-} from "@ant-design/icons";
+import { AccountBookOutlined, AimOutlined, DatabaseOutlined, ThunderboltOutlined } from "@ant-design/icons";
 import { colorPrimary, fontSize } from "@superdl/ui";
 import { useNavigate } from "@tanstack/react-router";
 import { Card, Col, Row, Typography } from "antd";
@@ -74,9 +69,7 @@ export function QuickEntrySection() {
                 }
               }}
             >
-              <div style={{ fontSize: fontSize.pageTitle, color: colorPrimary, marginBottom: 8 }}>
-                {e.icon}
-              </div>
+              <div style={{ fontSize: fontSize.pageTitle, color: colorPrimary, marginBottom: 8 }}>{e.icon}</div>
               <Typography.Text strong style={{ display: "block", marginBottom: 4 }}>
                 {TITLE[e.key]}
               </Typography.Text>

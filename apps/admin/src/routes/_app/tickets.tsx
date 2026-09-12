@@ -1,20 +1,7 @@
 /** 工单:status/category 筛选 + user_id/ticket_no 检索(游标分页)+ 详情抽屉。读:全角色;写:ops/admin。 */
 
-import {
-  formatDateTime,
-  isTicketRepliable,
-  metaOf,
-  ticketCategoryMap,
-  ticketStatusMap,
-} from "@superdl/ui";
-import {
-  HexTag,
-  LoadMore,
-  PageContainer,
-  TableErrorEmpty,
-  TicketBubble,
-  useConfirm,
-} from "@superdl/ui/components";
+import { formatDateTime, isTicketRepliable, metaOf, ticketCategoryMap, ticketStatusMap } from "@superdl/ui";
+import { HexTag, LoadMore, PageContainer, TableErrorEmpty, TicketBubble, useConfirm } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
@@ -55,21 +42,18 @@ const TICKET_CATEGORIES = Object.keys(ticketCategoryMap);
 
 export const Route = createFileRoute("/_app/tickets")({
   // 筛选入 URL;id = 告警深链(自动开详情抽屉)
-  validateSearch: (search: Record<string, unknown>): {
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): {
     status?: string;
     category?: string;
     id?: number;
     user_id?: number;
     ticket_no?: string;
   } => ({
-    status:
-      typeof search.status === "string" && TICKET_STATUSES.includes(search.status)
-        ? search.status
-        : undefined,
+    status: typeof search.status === "string" && TICKET_STATUSES.includes(search.status) ? search.status : undefined,
     category:
-      typeof search.category === "string" && TICKET_CATEGORIES.includes(search.category)
-        ? search.category
-        : undefined,
+      typeof search.category === "string" && TICKET_CATEGORIES.includes(search.category) ? search.category : undefined,
     id:
       typeof search.id === "number" && Number.isInteger(search.id) && search.id > 0
         ? search.id
@@ -82,8 +66,7 @@ export const Route = createFileRoute("/_app/tickets")({
         : typeof search.user_id === "string" && /^\d+$/.test(search.user_id)
           ? Number(search.user_id)
           : undefined,
-    ticket_no:
-      typeof search.ticket_no === "string" && search.ticket_no ? search.ticket_no : undefined,
+    ticket_no: typeof search.ticket_no === "string" && search.ticket_no ? search.ticket_no : undefined,
   }),
   component: TicketsPage,
 });
@@ -165,11 +148,7 @@ function TicketDrawer({
       {/* 详情查询三态:骨架 / 失败可重试 */}
       {detail.isPending && ticketId !== null && <Skeleton active paragraph={{ rows: 6 }} />}
       {detail.isError && (
-        <TableErrorEmpty
-          isError
-          onRetry={() => void detail.refetch()}
-          compact
-        >
+        <TableErrorEmpty isError onRetry={() => void detail.refetch()} compact>
           {null}
         </TableErrorEmpty>
       )}
@@ -303,7 +282,18 @@ function TicketsPage() {
     ...(userId != null ? { user_id: userId } : {}),
     ...(ticketNo.trim() ? { ticket_no: ticketNo.trim() } : {}),
   });
-  const { data, queryKey, isLoading, isError, error, refetch, hasNextPage, fetchNextPage, isFetchingNextPage, isFetchNextPageError } = ticketsQ;
+  const {
+    data,
+    queryKey,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+  } = ticketsQ;
   // 待客服计数角标(60s 轮询);点击按该口径过滤
   const pendingQ = useTicketPendingCount();
   const rows: AdminTicketOut[] = (data?.pages ?? []).flatMap((p) => p.items);
@@ -379,84 +369,79 @@ function TicketsPage() {
       }
     >
       <Card>
-      <Table<AdminTicketOut>
-        scroll={{ x: 960 }}
-        rowKey="id"
-        loading={isLoading}
-        dataSource={rows}
-        pagination={false}
-        locale={{
-          emptyText: (
-            <TableErrorEmpty
-              isError={isError}
-              isForbidden={isApiError(error) && error.status === 403}
-              onRetry={() => void refetch()}
-            >
-              {t("tickets.empty")}
-            </TableErrorEmpty>
-          ),
-        }}
-        onRow={(r) => ({ onClick: () => setOpenId(r.id), style: { cursor: "pointer" } })}
-        columns={[
-          { title: t("tickets.colTicketNo"), dataIndex: "ticket_no", width: 140 },
-          {
-            title: t("tickets.colTenant"),
-            dataIndex: "user_id",
-            width: 80,
-            render: (v: number) => <TenantLink id={v} />,
-          },
-          {
-            title: t("tickets.colCategory"),
-            dataIndex: "category",
-            width: 110,
-            render: (v: string) => {
-              const m = metaOf(ticketCategoryMap, v);
-              return m ? t(m.labelKey) : v;
-            },
-          },
-          { title: t("tickets.colSubject"), dataIndex: "subject", ellipsis: true },
-          {
-            title: t("tickets.colStatus"),
-            dataIndex: "status",
-            width: 110,
-            render: (v: string) => {
-              const m = metaOf(ticketStatusMap, v);
-              return (
-                <Badge
-                  status={m?.badge ?? "default"}
-                  text={m ? t(m.labelKey) : v}
-                />
-              );
-            },
-          },
-          { title: t("tickets.colUpdatedAt"), dataIndex: "updated_at", width: 150, render: formatDateTime },
-          { title: t("tickets.colCreatedAt"), dataIndex: "created_at", width: 150, render: formatDateTime },
-          {
-            // 文字按钮保证键盘可达
-            title: t("tickets.colActions"),
-            width: 80,
-            render: (_, r) => (
-              <Button
-                type="link"
-                size="small"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setOpenId(r.id);
-                }}
+        <Table<AdminTicketOut>
+          scroll={{ x: 960 }}
+          rowKey="id"
+          loading={isLoading}
+          dataSource={rows}
+          pagination={false}
+          locale={{
+            emptyText: (
+              <TableErrorEmpty
+                isError={isError}
+                isForbidden={isApiError(error) && error.status === 403}
+                onRetry={() => void refetch()}
               >
-                {t("tickets.detail")}
-              </Button>
+                {t("tickets.empty")}
+              </TableErrorEmpty>
             ),
-          },
-        ]}
-      />
-      <LoadMore
-        hasNextPage={Boolean(hasNextPage)}
-        loading={isFetchingNextPage}
-        isError={isFetchNextPageError}
-        loadedCount={rows.length}
-        onLoadMore={() => void fetchNextPage()}
-      />
+          }}
+          onRow={(r) => ({ onClick: () => setOpenId(r.id), style: { cursor: "pointer" } })}
+          columns={[
+            { title: t("tickets.colTicketNo"), dataIndex: "ticket_no", width: 140 },
+            {
+              title: t("tickets.colTenant"),
+              dataIndex: "user_id",
+              width: 80,
+              render: (v: number) => <TenantLink id={v} />,
+            },
+            {
+              title: t("tickets.colCategory"),
+              dataIndex: "category",
+              width: 110,
+              render: (v: string) => {
+                const m = metaOf(ticketCategoryMap, v);
+                return m ? t(m.labelKey) : v;
+              },
+            },
+            { title: t("tickets.colSubject"), dataIndex: "subject", ellipsis: true },
+            {
+              title: t("tickets.colStatus"),
+              dataIndex: "status",
+              width: 110,
+              render: (v: string) => {
+                const m = metaOf(ticketStatusMap, v);
+                return <Badge status={m?.badge ?? "default"} text={m ? t(m.labelKey) : v} />;
+              },
+            },
+            { title: t("tickets.colUpdatedAt"), dataIndex: "updated_at", width: 150, render: formatDateTime },
+            { title: t("tickets.colCreatedAt"), dataIndex: "created_at", width: 150, render: formatDateTime },
+            {
+              // 文字按钮保证键盘可达
+              title: t("tickets.colActions"),
+              width: 80,
+              render: (_, r) => (
+                <Button
+                  type="link"
+                  size="small"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setOpenId(r.id);
+                  }}
+                >
+                  {t("tickets.detail")}
+                </Button>
+              ),
+            },
+          ]}
+        />
+        <LoadMore
+          hasNextPage={Boolean(hasNextPage)}
+          loading={isFetchingNextPage}
+          isError={isFetchNextPageError}
+          loadedCount={rows.length}
+          onLoadMore={() => void fetchNextPage()}
+        />
       </Card>
       <TicketDrawer ticketId={openId} onClose={() => setOpenId(null)} writable={writable} />
     </PageContainer>

@@ -1,12 +1,6 @@
 /** 包周期(预付)共用件:折扣读取、本地报价、量词与费用明细三行;市场页 / 创建页 / 续费 modal 共用,与后端 core/pricing.py 同源。本地报价只作预览,成交金额以接口 quote 为准,明细区须挂 hint。 */
 
-import {
-  fontSize,
-  periodMap,
-  quoteSubscription,
-  type BillingPeriod,
-  type PeriodQuote,
-} from "@superdl/ui";
+import { fontSize, periodMap, quoteSubscription, type BillingPeriod, type PeriodQuote } from "@superdl/ui";
 import { Space, Typography } from "antd";
 import { useMemo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";

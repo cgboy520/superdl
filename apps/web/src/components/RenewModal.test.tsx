@@ -122,9 +122,7 @@ describe("RenewModal", () => {
       const pad = (n: number) => String(n).padStart(2, "0");
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     };
-    expect(
-      within(dialog).getByText(new RegExp(`${ymd(STARTED_AT)}.*→.*${ymd(EXPIRES_AT)}`)),
-    ).toBeInTheDocument();
+    expect(within(dialog).getByText(new RegExp(`${ymd(STARTED_AT)}.*→.*${ymd(EXPIRES_AT)}`))).toBeInTheDocument();
   });
 
   it("新到期时间从老到期时刻起算(提前续费不丢手上剩的天数)", async () => {

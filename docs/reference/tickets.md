@@ -11,17 +11,17 @@
 
 ## 契约
 
-| 端点 | 角色/鉴权 | 说明 |
-|---|---|---|
-| `POST /api/v1/tickets` | user | `{category, subject, body, instance_uuid?}` → 201;首条消息同单落库;`Idempotency-Key` 重放回既有单(200 + `X-Idempotent-Replay`,不耗限流配额) |
-| `GET /api/v1/tickets?cursor=&limit=` | user | 本人工单,降序游标分页 |
-| `GET /api/v1/tickets/{ticket_id}` | user | 详情 + 消息流(升序);owner 校验在 SQL WHERE,他人工单与不存在同回 404 |
-| `POST /api/v1/tickets/{ticket_id}/messages` | user | 追加回复 → pending_staff;终态单 409 |
-| `POST /api/v1/tickets/{ticket_id}/close` | user | 仅 resolved 可关 |
-| `GET /api/admin/v1/tickets?status=&category=&user_id=&ticket_no=` | ops/finance/readonly | 游标分页,精确过滤与检索 |
-| `GET /api/admin/v1/tickets/{ticket_id}` | ops/finance/readonly | 详情 + 消息流 |
-| `POST /api/admin/v1/tickets/{ticket_id}/reply` | ops/admin | 客服回复 → pending_user,站内信告知用户(dedup_key 防重);审计 |
-| `POST /api/admin/v1/tickets/{ticket_id}/status` | ops/admin | `{action: resolve \| close}`;close 仅 resolved 后可;审计 |
+| 端点                                                              | 角色/鉴权            | 说明                                                                                                                                        |
+| ----------------------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/v1/tickets`                                            | user                 | `{category, subject, body, instance_uuid?}` → 201;首条消息同单落库;`Idempotency-Key` 重放回既有单(200 + `X-Idempotent-Replay`,不耗限流配额) |
+| `GET /api/v1/tickets?cursor=&limit=`                              | user                 | 本人工单,降序游标分页                                                                                                                       |
+| `GET /api/v1/tickets/{ticket_id}`                                 | user                 | 详情 + 消息流(升序);owner 校验在 SQL WHERE,他人工单与不存在同回 404                                                                         |
+| `POST /api/v1/tickets/{ticket_id}/messages`                       | user                 | 追加回复 → pending_staff;终态单 409                                                                                                         |
+| `POST /api/v1/tickets/{ticket_id}/close`                          | user                 | 仅 resolved 可关                                                                                                                            |
+| `GET /api/admin/v1/tickets?status=&category=&user_id=&ticket_no=` | ops/finance/readonly | 游标分页,精确过滤与检索                                                                                                                     |
+| `GET /api/admin/v1/tickets/{ticket_id}`                           | ops/finance/readonly | 详情 + 消息流                                                                                                                               |
+| `POST /api/admin/v1/tickets/{ticket_id}/reply`                    | ops/admin            | 客服回复 → pending_user,站内信告知用户(dedup_key 防重);审计                                                                                 |
+| `POST /api/admin/v1/tickets/{ticket_id}/status`                   | ops/admin            | `{action: resolve \| close}`;close 仅 resolved 后可;审计                                                                                    |
 
 前端:用户端 `/support`(FAQ + 我的工单)与 `/support/:ticketId`;管理端 `/tickets`。
 

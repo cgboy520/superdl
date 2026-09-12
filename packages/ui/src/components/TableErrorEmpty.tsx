@@ -26,13 +26,7 @@ export function TableErrorEmpty({
 }) {
   const { t } = useTranslation("shared");
   if (isForbidden) {
-    return (
-      <Result
-        status="403"
-        title={t("common.forbidden")}
-        subTitle={t("common.forbiddenDesc")}
-      />
-    );
+    return <Result status="403" title={t("common.forbidden")} subTitle={t("common.forbiddenDesc")} />;
   }
   if (!isError) {
     if (children || action) {

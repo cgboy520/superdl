@@ -75,7 +75,10 @@ test("部署在线服务并拿到端点与 API Key", async ({ page }) => {
   await expect(page.getByText("已吊销").first()).toBeVisible({ timeout: 15_000 });
 
   // 停止服务:头部按钮 → 确认 → 状态离开运行中;端点与 Key 仍在
-  await page.getByRole("button", { name: /^停\s*止$/ }).first().click();
+  await page
+    .getByRole("button", { name: /^停\s*止$/ })
+    .first()
+    .click();
   await page
     .locator(".ant-modal-confirm-btns")
     .getByRole("button", { name: /^确\s*定$/ })
@@ -97,7 +100,12 @@ test("部署在线服务并拿到端点与 API Key", async ({ page }) => {
   // 列表:服务在「在线服务」里,不在容器实例里
   await page.goto("/services");
   // 行里有两处 slug 文本,取名称列精确匹配
-  await expect(page.locator(".ant-table-row").first().getByText(/^svc-[a-z0-9]+$/)).toBeVisible({
+  await expect(
+    page
+      .locator(".ant-table-row")
+      .first()
+      .getByText(/^svc-[a-z0-9]+$/),
+  ).toBeVisible({
     timeout: 15_000,
   });
   await page.goto("/instances");

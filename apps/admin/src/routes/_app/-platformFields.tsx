@@ -136,11 +136,7 @@ export function FieldControl({
   if (item.kind === "bool") {
     const effective = (draft ?? item.value ?? "false") === "true";
     return (
-      <Switch
-        checked={effective}
-        disabled={disabled}
-        onChange={(checked) => onChange(checked ? "true" : "false")}
-      />
+      <Switch checked={effective} disabled={disabled} onChange={(checked) => onChange(checked ? "true" : "false")} />
     );
   }
   if (item.kind === "choice") {
@@ -230,9 +226,7 @@ export function GroupPanel({
             key: "guide",
             label: t("platform.configGuide"),
             children: (
-              <Typography.Paragraph style={{ marginBottom: 0 }}>
-                {t(GROUP_INTRO_KEYS[group])}
-              </Typography.Paragraph>
+              <Typography.Paragraph style={{ marginBottom: 0 }}>{t(GROUP_INTRO_KEYS[group])}</Typography.Paragraph>
             ),
           },
         ]}
@@ -286,4 +280,3 @@ export function GroupPanel({
     </Space>
   );
 }
-

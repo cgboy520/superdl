@@ -23,7 +23,10 @@ function fakeLocks(): Pick<LockManager, "request"> {
     request: ((name: string, cb: () => Promise<unknown>) => {
       const prev = tails.get(name) ?? Promise.resolve();
       const next = prev.then(cb, cb);
-      tails.set(name, next.catch(() => undefined));
+      tails.set(
+        name,
+        next.catch(() => undefined),
+      );
       return next;
     }) as LockManager["request"],
   };
@@ -146,8 +149,6 @@ describe("错误体解析", () => {
         headers: { "Content-Type": "text/csv; charset=utf-8" },
       }),
     ]);
-    await expect(customFetch("/api/v1/billing/export", { method: "GET" })).resolves.toBe(
-      "a,b\r\n1,2\r\n",
-    );
+    await expect(customFetch("/api/v1/billing/export", { method: "GET" })).resolves.toBe("a,b\r\n1,2\r\n");
   });
 });

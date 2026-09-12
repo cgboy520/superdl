@@ -12,13 +12,7 @@ import { CopyButton } from "../common";
 
 const KEYGEN_CMD = 'ssh-keygen -t ed25519 -C "you@example.com"';
 
-export function SshKeyPicker({
-  value,
-  onChange,
-}: {
-  value: number[];
-  onChange: (ids: number[]) => void;
-}) {
+export function SshKeyPicker({ value, onChange }: { value: number[]; onChange: (ids: number[]) => void }) {
   const { t } = useTranslation();
   const { message } = App.useApp();
   const keysQ = useSshKeys();

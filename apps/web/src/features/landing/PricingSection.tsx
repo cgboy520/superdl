@@ -120,10 +120,12 @@ export function PricingSection() {
                 >
                   {g.tiers.length > 1 && (
                     <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                      {g.tiers.map((tier) => {
-                        const m = metaOf(skuTierMap, tier);
-                        return m ? t(m.labelKey) : tier;
-                      }).join(" / ")}
+                      {g.tiers
+                        .map((tier) => {
+                          const m = metaOf(skuTierMap, tier);
+                          return m ? t(m.labelKey) : tier;
+                        })
+                        .join(" / ")}
                     </Typography.Text>
                   )}
                   <Typography.Text strong>
@@ -149,12 +151,7 @@ export function PricingSection() {
                       ? t("landing.pricing.priceFrom", { price: formatHourlyPrice(sku.price_hourly) })
                       : formatHourlyPrice(sku.price_hourly)}
                   </div>
-                  <Button
-                    type="primary"
-                    block
-                    disabled={g.available <= 0}
-                    onClick={() => rent(g.rentTarget.id)}
-                  >
+                  <Button type="primary" block disabled={g.available <= 0} onClick={() => rent(g.rentTarget.id)}>
                     {g.available > 0 ? t("copy.stockAvailable", { count: g.available }) : t("copy.outOfStock")}
                   </Button>
                   {meta && "hintKey" in meta && (

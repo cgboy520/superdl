@@ -64,9 +64,7 @@ function tipped(label: string, tip?: string) {
   return tip ? <Tooltip title={tip}>{label}</Tooltip> : label;
 }
 
-export function canRolloutService(
-  service: ServiceOut,
-): { ok: boolean; reason?: "subscription" | "unsettled" } {
+export function canRolloutService(service: ServiceOut): { ok: boolean; reason?: "subscription" | "unsettled" } {
   const s = service.status;
   if (service.current_instance?.market === "subscription") return { ok: false, reason: "subscription" };
   if (s === "running" || s === "unready" || s === "stopped" || s === "failed") return { ok: true };

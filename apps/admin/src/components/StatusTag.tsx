@@ -41,7 +41,15 @@ type KnownStatusMap =
 /** 全部已知状态表的条目并集(labelKey 保持字面量,t() 可校验) */
 type KnownMeta = KnownStatusMap extends infer U ? (U extends Record<string, infer V> ? V : never) : never;
 
-export function StatusTag({ map, value, variant = "tag" }: { map: KnownStatusMap; value: string; variant?: "tag" | "badge" }) {
+export function StatusTag({
+  map,
+  value,
+  variant = "tag",
+}: {
+  map: KnownStatusMap;
+  value: string;
+  variant?: "tag" | "badge";
+}) {
   const { t } = useTranslation(["admin", "shared"]);
   const meta: KnownMeta | undefined = metaOf(map as Record<string, KnownMeta>, value);
   const label = meta ? t(meta.labelKey) : value;

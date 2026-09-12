@@ -19,7 +19,7 @@ export interface SkuFormValues {
   vcpu: number;
   mem_gb: number;
   disk_gb: number;
-  price_hourly: string;  // stringMode:单价 4 位小数,不经二进制浮点
+  price_hourly: string; // stringMode:单价 4 位小数,不经二进制浮点
   max_gpus_per_instance: number;
   cuda_max?: string | null;
   /** 是否接受包周期下单(与档位正交) */
@@ -74,4 +74,3 @@ export function warnText(t: TFn, w: CapacityWarning): string {
       });
   }
 }
-

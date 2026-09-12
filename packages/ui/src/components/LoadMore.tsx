@@ -43,10 +43,7 @@ export function LoadMore({
   }
   if (loadedCount) {
     return (
-      <Typography.Text
-        type="secondary"
-        style={{ display: "block", textAlign: "center", padding: "8px 0" }}
-      >
+      <Typography.Text type="secondary" style={{ display: "block", textAlign: "center", padding: "8px 0" }}>
         {t("common.loadedAll", { count: loadedCount })}
       </Typography.Text>
     );

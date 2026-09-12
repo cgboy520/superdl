@@ -21,9 +21,7 @@ export function ReconciliationCard() {
   const [day, setDay] = useState<Dayjs>(dayjs());
   const { data: report, isError, refetch } = useReconciliation(day.format("YYYY-MM-DD"));
   const diffHigh = report != null && report.diff_pct > RECONCILE_DIFF_WARN_PCT;
-  const { doExport, exporting } = useCsvExport((_tz, lang) =>
-    exportReconciliationCsv(day.format("YYYY-MM-DD"), lang),
-  );
+  const { doExport, exporting } = useCsvExport((_tz, lang) => exportReconciliationCsv(day.format("YYYY-MM-DD"), lang));
 
   return (
     <Card
@@ -52,10 +50,16 @@ export function ReconciliationCard() {
       )}
       <Row gutter={16}>
         <Col xs={24} sm={12} md={8}>
-          <Statistic title={t("finance.billedTotal")} value={moneyOr(formatMoney(report?.billed_total), report != null)} />
+          <Statistic
+            title={t("finance.billedTotal")}
+            value={moneyOr(formatMoney(report?.billed_total), report != null)}
+          />
         </Col>
         <Col xs={24} sm={12} md={8}>
-          <Statistic title={t("finance.estimatedTotal")} value={moneyOr(formatMoney(report?.estimated_total), report != null)} />
+          <Statistic
+            title={t("finance.estimatedTotal")}
+            value={moneyOr(formatMoney(report?.estimated_total), report != null)}
+          />
         </Col>
         <Col xs={24} sm={12} md={8}>
           <Statistic
@@ -95,4 +99,3 @@ export function ReconciliationCard() {
     </Card>
   );
 }
-

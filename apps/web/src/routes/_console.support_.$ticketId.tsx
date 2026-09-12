@@ -2,28 +2,11 @@
 
 import { POLL } from "@superdl/ui";
 import { ArrowLeftOutlined } from "@ant-design/icons";
-import {
-  fontSize,
-  formatDateTime,
-  isTicketRepliable,
-  metaOf,
-  ticketCategoryMap,
-  ticketStatusMap,
-} from "@superdl/ui";
+import { fontSize, formatDateTime, isTicketRepliable, metaOf, ticketCategoryMap, ticketStatusMap } from "@superdl/ui";
 import { DataErrorAlert, isMacPlatform, TicketBubble, useConfirm } from "@superdl/ui/components";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import {
-  Alert,
-  Badge,
-  Button,
-  Card,
-  Input,
-  Skeleton,
-  Space,
-  Tag,
-  Typography,
-} from "antd";
+import { Alert, Badge, Button, Card, Input, Skeleton, Space, Tag, Typography } from "antd";
 import { useEffect, useRef, useState } from "react";
 
 import { useAppendTicketMessage, useCloseTicket } from "../api/mutations";
@@ -46,9 +29,7 @@ function TicketDetailPage() {
   const detail = useTicketDetail(id, {
     refetchInterval: (q) => {
       const status = q.state.data?.status;
-      return status === "open" || status === "pending_staff" || status === "pending_user"
-        ? POLL.ticket
-        : false;
+      return status === "open" || status === "pending_staff" || status === "pending_user" ? POLL.ticket : false;
     },
   });
   const [draft, setDraft] = useState("");
@@ -136,11 +117,7 @@ function TicketDetailPage() {
       </Card>
       <Card title={t("support.conversation")}>
         <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-          <div
-            ref={scrollRef}
-            onScroll={onScroll}
-            style={{ maxHeight: 480, overflow: "auto" }}
-          >
+          <div ref={scrollRef} onScroll={onScroll} style={{ maxHeight: 480, overflow: "auto" }}>
             <Space orientation="vertical" size={12} style={{ width: "100%" }}>
               {(ticket.messages ?? []).map((m) => (
                 <TicketBubble

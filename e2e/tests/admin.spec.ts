@@ -3,10 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { fillTotp } from "./totp";
 
-test.skip(
-  !process.env.SUPERDL_ADMIN_E2E,
-  "管理端 e2e 门控:SUPERDL_ADMIN_E2E=1 开启(需 API 8000 已迁移 + seed)",
-);
+test.skip(!process.env.SUPERDL_ADMIN_E2E, "管理端 e2e 门控:SUPERDL_ADMIN_E2E=1 开启(需 API 8000 已迁移 + seed)");
 
 const ADMIN = process.env.SUPERDL_ADMIN_BASE ?? "http://localhost:5174";
 const SEED_ADMIN = {

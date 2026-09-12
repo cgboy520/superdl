@@ -91,10 +91,7 @@ export function SettingsTab({
                 }
                 confirm({
                   title: t("services.settings.authOffConfirmTitle"),
-                  consequences: [
-                    t("services.settings.authOffConfirmBody"),
-                    t("services.settings.authOffConfirmKeep"),
-                  ],
+                  consequences: [t("services.settings.authOffConfirmBody"), t("services.settings.authOffConfirmKeep")],
                   danger: true,
                   onOk: () => setAuth(false),
                 });
@@ -136,17 +133,11 @@ export function SettingsTab({
               <Typography.Text type="secondary">{t("copy.sshKeyOnly")}</Typography.Text>
             </>
           )}
-          {withSsh && (
-            <Typography.Text type="secondary">{t("services.settings.sshOpenNote")}</Typography.Text>
-          )}
+          {withSsh && <Typography.Text type="secondary">{t("services.settings.sshOpenNote")}</Typography.Text>}
         </Space>
       </Card>
 
-      <Card
-        size="small"
-        title={t("services.detail.dangerZone")}
-        style={{ borderColor: token.colorErrorBorder }}
-      >
+      <Card size="small" title={t("services.detail.dangerZone")} style={{ borderColor: token.colorErrorBorder }}>
         <Space orientation="vertical">
           <Typography.Text type="secondary">{t("services.detail.dangerNote")}</Typography.Text>
           <Tooltip title={deletable ? undefined : t("services.actions.deleteNeedsStopped")}>

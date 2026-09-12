@@ -144,12 +144,7 @@ function RevisionForm({ service, onClose }: { service: ServiceOut; onClose: () =
       consequences: [t("services.revision.confirmBody"), t("services.revision.confirmKeep")],
       onOk: async () => {
         // 幂等键 = 抽屉 nonce + 表单快照
-        const idempotencyKey = idemKeyOf("svc-rev", [
-          nonce,
-          service.slug,
-          service.revision,
-          JSON.stringify(body),
-        ]);
+        const idempotencyKey = idemKeyOf("svc-rev", [nonce, service.slug, service.revision, JSON.stringify(body)]);
         try {
           await create.mutateAsync({ body, idempotencyKey });
           message.success(t("services.revision.started", { no: nextNo }));
@@ -191,78 +186,76 @@ function RevisionForm({ service, onClose }: { service: ServiceOut; onClose: () =
         </Space>
       }
     >
-    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-      <Alert type="warning" showIcon title={t("services.revision.notice")} />
-      <Card size="small" title={t("services.revision.sectionContainer")}>
-        <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-          <ContainerFields
-            image={image}
-            onImage={setImage}
-            command={command}
-            onCommand={setCommand}
-            argRows={argRows}
-            onArgRows={setArgRows}
-            envRows={envRows}
-            onEnvRows={setEnvRows}
-            collapsibleEnv
-          />
-          {keepKeys.length > 0 && (
-            <Space orientation="vertical" size={4} style={{ width: "100%" }}>
-              <Typography.Text type="secondary">{t("services.revision.keptSecrets")}</Typography.Text>
-              {keepKeys.map((key) => (
-                <Space key={key} wrap>
-                  <Typography.Text code>{key}</Typography.Text>
-                  <Tag>{t("services.revision.keepCurrent")}</Tag>
-                  <Button size="small" onClick={() => overrideSecret(key)}>
-                    {t("services.revision.override")}
-                  </Button>
-                  <Button size="small" onClick={() => setKeepKeys((ks) => ks.filter((k) => k !== key))}>
-                    {t("services.revision.remove")}
-                  </Button>
-                </Space>
-              ))}
-              <Typography.Text type="secondary">{t("services.revision.keptHint")}</Typography.Text>
-            </Space>
-          )}
-          {inst?.data_disk_id != null && (
-            <Alert type="info" showIcon title={t("services.revision.diskNote")} />
-          )}
-        </Space>
-      </Card>
-      <Card size="small" title={t("services.revision.sectionAccess")}>
-        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-          <PublicAccessFields
-            port={port}
-            onPort={setPort}
-            healthPath={healthPath}
-            onHealthPath={setHealthPath}
-            requireApiKey={service.require_api_key}
-            onRequireApiKey={() => undefined}
-            hideAuth
-          />
-          <Typography.Text type="secondary">{t("services.revision.authNote")}</Typography.Text>
-        </Space>
-      </Card>
-      <Card size="small" title={t("services.revision.sectionAdvanced")}>
-        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-          <Checkbox checked={withSsh} onChange={(e) => setWithSsh(e.target.checked)}>
-            {t("services.form.withSsh")}
-          </Checkbox>
-          <Typography.Text type="secondary">{t("services.form.withSshHint")}</Typography.Text>
-          {withSsh && <SshKeyPicker value={keyIds} onChange={setKeyIds} />}
-        </Space>
-      </Card>
-      <Card size="small" title={t("services.revision.sectionSpec")}>
-        <Typography.Text type="secondary">
-          {t("services.revision.specFixed", {
-            no: service.revision,
-            spec: specLine,
-            billing: billingKey ? t(billingKey) : (inst?.market ?? "—"),
-          })}
-        </Typography.Text>
-      </Card>
-    </Space>
-    {leave.modal}
+      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <Alert type="warning" showIcon title={t("services.revision.notice")} />
+        <Card size="small" title={t("services.revision.sectionContainer")}>
+          <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+            <ContainerFields
+              image={image}
+              onImage={setImage}
+              command={command}
+              onCommand={setCommand}
+              argRows={argRows}
+              onArgRows={setArgRows}
+              envRows={envRows}
+              onEnvRows={setEnvRows}
+              collapsibleEnv
+            />
+            {keepKeys.length > 0 && (
+              <Space orientation="vertical" size={4} style={{ width: "100%" }}>
+                <Typography.Text type="secondary">{t("services.revision.keptSecrets")}</Typography.Text>
+                {keepKeys.map((key) => (
+                  <Space key={key} wrap>
+                    <Typography.Text code>{key}</Typography.Text>
+                    <Tag>{t("services.revision.keepCurrent")}</Tag>
+                    <Button size="small" onClick={() => overrideSecret(key)}>
+                      {t("services.revision.override")}
+                    </Button>
+                    <Button size="small" onClick={() => setKeepKeys((ks) => ks.filter((k) => k !== key))}>
+                      {t("services.revision.remove")}
+                    </Button>
+                  </Space>
+                ))}
+                <Typography.Text type="secondary">{t("services.revision.keptHint")}</Typography.Text>
+              </Space>
+            )}
+            {inst?.data_disk_id != null && <Alert type="info" showIcon title={t("services.revision.diskNote")} />}
+          </Space>
+        </Card>
+        <Card size="small" title={t("services.revision.sectionAccess")}>
+          <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+            <PublicAccessFields
+              port={port}
+              onPort={setPort}
+              healthPath={healthPath}
+              onHealthPath={setHealthPath}
+              requireApiKey={service.require_api_key}
+              onRequireApiKey={() => undefined}
+              hideAuth
+            />
+            <Typography.Text type="secondary">{t("services.revision.authNote")}</Typography.Text>
+          </Space>
+        </Card>
+        <Card size="small" title={t("services.revision.sectionAdvanced")}>
+          <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+            <Checkbox checked={withSsh} onChange={(e) => setWithSsh(e.target.checked)}>
+              {t("services.form.withSsh")}
+            </Checkbox>
+            <Typography.Text type="secondary">{t("services.form.withSshHint")}</Typography.Text>
+            {withSsh && <SshKeyPicker value={keyIds} onChange={setKeyIds} />}
+          </Space>
+        </Card>
+        <Card size="small" title={t("services.revision.sectionSpec")}>
+          <Typography.Text type="secondary">
+            {t("services.revision.specFixed", {
+              no: service.revision,
+              spec: specLine,
+              billing: billingKey ? t(billingKey) : (inst?.market ?? "—"),
+            })}
+          </Typography.Text>
+        </Card>
+      </Space>
+      {leave.modal}
     </Drawer>
   );
 }

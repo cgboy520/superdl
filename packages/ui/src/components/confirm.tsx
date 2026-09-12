@@ -34,9 +34,7 @@ export function useConfirm() {
                 {line}
               </Typography.Paragraph>
             ))}
-            {opts.impact ? (
-              <Typography.Text type="secondary">{opts.impact}</Typography.Text>
-            ) : null}
+            {opts.impact ? <Typography.Text type="secondary">{opts.impact}</Typography.Text> : null}
           </Space>
         ),
         okText: opts.okText,
@@ -122,9 +120,7 @@ export function TypeConfirmModal({
     >
       <Typography.Paragraph>{body}</Typography.Paragraph>
       <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-        <Typography.Text type="secondary">
-          {t("confirm.typeNameToConfirm", { name: targetName })}
-        </Typography.Text>
+        <Typography.Text type="secondary">{t("confirm.typeNameToConfirm", { name: targetName })}</Typography.Text>
         <Input
           value={typed}
           onChange={(e) => setTyped(e.target.value)}

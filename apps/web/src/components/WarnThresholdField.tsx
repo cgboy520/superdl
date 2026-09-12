@@ -47,12 +47,7 @@ export function WarnThresholdField({ size, style }: { size?: "small" | "middle";
         onChange={(v) => setWarnHours(v ?? undefined)}
         onPressEnter={save}
       />
-      <Button
-        size={size}
-        loading={setThreshold.isPending}
-        icon={saved ? <CheckOutlined /> : undefined}
-        onClick={save}
-      >
+      <Button size={size} loading={setThreshold.isPending} icon={saved ? <CheckOutlined /> : undefined} onClick={save}>
         {saved ? t("billing.saved") : t("billing.save")}
       </Button>
       <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>

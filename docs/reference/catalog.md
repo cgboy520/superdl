@@ -10,14 +10,14 @@ SKU 管理(管理端 CRUD)、用户端市场查询、平台镜像目录与近似
 
 ## 契约
 
-| 端点 | 角色/鉴权 | 说明 |
-|---|---|---|
-| `GET /api/v1/skus?tier=&gpu_model=` | 匿名 | 仅 on 架;含 available_count(每请求按节点台账算,全部 SKU 批量一次)、`period_enabled`、`spot_enabled` |
-| `GET /api/v1/images` | 匿名 | 平台镜像目录;`is_prewarmed` 为计算值 |
-| `GET /api/admin/v1/skus` | ops/finance/readonly | SkuAdminOut 含 `capacity_gpus / sold_share / actual_oversell` |
-| `POST /api/admin/v1/skus` | ops | 创建;`period_enabled` 省略即 true;`spot_enabled` 省略即 false |
-| `PATCH /api/admin/v1/skus/{sku_id}?force=` | ops | 可改 `pool_label` + `mig_profile`(成对,仅下架态;在售改任一 409 `CONFLICT`)。撞业务唯一键 409 `skuBusinessKeyExists`。`status→on` 硬校验「台账存在 model_matches 且 pool 相符的 Ready 节点」,失败 409 `SKU_NOT_SELLABLE`,force 跳过 |
-| `GET /api/admin/v1/skus/capacity-preview` | ops/readonly | query `pool_label&gpu_model&gpu_cores_pct&oversell_cores&vram_gb&vcpu&mem_gb` → `{matching_nodes, ready_gpus, total_gpus, est_instances, warnings[]}`;纯 DB,hami 池 est = ready_gpus × ⌊100×oversell/pct⌋。`gpu_model` 留空 = CPU 规格预览:只按池匹配节点,`ready_gpus/total_gpus` 恒 0,est 走 `sellable_cpu_slots` |
+| 端点                                       | 角色/鉴权            | 说明                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /api/v1/skus?tier=&gpu_model=`        | 匿名                 | 仅 on 架;含 available_count(每请求按节点台账算,全部 SKU 批量一次)、`period_enabled`、`spot_enabled`                                                                                                                                                                                                                |
+| `GET /api/v1/images`                       | 匿名                 | 平台镜像目录;`is_prewarmed` 为计算值                                                                                                                                                                                                                                                                               |
+| `GET /api/admin/v1/skus`                   | ops/finance/readonly | SkuAdminOut 含 `capacity_gpus / sold_share / actual_oversell`                                                                                                                                                                                                                                                      |
+| `POST /api/admin/v1/skus`                  | ops                  | 创建;`period_enabled` 省略即 true;`spot_enabled` 省略即 false                                                                                                                                                                                                                                                      |
+| `PATCH /api/admin/v1/skus/{sku_id}?force=` | ops                  | 可改 `pool_label` + `mig_profile`(成对,仅下架态;在售改任一 409 `CONFLICT`)。撞业务唯一键 409 `skuBusinessKeyExists`。`status→on` 硬校验「台账存在 model_matches 且 pool 相符的 Ready 节点」,失败 409 `SKU_NOT_SELLABLE`,force 跳过                                                                                 |
+| `GET /api/admin/v1/skus/capacity-preview`  | ops/readonly         | query `pool_label&gpu_model&gpu_cores_pct&oversell_cores&vram_gb&vcpu&mem_gb` → `{matching_nodes, ready_gpus, total_gpus, est_instances, warnings[]}`;纯 DB,hami 池 est = ready_gpus × ⌊100×oversell/pct⌋。`gpu_model` 留空 = CPU 规格预览:只按池匹配节点,`ready_gpus/total_gpus` 恒 0,est 走 `sellable_cpu_slots` |
 
 `capacity_gpus / sold_share / actual_oversell` 由 adminapi 组装 catalog+nodes+orchestrator 三个 service 得出,catalog 不反向依赖。
 

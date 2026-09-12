@@ -9,12 +9,7 @@ import { useTranslation } from "react-i18next";
 
 import type { AdminSettlementGapOut } from "@superdl/api-client";
 
-import {
-  isApiError,
-  useReplaySettlementGap,
-  useResolveSettlementGap,
-  useSettlementGaps,
-} from "../../api";
+import { isApiError, useReplaySettlementGap, useResolveSettlementGap, useSettlementGaps } from "../../api";
 import { BulkBar, runBulk } from "../../components/BulkBar";
 import { ReasonAction } from "../../components/ReasonAction";
 import { useApiErrorText } from "@superdl/ui";
@@ -48,8 +43,18 @@ export function SettlementGapsTab() {
     ...(kind ? { kind } : {}),
     unresolved: unresolvedOnly,
   };
-  const { data, queryKey, isLoading, isError, error, refetch, hasNextPage, fetchNextPage, isFetchingNextPage, isFetchNextPageError } =
-    useSettlementGaps(params);
+  const {
+    data,
+    queryKey,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+  } = useSettlementGaps(params);
   const refresh = () => qc.invalidateQueries({ queryKey });
 
   const replay = useReplaySettlementGap();
@@ -155,13 +160,8 @@ export function SettlementGapsTab() {
             title: t("finance.gapReason"),
             dataIndex: "reason",
             render: (v: string) => {
-              const labelKey =
-                v in REASON_LABEL_KEY ? REASON_LABEL_KEY[v as GapReason] : undefined;
-              return (
-                <Tag color={v === "dead_letter" ? "red" : "orange"}>
-                  {labelKey ? t(labelKey) : v}
-                </Tag>
-              );
+              const labelKey = v in REASON_LABEL_KEY ? REASON_LABEL_KEY[v as GapReason] : undefined;
+              return <Tag color={v === "dead_letter" ? "red" : "orange"}>{labelKey ? t(labelKey) : v}</Tag>;
             },
           },
           {
@@ -199,9 +199,7 @@ export function SettlementGapsTab() {
                             message.success(t("finance.gapReplayed"));
                             refresh();
                           } catch (e) {
-                            message.error(
-                              errText(e, t("common.actionFailed", { action: t("finance.gapReplay") })),
-                            );
+                            message.error(errText(e, t("common.actionFailed", { action: t("finance.gapReplay") })));
                           }
                         },
                       })

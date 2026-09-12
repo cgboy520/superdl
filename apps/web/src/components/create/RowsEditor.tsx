@@ -154,7 +154,10 @@ export function RowsEditor<T extends { id: string }>({
             />
             {preview && (
               <>
-                <Typography.Text type={preview.skipped > 0 ? "warning" : "secondary"} style={{ fontSize: fontSize.caption }}>
+                <Typography.Text
+                  type={preview.skipped > 0 ? "warning" : "secondary"}
+                  style={{ fontSize: fontSize.caption }}
+                >
                   {t("rowsEditor.previewSummary", { count: preview.rows.length, skipped: preview.skipped })}
                 </Typography.Text>
                 {bulk.previewColumns && preview.rows.length > 0 && (
@@ -163,7 +166,11 @@ export function RowsEditor<T extends { id: string }>({
                     rowKey="id"
                     pagination={false}
                     dataSource={preview.rows}
-                    columns={bulk.previewColumns.map((c, i) => ({ key: i, title: c.title, render: (_: unknown, r: T) => c.render(r) }))}
+                    columns={bulk.previewColumns.map((c, i) => ({
+                      key: i,
+                      title: c.title,
+                      render: (_: unknown, r: T) => c.render(r),
+                    }))}
                   />
                 )}
               </>

@@ -37,9 +37,7 @@ function Freshness({ updatedAt, intervalMs, paused, onTogglePause, onRefresh, re
       </Typography.Text>
       {intervalMs !== false && (
         <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-          {paused
-            ? t("freshness.paused")
-            : t("freshness.autoRefresh", { seconds: Math.round(intervalMs / 1000) })}
+          {paused ? t("freshness.paused") : t("freshness.autoRefresh", { seconds: Math.round(intervalMs / 1000) })}
         </Typography.Text>
       )}
       {intervalMs !== false && onTogglePause && (
@@ -92,7 +90,13 @@ export function PageHeader({ title, description, extra, breadcrumb, back, freshn
       )}
       {back && !breadcrumb && (
         <div>
-          <Button type="text" size="small" icon={<ArrowLeftOutlined />} onClick={back.onClick} style={{ paddingInline: 4 }}>
+          <Button
+            type="text"
+            size="small"
+            icon={<ArrowLeftOutlined />}
+            onClick={back.onClick}
+            style={{ paddingInline: 4 }}
+          >
             {back.label}
           </Button>
         </div>

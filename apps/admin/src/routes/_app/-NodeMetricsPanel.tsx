@@ -65,10 +65,7 @@ export function NodeMetricsPanel({
             ]}
           />
           {grafanaUrl && (
-            <Button
-              size="small"
-              onClick={() => window.open(grafanaUrl, "_blank", "noopener,noreferrer")}
-            >
+            <Button size="small" onClick={() => window.open(grafanaUrl, "_blank", "noopener,noreferrer")}>
               {t("nodes.openGrafana")}
             </Button>
           )}
@@ -88,4 +85,3 @@ export function NodeMetricsPanel({
     </Card>
   );
 }
-

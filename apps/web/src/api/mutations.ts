@@ -1,8 +1,6 @@
 /** 写操作封装:生成 fetcher + useMutation;成功后按各 hook 声明的 invalidates 失效查询。 */
 
-import type { ApiError,
-  SshKeyOut,
-} from "@superdl/api-client";
+import type { ApiError, SshKeyOut } from "@superdl/api-client";
 import {
   addSshKeyApiV1SshKeysPost,
   appendMessageApiV1TicketsTicketIdMessagesPost,
@@ -89,10 +87,7 @@ interface MutationOpts<TData> {
 /** 页面侧可传的项;失效域由各 hook 声明 */
 type CallerOpts<TData = unknown> = Omit<MutationOpts<TData>, "invalidates">;
 
-export function useApiMutation<TVars, TData>(
-  fn: (vars: TVars) => Promise<TData>,
-  opts: MutationOpts<TData>,
-) {
+export function useApiMutation<TVars, TData>(fn: (vars: TVars) => Promise<TData>, opts: MutationOpts<TData>) {
   const queryClient = useQueryClient();
   const { message } = App.useApp();
   const errText = useApiErrorText();
@@ -117,7 +112,10 @@ export const useLogin = (o?: CallerOpts) =>
   useApiMutation((body: LoginRequest) => loginApiV1AuthLoginPost(body), { ...o, invalidates: [] });
 /** 设置/修改/找回密码(手机号 + 验证码);返回新 token 对。 */
 export const useResetPassword = (o?: CallerOpts) =>
-  useApiMutation((body: PasswordResetRequest) => resetPasswordApiV1AuthPasswordResetPost(body), { ...o, invalidates: [] });
+  useApiMutation((body: PasswordResetRequest) => resetPasswordApiV1AuthPasswordResetPost(body), {
+    ...o,
+    invalidates: [],
+  });
 
 /** 登出:current = 撤销本设备 refresh token;all = 撤销该账号全部会话。之后清本地并整页刷新,请求失败不阻断。 */
 export function useLogout() {
@@ -165,8 +163,7 @@ export const useReleaseInstance = (o?: { onSuccess?: () => void }) =>
   });
 export const useRenameInstance = () =>
   useApiMutation(
-    ({ uuid, name }: { uuid: string; name: string }) =>
-      renameInstanceApiV1InstancesUuidPatch(uuid, { name }),
+    ({ uuid, name }: { uuid: string; name: string }) => renameInstanceApiV1InstancesUuidPatch(uuid, { name }),
     { invalidates: ["instances"] },
   );
 /** 包周期续费带幂等键;键由 modal 每次打开生成,关掉重开才换。 */
@@ -187,16 +184,16 @@ export const useSubscribeInstance = (uuid: string, o?: CallerOpts<RenewOut>) =>
   );
 /** 竞价转按量:只翻 market 与单价,不带幂等键;失效面含账单。 */
 export const useConvertToOnDemand = (uuid: string, o?: CallerOpts<InstanceOut>) =>
-  useApiMutation(
-    (_v: void) => convertToOnDemandApiV1InstancesUuidToOnDemandPost(uuid),
-    { ...o, invalidates: [...INSTANCE_INVALIDATES] },
-  );
+  useApiMutation((_v: void) => convertToOnDemandApiV1InstancesUuidToOnDemandPost(uuid), {
+    ...o,
+    invalidates: [...INSTANCE_INVALIDATES],
+  });
 /** 自动续费开关:只改订阅行,失效面只有实例域。 */
 export const useSetAutoRenew = (uuid: string, o?: CallerOpts<InstanceOut>) =>
-  useApiMutation(
-    (enabled: boolean) => setAutoRenewApiV1InstancesUuidAutoRenewPost(uuid, { enabled }),
-    { ...o, invalidates: ["instances"] },
-  );
+  useApiMutation((enabled: boolean) => setAutoRenewApiV1InstancesUuidAutoRenewPost(uuid, { enabled }), {
+    ...o,
+    invalidates: ["instances"],
+  });
 export const useResetJupyterToken = () =>
   useApiMutation((uuid: string) => resetJupyterTokenApiV1InstancesUuidResetJupyterTokenPost(uuid), {
     invalidates: ["instances"],
@@ -212,10 +209,7 @@ export const useCreateService = (o?: { onSuccess?: (d: ServiceOut) => void; sile
     { ...o, invalidates: [...SERVICE_INVALIDATES, "skus", "disks"] },
   );
 /** 版本更新(重建):幂等键按表单快照派生。 */
-export const useCreateRevision = (
-  slug: string,
-  o?: { onSuccess?: (d: ServiceOut) => void; silentError?: boolean },
-) =>
+export const useCreateRevision = (slug: string, o?: { onSuccess?: (d: ServiceOut) => void; silentError?: boolean }) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: ServiceRevisionCreate; idempotencyKey: string }) =>
       createRevisionApiV1ServicesSlugRevisionsPost(slug, body, { "Idempotency-Key": idempotencyKey }),
@@ -263,8 +257,7 @@ export const useCreateRecharge = (o?: { onSuccess?: (d: unknown) => void }) =>
   );
 export const useMockPay = (o?: { onSuccess?: () => void }) =>
   useApiMutation(
-    (vars: { order_no: string; amount: string }) =>
-      mockWebhookApiV1WebhooksMockPost({ body: JSON.stringify(vars) }),
+    (vars: { order_no: string; amount: string }) => mockWebhookApiV1WebhooksMockPost({ body: JSON.stringify(vars) }),
     { ...o, invalidates: ["wallet", "recharge", "ledger"] },
   );
 /** 申请退款:幂等键按表单快照派生。 */
@@ -282,22 +275,19 @@ export const useCreateInvoice = (o?: { onSuccess?: () => void }) =>
     { ...o, invalidates: ["invoices", "invoice-eligible"] },
   );
 export const useSubmitRealName = (o?: { onSuccess?: () => void }) =>
-  useApiMutation(
-    (body: RealNameRequest) => submitRealNameApiV1MeRealNamePost(body),
-    { ...o, invalidates: ["me"] },
-  );
+  useApiMutation((body: RealNameRequest) => submitRealNameApiV1MeRealNamePost(body), { ...o, invalidates: ["me"] });
 export const useSetWarnThreshold = (o?: { onSuccess?: () => void }) =>
-  useApiMutation(
-    (hours: number) => setWarnThresholdApiV1MeWarnThresholdPatch({ low_balance_warn_hours: hours }),
-    { ...o, invalidates: ["me"] },
-  );
+  useApiMutation((hours: number) => setWarnThresholdApiV1MeWarnThresholdPatch({ low_balance_warn_hours: hours }), {
+    ...o,
+    invalidates: ["me"],
+  });
 
 /** 申请注销:服务端按 (user_id, pending) 幂等。 */
 export const useCreateDeletionRequest = (o?: { onSuccess?: () => void }) =>
-  useApiMutation(
-    (body: DeletionRequestCreate) => createDeletionRequestApiV1MeDeletionRequestPost(body),
-    { ...o, invalidates: ["deletion-request"] },
-  );
+  useApiMutation((body: DeletionRequestCreate) => createDeletionRequestApiV1MeDeletionRequestPost(body), {
+    ...o,
+    invalidates: ["deletion-request"],
+  });
 export const useCancelDeletionRequest = (o?: { onSuccess?: () => void }) =>
   useApiMutation((_v: void) => cancelDeletionRequestApiV1MeDeletionRequestCancelPost(), {
     ...o,
@@ -312,10 +302,10 @@ export const useCreateDisk = (o?: { onSuccess?: () => void }) =>
     { ...o, invalidates: ["disks", "wallet"] },
   );
 export const useExpandDisk = (o?: { onSuccess?: () => void }) =>
-  useApiMutation(
-    ({ uuid, body }: { uuid: string; body: DiskExpand }) => expandDiskApiV1DisksUuidPatch(uuid, body),
-    { ...o, invalidates: ["disks", "wallet"] },
-  );
+  useApiMutation(({ uuid, body }: { uuid: string; body: DiskExpand }) => expandDiskApiV1DisksUuidPatch(uuid, body), {
+    ...o,
+    invalidates: ["disks", "wallet"],
+  });
 export const useDeleteDisk = (o?: { onSuccess?: () => void }) =>
   useApiMutation((uuid: string) => deleteDiskApiV1DisksUuidDelete(uuid), {
     ...o,
@@ -323,10 +313,10 @@ export const useDeleteDisk = (o?: { onSuccess?: () => void }) =>
   });
 
 export const useAddSshKey = (o?: { onSuccess?: (key: SshKeyOut) => void }) =>
-  useApiMutation(
-    (body: { name: string; public_key: string }) => addSshKeyApiV1SshKeysPost(body),
-    { ...o, invalidates: ["ssh-keys"] },
-  );
+  useApiMutation((body: { name: string; public_key: string }) => addSshKeyApiV1SshKeysPost(body), {
+    ...o,
+    invalidates: ["ssh-keys"],
+  });
 export const useDeleteSshKey = () =>
   useApiMutation((keyId: number) => deleteSshKeyApiV1SshKeysKeyIdDelete(keyId), {
     invalidates: ["ssh-keys"],

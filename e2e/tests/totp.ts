@@ -30,10 +30,7 @@ export function totp(secret: string, atMs: number = Date.now()): string {
   const digest = createHmac("sha1", key).update(msg).digest();
   const offset = digest[digest.length - 1] & 0x0f;
   const binary =
-    ((digest[offset] & 0x7f) << 24) |
-    (digest[offset + 1] << 16) |
-    (digest[offset + 2] << 8) |
-    digest[offset + 3];
+    ((digest[offset] & 0x7f) << 24) | (digest[offset + 1] << 16) | (digest[offset + 2] << 8) | digest[offset + 3];
   return String(binary % 1_000_000).padStart(6, "0");
 }
 

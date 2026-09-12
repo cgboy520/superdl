@@ -19,13 +19,7 @@ import {
   useInstanceEventPages,
   useInstanceLogs,
 } from "../api/queries";
-import {
-  CopyButton,
-  InstanceStatusBadge,
-  SpotTag,
-  SubscriptionTag,
-  TierTag,
-} from "../components/common";
+import { CopyButton, InstanceStatusBadge, SpotTag, SubscriptionTag, TierTag } from "../components/common";
 import { HourlyBillsTable } from "../components/HourlyBillsTable";
 import { EventsPanel } from "../components/instance/EventsPanel";
 import { LogsPanel } from "../components/instance/LogsPanel";
@@ -42,9 +36,7 @@ export const Route = createFileRoute("/_console/instances_/$uuid")({
   validateSearch: (search: Record<string, unknown>): { tab?: string } => {
     // tab 白名单:非法值回默认 Tab
     const tab = search["tab"];
-    return typeof tab === "string" && (DETAIL_TABS as readonly string[]).includes(tab)
-      ? { tab }
-      : {};
+    return typeof tab === "string" && (DETAIL_TABS as readonly string[]).includes(tab) ? { tab } : {};
   },
   component: InstanceDetail,
 });
@@ -70,9 +62,7 @@ function AccessTab({ instance, running }: { instance: InstanceOut; running: bool
         <Card size="small" title="SSH">
           <Space orientation="vertical">
             <Typography.Text code>{access?.ssh_command}</Typography.Text>
-            {access?.ssh_command && (
-              <CopyButton text={access.ssh_command} label={t("instances.copyCommand")} />
-            )}
+            {access?.ssh_command && <CopyButton text={access.ssh_command} label={t("instances.copyCommand")} />}
             <Typography.Text type="secondary">{t("copy.sshKeyOnly")}</Typography.Text>
           </Space>
         </Card>
@@ -150,20 +140,9 @@ function EventsTab({ uuid, status }: { uuid: string; status?: string }) {
     const timer = setTimeout(() => void queryClient.invalidateQueries({ queryKey: key }), 3_000);
     return () => clearTimeout(timer);
   }, [status, uuid, queryClient]);
-  const {
-    data,
-    isLoading,
-    isError,
-    refetch,
-    hasNextPage,
-    isFetchingNextPage,
-    isFetchNextPageError,
-    fetchNextPage,
-  } = useInstanceEventPages(uuid);
-  const events = useMemo<InstanceEventOut[]>(
-    () => (data?.pages ?? []).flatMap((p) => p.items),
-    [data],
-  );
+  const { data, isLoading, isError, refetch, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } =
+    useInstanceEventPages(uuid);
+  const events = useMemo<InstanceEventOut[]>(() => (data?.pages ?? []).flatMap((p) => p.items), [data]);
   return (
     <EventsPanel
       events={events}
@@ -181,7 +160,6 @@ function EventsTab({ uuid, status }: { uuid: string; status?: string }) {
 function BillsTab({ instanceId }: { instanceId: number }) {
   return <HourlyBillsTable query={useHourlyBillPages({ instance_id: instanceId })} />;
 }
-
 
 /** 设置 Tab:改名 + 危险区(释放),与服务详情的设置 Tab 对齐。 */
 function SettingsTab({
@@ -213,12 +191,7 @@ function SettingsTab({
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
             style={{ width: controlWidth.lg }}
           />
-          <Button
-            type="primary"
-            disabled={!dirty}
-            loading={rename.isPending}
-            onClick={() => void save()}
-          >
+          <Button type="primary" disabled={!dirty} loading={rename.isPending} onClick={() => void save()}>
             {t("instances.saveName")}
           </Button>
         </Space>
@@ -258,8 +231,7 @@ function InstanceDetail() {
   });
   const { date, tzOffsetMinutes } = localToday();
   const { data: daily } = useDailySummary(date, tzOffsetMinutes, { refetchInterval: POLL.daily });
-  const todayAmount =
-    (instance && daily?.items.find((it) => it.instance_id === instance.id)?.total_amount) ?? null;
+  const todayAmount = (instance && daily?.items.find((it) => it.instance_id === instance.id)?.total_amount) ?? null;
 
   if (instanceError && !instance) {
     return <DataErrorAlert onRetry={() => void refetchInstance()} />;
@@ -304,10 +276,7 @@ function InstanceDetail() {
               <Typography.Title level={4} style={{ margin: 0 }}>
                 {instance.name}
               </Typography.Title>
-              <InstanceStatusBadge
-                status={instance.status}
-                frozenDeadline={instance.frozen_deadline}
-              />
+              <InstanceStatusBadge status={instance.status} frozenDeadline={instance.frozen_deadline} />
               <TierTag tier={instance.spec["tier"] as string} pool={instance.spec["pool_label"] as string} />
               <SubscriptionTag market={instance.market} subscription={instance.subscription} />
               <SpotTag market={instance.market} />
@@ -319,7 +288,10 @@ function InstanceDetail() {
                 { label: t("instances.labelId"), children: instance.uuid.slice(0, 12) },
                 {
                   label: t("instances.labelSpec"),
-                  children: t("instances.specLine", { model: instance.spec["gpu_model"] as string, count: instance.gpu_count }),
+                  children: t("instances.specLine", {
+                    model: instance.spec["gpu_model"] as string,
+                    count: instance.gpu_count,
+                  }),
                 },
                 {
                   label: t("instances.labelBilling"),
@@ -330,7 +302,10 @@ function InstanceDetail() {
                         instance.subscription.period,
                         instance.subscription.period_count,
                       )
-                    : t("instances.pricePerCard", { price: formatHourlyPrice(instance.price_hourly), count: instance.gpu_count }),
+                    : t("instances.pricePerCard", {
+                        price: formatHourlyPrice(instance.price_hourly),
+                        count: instance.gpu_count,
+                      }),
                 },
                 ...(instance.subscription
                   ? [
@@ -353,9 +328,7 @@ function InstanceDetail() {
           <InstanceActions
             instance={instance}
             size="middle"
-            onShowEvents={() =>
-              void navigate({ to: "/instances/$uuid", params: { uuid }, search: { tab: "events" } })
-            }
+            onShowEvents={() => void navigate({ to: "/instances/$uuid", params: { uuid }, search: { tab: "events" } })}
           />
         </Space>
       </Card>
@@ -381,10 +354,7 @@ function InstanceDetail() {
             key: "logs",
             label: t("instances.tabLogs"),
             children: (
-              <LogsTab
-                uuid={uuid}
-                viewable={instance.status === "running" || instance.status === "stopping"}
-              />
+              <LogsTab uuid={uuid} viewable={instance.status === "running" || instance.status === "stopping"} />
             ),
           },
           {
@@ -401,11 +371,7 @@ function InstanceDetail() {
             key: "settings",
             label: t("instances.tabSettings"),
             children: (
-              <SettingsTab
-                instance={instance}
-                canRelease={canRelease}
-                onRelease={() => setReleaseOpen(true)}
-              />
+              <SettingsTab instance={instance} canRelease={canRelease} onRelease={() => setReleaseOpen(true)} />
             ),
           },
         ]}

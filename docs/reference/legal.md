@@ -9,15 +9,15 @@
 
 ## 契约
 
-| 端点 | 角色/鉴权 | 说明 |
-|---|---|---|
-| `GET /api/v1/legal/{doc_key}?lang=` | 匿名 | 当前 published 版;en-US 缺失回落 zh-CN 且 `fallback=true`;doc_key 非法或无 published 404 |
-| `GET /api/admin/v1/legal-docs` | ops/finance/readonly(admin 恒可) | 总览:doc_key × locale 状态格 |
-| `GET /api/admin/v1/legal-docs/{doc_key}/versions?locale=` | 同上 | 版本历史(version 倒序) |
-| `POST /api/admin/v1/legal-docs/{doc_key}/versions` | 仅 admin | `{locale}`:基于当前 published 复制出新 draft(version = max+1);该语言无 published 时以 zh-CN published 为底稿;每 (doc_key, locale) 同时只一个 draft(409) |
-| `PUT /api/admin/v1/legal-docs/versions/{version_id}` | 仅 admin | 改 title / content_md / effective_note;非 draft 409;审计 detail 记版本与正文 sha256 |
-| `POST /api/admin/v1/legal-docs/versions/{version_id}/publish` | 仅 admin | 同事务把同 (doc_key, locale) 旧 published 转 archived;审计 |
-| `POST /api/admin/v1/legal-docs/versions/{version_id}/archive` | 仅 admin | draft → archived;published 不可直接归档(409) |
+| 端点                                                          | 角色/鉴权                        | 说明                                                                                                                                                    |
+| ------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/v1/legal/{doc_key}?lang=`                           | 匿名                             | 当前 published 版;en-US 缺失回落 zh-CN 且 `fallback=true`;doc_key 非法或无 published 404                                                                |
+| `GET /api/admin/v1/legal-docs`                                | ops/finance/readonly(admin 恒可) | 总览:doc_key × locale 状态格                                                                                                                            |
+| `GET /api/admin/v1/legal-docs/{doc_key}/versions?locale=`     | 同上                             | 版本历史(version 倒序)                                                                                                                                  |
+| `POST /api/admin/v1/legal-docs/{doc_key}/versions`            | 仅 admin                         | `{locale}`:基于当前 published 复制出新 draft(version = max+1);该语言无 published 时以 zh-CN published 为底稿;每 (doc_key, locale) 同时只一个 draft(409) |
+| `PUT /api/admin/v1/legal-docs/versions/{version_id}`          | 仅 admin                         | 改 title / content_md / effective_note;非 draft 409;审计 detail 记版本与正文 sha256                                                                     |
+| `POST /api/admin/v1/legal-docs/versions/{version_id}/publish` | 仅 admin                         | 同事务把同 (doc_key, locale) 旧 published 转 archived;审计                                                                                              |
+| `POST /api/admin/v1/legal-docs/versions/{version_id}/archive` | 仅 admin                         | draft → archived;published 不可直接归档(409)                                                                                                            |
 
 前端:用户端 `/legal/terms`、`/legal/privacy`、`/legal/deletion-notice` 渲染 published 正文;管理端在系统设置「法务文档」维护。
 

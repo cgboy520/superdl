@@ -60,12 +60,7 @@ export function marketValidateSearch(search: Record<string, unknown>): MarketSea
   else if (typeof mode === "string" && isBillingPeriod(mode)) out.mode = mode;
   // on_demand 为默认,剥离
   if (typeof search.model === "string" && search.model !== "") out.model = search.model;
-  if (
-    typeof search.tier === "string" &&
-    search.tier !== "" &&
-    search.tier !== "cpu" &&
-    search.tier in skuTierMap
-  ) {
+  if (typeof search.tier === "string" && search.tier !== "" && search.tier !== "cpu" && search.tier in skuTierMap) {
     out.tier = search.tier;
   }
   const vram = posInt(search.vram);
@@ -179,7 +174,11 @@ function MarketPage() {
   // 市场页无报价端点,按 policies 折扣本地估算(展示值,创建页报价为准)
   const quote =
     selected && period
-      ? periodQuoteOf(selected.price_hourly, { units: billingUnits(isCpu ? 0 : gpuCount), period, periodCount }, discounts)
+      ? periodQuoteOf(
+          selected.price_hourly,
+          { units: billingUnits(isCpu ? 0 : gpuCount), period, periodCount },
+          discounts,
+        )
       : undefined;
 
   const selectedVariant = selected ? skuVariant(selected.tier, selected.pool_label) : null;
@@ -278,7 +277,11 @@ function MarketPage() {
             : {
                 label: t("create.configCostLabel"),
                 // 大字带「× N 卡」/「整机」后缀(价格口径显性化);CPU 规格 price_hourly 已是整机时价
-                suffix: !selected ? undefined : isCpu ? t("sku.wholeMachine") : t("sku.timesCards", { count: gpuCount }),
+                suffix: !selected
+                  ? undefined
+                  : isCpu
+                    ? t("sku.wholeMachine")
+                    : t("sku.timesCards", { count: gpuCount }),
                 value: !selected ? (
                   "--"
                 ) : isSpot ? (
@@ -302,7 +305,9 @@ function MarketPage() {
                     ? t("instances.pricePerInstance", { price: formatHourlyPrice(unitPrice) })
                     : t("instances.pricePerCard", { price: formatHourlyPrice(unitPrice), count: gpuCount })}
                 </span>
-                <Typography.Text type="secondary">{isCpu ? t("copy.billingBasisCpu") : t("copy.billingBasis")}</Typography.Text>
+                <Typography.Text type="secondary">
+                  {isCpu ? t("copy.billingBasisCpu") : t("copy.billingBasis")}
+                </Typography.Text>
                 {isSpot && <Typography.Text type="secondary">{t("copy.spotBillingBasis")}</Typography.Text>}
               </Space>
             )
@@ -339,7 +344,9 @@ function MarketPage() {
             t("copy.billingRules.r1"),
             t("copy.billingRules.r2"),
             t("copy.billingRules.r3"),
-            policies ? t("copy.billingRules.r4", { hours: policies.freeze_grace_hours }) : t("copy.billingRules.r4Fallback"),
+            policies
+              ? t("copy.billingRules.r4", { hours: policies.freeze_grace_hours })
+              : t("copy.billingRules.r4Fallback"),
             t("copy.billingRules.r5"),
           ].map((r) => (
             <li key={r} style={{ marginBottom: 8 }}>

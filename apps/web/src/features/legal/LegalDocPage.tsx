@@ -32,19 +32,11 @@ export function LegalDocPage({ docKey }: { docKey: LegalDocKey }) {
           {data && (
             <>
               {data.fallback && (
-                <Alert
-                  type="info"
-                  showIcon
-                  title={t("legal.fallbackNote")}
-                  style={{ marginBottom: 24 }}
-                />
+                <Alert type="info" showIcon title={t("legal.fallbackNote")} style={{ marginBottom: 24 }} />
               )}
               <Typography.Title level={2}>{data.title}</Typography.Title>
               <LegalMarkdown content={data.content_md} />
-              <Typography.Paragraph
-                type="secondary"
-                style={{ marginTop: 32, fontSize: fontSize.caption }}
-              >
+              <Typography.Paragraph type="secondary" style={{ marginTop: 32, fontSize: fontSize.caption }}>
                 {t("legal.versionLine", {
                   version: data.version,
                   date: data.published_at ? formatDateTime(data.published_at) : "—",

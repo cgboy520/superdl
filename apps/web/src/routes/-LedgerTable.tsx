@@ -26,20 +26,9 @@ export function LedgerTable() {
   const { token } = theme.useToken();
   const navigate = useNavigate();
   const { ledger: ledgerFilter } = routeApi.useSearch();
-  const {
-    data,
-    isLoading,
-    isError,
-    refetch,
-    isFetchingNextPage,
-    isFetchNextPageError,
-    hasNextPage,
-    fetchNextPage,
-  } = useLedgerPages(20);
-  const merged = useMemo<LedgerEntryOut[]>(
-    () => (data?.pages ?? []).flatMap((p) => p.items),
-    [data],
-  );
+  const { data, isLoading, isError, refetch, isFetchingNextPage, isFetchNextPageError, hasNextPage, fetchNextPage } =
+    useLedgerPages(20);
+  const merged = useMemo<LedgerEntryOut[]>(() => (data?.pages ?? []).flatMap((p) => p.items), [data]);
   // 类型筛选为客户端筛选,只作用于已加载页
   const filtered = useMemo<LedgerEntryOut[]>(
     () => (ledgerFilter ? merged.filter((r) => r.type === ledgerFilter) : merged),
@@ -100,9 +89,7 @@ export function LedgerTable() {
             title: t("billing.colAmount"),
             render: (_, r) => (
               // 收入绿/支出红
-              <span
-                style={{ color: r.amount.startsWith("-") ? token.colorError : token.colorSuccess }}
-              >
+              <span style={{ color: r.amount.startsWith("-") ? token.colorError : token.colorSuccess }}>
                 {r.amount.startsWith("-") ? "" : "+"}
                 {formatMoney(r.amount)}
               </span>
@@ -125,4 +112,3 @@ export function LedgerTable() {
     </Space>
   );
 }
-

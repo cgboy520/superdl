@@ -60,10 +60,7 @@ export function envEntriesOf(rows: readonly EnvRow[]): EnvRow[] {
 }
 
 /** 批量粘贴 KEY=VALUE(一行一条):非法名 / 保留名 / 重名的行跳过并计数。 */
-export function parseEnvBulk(
-  text: string,
-  existingNames: Iterable<string>,
-): { rows: EnvRow[]; skipped: number } {
+export function parseEnvBulk(text: string, existingNames: Iterable<string>): { rows: EnvRow[]; skipped: number } {
   const existing = new Set(existingNames);
   const seen = new Set<string>();
   const rows: EnvRow[] = [];

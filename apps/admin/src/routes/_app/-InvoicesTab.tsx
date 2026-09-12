@@ -10,7 +10,14 @@ import { HexTag, TableErrorEmpty } from "@superdl/ui/components";
 import { useCsvExport } from "@superdl/ui";
 import { useFormat } from "@superdl/ui";
 
-import { type InvoiceRow, exportInvoicesCsv, isApiError, useInvoices, useIssueInvoice, useRejectInvoice } from "../../api";
+import {
+  type InvoiceRow,
+  exportInvoicesCsv,
+  isApiError,
+  useInvoices,
+  useIssueInvoice,
+  useRejectInvoice,
+} from "../../api";
 import { LIST_CAPS, ListCapNote } from "../../components/ListCapNote";
 import { ReasonAction } from "../../components/ReasonAction";
 import { isValidReason, REASON_MAX_LEN } from "../../lib/validators";
@@ -248,12 +255,7 @@ export function InvoicesTab() {
               return (
                 <Space wrap>
                   <Tooltip title={writable ? "" : noPerm}>
-                    <Button
-                      size="small"
-                      type="primary"
-                      disabled={!writable}
-                      onClick={() => setIssueTarget(r)}
-                    >
+                    <Button size="small" type="primary" disabled={!writable} onClick={() => setIssueTarget(r)}>
                       {t("finance.invoiceIssue")}
                     </Button>
                   </Tooltip>
@@ -278,12 +280,7 @@ export function InvoicesTab() {
         ]}
       />
       <ListCapNote rows={rows.length} cap={LIST_CAPS.invoices} />
-      <IssueInvoiceModal
-        target={issueTarget}
-        onClose={() => setIssueTarget(null)}
-        onDone={refresh}
-      />
+      <IssueInvoiceModal target={issueTarget} onClose={() => setIssueTarget(null)} onDone={refresh} />
     </>
   );
 }
-

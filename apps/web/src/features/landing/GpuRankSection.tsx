@@ -20,10 +20,7 @@ export function GpuRankSection() {
   // 窄屏紧凑模式:收缩定宽列
   const wide = Grid.useBreakpoint().md;
 
-  const onSale = useMemo(
-    () => new Set((skus ?? []).map((s) => normalizeGpuModel(s.gpu_model))),
-    [skus],
-  );
+  const onSale = useMemo(() => new Set((skus ?? []).map((s) => normalizeGpuModel(s.gpu_model))), [skus]);
 
   const rows = useMemo(() => {
     const key = metric === "fp16" ? "fp16Tflops" : "fp32Tflops";
@@ -40,86 +37,83 @@ export function GpuRankSection() {
       title={t("landing.ranking.title")}
       subtitle={t("landing.ranking.subtitle")}
     >
-        <Tabs
-          centered
-          activeKey={metric}
-          onChange={(k) => setMetric(k as "fp16" | "fp32")}
-          items={[
-            { key: "fp16", label: t("landing.ranking.tabFp16") },
-            { key: "fp32", label: t("landing.ranking.tabFp32") },
-          ]}
-        />
-        <div style={{ maxWidth: 860, margin: "0 auto", display: "flex", flexDirection: "column", gap: 12 }}>
-          {rows.map((r, i) => (
-            <div key={r.model} style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <span
+      <Tabs
+        centered
+        activeKey={metric}
+        onChange={(k) => setMetric(k as "fp16" | "fp32")}
+        items={[
+          { key: "fp16", label: t("landing.ranking.tabFp16") },
+          { key: "fp32", label: t("landing.ranking.tabFp32") },
+        ]}
+      />
+      <div style={{ maxWidth: 860, margin: "0 auto", display: "flex", flexDirection: "column", gap: 12 }}>
+        {rows.map((r, i) => (
+          <div key={r.model} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span
+              style={{
+                width: 24,
+                height: 24,
+                borderRadius: "50%",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: fontSize.caption,
+                fontWeight: 700,
+                flexShrink: 0,
+                color: i < 3 ? "#fff" : token.colorTextSecondary,
+                background: i < 3 ? MEDALS[i] : token.colorFillSecondary,
+              }}
+            >
+              {i + 1}
+            </span>
+            <span
+              style={{
+                width: wide ? 150 : 104,
+                flexShrink: 0,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                fontSize: wide ? fontSize.body : fontSize.caption,
+              }}
+            >
+              {t("landing.ranking.modelVram", { label: r.spec.label, vram: r.spec.vramGb })}
+            </span>
+            <div style={{ flex: 1, minWidth: 32, background: token.colorFillQuaternary, borderRadius: 4, height: 14 }}>
+              <div
                 style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: "50%",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: fontSize.caption,
-                  fontWeight: 700,
-                  flexShrink: 0,
-                  color: i < 3 ? "#fff" : token.colorTextSecondary,
-                  background: i < 3 ? MEDALS[i] : token.colorFillSecondary,
+                  width: `${Math.max((r.value / max) * 100, 2)}%`,
+                  height: "100%",
+                  borderRadius: 4,
+                  background: `linear-gradient(90deg, ${colorPrimary}, ${chartAccentColors.indigo})`,
                 }}
-              >
-                {i + 1}
-              </span>
-              <span
-                style={{
-                  width: wide ? 150 : 104,
-                  flexShrink: 0,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                  fontSize: wide ? fontSize.body : fontSize.caption,
-                }}
-              >
-                {t("landing.ranking.modelVram", { label: r.spec.label, vram: r.spec.vramGb })}
-              </span>
-              <div style={{ flex: 1, minWidth: 32, background: token.colorFillQuaternary, borderRadius: 4, height: 14 }}>
-                <div
-                  style={{
-                    width: `${Math.max((r.value / max) * 100, 2)}%`,
-                    height: "100%",
-                    borderRadius: 4,
-                    background: `linear-gradient(90deg, ${colorPrimary}, ${chartAccentColors.indigo})`,
-                  }}
-                />
-              </div>
-              <span
-                style={{
-                  width: wide ? 170 : 56,
-                  textAlign: "right",
-                  flexShrink: 0,
-                  fontSize: wide ? fontSize.body : fontSize.caption,
-                }}
-              >
-                {r.value}
-                {wide ? (metric === "fp16" ? " Tensor TFLOPS" : " TFLOPS") : ""}
-              </span>
-              <span style={{ width: wide ? 56 : 40, flexShrink: 0, fontSize: wide ? fontSize.body : fontSize.caption }}>
-                {onSale.has(r.model) && (
-                  <Link to="/" hash="pricing">
-                    <Tag color={colorPrimary} style={{ marginInlineEnd: 0 }}>
-                      {t("landing.ranking.onSale")}
-                    </Tag>
-                  </Link>
-                )}
-              </span>
+              />
             </div>
-          ))}
-        </div>
-        <Typography.Paragraph
-          type="secondary"
-          style={{ textAlign: "center", marginTop: 24, fontSize: fontSize.caption }}
-        >
-          {t("landing.ranking.footnote")}
-        </Typography.Paragraph>
+            <span
+              style={{
+                width: wide ? 170 : 56,
+                textAlign: "right",
+                flexShrink: 0,
+                fontSize: wide ? fontSize.body : fontSize.caption,
+              }}
+            >
+              {r.value}
+              {wide ? (metric === "fp16" ? " Tensor TFLOPS" : " TFLOPS") : ""}
+            </span>
+            <span style={{ width: wide ? 56 : 40, flexShrink: 0, fontSize: wide ? fontSize.body : fontSize.caption }}>
+              {onSale.has(r.model) && (
+                <Link to="/" hash="pricing">
+                  <Tag color={colorPrimary} style={{ marginInlineEnd: 0 }}>
+                    {t("landing.ranking.onSale")}
+                  </Tag>
+                </Link>
+              )}
+            </span>
+          </div>
+        ))}
+      </div>
+      <Typography.Paragraph type="secondary" style={{ textAlign: "center", marginTop: 24, fontSize: fontSize.caption }}>
+        {t("landing.ranking.footnote")}
+      </Typography.Paragraph>
     </LandingSection>
   );
 }

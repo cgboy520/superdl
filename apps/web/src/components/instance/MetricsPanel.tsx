@@ -95,7 +95,13 @@ export function MetricsPanel({ uuid, running }: { uuid: string; running: boolean
           />
         </Tooltip>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(360px, 100%), 1fr))", gap: layout.cardGap }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(360px, 100%), 1fr))",
+          gap: layout.cardGap,
+        }}
+      >
         {Object.entries(SERIES_META).map(([key, meta]) => {
           const points = series[key] ?? [];
           const scale = scaleOf(points, meta.unit);

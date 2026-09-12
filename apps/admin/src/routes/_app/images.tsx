@@ -241,216 +241,211 @@ function ImagesPage() {
         </Tooltip>
       }
     >
-    <Card>
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 16 }}
-        title={t("images.prewarmInfo")}
-        description={t("images.prewarmInfoDesc")}
-      />
-      <Table<ImageRow>
-        scroll={{ x: 1100 }}
-        sticky={{ offsetHeader: layout.topBarHeight }}
-        rowKey="id"
-        loading={isLoading}
-        locale={{
-          emptyText: (
-            <TableErrorEmpty
-              isError={isError}
-              isForbidden={isApiError(error) && error.status === 403}
-              onRetry={() => void refetch()}
-            />
-          ),
-        }}
-        dataSource={images ?? []}
-        pagination={false}
-        expandable={{
-          expandedRowRender: (r) => <ImageNodesPanel imageId={r.id} />,
-          expandedRowKeys: expandedImage != null ? [expandedImage] : [],
-          onExpand: (open, r) => setExpandedImage(open ? r.id : undefined),
-        }}
-        columns={[
-          {
-            title: t("images.colFramework"),
-            fixed: "left",
-            width: 180,
-            render: (_, r) => `${r.framework} ${r.framework_version}`,
-          },
-          { title: "Python", dataIndex: "python_version" },
-          { title: "CUDA", dataIndex: "cuda_version" },
-          {
-            title: t("images.colImageRef"),
-            dataIndex: "image_ref",
-            width: 320,
-            render: (v: string) => (
-              <Typography.Text copyable ellipsis style={{ maxWidth: 300 }}>
-                {v}
-              </Typography.Text>
+      <Card>
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          title={t("images.prewarmInfo")}
+          description={t("images.prewarmInfoDesc")}
+        />
+        <Table<ImageRow>
+          scroll={{ x: 1100 }}
+          sticky={{ offsetHeader: layout.topBarHeight }}
+          rowKey="id"
+          loading={isLoading}
+          locale={{
+            emptyText: (
+              <TableErrorEmpty
+                isError={isError}
+                isForbidden={isApiError(error) && error.status === 403}
+                onRetry={() => void refetch()}
+              />
             ),
-          },
-          {
-            title: t("images.colPrewarm"),
-            dataIndex: "prewarm_enabled",
-            render: (v: boolean, r) => (
-              <Tooltip title={writable ? "" : t("nodes.readonlyNoOp")}>
-                <Switch
-                  checked={v}
-                  disabled={!writable}
-                  // 行级 loading
-                  loading={update.isPending && update.variables?.imageId === r.id}
-                  onChange={(on) => {
-                    // 关闭预热影响新节点的秒级启动承诺:L1 确认;开启直接生效
-                    if (on) {
-                      update.mutate({ imageId: r.id, data: { prewarm_enabled: true } });
-                      return;
-                    }
-                    confirm({
-                      title: t("images.prewarmOffTitle", { name: `${r.framework} ${r.framework_version}` }),
-                      consequences: [t("images.prewarmOffBody")],
-                      okText: t("images.prewarmOffOk"),
-                      onOk: () => update.mutate({ imageId: r.id, data: { prewarm_enabled: false } }),
-                    });
-                  }}
-                />
-              </Tooltip>
-            ),
-          },
-          {
-            title: t("images.colCoverage"),
-            render: (_, r) => {
-              if (!r.prewarm_enabled) return <Tag>{t("images.disabled")}</Tag>;
-              if (r.coverage.total === 0) return <Tag color="default">{t("images.awaitingPatrol")}</Tag>;
-              return (
-                <Space>
-                  <Progress
-                    percent={r.coverage.pct}
-                    size="small"
-                    style={{ width: 120 }}
-                    status={r.failed_nodes > 0 ? "exception" : undefined}
-                  />
-                  <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                    {r.coverage.cached}/{r.coverage.total}
-                  </Typography.Text>
-                  {r.failed_nodes > 0 && (
-                    <Tag
-                      color="red"
-                      style={{ cursor: "pointer" }}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => setExpandedImage(r.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") setExpandedImage(r.id);
-                      }}
-                    >
-                      {t("images.failedCount", { count: r.failed_nodes })}
-                    </Tag>
-                  )}
-                </Space>
-              );
+          }}
+          dataSource={images ?? []}
+          pagination={false}
+          expandable={{
+            expandedRowRender: (r) => <ImageNodesPanel imageId={r.id} />,
+            expandedRowKeys: expandedImage != null ? [expandedImage] : [],
+            onExpand: (open, r) => setExpandedImage(open ? r.id : undefined),
+          }}
+          columns={[
+            {
+              title: t("images.colFramework"),
+              fixed: "left",
+              width: 180,
+              render: (_, r) => `${r.framework} ${r.framework_version}`,
             },
-          },
-          {
-            title: t("skus.colActions"),
-            width: 220,
-            fixed: "right",
-            render: (_, r) => (
-              <Space>
-                <Tooltip title={writable ? t("images.prewarmTip") : t("nodes.readonlyNoOp")}>
-                  <Button
-                    size="small"
-                    disabled={!writable || !r.prewarm_enabled}
-                    loading={prewarm.isPending && prewarm.variables?.imageId === r.id}
-                    onClick={() => prewarm.mutate({ imageId: r.id })}
-                  >
-                    {t("images.prewarmNow")}
-                  </Button>
-                </Tooltip>
-                <Tooltip title={writable ? "" : t("common.readonlyNoEdit")}>
-                  <Button size="small" disabled={!writable} onClick={() => openEdit(r)}>
-                    {t("skus.edit")}
-                  </Button>
-                </Tooltip>
-                <RowMoreMenu>
-                  <ReasonAction
-                    label={t("images.delete")}
-                    type="text"
-                    target={`${r.framework} ${r.framework_version}`}
-                    title={t("images.deleteTitle")}
-                    confirmText={t("images.deleteConfirm", { name: `${r.framework} ${r.framework_version}` })}
-                    danger
+            { title: "Python", dataIndex: "python_version" },
+            { title: "CUDA", dataIndex: "cuda_version" },
+            {
+              title: t("images.colImageRef"),
+              dataIndex: "image_ref",
+              width: 320,
+              render: (v: string) => (
+                <Typography.Text copyable ellipsis style={{ maxWidth: 300 }}>
+                  {v}
+                </Typography.Text>
+              ),
+            },
+            {
+              title: t("images.colPrewarm"),
+              dataIndex: "prewarm_enabled",
+              render: (v: boolean, r) => (
+                <Tooltip title={writable ? "" : t("nodes.readonlyNoOp")}>
+                  <Switch
+                    checked={v}
                     disabled={!writable}
-                    disabledReason={t("images.readonlyNoDelete")}
-                    onSubmit={async (reason) => {
-                      await del.mutateAsync({ imageId: r.id, data: { reason } });
+                    // 行级 loading
+                    loading={update.isPending && update.variables?.imageId === r.id}
+                    onChange={(on) => {
+                      // 关闭预热影响新节点的秒级启动承诺:L1 确认;开启直接生效
+                      if (on) {
+                        update.mutate({ imageId: r.id, data: { prewarm_enabled: true } });
+                        return;
+                      }
+                      confirm({
+                        title: t("images.prewarmOffTitle", { name: `${r.framework} ${r.framework_version}` }),
+                        consequences: [t("images.prewarmOffBody")],
+                        okText: t("images.prewarmOffOk"),
+                        onOk: () => update.mutate({ imageId: r.id, data: { prewarm_enabled: false } }),
+                      });
                     }}
                   />
-                </RowMoreMenu>
-              </Space>
-            ),
-          },
-        ]}
-      />
-      <Drawer
-        title={
-          editing === "new"
-            ? t("images.newImage")
-            : t("images.editTitle", { name: typeof editing === "object" && editing ? editing.framework : "" })
-        }
-        open={editing !== null}
-        onClose={() => setEditing(null)}
-        width="min(480px, 100vw)"
-        extra={
-          <Button type="primary" loading={create.isPending || update.isPending} onClick={submit}>
-            {t("skus.submit")}
-          </Button>
-        }
-      >
-        <Form form={form} layout="vertical">
-          <Form.Item name="framework" label={t("images.colFramework")} rules={[{ required: true }]}>
-            <Input placeholder={t("images.frameworkPlaceholder")} />
-          </Form.Item>
-          <Form.Item name="framework_version" label={t("images.frameworkVersionLabel")} rules={[{ required: true }]}>
-            <Input placeholder={t("images.versionPlaceholder")} />
-          </Form.Item>
-          <Form.Item name="python_version" label={t("images.pythonVersionLabel")} rules={[{ required: true }]}>
-            <Input placeholder={t("images.pythonPlaceholder")} />
-          </Form.Item>
-          <Form.Item name="cuda_version" label={t("images.cudaVersionLabel")} rules={[{ required: true }]}>
-            <Input placeholder={t("images.cudaPlaceholder")} />
-          </Form.Item>
-          {editing !== "new" && (
-            <Alert
-              type="warning"
-              showIcon
-              style={{ marginBottom: 16 }}
-              title={t("images.refChangeWarn")}
-            />
-          )}
-          <Form.Item
-            name="image_ref"
-            label={t("images.imageRefLabel")}
-            rules={[
-              { required: true, min: 3 },
-              {
-                validator: (_, v: string) =>
-                  v && !/@sha256:[0-9a-f]{64}$/.test(v)
-                    ? Promise.reject(new Error(t("images.tagRule")))
-                    : Promise.resolve(),
+                </Tooltip>
+              ),
+            },
+            {
+              title: t("images.colCoverage"),
+              render: (_, r) => {
+                if (!r.prewarm_enabled) return <Tag>{t("images.disabled")}</Tag>;
+                if (r.coverage.total === 0) return <Tag color="default">{t("images.awaitingPatrol")}</Tag>;
+                return (
+                  <Space>
+                    <Progress
+                      percent={r.coverage.pct}
+                      size="small"
+                      style={{ width: 120 }}
+                      status={r.failed_nodes > 0 ? "exception" : undefined}
+                    />
+                    <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                      {r.coverage.cached}/{r.coverage.total}
+                    </Typography.Text>
+                    {r.failed_nodes > 0 && (
+                      <Tag
+                        color="red"
+                        style={{ cursor: "pointer" }}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setExpandedImage(r.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") setExpandedImage(r.id);
+                        }}
+                      >
+                        {t("images.failedCount", { count: r.failed_nodes })}
+                      </Tag>
+                    )}
+                  </Space>
+                );
               },
-            ]}
-          >
-            <Input placeholder={`${registryPrefix}pytorch:2.13.0-cu132-py313@sha256:…`} />
-          </Form.Item>
-          <Form.Item name="sort" label={t("images.sortLabel")}>
-            <InputNumber min={0} max={9999} style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item name="prewarm_enabled" label={t("images.prewarmEnabledLabel")} valuePropName="checked">
-            <Switch />
-          </Form.Item>
-        </Form>
-      </Drawer>
-    </Card>
+            },
+            {
+              title: t("skus.colActions"),
+              width: 220,
+              fixed: "right",
+              render: (_, r) => (
+                <Space>
+                  <Tooltip title={writable ? t("images.prewarmTip") : t("nodes.readonlyNoOp")}>
+                    <Button
+                      size="small"
+                      disabled={!writable || !r.prewarm_enabled}
+                      loading={prewarm.isPending && prewarm.variables?.imageId === r.id}
+                      onClick={() => prewarm.mutate({ imageId: r.id })}
+                    >
+                      {t("images.prewarmNow")}
+                    </Button>
+                  </Tooltip>
+                  <Tooltip title={writable ? "" : t("common.readonlyNoEdit")}>
+                    <Button size="small" disabled={!writable} onClick={() => openEdit(r)}>
+                      {t("skus.edit")}
+                    </Button>
+                  </Tooltip>
+                  <RowMoreMenu>
+                    <ReasonAction
+                      label={t("images.delete")}
+                      type="text"
+                      target={`${r.framework} ${r.framework_version}`}
+                      title={t("images.deleteTitle")}
+                      confirmText={t("images.deleteConfirm", { name: `${r.framework} ${r.framework_version}` })}
+                      danger
+                      disabled={!writable}
+                      disabledReason={t("images.readonlyNoDelete")}
+                      onSubmit={async (reason) => {
+                        await del.mutateAsync({ imageId: r.id, data: { reason } });
+                      }}
+                    />
+                  </RowMoreMenu>
+                </Space>
+              ),
+            },
+          ]}
+        />
+        <Drawer
+          title={
+            editing === "new"
+              ? t("images.newImage")
+              : t("images.editTitle", { name: typeof editing === "object" && editing ? editing.framework : "" })
+          }
+          open={editing !== null}
+          onClose={() => setEditing(null)}
+          width="min(480px, 100vw)"
+          extra={
+            <Button type="primary" loading={create.isPending || update.isPending} onClick={submit}>
+              {t("skus.submit")}
+            </Button>
+          }
+        >
+          <Form form={form} layout="vertical">
+            <Form.Item name="framework" label={t("images.colFramework")} rules={[{ required: true }]}>
+              <Input placeholder={t("images.frameworkPlaceholder")} />
+            </Form.Item>
+            <Form.Item name="framework_version" label={t("images.frameworkVersionLabel")} rules={[{ required: true }]}>
+              <Input placeholder={t("images.versionPlaceholder")} />
+            </Form.Item>
+            <Form.Item name="python_version" label={t("images.pythonVersionLabel")} rules={[{ required: true }]}>
+              <Input placeholder={t("images.pythonPlaceholder")} />
+            </Form.Item>
+            <Form.Item name="cuda_version" label={t("images.cudaVersionLabel")} rules={[{ required: true }]}>
+              <Input placeholder={t("images.cudaPlaceholder")} />
+            </Form.Item>
+            {editing !== "new" && (
+              <Alert type="warning" showIcon style={{ marginBottom: 16 }} title={t("images.refChangeWarn")} />
+            )}
+            <Form.Item
+              name="image_ref"
+              label={t("images.imageRefLabel")}
+              rules={[
+                { required: true, min: 3 },
+                {
+                  validator: (_, v: string) =>
+                    v && !/@sha256:[0-9a-f]{64}$/.test(v)
+                      ? Promise.reject(new Error(t("images.tagRule")))
+                      : Promise.resolve(),
+                },
+              ]}
+            >
+              <Input placeholder={`${registryPrefix}pytorch:2.13.0-cu132-py313@sha256:…`} />
+            </Form.Item>
+            <Form.Item name="sort" label={t("images.sortLabel")}>
+              <InputNumber min={0} max={9999} style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item name="prewarm_enabled" label={t("images.prewarmEnabledLabel")} valuePropName="checked">
+              <Switch />
+            </Form.Item>
+          </Form>
+        </Drawer>
+      </Card>
     </PageContainer>
   );
 }

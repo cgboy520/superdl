@@ -1,12 +1,7 @@
 /** 竞价冒烟:市场页切竞价 → 折后价 → 创建页知情同意(不勾选关不掉)→ 建出竞价实例 → 列表「可回收」标记 → 转按量 → 标记消失。 */
 import { expect, test } from "@playwright/test";
 
-import {
-  fillCustomImageForm,
-  pickSharedStandardSku,
-  setupUser,
-  waitFirstRowRunning,
-} from "./helpers";
+import { fillCustomImageForm, pickSharedStandardSku, setupUser, waitFirstRowRunning } from "./helpers";
 
 test("买竞价并转按量", async ({ page }) => {
   // 建号 + 充值 + 公钥(API 直达)

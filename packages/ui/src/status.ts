@@ -3,15 +3,7 @@
 import { colorPrimary, statusColors } from "./tokens";
 
 export type InstanceStatus =
-  | "creating"
-  | "running"
-  | "stopping"
-  | "stopped"
-  | "starting"
-  | "frozen"
-  | "releasing"
-  | "released"
-  | "failed";
+  "creating" | "running" | "stopping" | "stopped" | "starting" | "frozen" | "releasing" | "released" | "failed";
 
 export interface StatusMeta {
   labelKey: string;
@@ -30,11 +22,26 @@ export function metaOf<M extends Record<string, unknown>>(map: M, key: string): 
 }
 
 export const instanceStatusMap = {
-  creating: { labelKey: "shared:status.instance.creating", color: statusColors.blue, badge: "processing", animated: true },
+  creating: {
+    labelKey: "shared:status.instance.creating",
+    color: statusColors.blue,
+    badge: "processing",
+    animated: true,
+  },
   running: { labelKey: "shared:status.instance.running", color: statusColors.green, badge: "success" },
-  stopping: { labelKey: "shared:status.instance.stopping", color: statusColors.blue, badge: "processing", animated: true },
+  stopping: {
+    labelKey: "shared:status.instance.stopping",
+    color: statusColors.blue,
+    badge: "processing",
+    animated: true,
+  },
   stopped: { labelKey: "shared:status.instance.stopped", color: statusColors.gray, badge: "default" },
-  starting: { labelKey: "shared:status.instance.starting", color: statusColors.blue, badge: "processing", animated: true },
+  starting: {
+    labelKey: "shared:status.instance.starting",
+    color: statusColors.blue,
+    badge: "processing",
+    animated: true,
+  },
   frozen: { labelKey: "shared:status.instance.frozen", color: statusColors.orange, badge: "warning" },
   releasing: { labelKey: "shared:status.instance.releasing", color: statusColors.red, badge: "error", animated: true },
   released: { labelKey: "shared:status.instance.released", color: statusColors.gray, badge: "default" },
@@ -42,12 +49,7 @@ export const instanceStatusMap = {
 } as const satisfies Record<InstanceStatus, StatusMeta>;
 
 /** 过渡态:列表/详情据此高频轮询。 */
-const TRANSIENT_INSTANCE_STATUSES: readonly string[] = [
-  "creating",
-  "starting",
-  "stopping",
-  "releasing",
-];
+const TRANSIENT_INSTANCE_STATUSES: readonly string[] = ["creating", "starting", "stopping", "releasing"];
 
 export function isTransientInstanceStatus(status: string): boolean {
   return TRANSIENT_INSTANCE_STATUSES.includes(status);
@@ -68,8 +70,16 @@ export function skuVariant(tier: string, poolLabel?: string | null): SkuVariant 
 export const skuTierMap = {
   dedicated: { labelKey: "shared:status.tier.dedicated", color: "#4F46E5" },
   // 白字对比度 ≥4.5:1(WCAG AA)
-  shared_mig: { labelKey: "shared:status.tier.shared_mig", color: "#0E7490", hintKey: "shared:status.tierHint.shared_mig" },
-  shared_hami: { labelKey: "shared:status.tier.shared_hami", color: statusColors.orange, hintKey: "shared:status.tierHint.shared_hami" },
+  shared_mig: {
+    labelKey: "shared:status.tier.shared_mig",
+    color: "#0E7490",
+    hintKey: "shared:status.tierHint.shared_mig",
+  },
+  shared_hami: {
+    labelKey: "shared:status.tier.shared_hami",
+    color: statusColors.orange,
+    hintKey: "shared:status.tierHint.shared_hami",
+  },
   cpu: { labelKey: "shared:status.tier.cpu", color: "#475569", hintKey: "shared:status.tierHint.cpu" },
 } as const satisfies Record<SkuVariant, { labelKey: string; color: string; hintKey?: string }>;
 
@@ -83,18 +93,15 @@ export const workloadTypeMap = {
 
 /** 在线服务派生状态(后端 services/state.py::derive_status,不落库)。unready = 容器在跑但健康检查未过,照常计费;released 译作「已删除」。 */
 export type ServiceStatus =
-  | "deploying"
-  | "running"
-  | "unready"
-  | "stopping"
-  | "stopped"
-  | "frozen"
-  | "failed"
-  | "releasing"
-  | "released";
+  "deploying" | "running" | "unready" | "stopping" | "stopped" | "frozen" | "failed" | "releasing" | "released";
 
 export const serviceStatusMap = {
-  deploying: { labelKey: "shared:status.service.deploying", color: statusColors.blue, badge: "processing", animated: true },
+  deploying: {
+    labelKey: "shared:status.service.deploying",
+    color: statusColors.blue,
+    badge: "processing",
+    animated: true,
+  },
   running: { labelKey: "shared:status.service.running", color: statusColors.green, badge: "success" },
   unready: {
     labelKey: "shared:status.service.unready",
@@ -102,7 +109,12 @@ export const serviceStatusMap = {
     badge: "warning",
     hintKey: "shared:status.serviceHint.unready",
   },
-  stopping: { labelKey: "shared:status.service.stopping", color: statusColors.blue, badge: "processing", animated: true },
+  stopping: {
+    labelKey: "shared:status.service.stopping",
+    color: statusColors.blue,
+    badge: "processing",
+    animated: true,
+  },
   stopped: { labelKey: "shared:status.service.stopped", color: statusColors.gray, badge: "default" },
   frozen: { labelKey: "shared:status.service.frozen", color: statusColors.orange, badge: "warning" },
   failed: { labelKey: "shared:status.service.failed", color: statusColors.red, badge: "error" },
@@ -224,27 +236,40 @@ export type ImageCacheStatus = "pending" | "pulling" | "cached" | "failed";
 
 export const imageCacheStatusMap = {
   pending: { labelKey: "shared:status.imageCache.pending", color: statusColors.gray, badge: "default" },
-  pulling: { labelKey: "shared:status.imageCache.pulling", color: statusColors.blue, badge: "processing", animated: true },
+  pulling: {
+    labelKey: "shared:status.imageCache.pulling",
+    color: statusColors.blue,
+    badge: "processing",
+    animated: true,
+  },
   cached: { labelKey: "shared:status.imageCache.cached", color: statusColors.green, badge: "success" },
   failed: { labelKey: "shared:status.imageCache.failed", color: statusColors.red, badge: "error" },
 } as const satisfies Record<ImageCacheStatus, StatusMeta>;
 
 /** 节点注册/加入状态(与 node_enrollments.status 严格一致) */
 export type NodeEnrollStatus =
-  | "pending"
-  | "installing"
-  | "rebooting"
-  | "joining"
-  | "joined"
-  | "failed"
-  | "expired"
-  | "revoked";
+  "pending" | "installing" | "rebooting" | "joining" | "joined" | "failed" | "expired" | "revoked";
 
 export const nodeEnrollStatusMap = {
   pending: { labelKey: "shared:status.nodeEnroll.pending", color: statusColors.gray, badge: "default" },
-  installing: { labelKey: "shared:status.nodeEnroll.installing", color: statusColors.blue, badge: "processing", animated: true },
-  rebooting: { labelKey: "shared:status.nodeEnroll.rebooting", color: statusColors.blue, badge: "processing", animated: true },
-  joining: { labelKey: "shared:status.nodeEnroll.joining", color: statusColors.blue, badge: "processing", animated: true },
+  installing: {
+    labelKey: "shared:status.nodeEnroll.installing",
+    color: statusColors.blue,
+    badge: "processing",
+    animated: true,
+  },
+  rebooting: {
+    labelKey: "shared:status.nodeEnroll.rebooting",
+    color: statusColors.blue,
+    badge: "processing",
+    animated: true,
+  },
+  joining: {
+    labelKey: "shared:status.nodeEnroll.joining",
+    color: statusColors.blue,
+    badge: "processing",
+    animated: true,
+  },
   joined: { labelKey: "shared:status.nodeEnroll.joined", color: statusColors.green, badge: "success" },
   failed: { labelKey: "shared:status.nodeEnroll.failed", color: statusColors.red, badge: "error" },
   expired: { labelKey: "shared:status.nodeEnroll.expired", color: statusColors.orange, badge: "warning" },

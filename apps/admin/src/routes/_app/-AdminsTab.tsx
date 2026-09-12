@@ -48,7 +48,8 @@ export function AdminsTab() {
   const { data, queryKey, isLoading, isError, error, refetch } = useAdminAccounts();
   // admin_mfa_enabled 仅超管可读,读不到按「开启」处理
   const mfaEnabled =
-    usePlatformConfig({ enabled: isSuperAdmin }).data?.items.find((i) => i.key === "admin_mfa_enabled")?.value !== "false";
+    usePlatformConfig({ enabled: isSuperAdmin }).data?.items.find((i) => i.key === "admin_mfa_enabled")?.value !==
+    "false";
 
   const [createOpen, setCreateOpen] = useState(false);
   const [pwdTarget, setPwdTarget] = useState<AdminAccountOut | null>(null);
@@ -144,7 +145,9 @@ export function AdminsTab() {
               target={row.username}
               title={t("admins.confirmStatusTitle", { name: row.username })}
               confirmText={
-                row.status === "active" ? t("admins.disableConfirm", { name: row.username }) : t("admins.enableConfirm", { name: row.username })
+                row.status === "active"
+                  ? t("admins.disableConfirm", { name: row.username })
+                  : t("admins.enableConfirm", { name: row.username })
               }
               danger={row.status === "active"}
               disabled={!isSuperAdmin || isSelf}
@@ -212,10 +215,22 @@ export function AdminsTab() {
               {t("admins.regenCodes")}
             </Button>
           )}
-          <Button onClick={() => { selfForm.resetFields(); setSelfOpen(true); }}>
+          <Button
+            onClick={() => {
+              selfForm.resetFields();
+              setSelfOpen(true);
+            }}
+          >
             {t("admins.changeOwnPassword")}
           </Button>
-          <Button type="primary" disabled={!isSuperAdmin} onClick={() => { createForm.resetFields(); setCreateOpen(true); }}>
+          <Button
+            type="primary"
+            disabled={!isSuperAdmin}
+            onClick={() => {
+              createForm.resetFields();
+              setCreateOpen(true);
+            }}
+          >
             {t("admins.create")}
           </Button>
         </Space>
@@ -290,12 +305,7 @@ export function AdminsTab() {
         }
         onCancel={() => setCodes(null)}
       >
-        <Alert
-          type="warning"
-          showIcon
-          style={{ marginBottom: 12 }}
-          title={t("admins.regenCodesHint")}
-        />
+        <Alert type="warning" showIcon style={{ marginBottom: 12 }} title={t("admins.regenCodesHint")} />
         <Card size="small">
           <Typography.Text code copyable={{ text: (codes ?? []).join("\n") }}>
             {t("login.recoveryCopy")}
@@ -314,7 +324,9 @@ export function AdminsTab() {
         onOk={async () => {
           const v = await createForm.validateFields();
           try {
-            await create.mutateAsync({ data: { username: v.username, password: v.password, role: v.role, reason: v.reason } });
+            await create.mutateAsync({
+              data: { username: v.username, password: v.password, role: v.role, reason: v.reason },
+            });
             message.success(t("admins.created"));
             setCreateOpen(false);
             refresh();

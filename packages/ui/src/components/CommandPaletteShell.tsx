@@ -143,10 +143,7 @@ export function CommandPaletteShell({
                 {g.items.map((item) => (
                   <Command.Item
                     key={item.key}
-                    value={
-                      item.value ??
-                      (typeof item.label === "string" ? `${item.label} ${item.key}` : item.key)
-                    }
+                    value={item.value ?? (typeof item.label === "string" ? `${item.label} ${item.key}` : item.key)}
                     keywords={item.keywords}
                     onSelect={() => go(item.run)}
                     style={itemStyle}

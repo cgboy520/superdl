@@ -1,12 +1,7 @@
 /** 包周期冒烟:市场页选包月 → 创建页「支付并创建」→ 余额一次性扣掉整段周期 → 列表显示「包月 · 剩 N 天」→ 续费 → 扣款回执。 */
 import { expect, test } from "@playwright/test";
 
-import {
-  fillCustomImageForm,
-  pickSharedStandardSku,
-  setupUser,
-  waitFirstRowRunning,
-} from "./helpers";
+import { fillCustomImageForm, pickSharedStandardSku, setupUser, waitFirstRowRunning } from "./helpers";
 
 test("买包月并续费", async ({ page }) => {
   // 建号 + 充值 + 公钥(API 直达)
@@ -36,12 +31,19 @@ test("买包月并续费", async ({ page }) => {
 
   // 余额:一次性扣掉整段周期
   await page.goto("/billing");
-  const balance = await page.getByText(/¥\s*[\d,]+\.\d{2}/).first().innerText();
+  const balance = await page
+    .getByText(/¥\s*[\d,]+\.\d{2}/)
+    .first()
+    .innerText();
   expect(Number(balance.replace(/[^\d.]/g, ""))).toBeLessThan(5000);
 
   // 续费:更多 → 续费 → 确认 → 扣款回执
   await page.goto("/instances");
-  await page.locator(".ant-table-row").first().getByRole("button", { name: /更\s*多/ }).click();
+  await page
+    .locator(".ant-table-row")
+    .first()
+    .getByRole("button", { name: /更\s*多/ })
+    .click();
   await page.getByRole("menuitem", { name: /^续\s*费$/ }).click();
   await expect(page.getByText("应付")).toBeVisible({ timeout: 15_000 });
   await page.getByRole("button", { name: /^确认续费$/ }).click();

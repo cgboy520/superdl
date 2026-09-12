@@ -21,15 +21,15 @@
 
 ## 2. 视觉与主题
 
-| | 用户端 `web` | 管理端 `admin` |
-|---|---|---|
-| 基调 | 浅色(默认)/ 暗色(深靛灰 `#0F1420` 系,顶栏图标钮切换,`localStorage("superdl.theme")` 持久化,初值跟系统) | 深色 NOC 风 |
-| 主色 | 靛蓝 `#4F46E5` | 同主色;亮青 `#22D3EE` 数据强调、琥珀 `#F59E0B` 告警 |
-| 品牌渐变 | 只用于公开层(主页 Hero / 公开顶栏 / CTA 横幅)与登录页左栏;控制台顶栏**中性色**(与侧栏同底 + 下边线),渐变底上的反白 CTA 走 `brandInverseButtonStyle` | 不用渐变 |
-| 实现 | antd 6 ConfigProvider token + components 级 token;暗色 = `theme.darkAlgorithm` + `webDarkTheme` 覆写,定义在 `packages/ui/src/tokens.ts`;全局 reset / 工具类在 `apps/web/src/styles.css`;`index.html` 内联脚本预置底色防 FOUC | antd `theme.darkAlgorithm` + 自定义背景 `#0B1220` 系(色值集中在 `adminColors`);表格密度由 `adminThemeComponents.Table` 统一 |
-| 字体 | 系统栈(`tokens.fontFamily`)+ body 级 tabular-nums | 同左;标识符列 `.mono` |
-| 布局 | 中性顶栏 56px(logo | 余额 · ⌘K · 通知铃 · 主题切换 · 用户菜单)+ 侧栏 200px(lg 以上常显;窄屏不渲染侧栏,导航走顶栏汉堡 Drawer,与侧栏共用 `ConsoleNavMenu`)+ `<main>` 内容区(`PageContainer` 1280) | 侧栏 200px(分组;按角色过滤;桌面可手动收成 80px 图标轨,收起态点图标导航;窄屏收为 0 宽走汉堡)+ 56px sticky 顶栏(环境徽标 | ⌘K 触发器 · 语言 · 告警铃 · 用户名与角色 ▾ 退出) |
-| 状态色 | running 绿 / creating·starting 蓝(动效)/ stopped 灰 / frozen 橙 / failed·releasing 红 | 同一套语义色,深色版调亮 |
+|          | 用户端 `web`                                                                                                                                                                                                                 | 管理端 `admin`                                                                                                                                                             |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 基调     | 浅色(默认)/ 暗色(深靛灰 `#0F1420` 系,顶栏图标钮切换,`localStorage("superdl.theme")` 持久化,初值跟系统)                                                                                                                       | 深色 NOC 风                                                                                                                                                                |
+| 主色     | 靛蓝 `#4F46E5`                                                                                                                                                                                                               | 同主色;亮青 `#22D3EE` 数据强调、琥珀 `#F59E0B` 告警                                                                                                                        |
+| 品牌渐变 | 只用于公开层(主页 Hero / 公开顶栏 / CTA 横幅)与登录页左栏;控制台顶栏**中性色**(与侧栏同底 + 下边线),渐变底上的反白 CTA 走 `brandInverseButtonStyle`                                                                          | 不用渐变                                                                                                                                                                   |
+| 实现     | antd 6 ConfigProvider token + components 级 token;暗色 = `theme.darkAlgorithm` + `webDarkTheme` 覆写,定义在 `packages/ui/src/tokens.ts`;全局 reset / 工具类在 `apps/web/src/styles.css`;`index.html` 内联脚本预置底色防 FOUC | antd `theme.darkAlgorithm` + 自定义背景 `#0B1220` 系(色值集中在 `adminColors`);表格密度由 `adminThemeComponents.Table` 统一                                                |
+| 字体     | 系统栈(`tokens.fontFamily`)+ body 级 tabular-nums                                                                                                                                                                            | 同左;标识符列 `.mono`                                                                                                                                                      |
+| 布局     | 中性顶栏 56px(logo                                                                                                                                                                                                           | 余额 · ⌘K · 通知铃 · 主题切换 · 用户菜单)+ 侧栏 200px(lg 以上常显;窄屏不渲染侧栏,导航走顶栏汉堡 Drawer,与侧栏共用 `ConsoleNavMenu`)+ `<main>` 内容区(`PageContainer` 1280) | 侧栏 200px(分组;按角色过滤;桌面可手动收成 80px 图标轨,收起态点图标导航;窄屏收为 0 宽走汉堡)+ 56px sticky 顶栏(环境徽标 | ⌘K 触发器 · 语言 · 告警铃 · 用户名与角色 ▾ 退出) |
+| 状态色   | running 绿 / creating·starting 蓝(动效)/ stopped 灰 / frozen 橙 / failed·releasing 红                                                                                                                                        | 同一套语义色,深色版调亮                                                                                                                                                    |
 
 **设计 token 纪律**:`packages/ui/src/tokens.ts` 是唯一事实源。
 ① 色值走 token(`webTheme` / `webDarkTheme` / `adminColors` / `statusColors` 等),禁止硬编码 hex;
@@ -107,6 +107,7 @@
 5. `* SSH 密钥`(必填):多选已有公钥;只有一把时自动勾选;无密钥时行内添加(名称 + **多行公钥框**)并自动选中,给 `ssh-keygen -t ed25519` 命令 + 复制与「公钥在 ~/.ssh/id_ed25519.pub」指引(不支持密码登录)。
 
 **结算条**(`CheckoutBar`):
+
 - 条上方 `notice` 槽:**未完成项清单**「还差 N 项:选择镜像 · 选择或添加 SSH 公钥 · 选择要挂载的数据盘」,每项可点击滚到对应卡(`scroll-margin-top` 补顶栏);主按钮禁用只作为兜底,原因不藏在 tooltip 里。
 - 费用项:按量 / 竞价 = `配置费用`(大字 + 「× N 卡」/「整机」后缀)+ `数据盘费用(按日)`(**只在真挂了盘时出**);包周期 = 周期费用 + 数据盘费用(如有)+ 到期时间(降级);「费用明细」Popover 逐行摊开(单价 × 卡数,CPU 规格写「整机 ¥X.XX」;盘价 GB·月折日;注明计费依据为实例事件流水)。
 - 主按钮文案:按量「创建并开机」、包周期「支付并创建」;提交中分步文案「正在创建数据盘…」→「正在创建实例…」;余额不足时按钮变「余额不足,去充值」;余额查询失败时禁用 + tooltip 并给可重试错误条。

@@ -22,7 +22,11 @@ export function SmsCodeField({
   return (
     <Form.Item>
       <Space.Compact style={{ width: "100%", alignItems: "flex-start" }}>
-        <Form.Item name={name} rules={[{ required: true, message: requiredMessage }]} style={{ flex: 1, marginBottom: 0 }}>
+        <Form.Item
+          name={name}
+          rules={[{ required: true, message: requiredMessage }]}
+          style={{ flex: 1, marginBottom: 0 }}
+        >
           <Input placeholder={placeholder} maxLength={6} autoComplete="one-time-code" aria-label={placeholder} />
         </Form.Item>
         <Button disabled={sms.countdown > 0} loading={sms.sending} onClick={onSend}>

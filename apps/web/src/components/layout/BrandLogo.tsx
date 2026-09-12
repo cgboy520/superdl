@@ -21,12 +21,7 @@ export function BrandLogo({ variant = "dark" }: { variant?: "light" | "dark" }) 
             <stop offset="1" stopColor={brandGradientStops.heroTo} />
           </linearGradient>
         </defs>
-        <rect
-          width="32"
-          height="32"
-          rx="7"
-          fill={light ? "rgba(255,255,255,0.92)" : "url(#sdl-mark)"}
-        />
+        <rect width="32" height="32" rx="7" fill={light ? "rgba(255,255,255,0.92)" : "url(#sdl-mark)"} />
         <path d={S_PATH} fill={light ? colorPrimary : textOnAccent} />
       </svg>
       <span

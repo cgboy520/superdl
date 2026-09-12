@@ -28,9 +28,7 @@ export type BillingTab = (typeof BILLING_TABS)[number];
 export const Route = createFileRoute("/_console/billing")({
   beforeLoad: requireAuth,
   // Tab/月份/流水类型入 URL;非法值回默认
-  validateSearch: (
-    search: Record<string, unknown>,
-  ): { tab?: BillingTab; month?: string; ledger?: LedgerFilter } => {
+  validateSearch: (search: Record<string, unknown>): { tab?: BillingTab; month?: string; ledger?: LedgerFilter } => {
     const out: { tab?: BillingTab; month?: string; ledger?: LedgerFilter } = {};
     if (typeof search.tab === "string" && (BILLING_TABS as readonly string[]).includes(search.tab)) {
       out.tab = search.tab as BillingTab;
@@ -38,10 +36,7 @@ export const Route = createFileRoute("/_console/billing")({
     if (typeof search.month === "string" && /^\d{4}-\d{2}$/.test(search.month)) {
       out.month = search.month;
     }
-    if (
-      typeof search.ledger === "string" &&
-      (LEDGER_FILTERS as readonly string[]).includes(search.ledger)
-    ) {
+    if (typeof search.ledger === "string" && (LEDGER_FILTERS as readonly string[]).includes(search.ledger)) {
       out.ledger = search.ledger as LedgerFilter;
     }
     return out;
@@ -244,4 +239,3 @@ function BillingPage() {
     </Space>
   );
 }
-
