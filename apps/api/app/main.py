@@ -106,13 +106,15 @@ def create_app() -> FastAPI:
         openapi_url=None if is_prod else "/openapi.json",
     )
     install_error_handlers(app)
-    # 最内层:未捕获异常在此渲染 500,安全头与 x-request-id 才能挂上错误响应
+    # add_middleware 后注册者在外层。自内向外:
+    # Uniform500(未捕获异常渲染 500)→ BodyLimit(流式计数,超限 413)→ Observability(x-request-id)
+    # → Audit(fail-closed 503 也要带安全头,故安全头在它外层)→ SecurityHeaders → CORS
+    # → EdgeGuard(prod 边缘收口,404 是刻意的「不存在」语义,不挂头)
     app.add_middleware(Uniform500Middleware)
-    # 请求体硬上限(外层另有 Envoy requestBuffer):流式计数,超限 413;注册在次内层
     app.add_middleware(RequestBodyLimitMiddleware)
-    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(ObservabilityMiddleware)
     app.add_middleware(AuditMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -123,7 +125,6 @@ def create_app() -> FastAPI:
         # 前端需读这两个响应头
         expose_headers=["X-Request-ID", "X-Idempotent-Replay"],
     )
-    # 最外层:边缘收口(prod 下 /api/admin 与 /metrics 不从公网 api 域暴露)
     app.add_middleware(EdgeGuardMiddleware)
 
     @app.get("/healthz", tags=["infra"], include_in_schema=False)
