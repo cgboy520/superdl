@@ -413,9 +413,7 @@ async def get_instance(client: AsyncClient, headers: dict, uuid: str) -> dict:
 
 async def provision_running(client, sm, fake, phone="13900000010") -> tuple[dict, str, int]:
     """建好一台 running 实例。返回 (headers, uuid, user_id)。"""
-    headers, user_id, key_id = await create_user_with_key(client, phone)
-    await fund_wallet(sm, user_id)
-    sku_id = await create_test_sku(sm)
+    headers, user_id, key_id, sku_id = await new_user(client, sm, phone)
     data = await create_instance_api(client, headers, sku_id, key_id)
     await drain(sm)
     fake.mark_ready(f"tenant-{user_id}", data["uuid"])
@@ -642,10 +640,18 @@ def service_body(sku_id: int, **over) -> dict:
     return body
 
 
-async def new_user(client: AsyncClient, sm, phone: str) -> tuple[dict[str, str], int, int, int]:
-    """注册 + 充值 + 建 SKU。返回 (headers, user_id, ssh_key_id, sku_id)。"""
+async def funded_user(
+    client: AsyncClient, sm, phone: str, amount: str = "100.00"
+) -> tuple[dict[str, str], int, int]:
+    """注册 + 加 SSH 公钥 + 充值。返回 (headers, user_id, ssh_key_id)。"""
     headers, user_id, key_id = await create_user_with_key(client, phone)
-    await fund_wallet(sm, user_id)
+    await fund_wallet(sm, user_id, amount)
+    return headers, user_id, key_id
+
+
+async def new_user(client: AsyncClient, sm, phone: str) -> tuple[dict[str, str], int, int, int]:
+    """funded_user + 建默认 SKU。返回 (headers, user_id, ssh_key_id, sku_id)。"""
+    headers, user_id, key_id = await funded_user(client, sm, phone)
     return headers, user_id, key_id, await create_test_sku(sm)
 
 

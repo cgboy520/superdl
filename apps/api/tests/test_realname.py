@@ -10,8 +10,7 @@ from app.modules.account.models import User
 from app.modules.account.realname import set_realname_provider
 from tests.helpers import (
     create_test_sku,
-    create_user_with_key,
-    fund_wallet,
+    funded_user,
     seed_instance,
     seed_node_spec,
     set_platform_setting,
@@ -136,8 +135,7 @@ class TestRealName:
         settings.real_name_required_for_recharge = True
         set_realname_provider(_Provider(True))
         try:
-            headers, user_id, key_id = await create_user_with_key(client, "13800000165")
-            await fund_wallet(sm, user_id)
+            headers, _user_id, key_id = await funded_user(client, sm, "13800000165")
             sku_id = await create_test_sku(sm)
             await seed_node_spec(sm)
             resp = await client.post(
@@ -172,8 +170,7 @@ class TestRealName:
         settings.real_name_required_for_recharge = True
         set_realname_provider(_Provider(True))
         try:
-            headers, user_id, _key_id = await create_user_with_key(client, "13800000166")
-            await fund_wallet(sm, user_id)
+            headers, user_id, _key_id = await funded_user(client, sm, "13800000166")
             await create_test_sku(sm)
             await seed_node_spec(sm)
             # 建盘:未实名 403

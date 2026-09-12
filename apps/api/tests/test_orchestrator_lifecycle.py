@@ -21,6 +21,7 @@ from tests.helpers import (
     drain,
     drain_strict,
     fund_wallet,
+    funded_user,
     get_instance,
     make_instance,
     provision_running,
@@ -34,8 +35,7 @@ pytestmark = pytest.mark.usefixtures("fake")
 class TestCreateLifecycle:
     async def test_idem_key_param_mismatch_409(self, client, sm, fake):
         """同键异参(改了 GPU 数):409,不返回上一台实例。"""
-        headers, user_id, key_id = await create_user_with_key(client, "13900000031")
-        await fund_wallet(sm, user_id)
+        headers, _user_id, key_id = await funded_user(client, sm, "13900000031")
         sku_id = await create_test_sku(sm)
         h = {**headers, "Idempotency-Key": "inst-idem-mix"}
         body = {
@@ -244,8 +244,7 @@ class TestFailureModes:
         assert all(p is None for p in ports)
 
     async def test_creating_timeout_fails_and_cleans(self, client, sm, fake):
-        headers, user_id, key_id = await create_user_with_key(client, "13900000021")
-        await fund_wallet(sm, user_id)
+        headers, user_id, key_id = await funded_user(client, sm, "13900000021")
         sku_id = await create_test_sku(sm)
         data = await create_instance_api(client, headers, sku_id, key_id)
         uuid = data["uuid"]
@@ -497,8 +496,7 @@ class TestRelease:
 
     async def test_cancel_creating_instance(self, client, sm, fake):
         """creating 可被用户主动取消,零扣费。"""
-        headers, user_id, key_id = await create_user_with_key(client, "13900000041")
-        await fund_wallet(sm, user_id)
+        headers, _user_id, key_id = await funded_user(client, sm, "13900000041")
         sku_id = await create_test_sku(sm)
         data = await create_instance_api(client, headers, sku_id, key_id)
         uuid = data["uuid"]
@@ -528,8 +526,7 @@ class TestPortPool:
         monkeypatch.setattr(settings, "ssh_port_range_start", 31000)
         monkeypatch.setattr(settings, "ssh_port_range_end", 31000)  # 池容量 1
 
-        headers, user_id, key_id = await create_user_with_key(client, "13900000041")
-        await fund_wallet(sm, user_id, "500.00")
+        headers, _user_id, key_id = await funded_user(client, sm, "13900000041", "500.00")
         sku_id = await create_test_sku(sm)
         a = await create_instance_api(client, headers, sku_id, key_id)
         await drain(sm)
@@ -548,8 +545,7 @@ class TestPortPool:
         monkeypatch.setattr(settings, "ssh_port_range_start", 31500)
         monkeypatch.setattr(settings, "ssh_port_excluded", {31500, 31501})
 
-        headers, user_id, key_id = await create_user_with_key(client, "13900000042")
-        await fund_wallet(sm, user_id, "500.00")
+        headers, _user_id, key_id = await funded_user(client, sm, "13900000042", "500.00")
         sku_id = await create_test_sku(sm)
         data = await create_instance_api(client, headers, sku_id, key_id)
         await drain(sm)
@@ -577,8 +573,7 @@ class TestPortPool:
 
         monkeypatch.setattr(fake, "create_instance", guarded)
 
-        headers, user_id, key_id = await create_user_with_key(client, "13900000043")
-        await fund_wallet(sm, user_id, "500.00")
+        headers, _user_id, key_id = await funded_user(client, sm, "13900000043", "500.00")
         sku_id = await create_test_sku(sm)
         data = await create_instance_api(client, headers, sku_id, key_id)
         await drain(sm)
@@ -704,8 +699,7 @@ class TestImageRefValidation:
         assert ImageUpdate(image_ref=None).image_ref is None  # 不传不校验
 
     async def test_malformed_image_ref_rejected(self, client, sm):
-        headers, user_id, key_id = await create_user_with_key(client, "13500000090")
-        await fund_wallet(sm, user_id)
+        headers, _user_id, key_id = await funded_user(client, sm, "13500000090")
         sku_id = await create_test_sku(sm)
         resp = await client.post(
             "/api/v1/instances",
@@ -722,8 +716,7 @@ class TestImageRefValidation:
     async def test_registry_allowlist_blocks_foreign_registry(self, client, sm, monkeypatch):
         from app.core.config import get_settings
 
-        headers, user_id, key_id = await create_user_with_key(client, "13500000091")
-        await fund_wallet(sm, user_id)
+        headers, _user_id, key_id = await funded_user(client, sm, "13500000091")
         sku_id = await create_test_sku(sm)
         settings = get_settings()
         monkeypatch.setattr(

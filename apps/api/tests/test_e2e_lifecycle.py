@@ -13,9 +13,8 @@ from tests.helpers import (
     IMAGE_PYTORCH,
     backdate_running_event,
     create_test_sku,
-    create_user_with_key,
     drain,
-    fund_wallet,
+    funded_user,
     gen_ed25519_key,
     seed_node_spec,
 )
@@ -179,8 +178,7 @@ async def test_pull_secret_managed_per_tenant_when_registry_configured(client, s
             updated_by=None,
         )
         await session.commit()
-    headers, user_id, key_id = await create_user_with_key(client, "13411113333")
-    await fund_wallet(sm, user_id)
+    headers, user_id, key_id = await funded_user(client, sm, "13411113333")
     sku_id = await create_test_sku(sm)
     await seed_node_spec(sm)
     resp = await client.post(

@@ -25,9 +25,8 @@ from tests.helpers import (
     admin_headers,
     backdate_running_event,
     create_test_sku,
-    create_user_with_key,
     drain,
-    fund_wallet,
+    funded_user,
     make_instance,
     seed_node_spec,
 )
@@ -255,8 +254,7 @@ class TestCapacity:
                 session, {"gpu_node_cpu_instance_vcpu_cap": "0"}, updated_by=None
             )
             await session.commit()
-        headers, user_id, key_id = await create_user_with_key(client, "13900000301")
-        await fund_wallet(sm, user_id)
+        headers, _user_id, key_id = await funded_user(client, sm, "13900000301")
         resp = await client.post(
             "/api/v1/instances",
             json={
@@ -316,8 +314,7 @@ class TestFullChain:
             await session.commit()
             sku_id = sku.id
 
-        headers, user_id, key_id = await create_user_with_key(client, "13900000302")
-        await fund_wallet(sm, user_id)
+        headers, user_id, key_id = await funded_user(client, sm, "13900000302")
         resp = await client.post(
             "/api/v1/instances",
             json={
@@ -371,8 +368,7 @@ class TestFullChain:
             session.add(sku)
             await session.commit()
             sku_id = sku.id
-        headers, user_id, key_id = await create_user_with_key(client, "13900000303")
-        await fund_wallet(sm, user_id)
+        headers, _user_id, key_id = await funded_user(client, sm, "13900000303")
         resp = await client.post(
             "/api/v1/instances",
             json={
@@ -390,8 +386,7 @@ class TestFullChain:
         """GPU 规格的「0 卡实例」由服务层挡住。"""
         await seed_node_spec(sm)
         sku_id = await create_test_sku(sm)
-        headers, user_id, key_id = await create_user_with_key(client, "13900000304")
-        await fund_wallet(sm, user_id)
+        headers, _user_id, key_id = await funded_user(client, sm, "13900000304")
         resp = await client.post(
             "/api/v1/instances",
             json={
@@ -419,8 +414,7 @@ class TestVcpuQuota:
             await session.commit()
             sku_id = sku.id
 
-        headers, user_id, key_id = await create_user_with_key(client, "13900000305")
-        await fund_wallet(sm, user_id)
+        headers, user_id, key_id = await funded_user(client, sm, "13900000305")
 
         async def create():
             return await client.post(
@@ -465,8 +459,7 @@ class TestVcpuQuota:
         async with sm() as session:
             await set_platform_settings(session, {"max_vcpus_per_user": "1"}, updated_by=None)
             await session.commit()
-        headers, user_id, key_id = await create_user_with_key(client, "13900000306")
-        await fund_wallet(sm, user_id)
+        headers, _user_id, key_id = await funded_user(client, sm, "13900000306")
         resp = await client.post(
             "/api/v1/instances",
             json={

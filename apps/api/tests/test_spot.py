@@ -22,6 +22,7 @@ from tests.helpers import (
     create_user_with_key,
     drain,
     fund_wallet,
+    funded_user,
     provision_running,
     provision_subscription,
     seed_node_spec,
@@ -91,8 +92,7 @@ async def create(client, headers, sku_id, key_id, *, market=MARKET_SPOT, expect=
 
 async def running_spot(client, sm, fake, phone, sku_id, *, cards=1):
     """建一台跑起来的竞价实例。返回 (headers, uuid, user_id)。"""
-    headers, user_id, key_id = await create_user_with_key(client, phone)
-    await fund_wallet(sm, user_id, "5000.00")
+    headers, user_id, key_id = await funded_user(client, sm, phone, "5000.00")
     data = await create(client, headers, sku_id, key_id)
     await drain(sm)
     fake.mark_ready(f"tenant-{user_id}", data["uuid"])
@@ -120,8 +120,7 @@ class TestSpotPricing:
         """没上竞价档的规格直接拒。"""
         sku_id = await create_test_sku(sm)  # 默认 spot_enabled=False
         await seed_node_spec(sm, node_name="node-nospot")
-        headers, user_id, key_id = await create_user_with_key(client, "13922200002")
-        await fund_wallet(sm, user_id, "5000.00")
+        headers, _user_id, key_id = await funded_user(client, sm, "13922200002", "5000.00")
         body = await create(client, headers, sku_id, key_id, expect=400)
         assert body["message_key"] == "orchestrator.spotNotEnabled"
 
@@ -198,8 +197,7 @@ class TestPreemptionFlow:
             await s.execute(update(NodeSpec).values(gpu_used=1))
             await s.commit()
 
-        headers, buyer_uid, key_id = await create_user_with_key(client, "13922200011")
-        await fund_wallet(sm, buyer_uid, "5000.00")
+        headers, buyer_uid, key_id = await funded_user(client, sm, "13922200011", "5000.00")
         await create(client, headers, sku_id, key_id, market=MARKET_ON_DEMAND)
 
         async with sm() as s:
@@ -227,8 +225,7 @@ class TestPreemptionFlow:
             await s.execute(update(NodeSpec).values(gpu_count=1, gpu_used=1))
             await s.commit()
 
-        headers, buyer_uid, key_id = await create_user_with_key(client, "13922200013")
-        await fund_wallet(sm, buyer_uid, "5000.00")
+        headers, _buyer_uid, key_id = await funded_user(client, sm, "13922200013", "5000.00")
         await create(client, headers, sku_id, key_id, market=MARKET_ON_DEMAND)
 
         async with sm() as s:
@@ -268,8 +265,7 @@ class TestPreemptionFlow:
             await s.execute(update(NodeSpec).values(gpu_count=1, gpu_used=1))
             await s.commit()
 
-        headers, buyer_uid, key_id = await create_user_with_key(client, "13922200015")
-        await fund_wallet(sm, buyer_uid, "5000.00")
+        headers, _buyer_uid, key_id = await funded_user(client, sm, "13922200015", "5000.00")
         await create(client, headers, sku_id, key_id, market=MARKET_ON_DEMAND)
 
         async with sm() as s:
@@ -290,8 +286,7 @@ class TestPreemptionFlow:
             await s.execute(update(NodeSpec).values(gpu_count=1, gpu_used=1))
             await s.commit()
 
-        headers, uid, key_id = await create_user_with_key(client, "13922200017")
-        await fund_wallet(sm, uid, "5000.00")
+        headers, _uid, key_id = await funded_user(client, sm, "13922200017", "5000.00")
         body = await create(client, headers, sku_id, key_id, market=MARKET_SPOT, expect=409)
         assert body["code"] == "NO_CAPACITY"
         async with sm() as s:
@@ -520,8 +515,7 @@ class TestPreemptedBillingEqualsNormalStop:
             await s.commit()
 
         # 一台被抢占,一台用户自己关机,同一时刻
-        buyer_headers, _, buyer_key = await create_user_with_key(client, "13922200042")
-        await fund_wallet(sm, _, "5000.00")
+        buyer_headers, _, buyer_key = await funded_user(client, sm, "13922200042", "5000.00")
         await client.post(f"/api/v1/instances/{twin_uuid}/stop", headers=twin_headers)
         await create(client, buyer_headers, sku_id, buyer_key, market=MARKET_ON_DEMAND)
 

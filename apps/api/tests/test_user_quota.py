@@ -8,9 +8,8 @@ from app.modules.orchestrator.reconciler import reconcile_once
 from tests.helpers import (
     IMAGE_PYTORCH,
     create_test_sku,
-    create_user_with_key,
     drain,
-    fund_wallet,
+    funded_user,
 )
 
 
@@ -41,8 +40,7 @@ class TestUserQuota:
     async def test_count_capped_and_freed_on_release(
         self, client: AsyncClient, sm, fake, _tight_quota
     ):
-        headers, user_id, key_id = await create_user_with_key(client, "13900000071")
-        await fund_wallet(sm, user_id)
+        headers, user_id, key_id = await funded_user(client, sm, "13900000071")
         sku_id = await create_test_sku(sm)
 
         first = await _create(client, headers, sku_id, key_id)

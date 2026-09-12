@@ -30,9 +30,9 @@ from tests.helpers import (
     IMAGE_PYTORCH,
     buy_subscription,
     create_test_sku,
-    create_user_with_key,
     drain,
     fund_wallet,
+    funded_user,
     get_instance,
     provision_running,
     provision_subscription,
@@ -137,8 +137,7 @@ class TestOrderAndIdempotency:
 
     async def test_replayed_key_charges_once(self, client, sm, fake):
         """同一 Idempotency-Key 重放:零重复扣款、零重复订阅行。"""
-        headers, user_id, key_id = await create_user_with_key(client, "13911100002")
-        await fund_wallet(sm, user_id, "5000.00")
+        headers, user_id, key_id = await funded_user(client, sm, "13911100002", "5000.00")
         sku_id = await create_test_sku(sm)
         await seed_node_spec(sm, node_name="node-idem")
 
@@ -160,8 +159,7 @@ class TestOrderAndIdempotency:
 
     async def test_insufficient_balance_never_reaches_creating(self, client, sm, fake):
         """余额不够买一个月:400,不留 creating 实例、不扣钱。"""
-        headers, user_id, key_id = await create_user_with_key(client, "13911100003")
-        await fund_wallet(sm, user_id, "10.00")
+        headers, user_id, key_id = await funded_user(client, sm, "13911100003", "10.00")
         sku_id = await create_test_sku(sm)
         await seed_node_spec(sm, node_name="node-poor")
 
@@ -179,8 +177,7 @@ class TestOrderAndIdempotency:
 
     async def test_period_field_rejected_on_on_demand(self, client, sm):
         """按量单带 period 一律 422。"""
-        headers, user_id, key_id = await create_user_with_key(client, "13911100004")
-        await fund_wallet(sm, user_id)
+        headers, _user_id, key_id = await funded_user(client, sm, "13911100004")
         sku_id = await create_test_sku(sm)
         resp = await client.post(
             "/api/v1/instances",
@@ -197,8 +194,7 @@ class TestOrderAndIdempotency:
 
     async def test_sku_with_period_disabled_refuses_subscription(self, client, sm, fake):
         """SKU 关闭包周期后直调接口也买不到。"""
-        headers, user_id, key_id = await create_user_with_key(client, "13911100005")
-        await fund_wallet(sm, user_id, "5000.00")
+        headers, _user_id, key_id = await funded_user(client, sm, "13911100005", "5000.00")
         sku_id = await create_test_sku(sm, gpu_cores_pct=45, vcpu=7)
         await seed_node_spec(sm, node_name="node-nop")
         async with sm() as s:
@@ -312,8 +308,9 @@ class TestCapacityReservation:
         await drain(sm)
         await reconcile_once(sm)
 
-        other_headers, other_uid, other_key = await create_user_with_key(client, "13911100031")
-        await fund_wallet(sm, other_uid, "5000.00")
+        other_headers, _other_uid, other_key = await funded_user(
+            client, sm, "13911100031", "5000.00"
+        )
         resp = await client.post(
             "/api/v1/instances",
             json={
@@ -1191,8 +1188,7 @@ class TestUnstartedPrepay:
         from app.modules.billing.models import BalanceLedger, Subscription
         from app.modules.notify.models import Notification
 
-        headers, user_id, key_id = await create_user_with_key(client, "13911100099")
-        await fund_wallet(sm, user_id, "5000.00")
+        headers, user_id, key_id = await funded_user(client, sm, "13911100099", "5000.00")
         sku_id = await create_test_sku(sm)
         await seed_node_spec(sm, node_name="node-timeout")
         code, data = await buy_subscription(client, headers, sku_id, key_id)

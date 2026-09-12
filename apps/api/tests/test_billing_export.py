@@ -7,7 +7,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core import csvexport
-from tests.helpers import create_user_with_key, fund_wallet, seed_bill_hourly
+from tests.helpers import create_user_with_key, funded_user, seed_bill_hourly
 
 
 def _hour(y: int, m: int, d: int, h: int) -> datetime:
@@ -119,8 +119,7 @@ class TestHourlyExport:
 
 class TestLedgerExport:
     async def test_ledger_rows(self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]):
-        headers, user_id, _ = await create_user_with_key(client, "13900000306")
-        await fund_wallet(sm, user_id, "100.00")
+        headers, _user_id, _ = await funded_user(client, sm, "13900000306", "100.00")
         resp = await client.get(
             "/api/v1/billing/export",
             params={"dataset": "ledger", "tz_offset_minutes": 480},
@@ -134,8 +133,7 @@ class TestLedgerExport:
 
     async def test_isolation(self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]):
         headers, _user_id, _ = await create_user_with_key(client, "13900000307")
-        _headers2, user_id2, _ = await create_user_with_key(client, "13900000308")
-        await fund_wallet(sm, user_id2, "888.00")
+        _headers2, user_id2, _ = await funded_user(client, sm, "13900000308", "888.00")
         await seed_bill_hourly(sm, user_id2, rows=[(1, _hour(2026, 8, 1, 0), "1.68")])
         resp = await client.get(
             "/api/v1/billing/export",

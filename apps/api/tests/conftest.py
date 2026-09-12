@@ -80,20 +80,16 @@ async def engine(pg_url: str) -> AsyncIterator[AsyncEngine]:
     await dispose_engine()
 
 
-@pytest.fixture
-async def sm(engine: AsyncEngine) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
-    """函数级 sessionmaker;测试结束清空非空表并归位序列保证隔离。"""
-    from app.core.db import get_sessionmaker
-    from app.models_registry import Base
-
-    smaker = get_sessionmaker()
-    # 集群能力缓存预置健康态(等价 worker 已跑过一轮巡检)
+async def _seed_baseline(smaker: async_sessionmaker[AsyncSession]) -> None:
+    """每个用例的 DB 基线:集群能力缓存健康态(等价 worker 已跑过一轮巡检)
+    + 法务文档预置(等价迁移已跑)。"""
     from app.core.k8s.base import (
         INSTANCE_DISK_STORAGE_CLASS,
         JUICEFS_STORAGE_CLASS,
         ClusterProbe,
     )
     from app.modules.nodes.service import save_cluster_probe
+    from tests.legal_preset import seed_preset_docs
 
     async with smaker() as session:
         await save_cluster_probe(
@@ -107,21 +103,28 @@ async def sm(engine: AsyncEngine) -> AsyncIterator[async_sessionmaker[AsyncSessi
                 storage_classes=(INSTANCE_DISK_STORAGE_CLASS, JUICEFS_STORAGE_CLASS),
             ),
         )
-        await session.commit()
-    # 法务文档预置(等价迁移已跑)
-    from tests.legal_preset import seed_preset_docs
-
-    async with smaker() as session:
         await seed_preset_docs(session)
         await session.commit()
-    # extAuth 鉴权缓存是进程内态,逐用例清空
+
+
+def _reset_process_state() -> None:
+    """进程内态逐用例清空:extAuth 鉴权缓存、审计 fail-closed 闸门。"""
+    from app.core import audit as audit_mod
     from app.modules.services import service as services_service
 
     services_service.clear_endpoint_auth_cache()
-    # 审计 fail-closed 闸门同样是进程内态
-    from app.core import audit as audit_mod
-
     audit_mod.reset_audit_gate()
+
+
+@pytest.fixture
+async def sm(engine: AsyncEngine) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    """函数级 sessionmaker;先播基线,测试结束清空非空表并归位序列保证隔离。"""
+    from app.core.db import get_sessionmaker
+    from app.models_registry import Base
+
+    smaker = get_sessionmaker()
+    await _seed_baseline(smaker)
+    _reset_process_state()
     yield smaker
 
     async with engine.begin() as conn:
@@ -160,28 +163,27 @@ async def client(
         yield c
 
 
-@pytest.fixture
-def fake() -> Iterator["FakeOrchestrator"]:
-    """注入 FakeOrchestrator(auto_ready=False,时序由用例驱动),收尾恢复默认。"""
+def _inject_fake(auto_ready: bool) -> Iterator["FakeOrchestrator"]:
+    """注入 FakeOrchestrator,收尾恢复默认。"""
     from app.core.k8s import set_orchestrator
     from app.core.k8s.fake import FakeOrchestrator
 
-    orch = FakeOrchestrator(auto_ready=False)
+    orch = FakeOrchestrator(auto_ready=auto_ready)
     set_orchestrator(orch)
     yield orch
     set_orchestrator(None)
+
+
+@pytest.fixture
+def fake() -> Iterator["FakeOrchestrator"]:
+    """auto_ready=False:Pod 就绪时序由用例驱动(fake.mark_ready)。"""
+    yield from _inject_fake(auto_ready=False)
 
 
 @pytest.fixture
 def fake_auto_ready() -> Iterator["FakeOrchestrator"]:
-    """auto_ready=True 的 FakeOrchestrator;与基线 fake 互斥,同一用例只取其一。"""
-    from app.core.k8s import set_orchestrator
-    from app.core.k8s.fake import FakeOrchestrator
-
-    orch = FakeOrchestrator(auto_ready=True)
-    set_orchestrator(orch)
-    yield orch
-    set_orchestrator(None)
+    """auto_ready=True;与基线 fake 互斥,同一用例只取其一。"""
+    yield from _inject_fake(auto_ready=True)
 
 
 @pytest.fixture(autouse=True)

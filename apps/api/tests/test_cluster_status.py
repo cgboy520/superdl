@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from app.core.k8s.base import derive_distro
 from app.modules.nodes import service
 from app.modules.nodes.models import ClusterStatus
-from tests.helpers import admin_headers, create_user_with_key, fund_wallet, seed_skus
+from tests.helpers import admin_headers, create_user_with_key, fund_wallet, funded_user, seed_skus
 
 pytestmark = pytest.mark.usefixtures("fake_auto_ready")
 
@@ -170,8 +170,7 @@ class TestGateWiring:
         from app.modules.nodes.models import ClusterStatus
 
         await seed_skus(sm)
-        headers, user_id, key_id = await create_user_with_key(client, "13900000077")
-        await fund_wallet(sm, user_id)
+        headers, _user_id, key_id = await funded_user(client, sm, "13900000077")
         async with sm() as session:
             row = await session.get(ClusterStatus, 1)
             assert row is not None

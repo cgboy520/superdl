@@ -27,6 +27,7 @@ from tests.helpers import (
     create_user_with_key,
     drain,
     fund_wallet,
+    funded_user,
     get_instance,
     provision_running,
     seed_instance,
@@ -180,8 +181,7 @@ class TestFailedRecovery:
 
     async def test_start_from_failed_rejects_unsynced_disk(self, client, sm, fake):
         """failed 恢复开机走挂载门禁:数据盘 quota_synced=false → 409,实例留在 failed。"""
-        headers, user_id, key_id = await create_user_with_key(client, "13900000109")
-        await fund_wallet(sm, user_id, "500.00")
+        headers, user_id, key_id = await funded_user(client, sm, "13900000109", "500.00")
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
         await drain(sm)  # 配额下发完成后才可挂载
@@ -233,8 +233,7 @@ class TestFailedRecovery:
 class TestReadyWithoutPort:
     async def test_ready_pod_without_port_not_promoted(self, client, sm, fake):
         """Pod 已 Ready 但 ssh_port 未落库:不推进 running,留在 creating 等超时转 failed。"""
-        headers, user_id, key_id = await create_user_with_key(client, "13900000110")
-        await fund_wallet(sm, user_id)
+        headers, user_id, key_id = await funded_user(client, sm, "13900000110")
         sku_id = await create_test_sku(sm)
         resp = await _raw_create(client, headers, sku_id, key_id)
         uuid = resp.json()["uuid"]
@@ -434,8 +433,7 @@ class TestCreateCriticalSection:
 
     async def test_concurrent_same_idempotency_key_single_instance(self, client, sm, fake):
         """同幂等键并发重放:只开一台;新建方 202,重放方 200 + X-Idempotent-Replay。"""
-        headers, user_id, key_id = await create_user_with_key(client, "13900000112")
-        await fund_wallet(sm, user_id, "500.00")
+        headers, _user_id, key_id = await funded_user(client, sm, "13900000112", "500.00")
         sku_id = await create_test_sku(sm)
         r1, r2 = await asyncio.gather(
             _raw_create(client, headers, sku_id, key_id, idem="race-1"),
@@ -450,8 +448,7 @@ class TestCreateCriticalSection:
 
     async def test_idempotency_key_expires_after_24h(self, client, sm, fake):
         """幂等键 24h 窗口:窗外同一键按新单处理。"""
-        headers, user_id, key_id = await create_user_with_key(client, "13900000113")
-        await fund_wallet(sm, user_id, "500.00")
+        headers, _user_id, key_id = await funded_user(client, sm, "13900000113", "500.00")
         sku_id = await create_test_sku(sm)
         r1 = await _raw_create(client, headers, sku_id, key_id, idem="day-key")
         assert r1.status_code == 202
@@ -471,8 +468,7 @@ class TestCreateCriticalSection:
 
     async def test_soft_admission_no_capacity(self, client, sm, fake):
         """软准入:(池,型号) 可分配量为 0 → 409 NO_CAPACITY。"""
-        headers, user_id, key_id = await create_user_with_key(client, "13900000114")
-        await fund_wallet(sm, user_id)
+        headers, _user_id, key_id = await funded_user(client, sm, "13900000114")
         sku_id = await create_test_sku(sm)
         await seed_node_spec(sm, gpu_count=1, gpu_used=1)  # hami 池唯一一张卡已占满
         resp = await _raw_create(client, headers, sku_id, key_id)
@@ -582,8 +578,7 @@ class TestDiskArrearsHardening:
 
     async def test_grace_days_not_billed(self, client, sm, fake):
         """grace 停计费:宽限日不出账,回款恢复后也不补回。"""
-        headers, user_id, _key = await create_user_with_key(client, "13900000131")
-        await fund_wallet(sm, user_id)
+        headers, user_id, _key = await funded_user(client, sm, "13900000131")
         disk = await create_disk(client, headers)
         t0 = now_utc()
         await self._drain_wallet(sm, user_id)
@@ -627,8 +622,7 @@ class TestDiskArrearsHardening:
         from app.modules.billing.models import SettlementGap
         from app.modules.billing.settlement import _advance_watermark
 
-        headers, user_id, _key = await create_user_with_key(client, "13900000132")
-        await fund_wallet(sm, user_id)
+        headers, _user_id, _key = await funded_user(client, sm, "13900000132")
         await create_disk(client, headers)
         t0 = now_utc()
         t_day = billing_day_floor(t0)
@@ -681,8 +675,7 @@ class TestDiskArrearsHardening:
 
     async def test_grace_clock_not_reset_by_recharge(self, client, sm, fake):
         """充值恢复不清零 grace_started_at。"""
-        headers, user_id, _key = await create_user_with_key(client, "13900000133")
-        await fund_wallet(sm, user_id)
+        headers, user_id, _key = await funded_user(client, sm, "13900000133")
         disk = await create_disk(client, headers)
         await self._drain_wallet(sm, user_id)
         await balance_patrol(sm)
@@ -716,8 +709,7 @@ class TestDiskArrearsHardening:
             raise NamespaceMissing(namespace)
 
         monkeypatch.setattr(fake, "wipe_disk", raise404)
-        headers, user_id, _key = await create_user_with_key(client, "13900000134")
-        await fund_wallet(sm, user_id)
+        headers, _user_id, _key = await funded_user(client, sm, "13900000134")
         disk = await create_disk(client, headers)
         await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
         await drain(sm)

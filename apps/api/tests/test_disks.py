@@ -20,6 +20,7 @@ from tests.helpers import (
     create_user_with_key,
     drain,
     fund_wallet,
+    funded_user,
     get_instance,
 )
 
@@ -81,8 +82,7 @@ class TestDiskCrud:
         assert d["size_gb"] == 100
 
     async def test_size_limits(self, client, sm, fake):
-        headers, user_id, _key = await create_user_with_key(client, "13500000002")
-        await fund_wallet(sm, user_id)
+        headers, _user_id, _key = await funded_user(client, sm, "13500000002")
         resp = await client.post("/api/v1/disks", json={"name": "d", "size_gb": 5}, headers=headers)
         assert resp.json()["code"] == "VALIDATION_ERROR"
 
@@ -90,8 +90,7 @@ class TestDiskCrud:
 class TestMountLifecycle:
     async def test_attach_rejected_until_quota_synced(self, client, sm, fake):
         """配额未下发成功的盘不得挂载;同步完成后即可挂。"""
-        headers, user_id, key_id = await create_user_with_key(client, "13500000013")
-        await fund_wallet(sm, user_id, "500.00")
+        headers, _user_id, key_id = await funded_user(client, sm, "13500000013", "500.00")
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
         # 不 drain:disk.quota 任务仍在途,quota_synced=false → 409
@@ -123,8 +122,7 @@ class TestMountLifecycle:
 
     async def test_start_after_delete_disk_detaches(self, client, sm, fake):
         """停机→删盘→开机:挂载引用随删盘同事务摘除,开机不挂到擦除中的旧 subPath。"""
-        headers, user_id, key_id = await create_user_with_key(client, "13500000011")
-        await fund_wallet(sm, user_id, "500.00")
+        headers, user_id, key_id = await funded_user(client, sm, "13500000011", "500.00")
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
         await drain(sm)  # 配额下发完成(quota_synced=true)后才可挂载
@@ -168,8 +166,7 @@ class TestMountLifecycle:
 
     async def test_start_rejected_when_disk_deleting(self, client, sm, fake):
         """盘处于 deleting(擦除中)时开机被拒绝:不能挂到正在被擦除的目录。"""
-        headers, user_id, key_id = await create_user_with_key(client, "13500000012")
-        await fund_wallet(sm, user_id, "500.00")
+        headers, user_id, key_id = await funded_user(client, sm, "13500000012", "500.00")
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
         await drain(sm)  # 配额下发完成后才可挂载
@@ -208,8 +205,7 @@ class TestMountLifecycle:
 
     async def test_cross_instance_mount(self, client, sm, fake):
         """验收:A 挂载 → A 释放(盘保留)→ B 挂载同一块盘。"""
-        headers, user_id, key_id = await create_user_with_key(client, "13500000010")
-        await fund_wallet(sm, user_id, "500.00")
+        headers, user_id, key_id = await funded_user(client, sm, "13500000010", "500.00")
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
         await drain(sm)  # 配额下发完成后才可挂载
@@ -283,8 +279,7 @@ class TestMountLifecycle:
 
 class TestDailyDiskBilling:
     async def test_daily_settlement_idempotent(self, client, sm, fake):
-        headers, user_id, _key = await create_user_with_key(client, "13500000020")
-        await fund_wallet(sm, user_id)
+        headers, _user_id, _key = await funded_user(client, sm, "13500000020")
         await create_disk(client, headers, size_gb=100)
         # 把盘的创建时间拨到昨天之前,进入昨日账期
         async with sm() as session:
@@ -306,15 +301,13 @@ class TestDailyDiskBilling:
         assert w["balance"] == str(Decimal("100.00") - expected)
 
     async def test_new_disk_not_billed_for_yesterday(self, client, sm, fake):
-        headers, user_id, _key = await create_user_with_key(client, "13500000021")
-        await fund_wallet(sm, user_id)
+        headers, _user_id, _key = await funded_user(client, sm, "13500000021")
         await create_disk(client, headers)  # 今天建的盘
         assert await settle_daily_disks(sm) == 0
 
     async def test_delete_same_day_pays_final_day(self, client, sm, fake):
         """当日建、当日删:出末日账。"""
-        headers, user_id, _key = await create_user_with_key(client, "13500000022")
-        await fund_wallet(sm, user_id)
+        headers, _user_id, _key = await funded_user(client, sm, "13500000022")
         disk = await create_disk(client, headers, size_gb=100)
         await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
         async with sm() as session:
@@ -327,8 +320,7 @@ class TestDailyDiskBilling:
 
     async def test_delete_without_watermark_backfills_from_creation(self, client, sm, fake):
         """水位线缺失:删盘以建盘日为下界补结欠账天数。"""
-        headers, user_id, _key = await create_user_with_key(client, "13500000025")
-        await fund_wallet(sm, user_id)
+        headers, _user_id, _key = await funded_user(client, sm, "13500000025")
         disk = await create_disk(client, headers, size_gb=100)
         async with sm() as session:
             await session.execute(update(DataDisk).values(created_at=now_utc() - timedelta(days=3)))
@@ -354,8 +346,7 @@ class TestDailyDiskBilling:
 
     async def test_expand_settles_old_size_first(self, client, sm, fake):
         """扩容前按旧容量结清未出账日期。"""
-        headers, user_id, _key = await create_user_with_key(client, "13500000023")
-        await fund_wallet(sm, user_id)
+        headers, _user_id, _key = await funded_user(client, sm, "13500000023")
         disk = await create_disk(client, headers, size_gb=100)
         resp = await client.patch(
             f"/api/v1/disks/{disk['uuid']}", json={"size_gb": 1000}, headers=headers
@@ -369,8 +360,7 @@ class TestDailyDiskBilling:
 
     async def test_frozen_disk_delete_not_billed(self, client, sm, fake):
         """冻结态不计费:欠费回收删盘不补账。"""
-        headers, user_id, _key = await create_user_with_key(client, "13500000024")
-        await fund_wallet(sm, user_id)
+        headers, _user_id, _key = await funded_user(client, sm, "13500000024")
         disk = await create_disk(client, headers)
         async with sm() as session:
             await session.execute(
@@ -384,8 +374,7 @@ class TestDailyDiskBilling:
 
 class TestDiskArrearsChain:
     async def test_grace_frozen_wipe_and_recovery(self, client, sm, fake):
-        headers, user_id, _key = await create_user_with_key(client, "13500000030")
-        await fund_wallet(sm, user_id)
+        headers, user_id, _key = await funded_user(client, sm, "13500000030")
         await create_disk(client, headers)
         # 清空余额 → grace
         async with sm() as session:
@@ -423,8 +412,7 @@ class TestDiskArrearsChain:
 
     async def test_recharge_restores_frozen_disk(self, client, sm, fake):
         """frozen 之后充值能解冻(巡检集合须含有 frozen 盘的用户)。"""
-        headers, user_id, _key = await create_user_with_key(client, "13500000032")
-        await fund_wallet(sm, user_id)
+        headers, user_id, _key = await funded_user(client, sm, "13500000032")
         await create_disk(client, headers)
         async with sm() as session:
             balance = await wallet.get_balance(session, user_id)
@@ -455,8 +443,7 @@ class TestDiskQuota:
     async def test_count_quota_blocks_creation(self, client, sm, fake, monkeypatch):
         from app.core.config import get_settings
 
-        headers, user_id, _key = await create_user_with_key(client, "13500000040")
-        await fund_wallet(sm, user_id)
+        headers, _user_id, _key = await funded_user(client, sm, "13500000040")
         monkeypatch.setattr(get_settings(), "max_disks_per_user", 2, raising=False)
         await create_disk(client, headers, name="d1")
         await create_disk(client, headers, name="d2")
@@ -470,8 +457,7 @@ class TestDiskQuota:
 class TestDiskIdempotency:
     async def test_repeated_create_with_same_key_returns_same_disk(self, client, sm, fake):
         """同幂等键重放不多出一块盘。"""
-        headers, user_id, _key = await create_user_with_key(client, "13500000050")
-        await fund_wallet(sm, user_id)
+        headers, _user_id, _key = await funded_user(client, sm, "13500000050")
         h = {**headers, "Idempotency-Key": "disk-idem-1"}
         a = await client.post("/api/v1/disks", json={"name": "d", "size_gb": 100}, headers=h)
         b = await client.post("/api/v1/disks", json={"name": "d", "size_gb": 100}, headers=h)
@@ -482,8 +468,7 @@ class TestDiskIdempotency:
 
     async def test_same_key_different_params_409(self, client, sm, fake):
         """同键异参(改了容量):409。"""
-        headers, user_id, _key = await create_user_with_key(client, "13500000051")
-        await fund_wallet(sm, user_id)
+        headers, _user_id, _key = await funded_user(client, sm, "13500000051")
         h = {**headers, "Idempotency-Key": "disk-idem-mix"}
         a = await client.post("/api/v1/disks", json={"name": "d", "size_gb": 100}, headers=h)
         assert a.status_code == 201

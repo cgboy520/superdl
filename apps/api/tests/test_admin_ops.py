@@ -23,6 +23,7 @@ from tests.helpers import (
     create_user_with_key,
     drain,
     fund_wallet,
+    funded_user,
     provision_running,
     register,
     seed_node_spec,
@@ -944,8 +945,7 @@ class TestTenantQuotaOverride:
     """配额覆盖:override 优先于 policy/env;清空恢复默认链;updated_by 落库。"""
 
     async def test_override_caps_disks_then_clear_restores(self, client, sm, fake):
-        headers, user_id, _key = await create_user_with_key(client, "13655550002")
-        await fund_wallet(sm, user_id)
+        headers, user_id, _key = await funded_user(client, sm, "13655550002")
         ah = await admin_headers(sm, client, role="ops")
 
         resp = await client.put(

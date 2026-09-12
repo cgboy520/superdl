@@ -18,7 +18,7 @@ from tests.helpers import (
     age_sms_codes,
     create_user_with_key,
     current_refresh_token,
-    fund_wallet,
+    funded_user,
     refresh_via_cookie,
     seed_disk,
     seed_instance,
@@ -196,8 +196,7 @@ class TestApproveGuards:
         assert uuid in body["detail"]["disks"]
 
     async def test_nonzero_balance_blocks(self, client: AsyncClient, sm):
-        headers, user_id, _ = await create_user_with_key(client, PHONE)
-        await fund_wallet(sm, user_id, "88.00")
+        headers, user_id, _ = await funded_user(client, sm, PHONE, "88.00")
         req_id = (await _create_request(client, headers)).json()["id"]
         await _backdate_request(sm, user_id, days=8)
         admin = await admin_headers(sm, client)
@@ -330,8 +329,7 @@ class TestApproveSuccess:
 
     async def test_ledger_preserved(self, client: AsyncClient, sm):
         """注销只脱敏身份,balance_ledger 行不动。"""
-        headers, user_id, _ = await create_user_with_key(client, PHONE)
-        await fund_wallet(sm, user_id, "100.00")
+        headers, user_id, _ = await funded_user(client, sm, PHONE, "100.00")
         async with sm() as session:
             before = (
                 await session.execute(
