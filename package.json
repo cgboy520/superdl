@@ -8,6 +8,8 @@
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",

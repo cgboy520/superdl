@@ -1,0 +1,24 @@
+# 生成物与缓存
+**/dist
+**/node_modules
+**/.turbo
+**/routeTree.gen.ts
+**/resources.d.ts
+packages/api-client/src/generated
+packages/api-client/openapi.json
+pnpm-lock.yaml
+**/.ruff_cache
+**/.import_linter_cache
+**/playwright-report
+**/test-results
+
+# locale JSON 由 i18next-cli 排序写入,不与其争夺
+**/locales/**/*.json
+
+# 后端与部署侧有自己的格式化(ruff / 手工)
+apps/api
+deploy
+
+# index.html 内联 FOUC 脚本的 sha256 钉在 CSP 里(scripts/check-csp-hash.sh),格式化会改 hash
+apps/web/index.html
+apps/admin/index.html

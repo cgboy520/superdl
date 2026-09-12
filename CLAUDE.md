@@ -37,7 +37,7 @@ uv run python scripts/export_error_messages.py   # 改 core/messages.py 后同�
 
 # 前端(仓库根)
 pnpm install
-pnpm dev / build / lint / typecheck / test / i18n
+pnpm dev / build / format / lint / typecheck / test / i18n
 pnpm api-client                          # orval 重新生成 fetcher 与 model 类型
 pnpm --filter @superdl/e2e test:e2e      # 需 API+worker 在跑;SUPERDL_ADMIN_E2E=1 再跑管理端用例
 
