@@ -85,7 +85,7 @@ async def _delete_pod(session: AsyncSession, task: OutboxTask, expected: str) ->
     await get_orchestrator().delete_instance(instance.k8s_namespace, instance.uuid)
 
 
-@outbox_handler("instance.stop")
+@outbox_handler("instance.stop", retry=RetryPolicy(timeout_seconds=180))
 async def handle_stop(session: AsyncSession, task: OutboxTask) -> None:
     await _delete_pod(session, task, sm_def.STOPPING)
 
@@ -168,7 +168,7 @@ async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
         await _create_with_port_recovery(session, instance)
 
 
-@outbox_handler("instance.release")
+@outbox_handler("instance.release", retry=RetryPolicy(timeout_seconds=300))
 async def handle_release(session: AsyncSession, task: OutboxTask) -> None:
     await _delete_pod(session, task, sm_def.RELEASING)
 
@@ -201,7 +201,9 @@ async def handle_disk_quota(session: AsyncSession, task: OutboxTask) -> None:
 
 
 # 轮询集群 Job 完成,预算约 1.5 小时
-@outbox_handler("disk.wipe", retry=RetryPolicy(max_retries=12, backoff_base_seconds=30))
+@outbox_handler(
+    "disk.wipe", retry=RetryPolicy(max_retries=12, backoff_base_seconds=30, timeout_seconds=120)
+)
 async def handle_disk_wipe(session: AsyncSession, task: OutboxTask) -> None:
     """擦除 JuiceFS 子路径(集群侧 Job,未完成抛错重试)后置 deleted;
     擦除前摘除目录配额(失败仅告警)。"""

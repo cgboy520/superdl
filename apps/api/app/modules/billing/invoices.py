@@ -22,7 +22,7 @@ from app.core.idempotency import find_replay, insert_idempotent, request_fingerp
 from app.core.logging import get_logger
 from app.core.money import as_amount, money_str
 from app.core.pagination import Page, paginate_by_id
-from app.core.sqlutil import get_for_update_or_404
+from app.core.sqlutil import get_for_update_or_404, sum_decimal, total
 from app.core.timeutil import BILLING_DAY_OFFSET, billing_month_range, now_utc
 from app.modules.billing.models import InvoiceRequest, Order, RefundRequest
 from app.modules.billing.schemas import AdminInvoiceOut, InvoiceEligibleOut, InvoiceOut
@@ -47,54 +47,45 @@ def current_beijing_period() -> str:
 async def _period_paid_sum(session: AsyncSession, user_id: int, period: str) -> Decimal:
     """该用户该账期(北京月界)已支付充值订单总额,不含已被渠道冲正的订单。"""
     start, end = billing_month_range(period)
-    total = (
-        await session.execute(
-            select(func.coalesce(func.sum(Order.amount), 0)).where(
-                Order.user_id == user_id,
-                Order.status == "paid",
-                # 待处置/已坐实的冲正不计入可开票额;人工 release 的恢复
-                or_(
-                    Order.channel_reversed_at.is_(None),
-                    Order.channel_reversal_action == "release",
-                ),
-                Order.paid_at >= start,
-                Order.paid_at < end,
-            )
-        )
-    ).scalar_one()
-    return Decimal(total)
+    return await sum_decimal(
+        session,
+        select(total(Order.amount)).where(
+            Order.user_id == user_id,
+            Order.status == "paid",
+            # 待处置/已坐实的冲正不计入可开票额;人工 release 的恢复
+            or_(Order.channel_reversed_at.is_(None), Order.channel_reversal_action == "release"),
+            Order.paid_at >= start,
+            Order.paid_at < end,
+        ),
+    )
 
 
 async def _period_refund_sum(session: AsyncSession, user_id: int, period: str) -> Decimal:
     """该账期订单的退款总额(已打款 + 在途 pending/approved),按关联订单 paid_at 归属。"""
     start, end = billing_month_range(period)
-    total = (
-        await session.execute(
-            select(func.coalesce(func.sum(RefundRequest.amount), 0))
-            .join(Order, RefundRequest.order_no == Order.order_no)
-            .where(
-                RefundRequest.user_id == user_id,
-                RefundRequest.status.in_(REFUND_WITHHELD_STATUSES),
-                Order.paid_at >= start,
-                Order.paid_at < end,
-            )
-        )
-    ).scalar_one()
-    return Decimal(total)
+    return await sum_decimal(
+        session,
+        select(total(RefundRequest.amount))
+        .join(Order, RefundRequest.order_no == Order.order_no)
+        .where(
+            RefundRequest.user_id == user_id,
+            RefundRequest.status.in_(REFUND_WITHHELD_STATUSES),
+            Order.paid_at >= start,
+            Order.paid_at < end,
+        ),
+    )
 
 
 async def _period_active_sum(session: AsyncSession, user_id: int, period: str) -> Decimal:
     """该账期已占用额度:申请中(submitted)+ 已开票(issued)申请金额合计。"""
-    total = (
-        await session.execute(
-            select(func.coalesce(func.sum(InvoiceRequest.amount), 0)).where(
-                InvoiceRequest.user_id == user_id,
-                InvoiceRequest.period == period,
-                InvoiceRequest.status.in_(ACTIVE_STATUSES),
-            )
-        )
-    ).scalar_one()
-    return Decimal(total)
+    return await sum_decimal(
+        session,
+        select(total(InvoiceRequest.amount)).where(
+            InvoiceRequest.user_id == user_id,
+            InvoiceRequest.period == period,
+            InvoiceRequest.status.in_(ACTIVE_STATUSES),
+        ),
+    )
 
 
 async def _period_billable_amount(

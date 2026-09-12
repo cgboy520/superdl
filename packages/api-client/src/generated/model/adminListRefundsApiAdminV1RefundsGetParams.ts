@@ -7,7 +7,7 @@
 
 export type AdminListRefundsApiAdminV1RefundsGetParams = {
 status?: string | null;
-day?: string | null;
 cursor?: string | null;
 limit?: number | null;
+day?: string | null;
 };

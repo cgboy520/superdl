@@ -115,8 +115,14 @@ class RecoveryCodesOut(BaseModel):
     recovery_codes: list[str]
 
 
-class MfaResetRequest(BaseModel):
+class ReasonBody(BaseModel):
+    """只带操作原因的请求体(落审计 detail);管理端所有「必填原因」的动作在此基础上派生。"""
+
     reason: str = Field(min_length=2, max_length=REASON_MAX_LENGTH)
+
+
+class MfaResetRequest(ReasonBody):
+    pass
 
 
 class AdminRefreshRequest(BaseModel):

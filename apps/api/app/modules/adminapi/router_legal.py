@@ -3,13 +3,12 @@
 import hashlib
 
 from fastapi import APIRouter, Query, Request, status
-from pydantic import BaseModel, Field
 
 from app.core.audit import set_audit_target
 from app.core.db import DbSession
 from app.modules.adminapi.deps import require_roles
 from app.modules.adminapi.models import AdminUser
-from app.modules.adminapi.schemas import REASON_MAX_LENGTH
+from app.modules.adminapi.schemas import ReasonBody
 from app.modules.legal import service as legal_service
 from app.modules.legal.schemas import (
     LegalDocCellOut,
@@ -22,10 +21,8 @@ from app.modules.legal.schemas import (
 router = APIRouter(tags=["admin"])
 
 
-class LegalDocVersionArchive(BaseModel):
+class LegalDocVersionArchive(ReasonBody):
     """归档草稿的请求体:原因必填。"""
-
-    reason: str = Field(min_length=2, max_length=REASON_MAX_LENGTH)
 
 
 # ---------- 法务文档(读全角色,写仅 admin) ----------

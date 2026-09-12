@@ -9471,22 +9471,6 @@
           },
           {
             "in": "query",
-            "name": "day",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Day"
-            }
-          },
-          {
-            "in": "query",
             "name": "cursor",
             "required": false,
             "schema": {
@@ -9516,6 +9500,22 @@
                 }
               ],
               "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "day",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Day"
             }
           }
         ],
@@ -9655,22 +9655,6 @@
           },
           {
             "in": "query",
-            "name": "day",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Day"
-            }
-          },
-          {
-            "in": "query",
             "name": "tz_offset_minutes",
             "required": false,
             "schema": {
@@ -9693,6 +9677,22 @@
               ],
               "title": "Lang",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "day",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Day"
             }
           }
         ],
@@ -13510,22 +13510,6 @@
           },
           {
             "in": "query",
-            "name": "day",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Day"
-            }
-          },
-          {
-            "in": "query",
             "name": "cursor",
             "required": false,
             "schema": {
@@ -13555,6 +13539,22 @@
                 }
               ],
               "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "day",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Day"
             }
           }
         ],
@@ -13646,22 +13646,6 @@
           },
           {
             "in": "query",
-            "name": "day",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Day"
-            }
-          },
-          {
-            "in": "query",
             "name": "tz_offset_minutes",
             "required": false,
             "schema": {
@@ -13684,6 +13668,22 @@
               ],
               "title": "Lang",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "day",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Day"
             }
           }
         ],
@@ -14251,22 +14251,6 @@
           },
           {
             "in": "query",
-            "name": "day",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Day"
-            }
-          },
-          {
-            "in": "query",
             "name": "cursor",
             "required": false,
             "schema": {
@@ -14296,6 +14280,22 @@
                 }
               ],
               "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "day",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Day"
             }
           }
         ],
@@ -14355,22 +14355,6 @@
           },
           {
             "in": "query",
-            "name": "day",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Day"
-            }
-          },
-          {
-            "in": "query",
             "name": "tz_offset_minutes",
             "required": false,
             "schema": {
@@ -14393,6 +14377,22 @@
               ],
               "title": "Lang",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "day",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Day"
             }
           }
         ],

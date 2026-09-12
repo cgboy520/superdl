@@ -9,7 +9,7 @@ export type AdminListOrdersApiAdminV1OrdersGetParams = {
 status?: string | null;
 order_no?: string | null;
 user_id?: number | null;
-day?: string | null;
 cursor?: string | null;
 limit?: number | null;
+day?: string | null;
 };

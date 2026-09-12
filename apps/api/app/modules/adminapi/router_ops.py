@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import AuditLog, mark_audited_read, set_audit_target
 from app.core.config import get_settings
-from app.core.csvexport import csv_response
+from app.core.csvexport import CSV_RESPONSES, csv_response
 from app.core.db import DbSession
 from app.core.errors import AppError, ErrorCode, conflict
 from app.core.http import mark_idempotent_replay
@@ -42,7 +42,6 @@ from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.models import AdminUser
 from app.modules.adminapi.router_shared import ExportLang
 from app.modules.adminapi.schemas import (
-    REASON_MAX_LENGTH,
     AnnouncementOut,
     AnnouncementResultOut,
     AuditLogOut,
@@ -54,6 +53,7 @@ from app.modules.adminapi.schemas import (
     PlatformConfigWarningOut,
     PoliciesAdminOut,
     PolicySpecOut,
+    ReasonBody,
     RegistryTestOut,
     SmsTestOut,
     UpdatedKeysOut,
@@ -198,9 +198,7 @@ async def admin_audit_log(
 @router.get(
     "/audit/export",
     dependencies=[require_roles("readonly", "ops", "finance")],
-    responses={
-        200: {"description": "CSV 导出", "content": {"text/csv": {"schema": {"type": "string"}}}}
-    },
+    responses=CSV_RESPONSES,
 )
 async def admin_audit_export(
     session: DbSession,
@@ -419,8 +417,8 @@ class AnnouncementCreate(BaseModel):
     content: str = Field(min_length=2, max_length=2000)
 
 
-class AnnouncementRevoke(BaseModel):
-    reason: str = Field(min_length=2, max_length=REASON_MAX_LENGTH)
+class AnnouncementRevoke(ReasonBody):
+    pass
 
 
 def _announcement_out(a: Any) -> AnnouncementOut:
@@ -515,12 +513,12 @@ async def admin_list_dead_tasks(session: DbSession) -> list[DeadTaskOut]:
     ]
 
 
-class OutboxDiscardRequest(BaseModel):
-    reason: str = Field(min_length=2, max_length=REASON_MAX_LENGTH)
+class OutboxDiscardRequest(ReasonBody):
+    pass
 
 
-class OutboxRetryRequest(BaseModel):
-    reason: str = Field(min_length=2, max_length=REASON_MAX_LENGTH)
+class OutboxRetryRequest(ReasonBody):
+    pass
 
 
 async def _load_dead_task(session: AsyncSession, task_id: int, *, conflict_key: str) -> OutboxTask:

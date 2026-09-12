@@ -1,7 +1,10 @@
 """SQL 小工具:LIKE/ILIKE 元字符转义(单一定义点,与 SQLAlchemy 的 escape="\\" 配套)、
 日内单号序列、FOR UPDATE 取行或 404。"""
 
-from sqlalchemy import func, select
+from decimal import Decimal
+from typing import Any
+
+from sqlalchemy import ColumnElement, Select, SQLColumnExpression, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 
@@ -31,3 +34,13 @@ async def get_for_update_or_404[T](
     if row is None:
         raise AppError(ErrorCode.NOT_FOUND, key=key, http_status=404)
     return row
+
+
+def total(column: SQLColumnExpression[Decimal]) -> ColumnElement[Decimal]:
+    """SUM(col) 的空集归零形态:coalesce(sum(col), 0)。"""
+    return func.coalesce(func.sum(column), 0)
+
+
+async def sum_decimal(session: AsyncSession, stmt: Select[tuple[Any]]) -> Decimal:
+    """执行单列聚合语句(通常 select(total(col)).where(...))并转 Decimal。"""
+    return Decimal((await session.execute(stmt)).scalar_one())

@@ -18,10 +18,10 @@ from app.core.params import Cursor, IdempotencyKey, Limit
 from app.core.platform_config import get_runtime_config
 from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.schemas import (
-    REASON_MAX_LENGTH,
     GpuModelAggregateOut,
     NodeOut,
     OversellPoolOut,
+    ReasonBody,
 )
 from app.modules.metering import service as metering_service
 from app.modules.metering.schemas import NodeMetricsOut
@@ -139,8 +139,8 @@ async def admin_list_instance_events(
 # ---------- 节点注册(读:ops/readonly,写:ops,admin 恒许) ----------
 
 
-class EnrollmentRevokeRequest(BaseModel):
-    reason: str = Field(min_length=2, max_length=REASON_MAX_LENGTH)
+class EnrollmentRevokeRequest(ReasonBody):
+    pass
 
 
 class EnrollmentRegenerateRequest(BaseModel):
@@ -327,8 +327,8 @@ async def admin_gpu_model_aggregates(session: DbSession) -> list[GpuModelAggrega
     return [GpuModelAggregateOut(**vars(a)) for a in aggs]
 
 
-class NodeCordonRequest(BaseModel):
-    reason: str = Field(min_length=2, max_length=REASON_MAX_LENGTH)
+class NodeCordonRequest(ReasonBody):
+    pass
 
 
 class NodeCordonOut(BaseModel):

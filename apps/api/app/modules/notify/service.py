@@ -12,7 +12,7 @@ from app.core.constants import ADMIN_LIST_CAP
 from app.core.errors import AppError, conflict, not_found
 from app.core.idempotency import find_replay, insert_idempotent
 from app.core.logging import get_logger
-from app.core.outbox import OutboxTask, enqueue, outbox_handler
+from app.core.outbox import OutboxTask, RetryPolicy, enqueue, outbox_handler
 from app.core.pagination import Page, paginate_by_id
 from app.core.platform_config import get_runtime_config
 from app.core.ratelimit import check_rate_limit
@@ -78,7 +78,7 @@ async def notify(
 SMS_TASK_TYPE = "notify.sms"
 
 
-@outbox_handler(SMS_TASK_TYPE)
+@outbox_handler(SMS_TASK_TYPE, retry=RetryPolicy(timeout_seconds=60))
 async def handle_notify_sms(session: AsyncSession, task: OutboxTask) -> None:
     """通知短信发送(outbox 执行,尽力而为,at-least-once)。
     收件人两形态:{"user_id": N} 或 {"phone": "1xx"}。

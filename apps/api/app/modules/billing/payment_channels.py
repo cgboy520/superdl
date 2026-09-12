@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode
 from app.core.platform_config import RuntimeConfig, get_runtime_config
+from app.core.timeutil import now_utc
 
 if TYPE_CHECKING:
     from app.modules.billing.models import Order
@@ -65,16 +66,15 @@ def header_value(headers: Mapping[str, str], name: str) -> str:
     return ""
 
 
+def channel_error(key: str) -> AppError:
+    """渠道侧错误(凭据不全 / 验签失败 / 商户不符 / 回调过期等)的统一形态。"""
+    return AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key=key)
+
+
 def assert_callback_fresh(ts: datetime | None, *, key: str) -> None:
     """回调时间戳须在 ±CALLBACK_FRESHNESS_SECONDS 内;缺失/不可解析同拒。"""
-    if ts is None or abs((now_utc_() - ts).total_seconds()) > CALLBACK_FRESHNESS_SECONDS:
-        raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key=key)
-
-
-def now_utc_() -> datetime:
-    from app.core.timeutil import now_utc
-
-    return now_utc()
+    if ts is None or abs((now_utc() - ts).total_seconds()) > CALLBACK_FRESHNESS_SECONDS:
+        raise channel_error(key)
 
 
 class QueryResult:
@@ -141,9 +141,7 @@ class MockChannel:
             )
         # InvalidOperation:amount 非数值;TypeError:报文不是 JSON 对象
         except (ValueError, KeyError, TypeError, InvalidOperation) as exc:
-            raise AppError(
-                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.mockCallbackParseFailed"
-            ) from exc
+            raise channel_error("billing.mockCallbackParseFailed") from exc
         if result.success:
             self.mark_paid(result.order_no, result.channel_txn_id, result.amount)
         return result
@@ -181,9 +179,7 @@ class WechatChannel:
 
     def __init__(self, cfg: RuntimeConfig) -> None:  # pragma: no cover - 需真实商户凭据
         if not all(getattr(cfg, k) for k in WECHAT_CFG_KEYS):
-            raise AppError(
-                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCredentialsIncomplete"
-            )
+            raise channel_error("billing.wechatCredentialsIncomplete")
         from wechatpayv3 import WeChatPay, WeChatPayType  # type: ignore[import-untyped]
 
         self._wxpay = WeChatPay(
@@ -226,9 +222,7 @@ class WechatChannel:
         进 SDK 前先核对 Wechatpay-Serial == 公钥 ID(否则 SDK 会去微信拉平台证书,未验签的外部请求
         不许触发出网)与时间戳新鲜度。"""
         if header_value(headers, "Wechatpay-Serial") != self._public_key_id:
-            raise AppError(
-                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackVerifyFailed"
-            )
+            raise channel_error("billing.wechatCallbackVerifyFailed")
         try:
             ts = datetime.fromtimestamp(int(header_value(headers, "Wechatpay-Timestamp")), UTC)
         except (ValueError, OverflowError, OSError):
@@ -239,23 +233,15 @@ class WechatChannel:
         except AppError:
             raise
         except Exception as exc:
-            raise AppError(
-                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackVerifyFailed"
-            ) from exc
+            raise channel_error("billing.wechatCallbackVerifyFailed") from exc
         if not isinstance(result, dict) or result.get("event_type") != "TRANSACTION.SUCCESS":
-            raise AppError(
-                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackVerifyFailed"
-            )
+            raise channel_error("billing.wechatCallbackVerifyFailed")
         resource = result.get("resource")
         if not isinstance(resource, dict):
-            raise AppError(
-                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackVerifyFailed"
-            )
+            raise channel_error("billing.wechatCallbackVerifyFailed")
         # 核对通知里的商户号/应用号;缺失即判失败
         if resource.get("mchid") != self._mchid or resource.get("appid") != self._appid:
-            raise AppError(
-                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackMerchantMismatch"
-            )
+            raise channel_error("billing.wechatCallbackMerchantMismatch")
         # 缺字段显式 4xx
         out_trade_no = resource.get("out_trade_no")
         transaction_id = resource.get("transaction_id")
@@ -264,14 +250,10 @@ class WechatChannel:
         total = amount_obj.get("total") if isinstance(amount_obj, dict) else None
         currency = amount_obj.get("currency") if isinstance(amount_obj, dict) else None
         if not out_trade_no or not transaction_id or not trade_state or total is None:
-            raise AppError(
-                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackVerifyFailed"
-            )
+            raise channel_error("billing.wechatCallbackVerifyFailed")
         # 币种必须是人民币
         if currency != "CNY":
-            raise AppError(
-                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackMerchantMismatch"
-            )
+            raise channel_error("billing.wechatCallbackMerchantMismatch")
         return CallbackResult(
             order_no=out_trade_no,
             channel_txn_id=transaction_id,
@@ -316,9 +298,7 @@ class AlipayChannel:
 
     def __init__(self, cfg: RuntimeConfig) -> None:  # pragma: no cover - 需真实商户凭据
         if not (cfg.alipay_app_id and cfg.alipay_private_key and cfg.alipay_public_key):
-            raise AppError(
-                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCredentialsIncomplete"
-            )
+            raise channel_error("billing.alipayCredentialsIncomplete")
         from alipay.aop.api.AlipayClientConfig import (
             AlipayClientConfig,  # type: ignore[import-untyped]
         )
@@ -338,7 +318,7 @@ class AlipayChannel:
         self._seller_id = cfg.alipay_seller_id or ""
         # prod 强制 seller_id:回调须核对收款方身份
         if get_settings().environment == "prod" and not self._seller_id:
-            raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipaySellerIdRequired")
+            raise channel_error("billing.alipaySellerIdRequired")
         self._notify_url = f"{get_settings().public_base_url}/api/v1/webhooks/alipay"
 
     async def create_payment(self, order: "Order") -> str:  # pragma: no cover - 需真实商户凭据
@@ -393,23 +373,15 @@ class AlipayChannel:
         try:
             ok = verify_with_rsa(self._public_key, message.encode("utf-8"), sign)
         except Exception as exc:
-            raise AppError(
-                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCallbackVerifyFailed"
-            ) from exc
+            raise channel_error("billing.alipayCallbackVerifyFailed") from exc
         if not ok:
-            raise AppError(
-                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCallbackVerifyFailed"
-            )
+            raise channel_error("billing.alipayCallbackVerifyFailed")
         # app_id 与 seller_id 须为已方
         if params.get("app_id") != self._app_id:
-            raise AppError(
-                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCallbackMerchantMismatch"
-            )
+            raise channel_error("billing.alipayCallbackMerchantMismatch")
         # seller_id 缺失或不符一律拒收
         if params.get("seller_id") != self._seller_id:
-            raise AppError(
-                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCallbackMerchantMismatch"
-            )
+            raise channel_error("billing.alipayCallbackMerchantMismatch")
         # notify_time 为北京时间 yyyy-MM-dd HH:mm:ss
         try:
             ts: datetime | None = datetime.strptime(
@@ -425,9 +397,7 @@ class AlipayChannel:
             try:
                 refund_amount = Decimal(refund_fee)
             except InvalidOperation as exc:
-                raise AppError(
-                    ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCallbackVerifyFailed"
-                ) from exc
+                raise channel_error("billing.alipayCallbackVerifyFailed") from exc
             if refund_amount <= 0:
                 refund_amount = None
         return CallbackResult(
@@ -489,7 +459,7 @@ async def get_channel(name: str, session: AsyncSession) -> PaymentChannel:
     if name == "mock":
         # 无验签渠道只在显式开启时可用;prod 下 payment_mock 必为 false(Settings 校验)
         if not settings.payment_mock:
-            raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.mockDevOnly")
+            raise channel_error("billing.mockDevOnly")
         return MockChannel()
     if name not in ("wechat", "alipay"):
         raise AppError(

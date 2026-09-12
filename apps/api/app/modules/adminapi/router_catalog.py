@@ -3,7 +3,6 @@
 from decimal import ROUND_HALF_EVEN, Decimal
 
 from fastapi import APIRouter, Request
-from pydantic import BaseModel, Field
 
 from app.core.audit import set_audit_target
 from app.core.db import DbSession
@@ -12,13 +11,13 @@ from app.core.platform_config import get_runtime_config
 from app.modules.adminapi import service
 from app.modules.adminapi.deps import require_roles
 from app.modules.adminapi.schemas import (
-    REASON_MAX_LENGTH,
     AdminImageOut,
     CapacityPreviewOut,
     CapacityWarningOut,
     ImageCoverageOut,
     ImageNodeCacheOut,
     PrewarmEnqueuedOut,
+    ReasonBody,
     SkuImpactOut,
 )
 from app.modules.catalog import service as catalog_service
@@ -177,8 +176,8 @@ async def admin_update_sku(
 # ---------- 镜像与预热(读:ops/readonly,写:ops,admin 恒许) ----------
 
 
-class ImageDeleteRequest(BaseModel):
-    reason: str = Field(min_length=2, max_length=REASON_MAX_LENGTH)
+class ImageDeleteRequest(ReasonBody):
+    pass
 
 
 def _admin_image_out(img, coverage: dict[int, tuple[int, int, int]]) -> AdminImageOut:

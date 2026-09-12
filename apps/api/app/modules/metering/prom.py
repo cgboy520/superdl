@@ -102,40 +102,35 @@ def _extract_points(series: dict[str, Any]) -> list[tuple[float, float]]:
         raise PrometheusUnavailable(f"malformed prometheus series: {exc}") from exc
 
 
-async def query_range(
-    metric: str, ns: str, pod: str, *, start: float, end: float, step: str
-) -> list[tuple[float, float]]:
-    """返回 [(unix_ts, value)];Prometheus 不可用抛 PrometheusUnavailable。"""
-    promql = QUERIES[metric].format(ns=ns, pod=pod)
+async def _get(path: str, params: dict[str, Any]) -> list[dict[str, Any]]:
+    """GET Prometheus HTTP API 并取出 data.result;
+    网络 / 状态码 / 报文形态错误统一归 PrometheusUnavailable。"""
     try:
-        resp = await get_client().get(
-            "/api/v1/query_range",
-            params={"query": promql, "start": start, "end": end, "step": step},
-        )
+        resp = await get_client().get(path, params=params)
         resp.raise_for_status()
         data: dict[str, Any] = resp.json()
     except (httpx.HTTPError, ValueError) as exc:
         raise PrometheusUnavailable(str(exc)) from exc
-    results = _extract_result(data)
-    if not results:
-        return []
-    return _extract_points(results[0])
+    return _extract_result(data)
+
+
+async def query_range(
+    metric: str, ns: str, pod: str, *, start: float, end: float, step: str
+) -> list[tuple[float, float]]:
+    """返回 [(unix_ts, value)];Prometheus 不可用抛 PrometheusUnavailable。"""
+    results = await query_range_raw(
+        QUERIES[metric].format(ns=ns, pod=pod), start=start, end=end, step=step
+    )
+    return _extract_points(results[0]) if results else []
 
 
 async def query_range_raw(
     promql: str, *, start: float, end: float, step: str
 ) -> list[dict[str, Any]]:
     """query_range 原始 result 列表(白名单模板已格式化后传入)。"""
-    try:
-        resp = await get_client().get(
-            "/api/v1/query_range",
-            params={"query": promql, "start": start, "end": end, "step": step},
-        )
-        resp.raise_for_status()
-        data: dict[str, Any] = resp.json()
-    except (httpx.HTTPError, ValueError) as exc:
-        raise PrometheusUnavailable(str(exc)) from exc
-    return _extract_result(data)
+    return await _get(
+        "/api/v1/query_range", {"query": promql, "start": start, "end": end, "step": step}
+    )
 
 
 async def query_range_multi(
@@ -153,13 +148,7 @@ async def query_range_multi(
 
 async def query_instant(promql: str) -> float | None:
     """瞬时查询取首序列标量值;无数据返回 None。"""
-    try:
-        resp = await get_client().get("/api/v1/query", params={"query": promql})
-        resp.raise_for_status()
-        data: dict[str, Any] = resp.json()
-    except (httpx.HTTPError, ValueError) as exc:
-        raise PrometheusUnavailable(str(exc)) from exc
-    results = _extract_result(data)
+    results = await _get("/api/v1/query", {"query": promql})
     if not results:
         return None
     try:

@@ -10,7 +10,7 @@ from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import mark_audited_read, set_audit_target, write_audit_sync
-from app.core.csvexport import csv_response
+from app.core.csvexport import CSV_RESPONSES, csv_response
 from app.core.db import DbSession, get_sessionmaker
 from app.core.http import mark_idempotent_replay
 from app.core.metrics import PII_REVEAL_ROWS_TOTAL
@@ -21,7 +21,7 @@ from app.modules.account import service as account_service
 from app.modules.adminapi import export as admin_export, service
 from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.models import AdminUser
-from app.modules.adminapi.router_shared import ExportLang, parse_day
+from app.modules.adminapi.router_shared import DayRange, ExportLang, day_suffix, parse_day
 from app.modules.adminapi.schemas import (
     REASON_MAX_LENGTH,
     AdjustmentOut,
@@ -32,6 +32,7 @@ from app.modules.adminapi.schemas import (
     OrderBackfillOut,
     OrderVerifyOut,
     PaymentAnomalyOut,
+    ReasonBody,
     ReconciliationOut,
     RevenueReportOut,
 )
@@ -70,9 +71,7 @@ async def reconciliation(session: DbSession, day: str) -> ReconciliationOut:
 @router.get(
     "/reconciliation/export",
     dependencies=[require_roles("finance", "readonly")],
-    responses={
-        200: {"description": "CSV 导出", "content": {"text/csv": {"schema": {"type": "string"}}}}
-    },
+    responses=CSV_RESPONSES,
 )
 async def reconciliation_export(
     session: DbSession, day: str, lang: Literal["zh-CN", "en-US"] = ExportLang
@@ -168,7 +167,7 @@ async def admin_list_adjustments(
     session: DbSession,
     status: str | None = None,
     user_id: int | None = None,
-    day: str | None = None,
+    day_range: DayRange = None,
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[AdjustmentOut]:
@@ -177,7 +176,7 @@ async def admin_list_adjustments(
         session,
         status=status,
         user_id=user_id,
-        day_range=parse_day(day) if day else None,
+        day_range=day_range,
         cursor=cursor,
         limit=limit,
     )
@@ -186,15 +185,13 @@ async def admin_list_adjustments(
 @router.get(
     "/adjustments/export",
     dependencies=[require_roles("finance", "readonly")],
-    responses={
-        200: {"description": "CSV 导出", "content": {"text/csv": {"schema": {"type": "string"}}}}
-    },
+    responses=CSV_RESPONSES,
 )
 async def admin_adjustments_export(
     session: DbSession,
     status: str | None = None,
     user_id: int | None = None,
-    day: str | None = None,
+    day_range: DayRange = None,
     tz_offset_minutes: int = TzOffset,
     lang: Literal["zh-CN", "en-US"] = ExportLang,
 ) -> StreamingResponse:
@@ -205,11 +202,11 @@ async def admin_adjustments_export(
             session,
             status=status,
             user_id=user_id,
-            day_range=parse_day(day) if day else None,
+            day_range=day_range,
             tz_offset_minutes=tz_offset_minutes,
             lang=lang,
         ),
-        f"superdl-adjustments-{day or 'all'}.csv",
+        f"superdl-adjustments-{day_suffix(day_range)}.csv",
     )
 
 
@@ -290,27 +287,25 @@ async def admin_resolve_reversal(
 async def admin_list_refunds(
     session: DbSession,
     status: str | None = None,
-    day: str | None = None,
+    day_range: DayRange = None,
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[AdminRefundOut]:
     """退款单列表(游标分页,降序)。day=YYYY-MM-DD 按申请时间过滤。"""
     return await billing_service.admin_list_refunds(
-        session, status, day_range=parse_day(day) if day else None, cursor=cursor, limit=limit
+        session, status, day_range=day_range, cursor=cursor, limit=limit
     )
 
 
 @router.get(
     "/refunds/export",
     dependencies=[require_roles("finance", "readonly")],
-    responses={
-        200: {"description": "CSV 导出", "content": {"text/csv": {"schema": {"type": "string"}}}}
-    },
+    responses=CSV_RESPONSES,
 )
 async def admin_refunds_export(
     session: DbSession,
     status: str | None = None,
-    day: str | None = None,
+    day_range: DayRange = None,
     tz_offset_minutes: int = TzOffset,
     lang: Literal["zh-CN", "en-US"] = ExportLang,
 ) -> StreamingResponse:
@@ -320,11 +315,11 @@ async def admin_refunds_export(
         billing_service.stream_admin_refunds_csv(
             session,
             status=status,
-            day_range=parse_day(day) if day else None,
+            day_range=day_range,
             tz_offset_minutes=tz_offset_minutes,
             lang=lang,
         ),
-        f"superdl-refunds-{day or 'all'}.csv",
+        f"superdl-refunds-{day_suffix(day_range)}.csv",
     )
 
 
@@ -450,9 +445,7 @@ async def admin_list_invoices(
 
 @router.get(
     "/invoices/export",
-    responses={
-        200: {"description": "CSV 导出", "content": {"text/csv": {"schema": {"type": "string"}}}}
-    },
+    responses=CSV_RESPONSES,
 )
 async def admin_invoices_export(
     session: DbSession,
@@ -550,7 +543,7 @@ async def admin_list_orders(
     status: str | None = None,
     order_no: str | None = None,
     user_id: int | None = None,
-    day: str | None = None,
+    day_range: DayRange = None,
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[AdminOrderOut]:
@@ -560,7 +553,7 @@ async def admin_list_orders(
         status,
         order_no=order_no,
         user_id=user_id,
-        day_range=parse_day(day) if day else None,
+        day_range=day_range,
         cursor=cursor,
         limit=limit,
     )
@@ -573,16 +566,14 @@ async def admin_list_orders(
 @router.get(
     "/orders/export",
     dependencies=[require_roles("finance", "readonly")],
-    responses={
-        200: {"description": "CSV 导出", "content": {"text/csv": {"schema": {"type": "string"}}}}
-    },
+    responses=CSV_RESPONSES,
 )
 async def admin_orders_export(
     session: DbSession,
     status: str | None = None,
     order_no: str | None = None,
     user_id: int | None = None,
-    day: str | None = None,
+    day_range: DayRange = None,
     tz_offset_minutes: int = TzOffset,
     lang: Literal["zh-CN", "en-US"] = ExportLang,
 ) -> StreamingResponse:
@@ -593,11 +584,11 @@ async def admin_orders_export(
             status=status,
             order_no=order_no,
             user_id=user_id,
-            day_range=parse_day(day) if day else None,
+            day_range=day_range,
             tz_offset_minutes=tz_offset_minutes,
             lang=lang,
         ),
-        f"superdl-orders-{day or 'all'}.csv",
+        f"superdl-orders-{day_suffix(day_range)}.csv",
     )
 
 
@@ -629,8 +620,8 @@ async def admin_verify_order(order_no: str, session: DbSession, request: Request
     return OrderVerifyOut.model_validate(result)
 
 
-class OrderBackfillRequest(BaseModel):
-    reason: str = Field(min_length=2, max_length=REASON_MAX_LENGTH)
+class OrderBackfillRequest(ReasonBody):
+    pass
 
 
 @router.post("/finance/orders/{order_no}/backfill", dependencies=[require_roles("finance")])

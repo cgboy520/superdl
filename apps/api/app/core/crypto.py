@@ -107,39 +107,36 @@ def _hmac_candidates(domain_msg: str) -> list[str]:
 
 def hash_sms_code(phone: str, purpose: str, code: str) -> str:
     """短信验证码的带密钥摘要(写路径);phone 与 purpose 混进消息做域分离。"""
-    return _hmac_candidates(f"smscode|{phone}|{purpose}|{code}")[0]
+    return hash_sms_code_candidates(phone, purpose, code)[0]
 
 
 def hash_sms_code_candidates(phone: str, purpose: str, code: str) -> list[str]:
-    """短信验证码的读路径候选(轮换窗口内兼读旧钥匙世代)。"""
+    """读路径候选(轮换窗口内兼读旧钥匙世代)。"""
     return _hmac_candidates(f"smscode|{phone}|{purpose}|{code}")
 
 
 def hash_api_key(key: str) -> str:
     """服务端点 API Key 的带密钥摘要(写路径;域分离前缀 service-api-key|)。"""
-    return _hmac_candidates(f"service-api-key|{key}")[0]
+    return hash_api_key_candidates(key)[0]
 
 
 def hash_api_key_candidates(key: str) -> list[str]:
-    """API Key 的读路径候选(轮换窗口内兼读旧世代)。"""
     return _hmac_candidates(f"service-api-key|{key}")
 
 
 def hash_id_number(id_number: str) -> str:
     """实名证件号的带密钥摘要(写路径;域分离前缀 id-number|):只用于同证件跨账号去重,原文不落库。"""
-    return _hmac_candidates(f"id-number|{id_number.strip().upper()}")[0]
+    return hash_id_number_candidates(id_number)[0]
 
 
 def hash_id_number_candidates(id_number: str) -> list[str]:
-    """证件号摘要的读路径候选(轮换窗口内兼读旧世代)。"""
     return _hmac_candidates(f"id-number|{id_number.strip().upper()}")
 
 
 def hash_node_token(token: str) -> str:
     """节点注册/进度令牌的带密钥摘要(写路径;域分离前缀 node-enroll|)。"""
-    return _hmac_candidates(f"node-enroll|{token}")[0]
+    return hash_node_token_candidates(token)[0]
 
 
 def hash_node_token_candidates(token: str) -> list[str]:
-    """节点令牌的读路径候选(轮换窗口内兼读旧钥匙世代)。"""
     return _hmac_candidates(f"node-enroll|{token}")

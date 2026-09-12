@@ -9,11 +9,11 @@ import type { AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetLang } from '.
 export type AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetParams = {
 status?: string | null;
 user_id?: number | null;
-day?: string | null;
 /**
  * @minimum -720
  * @maximum 720
  */
 tz_offset_minutes?: number;
 lang?: AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetLang;
+day?: string | null;
 };

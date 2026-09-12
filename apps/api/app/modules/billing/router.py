@@ -4,7 +4,7 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import StreamingResponse
 
 from app.core.audit import set_audit_target
-from app.core.csvexport import csv_response
+from app.core.csvexport import CSV_RESPONSES, csv_response
 from app.core.db import DbSession
 from app.core.http import mark_idempotent_replay
 from app.core.pagination import Page
@@ -126,9 +126,7 @@ async def bill_daily_summary(
 
 @router.get(
     "/billing/export",
-    responses={
-        200: {"description": "CSV 导出", "content": {"text/csv": {"schema": {"type": "string"}}}}
-    },
+    responses=CSV_RESPONSES,
 )
 async def export_billing(
     user: CurrentUser,

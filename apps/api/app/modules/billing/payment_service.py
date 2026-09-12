@@ -31,6 +31,7 @@ from app.modules.billing.payment_channels import (
     CallbackResult,
     PaymentChannel,
     QueryResult,
+    channel_error,
     get_channel,
 )
 
@@ -65,7 +66,7 @@ async def create_recharge(
         "alipay": cfg.payment_alipay_enabled,
     }
     if channel_name in channel_enabled and not channel_enabled[channel_name]:
-        raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.channelNotEnabled")
+        raise channel_error("billing.channelNotEnabled")
     channel = await get_channel(channel_name, session)
 
     # 异参检测指纹:同键改了金额/渠道 → 409
@@ -205,7 +206,7 @@ async def handle_callback(session: AsyncSession, channel_name: str, result: Call
         logger.warning("callback_on_closed_order", order_no=order.order_no, status=order.status)
         return "ok"
     if order.channel != channel_name:
-        raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.callbackChannelMismatch")
+        raise channel_error("billing.callbackChannelMismatch")
     if as_amount(result.amount) != order.amount:
         logger.error(
             "callback_amount_mismatch",
@@ -214,7 +215,7 @@ async def handle_callback(session: AsyncSession, channel_name: str, result: Call
             got=str(result.amount),
         )
         PAYMENT_CALLBACK_MISMATCH_TOTAL.inc()
-        raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.callbackAmountMismatch")
+        raise channel_error("billing.callbackAmountMismatch")
     if not result.success:
         order.status = "failed"
         await session.commit()

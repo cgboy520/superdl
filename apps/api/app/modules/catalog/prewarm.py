@@ -14,7 +14,7 @@ from app.core.gpu_adapter import POOL_CPU
 from app.core.k8s import ensure_registry_pull_secret, get_orchestrator
 from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
-from app.core.outbox import OutboxTask, enqueue, outbox_handler
+from app.core.outbox import OutboxTask, RetryPolicy, enqueue, outbox_handler
 from app.core.platform_config import get_runtime_config
 from app.core.timeutil import now_utc
 from app.modules.catalog.models import ImageNodeCache, PlatformImage
@@ -29,7 +29,7 @@ PENDING_REQUEUE_TIMEOUT = timedelta(minutes=10)
 TARGET_NODE_STATUSES = ("Ready", "Cordoned")
 
 
-@outbox_handler("image.prewarm")
+@outbox_handler("image.prewarm", retry=RetryPolicy(timeout_seconds=120))
 async def handle_image_prewarm(session: AsyncSession, task: OutboxTask) -> None:
     """幂等:行已 cached/已删、镜像已删/已禁用 → 跳过;K8s 报错抛出交退避重试。"""
     image_id = task.payload["image_id"]

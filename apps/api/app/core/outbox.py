@@ -29,26 +29,19 @@ BACKOFF_BASE_SECONDS = 10
 BACKOFF_MAX_SECONDS = 600  # 退避上限
 # 单个 handler 的执行上限(只取消协程,底层同步线程会跑完但结果丢弃)
 TASK_TIMEOUT_SECONDS = 600.0
-# reaper 把超时 running 打回 pending;须显著大于 TASK_TIMEOUT_SECONDS,取 2 倍
+# reaper 把超时 running 打回 pending;须显著大于任何 handler 超时,取默认超时的 2 倍
 RUNNING_TIMEOUT = timedelta(seconds=2 * TASK_TIMEOUT_SECONDS)
-# 按任务类型的执行超时覆盖(秒);未列出的用 TASK_TIMEOUT_SECONDS
-TASK_TIMEOUT_OVERRIDES: dict[str, float] = {
-    "instance.stop": 180.0,
-    "instance.release": 300.0,
-    "disk.wipe": 120.0,
-    "image.prewarm": 120.0,
-    "node.cordon": 120.0,
-    "notify.sms": 60.0,
-}
 
 
 @dataclass(frozen=True)
 class RetryPolicy:
-    """按任务类型的重试预算;默认 5 次 × 10s 指数退避。"""
+    """按任务类型的重试预算与执行超时;默认 5 次 × 10s 指数退避、单轮 600s。
+    在 @outbox_handler(retry=...) 上声明,与 handler 同处一地。"""
 
     max_retries: int = MAX_RETRIES
     backoff_base_seconds: int = BACKOFF_BASE_SECONDS
     backoff_max_seconds: int = BACKOFF_MAX_SECONDS
+    timeout_seconds: float | None = None  # None = TASK_TIMEOUT_SECONDS(测试可 monkeypatch)
 
 
 DEFAULT_RETRY_POLICY = RetryPolicy()
@@ -173,7 +166,7 @@ async def _process_one(
     policy = retry_policy_for(task.type)
     attempt = task.retries + 1
     will_retry = attempt <= policy.max_retries
-    timeout = TASK_TIMEOUT_OVERRIDES.get(task.type, TASK_TIMEOUT_SECONDS)
+    timeout = policy.timeout_seconds or TASK_TIMEOUT_SECONDS
     error: str | None = None
     # 回填发起请求的 request_id 到日志上下文,执行完解绑
     request_id = task.payload.get(REQUEST_ID_KEY)

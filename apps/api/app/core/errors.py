@@ -104,15 +104,27 @@ class AppError(Exception):
         self.headers = dict(headers) if headers else None
 
 
+def _make(
+    code: ErrorCode,
+    http_status: int,
+    default_key: str,
+    message: str | None,
+    key: str | None,
+    params: Mapping[str, Any] | None = None,
+    detail: Any = None,
+) -> AppError:
+    """四个便捷工厂的共同体:给了 message 就不带文案键;否则用 key 或该状态的默认键。"""
+    key = None if message is not None else (key or default_key)
+    return AppError(code, message, key=key, params=params, http_status=http_status, detail=detail)
+
+
 def not_found(message: str | None = None, *, key: str | None = None) -> AppError:
-    key = None if message is not None else (key or "common.notFound")
-    return AppError(ErrorCode.NOT_FOUND, message, key=key, http_status=status.HTTP_404_NOT_FOUND)
+    return _make(ErrorCode.NOT_FOUND, status.HTTP_404_NOT_FOUND, "common.notFound", message, key)
 
 
 def unauthorized(message: str | None = None, *, key: str | None = None) -> AppError:
-    key = None if message is not None else (key or "common.unauthorized")
-    return AppError(
-        ErrorCode.UNAUTHORIZED, message, key=key, http_status=status.HTTP_401_UNAUTHORIZED
+    return _make(
+        ErrorCode.UNAUTHORIZED, status.HTTP_401_UNAUTHORIZED, "common.unauthorized", message, key
     )
 
 
@@ -122,9 +134,8 @@ def forbidden(
     key: str | None = None,
     params: Mapping[str, Any] | None = None,
 ) -> AppError:
-    key = None if message is not None else (key or "common.forbidden")
-    return AppError(
-        ErrorCode.FORBIDDEN, message, key=key, params=params, http_status=status.HTTP_403_FORBIDDEN
+    return _make(
+        ErrorCode.FORBIDDEN, status.HTTP_403_FORBIDDEN, "common.forbidden", message, key, params
     )
 
 
@@ -135,14 +146,14 @@ def conflict(
     params: Mapping[str, Any] | None = None,
     detail: Any = None,
 ) -> AppError:
-    key = None if message is not None else (key or "common.retryableConflict")
-    return AppError(
+    return _make(
         ErrorCode.CONFLICT,
+        status.HTTP_409_CONFLICT,
+        "common.retryableConflict",
         message,
-        key=key,
-        params=params,
-        http_status=status.HTTP_409_CONFLICT,
-        detail=detail,
+        key,
+        params,
+        detail,
     )
 
 

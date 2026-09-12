@@ -4,11 +4,10 @@ from typing import Literal
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import mark_audited_read, set_audit_target
-from app.core.csvexport import csv_response
+from app.core.csvexport import CSV_RESPONSES, csv_response
 from app.core.db import DbSession
 from app.core.errors import AppError
 from app.core.logging import mask_phone_value
@@ -29,6 +28,7 @@ from app.modules.adminapi.router_shared import ExportLang
 from app.modules.adminapi.schemas import (
     REASON_MAX_LENGTH,
     AdjustContextOut,
+    ReasonBody,
     TenantOut,
     TenantQuotaOut,
     TenantQuotaUpdate,
@@ -51,8 +51,8 @@ router = APIRouter(tags=["admin"])
 # ---------- 租户管理(角色:admin / ops) ----------
 
 
-class TenantFreezeRequest(BaseModel):
-    reason: str = Field(min_length=2, max_length=REASON_MAX_LENGTH)
+class TenantFreezeRequest(ReasonBody):
+    pass
 
 
 @router.get("/tenants", dependencies=[require_roles("ops", "finance", "readonly")])
@@ -147,9 +147,7 @@ async def admin_tenant_ledger(
 @router.get(
     "/tenants/{user_id}/ledger/export",
     dependencies=[require_roles("ops", "finance", "readonly")],
-    responses={
-        200: {"description": "CSV 导出", "content": {"text/csv": {"schema": {"type": "string"}}}}
-    },
+    responses=CSV_RESPONSES,
 )
 async def admin_tenant_ledger_export(
     user_id: int,

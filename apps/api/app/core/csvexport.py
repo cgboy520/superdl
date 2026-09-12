@@ -31,6 +31,12 @@ TRUNCATED_NOTES: dict[str, str] = {
 }
 
 
+# 路由 responses= 的 OpenAPI 声明(流式 CSV 端点共用)
+CSV_RESPONSES: dict[int | str, dict[str, Any]] = {
+    200: {"description": "CSV 导出", "content": {"text/csv": {"schema": {"type": "string"}}}}
+}
+
+
 def csv_response(stream: AsyncIterator[str], filename: str) -> StreamingResponse:
     """CSV 流式响应(Content-Disposition 附件)。"""
     return StreamingResponse(

@@ -11,13 +11,14 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import String, cast, func, select, true
+from sqlalchemy import ColumnElement, SQLColumnExpression, String, cast, func, select, true
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.metrics import FUND_RECONCILE_MISMATCH_TOTAL
+from app.core.sqlutil import sum_decimal, total
 from app.core.timeutil import billing_day_floor, now_utc
 from app.modules.billing.models import (
     BalanceLedger,
@@ -199,108 +200,66 @@ async def wallet_ledger_chain_check(sm: async_sessionmaker[AsyncSession]) -> lis
     return mismatches
 
 
+@dataclass(frozen=True)
+class _BillSource:
+    """一类出账及其在 balance_ledger 上的回连方式:ledger.ref_type / ref_id = 账单主键。"""
+
+    ref_type: str
+    table: type[BillHourly] | type[BillDailyDisk] | type[Subscription]
+    amount_col: SQLColumnExpression[Decimal]
+    period_col: SQLColumnExpression[datetime]  # 归属期(切窗用)
+
+
+# 三类出账:小时账按 hour_start、盘日结按 day、包周期预付按 subscriptions.created_at 切窗
+_BILL_SOURCES: tuple[_BillSource, ...] = (
+    _BillSource("bill_hourly", BillHourly, BillHourly.amount, BillHourly.hour_start),
+    _BillSource("bill_daily_disk", BillDailyDisk, BillDailyDisk.amount, BillDailyDisk.day),
+    _BillSource("subscription", Subscription, Subscription.amount_paid, Subscription.created_at),
+)
+
+
 async def bills_vs_consume(
     session: AsyncSession, since: datetime, until: datetime
 ) -> tuple[Decimal, Decimal]:
     """窗口内 (出账合计, 消费流水合计的绝对值)。两者必须相等。
-
-    两侧都按账单归属期切窗:bills 用 hour_start/day,ledger 经 ref_id 回连账单取归属期。
-    包周期预付「出账」侧取 `subscriptions.amount_paid`,切窗用 `subscriptions.created_at`。
-    """
-    billed_hourly = (
-        await session.execute(
-            select(func.coalesce(func.sum(BillHourly.amount), 0)).where(
-                BillHourly.hour_start >= since, BillHourly.hour_start < until
-            )
+    两侧都按账单归属期切窗:bills 用归属列,ledger 经 ref_id 回连账单取归属期。"""
+    billed = consumed = Decimal("0.00")
+    for src in _BILL_SOURCES:
+        in_window: tuple[ColumnElement[bool], ...] = (
+            src.period_col >= since,
+            src.period_col < until,
         )
-    ).scalar_one()
-    billed_daily = (
-        await session.execute(
-            select(func.coalesce(func.sum(BillDailyDisk.amount), 0)).where(
-                BillDailyDisk.day >= since, BillDailyDisk.day < until
-            )
+        billed += await sum_decimal(session, select(total(src.amount_col)).where(*in_window))
+        consumed -= await sum_decimal(
+            session,
+            select(total(BalanceLedger.amount))
+            .where(BalanceLedger.type == "consume", BalanceLedger.ref_type == src.ref_type)
+            .join(src.table, BalanceLedger.ref_id == cast(src.table.id, String))
+            .where(*in_window),
         )
-    ).scalar_one()
-    consumed_hourly = (
-        await session.execute(
-            select(func.coalesce(func.sum(BalanceLedger.amount), 0))
-            .where(BalanceLedger.type == "consume", BalanceLedger.ref_type == "bill_hourly")
-            .join(BillHourly, BalanceLedger.ref_id == cast(BillHourly.id, String))
-            .where(BillHourly.hour_start >= since, BillHourly.hour_start < until)
-        )
-    ).scalar_one()
-    consumed_daily = (
-        await session.execute(
-            select(func.coalesce(func.sum(BalanceLedger.amount), 0))
-            .where(BalanceLedger.type == "consume", BalanceLedger.ref_type == "bill_daily_disk")
-            .join(BillDailyDisk, BalanceLedger.ref_id == cast(BillDailyDisk.id, String))
-            .where(BillDailyDisk.day >= since, BillDailyDisk.day < until)
-        )
-    ).scalar_one()
-    billed_subscription = (
-        await session.execute(
-            select(func.coalesce(func.sum(Subscription.amount_paid), 0)).where(
-                Subscription.created_at >= since, Subscription.created_at < until
-            )
-        )
-    ).scalar_one()
-    consumed_subscription = (
-        await session.execute(
-            select(func.coalesce(func.sum(BalanceLedger.amount), 0))
-            .where(BalanceLedger.type == "consume", BalanceLedger.ref_type == "subscription")
-            .join(Subscription, BalanceLedger.ref_id == cast(Subscription.id, String))
-            .where(Subscription.created_at >= since, Subscription.created_at < until)
-        )
-    ).scalar_one()
-    billed = Decimal(billed_hourly) + Decimal(billed_daily) + Decimal(billed_subscription)
-    consumed = -(
-        Decimal(consumed_hourly) + Decimal(consumed_daily) + Decimal(consumed_subscription)
-    )
     return billed, consumed
 
 
 async def dangling_consume_refs(session: AsyncSession) -> int:
     """ref_id 回连不到账单的 consume 流水数(理论为零)。"""
-    hourly_dangling = (
-        await session.execute(
-            select(func.count())
-            .select_from(BalanceLedger)
-            .where(
-                BalanceLedger.type == "consume",
-                BalanceLedger.ref_type == "bill_hourly",
-                ~select(BillHourly.id)
-                .where(cast(BillHourly.id, String) == BalanceLedger.ref_id)
-                .exists(),
-            )
+    total = 0
+    for src in _BILL_SOURCES:
+        total += int(
+            (
+                await session.execute(
+                    select(func.count())
+                    .select_from(BalanceLedger)
+                    .where(
+                        BalanceLedger.type == "consume",
+                        BalanceLedger.ref_type == src.ref_type,
+                        ~select(src.table.id)
+                        .where(cast(src.table.id, String) == BalanceLedger.ref_id)
+                        .exists(),
+                    )
+                )
+            ).scalar_one()
         )
-    ).scalar_one()
-    daily_dangling = (
-        await session.execute(
-            select(func.count())
-            .select_from(BalanceLedger)
-            .where(
-                BalanceLedger.type == "consume",
-                BalanceLedger.ref_type == "bill_daily_disk",
-                ~select(BillDailyDisk.id)
-                .where(cast(BillDailyDisk.id, String) == BalanceLedger.ref_id)
-                .exists(),
-            )
-        )
-    ).scalar_one()
-    subscription_dangling = (
-        await session.execute(
-            select(func.count())
-            .select_from(BalanceLedger)
-            .where(
-                BalanceLedger.type == "consume",
-                BalanceLedger.ref_type == "subscription",
-                ~select(Subscription.id)
-                .where(cast(Subscription.id, String) == BalanceLedger.ref_id)
-                .exists(),
-            )
-        )
-    ).scalar_one()
-    return int(hourly_dangling) + int(daily_dangling) + int(subscription_dangling)
+    return total
 
 
 async def reconcile_funds(

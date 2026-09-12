@@ -22,7 +22,7 @@ from app.core.idempotency import (
 )
 from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
-from app.core.metrics import PATROL_FAILED_TOTAL
+from app.core.patrol import for_each
 from app.core.platform_config import get_runtime_config
 from app.core.pricing import SubscriptionQuote, period_delta, quote_subscription
 from app.core.timeutil import ensure_utc, now_utc
@@ -565,14 +565,15 @@ async def _patrol_due(sm: async_sessionmaker[AsyncSession], counts: dict[str, in
             .scalars()
             .all()
         )
-    for subscription_id in due_ids:
-        try:
-            async with sm() as session:
-                await _handle_due(session, subscription_id, counts)
-                await session.commit()
-        except Exception:
-            PATROL_FAILED_TOTAL.labels(stage="subscription_due").inc()
-            logger.exception("subscription_patrol_failed", subscription_id=subscription_id)
+
+    async def handle(subscription_id: int) -> None:
+        async with sm() as session:
+            await _handle_due(session, subscription_id, counts)
+            await session.commit()
+
+    await for_each(
+        due_ids, handle, stage="subscription_due", ident=lambda sid: {"subscription_id": sid}
+    )
 
 
 async def _handle_due(session: AsyncSession, subscription_id: int, counts: dict[str, int]) -> None:
@@ -729,18 +730,22 @@ async def _patrol_freeze_expired(
             return
         candidates = [
             inst
-            for inst in await orchestrator_queries.list_instances_by_status(session, "stopped")
+            for inst in await orchestrator_queries.list_instances_by_status(session, sm_def.STOPPED)
             if inst.id in expired
         ]
-    for inst in candidates:
-        try:
-            async with sm() as session:
-                fresh = await orchestrator_queries.instance_by_id(session, inst.id)
-                if fresh.status != "stopped":
-                    continue
-                await _freeze(session, fresh)
-                await session.commit()
-                counts["frozen"] += 1
-        except Exception:
-            PATROL_FAILED_TOTAL.labels(stage="subscription_freeze").inc()
-            logger.exception("subscription_freeze_failed", instance_id=inst.id)
+
+    async def freeze_if_still_stopped(inst: "Instance") -> None:
+        async with sm() as session:
+            fresh = await orchestrator_queries.instance_by_id(session, inst.id)
+            if fresh.status != sm_def.STOPPED:
+                return
+            await _freeze(session, fresh)
+            await session.commit()
+            counts["frozen"] += 1
+
+    await for_each(
+        candidates,
+        freeze_if_still_stopped,
+        stage="subscription_freeze",
+        ident=lambda inst: {"instance_id": inst.id},
+    )

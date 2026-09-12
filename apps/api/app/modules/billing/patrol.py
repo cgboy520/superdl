@@ -6,15 +6,16 @@
 
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
-from app.core.metrics import PATROL_FAILED_TOTAL, WALLET_NEGATIVE_COUNT, WALLET_NEGATIVE_SUM
+from app.core.metrics import WALLET_NEGATIVE_COUNT, WALLET_NEGATIVE_SUM
 from app.core.money import as_amount, hourly_cost, money_str
+from app.core.patrol import for_each
 from app.core.platform_config import get_runtime_config
 from app.core.pricing import MARKET_SUBSCRIPTION
 from app.core.timeutil import hour_floor, now_utc
@@ -36,7 +37,7 @@ from app.modules.orchestrator import (
 )
 
 if TYPE_CHECKING:
-    from app.modules.orchestrator.models import DataDisk
+    from app.modules.orchestrator.models import DataDisk, Instance
 
 logger = get_logger(__name__)
 
@@ -83,23 +84,22 @@ async def _patrol_frozen_tenants(
     """被冻结账号仍在跑的实例 → 停机(兜冻结时还在 creating/starting、随后收敛到 running 的实例)。"""
     async with sm() as session:
         frozen_user_ids = await account_service.frozen_user_ids(session)
-    if not frozen_user_ids:
-        return
-    for user_id in frozen_user_ids:
-        try:
-            async with sm() as session:
-                stopped = await orchestrator_transitions.stop_all_for_user(
-                    session, user_id, reason="tenant_frozen"
-                )
-                await session.commit()
-                counts["stopped"] += stopped
-        except Exception:
-            PATROL_FAILED_TOTAL.labels(stage="frozen_tenant").inc()
-            logger.exception("patrol_frozen_tenant_failed", user_id=user_id)
+
+    async def stop_all(user_id: int) -> None:
+        async with sm() as session:
+            stopped = await orchestrator_transitions.stop_all_for_user(
+                session, user_id, reason="tenant_frozen"
+            )
+            await session.commit()
+            counts["stopped"] += stopped
+
+    await for_each(
+        frozen_user_ids, stop_all, stage="frozen_tenant", ident=lambda uid: {"user_id": uid}
+    )
 
 
 async def _unsettled_burn(
-    session: AsyncSession, inst, now: datetime, settled_through: datetime | None
+    session: AsyncSession, inst: "Instance", now: datetime, settled_through: datetime | None
 ) -> Decimal:
     """该实例「已跑未出账」的实时估算消耗(2 位小数),只用于停机/预警判据,永不入账。
 
@@ -125,65 +125,87 @@ async def _unsettled_burn(
 
 
 async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str, int]) -> None:
+    """按用户看 running 实例:可用余额 − 未结算消耗 ≤ 0 → 停机;否则按预估可用时长预警。"""
     async with sm() as session:
         by_user = await orchestrator_queries.list_running_instances_by_user(session)
         thresholds = await account_service.get_warn_thresholds(session, list(by_user))
         settled_through = await get_watermark(session, "hourly")
 
-    for user_id, all_instances in by_user.items():
-        # 包周期实例不参与燃烧率与欠费停机。三处配套过滤之一
-        # (另两处:wallet.assert_can_afford、billing.edge_listener)
-        instances = [i for i in all_instances if i.market != MARKET_SUBSCRIPTION]
-        if not instances:
-            continue
-        try:
-            async with sm() as session:
-                available = await wallet.get_available_balance(session, user_id)
-                burn_per_hour = sum(
-                    (hourly_cost(i.price_hourly, i.gpu_count) for i in instances),
-                    Decimal("0.00"),
-                )
-                # 停机判据:可用余额 − 未结算消耗 ≤ 0
-                now = now_utc()
-                unsettled = Decimal("0.00")
-                for inst in instances:
-                    unsettled += await _unsettled_burn(session, inst, now, settled_through)
-                effective = as_amount(available - unsettled)
-                fresh_instances: list[Any] = []
-                if effective <= 0:
-                    # 锁序 instance → wallet,与结算(instance → bill → wallet)同向,避免 ABBA 死锁;
-                    # 锁内二次读(credit 与本锁互斥),同样走可用口径
-                    for inst in sorted(instances, key=lambda i: i.id):
-                        fresh = await orchestrator_queries.lock_instance(session, inst.id)
-                        if fresh is not None:
-                            fresh_instances.append(fresh)
-                    locked = await wallet.lock_wallet(session, user_id)
-                    effective = as_amount(wallet.available_of(locked) - unsettled)
-                if effective <= 0:
-                    for fresh in fresh_instances:
-                        if fresh.status == sm_def.RUNNING:
-                            await orchestrator_transitions.system_stop(
-                                session, fresh, reason="arrears_stop"
-                            )
-                            counts["stopped"] += 1
-                    await notify_service.send_arrears_notice(
-                        session,
-                        user_id,
-                        action="auto_stop",
-                        detail="余额耗尽,实例已自动关机",
+    # 包周期实例不参与燃烧率与欠费停机。三处配套过滤之一
+    # (另两处:wallet.assert_can_afford、billing.edge_listener)
+    on_demand = {
+        uid: [i for i in insts if i.market != MARKET_SUBSCRIPTION] for uid, insts in by_user.items()
+    }
+
+    async def check_user(user_id: int) -> None:
+        async with sm() as session:
+            await _check_user_burn(
+                session,
+                user_id,
+                on_demand[user_id],
+                settled_through=settled_through,
+                warn_hours=thresholds.get(user_id),
+                counts=counts,
+            )
+
+    await for_each(
+        [uid for uid, insts in on_demand.items() if insts],
+        check_user,
+        stage="running",
+        ident=lambda uid: {"user_id": uid},
+    )
+
+
+async def _check_user_burn(
+    session: AsyncSession,
+    user_id: int,
+    instances: list["Instance"],
+    *,
+    settled_through: datetime | None,
+    warn_hours: int | None,
+    counts: dict[str, int],
+) -> None:
+    """单用户判据与处置(同一事务):停机 → 尾账 + 通知;未停机且预估时长低于阈值 → 预警。"""
+    available = await wallet.get_available_balance(session, user_id)
+    burn_per_hour = sum(
+        (hourly_cost(i.price_hourly, i.gpu_count) for i in instances), Decimal("0.00")
+    )
+    # 停机判据:可用余额 − 未结算消耗 ≤ 0
+    now = now_utc()
+    unsettled = Decimal("0.00")
+    for inst in instances:
+        unsettled += await _unsettled_burn(session, inst, now, settled_through)
+    effective = as_amount(available - unsettled)
+    if effective <= 0:
+        # 锁序 instance → wallet,与结算(instance → bill → wallet)同向,避免 ABBA 死锁;
+        # 锁内二次读(credit 与本锁互斥),同样走可用口径
+        locked_instances = [
+            fresh
+            for inst in sorted(instances, key=lambda i: i.id)
+            if (fresh := await orchestrator_queries.lock_instance(session, inst.id)) is not None
+        ]
+        locked = await wallet.lock_wallet(session, user_id)
+        effective = as_amount(wallet.available_of(locked) - unsettled)
+        if effective <= 0:
+            for fresh in locked_instances:
+                if fresh.status == sm_def.RUNNING:
+                    await orchestrator_transitions.system_stop(
+                        session, fresh, reason="arrears_stop"
                     )
-                    await session.commit()
-                elif burn_per_hour > 0:
-                    est_hours = float(effective / burn_per_hour)
-                    # 阈值存 users.low_balance_warn_hours(NOT NULL),每个 user_id 必有阈值行
-                    if est_hours < thresholds[user_id]:
-                        await notify_service.send_low_balance_warning(
-                            session, user_id, est_hours=est_hours, balance=money_str(available)
-                        )
-                        counts["warned"] += 1
-        except Exception:
-            PATROL_FAILED_TOTAL.labels(stage="running").inc()
-            logger.exception("patrol_running_failed", user_id=user_id)
+                    counts["stopped"] += 1
+            await notify_service.send_arrears_notice(
+                session, user_id, action="auto_stop", detail="余额耗尽,实例已自动关机"
+            )
+            await session.commit()
+            return
+    if warn_hours is None or burn_per_hour <= 0:
+        return  # 阈值来自 users.low_balance_warn_hours;无用户行(残留实例)不预警
+    est_hours = float(effective / burn_per_hour)
+    if est_hours < warn_hours:
+        await notify_service.send_low_balance_warning(
+            session, user_id, est_hours=est_hours, balance=money_str(available)
+        )
+        counts["warned"] += 1
 
 
 async def _patrol_frozen_and_arrears_stopped(
@@ -197,56 +219,57 @@ async def _patrol_frozen_and_arrears_stopped(
         stopped = await orchestrator_queries.list_instances_by_status(session, sm_def.STOPPED)
         frozen = await orchestrator_queries.list_instances_by_status(session, sm_def.FROZEN)
 
-    # 欠费用户的 stopped 实例 → 冻结。包周期的冻结由 subscriptions.subscription_patrol
-    # 写 frozen_deadline,回收归下面统一做
-    for inst in (i for i in stopped if i.market != MARKET_SUBSCRIPTION):
-        try:
-            async with sm() as session:
-                available = await wallet.get_available_balance(session, inst.user_id)
-                if available > 0:
-                    continue
-                fresh = await orchestrator_queries.get_instance(session, inst.user_id, inst.uuid)
-                if fresh.status != sm_def.STOPPED:
-                    continue
-                deadline = now + timedelta(hours=policies.freeze_grace_hours)
-                await orchestrator_transitions.freeze_instance(session, fresh, deadline)
+    async def freeze_if_in_arrears(inst: "Instance") -> None:
+        # 欠费用户的 stopped 实例 → 冻结。包周期的冻结由 subscriptions.subscription_patrol
+        # 写 frozen_deadline,回收归下面统一做
+        async with sm() as session:
+            available = await wallet.get_available_balance(session, inst.user_id)
+            if available > 0:
+                return
+            fresh = await orchestrator_queries.get_instance(session, inst.user_id, inst.uuid)
+            if fresh.status != sm_def.STOPPED:
+                return
+            deadline = now + timedelta(hours=policies.freeze_grace_hours)
+            await orchestrator_transitions.freeze_instance(session, fresh, deadline)
+            await notify_service.send_arrears_notice(
+                session,
+                inst.user_id,
+                action="freeze",
+                detail=f"欠费冻结,{policies.freeze_grace_hours} 小时后将回收实例盘",
+            )
+            await session.commit()
+            counts["frozen"] += 1
+
+    async def unfreeze_or_reclaim(inst: "Instance") -> None:
+        # frozen:充值 → 解冻;到期 → 回收
+        async with sm() as session:
+            fresh = await orchestrator_queries.get_instance(session, inst.user_id, inst.uuid)
+            if fresh.status != sm_def.FROZEN:
+                return
+            # 解冻条件按购买模式分:按量看可用余额,包周期看续费
+            available = await wallet.get_available_balance(session, inst.user_id)
+            if available > 0 and fresh.market != MARKET_SUBSCRIPTION:
+                await orchestrator_transitions.unfreeze_instance(session, fresh)
+                counts["unfrozen"] += 1
+            elif fresh.frozen_deadline is not None and fresh.frozen_deadline <= now:
+                await orchestrator_transitions.reclaim_frozen(session, fresh)
                 await notify_service.send_arrears_notice(
                     session,
                     inst.user_id,
-                    action="freeze",
-                    detail=f"欠费冻结,{policies.freeze_grace_hours} 小时后将回收实例盘",
+                    action="reclaim",
+                    detail="冻结期满,实例已回收(实例盘清除,数据盘保留)",
                 )
-                await session.commit()
-                counts["frozen"] += 1
-        except Exception:
-            PATROL_FAILED_TOTAL.labels(stage="freeze").inc()
-            logger.exception("patrol_freeze_failed", instance_id=inst.id)
+                counts["reclaimed"] += 1
+            await session.commit()
 
-    # frozen:充值 → 解冻;到期 → 回收
-    for inst in frozen:
-        try:
-            async with sm() as session:
-                fresh = await orchestrator_queries.get_instance(session, inst.user_id, inst.uuid)
-                if fresh.status != sm_def.FROZEN:
-                    continue
-                # 解冻条件按购买模式分:按量看可用余额,包周期看续费
-                available = await wallet.get_available_balance(session, inst.user_id)
-                if available > 0 and fresh.market != MARKET_SUBSCRIPTION:
-                    await orchestrator_transitions.unfreeze_instance(session, fresh)
-                    counts["unfrozen"] += 1
-                elif fresh.frozen_deadline is not None and fresh.frozen_deadline <= now:
-                    await orchestrator_transitions.reclaim_frozen(session, fresh)
-                    await notify_service.send_arrears_notice(
-                        session,
-                        inst.user_id,
-                        action="reclaim",
-                        detail="冻结期满,实例已回收(实例盘清除,数据盘保留)",
-                    )
-                    counts["reclaimed"] += 1
-                await session.commit()
-        except Exception:
-            PATROL_FAILED_TOTAL.labels(stage="frozen").inc()
-            logger.exception("patrol_frozen_failed", instance_id=inst.id)
+    ident = lambda inst: {"instance_id": inst.id}  # noqa: E731
+    await for_each(
+        [i for i in stopped if i.market != MARKET_SUBSCRIPTION],
+        freeze_if_in_arrears,
+        stage="freeze",
+        ident=ident,
+    )
+    await for_each(frozen, unfreeze_or_reclaim, stage="frozen", ident=ident)
 
 
 async def _settle_disk_pending(session: AsyncSession, disk: "DataDisk") -> None:
@@ -270,15 +293,14 @@ async def _patrol_disks(sm: async_sessionmaker[AsyncSession], counts: dict[str, 
     """
     async with sm() as session:
         user_ids = await orchestrator_queries.arrears_chain_disk_user_ids(session)
-    for user_id in user_ids:
-        try:
-            async with sm() as session:
-                available = await wallet.get_available_balance(session, user_id)
-                changed = await orchestrator_transitions.arrears_transition_disks(
-                    session, user_id, available <= 0, settle_pending=_settle_disk_pending
-                )
-                await session.commit()
-                counts["disks"] += changed
-        except Exception:
-            PATROL_FAILED_TOTAL.labels(stage="disks").inc()
-            logger.exception("patrol_disks_failed", user_id=user_id)
+
+    async def advance_chain(user_id: int) -> None:
+        async with sm() as session:
+            available = await wallet.get_available_balance(session, user_id)
+            changed = await orchestrator_transitions.arrears_transition_disks(
+                session, user_id, available <= 0, settle_pending=_settle_disk_pending
+            )
+            await session.commit()
+            counts["disks"] += changed
+
+    await for_each(user_ids, advance_chain, stage="disks", ident=lambda uid: {"user_id": uid})

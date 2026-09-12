@@ -5,13 +5,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.k8s import get_orchestrator
 from app.core.logging import get_logger
-from app.core.outbox import OutboxTask, outbox_handler
+from app.core.outbox import OutboxTask, RetryPolicy, outbox_handler
 from app.modules.nodes.models import NodeSpec
 
 logger = get_logger(__name__)
 
 
-@outbox_handler("node.cordon")
+@outbox_handler("node.cordon", retry=RetryPolicy(timeout_seconds=120))
 async def handle_node_cordon(session: AsyncSession, task: OutboxTask) -> None:
     """cordon/uncordon:执行台账期望态(desired_unschedulable),不读 payload(乱序重试幂等收敛)。
     节点不存在 404,退避重试后进死信。"""

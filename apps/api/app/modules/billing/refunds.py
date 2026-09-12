@@ -22,7 +22,7 @@ from app.core.idempotency import find_replay, insert_idempotent, request_fingerp
 from app.core.logging import get_logger
 from app.core.money import as_amount, money_str
 from app.core.pagination import Page, paginate_by_id
-from app.core.sqlutil import get_for_update_or_404, next_daily_seq
+from app.core.sqlutil import get_for_update_or_404, next_daily_seq, sum_decimal, total
 from app.core.timeutil import now_utc
 from app.modules.billing import invoices, wallet
 from app.modules.billing.models import InvoiceRequest, Order, RefundRequest, reversal_blocks_refund
@@ -77,15 +77,12 @@ async def _active_refund_of_order(session: AsyncSession, order_no: str) -> Refun
 
 async def _paid_total_of_order(session: AsyncSession, order_no: str) -> Decimal:
     """该订单已打款退款合计。"""
-    total = (
-        await session.execute(
-            select(func.coalesce(func.sum(RefundRequest.amount), 0)).where(
-                RefundRequest.order_no == order_no,
-                RefundRequest.status == "paid",
-            )
-        )
-    ).scalar_one()
-    return Decimal(total)
+    return await sum_decimal(
+        session,
+        select(total(RefundRequest.amount)).where(
+            RefundRequest.order_no == order_no, RefundRequest.status == "paid"
+        ),
+    )
 
 
 @dataclass(frozen=True)
