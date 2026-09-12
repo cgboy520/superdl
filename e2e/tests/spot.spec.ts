@@ -33,7 +33,8 @@ test("买竞价并转按量", async ({ page }) => {
   await expect(proceed).toBeEnabled();
   await proceed.click();
 
-  // 列表:竞价 + 可回收标记
+  // 列表:竞价 + 可回收标记(创建后落在详情页,先回列表)
+  await page.goto("/instances");
   const row = await waitFirstRowRunning(page);
   await expect(row.getByText(/竞价/).first()).toBeVisible();
   await expect(row.getByText("可回收")).toBeVisible();

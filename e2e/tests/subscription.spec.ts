@@ -24,7 +24,8 @@ test("买包月并续费", async ({ page }) => {
   await expect(submit).toBeVisible({ timeout: 15_000 });
   await submit.click();
 
-  // 列表:包月标记 + 剩余天数
+  // 列表:包月标记 + 剩余天数(创建后落在详情页,先回列表)
+  await page.goto("/instances");
   const row = await waitFirstRowRunning(page);
   await expect(row.getByText(/包月/)).toBeVisible();
   await expect(row.getByText(/剩 \d+ 天/)).toBeVisible();
