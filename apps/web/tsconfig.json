@@ -18,5 +18,5 @@
     "types": ["vite/client"],
     "resolveJsonModule": true
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "vite.config.ts", "i18next.config.ts"]
 }
