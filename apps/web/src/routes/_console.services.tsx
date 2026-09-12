@@ -12,26 +12,19 @@ import {
   metaOf,
   SERVICE_FILTER_STATUSES,
   serviceStatusMap,
-  useDebouncedValue,
-  useFormat,
 } from "@superdl/ui";
-import { LoadMore, moneyOr, PageHeader, TableErrorEmpty } from "@superdl/ui/components";
+import { LoadMore, PageHeader, TableErrorEmpty } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Button, Input, Select, Space, Table, Tag, theme, Tooltip, Typography } from "antd";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useDailySummary, usePolicies, useServicePages, useTransientServiceRefresh } from "../api/queries";
-import {
-  CopyButton,
-  ServiceStatusBadge,
-  SpotReclaimTag,
-  SpotTag,
-  SubscriptionTag,
-  TierTag,
-} from "../components/common";
+import { BillingCell } from "../components/BillingCell";
+import { CopyButton, ServiceStatusBadge, TierTag } from "../components/common";
 import { ServiceActions } from "../components/services/ServiceActions";
 import { requireAuth } from "../lib/guard";
+import { useCursorList } from "../lib/useCursorList";
 
 export interface ServicesSearch {
   q?: string;
@@ -56,68 +49,20 @@ function hostOf(url: string): string {
   return url.replace(/^https?:\/\//, "");
 }
 
-/** 费用列:包周期 = 周期标 + 周期价;按量 / 竞价 = 标记 + 时价 + 今日消费(按当前版本实例匹配)。 */
-function BillingCell({
-  service,
-  todayByInstance,
-  dailyReady,
-}: {
-  service: ServiceOut;
-  todayByInstance: ReadonlyMap<number, string>;
-  dailyReady: boolean;
-}) {
-  const { t } = useTranslation(["web", "shared"]);
-  const { formatHourlyPrice, formatMoney, formatPeriodPrice } = useFormat();
-  const inst = service.current_instance ?? service.rollout_instance;
-  if (!inst) return <Typography.Text type="secondary">—</Typography.Text>;
-  if (inst.market === "subscription" && inst.subscription) {
-    return (
-      <Space orientation="vertical" size={0} align="start">
-        <SubscriptionTag market={inst.market} subscription={inst.subscription} />
-        <span>
-          {formatPeriodPrice(inst.subscription.amount_paid, inst.subscription.period, inst.subscription.period_count)}
-        </span>
-      </Space>
-    );
-  }
-  return (
-    <Space orientation="vertical" size={0}>
-      <Space size={6}>
-        {inst.market === "spot" ? (
-          <SpotTag market={inst.market} />
-        ) : (
-          <Tag style={{ marginInlineEnd: 0 }}>{t("instances.payAsYouGo")}</Tag>
-        )}
-        <span>
-          {t("instances.pricePerCard", {
-            price: formatHourlyPrice(inst.price_hourly),
-            count: inst.gpu_count,
-          })}
-        </span>
-      </Space>
-      <Space size={6}>
-        <SpotReclaimTag market={inst.market} />
-        <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-          {t("instances.todayCost", {
-            amount: moneyOr(formatMoney(todayByInstance.get(inst.id)), dailyReady),
-          })}
-        </Typography.Text>
-      </Space>
-    </Space>
-  );
-}
-
 function ServicesPage() {
   const { t } = useTranslation(["web", "shared"]);
   const { token } = theme.useToken();
   const navigate = useNavigate();
   const { q, status } = Route.useSearch();
-  const [keyword, setKeyword] = useState(q ?? "");
-  const debouncedKeyword = useDebouncedValue(keyword, 300);
-  const deferredQ = debouncedKeyword.trim();
   const { data: policies } = usePolicies();
+  const commitQ = useCallback(
+    (next: string | undefined) => void navigate({ to: "/services", search: { q: next, status }, replace: true }),
+    [navigate, status],
+  );
   const {
-    data,
+    keyword,
+    setKeyword,
+    rows,
     isLoading,
     isError,
     refetch,
@@ -126,25 +71,18 @@ function ServicesPage() {
     isFetchingNextPage,
     isFetchNextPageError,
     fetchNextPage,
-  } = useServicePages({ status, name: deferredQ || undefined });
+  } = useCursorList({
+    urlQ: q,
+    commitQ,
+    usePages: (name) => useServicePages({ status, name }),
+    keyOf: (s: ServiceOut) => s.slug,
+  });
   const { date, tzOffsetMinutes } = localToday();
   const { data: daily } = useDailySummary(date, tzOffsetMinutes, { refetchInterval: POLL.daily });
   const todayByInstance = useMemo(
     () => new Map((daily?.items ?? []).map((it) => [it.instance_id, it.total_amount])),
     [daily],
   );
-  const rows = useMemo<ServiceOut[]>(() => {
-    const seen = new Set<string>();
-    const out: ServiceOut[] = [];
-    for (const p of data?.pages ?? []) {
-      for (const s of p.items) {
-        if (seen.has(s.slug)) continue;
-        seen.add(s.slug);
-        out.push(s);
-      }
-    }
-    return out;
-  }, [data]);
   useTransientServiceRefresh(rows);
 
   const setSearch = (patch: ServicesSearch) =>
@@ -156,10 +94,6 @@ function ServicesPage() {
       },
       replace: true,
     });
-  useEffect(() => {
-    if ((q ?? "") === deferredQ) return;
-    void navigate({ to: "/services", search: { q: deferredQ || undefined, status }, replace: true });
-  }, [q, deferredQ, status, navigate]);
 
   const emptyText = isError ? (
     <TableErrorEmpty isError onRetry={() => void refetch()} />
@@ -300,7 +234,13 @@ function ServicesPage() {
           },
           {
             title: t("services.colBilling"),
-            render: (_, r) => <BillingCell service={r} todayByInstance={todayByInstance} dailyReady={daily != null} />,
+            render: (_, r) => (
+              <BillingCell
+                instance={r.current_instance ?? r.rollout_instance}
+                todayByInstance={todayByInstance}
+                dailyReady={daily != null}
+              />
+            ),
           },
           { title: t("services.colCreated"), render: (_, r) => formatDateTime(r.created_at) },
           {
