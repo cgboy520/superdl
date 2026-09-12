@@ -1,6 +1,7 @@
 """worker 组件划分:outbox 任务类型与定时任务按组件分片,每个 Deployment 经 SUPERDL_WORKER_COMPONENT
 声明身份(K8s 权限随组件收窄,见 deploy/app/k8s/01-rbac.yaml);ALL 为 dev/test 单进程全量。
-新增 outbox handler / 定时任务必须登记到某个组件(tests/test_workers_components.py 锚定)。
+新增 outbox handler 必须登记到某个组件(tests/test_workers_components.py 锚定);
+定时任务的归属在 workers/jobs.py 的 JOBS 清单里声明。
 """
 
 from enum import StrEnum
@@ -36,30 +37,6 @@ COMPONENT_OUTBOX_TYPES: dict[WorkerComponent, frozenset[str]] = {
     WorkerComponent.DISK_OPS: frozenset({"disk.quota", "disk.wipe"}),
 }
 
-# 定时任务 id → 组件(与 register_scheduled_jobs 由 tests/test_workers_components.py 双向锁定)
-COMPONENT_SCHEDULED_JOBS: dict[WorkerComponent, frozenset[str]] = {
-    WorkerComponent.CORE: frozenset(
-        {
-            "outbox_reaper",
-            "outbox_metrics",
-            "hourly_settlement",
-            "daily_disk_settlement",
-            "fund_reconcile",
-            "usage_aggregation",
-            "close_expired_orders",
-            "payment_reconcile",
-            "cleanup_expired_rows",
-            "balance_patrol",
-            "subscription_patrol",
-            "ticket_stale_patrol",
-        }
-    ),
-    WorkerComponent.TENANT_MGR: frozenset({"reconciler"}),
-    WorkerComponent.NODE_MGR: frozenset({"node_spec_patrol", "node_enroll_reconciler"}),
-    WorkerComponent.PREWARM: frozenset({"prewarm_patrol"}),
-    WorkerComponent.DISK_OPS: frozenset(),
-}
-
 
 def current_component() -> WorkerComponent:
     """SUPERDL_WORKER_COMPONENT 解析;缺省 ALL,非法值拒启。"""
@@ -76,10 +53,3 @@ def outbox_types_for(component: WorkerComponent) -> frozenset[str] | None:
     if component is WorkerComponent.ALL:
         return None
     return COMPONENT_OUTBOX_TYPES[component]
-
-
-def scheduled_jobs_for(component: WorkerComponent) -> frozenset[str] | None:
-    """组件的定时任务集合;ALL 返回 None(全注册)。"""
-    if component is WorkerComponent.ALL:
-        return None
-    return COMPONENT_SCHEDULED_JOBS[component]

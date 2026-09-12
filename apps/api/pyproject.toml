@@ -61,7 +61,6 @@ combine-as-imports = true
 # 副作用注册 / 生命周期内的延迟 import
 "app/wiring.py" = ["PLC0415"]
 "app/main.py" = ["PLC0415"]
-"app/workers/main.py" = ["PLC0415"]
 # 第三方支付 SDK 无 stub 且构造期加载,按需 import
 "app/modules/billing/payment_channels.py" = ["PLC0415"]
 "tests/*" = ["PLC0415", "ARG"]

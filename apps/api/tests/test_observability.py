@@ -83,7 +83,7 @@ class TestUnhandledException:
 class TestCleanup:
     async def test_expired_rows_removed(self, client: AsyncClient, sm):
         from app.modules.account.models import SmsCode, UsedRefreshToken
-        from app.workers.main import cleanup_expired_rows
+        from app.workers.cleanup import cleanup_expired_rows
 
         async with sm() as session:
             session.add(

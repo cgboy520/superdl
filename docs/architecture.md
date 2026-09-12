@@ -78,7 +78,7 @@ OpenAPI-first:FastAPI schema 导出 `openapi.json`,orval 生成 `packages/api-cl
 
 **reconciler。** 每 30s 比对 DB 期望态与 K8s 实际态(按租户 namespace 前缀 list):Pod 消失而 DB running → `failed`、停止计费并告警;Pod 存在而 DB released → 强删并告警;`creating` 超时 → 失败退款。reconciler 不得关闭。
 
-worker 其余定时任务:outbox 卡单回收、小时结算、数据盘日结、资金核对、usage 聚合、余额巡检、包周期到期巡检、支付查单与超时关单、镜像预热巡检、节点规格巡检与入网 reconciler、工单滞留巡检、数据保洁。定时任务先抢 pg advisory lock,单实例执行;周期见 `apps/api/app/workers/main.py`。
+worker 其余定时任务:outbox 卡单回收、小时结算、数据盘日结、资金核对、usage 聚合、余额巡检、包周期到期巡检、支付查单与超时关单、镜像预热巡检、节点规格巡检与入网 reconciler、工单滞留巡检、数据保洁。定时任务先抢 pg advisory lock,单实例执行;清单与周期见 `apps/api/app/workers/jobs.py`(每个任务声明归属组件)。
 
 ## 5. 接入层
 

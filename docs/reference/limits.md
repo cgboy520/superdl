@@ -39,7 +39,7 @@
 | 单次下单 / 续费的周期数 | 1~36 | `core/pricing.py` `MAX_PERIOD_COUNT`;契约层同值 |
 | 竞价折扣 | 40(百分数,40 = 4 折) | 策略 `spot_discount_pct`(10~90)。经 `GET /api/v1/policies` 下发 |
 | 抢占宽限窗 | 60s | 策略 `spot_grace_seconds`(静态区间 30~600),**另有跨键上限,见下**;经 `/policies` 下发 |
-| 包周期到期巡检 | 30min | `workers/main.py` `subscription_patrol`(worker `core` 组件) |
+| 包周期到期巡检 | 30min | `workers/jobs.py` `subscription_patrol`(worker `core` 组件) |
 | 数据盘欠费宽限 / 冻结 | 7 天 / 30 天 | 策略 `disk_grace_days` / `disk_frozen_days`(各 1~365) |
 | 数据盘单价 | 0.0350 元/GB·月 | 策略 `disk_price_gb_month`(0.0010~1.0000),建盘时快照 |
 | failed 实例保留 | 7 天后回收 | env `failed_retention_days` |
@@ -126,7 +126,7 @@
 | 数据 | 保留 | 承载 |
 |---|---|---|
 | `audit_log` | 365 天 | env `audit_retention_days`(等保 ≥6 个月) |
-| `sms_codes` | 过期后 7 天删 | `workers/main.py` `cleanup_expired_rows`(每日) |
+| `sms_codes` | 过期后 7 天删 | `workers/cleanup.py` `cleanup_expired_rows`(每日) |
 | `used_refresh_tokens` | 过期即删 | 同上 |
 | `outbox_tasks`(done / discarded) | 7 天 | 同上 |
 | `rate_limit_counters` | 2 天 | 同上 |

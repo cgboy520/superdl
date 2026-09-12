@@ -6,11 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config import get_settings
 from app.workers.components import (
     COMPONENT_OUTBOX_TYPES,
-    COMPONENT_SCHEDULED_JOBS,
     WorkerComponent,
     current_component,
     outbox_types_for,
 )
+from app.workers.jobs import JOBS, scheduled_jobs_for
 
 _SHARDED = [c for c in WorkerComponent if c is not WorkerComponent.ALL]
 
@@ -38,18 +38,18 @@ class TestPartition:
             f"{sorted(sharded - registered)}"
         )
 
-    async def test_scheduled_jobs_disjoint_and_match_scheduler(self, pg_url):
-        """定时任务分片:各组件互不重叠,并集 == register_scheduled_jobs 注册的 id 集。
-        依赖 pg_url:register_scheduled_jobs 会创建 engine,须先指向测试库。"""
+    async def test_scheduled_jobs_table_matches_scheduler(self, pg_url):
+        """JOBS 清单即事实源:每个任务恰归属一个非 ALL 组件、各组件切片互不重叠且并集 == 全表,
+        register_scheduled_jobs 注册的 id 集 == 全表。
+        依赖 pg_url:注册会创建 engine,须先指向测试库。"""
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
         from app.workers.main import register_scheduled_jobs
 
-        seen: dict[str, WorkerComponent] = {}
-        for component in _SHARDED:
-            for job_id in COMPONENT_SCHEDULED_JOBS[component]:
-                assert job_id not in seen, f"{job_id} 同时归属 {seen[job_id]} 与 {component}"
-                seen[job_id] = component
+        assert all(job.component is not WorkerComponent.ALL for job in JOBS)
+        by_component = [{j.id for j in scheduled_jobs_for(c)} for c in _SHARDED]
+        assert sum(len(s) for s in by_component) == len(JOBS)
+        assert set().union(*by_component) == {j.id for j in JOBS}
         scheduler = AsyncIOScheduler(timezone="UTC")
         register_scheduled_jobs(scheduler)
         scheduler.start(paused=True)  # paused:只取注册清单,不触发任何任务执行
@@ -57,10 +57,7 @@ class TestPartition:
             registered = {job.id for job in scheduler.get_jobs()}
         finally:
             scheduler.shutdown(wait=False)
-        assert registered == set(seen), (
-            f"未登记组件: {sorted(registered - seen.keys())};"
-            f"登记了但未注册: {sorted(seen.keys() - registered)}"
-        )
+        assert registered == {j.id for j in JOBS}
 
 
 class TestComponentEnv:
