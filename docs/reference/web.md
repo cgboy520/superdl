@@ -27,7 +27,7 @@
 
 ## 规则与不变量
 
-- 服务端状态全走 TanStack Query,请求一律用生成的 fetcher(hooks 在 `api/queries.ts` / `api/mutations.ts` 自建),禁止手写 fetch;文案与状态映射走 `packages/ui`;antd 6 原生组件自封装。
+- 服务端状态全走 TanStack Query,请求一律用生成的 fetcher(hooks 在 `api/queries.ts` / `api/mutations.ts` 自建;查询键只在 `api/keys.ts`,失效与定义引用同一工厂),禁止手写 fetch;文案与状态映射走 `packages/ui`;antd 6 原生组件自封装。
 - `src/routes/` 下的非路由文件以 `-` 开头(tanstack router 的 routeFileIgnorePrefix);antd 6 已废弃的 props(如 `maskClosable` → `mask={{closable}}`)按 deprecation 警告即时迁移。
 - 401 由 mutator 静默续期并重放(single-flight);续期失败才跳登录并带回跳。
 - 查询失败不得伪装成数据:统一走 `packages/ui/src/components/QueryState.tsx` 的表格错误态与页级横幅,金额未就绪显示 `—`,详情页加载失败为错误横幅 + 重试。

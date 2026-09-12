@@ -6,6 +6,7 @@
 
 - **直接在 `main` 提交,不建分支、不发 PR。** 约束:回退粒度是单个提交,「一个提交一件事」是硬要求。
 - **本地闸门是事实源,CI 是复跑。** 闸门按改动范围跑,红了不提交。依赖漏洞、gitleaks、kubeconform、kind 冒烟只在 CI 跑。
+- **前端静态分析 = strictTypeChecked + Prettier。** ESLint 用 typescript-eslint 的 strictTypeChecked + stylisticTypeChecked(projectService 类型感知),Prettier 只有一份 `.prettierrc`(printWidth 120 / LF),`pnpm format:check` 进 CI 前端闸门。约束:冗余守卫(类型已保证非空的 `?.` / `??`)由 `no-unnecessary-condition` 自动抓,不靠人审;规则收窄只许逐条带理由的 options,不整条关闭。
 - **不设覆盖率阈值。** 用例必须能回答「它挂了说明什么坏了」。
 - **命令清单只有一份**:CLAUDE.md「常用命令」;README 只放快速开始。
 - **停机发布,不留兼容窗口、不支持回滚。** 顺序恒为「先 `alembic upgrade head`,后替换代码」;`/readyz` 只认 DB == 代码 head,落后/领先/未知版本一律摘流。破坏性 DDL 允许,提交说明写明数据影响;downgrade 一律 raise;alembic 历史以单条基线 `20260901_1620c05976ce` 起线性追加,`alembic check` 把关。
