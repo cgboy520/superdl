@@ -11,13 +11,11 @@ import {
   idemKeyOf,
   isBillingPeriod,
   layout,
-  MAX_PERIOD_COUNT,
   mulPrice,
   PERIOD_HOURS,
   periodMap,
   POLL,
   skuVariant,
-  type BillingPeriod,
 } from "@superdl/ui";
 import { DataErrorAlert, PageHeader, useConfirm } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -53,6 +51,7 @@ import { ContainerFields } from "../components/services/ContainerCard";
 import { PublicAccessFields } from "../components/services/PublicAccessCard";
 import { BillingModeCard, type BillingMode } from "../components/skuTable";
 import { SpotPriceInline, spotPriceOf, useSpotPolicy } from "../components/spotBilling";
+import { parseDeployDeepLink } from "../lib/deployLink";
 import { requireAuth } from "../lib/guard";
 import {
   commandToList,
@@ -65,31 +64,8 @@ import {
 } from "../lib/serviceSpec";
 import { useLeaveGuard } from "../lib/useLeaveGuard";
 
-export interface DeploySearch {
-  sku_id?: number;
-  gpus?: number;
-  period?: BillingPeriod;
-  market?: "spot";
-  count?: number;
-}
-
-/** 深链预填:规格 / 卡数 / 计费方式;竞价与包周期互斥,以 period 为准。 */
-export function deployValidateSearch(search: Record<string, unknown>): DeploySearch {
-  const out: DeploySearch = {};
-  const sku = Number(search.sku_id);
-  if (Number.isInteger(sku) && sku > 0) out.sku_id = sku;
-  const g = Number(search.gpus);
-  if (Number.isInteger(g) && g >= 1 && g <= 8) out.gpus = g;
-  if (typeof search.period === "string" && isBillingPeriod(search.period)) {
-    out.period = search.period;
-    const c = Number(search.count);
-    if (Number.isInteger(c) && c >= 1 && c <= MAX_PERIOD_COUNT) out.count = c;
-  } else if (search.market === "spot") out.market = "spot";
-  return out;
-}
-
 export const Route = createFileRoute("/_console/services_/new")({
-  validateSearch: deployValidateSearch,
+  validateSearch: parseDeployDeepLink,
   beforeLoad: requireAuth,
   component: DeployPage,
 });

@@ -1,29 +1,20 @@
 /** 实例详情:连接 / 监控 / 日志 / 事件时间线(= 计费依据)/ 账单 / 设置(改名 + 危险区释放)。默认 Tab 按状态(running → 连接,其余 → 事件);事件/账单 Tab 游标分页;面包屑返回列表不丢筛选态。服务的版本实例不进列表但直链可达:「连接」按 with_ssh 出 SSH 卡,Jupyter 卡不出。 */
 
 import { type InstanceOut } from "@superdl/api-client";
-import { controlWidth, flattenPages, formatDateTime, isTransientInstanceStatus, localToday, POLL } from "@superdl/ui";
+import { controlWidth, formatDateTime, isTransientInstanceStatus, localToday, POLL } from "@superdl/ui";
 import { DangerZone, DataErrorAlert, moneyOr, useConfirm } from "@superdl/ui/components";
-import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Alert, App, Breadcrumb, Button, Card, Descriptions, Input, Skeleton, Space, Tabs, Typography } from "antd";
 import { useFormat } from "@superdl/ui";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { keys } from "../api/keys";
 import { useRenameInstance, useResetJupyterToken } from "../api/mutations";
-import {
-  useDailySummary,
-  useHourlyBillPages,
-  useInstance,
-  useInstanceAccess,
-  useInstanceEventPages,
-  useInstanceLogs,
-} from "../api/queries";
+import { useDailySummary, useHourlyBillPages, useInstance, useInstanceAccess } from "../api/queries";
 import { CopyButton, InstanceStatusBadge, SpotTag, SubscriptionTag, TierTag } from "../components/common";
 import { HourlyBillsTable } from "../components/HourlyBillsTable";
-import { EventsPanel } from "../components/instance/EventsPanel";
-import { LogsPanel } from "../components/instance/LogsPanel";
+import { EventsTab } from "../components/instance/EventsTab";
+import { LogsTab } from "../components/instance/LogsTab";
 import { MetricsPanel } from "../components/instance/MetricsPanel";
 import { InstanceActions, ReleaseModal, canReleaseStatus } from "../components/InstanceActions";
 import { requireAuth } from "../lib/guard";
@@ -100,61 +91,6 @@ function AccessTab({ instance, running }: { instance: InstanceOut; running: bool
         </Card>
       )}
     </Space>
-  );
-}
-
-function LogsTab({ uuid, viewable }: { uuid: string; viewable: boolean }) {
-  const [tail, setTail] = useState(200);
-  const [autoRefresh, setAutoRefresh] = useState(true);
-  const { data, error, refetch } = useInstanceLogs(
-    uuid,
-    { tail_lines: tail },
-    // 页面不可见时间隔轮询自动暂停(未开 refetchIntervalInBackground)
-    { enabled: viewable, refetchInterval: autoRefresh ? POLL.logs : false, retry: 0 },
-  );
-  const lines = useMemo(() => data?.lines ?? [], [data]);
-  return (
-    <LogsPanel
-      viewable={viewable}
-      lines={lines}
-      truncated={data?.truncated}
-      error={error}
-      onRetry={() => void refetch()}
-      tail={tail}
-      onTail={setTail}
-      autoRefresh={autoRefresh}
-      onAutoRefresh={setAutoRefresh}
-      downloadName={uuid}
-    />
-  );
-}
-
-function EventsTab({ uuid, status }: { uuid: string; status?: string }) {
-  const queryClient = useQueryClient();
-  // 事件时间线游标分页,不挂 refetchInterval;外层实例轮询检测到 status 迁移后失效事件查询(立即 + 3s 延迟各一次)
-  const prevStatus = useRef(status);
-  useEffect(() => {
-    if (prevStatus.current === status) return;
-    prevStatus.current = status;
-    const key = keys.instances.events(uuid);
-    void queryClient.invalidateQueries({ queryKey: key });
-    const timer = setTimeout(() => void queryClient.invalidateQueries({ queryKey: key }), 3_000);
-    return () => clearTimeout(timer);
-  }, [status, uuid, queryClient]);
-  const { data, isLoading, isError, refetch, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } =
-    useInstanceEventPages(uuid);
-  const events = useMemo(() => flattenPages(data), [data]);
-  return (
-    <EventsPanel
-      events={events}
-      isLoading={isLoading}
-      isError={isError}
-      onRetry={() => void refetch()}
-      hasNextPage={hasNextPage}
-      isFetchingNextPage={isFetchingNextPage}
-      isFetchNextPageError={isFetchNextPageError}
-      onLoadMore={() => void fetchNextPage()}
-    />
   );
 }
 
@@ -355,13 +291,16 @@ function InstanceDetail() {
             key: "logs",
             label: t("instances.tabLogs"),
             children: (
-              <LogsTab uuid={uuid} viewable={instance.status === "running" || instance.status === "stopping"} />
+              <LogsTab
+                subject={{ kind: "instance", uuid }}
+                viewable={instance.status === "running" || instance.status === "stopping"}
+              />
             ),
           },
           {
             key: "events",
             label: t("instances.tabEvents"),
-            children: <EventsTab uuid={uuid} status={instance.status} />,
+            children: <EventsTab subject={{ kind: "instance", uuid }} status={instance.status} />,
           },
           {
             key: "bills",

@@ -2,21 +2,12 @@
 
 import { POLL } from "@superdl/ui";
 import type { InstanceOut, ServiceOut } from "@superdl/api-client";
-import {
-  flattenPages,
-  fontSize,
-  formatDateTime,
-  instanceStatusMap,
-  isTransientServiceStatus,
-  localToday,
-  metaOf,
-} from "@superdl/ui";
+import { fontSize, formatDateTime, instanceStatusMap, isTransientServiceStatus, localToday, metaOf } from "@superdl/ui";
 import { DataErrorAlert, moneyOr, TableErrorEmpty } from "@superdl/ui/components";
-import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Alert, Badge, Breadcrumb, Card, Descriptions, Skeleton, Space, Table, Tabs, Tag, Typography } from "antd";
 import { useFormat } from "@superdl/ui";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -24,15 +15,12 @@ import {
   useService,
   useServiceApiKeys,
   useServiceBillPages,
-  useServiceEventPages,
-  useServiceLogs,
   useServiceRevisions,
 } from "../api/queries";
-import { keys } from "../api/keys";
 import { CopyButton, ServiceStatusBadge, SpotTag, SubscriptionTag, TierTag } from "../components/common";
 import { HourlyBillsTable } from "../components/HourlyBillsTable";
-import { EventsPanel } from "../components/instance/EventsPanel";
-import { LogsPanel } from "../components/instance/LogsPanel";
+import { EventsTab } from "../components/instance/EventsTab";
+import { LogsTab } from "../components/instance/LogsTab";
 import { MetricsPanel } from "../components/instance/MetricsPanel";
 import { ApiKeysCard } from "../components/services/ApiKeysCard";
 import { EndpointCard } from "../components/services/EndpointCard";
@@ -169,62 +157,6 @@ function OverviewTab({ service }: { service: ServiceOut }) {
         </Space>
       </Card>
     </Space>
-  );
-}
-
-function LogsTab({ service }: { service: ServiceOut }) {
-  const [tail, setTail] = useState(200);
-  const [autoRefresh, setAutoRefresh] = useState(true);
-  // deploying / running / unready 都可读日志
-  const viewable = service.status === "deploying" || service.status === "running" || service.status === "unready";
-  const { data, error, refetch } = useServiceLogs(
-    service.slug,
-    { tail_lines: tail },
-    { enabled: viewable, refetchInterval: autoRefresh ? POLL.logs : false, retry: 0 },
-  );
-  const lines = useMemo(() => data?.lines ?? [], [data]);
-  return (
-    <LogsPanel
-      viewable={viewable}
-      lines={lines}
-      truncated={data?.truncated}
-      error={error}
-      onRetry={() => void refetch()}
-      tail={tail}
-      onTail={setTail}
-      autoRefresh={autoRefresh}
-      onAutoRefresh={setAutoRefresh}
-      downloadName={service.slug}
-    />
-  );
-}
-
-function EventsTab({ slug, status }: { slug: string; status: string }) {
-  const queryClient = useQueryClient();
-  // 服务轮询检测到 status 迁移后失效事件查询:立即 + 3s 延迟各一次
-  const prevStatus = useRef(status);
-  useEffect(() => {
-    if (prevStatus.current === status) return;
-    prevStatus.current = status;
-    const key = keys.services.events(slug);
-    void queryClient.invalidateQueries({ queryKey: key });
-    const timer = setTimeout(() => void queryClient.invalidateQueries({ queryKey: key }), 3_000);
-    return () => clearTimeout(timer);
-  }, [status, slug, queryClient]);
-  const { data, isLoading, isError, refetch, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } =
-    useServiceEventPages(slug);
-  const events = useMemo(() => flattenPages(data), [data]);
-  return (
-    <EventsPanel
-      events={events}
-      isLoading={isLoading}
-      isError={isError}
-      onRetry={() => void refetch()}
-      hasNextPage={hasNextPage}
-      isFetchingNextPage={isFetchingNextPage}
-      isFetchNextPageError={isFetchNextPageError}
-      onLoadMore={() => void fetchNextPage()}
-    />
   );
 }
 
@@ -456,7 +388,17 @@ function ServiceDetail() {
               <Alert type="info" showIcon title={t("services.detail.metricsNotRunning")} />
             ),
           },
-          { key: "logs", label: t("services.detail.tabLogs"), children: <LogsTab service={service} /> },
+          {
+            key: "logs",
+            label: t("services.detail.tabLogs"),
+            // deploying / running / unready 都可读日志
+            children: (
+              <LogsTab
+                subject={{ kind: "service", slug: service.slug }}
+                viewable={["deploying", "running", "unready"].includes(service.status)}
+              />
+            ),
+          },
           {
             // 版本与事件都是历史轴,合成一个 Tab
             key: "history",
@@ -467,7 +409,7 @@ function ServiceDetail() {
                   <RevisionsTab service={service} />
                 </Card>
                 <Card size="small" title={t("services.detail.tabEvents")}>
-                  <EventsTab slug={service.slug} status={service.status} />
+                  <EventsTab subject={{ kind: "service", slug: service.slug }} status={service.status} />
                 </Card>
               </Space>
             ),

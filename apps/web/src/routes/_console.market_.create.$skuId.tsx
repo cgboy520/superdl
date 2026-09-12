@@ -15,13 +15,11 @@ import {
   idemKeyOf,
   isBillingPeriod,
   layout,
-  MAX_PERIOD_COUNT,
   mulPrice,
   PERIOD_HOURS,
   periodMap,
   skuVariant,
   space,
-  type BillingPeriod,
 } from "@superdl/ui";
 import { DataErrorAlert, PageHeader, useConfirm } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -41,35 +39,17 @@ import { SshKeyPicker } from "../components/create/SshKeyPicker";
 import { PeriodQuoteRows, periodQuoteOf, usePeriodDiscounts } from "../components/periodBilling";
 import { BillingModeCard, skuColumns, type BillingMode } from "../components/skuTable";
 import { SpotPriceInline, spotPriceOf, useSpotPolicy } from "../components/spotBilling";
+import { parseDeployDeepLink, type DeploySearch } from "../lib/deployLink";
 import { requireAuth } from "../lib/guard";
 import { isPinnedImageRef } from "../lib/serviceSpec";
 import { useLeaveGuard } from "../lib/useLeaveGuard";
 
 export const Route = createFileRoute("/_console/market_/create/$skuId")({
-  validateSearch: (
-    search: Record<string, unknown>,
-  ): {
-    gpus?: number;
-    period?: BillingPeriod;
-    market?: "spot";
-    count?: number;
-  } => {
-    // 竞价与包周期互斥,以 period 为准
-    const g = Number(search.gpus);
-    const out: {
-      gpus?: number;
-      period?: BillingPeriod;
-      market?: "spot";
-      count?: number;
-    } = {};
-    if (Number.isInteger(g) && g >= 1 && g <= 8) out.gpus = g;
-    if (typeof search.period === "string" && isBillingPeriod(search.period)) {
-      out.period = search.period;
-      // 市场页购买时长透传(1~36)
-      const c = Number(search.count);
-      if (Number.isInteger(c) && c >= 1 && c <= MAX_PERIOD_COUNT) out.count = c;
-    } else if (search.market === "spot") out.market = "spot";
-    return out;
+  // 深链解析与 /services/new 共用;sku 在路径参数里,查询串的 sku_id 无意义
+  validateSearch: (search: Record<string, unknown>): Omit<DeploySearch, "sku_id"> => {
+    const parsed = parseDeployDeepLink(search);
+    delete parsed.sku_id;
+    return parsed;
   },
   beforeLoad: requireAuth,
   component: CreatePage,

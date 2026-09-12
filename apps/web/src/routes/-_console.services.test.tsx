@@ -1,9 +1,9 @@
 /** 三条服务路由的 URL 状态往返:非法值必须剥离回默认(URL 不做旧名兼容)。 */
 import { describe, expect, it } from "vitest";
 
+import { parseDeployDeepLink } from "../lib/deployLink";
 import { servicesValidateSearch } from "./_console.services";
 import { serviceDetailValidateSearch } from "./_console.services_.$slug";
-import { deployValidateSearch } from "./_console.services_.new";
 
 describe("servicesValidateSearch", () => {
   it("status 只认派生态白名单且不含 released;q 空白剥离", () => {
@@ -29,17 +29,17 @@ describe("serviceDetailValidateSearch", () => {
   });
 });
 
-describe("deployValidateSearch", () => {
+describe("parseDeployDeepLink", () => {
   it("sku_id 正整数、gpus 1~8、period 压过 market=spot、count 只在包周期下有效", () => {
-    expect(deployValidateSearch({ sku_id: "3", gpus: "2", period: "month", market: "spot", count: "6" })).toEqual({
+    expect(parseDeployDeepLink({ sku_id: "3", gpus: "2", period: "month", market: "spot", count: "6" })).toEqual({
       sku_id: 3,
       gpus: 2,
       period: "month",
       count: 6,
     });
-    expect(deployValidateSearch({ sku_id: "0", gpus: "9", market: "spot", count: "6" })).toEqual({
+    expect(parseDeployDeepLink({ sku_id: "0", gpus: "9", market: "spot", count: "6" })).toEqual({
       market: "spot",
     });
-    expect(deployValidateSearch({ period: "quarter" })).toEqual({});
+    expect(parseDeployDeepLink({ period: "quarter" })).toEqual({});
   });
 });

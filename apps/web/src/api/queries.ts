@@ -332,6 +332,40 @@ export const useInstanceMetrics = (
     queryFn: () => getInstanceMetricsApiV1InstancesUuidMetricsGet(uuid, params),
     ...opts,
   });
+// ---------- 实例 / 服务共用 ----------
+/** 工作负载标识:实例(uuid)或服务(slug;打当前版本实例)。 */
+export type WorkloadSubject = { kind: "instance"; uuid: string } | { kind: "service"; slug: string };
+
+/** 容器日志(实例或服务当前版本实例):tail / 自动刷新由调用方经 params 与 refetchInterval 控制。 */
+export const useWorkloadLogs = (
+  subject: WorkloadSubject,
+  params: GetInstanceLogsApiV1InstancesUuidLogsGetParams,
+  opts?: QueryOpts<InstanceLogsOut>,
+) =>
+  useQuery({
+    queryKey:
+      subject.kind === "instance"
+        ? keys.instances.logs(subject.uuid, params)
+        : keys.services.logs(subject.slug, params),
+    queryFn: () =>
+      subject.kind === "instance"
+        ? getInstanceLogsApiV1InstancesUuidLogsGet(subject.uuid, params)
+        : getServiceLogsApiV1ServicesSlugLogsGet(subject.slug, params),
+    ...opts,
+  });
+
+/** 事件时间线游标分页(实例,或服务全部版本实例并集);不挂轮询,由外层轮询检测到迁移后失效。 */
+export const useWorkloadEventPages = (subject: WorkloadSubject) =>
+  useCursorPages(
+    subject.kind === "instance" ? keys.instances.eventPages(subject.uuid) : keys.services.eventPages(subject.slug),
+    (p?: { cursor?: string | null; limit?: number | null }) =>
+      subject.kind === "instance"
+        ? listInstanceEventsApiV1InstancesUuidEventsGet(subject.uuid, p)
+        : listServiceEventsApiV1ServicesSlugEventsGet(subject.slug, p),
+    undefined,
+    50,
+  );
+
 /** 小时账单游标分页。 */
 export const useHourlyBillPages = (params?: Omit<ListHourlyBillsApiV1BillsHourlyGetParams, "cursor" | "limit">) =>
   useCursorPages(keys.bills.pages(params), listHourlyBillsApiV1BillsHourlyGet, params, 50);
