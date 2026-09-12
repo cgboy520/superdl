@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -321,6 +321,21 @@ async def refundable_orders(session: AsyncSession, user_id: int) -> list[dict]:
 # ---------- 管理端(finance/admin) ----------
 
 
+def admin_refunds_query(
+    *, status: str | None = None, day_range: tuple[datetime, datetime] | None = None
+) -> Select[tuple[RefundRequest]]:
+    """管理端退款单的筛选口径(列表与 CSV 共用):status 精确;
+    day_range 为 [start, end) 的申请时间窗口。"""
+    stmt = select(RefundRequest)
+    if status:
+        stmt = stmt.where(RefundRequest.status == status)
+    if day_range is not None:
+        stmt = stmt.where(
+            RefundRequest.created_at >= day_range[0], RefundRequest.created_at < day_range[1]
+        )
+    return stmt
+
+
 async def admin_list_refunds(
     session: AsyncSession,
     status: str | None = None,
@@ -330,13 +345,7 @@ async def admin_list_refunds(
     limit: int | None = None,
 ) -> Page[AdminRefundOut]:
     """退款单列表(游标分页,降序)。day_range 为 [start, end) 的 created_at 窗口。"""
-    stmt = select(RefundRequest).order_by(RefundRequest.id.desc())
-    if status:
-        stmt = stmt.where(RefundRequest.status == status)
-    if day_range is not None:
-        stmt = stmt.where(
-            RefundRequest.created_at >= day_range[0], RefundRequest.created_at < day_range[1]
-        )
+    stmt = admin_refunds_query(status=status, day_range=day_range).order_by(RefundRequest.id.desc())
     page_items, next_cursor = await paginate_by_id(
         session, stmt, id_col=RefundRequest.id, cursor=cursor, limit=limit
     )

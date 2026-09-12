@@ -12,7 +12,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -246,15 +246,27 @@ async def list_my_invoices(
 # ---------- 管理端(finance/admin 写,ops/finance/readonly 读) ----------
 
 
-async def admin_list_invoices(
-    session: AsyncSession, status: str | None = None, period: str | None = None
-) -> list[AdminInvoiceOut]:
-    """发票申请列表(固定截断)。status/period 精确过滤。"""
-    stmt = select(InvoiceRequest).order_by(InvoiceRequest.id.desc()).limit(ADMIN_LIST_CAP)
+def admin_invoices_query(
+    *, status: str | None = None, period: str | None = None
+) -> Select[tuple[InvoiceRequest]]:
+    """管理端发票申请的筛选口径(列表与 CSV 共用):status / period 精确。"""
+    stmt = select(InvoiceRequest)
     if status:
         stmt = stmt.where(InvoiceRequest.status == status)
     if period:
         stmt = stmt.where(InvoiceRequest.period == period)
+    return stmt
+
+
+async def admin_list_invoices(
+    session: AsyncSession, status: str | None = None, period: str | None = None
+) -> list[AdminInvoiceOut]:
+    """发票申请列表(固定截断)。status/period 精确过滤。"""
+    stmt = (
+        admin_invoices_query(status=status, period=period)
+        .order_by(InvoiceRequest.id.desc())
+        .limit(ADMIN_LIST_CAP)
+    )
     rows = (await session.execute(stmt)).scalars()
     return [AdminInvoiceOut.model_validate(r) for r in rows]
 

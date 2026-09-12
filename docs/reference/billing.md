@@ -32,7 +32,7 @@
 - 小时结算(每小时 :02,advisory lock):由 `settlement_watermarks` 驱动,从上次已结窗口追平到上一整点;每实例按事件重建窗口 running 秒数,`UNIQUE(instance_id, hour_start)` 幂等 upsert,秒数单调递增时只补差价。重复执行与并发执行零重复扣款。
 - 追平截断与单对象连续失败死信,跳窗前登记 `settlement_gaps`;阈值见 [limits.md](./limits.md)。
 - 尾账:stop/release 时对当前小时已用秒数立即入账,同一 UNIQUE 键幂等。
-- 平台责任失联(node_lost/pod_lost):计费截断到 Pod 首次 not-ready 时刻(事件 `metadata.unready_since`);截断在事件重建层(`settlement._billing_view`)生效,尾账/整点/追平三路径同口径(尾账监听器把 `truncated_at` / `truncate_reason` 留进 `bills_hourly.detail`)。`unready_since` 由 reconciler 跨轮累积、清零只有两处,见 [orchestrator.md](./orchestrator.md)。pod_unready(节点正常)不截断。
+- 平台责任失联(node_lost/pod_lost):计费截断到 Pod 首次 not-ready 时刻(事件 `metadata.unready_since`);截断口径只有一处 `settlement.truncated_at`:整点/追平在事件重建层用它,尾账监听器对本次退出边用它(并把 `truncated_at` / `truncate_reason` 留进 `bills_hourly.detail`)。`unready_since` 由 reconciler 跨轮累积、清零只有两处,见 [orchestrator.md](./orchestrator.md)。pod_unready(节点正常)不截断。
 - 无水位线行只结最近窗口,落 `{kind}_watermark_missing` 告警日志,更早窗口需人工补结。
 - 退款:creating 失败全额退;未产生 running 时段即无账。
 - 开户前校验(`assert_can_afford`):余额 ≥ (在途 running 实例时费 + 新增时费) × `afford_cover_hours` + (在途盘日费 + 新增盘日费) × `disk_grace_days`;钱包 FOR UPDATE 锁内统计,与资源创建同事务。不足报 `INSUFFICIENT_BALANCE`。

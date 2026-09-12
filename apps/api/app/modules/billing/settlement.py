@@ -7,7 +7,7 @@
 未核销数经 SETTLEMENT_GAP_UNRESOLVED 持续告警,缺口不自愈。
 """
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -57,21 +57,27 @@ CLOCK_SKEW_MAX_SECONDS = 30.0
 _failure_streaks: dict[tuple[str, datetime, int], int] = {}
 
 
+def truncated_at(
+    edge_at: datetime, from_status: str | None, meta: Mapping[str, Any] | None
+) -> datetime:
+    """离开 running 的边的计费终点:平台责任失联(node_lost / pod_lost 落的 metadata.unready_since)
+    截断到 Pod 首次 not-ready 时刻,否则即边的时刻。尾账 / 整点 / 追平 / 巡检估算四条路径同口径。"""
+    edge_at = ensure_utc(edge_at)
+    if from_status == RUNNING and meta and meta.get("unready_since"):
+        unready_at = ensure_utc(datetime.fromisoformat(str(meta["unready_since"])))
+        if unready_at < edge_at:
+            return unready_at
+    return edge_at
+
+
 def _billing_view(
     events: list[tuple[datetime, str | None, str, Any]],
 ) -> list[tuple[datetime, str | None, str]]:
-    """事件流水 → 计费视图(3 元组)。node_lost/pod_lost 的退出边带 metadata.unready_since,
-    计费截断到该时刻;尾账/整点/追平三条路径同口径。
-    """
-    out: list[tuple[datetime, str | None, str]] = []
-    for created_at, from_status, to_status, meta in events:
-        ts = ensure_utc(created_at)
-        if from_status == RUNNING and meta and meta.get("unready_since"):
-            unready_at = ensure_utc(datetime.fromisoformat(str(meta["unready_since"])))
-            if unready_at < ts:
-                ts = unready_at
-        out.append((ts, from_status, to_status))
-    return out
+    """事件流水 → 计费视图(3 元组),退出边按 truncated_at 截断。"""
+    return [
+        (truncated_at(created_at, from_status, meta), from_status, to_status)
+        for created_at, from_status, to_status, meta in events
+    ]
 
 
 def running_seconds_in_window(
@@ -191,18 +197,32 @@ async def upsert_hour_bill(
 
     if charged <= 0:
         return Decimal("0.00")  # 秒数过少舍入为 0:留账单行,不产生扣款
-    await wallet.debit(
+    await _charge_bill(
         session,
         user_id,
         charged,
-        type_="consume",
         ref_type="bill_hourly",
-        ref_id=str(row_id),
+        ref_id=row_id,
         remark=f"实例 GPU 时费({source})",
-        allow_negative=True,
-        allow_frozen=True,  # 对已发生消费的收款
     )
     return charged
+
+
+async def _charge_bill(
+    session: AsyncSession, user_id: int, amount: Decimal, *, ref_type: str, ref_id: int, remark: str
+) -> None:
+    """账单入账的扣款口径:消费类流水、允许透支(结算不拒账)、允许对冻结中钱包收款(已发生消费)。"""
+    await wallet.debit(
+        session,
+        user_id,
+        amount,
+        type_="consume",
+        ref_type=ref_type,
+        ref_id=str(ref_id),
+        remark=remark,
+        allow_negative=True,
+        allow_frozen=True,
+    )
 
 
 async def settle_instance_window(
@@ -310,16 +330,13 @@ async def reprice_current_hour(
     row.unit_price = new_price
     row.amount = amount
     row.detail = {**(row.detail or {}), "repriced": True}
-    await wallet.debit(
+    await _charge_bill(
         session,
         user_id,
         delta,
-        type_="consume",
         ref_type="bill_hourly",
-        ref_id=str(row.id),
+        ref_id=row.id,
         remark="实例 GPU 时费(转按量补差价)",
-        allow_negative=True,
-        allow_frozen=True,  # 对已发生消费的收款
     )
     return delta
 
@@ -635,16 +652,13 @@ async def charge_disk_day(
     if inserted is None:
         return Decimal("0.00")
     if amount > 0:
-        await wallet.debit(
+        await _charge_bill(
             session,
             user_id,
             amount,
-            type_="consume",
             ref_type="bill_daily_disk",
-            ref_id=str(inserted),
+            ref_id=inserted,
             remark="数据盘日常费用",
-            allow_negative=True,
-            allow_frozen=True,  # 对已发生消费的收款
         )
     return amount
 

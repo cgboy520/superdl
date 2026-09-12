@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.csvexport import TRUNCATED_NOTES, fmt_money, fmt_ts, stream_rows
 from app.core.timeutil import BILLING_TZ_OFFSET_MINUTES
 from app.modules.account import service as account_service
+from app.modules.billing import invoices, refunds, wallet
 from app.modules.billing.models import (
     BalanceLedger,
     BillHourly,
@@ -230,15 +231,9 @@ def stream_admin_orders_csv(
     lang: str = "zh-CN",
 ) -> AsyncIterator[str]:
     """管理端充值订单 CSV(降序;筛选口径与 GET /admin/v1/orders 一致)。"""
-    stmt = select(Order)
-    if status:
-        stmt = stmt.where(Order.status == status)
-    if order_no:
-        stmt = stmt.where(Order.order_no == order_no.strip())
-    if user_id:
-        stmt = stmt.where(Order.user_id == user_id)
-    if day_range is not None:
-        stmt = stmt.where(Order.created_at >= day_range[0], Order.created_at < day_range[1])
+    stmt = wallet.admin_orders_query(
+        status=status, order_no=order_no, user_id=user_id, day_range=day_range
+    )
     status_labels = _ORDER_STATUS_LABEL[lang]
     channel_labels = _ORDER_CHANNEL_LABEL[lang]
 
@@ -272,13 +267,7 @@ def stream_admin_refunds_csv(
     lang: str = "zh-CN",
 ) -> AsyncIterator[str]:
     """管理端退款单 CSV(降序;筛选口径与 GET /admin/v1/refunds 一致)。"""
-    stmt = select(RefundRequest)
-    if status:
-        stmt = stmt.where(RefundRequest.status == status)
-    if day_range is not None:
-        stmt = stmt.where(
-            RefundRequest.created_at >= day_range[0], RefundRequest.created_at < day_range[1]
-        )
+    stmt = refunds.admin_refunds_query(status=status, day_range=day_range)
     status_labels = _REFUND_STATUS_LABEL[lang]
     channel_labels = _PAYOUT_CHANNEL_LABEL[lang]
 
@@ -324,11 +313,7 @@ def stream_admin_invoices_csv(
 
     reveal=False(默认)脱敏抬头与邮箱;row_counter 由 row() 边吐边记实际行数,供调用方落审计。
     """
-    stmt = select(InvoiceRequest)
-    if status:
-        stmt = stmt.where(InvoiceRequest.status == status)
-    if period:
-        stmt = stmt.where(InvoiceRequest.period == period)
+    stmt = invoices.admin_invoices_query(status=status, period=period)
     status_labels = _INVOICE_STATUS_LABEL[lang]
 
     def row(r: InvoiceRequest) -> list[object]:

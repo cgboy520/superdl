@@ -1,6 +1,5 @@
 """计费边监听器:实例离开 running 时与状态迁移同事务出尾账(wire_modules() 注册)。"""
 
-from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +8,7 @@ from app.core.logging import get_logger
 from app.core.pricing import MARKET_SUBSCRIPTION
 from app.core.timeutil import ensure_utc, hour_floor
 from app.modules.billing import subscriptions
-from app.modules.billing.settlement import settle_instance_window
+from app.modules.billing.settlement import settle_instance_window, truncated_at
 from app.modules.orchestrator import statemachine as sm_def
 from app.modules.orchestrator.transitions import register_transition_listener
 
@@ -17,9 +16,6 @@ if TYPE_CHECKING:
     from app.modules.orchestrator.models import Instance, InstanceEvent
 
 logger = get_logger(__name__)
-
-# 平台责任失联(node_lost/pod_lost):计费截断到 Pod 首次 not-ready 时刻。pod_unready 不在此列
-_TRUNCATE_REASONS = ("node_lost", "pod_lost")
 
 
 async def on_instance_transition(
@@ -34,16 +30,12 @@ async def on_instance_transition(
         # 包周期离开 running 不出尾账。三处配套过滤之一
         # (另两处:wallet.assert_can_afford、billing.patrol)
         return
-    at = ensure_utc(event.created_at)
-    detail_extra = None
-    meta = event.event_metadata or {}
-    if event.reason in _TRUNCATE_REASONS and meta.get("unready_since"):
-        # 与 settlement._billing_view 同口径:截断到 Pod 首次 not-ready 时刻;
-        # 本次退出边的 metadata 只有这里能读到
-        unready_at = ensure_utc(datetime.fromisoformat(str(meta["unready_since"])))
-        if unready_at < at:
-            at = unready_at
-            detail_extra = {"truncated_at": meta["unready_since"], "truncate_reason": event.reason}
+    edge_at = ensure_utc(event.created_at)
+    # 本次退出边的 metadata 只有这里能读到;截断口径与整点 / 追平结算同源
+    at = truncated_at(edge_at, event.from_status, event.event_metadata)
+    detail_extra = (
+        {"truncated_at": at.isoformat(), "truncate_reason": event.reason} if at < edge_at else None
+    )
     charged = await settle_instance_window(
         session,
         instance_id=instance.id,

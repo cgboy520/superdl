@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import case, func, select
+from sqlalchemy import Select, case, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -466,6 +466,27 @@ async def revenue_summary(session: AsyncSession, *, tz_offset_minutes: int = 0) 
     }
 
 
+def admin_orders_query(
+    *,
+    status: str | None = None,
+    order_no: str | None = None,
+    user_id: int | None = None,
+    day_range: tuple[datetime, datetime] | None = None,
+) -> Select[tuple[Order]]:
+    """管理端充值订单的筛选口径(列表与 CSV 共用):status 精确、order_no 精确、user_id、
+    day_range 为 [start, end) 的 created_at 窗口。"""
+    stmt = select(Order)
+    if status:
+        stmt = stmt.where(Order.status == status)
+    if order_no:
+        stmt = stmt.where(Order.order_no == order_no.strip())
+    if user_id:
+        stmt = stmt.where(Order.user_id == user_id)
+    if day_range is not None:
+        stmt = stmt.where(Order.created_at >= day_range[0], Order.created_at < day_range[1])
+    return stmt
+
+
 async def admin_list_orders(
     session: AsyncSession,
     status: str | None = None,
@@ -477,15 +498,9 @@ async def admin_list_orders(
     limit: int | None = None,
 ) -> RawPage[Order]:
     """充值订单列表(游标分页,降序)。order_no 精确匹配;day_range 按 created_at 过滤。"""
-    stmt = select(Order).order_by(Order.id.desc())
-    if status:
-        stmt = stmt.where(Order.status == status)
-    if order_no:
-        stmt = stmt.where(Order.order_no == order_no.strip())
-    if user_id:
-        stmt = stmt.where(Order.user_id == user_id)
-    if day_range is not None:
-        stmt = stmt.where(Order.created_at >= day_range[0], Order.created_at < day_range[1])
+    stmt = admin_orders_query(
+        status=status, order_no=order_no, user_id=user_id, day_range=day_range
+    ).order_by(Order.id.desc())
     page_items, next_cursor = await paginate_by_id(
         session, stmt, id_col=Order.id, cursor=cursor, limit=limit
     )
