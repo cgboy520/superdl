@@ -51,14 +51,14 @@
 
 ### 部署与版本
 
-- 部署走 `create_instance_row(service=ServiceBinding(...))`:形态 service、镜像必须钉版本(`:latest` 与不写 tag 拒)、暴露规格快照到实例行、按 `with_ssh` 决定 SSH 入口;实例与服务同名。
-- 幂等指纹不含 slug / service_id;并发同键撞库时 `insert_idempotent` 连同未提交的 `services` 行一起回滚。
+- 部署走 `create_instance_row(req: InstanceRequest, service=ServiceBinding(...))`:`InstanceRequest.service_port` 非空即服务形态(镜像必须钉版本,`:latest` 与不写 tag 拒;暴露规格快照到实例行;按 `with_ssh` 决定 SSH 入口),`ServiceBinding` 只带服务身份(id / revision / slug);实例与服务同名。
+- 幂等指纹 = `InstanceRequest.fingerprint(user_id, extra=...)`,不含 slug / service_id;并发同键撞库时 `insert_idempotent` 连同未提交的 `services` 行一起回滚。
 - `services` 行的唯一非请求写入点是迁移监听器(`register_service_listeners`):RUNNING 迁出即失效鉴权缓存;当前实例 released 即写 `released_at`(覆盖用户删除、欠费回收、保留期 GC)。监听器在 transition 的实例行锁之后才碰 `services` 行(锁序 instance → service),不再锁另一台实例。
 - 版本更新只做 recreate,不对包周期服务开放;HTTPRoute 每实例一条。
 
 ### 版本更新(recreate)
 
-1. 请求事务:幂等重放最先判;`released` / 在途 / 包周期(请求或当前实例)/ 旧版本不在 `running | stopped | failed` 一律 409;锁旧实例 → 锁服务行 → `create_instance_row(service=ServiceBinding(revision+1), exclude_instance_id=旧)`(配额三维与软准入把旧版本份额让给新版本,余额不让);`env_secret_keep` 的键从旧实例密文解出、按新实例 AAD 重加密;`revision += 1`、`rollout_instance_id = 新`、`desired_state = running`;旧版本 running → `stop_instance_row(reason="rollout")`。
+1. 请求事务:幂等重放最先判;`released` / 在途 / 包周期(请求或当前实例)/ 旧版本不在 `running | stopped | failed` 一律 409;锁旧实例 → 锁服务行 → `create_instance_row(req, service=ServiceBinding(revision+1), exclude_instance_id=旧)`(配额三维与软准入把旧版本份额让给新版本,余额不让);`env_secret_keep` 的键从旧实例密文解出、按新实例 AAD 重加密;`revision += 1`、`rollout_instance_id = 新`、`desired_state = running`;旧版本 running → `stop_instance_row(reason="rollout")`。
 2. 新版本 → running:迁移监听器翻转 `current_instance_id`、清空 `rollout_instance_id`、失效鉴权缓存、入队 **`service.retire{service_id, instance_id=旧}`**(归 `tenant-mgr` 组件)。handler:锁旧实例 → 仍是当前版本 / 已在释放 → no-op;`stopping | stopped | frozen | failed` → `release_instance_row(actor="system", reason="rollout_retire")`;其它状态抛错退避(30 × 20s)。
 3. 新版本 → failed:监听器清空 `rollout_instance_id` 并站内信(type `service`,target = slug);旧版本留在 stopped,用户「启动」= 回滚(`revision` 不回退)。
 4. 用户可见窗口:旧 Pod 删除到新 Pod Ready 之间网关回 503;slug / URL / API Key 不变。

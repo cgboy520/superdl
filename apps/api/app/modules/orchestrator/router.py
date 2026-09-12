@@ -43,16 +43,18 @@ async def create_instance(
     instance, created = await service.create_instance(
         session,
         user.id,
-        sku_id=body.sku_id,
-        gpu_count=body.gpu_count,
-        image_ref=body.image_ref,
-        ssh_key_ids=body.ssh_key_ids,
-        name=body.name,
-        data_disk_id=body.data_disk_id,
+        service.InstanceRequest(
+            sku_id=body.sku_id,
+            gpu_count=body.gpu_count,
+            image_ref=body.image_ref,
+            ssh_key_ids=tuple(body.ssh_key_ids),
+            name=body.name,
+            data_disk_id=body.data_disk_id,
+            market=body.market,
+            period=body.period,
+            period_count=body.period_count,
+        ),
         idempotency_key=idempotency_key,
-        market=body.market,
-        period=body.period,
-        period_count=body.period_count,
     )
     if not created:
         mark_idempotent_replay(response)

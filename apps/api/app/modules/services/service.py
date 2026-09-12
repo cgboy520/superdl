@@ -7,7 +7,7 @@ import base64
 import secrets
 import time
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
@@ -34,7 +34,8 @@ from app.modules.orchestrator import (
     statemachine as sm_def,
     transitions as orchestrator_transitions,
 )
-from app.modules.orchestrator.schemas import WORKLOAD_SERVICE, InstanceOut
+from app.modules.orchestrator.schemas import InstanceOut
+from app.modules.orchestrator.service import InstanceRequest, ServiceBinding
 from app.modules.services.models import DESIRED_RUNNING, DESIRED_STOPPED, Service, ServiceApiKey
 from app.modules.services.schemas import (
     AdminServiceOut,
@@ -117,22 +118,26 @@ async def _insert_service(
 # ---------- 部署 ----------
 
 
-def _spec_kwargs(spec: "ServiceSpecIn") -> dict[str, object]:
-    return {
-        "sku_id": spec.sku_id,
-        "gpu_count": spec.gpu_count,
-        "image_ref": spec.image_ref,
-        "ssh_key_ids": spec.ssh_key_ids,
-        "data_disk_id": spec.data_disk_id,
-        "container_command": spec.container_command,
-        "container_args": spec.container_args,
-        "env": spec.env,
-        "env_secret_keys": spec.env_secret_keys,
-        "with_ssh": spec.with_ssh,
-        "market": spec.market,
-        "period": spec.period,
-        "period_count": spec.period_count,
-    }
+def _instance_request(spec: "ServiceSpecIn", *, name: str | None) -> InstanceRequest:
+    """服务表单 → 建实例请求(service_port 非空即服务形态)。"""
+    return InstanceRequest(
+        sku_id=spec.sku_id,
+        gpu_count=spec.gpu_count,
+        image_ref=spec.image_ref,
+        ssh_key_ids=tuple(spec.ssh_key_ids),
+        name=name,
+        data_disk_id=spec.data_disk_id,
+        container_command=tuple(spec.container_command) if spec.container_command else None,
+        container_args=tuple(spec.container_args) if spec.container_args else None,
+        env=spec.env,
+        env_secret_keys=tuple(spec.env_secret_keys) if spec.env_secret_keys else None,
+        with_ssh=spec.with_ssh,
+        market=spec.market,
+        period=spec.period,
+        period_count=spec.period_count,
+        service_port=spec.service_port,
+        health_path=spec.health_path,
+    )
 
 
 async def create_service(
@@ -141,17 +146,9 @@ async def create_service(
     """部署服务(202 异步)。返回 (服务, created);created=False = 幂等重放。
     幂等键落在 instances 行,重放经实例反查服务。
     """
-    kwargs = _spec_kwargs(spec)
+    req = _instance_request(spec, name=spec.name)
     # 指纹不含 slug / service_id
-    fingerprint = orchestrator_service.instance_fingerprint(
-        user_id,
-        workload_type=WORKLOAD_SERVICE,
-        name=spec.name,
-        service_port=spec.service_port,
-        health_path=spec.health_path,
-        extra=("service", spec.require_api_key, spec.protocol),
-        **kwargs,  # type: ignore[arg-type]
-    )
+    fingerprint = req.fingerprint(user_id, extra=("service", spec.require_api_key, spec.protocol))
     if idempotency_key:
         existing = await orchestrator_service.find_instance_replay(
             session, user_id, key=idempotency_key, fingerprint=fingerprint
@@ -169,17 +166,10 @@ async def create_service(
     instance, created = await orchestrator_service.create_instance_row(
         session,
         user_id,
-        name=spec.name,
+        req,
         idempotency_key=idempotency_key,
-        service=orchestrator_service.ServiceBinding(
-            service_id=svc.id,
-            revision=1,
-            slug=svc.public_slug,
-            service_port=spec.service_port,
-            health_path=spec.health_path,
-        ),
+        service=ServiceBinding(service_id=svc.id, revision=1, slug=svc.public_slug),
         fingerprint=fingerprint,
-        **kwargs,  # type: ignore[arg-type]
     )
     if not created:
         # 并发同键:按重放返回对方的服务(本事务的 services 行已回滚)
@@ -216,16 +206,10 @@ async def create_revision(
     配额与软准入把旧版本份额让给新版本,余额不让;包周期一律 409。
     """
     svc = await get_service(session, user_id, slug)
-    kwargs = _spec_kwargs(spec)
+    req = _instance_request(spec, name=svc.name)
     # 指纹按请求原样算(密文沿用只进键名),并入 service_id
-    fingerprint = orchestrator_service.instance_fingerprint(
-        user_id,
-        workload_type=WORKLOAD_SERVICE,
-        name=svc.name,
-        service_port=spec.service_port,
-        health_path=spec.health_path,
-        extra=("revision", svc.id, tuple(sorted(spec.env_secret_keep))),
-        **kwargs,  # type: ignore[arg-type]
+    fingerprint = req.fingerprint(
+        user_id, extra=("revision", svc.id, tuple(sorted(spec.env_secret_keep)))
     )
     if idempotency_key:
         existing = await orchestrator_service.find_instance_replay(
@@ -257,24 +241,18 @@ async def create_revision(
             if key not in env:
                 env[key] = old_secret[key]
                 secret_keys.add(key)
-    kwargs["env"] = env or None
-    kwargs["env_secret_keys"] = sorted(secret_keys) or None
+    req = replace(
+        req, env=env or None, env_secret_keys=tuple(sorted(secret_keys)) if secret_keys else None
+    )
 
     new, created = await orchestrator_service.create_instance_row(
         session,
         user_id,
-        name=svc.name,
+        req,
         idempotency_key=idempotency_key,
-        service=orchestrator_service.ServiceBinding(
-            service_id=svc.id,
-            revision=svc.revision + 1,
-            slug=svc.public_slug,
-            service_port=spec.service_port,
-            health_path=spec.health_path,
-        ),
+        service=ServiceBinding(service_id=svc.id, revision=svc.revision + 1, slug=svc.public_slug),
         exclude_instance_id=old.id,
         fingerprint=fingerprint,
-        **kwargs,  # type: ignore[arg-type]
     )
     if not created:
         return svc, False

@@ -75,13 +75,71 @@ logger = get_logger(__name__)
 
 @dataclass(frozen=True)
 class ServiceBinding:
-    """建实例时绑定的在线服务版本:暴露规格快照到实例行,建 Pod 只读这些快照列。"""
+    """建实例时绑定的在线服务版本身份(服务行已落库后才有);端口与健康路径在 InstanceRequest 里。"""
 
     service_id: int
     revision: int
     slug: str
-    service_port: int
-    health_path: str | None
+
+
+@dataclass(frozen=True)
+class InstanceRequest:
+    """一次建实例的全部下单参数(开发机与服务版本共用),异参检测指纹由本对象派生。
+    service_port 非空 = 服务形态(镜像须钉版本、SSH 按 with_ssh);开发机恒开 SSH。"""
+
+    sku_id: int
+    gpu_count: int
+    image_ref: str
+    ssh_key_ids: tuple[int, ...]
+    name: str | None = None
+    data_disk_id: int | None = None
+    container_command: tuple[str, ...] | None = None
+    container_args: tuple[str, ...] | None = None
+    env: dict[str, str] | None = None
+    env_secret_keys: tuple[str, ...] | None = None
+    with_ssh: bool = True
+    market: str = MARKET_ON_DEMAND
+    period: str | None = None
+    period_count: int = 1
+    service_port: int | None = None
+    health_path: str | None = None
+
+    @property
+    def is_service(self) -> bool:
+        return self.service_port is not None
+
+    @property
+    def workload_type(self) -> str:
+        return WORKLOAD_SERVICE if self.is_service else WORKLOAD_DEV
+
+    @property
+    def wants_ssh(self) -> bool:
+        """dev 形态恒开 SSH;service 形态由用户勾选。"""
+        return self.with_ssh if self.is_service else True
+
+    def fingerprint(self, user_id: int, *, extra: tuple[object, ...] = ()) -> str:
+        """异参检测指纹:下单参数全集的 sha256;服务部署经 extra 并入服务级属性(不含 slug / id)。"""
+        return request_fingerprint(
+            user_id,
+            self.sku_id,
+            self.gpu_count,
+            self.image_ref,
+            sorted(self.ssh_key_ids),
+            self.name,
+            self.data_disk_id,
+            self.workload_type,
+            self.container_command,
+            self.container_args,
+            sorted(self.env.items()) if self.env else None,
+            sorted(self.env_secret_keys) if self.env_secret_keys else None,
+            self.service_port,
+            self.health_path,
+            self.with_ssh,
+            self.market,
+            self.period,
+            self.period_count,
+            *extra,
+        )
 
 
 def jupyter_host(instance_uuid: str, settings: Settings | None = None) -> str:
@@ -384,57 +442,24 @@ async def _reserved_slots(session: AsyncSession, sku: "Sku") -> int:
 async def create_instance_row(
     session: AsyncSession,
     user_id: int,
+    req: InstanceRequest,
     *,
-    sku_id: int,
-    gpu_count: int,
-    image_ref: str,
-    ssh_key_ids: list[int],
-    name: str | None,
-    data_disk_id: int | None,
     idempotency_key: str | None,
-    container_command: list[str] | None = None,
-    container_args: list[str] | None = None,
-    env: dict[str, str] | None = None,
-    env_secret_keys: list[str] | None = None,
-    with_ssh: bool = False,
-    market: str = MARKET_ON_DEMAND,
-    period: str | None = None,
-    period_count: int = 1,
     service: ServiceBinding | None = None,
     exclude_instance_id: int | None = None,
     fingerprint: str | None = None,
 ) -> tuple[Instance, bool]:
-    """创建实例的 row 级核心:软准入 → 钱包行锁 → 写 instances / 事件 / outbox,**不 commit**。
-    返回 (实例, created),created=False = 幂等重放。
-    service 非空 = 在线服务的一个版本(镜像钉版本、暴露规格快照到实例行、SSH 按 with_ssh);
-    dev 恒开 SSH。
-    market='subscription' 同事务落 subscriptions 并一次性扣款(不许透支),再过在途燃烧率校验。
-    exclude_instance_id 的份额让给新实例(配额与软准入),余额不让。
-    fingerprint 由调用方给时须与 instance_fingerprint 同算法。
+    """创建实例的 row 级核心:校验 → 软准入 → 钱包行锁内配额与余额 → 写 instances / 事件 / outbox,
+    **不 commit**。返回 (实例, created),created=False = 幂等重放。
+    service 非空 = 在线服务的一个版本(req.service_port 必须同时非空);
+    market='subscription' 同事务落 subscriptions 并一次性扣款(不许透支),再过在途燃烧率校验;
+    exclude_instance_id 的份额让给新实例(配额与软准入),余额不让;
+    fingerprint 由调用方给时须为同一 req 的 req.fingerprint(...)。
     """
-    is_service = service is not None
-    workload_type = WORKLOAD_SERVICE if is_service else WORKLOAD_DEV
+    if (service is not None) != req.is_service:
+        raise ValueError("service binding and req.service_port must be both set or both unset")
     if fingerprint is None:
-        fingerprint = instance_fingerprint(
-            user_id,
-            sku_id=sku_id,
-            gpu_count=gpu_count,
-            image_ref=image_ref,
-            ssh_key_ids=ssh_key_ids,
-            name=name,
-            data_disk_id=data_disk_id,
-            workload_type=workload_type,
-            container_command=container_command,
-            container_args=container_args,
-            env=env,
-            env_secret_keys=env_secret_keys,
-            service_port=service.service_port if service else None,
-            health_path=service.health_path if service else None,
-            with_ssh=with_ssh,
-            market=market,
-            period=period,
-            period_count=period_count,
-        )
+        fingerprint = req.fingerprint(user_id)
     if idempotency_key:
         existing = await find_instance_replay(
             session, user_id, key=idempotency_key, fingerprint=fingerprint
@@ -442,104 +467,28 @@ async def create_instance_row(
         if existing is not None:
             return existing, False
 
-    sku = await catalog_service.get_on_sale_sku(session, sku_id)
-    await _require_cluster_for_pool(
-        session, sku.pool_label, gpu_count, with_data_disk=data_disk_id is not None
-    )
-    # CPU 规格(max_gpus_per_instance=0)只收 0 卡,GPU 规格只收 1..max
-    if sku.max_gpus_per_instance == 0:
-        if gpu_count != 0:
-            raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.cpuSkuNoGpu")
-    elif not 1 <= gpu_count <= sku.max_gpus_per_instance:
-        raise AppError(
-            ErrorCode.VALIDATION_ERROR,
-            key="orchestrator.gpuCountRange",
-            params={"max": sku.max_gpus_per_instance},
-        )
-    await _validate_image_ref(session, image_ref, require_pinned=is_service)
-    if market == MARKET_SPOT and not sku.spot_enabled:
-        raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.spotNotEnabled")
-    # 抢占与建实例同事务
-    await _soft_admit_capacity(
-        session,
-        sku,
-        gpu_count,
-        market=market,
-        user_id=user_id,
-        freeing_slots=await _freeing_slots_of(session, exclude_instance_id, sku),
-    )
-    # dev 形态恒开 SSH;service 形态由用户勾选
-    wants_ssh = with_ssh if is_service else True
-
-    is_subscription = market == MARKET_SUBSCRIPTION
-    if is_subscription and not sku.period_enabled:
-        raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.periodNotEnabled")
+    sku = await catalog_service.get_on_sale_sku(session, req.sku_id)
+    await _validate_request(session, req, sku)
+    await _admit(session, user_id, req, sku, exclude_instance_id=exclude_instance_id)
     # 有效时价:唯一折扣计算点在 core/pricing
     policies = await get_runtime_config(session)
-    unit_price = price_for(sku.price_hourly, market=market, policies=policies, period=period)
-
-    disk_id_validated: int | None = None
-    if data_disk_id is not None:
-        # 锁序 disk → wallet(与删盘/扩盘链路同向);attach 在下方同事务重入此锁
-        disk = await disks_service.lock_disk_for_attach(session, user_id, data_disk_id)
-        disk_id_validated = disk.id
-
-    # 临界区:FOR UPDATE 锁钱包行持有到 commit;在途统计与配额校验必须在锁内。
-    # 余额口径:在途 + creating/starting 待燃(assert_can_afford 内部并入)+ 本次新增
-    estimate = hourly_cost(unit_price, gpu_count)
-    await billing_service.lock_wallet(session, user_id)
-    if not is_subscription:
-        await billing_service.assert_can_afford(session, user_id, additional_hourly=estimate)
-    # 只有 CPU 实例计 vCPU 维
-    await _check_user_quota(
-        session,
-        user_id,
-        gpu_count,
-        sku.vcpu if gpu_count == 0 else 0,
-        exclude_instance_id=exclude_instance_id,
+    unit_price = price_for(
+        sku.price_hourly, market=req.market, policies=policies, period=req.period
     )
-
-    selected: list[str] = []
-    if wants_ssh:
-        keys = await account_service.ssh_keys_by_ids(session, user_id, list(ssh_key_ids))
-        selected = [k.public_key for k in keys]
-        if not selected:
-            raise AppError(ErrorCode.SSH_KEY_INVALID, key="orchestrator.sshKeyRequired")
-
-    instance_uuid = uuid4().hex
-    jupyter_token = secrets.token_urlsafe(24)
-    instance = Instance(
-        uuid=instance_uuid,
-        user_id=user_id,
-        name=name or f"instance-{uuid4().hex[:6]}",
-        sku_id=sku.id,
-        spec=_snapshot_spec(sku),
-        price_hourly=unit_price,
-        gpu_count=gpu_count,
-        market=market,
-        image_ref=image_ref,
-        status=sm_def.CREATING,
-        k8s_namespace=f"{get_settings().k8s_namespace_prefix}{user_id}",
-        # service 形态也签(列非空),不进 Pod spec
-        jupyter_token=_encode_token(jupyter_token, instance_uuid=instance_uuid),
-        authorized_keys=selected,
-        data_disk_id=disk_id_validated,
+    disk_id = await _lock_disk(session, user_id, req.data_disk_id)
+    authorized_keys = await _reserve_funds_and_quota(
+        session, user_id, req, sku, unit_price, exclude_instance_id=exclude_instance_id
+    )
+    instance = _build_row(
+        user_id,
+        req,
+        sku,
+        unit_price=unit_price,
+        authorized_keys=authorized_keys,
+        disk_id=disk_id,
         idempotency_key=idempotency_key,
-        request_fingerprint=fingerprint,
-        workload_type=workload_type,
-        container_command=list(container_command) if container_command else None,
-        container_args=list(container_args) if container_args else None,
-        with_ssh=wants_ssh,
-        env_encrypted=(
-            _encode_env(env, set(env_secret_keys or ()), instance_uuid=instance_uuid)
-            if env
-            else None
-        ),
-        service_id=service.service_id if service else None,
-        service_revision=service.revision if service else None,
-        service_slug=service.slug if service else None,
-        service_port=service.service_port if service else None,
-        health_path=service.health_path if service else None,
+        fingerprint=fingerprint,
+        service=service,
     )
     result = await insert_idempotent(
         session,
@@ -553,8 +502,153 @@ async def create_instance_row(
     if result is not instance:
         # 并发同幂等键:按重放返回既有实例
         return result, False
-    if is_subscription:
-        assert period is not None  # 契约层已拦,这里给类型收敛
+    await _post_insert(session, user_id, req, sku, instance, service=service)
+    return instance, True
+
+
+async def _validate_request(session: AsyncSession, req: InstanceRequest, sku: "Sku") -> None:
+    """契约层拦不住的规格配对:卡数与 SKU 形态、镜像形态与来源、购买模式与 SKU 开关。"""
+    # CPU 规格(max_gpus_per_instance=0)只收 0 卡,GPU 规格只收 1..max
+    if sku.max_gpus_per_instance == 0:
+        if req.gpu_count != 0:
+            raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.cpuSkuNoGpu")
+    elif not 1 <= req.gpu_count <= sku.max_gpus_per_instance:
+        raise AppError(
+            ErrorCode.VALIDATION_ERROR,
+            key="orchestrator.gpuCountRange",
+            params={"max": sku.max_gpus_per_instance},
+        )
+    await _validate_image_ref(session, req.image_ref, require_pinned=req.is_service)
+    if req.market == MARKET_SPOT and not sku.spot_enabled:
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.spotNotEnabled")
+    if req.market == MARKET_SUBSCRIPTION and not sku.period_enabled:
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.periodNotEnabled")
+
+
+async def _admit(
+    session: AsyncSession,
+    user_id: int,
+    req: InstanceRequest,
+    sku: "Sku",
+    *,
+    exclude_instance_id: int | None,
+) -> None:
+    """下发门禁(集群能力)+ 容量软准入(不足先抢占竞价实例,与建实例同事务)。"""
+    await _require_cluster_for_pool(
+        session, sku.pool_label, req.gpu_count, with_data_disk=req.data_disk_id is not None
+    )
+    await _soft_admit_capacity(
+        session,
+        sku,
+        req.gpu_count,
+        market=req.market,
+        user_id=user_id,
+        freeing_slots=await _freeing_slots_of(session, exclude_instance_id, sku),
+    )
+
+
+async def _lock_disk(session: AsyncSession, user_id: int, data_disk_id: int | None) -> int | None:
+    """挂盘前锁盘行(锁序 disk → wallet,与删盘/扩盘链路同向);attach 在插入后同事务重入此锁。"""
+    if data_disk_id is None:
+        return None
+    return (await disks_service.lock_disk_for_attach(session, user_id, data_disk_id)).id
+
+
+async def _reserve_funds_and_quota(
+    session: AsyncSession,
+    user_id: int,
+    req: InstanceRequest,
+    sku: "Sku",
+    unit_price: Decimal,
+    *,
+    exclude_instance_id: int | None,
+) -> list[str]:
+    """临界区:FOR UPDATE 锁钱包行持有到 commit;在途统计、配额与公钥校验都在锁内。
+    余额口径:在途 + creating/starting 待燃(assert_can_afford 内部并入)+ 本次新增。返回下发公钥。"""
+    await billing_service.lock_wallet(session, user_id)
+    if req.market != MARKET_SUBSCRIPTION:
+        await billing_service.assert_can_afford(
+            session, user_id, additional_hourly=hourly_cost(unit_price, req.gpu_count)
+        )
+    # 只有 CPU 实例计 vCPU 维
+    await _check_user_quota(
+        session,
+        user_id,
+        req.gpu_count,
+        sku.vcpu if req.gpu_count == 0 else 0,
+        exclude_instance_id=exclude_instance_id,
+    )
+    if not req.wants_ssh:
+        return []
+    keys = await account_service.ssh_keys_by_ids(session, user_id, list(req.ssh_key_ids))
+    selected = [k.public_key for k in keys]
+    if not selected:
+        raise AppError(ErrorCode.SSH_KEY_INVALID, key="orchestrator.sshKeyRequired")
+    return selected
+
+
+def _build_row(
+    user_id: int,
+    req: InstanceRequest,
+    sku: "Sku",
+    *,
+    unit_price: Decimal,
+    authorized_keys: list[str],
+    disk_id: int | None,
+    idempotency_key: str | None,
+    fingerprint: str,
+    service: ServiceBinding | None,
+) -> Instance:
+    """instances 行(creating);Jupyter token 与用户 env 密文落库,
+    服务形态的快照列来自 req 与 service。"""
+    instance_uuid = uuid4().hex
+    return Instance(
+        uuid=instance_uuid,
+        user_id=user_id,
+        name=req.name or f"instance-{uuid4().hex[:6]}",
+        sku_id=sku.id,
+        spec=_snapshot_spec(sku),
+        price_hourly=unit_price,
+        gpu_count=req.gpu_count,
+        market=req.market,
+        image_ref=req.image_ref,
+        status=sm_def.CREATING,
+        k8s_namespace=f"{get_settings().k8s_namespace_prefix}{user_id}",
+        # service 形态也签(列非空),不进 Pod spec
+        jupyter_token=_encode_token(secrets.token_urlsafe(24), instance_uuid=instance_uuid),
+        authorized_keys=authorized_keys,
+        data_disk_id=disk_id,
+        idempotency_key=idempotency_key,
+        request_fingerprint=fingerprint,
+        workload_type=req.workload_type,
+        container_command=list(req.container_command) if req.container_command else None,
+        container_args=list(req.container_args) if req.container_args else None,
+        with_ssh=req.wants_ssh,
+        env_encrypted=(
+            _encode_env(req.env, set(req.env_secret_keys or ()), instance_uuid=instance_uuid)
+            if req.env
+            else None
+        ),
+        service_id=service.service_id if service else None,
+        service_revision=service.revision if service else None,
+        service_slug=service.slug if service else None,
+        service_port=req.service_port,
+        health_path=req.health_path,
+    )
+
+
+async def _post_insert(
+    session: AsyncSession,
+    user_id: int,
+    req: InstanceRequest,
+    sku: "Sku",
+    instance: Instance,
+    *,
+    service: ServiceBinding | None,
+) -> None:
+    """行已插入后的同事务收尾:包周期预扣、数据盘占用、创建事件、outbox。"""
+    if req.market == MARKET_SUBSCRIPTION:
+        assert req.period is not None  # 契约层已拦,这里给类型收敛
         # 先扣款再校验在途(校验扣后余额)
         await billing_service.charge_new_subscription(
             session,
@@ -563,15 +657,17 @@ async def create_instance_row(
             instance_name=instance.name,
             sku_id=sku.id,
             base_hourly=sku.price_hourly,
-            gpu_count=gpu_count,
-            period=period,
-            period_count=period_count,
+            gpu_count=req.gpu_count,
+            period=req.period,
+            period_count=req.period_count,
             # 幂等由 instances 行担保,订阅行不带键
             idempotency_key=None,
         )
         await billing_service.assert_can_afford(session, user_id)
-    if disk_id_validated is not None:
-        await disks_service.attach_for_instance(session, user_id, disk_id_validated, instance.id)
+    if instance.data_disk_id is not None:
+        await disks_service.attach_for_instance(
+            session, user_id, instance.data_disk_id, instance.id
+        )
     session.add(
         InstanceEvent(
             instance_id=instance.id,
@@ -581,9 +677,9 @@ async def create_instance_row(
             actor="user",
             event_metadata={
                 "sku_id": sku.id,
-                "gpu_count": gpu_count,
-                "workload_type": workload_type,
-                "market": market,
+                "gpu_count": req.gpu_count,
+                "workload_type": req.workload_type,
+                "market": req.market,
                 **(
                     {"service_id": service.service_id, "revision": service.revision}
                     if service
@@ -594,53 +690,6 @@ async def create_instance_row(
         )
     )
     enqueue(session, "instance.create", {"instance_id": instance.id})
-    return instance, True
-
-
-def instance_fingerprint(
-    user_id: int,
-    *,
-    sku_id: int,
-    gpu_count: int,
-    image_ref: str,
-    ssh_key_ids: list[int],
-    name: str | None,
-    data_disk_id: int | None,
-    workload_type: str,
-    container_command: list[str] | None,
-    container_args: list[str] | None,
-    env: dict[str, str] | None,
-    env_secret_keys: list[str] | None,
-    service_port: int | None,
-    health_path: str | None,
-    with_ssh: bool,
-    market: str,
-    period: str | None,
-    period_count: int,
-    extra: tuple[object, ...] = (),
-) -> str:
-    """异参检测指纹:下单参数全集的 sha256(dict 排序);服务部署经 extra 并入服务级属性。"""
-    return request_fingerprint(
-        user_id,
-        sku_id,
-        gpu_count,
-        image_ref,
-        sorted(ssh_key_ids),
-        name,
-        data_disk_id,
-        workload_type,
-        container_command,
-        container_args,
-        sorted(env.items()) if env else None,
-        sorted(env_secret_keys) if env_secret_keys else None,
-        service_port,
-        health_path,
-        with_ssh,
-        market,
-        period,
-        period_count,
-        *extra,
-    )
 
 
 async def find_instance_replay(
@@ -688,10 +737,12 @@ async def _freeing_slots_of(session: AsyncSession, instance_id: int | None, sku:
 
 
 async def create_instance(
-    session: AsyncSession, user_id: int, **kwargs: Any
+    session: AsyncSession, user_id: int, req: InstanceRequest, *, idempotency_key: str | None
 ) -> tuple[Instance, bool]:
-    """创建实例(202 异步):create_instance_row + commit。created=False = 幂等重放(路由回 200)。"""
-    instance, created = await create_instance_row(session, user_id, **kwargs)
+    """创建开发机(202 异步):create_instance_row + commit。created=False = 幂等重放(路由回 200)。"""
+    instance, created = await create_instance_row(
+        session, user_id, req, idempotency_key=idempotency_key
+    )
     if created:
         await session.commit()
         logger.info("instance_create_accepted", instance_id=instance.id, user_id=user_id)
