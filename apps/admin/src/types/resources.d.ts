@@ -1378,7 +1378,6 @@ export default interface Resources {
         "wechat": "微信支付"
       },
       "deletion": {
-        "approved": "已批准",
         "cancelled": "已撤销",
         "completed": "已注销",
         "pending": "冷静期",
@@ -1393,7 +1392,6 @@ export default interface Resources {
       },
       "eventReason": {
         "admin_force_stop": "管理员强制停止",
-        "admin_release": "管理员释放",
         "arrears_freeze": "欠费冻结",
         "arrears_reclaim": "欠费回收实例盘",
         "arrears_stop": "欠费停机",
@@ -1414,7 +1412,6 @@ export default interface Resources {
         "subscription_freeze": "包周期到期冻结",
         "subscription_renew": "包周期续费",
         "tenant_frozen": "账号被冻结",
-        "user_release": "用户释放",
         "user_start": "用户开机",
         "user_stop": "用户关机"
       },

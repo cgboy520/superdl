@@ -17,5 +17,3 @@ export { LoadMore } from "./LoadMore";
 export { moneyOr, DataErrorAlert } from "./QueryState";
 export { useConfirm, TypeConfirmModal } from "./confirm";
 export { DangerZone } from "./DangerZone";
-export { VStack, Caption } from "./Stack";
-export type { DangerAction } from "./DangerZone";

@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./components": "./src/components/index.ts",
+    "./localeParity": "./src/localeParity.ts",
     "./locales/*": "./locales/*"
   },
   "scripts": {
@@ -40,7 +41,6 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "antd": "^6.6.1",
-    "cmdk": "^1.1.1",
     "dayjs": "^1.11.23",
     "echarts": "^6.1.0",
     "i18next": "^26.4.0",

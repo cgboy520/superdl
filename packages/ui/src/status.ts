@@ -168,8 +168,6 @@ export const instanceEventReasonMap = {
   user_stop: { labelKey: "shared:status.eventReason.user_stop" },
   restart: { labelKey: "shared:status.eventReason.restart" },
   failed_recover: { labelKey: "shared:status.eventReason.failed_recover" },
-  user_release: { labelKey: "shared:status.eventReason.user_release" },
-  admin_release: { labelKey: "shared:status.eventReason.admin_release" },
   released: { labelKey: "shared:status.eventReason.released" },
   retention_reclaim: { labelKey: "shared:status.eventReason.retention_reclaim" },
   failed_retention_reclaim: { labelKey: "shared:status.eventReason.failed_retention_reclaim" },
@@ -379,11 +377,10 @@ export const ticketCategoryMap = {
 } as const satisfies Record<TicketCategory, { labelKey: string }>;
 
 /** 注销申请状态(与 account_deletion_requests.status 严格一致) */
-export type DeletionStatus = "pending" | "approved" | "completed" | "rejected" | "cancelled";
+export type DeletionStatus = "pending" | "completed" | "rejected" | "cancelled";
 
 export const deletionStatusMap = {
   pending: { labelKey: "shared:status.deletion.pending", color: statusColors.orange, badge: "warning" },
-  approved: { labelKey: "shared:status.deletion.approved", color: statusColors.blue, badge: "processing" },
   completed: { labelKey: "shared:status.deletion.completed", color: statusColors.gray, badge: "default" },
   rejected: { labelKey: "shared:status.deletion.rejected", color: statusColors.red, badge: "error" },
   cancelled: { labelKey: "shared:status.deletion.cancelled", color: statusColors.gray, badge: "default" },

@@ -228,9 +228,6 @@ export const layout = {
 /** 控件宽度四档:短码 / 短文本 / 常规 / 长文本;输入框、下拉一律取这里,不写裸数字 */
 export const controlWidth = { xs: 96, sm: 160, md: 260, lg: 320 } as const;
 
-/** Modal 宽度三档:确认 / 表单 / 复杂表单(再大用 Drawer,见 docs/ui-ux-spec.md §1) */
-export const modalWidth = { sm: 480, md: 560, lg: 720 } as const;
-
 /** Drawer 宽度两档(CSS 值,窄屏自动收到 100vw) */
 export const drawerWidth = { md: "min(640px, 100vw)", lg: "min(760px, 100vw)" } as const;
 

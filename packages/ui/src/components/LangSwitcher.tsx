@@ -1,10 +1,10 @@
-/** 语言切换(两端共用),与两端 i18n.ts SUPPORTED_LANGS 对齐;浅色面传 variant="light"。 */
+/** 语言切换(两端共用);浅色面传 variant="light"。 */
 
 import { GlobalOutlined } from "@ant-design/icons";
 import { Select } from "antd";
 import { useTranslation } from "react-i18next";
 
-const SUPPORTED_LANGS = ["zh-CN", "en-US"] as const;
+import { SUPPORTED_LANGS } from "../i18n";
 
 export function LangSwitcher({ variant = "dark", width = 88 }: { variant?: "dark" | "light"; width?: number }) {
   const { t, i18n } = useTranslation("shared");

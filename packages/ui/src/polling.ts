@@ -15,5 +15,3 @@ export const POLL = {
   /** 日消费 / 财务类汇总 */
   daily: 60_000,
 } as const;
-
-export type PollKey = keyof typeof POLL;

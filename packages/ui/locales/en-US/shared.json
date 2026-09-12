@@ -114,7 +114,6 @@
       "grace": "Grace period"
     },
     "deletion": {
-      "approved": "Approved",
       "cancelled": "Cancelled",
       "completed": "Deleted",
       "pending": "Cooling-off",
@@ -251,7 +250,6 @@
     },
     "eventReason": {
       "admin_force_stop": "Force-stopped by an administrator",
-      "admin_release": "Released by an administrator",
       "arrears_freeze": "Frozen: insufficient balance",
       "arrears_reclaim": "Instance disk reclaimed: unpaid balance",
       "arrears_stop": "Stopped: insufficient balance",
@@ -272,7 +270,6 @@
       "subscription_freeze": "Frozen: subscription expired",
       "subscription_renew": "Subscription renewed",
       "tenant_frozen": "Account frozen",
-      "user_release": "Released by you",
       "user_start": "Started by you",
       "user_stop": "Stopped by you"
     }

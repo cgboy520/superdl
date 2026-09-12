@@ -16,7 +16,7 @@
 10. **URL 即状态**:列表筛选、搜索词、Tab activeKey、深链目标(节点名 / 工单 id / 租户 id / 配置分组)一律入 URL(`validateSearch` 白名单 + 默认值剥离 + `replace: true`);控件与 URL 双向同步;抽屉开合若承载可转达视图(租户抽屉)也入 URL。详情页「返回列表」带回列表最近筛选态(web `stores/listSearch`)。
 11. **轮询三律 + 新鲜度可见**:① 只经 react-query `refetchInterval`,周期取 `packages/ui/src/polling.ts` 的 `POLL`,禁止裸数字与原生 `setInterval`;② 一律函数式:过渡态 `POLL.transient`、稳态 `POLL.steady`、终态即停(false);③ `useInfiniteQuery` 上禁止轮询,列表新鲜度靠 `refetchOnWindowFocus` + 手动刷新;折叠 / 未打开的 UI 对应查询挂 `enabled`。轮询页在页头给「更新于 · 每 N 秒自动刷新 · 暂停 / 立即刷新」(`PageHeader.freshness` + `useAutoRefresh`)。
 12. **密度分级**:web「舒适」(表格 `cellPaddingBlock 12`、正文 14);admin「紧凑」(表格 13px / `cellPaddingBlock 8`,嵌套表 `size="small"`;全站 `tabular-nums`;标识符列 `.mono` 等宽);`scroll.x ≥ 1000` 的表**必须**固定标识列(左)与操作列(右)+ `sticky={{ offsetHeader: layout.topBarHeight }}`;宽表页用 `PageContainer width="full"`。
-13. **尺寸与容器分档**:输入框 / 下拉宽度取 `controlWidth`(xs 96 / sm 160 / md 260 / lg 320);Modal 宽度取 `modalWidth`(sm 480 / md 560 / lg 720),≥2 张卡或需滚动的编辑表单改 Drawer(`drawerWidth`,提交按钮进 `footer`,挂 `useLeaveGuard`);按钮尺寸「页主 CTA large / 卡内 middle / 行内 small」;锚点滚动目标加 `scroll-margin-top: layout.scrollMarginTop`。
+13. **尺寸与容器分档**:输入框 / 下拉宽度取 `controlWidth`(xs 96 / sm 160 / md 260 / lg 320);≥2 张卡或需滚动的编辑表单改 Drawer(`drawerWidth`,提交按钮进 `footer`,挂 `useLeaveGuard`);按钮尺寸「页主 CTA large / 卡内 middle / 行内 small」;锚点滚动目标加 `scroll-margin-top: layout.scrollMarginTop`。
 14. **可访问性底线**:`<main id="main">` 地标 + 跳转链接;导航当前项 `aria-current="page"`;手写 `role="button"` 元素统一焦点框;Popover 信息触屏可点开(`trigger` 含 click);快捷键在可编辑元素聚焦时不抢。
 
 ## 2. 视觉与主题
@@ -33,8 +33,8 @@
 
 **设计 token 纪律**:`packages/ui/src/tokens.ts` 是唯一事实源。
 ① 色值走 token(`webTheme` / `webDarkTheme` / `adminColors` / `statusColors` 等),禁止硬编码 hex;
-② 布局尺寸走 `space`(4 阶梯)与 `layout`(含 `topBarHeight` / `scrollMarginTop`),字号走 `fontSize` 五档,控件 / Modal / Drawer 宽度走 `controlWidth` / `modalWidth` / `drawerWidth`;
-③ 高频模式组件化(`packages/ui` `src/components/`):`PageContainer`(页宽四档 default 1280 / wide 1200 / narrow 880 / full)/ `PageHeader`(面包屑 / 返回 / 描述 / 右侧动作 / 新鲜度条)/ `KpiGrid`(CSS grid 自适应)/ `TableErrorEmpty`(含 isForbidden 403 区分)/ `DataErrorAlert`(`description={null}` 单行形态)/ `EmptyState` / `HexTag` / `LoadMore` / `EChart`(三态 + `group` 联动)/ `DangerZone` / 排版原语 `VStack` / `Caption`;用户端另有 `Field`(受控字段骨架)/ `SmsCodeField` / `LandingSection` / `AttentionBar` / `ConsentGate`,管理端另有 `ReasonAction` / `RowMoreMenu` / `BulkBar` / `FilterBar` / `StatusTag`;
+② 布局尺寸走 `space`(4 阶梯)与 `layout`(含 `topBarHeight` / `scrollMarginTop`),字号走 `fontSize` 五档,控件 / Drawer 宽度走 `controlWidth` / `drawerWidth`;
+③ 高频模式组件化(`packages/ui` `src/components/`):`PageContainer`(页宽四档 default 1280 / wide 1200 / narrow 880 / full)/ `PageHeader`(面包屑 / 返回 / 描述 / 右侧动作 / 新鲜度条)/ `KpiGrid`(CSS grid 自适应)/ `TableErrorEmpty`(含 isForbidden 403 区分)/ `DataErrorAlert`(`description={null}` 单行形态)/ `EmptyState` / `HexTag` / `LoadMore` / `EChart`(三态 + `group` 联动)/ `DangerZone`;用户端另有 `Field`(受控字段骨架)/ `SmsCodeField` / `LandingSection` / `AttentionBar` / `ConsentGate`,管理端另有 `ReasonAction` / `RowMoreMenu` / `BulkBar` / `FilterBar` / `StatusTag`;
 ④ 确认强度组件化:L1 / L2 用 `useConfirm`(支持 `danger` / `okDisabled`),L3 用 `TypeConfirmModal`,管理端审计型用 `ReasonAction`;
 ⑤ 动效走 `motion` token(fast 0.15 / normal 0.2 / slow 0.25 + easeOut):仅透明度 / 位移,路由切换不动效;自绘浮层 zIndex 走 `zIndex` token;
 ⑥ CSS 覆盖区一律 `var(--sdl-*)`,取值经 `cssVars` 桥由 `__root.tsx` 注入;admin 端走 `var(--admin-*)`(`main.tsx` 从 `adminColors` 注入,见 `global.css`);新代码不写 inline 尺寸魔法数,存量按「碰到的文件顺手收敛」推进;
