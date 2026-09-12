@@ -232,7 +232,7 @@ async def admin_node_metrics(
     """
     out = await metering_service.node_gpu_metrics(node_name, range)
     cfg = await get_runtime_config(session)
-    return NodeMetricsOut(**out, grafana_url=cfg.grafana_url or None)
+    return out.model_copy(update={"grafana_url": cfg.grafana_url or None})
 
 
 @router.get("/nodes", dependencies=[require_roles("ops", "readonly")])
@@ -324,7 +324,7 @@ async def admin_cluster_test_connection(session: DbSession, request: Request) ->
 async def admin_gpu_model_aggregates(session: DbSession) -> list[GpuModelAggregateOut]:
     """台账按 canonical×池聚合(None 型号 = 未识别桶)。"""
     aggs = await nodes_service.gpu_model_aggregates(session)
-    return [GpuModelAggregateOut(**vars(a)) for a in aggs]
+    return [GpuModelAggregateOut.model_validate(a, from_attributes=True) for a in aggs]
 
 
 class NodeCordonRequest(ReasonBody):

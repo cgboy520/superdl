@@ -33,7 +33,6 @@ from app.modules.adminapi.schemas import (
     OrderVerifyOut,
     PaymentAnomalyOut,
     ReasonBody,
-    ReconciliationOut,
     RevenueReportOut,
 )
 from app.modules.billing import service as billing_service
@@ -49,6 +48,7 @@ from app.modules.billing.schemas import (
     SettlementGapResolve,
 )
 from app.modules.metering import service as metering_service
+from app.modules.metering.schemas import ReconciliationOut
 from app.modules.notify import service as notify_service
 
 if TYPE_CHECKING:
@@ -65,7 +65,7 @@ async def reconciliation(session: DbSession, day: str) -> ReconciliationOut:
     """日对账:事件计费 vs 指标估算 + diff%(>2% 列差异实例)。"""
     day_start, _ = parse_day(day)
     report = await metering_service.reconciliation_report(session, day_start)
-    return ReconciliationOut.model_validate(report)
+    return report
 
 
 @router.get(

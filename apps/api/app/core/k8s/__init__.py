@@ -3,7 +3,13 @@ from functools import lru_cache
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.k8s.base import InstancePodSpec, K8sOrchestrator, NodePortTaken, PodStatus
+from app.core.k8s.base import (
+    InstancePodSpec,
+    K8sOrchestrator,
+    NamespaceMissing,
+    NodePortTaken,
+    PodStatus,
+)
 from app.core.k8s.fake import FakeOrchestrator
 from app.core.platform_config import get_runtime_config
 from app.core.registry import PULL_SECRET_NAME, dockerconfigjson, pull_secret_fingerprint
@@ -12,6 +18,7 @@ __all__ = [
     "FakeOrchestrator",
     "InstancePodSpec",
     "K8sOrchestrator",
+    "NamespaceMissing",
     "NodePortTaken",
     "PodStatus",
     "ensure_registry_pull_secret",

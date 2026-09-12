@@ -217,21 +217,6 @@ class AdjustContextOut(BaseModel):
     recent_ledger: list[LedgerEntryOut]
 
 
-class ReconciliationOutlier(BaseModel):
-    instance_id: int
-    billed: str
-    estimated: str
-    diff_pct: float
-
-
-class ReconciliationOut(BaseModel):
-    day: str
-    billed_total: str
-    estimated_total: str
-    diff_pct: float
-    outliers: list[ReconciliationOutlier]
-
-
 class AdminAlertOut(BaseModel):
     id: int
     type: str

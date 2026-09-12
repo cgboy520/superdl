@@ -31,3 +31,25 @@ class NodeMetricsOut(BaseModel):
     gpus: list[NodeGpuSeriesOut]
     xid_count_24h: int
     grafana_url: str | None = None
+
+
+class InstanceMetricsOut(BaseModel):
+    """实例监控曲线:指标名 → (unix_ts, 值) 序列;指标集见 prom.QUERIES。"""
+
+    range: str
+    series: dict[str, list[tuple[float, float]]]
+
+
+class ReconciliationOutlier(BaseModel):
+    instance_id: int
+    billed: str
+    estimated: str
+    diff_pct: float
+
+
+class ReconciliationOut(BaseModel):
+    day: str
+    billed_total: str
+    estimated_total: str
+    diff_pct: float
+    outliers: list[ReconciliationOutlier]

@@ -38,6 +38,7 @@ from app.core.pricing import (
     MARKET_ON_DEMAND,
     MARKET_SPOT,
     MARKET_SUBSCRIPTION,
+    SubscriptionQuote,
     price_for,
 )
 from app.core.ratelimit import check_rate_limit
@@ -55,10 +56,11 @@ from app.modules.orchestrator import (
     statemachine as sm_def,
 )
 from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent
-from app.modules.orchestrator.queries import get_instance
+from app.modules.orchestrator.queries import get_instance, lock_instance
 from app.modules.orchestrator.schemas import (
     WORKLOAD_DEV,
     WORKLOAD_SERVICE,
+    InstanceAccessOut,
     InstanceEventOut,
     InstanceLogsOut,
     InstanceOut,
@@ -928,13 +930,18 @@ async def _rebind_data_disk(session: AsyncSession, instance: Instance) -> None:
     await disks_service.attach_for_instance(session, instance.user_id, disk.id, instance.id)
 
 
+async def lock_instance_row(session: AsyncSession, instance: Instance) -> Instance:
+    """对已取到的实例行加 FOR UPDATE 并重读(同事务内不会消失)。"""
+    locked = await lock_instance(session, instance.id)
+    assert locked is not None
+    return locked
+
+
 async def start_instance_row(session: AsyncSession, user_id: int, instance: Instance) -> Instance:
     """开机的 row 级核心:锁实例 → 冻结 / 状态 / 节点 / 集群 / 订阅 / 数据盘 / 余额逐道闸
     → starting + outbox,**不 commit**。"""
     # 锁序 instance → disk → wallet
-    locked = await session.get(Instance, instance.id, with_for_update=True, populate_existing=True)
-    assert locked is not None  # get_instance 刚取到,同事务内不可能消失
-    instance = locked
+    instance = await lock_instance_row(session, instance)
     if instance.status == sm_def.FROZEN:
         raise AppError(ErrorCode.INSTANCE_FROZEN, key="orchestrator.frozenNeedsRecharge")
     recovered = instance.status == sm_def.FAILED
@@ -1008,15 +1015,13 @@ async def renew_instance(
     period: str,
     period_count: int,
     idempotency_key: str | None,
-) -> tuple[Instance, Any, bool]:
+) -> tuple[Instance, SubscriptionQuote, bool]:
     """续费包周期实例。返回 (实例, 报价, created);created=False = 幂等重放。
     换周期续同时刷新 `instances.price_hourly`;冻结中续费即解冻回 stopped。
     """
     instance = await get_instance(session, user_id, uuid)
     # 锁序 instance → wallet → subscription
-    locked = await session.get(Instance, instance.id, with_for_update=True, populate_existing=True)
-    assert locked is not None  # get_instance 刚取到,同事务内不可能消失
-    instance = locked
+    instance = await lock_instance_row(session, instance)
     if instance.market != MARKET_SUBSCRIPTION:
         raise AppError(
             ErrorCode.SUBSCRIPTION_NOT_RENEWABLE, key="orchestrator.renewNotSubscription"
@@ -1055,7 +1060,7 @@ async def subscribe_instance(
     period: str,
     period_count: int,
     idempotency_key: str | None,
-) -> tuple[Instance, Any, bool]:
+) -> tuple[Instance, SubscriptionQuote, bool]:
     """按量实例转包周期。返回 (实例, 报价, created);created=False = 幂等重放。
     先按转换前时价结清按量账,再翻 `market`;只收 running / stopped。
     """
@@ -1079,9 +1084,7 @@ async def subscribe_instance(
                 False,
             )
     # 锁序 instance → bill → wallet
-    locked = await session.get(Instance, instance.id, with_for_update=True, populate_existing=True)
-    assert locked is not None  # get_instance 刚取到,同事务内不可能消失
-    instance = locked
+    instance = await lock_instance_row(session, instance)
     if instance.market != MARKET_ON_DEMAND:
         raise AppError(ErrorCode.SUBSCRIPTION_NOT_RENEWABLE, key="orchestrator.convertNotOnDemand")
     if instance.status not in (sm_def.RUNNING, sm_def.STOPPED):
@@ -1132,9 +1135,7 @@ async def convert_to_on_demand(session: AsyncSession, user_id: int, uuid: str) -
     if instance.market == MARKET_ON_DEMAND:
         return instance  # 幂等:目标状态已达成
     # 锁序 instance → bill → wallet
-    locked = await session.get(Instance, instance.id, with_for_update=True, populate_existing=True)
-    assert locked is not None  # get_instance 刚取到,同事务内不可能消失
-    instance = locked
+    instance = await lock_instance_row(session, instance)
     if instance.market != MARKET_SPOT:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.toOnDemandNotSpot")
     if instance.status not in (sm_def.RUNNING, sm_def.STOPPED):
@@ -1329,28 +1330,27 @@ async def build_pod_spec_with_cluster(
 # ---------- 接入信息 ----------
 
 
-def build_access(instance: Instance) -> dict[str, Any]:
-    """接入信息:按形态给字段,没有的入口直接缺席。"""
+def build_access(instance: Instance) -> InstanceAccessOut:
+    """接入信息:按形态出字段,没有的入口留空。"""
     settings = get_settings()
     if instance.status != sm_def.RUNNING:
         raise AppError(ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.accessNeedsRunning")
-    out: dict[str, Any] = {}
+    out = InstanceAccessOut()
     if instance.with_ssh:
-        # SSH 主机名 = 实例域名(靠 NodePort 区分实例)
-        ssh_host = jupyter_host(instance.uuid, settings)
-        out["ssh_host"] = ssh_host
-        out["ssh_port"] = instance.ssh_port
-        out["ssh_command"] = f"ssh root@{ssh_host} -p {instance.ssh_port}"
+        # SSH 主机名 = 实例主机(走 NodePort 直连实例)
+        out.ssh_host = jupyter_host(instance.uuid, settings)
+        out.ssh_port = instance.ssh_port
+        out.ssh_command = f"ssh root@{out.ssh_host} -p {instance.ssh_port}"
     if instance.workload_type == WORKLOAD_DEV:
         # 一次性入场票据,token 不进 URL
-        out["jupyter_url"] = _new_jupyter_ticket(instance, _token_plain(instance))
+        out.jupyter_url = _new_jupyter_ticket(instance, _token_plain(instance))
     if instance.service_slug:
-        out["endpoint_url"] = f"https://{service_endpoint_host(instance.service_slug, settings)}"
+        out.endpoint_url = f"https://{service_endpoint_host(instance.service_slug, settings)}"
     return out
 
 
-async def get_access(session: AsyncSession, user_id: int, uuid: str) -> dict[str, Any]:
-    """取实例(owner 校验)再拼接入信息。"""
+async def get_access(session: AsyncSession, user_id: int, uuid: str) -> InstanceAccessOut:
+    """取实例(owner 校验)并拼接入信息。"""
     return build_access(await get_instance(session, user_id, uuid))
 
 

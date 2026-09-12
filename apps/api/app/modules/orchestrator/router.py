@@ -245,7 +245,7 @@ async def get_instance_access(
     uuid: str, user: CurrentUser, session: DbSession
 ) -> InstanceAccessOut:
     """接入信息,字段按形态出现:dev 给 SSH + Jupyter,服务版本实例给端点 URL(开了 SSH 都有)。"""
-    return InstanceAccessOut.model_validate(await service.get_access(session, user.id, uuid))
+    return await service.get_access(session, user.id, uuid)
 
 
 @router.get("/instances/{uuid}/logs")

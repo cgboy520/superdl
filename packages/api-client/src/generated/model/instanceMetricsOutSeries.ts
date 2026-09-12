@@ -5,4 +5,4 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type GetInstanceMetricsApiV1InstancesUuidMetricsGet200 = { [key: string]: unknown };
+export type InstanceMetricsOutSeries = {[key: string]: [number, number][]};

@@ -5,8 +5,8 @@
  * OpenAPI spec version: 0.1.0
  */
 import type {
-  GetInstanceMetricsApiV1InstancesUuidMetricsGet200,
   GetInstanceMetricsApiV1InstancesUuidMetricsGetParams,
+  InstanceMetricsOut,
   InstanceMetricsSummaryOut
 } from '../../model';
 
@@ -33,9 +33,9 @@ export const getGetInstanceMetricsApiV1InstancesUuidMetricsGetUrl = (uuid: strin
  * @summary Get Instance Metrics
  */
 export const getInstanceMetricsApiV1InstancesUuidMetricsGet = async (uuid: string,
-    params?: GetInstanceMetricsApiV1InstancesUuidMetricsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<GetInstanceMetricsApiV1InstancesUuidMetricsGet200> => {
+    params?: GetInstanceMetricsApiV1InstancesUuidMetricsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<InstanceMetricsOut> => {
 
-  return customFetch<GetInstanceMetricsApiV1InstancesUuidMetricsGet200>(getGetInstanceMetricsApiV1InstancesUuidMetricsGetUrl(uuid,params),
+  return customFetch<InstanceMetricsOut>(getGetInstanceMetricsApiV1InstancesUuidMetricsGetUrl(uuid,params),
   {
     ...options,
     method: 'GET'

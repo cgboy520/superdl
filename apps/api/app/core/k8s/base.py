@@ -92,6 +92,14 @@ class NodePortTaken(Exception):
         self.port = port
 
 
+class NamespaceMissing(Exception):
+    """目标租户 namespace 不存在(apiserver 404);擦盘等清理动作视为已完成。"""
+
+    def __init__(self, namespace: str) -> None:
+        super().__init__(f"namespace {namespace} not found")
+        self.namespace = namespace
+
+
 @dataclass(frozen=True)
 class PodStatus:
     """Pod 状态(get_status 与 list_instance_pods 同形状);LIST 条目带 namespace/name 与 labels

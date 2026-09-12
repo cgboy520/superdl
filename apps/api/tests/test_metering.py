@@ -95,17 +95,22 @@ class TestNodeMetrics:
             )
         )
         out = await node_gpu_metrics("gpu-a3-01", "1h")
-        assert out["available"] is True
-        assert [g["index"] for g in out["gpus"]] == ["0", "1"]
-        assert out["gpus"][0]["util"] == [(1.0, 78.0)]
-        assert out["xid_count_24h"] == 2
+        assert out.available is True
+        assert [g.index for g in out.gpus] == ["0", "1"]
+        assert out.gpus[0].util == [(1.0, 78.0)]
+        assert out.xid_count_24h == 2
 
     async def test_node_gpu_metrics_degrades(self):
         from app.modules.metering.service import node_gpu_metrics
 
         prom.set_client(prom_mock(fail=True))
         out = await node_gpu_metrics("gpu-a3-01", "1h")
-        assert out == {"available": False, "range": "1h", "gpus": [], "xid_count_24h": 0}
+        assert out.model_dump(exclude={"grafana_url"}) == {
+            "available": False,
+            "range": "1h",
+            "gpus": [],
+            "xid_count_24h": 0,
+        }
 
 
 class TestTierSource:

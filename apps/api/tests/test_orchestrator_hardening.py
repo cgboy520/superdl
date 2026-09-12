@@ -710,11 +710,10 @@ class TestDiskArrearsHardening:
     async def test_wipe_namespace_missing_is_done(self, client, sm, fake, monkeypatch):
         """租户 ns 不存在时擦盘视为完成。"""
 
-        class _Api404(Exception):
-            status = 404
+        from app.core.k8s import NamespaceMissing
 
         async def raise404(namespace, subpath):
-            raise _Api404("namespace not found")
+            raise NamespaceMissing(namespace)
 
         monkeypatch.setattr(fake, "wipe_disk", raise404)
         headers, user_id, _key = await create_user_with_key(client, "13900000134")

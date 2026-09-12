@@ -5,7 +5,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.db import get_sessionmaker
 from app.core.errors import AppError, ErrorCode
-from app.core.k8s import NodePortTaken, ensure_registry_pull_secret, get_orchestrator
+from app.core.k8s import (
+    NamespaceMissing,
+    NodePortTaken,
+    ensure_registry_pull_secret,
+    get_orchestrator,
+)
 from app.core.logging import get_logger
 from app.core.money import hourly_cost
 from app.core.outbox import OutboxTask, RetryPolicy, outbox_handler
@@ -15,6 +20,7 @@ from app.modules.notify import service as notify_service
 from app.modules.orchestrator import statemachine as sm_def
 from app.modules.orchestrator.models import DataDisk, Instance
 from app.modules.orchestrator.ports import block_port, ensure_port
+from app.modules.orchestrator.queries import lock_instance
 from app.modules.orchestrator.service import build_pod_spec_with_cluster
 from app.modules.orchestrator.transitions import transition
 
@@ -110,9 +116,7 @@ async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
         await session.commit()
     if instance.status == sm_def.STOPPED:
         # 锁序 instance → wallet;锁内重读
-        fresh_stopped = await session.get(
-            Instance, instance.id, with_for_update=True, populate_existing=True
-        )
+        fresh_stopped = await lock_instance(session, instance.id)
         if fresh_stopped is None or fresh_stopped.status != sm_def.STOPPED:
             return  # 已被并发路径推进/删除,幂等退出
         instance = fresh_stopped
@@ -217,10 +221,8 @@ async def handle_disk_wipe(session: AsyncSession, task: OutboxTask) -> None:
         logger.warning("disk_quota_delete_failed", disk_id=disk.id, exc_info=True)
     try:
         await get_orchestrator().wipe_disk(namespace, disk.juicefs_subpath)
-    except Exception as exc:
-        # 租户 ns 不存在(404)视为完成;按 status 属性鸭子判定,不 import kubernetes
-        if getattr(exc, "status", None) != 404:
-            raise
+    except NamespaceMissing:
+        # 租户 ns 不存在视为完成
         logger.warning("disk_wipe_namespace_missing", disk_id=disk.id, namespace=namespace)
     logger.info("disk_wiped", disk_id=disk.id, subpath=disk.juicefs_subpath)
     disk.status = "deleted"

@@ -1,6 +1,6 @@
 """管理端鉴权:独立 audience 的 JWT + 角色检查。"""
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -36,7 +36,7 @@ async def get_current_admin(
 CurrentAdmin = Annotated[AdminUser, Depends(get_current_admin)]
 
 
-def require_roles(*roles: str):
+def require_roles(*roles: str) -> Any:
     """角色门:admin 恒许;其余按白名单。无参调用 = 仅 admin。"""
 
     async def checker(

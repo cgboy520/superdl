@@ -32,6 +32,7 @@ from app.core.k8s.base import (
     POOL_NODE_LABEL,
     ClusterProbe,
     InstancePodSpec,
+    NamespaceMissing,
     NodeInfo,
     NodePortTaken,
     PodStatus,
@@ -1101,8 +1102,11 @@ class RealOrchestrator:
         await self._run(self._wipe_disk_sync, namespace, subpath)
 
     def _wipe_disk_sync(self, namespace: str, subpath: str) -> None:
-        """租户 ns 内起 Job 挂 JuiceFS PVC 删除子目录(幂等,见 _run_managed_job_sync)。"""
+        """租户 ns 内起 Job 挂 JuiceFS PVC 删除子目录(幂等,见 _run_managed_job_sync);
+        ns 不存在抛 NamespaceMissing。"""
         _check_subpath(subpath)
+        if _ignore(lambda: self.core.read_namespace(namespace), 404) is None:
+            raise NamespaceMissing(namespace)
         container = self._batch_container(
             "wipe", WIPE_IMAGE, ["rm", "-rf", f"/data/{subpath}"], env=[]
         )

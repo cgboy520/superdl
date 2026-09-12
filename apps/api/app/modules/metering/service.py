@@ -3,7 +3,7 @@
 import re
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import Literal
 
 from fastapi import status
 from sqlalchemy import func, select
@@ -18,7 +18,15 @@ from app.core.timeutil import now_utc, prev_hour_range
 from app.modules.billing import service as billing_service
 from app.modules.metering import prom
 from app.modules.metering.models import UsageHourly
-from app.modules.metering.schemas import InstanceGpuSeries, InstanceMetricsSummaryOut
+from app.modules.metering.schemas import (
+    InstanceGpuSeries,
+    InstanceMetricsOut,
+    InstanceMetricsSummaryOut,
+    NodeGpuSeriesOut,
+    NodeMetricsOut,
+    ReconciliationOut,
+    ReconciliationOutlier,
+)
 from app.modules.orchestrator import queries as orchestrator_queries
 
 logger = get_logger(__name__)
@@ -28,7 +36,7 @@ RANGES = {"1h": 3600, "6h": 6 * 3600, "24h": 24 * 3600}
 
 async def instance_metrics(
     ns: str, pod: str, range_key: str, *, pool_label: str | None = None
-) -> dict[str, Any]:
+) -> InstanceMetricsOut:
     """代理查询实例监控曲线,断源 503。hami 池 gpu_util/vram 走 HAMi 容器维指标,查空回落 DCGM。"""
     if range_key not in RANGES:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="metering.badRange")
@@ -47,7 +55,7 @@ async def instance_metrics(
             key="metering.unavailable",
             http_status=status.HTTP_503_SERVICE_UNAVAILABLE,
         ) from exc
-    return {"range": range_key, "series": series}
+    return InstanceMetricsOut(range=range_key, series=series)
 
 
 SUMMARY_CAP = 20  # 列表 sparkline 最多取前 N 台 running,防批量放大 Prometheus 压力
@@ -124,7 +132,7 @@ async def aggregate_previous_hour(
     return written
 
 
-async def reconciliation_report(session: AsyncSession, day: datetime) -> dict[str, Any]:
+async def reconciliation_report(session: AsyncSession, day: datetime) -> ReconciliationOut:
     """日对账:事件计费合计 vs 指标估算(usage_hourly 有数据小时数 × 单价)+ diff%;
     diff>2% 列差异实例。"""
     day_start = day.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -146,7 +154,7 @@ async def reconciliation_report(session: AsyncSession, day: datetime) -> dict[st
 
     billed_total = sum((amount for _, amount in billed.items()), Decimal("0.00"))
     est_total = Decimal("0.00")
-    diffs: list[dict[str, Any]] = []
+    diffs: list[ReconciliationOutlier] = []
     all_ids = set(billed) | set(usage_by_instance)
     # 按 id 精确取价
     price_by_id = await orchestrator_queries.instance_hourly_prices(session, all_ids)
@@ -159,22 +167,22 @@ async def reconciliation_report(session: AsyncSession, day: datetime) -> dict[st
             diff_pct = float(abs(b - est) / base * 100) if base else 0.0
             if diff_pct > 2.0:
                 diffs.append(
-                    {
-                        "instance_id": iid,
-                        "billed": money_str(b),
-                        "estimated": money_str(est),
-                        "diff_pct": round(diff_pct, 1),
-                    }
+                    ReconciliationOutlier(
+                        instance_id=iid,
+                        billed=money_str(b),
+                        estimated=money_str(est),
+                        diff_pct=round(diff_pct, 1),
+                    )
                 )
     total_base = max(billed_total, est_total)
     total_diff_pct = float(abs(billed_total - est_total) / total_base * 100) if total_base else 0.0
-    return {
-        "day": day_start.date().isoformat(),
-        "billed_total": money_str(billed_total),
-        "estimated_total": money_str(est_total),
-        "diff_pct": round(total_diff_pct, 1),
-        "outliers": sorted(diffs, key=lambda d: -d["diff_pct"]),
-    }
+    return ReconciliationOut(
+        day=day_start.date().isoformat(),
+        billed_total=money_str(billed_total),
+        estimated_total=money_str(est_total),
+        diff_pct=round(total_diff_pct, 1),
+        outliers=sorted(diffs, key=lambda d: -d.diff_pct),
+    )
 
 
 async def gpu_util_last_24h_by_instance(session: AsyncSession) -> dict[int, tuple[float, int]]:
@@ -190,13 +198,18 @@ async def gpu_util_last_24h_by_instance(session: AsyncSession) -> dict[int, tupl
     return {int(iid): (float(total), int(n)) for iid, total, n in rows}
 
 
-NODE_METRIC_KEYS = ("util", "mem_used_mb", "temp")
+# 与 NodeGpuSeriesOut 的三个序列字段一一对应
+NODE_METRIC_KEYS: tuple[Literal["util", "mem_used_mb", "temp"], ...] = (
+    "util",
+    "mem_used_mb",
+    "temp",
+)
 
 # K8s 节点名(RFC1123 子域);node_name 进 PromQL 前必须校验
 _NODE_NAME_RE = re.compile(r"^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$")
 
 
-async def node_gpu_metrics(node_name: str, range_key: str) -> dict[str, Any]:
+async def node_gpu_metrics(node_name: str, range_key: str) -> NodeMetricsOut:
     """管理端节点每卡曲线(DCGM per-GPU 多序列)+ 24h XID 计数;断源 available=False(200)。"""
     if range_key not in RANGES:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="metering.badRange")
@@ -205,20 +218,17 @@ async def node_gpu_metrics(node_name: str, range_key: str) -> dict[str, Any]:
     end = now_utc().timestamp()
     start = end - RANGES[range_key]
     step = prom.RANGE_STEPS[range_key]
-    gpus: dict[str, dict[str, Any]] = {}
+    gpus: dict[str, NodeGpuSeriesOut] = {}
     try:
         for key in NODE_METRIC_KEYS:
             promql = prom.NODE_QUERIES[key].format(node=node_name)
             for gpu_index, points in await prom.query_range_multi(
                 promql, start=start, end=end, step=step
             ):
-                gpus.setdefault(gpu_index, {"index": gpu_index})[key] = points
+                setattr(gpus.setdefault(gpu_index, NodeGpuSeriesOut(index=gpu_index)), key, points)
         xid = await prom.query_instant(prom.NODE_XID_QUERY.format(node=node_name))
     except prom.PrometheusUnavailable:
-        return {"available": False, "range": range_key, "gpus": [], "xid_count_24h": 0}
-    return {
-        "available": True,
-        "range": range_key,
-        "gpus": list(gpus.values()),
-        "xid_count_24h": int(xid or 0),
-    }
+        return NodeMetricsOut(available=False, range=range_key, gpus=[], xid_count_24h=0)
+    return NodeMetricsOut(
+        available=True, range=range_key, gpus=list(gpus.values()), xid_count_24h=int(xid or 0)
+    )

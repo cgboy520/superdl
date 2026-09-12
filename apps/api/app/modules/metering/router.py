@@ -1,11 +1,9 @@
-from typing import Any
-
 from fastapi import APIRouter
 
 from app.core.db import DbSession
 from app.modules.account.deps import CurrentUser
 from app.modules.metering import service
-from app.modules.metering.schemas import InstanceMetricsSummaryOut
+from app.modules.metering.schemas import InstanceMetricsOut, InstanceMetricsSummaryOut
 from app.modules.orchestrator import (
     queries as orchestrator_queries,
     service as orchestrator_service,
@@ -30,7 +28,7 @@ async def instances_metrics_summary(
 @router.get("/instances/{uuid}/metrics")
 async def get_instance_metrics(
     uuid: str, user: CurrentUser, session: DbSession, range: str = "1h"
-) -> dict[str, Any]:
+) -> InstanceMetricsOut:
     """实例监控曲线(代理 Prometheus,按租户隔离)。断源 503,不影响计费。"""
     instance = await orchestrator_queries.get_instance(session, user.id, uuid)
     pool_label = instance.spec.get("pool_label")

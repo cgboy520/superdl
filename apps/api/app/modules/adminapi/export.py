@@ -7,7 +7,6 @@
 import json
 from collections.abc import AsyncIterator
 from datetime import datetime
-from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +16,7 @@ from app.core.csvexport import TRUNCATED_NOTES, csv_line, fmt_money, fmt_ts, str
 from app.core.sqlutil import like_escape
 from app.core.timeutil import BILLING_TZ_OFFSET_MINUTES
 from app.modules.adminapi.models import AdminAdjustment
+from app.modules.metering.schemas import ReconciliationOut
 
 _HEADERS: dict[tuple[str, str], list[str]] = {
     ("audit", "zh-CN"): [
@@ -133,7 +133,7 @@ def stream_audit_csv(
 
 
 async def stream_reconciliation_csv(
-    report: dict[str, Any],
+    report: ReconciliationOut,
     *,
     lang: str = "zh-CN",
 ) -> AsyncIterator[str]:
@@ -142,13 +142,13 @@ async def stream_reconciliation_csv(
     yield csv_line(
         [
             _TOTAL_LABEL[lang],
-            report["billed_total"],
-            report["estimated_total"],
-            report["diff_pct"],
+            report.billed_total,
+            report.estimated_total,
+            report.diff_pct,
         ]
     )
-    for o in report["outliers"]:
-        yield csv_line([o["instance_id"], o["billed"], o["estimated"], o["diff_pct"]])
+    for o in report.outliers:
+        yield csv_line([o.instance_id, o.billed, o.estimated, o.diff_pct])
 
 
 def stream_adjustments_csv(

@@ -3573,6 +3573,41 @@
         "title": "InstanceLogsOut",
         "type": "object"
       },
+      "InstanceMetricsOut": {
+        "description": "实例监控曲线:指标名 → (unix_ts, 值) 序列;指标集见 prom.QUERIES。",
+        "properties": {
+          "range": {
+            "title": "Range",
+            "type": "string"
+          },
+          "series": {
+            "additionalProperties": {
+              "items": {
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array"
+              },
+              "type": "array"
+            },
+            "title": "Series",
+            "type": "object"
+          }
+        },
+        "required": [
+          "range",
+          "series"
+        ],
+        "title": "InstanceMetricsOut",
+        "type": "object"
+      },
       "InstanceMetricsSummaryOut": {
         "description": "实例列表 sparkline 数据源。断源时 available=false(200,不 503)。",
         "properties": {
@@ -17785,9 +17820,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Instance Metrics Api V1 Instances  Uuid  Metrics Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/InstanceMetricsOut"
                 }
               }
             },
