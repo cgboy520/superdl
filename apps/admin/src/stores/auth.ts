@@ -44,6 +44,12 @@ export const authStore = createStore<AuthState>()((set) => ({
   },
 }));
 
+// 其他标签页登出/续期后同步本页登录态(storage 事件,与用户端同规约)
+window.addEventListener("storage", (e) => {
+  if (e.key !== null && e.key !== TOKEN_KEY) return;
+  authStore.setState({ accessToken: readAdminToken() });
+});
+
 export function useAuth(): AuthState {
   return useStore(authStore);
 }

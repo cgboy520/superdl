@@ -93,7 +93,7 @@ function NodesPage() {
           }),
         );
         void qc.invalidateQueries({ queryKey: adminKeys.nodes });
-        if ((r as { queued?: boolean }).queued) {
+        if (r.queued) {
           cordonTimer.current = setTimeout(() => void qc.invalidateQueries({ queryKey: adminKeys.nodes }), 3_000);
         }
       },

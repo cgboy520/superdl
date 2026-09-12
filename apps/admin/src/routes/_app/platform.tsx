@@ -65,20 +65,7 @@ function PlatformConfigPage() {
   // 「前往」跳入的来源分组(回链)
   const [originGroup, setOriginGroup] = useState<Group | null>(null);
   const [reasonForm] = Form.useForm<{ reason: string }>();
-  // 配置项到达后清洗草稿:剔除 secret 字段与已下线的键
-  const [draftSanitized, setDraftSanitized] = useState(false);
-  if (!draftSanitized && items.length > 0) {
-    setDraftSanitized(true);
-    setDraftState((d) =>
-      Object.fromEntries(
-        Object.entries(d).filter(([k]) => {
-          const item = byKey.get(k);
-          return item != null && item.kind !== "secret";
-        }),
-      ),
-    );
-  }
-  // 每次变更同步写草稿(只落非 secret 字段)
+  // 每次变更同步写草稿(只落非 secret 字段;这是 secret 不进 sessionStorage 的唯一保证,不再做开机清洗——已下线的键由 changed 的 !item 分支排除)
   const setDraft: React.Dispatch<React.SetStateAction<Record<string, string>>> = (updater) => {
     setDraftState((prev) => {
       const next = typeof updater === "function" ? updater(prev) : updater;
