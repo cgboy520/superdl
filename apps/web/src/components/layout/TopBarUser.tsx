@@ -13,7 +13,7 @@ import {
   UserOutlined,
   WalletOutlined,
 } from "@ant-design/icons";
-import { adminColors, fontSize, maskPhone, SUPPORTED_LANGS } from "@superdl/ui";
+import { adminColors, flattenPages, fontSize, maskPhone, SUPPORTED_LANGS } from "@superdl/ui";
 import { LoadMore, moneyOr, TableErrorEmpty } from "@superdl/ui/components";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Badge, Button, Dropdown, Grid, List, Popover, Space, theme, type MenuProps } from "antd";
@@ -34,7 +34,7 @@ function NotificationBell() {
   const { token } = theme.useToken();
   const countQ = useUnreadCount({ refetchInterval: POLL.steady });
   const pagesQ = useNotificationPages();
-  const items = (pagesQ.data?.pages ?? []).flatMap((p) => p.items);
+  const items = flattenPages(pagesQ.data);
   const unreadCount = countQ.data?.unread_count ?? 0;
   const markAllRead = useMarkAllNotificationsRead();
   const [open, setOpen] = useState(false);

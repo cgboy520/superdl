@@ -1,6 +1,7 @@
 /** 支持:自助排查(FAQ 锚点)+ 联系客服(平台配置 support 组)+ 我的工单。新建工单走 Modal,详情为独立对话页。 */
 
 import {
+  flattenPages,
   fontSize,
   formatDateTime,
   idemKeyOf,
@@ -171,7 +172,7 @@ function SupportPage() {
       });
   };
   const tickets = useTicketPages(20);
-  const rows = useMemo<TicketOut[]>(() => (tickets.data?.pages ?? []).flatMap((p) => p.items), [tickets.data]);
+  const rows = useMemo(() => flattenPages(tickets.data), [tickets.data]);
   // 状态筛选为客户端筛选,只作用于已加载页
   const filtered = useMemo<TicketOut[]>(
     () => (statusFilter ? rows.filter((r) => r.status === statusFilter) : rows),

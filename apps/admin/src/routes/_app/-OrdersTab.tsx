@@ -5,7 +5,7 @@ import dayjs from "dayjs";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { orderStatusMap } from "@superdl/ui";
+import { flattenPages, orderStatusMap } from "@superdl/ui";
 import { LoadMore, TableErrorEmpty } from "@superdl/ui/components";
 import { useCsvExport } from "@superdl/ui";
 
@@ -34,7 +34,7 @@ export function OrdersTab() {
     ...(search.o_day ? { day: search.o_day } : {}),
   };
   const q = useOrders(params);
-  const orders: OrderRow[] = q.data?.pages.flatMap((p) => p.items) ?? [];
+  const orders = flattenPages(q.data);
   const { doExport, exporting } = useCsvExport((tz, lang) => exportOrdersCsv(params, tz, lang));
   return (
     <>

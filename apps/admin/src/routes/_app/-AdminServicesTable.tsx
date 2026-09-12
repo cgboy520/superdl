@@ -1,6 +1,6 @@
 /** 全局在线服务表(在线服务页与租户抽屉共用);唯一处置「强制停止」委托当前版本实例的 force-stop。 */
 
-import { fontSize, formatDateTime, layout, metaOf, serviceStatusMap } from "@superdl/ui";
+import { flattenPages, fontSize, formatDateTime, layout, metaOf, serviceStatusMap } from "@superdl/ui";
 import { HexTag, LoadMore, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -52,7 +52,7 @@ export function AdminServicesTable({
     isFetchNextPageError,
     fetchNextPage,
   } = servicesQ;
-  const rows: AdminServiceOut[] = data?.pages.flatMap((p) => p.items) ?? [];
+  const rows = flattenPages(data);
   const total = data?.pages[0]?.total ?? null;
   const forceStop = useForceStop();
   const refresh = () => void qc.invalidateQueries({ queryKey });

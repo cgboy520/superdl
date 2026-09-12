@@ -1,7 +1,7 @@
 /** 实例详情:连接 / 监控 / 日志 / 事件时间线(= 计费依据)/ 账单 / 设置(改名 + 危险区释放)。默认 Tab 按状态(running → 连接,其余 → 事件);事件/账单 Tab 游标分页;面包屑返回列表不丢筛选态。服务的版本实例不进列表但直链可达:「连接」按 with_ssh 出 SSH 卡,Jupyter 卡不出。 */
 
-import { type InstanceEventOut, type InstanceOut } from "@superdl/api-client";
-import { controlWidth, formatDateTime, isTransientInstanceStatus, localToday, POLL } from "@superdl/ui";
+import { type InstanceOut } from "@superdl/api-client";
+import { controlWidth, flattenPages, formatDateTime, isTransientInstanceStatus, localToday, POLL } from "@superdl/ui";
 import { DangerZone, DataErrorAlert, moneyOr, useConfirm } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -10,6 +10,7 @@ import { useFormat } from "@superdl/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { keys } from "../api/keys";
 import { useRenameInstance, useResetJupyterToken } from "../api/mutations";
 import {
   useDailySummary,
@@ -135,14 +136,14 @@ function EventsTab({ uuid, status }: { uuid: string; status?: string }) {
   useEffect(() => {
     if (prevStatus.current === status) return;
     prevStatus.current = status;
-    const key = ["instances", uuid, "events"];
+    const key = keys.instances.events(uuid);
     void queryClient.invalidateQueries({ queryKey: key });
     const timer = setTimeout(() => void queryClient.invalidateQueries({ queryKey: key }), 3_000);
     return () => clearTimeout(timer);
   }, [status, uuid, queryClient]);
   const { data, isLoading, isError, refetch, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } =
     useInstanceEventPages(uuid);
-  const events = useMemo<InstanceEventOut[]>(() => (data?.pages ?? []).flatMap((p) => p.items), [data]);
+  const events = useMemo(() => flattenPages(data), [data]);
   return (
     <EventsPanel
       events={events}

@@ -1,6 +1,13 @@
 /** 工单:status/category 筛选 + user_id/ticket_no 检索(游标分页)+ 详情抽屉。读:全角色;写:ops/admin。 */
 
-import { formatDateTime, isTicketRepliable, metaOf, ticketCategoryMap, ticketStatusMap } from "@superdl/ui";
+import {
+  flattenPages,
+  formatDateTime,
+  isTicketRepliable,
+  metaOf,
+  ticketCategoryMap,
+  ticketStatusMap,
+} from "@superdl/ui";
 import { HexTag, LoadMore, PageContainer, TableErrorEmpty, TicketBubble, useConfirm } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
@@ -300,7 +307,7 @@ function TicketsPage() {
   } = ticketsQ;
   // 待客服计数角标(60s 轮询);点击按该口径过滤
   const pendingQ = useTicketPendingCount();
-  const rows: AdminTicketOut[] = (data?.pages ?? []).flatMap((p) => p.items);
+  const rows = flattenPages(data);
   const [openId, setOpenId] = useState<number | null>(null);
   // 告警深链(/tickets?id=<id>)自动开详情抽屉
   const [prevSearchId, setPrevSearchId] = useState(search.id);

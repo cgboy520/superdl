@@ -6,7 +6,7 @@ import { Button, Input, Modal, Select, Space, Table, Tag, Typography } from "ant
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { adminColors, formatDateTime, layout } from "@superdl/ui";
+import { adminColors, flattenPages, formatDateTime, layout } from "@superdl/ui";
 import { LoadMore, TableErrorEmpty } from "@superdl/ui/components";
 import { useFormat } from "@superdl/ui";
 
@@ -83,7 +83,7 @@ export function TenantsTab() {
     isFetchNextPageError,
     fetchNextPage,
   } = tenantsQ;
-  const tenants: TenantRow[] = data?.pages.flatMap((p) => p.items) ?? [];
+  const tenants = flattenPages(data);
   const drilldown = urlTenant != null ? (tenants.find((r) => r.id === urlTenant) ?? null) : null;
   const freeze = useFreezeTenant();
   const unfreeze = useUnfreezeTenant();

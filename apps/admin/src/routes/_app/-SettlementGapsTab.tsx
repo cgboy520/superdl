@@ -1,6 +1,6 @@
 /** 结算缺口:重放补结 / 人工核销入口(告警 superdl_settlement_gap_unresolved)。 */
 
-import { formatDateTime } from "@superdl/ui";
+import { flattenPages, formatDateTime } from "@superdl/ui";
 import { LoadMore, TableErrorEmpty, useConfirm } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { App, Button, Select, Space, Switch, Table, Tag, Typography } from "antd";
@@ -66,7 +66,7 @@ export function SettlementGapsTab() {
   const resolve = useResolveSettlementGap();
   const confirm = useConfirm();
 
-  const items: AdminSettlementGapOut[] = (data?.pages ?? []).flatMap((p) => p.items);
+  const items = flattenPages(data);
   // 批量重放:勾选未核销行,逐条并发(幂等原语,只补不重扣)
   const [selected, setSelected] = useState<number[]>([]);
   const [bulkPending, setBulkPending] = useState(false);

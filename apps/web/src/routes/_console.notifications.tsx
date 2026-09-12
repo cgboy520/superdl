@@ -1,5 +1,6 @@
 /** 通知中心:全量通知列表 + 已读管理。全部/未读筛选入 URL(?filter=);行点击复用 notificationNav 的 useNotificationOpen。 */
 
+import { flattenPages } from "@superdl/ui";
 import { LoadMore, TableErrorEmpty } from "@superdl/ui/components";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Button, List, Segmented, Space, Typography } from "antd";
@@ -27,7 +28,7 @@ function NotificationsPage() {
   const { filter } = Route.useSearch();
   const unreadOnly = filter === "unread";
   const pagesQ = useNotificationPages(unreadOnly ? { unread: true } : undefined);
-  const items = (pagesQ.data?.pages ?? []).flatMap((p) => p.items);
+  const items = flattenPages(pagesQ.data);
   const { data: unread } = useUnreadCount();
   const markAllRead = useMarkAllNotificationsRead();
   const open = useNotificationOpen();

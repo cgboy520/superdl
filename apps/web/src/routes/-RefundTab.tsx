@@ -4,8 +4,16 @@ import { useTranslation } from "react-i18next";
 import { App, Button, Card, Input, InputNumber, Select, Space, Table, Tag, Tooltip, Typography } from "antd";
 import { useMemo, useState } from "react";
 
-import { type RefundOut, type RefundableOrderOut } from "@superdl/api-client";
-import { fontSize, formatDateTime, idemKeyOf, metaOf, payoutChannelMap, refundStatusMap } from "@superdl/ui";
+import { type RefundableOrderOut } from "@superdl/api-client";
+import {
+  flattenPages,
+  fontSize,
+  formatDateTime,
+  idemKeyOf,
+  metaOf,
+  payoutChannelMap,
+  refundStatusMap,
+} from "@superdl/ui";
 import { DataErrorAlert, EmptyState, LoadMore, TableErrorEmpty } from "@superdl/ui/components";
 import { useFormat } from "@superdl/ui";
 
@@ -50,7 +58,7 @@ export function RefundTab() {
     },
   });
   const refunds = useRefundPages(20);
-  const rows = useMemo<RefundOut[]>(() => (refunds.data?.pages ?? []).flatMap((p) => p.items), [refunds.data]);
+  const rows = useMemo(() => flattenPages(refunds.data), [refunds.data]);
 
   const submit = () => {
     if (!selected || reason.trim().length < 2) return;

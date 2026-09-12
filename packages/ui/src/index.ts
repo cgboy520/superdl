@@ -35,6 +35,7 @@ export type { PeriodQuote, Formatters } from "./format";
 export { apiErrorText } from "./apiError";
 export * from "./gpuSpecs";
 export * from "./idemKey";
+export * from "./pages";
 export * from "./csv";
 export * from "./formDraft";
 export { initAppI18n, SUPPORTED_LANGS } from "./i18n";

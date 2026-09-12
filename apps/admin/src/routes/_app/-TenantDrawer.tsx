@@ -1,6 +1,7 @@
 /** 租户下钻抽屉:实名摘要 + 账单/流水/订单/实例/在线服务/配额/事件 七 Tab + 跳审计。 */
 
 import {
+  flattenPages,
   fontSize,
   formatDate,
   formatDateTime,
@@ -78,7 +79,7 @@ export function TenantDrawer({
     enabled: tenant !== null,
     limit: 100,
   });
-  const instances = tenantInstances.data?.pages.flatMap((p) => p.items) ?? [];
+  const instances = flattenPages(tenantInstances.data);
   // 租户实例精确计数(判断是否截断)
   const instancesTotal = tenantInstances.data?.pages[0]?.total ?? null;
 
@@ -175,7 +176,7 @@ function BillsTab({ userId, instances }: { userId: number; instances: AdminInsta
   const { formatMoney, formatHourlyPrice, formatDuration } = useFormat();
   const [instanceId, setInstanceId] = useState<number | null>(null);
   const bills = useTenantBills(userId, instanceId);
-  const billRows = bills.data?.pages.flatMap((p) => p.items) ?? [];
+  const billRows = flattenPages(bills.data);
 
   return (
     <>
@@ -238,7 +239,7 @@ function LedgerTab({ userId }: { userId: number }) {
   const { t } = useTranslation(["admin", "shared"]);
   const { formatMoney } = useFormat();
   const ledger = useTenantLedger(userId);
-  const ledgerRows = ledger.data?.pages.flatMap((p) => p.items) ?? [];
+  const ledgerRows = flattenPages(ledger.data);
   const { doExport, exporting } = useCsvExport((tz, lang) => exportTenantLedgerCsv(userId, tz, lang));
 
   return (
@@ -302,7 +303,7 @@ function LedgerTab({ userId }: { userId: number }) {
 /** 该租户的充值订单(游标分页)。 */
 function OrdersTab({ userId }: { userId: number }) {
   const orders = useOrders({ user_id: userId });
-  const rows: OrderRow[] = orders.data?.pages.flatMap((p) => p.items) ?? [];
+  const rows = flattenPages(orders.data);
   const columns = useOrderColumns({ withTenant: false });
 
   return (
@@ -539,7 +540,7 @@ function EventsTab({ instances }: { instances: AdminInstanceOut[] }) {
   const { t } = useTranslation(["admin", "shared"]);
   const [uuid, setUuid] = useState<string | null>(null);
   const events = useInstanceEvents(uuid);
-  const rows: InstanceEvent[] = events.data?.pages.flatMap((p) => p.items) ?? [];
+  const rows = flattenPages(events.data);
 
   return (
     <>

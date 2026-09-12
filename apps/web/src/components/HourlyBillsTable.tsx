@@ -1,7 +1,7 @@
 /** 小时账单表:费用中心(按月,带实例列)、实例详情账单 Tab、服务详情账单 Tab 同一张表,列口径一致。查询结果由调用方注入;金额一律按字符串渲染。 */
 
-import type { ApiError, BillHourlyOut, PageBillHourlyOut } from "@superdl/api-client";
-import { formatDateTime } from "@superdl/ui";
+import type { BillHourlyOut, PageBillHourlyOut } from "@superdl/api-client";
+import { flattenPages, formatDateTime } from "@superdl/ui";
 import { EmptyState, LoadMore, TableErrorEmpty } from "@superdl/ui/components";
 import type { InfiniteData, UseInfiniteQueryResult } from "@tanstack/react-query";
 import { Space, Table } from "antd";
@@ -10,7 +10,7 @@ import { useTranslation } from "react-i18next";
 
 import { useFormat } from "@superdl/ui";
 
-export type HourlyBillsQuery = UseInfiniteQueryResult<InfiniteData<PageBillHourlyOut>, ApiError>;
+export type HourlyBillsQuery = UseInfiniteQueryResult<InfiniteData<PageBillHourlyOut>>;
 
 export function HourlyBillsTable({
   query,
@@ -24,7 +24,7 @@ export function HourlyBillsTable({
   const { formatDuration, formatHourlyPrice, formatMoney } = useFormat();
   const { data, isLoading, isError, refetch, isFetchingNextPage, isFetchNextPageError, hasNextPage, fetchNextPage } =
     query;
-  const rows = useMemo<BillHourlyOut[]>(() => (data?.pages ?? []).flatMap((p) => p.items), [data]);
+  const rows = useMemo(() => flattenPages(data), [data]);
 
   return (
     <Space orientation="vertical" style={{ width: "100%" }}>

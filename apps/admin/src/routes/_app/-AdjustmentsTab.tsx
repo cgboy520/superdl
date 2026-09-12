@@ -26,6 +26,7 @@ import { useTranslation } from "react-i18next";
 import {
   addAmounts,
   adjustmentStatusMap,
+  flattenPages,
   adminColors,
   fontSize,
   formatDateTime,
@@ -202,7 +203,7 @@ export function AdjustmentsTab() {
     fetchNextPage,
   } = useAdjustments(params);
   const { doExport, exporting } = useCsvExport((tz, lang) => exportAdjustmentsCsv(params, tz, lang));
-  const rows: AdjustmentRow[] = data?.pages.flatMap((p) => p.items) ?? [];
+  const rows = flattenPages(data);
 
   // 输入 user_id 回显租户身份与资金现状;不存在阻止提交
   const wUserId = Form.useWatch("user_id", form);

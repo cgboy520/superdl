@@ -10,6 +10,7 @@ import { compareAmounts, fontSize, formatDateTime, idemKeyOf } from "@superdl/ui
 import { DataErrorAlert } from "@superdl/ui/components";
 import { useFormat } from "@superdl/ui";
 
+import { keys } from "../api/keys";
 import { useCreateRecharge, useMockPay } from "../api/mutations";
 import { useRecharge, useSiteConfig } from "../api/queries";
 
@@ -105,8 +106,8 @@ export function RechargeModal({ open, onClose }: { open: boolean; onClose: () =>
     if (!status) return;
     if (status === "paid") {
       sessionStorage.removeItem(PENDING_ORDER_KEY);
-      void queryClient.invalidateQueries({ queryKey: ["wallet"] });
-      void queryClient.invalidateQueries({ queryKey: ["ledger"] });
+      void queryClient.invalidateQueries({ queryKey: keys.wallet });
+      void queryClient.invalidateQueries({ queryKey: keys.ledger.all });
     } else if (status !== "pending") {
       sessionStorage.removeItem(PENDING_ORDER_KEY);
     }

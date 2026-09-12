@@ -6,7 +6,16 @@ import dayjs from "dayjs";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { adminColors, fontSize, formatDateTime, layout, metaOf, payoutChannelMap, refundStatusMap } from "@superdl/ui";
+import {
+  adminColors,
+  flattenPages,
+  fontSize,
+  formatDateTime,
+  layout,
+  metaOf,
+  payoutChannelMap,
+  refundStatusMap,
+} from "@superdl/ui";
 import { HexTag, LoadMore, TableErrorEmpty } from "@superdl/ui/components";
 import { useCsvExport } from "@superdl/ui";
 import { useFormat } from "@superdl/ui";
@@ -112,7 +121,7 @@ export function RefundsTab() {
     fetchNextPage,
   } = useRefunds(params);
   const { doExport, exporting } = useCsvExport((tz, lang) => exportRefundsCsv(params, tz, lang));
-  const all: RefundRow[] = data?.pages.flatMap((p) => p.items) ?? [];
+  const all = flattenPages(data);
   const rows = channel ? all.filter((r) => r.payout_channel === channel) : all;
   const [payoutTarget, setPayoutTarget] = useState<RefundRow | null>(null);
   const review = useReviewRefund();

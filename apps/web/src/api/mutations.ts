@@ -77,12 +77,13 @@ import { useCallback } from "react";
 
 import { useApiErrorText } from "@superdl/ui";
 import { authStore } from "../stores/auth";
+import { keys } from "./keys";
 
 interface MutationOpts<TData> {
   onSuccess?: (data: TData) => void;
   silentError?: boolean;
-  /** 成功后失效的查询键前缀;空数组 = 不失效 */
-  invalidates: readonly string[];
+  /** 成功后失效的查询键(前缀匹配);空数组 = 不失效。一律取 keys.ts 的键,不写字面量 */
+  invalidates: readonly (readonly unknown[])[];
 }
 /** 页面侧可传的项;失效域由各 hook 声明 */
 type CallerOpts<TData = unknown> = Omit<MutationOpts<TData>, "invalidates">;
@@ -98,7 +99,7 @@ export function useApiMutation<TVars = void, TData = unknown>(
     mutationFn: fn,
     onSuccess: (data) => {
       // 不 await refetch
-      for (const key of opts.invalidates) void queryClient.invalidateQueries({ queryKey: [key] });
+      for (const key of opts.invalidates) void queryClient.invalidateQueries({ queryKey: key });
       opts.onSuccess?.(data);
     },
     onError: (err) => {
@@ -140,20 +141,20 @@ export function useLogout() {
 }
 
 // instances:失效实例域与钱包余额
-const INSTANCE_INVALIDATES = ["instances", "wallet", "bills", "bill-daily-summary"] as const;
+const INSTANCE_INVALIDATES = [keys.instances.all, keys.wallet, keys.bills.all, keys.billDailySummary.all] as const;
 export const useCreateInstance = (o?: { onSuccess?: (d: unknown) => void; silentError?: boolean }) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: InstanceCreate; idempotencyKey: string }) =>
       createInstanceApiV1InstancesPost(body, { "Idempotency-Key": idempotencyKey }),
-    { ...o, invalidates: [...INSTANCE_INVALIDATES, "skus"] },
+    { ...o, invalidates: [...INSTANCE_INVALIDATES, keys.skus] },
   );
 export const useStartInstance = () =>
   useApiMutation((uuid: string) => startInstanceApiV1InstancesUuidStartPost(uuid), {
-    invalidates: [...INSTANCE_INVALIDATES, "skus"],
+    invalidates: [...INSTANCE_INVALIDATES, keys.skus],
   });
 export const useStopInstance = () =>
   useApiMutation((uuid: string) => stopInstanceApiV1InstancesUuidStopPost(uuid), {
-    invalidates: [...INSTANCE_INVALIDATES, "skus"],
+    invalidates: [...INSTANCE_INVALIDATES, keys.skus],
   });
 export const useRestartInstance = () =>
   useApiMutation((uuid: string) => restartInstanceApiV1InstancesUuidRestartPost(uuid), {
@@ -162,12 +163,12 @@ export const useRestartInstance = () =>
 export const useReleaseInstance = (o?: { onSuccess?: () => void }) =>
   useApiMutation((uuid: string) => releaseInstanceApiV1InstancesUuidDelete(uuid), {
     ...o,
-    invalidates: [...INSTANCE_INVALIDATES, "skus", "disks"],
+    invalidates: [...INSTANCE_INVALIDATES, keys.skus, keys.disks],
   });
 export const useRenameInstance = () =>
   useApiMutation(
     ({ uuid, name }: { uuid: string; name: string }) => renameInstanceApiV1InstancesUuidPatch(uuid, { name }),
-    { invalidates: ["instances"] },
+    { invalidates: [keys.instances.all] },
   );
 /** 包周期续费带幂等键;键由 modal 每次打开生成,关掉重开才换。 */
 export const useRenewInstance = (uuid: string, o?: CallerOpts<RenewOut>) =>
@@ -195,106 +196,106 @@ export const useConvertToOnDemand = (uuid: string, o?: CallerOpts<InstanceOut>) 
 export const useSetAutoRenew = (uuid: string, o?: CallerOpts<InstanceOut>) =>
   useApiMutation((enabled: boolean) => setAutoRenewApiV1InstancesUuidAutoRenewPost(uuid, { enabled }), {
     ...o,
-    invalidates: ["instances"],
+    invalidates: [keys.instances.all],
   });
 export const useResetJupyterToken = () =>
   useApiMutation((uuid: string) => resetJupyterTokenApiV1InstancesUuidResetJupyterTokenPost(uuid), {
-    invalidates: ["instances"],
+    invalidates: [keys.instances.all],
   });
 
 // 在线服务:失效服务域与钱包余额
-const SERVICE_INVALIDATES = ["services", "wallet", "bills", "bill-daily-summary"] as const;
+const SERVICE_INVALIDATES = [keys.services.all, keys.wallet, keys.bills.all, keys.billDailySummary.all] as const;
 /** 部署服务:幂等键按表单快照派生。 */
 export const useCreateService = (o?: { onSuccess?: (d: ServiceOut) => void; silentError?: boolean }) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: ServiceCreate; idempotencyKey: string }) =>
       createServiceApiV1ServicesPost(body, { "Idempotency-Key": idempotencyKey }),
-    { ...o, invalidates: [...SERVICE_INVALIDATES, "skus", "disks"] },
+    { ...o, invalidates: [...SERVICE_INVALIDATES, keys.skus, keys.disks] },
   );
 /** 版本更新(重建):幂等键按表单快照派生。 */
 export const useCreateRevision = (slug: string, o?: { onSuccess?: (d: ServiceOut) => void; silentError?: boolean }) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: ServiceRevisionCreate; idempotencyKey: string }) =>
       createRevisionApiV1ServicesSlugRevisionsPost(slug, body, { "Idempotency-Key": idempotencyKey }),
-    { ...o, invalidates: [...SERVICE_INVALIDATES, "skus"] },
+    { ...o, invalidates: [...SERVICE_INVALIDATES, keys.skus] },
   );
 export const useStopService = (o?: CallerOpts<ServiceOut>) =>
   useApiMutation((slug: string) => stopServiceApiV1ServicesSlugStopPost(slug), {
     ...o,
-    invalidates: [...SERVICE_INVALIDATES, "skus"],
+    invalidates: [...SERVICE_INVALIDATES, keys.skus],
   });
 export const useStartService = (o?: CallerOpts<ServiceOut>) =>
   useApiMutation((slug: string) => startServiceApiV1ServicesSlugStartPost(slug), {
     ...o,
-    invalidates: [...SERVICE_INVALIDATES, "skus"],
+    invalidates: [...SERVICE_INVALIDATES, keys.skus],
   });
 export const useDeleteService = (o?: CallerOpts<ServiceOut>) =>
   useApiMutation((slug: string) => deleteServiceApiV1ServicesSlugDelete(slug), {
     ...o,
-    invalidates: [...SERVICE_INVALIDATES, "skus", "disks"],
+    invalidates: [...SERVICE_INVALIDATES, keys.skus, keys.disks],
   });
 /** 改名 / 鉴权开关:失效面只有服务域。 */
 export const useUpdateService = (slug: string, o?: CallerOpts<ServiceOut>) =>
   useApiMutation((body: ServicePatch) => patchServiceApiV1ServicesSlugPatch(slug, body), {
     ...o,
-    invalidates: ["services"],
+    invalidates: [keys.services.all],
   });
 /** 新建服务访问 Key:明文 key 只在响应露面一次,只交给一次性展示的成功态,禁止入缓存或日志。 */
 export const useCreateServiceApiKey = (slug: string, o?: CallerOpts<ApiKeyCreateOut>) =>
   useApiMutation((name: string) => createApiKeyApiV1ServicesSlugApiKeysPost(slug, { name }), {
     ...o,
-    invalidates: ["services"],
+    invalidates: [keys.services.all],
   });
 /** 吊销 Key:写 revoked_at 不删行。 */
 export const useRevokeServiceApiKey = (slug: string, o?: CallerOpts) =>
   useApiMutation((keyId: number) => revokeApiKeyApiV1ServicesSlugApiKeysKeyIdDelete(slug, keyId), {
     ...o,
-    invalidates: ["services"],
+    invalidates: [keys.services.all],
   });
 
 export const useCreateRecharge = (o?: { onSuccess?: (d: unknown) => void }) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: RechargeCreate; idempotencyKey: string }) =>
       createRechargeApiV1WalletRechargesPost(body, { "Idempotency-Key": idempotencyKey }),
-    { ...o, invalidates: ["wallet", "ledger"] },
+    { ...o, invalidates: [keys.wallet, keys.ledger.all] },
   );
 export const useMockPay = (o?: { onSuccess?: () => void }) =>
   useApiMutation(
     (vars: { order_no: string; amount: string }) => mockWebhookApiV1WebhooksMockPost({ body: JSON.stringify(vars) }),
-    { ...o, invalidates: ["wallet", "recharge", "ledger"] },
+    { ...o, invalidates: [keys.wallet, keys.recharge.all, keys.ledger.all] },
   );
 /** 申请退款:幂等键按表单快照派生。 */
 export const useCreateRefund = (o?: { onSuccess?: () => void }) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: RefundCreate; idempotencyKey: string }) =>
       createRefundApiV1WalletRefundsPost(body, { "Idempotency-Key": idempotencyKey }),
-    { ...o, invalidates: ["refunds", "refundable-orders", "wallet", "ledger"] },
+    { ...o, invalidates: [keys.refunds.all, keys.refundableOrders, keys.wallet, keys.ledger.all] },
   );
 /** 申请开票:金额由服务端按账期计算;幂等键重放返回既有单。 */
 export const useCreateInvoice = (o?: { onSuccess?: () => void }) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: InvoiceCreate; idempotencyKey: string }) =>
       createInvoiceApiV1BillingInvoicesPost(body, { "Idempotency-Key": idempotencyKey }),
-    { ...o, invalidates: ["invoices", "invoice-eligible"] },
+    { ...o, invalidates: [keys.invoices.all, keys.invoiceEligible] },
   );
 export const useSubmitRealName = (o?: { onSuccess?: () => void }) =>
-  useApiMutation((body: RealNameRequest) => submitRealNameApiV1MeRealNamePost(body), { ...o, invalidates: ["me"] });
+  useApiMutation((body: RealNameRequest) => submitRealNameApiV1MeRealNamePost(body), { ...o, invalidates: [keys.me] });
 export const useSetWarnThreshold = (o?: { onSuccess?: () => void }) =>
   useApiMutation((hours: number) => setWarnThresholdApiV1MeWarnThresholdPatch({ low_balance_warn_hours: hours }), {
     ...o,
-    invalidates: ["me"],
+    invalidates: [keys.me],
   });
 
 /** 申请注销:服务端按 (user_id, pending) 幂等。 */
 export const useCreateDeletionRequest = (o?: { onSuccess?: () => void }) =>
   useApiMutation((body: DeletionRequestCreate) => createDeletionRequestApiV1MeDeletionRequestPost(body), {
     ...o,
-    invalidates: ["deletion-request"],
+    invalidates: [keys.deletionRequest],
   });
 export const useCancelDeletionRequest = (o?: { onSuccess?: () => void }) =>
   useApiMutation(() => cancelDeletionRequestApiV1MeDeletionRequestCancelPost(), {
     ...o,
-    invalidates: ["deletion-request"],
+    invalidates: [keys.deletionRequest],
   });
 
 /** 建盘带幂等键。 */
@@ -302,35 +303,35 @@ export const useCreateDisk = (o?: { onSuccess?: () => void }) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: DiskCreate; idempotencyKey: string }) =>
       createDiskApiV1DisksPost(body, { "Idempotency-Key": idempotencyKey }),
-    { ...o, invalidates: ["disks", "wallet"] },
+    { ...o, invalidates: [keys.disks, keys.wallet] },
   );
 export const useExpandDisk = (o?: { onSuccess?: () => void }) =>
   useApiMutation(({ uuid, body }: { uuid: string; body: DiskExpand }) => expandDiskApiV1DisksUuidPatch(uuid, body), {
     ...o,
-    invalidates: ["disks", "wallet"],
+    invalidates: [keys.disks, keys.wallet],
   });
 export const useDeleteDisk = (o?: { onSuccess?: () => void }) =>
   useApiMutation((uuid: string) => deleteDiskApiV1DisksUuidDelete(uuid), {
     ...o,
-    invalidates: ["disks", "wallet", "instances", "services"],
+    invalidates: [keys.disks, keys.wallet, keys.instances.all, keys.services.all],
   });
 
 export const useAddSshKey = (o?: { onSuccess?: (key: SshKeyOut) => void }) =>
   useApiMutation((body: { name: string; public_key: string }) => addSshKeyApiV1SshKeysPost(body), {
     ...o,
-    invalidates: ["ssh-keys"],
+    invalidates: [keys.sshKeys],
   });
 export const useDeleteSshKey = () =>
   useApiMutation((keyId: number) => deleteSshKeyApiV1SshKeysKeyIdDelete(keyId), {
-    invalidates: ["ssh-keys"],
+    invalidates: [keys.sshKeys],
   });
 export const useMarkNotificationRead = () =>
   useApiMutation((id: number) => markReadApiV1NotificationsNotificationIdReadPost(id), {
-    invalidates: ["notifications"],
+    invalidates: [keys.notifications.all],
   });
 export const useMarkAllNotificationsRead = () =>
   useApiMutation(() => markAllReadApiV1NotificationsReadAllPost(), {
-    invalidates: ["notifications"],
+    invalidates: [keys.notifications.all],
   });
 
 /** 新建工单:幂等键按表单快照派生。 */
@@ -338,16 +339,16 @@ export const useCreateTicket = (o?: { onSuccess?: (d: TicketOut) => void }) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: TicketCreate; idempotencyKey: string }) =>
       createTicketApiV1TicketsPost(body, { "Idempotency-Key": idempotencyKey }),
-    { ...o, invalidates: ["tickets"] },
+    { ...o, invalidates: [keys.tickets.all] },
   );
 export const useAppendTicketMessage = (o?: { onSuccess?: () => void }) =>
   useApiMutation(
     ({ ticketId, body }: { ticketId: number; body: TicketMessageCreate }) =>
       appendMessageApiV1TicketsTicketIdMessagesPost(ticketId, body),
-    { ...o, invalidates: ["tickets"] },
+    { ...o, invalidates: [keys.tickets.all] },
   );
 export const useCloseTicket = (o?: { onSuccess?: () => void }) =>
   useApiMutation((ticketId: number) => closeTicketApiV1TicketsTicketIdClosePost(ticketId), {
     ...o,
-    invalidates: ["tickets"],
+    invalidates: [keys.tickets.all],
   });

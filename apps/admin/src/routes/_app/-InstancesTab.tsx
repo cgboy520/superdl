@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 
 import {
   controlWidth,
+  flattenPages,
   formatDateTime,
   instanceStatusMap,
   layout,
@@ -68,7 +69,7 @@ export function InstancesTab() {
     isFetchNextPageError,
     fetchNextPage,
   } = instancesQ;
-  const instances: AdminInstanceOut[] = data?.pages.flatMap((p) => p.items) ?? [];
+  const instances = flattenPages(data);
   const forceStop = useForceStop();
   const preempt = usePreemptInstance();
   const refresh = () => void qc.invalidateQueries({ queryKey });

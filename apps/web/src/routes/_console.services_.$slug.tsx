@@ -1,8 +1,16 @@
-/** 服务详情:头部(名称 / 状态 / 版本 / 操作)+ 常驻服务端点卡 + Tab `概览(含小时账单)/ 访问密钥(公开访问时不出)/ 监控 / 日志 / 历史(版本 + 事件)/ 设置`(危险区在设置里);「更新版本」是抽屉。只有一条服务轮询(过渡态 / 运行中 / 已删除停);监控与日志打当前版本实例。旧链接 ?tab=revisions|events → history、?tab=bills → overview。 */
+/** 服务详情:头部(名称 / 状态 / 版本 / 操作)+ 常驻服务端点卡 + Tab `概览(含小时账单)/ 访问密钥(公开访问时不出)/ 监控 / 日志 / 历史(版本 + 事件)/ 设置`(危险区在设置里);「更新版本」是抽屉。只有一条服务轮询(过渡态 / 运行中 / 已删除停);监控与日志打当前版本实例。`?tab=` 非法值回默认(URL 不做旧名兼容)。 */
 
 import { POLL } from "@superdl/ui";
-import type { InstanceEventOut, InstanceOut, ServiceOut } from "@superdl/api-client";
-import { fontSize, formatDateTime, instanceStatusMap, isTransientServiceStatus, localToday, metaOf } from "@superdl/ui";
+import type { InstanceOut, ServiceOut } from "@superdl/api-client";
+import {
+  flattenPages,
+  fontSize,
+  formatDateTime,
+  instanceStatusMap,
+  isTransientServiceStatus,
+  localToday,
+  metaOf,
+} from "@superdl/ui";
 import { DataErrorAlert, moneyOr, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -20,6 +28,7 @@ import {
   useServiceLogs,
   useServiceRevisions,
 } from "../api/queries";
+import { keys } from "../api/keys";
 import { CopyButton, ServiceStatusBadge, SpotTag, SubscriptionTag, TierTag } from "../components/common";
 import { HourlyBillsTable } from "../components/HourlyBillsTable";
 import { EventsPanel } from "../components/instance/EventsPanel";
@@ -197,14 +206,14 @@ function EventsTab({ slug, status }: { slug: string; status: string }) {
   useEffect(() => {
     if (prevStatus.current === status) return;
     prevStatus.current = status;
-    const key = ["services", slug, "events"];
+    const key = keys.services.events(slug);
     void queryClient.invalidateQueries({ queryKey: key });
     const timer = setTimeout(() => void queryClient.invalidateQueries({ queryKey: key }), 3_000);
     return () => clearTimeout(timer);
   }, [status, slug, queryClient]);
   const { data, isLoading, isError, refetch, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } =
     useServiceEventPages(slug);
-  const events = useMemo<InstanceEventOut[]>(() => (data?.pages ?? []).flatMap((p) => p.items), [data]);
+  const events = useMemo(() => flattenPages(data), [data]);
   return (
     <EventsPanel
       events={events}

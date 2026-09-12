@@ -4,8 +4,8 @@ import { useTranslation } from "react-i18next";
 import { Alert, App, Button, Card, Input, Modal, Radio, Select, Space, Statistic, Table, Tag, Typography } from "antd";
 import { useMemo, useState } from "react";
 
-import { type InvoiceEligibleOut, type InvoiceOut } from "@superdl/api-client";
-import { addAmounts, fontSize, formatDateTime, idemKeyOf, invoiceStatusMap, metaOf } from "@superdl/ui";
+import { type InvoiceEligibleOut } from "@superdl/api-client";
+import { addAmounts, flattenPages, fontSize, formatDateTime, idemKeyOf, invoiceStatusMap, metaOf } from "@superdl/ui";
 import { DataErrorAlert, LoadMore, moneyOr, TableErrorEmpty } from "@superdl/ui/components";
 import { useFormat } from "@superdl/ui";
 
@@ -160,7 +160,7 @@ export function InvoiceTab() {
   const total = useMemo(() => periods.reduce((acc, p) => addAmounts(acc, p.amount), "0.00"), [periods]);
   const [applyOpen, setApplyOpen] = useState(false);
   const invoices = useInvoicePages(20);
-  const rows = useMemo<InvoiceOut[]>(() => (invoices.data?.pages ?? []).flatMap((p) => p.items), [invoices.data]);
+  const rows = useMemo(() => flattenPages(invoices.data), [invoices.data]);
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>

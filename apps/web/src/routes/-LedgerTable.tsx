@@ -6,7 +6,7 @@ import { Select, Space, Table, Tag, theme } from "antd";
 import { useMemo } from "react";
 
 import { type LedgerEntryOut } from "@superdl/api-client";
-import { formatDateTime, ledgerTypeMap, metaOf } from "@superdl/ui";
+import { flattenPages, formatDateTime, ledgerTypeMap, metaOf } from "@superdl/ui";
 import { EmptyState, LoadMore, TableErrorEmpty } from "@superdl/ui/components";
 import { useFormat } from "@superdl/ui";
 
@@ -28,7 +28,7 @@ export function LedgerTable() {
   const { ledger: ledgerFilter } = routeApi.useSearch();
   const { data, isLoading, isError, refetch, isFetchingNextPage, isFetchNextPageError, hasNextPage, fetchNextPage } =
     useLedgerPages(20);
-  const merged = useMemo<LedgerEntryOut[]>(() => (data?.pages ?? []).flatMap((p) => p.items), [data]);
+  const merged = useMemo(() => flattenPages(data), [data]);
   // 类型筛选为客户端筛选,只作用于已加载页
   const filtered = useMemo<LedgerEntryOut[]>(
     () => (ledgerFilter ? merged.filter((r) => r.type === ledgerFilter) : merged),
