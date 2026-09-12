@@ -8,7 +8,7 @@ import {
   ticketCategoryMap,
   ticketStatusMap,
 } from "@superdl/ui";
-import { HexTag, LoadMore, PageContainer, TableErrorEmpty, TicketBubble, useConfirm } from "@superdl/ui/components";
+import { CursorTable, HexTag, PageContainer, TableErrorEmpty, TicketBubble, useConfirm } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
@@ -23,18 +23,16 @@ import {
   Select,
   Skeleton,
   Space,
-  Table,
   Tag,
   Tooltip,
   Typography,
 } from "antd";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { AdminTicketOut } from "@superdl/api-client";
 import {
   adminKeys,
-  isApiError,
   useReplyTicket,
   useTicketDetail,
   useTicketPendingCount,
@@ -43,6 +41,7 @@ import {
 } from "../../api";
 import { StatusTag } from "../../components/StatusTag";
 import { TenantLink } from "../../components/TenantLink";
+import { useUrlCommittedInput } from "../../lib/useUrlCommittedInput";
 import { useApiErrorText } from "@superdl/ui";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
@@ -278,35 +277,21 @@ function TicketsPage() {
   const category = search.category;
   // 文本检索 commit 制:回车/失焦/点搜索才回写 URL
   const userId = search.user_id ?? null;
-  const ticketNo = search.ticket_no ?? "";
+  const ticketNo = search.ticket_no;
   const [userIdInput, setUserIdInput] = useState<number | null>(userId);
-  const [ticketNoInput, setTicketNoInput] = useState(ticketNo);
-  // URL 变化回流进输入框(渲染期派生态)
-  const filterKey = `${search.user_id ?? ""}|${search.ticket_no ?? ""}`;
-  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
-  if (filterKey !== prevFilterKey) {
-    setPrevFilterKey(filterKey);
+  // 用户 id 是数值提交框(blur/回车提交):URL 变化回流(渲染期派生态)
+  const [prevUserId, setPrevUserId] = useState(userId);
+  if (userId !== prevUserId) {
+    setPrevUserId(userId);
     setUserIdInput(userId);
-    setTicketNoInput(ticketNo);
   }
   const ticketsQ = useTickets({
     ...(status ? { status } : {}),
     ...(category ? { category } : {}),
     ...(userId != null ? { user_id: userId } : {}),
-    ...(ticketNo.trim() ? { ticket_no: ticketNo.trim() } : {}),
+    ...(ticketNo?.trim() ? { ticket_no: ticketNo.trim() } : {}),
   });
-  const {
-    data,
-    queryKey,
-    isLoading,
-    isError,
-    error,
-    refetch,
-    hasNextPage,
-    fetchNextPage,
-    isFetchingNextPage,
-    isFetchNextPageError,
-  } = ticketsQ;
+  const { data, queryKey } = ticketsQ;
   // 待客服计数角标(60s 轮询);点击按该口径过滤
   const pendingQ = useTicketPendingCount();
   const rows = flattenPages(data);
@@ -317,12 +302,18 @@ function TicketsPage() {
     setPrevSearchId(search.id);
     if (search.id != null) setOpenId(search.id);
   }
-  const setFilters = (next: { status?: string; category?: string; user_id?: number; ticket_no?: string }) =>
-    void navigate({
-      to: "/tickets",
-      replace: true,
-      search: (prev) => ({ ...prev, ...next }),
-    });
+  const setFilters = useCallback(
+    (next: { status?: string; category?: string; user_id?: number; ticket_no?: string }) =>
+      void navigate({
+        to: "/tickets",
+        replace: true,
+        search: (prev) => ({ ...prev, ...next }),
+      }),
+    [navigate],
+  );
+  // 工单号检索:防抖回写 URL;URL 回流同步进输入框
+  const commitTicketNo = useCallback((next: string | undefined) => setFilters({ ticket_no: next }), [setFilters]);
+  const { value: ticketNoInput, setValue: setTicketNoInput } = useUrlCommittedInput(ticketNo, commitTicketNo);
 
   return (
     <PageContainer
@@ -346,7 +337,7 @@ function TicketsPage() {
             style={{ width: 180 }}
             value={ticketNoInput}
             onChange={(e) => setTicketNoInput(e.target.value)}
-            onSearch={(v) => setFilters({ ticket_no: v || undefined })}
+            onSearch={(v) => commitTicketNo(v || undefined)}
           />
           <Select
             allowClear
@@ -382,23 +373,12 @@ function TicketsPage() {
       }
     >
       <Card>
-        <Table<AdminTicketOut>
+        <CursorTable<AdminTicketOut>
+          query={ticketsQ}
+          rows={rows}
+          empty={t("tickets.empty")}
           scroll={{ x: 960 }}
           rowKey="id"
-          loading={isLoading}
-          dataSource={rows}
-          pagination={false}
-          locale={{
-            emptyText: (
-              <TableErrorEmpty
-                isError={isError}
-                isForbidden={isApiError(error) && error.status === 403}
-                onRetry={() => void refetch()}
-              >
-                {t("tickets.empty")}
-              </TableErrorEmpty>
-            ),
-          }}
           onRow={(r) => ({ onClick: () => setOpenId(r.id), style: { cursor: "pointer" } })}
           columns={[
             { title: t("tickets.colTicketNo"), dataIndex: "ticket_no", width: 140 },
@@ -446,13 +426,6 @@ function TicketsPage() {
               ),
             },
           ]}
-        />
-        <LoadMore
-          hasNextPage={hasNextPage}
-          loading={isFetchingNextPage}
-          isError={isFetchNextPageError}
-          loadedCount={rows.length}
-          onLoadMore={() => void fetchNextPage()}
         />
       </Card>
       <TicketDrawer ticketId={openId} onClose={() => setOpenId(null)} writable={writable} />

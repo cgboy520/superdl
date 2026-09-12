@@ -1,7 +1,7 @@
 /** 退款 Tab:审批 / 驳回 / 打款登记 / 取消(更多)。 */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { Button, DatePicker, Form, Input, Select, Space, Table, Tooltip, Typography } from "antd";
+import { Button, DatePicker, Form, Input, Select, Space, Tooltip, Typography } from "antd";
 import dayjs from "dayjs";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -16,7 +16,7 @@ import {
   payoutChannelMap,
   refundStatusMap,
 } from "@superdl/ui";
-import { LoadMore, TableErrorEmpty } from "@superdl/ui/components";
+import { CursorTable } from "@superdl/ui/components";
 import { useCsvExport } from "@superdl/ui";
 import { useFormat } from "@superdl/ui";
 
@@ -24,7 +24,6 @@ import {
   type RefundPayout,
   type RefundRow,
   exportRefundsCsv,
-  isApiError,
   useCancelRefund,
   usePayoutRefund,
   useRefunds,
@@ -109,18 +108,9 @@ export function RefundsTab() {
     ...(status ? { status } : {}),
     ...(search.r_day ? { day: search.r_day } : {}),
   };
-  const {
-    data,
-    queryKey,
-    isLoading,
-    isError,
-    error,
-    refetch,
-    hasNextPage,
-    isFetchingNextPage,
-    isFetchNextPageError,
-    fetchNextPage,
-  } = useRefunds(params);
+  const refundsQ = useRefunds(params);
+  // hasNextPage/isFetchNextPageError 还服务渠道过滤的汇总行,留在解构里
+  const { data, queryKey, hasNextPage, isFetchNextPageError } = refundsQ;
   const { doExport, exporting } = useCsvExport((tz, lang) => exportRefundsCsv(params, tz, lang));
   const all = flattenPages(data);
   const rows = channel ? all.filter((r) => r.payout_channel === channel) : all;
@@ -164,21 +154,12 @@ export function RefundsTab() {
           {t("common.exportCsv")}
         </Button>
       </Space>
-      <Table<RefundRow>
+      <CursorTable<RefundRow>
+        query={refundsQ}
+        rows={rows}
         scroll={{ x: 1100 }}
         sticky={{ offsetHeader: layout.topBarHeight }}
         rowKey="id"
-        loading={isLoading}
-        locale={{
-          emptyText: (
-            <TableErrorEmpty
-              isError={isError}
-              isForbidden={isApiError(error) && error.status === 403}
-              onRetry={() => void refetch()}
-            />
-          ),
-        }}
-        dataSource={rows}
         columns={[
           {
             title: t("finance.colRefundNo"),
@@ -314,14 +295,6 @@ export function RefundsTab() {
             },
           },
         ]}
-      />
-      <LoadMore
-        hasNextPage={hasNextPage}
-        loading={isFetchingNextPage}
-        isError={isFetchNextPageError}
-        // 渠道过滤时隐藏计数,改由下方汇总行展示
-        loadedCount={channel ? undefined : all.length}
-        onLoadMore={() => void fetchNextPage()}
       />
       {channel && !hasNextPage && !isFetchNextPageError && all.length > 0 && (
         <Typography.Text type="secondary" style={{ display: "block", textAlign: "center", padding: "8px 0" }}>

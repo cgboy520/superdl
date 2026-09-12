@@ -1,4 +1,6 @@
 export { TableErrorEmpty } from "./TableErrorEmpty";
+export { CursorTable } from "./CursorTable";
+export type { CursorListQuery } from "./CursorTable";
 export { TicketBubble } from "./TicketBubble";
 export { RouteErrorFallbackView, NotFoundView } from "./ErrorPages";
 export { CommandPaletteShell, COMMAND_KBD_HINT, isMacPlatform } from "./CommandPaletteShell";

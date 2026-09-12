@@ -1,10 +1,11 @@
 /** 全局在线服务表(在线服务页与租户抽屉共用);唯一处置「强制停止」委托当前版本实例的 force-stop。 */
 
 import { flattenPages, fontSize, formatDateTime, layout, metaOf, serviceStatusMap } from "@superdl/ui";
-import { HexTag, LoadMore, TableErrorEmpty } from "@superdl/ui/components";
+import { CursorTable, HexTag, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Space, Table, Typography } from "antd";
+import type { TableColumnsType } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { type AdminServiceOut, isApiError, useAdminServices, useForceStop } from "../../api";
@@ -40,22 +41,102 @@ export function AdminServicesTable({
     },
     compact ? { limit: 100 } : undefined,
   );
-  const {
-    data,
-    queryKey,
-    isLoading,
-    isError,
-    error,
-    refetch,
-    hasNextPage,
-    isFetchingNextPage,
-    isFetchNextPageError,
-    fetchNextPage,
-  } = servicesQ;
+  // compact(抽屉)形态截断前 100 条、不出「加载更多」,该分支保留裸 Table 所需字段
+  const { data, queryKey, isLoading, isError, error, refetch } = servicesQ;
   const rows = flattenPages(data);
   const total = data?.pages[0]?.total ?? null;
   const forceStop = useForceStop();
   const refresh = () => void qc.invalidateQueries({ queryKey });
+
+  const columns: TableColumnsType<AdminServiceOut> = [
+    {
+      title: t("services.colService"),
+      fixed: compact ? undefined : "left",
+      width: 200,
+      render: (_, r) => (
+        <Space orientation="vertical" size={0}>
+          <span>{r.name}</span>
+          <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+            {r.slug}
+          </Typography.Text>
+        </Space>
+      ),
+    },
+    ...(compact ? [] : [tenantColumn<AdminServiceOut>(t("tenants.colOwner"), 90)]),
+    {
+      title: t("services.colEndpoint"),
+      render: (_, r) => (
+        <Typography.Text copyable={{ text: r.url }} style={{ fontSize: fontSize.caption }}>
+          {hostOf(r.url)}
+        </Typography.Text>
+      ),
+    },
+    {
+      title: t("services.colStatus"),
+      width: 130,
+      render: (_, r) => {
+        const m = metaOf(serviceStatusMap, r.status);
+        return (
+          <Space orientation="vertical" size={0}>
+            <HexTag color={m?.color}>{m ? t(m.labelKey) : r.status}</HexTag>
+            {(r.status === "running" || r.status === "unready") && (
+              <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                {r.ready ? t("services.ready") : t("services.notReady")}
+              </Typography.Text>
+            )}
+          </Space>
+        );
+      },
+    },
+    {
+      // 链到全局实例表按 uuid 前缀检索
+      title: t("services.colInstance"),
+      width: 120,
+      render: (_, r) => {
+        const inst = r.current_instance ?? r.rollout_instance;
+        return inst ? (
+          <Link to="/tenants" search={{ tab: "instances", iq: inst.uuid }}>
+            {inst.uuid.slice(0, 8)}
+          </Link>
+        ) : (
+          "—"
+        );
+      },
+    },
+    { title: t("services.colRevision"), width: 70, render: (_, r) => `v${r.revision}` },
+    {
+      title: t("services.colNode"),
+      dataIndex: "node_name",
+      width: 160,
+      render: (v: string | null) => v ?? "—",
+    },
+    { title: t("services.colCreatedAt"), dataIndex: "created_at", width: 170, render: formatDateTime },
+    {
+      title: t("services.colActions"),
+      width: 110,
+      fixed: compact ? undefined : "right",
+      render: (_, r) => {
+        const inst = r.current_instance;
+        const stoppable = inst != null && (r.status === "running" || r.status === "unready");
+        return (
+          <ReasonAction
+            label={t("tenants.forceStop")}
+            target={`${r.name} · ${r.slug}`}
+            danger
+            title={t("services.forceStopTitle")}
+            confirmText={t("services.forceStopConfirm", { name: r.name, slug: r.slug })}
+            disabled={!writable || !stoppable}
+            disabledReason={!writable ? t("tenants.noPermission") : t("services.forceStopNeedsRunning")}
+            onSubmit={async (reason) => {
+              if (!inst) return;
+              await forceStop.mutateAsync({ uuid: inst.uuid, data: { reason } });
+              refresh();
+            }}
+          />
+        );
+      },
+    },
+  ];
 
   return (
     <>
@@ -67,120 +148,33 @@ export function AdminServicesTable({
           </Link>
         </Typography.Text>
       )}
-      <Table<AdminServiceOut>
-        size={compact ? "small" : undefined}
-        rowKey="slug"
-        loading={isLoading}
-        pagination={false}
-        scroll={compact ? { x: 900, y: 420 } : { x: 1240 }}
-        sticky={compact ? undefined : { offsetHeader: layout.topBarHeight }}
-        locale={{
-          emptyText: (
-            <TableErrorEmpty
-              isError={isError}
-              isForbidden={isApiError(error) && error.status === 403}
-              onRetry={() => void refetch()}
-            />
-          ),
-        }}
-        dataSource={rows}
-        columns={[
-          {
-            title: t("services.colService"),
-            fixed: compact ? undefined : "left",
-            width: 200,
-            render: (_, r) => (
-              <Space orientation="vertical" size={0}>
-                <span>{r.name}</span>
-                <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                  {r.slug}
-                </Typography.Text>
-              </Space>
+      {compact ? (
+        <Table<AdminServiceOut>
+          size="small"
+          rowKey="slug"
+          loading={isLoading}
+          pagination={false}
+          scroll={{ x: 900, y: 420 }}
+          locale={{
+            emptyText: (
+              <TableErrorEmpty
+                isError={isError}
+                isForbidden={isApiError(error) && error.status === 403}
+                onRetry={() => void refetch()}
+              />
             ),
-          },
-          ...(compact ? [] : [tenantColumn<AdminServiceOut>(t("tenants.colOwner"), 90)]),
-          {
-            title: t("services.colEndpoint"),
-            render: (_, r) => (
-              <Typography.Text copyable={{ text: r.url }} style={{ fontSize: fontSize.caption }}>
-                {hostOf(r.url)}
-              </Typography.Text>
-            ),
-          },
-          {
-            title: t("services.colStatus"),
-            width: 130,
-            render: (_, r) => {
-              const m = metaOf(serviceStatusMap, r.status);
-              return (
-                <Space orientation="vertical" size={0}>
-                  <HexTag color={m?.color}>{m ? t(m.labelKey) : r.status}</HexTag>
-                  {(r.status === "running" || r.status === "unready") && (
-                    <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                      {r.ready ? t("services.ready") : t("services.notReady")}
-                    </Typography.Text>
-                  )}
-                </Space>
-              );
-            },
-          },
-          {
-            // 链到全局实例表按 uuid 前缀检索
-            title: t("services.colInstance"),
-            width: 120,
-            render: (_, r) => {
-              const inst = r.current_instance ?? r.rollout_instance;
-              return inst ? (
-                <Link to="/tenants" search={{ tab: "instances", iq: inst.uuid }}>
-                  {inst.uuid.slice(0, 8)}
-                </Link>
-              ) : (
-                "—"
-              );
-            },
-          },
-          { title: t("services.colRevision"), width: 70, render: (_, r) => `v${r.revision}` },
-          {
-            title: t("services.colNode"),
-            dataIndex: "node_name",
-            width: 160,
-            render: (v: string | null) => v ?? "—",
-          },
-          { title: t("services.colCreatedAt"), dataIndex: "created_at", width: 170, render: formatDateTime },
-          {
-            title: t("services.colActions"),
-            width: 110,
-            fixed: compact ? undefined : "right",
-            render: (_, r) => {
-              const inst = r.current_instance;
-              const stoppable = inst != null && (r.status === "running" || r.status === "unready");
-              return (
-                <ReasonAction
-                  label={t("tenants.forceStop")}
-                  target={`${r.name} · ${r.slug}`}
-                  danger
-                  title={t("services.forceStopTitle")}
-                  confirmText={t("services.forceStopConfirm", { name: r.name, slug: r.slug })}
-                  disabled={!writable || !stoppable}
-                  disabledReason={!writable ? t("tenants.noPermission") : t("services.forceStopNeedsRunning")}
-                  onSubmit={async (reason) => {
-                    if (!inst) return;
-                    await forceStop.mutateAsync({ uuid: inst.uuid, data: { reason } });
-                    refresh();
-                  }}
-                />
-              );
-            },
-          },
-        ]}
-      />
-      {!compact && (
-        <LoadMore
-          hasNextPage={hasNextPage}
-          loading={isFetchingNextPage}
-          isError={isFetchNextPageError}
-          loadedCount={rows.length}
-          onLoadMore={() => void fetchNextPage()}
+          }}
+          dataSource={rows}
+          columns={columns}
+        />
+      ) : (
+        <CursorTable<AdminServiceOut>
+          query={servicesQ}
+          rows={rows}
+          rowKey="slug"
+          scroll={{ x: 1240 }}
+          sticky={{ offsetHeader: layout.topBarHeight }}
+          columns={columns}
         />
       )}
     </>

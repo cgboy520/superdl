@@ -1,12 +1,12 @@
 /** 发票 Tab:申请开票(抬头 / 税号 / 邮箱校验)+ 我的发票。 */
 
 import { useTranslation } from "react-i18next";
-import { Alert, App, Button, Card, Input, Modal, Radio, Select, Space, Statistic, Table, Tag, Typography } from "antd";
+import { Alert, App, Button, Card, Input, Modal, Radio, Select, Space, Statistic, Tag, Typography } from "antd";
 import { useMemo, useState } from "react";
 
 import { type InvoiceEligibleOut } from "@superdl/api-client";
 import { addAmounts, flattenPages, fontSize, formatDateTime, idemKeyOf, invoiceStatusMap, metaOf } from "@superdl/ui";
-import { DataErrorAlert, LoadMore, moneyOr, TableErrorEmpty } from "@superdl/ui/components";
+import { CursorTable, DataErrorAlert, moneyOr } from "@superdl/ui/components";
 import { useFormat } from "@superdl/ui";
 
 import { useCreateInvoice } from "../api/mutations";
@@ -196,20 +196,13 @@ export function InvoiceTab() {
           {t("billing.invoiceManualNote")}
         </Typography.Text>
       </Card>
-      <Table
+      <CursorTable
+        query={invoices}
+        rows={rows}
+        empty={t("billing.invoiceNone")}
         rowKey="id"
         size="small"
-        pagination={false}
         scroll={{ x: 860 }}
-        loading={invoices.isLoading}
-        dataSource={rows}
-        locale={{
-          emptyText: invoices.isError ? (
-            <TableErrorEmpty isError onRetry={() => void invoices.refetch()} />
-          ) : (
-            t("billing.invoiceNone")
-          ),
-        }}
         columns={[
           { title: t("billing.colPeriod"), dataIndex: "period" },
           {
@@ -234,13 +227,6 @@ export function InvoiceTab() {
           },
           { title: t("billing.colTime"), dataIndex: "created_at", render: formatDateTime },
         ]}
-      />
-      <LoadMore
-        hasNextPage={invoices.hasNextPage}
-        loading={invoices.isFetchingNextPage}
-        isError={invoices.isFetchNextPageError}
-        loadedCount={rows.length}
-        onLoadMore={() => void invoices.fetchNextPage()}
       />
       <InvoiceApplyModal periods={periods} open={applyOpen} onClose={() => setApplyOpen(false)} />
     </Space>

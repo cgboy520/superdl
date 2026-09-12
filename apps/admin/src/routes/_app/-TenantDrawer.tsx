@@ -12,7 +12,7 @@ import {
   metaOf,
   subscriptionStatusMap,
 } from "@superdl/ui";
-import { DataErrorAlert, HexTag, LoadMore, TableErrorEmpty } from "@superdl/ui/components";
+import { CursorTable, DataErrorAlert, HexTag } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
@@ -41,7 +41,6 @@ import {
   type OrderRow,
   type TenantRow,
   exportTenantLedgerCsv,
-  isApiError,
   useAdminInstances,
   useInstanceEvents,
   useOrders,
@@ -194,22 +193,12 @@ function BillsTab({ userId, instances }: { userId: number; instances: AdminInsta
           label: `${i.name} (${i.uuid.slice(0, 8)})`,
         }))}
       />
-      <Table
+      <CursorTable
+        query={bills}
+        rows={billRows}
         size="small"
         rowKey="id"
-        loading={bills.isLoading}
-        locale={{
-          emptyText: (
-            <TableErrorEmpty
-              isError={bills.isError}
-              isForbidden={isApiError(bills.error) && bills.error.status === 403}
-              onRetry={() => void bills.refetch()}
-            />
-          ),
-        }}
-        pagination={false}
         scroll={{ y: 420 }}
-        dataSource={billRows}
         columns={[
           { title: t("tenants.colHour"), dataIndex: "hour_start", render: formatDateTime },
           { title: t("tenants.colInstanceId"), dataIndex: "instance_id", width: 90 },
@@ -225,13 +214,6 @@ function BillsTab({ userId, instances }: { userId: number; instances: AdminInsta
           },
           { title: t("tenants.colAmount"), dataIndex: "amount", render: (v: string) => formatMoney(v) },
         ]}
-      />
-      <LoadMore
-        hasNextPage={bills.hasNextPage}
-        loading={bills.isFetchingNextPage}
-        isError={bills.isFetchNextPageError}
-        loadedCount={billRows.length}
-        onLoadMore={() => void bills.fetchNextPage()}
       />
     </>
   );
@@ -251,22 +233,12 @@ function LedgerTab({ userId }: { userId: number }) {
           {t("common.exportCsv")}
         </Button>
       </div>
-      <Table
+      <CursorTable
+        query={ledger}
+        rows={ledgerRows}
         size="small"
         rowKey="id"
-        loading={ledger.isLoading}
-        locale={{
-          emptyText: (
-            <TableErrorEmpty
-              isError={ledger.isError}
-              isForbidden={isApiError(ledger.error) && ledger.error.status === 403}
-              onRetry={() => void ledger.refetch()}
-            />
-          ),
-        }}
-        pagination={false}
         scroll={{ y: 420 }}
-        dataSource={ledgerRows}
         columns={[
           { title: t("tenants.colTime"), dataIndex: "created_at", render: formatDateTime },
           {
@@ -290,13 +262,6 @@ function LedgerTab({ userId }: { userId: number }) {
           { title: t("tenants.colRemark"), dataIndex: "remark", ellipsis: true },
         ]}
       />
-      <LoadMore
-        hasNextPage={ledger.hasNextPage}
-        loading={ledger.isFetchingNextPage}
-        isError={ledger.isFetchNextPageError}
-        loadedCount={ledgerRows.length}
-        onLoadMore={() => void ledger.fetchNextPage()}
-      />
     </>
   );
 }
@@ -309,30 +274,13 @@ function OrdersTab({ userId }: { userId: number }) {
 
   return (
     <>
-      <Table<OrderRow>
+      <CursorTable<OrderRow>
+        query={orders}
+        rows={rows}
         size="small"
         rowKey="order_no"
-        loading={orders.isLoading}
-        locale={{
-          emptyText: (
-            <TableErrorEmpty
-              isError={orders.isError}
-              isForbidden={isApiError(orders.error) && orders.error.status === 403}
-              onRetry={() => void orders.refetch()}
-            />
-          ),
-        }}
-        pagination={false}
         scroll={{ y: 420 }}
-        dataSource={rows}
         columns={columns}
-      />
-      <LoadMore
-        hasNextPage={orders.hasNextPage}
-        loading={orders.isFetchingNextPage}
-        isError={orders.isFetchNextPageError}
-        loadedCount={rows.length}
-        onLoadMore={() => void orders.fetchNextPage()}
       />
     </>
   );
@@ -556,24 +504,13 @@ function EventsTab({ instances }: { instances: AdminInstanceOut[] }) {
           label: `${i.name} (${i.uuid.slice(0, 8)})`,
         }))}
       />
-      <Table<InstanceEvent>
+      <CursorTable<InstanceEvent>
+        query={events}
+        rows={rows}
+        empty={uuid ? t("tenants.events.empty") : t("tenants.events.pickFirst")}
         size="small"
         rowKey="id"
-        loading={uuid !== null && events.isLoading}
-        pagination={false}
         scroll={{ y: 420 }}
-        dataSource={rows}
-        locale={{
-          emptyText: (
-            <TableErrorEmpty
-              isError={uuid !== null && events.isError}
-              isForbidden={uuid !== null && isApiError(events.error) && events.error.status === 403}
-              onRetry={() => void events.refetch()}
-            >
-              {uuid ? t("tenants.events.empty") : t("tenants.events.pickFirst")}
-            </TableErrorEmpty>
-          ),
-        }}
         columns={[
           { title: t("tenants.colTime"), dataIndex: "created_at", render: formatDateTime },
           {
@@ -593,13 +530,6 @@ function EventsTab({ instances }: { instances: AdminInstanceOut[] }) {
           { title: t("tenants.events.colReason"), dataIndex: "reason" },
           { title: t("tenants.events.colActor"), dataIndex: "actor", width: 90 },
         ]}
-      />
-      <LoadMore
-        hasNextPage={events.hasNextPage}
-        loading={events.isFetchingNextPage}
-        isError={events.isFetchNextPageError}
-        loadedCount={rows.length}
-        onLoadMore={() => void events.fetchNextPage()}
       />
     </>
   );

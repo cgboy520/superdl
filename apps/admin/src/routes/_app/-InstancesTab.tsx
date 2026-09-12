@@ -2,8 +2,8 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, getRouteApi } from "@tanstack/react-router";
-import { Input, Select, Space, Table } from "antd";
-import { useState } from "react";
+import { Input, Select, Space } from "antd";
+import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -20,13 +20,14 @@ import {
   workloadTypeMap,
   type InstanceStatus,
 } from "@superdl/ui";
-import { HexTag, LoadMore, TableErrorEmpty } from "@superdl/ui/components";
+import { CursorTable, HexTag } from "@superdl/ui/components";
 
-import { type AdminInstanceOut, isApiError, useAdminInstances, useForceStop, usePreemptInstance } from "../../api";
+import { type AdminInstanceOut, useAdminInstances, useForceStop, usePreemptInstance } from "../../api";
 import { ReasonAction } from "../../components/ReasonAction";
 import { FilterBar } from "../../components/FilterBar";
 import { StatusTag } from "../../components/StatusTag";
 import { tenantColumn } from "../../components/TenantLink";
+import { useUrlCommittedInput } from "../../lib/useUrlCommittedInput";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 const routeApi = getRouteApi("/_app/tenants");
@@ -40,35 +41,26 @@ export function InstancesTab() {
   const status = routeApi.useSearch({ select: (s) => s.istatus });
   const nodeName = routeApi.useSearch({ select: (s) => s.inode });
   const instQ = routeApi.useSearch({ select: (s) => s.iq });
-  const [instInput, setInstInput] = useState(instQ ?? "");
-  const [nodeInput, setNodeInput] = useState(nodeName ?? "");
-  const filterKey = `${instQ ?? ""}|${nodeName ?? ""}`;
-  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
-  if (filterKey !== prevFilterKey) {
-    setPrevFilterKey(filterKey);
-    setInstInput(instQ ?? "");
-    setNodeInput(nodeName ?? "");
-  }
-  const setUrl = (next: { istatus?: string; inode?: string; iq?: string }) =>
-    void navigate({ to: "/tenants", replace: true, search: (prev) => ({ ...prev, ...next }) });
+  const setUrl = useCallback(
+    (next: { istatus?: string; inode?: string; iq?: string }) =>
+      void navigate({ to: "/tenants", replace: true, search: (prev) => ({ ...prev, ...next }) }),
+    [navigate],
+  );
+  const { value: instInput, setValue: setInstInput } = useUrlCommittedInput(
+    instQ,
+    useCallback((next: string | undefined) => setUrl({ iq: next }), [setUrl]),
+  );
+  const { value: nodeInput, setValue: setNodeInput } = useUrlCommittedInput(
+    nodeName,
+    useCallback((next: string | undefined) => setUrl({ inode: next }), [setUrl]),
+  );
   const qc = useQueryClient();
   const instancesQ = useAdminInstances({
     ...(status ? { status } : {}),
     ...(instQ ? { q: instQ } : {}),
     ...(nodeName ? { node_name: nodeName } : {}),
   });
-  const {
-    data,
-    queryKey,
-    isLoading,
-    isError,
-    error,
-    refetch,
-    hasNextPage,
-    isFetchingNextPage,
-    isFetchNextPageError,
-    fetchNextPage,
-  } = instancesQ;
+  const { data, queryKey } = instancesQ;
   const instances = flattenPages(data);
   const forceStop = useForceStop();
   const preempt = usePreemptInstance();
@@ -111,21 +103,12 @@ export function InstancesTab() {
           onSearch={(v) => setUrl({ inode: v || undefined })}
         />
       </FilterBar>
-      <Table<AdminInstanceOut>
+      <CursorTable<AdminInstanceOut>
+        query={instancesQ}
+        rows={instances}
         scroll={{ x: 1250 }}
         sticky={{ offsetHeader: layout.topBarHeight }}
         rowKey="uuid"
-        loading={isLoading}
-        locale={{
-          emptyText: (
-            <TableErrorEmpty
-              isError={isError}
-              isForbidden={isApiError(error) && error.status === 403}
-              onRetry={() => void refetch()}
-            />
-          ),
-        }}
-        dataSource={instances}
         columns={[
           { title: t("tenants.colInstance"), dataIndex: "name", fixed: "left", width: 180 },
           tenantColumn(t("tenants.colOwner"), 90),
@@ -230,13 +213,6 @@ export function InstancesTab() {
             },
           },
         ]}
-      />
-      <LoadMore
-        hasNextPage={hasNextPage}
-        loading={isFetchingNextPage}
-        isError={isFetchNextPageError}
-        loadedCount={instances.length}
-        onLoadMore={() => void fetchNextPage()}
       />
     </>
   );

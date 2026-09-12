@@ -1,7 +1,7 @@
 /** 退款 Tab:可退订单 → 申请退款 + 我的退款单。 */
 
 import { useTranslation } from "react-i18next";
-import { App, Button, Card, Input, InputNumber, Select, Space, Table, Tag, Tooltip, Typography } from "antd";
+import { App, Button, Card, Input, InputNumber, Select, Space, Tag, Tooltip, Typography } from "antd";
 import { useMemo, useState } from "react";
 
 import { type RefundableOrderOut } from "@superdl/api-client";
@@ -14,7 +14,7 @@ import {
   payoutChannelMap,
   refundStatusMap,
 } from "@superdl/ui";
-import { DataErrorAlert, EmptyState, LoadMore, TableErrorEmpty } from "@superdl/ui/components";
+import { CursorTable, DataErrorAlert, EmptyState } from "@superdl/ui/components";
 import { useFormat } from "@superdl/ui";
 
 import { useCreateRefund } from "../api/mutations";
@@ -141,20 +141,13 @@ export function RefundTab() {
           </Space>
         )}
       </Card>
-      <Table
+      <CursorTable
+        query={refunds}
+        rows={rows}
+        empty={t("billing.refundNone")}
         rowKey="id"
         size="small"
-        pagination={false}
         scroll={{ x: 860 }}
-        loading={refunds.isLoading}
-        dataSource={rows}
-        locale={{
-          emptyText: refunds.isError ? (
-            <TableErrorEmpty isError onRetry={() => void refunds.refetch()} />
-          ) : (
-            t("billing.refundNone")
-          ),
-        }}
         columns={[
           { title: t("billing.colTime"), dataIndex: "created_at", render: formatDateTime },
           { title: t("billing.colRefundNo"), dataIndex: "refund_no" },
@@ -183,13 +176,6 @@ export function RefundTab() {
             },
           },
         ]}
-      />
-      <LoadMore
-        hasNextPage={refunds.hasNextPage}
-        loading={refunds.isFetchingNextPage}
-        isError={refunds.isFetchNextPageError}
-        loadedCount={rows.length}
-        onLoadMore={() => void refunds.fetchNextPage()}
       />
     </Space>
   );

@@ -2,15 +2,15 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, getRouteApi } from "@tanstack/react-router";
-import { Button, Input, Modal, Select, Space, Table, Tag, Typography } from "antd";
+import { Button, Input, Modal, Select, Space, Tag, Typography } from "antd";
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { adminColors, flattenPages, formatDateTime, layout } from "@superdl/ui";
-import { LoadMore, TableErrorEmpty } from "@superdl/ui/components";
+import { CursorTable } from "@superdl/ui/components";
 import { useFormat } from "@superdl/ui";
 
-import { type TenantRow, isApiError, useFreezeTenant, useTenants, useUnfreezeTenant } from "../../api";
+import { type TenantRow, useFreezeTenant, useTenants, useUnfreezeTenant } from "../../api";
 import { ReasonAction } from "../../components/ReasonAction";
 import { TenantLink } from "../../components/TenantLink";
 import { useUrlCommittedInput } from "../../lib/useUrlCommittedInput";
@@ -71,18 +71,7 @@ export function TenantsTab() {
     ...(order ? { order } : {}),
     ...(revealReason !== null ? { reveal: true, reason: revealReason } : {}),
   });
-  const {
-    data,
-    queryKey,
-    isLoading,
-    isError,
-    error,
-    refetch,
-    hasNextPage,
-    isFetchingNextPage,
-    isFetchNextPageError,
-    fetchNextPage,
-  } = tenantsQ;
+  const { data, queryKey } = tenantsQ;
   const tenants = flattenPages(data);
   const drilldown = urlTenant != null ? (tenants.find((r) => r.id === urlTenant) ?? null) : null;
   const freeze = useFreezeTenant();
@@ -153,23 +142,13 @@ export function TenantsTab() {
           />
         </Space>
       </Modal>
-      <Table<TenantRow>
+      <CursorTable<TenantRow>
+        query={tenantsQ}
+        rows={tenants}
+        empty={tt("tenants.empty")}
         scroll={{ x: 1000 }}
         sticky={{ offsetHeader: layout.topBarHeight }}
         rowKey="id"
-        loading={isLoading}
-        locale={{
-          emptyText: (
-            <TableErrorEmpty
-              isError={isError}
-              isForbidden={isApiError(error) && error.status === 403}
-              onRetry={() => void refetch()}
-            >
-              {tt("tenants.empty")}
-            </TableErrorEmpty>
-          ),
-        }}
-        dataSource={tenants}
         onRow={(r) => ({ style: { cursor: "pointer" }, onClick: () => setDrilldown(r) })}
         onChange={(_p, _f, sorter) => {
           const s = Array.isArray(sorter) ? sorter[0] : sorter;
@@ -288,13 +267,6 @@ export function TenantsTab() {
             ),
           },
         ]}
-      />
-      <LoadMore
-        hasNextPage={hasNextPage}
-        loading={isFetchingNextPage}
-        isError={isFetchNextPageError}
-        loadedCount={tenants.length}
-        onLoadMore={() => void fetchNextPage()}
       />
       <TenantDrawer tenant={drilldown} dtab={dtab} onTabChange={onDrawerTabChange} onClose={() => setDrilldown(null)} />
     </>

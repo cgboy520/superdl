@@ -15,7 +15,6 @@ import {
   Select,
   Space,
   Spin,
-  Table,
   Tooltip,
   Typography,
 } from "antd";
@@ -35,7 +34,7 @@ import {
   ledgerTypeMap,
   metaOf,
 } from "@superdl/ui";
-import { moneyOr, LoadMore, TableErrorEmpty } from "@superdl/ui/components";
+import { CursorTable, moneyOr } from "@superdl/ui/components";
 import { useApiErrorText } from "@superdl/ui";
 import { useCsvExport, useFormDraft } from "@superdl/ui";
 import { useFormat } from "@superdl/ui";
@@ -43,7 +42,6 @@ import { useFormat } from "@superdl/ui";
 import {
   type AdjustmentRow,
   exportAdjustmentsCsv,
-  isApiError,
   useAdjustContext,
   useAdjustments,
   useCreateAdjustment,
@@ -120,11 +118,11 @@ export function ReviewConfirmModal({
           <SignedAmount value={adj.amount} />
         </Descriptions.Item>
         <Descriptions.Item label={t("finance.ctxBalance")}>
-          {ctx.isLoading ? "…" : moneyOr(formatMoney(ctx.data?.balance), ctx.data != null)}
+          {ctx.isLoading ? "…" : moneyOr(formatMoney(ctx.data?.balance ?? "0.00"), ctx.data != null)}
         </Descriptions.Item>
         {approve && (
           <Descriptions.Item label={t("finance.ctxBalanceAfter")}>
-            {moneyOr(formatMoney(after), after !== null)}
+            {moneyOr(formatMoney(after ?? "0.00"), after !== null)}
           </Descriptions.Item>
         )}
         <Descriptions.Item label={t("finance.colCreatedBy")}>#{adj.created_by}</Descriptions.Item>
@@ -191,18 +189,8 @@ export function AdjustmentsTab() {
     ...(search.a_day ? { day: search.a_day } : {}),
     ...(search.a_uid ? { user_id: search.a_uid } : {}),
   };
-  const {
-    data,
-    queryKey,
-    isLoading,
-    isError,
-    error,
-    refetch,
-    hasNextPage,
-    isFetchingNextPage,
-    isFetchNextPageError,
-    fetchNextPage,
-  } = useAdjustments(params);
+  const adjustmentsQ = useAdjustments(params);
+  const { data, queryKey } = adjustmentsQ;
   const { doExport, exporting } = useCsvExport((tz, lang) => exportAdjustmentsCsv(params, tz, lang));
   const rows = flattenPages(data);
 
@@ -268,21 +256,12 @@ export function AdjustmentsTab() {
           </Button>
         </Tooltip>
       </Space>
-      <Table<AdjustmentRow>
+      <CursorTable<AdjustmentRow>
+        query={adjustmentsQ}
+        rows={rows}
         scroll={{ x: 1000 }}
         sticky={{ offsetHeader: layout.topBarHeight }}
         rowKey="id"
-        loading={isLoading}
-        locale={{
-          emptyText: (
-            <TableErrorEmpty
-              isError={isError}
-              isForbidden={isApiError(error) && error.status === 403}
-              onRetry={() => void refetch()}
-            />
-          ),
-        }}
-        dataSource={rows}
         columns={[
           { title: t("finance.colAdjustId"), dataIndex: "id", width: 70, fixed: "left" },
           tenantColumn(t("finance.colTenant")),
@@ -339,13 +318,6 @@ export function AdjustmentsTab() {
           },
           { title: t("finance.colCreatedAtShort"), dataIndex: "created_at", render: formatDateTime },
         ]}
-      />
-      <LoadMore
-        hasNextPage={hasNextPage}
-        loading={isFetchingNextPage}
-        isError={isFetchNextPageError}
-        loadedCount={rows.length}
-        onLoadMore={() => void fetchNextPage()}
       />
       <ReviewConfirmModal target={reviewTarget} onClose={() => setReviewTarget(null)} onReviewed={refresh} />
       <Modal

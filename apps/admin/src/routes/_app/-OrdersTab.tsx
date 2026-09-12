@@ -1,16 +1,17 @@
 /** 充值订单 Tab:订单号 / 日期筛选、核验与补单。 */
 
-import { Button, DatePicker, Input, Select, Space, Table } from "antd";
+import { Button, DatePicker, Input, Select, Space } from "antd";
 import dayjs from "dayjs";
-import { useState } from "react";
+import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 
 import { flattenPages, orderStatusMap } from "@superdl/ui";
-import { LoadMore, TableErrorEmpty } from "@superdl/ui/components";
+import { CursorTable } from "@superdl/ui/components";
 import { useCsvExport } from "@superdl/ui";
 
-import { type OrderRow, exportOrdersCsv, isApiError, useOrders } from "../../api";
+import { type OrderRow, exportOrdersCsv, useOrders } from "../../api";
 import { useOrderColumns } from "../../components/orderColumns";
+import { useUrlCommittedInput } from "../../lib/useUrlCommittedInput";
 import { useFinanceFilters } from "./-financeFilters";
 
 export function OrdersTab() {
@@ -19,14 +20,10 @@ export function OrdersTab() {
   // 筛选条件入 URL(status/订单号/下单日)
   const { search, setFilters } = useFinanceFilters();
   const status = search.o_status;
-  const orderNo = search.o_no ?? "";
-  // 检索 commit 制:回车/点搜索/清空才写 URL;URL 回流走渲染期派生态
-  const [orderNoInput, setOrderNoInput] = useState(orderNo);
-  const [prevOrderNo, setPrevOrderNo] = useState(orderNo);
-  if (orderNo !== prevOrderNo) {
-    setPrevOrderNo(orderNo);
-    setOrderNoInput(orderNo);
-  }
+  const orderNo = search.o_no;
+  // 检索防抖回写 URL;URL 回流同步进输入框
+  const commitOrderNo = useCallback((next: string | undefined) => setFilters({ o_no: next }), [setFilters]);
+  const { value: orderNoInput, setValue: setOrderNoInput } = useUrlCommittedInput(orderNo, commitOrderNo);
   const day = search.o_day ? dayjs(search.o_day) : null;
   const params = {
     ...(status ? { status } : {}),
@@ -53,7 +50,7 @@ export function OrdersTab() {
           style={{ width: 260 }}
           value={orderNoInput}
           onChange={(e) => setOrderNoInput(e.target.value)}
-          onSearch={(v) => setFilters({ o_no: v.trim() || undefined })}
+          onSearch={(v) => commitOrderNo(v.trim() || undefined)}
         />
         <DatePicker
           value={day}
@@ -64,29 +61,7 @@ export function OrdersTab() {
           {t("common.exportCsv")}
         </Button>
       </Space>
-      <Table<OrderRow>
-        scroll={{ x: 900 }}
-        rowKey="order_no"
-        dataSource={orders}
-        loading={q.isLoading}
-        locale={{
-          emptyText: (
-            <TableErrorEmpty
-              isError={q.isError}
-              isForbidden={isApiError(q.error) && q.error.status === 403}
-              onRetry={() => void q.refetch()}
-            />
-          ),
-        }}
-        columns={orderColumns}
-      />
-      <LoadMore
-        hasNextPage={q.hasNextPage}
-        loading={q.isFetchingNextPage}
-        isError={q.isFetchNextPageError}
-        loadedCount={orders.length}
-        onLoadMore={() => void q.fetchNextPage()}
-      />
+      <CursorTable<OrderRow> query={q} rows={orders} scroll={{ x: 900 }} rowKey="order_no" columns={orderColumns} />
     </>
   );
 }

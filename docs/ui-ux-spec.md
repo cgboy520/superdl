@@ -34,7 +34,7 @@
 **设计 token 纪律**:`packages/ui/src/tokens.ts` 是唯一事实源。
 ① 色值走 token(`webTheme` / `webDarkTheme` / `adminColors` / `statusColors` 等),禁止硬编码 hex;
 ② 布局尺寸走 `space`(4 阶梯)与 `layout`(含 `topBarHeight` / `scrollMarginTop`),字号走 `fontSize` 五档,控件 / Drawer 宽度走 `controlWidth` / `drawerWidth`;
-③ 高频模式组件化(`packages/ui` `src/components/`):`PageContainer`(页宽四档 default 1280 / wide 1200 / narrow 880 / full)/ `PageHeader`(面包屑 / 返回 / 描述 / 右侧动作 / 新鲜度条)/ `KpiGrid`(CSS grid 自适应)/ `TableErrorEmpty`(含 isForbidden 403 区分)/ `DataErrorAlert`(`description={null}` 单行形态)/ `EmptyState` / `HexTag` / `LoadMore` / `EChart`(三态 + `group` 联动)/ `DangerZone`;用户端另有 `Field`(受控字段骨架)/ `SmsCodeField` / `LandingSection` / `AttentionBar` / `ConsentGate`,管理端另有 `ReasonAction` / `RowMoreMenu` / `BulkBar` / `FilterBar` / `StatusTag`;
+③ 高频模式组件化(`packages/ui` `src/components/`):`PageContainer`(页宽四档 default 1280 / wide 1200 / narrow 880 / full)/ `PageHeader`(面包屑 / 返回 / 描述 / 右侧动作 / 新鲜度条)/ `KpiGrid`(CSS grid 自适应)/ `TableErrorEmpty`(含 isForbidden 403 区分)/ `DataErrorAlert`(`description={null}` 单行形态)/ `EmptyState` / `HexTag` / `LoadMore` / `EChart`(三态 + `group` 联动)/ `DangerZone` / `CursorTable`(游标分页三件套:Table + 错误空态 + LoadMore);用户端另有 `Field`(受控字段骨架)/ `SmsCodeField` / `LandingSection` / `AttentionBar` / `ConsentGate`,管理端另有 `ReasonAction` / `RowMoreMenu` / `BulkBar` / `FilterBar` / `StatusTag`;
 ④ 确认强度组件化:L1 / L2 用 `useConfirm`(支持 `danger` / `okDisabled`),L3 用 `TypeConfirmModal`,管理端审计型用 `ReasonAction`;
 ⑤ 动效走 `motion` token(fast 0.15 / normal 0.2 / slow 0.25 + easeOut):仅透明度 / 位移,路由切换不动效;自绘浮层 zIndex 走 `zIndex` token;
 ⑥ CSS 覆盖区一律 `var(--sdl-*)`,取值经 `cssVars` 桥由 `__root.tsx` 注入;admin 端走 `var(--admin-*)`(`main.tsx` 从 `adminColors` 注入,见 `global.css`);新代码不写 inline 尺寸魔法数,存量按「碰到的文件顺手收敛」推进;
@@ -230,7 +230,7 @@ Tab 固定 `概览 / 访问密钥 / 监控 / 日志 / 历史 / 设置`(白名单
 
 ### 4.2 逐屏要点
 
-通用骨架:`PageContainer`(宽表页 `width="full"`)+ `PageHeader`(标题 · 右侧动作 · 轮询页新鲜度条);首屏 KPI `KpiGrid` 逐卡骨架;宽表固定标识列 + 操作列 + sticky 表头;行内 ≤2 动作 + `RowMoreMenu`;多选行出 `BulkBar`;筛选走 `FilterBar`(清除筛选 + 服务端 total);检索框 ↔ URL 走 `useUrlCommittedInput`;截断表挂 `ListCapNote`(可带「缩小筛选」动作);状态标 `StatusTag`;错误 / 403 走 `TableErrorEmpty`(抽屉内 `compact`),取数失败条走 `DataErrorAlert`;图表三态(loading / empty / degraded)在 `EChart` 内。
+通用骨架:`PageContainer`(宽表页 `width="full"`)+ `PageHeader`(标题 · 右侧动作 · 轮询页新鲜度条);首屏 KPI `KpiGrid` 逐卡骨架;宽表固定标识列 + 操作列 + sticky 表头;行内 ≤2 动作 + `RowMoreMenu`;多选行出 `BulkBar`;筛选走 `FilterBar`(清除筛选 + 服务端 total);检索框 ↔ URL 走 `useUrlCommittedInput`;截断表挂 `ListCapNote`(可带「缩小筛选」动作);游标分页表走 `CursorTable`(Table + 错误空态 + LoadMore 一处);状态标 `StatusTag`;错误 / 403 走 `TableErrorEmpty`(抽屉内 `compact`),取数失败条走 `DataErrorAlert`;图表三态(loading / empty / degraded)在 `EChart` 内。
 
 - **运营总览**:KPI **两行**——资金与租户(今日收入含昨日对照 / 本月收入 / 今日新注册环比 / 付费租户)、运行与风险(活跃实例 / 有效订阅 / 节点健康 / 告警数),各卡只等自己的 query;主图表「实际超卖率 vs 真实利用率」按池并置(60%/85% 阈值线);GPU 池占用堆叠条(按节点池分组,已租 / 空闲,已租段内分出「其中竞价(可回收)」);右栏实时告警流(查询失败如实显示错误态;条目按 `target_kind` 深链:`tenant` → `/tenants?tenant=<id>` 直开抽屉、`node` → `/nodes?node=<名称>`、`ticket` → `/tickets?id=<id>`);有死信时展开任务死信卡(单条 / **勾选批量**重放 · 忽略,一条原因作用于全部所选)。
 - **节点与 GPU**(全宽;页头新鲜度条,`POLL.steady` 可暂停):待入网节点卡(池 / 主机名 / 备注 / 状态 / 阶段 / 心跳 / 错误 + 重新生成加入命令 / 吊销,确认文案带主机名)与「添加节点」生成一次性加入命令;节点表(名称(等宽,固定左)/ 池标签 / GPU 型号×数量 / 显存 / **已用(链到 `/tenants?tab=instances&inode=<节点>`)** / 驱动 / CUDA / vCPU / 内存 / 磁盘 / 状态 / 操作(固定右)`cordon`·`uncordon`,经 outbox;**勾选多节点批量 cordon / uncordon**;`drain` 灰置占位 + tooltip 说明经集群 Runbook 执行);点节点行(整行可键盘选中)→ 每卡热力网格 + 节点级 ECharts 曲线(1h/6h/24h,24h XID 计数红标),配了 `grafana_url` 才多一个外链按钮。子文件:`-GpuGrid` / `-NodeMetricsPanel` / `-AddNodeModal` / `-EnrollmentsCard`。

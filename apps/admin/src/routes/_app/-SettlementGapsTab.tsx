@@ -1,15 +1,15 @@
 /** 结算缺口:重放补结 / 人工核销入口(告警 superdl_settlement_gap_unresolved)。 */
 
 import { flattenPages, formatDateTime } from "@superdl/ui";
-import { LoadMore, TableErrorEmpty, useConfirm } from "@superdl/ui/components";
+import { CursorTable, useConfirm } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
-import { App, Button, Select, Space, Switch, Table, Tag, Typography } from "antd";
+import { App, Button, Select, Space, Switch, Tag, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { AdminSettlementGapOut } from "@superdl/api-client";
 
-import { isApiError, useReplaySettlementGap, useResolveSettlementGap, useSettlementGaps } from "../../api";
+import { useReplaySettlementGap, useResolveSettlementGap, useSettlementGaps } from "../../api";
 import { BulkBar, runBulk } from "../../components/BulkBar";
 import { ReasonAction } from "../../components/ReasonAction";
 import { useApiErrorText } from "@superdl/ui";
@@ -48,18 +48,8 @@ export function SettlementGapsTab() {
     ...(kind ? { kind } : {}),
     unresolved: unresolvedOnly,
   };
-  const {
-    data,
-    queryKey,
-    isLoading,
-    isError,
-    error,
-    refetch,
-    hasNextPage,
-    fetchNextPage,
-    isFetchingNextPage,
-    isFetchNextPageError,
-  } = useSettlementGaps(params);
+  const gapsQ = useSettlementGaps(params);
+  const { data, queryKey } = gapsQ;
   const refresh = () => void qc.invalidateQueries({ queryKey });
 
   const replay = useReplaySettlementGap();
@@ -115,12 +105,11 @@ export function SettlementGapsTab() {
           {t("bulk.replaySelected", { count: selected.length })}
         </Button>
       </BulkBar>
-      <Table<AdminSettlementGapOut>
+      <CursorTable<AdminSettlementGapOut>
+        query={gapsQ}
+        rows={items}
         rowKey="id"
         size="small"
-        loading={isLoading}
-        dataSource={items}
-        pagination={false}
         rowSelection={
           writable
             ? {
@@ -130,15 +119,6 @@ export function SettlementGapsTab() {
               }
             : undefined
         }
-        locale={{
-          emptyText: (
-            <TableErrorEmpty
-              isError={isError}
-              isForbidden={isApiError(error) && error.status === 403}
-              onRetry={() => void refetch()}
-            />
-          ),
-        }}
         columns={[
           { title: "ID", dataIndex: "id", width: 80 },
           {
@@ -228,13 +208,6 @@ export function SettlementGapsTab() {
               ),
           },
         ]}
-      />
-      <LoadMore
-        hasNextPage={hasNextPage}
-        loading={isFetchingNextPage}
-        isError={isFetchNextPageError}
-        loadedCount={items.length}
-        onLoadMore={() => void fetchNextPage()}
       />
     </>
   );
