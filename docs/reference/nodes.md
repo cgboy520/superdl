@@ -47,7 +47,7 @@
 - **池标签纠偏(阶段 C2)的事实源是注册登记,同时看 joined 与 failed 两态**;同主机名多次登记取 id 最大的那行。规格快照(型号 / 显存 / 驱动 / CUDA)只认 joined。
 - 纠偏顺序**先 cordon 再改标签**;cordon 走 `service.request_cordon`(期望态落台账 + outbox),与管理端手工 cordon 同一条路径,阶段 D 按期望态复收敛。
 - `superdl_node_pool_label_mismatch_total` 在**发现**时自增,不在纠正成功后。消费方 `NodePoolLabelMismatch`(critical)。
-- **节点退役**(`decommission_node`)三件事同一事务:停调度期望态落台账 → 该主机名下所有登记置 revoked → enqueue `node.decommission` 由 worker 删 Node 对象。两条平台管不到的边界交回运维(回执文案 `nodes.decommissionDone`):删 Node 对象**不吊销 kubelet 证书**(kubelet 存活会重新注册,巡检按期望态再 cordon);join token 轮换与 kubelet 证书吊销是控制面动作。
+- **节点退役**(`decommission_node`)三件事同一事务:停调度期望态落台账 → 该主机名下所有登记置 revoked → enqueue `node.decommission` 由 worker 删 Node 对象。两条平台管不到的边界交回运维(管理端退役确认框提示):删 Node 对象**不吊销 kubelet 证书**(kubelet 存活会重新注册,巡检按期望态再 cordon);join token 轮换与 kubelet 证书吊销是控制面动作。
 - **能删哪些节点由准入层界定,不由 RBAC**:`deploy/cluster/admission/tenant-restrictions.yaml` 策略⑦,带控制面 / etcd 角色或 infra 落点标签的节点不可删。删掉控制面 Node 对象后 kubelet 重新注册,但 `node-restriction.kubernetes.io/superdl-infra` 不会跟着回来。
 - 业务读台账,不实时调 K8s;节点消失先置 `Missing`,超保留期才删行(见 [limits.md](./limits.md));上架校验只认 Ready。
 - 巡检在 worker 收敛环直连 K8s 并幂等重试;outbox 只管请求路径的业务事务。

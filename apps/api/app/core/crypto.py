@@ -27,17 +27,13 @@ _MAC_INFO = b"superdl/mac/v2"
 _KDF_SALT = b"superdl-crypto"
 
 
-def _decode_key(raw: str, *, env_name: str) -> bytes:
-    return decode_master_key(raw, label=env_name)
-
-
 def _active_key() -> bytes:
     settings = get_settings()
     raw = settings.config_encryption_key
     if not raw:
         # dev/test 兜底派生
         return hashlib.sha256(f"{settings.jwt_secret}:platform-config".encode()).digest()
-    return _decode_key(raw, env_name="SUPERDL_CONFIG_ENCRYPTION_KEY")
+    return decode_master_key(raw, label="SUPERDL_CONFIG_ENCRYPTION_KEY")
 
 
 def _previous_key() -> bytes | None:
@@ -45,7 +41,7 @@ def _previous_key() -> bytes | None:
     raw = get_settings().config_encryption_key_previous
     if not raw:
         return None
-    return _decode_key(raw, env_name="SUPERDL_CONFIG_ENCRYPTION_KEY_PREVIOUS")
+    return decode_master_key(raw, label="SUPERDL_CONFIG_ENCRYPTION_KEY_PREVIOUS")
 
 
 def _kid_of(key: bytes) -> str:
@@ -55,10 +51,6 @@ def _kid_of(key: bytes) -> str:
 
 def _derive(key: bytes, info: bytes) -> bytes:
     return HKDF(algorithm=hashes.SHA256(), length=32, salt=_KDF_SALT, info=info).derive(key)
-
-
-def is_encrypted(value: str) -> bool:
-    return value.startswith(_PREFIX_V2)
 
 
 def encrypt_str(plaintext: str, *, aad: str) -> str:
@@ -91,13 +83,9 @@ def _hmac_hex(mac_key: bytes, domain_msg: str) -> str:
 
 
 def _mac_candidates() -> list[bytes]:
-    """摘要用钥读候选:当前世代在前,轮换窗口内追加 previous 派生;按值去重。"""
-    out: list[bytes] = []
-    for master in dict.fromkeys(k for k in (_active_key(), _previous_key()) if k is not None):
-        mac_key = _derive(master, _MAC_INFO)
-        if mac_key not in out:
-            out.append(mac_key)
-    return out
+    """摘要用钥读候选:当前世代在前,轮换窗口内追加 previous 派生(主密钥不同则派生必不同)。"""
+    masters = dict.fromkeys(k for k in (_active_key(), _previous_key()) if k is not None)
+    return [_derive(master, _MAC_INFO) for master in masters]
 
 
 def _hmac_candidates(domain_msg: str) -> list[str]:

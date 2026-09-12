@@ -70,8 +70,7 @@
 | refresh 重放宽限 | 同 jti 10s 内视为并发重试 | `account/service.py` |
 | 管理端会话 | 续期宽限 15min,单次会话最长 12h | `adminapi/auth_service.py` |
 | TOTP 绑定票 / 二要素票 | 10min / 5min;恢复码 10 枚一次性 | 同上 |
-| 管理员口令 | ≥12 字符,≤72 字节 | 同上 |
-| 用户密码 | ≤72 字节(bcrypt 上限) | `account/schemas.py` |
+| 口令(用户密码 / 管理员口令,注册 / 改密 / 重置) | ≥12 字符,≤72 字节(bcrypt 上限),不合格 422 | `core/security.py` `PasswordStr`,两端 schema 共用 |
 | 短信验证码 | 有效 300s;失败 5 次作废;同号重发 60s 起 ×2 递增、封顶 480s | env `sms_code_ttl_seconds` 等,`account/service.py` |
 
 ## 应用层限流

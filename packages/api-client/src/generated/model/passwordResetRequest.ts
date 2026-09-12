@@ -11,7 +11,7 @@
 export interface PasswordResetRequest {
   /**
      * @minLength 12
-     * @maxLength 64
+     * @maxLength 128
      */
   new_password: string;
   /**

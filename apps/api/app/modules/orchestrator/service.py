@@ -372,7 +372,7 @@ async def _soft_admit_capacity(
     )
     if matching_free is None:
         return
-    sellable -= await _reserved_slots(session, sku)
+    sellable -= (await _reserved_slots_by_sku(session, [sku.id])).get(sku.id, 0)
     sellable += freeing_slots
     # GPU 实例按卡数占容量,CPU 实例占 1
     needed = gpu_count if gpu_count > 0 else 1
@@ -434,11 +434,6 @@ async def _reserved_slots_by_sku(session: AsyncSession, sku_ids: list[int]) -> d
         if instance_id in reserved_ids:
             out[sku_id] = out.get(sku_id, 0) + (gpus if gpus > 0 else 1)
     return out
-
-
-async def _reserved_slots(session: AsyncSession, sku: "Sku") -> int:
-    """单条 SKU 的包周期预留槽位(创建软准入用)。口径见 _reserved_slots_by_sku。"""
-    return (await _reserved_slots_by_sku(session, [sku.id])).get(sku.id, 0)
 
 
 async def create_instance_row(

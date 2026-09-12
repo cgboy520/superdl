@@ -6058,7 +6058,7 @@
         "description": "设置/修改/找回密码:凭手机号 + 验证码,不需要旧密码。",
         "properties": {
           "new_password": {
-            "maxLength": 64,
+            "maxLength": 128,
             "minLength": 12,
             "title": "New Password",
             "type": "string"
@@ -7052,7 +7052,7 @@
           "password": {
             "anyOf": [
               {
-                "maxLength": 64,
+                "maxLength": 128,
                 "minLength": 12,
                 "type": "string"
               },

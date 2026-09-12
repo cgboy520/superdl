@@ -1188,7 +1188,6 @@ export default interface Resources {
     "legal": {
       "docNotFound": "法务文档不存在或尚未发布",
       "draftExists": "该文档与语言已存在草稿,请先处理现有草稿",
-      "localeUnsupported": "语言 {{locale}} 不受支持",
       "publishedNotArchivable": "已发布版本不可直接归档",
       "versionNotDraft": "版本状态为 {{status}},仅草稿可执行该操作"
     },
@@ -1202,7 +1201,6 @@ export default interface Resources {
       "clusterNotConfigured": "集群接入参数未配置:请超管在「平台配置 · 集群接入」录入 RKE2 Server 地址与 join token",
       "clusterNotReady": "集群调度组件未就绪,暂时无法开机;平台正在自动检测恢复,请稍后重试",
       "clusterProbeFailed": "集群连接失败:{{error}}",
-      "decommissionDone": "节点已退役:已停止调度、作废该机全部注册令牌,集群侧 Node 对象将在后台删除。请另行轮换集群 join token 并吊销该机 kubelet 证书",
       "enrollTransition": "注册状态不允许 {{from}} → {{to}}",
       "hostnameMismatch": "主机名与登记不符,令牌已作废,请在管理端核对后重新生成",
       "nodeNotFound": "节点不在台账中:请确认节点名,或等待下一轮巡检(60 秒)收录后再试",
@@ -1242,7 +1240,6 @@ export default interface Resources {
       "renewReleased": "实例正在释放或已释放,无法续费",
       "restartNeedsRunning": "仅运行中的实例可以重启",
       "serviceInstanceLifecycle": "这台实例属于在线服务,请在「在线服务」里停止 / 启动 / 删除该服务",
-      "servicePortRequired": "请填写容器监听端口",
       "servicePortReserved": "端口 {{port}} 由平台占用(22 = SSH,8888 = JupyterLab),请把服务改到其他端口",
       "spotNotEnabled": "该规格暂未上竞价档,请选择按量或包周期",
       "sshKeyRequired": "请至少选择一个 SSH 公钥(实例仅支持密钥登录)",

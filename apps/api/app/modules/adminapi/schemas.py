@@ -4,6 +4,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from app.core.platform_config import PlatformConfigGroup, PlatformConfigKind
+from app.core.security import PasswordStr
 from app.modules.billing.schemas import LedgerEntryOut, RechargeOut
 
 
@@ -42,7 +43,7 @@ class AdminAccountOut(BaseModel):
 
 class AdminCreateRequest(BaseModel):
     username: str = Field(min_length=3, max_length=64, pattern=r"^[a-zA-Z0-9._-]+$")
-    password: str = Field(min_length=12, max_length=128)
+    password: PasswordStr
     role: AdminRole
     reason: str = Field(min_length=2, max_length=200)
 
@@ -54,13 +55,13 @@ class AdminUpdateRequest(BaseModel):
 
 
 class AdminResetPasswordRequest(BaseModel):
-    password: str = Field(min_length=12, max_length=128)
+    password: PasswordStr
     reason: str = Field(min_length=2, max_length=200)
 
 
 class AdminSelfPasswordRequest(BaseModel):
     current_password: str = Field(min_length=1, max_length=128)
-    new_password: str = Field(min_length=12, max_length=128)
+    new_password: PasswordStr
 
 
 class MfaChallengeOut(BaseModel):

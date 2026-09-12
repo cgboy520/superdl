@@ -34,7 +34,7 @@
 - refresh token 只走 HttpOnly Cookie:prod 名 `__Host-superdl_refresh`(Secure + `path=/` + 无 Domain),非 prod `superdl_refresh`。
 - `users.token_version` 是撤销闸;冻结用户同步递增。所有 `token_version` 读-改-写(改密/冻结/refresh 重放撤销/logout-all)带行锁(`with_for_update`)。
 - 登录限流只计失败,四层桶:`user-login:{ip}:{phone}` 与 `user-login-acct:{phone}` 成功即清零,`user-login-ip:{ip}` 与 `user-login-acct-daily:{phone}` 不清零;注册、找回密码、实名核验与发码各有桶。计数落 PG(见 [security.md](./security.md)),限额见 [limits.md](./limits.md)。
-- 密码按 UTF-8 字节数校验(bcrypt 上限 72 字节);管理端口令同标。
+- 密码规则只有一处 `core/security.PasswordStr`(≥12 字符、UTF-8 ≤72 字节,bcrypt 上限),用户端与管理端请求体共用,不合格 422。
 - 验证码失败计次 `attempts` 达上限即作废(置 `used_at`)。同 phone 连续未消费的第 N 条发码间隔 `SUPERDL_SMS_SEND_INTERVAL_SECONDS` × 2^(N-1)(指数封顶 3),报 `SMS_TOO_FREQUENT`;手机号日配额按「验证码被消费」计。
 - 短信发送失败必须作废已落库的验证码并返 502。
 - 公钥须为 ssh-ed25519 / ssh-rsa / ecdsa-*;唯一性按 (user_id, fingerprint),重复报 `SSH_KEY_DUPLICATE`,非法报 `SSH_KEY_INVALID`;删除为硬删除。

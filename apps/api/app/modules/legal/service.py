@@ -104,13 +104,12 @@ async def admin_overview(session: AsyncSession) -> list[LegalDocCellOut]:
     grid = {(k, loc) for k in VALID_DOC_KEYS for loc in SUPPORTED_LOCALES} | pairs
     return [
         LegalDocCellOut(
-            doc_key=doc_key,
-            locale=locale,
+            doc_key=key[0],
+            locale=key[1],
             published=_brief(published[key]) if key in published else None,
             draft=_brief(drafts[key]) if key in drafts else None,
         )
         for key in sorted(grid)
-        for doc_key, locale in (key,)
     ]
 
 

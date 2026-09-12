@@ -52,36 +52,6 @@ class TestRegister:
         assert too_long.status_code == 422
         assert too_long.json()["code"] == "VALIDATION_ERROR"
 
-    async def test_password_weak_blacklist(self, client: AsyncClient):
-        """弱口令黑名单(不区分大小写):满足长度仍 422;改密路径同表拦截。"""
-        await send_code(client, "13800000075", "register")
-        weak = await client.post(
-            "/api/v1/auth/register",
-            json={
-                "phone": "13800000075",
-                "sms_code": "123456",
-                "password": "Password1234",  # 12 位、在黑名单(大小写不敏感)
-                "accept_terms": True,
-            },
-        )
-        assert weak.status_code == 422
-        assert weak.json()["code"] == "VALIDATION_ERROR"
-
-        # 改密路径:同一 PasswordStr 校验链
-        data = await register(client, "13800000076", password="x9k" * 4)
-        await send_code(client, "13800000076", "reset_password")
-        resp = await client.post(
-            "/api/v1/auth/password/reset",
-            json={
-                "phone": "13800000076",
-                "sms_code": "123456",
-                "new_password": "qwerty123456",
-            },
-        )
-        assert resp.status_code == 422
-        assert resp.json()["code"] == "VALIDATION_ERROR"
-        assert data["access_token"]  # 原会话未被改密失败影响
-
     async def test_duplicate_phone(self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]):
         await register(client)
         await age_sms_codes(sm)

@@ -25,7 +25,6 @@ from app.core.platform_config import get_runtime_config
 from app.core.ratelimit import check_rate_limit, ensure_not_rate_limited
 from app.core.security import (
     PASSWORD_MAX_BYTES,
-    check_password_bytes,
     create_token,
     decode_token,
     dummy_password_hash,
@@ -86,14 +85,6 @@ def ensure_reveal_allowed(*, role: str, reason: str | None) -> str:
             detail={"field": "reason", "constraint": "required_when_reveal"},
         )
     return normalized
-
-
-def _check_password_bytes(password: str) -> None:
-    """哈希前按字节数拦截超长口令(bcrypt 5.x 限 72 字节)。"""
-    try:
-        check_password_bytes(password)
-    except ValueError:
-        raise AppError(ErrorCode.VALIDATION_ERROR, key="common.validation") from None
 
 
 def _login_buckets(client_ip: str | None, username: str) -> list[LoginBucket]:
@@ -408,7 +399,6 @@ async def reset_totp(session: AsyncSession, actor: AdminUser, target_id: int) ->
 
 
 async def create_admin(session: AsyncSession, username: str, password: str, role: str) -> AdminUser:
-    _check_password_bytes(password)
     admin = AdminUser(username=username, password_hash=await hash_password(password), role=role)
     session.add(admin)
     try:
@@ -487,7 +477,6 @@ async def update_admin(
 
 async def reset_admin_password(session: AsyncSession, admin_id: int, password: str) -> AdminUser:
     admin = await _get_admin(session, admin_id)
-    _check_password_bytes(password)
     admin.password_hash = await hash_password(password)
     admin.token_version += 1  # 改密即踢掉全部在外会话
     await session.commit()
@@ -502,7 +491,6 @@ async def change_own_password(
     admin = await _get_admin(session, admin_id)
     if not await verify_password(current_password, admin.password_hash):
         raise AppError(ErrorCode.LOGIN_FAILED, key="adminapi.loginFailed")
-    _check_password_bytes(new_password)
     admin.password_hash = await hash_password(new_password)
     admin.token_version += 1
     await session.commit()

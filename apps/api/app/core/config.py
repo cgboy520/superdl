@@ -306,7 +306,7 @@ class Settings(BaseSettings):
         for name in ("config_encryption_key", "config_encryption_key_previous"):
             raw = getattr(self, name)
             if raw is not None:
-                self._check_master_key_format(name, raw)
+                decode_master_key(raw, label=name)  # urlsafe-base64 且解出 32 字节
         if (
             self.config_encryption_key
             and self.config_encryption_key_previous
@@ -317,11 +317,6 @@ class Settings(BaseSettings):
                 "相同等于没轮换(钥匙串里去重后仍是一把)"
             )
         return self
-
-    @staticmethod
-    def _check_master_key_format(name: str, raw: str) -> None:
-        """主密钥格式:urlsafe-base64 且解码后 32 字节。"""
-        decode_master_key(raw, label=name)
 
     def parsed_shared_tier_pools(self) -> tuple[str, ...]:
         """共享档允许池(逗号分隔,去空白去空项)。"""

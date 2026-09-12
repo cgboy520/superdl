@@ -1,48 +1,12 @@
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Literal
 
-from pydantic import AfterValidator, BaseModel, Field
+from pydantic import BaseModel, Field
 
 from app.core.regex import PHONE_RE
-from app.core.security import check_password_bytes
+from app.core.security import PasswordStr
 
 PhoneStr = Field(pattern=PHONE_RE, description="中国大陆手机号")
-
-
-def _within_bcrypt_limit(v: str) -> str:
-    # bcrypt 只认前 72 字节;max_length 按字符计,须再按字节数拦一道
-    check_password_bytes(v)
-    return v
-
-
-# 常见弱口令黑名单(不区分大小写),只收 ≥12 位的条目
-WEAK_PASSWORDS = frozenset(
-    {
-        "111111111111",
-        "123123123123",
-        "123456789012",
-        "012345678901",
-        "password1234",
-        "passw0rd1234",
-        "qwerty123456",
-        "qwertyuiop12",
-        "1q2w3e4r5t6y",
-        "admin1234567",
-        "root12345678",
-        "abc123456789",
-        "aa1234567890",
-    }
-)
-
-
-def _password_strength(v: str) -> str:
-    v = _within_bcrypt_limit(v)
-    if v.lower() in WEAK_PASSWORDS:
-        raise ValueError("密码过于常见(弱口令黑名单),请更换更强口令")
-    return v
-
-
-PasswordStr = Annotated[str, AfterValidator(_password_strength)]
 
 
 class SmsCodeRequest(BaseModel):
@@ -55,7 +19,7 @@ class SmsCodeRequest(BaseModel):
 class RegisterRequest(BaseModel):
     phone: str = PhoneStr
     sms_code: str = Field(min_length=4, max_length=8)
-    password: PasswordStr | None = Field(default=None, min_length=12, max_length=64)
+    password: PasswordStr | None = None
     accept_terms: bool = False  # 必须显式同意用户协议与隐私政策
 
 
@@ -70,7 +34,7 @@ class PasswordResetRequest(BaseModel):
 
     phone: str = PhoneStr
     sms_code: str = Field(min_length=4, max_length=8)
-    new_password: PasswordStr = Field(min_length=12, max_length=64)
+    new_password: PasswordStr
 
 
 class UserOut(BaseModel):

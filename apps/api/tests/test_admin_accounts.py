@@ -228,7 +228,7 @@ class TestAdminLoginLockout:
 
 
 class TestAdminPasswordByteLimit:
-    """多字节口令在服务层按字节拦 72 上限(400)。"""
+    """多字节口令在请求体层按字节拦 72 上限(422,与用户端 PasswordStr 同一校验)。"""
 
     async def test_create_admin_multibyte_password(self, client, sm):
         h = await admin_headers(sm, client)
@@ -237,7 +237,7 @@ class TestAdminPasswordByteLimit:
             json={"username": "ops-cn", "password": "汉" * 25, "role": "ops", "reason": "入职"},
             headers=h,
         )
-        assert too_long.status_code == 400
+        assert too_long.status_code == 422
         assert too_long.json()["code"] == "VALIDATION_ERROR"
         # 72 字节整(24 个汉字)可建可登录
         ok = await client.post(
@@ -256,7 +256,7 @@ class TestAdminPasswordByteLimit:
             json={"password": "汉" * 25, "reason": "轮换"},
             headers=h,
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 422
         assert resp.json()["code"] == "VALIDATION_ERROR"
 
     async def test_self_password_change_multibyte_limit(self, client, sm):
@@ -266,5 +266,5 @@ class TestAdminPasswordByteLimit:
             json={"current_password": "pass1234", "new_password": "汉" * 25},
             headers=h,
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 422
         assert resp.json()["code"] == "VALIDATION_ERROR"

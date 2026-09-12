@@ -4,11 +4,12 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from functools import cache
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import uuid4
 
 import bcrypt
 import jwt
+from pydantic import AfterValidator, Field
 
 from app.core.config import get_settings
 from app.core.errors import unauthorized
@@ -22,10 +23,17 @@ TokenType = Literal["access", "refresh", "mfa_setup", "mfa_ticket"]
 PASSWORD_MAX_BYTES = 72
 
 
-def check_password_bytes(plain: str) -> None:
-    """哈希前按字节数拦截超长口令。"""
+def check_password_bytes(plain: str) -> str:
+    """哈希前按字节数拦截超长口令(max_length 数的是字符,这里按字节再拦一道)。"""
     if len(plain.encode()) > PASSWORD_MAX_BYTES:
         raise ValueError("密码过长:UTF-8 编码后不得超过 72 字节")
+    return plain
+
+
+# 请求体里的新口令:≥12 字符、≤72 字节(bcrypt 上限);两端注册 / 改密 / 重置共用,校验失败即 422
+PasswordStr = Annotated[
+    str, Field(min_length=12, max_length=128), AfterValidator(check_password_bytes)
+]
 
 
 def hash_password_sync(plain: str) -> str:

@@ -1266,19 +1266,16 @@ class RealOrchestrator:
         """K8s 资源量(如 49192080Ki / 200Gi / 500M)转字节。无法解析返回 0。"""
         if not q:
             return 0
+        # 节点容量只见过二进制单位(memory 为 Ki,ephemeral-storage 为 Ki 或裸字节)与十进制 G/M
         units = {
             "Ki": 1024,
             "Mi": 1024**2,
             "Gi": 1024**3,
             "Ti": 1024**4,
-            "Pi": 1024**5,
-            "K": 1000,
-            "M": 1000**2,
             "G": 1000**3,
-            "T": 1000**4,
-            "P": 1000**5,
+            "M": 1000**2,
         }
-        # 长后缀优先("Ki" 先于 "K")
+        # 长后缀优先("Gi" 先于 "G")
         for suf in sorted(units, key=len, reverse=True):
             if q.endswith(suf):
                 try:
