@@ -1,4 +1,4 @@
-/** 三条服务路由的 URL 状态往返:非法值(含旧链接的 ?tab=service)必须剥离回默认。 */
+/** 三条服务路由的 URL 状态往返:非法值必须剥离回默认(URL 不做旧名兼容)。 */
 import { describe, expect, it } from "vitest";
 
 import { servicesValidateSearch } from "./_console.services";
@@ -17,13 +17,13 @@ describe("servicesValidateSearch", () => {
 });
 
 describe("serviceDetailValidateSearch", () => {
-  it("六个合法 tab 保留;旧 Tab 名归一(revisions/events → history,bills → overview);?tab=service 与未知值回默认", () => {
+  it("六个合法 tab 保留;旧名(revisions/events/bills/service)与未知值一律回默认", () => {
     for (const tab of ["overview", "keys", "metrics", "logs", "history", "settings"]) {
       expect(serviceDetailValidateSearch({ tab })).toEqual({ tab });
     }
-    expect(serviceDetailValidateSearch({ tab: "revisions" })).toEqual({ tab: "history" });
-    expect(serviceDetailValidateSearch({ tab: "events" })).toEqual({ tab: "history" });
-    expect(serviceDetailValidateSearch({ tab: "bills" })).toEqual({ tab: "overview" });
+    expect(serviceDetailValidateSearch({ tab: "revisions" })).toEqual({});
+    expect(serviceDetailValidateSearch({ tab: "events" })).toEqual({});
+    expect(serviceDetailValidateSearch({ tab: "bills" })).toEqual({});
     expect(serviceDetailValidateSearch({ tab: "service" })).toEqual({});
     expect(serviceDetailValidateSearch({ tab: "xyz" })).toEqual({});
   });

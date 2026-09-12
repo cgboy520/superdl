@@ -35,16 +35,11 @@ import { requireAuth } from "../lib/guard";
 export const SERVICE_DETAIL_TABS = ["overview", "keys", "metrics", "logs", "history", "settings"] as const;
 export type ServiceDetailTab = (typeof SERVICE_DETAIL_TABS)[number];
 
-/** 旧 Tab 名映射(revisions / events → history,bills → overview) */
-const LEGACY_TABS: Record<string, ServiceDetailTab> = { revisions: "history", events: "history", bills: "overview" };
-
-/** tab 白名单:旧名归一,非法值(含更早的 ?tab=service)回默认 Tab。 */
+/** tab 白名单:非法值回默认 Tab(URL 不做旧名兼容,见 docs/decisions.md)。 */
 export function serviceDetailValidateSearch(search: Record<string, unknown>): { tab?: ServiceDetailTab } {
   const tab = search.tab;
   if (typeof tab !== "string") return {};
-  if ((SERVICE_DETAIL_TABS as readonly string[]).includes(tab)) return { tab: tab as ServiceDetailTab };
-  const legacy = LEGACY_TABS[tab];
-  return legacy ? { tab: legacy } : {};
+  return (SERVICE_DETAIL_TABS as readonly string[]).includes(tab) ? { tab: tab as ServiceDetailTab } : {};
 }
 
 export const Route = createFileRoute("/_console/services_/$slug")({
