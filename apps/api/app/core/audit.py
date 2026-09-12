@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import Request
-from sqlalchemy import String, func, text
+from sqlalchemy import Index, String, func, text
 from sqlalchemy.dialects.postgresql import INET, JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
@@ -65,6 +65,8 @@ USER_AGENT_MAX_LENGTH = 256
 
 class AuditLog(Base):
     __tablename__ = "audit_log"
+    # 审计按操作人下钻(actor_id, 按 id 倒序翻页)
+    __table_args__ = (Index("ix_audit_log_actor_id_id", "actor_id", "id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     actor_type: Mapped[str] = mapped_column(String(16))  # user / admin / system / anonymous

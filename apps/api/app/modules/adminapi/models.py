@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, Numeric, String, UniqueConstraint, func
+from sqlalchemy import BigInteger, CheckConstraint, Numeric, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -37,6 +37,12 @@ class AdminAdjustment(Base):
     __table_args__ = (
         UniqueConstraint(
             "created_by", "user_id", "idempotency_key", name="uq_admin_adjustments_idem_scope"
+        ),
+        CheckConstraint("amount <> 0", name="amount_nonzero"),
+        CheckConstraint("status IN ('pending', 'approved', 'rejected')", name="status"),
+        # 双人复核:复核人不得是发起人
+        CheckConstraint(
+            "reviewed_by IS NULL OR reviewed_by <> created_by", name="reviewer_not_creator"
         ),
     )
 

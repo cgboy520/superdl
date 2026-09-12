@@ -3,7 +3,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, String, func
+from sqlalchemy import CheckConstraint, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -17,6 +17,7 @@ class Service(Base):
     __table_args__ = (
         CheckConstraint("protocol IN ('http')", name="protocol"),
         CheckConstraint("desired_state IN ('running', 'stopped')", name="desired_state"),
+        Index("ix_services_user_id_id", "user_id", "id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

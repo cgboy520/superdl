@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import String, Text, UniqueConstraint, func
+from sqlalchemy import CheckConstraint, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -78,6 +78,7 @@ class ClusterStatus(Base):
     """集群能力缓存(单行 id=1):巡检探测落库,门禁与集群页只读;probed_at 超 10min 视为未知。"""
 
     __tablename__ = "cluster_status"
+    __table_args__ = (CheckConstraint("id = 1", name="singleton"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)  # 恒为 1
     api_reachable: Mapped[bool] = mapped_column(default=False)

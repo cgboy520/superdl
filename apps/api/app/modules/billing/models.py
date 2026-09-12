@@ -37,8 +37,17 @@ class BalanceLedger(Base):
     """追加式资金流水,对账基准。amount 带符号;balance_after 为扣/入账后的快照。"""
 
     __tablename__ = "balance_ledger"
-    # amount <> 0;不加 balance >= 0(允许透支)
-    __table_args__ = (CheckConstraint("amount <> 0", name="amount_nonzero"),)
+    # amount <> 0;不加 balance >= 0(允许透支)。ref_type 白名单枚举全部入账来源
+    __table_args__ = (
+        CheckConstraint("amount <> 0", name="amount_nonzero"),
+        CheckConstraint(
+            "ref_type IS NULL OR ref_type IN"
+            " ('bill_hourly', 'bill_daily_disk', 'order', 'adjustment', 'refund_request',"
+            " 'subscription')",
+            name="ref_type",
+        ),
+        Index("ix_balance_ledger_user_id_id", "user_id", "id"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     user_id: Mapped[int] = mapped_column(index=True)
@@ -61,6 +70,9 @@ class BillHourly(Base):
         # 单个自然小时窗口最多 3600 秒(兜住旁路写入)
         CheckConstraint("seconds_used >= 0 AND seconds_used <= 3600", name="seconds_range"),
         CheckConstraint("amount >= 0", name="amount_nonneg"),
+        # 用户账单页按 (user_id, hour_start) 翻页;列表游标翻页按 (user_id, id)
+        Index("ix_bills_hourly_user_hour", "user_id", "hour_start"),
+        Index("ix_bills_hourly_user_id_id", "user_id", "id"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -84,6 +96,8 @@ class BillDailyDisk(Base):
         UniqueConstraint("disk_id", "day"),
         CheckConstraint("amount >= 0", name="amount_nonneg"),
         CheckConstraint("size_gb >= 0", name="size_nonneg"),
+        # 用户盘账单页按 (user_id, day) 翻页
+        Index("ix_bills_daily_disk_user_day", "user_id", "day"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -150,6 +164,7 @@ class Order(Base):
         # 人工补单幂等键 DB 兜底
         UniqueConstraint("backfill_idempotency_key"),
         CheckConstraint("amount > 0", name="amount_positive"),
+        CheckConstraint("status IN ('pending', 'paid', 'failed', 'closed')", name="status"),
         CheckConstraint(
             "channel_reversal_action IS NULL "
             "OR channel_reversal_action IN ('release', 'chargeback')",

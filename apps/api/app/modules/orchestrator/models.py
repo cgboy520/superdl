@@ -24,6 +24,8 @@ class Instance(Base):
     __tablename__ = "instances"
     __table_args__ = (
         UniqueConstraint("user_id", "idempotency_key"),
+        # 租户列表页 WHERE user_id = ? ORDER BY id DESC 游标翻页:等值列 + 排序列成对建索引
+        Index("ix_instances_user_id_id", "user_id", "id"),
         # 状态枚举兜底;合法迁移见 statemachine.TRANSITIONS。约束名由 naming convention 补前缀
         CheckConstraint(
             "status IN ('creating', 'running', 'stopping', 'stopped', 'starting', 'frozen',"
@@ -106,6 +108,7 @@ class InstanceEvent(Base):
     """状态迁移流水:计费主依据 + 用户时间线,追加式。"""
 
     __tablename__ = "instance_events"
+    __table_args__ = (Index("ix_instance_events_instance_id_id", "instance_id", "id"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     instance_id: Mapped[int] = mapped_column(index=True)

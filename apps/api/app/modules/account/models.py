@@ -11,6 +11,10 @@ DELETION_COOLDOWN = timedelta(days=7)
 
 class User(Base):
     __tablename__ = "users"
+    # 冻结/停用小众状态的反查(冻结租户巡检等);active 是大头不入索引
+    __table_args__ = (
+        Index("ix_users_status_not_active", "status", postgresql_where=text("status <> 'active'")),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     # 注销匿名化后改写为 del:{id}:{随机 16 hex}

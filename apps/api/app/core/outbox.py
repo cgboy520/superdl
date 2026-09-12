@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from typing import Any, Literal, cast
 
 import structlog
-from sqlalchemy import CursorResult, String, Text, func, select, update
+from sqlalchemy import CheckConstraint, CursorResult, Index, String, Text, func, select, update
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Mapped, mapped_column
@@ -68,6 +68,13 @@ def backoff_delay(policy: RetryPolicy, attempt: int) -> timedelta:
 
 class OutboxTask(Base):
     __tablename__ = "outbox_tasks"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'running', 'done', 'dead', 'discarded')", name="status"
+        ),
+        # 领取查询 ORDER BY next_retry_at, id
+        Index("ix_outbox_tasks_status_next_retry_at_id", "status", "next_retry_at", "id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     type: Mapped[str] = mapped_column(String(64), index=True)
