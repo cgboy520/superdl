@@ -105,6 +105,12 @@ def enrollment_commands(token: str) -> tuple[str, str]:
     return curl_cmd, wget_cmd
 
 
+def pool_matches(enrolled_pool: str, observed_pool: str | None) -> bool:
+    """节点自声明的池标签是否与注册登记一致(登记是事实源);未打标 / unknown 一律不算一致。
+    入网对账(joined 判据)与规格巡检(池标签纠偏)共用。"""
+    return bool(observed_pool) and observed_pool != "unknown" and observed_pool == enrolled_pool
+
+
 async def require_cluster_config(session: AsyncSession) -> RuntimeConfig:
     """创建注册令牌的前置:cluster 组必须已配置,否则 409。"""
     cfg = await get_runtime_config(session)

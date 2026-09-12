@@ -10,7 +10,7 @@ from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.timeutil import now_utc
 from app.modules.nodes.models import NodeEnrollment
-from app.modules.nodes.service import transition_enrollment
+from app.modules.nodes.service import pool_matches, transition_enrollment
 
 logger = get_logger(__name__)
 
@@ -48,7 +48,7 @@ async def reconcile_enrollments_once(sm: async_sessionmaker[AsyncSession]) -> di
                     continue
                 node = nodes.get(row.node_name or "")
                 if node is not None and node.status == "Ready":
-                    if node.pool_label == row.pool:
+                    if pool_matches(row.pool, node.pool_label):
                         # joined 即终态,令牌作废
                         transition_enrollment(row, "joined", phase="joined")
                         counts["joined"] += 1
