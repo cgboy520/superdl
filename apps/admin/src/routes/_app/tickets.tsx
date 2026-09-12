@@ -33,6 +33,7 @@ import { useTranslation } from "react-i18next";
 
 import type { AdminTicketOut } from "@superdl/api-client";
 import {
+  adminKeys,
   isApiError,
   useReplyTicket,
   useTicketDetail,
@@ -97,8 +98,8 @@ function TicketDrawer({
   const updateStatus = useUpdateTicketStatus();
   const confirm = useConfirm();
   const refresh = () => {
-    void qc.invalidateQueries({ queryKey: ["admin", "tickets"] });
-    void qc.invalidateQueries({ queryKey: ["admin", "ticket", ticketId] });
+    void qc.invalidateQueries({ queryKey: adminKeys.tickets.all });
+    void qc.invalidateQueries({ queryKey: adminKeys.tickets.detail(ticketId) });
   };
 
   const ticket = detail.data;

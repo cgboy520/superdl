@@ -8,7 +8,7 @@ import { App, Badge, Button, Checkbox, List, Select, Space, Tooltip, Typography 
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { type AlertRow, useAckAlert, useAlerts } from "../../api";
+import { adminKeys, type AlertRow, useAckAlert, useAlerts } from "../../api";
 import { BulkBar, runBulk } from "../../components/BulkBar";
 import { alertLink, SEVERITY_LABEL_KEY, severityColor, useAckAlertWithFeedback } from "../../lib/alertLink";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
@@ -59,7 +59,7 @@ function AlertsPage() {
     try {
       const { ok, failed } = await runBulk(selected, (id) => ackRaw.mutateAsync({ alertId: id }));
       setSelected([]);
-      void qc.invalidateQueries({ queryKey: ["admin", "alerts"] });
+      void qc.invalidateQueries({ queryKey: adminKeys.alerts });
       if (failed > 0) message.warning(t("bulk.partial", { ok, failed }));
       else message.success(t("bulk.done", { count: ok }));
     } finally {

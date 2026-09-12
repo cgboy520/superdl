@@ -12,6 +12,7 @@
 - **私有仓库,不放 LICENSE。** 转公开或对外交付前先定许可证。
 - **release notes 不手维护。** `gh release create --generate-notes`,不设 CHANGELOG。
 - **orval 只生成 fetcher 与 model 类型,不生成 TanStack Query hooks。** `packages/api-client` 用 `client: "fetch"`;两端在 `apps/web/src/api/*.ts`、`apps/admin/src/api.ts` 用 useQuery/useMutation 包 fetcher。约束:`client` 保持 `"fetch"`,不加 `query` 块。
+- **前端查询键只有一份事实源,条件查询用 `skipToken`。** web 在 `apps/web/src/api/keys.ts`,admin 在 `apps/admin/src/api.ts` 的 `adminKeys`;失效与定义引用同一工厂,禁止在组件里手拼键字面量。约束:可空入参(id 为 null 不取数)一律 `queryFn: x === null ? skipToken : () => fetch(x)`,禁止 `as` 断言配 `enabled` 的组合(类型系统管不到运行时守卫);错误类型经 `Register.defaultError` 全局钉成 `ApiError`(web `api/register.d.ts`),不再逐 hook 手写错误泛型。
 - **UI 占位项的去留有判据。** 只有「已排期、按当前设计确定要做」的能力留 disabled 占位并注「即将上线」。约束:变动时 `docs/ui-ux-spec.md` 占位清单与 `docs/reference/web.md` 同提交更新。
 
 ## 界面

@@ -11,7 +11,7 @@ import { formatDateTime, layout, POLL, space, useAutoRefresh } from "@superdl/ui
 import { PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { useApiErrorText } from "@superdl/ui";
 
-import { type NodeRow, isApiError, useNodeMetrics, useCordonNode, useNodes, usePortPool } from "../../api";
+import { adminKeys, type NodeRow, isApiError, useNodeMetrics, useCordonNode, useNodes, usePortPool } from "../../api";
 import { BulkBar, runBulk } from "../../components/BulkBar";
 import { ReasonAction } from "../../components/ReasonAction";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
@@ -92,9 +92,9 @@ function NodesPage() {
             action: v.on ? t("nodes.actionCordon") : t("nodes.actionUncordon"),
           }),
         );
-        void qc.invalidateQueries({ queryKey: ["admin", "nodes"] });
+        void qc.invalidateQueries({ queryKey: adminKeys.nodes });
         if ((r as { queued?: boolean }).queued) {
-          cordonTimer.current = setTimeout(() => void qc.invalidateQueries({ queryKey: ["admin", "nodes"] }), 3_000);
+          cordonTimer.current = setTimeout(() => void qc.invalidateQueries({ queryKey: adminKeys.nodes }), 3_000);
         }
       },
       onError: (e, v) =>
@@ -115,7 +115,7 @@ function NodesPage() {
       cordon.mutateAsync({ nodeName: name, on, data: { reason } }),
     );
     setBulkSelected([]);
-    void qc.invalidateQueries({ queryKey: ["admin", "nodes"] });
+    void qc.invalidateQueries({ queryKey: adminKeys.nodes });
     if (failed > 0) message.warning(t("bulk.partial", { ok, failed }));
     return t("bulk.done", { count: ok });
   };

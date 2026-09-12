@@ -1,6 +1,7 @@
 /** 在线服务:全局服务表(不限租户),检索与「含已删除」入 URL;处置只有强制停止。 */
 
 import { PageContainer } from "@superdl/ui/components";
+import { adminKeys } from "../../api";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Button, Card, Checkbox, Input, Space } from "antd";
 import { useState } from "react";
@@ -65,7 +66,7 @@ function ServicesPage() {
           >
             {t("services.includeReleased")}
           </Checkbox>
-          <Button onClick={() => void qc.invalidateQueries({ queryKey: ["admin", "services"] })}>
+          <Button onClick={() => void qc.invalidateQueries({ queryKey: adminKeys.services })}>
             {t("common.refresh")}
           </Button>
         </Space>

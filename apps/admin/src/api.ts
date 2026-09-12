@@ -174,7 +174,14 @@ import type {
   TenantFreezeRequest,
   TenantQuotaUpdate,
 } from "@superdl/api-client";
-import { skipToken, useInfiniteQuery, useMutation, useQuery, type UseMutationOptions } from "@tanstack/react-query";
+import {
+  skipToken,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  type SkipToken,
+  type UseMutationOptions,
+} from "@tanstack/react-query";
 
 import { downloadCsvChecked, POLL } from "@superdl/ui";
 
@@ -237,38 +244,60 @@ interface CursorPage {
   next_cursor?: string | null;
 }
 
-/** 游标分页 useInfiniteQuery 骨架。 */
+/** 跨文件共享的查询键前缀:定义在本文件下方各 hook,失效在页面/lib,两边只认这里。 */
+export const adminKeys = {
+  alerts: ["admin", "alerts"],
+  tickets: { all: ["admin", "tickets"], detail: (id: number | null) => ["admin", "ticket", id] },
+  services: ["admin", "services"],
+  nodes: ["admin", "nodes"],
+};
+
+/** 查询 hook 骨架:结果附带 queryKey 供调用方失效/刷新;条件查询的 queryFn 传 skipToken(禁止断言配 enabled)。 */
+function useKeyedQuery<T>(
+  queryKey: readonly unknown[],
+  queryFn: (() => Promise<T>) | SkipToken,
+  opts?: {
+    enabled?: boolean;
+    refetchInterval?: number | false;
+    retry?: number | boolean;
+    staleTime?: number;
+    refetchOnWindowFocus?: boolean;
+  },
+) {
+  const q = useQuery<T>({ queryKey, queryFn, ...opts });
+  return { ...q, queryKey };
+}
+
+/** 游标分页 useInfiniteQuery 骨架;fetcher 传 null = 条件不满足不取数(skipToken)。结果附带 queryKey。 */
 function useCursorPages<TPage extends CursorPage, P extends CursorParams>(
   key: readonly unknown[],
-  fetcher: (params?: P) => Promise<TPage>,
+  fetcher: ((params?: P) => Promise<TPage>) | null,
   params: Omit<P, "cursor" | "limit"> | undefined,
   opts?: { enabled?: boolean; limit?: number; refetchOnWindowFocus?: boolean },
 ) {
   const limit = opts?.limit ?? 50;
-  return useInfiniteQuery({
+  const q = useInfiniteQuery({
     queryKey: key,
     enabled: opts?.enabled ?? true,
     refetchOnWindowFocus: opts?.refetchOnWindowFocus,
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) => fetcher({ ...params, limit, ...(pageParam ? { cursor: pageParam } : {}) } as P),
+    queryFn:
+      fetcher === null
+        ? skipToken
+        : ({ pageParam }) => fetcher({ ...params, limit, ...(pageParam ? { cursor: pageParam } : {}) } as P),
     getNextPageParam: (last) => last.next_cursor ?? undefined,
   });
+  return { ...q, queryKey: key };
 }
 
 export function useAdminSkus() {
-  const queryKey = ["admin", "skus"] as const;
-  const q = useQuery({ queryKey, queryFn: () => adminListSkusApiAdminV1SkusGet() });
-  return { ...q, queryKey };
+  return useKeyedQuery(["admin", "skus"], () => adminListSkusApiAdminV1SkusGet());
 }
 
 export function useClusterStatus() {
-  const queryKey = ["admin", "cluster-status"] as const;
-  const q = useQuery({
-    queryKey,
-    queryFn: () => adminClusterStatusApiAdminV1ClusterStatusGet(),
+  return useKeyedQuery(["admin", "cluster-status"], () => adminClusterStatusApiAdminV1ClusterStatusGet(), {
     refetchInterval: POLL.steady,
   });
-  return { ...q, queryKey };
 }
 
 export const useTestClusterConnection = adminMutation(() =>
@@ -276,13 +305,9 @@ export const useTestClusterConnection = adminMutation(() =>
 );
 
 export function useGpuModelAggregates(options?: { enabled?: boolean }) {
-  const queryKey = ["admin", "gpu-models"] as const;
-  const q = useQuery({
-    queryKey,
-    queryFn: () => adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet(),
-    enabled: options?.enabled ?? true,
+  return useKeyedQuery(["admin", "gpu-models"], () => adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet(), {
+    enabled: options?.enabled,
   });
-  return { ...q, queryKey };
 }
 
 export function useSkuCapacityPreview(params: SkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetParams | null) {
@@ -298,9 +323,12 @@ export function useAdminInstances(
   params?: Omit<AdminListInstancesApiAdminV1InstancesGetParams, "cursor" | "limit">,
   options?: { enabled?: boolean; limit?: number },
 ) {
-  const queryKey = ["admin", "instances", params, options?.limit ?? 50] as const;
-  const q = useCursorPages(queryKey, adminListInstancesApiAdminV1InstancesGet, params, options);
-  return { ...q, queryKey };
+  return useCursorPages(
+    ["admin", "instances", params, options?.limit ?? 50],
+    adminListInstancesApiAdminV1InstancesGet,
+    params,
+    options,
+  );
 }
 
 /** 在线服务列表(不限租户);user_id 过滤时响应带 total。 */
@@ -308,53 +336,49 @@ export function useAdminServices(
   params?: Omit<AdminListServicesApiAdminV1ServicesGetParams, "cursor" | "limit">,
   options?: { enabled?: boolean; limit?: number },
 ) {
-  const queryKey = ["admin", "services", params, options?.limit ?? 50] as const;
-  const q = useCursorPages(queryKey, adminListServicesApiAdminV1ServicesGet, params, options);
-  return { ...q, queryKey };
+  return useCursorPages(
+    [...adminKeys.services, params, options?.limit ?? 50],
+    adminListServicesApiAdminV1ServicesGet,
+    params,
+    options,
+  );
 }
 
 /** 租户列表(游标分页)。q = 手机号(完整精确,短串后缀);纯数字另按 id 命中。 */
 export function useTenants(params?: Omit<AdminListTenantsApiAdminV1TenantsGetParams, "cursor" | "limit">) {
-  const queryKey = ["admin", "tenants", params] as const;
-  const q = useCursorPages(queryKey, adminListTenantsApiAdminV1TenantsGet, params, undefined);
-  return { ...q, queryKey };
+  return useCursorPages(["admin", "tenants", params], adminListTenantsApiAdminV1TenantsGet, params, undefined);
 }
 
 /** 租户资金流水(游标分页)。 */
 export function useTenantLedger(userId: number | null) {
-  const queryKey = ["admin", "tenant-ledger", userId] as const;
-  const q = useCursorPages(
-    queryKey,
-    (p?: AdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetParams) =>
-      adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet(userId as number, p),
+  return useCursorPages(
+    ["admin", "tenant-ledger", userId],
+    userId === null
+      ? null
+      : (p?: AdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetParams) =>
+          adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet(userId, p),
     undefined,
-    { enabled: userId !== null },
   );
-  return { ...q, queryKey };
 }
 
 /** 租户小时账单;instanceId 非空时按实例过滤。 */
 export function useTenantBills(userId: number | null, instanceId?: number | null) {
-  const queryKey = ["admin", "tenant-bills", userId, instanceId ?? null] as const;
-  const q = useCursorPages(
-    queryKey,
-    (p?: AdminTenantBillsApiAdminV1TenantsUserIdBillsGetParams) =>
-      adminTenantBillsApiAdminV1TenantsUserIdBillsGet(userId as number, p),
+  return useCursorPages(
+    ["admin", "tenant-bills", userId, instanceId ?? null],
+    userId === null
+      ? null
+      : (p?: AdminTenantBillsApiAdminV1TenantsUserIdBillsGetParams) =>
+          adminTenantBillsApiAdminV1TenantsUserIdBillsGet(userId, p),
     instanceId ? { instance_id: instanceId } : undefined,
-    { enabled: userId !== null },
   );
-  return { ...q, queryKey };
 }
 
 /** 租户配额覆盖 + 生效值(抽屉「配额」Tab)。 */
 export function useTenantQuota(userId: number | null) {
-  const queryKey = ["admin", "tenant-quota", userId] as const;
-  const q = useQuery({
-    queryKey,
-    enabled: userId !== null,
-    queryFn: () => adminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGet(userId as number),
-  });
-  return { ...q, queryKey };
+  return useKeyedQuery(
+    ["admin", "tenant-quota", userId],
+    userId === null ? skipToken : () => adminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGet(userId),
+  );
 }
 
 export const useSetTenantQuota = adminMutation((v: { userId: number; data: TenantQuotaUpdate }) =>
@@ -363,25 +387,20 @@ export const useSetTenantQuota = adminMutation((v: { userId: number; data: Tenan
 
 /** 实例事件时间线(不限租户,游标分页)。 */
 export function useInstanceEvents(uuid: string | null) {
-  const queryKey = ["admin", "instance-events", uuid] as const;
-  const q = useCursorPages(
-    queryKey,
-    (p?: AdminListInstanceEventsApiAdminV1InstancesUuidEventsGetParams) =>
-      adminListInstanceEventsApiAdminV1InstancesUuidEventsGet(uuid as string, p),
+  return useCursorPages(
+    ["admin", "instance-events", uuid],
+    uuid === null
+      ? null
+      : (p?: AdminListInstanceEventsApiAdminV1InstancesUuidEventsGetParams) =>
+          adminListInstanceEventsApiAdminV1InstancesUuidEventsGet(uuid, p),
     undefined,
-    { enabled: uuid !== null },
   );
-  return { ...q, queryKey };
 }
 
 export function useNodeMetrics(nodeName: string | null, range: string) {
   return useQuery({
     queryKey: ["admin", "node-metrics", nodeName, range],
-    queryFn: () =>
-      adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet(nodeName ?? "", {
-        range,
-      }),
-    enabled: Boolean(nodeName),
+    queryFn: !nodeName ? skipToken : () => adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet(nodeName, { range }),
     refetchInterval: POLL.steady,
     retry: 0,
   });
@@ -390,7 +409,7 @@ export function useNodeMetrics(nodeName: string | null, range: string) {
 /** 节点台账;轮询周期由页面给(可暂停),默认 POLL.steady。 */
 export function useNodes(options?: { refetchInterval?: number | false }) {
   return useQuery({
-    queryKey: ["admin", "nodes"],
+    queryKey: adminKeys.nodes,
     queryFn: () => adminListNodesApiAdminV1NodesGet(),
     refetchInterval: options?.refetchInterval ?? POLL.steady,
   });
@@ -405,13 +424,9 @@ export function usePortPool() {
 }
 
 export function useAdminImages(options?: { refetchInterval?: number | false }) {
-  const queryKey = ["admin", "images"] as const;
-  const q = useQuery({
-    queryKey,
-    queryFn: () => adminListImagesApiAdminV1ImagesGet(),
+  return useKeyedQuery(["admin", "images"], () => adminListImagesApiAdminV1ImagesGet(), {
     refetchInterval: options?.refetchInterval,
   });
-  return { ...q, queryKey };
 }
 
 export function useImageNodes(imageId: number, options?: { refetchInterval?: number }) {
@@ -423,13 +438,9 @@ export function useImageNodes(imageId: number, options?: { refetchInterval?: num
 }
 
 export function useOversellReport() {
-  const queryKey = ["admin", "oversell"] as const;
-  const q = useQuery({
-    queryKey,
-    queryFn: () => oversellReportApiAdminV1ReportsOversellGet(),
+  return useKeyedQuery(["admin", "oversell"], () => oversellReportApiAdminV1ReportsOversellGet(), {
     refetchInterval: POLL.daily,
   });
-  return { ...q, queryKey };
 }
 
 export function useReconciliation(day: string) {
@@ -444,20 +455,16 @@ export function useAlerts(
   params?: AdminAlertsApiAdminV1AlertsGetParams,
   options?: { refetchInterval?: number | false; enabled?: boolean },
 ) {
-  const queryKey = ["admin", "alerts", params] as const;
-  const q = useQuery({
-    queryKey,
-    queryFn: () => adminAlertsApiAdminV1AlertsGet(params),
-    enabled: options?.enabled ?? true,
+  return useKeyedQuery([...adminKeys.alerts, params], () => adminAlertsApiAdminV1AlertsGet(params), {
+    enabled: options?.enabled,
     refetchInterval: options?.refetchInterval,
   });
-  return { ...q, queryKey };
 }
 
 /** 未确认告警数(顶栏铃铛角标)。 */
 export function useAlertUnreadCount(options?: { refetchInterval?: number }) {
   return useQuery({
-    queryKey: ["admin", "alerts", "unread-count"],
+    queryKey: [...adminKeys.alerts, "unread-count"],
     queryFn: () => adminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet(),
     refetchInterval: options?.refetchInterval,
   });
@@ -472,23 +479,22 @@ export function useOrders(
   params?: Omit<AdminListOrdersApiAdminV1OrdersGetParams, "cursor" | "limit">,
   options?: { enabled?: boolean },
 ) {
-  const queryKey = ["admin", "orders", params] as const;
-  const q = useCursorPages(queryKey, adminListOrdersApiAdminV1OrdersGet, params, options);
-  return { ...q, queryKey };
+  return useCursorPages(["admin", "orders", params], adminListOrdersApiAdminV1OrdersGet, params, options);
 }
 
 /** 调账单(游标分页):status/user_id/day 服务端过滤。 */
 export function useAdjustments(params?: Omit<AdminListAdjustmentsApiAdminV1AdjustmentsGetParams, "cursor" | "limit">) {
-  const queryKey = ["admin", "adjustments", params] as const;
-  const q = useCursorPages(queryKey, adminListAdjustmentsApiAdminV1AdjustmentsGet, params, undefined);
-  return { ...q, queryKey };
+  return useCursorPages(
+    ["admin", "adjustments", params],
+    adminListAdjustmentsApiAdminV1AdjustmentsGet,
+    params,
+    undefined,
+  );
 }
 
 /** 退款单列表(游标分页)。status 服务端过滤;day=YYYY-MM-DD(UTC 日)。 */
 export function useRefunds(params?: Omit<AdminListRefundsApiAdminV1RefundsGetParams, "cursor" | "limit">) {
-  const queryKey = ["admin", "refunds", params] as const;
-  const q = useCursorPages(queryKey, adminListRefundsApiAdminV1RefundsGet, params, undefined);
-  return { ...q, queryKey };
+  return useCursorPages(["admin", "refunds", params], adminListRefundsApiAdminV1RefundsGet, params, undefined);
 }
 
 export const useReviewRefund = adminMutation((v: { refundId: number; data: RefundReview }) =>
@@ -509,12 +515,7 @@ export const useCancelRefund = adminMutation((v: { refundId: number; data: Refun
 
 /** 发票申请列表(finance/admin)。status/period(YYYY-MM)服务端过滤;抬头与邮箱默认脱敏,reveal=true + reason 回明文(进 queryKey)。 */
 export function useInvoices(params?: AdminListInvoicesApiAdminV1InvoicesGetParams) {
-  const queryKey = ["admin", "invoices", params] as const;
-  const q = useQuery({
-    queryKey,
-    queryFn: () => adminListInvoicesApiAdminV1InvoicesGet(params),
-  });
-  return { ...q, queryKey };
+  return useKeyedQuery(["admin", "invoices", params], () => adminListInvoicesApiAdminV1InvoicesGet(params));
 }
 
 export const useIssueInvoice = adminMutation((v: { invoiceId: number; data: InvoiceIssue }) =>
@@ -529,11 +530,12 @@ export const useRejectInvoice = adminMutation((v: { invoiceId: number; data: Inv
 export function useSettlementGaps(
   params?: Omit<AdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetParams, "cursor" | "limit">,
 ) {
-  const queryKey = ["admin", "settlement-gaps", params] as const;
-  const q = useCursorPages(queryKey, adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet, params, {
-    refetchOnWindowFocus: true,
-  });
-  return { ...q, queryKey };
+  return useCursorPages(
+    ["admin", "settlement-gaps", params],
+    adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet,
+    params,
+    { refetchOnWindowFocus: true },
+  );
 }
 
 export const useReplaySettlementGap = adminMutation((v: { gapId: number }) =>
@@ -546,32 +548,27 @@ export const useResolveSettlementGap = adminMutation((v: { gapId: number; data: 
 
 /** 工单列表(游标分页):status/category 过滤,user_id/ticket_no 检索;不挂 refetchInterval。 */
 export function useTickets(params?: Omit<AdminListTicketsApiAdminV1TicketsGetParams, "cursor" | "limit">) {
-  const queryKey = ["admin", "tickets", params] as const;
-  const q = useCursorPages(queryKey, adminListTicketsApiAdminV1TicketsGet, params, {
+  return useCursorPages([...adminKeys.tickets.all, params], adminListTicketsApiAdminV1TicketsGet, params, {
     refetchOnWindowFocus: true,
   });
-  return { ...q, queryKey };
 }
 
 /** 待客服工单计数(60s 轮询)。 */
 export function useTicketPendingCount() {
-  const queryKey = ["admin", "tickets-count"] as const;
-  const q = useQuery({
-    queryKey,
-    queryFn: () => adminTicketsCountApiAdminV1TicketsCountGet({ status: "pending_staff" }),
-    refetchInterval: POLL.daily,
-  });
-  return { ...q, queryKey };
+  return useKeyedQuery(
+    ["admin", "tickets-count"],
+    () => adminTicketsCountApiAdminV1TicketsCountGet({ status: "pending_staff" }),
+    {
+      refetchInterval: POLL.daily,
+    },
+  );
 }
 
 /** 注销申请列表。status 服务端过滤;行内附执行前校验计数。 */
 export function useDeletionRequests(params?: AdminListDeletionRequestsApiAdminV1DeletionRequestsGetParams) {
-  const queryKey = ["admin", "deletion-requests", params] as const;
-  const q = useQuery({
-    queryKey,
-    queryFn: () => adminListDeletionRequestsApiAdminV1DeletionRequestsGet(params),
-  });
-  return { ...q, queryKey };
+  return useKeyedQuery(["admin", "deletion-requests", params], () =>
+    adminListDeletionRequestsApiAdminV1DeletionRequestsGet(params),
+  );
 }
 
 /** 执行注销(仅超管):校验不过 → 409,detail 含残留清单。 */
@@ -585,14 +582,11 @@ export const useRejectDeletion = adminMutation((v: { requestId: number; data: Ad
 
 /** 工单详情 + 消息流(开启时 15s 轮询)。 */
 export function useTicketDetail(ticketId: number | null) {
-  const queryKey = ["admin", "ticket", ticketId] as const;
-  const q = useQuery({
-    queryKey,
-    enabled: ticketId !== null,
-    refetchInterval: POLL.ticket,
-    queryFn: () => adminGetTicketApiAdminV1TicketsTicketIdGet(ticketId as number),
-  });
-  return { ...q, queryKey };
+  return useKeyedQuery(
+    adminKeys.tickets.detail(ticketId),
+    ticketId === null ? skipToken : () => adminGetTicketApiAdminV1TicketsTicketIdGet(ticketId),
+    { refetchInterval: POLL.ticket },
+  );
 }
 
 // 法务文档(读全角色,写仅 admin)
@@ -605,23 +599,17 @@ export type {
 
 /** 法务文档总览:doc_key × locale 状态格(当前 published + 最新 draft)。 */
 export function useLegalDocs() {
-  const queryKey = ["admin", "legal-docs"] as const;
-  const q = useQuery({ queryKey, queryFn: () => adminListLegalDocsApiAdminV1LegalDocsGet() });
-  return { ...q, queryKey };
+  return useKeyedQuery(["admin", "legal-docs"], () => adminListLegalDocsApiAdminV1LegalDocsGet());
 }
 
 /** 某 (doc_key, locale) 的版本历史(version 倒序)。 */
 export function useLegalDocVersions(docKey: string | null, locale: LegalLocale | null) {
-  const queryKey = ["admin", "legal-doc-versions", docKey, locale] as const;
-  const q = useQuery({
-    queryKey,
-    enabled: docKey !== null && locale !== null,
-    queryFn: () =>
-      adminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGet(docKey as string, {
-        locale: locale as LegalLocale,
-      }),
-  });
-  return { ...q, queryKey };
+  return useKeyedQuery(
+    ["admin", "legal-doc-versions", docKey, locale],
+    docKey === null || locale === null
+      ? skipToken
+      : () => adminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGet(docKey, { locale }),
+  );
 }
 
 export const useCreateLegalDocVersion = adminMutation((v: { docKey: string; data: LegalDocVersionCreate }) =>
@@ -708,13 +696,11 @@ export const useUpdateSku = adminMutation((v: { skuId: number; data: SkuUpdate; 
 );
 
 export function useEnrollments(options?: { active?: boolean; refetchInterval?: number }) {
-  const queryKey = ["admin", "node-enrollments", options?.active] as const;
-  const q = useQuery({
-    queryKey,
-    queryFn: () => adminListEnrollmentsApiAdminV1NodeEnrollmentsGet(options?.active ? { active: true } : undefined),
-    refetchInterval: options?.refetchInterval,
-  });
-  return { ...q, queryKey };
+  return useKeyedQuery(
+    ["admin", "node-enrollments", options?.active],
+    () => adminListEnrollmentsApiAdminV1NodeEnrollmentsGet(options?.active ? { active: true } : undefined),
+    { refetchInterval: options?.refetchInterval },
+  );
 }
 
 export const useCreateEnrollment = adminMutation((v: { data: EnrollmentCreate; idempotencyKey?: string }) =>
@@ -784,24 +770,16 @@ export const useReviewAdjustment = adminMutation((v: { adjustmentId: number; dat
 // 运营:死信重放 / 收入报表 / 公告
 
 export function useAnomalies() {
-  const queryKey = ["admin", "anomalies"] as const;
-  const q = useQuery({
-    queryKey,
-    queryFn: () => adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet(),
+  return useKeyedQuery(["admin", "anomalies"], () => adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet(), {
     refetchInterval: POLL.daily,
   });
-  return { ...q, queryKey };
 }
 
 export function useDeadTasks(options?: { enabled?: boolean }) {
-  const queryKey = ["admin", "outbox-dead"] as const;
-  const q = useQuery({
-    queryKey,
-    queryFn: () => adminListDeadTasksApiAdminV1OutboxDeadGet(),
-    enabled: options?.enabled ?? true,
+  return useKeyedQuery(["admin", "outbox-dead"], () => adminListDeadTasksApiAdminV1OutboxDeadGet(), {
+    enabled: options?.enabled,
     refetchInterval: POLL.daily,
   });
-  return { ...q, queryKey };
 }
 
 export function useRevenueReport() {
@@ -814,12 +792,7 @@ export function useRevenueReport() {
 }
 
 export function useAdminPolicies() {
-  const queryKey = ["admin", "policies"] as const;
-  const q = useQuery({
-    queryKey,
-    queryFn: () => adminGetPoliciesApiAdminV1PoliciesGet(),
-  });
-  return { ...q, queryKey };
+  return useKeyedQuery(["admin", "policies"], () => adminGetPoliciesApiAdminV1PoliciesGet());
 }
 
 export const useVerifyOrder = adminMutation((v: { orderNo: string }) =>
@@ -853,12 +826,7 @@ export const usePublishAnnouncement = adminMutation((v: { data: AnnouncementCrea
 
 /** 公告历史(含已撤回;固定截断 200)。 */
 export function useAnnouncements() {
-  const queryKey = ["admin", "announcements"] as const;
-  const q = useQuery({
-    queryKey,
-    queryFn: () => adminListAnnouncementsApiAdminV1AnnouncementsGet(),
-  });
-  return { ...q, queryKey };
+  return useKeyedQuery(["admin", "announcements"], () => adminListAnnouncementsApiAdminV1AnnouncementsGet());
 }
 
 export const useRevokeAnnouncement = adminMutation((v: { announcementId: number; data: AnnouncementRevoke }) =>
@@ -872,16 +840,12 @@ export const useUpdatePolicies = adminMutation((v: { data: PolicyUpdateRequest }
 // 平台配置(仅 admin 角色)
 
 export function usePlatformConfig(options?: { enabled?: boolean }) {
-  const queryKey = ["admin", "platform-config"] as const;
-  const q = useQuery({
-    queryKey,
-    queryFn: () => adminGetPlatformConfigApiAdminV1PlatformConfigGet(),
+  return useKeyedQuery(["admin", "platform-config"], () => adminGetPlatformConfigApiAdminV1PlatformConfigGet(), {
     // 非 admin 角色 403,调用方按角色传 enabled
-    enabled: options?.enabled ?? true,
+    enabled: options?.enabled,
     refetchOnWindowFocus: false,
     retry: false,
   });
-  return { ...q, queryKey };
 }
 
 export const useUpdatePlatformConfig = adminMutation((v: { data: PlatformConfigUpdateRequest }) =>
@@ -897,9 +861,7 @@ export const useTestSms = adminMutation((v: { data: SmsTestRequest }) =>
 // 管理员账号
 
 export function useAdminAccounts() {
-  const queryKey = ["admin", "admins"] as const;
-  const q = useQuery({ queryKey, queryFn: () => adminListAdminsApiAdminV1AdminsGet() });
-  return { ...q, queryKey };
+  return useKeyedQuery(["admin", "admins"], () => adminListAdminsApiAdminV1AdminsGet());
 }
 
 export const useCreateAdminAccount = adminMutation((v: { data: AdminCreateRequest }) =>
@@ -927,23 +889,18 @@ export function fetchAdminMe(): Promise<AdminOut> {
 
 /** 总览聚合(精确 COUNT,全角色可读)。 */
 export function useOverview() {
-  const queryKey = ["admin", "overview"] as const;
-  const q = useQuery({
-    queryKey,
-    queryFn: () => adminOverviewApiAdminV1OverviewGet(),
+  return useKeyedQuery(["admin", "overview"], () => adminOverviewApiAdminV1OverviewGet(), {
     refetchInterval: POLL.daily,
   });
-  return { ...q, queryKey };
 }
 
 /** 调账前置上下文:租户身份与资金现状;不存在 → 404。 */
 export function useAdjustContext(userId: number | null) {
   return useQuery({
     queryKey: ["admin", "adjust-context", userId],
-    enabled: userId !== null,
     retry: 0,
     staleTime: 30_000,
-    queryFn: () => adminAdjustContextApiAdminV1TenantsUserIdAdjustContextGet(userId as number),
+    queryFn: userId === null ? skipToken : () => adminAdjustContextApiAdminV1TenantsUserIdAdjustContextGet(userId),
   });
 }
 
@@ -951,9 +908,8 @@ export function useAdjustContext(userId: number | null) {
 export function useSkuImpact(skuId: number | null) {
   return useQuery({
     queryKey: ["admin", "sku-impact", skuId],
-    enabled: skuId !== null,
     staleTime: 30_000,
-    queryFn: () => adminSkuImpactApiAdminV1SkusSkuIdImpactGet(skuId as number),
+    queryFn: skuId === null ? skipToken : () => adminSkuImpactApiAdminV1SkusSkuIdImpactGet(skuId),
   });
 }
 

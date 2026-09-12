@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 
 import { adminColors, useApiErrorText } from "@superdl/ui";
 
-import { type AlertRow, useAckAlert } from "../api";
+import { adminKeys, type AlertRow, useAckAlert } from "../api";
 
 export const SEVERITY_LABEL_KEY = {
   info: "overview.severityInfo",
@@ -28,7 +28,7 @@ export function severityColor(severity: string): string {
   }
 }
 
-/** 告警确认闭环:成功文案 + 失效 ["admin","alerts"] 前缀;错误文案走后端 message_key。 */
+/** 告警确认闭环:成功文案 + 失效 adminKeys.alerts 前缀;错误文案走后端 message_key。 */
 export function useAckAlertWithFeedback() {
   const { t } = useTranslation();
   const errText = useApiErrorText();
@@ -38,7 +38,7 @@ export function useAckAlertWithFeedback() {
     mutation: {
       onSuccess: () => {
         message.success(t("overview.ackDone"));
-        void qc.invalidateQueries({ queryKey: ["admin", "alerts"] });
+        void qc.invalidateQueries({ queryKey: adminKeys.alerts });
       },
       onError: (e) => message.error(errText(e, t("overview.ackFailed"))),
     },
