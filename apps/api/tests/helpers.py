@@ -23,7 +23,7 @@ from app.core.k8s.fake import FakeOrchestrator
 from app.core.platform_config import set_platform_settings
 from app.core.timeutil import now_utc
 from app.modules.account.models import SmsCode
-from app.modules.adminapi.service import create_admin
+from app.modules.adminapi.auth_service import create_admin
 from app.modules.billing import service as billing_service, wallet
 from app.modules.catalog.models import PlatformImage, Sku
 from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent

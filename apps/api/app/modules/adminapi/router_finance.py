@@ -18,7 +18,7 @@ from app.core.pagination import Page
 from app.core.params import Cursor, IdempotencyKey, Limit, TzOffset
 from app.core.ratelimit import check_rate_limit
 from app.modules.account import service as account_service
-from app.modules.adminapi import export as admin_export, service
+from app.modules.adminapi import auth_service, export as admin_export, finance_service
 from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.models import AdminUser
 from app.modules.adminapi.router_shared import DayRange, ExportLang, day_suffix, parse_day
@@ -172,7 +172,7 @@ async def admin_list_adjustments(
     limit: int | None = Limit,
 ) -> Page[AdjustmentOut]:
     """调账单列表(游标分页,降序)。status/user_id 精确过滤;day=YYYY-MM-DD 按发起日过滤。"""
-    return await service.list_adjustments(
+    return await finance_service.list_adjustments(
         session,
         status=status,
         user_id=user_id,
@@ -222,7 +222,7 @@ async def admin_create_adjustment(
     """发起调账(双人复核前置)。Idempotency-Key 重放返回已受理的单(200 + X-Idempotent-Replay)。"""
     # 资金端点限流(每管理员)
     await check_rate_limit(f"admin-adjust:{admin.id}", max_attempts=20, window_seconds=3600.0)
-    adj, created = await service.create_adjustment(
+    adj, created = await finance_service.create_adjustment(
         session,
         user_id=body.user_id,
         amount=body.amount,
@@ -246,7 +246,7 @@ async def admin_review_adjustment(
 ) -> AdjustmentStatusOut:
     """复核调账(approve 即生效):审计行与生效同事务(write_audit_sync)。"""
     set_audit_target(request, f"adjustment:{adjustment_id}", detail={"approve": body.approve})
-    adj = await service.review_adjustment(
+    adj = await finance_service.review_adjustment(
         session,
         adjustment_id,
         approve=body.approve,
@@ -269,7 +269,7 @@ async def admin_resolve_reversal(
     set_audit_target(
         request, f"reversal:{order_no}", detail={"action": body.action, "reason": body.reason}
     )
-    await service.resolve_reversal(
+    await finance_service.resolve_reversal(
         session,
         order_no,
         action=body.action,
@@ -397,7 +397,7 @@ async def admin_cancel_refund(
 
 def _invoice_reveal(admin: AdminUser, reveal: bool, reason: str | None) -> str:
     """明文开闸:与 /tenants 实名同一套(readonly 不可 reveal、事由必填)。返回规范化事由。"""
-    return service.ensure_reveal_allowed(role=admin.role, reason=reason) if reveal else ""
+    return auth_service.ensure_reveal_allowed(role=admin.role, reason=reason) if reveal else ""
 
 
 @router.get("/invoices")

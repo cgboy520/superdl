@@ -146,3 +146,48 @@ class ClusterStatusOut(BaseModel):
     components: list[ClusterComponentOut]
     config: ClusterConfigStateOut
     error: str | None
+
+
+# ---------- 节点台账(管理端) ----------
+
+
+class NodeOut(BaseModel):
+    name: str
+    pool_label: str
+    gpu_model: str  # canonical;未识别时为 "GPU"
+    gpu_total: int
+    gpu_used: int
+    status: str  # Ready / NotReady / Cordoned / Missing(台账口径)
+    vcpu: int
+    mem_gb: int
+    disk_gb: int
+    driver_version: str = ""
+    cuda_version: str = ""
+    # 台账扩展
+    gpu_model_raw: str = ""
+    vram_gb: int = 0
+    unlabeled: bool = False
+    label_synced: bool = False
+    last_seen: str = ""  # ISO;空=尚无台账行
+
+
+class GpuModelAggregateOut(BaseModel):
+    """台账按 canonical×池聚合。gpu_model=None 为未识别桶。"""
+
+    gpu_model: str | None
+    gpu_model_raw: str | None
+    pool_label: str | None
+    node_count: int
+    gpu_total: int
+    ready_gpu_total: int
+    ready_gpu_free: int
+    vram_gb: int
+    vcpu_per_gpu: int  # Ready 节点整机配比最小值(vCPU÷卡数),0=未知
+    mem_gb_per_gpu: int
+
+
+class OversellPoolOut(BaseModel):
+    pool: str
+    sold_share: float
+    oversell_ratio: float
+    util_avg_24h: float | None

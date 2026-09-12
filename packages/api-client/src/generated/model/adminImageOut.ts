@@ -6,6 +6,9 @@
  */
 import type { ImageCoverageOut } from './imageCoverageOut';
 
+/**
+ * 公开目录字段 + 管理端预热视图。
+ */
 export interface AdminImageOut {
   coverage: ImageCoverageOut;
   cuda_version: string;
@@ -14,6 +17,7 @@ export interface AdminImageOut {
   framework_version: string;
   id: number;
   image_ref: string;
+  is_prewarmed: boolean;
   prewarm_enabled: boolean;
   python_version: string;
   sort: number;

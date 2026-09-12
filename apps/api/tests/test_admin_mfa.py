@@ -15,7 +15,7 @@ pytestmark = pytest.mark.usefixtures("fake")
 
 
 async def _create(client, sm, username: str, role: str) -> None:
-    from app.modules.adminapi.service import create_admin
+    from app.modules.adminapi.auth_service import create_admin
 
     async with sm() as session:
         await create_admin(session, username, "pass1234", role)

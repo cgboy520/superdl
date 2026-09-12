@@ -68,7 +68,7 @@
 |---|---|---|
 | 用户 access / refresh token | 1h / 7d(prod 上限同此) | env `access_token_ttl_seconds` / `refresh_token_ttl_seconds` |
 | refresh 重放宽限 | 同 jti 10s 内视为并发重试 | `account/service.py` |
-| 管理端会话 | 续期宽限 15min,单次会话最长 12h | `adminapi/service.py` |
+| 管理端会话 | 续期宽限 15min,单次会话最长 12h | `adminapi/auth_service.py` |
 | TOTP 绑定票 / 二要素票 | 10min / 5min;恢复码 10 枚一次性 | 同上 |
 | 管理员口令 | ≥12 字符,≤72 字节 | 同上 |
 | 用户密码 | ≤72 字节(bcrypt 上限) | `account/schemas.py` |
@@ -119,7 +119,7 @@
 | K8s list | 每页 500 + continue;连接 5s / 读 30s 超时 | `core/k8s/real.py`,env `k8s_*_timeout_seconds` |
 | Prometheus 查询 | 单次 5s 超时 | env `prometheus_timeout_seconds` |
 | 集群连通性探测 | 5s → 502 | `nodes/service.py` |
-| 调账单笔绝对值 | ≤100000.00 | `adminapi/service.py` `ADJUST_MAX_ABS` |
+| 调账单笔绝对值 | ≤100000.00 | `adminapi/finance_service.py` `ADJUST_MAX_ABS` |
 
 ## 数据保留
 

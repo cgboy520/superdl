@@ -11,9 +11,9 @@ from sqlalchemy import select
 from app.core.errors import AppError, ErrorCode
 from app.core.outbox import OutboxTask
 from app.core.timeutil import now_utc
-from app.modules.adminapi import service as admin_service
+from app.modules.adminapi import finance_service
+from app.modules.adminapi.auth_service import create_admin
 from app.modules.adminapi.models import AdminAdjustment
-from app.modules.adminapi.service import create_admin
 from app.modules.billing.models import BalanceLedger
 from app.modules.notify.models import Notification
 from app.modules.orchestrator.reconciler import reconcile_once
@@ -154,7 +154,7 @@ class TestAdjustments:
             r2 = await create_admin(session, "fin-race-c", "pass1234", "finance")
             creator_id, r1_id, r2_id = creator.id, r1.id, r2.id
         async with sm() as session:
-            adj, _created = await admin_service.create_adjustment(
+            adj, _created = await finance_service.create_adjustment(
                 session,
                 user_id=user_id,
                 amount="10.00",
@@ -166,7 +166,7 @@ class TestAdjustments:
         async def review(reviewer_id: int) -> str:
             async with sm() as session:
                 try:
-                    await admin_service.review_adjustment(
+                    await finance_service.review_adjustment(
                         session, adj_id, approve=True, reviewer_id=reviewer_id, comment=None
                     )
                     return "approved"
@@ -1096,7 +1096,7 @@ class TestAdminListPagination:
                 await session.execute(select(AdminUser.id).where(AdminUser.username == "fin-page"))
             ).scalar_one()
             for i in range(3):
-                await admin_service.create_adjustment(
+                await finance_service.create_adjustment(
                     session,
                     user_id=user_id,
                     amount="1.00",

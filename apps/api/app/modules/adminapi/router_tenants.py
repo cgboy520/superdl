@@ -21,7 +21,7 @@ from app.modules.account.schemas import (
     AdminDeletionReject,
     AdminDeletionRequestOut,
 )
-from app.modules.adminapi import service
+from app.modules.adminapi import auth_service, overview
 from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.models import AdminUser
 from app.modules.adminapi.router_shared import ExportLang
@@ -73,7 +73,9 @@ async def admin_list_tenants(
     order = id 正/倒序;聚合列按页拼装,不支持排序。
     实名信息默认脱敏;reveal=true 且 reason 必填回明文(readonly 不可),每次按条数+事由落审计。
     """
-    reveal_reason = service.ensure_reveal_allowed(role=admin.role, reason=reason) if reveal else ""
+    reveal_reason = (
+        auth_service.ensure_reveal_allowed(role=admin.role, reason=reason) if reveal else ""
+    )
     if q:
         masked = mask_phone_value(q)
         mark_audited_read(request, f"tenant-search:{masked}", detail={"query_len": len(q)})
@@ -252,7 +254,7 @@ async def admin_adjust_context(
 ) -> AdjustContextOut:
     """调账前置上下文(只读):掩码手机号/当前余额/近 3 条流水。不存在 → 404。"""
     mark_audited_read(request, f"tenant-adjust-context:{user_id}")
-    return AdjustContextOut.model_validate(await service.adjust_context(session, user_id))
+    return AdjustContextOut.model_validate(await overview.adjust_context(session, user_id))
 
 
 @router.post("/tenants/{user_id}/freeze", dependencies=[require_roles("ops")])

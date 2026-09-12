@@ -19,8 +19,8 @@ from sqlalchemy import select
 from app.core.config import get_settings
 from app.core.db import get_sessionmaker
 from app.core.logging import setup_logging
+from app.modules.adminapi.auth_service import ensure_bootstrap_admin
 from app.modules.adminapi.models import AdminUser
-from app.modules.adminapi.service import ensure_bootstrap_admin
 
 
 async def main() -> None:

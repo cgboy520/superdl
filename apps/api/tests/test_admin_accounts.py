@@ -12,7 +12,7 @@ STRONG = "s3cret-passw0rd"
 
 
 async def _create_admin(sm: async_sessionmaker[AsyncSession], username: str) -> None:
-    from app.modules.adminapi.service import create_admin
+    from app.modules.adminapi.auth_service import create_admin
 
     async with sm() as session:
         await create_admin(session, username, "pass1234", "admin")
@@ -200,13 +200,13 @@ class TestAdminLoginLockout:
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession], monkeypatch
     ):
         """日窗账号桶只计数,不封禁:打满之后正确口令仍能登录。"""
-        from app.modules.adminapi import service as admin_service
+        from app.modules.adminapi import auth_service
 
         # 只留日桶做闸,其余三桶放宽
-        monkeypatch.setattr(admin_service, "LOGIN_ACCT_DAILY_MAX_ATTEMPTS", 3)
-        monkeypatch.setattr(admin_service, "LOGIN_IP_MAX_ATTEMPTS", 10_000)
-        monkeypatch.setattr(admin_service, "LOGIN_MAX_ATTEMPTS", 10_000)
-        monkeypatch.setattr(admin_service, "LOGIN_ACCT_MAX_ATTEMPTS", 10_000)
+        monkeypatch.setattr(auth_service, "LOGIN_ACCT_DAILY_MAX_ATTEMPTS", 3)
+        monkeypatch.setattr(auth_service, "LOGIN_IP_MAX_ATTEMPTS", 10_000)
+        monkeypatch.setattr(auth_service, "LOGIN_MAX_ATTEMPTS", 10_000)
+        monkeypatch.setattr(auth_service, "LOGIN_ACCT_MAX_ATTEMPTS", 10_000)
         await _create_admin(sm, "lockout-admin")
 
         for _ in range(4):  # 打满并越过日桶阈值

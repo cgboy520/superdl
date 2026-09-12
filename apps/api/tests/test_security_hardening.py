@@ -29,9 +29,9 @@ class TestLoginRateLimit:
 
     async def test_admin_login_pure_ip_bucket(self, client: AsyncClient, sm, monkeypatch):
         """纯 IP 桶:遍历用户名也躲不开;只计失败。"""
-        from app.modules.adminapi import service as admin_service
+        from app.modules.adminapi import auth_service
 
-        monkeypatch.setattr(admin_service, "LOGIN_IP_MAX_ATTEMPTS", 3)
+        monkeypatch.setattr(auth_service, "LOGIN_IP_MAX_ATTEMPTS", 3)
         await admin_headers(sm, client)
         # 账号桶每桶仅 1 次,压力落在纯 IP 桶
         for i in range(3):
@@ -101,19 +101,19 @@ class TestAccountLevelLock:
         import pytest
 
         from app.core.errors import AppError, ErrorCode
-        from app.modules.adminapi import service as admin_service
+        from app.modules.adminapi import auth_service
 
         await admin_headers(sm, client)  # 创建 admin-user(成功登录不计数)
         for i in range(10):
             async with sm() as session:
                 with pytest.raises(AppError) as exc_info:
-                    await admin_service.login(
+                    await auth_service.login(
                         session, "admin-user", "wrong", client_ip=f"10.1.0.{i}"
                     )
                 assert exc_info.value.code is ErrorCode.LOGIN_FAILED
         async with sm() as session:
             with pytest.raises(AppError) as exc_info:
-                await admin_service.login(session, "admin-user", "wrong", client_ip="10.1.0.99")
+                await auth_service.login(session, "admin-user", "wrong", client_ip="10.1.0.99")
             assert exc_info.value.code is ErrorCode.RATE_LIMITED
 
     async def test_success_after_foreign_failures_notifies_and_clears(
@@ -726,8 +726,8 @@ class TestBootstrapAdminGate:
         import pytest
         from sqlalchemy import select
 
+        from app.modules.adminapi.auth_service import ensure_bootstrap_admin
         from app.modules.adminapi.models import AdminUser
-        from app.modules.adminapi.service import ensure_bootstrap_admin
 
         async with sm() as session:
             with pytest.raises(RuntimeError, match="引导口令"):
@@ -787,7 +787,7 @@ class TestAdminTokenRenewal:
 
         from app.core.security import create_token
         from app.core.timeutil import now_utc
-        from app.modules.adminapi.service import SESSION_MAX_SECONDS, create_admin
+        from app.modules.adminapi.auth_service import SESSION_MAX_SECONDS, create_admin
 
         async with sm() as session:
             admin = await create_admin(session, "grace-admin", "pass1234", "ops")

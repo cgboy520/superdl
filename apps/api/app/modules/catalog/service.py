@@ -25,9 +25,14 @@ from app.core.platform_config import get_runtime_config
 from app.modules.catalog import inventory
 from app.modules.catalog.models import ImageNodeCache, PlatformImage, Sku
 from app.modules.catalog.schemas import (
+    AdminImageOut,
+    CapacityPreviewOut,
+    CapacityWarningOut,
+    ImageCoverageOut,
     ImageCreate,
     ImageOut,
     ImageUpdate,
+    SkuAdminOut,
     SkuCreate,
     SkuMarketOut,
     SkuUpdate,
@@ -35,6 +40,7 @@ from app.modules.catalog.schemas import (
 )
 from app.modules.nodes import service as nodes_service
 from app.modules.notify import service as notify_service
+from app.modules.orchestrator import ports as orchestrator_ports
 
 if TYPE_CHECKING:
     from app.modules.nodes.models import NodeSpec
@@ -159,16 +165,19 @@ async def image_coverage(session: AsyncSession) -> dict[int, tuple[int, int, int
     return {image_id: (cached, total, failed) for image_id, cached, total, failed in rows}
 
 
+def _is_prewarmed(img: PlatformImage, cached: int, total: int, threshold: int) -> bool:
+    """prewarm_enabled 且(零 cache 行回落旧语义 / 覆盖率 ≥ prewarm_min_coverage_pct)。"""
+    return img.prewarm_enabled and (total == 0 or cached * 100 >= threshold * total)
+
+
 async def list_images_out(session: AsyncSession) -> list[ImageOut]:
-    """公开镜像目录,is_prewarmed 为计算值:
-    prewarm_enabled 且(零 cache 行回落旧语义 / 覆盖率 ≥ prewarm_min_coverage_pct)。"""
+    """公开镜像目录,is_prewarmed 为计算值。"""
     images = await list_images(session)
     coverage = await image_coverage(session)
     threshold = (await get_runtime_config(session)).prewarm_min_coverage_pct
     out: list[ImageOut] = []
     for img in images:
         cached, total, _failed = coverage.get(img.id, (0, 0, 0))
-        prewarmed = img.prewarm_enabled and (total == 0 or cached * 100 >= threshold * total)
         out.append(
             ImageOut(
                 id=img.id,
@@ -177,10 +186,46 @@ async def list_images_out(session: AsyncSession) -> list[ImageOut]:
                 python_version=img.python_version,
                 cuda_version=img.cuda_version,
                 image_ref=img.image_ref,
-                is_prewarmed=prewarmed,
+                is_prewarmed=_is_prewarmed(img, cached, total, threshold),
             )
         )
     return out
+
+
+async def admin_image_out(session: AsyncSession, img: PlatformImage) -> AdminImageOut:
+    """单镜像的管理端视图(建 / 改的响应)。"""
+    coverage = await image_coverage(session)
+    threshold = (await get_runtime_config(session)).prewarm_min_coverage_pct
+    return _admin_image_out(img, coverage, threshold)
+
+
+async def admin_list_images_out(session: AsyncSession) -> list[AdminImageOut]:
+    """镜像目录 + 每镜像预热覆盖率(纯 DB 聚合,不调 K8s)。"""
+    images = await list_images(session)
+    coverage = await image_coverage(session)
+    threshold = (await get_runtime_config(session)).prewarm_min_coverage_pct
+    return [_admin_image_out(img, coverage, threshold) for img in images]
+
+
+def _admin_image_out(
+    img: PlatformImage, coverage: dict[int, tuple[int, int, int]], threshold: int
+) -> AdminImageOut:
+    cached, total, failed = coverage.get(img.id, (0, 0, 0))
+    return AdminImageOut(
+        id=img.id,
+        framework=img.framework,
+        framework_version=img.framework_version,
+        python_version=img.python_version,
+        cuda_version=img.cuda_version,
+        image_ref=img.image_ref,
+        is_prewarmed=_is_prewarmed(img, cached, total, threshold),
+        prewarm_enabled=img.prewarm_enabled,
+        sort=img.sort,
+        coverage=ImageCoverageOut(
+            cached=cached, total=total, pct=(cached * 100 // total) if total else 0
+        ),
+        failed_nodes=failed,
+    )
 
 
 # ---------- 管理端 ----------
@@ -388,4 +433,92 @@ async def image_node_rows(session: AsyncSession, image_id: int) -> list[ImageNod
                 .order_by(ImageNodeCache.node_name)
             )
         ).scalars()
+    )
+
+
+# ---------- 管理端 SKU 视图与容量预览(纯台账推算) ----------
+
+
+async def admin_skus_out(session: AsyncSession) -> list[SkuAdminOut]:
+    """SKU 列表,组装台账容量与占用列:actual_oversell / sold_share 为已售名义算力(卡×pct/100)
+    对物理与对可售(×超卖)的比值,2 位小数。"""
+    skus = await admin_list_skus(session)
+    specs = await nodes_service.ready_specs(session)
+    sold = await orchestrator_ports.active_gpu_counts_by_sku(session)
+    out: list[SkuAdminOut] = []
+    for sku in skus:
+        item = SkuAdminOut.model_validate(sku)
+        wanted = canonical_gpu_model(sku.gpu_model)
+        item.capacity_gpus = sum(
+            sp.gpu_count for sp in nodes_service.matching_specs(specs, sku.pool_label, wanted)
+        )
+        if item.capacity_gpus:
+            nominal = Decimal(sold.get(sku.id, 0)) * Decimal(sku.gpu_cores_pct) / Decimal(100)
+            cap = Decimal(item.capacity_gpus)
+            item.actual_oversell = str(as_amount(nominal / cap))
+            item.sold_share = str(as_amount(nominal / (cap * sku.oversell_cores)))
+        out.append(item)
+    return out
+
+
+async def capacity_preview(
+    session: AsyncSession,
+    *,
+    pool_label: str,
+    gpu_model: str,
+    gpu_cores_pct: int,
+    oversell_cores: Decimal,
+    vram_gb: int | None,
+    vcpu: int | None,
+    mem_gb: int | None,
+) -> CapacityPreviewOut:
+    """SKU 表单实时容量预览。gpu_model 留空 = CPU 规格:只按池匹配节点,
+    可售数走 sellable_cpu_slots。"""
+    all_specs = await nodes_service.list_node_specs(session)
+    warnings: list[CapacityWarningOut] = []
+    if not gpu_model:
+        specs = nodes_service.pool_specs(all_specs, pool_label)
+        ready = [sp for sp in specs if sp.status == "Ready"]
+        if not ready:
+            warnings.append(
+                CapacityWarningOut(
+                    code="no_ready_node", params={"model": "CPU", "pool": pool_label}
+                )
+            )
+        est = 0
+        if vcpu and mem_gb:
+            cap = (await get_runtime_config(session)).gpu_node_cpu_instance_vcpu_cap
+            est = sellable_cpu_slots(vcpu, mem_gb, ready, gpu_node_vcpu_cap=cap)
+        return CapacityPreviewOut(
+            matching_nodes=len(specs),
+            ready_gpus=0,
+            total_gpus=0,
+            est_instances=est,
+            warnings=warnings,
+        )
+    wanted = canonical_gpu_model(gpu_model)
+    if wanted is None:
+        warnings.append(CapacityWarningOut(code="unrecognized_model", params={"model": gpu_model}))
+    specs = nodes_service.matching_specs(all_specs, pool_label, wanted)
+    ready = [sp for sp in specs if sp.status == "Ready"]
+    ready_gpus = sum(sp.gpu_count for sp in ready)
+    if not ready:
+        warnings.append(
+            CapacityWarningOut(
+                code="no_ready_node", params={"model": wanted or gpu_model, "pool": pool_label}
+            )
+        )
+    max_vram = max((sp.vram_gb for sp in ready), default=0)
+    if vram_gb is not None and ready and vram_gb > max_vram:
+        warnings.append(
+            CapacityWarningOut(
+                code="vram_exceeds_node", params={"vram_gb": vram_gb, "node_vram_gb": max_vram}
+            )
+        )
+    return CapacityPreviewOut(
+        matching_nodes=len(specs),
+        ready_gpus=ready_gpus,
+        total_gpus=sum(sp.gpu_count for sp in specs),
+        est_instances=ready_gpus * sellable_per_gpu(pool_label, gpu_cores_pct, oversell_cores),
+        warnings=warnings,
     )

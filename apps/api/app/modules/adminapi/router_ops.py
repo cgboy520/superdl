@@ -37,7 +37,7 @@ from app.core.regex import PHONE_RE_LOOSE
 from app.core.registry import probe_harbor
 from app.core.sms import SmsError, ensure_sms_platform_quota, get_sms_channel
 from app.core.timeutil import now_utc
-from app.modules.adminapi import export as admin_export, service
+from app.modules.adminapi import export as admin_export, overview
 from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.models import AdminUser
 from app.modules.adminapi.router_shared import ExportLang
@@ -77,7 +77,7 @@ router = APIRouter(tags=["admin"])
 @router.get("/overview", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_overview(session: DbSession) -> OverviewOut:
     """值班首屏聚合:实例分状态 COUNT、付费租户 COUNT、池级 GPU 台账。全是精确计数。"""
-    return OverviewOut.model_validate(await service.overview(session))
+    return OverviewOut.model_validate(await overview.overview(session))
 
 
 # ---------- 工单(读 ops/finance/readonly,写 ops/admin) ----------

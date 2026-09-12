@@ -2614,9 +2614,7 @@ export const getSkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetUrl = (params:
 }
 
 /**
- * SKU 表单实时容量预览(纯台账)。
- *
- * gpu_model 留空 = CPU 规格预览:只按池匹配节点,可售数走 `catalog.sellable_cpu_slots`。
+ * SKU 表单实时容量预览(纯台账)。gpu_model 留空 = CPU 规格预览。
  * @summary Sku Capacity Preview
  */
 export const skuCapacityPreviewApiAdminV1SkusCapacityPreviewGet = async (params: SkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetParams, options?: Parameters<typeof customFetch>[1]): Promise<CapacityPreviewOut> => {

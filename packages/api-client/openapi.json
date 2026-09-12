@@ -499,6 +499,7 @@
         "type": "object"
       },
       "AdminImageOut": {
+        "description": "公开目录字段 + 管理端预热视图。",
         "properties": {
           "coverage": {
             "$ref": "#/components/schemas/ImageCoverageOut"
@@ -527,6 +528,10 @@
             "title": "Image Ref",
             "type": "string"
           },
+          "is_prewarmed": {
+            "title": "Is Prewarmed",
+            "type": "boolean"
+          },
           "prewarm_enabled": {
             "title": "Prewarm Enabled",
             "type": "boolean"
@@ -547,6 +552,7 @@
           "python_version",
           "cuda_version",
           "image_ref",
+          "is_prewarmed",
           "prewarm_enabled",
           "sort",
           "coverage",
@@ -14896,7 +14902,7 @@
     },
     "/api/admin/v1/skus/capacity-preview": {
       "get": {
-        "description": "SKU 表单实时容量预览(纯台账)。\n\ngpu_model 留空 = CPU 规格预览:只按池匹配节点,可售数走 `catalog.sellable_cpu_slots`。",
+        "description": "SKU 表单实时容量预览(纯台账)。gpu_model 留空 = CPU 规格预览。",
         "operationId": "sku_capacity_preview_api_admin_v1_skus_capacity_preview_get",
         "parameters": [
           {

@@ -1,5 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -219,3 +220,65 @@ class ImageUpdate(BaseModel):
     @classmethod
     def _valid_ref(cls, v: str | None) -> str | None:
         return None if v is None else _check_image_ref(v)
+
+
+# ---------- 管理端 ----------
+
+
+class SkuImpactOut(BaseModel):
+    """改价影响面:该 SKU 活跃(creating/starting/running)实例数/用户数/卡数。"""
+
+    sku_id: int
+    active_instances: int
+    active_users: int
+    active_gpus: int
+
+
+class ImageCoverageOut(BaseModel):
+    """预热覆盖:cached/total 节点数与百分比(total=巡检登记的目标节点数)。"""
+
+    cached: int
+    total: int
+    pct: int
+
+
+class AdminImageOut(ImageOut):
+    """公开目录字段 + 管理端预热视图。"""
+
+    prewarm_enabled: bool
+    sort: int
+    coverage: ImageCoverageOut
+    failed_nodes: int
+
+
+class ImageNodeCacheOut(BaseModel):
+    node_name: str
+    status: str  # pending / pulling / cached / failed
+    last_error: str | None
+    checked_at: datetime | None
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PrewarmEnqueuedOut(BaseModel):
+    enqueued: int
+
+
+class CapacityWarningOut(BaseModel):
+    """结构化警示(前端按 code 映射文案,params 供插值)。"""
+
+    code: Literal["unrecognized_model", "no_ready_node", "vram_exceeds_node"]
+    params: dict[str, Any] = {}
+
+
+class CapacityPreviewOut(BaseModel):
+    """SKU 表单容量预览(纯台账推算)。"""
+
+    matching_nodes: int
+    ready_gpus: int  # CPU 规格恒 0
+    total_gpus: int  # 同上
+    # 共享档 = ready_gpus × ⌊100×oversell/pct⌋;dedicated/mig = ready_gpus;
+    # CPU 规格 = 按节点 vCPU/内存上限折算(catalog.sellable_cpu_slots)
+    est_instances: int
+    warnings: list[CapacityWarningOut]

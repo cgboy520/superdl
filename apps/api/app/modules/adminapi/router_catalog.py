@@ -1,60 +1,29 @@
 """管理端路由(SKU 与镜像/预热)。"""
 
-from decimal import ROUND_HALF_EVEN, Decimal
+from decimal import Decimal
 
 from fastapi import APIRouter, Request
 
 from app.core.audit import set_audit_target
 from app.core.db import DbSession
-from app.core.gpu_models import canonical_gpu_model
-from app.core.platform_config import get_runtime_config
-from app.modules.adminapi import service
+from app.modules.adminapi import overview
 from app.modules.adminapi.deps import require_roles
-from app.modules.adminapi.schemas import (
-    AdminImageOut,
-    CapacityPreviewOut,
-    CapacityWarningOut,
-    ImageCoverageOut,
-    ImageNodeCacheOut,
-    PrewarmEnqueuedOut,
-    ReasonBody,
-    SkuImpactOut,
-)
+from app.modules.adminapi.schemas import ReasonBody
 from app.modules.catalog import service as catalog_service
 from app.modules.catalog.schemas import (
+    AdminImageOut,
+    CapacityPreviewOut,
     ImageCreate,
+    ImageNodeCacheOut,
     ImageUpdate,
+    PrewarmEnqueuedOut,
     SkuAdminOut,
     SkuCreate,
+    SkuImpactOut,
     SkuUpdate,
 )
-from app.modules.nodes import service as nodes_service
-from app.modules.orchestrator import ports as orchestrator_ports
 
 router = APIRouter(tags=["admin"])
-
-
-async def _cpu_capacity_preview(
-    session: DbSession, pool_label: str, vcpu: int | None, mem_gb: int | None
-) -> CapacityPreviewOut:
-    specs = nodes_service.pool_specs(await nodes_service.list_node_specs(session), pool_label)
-    ready = [sp for sp in specs if sp.status == "Ready"]
-    warnings: list[CapacityWarningOut] = []
-    if not ready:
-        warnings.append(
-            CapacityWarningOut(code="no_ready_node", params={"model": "CPU", "pool": pool_label})
-        )
-    est = 0
-    if vcpu and mem_gb:
-        cap = (await get_runtime_config(session)).gpu_node_cpu_instance_vcpu_cap
-        est = catalog_service.sellable_cpu_slots(vcpu, mem_gb, ready, gpu_node_vcpu_cap=cap)
-    return CapacityPreviewOut(
-        matching_nodes=len(specs),
-        ready_gpus=0,
-        total_gpus=0,
-        est_instances=est,
-        warnings=warnings,
-    )
 
 
 # ---------- SKU 管理(角色:admin / ops) ----------
@@ -63,30 +32,7 @@ async def _cpu_capacity_preview(
 @router.get("/skus", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_list_skus(session: DbSession) -> list[SkuAdminOut]:
     """SKU 列表,组装台账容量与占用列。"""
-    skus = await catalog_service.admin_list_skus(session)
-    specs = await nodes_service.ready_specs(session)
-    sold = await orchestrator_ports.active_gpu_counts_by_sku(session)
-    out: list[SkuAdminOut] = []
-    for sku in skus:
-        item = SkuAdminOut.model_validate(sku)
-        wanted = canonical_gpu_model(sku.gpu_model)
-        item.capacity_gpus = sum(
-            sp.gpu_count for sp in nodes_service.matching_specs(specs, sku.pool_label, wanted)
-        )
-        if item.capacity_gpus:
-            # 已售名义算力(卡×pct/100)对物理与对可售(×超卖)的比值,2 位小数
-            nominal = Decimal(sold.get(sku.id, 0)) * Decimal(sku.gpu_cores_pct) / Decimal(100)
-            cap = Decimal(item.capacity_gpus)
-            item.actual_oversell = str(
-                (nominal / cap).quantize(Decimal("0.01"), rounding=ROUND_HALF_EVEN)
-            )
-            item.sold_share = str(
-                (nominal / (cap * sku.oversell_cores)).quantize(
-                    Decimal("0.01"), rounding=ROUND_HALF_EVEN
-                )
-            )
-        out.append(item)
-    return out
+    return await catalog_service.admin_skus_out(session)
 
 
 @router.get("/skus/capacity-preview", dependencies=[require_roles("ops", "readonly")])
@@ -100,48 +46,23 @@ async def sku_capacity_preview(
     vcpu: int | None = None,
     mem_gb: int | None = None,
 ) -> CapacityPreviewOut:
-    """SKU 表单实时容量预览(纯台账)。
-
-    gpu_model 留空 = CPU 规格预览:只按池匹配节点,可售数走 `catalog.sellable_cpu_slots`。
-    """
-    if not gpu_model:
-        return await _cpu_capacity_preview(session, pool_label, vcpu, mem_gb)
-    warnings: list[CapacityWarningOut] = []
-    wanted = canonical_gpu_model(gpu_model)
-    if wanted is None:
-        warnings.append(CapacityWarningOut(code="unrecognized_model", params={"model": gpu_model}))
-    specs = nodes_service.matching_specs(
-        await nodes_service.list_node_specs(session), pool_label, wanted
-    )
-    ready = [sp for sp in specs if sp.status == "Ready"]
-    ready_gpus = sum(sp.gpu_count for sp in ready)
-    if not ready:
-        warnings.append(
-            CapacityWarningOut(
-                code="no_ready_node", params={"model": wanted or gpu_model, "pool": pool_label}
-            )
-        )
-    max_vram = max((sp.vram_gb for sp in ready), default=0)
-    if vram_gb is not None and ready and vram_gb > max_vram:
-        warnings.append(
-            CapacityWarningOut(
-                code="vram_exceeds_node", params={"vram_gb": vram_gb, "node_vram_gb": max_vram}
-            )
-        )
-    return CapacityPreviewOut(
-        matching_nodes=len(specs),
-        ready_gpus=ready_gpus,
-        total_gpus=sum(sp.gpu_count for sp in specs),
-        est_instances=ready_gpus
-        * catalog_service.sellable_per_gpu(pool_label, gpu_cores_pct, oversell_cores),
-        warnings=warnings,
+    """SKU 表单实时容量预览(纯台账)。gpu_model 留空 = CPU 规格预览。"""
+    return await catalog_service.capacity_preview(
+        session,
+        pool_label=pool_label,
+        gpu_model=gpu_model,
+        gpu_cores_pct=gpu_cores_pct,
+        oversell_cores=oversell_cores,
+        vram_gb=vram_gb,
+        vcpu=vcpu,
+        mem_gb=mem_gb,
     )
 
 
 @router.get("/skus/{sku_id}/impact", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_sku_impact(sku_id: int, session: DbSession) -> SkuImpactOut:
     """改价/下架影响面(只读):当前活跃实例数/涉及用户数/占用卡数。"""
-    return SkuImpactOut.model_validate(await service.sku_impact(session, sku_id))
+    return SkuImpactOut.model_validate(await overview.sku_impact(session, sku_id))
 
 
 @router.post("/skus", dependencies=[require_roles("ops")], status_code=201)
@@ -180,30 +101,10 @@ class ImageDeleteRequest(ReasonBody):
     pass
 
 
-def _admin_image_out(img, coverage: dict[int, tuple[int, int, int]]) -> AdminImageOut:
-    cached, total, failed = coverage.get(img.id, (0, 0, 0))
-    return AdminImageOut(
-        id=img.id,
-        framework=img.framework,
-        framework_version=img.framework_version,
-        python_version=img.python_version,
-        cuda_version=img.cuda_version,
-        image_ref=img.image_ref,
-        prewarm_enabled=img.prewarm_enabled,
-        sort=img.sort,
-        coverage=ImageCoverageOut(
-            cached=cached, total=total, pct=(cached * 100 // total) if total else 0
-        ),
-        failed_nodes=failed,
-    )
-
-
 @router.get("/images", dependencies=[require_roles("ops", "readonly")])
 async def admin_list_images(session: DbSession) -> list[AdminImageOut]:
     """镜像目录 + 每镜像预热覆盖率(纯 DB 聚合,不调 K8s)。"""
-    images = await catalog_service.list_images(session)
-    coverage = await catalog_service.image_coverage(session)
-    return [_admin_image_out(img, coverage) for img in images]
+    return await catalog_service.admin_list_images_out(session)
 
 
 @router.post("/images", dependencies=[require_roles("ops")], status_code=201)
@@ -212,7 +113,7 @@ async def admin_create_image(
 ) -> AdminImageOut:
     img = await catalog_service.admin_create_image(session, body)
     set_audit_target(request, f"image:{img.id}", detail={"image_ref": img.image_ref})
-    return _admin_image_out(img, {})
+    return await catalog_service.admin_image_out(session, img)
 
 
 @router.patch("/images/{image_id}", dependencies=[require_roles("ops")])
@@ -223,8 +124,7 @@ async def admin_update_image(
     set_audit_target(
         request, f"image:{img.id}", detail=body.model_dump(exclude_unset=True, mode="json")
     )
-    coverage = await catalog_service.image_coverage(session)
-    return _admin_image_out(img, coverage)
+    return await catalog_service.admin_image_out(session, img)
 
 
 @router.delete("/images/{image_id}", dependencies=[require_roles("ops")], status_code=204)

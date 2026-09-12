@@ -978,7 +978,7 @@ class TestReconcileAndReporting:
 
     async def test_overview_counts_active_subscriptions(self, client, sm, fake):
         """总览「包周期在保数」按订阅行数,停机的包月实例仍在保。"""
-        from app.modules.adminapi.service import overview
+        from app.modules.adminapi.overview import overview
 
         headers, uuid, _, _, _ = await provision_subscription(client, sm, fake, "13911100081")
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
