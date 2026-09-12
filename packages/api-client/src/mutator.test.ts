@@ -8,7 +8,9 @@ function mockFetch(responses: Response[]): { auth: (string | null)[] } {
   let i = 0;
   vi.stubGlobal("fetch", (_url: string, init: RequestInit) => {
     auth.push(new Headers(init.headers).get("Authorization"));
-    return Promise.resolve(responses[Math.min(i++, responses.length - 1)].clone());
+    const r = responses[Math.min(i++, responses.length - 1)];
+    if (!r) return Promise.reject(new Error("no more responses"));
+    return Promise.resolve(r.clone());
   });
   return { auth };
 }
@@ -35,6 +37,8 @@ function fakeLocks(): Pick<LockManager, "request"> {
 describe("customFetch 401 静默续期", () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
+    // jsdom 不实现 Web Locks;续期互斥走 navigator.locks,统一挂最小替身
+    vi.stubGlobal("navigator", { locks: fakeLocks() });
   });
 
   it("续期成功后带新 token 重放一次", async () => {
@@ -56,25 +60,7 @@ describe("customFetch 401 静默续期", () => {
     expect(auth).toEqual(["Bearer old", "Bearer new"]);
   });
 
-  it("并发 401 只续期一次:无 Web Locks 时靠同标签页内存 single-flight", async () => {
-    let token = "old";
-    const refresh = vi.fn(async () => {
-      await new Promise((r) => setTimeout(r, 5));
-      token = "new";
-      return true;
-    });
-    mockFetch([unauthorized(), unauthorized(), ok()]);
-    configureApiClient({ baseUrl: "", getToken: () => token, refreshToken: refresh });
-
-    await Promise.all([
-      customFetch("/api/v1/wallet", { method: "GET" }),
-      customFetch("/api/v1/instances", { method: "GET" }),
-    ]);
-    expect(refresh).toHaveBeenCalledTimes(1);
-  });
-
-  it("并发 401 只续期一次:有 Web Locks 时靠临界区内的 stale-token 复检", async () => {
-    vi.stubGlobal("navigator", { locks: fakeLocks() });
+  it("并发 401 只续期一次:Web Locks 互斥 + 临界区内的 stale-token 复检", async () => {
     let token = "old";
     const refresh = vi.fn(async () => {
       await new Promise((r) => setTimeout(r, 5));
@@ -100,7 +86,7 @@ describe("customFetch 401 静默续期", () => {
     const { auth } = mockFetch([unauthorized(), ok()]);
     configureApiClient({
       baseUrl: "",
-      getToken: () => tokens[Math.min(i++, tokens.length - 1)],
+      getToken: () => tokens[Math.min(i++, tokens.length - 1)] ?? null,
       refreshToken: refresh,
     });
 

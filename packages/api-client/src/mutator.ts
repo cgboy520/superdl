@@ -28,28 +28,19 @@ const config: ClientConfig = {
   refreshToken: null,
 };
 
-/** 同标签页内并发 401 共享同一次续期(无 Web Locks 时的兜底 single-flight)。 */
-let refreshInFlight: Promise<boolean> | null = null;
-
 /** 跨标签页续期互斥锁名。后端 refresh 是一次性消费,重放即被判定泄露并撤销全部会话。 */
 const REFRESH_LOCK = "superdl:token-refresh";
 
 /**
  * 续期一次。staleToken 是发起该请求时用的 access token:进入临界区后 token 已变,
  * 说明别的标签页/并发请求刚续期成功,直接重放。
+ * 互斥走 Web Locks(目标浏览器全支持;jsdom 测试经 fakeLocks 替身)。
  */
 async function refreshOnce(staleToken: string | null): Promise<boolean> {
-  const run = async (): Promise<boolean> => {
+  return navigator.locks.request(REFRESH_LOCK, async () => {
     if (config.getToken() !== staleToken) return true;
     return (await config.refreshToken?.()) ?? false;
-  };
-  if (typeof navigator !== "undefined" && "locks" in navigator) {
-    return navigator.locks.request(REFRESH_LOCK, run);
-  }
-  refreshInFlight ??= run().finally(() => {
-    refreshInFlight = null;
   });
-  return refreshInFlight;
 }
 
 export function configureApiClient(opts: Partial<ClientConfig>): void {
@@ -79,19 +70,10 @@ export function isApiError(e: unknown): e is ApiError {
   return typeof e === "object" && e !== null && "code" in e && "status" in e;
 }
 
-/** 直连用户端刷新接口(绕过拦截器,避免 401→refresh 递归)。
- *  refresh 走 HttpOnly Cookie(同源反代自动随路),不带 body;
- *  响应体只含新 access token(refresh 不进 JS 可读面,服务端轮换并回写 Cookie)。
- *  X-Requested-With 是 cookie 路径的 CSRF 纵深头(服务端强制)。失败返回 null。 */
-export async function requestTokenRefresh(): Promise<{
-  access_token: string;
-} | null> {
+/** 直连刷新接口(绕过拦截器,避免 401→refresh 递归)。失败返回 null。 */
+async function postRefresh(path: string, init: RequestInit): Promise<{ access_token: string } | null> {
   try {
-    const resp = await fetch(`${config.baseUrl}/api/v1/auth/refresh`, {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "X-Requested-With": "fetch" },
-    });
+    const resp = await fetch(`${config.baseUrl}${path}`, { method: "POST", ...init });
     if (!resp.ok) return null;
     return (await resp.json()) as { access_token: string };
   } catch {
@@ -99,19 +81,22 @@ export async function requestTokenRefresh(): Promise<{
   }
 }
 
-/** 管理端静默续期(滑动窗口,15 分钟过期宽限):access token 换新。失败返回 null。 */
-export async function requestAdminTokenRefresh(accessToken: string): Promise<{ access_token: string } | null> {
-  try {
-    const resp = await fetch(`${config.baseUrl}/api/admin/v1/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ access_token: accessToken }),
-    });
-    if (!resp.ok) return null;
-    return (await resp.json()) as { access_token: string };
-  } catch {
-    return null;
-  }
+/** 用户端:refresh 走 HttpOnly Cookie(同源反代自动随路),不带 body;
+ *  响应体只含新 access token(refresh 不进 JS 可读面,服务端轮换并回写 Cookie)。
+ *  X-Requested-With 是 cookie 路径的 CSRF 纵深头(服务端强制)。 */
+export function requestTokenRefresh(): Promise<{ access_token: string } | null> {
+  return postRefresh("/api/v1/auth/refresh", {
+    credentials: "same-origin",
+    headers: { "X-Requested-With": "fetch" },
+  });
+}
+
+/** 管理端静默续期(滑动窗口,15 分钟过期宽限):access token 换新。 */
+export function requestAdminTokenRefresh(accessToken: string): Promise<{ access_token: string } | null> {
+  return postRefresh("/api/admin/v1/auth/refresh", {
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ access_token: accessToken }),
+  });
 }
 
 /** 网络层失败(断网/DNS/连接拒绝)统一成 ApiError,不把 fetch 的 TypeError 原文透出。 */
@@ -177,11 +162,13 @@ export const customFetch = async <T>(url: string, options: ApiRequestOptions): P
 
   if (!response.ok) {
     const err = (body ?? {}) as Partial<ApiError>;
+    // 服务端给了非空 message 就原样透出;否则按无错误体合成兜底
+    const serverMessage = typeof err.message === "string" && err.message !== "" ? err.message : undefined;
     const apiError: ApiError = {
       code: err.code ?? "HTTP_ERROR",
-      message: err.message ?? `请求失败(${response.status})`,
-      message_key: err.message_key ?? (err.message ? null : "common.httpError"),
-      params: err.params ?? (err.message ? null : { status: response.status }),
+      message: serverMessage ?? `请求失败(${response.status})`,
+      message_key: err.message_key ?? (serverMessage ? null : "common.httpError"),
+      params: err.params ?? (serverMessage ? null : { status: response.status }),
       detail: err.detail,
       status: response.status,
     };
