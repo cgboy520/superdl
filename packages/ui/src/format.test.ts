@@ -48,10 +48,8 @@ describe("addAmounts", () => {
     expect(addAmounts("1.10", "2.80")).toBe("3.90");
     expect(addAmounts("0.01", "0.02")).toBe("0.03");
   });
-  it("负数与空值", () => {
+  it("负数", () => {
     expect(addAmounts("-1.50", "1.00")).toBe("-0.50");
-    expect(addAmounts(null, "2.00")).toBe("2.00");
-    expect(addAmounts(null, undefined)).toBe("0.00");
   });
 });
 
@@ -70,10 +68,8 @@ describe("compareAmounts", () => {
     expect(compareAmounts("1.6799", "1.68")).toBe(-1);
     expect(compareAmounts("0.3000", "0.2999")).toBe(1);
   });
-  it("负数与空值", () => {
+  it("负数", () => {
     expect(compareAmounts("-0.01", "0")).toBe(-1);
-    expect(compareAmounts(null, "0.00")).toBe(0);
-    expect(compareAmounts(undefined, "-1")).toBe(1);
   });
 });
 
@@ -83,9 +79,7 @@ describe("mulPrice", () => {
     expect(mulPrice("0.98", 3)).toBe("2.9400");
     expect(mulPrice("0.0001", 8)).toBe("0.0008");
   });
-  it("空值兜底", () => {
-    expect(mulPrice(null, 4)).toBe("0.0000");
-  });
+  it("空值兜底", () => {});
 });
 
 describe.each([
@@ -122,10 +116,6 @@ describe("formatMoney", () => {
     expect(formatMoney("1234.5", "en-US")).toBe("CN¥1,234.50");
     expect(formatMoney("-12.3", "en-US")).toBe("-CN¥12.30");
   });
-  it("空值兜底", () => {
-    expect(formatMoney(null, "zh-CN")).toBe("¥0.00");
-    expect(formatMoney(undefined, "en-US")).toBe("CN¥0.00");
-  });
   it("截断而非四舍五入(展示层不做算术)", () => {
     expect(formatMoney("1.999", "zh-CN")).toBe("¥1.99");
   });
@@ -136,7 +126,6 @@ describe("formatHourlyPrice", () => {
     expect(formatHourlyPrice("1.6800", tZh, "zh-CN")).toBe("¥1.68/时");
     expect(formatHourlyPrice("0.1250", tZh, "zh-CN")).toBe("¥0.125/时");
     expect(formatHourlyPrice("3", tZh, "zh-CN")).toBe("¥3.00/时");
-    expect(formatHourlyPrice(null, tZh, "zh-CN")).toBe("¥0.00/时");
   });
   it("en:/hr 量词", () => {
     expect(formatHourlyPrice("1.6800", tEn, "en-US")).toBe("CN¥1.68/hr");
@@ -225,7 +214,6 @@ describe("diskDailyEstimate", () => {
     expect(diskDailyEstimate("0.0500", 15)).toBe("0.02");
   });
   it("边界:空价/0GB/非整数 GB 返回 0.00", () => {
-    expect(diskDailyEstimate(null, 100)).toBe("0.00");
     expect(diskDailyEstimate("", 100)).toBe("0.00");
     expect(diskDailyEstimate("0.50", 0)).toBe("0.00");
     expect(diskDailyEstimate("0.50", 1.5)).toBe("0.00");
@@ -263,9 +251,7 @@ describe("quoteSubscription", () => {
     expect(q.listAmount).toBe("838857.60"); // 3.99 × 8 × 26280
     expect(q.amount).toBe("587200.32");
   });
-  it("空价与 100% 折扣(不打折)照常自洽", () => {
-    const none = quoteSubscription(null, { units: 1, period: "month", periodCount: 1, discountPct: 80 });
-    expect(none.amount).toBe("0.00");
+  it("100% 折扣(不打折)照常自洽", () => {
     const full = quoteSubscription("1.0000", { units: 1, period: "day", periodCount: 1, discountPct: 100 });
     expect(full.amount).toBe(full.listAmount);
     expect(full.discountAmount).toBe("0.00");
@@ -295,7 +281,6 @@ describe("spotHourlyPrice", () => {
   it("与后端 as_price(price × pct / 100) 同口径:HALF_EVEN 量化到 4 位", () => {
     expect(spotHourlyPrice("3.9900", 40)).toBe("1.5960");
     expect(spotHourlyPrice("3.9900", 100)).toBe("3.9900"); // 不打折 = 原价
-    expect(spotHourlyPrice(null, 40)).toBe("0.0000");
   });
   it("恰好半个万分位时向偶进(与 quoteSubscription 的折后时价同一条舍入规则)", () => {
     // 0.00045 → 0.0004

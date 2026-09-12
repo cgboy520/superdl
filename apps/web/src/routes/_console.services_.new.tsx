@@ -190,7 +190,7 @@ function DeployPage() {
       : diskMode === "existing"
         ? ((disks ?? []).find((d) => d.id === existingDiskId)?.size_gb ?? 0)
         : 0;
-  const diskDaily = diskDailyEstimate(diskPriceGbMonth, diskGb);
+  const diskDaily = diskPriceGbMonth === undefined ? undefined : diskDailyEstimate(diskPriceGbMonth, diskGb);
   // BigInt 比较:按量门槛 = 1 小时费用,包周期 = 应付全额;报价未就绪不放行
   const needAmount = period ? quote?.amount : hourlyTotal;
   const balanceReady = wallet != null && (!period || quote != null);
@@ -590,7 +590,7 @@ function DeployPage() {
                   label: t("period.costLabel", { period: t(periodMap[period].labelKey) }),
                   value: fmt.formatPeriodPrice(quote.amount, period, periodCount),
                 },
-                ...(diskGb > 0 && diskPriceGbMonth
+                ...(diskGb > 0 && diskDaily !== undefined
                   ? [
                       {
                         label: t("create.diskCostLabel"),
@@ -609,15 +609,16 @@ function DeployPage() {
                 {
                   label: t("create.configCostLabel"),
                   suffix: !sku ? undefined : isCpu ? t("sku.wholeMachine") : t("sku.timesCards", { count: gpuCount }),
-                  value: !sku ? (
-                    "--"
-                  ) : isSpot ? (
-                    <SpotPriceInline baseHourly={sku.price_hourly} units={priceUnits} policy={spotPolicy} />
-                  ) : (
-                    formatHourlyPrice(hourlyTotal)
-                  ),
+                  value:
+                    hourlyTotal === null ? (
+                      "--"
+                    ) : isSpot && sku ? (
+                      <SpotPriceInline baseHourly={sku.price_hourly} units={priceUnits} policy={spotPolicy} />
+                    ) : (
+                      formatHourlyPrice(hourlyTotal)
+                    ),
                 },
-                ...(diskGb > 0 && diskPriceGbMonth
+                ...(diskGb > 0 && diskDaily !== undefined
                   ? [
                       {
                         label: t("create.diskCostLabel"),
@@ -629,7 +630,7 @@ function DeployPage() {
               ]
         }
         detail={
-          sku ? (
+          unitHourly !== null && hourlyTotal !== null ? (
             <Space orientation="vertical" size={4} style={{ maxWidth: 360 }}>
               {period && quote ? (
                 <PeriodQuoteRows quote={quote} gpuCount={gpuCount} cpu={isCpu} />

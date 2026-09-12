@@ -158,7 +158,7 @@ export function CheckoutBar({
           {balance !== undefined && (
             <Typography.Text type="secondary">
               {t("common.balance")}{" "}
-              <span style={{ fontWeight: 600 }}>{moneyOr(formatMoney(balance), balanceReady)}</span>
+              <span style={{ fontWeight: 600 }}>{moneyOr(formatMoney(balance ?? "0.00"), balanceReady)}</span>
             </Typography.Text>
           )}
         </Space>

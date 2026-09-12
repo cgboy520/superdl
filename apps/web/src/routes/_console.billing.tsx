@@ -133,7 +133,7 @@ function BillingPage() {
             <Space style={{ width: "100%", justifyContent: "space-between" }} align="start">
               <Statistic
                 title={t("billing.availableBalance")}
-                value={moneyOr(formatMoney(wallet?.balance), wallet != null)}
+                value={moneyOr(formatMoney(wallet?.balance ?? "0.00"), wallet != null)}
                 styles={{ content: { fontSize: fontSize.kpi } }}
               />
               <Button type="primary" size="large" onClick={() => setRechargeOpen(true)}>
@@ -164,17 +164,17 @@ function BillingPage() {
               <Col xs={24} md={10}>
                 <Statistic
                   title={t("billing.gpuTotal")}
-                  value={moneyOr(formatMoney(summary?.gpu_total), summary != null)}
+                  value={moneyOr(formatMoney(summary?.gpu_total ?? "0.00"), summary != null)}
                 />
                 <Statistic
                   title={t("billing.diskTotal")}
-                  value={moneyOr(formatMoney(summary?.disk_total), summary != null)}
+                  value={moneyOr(formatMoney(summary?.disk_total ?? "0.00"), summary != null)}
                   styles={{ content: { fontSize: fontSize.sectionTitle } }}
                 />
                 <Statistic
                   title={t("instances.labelToday")}
                   value={moneyOr(
-                    formatMoney(daily ? addAmounts(daily.gpu_total, daily.disk_total) : null),
+                    formatMoney(daily ? addAmounts(daily.gpu_total, daily.disk_total) : "0.00"),
                     daily != null,
                   )}
                   styles={{ content: { fontSize: fontSize.sectionTitle } }}

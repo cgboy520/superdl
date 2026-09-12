@@ -26,7 +26,7 @@ export function useSpotPolicy(): SpotPolicy | undefined {
 }
 
 /** 竞价时价(单份);策略未就绪返回 undefined。 */
-export function spotPriceOf(baseHourly: string | null | undefined, policy: SpotPolicy | undefined): string | undefined {
+export function spotPriceOf(baseHourly: string, policy: SpotPolicy | undefined): string | undefined {
   return policy ? spotHourlyPrice(baseHourly, policy.discountPct) : undefined;
 }
 
@@ -36,7 +36,7 @@ export function SpotPriceInline({
   units,
   policy,
 }: {
-  baseHourly: string | null | undefined;
+  baseHourly: string;
   units: number;
   policy: SpotPolicy | undefined;
 }) {

@@ -228,8 +228,8 @@ function CreatePage() {
       : diskMode === "existing"
         ? ((disks ?? []).find((d) => d.id === existingDiskId)?.size_gb ?? 0)
         : 0;
-  // 「约 ¥X/日」为展示层估算(月价/30,BigInt);入账以后端日结为准
-  const diskDaily = diskDailyEstimate(diskPriceGbMonth, diskGb);
+  // 「约 ¥X/日」为展示层估算(月价/30,BigInt);入账以后端日结为准;单价未就绪不估算(不显假 0.00)
+  const diskDaily = diskPriceGbMonth === undefined ? undefined : diskDailyEstimate(diskPriceGbMonth, diskGb);
 
   // 未开包周期 / 未上竞价时按量兜底,提交体不带 period 或 market=spot
   const periodBlocked = sku != null && !sku.period_enabled;
@@ -652,7 +652,7 @@ function CreatePage() {
                   label: t("period.costLabel", { period: t(periodMap[period].labelKey) }),
                   value: fmt.formatPeriodPrice(quote.amount, period, periodCount),
                 },
-                ...(diskGb > 0 && diskPriceGbMonth
+                ...(diskGb > 0 && diskDaily !== undefined
                   ? [
                       {
                         label: t("create.diskCostLabel"),
@@ -677,7 +677,7 @@ function CreatePage() {
                     formatHourlyPrice(hourlyTotal)
                   ),
                 },
-                ...(diskGb > 0 && diskPriceGbMonth
+                ...(diskGb > 0 && diskDaily !== undefined
                   ? [
                       {
                         label: t("create.diskCostLabel"),

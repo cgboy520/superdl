@@ -52,13 +52,13 @@ export function ReconciliationCard() {
         <Col xs={24} sm={12} md={8}>
           <Statistic
             title={t("finance.billedTotal")}
-            value={moneyOr(formatMoney(report?.billed_total), report != null)}
+            value={moneyOr(formatMoney(report?.billed_total ?? "0.00"), report != null)}
           />
         </Col>
         <Col xs={24} sm={12} md={8}>
           <Statistic
             title={t("finance.estimatedTotal")}
-            value={moneyOr(formatMoney(report?.estimated_total), report != null)}
+            value={moneyOr(formatMoney(report?.estimated_total ?? "0.00"), report != null)}
           />
         </Col>
         <Col xs={24} sm={12} md={8}>

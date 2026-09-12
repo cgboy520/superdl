@@ -168,7 +168,7 @@ function InstanceDetail() {
   });
   const { date, tzOffsetMinutes } = localToday();
   const { data: daily } = useDailySummary(date, tzOffsetMinutes, { refetchInterval: POLL.daily });
-  const todayAmount = (instance && daily?.items.find((it) => it.instance_id === instance.id)?.total_amount) ?? null;
+  const todayAmount = (instance && daily?.items.find((it) => it.instance_id === instance.id)?.total_amount) ?? "0.00";
 
   if (instanceError && !instance) {
     return <DataErrorAlert onRetry={() => void refetchInstance()} />;

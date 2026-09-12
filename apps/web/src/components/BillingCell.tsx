@@ -44,7 +44,7 @@ export function BillingCell({
         <SpotReclaimTag market={r.market} />
         <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
           {/* 查询未就绪走 moneyOr 显「—」,不显假 ¥0.00(与详情页同口径) */}
-          {t("instances.todayCost", { amount: moneyOr(formatMoney(todayByInstance.get(r.id)), dailyReady) })}
+          {t("instances.todayCost", { amount: moneyOr(formatMoney(todayByInstance.get(r.id) ?? "0.00"), dailyReady) })}
         </Typography.Text>
       </Space>
     </Space>

@@ -327,7 +327,7 @@ function StoragePage() {
           <Typography.Text strong style={{ display: "block", marginTop: 8 }}>
             {t("storage.dailyEstimate", {
               size: sizeWatch ?? 0,
-              amount: formatMoney(diskDailyEstimate(policies?.disk_price_gb_month, sizeWatch ?? 0)),
+              amount: policies ? formatMoney(diskDailyEstimate(policies.disk_price_gb_month, sizeWatch ?? 0)) : "—",
             })}
           </Typography.Text>
         </Form>

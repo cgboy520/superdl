@@ -154,7 +154,7 @@ export function TopBarUser() {
       <Link to="/billing" className="topbar-balance" aria-label={t("common.balance")}>
         <Space size={4}>
           <WalletOutlined />
-          <span style={{ fontWeight: 600 }}>{moneyOr(formatMoney(wallet?.balance), wallet != null)}</span>
+          <span style={{ fontWeight: 600 }}>{moneyOr(formatMoney(wallet?.balance ?? "0.00"), wallet != null)}</span>
         </Space>
       </Link>
       {screens.md && (

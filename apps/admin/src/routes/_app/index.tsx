@@ -475,17 +475,17 @@ function Overview() {
                   <>
                     <Statistic
                       title={t("overview.todayRevenue")}
-                      value={moneyOr(formatMoney(revenue?.today_revenue), revenue != null)}
+                      value={moneyOr(formatMoney(revenue?.today_revenue ?? "0.00"), revenue != null)}
                     />
                     <Typography.Text type="secondary" style={{ fontSize: fontSize.caption, display: "block" }}>
                       {t("overview.yesterdayPrefix", {
-                        amount: moneyOr(formatMoney(revenue?.yesterday_revenue), revenue != null),
+                        amount: moneyOr(formatMoney(revenue?.yesterday_revenue ?? "0.00"), revenue != null),
                       })}
                     </Typography.Text>
                     {/* 收入含包周期预付,单列摊开 */}
                     <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                       {t("overview.prepaidPart", {
-                        amount: moneyOr(formatMoney(revenue?.today_prepaid), revenue != null),
+                        amount: moneyOr(formatMoney(revenue?.today_prepaid ?? "0.00"), revenue != null),
                       })}
                     </Typography.Text>
                   </>
@@ -498,11 +498,11 @@ function Overview() {
                   <>
                     <Statistic
                       title={t("overview.monthRevenue")}
-                      value={moneyOr(formatMoney(revenue?.month_revenue), revenue != null)}
+                      value={moneyOr(formatMoney(revenue?.month_revenue ?? "0.00"), revenue != null)}
                     />
                     <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                       {t("overview.prepaidPart", {
-                        amount: moneyOr(formatMoney(revenue?.month_prepaid), revenue != null),
+                        amount: moneyOr(formatMoney(revenue?.month_prepaid ?? "0.00"), revenue != null),
                       })}
                     </Typography.Text>
                   </>

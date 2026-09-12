@@ -296,7 +296,7 @@ function MarketPage() {
               },
         ]}
         detail={
-          selected ? (
+          unitPrice != null ? (
             period && quote ? (
               <PeriodQuoteRows quote={quote} gpuCount={gpuCount} cpu={isCpu} hint={t("period.hintFinalOnCreate")} />
             ) : (

@@ -265,7 +265,7 @@ function ServiceDetail() {
   }
   const inst = service.current_instance ?? service.rollout_instance;
   const live = service.status === "running" || service.status === "unready";
-  const todayAmount = (inst && daily?.items.find((it) => it.instance_id === inst.id)?.total_amount) ?? null;
+  const todayAmount = (inst && daily?.items.find((it) => it.instance_id === inst.id)?.total_amount) ?? "0.00";
   const requested: ServiceDetailTab = tab ?? "overview";
   // 公开访问时无「访问密钥」Tab:深链落到设置(鉴权开关在那)
   const activeTab: ServiceDetailTab = requested === "keys" && !service.require_api_key ? "settings" : requested;

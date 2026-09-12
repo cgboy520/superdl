@@ -45,8 +45,8 @@ export function DataDiskCard({
   const disksQ = useDisks();
   const { data: policies } = usePolicies();
   const diskPriceGbMonth = policies?.disk_price_gb_month;
-  // 「约 ¥X/日」为展示层估算(月价/30,BigInt);入账以后端日结为准
-  const diskDaily = diskDailyEstimate(diskPriceGbMonth, newGb);
+  // 「约 ¥X/日」为展示层估算(月价/30,BigInt);入账以后端日结为准;单价未就绪不估算(不显假 0.00)
+  const diskDaily = diskPriceGbMonth === undefined ? undefined : diskDailyEstimate(diskPriceGbMonth, newGb);
 
   const body = (
     <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
@@ -89,7 +89,7 @@ export function DataDiskCard({
             </Space.Compact>
           </Flex>
           <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-            {diskPriceGbMonth
+            {diskPriceGbMonth !== undefined && diskDaily !== undefined
               ? t("create.diskNewSummary", {
                   size: formatSizeGb(newGb),
                   price: t("common.gbMonthPrice", { price: diskPriceGbMonth }),

@@ -32,7 +32,7 @@ export function discountOff(pct: number): number {
 
 /** 本地报价:折扣未就绪不报价。 */
 export function periodQuoteOf(
-  baseHourly: string | null | undefined,
+  baseHourly: string,
   opts: { units: number; period: BillingPeriod; periodCount: number },
   discounts: Record<BillingPeriod, number> | undefined,
 ): PeriodQuote | undefined {

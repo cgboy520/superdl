@@ -66,9 +66,9 @@ export function RenewModal({
   const subscribe = useSubscribeInstance(instance.uuid, { onSuccess: onPaid });
   const submit = isConvert ? subscribe : renew;
 
-  const baseHourly = isConvert ? instance.price_hourly : sub?.unit_price;
+  const baseHourly = isConvert ? instance.price_hourly : (sub?.unit_price ?? null);
   const quote =
-    isConvert || sub
+    baseHourly !== null
       ? periodQuoteOf(baseHourly, { units: billingUnits(instance.gpu_count), period, periodCount: count }, discounts)
       : undefined;
 
@@ -76,7 +76,7 @@ export function RenewModal({
   const newExpiry = new Date(startFrom + PERIOD_HOURS[period] * count * 3_600_000).toISOString();
 
   const balance = wallet?.balance ?? null;
-  const afterBalance = quote ? addAmounts(balance, `-${quote.amount}`) : null;
+  const afterBalance = quote && balance !== null ? addAmounts(balance, `-${quote.amount}`) : null;
   const enough = quote != null && balance != null && compareAmounts(balance, quote.amount) >= 0;
 
   return (
@@ -181,12 +181,16 @@ export function RenewModal({
           items={[
             {
               label: t("common.balance"),
-              children: quote
-                ? t("period.balanceChange", {
-                    before: formatMoney(balance),
-                    after: formatMoney(afterBalance),
-                  })
-                : formatMoney(balance),
+              children:
+                afterBalance !== null && balance !== null
+                  ? t("period.balanceChange", {
+                      before: formatMoney(balance),
+                      after: formatMoney(afterBalance),
+                    })
+                  : // 钱包未就绪不显假 ¥0.00
+                    balance !== null
+                    ? formatMoney(balance)
+                    : "—",
             },
             {
               label: t("period.newExpiry"),
