@@ -99,18 +99,22 @@ function CreateTicketModal({ open, onClose }: { open: boolean; onClose: () => vo
       onCancel={onClose}
       okText={t("support.createSubmit")}
       okButtonProps={{ loading: create.isPending }}
-      onOk={async () => {
-        const values = await form.validateFields();
-        create.mutate({
-          body: values,
-          idempotencyKey: idemKeyOf("ticket", [
-            submitSeq,
-            values.category,
-            values.instance_uuid ?? null,
-            values.subject,
-            values.body,
-          ]),
-        });
+      onOk={() => {
+        void form
+          .validateFields()
+          .then((values) => {
+            create.mutate({
+              body: values,
+              idempotencyKey: idemKeyOf("ticket", [
+                submitSeq,
+                values.category,
+                values.instance_uuid ?? null,
+                values.subject,
+                values.body,
+              ]),
+            });
+          })
+          .catch(() => undefined); // 校验失败:antd 已就地标红
       }}
     >
       <Typography.Paragraph type="secondary" style={{ fontSize: fontSize.caption }}>
@@ -280,7 +284,7 @@ function SupportPage() {
           }}
         />
         <LoadMore
-          hasNextPage={tickets.hasNextPage ?? false}
+          hasNextPage={tickets.hasNextPage}
           loading={tickets.isFetchingNextPage}
           isError={tickets.isFetchNextPageError}
           loadedCount={filtered.length}

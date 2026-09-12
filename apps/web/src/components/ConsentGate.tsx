@@ -36,7 +36,8 @@ export function ConsentGate({
     setChecked(false);
     onCancel();
   };
-  const title = sections.length === 1 ? sections[0]!.title : t("consent.titleBoth");
+  const first = sections[0];
+  const title = sections.length === 1 && first ? first.title : t("consent.titleBoth");
   return (
     <Modal
       title={title}

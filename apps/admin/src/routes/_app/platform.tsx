@@ -249,13 +249,15 @@ function PlatformConfigPage() {
           open={reasonOpen}
           onCancel={() => setReasonOpen(false)}
           okButtonProps={{ loading: update.isPending }}
-          onOk={async () => {
-            try {
-              const { reason } = await reasonForm.validateFields();
-              update.mutate({ data: { updates: Object.fromEntries(changed), reason } });
-            } catch {
-              /* 校验失败:antd 已给红字 */
-            }
+          onOk={() => {
+            void (async () => {
+              try {
+                const { reason } = await reasonForm.validateFields();
+                update.mutate({ data: { updates: Object.fromEntries(changed), reason } });
+              } catch {
+                /* 校验失败:antd 已给红字 */
+              }
+            })();
           }}
         >
           <Space orientation="vertical" size={8} style={{ width: "100%" }}>

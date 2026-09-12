@@ -10,7 +10,8 @@ export interface ApiErrorLike {
 export type LooseT = (key: string, opts?: Record<string, unknown>) => string;
 
 export function apiErrorText(t: LooseT, err: unknown, fallback: string): string {
-  const e = (err ?? undefined) as ApiErrorLike | undefined;
+  // unknown → 结构读取;可选链兜住 null/非对象
+  const e = err as ApiErrorLike | undefined;
   if (e?.message_key) {
     return t(e.message_key, {
       ns: "errors",

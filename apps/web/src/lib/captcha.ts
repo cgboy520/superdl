@@ -79,8 +79,8 @@ async function initAliyun(cfg: CaptchaConfigOut): Promise<void> {
       pendingResolve?.(param);
       pendingResolve = null;
     },
-    onBizResultCallback: () => {},
-    getInstance: () => {},
+    onBizResultCallback: () => undefined,
+    getInstance: () => undefined,
     slideStyle: { width: 360, height: 40 },
     language: document.documentElement.lang.startsWith("en") ? "en" : "cn",
     region: "cn",

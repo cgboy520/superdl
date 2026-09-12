@@ -140,7 +140,7 @@ describe("InstanceActions", () => {
   });
 
   it("failed 实例:主动作是「重新创建」并链到该规格的创建页", () => {
-    renderWithApp(<InstanceActions instance={{ ...makeInstance("failed"), sku_id: 7 } as InstanceOut} />);
+    renderWithApp(<InstanceActions instance={{ ...makeInstance("failed"), sku_id: 7 }} />);
     const link = screen.getByRole("link", { name: /重新创建/ });
     expect(link).toHaveAttribute("href", "/market/create/$skuId");
   });

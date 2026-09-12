@@ -174,7 +174,7 @@ import type {
   TenantFreezeRequest,
   TenantQuotaUpdate,
 } from "@superdl/api-client";
-import { useInfiniteQuery, useMutation, useQuery, type UseMutationOptions } from "@tanstack/react-query";
+import { skipToken, useInfiniteQuery, useMutation, useQuery, type UseMutationOptions } from "@tanstack/react-query";
 
 import { downloadCsvChecked, POLL } from "@superdl/ui";
 
@@ -217,18 +217,25 @@ export type {
   RefundPayout,
 } from "@superdl/api-client";
 
-type MutOpts<TData, TVars> = { mutation?: UseMutationOptions<TData, unknown, TVars> };
+interface MutOpts<TData, TVars> {
+  mutation?: UseMutationOptions<TData, unknown, TVars>;
+}
 
-/** 变更 hook 工厂:mutationFn + 透传 opts.mutation。 */
-function adminMutation<TData, TVars>(mutationFn: (v: TVars) => Promise<TData>) {
+/** 变更 hook 工厂:mutationFn + 透传 opts.mutation。无参变更省略变量(TVars 默认 void,mutate() 直调)。 */
+function adminMutation<TData, TVars = void>(mutationFn: (v: TVars) => Promise<TData>) {
   return function useBoundMutation(opts?: MutOpts<TData, TVars>) {
     return useMutation({ mutationFn, ...opts?.mutation });
   };
 }
 
 /** 游标分页公共形状:params 带 limit/cursor,响应带 next_cursor(audit 不走这里)。 */
-type CursorParams = { limit?: number; cursor?: string };
-type CursorPage = { next_cursor?: string | null };
+interface CursorParams {
+  limit?: number;
+  cursor?: string;
+}
+interface CursorPage {
+  next_cursor?: string | null;
+}
 
 /** 游标分页 useInfiniteQuery 骨架。 */
 function useCursorPages<TPage extends CursorPage, P extends CursorParams>(
@@ -264,7 +271,7 @@ export function useClusterStatus() {
   return { ...q, queryKey };
 }
 
-export const useTestClusterConnection = adminMutation((_: void) =>
+export const useTestClusterConnection = adminMutation(() =>
   adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost(),
 );
 
@@ -281,8 +288,7 @@ export function useGpuModelAggregates(options?: { enabled?: boolean }) {
 export function useSkuCapacityPreview(params: SkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetParams | null) {
   return useQuery<CapacityPreviewOut>({
     queryKey: ["admin", "sku-capacity-preview", params],
-    queryFn: () => skuCapacityPreviewApiAdminV1SkusCapacityPreviewGet(params!),
-    enabled: params !== null,
+    queryFn: params === null ? skipToken : () => skuCapacityPreviewApiAdminV1SkusCapacityPreviewGet(params),
     placeholderData: (prev) => prev,
   });
 }
@@ -659,7 +665,10 @@ export function useAuditLog(filters: AuditFilters) {
         limit,
         ...(pageParam ? { cursor: pageParam } : {}),
       }),
-    getNextPageParam: (last) => (last.length >= limit ? btoa(String(last[last.length - 1]!.id)) : undefined),
+    getNextPageParam: (last) => {
+      const tail = last[last.length - 1];
+      return last.length >= limit && tail ? btoa(String(tail.id)) : undefined;
+    },
   });
   return { ...q, queryKey };
 }
@@ -684,7 +693,7 @@ export const useMfaVerify = adminMutation((v: { ticket: string; code: string }) 
   mfaLoginVerifyApiAdminV1AuthLoginMfaPost({ ticket: v.ticket, code: v.code }),
 );
 
-export const useRegenerateRecoveryCodes = adminMutation((_: void) =>
+export const useRegenerateRecoveryCodes = adminMutation(() =>
   mfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPost(),
 );
 
@@ -879,7 +888,7 @@ export const useUpdatePlatformConfig = adminMutation((v: { data: PlatformConfigU
   adminUpdatePlatformConfigApiAdminV1PlatformConfigPut(v.data),
 );
 
-export const useTestRegistry = adminMutation((_: void) => adminTestRegistryApiAdminV1PlatformConfigTestRegistryPost());
+export const useTestRegistry = adminMutation(() => adminTestRegistryApiAdminV1PlatformConfigTestRegistryPost());
 
 export const useTestSms = adminMutation((v: { data: SmsTestRequest }) =>
   adminTestSmsApiAdminV1PlatformConfigTestSmsPost(v.data),

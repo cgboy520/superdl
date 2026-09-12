@@ -49,10 +49,9 @@ export function ConnectMenu({ instance, size = "small" }: { instance: InstanceOu
       onOpenChange={setOpen}
       menu={{
         items,
-        onClick: async ({ key }) => {
+        onClick: ({ key }) => {
           if (key === "ssh" && sshCommand) {
-            await navigator.clipboard.writeText(sshCommand);
-            message.success(t("common.copied"));
+            void navigator.clipboard.writeText(sshCommand).then(() => message.success(t("common.copied")));
           } else if (key === "jupyter" && jupyterUrl) {
             window.open(jupyterUrl, "_blank", "noopener,noreferrer");
           } else if (key === "access") {

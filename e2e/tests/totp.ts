@@ -46,11 +46,10 @@ export async function fillTotp(
   secret: string,
 ): Promise<void> {
   let now = Date.now();
-  let remain = 30_000 - (now % 30_000);
+  const remain = 30_000 - (now % 30_000);
   if (remain < 3_000 || lastStepBySecret.get(secret) === Math.floor(now / 30_000)) {
     await input.page().waitForTimeout(remain + 100);
     now = Date.now();
-    remain = 30_000 - (now % 30_000);
   }
   lastStepBySecret.set(secret, Math.floor(now / 30_000));
   await input.fill(totp(secret, now));

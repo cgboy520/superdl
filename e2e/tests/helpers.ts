@@ -21,7 +21,7 @@ export function genEd25519Key(): string {
   dv.setUint32(4 + typeBytes.length, 32);
   blob.set(keyBytes, 8 + typeBytes.length);
   let bin = "";
-  for (let i = 0; i < blob.length; i++) bin += String.fromCharCode(blob[i]);
+  for (const b of blob) bin += String.fromCharCode(b);
   const b64 = btoa(bin);
   return `${type} ${b64} e2e@smoke`;
 }

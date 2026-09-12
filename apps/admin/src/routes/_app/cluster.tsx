@@ -51,7 +51,7 @@ function ClusterPage() {
     },
   });
 
-  const unlabeled = data?.pools["unlabeled"] ?? 0;
+  const unlabeled = data?.pools.unlabeled ?? 0;
   const isK3s = data?.distro === "k3s";
 
   return (
@@ -143,7 +143,7 @@ function ClusterPage() {
           <Col xs={24} lg={12}>
             <Card title={t("cluster.healthCard")}>
               <Space orientation="vertical" size={10} style={{ width: "100%" }}>
-                {data && (data.components ?? []).length === 0 && (
+                {data && data.components.length === 0 && (
                   <Typography.Text type="secondary">{t("cluster.noComponents")}</Typography.Text>
                 )}
                 {(data?.components ?? []).map((c) => (

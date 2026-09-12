@@ -176,7 +176,7 @@ export function AdminServicesTable({
       />
       {!compact && (
         <LoadMore
-          hasNextPage={Boolean(hasNextPage)}
+          hasNextPage={hasNextPage}
           loading={isFetchingNextPage}
           isError={isFetchNextPageError}
           loadedCount={rows.length}

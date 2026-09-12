@@ -40,7 +40,7 @@ const LEGACY_TABS: Record<string, ServiceDetailTab> = { revisions: "history", ev
 
 /** tab 白名单:旧名归一,非法值(含更早的 ?tab=service)回默认 Tab。 */
 export function serviceDetailValidateSearch(search: Record<string, unknown>): { tab?: ServiceDetailTab } {
-  const tab = search["tab"];
+  const tab = search.tab;
   if (typeof tab !== "string") return {};
   if ((SERVICE_DETAIL_TABS as readonly string[]).includes(tab)) return { tab: tab as ServiceDetailTab };
   const legacy = LEGACY_TABS[tab];
@@ -216,7 +216,7 @@ function EventsTab({ slug, status }: { slug: string; status: string }) {
       isLoading={isLoading}
       isError={isError}
       onRetry={() => void refetch()}
-      hasNextPage={hasNextPage ?? false}
+      hasNextPage={hasNextPage}
       isFetchingNextPage={isFetchingNextPage}
       isFetchNextPageError={isFetchNextPageError}
       onLoadMore={() => void fetchNextPage()}
@@ -347,7 +347,7 @@ function ServiceDetail() {
                 {service.name}
               </Typography.Title>
               <ServiceStatusBadge status={service.status} frozenDeadline={inst?.frozen_deadline} />
-              {inst && <TierTag tier={inst.spec["tier"] as string} pool={inst.spec["pool_label"] as string} />}
+              {inst && <TierTag tier={inst.spec.tier as string} pool={inst.spec.pool_label as string} />}
               <Tag>{t("services.revisionTag", { no: service.revision })}</Tag>
               {inst && <SubscriptionTag market={inst.market} subscription={inst.subscription} />}
               {inst && <SpotTag market={inst.market} />}
@@ -360,7 +360,7 @@ function ServiceDetail() {
                 {
                   label: t("services.detail.labelSpec"),
                   children: inst
-                    ? t("instances.specLine", { model: inst.spec["gpu_model"] as string, count: inst.gpu_count })
+                    ? t("instances.specLine", { model: inst.spec.gpu_model as string, count: inst.gpu_count })
                     : "—",
                 },
                 {

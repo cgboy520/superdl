@@ -26,7 +26,7 @@ const SUB: InstanceSubscriptionOut = {
   auto_renew: false,
   amount_paid: "100.00",
   unit_price: "1.0000",
-} as InstanceSubscriptionOut;
+};
 
 describe("HexTag 替换后的 Tag 渲染", () => {
   it("暗色主题:TierTag/SpotTag/SubscriptionTag 底色不被 algorithm 调亮,白字", () => {

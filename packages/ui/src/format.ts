@@ -233,19 +233,19 @@ export function formatExpiry(expiresAt: string | null | undefined, t: SharedT, n
   return expiresAt ? formatDaysUntil(expiresAt, t, now) : null;
 }
 
-/** useFormat() 绑定 t/locale 后的格式化件集合。 */
+/** useFormat() 绑定 t/locale 后的格式化件集合。属性式签名(非方法简写),解构不触 unbound-method。 */
 export interface Formatters {
   currencySymbol: string;
-  formatMoney(amount: string | null | undefined): string;
-  formatHourlyPrice(price: string | null | undefined): string;
-  formatDuration(seconds: number): string;
-  formatCountdown(deadline: string | Date, now?: Date): string;
-  formatReclaimCountdown(deadline: string | Date, now?: Date): string;
-  formatDaysUntil(deadline: string | Date, now?: Date): string;
-  formatDaysLeft(startedAt: string | null | undefined, totalDays: number, now?: Date): string | null;
-  formatPeriodPrice(amount: string | null | undefined, period: string, count: number): string;
-  formatExpiry(expiresAt: string | null | undefined, now?: Date): string | null;
-  formatSpotDiscount(discountPct: number): string;
+  formatMoney: (amount: string | null | undefined) => string;
+  formatHourlyPrice: (price: string | null | undefined) => string;
+  formatDuration: (seconds: number) => string;
+  formatCountdown: (deadline: string | Date, now?: Date) => string;
+  formatReclaimCountdown: (deadline: string | Date, now?: Date) => string;
+  formatDaysUntil: (deadline: string | Date, now?: Date) => string;
+  formatDaysLeft: (startedAt: string | null | undefined, totalDays: number, now?: Date) => string | null;
+  formatPeriodPrice: (amount: string | null | undefined, period: string, count: number) => string;
+  formatExpiry: (expiresAt: string | null | undefined, now?: Date) => string | null;
+  formatSpotDiscount: (discountPct: number) => string;
 }
 
 export function makeFormatters(t: SharedT, locale: string): Formatters {

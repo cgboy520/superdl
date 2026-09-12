@@ -68,7 +68,7 @@ export function HourlyBillsTable({
         ]}
       />
       <LoadMore
-        hasNextPage={hasNextPage ?? false}
+        hasNextPage={hasNextPage}
         loading={isFetchingNextPage}
         isError={isFetchNextPageError}
         loadedCount={rows.length}

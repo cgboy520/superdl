@@ -9,7 +9,11 @@ import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { AdminServicesTable } from "./-AdminServicesTable";
 
-export type ServicesSearch = { q?: string; user_id?: number; released?: "1" };
+export interface ServicesSearch {
+  q?: string;
+  user_id?: number;
+  released?: "1";
+}
 
 /** q:名称或 slug 前缀;user_id:租户过滤;released=1:含已删除。 */
 export function servicesValidateSearch(search: Record<string, unknown>): ServicesSearch {

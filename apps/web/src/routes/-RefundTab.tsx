@@ -177,7 +177,7 @@ export function RefundTab() {
         ]}
       />
       <LoadMore
-        hasNextPage={refunds.hasNextPage ?? false}
+        hasNextPage={refunds.hasNextPage}
         loading={refunds.isFetchingNextPage}
         isError={refunds.isFetchNextPageError}
         loadedCount={rows.length}

@@ -47,6 +47,8 @@ export default tseslint.config(
         "error",
         { ignorePrimitives: { string: true, number: true, boolean: true } },
       ],
+      // TanStack Query 无参变更的惯用类型变量:useMutation<void, ...>(仅放行泛型实参位)
+      "@typescript-eslint/no-invalid-void-type": ["error", { allowInGenericTypeArguments: true }],
       "no-restricted-globals": [
         "error",
         { name: "fetch", message: "使用 @superdl/api-client 生成的 hooks,禁止手写 fetch" },

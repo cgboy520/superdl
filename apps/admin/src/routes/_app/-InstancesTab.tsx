@@ -231,7 +231,7 @@ export function InstancesTab() {
         ]}
       />
       <LoadMore
-        hasNextPage={Boolean(hasNextPage)}
+        hasNextPage={hasNextPage}
         loading={isFetchingNextPage}
         isError={isFetchNextPageError}
         loadedCount={instances.length}

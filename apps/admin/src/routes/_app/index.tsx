@@ -410,7 +410,7 @@ function AlertStreamCard() {
                       <Button
                         size="small"
                         disabled={!writable}
-                        loading={ack.isPending && ack.variables?.alertId === a.id}
+                        loading={ack.isPending && ack.variables.alertId === a.id}
                         onClick={() => ack.mutate({ alertId: a.id })}
                       >
                         {t("overview.ack")}

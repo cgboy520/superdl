@@ -62,6 +62,32 @@ export function AnomaliesTab() {
     }
   };
 
+  const submitBackfill = async () => {
+    let v: { reason: string };
+    try {
+      v = await reasonForm.validateFields();
+    } catch {
+      return; // 校验失败:antd 已就地标红
+    }
+    const target = backfillTarget;
+    if (!target?.order_no) return;
+    const orderNo = target.order_no;
+    try {
+      await backfill.mutateAsync({
+        orderNo,
+        data: { reason: v.reason },
+        // 幂等键从快照派生
+        idempotencyKey: idemKeyOf("backfill", [orderNo, v.reason]),
+      });
+      message.success(t("finance.backfilled"));
+      setBackfillTarget(null);
+      reasonForm.resetFields();
+      refresh();
+    } catch (e) {
+      message.error(errText(e, t("finance.backfillFailed")));
+    }
+  };
+
   return (
     <>
       <Table<AnomalyRow>
@@ -105,9 +131,12 @@ export function AnomaliesTab() {
               if (r.kind === "negative_balance") {
                 return <span style={{ color: adminColors.textSecondary }}>{t("finance.negativeBalanceHint")}</span>;
               }
+              // 渠道核验/补单只对有订单号的异常有意义
+              const orderNo = r.order_no;
+              if (!orderNo) return null;
               return (
                 <Space>
-                  <Button size="small" onClick={() => void doVerify(r.order_no!)}>
+                  <Button size="small" onClick={() => void doVerify(orderNo)}>
                     {t("finance.verifyChannel")}
                   </Button>
                   <Tooltip title={writable ? "" : t("finance.financeOnlyBackfill")}>
@@ -127,23 +156,7 @@ export function AnomaliesTab() {
         onCancel={() => setBackfillTarget(null)}
         okText={t("finance.backfillOk")}
         okButtonProps={{ loading: backfill.isPending }}
-        onOk={async () => {
-          const { reason } = await reasonForm.validateFields();
-          try {
-            await backfill.mutateAsync({
-              orderNo: backfillTarget!.order_no!,
-              data: { reason },
-              // 幂等键从快照派生
-              idempotencyKey: idemKeyOf("backfill", [backfillTarget!.order_no!, reason]),
-            });
-            message.success(t("finance.backfilled"));
-            setBackfillTarget(null);
-            reasonForm.resetFields();
-            refresh();
-          } catch (e) {
-            message.error(errText(e, t("finance.backfillFailed")));
-          }
-        }}
+        onOk={() => void submitBackfill()}
       >
         <Space orientation="vertical" size={8} style={{ width: "100%" }}>
           <span style={{ color: adminColors.textSecondary }}>{t("finance.backfillNote")}</span>

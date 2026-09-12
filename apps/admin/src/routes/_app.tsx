@@ -116,7 +116,7 @@ function AlertBell() {
                           <Button
                             size="small"
                             disabled={!writable}
-                            loading={ack.isPending && ack.variables?.alertId === a.id}
+                            loading={ack.isPending && ack.variables.alertId === a.id}
                             onClick={() => ack.mutate({ alertId: a.id })}
                           >
                             {t("overview.ack")}
@@ -311,15 +311,17 @@ function AppLayout() {
                     key: "logout",
                     icon: <LogoutOutlined />,
                     label: t("shell.logout"),
-                    onClick: async () => {
-                      // 服务端登出(吊销全部会话)再清本地态;网络失败也照常本地登出
-                      try {
-                        await adminLogoutApiAdminV1AuthLogoutPost();
-                      } catch {
-                        /* 登出不受阻 */
-                      }
-                      authStore.getState().logout();
-                      void navigate({ to: "/login" });
+                    onClick: () => {
+                      void (async () => {
+                        // 服务端登出(吊销全部会话)再清本地态;网络失败也照常本地登出
+                        try {
+                          await adminLogoutApiAdminV1AuthLogoutPost();
+                        } catch {
+                          /* 登出不受阻 */
+                        }
+                        authStore.getState().logout();
+                        void navigate({ to: "/login" });
+                      })();
                     },
                   },
                 ],

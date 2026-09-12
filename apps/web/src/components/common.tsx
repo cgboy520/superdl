@@ -49,7 +49,7 @@ export function ServiceStatusBadge({ status, frozenDeadline }: { status: string;
   const badge = <Badge status={meta?.badge ?? "default"} text={meta ? t(meta.labelKey) : status} />;
   return (
     <span>
-      {meta && "hintKey" in meta && meta.hintKey ? <Tooltip title={t(meta.hintKey)}>{badge}</Tooltip> : badge}
+      {meta && "hintKey" in meta ? <Tooltip title={t(meta.hintKey)}>{badge}</Tooltip> : badge}
       {status === "frozen" && frozenDeadline && (
         <Tag color="red" style={{ marginInlineStart: 8 }}>
           {formatReclaimCountdown(frozenDeadline)}
@@ -71,7 +71,7 @@ export function TierTag({ tier, pool }: { tier: string; pool?: string | null }) 
   const meta = metaOf(skuTierMap, variant);
   if (!meta) return <Tag>{variant}</Tag>;
   const tag = <HexTag color={meta.color}>{t(meta.labelKey)}</HexTag>;
-  return "hintKey" in meta && meta.hintKey ? <Tooltip title={t(meta.hintKey)}>{tag}</Tooltip> : tag;
+  return "hintKey" in meta ? <Tooltip title={t(meta.hintKey)}>{tag}</Tooltip> : tag;
 }
 
 export function SubscriptionTag({
@@ -136,11 +136,12 @@ export function CopyButton({ text, label }: { text: string; label?: string }) {
     <Button
       size="small"
       icon={copied ? <CheckOutlined /> : <CopyOutlined />}
-      onClick={async () => {
-        await navigator.clipboard.writeText(text);
-        setCopied(true);
-        message.success(t("common.copied"));
-        setTimeout(() => setCopied(false), 1500);
+      onClick={() => {
+        void navigator.clipboard.writeText(text).then(() => {
+          setCopied(true);
+          message.success(t("common.copied"));
+          setTimeout(() => setCopied(false), 1500);
+        });
       }}
     >
       {label}

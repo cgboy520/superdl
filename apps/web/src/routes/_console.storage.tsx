@@ -165,7 +165,7 @@ function StoragePage() {
   const [deleteTarget, setDeleteTarget] = useState<DiskOut | null>(null);
   const [newSize, setNewSize] = useState(100);
   const [form] = Form.useForm();
-  const sizeWatch = Form.useWatch<number>("size_gb", form);
+  const sizeWatch = Form.useWatch<number | undefined>("size_gb", form);
   const { formatMoney } = useFormat();
 
   const priceText = policies
@@ -337,7 +337,7 @@ function StoragePage() {
         title={t("storage.expandDrawerTitle", { name: expandTarget?.name ?? "" })}
         open={Boolean(expandTarget)}
         onClose={() => setExpandTarget(null)}
-        width="min(420px, 100vw)"
+        size="min(420px, 100vw)"
         footer={
           <Button
             type="primary"

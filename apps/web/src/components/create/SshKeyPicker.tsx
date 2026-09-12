@@ -26,7 +26,8 @@ export function SshKeyPicker({ value, onChange }: { value: number[]; onChange: (
     },
   });
   // 只有一把公钥时默认选中(一键创建的前提之一)
-  const onlyKeyId = keys.length === 1 ? keys[0]!.id : undefined;
+  const firstKey = keys[0];
+  const onlyKeyId = keys.length === 1 && firstKey ? firstKey.id : undefined;
   useEffect(() => {
     if (onlyKeyId !== undefined && value.length === 0) onChange([onlyKeyId]);
   }, [onlyKeyId, value.length, onChange]);
@@ -88,7 +89,7 @@ export function SshKeyPicker({ value, onChange }: { value: number[]; onChange: (
   return (
     <Checkbox.Group
       value={value}
-      onChange={(v) => onChange(v as number[])}
+      onChange={(v) => onChange(v)}
       options={keys.map((k) => ({
         value: k.id,
         label: `${k.name}(${k.fingerprint.slice(0, 20)}…)`,

@@ -91,13 +91,15 @@ export function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => 
           <Button
             type="primary"
             loading={create.isPending}
-            onClick={async () => {
-              try {
-                const values = await form.validateFields();
-                create.mutate({ data: values, idempotencyKey: idemKey });
-              } catch {
-                // 校验失败:antd 已给红字
-              }
+            onClick={() => {
+              void (async () => {
+                try {
+                  const values = await form.validateFields();
+                  create.mutate({ data: values, idempotencyKey: idemKey });
+                } catch {
+                  // 校验失败:antd 已给红字
+                }
+              })();
             }}
           >
             {t("nodes.generateCmd")}

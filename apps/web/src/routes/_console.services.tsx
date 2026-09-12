@@ -33,7 +33,10 @@ import {
 import { ServiceActions } from "../components/services/ServiceActions";
 import { requireAuth } from "../lib/guard";
 
-export type ServicesSearch = { q?: string; status?: string };
+export interface ServicesSearch {
+  q?: string;
+  status?: string;
+}
 
 /** 列表状态入 URL;非法值回默认(已删除不在筛选项里)。 */
 export function servicesValidateSearch(search: Record<string, unknown>): ServicesSearch {
@@ -284,9 +287,9 @@ function ServicesPage() {
               return (
                 <Space>
                   <span>
-                    {inst.spec["gpu_model"] as string} × {inst.gpu_count}
+                    {inst.spec.gpu_model as string} × {inst.gpu_count}
                   </span>
-                  <TierTag tier={inst.spec["tier"] as string} pool={inst.spec["pool_label"] as string} />
+                  <TierTag tier={inst.spec.tier as string} pool={inst.spec.pool_label as string} />
                 </Space>
               );
             },
@@ -311,7 +314,7 @@ function ServicesPage() {
         })}
       />
       <LoadMore
-        hasNextPage={hasNextPage ?? false}
+        hasNextPage={hasNextPage}
         loading={isFetchingNextPage}
         isError={isFetchNextPageError}
         loadedCount={rows.length}

@@ -43,7 +43,7 @@ async function refreshOnce(staleToken: string | null): Promise<boolean> {
     if (config.getToken() !== staleToken) return true;
     return (await config.refreshToken?.()) ?? false;
   };
-  if (typeof navigator !== "undefined" && navigator.locks) {
+  if (typeof navigator !== "undefined" && "locks" in navigator) {
     return navigator.locks.request(REFRESH_LOCK, run);
   }
   refreshInFlight ??= run().finally(() => {

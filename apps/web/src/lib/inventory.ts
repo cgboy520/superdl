@@ -17,7 +17,7 @@ export function dedupAvailableByModel(skus: readonly SkuAvailabilityLike[]): Map
   const byGroup = new Map<string, { model: string; free: number }>();
   for (const s of skus) {
     if (!s.gpu_model) continue;
-    const key = `${s.pool_label ?? ""}${s.gpu_model}`;
+    const key = `${s.pool_label}${s.gpu_model}`;
     const free = s.available_count ?? 0;
     const cur = byGroup.get(key);
     if (cur === undefined || free > cur.free) {

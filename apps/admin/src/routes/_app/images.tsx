@@ -298,7 +298,7 @@ function ImagesPage() {
                     checked={v}
                     disabled={!writable}
                     // 行级 loading
-                    loading={update.isPending && update.variables?.imageId === r.id}
+                    loading={update.isPending && update.variables.imageId === r.id}
                     onChange={(on) => {
                       // 关闭预热影响新节点的秒级启动承诺:L1 确认;开启直接生效
                       if (on) {
@@ -360,7 +360,7 @@ function ImagesPage() {
                     <Button
                       size="small"
                       disabled={!writable || !r.prewarm_enabled}
-                      loading={prewarm.isPending && prewarm.variables?.imageId === r.id}
+                      loading={prewarm.isPending && prewarm.variables.imageId === r.id}
                       onClick={() => prewarm.mutate({ imageId: r.id })}
                     >
                       {t("images.prewarmNow")}
@@ -399,9 +399,9 @@ function ImagesPage() {
           }
           open={editing !== null}
           onClose={() => setEditing(null)}
-          width="min(480px, 100vw)"
+          size="min(480px, 100vw)"
           extra={
-            <Button type="primary" loading={create.isPending || update.isPending} onClick={submit}>
+            <Button type="primary" loading={create.isPending || update.isPending} onClick={() => void submit()}>
               {t("skus.submit")}
             </Button>
           }

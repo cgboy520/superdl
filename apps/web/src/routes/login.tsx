@@ -124,7 +124,7 @@ function LoginPage() {
   const { token } = theme.useToken();
   const [mode, setMode] = useState<Mode>(searchMode === "register" ? "register" : "sms");
   const [form] = Form.useForm();
-  const watchedPassword: string = Form.useWatch("password", form) ?? "";
+  const watchedPassword = (Form.useWatch("password", form) as string | undefined) ?? "";
 
   const switchMode = (next: Mode) => {
     setMode(next);
@@ -246,7 +246,7 @@ function LoginPage() {
                 requiredMessage={t("login.smsRequired")}
                 getCodeLabel={t("login.getCode")}
                 onSend={() => {
-                  void form.validateFields(["phone"]).then(({ phone }) => sms.send(phone));
+                  void form.validateFields(["phone"]).then(({ phone }: { phone: string }) => sms.send(phone));
                 }}
               />
             )}

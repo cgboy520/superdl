@@ -7,7 +7,11 @@ import { adminColors } from "@superdl/ui";
 import { type PlatformConfigItem } from "../../api";
 
 export type Group = PlatformConfigItem["group"];
-export type ConfigWarning = { key: string; level: "error" | "warning"; message: string };
+export interface ConfigWarning {
+  key: string;
+  level: "error" | "warning";
+  message: string;
+}
 
 /** 左侧分组导航:业务分组 → 配置组;顺序即展示顺序,新增配置组须归入某分组。 */
 export const NAV = [

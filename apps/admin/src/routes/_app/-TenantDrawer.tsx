@@ -84,7 +84,7 @@ export function TenantDrawer({
 
   return (
     <Drawer
-      width="min(880px, 100vw)"
+      size="min(880px, 100vw)"
       open={tenant !== null}
       onClose={onClose}
       title={tenant ? t("tenants.drawerTitle", { id: tenant.id, phone: tenant.phone_masked }) : undefined}
@@ -181,8 +181,7 @@ function BillsTab({ userId, instances }: { userId: number; instances: AdminInsta
     <>
       <Select
         allowClear
-        showSearch
-        optionFilterProp="label"
+        showSearch={{ optionFilterProp: "label" }}
         placeholder={t("tenants.billsInstanceFilter")}
         style={{ width: 280, marginBottom: 12 }}
         value={instanceId}
@@ -225,7 +224,7 @@ function BillsTab({ userId, instances }: { userId: number; instances: AdminInsta
         ]}
       />
       <LoadMore
-        hasNextPage={Boolean(bills.hasNextPage)}
+        hasNextPage={bills.hasNextPage}
         loading={bills.isFetchingNextPage}
         isError={bills.isFetchNextPageError}
         loadedCount={billRows.length}
@@ -290,7 +289,7 @@ function LedgerTab({ userId }: { userId: number }) {
         ]}
       />
       <LoadMore
-        hasNextPage={Boolean(ledger.hasNextPage)}
+        hasNextPage={ledger.hasNextPage}
         loading={ledger.isFetchingNextPage}
         isError={ledger.isFetchNextPageError}
         loadedCount={ledgerRows.length}
@@ -327,7 +326,7 @@ function OrdersTab({ userId }: { userId: number }) {
         columns={columns}
       />
       <LoadMore
-        hasNextPage={Boolean(orders.hasNextPage)}
+        hasNextPage={orders.hasNextPage}
         loading={orders.isFetchingNextPage}
         isError={orders.isFetchNextPageError}
         loadedCount={rows.length}
@@ -443,7 +442,7 @@ function QuotaTab({ userId }: { userId: number }) {
   const q = quota.data;
   if (!q) return null;
 
-  const fields: Array<{ name: "max_gpus" | "max_instances" | "max_disks"; label: string }> = [
+  const fields: { name: "max_gpus" | "max_instances" | "max_disks"; label: string }[] = [
     { name: "max_gpus", label: t("tenants.quota.maxGpus") },
     { name: "max_instances", label: t("tenants.quota.maxInstances") },
     { name: "max_disks", label: t("tenants.quota.maxDisks") },
@@ -461,23 +460,25 @@ function QuotaTab({ userId }: { userId: number }) {
           max_disks: q.max_disks,
           note: "",
         }}
-        onFinish={async (v) => {
-          try {
-            await setQuota.mutateAsync({
-              userId,
-              data: {
-                max_gpus: v.max_gpus ?? null,
-                max_instances: v.max_instances ?? null,
-                max_disks: v.max_disks ?? null,
-                note: v.note.trim(),
-              },
-            });
-            message.success(t("tenants.quota.saved"));
-            form.resetFields(["note"]);
-            await qc.invalidateQueries({ queryKey: quota.queryKey });
-          } catch (e) {
-            message.error(errText(e, t("tenants.quota.saveFailed")));
-          }
+        onFinish={(v) => {
+          void (async () => {
+            try {
+              await setQuota.mutateAsync({
+                userId,
+                data: {
+                  max_gpus: v.max_gpus ?? null,
+                  max_instances: v.max_instances ?? null,
+                  max_disks: v.max_disks ?? null,
+                  note: v.note.trim(),
+                },
+              });
+              message.success(t("tenants.quota.saved"));
+              form.resetFields(["note"]);
+              await qc.invalidateQueries({ queryKey: quota.queryKey });
+            } catch (e) {
+              message.error(errText(e, t("tenants.quota.saveFailed")));
+            }
+          })();
         }}
       >
         <Space wrap size={12}>
@@ -544,8 +545,7 @@ function EventsTab({ instances }: { instances: AdminInstanceOut[] }) {
     <>
       <Select
         allowClear
-        showSearch
-        optionFilterProp="label"
+        showSearch={{ optionFilterProp: "label" }}
         placeholder={t("tenants.events.instancePlaceholder")}
         style={{ width: 320, marginBottom: 12 }}
         value={uuid}
@@ -594,7 +594,7 @@ function EventsTab({ instances }: { instances: AdminInstanceOut[] }) {
         ]}
       />
       <LoadMore
-        hasNextPage={Boolean(events.hasNextPage)}
+        hasNextPage={events.hasNextPage}
         loading={events.isFetchingNextPage}
         isError={events.isFetchNextPageError}
         loadedCount={rows.length}

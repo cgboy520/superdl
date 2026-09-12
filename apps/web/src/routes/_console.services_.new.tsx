@@ -305,11 +305,11 @@ function DeployPage() {
       if (diskMode === "new") {
         let disk: DiskOut;
         try {
-          disk = (await createDisk.mutateAsync({
+          disk = await createDisk.mutateAsync({
             body: { name: newDiskName.trim() || defaultDiskName(), size_gb: diskGbValue },
             // 与服务同一个参数快照派生
             idempotencyKey,
-          })) as DiskOut;
+          });
         } catch {
           return; // 建盘失败,错误已由 useApiMutation 弹出
         }
@@ -706,7 +706,7 @@ function DeployPage() {
                 {submitLabel}
               </Button>
             ) : enough ? (
-              <Tooltip title={canSubmit ? undefined : (firstIssue ?? undefined)}>
+              <Tooltip title={canSubmit ? undefined : firstIssue}>
                 <Button type="primary" size="large" disabled={!canSubmit} loading={pending} onClick={submit}>
                   {submitLabel}
                 </Button>

@@ -159,7 +159,7 @@ function CreatePage() {
 
   // 镜像清单:CPU 规格只给不带 CUDA 的镜像,GPU 规格只给带 CUDA 的
   const usableImages = useMemo(
-    () => (images ?? []).filter((img) => (/^\d/.test(img.cuda_version) ? !isCpu : Boolean(isCpu))),
+    () => (images ?? []).filter((img) => (/^\d/.test(img.cuda_version) ? !isCpu : isCpu)),
     [images, isCpu],
   );
   const cascade = useMemo(() => {
@@ -334,11 +334,11 @@ function CreatePage() {
       if (diskMode === "new" && !createdDisk) {
         setPhase("disk");
         try {
-          createdDisk = (await createDisk.mutateAsync({
+          createdDisk = await createDisk.mutateAsync({
             body: { name: newDiskName.trim() || defaultDiskName(), size_gb: diskGbValue },
             // 与实例同一个参数快照派生
             idempotencyKey,
-          })) as DiskOut;
+          });
         } catch {
           return; // 建盘失败,错误已由 useApiMutation 弹出
         }
@@ -548,7 +548,7 @@ function CreatePage() {
                       value={effectivePlatformImage}
                       onChange={(v) => {
                         setImageTouched(true);
-                        setPlatformImage(v as string[]);
+                        setPlatformImage(v);
                       }}
                       placeholder={t("create.cascadePlaceholder")}
                       showSearch

@@ -45,7 +45,15 @@ import { POOL_LABEL_KEY } from "../../lib/pools";
 import { REASON_MAX_LEN } from "../../lib/validators";
 import { ReasonAction } from "../../components/ReasonAction";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
-import { ALL_VARIANTS, CPU_ZERO_FIELDS, POOL_VARIANTS, SkuFormValues, VARIANT_SPEC, warnText } from "./-skuForm";
+import {
+  ALL_VARIANTS,
+  CPU_ZERO_FIELDS,
+  POOL_VARIANTS,
+  SkuFormValues,
+  useWatchSkuField,
+  VARIANT_SPEC,
+  warnText,
+} from "./-skuForm";
 
 export const Route = createFileRoute("/_app/skus")({
   component: SkusPage,
@@ -119,14 +127,14 @@ function SkusPage() {
   const record = editing !== null && editing !== "new" ? editing : null;
   // 改价影响面(编辑态才查)
   const impact = useSkuImpact(record?.id ?? null);
-  const wModel = Form.useWatch("gpu_model", form);
-  const wVariant = Form.useWatch("variant", form);
-  const wPool = Form.useWatch("pool_label", form);
-  const wPct = Form.useWatch("gpu_cores_pct", form);
-  const wOversell = Form.useWatch("oversell_cores", form);
-  const wVram = Form.useWatch("vram_gb", form);
-  const wVcpu = Form.useWatch("vcpu", form);
-  const wMem = Form.useWatch("mem_gb", form);
+  const wModel = useWatchSkuField(form, "gpu_model");
+  const wVariant = useWatchSkuField(form, "variant");
+  const wPool = useWatchSkuField(form, "pool_label");
+  const wPct = useWatchSkuField(form, "gpu_cores_pct");
+  const wOversell = useWatchSkuField(form, "oversell_cores");
+  const wVram = useWatchSkuField(form, "vram_gb");
+  const wVcpu = useWatchSkuField(form, "vcpu");
+  const wMem = useWatchSkuField(form, "mem_gb");
   const isCpuVariant = (wVariant ?? (record ? skuVariant(record.tier, record.pool_label) : undefined)) === "cpu";
   const pModel = wModel ?? record?.gpu_model;
   const pPool = wPool ?? record?.pool_label;
@@ -181,7 +189,7 @@ function SkusPage() {
     onVariantChange(variant);
     // CPU 规格不套型号推荐
     if (variant !== "cpu") {
-      applyRecommend(agg, variant, form.getFieldValue("gpu_cores_pct") ?? 50);
+      applyRecommend(agg, variant, (form.getFieldValue("gpu_cores_pct") as number | undefined) ?? 50);
     } else {
       form.setFieldsValue({ pool_label: agg.pool_label ?? "hami" });
     }
@@ -201,7 +209,7 @@ function SkusPage() {
       return;
     }
     if (clusterPick) {
-      applyRecommend(clusterPick, variant, form.getFieldValue("gpu_cores_pct") ?? 50);
+      applyRecommend(clusterPick, variant, (form.getFieldValue("gpu_cores_pct") as number | undefined) ?? 50);
     } else if (variant !== "shared_hami") {
       form.setFieldsValue({ gpu_cores_pct: 100 });
     }
@@ -494,9 +502,9 @@ function SkusPage() {
           title={isNew ? t("skus.newSku") : t("skus.editTitle", { name: record?.name ?? "" })}
           open={editing !== null}
           onClose={() => setEditing(null)}
-          width="min(760px, 100vw)"
+          size="min(760px, 100vw)"
           extra={
-            <Button type="primary" loading={create.isPending || update.isPending} onClick={submit}>
+            <Button type="primary" loading={create.isPending || update.isPending} onClick={() => void submit()}>
               {t("skus.submit")}
             </Button>
           }

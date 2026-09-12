@@ -81,7 +81,7 @@ export function OrdersTab() {
         columns={orderColumns}
       />
       <LoadMore
-        hasNextPage={Boolean(q.hasNextPage)}
+        hasNextPage={q.hasNextPage}
         loading={q.isFetchingNextPage}
         isError={q.isFetchNextPageError}
         loadedCount={orders.length}

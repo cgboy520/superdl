@@ -45,7 +45,8 @@ export function PricingSection() {
     const out: ModelGroup[] = [];
     for (const [model, list] of byModel) {
       const byPrice = [...list].sort((a, b) => compareAmounts(a.price_hourly, b.price_hourly));
-      const representative = byPrice[0]!;
+      const representative = byPrice[0];
+      if (!representative) continue;
       const rentTarget = byPrice.find((s) => (s.available_count ?? 0) > 0) ?? representative;
       out.push({
         model,

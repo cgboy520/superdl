@@ -27,7 +27,9 @@ export function ApiKeysCard({
   const [newKeyOpen, setNewKeyOpen] = useState(false);
   const keysQ = useServiceApiKeys(slug);
   const revoke = useRevokeServiceApiKey(slug, {
-    onSuccess: () => message.success(t("services.keys.revokedMsg")),
+    onSuccess: () => {
+      message.success(t("services.keys.revokedMsg"));
+    },
   });
   const keys = keysQ.data ?? [];
   return (

@@ -59,7 +59,7 @@ export function SiteFooter() {
   ];
   const supportLinks: FooterLink[] = [
     { label: t("footer.linkHelp"), to: "/help" },
-    ...(site?.support_email ? [{ label: t("footer.linkContact"), to: `mailto:${site.support_email}` as string }] : []),
+    ...(site?.support_email ? [{ label: t("footer.linkContact"), to: `mailto:${site.support_email}` }] : []),
   ];
   const complianceLinks: FooterLink[] = [
     { label: t("footer.linkTerms"), to: "/legal/terms" },

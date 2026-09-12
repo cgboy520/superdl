@@ -340,7 +340,7 @@ export function AdjustmentsTab() {
         ]}
       />
       <LoadMore
-        hasNextPage={Boolean(hasNextPage)}
+        hasNextPage={hasNextPage}
         loading={isFetchingNextPage}
         isError={isFetchNextPageError}
         loadedCount={rows.length}
@@ -351,23 +351,36 @@ export function AdjustmentsTab() {
         title={t("finance.createAdjustTitle")}
         open={creating}
         onCancel={() => setCreating(false)}
-        onOk={async () => {
-          const values = await form.validateFields();
-          // 上下文未确认(不存在/查询失败)阻止提交
-          if (!ctx.data) return;
-          create.mutate({
-            data: {
-              user_id: values.user_id,
-              amount: values.amount,
-              reason: values.reason,
-            },
-            // 幂等键从表单快照派生,失败不轮换
-            idempotencyKey: idemKeyOf("adj", [values.user_id, values.amount, values.reason]),
-          });
+        onOk={() => {
+          void (async () => {
+            let values: { user_id: number; amount: string; reason: string };
+            try {
+              values = await form.validateFields();
+            } catch {
+              return; // 校验失败:antd 已就地标红
+            }
+            // 上下文未确认(不存在/查询失败)阻止提交
+            if (!ctx.data) return;
+            create.mutate({
+              data: {
+                user_id: values.user_id,
+                amount: values.amount,
+                reason: values.reason,
+              },
+              // 幂等键从表单快照派生,失败不轮换
+              idempotencyKey: idemKeyOf("adj", [values.user_id, values.amount, values.reason]),
+            });
+          })();
         }}
         okButtonProps={{ loading: create.isPending, disabled: ctxId === null || !ctx.data }}
       >
-        <Form form={form} layout="vertical" onValuesChange={() => draft.save(form.getFieldsValue(true))}>
+        <Form
+          form={form}
+          layout="vertical"
+          onValuesChange={() =>
+            draft.save(form.getFieldsValue(true) as Partial<{ user_id: number; amount: string; reason: string }>)
+          }
+        >
           <Form.Item name="user_id" label={t("finance.tenantIdLabel")} rules={[{ required: true }]}>
             <InputNumber min={1} precision={0} style={{ width: "100%" }} />
           </Form.Item>

@@ -75,7 +75,11 @@ export function RechargeModal({ open, onClose }: { open: boolean; onClose: () =>
       setOrderSeq((s) => s + 1);
     },
   });
-  const mockPay = useMockPay({ onSuccess: () => message.success(t("billing.mockPaySent")) });
+  const mockPay = useMockPay({
+    onSuccess: () => {
+      message.success(t("billing.mockPaySent"));
+    },
+  });
   const activeNo = order?.order_no ?? resumedNo;
   const rechargeQ = useRecharge(activeNo, {
     // 轮询仅在弹窗 open 时进行

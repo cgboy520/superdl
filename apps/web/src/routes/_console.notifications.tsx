@@ -85,7 +85,7 @@ function NotificationsPage() {
         renderItem={(n) => <NotificationListItem n={n} onOpen={open} />}
       />
       <LoadMore
-        hasNextPage={pagesQ.hasNextPage ?? false}
+        hasNextPage={pagesQ.hasNextPage}
         loading={pagesQ.isFetchingNextPage}
         isError={pagesQ.isFetchNextPageError}
         loadedCount={items.length}

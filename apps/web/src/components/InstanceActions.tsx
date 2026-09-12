@@ -117,11 +117,14 @@ export function InstanceActions({
   const stop = useStopInstance();
   const restart = useRestartInstance();
   const autoRenew = useSetAutoRenew(instance.uuid, {
-    onSuccess: (data) =>
-      message.success(data.subscription?.auto_renew ? t("period.autoRenewOn") : t("period.autoRenewOff")),
+    onSuccess: (data) => {
+      message.success(data.subscription?.auto_renew ? t("period.autoRenewOn") : t("period.autoRenewOff"));
+    },
   });
   const toOnDemand = useConvertToOnDemand(instance.uuid, {
-    onSuccess: () => message.success(t("spot.toOnDemandOk"), 6),
+    onSuccess: () => {
+      message.success(t("spot.toOnDemandOk"), 6);
+    },
   });
   const s = instance.status;
   const sub = instance.subscription;

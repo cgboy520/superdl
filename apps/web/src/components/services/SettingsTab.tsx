@@ -46,6 +46,10 @@ export function SettingsTab({
     await update.mutateAsync({ require_api_key: on });
     message.success(t("services.settings.authSaved"));
   };
+  const saveName = async () => {
+    await update.mutateAsync({ name: trimmed });
+    message.success(t("services.settings.saved"));
+  };
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
@@ -65,10 +69,7 @@ export function SettingsTab({
               type="primary"
               disabled={!nameDirty || released}
               loading={update.isPending}
-              onClick={async () => {
-                await update.mutateAsync({ name: trimmed });
-                message.success(t("services.settings.saved"));
-              }}
+              onClick={() => void saveName()}
             >
               {t("services.settings.save")}
             </Button>

@@ -37,6 +37,27 @@ export function RowActionModal<Values>({
     form.resetFields();
     onClose();
   };
+  const handleOk = async () => {
+    let values: Values;
+    try {
+      values = await form.validateFields();
+    } catch {
+      // 校验失败:antd 已给红字
+      return;
+    }
+    setLoading(true);
+    try {
+      await submit(values);
+      message.success(successText);
+      onDone();
+      close();
+    } catch (e) {
+      message.error(errText(e, failText));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <Modal
       open
@@ -45,26 +66,7 @@ export function RowActionModal<Values>({
       okButtonProps={{ loading }}
       onCancel={close}
       destroyOnHidden
-      onOk={async () => {
-        let values: Values;
-        try {
-          values = await form.validateFields();
-        } catch {
-          // 校验失败:antd 已给红字
-          return;
-        }
-        setLoading(true);
-        try {
-          await submit(values);
-          message.success(successText);
-          onDone();
-          close();
-        } catch (e) {
-          message.error(errText(e, failText));
-        } finally {
-          setLoading(false);
-        }
-      }}
+      onOk={() => void handleOk()}
     >
       <Space orientation="vertical" size={12} style={{ width: "100%" }}>
         <Alert type="info" showIcon title={note} />

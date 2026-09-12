@@ -8,9 +8,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { RenewModal } from "./RenewModal";
 
+interface MutateCall {
+  body: { period: string; period_count: number };
+  idempotencyKey: string;
+}
+
 const { renewMutate, subscribeMutate, walletBalance } = vi.hoisted(() => ({
-  renewMutate: vi.fn(),
-  subscribeMutate: vi.fn(),
+  renewMutate: vi.fn<(c: MutateCall) => void>(),
+  subscribeMutate: vi.fn<(c: MutateCall) => void>(),
   walletBalance: { current: "3000.00" },
 }));
 
@@ -156,6 +161,7 @@ describe("RenewModal", () => {
     await user.click(within(dialog).getByRole("button", { name: /包\s*周/ }));
     await user.click(within(dialog).getByRole("button", { name: "确认续费" }));
     const second = renewMutate.mock.calls[1]?.[0];
+    if (!second) throw new Error("expected a second renew call");
     expect(second.idempotencyKey).toBe(firstKey);
     expect(second.body).toEqual({ period: "week", period_count: 1 });
   });
@@ -176,6 +182,7 @@ describe("RenewModal", () => {
     await user.click(within(dialog).getByRole("button", { name: "支付并转为包周期" }));
     expect(renewMutate).not.toHaveBeenCalled();
     const call = subscribeMutate.mock.calls[0]?.[0];
+    if (!call) throw new Error("expected a subscribe call");
     expect(call.body).toEqual({ period: "month", period_count: 1 });
     expect(call.idempotencyKey).toBeTruthy();
   });

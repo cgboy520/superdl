@@ -35,7 +35,7 @@ export const Route = createFileRoute("/_console/instances_/$uuid")({
   beforeLoad: requireAuth,
   validateSearch: (search: Record<string, unknown>): { tab?: string } => {
     // tab 白名单:非法值回默认 Tab
-    const tab = search["tab"];
+    const tab = search.tab;
     return typeof tab === "string" && (DETAIL_TABS as readonly string[]).includes(tab) ? { tab } : {};
   },
   component: InstanceDetail,
@@ -149,7 +149,7 @@ function EventsTab({ uuid, status }: { uuid: string; status?: string }) {
       isLoading={isLoading}
       isError={isError}
       onRetry={() => void refetch()}
-      hasNextPage={hasNextPage ?? false}
+      hasNextPage={hasNextPage}
       isFetchingNextPage={isFetchingNextPage}
       isFetchNextPageError={isFetchNextPageError}
       onLoadMore={() => void fetchNextPage()}
@@ -277,7 +277,7 @@ function InstanceDetail() {
                 {instance.name}
               </Typography.Title>
               <InstanceStatusBadge status={instance.status} frozenDeadline={instance.frozen_deadline} />
-              <TierTag tier={instance.spec["tier"] as string} pool={instance.spec["pool_label"] as string} />
+              <TierTag tier={instance.spec.tier as string} pool={instance.spec.pool_label as string} />
               <SubscriptionTag market={instance.market} subscription={instance.subscription} />
               <SpotTag market={instance.market} />
             </Space>
@@ -289,7 +289,7 @@ function InstanceDetail() {
                 {
                   label: t("instances.labelSpec"),
                   children: t("instances.specLine", {
-                    model: instance.spec["gpu_model"] as string,
+                    model: instance.spec.gpu_model as string,
                     count: instance.gpu_count,
                   }),
                 },
@@ -337,7 +337,7 @@ function InstanceDetail() {
         activeKey={activeTab}
         onChange={(k) =>
           // Tab activeKey 入 URL 用 replace(ui-ux-spec §1-8)
-          navigate({ to: "/instances/$uuid", params: { uuid }, search: { tab: k }, replace: true })
+          void navigate({ to: "/instances/$uuid", params: { uuid }, search: { tab: k }, replace: true })
         }
         items={[
           {
@@ -360,7 +360,7 @@ function InstanceDetail() {
           {
             key: "events",
             label: t("instances.tabEvents"),
-            children: <EventsTab uuid={uuid} status={instance?.status} />,
+            children: <EventsTab uuid={uuid} status={instance.status} />,
           },
           {
             key: "bills",
@@ -380,7 +380,7 @@ function InstanceDetail() {
         instance={instance}
         open={releaseOpen}
         onClose={() => setReleaseOpen(false)}
-        onReleased={() => navigate({ to: "/instances", search: listSearch })}
+        onReleased={() => void navigate({ to: "/instances", search: listSearch })}
       />
     </Space>
   );

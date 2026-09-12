@@ -191,7 +191,8 @@ function MarketPage() {
   /** 未登录去登录:带回完整市场筛选态 */
   const marketHref = () => {
     const qs = new URLSearchParams();
-    for (const [k, v] of Object.entries(search)) if (v !== undefined) qs.set(k, String(v));
+    // validateSearch 只产出有值的键,entries 无 undefined
+    for (const [k, v] of Object.entries(search)) qs.set(k, String(v));
     const s = qs.toString();
     return s ? `/market?${s}` : "/market";
   };

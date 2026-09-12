@@ -110,7 +110,9 @@ function TicketDrawer({
           message.success(t("tickets.replied"));
           refresh();
         },
-        onError: (e) => message.error(errText(e, t("tickets.replyFailed"))),
+        onError: (e) => {
+          message.error(errText(e, t("tickets.replyFailed")));
+        },
       },
     );
   };
@@ -123,7 +125,9 @@ function TicketDrawer({
           message.success(t(action === "resolve" ? "tickets.resolvedOk" : "tickets.closedOk"));
           refresh();
         },
-        onError: (e) => message.error(errText(e, t("tickets.statusFailed"))),
+        onError: (e) => {
+          message.error(errText(e, t("tickets.statusFailed")));
+        },
       },
     );
   };
@@ -132,7 +136,7 @@ function TicketDrawer({
     <Drawer
       open={ticketId !== null}
       onClose={onClose}
-      width="min(640px, 100vw)"
+      size="min(640px, 100vw)"
       title={
         ticket ? (
           <Space size={8} wrap>
@@ -436,7 +440,7 @@ function TicketsPage() {
           ]}
         />
         <LoadMore
-          hasNextPage={Boolean(hasNextPage)}
+          hasNextPage={hasNextPage}
           loading={isFetchingNextPage}
           isError={isFetchNextPageError}
           loadedCount={rows.length}

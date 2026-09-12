@@ -88,8 +88,16 @@ export function ServiceActions({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const goTab = (tab: "keys" | "settings") =>
     void navigate({ to: "/services/$slug", params: { slug: service.slug }, search: { tab } });
-  const stop = useStopService({ onSuccess: () => message.success(t("services.actions.stopped")) });
-  const start = useStartService({ onSuccess: () => message.success(t("services.actions.started")) });
+  const stop = useStopService({
+    onSuccess: () => {
+      message.success(t("services.actions.stopped"));
+    },
+  });
+  const start = useStartService({
+    onSuccess: () => {
+      message.success(t("services.actions.started"));
+    },
+  });
   const s = service.status;
   const stoppable = canStopService(s);
   const startable = canStartService(s);

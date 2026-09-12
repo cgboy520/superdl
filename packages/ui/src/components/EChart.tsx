@@ -129,10 +129,10 @@ export interface EChartProps {
   ariaLabel?: string;
   /** 加载中:图表区盖 Spin */
   loading?: boolean;
-  /** 无数据空态:true 默认文案,ReactNode 自定义 */
-  empty?: boolean | ReactNode;
+  /** 无数据空态:true 默认文案,ReactNode 自定义(boolean 含于 ReactNode) */
+  empty?: ReactNode;
   /** 断源降级:true 默认文案,ReactNode 自定义 */
-  degraded?: boolean | ReactNode;
+  degraded?: ReactNode;
   /** 联动组名:同组图表 axisPointer / tooltip 联动(echarts.connect) */
   group?: string;
 }

@@ -25,8 +25,8 @@ interface Props {
   size?: ButtonProps["size"];
   /** 触发按钮形态(行内「更多」里用 link) */
   type?: ButtonProps["type"];
-  /** 返回字符串作成功提示,否则用通用文案 */
-  onSubmit: (reason: string) => Promise<string | void>;
+  /** 返回字符串作成功提示,否则用通用文案(void 联合会被 no-invalid-void-type 拒,写成 Promise 联合) */
+  onSubmit: (reason: string) => Promise<string> | Promise<void>;
 }
 
 export function ReasonAction({
@@ -110,7 +110,7 @@ export function ReasonAction({
           setOpen(false);
           setConfirming(false);
         }}
-        onOk={goNext}
+        onOk={() => void goNext()}
         okText={t("common.next")}
         destroyOnHidden
       >
@@ -149,7 +149,7 @@ export function ReasonAction({
           setConfirming(false);
           setOpen(true);
         }}
-        onOk={run}
+        onOk={() => void run()}
         okText={t("common.confirmExecute")}
         okButtonProps={{ danger, loading }}
       >

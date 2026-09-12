@@ -88,8 +88,13 @@ function useApiQuery<T>(key: unknown[], fn: () => Promise<T>, opts?: QueryOpts<N
 }
 
 /** 游标分页公共形状:params 带 limit/cursor,响应带 next_cursor。 */
-type CursorParams = { limit?: number; cursor?: string };
-type CursorPage = { next_cursor?: string | null };
+interface CursorParams {
+  limit?: number;
+  cursor?: string;
+}
+interface CursorPage {
+  next_cursor?: string | null;
+}
 
 /** 游标分页骨架(useInfiniteQuery 样板)。infinite 查询禁止轮询与 focus 重拉;新鲜度靠手动刷新。 */
 function useCursorPages<TPage extends CursorPage, P extends CursorParams>(
@@ -168,13 +173,13 @@ export function useTransientInstanceRefresh(rows: InstanceOut[]) {
   useEffect(() => {
     let changed = false;
     const alive = new Set(transientUuids);
-    transientUuids.forEach((uuid, i) => {
+    for (const [i, uuid] of transientUuids.entries()) {
       const status = results[i]?.data?.status;
-      if (!status) return;
+      if (!status) continue;
       const prev = lastSeen.current.get(uuid);
       lastSeen.current.set(uuid, status);
       if (prev !== undefined && prev !== status) changed = true;
-    });
+    }
     // 退出过渡态集合的 uuid 清出基线
     for (const uuid of [...lastSeen.current.keys()]) {
       if (!alive.has(uuid)) lastSeen.current.delete(uuid);
@@ -239,13 +244,13 @@ export function useTransientServiceRefresh(rows: ServiceOut[]) {
   useEffect(() => {
     let changed = false;
     const alive = new Set(transientSlugs);
-    transientSlugs.forEach((slug, i) => {
+    for (const [i, slug] of transientSlugs.entries()) {
       const status = results[i]?.data?.status;
-      if (!status) return;
+      if (!status) continue;
       const prev = lastSeen.current.get(slug);
       lastSeen.current.set(slug, status);
       if (prev !== undefined && prev !== status) changed = true;
-    });
+    }
     for (const slug of [...lastSeen.current.keys()]) {
       if (!alive.has(slug)) lastSeen.current.delete(slug);
     }

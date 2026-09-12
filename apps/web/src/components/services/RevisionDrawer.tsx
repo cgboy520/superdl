@@ -67,7 +67,7 @@ function RevisionForm({ service, onClose }: { service: ServiceOut; onClose: () =
     command !== (c?.container_command?.join(" ") ?? "") ||
     argRows.map((r) => r.value).join("\n") !== (c?.container_args ?? []).join("\n") ||
     envRows.length !== Object.keys(c?.env ?? {}).length ||
-    envRows.some((r) => r.secret || (c?.env ?? {})[r.name] !== r.value) ||
+    envRows.some((r) => r.secret || c?.env[r.name] !== r.value) ||
     keepKeys.length !== (c?.env_secret_keys ?? []).length ||
     port !== (c?.service_port ?? null) ||
     healthPath !== (c?.health_path ?? "") ||
@@ -163,8 +163,8 @@ function RevisionForm({ service, onClose }: { service: ServiceOut; onClose: () =
 
   const specLine = inst
     ? inst.gpu_count === 0
-      ? t("create.summaryCpu", { vcpu: inst.spec["vcpu"] as number, mem: inst.spec["mem_gb"] as number })
-      : t("instances.specLine", { model: inst.spec["gpu_model"] as string, count: inst.gpu_count })
+      ? t("create.summaryCpu", { vcpu: inst.spec.vcpu as number, mem: inst.spec.mem_gb as number })
+      : t("instances.specLine", { model: inst.spec.gpu_model as string, count: inst.gpu_count })
     : "—";
   const billingKey = inst ? marketLabelKey(inst.market, inst.subscription?.period) : null;
 

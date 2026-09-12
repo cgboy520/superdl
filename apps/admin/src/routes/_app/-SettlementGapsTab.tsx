@@ -31,6 +31,11 @@ type GapKind = keyof typeof KIND_LABEL_KEY;
 
 export function SettlementGapsTab() {
   const { t } = useTranslation();
+  // 未知 kind 原样回显,不进 t()(与状态表同规约)
+  const gapKindText = (v: string): string => {
+    const labelKey = v in KIND_LABEL_KEY ? KIND_LABEL_KEY[v as GapKind] : undefined;
+    return labelKey ? t(labelKey) : v;
+  };
   const errText = useApiErrorText();
   const { message } = App.useApp();
   const qc = useQueryClient();
@@ -55,7 +60,7 @@ export function SettlementGapsTab() {
     isFetchingNextPage,
     isFetchNextPageError,
   } = useSettlementGaps(params);
-  const refresh = () => qc.invalidateQueries({ queryKey });
+  const refresh = () => void qc.invalidateQueries({ queryKey });
 
   const replay = useReplaySettlementGap();
   const resolve = useResolveSettlementGap();
@@ -141,8 +146,7 @@ export function SettlementGapsTab() {
             dataIndex: "kind",
             width: 110,
             render: (v: string) => {
-              const labelKey = v in KIND_LABEL_KEY ? KIND_LABEL_KEY[v as GapKind] : undefined;
-              return labelKey ? t(labelKey) : v;
+              return gapKindText(v);
             },
           },
           {
@@ -209,7 +213,7 @@ export function SettlementGapsTab() {
                   </Button>
                   <ReasonAction
                     label={t("finance.gapResolve")}
-                    target={`#${row.id} · ${t(KIND_LABEL_KEY[row.kind as GapKind] ?? "finance.gapKindHourly")} · ${row.object_id}`}
+                    target={`#${row.id} · ${gapKindText(row.kind)} · ${row.object_id}`}
                     title={t("finance.gapResolveTitle")}
                     confirmText={t("finance.gapResolveConfirm", { id: row.id })}
                     disabled={!writable}
@@ -226,7 +230,7 @@ export function SettlementGapsTab() {
         ]}
       />
       <LoadMore
-        hasNextPage={Boolean(hasNextPage)}
+        hasNextPage={hasNextPage}
         loading={isFetchingNextPage}
         isError={isFetchNextPageError}
         loadedCount={items.length}

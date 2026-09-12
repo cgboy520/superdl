@@ -32,6 +32,6 @@ class ResizeObserverStub implements ResizeObserver {
   unobserve(): void {}
   disconnect(): void {}
 }
-if (!window.ResizeObserver) {
+if (!("ResizeObserver" in window)) {
   Object.defineProperty(window, "ResizeObserver", { writable: true, value: ResizeObserverStub });
 }

@@ -269,7 +269,9 @@ function DeletionZone({ phone }: { phone: string }) {
     },
   });
   const cancel = useCancelDeletionRequest({
-    onSuccess: () => message.success(t("settings.deletion.cancelled")),
+    onSuccess: () => {
+      message.success(t("settings.deletion.cancelled"));
+    },
   });
   const confirm = useConfirm();
 
@@ -283,7 +285,7 @@ function DeletionZone({ phone }: { phone: string }) {
       <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
         {t("settings.deletion.dangerZone")}
       </Typography.Text>
-      {pending && req ? (
+      {pending ? (
         <Alert
           type="warning"
           showIcon
@@ -400,7 +402,9 @@ function RealNameCard({
   const { message } = App.useApp();
   const [form] = Form.useForm<{ name: string; id_number: string }>();
   const submit = useSubmitRealName({
-    onSuccess: () => message.success(t("settings.realNameDone")),
+    onSuccess: () => {
+      message.success(t("settings.realNameDone"));
+    },
   });
   const verified = me?.verification_status === "verified";
   return (

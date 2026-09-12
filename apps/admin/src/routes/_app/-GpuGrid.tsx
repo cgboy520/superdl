@@ -31,7 +31,7 @@ export function last(points?: [number, number][] | null): number | null {
 /** 每卡热力格:有指标按 util 染色(tooltip 给 util/显存/温度);断源回落「已租/空闲」两态,断源空闲格斜纹底。 */
 export function GpuGrid({ node, metrics }: { node: NodeRow; metrics: NodeMetricsOut | undefined }) {
   const { t } = useTranslation();
-  const byIndex = new Map((metrics?.gpus ?? []).map((g) => [String(g.index), g]));
+  const byIndex = new Map((metrics?.gpus ?? []).map((g) => [g.index, g]));
   const live = Boolean(metrics?.available && byIndex.size > 0);
   return (
     <>

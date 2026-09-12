@@ -236,7 +236,7 @@ export function InvoiceTab() {
         ]}
       />
       <LoadMore
-        hasNextPage={invoices.hasNextPage ?? false}
+        hasNextPage={invoices.hasNextPage}
         loading={invoices.isFetchingNextPage}
         isError={invoices.isFetchNextPageError}
         loadedCount={rows.length}

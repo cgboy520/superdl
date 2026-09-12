@@ -1,10 +1,19 @@
 /** SKU 表单事实源:表单值类型、档位 ↔ 池映射、CPU 规格清零字段、容量预警文案。 */
 
+import { Form, type FormInstance } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { type SkuTier, type SkuVariant } from "@superdl/ui";
 
 import { type CapacityWarning } from "../../api";
+
+/** antd useWatch 的类型不含「字段未初始化」的 undefined,运行时会拿到;这里统一收窄出真实类型。 */
+export function useWatchSkuField<K extends keyof SkuFormValues>(
+  form: FormInstance<SkuFormValues>,
+  name: K,
+): SkuFormValues[K] | undefined {
+  return Form.useWatch(name, form);
+}
 
 export interface SkuFormValues {
   name: string;
@@ -57,15 +66,18 @@ export const CPU_ZERO_FIELDS = {
 
 export type TFn = ReturnType<typeof useTranslation<["admin", "shared"]>>["t"];
 
+/** 告警 params 是后端自由 map({[key]: unknown});只接受字符串/数字,其余按缺失处理 */
+const strParam = (v: unknown): string => (typeof v === "string" || typeof v === "number" ? String(v) : "");
+
 export function warnText(t: TFn, w: CapacityWarning): string {
   const p = w.params ?? {};
   switch (w.code) {
     case "unrecognized_model":
-      return t("skus.warnUnrecognizedModel", { model: String(p.model ?? "") });
+      return t("skus.warnUnrecognizedModel", { model: strParam(p.model) });
     case "no_ready_node":
       return t("skus.warnNoReadyNode", {
-        model: String(p.model ?? ""),
-        pool: String(p.pool ?? ""),
+        model: strParam(p.model),
+        pool: strParam(p.pool),
       });
     case "vram_exceeds_node":
       return t("skus.warnVramExceedsNode", {

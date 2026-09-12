@@ -103,7 +103,7 @@ export function LedgerTable() {
         ]}
       />
       <LoadMore
-        hasNextPage={hasNextPage ?? false}
+        hasNextPage={hasNextPage}
         loading={isFetchingNextPage}
         isError={isFetchNextPageError}
         loadedCount={filtered.length}

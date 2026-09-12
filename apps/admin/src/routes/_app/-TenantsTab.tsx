@@ -290,7 +290,7 @@ export function TenantsTab() {
         ]}
       />
       <LoadMore
-        hasNextPage={Boolean(hasNextPage)}
+        hasNextPage={hasNextPage}
         loading={isFetchingNextPage}
         isError={isFetchNextPageError}
         loadedCount={tenants.length}

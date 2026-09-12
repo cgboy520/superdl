@@ -33,11 +33,15 @@ function diffStats(oldText: string, newText: string): { added: number; removed: 
   const n = b.length;
   const dp: Uint32Array[] = Array.from({ length: m + 1 }, () => new Uint32Array(n + 1));
   for (let i = m - 1; i >= 0; i--) {
+    const row = dp[i];
+    const next = dp[i + 1];
+    if (!row || !next) continue;
     for (let j = n - 1; j >= 0; j--) {
-      dp[i]![j] = a[i] === b[j] ? dp[i + 1]![j + 1]! + 1 : Math.max(dp[i + 1]![j]!, dp[i]![j + 1]!);
+      // 单元格在构造时已零填充,?? 0 只为满足 noUncheckedIndexedAccess
+      row[j] = a[i] === b[j] ? (next[j + 1] ?? 0) + 1 : Math.max(next[j] ?? 0, row[j + 1] ?? 0);
     }
   }
-  const lcs = dp[0]![0]!;
+  const lcs = dp[0]?.[0] ?? 0;
   return { added: n - lcs, removed: m - lcs };
 }
 
@@ -253,7 +257,7 @@ function CellEditor({
               </Button>
               <ReasonAction
                 label={t("settings.legal.archive")}
-                target={draft ? `${docLabel} · v${draft.version}` : docLabel}
+                target={`${docLabel} · v${draft.version}`}
                 title={t("settings.legal.archive")}
                 confirmText={t("settings.legal.confirmArchive")}
                 danger

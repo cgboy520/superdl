@@ -60,7 +60,7 @@ export function AdminsTab() {
   const [selfForm] = Form.useForm<{ current_password: string; new_password: string }>();
   const [roleForm] = Form.useForm<{ reason: string }>();
 
-  const refresh = () => qc.invalidateQueries({ queryKey });
+  const refresh = () => void qc.invalidateQueries({ queryKey });
   const create = useCreateAdminAccount();
   const update = useUpdateAdminAccount();
   const resetPwd = useResetAdminPassword();
@@ -193,6 +193,72 @@ export function AdminsTab() {
     },
   ];
 
+  const submitCreate = async () => {
+    let v: { username: string; password: string; role: Role; reason: string };
+    try {
+      v = await createForm.validateFields();
+    } catch {
+      return; // 校验失败:antd 已就地标红
+    }
+    try {
+      await create.mutateAsync({
+        data: { username: v.username, password: v.password, role: v.role, reason: v.reason },
+      });
+      message.success(t("admins.created"));
+      setCreateOpen(false);
+      refresh();
+    } catch (e) {
+      message.error(errText(e));
+    }
+  };
+
+  const submitPwd = async () => {
+    let v: { password: string; reason: string };
+    try {
+      v = await pwdForm.validateFields();
+    } catch {
+      return;
+    }
+    if (!pwdTarget) return;
+    const target = pwdTarget;
+    // 二次确认带目标:重置会踢掉该管理员全部登录态
+    confirm({
+      title: t("admins.resetPasswordConfirmTitle", { name: target.username }),
+      consequences: [t("admins.resetKicksSessions")],
+      okText: t("admins.resetPassword"),
+      danger: true,
+      onOk: async () => {
+        try {
+          await resetPwd.mutateAsync({ id: target.id, data: { password: v.password, reason: v.reason } });
+          message.success(t("admins.passwordReset"));
+          setPwdTarget(null);
+          refresh();
+        } catch (e) {
+          message.error(errText(e));
+        }
+      },
+    });
+  };
+
+  const submitSelf = async () => {
+    let v: { current_password: string; new_password: string };
+    try {
+      v = await selfForm.validateFields();
+    } catch {
+      return;
+    }
+    try {
+      await changeOwn.mutateAsync({ data: v });
+      message.success(t("admins.ownPasswordChanged"));
+      setSelfOpen(false);
+      // 改密撤销全部会话,回登录页
+      logout();
+      void navigate({ to: "/login" });
+    } catch (e) {
+      message.error(errText(e));
+    }
+  };
+
   return (
     <Card
       variant="borderless"
@@ -201,15 +267,15 @@ export function AdminsTab() {
         <Space>
           {(data ?? []).find((a) => a.id === me?.id)?.totp_enabled && (
             <Button
-              onClick={() =>
+              onClick={() => {
                 // 重新生成:旧恢复码立即失效
                 modal.confirm({
                   title: t("admins.regenCodesConfirmTitle"),
                   content: t("admins.regenCodesConfirmDesc"),
                   okText: t("admins.regenCodes"),
                   onOk: () => regenCodes.mutate(),
-                })
-              }
+                });
+              }}
               loading={regenCodes.isPending}
             >
               {t("admins.regenCodes")}
@@ -283,7 +349,7 @@ export function AdminsTab() {
           successText={t("admins.updated")}
           failText={t("admins.updateFailed")}
           onClose={() => setRoleTarget(null)}
-          onDone={() => void refresh()}
+          onDone={refresh}
         >
           <Form.Item
             name="reason"
@@ -321,19 +387,7 @@ export function AdminsTab() {
         title={t("admins.create")}
         okText={t("admins.create")}
         onCancel={() => setCreateOpen(false)}
-        onOk={async () => {
-          const v = await createForm.validateFields();
-          try {
-            await create.mutateAsync({
-              data: { username: v.username, password: v.password, role: v.role, reason: v.reason },
-            });
-            message.success(t("admins.created"));
-            setCreateOpen(false);
-            refresh();
-          } catch (e) {
-            message.error(errText(e));
-          }
-        }}
+        onOk={() => void submitCreate()}
       >
         <Form form={createForm} layout="vertical">
           <Form.Item
@@ -365,28 +419,7 @@ export function AdminsTab() {
         okText={t("admins.resetPassword")}
         okButtonProps={{ danger: true }}
         onCancel={() => setPwdTarget(null)}
-        onOk={async () => {
-          const v = await pwdForm.validateFields();
-          if (!pwdTarget) return;
-          const target = pwdTarget;
-          // 二次确认带目标:重置会踢掉该管理员全部登录态
-          confirm({
-            title: t("admins.resetPasswordConfirmTitle", { name: target.username }),
-            consequences: [t("admins.resetKicksSessions")],
-            okText: t("admins.resetPassword"),
-            danger: true,
-            onOk: async () => {
-              try {
-                await resetPwd.mutateAsync({ id: target.id, data: { password: v.password, reason: v.reason } });
-                message.success(t("admins.passwordReset"));
-                setPwdTarget(null);
-                refresh();
-              } catch (e) {
-                message.error(errText(e));
-              }
-            },
-          });
-        }}
+        onOk={() => void submitPwd()}
       >
         <Alert type="warning" showIcon style={{ marginBottom: 12 }} title={t("admins.resetKicksSessions")} />
         <Form form={pwdForm} layout="vertical">
@@ -408,19 +441,7 @@ export function AdminsTab() {
         title={t("admins.changeOwnPassword")}
         okText={t("admins.changeOwnPassword")}
         onCancel={() => setSelfOpen(false)}
-        onOk={async () => {
-          const v = await selfForm.validateFields();
-          try {
-            await changeOwn.mutateAsync({ data: v });
-            message.success(t("admins.ownPasswordChanged"));
-            setSelfOpen(false);
-            // 改密撤销全部会话,回登录页
-            logout();
-            void navigate({ to: "/login" });
-          } catch (e) {
-            message.error(errText(e));
-          }
-        }}
+        onOk={() => void submitSelf()}
       >
         <Alert type="info" showIcon style={{ marginBottom: 12 }} title={t("admins.selfChangeKicksSessions")} />
         <Form form={selfForm} layout="vertical">

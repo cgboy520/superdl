@@ -71,7 +71,7 @@ function NotificationBell() {
               renderItem={(n) => <NotificationListItem n={n} onOpen={openNotification} />}
             />
             <LoadMore
-              hasNextPage={pagesQ.hasNextPage ?? false}
+              hasNextPage={pagesQ.hasNextPage}
               loading={pagesQ.isFetchingNextPage}
               isError={pagesQ.isFetchNextPageError}
               loadedCount={items.length}
@@ -122,7 +122,7 @@ export function TopBarUser() {
 
   if (!loggedIn) {
     return (
-      <Button type="primary" onClick={() => navigate({ to: "/login" })}>
+      <Button type="primary" onClick={() => void navigate({ to: "/login" })}>
         {t("topbar.loginRegister")}
       </Button>
     );

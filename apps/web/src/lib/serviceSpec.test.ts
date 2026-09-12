@@ -29,8 +29,8 @@ describe("envRowIssue", () => {
     expect(envRowIssue(row("1BAD"), [row("1BAD")])).toBe("invalid");
     expect(envRowIssue(row("JUPYTER_TOKEN"), [row("JUPYTER_TOKEN")])).toBe("reserved");
     expect(envRowIssue(row("AUTHORIZED_KEYS"), [row("AUTHORIZED_KEYS")])).toBe("reserved");
-    const dup = [row("HF_TOKEN", "a"), row(" HF_TOKEN ", "b")];
-    expect(envRowIssue(dup[0]!, dup)).toBe("duplicate");
+    const dupA = row("HF_TOKEN", "a");
+    expect(envRowIssue(dupA, [dupA, row(" HF_TOKEN ", "b")])).toBe("duplicate");
     expect(envRowIssue(row(""), [row("")])).toBeNull();
     expect(envRowIssue(row("MODEL"), [row("MODEL")])).toBeNull();
   });

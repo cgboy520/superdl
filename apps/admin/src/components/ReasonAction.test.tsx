@@ -57,7 +57,7 @@ async function waitFor(cond: () => boolean, timeoutMs = 3000): Promise<void> {
   }
 }
 
-function renderAction(onSubmit: (reason: string) => Promise<string | void>) {
+function renderAction(onSubmit: (reason: string) => Promise<string> | Promise<void>) {
   act(() => {
     root.render(
       <I18nextProvider i18n={i18n}>
@@ -80,11 +80,17 @@ function renderAction(onSubmit: (reason: string) => Promise<string | void>) {
 }
 
 function setTextareaValue(el: HTMLTextAreaElement, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
   act(() => {
-    setter?.call(el, value);
+    // 走原生 setter 才能触发 React onChange(jsdom 直赋 value 不触发)
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(el, value);
     el.dispatchEvent(new Event("input", { bubbles: true }));
   });
+}
+
+/** 取不到即测试失败,省掉满屏非空断言 */
+function must<T>(v: T | null | undefined): T {
+  if (v == null) throw new Error("expected element to exist");
+  return v;
 }
 
 beforeEach(() => {
@@ -103,13 +109,11 @@ describe("ReasonAction", () => {
   it("第二步取消返回第一步,已填原因保留", async () => {
     renderAction(vi.fn().mockResolvedValue(undefined));
     // 打开第一步(原因弹窗)
-    click(findButton("下架")!);
+    click(must(findButton("下架")));
     await flush();
-    const textarea = document.body.querySelector("textarea");
-    expect(textarea).not.toBeNull();
-    setTextareaValue(textarea!, "滞销规格下架");
+    setTextareaValue(must(document.body.querySelector("textarea")), "滞销规格下架");
     // 进入第二步
-    click(findButton("下一步")!);
+    click(must(findButton("下一步")));
     await flush();
     expect(document.body.textContent).toContain("下架后不可新租");
     // 第一步 destroyOnHidden,原因输入框已卸载
@@ -118,10 +122,9 @@ describe("ReasonAction", () => {
     const cancelBtn = [...document.body.querySelectorAll(".ant-modal-footer button")].find(
       (b) => !b.classList.contains("ant-btn-primary"),
     );
-    click(cancelBtn!);
+    click(must(cancelBtn));
     await waitFor(() => document.body.querySelector("textarea") !== null);
-    const reopened = document.body.querySelector("textarea");
-    expect(reopened!.value).toBe("滞销规格下架");
+    expect(must(document.body.querySelector("textarea")).value).toBe("滞销规格下架");
   });
 
   it("提交飞行中蒙层点击不关闭;完成后关闭并提示", async () => {
@@ -133,30 +136,30 @@ describe("ReasonAction", () => {
         }),
     );
     renderAction(onSubmit);
-    click(findButton("下架")!);
+    click(must(findButton("下架")));
     await flush();
-    setTextareaValue(document.body.querySelector("textarea")!, "滞销规格下架");
-    click(findButton("下一步")!);
+    setTextareaValue(must(document.body.querySelector("textarea")), "滞销规格下架");
+    click(must(findButton("下一步")));
     await flush();
     // 确认执行 → 请求在途
-    click(findButton("确认执行")!);
+    click(must(findButton("确认执行")));
     await flush();
     expect(onSubmit).toHaveBeenCalledWith("滞销规格下架");
     // 在途时点蒙层不关
     const wrap = [...document.body.querySelectorAll<HTMLElement>(".ant-modal-wrap")].find((w) =>
-      w.textContent?.includes("下架后不可新租"),
+      w.textContent.includes("下架后不可新租"),
     );
-    click(wrap!);
+    click(must(wrap));
     await flush();
     expect(document.body.textContent).toContain("下架后不可新租");
     // 请求完成 → 弹窗关闭
     await act(async () => {
-      resolveSubmit!();
+      must(resolveSubmit)();
       await new Promise((r) => setTimeout(r, 30));
     });
     await waitFor(() => {
       const w = [...document.body.querySelectorAll<HTMLElement>(".ant-modal-wrap")].find((el) =>
-        el.textContent?.includes("下架后不可新租"),
+        el.textContent.includes("下架后不可新租"),
       );
       return !w || w.style.display === "none";
     });

@@ -87,7 +87,10 @@ interface MutationOpts<TData> {
 /** 页面侧可传的项;失效域由各 hook 声明 */
 type CallerOpts<TData = unknown> = Omit<MutationOpts<TData>, "invalidates">;
 
-export function useApiMutation<TVars, TData>(fn: (vars: TVars) => Promise<TData>, opts: MutationOpts<TData>) {
+export function useApiMutation<TVars = void, TData = unknown>(
+  fn: (vars: TVars) => Promise<TData>,
+  opts: MutationOpts<TData>,
+) {
   const queryClient = useQueryClient();
   const { message } = App.useApp();
   const errText = useApiErrorText();
@@ -184,7 +187,7 @@ export const useSubscribeInstance = (uuid: string, o?: CallerOpts<RenewOut>) =>
   );
 /** 竞价转按量:只翻 market 与单价,不带幂等键;失效面含账单。 */
 export const useConvertToOnDemand = (uuid: string, o?: CallerOpts<InstanceOut>) =>
-  useApiMutation((_v: void) => convertToOnDemandApiV1InstancesUuidToOnDemandPost(uuid), {
+  useApiMutation(() => convertToOnDemandApiV1InstancesUuidToOnDemandPost(uuid), {
     ...o,
     invalidates: [...INSTANCE_INVALIDATES],
   });
@@ -289,7 +292,7 @@ export const useCreateDeletionRequest = (o?: { onSuccess?: () => void }) =>
     invalidates: ["deletion-request"],
   });
 export const useCancelDeletionRequest = (o?: { onSuccess?: () => void }) =>
-  useApiMutation((_v: void) => cancelDeletionRequestApiV1MeDeletionRequestCancelPost(), {
+  useApiMutation(() => cancelDeletionRequestApiV1MeDeletionRequestCancelPost(), {
     ...o,
     invalidates: ["deletion-request"],
   });
@@ -326,7 +329,7 @@ export const useMarkNotificationRead = () =>
     invalidates: ["notifications"],
   });
 export const useMarkAllNotificationsRead = () =>
-  useApiMutation((_: void) => markAllReadApiV1NotificationsReadAllPost(), {
+  useApiMutation(() => markAllReadApiV1NotificationsReadAllPost(), {
     invalidates: ["notifications"],
   });
 

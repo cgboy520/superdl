@@ -72,19 +72,21 @@ export function DataDiskCard({
               onChange={onNewGbChange}
               disabled={!policies}
             />
-            <InputNumber
-              min={policies?.disk_min_gb}
-              max={policies?.disk_max_gb}
-              step={10}
-              value={newGb}
-              onChange={(v) => {
-                if (typeof v === "number") onNewGbChange(v);
-              }}
-              disabled={!policies}
-              style={{ width: controlWidth.xs + 14 }}
-              addonAfter="GB"
-              aria-label={t("create.diskSizeAria")}
-            />
+            <Space.Compact style={{ width: controlWidth.xs + 14 }}>
+              <InputNumber
+                min={policies?.disk_min_gb}
+                max={policies?.disk_max_gb}
+                step={10}
+                value={newGb}
+                onChange={(v) => {
+                  if (typeof v === "number") onNewGbChange(v);
+                }}
+                disabled={!policies}
+                style={{ width: "100%" }}
+                aria-label={t("create.diskSizeAria")}
+              />
+              <Space.Addon>GB</Space.Addon>
+            </Space.Compact>
           </Flex>
           <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
             {diskPriceGbMonth

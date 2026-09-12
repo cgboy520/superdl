@@ -8,7 +8,7 @@ import { Card, Col, Row, Typography } from "antd";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-const ENTRIES: Array<{ key: "start" | "gpu" | "billing" | "data"; icon: ReactNode }> = [
+const ENTRIES: { key: "start" | "gpu" | "billing" | "data"; icon: ReactNode }[] = [
   { key: "start", icon: <ThunderboltOutlined /> },
   { key: "gpu", icon: <AimOutlined /> },
   { key: "billing", icon: <AccountBookOutlined /> },

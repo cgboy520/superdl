@@ -307,7 +307,7 @@ export function RefundsTab() {
         ]}
       />
       <LoadMore
-        hasNextPage={Boolean(hasNextPage)}
+        hasNextPage={hasNextPage}
         loading={isFetchingNextPage}
         isError={isFetchNextPageError}
         // 渠道过滤时隐藏计数,改由下方汇总行展示

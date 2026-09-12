@@ -90,7 +90,9 @@ function useInstanceAttention(rows: InstanceOut[], onRenew: (i: InstanceOut) => 
   const { data: policies } = usePolicies();
   const { data: soon } = useExpiringInstances(policies?.period_expire_warn_days);
   const autoRenew = useSetAutoRenew(soon?.[0]?.uuid ?? "", {
-    onSuccess: () => message.success(t("period.autoRenewOn")),
+    onSuccess: () => {
+      message.success(t("period.autoRenewOn"));
+    },
   });
   const items: AttentionItem[] = [];
   for (const inst of (soon ?? []).slice(0, 3)) {
@@ -249,12 +251,12 @@ function SpecCell({ instance }: { instance: InstanceOut }) {
       trigger={["hover", "focus", "click"]}
       content={
         <Space orientation="vertical" size={2}>
-          <span>{instance.spec["sku_name"] as string}</span>
+          <span>{instance.spec.sku_name as string}</span>
           <span>
             {t("common.hostSpec", {
-              vcpu: (instance.spec["vcpu"] as number) * instance.gpu_count,
-              mem: (instance.spec["mem_gb"] as number) * instance.gpu_count,
-              disk: instance.spec["disk_gb"] as number,
+              vcpu: (instance.spec.vcpu as number) * instance.gpu_count,
+              mem: (instance.spec.mem_gb as number) * instance.gpu_count,
+              disk: instance.spec.disk_gb as number,
             })}
           </span>
           <span style={{ maxWidth: 360, wordBreak: "break-all" }}>
@@ -270,9 +272,9 @@ function SpecCell({ instance }: { instance: InstanceOut }) {
           className="focus-ring"
           style={{ textDecoration: "underline dotted", cursor: "help" }}
         >
-          {instance.spec["gpu_model"] as string} × {instance.gpu_count}
+          {instance.spec.gpu_model as string} × {instance.gpu_count}
         </Typography.Text>
-        <TierTag tier={instance.spec["tier"] as string} pool={instance.spec["pool_label"] as string} />
+        <TierTag tier={instance.spec.tier as string} pool={instance.spec.pool_label as string} />
       </Space>
     </Popover>
   );
@@ -618,7 +620,7 @@ function InstancesPage() {
         />
       )}
       <LoadMore
-        hasNextPage={hasNextPage ?? false}
+        hasNextPage={hasNextPage}
         loading={isFetchingNextPage}
         isError={isFetchNextPageError}
         loadedCount={rows.length}

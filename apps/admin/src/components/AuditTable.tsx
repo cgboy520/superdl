@@ -14,12 +14,12 @@ import { AUDIT_DEFAULT_LIMIT, type AuditRow, exportAuditCsv, isApiError, useAudi
 function detailSummary(detail: Record<string, unknown> | null | undefined): string {
   if (!detail || Object.keys(detail).length === 0) return "";
   const parts: string[] = [];
-  const before = detail["before"];
-  const after = detail["after"];
+  const before = detail.before;
+  const after = detail.after;
   if (before && typeof before === "object" && Object.keys(before).length > 0) {
     parts.push(`${JSON.stringify(before)} → ${JSON.stringify(after ?? {})}`);
   }
-  const reason = detail["reason"];
+  const reason = detail.reason;
   if (typeof reason === "string" && reason) parts.push(reason);
   return parts.length ? parts.join(" · ") : JSON.stringify(detail);
 }
@@ -151,7 +151,7 @@ export function AuditTable({
           showTime={{ format: "HH:mm" }}
           value={range}
           onChange={(v) => {
-            const next = v as [Dayjs | null, Dayjs | null] | null;
+            const next = v;
             setRange(next);
             commit({
               actor_type: actorType,
@@ -260,7 +260,7 @@ export function AuditTable({
         }}
       />
       <LoadMore
-        hasNextPage={Boolean(audit.hasNextPage)}
+        hasNextPage={audit.hasNextPage}
         loading={audit.isFetchingNextPage}
         isError={audit.isFetchNextPageError}
         loadedCount={rows.length}
