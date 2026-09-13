@@ -26,6 +26,16 @@
 - **管理端密度「紧凑」、用户端「舒适」,分档写死在 token。** 管理端表格 13px / `cellPaddingBlock 8`,宽表固定列 + sticky 表头 + 全宽页;用户端保持 antd 默认密度。约束:两端不互相借用密度;宽表判据 `scroll.x ≥ 1000`。
 - **轮询周期只有一份(`POLL`),轮询页必须可见新鲜度。** 约束:新轮询不写裸毫秒数;页头用 `PageHeader.freshness` 给「更新于 / 自动刷新 / 暂停」。
 - **URL 参数不做旧名兼容,白名单丢弃即全部策略。** 与「停机发布、无兼容窗口」同源:产品未对外发布,不为旧书签/旧链接留映射层;`validateSearch` 只认当前白名单,非法值剥离回默认。约束:重命名 URL 参数或枚举值时直接改,不加归一化代码。
+- **「禁用带原因」只有一种写法:`GatedButton`。** antd 6 的 `Button` 渲染原生 `disabled`,`Tooltip` 不再给禁用子元素套壳,原生禁用按钮无鼠标事件、不可聚焦,原因永远弹不出来。约束:`reason` 非空即 `aria-disabled` + 可聚焦 + 拦截点击 + Tooltip;`Tooltip` 直接包 `disabled` Button 由 ESLint 拦;真正的硬禁用只用于提交在途;`ReasonAction` / `ChipRow` / `RowMoreMenu` 的项内部都用它。
+- **页面自持 `PageContainer`,两端一致。** web 壳不再包一层容器,每个路由自己决定页宽与页头(与 admin 相同)。约束:新页面必须以 `PageContainer` 开头(页面骨架检查脚本守护),筛选走 `FilterBar`,实体页头走 `EntityHeader`。
+- **共享件按「通用即共享」划界。** `FilterBar / RowMoreMenu / AttentionBar / ChipRow / useLeaveGuard` 提升到 `packages/ui`;`CheckoutBar / ConsentGate / OnboardingSteps`(web)与 `ReasonAction / BulkBar / ListCapNote / AuditTable`(admin)因绑定各端数据与流程留在本端。约束:一端新写通用件时先看另一端是否已有同物,有则提升不复制;`useLeaveGuard` 核心无路由依赖,各端只包一层注入 `useBlocker`。
+- **JS 侧取语义色只经 `useThemeColors()`。** token 是静态常量,直接 `import { colorPrimary }` 在暗色下画不对(sparkline 曾以 ≈2.6:1 上线)。约束:`themeColors` 三套(web-light / web-dark / admin)是 JS 取色唯一入口,`useThemeMode` 只在 `__root.tsx` 与主题切换钮使用,图表主题经 `useChartTheme()`;`HexTag` 字色按底色亮度取黑白。
+- **「选一个」控件按角色分工,计费方式保持 ChipRow。** `Segmented` 视图切换、`ChipRow` 筛选与轻量选项、`OptionTile` 表单互斥大项、表内 radio 挑一行。约束:禁 `Button + aria-pressed` 与 `Radio.Group optionType="button"`;计费方式在市场页与创建页都是 `ChipRow`(`role=group` 名「计费方式」被两个 e2e 用例钉住),只改位置不改控件。
+- **恢复方向的管理动作不做第二步确认。** 解封节点、解冻租户、上架 SKU 只填原因;破坏方向(封锁、冻结、下架、回收、强停)保留原因 + 二次确认。约束:确认强度不倒挂——恢复不能比破坏更难。
+- **用户端的「一眼看全」由实例列表状态计数条承担,管理端的「先处理什么」由总览待处理条承担。** 仍不建独立概览页。约束:计数来自已加载数据或既有列表端点,精确汇总端点是后续路线图项;总览 KPI 全部可点击深链到预筛选列表。
+- **公开层首屏是行情板,不是海报。** 数字一律真实数据;删除泛营销模块;公开层跟随主题;价格 / 型号 / 命令用自托管等宽字体(放在 web 的 public 目录下,CSP `font-src 'self'` 已放行,不改 index.html 内联脚本)。约束:首页任何数字必须来自 `/skus` 或 `gpuSpecs.ts`。
+- **账户设置分 Tab,财务对账不内嵌审计。** 设置页四 Tab(`?tab=`);审计只在 `/audit` 一处。
+- **e2e 选择器优先 role + name,`data-testid` 只用于无稳定 role / 文案的元素。** 清单集中在 packages/ui 的 testIds 模块(`mfa-secret` / `endpoint-url`);表格行仍靠 antd `data-row-key`;确认框按钮经 `getByRole("dialog")` 定位而不靠 `.ant-modal-confirm-btns`。
 
 ## 计费与资金
 
