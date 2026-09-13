@@ -15,7 +15,7 @@ test("买竞价并转按量", async ({ page }) => {
     .click();
   // 可被回收这句必须常驻
   await expect(page.getByText(/可被平台回收|可被回收/).first()).toBeVisible();
-  await page.getByRole("button", { name: "下一步:配置实例" }).click();
+  await page.getByRole("button", { name: "配置实例" }).click();
   await expect(page).toHaveURL(/market=spot/);
 
   // 创建页:提交前弹知情同意,不勾选过不去

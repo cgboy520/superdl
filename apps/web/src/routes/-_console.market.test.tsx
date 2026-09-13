@@ -11,7 +11,7 @@ describe("market validateSearch", () => {
       model: "H100",
       tier: "dedicated",
       vram: "80",
-      gpus: "4",
+      qty: "4",
       vcpu: "16",
       mem: "128",
       sku: "42",
@@ -23,7 +23,7 @@ describe("market validateSearch", () => {
       model: "H100",
       tier: "dedicated",
       vram: 80,
-      gpus: 4,
+      qty: 4,
       vcpu: 16,
       mem: 128,
       sku: 42,
@@ -31,7 +31,7 @@ describe("market validateSearch", () => {
     });
   });
 
-  it("默认值剥离:kind=gpu / mode=on_demand / gpus=1 / count=1 / 空档与 0 值不进 URL", () => {
+  it("默认值剥离:kind=gpu / mode=on_demand / qty=1 / count=1 / 空档与 0 值不进 URL", () => {
     expect(
       marketValidateSearch({
         kind: "gpu",
@@ -39,7 +39,7 @@ describe("market validateSearch", () => {
         model: "",
         tier: "",
         vram: 0,
-        gpus: 1,
+        qty: 1,
         vcpu: 0,
         mem: 0,
         count: 1,
@@ -54,7 +54,7 @@ describe("market validateSearch", () => {
         mode: "hourly",
         tier: "cpu",
         vram: -1,
-        gpus: 2.5,
+        qty: 2.5,
         vcpu: "abc",
         mem: null,
         sku: 0,

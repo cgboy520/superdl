@@ -1,8 +1,8 @@
-/** 服务设置 Tab:改名 / 访问鉴权开关 / 调试 SSH / 危险区。改名与鉴权只 PATCH services 行,不重新部署;关鉴权走 L2 确认;开着鉴权却没有可用 Key 时常驻提醒;SSH 随版本固定,只回显。 */
+/** 服务设置 Tab:访问鉴权开关 / 调试 SSH / 危险区(改名在头部 EntityHeader 完成)。鉴权只 PATCH services 行,不重新部署;关鉴权走 L2 确认;开着鉴权却没有可用 Key 时常驻提醒;SSH 随版本固定,只回显。 */
 
 import type { ServiceOut } from "@superdl/api-client";
 import { CopyField, GatedButton, useConfirm } from "@superdl/ui/components";
-import { Alert, App, Button, Card, Input, Space, Switch, theme, Typography } from "antd";
+import { Alert, App, Button, Card, Space, Switch, theme, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -23,7 +23,6 @@ export function SettingsTab({
   const { message } = App.useApp();
   const { token } = theme.useToken();
   const confirm = useConfirm();
-  const [name, setName] = useState(service.name);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const update = useUpdateService(service.slug);
   const keysQ = useServiceApiKeys(service.slug);
@@ -33,8 +32,6 @@ export function SettingsTab({
   const inst = service.current_instance;
   const withSsh = service.container?.with_ssh ?? false;
   const accessQ = useInstanceAccess(inst?.uuid ?? "", { enabled: live && withSsh && inst != null });
-  const trimmed = name.trim();
-  const nameDirty = trimmed !== "" && trimmed !== service.name;
   const deletable =
     service.status === "stopped" ||
     service.status === "frozen" ||
@@ -45,37 +42,8 @@ export function SettingsTab({
     await update.mutateAsync({ require_api_key: on });
     message.success(t("services.settings.authSaved"));
   };
-  const saveName = async () => {
-    await update.mutateAsync({ name: trimmed });
-    message.success(t("services.settings.saved"));
-  };
-
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-      <Card size="small" title={t("services.settings.nameCard")}>
-        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-          <Typography.Text type="secondary">{t("services.settings.nameLabel")}</Typography.Text>
-          <Space wrap>
-            <Input
-              maxLength={64}
-              aria-label={t("services.settings.nameLabel")}
-              value={name}
-              disabled={released}
-              onChange={(e) => setName(e.target.value)}
-              style={{ width: 320, maxWidth: "100%" }}
-            />
-            <Button
-              type="primary"
-              disabled={!nameDirty || released}
-              loading={update.isPending}
-              onClick={() => void saveName()}
-            >
-              {t("services.settings.save")}
-            </Button>
-          </Space>
-        </Space>
-      </Card>
-
       <Card size="small" title={t("services.settings.authCard")}>
         <Space orientation="vertical" size={8} style={{ width: "100%" }}>
           <Space>

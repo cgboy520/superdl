@@ -49,3 +49,5 @@ export { StatusSummaryBar } from "./StatusSummaryBar";
 export type { StatusSummaryItem } from "./StatusSummaryBar";
 export { TriageBar } from "./TriageBar";
 export type { TriageItem } from "./TriageBar";
+export { SectionRail, SectionAnchor, deriveSectionStatus, scrollToSection } from "./SectionRail";
+export type { SectionDef, SectionStatus } from "./SectionRail";

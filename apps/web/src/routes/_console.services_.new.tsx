@@ -1,5 +1,6 @@
-/** 部署服务:分段单页(① 基本信息 → ② 容器配置(含数据盘)→ ③ 服务配置 → ④ 高级配置)+ 左侧步骤锚点(窄屏改顶部横向)+ 底部结算条(未完成项清单在条上方)。
- *  不用 antd Form,全部受控 state + 派生 issue,每段独立标状态;字段级错误就地显示。数据盘「新建」先建盘再部署,建盘成功而部署失败须提示盘已计费。 */
+/** 部署服务:SectionRail 分段长表单(① 基本信息 → ② 容器配置(含数据盘)→ ③ 服务配置 → ④ 高级配置)+ 底部结算条(未完成项清单在条上方)。
+ *  不用 antd Form,全部受控 state + 派生 issue,每段独立标状态(首屏不出红叉:未触碰且没点过提交的问题段只标 wait);字段级错误就地显示。
+ *  数据盘「新建」先建盘再部署,建盘成功而部署失败须提示盘已计费。 */
 
 import { isApiError, type DiskOut, type SkuMarketOut } from "@superdl/api-client";
 import {
@@ -10,16 +11,24 @@ import {
   formatDate,
   idemKeyOf,
   isBillingPeriod,
-  layout,
   mulPrice,
   PERIOD_HOURS,
   periodMap,
   POLL,
   skuVariant,
 } from "@superdl/ui";
-import { DataErrorAlert, GatedButton, KeyValue, PageContainer } from "@superdl/ui/components";
+import {
+  DataErrorAlert,
+  GatedButton,
+  KeyValue,
+  PageContainer,
+  scrollToSection,
+  SectionAnchor,
+  SectionRail,
+  type SectionDef,
+} from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { App, Button, Card, Checkbox, Col, Grid, Input, Row, Space, Steps, Typography } from "antd";
+import { App, Button, Checkbox, Input, Space, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -72,7 +81,6 @@ function DeployPage() {
   } = Route.useSearch();
   const navigate = useNavigate();
   const { message } = App.useApp();
-  const wide = Grid.useBreakpoint().md;
 
   const skusQ = useSkus({ refetchInterval: POLL.steady });
   const { data: skus } = skusQ;
@@ -108,6 +116,10 @@ function DeployPage() {
   const [withSsh, setWithSsh] = useState(false);
   const [keyIds, setKeyIds] = useState<number[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  // 段状态:碰过的段(改字段 / 点进段内)+ 点过主 CTA;首屏两者皆空,问题段只标 wait 不出红叉
+  const [touchedIds, setTouchedIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [submitted, setSubmitted] = useState(false);
+  const touch = (id: string) => setTouchedIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
   // 幂等键 = 本次挂载的 nonce + 参数快照
   const [formNonce] = useState(() => crypto.randomUUID());
   const [mountedAt] = useState(() => Date.now());
@@ -148,9 +160,8 @@ function DeployPage() {
 
   const sku: SkuMarketOut | undefined = (skus ?? []).find((s) => s.id === skuId);
   const isCpu = sku?.tier === "cpu";
-  // 盘容量初值取策略下限(不写死 100);锚点滚动补顶栏
+  // 盘容量初值取策略下限(不写死 100)
   const diskGbValue = newDiskGb ?? policies?.disk_min_gb ?? 100;
-  const anchorStyle = { scrollMarginTop: layout.scrollMarginTop } as const;
   const gpus = isCpu ? 0 : gpuCount;
   const priceUnits = isCpu ? 1 : gpuCount;
   const periodBlocked = sku != null && !sku.period_enabled;
@@ -213,9 +224,18 @@ function DeployPage() {
   const firstIssueIndex = sectionIssues.findIndex((i) => i != null);
   const firstIssue = firstIssueIndex >= 0 ? sectionIssues[firstIssueIndex] : null;
   const canSubmit = firstIssue == null;
+  const issueCount = sectionIssues.filter((i) => i != null).length;
 
-  const scrollTo = (i: number) =>
-    document.getElementById(SECTION_IDS[i] ?? "")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const sections: SectionDef[] = SECTION_IDS.map((id, i) => ({
+    id,
+    title: t(`services.form.section${String(i + 1)}` as "services.form.section1"),
+    issue: sectionIssues[i] ?? null,
+    touched: touchedIds.has(id),
+  }));
+  const scrollTo = (i: number) => {
+    const id = SECTION_IDS[i];
+    if (id) scrollToSection(id);
+  };
 
   const onCancel = () =>
     leave.confirmLeave(() => {
@@ -313,213 +333,179 @@ function DeployPage() {
     spotPolicy,
     confirmLabel: t("services.form.ecoConfirm"),
     loading: pending,
-    onProceed: () => void doCreate(),
+    onProceed: () => doCreate(),
   });
   const submit = gate.submit;
 
-  const steps = (
-    <Steps
-      orientation="vertical"
-      size="small"
-      current={firstIssueIndex >= 0 ? firstIssueIndex : SECTION_IDS.length - 1}
-      onChange={scrollTo}
-      items={[
-        t("services.form.section1"),
-        t("services.form.section2"),
-        t("services.form.section3"),
-        t("services.form.section4"),
-      ].map((title, i) => ({
-        title,
-        // 每段独立算状态:有问题 = error(红点),没问题 = finish;不再被「第一个问题」折叠
-        status: sectionIssues[i] ? (i === firstIssueIndex ? "process" : "error") : "finish",
-        description: sectionIssues[i] ?? undefined,
-      }))}
-    />
-  );
-
-  const sections = (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+  const cards = (
+    <>
       {/* ① 基本信息:名称 + 算力规格 + 计费方式 */}
-      <Card id={SECTION_IDS[0]} style={anchorStyle} title={t("services.form.section1")}>
-        <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-          <Space orientation="vertical" size={4} style={{ width: "100%" }}>
-            <Typography.Text type="secondary">{t("services.form.nameLabel")}</Typography.Text>
-            <Input
-              placeholder={t("services.form.namePlaceholder")}
-              maxLength={64}
-              aria-label={t("services.form.nameLabel")}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              style={{ width: "100%", maxWidth: 320 }}
+      <div onFocusCapture={() => touch(SECTION_IDS[0])} onClickCapture={() => touch(SECTION_IDS[0])}>
+        <SectionAnchor id={SECTION_IDS[0]} title={t("services.form.section1")}>
+          <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+            <Space orientation="vertical" size={4} style={{ width: "100%" }}>
+              <Typography.Text type="secondary">{t("services.form.nameLabel")}</Typography.Text>
+              <Input
+                placeholder={t("services.form.namePlaceholder")}
+                maxLength={64}
+                aria-label={t("services.form.nameLabel")}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                style={{ width: "100%", maxWidth: 320 }}
+              />
+            </Space>
+            <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+              <Typography.Text type="secondary">{t("services.form.specLabel")}</Typography.Text>
+              <SkuPicker
+                skus={skus}
+                isLoading={skusQ.isLoading}
+                isError={skusQ.isError}
+                onRetry={() => void skusQ.refetch()}
+                value={sku}
+                onChange={(s) => setSkuId(s?.id)}
+                gpuCount={gpuCount}
+                onGpuCount={setGpuCount}
+                {...(isSpot && spotPolicy ? { spot: spotPolicy } : {})}
+              />
+            </Space>
+            <BillingModeCard
+              value={mode}
+              onChange={setBillingMode}
+              periodEnabled={!periodBlocked}
+              spotEnabled={sku?.spot_enabled ?? true}
+              count={periodCount}
+              onCountChange={setPeriodCount}
             />
+            {/* 竞价只警示不禁止;回收会断对外地址,下单前必须出现(贴在计费卡下,不做页顶常驻) */}
+            {isSpot && (
+              <Typography.Text type="warning" style={{ fontSize: fontSize.caption }}>
+                {t("copy.spotNotForService")}
+              </Typography.Text>
+            )}
           </Space>
-          <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-            <Typography.Text type="secondary">{t("services.form.specLabel")}</Typography.Text>
-            <SkuPicker
-              skus={skus}
-              isLoading={skusQ.isLoading}
-              isError={skusQ.isError}
-              onRetry={() => void skusQ.refetch()}
-              value={sku}
-              onChange={(s) => setSkuId(s?.id)}
-              gpuCount={gpuCount}
-              onGpuCount={setGpuCount}
-              {...(isSpot && spotPolicy ? { spot: spotPolicy } : {})}
-            />
-          </Space>
-          <BillingModeCard
-            value={mode}
-            onChange={setBillingMode}
-            periodEnabled={!periodBlocked}
-            spotEnabled={sku?.spot_enabled ?? true}
-            count={periodCount}
-            onCountChange={setPeriodCount}
-          />
-          {/* 竞价只警示不禁止;回收会断对外地址,下单前必须出现(贴在计费卡下,不做页顶常驻) */}
-          {isSpot && (
-            <Typography.Text type="warning" style={{ fontSize: fontSize.caption }}>
-              {t("copy.spotNotForService")}
-            </Typography.Text>
-          )}
-        </Space>
-      </Card>
+        </SectionAnchor>
+      </div>
 
       {/* ② 容器配置(数据盘归在本段) */}
-      <Card id={SECTION_IDS[1]} style={anchorStyle} title={t("services.form.section2")}>
-        <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-          <ContainerFields
-            image={image}
-            onImage={setImage}
-            command={command}
-            onCommand={setCommand}
-            argRows={argRows}
-            onArgRows={setArgRows}
-            envRows={envRows}
-            onEnvRows={setEnvRows}
-          />
-          <DataDiskCard
-            variant="section"
-            mode={diskMode}
-            onModeChange={setDiskMode}
-            newName={newDiskName}
-            onNewNameChange={setNewDiskName}
-            newGb={diskGbValue}
-            onNewGbChange={setNewDiskGb}
-            existingId={existingDiskId}
-            onExistingIdChange={setExistingDiskId}
-          />
-        </Space>
-      </Card>
-
-      {/* ③ 服务配置 */}
-      <Card id={SECTION_IDS[2]} style={anchorStyle} title={t("services.form.section3")}>
-        <PublicAccessFields
-          port={servicePort}
-          onPort={setServicePort}
-          healthPath={healthPath}
-          onHealthPath={setHealthPath}
-          requireApiKey={requireApiKey}
-          onRequireApiKey={setRequireApiKey}
-        />
-      </Card>
-
-      {/* ④ 高级配置:调试 SSH + 更新策略说明 + 配置摘要 */}
-      <Card id={SECTION_IDS[3]} style={anchorStyle} title={t("services.form.section4")}>
-        <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-          <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-            <Checkbox checked={withSsh} onChange={(e) => setWithSsh(e.target.checked)}>
-              {t("services.form.withSsh")}
-            </Checkbox>
-            <Typography.Text type="secondary">{t("services.form.withSshHint")}</Typography.Text>
-            {/* 勾了才要公钥:后端对 with_ssh 服务要求 ssh_key_ids 非空 */}
-            {withSsh && <SshKeyPicker value={keyIds} onChange={setKeyIds} />}
-          </Space>
-          <Space orientation="vertical" size={4} style={{ width: "100%" }}>
-            <Typography.Text type="secondary">{t("services.form.strategyLabel")}</Typography.Text>
-            <Typography.Text>{t("services.form.strategyRecreate")}</Typography.Text>
-          </Space>
-          <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-            <Typography.Text strong>{t("services.form.summaryLabel")}</Typography.Text>
-            <KeyValue
-              layout="vertical"
-              columns={{ xs: 1, sm: 2 }}
-              items={[
-                {
-                  label: t("services.form.summarySpec"),
-                  value: sku
-                    ? isCpu
-                      ? t("create.summaryCpu", { vcpu: sku.vcpu, mem: sku.mem_gb })
-                      : t("instances.specLine", { model: sku.gpu_model, count: gpuCount })
-                    : t("services.form.summaryNone"),
-                },
-                {
-                  label: t("services.form.summaryBilling"),
-                  value: sku
-                    ? period && quote
-                      ? fmt.formatPeriodPrice(quote.amount, period, periodCount)
-                      : hourlyTotal
-                        ? formatHourlyPrice(hourlyTotal)
-                        : null
-                    : t("services.form.summaryNone"),
-                },
-                {
-                  label: t("services.form.summaryImage"),
-                  value: imageRef || t("services.form.summaryNone"),
-                  mono: Boolean(imageRef),
-                },
-                {
-                  label: t("services.form.summaryPort"),
-                  value: servicePort ?? t("services.form.summaryNone"),
-                },
-                {
-                  label: t("services.form.summaryHealth"),
-                  value: healthPath.trim() || t("services.form.summaryNone"),
-                },
-                {
-                  label: t("services.form.summaryAuth"),
-                  value: requireApiKey ? t("services.form.authRequire") : t("services.form.authPublic"),
-                },
-                {
-                  label: t("services.form.summarySsh"),
-                  value: withSsh ? t("services.detail.sshOn") : t("services.detail.sshOff"),
-                },
-              ]}
+      <div onFocusCapture={() => touch(SECTION_IDS[1])} onClickCapture={() => touch(SECTION_IDS[1])}>
+        <SectionAnchor id={SECTION_IDS[1]} title={t("services.form.section2")}>
+          <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+            <ContainerFields
+              image={image}
+              onImage={setImage}
+              command={command}
+              onCommand={setCommand}
+              argRows={argRows}
+              onArgRows={setArgRows}
+              envRows={envRows}
+              onEnvRows={setEnvRows}
+            />
+            <DataDiskCard
+              variant="section"
+              mode={diskMode}
+              onModeChange={setDiskMode}
+              newName={newDiskName}
+              onNewNameChange={setNewDiskName}
+              newGb={diskGbValue}
+              onNewGbChange={setNewDiskGb}
+              existingId={existingDiskId}
+              onExistingIdChange={setExistingDiskId}
             />
           </Space>
-        </Space>
-      </Card>
-    </div>
+        </SectionAnchor>
+      </div>
+
+      {/* ③ 服务配置 */}
+      <div onFocusCapture={() => touch(SECTION_IDS[2])} onClickCapture={() => touch(SECTION_IDS[2])}>
+        <SectionAnchor id={SECTION_IDS[2]} title={t("services.form.section3")}>
+          <PublicAccessFields
+            port={servicePort}
+            onPort={setServicePort}
+            healthPath={healthPath}
+            onHealthPath={setHealthPath}
+            requireApiKey={requireApiKey}
+            onRequireApiKey={setRequireApiKey}
+          />
+        </SectionAnchor>
+      </div>
+
+      {/* ④ 高级配置:调试 SSH + 更新策略说明 + 配置摘要 */}
+      <div onFocusCapture={() => touch(SECTION_IDS[3])} onClickCapture={() => touch(SECTION_IDS[3])}>
+        <SectionAnchor id={SECTION_IDS[3]} title={t("services.form.section4")}>
+          <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+            <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+              <Checkbox checked={withSsh} onChange={(e) => setWithSsh(e.target.checked)}>
+                {t("services.form.withSsh")}
+              </Checkbox>
+              <Typography.Text type="secondary">{t("services.form.withSshHint")}</Typography.Text>
+              {/* 勾了才要公钥:后端对 with_ssh 服务要求 ssh_key_ids 非空 */}
+              {withSsh && <SshKeyPicker value={keyIds} onChange={setKeyIds} />}
+            </Space>
+            <Space orientation="vertical" size={4} style={{ width: "100%" }}>
+              <Typography.Text type="secondary">{t("services.form.strategyLabel")}</Typography.Text>
+              <Typography.Text>{t("services.form.strategyRecreate")}</Typography.Text>
+            </Space>
+            <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+              <Typography.Text strong>{t("services.form.summaryLabel")}</Typography.Text>
+              <KeyValue
+                layout="vertical"
+                columns={{ xs: 1, sm: 2 }}
+                items={[
+                  {
+                    label: t("services.form.summarySpec"),
+                    value: sku
+                      ? isCpu
+                        ? t("create.summaryCpu", { vcpu: sku.vcpu, mem: sku.mem_gb })
+                        : t("instances.specLine", { model: sku.gpu_model, count: gpuCount })
+                      : t("services.form.summaryNone"),
+                  },
+                  {
+                    label: t("services.form.summaryBilling"),
+                    value: sku
+                      ? period && quote
+                        ? fmt.formatPeriodPrice(quote.amount, period, periodCount)
+                        : hourlyTotal
+                          ? formatHourlyPrice(hourlyTotal)
+                          : null
+                      : t("services.form.summaryNone"),
+                  },
+                  {
+                    label: t("services.form.summaryImage"),
+                    value: imageRef || t("services.form.summaryNone"),
+                    mono: Boolean(imageRef),
+                  },
+                  {
+                    label: t("services.form.summaryPort"),
+                    value: servicePort ?? t("services.form.summaryNone"),
+                  },
+                  {
+                    label: t("services.form.summaryHealth"),
+                    value: healthPath.trim() || t("services.form.summaryNone"),
+                  },
+                  {
+                    label: t("services.form.summaryAuth"),
+                    value: requireApiKey ? t("services.form.authRequire") : t("services.form.authPublic"),
+                  },
+                  {
+                    label: t("services.form.summarySsh"),
+                    value: withSsh ? t("services.detail.sshOn") : t("services.detail.sshOff"),
+                  },
+                ]}
+              />
+            </Space>
+          </Space>
+        </SectionAnchor>
+      </div>
+    </>
   );
 
   return (
     <PageContainer title={t("services.deploy")} back={{ label: t("services.backToList"), onClick: onCancel }}>
       {/* 不用 Space(ant-space-item 包装会破坏 sticky 结算条的包含块) */}
       <div style={{ display: "flex", flexDirection: "column", gap: 16, width: "100%" }}>
-        {wide ? (
-          <Row gutter={16} wrap={false}>
-            <Col flex="200px">
-              <div style={{ position: "sticky", top: layout.scrollMarginTop }}>{steps}</div>
-            </Col>
-            <Col flex="auto" style={{ minWidth: 0 }}>
-              {sections}
-            </Col>
-          </Row>
-        ) : (
-          <>
-            {/* 窄屏:横向步骤条在顶,分段导航照样可用 */}
-            <Steps
-              size="small"
-              responsive={false}
-              current={firstIssueIndex >= 0 ? firstIssueIndex : SECTION_IDS.length - 1}
-              onChange={scrollTo}
-              items={[1, 2, 3, 4].map((n, i) => ({
-                title: t(`services.form.section${n}` as "services.form.section1"),
-                status: sectionIssues[i] ? (i === firstIssueIndex ? "process" : "error") : "finish",
-              }))}
-            />
-            {sections}
-          </>
-        )}
+        <SectionRail sections={sections} submitted={submitted} ariaLabel={t("services.form.railAria")}>
+          {cards}
+        </SectionRail>
 
         {walletQ.isError && <DataErrorAlert onRetry={() => void walletQ.refetch()} />}
         <CheckoutBar
@@ -536,11 +522,12 @@ function DeployPage() {
                   })
               : t("services.form.specNeeded")
           }
+          {...(!canSubmit && sku ? { noticeSummary: t("create.issuesShort", { count: issueCount }) } : {})}
           notice={
             !canSubmit && sku ? (
               <Space size={8} wrap style={{ fontSize: fontSize.caption }}>
                 <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                  {t("create.issuesTitle", { count: sectionIssues.filter((i) => i != null).length })}
+                  {t("create.issuesTitle", { count: issueCount })}
                 </Typography.Text>
                 {sectionIssues.map((issue, i) =>
                   issue ? (
@@ -638,10 +625,8 @@ function DeployPage() {
           balance={wallet?.balance ?? null}
           balanceReady={balanceReady}
           actions={
-            <>
-              <Button size="large" onClick={onCancel}>
-                {t("create.cancel")}
-              </Button>
+            // 点过主 CTA 后所有问题段都标红(首屏不标);「取消」不放结算条,页头返回是唯一出口
+            <span onClickCapture={() => setSubmitted(true)}>
               {walletQ.isError ? (
                 <GatedButton type="primary" size="large" reason={t("services.form.walletQueryFailedRetry")}>
                   {submitLabel}
@@ -671,7 +656,7 @@ function DeployPage() {
                   </Button>
                 </Link>
               )}
-            </>
+            </span>
           }
         />
 

@@ -57,7 +57,7 @@ function SettingsPage() {
     },
   });
   const delKey = useDeleteSshKey();
-  // /settings#ssh 深链:滚动到 SSH 卡并高亮 2s
+  // /settings#ssh / #notify 深链:滚动到目标卡并高亮 2s
   useHashScroll({ highlight: true });
 
   return (
@@ -143,7 +143,8 @@ function SettingsPage() {
           </Space>
         </Card>
 
-        <Card title={t("settings.notifyCard")}>
+        {/* /settings#notify 深链:费用中心余额卡的「修改」落这里 */}
+        <Card id="notify" title={t("settings.notifyCard")}>
           <WarnThresholdField />
         </Card>
 

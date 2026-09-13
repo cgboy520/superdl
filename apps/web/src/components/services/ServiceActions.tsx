@@ -70,11 +70,14 @@ export function ServiceActions({
   service,
   onDeleted,
   onRollout,
+  size = "small",
 }: {
   service: ServiceOut;
   onDeleted?: () => void;
   /** 详情页头部给:出「更新版本」按钮 */
   onRollout?: () => void;
+  /** 行内 small / 详情页头 middle */
+  size?: "small" | "middle";
 }) {
   const { t } = useTranslation();
   const { message } = App.useApp();
@@ -114,16 +117,16 @@ export function ServiceActions({
 
   // 主动作随状态变:可启动 → 启动;可停止 → 停止;过渡态 / 冻结 → 启动灰置带原因
   const primary = startable ? (
-    <Button size="small" type="primary" loading={start.isPending} onClick={() => start.mutate(service.slug)}>
+    <Button size={size} type="primary" loading={start.isPending} onClick={() => start.mutate(service.slug)}>
       {t("services.actions.start")}
     </Button>
   ) : stoppable ? (
-    <Button size="small" loading={stop.isPending} onClick={confirmStop}>
+    <Button size={size} loading={stop.isPending} onClick={confirmStop}>
       {t("services.actions.stop")}
     </Button>
   ) : (
     <GatedButton
-      size="small"
+      size={size}
       type="primary"
       reason={s === "frozen" ? t("copy.frozenNeedsRecharge") : t("services.actions.needsStopped")}
     >
@@ -133,7 +136,7 @@ export function ServiceActions({
 
   const secondary = onRollout ? (
     <GatedButton
-      size="small"
+      size={size}
       reason={
         rollout.ok
           ? undefined
@@ -162,7 +165,7 @@ export function ServiceActions({
 
   return (
     <>
-      <RowActions primary={primary} secondary={secondary} more={more} />
+      <RowActions primary={primary} secondary={secondary} more={more} size={size} />
       <DeleteServiceModal
         service={service}
         open={deleteOpen}

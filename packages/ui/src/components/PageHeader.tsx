@@ -11,7 +11,8 @@ import { Freshness, type FreshnessProps } from "./Freshness";
 export type { FreshnessProps } from "./Freshness";
 
 export interface PageHeaderProps {
-  title: ReactNode;
+  /** 不传则不渲染标题行(只有面包屑 / 返回的页面:详情页由 EntityHeader 承担标题) */
+  title?: ReactNode;
   /** 一句话描述(≤30 字;政策/口径说明不放这里,进 tooltip 或规则弹窗) */
   description?: ReactNode;
   /** 右侧动作区(主按钮 + 次按钮) */
@@ -44,35 +45,42 @@ export function PageHeader({ title, description, extra, breadcrumb, back, freshn
           </Button>
         </div>
       )}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          flexWrap: "wrap",
-          gap: space.md,
-        }}
-      >
-        <div style={{ display: "flex", flexDirection: "column", gap: space.xs, minWidth: 0 }}>
-          <Space size={space.sm} wrap align="center">
-            <Typography.Title level={4} style={{ margin: 0, fontSize: fontSize.pageTitle }}>
-              {title}
-            </Typography.Title>
-            {tags}
-          </Space>
-          {description && (
-            <Typography.Text type="secondary" style={{ fontSize: fontSize.body }}>
-              {description}
-            </Typography.Text>
+      {(title !== undefined || tags || extra || description || freshness) && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            flexWrap: "wrap",
+            gap: space.md,
+          }}
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: space.xs, minWidth: 0 }}>
+            {(title !== undefined || tags) && (
+              <Space size={space.sm} wrap align="center">
+                {/* 空标题会被 axe 判为 empty-heading:没有 title 就不渲染 h4 */}
+                {title !== undefined && (
+                  <Typography.Title level={4} style={{ margin: 0, fontSize: fontSize.pageTitle }}>
+                    {title}
+                  </Typography.Title>
+                )}
+                {tags}
+              </Space>
+            )}
+            {description && (
+              <Typography.Text type="secondary" style={{ fontSize: fontSize.body }}>
+                {description}
+              </Typography.Text>
+            )}
+            {freshness && <Freshness {...freshness} />}
+          </div>
+          {extra && (
+            <Space size={space.sm} wrap>
+              {extra}
+            </Space>
           )}
-          {freshness && <Freshness {...freshness} />}
         </div>
-        {extra && (
-          <Space size={space.sm} wrap>
-            {extra}
-          </Space>
-        )}
-      </div>
+      )}
     </div>
   );
 }

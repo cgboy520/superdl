@@ -1,4 +1,4 @@
-/** 市场页与创建页共用的 SKU 表列与「计费方式」卡。 */
+/** 市场页 / 创建页 / 部署页共用的 SKU 表列与「计费方式」选择(市场页用 chips 进表格工具行,创建页与部署页用卡)。 */
 
 import type { SkuMarketOut } from "@superdl/api-client";
 import {
@@ -182,16 +182,7 @@ export const SKU_ROW_DISABLED_CLASS = "sku-row--disabled";
 /** 计费方式:按量 + 竞价 + 四个包周期,与档位正交;竞价与包周期互斥(market 单值),同行单选。 */
 export type BillingMode = "on_demand" | "spot" | BillingPeriod;
 
-/** 计费方式卡(市场页与创建页共用)。折扣角标与竞价折扣从 `/policies` 读,禁止硬编码;规格不接受包周期 / 未上竞价时对应项灰置 + tooltip,不隐藏;数量选择器只在传 count + onCountChange 时出。 */
-export function BillingModeCard({
-  value,
-  onChange,
-  periodEnabled = true,
-  spotEnabled = true,
-  count,
-  onCountChange,
-  extra,
-}: {
+interface BillingModeProps {
   value: BillingMode;
   onChange: (v: BillingMode) => void;
   periodEnabled?: boolean;
@@ -199,7 +190,20 @@ export function BillingModeCard({
   count?: number;
   onCountChange?: (n: number) => void;
   extra?: ReactNode;
-}) {
+}
+
+/** 计费方式 chips(市场页表格工具行 / 创建页与部署页的卡内)。折扣角标与竞价折扣从 `/policies` 读,禁止硬编码;
+ *  规格不接受包周期 / 未上竞价时对应项灰置 + tooltip,不隐藏;数量选择器只在传 count + onCountChange 时出。
+ *  chip 组的 role=group 名「计费方式」是市场页 e2e 的定位锚点。 */
+export function BillingModeChips({
+  value,
+  onChange,
+  periodEnabled = true,
+  spotEnabled = true,
+  count,
+  onCountChange,
+  extra,
+}: BillingModeProps) {
   const { t } = useTranslation(["web", "shared"]);
   // 「该规格暂不支持包周期 / 暂未上竞价档」文案事实源在后端 messages.py
   const { t: tErr } = useTranslation("errors");
@@ -207,85 +211,92 @@ export function BillingModeCard({
   const spotPolicy = useSpotPolicy();
   const showCount = count != null && onCountChange != null && isBillingPeriod(value);
   return (
-    <Card styles={{ body: { paddingBlock: 16 } }}>
-      <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-        <ChipRow<BillingMode>
-          label={t("sku.billingModeTitle")}
-          value={value}
-          onChange={onChange}
-          options={[
-            { value: "on_demand", label: t("sku.modeHourly") },
-            {
-              value: "spot",
+    <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+      <ChipRow<BillingMode>
+        label={t("sku.billingModeTitle")}
+        value={value}
+        onChange={onChange}
+        options={[
+          { value: "on_demand", label: t("sku.modeHourly") },
+          {
+            value: "spot",
+            label: (
+              <span>
+                {t(marketMap.spot.labelKey)}
+                <SpotOffLabel policy={spotPolicy} />
+              </span>
+            ),
+            // 策略没回来不放行
+            disabled: !spotEnabled || spotPolicy == null,
+            disabledReason: !spotEnabled
+              ? tErr("orchestrator.spotNotEnabled")
+              : spotPolicy == null
+                ? t("period.quotePending")
+                : undefined,
+          },
+          ...BILLING_PERIODS.map((p) => {
+            const off = discounts ? discountOff(discounts[p]) : 0;
+            return {
+              value: p,
               label: (
                 <span>
-                  {t(marketMap.spot.labelKey)}
-                  <SpotOffLabel policy={spotPolicy} />
+                  {t(periodMap[p].labelKey)}
+                  {off > 0 && (
+                    <Typography.Text type="secondary" style={{ marginInlineStart: 4 }}>
+                      {t("period.offPct", { off })}
+                    </Typography.Text>
+                  )}
                 </span>
               ),
-              // 策略没回来不放行
-              disabled: !spotEnabled || spotPolicy == null,
-              disabledReason: !spotEnabled
-                ? tErr("orchestrator.spotNotEnabled")
-                : spotPolicy == null
-                  ? t("period.quotePending")
-                  : undefined,
-            },
-            ...BILLING_PERIODS.map((p) => {
-              const off = discounts ? discountOff(discounts[p]) : 0;
-              return {
-                value: p,
-                label: (
-                  <span>
-                    {t(periodMap[p].labelKey)}
-                    {off > 0 && (
-                      <Typography.Text type="secondary" style={{ marginInlineStart: 4 }}>
-                        {t("period.offPct", { off })}
-                      </Typography.Text>
-                    )}
-                  </span>
-                ),
-                disabled: !periodEnabled,
-                disabledReason: periodEnabled ? undefined : tErr("orchestrator.periodNotEnabled"),
-              };
-            }),
-          ]}
-          extra={extra}
-        />
-        {showCount && (
-          // 与 ChipRow 同款标签栏(CHIP_LABEL_WIDTH 右对齐)
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <Typography.Text
-              type="secondary"
-              style={{ flexShrink: 0, width: CHIP_LABEL_WIDTH, lineHeight: "32px", textAlign: "right" }}
-            >
-              {t("period.countLabel")}
-            </Typography.Text>
-            <Space size={8}>
-              <InputNumber
-                min={1}
-                max={MAX_PERIOD_COUNT}
-                value={count}
-                aria-label={t("period.countLabel")}
-                onChange={(v) => onCountChange(typeof v === "number" ? v : 1)}
-                style={{ width: 96 }}
-              />
-              <PeriodCountUnit period={value} />
-            </Space>
-          </div>
-        )}
-        {/* 与当前选择直接相关的一句说明(≤30 字);风险摘要贴在 chip 下方(ui-ux-spec §1 规则 6) */}
-        {isBillingPeriod(value) && (
-          <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-            {t("copy.periodPrepaid")}
+              disabled: !periodEnabled,
+              disabledReason: periodEnabled ? undefined : tErr("orchestrator.periodNotEnabled"),
+            };
+          }),
+        ]}
+        extra={extra}
+      />
+      {showCount && (
+        // 与 ChipRow 同款标签栏(CHIP_LABEL_WIDTH 右对齐)
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <Typography.Text
+            type="secondary"
+            style={{ flexShrink: 0, width: CHIP_LABEL_WIDTH, lineHeight: "32px", textAlign: "right" }}
+          >
+            {t("period.countLabel")}
           </Typography.Text>
-        )}
-        {value === "spot" && spotPolicy && (
-          <Typography.Text type="warning" style={{ fontSize: fontSize.caption }}>
-            {t("copy.spotReclaimNotice", { seconds: spotPolicy.graceSeconds })}
-          </Typography.Text>
-        )}
-      </Space>
+          <Space size={8}>
+            <InputNumber
+              min={1}
+              max={MAX_PERIOD_COUNT}
+              value={count}
+              aria-label={t("period.countLabel")}
+              onChange={(v) => onCountChange(typeof v === "number" ? v : 1)}
+              style={{ width: 96 }}
+            />
+            <PeriodCountUnit period={value} />
+          </Space>
+        </div>
+      )}
+      {/* 与当前选择直接相关的一句说明(≤30 字);风险摘要贴在 chip 下方(ui-ux-spec §1 规则 6) */}
+      {isBillingPeriod(value) && (
+        <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+          {t("copy.periodPrepaid")}
+        </Typography.Text>
+      )}
+      {value === "spot" && spotPolicy && (
+        <Typography.Text type="warning" style={{ fontSize: fontSize.caption }}>
+          {t("copy.spotReclaimNotice", { seconds: spotPolicy.graceSeconds })}
+        </Typography.Text>
+      )}
+    </Space>
+  );
+}
+
+/** 计费方式卡(创建页与部署页):BillingModeChips 加一张卡。市场页不用卡,chips 直接进表格工具行。 */
+export function BillingModeCard(props: BillingModeProps) {
+  return (
+    <Card styles={{ body: { paddingBlock: 16 } }}>
+      <BillingModeChips {...props} />
     </Card>
   );
 }

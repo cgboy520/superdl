@@ -1,11 +1,14 @@
-/** 算力市场:规格选择(SkuPicker full,筛选入 URL)在上 → 计费方式在下(可选项依赖已选规格)→ 底部结算条。CTA 即库存,不可选行灰置排末不隐藏;
- *  未登录可看,CTA「登录后租用」带回完整筛选态。规格不支持所选计费方式时用 message 明示并切回按量,不让 chip 静默跳动。 */
+/** 算力市场:一张「选择规格」卡(筛选 chips → 购买数量 → 工具行含计费方式 chips → SKU 表)+ 底部结算条。
+ *  CTA 即库存,不可选行灰置排末不隐藏;购买数量不是筛选(不清空已选、不进「清除筛选」,库存不足只灰置 CTA)。
+ *  未登录可看,CTA「登录后租用」带回完整筛选态;筛选态同时记入 listSearchStore,创建页返回时带回。
+ *  规格不支持所选计费方式时用 message 明示并切回按量,不让 chip 静默跳动。 */
 
 import { QuestionCircleOutlined } from "@ant-design/icons";
 import type { SkuMarketOut } from "@superdl/api-client";
 import {
   billingUnits,
   fontSize,
+  GPU_COUNT_STEPS,
   isBillingPeriod,
   MAX_PERIOD_COUNT,
   mulPrice,
@@ -16,10 +19,10 @@ import {
   space,
   useAutoRefresh,
 } from "@superdl/ui";
-import { GatedButton, PageContainer } from "@superdl/ui/components";
+import { ChipRow, GatedButton, PageContainer } from "@superdl/ui/components";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { App, Button, Card, Modal, Space, Typography } from "antd";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useFormat } from "@superdl/ui";
@@ -27,20 +30,22 @@ import { usePolicies, useSkus } from "../api/queries";
 import { CheckoutBar } from "../components/CheckoutBar";
 import { DEFAULT_SKU_FILTERS, SkuPicker, type SkuFilters } from "../components/create/SkuPicker";
 import { PeriodQuoteRows, periodQuoteOf, usePeriodDiscounts } from "../components/periodBilling";
-import { BillingModeCard, type BillingMode } from "../components/skuTable";
+import { BillingModeChips, type BillingMode } from "../components/skuTable";
 import { SpotOffLabel, SpotPriceInline, spotPriceOf, useSpotPolicy } from "../components/spotBilling";
 import { useIsLoggedIn } from "../stores/auth";
+import { listSearchStore } from "../stores/listSearch";
 
 type Kind = "gpu" | "cpu";
 
-/** 市场页 URL 状态:筛选 / 选中 / 计费 10 个参数,默认值一律剥离(kind=gpu / mode=on_demand / chips 空档 / gpus=1 / count=1);非法值回默认。 */
+/** 市场页 URL 状态:筛选 / 选中 / 购买数量 / 计费 10 个参数,默认值一律剥离(kind=gpu / mode=on_demand / chips 空档 / qty=1 / count=1);非法值回默认。 */
 export interface MarketSearch {
   kind?: Kind;
   mode?: BillingMode;
   model?: string;
   tier?: string;
   vram?: number;
-  gpus?: number;
+  /** 购买数量(卡数,1~8):不是筛选,只决定库存口径与价格 */
+  qty?: number;
   vcpu?: number;
   mem?: number;
   sku?: number;
@@ -67,8 +72,8 @@ export function marketValidateSearch(search: Record<string, unknown>): MarketSea
   }
   const vram = posInt(search.vram);
   if (vram != null) out.vram = vram;
-  const gpus = posInt(search.gpus);
-  if (gpus != null && gpus > 1) out.gpus = gpus; // 1 卡为默认,剥离
+  const qty = posInt(search.qty);
+  if (qty != null && qty > 1) out.qty = qty; // 1 卡为默认,剥离
   const vcpu = posInt(search.vcpu);
   if (vcpu != null) out.vcpu = vcpu;
   const mem = posInt(search.mem);
@@ -93,7 +98,6 @@ function filtersOf(s: MarketSearch): SkuFilters {
     model: s.model ?? DEFAULT_SKU_FILTERS.model,
     tier: s.tier ?? DEFAULT_SKU_FILTERS.tier,
     vram: s.vram ?? 0,
-    gpus: s.gpus ?? 1,
     vcpu: s.vcpu ?? 0,
     mem: s.mem ?? 0,
   };
@@ -107,7 +111,6 @@ function searchOfFilters(f: SkuFilters, prev: MarketSearch): MarketSearch {
     model: f.model || undefined,
     tier: f.tier || undefined,
     vram: f.vram || undefined,
-    gpus: f.gpus > 1 ? f.gpus : undefined,
     vcpu: f.vcpu || undefined,
     mem: f.mem || undefined,
   };
@@ -125,12 +128,20 @@ function MarketPage() {
   const search = Route.useSearch();
   const filters = filtersOf(search);
   const isCpu = filters.kind === "cpu";
-  const gpuCount = filters.gpus;
+  // 购买数量:CPU 规格恒为整机 1 份
+  const qty = search.qty ?? 1;
   const billingMode: BillingMode = search.mode ?? "on_demand";
   const selectedId = search.sku;
   // 购买时长(1~36 个周期):入 URL 并透传创建页
   const periodCount = search.count ?? 1;
   const update = (next: MarketSearch) => void navigate({ to: "/market", search: next, replace: true });
+  // 购买数量改动不碰 sku:它不是筛选
+  const setQty = (n: number) => update({ ...search, qty: n > 1 ? n : undefined });
+
+  // 创建页「← 返回算力市场」/「更换规格」带回本页筛选态
+  useEffect(() => {
+    listSearchStore.getState().remember("/market", search);
+  }, [search]);
 
   // 库存稳态轮询,页头新鲜度条可暂停
   const auto = useAutoRefresh(POLL.steady);
@@ -150,7 +161,9 @@ function MarketPage() {
   const spotPolicy = useSpotPolicy();
 
   const selected = (allSkus ?? []).find((s) => s.id === selectedId);
-  const needed = isCpu ? 1 : gpuCount;
+  const needed = isCpu ? 1 : qty;
+  // 购买数量改大后已选规格库存不够:保持选中(行内出「不足 N 卡」),只灰置 CTA
+  const shortOfStock = selected != null && (selected.available_count ?? 0) < needed;
 
   // 选中规格不接受包周期 / 未上竞价:URL 里已是按量(选中时即切回并提示),这里只做兜底
   const periodBlocked = selected != null && !selected.period_enabled;
@@ -187,16 +200,13 @@ function MarketPage() {
   // 市场页无报价端点,按 policies 折扣本地估算(展示值,创建页报价为准)
   const quote =
     selected && period
-      ? periodQuoteOf(
-          selected.price_hourly,
-          { units: billingUnits(isCpu ? 0 : gpuCount), period, periodCount },
-          discounts,
-        )
+      ? periodQuoteOf(selected.price_hourly, { units: billingUnits(isCpu ? 0 : qty), period, periodCount }, discounts)
       : undefined;
 
   const selectedVariant = selected ? skuVariant(selected.tier, selected.pool_label) : null;
   const createSearch = {
-    ...(isCpu ? {} : { gpus: gpuCount }),
+    // 创建页深链的卡数参数名是 gpus(与 /services/new 共用解析)
+    ...(isCpu ? {} : { gpus: qty }),
     ...(period ? { period } : {}),
     ...(period && periodCount > 1 ? { count: periodCount } : {}),
     ...(isSpot ? { market: "spot" as const } : {}),
@@ -238,11 +248,37 @@ function MarketPage() {
             onRetry={() => void refetch()}
             value={selected}
             onChange={onSelectSku}
-            gpuCount={gpuCount}
-            onGpuCount={(n) => update({ ...search, gpus: n > 1 ? n : undefined })}
+            gpuCount={qty}
+            onGpuCount={setQty}
             filters={filters}
             onFiltersChange={(f) => update({ ...searchOfFilters(f, search), sku: undefined })}
             priceFontSize={fontSize.pageTitle}
+            {...(isCpu
+              ? {}
+              : {
+                  // 购买数量是独立一行:改它不清空已选行,也不进「清除筛选」
+                  qtyRow: (
+                    <ChipRow
+                      label={t("market.chipGpuCount")}
+                      value={qty}
+                      onChange={setQty}
+                      options={GPU_COUNT_STEPS.map((n) => ({
+                        value: n,
+                        label: t("market.cardsUnit", { count: n }),
+                      }))}
+                    />
+                  ),
+                })}
+            toolbarExtra={
+              <BillingModeChips
+                value={mode}
+                onChange={(v) => update({ ...search, mode: v === "on_demand" ? undefined : v })}
+                periodEnabled={!periodBlocked}
+                spotEnabled={!spotUnavailable}
+                count={periodCount}
+                onCountChange={(n) => update({ ...search, count: n > 1 ? n : undefined })}
+              />
+            }
             {...(isSpot && spotPolicy ? { spot: spotPolicy } : {})}
           />
           {/* 选中共享·经济时,在选择处就地给风险摘要(完整条款在创建页提交前的知情同意里) */}
@@ -256,14 +292,6 @@ function MarketPage() {
           )}
         </Card>
 
-        <BillingModeCard
-          value={mode}
-          onChange={(v) => update({ ...search, mode: v === "on_demand" ? undefined : v })}
-          periodEnabled={!periodBlocked}
-          spotEnabled={!spotUnavailable}
-          count={periodCount}
-          onCountChange={(n) => update({ ...search, count: n > 1 ? n : undefined })}
-        />
         {/* 合规声明只在市场页脚(ui-ux-spec §1 规则 1) */}
         <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
           {t("copy.antiMiningNotice")}
@@ -271,16 +299,16 @@ function MarketPage() {
 
         <CheckoutBar
           // 选中规格/计费方式/时长变化时汇总数字淡入
-          changeKey={selected ? `${selected.id}-${mode}-${periodCount}` : "none"}
+          changeKey={selected ? `${selected.id}-${mode}-${periodCount}-${qty}` : "none"}
           summary={
             selected
               ? isCpu
                 ? t("market.summaryCpu", { vcpu: selected.vcpu, mem: selected.mem_gb, disk: selected.disk_gb })
                 : t("market.summary", {
                     model: selected.gpu_model,
-                    count: gpuCount,
-                    vcpu: selected.vcpu * gpuCount,
-                    mem: selected.mem_gb * gpuCount,
+                    count: qty,
+                    vcpu: selected.vcpu * qty,
+                    mem: selected.mem_gb * qty,
                     disk: selected.disk_gb,
                   })
               : t("market.selectHint")
@@ -301,11 +329,7 @@ function MarketPage() {
               : {
                   label: t("create.configCostLabel"),
                   // 大字带「× N 卡」/「整机」后缀(价格口径显性化);CPU 规格 price_hourly 已是整机时价
-                  suffix: !selected
-                    ? undefined
-                    : isCpu
-                      ? t("sku.wholeMachine")
-                      : t("sku.timesCards", { count: gpuCount }),
+                  suffix: !selected ? undefined : isCpu ? t("sku.wholeMachine") : t("sku.timesCards", { count: qty }),
                   value: !selected ? (
                     "--"
                   ) : isSpot ? (
@@ -321,13 +345,13 @@ function MarketPage() {
           detail={
             unitPrice != null ? (
               period && quote ? (
-                <PeriodQuoteRows quote={quote} gpuCount={gpuCount} cpu={isCpu} hint={t("period.hintFinalOnCreate")} />
+                <PeriodQuoteRows quote={quote} gpuCount={qty} cpu={isCpu} hint={t("period.hintFinalOnCreate")} />
               ) : (
                 <Space orientation="vertical" size={4}>
                   <span>
                     {isCpu
                       ? t("instances.pricePerInstance", { price: formatHourlyPrice(unitPrice) })
-                      : t("instances.pricePerCard", { price: formatHourlyPrice(unitPrice), count: gpuCount })}
+                      : t("instances.pricePerCard", { price: formatHourlyPrice(unitPrice), count: qty })}
                   </span>
                   <Typography.Text type="secondary">
                     {isCpu ? t("copy.billingBasisCpu") : t("copy.billingBasis")}
@@ -341,7 +365,7 @@ function MarketPage() {
             <GatedButton
               type="primary"
               size="large"
-              reason={selected ? undefined : t("market.selectFirst")}
+              reason={!selected ? t("market.selectFirst") : shortOfStock ? t("copy.noStockForGpuCount") : undefined}
               onClick={() => {
                 if (!selected) return;
                 if (!loggedIn) {

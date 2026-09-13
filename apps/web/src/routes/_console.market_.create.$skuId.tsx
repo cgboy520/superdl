@@ -1,7 +1,8 @@
-/** 创建实例(开发机):单栏卡片流(基本信息 → 计费方式 → 镜像 → 数据盘 → SSH 密钥)+ 底部结算条。
+/** 创建实例(开发机):SectionRail 分段长表单(基本信息 → 计费方式 → 镜像 → 数据盘 → SSH 密钥)+ 底部结算条。
  *  一键创建:镜像默认推荐项、单把公钥自动选中、必填卡标红星、未完成项在结算条上方给可点击清单(不靠禁用按钮的 tooltip)。
+ *  段状态由 deriveSectionStatus 派生(首屏不出红叉:未触碰且没点过提交的问题段只标 wait)。
  *  知情同意合并为一个分节 modal(ConsentGate);数据盘「新建」为行内直建:先建盘再建实例,建盘成功而实例失败用不自动消失的 Alert 告知并给存储页入口。
- *  部署在线服务走 /services/new。 */
+ *  返回市场的两个出口(页头 back / 「更换规格」)都带回 listSearchStore 记下的市场筛选态。部署在线服务走 /services/new。 */
 
 import { isApiError, type DiskOut, type InstanceOut, type SkuMarketOut } from "@superdl/api-client";
 import {
@@ -14,7 +15,6 @@ import {
   GPU_COUNT_STEPS,
   idemKeyOf,
   isBillingPeriod,
-  layout,
   mulPrice,
   PERIOD_HOURS,
   periodMap,
@@ -28,10 +28,14 @@ import {
   GatedButton,
   OptionTileGroup,
   PageContainer,
+  scrollToSection,
+  SectionAnchor,
+  SectionRail,
+  type SectionDef,
 } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { Alert, App, Button, Card, Cascader, Input, Skeleton, Space, Table, Tabs, Typography } from "antd";
+import { Alert, App, Button, Card, Cascader, Input, Skeleton, Space, Tabs, Typography } from "antd";
 import { useMemo, useState, type ReactNode } from "react";
 
 import { useFormat } from "@superdl/ui";
@@ -43,12 +47,15 @@ import { useConsentGate } from "../components/ConsentGate";
 import { DataDiskCard, defaultDiskName, type DiskMode } from "../components/create/DataDiskCard";
 import { SshKeyPicker } from "../components/create/SshKeyPicker";
 import { PeriodQuoteRows, periodQuoteOf, usePeriodDiscounts } from "../components/periodBilling";
-import { BillingModeCard, skuColumns, type BillingMode } from "../components/skuTable";
+import { BillingModeCard, type BillingMode } from "../components/skuTable";
 import { SpotPriceInline, spotPriceOf, useSpotPolicy } from "../components/spotBilling";
 import { parseDeployDeepLink, type DeploySearch } from "../lib/deployLink";
 import { requireAuth } from "../lib/guard";
 import { isPinnedImageRef } from "../lib/serviceSpec";
 import { useLeaveGuard } from "../lib/useLeaveGuard";
+import { useRememberedListSearch } from "../stores/listSearch";
+import { TierTag } from "../components/common";
+import type { MarketSearch } from "./_console.market";
 
 export const Route = createFileRoute("/_console/market_/create/$skuId")({
   // 深链解析与 /services/new 共用;sku 在路径参数里,查询串的 sku_id 无意义
@@ -132,6 +139,12 @@ function CreatePage() {
   const [phase, setPhase] = useState<"disk" | "instance" | null>(null);
   // 建盘成功而建实例失败:页内常驻告知,直到用户处理
   const [diskCreatedButFailed, setDiskCreatedButFailed] = useState<DiskOut | null>(null);
+  // 空闲 GPU 不足:结算条上方常驻 Alert + 「换个规格」,不用 toast(ui-ux-spec §3.5)
+  const [noCapacity, setNoCapacity] = useState(false);
+  // 段状态:碰过的段(改字段 / 点进段内)+ 点过主 CTA;首屏两者皆空,问题段只标 wait 不出红叉
+  const [touchedIds, setTouchedIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [submitted, setSubmitted] = useState(false);
+  const touch = (id: string) => setTouchedIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
   // 幂等键 = 本次挂载的 nonce + 参数快照
   const [formNonce] = useState(() => crypto.randomUUID());
   const [mountedAt] = useState(() => Date.now());
@@ -266,23 +279,38 @@ function CreatePage() {
   const selectedImage = usableImages.find((i) => i.image_ref === imageRef);
   const customInvalid = imageTab === "custom" && customImage.trim() !== "" && !isPinnedImageRef(customImage.trim());
 
-  // 未完成项清单(结算条上方,可点击跳到对应卡)
-  const issues: { key: string; label: string; anchor: string }[] = [];
-  if (!imageRef) issues.push({ key: "image", label: t("create.issueImage"), anchor: ANCHOR.image });
-  else if (!isPinnedImageRef(imageRef))
-    issues.push({ key: "pinned", label: tErr("orchestrator.imageRefNotPinned"), anchor: ANCHOR.image });
-  if (keyIds.length === 0) issues.push({ key: "ssh", label: t("create.issueSsh"), anchor: ANCHOR.ssh });
-  if (diskMode === "existing" && existingDiskId == null)
-    issues.push({ key: "disk", label: t("create.issueDisk"), anchor: ANCHOR.disk });
-  const canSubmit = issues.length === 0;
-  const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  // 每段的第一个问题(rail 段状态与未完成项清单同一事实源)
+  const imageIssue = !imageRef
+    ? t("create.issueImage")
+    : !isPinnedImageRef(imageRef)
+      ? tErr("orchestrator.imageRefNotPinned")
+      : null;
+  const sshIssue = keyIds.length === 0 ? t("create.issueSsh") : null;
+  const diskIssue = diskMode === "existing" && existingDiskId == null ? t("create.issueDisk") : null;
 
-  const onCancel = () =>
+  // 未完成项清单(结算条上方,可点击跳到对应段)
+  const issues: { key: string; label: string; anchor: string }[] = [];
+  if (imageIssue) issues.push({ key: "image", label: imageIssue, anchor: ANCHOR.image });
+  if (sshIssue) issues.push({ key: "ssh", label: sshIssue, anchor: ANCHOR.ssh });
+  if (diskIssue) issues.push({ key: "disk", label: diskIssue, anchor: ANCHOR.disk });
+  const canSubmit = issues.length === 0;
+
+  const sections: SectionDef[] = [
+    { id: ANCHOR.basic, title: t("create.basicCard"), issue: null, touched: touchedIds.has(ANCHOR.basic) },
+    { id: ANCHOR.billing, title: t("sku.billingModeTitle"), issue: null, touched: touchedIds.has(ANCHOR.billing) },
+    { id: ANCHOR.image, title: t("create.imageCard"), issue: imageIssue, touched: touchedIds.has(ANCHOR.image) },
+    { id: ANCHOR.disk, title: t("create.diskCard"), issue: diskIssue, touched: touchedIds.has(ANCHOR.disk) },
+    { id: ANCHOR.ssh, title: t("create.sshCard"), issue: sshIssue, touched: touchedIds.has(ANCHOR.ssh) },
+  ];
+
+  // 返回市场的唯一出口(页头 back 与「更换规格」同一个):带回市场页记下的筛选态,脏表单先确认
+  const marketSearch = useRememberedListSearch("/market") as MarketSearch;
+  const goMarket = () =>
     leave.confirmLeave(() => {
       leave.bypass();
-      void navigate({ to: "/market" });
+      void navigate({ to: "/market", search: marketSearch });
     });
-  const back = { label: t("create.backToMarket"), onClick: onCancel };
+  const back = { label: t("create.backToMarket"), onClick: goMarket };
 
   const doCreate = async () => {
     if (!imageRef || !sku) return;
@@ -337,10 +365,11 @@ function CreatePage() {
           idempotencyKey,
         });
         setDiskCreatedButFailed(null);
+        setNoCapacity(false);
       } catch (err) {
-        // silentError 模式下提示统一在这里出:库存不足给换规格引导,其余给错误原文
+        // silentError 模式下提示统一在这里出:库存不足给常驻 Alert + 换规格入口(toast 会自己消失,用户回头就找不到原因了)
         if (isApiError(err) && err.code === "NO_CAPACITY") {
-          message.warning(t("copy.noCapacityGuide"), 6);
+          setNoCapacity(true);
         } else {
           message.error(errText(err));
         }
@@ -360,7 +389,7 @@ function CreatePage() {
     spotPolicy,
     confirmLabel: t("create.consentConfirm"),
     loading: pending,
-    onProceed: () => void doCreate(),
+    onProceed: () => doCreate(),
   });
 
   // 规格三态:加载中骨架 / 加载失败可重试 / 真不存在才提示下架
@@ -403,11 +432,10 @@ function CreatePage() {
   const gpuOptions = Array.from({ length: maxGpus }, (_, i) => i + 1).filter(
     (n) => GPU_COUNT_STEPS.includes(n) || n === maxGpus,
   );
-  const columns = skuColumns({ fmt, t, cpu: isCpu, units: priceUnits });
-  const anchorStyle = { scrollMarginTop: layout.scrollMarginTop } as const;
 
   const pickQuick = (img: (typeof usableImages)[number]) => {
     setImageTouched(true);
+    touch(ANCHOR.image);
     setImageTab("platform");
     setPlatformImage(pathOf(img));
   };
@@ -416,173 +444,213 @@ function CreatePage() {
     <PageContainer title={pageTitle} back={back}>
       {/* 不用 Space(ant-space-item 包装会破坏 sticky 结算条的包含块) */}
       <div style={{ display: "flex", flexDirection: "column", gap: space.lg, width: "100%" }}>
-        {/* ① 基本信息:名称 + 已选规格回显 + GPU 数量 */}
-        <Card
-          id={ANCHOR.basic}
-          style={anchorStyle}
-          title={t("create.basicCard")}
-          extra={<Link to="/market">{t("create.changeSpec")}</Link>}
-        >
-          <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
-            <Space size={space.md} align="center" wrap>
-              <Typography.Text type="secondary">{t("create.nameLabel")}</Typography.Text>
-              <Input
-                placeholder={t("create.namePlaceholder")}
-                maxLength={64}
-                aria-label={t("create.nameLabel")}
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                style={{ width: controlWidth.lg }}
-              />
-            </Space>
-            <Table<SkuMarketOut> size="small" rowKey="id" dataSource={[skuNN]} columns={columns} pagination={false} />
-            {/* 卡数选择受 available_count 约束:无库存档位禁用 + 提示。CPU 规格不带卡,整行不出 */}
-            {!isCpu && (
-              <ChipRow
-                label={t("market.chipGpuCount")}
-                value={gpuCount}
-                onChange={setGpuCount}
-                options={gpuOptions.map((n) => ({
-                  value: n,
-                  label: t("market.cardsUnit", { count: n }),
-                  disabled: n > (skuNN.available_count ?? 0),
-                  disabledReason: t("copy.noStockForGpuCount"),
-                }))}
-              />
-            )}
-          </Space>
-        </Card>
+        <SectionRail sections={sections} submitted={submitted} ariaLabel={t("create.railAria")}>
+          {/* ① 基本信息:已选规格一行摘要 + 名称 + GPU 数量 */}
+          <div onFocusCapture={() => touch(ANCHOR.basic)} onClickCapture={() => touch(ANCHOR.basic)}>
+            <SectionAnchor
+              id={ANCHOR.basic}
+              title={t("create.basicCard")}
+              extra={
+                <Button type="link" style={{ paddingInline: 0 }} onClick={goMarket}>
+                  {t("create.changeSpec")}
+                </Button>
+              }
+            >
+              <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
+                {/* 规格回显是一行摘要,不是表格:本页不再做规格比价 */}
+                <Space size={space.sm} align="center" wrap>
+                  <Typography.Text>
+                    {isCpu
+                      ? t("market.summaryCpu", { vcpu: skuNN.vcpu, mem: skuNN.mem_gb, disk: skuNN.disk_gb })
+                      : t("market.summary", {
+                          model: skuNN.gpu_model,
+                          count: gpuCount,
+                          vcpu: skuNN.vcpu * gpuCount,
+                          mem: skuNN.mem_gb * gpuCount,
+                          disk: skuNN.disk_gb,
+                        })}
+                  </Typography.Text>
+                  <TierTag tier={skuNN.tier} pool={skuNN.pool_label} />
+                  <Typography.Text strong>{formatHourlyPrice(skuNN.price_hourly)}</Typography.Text>
+                </Space>
+                <Space size={space.md} align="center" wrap>
+                  <Typography.Text type="secondary">{t("create.nameLabel")}</Typography.Text>
+                  <Input
+                    placeholder={t("create.namePlaceholder")}
+                    maxLength={64}
+                    aria-label={t("create.nameLabel")}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    style={{ width: controlWidth.lg }}
+                  />
+                </Space>
+                {/* 卡数选择受 available_count 约束:无库存档位禁用 + 提示。CPU 规格不带卡,整行不出 */}
+                {!isCpu && (
+                  <ChipRow
+                    label={t("market.chipGpuCount")}
+                    value={gpuCount}
+                    onChange={(n) => {
+                      setGpuCount(n);
+                      // 换了卡数 = 换了库存诉求,上一次的「空闲不足」结论作废
+                      setNoCapacity(false);
+                    }}
+                    options={gpuOptions.map((n) => ({
+                      value: n,
+                      label: t("market.cardsUnit", { count: n }),
+                      disabled: n > (skuNN.available_count ?? 0),
+                      disabledReason: t("copy.noStockForGpuCount"),
+                    }))}
+                  />
+                )}
+              </Space>
+            </SectionAnchor>
+          </div>
 
-        {/* ② 计费方式(风险摘要贴在 chip 下方,由 BillingModeCard 出) */}
-        <div id={ANCHOR.billing} style={anchorStyle}>
-          <BillingModeCard
-            value={mode}
-            onChange={setBillingMode}
-            periodEnabled={!periodBlocked}
-            spotEnabled={skuNN.spot_enabled}
-            count={periodCount}
-            onCountChange={setPeriodCount}
-          />
-        </div>
+          {/* ② 计费方式(风险摘要贴在 chip 下方,由 BillingModeCard 出) */}
+          <div onFocusCapture={() => touch(ANCHOR.billing)} onClickCapture={() => touch(ANCHOR.billing)}>
+            <SectionAnchor id={ANCHOR.billing} card={false}>
+              <BillingModeCard
+                value={mode}
+                onChange={setBillingMode}
+                periodEnabled={!periodBlocked}
+                spotEnabled={skuNN.spot_enabled}
+                count={periodCount}
+                onCountChange={setPeriodCount}
+              />
+            </SectionAnchor>
+          </div>
 
-        {/* ③ 镜像(必填):常用卡片 + 更多级联 / 自定义 */}
-        <Card id={ANCHOR.image} style={anchorStyle} title={<RequiredTitle>{t("create.imageCard")}</RequiredTitle>}>
-          <Tabs
-            activeKey={imageTab}
-            onChange={(k) => {
-              // 切 Tab 清另一侧的选择,当前生效的镜像只有一个来源
-              setImageTab(k as "platform" | "custom");
-              setImageTouched(true);
-              if (k === "custom") setPlatformImage(undefined);
-              else setCustomImage("");
-            }}
-            items={[
-              {
-                key: "platform",
-                label: t("create.tabPlatform"),
-                children: imagesQ.isError ? (
-                  // 镜像清单加载失败不伪装成「没有可用镜像」
-                  <DataErrorAlert onRetry={() => void imagesQ.refetch()} />
-                ) : (
-                  <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
-                    {/* 常用镜像 tile:每框架首条,副行 CUDA · Py · 预热状态;CPU 规格不承诺预热 */}
-                    <OptionTileGroup
-                      label={t("create.tabPlatform")}
-                      hideLabel
-                      columns={4}
-                      size="sm"
-                      value={effectivePlatformImage?.[3]}
-                      onChange={(ref) => {
-                        const img = quickImages.find((i) => i.image_ref === ref);
-                        if (img) pickQuick(img);
-                      }}
-                      options={quickImages.map((img) => ({
-                        value: img.image_ref,
-                        title: `${img.framework} ${img.framework_version}`,
-                        description: [
-                          /^\d/.test(img.cuda_version) ? `CUDA ${img.cuda_version}` : img.cuda_version,
-                          `Py ${img.python_version}`,
-                          ...(isCpu
-                            ? []
-                            : [img.is_prewarmed ? t("create.tilePrewarmed") : t("create.tileNotPrewarmed")]),
-                        ].join(" · "),
-                      }))}
-                    />
-                    <Button type="link" style={{ paddingInline: 0 }} onClick={() => setMoreImages((v) => !v)}>
-                      {moreImages ? t("create.lessImages") : t("create.moreImages")}
-                    </Button>
-                    {moreImages && (
-                      <Cascader
-                        style={{ width: "100%", maxWidth: 640 }}
-                        options={cascade}
-                        value={effectivePlatformImage}
-                        onChange={(v) => {
-                          setImageTouched(true);
-                          setPlatformImage(v);
-                        }}
-                        placeholder={t("create.cascadePlaceholder")}
-                        showSearch
-                      />
-                    )}
-                    {/* 选定后回显完整镜像地址与预热状态,便于核对 */}
-                    {selectedImage && (
-                      <Space size={space.sm} wrap>
-                        <CopyField value={selectedImage.image_ref} code />
+          {/* ③ 镜像(必填):常用卡片 + 更多级联 / 自定义 */}
+          <div onFocusCapture={() => touch(ANCHOR.image)} onClickCapture={() => touch(ANCHOR.image)}>
+            <SectionAnchor id={ANCHOR.image} title={<RequiredTitle>{t("create.imageCard")}</RequiredTitle>}>
+              <Tabs
+                activeKey={imageTab}
+                onChange={(k) => {
+                  // 切 Tab 清另一侧的选择,当前生效的镜像只有一个来源
+                  setImageTab(k as "platform" | "custom");
+                  setImageTouched(true);
+                  touch(ANCHOR.image);
+                  if (k === "custom") setPlatformImage(undefined);
+                  else setCustomImage("");
+                }}
+                items={[
+                  {
+                    key: "platform",
+                    label: t("create.tabPlatform"),
+                    children: imagesQ.isError ? (
+                      // 镜像清单加载失败不伪装成「没有可用镜像」
+                      <DataErrorAlert onRetry={() => void imagesQ.refetch()} />
+                    ) : (
+                      <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
+                        {/* 常用镜像 tile:每框架首条,副行 CUDA · Py · 预热状态;CPU 规格不承诺预热 */}
+                        <OptionTileGroup
+                          label={t("create.tabPlatform")}
+                          hideLabel
+                          columns={4}
+                          size="sm"
+                          value={effectivePlatformImage?.[3]}
+                          onChange={(ref) => {
+                            const img = quickImages.find((i) => i.image_ref === ref);
+                            if (img) pickQuick(img);
+                          }}
+                          options={quickImages.map((img) => ({
+                            value: img.image_ref,
+                            title: `${img.framework} ${img.framework_version}`,
+                            description: [
+                              /^\d/.test(img.cuda_version) ? `CUDA ${img.cuda_version}` : img.cuda_version,
+                              `Py ${img.python_version}`,
+                              ...(isCpu
+                                ? []
+                                : [img.is_prewarmed ? t("create.tilePrewarmed") : t("create.tileNotPrewarmed")]),
+                            ].join(" · "),
+                          }))}
+                        />
+                        <Button type="link" style={{ paddingInline: 0 }} onClick={() => setMoreImages((v) => !v)}>
+                          {moreImages ? t("create.lessImages") : t("create.moreImages")}
+                        </Button>
+                        {moreImages && (
+                          <Cascader
+                            style={{ width: "100%", maxWidth: 640 }}
+                            options={cascade}
+                            value={effectivePlatformImage}
+                            onChange={(v) => {
+                              setImageTouched(true);
+                              touch(ANCHOR.image);
+                              setPlatformImage(v);
+                            }}
+                            placeholder={t("create.cascadePlaceholder")}
+                            showSearch
+                          />
+                        )}
+                        {/* 选定后回显完整镜像地址与预热状态,便于核对 */}
+                        {selectedImage && (
+                          <Space size={space.sm} wrap>
+                            <CopyField value={selectedImage.image_ref} code />
+                            <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                              {isCpu
+                                ? t("create.prewarmedNotForCpu")
+                                : selectedImage.is_prewarmed
+                                  ? t("create.prewarmed")
+                                  : t("create.notPrewarmed")}
+                            </Typography.Text>
+                          </Space>
+                        )}
+                      </Space>
+                    ),
+                  },
+                  {
+                    key: "custom",
+                    label: t("create.tabCustom"),
+                    children: (
+                      <Space orientation="vertical" style={{ width: "100%" }}>
+                        <Input
+                          placeholder="registry.example.com/your/image:tag"
+                          aria-label={t("create.tabCustom")}
+                          value={customImage}
+                          onChange={(e) => {
+                            touch(ANCHOR.image);
+                            setCustomImage(e.target.value);
+                          }}
+                          status={customInvalid ? "error" : undefined}
+                          className="mono"
+                        />
+                        {customInvalid && (
+                          <Typography.Text type="danger">{tErr("orchestrator.imageRefNotPinned")}</Typography.Text>
+                        )}
                         <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                          {isCpu
-                            ? t("create.prewarmedNotForCpu")
-                            : selectedImage.is_prewarmed
-                              ? t("create.prewarmed")
-                              : t("create.notPrewarmed")}
+                          {t("create.customImageHint")}
                         </Typography.Text>
                       </Space>
-                    )}
-                  </Space>
-                ),
-              },
-              {
-                key: "custom",
-                label: t("create.tabCustom"),
-                children: (
-                  <Space orientation="vertical" style={{ width: "100%" }}>
-                    <Input
-                      placeholder="registry.example.com/your/image:tag"
-                      aria-label={t("create.tabCustom")}
-                      value={customImage}
-                      onChange={(e) => setCustomImage(e.target.value)}
-                      status={customInvalid ? "error" : undefined}
-                      className="mono"
-                    />
-                    {customInvalid && (
-                      <Typography.Text type="danger">{tErr("orchestrator.imageRefNotPinned")}</Typography.Text>
-                    )}
-                    <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                      {t("create.customImageHint")}
-                    </Typography.Text>
-                  </Space>
-                ),
-              },
-            ]}
-          />
-        </Card>
+                    ),
+                  },
+                ]}
+              />
+            </SectionAnchor>
+          </div>
 
-        {/* ④ 数据盘(可选) */}
-        <DataDiskCard
-          id={ANCHOR.disk}
-          mode={diskMode}
-          onModeChange={setDiskMode}
-          newName={newDiskName}
-          onNewNameChange={setNewDiskName}
-          newGb={diskGbValue}
-          onNewGbChange={setNewDiskGb}
-          existingId={existingDiskId}
-          onExistingIdChange={setExistingDiskId}
-        />
+          {/* ④ 数据盘(可选) */}
+          <div onFocusCapture={() => touch(ANCHOR.disk)} onClickCapture={() => touch(ANCHOR.disk)}>
+            <SectionAnchor id={ANCHOR.disk} card={false}>
+              <DataDiskCard
+                mode={diskMode}
+                onModeChange={setDiskMode}
+                newName={newDiskName}
+                onNewNameChange={setNewDiskName}
+                newGb={diskGbValue}
+                onNewGbChange={setNewDiskGb}
+                existingId={existingDiskId}
+                onExistingIdChange={setExistingDiskId}
+              />
+            </SectionAnchor>
+          </div>
 
-        {/* ⑤ SSH 密钥(必填) */}
-        <Card id={ANCHOR.ssh} style={anchorStyle} title={<RequiredTitle>{t("create.sshCard")}</RequiredTitle>}>
-          <SshKeyPicker value={keyIds} onChange={setKeyIds} />
-        </Card>
+          {/* ⑤ SSH 密钥(必填) */}
+          <div onFocusCapture={() => touch(ANCHOR.ssh)} onClickCapture={() => touch(ANCHOR.ssh)}>
+            <SectionAnchor id={ANCHOR.ssh} title={<RequiredTitle>{t("create.sshCard")}</RequiredTitle>}>
+              <SshKeyPicker value={keyIds} onChange={setKeyIds} />
+            </SectionAnchor>
+          </div>
+        </SectionRail>
 
         {/* 余额查询失败绝不静默转圈:结算条上方给可重试错误条,CTA 改普通禁用态 */}
         {walletQ.isError && <DataErrorAlert onRetry={() => void walletQ.refetch()} />}
@@ -602,6 +670,19 @@ function CreatePage() {
                   }
                 />
               )}
+              {/* 空闲 GPU 不足:常驻在条上方并给换规格出口,不用会自己消失的 toast */}
+              {noCapacity && (
+                <Alert
+                  type="warning"
+                  showIcon
+                  title={t("copy.noCapacityGuide")}
+                  action={
+                    <Button size="small" onClick={goMarket}>
+                      {t("create.changeSpecCta")}
+                    </Button>
+                  }
+                />
+              )}
               {issues.length > 0 && (
                 <Space size={space.sm} wrap style={{ fontSize: fontSize.caption }}>
                   <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
@@ -613,7 +694,7 @@ function CreatePage() {
                       type="link"
                       size="small"
                       style={{ paddingInline: 0, fontSize: fontSize.caption }}
-                      onClick={() => scrollTo(i.anchor)}
+                      onClick={() => scrollToSection(i.anchor)}
                     >
                       {i.label}
                     </Button>
@@ -622,6 +703,7 @@ function CreatePage() {
               )}
             </>
           }
+          {...(issues.length > 0 ? { noticeSummary: t("create.issuesShort", { count: issues.length }) } : {})}
           summary={
             isCpu
               ? t("create.summaryCpu", { vcpu: skuNN.vcpu, mem: skuNN.mem_gb })
@@ -709,10 +791,8 @@ function CreatePage() {
           balance={wallet?.balance ?? null}
           balanceReady={balanceReady}
           actions={
-            <>
-              <Button size="large" onClick={onCancel}>
-                {t("create.cancel")}
-              </Button>
+            // 点过主 CTA 后所有问题段都标红(首屏不标);「取消」不放结算条,页头返回是唯一出口
+            <span onClickCapture={() => setSubmitted(true)}>
               {walletQ.isError ? (
                 // 余额查询失败:CTA 门控并提示原因
                 <GatedButton type="primary" size="large" reason={t("create.walletQueryFailedRetry")}>
@@ -738,7 +818,7 @@ function CreatePage() {
                   </Button>
                 </Link>
               )}
-            </>
+            </span>
           }
         />
         {gate.modal}

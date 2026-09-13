@@ -93,7 +93,8 @@ export function useConsentGate({
   spotPolicy: SpotPolicy | undefined;
   confirmLabel: string;
   loading?: boolean;
-  onProceed: () => void;
+  /** 返回 Promise 时等它落定再收窗(确认按钮上的 loading 才看得见);同步实现则立刻收窗 */
+  onProceed: () => void | Promise<void>;
 }): { submit: () => void; modal: ReactNode } {
   const { t } = useTranslation(["web", "shared"]);
   const [open, setOpen] = useState(false);
@@ -124,7 +125,7 @@ export function useConsentGate({
     });
   }
   const submit = () => {
-    if (sections.length === 0) onProceed();
+    if (sections.length === 0) void onProceed();
     else setOpen(true);
   };
   const modal = (
@@ -135,9 +136,11 @@ export function useConsentGate({
       loading={loading}
       onCancel={() => setOpen(false)}
       onConfirm={() => {
-        // 提交后关 modal;失败由页面提示,再点提交会重新弹(勾选态留在 modal 内)
-        setOpen(false);
-        onProceed();
+        // 先提交后关窗:提交在途时确认按钮亮 loading,落定(成功导航走 / 失败页面出错误提示)才收窗。
+        // 失败再点提交会重新弹,勾选态留在 modal 内。
+        const proceeding = onProceed();
+        if (proceeding instanceof Promise) void proceeding.finally(() => setOpen(false));
+        else setOpen(false);
       }}
     />
   );

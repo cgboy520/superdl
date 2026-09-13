@@ -1,4 +1,4 @@
-/* web 专属全局样式:reset / 滚动条 / 顶栏 / 规格表行 / 结算条 / 命令面板;两端共用基线(等宽数字、.mono、门控按钮、跳转链接、焦点框、行内 hover)在 @superdl/ui/base.css。业务样式一律走 antd token。 */
+/* web 专属全局样式:reset / 滚动条 / 顶栏 / 规格表行 / 命令面板;两端共用基线(等宽数字、.mono、门控按钮、跳转链接、焦点框、行内 hover)在 @superdl/ui/base.css。业务样式一律走 antd token。 */
 
 html,
 body,
@@ -129,12 +129,6 @@ body,
 .drawer-link:focus-visible {
   outline: 2px solid var(--sdl-color-primary);
   outline-offset: 2px;
-}
-
-/* 结算条(CheckoutBar)窄屏(<sm):动作按钮整行竖排 */
-.checkout-bar-actions-block .ant-space-item,
-.checkout-bar-actions-block .ant-space-item button {
-  width: 100%;
 }
 
 /* Cmd+K 命令面板(cmdk):选中行底色 = 主色 12% 透明(--sdl-color-primary,见 packages/ui tokens.ts cssVars) */

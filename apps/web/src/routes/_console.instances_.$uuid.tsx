@@ -1,18 +1,18 @@
-/** 实例详情:连接 / 监控 / 日志 / 事件时间线(= 计费依据)/ 账单 / 设置(改名 + 危险区释放)。默认 Tab 按状态(running → 连接,其余 → 事件);事件/账单 Tab 游标分页;面包屑返回列表不丢筛选态。服务的版本实例不进列表但直链可达:「连接」按 with_ssh 出 SSH 卡,Jupyter 卡不出。 */
+/** 实例详情:EntityHeader(名称行内改名 / 状态 / 标签 / 元信息 / 操作组)+ 连接 / 监控 / 日志 / 事件时间线(= 计费依据)/ 账单 / 设置(只剩危险区)。默认 Tab 按状态(running → 连接,其余 → 事件);事件/账单 Tab 游标分页;面包屑返回列表不丢筛选态。服务的版本实例不进列表但直链可达:「连接」按 with_ssh 出 SSH 卡,Jupyter 卡不出。 */
 
 import { type InstanceOut } from "@superdl/api-client";
-import { controlWidth, formatDateTime, isTransientInstanceStatus, localToday, POLL } from "@superdl/ui";
+import { formatDateTime, isTransientInstanceStatus, localToday, POLL, space } from "@superdl/ui";
 import {
   CopyField,
   DangerZone,
   DataErrorAlert,
-  KeyValue,
+  EntityHeader,
   moneyOr,
   PageContainer,
   useConfirm,
 } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Alert, App, Breadcrumb, Button, Card, Input, Skeleton, Space, Tabs, Typography } from "antd";
+import { Alert, App, Breadcrumb, Button, Card, Skeleton, Space, Tabs, Typography } from "antd";
 import { useFormat } from "@superdl/ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -109,61 +109,32 @@ function BillsTab({ instanceId }: { instanceId: number }) {
   return <HourlyBillsTable query={useHourlyBillPages({ instance_id: instanceId })} />;
 }
 
-/** 设置 Tab:改名 + 危险区(释放),与服务详情的设置 Tab 对齐。 */
-function SettingsTab({
-  instance,
-  canRelease,
-  onRelease,
-}: {
-  instance: InstanceOut;
-  canRelease: boolean;
-  onRelease: () => void;
-}) {
+/** 设置 Tab:只有危险区(改名在头部完成,ui-ux-spec §3.3)。 */
+function SettingsTab({ canRelease, onRelease }: { canRelease: boolean; onRelease: () => void }) {
   const { t } = useTranslation();
-  const { message } = App.useApp();
-  const [name, setName] = useState(instance.name);
-  const rename = useRenameInstance();
-  const dirty = name.trim() !== "" && name.trim() !== instance.name;
-  const save = async () => {
-    await rename.mutateAsync({ uuid: instance.uuid, name: name.trim() });
-    message.success(t("instances.renamed"));
-  };
   return (
-    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-      <Card size="small" title={t("instances.settingsBasic")}>
-        <Space wrap>
-          <Input
-            value={name}
-            maxLength={64}
-            aria-label={t("create.nameLabel")}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
-            style={{ width: controlWidth.lg }}
-          />
-          <Button type="primary" disabled={!dirty} loading={rename.isPending} onClick={() => void save()}>
-            {t("instances.saveName")}
-          </Button>
-        </Space>
-      </Card>
-      <DangerZone
-        title={t("instances.dangerZone")}
-        description={t("instances.dangerNote")}
-        actions={[
-          {
-            key: "release",
-            label: t("instances.release"),
-            onClick: onRelease,
-            disabled: !canRelease,
-            disabledReason: t("copy.releaseNeedsStopped"),
-          },
-        ]}
-      />
-    </Space>
+    <DangerZone
+      title={t("instances.dangerZone")}
+      description={t("instances.dangerNote")}
+      actions={[
+        {
+          key: "release",
+          label: t("instances.release"),
+          onClick: onRelease,
+          disabled: !canRelease,
+          disabledReason: t("copy.releaseNeedsStopped"),
+        },
+      ]}
+    />
   );
 }
 
 function InstanceDetail() {
   const { t } = useTranslation();
+  const { message } = App.useApp();
   const { formatHourlyPrice, formatMoney, formatPeriodPrice } = useFormat();
+  // 头部行内改名(设置 Tab 不再有改名卡)
+  const rename = useRenameInstance();
   const { uuid } = Route.useParams();
   const { tab } = Route.useSearch();
   const navigate = useNavigate();
@@ -210,7 +181,7 @@ function InstanceDetail() {
 
   return (
     <PageContainer>
-      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+      <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
         {/* 面包屑:带回列表页最近一次筛选态(stores/listSearch) */}
         <Breadcrumb
           items={[
@@ -224,61 +195,60 @@ function InstanceDetail() {
             { title: instance.name },
           ]}
         />
-        <Card>
-          <Space style={{ width: "100%", justifyContent: "space-between" }} align="start">
-            <Space orientation="vertical" size={4}>
-              <Space>
-                <Typography.Title level={4} style={{ margin: 0 }}>
-                  {instance.name}
-                </Typography.Title>
-                <InstanceStatusBadge status={instance.status} frozenDeadline={instance.frozen_deadline} />
-                <TierTag tier={instance.spec.tier as string} pool={instance.spec.pool_label as string} />
-                <SubscriptionTag market={instance.market} subscription={instance.subscription} />
-                <SpotTag market={instance.market} />
-              </Space>
-              <KeyValue
-                layout="inline"
-                items={[
-                  { label: t("instances.labelId"), value: instance.uuid, mono: true, copy: instance.uuid },
-                  {
-                    label: t("instances.labelSpec"),
-                    value: t("instances.specLine", {
-                      model: instance.spec.gpu_model as string,
-                      count: instance.gpu_count,
-                    }),
-                  },
-                  {
-                    label: t("instances.labelBilling"),
-                    // 包周期实例时价是折后价且不出小时账,不报「¥X/时 × N 卡」
-                    value: instance.subscription
-                      ? formatPeriodPrice(
-                          instance.subscription.amount_paid,
-                          instance.subscription.period,
-                          instance.subscription.period_count,
-                        )
-                      : t("instances.pricePerCard", {
-                          price: formatHourlyPrice(instance.price_hourly),
-                          count: instance.gpu_count,
-                        }),
-                  },
-                  ...(instance.subscription
-                    ? [
-                        {
-                          label: t("instances.labelExpiresAt"),
-                          value: formatDateTime(instance.subscription.expires_at),
-                        },
-                      ]
-                    : [
-                        {
-                          label: t("instances.labelToday"),
-                          value: moneyOr(formatMoney(todayAmount), daily != null),
-                        },
-                      ]),
-                  { label: t("instances.createdAt"), value: formatDateTime(instance.created_at) },
-                ]}
-              />
-            </Space>
-            {/* 「事件日志」跳到本页事件 Tab */}
+        <EntityHeader
+          name={instance.name}
+          status={<InstanceStatusBadge status={instance.status} frozenDeadline={instance.frozen_deadline} />}
+          tags={
+            <>
+              <TierTag tier={instance.spec.tier as string} pool={instance.spec.pool_label as string} />
+              <SubscriptionTag market={instance.market} subscription={instance.subscription} />
+              <SpotTag market={instance.market} />
+            </>
+          }
+          meta={[
+            { label: t("instances.labelId"), value: instance.uuid, mono: true, copy: instance.uuid },
+            {
+              label: t("instances.labelSpec"),
+              value: t("instances.specLine", {
+                model: instance.spec.gpu_model as string,
+                count: instance.gpu_count,
+              }),
+            },
+            {
+              label: t("instances.labelBilling"),
+              // 包周期实例时价是折后价且不出小时账,不报「¥X/时 × N 卡」
+              value: instance.subscription
+                ? formatPeriodPrice(
+                    instance.subscription.amount_paid,
+                    instance.subscription.period,
+                    instance.subscription.period_count,
+                  )
+                : t("instances.pricePerCard", {
+                    price: formatHourlyPrice(instance.price_hourly),
+                    count: instance.gpu_count,
+                  }),
+            },
+            instance.subscription
+              ? {
+                  label: t("instances.labelExpiresAt"),
+                  value: formatDateTime(instance.subscription.expires_at),
+                }
+              : {
+                  label: t("instances.labelToday"),
+                  value: moneyOr(formatMoney(todayAmount), daily != null),
+                },
+            { label: t("instances.createdAt"), value: formatDateTime(instance.created_at) },
+          ]}
+          rename={{
+            onSave: async (next) => {
+              await rename.mutateAsync({ uuid: instance.uuid, name: next });
+              message.success(t("instances.renamed"));
+            },
+            ariaLabel: t("instances.renameAria", { name: instance.name }),
+            maxLength: 64,
+          }}
+          actions={
+            /* 「事件日志」跳到本页事件 Tab */
             <InstanceActions
               instance={instance}
               size="middle"
@@ -286,8 +256,8 @@ function InstanceDetail() {
                 void navigate({ to: "/instances/$uuid", params: { uuid }, search: { tab: "events" } })
               }
             />
-          </Space>
-        </Card>
+          }
+        />
 
         <Tabs
           activeKey={activeTab}
@@ -329,9 +299,7 @@ function InstanceDetail() {
             {
               key: "settings",
               label: t("instances.tabSettings"),
-              children: (
-                <SettingsTab instance={instance} canRelease={canRelease} onRelease={() => setReleaseOpen(true)} />
-              ),
+              children: <SettingsTab canRelease={canRelease} onRelease={() => setReleaseOpen(true)} />,
             },
           ]}
         />

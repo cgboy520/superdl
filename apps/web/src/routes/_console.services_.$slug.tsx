@@ -1,15 +1,24 @@
-/** 服务详情:头部(名称 / 状态 / 版本 / 操作)+ 常驻服务端点卡 + Tab `概览(含小时账单)/ 访问密钥(公开访问时不出)/ 监控 / 日志 / 历史(版本 + 事件)/ 设置`(危险区在设置里);「更新版本」是抽屉。只有一条服务轮询(过渡态 / 运行中 / 已删除停);监控与日志打当前版本实例。`?tab=` 非法值回默认(URL 不做旧名兼容)。 */
+/** 服务详情:EntityHeader(名称行内改名 / 状态 / 版本 / 元信息 / 操作组)+ 常驻服务端点卡 + Tab `概览(含小时账单)/ 访问密钥(公开访问时不出)/ 监控 / 日志 / 历史(版本 + 事件)/ 设置`(危险区在设置里);「更新版本」是抽屉。只有一条服务轮询(过渡态 / 运行中 / 已删除停);监控与日志打当前版本实例。`?tab=` 非法值回默认(URL 不做旧名兼容)。 */
 
 import { POLL } from "@superdl/ui";
 import type { InstanceOut, ServiceOut } from "@superdl/api-client";
 import { fontSize, formatDateTime, instanceStatusMap, isTransientServiceStatus, localToday, metaOf } from "@superdl/ui";
-import { CopyButton, DataErrorAlert, KeyValue, moneyOr, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
+import {
+  CopyButton,
+  DataErrorAlert,
+  EntityHeader,
+  KeyValue,
+  moneyOr,
+  PageContainer,
+  TableErrorEmpty,
+} from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Alert, Badge, Breadcrumb, Card, Grid, Skeleton, Space, Table, Tabs, Tag, Typography } from "antd";
+import { Alert, App, Badge, Breadcrumb, Card, Grid, Skeleton, Space, Table, Tabs, Tag, Typography } from "antd";
 import { useFormat } from "@superdl/ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { useUpdateService } from "../api/mutations";
 import {
   useDailySummary,
   useService,
@@ -230,6 +239,7 @@ function BillsTab({ slug }: { slug: string }) {
 
 function ServiceDetail() {
   const { t } = useTranslation(["web", "shared"]);
+  const { message } = App.useApp();
   const { formatHourlyPrice, formatMoney, formatPeriodPrice } = useFormat();
   const { slug } = Route.useParams();
   const { tab } = Route.useSearch();
@@ -248,6 +258,8 @@ function ServiceDetail() {
   });
   const { date, tzOffsetMinutes } = localToday();
   const { data: daily } = useDailySummary(date, tzOffsetMinutes, { refetchInterval: POLL.daily });
+  // 头部行内改名(设置 Tab 不再有改名卡)
+  const update = useUpdateService(slug);
 
   if (serviceError && !service) {
     return (
@@ -272,6 +284,7 @@ function ServiceDetail() {
   }
   const inst = service.current_instance ?? service.rollout_instance;
   const live = service.status === "running" || service.status === "unready";
+  const released = service.released_at != null;
   const todayAmount = (inst && daily?.items.find((it) => it.instance_id === inst.id)?.total_amount) ?? "0.00";
   const requested: ServiceDetailTab = tab ?? "overview";
   // 公开访问时无「访问密钥」Tab:深链落到设置(鉴权开关在那)
@@ -283,68 +296,73 @@ function ServiceDetail() {
     <PageContainer>
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
         <Breadcrumb items={[{ title: <Link to="/services">{t("services.title")}</Link> }, { title: service.name }]} />
-        <Card>
-          <Space style={{ width: "100%", justifyContent: "space-between" }} align="start" wrap>
-            <Space orientation="vertical" size={4}>
-              <Space wrap>
-                <Typography.Title level={4} style={{ margin: 0 }}>
-                  {service.name}
-                </Typography.Title>
-                <ServiceStatusBadge status={service.status} frozenDeadline={inst?.frozen_deadline} />
-                {inst && <TierTag tier={inst.spec.tier as string} pool={inst.spec.pool_label as string} />}
-                <Tag>{t("services.revisionTag", { no: service.revision })}</Tag>
-                {inst && <SubscriptionTag market={inst.market} subscription={inst.subscription} />}
-                {inst && <SpotTag market={inst.market} />}
-              </Space>
-              <KeyValue
-                layout="inline"
-                items={[
-                  { label: t("services.detail.labelId"), value: service.slug, mono: true, copy: service.slug },
-                  {
-                    label: t("services.detail.labelSpec"),
-                    value: inst
-                      ? t("instances.specLine", { model: inst.spec.gpu_model as string, count: inst.gpu_count })
-                      : null,
+        <EntityHeader
+          name={service.name}
+          status={<ServiceStatusBadge status={service.status} frozenDeadline={inst?.frozen_deadline} />}
+          tags={
+            <>
+              {inst && <TierTag tier={inst.spec.tier as string} pool={inst.spec.pool_label as string} />}
+              <Tag>{t("services.revisionTag", { no: service.revision })}</Tag>
+              {inst && <SubscriptionTag market={inst.market} subscription={inst.subscription} />}
+              {inst && <SpotTag market={inst.market} />}
+            </>
+          }
+          meta={[
+            { label: t("services.detail.labelId"), value: service.slug, mono: true, copy: service.slug },
+            {
+              label: t("services.detail.labelSpec"),
+              value: inst
+                ? t("instances.specLine", { model: inst.spec.gpu_model as string, count: inst.gpu_count })
+                : null,
+            },
+            {
+              label: t("services.detail.labelBilling"),
+              value: inst
+                ? inst.subscription
+                  ? formatPeriodPrice(
+                      inst.subscription.amount_paid,
+                      inst.subscription.period,
+                      inst.subscription.period_count,
+                    )
+                  : t("instances.pricePerCard", {
+                      price: formatHourlyPrice(inst.price_hourly),
+                      count: inst.gpu_count,
+                    })
+                : null,
+            },
+            inst?.subscription
+              ? {
+                  label: t("services.detail.labelExpiresAt"),
+                  value: formatDateTime(inst.subscription.expires_at),
+                }
+              : {
+                  label: t("services.detail.labelToday"),
+                  value: moneyOr(formatMoney(todayAmount), daily != null),
+                },
+            { label: t("services.detail.createdAt"), value: formatDateTime(service.created_at) },
+          ]}
+          // 已删除的服务不再改名(与设置 Tab 的灰置同判据)
+          rename={
+            released
+              ? undefined
+              : {
+                  onSave: async (next) => {
+                    await update.mutateAsync({ name: next });
+                    message.success(t("services.settings.saved"));
                   },
-                  {
-                    label: t("services.detail.labelBilling"),
-                    value: inst
-                      ? inst.subscription
-                        ? formatPeriodPrice(
-                            inst.subscription.amount_paid,
-                            inst.subscription.period,
-                            inst.subscription.period_count,
-                          )
-                        : t("instances.pricePerCard", {
-                            price: formatHourlyPrice(inst.price_hourly),
-                            count: inst.gpu_count,
-                          })
-                      : null,
-                  },
-                  ...(inst?.subscription
-                    ? [
-                        {
-                          label: t("services.detail.labelExpiresAt"),
-                          value: formatDateTime(inst.subscription.expires_at),
-                        },
-                      ]
-                    : [
-                        {
-                          label: t("services.detail.labelToday"),
-                          value: moneyOr(formatMoney(todayAmount), daily != null),
-                        },
-                      ]),
-                  { label: t("services.detail.createdAt"), value: formatDateTime(service.created_at) },
-                ]}
-              />
-            </Space>
+                  ariaLabel: t("instances.renameAria", { name: service.name }),
+                  maxLength: 64,
+                }
+          }
+          actions={
             <ServiceActions
               service={service}
+              size="middle"
               onDeleted={() => void navigate({ to: "/services" })}
               onRollout={() => setRevisionOpen(true)}
             />
-          </Space>
-        </Card>
+          }
+        />
 
         <EndpointCard
           service={service}

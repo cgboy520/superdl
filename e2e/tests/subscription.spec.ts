@@ -15,7 +15,7 @@ test("买包月并续费", async ({ page }) => {
     .getByRole("group", { name: "计费方式" })
     .getByRole("button", { name: /^包\s*月/ })
     .click();
-  await page.getByRole("button", { name: "下一步:配置实例" }).click();
+  await page.getByRole("button", { name: "配置实例" }).click();
   await expect(page).toHaveURL(/period=month/);
 
   // 创建页:主 CTA 是「支付」

@@ -85,10 +85,12 @@ test("部署在线服务并拿到端点与 API Key", async ({ page }) => {
     .click();
   await expect(page.getByText(/停止中|已停止/).first()).toBeVisible({ timeout: 30_000 });
 
-  // 设置 Tab:改名反映到头部;关鉴权走确认,端点卡显示「公开访问」
+  // 头部行内改名(铅笔 → 输入 → Enter),标题当场更新;设置 Tab 只留鉴权 / SSH / 危险区
   await page.getByRole("tab", { name: "设置" }).click();
-  await page.getByLabel("服务名称").fill("e2e-renamed");
-  await page.getByRole("button", { name: /^保\s*存$/ }).click();
+  await page.getByRole("button", { name: /^改名:/ }).click();
+  const nameEdit = page.getByLabel(/^改名:/);
+  await nameEdit.fill("e2e-renamed");
+  await nameEdit.press("Enter");
   await expect(page.getByRole("heading", { name: "e2e-renamed" })).toBeVisible({ timeout: 15_000 });
   await page.getByRole("switch", { name: "访问鉴权" }).click();
   await page

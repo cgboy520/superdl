@@ -71,6 +71,8 @@ export function InlineEdit({
       <Input
         size={size}
         autoFocus
+        // 编辑态的输入框沿用触发钮的标签,否则是无标签表单项(axe)
+        aria-label={ariaLabel}
         maxLength={maxLength}
         value={draft}
         status={error ? "error" : undefined}

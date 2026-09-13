@@ -24,7 +24,7 @@ test("全生命周期冒烟", async ({ page }) => {
 
   // 市场:筛选链 + SKU 表格单选 → 结算条下一步
   await pickSharedStandardSku(page);
-  await page.getByRole("button", { name: "下一步:配置实例" }).click();
+  await page.getByRole("button", { name: "配置实例" }).click();
   await expect(page).toHaveURL(/market\/create/);
 
   // 创建实例:自定义镜像 + 选公钥(唯一一把已自动选中)→ 创建并开机 → 直达详情「连接」Tab

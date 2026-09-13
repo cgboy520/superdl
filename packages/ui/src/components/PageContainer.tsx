@@ -25,9 +25,18 @@ export function PageContainer({
   children: ReactNode;
 }) {
   const maxWidth = widthMap[width];
+  // 任一页头槽位有值就渲染页头(详情页只给面包屑 / 返回,标题由 EntityHeader 承担)
+  const hasHeader =
+    title !== undefined ||
+    header.breadcrumb !== undefined ||
+    header.back !== undefined ||
+    header.extra !== undefined ||
+    header.description !== undefined ||
+    header.freshness !== undefined ||
+    header.tags !== undefined;
   return (
     <div style={{ maxWidth, margin: maxWidth ? "0 auto" : undefined, minWidth: 0 }}>
-      {title !== undefined && <PageHeader title={title} {...header} />}
+      {hasHeader && <PageHeader title={title} {...header} />}
       {children}
     </div>
   );

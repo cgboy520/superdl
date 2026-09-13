@@ -1,5 +1,5 @@
-/** 容器实例列表(默认落地页):页头(标题 + 描述 + 新鲜度 + 主 CTA)→ AttentionBar(公告 / 余额 / 到期 / 冻结 / 失败聚合成一条)→ FilterBar(状态 + 搜索)→ 表格。
- *  服务端游标分页 + status/name 过滤(状态入 URL);名称即详情链接,改名走 hover 铅笔;行内动作 RowActions 三槽位(InstanceActions);
+/** 容器实例列表(默认落地页):页头(标题 + 描述 + 新鲜度 + 主 CTA)→ AttentionBar(公告 / 余额 / 到期 / 冻结 / 失败聚合成一条)→ FilterBar(状态计数条 + 搜索)→ 表格。
+ *  服务端游标分页 + status/name 过滤(状态入 URL);「需处理」不落服务端,拉全量后客户端筛;名称即详情链接,改名走 hover 铅笔;行内动作 RowActions 三槽位(InstanceActions);
  *  列表不挂 refetchInterval,过渡态由 useTransientInstanceRefresh 逐台轻轮询并在迁移时失效列表;指标与今日消费按页头新鲜度条轮询,暂停同停。
  *  真空态(无筛选且无实例)整页换新手引导,不渲染表头。 */
 
@@ -9,17 +9,24 @@ import {
   controlWidth,
   fontSize,
   formatDateTime,
-  instanceStatusMap,
+  isSubscriptionExpired,
   layout,
   localToday,
-  metaOf,
   POLL,
   space,
   useAutoRefresh,
 } from "@superdl/ui";
-import { AttentionBar, EmptyState, FilterBar, LoadMore, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
+import {
+  AttentionBar,
+  EmptyState,
+  FilterBar,
+  LoadMore,
+  PageContainer,
+  StatusSummaryBar,
+  TableErrorEmpty,
+} from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Button, Card, Grid, Input, Popover, Select, Skeleton, Space, Table, Tooltip, Typography } from "antd";
+import { Button, Card, Grid, Input, Popover, Skeleton, Space, Table, Tooltip, Typography } from "antd";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -43,17 +50,20 @@ import { requireAuth } from "../lib/guard";
 import { useCursorList } from "../lib/useCursorList";
 import { listSearchStore } from "../stores/listSearch";
 
-/** 可过滤的状态(released 终态不出列表) */
-const FILTER_STATUSES = [
-  "creating",
-  "running",
-  "stopping",
-  "stopped",
-  "starting",
-  "frozen",
-  "releasing",
-  "failed",
-] as const;
+/** 状态计数条的视图键 = ?status= 白名单;running / stopped 直落服务端过滤,attention 是客户端派生集合。 */
+const SUMMARY_KEYS = ["running", "stopped", "attention"] as const;
+
+/** 「需处理」的状态集合:过渡态(会自己走完但要盯)+ 冻结 + 失败。 */
+const ATTENTION_STATUSES = new Set(["creating", "starting", "stopping", "frozen", "failed"]);
+
+/** 需处理判据(与 §3.2 一致):上表状态,或包周期已到期 / 在 period_expire_warn_days 窗口内到期。 */
+function needsAttention(i: InstanceOut, warnDays: number | undefined, now: number): boolean {
+  if (ATTENTION_STATUSES.has(i.status)) return true;
+  const sub = i.subscription;
+  if (!sub) return false;
+  if (isSubscriptionExpired(i.market, sub, new Date(now))) return true;
+  return warnDays !== undefined && new Date(sub.expires_at).getTime() - now <= warnDays * 86_400_000;
+}
 
 export const Route = createFileRoute("/_console/instances")({
   beforeLoad: requireAuth,
@@ -61,7 +71,7 @@ export const Route = createFileRoute("/_console/instances")({
   validateSearch: (search: Record<string, unknown>): { q?: string; status?: string } => {
     const out: { q?: string; status?: string } = {};
     if (typeof search.q === "string" && search.q.trim()) out.q = search.q;
-    if (typeof search.status === "string" && (FILTER_STATUSES as readonly string[]).includes(search.status)) {
+    if (typeof search.status === "string" && (SUMMARY_KEYS as readonly string[]).includes(search.status)) {
       out.status = search.status;
     }
     return out;
@@ -221,7 +231,8 @@ function InstancesPage() {
   } = useCursorList({
     urlQ: q,
     commitQ,
-    usePages: (name) => useInstancePages({ status, name }),
+    // attention 是客户端派生集合:不带 status 拉全量,再按判据筛
+    usePages: (name) => useInstancePages({ status: status === "attention" ? undefined : status, name }),
     keyOf: (i: InstanceOut) => i.uuid,
   });
   // 指标与今日消费按页头新鲜度条轮询,暂停同停
@@ -240,6 +251,16 @@ function InstancesPage() {
 
   // 过渡态实例逐台轻轮询(终态即停),迁移时失效列表查询
   useTransientInstanceRefresh(rows);
+
+  const warnDays = policies?.period_expire_warn_days;
+  // 临期窗口是天级,「现在」在挂载时定一次:轮询重渲染不抖动计数
+  const [mountedAt] = useState(() => Date.now());
+  // 「需处理」在客户端筛;其余视图服务端已筛好
+  const attentionRows = useMemo(
+    () => rows.filter((r) => needsAttention(r, warnDays, mountedAt)),
+    [rows, warnDays, mountedAt],
+  );
+  const visibleRows = status === "attention" ? attentionRows : rows;
 
   // 公告 / 余额 / 欠费 + 到期 / 冻结 / 失败聚合成一条横幅
   const attention = [...useNotificationAttention(), ...useInstanceAttention(rows, setRenewTarget)];
@@ -280,7 +301,29 @@ function InstancesPage() {
   // 真空态(无筛选且无实例)整页换新手引导;错误态 > 筛选无结果 > 真空态
   const trueEmpty = !isLoading && !isError && !filtered && rows.length === 0;
   // 计数只在全部加载完才显示
-  const count = isLoading || isError || hasNextPage ? undefined : rows.length;
+  const count = isLoading || isError || hasNextPage ? undefined : visibleRows.length;
+  // 计数条数字只在「未按状态筛 + 全部加载完」时可信,否则整条不出数字
+  const countsReady = status === undefined && !isLoading && !isError && !hasNextPage;
+  const countOf = (n: number) => (countsReady ? n : undefined);
+  const summaryItems = [
+    { key: "all", label: t("instances.summaryAll"), count: countOf(rows.length) },
+    {
+      key: "running",
+      label: t("shared:status.instance.running"),
+      count: countOf(rows.filter((r) => r.status === "running").length),
+    },
+    {
+      key: "stopped",
+      label: t("shared:status.instance.stopped"),
+      count: countOf(rows.filter((r) => r.status === "stopped").length),
+    },
+    {
+      key: "attention",
+      label: t("instances.summaryAttention"),
+      tone: "warning" as const,
+      count: countOf(attentionRows.length),
+    },
+  ];
 
   const emptyState = isError ? (
     <TableErrorEmpty isError onRetry={() => void refetch()} />
@@ -309,7 +352,7 @@ function InstancesPage() {
           </Card>
         ))}
       </Space>
-    ) : rows.length === 0 ? (
+    ) : visibleRows.length === 0 ? (
       trueEmpty ? (
         onboarding
       ) : (
@@ -317,7 +360,7 @@ function InstancesPage() {
       )
     ) : (
       <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
-        {rows.map((r) => (
+        {visibleRows.map((r) => (
           <InstanceCard
             key={r.uuid}
             instance={r}
@@ -336,7 +379,7 @@ function InstancesPage() {
     <Table<InstanceOut>
       rowKey="uuid"
       loading={isLoading}
-      dataSource={rows}
+      dataSource={visibleRows}
       pagination={false}
       scroll={{ x: 1000 }}
       sticky={{ offsetHeader: layout.topBarHeight }}
@@ -409,18 +452,11 @@ function InstancesPage() {
       <AttentionBar items={attention} style={{ marginBottom: space.lg }} />
       {!trueEmpty && (
         <FilterBar hasFilter={hasFilter} onClear={clearFilters} count={count}>
-          <Select
-            allowClear
-            style={{ width: controlWidth.sm }}
-            placeholder={t("instances.statusFilter")}
-            aria-label={t("instances.statusFilter")}
-            value={status ?? null}
-            onChange={(v: string | null) => setSearch({ status: v ?? undefined })}
-            options={FILTER_STATUSES.map((s) => {
-              const meta = metaOf(instanceStatusMap, s);
-              // 裸状态码不进 t()(extract 会当成新键)
-              return { value: s, label: meta ? t(meta.labelKey) : s };
-            })}
+          <StatusSummaryBar
+            items={summaryItems}
+            value={status ?? "all"}
+            onChange={(k) => setSearch({ status: k === "all" ? undefined : k })}
+            ariaLabel={t("instances.summaryAria")}
           />
           <Input
             allowClear
