@@ -19,7 +19,7 @@
 13. **尺寸与容器分档**:输入框 / 下拉宽度取 `controlWidth`(xs 96 / sm 160 / md 260 / lg 320);≥2 张卡或需滚动的编辑表单改 Drawer(`drawerWidth.md/lg` 两档,提交与取消固定在 `footer`,挂 `useLeaveGuard`,审计原因是最后一个字段);按钮尺寸「页头 CTA middle / 结算条 large / 卡内 middle / 行内 small」;锚点滚动目标加 `scroll-margin-top: layout.scrollMarginTop`。
 14. **「选一个」控件角色表**:`Segmented` = 视图 / Tab 切换(状态计数条、监控范围、登录方式);`ChipRow` = 筛选与轻量选项(市场筛选、GPU 数量、计费方式);`OptionTile` = 表单里的互斥大项(镜像、数据盘模式、充值渠道、访问鉴权、协议),`role=radiogroup` + 方向键;表内 radio 只用于「从列表里挑一行」。禁止 `Button + aria-pressed` 表示选中,禁止 `Radio.Group optionType="button"`。
 15. **可访问性底线**:两端 `<main id="main">` 地标 + 跳转链接;导航当前项 `aria-current="page"`;手写 `role="button"` 元素统一焦点框(`base.css .focus-ring`);Popover / Tooltip 信息触屏可点开(`trigger` 含 click,宿主可聚焦);快捷键在可编辑元素聚焦时不抢;告警严重度与状态从不只靠颜色(文字 + 图标);`HexTag` 文字色按底色亮度取黑 / 白;移动端也能切主题(用户菜单)。
-16. **页面骨架**:每个控制台页面自持 `PageContainer`(`title` / `description` / `extra` / `freshness` / `width`),下方可选 `FilterBar`(筛选控件 + 「清除筛选」+ 「共 N 条」),再是主体;两端一致(web 不再在壳里包一层容器)。实体详情页与抽屉头部用 `EntityHeader`。
+16. **页面骨架**:每个控制台页面自持 `PageContainer`(`title` / `description` / `extra` / `freshness` / `width`),下方可选 `FilterBar`(筛选控件 + 「清除筛选」+ 「共 N 条」),再是主体;两端一致(web 不再在壳里包一层容器)。实体详情页与抽屉头部用 `EntityHeader`。闸门:`python3 scripts/check-page-skeleton.py`。
 
 ## 2. 视觉与主题
 

@@ -46,12 +46,12 @@ test("全生命周期冒烟", async ({ page }) => {
 
   await page.goto("/billing");
   await page.getByRole("tab", { name: "小时账单" }).click();
-  await expect(page.locator(".ant-table-row").first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator("[data-row-key]").first()).toBeVisible({ timeout: 15_000 });
 
   // 释放:多级防护(键入实例名 + 勾选解锁)→ 列表消失
   await page.goto("/instances");
   await page
-    .locator(".ant-table-row")
+    .locator("[data-row-key]")
     .first()
     .getByText(/更\s*多/)
     .click();

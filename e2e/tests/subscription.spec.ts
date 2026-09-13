@@ -41,7 +41,7 @@ test("买包月并续费", async ({ page }) => {
   // 续费:更多 → 续费 → 确认 → 扣款回执
   await page.goto("/instances");
   await page
-    .locator(".ant-table-row")
+    .locator("[data-row-key]")
     .first()
     .getByRole("button", { name: /更\s*多/ })
     .click();

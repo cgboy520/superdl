@@ -2,6 +2,7 @@ export * from "./tokens";
 export * from "./color";
 export * from "./polling";
 export * from "./status";
+export * from "./testIds";
 // format 显式点名,currencySymbol/tzSuffix 不进包面
 export {
   formatMoney,

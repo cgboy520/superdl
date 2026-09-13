@@ -51,6 +51,7 @@ export function CopyField({
   secret = false,
   block = false,
   size = "small",
+  testId,
   onCopied,
 }: {
   value: string;
@@ -65,17 +66,19 @@ export function CopyField({
   secret?: boolean;
   block?: boolean;
   size?: "small" | "middle";
+  /** 只给 testIds.ts 白名单里的两处值用(密钥 / 端点 URL) */
+  testId?: string;
   onCopied?: () => void;
 }) {
   const { t } = useTranslation("shared");
   const [revealed, setRevealed] = useState(!secret);
   const shown = revealed ? (display ?? value) : "•".repeat(Math.min(value.length, 24));
   const text = code ? (
-    <Typography.Text code className={mono ? "mono" : undefined} style={{ wordBreak: "break-all" }}>
+    <Typography.Text code className={mono ? "mono" : undefined} style={{ wordBreak: "break-all" }} data-testid={testId}>
       {shown}
     </Typography.Text>
   ) : (
-    <span className={mono ? "mono" : undefined} style={{ wordBreak: "break-all" }}>
+    <span className={mono ? "mono" : undefined} style={{ wordBreak: "break-all" }} data-testid={testId}>
       {shown}
     </span>
   );

@@ -5,6 +5,7 @@ import { type DiskOut } from "@superdl/api-client";
 import {
   diskDailyEstimate,
   diskStatusMap,
+  drawerWidth,
   fontSize,
   formatDateTime,
   formatSizeGb,
@@ -366,7 +367,7 @@ function StoragePage() {
           title={t("storage.expandDrawerTitle", { name: expandTarget?.name ?? "" })}
           open={Boolean(expandTarget)}
           onClose={() => setExpandTarget(null)}
-          size="min(420px, 100vw)"
+          size={drawerWidth.md}
           footer={
             <Space style={{ width: "100%", justifyContent: "flex-end" }}>
               <Button onClick={() => setExpandTarget(null)}>{t("create.cancel")}</Button>

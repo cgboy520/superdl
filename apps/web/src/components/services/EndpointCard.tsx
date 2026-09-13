@@ -2,11 +2,11 @@
  *  停机类四态分开说:stopped / stopping(启动后恢复)、frozen(欠费,去充值)、failed(部署失败,看日志 / 看事件)。 */
 
 import type { ServiceOut } from "@superdl/api-client";
-import { CopyField } from "@superdl/ui/components";
+import { CopyField, GatedButton } from "@superdl/ui/components";
 import { Link } from "@tanstack/react-router";
 import { Alert, Badge, Button, Card, Space, Tag, Typography } from "antd";
 import { useTranslation } from "react-i18next";
-import { space } from "@superdl/ui";
+import { space, TEST_IDS } from "@superdl/ui";
 
 export function EndpointCard({
   service,
@@ -24,15 +24,15 @@ export function EndpointCard({
     <Card size="small" title={t("services.detail.endpointCard")}>
       <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
         <Space wrap size={space.sm}>
-          {/* 完整 URL 在唯一一个 <code> 里(e2e 以 code 定位端点) */}
-          <CopyField value={service.url} code label={t("services.copyEndpoint")} />
-          <Button
+          {/* 端点 URL 是 testIds 白名单里的两处之一(值本身没有可定位语义) */}
+          <CopyField value={service.url} code label={t("services.copyEndpoint")} testId={TEST_IDS.endpointUrl} />
+          <GatedButton
             size="small"
-            disabled={!live}
+            reason={live ? undefined : t("services.endpointUnreachable")}
             onClick={() => window.open(service.url, "_blank", "noopener,noreferrer")}
           >
             {t("services.openEndpoint")}
-          </Button>
+          </GatedButton>
         </Space>
         <Space wrap size={space.md}>
           <Badge

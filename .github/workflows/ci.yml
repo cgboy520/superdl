@@ -48,7 +48,7 @@ jobs:
           hit() { if grep -qE "$1" /tmp/changed; then echo true; else echo false; fi }
           {
             echo "api=$(hit '^(apps/api/|packages/api-client/openapi\.json$|pyrightconfig\.json$|\.python-version$|\.github/workflows/ci\.yml$)')"
-            echo "frontend=$(hit '^(apps/web/|apps/admin/|packages/|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|package\.json$|turbo\.json$|eslint\.config\.mjs$|\.prettierrc$|\.prettierignore$|scripts/check-cjk\.sh$|scripts/check-copy-banned\.sh$|scripts/check-csp-hash\.sh$|deploy/app/security-headers-web-csp\.conf$|\.github/workflows/ci\.yml$)')"
+            echo "frontend=$(hit '^(apps/web/|apps/admin/|packages/|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|package\.json$|turbo\.json$|eslint\.config\.mjs$|\.prettierrc$|\.prettierignore$|scripts/check-cjk\.sh$|scripts/check-copy-banned\.sh$|scripts/check-csp-hash\.sh$|scripts/check-page-skeleton\.py$|deploy/app/security-headers-web-csp\.conf$|\.github/workflows/ci\.yml$)')"
             echo "e2e=$(hit '^(apps/|packages/|e2e/|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|package\.json$|turbo\.json$|\.python-version$|\.github/workflows/ci\.yml$)')"
             echo "k8s=$(hit '^(apps/api/|deploy/|\.python-version$|\.github/workflows/ci\.yml$)')"
             echo "manifest=$(hit '^(deploy/app/k8s/|scripts/check-gateway-manifests\.py$|\.github/workflows/ci\.yml$)')"
@@ -104,6 +104,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
       - run: pnpm lint
+      # 控制台路由页自持 PageContainer(ui-ux-spec §1 规则 16)
+      - run: python3 scripts/check-page-skeleton.py
       - run: pnpm typecheck
       - run: pnpm i18n
       - run: pnpm test

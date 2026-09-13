@@ -35,6 +35,8 @@
 - **用户端的「一眼看全」由实例列表状态计数条承担,管理端的「先处理什么」由总览待处理条承担。** 仍不建独立概览页。约束:计数来自已加载数据或既有列表端点,精确汇总端点是后续路线图项;总览 KPI 全部可点击深链到预筛选列表。
 - **公开层首屏是行情板,不是海报。** 数字一律真实数据;删除泛营销模块;公开层跟随主题;价格 / 型号 / 命令用自托管等宽字体(放在 web 的 public 目录下,CSP `font-src 'self'` 已放行,不改 index.html 内联脚本)。约束:首页任何数字必须来自 `/skus` 或 `gpuSpecs.ts`。
 - **账户设置分 Tab,财务对账不内嵌审计。** 设置页四 Tab(`?tab=`);审计只在 `/audit` 一处。
+- **设计 token 由 ESLint 强制,不靠人审。** 颜色 hex 字面量、`Space size={数字}`、`Drawer` 的 `width` 与字面量 `size` 在 `apps/**` 与 `packages/ui/src/**` 一律报错(token 定义 `tokens.ts` / `color.ts` / `status.ts` 与对比度回归自身豁免);`turbo.json` 把 `eslint.config.mjs` 列进 `globalDependencies`,改规则不会命中旧缓存。约束:新增语义色先进 `tokens.ts`,JS 取随主题的色只经 `useThemeColors()`。
+- **控制台页面骨架由脚本闸门锁定。** `python3 scripts/check-page-skeleton.py` 扫 `apps/web/src/routes/_console*.tsx` 与 `apps/admin/src/routes/_app/*.tsx`,每页必须自持 `PageContainer`;进 CI 前端 job。公开层不在扫描范围。
 - **e2e 选择器优先 role + name,`data-testid` 只用于无稳定 role / 文案的元素。** 清单集中在 packages/ui 的 testIds 模块(`mfa-secret` / `endpoint-url`);表格行仍靠 antd `data-row-key`;确认框按钮经 `getByRole("dialog")` 定位而不靠 `.ant-modal-confirm-btns`。
 
 ## 计费与资金

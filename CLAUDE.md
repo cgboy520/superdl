@@ -45,6 +45,7 @@ pnpm --filter @superdl/e2e test:e2e      # 需 API+worker 在跑;SUPERDL_ADMIN_E
 bash -n apps/api/app/modules/nodes/assets/node-join.sh && shellcheck apps/api/app/modules/nodes/assets/node-join.sh
 bats deploy/node-join/tests              # PATH shim 伪造系统命令
 python3 scripts/check-docs-links.py      # 文档相对链接、反引号路径、告警 runbook_url
+python3 scripts/check-page-skeleton.py   # 控制台路由页自持 PageContainer
 ```
 
 ## 硬性规范(违反即返工)

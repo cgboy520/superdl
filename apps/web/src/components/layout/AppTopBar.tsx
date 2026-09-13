@@ -124,7 +124,7 @@ export function AppTopBar({ variant, right }: { variant: "public" | "console"; r
       <Drawer
         title={<BrandLogo />}
         placement="left"
-        size={260}
+        size={layout.navDrawerWidth}
         open={menuOpen}
         onClose={() => setMenuOpen(false)}
         styles={{ body: { padding: isPublic ? undefined : 0 } }}

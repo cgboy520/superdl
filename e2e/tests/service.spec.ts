@@ -1,7 +1,7 @@
 /** 在线服务冒烟:在线服务页「部署服务」→ 部署页(页内选规格)→ 容器与服务配置 → 部署 → 服务详情 → 运行中 → 端点卡拿到 URL → 更新版本(v2)→ 新建 API Key(一次性展示)→ 吊销 → 停止服务 → 设置里改名与关鉴权。 */
 import { expect, test } from "@playwright/test";
 
-import { setupUser } from "./helpers";
+import { confirmOk, setupUser } from "./helpers";
 
 test("部署在线服务并拿到端点与 API Key", async ({ page }) => {
   // 建号 + 充值 + 公钥(API 直达)
@@ -11,7 +11,7 @@ test("部署在线服务并拿到端点与 API Key", async ({ page }) => {
   await page.goto("/services");
   await page.getByRole("button", { name: "部署服务" }).first().click();
   await expect(page).toHaveURL(/\/services\/new$/);
-  const skuRow = page.locator(".ant-table-row", { hasText: "共享·标准" }).first();
+  const skuRow = page.locator("[data-row-key]", { hasText: "共享·标准" }).first();
   await expect(skuRow).toBeVisible({ timeout: 15_000 });
   await skuRow.getByRole("radio").check();
   await expect(page.getByText("GPU 数量")).toBeVisible();
@@ -30,18 +30,15 @@ test("部署在线服务并拿到端点与 API Key", async ({ page }) => {
   // 部署后直达服务详情:部署中 → 运行中
   await expect(page).toHaveURL(/\/services\/svc-[a-z0-9]+/, { timeout: 20_000 });
   await expect(page.getByText("运行中").first()).toBeVisible({ timeout: 90_000 });
-  // 端点卡:完整 URL 的 <code>(取端点卡那个,不取概览 Tab 的 curl 示例)
-  await expect(page.locator("code", { hasText: /^https:\/\/svc-[a-z0-9]+\./ }).first()).toBeVisible();
+  // 端点卡:完整 URL(testid 白名单;同页 curl 示例也是 code,靠标签会抢错)
+  await expect(page.getByTestId("endpoint-url")).toHaveText(/^https:\/\/svc-[a-z0-9]+\./);
 
   // 更新版本:抽屉里换镜像 → 发布 → 头部翻成 v2 → 回到运行中
   await page.getByRole("button", { name: "更新版本" }).click();
   const drawer = page.getByRole("dialog");
   await drawer.getByLabel("镜像地址").fill("registry.superdl.local/vllm:v0.7.0");
   await drawer.getByRole("button", { name: "发布新版本" }).click();
-  await page
-    .locator(".ant-modal-confirm-btns")
-    .getByRole("button", { name: /^确\s*定$/ })
-    .click();
+  await confirmOk(page);
   await expect(page.getByText("v2", { exact: true }).first()).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText("运行中").first()).toBeVisible({ timeout: 90_000 });
   // 版本与事件合成「历史」Tab
@@ -68,10 +65,7 @@ test("部署在线服务并拿到端点与 API Key", async ({ page }) => {
     .getByRole("button", { name: /^吊\s*销$/ })
     .first()
     .click();
-  await page
-    .locator(".ant-modal-confirm-btns")
-    .getByRole("button", { name: /^确\s*定$/ })
-    .click();
+  await confirmOk(page);
   await expect(page.getByText("已吊销").first()).toBeVisible({ timeout: 15_000 });
 
   // 停止服务:头部按钮 → 确认 → 状态离开运行中;端点与 Key 仍在
@@ -79,10 +73,7 @@ test("部署在线服务并拿到端点与 API Key", async ({ page }) => {
     .getByRole("button", { name: /^停\s*止$/ })
     .first()
     .click();
-  await page
-    .locator(".ant-modal-confirm-btns")
-    .getByRole("button", { name: /^确\s*定$/ })
-    .click();
+  await confirmOk(page);
   await expect(page.getByText(/停止中|已停止/).first()).toBeVisible({ timeout: 30_000 });
 
   // 头部行内改名(铅笔 → 输入 → Enter),标题当场更新;设置 Tab 只留鉴权 / SSH / 危险区
@@ -93,10 +84,7 @@ test("部署在线服务并拿到端点与 API Key", async ({ page }) => {
   await nameEdit.press("Enter");
   await expect(page.getByRole("heading", { name: "e2e-renamed" })).toBeVisible({ timeout: 15_000 });
   await page.getByRole("switch", { name: "访问鉴权" }).click();
-  await page
-    .locator(".ant-modal-confirm-btns")
-    .getByRole("button", { name: /^确\s*定$/ })
-    .click();
+  await confirmOk(page);
   await expect(page.getByText("公开访问").first()).toBeVisible({ timeout: 15_000 });
 
   // 列表:服务在「在线服务」里,不在容器实例里
@@ -104,12 +92,12 @@ test("部署在线服务并拿到端点与 API Key", async ({ page }) => {
   // 行里有两处 slug 文本,取名称列精确匹配
   await expect(
     page
-      .locator(".ant-table-row")
+      .locator("[data-row-key]")
       .first()
       .getByText(/^svc-[a-z0-9]+$/),
   ).toBeVisible({
     timeout: 15_000,
   });
   await page.goto("/instances");
-  await expect(page.locator(".ant-table-row")).toHaveCount(0);
+  await expect(page.locator("[data-row-key]")).toHaveCount(0);
 });

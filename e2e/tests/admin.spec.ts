@@ -18,8 +18,8 @@ async function loginAndBindMfa(page: Page, username: string, password: string): 
   await page.getByLabel("用户名").fill(username);
   await page.getByLabel("密码").fill(password);
   await page.getByRole("button", { name: /^登\s*录$/ }).click();
-  // 绑定页:二维码 + 手动录入密钥(code 元素全页唯一)
-  const secretEl = page.locator("code").first();
+  // 绑定页:二维码 + 手动录入密钥(testid 白名单,见 packages/ui/src/testIds.ts)
+  const secretEl = page.getByTestId("mfa-secret");
   await expect(secretEl).toBeVisible({ timeout: 15_000 });
   const secret = (await secretEl.innerText()).trim();
   expect(secret.length).toBeGreaterThanOrEqual(16);

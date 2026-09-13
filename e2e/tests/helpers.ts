@@ -2,6 +2,16 @@
 
 import { expect, type Locator, type Page } from "@playwright/test";
 
+/** 点 antd Modal.confirm 的「确定」。不用 .ant-modal-confirm-btns(内部 class);页面可能同时开着抽屉,取最后一个匹配。
+ *  antd 两字按钮会插空格,故用 /^确\s*定$/。 */
+export async function confirmOk(page: Page): Promise<void> {
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: /^确\s*定$/ })
+    .last()
+    .click();
+}
+
 /** 本轮唯一的测试手机号;spec 并行,必须带随机分量。 */
 export function uniquePhone(): string {
   const ms = String(Date.now()).slice(-5);
@@ -104,7 +114,7 @@ export async function addSshKeyViaUi(page: Page): Promise<void> {
 /** 市场页选中「共享·标准」SKU;计费方式与形态分叉由各 spec 自己接。 */
 export async function pickSharedStandardSku(page: Page): Promise<void> {
   await page.goto("/market");
-  const skuRow = page.locator(".ant-table-row", { hasText: "共享·标准" }).first();
+  const skuRow = page.locator("[data-row-key]", { hasText: "共享·标准" }).first();
   await expect(skuRow).toBeVisible({ timeout: 15_000 });
   await skuRow.getByRole("radio").check();
 }
@@ -119,7 +129,7 @@ export async function fillCustomImageForm(page: Page): Promise<void> {
 /** 实例列表等首行进入「运行中」,返回首行。 */
 export async function waitFirstRowRunning(page: Page): Promise<Locator> {
   await expect(page).toHaveURL(/instances/, { timeout: 20_000 });
-  const row = page.locator(".ant-table-row").first();
+  const row = page.locator("[data-row-key]").first();
   await expect(row.getByText("运行中")).toBeVisible({ timeout: 90_000 });
   return row;
 }

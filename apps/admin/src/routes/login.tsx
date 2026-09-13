@@ -1,4 +1,4 @@
-import { adminColors, fontSize, space } from "@superdl/ui";
+import { adminColors, fontSize, space, TEST_IDS } from "@superdl/ui";
 import { CopyButton, CopyField, LangSwitcher, Mono } from "@superdl/ui/components";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { App, Button, Card, Checkbox, Form, Input, QRCode, Space, Typography } from "antd";
@@ -160,7 +160,8 @@ function MfaSetupForm({ ticket }: { ticket: string }) {
             {t("login.mfaManualKey")}
           </Typography.Text>
           <br />
-          <CopyField value={begin.data.secret} code />
+          {/* 密钥是 testIds 白名单里的两处之一(同页还有别的 code) */}
+          <CopyField value={begin.data.secret} code testId={TEST_IDS.mfaSecret} />
         </Typography.Paragraph>
       )}
       <Form.Item

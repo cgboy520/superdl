@@ -46,7 +46,7 @@ test("买竞价并转按量", async ({ page }) => {
     .getByRole("button", { name: /^确\s*定$|^确认转按量$/ })
     .last()
     .click();
-  await expect(page.locator(".ant-table-row").first().getByText("可回收")).toBeHidden({
+  await expect(page.locator("[data-row-key]").first().getByText("可回收")).toBeHidden({
     timeout: 20_000,
   });
 });
