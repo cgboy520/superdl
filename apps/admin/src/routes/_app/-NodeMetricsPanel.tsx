@@ -1,6 +1,6 @@
-/** 节点指标面板:选中节点的 GPU / CPU / 内存时序(1h / 6h / 24h)。 */
+/** 节点指标面板:选中节点的 GPU 利用率 / 显存时序;时间范围由抽屉给。 */
 
-import { Radio, Button, Card, Space, Tag, Typography } from "antd";
+import { Button, Card, Space, Tag, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { fontSize, useChartTheme } from "@superdl/ui";
@@ -9,17 +9,7 @@ import { EChart } from "@superdl/ui/components";
 import { type NodeMetricsOut, type NodeRow } from "../../api";
 
 /** 节点级历史曲线(per-GPU util / 显存)+ XID 徽标 + 可选 Grafana 外链。 */
-export function NodeMetricsPanel({
-  node,
-  metrics,
-  range,
-  onRangeChange,
-}: {
-  node: NodeRow;
-  metrics: NodeMetricsOut | undefined;
-  range: string;
-  onRangeChange: (r: string) => void;
-}) {
+export function NodeMetricsPanel({ node, metrics }: { node: NodeRow; metrics: NodeMetricsOut | undefined }) {
   const { t } = useTranslation();
   const chartTheme = useChartTheme();
   const gpus = metrics?.gpus ?? [];
@@ -50,21 +40,9 @@ export function NodeMetricsPanel({
   return (
     <Card
       title={t("nodes.historyTitle")}
-      style={{ marginTop: 16 }}
       extra={
         <Space size={12}>
           {xid > 0 && <Tag color="red">{t("nodes.xidBadge", { count: xid })}</Tag>}
-          <Radio.Group
-            size="small"
-            value={range}
-            onChange={(e) => onRangeChange(e.target.value as string)}
-            optionType="button"
-            options={[
-              { value: "1h", label: t("nodes.range1h") },
-              { value: "6h", label: t("nodes.range6h") },
-              { value: "24h", label: t("nodes.range24h") },
-            ]}
-          />
           {grafanaUrl && (
             <Button size="small" onClick={() => window.open(grafanaUrl, "_blank", "noopener,noreferrer")}>
               {t("nodes.openGrafana")}

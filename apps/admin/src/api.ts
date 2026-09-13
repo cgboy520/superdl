@@ -461,8 +461,8 @@ export function useAlerts(
   });
 }
 
-/** 未确认告警数(顶栏铃铛角标)。 */
-export function useAlertUnreadCount(options?: { refetchInterval?: number }) {
+/** 未确认告警数(顶栏铃铛角标 / 总览待处理条)。 */
+export function useAlertUnreadCount(options?: { refetchInterval?: number | false }) {
   return useQuery({
     queryKey: [...adminKeys.alerts, "unread-count"],
     queryFn: () => adminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet(),
@@ -492,9 +492,14 @@ export function useAdjustments(params?: Omit<AdminListAdjustmentsApiAdminV1Adjus
   );
 }
 
-/** 退款单列表(游标分页)。status 服务端过滤;day=YYYY-MM-DD(UTC 日)。 */
-export function useRefunds(params?: Omit<AdminListRefundsApiAdminV1RefundsGetParams, "cursor" | "limit">) {
-  return useCursorPages(["admin", "refunds", params], adminListRefundsApiAdminV1RefundsGet, params, undefined);
+/** 退款单列表(游标分页)。status 服务端过滤;day=YYYY-MM-DD(UTC 日);enabled=false 不取数(无权角色)。 */
+export function useRefunds(
+  params?: Omit<AdminListRefundsApiAdminV1RefundsGetParams, "cursor" | "limit">,
+  options?: { enabled?: boolean },
+) {
+  return useCursorPages(["admin", "refunds", params], adminListRefundsApiAdminV1RefundsGet, params, {
+    enabled: options?.enabled,
+  });
 }
 
 export const useReviewRefund = adminMutation((v: { refundId: number; data: RefundReview }) =>
@@ -514,8 +519,10 @@ export const useCancelRefund = adminMutation((v: { refundId: number; data: Refun
 );
 
 /** 发票申请列表(finance/admin)。status/period(YYYY-MM)服务端过滤;抬头与邮箱默认脱敏,reveal=true + reason 回明文(进 queryKey)。 */
-export function useInvoices(params?: AdminListInvoicesApiAdminV1InvoicesGetParams) {
-  return useKeyedQuery(["admin", "invoices", params], () => adminListInvoicesApiAdminV1InvoicesGet(params));
+export function useInvoices(params?: AdminListInvoicesApiAdminV1InvoicesGetParams, options?: { enabled?: boolean }) {
+  return useKeyedQuery(["admin", "invoices", params], () => adminListInvoicesApiAdminV1InvoicesGet(params), {
+    enabled: options?.enabled,
+  });
 }
 
 export const useIssueInvoice = adminMutation((v: { invoiceId: number; data: InvoiceIssue }) =>
@@ -529,12 +536,13 @@ export const useRejectInvoice = adminMutation((v: { invoiceId: number; data: Inv
 /** 结算缺口列表(游标分页):kind/reason 服务端过滤,unresolved 默认 true;不挂 refetchInterval。 */
 export function useSettlementGaps(
   params?: Omit<AdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetParams, "cursor" | "limit">,
+  options?: { enabled?: boolean },
 ) {
   return useCursorPages(
     ["admin", "settlement-gaps", params],
     adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet,
     params,
-    { refetchOnWindowFocus: true },
+    { refetchOnWindowFocus: true, enabled: options?.enabled },
   );
 }
 
@@ -565,9 +573,14 @@ export function useTicketPendingCount() {
 }
 
 /** 注销申请列表。status 服务端过滤;行内附执行前校验计数。 */
-export function useDeletionRequests(params?: AdminListDeletionRequestsApiAdminV1DeletionRequestsGetParams) {
-  return useKeyedQuery(["admin", "deletion-requests", params], () =>
-    adminListDeletionRequestsApiAdminV1DeletionRequestsGet(params),
+export function useDeletionRequests(
+  params?: AdminListDeletionRequestsApiAdminV1DeletionRequestsGetParams,
+  options?: { enabled?: boolean },
+) {
+  return useKeyedQuery(
+    ["admin", "deletion-requests", params],
+    () => adminListDeletionRequestsApiAdminV1DeletionRequestsGet(params),
+    { enabled: options?.enabled },
   );
 }
 
@@ -887,10 +900,10 @@ export function fetchAdminMe(): Promise<AdminOut> {
   return adminMeApiAdminV1MeGet();
 }
 
-/** 总览聚合(精确 COUNT,全角色可读)。 */
-export function useOverview() {
+/** 总览聚合(精确 COUNT,全角色可读);轮询周期由页面给(可暂停),默认 POLL.daily。 */
+export function useOverview(options?: { refetchInterval?: number | false }) {
   return useKeyedQuery(["admin", "overview"], () => adminOverviewApiAdminV1OverviewGet(), {
-    refetchInterval: POLL.daily,
+    refetchInterval: options?.refetchInterval ?? POLL.daily,
   });
 }
 

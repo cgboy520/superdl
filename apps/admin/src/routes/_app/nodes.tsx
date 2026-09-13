@@ -1,4 +1,4 @@
-/** 节点与 GPU:待加入节点卡(-EnrollmentsCard)+ FilterBar(名称 / 池 / 状态,入 URL)+ 节点台账(热力格 -GpuGrid、选中节点指标 -NodeMetricsPanel、添加节点 -AddNodeModal);?node= 深链定位行。 */
+/** 节点与 GPU:待加入节点卡(-EnrollmentsCard)+ FilterBar(名称 / 池 / 状态,入 URL)+ 节点台账(添加节点 -AddNodeModal);点行 / 告警深链 ?node= 打开右侧节点抽屉(-NodeDrawer:热力格 + 指标曲线)。 */
 
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -9,7 +9,6 @@ import { useTranslation } from "react-i18next";
 
 import {
   controlWidth,
-  formatDateTime,
   layout,
   nodeStatusMap,
   POLL,
@@ -24,20 +23,26 @@ import {
   GatedButton,
   Mono,
   PageContainer,
-  RowActions,
   TableErrorEmpty,
   StatusTag,
 } from "@superdl/ui/components";
 import { useApiErrorText } from "@superdl/ui";
 
-import { adminKeys, type NodeRow, isApiError, useNodeMetrics, useCordonNode, useNodes, usePortPool } from "../../api";
+import { adminKeys, type NodeRow, isApiError, useCordonNode, useNodes, usePortPool } from "../../api";
 import { BulkBar, runBulk } from "../../components/BulkBar";
 import { ReasonAction } from "../../components/ReasonAction";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
-import { GpuGrid } from "./-GpuGrid";
-import { NodeMetricsPanel } from "./-NodeMetricsPanel";
 import { AddNodeModal } from "./-AddNodeModal";
 import { EnrollmentsCard } from "./-EnrollmentsCard";
+import {
+  type CordonFn,
+  GpuModelCell,
+  isUnlabeled,
+  LastSeenCell,
+  NodeActions,
+  NodeDrawer,
+  PoolTag,
+} from "./-NodeDrawer";
 
 const NODE_STATUSES = ["Ready", "NotReady", "Cordoned", "Missing"] as const;
 type NodeStatus = (typeof NODE_STATUSES)[number];
@@ -45,7 +50,7 @@ type NodeStatus = (typeof NODE_STATUSES)[number];
 const POOL_UNLABELED = "unlabeled";
 
 export const Route = createFileRoute("/_app/nodes")({
-  // node:告警深链(/nodes?node=<name>)目标行;q/pool/status:客户端筛选
+  // node:抽屉目标(/nodes?node=<name>,告警深链同源);q/pool/status:客户端筛选
   validateSearch: (
     search: Record<string, unknown>,
   ): { node?: string; q?: string; pool?: string; status?: NodeStatus } => ({
@@ -57,8 +62,9 @@ export const Route = createFileRoute("/_app/nodes")({
   component: NodesPage,
 });
 
-function isUnlabeled(n: NodeRow): boolean {
-  return n.unlabeled || !n.pool_label;
+/** 行内链接 / 按钮 / 勾选框自己处理点击,不再冒泡成「打开抽屉」 */
+function fromInteractive(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest("a, button, input, label") !== null;
 }
 
 function NodesPage() {
@@ -84,12 +90,10 @@ function NodesPage() {
   const nodes: NodeRow[] = useMemo(() => data ?? [], [data]);
   const { data: portPool } = usePortPool();
   const { node: nodeParam, q: urlQ, pool, status: statusFilter } = Route.useSearch();
-  const [selected, setSelected] = useState<string | null>(null);
-  const [range, setRange] = useState("1h");
   const [addOpen, setAddOpen] = useState(false);
-  // 名称 / 池 / 状态筛选入 URL,客户端过滤全量小表
+  // 名称 / 池 / 状态筛选与抽屉目标都入 URL,客户端过滤全量小表
   const setUrl = useCallback(
-    (patch: { q?: string; pool?: string; status?: NodeStatus }) =>
+    (patch: { q?: string; pool?: string; status?: NodeStatus; node?: string }) =>
       void navigate({ to: "/nodes", replace: true, search: (prev) => ({ ...prev, ...patch }) }),
     [navigate],
   );
@@ -119,17 +123,12 @@ function NodesPage() {
     if (nodes.some(isUnlabeled)) opts.push({ value: POOL_UNLABELED, label: t("nodes.unlabeledTag") });
     return opts;
   }, [nodes, t]);
-  // ?node= 目标不存在时顶部提示
-  const deepLinkMissing = nodeParam !== undefined && data !== undefined && !nodes.some((n) => n.name === nodeParam);
-  const node =
-    deepLinkMissing && selected === nodeParam ? undefined : (nodes.find((n) => n.name === selected) ?? nodes[0]);
-  const { data: nodeMetrics } = useNodeMetrics(node?.name ?? null, range);
-  // 告警深链:选中目标行并滚动到可视区(data-row-key 定位;渲染期派生态)
-  const [prevNodeParam, setPrevNodeParam] = useState(nodeParam);
-  if (nodeParam !== prevNodeParam) {
-    setPrevNodeParam(nodeParam);
-    if (nodeParam) setSelected(nodeParam);
-  }
+  // 抽屉目标 = ?node= 对应的台账行;目标不存在时顶部提示、抽屉不开
+  const node = nodeParam === undefined ? undefined : nodes.find((n) => n.name === nodeParam);
+  const deepLinkMissing = nodeParam !== undefined && data !== undefined && node === undefined;
+  const openNode = useCallback((name: string) => setUrl({ node: name }), [setUrl]);
+  const closeNode = useCallback(() => setUrl({ node: undefined }), [setUrl]);
+  // 告警深链:目标行滚动到可视区(data-row-key 定位)
   useEffect(() => {
     if (!nodeParam || nodes.length === 0) return;
     const row = document.querySelector(`[data-row-key="${CSS.escape(nodeParam)}"]`);
@@ -167,6 +166,9 @@ function NodesPage() {
         ),
     },
   });
+  const cordonNode: CordonFn = async (nodeName, on, reason) => {
+    await cordon.mutateAsync({ nodeName, on, data: { reason } });
+  };
   // 批量 cordon / uncordon:一条原因作用于全部所选,逐条并发
   const [bulkSelected, setBulkSelected] = useState<string[]>([]);
   const bulkCordon = async (on: boolean, reason: string) => {
@@ -308,18 +310,20 @@ function NodesPage() {
             filteredNodes.length > 200 ? { pageSize: 100, showSizeChanger: false, hideOnSinglePage: true } : false
           }
           onRow={(r) => ({
-            onClick: () => setSelected(r.name),
-            // 整行即按钮(Enter/Space 选中)
+            onClick: (e) => {
+              if (!fromInteractive(e.target)) openNode(r.name);
+            },
+            // 整行即按钮(Enter/Space 打开抽屉;行内控件自己的键盘事件不代管)
             tabIndex: 0,
             onKeyDown: (e) => {
-              if (e.key === "Enter" || e.key === " ") {
+              if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) {
                 e.preventDefault();
-                setSelected(r.name);
+                openNode(r.name);
               }
             },
             style: {
               cursor: "pointer",
-              ...(r.name === node?.name
+              ...(r.name === nodeParam
                 ? { background: token.colorPrimaryBg, boxShadow: `inset 0 0 0 1px ${token.colorPrimary}` }
                 : {}),
             },
@@ -336,25 +340,11 @@ function NodesPage() {
             {
               title: t("nodes.colPool"),
               dataIndex: "pool_label",
-              render: (v: string, r) =>
-                r.unlabeled || !v ? <Tag color="red">{t("nodes.unlabeledTag")}</Tag> : <Tag color="cyan">{v}</Tag>,
+              render: (_, r) => <PoolTag node={r} />,
             },
             {
               title: t("nodes.colGpu"),
-              render: (_, r) => {
-                const unrecognized = r.gpu_model === "GPU" && !!r.gpu_model_raw;
-                return (
-                  <Space size={4}>
-                    <span>{`${unrecognized ? r.gpu_model_raw : r.gpu_model} × ${r.gpu_total}`}</span>
-                    {unrecognized && <Tag color="gold">{t("nodes.unrecognizedTag")}</Tag>}
-                    {!unrecognized && r.gpu_model !== "GPU" && r.label_synced === false && (
-                      <Tooltip title={t("nodes.labelUnsynced")}>
-                        <Tag color="orange">!</Tag>
-                      </Tooltip>
-                    )}
-                  </Space>
-                );
-              },
+              render: (_, r) => <GpuModelCell node={r} />,
             },
             {
               title: t("nodes.colVram"),
@@ -396,15 +386,7 @@ function NodesPage() {
               dataIndex: "last_seen",
               width: 130,
               sorter: (a, b) => dayjs(a.last_seen || 0).valueOf() - dayjs(b.last_seen || 0).valueOf(),
-              // 相对时间,hover 给绝对时间;空 = 尚无台账行
-              render: (v: string) =>
-                v ? (
-                  <Tooltip title={formatDateTime(v)}>
-                    <span>{dayjs(v).fromNow()}</span>
-                  </Tooltip>
-                ) : (
-                  "—"
-                ),
+              render: (v: string) => <LastSeenCell value={v} />,
             },
             {
               title: t("nodes.colStatus"),
@@ -415,54 +397,13 @@ function NodesPage() {
               title: t("nodes.colActions"),
               width: 170,
               fixed: "right",
-              render: (_, r) => {
-                const cordoned = r.status === "Cordoned";
-                return (
-                  <RowActions
-                    primary={
-                      <ReasonAction
-                        label={cordoned ? t("nodes.uncordonBtn") : t("nodes.cordonBtn")}
-                        target={r.name}
-                        title={cordoned ? t("nodes.uncordonTitle") : t("nodes.cordonTitle")}
-                        confirmText={
-                          cordoned
-                            ? t("nodes.uncordonConfirm", { name: r.name })
-                            : t("nodes.cordonConfirm", { name: r.name })
-                        }
-                        danger={!cordoned}
-                        disabled={!writable}
-                        disabledReason={t("nodes.readonlyNoOp")}
-                        onSubmit={async (reason) => {
-                          await cordon.mutateAsync({
-                            nodeName: r.name,
-                            on: !cordoned,
-                            data: { reason },
-                          });
-                        }}
-                      />
-                    }
-                    secondary={
-                      /* 占位项:可见但禁用 + tooltip */
-                      <GatedButton size="small" reason={t("nodes.drainDeferred")}>
-                        {t("nodes.drainBtn")}
-                      </GatedButton>
-                    }
-                  />
-                );
-              },
+              render: (_, r) => <NodeActions node={r} writable={writable} onCordon={cordonNode} />,
             },
           ]}
         />
       </Card>
       <AddNodeModal open={addOpen} onClose={() => setAddOpen(false)} />
-      {node && (
-        <>
-          <Card title={t("nodes.gpuGridTitle", { name: node.name })} style={{ marginTop: 16 }}>
-            <GpuGrid node={node} metrics={nodeMetrics} />
-          </Card>
-          <NodeMetricsPanel node={node} metrics={nodeMetrics} range={range} onRangeChange={setRange} />
-        </>
-      )}
+      <NodeDrawer node={node} onClose={closeNode} writable={writable} onCordon={cordonNode} />
     </PageContainer>
   );
 }

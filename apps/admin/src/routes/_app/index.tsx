@@ -1,11 +1,21 @@
+/** 运营总览:TriageBar 置顶(深链预筛选列表)→ 两行 StatCard(各卡只等自己的 query,整卡可点)→ 左栏超卖率 / 利用率 / 池占用图表 + 任务死信卡(有死信默认展开,#dead-tasks 锚点)、右栏实时告警流(severity 入 URL);页头新鲜度条(POLL.steady 可暂停)。 */
+
+import { QuestionCircleOutlined } from "@ant-design/icons";
 import {
   adminColors,
+  type AlertSeverity,
+  flattenPages,
   fontSize,
   formatDateTime,
+  iconSize,
+  layout,
+  POLL,
   SEVERITY_ORDER,
   severityMap,
   statusColors,
+  useAutoRefresh,
   useChartTheme,
+  useFormat,
 } from "@superdl/ui";
 import {
   DataErrorAlert,
@@ -13,37 +23,23 @@ import {
   EmptyState,
   GatedButton,
   KpiGrid,
-  moneyOr,
   PageContainer,
   RowActions,
   RowMoreMenu,
+  StatCard,
   StatusTag,
   TableErrorEmpty,
+  TriageBar,
+  type TriageItem,
 } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
-import { Link, createFileRoute } from "@tanstack/react-router";
-import {
-  App,
-  Badge,
-  Card,
-  Col,
-  Collapse,
-  Row,
-  Select,
-  Skeleton,
-  Space,
-  Statistic,
-  Table,
-  Tag,
-  Tooltip,
-  Typography,
-} from "antd";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
+import { App, Badge, Card, Col, Collapse, Row, Select, Skeleton, Space, Table, Tag, Tooltip, Typography } from "antd";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-import { useFormat } from "@superdl/ui";
-
 import {
+  adminKeys,
   type AlertRow,
   type DeadTaskRow,
   type OversellRow,
@@ -52,46 +48,49 @@ import {
   useAlertUnreadCount,
   useAlerts,
   useDeadTasks,
+  useDeletionRequests,
   useDiscardDeadTask,
+  useInvoices,
   useOversellReport,
   useOverview,
+  useRefunds,
   useRetryDeadTask,
   useRevenueReport,
+  useSettlementGaps,
 } from "../../api";
 import { BulkBar, runBulk } from "../../components/BulkBar";
 import { ReasonAction } from "../../components/ReasonAction";
 import { alertLink, useAckAlertWithFeedback } from "../../lib/alertLink";
-import { canWriteOps, useAdminRole } from "../../stores/auth";
+import { canReadInvoices, canWriteFinance, canWriteOps, useAdminRole } from "../../stores/auth";
 
 export const Route = createFileRoute("/_app/")({
+  // severity:告警流级别筛选(白名单 SEVERITY_ORDER)
+  validateSearch: (search: Record<string, unknown>): { severity?: AlertSeverity } => ({
+    severity:
+      typeof search.severity === "string" && (SEVERITY_ORDER as readonly string[]).includes(search.severity)
+        ? (search.severity as AlertSeverity)
+        : undefined,
+  }),
   component: Overview,
 });
 
-function OversellChart({ rows }: { rows: OversellRow[] }) {
+const percent = (v: number) => `${(v * 100).toFixed(0)}%`;
+
+/** 实际超卖率(按池):单轴柱图。 */
+function OversellRatioChart({ rows }: { rows: OversellRow[] }) {
   const { t } = useTranslation();
   const chartTheme = useChartTheme();
-  const pools = rows.map((r) => r.pool);
   const option = {
     backgroundColor: "transparent",
-    tooltip: { trigger: "axis" },
-    legend: { textStyle: { color: adminColors.textSecondary } },
-    grid: { left: 48, right: 48, top: 40, bottom: 28 },
-    xAxis: { type: "category", data: pools, axisLabel: { color: adminColors.textSecondary } },
-    yAxis: [
-      {
-        type: "value",
-        name: t("overview.axisOversell"),
-        axisLabel: { formatter: (v: number) => `${(v * 100).toFixed(0)}%`, color: adminColors.textSecondary },
-        splitLine: { lineStyle: { color: adminColors.gridLine } },
-      },
-      {
-        type: "value",
-        name: t("overview.axisUtil"),
-        max: 100,
-        axisLabel: { color: adminColors.textSecondary },
-        splitLine: { show: false },
-      },
-    ],
+    tooltip: { trigger: "axis", valueFormatter: (v: unknown) => (typeof v === "number" ? percent(v) : "") },
+    grid: { left: 56, right: 24, top: 32, bottom: 28 },
+    xAxis: { type: "category", data: rows.map((r) => r.pool), axisLabel: { color: adminColors.textSecondary } },
+    yAxis: {
+      type: "value",
+      name: t("overview.axisOversell"),
+      axisLabel: { formatter: percent, color: adminColors.textSecondary },
+      splitLine: { lineStyle: { color: adminColors.gridLine } },
+    },
     series: [
       {
         name: t("overview.seriesOversell"),
@@ -100,10 +99,34 @@ function OversellChart({ rows }: { rows: OversellRow[] }) {
         itemStyle: { color: adminColors.dataAccent },
         barWidth: 36,
       },
+    ],
+  };
+  return (
+    <EChart option={option} style={{ height: 240 }} theme={chartTheme} ariaLabel={t("overview.oversellChartTitle")} />
+  );
+}
+
+/** 真实利用率 24h(按池):0–100 折线 + 上调 / 回调阈值虚线。 */
+function UtilChart({ rows }: { rows: OversellRow[] }) {
+  const { t } = useTranslation();
+  const chartTheme = useChartTheme();
+  const option = {
+    backgroundColor: "transparent",
+    tooltip: { trigger: "axis" },
+    grid: { left: 56, right: 24, top: 32, bottom: 28 },
+    xAxis: { type: "category", data: rows.map((r) => r.pool), axisLabel: { color: adminColors.textSecondary } },
+    yAxis: {
+      type: "value",
+      name: t("overview.axisUtil"),
+      min: 0,
+      max: 100,
+      axisLabel: { color: adminColors.textSecondary },
+      splitLine: { lineStyle: { color: adminColors.gridLine } },
+    },
+    series: [
       {
         name: t("overview.seriesUtil"),
         type: "line",
-        yAxisIndex: 1,
         data: rows.map((r) => r.util_avg_24h),
         itemStyle: { color: adminColors.alertAccent },
         markLine: {
@@ -117,9 +140,7 @@ function OversellChart({ rows }: { rows: OversellRow[] }) {
       },
     ],
   };
-  return (
-    <EChart option={option} style={{ height: 320 }} theme={chartTheme} ariaLabel={t("overview.oversellChartTitle")} />
-  );
+  return <EChart option={option} style={{ height: 240 }} theme={chartTheme} ariaLabel={t("overview.utilChartTitle")} />;
 }
 
 function PoolOccupancy({ pools }: { pools: OverviewOut["pools"] }) {
@@ -181,7 +202,7 @@ function PoolOccupancy({ pools }: { pools: OverviewOut["pools"] }) {
   );
 }
 
-/** 任务死信卡(重放/忽略需原因 + 二次确认)。 */
+/** 任务死信卡(重放/忽略需原因 + 二次确认);有死信默认展开,#dead-tasks 供待处理条锚定。 */
 function DeadTasksCard() {
   const { t, i18n } = useTranslation(["admin", "shared"]);
   const qc = useQueryClient();
@@ -194,6 +215,9 @@ function DeadTasksCard() {
   const retry = useRetryDeadTask();
   const discard = useDiscardDeadTask();
   const refresh = () => void qc.invalidateQueries({ queryKey });
+  // 用户手动折叠 / 展开后尊重其选择;未动过则按有无死信决定
+  const [collapsed, setCollapsed] = useState<boolean | null>(null);
+  const expanded = collapsed === null ? rows.length > 0 : !collapsed;
   // 批量:勾选后一条原因作用于全部所选(后端无批量端点,逐条并发)
   const [selected, setSelected] = useState<number[]>([]);
   const { message } = App.useApp();
@@ -213,8 +237,10 @@ function DeadTasksCard() {
   if (!canRead) return null;
   if (!isError && !isLoading && rows.length === 0) return null;
   return (
-    <Col span={24}>
+    <div id="dead-tasks" style={{ marginTop: 16, scrollMarginTop: layout.scrollMarginTop }}>
       <Collapse
+        activeKey={expanded ? ["dead"] : []}
+        onChange={(keys) => setCollapsed(keys.length === 0)}
         items={[
           {
             key: "dead",
@@ -368,17 +394,18 @@ function DeadTasksCard() {
           },
         ]}
       />
-    </Col>
+    </div>
   );
 }
 
-/** 实时告警流:severity 过滤、确认闭环、深链跳受影响节点/租户(lib/alertLink)。 */
-function AlertStreamCard() {
+/** 实时告警流:severity 过滤入 URL(?severity=)、确认闭环、深链跳受影响节点/租户(lib/alertLink);轮询节拍由页面给。 */
+function AlertStreamCard({ refetchInterval }: { refetchInterval: number | false }) {
   const { t } = useTranslation(["admin", "shared"]);
   const role = useAdminRole();
   const writable = canWriteOps(role);
-  const [severity, setSeverity] = useState<string | undefined>();
-  const { data, isError, refetch } = useAlerts(severity ? { severity } : undefined);
+  const navigate = useNavigate({ from: "/" });
+  const { severity } = Route.useSearch();
+  const { data, isError, refetch } = useAlerts(severity ? { severity } : undefined, { refetchInterval });
   const ack = useAckAlertWithFeedback();
   const alerts: AlertRow[] = data ?? [];
 
@@ -392,7 +419,9 @@ function AlertStreamCard() {
           placeholder={t("overview.severityFilter")}
           style={{ width: 120 }}
           value={severity}
-          onChange={(v) => setSeverity(v)}
+          onChange={(v: AlertSeverity | undefined) =>
+            void navigate({ to: "/", replace: true, search: (prev) => ({ ...prev, severity: v }) })
+          }
           options={SEVERITY_ORDER.map((s) => ({ value: s, label: t(severityMap[s].labelKey) }))}
         />
       }
@@ -449,217 +478,317 @@ function AlertStreamCard() {
   );
 }
 
-/** 逐卡骨架:各卡只等自己的 query,失败语义留在卡内。 */
-function KpiCard({ pending, children }: { pending: boolean; children: ReactNode }) {
-  if (pending) {
-    return (
-      <Card>
-        <Skeleton active title={{ width: "40%" }} paragraph={{ rows: 1, width: "70%" }} />
-      </Card>
-    );
-  }
-  return <Card>{children}</Card>;
+/** 游标页计数:服务端 total 优先,缺省用已加载条数;未取到数据 = undefined。 */
+function pageCount(data: { pages: { items: unknown[]; total?: number | null }[] } | undefined): number | undefined {
+  if (!data) return undefined;
+  return data.pages[0]?.total ?? flattenPages(data).length;
 }
+
+/** 待处理条五项的计数来源:严重告警 = 未确认计数端点 critical_count;失联节点 = 总览聚合;死信 = 死信列表长度;结算缺口 = 未核销缺口页 total;
+ *  待审批 = 待审退款(pending)+ 待开发票(submitted)+ 待处理注销(pending)。无权限的项不取数,计数显示 —,不伪造 0。 */
+function useTriageItems({
+  criticalUnacked,
+  nodesMissing,
+}: {
+  criticalUnacked: number | undefined;
+  nodesMissing: number | undefined;
+}): TriageItem[] {
+  const { t } = useTranslation();
+  const role = useAdminRole();
+  const canReadOps = canWriteOps(role) || role === "readonly";
+  const canReadFinance = canWriteFinance(role) || role === "readonly";
+  const deadQ = useDeadTasks({ enabled: canReadOps });
+  const gapsQ = useSettlementGaps({ unresolved: true }, { enabled: canReadFinance });
+  const refundsQ = useRefunds({ status: "pending" }, { enabled: canReadFinance });
+  const invoicesQ = useInvoices({ status: "submitted" }, { enabled: canReadInvoices(role) });
+  const deletionsQ = useDeletionRequests({ status: "pending" });
+  const refunds = pageCount(refundsQ.data);
+  const invoices = invoicesQ.data?.length;
+  const deletions = deletionsQ.data?.length;
+  const approvals =
+    refunds !== undefined && invoices !== undefined && deletions !== undefined
+      ? refunds + invoices + deletions
+      : undefined;
+  return [
+    { key: "critical", label: t("overview.triage.critical"), count: criticalUnacked, severity: "critical" },
+    { key: "missing", label: t("overview.triage.missingNodes"), count: nodesMissing, severity: "warning" },
+    { key: "dead", label: t("overview.triage.deadTasks"), count: deadQ.data?.length, severity: "warning" },
+    { key: "gaps", label: t("overview.triage.gaps"), count: pageCount(gapsQ.data), severity: "info" },
+    {
+      key: "approvals",
+      label: t("overview.triage.approvals"),
+      count: approvals,
+      severity: "info",
+      detail: t("overview.triage.approvalsDetail", {
+        refunds: refunds ?? "—",
+        invoices: invoices ?? "—",
+        deletions: deletions ?? "—",
+      }),
+    },
+  ];
+}
+
+const triageLinkStyle = { display: "inline-block", textDecoration: "none", color: "inherit" } as const;
+
+/** 待处理条深链:按 item.key 落到预筛选列表;死信落本页锚点。 */
+function triageLink(item: TriageItem, children: ReactNode): ReactNode {
+  switch (item.key) {
+    case "critical":
+      return (
+        <Link to="/alerts" search={{ severity: "critical", acked: "unacked" }} style={triageLinkStyle}>
+          {children}
+        </Link>
+      );
+    case "missing":
+      return (
+        <Link to="/nodes" search={{ status: "Missing" }} style={triageLinkStyle}>
+          {children}
+        </Link>
+      );
+    case "dead":
+      return (
+        <a href="#dead-tasks" style={triageLinkStyle}>
+          {children}
+        </a>
+      );
+    case "gaps":
+      return (
+        <Link to="/finance" search={{ tab: "gaps" }} style={triageLinkStyle}>
+          {children}
+        </Link>
+      );
+    default:
+      return (
+        <Link to="/finance" search={{ tab: "refunds" }} style={triageLinkStyle}>
+          {children}
+        </Link>
+      );
+  }
+}
+
+/** 整卡链接:块级 + 继承文字色,避免卡内大数染成链接蓝。 */
+const cardLinkStyle = { display: "block", textDecoration: "none", color: "inherit" } as const;
 
 function Overview() {
   const { t } = useTranslation();
   const { formatMoney } = useFormat();
-  const oversellQ = useOversellReport();
-  const ovQ = useOverview();
+  const qc = useQueryClient();
+  // 页面级稳态轮询(可暂停):总览聚合 / 未确认计数 / 告警流同一节拍;报表类仍按各自周期
+  const autoRefresh = useAutoRefresh(POLL.steady);
+  const ovQ = useOverview({ refetchInterval: autoRefresh.refetchInterval });
+  const unreadQ = useAlertUnreadCount({ refetchInterval: autoRefresh.refetchInterval });
   const revenueQ = useRevenueReport();
-  // 「告警(总)」 = 未确认告警精确计数
-  const unreadQ = useAlertUnreadCount();
-  const { data: oversell, isError: oversellError, refetch: refetchOversell } = oversellQ;
-  const { data: ov, isError: ovError, refetch: refetchOv } = ovQ;
+  const oversellQ = useOversellReport();
+  const { data: ov } = ovQ;
   const { data: revenue } = revenueQ;
   const { data: unread } = unreadQ;
+  const triage = useTriageItems({ criticalUnacked: unread?.critical_count, nodesMissing: ov?.nodes_missing });
 
-  const oversellRows: OversellRow[] = oversell ?? [];
+  const oversellRows: OversellRow[] = oversellQ.data ?? [];
   const byStatus = ov?.instances_by_status ?? {};
   const activeInstances = (byStatus.creating ?? 0) + (byStatus.starting ?? 0) + (byStatus.running ?? 0);
   const signupDelta = revenue ? revenue.today_signups - revenue.yesterday_signups : 0;
   // KPI 查询失败嵌错误条;按数据源分卡归属
-  const revenueErr = <DataErrorAlert onRetry={() => void revenueQ.refetch()} />;
-  const ovErr = <DataErrorAlert onRetry={() => void ovQ.refetch()} />;
-  const unreadErr = <DataErrorAlert onRetry={() => void unreadQ.refetch()} />;
+  const revenueErr = revenueQ.isError ? <DataErrorAlert onRetry={() => void revenueQ.refetch()} /> : undefined;
+  const ovErr = ovQ.isError ? <DataErrorAlert onRetry={() => void ovQ.refetch()} /> : undefined;
+  const unreadErr = unreadQ.isError ? <DataErrorAlert onRetry={() => void unreadQ.refetch()} /> : undefined;
+  // 超卖率 / 利用率两张卡共用同一份报表的三态
+  const oversellBody = (chart: ReactNode) =>
+    oversellQ.isError ? (
+      <DataErrorAlert title={t("overview.loadFailed")} description={null} onRetry={() => void oversellQ.refetch()} />
+    ) : oversellRows.length ? (
+      chart
+    ) : (
+      <EmptyState scene="list" compact description={t("overview.oversellEmpty")} />
+    );
 
   return (
-    <PageContainer title={t("menu.overview")}>
+    <PageContainer
+      title={t("menu.overview")}
+      freshness={{
+        updatedAt: ovQ.dataUpdatedAt,
+        intervalMs: autoRefresh.intervalMs,
+        paused: autoRefresh.paused,
+        onTogglePause: autoRefresh.toggle,
+        // adminKeys.alerts 前缀同时覆盖告警流与未确认计数
+        onRefresh: () => {
+          void ovQ.refetch();
+          void qc.invalidateQueries({ queryKey: adminKeys.alerts });
+        },
+        refreshing: ovQ.isRefetching,
+      }}
+    >
       <Row gutter={[16, 16]}>
-        {/* KPI 分两行:资金与租户 / 运行与风险;各卡独立等待 */}
+        <Col span={24}>
+          <TriageBar items={triage} renderLink={triageLink} ariaLabel={t("overview.triageAria")} />
+        </Col>
+        {/* KPI 分两行:资金与租户 / 运行与风险;各卡独立等待,整卡深链 */}
         <Col span={24}>
           <KpiGrid
             items={[
-              <KpiCard key="rev-today" pending={revenueQ.isLoading}>
-                {revenueQ.isError ? (
-                  revenueErr
-                ) : (
-                  <>
-                    <Statistic
-                      title={t("overview.todayRevenue")}
-                      value={moneyOr(formatMoney(revenue?.today_revenue ?? "0.00"), revenue != null)}
-                    />
-                    <Typography.Text type="secondary" style={{ fontSize: fontSize.caption, display: "block" }}>
-                      {t("overview.yesterdayPrefix", {
-                        amount: moneyOr(formatMoney(revenue?.yesterday_revenue ?? "0.00"), revenue != null),
-                      })}
-                    </Typography.Text>
-                    {/* 收入含包周期预付,单列摊开 */}
-                    <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                      {t("overview.prepaidPart", {
-                        amount: moneyOr(formatMoney(revenue?.today_prepaid ?? "0.00"), revenue != null),
-                      })}
-                    </Typography.Text>
-                  </>
+              <StatCard
+                key="rev-today"
+                title={t("overview.todayRevenue")}
+                value={revenue ? formatMoney(revenue.today_revenue) : undefined}
+                error={revenueErr}
+                footer={
+                  revenue && (
+                    <>
+                      {t("overview.yesterdayPrefix", { amount: formatMoney(revenue.yesterday_revenue) })}
+                      <br />
+                      {/* 收入含包周期预付,单列摊开 */}
+                      {t("overview.prepaidPart", { amount: formatMoney(revenue.today_prepaid) })}
+                    </>
+                  )
+                }
+                link={(c) => (
+                  <Link to="/finance" style={cardLinkStyle}>
+                    {c}
+                  </Link>
                 )}
-              </KpiCard>,
-              <KpiCard key="rev-month" pending={revenueQ.isLoading}>
-                {revenueQ.isError ? (
-                  revenueErr
-                ) : (
-                  <>
-                    <Statistic
-                      title={t("overview.monthRevenue")}
-                      value={moneyOr(formatMoney(revenue?.month_revenue ?? "0.00"), revenue != null)}
-                    />
-                    <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                      {t("overview.prepaidPart", {
-                        amount: moneyOr(formatMoney(revenue?.month_prepaid ?? "0.00"), revenue != null),
-                      })}
-                    </Typography.Text>
-                  </>
+              />,
+              <StatCard
+                key="rev-month"
+                title={t("overview.monthRevenue")}
+                value={revenue ? formatMoney(revenue.month_revenue) : undefined}
+                error={revenueErr}
+                footer={revenue && t("overview.prepaidPart", { amount: formatMoney(revenue.month_prepaid) })}
+                link={(c) => (
+                  <Link to="/finance" style={cardLinkStyle}>
+                    {c}
+                  </Link>
                 )}
-              </KpiCard>,
-              <KpiCard key="signup" pending={revenueQ.isLoading}>
-                {revenueQ.isError ? (
-                  revenueErr
-                ) : (
-                  <>
-                    <Statistic title={t("overview.todaySignups")} value={revenue ? revenue.today_signups : "—"} />
-                    <Typography.Text
-                      style={{
-                        fontSize: fontSize.caption,
-                        color: signupDelta >= 0 ? adminColors.positive : adminColors.negative,
-                      }}
-                    >
-                      {signupDelta >= 0 ? "▲" : "▼"} {t("overview.vsYesterday", { count: Math.abs(signupDelta) })}
-                    </Typography.Text>
-                  </>
+              />,
+              <StatCard
+                key="signup"
+                title={t("overview.todaySignups")}
+                value={revenue?.today_signups}
+                error={revenueErr}
+                trend={
+                  revenue && {
+                    text: t("overview.vsYesterday", { count: Math.abs(signupDelta) }),
+                    direction: signupDelta > 0 ? "up" : signupDelta < 0 ? "down" : "flat",
+                  }
+                }
+                link={(c) => (
+                  <Link to="/tenants" style={cardLinkStyle}>
+                    {c}
+                  </Link>
                 )}
-              </KpiCard>,
-              <KpiCard key="paying" pending={ovQ.isLoading}>
-                {ovQ.isError ? (
-                  ovErr
-                ) : (
-                  <Statistic
-                    title={t("overview.payingTenants")}
-                    value={ov ? `${ov.paying_tenants} / ${ov.tenants_total}` : "—"}
-                  />
+              />,
+              <StatCard
+                key="paying"
+                title={t("overview.payingTenants")}
+                value={ov?.paying_tenants}
+                error={ovErr}
+                footer={ov && t("overview.tenantsTotalFooter", { count: ov.tenants_total })}
+                link={(c) => (
+                  <Link to="/tenants" style={cardLinkStyle}>
+                    {c}
+                  </Link>
                 )}
-              </KpiCard>,
+              />,
             ]}
           />
         </Col>
         <Col span={24}>
           <KpiGrid
             items={[
-              <KpiCard key="active" pending={ovQ.isLoading}>
-                {ovQ.isError ? (
-                  ovErr
-                ) : (
-                  <>
-                    <Statistic title={t("overview.activeInstances")} value={ov ? activeInstances : "—"} />
-                    <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                      {t("overview.instanceStatusHint", {
-                        stopped: byStatus.stopped ?? 0,
-                        failed: byStatus.failed ?? 0,
-                      })}
-                    </Typography.Text>
-                  </>
+              <StatCard
+                key="active"
+                title={t("overview.activeInstances")}
+                value={ov ? activeInstances : undefined}
+                error={ovErr}
+                footer={
+                  ov &&
+                  t("overview.instanceStatusHint", { stopped: byStatus.stopped ?? 0, failed: byStatus.failed ?? 0 })
+                }
+                link={(c) => (
+                  <Link to="/tenants" search={{ tab: "instances", istatus: "running" }} style={cardLinkStyle}>
+                    {c}
+                  </Link>
                 )}
-              </KpiCard>,
-              <KpiCard key="subs" pending={ovQ.isLoading}>
-                {ovQ.isError ? (
-                  ovErr
-                ) : (
-                  <>
-                    {/* 按订阅行数计,可大于活跃实例数 */}
-                    <Statistic title={t("overview.subscriptionsActive")} value={ov ? ov.subscriptions_active : "—"} />
-                    <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                      {t("overview.subscriptionsActiveHint")}
-                    </Typography.Text>
-                  </>
+              />,
+              <StatCard
+                key="subs"
+                title={t("overview.subscriptionsActive")}
+                // 按订阅行数计,可大于活跃实例数
+                value={ov?.subscriptions_active}
+                error={ovErr}
+                footer={ov && t("overview.subscriptionsActiveHint")}
+                link={(c) => (
+                  <Link to="/tenants" search={{ tab: "instances" }} style={cardLinkStyle}>
+                    {c}
+                  </Link>
                 )}
-              </KpiCard>,
-              <KpiCard key="nodes" pending={ovQ.isLoading}>
-                {ovQ.isError ? (
-                  ovErr
-                ) : (
-                  <>
-                    <Statistic
-                      title={t("overview.nodesHealth")}
-                      value={ov ? `${ov.nodes_ready} / ${ov.nodes_total}` : "—"}
-                    />
-                    <Typography.Text
-                      style={{
-                        fontSize: fontSize.caption,
-                        color: ov && ov.nodes_missing > 0 ? adminColors.negative : adminColors.textSecondary,
-                      }}
-                    >
-                      {t("overview.nodesMissing", { count: ov?.nodes_missing ?? 0 })}
-                    </Typography.Text>
-                  </>
+              />,
+              <StatCard
+                key="nodes"
+                title={t("overview.nodesHealth")}
+                value={ov ? `${ov.nodes_ready} / ${ov.nodes_total}` : undefined}
+                error={ovErr}
+                footer={
+                  ov && (
+                    <span style={{ color: ov.nodes_missing > 0 ? adminColors.negative : undefined }}>
+                      {t("overview.nodesMissing", { count: ov.nodes_missing })}
+                    </span>
+                  )
+                }
+                link={(c) => (
+                  <Link to="/nodes" style={cardLinkStyle}>
+                    {c}
+                  </Link>
                 )}
-              </KpiCard>,
-              <KpiCard key="alerts" pending={unreadQ.isLoading}>
-                {unreadQ.isError ? (
-                  unreadErr
-                ) : (
-                  <Statistic
-                    title={t("overview.alertsTotal")}
-                    value={unread?.count ?? "—"}
-                    styles={{
-                      // 红色高亮取精确计数端点的 critical
-                      content: (unread?.critical_count ?? 0) > 0 ? { color: adminColors.negative } : undefined,
-                    }}
-                  />
+              />,
+              <StatCard
+                key="alerts"
+                title={t("overview.alertsTotal")}
+                value={unread?.count}
+                error={unreadErr}
+                // 红色取精确计数端点的 critical
+                tone={(unread?.critical_count ?? 0) > 0 ? "negative" : "default"}
+                link={(c) => (
+                  <Link to="/alerts" search={{ acked: "unacked" }} style={cardLinkStyle}>
+                    {c}
+                  </Link>
                 )}
-              </KpiCard>,
+              />,
             ]}
           />
         </Col>
-
-        <DeadTasksCard />
 
         <Col xs={24} xl={16}>
           <Card
             title={t("overview.oversellChartTitle")}
-            extra={<Typography.Text type="secondary">{t("overview.oversellHint")}</Typography.Text>}
+            extra={
+              <Tooltip title={t("overview.oversellRule")}>
+                <QuestionCircleOutlined
+                  tabIndex={0}
+                  className="focus-ring"
+                  aria-label={t("overview.oversellRule")}
+                  style={{ fontSize: iconSize.sm, color: adminColors.textSecondary, cursor: "help" }}
+                />
+              </Tooltip>
+            }
           >
-            {oversellError ? (
-              <DataErrorAlert
-                title={t("overview.loadFailed")}
-                description={null}
-                onRetry={() => void refetchOversell()}
-              />
-            ) : oversellRows.length ? (
-              <OversellChart rows={oversellRows} />
-            ) : (
-              <EmptyState scene="list" compact description={t("overview.oversellEmpty")} />
-            )}
+            {oversellBody(<OversellRatioChart rows={oversellRows} />)}
+          </Card>
+          <Card title={t("overview.utilChartTitle")} style={{ marginTop: 16 }}>
+            {oversellBody(<UtilChart rows={oversellRows} />)}
           </Card>
           <Card title={t("overview.poolOccupancy")} style={{ marginTop: 16 }}>
-            {ovError ? (
-              <DataErrorAlert title={t("overview.loadFailed")} description={null} onRetry={() => void refetchOv()} />
+            {ovQ.isError ? (
+              <DataErrorAlert title={t("overview.loadFailed")} description={null} onRetry={() => void ovQ.refetch()} />
             ) : ov && ov.pools.length ? (
               <PoolOccupancy pools={ov.pools} />
             ) : (
               <EmptyState scene="list" compact description={t("overview.poolEmpty")} />
             )}
           </Card>
+          <DeadTasksCard />
         </Col>
         <Col xs={24} xl={8}>
-          <AlertStreamCard />
+          <AlertStreamCard refetchInterval={autoRefresh.refetchInterval} />
         </Col>
       </Row>
     </PageContainer>
