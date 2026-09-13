@@ -10,7 +10,7 @@ import {
   ticketStatusMap,
   type TicketStatus,
 } from "@superdl/ui";
-import { LoadMore, TableErrorEmpty } from "@superdl/ui/components";
+import { LoadMore, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import {
@@ -180,29 +180,34 @@ function SupportPage() {
   );
 
   return (
-    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-      <Typography.Title level={4} style={{ marginBottom: 0 }}>
-        {t("support.title")}
-      </Typography.Title>
-      <Row gutter={16}>
-        <Col xs={24} md={12}>
-          <SelfHelpCard />
-        </Col>
-        <Col xs={24} md={12}>
-          <ContactCard
-            title={t("support.contactTitle")}
-            emailLabel={t("support.contactEmail")}
-            wechatLabel={t("support.contactWechat")}
-            hint={t("support.contactHint")}
-            missingText={t("support.contactMissing")}
-            style={{ height: "100%" }}
-          />
-        </Col>
-      </Row>
-      <Card
-        title={t("support.myTickets")}
-        extra={
-          <Space>
+    <PageContainer
+      width="narrow"
+      title={t("support.title")}
+      extra={
+        <Button type="primary" onClick={() => setCreating(true)}>
+          {t("support.create")}
+        </Button>
+      }
+    >
+      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <Row gutter={16}>
+          <Col xs={24} md={12}>
+            <SelfHelpCard />
+          </Col>
+          <Col xs={24} md={12}>
+            <ContactCard
+              title={t("support.contactTitle")}
+              emailLabel={t("support.contactEmail")}
+              wechatLabel={t("support.contactWechat")}
+              hint={t("support.contactHint")}
+              missingText={t("support.contactMissing")}
+              style={{ height: "100%" }}
+            />
+          </Col>
+        </Row>
+        <Card
+          title={t("support.myTickets")}
+          extra={
             <Select
               size="small"
               style={{ width: 150 }}
@@ -227,72 +232,69 @@ function SupportPage() {
                 }),
               ]}
             />
-            <Button type="primary" onClick={() => setCreating(true)}>
-              {t("support.create")}
-            </Button>
-          </Space>
-        }
-      >
-        <List
-          loading={tickets.isLoading}
-          dataSource={filtered}
-          locale={{
-            emptyText: tickets.isError ? (
-              // 失败不伪装成「暂无工单」
-              <TableErrorEmpty isError onRetry={() => void tickets.refetch()} />
-            ) : statusFilter ? (
-              // 筛选态空 ≠ 没有工单
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("support.noneWithStatus")} />
-            ) : (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("support.none")}>
-                <Button type="primary" onClick={() => setCreating(true)}>
-                  {t("support.create")}
-                </Button>
-              </Empty>
-            ),
-          }}
-          renderItem={(r) => {
-            const sm = metaOf(ticketStatusMap, r.status);
-            const cm = metaOf(ticketCategoryMap, r.category);
-            const open = () => void navigate({ to: "/support/$ticketId", params: { ticketId: String(r.id) } });
-            return (
-              <List.Item
-                style={{ cursor: "pointer" }}
-                onClick={open}
-                // 整行点击须有键盘语义
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    open();
-                  }
-                }}
-              >
-                <List.Item.Meta
-                  title={
-                    <Space size={8} wrap>
-                      <Typography.Text code>{r.ticket_no}</Typography.Text>
-                      {cm && <Tag>{t(cm.labelKey)}</Tag>}
-                      <span>{r.subject}</span>
-                    </Space>
-                  }
-                  description={formatDateTime(r.updated_at)}
-                />
-                <Badge status={sm?.badge ?? "default"} text={sm ? t(sm.labelKey) : r.status} />
-              </List.Item>
-            );
-          }}
-        />
-        <LoadMore
-          hasNextPage={tickets.hasNextPage}
-          loading={tickets.isFetchingNextPage}
-          isError={tickets.isFetchNextPageError}
-          loadedCount={filtered.length}
-          onLoadMore={() => void tickets.fetchNextPage()}
-        />
-      </Card>
-      <CreateTicketModal open={creating} onClose={closeCreate} />
-    </Space>
+          }
+        >
+          <List
+            loading={tickets.isLoading}
+            dataSource={filtered}
+            locale={{
+              emptyText: tickets.isError ? (
+                // 失败不伪装成「暂无工单」
+                <TableErrorEmpty isError onRetry={() => void tickets.refetch()} />
+              ) : statusFilter ? (
+                // 筛选态空 ≠ 没有工单
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("support.noneWithStatus")} />
+              ) : (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("support.none")}>
+                  <Button type="primary" onClick={() => setCreating(true)}>
+                    {t("support.create")}
+                  </Button>
+                </Empty>
+              ),
+            }}
+            renderItem={(r) => {
+              const sm = metaOf(ticketStatusMap, r.status);
+              const cm = metaOf(ticketCategoryMap, r.category);
+              const open = () => void navigate({ to: "/support/$ticketId", params: { ticketId: String(r.id) } });
+              return (
+                <List.Item
+                  style={{ cursor: "pointer" }}
+                  onClick={open}
+                  // 整行点击须有键盘语义
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      open();
+                    }
+                  }}
+                >
+                  <List.Item.Meta
+                    title={
+                      <Space size={8} wrap>
+                        <Typography.Text code>{r.ticket_no}</Typography.Text>
+                        {cm && <Tag>{t(cm.labelKey)}</Tag>}
+                        <span>{r.subject}</span>
+                      </Space>
+                    }
+                    description={formatDateTime(r.updated_at)}
+                  />
+                  <Badge status={sm?.badge ?? "default"} text={sm ? t(sm.labelKey) : r.status} />
+                </List.Item>
+              );
+            }}
+          />
+          <LoadMore
+            hasNextPage={tickets.hasNextPage}
+            loading={tickets.isFetchingNextPage}
+            isError={tickets.isFetchNextPageError}
+            loadedCount={filtered.length}
+            onLoadMore={() => void tickets.fetchNextPage()}
+          />
+        </Card>
+        <CreateTicketModal open={creating} onClose={closeCreate} />
+      </Space>
+    </PageContainer>
   );
 }

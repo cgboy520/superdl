@@ -17,7 +17,7 @@ import {
   POLL,
   skuVariant,
 } from "@superdl/ui";
-import { DataErrorAlert, GatedButton, PageHeader } from "@superdl/ui/components";
+import { DataErrorAlert, GatedButton, PageContainer } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { App, Button, Card, Checkbox, Col, Descriptions, Grid, Input, Row, Space, Steps, Typography } from "antd";
 import { useState } from "react";
@@ -489,191 +489,192 @@ function DeployPage() {
   );
 
   return (
-    // 不用 Space(ant-space-item 包装会破坏 sticky 结算条的包含块)
-    <div style={{ display: "flex", flexDirection: "column", gap: 16, width: "100%" }}>
-      <PageHeader title={t("services.deploy")} back={{ label: t("services.backToList"), onClick: onCancel }} />
-      {wide ? (
-        <Row gutter={16} wrap={false}>
-          <Col flex="200px">
-            <div style={{ position: "sticky", top: layout.scrollMarginTop }}>{steps}</div>
-          </Col>
-          <Col flex="auto" style={{ minWidth: 0 }}>
-            {sections}
-          </Col>
-        </Row>
-      ) : (
-        <>
-          {/* 窄屏:横向步骤条在顶,分段导航照样可用 */}
-          <Steps
-            size="small"
-            responsive={false}
-            current={firstIssueIndex >= 0 ? firstIssueIndex : SECTION_IDS.length - 1}
-            onChange={scrollTo}
-            items={[1, 2, 3, 4].map((n, i) => ({
-              title: t(`services.form.section${n}` as "services.form.section1"),
-              status: sectionIssues[i] ? (i === firstIssueIndex ? "process" : "error") : "finish",
-            }))}
-          />
-          {sections}
-        </>
-      )}
-
-      {walletQ.isError && <DataErrorAlert onRetry={() => void walletQ.refetch()} />}
-      <CheckoutBar
-        changeKey={sku ? `${sku.id}-${mode}-${periodCount}-${gpuCount}` : "none"}
-        summary={
-          sku
-            ? isCpu
-              ? t("create.summaryCpu", { vcpu: sku.vcpu, mem: sku.mem_gb })
-              : t("create.summary", {
-                  model: sku.gpu_model,
-                  count: gpuCount,
-                  vcpu: sku.vcpu * gpuCount,
-                  mem: sku.mem_gb * gpuCount,
-                })
-            : t("services.form.specNeeded")
-        }
-        notice={
-          !canSubmit && sku ? (
-            <Space size={8} wrap style={{ fontSize: fontSize.caption }}>
-              <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                {t("create.issuesTitle", { count: sectionIssues.filter((i) => i != null).length })}
-              </Typography.Text>
-              {sectionIssues.map((issue, i) =>
-                issue ? (
-                  <Button
-                    key={SECTION_IDS[i]}
-                    type="link"
-                    size="small"
-                    style={{ paddingInline: 0, fontSize: fontSize.caption }}
-                    onClick={() => scrollTo(i)}
-                  >
-                    {issue}
-                  </Button>
-                ) : null,
-              )}
-            </Space>
-          ) : undefined
-        }
-        breakdown={period && quote ? <PeriodQuoteRows quote={quote} gpuCount={gpuCount} cpu={isCpu} /> : undefined}
-        items={
-          period && quote
-            ? [
-                {
-                  label: t("period.costLabel", { period: t(periodMap[period].labelKey) }),
-                  value: fmt.formatPeriodPrice(quote.amount, period, periodCount),
-                },
-                ...(diskGb > 0 && diskDaily !== undefined
-                  ? [
-                      {
-                        label: t("create.diskCostLabel"),
-                        hint: t("create.dailyCostHint"),
-                        value: t("common.dailyApprox", { amount: diskDaily }),
-                      },
-                    ]
-                  : []),
-                {
-                  label: t("create.expiresAtLabel"),
-                  value: t("create.expiresAtApprox", { date: formatDate(expiresAt) }),
-                  muted: true,
-                },
-              ]
-            : [
-                {
-                  label: t("create.configCostLabel"),
-                  suffix: !sku ? undefined : isCpu ? t("sku.wholeMachine") : t("sku.timesCards", { count: gpuCount }),
-                  value:
-                    hourlyTotal === null ? (
-                      "--"
-                    ) : isSpot && sku ? (
-                      <SpotPriceInline baseHourly={sku.price_hourly} units={priceUnits} policy={spotPolicy} />
-                    ) : (
-                      formatHourlyPrice(hourlyTotal)
-                    ),
-                },
-                ...(diskGb > 0 && diskDaily !== undefined
-                  ? [
-                      {
-                        label: t("create.diskCostLabel"),
-                        hint: t("create.dailyCostHint"),
-                        value: t("common.dailyApprox", { amount: diskDaily }),
-                      },
-                    ]
-                  : []),
-              ]
-        }
-        detail={
-          unitHourly !== null && hourlyTotal !== null ? (
-            <Space orientation="vertical" size={4} style={{ maxWidth: 360 }}>
-              {period && quote ? (
-                <PeriodQuoteRows quote={quote} gpuCount={gpuCount} cpu={isCpu} />
-              ) : (
-                <span>
-                  {isCpu
-                    ? t("create.detailInstanceLineCpu", { total: formatHourlyPrice(hourlyTotal) })
-                    : t("create.detailInstanceLine", {
-                        unit: formatHourlyPrice(unitHourly),
-                        count: gpuCount,
-                        total: formatHourlyPrice(hourlyTotal),
-                      })}
-                </span>
-              )}
-              <span>
-                {diskGb > 0 && diskPriceGbMonth
-                  ? t("create.detailDiskLine", {
-                      size: diskGb,
-                      price: t("common.gbMonthPrice", { price: diskPriceGbMonth }),
-                    })
-                  : t("create.detailDiskNone")}
-              </span>
-              <Typography.Text type="secondary">
-                {period ? t("create.balanceNeedNotePeriod") : t("create.balanceNeedNote")}
-              </Typography.Text>
-            </Space>
-          ) : undefined
-        }
-        balance={wallet?.balance ?? null}
-        balanceReady={balanceReady}
-        actions={
+    <PageContainer title={t("services.deploy")} back={{ label: t("services.backToList"), onClick: onCancel }}>
+      {/* 不用 Space(ant-space-item 包装会破坏 sticky 结算条的包含块) */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 16, width: "100%" }}>
+        {wide ? (
+          <Row gutter={16} wrap={false}>
+            <Col flex="200px">
+              <div style={{ position: "sticky", top: layout.scrollMarginTop }}>{steps}</div>
+            </Col>
+            <Col flex="auto" style={{ minWidth: 0 }}>
+              {sections}
+            </Col>
+          </Row>
+        ) : (
           <>
-            <Button size="large" onClick={onCancel}>
-              {t("create.cancel")}
-            </Button>
-            {walletQ.isError ? (
-              <GatedButton type="primary" size="large" reason={t("services.form.walletQueryFailedRetry")}>
-                {submitLabel}
-              </GatedButton>
-            ) : !sku ? (
-              <GatedButton type="primary" size="large" reason={t("services.form.specNeeded")}>
-                {submitLabel}
-              </GatedButton>
-            ) : !balanceReady ? (
-              <Button type="primary" size="large" loading disabled>
-                {submitLabel}
-              </Button>
-            ) : enough ? (
-              <GatedButton
-                type="primary"
-                size="large"
-                reason={canSubmit ? undefined : firstIssue}
-                loading={pending}
-                onClick={submit}
-              >
-                {submitLabel}
-              </GatedButton>
-            ) : (
-              <Link to="/billing">
-                <Button type="primary" danger size="large">
-                  {t("create.notEnoughGoRecharge")}
-                </Button>
-              </Link>
-            )}
+            {/* 窄屏:横向步骤条在顶,分段导航照样可用 */}
+            <Steps
+              size="small"
+              responsive={false}
+              current={firstIssueIndex >= 0 ? firstIssueIndex : SECTION_IDS.length - 1}
+              onChange={scrollTo}
+              items={[1, 2, 3, 4].map((n, i) => ({
+                title: t(`services.form.section${n}` as "services.form.section1"),
+                status: sectionIssues[i] ? (i === firstIssueIndex ? "process" : "error") : "finish",
+              }))}
+            />
+            {sections}
           </>
-        }
-      />
+        )}
 
-      {gate.modal}
-      {leave.modal}
-    </div>
+        {walletQ.isError && <DataErrorAlert onRetry={() => void walletQ.refetch()} />}
+        <CheckoutBar
+          changeKey={sku ? `${sku.id}-${mode}-${periodCount}-${gpuCount}` : "none"}
+          summary={
+            sku
+              ? isCpu
+                ? t("create.summaryCpu", { vcpu: sku.vcpu, mem: sku.mem_gb })
+                : t("create.summary", {
+                    model: sku.gpu_model,
+                    count: gpuCount,
+                    vcpu: sku.vcpu * gpuCount,
+                    mem: sku.mem_gb * gpuCount,
+                  })
+              : t("services.form.specNeeded")
+          }
+          notice={
+            !canSubmit && sku ? (
+              <Space size={8} wrap style={{ fontSize: fontSize.caption }}>
+                <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                  {t("create.issuesTitle", { count: sectionIssues.filter((i) => i != null).length })}
+                </Typography.Text>
+                {sectionIssues.map((issue, i) =>
+                  issue ? (
+                    <Button
+                      key={SECTION_IDS[i]}
+                      type="link"
+                      size="small"
+                      style={{ paddingInline: 0, fontSize: fontSize.caption }}
+                      onClick={() => scrollTo(i)}
+                    >
+                      {issue}
+                    </Button>
+                  ) : null,
+                )}
+              </Space>
+            ) : undefined
+          }
+          breakdown={period && quote ? <PeriodQuoteRows quote={quote} gpuCount={gpuCount} cpu={isCpu} /> : undefined}
+          items={
+            period && quote
+              ? [
+                  {
+                    label: t("period.costLabel", { period: t(periodMap[period].labelKey) }),
+                    value: fmt.formatPeriodPrice(quote.amount, period, periodCount),
+                  },
+                  ...(diskGb > 0 && diskDaily !== undefined
+                    ? [
+                        {
+                          label: t("create.diskCostLabel"),
+                          hint: t("create.dailyCostHint"),
+                          value: t("common.dailyApprox", { amount: diskDaily }),
+                        },
+                      ]
+                    : []),
+                  {
+                    label: t("create.expiresAtLabel"),
+                    value: t("create.expiresAtApprox", { date: formatDate(expiresAt) }),
+                    muted: true,
+                  },
+                ]
+              : [
+                  {
+                    label: t("create.configCostLabel"),
+                    suffix: !sku ? undefined : isCpu ? t("sku.wholeMachine") : t("sku.timesCards", { count: gpuCount }),
+                    value:
+                      hourlyTotal === null ? (
+                        "--"
+                      ) : isSpot && sku ? (
+                        <SpotPriceInline baseHourly={sku.price_hourly} units={priceUnits} policy={spotPolicy} />
+                      ) : (
+                        formatHourlyPrice(hourlyTotal)
+                      ),
+                  },
+                  ...(diskGb > 0 && diskDaily !== undefined
+                    ? [
+                        {
+                          label: t("create.diskCostLabel"),
+                          hint: t("create.dailyCostHint"),
+                          value: t("common.dailyApprox", { amount: diskDaily }),
+                        },
+                      ]
+                    : []),
+                ]
+          }
+          detail={
+            unitHourly !== null && hourlyTotal !== null ? (
+              <Space orientation="vertical" size={4} style={{ maxWidth: 360 }}>
+                {period && quote ? (
+                  <PeriodQuoteRows quote={quote} gpuCount={gpuCount} cpu={isCpu} />
+                ) : (
+                  <span>
+                    {isCpu
+                      ? t("create.detailInstanceLineCpu", { total: formatHourlyPrice(hourlyTotal) })
+                      : t("create.detailInstanceLine", {
+                          unit: formatHourlyPrice(unitHourly),
+                          count: gpuCount,
+                          total: formatHourlyPrice(hourlyTotal),
+                        })}
+                  </span>
+                )}
+                <span>
+                  {diskGb > 0 && diskPriceGbMonth
+                    ? t("create.detailDiskLine", {
+                        size: diskGb,
+                        price: t("common.gbMonthPrice", { price: diskPriceGbMonth }),
+                      })
+                    : t("create.detailDiskNone")}
+                </span>
+                <Typography.Text type="secondary">
+                  {period ? t("create.balanceNeedNotePeriod") : t("create.balanceNeedNote")}
+                </Typography.Text>
+              </Space>
+            ) : undefined
+          }
+          balance={wallet?.balance ?? null}
+          balanceReady={balanceReady}
+          actions={
+            <>
+              <Button size="large" onClick={onCancel}>
+                {t("create.cancel")}
+              </Button>
+              {walletQ.isError ? (
+                <GatedButton type="primary" size="large" reason={t("services.form.walletQueryFailedRetry")}>
+                  {submitLabel}
+                </GatedButton>
+              ) : !sku ? (
+                <GatedButton type="primary" size="large" reason={t("services.form.specNeeded")}>
+                  {submitLabel}
+                </GatedButton>
+              ) : !balanceReady ? (
+                <Button type="primary" size="large" loading disabled>
+                  {submitLabel}
+                </Button>
+              ) : enough ? (
+                <GatedButton
+                  type="primary"
+                  size="large"
+                  reason={canSubmit ? undefined : firstIssue}
+                  loading={pending}
+                  onClick={submit}
+                >
+                  {submitLabel}
+                </GatedButton>
+              ) : (
+                <Link to="/billing">
+                  <Button type="primary" danger size="large">
+                    {t("create.notEnoughGoRecharge")}
+                  </Button>
+                </Link>
+              )}
+            </>
+          }
+        />
+
+        {gate.modal}
+        {leave.modal}
+      </div>
+    </PageContainer>
   );
 }

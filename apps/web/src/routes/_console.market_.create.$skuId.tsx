@@ -21,7 +21,7 @@ import {
   skuVariant,
   space,
 } from "@superdl/ui";
-import { DataErrorAlert, GatedButton, PageHeader } from "@superdl/ui/components";
+import { DataErrorAlert, GatedButton, PageContainer } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { Alert, App, Button, Card, Cascader, Input, Skeleton, Space, Table, Tabs, Typography } from "antd";
@@ -276,6 +276,7 @@ function CreatePage() {
       leave.bypass();
       void navigate({ to: "/market" });
     });
+  const back = { label: t("create.backToMarket"), onClick: onCancel };
 
   const doCreate = async () => {
     if (!imageRef || !sku) return;
@@ -359,26 +360,23 @@ function CreatePage() {
   // 规格三态:加载中骨架 / 加载失败可重试 / 真不存在才提示下架
   if (skusError && !skus) {
     return (
-      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-        <PageHeader title={pageTitle} />
+      <PageContainer title={pageTitle} back={back}>
         <DataErrorAlert onRetry={() => void refetchSkus()} />
-      </Space>
+      </PageContainer>
     );
   }
   if (!skus) {
     return (
-      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-        <PageHeader title={pageTitle} />
+      <PageContainer title={pageTitle} back={back}>
         <Card>
           <Skeleton active paragraph={{ rows: 6 }} loading={skusLoading} />
         </Card>
-      </Space>
+      </PageContainer>
     );
   }
   if (!sku) {
     return (
-      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-        <PageHeader title={pageTitle} />
+      <PageContainer title={pageTitle} back={back}>
         <Alert
           type="warning"
           showIcon
@@ -389,7 +387,7 @@ function CreatePage() {
             </Link>
           }
         />
-      </Space>
+      </PageContainer>
     );
   }
 
@@ -409,339 +407,339 @@ function CreatePage() {
   };
 
   return (
-    // 不用 Space(ant-space-item 包装会破坏 sticky 结算条的包含块)
-    <div style={{ display: "flex", flexDirection: "column", gap: space.lg, width: "100%" }}>
-      <PageHeader title={pageTitle} back={{ label: t("create.backToMarket"), onClick: onCancel }} />
-
-      {/* ① 基本信息:名称 + 已选规格回显 + GPU 数量 */}
-      <Card
-        id={ANCHOR.basic}
-        style={anchorStyle}
-        title={t("create.basicCard")}
-        extra={<Link to="/market">{t("create.changeSpec")}</Link>}
-      >
-        <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
-          <Space size={space.md} align="center" wrap>
-            <Typography.Text type="secondary">{t("create.nameLabel")}</Typography.Text>
-            <Input
-              placeholder={t("create.namePlaceholder")}
-              maxLength={64}
-              aria-label={t("create.nameLabel")}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              style={{ width: controlWidth.lg }}
-            />
-          </Space>
-          <Table<SkuMarketOut> size="small" rowKey="id" dataSource={[skuNN]} columns={columns} pagination={false} />
-          {/* 卡数选择受 available_count 约束:无库存档位禁用 + 提示。CPU 规格不带卡,整行不出 */}
-          {!isCpu && (
-            <ChipRow
-              label={t("market.chipGpuCount")}
-              value={gpuCount}
-              onChange={setGpuCount}
-              options={gpuOptions.map((n) => ({
-                value: n,
-                label: t("market.cardsUnit", { count: n }),
-                disabled: n > (skuNN.available_count ?? 0),
-                disabledReason: t("copy.noStockForGpuCount"),
-              }))}
-            />
-          )}
-        </Space>
-      </Card>
-
-      {/* ② 计费方式(风险摘要贴在 chip 下方,由 BillingModeCard 出) */}
-      <div id={ANCHOR.billing} style={anchorStyle}>
-        <BillingModeCard
-          value={mode}
-          onChange={setBillingMode}
-          periodEnabled={!periodBlocked}
-          spotEnabled={skuNN.spot_enabled}
-          count={periodCount}
-          onCountChange={setPeriodCount}
-        />
-      </div>
-
-      {/* ③ 镜像(必填):常用卡片 + 更多级联 / 自定义 */}
-      <Card id={ANCHOR.image} style={anchorStyle} title={<RequiredTitle>{t("create.imageCard")}</RequiredTitle>}>
-        <Tabs
-          activeKey={imageTab}
-          onChange={(k) => {
-            // 切 Tab 清另一侧的选择,当前生效的镜像只有一个来源
-            setImageTab(k as "platform" | "custom");
-            setImageTouched(true);
-            if (k === "custom") setPlatformImage(undefined);
-            else setCustomImage("");
-          }}
-          items={[
-            {
-              key: "platform",
-              label: t("create.tabPlatform"),
-              children: imagesQ.isError ? (
-                // 镜像清单加载失败不伪装成「没有可用镜像」
-                <DataErrorAlert onRetry={() => void imagesQ.refetch()} />
-              ) : (
-                <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
-                  <Space wrap size={space.sm}>
-                    {quickImages.map((img) => {
-                      const active = effectivePlatformImage?.[3] === img.image_ref;
-                      return (
-                        <Button
-                          key={img.image_ref}
-                          type={active ? "primary" : "default"}
-                          ghost={active}
-                          aria-pressed={active}
-                          onClick={() => pickQuick(img)}
-                        >
-                          {img.framework} {img.framework_version}
-                          <Typography.Text
-                            type="secondary"
-                            style={{ fontSize: fontSize.caption, marginInlineStart: 6 }}
-                          >
-                            {/^\d/.test(img.cuda_version) ? `CUDA ${img.cuda_version}` : img.cuda_version} · Py{" "}
-                            {img.python_version}
-                          </Typography.Text>
-                        </Button>
-                      );
-                    })}
-                    <Button type="link" onClick={() => setMoreImages((v) => !v)}>
-                      {moreImages ? t("create.lessImages") : t("create.moreImages")}
-                    </Button>
-                  </Space>
-                  {moreImages && (
-                    <Cascader
-                      style={{ width: "100%", maxWidth: 640 }}
-                      options={cascade}
-                      value={effectivePlatformImage}
-                      onChange={(v) => {
-                        setImageTouched(true);
-                        setPlatformImage(v);
-                      }}
-                      placeholder={t("create.cascadePlaceholder")}
-                      showSearch
-                    />
-                  )}
-                  {/* 选定后回显完整镜像地址与预热状态,便于核对 */}
-                  {selectedImage && (
-                    <Space size={space.sm} wrap>
-                      <Typography.Text code className="mono">
-                        {selectedImage.image_ref}
-                      </Typography.Text>
-                      <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                        {isCpu
-                          ? t("create.prewarmedNotForCpu")
-                          : selectedImage.is_prewarmed
-                            ? t("create.prewarmed")
-                            : t("create.notPrewarmed")}
-                      </Typography.Text>
-                    </Space>
-                  )}
-                </Space>
-              ),
-            },
-            {
-              key: "custom",
-              label: t("create.tabCustom"),
-              children: (
-                <Space orientation="vertical" style={{ width: "100%" }}>
-                  <Input
-                    placeholder="registry.example.com/your/image:tag"
-                    aria-label={t("create.tabCustom")}
-                    value={customImage}
-                    onChange={(e) => setCustomImage(e.target.value)}
-                    status={customInvalid ? "error" : undefined}
-                    className="mono"
-                  />
-                  {customInvalid && (
-                    <Typography.Text type="danger">{tErr("orchestrator.imageRefNotPinned")}</Typography.Text>
-                  )}
-                  <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                    {t("create.customImageHint")}
-                  </Typography.Text>
-                </Space>
-              ),
-            },
-          ]}
-        />
-      </Card>
-
-      {/* ④ 数据盘(可选) */}
-      <DataDiskCard
-        id={ANCHOR.disk}
-        mode={diskMode}
-        onModeChange={setDiskMode}
-        newName={newDiskName}
-        onNewNameChange={setNewDiskName}
-        newGb={diskGbValue}
-        onNewGbChange={setNewDiskGb}
-        existingId={existingDiskId}
-        onExistingIdChange={setExistingDiskId}
-      />
-
-      {/* ⑤ SSH 密钥(必填) */}
-      <Card id={ANCHOR.ssh} style={anchorStyle} title={<RequiredTitle>{t("create.sshCard")}</RequiredTitle>}>
-        <SshKeyPicker value={keyIds} onChange={setKeyIds} />
-      </Card>
-
-      {/* 余额查询失败绝不静默转圈:结算条上方给可重试错误条,CTA 改普通禁用态 */}
-      {walletQ.isError && <DataErrorAlert onRetry={() => void walletQ.refetch()} />}
-      <CheckoutBar
-        notice={
-          <>
-            {diskCreatedButFailed && (
-              <Alert
-                type="warning"
-                showIcon
-                title={t("copy.diskCreatedButInstanceFailed")}
-                description={t("create.diskCreatedReuse", { name: diskCreatedButFailed.name })}
-                action={
-                  <Link to="/storage">
-                    <Button size="small">{t("create.goStorage")}</Button>
-                  </Link>
-                }
+    <PageContainer title={pageTitle} back={back}>
+      {/* 不用 Space(ant-space-item 包装会破坏 sticky 结算条的包含块) */}
+      <div style={{ display: "flex", flexDirection: "column", gap: space.lg, width: "100%" }}>
+        {/* ① 基本信息:名称 + 已选规格回显 + GPU 数量 */}
+        <Card
+          id={ANCHOR.basic}
+          style={anchorStyle}
+          title={t("create.basicCard")}
+          extra={<Link to="/market">{t("create.changeSpec")}</Link>}
+        >
+          <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
+            <Space size={space.md} align="center" wrap>
+              <Typography.Text type="secondary">{t("create.nameLabel")}</Typography.Text>
+              <Input
+                placeholder={t("create.namePlaceholder")}
+                maxLength={64}
+                aria-label={t("create.nameLabel")}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                style={{ width: controlWidth.lg }}
+              />
+            </Space>
+            <Table<SkuMarketOut> size="small" rowKey="id" dataSource={[skuNN]} columns={columns} pagination={false} />
+            {/* 卡数选择受 available_count 约束:无库存档位禁用 + 提示。CPU 规格不带卡,整行不出 */}
+            {!isCpu && (
+              <ChipRow
+                label={t("market.chipGpuCount")}
+                value={gpuCount}
+                onChange={setGpuCount}
+                options={gpuOptions.map((n) => ({
+                  value: n,
+                  label: t("market.cardsUnit", { count: n }),
+                  disabled: n > (skuNN.available_count ?? 0),
+                  disabledReason: t("copy.noStockForGpuCount"),
+                }))}
               />
             )}
-            {issues.length > 0 && (
-              <Space size={space.sm} wrap style={{ fontSize: fontSize.caption }}>
-                <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                  {t("create.issuesTitle", { count: issues.length })}
-                </Typography.Text>
-                {issues.map((i) => (
-                  <Button
-                    key={i.key}
-                    type="link"
-                    size="small"
-                    style={{ paddingInline: 0, fontSize: fontSize.caption }}
-                    onClick={() => scrollTo(i.anchor)}
-                  >
-                    {i.label}
-                  </Button>
-                ))}
-              </Space>
-            )}
-          </>
-        }
-        summary={
-          isCpu
-            ? t("create.summaryCpu", { vcpu: skuNN.vcpu, mem: skuNN.mem_gb })
-            : t("create.summary", {
-                model: skuNN.gpu_model,
-                count: gpuCount,
-                vcpu: skuNN.vcpu * gpuCount,
-                mem: skuNN.mem_gb * gpuCount,
-              })
-        }
-        items={
-          period && quote
-            ? [
-                // 包周期:主数字 = 周期费用;数据盘一栏只在真挂了盘时出;到期时间降级为正文
-                {
-                  label: t("period.costLabel", { period: t(periodMap[period].labelKey) }),
-                  value: fmt.formatPeriodPrice(quote.amount, period, periodCount),
-                },
-                ...(diskGb > 0 && diskDaily !== undefined
-                  ? [
-                      {
-                        label: t("create.diskCostLabel"),
-                        hint: t("create.dailyCostHint"),
-                        value: t("common.dailyApprox", { amount: diskDaily }),
-                      },
-                    ]
-                  : []),
-                {
-                  label: t("create.expiresAtLabel"),
-                  value: t("create.expiresAtApprox", { date: formatDate(expiresAt) }),
-                  muted: true,
-                },
-              ]
-            : [
-                {
-                  label: t("create.configCostLabel"),
-                  suffix: isCpu ? t("sku.wholeMachine") : t("sku.timesCards", { count: gpuCount }),
-                  value: isSpot ? (
-                    <SpotPriceInline baseHourly={skuNN.price_hourly} units={priceUnits} policy={spotPolicy} />
-                  ) : (
-                    formatHourlyPrice(hourlyTotal)
-                  ),
-                },
-                ...(diskGb > 0 && diskDaily !== undefined
-                  ? [
-                      {
-                        label: t("create.diskCostLabel"),
-                        hint: t("create.dailyCostHint"),
-                        value: t("common.dailyApprox", { amount: diskDaily }),
-                      },
-                    ]
-                  : []),
-              ]
-        }
-        breakdown={period && quote ? <PeriodQuoteRows quote={quote} gpuCount={gpuCount} cpu={isCpu} /> : undefined}
-        detail={
-          <Space orientation="vertical" size={4} style={{ maxWidth: 360 }}>
-            {period && quote ? (
-              <PeriodQuoteRows quote={quote} gpuCount={gpuCount} cpu={isCpu} />
-            ) : (
-              <span>
-                {/* 竞价档摊开折后单价,与结算条大字同数 */}
-                {isCpu
-                  ? t("create.detailInstanceLineCpu", { total: formatHourlyPrice(hourlyTotal) })
-                  : t("create.detailInstanceLine", {
-                      unit: formatHourlyPrice(unitHourly),
-                      count: gpuCount,
-                      total: formatHourlyPrice(hourlyTotal),
-                    })}
-              </span>
-            )}
-            <span>
-              {diskGb > 0 && diskPriceGbMonth
-                ? t("create.detailDiskLine", {
-                    size: diskGb,
-                    price: t("common.gbMonthPrice", { price: diskPriceGbMonth }),
-                  })
-                : t("create.detailDiskNone")}
-            </span>
-            <Typography.Text type="secondary">
-              {period ? t("create.balanceNeedNotePeriod") : t("create.balanceNeedNote")}
-            </Typography.Text>
           </Space>
-        }
-        balance={wallet?.balance ?? null}
-        balanceReady={balanceReady}
-        actions={
-          <>
-            <Button size="large" onClick={onCancel}>
-              {t("create.cancel")}
-            </Button>
-            {walletQ.isError ? (
-              // 余额查询失败:CTA 门控并提示原因
-              <GatedButton type="primary" size="large" reason={t("create.walletQueryFailedRetry")}>
-                {submitLabel}
-              </GatedButton>
-            ) : !balanceReady ? (
-              // 余额未就绪:主 CTA 保持 primary + loading
-              <Button type="primary" size="large" loading disabled>
-                {submitLabel}
+        </Card>
+
+        {/* ② 计费方式(风险摘要贴在 chip 下方,由 BillingModeCard 出) */}
+        <div id={ANCHOR.billing} style={anchorStyle}>
+          <BillingModeCard
+            value={mode}
+            onChange={setBillingMode}
+            periodEnabled={!periodBlocked}
+            spotEnabled={skuNN.spot_enabled}
+            count={periodCount}
+            onCountChange={setPeriodCount}
+          />
+        </div>
+
+        {/* ③ 镜像(必填):常用卡片 + 更多级联 / 自定义 */}
+        <Card id={ANCHOR.image} style={anchorStyle} title={<RequiredTitle>{t("create.imageCard")}</RequiredTitle>}>
+          <Tabs
+            activeKey={imageTab}
+            onChange={(k) => {
+              // 切 Tab 清另一侧的选择,当前生效的镜像只有一个来源
+              setImageTab(k as "platform" | "custom");
+              setImageTouched(true);
+              if (k === "custom") setPlatformImage(undefined);
+              else setCustomImage("");
+            }}
+            items={[
+              {
+                key: "platform",
+                label: t("create.tabPlatform"),
+                children: imagesQ.isError ? (
+                  // 镜像清单加载失败不伪装成「没有可用镜像」
+                  <DataErrorAlert onRetry={() => void imagesQ.refetch()} />
+                ) : (
+                  <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
+                    <Space wrap size={space.sm}>
+                      {quickImages.map((img) => {
+                        const active = effectivePlatformImage?.[3] === img.image_ref;
+                        return (
+                          <Button
+                            key={img.image_ref}
+                            type={active ? "primary" : "default"}
+                            ghost={active}
+                            aria-pressed={active}
+                            onClick={() => pickQuick(img)}
+                          >
+                            {img.framework} {img.framework_version}
+                            <Typography.Text
+                              type="secondary"
+                              style={{ fontSize: fontSize.caption, marginInlineStart: 6 }}
+                            >
+                              {/^\d/.test(img.cuda_version) ? `CUDA ${img.cuda_version}` : img.cuda_version} · Py{" "}
+                              {img.python_version}
+                            </Typography.Text>
+                          </Button>
+                        );
+                      })}
+                      <Button type="link" onClick={() => setMoreImages((v) => !v)}>
+                        {moreImages ? t("create.lessImages") : t("create.moreImages")}
+                      </Button>
+                    </Space>
+                    {moreImages && (
+                      <Cascader
+                        style={{ width: "100%", maxWidth: 640 }}
+                        options={cascade}
+                        value={effectivePlatformImage}
+                        onChange={(v) => {
+                          setImageTouched(true);
+                          setPlatformImage(v);
+                        }}
+                        placeholder={t("create.cascadePlaceholder")}
+                        showSearch
+                      />
+                    )}
+                    {/* 选定后回显完整镜像地址与预热状态,便于核对 */}
+                    {selectedImage && (
+                      <Space size={space.sm} wrap>
+                        <Typography.Text code className="mono">
+                          {selectedImage.image_ref}
+                        </Typography.Text>
+                        <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                          {isCpu
+                            ? t("create.prewarmedNotForCpu")
+                            : selectedImage.is_prewarmed
+                              ? t("create.prewarmed")
+                              : t("create.notPrewarmed")}
+                        </Typography.Text>
+                      </Space>
+                    )}
+                  </Space>
+                ),
+              },
+              {
+                key: "custom",
+                label: t("create.tabCustom"),
+                children: (
+                  <Space orientation="vertical" style={{ width: "100%" }}>
+                    <Input
+                      placeholder="registry.example.com/your/image:tag"
+                      aria-label={t("create.tabCustom")}
+                      value={customImage}
+                      onChange={(e) => setCustomImage(e.target.value)}
+                      status={customInvalid ? "error" : undefined}
+                      className="mono"
+                    />
+                    {customInvalid && (
+                      <Typography.Text type="danger">{tErr("orchestrator.imageRefNotPinned")}</Typography.Text>
+                    )}
+                    <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                      {t("create.customImageHint")}
+                    </Typography.Text>
+                  </Space>
+                ),
+              },
+            ]}
+          />
+        </Card>
+
+        {/* ④ 数据盘(可选) */}
+        <DataDiskCard
+          id={ANCHOR.disk}
+          mode={diskMode}
+          onModeChange={setDiskMode}
+          newName={newDiskName}
+          onNewNameChange={setNewDiskName}
+          newGb={diskGbValue}
+          onNewGbChange={setNewDiskGb}
+          existingId={existingDiskId}
+          onExistingIdChange={setExistingDiskId}
+        />
+
+        {/* ⑤ SSH 密钥(必填) */}
+        <Card id={ANCHOR.ssh} style={anchorStyle} title={<RequiredTitle>{t("create.sshCard")}</RequiredTitle>}>
+          <SshKeyPicker value={keyIds} onChange={setKeyIds} />
+        </Card>
+
+        {/* 余额查询失败绝不静默转圈:结算条上方给可重试错误条,CTA 改普通禁用态 */}
+        {walletQ.isError && <DataErrorAlert onRetry={() => void walletQ.refetch()} />}
+        <CheckoutBar
+          notice={
+            <>
+              {diskCreatedButFailed && (
+                <Alert
+                  type="warning"
+                  showIcon
+                  title={t("copy.diskCreatedButInstanceFailed")}
+                  description={t("create.diskCreatedReuse", { name: diskCreatedButFailed.name })}
+                  action={
+                    <Link to="/storage">
+                      <Button size="small">{t("create.goStorage")}</Button>
+                    </Link>
+                  }
+                />
+              )}
+              {issues.length > 0 && (
+                <Space size={space.sm} wrap style={{ fontSize: fontSize.caption }}>
+                  <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                    {t("create.issuesTitle", { count: issues.length })}
+                  </Typography.Text>
+                  {issues.map((i) => (
+                    <Button
+                      key={i.key}
+                      type="link"
+                      size="small"
+                      style={{ paddingInline: 0, fontSize: fontSize.caption }}
+                      onClick={() => scrollTo(i.anchor)}
+                    >
+                      {i.label}
+                    </Button>
+                  ))}
+                </Space>
+              )}
+            </>
+          }
+          summary={
+            isCpu
+              ? t("create.summaryCpu", { vcpu: skuNN.vcpu, mem: skuNN.mem_gb })
+              : t("create.summary", {
+                  model: skuNN.gpu_model,
+                  count: gpuCount,
+                  vcpu: skuNN.vcpu * gpuCount,
+                  mem: skuNN.mem_gb * gpuCount,
+                })
+          }
+          items={
+            period && quote
+              ? [
+                  // 包周期:主数字 = 周期费用;数据盘一栏只在真挂了盘时出;到期时间降级为正文
+                  {
+                    label: t("period.costLabel", { period: t(periodMap[period].labelKey) }),
+                    value: fmt.formatPeriodPrice(quote.amount, period, periodCount),
+                  },
+                  ...(diskGb > 0 && diskDaily !== undefined
+                    ? [
+                        {
+                          label: t("create.diskCostLabel"),
+                          hint: t("create.dailyCostHint"),
+                          value: t("common.dailyApprox", { amount: diskDaily }),
+                        },
+                      ]
+                    : []),
+                  {
+                    label: t("create.expiresAtLabel"),
+                    value: t("create.expiresAtApprox", { date: formatDate(expiresAt) }),
+                    muted: true,
+                  },
+                ]
+              : [
+                  {
+                    label: t("create.configCostLabel"),
+                    suffix: isCpu ? t("sku.wholeMachine") : t("sku.timesCards", { count: gpuCount }),
+                    value: isSpot ? (
+                      <SpotPriceInline baseHourly={skuNN.price_hourly} units={priceUnits} policy={spotPolicy} />
+                    ) : (
+                      formatHourlyPrice(hourlyTotal)
+                    ),
+                  },
+                  ...(diskGb > 0 && diskDaily !== undefined
+                    ? [
+                        {
+                          label: t("create.diskCostLabel"),
+                          hint: t("create.dailyCostHint"),
+                          value: t("common.dailyApprox", { amount: diskDaily }),
+                        },
+                      ]
+                    : []),
+                ]
+          }
+          breakdown={period && quote ? <PeriodQuoteRows quote={quote} gpuCount={gpuCount} cpu={isCpu} /> : undefined}
+          detail={
+            <Space orientation="vertical" size={4} style={{ maxWidth: 360 }}>
+              {period && quote ? (
+                <PeriodQuoteRows quote={quote} gpuCount={gpuCount} cpu={isCpu} />
+              ) : (
+                <span>
+                  {/* 竞价档摊开折后单价,与结算条大字同数 */}
+                  {isCpu
+                    ? t("create.detailInstanceLineCpu", { total: formatHourlyPrice(hourlyTotal) })
+                    : t("create.detailInstanceLine", {
+                        unit: formatHourlyPrice(unitHourly),
+                        count: gpuCount,
+                        total: formatHourlyPrice(hourlyTotal),
+                      })}
+                </span>
+              )}
+              <span>
+                {diskGb > 0 && diskPriceGbMonth
+                  ? t("create.detailDiskLine", {
+                      size: diskGb,
+                      price: t("common.gbMonthPrice", { price: diskPriceGbMonth }),
+                    })
+                  : t("create.detailDiskNone")}
+              </span>
+              <Typography.Text type="secondary">
+                {period ? t("create.balanceNeedNotePeriod") : t("create.balanceNeedNote")}
+              </Typography.Text>
+            </Space>
+          }
+          balance={wallet?.balance ?? null}
+          balanceReady={balanceReady}
+          actions={
+            <>
+              <Button size="large" onClick={onCancel}>
+                {t("create.cancel")}
               </Button>
-            ) : enough ? (
-              <Button type="primary" size="large" disabled={!canSubmit} loading={pending} onClick={gate.submit}>
-                {phase === "disk"
-                  ? t("create.phaseDisk")
-                  : phase === "instance"
-                    ? t("create.phaseInstance")
-                    : submitLabel}
-              </Button>
-            ) : (
-              <Link to="/billing">
-                <Button type="primary" danger size="large">
-                  {t("create.notEnoughGoRecharge")}
+              {walletQ.isError ? (
+                // 余额查询失败:CTA 门控并提示原因
+                <GatedButton type="primary" size="large" reason={t("create.walletQueryFailedRetry")}>
+                  {submitLabel}
+                </GatedButton>
+              ) : !balanceReady ? (
+                // 余额未就绪:主 CTA 保持 primary + loading
+                <Button type="primary" size="large" loading disabled>
+                  {submitLabel}
                 </Button>
-              </Link>
-            )}
-          </>
-        }
-      />
-      {gate.modal}
-      {leave.modal}
-    </div>
+              ) : enough ? (
+                <Button type="primary" size="large" disabled={!canSubmit} loading={pending} onClick={gate.submit}>
+                  {phase === "disk"
+                    ? t("create.phaseDisk")
+                    : phase === "instance"
+                      ? t("create.phaseInstance")
+                      : submitLabel}
+                </Button>
+              ) : (
+                <Link to="/billing">
+                  <Button type="primary" danger size="large">
+                    {t("create.notEnoughGoRecharge")}
+                  </Button>
+                </Link>
+              )}
+            </>
+          }
+        />
+        {gate.modal}
+        {leave.modal}
+      </div>
+    </PageContainer>
   );
 }

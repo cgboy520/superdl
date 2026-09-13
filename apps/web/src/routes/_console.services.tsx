@@ -1,6 +1,6 @@
-/** 在线服务列表:名称 / 状态 / 服务端点 / 规格 / 版本 / 费用 / 创建时间 / 操作;筛选与搜索入 URL(replace)。列表不轮询;deploying / stopping / releasing 逐条 5s 轮询,迁移即回刷;unready 不算过渡态。 */
+/** 在线服务列表:页头(标题 + 策略 ? tooltip + 主 CTA)→ FilterBar(状态 + 搜索,入 URL replace)→ 表格(名称 / 状态 / 服务端点 / 规格 / 版本 / 费用 / 创建时间 / 操作)。
+ *  列表不轮询;deploying / stopping / releasing 逐条 5s 轮询,迁移即回刷;unready 不算过渡态。进详情走名称链接,不做双击行。 */
 
-import { POLL } from "@superdl/ui";
 import { QuestionCircleOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import type { ServiceOut } from "@superdl/api-client";
 import {
@@ -8,14 +8,16 @@ import {
   fontSize,
   formatDateTime,
   isServiceStatus,
+  layout,
   localToday,
   metaOf,
+  POLL,
   SERVICE_FILTER_STATUSES,
   serviceStatusMap,
 } from "@superdl/ui";
-import { LoadMore, PageHeader, TableErrorEmpty } from "@superdl/ui/components";
+import { EmptyState, FilterBar, LoadMore, Mono, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Button, Input, Select, Space, Table, Tag, theme, Tooltip, Typography } from "antd";
+import { Button, Input, Select, Skeleton, Space, Table, Tag, theme, Tooltip, Typography } from "antd";
 import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -95,96 +97,129 @@ function ServicesPage() {
       replace: true,
     });
 
+  const hasFilter = Boolean(status) || keyword.trim() !== "";
+  // 已提交到 URL 的检索词也算筛选态:输入清空后 300ms 内行仍是旧结果,不能误判成真空态
+  const filtered = hasFilter || Boolean(q);
+  const clearFilters = () => {
+    // 检索词经防抖回写 URL(与输入框清空同一路径);状态直接清
+    setKeyword("");
+    setSearch({ status: undefined });
+  };
+  // 计数只在全部加载完才显示
+  const count = isLoading || isError || hasNextPage ? undefined : rows.length;
+
+  // 错误态 > 筛选无结果 > 真空态;首载给骨架
   const emptyText = isError ? (
     <TableErrorEmpty isError onRetry={() => void refetch()} />
-  ) : keyword || status ? (
-    t("services.noMatch")
+  ) : isLoading ? (
+    <Skeleton active title={false} paragraph={{ rows: 3 }} />
+  ) : filtered ? (
+    <EmptyState
+      scene="search"
+      secondaryAction={
+        <Button size="small" onClick={clearFilters}>
+          {t("shared:filter.clear")}
+        </Button>
+      }
+    />
   ) : (
-    <TableErrorEmpty
-      isError={false}
+    <EmptyState
+      scene="list"
+      description={
+        <>
+          {t("services.emptyTitle")}
+          <br />
+          {t("services.emptyHint")}
+        </>
+      }
       action={
         <Link to="/services/new">
           <Button type="primary">{t("services.deploy")}</Button>
         </Link>
       }
-    >
-      <Space orientation="vertical" size={4}>
-        <Typography.Text strong>{t("services.emptyTitle")}</Typography.Text>
-        <Typography.Text type="secondary">{t("services.emptyHint")}</Typography.Text>
-      </Space>
-    </TableErrorEmpty>
+    />
   );
 
   return (
-    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-      {/* 停机 / 冻结策略不做常驻条:放标题旁 tooltip(ui-ux-spec §1 规则 1) */}
-      <PageHeader
-        title={t("services.title")}
-        tags={
-          <Tooltip
-            title={
-              policies?.freeze_grace_hours !== undefined
-                ? t("services.policyBanner", { hours: policies.freeze_grace_hours })
-                : t("services.policyBannerFallback")
-            }
-          >
-            <QuestionCircleOutlined style={{ color: token.colorTextSecondary, cursor: "help" }} />
-          </Tooltip>
-        }
-        extra={
-          <>
-            <Select
-              allowClear
-              style={{ width: controlWidth.sm }}
-              placeholder={t("services.statusFilter")}
-              aria-label={t("services.statusFilter")}
-              value={status ?? null}
-              onChange={(v: string | null) => setSearch({ status: v ?? undefined })}
-              options={SERVICE_FILTER_STATUSES.map((s) => {
-                const meta = metaOf(serviceStatusMap, s);
-                // 裸状态码不进 t()(extract 会当成新键)
-                return { value: s, label: meta ? t(meta.labelKey) : s };
-              })}
-            />
-            <Input
-              allowClear
-              prefix={<SearchOutlined />}
-              placeholder={t("services.searchPlaceholder")}
-              aria-label={t("services.searchPlaceholder")}
-              data-search-input
-              style={{ width: controlWidth.md }}
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-            />
-            <Button
-              icon={<ReloadOutlined />}
-              aria-label={t("instances.refreshList")}
-              loading={isRefetching}
-              onClick={() => void refetch()}
-            />
-            <Link to="/services/new">
-              <Button type="primary">{t("services.deploy")}</Button>
-            </Link>
-          </>
-        }
-      />
+    <PageContainer
+      title={t("services.title")}
+      // 停机 / 冻结策略不做常驻条:放标题旁 tooltip(ui-ux-spec §1 规则 1);宿主可聚焦、可点
+      tags={
+        <Tooltip
+          trigger={["hover", "focus", "click"]}
+          title={
+            policies?.freeze_grace_hours !== undefined
+              ? t("services.policyBanner", { hours: policies.freeze_grace_hours })
+              : t("services.policyBannerFallback")
+          }
+        >
+          <QuestionCircleOutlined
+            tabIndex={0}
+            className="focus-ring"
+            aria-label={t("services.policyHelp")}
+            style={{ color: token.colorTextSecondary, cursor: "help" }}
+          />
+        </Tooltip>
+      }
+      extra={
+        <>
+          <Button
+            icon={<ReloadOutlined />}
+            aria-label={t("instances.refreshList")}
+            loading={isRefetching}
+            onClick={() => void refetch()}
+          />
+          <Link to="/services/new">
+            <Button type="primary">{t("services.deploy")}</Button>
+          </Link>
+        </>
+      }
+    >
+      <FilterBar hasFilter={hasFilter} onClear={clearFilters} count={count}>
+        <Select
+          allowClear
+          style={{ width: controlWidth.sm }}
+          placeholder={t("services.statusFilter")}
+          aria-label={t("services.statusFilter")}
+          value={status ?? null}
+          onChange={(v: string | null) => setSearch({ status: v ?? undefined })}
+          options={SERVICE_FILTER_STATUSES.map((s) => {
+            const meta = metaOf(serviceStatusMap, s);
+            // 裸状态码不进 t()(extract 会当成新键)
+            return { value: s, label: meta ? t(meta.labelKey) : s };
+          })}
+        />
+        <Input
+          allowClear
+          prefix={<SearchOutlined />}
+          placeholder={t("services.searchPlaceholder")}
+          aria-label={t("services.searchPlaceholder")}
+          data-search-input
+          style={{ width: controlWidth.md }}
+          value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
+        />
+      </FilterBar>
       <Table<ServiceOut>
         rowKey="slug"
         loading={isLoading}
         dataSource={rows}
         pagination={false}
         scroll={{ x: 1080 }}
+        sticky={{ offsetHeader: layout.topBarHeight }}
         locale={{ emptyText }}
         columns={[
           {
             title: t("services.colName"),
+            width: 220,
+            fixed: "left",
             render: (_, r) => (
               <Space orientation="vertical" size={0}>
                 <Link to="/services/$slug" params={{ slug: r.slug }}>
                   {r.name}
                 </Link>
-                <Typography.Text type="secondary" code style={{ fontSize: fontSize.caption }}>
-                  {r.slug}
+                <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                  <Mono>{r.slug}</Mono>
                 </Typography.Text>
               </Space>
             ),
@@ -246,12 +281,10 @@ function ServicesPage() {
           {
             title: t("services.colActions"),
             fixed: "right",
+            width: 220,
             render: (_, r) => <ServiceActions service={r} />,
           },
         ]}
-        onRow={(r) => ({
-          onDoubleClick: () => void navigate({ to: "/services/$slug", params: { slug: r.slug } }),
-        })}
       />
       <LoadMore
         hasNextPage={hasNextPage}
@@ -260,6 +293,6 @@ function ServicesPage() {
         loadedCount={rows.length}
         onLoadMore={() => void fetchNextPage()}
       />
-    </Space>
+    </PageContainer>
   );
 }

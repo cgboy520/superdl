@@ -2,7 +2,14 @@
 
 import type { TokenPairOut } from "@superdl/api-client";
 import { deletionStatusMap, fontSize, formatDateTime, maskPhone, metaOf } from "@superdl/ui";
-import { DataErrorAlert, GatedButton, TableErrorEmpty, TypeConfirmModal, useConfirm } from "@superdl/ui/components";
+import {
+  DataErrorAlert,
+  GatedButton,
+  PageContainer,
+  TableErrorEmpty,
+  TypeConfirmModal,
+  useConfirm,
+} from "@superdl/ui/components";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { App, Alert, Button, Card, Form, Input, Modal, Skeleton, Space, Table, Tag, Typography } from "antd";
@@ -54,150 +61,152 @@ function SettingsPage() {
   useHashScroll({ highlight: true });
 
   return (
-    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-      <Typography.Title level={4} style={{ margin: 0 }}>
-        {t("settings.title")}
-      </Typography.Title>
-
-      <Card
-        id="ssh"
-        title={t("settings.sshCard")}
-        extra={<Typography.Text type="secondary">{t("copy.sshKeyOnly")}</Typography.Text>}
-      >
-        <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-          <Table
-            rowKey="id"
-            size="small"
-            loading={isLoading}
-            pagination={false}
-            scroll={{ x: 640 }}
-            dataSource={keys ?? []}
-            locale={{
-              emptyText: isError ? <TableErrorEmpty isError onRetry={() => void refetch()} /> : t("settings.noKeys"),
-            }}
-            columns={[
-              { title: t("storage.nameLabel"), dataIndex: "name" },
-              {
-                title: t("settings.colFingerprint"),
-                render: (_, r) => <Typography.Text code>{r.fingerprint}</Typography.Text>,
-              },
-              { title: t("settings.colAddedAt"), render: (_, r) => formatDateTime(r.created_at) },
-              {
-                title: t("storage.colActions"),
-                render: (_, r) => (
-                  // L1 确认(可逆、影响面 = 1),危险按钮配红色确认
-                  <Button
-                    size="small"
-                    danger
-                    onClick={() =>
-                      confirm({
-                        title: t("settings.deleteKeyConfirm"),
-                        consequences: [t("settings.deleteKeyBody", { name: r.name })],
-                        okText: t("storage.delete"),
-                        danger: true,
-                        onOk: async () => {
-                          await delKey.mutateAsync(r.id);
-                        },
-                      })
-                    }
-                  >
-                    {t("storage.delete")}
-                  </Button>
-                ),
-              },
-            ]}
-          />
-          <Form form={form} layout="vertical" onFinish={(v: { name: string; public_key: string }) => addKey.mutate(v)}>
-            <Form.Item
-              name="name"
-              label={t("storage.nameLabel")}
-              rules={[{ required: true, message: t("settings.keyNameHint") }]}
-            >
-              <Input style={{ width: 240 }} maxLength={64} />
-            </Form.Item>
-            <Form.Item
-              name="public_key"
-              label={t("settings.keyContentLabel")}
-              rules={[
-                { required: true, message: t("settings.keyContentRequired") },
+    <PageContainer width="narrow" title={t("settings.title")}>
+      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <Card
+          id="ssh"
+          title={t("settings.sshCard")}
+          extra={<Typography.Text type="secondary">{t("copy.sshKeyOnly")}</Typography.Text>}
+        >
+          <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+            <Table
+              rowKey="id"
+              size="small"
+              loading={isLoading}
+              pagination={false}
+              scroll={{ x: 640 }}
+              dataSource={keys ?? []}
+              locale={{
+                emptyText: isError ? <TableErrorEmpty isError onRetry={() => void refetch()} /> : t("settings.noKeys"),
+              }}
+              columns={[
+                { title: t("storage.nameLabel"), dataIndex: "name" },
                 {
-                  pattern: /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521))\s+\S+/,
-                  message: t("settings.keyFormatHint"),
+                  title: t("settings.colFingerprint"),
+                  render: (_, r) => <Typography.Text code>{r.fingerprint}</Typography.Text>,
+                },
+                { title: t("settings.colAddedAt"), render: (_, r) => formatDateTime(r.created_at) },
+                {
+                  title: t("storage.colActions"),
+                  render: (_, r) => (
+                    // L1 确认(可逆、影响面 = 1),危险按钮配红色确认
+                    <Button
+                      size="small"
+                      danger
+                      onClick={() =>
+                        confirm({
+                          title: t("settings.deleteKeyConfirm"),
+                          consequences: [t("settings.deleteKeyBody", { name: r.name })],
+                          okText: t("storage.delete"),
+                          danger: true,
+                          onOk: async () => {
+                            await delKey.mutateAsync(r.id);
+                          },
+                        })
+                      }
+                    >
+                      {t("storage.delete")}
+                    </Button>
+                  ),
                 },
               ]}
+            />
+            <Form
+              form={form}
+              layout="vertical"
+              onFinish={(v: { name: string; public_key: string }) => addKey.mutate(v)}
             >
-              <Input.TextArea rows={3} placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5… you@host" />
-            </Form.Item>
-            <Button type="primary" htmlType="submit" loading={addKey.isPending}>
-              {t("create.addKey")}
-            </Button>
-          </Form>
-        </Space>
-      </Card>
-
-      <Card title={t("settings.notifyCard")}>
-        <WarnThresholdField />
-      </Card>
-
-      <RealNameCard
-        me={me}
-        enabled={policies?.real_name_enabled ?? false}
-        loading={meQ.isPending}
-        error={meQ.isError}
-        onRetry={() => void meQ.refetch()}
-      />
-
-      <Card title={t("settings.accountCard")}>
-        <Space orientation="vertical" size={12}>
-          {me ? (
-            <Typography.Text>{t("settings.phoneLine", { phone: maskPhone(me.phone) })}</Typography.Text>
-          ) : (
-            <Skeleton.Input active size="small" style={{ width: 200 }} />
-          )}
-          <Space>
-            <Button onClick={() => setPwdOpen(true)}>{t("settings.changePassword")}</Button>
-            <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-              {t("settings.changePasswordHint")}
-            </Typography.Text>
+              <Form.Item
+                name="name"
+                label={t("storage.nameLabel")}
+                rules={[{ required: true, message: t("settings.keyNameHint") }]}
+              >
+                <Input style={{ width: 240 }} maxLength={64} />
+              </Form.Item>
+              <Form.Item
+                name="public_key"
+                label={t("settings.keyContentLabel")}
+                rules={[
+                  { required: true, message: t("settings.keyContentRequired") },
+                  {
+                    pattern: /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521))\s+\S+/,
+                    message: t("settings.keyFormatHint"),
+                  },
+                ]}
+              >
+                <Input.TextArea rows={3} placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5… you@host" />
+              </Form.Item>
+              <Button type="primary" htmlType="submit" loading={addKey.isPending}>
+                {t("create.addKey")}
+              </Button>
+            </Form>
           </Space>
-          <Space>
+        </Card>
+
+        <Card title={t("settings.notifyCard")}>
+          <WarnThresholdField />
+        </Card>
+
+        <RealNameCard
+          me={me}
+          enabled={policies?.real_name_enabled ?? false}
+          loading={meQ.isPending}
+          error={meQ.isError}
+          onRetry={() => void meQ.refetch()}
+        />
+
+        <Card title={t("settings.accountCard")}>
+          <Space orientation="vertical" size={12}>
+            {me ? (
+              <Typography.Text>{t("settings.phoneLine", { phone: maskPhone(me.phone) })}</Typography.Text>
+            ) : (
+              <Skeleton.Input active size="small" style={{ width: 200 }} />
+            )}
+            <Space>
+              <Button onClick={() => setPwdOpen(true)}>{t("settings.changePassword")}</Button>
+              <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                {t("settings.changePasswordHint")}
+              </Typography.Text>
+            </Space>
+            <Space>
+              <Button
+                danger
+                onClick={() =>
+                  confirm({
+                    title: t("settings.logoutAllConfirm"),
+                    consequences: [t("settings.logoutAllBody")],
+                    okText: t("settings.logoutAll"),
+                    danger: true,
+                    onOk: () => logout("all"),
+                  })
+                }
+              >
+                {t("settings.logoutAll")}
+              </Button>
+              <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                {t("settings.logoutAllHint")}
+              </Typography.Text>
+            </Space>
             <Button
               danger
               onClick={() =>
                 confirm({
-                  title: t("settings.logoutAllConfirm"),
-                  consequences: [t("settings.logoutAllBody")],
-                  okText: t("settings.logoutAll"),
+                  title: t("settings.logoutConfirm"),
+                  consequences: [t("settings.logoutBody")],
+                  okText: t("settings.logout"),
                   danger: true,
-                  onOk: () => logout("all"),
+                  onOk: () => logout(),
                 })
               }
             >
-              {t("settings.logoutAll")}
+              {t("settings.logout")}
             </Button>
-            <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-              {t("settings.logoutAllHint")}
-            </Typography.Text>
+            <DeletionZone phone={me?.phone ?? ""} />
           </Space>
-          <Button
-            danger
-            onClick={() =>
-              confirm({
-                title: t("settings.logoutConfirm"),
-                consequences: [t("settings.logoutBody")],
-                okText: t("settings.logout"),
-                danger: true,
-                onOk: () => logout(),
-              })
-            }
-          >
-            {t("settings.logout")}
-          </Button>
-          <DeletionZone phone={me?.phone ?? ""} />
-        </Space>
-      </Card>
-      <PasswordModal open={pwdOpen} phone={me?.phone ?? ""} onClose={() => setPwdOpen(false)} />
-    </Space>
+        </Card>
+        <PasswordModal open={pwdOpen} phone={me?.phone ?? ""} onClose={() => setPwdOpen(false)} />
+      </Space>
+    </PageContainer>
   );
 }
 

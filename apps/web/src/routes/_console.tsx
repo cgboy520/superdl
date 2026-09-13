@@ -2,7 +2,6 @@
  *  <main id="main"> 地标 + 跳转链接给键盘用户;合规声明只在公开页脚与市场页脚,控制台不再常驻。 */
 
 import { layout, space } from "@superdl/ui";
-import { PageContainer } from "@superdl/ui/components";
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { Grid, Layout, theme } from "antd";
@@ -51,9 +50,7 @@ function ConsoleLayout() {
             tabIndex={-1}
             style={{ padding: screens.md ? layout.contentPadding : space.lg, outline: "none" }}
           >
-            <PageContainer>
-              <Outlet />
-            </PageContainer>
+            <Outlet />
           </Layout.Content>
         </Layout>
       </Layout>

@@ -1,10 +1,9 @@
-/** 服务操作组:停止 / 启动 互斥常显,更多 ▾ 放访问密钥 / 设置直达与删除;条目永不隐藏,灰置用 Tooltip。停止二次确认;删除走键入名称 + 勾选的多级防护,运行中须先停(后端 409 同判据)。 */
+/** 服务操作组(RowActions 三槽位):主动作随状态变(可启动 → 启动 / 可停止 → 停止 / 其余 → 启动灰置带原因)+ 次动作(详情页头的「更新版本」)+ 更多 ▾(访问密钥 / 设置直达与删除)。条目永不隐藏,灰置带原因。停止二次确认;删除走键入名称 + 勾选的多级防护,运行中须先停(后端 409 同判据)。 */
 
-import { DownOutlined } from "@ant-design/icons";
 import type { ServiceOut } from "@superdl/api-client";
-import { GatedButton, TypeConfirmModal, useConfirm } from "@superdl/ui/components";
+import { GatedButton, RowActions, TypeConfirmModal, useConfirm, type RowMenuItem } from "@superdl/ui/components";
 import { useNavigate } from "@tanstack/react-router";
-import { App, Button, Dropdown, Space, Tooltip, Typography } from "antd";
+import { App, Button, Typography } from "antd";
 import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 
@@ -60,10 +59,6 @@ export function DeleteServiceModal({
   );
 }
 
-function tipped(label: string, tip?: string) {
-  return tip ? <Tooltip title={tip}>{label}</Tooltip> : label;
-}
-
 export function canRolloutService(service: ServiceOut): { ok: boolean; reason?: "subscription" | "unsettled" } {
   const s = service.status;
   if (service.current_instance?.market === "subscription") return { ok: false, reason: "subscription" };
@@ -105,77 +100,75 @@ export function ServiceActions({
   const isSubscription = service.current_instance?.market === "subscription";
   const rollout = canRolloutService(service);
 
+  const confirmStop = () =>
+    confirm({
+      title: t("services.actions.stopConfirmTitle", { name: service.name }),
+      consequences: [
+        t("services.actions.stopConfirmBody"),
+        ...(isSubscription ? [t("services.actions.stopConfirmSubscription")] : []),
+      ],
+      onOk: async () => {
+        await stop.mutateAsync(service.slug);
+      },
+    });
+
+  // 主动作随状态变:可启动 → 启动;可停止 → 停止;过渡态 / 冻结 → 启动灰置带原因
+  const primary = startable ? (
+    <Button size="small" type="primary" loading={start.isPending} onClick={() => start.mutate(service.slug)}>
+      {t("services.actions.start")}
+    </Button>
+  ) : stoppable ? (
+    <Button size="small" loading={stop.isPending} onClick={confirmStop}>
+      {t("services.actions.stop")}
+    </Button>
+  ) : (
+    <GatedButton
+      size="small"
+      type="primary"
+      reason={s === "frozen" ? t("copy.frozenNeedsRecharge") : t("services.actions.needsStopped")}
+    >
+      {t("services.actions.start")}
+    </GatedButton>
+  );
+
+  const secondary = onRollout ? (
+    <GatedButton
+      size="small"
+      reason={
+        rollout.ok
+          ? undefined
+          : rollout.reason === "subscription"
+            ? t("services.revision.subscriptionUnsupported")
+            : t("services.revision.needsSettled")
+      }
+      onClick={onRollout}
+    >
+      {t("services.actions.rollout")}
+    </GatedButton>
+  ) : undefined;
+
+  const more: RowMenuItem[] = [
+    { key: "keys", label: t("services.actions.keys"), onClick: () => goTab("keys") },
+    { key: "settings", label: t("services.actions.settings"), onClick: () => goTab("settings") },
+    { type: "divider", key: "d-delete" },
+    {
+      key: "delete",
+      danger: true,
+      label: t("services.actions.delete"),
+      reason: deletable ? undefined : t("services.actions.deleteNeedsStopped"),
+      onClick: () => setDeleteOpen(true),
+    },
+  ];
+
   return (
-    <Space>
-      {startable ? (
-        <Button size="small" type="primary" loading={start.isPending} onClick={() => start.mutate(service.slug)}>
-          {t("services.actions.start")}
-        </Button>
-      ) : (
-        <GatedButton
-          size="small"
-          reason={stoppable ? undefined : t("services.actions.needsRunning")}
-          loading={stop.isPending}
-          onClick={() =>
-            confirm({
-              title: t("services.actions.stopConfirmTitle", { name: service.name }),
-              consequences: [
-                t("services.actions.stopConfirmBody"),
-                ...(isSubscription ? [t("services.actions.stopConfirmSubscription")] : []),
-              ],
-              onOk: async () => {
-                await stop.mutateAsync(service.slug);
-              },
-            })
-          }
-        >
-          {t("services.actions.stop")}
-        </GatedButton>
-      )}
-      {onRollout && (
-        <GatedButton
-          size="small"
-          reason={
-            rollout.ok
-              ? undefined
-              : rollout.reason === "subscription"
-                ? t("services.revision.subscriptionUnsupported")
-                : t("services.revision.needsSettled")
-          }
-          onClick={onRollout}
-        >
-          {t("services.actions.rollout")}
-        </GatedButton>
-      )}
-      <Dropdown
-        menu={{
-          items: [
-            { key: "keys", label: t("services.actions.keys"), onClick: () => goTab("keys") },
-            { key: "settings", label: t("services.actions.settings"), onClick: () => goTab("settings") },
-            { type: "divider" },
-            {
-              key: "delete",
-              danger: true,
-              disabled: !deletable,
-              label: tipped(
-                t("services.actions.delete"),
-                deletable ? undefined : t("services.actions.deleteNeedsStopped"),
-              ),
-              onClick: () => setDeleteOpen(true),
-            },
-          ],
-        }}
-      >
-        <Button size="small">
-          {t("services.actions.more")} <DownOutlined />
-        </Button>
-      </Dropdown>
+    <>
+      <RowActions primary={primary} secondary={secondary} more={more} />
       <DeleteServiceModal
         service={service}
         open={deleteOpen}
         onClose={() => setDeleteOpen(false)}
         onDeleted={onDeleted}
       />
-    </Space>
+    </>
   );
 }

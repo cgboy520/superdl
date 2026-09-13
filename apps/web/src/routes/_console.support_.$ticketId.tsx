@@ -1,10 +1,9 @@
-/** 工单详情:对话流(用户/客服气泡)+ 关联实例链接 + [关闭工单]。resolved/closed 不可再回复;关闭入口仅在 resolved 出现。 */
+/** 工单详情(PageContainer narrow,标题 = 工单主题,返回列表):对话流(用户/客服气泡)+ 关联实例链接 + [关闭工单]。resolved/closed 不可再回复;关闭入口仅在 resolved 出现。 */
 
 import { POLL } from "@superdl/ui";
-import { ArrowLeftOutlined } from "@ant-design/icons";
 import { fontSize, formatDateTime, isTicketRepliable, metaOf, ticketCategoryMap, ticketStatusMap } from "@superdl/ui";
-import { DataErrorAlert, isMacPlatform, TicketBubble, useConfirm } from "@superdl/ui/components";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { DataErrorAlert, isMacPlatform, PageContainer, TicketBubble, useConfirm } from "@superdl/ui/components";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { Alert, Badge, Button, Card, Input, Skeleton, Space, Tag, Typography } from "antd";
 import { useEffect, useRef, useState } from "react";
@@ -25,6 +24,8 @@ function TicketDetailPage() {
   const { t } = useTranslation(["web", "shared"]);
   const { ticketId } = Route.useParams();
   const id = Number(ticketId);
+  const navigate = useNavigate();
+  const back = { label: t("support.backToList"), onClick: () => void navigate({ to: "/support" }) };
   // 进行中 15s 轮询,resolved/closed 终态即停
   const detail = useTicketDetail(id, {
     refetchInterval: (q) => {
@@ -54,121 +55,123 @@ function TicketDetailPage() {
   };
 
   if (detail.isError) {
-    return <DataErrorAlert onRetry={() => void detail.refetch()} />;
+    return (
+      <PageContainer width="narrow" title={t("support.title")} back={back}>
+        <DataErrorAlert onRetry={() => void detail.refetch()} />
+      </PageContainer>
+    );
   }
   const ticket = detail.data;
   if (!ticket) {
-    return <Skeleton active paragraph={{ rows: 6 }} />;
+    return (
+      <PageContainer width="narrow">
+        <Skeleton active paragraph={{ rows: 6 }} />
+      </PageContainer>
+    );
   }
   const sm = metaOf(ticketStatusMap, ticket.status);
   const cm = metaOf(ticketCategoryMap, ticket.category);
   const repliable = isTicketRepliable(ticket.status);
 
   return (
-    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-      <Link to="/support">
-        <Button type="text" icon={<ArrowLeftOutlined />}>
-          {t("support.backToList")}
-        </Button>
-      </Link>
-      <Card
-        title={
-          <Space size={8} wrap>
-            <Typography.Text code>{ticket.ticket_no}</Typography.Text>
-            {cm && <Tag>{t(cm.labelKey)}</Tag>}
-            <Badge status={sm?.badge ?? "default"} text={sm ? t(sm.labelKey) : ticket.status} />
-          </Space>
-        }
-        extra={
-          ticket.status === "resolved" && (
-            // L1 确认(可逆性低但影响面 = 1)
-            <Button
-              size="small"
-              loading={close.isPending}
-              onClick={() =>
-                confirm({
-                  title: t("support.closeConfirm"),
-                  consequences: [t("support.closeBody")],
-                  okText: t("support.closeTicket"),
-                  onOk: async () => {
-                    await close.mutateAsync(id);
-                  },
-                })
-              }
-            >
-              {t("support.closeTicket")}
-            </Button>
-          )
-        }
-      >
-        <Typography.Title level={4} style={{ marginTop: 0 }}>
-          {ticket.subject}
-        </Typography.Title>
-        <Space size={16} wrap>
-          <Typography.Text type="secondary">
-            {t("support.createdAt")}: {formatDateTime(ticket.created_at)}
-          </Typography.Text>
-          {ticket.instance_uuid && (
-            <Link to="/instances/$uuid" params={{ uuid: ticket.instance_uuid }}>
-              {t("support.linkedInstance")}
-            </Link>
-          )}
-        </Space>
-      </Card>
-      <Card title={t("support.conversation")}>
-        <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-          <div ref={scrollRef} onScroll={onScroll} style={{ maxHeight: 480, overflow: "auto" }}>
-            <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-              {(ticket.messages ?? []).map((m) => (
-                <TicketBubble
-                  key={m.id}
-                  side={m.sender_kind === "user" ? "right" : "left"}
-                  label={m.sender_kind === "user" ? t("support.msgMe") : t("support.msgStaff")}
-                  time={formatDateTime(m.created_at)}
-                  body={m.body}
-                />
-              ))}
+    <PageContainer width="narrow" title={ticket.subject} back={back}>
+      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <Card
+          title={
+            <Space size={8} wrap>
+              <Typography.Text code>{ticket.ticket_no}</Typography.Text>
+              {cm && <Tag>{t(cm.labelKey)}</Tag>}
+              <Badge status={sm?.badge ?? "default"} text={sm ? t(sm.labelKey) : ticket.status} />
             </Space>
-          </div>
-          {repliable ? (
-            <>
-              <Space.Compact style={{ width: "100%" }}>
-                <Input.TextArea
-                  rows={3}
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  aria-label={t("support.replyPlaceholder")}
-                  onKeyDown={(e) => {
-                    // Ctrl/Cmd+Enter 发送(与发送按钮同一提交条件)
-                    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-                      e.preventDefault();
-                      if (!reply.isPending && draft.trim().length >= 2) {
-                        reply.mutate({ ticketId: id, body: { body: draft.trim() } });
+          }
+          extra={
+            ticket.status === "resolved" && (
+              // L1 确认(可逆性低但影响面 = 1)
+              <Button
+                size="small"
+                loading={close.isPending}
+                onClick={() =>
+                  confirm({
+                    title: t("support.closeConfirm"),
+                    consequences: [t("support.closeBody")],
+                    okText: t("support.closeTicket"),
+                    onOk: async () => {
+                      await close.mutateAsync(id);
+                    },
+                  })
+                }
+              >
+                {t("support.closeTicket")}
+              </Button>
+            )
+          }
+        >
+          <Space size={16} wrap>
+            <Typography.Text type="secondary">
+              {t("support.createdAt")}: {formatDateTime(ticket.created_at)}
+            </Typography.Text>
+            {ticket.instance_uuid && (
+              <Link to="/instances/$uuid" params={{ uuid: ticket.instance_uuid }}>
+                {t("support.linkedInstance")}
+              </Link>
+            )}
+          </Space>
+        </Card>
+        <Card title={t("support.conversation")}>
+          <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+            <div ref={scrollRef} onScroll={onScroll} style={{ maxHeight: 480, overflow: "auto" }}>
+              <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+                {(ticket.messages ?? []).map((m) => (
+                  <TicketBubble
+                    key={m.id}
+                    side={m.sender_kind === "user" ? "right" : "left"}
+                    label={m.sender_kind === "user" ? t("support.msgMe") : t("support.msgStaff")}
+                    time={formatDateTime(m.created_at)}
+                    body={m.body}
+                  />
+                ))}
+              </Space>
+            </div>
+            {repliable ? (
+              <>
+                <Space.Compact style={{ width: "100%" }}>
+                  <Input.TextArea
+                    rows={3}
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    aria-label={t("support.replyPlaceholder")}
+                    onKeyDown={(e) => {
+                      // Ctrl/Cmd+Enter 发送(与发送按钮同一提交条件)
+                      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+                        e.preventDefault();
+                        if (!reply.isPending && draft.trim().length >= 2) {
+                          reply.mutate({ ticketId: id, body: { body: draft.trim() } });
+                        }
                       }
-                    }
-                  }}
-                  maxLength={4000}
-                  placeholder={t("support.replyPlaceholder")}
-                />
-                <Button
-                  type="primary"
-                  style={{ height: "auto" }}
-                  loading={reply.isPending}
-                  disabled={draft.trim().length < 2}
-                  onClick={() => reply.mutate({ ticketId: id, body: { body: draft.trim() } })}
-                >
-                  {t("support.replySend")}
-                </Button>
-              </Space.Compact>
-              <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                {t("support.replySendHint", { kbd: SEND_KBD_HINT })}
-              </Typography.Text>
-            </>
-          ) : (
-            <Alert type="info" showIcon title={t("support.terminalHint")} />
-          )}
-        </Space>
-      </Card>
-    </Space>
+                    }}
+                    maxLength={4000}
+                    placeholder={t("support.replyPlaceholder")}
+                  />
+                  <Button
+                    type="primary"
+                    style={{ height: "auto" }}
+                    loading={reply.isPending}
+                    disabled={draft.trim().length < 2}
+                    onClick={() => reply.mutate({ ticketId: id, body: { body: draft.trim() } })}
+                  >
+                    {t("support.replySend")}
+                  </Button>
+                </Space.Compact>
+                <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                  {t("support.replySendHint", { kbd: SEND_KBD_HINT })}
+                </Typography.Text>
+              </>
+            ) : (
+              <Alert type="info" showIcon title={t("support.terminalHint")} />
+            )}
+          </Space>
+        </Card>
+      </Space>
+    </PageContainer>
   );
 }

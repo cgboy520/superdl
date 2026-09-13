@@ -3,6 +3,7 @@
 import { EditOutlined } from "@ant-design/icons";
 import { controlWidth, fontSize } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
+import { Mono } from "@superdl/ui/components";
 import { App, Button, Input, Space, Typography } from "antd";
 import { memo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -80,8 +81,8 @@ export function InstanceNameCell({ instance }: { instance: InstanceOut }) {
           }}
         />
       </Space>
-      <Typography.Text type="secondary" className="mono" style={{ fontSize: fontSize.caption }}>
-        {instance.uuid.slice(0, 12)}
+      <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+        <Mono truncate={12}>{instance.uuid}</Mono>
       </Typography.Text>
     </Space>
   );

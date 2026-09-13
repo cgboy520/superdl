@@ -3,7 +3,7 @@
 import { POLL } from "@superdl/ui";
 import type { InstanceOut, ServiceOut } from "@superdl/api-client";
 import { fontSize, formatDateTime, instanceStatusMap, isTransientServiceStatus, localToday, metaOf } from "@superdl/ui";
-import { DataErrorAlert, moneyOr, TableErrorEmpty } from "@superdl/ui/components";
+import { DataErrorAlert, moneyOr, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Alert, Badge, Breadcrumb, Card, Descriptions, Skeleton, Space, Table, Tabs, Tag, Typography } from "antd";
 import { useFormat } from "@superdl/ui";
@@ -249,18 +249,24 @@ function ServiceDetail() {
   const { data: daily } = useDailySummary(date, tzOffsetMinutes, { refetchInterval: POLL.daily });
 
   if (serviceError && !service) {
-    return <DataErrorAlert onRetry={() => void refetchService()} />;
+    return (
+      <PageContainer>
+        <DataErrorAlert onRetry={() => void refetchService()} />
+      </PageContainer>
+    );
   }
   if (!service) {
     return (
-      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-        <Card>
-          <Skeleton active title={{ width: 240 }} paragraph={{ rows: 2 }} />
-        </Card>
-        <Card>
-          <Skeleton active paragraph={{ rows: 6 }} />
-        </Card>
-      </Space>
+      <PageContainer>
+        <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+          <Card>
+            <Skeleton active title={{ width: 240 }} paragraph={{ rows: 2 }} />
+          </Card>
+          <Card>
+            <Skeleton active paragraph={{ rows: 6 }} />
+          </Card>
+        </Space>
+      </PageContainer>
     );
   }
   const inst = service.current_instance ?? service.rollout_instance;
@@ -273,163 +279,165 @@ function ServiceDetail() {
     void navigate({ to: "/services/$slug", params: { slug }, search: { tab: k as ServiceDetailTab }, replace });
 
   return (
-    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-      <Breadcrumb items={[{ title: <Link to="/services">{t("services.title")}</Link> }, { title: service.name }]} />
-      <Card>
-        <Space style={{ width: "100%", justifyContent: "space-between" }} align="start" wrap>
-          <Space orientation="vertical" size={4}>
-            <Space wrap>
-              <Typography.Title level={4} style={{ margin: 0 }}>
-                {service.name}
-              </Typography.Title>
-              <ServiceStatusBadge status={service.status} frozenDeadline={inst?.frozen_deadline} />
-              {inst && <TierTag tier={inst.spec.tier as string} pool={inst.spec.pool_label as string} />}
-              <Tag>{t("services.revisionTag", { no: service.revision })}</Tag>
-              {inst && <SubscriptionTag market={inst.market} subscription={inst.subscription} />}
-              {inst && <SpotTag market={inst.market} />}
+    <PageContainer>
+      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <Breadcrumb items={[{ title: <Link to="/services">{t("services.title")}</Link> }, { title: service.name }]} />
+        <Card>
+          <Space style={{ width: "100%", justifyContent: "space-between" }} align="start" wrap>
+            <Space orientation="vertical" size={4}>
+              <Space wrap>
+                <Typography.Title level={4} style={{ margin: 0 }}>
+                  {service.name}
+                </Typography.Title>
+                <ServiceStatusBadge status={service.status} frozenDeadline={inst?.frozen_deadline} />
+                {inst && <TierTag tier={inst.spec.tier as string} pool={inst.spec.pool_label as string} />}
+                <Tag>{t("services.revisionTag", { no: service.revision })}</Tag>
+                {inst && <SubscriptionTag market={inst.market} subscription={inst.subscription} />}
+                {inst && <SpotTag market={inst.market} />}
+              </Space>
+              <Descriptions
+                size="small"
+                column={{ xs: 1, sm: 2, md: 3, xl: 4 }}
+                items={[
+                  { label: t("services.detail.labelId"), children: service.slug },
+                  {
+                    label: t("services.detail.labelSpec"),
+                    children: inst
+                      ? t("instances.specLine", { model: inst.spec.gpu_model as string, count: inst.gpu_count })
+                      : "—",
+                  },
+                  {
+                    label: t("services.detail.labelBilling"),
+                    children: inst
+                      ? inst.subscription
+                        ? formatPeriodPrice(
+                            inst.subscription.amount_paid,
+                            inst.subscription.period,
+                            inst.subscription.period_count,
+                          )
+                        : t("instances.pricePerCard", {
+                            price: formatHourlyPrice(inst.price_hourly),
+                            count: inst.gpu_count,
+                          })
+                      : "—",
+                  },
+                  ...(inst?.subscription
+                    ? [
+                        {
+                          label: t("services.detail.labelExpiresAt"),
+                          children: formatDateTime(inst.subscription.expires_at),
+                        },
+                      ]
+                    : [
+                        {
+                          label: t("services.detail.labelToday"),
+                          children: moneyOr(formatMoney(todayAmount), daily != null),
+                        },
+                      ]),
+                  { label: t("services.detail.createdAt"), children: formatDateTime(service.created_at) },
+                ]}
+              />
             </Space>
-            <Descriptions
-              size="small"
-              column={{ xs: 1, sm: 2, md: 3, xl: 4 }}
-              items={[
-                { label: t("services.detail.labelId"), children: service.slug },
-                {
-                  label: t("services.detail.labelSpec"),
-                  children: inst
-                    ? t("instances.specLine", { model: inst.spec.gpu_model as string, count: inst.gpu_count })
-                    : "—",
-                },
-                {
-                  label: t("services.detail.labelBilling"),
-                  children: inst
-                    ? inst.subscription
-                      ? formatPeriodPrice(
-                          inst.subscription.amount_paid,
-                          inst.subscription.period,
-                          inst.subscription.period_count,
-                        )
-                      : t("instances.pricePerCard", {
-                          price: formatHourlyPrice(inst.price_hourly),
-                          count: inst.gpu_count,
-                        })
-                    : "—",
-                },
-                ...(inst?.subscription
-                  ? [
-                      {
-                        label: t("services.detail.labelExpiresAt"),
-                        children: formatDateTime(inst.subscription.expires_at),
-                      },
-                    ]
-                  : [
-                      {
-                        label: t("services.detail.labelToday"),
-                        children: moneyOr(formatMoney(todayAmount), daily != null),
-                      },
-                    ]),
-                { label: t("services.detail.createdAt"), children: formatDateTime(service.created_at) },
-              ]}
+            <ServiceActions
+              service={service}
+              onDeleted={() => void navigate({ to: "/services" })}
+              onRollout={() => setRevisionOpen(true)}
             />
           </Space>
-          <ServiceActions
-            service={service}
-            onDeleted={() => void navigate({ to: "/services" })}
-            onRollout={() => setRevisionOpen(true)}
-          />
-        </Space>
-      </Card>
+        </Card>
 
-      <EndpointCard
-        service={service}
-        onShowLogs={() => goTab("logs", false)}
-        onShowEvents={() => goTab("history", false)}
-      />
+        <EndpointCard
+          service={service}
+          onShowLogs={() => goTab("logs", false)}
+          onShowEvents={() => goTab("history", false)}
+        />
 
-      <Tabs
-        activeKey={activeTab}
-        // Tab activeKey 入 URL 用 replace(ui-ux-spec §1-8)
-        onChange={(k) => goTab(k, true)}
-        items={[
-          {
-            key: "overview",
-            label: t("services.detail.tabOverview"),
-            children: (
-              <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-                <OverviewTab service={service} />
-                {/* 小时账单并入概览(全部版本实例) */}
-                <Card size="small" title={t("services.detail.tabBills")}>
-                  <BillsTab slug={service.slug} />
-                </Card>
-              </Space>
-            ),
-          },
-          // 公开访问时网关不校验 Key,不出该 Tab(设置里开回鉴权后再出)
-          ...(service.require_api_key
-            ? [
-                {
-                  key: "keys",
-                  label: t("services.detail.tabKeys"),
-                  children: (
-                    <ApiKeysCard
-                      slug={service.slug}
-                      requireApiKey={service.require_api_key}
-                      released={service.released_at != null}
-                    />
-                  ),
-                },
-              ]
-            : []),
-          {
-            key: "metrics",
-            label: t("services.detail.tabMetrics"),
-            children: inst ? (
-              <MetricsPanel uuid={inst.uuid} running={live} />
-            ) : (
-              <Alert type="info" showIcon title={t("services.detail.metricsNotRunning")} />
-            ),
-          },
-          {
-            key: "logs",
-            label: t("services.detail.tabLogs"),
-            // deploying / running / unready 都可读日志
-            children: (
-              <LogsTab
-                subject={{ kind: "service", slug: service.slug }}
-                viewable={["deploying", "running", "unready"].includes(service.status)}
-              />
-            ),
-          },
-          {
-            // 版本与事件都是历史轴,合成一个 Tab
-            key: "history",
-            label: t("services.detail.tabHistory"),
-            children: (
-              <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-                <Card size="small" title={t("services.detail.tabRevisions")}>
-                  <RevisionsTab service={service} />
-                </Card>
-                <Card size="small" title={t("services.detail.tabEvents")}>
-                  <EventsTab subject={{ kind: "service", slug: service.slug }} status={service.status} />
-                </Card>
-              </Space>
-            ),
-          },
-          {
-            key: "settings",
-            label: t("services.detail.tabSettings"),
-            children: (
-              <SettingsTab
-                // 换服务时重置本地草稿
-                key={service.slug}
-                service={service}
-                onGoKeys={() => goTab("keys", false)}
-                onDeleted={() => void navigate({ to: "/services" })}
-              />
-            ),
-          },
-        ]}
-      />
-      <RevisionDrawer service={service} open={revisionOpen} onClose={() => setRevisionOpen(false)} />
-    </Space>
+        <Tabs
+          activeKey={activeTab}
+          // Tab activeKey 入 URL 用 replace(ui-ux-spec §1-8)
+          onChange={(k) => goTab(k, true)}
+          items={[
+            {
+              key: "overview",
+              label: t("services.detail.tabOverview"),
+              children: (
+                <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+                  <OverviewTab service={service} />
+                  {/* 小时账单并入概览(全部版本实例) */}
+                  <Card size="small" title={t("services.detail.tabBills")}>
+                    <BillsTab slug={service.slug} />
+                  </Card>
+                </Space>
+              ),
+            },
+            // 公开访问时网关不校验 Key,不出该 Tab(设置里开回鉴权后再出)
+            ...(service.require_api_key
+              ? [
+                  {
+                    key: "keys",
+                    label: t("services.detail.tabKeys"),
+                    children: (
+                      <ApiKeysCard
+                        slug={service.slug}
+                        requireApiKey={service.require_api_key}
+                        released={service.released_at != null}
+                      />
+                    ),
+                  },
+                ]
+              : []),
+            {
+              key: "metrics",
+              label: t("services.detail.tabMetrics"),
+              children: inst ? (
+                <MetricsPanel uuid={inst.uuid} running={live} />
+              ) : (
+                <Alert type="info" showIcon title={t("services.detail.metricsNotRunning")} />
+              ),
+            },
+            {
+              key: "logs",
+              label: t("services.detail.tabLogs"),
+              // deploying / running / unready 都可读日志
+              children: (
+                <LogsTab
+                  subject={{ kind: "service", slug: service.slug }}
+                  viewable={["deploying", "running", "unready"].includes(service.status)}
+                />
+              ),
+            },
+            {
+              // 版本与事件都是历史轴,合成一个 Tab
+              key: "history",
+              label: t("services.detail.tabHistory"),
+              children: (
+                <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+                  <Card size="small" title={t("services.detail.tabRevisions")}>
+                    <RevisionsTab service={service} />
+                  </Card>
+                  <Card size="small" title={t("services.detail.tabEvents")}>
+                    <EventsTab subject={{ kind: "service", slug: service.slug }} status={service.status} />
+                  </Card>
+                </Space>
+              ),
+            },
+            {
+              key: "settings",
+              label: t("services.detail.tabSettings"),
+              children: (
+                <SettingsTab
+                  // 换服务时重置本地草稿
+                  key={service.slug}
+                  service={service}
+                  onGoKeys={() => goTab("keys", false)}
+                  onDeleted={() => void navigate({ to: "/services" })}
+                />
+              ),
+            },
+          ]}
+        />
+        <RevisionDrawer service={service} open={revisionOpen} onClose={() => setRevisionOpen(false)} />
+      </Space>
+    </PageContainer>
   );
 }

@@ -1,11 +1,10 @@
-/** 实例操作组:主动作随状态变(running 连接 ▾ / failed 重新创建 / 其余 开机)+ 关机 + 更多(重启·事件·续费·自动续费·转换·释放)。条目永不隐藏,灰置用 Tooltip 说明前置条件。按形态出计费项:按量出「转包周期」,包周期出「续费 / 自动续费」,竞价出「转按量」;转包周期确认在 RenewModal 里做。释放走多级防护:键入实例名 + 勾选盘数据清除(ui-ux-spec §1 规则 7)。 */
+/** 实例操作组(RowActions 三槽位):主动作随状态变(running 连接 ▾ / failed 重新创建 / 其余 开机)+ 次动作随状态变(running 关机 / 其余 事件记录)+ 更多 ▾(重启·事件·续费·自动续费·转换·释放)。条目永不隐藏,灰置带原因。按形态出计费项:按量出「转包周期」,包周期出「续费 / 自动续费」,竞价出「转按量」;转包周期确认在 RenewModal 里做。释放走多级防护:键入实例名 + 勾选盘数据清除(ui-ux-spec §1 规则 7)。 */
 
-import { DownOutlined } from "@ant-design/icons";
 import type { InstanceOut } from "@superdl/api-client";
 import { isSubscriptionExpired } from "@superdl/ui";
-import { GatedButton, TypeConfirmModal, useConfirm } from "@superdl/ui/components";
+import { GatedButton, RowActions, TypeConfirmModal, useConfirm, type RowMenuItem } from "@superdl/ui/components";
 import { Link } from "@tanstack/react-router";
-import { App, Button, Dropdown, Space, Tooltip, Typography } from "antd";
+import { App, Button, Space, Typography } from "antd";
 import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 
@@ -89,10 +88,6 @@ export function ReleaseModal({
       onCancel={onClose}
     />
   );
-}
-
-function tipped(label: string, tip?: string) {
-  return tip ? <Tooltip title={tip}>{label}</Tooltip> : label;
 }
 
 export function InstanceActions({
@@ -184,92 +179,54 @@ export function InstanceActions({
       </GatedButton>
     );
 
-  return (
-    <Space size={4}>
-      {primary}
-      <GatedButton
-        size={size}
-        reason={canStop ? undefined : t("copy.stopNeedsRunning")}
-        loading={stop.isPending}
-        onClick={confirmStop}
-      >
-        {t("instances.actions.stop")}
-      </GatedButton>
-      <Dropdown
-        menu={{
-          items: [
-            {
-              key: "restart",
-              label: tipped(t("instances.actions.restart"), canRestart ? undefined : t("copy.stopNeedsRunning")),
-              disabled: !canRestart,
-            },
-            { key: "events", label: t("instances.actions.eventsLog") },
-            { type: "divider" },
-            // 按形态分化:按量出「转包周期」,包周期出「续费 / 自动续费」
-            ...(isSubscription
-              ? [
-                  { key: "renew", label: t("period.renewMenu") },
-                  {
-                    key: "auto-renew",
-                    label: sub?.auto_renew ? t("period.autoRenewOffMenu") : t("period.autoRenewOnMenu"),
-                    disabled: sub == null,
-                  },
-                  { type: "divider" as const },
-                ]
-              : []),
-            ...(isSpot
-              ? [
-                  {
-                    key: "to-on-demand",
-                    label: tipped(
-                      t("spot.toOnDemandMenu"),
-                      toOnDemandBlocked ? tErr("orchestrator.convertNeedsRunningOrStopped") : undefined,
-                    ),
-                    disabled: toOnDemandBlocked,
-                  },
-                  { type: "divider" as const },
-                ]
-              : []),
-            ...(canConvert
-              ? [
-                  {
-                    key: "to-period",
-                    label: tipped(
-                      t("instances.actions.toPeriod"),
-                      convertBlocked ? tErr("orchestrator.convertNeedsRunningOrStopped") : undefined,
-                    ),
-                    disabled: convertBlocked,
-                  },
-                  { type: "divider" as const },
-                ]
-              : []),
-            {
-              key: "release",
-              danger: true,
-              label: tipped(
-                s === "creating" ? t("instances.actions.cancelCreate") : t("instances.actions.releaseMenu"),
-                canRelease ? undefined : t("copy.releaseNeedsStopped"),
-              ),
-              disabled: !canRelease,
-            },
-          ],
-          onClick: ({ key }) => {
-            if (key === "restart") {
-              confirm({
-                title: t("instances.actions.restartConfirmTitle"),
-                consequences: [t("instances.actions.restartConfirmBody")],
-                danger: true,
-                onOk: async () => {
-                  await restart.mutateAsync(instance.uuid);
-                },
-              });
-            } else if (key === "events") {
-              onShowEvents?.();
-            } else if (key === "renew") {
-              setRenewOpen(true);
-            } else if (key === "to-period") {
-              setConvertOpen(true);
-            } else if (key === "to-on-demand") {
+  // 次动作随状态变:running → 关机;其余 → 事件记录
+  const secondary = canStop ? (
+    <Button size={size} loading={stop.isPending} onClick={confirmStop}>
+      {t("instances.actions.stop")}
+    </Button>
+  ) : (
+    <Button size={size} onClick={onShowEvents}>
+      {t("instances.actions.eventsLog")}
+    </Button>
+  );
+
+  const more: RowMenuItem[] = [
+    {
+      key: "restart",
+      label: t("instances.actions.restart"),
+      reason: canRestart ? undefined : t("copy.stopNeedsRunning"),
+      onClick: () =>
+        confirm({
+          title: t("instances.actions.restartConfirmTitle"),
+          consequences: [t("instances.actions.restartConfirmBody")],
+          danger: true,
+          onOk: async () => {
+            await restart.mutateAsync(instance.uuid);
+          },
+        }),
+    },
+    // running 时事件记录不在次动作槽,进更多
+    ...(canStop ? [{ key: "events", label: t("instances.actions.eventsLog"), onClick: () => onShowEvents?.() }] : []),
+    { type: "divider", key: "d-ops" },
+    // 按形态分化:按量出「转包周期」,包周期出「续费 / 自动续费」,竞价出「转按量」
+    ...(isSubscription
+      ? [
+          { key: "renew", label: t("period.renewMenu"), onClick: () => setRenewOpen(true) },
+          {
+            key: "auto-renew",
+            label: sub?.auto_renew ? t("period.autoRenewOffMenu") : t("period.autoRenewOnMenu"),
+            onClick: () => autoRenew.mutate(!sub?.auto_renew),
+          },
+          { type: "divider" as const, key: "d-sub" },
+        ]
+      : []),
+    ...(isSpot
+      ? [
+          {
+            key: "to-on-demand",
+            label: t("spot.toOnDemandMenu"),
+            reason: toOnDemandBlocked ? tErr("orchestrator.convertNeedsRunningOrStopped") : undefined,
+            onClick: () =>
               confirm({
                 title: t("spot.toOnDemandTitle"),
                 consequences: [
@@ -281,24 +238,39 @@ export function InstanceActions({
                 onOk: async () => {
                   await toOnDemand.mutateAsync();
                 },
-              });
-            } else if (key === "auto-renew") {
-              autoRenew.mutate(!sub?.auto_renew);
-            } else if (key === "release") {
-              setReleaseOpen(true);
-            }
+              }),
           },
-        }}
-      >
-        <Button size={size}>
-          {t("instances.actions.more")} <DownOutlined />
-        </Button>
-      </Dropdown>
+          { type: "divider" as const, key: "d-spot" },
+        ]
+      : []),
+    ...(canConvert
+      ? [
+          {
+            key: "to-period",
+            label: t("instances.actions.toPeriod"),
+            reason: convertBlocked ? tErr("orchestrator.convertNeedsRunningOrStopped") : undefined,
+            onClick: () => setConvertOpen(true),
+          },
+          { type: "divider" as const, key: "d-period" },
+        ]
+      : []),
+    {
+      key: "release",
+      danger: true,
+      label: s === "creating" ? t("instances.actions.cancelCreate") : t("instances.actions.releaseMenu"),
+      reason: canRelease ? undefined : t("copy.releaseNeedsStopped"),
+      onClick: () => setReleaseOpen(true),
+    },
+  ];
+
+  return (
+    <>
+      <RowActions primary={primary} secondary={secondary} more={more} size={size} />
       <ReleaseModal instance={instance} open={releaseOpen} onClose={() => setReleaseOpen(false)} />
       {isSubscription && renewOpen && <RenewModal instance={instance} open onClose={() => setRenewOpen(false)} />}
       {canConvert && convertOpen && (
         <RenewModal instance={instance} mode="subscribe" open onClose={() => setConvertOpen(false)} />
       )}
-    </Space>
+    </>
   );
 }

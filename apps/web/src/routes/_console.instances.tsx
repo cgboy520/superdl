@@ -1,6 +1,7 @@
-/** 容器实例列表(默认落地页):页头(标题 + 主 CTA + 筛选)→ AttentionBar(公告 / 余额 / 到期 / 冻结 / 失败聚合成一条)→ 表格。
- *  服务端游标分页 + status/name 过滤(状态入 URL);名称即详情链接,改名走 hover 铅笔;主动作随状态变(连接 ▾ / 开机 / 重新创建);
- *  列表不挂 refetchInterval,过渡态由 useTransientInstanceRefresh 逐台轻轮询并在迁移时失效列表。 */
+/** 容器实例列表(默认落地页):页头(标题 + 描述 + 新鲜度 + 主 CTA)→ AttentionBar(公告 / 余额 / 到期 / 冻结 / 失败聚合成一条)→ FilterBar(状态 + 搜索)→ 表格。
+ *  服务端游标分页 + status/name 过滤(状态入 URL);名称即详情链接,改名走 hover 铅笔;行内动作 RowActions 三槽位(InstanceActions);
+ *  列表不挂 refetchInterval,过渡态由 useTransientInstanceRefresh 逐台轻轮询并在迁移时失效列表;指标与今日消费按页头新鲜度条轮询,暂停同停。
+ *  真空态(无筛选且无实例)整页换新手引导,不渲染表头。 */
 
 import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { type InstanceMetricsSummaryOut, type InstanceOut } from "@superdl/api-client";
@@ -9,12 +10,14 @@ import {
   fontSize,
   formatDateTime,
   instanceStatusMap,
+  layout,
   localToday,
   metaOf,
   POLL,
   space,
+  useAutoRefresh,
 } from "@superdl/ui";
-import { AttentionBar, LoadMore, PageHeader, TableErrorEmpty } from "@superdl/ui/components";
+import { AttentionBar, EmptyState, FilterBar, LoadMore, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Button, Card, Grid, Input, Popover, Select, Skeleton, Space, Table, Tooltip, Typography } from "antd";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
@@ -221,9 +224,14 @@ function InstancesPage() {
     usePages: (name) => useInstancePages({ status, name }),
     keyOf: (i: InstanceOut) => i.uuid,
   });
-  const { data: metrics } = useMetricsSummary({ refetchInterval: POLL.metrics });
+  // 指标与今日消费按页头新鲜度条轮询,暂停同停
+  const auto = useAutoRefresh(POLL.metrics);
+  const metricsQ = useMetricsSummary({ refetchInterval: auto.refetchInterval });
+  const { data: metrics } = metricsQ;
   const { date, tzOffsetMinutes } = localToday();
-  const { data: daily } = useDailySummary(date, tzOffsetMinutes, { refetchInterval: POLL.daily });
+  const { data: daily } = useDailySummary(date, tzOffsetMinutes, {
+    refetchInterval: auto.paused ? false : POLL.daily,
+  });
 
   const todayByInstance = useMemo(
     () => new Map((daily?.items ?? []).map((it) => [it.instance_id, it.total_amount])),
@@ -261,138 +269,184 @@ function InstancesPage() {
       search: tab ? { tab } : undefined,
     });
 
-  // 空态表格/卡片共用:错误态 > 筛选无结果 > 真空态(新手引导三步)
-  const emptyText = isError ? (
+  const hasFilter = Boolean(status) || keyword.trim() !== "";
+  // 已提交到 URL 的检索词也算筛选态:输入清空后 300ms 内行仍是旧结果,不能误判成真空态
+  const filtered = hasFilter || Boolean(q);
+  const clearFilters = () => {
+    // 检索词经防抖回写 URL(与输入框清空同一路径);状态直接清
+    setKeyword("");
+    setSearch({ status: undefined });
+  };
+  // 真空态(无筛选且无实例)整页换新手引导;错误态 > 筛选无结果 > 真空态
+  const trueEmpty = !isLoading && !isError && !filtered && rows.length === 0;
+  // 计数只在全部加载完才显示
+  const count = isLoading || isError || hasNextPage ? undefined : rows.length;
+
+  const emptyState = isError ? (
     <TableErrorEmpty isError onRetry={() => void refetch()} />
-  ) : keyword || status ? (
-    t("instances.noMatch")
   ) : (
+    <EmptyState
+      scene="search"
+      secondaryAction={
+        <Button size="small" onClick={clearFilters}>
+          {t("shared:filter.clear")}
+        </Button>
+      }
+    />
+  );
+  const onboarding = (
     <div style={{ display: "flex", justifyContent: "center", padding: `${space.xl}px 0` }}>
       <OnboardingSteps />
     </div>
   );
 
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: space.lg }}>
-      <PageHeader
-        title={t("instances.title")}
-        extra={
-          <>
-            <Select
-              allowClear
-              style={{ width: controlWidth.sm }}
-              placeholder={t("instances.statusFilter")}
-              aria-label={t("instances.statusFilter")}
-              value={status ?? null}
-              onChange={(v: string | null) => setSearch({ status: v ?? undefined })}
-              options={FILTER_STATUSES.map((s) => {
-                const meta = metaOf(instanceStatusMap, s);
-                // 裸状态码不进 t()(extract 会当成新键)
-                return { value: s, label: meta ? t(meta.labelKey) : s };
-              })}
-            />
-            <Input
-              allowClear
-              prefix={<SearchOutlined />}
-              placeholder={t("instances.searchPlaceholder")}
-              aria-label={t("instances.searchPlaceholder")}
-              data-search-input
-              style={{ width: controlWidth.md }}
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-            />
-            <Button
-              aria-label={t("instances.refreshList")}
-              icon={<ReloadOutlined />}
-              loading={isRefetching}
-              onClick={() => void refetch()}
-            />
-            <Link to="/market">
-              <Button type="primary">{t("instances.rentNew")}</Button>
-            </Link>
-          </>
-        }
-      />
-      <AttentionBar items={attention} />
-      {narrow ? (
-        isLoading ? (
-          <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
-            {[0, 1, 2].map((i) => (
-              <Card key={i} size="small">
-                <Skeleton active title={{ width: "40%" }} paragraph={{ rows: 2 }} />
-              </Card>
-            ))}
-          </Space>
-        ) : rows.length === 0 ? (
-          emptyText
-        ) : (
-          <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
-            {rows.map((r) => (
-              <InstanceCard
-                key={r.uuid}
-                instance={r}
-                summary={metrics}
-                todayByInstance={todayByInstance}
-                dailyReady={daily != null}
-                freezeGraceHours={policies?.freeze_grace_hours}
-                onShowEvents={() => void openDetail(r.uuid, "events")}
-              />
-            ))}
-          </Space>
-        )
+  const body = narrow ? (
+    isLoading ? (
+      <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
+        {[0, 1, 2].map((i) => (
+          <Card key={i} size="small">
+            <Skeleton active title={{ width: "40%" }} paragraph={{ rows: 2 }} />
+          </Card>
+        ))}
+      </Space>
+    ) : rows.length === 0 ? (
+      trueEmpty ? (
+        onboarding
       ) : (
-        <Table<InstanceOut>
-          rowKey="uuid"
-          loading={isLoading}
-          dataSource={rows}
-          pagination={false}
-          scroll={{ x: 1000 }}
-          locale={{ emptyText }}
-          columns={[
-            {
-              title: t("instances.colName"),
-              width: 220,
-              render: (_, r) => <InstanceNameCellMemo instance={r} />,
-            },
-            {
-              title: t("instances.colStatus"),
-              width: 140,
-              render: (_, r) => <StatusCell instance={r} freezeGraceHours={policies?.freeze_grace_hours} />,
-            },
-            {
-              title: t("instances.colSpec"),
-              render: (_, r) => <SpecCell instance={r} />,
-            },
-            {
-              title: t("instances.colUtil"),
-              width: 160,
-              render: (_, r) => <UtilCellMemo instance={r} summary={metrics} />,
-            },
-            {
-              title: t("instances.colBilling"),
-              render: (_, r) => (
-                <BillingCell instance={r} todayByInstance={todayByInstance} dailyReady={daily != null} />
-              ),
-            },
-            {
-              title: t("instances.colActions"),
-              fixed: "right",
-              width: 260,
-              render: (_, r) => <InstanceActions instance={r} onShowEvents={() => void openDetail(r.uuid, "events")} />,
-            },
-          ]}
+        emptyState
+      )
+    ) : (
+      <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
+        {rows.map((r) => (
+          <InstanceCard
+            key={r.uuid}
+            instance={r}
+            summary={metrics}
+            todayByInstance={todayByInstance}
+            dailyReady={daily != null}
+            freezeGraceHours={policies?.freeze_grace_hours}
+            onShowEvents={() => void openDetail(r.uuid, "events")}
+          />
+        ))}
+      </Space>
+    )
+  ) : trueEmpty ? (
+    onboarding
+  ) : (
+    <Table<InstanceOut>
+      rowKey="uuid"
+      loading={isLoading}
+      dataSource={rows}
+      pagination={false}
+      scroll={{ x: 1000 }}
+      sticky={{ offsetHeader: layout.topBarHeight }}
+      // 表格渲染且无行 = 首载 / 错误 / 筛选无结果(真空态已整页替换)
+      locale={{ emptyText: isLoading ? <Skeleton active title={false} paragraph={{ rows: 3 }} /> : emptyState }}
+      columns={[
+        {
+          title: t("instances.colName"),
+          width: 220,
+          fixed: "left",
+          render: (_, r) => <InstanceNameCellMemo instance={r} />,
+        },
+        {
+          title: t("instances.colStatus"),
+          width: 140,
+          render: (_, r) => <StatusCell instance={r} freezeGraceHours={policies?.freeze_grace_hours} />,
+        },
+        {
+          title: t("instances.colSpec"),
+          render: (_, r) => <SpecCell instance={r} />,
+        },
+        {
+          title: t("instances.colUtil"),
+          width: 160,
+          render: (_, r) => <UtilCellMemo instance={r} summary={metrics} />,
+        },
+        {
+          title: t("instances.colBilling"),
+          render: (_, r) => <BillingCell instance={r} todayByInstance={todayByInstance} dailyReady={daily != null} />,
+        },
+        {
+          title: t("instances.colActions"),
+          fixed: "right",
+          width: 250,
+          render: (_, r) => <InstanceActions instance={r} onShowEvents={() => void openDetail(r.uuid, "events")} />,
+        },
+      ]}
+    />
+  );
+
+  return (
+    <PageContainer
+      title={t("instances.title")}
+      description={t("instances.description")}
+      extra={
+        <>
+          <Button
+            aria-label={t("instances.refreshList")}
+            icon={<ReloadOutlined />}
+            loading={isRefetching}
+            onClick={() => void refetch()}
+          />
+          <Link to="/market">
+            <Button type="primary">{t("instances.rentNew")}</Button>
+          </Link>
+        </>
+      }
+      freshness={{
+        updatedAt: metricsQ.dataUpdatedAt,
+        intervalMs: auto.intervalMs,
+        paused: auto.paused,
+        onTogglePause: auto.toggle,
+        onRefresh: () => {
+          void refetch();
+          void metricsQ.refetch();
+        },
+        refreshing: isRefetching,
+      }}
+    >
+      <AttentionBar items={attention} style={{ marginBottom: space.lg }} />
+      {!trueEmpty && (
+        <FilterBar hasFilter={hasFilter} onClear={clearFilters} count={count}>
+          <Select
+            allowClear
+            style={{ width: controlWidth.sm }}
+            placeholder={t("instances.statusFilter")}
+            aria-label={t("instances.statusFilter")}
+            value={status ?? null}
+            onChange={(v: string | null) => setSearch({ status: v ?? undefined })}
+            options={FILTER_STATUSES.map((s) => {
+              const meta = metaOf(instanceStatusMap, s);
+              // 裸状态码不进 t()(extract 会当成新键)
+              return { value: s, label: meta ? t(meta.labelKey) : s };
+            })}
+          />
+          <Input
+            allowClear
+            prefix={<SearchOutlined />}
+            placeholder={t("instances.searchPlaceholder")}
+            aria-label={t("instances.searchPlaceholder")}
+            data-search-input
+            style={{ width: controlWidth.md }}
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+          />
+        </FilterBar>
+      )}
+      {body}
+      {!trueEmpty && (
+        <LoadMore
+          hasNextPage={hasNextPage}
+          loading={isFetchingNextPage}
+          isError={isFetchNextPageError}
+          loadedCount={rows.length}
+          onLoadMore={() => void fetchNextPage()}
         />
       )}
-      <LoadMore
-        hasNextPage={hasNextPage}
-        loading={isFetchingNextPage}
-        isError={isFetchNextPageError}
-        loadedCount={rows.length}
-        onLoadMore={() => void fetchNextPage()}
-      />
       {renewTarget && (
         <RenewModal key={renewTarget.uuid} instance={renewTarget} open onClose={() => setRenewTarget(null)} />
       )}
-    </div>
+    </PageContainer>
   );
 }

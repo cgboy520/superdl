@@ -2,7 +2,7 @@
 
 import { type InstanceOut } from "@superdl/api-client";
 import { controlWidth, formatDateTime, isTransientInstanceStatus, localToday, POLL } from "@superdl/ui";
-import { DangerZone, DataErrorAlert, moneyOr, useConfirm } from "@superdl/ui/components";
+import { DangerZone, DataErrorAlert, moneyOr, PageContainer, useConfirm } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Alert, App, Breadcrumb, Button, Card, Descriptions, Input, Skeleton, Space, Tabs, Typography } from "antd";
 import { useFormat } from "@superdl/ui";
@@ -171,19 +171,25 @@ function InstanceDetail() {
   const todayAmount = (instance && daily?.items.find((it) => it.instance_id === instance.id)?.total_amount) ?? "0.00";
 
   if (instanceError && !instance) {
-    return <DataErrorAlert onRetry={() => void refetchInstance()} />;
+    return (
+      <PageContainer>
+        <DataErrorAlert onRetry={() => void refetchInstance()} />
+      </PageContainer>
+    );
   }
   // 首载骨架
   if (!instance) {
     return (
-      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-        <Card>
-          <Skeleton active title={{ width: 240 }} paragraph={{ rows: 2 }} />
-        </Card>
-        <Card>
-          <Skeleton active paragraph={{ rows: 6 }} />
-        </Card>
-      </Space>
+      <PageContainer>
+        <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+          <Card>
+            <Skeleton active title={{ width: 240 }} paragraph={{ rows: 2 }} />
+          </Card>
+          <Card>
+            <Skeleton active paragraph={{ rows: 6 }} />
+          </Card>
+        </Space>
+      </PageContainer>
     );
   }
   const running = instance.status === "running";
@@ -192,136 +198,140 @@ function InstanceDetail() {
   const activeTab = tab ?? (running ? "access" : "events");
 
   return (
-    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-      {/* 面包屑:带回列表页最近一次筛选态(stores/listSearch) */}
-      <Breadcrumb
-        items={[
-          {
-            title: (
-              <Link to="/instances" search={listSearch}>
-                {t("instances.title")}
-              </Link>
-            ),
-          },
-          { title: instance.name },
-        ]}
-      />
-      <Card>
-        <Space style={{ width: "100%", justifyContent: "space-between" }} align="start">
-          <Space orientation="vertical" size={4}>
-            <Space>
-              <Typography.Title level={4} style={{ margin: 0 }}>
-                {instance.name}
-              </Typography.Title>
-              <InstanceStatusBadge status={instance.status} frozenDeadline={instance.frozen_deadline} />
-              <TierTag tier={instance.spec.tier as string} pool={instance.spec.pool_label as string} />
-              <SubscriptionTag market={instance.market} subscription={instance.subscription} />
-              <SpotTag market={instance.market} />
+    <PageContainer>
+      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        {/* 面包屑:带回列表页最近一次筛选态(stores/listSearch) */}
+        <Breadcrumb
+          items={[
+            {
+              title: (
+                <Link to="/instances" search={listSearch}>
+                  {t("instances.title")}
+                </Link>
+              ),
+            },
+            { title: instance.name },
+          ]}
+        />
+        <Card>
+          <Space style={{ width: "100%", justifyContent: "space-between" }} align="start">
+            <Space orientation="vertical" size={4}>
+              <Space>
+                <Typography.Title level={4} style={{ margin: 0 }}>
+                  {instance.name}
+                </Typography.Title>
+                <InstanceStatusBadge status={instance.status} frozenDeadline={instance.frozen_deadline} />
+                <TierTag tier={instance.spec.tier as string} pool={instance.spec.pool_label as string} />
+                <SubscriptionTag market={instance.market} subscription={instance.subscription} />
+                <SpotTag market={instance.market} />
+              </Space>
+              <Descriptions
+                size="small"
+                column={{ xs: 1, sm: 2, md: 3, xl: 4 }}
+                items={[
+                  { label: t("instances.labelId"), children: instance.uuid.slice(0, 12) },
+                  {
+                    label: t("instances.labelSpec"),
+                    children: t("instances.specLine", {
+                      model: instance.spec.gpu_model as string,
+                      count: instance.gpu_count,
+                    }),
+                  },
+                  {
+                    label: t("instances.labelBilling"),
+                    // 包周期实例时价是折后价且不出小时账,不报「¥X/时 × N 卡」
+                    children: instance.subscription
+                      ? formatPeriodPrice(
+                          instance.subscription.amount_paid,
+                          instance.subscription.period,
+                          instance.subscription.period_count,
+                        )
+                      : t("instances.pricePerCard", {
+                          price: formatHourlyPrice(instance.price_hourly),
+                          count: instance.gpu_count,
+                        }),
+                  },
+                  ...(instance.subscription
+                    ? [
+                        {
+                          label: t("instances.labelExpiresAt"),
+                          children: formatDateTime(instance.subscription.expires_at),
+                        },
+                      ]
+                    : [
+                        {
+                          label: t("instances.labelToday"),
+                          children: moneyOr(formatMoney(todayAmount), daily != null),
+                        },
+                      ]),
+                  { label: t("instances.createdAt"), children: formatDateTime(instance.created_at) },
+                ]}
+              />
             </Space>
-            <Descriptions
-              size="small"
-              column={{ xs: 1, sm: 2, md: 3, xl: 4 }}
-              items={[
-                { label: t("instances.labelId"), children: instance.uuid.slice(0, 12) },
-                {
-                  label: t("instances.labelSpec"),
-                  children: t("instances.specLine", {
-                    model: instance.spec.gpu_model as string,
-                    count: instance.gpu_count,
-                  }),
-                },
-                {
-                  label: t("instances.labelBilling"),
-                  // 包周期实例时价是折后价且不出小时账,不报「¥X/时 × N 卡」
-                  children: instance.subscription
-                    ? formatPeriodPrice(
-                        instance.subscription.amount_paid,
-                        instance.subscription.period,
-                        instance.subscription.period_count,
-                      )
-                    : t("instances.pricePerCard", {
-                        price: formatHourlyPrice(instance.price_hourly),
-                        count: instance.gpu_count,
-                      }),
-                },
-                ...(instance.subscription
-                  ? [
-                      {
-                        label: t("instances.labelExpiresAt"),
-                        children: formatDateTime(instance.subscription.expires_at),
-                      },
-                    ]
-                  : [
-                      {
-                        label: t("instances.labelToday"),
-                        children: moneyOr(formatMoney(todayAmount), daily != null),
-                      },
-                    ]),
-                { label: t("instances.createdAt"), children: formatDateTime(instance.created_at) },
-              ]}
+            {/* 「事件日志」跳到本页事件 Tab */}
+            <InstanceActions
+              instance={instance}
+              size="middle"
+              onShowEvents={() =>
+                void navigate({ to: "/instances/$uuid", params: { uuid }, search: { tab: "events" } })
+              }
             />
           </Space>
-          {/* 「事件日志」跳到本页事件 Tab */}
-          <InstanceActions
-            instance={instance}
-            size="middle"
-            onShowEvents={() => void navigate({ to: "/instances/$uuid", params: { uuid }, search: { tab: "events" } })}
-          />
-        </Space>
-      </Card>
+        </Card>
 
-      <Tabs
-        activeKey={activeTab}
-        onChange={(k) =>
-          // Tab activeKey 入 URL 用 replace(ui-ux-spec §1-8)
-          void navigate({ to: "/instances/$uuid", params: { uuid }, search: { tab: k }, replace: true })
-        }
-        items={[
-          {
-            key: "access",
-            label: t("instances.tabAccess"),
-            children: <AccessTab instance={instance} running={running} />,
-          },
-          {
-            key: "metrics",
-            label: t("instances.tabMetrics"),
-            children: <MetricsPanel uuid={uuid} running={running} />,
-          },
-          {
-            key: "logs",
-            label: t("instances.tabLogs"),
-            children: (
-              <LogsTab
-                subject={{ kind: "instance", uuid }}
-                viewable={instance.status === "running" || instance.status === "stopping"}
-              />
-            ),
-          },
-          {
-            key: "events",
-            label: t("instances.tabEvents"),
-            children: <EventsTab subject={{ kind: "instance", uuid }} status={instance.status} />,
-          },
-          {
-            key: "bills",
-            label: t("instances.tabBills"),
-            children: <BillsTab instanceId={instance.id} />,
-          },
-          {
-            key: "settings",
-            label: t("instances.tabSettings"),
-            children: (
-              <SettingsTab instance={instance} canRelease={canRelease} onRelease={() => setReleaseOpen(true)} />
-            ),
-          },
-        ]}
-      />
-      <ReleaseModal
-        instance={instance}
-        open={releaseOpen}
-        onClose={() => setReleaseOpen(false)}
-        onReleased={() => void navigate({ to: "/instances", search: listSearch })}
-      />
-    </Space>
+        <Tabs
+          activeKey={activeTab}
+          onChange={(k) =>
+            // Tab activeKey 入 URL 用 replace(ui-ux-spec §1-8)
+            void navigate({ to: "/instances/$uuid", params: { uuid }, search: { tab: k }, replace: true })
+          }
+          items={[
+            {
+              key: "access",
+              label: t("instances.tabAccess"),
+              children: <AccessTab instance={instance} running={running} />,
+            },
+            {
+              key: "metrics",
+              label: t("instances.tabMetrics"),
+              children: <MetricsPanel uuid={uuid} running={running} />,
+            },
+            {
+              key: "logs",
+              label: t("instances.tabLogs"),
+              children: (
+                <LogsTab
+                  subject={{ kind: "instance", uuid }}
+                  viewable={instance.status === "running" || instance.status === "stopping"}
+                />
+              ),
+            },
+            {
+              key: "events",
+              label: t("instances.tabEvents"),
+              children: <EventsTab subject={{ kind: "instance", uuid }} status={instance.status} />,
+            },
+            {
+              key: "bills",
+              label: t("instances.tabBills"),
+              children: <BillsTab instanceId={instance.id} />,
+            },
+            {
+              key: "settings",
+              label: t("instances.tabSettings"),
+              children: (
+                <SettingsTab instance={instance} canRelease={canRelease} onRelease={() => setReleaseOpen(true)} />
+              ),
+            },
+          ]}
+        />
+        <ReleaseModal
+          instance={instance}
+          open={releaseOpen}
+          onClose={() => setReleaseOpen(false)}
+          onReleased={() => void navigate({ to: "/instances", search: listSearch })}
+        />
+      </Space>
+    </PageContainer>
   );
 }

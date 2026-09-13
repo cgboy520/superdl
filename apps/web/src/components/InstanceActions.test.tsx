@@ -1,4 +1,4 @@
-/** InstanceActions / ReleaseModal:状态驱动的禁用态、关机确认弹窗、释放多级防护。写操作 hooks 全 mock。 */
+/** InstanceActions / ReleaseModal:三槽位随状态变(主 / 次 / 更多 ▾ 点击展开,条目 role=menuitem)、关机确认弹窗、释放多级防护。写操作 hooks 全 mock。 */
 import type { InstanceOut } from "@superdl/api-client";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -118,16 +118,19 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-// antd 两字按钮插空格,可访问名是「开 机」
+// antd 两字按钮插空格,可访问名是「开 机」(菜单项也是按钮,「续 费」同理)
 const BTN_START = /开\s*机/;
 const BTN_STOP = /关\s*机/;
 const BTN_MORE = /更\s*多/;
+const BTN_EVENTS = "事件记录";
+const MENU_RENEW = /^续\s*费$/;
 
 describe("InstanceActions", () => {
-  it("stopped 实例:开机可用,关机禁用(灰置而非隐藏)", () => {
+  it("stopped 实例:开机可用,次动作是「事件记录」(关机只在运行中出)", () => {
     renderWithApp(<InstanceActions instance={makeInstance("stopped")} />);
     expect(screen.getByRole("button", { name: BTN_START })).toBeEnabled();
-    expect(screen.getByRole("button", { name: BTN_STOP })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.queryByRole("button", { name: BTN_STOP })).toBeNull();
+    expect(screen.getByRole("button", { name: BTN_EVENTS })).toBeEnabled();
   });
 
   it("running 实例:主动作是「连接 ▾」而不是开机;菜单里有复制 SSH / 打开 JupyterLab", async () => {
@@ -161,15 +164,18 @@ describe("InstanceActions", () => {
     renderWithApp(<InstanceActions instance={makeInstance("frozen")} />);
     const start = screen.getByRole("button", { name: BTN_START });
     expect(start).toHaveAttribute("aria-disabled", "true");
-    expect(screen.getByRole("button", { name: BTN_STOP })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.queryByRole("button", { name: BTN_STOP })).toBeNull();
+    expect(screen.getByRole("button", { name: BTN_EVENTS })).toBeEnabled();
     await user.click(start);
     expect(startMutate).not.toHaveBeenCalled();
   });
 
-  it("释放全链路:更多 → 释放实例 → 键入名称 + 勾选清盘才解锁 → 触发 release", async () => {
+  it("释放全链路:更多 → 释放实例(危险项末尾) → 键入名称 + 勾选清盘才解锁 → 触发 release", async () => {
     const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeInstance("stopped")} />);
-    await user.hover(screen.getByRole("button", { name: BTN_MORE }));
+    await user.click(screen.getByRole("button", { name: BTN_MORE }));
+    const items = await screen.findAllByRole("menuitem");
+    expect(items.at(-1)).toHaveTextContent("释放实例");
     await user.click(await screen.findByText("释放实例"));
     const dialog = await screen.findByRole("dialog");
     const confirm = within(dialog).getByRole("button", { name: "确认释放" });
@@ -188,42 +194,40 @@ describe("InstanceActions · 包周期", () => {
   it("按量 running 实例:出「转包周期」,不出续费/自动续费/转按量(那三项对它不存在)", async () => {
     const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeInstance("running")} />);
-    await user.hover(screen.getByRole("button", { name: BTN_MORE }));
-    expect(await screen.findByText("转包周期")).toBeInTheDocument();
-    expect(screen.queryByText("续费")).toBeNull();
-    expect(screen.queryByText("开启自动续费")).toBeNull();
-    expect(screen.queryByText("转按量")).toBeNull();
+    await user.click(screen.getByRole("button", { name: BTN_MORE }));
+    expect(await screen.findByRole("menuitem", { name: "转包周期" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: MENU_RENEW })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "开启自动续费" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "转按量" })).toBeNull();
   });
 
   it("按量 stopped 实例:「转包周期」照常可用(后端两种状态都收)", async () => {
     const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeInstance("stopped")} />);
-    await user.hover(screen.getByRole("button", { name: BTN_MORE }));
-    const item = await screen.findByText("转包周期");
-    expect(item.closest("li")).not.toHaveAttribute("aria-disabled", "true");
+    await user.click(screen.getByRole("button", { name: BTN_MORE }));
+    expect(await screen.findByRole("menuitem", { name: "转包周期" })).not.toHaveAttribute("aria-disabled", "true");
   });
 
   it("按量在途/冻结实例:「转包周期」可见但灰置(后端会 409,先拦一道)", async () => {
     const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeInstance("frozen")} />);
-    await user.hover(screen.getByRole("button", { name: BTN_MORE }));
-    const item = await screen.findByText("转包周期");
-    expect(item.closest("li")).toHaveAttribute("aria-disabled", "true");
+    await user.click(screen.getByRole("button", { name: BTN_MORE }));
+    expect(await screen.findByRole("menuitem", { name: "转包周期" })).toHaveAttribute("aria-disabled", "true");
   });
 
   it("包周期实例:不出「转包周期」(它已经在包周期里,该走续费)", async () => {
     const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeSubscription("running", { expiresAt: FUTURE })} />);
-    await user.hover(screen.getByRole("button", { name: BTN_MORE }));
-    await screen.findByText("续费");
-    expect(screen.queryByText("转包周期")).toBeNull();
+    await user.click(screen.getByRole("button", { name: BTN_MORE }));
+    await screen.findByRole("menuitem", { name: MENU_RENEW });
+    expect(screen.queryByRole("menuitem", { name: "转包周期" })).toBeNull();
   });
 
   it("点「转包周期」弹的是支付确认(标题带实例名,按钮写明是支付)", async () => {
     const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeInstance("running")} />);
-    await user.hover(screen.getByRole("button", { name: BTN_MORE }));
-    await user.click(await screen.findByText("转包周期"));
+    await user.click(screen.getByRole("button", { name: BTN_MORE }));
+    await user.click(await screen.findByRole("menuitem", { name: "转包周期" }));
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getAllByText(/转包周期 · demo-vm/).length).toBeGreaterThan(0);
     expect(within(dialog).getByRole("button", { name: "支付并转为包周期" })).toBeEnabled();
@@ -233,17 +237,17 @@ describe("InstanceActions · 包周期", () => {
   it("包周期实例:菜单出续费与自动续费,开关项按当前状态取反", async () => {
     const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeSubscription("running", { expiresAt: FUTURE })} />);
-    await user.hover(screen.getByRole("button", { name: BTN_MORE }));
-    expect(await screen.findByText("续费")).toBeInTheDocument();
-    await user.click(screen.getByText("开启自动续费"));
+    await user.click(screen.getByRole("button", { name: BTN_MORE }));
+    expect(await screen.findByRole("menuitem", { name: MENU_RENEW })).toBeInTheDocument();
+    await user.click(screen.getByRole("menuitem", { name: "开启自动续费" }));
     expect(autoRenewMutate).toHaveBeenCalledWith(true);
   });
 
   it("已开自动续费的实例菜单项变成「关闭自动续费」,点它传 false", async () => {
     const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeSubscription("running", { expiresAt: FUTURE, autoRenew: true })} />);
-    await user.hover(screen.getByRole("button", { name: BTN_MORE }));
-    await user.click(await screen.findByText("关闭自动续费"));
+    await user.click(screen.getByRole("button", { name: BTN_MORE }));
+    await user.click(await screen.findByRole("menuitem", { name: "关闭自动续费" }));
     expect(autoRenewMutate).toHaveBeenCalledWith(false);
   });
 
@@ -275,24 +279,23 @@ describe("InstanceActions · 竞价", () => {
   it("竞价 running 实例:出「转按量」,不出「转包周期」(market 是单值,两条路互斥)", async () => {
     const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeSpot("running")} />);
-    await user.hover(screen.getByRole("button", { name: BTN_MORE }));
-    expect(await screen.findByText("转按量")).toBeInTheDocument();
-    expect(screen.queryByText("转包周期")).toBeNull();
+    await user.click(screen.getByRole("button", { name: BTN_MORE }));
+    expect(await screen.findByRole("menuitem", { name: "转按量" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "转包周期" })).toBeNull();
   });
 
   it("竞价在途实例:「转按量」可见但灰置(后端只收 running / stopped)", async () => {
     const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeSpot("creating")} />);
-    await user.hover(screen.getByRole("button", { name: BTN_MORE }));
-    const item = await screen.findByText("转按量");
-    expect(item.closest("li")).toHaveAttribute("aria-disabled", "true");
+    await user.click(screen.getByRole("button", { name: BTN_MORE }));
+    expect(await screen.findByRole("menuitem", { name: "转按量" })).toHaveAttribute("aria-disabled", "true");
   });
 
   it("点「转按量」的确认框必须写明重算当前整点小时与不再被回收,确认后才下发", async () => {
     const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeSpot("running")} />);
-    await user.hover(screen.getByRole("button", { name: BTN_MORE }));
-    await user.click(await screen.findByText("转按量"));
+    await user.click(screen.getByRole("button", { name: BTN_MORE }));
+    await user.click(await screen.findByRole("menuitem", { name: "转按量" }));
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText(/当前整点小时将整体改按按量价结算/)).toBeInTheDocument();
     expect(within(dialog).getByText(/不再被回收/)).toBeInTheDocument();

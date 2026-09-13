@@ -1,6 +1,6 @@
 /** 存储:挂载全景图 + 数据盘列表(计费快照价 / 到期回收倒计时 / 扩容抽屉 / 多级删除防护)。盘价与宽限/冻结天数来自 /policies;「计费」列显示每盘创建时快照价。 */
 
-import { POLL } from "@superdl/ui";
+import { POLL, useAutoRefresh } from "@superdl/ui";
 import { type DiskOut } from "@superdl/api-client";
 import {
   colorPrimary,
@@ -11,7 +11,7 @@ import {
   idemKeyOf,
   statusColors,
 } from "@superdl/ui";
-import { GatedButton, TableErrorEmpty, TypeConfirmModal } from "@superdl/ui/components";
+import { GatedButton, PageContainer, TableErrorEmpty, TypeConfirmModal } from "@superdl/ui/components";
 import { createFileRoute } from "@tanstack/react-router";
 import { Trans, useTranslation } from "react-i18next";
 import {
@@ -157,7 +157,17 @@ function StoragePage() {
   const { t } = useTranslation();
   const { message } = App.useApp();
   // 数据盘状态由欠费巡检驱动(小时级):稳态 30s 单档
-  const { data: disks, isLoading, isError, refetch } = useDisks({ refetchInterval: POLL.steady });
+  const auto = useAutoRefresh(POLL.steady);
+  const {
+    data: disks,
+    isLoading,
+    isError,
+    refetch,
+    isRefetching,
+    dataUpdatedAt,
+  } = useDisks({
+    refetchInterval: auto.refetchInterval,
+  });
   const { data: instances } = useInstances();
   const { data: policies } = usePolicies();
   const [createOpen, setCreateOpen] = useState(false);
@@ -195,182 +205,191 @@ function StoragePage() {
     id == null ? "—" : ((instances ?? []).find((i) => i.id === id)?.name ?? `#${id}`);
 
   return (
-    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-      <Space style={{ width: "100%", justifyContent: "space-between" }}>
-        <Typography.Title level={4} style={{ margin: 0 }}>
-          {t("storage.title")}
-        </Typography.Title>
+    <PageContainer
+      title={t("storage.title")}
+      extra={
         <Button type="primary" onClick={() => setCreateOpen(true)}>
           {t("create.diskNew")}
         </Button>
-      </Space>
-      <MountOverview priceText={priceText} />
-      <Card>
-        {isError ? (
-          <TableErrorEmpty isError onRetry={() => void refetch()} />
-        ) : (disks ?? []).length === 0 && !isLoading ? (
-          <Empty description={t("copy.diskRetention")}>
-            <Button type="primary" onClick={() => setCreateOpen(true)}>
-              {t("storage.createFirst")}
-            </Button>
-          </Empty>
-        ) : (
-          <Table<DiskOut>
-            rowKey="uuid"
-            loading={isLoading}
-            pagination={false}
-            scroll={{ x: 920 }}
-            dataSource={disks ?? []}
-            columns={[
-              { title: t("storage.nameLabel"), dataIndex: "name" },
-              { title: t("storage.colSize"), render: (_, r) => formatSizeGb(r.size_gb) },
-              {
-                title: t("storage.colBilling"),
-                render: (_, r) => (
-                  <Space orientation="vertical" size={0}>
-                    <span>{t("common.gbMonthPrice", { price: r.price_gb_month })}</span>
-                    <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                      {t("common.dailyApprox", { amount: diskDailyEstimate(r.price_gb_month, r.size_gb) })}
-                    </Typography.Text>
-                  </Space>
-                ),
-              },
-              {
-                title: t("storage.colStatus"),
-                render: (_, r) => (
-                  <Space size={4}>
-                    <DiskStatusBadge status={r.status} />
-                    {!r.quota_synced && r.status !== "deleting" && (
-                      <Tooltip title={t("storage.quotaPendingHint")}>
-                        <Tag color="gold" style={{ marginInlineEnd: 0 }}>
-                          {t("storage.quotaPending")}
-                        </Tag>
-                      </Tooltip>
-                    )}
-                  </Space>
-                ),
-              },
-              {
-                title: t("storage.colExpiry"),
-                render: (_, r) => <ExpiryCell disk={r} graceDays={graceDays} frozenDays={frozenDays} />,
-              },
-              { title: t("storage.colMounted"), render: (_, r) => instanceName(r.mounted_instance_id) },
-              { title: t("storage.colCreated"), render: (_, r) => formatDateTime(r.created_at) },
-              {
-                title: t("storage.colActions"),
-                render: (_, r) => {
-                  const canExpand = r.status === "active";
-                  const canDelete = r.mounted_instance_id == null && r.status !== "deleting";
-                  return (
-                    <Space>
-                      <GatedButton
-                        size="small"
-                        reason={canExpand ? undefined : t("storage.expandNeedsActive")}
-                        onClick={() => {
-                          setNewSize(r.size_gb + EXPAND_DEFAULT_STEP_GB);
-                          setExpandTarget(r);
-                        }}
-                      >
-                        {t("storage.expand")}
-                      </GatedButton>
-                      <GatedButton
-                        size="small"
-                        danger
-                        reason={canDelete ? undefined : t("storage.deleteNeedsUnmounted")}
-                        onClick={() => setDeleteTarget(r)}
-                      >
-                        {t("storage.delete")}
-                      </GatedButton>
+      }
+      freshness={{
+        updatedAt: dataUpdatedAt,
+        intervalMs: auto.intervalMs,
+        paused: auto.paused,
+        onTogglePause: auto.toggle,
+        onRefresh: () => void refetch(),
+        refreshing: isRefetching,
+      }}
+    >
+      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <MountOverview priceText={priceText} />
+        <Card>
+          {isError ? (
+            <TableErrorEmpty isError onRetry={() => void refetch()} />
+          ) : (disks ?? []).length === 0 && !isLoading ? (
+            <Empty description={t("copy.diskRetention")}>
+              <Button type="primary" onClick={() => setCreateOpen(true)}>
+                {t("storage.createFirst")}
+              </Button>
+            </Empty>
+          ) : (
+            <Table<DiskOut>
+              rowKey="uuid"
+              loading={isLoading}
+              pagination={false}
+              scroll={{ x: 920 }}
+              dataSource={disks ?? []}
+              columns={[
+                { title: t("storage.nameLabel"), dataIndex: "name" },
+                { title: t("storage.colSize"), render: (_, r) => formatSizeGb(r.size_gb) },
+                {
+                  title: t("storage.colBilling"),
+                  render: (_, r) => (
+                    <Space orientation="vertical" size={0}>
+                      <span>{t("common.gbMonthPrice", { price: r.price_gb_month })}</span>
+                      <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                        {t("common.dailyApprox", { amount: diskDailyEstimate(r.price_gb_month, r.size_gb) })}
+                      </Typography.Text>
                     </Space>
-                  );
+                  ),
                 },
-              },
-            ]}
-          />
-        )}
-      </Card>
+                {
+                  title: t("storage.colStatus"),
+                  render: (_, r) => (
+                    <Space size={4}>
+                      <DiskStatusBadge status={r.status} />
+                      {!r.quota_synced && r.status !== "deleting" && (
+                        <Tooltip title={t("storage.quotaPendingHint")}>
+                          <Tag color="gold" style={{ marginInlineEnd: 0 }}>
+                            {t("storage.quotaPending")}
+                          </Tag>
+                        </Tooltip>
+                      )}
+                    </Space>
+                  ),
+                },
+                {
+                  title: t("storage.colExpiry"),
+                  render: (_, r) => <ExpiryCell disk={r} graceDays={graceDays} frozenDays={frozenDays} />,
+                },
+                { title: t("storage.colMounted"), render: (_, r) => instanceName(r.mounted_instance_id) },
+                { title: t("storage.colCreated"), render: (_, r) => formatDateTime(r.created_at) },
+                {
+                  title: t("storage.colActions"),
+                  render: (_, r) => {
+                    const canExpand = r.status === "active";
+                    const canDelete = r.mounted_instance_id == null && r.status !== "deleting";
+                    return (
+                      <Space>
+                        <GatedButton
+                          size="small"
+                          reason={canExpand ? undefined : t("storage.expandNeedsActive")}
+                          onClick={() => {
+                            setNewSize(r.size_gb + EXPAND_DEFAULT_STEP_GB);
+                            setExpandTarget(r);
+                          }}
+                        >
+                          {t("storage.expand")}
+                        </GatedButton>
+                        <GatedButton
+                          size="small"
+                          danger
+                          reason={canDelete ? undefined : t("storage.deleteNeedsUnmounted")}
+                          onClick={() => setDeleteTarget(r)}
+                        >
+                          {t("storage.delete")}
+                        </GatedButton>
+                      </Space>
+                    );
+                  },
+                },
+              ]}
+            />
+          )}
+        </Card>
 
-      <Modal
-        title={t("create.diskNew")}
-        open={createOpen}
-        onCancel={() => setCreateOpen(false)}
-        onOk={() => form.submit()}
-        confirmLoading={createDisk.isPending}
-      >
-        <Form
-          form={form}
-          layout="vertical"
-          initialValues={{ name: "", size_gb: 100 }}
-          onFinish={(v: { name: string; size_gb: number }) =>
-            createDisk.mutate({
-              body: v,
-              idempotencyKey: idemKeyOf("disk", [submitSeq, v.name, v.size_gb]),
-            })
-          }
+        <Modal
+          title={t("create.diskNew")}
+          open={createOpen}
+          onCancel={() => setCreateOpen(false)}
+          onOk={() => form.submit()}
+          confirmLoading={createDisk.isPending}
         >
-          <Form.Item
-            name="name"
-            label={t("storage.nameLabel")}
-            rules={[{ required: true, message: t("storage.nameRequired") }]}
+          <Form
+            form={form}
+            layout="vertical"
+            initialValues={{ name: "", size_gb: 100 }}
+            onFinish={(v: { name: string; size_gb: number }) =>
+              createDisk.mutate({
+                body: v,
+                idempotencyKey: idemKeyOf("disk", [submitSeq, v.name, v.size_gb]),
+              })
+            }
           >
-            <Input maxLength={64} />
-          </Form.Item>
-          <Form.Item name="size_gb" label={t("storage.sizeLabel")} rules={[{ required: true }]}>
-            <InputNumber
-              min={policies?.disk_min_gb}
-              max={policies?.disk_max_gb}
-              step={10}
-              disabled={!policies}
-              style={{ width: 200 }}
-            />
-          </Form.Item>
-          <Typography.Text type="secondary">{t("storage.createNote", { price: priceText })}</Typography.Text>
-          <Typography.Text strong style={{ display: "block", marginTop: 8 }}>
-            {t("storage.dailyEstimate", {
-              size: sizeWatch ?? 0,
-              amount: policies ? formatMoney(diskDailyEstimate(policies.disk_price_gb_month, sizeWatch ?? 0)) : "—",
-            })}
-          </Typography.Text>
-        </Form>
-      </Modal>
-
-      <Drawer
-        title={t("storage.expandDrawerTitle", { name: expandTarget?.name ?? "" })}
-        open={Boolean(expandTarget)}
-        onClose={() => setExpandTarget(null)}
-        size="min(420px, 100vw)"
-        footer={
-          <Button
-            type="primary"
-            block
-            loading={expand.isPending}
-            disabled={!expandTarget || newSize <= expandTarget.size_gb}
-            onClick={() => expandTarget && expand.mutate({ uuid: expandTarget.uuid, body: { size_gb: newSize } })}
-          >
-            {t("storage.confirmExpandTo", { size: formatSizeGb(newSize) })}
-          </Button>
-        }
-      >
-        {expandTarget && policies && (
-          <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-            <Slider
-              min={expandTarget.size_gb}
-              max={policies.disk_max_gb}
-              step={10}
-              value={newSize}
-              onChange={setNewSize}
-            />
-            <Typography.Text type="secondary">
-              {t("storage.expandCostNote", {
-                daily: t("common.dailyApprox", {
-                  amount: diskDailyEstimate(expandTarget.price_gb_month, newSize - expandTarget.size_gb),
-                }),
+            <Form.Item
+              name="name"
+              label={t("storage.nameLabel")}
+              rules={[{ required: true, message: t("storage.nameRequired") }]}
+            >
+              <Input maxLength={64} />
+            </Form.Item>
+            <Form.Item name="size_gb" label={t("storage.sizeLabel")} rules={[{ required: true }]}>
+              <InputNumber
+                min={policies?.disk_min_gb}
+                max={policies?.disk_max_gb}
+                step={10}
+                disabled={!policies}
+                style={{ width: 200 }}
+              />
+            </Form.Item>
+            <Typography.Text type="secondary">{t("storage.createNote", { price: priceText })}</Typography.Text>
+            <Typography.Text strong style={{ display: "block", marginTop: 8 }}>
+              {t("storage.dailyEstimate", {
+                size: sizeWatch ?? 0,
+                amount: policies ? formatMoney(diskDailyEstimate(policies.disk_price_gb_month, sizeWatch ?? 0)) : "—",
               })}
             </Typography.Text>
-          </Space>
-        )}
-      </Drawer>
-      <DeleteDiskModal disk={deleteTarget} onClose={() => setDeleteTarget(null)} />
-    </Space>
+          </Form>
+        </Modal>
+
+        <Drawer
+          title={t("storage.expandDrawerTitle", { name: expandTarget?.name ?? "" })}
+          open={Boolean(expandTarget)}
+          onClose={() => setExpandTarget(null)}
+          size="min(420px, 100vw)"
+          footer={
+            <Button
+              type="primary"
+              block
+              loading={expand.isPending}
+              disabled={!expandTarget || newSize <= expandTarget.size_gb}
+              onClick={() => expandTarget && expand.mutate({ uuid: expandTarget.uuid, body: { size_gb: newSize } })}
+            >
+              {t("storage.confirmExpandTo", { size: formatSizeGb(newSize) })}
+            </Button>
+          }
+        >
+          {expandTarget && policies && (
+            <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+              <Slider
+                min={expandTarget.size_gb}
+                max={policies.disk_max_gb}
+                step={10}
+                value={newSize}
+                onChange={setNewSize}
+              />
+              <Typography.Text type="secondary">
+                {t("storage.expandCostNote", {
+                  daily: t("common.dailyApprox", {
+                    amount: diskDailyEstimate(expandTarget.price_gb_month, newSize - expandTarget.size_gb),
+                  }),
+                })}
+              </Typography.Text>
+            </Space>
+          )}
+        </Drawer>
+        <DeleteDiskModal disk={deleteTarget} onClose={() => setDeleteTarget(null)} />
+      </Space>
+    </PageContainer>
   );
 }

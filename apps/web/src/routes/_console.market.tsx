@@ -1,6 +1,7 @@
 /** 算力市场:规格选择(SkuPicker full,筛选入 URL)在上 → 计费方式在下(可选项依赖已选规格)→ 底部结算条。CTA 即库存,不可选行灰置排末不隐藏;
  *  未登录可看,CTA「登录后租用」带回完整筛选态。规格不支持所选计费方式时用 message 明示并切回按量,不让 chip 静默跳动。 */
 
+import { QuestionCircleOutlined } from "@ant-design/icons";
 import type { SkuMarketOut } from "@superdl/api-client";
 import {
   billingUnits,
@@ -13,8 +14,9 @@ import {
   skuTierMap,
   skuVariant,
   space,
+  useAutoRefresh,
 } from "@superdl/ui";
-import { GatedButton, PageHeader } from "@superdl/ui/components";
+import { GatedButton, PageContainer } from "@superdl/ui/components";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { App, Button, Card, Modal, Space, Typography } from "antd";
 import { useState } from "react";
@@ -130,7 +132,18 @@ function MarketPage() {
   const periodCount = search.count ?? 1;
   const update = (next: MarketSearch) => void navigate({ to: "/market", search: next, replace: true });
 
-  const { data: allSkus, isLoading, isError, refetch } = useSkus({ refetchInterval: POLL.steady });
+  // 库存稳态轮询,页头新鲜度条可暂停
+  const auto = useAutoRefresh(POLL.steady);
+  const {
+    data: allSkus,
+    isLoading,
+    isError,
+    refetch,
+    isRefetching,
+    dataUpdatedAt,
+  } = useSkus({
+    refetchInterval: auto.refetchInterval,
+  });
   // 冻结宽限小时数读 /policies;未就绪用无数字兜底句
   const { data: policies } = usePolicies();
   const discounts = usePeriodDiscounts();
@@ -198,162 +211,173 @@ function MarketPage() {
   };
 
   return (
-    // 不用 Space(ant-space-item 包装会破坏 sticky 结算条的包含块)
-    <div style={{ display: "flex", flexDirection: "column", gap: space.lg, width: "100%" }}>
-      <PageHeader
-        title={t("market.title")}
-        extra={
-          <Button type="link" size="small" onClick={() => setRulesOpen(true)}>
-            {t("market.billingRulesLink")}
-          </Button>
-        }
-      />
+    <PageContainer
+      title={t("market.title")}
+      extra={
+        <Button icon={<QuestionCircleOutlined />} onClick={() => setRulesOpen(true)}>
+          {t("market.billingRulesLink")}
+        </Button>
+      }
+      freshness={{
+        updatedAt: dataUpdatedAt,
+        intervalMs: auto.intervalMs,
+        paused: auto.paused,
+        onTogglePause: auto.toggle,
+        onRefresh: () => void refetch(),
+        refreshing: isRefetching,
+      }}
+    >
+      {/* 不用 Space(ant-space-item 包装会破坏 sticky 结算条的包含块) */}
+      <div style={{ display: "flex", flexDirection: "column", gap: space.lg, width: "100%" }}>
+        <Card title={t("market.selectSpec")} styles={{ body: { paddingBlock: 16 } }}>
+          <SkuPicker
+            variant="full"
+            skus={allSkus}
+            isLoading={isLoading}
+            isError={isError}
+            onRetry={() => void refetch()}
+            value={selected}
+            onChange={onSelectSku}
+            gpuCount={gpuCount}
+            onGpuCount={(n) => update({ ...search, gpus: n > 1 ? n : undefined })}
+            filters={filters}
+            onFiltersChange={(f) => update({ ...searchOfFilters(f, search), sku: undefined })}
+            priceFontSize={fontSize.pageTitle}
+            {...(isSpot && spotPolicy ? { spot: spotPolicy } : {})}
+          />
+          {/* 选中共享·经济时,在选择处就地给风险摘要(完整条款在创建页提交前的知情同意里) */}
+          {selectedVariant === "shared_hami" && (
+            <Typography.Text
+              type="warning"
+              style={{ display: "block", marginTop: space.md, fontSize: fontSize.caption }}
+            >
+              {t("market.ecoRiskSummary")}
+            </Typography.Text>
+          )}
+        </Card>
 
-      <Card title={t("market.selectSpec")} styles={{ body: { paddingBlock: 16 } }}>
-        <SkuPicker
-          variant="full"
-          skus={allSkus}
-          isLoading={isLoading}
-          isError={isError}
-          onRetry={() => void refetch()}
-          value={selected}
-          onChange={onSelectSku}
-          gpuCount={gpuCount}
-          onGpuCount={(n) => update({ ...search, gpus: n > 1 ? n : undefined })}
-          filters={filters}
-          onFiltersChange={(f) => update({ ...searchOfFilters(f, search), sku: undefined })}
-          priceFontSize={fontSize.pageTitle}
-          {...(isSpot && spotPolicy ? { spot: spotPolicy } : {})}
+        <BillingModeCard
+          value={mode}
+          onChange={(v) => update({ ...search, mode: v === "on_demand" ? undefined : v })}
+          periodEnabled={!periodBlocked}
+          spotEnabled={!spotUnavailable}
+          count={periodCount}
+          onCountChange={(n) => update({ ...search, count: n > 1 ? n : undefined })}
         />
-        {/* 选中共享·经济时,在选择处就地给风险摘要(完整条款在创建页提交前的知情同意里) */}
-        {selectedVariant === "shared_hami" && (
-          <Typography.Text type="warning" style={{ display: "block", marginTop: space.md, fontSize: fontSize.caption }}>
-            {t("market.ecoRiskSummary")}
-          </Typography.Text>
-        )}
-      </Card>
+        {/* 合规声明只在市场页脚(ui-ux-spec §1 规则 1) */}
+        <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+          {t("copy.antiMiningNotice")}
+        </Typography.Text>
 
-      <BillingModeCard
-        value={mode}
-        onChange={(v) => update({ ...search, mode: v === "on_demand" ? undefined : v })}
-        periodEnabled={!periodBlocked}
-        spotEnabled={!spotUnavailable}
-        count={periodCount}
-        onCountChange={(n) => update({ ...search, count: n > 1 ? n : undefined })}
-      />
-      {/* 合规声明只在市场页脚(ui-ux-spec §1 规则 1) */}
-      <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-        {t("copy.antiMiningNotice")}
-      </Typography.Text>
+        <CheckoutBar
+          // 选中规格/计费方式/时长变化时汇总数字淡入
+          changeKey={selected ? `${selected.id}-${mode}-${periodCount}` : "none"}
+          summary={
+            selected
+              ? isCpu
+                ? t("market.summaryCpu", { vcpu: selected.vcpu, mem: selected.mem_gb, disk: selected.disk_gb })
+                : t("market.summary", {
+                    model: selected.gpu_model,
+                    count: gpuCount,
+                    vcpu: selected.vcpu * gpuCount,
+                    mem: selected.mem_gb * gpuCount,
+                    disk: selected.disk_gb,
+                  })
+              : t("market.selectHint")
+          }
+          items={[
+            period && quote
+              ? {
+                  label: t("period.costLabel", { period: t(periodMap[period].labelKey) }),
+                  value: (
+                    <Space size={8} align="baseline">
+                      <Typography.Text type="secondary" delete style={{ fontSize: fontSize.body }}>
+                        {fmt.formatMoney(quote.listAmount)}
+                      </Typography.Text>
+                      <span>{fmt.formatPeriodPrice(quote.amount, period, periodCount)}</span>
+                    </Space>
+                  ),
+                }
+              : {
+                  label: t("create.configCostLabel"),
+                  // 大字带「× N 卡」/「整机」后缀(价格口径显性化);CPU 规格 price_hourly 已是整机时价
+                  suffix: !selected
+                    ? undefined
+                    : isCpu
+                      ? t("sku.wholeMachine")
+                      : t("sku.timesCards", { count: gpuCount }),
+                  value: !selected ? (
+                    "--"
+                  ) : isSpot ? (
+                    <Space size={8} align="baseline">
+                      <SpotPriceInline baseHourly={selected.price_hourly} units={needed} policy={spotPolicy} />
+                      <SpotOffLabel policy={spotPolicy} />
+                    </Space>
+                  ) : (
+                    formatHourlyPrice(mulPrice(selected.price_hourly, needed))
+                  ),
+                },
+          ]}
+          detail={
+            unitPrice != null ? (
+              period && quote ? (
+                <PeriodQuoteRows quote={quote} gpuCount={gpuCount} cpu={isCpu} hint={t("period.hintFinalOnCreate")} />
+              ) : (
+                <Space orientation="vertical" size={4}>
+                  <span>
+                    {isCpu
+                      ? t("instances.pricePerInstance", { price: formatHourlyPrice(unitPrice) })
+                      : t("instances.pricePerCard", { price: formatHourlyPrice(unitPrice), count: gpuCount })}
+                  </span>
+                  <Typography.Text type="secondary">
+                    {isCpu ? t("copy.billingBasisCpu") : t("copy.billingBasis")}
+                  </Typography.Text>
+                  {isSpot && <Typography.Text type="secondary">{t("copy.spotBillingBasis")}</Typography.Text>}
+                </Space>
+              )
+            ) : undefined
+          }
+          actions={
+            <GatedButton
+              type="primary"
+              size="large"
+              reason={selected ? undefined : t("market.selectFirst")}
+              onClick={() => {
+                if (!selected) return;
+                if (!loggedIn) {
+                  void navigate({ to: "/login", search: { redirect: marketHref() } });
+                  return;
+                }
+                void navigate({
+                  to: "/market/create/$skuId",
+                  params: { skuId: String(selected.id) },
+                  search: createSearch,
+                });
+              }}
+            >
+              {loggedIn ? t("market.next") : t("market.loginToRent")}
+            </GatedButton>
+          }
+        />
 
-      <CheckoutBar
-        // 选中规格/计费方式/时长变化时汇总数字淡入
-        changeKey={selected ? `${selected.id}-${mode}-${periodCount}` : "none"}
-        summary={
-          selected
-            ? isCpu
-              ? t("market.summaryCpu", { vcpu: selected.vcpu, mem: selected.mem_gb, disk: selected.disk_gb })
-              : t("market.summary", {
-                  model: selected.gpu_model,
-                  count: gpuCount,
-                  vcpu: selected.vcpu * gpuCount,
-                  mem: selected.mem_gb * gpuCount,
-                  disk: selected.disk_gb,
-                })
-            : t("market.selectHint")
-        }
-        items={[
-          period && quote
-            ? {
-                label: t("period.costLabel", { period: t(periodMap[period].labelKey) }),
-                value: (
-                  <Space size={8} align="baseline">
-                    <Typography.Text type="secondary" delete style={{ fontSize: fontSize.body }}>
-                      {fmt.formatMoney(quote.listAmount)}
-                    </Typography.Text>
-                    <span>{fmt.formatPeriodPrice(quote.amount, period, periodCount)}</span>
-                  </Space>
-                ),
-              }
-            : {
-                label: t("create.configCostLabel"),
-                // 大字带「× N 卡」/「整机」后缀(价格口径显性化);CPU 规格 price_hourly 已是整机时价
-                suffix: !selected
-                  ? undefined
-                  : isCpu
-                    ? t("sku.wholeMachine")
-                    : t("sku.timesCards", { count: gpuCount }),
-                value: !selected ? (
-                  "--"
-                ) : isSpot ? (
-                  <Space size={8} align="baseline">
-                    <SpotPriceInline baseHourly={selected.price_hourly} units={needed} policy={spotPolicy} />
-                    <SpotOffLabel policy={spotPolicy} />
-                  </Space>
-                ) : (
-                  formatHourlyPrice(mulPrice(selected.price_hourly, needed))
-                ),
-              },
-        ]}
-        detail={
-          unitPrice != null ? (
-            period && quote ? (
-              <PeriodQuoteRows quote={quote} gpuCount={gpuCount} cpu={isCpu} hint={t("period.hintFinalOnCreate")} />
-            ) : (
-              <Space orientation="vertical" size={4}>
-                <span>
-                  {isCpu
-                    ? t("instances.pricePerInstance", { price: formatHourlyPrice(unitPrice) })
-                    : t("instances.pricePerCard", { price: formatHourlyPrice(unitPrice), count: gpuCount })}
-                </span>
-                <Typography.Text type="secondary">
-                  {isCpu ? t("copy.billingBasisCpu") : t("copy.billingBasis")}
-                </Typography.Text>
-                {isSpot && <Typography.Text type="secondary">{t("copy.spotBillingBasis")}</Typography.Text>}
-              </Space>
-            )
-          ) : undefined
-        }
-        actions={
-          <GatedButton
-            type="primary"
-            size="large"
-            reason={selected ? undefined : t("market.selectFirst")}
-            onClick={() => {
-              if (!selected) return;
-              if (!loggedIn) {
-                void navigate({ to: "/login", search: { redirect: marketHref() } });
-                return;
-              }
-              void navigate({
-                to: "/market/create/$skuId",
-                params: { skuId: String(selected.id) },
-                search: createSearch,
-              });
-            }}
-          >
-            {loggedIn ? t("market.next") : t("market.loginToRent")}
-          </GatedButton>
-        }
-      />
-
-      <Modal open={rulesOpen} onCancel={() => setRulesOpen(false)} footer={null} title={t("market.billingRulesLink")}>
-        <ul style={{ paddingInlineStart: 20, margin: 0 }}>
-          {[
-            t("copy.billingRules.r1"),
-            t("copy.billingRules.r2"),
-            t("copy.billingRules.r3"),
-            policies
-              ? t("copy.billingRules.r4", { hours: policies.freeze_grace_hours })
-              : t("copy.billingRules.r4Fallback"),
-            t("copy.billingRules.r5"),
-          ].map((r) => (
-            <li key={r} style={{ marginBottom: 8 }}>
-              {r}
-            </li>
-          ))}
-        </ul>
-      </Modal>
-    </div>
+        <Modal open={rulesOpen} onCancel={() => setRulesOpen(false)} footer={null} title={t("market.billingRulesLink")}>
+          <ul style={{ paddingInlineStart: 20, margin: 0 }}>
+            {[
+              t("copy.billingRules.r1"),
+              t("copy.billingRules.r2"),
+              t("copy.billingRules.r3"),
+              policies
+                ? t("copy.billingRules.r4", { hours: policies.freeze_grace_hours })
+                : t("copy.billingRules.r4Fallback"),
+              t("copy.billingRules.r5"),
+            ].map((r) => (
+              <li key={r} style={{ marginBottom: 8 }}>
+                {r}
+              </li>
+            ))}
+          </ul>
+        </Modal>
+      </div>
+    </PageContainer>
   );
 }
