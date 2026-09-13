@@ -206,7 +206,7 @@ export function SkuPicker({
 
   if (variant === "compact" && value && !expanded) {
     return (
-      <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+      <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
         <Table<SkuMarketOut>
           size="small"
           rowKey="id"
@@ -223,7 +223,7 @@ export function SkuPicker({
   }
 
   return (
-    <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
       <Segmented<SkuKind>
         value={f.kind}
         options={[

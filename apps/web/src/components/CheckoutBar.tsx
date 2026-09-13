@@ -178,7 +178,7 @@ export function CheckoutBar({
                 {t("common.detailsToggle")} ▴
               </Button>
             </div>
-            <Space size={12}>{actions}</Space>
+            <Space size={space.md}>{actions}</Space>
           </div>
           <Drawer
             placement="bottom"
@@ -203,7 +203,7 @@ export function CheckoutBar({
           {notice}
           <div style={{ display: "flex", alignItems: "center", gap: space.xl, flexWrap: "wrap" }}>
             {summaryChip}
-            <Space size={24} style={{ flex: 1, flexWrap: "wrap" }}>
+            <Space size={space.xl} style={{ flex: 1, flexWrap: "wrap" }}>
               {itemBlocks}
               {detail && (
                 <Popover content={detail} title={t("common.costDetail")} placement="topLeft">
@@ -215,7 +215,7 @@ export function CheckoutBar({
               )}
               {balanceNode}
             </Space>
-            <Space size={12}>{actions}</Space>
+            <Space size={space.md}>{actions}</Space>
           </div>
           {breakdown && (
             <div style={{ borderTop: `1px dashed ${token.colorBorderSecondary}`, paddingTop: space.sm }}>

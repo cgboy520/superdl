@@ -1,7 +1,7 @@
 /** 容器日志面板(纯展示):末 N 行 + 关键词过滤 + 换行开关 + 自动刷新开关 + 贴底跟随 + 下载。数据与 tail / 自动刷新状态由调用方持有;实例详情页与服务详情页共用。 */
 
 import { SearchOutlined } from "@ant-design/icons";
-import { controlWidth, fontSize } from "@superdl/ui";
+import { controlWidth, fontSize, space } from "@superdl/ui";
 import { DataErrorAlert } from "@superdl/ui/components";
 import { Alert, Button, Input, Select, Space, Switch, theme, Typography } from "antd";
 import { useEffect, useRef, useState } from "react";
@@ -98,8 +98,8 @@ export function LogsPanel({
   };
 
   return (
-    <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-      <Space wrap size={12}>
+    <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
+      <Space wrap size={space.md}>
         <Typography.Text type="secondary">{t("instances.logsTail")}</Typography.Text>
         <Select
           value={tail}

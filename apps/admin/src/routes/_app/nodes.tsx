@@ -194,7 +194,7 @@ function NodesPage() {
         refreshing: isRefetching,
       }}
       extra={
-        <Space size={12}>
+        <Space size={space.md}>
           {portPool && (
             <Tooltip title={t("nodes.portPoolHint")}>
               <Tag color={portPool.blocked > 0 ? "red" : "default"} style={{ marginInlineEnd: 0 }}>

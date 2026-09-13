@@ -1,7 +1,7 @@
 /** 实例操作组(RowActions 三槽位):主动作随状态变(running 连接 ▾ / failed 重新创建 / 其余 开机)+ 次动作随状态变(running 关机 / 其余 事件记录)+ 更多 ▾(重启·事件·续费·自动续费·转换·释放)。条目永不隐藏,灰置带原因。按形态出计费项:按量出「转包周期」,包周期出「续费 / 自动续费」,竞价出「转按量」;转包周期确认在 RenewModal 里做。释放走多级防护:键入实例名 + 勾选盘数据清除(ui-ux-spec §1 规则 7)。 */
 
 import type { InstanceOut } from "@superdl/api-client";
-import { isSubscriptionExpired } from "@superdl/ui";
+import { isSubscriptionExpired, space } from "@superdl/ui";
 import { GatedButton, RowActions, TypeConfirmModal, useConfirm, type RowMenuItem } from "@superdl/ui/components";
 import { Link } from "@tanstack/react-router";
 import { App, Button, Space, Typography } from "antd";
@@ -65,7 +65,7 @@ export function ReleaseModal({
             components={{ b: <Typography.Text strong /> }}
           />
         ) : (
-          <Space orientation="vertical" size={8}>
+          <Space orientation="vertical" size={space.sm}>
             <Trans
               i18nKey="instances.actions.releaseBody"
               values={{ name: instance.name, id: instance.uuid.slice(0, 8) }}

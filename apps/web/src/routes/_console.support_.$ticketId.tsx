@@ -1,6 +1,6 @@
 /** 工单详情(PageContainer narrow,标题 = 工单主题,返回列表):对话流(用户/客服气泡)+ 关联实例链接 + [关闭工单]。resolved/closed 不可再回复;关闭入口常驻,非 resolved 灰置带原因。 */
 
-import { POLL } from "@superdl/ui";
+import { POLL, space } from "@superdl/ui";
 import { fontSize, formatDateTime, isTicketRepliable, metaOf, ticketCategoryMap, ticketStatusMap } from "@superdl/ui";
 import {
   DataErrorAlert,
@@ -82,10 +82,10 @@ function TicketDetailPage() {
 
   return (
     <PageContainer width="narrow" title={ticket.subject} back={back}>
-      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+      <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
         <Card
           title={
-            <Space size={8} wrap>
+            <Space size={space.sm} wrap>
               <Typography.Text code>{ticket.ticket_no}</Typography.Text>
               {cm && <Tag>{t(cm.labelKey)}</Tag>}
               <Badge status={sm?.badge ?? "default"} text={sm ? t(sm.labelKey) : ticket.status} />
@@ -112,7 +112,7 @@ function TicketDetailPage() {
             </GatedButton>
           }
         >
-          <Space size={16} wrap>
+          <Space size={space.lg} wrap>
             <Typography.Text type="secondary">
               {t("support.createdAt")}: {formatDateTime(ticket.created_at)}
             </Typography.Text>
@@ -124,9 +124,9 @@ function TicketDetailPage() {
           </Space>
         </Card>
         <Card title={t("support.conversation")}>
-          <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+          <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
             <div ref={scrollRef} onScroll={onScroll} style={{ maxHeight: 480, overflow: "auto" }}>
-              <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+              <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
                 {(ticket.messages ?? []).map((m) => (
                   <TicketBubble
                     key={m.id}

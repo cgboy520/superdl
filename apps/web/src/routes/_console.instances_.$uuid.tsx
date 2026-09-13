@@ -57,7 +57,7 @@ function AccessTab({ instance, running }: { instance: InstanceOut; running: bool
     return <Alert type="info" showIcon title={t("instances.accessServiceOnly")} />;
   }
   return (
-    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
       {instance.with_ssh && (
         <Card size="small" title="SSH">
           <Space orientation="vertical">
@@ -163,7 +163,7 @@ function InstanceDetail() {
   if (!instance) {
     return (
       <PageContainer>
-        <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
           <Card>
             <Skeleton active title={{ width: 240 }} paragraph={{ rows: 2 }} />
           </Card>

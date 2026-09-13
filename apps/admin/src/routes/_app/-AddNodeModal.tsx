@@ -4,7 +4,7 @@ import { Alert, App, Button, Form, Input, InputNumber, Modal, Select, Space, Typ
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { fontSize, formatDateTime } from "@superdl/ui";
+import { fontSize, formatDateTime, space } from "@superdl/ui";
 import { CopyField } from "@superdl/ui/components";
 import { useApiErrorText } from "@superdl/ui";
 import { useFormDraft } from "@superdl/ui";
@@ -16,7 +16,7 @@ import { POOL_LABEL_KEY } from "../../lib/pools";
 export function CommandPanel({ result }: { result: EnrollmentCommandOut }) {
   const { t } = useTranslation();
   return (
-    <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
       <Alert
         type="warning"
         showIcon

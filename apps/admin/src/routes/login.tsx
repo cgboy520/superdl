@@ -1,4 +1,4 @@
-import { adminColors, fontSize } from "@superdl/ui";
+import { adminColors, fontSize, space } from "@superdl/ui";
 import { CopyButton, CopyField, LangSwitcher, Mono } from "@superdl/ui/components";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { App, Button, Card, Checkbox, Form, Input, QRCode, Space, Typography } from "antd";
@@ -105,7 +105,7 @@ function MfaSetupForm({ ticket }: { ticket: string }) {
 
   if (codes != null) {
     return (
-      <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+      <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
           {t("login.recoveryDesc")}
         </Typography.Paragraph>
@@ -144,7 +144,7 @@ function MfaSetupForm({ ticket }: { ticket: string }) {
         {begin.data ? (
           <QRCode value={begin.data.otpauth_uri} size={168} />
         ) : begin.isError ? (
-          <Space orientation="vertical" size={8}>
+          <Space orientation="vertical" size={space.sm}>
             <Typography.Text type="danger">{errText(begin.error, t("login.failed"))}</Typography.Text>
             <Button size="small" onClick={() => beginSetup({ ticket })}>
               {t("common.retry", { ns: "shared" })}

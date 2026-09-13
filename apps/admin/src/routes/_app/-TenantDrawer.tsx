@@ -446,7 +446,7 @@ function TenantInstancesTab({
             {
               title: t("tenants.colInstance"),
               render: (_, r) => (
-                <Space size={8}>
+                <Space size={space.sm}>
                   <span>{r.name}</span>
                   <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                     <Mono truncate={8}>{r.uuid}</Mono>
@@ -538,7 +538,7 @@ function QuotaTab({ userId }: { userId: number }) {
   ];
 
   return (
-    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
       <Typography.Text type="secondary">{t("tenants.quota.hint")}</Typography.Text>
       <Form
         form={form}
@@ -570,7 +570,7 @@ function QuotaTab({ userId }: { userId: number }) {
           })();
         }}
       >
-        <Space wrap size={12}>
+        <Space wrap size={space.md}>
           {fields.map((f) => (
             <Form.Item key={f.name} name={f.name} label={f.label} style={{ marginBottom: 8 }}>
               <InputNumber min={1} precision={0} style={{ width: 110 }} disabled={!writable} />
@@ -598,7 +598,7 @@ function QuotaTab({ userId }: { userId: number }) {
           </Form.Item>
         </Space>
       </Form>
-      <Space size={24} wrap>
+      <Space size={space.xl} wrap>
         <span>
           {t("tenants.quota.effective")}:
           <b>
@@ -666,7 +666,7 @@ function EventsTab({ instances }: { instances: AdminInstanceOut[] }) {
               const from = r.from_status ? metaOf(instanceStatusMap, r.from_status) : undefined;
               const to = metaOf(instanceStatusMap, r.to_status);
               return (
-                <Space size={4}>
+                <Space size={space.xs}>
                   <span>{r.from_status ? (from ? t(from.labelKey) : r.from_status) : "—"}</span>
                   <span>→</span>
                   <HexTag color={to?.color}>{to ? t(to.labelKey) : r.to_status}</HexTag>

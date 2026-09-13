@@ -23,15 +23,16 @@ import { useTranslation } from "react-i18next";
 import {
   addAmounts,
   adjustmentStatusMap,
+  adminColors,
   controlWidth,
   flattenPages,
-  adminColors,
   fontSize,
   formatDateTime,
   idemKeyOf,
   layout,
   ledgerTypeMap,
   metaOf,
+  space,
 } from "@superdl/ui";
 import { CursorTable, EmptyState, FilterBar, GatedButton, KeyValue, moneyOr, RowActions } from "@superdl/ui/components";
 import { useApiErrorText, useUrlFilters } from "@superdl/ui";
@@ -399,7 +400,7 @@ export function AdjustmentsTab() {
                   type={ctx.data.status === "frozen" ? "warning" : "info"}
                   showIcon
                   title={
-                    <Space size={12} wrap>
+                    <Space size={space.md} wrap>
                       <span>{ctx.data.phone_masked}</span>
                       <span>{ctx.data.status === "frozen" ? t("tenants.frozen") : t("tenants.active")}</span>
                       <span>
@@ -410,7 +411,7 @@ export function AdjustmentsTab() {
                   }
                   description={
                     ctx.data.recent_ledger.length > 0 ? (
-                      <Space orientation="vertical" size={2} style={{ width: "100%" }}>
+                      <Space orientation="vertical" size={space.xs} style={{ width: "100%" }}>
                         {ctx.data.recent_ledger.map((l) => (
                           <span key={l.id} style={{ fontSize: fontSize.caption }}>
                             {formatDateTime(l.created_at)} ·{" "}

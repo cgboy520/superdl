@@ -5,7 +5,16 @@ import { Alert, App, Button, Card, Input, Modal, Radio, Select, Space, Statistic
 import { useMemo, useState } from "react";
 
 import { type InvoiceEligibleOut } from "@superdl/api-client";
-import { addAmounts, flattenPages, fontSize, formatDateTime, idemKeyOf, invoiceStatusMap, metaOf } from "@superdl/ui";
+import {
+  addAmounts,
+  flattenPages,
+  fontSize,
+  formatDateTime,
+  idemKeyOf,
+  invoiceStatusMap,
+  metaOf,
+  space,
+} from "@superdl/ui";
 import { CursorTable, DataErrorAlert, moneyOr } from "@superdl/ui/components";
 import { useFormat } from "@superdl/ui";
 
@@ -80,7 +89,7 @@ export function InvoiceApplyModal({
         });
       }}
     >
-      <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+      <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
         <Alert type="info" showIcon title={t("billing.invoiceManualNote")} />
         <Select
           style={{ width: "100%" }}
@@ -163,7 +172,7 @@ export function InvoiceTab() {
   const rows = useMemo(() => flattenPages(invoices.data), [invoices.data]);
 
   return (
-    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
       <Card size="small">
         <Space style={{ width: "100%", justifyContent: "space-between" }} align="start" wrap>
           <Statistic
@@ -178,7 +187,7 @@ export function InvoiceTab() {
           // 加载失败不伪装成「无可开票账期」
           <DataErrorAlert onRetry={() => void eligibleQ.refetch()} />
         ) : periods.length > 0 ? (
-          <Space wrap size={8} style={{ marginTop: 12 }}>
+          <Space wrap size={space.sm} style={{ marginTop: 12 }}>
             {periods.map((p) => (
               <Tag key={p.period}>{`${p.period} · ${formatMoney(p.amount)}`}</Tag>
             ))}

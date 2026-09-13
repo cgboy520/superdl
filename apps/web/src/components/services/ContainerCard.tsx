@@ -7,6 +7,7 @@ import { isPinnedImageRef, type ArgRow, type EnvRow } from "../../lib/serviceSpe
 import { Field } from "../Field";
 import { ArgRowsEditor } from "../create/ArgRowsEditor";
 import { EnvRowsEditor } from "../create/EnvRowsEditor";
+import { space } from "@superdl/ui";
 
 export function ContainerFields({
   image,
@@ -34,7 +35,7 @@ export function ContainerFields({
   const { t: tErr } = useTranslation("errors");
   const pinned = image.trim() === "" || isPinnedImageRef(image.trim());
   return (
-    <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
       <Field
         label={t("services.form.imageLabel")}
         required

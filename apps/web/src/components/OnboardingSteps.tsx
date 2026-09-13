@@ -5,13 +5,14 @@ import { Button, Space, Steps, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { useRefundableOrders } from "../api/queries";
+import { space } from "@superdl/ui";
 
 export function OnboardingSteps() {
   const { t } = useTranslation();
   const { data: orders } = useRefundableOrders();
   const hasPaid = (orders?.length ?? 0) > 0;
   return (
-    <Space orientation="vertical" size={16} style={{ width: "100%", maxWidth: 720 }}>
+    <Space orientation="vertical" size={space.lg} style={{ width: "100%", maxWidth: 720 }}>
       <Typography.Text strong>{t("onboarding.title")}</Typography.Text>
       <Steps
         size="small"

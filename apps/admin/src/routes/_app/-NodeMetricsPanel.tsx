@@ -3,7 +3,7 @@
 import { Button, Card, Space, Tag, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
-import { fontSize, useChartTheme } from "@superdl/ui";
+import { fontSize, space, useChartTheme } from "@superdl/ui";
 import { EChart } from "@superdl/ui/components";
 
 import { type NodeMetricsOut, type NodeRow } from "../../api";
@@ -41,7 +41,7 @@ export function NodeMetricsPanel({ node, metrics }: { node: NodeRow; metrics: No
     <Card
       title={t("nodes.historyTitle")}
       extra={
-        <Space size={12}>
+        <Space size={space.md}>
           {xid > 0 && <Tag color="red">{t("nodes.xidBadge", { count: xid })}</Tag>}
           {grafanaUrl && (
             <Button size="small" onClick={() => window.open(grafanaUrl, "_blank", "noopener,noreferrer")}>
@@ -52,7 +52,7 @@ export function NodeMetricsPanel({ node, metrics }: { node: NodeRow; metrics: No
       }
     >
       {metrics?.available && gpus.length > 0 ? (
-        <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+        <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
           {chart("util", t("nodes.utilChart"), "%")}
           {chart("mem_used_mb", t("nodes.vramChart"), "MB")}
         </Space>

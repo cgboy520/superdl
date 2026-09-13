@@ -1,6 +1,6 @@
 /** 服务配置段(对外访问):服务端口 / 协议 tile(TCP、gRPC 即将上线,灰置不隐藏)/ 健康检查 / 访问鉴权 tile / 端点占位。字段级错误在 blur 后就地显示(不只喂给提交钮 tooltip)。 */
 
-import { controlWidth } from "@superdl/ui";
+import { controlWidth, space } from "@superdl/ui";
 import { OptionTileGroup } from "@superdl/ui/components";
 import { Input, InputNumber, Space, Typography } from "antd";
 import { useState } from "react";
@@ -43,7 +43,7 @@ export function PublicAccessFields({
       ? t("services.form.healthPathSlash")
       : null;
   return (
-    <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
       <Field label={t("services.form.portLabel")} required error={portError} hint={t("services.form.portHint")}>
         <InputNumber
           min={1}
@@ -83,7 +83,7 @@ export function PublicAccessFields({
         />
       </Field>
       {!hideAuth && (
-        <Space orientation="vertical" size={4} style={{ width: "100%" }}>
+        <Space orientation="vertical" size={space.xs} style={{ width: "100%" }}>
           <OptionTileGroup
             label={t("services.form.authLabel")}
             columns={2}
@@ -100,7 +100,7 @@ export function PublicAccessFields({
         </Space>
       )}
       {!hideAuth && (
-        <Space orientation="vertical" size={4}>
+        <Space orientation="vertical" size={space.xs}>
           <Typography.Text type="secondary">{t("services.form.endpointLabel")}</Typography.Text>
           <Typography.Text type="secondary">{t("services.form.endpointPending")}</Typography.Text>
         </Space>

@@ -4,7 +4,7 @@ import { ArrowLeftOutlined } from "@ant-design/icons";
 import { Collapse, Button, Form, Input, Select, Space, Switch, Tag, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
-import { fontSize, formatDateTime } from "@superdl/ui";
+import { fontSize, formatDateTime, space } from "@superdl/ui";
 
 import { type PlatformConfigItem } from "../../api";
 import { GROUP_LABEL_KEY, Group } from "./-platformNav";
@@ -223,7 +223,7 @@ export function GroupPanel({
   const { t } = useTranslation();
   const fieldLabel = useFieldLabel();
   return (
-    <Space orientation="vertical" size={16} style={{ width: "100%", maxWidth: 760 }}>
+    <Space orientation="vertical" size={space.lg} style={{ width: "100%", maxWidth: 760 }}>
       {origin && (
         <Button
           type="link"
@@ -252,7 +252,7 @@ export function GroupPanel({
           <Form.Item
             key={item.key}
             label={
-              <Space size={8}>
+              <Space size={space.sm}>
                 {fieldLabel(item.key)}
                 <Tag color={SOURCE_TAG[item.source].color}>{t(SOURCE_TAG[item.source].textKey)}</Tag>
                 {item.updated_at && (
@@ -268,7 +268,7 @@ export function GroupPanel({
               </span>
             }
           >
-            <Space size={8} align="start">
+            <Space size={space.sm} align="start">
               <FieldControl
                 item={item}
                 draft={draft[item.key]}

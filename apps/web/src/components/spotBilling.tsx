@@ -1,6 +1,6 @@
 /** 竞价(spot)共用件:策略读取、折后时价、折扣角标;市场页 / 创建页 / 实例列表与详情共用。知情同意在 ConsentGate。折扣与宽限窗一律从 `/policies` 读。 */
 
-import { fontSize, mulPrice, spotHourlyPrice } from "@superdl/ui";
+import { fontSize, mulPrice, space, spotHourlyPrice } from "@superdl/ui";
 import { Space, Typography } from "antd";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
@@ -44,7 +44,7 @@ export function SpotPriceInline({
   const spot = spotPriceOf(baseHourly, policy);
   if (!spot) return <>{formatHourlyPrice(mulPrice(baseHourly, units))}</>;
   return (
-    <Space size={8} align="baseline">
+    <Space size={space.sm} align="baseline">
       <Typography.Text type="secondary" delete style={{ fontSize: fontSize.body }}>
         {formatHourlyPrice(mulPrice(baseHourly, units))}
       </Typography.Text>

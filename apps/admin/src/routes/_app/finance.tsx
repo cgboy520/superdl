@@ -13,6 +13,7 @@ import {
   orderStatusMap,
   payoutChannelMap,
   refundStatusMap,
+  space,
 } from "@superdl/ui";
 import { PageContainer } from "@superdl/ui/components";
 
@@ -105,7 +106,7 @@ function FinancePage() {
             {
               key: "anomalies",
               label: (
-                <Space size={6}>
+                <Space size={space.sm}>
                   {t("finance.tabAnomalies")}
                   {/* 计数查询失败显示警示图标,不静默为 0 */}
                   {anomaliesError ? (

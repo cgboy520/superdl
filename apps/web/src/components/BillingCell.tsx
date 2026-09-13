@@ -1,7 +1,7 @@
 /** 计费列(实例列表 / 服务列表共用):包周期 = 档位标 + 周期价;按量 / 竞价 = 标记 + 时价 + 今日消费。服务侧传 current_instance ?? rollout_instance;无实例显「—」。续费入口在「更多」。 */
 
 import type { InstanceOut } from "@superdl/api-client";
-import { fontSize } from "@superdl/ui";
+import { fontSize, space } from "@superdl/ui";
 import { useFormat } from "@superdl/ui";
 import { moneyOr } from "@superdl/ui/components";
 import { Space, Tag, Typography } from "antd";
@@ -32,7 +32,7 @@ export function BillingCell({
   ) : (
     // 竞价与按量共用;price_hourly 在竞价实例上已是折后价
     <Space orientation="vertical" size={0}>
-      <Space size={6}>
+      <Space size={space.sm}>
         {r.market === "spot" ? (
           <SpotTag market={r.market} />
         ) : (
@@ -40,7 +40,7 @@ export function BillingCell({
         )}
         <span>{t("instances.pricePerCard", { price: formatHourlyPrice(r.price_hourly), count: r.gpu_count })}</span>
       </Space>
-      <Space size={6}>
+      <Space size={space.sm}>
         <SpotReclaimTag market={r.market} />
         <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
           {/* 查询未就绪走 moneyOr 显「—」,不显假 ¥0.00(与详情页同口径) */}

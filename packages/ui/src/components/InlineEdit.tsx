@@ -4,7 +4,7 @@ import { EditOutlined } from "@ant-design/icons";
 import { Button, Input, Space } from "antd";
 import { useRef, useState, type ReactNode } from "react";
 
-import { controlWidth, iconSize } from "../tokens";
+import { controlWidth, iconSize, space } from "../tokens";
 
 export function InlineEdit({
   value,
@@ -96,7 +96,7 @@ export function InlineEdit({
     );
   }
   return (
-    <Space size={4} align="center">
+    <Space size={space.xs} align="center">
       {display ?? value}
       <Button
         type="text"

@@ -760,7 +760,7 @@ function CreatePage() {
           }
           breakdown={period && quote ? <PeriodQuoteRows quote={quote} gpuCount={gpuCount} cpu={isCpu} /> : undefined}
           detail={
-            <Space orientation="vertical" size={4} style={{ maxWidth: 360 }}>
+            <Space orientation="vertical" size={space.xs} style={{ maxWidth: 360 }}>
               {period && quote ? (
                 <PeriodQuoteRows quote={quote} gpuCount={gpuCount} cpu={isCpu} />
               ) : (

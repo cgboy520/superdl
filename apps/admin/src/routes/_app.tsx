@@ -96,7 +96,7 @@ function AlertBell() {
         <div style={{ width: 360 }}>
           <div style={{ maxHeight: 400, overflow: "auto" }}>
             {alertsQ.isError ? (
-              <Space orientation="vertical" size={8}>
+              <Space orientation="vertical" size={space.sm}>
                 <Typography.Text type="secondary">{t("common.loadFailed", { ns: "shared" })}</Typography.Text>
                 <Button size="small" onClick={() => void alertsQ.refetch()}>
                   {t("common.retry", { ns: "shared" })}
@@ -109,7 +109,7 @@ function AlertBell() {
                   const link = alertLink(a);
                   return (
                     <div key={a.id} style={{ padding: "6px 0", borderBottom: `1px solid ${adminColors.divider}` }}>
-                      <Space size={6} align="start">
+                      <Space size={space.sm} align="start">
                         <StatusTag map={severityMap} value={a.severity} variant="text" icon />
                         <Typography.Text style={{ fontSize: fontSize.body }} delete={a.acked_at != null}>
                           {link ? (
@@ -353,7 +353,7 @@ function AppLayout() {
             lineHeight: `${layout.topBarHeight}px`,
           }}
         >
-          <Space size={12}>
+          <Space size={space.md}>
             {!desktop && (
               <Button
                 type="text"
@@ -364,7 +364,7 @@ function AppLayout() {
             )}
             <Tag color={isProd ? "red" : "cyan"}>{isProd ? t("shell.envProd") : t("shell.envDev")}</Tag>
           </Space>
-          <Space size={24}>
+          <Space size={space.xl}>
             {/* md 以下命令面板触发器/语言切换/铃铛收入用户下拉 */}
             {screens.md && (
               <>

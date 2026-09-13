@@ -3,7 +3,7 @@
 import { Collapse, Button, Space, Switch, Tag, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
-import { adminColors, fontSize, formatDateTime } from "@superdl/ui";
+import { adminColors, fontSize, formatDateTime, space } from "@superdl/ui";
 
 import { type PlatformConfigItem } from "../../api";
 import { FieldExtraText, GROUP_INTRO_KEYS, SOURCE_TAG, useFieldLabel } from "./-platformFields";
@@ -59,14 +59,14 @@ export function SwitchRow({
   const risks = warnings.filter((w) => w.key === item.key);
   return (
     <div style={{ border: `1px solid ${adminColors.divider}`, borderRadius: 6, padding: "12px 16px" }}>
-      <Space align="start" size={16} style={{ width: "100%" }}>
+      <Space align="start" size={space.lg} style={{ width: "100%" }}>
         <Switch
           checked={effective}
           disabled={disabled}
           onChange={(checked) => setDraft((d) => ({ ...d, [item.key]: checked ? "true" : "false" }))}
         />
-        <Space orientation="vertical" size={4}>
-          <Space size={8} wrap>
+        <Space orientation="vertical" size={space.xs}>
+          <Space size={space.sm} wrap>
             <Typography.Text strong>{fieldLabel(item.key)}</Typography.Text>
             <Tag color={SOURCE_TAG[item.source].color}>{t(SOURCE_TAG[item.source].textKey)}</Tag>
             {item.updated_at && (
@@ -92,7 +92,7 @@ export function SwitchRow({
             <FieldExtraText itemKey={item.key} hint={item.hint} />
           </Typography.Text>
           {deps && (
-            <Space size={4}>
+            <Space size={space.xs}>
               <Typography.Text
                 style={{
                   fontSize: fontSize.caption,
@@ -153,7 +153,7 @@ export function SecurityPanel({
 }) {
   const { t } = useTranslation();
   return (
-    <Space orientation="vertical" size={12} style={{ width: "100%", maxWidth: 760 }}>
+    <Space orientation="vertical" size={space.md} style={{ width: "100%", maxWidth: 760 }}>
       <Collapse
         size="small"
         items={[

@@ -5,7 +5,7 @@ import { Button, Form, Input, Modal, Select, Space, Table, Tag, Tooltip, Typogra
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { adminColors, controlWidth, fontSize, formatDateTime, invoiceStatusMap, layout } from "@superdl/ui";
+import { adminColors, controlWidth, fontSize, formatDateTime, invoiceStatusMap, layout, space } from "@superdl/ui";
 import {
   EmptyState,
   FilterBar,
@@ -182,7 +182,7 @@ export function InvoicesTab() {
           setReasonInput("");
         }}
       >
-        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+        <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
           <Typography.Text type="secondary">{t("finance.revealHint")}</Typography.Text>
           <Input.TextArea
             rows={2}

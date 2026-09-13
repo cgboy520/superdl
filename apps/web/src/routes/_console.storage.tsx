@@ -243,7 +243,7 @@ function StoragePage() {
         refreshing: isRefetching,
       }}
     >
-      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+      <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
         <MountOverview priceText={priceText} />
         <Card>
           {isError ? (
@@ -278,7 +278,7 @@ function StoragePage() {
                 {
                   title: t("storage.colStatus"),
                   render: (_, r) => (
-                    <Space size={4}>
+                    <Space size={space.xs}>
                       <StatusTag map={diskStatusMap} value={r.status} variant="badge" />
                       {!r.quota_synced && r.status !== "deleting" && (
                         <Tooltip title={t("storage.quotaPendingHint")}>

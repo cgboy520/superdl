@@ -6,6 +6,7 @@ import { CopyField } from "@superdl/ui/components";
 import { Link } from "@tanstack/react-router";
 import { Alert, Badge, Button, Card, Space, Tag, Typography } from "antd";
 import { useTranslation } from "react-i18next";
+import { space } from "@superdl/ui";
 
 export function EndpointCard({
   service,
@@ -21,8 +22,8 @@ export function EndpointCard({
   const live = service.status === "running" || service.status === "unready";
   return (
     <Card size="small" title={t("services.detail.endpointCard")}>
-      <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-        <Space wrap size={8}>
+      <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
+        <Space wrap size={space.sm}>
           {/* 完整 URL 在唯一一个 <code> 里(e2e 以 code 定位端点) */}
           <CopyField value={service.url} code label={t("services.copyEndpoint")} />
           <Button
@@ -33,7 +34,7 @@ export function EndpointCard({
             {t("services.openEndpoint")}
           </Button>
         </Space>
-        <Space wrap size={12}>
+        <Space wrap size={space.md}>
           <Badge
             status={service.ready ? "success" : "default"}
             text={service.ready ? t("services.ready") : t("services.notReady")}
@@ -86,7 +87,7 @@ export function EndpointCard({
             showIcon
             title={t("services.detail.failedHint")}
             action={
-              <Space size={8}>
+              <Space size={space.sm}>
                 <Button size="small" onClick={onShowLogs}>
                   {t("services.detail.checkLogs")}
                 </Button>

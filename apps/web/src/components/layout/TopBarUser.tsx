@@ -1,7 +1,7 @@
 /** 控制台顶栏右区(中性底,图标走 antd token 色):余额入口 · ⌘K · 通知铃 · 主题切换 · 用户菜单(账户设置 / 通知中心 / 帮助 / 语言 / 主题 / 退出)。
  *  语言与帮助收进用户菜单以精简顶栏;窄屏(<md)只留余额 / 铃 / 用户,主题改走用户菜单(ui-ux-spec §1 规则 15)。未登录(公开市场页)显示登录入口。 */
 
-import { POLL } from "@superdl/ui";
+import { POLL, space } from "@superdl/ui";
 import {
   BellOutlined,
   ExclamationCircleFilled,
@@ -162,9 +162,9 @@ export function TopBarUser() {
     { key: "logout", icon: <LogoutOutlined />, label: t("settings.logout"), danger: true },
   ];
   return (
-    <Space size={4}>
+    <Space size={space.xs}>
       <Link to="/billing" className="topbar-balance" aria-label={t("common.balance")}>
-        <Space size={4}>
+        <Space size={space.xs}>
           <WalletOutlined />
           <span style={{ fontWeight: 600 }}>{moneyOr(formatMoney(wallet?.balance ?? "0.00"), wallet != null)}</span>
         </Space>

@@ -76,7 +76,7 @@ export function EventsPanel({
           color: e.to_status === "running" ? "green" : e.to_status === "failed" ? "red" : "gray",
           content: (
             <Space orientation="vertical" size={0}>
-              <Space size={8} align="center">
+              <Space size={space.sm} align="center">
                 <Typography.Text strong>
                   {statusText(e.from_status)} → {statusText(e.to_status)}
                 </Typography.Text>

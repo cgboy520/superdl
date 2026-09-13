@@ -6,7 +6,16 @@ import { App, Button, Input, Select, Space, Table, Tag, Typography } from "antd"
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { controlWidth, deletionStatusMap, fontSize, formatDateTime, layout, useNow, useUrlFilters } from "@superdl/ui";
+import {
+  controlWidth,
+  deletionStatusMap,
+  fontSize,
+  formatDateTime,
+  layout,
+  space,
+  useNow,
+  useUrlFilters,
+} from "@superdl/ui";
 import {
   EmptyState,
   FilterBar,
@@ -130,7 +139,7 @@ export function DeletionsTab() {
             fixed: "left",
             width: 170,
             render: (_, r) => (
-              <Space size={8}>
+              <Space size={space.sm}>
                 <TenantLink id={r.user_id} />
                 <span>{r.phone_masked}</span>
               </Space>
@@ -151,7 +160,7 @@ export function DeletionsTab() {
             title: t("tenants.deletion.colCooldownEnd"),
             dataIndex: "cooldown_ends_at",
             render: (v: string, r) => (
-              <Space size={8}>
+              <Space size={space.sm}>
                 <span>{formatDateTime(v)}</span>
                 {r.status === "pending" && !cooldownOver(r) && <Tag color="orange">{cooldownLeft(r)}</Tag>}
               </Space>
@@ -160,7 +169,7 @@ export function DeletionsTab() {
           {
             title: t("tenants.deletion.colPrecheck"),
             render: (_, r) => (
-              <Space size={8}>
+              <Space size={space.sm}>
                 <span>{t("tenants.deletion.precheckInstances", { count: r.instances_active })}</span>
                 <span>{t("tenants.deletion.precheckDisks", { count: r.disks_active })}</span>
                 <span>{formatMoney(r.balance)}</span>
@@ -236,7 +245,7 @@ export function DeletionsTab() {
           title={t("tenants.deletion.approveTitle")}
           targetName={String(approving.user_id)}
           body={
-            <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+            <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
               <Typography.Text strong>
                 {t("tenants.deletion.approveTarget", {
                   id: approving.user_id,

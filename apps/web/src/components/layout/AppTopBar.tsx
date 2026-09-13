@@ -3,7 +3,7 @@
  *  窄屏(<lg)左侧出汉堡:console 打开控制台导航 Drawer,public 打开锚点导航 Drawer。 */
 
 import { MenuOutlined, MoonOutlined, SunOutlined } from "@ant-design/icons";
-import { brand, brandInverseButtonStyle, fontSize, layout } from "@superdl/ui";
+import { brand, brandInverseButtonStyle, fontSize, layout, space } from "@superdl/ui";
 import { LangSwitcher } from "@superdl/ui/components";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Button, Drawer, Grid, Space, theme } from "antd";
@@ -107,7 +107,7 @@ export function AppTopBar({ variant, right }: { variant: "public" | "console"; r
                 <Button ghost>{t("common.enterConsole")}</Button>
               </Link>
             ) : (
-              <Space size={8}>
+              <Space size={space.sm}>
                 <Link to="/login" className="topbar-link">
                   {t("topbar.login")}
                 </Link>

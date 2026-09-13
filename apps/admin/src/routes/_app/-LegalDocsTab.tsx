@@ -69,7 +69,7 @@ export function LegalDocsTab() {
         : t("settings.legal.docDeletionNotice");
 
   return (
-    <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
       {!writable && <Alert type="info" showIcon title={t("settings.legal.adminOnlyTip")} />}
       {overview.isError && (
         <DataErrorAlert
@@ -294,7 +294,7 @@ function CellEditor({
         </Space>
       }
     >
-      <Space size={12} align="start" style={{ width: "100%" }}>
+      <Space size={space.md} align="start" style={{ width: "100%" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <Typography.Text type="secondary">{t("settings.legal.editTitle")}</Typography.Text>
           <Input

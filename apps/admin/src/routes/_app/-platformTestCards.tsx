@@ -4,7 +4,7 @@ import { App, Button, Card, Input, Space, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { adminColors, fontSize } from "@superdl/ui";
+import { adminColors, fontSize, space } from "@superdl/ui";
 import { useApiErrorText } from "@superdl/ui";
 
 import { useTestRegistry, useTestSms } from "../../api";
@@ -60,7 +60,7 @@ export function RegistryTestCard({ disabled }: { disabled: boolean }) {
   const r = test.data;
   return (
     <Card size="small" title={t("platform.testRegistryTitle")}>
-      <Space orientation="vertical" size={8}>
+      <Space orientation="vertical" size={space.sm}>
         <Button type="primary" disabled={disabled} loading={test.isPending} onClick={() => test.mutate()}>
           {t("platform.testRegistryRun")}
         </Button>

@@ -4,6 +4,7 @@
 import { Button, Empty, Result, Space, Typography } from "antd";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { space } from "../tokens";
 
 export function TableErrorEmpty({
   isError,
@@ -40,7 +41,7 @@ export function TableErrorEmpty({
   }
   if (compact) {
     return (
-      <Space orientation="vertical" size={8} style={{ padding: "24px 0" }}>
+      <Space orientation="vertical" size={space.sm} style={{ padding: "24px 0" }}>
         <Typography.Text type="secondary">{t("common.loadFailed")}</Typography.Text>
         {onRetry && (
           <Button size="small" onClick={onRetry}>

@@ -1,5 +1,5 @@
 import { CheckCircleFilled, CloseCircleFilled } from "@ant-design/icons";
-import { adminColors, formatDateTime, metaOf } from "@superdl/ui";
+import { adminColors, formatDateTime, metaOf, space } from "@superdl/ui";
 import { CopyField, DataErrorAlert, GatedButton, PageContainer } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -56,7 +56,7 @@ function ClusterPage() {
 
   return (
     <PageContainer title={t("menu.cluster")}>
-      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+      <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
         {isError && <DataErrorAlert onRetry={() => void refetch()} />}
         {isK3s && <Alert type="warning" showIcon title={t("cluster.lightWarning")} />}
         {data && !data.api_reachable && data.error && (
@@ -79,8 +79,8 @@ function ClusterPage() {
                 </GatedButton>
               }
             >
-              <Space orientation="vertical" size={8}>
-                <Space size={8}>
+              <Space orientation="vertical" size={space.sm}>
+                <Space size={space.sm}>
                   <Badge status={isLoading ? "processing" : data?.api_reachable ? "success" : "error"} />
                   <Typography.Text strong>
                     {isLoading
@@ -107,7 +107,7 @@ function ClusterPage() {
           </Col>
           <Col xs={24} lg={12}>
             <Card title={t("cluster.configCard")}>
-              <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+              <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
                 {(
                   [
                     ["cluster.cfgServer", data?.config.server_url_set],
@@ -115,7 +115,7 @@ function ClusterPage() {
                     ["cluster.cfgProm", data?.config.prometheus_url_set],
                   ] as const
                 ).map(([key, ok]) => (
-                  <Space key={key} size={8}>
+                  <Space key={key} size={space.sm}>
                     {ok ? (
                       <CheckCircleFilled style={{ color: adminColors.positive }} />
                     ) : (
@@ -127,7 +127,7 @@ function ClusterPage() {
                     </Typography.Text>
                   </Space>
                 ))}
-                <Space size={12}>
+                <Space size={space.md}>
                   <Link to="/platform">{t("cluster.goPlatform")}</Link>
                   {data?.config.grafana_url && (
                     <Typography.Link href={data.config.grafana_url} target="_blank">
@@ -140,13 +140,13 @@ function ClusterPage() {
           </Col>
           <Col xs={24} lg={12}>
             <Card title={t("cluster.healthCard")}>
-              <Space orientation="vertical" size={10} style={{ width: "100%" }}>
+              <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
                 {data && data.components.length === 0 && (
                   <Typography.Text type="secondary">{t("cluster.noComponents")}</Typography.Text>
                 )}
                 {(data?.components ?? []).map((c) => (
                   <div key={c.key}>
-                    <Space size={8}>
+                    <Space size={space.sm}>
                       {c.ok ? (
                         <CheckCircleFilled style={{ color: adminColors.positive }} />
                       ) : (
@@ -168,8 +168,8 @@ function ClusterPage() {
           </Col>
           <Col xs={24} lg={12}>
             <Card title={t("cluster.poolCard")}>
-              <Space orientation="vertical" size={10}>
-                <Space size={8} wrap>
+              <Space orientation="vertical" size={space.md}>
+                <Space size={space.sm} wrap>
                   {Object.entries(data?.pools ?? {})
                     .filter(([k]) => k !== "unlabeled")
                     .map(([pool, count]) => {

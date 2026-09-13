@@ -4,7 +4,7 @@ import { Alert, App, Form, type FormInstance, Modal, Space } from "antd";
 import type { ReactNode } from "react";
 import { useState } from "react";
 
-import { useApiErrorText } from "@superdl/ui";
+import { space, useApiErrorText } from "@superdl/ui";
 
 export function RowActionModal<Values>({
   title,
@@ -68,7 +68,7 @@ export function RowActionModal<Values>({
       destroyOnHidden
       onOk={() => void handleOk()}
     >
-      <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+      <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
         <Alert type="info" showIcon title={note} />
         <Form form={form} layout="vertical">
           {children}

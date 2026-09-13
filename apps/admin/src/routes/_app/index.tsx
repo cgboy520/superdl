@@ -3,7 +3,6 @@
 import { QuestionCircleOutlined } from "@ant-design/icons";
 import {
   adminColors,
-  type AlertSeverity,
   flattenPages,
   fontSize,
   formatDateTime,
@@ -12,7 +11,9 @@ import {
   POLL,
   SEVERITY_ORDER,
   severityMap,
+  space,
   statusColors,
+  type AlertSeverity,
   useAutoRefresh,
   useChartTheme,
   useFormat,
@@ -245,7 +246,7 @@ function DeadTasksCard() {
           {
             key: "dead",
             label: (
-              <Space size={8}>
+              <Space size={space.sm}>
                 <Badge status="error" />
                 <b>{t("overview.deadTasks")}</b>
                 {isError ? (
@@ -437,7 +438,7 @@ function AlertStreamCard({ refetchInterval }: { refetchInterval: number | false 
             const link = alertLink(a);
             return (
               <div key={a.id} style={{ marginBottom: 12 }}>
-                <Space size={6} align="start">
+                <Space size={space.sm} align="start">
                   <StatusTag map={severityMap} value={a.severity} variant="text" icon />
                   {link ? (
                     <Link to={link.to} search={link.search}>

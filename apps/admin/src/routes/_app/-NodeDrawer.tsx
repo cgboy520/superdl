@@ -7,7 +7,7 @@ import dayjs from "dayjs";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { drawerWidth, fontSize, fontWeight, formatDateTime, nodeStatusMap } from "@superdl/ui";
+import { drawerWidth, fontSize, fontWeight, formatDateTime, nodeStatusMap, space } from "@superdl/ui";
 import { EntityHeader, GatedButton, RowActions, StatusTag, type KeyValueItem } from "@superdl/ui/components";
 
 import { type NodeRow, useNodeMetrics } from "../../api";
@@ -36,7 +36,7 @@ export function GpuModelCell({ node }: { node: NodeRow }) {
   const { t } = useTranslation();
   const unrecognized = node.gpu_model === "GPU" && !!node.gpu_model_raw;
   return (
-    <Space size={4}>
+    <Space size={space.xs}>
       <span>{`${unrecognized ? node.gpu_model_raw : node.gpu_model} × ${node.gpu_total}`}</span>
       {unrecognized && <Tag color="gold">{t("nodes.unrecognizedTag")}</Tag>}
       {!unrecognized && node.gpu_model !== "GPU" && node.label_synced === false && (
@@ -147,7 +147,7 @@ function NodeDrawerBody({ node }: { node: NodeRow }) {
   const [range, setRange] = useState("1h");
   const { data: metrics } = useNodeMetrics(node.name, range);
   return (
-    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
       <Segmented
         value={range}
         onChange={setRange}

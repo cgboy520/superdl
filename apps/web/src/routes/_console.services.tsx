@@ -14,6 +14,7 @@ import {
   POLL,
   SERVICE_FILTER_STATUSES,
   serviceStatusMap,
+  space,
 } from "@superdl/ui";
 import {
   CopyButton,
@@ -242,7 +243,7 @@ function ServicesPage() {
             title: t("services.colEndpoint"),
             render: (_, r) => (
               <Space orientation="vertical" size={0}>
-                <Space size={6}>
+                <Space size={space.sm}>
                   <Typography.Text code>{hostOf(r.url)}</Typography.Text>
                   <CopyButton text={r.url} />
                 </Space>

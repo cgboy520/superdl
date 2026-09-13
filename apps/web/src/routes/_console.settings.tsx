@@ -1,7 +1,7 @@
 /** 账户设置:四 Tab(SSH 公钥 / 通知 / 实名认证 / 账号),?tab= 入 URL(白名单 + replace);#ssh / #notify 深链落到对应 Tab 并滚动高亮。 */
 
 import type { TokenPairOut } from "@superdl/api-client";
-import { deletionStatusMap, fontSize, formatDateTime, maskPhone, metaOf, useFormat } from "@superdl/ui";
+import { deletionStatusMap, fontSize, formatDateTime, maskPhone, metaOf, space, useFormat } from "@superdl/ui";
 import {
   DangerZone,
   DataErrorAlert,
@@ -124,7 +124,7 @@ function SshTab() {
 
   return (
     <Card id="ssh" extra={<Typography.Text type="secondary">{t("copy.sshKeyOnly")}</Typography.Text>}>
-      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+      <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
         <Table
           rowKey="id"
           size="small"
@@ -205,9 +205,9 @@ function AccountTab({ me }: { me: { phone: string } | undefined }) {
   const confirm = useConfirm();
 
   return (
-    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
       <Card>
-        <Space orientation="vertical" size={12}>
+        <Space orientation="vertical" size={space.md}>
           {me ? (
             <Typography.Text>{t("settings.phoneLine", { phone: maskPhone(me.phone) })}</Typography.Text>
           ) : (
@@ -359,10 +359,10 @@ function DeletionZone({ phone }: { phone: string }) {
         <DangerZone
           title={t("settings.deletion.dangerZone")}
           description={
-            <Space orientation="vertical" size={4}>
+            <Space orientation="vertical" size={space.xs}>
               <span>{t("settings.deletion.dangerNote")}</span>
               {req && statusMeta && (
-                <Space size={8}>
+                <Space size={space.sm}>
                   <Tag color={statusMeta.color}>{t(statusMeta.labelKey)}</Tag>
                   {req.status === "rejected" && req.note && (
                     <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
@@ -383,7 +383,7 @@ function DeletionZone({ phone }: { phone: string }) {
         targetName={phone}
         maxLength={11}
         body={
-          <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+          <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
             <Alert
               type="error"
               showIcon
@@ -403,7 +403,7 @@ function DeletionZone({ phone }: { phone: string }) {
                 </>
               }
             />
-            <Space orientation="vertical" size={4} style={{ width: "100%" }}>
+            <Space orientation="vertical" size={space.xs} style={{ width: "100%" }}>
               <Typography.Text>{t("settings.deletion.reasonLabel")}</Typography.Text>
               <Input.TextArea
                 rows={2}
@@ -472,7 +472,7 @@ function RealNameTab({
       ) : verified ? (
         <Typography.Text type="secondary">{t("settings.realNameDoneNote")}</Typography.Text>
       ) : (
-        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+        <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
           <Typography.Text type="secondary">
             {enabled ? t("settings.realNameNote") : t("settings.realNameDisabled")}
           </Typography.Text>

@@ -1,7 +1,7 @@
 /** 访问密钥卡:名称 / Key 前缀 / 最近使用 / 创建时间 / 吊销 + 新建(一次性展示)。公开访问的服务仍渲染,附「网关不校验 Key」说明。 */
 
 import type { ApiKeyOut } from "@superdl/api-client";
-import { formatDateTime } from "@superdl/ui";
+import { formatDateTime, space } from "@superdl/ui";
 import { TableErrorEmpty, useConfirm } from "@superdl/ui/components";
 import { Alert, App, Button, Card, Space, Table, Typography } from "antd";
 import { useState } from "react";
@@ -42,7 +42,7 @@ export function ApiKeysCard({
         </Button>
       }
     >
-      <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+      <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
         {!requireApiKey && <Alert type="warning" showIcon title={t("services.keys.publicNote")} />}
         <Table<ApiKeyOut>
           rowKey="id"

@@ -7,6 +7,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useCreateServiceApiKey } from "../../api/mutations";
+import { space } from "@superdl/ui";
 
 export function ApiKeyModal({ slug, open, onClose }: { slug: string; open: boolean; onClose: () => void }) {
   const { t } = useTranslation();
@@ -37,7 +38,7 @@ export function ApiKeyModal({ slug, open, onClose }: { slug: string; open: boole
           </Button>
         }
       >
-        <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+        <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
           <Typography.Text type="danger" strong>
             {t("services.keys.onceWarn")}
           </Typography.Text>
@@ -64,7 +65,7 @@ export function ApiKeyModal({ slug, open, onClose }: { slug: string; open: boole
       okButtonProps={{ disabled: name.trim() === "" }}
       onOk={() => create.mutate(name.trim())}
     >
-      <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+      <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
         <Typography.Text type="secondary">{t("services.keys.nameLabel")}</Typography.Text>
         <Input
           maxLength={64}

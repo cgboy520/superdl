@@ -1,6 +1,6 @@
 /** 结算缺口:FilterBar(类型 / 只看未核销,入 URL ?g_kind= / ?g_open=)+ 重放补结 / 人工核销(告警 superdl_settlement_gap_unresolved)。 */
 
-import { controlWidth, flattenPages, formatDateTime, useUrlFilters } from "@superdl/ui";
+import { controlWidth, flattenPages, formatDateTime, space, useUrlFilters } from "@superdl/ui";
 import { CursorTable, EmptyState, FilterBar, GatedButton, RowActions, useConfirm } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { App, Button, Select, Space, Switch, Tag, Typography } from "antd";
@@ -109,7 +109,7 @@ export function SettlementGapsTab() {
             label: t(KIND_LABEL_KEY[k]),
           }))}
         />
-        <Space size={6}>
+        <Space size={space.sm}>
           <Switch checked={unresolvedOnly} onChange={(on) => setFilters({ g_open: on ? undefined : "0" })} />
           <Typography.Text type="secondary">{t("finance.gapUnresolvedOnly")}</Typography.Text>
         </Space>

@@ -6,6 +6,7 @@ import {
   formatDateTime,
   idemKeyOf,
   metaOf,
+  space,
   ticketCategoryMap,
   ticketStatusMap,
   type TicketStatus,
@@ -173,7 +174,7 @@ function SupportPage() {
         </Button>
       }
     >
-      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+      <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
         <Row gutter={16}>
           <Col xs={24} md={12}>
             <SelfHelpCard />
@@ -243,7 +244,7 @@ function SupportPage() {
                 <List.Item>
                   <List.Item.Meta
                     title={
-                      <Space size={8} wrap>
+                      <Space size={space.sm} wrap>
                         <Mono>{r.ticket_no}</Mono>
                         {cm && <Tag>{t(cm.labelKey)}</Tag>}
                         <Link to="/support/$ticketId" params={{ ticketId: String(r.id) }}>
@@ -252,7 +253,7 @@ function SupportPage() {
                       </Space>
                     }
                   />
-                  <Space size={12}>
+                  <Space size={space.md}>
                     <StatusTag map={ticketStatusMap} value={r.status} variant="badge" />
                     <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                       {formatDateTime(r.updated_at)}

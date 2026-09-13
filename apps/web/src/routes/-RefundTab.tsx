@@ -13,6 +13,7 @@ import {
   metaOf,
   payoutChannelMap,
   refundStatusMap,
+  space,
 } from "@superdl/ui";
 import { CursorTable, DataErrorAlert, EmptyState, GatedButton } from "@superdl/ui/components";
 import { useFormat } from "@superdl/ui";
@@ -69,7 +70,7 @@ export function RefundTab() {
   };
 
   return (
-    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
       <Card size="small" title={t("billing.refundApply")}>
         {ordersQ.isError ? (
           // 加载失败不伪装成「无充值订单」
@@ -77,7 +78,7 @@ export function RefundTab() {
         ) : orders.length === 0 && !ordersQ.isLoading ? (
           <EmptyState scene="list" compact description={t("billing.refundNoOrders")} />
         ) : (
-          <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+          <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
             <Select
               style={{ width: "100%", maxWidth: 560 }}
               placeholder={t("billing.refundSelectOrder")}

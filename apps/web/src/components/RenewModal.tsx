@@ -2,15 +2,16 @@
 
 import type { InstanceOut, RenewOut } from "@superdl/api-client";
 import {
-  billingUnits,
-  BILLING_PERIODS,
   addAmounts,
+  BILLING_PERIODS,
+  billingUnits,
   compareAmounts,
   formatDateTime,
   isBillingPeriod,
   MAX_PERIOD_COUNT,
   PERIOD_HOURS,
   periodMap,
+  space,
 } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
 import { App, Button, InputNumber, Modal, Space, Typography } from "antd";
@@ -109,7 +110,7 @@ export function RenewModal({
         </Space>
       }
     >
-      <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+      <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
         <KeyValue
           items={[
             isConvert
@@ -153,7 +154,7 @@ export function RenewModal({
             };
           })}
           extra={
-            <Space size={8}>
+            <Space size={space.sm}>
               <InputNumber
                 min={1}
                 max={MAX_PERIOD_COUNT}

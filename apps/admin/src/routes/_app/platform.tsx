@@ -257,7 +257,7 @@ function PlatformConfigPage() {
             })();
           }}
         >
-          <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+          <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
             {changedByGroup.map(({ group, rows }) => (
               <div key={group}>
                 <Typography.Text style={{ fontWeight: fontWeight.semibold }}>

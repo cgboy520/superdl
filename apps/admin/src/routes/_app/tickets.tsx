@@ -163,7 +163,7 @@ function TicketDrawer({
       size={drawerWidth.md}
       title={
         ticket ? (
-          <Space size={8} wrap>
+          <Space size={space.sm} wrap>
             <Typography.Text code>{ticket.ticket_no}</Typography.Text>
             {cm && <Tag>{t(cm.labelKey)}</Tag>}
             {sm && <HexTag color={sm.color}>{t(sm.labelKey)}</HexTag>}
@@ -224,12 +224,12 @@ function TicketDrawer({
       {ticket && (
         // 列布局撑满抽屉高度,回复框才有贴底的空间
         <div style={{ display: "flex", flexDirection: "column", minHeight: "100%" }}>
-          <Space orientation="vertical" size={16} style={{ width: "100%", flex: 1 }}>
+          <Space orientation="vertical" size={space.lg} style={{ width: "100%", flex: 1 }}>
             <div>
               <Typography.Title level={5} style={{ marginTop: 0 }}>
                 {ticket.subject}
               </Typography.Title>
-              <Space size={16} wrap>
+              <Space size={space.lg} wrap>
                 <TenantLink id={ticket.user_id} />
                 <Typography.Text type="secondary">
                   {t("tickets.colCreatedAt")}: {formatDateTime(ticket.created_at)}
@@ -241,7 +241,7 @@ function TicketDrawer({
                 )}
               </Space>
             </div>
-            <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+            <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
               {(ticket.messages ?? []).map((m) => (
                 <TicketBubble
                   key={m.id}

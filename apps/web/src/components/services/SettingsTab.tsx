@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import { useUpdateService } from "../../api/mutations";
 import { useInstanceAccess, useServiceApiKeys } from "../../api/queries";
 import { DeleteServiceModal } from "./ServiceActions";
+import { space } from "@superdl/ui";
 
 export function SettingsTab({
   service,
@@ -43,9 +44,9 @@ export function SettingsTab({
     message.success(t("services.settings.authSaved"));
   };
   return (
-    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
       <Card size="small" title={t("services.settings.authCard")}>
-        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+        <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
           <Space>
             <Switch
               checked={service.require_api_key}
@@ -87,7 +88,7 @@ export function SettingsTab({
       </Card>
 
       <Card size="small" title={t("services.settings.sshCard")}>
-        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+        <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
           {!withSsh ? (
             <Typography.Text type="secondary">{t("services.settings.sshFixedNote")}</Typography.Text>
           ) : !live ? (

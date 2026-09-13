@@ -1,6 +1,6 @@
 /** 通知中心(PageContainer narrow):全量通知列表 + 已读管理。全部/未读筛选入 URL(?filter=);行点击复用 notificationNav 的 useNotificationOpen。 */
 
-import { flattenPages } from "@superdl/ui";
+import { flattenPages, space } from "@superdl/ui";
 import { EmptyState, LoadMore, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Button, List, Segmented, Space } from "antd";
@@ -47,7 +47,7 @@ function NotificationsPage() {
         </Button>
       }
     >
-      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+      <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
         <Segmented
           value={unreadOnly ? "unread" : "all"}
           onChange={(v) =>

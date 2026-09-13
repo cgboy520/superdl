@@ -96,7 +96,7 @@ export function StatCard({
         </div>
       )}
       {trend && (
-        <Space size={4} style={{ fontSize: fontSize.caption, color: trendColor }}>
+        <Space size={space.xs} style={{ fontSize: fontSize.caption, color: trendColor }}>
           {trend.direction === "up" ? <ArrowUpOutlined /> : trend.direction === "down" ? <ArrowDownOutlined /> : null}
           <span>{trend.text}</span>
         </Space>

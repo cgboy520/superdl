@@ -259,7 +259,7 @@ function PoliciesTab() {
           })();
         }}
       >
-        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+        <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
           {changed.map(([k, v]) => (
             <div key={k}>
               {policyLabel(k)}:{data?.effective[k]} → <b>{v}</b>
@@ -311,7 +311,7 @@ function AnnouncementTab() {
   });
 
   return (
-    <Space orientation="vertical" size={12} style={{ width: "100%", maxWidth: 860 }}>
+    <Space orientation="vertical" size={space.md} style={{ width: "100%", maxWidth: 860 }}>
       <Alert type="info" showIcon title={t("settings.announceScope")} />
       <Form
         form={form}

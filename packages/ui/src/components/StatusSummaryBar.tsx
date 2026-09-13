@@ -4,7 +4,7 @@ import { Segmented, Space, Typography } from "antd";
 import type { ReactNode } from "react";
 
 import { useThemeColors } from "../hooks/useThemeColors";
-import { fontSize } from "../tokens";
+import { fontSize, space } from "../tokens";
 
 export interface StatusSummaryItem {
   key: string;
@@ -34,7 +34,7 @@ export function StatusSummaryBar({
       options={items.map((it) => ({
         value: it.key,
         label: (
-          <Space size={4} align="center">
+          <Space size={space.xs} align="center">
             {it.tone && it.tone !== "default" && (
               <span
                 aria-hidden

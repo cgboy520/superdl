@@ -96,7 +96,7 @@ function UtilCell({ instance, summary }: { instance: InstanceOut; summary: Insta
     return <Typography.Text type="secondary">-</Typography.Text>;
   }
   return (
-    <Space size={8} align="center">
+    <Space size={space.sm} align="center">
       <GpuSparkline points={item.points} />
       <span style={{ fontSize: fontSize.caption }}>{Math.round(item.last ?? 0)}%</span>
     </Space>
@@ -130,7 +130,7 @@ function SpecCell({ instance }: { instance: InstanceOut }) {
     <Popover
       trigger={["hover", "focus", "click"]}
       content={
-        <Space orientation="vertical" size={2}>
+        <Space orientation="vertical" size={space.xs}>
           <span>{instance.spec.sku_name as string}</span>
           <span>
             {t("common.hostSpec", {

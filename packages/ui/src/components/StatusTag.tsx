@@ -15,7 +15,7 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { isColorMeta, isStatusMeta, metaOf, type AnyStatusMap, type StatusIcon, type StatusMeta } from "../status";
-import { iconSize } from "../tokens";
+import { iconSize, space } from "../tokens";
 import { HexTag } from "./HexTag";
 
 /** 全部已知状态表的条目并集(labelKey / hintKey 保持字面量,t() 可校验) */
@@ -76,7 +76,7 @@ export function StatusTag({
     node = <Tag>{label}</Tag>;
   }
   const withIcon = iconNode ? (
-    <Space size={4} align="center" style={{ fontSize: iconSize.sm }}>
+    <Space size={space.xs} align="center" style={{ fontSize: iconSize.sm }}>
       <span style={{ color, display: "inline-flex" }}>{iconNode}</span>
       {node}
     </Space>

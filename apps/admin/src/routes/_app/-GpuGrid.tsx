@@ -3,7 +3,7 @@
 import { Space, Tooltip, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
-import { adminColors, fontSize, heatColors, textOnAccent } from "@superdl/ui";
+import { adminColors, fontSize, heatColors, space, textOnAccent } from "@superdl/ui";
 
 import { type NodeMetricsOut, type NodeRow } from "../../api";
 
@@ -92,9 +92,9 @@ export function GpuGrid({ node, metrics }: { node: NodeRow; metrics: NodeMetrics
         })}
       </div>
       {/* 色阶图例:四档 + 断源两态 */}
-      <Space size={12} wrap style={{ marginTop: 12 }}>
+      <Space size={space.md} wrap style={{ marginTop: 12 }}>
         {(Object.keys(HEAT_LEGEND_KEY) as (keyof typeof HEAT_LEGEND_KEY)[]).map((key) => (
-          <Space key={key} size={4}>
+          <Space key={key} size={space.xs}>
             <span
               style={{ display: "inline-block", width: 12, height: 12, borderRadius: 3, background: HEAT_COLORS[key] }}
             />
@@ -103,7 +103,7 @@ export function GpuGrid({ node, metrics }: { node: NodeRow; metrics: NodeMetrics
             </Typography.Text>
           </Space>
         ))}
-        <Space size={4}>
+        <Space size={space.xs}>
           <span
             style={{
               display: "inline-block",
@@ -118,7 +118,7 @@ export function GpuGrid({ node, metrics }: { node: NodeRow; metrics: NodeMetrics
             {t("nodes.heatLegend.offlineFree")}
           </Typography.Text>
         </Space>
-        <Space size={4}>
+        <Space size={space.xs}>
           <span
             style={{
               display: "inline-block",

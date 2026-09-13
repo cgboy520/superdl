@@ -4,7 +4,7 @@
 
 import { CheckCircleOutlined } from "@ant-design/icons";
 import type { SkuMarketOut, TokenPairOut } from "@superdl/api-client";
-import { brand, compareAmounts, fontSize, useFormat } from "@superdl/ui";
+import { brand, compareAmounts, fontSize, space, useFormat } from "@superdl/ui";
 import { LangSwitcher } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import {
@@ -77,7 +77,7 @@ function PasswordStrengthHint({ password }: { password: string }) {
     strong: { percent: 100, color: token.colorSuccess, label: t("login.passwordStrengthStrong") },
   }[level];
   return (
-    <Space size={8} style={{ width: "100%" }}>
+    <Space size={space.sm} style={{ width: "100%" }}>
       <Progress
         percent={meta.percent}
         showInfo={false}
@@ -137,19 +137,19 @@ function BrandPane() {
         </Link>
       </div>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
-        <Typography.Title style={{ color: "#fff", fontSize: fontSize.kpi, marginBottom: 32 }}>
+        <Typography.Title style={{ color: brand.onHero, fontSize: fontSize.kpi, marginBottom: space.xxl }}>
           {t("login.slogan")}
         </Typography.Title>
         {isLoading ? (
-          <Space orientation="vertical" size={16}>
+          <Space orientation="vertical" size={space.lg}>
             {[1, 2, 3].map((i) => (
               <Skeleton.Input key={i} active size="small" />
             ))}
           </Space>
         ) : (
-          <Space orientation="vertical" size={16}>
+          <Space orientation="vertical" size={space.lg}>
             {facts.map((b) => (
-              <Space key={b} size={10}>
+              <Space key={b} size={space.md}>
                 <CheckCircleOutlined style={{ color: "rgba(255,255,255,0.9)", fontSize: fontSize.sectionTitle }} />
                 <span style={{ color: "rgba(255,255,255,0.9)", fontSize: fontSize.sectionTitle }}>{b}</span>
               </Space>
@@ -240,7 +240,7 @@ function LoginPage() {
         }}
       >
         <div style={{ position: "absolute", top: 16, right: 16 }}>
-          <Space size={4}>
+          <Space size={space.xs}>
             <ThemeToggle variant="plain" />
             <LangSwitcher variant="light" />
           </Space>

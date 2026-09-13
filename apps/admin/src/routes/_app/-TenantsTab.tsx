@@ -6,7 +6,7 @@ import { Button, Input, Modal, Select, Space, Tag, Typography } from "antd";
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { adminColors, controlWidth, flattenPages, formatDateTime, layout } from "@superdl/ui";
+import { adminColors, controlWidth, flattenPages, formatDateTime, layout, space } from "@superdl/ui";
 import { CursorTable, EmptyState, FilterBar, RowActions } from "@superdl/ui/components";
 import { useFormat, useUrlCommittedInput, useUrlFilters } from "@superdl/ui";
 
@@ -134,7 +134,7 @@ export function TenantsTab() {
           setReasonInput("");
         }}
       >
-        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+        <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
           <Typography.Text type="secondary">{tt("tenants.revealHint")}</Typography.Text>
           <Input.TextArea
             rows={2}

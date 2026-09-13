@@ -1,7 +1,7 @@
 /** 通知列表项(通知中心与顶栏 Popover 同一份渲染):未读 = 左色点 + 浅底 + 左边框;整行点击带键盘语义。 */
 
 import type { NotificationOut } from "@superdl/api-client";
-import { fontSize, formatDateTime } from "@superdl/ui";
+import { fontSize, formatDateTime, space } from "@superdl/ui";
 import { Badge, List, Space, theme, Typography } from "antd";
 
 export function NotificationListItem({ n, onOpen }: { n: NotificationOut; onOpen: (n: NotificationOut) => void }) {
@@ -27,7 +27,7 @@ export function NotificationListItem({ n, onOpen }: { n: NotificationOut; onOpen
     >
       <List.Item.Meta
         title={
-          <Space size={8}>
+          <Space size={space.sm}>
             {isUnread && <Badge color={token.colorPrimary} />}
             <Typography.Text strong={isUnread}>{n.title}</Typography.Text>
           </Space>

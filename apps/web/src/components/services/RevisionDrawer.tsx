@@ -2,7 +2,7 @@
  *  提交按钮固定在 Drawer footer;脏表单点遮罩 / 关闭 / 路由跳走都走离开确认(useLeaveGuard);提交前 L2 确认;幂等键按表单快照派生,失败不轮换。 */
 
 import { isApiError, type ServiceOut, type ServiceRevisionCreate } from "@superdl/api-client";
-import { drawerWidth, idemKeyOf, marketLabelKey, useApiErrorText } from "@superdl/ui";
+import { drawerWidth, idemKeyOf, marketLabelKey, space, useApiErrorText } from "@superdl/ui";
 import { GatedButton, useConfirm } from "@superdl/ui/components";
 import { Alert, App, Button, Card, Checkbox, Drawer, Space, Tag, Typography } from "antd";
 import { useState } from "react";
@@ -172,10 +172,10 @@ function RevisionForm({ service, onClose }: { service: ServiceOut; onClose: () =
         </Space>
       }
     >
-      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+      <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
         <Alert type="warning" showIcon title={t("services.revision.notice")} />
         <Card size="small" title={t("services.revision.sectionContainer")}>
-          <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+          <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
             <ContainerFields
               image={image}
               onImage={setImage}
@@ -188,7 +188,7 @@ function RevisionForm({ service, onClose }: { service: ServiceOut; onClose: () =
               collapsibleEnv
             />
             {keepKeys.length > 0 && (
-              <Space orientation="vertical" size={4} style={{ width: "100%" }}>
+              <Space orientation="vertical" size={space.xs} style={{ width: "100%" }}>
                 <Typography.Text type="secondary">{t("services.revision.keptSecrets")}</Typography.Text>
                 {keepKeys.map((key) => (
                   <Space key={key} wrap>
@@ -209,7 +209,7 @@ function RevisionForm({ service, onClose }: { service: ServiceOut; onClose: () =
           </Space>
         </Card>
         <Card size="small" title={t("services.revision.sectionAccess")}>
-          <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+          <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
             <PublicAccessFields
               port={port}
               onPort={setPort}
@@ -223,7 +223,7 @@ function RevisionForm({ service, onClose }: { service: ServiceOut; onClose: () =
           </Space>
         </Card>
         <Card size="small" title={t("services.revision.sectionAdvanced")}>
-          <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+          <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
             <Checkbox checked={withSsh} onChange={(e) => setWithSsh(e.target.checked)}>
               {t("services.form.withSsh")}
             </Checkbox>

@@ -1,7 +1,7 @@
 /** 筛选链 chip 行(市场/创建页)。单选,禁用项走 GatedButton(灰置 + 原因);聚合项由调用方用哨兵值表达。 */
 
 import { useThemeColors } from "../hooks/useThemeColors";
-import { fontWeight } from "../tokens";
+import { fontWeight, space } from "../tokens";
 import { GatedButton } from "./GatedButton";
 import { Space, theme, Typography } from "antd";
 import { useId, type ReactNode } from "react";
@@ -48,7 +48,7 @@ export function ChipRow<T extends string | number>({
       >
         {label}
       </Typography.Text>
-      <Space wrap size={8} style={{ flex: 1 }} role="group" aria-labelledby={labelId}>
+      <Space wrap size={space.sm} style={{ flex: 1 }} role="group" aria-labelledby={labelId}>
         {options.map((o) => {
           const selected = o.value === value;
           return (

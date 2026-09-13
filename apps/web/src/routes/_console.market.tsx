@@ -318,7 +318,7 @@ function MarketPage() {
               ? {
                   label: t("period.costLabel", { period: t(periodMap[period].labelKey) }),
                   value: (
-                    <Space size={8} align="baseline">
+                    <Space size={space.sm} align="baseline">
                       <Typography.Text type="secondary" delete style={{ fontSize: fontSize.body }}>
                         {fmt.formatMoney(quote.listAmount)}
                       </Typography.Text>
@@ -333,7 +333,7 @@ function MarketPage() {
                   value: !selected ? (
                     "--"
                   ) : isSpot ? (
-                    <Space size={8} align="baseline">
+                    <Space size={space.sm} align="baseline">
                       <SpotPriceInline baseHourly={selected.price_hourly} units={needed} policy={spotPolicy} />
                       <SpotOffLabel policy={spotPolicy} />
                     </Space>
@@ -347,7 +347,7 @@ function MarketPage() {
               period && quote ? (
                 <PeriodQuoteRows quote={quote} gpuCount={qty} cpu={isCpu} hint={t("period.hintFinalOnCreate")} />
               ) : (
-                <Space orientation="vertical" size={4}>
+                <Space orientation="vertical" size={space.xs}>
                   <span>
                     {isCpu
                       ? t("instances.pricePerInstance", { price: formatHourlyPrice(unitPrice) })

@@ -4,6 +4,7 @@
 import { App, Button, Checkbox, Input, Modal, Space, Typography } from "antd";
 import { useCallback, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { space } from "../tokens";
 
 export interface ConfirmOptions {
   title: ReactNode;
@@ -28,7 +29,7 @@ export function useConfirm() {
       modal.confirm({
         title: opts.title,
         content: (
-          <Space orientation="vertical" size={4} style={{ width: "100%" }}>
+          <Space orientation="vertical" size={space.xs} style={{ width: "100%" }}>
             {opts.consequences.map((line, i) => (
               <Typography.Paragraph key={i} style={{ marginBottom: 0 }}>
                 {line}
@@ -119,7 +120,7 @@ export function TypeConfirmModal({
       }
     >
       <Typography.Paragraph>{body}</Typography.Paragraph>
-      <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+      <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
         <Typography.Text type="secondary">{t("confirm.typeNameToConfirm", { name: targetName })}</Typography.Text>
         <Input
           value={typed}

@@ -1,6 +1,6 @@
 /** 服务详情:EntityHeader(名称行内改名 / 状态 / 版本 / 元信息 / 操作组)+ 常驻服务端点卡 + Tab `概览(含小时账单)/ 访问密钥(公开访问时不出)/ 监控 / 日志 / 历史(版本 + 事件)/ 设置`(危险区在设置里);「更新版本」是抽屉。只有一条服务轮询(过渡态 / 运行中 / 已删除停);监控与日志打当前版本实例。`?tab=` 非法值回默认(URL 不做旧名兼容)。 */
 
-import { POLL } from "@superdl/ui";
+import { POLL, space } from "@superdl/ui";
 import type { InstanceOut, ServiceOut } from "@superdl/api-client";
 import { fontSize, formatDateTime, instanceStatusMap, isTransientServiceStatus, localToday, metaOf } from "@superdl/ui";
 import {
@@ -75,9 +75,9 @@ function OverviewTab({ service }: { service: ServiceOut }) {
       ].sort((a, b) => a.name.localeCompare(b.name))
     : [];
   return (
-    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
       <Card size="small" title={t("services.detail.currentRevision", { no: service.revision })}>
-        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+        <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
           <KeyValue
             columns={{ xs: 1, sm: 2 }}
             items={[
@@ -110,7 +110,7 @@ function OverviewTab({ service }: { service: ServiceOut }) {
                 span: full,
                 value:
                   c?.container_args && c.container_args.length > 0 ? (
-                    <Space orientation="vertical" size={2}>
+                    <Space orientation="vertical" size={space.xs}>
                       {c.container_args.map((arg, i) => (
                         <Typography.Text key={`${i}-${arg}`} code>
                           {arg}
@@ -126,7 +126,7 @@ function OverviewTab({ service }: { service: ServiceOut }) {
                 span: full,
                 value:
                   envRows.length > 0 ? (
-                    <Space orientation="vertical" size={2}>
+                    <Space orientation="vertical" size={space.xs}>
                       {envRows.map((row) => (
                         <Typography.Text key={row.name} code>
                           {row.name}={row.secret ? "••••••" : row.value}
@@ -148,7 +148,7 @@ function OverviewTab({ service }: { service: ServiceOut }) {
         </Space>
       </Card>
       <Card size="small" title={t("services.detail.curlCard")}>
-        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+        <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
           <pre
             style={{
               margin: 0,
@@ -196,7 +196,7 @@ function RevisionsTab({ service }: { service: ServiceOut }) {
           title: t("services.revision.colRevision"),
           width: 120,
           render: (_, r) => (
-            <Space size={4}>
+            <Space size={space.xs}>
               <span>v{r.service_revision ?? "?"}</span>
               {r.uuid === currentUuid && <Tag color="blue">{t("services.revision.currentTag")}</Tag>}
             </Space>
@@ -271,7 +271,7 @@ function ServiceDetail() {
   if (!service) {
     return (
       <PageContainer>
-        <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
           <Card>
             <Skeleton active title={{ width: 240 }} paragraph={{ rows: 2 }} />
           </Card>
@@ -294,7 +294,7 @@ function ServiceDetail() {
 
   return (
     <PageContainer>
-      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+      <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
         <Breadcrumb items={[{ title: <Link to="/services">{t("services.title")}</Link> }, { title: service.name }]} />
         <EntityHeader
           name={service.name}
@@ -379,7 +379,7 @@ function ServiceDetail() {
               key: "overview",
               label: t("services.detail.tabOverview"),
               children: (
-                <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+                <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
                   <OverviewTab service={service} />
                   {/* 小时账单并入概览(全部版本实例) */}
                   <Card size="small" title={t("services.detail.tabBills")}>
@@ -429,7 +429,7 @@ function ServiceDetail() {
               key: "history",
               label: t("services.detail.tabHistory"),
               children: (
-                <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+                <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
                   <Card size="small" title={t("services.detail.tabRevisions")}>
                     <RevisionsTab service={service} />
                   </Card>

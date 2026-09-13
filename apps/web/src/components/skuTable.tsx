@@ -10,6 +10,7 @@ import {
   MAX_PERIOD_COUNT,
   mulPrice,
   periodMap,
+  space,
   statusColors,
   type BillingPeriod,
   type Formatters,
@@ -87,7 +88,7 @@ export function skuColumns(opts: {
       );
     return (
       <Space orientation="vertical" size={0} align="end">
-        <Space size={6} align="baseline">
+        <Space size={space.sm} align="baseline">
           <span style={{ fontSize: opts.priceFontSize, fontWeight: 700 }}>{unit}</span>
           {opts.spot && !s.spot_enabled && <Tag style={{ marginInlineEnd: 0 }}>{t("sku.spotUnavailable")}</Tag>}
         </Space>
@@ -211,7 +212,7 @@ export function BillingModeChips({
   const spotPolicy = useSpotPolicy();
   const showCount = count != null && onCountChange != null && isBillingPeriod(value);
   return (
-    <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
       <ChipRow<BillingMode>
         label={t("sku.billingModeTitle")}
         value={value}
@@ -264,7 +265,7 @@ export function BillingModeChips({
           >
             {t("period.countLabel")}
           </Typography.Text>
-          <Space size={8}>
+          <Space size={space.sm}>
             <InputNumber
               min={1}
               max={MAX_PERIOD_COUNT}

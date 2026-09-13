@@ -68,7 +68,7 @@ export function TriageBar({
             >
               {it.count ?? "—"}
             </span>
-            <Space size={4}>
+            <Space size={space.xs}>
               <span>{it.label}</span>
               {it.detail && (
                 <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>

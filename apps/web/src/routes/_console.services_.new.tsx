@@ -16,6 +16,7 @@ import {
   periodMap,
   POLL,
   skuVariant,
+  space,
 } from "@superdl/ui";
 import {
   DataErrorAlert,
@@ -342,8 +343,8 @@ function DeployPage() {
       {/* ① 基本信息:名称 + 算力规格 + 计费方式 */}
       <div onFocusCapture={() => touch(SECTION_IDS[0])} onClickCapture={() => touch(SECTION_IDS[0])}>
         <SectionAnchor id={SECTION_IDS[0]} title={t("services.form.section1")}>
-          <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-            <Space orientation="vertical" size={4} style={{ width: "100%" }}>
+          <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
+            <Space orientation="vertical" size={space.xs} style={{ width: "100%" }}>
               <Typography.Text type="secondary">{t("services.form.nameLabel")}</Typography.Text>
               <Input
                 placeholder={t("services.form.namePlaceholder")}
@@ -354,7 +355,7 @@ function DeployPage() {
                 style={{ width: "100%", maxWidth: 320 }}
               />
             </Space>
-            <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+            <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
               <Typography.Text type="secondary">{t("services.form.specLabel")}</Typography.Text>
               <SkuPicker
                 skus={skus}
@@ -389,7 +390,7 @@ function DeployPage() {
       {/* ② 容器配置(数据盘归在本段) */}
       <div onFocusCapture={() => touch(SECTION_IDS[1])} onClickCapture={() => touch(SECTION_IDS[1])}>
         <SectionAnchor id={SECTION_IDS[1]} title={t("services.form.section2")}>
-          <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+          <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
             <ContainerFields
               image={image}
               onImage={setImage}
@@ -432,8 +433,8 @@ function DeployPage() {
       {/* ④ 高级配置:调试 SSH + 更新策略说明 + 配置摘要 */}
       <div onFocusCapture={() => touch(SECTION_IDS[3])} onClickCapture={() => touch(SECTION_IDS[3])}>
         <SectionAnchor id={SECTION_IDS[3]} title={t("services.form.section4")}>
-          <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-            <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+          <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
+            <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
               <Checkbox checked={withSsh} onChange={(e) => setWithSsh(e.target.checked)}>
                 {t("services.form.withSsh")}
               </Checkbox>
@@ -441,11 +442,11 @@ function DeployPage() {
               {/* 勾了才要公钥:后端对 with_ssh 服务要求 ssh_key_ids 非空 */}
               {withSsh && <SshKeyPicker value={keyIds} onChange={setKeyIds} />}
             </Space>
-            <Space orientation="vertical" size={4} style={{ width: "100%" }}>
+            <Space orientation="vertical" size={space.xs} style={{ width: "100%" }}>
               <Typography.Text type="secondary">{t("services.form.strategyLabel")}</Typography.Text>
               <Typography.Text>{t("services.form.strategyRecreate")}</Typography.Text>
             </Space>
-            <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+            <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
               <Typography.Text strong>{t("services.form.summaryLabel")}</Typography.Text>
               <KeyValue
                 layout="vertical"
@@ -525,7 +526,7 @@ function DeployPage() {
           {...(!canSubmit && sku ? { noticeSummary: t("create.issuesShort", { count: issueCount }) } : {})}
           notice={
             !canSubmit && sku ? (
-              <Space size={8} wrap style={{ fontSize: fontSize.caption }}>
+              <Space size={space.sm} wrap style={{ fontSize: fontSize.caption }}>
                 <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                   {t("create.issuesTitle", { count: issueCount })}
                 </Typography.Text>
@@ -594,7 +595,7 @@ function DeployPage() {
           }
           detail={
             unitHourly !== null && hourlyTotal !== null ? (
-              <Space orientation="vertical" size={4} style={{ maxWidth: 360 }}>
+              <Space orientation="vertical" size={space.xs} style={{ maxWidth: 360 }}>
                 {period && quote ? (
                   <PeriodQuoteRows quote={quote} gpuCount={gpuCount} cpu={isCpu} />
                 ) : (

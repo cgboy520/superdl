@@ -1,6 +1,6 @@
 /** 管理员账号:建号 / 改角色 / 停用 / 重置密码 + 自助改密。 */
 
-import { adminColors, controlWidth, fontSize, formatDateTime, layout } from "@superdl/ui";
+import { adminColors, controlWidth, fontSize, formatDateTime, layout, space } from "@superdl/ui";
 import {
   CopyButton,
   EmptyState,
@@ -118,7 +118,7 @@ export function AdminsTab() {
     },
     {
       title: (
-        <Space size={6}>
+        <Space size={space.sm}>
           {t("admins.colMfa")}
           {!mfaEnabled && <Tag color="orange">{t("admins.mfaDisabledTag")}</Tag>}
         </Space>

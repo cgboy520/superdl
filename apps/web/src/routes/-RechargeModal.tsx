@@ -142,7 +142,7 @@ export function RechargeModal({ open, onClose }: { open: boolean; onClose: () =>
       }}
     >
       {!shown ? (
-        <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+        <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
           {siteQ.isError && (
             // 渠道信息加载失败不伪装成「全部渠道未开通」
             <DataErrorAlert onRetry={() => void siteQ.refetch()} />
@@ -206,7 +206,7 @@ export function RechargeModal({ open, onClose }: { open: boolean; onClose: () =>
           </Button>
         </Space>
       ) : (
-        <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+        <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
           <Alert
             type="info"
             showIcon
@@ -221,7 +221,7 @@ export function RechargeModal({ open, onClose }: { open: boolean; onClose: () =>
               <QRCode value={shown.qr_url} size={168} />
             ) : (
               // qr_url 空串/缺失时不渲染码:错误态 + 重新获取
-              <Space orientation="vertical" size={12} align="center">
+              <Space orientation="vertical" size={space.md} align="center">
                 <Typography.Text type="danger">{t("billing.qrFailed")}</Typography.Text>
                 <Button
                   onClick={() => {
