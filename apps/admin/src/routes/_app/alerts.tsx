@@ -1,24 +1,36 @@
-/** 告警中心:FilterBar(severity 服务端过滤、确认状态客户端过滤,入 URL);深链与确认闭环走 alertLink(ops/admin 可写)。 */
+/** 告警中心:FilterBar(severity 服务端过滤、确认状态客户端过滤,入 URL);表格勾选未确认项批量确认;深链与确认闭环走 alertLink(ops/admin 可写)。 */
 
 import {
   controlWidth,
   fontSize,
   formatDateTime,
+  layout,
   POLL,
   severityMap,
   space,
   useAutoRefresh,
   useUrlFilters,
 } from "@superdl/ui";
-import { EmptyState, FilterBar, GatedButton, PageContainer, StatusTag, TableErrorEmpty } from "@superdl/ui/components";
+import {
+  EmptyState,
+  EmptyValue,
+  FilterBar,
+  GatedButton,
+  Mono,
+  PageContainer,
+  StatusTag,
+  TableErrorEmpty,
+} from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { App, Button, Checkbox, List, Select, Space, Typography } from "antd";
+import { App, Button, Select, Space, Table, Typography } from "antd";
+import type { TableColumnsType } from "antd";
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { adminKeys, type AlertRow, useAckAlert, useAlerts } from "../../api";
 import { BulkBar, runBulk } from "../../components/BulkBar";
+import { LIST_CAPS, ListCapNote } from "../../components/ListCapNote";
 import { alertLink, useAckAlertWithFeedback } from "../../lib/alertLink";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
@@ -45,12 +57,13 @@ function AlertsPage() {
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const { severity, acked } = Route.useSearch();
-  // severity 服务端参数;确认状态客户端过滤(200 条窗口)
+  // severity 服务端参数;确认状态客户端过滤(后端只回最近一窗)
   const autoRefresh = useAutoRefresh(POLL.steady);
   const alertsQ = useAlerts(severity ? { severity } : undefined, {
     refetchInterval: autoRefresh.refetchInterval,
   });
-  const rows = (alertsQ.data ?? []).filter((a) =>
+  const loaded = alertsQ.data ?? [];
+  const rows = loaded.filter((a) =>
     acked === "acked" ? a.acked_at != null : acked === "unacked" ? a.acked_at == null : true,
   );
   // 确认闭环见 lib/alertLink
@@ -61,8 +74,6 @@ function AlertsPage() {
   const ackRaw = useAckAlert();
   const [selected, setSelected] = useState<number[]>([]);
   const [bulkPending, setBulkPending] = useState(false);
-  const unacked = rows.filter((a) => a.acked_at == null);
-  const allSelected = unacked.length > 0 && unacked.every((a) => selected.includes(a.id));
   const bulkAck = async () => {
     setBulkPending(true);
     try {
@@ -81,6 +92,76 @@ function AlertsPage() {
     [navigate],
   );
   const filters = useUrlFilters({ search: { severity, acked }, keys: ["severity", "acked"], commit: setFilters });
+
+  const columns: TableColumnsType<AlertRow> = [
+    {
+      title: t("alerts.colSeverity"),
+      dataIndex: "severity",
+      fixed: "left",
+      width: 110,
+      // 严重度从不只靠颜色:图标 + 文字
+      render: (v: string) => <StatusTag map={severityMap} value={v} variant="text" icon />,
+    },
+    {
+      title: t("alerts.colTitle"),
+      render: (_, a) => {
+        const link = alertLink(a);
+        return (
+          <Space orientation="vertical" size={0}>
+            {link ? (
+              <Link to={link.to} search={link.search}>
+                {a.title}
+              </Link>
+            ) : (
+              <Typography.Text>{a.title}</Typography.Text>
+            )}
+            <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+              {a.content}
+            </Typography.Text>
+          </Space>
+        );
+      },
+    },
+    {
+      title: t("alerts.colTarget"),
+      width: 220,
+      render: (_, a) =>
+        a.target_kind && a.target_id ? (
+          <Space size={space.xs}>
+            <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+              {a.target_kind}
+            </Typography.Text>
+            <Mono>{a.target_id}</Mono>
+          </Space>
+        ) : (
+          <EmptyValue />
+        ),
+    },
+    { title: t("alerts.colTime"), dataIndex: "created_at", width: 170, render: formatDateTime },
+    {
+      title: t("alerts.colAck"),
+      fixed: "right",
+      width: 180,
+      render: (_, a) =>
+        a.acked_at != null ? (
+          <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+            {t("alerts.ackedShort", {
+              name: a.acked_by_username ?? `#${a.acked_by ?? "-"}`,
+              time: formatDateTime(a.acked_at),
+            })}
+          </Typography.Text>
+        ) : (
+          <GatedButton
+            size="small"
+            reason={writable ? undefined : t("overview.opsOnly")}
+            loading={ack.isPending && ack.variables.alertId === a.id}
+            onClick={() => ack.mutate({ alertId: a.id })}
+          >
+            {t("overview.ack")}
+          </GatedButton>
+        ),
+    },
+  ];
 
   return (
     <PageContainer
@@ -118,25 +199,30 @@ function AlertsPage() {
           ]}
         />
       </FilterBar>
-      {writable && unacked.length > 0 && (
-        <div style={{ marginBottom: space.sm, paddingInline: space.md }}>
-          <Checkbox
-            checked={allSelected}
-            indeterminate={selected.length > 0 && !allSelected}
-            onChange={(e) => setSelected(e.target.checked ? unacked.map((a) => a.id) : [])}
-          >
-            {t("bulk.selectAllUnacked", { count: unacked.length })}
-          </Checkbox>
-        </div>
-      )}
       <BulkBar count={selected.length} onClear={() => setSelected([])}>
         <Button type="primary" size="small" loading={bulkPending} onClick={() => void bulkAck()}>
           {t("bulk.ackSelected", { count: selected.length })}
         </Button>
       </BulkBar>
-      <List
+      <Table<AlertRow>
+        rowKey="id"
         loading={alertsQ.isLoading}
+        columns={columns}
         dataSource={rows}
+        pagination={false}
+        scroll={{ x: 1000 }}
+        sticky={{ offsetHeader: layout.topBarHeight }}
+        // 只有未确认项可勾选:已确认的没有可执行动作
+        rowSelection={
+          writable
+            ? {
+                selectedRowKeys: selected,
+                onChange: (keys) => setSelected(keys.map(Number)),
+                getCheckboxProps: (a) => ({ disabled: a.acked_at != null, name: a.title }),
+                fixed: true,
+              }
+            : undefined
+        }
         locale={{
           emptyText: alertsQ.isError ? (
             <TableErrorEmpty isError onRetry={() => void alertsQ.refetch()} />
@@ -155,72 +241,8 @@ function AlertsPage() {
             <EmptyState scene="notification" compact description={t("shell.noAlerts")} />
           ),
         }}
-        renderItem={(a: AlertRow) => {
-          const link = alertLink(a);
-          return (
-            <List.Item
-              style={{ paddingInline: space.md }}
-              actions={
-                a.acked_at == null
-                  ? [
-                      <GatedButton
-                        key="ack"
-                        size="small"
-                        reason={writable ? undefined : t("overview.opsOnly")}
-                        loading={ack.isPending && ack.variables.alertId === a.id}
-                        onClick={() => ack.mutate({ alertId: a.id })}
-                      >
-                        {t("overview.ack")}
-                      </GatedButton>,
-                    ]
-                  : undefined
-              }
-            >
-              <List.Item.Meta
-                avatar={
-                  writable && a.acked_at == null ? (
-                    <Checkbox
-                      aria-label={a.title}
-                      checked={selected.includes(a.id)}
-                      onChange={(e) =>
-                        setSelected((s) => (e.target.checked ? [...s, a.id] : s.filter((id) => id !== a.id)))
-                      }
-                    />
-                  ) : undefined
-                }
-                title={
-                  <Space size={8} wrap>
-                    <StatusTag map={severityMap} value={a.severity} variant="text" icon />
-                    {link ? (
-                      <Link to={link.to} search={link.search}>
-                        {a.title}
-                      </Link>
-                    ) : (
-                      <Typography.Text>{a.title}</Typography.Text>
-                    )}
-                    {a.acked_at != null && (
-                      <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                        {t("alerts.ackedBy", {
-                          name: a.acked_by_username ?? `#${a.acked_by ?? "-"}`,
-                          time: formatDateTime(a.acked_at),
-                        })}
-                      </Typography.Text>
-                    )}
-                  </Space>
-                }
-                description={
-                  <>
-                    <div>{a.content}</div>
-                    <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                      {formatDateTime(a.created_at)}
-                    </Typography.Text>
-                  </>
-                }
-              />
-            </List.Item>
-          );
-        }}
       />
+      <ListCapNote rows={loaded.length} cap={LIST_CAPS.alerts} />
     </PageContainer>
   );
 }

@@ -10,12 +10,11 @@ import { adminColors, controlWidth, flattenPages, formatDateTime, layout } from 
 import { CursorTable, EmptyState, FilterBar, RowActions } from "@superdl/ui/components";
 import { useFormat, useUrlCommittedInput, useUrlFilters } from "@superdl/ui";
 
-import { type TenantRow, useFreezeTenant, useTenants, useUnfreezeTenant } from "../../api";
-import { ReasonAction } from "../../components/ReasonAction";
+import { type TenantRow, useTenants } from "../../api";
 import { TenantLink } from "../../components/TenantLink";
 import { REASON_MAX_LEN } from "../../lib/validators";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
-import { type DrawerTab, TenantDrawer } from "./-TenantDrawer";
+import { type DrawerTab, TenantDrawer, TenantFreezeAction } from "./-TenantDrawer";
 
 const routeApi = getRouteApi("/_app/tenants");
 
@@ -61,7 +60,7 @@ export function TenantsTab() {
     void navigate({
       to: "/tenants",
       replace: true,
-      search: (prev) => ({ ...prev, dtab: key === "bills" ? undefined : key }),
+      search: (prev) => ({ ...prev, dtab: key === "billing" ? undefined : key }),
     });
   // 实名明文查看:必填事由,落审计;readonly 不渲染入口(后端 403)
   const canReveal = role === "ops" || role === "finance" || role === "admin";
@@ -78,8 +77,6 @@ export function TenantsTab() {
   const tenants = flattenPages(data);
   const total = data?.pages[0]?.total ?? undefined;
   const drilldown = urlTenant != null ? (tenants.find((r) => r.id === urlTenant) ?? null) : null;
-  const freeze = useFreezeTenant();
-  const unfreeze = useUnfreezeTenant();
   const refresh = () => void qc.invalidateQueries({ queryKey });
 
   return (
@@ -250,49 +247,20 @@ export function TenantsTab() {
                       {tt("tenants.viewBilling")}
                     </Button>
                   }
-                  secondary={
-                    t.status === "active" ? (
-                      <ReasonAction
-                        label={tt("tenants.freeze")}
-                        target={`#${t.id} · ${t.phone_masked}`}
-                        danger
-                        title={tt("tenants.freezeTitle")}
-                        confirmText={tt("tenants.freezeConfirm", {
-                          id: t.id,
-                          phone: t.phone_masked,
-                          count: t.instances,
-                        })}
-                        disabled={!writable}
-                        disabledReason={tt("tenants.noPermission")}
-                        onSubmit={async (reason) => {
-                          const r = await freeze.mutateAsync({ userId: t.id, data: { reason } });
-                          refresh();
-                          // 回显后端实停台数
-                          return tt("tenants.freezeDone", { count: r.instances_stopped ?? 0 });
-                        }}
-                      />
-                    ) : (
-                      <ReasonAction
-                        label={tt("tenants.unfreeze")}
-                        target={`#${t.id} · ${t.phone_masked}`}
-                        title={tt("tenants.unfreezeTitle")}
-                        confirmText={tt("tenants.unfreezeConfirm", { id: t.id })}
-                        disabled={!writable}
-                        disabledReason={tt("tenants.noPermission")}
-                        onSubmit={async (reason) => {
-                          await unfreeze.mutateAsync({ userId: t.id, data: { reason } });
-                          refresh();
-                        }}
-                      />
-                    )
-                  }
+                  secondary={<TenantFreezeAction tenant={t} writable={writable} onDone={refresh} />}
                 />
               </span>
             ),
           },
         ]}
       />
-      <TenantDrawer tenant={drilldown} dtab={dtab} onTabChange={onDrawerTabChange} onClose={() => setDrilldown(null)} />
+      <TenantDrawer
+        tenant={drilldown}
+        dtab={dtab}
+        onTabChange={onDrawerTabChange}
+        onClose={() => setDrilldown(null)}
+        onChanged={refresh}
+      />
     </>
   );
 }

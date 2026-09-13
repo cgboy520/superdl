@@ -1,12 +1,16 @@
-/** 镜像与预热:镜像表(框架固定左 / 覆盖率右对齐 / 操作固定右:立即预热 · 编辑 + 更多 ▾ 删除)+ 行展开节点缓存面板(?image= 入 URL)+ 编辑抽屉。 */
+/** 镜像与预热:镜像表(框架固定左 / 覆盖率右对齐 + 预热说明 ? tooltip / 操作固定右:立即预热 · 编辑 + 更多 ▾ 删除)+ 行展开节点缓存面板(?image= 入 URL)+ 编辑抽屉(footer 提交 / 取消 + useLeaveGuard)。 */
 
+import { QuestionCircleOutlined } from "@ant-design/icons";
 import {
+  adminColors,
   drawerWidth,
   imageCacheStatusMap,
   fontSize,
   formatDateTime,
+  iconSize,
   layout,
   POLL,
+  space,
   useAutoRefresh,
   type ImageCacheStatus,
 } from "@superdl/ui";
@@ -56,6 +60,7 @@ import {
   useUpdateImage,
 } from "../../api";
 import { useApiErrorText } from "@superdl/ui";
+import { useLeaveGuard } from "../../lib/useLeaveGuard";
 import { ReasonAction } from "../../components/ReasonAction";
 import { StatusTag } from "@superdl/ui/components";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
@@ -159,6 +164,13 @@ function ImagesPage() {
     refetch,
   } = useAdminImages({ refetchInterval: autoRefresh.refetchInterval });
   const [editing, setEditing] = useState<ImageRow | "new" | null>(null);
+  // 动过表单即脏:关抽屉先确认(提交成功走 closeEdit,不再拦)
+  const [dirty, setDirty] = useState(false);
+  const leave = useLeaveGuard(dirty);
+  const closeEdit = () => {
+    setDirty(false);
+    setEditing(null);
+  };
   // 新建镜像默认仓库前缀:取平台配置的 Harbor 地址与项目
   const { data: cluster } = useClusterStatus();
   const registryPrefix = cluster?.config.registry_host
@@ -177,7 +189,7 @@ function ImagesPage() {
     mutation: {
       onSuccess: () => {
         message.success(t("images.created"));
-        setEditing(null);
+        closeEdit();
         refresh();
       },
       onError: (e) => message.error(errText(e, t("common.createFailed"))),
@@ -189,7 +201,7 @@ function ImagesPage() {
         // 预热开关与整表保存共用本 mutation,反馈文案按补丁形态分开
         const toggleOnly = Object.keys(v.data).length === 1 && "prewarm_enabled" in v.data;
         message.success(t(toggleOnly ? "images.prewarmToggled" : "images.saved"));
-        setEditing(null);
+        closeEdit();
         refresh();
       },
       onError: (e) => message.error(errText(e, t("common.saveFailed"))),
@@ -209,6 +221,7 @@ function ImagesPage() {
   });
 
   const openEdit = (img: ImageRow | "new") => {
+    setDirty(false);
     setEditing(img);
     if (img === "new") {
       form.resetFields();
@@ -223,7 +236,12 @@ function ImagesPage() {
   };
 
   const submit = async () => {
-    const values = await form.validateFields();
+    let values: ImageFormValues;
+    try {
+      values = await form.validateFields();
+    } catch {
+      return; // 校验失败:antd 已就地标红
+    }
     if (editing === "new") {
       create.mutate({ data: values });
     } else if (editing) {
@@ -255,13 +273,6 @@ function ImagesPage() {
       }
     >
       <Card>
-        <Alert
-          type="info"
-          showIcon
-          style={{ marginBottom: 16 }}
-          title={t("images.prewarmInfo")}
-          description={t("images.prewarmInfoDesc")}
-        />
         <Table<ImageRow>
           scroll={{ x: 1100 }}
           sticky={{ offsetHeader: layout.topBarHeight }}
@@ -337,7 +348,29 @@ function ImagesPage() {
               ),
             },
             {
-              title: t("images.colCoverage"),
+              // 预热说明进表头 ? tooltip,不做常驻条
+              title: (
+                <Space size={space.xs}>
+                  {t("images.colCoverage")}
+                  <Tooltip
+                    trigger={["hover", "focus", "click"]}
+                    title={
+                      <>
+                        <b>{t("images.prewarmInfo")}</b>
+                        <br />
+                        {t("images.prewarmInfoDesc")}
+                      </>
+                    }
+                  >
+                    <QuestionCircleOutlined
+                      tabIndex={0}
+                      className="focus-ring"
+                      aria-label={t("images.prewarmInfo")}
+                      style={{ fontSize: iconSize.sm, color: adminColors.textSecondary, cursor: "help" }}
+                    />
+                  </Tooltip>
+                </Space>
+              ),
               align: "right",
               render: (_, r) => {
                 if (!r.prewarm_enabled) return <Tag>{t("images.disabled")}</Tag>;
@@ -433,15 +466,26 @@ function ImagesPage() {
               : t("images.editTitle", { name: typeof editing === "object" && editing ? editing.framework : "" })
           }
           open={editing !== null}
-          onClose={() => setEditing(null)}
+          onClose={() => {
+            leave.confirmLeave(closeEdit);
+          }}
           size={drawerWidth.md}
-          extra={
-            <Button type="primary" loading={create.isPending || update.isPending} onClick={() => void submit()}>
-              {t("skus.submit")}
-            </Button>
+          footer={
+            <Space style={{ display: "flex", justifyContent: "flex-end" }}>
+              <Button
+                onClick={() => {
+                  leave.confirmLeave(closeEdit);
+                }}
+              >
+                {t("common.cancel", { ns: "shared" })}
+              </Button>
+              <Button type="primary" loading={create.isPending || update.isPending} onClick={() => void submit()}>
+                {t("skus.submit")}
+              </Button>
+            </Space>
           }
         >
-          <Form form={form} layout="vertical">
+          <Form form={form} layout="vertical" onValuesChange={() => setDirty(true)}>
             <Form.Item name="framework" label={t("images.colFramework")} rules={[{ required: true }]}>
               <Input placeholder={t("images.frameworkPlaceholder")} />
             </Form.Item>
@@ -480,6 +524,7 @@ function ImagesPage() {
             </Form.Item>
           </Form>
         </Drawer>
+        {leave.modal}
       </Card>
     </PageContainer>
   );

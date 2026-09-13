@@ -58,7 +58,7 @@ export function LastSeenCell({ value }: { value: string | null | undefined }) {
   );
 }
 
-/** 封锁 / 解封(ReasonAction)+ drain 占位(可见但禁用 + tooltip);表格行 small、抽屉头 middle。 */
+/** 封锁 / 解封(ReasonAction;解封是恢复方向,只填原因不做二次确认)+ drain 占位(可见但禁用 + tooltip);表格行 small、抽屉头 middle。 */
 export function NodeActions({
   node,
   writable,
@@ -85,6 +85,7 @@ export function NodeActions({
             cordoned ? t("nodes.uncordonConfirm", { name: node.name }) : t("nodes.cordonConfirm", { name: node.name })
           }
           danger={!cordoned}
+          confirm={!cordoned}
           disabled={!writable}
           disabledReason={t("nodes.readonlyNoOp")}
           onSubmit={(reason) => onCordon(node.name, !cordoned, reason)}

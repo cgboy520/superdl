@@ -262,11 +262,13 @@ function NodesPage() {
             disabledReason={t("nodes.readonlyNoOp")}
             onSubmit={(reason) => bulkCordon(true, reason)}
           />
+          {/* 恢复方向:只填原因,不做二次确认 */}
           <ReasonAction
             label={t("nodes.uncordonBtn")}
             target={t("bulk.selected", { count: bulkSelected.length })}
             title={t("nodes.uncordonTitle")}
             confirmText={t("bulk.uncordonConfirm", { count: bulkSelected.length })}
+            confirm={false}
             disabled={!writable}
             disabledReason={t("nodes.readonlyNoOp")}
             onSubmit={(reason) => bulkCordon(false, reason)}

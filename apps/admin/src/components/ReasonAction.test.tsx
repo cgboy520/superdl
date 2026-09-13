@@ -1,4 +1,5 @@
-/** ReasonAction 状态机:二次确认取消回第一步且原因保留;提交在途禁止关闭。react-dom/client + act 直驱 jsdom。 */
+/** ReasonAction 状态机:二次确认取消回第一步且原因保留;提交在途禁止关闭;confirm={false} 只填原因直提。
+ *  react-dom/client + act 直驱 jsdom。 */
 
 import { App, ConfigProvider } from "antd";
 import i18n from "i18next";
@@ -57,7 +58,7 @@ async function waitFor(cond: () => boolean, timeoutMs = 3000): Promise<void> {
   }
 }
 
-function renderAction(onSubmit: (reason: string) => Promise<string> | Promise<void>) {
+function renderAction(onSubmit: (reason: string) => Promise<string> | Promise<void>, confirm?: boolean) {
   act(() => {
     root.render(
       <I18nextProvider i18n={i18n}>
@@ -70,6 +71,7 @@ function renderAction(onSubmit: (reason: string) => Promise<string> | Promise<vo
               confirmText="下架后不可新租,已有实例不受影响"
               danger
               disabledReason="只读角色不可操作"
+              confirm={confirm}
               onSubmit={onSubmit}
             />
           </App>
@@ -125,6 +127,23 @@ describe("ReasonAction", () => {
     click(must(cancelBtn));
     await waitFor(() => document.body.querySelector("textarea") !== null);
     expect(must(document.body.querySelector("textarea")).value).toBe("滞销规格下架");
+  });
+
+  it("confirm={false} 填完原因直接提交,不出二次确认", async () => {
+    // 挂了说明:恢复类动作(解封 / 解冻 / 上架)又被要求二次确认
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderAction(onSubmit, false);
+    click(must(findButton("下架")));
+    await flush();
+    setTextareaValue(must(document.body.querySelector("textarea")), "节点已恢复");
+    // 原因弹窗的确认钮即提交,没有「下一步」
+    expect(findButton("下一步")).toBeUndefined();
+    click(must(findButton("确认执行")));
+    await waitFor(() => onSubmit.mock.calls.length > 0);
+    expect(onSubmit).toHaveBeenCalledWith("节点已恢复");
+    // 二次确认弹窗从未出现,原因正文也不会被复述
+    expect(document.body.textContent).not.toContain("二次确认");
+    expect(document.body.textContent).not.toContain("下架后不可新租");
   });
 
   it("提交飞行中蒙层点击不关闭;完成后关闭并提示", async () => {

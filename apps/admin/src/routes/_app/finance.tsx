@@ -1,8 +1,9 @@
-/** 财务对账页:对账卡 + Tab(充值订单 / 退款 / 发票 / 调账 / 结算缺口 / 支付异常 / 审计),各 Tab 拆在同目录 -Xxx.tsx;筛选态入 URL(-financeFilters)。 */
+/** 财务对账页:对账卡(?day=)+ Tab(充值订单 / 退款 / 发票 / 调账 / 结算缺口 / 支付异常),各 Tab 拆在同目录 -Xxx.tsx;筛选态入 URL(-financeFilters)。审计独立成页。 */
 
 import { WarningOutlined } from "@ant-design/icons";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Alert, Card, Space, Tabs, Tag, Tooltip } from "antd";
+import dayjs from "dayjs";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -16,7 +17,6 @@ import {
 import { PageContainer } from "@superdl/ui/components";
 
 import { useAnomalies } from "../../api";
-import { AuditTable } from "../../components/AuditTable";
 import { canReadInvoices, useAdminRole } from "../../stores/auth";
 import { SettlementGapsTab } from "./-SettlementGapsTab";
 import { DAY_RE, FINANCE_TABS, FinanceSearch, FinanceTab, GAP_KINDS, GapKind, PERIOD_RE } from "./-financeFilters";
@@ -31,6 +31,7 @@ export const Route = createFileRoute("/_app/finance")({
   // 筛选条件入 URL,非法值剥离
   validateSearch: (search: Record<string, unknown>): FinanceSearch => ({
     tab: FINANCE_TABS.includes(search.tab as FinanceTab) ? (search.tab as FinanceTab) : undefined,
+    day: typeof search.day === "string" && DAY_RE.test(search.day) ? search.day : undefined,
     o_status: typeof search.o_status === "string" && search.o_status in orderStatusMap ? search.o_status : undefined,
     o_no: typeof search.o_no === "string" && search.o_no ? search.o_no : undefined,
     o_day: typeof search.o_day === "string" && DAY_RE.test(search.o_day) ? search.o_day : undefined,
@@ -57,8 +58,9 @@ export const Route = createFileRoute("/_app/finance")({
 
 function FinancePage() {
   const { t } = useTranslation(["admin", "shared"]);
-  const navigate = useNavigate();
+  const navigate = useNavigate({ from: "/finance" });
   const tab = Route.useSearch({ select: (s) => s.tab });
+  const day = Route.useSearch({ select: (s) => s.day });
   const role = useAdminRole();
   const anomaliesQ = useAnomalies();
   const { data: anomalies, isError: anomaliesError } = anomaliesQ;
@@ -69,7 +71,17 @@ function FinancePage() {
   const invoicesDenied = activeTab === "invoices" && !showInvoices;
   return (
     <PageContainer width="full" title={t("menu.finance")}>
-      <ReconciliationCard />
+      <ReconciliationCard
+        day={day}
+        onDayChange={(d) =>
+          void navigate({
+            to: "/finance",
+            replace: true,
+            // 今天是默认值,不入 URL
+            search: (prev) => ({ ...prev, day: d === dayjs().format("YYYY-MM-DD") ? undefined : d }),
+          })
+        }
+      />
       <Card style={{ marginTop: 16 }}>
         {invoicesDenied && (
           <Alert type="warning" showIcon style={{ marginBottom: 12 }} title={t("finance.tabInvoicesDenied")} />
@@ -80,7 +92,8 @@ function FinancePage() {
             void navigate({
               to: "/finance",
               replace: true,
-              search: key === "orders" ? {} : { tab: key as FinanceTab },
+              // 换 Tab 清掉其它 Tab 的筛选;对账日常驻,跟着走
+              search: (prev) => (key === "orders" ? { day: prev.day } : { day: prev.day, tab: key as FinanceTab }),
             })
           }
           items={[
@@ -106,7 +119,6 @@ function FinancePage() {
               ),
               children: <AnomaliesTab />,
             },
-            { key: "audit", label: t("menu.audit"), children: <AuditTable /> },
           ]}
         />
       </Card>

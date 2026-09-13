@@ -1,14 +1,15 @@
-/** SKU 与定价:列表(状态列在售 / 已下架;操作固定右:编辑 + 更多 ▾ 上架 / 下架,改价确认带影响面);新建 / 编辑抽屉在 -SkuDrawerForm,表单常量与联动纯函数在 -skuForm。 */
+/** SKU 与定价:FilterBar(型号 / 档位 / 在售 / 名称,入 URL,客户端过滤)+ 列表(状态列在售 / 已下架;操作固定右:编辑 + 更多 ▾ 上架 / 下架,改价确认带影响面);新建 / 编辑抽屉在 -SkuDrawerForm,表单常量与联动纯函数在 -skuForm。 */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
-import { App, Card, Table, Tag } from "antd";
-import { useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { App, Button, Card, Input, Select, Table, Tag } from "antd";
+import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { layout, skuTierMap, skuVariant } from "@superdl/ui";
+import { controlWidth, layout, skuTierMap, skuVariant, type SkuVariant } from "@superdl/ui";
 import {
   EmptyState,
+  FilterBar,
   GatedButton,
   PageContainer,
   RowActions,
@@ -18,6 +19,7 @@ import {
 } from "@superdl/ui/components";
 import { useFormat } from "@superdl/ui";
 import { useApiErrorText } from "@superdl/ui";
+import { useUrlCommittedInput, useUrlFilters } from "@superdl/ui";
 
 import { StatusTag } from "@superdl/ui/components";
 import { type SkuAdminOut, isApiError, useAdminSkus, useUpdateSku } from "../../api";
@@ -25,7 +27,29 @@ import { ReasonAction } from "../../components/ReasonAction";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 import { SkuDrawerForm } from "./-SkuDrawerForm";
 
+export interface SkusSearch {
+  /** 卡型(精确匹配 gpu_model) */
+  model?: string;
+  /** 档位(skuTierMap 键) */
+  tier?: SkuVariant;
+  /** 在售筛选:on = 在售,off = 已下架,缺省 = 全部 */
+  sale?: "on" | "off";
+  /** 名称检索(子串,大小写不敏感) */
+  q?: string;
+}
+
+/** 全部筛选项客户端生效(SKU 一次取全量),白名单外与空值一律剥离。 */
+export function skusValidateSearch(search: Record<string, unknown>): SkusSearch {
+  const out: SkusSearch = {};
+  if (typeof search.model === "string" && search.model.trim()) out.model = search.model;
+  if (typeof search.tier === "string" && search.tier in skuTierMap) out.tier = search.tier as SkuVariant;
+  if (search.sale === "on" || search.sale === "off") out.sale = search.sale;
+  if (typeof search.q === "string" && search.q.trim()) out.q = search.q;
+  return out;
+}
+
 export const Route = createFileRoute("/_app/skus")({
+  validateSearch: skusValidateSearch,
   component: SkusPage,
 });
 
@@ -40,6 +64,36 @@ function SkusPage() {
   const qc = useQueryClient();
   const { data: skus, queryKey, isLoading, isError, error, refetch } = useAdminSkus();
   const [editing, setEditing] = useState<SkuAdminOut | "new" | null>(null);
+  // 筛选入 URL;SKU 一次取全量,过滤在客户端
+  const navigate = useNavigate({ from: "/skus" });
+  const { model, tier, sale, q } = Route.useSearch();
+  const setUrl = useCallback(
+    (patch: Partial<SkusSearch>) =>
+      void navigate({ to: "/skus", replace: true, search: (prev) => ({ ...prev, ...patch }) }),
+    [navigate],
+  );
+  const commitQ = useCallback((next: string | undefined) => setUrl({ q: next }), [setUrl]);
+  const { value: qInput, setValue: setQInput } = useUrlCommittedInput(q, commitQ);
+  const filters = useUrlFilters({
+    search: { model, tier, sale, q },
+    keys: ["model", "tier", "sale", "q"],
+    commit: setUrl,
+  });
+  // 型号选项取当前列表的去重值(没有单独的型号字典端点)
+  const modelOptions = useMemo(
+    () => [...new Set((skus ?? []).map((s) => s.gpu_model).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [skus],
+  );
+  const rows = useMemo(() => {
+    const needle = q?.trim().toLowerCase();
+    return (skus ?? []).filter((r) => {
+      if (model && r.gpu_model !== model) return false;
+      if (tier && skuVariant(r.tier, r.pool_label) !== tier) return false;
+      if (sale && (r.status === "on") !== (sale === "on")) return false;
+      if (needle && !r.name.toLowerCase().includes(needle)) return false;
+      return true;
+    });
+  }, [skus, model, tier, sale, q]);
 
   const refresh = () => void qc.invalidateQueries({ queryKey });
   // 行级上下架共一个变更实例;成功只刷新,文案由 ReasonAction / 强制上架确认各自承担
@@ -60,6 +114,44 @@ function SkusPage() {
       }
     >
       <Card>
+        <FilterBar hasFilter={filters.hasFilter} onClear={filters.clear} count={rows.length}>
+          <Select
+            allowClear
+            showSearch
+            placeholder={t("skus.filterModel")}
+            style={{ width: controlWidth.md }}
+            value={model}
+            onChange={(v: string | undefined) => setUrl({ model: v })}
+            options={modelOptions.map((m) => ({ value: m, label: m }))}
+          />
+          <Select
+            allowClear
+            placeholder={t("skus.colTier")}
+            style={{ width: controlWidth.md }}
+            value={tier}
+            onChange={(v: SkuVariant | undefined) => setUrl({ tier: v })}
+            options={Object.entries(skuTierMap).map(([v, m]) => ({ value: v, label: t(m.labelKey) }))}
+          />
+          <Select
+            allowClear
+            placeholder={t("skus.colStatus")}
+            style={{ width: controlWidth.sm }}
+            value={sale}
+            onChange={(v: "on" | "off" | undefined) => setUrl({ sale: v })}
+            options={[
+              { value: "on", label: t("skus.statusOnSale") },
+              { value: "off", label: t("skus.statusOffShelf") },
+            ]}
+          />
+          <Input.Search
+            allowClear
+            placeholder={t("skus.searchPlaceholder")}
+            style={{ width: controlWidth.md }}
+            value={qInput}
+            onChange={(e) => setQInput(e.target.value)}
+            onSearch={(v) => commitQ(v.trim() || undefined)}
+          />
+        </FilterBar>
         <Table<SkuAdminOut>
           scroll={{ x: 1440 }}
           sticky={{ offsetHeader: layout.topBarHeight }}
@@ -73,10 +165,20 @@ function SkusPage() {
                 onRetry={() => void refetch()}
               />
             ) : (
-              <EmptyState scene="list" compact />
+              <EmptyState
+                scene={filters.hasFilter ? "search" : "list"}
+                compact
+                secondaryAction={
+                  filters.hasFilter ? (
+                    <Button size="small" onClick={filters.clear}>
+                      {t("filter.clear", { ns: "shared" })}
+                    </Button>
+                  ) : undefined
+                }
+              />
             ),
           }}
-          dataSource={skus ?? []}
+          dataSource={rows}
           pagination={false}
           columns={[
             { title: t("skus.colName"), dataIndex: "name", fixed: "left", width: 200 },
@@ -188,11 +290,12 @@ function SkusPage() {
                           }}
                         />
                       ) : (
-                        // 上架:规格缺要素被拒时给「强制上架」出口
+                        // 上架是恢复方向:只填原因,不做第二步确认;规格缺要素被拒时给「强制上架」出口
                         <ReasonAction
                           label={t("skus.onSale")}
                           type="text"
                           target={r.name}
+                          confirm={false}
                           title={t("skus.onSaleTitle")}
                           confirmText={t("skus.onSaleConfirm", { name: r.name })}
                           disabled={!writable}

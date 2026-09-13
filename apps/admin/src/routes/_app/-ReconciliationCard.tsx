@@ -1,12 +1,12 @@
-/** 财务对账卡:事件流水 vs 指标估算的差异,超阈值给 warning。 */
+/** 财务对账卡:事件流水 vs 指标估算的差异,超阈值给 warning;对账日期由财务页的 ?day= 持有。 */
 
+import { Link } from "@tanstack/react-router";
 import { Button, Card, Col, DatePicker, Row, Space, Statistic, Table, Tag } from "antd";
-import dayjs, { type Dayjs } from "dayjs";
-import { useState } from "react";
+import dayjs from "dayjs";
 import { useTranslation } from "react-i18next";
 
 import { adminColors } from "@superdl/ui";
-import { DataErrorAlert, moneyOr } from "@superdl/ui/components";
+import { DataErrorAlert, Mono, moneyOr } from "@superdl/ui/components";
 import { useCsvExport } from "@superdl/ui";
 import { useFormat } from "@superdl/ui";
 
@@ -15,10 +15,17 @@ import { type ReconciliationReport, exportReconciliationCsv, useReconciliation }
 // 对账 diff 标红阈值(%)
 export const RECONCILE_DIFF_WARN_PCT = 2;
 
-export function ReconciliationCard() {
+export function ReconciliationCard({
+  day: dayParam,
+  onDayChange,
+}: {
+  /** ?day=(YYYY-MM-DD);缺省 = 今天(默认值不入 URL) */
+  day?: string;
+  onDayChange: (day: string) => void;
+}) {
   const { t } = useTranslation(["admin", "shared"]);
   const { formatMoney } = useFormat();
-  const [day, setDay] = useState<Dayjs>(dayjs());
+  const day = dayParam ? dayjs(dayParam) : dayjs();
   const { data: report, isError, refetch } = useReconciliation(day.format("YYYY-MM-DD"));
   const diffHigh = report != null && report.diff_pct > RECONCILE_DIFF_WARN_PCT;
   const { doExport, exporting } = useCsvExport((_tz, lang) => exportReconciliationCsv(day.format("YYYY-MM-DD"), lang));
@@ -30,7 +37,9 @@ export function ReconciliationCard() {
         <Space>
           <DatePicker
             value={day}
-            onChange={(d) => d && setDay(d)}
+            onChange={(d) => {
+              if (d) onDayChange(d.format("YYYY-MM-DD"));
+            }}
             allowClear={false}
             disabledDate={(d) => d.isAfter(dayjs(), "day")}
           />
@@ -63,7 +72,7 @@ export function ReconciliationCard() {
         </Col>
         <Col xs={24} sm={12} md={8}>
           <Statistic
-            title="diff%"
+            title={t("finance.diffRate")}
             value={report ? report.diff_pct : "—"}
             suffix={report ? "%" : undefined}
             styles={{
@@ -85,7 +94,16 @@ export function ReconciliationCard() {
           dataSource={report.outliers}
           pagination={false}
           columns={[
-            { title: t("finance.colInstanceId"), dataIndex: "instance_id" },
+            {
+              title: t("finance.colInstanceId"),
+              dataIndex: "instance_id",
+              // 差异实例直链到全局实例表(按 id 检索)
+              render: (v: number) => (
+                <Link to="/tenants" search={{ tab: "instances", iq: String(v) }}>
+                  <Mono>{String(v)}</Mono>
+                </Link>
+              ),
+            },
             {
               title: t("finance.colBilled"),
               dataIndex: "billed",
@@ -99,7 +117,7 @@ export function ReconciliationCard() {
               render: (v: string) => formatMoney(v),
             },
             {
-              title: "diff%",
+              title: t("finance.diffRate"),
               dataIndex: "diff_pct",
               align: "right",
               render: (v: number) => <Tag color="red">{v}%</Tag>,

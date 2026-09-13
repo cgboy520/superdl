@@ -1,5 +1,6 @@
 /** 高危操作统一模式:原因必填 → 二次确认 → 执行 → message 反馈;无权角色按钮可见但禁用 + tooltip。
- *  target(目标标识:租户 #id·手机 / 实例名·uuid 前缀 / 节点名 / 退款单号)在两步弹窗都显示,操作者看得见自己在动哪一条。 */
+ *  target(目标标识:租户 #id·手机 / 实例名·uuid 前缀 / 节点名 / 退款单号)在两步弹窗都显示,操作者看得见自己在动哪一条。
+ *  confirm={false} = 恢复方向动作(解封节点 / 解冻租户 / 上架 SKU):只填原因,原因弹窗直接提交,不走第二步。 */
 
 import { fontSize, space } from "@superdl/ui";
 import { App, Form, Input, Modal, Space, Typography } from "antd";
@@ -26,6 +27,8 @@ interface Props {
   size?: ButtonProps["size"];
   /** 触发按钮形态(行内「更多」里用 link) */
   type?: ButtonProps["type"];
+  /** 二次确认(默认开);恢复方向动作传 false,只填原因 */
+  confirm?: boolean;
   /** 返回字符串作成功提示,否则用通用文案(void 联合会被 no-invalid-void-type 拒,写成 Promise 联合) */
   onSubmit: (reason: string) => Promise<string> | Promise<void>;
 }
@@ -40,6 +43,7 @@ export function ReasonAction({
   disabledReason,
   size = "small",
   type,
+  confirm = true,
   onSubmit,
 }: Props) {
   const { t } = useTranslation();
@@ -65,10 +69,10 @@ export function ReasonAction({
     </GatedButton>
   );
 
-  const run = async () => {
+  const run = async (reason: string) => {
     setLoading(true);
     try {
-      const custom = await onSubmit(reasonSnapshot);
+      const custom = await onSubmit(reason);
       message.success(custom || t("common.actionDone", { action: title }));
       setOpen(false);
       setConfirming(false);
@@ -92,8 +96,14 @@ export function ReasonAction({
     } catch {
       return;
     }
+    const reason = form.getFieldValue("reason") as string;
+    setReasonSnapshot(reason);
+    if (!confirm) {
+      // 恢复方向:原因弹窗内直接提交
+      await run(reason);
+      return;
+    }
     // 先关原因弹窗再开二次确认
-    setReasonSnapshot(form.getFieldValue("reason") as string);
     setOpen(false);
     setConfirming(true);
   };
@@ -105,11 +115,16 @@ export function ReasonAction({
         title={title}
         open={open}
         onCancel={() => {
+          // 直接提交模式下在途禁止关闭
+          if (loading) return;
           setOpen(false);
           setConfirming(false);
         }}
+        mask={{ closable: confirm || !loading }}
+        keyboard={confirm || !loading}
         onOk={() => void goNext()}
-        okText={t("common.next")}
+        okText={confirm ? t("common.next") : t("common.confirmExecute")}
+        okButtonProps={confirm ? undefined : { danger, loading }}
         destroyOnHidden
       >
         {targetLine}
@@ -147,7 +162,7 @@ export function ReasonAction({
           setConfirming(false);
           setOpen(true);
         }}
-        onOk={() => void run()}
+        onOk={() => void run(reasonSnapshot)}
         okText={t("common.confirmExecute")}
         okButtonProps={{ danger, loading }}
       >

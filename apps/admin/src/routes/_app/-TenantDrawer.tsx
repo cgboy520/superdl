@@ -1,4 +1,5 @@
-/** 租户下钻抽屉:实名摘要 + 账单/流水/订单/实例/在线服务/配额/事件 七 Tab + 跳审计。 */
+/** 租户下钻抽屉:EntityHeader(租户 #id / 手机 / 状态 / 余额 / 累计消费 / 实例 / 数据盘 / 实名 / 注册时间 + 冻结·解冻)
+ *  + 四 Tab:账务(小时账单 + 资金流水 + 订单)/ 实例(配额覆盖 + 实例列表)/ 在线服务 / 事件 + 跳审计。 */
 
 import {
   controlWidth,
@@ -12,9 +13,18 @@ import {
   marketLabelKey,
   marketMap,
   metaOf,
+  space,
   subscriptionStatusMap,
 } from "@superdl/ui";
-import { CursorTable, DataErrorAlert, EmptyState, HexTag, Mono } from "@superdl/ui/components";
+import {
+  CursorTable,
+  DataErrorAlert,
+  EmptyState,
+  EntityHeader,
+  HexTag,
+  Mono,
+  type KeyValueItem,
+} from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
@@ -32,7 +42,7 @@ import {
   Tag,
   Typography,
 } from "antd";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { StatusTag } from "@superdl/ui/components";
@@ -44,14 +54,17 @@ import {
   type TenantRow,
   exportTenantLedgerCsv,
   useAdminInstances,
+  useFreezeTenant,
   useInstanceEvents,
   useOrders,
   useSetTenantQuota,
+  useUnfreezeTenant,
   useTenantBills,
   useTenantLedger,
   useTenantQuota,
 } from "../../api";
 import { useOrderColumns } from "../../components/orderColumns";
+import { ReasonAction } from "../../components/ReasonAction";
 import { SignedAmount } from "../../components/SignedAmount";
 import { useApiErrorText } from "@superdl/ui";
 import { useCsvExport } from "@superdl/ui";
@@ -59,24 +72,94 @@ import { useFormat } from "@superdl/ui";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 import { AdminServicesTable } from "./-AdminServicesTable";
 
-// 抽屉 Tab 白名单(tenants 路由 ?dtab= 校验共用)
-export const DRAWER_TABS = ["bills", "ledger", "orders", "instances", "services", "quota", "events"] as const;
+// 抽屉 Tab 白名单(tenants 路由 ?dtab= 校验共用);账单 / 流水 / 订单并进「账务」一屏
+export const DRAWER_TABS = ["billing", "instances", "services", "events"] as const;
 export type DrawerTab = (typeof DRAWER_TABS)[number];
+
+/** 冻结 / 解冻(租户表行内与抽屉头共用):冻结是破坏方向(原因 + 二次确认),解冻是恢复方向(只填原因)。 */
+export function TenantFreezeAction({
+  tenant,
+  writable,
+  onDone,
+  size = "small",
+}: {
+  tenant: TenantRow;
+  writable: boolean;
+  /** 提交成功后刷新列表 */
+  onDone: () => void;
+  size?: "small" | "middle";
+}) {
+  const { t } = useTranslation(["admin", "shared"]);
+  const freeze = useFreezeTenant();
+  const unfreeze = useUnfreezeTenant();
+  const target = `#${tenant.id} · ${tenant.phone_masked}`;
+  return tenant.status === "active" ? (
+    <ReasonAction
+      size={size}
+      label={t("tenants.freeze")}
+      target={target}
+      danger
+      title={t("tenants.freezeTitle")}
+      confirmText={t("tenants.freezeConfirm", {
+        id: tenant.id,
+        phone: tenant.phone_masked,
+        count: tenant.instances,
+      })}
+      disabled={!writable}
+      disabledReason={t("tenants.noPermission")}
+      onSubmit={async (reason) => {
+        const r = await freeze.mutateAsync({ userId: tenant.id, data: { reason } });
+        onDone();
+        // 回显后端实停台数
+        return t("tenants.freezeDone", { count: r.instances_stopped ?? 0 });
+      }}
+    />
+  ) : (
+    <ReasonAction
+      size={size}
+      label={t("tenants.unfreeze")}
+      target={target}
+      confirm={false}
+      title={t("tenants.unfreezeTitle")}
+      confirmText={t("tenants.unfreezeConfirm", { id: tenant.id })}
+      disabled={!writable}
+      disabledReason={t("tenants.noPermission")}
+      onSubmit={async (reason) => {
+        await unfreeze.mutateAsync({ userId: tenant.id, data: { reason } });
+        onDone();
+      }}
+    />
+  );
+}
+
+/** 抽屉内的分节标题(账务三段 / 实例两段)。 */
+function DrawerSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section>
+      <Typography.Title level={5} style={{ margin: `0 0 ${String(space.sm)}px`, fontSize: fontSize.sectionTitle }}>
+        {title}
+      </Typography.Title>
+      {children}
+    </section>
+  );
+}
 
 export function TenantDrawer({
   tenant,
   dtab,
   onTabChange,
   onClose,
+  onChanged,
 }: {
   tenant: TenantRow | null;
   /** 抽屉 Tab(受控,?dtab=) */
   dtab?: DrawerTab;
   onTabChange?: (tab: DrawerTab) => void;
   onClose: () => void;
+  /** 冻结 / 解冻成功后刷新租户列表 */
+  onChanged: () => void;
 }) {
   const { t } = useTranslation(["admin", "shared"]);
-  const { formatMoney } = useFormat();
   // 抽屉级实例列表(前 100 条),三处复用
   const tenantInstances = useAdminInstances(tenant ? { user_id: tenant.id } : undefined, {
     enabled: tenant !== null,
@@ -91,7 +174,7 @@ export function TenantDrawer({
       size={drawerWidth.lg}
       open={tenant !== null}
       onClose={onClose}
-      title={tenant ? t("tenants.drawerTitle", { id: tenant.id, phone: tenant.phone_masked }) : undefined}
+      title={tenant && <TenantHeader tenant={tenant} onChanged={onChanged} />}
       extra={
         tenant && (
           <Link to="/audit" search={{ actor_type: "user", actor_id: String(tenant.id) }}>
@@ -101,75 +184,95 @@ export function TenantDrawer({
       }
     >
       {tenant && (
-        <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-          <Space size={24} wrap>
-            <span>
-              {t("tenants.colBalance")}:<b>{formatMoney(tenant.balance)}</b>
-            </span>
-            <span>
-              {t("tenants.colTotalConsumed")}:<b>{formatMoney(tenant.total_consumed)}</b>
-            </span>
-            <span>
-              {t("tenants.colInstances")}:<b>{tenant.instances}</b>
-            </span>
-            <span>
-              {t("tenants.realname")}:
-              {tenant.verification_status === "verified" ? (
-                <Tag color="green">{t("tenants.realnameVerified")}</Tag>
-              ) : (
-                <Tag>{t("tenants.realnameUnverified")}</Tag>
-              )}
-            </span>
-            {tenant.id_name && (
-              <span>
-                {t("tenants.colIdName")}:<b>{tenant.id_name}</b>
-              </span>
-            )}
-          </Space>
-          <Tabs
-            activeKey={dtab ?? "bills"}
-            onChange={(key) => onTabChange?.(key as DrawerTab)}
-            items={[
-              {
-                key: "bills",
-                label: t("tenants.tabBills"),
-                children: <BillsTab userId={tenant.id} instances={instances} />,
-              },
-              {
-                key: "ledger",
-                label: t("tenants.tabLedger"),
-                children: <LedgerTab userId={tenant.id} />,
-              },
-              {
-                key: "orders",
-                label: t("tenants.tabOrders"),
-                children: <OrdersTab userId={tenant.id} />,
-              },
-              {
-                key: "instances",
-                label: t("tenants.tabInstances"),
-                children: <TenantInstancesTab instances={instances} total={instancesTotal} />,
-              },
-              {
-                key: "services",
-                label: t("tenants.tabServices"),
-                children: <AdminServicesTable userId={tenant.id} compact />,
-              },
-              {
-                key: "quota",
-                label: t("tenants.tabQuota"),
-                children: <QuotaTab userId={tenant.id} />,
-              },
-              {
-                key: "events",
-                label: t("tenants.tabEvents"),
-                children: <EventsTab instances={instances} />,
-              },
-            ]}
-          />
-        </Space>
+        <Tabs
+          activeKey={dtab ?? "billing"}
+          onChange={(key) => onTabChange?.(key as DrawerTab)}
+          items={[
+            {
+              key: "billing",
+              label: t("tenants.drawerTabBilling"),
+              children: <BillingTab userId={tenant.id} instances={instances} />,
+            },
+            {
+              key: "instances",
+              label: t("tenants.drawerTabInstances"),
+              children: <TenantInstancesTab userId={tenant.id} instances={instances} total={instancesTotal} />,
+            },
+            {
+              key: "services",
+              label: t("tenants.tabServices"),
+              children: <AdminServicesTable userId={tenant.id} compact />,
+            },
+            {
+              key: "events",
+              label: t("tenants.tabEvents"),
+              children: <EventsTab instances={instances} />,
+            },
+          ]}
+        />
       )}
     </Drawer>
+  );
+}
+
+/** 抽屉头:租户 #id / 手机脱敏 / 冻结态 + 关键账务信息 + 冻结·解冻。 */
+function TenantHeader({ tenant, onChanged }: { tenant: TenantRow; onChanged: () => void }) {
+  const { t } = useTranslation(["admin", "shared"]);
+  const { formatMoney } = useFormat();
+  const role = useAdminRole();
+  const meta: KeyValueItem[] = [
+    { label: t("tenants.colBalance"), value: formatMoney(tenant.balance) },
+    { label: t("tenants.colTotalConsumed"), value: formatMoney(tenant.total_consumed) },
+    { label: t("tenants.colInstances"), value: tenant.instances },
+    { label: t("tenants.colDisk"), value: `${String(tenant.disk_gb)} GB` },
+    {
+      label: t("tenants.realname"),
+      value:
+        tenant.verification_status === "verified" ? (
+          <Space size={space.xs}>
+            <Tag color="green">{t("tenants.realnameVerified")}</Tag>
+            {tenant.id_name}
+          </Space>
+        ) : (
+          <Tag>{t("tenants.realnameUnverified")}</Tag>
+        ),
+    },
+    { label: t("tenants.colCreatedAt"), value: formatDateTime(tenant.created_at) },
+  ];
+  return (
+    <EntityHeader
+      size="drawer"
+      name={t("tenants.drawerName", { id: tenant.id })}
+      subtitle={tenant.phone_masked}
+      // 租户没有共享状态映射表,冻结 / 正常两态直接出 Tag
+      status={
+        tenant.status === "active" ? (
+          <Tag color="green">{t("tenants.active")}</Tag>
+        ) : (
+          <Tag color="red">{t("tenants.frozen")}</Tag>
+        )
+      }
+      meta={meta}
+      actions={<TenantFreezeAction tenant={tenant} writable={canWriteOps(role)} onDone={onChanged} size="middle" />}
+    />
+  );
+}
+
+/** 账务:小时账单 + 资金流水 + 订单,一屏分三段。 */
+function BillingTab({ userId, instances }: { userId: number; instances: AdminInstanceOut[] }) {
+  const { t } = useTranslation(["admin", "shared"]);
+  return (
+    <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
+      <DrawerSection title={t("tenants.tabBills")}>
+        <BillsTab userId={userId} instances={instances} />
+      </DrawerSection>
+      <DrawerSection title={t("tenants.tabLedger")}>
+        <LedgerTab userId={userId} />
+      </DrawerSection>
+      <DrawerSection title={t("tenants.tabOrders")}>
+        <OrdersTab userId={userId} />
+      </DrawerSection>
+    </Space>
   );
 }
 
@@ -310,86 +413,99 @@ function OrdersTab({ userId }: { userId: number }) {
   );
 }
 
-/** 实例只读视图(前 100 条;写操作在「全局实例」Tab)。 */
-function TenantInstancesTab({ instances, total }: { instances: AdminInstanceOut[]; total: number | null }) {
+/** 实例:配额覆盖 + 实例只读视图(前 100 条;写操作在「全局实例」Tab)。 */
+function TenantInstancesTab({
+  userId,
+  instances,
+  total,
+}: {
+  userId: number;
+  instances: AdminInstanceOut[];
+  total: number | null;
+}) {
   const { t } = useTranslation(["admin", "shared"]);
   return (
-    <>
-      {/* 超过 100 台明示截断 */}
-      {total !== null && total > instances.length && (
-        <Typography.Text type="warning" style={{ display: "block", marginBottom: 8, fontSize: fontSize.caption }}>
-          {t("tenants.instancesCapped", { shown: instances.length, total })}
-        </Typography.Text>
-      )}
-      <Table<AdminInstanceOut>
-        size="small"
-        rowKey="uuid"
-        pagination={false}
-        scroll={{ x: 840, y: 420 }}
-        dataSource={instances}
-        columns={[
-          {
-            title: t("tenants.colInstance"),
-            render: (_, r) => (
-              <Space size={8}>
-                <span>{r.name}</span>
-                <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                  <Mono truncate={8}>{r.uuid}</Mono>
-                </Typography.Text>
-              </Space>
-            ),
-          },
-          {
-            title: t("tenants.colStatus"),
-            dataIndex: "status",
-            width: 110,
-            render: (v: string) => {
-              return <StatusTag map={instanceStatusMap} value={v} />;
-            },
-          },
-          {
-            // 购买模式标签取 packages/ui 映射;到期信息取内联 subscription
-            title: t("tenants.colMarket"),
-            width: 150,
-            render: (_, r) => {
-              const labelKey = marketLabelKey(r.market, r.subscription?.period);
-              const sub = r.subscription;
-              const subMeta = sub ? metaOf(subscriptionStatusMap, sub.status) : undefined;
-              const lapsed = sub != null && sub.status !== "active";
-              return (
-                <Space orientation="vertical" size={0}>
-                  <HexTag color={metaOf(marketMap, r.market)?.color}>{labelKey ? t(labelKey) : r.market}</HexTag>
-                  {sub && (
-                    <Typography.Text
-                      type={lapsed ? undefined : "secondary"}
-                      style={{
-                        fontSize: fontSize.caption,
-                        whiteSpace: "nowrap",
-                        ...(lapsed && subMeta ? { color: subMeta.color } : {}),
-                      }}
-                    >
-                      {lapsed && subMeta
-                        ? t(subMeta.labelKey)
-                        : t("tenants.expiresAt", { date: formatDate(sub.expires_at) })}
-                    </Typography.Text>
-                  )}
+    <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
+      <DrawerSection title={t("tenants.tabQuota")}>
+        <QuotaTab userId={userId} />
+      </DrawerSection>
+      <DrawerSection title={t("tenants.drawerTabInstances")}>
+        {/* 超过 100 台明示截断 */}
+        {total !== null && total > instances.length && (
+          <Typography.Text type="warning" style={{ display: "block", marginBottom: 8, fontSize: fontSize.caption }}>
+            {t("tenants.instancesCapped", { shown: instances.length, total })}
+          </Typography.Text>
+        )}
+        <Table<AdminInstanceOut>
+          size="small"
+          rowKey="uuid"
+          pagination={false}
+          scroll={{ x: 840, y: 420 }}
+          dataSource={instances}
+          columns={[
+            {
+              title: t("tenants.colInstance"),
+              render: (_, r) => (
+                <Space size={8}>
+                  <span>{r.name}</span>
+                  <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                    <Mono truncate={8}>{r.uuid}</Mono>
+                  </Typography.Text>
                 </Space>
-              );
+              ),
             },
-          },
-          {
-            title: t("tenants.colSpec"),
-            render: (_, r) => `${String(r.spec.gpu_model)} × ${r.gpu_count}`,
-          },
-          {
-            title: t("tenants.colNode"),
-            dataIndex: "node_name",
-            render: (v: string | null) => (v ? <Mono>{v}</Mono> : "—"),
-          },
-          { title: t("tenants.colCreatedAt"), dataIndex: "created_at", render: formatDateTime },
-        ]}
-      />
-    </>
+            {
+              title: t("tenants.colStatus"),
+              dataIndex: "status",
+              width: 110,
+              render: (v: string) => {
+                return <StatusTag map={instanceStatusMap} value={v} />;
+              },
+            },
+            {
+              // 购买模式标签取 packages/ui 映射;到期信息取内联 subscription
+              title: t("tenants.colMarket"),
+              width: 150,
+              render: (_, r) => {
+                const labelKey = marketLabelKey(r.market, r.subscription?.period);
+                const sub = r.subscription;
+                const subMeta = sub ? metaOf(subscriptionStatusMap, sub.status) : undefined;
+                const lapsed = sub != null && sub.status !== "active";
+                return (
+                  <Space orientation="vertical" size={0}>
+                    <HexTag color={metaOf(marketMap, r.market)?.color}>{labelKey ? t(labelKey) : r.market}</HexTag>
+                    {sub && (
+                      <Typography.Text
+                        type={lapsed ? undefined : "secondary"}
+                        style={{
+                          fontSize: fontSize.caption,
+                          whiteSpace: "nowrap",
+                          ...(lapsed && subMeta ? { color: subMeta.color } : {}),
+                        }}
+                      >
+                        {lapsed && subMeta
+                          ? t(subMeta.labelKey)
+                          : t("tenants.expiresAt", { date: formatDate(sub.expires_at) })}
+                      </Typography.Text>
+                    )}
+                  </Space>
+                );
+              },
+            },
+            {
+              title: t("tenants.colSpec"),
+              render: (_, r) => `${String(r.spec.gpu_model)} × ${r.gpu_count}`,
+            },
+            {
+              title: t("tenants.colNode"),
+              dataIndex: "node_name",
+              render: (v: string | null) => (v ? <Mono>{v}</Mono> : "—"),
+            },
+            { title: t("tenants.colCreatedAt"), dataIndex: "created_at", render: formatDateTime },
+          ]}
+        />
+      </DrawerSection>
+    </Space>
   );
 }
 

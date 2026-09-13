@@ -63,7 +63,7 @@
 - 行内动作走 `RowActions`(≤1 主 + 1 次 + `RowMoreMenu`,危险项末尾;退款单「取消」、镜像「删除」、实例「强制回收」收进更多);条件禁用一律 `GatedButton`;**所有筛选**走 `FilterBar`(清除筛选 + 服务端 total)并入 URL;检索框 ↔ URL 走 `useUrlCommittedInput`;状态标走 `StatusTag`(只接受 packages/ui 的状态表,含 `nodeStatusMap` / `severityMap`);游标分页表走 `CursorTable`(Table + 错误空态 + LoadMore 一处,查询侧传结构化 `CursorListQuery`)。
 - 命令面板实体检索:纯数字 → 租户 id(直开抽屉);≥6 位十六进制 → 实例 uuid 前缀(→ 租户页实例 Tab);节点名 / SKU 名 / 服务名从已缓存列表匹配;页面导航按侧栏分组分节。
 - 菜单项事实源 `lib/menu.ts` 的 `MENU`(侧栏与 ⌘K 共用;`group` 分四组:总览 / 资源 / 业务 / 治理,顺序 `MENU_GROUP_ORDER`),可见性由 `MENU_ROLES` 过滤;键集一致性由 `lib/menu.test.ts` 守护。
-- 表格密度与固定列:`adminThemeComponents.Table` 统一 13px / `cellPaddingBlock 8`(顶层表不用 `small`);数值与金额列右对齐,标识列 `Mono`;`scroll.x ≥ 1000` 的表固定标识列与操作列并 `sticky`(顶栏高度 `layout.topBarHeight`),固定右列必须是最后一列;宽表页 `PageContainer width="full"`;轮询页页头挂新鲜度条(`useAutoRefresh` + `PageHeader.freshness`);编辑抽屉 footer 提交 + 取消、`useLeaveGuard`、宽度只取 `drawerWidth.md/lg`;环境徽标取运行时 `/site-config`,不取构建模式;恢复方向动作(解封 / 解冻 / 上架)只填原因不二次确认。
+- 表格密度与固定列:`adminThemeComponents.Table` 统一 13px / `cellPaddingBlock 8`(顶层表不用 `small`);数值与金额列右对齐,标识列 `Mono`;`scroll.x ≥ 1000` 的表固定标识列与操作列并 `sticky`(顶栏高度 `layout.topBarHeight`),固定右列必须是最后一列;宽表页 `PageContainer width="full"`;轮询页页头挂新鲜度条(`useAutoRefresh` + `PageHeader.freshness`);编辑抽屉 footer 提交 + 取消、`useLeaveGuard`、宽度只取 `drawerWidth.md/lg`;环境徽标判定收在 `lib/environment.ts`(后端暂无 environment 端点,现按构建模式判定);恢复方向动作(解封 / 解冻 / 上架)只填原因不二次确认。
 - `src/routes/` 下的非路由文件以 `-` 开头(tanstack router 的 routeFileIgnorePrefix)。
 - 管理端登录限流只计失败,四层桶:`admin-login:{ip}:{username}` 与 `admin-login-acct:{username}` 成功即清零,`admin-login-ip:{ip}` 与 `admin-login-acct-daily:{username}` 不清零;TOTP 校验走 `admin-mfa:{admin_id}`。限额见 [limits.md](./limits.md)。
 - 日窗账号桶只在失败后计数,不参与 bcrypt 前的准入预检(其余三层桶参与)。

@@ -5,11 +5,12 @@ import { Space, Typography } from "antd";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-/** 与后端 app/core/constants.ADMIN_LIST_CAP 对齐,同步改。 */
+/** 与后端 app/core/constants.ADMIN_LIST_CAP 对齐,同步改;alerts 另有自己的窗口(notify/service.admin_alert_stream 取最近 50 条)。 */
 export const LIST_CAPS = {
   invoices: 200,
   deletions: 200,
   announcements: 200,
+  alerts: 50,
 } as const;
 
 export function ListCapNote({ rows, cap, action }: { rows: number; cap: number; action?: ReactNode }) {

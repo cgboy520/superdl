@@ -1,13 +1,21 @@
-/** Cmd+K 命令面板:页面导航(按角色过滤,同侧栏 MENU 源)+ 实体检索(纯数字 → 租户 id;≥6 位十六进制 → 实例 uuid 前缀,输入即查)+ 快捷动作;壳在 @superdl/ui CommandPaletteShell。 */
+/** Cmd+K 命令面板:页面导航(按角色过滤,同侧栏 MENU 源)+ 实体检索(纯数字 → 租户 id;≥6 位十六进制 → 实例 uuid 前缀,输入即查;
+ *  节点名 / SKU 名 / 服务名与 slug 只在已缓存的列表里子串匹配,不为面板发新请求)+ 快捷动作;壳在 @superdl/ui CommandPaletteShell。 */
 
-import { AlertOutlined, CloudServerOutlined, ReloadOutlined, TeamOutlined } from "@ant-design/icons";
+import {
+  AlertOutlined,
+  ClusterOutlined,
+  CloudServerOutlined,
+  ReloadOutlined,
+  TagsOutlined,
+  TeamOutlined,
+} from "@ant-design/icons";
 import { COMMAND_KBD_HINT, CommandPaletteShell, type CommandPaletteGroup } from "@superdl/ui/components";
 import { useNavigate } from "@tanstack/react-router";
 import { App } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { useAdminInstances, useTenants } from "../api";
+import { adminKeys, useAdminInstances, useTenants, type AdminServiceOut, type NodeRow, type SkuAdminOut } from "../api";
 import { MENU, MENU_GROUP_LABEL_KEY, MENU_GROUP_ORDER, canSeeMenu } from "../lib/menu";
 import { queryClient } from "../lib/queryClient";
 import { useAdminRole } from "../stores/auth";
@@ -16,6 +24,28 @@ import { useAdminRole } from "../stores/auth";
 export const COMMAND_PALETTE_OPEN_EVENT = "superdl:admin-command-palette-open";
 
 export { COMMAND_KBD_HINT };
+
+/** 每个实体分组最多列几条 */
+const ENTITY_HITS = 8;
+
+/** 在线服务列表按参数分了多份缓存,前缀取全部再按 id 去重。 */
+function cachedServices(): AdminServiceOut[] {
+  const seen = new Set<number>();
+  const out: AdminServiceOut[] = [];
+  const cached = queryClient.getQueriesData<{ pages: { items: AdminServiceOut[] }[] }>({
+    queryKey: adminKeys.services,
+  });
+  for (const [, data] of cached) {
+    for (const page of data?.pages ?? []) {
+      for (const svc of page.items) {
+        if (seen.has(svc.id)) continue;
+        seen.add(svc.id);
+        out.push(svc);
+      }
+    }
+  }
+  return out;
+}
 
 export function CommandPalette() {
   const { t } = useTranslation();
@@ -53,6 +83,22 @@ export function CommandPalette() {
     })),
   })).filter((g) => g.items.length > 0);
 
+  // 实体名检索:大小写不敏感子串,只在已缓存的列表里找(列表页访问过才有命中)
+  const lower = q.toLowerCase();
+  const hit = (...fields: (string | null | undefined)[]) =>
+    q.length > 0 && fields.some((f) => (f ?? "").toLowerCase().includes(lower));
+  const nodeHits = canSeeMenu("/nodes", role)
+    ? (queryClient.getQueryData<NodeRow[]>(adminKeys.nodes) ?? []).filter((n) => hit(n.name)).slice(0, ENTITY_HITS)
+    : [];
+  const skuHits = canSeeMenu("/skus", role)
+    ? (queryClient.getQueryData<SkuAdminOut[]>(adminKeys.skus) ?? []).filter((s) => hit(s.name)).slice(0, ENTITY_HITS)
+    : [];
+  const serviceHits = canSeeMenu("/services", role)
+    ? cachedServices()
+        .filter((s) => hit(s.name, s.slug))
+        .slice(0, ENTITY_HITS)
+    : [];
+
   const entityGroups: CommandPaletteGroup[] = [
     {
       heading: t("command.groupTenants"),
@@ -86,7 +132,55 @@ export function CommandPalette() {
         run: () => void navigate({ to: "/tenants", search: { tab: "instances", iq: inst.uuid } }),
       })),
     },
-  ];
+    {
+      heading: t("command.groupNodes"),
+      items: nodeHits.map((n) => ({
+        key: `node:${n.name}`,
+        value: `${n.name} ${n.gpu_model}`,
+        label: (
+          <>
+            <ClusterOutlined />
+            <span>
+              {n.name} · {n.gpu_model}
+            </span>
+          </>
+        ),
+        run: () => void navigate({ to: "/nodes", search: { node: n.name } }),
+      })),
+    },
+    {
+      heading: t("command.groupSkus"),
+      items: skuHits.map((s) => ({
+        key: `sku:${s.id}`,
+        value: `${s.name} ${s.gpu_model}`,
+        label: (
+          <>
+            <TagsOutlined />
+            <span>
+              {s.name} · {s.gpu_model}
+            </span>
+          </>
+        ),
+        run: () => void navigate({ to: "/skus", search: { q: s.name } }),
+      })),
+    },
+    {
+      heading: t("command.groupServices"),
+      items: serviceHits.map((s) => ({
+        key: `svc:${s.id}`,
+        value: `${s.name} ${s.slug}`,
+        label: (
+          <>
+            <CloudServerOutlined />
+            <span>
+              {s.name} · {s.slug}
+            </span>
+          </>
+        ),
+        run: () => void navigate({ to: "/services", search: { q: s.slug } }),
+      })),
+    },
+  ].filter((g) => g.items.length > 0);
 
   const groups: CommandPaletteGroup[] = [
     ...entityGroups,

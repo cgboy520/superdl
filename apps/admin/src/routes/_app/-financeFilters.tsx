@@ -4,7 +4,8 @@ import { useNavigate, getRouteApi } from "@tanstack/react-router";
 
 const routeApi = getRouteApi("/_app/finance");
 
-export const FINANCE_TABS = ["orders", "refunds", "invoices", "adjustments", "gaps", "anomalies", "audit"] as const;
+// 审计独立成页(/audit),财务页不再内嵌
+export const FINANCE_TABS = ["orders", "refunds", "invoices", "adjustments", "gaps", "anomalies"] as const;
 export type FinanceTab = (typeof FINANCE_TABS)[number];
 
 // URL 筛选白名单:状态取共享映射表,日期 YYYY-MM-DD,账期 YYYY-MM,租户 id 正整数
@@ -16,6 +17,8 @@ export type GapKind = (typeof GAP_KINDS)[number];
 
 export interface FinanceSearch {
   tab?: FinanceTab;
+  // 日对账卡的对账日(YYYY-MM-DD;缺省 = 今天)
+  day?: string;
   // 订单 Tab
   o_status?: string;
   o_no?: string;

@@ -7,14 +7,21 @@ const validate = Route.options.validateSearch as (search: Record<string, unknown
 
 describe("tenants validateSearch", () => {
   it("tab/q 序列化往返:合法值原样保留", () => {
-    const out = validate({ tab: "instances", q: "13800001111", dtab: "quota" });
-    expect(out).toEqual({ tab: "instances", q: "13800001111", dtab: "quota" });
+    const out = validate({ tab: "instances", q: "13800001111", dtab: "billing" });
+    expect(out).toEqual({ tab: "instances", q: "13800001111", dtab: "billing" });
     expect(validate({ dtab: "services" })).toEqual({ dtab: "services" });
+    expect(validate({ dtab: "events" })).toEqual({ dtab: "events" });
   });
 
   it("非法/空值剥离:白名单外的 tab、空 q、未知参数一律不落", () => {
     const out = validate({ tab: "hacked", q: "", dtab: "nope", foo: "bar" });
     expect(out).toEqual({});
+  });
+
+  it("抽屉 Tab 收成四项:账单 / 流水 / 订单 / 配额等旧名不再是合法 dtab", () => {
+    for (const stale of ["bills", "ledger", "orders", "quota"]) {
+      expect(validate({ dtab: stale })).toEqual({});
+    }
   });
 
   it("实例筛选 istatus/inode:istatus 走实例状态白名单,inode 非空即收", () => {

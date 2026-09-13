@@ -1,21 +1,26 @@
-/** 充值订单 Tab:FilterBar(状态 / 订单号 / 日期,入 URL)+ 导出。 */
+/** 充值订单 Tab:FilterBar(状态 / 订单号 / 日期,入 URL)+ 行内核验 / 补单 + 导出。 */
 
+import { useQueryClient } from "@tanstack/react-query";
 import { Button, DatePicker, Input, Select } from "antd";
 import dayjs from "dayjs";
 import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 
-import { controlWidth, flattenPages, orderStatusMap } from "@superdl/ui";
+import { controlWidth, flattenPages, layout, orderStatusMap } from "@superdl/ui";
 import { CursorTable, EmptyState, FilterBar } from "@superdl/ui/components";
 import { useCsvExport, useUrlCommittedInput, useUrlFilters } from "@superdl/ui";
 
 import { type OrderRow, exportOrdersCsv, useOrders } from "../../api";
+import { useOrderActions } from "../../components/orderActions";
 import { useOrderColumns } from "../../components/orderColumns";
 import { useFinanceFilters } from "./-financeFilters";
 
 export function OrdersTab() {
   const { t } = useTranslation(["admin", "shared"]);
-  const orderColumns = useOrderColumns({ withTenant: true });
+  const qc = useQueryClient();
+  // 补单入账后订单状态变,整个 orders 前缀失效
+  const actions = useOrderActions(() => void qc.invalidateQueries({ queryKey: ["admin", "orders"] }));
+  const orderColumns = useOrderColumns({ withTenant: true, actions });
   // 筛选条件入 URL(status/订单号/下单日)
   const { search, setFilters } = useFinanceFilters();
   const status = search.o_status;
@@ -88,10 +93,12 @@ export function OrdersTab() {
             }
           />
         }
-        scroll={{ x: 900 }}
+        scroll={{ x: 1100 }}
+        sticky={{ offsetHeader: layout.topBarHeight }}
         rowKey="order_no"
         columns={orderColumns}
       />
+      {actions.modals}
     </>
   );
 }

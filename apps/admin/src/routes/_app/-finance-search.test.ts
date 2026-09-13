@@ -1,4 +1,4 @@
-/** finance 路由 validateSearch:结算缺口 g_kind/g_open 白名单与默认值剥离。挂了 = 缺口筛选不再落 URL,或非法值穿透到查询参数。 */
+/** finance 路由 validateSearch:对账日 day、Tab 白名单与结算缺口 g_kind/g_open 默认值剥离。挂了 = 对账日 / 缺口筛选不再落 URL,或非法值穿透到查询参数。 */
 import { describe, expect, it } from "vitest";
 
 import { Route } from "./finance";
@@ -13,5 +13,15 @@ describe("finance validateSearch(结算缺口)", () => {
       g_open: "0",
     });
     expect(validate({ g_kind: "weekly", g_open: "1" })).toEqual({});
+  });
+
+  it("对账日 day 只收 YYYY-MM-DD", () => {
+    expect(validate({ day: "2026-09-13" })).toEqual({ day: "2026-09-13" });
+    expect(validate({ day: "2026-9-13" })).toEqual({});
+  });
+
+  it("审计已独立成页:?tab=audit 不再是合法 Tab(回落订单)", () => {
+    expect(validate({ tab: "audit" })).toEqual({});
+    expect(validate({ tab: "anomalies" })).toEqual({ tab: "anomalies" });
   });
 });

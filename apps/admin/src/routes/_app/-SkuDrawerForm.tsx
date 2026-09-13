@@ -1,6 +1,20 @@
-/** SKU 新建 / 编辑抽屉:集群资源联动(推荐填表)+ 容量预览 + 改价影响面确认;表单常量与联动纯函数在 -skuForm。 */
+/** SKU 新建 / 编辑抽屉:集群资源联动(推荐填表)+ 容量预览(sticky)+ 改价影响面确认;提交 / 取消在 footer,脏表单挂 useLeaveGuard,变更原因是最后一个字段;表单常量与联动纯函数在 -skuForm。 */
 
-import { App, Alert, Button, Card, Drawer, Form, Input, InputNumber, Select, Spin, Switch, Typography } from "antd";
+import {
+  App,
+  Alert,
+  Button,
+  Card,
+  Drawer,
+  Form,
+  Input,
+  InputNumber,
+  Select,
+  Space,
+  Spin,
+  Switch,
+  Typography,
+} from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -20,6 +34,7 @@ import {
   useUpdateSku,
 } from "../../api";
 import { POOL_LABEL_KEY } from "../../lib/pools";
+import { useLeaveGuard } from "../../lib/useLeaveGuard";
 import { REASON_MAX_LEN } from "../../lib/validators";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 import {
@@ -59,10 +74,20 @@ export function SkuDrawerForm({
   const [form] = Form.useForm<SkuFormValues>();
   // 新建草稿(sessionStorage);编辑态不写草稿
   const draft = useFormDraft<SkuFormValues>("sku-new");
+  // 动过表单即脏:离开 / 关抽屉先确认(提交成功走 closeNow,不再拦)。
+  // 记「哪一条被改过」而不是布尔:换记录 / 关抽屉自动回到不脏,不必在 effect 里 setState
+  const editingKey = editing === null ? null : editing === "new" ? "new" : String(editing.id);
+  const [dirtyKey, setDirtyKey] = useState<string | null>(null);
+  const dirty = dirtyKey !== null && dirtyKey === editingKey;
+  const leave = useLeaveGuard(dirty);
   // 关闭即清集群选择(下次打开重新选;所有关闭路径都经这里)
-  const handleClose = () => {
+  const closeNow = () => {
     setClusterPick(null);
+    setDirtyKey(null);
     onClose();
+  };
+  const handleClose = () => {
+    leave.confirmLeave(closeNow);
   };
 
   const clusterOptions = useMemo(
@@ -75,7 +100,7 @@ export function SkuDrawerForm({
       onSuccess: () => {
         message.success(t("skus.created"));
         draft.clear();
-        handleClose();
+        closeNow();
         onSaved();
       },
       onError: (e) => message.error(errText(e, t("common.createFailed"))),
@@ -85,7 +110,7 @@ export function SkuDrawerForm({
     mutation: {
       onSuccess: () => {
         message.success(t("skus.saved"));
-        handleClose();
+        closeNow();
         onSaved();
       },
       onError: (e) => message.error(errText(e, t("common.saveFailed"))),
@@ -259,221 +284,234 @@ export function SkuDrawerForm({
   const variantLocked = !isNew && record?.status === "on";
 
   return (
-    <Drawer
-      title={isNew ? t("skus.newSku") : t("skus.editTitle", { name: record?.name ?? "" })}
-      open={editing !== null}
-      onClose={handleClose}
-      size={drawerWidth.lg}
-      extra={
-        <Button type="primary" loading={create.isPending || update.isPending} onClick={() => void submit()}>
-          {t("skus.submit")}
-        </Button>
-      }
-    >
-      <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
-        <Form
-          form={form}
-          layout="vertical"
-          style={{ flex: 1, minWidth: 0 }}
-          onValuesChange={() => {
-            if (isNew) draft.save(form.getFieldsValue(true) as Partial<SkuFormValues>);
-          }}
-        >
-          {isNew && clusterOptions.length > 0 && (
-            <Form.Item label={t("skus.fromClusterLabel")}>
-              <Select<number | "manual">
-                placeholder={t("skus.fromClusterPlaceholder")}
-                onChange={onClusterPick}
-                options={[
-                  ...clusterOptions.map((a, i) => ({
-                    value: i,
-                    label: `${a.gpu_model} · ${a.pool_label} · ${t("skus.modelOptionMeta", {
-                      free: a.ready_gpu_free,
-                      total: a.gpu_total,
-                      vram: a.vram_gb,
-                    })}`,
-                  })),
-                  { value: "manual" as const, label: t("skus.manualOption") },
-                ]}
+    <>
+      <Drawer
+        title={isNew ? t("skus.newSku") : t("skus.editTitle", { name: record?.name ?? "" })}
+        open={editing !== null}
+        onClose={handleClose}
+        size={drawerWidth.lg}
+        footer={
+          <Space style={{ display: "flex", justifyContent: "flex-end" }}>
+            <Button onClick={handleClose}>{t("common.cancel", { ns: "shared" })}</Button>
+            <Button type="primary" loading={create.isPending || update.isPending} onClick={() => void submit()}>
+              {t("skus.submit")}
+            </Button>
+          </Space>
+        }
+      >
+        <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
+          <Form
+            form={form}
+            layout="vertical"
+            style={{ flex: 1, minWidth: 0 }}
+            onValuesChange={() => {
+              setDirtyKey(editingKey);
+              if (isNew) draft.save(form.getFieldsValue(true) as Partial<SkuFormValues>);
+            }}
+          >
+            {isNew && clusterOptions.length > 0 && (
+              <Form.Item label={t("skus.fromClusterLabel")}>
+                <Select<number | "manual">
+                  placeholder={t("skus.fromClusterPlaceholder")}
+                  onChange={onClusterPick}
+                  options={[
+                    ...clusterOptions.map((a, i) => ({
+                      value: i,
+                      label: `${a.gpu_model} · ${a.pool_label} · ${t("skus.modelOptionMeta", {
+                        free: a.ready_gpu_free,
+                        total: a.gpu_total,
+                        vram: a.vram_gb,
+                      })}`,
+                    })),
+                    { value: "manual" as const, label: t("skus.manualOption") },
+                  ]}
+                />
+              </Form.Item>
+            )}
+            {isNew && clusterOptions.length === 0 && (
+              <Alert type="info" showIcon style={{ marginBottom: 16 }} title={t("skus.clusterEmptyHint")} />
+            )}
+            <Form.Item name="name" label={t("skus.colName")} rules={[{ required: true }]}>
+              <Input />
+            </Form.Item>
+            {/* 型号只在新建时出现;CPU 规格不带型号 */}
+            {isNew && !isCpuVariant && (
+              <Form.Item name="gpu_model" label={t("skus.gpuModelLabel")} rules={[{ required: true }]}>
+                <Input placeholder={t("skus.gpuModelPlaceholder")} disabled={clusterPick !== null} />
+              </Form.Item>
+            )}
+            {/* 档位与切片编辑态也挂载 */}
+            <Form.Item
+              name="variant"
+              label={t("skus.colTier")}
+              rules={[{ required: true }]}
+              extra={variantLocked ? t("skus.tierLockedOnSale") : undefined}
+            >
+              <Select
+                disabled={variantLocked}
+                onChange={onVariantChange}
+                options={variantOptions.map((v) => ({
+                  value: v,
+                  label: t(skuTierMap[v].labelKey),
+                }))}
               />
             </Form.Item>
-          )}
-          {isNew && clusterOptions.length === 0 && (
-            <Alert type="info" showIcon style={{ marginBottom: 16 }} title={t("skus.clusterEmptyHint")} />
-          )}
-          <Form.Item name="name" label={t("skus.colName")} rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          {/* 型号只在新建时出现;CPU 规格不带型号 */}
-          {isNew && !isCpuVariant && (
-            <Form.Item name="gpu_model" label={t("skus.gpuModelLabel")} rules={[{ required: true }]}>
-              <Input placeholder={t("skus.gpuModelPlaceholder")} disabled={clusterPick !== null} />
-            </Form.Item>
-          )}
-          {/* 档位与切片编辑态也挂载 */}
-          <Form.Item
-            name="variant"
-            label={t("skus.colTier")}
-            rules={[{ required: true }]}
-            extra={variantLocked ? t("skus.tierLockedOnSale") : undefined}
-          >
-            <Select
-              disabled={variantLocked}
-              onChange={onVariantChange}
-              options={variantOptions.map((v) => ({
-                value: v,
-                label: t(skuTierMap[v].labelKey),
-              }))}
-            />
-          </Form.Item>
-          {wVariant === "shared_mig" && (
-            <Form.Item name="mig_profile" label={t("skus.migProfileLabel")} rules={[{ required: true }]}>
-              <Input
-                placeholder={t("skus.migProfilePlaceholder")}
-                onChange={(e) => {
-                  const m = /(\d+)gb/i.exec(e.target.value);
-                  if (m) form.setFieldsValue({ vram_gb: Number(m[1]) });
-                }}
-              />
-            </Form.Item>
-          )}
-          {/* 池由档位派生;CPU 档可选 cpu / hami */}
-          <Form.Item
-            name="pool_label"
-            label={t("nodes.poolLabel")}
-            rules={[{ required: true }]}
-            extra={isCpuVariant ? t("skus.cpuPoolHint") : undefined}
-          >
-            <Select
-              disabled={!isCpuVariant}
-              options={Object.entries(POOL_LABEL_KEY)
-                .filter(([value]) => !isCpuVariant || value === "cpu" || value === "hami")
-                .map(([value, labelKey]) => ({ value, label: t(labelKey) }))}
-            />
-          </Form.Item>
-          {/* CPU 规格不挂载,提交时由 CPU_ZERO_FIELDS 补零 */}
-          {!isCpuVariant && (
-            <>
-              <Form.Item name="gpu_cores_pct" label={t("skus.coresPctLabel")} rules={[{ required: true }]}>
-                <InputNumber
-                  min={1}
-                  max={100}
-                  disabled={!!wVariant && wVariant !== "shared_hami"}
-                  style={{ width: "100%" }}
-                  onChange={(v) => {
-                    if (clusterPick && wVariant && typeof v === "number") {
-                      applyRecommend(clusterPick, wVariant, v);
-                    }
+            {wVariant === "shared_mig" && (
+              <Form.Item name="mig_profile" label={t("skus.migProfileLabel")} rules={[{ required: true }]}>
+                <Input
+                  placeholder={t("skus.migProfilePlaceholder")}
+                  onChange={(e) => {
+                    const m = /(\d+)gb/i.exec(e.target.value);
+                    if (m) form.setFieldsValue({ vram_gb: Number(m[1]) });
                   }}
                 />
               </Form.Item>
-              <Form.Item name="vram_gb" label={t("skus.vramLabel")} rules={[{ required: true }]}>
-                <InputNumber min={1} max={clusterPick?.vram_gb || undefined} style={{ width: "100%" }} />
-              </Form.Item>
-              <Alert
-                type="warning"
-                showIcon
-                style={{ marginBottom: 16 }}
-                title={t("skus.oversellRisk")}
-                description={t("skus.oversellRiskDesc")}
-              />
-              <Form.Item name="oversell_cores" label={t("skus.oversellCoresLabel")} rules={[{ required: true }]}>
-                <InputNumber min={1} max={9.99} step={0.1} style={{ width: "100%" }} />
-              </Form.Item>
-            </>
-          )}
-          <Form.Item
-            name="vcpu"
-            label="vCPU"
-            rules={[{ required: true }]}
-            extra={
-              clusterPick && clusterPick.vcpu_per_gpu > 0
-                ? t("skus.ratioHint", { model: clusterPick.gpu_model ?? "" })
-                : undefined
-            }
-          >
-            <InputNumber min={1} style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item name="mem_gb" label={t("skus.memLabel")} rules={[{ required: true }]}>
-            <InputNumber min={1} style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item name="disk_gb" label={t("skus.diskLabel")} rules={[{ required: true }]}>
-            <InputNumber min={10} style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item name="price_hourly" label={t("skus.priceLabel")} rules={[{ required: true }]}>
-            <InputNumber min="0.0001" step="0.01" precision={4} stringMode style={{ width: "100%" }} />
-          </Form.Item>
-          {/* 包周期开关:关掉只挡新单 */}
-          <Form.Item
-            name="period_enabled"
-            label={t("skus.periodEnabledLabel")}
-            valuePropName="checked"
-            extra={t("skus.periodEnabledHint")}
-          >
-            <Switch />
-          </Form.Item>
-          {/* 竞价开关:关掉只挡新单 */}
-          <Form.Item
-            name="spot_enabled"
-            label={t("skus.spotEnabledLabel")}
-            valuePropName="checked"
-            extra={t("skus.spotEnabledHint")}
-          >
-            <Switch />
-          </Form.Item>
-          {/* 编辑必填原因(入审计) */}
-          {editing !== "new" && (
+            )}
+            {/* 池由档位派生;CPU 档可选 cpu / hami */}
             <Form.Item
-              name="reason"
-              label={t("skus.reasonLabel")}
-              rules={[{ required: true, min: 2, max: REASON_MAX_LEN, message: t("skus.reasonRequired") }]}
+              name="pool_label"
+              label={t("nodes.poolLabel")}
+              rules={[{ required: true }]}
+              extra={isCpuVariant ? t("skus.cpuPoolHint") : undefined}
             >
-              <Input.TextArea rows={2} placeholder={t("skus.reasonPlaceholder")} />
+              <Select
+                disabled={!isCpuVariant}
+                options={Object.entries(POOL_LABEL_KEY)
+                  .filter(([value]) => !isCpuVariant || value === "cpu" || value === "hami")
+                  .map(([value, labelKey]) => ({ value, label: t(labelKey) }))}
+              />
             </Form.Item>
-          )}
-          {!isCpuVariant && (
-            <Form.Item name="max_gpus_per_instance" label={t("skus.maxGpusLabel")}>
-              <InputNumber min={1} max={8} style={{ width: "100%" }} />
+            {/* CPU 规格不挂载,提交时由 CPU_ZERO_FIELDS 补零 */}
+            {!isCpuVariant && (
+              <>
+                <Form.Item name="gpu_cores_pct" label={t("skus.coresPctLabel")} rules={[{ required: true }]}>
+                  <InputNumber
+                    min={1}
+                    max={100}
+                    disabled={!!wVariant && wVariant !== "shared_hami"}
+                    style={{ width: "100%" }}
+                    onChange={(v) => {
+                      if (clusterPick && wVariant && typeof v === "number") {
+                        applyRecommend(clusterPick, wVariant, v);
+                      }
+                    }}
+                  />
+                </Form.Item>
+                <Form.Item name="vram_gb" label={t("skus.vramLabel")} rules={[{ required: true }]}>
+                  <InputNumber min={1} max={clusterPick?.vram_gb || undefined} style={{ width: "100%" }} />
+                </Form.Item>
+                {/* 超卖风险说明挂字段 extra,不做常驻 Alert */}
+                <Form.Item
+                  name="oversell_cores"
+                  label={t("skus.oversellCoresLabel")}
+                  rules={[{ required: true }]}
+                  extra={t("skus.oversellRiskDesc")}
+                >
+                  <InputNumber min={1} max={9.99} step={0.1} style={{ width: "100%" }} />
+                </Form.Item>
+              </>
+            )}
+            <Form.Item
+              name="vcpu"
+              label="vCPU"
+              rules={[{ required: true }]}
+              extra={
+                clusterPick && clusterPick.vcpu_per_gpu > 0
+                  ? t("skus.ratioHint", { model: clusterPick.gpu_model ?? "" })
+                  : undefined
+              }
+            >
+              <InputNumber min={1} style={{ width: "100%" }} />
             </Form.Item>
-          )}
-          {/* 最高 CUDA:CPU 档不出现 */}
-          {!isCpuVariant && (
-            <Form.Item name="cuda_max" label={t("skus.cudaMaxLabel")}>
-              <Input placeholder={t("images.cudaPlaceholder")} />
+            <Form.Item name="mem_gb" label={t("skus.memLabel")} rules={[{ required: true }]}>
+              <InputNumber min={1} style={{ width: "100%" }} />
             </Form.Item>
-          )}
-        </Form>
-        <Card size="small" title={t("skus.previewTitle")} style={{ width: 248, flexShrink: 0 }}>
-          {previewParams === null ? (
-            <Typography.Text type="secondary">{t("skus.previewPending")}</Typography.Text>
-          ) : preview.data ? (
-            <>
-              {(isCpuVariant
-                ? [
-                    [t("skus.previewNodes"), preview.data.matching_nodes],
-                    [t("skus.previewEst"), preview.data.est_instances],
-                  ]
-                : [
-                    [t("skus.previewNodes"), preview.data.matching_nodes],
-                    [t("skus.previewReadyGpus"), preview.data.ready_gpus],
-                    [t("skus.previewTotalGpus"), preview.data.total_gpus],
-                    [t("skus.previewEst"), preview.data.est_instances],
-                  ]
-              ).map(([label, value]) => (
-                <div key={String(label)} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                  <Typography.Text type="secondary">{label}</Typography.Text>
-                  <Typography.Text strong>{value}</Typography.Text>
-                </div>
-              ))}
-              {preview.data.warnings.map((w) => (
-                <Alert key={w.code} type="warning" showIcon style={{ marginTop: 8 }} title={warnText(t, w)} />
-              ))}
-            </>
-          ) : (
-            <Spin size="small" />
-          )}
-        </Card>
-      </div>
-    </Drawer>
+            <Form.Item name="disk_gb" label={t("skus.diskLabel")} rules={[{ required: true }]}>
+              <InputNumber min={10} style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item name="price_hourly" label={t("skus.priceLabel")} rules={[{ required: true }]}>
+              <InputNumber min="0.0001" step="0.01" precision={4} stringMode style={{ width: "100%" }} />
+            </Form.Item>
+            {/* 包周期开关:关掉只挡新单 */}
+            <Form.Item
+              name="period_enabled"
+              label={t("skus.periodEnabledLabel")}
+              valuePropName="checked"
+              extra={t("skus.periodEnabledHint")}
+            >
+              <Switch />
+            </Form.Item>
+            {/* 竞价开关:关掉只挡新单 */}
+            <Form.Item
+              name="spot_enabled"
+              label={t("skus.spotEnabledLabel")}
+              valuePropName="checked"
+              extra={t("skus.spotEnabledHint")}
+            >
+              <Switch />
+            </Form.Item>
+            {!isCpuVariant && (
+              <Form.Item name="max_gpus_per_instance" label={t("skus.maxGpusLabel")}>
+                <InputNumber min={1} max={8} style={{ width: "100%" }} />
+              </Form.Item>
+            )}
+            {/* 最高 CUDA:CPU 档不出现 */}
+            {!isCpuVariant && (
+              <Form.Item name="cuda_max" label={t("skus.cudaMaxLabel")}>
+                <Input placeholder={t("images.cudaPlaceholder")} />
+              </Form.Item>
+            )}
+            {/* 编辑必填原因(入审计):审计原因永远是最后一个字段 */}
+            {editing !== "new" && (
+              <Form.Item
+                name="reason"
+                label={t("skus.reasonLabel")}
+                rules={[{ required: true, min: 2, max: REASON_MAX_LEN, message: t("skus.reasonRequired") }]}
+              >
+                <Input.TextArea rows={2} placeholder={t("skus.reasonPlaceholder")} />
+              </Form.Item>
+            )}
+          </Form>
+          <Card
+            size="small"
+            title={t("skus.previewTitle")}
+            style={{ width: 248, flexShrink: 0, position: "sticky", top: 0 }}
+          >
+            {previewParams === null ? (
+              <Typography.Text type="secondary">{t("skus.previewPending")}</Typography.Text>
+            ) : preview.data ? (
+              <>
+                {(isCpuVariant
+                  ? [
+                      [t("skus.previewNodes"), preview.data.matching_nodes],
+                      [t("skus.previewEst"), preview.data.est_instances],
+                    ]
+                  : [
+                      [t("skus.previewNodes"), preview.data.matching_nodes],
+                      [t("skus.previewReadyGpus"), preview.data.ready_gpus],
+                      [t("skus.previewTotalGpus"), preview.data.total_gpus],
+                      [t("skus.previewEst"), preview.data.est_instances],
+                    ]
+                ).map(([label, value]) => (
+                  <div
+                    key={String(label)}
+                    style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}
+                  >
+                    <Typography.Text type="secondary">{label}</Typography.Text>
+                    <Typography.Text strong>{value}</Typography.Text>
+                  </div>
+                ))}
+                {preview.data.warnings.map((w) => (
+                  <Alert key={w.code} type="warning" showIcon style={{ marginTop: 8 }} title={warnText(t, w)} />
+                ))}
+              </>
+            ) : (
+              <Spin size="small" />
+            )}
+          </Card>
+        </div>
+      </Drawer>
+      {leave.modal}
+    </>
   );
 }

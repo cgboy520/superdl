@@ -250,6 +250,7 @@ export const adminKeys = {
   tickets: { all: ["admin", "tickets"], detail: (id: number | null) => ["admin", "ticket", id] },
   services: ["admin", "services"],
   nodes: ["admin", "nodes"],
+  skus: ["admin", "skus"],
 };
 
 /** 查询 hook 骨架:结果附带 queryKey 供调用方失效/刷新;条件查询的 queryFn 传 skipToken(禁止断言配 enabled)。 */
@@ -291,7 +292,7 @@ function useCursorPages<TPage extends CursorPage, P extends CursorParams>(
 }
 
 export function useAdminSkus() {
-  return useKeyedQuery(["admin", "skus"], () => adminListSkusApiAdminV1SkusGet());
+  return useKeyedQuery(adminKeys.skus, () => adminListSkusApiAdminV1SkusGet());
 }
 
 export function useClusterStatus() {

@@ -7,6 +7,7 @@ import {
   formatDateTime,
   isTicketRepliable,
   metaOf,
+  space,
   ticketCategoryMap,
   ticketStatusMap,
   useUrlFilters,
@@ -39,6 +40,7 @@ import {
   Skeleton,
   Space,
   Tag,
+  theme,
   Typography,
 } from "antd";
 import { useCallback, useState } from "react";
@@ -104,6 +106,7 @@ function TicketDrawer({
   const { t } = useTranslation(["admin", "shared"]);
   const errText = useApiErrorText();
   const { message } = App.useApp();
+  const { token } = theme.useToken();
   const qc = useQueryClient();
   const detail = useTicketDetail(ticketId);
   const [draft, setDraft] = useState("");
@@ -169,70 +172,10 @@ function TicketDrawer({
           t("tickets.detailTitle")
         )
       }
-    >
-      {/* 详情查询三态:骨架 / 失败可重试 */}
-      {detail.isPending && ticketId !== null && <Skeleton active paragraph={{ rows: 6 }} />}
-      {detail.isError && (
-        <TableErrorEmpty isError onRetry={() => void detail.refetch()} compact>
-          {null}
-        </TableErrorEmpty>
-      )}
-      {ticket && (
-        <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-          <div>
-            <Typography.Title level={5} style={{ marginTop: 0 }}>
-              {ticket.subject}
-            </Typography.Title>
-            <Space size={16} wrap>
-              <TenantLink id={ticket.user_id} />
-              <Typography.Text type="secondary">
-                {t("tickets.colCreatedAt")}: {formatDateTime(ticket.created_at)}
-              </Typography.Text>
-              {ticket.instance_uuid && (
-                <Typography.Text type="secondary">
-                  {t("tickets.instanceUuid")}: <Mono>{ticket.instance_uuid}</Mono>
-                </Typography.Text>
-              )}
-            </Space>
-          </div>
-          <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-            {(ticket.messages ?? []).map((m) => (
-              <TicketBubble
-                key={m.id}
-                side={m.sender_kind === "staff" ? "right" : "left"}
-                label={m.sender_kind === "staff" ? t("tickets.msgStaff") : t("tickets.msgUser")}
-                time={formatDateTime(m.created_at)}
-                body={m.body}
-                maxWidth="85%"
-              />
-            ))}
-          </Space>
-          {repliable ? (
-            <Space.Compact style={{ width: "100%" }}>
-              <Input.TextArea
-                rows={3}
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                maxLength={4000}
-                placeholder={t("tickets.replyPlaceholder")}
-                aria-label={t("tickets.replyLabel")}
-                disabled={!writable}
-              />
-              <GatedButton
-                type="primary"
-                style={{ height: "auto" }}
-                loading={reply.isPending}
-                reason={writable ? undefined : noPerm}
-                disabled={draft.trim().length < 2}
-                onClick={sendReply}
-              >
-                {t("tickets.replySend")}
-              </GatedButton>
-            </Space.Compact>
-          ) : (
-            <Alert type="info" showIcon title={t("tickets.terminalHint")} />
-          )}
-          <Space wrap>
+      // 处置动作固定在 footer,正文只留对话与回复框
+      footer={
+        ticket ? (
+          <Space wrap style={{ display: "flex", justifyContent: "flex-end" }}>
             {/* L1 确认(useConfirm):后果前置,目标 = 当前工单号 */}
             {ticket.status !== "resolved" && ticket.status !== "closed" && (
               <GatedButton
@@ -268,7 +211,85 @@ function TicketDrawer({
               </GatedButton>
             )}
           </Space>
-        </Space>
+        ) : null
+      }
+    >
+      {/* 详情查询三态:骨架 / 失败可重试 */}
+      {detail.isPending && ticketId !== null && <Skeleton active paragraph={{ rows: 6 }} />}
+      {detail.isError && (
+        <TableErrorEmpty isError onRetry={() => void detail.refetch()} compact>
+          {null}
+        </TableErrorEmpty>
+      )}
+      {ticket && (
+        // 列布局撑满抽屉高度,回复框才有贴底的空间
+        <div style={{ display: "flex", flexDirection: "column", minHeight: "100%" }}>
+          <Space orientation="vertical" size={16} style={{ width: "100%", flex: 1 }}>
+            <div>
+              <Typography.Title level={5} style={{ marginTop: 0 }}>
+                {ticket.subject}
+              </Typography.Title>
+              <Space size={16} wrap>
+                <TenantLink id={ticket.user_id} />
+                <Typography.Text type="secondary">
+                  {t("tickets.colCreatedAt")}: {formatDateTime(ticket.created_at)}
+                </Typography.Text>
+                {ticket.instance_uuid && (
+                  <Typography.Text type="secondary">
+                    {t("tickets.instanceUuid")}: <Mono>{ticket.instance_uuid}</Mono>
+                  </Typography.Text>
+                )}
+              </Space>
+            </div>
+            <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+              {(ticket.messages ?? []).map((m) => (
+                <TicketBubble
+                  key={m.id}
+                  side={m.sender_kind === "staff" ? "right" : "left"}
+                  label={m.sender_kind === "staff" ? t("tickets.msgStaff") : t("tickets.msgUser")}
+                  time={formatDateTime(m.created_at)}
+                  body={m.body}
+                  maxWidth="85%"
+                />
+              ))}
+            </Space>
+          </Space>
+          {/* 回复框贴底,对话流在其上滚动 */}
+          <div
+            style={{
+              position: "sticky",
+              bottom: 0,
+              background: token.colorBgElevated,
+              paddingTop: space.md,
+            }}
+          >
+            {repliable ? (
+              <Space.Compact style={{ width: "100%" }}>
+                <Input.TextArea
+                  rows={3}
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  maxLength={4000}
+                  placeholder={t("tickets.replyPlaceholder")}
+                  aria-label={t("tickets.replyLabel")}
+                  disabled={!writable}
+                />
+                <GatedButton
+                  type="primary"
+                  style={{ height: "auto" }}
+                  loading={reply.isPending}
+                  reason={writable ? undefined : noPerm}
+                  disabled={draft.trim().length < 2}
+                  onClick={sendReply}
+                >
+                  {t("tickets.replySend")}
+                </GatedButton>
+              </Space.Compact>
+            ) : (
+              <Alert type="info" showIcon title={t("tickets.terminalHint")} />
+            )}
+          </div>
+        </div>
       )}
     </Drawer>
   );
