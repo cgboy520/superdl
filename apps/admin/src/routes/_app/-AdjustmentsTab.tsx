@@ -7,7 +7,6 @@ import {
   Button,
   Checkbox,
   DatePicker,
-  Descriptions,
   Form,
   Input,
   InputNumber,
@@ -34,7 +33,7 @@ import {
   ledgerTypeMap,
   metaOf,
 } from "@superdl/ui";
-import { CursorTable, FilterBar, GatedButton, moneyOr, RowActions } from "@superdl/ui/components";
+import { CursorTable, EmptyState, FilterBar, GatedButton, KeyValue, moneyOr, RowActions } from "@superdl/ui/components";
 import { useApiErrorText, useUrlFilters } from "@superdl/ui";
 import { useCsvExport, useFormDraft } from "@superdl/ui";
 import { useFormat } from "@superdl/ui";
@@ -108,26 +107,26 @@ export function ReviewConfirmModal({
         })
       }
     >
-      <Descriptions column={1} size="small" bordered>
-        <Descriptions.Item label={t("finance.colTenant")}>
-          #{adj.user_id}
-          {ctx.data ? ` · ${ctx.data.phone_masked}` : ""}
-          {ctx.data?.status === "frozen" ? ` · ${t("tenants.frozen")}` : ""}
-        </Descriptions.Item>
-        <Descriptions.Item label={t("finance.colAmount")}>
-          <SignedAmount value={adj.amount} />
-        </Descriptions.Item>
-        <Descriptions.Item label={t("finance.ctxBalance")}>
-          {ctx.isLoading ? "…" : moneyOr(formatMoney(ctx.data?.balance ?? "0.00"), ctx.data != null)}
-        </Descriptions.Item>
-        {approve && (
-          <Descriptions.Item label={t("finance.ctxBalanceAfter")}>
-            {moneyOr(formatMoney(after ?? "0.00"), after !== null)}
-          </Descriptions.Item>
-        )}
-        <Descriptions.Item label={t("finance.colCreatedBy")}>#{adj.created_by}</Descriptions.Item>
-        <Descriptions.Item label={t("finance.colReason")}>{adj.reason}</Descriptions.Item>
-      </Descriptions>
+      <KeyValue
+        items={[
+          {
+            label: t("finance.colTenant"),
+            value: `#${adj.user_id}${ctx.data ? ` · ${ctx.data.phone_masked}` : ""}${
+              ctx.data?.status === "frozen" ? ` · ${t("tenants.frozen")}` : ""
+            }`,
+          },
+          { label: t("finance.colAmount"), value: <SignedAmount value={adj.amount} /> },
+          {
+            label: t("finance.ctxBalance"),
+            value: ctx.isLoading ? "…" : moneyOr(formatMoney(ctx.data?.balance ?? "0.00"), ctx.data != null),
+          },
+          ...(approve
+            ? [{ label: t("finance.ctxBalanceAfter"), value: moneyOr(formatMoney(after ?? "0.00"), after !== null) }]
+            : []),
+          { label: t("finance.colCreatedBy"), value: `#${adj.created_by}` },
+          { label: t("finance.colReason"), value: adj.reason },
+        ]}
+      />
       {approve && (
         <Checkbox checked={acked} onChange={(e) => setAcked(e.target.checked)} style={{ marginTop: 12 }}>
           {t("finance.approveAck")}
@@ -271,7 +270,19 @@ export function AdjustmentsTab() {
       <CursorTable<AdjustmentRow>
         query={adjustmentsQ}
         rows={rows}
-        empty={filters.hasFilter ? t("empty.search", { ns: "shared" }) : undefined}
+        emptyNode={
+          <EmptyState
+            scene={filters.hasFilter ? "search" : "list"}
+            compact
+            secondaryAction={
+              filters.hasFilter ? (
+                <Button size="small" onClick={filters.clear}>
+                  {t("filter.clear", { ns: "shared" })}
+                </Button>
+              ) : undefined
+            }
+          />
+        }
         scroll={{ x: 1000 }}
         sticky={{ offsetHeader: layout.topBarHeight }}
         rowKey="id"

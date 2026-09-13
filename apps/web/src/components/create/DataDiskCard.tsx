@@ -1,9 +1,9 @@
-/** 数据盘卡:「不需要 / 新建 / 挂载已有盘」。新建为行内直建(容量滑块在前,名称折在「高级」里;单价来自 /policies 折日展示),建盘动作由页面在提交时执行;盘清单加载失败不伪装成「没有可挂载的盘」。
+/** 数据盘卡:「不需要 / 新建 / 挂载已有盘」三个 tile(副行写口径与可挂载盘数)。新建为行内直建(DiskSizeField 在前,名称折在「高级」里;单价来自 /policies 折日展示),建盘动作由页面在提交时执行;盘清单加载失败不伪装成「没有可挂载的盘」。
  *  实例盘为本地盘、不做冗余的说明放在本卡脚注(与「要不要数据盘」这个决定直接相关),不做页顶常驻条。 */
 
-import { controlWidth, diskDailyEstimate, fontSize, formatSizeGb, space } from "@superdl/ui";
-import { DataErrorAlert } from "@superdl/ui/components";
-import { Card, Collapse, Flex, Input, InputNumber, Radio, Select, Slider, Space, Typography } from "antd";
+import { controlWidth, fontSize, formatSizeGb, space } from "@superdl/ui";
+import { DataErrorAlert, DiskSizeField, OptionTileGroup } from "@superdl/ui/components";
+import { Card, Collapse, Input, Select, Space, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { useDisks, usePolicies } from "../../api/queries";
@@ -44,58 +44,41 @@ export function DataDiskCard({
   const { t } = useTranslation();
   const disksQ = useDisks();
   const { data: policies } = usePolicies();
-  const diskPriceGbMonth = policies?.disk_price_gb_month;
-  // 「约 ¥X/日」为展示层估算(月价/30,BigInt);入账以后端日结为准;单价未就绪不估算(不显假 0.00)
-  const diskDaily = diskPriceGbMonth === undefined ? undefined : diskDailyEstimate(diskPriceGbMonth, newGb);
+  // 可挂载 = 正常状态且未挂在别的实例上
+  const mountable = (disksQ.data ?? []).filter((d) => d.status === "active" && d.mounted_instance_id == null);
 
   const body = (
     <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
-      <Radio.Group
+      <OptionTileGroup
+        label={t("create.diskCard")}
+        hideLabel
+        columns={3}
+        size="sm"
         value={mode}
-        onChange={(e) => onModeChange(e.target.value as DiskMode)}
+        onChange={onModeChange}
         options={[
-          { value: "none", label: t("create.diskNone") },
-          { value: "new", label: t("create.diskNew") },
-          { value: "existing", label: t("create.diskExisting") },
+          { value: "none", title: t("create.diskNone"), description: t("create.diskNoneDesc") },
+          { value: "new", title: t("create.diskNew"), description: t("create.diskNewDesc") },
+          {
+            value: "existing",
+            title: t("create.diskExisting"),
+            description: t("create.diskExistingDesc", { count: mountable.length }),
+          },
         ]}
       />
       {mode === "new" && (
         <>
-          {/* 容量:Slider 与 InputNumber 联动同值;min/max 取 /policies */}
-          <Flex gap={space.md} align="center">
-            <Slider
-              style={{ flex: 1, maxWidth: 480 }}
-              min={policies?.disk_min_gb}
-              max={policies?.disk_max_gb}
-              step={10}
-              value={newGb}
-              onChange={onNewGbChange}
-              disabled={!policies}
-            />
-            <Space.Compact style={{ width: controlWidth.xs + 14 }}>
-              <InputNumber
-                min={policies?.disk_min_gb}
-                max={policies?.disk_max_gb}
-                step={10}
-                value={newGb}
-                onChange={(v) => {
-                  if (typeof v === "number") onNewGbChange(v);
-                }}
-                disabled={!policies}
-                style={{ width: "100%" }}
-                aria-label={t("create.diskSizeAria")}
-              />
-              <Space.Addon>GB</Space.Addon>
-            </Space.Compact>
-          </Flex>
+          {/* 容量:滑块与数字框联动;min/max 与单价取 /policies,折日估算由 DiskSizeField 出 */}
+          <DiskSizeField
+            value={newGb}
+            onChange={onNewGbChange}
+            min={policies?.disk_min_gb}
+            max={policies?.disk_max_gb}
+            priceGbMonth={policies?.disk_price_gb_month}
+            ariaLabel={t("create.diskSizeAria")}
+          />
           <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-            {diskPriceGbMonth !== undefined && diskDaily !== undefined
-              ? t("create.diskNewSummary", {
-                  size: formatSizeGb(newGb),
-                  price: t("common.gbMonthPrice", { price: diskPriceGbMonth }),
-                  daily: t("common.dailyApprox", { amount: diskDaily }),
-                })
-              : formatSizeGb(newGb)}
+            {t("create.diskAutoCreate")}
           </Typography.Text>
           <Collapse
             ghost
@@ -130,12 +113,10 @@ export function DataDiskCard({
             placeholder={t("create.selectDiskPlaceholder")}
             value={existingId}
             onChange={onExistingIdChange}
-            options={(disksQ.data ?? [])
-              .filter((d) => d.status === "active" && d.mounted_instance_id == null)
-              .map((d) => ({
-                value: d.id,
-                label: `${d.name}(${formatSizeGb(d.size_gb)})`,
-              }))}
+            options={mountable.map((d) => ({
+              value: d.id,
+              label: `${d.name}(${formatSizeGb(d.size_gb)})`,
+            }))}
             notFoundContent={t("create.noMountableDisks")}
           />
         ))}

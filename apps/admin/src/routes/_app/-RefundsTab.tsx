@@ -17,7 +17,7 @@ import {
   payoutChannelMap,
   refundStatusMap,
 } from "@superdl/ui";
-import { CursorTable, FilterBar, GatedButton, Mono, RowActions, RowMoreMenu } from "@superdl/ui/components";
+import { CursorTable, EmptyState, FilterBar, GatedButton, Mono, RowActions, RowMoreMenu } from "@superdl/ui/components";
 import { useCsvExport, useUrlFilters } from "@superdl/ui";
 import { useFormat } from "@superdl/ui";
 
@@ -170,7 +170,19 @@ export function RefundsTab() {
       <CursorTable<RefundRow>
         query={refundsQ}
         rows={rows}
-        empty={filters.hasFilter ? t("empty.search", { ns: "shared" }) : undefined}
+        emptyNode={
+          <EmptyState
+            scene={filters.hasFilter ? "search" : "list"}
+            compact
+            secondaryAction={
+              filters.hasFilter ? (
+                <Button size="small" onClick={filters.clear}>
+                  {t("filter.clear", { ns: "shared" })}
+                </Button>
+              ) : undefined
+            }
+          />
+        }
         scroll={{ x: 1100 }}
         sticky={{ offsetHeader: layout.topBarHeight }}
         rowKey="id"

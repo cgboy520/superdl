@@ -3,9 +3,9 @@
 import { POLL } from "@superdl/ui";
 import type { InstanceOut, ServiceOut } from "@superdl/api-client";
 import { fontSize, formatDateTime, instanceStatusMap, isTransientServiceStatus, localToday, metaOf } from "@superdl/ui";
-import { DataErrorAlert, moneyOr, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
+import { CopyButton, DataErrorAlert, KeyValue, moneyOr, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Alert, Badge, Breadcrumb, Card, Descriptions, Skeleton, Space, Table, Tabs, Tag, Typography } from "antd";
+import { Alert, Badge, Breadcrumb, Card, Grid, Skeleton, Space, Table, Tabs, Tag, Typography } from "antd";
 import { useFormat } from "@superdl/ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -17,7 +17,7 @@ import {
   useServiceBillPages,
   useServiceRevisions,
 } from "../api/queries";
-import { CopyButton, ServiceStatusBadge, SpotTag, SubscriptionTag, TierTag } from "../components/common";
+import { ServiceStatusBadge, SpotTag, SubscriptionTag, TierTag } from "../components/common";
 import { HourlyBillsTable } from "../components/HourlyBillsTable";
 import { EventsTab } from "../components/instance/EventsTab";
 import { LogsTab } from "../components/instance/LogsTab";
@@ -49,6 +49,9 @@ export const Route = createFileRoute("/_console/services_/$slug")({
 function OverviewTab({ service }: { service: ServiceOut }) {
   const { t } = useTranslation();
   const c = service.container;
+  // 两列网格里的长值(镜像 / 命令 / 参数 / 环境变量)独占一行;xs 单列时 span 回 1
+  const screens = Grid.useBreakpoint();
+  const full = screens.sm ? 2 : 1;
   const keysQ = useServiceApiKeys(service.slug, { enabled: service.require_api_key });
   // 调用示例里的 Key 用「某把未吊销 Key 的前缀 + 省略号」占位
   const livePrefix = (keysQ.data ?? []).find((k) => k.revoked_at == null)?.key_prefix;
@@ -66,29 +69,27 @@ function OverviewTab({ service }: { service: ServiceOut }) {
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Card size="small" title={t("services.detail.currentRevision", { no: service.revision })}>
         <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-          <Descriptions
-            size="small"
-            column={{ xs: 1, sm: 2 }}
+          <KeyValue
+            columns={{ xs: 1, sm: 2 }}
             items={[
-              // 镜像地址独占一行(column 凑齐)
-              { label: t("services.detail.imageLabel"), span: { xs: 1, sm: 2 }, children: c?.image_ref ?? "—" },
-              { label: t("services.detail.portLabel"), children: c?.service_port ?? "—" },
+              { label: t("services.detail.imageLabel"), span: full, value: c?.image_ref, mono: true },
+              { label: t("services.detail.portLabel"), value: c?.service_port },
               {
                 label: t("services.detail.healthLabel"),
-                children: c?.health_path ?? t("services.detail.healthNone"),
+                value: c?.health_path ?? t("services.detail.healthNone"),
               },
               {
                 label: t("services.detail.authLabel"),
-                children: service.require_api_key ? t("services.authRequired") : t("services.authPublic"),
+                value: service.require_api_key ? t("services.authRequired") : t("services.authPublic"),
               },
               {
                 label: "SSH",
-                children: c?.with_ssh ? t("services.detail.sshOn") : t("services.detail.sshOff"),
+                value: c?.with_ssh ? t("services.detail.sshOn") : t("services.detail.sshOff"),
               },
               {
                 label: t("services.detail.commandLabel"),
-                span: { xs: 1, sm: 2 },
-                children:
+                span: full,
+                value:
                   c?.container_command && c.container_command.length > 0 ? (
                     <Typography.Text code>{c.container_command.join(" ")}</Typography.Text>
                   ) : (
@@ -97,8 +98,8 @@ function OverviewTab({ service }: { service: ServiceOut }) {
               },
               {
                 label: t("services.detail.argsLabel"),
-                span: { xs: 1, sm: 2 },
-                children:
+                span: full,
+                value:
                   c?.container_args && c.container_args.length > 0 ? (
                     <Space orientation="vertical" size={2}>
                       {c.container_args.map((arg, i) => (
@@ -113,8 +114,8 @@ function OverviewTab({ service }: { service: ServiceOut }) {
               },
               {
                 label: t("services.detail.envLabel"),
-                span: { xs: 1, sm: 2 },
-                children:
+                span: full,
+                value:
                   envRows.length > 0 ? (
                     <Space orientation="vertical" size={2}>
                       {envRows.map((row) => (
@@ -295,20 +296,19 @@ function ServiceDetail() {
                 {inst && <SubscriptionTag market={inst.market} subscription={inst.subscription} />}
                 {inst && <SpotTag market={inst.market} />}
               </Space>
-              <Descriptions
-                size="small"
-                column={{ xs: 1, sm: 2, md: 3, xl: 4 }}
+              <KeyValue
+                layout="inline"
                 items={[
-                  { label: t("services.detail.labelId"), children: service.slug },
+                  { label: t("services.detail.labelId"), value: service.slug, mono: true, copy: service.slug },
                   {
                     label: t("services.detail.labelSpec"),
-                    children: inst
+                    value: inst
                       ? t("instances.specLine", { model: inst.spec.gpu_model as string, count: inst.gpu_count })
-                      : "—",
+                      : null,
                   },
                   {
                     label: t("services.detail.labelBilling"),
-                    children: inst
+                    value: inst
                       ? inst.subscription
                         ? formatPeriodPrice(
                             inst.subscription.amount_paid,
@@ -319,22 +319,22 @@ function ServiceDetail() {
                             price: formatHourlyPrice(inst.price_hourly),
                             count: inst.gpu_count,
                           })
-                      : "—",
+                      : null,
                   },
                   ...(inst?.subscription
                     ? [
                         {
                           label: t("services.detail.labelExpiresAt"),
-                          children: formatDateTime(inst.subscription.expires_at),
+                          value: formatDateTime(inst.subscription.expires_at),
                         },
                       ]
                     : [
                         {
                           label: t("services.detail.labelToday"),
-                          children: moneyOr(formatMoney(todayAmount), daily != null),
+                          value: moneyOr(formatMoney(todayAmount), daily != null),
                         },
                       ]),
-                  { label: t("services.detail.createdAt"), children: formatDateTime(service.created_at) },
+                  { label: t("services.detail.createdAt"), value: formatDateTime(service.created_at) },
                 ]}
               />
             </Space>

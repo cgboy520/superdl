@@ -19,7 +19,7 @@ import { Card, InputNumber, Space, Table, Tag, Tooltip, Typography } from "antd"
 import type { ComponentProps, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-import { ChipRow, CHIP_LABEL_WIDTH } from "./ChipRow";
+import { ChipRow, CHIP_LABEL_WIDTH } from "@superdl/ui/components";
 import { skuVariant } from "@superdl/ui";
 
 import { TierTag } from "./common";

@@ -21,7 +21,14 @@ import {
   skuVariant,
   space,
 } from "@superdl/ui";
-import { DataErrorAlert, GatedButton, PageContainer } from "@superdl/ui/components";
+import {
+  ChipRow,
+  CopyField,
+  DataErrorAlert,
+  GatedButton,
+  OptionTileGroup,
+  PageContainer,
+} from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { Alert, App, Button, Card, Cascader, Input, Skeleton, Space, Table, Tabs, Typography } from "antd";
@@ -31,7 +38,6 @@ import { useFormat } from "@superdl/ui";
 import { useApiErrorText } from "@superdl/ui";
 import { useCreateDisk, useCreateInstance } from "../api/mutations";
 import { useDisks, useImages, usePolicies, useSkus, useWallet } from "../api/queries";
-import { ChipRow } from "../components/ChipRow";
 import { CheckoutBar } from "../components/CheckoutBar";
 import { useConsentGate } from "../components/ConsentGate";
 import { DataDiskCard, defaultDiskName, type DiskMode } from "../components/create/DataDiskCard";
@@ -479,32 +485,32 @@ function CreatePage() {
                   <DataErrorAlert onRetry={() => void imagesQ.refetch()} />
                 ) : (
                   <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
-                    <Space wrap size={space.sm}>
-                      {quickImages.map((img) => {
-                        const active = effectivePlatformImage?.[3] === img.image_ref;
-                        return (
-                          <Button
-                            key={img.image_ref}
-                            type={active ? "primary" : "default"}
-                            ghost={active}
-                            aria-pressed={active}
-                            onClick={() => pickQuick(img)}
-                          >
-                            {img.framework} {img.framework_version}
-                            <Typography.Text
-                              type="secondary"
-                              style={{ fontSize: fontSize.caption, marginInlineStart: 6 }}
-                            >
-                              {/^\d/.test(img.cuda_version) ? `CUDA ${img.cuda_version}` : img.cuda_version} · Py{" "}
-                              {img.python_version}
-                            </Typography.Text>
-                          </Button>
-                        );
-                      })}
-                      <Button type="link" onClick={() => setMoreImages((v) => !v)}>
-                        {moreImages ? t("create.lessImages") : t("create.moreImages")}
-                      </Button>
-                    </Space>
+                    {/* 常用镜像 tile:每框架首条,副行 CUDA · Py · 预热状态;CPU 规格不承诺预热 */}
+                    <OptionTileGroup
+                      label={t("create.tabPlatform")}
+                      hideLabel
+                      columns={4}
+                      size="sm"
+                      value={effectivePlatformImage?.[3]}
+                      onChange={(ref) => {
+                        const img = quickImages.find((i) => i.image_ref === ref);
+                        if (img) pickQuick(img);
+                      }}
+                      options={quickImages.map((img) => ({
+                        value: img.image_ref,
+                        title: `${img.framework} ${img.framework_version}`,
+                        description: [
+                          /^\d/.test(img.cuda_version) ? `CUDA ${img.cuda_version}` : img.cuda_version,
+                          `Py ${img.python_version}`,
+                          ...(isCpu
+                            ? []
+                            : [img.is_prewarmed ? t("create.tilePrewarmed") : t("create.tileNotPrewarmed")]),
+                        ].join(" · "),
+                      }))}
+                    />
+                    <Button type="link" style={{ paddingInline: 0 }} onClick={() => setMoreImages((v) => !v)}>
+                      {moreImages ? t("create.lessImages") : t("create.moreImages")}
+                    </Button>
                     {moreImages && (
                       <Cascader
                         style={{ width: "100%", maxWidth: 640 }}
@@ -521,9 +527,7 @@ function CreatePage() {
                     {/* 选定后回显完整镜像地址与预热状态,便于核对 */}
                     {selectedImage && (
                       <Space size={space.sm} wrap>
-                        <Typography.Text code className="mono">
-                          {selectedImage.image_ref}
-                        </Typography.Text>
+                        <CopyField value={selectedImage.image_ref} code />
                         <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                           {isCpu
                             ? t("create.prewarmedNotForCpu")

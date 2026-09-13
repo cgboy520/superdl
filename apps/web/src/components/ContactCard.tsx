@@ -1,12 +1,11 @@
 /** 联系方式卡(site-config support 组驱动):/help 与 /support 共用。加载失败不伪装成「未配置」;未就绪不闪「未配置」。 */
 
 import { fontSize } from "@superdl/ui";
-import { DataErrorAlert } from "@superdl/ui/components";
+import { CopyButton, DataErrorAlert } from "@superdl/ui/components";
 import { Alert, Card, Space, Typography } from "antd";
 import type { CSSProperties } from "react";
 
 import { useSiteConfig } from "../api/queries";
-import { CopyButton } from "./common";
 
 export function ContactCard({
   title,

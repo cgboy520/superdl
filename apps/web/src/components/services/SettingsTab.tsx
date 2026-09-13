@@ -1,14 +1,13 @@
 /** 服务设置 Tab:改名 / 访问鉴权开关 / 调试 SSH / 危险区。改名与鉴权只 PATCH services 行,不重新部署;关鉴权走 L2 确认;开着鉴权却没有可用 Key 时常驻提醒;SSH 随版本固定,只回显。 */
 
 import type { ServiceOut } from "@superdl/api-client";
-import { GatedButton, useConfirm } from "@superdl/ui/components";
+import { CopyField, GatedButton, useConfirm } from "@superdl/ui/components";
 import { Alert, App, Button, Card, Input, Space, Switch, theme, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useUpdateService } from "../../api/mutations";
 import { useInstanceAccess, useServiceApiKeys } from "../../api/queries";
-import { CopyButton } from "../common";
 import { DeleteServiceModal } from "./ServiceActions";
 
 export function SettingsTab({
@@ -127,9 +126,10 @@ export function SettingsTab({
             <Alert type="info" showIcon title={t("services.settings.sshNotRunning")} />
           ) : (
             <>
-              <Typography.Text code>{accessQ.data?.ssh_command ?? "…"}</Typography.Text>
-              {accessQ.data?.ssh_command && (
-                <CopyButton text={accessQ.data.ssh_command} label={t("instances.copyCommand")} />
+              {accessQ.data?.ssh_command ? (
+                <CopyField value={accessQ.data.ssh_command} code label={t("instances.copyCommand")} />
+              ) : (
+                <Typography.Text code>…</Typography.Text>
               )}
               <Typography.Text type="secondary">{t("copy.sshKeyOnly")}</Typography.Text>
             </>

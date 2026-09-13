@@ -7,7 +7,7 @@ import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { adminColors, controlWidth, flattenPages, formatDateTime, layout } from "@superdl/ui";
-import { CursorTable, FilterBar, RowActions } from "@superdl/ui/components";
+import { CursorTable, EmptyState, FilterBar, RowActions } from "@superdl/ui/components";
 import { useFormat, useUrlCommittedInput, useUrlFilters } from "@superdl/ui";
 
 import { type TenantRow, useFreezeTenant, useTenants, useUnfreezeTenant } from "../../api";
@@ -151,7 +151,20 @@ export function TenantsTab() {
       <CursorTable<TenantRow>
         query={tenantsQ}
         rows={tenants}
-        empty={filters.hasFilter ? tt("empty.search", { ns: "shared" }) : tt("tenants.empty")}
+        emptyNode={
+          <EmptyState
+            scene={filters.hasFilter ? "search" : "list"}
+            compact
+            description={filters.hasFilter ? undefined : tt("tenants.empty")}
+            secondaryAction={
+              filters.hasFilter ? (
+                <Button size="small" onClick={filters.clear}>
+                  {tt("filter.clear", { ns: "shared" })}
+                </Button>
+              ) : undefined
+            }
+          />
+        }
         scroll={{ x: 1000 }}
         sticky={{ offsetHeader: layout.topBarHeight }}
         rowKey="id"

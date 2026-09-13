@@ -9,10 +9,18 @@ import {
   formatDateTime,
   formatSizeGb,
   idemKeyOf,
+  space,
   statusColors,
   useThemeColors,
 } from "@superdl/ui";
-import { GatedButton, PageContainer, TableErrorEmpty, TypeConfirmModal } from "@superdl/ui/components";
+import {
+  DiskSizeField,
+  GatedButton,
+  PageContainer,
+  StatusTag,
+  TableErrorEmpty,
+  TypeConfirmModal,
+} from "@superdl/ui/components";
 import { createFileRoute } from "@tanstack/react-router";
 import { Trans, useTranslation } from "react-i18next";
 import {
@@ -21,12 +29,9 @@ import {
   Card,
   Drawer,
   Empty,
-  Form,
   Grid,
   Input,
-  InputNumber,
   Modal,
-  Slider,
   Space,
   Table,
   Tag,
@@ -39,7 +44,8 @@ import { useState } from "react";
 import { useFormat } from "@superdl/ui";
 import { useCreateDisk, useDeleteDisk, useExpandDisk } from "../api/mutations";
 import { useDisks, useInstances, usePolicies } from "../api/queries";
-import { StatusTag } from "@superdl/ui/components";
+import { defaultDiskName } from "../components/create/DataDiskCard";
+import { Field } from "../components/Field";
 import { requireAuth } from "../lib/guard";
 
 export const Route = createFileRoute("/_console/storage")({
@@ -176,9 +182,10 @@ function StoragePage() {
   const [expandTarget, setExpandTarget] = useState<DiskOut | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DiskOut | null>(null);
   const [newSize, setNewSize] = useState(100);
-  const [form] = Form.useForm();
-  const sizeWatch = Form.useWatch<number | undefined>("size_gb", form);
-  const { formatMoney } = useFormat();
+  // 新建盘:名称可选(空则自动生成),容量初值取策略下限
+  const [createName, setCreateName] = useState("");
+  const [createSize, setCreateSize] = useState<number>();
+  const createSizeValue = createSize ?? policies?.disk_min_gb ?? 100;
 
   const priceText = policies
     ? t("common.gbMonthPrice", { price: policies.disk_price_gb_month })
@@ -192,7 +199,6 @@ function StoragePage() {
     onSuccess: () => {
       message.success(t("storage.created"));
       setCreateOpen(false);
-      form.resetFields();
       setSubmitSeq((s) => s + 1);
     },
   });
@@ -206,11 +212,24 @@ function StoragePage() {
   const instanceName = (id: number | null) =>
     id == null ? "—" : ((instances ?? []).find((i) => i.id === id)?.name ?? `#${id}`);
 
+  const openCreate = () => {
+    setCreateName("");
+    setCreateSize(undefined);
+    setCreateOpen(true);
+  };
+  const submitCreate = () => {
+    const name = createName.trim();
+    createDisk.mutate({
+      body: { name: name || defaultDiskName(), size_gb: createSizeValue },
+      idempotencyKey: idemKeyOf("disk", [submitSeq, name, createSizeValue]),
+    });
+  };
+
   return (
     <PageContainer
       title={t("storage.title")}
       extra={
-        <Button type="primary" onClick={() => setCreateOpen(true)}>
+        <Button type="primary" onClick={openCreate}>
           {t("create.diskNew")}
         </Button>
       }
@@ -230,7 +249,7 @@ function StoragePage() {
             <TableErrorEmpty isError onRetry={() => void refetch()} />
           ) : (disks ?? []).length === 0 && !isLoading ? (
             <Empty description={t("copy.diskRetention")}>
-              <Button type="primary" onClick={() => setCreateOpen(true)}>
+              <Button type="primary" onClick={openCreate}>
                 {t("storage.createFirst")}
               </Button>
             </Empty>
@@ -314,44 +333,32 @@ function StoragePage() {
           title={t("create.diskNew")}
           open={createOpen}
           onCancel={() => setCreateOpen(false)}
-          onOk={() => form.submit()}
+          onOk={submitCreate}
           confirmLoading={createDisk.isPending}
         >
-          <Form
-            form={form}
-            layout="vertical"
-            initialValues={{ name: "", size_gb: 100 }}
-            onFinish={(v: { name: string; size_gb: number }) =>
-              createDisk.mutate({
-                body: v,
-                idempotencyKey: idemKeyOf("disk", [submitSeq, v.name, v.size_gb]),
-              })
-            }
-          >
-            <Form.Item
-              name="name"
-              label={t("storage.nameLabel")}
-              rules={[{ required: true, message: t("storage.nameRequired") }]}
-            >
-              <Input maxLength={64} />
-            </Form.Item>
-            <Form.Item name="size_gb" label={t("storage.sizeLabel")} rules={[{ required: true }]}>
-              <InputNumber
+          <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
+            <Field label={t("storage.nameLabel")}>
+              <Input
+                maxLength={64}
+                aria-label={t("storage.nameLabel")}
+                placeholder={t("create.namePlaceholder")}
+                value={createName}
+                onChange={(e) => setCreateName(e.target.value)}
+                onPressEnter={submitCreate}
+              />
+            </Field>
+            <Field label={t("storage.sizeLabel")}>
+              <DiskSizeField
+                value={createSizeValue}
+                onChange={setCreateSize}
                 min={policies?.disk_min_gb}
                 max={policies?.disk_max_gb}
-                step={10}
-                disabled={!policies}
-                style={{ width: 200 }}
+                priceGbMonth={policies?.disk_price_gb_month}
+                ariaLabel={t("create.diskSizeAria")}
               />
-            </Form.Item>
+            </Field>
             <Typography.Text type="secondary">{t("storage.createNote", { price: priceText })}</Typography.Text>
-            <Typography.Text strong style={{ display: "block", marginTop: 8 }}>
-              {t("storage.dailyEstimate", {
-                size: sizeWatch ?? 0,
-                amount: policies ? formatMoney(diskDailyEstimate(policies.disk_price_gb_month, sizeWatch ?? 0)) : "—",
-              })}
-            </Typography.Text>
-          </Form>
+          </Space>
         </Modal>
 
         <Drawer
@@ -360,31 +367,34 @@ function StoragePage() {
           onClose={() => setExpandTarget(null)}
           size="min(420px, 100vw)"
           footer={
-            <Button
-              type="primary"
-              block
-              loading={expand.isPending}
-              disabled={!expandTarget || newSize <= expandTarget.size_gb}
-              onClick={() => expandTarget && expand.mutate({ uuid: expandTarget.uuid, body: { size_gb: newSize } })}
-            >
-              {t("storage.confirmExpandTo", { size: formatSizeGb(newSize) })}
-            </Button>
+            <Space style={{ width: "100%", justifyContent: "flex-end" }}>
+              <Button onClick={() => setExpandTarget(null)}>{t("create.cancel")}</Button>
+              <Button
+                type="primary"
+                loading={expand.isPending}
+                disabled={!expandTarget || newSize <= expandTarget.size_gb}
+                onClick={() => expandTarget && expand.mutate({ uuid: expandTarget.uuid, body: { size_gb: newSize } })}
+              >
+                {t("storage.confirmExpandTo", { size: formatSizeGb(newSize) })}
+              </Button>
+            </Space>
           }
         >
           {expandTarget && policies && (
-            <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-              <Slider
-                min={expandTarget.size_gb}
-                max={policies.disk_max_gb}
-                step={10}
+            <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
+              {/* 基线 = 当前容量,估算只算新增部分;差价按本盘快照价 */}
+              <DiskSizeField
                 value={newSize}
                 onChange={setNewSize}
+                min={policies.disk_min_gb}
+                max={policies.disk_max_gb}
+                baseline={expandTarget.size_gb}
+                priceGbMonth={expandTarget.price_gb_month}
+                ariaLabel={t("create.diskSizeAria")}
               />
-              <Typography.Text type="secondary">
-                {t("storage.expandCostNote", {
-                  daily: t("common.dailyApprox", {
-                    amount: diskDailyEstimate(expandTarget.price_gb_month, newSize - expandTarget.size_gb),
-                  }),
+              <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                {t("storage.expandSnapshotPrice", {
+                  price: t("common.gbMonthPrice", { price: expandTarget.price_gb_month }),
                 })}
               </Typography.Text>
             </Space>

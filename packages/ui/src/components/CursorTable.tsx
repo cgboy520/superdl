@@ -24,13 +24,16 @@ export function CursorTable<T>({
   query,
   rows,
   empty,
+  emptyNode,
   compact,
   ...tableProps
 }: Omit<TableProps<T>, "dataSource" | "locale" | "pagination" | "loading"> & {
   query: CursorListQuery;
   rows: T[];
-  /** 非错误空态内容(文案或引导) */
+  /** 非错误空态文案(进 antd Empty) */
   empty?: ReactNode;
+  /** 非错误空态整块自定义(EmptyState 等),优先于 empty */
+  emptyNode?: ReactNode;
   /** 抽屉 / 嵌套里的紧凑错误态 */
   compact?: boolean;
 }) {
@@ -44,16 +47,19 @@ export function CursorTable<T>({
         loading={query.isLoading}
         dataSource={rows}
         locale={{
-          emptyText: (
-            <TableErrorEmpty
-              isError={query.isError}
-              isForbidden={isForbidden}
-              onRetry={() => void query.refetch()}
-              compact={compact}
-            >
-              {empty}
-            </TableErrorEmpty>
-          ),
+          emptyText:
+            !query.isError && !isForbidden && emptyNode ? (
+              emptyNode
+            ) : (
+              <TableErrorEmpty
+                isError={query.isError}
+                isForbidden={isForbidden}
+                onRetry={() => void query.refetch()}
+                compact={compact}
+              >
+                {empty}
+              </TableErrorEmpty>
+            ),
         }}
       />
       <LoadMore

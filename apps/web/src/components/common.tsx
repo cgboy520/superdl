@@ -1,6 +1,5 @@
-/** 小件:状态徽标(StatusTag 的 ≤5 行包装)/ 档位标 / 购买模式标 / 复制按钮。 */
+/** 小件:状态徽标(StatusTag 的 ≤5 行包装)/ 档位标 / 购买模式标。 */
 
-import { CheckOutlined, CopyOutlined } from "@ant-design/icons";
 import type { InstanceSubscriptionOut } from "@superdl/api-client";
 import {
   instanceEventReasonMap,
@@ -18,8 +17,7 @@ import {
   useThemeColors,
 } from "@superdl/ui";
 import { HexTag, StatusTag } from "@superdl/ui/components";
-import { App, Button, Tag, Tooltip } from "antd";
-import { useState } from "react";
+import { Tag, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { useFormat } from "@superdl/ui";
@@ -110,26 +108,5 @@ export function SpotReclaimTag({ market }: { market: string }) {
     <Tooltip title={t(spotReclaimTag.hintKey)}>
       <HexTag color={spotReclaimTag.color}>{t(spotReclaimTag.labelKey)}</HexTag>
     </Tooltip>
-  );
-}
-
-export function CopyButton({ text, label }: { text: string; label?: string }) {
-  const { message } = App.useApp();
-  const { t } = useTranslation(["web", "shared"]);
-  const [copied, setCopied] = useState(false);
-  return (
-    <Button
-      size="small"
-      icon={copied ? <CheckOutlined /> : <CopyOutlined />}
-      onClick={() => {
-        void navigator.clipboard.writeText(text).then(() => {
-          setCopied(true);
-          message.success(t("common.copied"));
-          setTimeout(() => setCopied(false), 1500);
-        });
-      }}
-    >
-      {label}
-    </Button>
   );
 }

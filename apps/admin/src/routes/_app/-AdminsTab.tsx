@@ -2,6 +2,7 @@
 
 import { adminColors, fontSize, formatDateTime, layout } from "@superdl/ui";
 import {
+  CopyButton,
   EmptyState,
   GatedButton,
   Mono,
@@ -12,7 +13,7 @@ import {
 } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Alert, App, Button, Card, Form, Input, Modal, Select, Space, Table, Tag, Typography } from "antd";
+import { Alert, App, Button, Card, Form, Input, Modal, Select, Space, Table, Tag } from "antd";
 import type { TableColumnsType } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -403,12 +404,14 @@ export function AdminsTab() {
       >
         <Alert type="warning" showIcon style={{ marginBottom: 12 }} title={t("admins.regenCodesHint")} />
         <Card size="small">
-          <Typography.Text code copyable={{ text: (codes ?? []).join("\n") }}>
-            {t("login.recoveryCopy")}
-          </Typography.Text>
-          <pre style={{ margin: "8px 0 0", fontSize: fontSize.caption, lineHeight: 1.8 }}>
-            {(codes ?? []).join("\n")}
-          </pre>
+          <CopyButton text={(codes ?? []).join("\n")} label={t("login.recoveryCopy")} />
+          <div style={{ marginTop: 8, fontSize: fontSize.caption, lineHeight: 1.8 }}>
+            {(codes ?? []).map((c) => (
+              <Mono block key={c}>
+                {c}
+              </Mono>
+            ))}
+          </div>
         </Card>
       </Modal>
 

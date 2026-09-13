@@ -13,6 +13,7 @@ import {
 } from "@superdl/ui";
 import {
   CursorTable,
+  EmptyState,
   FilterBar,
   GatedButton,
   HexTag,
@@ -393,7 +394,20 @@ function TicketsPage() {
         <CursorTable<AdminTicketOut>
           query={ticketsQ}
           rows={rows}
-          empty={filters.hasFilter ? t("empty.search", { ns: "shared" }) : t("tickets.empty")}
+          emptyNode={
+            <EmptyState
+              scene={filters.hasFilter ? "search" : "ticket"}
+              compact
+              description={filters.hasFilter ? undefined : t("tickets.empty")}
+              secondaryAction={
+                filters.hasFilter ? (
+                  <Button size="small" onClick={filters.clear}>
+                    {t("filter.clear", { ns: "shared" })}
+                  </Button>
+                ) : undefined
+              }
+            />
+          }
           scroll={{ x: 960 }}
           rowKey="id"
           onRow={(r) => ({ onClick: () => setOpenId(r.id), style: { cursor: "pointer" } })}

@@ -17,9 +17,9 @@ import {
   POLL,
   skuVariant,
 } from "@superdl/ui";
-import { DataErrorAlert, GatedButton, PageContainer } from "@superdl/ui/components";
+import { DataErrorAlert, GatedButton, KeyValue, PageContainer } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { App, Button, Card, Checkbox, Col, Descriptions, Grid, Input, Row, Space, Steps, Typography } from "antd";
+import { App, Button, Card, Checkbox, Col, Grid, Input, Row, Space, Steps, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -438,51 +438,54 @@ function DeployPage() {
             <Typography.Text type="secondary">{t("services.form.strategyLabel")}</Typography.Text>
             <Typography.Text>{t("services.form.strategyRecreate")}</Typography.Text>
           </Space>
-          <Descriptions
-            size="small"
-            title={t("services.form.summaryLabel")}
-            column={{ xs: 1, sm: 2 }}
-            items={[
-              {
-                label: t("services.form.summarySpec"),
-                children: sku
-                  ? isCpu
-                    ? t("create.summaryCpu", { vcpu: sku.vcpu, mem: sku.mem_gb })
-                    : t("instances.specLine", { model: sku.gpu_model, count: gpuCount })
-                  : t("services.form.summaryNone"),
-              },
-              {
-                label: t("services.form.summaryBilling"),
-                children: sku
-                  ? period && quote
-                    ? fmt.formatPeriodPrice(quote.amount, period, periodCount)
-                    : hourlyTotal
-                      ? formatHourlyPrice(hourlyTotal)
-                      : "—"
-                  : t("services.form.summaryNone"),
-              },
-              {
-                label: t("services.form.summaryImage"),
-                children: imageRef || t("services.form.summaryNone"),
-              },
-              {
-                label: t("services.form.summaryPort"),
-                children: servicePort ?? t("services.form.summaryNone"),
-              },
-              {
-                label: t("services.form.summaryHealth"),
-                children: healthPath.trim() || t("services.form.summaryNone"),
-              },
-              {
-                label: t("services.form.summaryAuth"),
-                children: requireApiKey ? t("services.form.authRequire") : t("services.form.authPublic"),
-              },
-              {
-                label: t("services.form.summarySsh"),
-                children: withSsh ? t("services.detail.sshOn") : t("services.detail.sshOff"),
-              },
-            ]}
-          />
+          <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+            <Typography.Text strong>{t("services.form.summaryLabel")}</Typography.Text>
+            <KeyValue
+              layout="vertical"
+              columns={{ xs: 1, sm: 2 }}
+              items={[
+                {
+                  label: t("services.form.summarySpec"),
+                  value: sku
+                    ? isCpu
+                      ? t("create.summaryCpu", { vcpu: sku.vcpu, mem: sku.mem_gb })
+                      : t("instances.specLine", { model: sku.gpu_model, count: gpuCount })
+                    : t("services.form.summaryNone"),
+                },
+                {
+                  label: t("services.form.summaryBilling"),
+                  value: sku
+                    ? period && quote
+                      ? fmt.formatPeriodPrice(quote.amount, period, periodCount)
+                      : hourlyTotal
+                        ? formatHourlyPrice(hourlyTotal)
+                        : null
+                    : t("services.form.summaryNone"),
+                },
+                {
+                  label: t("services.form.summaryImage"),
+                  value: imageRef || t("services.form.summaryNone"),
+                  mono: Boolean(imageRef),
+                },
+                {
+                  label: t("services.form.summaryPort"),
+                  value: servicePort ?? t("services.form.summaryNone"),
+                },
+                {
+                  label: t("services.form.summaryHealth"),
+                  value: healthPath.trim() || t("services.form.summaryNone"),
+                },
+                {
+                  label: t("services.form.summaryAuth"),
+                  value: requireApiKey ? t("services.form.authRequire") : t("services.form.authPublic"),
+                },
+                {
+                  label: t("services.form.summarySsh"),
+                  value: withSsh ? t("services.detail.sshOn") : t("services.detail.sshOff"),
+                },
+              ]}
+            />
+          </Space>
         </Space>
       </Card>
     </div>

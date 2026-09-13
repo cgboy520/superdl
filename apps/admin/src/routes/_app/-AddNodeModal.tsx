@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { fontSize, formatDateTime } from "@superdl/ui";
+import { CopyField } from "@superdl/ui/components";
 import { useApiErrorText } from "@superdl/ui";
 import { useFormDraft } from "@superdl/ui";
 
@@ -24,13 +25,13 @@ export function CommandPanel({ result }: { result: EnrollmentCommandOut }) {
       />
       <div>
         <Typography.Text type="secondary">{t("nodes.cmdPiped")}</Typography.Text>
-        <Typography.Paragraph copyable code style={{ marginBottom: 8 }}>
-          {result.curl_command}
-        </Typography.Paragraph>
+        <div style={{ margin: "4px 0 8px" }}>
+          <CopyField value={result.curl_command} code block />
+        </div>
         <Typography.Text type="secondary">{t("nodes.cmdCautious")}</Typography.Text>
-        <Typography.Paragraph copyable code style={{ marginBottom: 0 }}>
-          {result.wget_command}
-        </Typography.Paragraph>
+        <div style={{ marginTop: 4 }}>
+          <CopyField value={result.wget_command} code block />
+        </div>
       </div>
       <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
         {t("nodes.cmdFootnote")}

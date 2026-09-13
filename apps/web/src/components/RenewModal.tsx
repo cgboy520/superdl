@@ -13,14 +13,14 @@ import {
   periodMap,
 } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
-import { App, Button, Descriptions, InputNumber, Modal, Space, Typography } from "antd";
+import { App, Button, InputNumber, Modal, Space, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useRenewInstance, useSubscribeInstance } from "../api/mutations";
 import { useWallet } from "../api/queries";
 import { useFormat } from "@superdl/ui";
-import { ChipRow } from "./ChipRow";
+import { ChipRow, KeyValue } from "@superdl/ui/components";
 import { discountOff, PeriodCountUnit, PeriodQuoteRows, periodQuoteOf, usePeriodDiscounts } from "./periodBilling";
 
 type PeriodPurchaseMode = "renew" | "subscribe";
@@ -110,26 +110,24 @@ export function RenewModal({
       }
     >
       <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-        <Descriptions
-          size="small"
-          column={1}
+        <KeyValue
           items={[
             isConvert
               ? {
                   label: t("period.currentBilling"),
-                  children: t("instances.pricePerCard", {
+                  value: t("instances.pricePerCard", {
                     price: fmt.formatHourlyPrice(instance.price_hourly),
                     count: instance.gpu_count,
                   }),
                 }
               : {
                   label: t("period.currentPeriod"),
-                  children: sub
+                  value: sub
                     ? t("period.currentPeriodRange", {
                         from: formatDateTime(sub.started_at),
                         to: formatDateTime(sub.expires_at),
                       })
-                    : "—",
+                    : null,
                 },
           ]}
         />
@@ -175,13 +173,11 @@ export function RenewModal({
           <Typography.Text type="secondary">{t("period.quotePending")}</Typography.Text>
         )}
 
-        <Descriptions
-          size="small"
-          column={1}
+        <KeyValue
           items={[
             {
               label: t("common.balance"),
-              children:
+              value:
                 afterBalance !== null && balance !== null
                   ? t("period.balanceChange", {
                       before: formatMoney(balance),
@@ -190,15 +186,15 @@ export function RenewModal({
                   : // 钱包未就绪不显假 ¥0.00
                     balance !== null
                     ? formatMoney(balance)
-                    : "—",
+                    : null,
             },
             {
               label: t("period.newExpiry"),
-              children: formatDateTime(newExpiry),
+              value: formatDateTime(newExpiry),
             },
             {
               label: t("period.startsFrom"),
-              children: isConvert ? t("period.startsNow") : t("period.startsAfterCurrent"),
+              value: isConvert ? t("period.startsNow") : t("period.startsAfterCurrent"),
             },
           ]}
         />

@@ -1,10 +1,10 @@
 /** 全局在线服务表(在线服务页与租户抽屉共用);唯一处置「强制停止」委托当前版本实例的 force-stop。 */
 
 import { flattenPages, fontSize, formatDateTime, layout, metaOf, serviceStatusMap } from "@superdl/ui";
-import { CursorTable, HexTag, Mono, RowActions, TableErrorEmpty } from "@superdl/ui/components";
+import { CopyField, CursorTable, EmptyState, HexTag, Mono, RowActions, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Space, Table, Typography } from "antd";
+import { Button, Space, Table, Typography } from "antd";
 import type { TableColumnsType } from "antd";
 import { useTranslation } from "react-i18next";
 
@@ -23,14 +23,17 @@ export function AdminServicesTable({
   includeReleased,
   compact,
   hasFilter,
+  onClearFilters,
 }: {
   userId?: number;
   q?: string;
   includeReleased?: boolean;
   /** 抽屉内:小表 + 前 100 条明示截断,不出归属列 */
   compact?: boolean;
-  /** 页面筛选态非空(空态文案切到「无匹配」) */
+  /** 页面筛选态非空(空态切到「无匹配」) */
   hasFilter?: boolean;
+  /** 空态「清除筛选」 */
+  onClearFilters?: () => void;
 }) {
   const { t } = useTranslation(["admin", "shared"]);
   const role = useAdminRole();
@@ -46,6 +49,7 @@ export function AdminServicesTable({
   );
   // compact(抽屉)形态截断前 100 条、不出「加载更多」,该分支保留裸 Table 所需字段
   const { data, queryKey, isLoading, isError, error, refetch } = servicesQ;
+  const forbidden = isApiError(error) && error.status === 403;
   const rows = flattenPages(data);
   const total = data?.pages[0]?.total ?? null;
   const forceStop = useForceStop();
@@ -68,11 +72,7 @@ export function AdminServicesTable({
     ...(compact ? [] : [tenantColumn<AdminServiceOut>(t("tenants.colOwner"), 90)]),
     {
       title: t("services.colEndpoint"),
-      render: (_, r) => (
-        <Typography.Text copyable={{ text: r.url }} style={{ fontSize: fontSize.caption }}>
-          {hostOf(r.url)}
-        </Typography.Text>
-      ),
+      render: (_, r) => <CopyField value={r.url} display={hostOf(r.url)} />,
     },
     {
       title: t("services.colStatus"),
@@ -163,14 +163,12 @@ export function AdminServicesTable({
           pagination={false}
           scroll={{ x: 900, y: 420 }}
           locale={{
-            emptyText: (
-              <TableErrorEmpty
-                isError={isError}
-                isForbidden={isApiError(error) && error.status === 403}
-                onRetry={() => void refetch()}
-                compact
-              />
-            ),
+            emptyText:
+              isError || forbidden ? (
+                <TableErrorEmpty isError={isError} isForbidden={forbidden} onRetry={() => void refetch()} compact />
+              ) : (
+                <EmptyState scene="list" compact />
+              ),
           }}
           dataSource={rows}
           columns={columns}
@@ -179,7 +177,19 @@ export function AdminServicesTable({
         <CursorTable<AdminServiceOut>
           query={servicesQ}
           rows={rows}
-          empty={hasFilter ? t("empty.search", { ns: "shared" }) : undefined}
+          emptyNode={
+            <EmptyState
+              scene={hasFilter ? "search" : "list"}
+              compact
+              secondaryAction={
+                hasFilter && onClearFilters ? (
+                  <Button size="small" onClick={onClearFilters}>
+                    {t("filter.clear", { ns: "shared" })}
+                  </Button>
+                ) : undefined
+              }
+            />
+          }
           rowKey="slug"
           scroll={{ x: 1240 }}
           sticky={{ offsetHeader: layout.topBarHeight }}

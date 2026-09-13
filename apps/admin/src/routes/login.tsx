@@ -1,5 +1,5 @@
 import { adminColors, fontSize } from "@superdl/ui";
-import { LangSwitcher } from "@superdl/ui/components";
+import { CopyButton, CopyField, LangSwitcher, Mono } from "@superdl/ui/components";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { App, Button, Card, Checkbox, Form, Input, QRCode, Space, Typography } from "antd";
 import { useEffect, useState } from "react";
@@ -110,10 +110,14 @@ function MfaSetupForm({ ticket }: { ticket: string }) {
           {t("login.recoveryDesc")}
         </Typography.Paragraph>
         <Card size="small">
-          <Typography.Text code copyable={{ text: codes.join("\n") }}>
-            {t("login.recoveryCopy")}
-          </Typography.Text>
-          <pre style={{ margin: "8px 0 0", fontSize: fontSize.caption, lineHeight: 1.8 }}>{codes.join("\n")}</pre>
+          <CopyButton text={codes.join("\n")} label={t("login.recoveryCopy")} />
+          <div style={{ marginTop: 8, fontSize: fontSize.caption, lineHeight: 1.8 }}>
+            {codes.map((c) => (
+              <Mono block key={c}>
+                {c}
+              </Mono>
+            ))}
+          </div>
         </Card>
         <Checkbox checked={saved} onChange={(e) => setSaved(e.target.checked)}>
           {t("login.recoveryConfirm")}
@@ -156,9 +160,7 @@ function MfaSetupForm({ ticket }: { ticket: string }) {
             {t("login.mfaManualKey")}
           </Typography.Text>
           <br />
-          <Typography.Text code copyable>
-            {begin.data.secret}
-          </Typography.Text>
+          <CopyField value={begin.data.secret} code />
         </Typography.Paragraph>
       )}
       <Form.Item

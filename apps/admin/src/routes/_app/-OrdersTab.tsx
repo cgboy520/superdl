@@ -6,7 +6,7 @@ import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 
 import { controlWidth, flattenPages, orderStatusMap } from "@superdl/ui";
-import { CursorTable, FilterBar } from "@superdl/ui/components";
+import { CursorTable, EmptyState, FilterBar } from "@superdl/ui/components";
 import { useCsvExport, useUrlCommittedInput, useUrlFilters } from "@superdl/ui";
 
 import { type OrderRow, exportOrdersCsv, useOrders } from "../../api";
@@ -75,7 +75,19 @@ export function OrdersTab() {
       <CursorTable<OrderRow>
         query={q}
         rows={orders}
-        empty={filters.hasFilter ? t("empty.search", { ns: "shared" }) : undefined}
+        emptyNode={
+          <EmptyState
+            scene={filters.hasFilter ? "search" : "list"}
+            compact
+            secondaryAction={
+              filters.hasFilter ? (
+                <Button size="small" onClick={filters.clear}>
+                  {t("filter.clear", { ns: "shared" })}
+                </Button>
+              ) : undefined
+            }
+          />
+        }
         scroll={{ x: 900 }}
         rowKey="order_no"
         columns={orderColumns}

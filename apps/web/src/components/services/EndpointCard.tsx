@@ -2,12 +2,10 @@
  *  停机类四态分开说:stopped / stopping(启动后恢复)、frozen(欠费,去充值)、failed(部署失败,看日志 / 看事件)。 */
 
 import type { ServiceOut } from "@superdl/api-client";
-import { fontSize } from "@superdl/ui";
+import { CopyField } from "@superdl/ui/components";
 import { Link } from "@tanstack/react-router";
 import { Alert, Badge, Button, Card, Space, Tag, Typography } from "antd";
 import { useTranslation } from "react-i18next";
-
-import { CopyButton } from "../common";
 
 export function EndpointCard({
   service,
@@ -25,10 +23,8 @@ export function EndpointCard({
     <Card size="small" title={t("services.detail.endpointCard")}>
       <Space orientation="vertical" size={8} style={{ width: "100%" }}>
         <Space wrap size={8}>
-          <Typography.Text code className="mono" style={{ fontSize: fontSize.sectionTitle }}>
-            {service.url}
-          </Typography.Text>
-          <CopyButton text={service.url} label={t("services.copyEndpoint")} />
+          {/* 完整 URL 在唯一一个 <code> 里(e2e 以 code 定位端点) */}
+          <CopyField value={service.url} code label={t("services.copyEndpoint")} />
           <Button
             size="small"
             disabled={!live}

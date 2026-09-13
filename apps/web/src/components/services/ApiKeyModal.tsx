@@ -1,13 +1,12 @@
 /** 新建服务访问 Key 弹窗。成功态一次性展示:大号等宽全值 + 复制 + 红字警告 + 必须勾「我已保存」才能关,X 与遮罩关闭封掉(与管理端 TOTP 恢复码同一套)。 */
 
 import type { ApiKeyCreateOut } from "@superdl/api-client";
-import { fontSize } from "@superdl/ui";
+import { CopyField } from "@superdl/ui/components";
 import { Button, Checkbox, Card, Input, Modal, Space, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useCreateServiceApiKey } from "../../api/mutations";
-import { CopyButton } from "../common";
 
 export function ApiKeyModal({ slug, open, onClose }: { slug: string; open: boolean; onClose: () => void }) {
   const { t } = useTranslation();
@@ -43,18 +42,8 @@ export function ApiKeyModal({ slug, open, onClose }: { slug: string; open: boole
             {t("services.keys.onceWarn")}
           </Typography.Text>
           <Card size="small">
-            <CopyButton text={created.key} label={t("services.keys.copy")} />
-            <pre
-              style={{
-                margin: "8px 0 0",
-                fontSize: fontSize.sectionTitle,
-                lineHeight: 1.8,
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-all",
-              }}
-            >
-              {created.key}
-            </pre>
+            {/* 明文全值不打码:本来就只显示这一次 */}
+            <CopyField value={created.key} code secret={false} label={t("services.keys.copy")} />
           </Card>
           <Checkbox checked={saved} onChange={(e) => setSaved(e.target.checked)}>
             {t("services.keys.savedConfirm")}

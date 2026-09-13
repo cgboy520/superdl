@@ -15,7 +15,15 @@ import {
   SERVICE_FILTER_STATUSES,
   serviceStatusMap,
 } from "@superdl/ui";
-import { EmptyState, FilterBar, LoadMore, Mono, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
+import {
+  CopyButton,
+  EmptyState,
+  FilterBar,
+  LoadMore,
+  Mono,
+  PageContainer,
+  TableErrorEmpty,
+} from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Button, Input, Select, Skeleton, Space, Table, Tag, theme, Tooltip, Typography } from "antd";
 import { useCallback, useMemo } from "react";
@@ -23,7 +31,7 @@ import { useTranslation } from "react-i18next";
 
 import { useDailySummary, usePolicies, useServicePages, useTransientServiceRefresh } from "../api/queries";
 import { BillingCell } from "../components/BillingCell";
-import { CopyButton, ServiceStatusBadge, TierTag } from "../components/common";
+import { ServiceStatusBadge, TierTag } from "../components/common";
 import { ServiceActions } from "../components/services/ServiceActions";
 import { requireAuth } from "../lib/guard";
 import { useCursorList } from "../lib/useCursorList";

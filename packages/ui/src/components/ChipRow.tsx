@@ -1,7 +1,8 @@
 /** 筛选链 chip 行(市场/创建页)。单选,禁用项走 GatedButton(灰置 + 原因);聚合项由调用方用哨兵值表达。 */
 
-import { fontWeight, useThemeColors } from "@superdl/ui";
-import { GatedButton } from "@superdl/ui/components";
+import { useThemeColors } from "../hooks/useThemeColors";
+import { fontWeight } from "../tokens";
+import { GatedButton } from "./GatedButton";
 import { Space, theme, Typography } from "antd";
 import { useId, type ReactNode } from "react";
 

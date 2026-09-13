@@ -2,7 +2,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, getRouteApi } from "@tanstack/react-router";
-import { Input, Select, Space, Typography } from "antd";
+import { Button, Input, Select, Space, Typography } from "antd";
 import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -22,7 +22,7 @@ import {
   workloadTypeMap,
   type InstanceStatus,
 } from "@superdl/ui";
-import { CursorTable, FilterBar, HexTag, Mono, RowActions, RowMoreMenu } from "@superdl/ui/components";
+import { CursorTable, EmptyState, FilterBar, HexTag, Mono, RowActions, RowMoreMenu } from "@superdl/ui/components";
 
 import { type AdminInstanceOut, useAdminInstances, useForceStop, usePreemptInstance } from "../../api";
 import { ReasonAction } from "../../components/ReasonAction";
@@ -68,14 +68,11 @@ export function InstancesTab() {
 
   const total = data?.pages[0]?.total ?? undefined;
   const hasFilter = Boolean(status || instQ || nodeName);
+  const clearFilters = () => setUrl({ istatus: undefined, iq: undefined, inode: undefined });
   return (
     <>
       {/* 筛选条:控件 + 清除筛选 + 精确总数(服务端 total) */}
-      <FilterBar
-        hasFilter={hasFilter}
-        onClear={() => setUrl({ istatus: undefined, iq: undefined, inode: undefined })}
-        count={total ?? undefined}
-      >
+      <FilterBar hasFilter={hasFilter} onClear={clearFilters} count={total ?? undefined}>
         <Select
           allowClear
           placeholder={t("common.statusFilter")}
@@ -107,7 +104,19 @@ export function InstancesTab() {
       <CursorTable<AdminInstanceOut>
         query={instancesQ}
         rows={instances}
-        empty={hasFilter ? t("empty.search", { ns: "shared" }) : undefined}
+        emptyNode={
+          <EmptyState
+            scene={hasFilter ? "search" : "list"}
+            compact
+            secondaryAction={
+              hasFilter ? (
+                <Button size="small" onClick={clearFilters}>
+                  {t("filter.clear", { ns: "shared" })}
+                </Button>
+              ) : undefined
+            }
+          />
+        }
         scroll={{ x: 1250 }}
         sticky={{ offsetHeader: layout.topBarHeight }}
         rowKey="uuid"

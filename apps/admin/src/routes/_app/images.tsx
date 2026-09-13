@@ -11,6 +11,7 @@ import {
   type ImageCacheStatus,
 } from "@superdl/ui";
 import {
+  CopyField,
   EmptyState,
   GatedButton,
   Mono,
@@ -298,9 +299,14 @@ function ImagesPage() {
               dataIndex: "image_ref",
               width: 320,
               render: (v: string) => (
-                <Typography.Text copyable ellipsis style={{ maxWidth: 300 }}>
-                  {v}
-                </Typography.Text>
+                <CopyField
+                  value={v}
+                  display={
+                    <Typography.Text ellipsis={{ tooltip: true }} style={{ maxWidth: 260 }}>
+                      {v}
+                    </Typography.Text>
+                  }
+                />
               ),
             },
             {

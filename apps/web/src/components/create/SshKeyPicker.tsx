@@ -1,14 +1,13 @@
 /** SSH 公钥选择块:查询失败可重试(不伪装成「你还没有密钥」)/ 只有一把时自动选中 / 无密钥时行内添加(多行公钥框 + ssh-keygen 指引)并自动选中 / 多选。开发机 SSH 卡与服务「同时开放 SSH」共用。 */
 
 import { controlWidth, fontSize, space } from "@superdl/ui";
-import { DataErrorAlert } from "@superdl/ui/components";
+import { CopyField, DataErrorAlert } from "@superdl/ui/components";
 import { App, Button, Checkbox, Form, Input, Space, Typography } from "antd";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useAddSshKey } from "../../api/mutations";
 import { useSshKeys } from "../../api/queries";
-import { CopyButton } from "../common";
 
 const KEYGEN_CMD = 'ssh-keygen -t ed25519 -C "you@example.com"';
 
@@ -44,10 +43,7 @@ export function SshKeyPicker({ value, onChange }: { value: number[]; onChange: (
           <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
             {t("create.keygenHint")}
           </Typography.Text>
-          <Typography.Text code className="mono">
-            {KEYGEN_CMD}
-          </Typography.Text>
-          <CopyButton text={KEYGEN_CMD} />
+          <CopyField value={KEYGEN_CMD} code />
           <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
             {t("create.keygenWhere")}
           </Typography.Text>

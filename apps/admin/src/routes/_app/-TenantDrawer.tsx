@@ -14,7 +14,7 @@ import {
   metaOf,
   subscriptionStatusMap,
 } from "@superdl/ui";
-import { CursorTable, DataErrorAlert, HexTag, Mono } from "@superdl/ui/components";
+import { CursorTable, DataErrorAlert, EmptyState, HexTag, Mono } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
@@ -198,6 +198,20 @@ function BillsTab({ userId, instances }: { userId: number; instances: AdminInsta
       <CursorTable
         query={bills}
         rows={billRows}
+        compact
+        emptyNode={
+          <EmptyState
+            scene={instanceId != null ? "search" : "list"}
+            compact
+            secondaryAction={
+              instanceId != null ? (
+                <Button size="small" onClick={() => setInstanceId(null)}>
+                  {t("filter.clear", { ns: "shared" })}
+                </Button>
+              ) : undefined
+            }
+          />
+        }
         size="small"
         rowKey="id"
         scroll={{ y: 420 }}
@@ -240,6 +254,8 @@ function LedgerTab({ userId }: { userId: number }) {
       <CursorTable
         query={ledger}
         rows={ledgerRows}
+        compact
+        emptyNode={<EmptyState scene="list" compact />}
         size="small"
         rowKey="id"
         scroll={{ y: 420 }}
@@ -283,6 +299,8 @@ function OrdersTab({ userId }: { userId: number }) {
       <CursorTable<OrderRow>
         query={orders}
         rows={rows}
+        compact
+        emptyNode={<EmptyState scene="list" compact />}
         size="small"
         rowKey="order_no"
         scroll={{ y: 420 }}
@@ -513,7 +531,14 @@ function EventsTab({ instances }: { instances: AdminInstanceOut[] }) {
       <CursorTable<InstanceEvent>
         query={events}
         rows={rows}
-        empty={uuid ? t("tenants.events.empty") : t("tenants.events.pickFirst")}
+        compact
+        emptyNode={
+          <EmptyState
+            scene="list"
+            compact
+            description={uuid ? t("tenants.events.empty") : t("tenants.events.pickFirst")}
+          />
+        }
         size="small"
         rowKey="id"
         scroll={{ y: 420 }}

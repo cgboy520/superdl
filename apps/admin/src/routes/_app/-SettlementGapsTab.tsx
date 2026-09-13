@@ -1,7 +1,7 @@
 /** 结算缺口:FilterBar(类型 / 只看未核销,入 URL ?g_kind= / ?g_open=)+ 重放补结 / 人工核销(告警 superdl_settlement_gap_unresolved)。 */
 
 import { controlWidth, flattenPages, formatDateTime, useUrlFilters } from "@superdl/ui";
-import { CursorTable, FilterBar, GatedButton, RowActions, useConfirm } from "@superdl/ui/components";
+import { CursorTable, EmptyState, FilterBar, GatedButton, RowActions, useConfirm } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { App, Button, Select, Space, Switch, Tag, Typography } from "antd";
 import { useState } from "react";
@@ -122,7 +122,19 @@ export function SettlementGapsTab() {
       <CursorTable<AdminSettlementGapOut>
         query={gapsQ}
         rows={items}
-        empty={filters.hasFilter ? t("empty.search", { ns: "shared" }) : undefined}
+        emptyNode={
+          <EmptyState
+            scene={filters.hasFilter ? "search" : "list"}
+            compact
+            secondaryAction={
+              filters.hasFilter ? (
+                <Button size="small" onClick={filters.clear}>
+                  {t("filter.clear", { ns: "shared" })}
+                </Button>
+              ) : undefined
+            }
+          />
+        }
         rowKey="id"
         rowSelection={
           writable

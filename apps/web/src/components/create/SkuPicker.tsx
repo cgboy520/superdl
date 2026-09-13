@@ -6,13 +6,12 @@
 
 import type { SkuMarketOut } from "@superdl/api-client";
 import { fontSize, GPU_COUNT_STEPS, skuTierMap, skuVariant, space, useFormat } from "@superdl/ui";
-import { TableErrorEmpty } from "@superdl/ui/components";
+import { CHIP_LABEL_WIDTH, ChipRow, TableErrorEmpty, type ChipOption } from "@superdl/ui/components";
 import { Button, Segmented, Space, Table, Tooltip, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { dedupAvailableByModel } from "../../lib/inventory";
-import { CHIP_LABEL_WIDTH, ChipRow, type ChipOption } from "../ChipRow";
 import { SKU_ROW_DISABLED_CLASS, skuColumns, skuDisabledReason, skuSelectable } from "../skuTable";
 import type { SpotPolicy } from "../spotBilling";
 

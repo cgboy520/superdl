@@ -1,6 +1,6 @@
 import { CheckCircleFilled, CloseCircleFilled } from "@ant-design/icons";
 import { adminColors, formatDateTime, metaOf } from "@superdl/ui";
-import { DataErrorAlert, GatedButton, PageContainer } from "@superdl/ui/components";
+import { CopyField, DataErrorAlert, GatedButton, PageContainer } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Alert, App, Badge, Card, Col, Row, Space, Tag, Typography } from "antd";
@@ -158,9 +158,7 @@ function ClusterPage() {
                     {!c.ok && c.fix_hint && (
                       <div style={{ marginLeft: 24, marginTop: 4 }}>
                         <Typography.Text type="secondary">{t("cluster.fixHint")}:</Typography.Text>{" "}
-                        <Typography.Text code copyable>
-                          {c.fix_hint}
-                        </Typography.Text>
+                        <CopyField value={c.fix_hint} code />
                       </div>
                     )}
                   </div>

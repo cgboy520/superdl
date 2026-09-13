@@ -82,7 +82,13 @@ function ServicesPage() {
             {t("services.includeReleased")}
           </Checkbox>
         </FilterBar>
-        <AdminServicesTable userId={userId} q={q} includeReleased={released === "1"} hasFilter={filters.hasFilter} />
+        <AdminServicesTable
+          userId={userId}
+          q={q}
+          includeReleased={released === "1"}
+          hasFilter={filters.hasFilter}
+          onClearFilters={filters.clear}
+        />
       </Card>
     </PageContainer>
   );

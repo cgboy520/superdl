@@ -2,16 +2,24 @@
 
 import { type InstanceOut } from "@superdl/api-client";
 import { controlWidth, formatDateTime, isTransientInstanceStatus, localToday, POLL } from "@superdl/ui";
-import { DangerZone, DataErrorAlert, moneyOr, PageContainer, useConfirm } from "@superdl/ui/components";
+import {
+  CopyField,
+  DangerZone,
+  DataErrorAlert,
+  KeyValue,
+  moneyOr,
+  PageContainer,
+  useConfirm,
+} from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Alert, App, Breadcrumb, Button, Card, Descriptions, Input, Skeleton, Space, Tabs, Typography } from "antd";
+import { Alert, App, Breadcrumb, Button, Card, Input, Skeleton, Space, Tabs, Typography } from "antd";
 import { useFormat } from "@superdl/ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useRenameInstance, useResetJupyterToken } from "../api/mutations";
 import { useDailySummary, useHourlyBillPages, useInstance, useInstanceAccess } from "../api/queries";
-import { CopyButton, InstanceStatusBadge, SpotTag, SubscriptionTag, TierTag } from "../components/common";
+import { InstanceStatusBadge, SpotTag, SubscriptionTag, TierTag } from "../components/common";
 import { HourlyBillsTable } from "../components/HourlyBillsTable";
 import { EventsTab } from "../components/instance/EventsTab";
 import { LogsTab } from "../components/instance/LogsTab";
@@ -53,8 +61,11 @@ function AccessTab({ instance, running }: { instance: InstanceOut; running: bool
       {instance.with_ssh && (
         <Card size="small" title="SSH">
           <Space orientation="vertical">
-            <Typography.Text code>{access?.ssh_command}</Typography.Text>
-            {access?.ssh_command && <CopyButton text={access.ssh_command} label={t("instances.copyCommand")} />}
+            {access?.ssh_command ? (
+              <CopyField value={access.ssh_command} code label={t("instances.copyCommand")} />
+            ) : (
+              <Typography.Text code>…</Typography.Text>
+            )}
             <Typography.Text type="secondary">{t("copy.sshKeyOnly")}</Typography.Text>
           </Space>
         </Card>
@@ -225,14 +236,13 @@ function InstanceDetail() {
                 <SubscriptionTag market={instance.market} subscription={instance.subscription} />
                 <SpotTag market={instance.market} />
               </Space>
-              <Descriptions
-                size="small"
-                column={{ xs: 1, sm: 2, md: 3, xl: 4 }}
+              <KeyValue
+                layout="inline"
                 items={[
-                  { label: t("instances.labelId"), children: instance.uuid.slice(0, 12) },
+                  { label: t("instances.labelId"), value: instance.uuid, mono: true, copy: instance.uuid },
                   {
                     label: t("instances.labelSpec"),
-                    children: t("instances.specLine", {
+                    value: t("instances.specLine", {
                       model: instance.spec.gpu_model as string,
                       count: instance.gpu_count,
                     }),
@@ -240,7 +250,7 @@ function InstanceDetail() {
                   {
                     label: t("instances.labelBilling"),
                     // 包周期实例时价是折后价且不出小时账,不报「¥X/时 × N 卡」
-                    children: instance.subscription
+                    value: instance.subscription
                       ? formatPeriodPrice(
                           instance.subscription.amount_paid,
                           instance.subscription.period,
@@ -255,16 +265,16 @@ function InstanceDetail() {
                     ? [
                         {
                           label: t("instances.labelExpiresAt"),
-                          children: formatDateTime(instance.subscription.expires_at),
+                          value: formatDateTime(instance.subscription.expires_at),
                         },
                       ]
                     : [
                         {
                           label: t("instances.labelToday"),
-                          children: moneyOr(formatMoney(todayAmount), daily != null),
+                          value: moneyOr(formatMoney(todayAmount), daily != null),
                         },
                       ]),
-                  { label: t("instances.createdAt"), children: formatDateTime(instance.created_at) },
+                  { label: t("instances.createdAt"), value: formatDateTime(instance.created_at) },
                 ]}
               />
             </Space>

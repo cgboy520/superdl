@@ -1,18 +1,18 @@
-/** 充值弹窗:金额档位 / 渠道 / 二维码 + 到期倒计时 + 轮询自动确认;未完成订单本地续接。 */
+/** 充值弹窗:渠道 tile / 金额(档位 chip 写入数字框 + 充值后余额预览)/ 二维码 + 到期倒计时 + 轮询自动确认;未完成订单本地续接,二维码态可回表单改金额。 */
 
 import { useTranslation } from "react-i18next";
-import { Alert, App, Button, InputNumber, Modal, QRCode, Radio, Space, Tabs, Tooltip, Typography } from "antd";
+import { Alert, App, Button, InputNumber, Modal, QRCode, Space, Typography } from "antd";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { type RechargeOut } from "@superdl/api-client";
-import { compareAmounts, fontSize, formatDateTime, idemKeyOf } from "@superdl/ui";
-import { DataErrorAlert } from "@superdl/ui/components";
+import { addAmounts, compareAmounts, controlWidth, fontSize, formatDateTime, idemKeyOf, space } from "@superdl/ui";
+import { ChipRow, DataErrorAlert, EMPTY_VALUE, OptionTileGroup } from "@superdl/ui/components";
 import { useFormat } from "@superdl/ui";
 
 import { keys } from "../api/keys";
 import { useCreateRecharge, useMockPay } from "../api/mutations";
-import { useRecharge, useSiteConfig } from "../api/queries";
+import { useRecharge, useSiteConfig, useWallet } from "../api/queries";
 
 /** 充值档位与单笔限额:与后端 billing schemas 同口径,后端变更需同步。 */
 export const PRESET_AMOUNTS = ["50.00", "100.00", "500.00"] as const;
@@ -21,6 +21,8 @@ export const RECHARGE_MAX_AMOUNT = "50000";
 
 /** 进行中的充值订单号(sessionStorage):关窗重开可恢复轮询。 */
 export const PENDING_ORDER_KEY = "superdl.web.pendingRecharge";
+
+type Channel = "wechat" | "alipay" | "mock";
 
 export function PayCountdown({ expiresAt }: { expiresAt: string }) {
   const { t } = useTranslation();
@@ -50,8 +52,9 @@ export function RechargeModal({ open, onClose }: { open: boolean; onClose: () =>
   const [order, setOrder] = useState<RechargeOut | null>(null);
   // 幂等键按「下单序号 + (amount, channel)」派生,序号 +1 才是新订单
   const [orderSeq, setOrderSeq] = useState(0);
-  const [pickedChannel, setPickedChannel] = useState<string | null>(null);
+  const [pickedChannel, setPickedChannel] = useState<Channel | null>(null);
   const [resumedNo, setResumedNo] = useState(() => sessionStorage.getItem(PENDING_ORDER_KEY) ?? "");
+  const { data: wallet } = useWallet();
 
   // 渠道开关来自 site-config 公开端点
   const siteQ = useSiteConfig();
@@ -61,7 +64,7 @@ export function RechargeModal({ open, onClose }: { open: boolean; onClose: () =>
     alipay: site?.payment_channels.alipay ?? false,
     mock: site?.payment_channels.mock ?? false,
   };
-  const firstEnabled = enabled.wechat ? "wechat" : enabled.alipay ? "alipay" : "mock";
+  const firstEnabled: Channel = enabled.wechat ? "wechat" : enabled.alipay ? "alipay" : "mock";
   const channel = pickedChannel ?? firstEnabled;
   const anyEnabled = enabled.wechat || enabled.alipay || enabled.mock;
   // mock 渠道关闭时不引导去模拟支付
@@ -118,6 +121,14 @@ export function RechargeModal({ open, onClose }: { open: boolean; onClose: () =>
     setResumedNo("");
     onClose();
   };
+  // 回表单改金额:只清本地展示态,sessionStorage 里的单号保留,关窗重开仍可续接
+  const backToForm = () => {
+    setOrder(null);
+    setResumedNo("");
+  };
+
+  const presetValue = PRESET_AMOUNTS.find((v) => compareAmounts(v, amount) === 0) ?? "";
+  const balanceAfter = wallet ? formatMoney(addAmounts(wallet.balance, amount)) : EMPTY_VALUE;
 
   return (
     <Modal
@@ -136,40 +147,29 @@ export function RechargeModal({ open, onClose }: { open: boolean; onClose: () =>
             // 渠道信息加载失败不伪装成「全部渠道未开通」
             <DataErrorAlert onRetry={() => void siteQ.refetch()} />
           )}
-          <Tabs
-            activeKey={channel}
+          <OptionTileGroup
+            label={t("billing.channelLabel")}
+            columns={3}
+            size="sm"
+            value={channel}
             onChange={setPickedChannel}
-            size="small"
-            items={[
-              {
-                key: "wechat",
-                label: enabled.wechat ? (
-                  t("billing.wechat")
-                ) : (
-                  <Tooltip title={channelTip}>{t("billing.wechat")}</Tooltip>
-                ),
-                disabled: !enabled.wechat,
-              },
-              {
-                key: "alipay",
-                label: enabled.alipay ? (
-                  t("billing.alipay")
-                ) : (
-                  <Tooltip title={channelTip}>{t("billing.alipay")}</Tooltip>
-                ),
-                disabled: !enabled.alipay,
-              },
-              ...(enabled.mock ? [{ key: "mock", label: t("billing.mockChannel") }] : []),
+            options={[
+              { value: "wechat", title: t("billing.wechat"), reason: enabled.wechat ? undefined : channelTip },
+              { value: "alipay", title: t("billing.alipay"), reason: enabled.alipay ? undefined : channelTip },
+              ...(enabled.mock ? [{ value: "mock" as const, title: t("billing.mockChannel") }] : []),
             ]}
           />
-          <Radio.Group
-            optionType="button"
-            value={PRESET_AMOUNTS.find((v) => compareAmounts(v, amount) === 0)}
-            onChange={(e) => setAmount(e.target.value as string)}
+          {/* 金额只有一个控件:档位 chip 写入数字框;自定义金额时无 chip 选中(哨兵 "") */}
+          <ChipRow
+            label={t("billing.presetAmounts")}
+            value={presetValue}
+            onChange={(v) => {
+              if (v !== "") setAmount(v);
+            }}
             options={PRESET_AMOUNTS.map((v) => ({ value: v, label: formatMoney(v) }))}
           />
           <InputNumber
-            style={{ width: 200 }}
+            style={{ width: controlWidth.md }}
             min={RECHARGE_MIN_AMOUNT}
             max={RECHARGE_MAX_AMOUNT}
             precision={2}
@@ -179,6 +179,7 @@ export function RechargeModal({ open, onClose }: { open: boolean; onClose: () =>
             prefix={currencySymbol}
             aria-label={t("billing.rechargeAmount")}
           />
+          <Typography.Text type="secondary">{t("billing.balanceAfter", { amount: balanceAfter })}</Typography.Text>
           <Button
             type="primary"
             block
@@ -253,9 +254,14 @@ export function RechargeModal({ open, onClose }: { open: boolean; onClose: () =>
               {t("billing.mockPayNow")}
             </Button>
           )}
-          <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-            {t("billing.pollNote")}
-          </Typography.Text>
+          <Space size={space.sm} wrap>
+            <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+              {t("billing.pollNote")}
+            </Typography.Text>
+            <Button type="link" size="small" style={{ paddingInline: 0 }} onClick={backToForm}>
+              {t("billing.changeAmount")}
+            </Button>
+          </Space>
         </Space>
       )}
     </Modal>

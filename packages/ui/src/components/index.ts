@@ -30,6 +30,8 @@ export { CopyField, CopyButton } from "./CopyField";
 export { InlineEdit } from "./InlineEdit";
 export { DiskSizeField } from "./DiskSizeField";
 export { KeyValue } from "./KeyValue";
+export { ChipRow, CHIP_LABEL_WIDTH } from "./ChipRow";
+export type { ChipOption } from "./ChipRow";
 export type { KeyValueItem } from "./KeyValue";
 export { KpiGrid } from "./KpiGrid";
 export { EmptyState } from "./EmptyState";
