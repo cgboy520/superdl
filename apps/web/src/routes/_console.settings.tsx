@@ -125,48 +125,53 @@ function SshTab() {
   return (
     <Card id="ssh" extra={<Typography.Text type="secondary">{t("copy.sshKeyOnly")}</Typography.Text>}>
       <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
-        <Table
-          rowKey="id"
-          size="small"
-          loading={isLoading}
-          pagination={false}
-          scroll={{ x: 640 }}
-          dataSource={keys ?? []}
-          locale={{
-            emptyText: isError ? <TableErrorEmpty isError onRetry={() => void refetch()} /> : t("settings.noKeys"),
-          }}
-          columns={[
-            { title: t("storage.nameLabel"), dataIndex: "name" },
-            {
-              title: t("settings.colFingerprint"),
-              render: (_, r) => <Typography.Text code>{r.fingerprint}</Typography.Text>,
-            },
-            { title: t("settings.colAddedAt"), render: (_, r) => formatDateTime(r.created_at) },
-            {
-              title: t("storage.colActions"),
-              render: (_, r) => (
-                // L1 确认(可逆、影响面 = 1),危险按钮配红色确认
-                <Button
-                  size="small"
-                  danger
-                  onClick={() =>
-                    confirm({
-                      title: t("settings.deleteKeyConfirm"),
-                      consequences: [t("settings.deleteKeyBody", { name: r.name })],
-                      okText: t("storage.delete"),
-                      danger: true,
-                      onOk: async () => {
-                        await delKey.mutateAsync(r.id);
-                      },
-                    })
-                  }
-                >
-                  {t("storage.delete")}
-                </Button>
-              ),
-            },
-          ]}
-        />
+        {/* 一把钥匙都没有时不摆空表:640 宽的表头在手机上只会拖出一条横向滚动条,提示语 + 下方表单就够了 */}
+        {(keys ?? []).length === 0 && !isLoading && !isError ? (
+          <Typography.Text type="secondary">{t("settings.noKeys")}</Typography.Text>
+        ) : (
+          <Table
+            rowKey="id"
+            size="small"
+            loading={isLoading}
+            pagination={false}
+            scroll={{ x: 640 }}
+            dataSource={keys ?? []}
+            locale={{
+              emptyText: isError ? <TableErrorEmpty isError onRetry={() => void refetch()} /> : t("settings.noKeys"),
+            }}
+            columns={[
+              { title: t("storage.nameLabel"), dataIndex: "name" },
+              {
+                title: t("settings.colFingerprint"),
+                render: (_, r) => <Typography.Text code>{r.fingerprint}</Typography.Text>,
+              },
+              { title: t("settings.colAddedAt"), render: (_, r) => formatDateTime(r.created_at) },
+              {
+                title: t("storage.colActions"),
+                render: (_, r) => (
+                  // L1 确认(可逆、影响面 = 1),危险按钮配红色确认
+                  <Button
+                    size="small"
+                    danger
+                    onClick={() =>
+                      confirm({
+                        title: t("settings.deleteKeyConfirm"),
+                        consequences: [t("settings.deleteKeyBody", { name: r.name })],
+                        okText: t("storage.delete"),
+                        danger: true,
+                        onOk: async () => {
+                          await delKey.mutateAsync(r.id);
+                        },
+                      })
+                    }
+                  >
+                    {t("storage.delete")}
+                  </Button>
+                ),
+              },
+            ]}
+          />
+        )}
         <Form form={form} layout="vertical" onFinish={(v: { name: string; public_key: string }) => addKey.mutate(v)}>
           <Form.Item
             name="name"
