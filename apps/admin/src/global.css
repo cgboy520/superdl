@@ -30,3 +30,8 @@ html {
 .command-palette [cmdk-item][data-disabled="true"] {
   opacity: 0.45;
 }
+
+/* 抽屉标题放的是多行 EntityHeader:关闭钮默认垂直居中会吊在半空,拉回顶部(antd 的 flex 容器是 header-title) */
+.ant-drawer-header .ant-drawer-header-title {
+  align-items: flex-start;
+}

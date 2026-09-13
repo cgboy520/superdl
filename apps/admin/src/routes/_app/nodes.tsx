@@ -340,6 +340,12 @@ function NodesPage() {
               render: (v: string) => <Mono>{v}</Mono>,
             },
             {
+              title: t("nodes.colStatus"),
+              dataIndex: "status",
+              width: 110,
+              render: (v: string) => <StatusTag map={nodeStatusMap} value={v} variant="badge" icon />,
+            },
+            {
               title: t("nodes.colPool"),
               dataIndex: "pool_label",
               render: (_, r) => <PoolTag node={r} />,
@@ -389,11 +395,6 @@ function NodesPage() {
               width: 130,
               sorter: (a, b) => dayjs(a.last_seen || 0).valueOf() - dayjs(b.last_seen || 0).valueOf(),
               render: (v: string) => <LastSeenCell value={v} />,
-            },
-            {
-              title: t("nodes.colStatus"),
-              dataIndex: "status",
-              render: (v: string) => <StatusTag map={nodeStatusMap} value={v} variant="badge" icon />,
             },
             {
               title: t("nodes.colActions"),

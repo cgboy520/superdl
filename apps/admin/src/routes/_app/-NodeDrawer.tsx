@@ -85,6 +85,8 @@ export function NodeActions({
             cordoned ? t("nodes.uncordonConfirm", { name: node.name }) : t("nodes.cordonConfirm", { name: node.name })
           }
           danger={!cordoned}
+          // 封锁可逆,且每行都有一个;触发钮不标红,红色留给确认框,免得整张表都是红按钮
+          triggerDanger={false}
           confirm={!cordoned}
           disabled={!writable}
           disabledReason={t("nodes.readonlyNoOp")}

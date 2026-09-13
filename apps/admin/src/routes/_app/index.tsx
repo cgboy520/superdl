@@ -133,9 +133,11 @@ function UtilChart({ rows }: { rows: OversellRow[] }) {
         markLine: {
           symbol: "none",
           lineStyle: { type: "dashed" },
+          // 默认 end 会把标签画到网格右侧、被画布裁掉;贴到线内上方
+          label: { position: "insideEndTop", color: adminColors.textSecondary },
           data: [
-            { yAxis: 60, label: { formatter: t("overview.raiseThreshold"), color: adminColors.textSecondary } },
-            { yAxis: 85, label: { formatter: t("overview.lowerThreshold"), color: adminColors.textSecondary } },
+            { yAxis: 60, label: { formatter: t("overview.raiseThreshold") } },
+            { yAxis: 85, label: { formatter: t("overview.lowerThreshold") } },
           ],
         },
       },
@@ -159,8 +161,9 @@ function PoolOccupancy({ pools }: { pools: OverviewOut["pools"] }) {
   const option = {
     backgroundColor: "transparent",
     tooltip: { trigger: "axis" },
-    legend: { textStyle: { color: adminColors.textSecondary } },
-    grid: { left: 80, right: 24, top: 32, bottom: 28 },
+    // 图例不显式定位会落到底部压住 x 轴刻度;放顶部并给网格留出这一行
+    legend: { top: 0, textStyle: { color: adminColors.textSecondary } },
+    grid: { left: 80, right: 24, top: 44, bottom: 28 },
     xAxis: {
       type: "value",
       axisLabel: { color: adminColors.textSecondary },

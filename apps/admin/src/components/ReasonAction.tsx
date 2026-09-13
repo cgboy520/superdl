@@ -19,7 +19,10 @@ interface Props {
   confirmText: string;
   /** 目标标识(两步弹窗顶部回显) */
   target?: ReactNode;
+  /** 确认弹窗 OK 按钮标红(危险动作一律传) */
   danger?: boolean;
+  /** 触发按钮标红,默认跟随 danger;可逆且每行都有的动作(封锁节点)传 false,红色留给确认框 */
+  triggerDanger?: boolean;
   disabled?: boolean;
   /** 禁用原因(tooltip) */
   disabledReason: string;
@@ -39,6 +42,7 @@ export function ReasonAction({
   confirmText,
   target,
   danger,
+  triggerDanger = danger,
   disabled,
   disabledReason,
   size = "small",
@@ -60,7 +64,7 @@ export function ReasonAction({
   const button = (
     <GatedButton
       reason={disabled ? disabledReason : undefined}
-      danger={danger}
+      danger={triggerDanger}
       size={size}
       type={type}
       onClick={() => setOpen(true)}
