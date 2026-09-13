@@ -7,7 +7,8 @@ body {
 
 /* 标识符(UUID / 订单号 / slug / 节点名)等宽;取值与 tokens.ts fontFamilyMono 同步 */
 .mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  /* 与 tokens.ts fontFamilyMono 同一串;字体文件只在 web 自托管(apps/web/src/styles.css @font-face),admin 回落系统等宽 */
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
 
 /* 门控按钮:视觉同 disabled,但保持可聚焦(tooltip 里的原因键盘可达) */

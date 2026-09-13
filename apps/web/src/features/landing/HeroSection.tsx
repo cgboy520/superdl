@@ -1,57 +1,26 @@
-/** 主页 Hero:单帧深靛渐变 + 网格纹理 + 右侧玻璃拟态实时数据卡。数据卡三态:未就绪骨架 / 失败降级为「前往算力市场」CTA / 实时数据;失败时不渲染假 0。 */
+/** 主页 Hero:左标题 + 两个 CTA,右实时行情板(第一屏就给价格与库存,而不是口号)。
+ *  ≥lg 左右分栏;<lg 行情板落到 CTA 下方(整块,不隐藏 —— 手机上更需要先看到价格)。 */
 
-import { POLL } from "@superdl/ui";
-import { brand, brandInverseButtonStyle, compareAmounts, fontSize, layout } from "@superdl/ui";
+import { brand, brandInverseButtonStyle, fontSize, fontWeight, layout, space } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
-import { Button, Grid, Skeleton, Space, Typography } from "antd";
+import { Button, Grid, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
-import { useFormat } from "@superdl/ui";
 import { GRID_TEXTURE } from "../../components/gridTexture";
-import { dedupAvailableTotal } from "../../lib/inventory";
-import { useSkus } from "../../api/queries";
 import { useIsLoggedIn } from "../../stores/auth";
-
-function GlassCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div
-      style={{
-        background: "rgba(255,255,255,0.12)",
-        border: "1px solid rgba(255,255,255,0.25)",
-        borderRadius: 12,
-        backdropFilter: "blur(8px)",
-        padding: "16px 24px",
-        color: "#fff",
-        minWidth: 200,
-      }}
-    >
-      <div style={{ fontSize: fontSize.caption, opacity: 0.8 }}>{label}</div>
-      <div style={{ fontSize: fontSize.kpi, fontWeight: 700, marginTop: 4 }}>{value}</div>
-    </div>
-  );
-}
+import { PriceBoard } from "./PriceBoard";
 
 export function HeroSection() {
   const { t } = useTranslation();
-  const { formatHourlyPrice } = useFormat();
   const loggedIn = useIsLoggedIn();
-  const screens = Grid.useBreakpoint();
-  const skusQ = useSkus({ refetchInterval: POLL.daily });
-  const { data: skus } = skusQ;
-
-  const minPrice = (skus ?? []).reduce<string | null>(
-    // 金额比较走 compareAmounts(BigInt 万分位)
-    (min, s) => (min === null || compareAmounts(s.price_hourly, min) < 0 ? s.price_hourly : min),
-    null,
-  );
-  const freeCards = dedupAvailableTotal(skus ?? []);
+  const wide = Grid.useBreakpoint().lg;
 
   return (
     <section
       style={{
         // 多重背景:网格纹理叠在渐变上
         backgroundImage: `${GRID_TEXTURE}, ${brand.heroBg}`,
-        padding: "88px 24px 96px",
+        padding: `${space.xxl * 2}px ${layout.contentPadding}px ${space.xxl * 2}px`,
       }}
     >
       <div
@@ -59,59 +28,52 @@ export function HeroSection() {
           maxWidth: layout.pageMaxWidthWide,
           margin: "0 auto",
           display: "flex",
-          alignItems: "center",
+          flexDirection: wide ? "row" : "column",
+          alignItems: wide ? "center" : "stretch",
           justifyContent: "space-between",
-          gap: 48,
+          gap: space.xxl,
         }}
       >
-        <div>
-          <Typography.Title style={{ color: "#fff", fontSize: fontSize.kpi, marginBottom: 12, marginTop: 0 }}>
+        <div style={{ minWidth: 0, flex: "1 1 auto" }}>
+          <Typography.Title
+            style={{
+              color: brand.onHero,
+              fontSize: wide ? fontSize.display : fontSize.kpi,
+              fontWeight: fontWeight.semibold,
+              lineHeight: 1.2,
+              marginTop: 0,
+              marginBottom: space.md,
+            }}
+          >
             {t("landing.hero.title")}
           </Typography.Title>
           <Typography.Paragraph
-            style={{ color: "rgba(255,255,255,0.85)", fontSize: fontSize.pageTitle, marginBottom: 32 }}
+            style={{
+              color: brand.onHeroMuted,
+              fontSize: fontSize.pageTitle,
+              maxWidth: 600,
+              marginBottom: space.xl,
+            }}
           >
             {t("landing.hero.subtitle")}
           </Typography.Paragraph>
-          <Space size={16}>
+          <div style={{ display: "flex", gap: space.lg, flexWrap: "wrap" }}>
             {/* 未登录主 CTA 直达注册态 */}
             <Link to={loggedIn ? "/instances" : "/login"} search={loggedIn ? {} : { mode: "register" }}>
-              <Button size="large" style={{ ...brandInverseButtonStyle, paddingInline: 32 }}>
+              <Button size="large" style={{ ...brandInverseButtonStyle, paddingInline: space.xxl }}>
                 {loggedIn ? t("common.enterConsole") : t("landing.hero.ctaPrimary")}
               </Button>
             </Link>
             <Link to="/market">
-              <Button size="large" ghost style={{ paddingInline: 24 }}>
+              <Button size="large" ghost style={{ paddingInline: space.xl }}>
                 {t("landing.hero.ctaSecondary")}
               </Button>
             </Link>
-          </Space>
+          </div>
         </div>
-        {screens.lg && (
-          <Space orientation="vertical" size={16}>
-            {skusQ.isError ? (
-              // 实时数据查询失败:整卡降级为市场入口
-              <Link to="/market">
-                <Button size="large" ghost>
-                  {t("landing.pricing.fallbackCta")}
-                </Button>
-              </Link>
-            ) : !skus ? (
-              <>
-                <Skeleton.Input active style={{ width: 200, height: 88 }} />
-                <Skeleton.Input active style={{ width: 200, height: 88 }} />
-              </>
-            ) : (
-              <>
-                {minPrice && <GlassCard label={t("landing.hero.minPriceLabel")} value={formatHourlyPrice(minPrice)} />}
-                <GlassCard
-                  label={t("landing.hero.freeLabel")}
-                  value={t("landing.hero.freeCards", { count: freeCards })}
-                />
-              </>
-            )}
-          </Space>
-        )}
+        <div style={{ flex: wide ? "0 0 auto" : "1 1 auto", minWidth: 0 }}>
+          <PriceBoard compact={!wide} />
+        </div>
       </div>
     </section>
   );

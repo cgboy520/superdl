@@ -864,6 +864,14 @@ export default interface Resources {
       "supportTitle": "支持"
     },
     "help": {
+      "category": {
+        "billing": "计费",
+        "connect": "连接",
+        "data": "数据",
+        "trouble": "故障"
+      },
+      "categoryNav": "帮助分类",
+      "clearSearch": "清除搜索",
       "contactEmail": "客服邮箱",
       "contactHint": "工作时间内响应;涉及账单争议请附订单号或实例名,便于核对流水。",
       "contactMissing": "客服渠道尚未配置。管理员可在「平台配置 · 客服联系方式」填写邮箱或微信客服号,填写后本页与页脚自动展示。",
@@ -904,6 +912,18 @@ export default interface Resources {
         }
       },
       "intro": "常见问题按「连接 → 计费 → 数据 → 故障」排列;没找到答案的,用下方联系方式找我们。",
+      "quickStart": {
+        "sshCommand": "ssh -p <端口> root@<主机>",
+        "step1": "在「费用中心」充值,余额到账即可开机",
+        "step2": "在「算力市场」按型号与档位挑规格,按钮上的可开台数就是真库存",
+        "step3": "实例进入「运行中」后,按详情页「连接」标签给出的命令登录",
+        "step3Title": "SSH 连接",
+        "title": "快速开始"
+      },
+      "searchEmpty": "没有匹配的问题,换个关键词试试",
+      "searchLabel": "搜索帮助",
+      "searchPlaceholder": "输入关键词,如 SSH、计费",
+      "stillStuck": "没解决?提交工单",
       "title": "帮助与支持"
     },
     "instances": {
@@ -1017,6 +1037,30 @@ export default interface Resources {
       "tokenReset": "Token 已重置"
     },
     "landing": {
+      "billing": {
+        "afterStop": "实例盘保留,不计时费",
+        "diskBar": "数据盘:全程按日计费",
+        "evRelease": "释放",
+        "evStart": "开机",
+        "evStop": "关机",
+        "factDisk": "数据盘独立",
+        "factDiskDesc": "数据盘按日计费,独立于实例;释放实例不丢数据。",
+        "factSecond": "按秒累计",
+        "factSecondDesc": "运行中按秒累计 GPU 时费,用多久算多久,不满一小时不按一小时收。",
+        "factStop": "关机停表",
+        "factStopDesc": "关机后不再产生 GPU 时费;实例盘为你保留,再次开机数据还在。",
+        "gpuBar": "运行中:GPU 时费按秒累计",
+        "subtitle": "开机才计 GPU 时费,关机停表;数据盘独立按日计。",
+        "timelineAria": "计费时间轴:开机开始计 GPU 时费,关机停止计费,数据盘全程按日计费",
+        "title": "怎么计费"
+      },
+      "board": {
+        "allSpecs": "查看全部规格",
+        "otherTiers": "看其它档位",
+        "perCard": "单卡",
+        "rent": "租用",
+        "title": "实时行情"
+      },
       "cta": {
         "button": "免费注册",
         "fallback": "弹性 GPU 算力,注册即开",
@@ -1025,51 +1069,46 @@ export default interface Resources {
       "hero": {
         "ctaPrimary": "免费注册",
         "ctaSecondary": "查看算力市场",
-        "freeCards": "{{count}} 台",
-        "freeLabel": "当前可开实例",
-        "minPriceLabel": "GPU 时价低至",
-        "subtitle": "按秒开机、按量计费的 GPU 租用平台",
+        "subtitle": "按秒计费的 GPU 租用平台。价格牌上的可开台数就是真库存。",
         "title": "SuperDL GPU 算力云"
       },
       "pricing": {
         "dedicatedSpec": "整卡 · {{vram}}G 显存",
         "fallbackCta": "前往算力市场",
-        "hostSpec": "{{vcpu}} vCPU / {{mem}}G 内存 / 实例盘 {{disk}}G",
         "migSpec": "MIG {{profile}} · {{vram}}G 显存",
         "moreLink": "查看全部规格与筛选",
-        "priceFrom": "{{price}} 起(多档)",
         "sharedSpec": "{{pct}}% 算力(均值) · {{vram}}G 显存",
+        "stockNote": "可开台数每分钟刷新一次,与控制台同源。",
         "subtitle": "价格即库存:按钮上的可开实例数与控制台实时一致",
-        "tabDedicated": "整卡独享",
-        "tabShared": "切分与共享",
         "tflops": "单精 {{fp32}} TFLOPS / 半精 {{fp16}} Tensor TFLOPS",
         "title": "GPU 租用价格"
       },
-      "quickEntries": {
-        "billing": {
-          "desc": "费用逐项摊开,计费依据可自查",
-          "title": "透明计费"
-        },
-        "data": {
-          "desc": "数据盘独立于实例,释放实例不丢数据",
-          "title": "数据无忧"
-        },
-        "gpu": {
-          "desc": "按算力与显存对比在售卡型",
-          "title": "GPU 选型"
-        },
-        "start": {
-          "desc": "注册并开出第一台 GPU 实例",
-          "title": "快速开始"
-        }
+      "quickStart": {
+        "command": "ssh -p <端口> root@<主机>",
+        "step1": "充值",
+        "step1Desc": "余额到账即可开机,开机前会按预估用量校验余额。",
+        "step1Link": "免费注册",
+        "step1LinkIn": "去费用中心充值",
+        "step2": "选规格",
+        "step2Desc": "按型号与档位挑规格,按钮上的可开台数就是真库存。",
+        "step2Link": "去算力市场",
+        "step3": "SSH 连接",
+        "step3Desc": "实例进入运行中后,按详情页「连接」给出的命令登录;只支持密钥登录。",
+        "subtitle": "从注册到 SSH 登录,通常几分钟。",
+        "title": "三步开机"
       },
       "ranking": {
         "footnote": "理论峰值算力,数据来自各厂商公开规格,实际性能因负载而异。",
+        "fp16Value": "{{value}} TFLOPS",
+        "fp32Value": "{{value}} TFLOPS",
         "modelVram": "{{label}} / {{vram}}GB",
         "onSale": "在售",
+        "perTflopsFootnote": "每 TFLOPS 时价 = 该型号最低单卡时价 ÷ 半精峰值算力,只统计在售型号,越低越划算。",
+        "perTflopsValue": "¥{{price}}/TFLOPS·时",
         "subtitle": "横向对比常见加速卡的理论峰值算力",
         "tabFp16": "半精 FP16",
         "tabFp32": "单精 FP32",
+        "tabPrice": "每 TFLOPS 时价",
         "title": "GPU 算力排名"
       }
     },
@@ -1079,6 +1118,7 @@ export default interface Resources {
       "docPrivacy": "《隐私政策》",
       "docTerms": "《用户协议》",
       "fallbackNote": "英文版翻译中,当前显示中文版本",
+      "toc": "目录",
       "versionLine": "版本 v{{version}} · 更新于 {{date}}"
     },
     "login": {
@@ -1096,23 +1136,29 @@ export default interface Resources {
       "goLogin": "去登录",
       "goRegister": "免费注册",
       "hasAccount": "已有账号?",
+      "liveMinPrice": "GPU 时价低至 {{price}}",
+      "liveStock": "当前可开 {{count}} 台实例",
       "modePassword": "密码登录",
       "modeSms": "验证码登录",
       "noAccount": "没有账号?",
+      "passwordLabel": "密码",
       "passwordMin": "至少 12 位",
-      "passwordPlaceholder": "密码",
+      "passwordNewLabel": "新密码",
       "passwordRequired": "请输入密码",
       "passwordResetPlaceholder": "新密码(至少 12 位)",
+      "passwordSetLabel": "设置密码(可选)",
       "passwordSetPlaceholder": "设置密码(可选,至少 12 位)",
       "passwordStrengthMedium": "密码强度:中",
       "passwordStrengthStrong": "密码强度:强",
       "passwordStrengthWeak": "密码强度:弱",
       "phoneInvalid": "请输入正确的手机号",
+      "phoneLabel": "手机号",
       "phonePlaceholder": "手机号",
       "registerTitle": "注册 SuperDL",
       "resetDone": "密码已更新",
       "resetTitle": "重置登录密码",
       "slogan": "开机计费,关机停表",
+      "smsLabel": "短信验证码",
       "smsPlaceholder": "短信验证码",
       "smsRequired": "请输入验证码",
       "submitLogin": "登录",
@@ -1231,13 +1277,17 @@ export default interface Resources {
         "ackEndpointLost": "我确认服务端点将立即失效,API Key 不可恢复",
         "cancel": "取消",
         "confirmDelete": "确认删除",
+        "copyUrl": "复制访问地址",
+        "curlExample": "调用示例",
         "delete": "删除服务",
         "deleteBody": "即将删除服务 <b>{{name}}</b>({{slug}}):服务端点立即失效、API Key 全部吊销、实例盘一并清除;数据盘不受影响",
         "deleteModalTitle": "删除服务",
         "deleteNeedsStopped": "请先停止服务,再删除",
         "deleteStarted": "服务删除中",
+        "endpointMenu": "端点",
         "keys": "访问密钥",
         "needsStopped": "已停止或失败的服务才能启动",
+        "openEndpoint": "打开端点",
         "rollout": "更新版本",
         "settings": "设置",
         "start": "启动",
@@ -1309,6 +1359,7 @@ export default interface Resources {
       "emptyHint": "把容器发布成带 API Key 的 HTTPS 服务端点",
       "emptyTitle": "还没有在线服务",
       "endpointOffline": "已停止,端点暂不可达",
+      "endpointUnreachable": "服务未运行,端点暂时打不通",
       "form": {
         "addArg": "添加参数",
         "addEnv": "添加变量",
@@ -1484,7 +1535,8 @@ export default interface Resources {
         "cancelConfirm": "撤销注销申请?",
         "cancelled": "注销申请已撤销",
         "confirmText": "确认申请注销",
-        "dangerZone": "危险区:注销后账号不可恢复",
+        "dangerNote": "注销后账号不可恢复",
+        "dangerZone": "危险区",
         "modalTitle": "注销账号",
         "noteAnonymize": "手机号与实名信息将被匿名化,注销后不可恢复",
         "noteBalance": "钱包余额须先经「费用中心 · 退款」流程提现",
@@ -1511,8 +1563,6 @@ export default interface Resources {
       "logoutAllBody": "将退出该账号在全部设备上的登录(含本机)。",
       "logoutAllConfirm": "退出全部设备登录?",
       "logoutAllHint": "手机丢失或怀疑账号被盗用时使用;会话最长保留 7 天,修改密码也会立即撤销全部会话",
-      "logoutBody": "将退出当前设备上的登录。",
-      "logoutConfirm": "退出登录?",
       "newPasswordPlaceholder": "新密码(至少 12 位)",
       "noKeys": "还没有公钥,先在下方添加(ssh-keygen -t ed25519 生成)",
       "notifyCard": "通知",
@@ -1568,6 +1618,7 @@ export default interface Resources {
       "toOnDemandTitle": "转为按量计费?"
     },
     "storage": {
+      "ackDataWipe": "我确认盘内数据将被清除且不可恢复",
       "activeBilling": "按日扣费中",
       "colActions": "操作",
       "colBilling": "计费",
@@ -1600,7 +1651,7 @@ export default interface Resources {
       "quotaPending": "配额下发中",
       "quotaPendingHint": "目录硬配额正在下发,完成前容量上限暂未强制;通常 1 分钟内生效,若长时间停留请刷新或联系客服",
       "segData": "数据盘 · {{price}} · 独立保留",
-      "segRoot": "实例盘 · 含 100G · 关机保留 · 释放时清除 · 免费",
+      "segRoot": "实例盘 · 关机保留 · 释放时清除 · 免费",
       "sizeLabel": "容量(GB)",
       "title": "存储"
     },
@@ -1608,6 +1659,7 @@ export default interface Resources {
       "backToList": "返回工单列表",
       "closeBody": "关闭后不可再回复;如问题未解决请在关闭前继续留言。",
       "closeConfirm": "关闭工单?",
+      "closeNeedsResolved": "工单标记解决后才能关闭",
       "closeTicket": "关闭工单",
       "colCategory": "分类",
       "contactEmail": "邮箱",
@@ -1639,6 +1691,7 @@ export default interface Resources {
       "replyPlaceholder": "补充说明或回复客服…",
       "replySend": "发送",
       "replySendHint": "{{kbd}} 发送",
+      "replyTooShort": "至少 2 个字",
       "selfHelp": {
         "arrears": "余额耗尽会发生什么?",
         "billingStart": "计费从什么时候开始?",

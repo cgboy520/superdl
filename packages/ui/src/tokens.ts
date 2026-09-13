@@ -34,6 +34,13 @@ export const brand = {
   pageBg: "#F5F6FA",
   /** 公开层深墨面板(行情板 / 页脚) */
   ink: "#14162B",
+  /** 品牌渐变 / 深墨底上的文字(渐变端色对白字的 AA 由 tokens.test 回归) */
+  onHero: "#FFFFFF",
+  onHeroMuted: "rgba(255,255,255,0.85)",
+  /** 深墨面板上的分隔线与弱化文字 */
+  inkBorder: "rgba(255,255,255,0.12)",
+  inkDivider: "rgba(255,255,255,0.08)",
+  inkTextMuted: "rgba(255,255,255,0.65)",
 } as const;
 export const adminColors = {
   bgBase: "#0B1220",
@@ -136,6 +143,18 @@ export const webTheme = {
     Button: { fontWeight: 500 },
     Statistic: { contentFontSize: 28 },
   },
+} as const;
+
+/** 墨色面板(公开层行情板)局部主题的 token,配合 `theme.darkAlgorithm` 传给嵌套 ConfigProvider。
+ *  面板恒为深底,与页面主题无关;webTheme 把次级/描述文本写死成深色值,darkAlgorithm 不会推翻它们,必须在这里显式压回。 */
+export const inkPanelTokens = {
+  colorBgContainer: brand.ink,
+  colorBgElevated: brand.ink,
+  colorTextSecondary: brand.inkTextMuted,
+  colorTextDescription: brand.inkTextMuted,
+  colorLink: brand.indigo50,
+  colorBorder: brand.inkBorder,
+  colorSplit: brand.inkDivider,
 } as const;
 
 /** antd 6 ConfigProvider theme —— 管理端(深色,配合 theme.darkAlgorithm 使用) */

@@ -88,7 +88,7 @@ function MountOverview({ priceText }: { priceText: string }) {
   );
 }
 
-function DeleteDiskModal({ disk, onClose }: { disk: DiskOut | null; onClose: () => void }) {
+export function DeleteDiskModal({ disk, onClose }: { disk: DiskOut | null; onClose: () => void }) {
   const { t } = useTranslation();
   const { message } = App.useApp();
   const del = useDeleteDisk({
@@ -97,7 +97,7 @@ function DeleteDiskModal({ disk, onClose }: { disk: DiskOut | null; onClose: () 
       onClose();
     },
   });
-  // 破坏确认只有键入盘名一道闸;取消键复用 create.cancel
+  // 两道闸:键入盘名 + 勾选数据清除(ui-ux-spec §1 规则 7);取消键复用 create.cancel
   return (
     <TypeConfirmModal
       open={Boolean(disk)}
@@ -110,6 +110,7 @@ function DeleteDiskModal({ disk, onClose }: { disk: DiskOut | null; onClose: () 
         />
       }
       targetName={disk?.name ?? ""}
+      checkboxLabel={t("storage.ackDataWipe")}
       confirmLabel={t("storage.confirmDelete")}
       cancelLabel={t("create.cancel")}
       loading={del.isPending}

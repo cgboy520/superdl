@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   adminColors,
   adminThemeComponents,
+  brand,
   brandGradientStops,
   chartAccentColors,
   chartSeriesColors,
@@ -22,6 +23,13 @@ import { nodeStatusMap, severityMap, skuTierMap } from "./status";
 const contrast = contrastRatio;
 
 const AA = 4.5;
+
+/** 半透明白叠在实色底上的等效实色(对比度只能对实色算) */
+function whiteOver(alpha: number, bgHex: string): string {
+  const c = bgHex.replace("#", "");
+  const mix = (i: number) => Math.round(alpha * 255 + (1 - alpha) * parseInt(c.slice(i, i + 2), 16));
+  return `#${[0, 2, 4].map((i) => mix(i).toString(16).padStart(2, "0")).join("")}`;
+}
 
 describe("tokens 对比度(WCAG AA ≥4.5:1)", () => {
   it("状态徽标深底白字", () => {
@@ -87,6 +95,16 @@ describe("tokens 对比度(WCAG AA ≥4.5:1)", () => {
     for (const [k, v] of Object.entries(chartAccentColors)) {
       expect(contrast(v, adminColors.bgBase), `chartAccentColors.${k}`).toBeGreaterThanOrEqual(3);
     }
+  });
+
+  it("公开层墨色面板(行情板 / 命令块):白字、弱化白字、库存绿、链接色于 brand.ink", () => {
+    expect(contrast(brand.onHero, brand.ink)).toBeGreaterThanOrEqual(AA);
+    expect(contrast(themeColors["web-dark"].positive, brand.ink)).toBeGreaterThanOrEqual(AA);
+    expect(contrast(brand.indigo50, brand.ink)).toBeGreaterThanOrEqual(AA);
+    // 弱化白字是半透明白:先与面板底合成再算
+    const alpha = Number(/^rgba\(255,\s*255,\s*255,\s*([\d.]+)\)$/.exec(brand.inkTextMuted)?.[1] ?? "0");
+    expect(alpha).toBeGreaterThan(0);
+    expect(contrast(whiteOver(alpha, brand.ink), brand.ink)).toBeGreaterThanOrEqual(AA);
   });
 
   it("品牌渐变端色上的白字(顶栏/Hero/登录左栏大量白字落在渐变上)", () => {

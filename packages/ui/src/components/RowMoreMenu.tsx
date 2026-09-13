@@ -26,12 +26,17 @@ export function RowMoreMenu({
   children,
   size = "small",
   label,
+  type,
+  icon,
 }: {
   items?: RowMenuItem[];
   /** 自带弹窗流程的按钮(如管理端 ReasonAction),与 items 二选一或并列 */
   children?: ReactNode;
   size?: "small" | "middle";
   label?: ReactNode;
+  /** 当这个下拉本身是行内主动作时(服务「端点 ▾」)给 primary,与实例「连接 ▾」同一外观 */
+  type?: "default" | "primary";
+  icon?: ReactNode;
 }) {
   const { t } = useTranslation("shared");
   const { token } = theme.useToken();
@@ -86,7 +91,7 @@ export function RowMoreMenu({
         </div>
       )}
     >
-      <Button size={size} aria-haspopup="menu" aria-expanded={open}>
+      <Button size={size} type={type} icon={icon} aria-haspopup="menu" aria-expanded={open}>
         {label ?? t("common.more")} <DownOutlined />
       </Button>
     </Dropdown>

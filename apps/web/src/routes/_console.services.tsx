@@ -289,7 +289,7 @@ function ServicesPage() {
           {
             title: t("services.colActions"),
             fixed: "right",
-            width: 220,
+            width: 260,
             render: (_, r) => <ServiceActions service={r} />,
           },
         ]}

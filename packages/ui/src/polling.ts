@@ -14,4 +14,6 @@ export const POLL = {
   metrics: 45_000,
   /** 日消费 / 财务类汇总 */
   daily: 60_000,
+  /** 公开层行情板与价格墙(匿名访问,频率压到一分钟) */
+  publicBoard: 60_000,
 } as const;

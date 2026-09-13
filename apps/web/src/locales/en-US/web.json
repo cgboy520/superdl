@@ -318,6 +318,14 @@
     "supportTitle": "Support"
   },
   "help": {
+    "category": {
+      "billing": "Billing",
+      "connect": "Connecting",
+      "data": "Data",
+      "trouble": "Failures"
+    },
+    "categoryNav": "Help categories",
+    "clearSearch": "Clear search",
     "contactEmail": "Support email",
     "contactHint": "Answered during business hours. For billing disputes, include the order number or instance name so we can match the ledger.",
     "contactMissing": "No support channel configured yet. An administrator can set an email or WeChat ID under Platform config · Support contact; it then shows here and in the footer.",
@@ -358,6 +366,18 @@
       }
     },
     "intro": "Questions are ordered the way you hit them: connecting, billing, data, failures. If yours is not here, contact us below.",
+    "quickStart": {
+      "sshCommand": "ssh -p <port> root@<host>",
+      "step1": "Top up in Billing — instances start once the balance lands",
+      "step2": "Pick a spec in the market; the count on the button is the real stock",
+      "step3": "Once the instance is Running, use the command on its Connect tab",
+      "step3Title": "Connect over SSH",
+      "title": "Quick start"
+    },
+    "searchEmpty": "No question matches — try another keyword",
+    "searchLabel": "Search help",
+    "searchPlaceholder": "Search, e.g. SSH or billing",
+    "stillStuck": "Still stuck? Open a ticket",
     "title": "Help & support"
   },
   "instances": {
@@ -474,6 +494,30 @@
     "tokenReset": "Token reset"
   },
   "landing": {
+    "billing": {
+      "afterStop": "Instance disk kept, no hourly charge",
+      "diskBar": "Data disk: billed daily throughout",
+      "evRelease": "Release",
+      "evStart": "Start",
+      "evStop": "Stop",
+      "factDisk": "Data disks are separate",
+      "factDiskDesc": "Data disks are billed per day, independent of any instance. Releasing an instance keeps the data.",
+      "factSecond": "Billed by the second",
+      "factSecondDesc": "GPU time accrues per second while running. A partial hour is never rounded up.",
+      "factStop": "Stops when you stop",
+      "factStopDesc": "No GPU charges after shutdown. The instance disk is kept, and your data is there on restart.",
+      "gpuBar": "Running: GPU time accrues per second",
+      "subtitle": "GPU time is billed only while the instance runs. Data disks are billed daily on their own.",
+      "timelineAria": "Billing timeline: GPU time starts at boot and stops at shutdown; data disks are billed daily throughout",
+      "title": "How billing works"
+    },
+    "board": {
+      "allSpecs": "See all specs",
+      "otherTiers": "Other tiers",
+      "perCard": "per GPU",
+      "rent": "Rent",
+      "title": "Live market"
+    },
     "cta": {
       "button": "Sign up free",
       "fallback": "Elastic GPU compute, ready at signup",
@@ -483,52 +527,46 @@
     "hero": {
       "ctaPrimary": "Sign up free",
       "ctaSecondary": "Browse marketplace",
-      "freeCards_one": "{{count}} instance",
-      "freeCards_other": "{{count}} instances",
-      "freeLabel": "Instances available now",
-      "minPriceLabel": "GPU rates from",
-      "subtitle": "GPU rental with per-second startup and pay-as-you-go billing",
+      "subtitle": "GPU rental billed by the second. The count on the price board is real stock.",
       "title": "SuperDL GPU Cloud"
     },
     "pricing": {
       "dedicatedSpec": "Full card · {{vram}}G VRAM",
       "fallbackCta": "Go to marketplace",
-      "hostSpec": "{{vcpu}} vCPU / {{mem}}G RAM / {{disk}}G instance disk",
       "migSpec": "MIG {{profile}} · {{vram}}G VRAM",
       "moreLink": "All specs and filters",
-      "priceFrom": "from {{price}} (multiple tiers)",
       "sharedSpec": "{{pct}}% compute (avg) · {{vram}}G VRAM",
+      "stockNote": "Availability refreshes every minute, from the same source as the console.",
       "subtitle": "Prices are inventory: the instance count on the button matches the console in real time",
-      "tabDedicated": "Dedicated",
-      "tabShared": "Sliced & shared",
       "tflops": "FP32 {{fp32}} TFLOPS / FP16 {{fp16}} Tensor TFLOPS",
       "title": "GPU Rental Pricing"
     },
-    "quickEntries": {
-      "billing": {
-        "desc": "Itemized costs with auditable billing events",
-        "title": "Transparent billing"
-      },
-      "data": {
-        "desc": "Data disks outlive instances — release without losing data",
-        "title": "Data safety"
-      },
-      "gpu": {
-        "desc": "Compare cards on sale by compute and VRAM",
-        "title": "GPU picker"
-      },
-      "start": {
-        "desc": "Register and launch your first GPU instance",
-        "title": "Quick start"
-      }
+    "quickStart": {
+      "command": "ssh -p <port> root@<host>",
+      "step1": "Top up",
+      "step1Desc": "You can start an instance as soon as the balance lands. Balance is checked against estimated usage first.",
+      "step1Link": "Sign up",
+      "step1LinkIn": "Top up in Billing",
+      "step2": "Pick a spec",
+      "step2Desc": "Choose a model and tier. The count on the button is real stock.",
+      "step2Link": "Open the marketplace",
+      "step3": "Connect over SSH",
+      "step3Desc": "Once the instance is running, use the command on its Connect tab. Key auth only.",
+      "subtitle": "From sign-up to SSH, usually a few minutes.",
+      "title": "Three steps to a running GPU"
     },
     "ranking": {
       "footnote": "Theoretical peak figures from vendor public specs; real-world performance varies by workload.",
+      "fp16Value": "{{value}} TFLOPS",
+      "fp32Value": "{{value}} TFLOPS",
       "modelVram": "{{label}} / {{vram}}GB",
       "onSale": "On sale",
+      "perTflopsFootnote": "Price per TFLOPS-hour = lowest per-GPU hourly price divided by peak half-precision throughput. In-stock models only; lower is better.",
+      "perTflopsValue": "¥{{price}} per TFLOPS-hour",
       "subtitle": "Theoretical peak compute of common accelerators",
       "tabFp16": "FP16 (half)",
       "tabFp32": "FP32 (single)",
+      "tabPrice": "Price per TFLOPS",
       "title": "GPU Compute Ranking"
     }
   },
@@ -538,6 +576,7 @@
     "docPrivacy": "Privacy Policy",
     "docTerms": "Terms of Service",
     "fallbackNote": "English translation in progress — showing the Chinese version",
+    "toc": "Contents",
     "versionLine": "Version v{{version}} · Updated {{date}}"
   },
   "login": {
@@ -555,23 +594,30 @@
     "goLogin": "Sign in",
     "goRegister": "Sign up free",
     "hasAccount": "Already have an account?",
+    "liveMinPrice": "GPU from {{price}}",
+    "liveStock_one": "1 instance available right now",
+    "liveStock_other": "{{count}} instances available right now",
     "modePassword": "Password",
     "modeSms": "SMS code",
     "noAccount": "No account yet?",
+    "passwordLabel": "Password",
     "passwordMin": "At least 12 characters",
-    "passwordPlaceholder": "Password",
+    "passwordNewLabel": "New password",
     "passwordRequired": "Enter your password",
     "passwordResetPlaceholder": "New password (12+ characters)",
+    "passwordSetLabel": "Set a password (optional)",
     "passwordSetPlaceholder": "Set password (optional, 12+ chars)",
     "passwordStrengthMedium": "Strength: medium",
     "passwordStrengthStrong": "Strength: strong",
     "passwordStrengthWeak": "Strength: weak",
     "phoneInvalid": "Enter a valid phone number",
+    "phoneLabel": "Phone number",
     "phonePlaceholder": "Phone number",
     "registerTitle": "Create your SuperDL account",
     "resetDone": "Password updated",
     "resetTitle": "Reset your password",
     "slogan": "Pay only while it runs",
+    "smsLabel": "SMS code",
     "smsPlaceholder": "SMS code",
     "smsRequired": "Enter the SMS code",
     "submitLogin": "Log in",
@@ -698,13 +744,17 @@
       "ackEndpointLost": "I understand the endpoint goes offline immediately and API keys cannot be recovered",
       "cancel": "Cancel",
       "confirmDelete": "Delete",
+      "copyUrl": "Copy endpoint URL",
+      "curlExample": "Example call",
       "delete": "Delete service",
       "deleteBody": "You are deleting service <b>{{name}}</b> ({{slug}}): the endpoint goes offline immediately, all API keys are revoked and the instance disk is wiped; data disks are unaffected",
       "deleteModalTitle": "Delete service",
       "deleteNeedsStopped": "Stop the service before deleting it",
       "deleteStarted": "Deleting the service",
+      "endpointMenu": "Endpoint",
       "keys": "API keys",
       "needsStopped": "Only a stopped or failed service can be started",
+      "openEndpoint": "Open endpoint",
       "rollout": "Update revision",
       "settings": "Settings",
       "start": "Start",
@@ -776,6 +826,7 @@
     "emptyHint": "Publish a container as an HTTPS endpoint protected by API keys",
     "emptyTitle": "No services yet",
     "endpointOffline": "Stopped; the endpoint is unreachable",
+    "endpointUnreachable": "The service is not running — the endpoint is unreachable",
     "form": {
       "addArg": "Add argument",
       "addEnv": "Add variable",
@@ -951,7 +1002,8 @@
       "cancelConfirm": "Withdraw deletion request?",
       "cancelled": "Deletion request withdrawn",
       "confirmText": "Confirm deletion request",
-      "dangerZone": "Danger zone: deletion is irreversible",
+      "dangerNote": "Account deletion cannot be undone",
+      "dangerZone": "Danger zone",
       "modalTitle": "Delete account",
       "noteAnonymize": "Your phone number and identity details will be anonymized and cannot be recovered",
       "noteBalance": "Any wallet balance must be withdrawn first via Billing → Refunds",
@@ -978,8 +1030,6 @@
     "logoutAllBody": "This signs the account out on every device, including this one.",
     "logoutAllConfirm": "Sign out everywhere?",
     "logoutAllHint": "Use this if your phone is lost or you suspect account theft. Sessions last at most 7 days; changing your password also revokes all sessions immediately",
-    "logoutBody": "You will be signed out on this device.",
-    "logoutConfirm": "Sign out?",
     "newPasswordPlaceholder": "New password (12+ characters)",
     "noKeys": "No keys yet — add one below (generate with ssh-keygen -t ed25519)",
     "notifyCard": "Notifications",
@@ -1038,6 +1088,7 @@
     "toOnDemandTitle": "Switch to pay-as-you-go?"
   },
   "storage": {
+    "ackDataWipe": "I understand the data on this disk will be wiped and cannot be recovered",
     "activeBilling": "Billing daily",
     "colActions": "Actions",
     "colBilling": "Billing",
@@ -1070,7 +1121,7 @@
     "quotaPending": "Quota syncing",
     "quotaPendingHint": "The directory hard quota is being applied; the capacity limit is not enforced until it completes. Usually done within a minute — refresh or contact support if it persists",
     "segData": "Data disk · {{price}} · kept independently",
-    "segRoot": "Instance disk · 100G included · kept on stop · wiped on release · free",
+    "segRoot": "Instance disk · kept on stop · wiped on release · free",
     "sizeLabel": "Size (GB)",
     "title": "Storage"
   },
@@ -1078,6 +1129,7 @@
     "backToList": "Back to tickets",
     "closeBody": "It can no longer be replied to afterwards; keep messaging before closing if the issue is unresolved.",
     "closeConfirm": "Close ticket?",
+    "closeNeedsResolved": "The ticket can be closed once it is marked resolved",
     "closeTicket": "Close ticket",
     "colCategory": "Category",
     "contactEmail": "Email",
@@ -1109,6 +1161,7 @@
     "replyPlaceholder": "Add details or reply to support…",
     "replySend": "Send",
     "replySendHint": "Press {{kbd}} to send",
+    "replyTooShort": "At least 2 characters",
     "selfHelp": {
       "arrears": "What happens when my balance runs out?",
       "billingStart": "When does billing start?",

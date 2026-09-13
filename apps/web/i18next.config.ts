@@ -17,6 +17,7 @@ export default defineConfig({
       "app.title",
       "instances.series*",
       "help.faq*",
+      "help.category.*",
       "support.selfHelp.*",
       "billing.refundOrder*",
       "nav.group*",

@@ -1,8 +1,9 @@
-/** 账户设置:SSH 公钥管理 / 通知阈值(保存按钮) / 账号(实名、登录密码、登出、注销)。 */
+/** 账户设置:四 Tab(SSH 公钥 / 通知 / 实名认证 / 账号),?tab= 入 URL(白名单 + replace);#ssh / #notify 深链落到对应 Tab 并滚动高亮。 */
 
 import type { TokenPairOut } from "@superdl/api-client";
-import { deletionStatusMap, fontSize, formatDateTime, maskPhone, metaOf } from "@superdl/ui";
+import { deletionStatusMap, fontSize, formatDateTime, maskPhone, metaOf, useFormat } from "@superdl/ui";
 import {
+  DangerZone,
   DataErrorAlert,
   GatedButton,
   PageContainer,
@@ -10,9 +11,9 @@ import {
   TypeConfirmModal,
   useConfirm,
 } from "@superdl/ui/components";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { App, Alert, Button, Card, Form, Input, Modal, Skeleton, Space, Table, Tag, Typography } from "antd";
+import { App, Alert, Button, Card, Form, Input, Modal, Skeleton, Space, Table, Tabs, Tag, Typography } from "antd";
 import { useState } from "react";
 
 import {
@@ -26,30 +27,93 @@ import {
 } from "../api/mutations";
 import { useMe, useMyDeletionRequest, usePolicies, useSshKeys } from "../api/queries";
 import { WarnThresholdField } from "../components/WarnThresholdField";
-import { useFormat } from "@superdl/ui";
 import { requireAuth } from "../lib/guard";
 import { useHashScroll } from "../lib/useHashScroll";
 import { SmsCodeField } from "../components/SmsCodeField";
 import { useSmsCode } from "../lib/useSmsCode";
 import { authStore } from "../stores/auth";
 
+export const SETTINGS_TABS = ["ssh", "notify", "realname", "account"] as const;
+export type SettingsTab = (typeof SETTINGS_TABS)[number];
+
+/** tab 白名单:非法值剥离回默认(默认 ssh,e2e 直奔 /settings 填公钥)。 */
+export function settingsValidateSearch(search: Record<string, unknown>): { tab?: SettingsTab } {
+  const tab = search.tab;
+  if (typeof tab !== "string") return {};
+  return (SETTINGS_TABS as readonly string[]).includes(tab) ? { tab: tab as SettingsTab } : {};
+}
+
+/** 旧的 #ssh / #notify 深链(费用中心余额卡「修改」)映射到对应 Tab。 */
+export function tabOfHash(hash: string): SettingsTab | undefined {
+  const id = hash.replace(/^#/, "");
+  if (id === "ssh") return "ssh";
+  if (id === "notify") return "notify";
+  return undefined;
+}
+
 export const Route = createFileRoute("/_console/settings")({
   beforeLoad: requireAuth,
+  validateSearch: settingsValidateSearch,
   component: SettingsPage,
 });
 
 function SettingsPage() {
   const { t } = useTranslation();
-  const { message } = App.useApp();
+  const { tab } = Route.useSearch();
+  const navigate = useNavigate();
+  const hash = useRouterState({ select: (s) => s.location.hash });
   const meQ = useMe();
   const { data: me } = meQ;
   const { data: policies } = usePolicies();
+  // #ssh / #notify 深链:滚动到目标并高亮 2s(目标所在 Tab 由 tabOfHash 激活)
+  useHashScroll({ highlight: true });
+  const activeTab: SettingsTab = tab ?? tabOfHash(hash) ?? "ssh";
+
+  return (
+    <PageContainer width="narrow" title={t("settings.title")}>
+      <Tabs
+        activeKey={activeTab}
+        // Tab activeKey 入 URL 用 replace(ui-ux-spec §1 规则 10);hash 由导航自然清掉
+        onChange={(k) => void navigate({ to: "/settings", search: { tab: k as SettingsTab }, replace: true })}
+        items={[
+          { key: "ssh", label: t("settings.sshCard"), children: <SshTab /> },
+          {
+            key: "notify",
+            label: t("settings.notifyCard"),
+            // 费用中心余额卡「修改」深链落点
+            children: (
+              <div id="notify">
+                <WarnThresholdField />
+              </div>
+            ),
+          },
+          {
+            key: "realname",
+            label: t("settings.realNameCard"),
+            children: (
+              <RealNameTab
+                me={me}
+                enabled={policies?.real_name_enabled ?? false}
+                loading={meQ.isPending}
+                error={meQ.isError}
+                onRetry={() => void meQ.refetch()}
+              />
+            ),
+          },
+          { key: "account", label: t("settings.accountCard"), children: <AccountTab me={me} /> },
+        ]}
+      />
+    </PageContainer>
+  );
+}
+
+/** SSH 公钥 Tab:已有公钥表(删除 L1)+ 添加表单。 */
+function SshTab() {
+  const { t } = useTranslation();
+  const { message } = App.useApp();
   const { data: keys, isLoading, isError, refetch } = useSshKeys();
   const [form] = Form.useForm();
-  const [pwdOpen, setPwdOpen] = useState(false);
-  const logout = useLogout();
   const confirm = useConfirm();
-
   const addKey = useAddSshKey({
     onSuccess: () => {
       message.success(t("create.keyAdded"));
@@ -57,157 +121,129 @@ function SettingsPage() {
     },
   });
   const delKey = useDeleteSshKey();
-  // /settings#ssh / #notify 深链:滚动到目标卡并高亮 2s
-  useHashScroll({ highlight: true });
 
   return (
-    <PageContainer width="narrow" title={t("settings.title")}>
+    <Card id="ssh" extra={<Typography.Text type="secondary">{t("copy.sshKeyOnly")}</Typography.Text>}>
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-        <Card
-          id="ssh"
-          title={t("settings.sshCard")}
-          extra={<Typography.Text type="secondary">{t("copy.sshKeyOnly")}</Typography.Text>}
-        >
-          <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-            <Table
-              rowKey="id"
-              size="small"
-              loading={isLoading}
-              pagination={false}
-              scroll={{ x: 640 }}
-              dataSource={keys ?? []}
-              locale={{
-                emptyText: isError ? <TableErrorEmpty isError onRetry={() => void refetch()} /> : t("settings.noKeys"),
-              }}
-              columns={[
-                { title: t("storage.nameLabel"), dataIndex: "name" },
-                {
-                  title: t("settings.colFingerprint"),
-                  render: (_, r) => <Typography.Text code>{r.fingerprint}</Typography.Text>,
-                },
-                { title: t("settings.colAddedAt"), render: (_, r) => formatDateTime(r.created_at) },
-                {
-                  title: t("storage.colActions"),
-                  render: (_, r) => (
-                    // L1 确认(可逆、影响面 = 1),危险按钮配红色确认
-                    <Button
-                      size="small"
-                      danger
-                      onClick={() =>
-                        confirm({
-                          title: t("settings.deleteKeyConfirm"),
-                          consequences: [t("settings.deleteKeyBody", { name: r.name })],
-                          okText: t("storage.delete"),
-                          danger: true,
-                          onOk: async () => {
-                            await delKey.mutateAsync(r.id);
-                          },
-                        })
-                      }
-                    >
-                      {t("storage.delete")}
-                    </Button>
-                  ),
-                },
-              ]}
-            />
-            <Form
-              form={form}
-              layout="vertical"
-              onFinish={(v: { name: string; public_key: string }) => addKey.mutate(v)}
-            >
-              <Form.Item
-                name="name"
-                label={t("storage.nameLabel")}
-                rules={[{ required: true, message: t("settings.keyNameHint") }]}
-              >
-                <Input style={{ width: 240 }} maxLength={64} />
-              </Form.Item>
-              <Form.Item
-                name="public_key"
-                label={t("settings.keyContentLabel")}
-                rules={[
-                  { required: true, message: t("settings.keyContentRequired") },
-                  {
-                    pattern: /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521))\s+\S+/,
-                    message: t("settings.keyFormatHint"),
-                  },
-                ]}
-              >
-                <Input.TextArea rows={3} placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5… you@host" />
-              </Form.Item>
-              <Button type="primary" htmlType="submit" loading={addKey.isPending}>
-                {t("create.addKey")}
-              </Button>
-            </Form>
-          </Space>
-        </Card>
-
-        {/* /settings#notify 深链:费用中心余额卡的「修改」落这里 */}
-        <Card id="notify" title={t("settings.notifyCard")}>
-          <WarnThresholdField />
-        </Card>
-
-        <RealNameCard
-          me={me}
-          enabled={policies?.real_name_enabled ?? false}
-          loading={meQ.isPending}
-          error={meQ.isError}
-          onRetry={() => void meQ.refetch()}
+        <Table
+          rowKey="id"
+          size="small"
+          loading={isLoading}
+          pagination={false}
+          scroll={{ x: 640 }}
+          dataSource={keys ?? []}
+          locale={{
+            emptyText: isError ? <TableErrorEmpty isError onRetry={() => void refetch()} /> : t("settings.noKeys"),
+          }}
+          columns={[
+            { title: t("storage.nameLabel"), dataIndex: "name" },
+            {
+              title: t("settings.colFingerprint"),
+              render: (_, r) => <Typography.Text code>{r.fingerprint}</Typography.Text>,
+            },
+            { title: t("settings.colAddedAt"), render: (_, r) => formatDateTime(r.created_at) },
+            {
+              title: t("storage.colActions"),
+              render: (_, r) => (
+                // L1 确认(可逆、影响面 = 1),危险按钮配红色确认
+                <Button
+                  size="small"
+                  danger
+                  onClick={() =>
+                    confirm({
+                      title: t("settings.deleteKeyConfirm"),
+                      consequences: [t("settings.deleteKeyBody", { name: r.name })],
+                      okText: t("storage.delete"),
+                      danger: true,
+                      onOk: async () => {
+                        await delKey.mutateAsync(r.id);
+                      },
+                    })
+                  }
+                >
+                  {t("storage.delete")}
+                </Button>
+              ),
+            },
+          ]}
         />
+        <Form form={form} layout="vertical" onFinish={(v: { name: string; public_key: string }) => addKey.mutate(v)}>
+          <Form.Item
+            name="name"
+            label={t("storage.nameLabel")}
+            rules={[{ required: true, message: t("settings.keyNameHint") }]}
+          >
+            <Input style={{ width: 240 }} maxLength={64} />
+          </Form.Item>
+          <Form.Item
+            name="public_key"
+            label={t("settings.keyContentLabel")}
+            rules={[
+              { required: true, message: t("settings.keyContentRequired") },
+              {
+                pattern: /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521))\s+\S+/,
+                message: t("settings.keyFormatHint"),
+              },
+            ]}
+          >
+            <Input.TextArea rows={3} placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5… you@host" />
+          </Form.Item>
+          <Button type="primary" htmlType="submit" loading={addKey.isPending}>
+            {t("create.addKey")}
+          </Button>
+        </Form>
+      </Space>
+    </Card>
+  );
+}
 
-        <Card title={t("settings.accountCard")}>
-          <Space orientation="vertical" size={12}>
-            {me ? (
-              <Typography.Text>{t("settings.phoneLine", { phone: maskPhone(me.phone) })}</Typography.Text>
-            ) : (
-              <Skeleton.Input active size="small" style={{ width: 200 }} />
-            )}
-            <Space>
-              <Button onClick={() => setPwdOpen(true)}>{t("settings.changePassword")}</Button>
-              <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                {t("settings.changePasswordHint")}
-              </Typography.Text>
-            </Space>
-            <Space>
-              <Button
-                danger
-                onClick={() =>
-                  confirm({
-                    title: t("settings.logoutAllConfirm"),
-                    consequences: [t("settings.logoutAllBody")],
-                    okText: t("settings.logoutAll"),
-                    danger: true,
-                    onOk: () => logout("all"),
-                  })
-                }
-              >
-                {t("settings.logoutAll")}
-              </Button>
-              <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                {t("settings.logoutAllHint")}
-              </Typography.Text>
-            </Space>
+/** 账号 Tab:手机号 / 设置修改密码 / 退出登录(L0)/ 登出全部设备(L2,非红)/ 页尾危险区注销。 */
+function AccountTab({ me }: { me: { phone: string } | undefined }) {
+  const { t } = useTranslation();
+  const [pwdOpen, setPwdOpen] = useState(false);
+  const logout = useLogout();
+  const confirm = useConfirm();
+
+  return (
+    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+      <Card>
+        <Space orientation="vertical" size={12}>
+          {me ? (
+            <Typography.Text>{t("settings.phoneLine", { phone: maskPhone(me.phone) })}</Typography.Text>
+          ) : (
+            <Skeleton.Input active size="small" style={{ width: 200 }} />
+          )}
+          <Space>
+            <Button onClick={() => setPwdOpen(true)}>{t("settings.changePassword")}</Button>
+            <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+              {t("settings.changePasswordHint")}
+            </Typography.Text>
+          </Space>
+          <Space>
+            {/* L2:后果前置但可恢复,确认按钮不标红(ui-ux-spec §1 规则 8) */}
             <Button
-              danger
               onClick={() =>
                 confirm({
-                  title: t("settings.logoutConfirm"),
-                  consequences: [t("settings.logoutBody")],
-                  okText: t("settings.logout"),
-                  danger: true,
-                  onOk: () => logout(),
+                  title: t("settings.logoutAllConfirm"),
+                  consequences: [t("settings.logoutAllBody")],
+                  okText: t("settings.logoutAll"),
+                  onOk: () => logout("all"),
                 })
               }
             >
-              {t("settings.logout")}
+              {t("settings.logoutAll")}
             </Button>
-            <DeletionZone phone={me?.phone ?? ""} />
+            <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+              {t("settings.logoutAllHint")}
+            </Typography.Text>
           </Space>
-        </Card>
-        <PasswordModal open={pwdOpen} phone={me?.phone ?? ""} onClose={() => setPwdOpen(false)} />
-      </Space>
-    </PageContainer>
+          {/* L0:可逆,不做确认 */}
+          <Button onClick={() => void logout()}>{t("settings.logout")}</Button>
+        </Space>
+      </Card>
+      <DeletionZone phone={me?.phone ?? ""} />
+      <PasswordModal open={pwdOpen} phone={me?.phone ?? ""} onClose={() => setPwdOpen(false)} />
+    </Space>
   );
 }
 
@@ -291,10 +327,7 @@ function DeletionZone({ phone }: { phone: string }) {
   const countdown = pending ? formatDaysUntil(req.cooldown_ends_at) : null;
 
   return (
-    <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-      <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-        {t("settings.deletion.dangerZone")}
-      </Typography.Text>
+    <>
       {pending ? (
         <Alert
           type="warning"
@@ -323,21 +356,25 @@ function DeletionZone({ phone }: { phone: string }) {
           }
         />
       ) : (
-        <Space orientation="vertical" size={4}>
-          {req && statusMeta && (
-            <Space size={8}>
-              <Tag color={statusMeta.color}>{t(statusMeta.labelKey)}</Tag>
-              {req.status === "rejected" && req.note && (
-                <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                  {t("settings.deletion.rejectedLine", { note: req.note })}
-                </Typography.Text>
+        <DangerZone
+          title={t("settings.deletion.dangerZone")}
+          description={
+            <Space orientation="vertical" size={4}>
+              <span>{t("settings.deletion.dangerNote")}</span>
+              {req && statusMeta && (
+                <Space size={8}>
+                  <Tag color={statusMeta.color}>{t(statusMeta.labelKey)}</Tag>
+                  {req.status === "rejected" && req.note && (
+                    <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                      {t("settings.deletion.rejectedLine", { note: req.note })}
+                    </Typography.Text>
+                  )}
+                </Space>
               )}
             </Space>
-          )}
-          <Button danger onClick={() => setOpen(true)}>
-            {t("settings.deletion.apply")}
-          </Button>
-        </Space>
+          }
+          actions={[{ key: "delete", label: t("settings.deletion.apply"), onClick: () => setOpen(true) }]}
+        />
       )}
 
       <TypeConfirmModal
@@ -390,12 +427,12 @@ function DeletionZone({ phone }: { phone: string }) {
         onConfirm={() => create.mutate({ phone, reason: reason.trim() })}
         onCancel={close}
       />
-    </Space>
+    </>
   );
 }
 
-/** 实名卡四态:未就绪骨架 / 错误可重试 / 已认证 / 未认证;平台未开通实名(real_name_enabled=false)时表单可见但禁用 + 说明。 */
-function RealNameCard({
+/** 实名四态:未就绪骨架 / 错误可重试 / 已认证 / 未认证;平台未开通实名(real_name_enabled=false)时表单可见但禁用 + 说明。 */
+function RealNameTab({
   me,
   enabled,
   loading,
@@ -419,15 +456,13 @@ function RealNameCard({
   const verified = me?.verification_status === "verified";
   return (
     <Card
-      title={
-        <Space size={8}>
-          {t("settings.realNameCard")}
-          {!loading && !error && (
-            <Tag color={verified ? "green" : "orange"}>
-              {verified ? t("settings.verified") : t("settings.unverified")}
-            </Tag>
-          )}
-        </Space>
+      // Tab 已给标题,卡头只留认证状态标
+      extra={
+        loading || error ? undefined : (
+          <Tag color={verified ? "green" : "orange"}>
+            {verified ? t("settings.verified") : t("settings.unverified")}
+          </Tag>
+        )
       }
     >
       {loading ? (

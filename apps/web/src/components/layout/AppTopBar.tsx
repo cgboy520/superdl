@@ -21,7 +21,7 @@ export function ThemeToggle({ variant = "brand" }: { variant?: "brand" | "plain"
   const mode = useThemeMode();
   const toggle = useThemeToggle();
   const dark = mode === "dark";
-  const color = variant === "brand" ? "#fff" : undefined;
+  const color = variant === "brand" ? brand.onHero : undefined;
   return (
     <Button
       type="text"
@@ -64,7 +64,7 @@ export function AppTopBar({ variant, right }: { variant: "public" | "console"; r
         background: token.colorBgContainer,
         borderBottom: `1px solid ${token.colorBorderSecondary}`,
       };
-  const iconColor = isPublic ? "#fff" : token.colorText;
+  const iconColor = isPublic ? brand.onHero : token.colorText;
   return (
     <header
       className={`app-topbar ${isPublic ? "app-topbar--brand" : "app-topbar--neutral"}`}
@@ -91,6 +91,9 @@ export function AppTopBar({ variant, right }: { variant: "public" | "console"; r
           </Link>
           <Link to="/" hash="ranking" className="topbar-link">
             {t("topbar.ranking")}
+          </Link>
+          <Link to="/help" className="topbar-link">
+            {t("topbar.help")}
           </Link>
         </nav>
       )}
@@ -133,6 +136,7 @@ export function AppTopBar({ variant, right }: { variant: "public" | "console"; r
                 { to: "/market", hash: undefined, label: t("topbar.market") },
                 { to: "/", hash: "pricing", label: t("topbar.pricing") },
                 { to: "/", hash: "ranking", label: t("topbar.ranking") },
+                { to: "/help", hash: undefined, label: t("topbar.help") },
               ] as const
             ).map((l) => (
               <Link

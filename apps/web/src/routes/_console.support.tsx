@@ -10,26 +10,10 @@ import {
   ticketStatusMap,
   type TicketStatus,
 } from "@superdl/ui";
-import { LoadMore, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
+import { LoadMore, Mono, PageContainer, StatusTag, TableErrorEmpty } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import {
-  App,
-  Badge,
-  Button,
-  Card,
-  Col,
-  Empty,
-  Form,
-  Input,
-  List,
-  Modal,
-  Row,
-  Select,
-  Space,
-  Tag,
-  Typography,
-} from "antd";
+import { App, Button, Card, Col, Empty, Form, Input, List, Modal, Row, Select, Space, Tag, Typography } from "antd";
 import { useMemo, useState } from "react";
 
 import type { TicketCreate, TicketOut } from "@superdl/api-client";
@@ -253,34 +237,27 @@ function SupportPage() {
               ),
             }}
             renderItem={(r) => {
-              const sm = metaOf(ticketStatusMap, r.status);
               const cm = metaOf(ticketCategoryMap, r.category);
-              const open = () => void navigate({ to: "/support/$ticketId", params: { ticketId: String(r.id) } });
+              // 进详情只走标题链接,不整行点击(ui-ux-spec §3.12)
               return (
-                <List.Item
-                  style={{ cursor: "pointer" }}
-                  onClick={open}
-                  // 整行点击须有键盘语义
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      open();
-                    }
-                  }}
-                >
+                <List.Item>
                   <List.Item.Meta
                     title={
                       <Space size={8} wrap>
-                        <Typography.Text code>{r.ticket_no}</Typography.Text>
+                        <Mono>{r.ticket_no}</Mono>
                         {cm && <Tag>{t(cm.labelKey)}</Tag>}
-                        <span>{r.subject}</span>
+                        <Link to="/support/$ticketId" params={{ ticketId: String(r.id) }}>
+                          {r.subject}
+                        </Link>
                       </Space>
                     }
-                    description={formatDateTime(r.updated_at)}
                   />
-                  <Badge status={sm?.badge ?? "default"} text={sm ? t(sm.labelKey) : r.status} />
+                  <Space size={12}>
+                    <StatusTag map={ticketStatusMap} value={r.status} variant="badge" />
+                    <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                      {formatDateTime(r.updated_at)}
+                    </Typography.Text>
+                  </Space>
                 </List.Item>
               );
             }}

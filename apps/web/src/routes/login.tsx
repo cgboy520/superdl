@@ -1,20 +1,36 @@
-/** 登录/注册:左品牌渐变区(lg 以下隐藏),右侧表单。登录方式(验证码 / 密码)用 Segmented 二选一;注册与登录分离,经底部「免费注册」/「去登录」链接切换。
- *  e2e 契约:placeholder「手机号」「短信验证码」、按钮「获取验证码」「注册并登录」「免费注册」。 */
+/** 登录/注册:左品牌渐变区(lg 以下隐藏,展示 /skus 实时行情摘要),右侧表单(字段带可见标签)。登录方式(验证码 / 密码)用 Segmented 二选一;
+ *  注册与登录分离,经底部「免费注册」/「去登录」链接切换;「忘记密码」两种登录模式都可见。
+ *  e2e 契约:placeholder「手机号」「短信验证码」、按钮「获取验证码」「注册并登录」「免费注册」「登录」。 */
 
 import { CheckCircleOutlined } from "@ant-design/icons";
-import type { TokenPairOut } from "@superdl/api-client";
-import { brand, fontSize } from "@superdl/ui";
+import type { SkuMarketOut, TokenPairOut } from "@superdl/api-client";
+import { brand, compareAmounts, fontSize, useFormat } from "@superdl/ui";
 import { LangSwitcher } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
-import { App, Button, Checkbox, Form, Grid, Input, Progress, Segmented, Space, theme, Typography } from "antd";
+import {
+  App,
+  Button,
+  Checkbox,
+  Form,
+  Grid,
+  Input,
+  Progress,
+  Segmented,
+  Skeleton,
+  Space,
+  theme,
+  Typography,
+} from "antd";
 import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 
 import { useLogin, useRegister, useResetPassword } from "../api/mutations";
+import { useSkus } from "../api/queries";
 import { GRID_TEXTURE } from "../components/gridTexture";
 import { BrandLogo } from "../components/layout/BrandLogo";
 import { ThemeToggle } from "../components/layout/AppTopBar";
 import { SmsCodeField } from "../components/SmsCodeField";
+import { dedupAvailableTotal } from "../lib/inventory";
 import { useSmsCode } from "../lib/useSmsCode";
 import { authStore } from "../stores/auth";
 
@@ -76,8 +92,31 @@ function PasswordStrengthHint({ password }: { password: string }) {
   );
 }
 
+/** GPU 规格里的最低单卡时价(金额串比较,不过 float);无在售 GPU 规格时为 null。 */
+function minGpuHourlyPrice(skus: readonly SkuMarketOut[]): string | null {
+  let min: string | null = null;
+  for (const s of skus) {
+    if (!s.gpu_model) continue;
+    if (min === null || compareAmounts(s.price_hourly, min) < 0) min = s.price_hourly;
+  }
+  return min;
+}
+
+/** 左侧品牌栏(lg+):行情摘要取 /skus 真实数据(最低时价 + 去重可开台数);加载中出骨架,失败回落静态三条。 */
 function BrandPane() {
   const { t } = useTranslation();
+  const { formatHourlyPrice } = useFormat();
+  const { data: skus, isLoading, isError } = useSkus();
+  const minPrice = minGpuHourlyPrice(skus ?? []);
+  const live =
+    !isError && minPrice !== null
+      ? [
+          t("login.liveMinPrice", { price: formatHourlyPrice(minPrice) }),
+          t("login.liveStock", { count: dedupAvailableTotal(skus ?? []) }),
+          t("login.bullets.b1"),
+        ]
+      : null;
+  const facts = live ?? [t("login.bullets.b1"), t("login.bullets.b2"), t("login.bullets.b3")];
   return (
     <div
       style={{
@@ -101,14 +140,22 @@ function BrandPane() {
         <Typography.Title style={{ color: "#fff", fontSize: fontSize.kpi, marginBottom: 32 }}>
           {t("login.slogan")}
         </Typography.Title>
-        <Space orientation="vertical" size={16}>
-          {[t("login.bullets.b1"), t("login.bullets.b2"), t("login.bullets.b3")].map((b) => (
-            <Space key={b} size={10}>
-              <CheckCircleOutlined style={{ color: "rgba(255,255,255,0.9)", fontSize: fontSize.sectionTitle }} />
-              <span style={{ color: "rgba(255,255,255,0.9)", fontSize: fontSize.sectionTitle }}>{b}</span>
-            </Space>
-          ))}
-        </Space>
+        {isLoading ? (
+          <Space orientation="vertical" size={16}>
+            {[1, 2, 3].map((i) => (
+              <Skeleton.Input key={i} active size="small" />
+            ))}
+          </Space>
+        ) : (
+          <Space orientation="vertical" size={16}>
+            {facts.map((b) => (
+              <Space key={b} size={10}>
+                <CheckCircleOutlined style={{ color: "rgba(255,255,255,0.9)", fontSize: fontSize.sectionTitle }} />
+                <span style={{ color: "rgba(255,255,255,0.9)", fontSize: fontSize.sectionTitle }}>{b}</span>
+              </Space>
+            ))}
+          </Space>
+        )}
       </div>
     </div>
   );
@@ -229,6 +276,7 @@ function LoginPage() {
           <Form form={form} layout="vertical" onFinish={submit}>
             <Form.Item
               name="phone"
+              label={t("login.phoneLabel")}
               rules={[{ required: true, pattern: /^1[3-9]\d{9}$/, message: t("login.phoneInvalid") }]}
             >
               <Input
@@ -236,12 +284,12 @@ function LoginPage() {
                 placeholder={t("login.phonePlaceholder")}
                 maxLength={11}
                 autoComplete="tel-national"
-                aria-label={t("login.phonePlaceholder")}
               />
             </Form.Item>
             {needsSms && (
               <SmsCodeField
                 sms={sms}
+                label={t("login.smsLabel")}
                 placeholder={t("login.smsPlaceholder")}
                 requiredMessage={t("login.smsRequired")}
                 getCodeLabel={t("login.getCode")}
@@ -253,6 +301,13 @@ function LoginPage() {
             {mode !== "sms" && (
               <Form.Item
                 name="password"
+                label={
+                  mode === "password"
+                    ? t("login.passwordLabel")
+                    : mode === "reset"
+                      ? t("login.passwordNewLabel")
+                      : t("login.passwordSetLabel")
+                }
                 rules={
                   mode === "password"
                     ? [{ required: true, message: t("login.passwordRequired") }]
@@ -268,16 +323,10 @@ function LoginPage() {
               >
                 <Input.Password
                   autoComplete={mode === "password" ? "current-password" : "new-password"}
-                  aria-label={
-                    mode === "password"
-                      ? t("login.passwordPlaceholder")
-                      : mode === "reset"
-                        ? t("login.passwordResetPlaceholder")
-                        : t("login.passwordSetPlaceholder")
-                  }
+                  // 密码登录的 placeholder 与标签同字不再重复;注册/重置的 placeholder 带位数提示,留作补充
                   placeholder={
                     mode === "password"
-                      ? t("login.passwordPlaceholder")
+                      ? undefined
                       : mode === "reset"
                         ? t("login.passwordResetPlaceholder")
                         : t("login.passwordSetPlaceholder")
@@ -351,7 +400,7 @@ function LoginPage() {
               )}
             </span>
             <span>
-              {mode === "password" && (
+              {(mode === "sms" || mode === "password") && (
                 <Button type="link" size="small" onClick={() => switchMode("reset")}>
                   {t("login.forgotPassword")}
                 </Button>

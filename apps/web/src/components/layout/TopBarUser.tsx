@@ -1,5 +1,5 @@
-/** 控制台顶栏右区(中性底,图标走 antd token 色):余额入口 · ⌘K · 通知铃 · 主题切换 · 用户菜单(账户设置 / 通知中心 / 帮助 / 语言 / 退出)。
- *  语言与帮助收进用户菜单以精简顶栏;窄屏(<md)只留余额 / 铃 / 用户。未登录(公开市场页)显示登录入口。 */
+/** 控制台顶栏右区(中性底,图标走 antd token 色):余额入口 · ⌘K · 通知铃 · 主题切换 · 用户菜单(账户设置 / 通知中心 / 帮助 / 语言 / 主题 / 退出)。
+ *  语言与帮助收进用户菜单以精简顶栏;窄屏(<md)只留余额 / 铃 / 用户,主题改走用户菜单(ui-ux-spec §1 规则 15)。未登录(公开市场页)显示登录入口。 */
 
 import { POLL } from "@superdl/ui";
 import {
@@ -7,9 +7,11 @@ import {
   ExclamationCircleFilled,
   GlobalOutlined,
   LogoutOutlined,
+  MoonOutlined,
   QuestionCircleOutlined,
   SearchOutlined,
   SettingOutlined,
+  SunOutlined,
   UserOutlined,
   WalletOutlined,
 } from "@ant-design/icons";
@@ -27,6 +29,7 @@ import { useNotificationOpen } from "../notificationNav";
 import { useLogout, useMarkAllNotificationsRead } from "../../api/mutations";
 import { useMe, useNotificationPages, useUnreadCount, useWallet } from "../../api/queries";
 import { useIsLoggedIn } from "../../stores/auth";
+import { useThemeMode, useThemeToggle } from "../../stores/theme";
 import { ThemeToggle } from "./AppTopBar";
 
 function NotificationBell() {
@@ -118,6 +121,8 @@ export function TopBarUser() {
   const loggedIn = useIsLoggedIn();
   const logout = useLogout();
   const screens = Grid.useBreakpoint();
+  const dark = useThemeMode() === "dark";
+  const toggleTheme = useThemeToggle();
   const { data: me } = useMe({ enabled: loggedIn });
   const { data: wallet } = useWallet({ enabled: loggedIn });
 
@@ -146,6 +151,12 @@ export function TopBarUser() {
         label: langLabel[l],
         disabled: l === currentLang,
       })),
+    },
+    // 主题项常驻:窄屏不出顶栏图标钮,暗色只能从这里切(ui-ux-spec §1 规则 15)
+    {
+      key: "theme",
+      icon: dark ? <SunOutlined /> : <MoonOutlined />,
+      label: dark ? t("topbar.themeToLight") : t("topbar.themeToDark"),
     },
     { type: "divider" },
     { key: "logout", icon: <LogoutOutlined />, label: t("settings.logout"), danger: true },
@@ -187,6 +198,7 @@ export function TopBarUser() {
           items: menuItems,
           onClick: ({ key }) => {
             if (key === "logout") void logout();
+            else if (key === "theme") toggleTheme();
             else if (key === "help") void navigate({ to: "/help" });
             else if (key === "notifications") void navigate({ to: "/notifications" });
             else if (key === "settings") void navigate({ to: "/settings" });

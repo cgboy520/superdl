@@ -1,11 +1,18 @@
-/** 工单详情(PageContainer narrow,标题 = 工单主题,返回列表):对话流(用户/客服气泡)+ 关联实例链接 + [关闭工单]。resolved/closed 不可再回复;关闭入口仅在 resolved 出现。 */
+/** 工单详情(PageContainer narrow,标题 = 工单主题,返回列表):对话流(用户/客服气泡)+ 关联实例链接 + [关闭工单]。resolved/closed 不可再回复;关闭入口常驻,非 resolved 灰置带原因。 */
 
 import { POLL } from "@superdl/ui";
 import { fontSize, formatDateTime, isTicketRepliable, metaOf, ticketCategoryMap, ticketStatusMap } from "@superdl/ui";
-import { DataErrorAlert, isMacPlatform, PageContainer, TicketBubble, useConfirm } from "@superdl/ui/components";
+import {
+  DataErrorAlert,
+  GatedButton,
+  isMacPlatform,
+  PageContainer,
+  TicketBubble,
+  useConfirm,
+} from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { Alert, Badge, Button, Card, Input, Skeleton, Space, Tag, Typography } from "antd";
+import { Alert, Badge, Card, Input, Skeleton, Space, Tag, Typography } from "antd";
 import { useEffect, useRef, useState } from "react";
 
 import { useAppendTicketMessage, useCloseTicket } from "../api/mutations";
@@ -85,25 +92,24 @@ function TicketDetailPage() {
             </Space>
           }
           extra={
-            ticket.status === "resolved" && (
-              // L1 确认(可逆性低但影响面 = 1)
-              <Button
-                size="small"
-                loading={close.isPending}
-                onClick={() =>
-                  confirm({
-                    title: t("support.closeConfirm"),
-                    consequences: [t("support.closeBody")],
-                    okText: t("support.closeTicket"),
-                    onOk: async () => {
-                      await close.mutateAsync(id);
-                    },
-                  })
-                }
-              >
-                {t("support.closeTicket")}
-              </Button>
-            )
+            // 入口常驻,未标记解决时灰置带原因(ui-ux-spec §1 规则 4);解决态走 L1 确认
+            <GatedButton
+              size="small"
+              loading={close.isPending}
+              reason={ticket.status === "resolved" ? undefined : t("support.closeNeedsResolved")}
+              onClick={() =>
+                confirm({
+                  title: t("support.closeConfirm"),
+                  consequences: [t("support.closeBody")],
+                  okText: t("support.closeTicket"),
+                  onOk: async () => {
+                    await close.mutateAsync(id);
+                  },
+                })
+              }
+            >
+              {t("support.closeTicket")}
+            </GatedButton>
           }
         >
           <Space size={16} wrap>
@@ -152,15 +158,15 @@ function TicketDetailPage() {
                     maxLength={4000}
                     placeholder={t("support.replyPlaceholder")}
                   />
-                  <Button
+                  <GatedButton
                     type="primary"
                     style={{ height: "auto" }}
                     loading={reply.isPending}
-                    disabled={draft.trim().length < 2}
+                    reason={draft.trim().length < 2 ? t("support.replyTooShort") : undefined}
                     onClick={() => reply.mutate({ ticketId: id, body: { body: draft.trim() } })}
                   >
                     {t("support.replySend")}
-                  </Button>
+                  </GatedButton>
                 </Space.Compact>
                 <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                   {t("support.replySendHint", { kbd: SEND_KBD_HINT })}

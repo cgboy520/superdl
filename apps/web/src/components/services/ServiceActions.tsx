@@ -1,9 +1,19 @@
-/** 服务操作组(RowActions 三槽位):主动作随状态变(可启动 → 启动 / 可停止 → 停止 / 其余 → 启动灰置带原因)+ 次动作(详情页头的「更新版本」)+ 更多 ▾(访问密钥 / 设置直达与删除)。条目永不隐藏,灰置带原因。停止二次确认;删除走键入名称 + 勾选的多级防护,运行中须先停(后端 409 同判据)。 */
+/** 服务操作组(RowActions 三槽位):主动作随状态变(可启动 → 启动 / 其余 → 端点 ▾)+ 次动作(停止或启动灰置,详情页再加「更新版本」)+ 更多 ▾(访问密钥 / 设置直达与删除)。条目永不隐藏,灰置带原因。停止二次确认;删除走键入名称 + 勾选的多级防护,运行中须先停(后端 409 同判据)。 */
 
+import { LinkOutlined } from "@ant-design/icons";
 import type { ServiceOut } from "@superdl/api-client";
-import { GatedButton, RowActions, TypeConfirmModal, useConfirm, type RowMenuItem } from "@superdl/ui/components";
+import { fontSize, space } from "@superdl/ui";
+import {
+  CopyButton,
+  GatedButton,
+  RowActions,
+  RowMoreMenu,
+  TypeConfirmModal,
+  useConfirm,
+  type RowMenuItem,
+} from "@superdl/ui/components";
 import { useNavigate } from "@tanstack/react-router";
-import { App, Button, Typography } from "antd";
+import { App, Button, Modal, Space, Typography } from "antd";
 import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 
@@ -66,6 +76,81 @@ export function canRolloutService(service: ServiceOut): { ok: boolean; reason?: 
   return { ok: false, reason: "unsettled" };
 }
 
+/** 调用示例 curl:与服务详情概览同一构造;行内拿不到 Key 列表,只给前缀占位。 */
+function curlExampleOf(service: ServiceOut): string {
+  return [
+    `curl ${service.url}`,
+    ...(service.require_api_key ? ['  -H "Authorization: Bearer sk-xxxxxxxx…"'] : []),
+  ].join(" \\\n");
+}
+
+/** 端点 ▾(对应实例的「连接 ▾」):复制访问地址 / 打开端点 / 调用示例;服务未运行时条目灰置带原因。 */
+function EndpointMenu({ service, size }: { service: ServiceOut; size: "small" | "middle" }) {
+  const { t } = useTranslation();
+  const { message } = App.useApp();
+  const [curlOpen, setCurlOpen] = useState(false);
+  // running / unready 的端点已解析到实例;其余状态网关打不通
+  const reason =
+    service.status === "running" || service.status === "unready" ? undefined : t("services.endpointUnreachable");
+  const curl = curlExampleOf(service);
+  const items: RowMenuItem[] = [
+    {
+      key: "copy",
+      label: t("services.actions.copyUrl"),
+      reason,
+      onClick: () => {
+        void navigator.clipboard.writeText(service.url).then(() => message.success(t("common.copied")));
+      },
+    },
+    {
+      key: "open",
+      label: t("services.actions.openEndpoint"),
+      reason,
+      onClick: () => {
+        window.open(service.url, "_blank", "noopener,noreferrer");
+      },
+    },
+    { key: "curl", label: t("services.actions.curlExample"), reason, onClick: () => setCurlOpen(true) },
+  ];
+  return (
+    <>
+      {/* 行内主动作:外观与实例「连接 ▾」一致 */}
+      <RowMoreMenu
+        items={items}
+        size={size}
+        label={t("services.actions.endpointMenu")}
+        type="primary"
+        icon={<LinkOutlined />}
+      />
+      <Modal
+        title={t("services.actions.curlExample")}
+        open={curlOpen}
+        onCancel={() => setCurlOpen(false)}
+        footer={null}
+        destroyOnHidden
+      >
+        <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
+          <pre
+            style={{
+              margin: 0,
+              fontSize: fontSize.caption,
+              lineHeight: 1.8,
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-all",
+            }}
+          >
+            {curl}
+          </pre>
+          <CopyButton text={curl} label={t("instances.copyCommand")} />
+          {service.require_api_key && (
+            <Typography.Text type="secondary">{t("services.detail.curlKeyPlaceholderNote")}</Typography.Text>
+          )}
+        </Space>
+      </Modal>
+    </>
+  );
+}
+
 export function ServiceActions({
   service,
   onDeleted,
@@ -115,26 +200,30 @@ export function ServiceActions({
       },
     });
 
-  // 主动作随状态变:可启动 → 启动;可停止 → 停止;过渡态 / 冻结 → 启动灰置带原因
+  // 主动作随状态变:可启动 → 启动;其余 → 端点 ▾(未运行时条目灰置带原因)
   const primary = startable ? (
     <Button size={size} type="primary" loading={start.isPending} onClick={() => start.mutate(service.slug)}>
       {t("services.actions.start")}
     </Button>
-  ) : stoppable ? (
+  ) : (
+    <EndpointMenu service={service} size={size} />
+  );
+
+  // 次动作:可停止 → 停止;既不可启动也不可停止 → 启动灰置带原因(冻结 / 过渡态)
+  const stopOrStart = stoppable ? (
     <Button size={size} loading={stop.isPending} onClick={confirmStop}>
       {t("services.actions.stop")}
     </Button>
-  ) : (
+  ) : startable ? undefined : (
     <GatedButton
       size={size}
-      type="primary"
       reason={s === "frozen" ? t("copy.frozenNeedsRecharge") : t("services.actions.needsStopped")}
     >
       {t("services.actions.start")}
     </GatedButton>
   );
-
-  const secondary = onRollout ? (
+  // 详情页头多一个「更新版本」(ui-ux-spec §3.8)
+  const rolloutButton = onRollout ? (
     <GatedButton
       size={size}
       reason={
@@ -149,6 +238,15 @@ export function ServiceActions({
       {t("services.actions.rollout")}
     </GatedButton>
   ) : undefined;
+  const secondary =
+    stopOrStart && rolloutButton ? (
+      <Space size={space.xs}>
+        {stopOrStart}
+        {rolloutButton}
+      </Space>
+    ) : (
+      (rolloutButton ?? stopOrStart)
+    );
 
   const more: RowMenuItem[] = [
     { key: "keys", label: t("services.actions.keys"), onClick: () => goTab("keys") },
