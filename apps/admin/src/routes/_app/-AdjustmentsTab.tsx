@@ -15,7 +15,6 @@ import {
   Select,
   Space,
   Spin,
-  Tooltip,
   Typography,
 } from "antd";
 import dayjs from "dayjs";
@@ -34,7 +33,7 @@ import {
   ledgerTypeMap,
   metaOf,
 } from "@superdl/ui";
-import { CursorTable, moneyOr } from "@superdl/ui/components";
+import { CursorTable, GatedButton, moneyOr } from "@superdl/ui/components";
 import { useApiErrorText } from "@superdl/ui";
 import { useCsvExport, useFormDraft } from "@superdl/ui";
 import { useFormat } from "@superdl/ui";
@@ -242,19 +241,17 @@ export function AdjustmentsTab() {
         <Button onClick={() => void doExport()} loading={exporting}>
           {t("common.exportCsv")}
         </Button>
-        <Tooltip title={writable ? "" : t("finance.financeOnlyCreate")}>
-          <Button
-            type="primary"
-            disabled={!writable}
-            onClick={() => {
-              setCreating(true);
-              const d = draft.load();
-              if (d) form.setFieldsValue(d);
-            }}
-          >
-            {t("finance.createAdjust")}
-          </Button>
-        </Tooltip>
+        <GatedButton
+          type="primary"
+          reason={writable ? undefined : t("finance.financeOnlyCreate")}
+          onClick={() => {
+            setCreating(true);
+            const d = draft.load();
+            if (d) form.setFieldsValue(d);
+          }}
+        >
+          {t("finance.createAdjust")}
+        </GatedButton>
       </Space>
       <CursorTable<AdjustmentRow>
         query={adjustmentsQ}
@@ -290,29 +287,30 @@ export function AdjustmentsTab() {
                 );
               }
               const isCreator = admin?.id === r.created_by;
+              const reason = !writable
+                ? t("finance.financeOnlyReview")
+                : isCreator
+                  ? t("finance.noSelfReviewShort")
+                  : undefined;
               return (
-                <Tooltip
-                  title={!writable ? t("finance.financeOnlyReview") : isCreator ? t("finance.noSelfReviewShort") : ""}
-                >
-                  <Space>
-                    <Button
-                      size="small"
-                      type="primary"
-                      disabled={!writable || isCreator}
-                      onClick={() => setReviewTarget({ adj: r, approve: true })}
-                    >
-                      {t("finance.approve")}
-                    </Button>
-                    <Button
-                      size="small"
-                      danger
-                      disabled={!writable || isCreator}
-                      onClick={() => setReviewTarget({ adj: r, approve: false })}
-                    >
-                      {t("finance.reject")}
-                    </Button>
-                  </Space>
-                </Tooltip>
+                <Space>
+                  <GatedButton
+                    size="small"
+                    type="primary"
+                    reason={reason}
+                    onClick={() => setReviewTarget({ adj: r, approve: true })}
+                  >
+                    {t("finance.approve")}
+                  </GatedButton>
+                  <GatedButton
+                    size="small"
+                    danger
+                    reason={reason}
+                    onClick={() => setReviewTarget({ adj: r, approve: false })}
+                  >
+                    {t("finance.reject")}
+                  </GatedButton>
+                </Space>
               );
             },
           },

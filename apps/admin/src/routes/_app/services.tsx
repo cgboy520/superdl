@@ -2,7 +2,7 @@
 
 import { PageContainer } from "@superdl/ui/components";
 import { adminKeys } from "../../api";
-import { useUrlCommittedInput } from "../../lib/useUrlCommittedInput";
+import { useUrlCommittedInput } from "@superdl/ui";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Button, Card, Checkbox, Input, Space } from "antd";
 import { useCallback } from "react";

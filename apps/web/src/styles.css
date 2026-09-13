@@ -1,15 +1,10 @@
-/* 全局基线:reset / 等宽数字 / 顶栏链接 / 滚动条。业务样式一律走 antd token。 */
+/* web 专属全局样式:reset / 滚动条 / 顶栏 / 规格表行 / 结算条 / 命令面板;两端共用基线(等宽数字、.mono、门控按钮、跳转链接、焦点框、行内 hover)在 @superdl/ui/base.css。业务样式一律走 antd token。 */
 
 html,
 body,
 #root {
   height: 100%;
   margin: 0;
-}
-
-/* 金额/端口/利用率全局等宽对齐 */
-body {
-  font-variant-numeric: tabular-nums;
 }
 
 *::-webkit-scrollbar {
@@ -92,30 +87,6 @@ body {
   outline-offset: 2px;
 }
 
-/* 跳到主内容(键盘用户):默认移出视口,聚焦时出现在顶栏左上 */
-.skip-link {
-  position: absolute;
-  left: 12px;
-  top: -48px;
-  z-index: 200;
-  padding: 8px 12px;
-  border-radius: 6px;
-  background: var(--sdl-color-primary);
-  color: #fff;
-  text-decoration: none;
-  transition: top 0.15s;
-}
-.skip-link:focus-visible {
-  top: 8px;
-  outline: 2px solid #fff;
-  outline-offset: 2px;
-}
-
-/* 标识符(UUID / 订单号)等宽 */
-.mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-}
-
 /* 规格表不可选行(库存不足 / 未上竞价):弱化底色 + 次要文字色,不用 opacity(对比度纪律) */
 .sku-row--disabled > td {
   background: color-mix(in srgb, var(--sdl-color-text) 4%, transparent);
@@ -124,25 +95,6 @@ body {
 .sku-row--disabled > td .ant-typography,
 .sku-row--disabled > td .ant-tag {
   color: var(--sdl-color-text-secondary);
-}
-
-/* 行内次级动作(改名铅笔):行 hover 或键盘聚焦时才出现 */
-.row-hover-only {
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-.ant-table-row:hover .row-hover-only,
-.ant-card:hover .row-hover-only,
-.row-hover-only:focus-visible {
-  opacity: 1;
-}
-
-/* 手写 role="button" / tabIndex 元素的统一焦点框(与 drawer-link 同色) */
-[role="button"][tabindex]:focus-visible,
-.focus-ring:focus-visible {
-  outline: 2px solid var(--sdl-color-primary);
-  outline-offset: 2px;
-  border-radius: 4px;
 }
 
 @media (max-width: 768px) {

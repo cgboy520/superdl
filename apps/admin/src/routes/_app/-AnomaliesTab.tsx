@@ -1,12 +1,12 @@
 /** 支付异常 Tab:渠道回调与订单状态不一致的清单与处置。 */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { App, Button, Form, Input, Modal, Space, Table, Tag, Tooltip } from "antd";
+import { App, Button, Form, Input, Modal, Space, Table, Tag } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { adminColors, fontSize, formatDateTime, idemKeyOf } from "@superdl/ui";
-import { TableErrorEmpty } from "@superdl/ui/components";
+import { GatedButton, TableErrorEmpty } from "@superdl/ui/components";
 import { useApiErrorText } from "@superdl/ui";
 import { useFormat } from "@superdl/ui";
 
@@ -139,11 +139,14 @@ export function AnomaliesTab() {
                   <Button size="small" onClick={() => void doVerify(orderNo)}>
                     {t("finance.verifyChannel")}
                   </Button>
-                  <Tooltip title={writable ? "" : t("finance.financeOnlyBackfill")}>
-                    <Button size="small" type="primary" disabled={!writable} onClick={() => setBackfillTarget(r)}>
-                      {t("finance.backfill")}
-                    </Button>
-                  </Tooltip>
+                  <GatedButton
+                    size="small"
+                    type="primary"
+                    reason={writable ? undefined : t("finance.financeOnlyBackfill")}
+                    onClick={() => setBackfillTarget(r)}
+                  >
+                    {t("finance.backfill")}
+                  </GatedButton>
                 </Space>
               );
             },

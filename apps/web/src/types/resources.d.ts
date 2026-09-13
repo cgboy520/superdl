@@ -241,6 +241,11 @@ export default interface Resources {
     }
   },
   "shared": {
+    "attention": {
+      "collapse": "收起",
+      "expand": "展开",
+      "summary": "{{count}} 件需要处理"
+    },
     "chart": {
       "degraded": "数据暂不可用",
       "empty": "暂无数据"
@@ -252,6 +257,8 @@ export default interface Resources {
       "loadFailed": "加载失败,请重试",
       "loadMore": "加载更多",
       "loadedAll": "已加载全部 {{count}} 条",
+      "more": "更多",
+      "notAvailable": "暂无数据",
       "requestFailed": "请求失败",
       "retry": "重试"
     },
@@ -275,6 +282,10 @@ export default interface Resources {
       "subtitle": "页面出现异常,请重试或返回首页",
       "techDetail": "技术详情",
       "title": "页面出错了"
+    },
+    "filter": {
+      "clear": "清除筛选",
+      "count": "共 {{count}} 条"
     },
     "format": {
       "countdown": {
@@ -322,6 +333,12 @@ export default interface Resources {
       "en": "English",
       "switchLabel": "切换语言",
       "zh": "中文"
+    },
+    "leave": {
+      "body": "已填写的内容将丢弃,确定离开吗?",
+      "cancel": "继续编辑",
+      "ok": "丢弃并离开",
+      "title": "丢弃已填写内容?"
     },
     "notFound": {
       "subtitle": "你访问的地址不存在或已被移除",
@@ -518,13 +535,10 @@ export default interface Resources {
       "announcement": "公告:{{title}}",
       "arrears": "账户已欠费,实例将被停机并在宽限期后回收实例盘",
       "balanceWarn": "余额低于预警阈值,请及时充值",
-      "collapse": "收起",
-      "expand": "展开",
       "expiring": "{{name}} 的{{period}}将于 {{time}} 到期({{left}})",
       "failed": "{{name}} 创建失败",
       "frozen": "{{name}} 已欠费冻结,{{left}}",
       "goRecharge": "去充值",
-      "summary": "{{count}} 件需要处理",
       "viewEvents": "查看事件",
       "viewNotifications": "查看通知"
     },
@@ -744,10 +758,6 @@ export default interface Resources {
       "detailDiskNone": "数据盘:无",
       "detailInstanceLine": "实例:{{unit}} × {{count}} 卡 = {{total}}",
       "detailInstanceLineCpu": "实例:整机 {{total}}",
-      "discardConfirmBody": "已填写的镜像、命令与参数等内容将丢弃,确定离开本页吗?",
-      "discardConfirmCancel": "继续编辑",
-      "discardConfirmOk": "丢弃并离开",
-      "discardConfirmTitle": "丢弃已填写内容?",
       "diskAdvanced": "高级:盘名称",
       "diskCard": "数据盘(可选)",
       "diskCostLabel": "数据盘费用(按日)",

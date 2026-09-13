@@ -8,7 +8,15 @@ import {
   ticketCategoryMap,
   ticketStatusMap,
 } from "@superdl/ui";
-import { CursorTable, HexTag, PageContainer, TableErrorEmpty, TicketBubble, useConfirm } from "@superdl/ui/components";
+import {
+  CursorTable,
+  GatedButton,
+  HexTag,
+  PageContainer,
+  TableErrorEmpty,
+  TicketBubble,
+  useConfirm,
+} from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
@@ -24,7 +32,6 @@ import {
   Skeleton,
   Space,
   Tag,
-  Tooltip,
   Typography,
 } from "antd";
 import { useCallback, useState } from "react";
@@ -41,8 +48,7 @@ import {
 } from "../../api";
 import { StatusTag } from "../../components/StatusTag";
 import { TenantLink } from "../../components/TenantLink";
-import { useUrlCommittedInput } from "../../lib/useUrlCommittedInput";
-import { useApiErrorText } from "@superdl/ui";
+import { useApiErrorText, useUrlCommittedInput } from "@superdl/ui";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 const TICKET_STATUSES = Object.keys(ticketStatusMap);
@@ -205,17 +211,16 @@ function TicketDrawer({
                 aria-label={t("tickets.replyLabel")}
                 disabled={!writable}
               />
-              <Tooltip title={writable ? "" : noPerm}>
-                <Button
-                  type="primary"
-                  style={{ height: "auto" }}
-                  loading={reply.isPending}
-                  disabled={!writable || draft.trim().length < 2}
-                  onClick={sendReply}
-                >
-                  {t("tickets.replySend")}
-                </Button>
-              </Tooltip>
+              <GatedButton
+                type="primary"
+                style={{ height: "auto" }}
+                loading={reply.isPending}
+                reason={writable ? undefined : noPerm}
+                disabled={draft.trim().length < 2}
+                onClick={sendReply}
+              >
+                {t("tickets.replySend")}
+              </GatedButton>
             </Space.Compact>
           ) : (
             <Alert type="info" showIcon title={t("tickets.terminalHint")} />
@@ -223,41 +228,37 @@ function TicketDrawer({
           <Space wrap>
             {/* L1 确认(useConfirm):后果前置,目标 = 当前工单号 */}
             {ticket.status !== "resolved" && ticket.status !== "closed" && (
-              <Tooltip title={writable ? "" : noPerm}>
-                <Button
-                  type="primary"
-                  disabled={!writable}
-                  loading={updateStatus.isPending}
-                  onClick={() =>
-                    confirm({
-                      title: t("tickets.resolveConfirm", { no: ticket.ticket_no }),
-                      consequences: [t("tickets.resolveBody")],
-                      okText: t("tickets.resolve"),
-                      onOk: () => setStatus("resolve"),
-                    })
-                  }
-                >
-                  {t("tickets.resolve")}
-                </Button>
-              </Tooltip>
+              <GatedButton
+                type="primary"
+                reason={writable ? undefined : noPerm}
+                loading={updateStatus.isPending}
+                onClick={() =>
+                  confirm({
+                    title: t("tickets.resolveConfirm", { no: ticket.ticket_no }),
+                    consequences: [t("tickets.resolveBody")],
+                    okText: t("tickets.resolve"),
+                    onOk: () => setStatus("resolve"),
+                  })
+                }
+              >
+                {t("tickets.resolve")}
+              </GatedButton>
             )}
             {ticket.status === "resolved" && (
-              <Tooltip title={writable ? "" : noPerm}>
-                <Button
-                  disabled={!writable}
-                  loading={updateStatus.isPending}
-                  onClick={() =>
-                    confirm({
-                      title: t("tickets.closeConfirm", { no: ticket.ticket_no }),
-                      consequences: [t("tickets.closeBody")],
-                      okText: t("tickets.close"),
-                      onOk: () => setStatus("close"),
-                    })
-                  }
-                >
-                  {t("tickets.close")}
-                </Button>
-              </Tooltip>
+              <GatedButton
+                reason={writable ? undefined : noPerm}
+                loading={updateStatus.isPending}
+                onClick={() =>
+                  confirm({
+                    title: t("tickets.closeConfirm", { no: ticket.ticket_no }),
+                    consequences: [t("tickets.closeBody")],
+                    okText: t("tickets.close"),
+                    onOk: () => setStatus("close"),
+                  })
+                }
+              >
+                {t("tickets.close")}
+              </GatedButton>
             )}
           </Space>
         </Space>

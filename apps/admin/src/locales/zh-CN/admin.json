@@ -154,7 +154,6 @@
     "exportCsv": "导出 CSV",
     "listCapped": "已达单次返回上限({{max}} 条):更早的记录未列出,请用上方筛选缩小范围",
     "loading": "加载中…",
-    "more": "更多",
     "next": "下一步",
     "readonlyNoCreate": "只读角色不可创建",
     "readonlyNoEdit": "只读角色不可编辑",
@@ -166,10 +165,6 @@
     "secondConfirm": "二次确认",
     "statusFilter": "状态过滤",
     "targetLabel": "目标"
-  },
-  "filter": {
-    "clear": "清除筛选",
-    "count": "共 {{count}} 条"
   },
   "finance": {
     "adjustCreated": "调账单已发起,等待第二位管理员复核",
@@ -786,7 +781,8 @@
     "logout": "退出登录",
     "noAlerts": "暂无告警",
     "openMenu": "打开导航菜单",
-    "primaryNav": "管理台导航"
+    "primaryNav": "管理台导航",
+    "skipToMain": "跳到主内容"
   },
   "skus": {
     "clusterEmptyHint": "节点台账暂无数据,型号需手动填写;接入集群并等待巡检后可从集群资源创建",

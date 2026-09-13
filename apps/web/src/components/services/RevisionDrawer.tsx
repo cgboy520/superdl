@@ -3,8 +3,8 @@
 
 import { isApiError, type ServiceOut, type ServiceRevisionCreate } from "@superdl/api-client";
 import { drawerWidth, idemKeyOf, marketLabelKey, useApiErrorText } from "@superdl/ui";
-import { useConfirm } from "@superdl/ui/components";
-import { Alert, App, Button, Card, Checkbox, Drawer, Space, Tag, Tooltip, Typography } from "antd";
+import { GatedButton, useConfirm } from "@superdl/ui/components";
+import { Alert, App, Button, Card, Checkbox, Drawer, Space, Tag, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -72,25 +72,13 @@ function RevisionForm({ service, onClose }: { service: ServiceOut; onClose: () =
     port !== (c?.service_port ?? null) ||
     healthPath !== (c?.health_path ?? "") ||
     withSsh !== (c?.with_ssh ?? false);
-  // 路由跳走由 useLeaveGuard 拦;抽屉自身关闭走下面的 requestClose
+  // 路由跳走由 useLeaveGuard 拦;抽屉自身关闭走 confirmLeave
   const leave = useLeaveGuard(dirty);
-  const requestClose = () => {
-    if (!dirty) {
+  const requestClose = () =>
+    leave.confirmLeave(() => {
+      leave.bypass();
       onClose();
-      return;
-    }
-    confirm({
-      title: t("create.discardConfirmTitle"),
-      consequences: [t("create.discardConfirmBody")],
-      okText: t("create.discardConfirmOk"),
-      cancelText: t("create.discardConfirmCancel"),
-      danger: true,
-      onOk: () => {
-        leave.bypass();
-        onClose();
-      },
     });
-  };
 
   const imageRef = image.trim();
   const issue = ((): string | null => {
@@ -178,11 +166,9 @@ function RevisionForm({ service, onClose }: { service: ServiceOut; onClose: () =
       footer={
         <Space style={{ width: "100%", justifyContent: "flex-end" }}>
           <Button onClick={requestClose}>{t("services.revision.cancel")}</Button>
-          <Tooltip title={issue ?? undefined}>
-            <Button type="primary" disabled={issue != null} loading={create.isPending} onClick={submit}>
-              {t("services.revision.submit")}
-            </Button>
-          </Tooltip>
+          <GatedButton type="primary" reason={issue ?? undefined} loading={create.isPending} onClick={submit}>
+            {t("services.revision.submit")}
+          </GatedButton>
         </Space>
       }
     >

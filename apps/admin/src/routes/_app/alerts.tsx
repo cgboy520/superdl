@@ -1,10 +1,10 @@
 /** 告警中心:severity 服务端过滤、确认状态客户端过滤,入 URL;深链与确认闭环走 alertLink(ops/admin 可写)。 */
 
 import { controlWidth, fontSize, formatDateTime, POLL, space, useAutoRefresh } from "@superdl/ui";
-import { EmptyState, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
+import { EmptyState, GatedButton, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { App, Badge, Button, Checkbox, List, Select, Space, Tooltip, Typography } from "antd";
+import { App, Badge, Button, Checkbox, List, Select, Space, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -141,16 +141,15 @@ function AlertsPage() {
               actions={
                 a.acked_at == null
                   ? [
-                      <Tooltip key="ack" title={writable ? "" : t("overview.opsOnly")}>
-                        <Button
-                          size="small"
-                          disabled={!writable}
-                          loading={ack.isPending && ack.variables.alertId === a.id}
-                          onClick={() => ack.mutate({ alertId: a.id })}
-                        >
-                          {t("overview.ack")}
-                        </Button>
-                      </Tooltip>,
+                      <GatedButton
+                        key="ack"
+                        size="small"
+                        reason={writable ? undefined : t("overview.opsOnly")}
+                        loading={ack.isPending && ack.variables.alertId === a.id}
+                        onClick={() => ack.mutate({ alertId: a.id })}
+                      >
+                        {t("overview.ack")}
+                      </GatedButton>,
                     ]
                   : undefined
               }

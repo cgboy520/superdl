@@ -1,9 +1,9 @@
 import { CheckCircleFilled, CloseCircleFilled } from "@ant-design/icons";
 import { adminColors, formatDateTime, metaOf } from "@superdl/ui";
-import { DataErrorAlert, PageContainer } from "@superdl/ui/components";
+import { DataErrorAlert, GatedButton, PageContainer } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Alert, App, Badge, Button, Card, Col, Row, Space, Tag, Tooltip, Typography } from "antd";
+import { Alert, App, Badge, Card, Col, Row, Space, Tag, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { type ClusterComponent, useClusterStatus, useTestClusterConnection } from "../../api";
@@ -68,17 +68,15 @@ function ClusterPage() {
             <Card
               title={t("cluster.connCard")}
               extra={
-                <Tooltip title={writable ? "" : t("cluster.readonlyNoTest")}>
-                  <Button
-                    type="primary"
-                    size="small"
-                    disabled={!writable}
-                    loading={test.isPending}
-                    onClick={() => test.mutate()}
-                  >
-                    {t("cluster.testBtn")}
-                  </Button>
-                </Tooltip>
+                <GatedButton
+                  type="primary"
+                  size="small"
+                  reason={writable ? undefined : t("cluster.readonlyNoTest")}
+                  loading={test.isPending}
+                  onClick={() => test.mutate()}
+                >
+                  {t("cluster.testBtn")}
+                </GatedButton>
               }
             >
               <Space orientation="vertical" size={8}>

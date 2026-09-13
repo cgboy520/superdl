@@ -1,9 +1,9 @@
 /** 法务文档 Tab:doc_key × locale 状态格 + 左编辑右预览 + 版本历史;写仅 admin;发布确认带行级 diff 统计。 */
 
 import { adminColors, formatDateTime, legalDocStatusMap, useApiErrorText, useFormDraft } from "@superdl/ui";
-import { DataErrorAlert, LegalMarkdown, TableErrorEmpty } from "@superdl/ui/components";
+import { DataErrorAlert, GatedButton, LegalMarkdown, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
-import { Alert, App, Button, Card, Collapse, Input, Modal, Space, Table, Tooltip, Typography } from "antd";
+import { Alert, App, Button, Card, Collapse, Input, Modal, Space, Table, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -228,16 +228,14 @@ function CellEditor({
       extra={
         <Space>
           {!draft && (
-            <Tooltip title={writable ? "" : t("settings.legal.adminOnlyTip")}>
-              <Button
-                type="primary"
-                disabled={!writable}
-                loading={create.isPending}
-                onClick={() => create.mutate({ docKey, data: { locale } })}
-              >
-                {t("settings.legal.create")}
-              </Button>
-            </Tooltip>
+            <GatedButton
+              type="primary"
+              reason={writable ? undefined : t("settings.legal.adminOnlyTip")}
+              loading={create.isPending}
+              onClick={() => create.mutate({ docKey, data: { locale } })}
+            >
+              {t("settings.legal.create")}
+            </GatedButton>
           )}
           {draft && (
             <>

@@ -1,8 +1,8 @@
 /** 服务设置 Tab:改名 / 访问鉴权开关 / 调试 SSH / 危险区。改名与鉴权只 PATCH services 行,不重新部署;关鉴权走 L2 确认;开着鉴权却没有可用 Key 时常驻提醒;SSH 随版本固定,只回显。 */
 
 import type { ServiceOut } from "@superdl/api-client";
-import { useConfirm } from "@superdl/ui/components";
-import { Alert, App, Button, Card, Input, Space, Switch, theme, Tooltip, Typography } from "antd";
+import { GatedButton, useConfirm } from "@superdl/ui/components";
+import { Alert, App, Button, Card, Input, Space, Switch, theme, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -141,11 +141,13 @@ export function SettingsTab({
       <Card size="small" title={t("services.detail.dangerZone")} style={{ borderColor: token.colorErrorBorder }}>
         <Space orientation="vertical">
           <Typography.Text type="secondary">{t("services.detail.dangerNote")}</Typography.Text>
-          <Tooltip title={deletable ? undefined : t("services.actions.deleteNeedsStopped")}>
-            <Button danger disabled={!deletable} onClick={() => setDeleteOpen(true)}>
-              {t("services.actions.delete")}
-            </Button>
-          </Tooltip>
+          <GatedButton
+            danger
+            reason={deletable ? undefined : t("services.actions.deleteNeedsStopped")}
+            onClick={() => setDeleteOpen(true)}
+          >
+            {t("services.actions.delete")}
+          </GatedButton>
         </Space>
       </Card>
       <DeleteServiceModal

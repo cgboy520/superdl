@@ -17,23 +17,9 @@ import {
   POLL,
   skuVariant,
 } from "@superdl/ui";
-import { DataErrorAlert, PageHeader, useConfirm } from "@superdl/ui/components";
+import { DataErrorAlert, GatedButton, PageHeader } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import {
-  App,
-  Button,
-  Card,
-  Checkbox,
-  Col,
-  Descriptions,
-  Grid,
-  Input,
-  Row,
-  Space,
-  Steps,
-  Tooltip,
-  Typography,
-} from "antd";
+import { App, Button, Card, Checkbox, Col, Descriptions, Grid, Input, Row, Space, Steps, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -86,7 +72,6 @@ function DeployPage() {
   } = Route.useSearch();
   const navigate = useNavigate();
   const { message } = App.useApp();
-  const confirm = useConfirm();
   const wide = Grid.useBreakpoint().md;
 
   const skusQ = useSkus({ refetchInterval: POLL.steady });
@@ -232,23 +217,11 @@ function DeployPage() {
   const scrollTo = (i: number) =>
     document.getElementById(SECTION_IDS[i] ?? "")?.scrollIntoView({ behavior: "smooth", block: "start" });
 
-  const onCancel = () => {
-    if (!formDirty) {
+  const onCancel = () =>
+    leave.confirmLeave(() => {
+      leave.bypass();
       void navigate({ to: "/services" });
-      return;
-    }
-    confirm({
-      title: t("create.discardConfirmTitle"),
-      consequences: [t("create.discardConfirmBody")],
-      okText: t("create.discardConfirmOk"),
-      cancelText: t("create.discardConfirmCancel"),
-      danger: true,
-      onOk: () => {
-        leave.bypass();
-        void navigate({ to: "/services" });
-      },
     });
-  };
 
   const doCreate = async () => {
     if (!sku || !imageRef || servicePort == null) return;
@@ -667,27 +640,27 @@ function DeployPage() {
               {t("create.cancel")}
             </Button>
             {walletQ.isError ? (
-              <Tooltip title={t("services.form.walletQueryFailedRetry")}>
-                <Button type="primary" size="large" disabled>
-                  {submitLabel}
-                </Button>
-              </Tooltip>
+              <GatedButton type="primary" size="large" reason={t("services.form.walletQueryFailedRetry")}>
+                {submitLabel}
+              </GatedButton>
             ) : !sku ? (
-              <Tooltip title={t("services.form.specNeeded")}>
-                <Button type="primary" size="large" disabled>
-                  {submitLabel}
-                </Button>
-              </Tooltip>
+              <GatedButton type="primary" size="large" reason={t("services.form.specNeeded")}>
+                {submitLabel}
+              </GatedButton>
             ) : !balanceReady ? (
               <Button type="primary" size="large" loading disabled>
                 {submitLabel}
               </Button>
             ) : enough ? (
-              <Tooltip title={canSubmit ? undefined : firstIssue}>
-                <Button type="primary" size="large" disabled={!canSubmit} loading={pending} onClick={submit}>
-                  {submitLabel}
-                </Button>
-              </Tooltip>
+              <GatedButton
+                type="primary"
+                size="large"
+                reason={canSubmit ? undefined : firstIssue}
+                loading={pending}
+                onClick={submit}
+              >
+                {submitLabel}
+              </GatedButton>
             ) : (
               <Link to="/billing">
                 <Button type="primary" danger size="large">

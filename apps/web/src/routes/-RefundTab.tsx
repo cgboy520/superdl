@@ -1,7 +1,7 @@
 /** 退款 Tab:可退订单 → 申请退款 + 我的退款单。 */
 
 import { useTranslation } from "react-i18next";
-import { App, Button, Card, Input, InputNumber, Select, Space, Tag, Tooltip, Typography } from "antd";
+import { App, Card, Input, InputNumber, Select, Space, Tag, Typography } from "antd";
 import { useMemo, useState } from "react";
 
 import { type RefundableOrderOut } from "@superdl/api-client";
@@ -14,7 +14,7 @@ import {
   payoutChannelMap,
   refundStatusMap,
 } from "@superdl/ui";
-import { CursorTable, DataErrorAlert, EmptyState } from "@superdl/ui/components";
+import { CursorTable, DataErrorAlert, EmptyState, GatedButton } from "@superdl/ui/components";
 import { useFormat } from "@superdl/ui";
 
 import { useCreateRefund } from "../api/mutations";
@@ -124,16 +124,20 @@ export function RefundTab() {
               maxLength={256}
             />
             <Space align="center" wrap>
-              <Tooltip title={selected && reason.trim().length < 2 ? t("billing.refundReasonTooShort") : undefined}>
-                <Button
-                  type="primary"
-                  loading={create.isPending}
-                  disabled={!selected || reason.trim().length < 2}
-                  onClick={submit}
-                >
-                  {t("billing.refundSubmit")}
-                </Button>
-              </Tooltip>
+              <GatedButton
+                type="primary"
+                loading={create.isPending}
+                reason={
+                  !selected
+                    ? t("billing.refundSelectOrder")
+                    : reason.trim().length < 2
+                      ? t("billing.refundReasonTooShort")
+                      : undefined
+                }
+                onClick={submit}
+              >
+                {t("billing.refundSubmit")}
+              </GatedButton>
               <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                 {t("billing.refundRuleNote")}
               </Typography.Text>

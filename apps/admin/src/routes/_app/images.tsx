@@ -7,7 +7,7 @@ import {
   useAutoRefresh,
   type ImageCacheStatus,
 } from "@superdl/ui";
-import { PageContainer, TableErrorEmpty, useConfirm } from "@superdl/ui/components";
+import { GatedButton, PageContainer, TableErrorEmpty, useConfirm } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
@@ -232,11 +232,13 @@ function ImagesPage() {
         refreshing: isRefetching,
       }}
       extra={
-        <Tooltip title={writable ? "" : t("common.readonlyNoCreate")}>
-          <Button type="primary" disabled={!writable} onClick={() => openEdit("new")}>
-            {t("images.newImage")}
-          </Button>
-        </Tooltip>
+        <GatedButton
+          type="primary"
+          reason={writable ? undefined : t("common.readonlyNoCreate")}
+          onClick={() => openEdit("new")}
+        >
+          {t("images.newImage")}
+        </GatedButton>
       }
     >
       <Card>
@@ -354,21 +356,29 @@ function ImagesPage() {
               fixed: "right",
               render: (_, r) => (
                 <Space>
-                  <Tooltip title={writable ? t("images.prewarmTip") : t("nodes.readonlyNoOp")}>
-                    <Button
-                      size="small"
-                      disabled={!writable || !r.prewarm_enabled}
-                      loading={prewarm.isPending && prewarm.variables.imageId === r.id}
-                      onClick={() => prewarm.mutate({ imageId: r.id })}
-                    >
+                  {/* 可用时 tooltip 是动作说明;未开预热 / 无权时门控并给原因 */}
+                  {writable && r.prewarm_enabled ? (
+                    <Tooltip title={t("images.prewarmTip")}>
+                      <Button
+                        size="small"
+                        loading={prewarm.isPending && prewarm.variables.imageId === r.id}
+                        onClick={() => prewarm.mutate({ imageId: r.id })}
+                      >
+                        {t("images.prewarmNow")}
+                      </Button>
+                    </Tooltip>
+                  ) : (
+                    <GatedButton size="small" reason={writable ? t("images.prewarmTip") : t("nodes.readonlyNoOp")}>
                       {t("images.prewarmNow")}
-                    </Button>
-                  </Tooltip>
-                  <Tooltip title={writable ? "" : t("common.readonlyNoEdit")}>
-                    <Button size="small" disabled={!writable} onClick={() => openEdit(r)}>
-                      {t("skus.edit")}
-                    </Button>
-                  </Tooltip>
+                    </GatedButton>
+                  )}
+                  <GatedButton
+                    size="small"
+                    reason={writable ? undefined : t("common.readonlyNoEdit")}
+                    onClick={() => openEdit(r)}
+                  >
+                    {t("skus.edit")}
+                  </GatedButton>
                   <RowMoreMenu>
                     <ReasonAction
                       label={t("images.delete")}

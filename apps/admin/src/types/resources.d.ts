@@ -156,7 +156,6 @@ export default interface Resources {
       "exportCsv": "导出 CSV",
       "listCapped": "已达单次返回上限({{max}} 条):更早的记录未列出,请用上方筛选缩小范围",
       "loading": "加载中…",
-      "more": "更多",
       "next": "下一步",
       "readonlyNoCreate": "只读角色不可创建",
       "readonlyNoEdit": "只读角色不可编辑",
@@ -168,10 +167,6 @@ export default interface Resources {
       "secondConfirm": "二次确认",
       "statusFilter": "状态过滤",
       "targetLabel": "目标"
-    },
-    "filter": {
-      "clear": "清除筛选",
-      "count": "共 {{count}} 条"
     },
     "finance": {
       "adjustCreated": "调账单已发起,等待第二位管理员复核",
@@ -788,7 +783,8 @@ export default interface Resources {
       "logout": "退出登录",
       "noAlerts": "暂无告警",
       "openMenu": "打开导航菜单",
-      "primaryNav": "管理台导航"
+      "primaryNav": "管理台导航",
+      "skipToMain": "跳到主内容"
     },
     "skus": {
       "clusterEmptyHint": "节点台账暂无数据,型号需手动填写;接入集群并等待巡检后可从集群资源创建",
@@ -1272,6 +1268,11 @@ export default interface Resources {
     }
   },
   "shared": {
+    "attention": {
+      "collapse": "收起",
+      "expand": "展开",
+      "summary": "{{count}} 件需要处理"
+    },
     "chart": {
       "degraded": "数据暂不可用",
       "empty": "暂无数据"
@@ -1283,6 +1284,8 @@ export default interface Resources {
       "loadFailed": "加载失败,请重试",
       "loadMore": "加载更多",
       "loadedAll": "已加载全部 {{count}} 条",
+      "more": "更多",
+      "notAvailable": "暂无数据",
       "requestFailed": "请求失败",
       "retry": "重试"
     },
@@ -1306,6 +1309,10 @@ export default interface Resources {
       "subtitle": "页面出现异常,请重试或返回首页",
       "techDetail": "技术详情",
       "title": "页面出错了"
+    },
+    "filter": {
+      "clear": "清除筛选",
+      "count": "共 {{count}} 条"
     },
     "format": {
       "countdown": {
@@ -1353,6 +1360,12 @@ export default interface Resources {
       "en": "English",
       "switchLabel": "切换语言",
       "zh": "中文"
+    },
+    "leave": {
+      "body": "已填写的内容将丢弃,确定离开吗?",
+      "cancel": "继续编辑",
+      "ok": "丢弃并离开",
+      "title": "丢弃已填写内容?"
     },
     "notFound": {
       "subtitle": "你访问的地址不存在或已被移除",

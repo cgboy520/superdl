@@ -14,7 +14,7 @@ import {
   POLL,
   space,
 } from "@superdl/ui";
-import { LoadMore, PageHeader, TableErrorEmpty } from "@superdl/ui/components";
+import { AttentionBar, LoadMore, PageHeader, TableErrorEmpty } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Button, Card, Grid, Input, Popover, Select, Skeleton, Space, Table, Tooltip, Typography } from "antd";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
@@ -27,7 +27,7 @@ import {
   usePolicies,
   useTransientInstanceRefresh,
 } from "../api/queries";
-import { AttentionBar, useNotificationAttention } from "../components/AttentionBar";
+import { useNotificationAttention } from "../components/useNotificationAttention";
 import { BillingCell } from "../components/BillingCell";
 import { InstanceStatusBadge, TierTag } from "../components/common";
 import { RenewModal } from "../components/RenewModal";

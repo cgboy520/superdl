@@ -1,9 +1,10 @@
-/** 筛选条:左侧筛选控件、右侧「共 N 条 · 清除筛选」;筛选态由页面持有(入 URL),这里只负责排版与清除。 */
+/** 筛选条(两端统一):左侧筛选控件 + 「清除筛选」,右侧「共 N 条」+ 附加动作;筛选态由页面持有(入 URL),这里只负责排版与清除。 */
 
-import { fontSize, space } from "@superdl/ui";
 import { Button, Space, Typography } from "antd";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+
+import { fontSize, space } from "../tokens";
 
 export function FilterBar({
   children,
@@ -20,7 +21,7 @@ export function FilterBar({
   /** 右侧附加动作(刷新 / 导出) */
   extra?: ReactNode;
 }) {
-  const { t } = useTranslation();
+  const { t } = useTranslation("shared");
   return (
     <div
       style={{

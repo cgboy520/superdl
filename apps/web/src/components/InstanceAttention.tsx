@@ -10,7 +10,7 @@ import { formatDateTime } from "@superdl/ui";
 import { useFormat } from "@superdl/ui";
 import { useSetAutoRenew } from "../api/mutations";
 import { useExpiringInstances, usePolicies } from "../api/queries";
-import type { AttentionItem } from "./AttentionBar";
+import type { AttentionItem } from "@superdl/ui/components";
 
 export function useInstanceAttention(rows: InstanceOut[], onRenew: (i: InstanceOut) => void): AttentionItem[] {
   const { t } = useTranslation(["web", "shared"]);

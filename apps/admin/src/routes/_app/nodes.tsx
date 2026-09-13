@@ -2,13 +2,13 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Alert, App, Button, Card, Input, Space, Table, Tag, Tooltip, theme } from "antd";
+import { Alert, App, Card, Input, Space, Table, Tag, Tooltip, theme } from "antd";
 import dayjs from "dayjs";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { formatDateTime, layout, POLL, space, useAutoRefresh } from "@superdl/ui";
-import { PageContainer, TableErrorEmpty } from "@superdl/ui/components";
+import { GatedButton, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { useApiErrorText } from "@superdl/ui";
 
 import { adminKeys, type NodeRow, isApiError, useNodeMetrics, useCordonNode, useNodes, usePortPool } from "../../api";
@@ -148,11 +148,13 @@ function NodesPage() {
               </Tag>
             </Tooltip>
           )}
-          <Tooltip title={writable ? "" : t("nodes.readonlyNoAdd")}>
-            <Button type="primary" disabled={!writable} onClick={() => setAddOpen(true)}>
-              {t("nodes.addNode")}
-            </Button>
-          </Tooltip>
+          <GatedButton
+            type="primary"
+            reason={writable ? undefined : t("nodes.readonlyNoAdd")}
+            onClick={() => setAddOpen(true)}
+          >
+            {t("nodes.addNode")}
+          </GatedButton>
         </Space>
       }
     >
@@ -366,11 +368,9 @@ function NodesPage() {
                       }}
                     />
                     {/* 占位项:可见但禁用 + tooltip */}
-                    <Tooltip title={t("nodes.drainDeferred")}>
-                      <Button size="small" disabled>
-                        {t("nodes.drainBtn")}
-                      </Button>
-                    </Tooltip>
+                    <GatedButton size="small" reason={t("nodes.drainDeferred")}>
+                      {t("nodes.drainBtn")}
+                    </GatedButton>
                   </Space>
                 );
               },

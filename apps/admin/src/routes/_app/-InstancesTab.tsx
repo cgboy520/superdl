@@ -17,17 +17,16 @@ import {
   metaOf,
   skuTierMap,
   skuVariant,
+  useUrlCommittedInput,
   workloadTypeMap,
   type InstanceStatus,
 } from "@superdl/ui";
-import { CursorTable, HexTag } from "@superdl/ui/components";
+import { CursorTable, FilterBar, HexTag } from "@superdl/ui/components";
 
 import { type AdminInstanceOut, useAdminInstances, useForceStop, usePreemptInstance } from "../../api";
 import { ReasonAction } from "../../components/ReasonAction";
-import { FilterBar } from "../../components/FilterBar";
 import { StatusTag } from "../../components/StatusTag";
 import { tenantColumn } from "../../components/TenantLink";
-import { useUrlCommittedInput } from "../../lib/useUrlCommittedInput";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 const routeApi = getRouteApi("/_app/tenants");

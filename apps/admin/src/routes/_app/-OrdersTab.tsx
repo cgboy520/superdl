@@ -7,11 +7,10 @@ import { useTranslation } from "react-i18next";
 
 import { flattenPages, orderStatusMap } from "@superdl/ui";
 import { CursorTable } from "@superdl/ui/components";
-import { useCsvExport } from "@superdl/ui";
+import { useCsvExport, useUrlCommittedInput } from "@superdl/ui";
 
 import { type OrderRow, exportOrdersCsv, useOrders } from "../../api";
 import { useOrderColumns } from "../../components/orderColumns";
-import { useUrlCommittedInput } from "../../lib/useUrlCommittedInput";
 import { useFinanceFilters } from "./-financeFilters";
 
 export function OrdersTab() {

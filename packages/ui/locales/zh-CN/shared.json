@@ -7,7 +7,9 @@
     "loadedAll": "已加载全部 {{count}} 条",
     "forbidden": "无权限查看",
     "forbiddenDesc": "当前角色无权查看该数据,如需访问请联系管理员。",
-    "requestFailed": "请求失败"
+    "requestFailed": "请求失败",
+    "more": "更多",
+    "notAvailable": "暂无数据"
   },
   "csv": {
     "exportDone": "已导出 CSV",
@@ -266,5 +268,20 @@
       "user_start": "用户开机",
       "user_stop": "用户关机"
     }
+  },
+  "filter": {
+    "clear": "清除筛选",
+    "count": "共 {{count}} 条"
+  },
+  "attention": {
+    "summary": "{{count}} 件需要处理",
+    "expand": "展开",
+    "collapse": "收起"
+  },
+  "leave": {
+    "title": "丢弃已填写内容?",
+    "body": "已填写的内容将丢弃,确定离开吗?",
+    "ok": "丢弃并离开",
+    "cancel": "继续编辑"
   }
 }

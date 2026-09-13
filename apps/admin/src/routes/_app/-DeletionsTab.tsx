@@ -1,12 +1,12 @@
 /** 注销申请 Tab:列表 + 执行(L3)/ 驳回(ReasonAction)。 */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { App, Button, Input, Select, Space, Table, Tag, Tooltip, Typography } from "antd";
+import { App, Input, Select, Space, Table, Tag, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { deletionStatusMap, fontSize, formatDateTime, layout, useNow } from "@superdl/ui";
-import { TableErrorEmpty, TypeConfirmModal } from "@superdl/ui/components";
+import { GatedButton, TableErrorEmpty, TypeConfirmModal } from "@superdl/ui/components";
 import { useApiErrorText, useFormat } from "@superdl/ui";
 
 import { type DeletionRow, isApiError, useApproveDeletion, useDeletionRequests, useRejectDeletion } from "../../api";
@@ -164,11 +164,14 @@ export function DeletionsTab() {
             render: (_, r) =>
               r.status === "pending" ? (
                 <Space>
-                  <Tooltip title={isAdmin ? undefined : t("tenants.deletion.noPermission")}>
-                    <Button size="small" danger disabled={!isAdmin} onClick={() => setApproving(r)}>
-                      {t("tenants.deletion.approve")}
-                    </Button>
-                  </Tooltip>
+                  <GatedButton
+                    size="small"
+                    danger
+                    reason={isAdmin ? undefined : t("tenants.deletion.noPermission")}
+                    onClick={() => setApproving(r)}
+                  >
+                    {t("tenants.deletion.approve")}
+                  </GatedButton>
                   <ReasonAction
                     label={t("tenants.deletion.reject")}
                     target={`#${r.user_id} · ${r.phone_masked}`}

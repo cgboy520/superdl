@@ -166,7 +166,6 @@
     "exportCsv": "Export CSV",
     "listCapped": "Showing the cap of {{max}} rows — older records are not listed; narrow the range with the filters above",
     "loading": "Loading…",
-    "more": "More",
     "next": "Next",
     "readonlyNoCreate": "Read-only role cannot create",
     "readonlyNoEdit": "Read-only role cannot edit",
@@ -178,11 +177,6 @@
     "secondConfirm": "Confirm again",
     "statusFilter": "Filter by status",
     "targetLabel": "Target"
-  },
-  "filter": {
-    "clear": "Clear filters",
-    "count_one": "{{count}} item",
-    "count_other": "{{count}} items"
   },
   "finance": {
     "adjustCreated": "Adjustment created — awaiting a second administrator's review",
@@ -812,7 +806,8 @@
     "logout": "Log out",
     "noAlerts": "No alerts",
     "openMenu": "Open navigation menu",
-    "primaryNav": "Admin navigation"
+    "primaryNav": "Admin navigation",
+    "skipToMain": "Skip to main content"
   },
   "skus": {
     "clusterEmptyHint": "Node inventory is empty, so the model must be entered manually. Connect a cluster and wait for the patrol to enable cluster-based creation",

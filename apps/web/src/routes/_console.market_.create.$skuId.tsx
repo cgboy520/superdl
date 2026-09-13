@@ -21,10 +21,10 @@ import {
   skuVariant,
   space,
 } from "@superdl/ui";
-import { DataErrorAlert, PageHeader, useConfirm } from "@superdl/ui/components";
+import { DataErrorAlert, GatedButton, PageHeader } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { Alert, App, Button, Card, Cascader, Input, Skeleton, Space, Table, Tabs, Tooltip, Typography } from "antd";
+import { Alert, App, Button, Card, Cascader, Input, Skeleton, Space, Table, Tabs, Typography } from "antd";
 import { useMemo, useState, type ReactNode } from "react";
 
 import { useFormat } from "@superdl/ui";
@@ -93,7 +93,6 @@ function CreatePage() {
   } = Route.useSearch();
   const navigate = useNavigate();
   const { message } = App.useApp();
-  const confirm = useConfirm();
 
   const { data: skus, isLoading: skusLoading, isError: skusError, refetch: refetchSkus } = useSkus();
   const sku = (skus ?? []).find((s) => s.id === Number(skuId));
@@ -272,23 +271,11 @@ function CreatePage() {
   const canSubmit = issues.length === 0;
   const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 
-  const onCancel = () => {
-    if (!formDirty) {
+  const onCancel = () =>
+    leave.confirmLeave(() => {
+      leave.bypass();
       void navigate({ to: "/market" });
-      return;
-    }
-    confirm({
-      title: t("create.discardConfirmTitle"),
-      consequences: [t("create.discardConfirmBody")],
-      okText: t("create.discardConfirmOk"),
-      cancelText: t("create.discardConfirmCancel"),
-      danger: true,
-      onOk: () => {
-        leave.bypass();
-        void navigate({ to: "/market" });
-      },
     });
-  };
 
   const doCreate = async () => {
     if (!imageRef || !sku) return;
@@ -726,12 +713,10 @@ function CreatePage() {
               {t("create.cancel")}
             </Button>
             {walletQ.isError ? (
-              // 余额查询失败:CTA 普通禁用态 + 原因提示
-              <Tooltip title={t("create.walletQueryFailedRetry")}>
-                <Button type="primary" size="large" disabled>
-                  {submitLabel}
-                </Button>
-              </Tooltip>
+              // 余额查询失败:CTA 门控并提示原因
+              <GatedButton type="primary" size="large" reason={t("create.walletQueryFailedRetry")}>
+                {submitLabel}
+              </GatedButton>
             ) : !balanceReady ? (
               // 余额未就绪:主 CTA 保持 primary + loading
               <Button type="primary" size="large" loading disabled>

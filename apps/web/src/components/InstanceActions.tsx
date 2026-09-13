@@ -3,7 +3,7 @@
 import { DownOutlined } from "@ant-design/icons";
 import type { InstanceOut } from "@superdl/api-client";
 import { isSubscriptionExpired } from "@superdl/ui";
-import { TypeConfirmModal, useConfirm } from "@superdl/ui/components";
+import { GatedButton, TypeConfirmModal, useConfirm } from "@superdl/ui/components";
 import { Link } from "@tanstack/react-router";
 import { App, Button, Dropdown, Space, Tooltip, Typography } from "antd";
 import { useState } from "react";
@@ -173,27 +173,28 @@ export function InstanceActions({
         </Button>
       </Link>
     ) : (
-      <Tooltip title={canStart ? undefined : startTip}>
-        <Button
-          type="primary"
-          size={size}
-          disabled={!canStart}
-          loading={start.isPending}
-          onClick={() => start.mutate(instance.uuid)}
-        >
-          {t("instances.actions.start")}
-        </Button>
-      </Tooltip>
+      <GatedButton
+        type="primary"
+        size={size}
+        reason={canStart ? undefined : startTip}
+        loading={start.isPending}
+        onClick={() => start.mutate(instance.uuid)}
+      >
+        {t("instances.actions.start")}
+      </GatedButton>
     );
 
   return (
     <Space size={4}>
       {primary}
-      <Tooltip title={canStop ? undefined : t("copy.stopNeedsRunning")}>
-        <Button size={size} disabled={!canStop} loading={stop.isPending} onClick={confirmStop}>
-          {t("instances.actions.stop")}
-        </Button>
-      </Tooltip>
+      <GatedButton
+        size={size}
+        reason={canStop ? undefined : t("copy.stopNeedsRunning")}
+        loading={stop.isPending}
+        onClick={confirmStop}
+      >
+        {t("instances.actions.stop")}
+      </GatedButton>
       <Dropdown
         menu={{
           items: [

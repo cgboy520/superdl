@@ -1,11 +1,18 @@
 import { adminColors, fontSize, formatDateTime, statusColors } from "@superdl/ui";
-import { moneyOr, DataErrorAlert, EChart, KpiGrid, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
+import {
+  moneyOr,
+  DataErrorAlert,
+  EChart,
+  GatedButton,
+  KpiGrid,
+  PageContainer,
+  TableErrorEmpty,
+} from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import {
   App,
   Badge,
-  Button,
   Card,
   Col,
   Collapse,
@@ -406,16 +413,14 @@ function AlertStreamCard() {
                       })}
                     </Typography.Text>
                   ) : (
-                    <Tooltip title={writable ? "" : t("overview.opsOnly")}>
-                      <Button
-                        size="small"
-                        disabled={!writable}
-                        loading={ack.isPending && ack.variables.alertId === a.id}
-                        onClick={() => ack.mutate({ alertId: a.id })}
-                      >
-                        {t("overview.ack")}
-                      </Button>
-                    </Tooltip>
+                    <GatedButton
+                      size="small"
+                      reason={writable ? undefined : t("overview.opsOnly")}
+                      loading={ack.isPending && ack.variables.alertId === a.id}
+                      onClick={() => ack.mutate({ alertId: a.id })}
+                    >
+                      {t("overview.ack")}
+                    </GatedButton>
                   )}
                 </div>
               </div>

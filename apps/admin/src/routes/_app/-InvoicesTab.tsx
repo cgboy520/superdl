@@ -6,8 +6,8 @@ import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { adminColors, fontSize, formatDateTime, invoiceStatusMap, layout } from "@superdl/ui";
-import { TableErrorEmpty } from "@superdl/ui/components";
-import { useCsvExport } from "@superdl/ui";
+import { GatedButton, TableErrorEmpty } from "@superdl/ui/components";
+import { useCsvExport, useUrlCommittedInput } from "@superdl/ui";
 import { useFormat } from "@superdl/ui";
 
 import {
@@ -21,7 +21,6 @@ import {
 import { LIST_CAPS, ListCapNote } from "../../components/ListCapNote";
 import { ReasonAction } from "../../components/ReasonAction";
 import { StatusTag } from "../../components/StatusTag";
-import { useUrlCommittedInput } from "../../lib/useUrlCommittedInput";
 import { isValidReason, REASON_MAX_LEN } from "../../lib/validators";
 import { RowActionModal } from "../../components/RowActionModal";
 import { tenantColumn } from "../../components/TenantLink";
@@ -251,11 +250,14 @@ export function InvoicesTab() {
               if (r.status !== "submitted") return null;
               return (
                 <Space wrap>
-                  <Tooltip title={writable ? "" : noPerm}>
-                    <Button size="small" type="primary" disabled={!writable} onClick={() => setIssueTarget(r)}>
-                      {t("finance.invoiceIssue")}
-                    </Button>
-                  </Tooltip>
+                  <GatedButton
+                    size="small"
+                    type="primary"
+                    reason={writable ? undefined : noPerm}
+                    onClick={() => setIssueTarget(r)}
+                  >
+                    {t("finance.invoiceIssue")}
+                  </GatedButton>
                   <ReasonAction
                     label={t("finance.invoiceReject")}
                     target={`#${r.id} · ${formatMoney(r.amount)}`}

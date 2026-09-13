@@ -5,12 +5,12 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Alert, App, Button, Card, Form, Grid, Input, Menu, Modal, Space, Tooltip } from "antd";
+import { Alert, App, Button, Card, Form, Grid, Input, Menu, Modal, Space } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useFormDraft } from "@superdl/ui";
-import { PageContainer } from "@superdl/ui/components";
+import { GatedButton, PageContainer } from "@superdl/ui/components";
 import { useApiErrorText } from "@superdl/ui";
 
 import { isApiError, usePlatformConfig, useUpdatePlatformConfig } from "../../api";
@@ -175,11 +175,14 @@ function PlatformConfigPage() {
     <PageContainer
       title={t("menu.platform")}
       extra={
-        <Tooltip title={isAdmin ? "" : t("platform.adminOnlyEdit")}>
-          <Button type="primary" disabled={disabled || changed.length === 0} onClick={() => setReasonOpen(true)}>
-            {t("settings.saveChanges", { count: changed.length })}
-          </Button>
-        </Tooltip>
+        <GatedButton
+          type="primary"
+          reason={isAdmin ? undefined : t("platform.adminOnlyEdit")}
+          disabled={changed.length === 0}
+          onClick={() => setReasonOpen(true)}
+        >
+          {t("settings.saveChanges", { count: changed.length })}
+        </GatedButton>
       }
     >
       <Card loading={isLoading}>

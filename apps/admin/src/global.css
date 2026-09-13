@@ -1,19 +1,9 @@
-/* 全局基础样式;色值由 main.tsx 从 packages/ui adminColors 注入 CSS 变量。 */
+/* 管理端专属样式(两端共用基线在 @superdl/ui/base.css);色值由 main.tsx 从 packages/ui adminColors 注入 CSS 变量。 */
 
 body {
   margin: 0;
   /* 防 FOUC(index.html 内联同款) */
   background: var(--admin-bg);
-}
-
-/* 数字等宽:全站(表格 / KPI / 抽屉摘要 / Descriptions 一律对齐) */
-body {
-  font-variant-numeric: tabular-nums;
-}
-
-/* 标识符列(订单号 / UUID / 退款单号)等宽字体 */
-.mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
 
 /* 深色滚动条 */
@@ -39,11 +29,4 @@ html {
 }
 .command-palette [cmdk-item][data-disabled="true"] {
   opacity: 0.45;
-}
-
-/* aria-disabled 按钮:视觉同 disabled,但保持可聚焦(tooltip 里的禁用原因键盘可达) */
-.btn-aria-disabled,
-.btn-aria-disabled:hover {
-  cursor: not-allowed;
-  opacity: 0.5;
 }

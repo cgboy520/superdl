@@ -8,12 +8,11 @@ import { useTranslation } from "react-i18next";
 
 import { adminColors, flattenPages, formatDateTime, layout } from "@superdl/ui";
 import { CursorTable } from "@superdl/ui/components";
-import { useFormat } from "@superdl/ui";
+import { useFormat, useUrlCommittedInput } from "@superdl/ui";
 
 import { type TenantRow, useFreezeTenant, useTenants, useUnfreezeTenant } from "../../api";
 import { ReasonAction } from "../../components/ReasonAction";
 import { TenantLink } from "../../components/TenantLink";
-import { useUrlCommittedInput } from "../../lib/useUrlCommittedInput";
 import { REASON_MAX_LEN } from "../../lib/validators";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 import { type DrawerTab, TenantDrawer } from "./-TenantDrawer";

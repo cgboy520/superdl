@@ -14,9 +14,9 @@ import {
   skuVariant,
   space,
 } from "@superdl/ui";
-import { PageHeader } from "@superdl/ui/components";
+import { GatedButton, PageHeader } from "@superdl/ui/components";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { App, Button, Card, Modal, Space, Tooltip, Typography } from "antd";
+import { App, Button, Card, Modal, Space, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -315,27 +315,25 @@ function MarketPage() {
           ) : undefined
         }
         actions={
-          <Tooltip title={selected ? undefined : t("market.selectFirst")}>
-            <Button
-              type="primary"
-              size="large"
-              disabled={!selected}
-              onClick={() => {
-                if (!selected) return;
-                if (!loggedIn) {
-                  void navigate({ to: "/login", search: { redirect: marketHref() } });
-                  return;
-                }
-                void navigate({
-                  to: "/market/create/$skuId",
-                  params: { skuId: String(selected.id) },
-                  search: createSearch,
-                });
-              }}
-            >
-              {loggedIn ? t("market.next") : t("market.loginToRent")}
-            </Button>
-          </Tooltip>
+          <GatedButton
+            type="primary"
+            size="large"
+            reason={selected ? undefined : t("market.selectFirst")}
+            onClick={() => {
+              if (!selected) return;
+              if (!loggedIn) {
+                void navigate({ to: "/login", search: { redirect: marketHref() } });
+                return;
+              }
+              void navigate({
+                to: "/market/create/$skuId",
+                params: { skuId: String(selected.id) },
+                search: createSearch,
+              });
+            }}
+          >
+            {loggedIn ? t("market.next") : t("market.loginToRent")}
+          </GatedButton>
         }
       />
 

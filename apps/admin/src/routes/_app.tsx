@@ -2,7 +2,7 @@ import { AlertOutlined, LogoutOutlined, MenuOutlined, SearchOutlined } from "@an
 import { POLL } from "@superdl/ui";
 import { adminLogoutApiAdminV1AuthLogoutPost } from "@superdl/api-client";
 import { adminColors, fontSize, formatDateTime, layout, metaOf } from "@superdl/ui";
-import { LangSwitcher } from "@superdl/ui/components";
+import { GatedButton, LangSwitcher } from "@superdl/ui/components";
 import { Link, Outlet, createFileRoute, redirect, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   Badge,
@@ -15,7 +15,6 @@ import {
   Popover,
   Space,
   Tag,
-  Tooltip,
   Typography,
   theme,
 } from "antd";
@@ -112,16 +111,14 @@ function AlertBell() {
                     </div>
                     {a.acked_at == null && (
                       <div style={{ paddingLeft: 14, marginTop: 2 }}>
-                        <Tooltip title={writable ? "" : t("overview.opsOnly")}>
-                          <Button
-                            size="small"
-                            disabled={!writable}
-                            loading={ack.isPending && ack.variables.alertId === a.id}
-                            onClick={() => ack.mutate({ alertId: a.id })}
-                          >
-                            {t("overview.ack")}
-                          </Button>
-                        </Tooltip>
+                        <GatedButton
+                          size="small"
+                          reason={writable ? undefined : t("overview.opsOnly")}
+                          loading={ack.isPending && ack.variables.alertId === a.id}
+                          onClick={() => ack.mutate({ alertId: a.id })}
+                        >
+                          {t("overview.ack")}
+                        </GatedButton>
                       </div>
                     )}
                   </div>
@@ -219,6 +216,9 @@ function AppLayout() {
 
   return (
     <Layout style={{ minHeight: "100vh" }}>
+      <a href="#main" className="skip-link">
+        {t("shell.skipToMain")}
+      </a>
       <Layout.Sider
         width={200}
         breakpoint="lg"
@@ -368,7 +368,8 @@ function AppLayout() {
             </Dropdown>
           </Space>
         </Layout.Header>
-        <Layout.Content style={{ padding: 24 }}>
+        {/* antd Layout.Content 即 <main>;id 供 skip-link 定位 */}
+        <Layout.Content id="main" tabIndex={-1} style={{ padding: 24, outline: "none" }}>
           <Outlet />
         </Layout.Content>
         <CommandPalette />

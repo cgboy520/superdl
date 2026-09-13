@@ -61,6 +61,12 @@ export default tseslint.config(
             "JSXOpeningElement[name.type='JSXMemberExpression'][name.object.name='Typography'][name.property.name='Link']:not(:has(> JSXAttribute[name.name='href']))",
           message: 'Typography.Link 必须带 href;纯动作请用 <Button type="link" size="small">',
         },
+        {
+          // ui-ux-spec §1 规则 4:antd 6 原生 disabled 按钮不可聚焦、无鼠标事件,Tooltip 弹不出原因;条件禁用一律 GatedButton
+          selector:
+            "JSXElement[openingElement.name.name='Tooltip'] JSXOpeningElement[name.name='Button'] > JSXAttribute[name.name='disabled']",
+          message: "Tooltip 直接包 disabled Button 弹不出原因;改用 @superdl/ui/components 的 <GatedButton reason={…}>",
+        },
       ],
     },
   },

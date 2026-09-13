@@ -11,7 +11,7 @@ import {
   idemKeyOf,
   statusColors,
 } from "@superdl/ui";
-import { TableErrorEmpty, TypeConfirmModal } from "@superdl/ui/components";
+import { GatedButton, TableErrorEmpty, TypeConfirmModal } from "@superdl/ui/components";
 import { createFileRoute } from "@tanstack/react-router";
 import { Trans, useTranslation } from "react-i18next";
 import {
@@ -263,23 +263,24 @@ function StoragePage() {
                   const canDelete = r.mounted_instance_id == null && r.status !== "deleting";
                   return (
                     <Space>
-                      <Tooltip title={canExpand ? undefined : t("storage.expandNeedsActive")}>
-                        <Button
-                          size="small"
-                          disabled={!canExpand}
-                          onClick={() => {
-                            setNewSize(r.size_gb + EXPAND_DEFAULT_STEP_GB);
-                            setExpandTarget(r);
-                          }}
-                        >
-                          {t("storage.expand")}
-                        </Button>
-                      </Tooltip>
-                      <Tooltip title={canDelete ? undefined : t("storage.deleteNeedsUnmounted")}>
-                        <Button size="small" danger disabled={!canDelete} onClick={() => setDeleteTarget(r)}>
-                          {t("storage.delete")}
-                        </Button>
-                      </Tooltip>
+                      <GatedButton
+                        size="small"
+                        reason={canExpand ? undefined : t("storage.expandNeedsActive")}
+                        onClick={() => {
+                          setNewSize(r.size_gb + EXPAND_DEFAULT_STEP_GB);
+                          setExpandTarget(r);
+                        }}
+                      >
+                        {t("storage.expand")}
+                      </GatedButton>
+                      <GatedButton
+                        size="small"
+                        danger
+                        reason={canDelete ? undefined : t("storage.deleteNeedsUnmounted")}
+                        onClick={() => setDeleteTarget(r)}
+                      >
+                        {t("storage.delete")}
+                      </GatedButton>
                     </Space>
                   );
                 },

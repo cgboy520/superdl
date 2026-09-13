@@ -7,7 +7,7 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 export function RowMoreMenu({ children }: { children: ReactNode }) {
-  const { t } = useTranslation();
+  const { t } = useTranslation("shared");
   const { token } = theme.useToken();
   return (
     <Dropdown

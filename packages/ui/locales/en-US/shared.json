@@ -8,7 +8,9 @@
     "loadedAll_other": "All {{count}} items loaded",
     "forbidden": "No permission",
     "forbiddenDesc": "Your role does not have access to this data. Contact an administrator if you need access.",
-    "requestFailed": "Request failed"
+    "requestFailed": "Request failed",
+    "more": "More",
+    "notAvailable": "Not available"
   },
   "csv": {
     "exportDone": "CSV exported",
@@ -273,5 +275,22 @@
       "user_start": "Started by you",
       "user_stop": "Stopped by you"
     }
+  },
+  "filter": {
+    "clear": "Clear filters",
+    "count_one": "{{count}} item",
+    "count_other": "{{count}} items"
+  },
+  "attention": {
+    "summary_one": "{{count}} item needs attention",
+    "summary_other": "{{count}} items need attention",
+    "expand": "Expand",
+    "collapse": "Collapse"
+  },
+  "leave": {
+    "title": "Discard what you entered?",
+    "body": "What you entered will be discarded. Leave anyway?",
+    "ok": "Discard and leave",
+    "cancel": "Keep editing"
   }
 }

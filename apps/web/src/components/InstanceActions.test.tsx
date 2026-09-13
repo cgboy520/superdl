@@ -127,7 +127,7 @@ describe("InstanceActions", () => {
   it("stopped 实例:开机可用,关机禁用(灰置而非隐藏)", () => {
     renderWithApp(<InstanceActions instance={makeInstance("stopped")} />);
     expect(screen.getByRole("button", { name: BTN_START })).toBeEnabled();
-    expect(screen.getByRole("button", { name: BTN_STOP })).toBeDisabled();
+    expect(screen.getByRole("button", { name: BTN_STOP })).toHaveAttribute("aria-disabled", "true");
   });
 
   it("running 实例:主动作是「连接 ▾」而不是开机;菜单里有复制 SSH / 打开 JupyterLab", async () => {
@@ -156,10 +156,14 @@ describe("InstanceActions", () => {
     expect(stopMutateAsync).toHaveBeenCalledWith("u-1");
   });
 
-  it("frozen 实例:开机禁用(欠费冻结前置条件)", () => {
+  it("frozen 实例:开机门控(欠费冻结前置条件),点击不触发 start", async () => {
+    const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeInstance("frozen")} />);
-    expect(screen.getByRole("button", { name: BTN_START })).toBeDisabled();
-    expect(screen.getByRole("button", { name: BTN_STOP })).toBeDisabled();
+    const start = screen.getByRole("button", { name: BTN_START });
+    expect(start).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("button", { name: BTN_STOP })).toHaveAttribute("aria-disabled", "true");
+    await user.click(start);
+    expect(startMutate).not.toHaveBeenCalled();
   });
 
   it("释放全链路:更多 → 释放实例 → 键入名称 + 勾选清盘才解锁 → 触发 release", async () => {
@@ -247,7 +251,7 @@ describe("InstanceActions · 包周期", () => {
     renderWithApp(
       <InstanceActions instance={makeSubscription("stopped", { expiresAt: PAST, subStatus: "expired" })} />,
     );
-    expect(screen.getByRole("button", { name: BTN_START })).toBeDisabled();
+    expect(screen.getByRole("button", { name: BTN_START })).toHaveAttribute("aria-disabled", "true");
   });
 
   it("包周期在保且已关机:开机照常可用", () => {

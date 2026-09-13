@@ -8,6 +8,7 @@ import { routeTree } from "./routeTree.gen";
 import { setupAuthCacheGuard } from "./lib/authCacheGuard";
 import { authStore, readAccessToken } from "./stores/auth";
 import "./i18n";
+import "@superdl/ui/base.css";
 import "./styles.css";
 
 const queryClient = new QueryClient({

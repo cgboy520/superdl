@@ -2,7 +2,7 @@
 
 import { DownOutlined } from "@ant-design/icons";
 import type { ServiceOut } from "@superdl/api-client";
-import { TypeConfirmModal, useConfirm } from "@superdl/ui/components";
+import { GatedButton, TypeConfirmModal, useConfirm } from "@superdl/ui/components";
 import { useNavigate } from "@tanstack/react-router";
 import { App, Button, Dropdown, Space, Tooltip, Typography } from "antd";
 import { useState } from "react";
@@ -112,42 +112,40 @@ export function ServiceActions({
           {t("services.actions.start")}
         </Button>
       ) : (
-        <Tooltip title={stoppable ? undefined : t("services.actions.needsRunning")}>
-          <Button
-            size="small"
-            disabled={!stoppable}
-            loading={stop.isPending}
-            onClick={() =>
-              confirm({
-                title: t("services.actions.stopConfirmTitle", { name: service.name }),
-                consequences: [
-                  t("services.actions.stopConfirmBody"),
-                  ...(isSubscription ? [t("services.actions.stopConfirmSubscription")] : []),
-                ],
-                onOk: async () => {
-                  await stop.mutateAsync(service.slug);
-                },
-              })
-            }
-          >
-            {t("services.actions.stop")}
-          </Button>
-        </Tooltip>
+        <GatedButton
+          size="small"
+          reason={stoppable ? undefined : t("services.actions.needsRunning")}
+          loading={stop.isPending}
+          onClick={() =>
+            confirm({
+              title: t("services.actions.stopConfirmTitle", { name: service.name }),
+              consequences: [
+                t("services.actions.stopConfirmBody"),
+                ...(isSubscription ? [t("services.actions.stopConfirmSubscription")] : []),
+              ],
+              onOk: async () => {
+                await stop.mutateAsync(service.slug);
+              },
+            })
+          }
+        >
+          {t("services.actions.stop")}
+        </GatedButton>
       )}
       {onRollout && (
-        <Tooltip
-          title={
+        <GatedButton
+          size="small"
+          reason={
             rollout.ok
               ? undefined
               : rollout.reason === "subscription"
                 ? t("services.revision.subscriptionUnsupported")
                 : t("services.revision.needsSettled")
           }
+          onClick={onRollout}
         >
-          <Button size="small" disabled={!rollout.ok} onClick={onRollout}>
-            {t("services.actions.rollout")}
-          </Button>
-        </Tooltip>
+          {t("services.actions.rollout")}
+        </GatedButton>
       )}
       <Dropdown
         menu={{

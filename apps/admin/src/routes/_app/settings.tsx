@@ -1,10 +1,10 @@
 /** 系统设置:策略参数(env 默认 + DB 覆盖,保存需原因)/ 公告发布(群发 active 租户)/ 法务文档 / 管理员账号。 */
 
 import { adminColors, announcementStatusMap, fontSize, formatDateTime, idemKeyOf, metaOf } from "@superdl/ui";
-import { DataErrorAlert, HexTag, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
+import { DataErrorAlert, GatedButton, HexTag, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Alert, App, Button, Card, Form, Input, InputNumber, Modal, Space, Table, Tabs, Tag, Tooltip } from "antd";
+import { Alert, App, Card, Form, Input, InputNumber, Modal, Space, Table, Tabs, Tag, Tooltip } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -156,16 +156,15 @@ function PoliciesTab() {
           },
         ]}
       />
-      <Tooltip title={writable ? "" : t("settings.opsOnlyPolicies")}>
-        <Button
-          type="primary"
-          style={{ marginTop: 12 }}
-          disabled={!writable || changed.length === 0}
-          onClick={() => setReasonOpen(true)}
-        >
-          {t("settings.saveChanges", { count: changed.length })}
-        </Button>
-      </Tooltip>
+      <GatedButton
+        type="primary"
+        style={{ marginTop: 12 }}
+        reason={writable ? undefined : t("settings.opsOnlyPolicies")}
+        disabled={changed.length === 0}
+        onClick={() => setReasonOpen(true)}
+      >
+        {t("settings.saveChanges", { count: changed.length })}
+      </GatedButton>
       <Modal
         title={t("settings.confirmPolicyTitle")}
         open={reasonOpen}
@@ -258,36 +257,34 @@ function AnnouncementTab() {
           <Input.TextArea rows={4} placeholder={t("settings.announceContentPlaceholder")} />
         </Form.Item>
       </Form>
-      <Tooltip title={writable ? "" : t("settings.opsOnlyAnnounce")}>
-        <Button
-          type="primary"
-          loading={publish.isPending}
-          disabled={!writable}
-          onClick={() => {
-            modal.confirm({
-              title: t("settings.confirmAnnounce"),
-              content: t("settings.confirmAnnounceDetail", {
-                title: form.getFieldValue("title") ?? "",
-              }),
-              okText: t("settings.publish"),
-              onOk: async () => {
-                try {
-                  const values = await form.validateFields();
-                  publish.mutate({
-                    data: values,
-                    // 幂等键从表单快照派生
-                    idempotencyKey: idemKeyOf("ann", [values.title, values.content]),
-                  });
-                } catch {
-                  /* 校验失败:antd 已给红字 */
-                }
-              },
-            });
-          }}
-        >
-          {t("settings.publish")}
-        </Button>
-      </Tooltip>
+      <GatedButton
+        type="primary"
+        loading={publish.isPending}
+        reason={writable ? undefined : t("settings.opsOnlyAnnounce")}
+        onClick={() => {
+          modal.confirm({
+            title: t("settings.confirmAnnounce"),
+            content: t("settings.confirmAnnounceDetail", {
+              title: form.getFieldValue("title") ?? "",
+            }),
+            okText: t("settings.publish"),
+            onOk: async () => {
+              try {
+                const values = await form.validateFields();
+                publish.mutate({
+                  data: values,
+                  // 幂等键从表单快照派生
+                  idempotencyKey: idemKeyOf("ann", [values.title, values.content]),
+                });
+              } catch {
+                /* 校验失败:antd 已给红字 */
+              }
+            },
+          });
+        }}
+      >
+        {t("settings.publish")}
+      </GatedButton>
       {lastPublished && (
         <Alert
           type="success"

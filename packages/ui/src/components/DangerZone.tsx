@@ -1,9 +1,10 @@
-/** 危险区卡(两端共用):红边 Card + 说明 + 一个或多个危险动作;动作禁用原因走 Tooltip(全站禁用项同一处理)。 */
+/** 危险区卡(两端共用):红边 Card + 说明 + 一个或多个危险动作;动作前置条件经 GatedButton(可见、可聚焦、原因可读)。 */
 
-import { Button, Card, Space, Tooltip, Typography, theme } from "antd";
+import { Card, Space, Typography, theme } from "antd";
 import type { ReactNode } from "react";
 
 import { space } from "../tokens";
+import { GatedButton } from "./GatedButton";
 
 export interface DangerAction {
   key: string;
@@ -31,11 +32,15 @@ export function DangerZone({
         {description && <Typography.Text type="secondary">{description}</Typography.Text>}
         <Space wrap>
           {actions.map((a) => (
-            <Tooltip key={a.key} title={a.disabled ? a.disabledReason : undefined}>
-              <Button danger disabled={a.disabled} loading={a.loading} onClick={a.onClick}>
-                {a.label}
-              </Button>
-            </Tooltip>
+            <GatedButton
+              key={a.key}
+              danger
+              reason={a.disabled ? a.disabledReason : undefined}
+              loading={a.loading}
+              onClick={a.onClick}
+            >
+              {a.label}
+            </GatedButton>
           ))}
         </Space>
       </Space>

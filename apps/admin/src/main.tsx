@@ -7,6 +7,7 @@ import { MotionConfig } from "motion/react";
 import React from "react";
 import ReactDOM from "react-dom/client";
 
+import "@superdl/ui/base.css";
 import "./global.css";
 import "./i18n";
 import { queryClient } from "./lib/queryClient";
@@ -41,6 +42,8 @@ document.documentElement.style.setProperty("--admin-bg", adminColors.bgBase);
 document.documentElement.style.setProperty("--admin-chart-neutral", adminColors.chartNeutral);
 // 命令面板选中行底色(global.css .command-palette)经变量注入
 document.documentElement.style.setProperty("--admin-accent", adminColors.dataAccent);
+// base.css 焦点框 / skip-link 主色(两端共用变量)
+document.documentElement.style.setProperty("--sdl-color-primary", adminColors.dataAccent);
 
 const router = createRouter({
   routeTree,

@@ -1,7 +1,8 @@
-/** 筛选链 chip 行(市场/创建页)。单选,禁用项灰置 + tooltip 原因;聚合项由调用方用哨兵值表达。 */
+/** 筛选链 chip 行(市场/创建页)。单选,禁用项走 GatedButton(灰置 + 原因);聚合项由调用方用哨兵值表达。 */
 
 import { brand, colorPrimary, fontWeight, webDarkColors } from "@superdl/ui";
-import { Button, Space, theme, Tooltip, Typography } from "antd";
+import { GatedButton } from "@superdl/ui/components";
+import { Space, theme, Typography } from "antd";
 import { useId, type ReactNode } from "react";
 
 import { useThemeMode } from "../stores/theme";
@@ -58,24 +59,17 @@ export function ChipRow<T extends string | number>({
       <Space wrap size={8} style={{ flex: 1 }} role="group" aria-labelledby={labelId}>
         {options.map((o) => {
           const selected = o.value === value;
-          const btn = (
-            <Button
+          return (
+            <GatedButton
               key={String(o.value)}
               size="middle"
-              disabled={o.disabled}
+              reason={o.disabled ? o.disabledReason : undefined}
               aria-pressed={selected}
               onClick={() => onChange(o.value)}
               style={selected ? selectedStyle : { borderColor: token.colorBorder }}
             >
               {o.label}
-            </Button>
-          );
-          return o.disabled && o.disabledReason ? (
-            <Tooltip key={String(o.value)} title={o.disabledReason}>
-              {btn}
-            </Tooltip>
-          ) : (
-            btn
+            </GatedButton>
           );
         })}
         {extra}

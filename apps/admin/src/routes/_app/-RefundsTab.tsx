@@ -1,7 +1,7 @@
 /** 退款 Tab:审批 / 驳回 / 打款登记 / 取消(更多)。 */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { Button, DatePicker, Form, Input, Select, Space, Tooltip, Typography } from "antd";
+import { Button, DatePicker, Form, Input, Select, Space, Typography } from "antd";
 import dayjs from "dayjs";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -16,7 +16,7 @@ import {
   payoutChannelMap,
   refundStatusMap,
 } from "@superdl/ui";
-import { CursorTable } from "@superdl/ui/components";
+import { CursorTable, GatedButton } from "@superdl/ui/components";
 import { useCsvExport } from "@superdl/ui";
 import { useFormat } from "@superdl/ui";
 
@@ -262,16 +262,14 @@ export function RefundsTab() {
                     </>
                   )}
                   {r.status === "approved" && (
-                    <Tooltip title={!writable ? noPerm : isReviewer ? t("finance.refundNoSelfPayout") : ""}>
-                      <Button
-                        size="small"
-                        type="primary"
-                        disabled={!writable || isReviewer}
-                        onClick={() => setPayoutTarget(r)}
-                      >
-                        {t("finance.payout")}
-                      </Button>
-                    </Tooltip>
+                    <GatedButton
+                      size="small"
+                      type="primary"
+                      reason={!writable ? noPerm : isReviewer ? t("finance.refundNoSelfPayout") : undefined}
+                      onClick={() => setPayoutTarget(r)}
+                    >
+                      {t("finance.payout")}
+                    </GatedButton>
                   )}
                   {/* 低频的「取消退款单」收进更多(行内 ≤2 动作) */}
                   <RowMoreMenu>

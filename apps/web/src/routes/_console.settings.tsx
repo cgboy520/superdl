@@ -2,10 +2,10 @@
 
 import type { TokenPairOut } from "@superdl/api-client";
 import { deletionStatusMap, fontSize, formatDateTime, maskPhone, metaOf } from "@superdl/ui";
-import { DataErrorAlert, TableErrorEmpty, TypeConfirmModal, useConfirm } from "@superdl/ui/components";
+import { DataErrorAlert, GatedButton, TableErrorEmpty, TypeConfirmModal, useConfirm } from "@superdl/ui/components";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { App, Alert, Button, Card, Form, Input, Modal, Skeleton, Space, Table, Tag, Tooltip, Typography } from "antd";
+import { App, Alert, Button, Card, Form, Input, Modal, Skeleton, Space, Table, Tag, Typography } from "antd";
 import { useState } from "react";
 
 import {
@@ -462,11 +462,14 @@ function RealNameCard({
                 maxLength={18}
               />
             </Form.Item>
-            <Tooltip title={enabled ? "" : t("settings.realNameDisabled")}>
-              <Button type="primary" htmlType="submit" loading={submit.isPending} disabled={!enabled}>
-                {t("settings.submitVerify")}
-              </Button>
-            </Tooltip>
+            <GatedButton
+              type="primary"
+              htmlType="submit"
+              loading={submit.isPending}
+              reason={enabled ? undefined : t("settings.realNameDisabled")}
+            >
+              {t("settings.submitVerify")}
+            </GatedButton>
           </Form>
         </Space>
       )}

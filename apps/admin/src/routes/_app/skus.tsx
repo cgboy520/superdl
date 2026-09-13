@@ -2,12 +2,12 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { App, Button, Card, Table, Tag, Tooltip } from "antd";
+import { App, Card, Table, Tag } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { layout, skuTierMap, skuVariant } from "@superdl/ui";
-import { PageContainer, TableErrorEmpty, useConfirm } from "@superdl/ui/components";
+import { GatedButton, PageContainer, TableErrorEmpty, useConfirm } from "@superdl/ui/components";
 import { useFormat } from "@superdl/ui";
 import { useApiErrorText } from "@superdl/ui";
 
@@ -42,11 +42,13 @@ function SkusPage() {
       width="full"
       title={t("menu.skus")}
       extra={
-        <Tooltip title={writable ? "" : t("common.readonlyNoCreate")}>
-          <Button type="primary" disabled={!writable} onClick={() => setEditing("new")}>
-            {t("skus.newSku")}
-          </Button>
-        </Tooltip>
+        <GatedButton
+          type="primary"
+          reason={writable ? undefined : t("common.readonlyNoCreate")}
+          onClick={() => setEditing("new")}
+        >
+          {t("skus.newSku")}
+        </GatedButton>
       }
     >
       <Card>
@@ -192,11 +194,13 @@ function SkusPage() {
               fixed: "right",
               width: 90,
               render: (_, r) => (
-                <Tooltip title={writable ? "" : t("common.readonlyNoEdit")}>
-                  <Button size="small" disabled={!writable} onClick={() => setEditing(r)}>
-                    {t("skus.edit")}
-                  </Button>
-                </Tooltip>
+                <GatedButton
+                  size="small"
+                  reason={writable ? undefined : t("common.readonlyNoEdit")}
+                  onClick={() => setEditing(r)}
+                >
+                  {t("skus.edit")}
+                </GatedButton>
               ),
             },
           ]}

@@ -2,12 +2,13 @@
  *  target(目标标识:租户 #id·手机 / 实例名·uuid 前缀 / 节点名 / 退款单号)在两步弹窗都显示,操作者看得见自己在动哪一条。 */
 
 import { fontSize, space } from "@superdl/ui";
-import { App, Button, Form, Input, Modal, Space, Tooltip, Typography } from "antd";
+import { App, Form, Input, Modal, Space, Typography } from "antd";
 import type { ButtonProps } from "antd";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useApiErrorText } from "@superdl/ui";
+import { GatedButton } from "@superdl/ui/components";
 
 import { REASON_MAX_LEN } from "../lib/validators";
 
@@ -51,20 +52,17 @@ export function ReasonAction({
   const [reasonSnapshot, setReasonSnapshot] = useState("");
   const [form] = Form.useForm<{ reason: string }>();
 
-  // 禁用态保持可聚焦(aria-disabled + 拦截点击),键盘用户也能读到 tooltip 里的原因
+  // 禁用态走 GatedButton:可聚焦 + 拦截点击,键盘用户也能读到 tooltip 里的原因
   const button = (
-    <Button
+    <GatedButton
+      reason={disabled ? disabledReason : undefined}
       danger={danger}
       size={size}
       type={type}
-      aria-disabled={disabled || undefined}
-      className={disabled ? "btn-aria-disabled" : undefined}
-      onClick={() => {
-        if (!disabled) setOpen(true);
-      }}
+      onClick={() => setOpen(true)}
     >
       {label}
-    </Button>
+    </GatedButton>
   );
 
   const run = async () => {
@@ -102,7 +100,7 @@ export function ReasonAction({
 
   return (
     <>
-      {disabled && disabledReason ? <Tooltip title={disabledReason}>{button}</Tooltip> : button}
+      {button}
       <Modal
         title={title}
         open={open}
