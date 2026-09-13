@@ -8,7 +8,7 @@ import { adminColors, fontSize } from "@superdl/ui";
 import { useApiErrorText } from "@superdl/ui";
 
 import { useTestRegistry, useTestSms } from "../../api";
-import { PROVIDER_LABELS } from "./-platformFields";
+import { PROVIDER_LABELS, type ProviderLabelKey } from "./-platformFields";
 
 export function SmsTestCard({ disabled }: { disabled: boolean }) {
   const { t } = useTranslation();
@@ -18,7 +18,8 @@ export function SmsTestCard({ disabled }: { disabled: boolean }) {
   const testSms = useTestSms({
     mutation: {
       onSuccess: (d) => {
-        message.success(t("platform.testSmsSent", { provider: PROVIDER_LABELS[d.provider] ?? d.provider }));
+        const labelKey = (PROVIDER_LABELS as Record<string, ProviderLabelKey>)[d.provider];
+        message.success(t("platform.testSmsSent", { provider: labelKey ? t(labelKey) : d.provider }));
       },
       onError: (e) => message.error(errText(e, t("platform.sendFailed"))),
     },

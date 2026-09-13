@@ -9,62 +9,72 @@ import { fontSize, formatDateTime } from "@superdl/ui";
 import { type PlatformConfigItem } from "../../api";
 import { GROUP_LABEL_KEY, Group } from "./-platformNav";
 
-// i18n-exempt(至 GROUP_INTRO 为止):中国渠道字段名与操作指引不译
-export const FIELD_LABELS: Record<string, string> = {
-  admin_mfa_enabled: "启用管理端两步验证(TOTP)",
-  captcha_enabled: "启用人机验证(阿里云验证码 2.0)",
-  captcha_scene_id: "场景 ID",
-  captcha_prefix: "身份标(prefix)",
-  captcha_access_key_id: "AccessKey ID",
-  captcha_access_key_secret: "AccessKey Secret",
-  grafana_url: "Grafana 地址(可选,外链)",
-  oncall_phone: "值班手机号(critical 告警短信)",
-  payment_wechat_enabled: "启用微信支付渠道",
-  wechat_mchid: "商户号(mchid)",
-  wechat_appid: "应用 AppID",
-  wechat_cert_serial_no: "商户 API 证书序列号",
-  wechat_private_key: "商户 API 私钥(apiclient_key.pem)",
-  wechat_apiv3_key: "APIv3 密钥",
-  wechat_public_key_id: "微信支付公钥 ID(PUB_KEY_ID_…)",
-  wechat_public_key: "微信支付公钥(pub_key.pem)",
-  payment_alipay_enabled: "启用支付宝渠道",
-  alipay_app_id: "应用 APPID",
-  alipay_private_key: "应用私钥(纯 base64,不含 PEM 头尾)",
-  alipay_public_key: "支付宝公钥(纯 base64,不含 PEM 头尾)",
-  sms_provider: "短信 Provider",
-  sms_access_key_id: "AccessKey ID",
-  sms_access_key_secret: "AccessKey Secret",
-  sms_sign_name: "短信签名名称",
-  sms_template_verify: "验证码模板码",
-  sms_template_notice: "通知模板码",
-  real_name_enabled: "启用实名认证(阿里云三要素核验)",
-  real_name_required_for_recharge: "充值前强制实名认证",
-  real_name_access_key_id: "AccessKey ID",
-  real_name_access_key_secret: "AccessKey Secret",
-  icp_number: "ICP 备案号",
-  police_record_number: "公安联网备案号",
-  company_name: "公司全称(营业执照)",
-  company_address: "公司注册地址",
-  company_phone: "对外联系电话",
-  business_license_url: "营业执照电子版链接(亮照)",
-  support_email: "客服邮箱",
-  support_wechat: "企业微信/微信客服号",
-  cluster_server_url: "Server 地址",
-  cluster_join_token: "Join Token",
-  cluster_agent_version: "Agent 版本(装机脚本钉死)",
-  node_driver_version: "NVIDIA 驱动主版本",
-  node_registries_yaml: "registries.yaml(高级覆盖)",
-  node_install_mirror: "装机安装源",
-  registry_host: "Harbor 地址",
-  registry_project: "平台镜像项目",
-  registry_robot_name: "机器人账户",
-  registry_robot_secret: "机器人 Secret",
-  registry_ca_pem: "CA 证书 PEM(自签时)",
-  registry_proxy_projects: "代理缓存项目(每行 上游=项目)",
-  image_allowed_registries: "镜像来源白名单(每行一个前缀)",
-};
+/** 字段标签:值是 locale 键(platform.field.*),取用经 useFieldLabel。 */
+export const FIELD_LABELS = {
+  admin_mfa_enabled: "platform.field.admin_mfa_enabled",
+  captcha_enabled: "platform.field.captcha_enabled",
+  captcha_scene_id: "platform.field.captcha_scene_id",
+  captcha_prefix: "platform.field.captcha_prefix",
+  captcha_access_key_id: "platform.field.captcha_access_key_id",
+  captcha_access_key_secret: "platform.field.captcha_access_key_secret",
+  grafana_url: "platform.field.grafana_url",
+  oncall_phone: "platform.field.oncall_phone",
+  payment_wechat_enabled: "platform.field.payment_wechat_enabled",
+  wechat_mchid: "platform.field.wechat_mchid",
+  wechat_appid: "platform.field.wechat_appid",
+  wechat_cert_serial_no: "platform.field.wechat_cert_serial_no",
+  wechat_private_key: "platform.field.wechat_private_key",
+  wechat_apiv3_key: "platform.field.wechat_apiv3_key",
+  wechat_public_key_id: "platform.field.wechat_public_key_id",
+  wechat_public_key: "platform.field.wechat_public_key",
+  payment_alipay_enabled: "platform.field.payment_alipay_enabled",
+  alipay_app_id: "platform.field.alipay_app_id",
+  alipay_private_key: "platform.field.alipay_private_key",
+  alipay_public_key: "platform.field.alipay_public_key",
+  sms_provider: "platform.field.sms_provider",
+  sms_access_key_id: "platform.field.sms_access_key_id",
+  sms_access_key_secret: "platform.field.sms_access_key_secret",
+  sms_sign_name: "platform.field.sms_sign_name",
+  sms_template_verify: "platform.field.sms_template_verify",
+  sms_template_notice: "platform.field.sms_template_notice",
+  real_name_enabled: "platform.field.real_name_enabled",
+  real_name_required_for_recharge: "platform.field.real_name_required_for_recharge",
+  real_name_access_key_id: "platform.field.real_name_access_key_id",
+  real_name_access_key_secret: "platform.field.real_name_access_key_secret",
+  icp_number: "platform.field.icp_number",
+  police_record_number: "platform.field.police_record_number",
+  company_name: "platform.field.company_name",
+  company_address: "platform.field.company_address",
+  company_phone: "platform.field.company_phone",
+  business_license_url: "platform.field.business_license_url",
+  support_email: "platform.field.support_email",
+  support_wechat: "platform.field.support_wechat",
+  cluster_server_url: "platform.field.cluster_server_url",
+  cluster_join_token: "platform.field.cluster_join_token",
+  cluster_agent_version: "platform.field.cluster_agent_version",
+  node_driver_version: "platform.field.node_driver_version",
+  node_registries_yaml: "platform.field.node_registries_yaml",
+  node_install_mirror: "platform.field.node_install_mirror",
+  registry_host: "platform.field.registry_host",
+  registry_project: "platform.field.registry_project",
+  registry_robot_name: "platform.field.registry_robot_name",
+  registry_robot_secret: "platform.field.registry_robot_secret",
+  registry_ca_pem: "platform.field.registry_ca_pem",
+  registry_proxy_projects: "platform.field.registry_proxy_projects",
+  image_allowed_registries: "platform.field.image_allowed_registries",
+} as const satisfies Record<string, string>;
+export type FieldLabelKey = (typeof FIELD_LABELS)[keyof typeof FIELD_LABELS];
 
-// 指引 prose 入 locale(platform.fieldExtra.*);FIELD_LABELS/PROVIDER_LABELS/RISK_OFF 维持 i18n-exempt
+/** 字段标签查表:未登记的键回落键名本身。 */
+export function useFieldLabel(): (key: string) => string {
+  const { t } = useTranslation();
+  return (key: string) => {
+    const labelKey = (FIELD_LABELS as Record<string, FieldLabelKey>)[key];
+    return labelKey ? t(labelKey) : key;
+  };
+}
+
+// 字段级指引 prose 的 locale 键(platform.fieldExtra.*)
 export const FIELD_EXTRA_KEYS = {
   admin_mfa_enabled: "platform.fieldExtra.admin_mfa_enabled",
   captcha_enabled: "platform.fieldExtra.captcha_enabled",
@@ -87,12 +97,14 @@ export const FIELD_EXTRA_KEYS = {
 } as const;
 export type FieldExtraKey = (typeof FIELD_EXTRA_KEYS)[keyof typeof FIELD_EXTRA_KEYS];
 
-export const PROVIDER_LABELS: Record<string, string> = {
-  mock: "开发模式(不发短信,固定码 123456 写日志;仅开发环境)",
-  aliyun: "阿里云",
-  cn: "国内镜像(rancher-mirror.rancher.cn)",
-  official: "官方源",
-};
+/** 选项标签:值是 locale 键(platform.provider.*)。 */
+export const PROVIDER_LABELS = {
+  mock: "platform.provider.mock",
+  aliyun: "platform.provider.aliyun",
+  cn: "platform.provider.cn",
+  official: "platform.provider.official",
+} as const satisfies Record<string, string>;
+export type ProviderLabelKey = (typeof PROVIDER_LABELS)[keyof typeof PROVIDER_LABELS];
 
 export const GROUP_INTRO_KEYS = {
   registry: "platform.groupIntro.registry",
@@ -145,7 +157,10 @@ export function FieldControl({
         style={{ width: 260 }}
         disabled={disabled}
         value={draft ?? item.value ?? undefined}
-        options={item.choices.map((c) => ({ value: c, label: PROVIDER_LABELS[c] ?? c }))}
+        options={item.choices.map((c) => {
+          const labelKey = (PROVIDER_LABELS as Record<string, ProviderLabelKey>)[c];
+          return { value: c, label: labelKey ? t(labelKey) : c };
+        })}
         onChange={(v) => onChange(v)}
       />
     );
@@ -206,6 +221,7 @@ export function GroupPanel({
   origin?: { group: Group; onBack: () => void };
 }) {
   const { t } = useTranslation();
+  const fieldLabel = useFieldLabel();
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%", maxWidth: 760 }}>
       {origin && (
@@ -237,7 +253,7 @@ export function GroupPanel({
             key={item.key}
             label={
               <Space size={8}>
-                {FIELD_LABELS[item.key] ?? item.key}
+                {fieldLabel(item.key)}
                 <Tag color={SOURCE_TAG[item.source].color}>{t(SOURCE_TAG[item.source].textKey)}</Tag>
                 {item.updated_at && (
                   <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>

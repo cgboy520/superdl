@@ -1,7 +1,7 @@
 /** 法务文档 Tab:doc_key × locale 状态格 + 左编辑右预览 + 版本历史;写仅 admin;发布确认带行级 diff 统计。 */
 
-import { adminColors, formatDateTime, legalDocStatusMap, useApiErrorText, useFormDraft } from "@superdl/ui";
-import { DataErrorAlert, GatedButton, LegalMarkdown, TableErrorEmpty } from "@superdl/ui/components";
+import { adminColors, formatDateTime, legalDocStatusMap, space, useApiErrorText, useFormDraft } from "@superdl/ui";
+import { DataErrorAlert, GatedButton, KeyValue, LegalMarkdown, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { Alert, App, Button, Card, Collapse, Input, Modal, Space, Table, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
@@ -91,11 +91,23 @@ export function LegalDocsTab() {
             render: (_: unknown, r: { docKey: string }) => {
               const cell = cells.get(`${r.docKey}:${locale}`);
               const active = selected?.docKey === r.docKey && selected.locale === locale;
+              const open = () => setSelected({ docKey: r.docKey, locale });
               return (
                 <Card
                   size="small"
                   hoverable
-                  onClick={() => setSelected({ docKey: r.docKey, locale })}
+                  role="button"
+                  tabIndex={0}
+                  className="focus-ring"
+                  aria-label={t("settings.legal.openEditor", { doc: docLabel(r.docKey), locale })}
+                  aria-pressed={active}
+                  onClick={open}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      open();
+                    }
+                  }}
                   style={active ? { borderColor: adminColors.dataAccent } : undefined}
                 >
                   {cell?.published && (
@@ -251,9 +263,19 @@ function CellEditor({
               >
                 {t("settings.legal.saveDraft")}
               </Button>
-              <Button type="primary" disabled={!writable} onClick={() => setPublishOpen(true)}>
+              <GatedButton
+                type="primary"
+                reason={
+                  !writable
+                    ? t("settings.legal.adminOnlyTip")
+                    : dirty
+                      ? t("settings.legal.saveBeforePublish")
+                      : undefined
+                }
+                onClick={() => setPublishOpen(true)}
+              >
                 {t("settings.legal.publish")}
-              </Button>
+              </GatedButton>
               <ReasonAction
                 label={t("settings.legal.archive")}
                 target={`${docLabel} · v${draft.version}`}
@@ -369,13 +391,23 @@ function CellEditor({
         okButtonProps={{ loading: publish.isPending }}
         onOk={() => draft && publish.mutate({ versionId: draft.id })}
       >
-        {diff ? (
-          <Typography.Text>
-            {t("settings.legal.diffLine", { added: diff.added, removed: diff.removed })}
-          </Typography.Text>
-        ) : (
-          <Typography.Text>{t("settings.legal.firstPublish")}</Typography.Text>
-        )}
+        <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
+          {draft && (
+            <KeyValue
+              items={[
+                { label: t("settings.legal.colVersion"), value: `v${draft.version}` },
+                { label: t("settings.legal.colCreatedAt"), value: formatDateTime(draft.created_at) },
+              ]}
+            />
+          )}
+          {diff ? (
+            <Typography.Text>
+              {t("settings.legal.diffLine", { added: diff.added, removed: diff.removed })}
+            </Typography.Text>
+          ) : (
+            <Typography.Text>{t("settings.legal.firstPublish")}</Typography.Text>
+          )}
+        </Space>
       </Modal>
     </Card>
   );

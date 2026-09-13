@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { adminColors, fontSize, formatDateTime } from "@superdl/ui";
 
 import { type PlatformConfigItem } from "../../api";
-import { FIELD_LABELS, FieldExtraText, GROUP_INTRO_KEYS, SOURCE_TAG } from "./-platformFields";
+import { FieldExtraText, GROUP_INTRO_KEYS, SOURCE_TAG, useFieldLabel } from "./-platformFields";
 import { ConfigWarning, GROUP_LABEL_KEY, Group } from "./-platformNav";
 
 /** 安全开关的依赖凭据(在别的分组录入)与「须先开启」的前置开关。 */
@@ -23,13 +23,14 @@ export const SWITCH_DEPS: Record<string, { keys: string[]; group: Group }> = {
 export const SWITCH_REQUIRES: Record<string, string> = {
   real_name_required_for_recharge: "real_name_enabled",
 };
-// i18n-exempt:关闭安全开关时弹窗复述的风险
-export const RISK_OFF: Record<string, string> = {
-  captcha_enabled: "关闭后 /auth/sms-code 不做人机校验,仅剩 IP/手机号限流",
-  admin_mfa_enabled: "关闭后管理端仅凭口令即可登录,已绑定的 TOTP 也不再校验",
-  real_name_enabled: "关闭后用户无法完成实名;若「充值前强制实名」开着,保存会被拒绝",
-  real_name_required_for_recharge: "关闭后未实名用户可以充值与开通实例",
-};
+/** 关闭安全开关时弹窗复述的风险:值是 locale 键(platform.riskOff.*)。 */
+export const RISK_OFF = {
+  captcha_enabled: "platform.riskOff.captcha_enabled",
+  admin_mfa_enabled: "platform.riskOff.admin_mfa_enabled",
+  real_name_enabled: "platform.riskOff.real_name_enabled",
+  real_name_required_for_recharge: "platform.riskOff.real_name_required_for_recharge",
+} as const satisfies Record<string, string>;
+export type RiskOffKey = (typeof RISK_OFF)[keyof typeof RISK_OFF];
 
 export function SwitchRow({
   item,
@@ -49,6 +50,7 @@ export function SwitchRow({
   onGoTo: (group: Group) => void;
 }) {
   const { t } = useTranslation();
+  const fieldLabel = useFieldLabel();
   const effective = (draft[item.key] ?? item.value ?? "false") === "true";
   const deps = SWITCH_DEPS[item.key];
   const missing = deps ? deps.keys.filter((k) => !byKey.get(k)?.configured) : [];
@@ -65,7 +67,7 @@ export function SwitchRow({
         />
         <Space orientation="vertical" size={4}>
           <Space size={8} wrap>
-            <Typography.Text strong>{FIELD_LABELS[item.key] ?? item.key}</Typography.Text>
+            <Typography.Text strong>{fieldLabel(item.key)}</Typography.Text>
             <Tag color={SOURCE_TAG[item.source].color}>{t(SOURCE_TAG[item.source].textKey)}</Tag>
             {item.updated_at && (
               <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
@@ -99,7 +101,7 @@ export function SwitchRow({
               >
                 {missing.length > 0
                   ? t("platform.depsMissing", {
-                      keys: missing.map((k) => FIELD_LABELS[k] ?? k).join(", "),
+                      keys: missing.map((k) => fieldLabel(k)).join(", "),
                     })
                   : t("platform.depsOk")}
               </Typography.Text>
@@ -112,7 +114,7 @@ export function SwitchRow({
           )}
           {requires && !requiresOn && (
             <Typography.Text style={{ fontSize: fontSize.caption, color: adminColors.alertAccent }}>
-              {t("platform.needsSwitch", { label: FIELD_LABELS[requires] ?? requires })}
+              {t("platform.needsSwitch", { label: fieldLabel(requires) })}
             </Typography.Text>
           )}
           {risks.map((w) => (

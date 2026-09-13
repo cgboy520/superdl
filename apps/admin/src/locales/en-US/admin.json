@@ -2,6 +2,7 @@
   "admins": {
     "cannotChangeSelf": "You cannot disable or downgrade your own account — ask another super admin",
     "changeOwnPassword": "Change my password",
+    "changeRole": "Change role",
     "colActions": "Actions",
     "colCreatedAt": "Created",
     "colMfa": "2FA",
@@ -45,6 +46,7 @@
     "resetPasswordConfirmTitle": "Reset the password of {{name}}?",
     "resetPasswordFor": "Reset password for {{name}}",
     "roleTakesEffectNow": "Role changes take effect immediately; the account must sign in again.",
+    "roleUnchanged": "Pick a role different from the current one",
     "selfChangeKicksSessions": "Changing your password revokes every session including this one; you will need to sign in again.",
     "statusActive": "Active",
     "statusDisabled": "Disabled",
@@ -646,6 +648,65 @@
     "confirmTitle": "Confirm platform config changes",
     "depsMissing": "Missing {{keys}}",
     "depsOk": "Credentials configured",
+    "dotConfigured": "Configured",
+    "dotError": "Misconfigured",
+    "dotLegend": "Red = misconfigured · Amber = needs attention · Green = on · Cyan = configured · Grey = not configured or off",
+    "dotOff": "Not configured or off",
+    "dotOn": "On",
+    "dotWarning": "Needs attention",
+    "field": {
+      "admin_mfa_enabled": "Enable admin two-factor authentication (TOTP)",
+      "alipay_app_id": "Application APPID",
+      "alipay_private_key": "Application private key (raw base64, no PEM header or footer)",
+      "alipay_public_key": "Alipay public key (raw base64, no PEM header or footer)",
+      "business_license_url": "Business license scan URL (public disclosure)",
+      "captcha_access_key_id": "AccessKey ID",
+      "captcha_access_key_secret": "AccessKey Secret",
+      "captcha_enabled": "Enable CAPTCHA (Aliyun Captcha 2.0)",
+      "captcha_prefix": "Identity prefix",
+      "captcha_scene_id": "Scene ID",
+      "cluster_agent_version": "Agent version (pinned by the install script)",
+      "cluster_join_token": "Join token",
+      "cluster_server_url": "Server URL",
+      "company_address": "Registered company address",
+      "company_name": "Full company name (as on the business license)",
+      "company_phone": "Public contact phone",
+      "grafana_url": "Grafana URL (optional, external link)",
+      "icp_number": "ICP 备案 (ICP filing) number",
+      "image_allowed_registries": "Allowed image sources (one prefix per line)",
+      "node_driver_version": "NVIDIA driver major version",
+      "node_install_mirror": "Node install source",
+      "node_registries_yaml": "registries.yaml (advanced override)",
+      "oncall_phone": "On-call phone (critical alert SMS)",
+      "payment_alipay_enabled": "Enable the Alipay channel",
+      "payment_wechat_enabled": "Enable the WeChat Pay channel",
+      "police_record_number": "公安联网备案 (public security filing) number",
+      "real_name_access_key_id": "AccessKey ID",
+      "real_name_access_key_secret": "AccessKey Secret",
+      "real_name_enabled": "Enable identity verification (Aliyun three-factor check)",
+      "real_name_required_for_recharge": "Require identity verification before top-up",
+      "registry_ca_pem": "CA certificate PEM (for self-signed certs)",
+      "registry_host": "Harbor URL",
+      "registry_project": "Platform image project",
+      "registry_proxy_projects": "Proxy cache projects (one upstream=project per line)",
+      "registry_robot_name": "Robot account",
+      "registry_robot_secret": "Robot account secret",
+      "sms_access_key_id": "AccessKey ID",
+      "sms_access_key_secret": "AccessKey Secret",
+      "sms_provider": "SMS provider",
+      "sms_sign_name": "SMS signature name",
+      "sms_template_notice": "Notification template ID",
+      "sms_template_verify": "Verification code template ID",
+      "support_email": "Support email",
+      "support_wechat": "WeCom / WeChat support account",
+      "wechat_apiv3_key": "APIv3 key",
+      "wechat_appid": "Application AppID",
+      "wechat_cert_serial_no": "Merchant API certificate serial number",
+      "wechat_mchid": "WeChat Pay merchant ID (mchid)",
+      "wechat_private_key": "Merchant API private key (apiclient_key.pem)",
+      "wechat_public_key": "WeChat Pay public key (pub_key.pem)",
+      "wechat_public_key_id": "WeChat Pay public key ID (PUB_KEY_ID_…)"
+    },
     "fieldExtra": {
       "admin_mfa_enabled": "On: all roles must bind TOTP on first login and sign in with a second factor; Off: password-only login, previously bound TOTP is no longer checked (re-enabling restores it). Turning this off in production = giving up the last line of defense against password leaks",
       "business_license_url": "Absolute http(s) URL only; when set, the footer \"Business License\" entry becomes a clickable link, otherwise it is plain text",
@@ -667,6 +728,7 @@
       "wechat_public_key_id": "Fill in together with the WeChat Pay public key; verification only supports public-key mode — the channel is unavailable unless both are set"
     },
     "goTo": "Go to",
+    "groupDirty": "This group has unsaved changes",
     "groupIntro": {
       "captcha": "Aliyun CAPTCHA 2.0 (pre-verification for /auth/sms-code, blocking distributed code-scraping scripts): after activating CAPTCHA 2.0, create a Web/H5 scene in \"Scene Management\" of the console to get the scene ID, and get the app key from the \"Overview\" page; a dedicated RAM sub-account with only AliyunYundunAFSFullAccess is recommended. Toggle it on the \"Security Policy\" page; fill in the credentials here first.",
       "cluster": "Cluster join parameters for one-command GPU node onboarding: the server address and join token come from the server node (use the dedicated agent token — the agent-token value in the server config; NEVER use node-token, which can pull the node into the etcd ring. Update here after rotation). The distro is auto-detected by the platform (see the \"Cluster\" page), no need to declare it; registries.yaml is auto-generated from the server address — this key is an advanced override, leave it empty. Once configured, ops generates a one-time enrollment command under \"Nodes & GPU → Add Node\".",
@@ -688,10 +750,22 @@
     "navSite": "Site information",
     "needsSwitch": "Requires “{{label}}” to be on",
     "networkError": "network error",
+    "provider": {
+      "aliyun": "Aliyun",
+      "cn": "China mirror (rancher-mirror.rancher.cn)",
+      "mock": "Dev mode (no SMS sent; fixed code 123456 written to the log; development only)",
+      "official": "Official source"
+    },
     "reasonLabel": "Reason (required, audited; the audit stores key names only, never values)",
     "reasonPlaceholder": "e.g. merchant credentials issued — entering production keys",
     "registryFailed": "Failed at step “{{step}}”: {{detail}}",
     "registryOk": "Connected{{version}}; {{repos}} repositories visible in the platform project",
+    "riskOff": {
+      "admin_mfa_enabled": "Once off, a password alone signs in to the admin console; already-bound TOTP is no longer verified",
+      "captcha_enabled": "Once off, /auth/sms-code runs no CAPTCHA check — only IP/phone rate limiting is left",
+      "real_name_enabled": "Once off, users cannot complete identity verification; saving is rejected while “Require identity verification before top-up” is on",
+      "real_name_required_for_recharge": "Once off, unverified users can top up and create instances"
+    },
     "riskOffTitle": "You are turning off a security feature",
     "savedCount_one": "Saved {{count}} item — effective immediately",
     "savedCount_other": "Saved {{count}} items — effective immediately",
@@ -762,8 +836,6 @@
     "colEffective": "Effective value",
     "colNewValue": "New value",
     "colParam": "Parameter",
-    "colRange": "Range",
-    "colUnit": "Unit",
     "confirmAnnounce": "Publish this announcement to all tenants?",
     "confirmAnnounceDetail": "Will be sent to every active tenant: \"{{title}}\"",
     "confirmPolicyTitle": "Confirm policy changes",
@@ -794,9 +866,11 @@
       "firstPublish": "No published version yet — this will be the first",
       "history": "Version history",
       "missing": "Missing",
+      "openEditor": "Edit {{doc}} · {{locale}}",
       "preview": "Preview",
       "publish": "Publish",
       "publishDone": "Published v{{version}}",
+      "saveBeforePublish": "Save the draft before publishing",
       "saved": "Draft saved",
       "saveDraft": "Save draft",
       "statusDraftV": "Draft v{{version}}",
@@ -805,6 +879,99 @@
     "opsOnlyAnnounce": "Ops/super admin only",
     "opsOnlyPolicies": "Ops/super admin only",
     "overridden": "Overridden",
+    "paramMeta": "Unit {{unit}} · range {{range}}",
+    "policy": {
+      "afford_cover_hours": {
+        "hint": "The balance must cover running plus new instances; a guardrail, not a hold",
+        "label": "Hours of usage the balance must cover before opening",
+        "unit": "hours"
+      },
+      "disk_frozen_days": {
+        "hint": "Reclaimed and erased once the freeze period ends",
+        "label": "Frozen retention (data disk)",
+        "unit": "days"
+      },
+      "disk_grace_days": {
+        "hint": "Frozen once the grace period ends",
+        "label": "Overdue grace period (data disk)",
+        "unit": "days"
+      },
+      "disk_max_gb": {
+        "label": "Maximum data disk size",
+        "unit": "GB"
+      },
+      "disk_min_gb": {
+        "label": "Minimum data disk size",
+        "unit": "GB"
+      },
+      "disk_price_gb_month": {
+        "hint": "Snapshotted when a disk is created; repricing affects new disks only",
+        "label": "Data disk unit price",
+        "unit": "CNY/GB·month"
+      },
+      "freeze_grace_hours": {
+        "hint": "The instance disk is reclaimed once the freeze ends",
+        "label": "Overdue freeze window (instance)",
+        "unit": "hours"
+      },
+      "max_disks_per_user": {
+        "hint": "A per-user override takes precedence over this value",
+        "label": "Max data disks per user",
+        "unit": "disks"
+      },
+      "max_gpus_per_user": {
+        "hint": "A per-user override takes precedence over this value",
+        "label": "Max total GPUs per user",
+        "unit": "GPUs"
+      },
+      "max_instances_per_user": {
+        "hint": "A per-user override takes precedence over this value",
+        "label": "Max instances per user",
+        "unit": "instances"
+      },
+      "period_discount_day": {
+        "hint": "Percentage: 80 = 20% off, 100 = no discount; new orders and renewals share this value",
+        "label": "Daily plan discount",
+        "unit": "%"
+      },
+      "period_discount_month": {
+        "label": "Monthly plan discount",
+        "unit": "%"
+      },
+      "period_discount_week": {
+        "label": "Weekly plan discount",
+        "unit": "%"
+      },
+      "period_discount_year": {
+        "label": "Yearly plan discount",
+        "unit": "%"
+      },
+      "period_expire_warn_days": {
+        "hint": "How many days before expiry warnings start; at most one per day",
+        "label": "Subscription expiry warning",
+        "unit": "days"
+      },
+      "prewarm_min_coverage_pct": {
+        "hint": "Marked prewarmed only once node coverage reaches the threshold",
+        "label": "Image prewarm coverage threshold",
+        "unit": "%"
+      },
+      "prewarm_recheck_hours": {
+        "hint": "How often cached nodes are rechecked",
+        "label": "Prewarm recheck window",
+        "unit": "hours"
+      },
+      "spot_discount_pct": {
+        "hint": "Percentage: 40 = 60% off the pay-as-you-go price; repricing affects only newly created spot instances",
+        "label": "Spot discount",
+        "unit": "%"
+      },
+      "spot_grace_seconds": {
+        "hint": "Time from the reclaim notice to the Pod actually being deleted; the real upper bound is also capped by the instance creation timeout (env config, not in this table) — saving is rejected with the exact limit when exceeded",
+        "label": "Preemption grace window",
+        "unit": "seconds"
+      }
+    },
     "policyReasonPlaceholder": "e.g. quarterly repricing / reclaim-window adjustment",
     "policySaved": "Policies updated — effective immediately",
     "publish": "Publish",

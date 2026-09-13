@@ -1,6 +1,6 @@
 /** 管理员账号:建号 / 改角色 / 停用 / 重置密码 + 自助改密。 */
 
-import { adminColors, fontSize, formatDateTime, layout } from "@superdl/ui";
+import { adminColors, controlWidth, fontSize, formatDateTime, layout } from "@superdl/ui";
 import {
   CopyButton,
   EmptyState,
@@ -64,11 +64,14 @@ export function AdminsTab() {
   const [createOpen, setCreateOpen] = useState(false);
   const [pwdTarget, setPwdTarget] = useState<AdminAccountOut | null>(null);
   const [selfOpen, setSelfOpen] = useState(false);
-  const [roleTarget, setRoleTarget] = useState<{ row: AdminAccountOut; role: Role } | null>(null);
+  const [roleTarget, setRoleTarget] = useState<AdminAccountOut | null>(null);
   const [createForm] = Form.useForm<{ username: string; password: string; role: Role; reason: string }>();
   const [pwdForm] = Form.useForm<{ password: string; reason: string }>();
   const [selfForm] = Form.useForm<{ current_password: string; new_password: string }>();
-  const [roleForm] = Form.useForm<{ reason: string }>();
+  const [roleForm] = Form.useForm<{ role: Role; reason: string }>();
+  // 弹窗标题回显当前选中的新角色
+  // useWatch 在表单挂载前返回 undefined,antd 的类型没标出来
+  const nextRole = Form.useWatch("role", roleForm) as Role | undefined;
 
   const refresh = () => void qc.invalidateQueries({ queryKey });
   const create = useCreateAdminAccount();
@@ -140,83 +143,82 @@ export function AdminsTab() {
       title: t("admins.colActions"),
       key: "actions",
       fixed: "right",
-      width: 300,
+      width: 180,
       render: (_: unknown, row: AdminAccountOut) => {
         const isSelf = row.id === me?.id;
         const noPerm = !isSuperAdmin ? t("admins.superAdminOnly") : undefined;
         const selfNote = isSelf ? t("admins.cannotChangeSelf") : undefined;
         return (
-          <Space size={4} wrap>
-            {/* 角色下拉留行内;其余动作走 RowActions:重置密码为主动作,停用 / 重置两步验证收进更多 */}
-            <Select
-              size="small"
-              style={{ width: 110 }}
-              value={row.role as Role}
-              disabled={!isSuperAdmin || isSelf}
-              options={ALL_ROLES.map((r) => ({ value: r, label: t(ROLE_LABEL_KEY[r]) }))}
-              onChange={(role: Role) => {
-                // 改角色收原因(入审计)
-                setRoleTarget({ row, role });
-              }}
-            />
-            <RowActions
-              primary={
-                <GatedButton
-                  size="small"
-                  reason={noPerm}
-                  onClick={() => {
-                    pwdForm.resetFields();
-                    setPwdTarget(row);
+          <RowActions
+            primary={
+              <GatedButton
+                size="small"
+                reason={noPerm}
+                onClick={() => {
+                  pwdForm.resetFields();
+                  setPwdTarget(row);
+                }}
+              >
+                {t("admins.resetPassword")}
+              </GatedButton>
+            }
+            more={
+              <RowMoreMenu
+                items={[
+                  {
+                    key: "role",
+                    label: t("admins.changeRole"),
+                    reason: noPerm ?? selfNote,
+                    onClick: () => {
+                      // 改角色是显式动作:选新角色 + 填原因(入审计)
+                      roleForm.resetFields();
+                      setRoleTarget(row);
+                    },
+                  },
+                ]}
+              >
+                <ReasonAction
+                  label={row.status === "active" ? t("admins.disable") : t("admins.enable")}
+                  type="text"
+                  target={row.username}
+                  title={t("admins.confirmStatusTitle", { name: row.username })}
+                  confirmText={
+                    row.status === "active"
+                      ? t("admins.disableConfirm", { name: row.username })
+                      : t("admins.enableConfirm", { name: row.username })
+                  }
+                  danger={row.status === "active"}
+                  disabled={!isSuperAdmin || isSelf}
+                  // 禁用时 noPerm/selfNote 必有一个
+                  disabledReason={noPerm ?? selfNote ?? t("admins.superAdminOnly")}
+                  onSubmit={async (reason) => {
+                    await update.mutateAsync({
+                      id: row.id,
+                      data: { status: row.status === "active" ? "disabled" : "active", reason },
+                    });
+                    refresh();
                   }}
-                >
-                  {t("admins.resetPassword")}
-                </GatedButton>
-              }
-              more={
-                <RowMoreMenu>
+                />
+                {row.totp_enabled && (
                   <ReasonAction
-                    label={row.status === "active" ? t("admins.disable") : t("admins.enable")}
+                    label={t("admins.resetMfa")}
                     type="text"
                     target={row.username}
-                    title={t("admins.confirmStatusTitle", { name: row.username })}
-                    confirmText={
-                      row.status === "active"
-                        ? t("admins.disableConfirm", { name: row.username })
-                        : t("admins.enableConfirm", { name: row.username })
-                    }
-                    danger={row.status === "active"}
+                    title={t("admins.resetMfaTitle", { name: row.username })}
+                    confirmText={t("admins.resetMfaConfirm", { name: row.username })}
+                    danger
                     disabled={!isSuperAdmin || isSelf}
-                    // 禁用时 noPerm/selfNote 必有一个
                     disabledReason={noPerm ?? selfNote ?? t("admins.superAdminOnly")}
                     onSubmit={async (reason) => {
-                      await update.mutateAsync({
-                        id: row.id,
-                        data: { status: row.status === "active" ? "disabled" : "active", reason },
-                      });
+                      await resetMfa.mutateAsync({ id: row.id, reason });
+                      message.success(t("admins.resetMfaDone"));
                       refresh();
                     }}
                   />
-                  {row.totp_enabled && (
-                    <ReasonAction
-                      label={t("admins.resetMfa")}
-                      type="text"
-                      target={row.username}
-                      title={t("admins.resetMfaTitle", { name: row.username })}
-                      confirmText={t("admins.resetMfaConfirm", { name: row.username })}
-                      danger
-                      disabled={!isSuperAdmin || isSelf}
-                      disabledReason={noPerm ?? selfNote ?? t("admins.superAdminOnly")}
-                      onSubmit={async (reason) => {
-                        await resetMfa.mutateAsync({ id: row.id, reason });
-                        message.success(t("admins.resetMfaDone"));
-                        refresh();
-                      }}
-                    />
-                  )}
-                </RowMoreMenu>
-              }
-            />
-          </Space>
+                )}
+              </RowMoreMenu>
+            }
+          />
         );
       },
     },
@@ -365,16 +367,16 @@ export function AdminsTab() {
       {roleTarget && (
         <RowActionModal
           title={t("admins.confirmRoleTitle", {
-            name: roleTarget.row.username,
-            role: t(ROLE_LABEL_KEY[roleTarget.role]),
+            name: roleTarget.username,
+            role: t(ROLE_LABEL_KEY[nextRole ?? (roleTarget.role as Role)]),
           })}
           okText={t("admins.confirmRoleOk")}
           note={t("admins.roleTakesEffectNow")}
           form={roleForm}
           submit={async (values) => {
             await update.mutateAsync({
-              id: roleTarget.row.id,
-              data: { role: roleTarget.role, reason: values.reason },
+              id: roleTarget.id,
+              data: { role: values.role, reason: values.reason },
             });
           }}
           successText={t("admins.updated")}
@@ -382,6 +384,24 @@ export function AdminsTab() {
           onClose={() => setRoleTarget(null)}
           onDone={refresh}
         >
+          <Form.Item
+            name="role"
+            label={t("admins.colRole")}
+            initialValue={roleTarget.role}
+            rules={[
+              { required: true },
+              // 同角色提交等于一次没意义的审计写入,就地拦下
+              {
+                validator: (_rule, value: Role) =>
+                  value === roleTarget.role ? Promise.reject(new Error(t("admins.roleUnchanged"))) : Promise.resolve(),
+              },
+            ]}
+          >
+            <Select
+              style={{ width: controlWidth.sm }}
+              options={ALL_ROLES.map((r) => ({ value: r, label: t(ROLE_LABEL_KEY[r]) }))}
+            />
+          </Form.Item>
           <Form.Item
             name="reason"
             label={t("admins.reason")}

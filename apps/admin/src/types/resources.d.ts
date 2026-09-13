@@ -4,6 +4,7 @@ export default interface Resources {
     "admins": {
       "cannotChangeSelf": "不能停用或降低自己的权限,请让另一位超级管理员操作",
       "changeOwnPassword": "修改我的密码",
+      "changeRole": "改角色",
       "colActions": "操作",
       "colCreatedAt": "创建时间",
       "colMfa": "两步验证",
@@ -47,6 +48,7 @@ export default interface Resources {
       "resetPasswordConfirmTitle": "重置 {{name}} 的密码?",
       "resetPasswordFor": "重置「{{name}}」的密码",
       "roleTakesEffectNow": "角色变更立即生效,该账号需重新登录。",
+      "roleUnchanged": "新角色与当前角色相同",
       "selfChangeKicksSessions": "修改密码会撤销全部在外登录态(含当前这个),完成后需重新登录。",
       "statusActive": "正常",
       "statusDisabled": "已停用",
@@ -627,6 +629,65 @@ export default interface Resources {
       "confirmTitle": "确认变更平台配置",
       "depsMissing": "缺 {{keys}}",
       "depsOk": "凭据已配置",
+      "dotConfigured": "已配置",
+      "dotError": "配置有误",
+      "dotLegend": "红 = 配置有误 · 琥珀 = 需要关注 · 绿 = 已开启 · 青 = 已配置 · 灰 = 未配置或已关闭",
+      "dotOff": "未配置或已关闭",
+      "dotOn": "已开启",
+      "dotWarning": "需要关注",
+      "field": {
+        "admin_mfa_enabled": "启用管理端两步验证(TOTP)",
+        "alipay_app_id": "应用 APPID",
+        "alipay_private_key": "应用私钥(纯 base64,不含 PEM 头尾)",
+        "alipay_public_key": "支付宝公钥(纯 base64,不含 PEM 头尾)",
+        "business_license_url": "营业执照电子版链接(亮照)",
+        "captcha_access_key_id": "AccessKey ID",
+        "captcha_access_key_secret": "AccessKey Secret",
+        "captcha_enabled": "启用人机验证(阿里云验证码 2.0)",
+        "captcha_prefix": "身份标(prefix)",
+        "captcha_scene_id": "场景 ID",
+        "cluster_agent_version": "Agent 版本(装机脚本钉死)",
+        "cluster_join_token": "Join Token",
+        "cluster_server_url": "Server 地址",
+        "company_address": "公司注册地址",
+        "company_name": "公司全称(营业执照)",
+        "company_phone": "对外联系电话",
+        "grafana_url": "Grafana 地址(可选,外链)",
+        "icp_number": "ICP 备案号",
+        "image_allowed_registries": "镜像来源白名单(每行一个前缀)",
+        "node_driver_version": "NVIDIA 驱动主版本",
+        "node_install_mirror": "装机安装源",
+        "node_registries_yaml": "registries.yaml(高级覆盖)",
+        "oncall_phone": "值班手机号(critical 告警短信)",
+        "payment_alipay_enabled": "启用支付宝渠道",
+        "payment_wechat_enabled": "启用微信支付渠道",
+        "police_record_number": "公安联网备案号",
+        "real_name_access_key_id": "AccessKey ID",
+        "real_name_access_key_secret": "AccessKey Secret",
+        "real_name_enabled": "启用实名认证(阿里云三要素核验)",
+        "real_name_required_for_recharge": "充值前强制实名认证",
+        "registry_ca_pem": "CA 证书 PEM(自签时)",
+        "registry_host": "Harbor 地址",
+        "registry_project": "平台镜像项目",
+        "registry_proxy_projects": "代理缓存项目(每行 上游=项目)",
+        "registry_robot_name": "机器人账户",
+        "registry_robot_secret": "机器人 Secret",
+        "sms_access_key_id": "AccessKey ID",
+        "sms_access_key_secret": "AccessKey Secret",
+        "sms_provider": "短信 Provider",
+        "sms_sign_name": "短信签名名称",
+        "sms_template_notice": "通知模板码",
+        "sms_template_verify": "验证码模板码",
+        "support_email": "客服邮箱",
+        "support_wechat": "企业微信/微信客服号",
+        "wechat_apiv3_key": "APIv3 密钥",
+        "wechat_appid": "应用 AppID",
+        "wechat_cert_serial_no": "商户 API 证书序列号",
+        "wechat_mchid": "商户号(mchid)",
+        "wechat_private_key": "商户 API 私钥(apiclient_key.pem)",
+        "wechat_public_key": "微信支付公钥(pub_key.pem)",
+        "wechat_public_key_id": "微信支付公钥 ID(PUB_KEY_ID_…)"
+      },
       "fieldExtra": {
         "admin_mfa_enabled": "开:全角色首登强制绑定并二要素登录;关:密码即登录,已绑定者也不再校验(重新开启即恢复)。生产环境关闭 = 放弃口令泄漏的最后一道纵深",
         "business_license_url": "仅接受 http(s) 绝对链接;配置后页脚「营业执照」可点击亮照,留空为纯文本展示",
@@ -648,6 +709,7 @@ export default interface Resources {
         "wechat_public_key_id": "与「微信支付公钥」同时填写;验签仅支持公钥模式,二者缺一渠道不可用"
       },
       "goTo": "前往",
+      "groupDirty": "本组有未保存修改",
       "groupIntro": {
         "captcha": "阿里云验证码 2.0(/auth/sms-code 前置人机校验,防分布式脚本刷码):开通验证码 2.0 后,在控制台「场景管理」新建 Web/H5 场景取场景 ID,「概览」页取身份标;建议独立 RAM 子账号仅授 AliyunYundunAFSFullAccess。是否启用在「安全策略」页切换;开启前请先在此填齐凭据。",
         "cluster": "GPU 节点一键加入的集群接入参数:Server 地址与 join token 来自 server 节点(token 填专用 agent token,即 server config 里 agent-token 的值;禁止填 node-token —— 它能把节点拉进 etcd 环。轮换后在此更新)。发行版由平台探测(见「集群」页),无需声明;registries.yaml 平台按 Server 地址自动生成,该键仅作高级覆盖,建议留空。配置完成后,运维在「节点与 GPU → 添加节点」生成一次性注册命令。",
@@ -669,10 +731,22 @@ export default interface Resources {
       "navSite": "站点信息",
       "needsSwitch": "需先开启「{{label}}」",
       "networkError": "网络错误",
+      "provider": {
+        "aliyun": "阿里云",
+        "cn": "国内镜像(rancher-mirror.rancher.cn)",
+        "mock": "开发模式(不发短信,固定码 123456 写日志;仅开发环境)",
+        "official": "官方源"
+      },
       "reasonLabel": "原因(必填,入审计;审计只记录键名不记录值)",
       "reasonPlaceholder": "如:商户资质下发,录入生产凭据",
       "registryFailed": "第「{{step}}」步失败:{{detail}}",
       "registryOk": "连接正常{{version}},平台项目可见 {{repos}} 个仓库",
+      "riskOff": {
+        "admin_mfa_enabled": "关闭后管理端仅凭口令即可登录,已绑定的 TOTP 也不再校验",
+        "captcha_enabled": "关闭后 /auth/sms-code 不做人机校验,仅剩 IP/手机号限流",
+        "real_name_enabled": "关闭后用户无法完成实名;若「充值前强制实名」开着,保存会被拒绝",
+        "real_name_required_for_recharge": "关闭后未实名用户可以充值与开通实例"
+      },
       "riskOffTitle": "你正在关闭安全功能",
       "savedCount": "已保存 {{count}} 项,即时生效",
       "secretConfigured": "已配置{{preview}},留空保持不变",
@@ -741,8 +815,6 @@ export default interface Resources {
       "colEffective": "当前生效值",
       "colNewValue": "新值",
       "colParam": "参数",
-      "colRange": "取值范围",
-      "colUnit": "单位",
       "confirmAnnounce": "确认向全部租户发布该公告?",
       "confirmAnnounceDetail": "将发送给全部正常状态租户:「{{title}}」",
       "confirmPolicyTitle": "确认调整策略参数",
@@ -772,9 +844,11 @@ export default interface Resources {
         "firstPublish": "当前无已发布版,本次为首次发布",
         "history": "版本历史",
         "missing": "缺失",
+        "openEditor": "编辑 {{doc}} · {{locale}}",
         "preview": "预览",
         "publish": "发布",
         "publishDone": "已发布 v{{version}}",
+        "saveBeforePublish": "先保存草稿再发布",
         "saveDraft": "保存草稿",
         "saved": "草稿已保存",
         "statusDraftV": "v{{version}} 草稿",
@@ -783,6 +857,99 @@ export default interface Resources {
       "opsOnlyAnnounce": "仅运维/超管可发布公告",
       "opsOnlyPolicies": "仅运维/超管可调整策略",
       "overridden": "已覆盖",
+      "paramMeta": "单位 {{unit}} · 范围 {{range}}",
+      "policy": {
+        "afford_cover_hours": {
+          "hint": "余额须覆盖在途+新增实例的消耗,护栏非预占",
+          "label": "开户前余额须覆盖小时数",
+          "unit": "小时"
+        },
+        "disk_frozen_days": {
+          "hint": "冻结到期回收擦除",
+          "label": "冻结保留(数据盘)",
+          "unit": "天"
+        },
+        "disk_grace_days": {
+          "hint": "宽限到期转冻结",
+          "label": "欠费宽限(数据盘)",
+          "unit": "天"
+        },
+        "disk_max_gb": {
+          "label": "数据盘最大容量",
+          "unit": "GB"
+        },
+        "disk_min_gb": {
+          "label": "数据盘最小容量",
+          "unit": "GB"
+        },
+        "disk_price_gb_month": {
+          "hint": "建盘时快照,调价只影响新盘",
+          "label": "数据盘单价",
+          "unit": "元/GB·月"
+        },
+        "freeze_grace_hours": {
+          "hint": "冻结到期回收实例盘",
+          "label": "欠费冻结时长(实例)",
+          "unit": "小时"
+        },
+        "max_disks_per_user": {
+          "hint": "用户级覆盖优先于本项",
+          "label": "每用户数据盘数上限",
+          "unit": "块"
+        },
+        "max_gpus_per_user": {
+          "hint": "用户级覆盖优先于本项",
+          "label": "每用户 GPU 总数上限",
+          "unit": "卡"
+        },
+        "max_instances_per_user": {
+          "hint": "用户级覆盖优先于本项",
+          "label": "每用户实例数上限",
+          "unit": "台"
+        },
+        "period_discount_day": {
+          "hint": "百分数:80 = 8 折,100 = 不打折;下单与续费同源",
+          "label": "包日折扣",
+          "unit": "%"
+        },
+        "period_discount_month": {
+          "label": "包月折扣",
+          "unit": "%"
+        },
+        "period_discount_week": {
+          "label": "包周折扣",
+          "unit": "%"
+        },
+        "period_discount_year": {
+          "label": "包年折扣",
+          "unit": "%"
+        },
+        "period_expire_warn_days": {
+          "hint": "到期前几天开始推送预警,每天至多一条",
+          "label": "包周期到期预警",
+          "unit": "天"
+        },
+        "prewarm_min_coverage_pct": {
+          "hint": "节点覆盖率达标才标记已预热",
+          "label": "镜像预热覆盖率门槛",
+          "unit": "%"
+        },
+        "prewarm_recheck_hours": {
+          "hint": "cached 节点多久复检一次",
+          "label": "预热复检窗口",
+          "unit": "小时"
+        },
+        "spot_discount_pct": {
+          "hint": "百分数:40 = 按量价的 4 折;调价只影响新建的竞价实例",
+          "label": "竞价折扣",
+          "unit": "%"
+        },
+        "spot_grace_seconds": {
+          "hint": "回收通知发出到真删 Pod 的时间;实际上限还受实例创建超时(env 配置,不在本表)约束,越界时保存被驳回并给出具体上限",
+          "label": "抢占宽限窗",
+          "unit": "秒"
+        }
+      },
       "policyReasonPlaceholder": "如:季度调价 / 回收周期运营调整",
       "policySaved": "策略已更新,即时生效",
       "publish": "发布公告",

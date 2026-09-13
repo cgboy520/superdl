@@ -5,20 +5,20 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Alert, App, Button, Card, Form, Grid, Input, Menu, Modal, Space } from "antd";
+import { Alert, App, Button, Card, Form, Grid, Input, Menu, Modal, Space, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { useFormDraft } from "@superdl/ui";
-import { GatedButton, PageContainer } from "@superdl/ui/components";
+import { fontWeight, space, useFormDraft } from "@superdl/ui";
+import { AttentionBar, type AttentionItem, GatedButton, PageContainer } from "@superdl/ui/components";
 import { useApiErrorText } from "@superdl/ui";
 
 import { isApiError, usePlatformConfig, useUpdatePlatformConfig } from "../../api";
 import { useAdminRole } from "../../stores/auth";
-import { ConfigWarning, GROUP_LABEL_KEY, Group, NAV, NavLabel, groupDotColor } from "./-platformNav";
-import { FIELD_LABELS, GroupPanel } from "./-platformFields";
+import { ConfigWarning, GROUP_LABEL_KEY, Group, NAV, NavDotLegend, NavLabel, groupDotStatus } from "./-platformNav";
+import { GroupPanel, useFieldLabel } from "./-platformFields";
 import { RegistryTestCard, SmsTestCard } from "./-platformTestCards";
-import { RISK_OFF, SecurityPanel } from "./-platformSecurity";
+import { RISK_OFF, type RiskOffKey, SecurityPanel } from "./-platformSecurity";
 
 export const Route = createFileRoute("/_app/platform")({
   // group:当前配置分组入 URL(默认 security 剥离),可直链
@@ -33,6 +33,7 @@ export const Route = createFileRoute("/_app/platform")({
 
 function PlatformConfigPage() {
   const { t } = useTranslation();
+  const fieldLabel = useFieldLabel();
   const errText = useApiErrorText();
   const { message } = App.useApp();
   const screens = Grid.useBreakpoint();
@@ -100,6 +101,12 @@ function PlatformConfigPage() {
     return v !== (item.value ?? "");
   });
   const riskyOff = changed.filter(([k, v]) => k in RISK_OFF && v === "false");
+  // 有未保存修改的分组(导航打点)
+  const dirtyGroups = new Set(changed.map(([k]) => byKey.get(k)?.group).filter((g): g is Group => g != null));
+  // 确认弹窗按配置分组列变更
+  const changedByGroup = NAV.flatMap((n) => n.groups)
+    .map((g) => ({ group: g, rows: changed.filter(([k]) => byKey.get(k)?.group === g) }))
+    .filter((x) => x.rows.length > 0);
 
   if (isError) {
     return (
@@ -120,12 +127,35 @@ function PlatformConfigPage() {
   }
 
   const disabled = !isAdmin;
+  // 服务端配置风险聚合为页顶唯一横幅;「前往」跳到该键所属分组
+  const attentionItems: AttentionItem[] = warnings.map((w) => ({
+    key: `${w.key}:${w.message}`,
+    severity: w.level,
+    title: w.message,
+    action: (
+      <Button
+        size="small"
+        onClick={() => {
+          const g = byKey.get(w.key)?.group;
+          if (g) setActive(g);
+        }}
+      >
+        {t("platform.goTo")}
+      </Button>
+    ),
+  }));
   const menuItems = NAV.map((n) => ({
     type: "group" as const,
     label: t(n.labelKey),
     children: n.groups.map((g) => ({
       key: g,
-      label: <NavLabel color={groupDotColor(g, items, warnings, byKey)} text={t(GROUP_LABEL_KEY[g])} />,
+      label: (
+        <NavLabel
+          status={groupDotStatus(g, items, warnings, byKey)}
+          text={t(GROUP_LABEL_KEY[g])}
+          dirty={dirtyGroups.has(g)}
+        />
+      ),
     })),
   }));
   const panel =
@@ -186,29 +216,7 @@ function PlatformConfigPage() {
       }
     >
       <Card loading={isLoading}>
-        {warnings.length > 0 && (
-          <Space orientation="vertical" size={8} style={{ width: "100%", marginBottom: 16 }}>
-            {warnings.map((w) => (
-              <Alert
-                key={`${w.key}:${w.message}`}
-                type={w.level}
-                showIcon
-                title={w.message}
-                action={
-                  <Button
-                    size="small"
-                    onClick={() => {
-                      const g = byKey.get(w.key)?.group;
-                      if (g) setActive(g);
-                    }}
-                  >
-                    {t("platform.goTo")}
-                  </Button>
-                }
-              />
-            ))}
-          </Space>
-        )}
+        <AttentionBar items={attentionItems} style={{ marginBottom: space.lg }} />
         <div
           style={{
             display: "flex",
@@ -217,21 +225,20 @@ function PlatformConfigPage() {
             flexDirection: screens.lg ? "row" : "column",
           }}
         >
-          <Menu
-            mode={screens.lg ? "inline" : "horizontal"}
-            selectedKeys={[active]}
-            items={menuItems}
-            // 手动切分组作废来源回链
-            onClick={(e) => {
-              setOriginGroup(null);
-              setActive(e.key as Group);
-            }}
-            style={
-              screens.lg
-                ? { width: 220, flex: "none", background: "transparent" }
-                : { width: "100%", flex: "none", background: "transparent" }
-            }
-          />
+          <div style={{ width: screens.lg ? 220 : "100%", flex: "none" }}>
+            <Menu
+              mode={screens.lg ? "inline" : "horizontal"}
+              selectedKeys={[active]}
+              items={menuItems}
+              // 手动切分组作废来源回链
+              onClick={(e) => {
+                setOriginGroup(null);
+                setActive(e.key as Group);
+              }}
+              style={{ width: "100%", background: "transparent" }}
+            />
+            <NavDotLegend />
+          </div>
           <div style={{ flex: 1, minWidth: 0, width: "100%" }}>{panel}</div>
         </div>
         <Modal
@@ -251,26 +258,36 @@ function PlatformConfigPage() {
           }}
         >
           <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-            {changed.map(([k, v]) => {
-              const item = byKey.get(k);
-              const shown =
-                item?.kind === "secret" ? t("platform.secretMasked") : v === "" ? t("platform.clearOverride") : v;
-              return (
-                <div key={k}>
-                  {FIELD_LABELS[k] ?? k} → <b>{shown}</b>
-                </div>
-              );
-            })}
+            {changedByGroup.map(({ group, rows }) => (
+              <div key={group}>
+                <Typography.Text style={{ fontWeight: fontWeight.semibold }}>
+                  {t(GROUP_LABEL_KEY[group])}
+                </Typography.Text>
+                {rows.map(([k, v]) => {
+                  const item = byKey.get(k);
+                  const shown =
+                    item?.kind === "secret" ? t("platform.secretMasked") : v === "" ? t("platform.clearOverride") : v;
+                  return (
+                    <div key={k}>
+                      {fieldLabel(k)} → <b>{shown}</b>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
             {riskyOff.length > 0 && (
               <Alert
                 type="error"
                 showIcon
                 title={t("platform.riskOffTitle")}
-                description={riskyOff.map(([k]) => (
-                  <div key={k}>
-                    {FIELD_LABELS[k] ?? k}:{RISK_OFF[k]}
-                  </div>
-                ))}
+                description={riskyOff.map(([k]) => {
+                  const riskKey = (RISK_OFF as Record<string, RiskOffKey>)[k];
+                  return (
+                    <div key={k}>
+                      {fieldLabel(k)}:{riskKey ? t(riskKey) : k}
+                    </div>
+                  );
+                })}
               />
             )}
             <Alert type="warning" showIcon title={t("platform.instantEffect")} />

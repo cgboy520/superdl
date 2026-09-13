@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # CJK 残留闸门:剥注释后在两端源码里查汉字。
-# 豁免:locales/、测试、生成物、types/、platform.tsx 的 FIELD_LABELS/PROVIDER_LABELS/RISK_OFF 常量块、
-# settings.tsx 的 POLICY_LABELS、web 的 legal.*
+# 豁免:locales/、测试、生成物、types/、web 的 legal.*
+# (平台配置字段名 / 提供方名 / 风险复述 / 策略参数名已进 locales,不再有常量块豁免)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -11,9 +11,6 @@ while IFS= read -r file; do
   if python3 - "$file" <<'PY'
 import re, sys
 src = open(sys.argv[1], encoding="utf-8").read()
-# 运营域术语常量块豁免:先于注释剥离执行
-for name in ("POLICY_LABELS", "FIELD_LABELS", "PROVIDER_LABELS", "RISK_OFF"):
-    src = re.sub(r"const %s[\s\S]*?\n\};" % name, "", src)
 src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
 src = re.sub(r"(?m)^\s*//.*$", "", src)
 src = re.sub(r"(?m)\s//[^\"'`]*$", "", src)

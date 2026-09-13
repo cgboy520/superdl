@@ -6,5 +6,8 @@ import enUS from "./en-US/admin.json";
 import zhCN from "./zh-CN/admin.json";
 
 it("admin 目录 zh/en 齐平(键集、非空、占位符)", () => {
-  assertLocaleParity(zhCN, enUS);
+  // 备案制度的中文原名在 en 侧保留(docs/copy-style-guide.md:中国渠道运营域专名不译)
+  assertLocaleParity(zhCN, enUS, {
+    allowCjkInEn: ["platform.field.icp_number", "platform.field.police_record_number"],
+  });
 });

@@ -1,8 +1,9 @@
-/** 平台配置分组导航事实源:业务分组 → 配置组、组标题键、分组状态点色。 */
+/** 平台配置分组导航事实源:业务分组 → 配置组、组标题键、分组状态点。 */
 
-import { Space } from "antd";
+import { Space, Tooltip } from "antd";
+import { useTranslation } from "react-i18next";
 
-import { adminColors } from "@superdl/ui";
+import { adminColors, fontSize, fontWeight, space } from "@superdl/ui";
 
 import { type PlatformConfigItem } from "../../api";
 
@@ -36,29 +37,70 @@ export const GROUP_LABEL_KEY = {
   compliance: "platform.tabCompliance",
   support: "platform.tabSupport",
 } as const satisfies Record<Group, string>;
-/** 导航项状态点:红 = 有 error 告警,琥珀 = warning,绿 = 开关已开,青 = 有覆盖/已配凭据,灰 = 未配置。 */
-export function groupDotColor(
+
+/** 导航项状态点语义(颜色非唯一线索:每点带 tooltip + aria-label,导航下方另出图例)。 */
+export type DotStatus = "error" | "warning" | "on" | "configured" | "off";
+export const DOT_COLOR = {
+  error: adminColors.negative,
+  warning: adminColors.alertAccent,
+  on: adminColors.positive,
+  configured: adminColors.dataAccent,
+  off: adminColors.textMuted,
+} as const satisfies Record<DotStatus, string>;
+export const DOT_TEXT_KEY = {
+  error: "platform.dotError",
+  warning: "platform.dotWarning",
+  on: "platform.dotOn",
+  configured: "platform.dotConfigured",
+  off: "platform.dotOff",
+} as const satisfies Record<DotStatus, string>;
+
+export function groupDotStatus(
   group: Group,
   items: PlatformConfigItem[],
   warnings: ConfigWarning[],
   byKey: Map<string, PlatformConfigItem>,
-): string {
+): DotStatus {
   const ws = warnings.filter((w) => byKey.get(w.key)?.group === group);
-  if (ws.some((w) => w.level === "error")) return adminColors.negative;
-  if (ws.length > 0) return adminColors.alertAccent;
+  if (ws.some((w) => w.level === "error")) return "error";
+  if (ws.length > 0) return "warning";
   const own = items.filter((i) => i.group === group);
-  if (own.some((i) => i.kind === "bool" && i.value === "true")) return adminColors.positive;
-  if (own.some((i) => i.source === "override" || (i.kind === "secret" && i.configured))) {
-    return adminColors.dataAccent;
-  }
-  return adminColors.textMuted;
+  if (own.some((i) => i.kind === "bool" && i.value === "true")) return "on";
+  if (own.some((i) => i.source === "override" || (i.kind === "secret" && i.configured))) return "configured";
+  return "off";
 }
 
-export function NavLabel({ color, text }: { color: string; text: string }) {
+export function NavLabel({ status, text, dirty }: { status: DotStatus; text: string; dirty?: boolean }) {
+  const { t } = useTranslation();
+  const dotText = t(DOT_TEXT_KEY[status]);
+  const dirtyText = t("platform.groupDirty");
   return (
-    <Space size={8}>
-      <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 4, background: color }} />
+    <Space size={space.sm}>
+      <Tooltip title={dotText}>
+        <span
+          role="img"
+          aria-label={dotText}
+          style={{ display: "inline-block", width: 8, height: 8, borderRadius: 4, background: DOT_COLOR[status] }}
+        />
+      </Tooltip>
       {text}
+      {dirty && (
+        <Tooltip title={dirtyText}>
+          <span
+            role="img"
+            aria-label={dirtyText}
+            style={{ color: adminColors.alertAccent, fontWeight: fontWeight.semibold }}
+          >
+            *
+          </span>
+        </Tooltip>
+      )}
     </Space>
   );
+}
+
+/** 状态点图例(导航下方一行):颜色含义写明,不只靠颜色。 */
+export function NavDotLegend() {
+  const { t } = useTranslation();
+  return <div style={{ fontSize: fontSize.caption, color: adminColors.textMuted }}>{t("platform.dotLegend")}</div>;
 }

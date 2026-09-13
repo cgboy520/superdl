@@ -26,7 +26,7 @@
 
 - 新增文案同时提交 zh-CN 与 en-US;en 语序独立重写(复数走 `_one/_other`)。
 - 带 `count` 参数的键 en 侧会生成复数变体,提交前在 `apps/web` / `apps/admin` 下跑 `pnpm i18n:write` 补全。
-- 中国渠道运营域文案(platform 渠道字段/指引、settings 策略参数名)不译,以 `i18n-exempt` 标记。
+- 平台配置字段名 / 提供方名 / 风险复述与策略参数名同样进 locales(动态取键须进 `i18next.config.ts` 的 `preservePatterns`);只有无官方英文名的监管登记名(ICP 备案、公安联网备案)在 en 保留中文并加英文解释,由 `locales.test.ts` 的 `allowCjkInEn` 逐条放行。
 
 ## 术语表
 
