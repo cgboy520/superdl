@@ -1,10 +1,19 @@
 /** 管理员账号:建号 / 改角色 / 停用 / 重置密码 + 自助改密。 */
 
-import { adminColors, fontSize, formatDateTime } from "@superdl/ui";
-import { TableErrorEmpty, useConfirm } from "@superdl/ui/components";
+import { adminColors, fontSize, formatDateTime, layout } from "@superdl/ui";
+import {
+  EmptyState,
+  GatedButton,
+  Mono,
+  RowActions,
+  RowMoreMenu,
+  TableErrorEmpty,
+  useConfirm,
+} from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Alert, App, Button, Card, Form, Input, Modal, Select, Space, Table, Tag, Typography } from "antd";
+import type { TableColumnsType } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -76,8 +85,15 @@ export function AdminsTab() {
 
   const activeAdmins = (data ?? []).filter((a) => a.role === "admin" && a.status === "active").length;
 
-  const columns = [
-    { title: t("admins.colUsername"), dataIndex: "username", key: "username", width: 160 },
+  const columns: TableColumnsType<AdminAccountOut> = [
+    {
+      title: t("admins.colUsername"),
+      dataIndex: "username",
+      key: "username",
+      width: 160,
+      fixed: "left",
+      render: (v: string) => <Mono>{v}</Mono>,
+    },
     {
       title: t("admins.colRole"),
       dataIndex: "role",
@@ -122,13 +138,15 @@ export function AdminsTab() {
     {
       title: t("admins.colActions"),
       key: "actions",
-      width: 420,
+      fixed: "right",
+      width: 300,
       render: (_: unknown, row: AdminAccountOut) => {
         const isSelf = row.id === me?.id;
         const noPerm = !isSuperAdmin ? t("admins.superAdminOnly") : undefined;
         const selfNote = isSelf ? t("admins.cannotChangeSelf") : undefined;
         return (
           <Space size={4} wrap>
+            {/* 角色下拉留行内;其余动作走 RowActions:重置密码为主动作,停用 / 重置两步验证收进更多 */}
             <Select
               size="small"
               style={{ width: 110 }}
@@ -140,53 +158,63 @@ export function AdminsTab() {
                 setRoleTarget({ row, role });
               }}
             />
-            <ReasonAction
-              label={row.status === "active" ? t("admins.disable") : t("admins.enable")}
-              target={row.username}
-              title={t("admins.confirmStatusTitle", { name: row.username })}
-              confirmText={
-                row.status === "active"
-                  ? t("admins.disableConfirm", { name: row.username })
-                  : t("admins.enableConfirm", { name: row.username })
+            <RowActions
+              primary={
+                <GatedButton
+                  size="small"
+                  reason={noPerm}
+                  onClick={() => {
+                    pwdForm.resetFields();
+                    setPwdTarget(row);
+                  }}
+                >
+                  {t("admins.resetPassword")}
+                </GatedButton>
               }
-              danger={row.status === "active"}
-              disabled={!isSuperAdmin || isSelf}
-              // 禁用时 noPerm/selfNote 必有一个
-              disabledReason={noPerm ?? selfNote ?? t("admins.superAdminOnly")}
-              onSubmit={async (reason) => {
-                await update.mutateAsync({
-                  id: row.id,
-                  data: { status: row.status === "active" ? "disabled" : "active", reason },
-                });
-                refresh();
-              }}
+              more={
+                <RowMoreMenu>
+                  <ReasonAction
+                    label={row.status === "active" ? t("admins.disable") : t("admins.enable")}
+                    type="text"
+                    target={row.username}
+                    title={t("admins.confirmStatusTitle", { name: row.username })}
+                    confirmText={
+                      row.status === "active"
+                        ? t("admins.disableConfirm", { name: row.username })
+                        : t("admins.enableConfirm", { name: row.username })
+                    }
+                    danger={row.status === "active"}
+                    disabled={!isSuperAdmin || isSelf}
+                    // 禁用时 noPerm/selfNote 必有一个
+                    disabledReason={noPerm ?? selfNote ?? t("admins.superAdminOnly")}
+                    onSubmit={async (reason) => {
+                      await update.mutateAsync({
+                        id: row.id,
+                        data: { status: row.status === "active" ? "disabled" : "active", reason },
+                      });
+                      refresh();
+                    }}
+                  />
+                  {row.totp_enabled && (
+                    <ReasonAction
+                      label={t("admins.resetMfa")}
+                      type="text"
+                      target={row.username}
+                      title={t("admins.resetMfaTitle", { name: row.username })}
+                      confirmText={t("admins.resetMfaConfirm", { name: row.username })}
+                      danger
+                      disabled={!isSuperAdmin || isSelf}
+                      disabledReason={noPerm ?? selfNote ?? t("admins.superAdminOnly")}
+                      onSubmit={async (reason) => {
+                        await resetMfa.mutateAsync({ id: row.id, reason });
+                        message.success(t("admins.resetMfaDone"));
+                        refresh();
+                      }}
+                    />
+                  )}
+                </RowMoreMenu>
+              }
             />
-            <Button
-              size="small"
-              disabled={!isSuperAdmin}
-              onClick={() => {
-                pwdForm.resetFields();
-                setPwdTarget(row);
-              }}
-            >
-              {t("admins.resetPassword")}
-            </Button>
-            {row.totp_enabled && (
-              <ReasonAction
-                label={t("admins.resetMfa")}
-                target={row.username}
-                title={t("admins.resetMfaTitle", { name: row.username })}
-                confirmText={t("admins.resetMfaConfirm", { name: row.username })}
-                danger
-                disabled={!isSuperAdmin || isSelf}
-                disabledReason={noPerm ?? selfNote ?? t("admins.superAdminOnly")}
-                onSubmit={async (reason) => {
-                  await resetMfa.mutateAsync({ id: row.id, reason });
-                  message.success(t("admins.resetMfaDone"));
-                  refresh();
-                }}
-              />
-            )}
           </Space>
         );
       },
@@ -314,16 +342,18 @@ export function AdminsTab() {
       {!isSuperAdmin && <Alert type="info" showIcon style={{ marginBottom: 12 }} title={t("admins.superAdminOnly")} />}
       <Table<AdminAccountOut>
         rowKey="id"
-        size="small"
         loading={isLoading}
         scroll={{ x: 1040 }}
+        sticky={{ offsetHeader: layout.topBarHeight }}
         locale={{
-          emptyText: (
+          emptyText: isError ? (
             <TableErrorEmpty
-              isError={isError}
+              isError
               isForbidden={isApiError(error) && error.status === 403}
               onRetry={() => void refetch()}
             />
+          ) : (
+            <EmptyState scene="list" compact />
           ),
         }}
         dataSource={data ?? []}

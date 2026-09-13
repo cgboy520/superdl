@@ -1,13 +1,14 @@
-/** 退款 Tab:审批 / 驳回 / 打款登记 / 取消(更多)。 */
+/** 退款 Tab:FilterBar(状态 / 渠道 / 发起日,入 URL)+ 行内审批 / 驳回 / 打款登记,取消收进更多。 */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { Button, DatePicker, Form, Input, Select, Space, Typography } from "antd";
+import { Button, DatePicker, Form, Input, Select, Typography } from "antd";
 import dayjs from "dayjs";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
   adminColors,
+  controlWidth,
   flattenPages,
   fontSize,
   formatDateTime,
@@ -16,8 +17,8 @@ import {
   payoutChannelMap,
   refundStatusMap,
 } from "@superdl/ui";
-import { CursorTable, GatedButton } from "@superdl/ui/components";
-import { useCsvExport } from "@superdl/ui";
+import { CursorTable, FilterBar, GatedButton, Mono, RowActions, RowMoreMenu } from "@superdl/ui/components";
+import { useCsvExport, useUrlFilters } from "@superdl/ui";
 import { useFormat } from "@superdl/ui";
 
 import {
@@ -31,7 +32,6 @@ import {
 } from "../../api";
 import { ReasonAction } from "../../components/ReasonAction";
 import { StatusTag } from "../../components/StatusTag";
-import { RowMoreMenu } from "../../components/RowMoreMenu";
 import { RowActionModal } from "../../components/RowActionModal";
 import { tenantColumn } from "../../components/TenantLink";
 import { canWriteFinance, useAdminRole, useAuth } from "../../stores/auth";
@@ -103,6 +103,11 @@ export function RefundsTab() {
   const status = search.r_status;
   const day = search.r_day ? dayjs(search.r_day) : null;
   const channel = search.r_channel;
+  const filters = useUrlFilters({
+    search: { r_status: status, r_day: search.r_day, r_channel: channel },
+    keys: ["r_status", "r_day", "r_channel"],
+    commit: setFilters,
+  });
   // 渠道不进导出参数
   const params = {
     ...(status ? { status } : {}),
@@ -114,6 +119,8 @@ export function RefundsTab() {
   const { doExport, exporting } = useCsvExport((tz, lang) => exportRefundsCsv(params, tz, lang));
   const all = flattenPages(data);
   const rows = channel ? all.filter((r) => r.payout_channel === channel) : all;
+  // 渠道是客户端过滤,服务端 total 与所见不一致时不出计数
+  const total = channel ? undefined : (data?.pages[0]?.total ?? undefined);
   const [payoutTarget, setPayoutTarget] = useState<RefundRow | null>(null);
   const review = useReviewRefund();
   const cancel = useCancelRefund();
@@ -122,11 +129,20 @@ export function RefundsTab() {
 
   return (
     <>
-      <Space wrap style={{ marginBottom: 12 }}>
+      <FilterBar
+        hasFilter={filters.hasFilter}
+        onClear={filters.clear}
+        count={total}
+        extra={
+          <Button onClick={() => void doExport()} loading={exporting}>
+            {t("common.exportCsv")}
+          </Button>
+        }
+      >
         <Select
           allowClear
           placeholder={t("common.statusFilter")}
-          style={{ width: 150 }}
+          style={{ width: controlWidth.sm }}
           value={status}
           onChange={(v) => setFilters({ r_status: v })}
           options={Object.entries(refundStatusMap).map(([v, m]) => ({
@@ -137,7 +153,7 @@ export function RefundsTab() {
         <Select
           allowClear
           placeholder={t("finance.filterPayoutChannel")}
-          style={{ width: 150 }}
+          style={{ width: controlWidth.sm }}
           value={channel}
           onChange={(v) => setFilters({ r_channel: v })}
           options={Object.entries(payoutChannelMap).map(([v, m]) => ({
@@ -150,13 +166,11 @@ export function RefundsTab() {
           onChange={(d) => setFilters({ r_day: d ? d.format("YYYY-MM-DD") : undefined })}
           allowClear
         />
-        <Button onClick={() => void doExport()} loading={exporting}>
-          {t("common.exportCsv")}
-        </Button>
-      </Space>
+      </FilterBar>
       <CursorTable<RefundRow>
         query={refundsQ}
         rows={rows}
+        empty={filters.hasFilter ? t("empty.search", { ns: "shared" }) : undefined}
         scroll={{ x: 1100 }}
         sticky={{ offsetHeader: layout.topBarHeight }}
         rowKey="id"
@@ -166,14 +180,20 @@ export function RefundsTab() {
             dataIndex: "refund_no",
             width: 150,
             fixed: "left",
-            render: (v: string) => <span className="mono">{v}</span>,
+            render: (v: string) => <Mono>{v}</Mono>,
           },
           tenantColumn(t("finance.colTenant")),
-          { title: t("finance.colOrderNo"), dataIndex: "order_no", width: 190 },
+          {
+            title: t("finance.colOrderNo"),
+            dataIndex: "order_no",
+            width: 190,
+            render: (v: string) => <Mono>{v}</Mono>,
+          },
           {
             title: t("finance.colAmount"),
             dataIndex: "amount",
             width: 100,
+            align: "right",
             render: (v: string) => formatMoney(v),
           },
           {
@@ -219,13 +239,14 @@ export function RefundsTab() {
             render: (_, r) => {
               if (r.status !== "pending" && r.status !== "approved") return null;
               const isReviewer = admin?.id === r.review_by;
+              const target = `${r.refund_no} · ${formatMoney(r.amount)}`;
               return (
-                <Space wrap>
-                  {r.status === "pending" && (
-                    <>
+                <RowActions
+                  primary={
+                    r.status === "pending" ? (
                       <ReasonAction
                         label={t("finance.refundApprove")}
-                        target={`${r.refund_no} · ${formatMoney(r.amount)}`}
+                        target={target}
                         title={t("finance.refundApproveTitle")}
                         confirmText={t("finance.refundApproveConfirm", {
                           amount: formatMoney(r.amount),
@@ -240,9 +261,22 @@ export function RefundsTab() {
                           refresh();
                         }}
                       />
+                    ) : (
+                      <GatedButton
+                        size="small"
+                        type="primary"
+                        reason={!writable ? noPerm : isReviewer ? t("finance.refundNoSelfPayout") : undefined}
+                        onClick={() => setPayoutTarget(r)}
+                      >
+                        {t("finance.payout")}
+                      </GatedButton>
+                    )
+                  }
+                  secondary={
+                    r.status === "pending" ? (
                       <ReasonAction
                         label={t("finance.refundReject")}
-                        target={`${r.refund_no} · ${formatMoney(r.amount)}`}
+                        target={target}
                         title={t("finance.refundRejectTitle")}
                         confirmText={t("finance.refundRejectConfirm", {
                           no: r.refund_no,
@@ -259,36 +293,31 @@ export function RefundsTab() {
                           refresh();
                         }}
                       />
-                    </>
-                  )}
-                  {r.status === "approved" && (
-                    <GatedButton
-                      size="small"
-                      type="primary"
-                      reason={!writable ? noPerm : isReviewer ? t("finance.refundNoSelfPayout") : undefined}
-                      onClick={() => setPayoutTarget(r)}
-                    >
-                      {t("finance.payout")}
-                    </GatedButton>
-                  )}
-                  {/* 低频的「取消退款单」收进更多(行内 ≤2 动作) */}
-                  <RowMoreMenu>
-                    <ReasonAction
-                      label={t("finance.cancelRefund")}
-                      type="text"
-                      target={`${r.refund_no} · ${formatMoney(r.amount)}`}
-                      title={t("finance.cancelRefundTitle")}
-                      confirmText={t("finance.cancelRefundConfirm", { no: r.refund_no, amount: formatMoney(r.amount) })}
-                      danger
-                      disabled={!writable}
-                      disabledReason={noPerm}
-                      onSubmit={async (reason) => {
-                        await cancel.mutateAsync({ refundId: r.id, data: { reason } });
-                        refresh();
-                      }}
-                    />
-                  </RowMoreMenu>
-                </Space>
+                    ) : undefined
+                  }
+                  more={
+                    <RowMoreMenu>
+                      {/* 低频的「取消退款单」收进更多 */}
+                      <ReasonAction
+                        label={t("finance.cancelRefund")}
+                        type="text"
+                        target={target}
+                        title={t("finance.cancelRefundTitle")}
+                        confirmText={t("finance.cancelRefundConfirm", {
+                          no: r.refund_no,
+                          amount: formatMoney(r.amount),
+                        })}
+                        danger
+                        disabled={!writable}
+                        disabledReason={noPerm}
+                        onSubmit={async (reason) => {
+                          await cancel.mutateAsync({ refundId: r.id, data: { reason } });
+                          refresh();
+                        }}
+                      />
+                    </RowMoreMenu>
+                  }
+                />
               );
             },
           },

@@ -1,4 +1,7 @@
+/** 镜像与预热:镜像表(框架固定左 / 覆盖率右对齐 / 操作固定右:立即预热 · 编辑 + 更多 ▾ 删除)+ 行展开节点缓存面板(?image= 入 URL)+ 编辑抽屉。 */
+
 import {
+  drawerWidth,
   imageCacheStatusMap,
   fontSize,
   formatDateTime,
@@ -7,7 +10,16 @@ import {
   useAutoRefresh,
   type ImageCacheStatus,
 } from "@superdl/ui";
-import { GatedButton, PageContainer, TableErrorEmpty, useConfirm } from "@superdl/ui/components";
+import {
+  EmptyState,
+  GatedButton,
+  Mono,
+  PageContainer,
+  RowActions,
+  RowMoreMenu,
+  TableErrorEmpty,
+  useConfirm,
+} from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
@@ -44,7 +56,6 @@ import {
 } from "../../api";
 import { useApiErrorText } from "@superdl/ui";
 import { ReasonAction } from "../../components/ReasonAction";
-import { RowMoreMenu } from "../../components/RowMoreMenu";
 import { StatusTag } from "../../components/StatusTag";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
@@ -82,13 +93,14 @@ function ImageNodesPanel({ imageId }: { imageId: number }) {
             isError={isError}
             isForbidden={isApiError(error) && error.status === 403}
             onRetry={() => void refetch()}
+            compact
           >
             {t("images.nodesEmpty")}
           </TableErrorEmpty>
         ),
       }}
       columns={[
-        { title: t("nodes.colNode"), dataIndex: "node_name" },
+        { title: t("nodes.colNode"), dataIndex: "node_name", render: (v: string) => <Mono>{v}</Mono> },
         {
           title: t("images.colCacheStatus"),
           dataIndex: "status",
@@ -255,12 +267,14 @@ function ImagesPage() {
           rowKey="id"
           loading={isLoading}
           locale={{
-            emptyText: (
+            emptyText: isError ? (
               <TableErrorEmpty
-                isError={isError}
+                isError
                 isForbidden={isApiError(error) && error.status === 403}
                 onRetry={() => void refetch()}
               />
+            ) : (
+              <EmptyState scene="list" compact />
             ),
           }}
           dataSource={images ?? []}
@@ -318,6 +332,7 @@ function ImagesPage() {
             },
             {
               title: t("images.colCoverage"),
+              align: "right",
               render: (_, r) => {
                 if (!r.prewarm_enabled) return <Tag>{t("images.disabled")}</Tag>;
                 if (r.coverage.total === 0) return <Tag color="default">{t("images.awaitingPatrol")}</Tag>;
@@ -355,46 +370,52 @@ function ImagesPage() {
               width: 220,
               fixed: "right",
               render: (_, r) => (
-                <Space>
-                  {/* 可用时 tooltip 是动作说明;未开预热 / 无权时门控并给原因 */}
-                  {writable && r.prewarm_enabled ? (
-                    <Tooltip title={t("images.prewarmTip")}>
-                      <Button
-                        size="small"
-                        loading={prewarm.isPending && prewarm.variables.imageId === r.id}
-                        onClick={() => prewarm.mutate({ imageId: r.id })}
-                      >
+                <RowActions
+                  primary={
+                    /* 可用时 tooltip 是动作说明;未开预热 / 无权时门控并给原因 */
+                    writable && r.prewarm_enabled ? (
+                      <Tooltip title={t("images.prewarmTip")}>
+                        <Button
+                          size="small"
+                          loading={prewarm.isPending && prewarm.variables.imageId === r.id}
+                          onClick={() => prewarm.mutate({ imageId: r.id })}
+                        >
+                          {t("images.prewarmNow")}
+                        </Button>
+                      </Tooltip>
+                    ) : (
+                      <GatedButton size="small" reason={writable ? t("images.prewarmTip") : t("nodes.readonlyNoOp")}>
                         {t("images.prewarmNow")}
-                      </Button>
-                    </Tooltip>
-                  ) : (
-                    <GatedButton size="small" reason={writable ? t("images.prewarmTip") : t("nodes.readonlyNoOp")}>
-                      {t("images.prewarmNow")}
+                      </GatedButton>
+                    )
+                  }
+                  secondary={
+                    <GatedButton
+                      size="small"
+                      reason={writable ? undefined : t("common.readonlyNoEdit")}
+                      onClick={() => openEdit(r)}
+                    >
+                      {t("skus.edit")}
                     </GatedButton>
-                  )}
-                  <GatedButton
-                    size="small"
-                    reason={writable ? undefined : t("common.readonlyNoEdit")}
-                    onClick={() => openEdit(r)}
-                  >
-                    {t("skus.edit")}
-                  </GatedButton>
-                  <RowMoreMenu>
-                    <ReasonAction
-                      label={t("images.delete")}
-                      type="text"
-                      target={`${r.framework} ${r.framework_version}`}
-                      title={t("images.deleteTitle")}
-                      confirmText={t("images.deleteConfirm", { name: `${r.framework} ${r.framework_version}` })}
-                      danger
-                      disabled={!writable}
-                      disabledReason={t("images.readonlyNoDelete")}
-                      onSubmit={async (reason) => {
-                        await del.mutateAsync({ imageId: r.id, data: { reason } });
-                      }}
-                    />
-                  </RowMoreMenu>
-                </Space>
+                  }
+                  more={
+                    <RowMoreMenu>
+                      <ReasonAction
+                        label={t("images.delete")}
+                        type="text"
+                        target={`${r.framework} ${r.framework_version}`}
+                        title={t("images.deleteTitle")}
+                        confirmText={t("images.deleteConfirm", { name: `${r.framework} ${r.framework_version}` })}
+                        danger
+                        disabled={!writable}
+                        disabledReason={t("images.readonlyNoDelete")}
+                        onSubmit={async (reason) => {
+                          await del.mutateAsync({ imageId: r.id, data: { reason } });
+                        }}
+                      />
+                    </RowMoreMenu>
+                  }
+                />
               ),
             },
           ]}
@@ -407,7 +428,7 @@ function ImagesPage() {
           }
           open={editing !== null}
           onClose={() => setEditing(null)}
-          size="min(480px, 100vw)"
+          size={drawerWidth.md}
           extra={
             <Button type="primary" loading={create.isPending || update.isPending} onClick={() => void submit()}>
               {t("skus.submit")}

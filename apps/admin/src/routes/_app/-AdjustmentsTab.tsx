@@ -1,4 +1,4 @@
-/** 调账 Tab:发起(草稿)+ 双人复核(批准需核对勾选,驳回需理由)。 */
+/** 调账 Tab:FilterBar(状态 / 租户 id / 发起日,入 URL)+ 发起(草稿)+ 双人复核(批准需核对勾选,驳回需理由;复核列固定右)。 */
 
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -24,6 +24,7 @@ import { useTranslation } from "react-i18next";
 import {
   addAmounts,
   adjustmentStatusMap,
+  controlWidth,
   flattenPages,
   adminColors,
   fontSize,
@@ -33,8 +34,8 @@ import {
   ledgerTypeMap,
   metaOf,
 } from "@superdl/ui";
-import { CursorTable, GatedButton, moneyOr } from "@superdl/ui/components";
-import { useApiErrorText } from "@superdl/ui";
+import { CursorTable, FilterBar, GatedButton, moneyOr, RowActions } from "@superdl/ui/components";
+import { useApiErrorText, useUrlFilters } from "@superdl/ui";
 import { useCsvExport, useFormDraft } from "@superdl/ui";
 import { useFormat } from "@superdl/ui";
 
@@ -169,6 +170,11 @@ export function AdjustmentsTab() {
   const { search, setFilters } = useFinanceFilters();
   const status = search.a_status;
   const day = search.a_day ? dayjs(search.a_day) : null;
+  const filters = useUrlFilters({
+    search: { a_status: status, a_day: search.a_day, a_uid: search.a_uid },
+    keys: ["a_status", "a_day", "a_uid"],
+    commit: setFilters,
+  });
   // 租户 id commit 制;URL 回流走渲染期派生态
   const [uidInput, setUidInput] = useState<number | null>(search.a_uid ?? null);
   const [prevUid, setPrevUid] = useState(search.a_uid);
@@ -192,6 +198,7 @@ export function AdjustmentsTab() {
   const { data, queryKey } = adjustmentsQ;
   const { doExport, exporting } = useCsvExport((tz, lang) => exportAdjustmentsCsv(params, tz, lang));
   const rows = flattenPages(data);
+  const total = data?.pages[0]?.total ?? undefined;
 
   // 输入 user_id 回显租户身份与资金现状;不存在阻止提交
   const wUserId = Form.useWatch("user_id", form);
@@ -213,11 +220,33 @@ export function AdjustmentsTab() {
 
   return (
     <>
-      <Space wrap style={{ marginBottom: 12 }}>
+      <FilterBar
+        hasFilter={filters.hasFilter}
+        onClear={filters.clear}
+        count={total}
+        extra={
+          <>
+            <Button onClick={() => void doExport()} loading={exporting}>
+              {t("common.exportCsv")}
+            </Button>
+            <GatedButton
+              type="primary"
+              reason={writable ? undefined : t("finance.financeOnlyCreate")}
+              onClick={() => {
+                setCreating(true);
+                const d = draft.load();
+                if (d) form.setFieldsValue(d);
+              }}
+            >
+              {t("finance.createAdjust")}
+            </GatedButton>
+          </>
+        }
+      >
         <Select
           allowClear
           placeholder={t("common.statusFilter")}
-          style={{ width: 150 }}
+          style={{ width: controlWidth.sm }}
           value={status}
           onChange={(v) => setFilters({ a_status: v })}
           options={Object.entries(adjustmentStatusMap).map(([v, m]) => ({ value: v, label: t(m.labelKey) }))}
@@ -227,7 +256,7 @@ export function AdjustmentsTab() {
           precision={0}
           controls={false}
           placeholder={t("finance.filterTenantId")}
-          style={{ width: 140 }}
+          style={{ width: controlWidth.sm }}
           value={uidInput}
           onChange={(v) => setUidInput(v ?? null)}
           onBlur={commitUid}
@@ -238,24 +267,11 @@ export function AdjustmentsTab() {
           onChange={(d) => setFilters({ a_day: d ? d.format("YYYY-MM-DD") : undefined })}
           allowClear
         />
-        <Button onClick={() => void doExport()} loading={exporting}>
-          {t("common.exportCsv")}
-        </Button>
-        <GatedButton
-          type="primary"
-          reason={writable ? undefined : t("finance.financeOnlyCreate")}
-          onClick={() => {
-            setCreating(true);
-            const d = draft.load();
-            if (d) form.setFieldsValue(d);
-          }}
-        >
-          {t("finance.createAdjust")}
-        </GatedButton>
-      </Space>
+      </FilterBar>
       <CursorTable<AdjustmentRow>
         query={adjustmentsQ}
         rows={rows}
+        empty={filters.hasFilter ? t("empty.search", { ns: "shared" }) : undefined}
         scroll={{ x: 1000 }}
         sticky={{ offsetHeader: layout.topBarHeight }}
         rowKey="id"
@@ -265,6 +281,7 @@ export function AdjustmentsTab() {
           {
             title: t("finance.colAmount"),
             dataIndex: "amount",
+            align: "right",
             render: (v: string) => <SignedAmount value={v} />,
           },
           { title: t("finance.colReason"), dataIndex: "reason", ellipsis: true },
@@ -276,8 +293,11 @@ export function AdjustmentsTab() {
             },
           },
           { title: t("finance.colCreatedBy"), dataIndex: "created_by", width: 80 },
+          { title: t("finance.colCreatedAtShort"), dataIndex: "created_at", render: formatDateTime },
           {
             title: t("finance.colReview"),
+            fixed: "right",
+            width: 160,
             render: (_, r) => {
               if (r.status !== "pending") {
                 return (
@@ -292,29 +312,33 @@ export function AdjustmentsTab() {
                 : isCreator
                   ? t("finance.noSelfReviewShort")
                   : undefined;
+              // 双向决定:批准 / 驳回并列可见
               return (
-                <Space>
-                  <GatedButton
-                    size="small"
-                    type="primary"
-                    reason={reason}
-                    onClick={() => setReviewTarget({ adj: r, approve: true })}
-                  >
-                    {t("finance.approve")}
-                  </GatedButton>
-                  <GatedButton
-                    size="small"
-                    danger
-                    reason={reason}
-                    onClick={() => setReviewTarget({ adj: r, approve: false })}
-                  >
-                    {t("finance.reject")}
-                  </GatedButton>
-                </Space>
+                <RowActions
+                  primary={
+                    <GatedButton
+                      size="small"
+                      type="primary"
+                      reason={reason}
+                      onClick={() => setReviewTarget({ adj: r, approve: true })}
+                    >
+                      {t("finance.approve")}
+                    </GatedButton>
+                  }
+                  secondary={
+                    <GatedButton
+                      size="small"
+                      danger
+                      reason={reason}
+                      onClick={() => setReviewTarget({ adj: r, approve: false })}
+                    >
+                      {t("finance.reject")}
+                    </GatedButton>
+                  }
+                />
               );
             },
           },
-          { title: t("finance.colCreatedAtShort"), dataIndex: "created_at", render: formatDateTime },
         ]}
       />
       <ReviewConfirmModal target={reviewTarget} onClose={() => setReviewTarget(null)} onReviewed={refresh} />

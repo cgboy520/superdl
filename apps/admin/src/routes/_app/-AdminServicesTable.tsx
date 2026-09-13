@@ -1,7 +1,7 @@
 /** 全局在线服务表(在线服务页与租户抽屉共用);唯一处置「强制停止」委托当前版本实例的 force-stop。 */
 
 import { flattenPages, fontSize, formatDateTime, layout, metaOf, serviceStatusMap } from "@superdl/ui";
-import { CursorTable, HexTag, TableErrorEmpty } from "@superdl/ui/components";
+import { CursorTable, HexTag, Mono, RowActions, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Space, Table, Typography } from "antd";
@@ -22,12 +22,15 @@ export function AdminServicesTable({
   q,
   includeReleased,
   compact,
+  hasFilter,
 }: {
   userId?: number;
   q?: string;
   includeReleased?: boolean;
   /** 抽屉内:小表 + 前 100 条明示截断,不出归属列 */
   compact?: boolean;
+  /** 页面筛选态非空(空态文案切到「无匹配」) */
+  hasFilter?: boolean;
 }) {
   const { t } = useTranslation(["admin", "shared"]);
   const role = useAdminRole();
@@ -57,7 +60,7 @@ export function AdminServicesTable({
         <Space orientation="vertical" size={0}>
           <span>{r.name}</span>
           <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-            {r.slug}
+            <Mono>{r.slug}</Mono>
           </Typography.Text>
         </Space>
       ),
@@ -96,19 +99,19 @@ export function AdminServicesTable({
         const inst = r.current_instance ?? r.rollout_instance;
         return inst ? (
           <Link to="/tenants" search={{ tab: "instances", iq: inst.uuid }}>
-            {inst.uuid.slice(0, 8)}
+            <Mono truncate={8}>{inst.uuid}</Mono>
           </Link>
         ) : (
           "—"
         );
       },
     },
-    { title: t("services.colRevision"), width: 70, render: (_, r) => `v${r.revision}` },
+    { title: t("services.colRevision"), width: 70, align: "right", render: (_, r) => `v${r.revision}` },
     {
       title: t("services.colNode"),
       dataIndex: "node_name",
       width: 160,
-      render: (v: string | null) => v ?? "—",
+      render: (v: string | null) => (v ? <Mono>{v}</Mono> : "—"),
     },
     { title: t("services.colCreatedAt"), dataIndex: "created_at", width: 170, render: formatDateTime },
     {
@@ -119,19 +122,23 @@ export function AdminServicesTable({
         const inst = r.current_instance;
         const stoppable = inst != null && (r.status === "running" || r.status === "unready");
         return (
-          <ReasonAction
-            label={t("tenants.forceStop")}
-            target={`${r.name} · ${r.slug}`}
-            danger
-            title={t("services.forceStopTitle")}
-            confirmText={t("services.forceStopConfirm", { name: r.name, slug: r.slug })}
-            disabled={!writable || !stoppable}
-            disabledReason={!writable ? t("tenants.noPermission") : t("services.forceStopNeedsRunning")}
-            onSubmit={async (reason) => {
-              if (!inst) return;
-              await forceStop.mutateAsync({ uuid: inst.uuid, data: { reason } });
-              refresh();
-            }}
+          <RowActions
+            primary={
+              <ReasonAction
+                label={t("tenants.forceStop")}
+                target={`${r.name} · ${r.slug}`}
+                danger
+                title={t("services.forceStopTitle")}
+                confirmText={t("services.forceStopConfirm", { name: r.name, slug: r.slug })}
+                disabled={!writable || !stoppable}
+                disabledReason={!writable ? t("tenants.noPermission") : t("services.forceStopNeedsRunning")}
+                onSubmit={async (reason) => {
+                  if (!inst) return;
+                  await forceStop.mutateAsync({ uuid: inst.uuid, data: { reason } });
+                  refresh();
+                }}
+              />
+            }
           />
         );
       },
@@ -161,6 +168,7 @@ export function AdminServicesTable({
                 isError={isError}
                 isForbidden={isApiError(error) && error.status === 403}
                 onRetry={() => void refetch()}
+                compact
               />
             ),
           }}
@@ -171,6 +179,7 @@ export function AdminServicesTable({
         <CursorTable<AdminServiceOut>
           query={servicesQ}
           rows={rows}
+          empty={hasFilter ? t("empty.search", { ns: "shared" }) : undefined}
           rowKey="slug"
           scroll={{ x: 1240 }}
           sticky={{ offsetHeader: layout.topBarHeight }}

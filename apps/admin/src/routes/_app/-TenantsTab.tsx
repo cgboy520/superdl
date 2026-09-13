@@ -1,4 +1,4 @@
-/** 租户 Tab:检索(落审计)/ 状态筛选 / 注册排序 + 行内冻结·解冻 + 租户抽屉(?tenant=)。 */
+/** 租户 Tab:FilterBar(检索落审计 / 状态,入 URL)+ 注册排序 + 行内账单·冻结·解冻 + 租户抽屉(?tenant=)。 */
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, getRouteApi } from "@tanstack/react-router";
@@ -6,9 +6,9 @@ import { Button, Input, Modal, Select, Space, Tag, Typography } from "antd";
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { adminColors, flattenPages, formatDateTime, layout } from "@superdl/ui";
-import { CursorTable } from "@superdl/ui/components";
-import { useFormat, useUrlCommittedInput } from "@superdl/ui";
+import { adminColors, controlWidth, flattenPages, formatDateTime, layout } from "@superdl/ui";
+import { CursorTable, FilterBar, RowActions } from "@superdl/ui/components";
+import { useFormat, useUrlCommittedInput, useUrlFilters } from "@superdl/ui";
 
 import { type TenantRow, useFreezeTenant, useTenants, useUnfreezeTenant } from "../../api";
 import { ReasonAction } from "../../components/ReasonAction";
@@ -45,12 +45,16 @@ export function TenantsTab() {
   // 状态筛选与注册排序:服务端参数入 URL
   const statusFilter = routeApi.useSearch({ select: (s) => s.tstatus });
   const order = routeApi.useSearch({ select: (s) => s.order });
-  const setStatusFilter = (v: string | undefined) =>
-    void navigate({
-      to: "/tenants",
-      replace: true,
-      search: (prev) => ({ ...prev, tstatus: v }),
-    });
+  const commitFilters = useCallback(
+    (patch: { q?: string; tstatus?: string }) =>
+      void navigate({ to: "/tenants", replace: true, search: (prev) => ({ ...prev, ...patch }) }),
+    [navigate],
+  );
+  const filters = useUrlFilters({
+    search: { q: urlQ, tstatus: statusFilter },
+    keys: ["q", "tstatus"],
+    commit: commitFilters,
+  });
   // 抽屉 Tab 入 URL(?dtab=)
   const dtab = routeApi.useSearch({ select: (s) => s.dtab });
   const onDrawerTabChange = (key: DrawerTab) =>
@@ -72,6 +76,7 @@ export function TenantsTab() {
   });
   const { data, queryKey } = tenantsQ;
   const tenants = flattenPages(data);
+  const total = data?.pages[0]?.total ?? undefined;
   const drilldown = urlTenant != null ? (tenants.find((r) => r.id === urlTenant) ?? null) : null;
   const freeze = useFreezeTenant();
   const unfreeze = useUnfreezeTenant();
@@ -79,35 +84,12 @@ export function TenantsTab() {
 
   return (
     <>
-      <Space style={{ marginBottom: 12 }} wrap>
-        <Input.Search
-          allowClear
-          placeholder={tt("tenants.searchPhonePlaceholder")}
-          style={{ width: 280 }}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onSearch={(v) => {
-            // 回车/点按钮立即提交
-            setInput(v);
-            void navigate({
-              to: "/tenants",
-              replace: true,
-              search: (prev) => ({ ...prev, q: v || undefined }),
-            });
-          }}
-        />
-        <Select
-          allowClear
-          placeholder={tt("common.statusFilter")}
-          style={{ width: 140 }}
-          value={statusFilter}
-          onChange={setStatusFilter}
-          options={[
-            { value: "active", label: tt("tenants.active") },
-            { value: "frozen", label: tt("tenants.frozen") },
-          ]}
-        />
-        {canReveal &&
+      <FilterBar
+        hasFilter={filters.hasFilter}
+        onClear={filters.clear}
+        count={total}
+        extra={
+          canReveal &&
           (revealReason === null ? (
             <Button size="small" onClick={() => setRevealOpen(true)}>
               {tt("tenants.revealIdName")}
@@ -116,8 +98,33 @@ export function TenantsTab() {
             <Tag color="orange" closable onClose={() => setRevealReason(null)}>
               {tt("tenants.revealActive", { reason: revealReason })}
             </Tag>
-          ))}
-      </Space>
+          ))
+        }
+      >
+        <Input.Search
+          allowClear
+          placeholder={tt("tenants.searchPhonePlaceholder")}
+          style={{ width: controlWidth.md }}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onSearch={(v) => {
+            // 回车/点按钮立即提交
+            setInput(v);
+            commitFilters({ q: v || undefined });
+          }}
+        />
+        <Select
+          allowClear
+          placeholder={tt("common.statusFilter")}
+          style={{ width: controlWidth.sm }}
+          value={statusFilter}
+          onChange={(v: string | undefined) => commitFilters({ tstatus: v })}
+          options={[
+            { value: "active", label: tt("tenants.active") },
+            { value: "frozen", label: tt("tenants.frozen") },
+          ]}
+        />
+      </FilterBar>
       <Modal
         title={tt("tenants.revealTitle")}
         open={revealOpen}
@@ -144,7 +151,7 @@ export function TenantsTab() {
       <CursorTable<TenantRow>
         query={tenantsQ}
         rows={tenants}
-        empty={tt("tenants.empty")}
+        empty={filters.hasFilter ? tt("empty.search", { ns: "shared" }) : tt("tenants.empty")}
         scroll={{ x: 1000 }}
         sticky={{ offsetHeader: layout.topBarHeight }}
         rowKey="id"
@@ -175,6 +182,7 @@ export function TenantsTab() {
           {
             title: tt("tenants.colBalance"),
             dataIndex: "balance",
+            align: "right",
             render: (v: string) => (
               <span style={{ color: Number(v) <= 0 ? adminColors.negative : undefined }}>{formatMoney(v)}</span>
             ),
@@ -182,14 +190,22 @@ export function TenantsTab() {
           {
             title: tt("tenants.colTotalConsumed"),
             dataIndex: "total_consumed",
+            align: "right",
             render: (v: string) => formatMoney(v),
           },
           {
             title: tt("tenants.colInstances"),
             dataIndex: "instances",
             width: 70,
+            align: "right",
           },
-          { title: tt("tenants.colDisk"), dataIndex: "disk_gb", render: (v: number) => `${v} GB`, width: 90 },
+          {
+            title: tt("tenants.colDisk"),
+            dataIndex: "disk_gb",
+            align: "right",
+            render: (v: number) => `${v} GB`,
+            width: 90,
+          },
           {
             title: tt("tenants.colStatus"),
             dataIndex: "status",
@@ -214,55 +230,51 @@ export function TenantsTab() {
             fixed: "right",
             width: 170,
             render: (_, t) => (
-              <Space>
-                <Button
-                  size="small"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setDrilldown(t);
-                  }}
-                >
-                  {tt("tenants.viewBilling")}
-                </Button>
-                {t.status === "active" ? (
-                  <span onClick={(e) => e.stopPropagation()}>
-                    <ReasonAction
-                      label={tt("tenants.freeze")}
-                      target={`#${t.id} · ${t.phone_masked}`}
-                      danger
-                      title={tt("tenants.freezeTitle")}
-                      confirmText={tt("tenants.freezeConfirm", {
-                        id: t.id,
-                        phone: t.phone_masked,
-                        count: t.instances,
-                      })}
-                      disabled={!writable}
-                      disabledReason={tt("tenants.noPermission")}
-                      onSubmit={async (reason) => {
-                        const r = await freeze.mutateAsync({ userId: t.id, data: { reason } });
-                        refresh();
-                        // 回显后端实停台数
-                        return tt("tenants.freezeDone", { count: r.instances_stopped ?? 0 });
-                      }}
-                    />
-                  </span>
-                ) : (
-                  <span onClick={(e) => e.stopPropagation()}>
-                    <ReasonAction
-                      label={tt("tenants.unfreeze")}
-                      target={`#${t.id} · ${t.phone_masked}`}
-                      title={tt("tenants.unfreezeTitle")}
-                      confirmText={tt("tenants.unfreezeConfirm", { id: t.id })}
-                      disabled={!writable}
-                      disabledReason={tt("tenants.noPermission")}
-                      onSubmit={async (reason) => {
-                        await unfreeze.mutateAsync({ userId: t.id, data: { reason } });
-                        refresh();
-                      }}
-                    />
-                  </span>
-                )}
-              </Space>
+              <span onClick={(e) => e.stopPropagation()}>
+                <RowActions
+                  primary={
+                    <Button size="small" onClick={() => setDrilldown(t)}>
+                      {tt("tenants.viewBilling")}
+                    </Button>
+                  }
+                  secondary={
+                    t.status === "active" ? (
+                      <ReasonAction
+                        label={tt("tenants.freeze")}
+                        target={`#${t.id} · ${t.phone_masked}`}
+                        danger
+                        title={tt("tenants.freezeTitle")}
+                        confirmText={tt("tenants.freezeConfirm", {
+                          id: t.id,
+                          phone: t.phone_masked,
+                          count: t.instances,
+                        })}
+                        disabled={!writable}
+                        disabledReason={tt("tenants.noPermission")}
+                        onSubmit={async (reason) => {
+                          const r = await freeze.mutateAsync({ userId: t.id, data: { reason } });
+                          refresh();
+                          // 回显后端实停台数
+                          return tt("tenants.freezeDone", { count: r.instances_stopped ?? 0 });
+                        }}
+                      />
+                    ) : (
+                      <ReasonAction
+                        label={tt("tenants.unfreeze")}
+                        target={`#${t.id} · ${t.phone_masked}`}
+                        title={tt("tenants.unfreezeTitle")}
+                        confirmText={tt("tenants.unfreezeConfirm", { id: t.id })}
+                        disabled={!writable}
+                        disabledReason={tt("tenants.noPermission")}
+                        onSubmit={async (reason) => {
+                          await unfreeze.mutateAsync({ userId: t.id, data: { reason } });
+                          refresh();
+                        }}
+                      />
+                    )
+                  }
+                />
+              </span>
             ),
           },
         ]}

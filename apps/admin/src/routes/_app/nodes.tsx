@@ -1,14 +1,31 @@
-/** 节点与 GPU:待加入节点卡(-EnrollmentsCard)+ 节点台账(热力格 -GpuGrid、选中节点指标 -NodeMetricsPanel、添加节点 -AddNodeModal);?node= 深链定位行。 */
+/** 节点与 GPU:待加入节点卡(-EnrollmentsCard)+ FilterBar(名称 / 池 / 状态,入 URL)+ 节点台账(热力格 -GpuGrid、选中节点指标 -NodeMetricsPanel、添加节点 -AddNodeModal);?node= 深链定位行。 */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { Alert, App, Card, Input, Space, Table, Tag, Tooltip, theme } from "antd";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { Alert, App, Button, Card, Input, Select, Space, Table, Tag, Tooltip, theme } from "antd";
 import dayjs from "dayjs";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { formatDateTime, layout, POLL, space, useAutoRefresh } from "@superdl/ui";
-import { GatedButton, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
+import {
+  controlWidth,
+  formatDateTime,
+  layout,
+  POLL,
+  space,
+  useAutoRefresh,
+  useUrlCommittedInput,
+  useUrlFilters,
+} from "@superdl/ui";
+import {
+  EmptyState,
+  FilterBar,
+  GatedButton,
+  Mono,
+  PageContainer,
+  RowActions,
+  TableErrorEmpty,
+} from "@superdl/ui/components";
 import { useApiErrorText } from "@superdl/ui";
 
 import { adminKeys, type NodeRow, isApiError, useNodeMetrics, useCordonNode, useNodes, usePortPool } from "../../api";
@@ -20,22 +37,37 @@ import { NodeMetricsPanel } from "./-NodeMetricsPanel";
 import { AddNodeModal } from "./-AddNodeModal";
 import { EnrollmentsCard } from "./-EnrollmentsCard";
 
+const NODE_STATUSES = ["Ready", "NotReady", "Cordoned", "Missing"] as const;
+type NodeStatus = (typeof NODE_STATUSES)[number];
+/** 池筛选里「未标注」的 URL 取值(与真实池标签不重名) */
+const POOL_UNLABELED = "unlabeled";
+
 export const Route = createFileRoute("/_app/nodes")({
-  // node:告警深链(/nodes?node=<name>)目标行
-  validateSearch: (search: Record<string, unknown>): { node?: string } => ({
+  // node:告警深链(/nodes?node=<name>)目标行;q/pool/status:客户端筛选
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { node?: string; q?: string; pool?: string; status?: NodeStatus } => ({
     node: typeof search.node === "string" && search.node ? search.node : undefined,
+    q: typeof search.q === "string" && search.q.trim() ? search.q : undefined,
+    pool: typeof search.pool === "string" && search.pool ? search.pool : undefined,
+    status: NODE_STATUSES.includes(search.status as NodeStatus) ? (search.status as NodeStatus) : undefined,
   }),
   component: NodesPage,
 });
 
+function isUnlabeled(n: NodeRow): boolean {
+  return n.unlabeled || !n.pool_label;
+}
+
 function NodesPage() {
-  const { t } = useTranslation();
+  const { t } = useTranslation(["admin", "shared"]);
   const errText = useApiErrorText();
   const { message } = App.useApp();
   const { token } = theme.useToken();
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();
+  const navigate = useNavigate({ from: "/nodes" });
   // 节点台账稳态轮询(可暂停),页头出新鲜度条
   const autoRefresh = useAutoRefresh(POLL.steady);
   const {
@@ -49,17 +81,42 @@ function NodesPage() {
   } = useNodes({ refetchInterval: autoRefresh.refetchInterval });
   const nodes: NodeRow[] = useMemo(() => data ?? [], [data]);
   const { data: portPool } = usePortPool();
-  const nodeParam = Route.useSearch({ select: (s) => s.node });
+  const { node: nodeParam, q: urlQ, pool, status: statusFilter } = Route.useSearch();
   const [selected, setSelected] = useState<string | null>(null);
   const [range, setRange] = useState("1h");
   const [addOpen, setAddOpen] = useState(false);
-  // 节点名过滤(commit 制,客户端过滤全量小表)
-  const [kwInput, setKwInput] = useState("");
-  const [kw, setKw] = useState("");
-  const filteredNodes = useMemo(
-    () => (kw ? nodes.filter((n) => n.name.toLowerCase().includes(kw)) : nodes),
-    [nodes, kw],
+  // 名称 / 池 / 状态筛选入 URL,客户端过滤全量小表
+  const setUrl = useCallback(
+    (patch: { q?: string; pool?: string; status?: NodeStatus }) =>
+      void navigate({ to: "/nodes", replace: true, search: (prev) => ({ ...prev, ...patch }) }),
+    [navigate],
   );
+  const commitQ = useCallback((next: string | undefined) => setUrl({ q: next }), [setUrl]);
+  const { value: kwInput, setValue: setKwInput } = useUrlCommittedInput(urlQ, commitQ);
+  const filters = useUrlFilters({
+    search: { q: urlQ, pool, status: statusFilter },
+    keys: ["q", "pool", "status"],
+    commit: setUrl,
+  });
+  const kw = urlQ?.trim().toLowerCase();
+  const filteredNodes = useMemo(
+    () =>
+      nodes.filter((n) => {
+        if (kw && !n.name.toLowerCase().includes(kw)) return false;
+        if (pool && (pool === POOL_UNLABELED ? !isUnlabeled(n) : isUnlabeled(n) || n.pool_label !== pool)) return false;
+        if (statusFilter && n.status !== statusFilter) return false;
+        return true;
+      }),
+    [nodes, kw, pool, statusFilter],
+  );
+  const poolOptions = useMemo(() => {
+    const opts = [...new Set(nodes.filter((n) => !isUnlabeled(n)).map((n) => n.pool_label))].map((p) => ({
+      value: p,
+      label: p,
+    }));
+    if (nodes.some(isUnlabeled)) opts.push({ value: POOL_UNLABELED, label: t("nodes.unlabeledTag") });
+    return opts;
+  }, [nodes, t]);
   // ?node= 目标不存在时顶部提示
   const deepLinkMissing = nodeParam !== undefined && data !== undefined && !nodes.some((n) => n.name === nodeParam);
   const node =
@@ -119,9 +176,6 @@ function NodesPage() {
     if (failed > 0) message.warning(t("bulk.partial", { ok, failed }));
     return t("bulk.done", { count: ok });
   };
-  const poolFilters = [...new Set(nodes.map((n) => (n.unlabeled ? "" : n.pool_label)))].map((p) =>
-    p ? { text: p, value: p } : { text: t("nodes.unlabeledTag"), value: "" },
-  );
 
   return (
     <PageContainer
@@ -168,18 +222,32 @@ function NodesPage() {
       )}
       <EnrollmentsCard writable={writable} />
       <Card>
-        <Input.Search
-          allowClear
-          placeholder={t("nodes.searchPlaceholder")}
-          style={{ width: 240, marginBottom: space.md }}
-          value={kwInput}
-          onChange={(e) => {
-            setKwInput(e.target.value);
-            // 清空立即提交
-            if (e.target.value === "") setKw("");
-          }}
-          onSearch={(v) => setKw(v.trim().toLowerCase())}
-        />
+        <FilterBar hasFilter={filters.hasFilter} onClear={filters.clear}>
+          <Input.Search
+            allowClear
+            placeholder={t("nodes.searchPlaceholder")}
+            style={{ width: controlWidth.md }}
+            value={kwInput}
+            onChange={(e) => setKwInput(e.target.value)}
+            onSearch={(v) => commitQ(v.trim() || undefined)}
+          />
+          <Select
+            allowClear
+            placeholder={t("nodes.filterPool")}
+            style={{ width: controlWidth.sm }}
+            value={pool}
+            onChange={(v: string | undefined) => setUrl({ pool: v })}
+            options={poolOptions}
+          />
+          <Select
+            allowClear
+            placeholder={t("common.statusFilter")}
+            style={{ width: controlWidth.sm }}
+            value={statusFilter}
+            onChange={(v: NodeStatus | undefined) => setUrl({ status: v })}
+            options={NODE_STATUSES.map((s) => ({ value: s, label: s }))}
+          />
+        </FilterBar>
         <BulkBar count={bulkSelected.length} onClear={() => setBulkSelected([])}>
           <ReasonAction
             label={t("nodes.cordonBtn")}
@@ -211,14 +279,25 @@ function NodesPage() {
               : undefined
           }
           locale={{
-            emptyText: kw ? (
-              t("nodes.noMatch")
-            ) : (
+            emptyText: isError ? (
               <TableErrorEmpty
-                isError={isError}
+                isError
                 isForbidden={isApiError(error) && error.status === 403}
                 onRetry={() => void refetch()}
               />
+            ) : filters.hasFilter ? (
+              <EmptyState
+                scene="search"
+                compact
+                description={t("nodes.noMatch")}
+                secondaryAction={
+                  <Button size="small" onClick={filters.clear}>
+                    {t("filter.clear", { ns: "shared" })}
+                  </Button>
+                }
+              />
+            ) : (
+              <EmptyState scene="list" compact />
             ),
           }}
           dataSource={filteredNodes}
@@ -250,13 +329,11 @@ function NodesPage() {
               fixed: "left",
               width: 180,
               sorter: (a, b) => a.name.localeCompare(b.name),
-              render: (v: string) => <span className="mono">{v}</span>,
+              render: (v: string) => <Mono>{v}</Mono>,
             },
             {
               title: t("nodes.colPool"),
               dataIndex: "pool_label",
-              filters: poolFilters,
-              onFilter: (v, r) => (r.unlabeled ? "" : r.pool_label) === v,
               render: (v: string, r) =>
                 r.unlabeled || !v ? <Tag color="red">{t("nodes.unlabeledTag")}</Tag> : <Tag color="cyan">{v}</Tag>,
             },
@@ -279,11 +356,13 @@ function NodesPage() {
             },
             {
               title: t("nodes.colVram"),
+              align: "right",
               render: (_, r) => (r.vram_gb ? `${r.vram_gb} G` : "—"),
             },
             {
               title: t("nodes.colUsed"),
               dataIndex: "gpu_used",
+              align: "right",
               sorter: (a, b) => a.gpu_used - b.gpu_used,
               // 已用卡数链到「租户与实例 › 实例」按节点过滤:从节点直达上面跑着谁
               render: (v: number, r) =>
@@ -297,14 +376,16 @@ function NodesPage() {
             },
             { title: t("nodes.colDriver"), render: (_, r) => r.driver_version || "—" },
             { title: "CUDA", render: (_, r) => r.cuda_version || "—" },
-            { title: t("nodes.colCpu"), render: (_, r) => t("nodes.coreCount", { count: r.vcpu }) },
+            { title: t("nodes.colCpu"), align: "right", render: (_, r) => t("nodes.coreCount", { count: r.vcpu }) },
             {
               title: t("nodes.colMem"),
+              align: "right",
               render: (_, r) => `${r.mem_gb} G`,
               sorter: (a, b) => a.mem_gb - b.mem_gb,
             },
             {
               title: t("nodes.colDisk"),
+              align: "right",
               render: (_, r) => `${r.disk_gb} G`,
               sorter: (a, b) => a.disk_gb - b.disk_gb,
             },
@@ -326,11 +407,6 @@ function NodesPage() {
             {
               title: t("nodes.colStatus"),
               dataIndex: "status",
-              filters: ["Ready", "NotReady", "Cordoned", "Missing"].map((s) => ({
-                text: s,
-                value: s,
-              })),
-              onFilter: (v, r) => r.status === v,
               render: (v: string) => (
                 <Tag
                   color={v === "Ready" ? "green" : v === "Cordoned" ? "orange" : v === "Missing" ? "default" : "red"}
@@ -346,32 +422,36 @@ function NodesPage() {
               render: (_, r) => {
                 const cordoned = r.status === "Cordoned";
                 return (
-                  <Space>
-                    <ReasonAction
-                      label={cordoned ? t("nodes.uncordonBtn") : t("nodes.cordonBtn")}
-                      target={r.name}
-                      title={cordoned ? t("nodes.uncordonTitle") : t("nodes.cordonTitle")}
-                      confirmText={
-                        cordoned
-                          ? t("nodes.uncordonConfirm", { name: r.name })
-                          : t("nodes.cordonConfirm", { name: r.name })
-                      }
-                      danger={!cordoned}
-                      disabled={!writable}
-                      disabledReason={t("nodes.readonlyNoOp")}
-                      onSubmit={async (reason) => {
-                        await cordon.mutateAsync({
-                          nodeName: r.name,
-                          on: !cordoned,
-                          data: { reason },
-                        });
-                      }}
-                    />
-                    {/* 占位项:可见但禁用 + tooltip */}
-                    <GatedButton size="small" reason={t("nodes.drainDeferred")}>
-                      {t("nodes.drainBtn")}
-                    </GatedButton>
-                  </Space>
+                  <RowActions
+                    primary={
+                      <ReasonAction
+                        label={cordoned ? t("nodes.uncordonBtn") : t("nodes.cordonBtn")}
+                        target={r.name}
+                        title={cordoned ? t("nodes.uncordonTitle") : t("nodes.cordonTitle")}
+                        confirmText={
+                          cordoned
+                            ? t("nodes.uncordonConfirm", { name: r.name })
+                            : t("nodes.cordonConfirm", { name: r.name })
+                        }
+                        danger={!cordoned}
+                        disabled={!writable}
+                        disabledReason={t("nodes.readonlyNoOp")}
+                        onSubmit={async (reason) => {
+                          await cordon.mutateAsync({
+                            nodeName: r.name,
+                            on: !cordoned,
+                            data: { reason },
+                          });
+                        }}
+                      />
+                    }
+                    secondary={
+                      /* 占位项:可见但禁用 + tooltip */
+                      <GatedButton size="small" reason={t("nodes.drainDeferred")}>
+                        {t("nodes.drainBtn")}
+                      </GatedButton>
+                    }
+                  />
                 );
               },
             },

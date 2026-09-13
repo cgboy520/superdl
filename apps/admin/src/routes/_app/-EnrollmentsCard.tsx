@@ -1,13 +1,13 @@
 /** 待加入节点卡:注册记录表(阶段 / 心跳 / 失败原因)+ 重新生成 / 吊销。 */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { Radio, Button, Card, Modal, Space, Table, Tag, Tooltip, Typography } from "antd";
+import { Radio, Button, Card, Modal, Table, Tag, Tooltip, Typography } from "antd";
 import dayjs from "dayjs";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { formatDateTime, metaOf, nodeEnrollStatusMap, type NodeEnrollStatus } from "@superdl/ui";
-import { TableErrorEmpty } from "@superdl/ui/components";
+import { Mono, RowActions, RowMoreMenu, TableErrorEmpty } from "@superdl/ui/components";
 
 import { StatusTag } from "../../components/StatusTag";
 
@@ -109,7 +109,10 @@ export function EnrollmentsCard({ writable }: { writable: boolean }) {
           },
           {
             title: t("nodes.colHostname"),
-            render: (_, r) => r.node_name ?? r.hostname ?? "-",
+            render: (_, r) => {
+              const host = r.node_name ?? r.hostname;
+              return host ? <Mono>{host}</Mono> : "-";
+            },
           },
           { title: t("nodes.noteCol"), dataIndex: "note", render: (v: string | null) => v ?? "-" },
           {
@@ -159,34 +162,41 @@ export function EnrollmentsCard({ writable }: { writable: boolean }) {
             title: t("nodes.colActions"),
             width: 190,
             render: (_, r) => (
-              <Space>
-                {/* 重新生成:旧命令立即失效,先收原因 */}
-                <ReasonAction
-                  label={t("nodes.regenerate")}
-                  target={r.hostname ?? `#${r.id}`}
-                  title={t("nodes.regenerateConfirmTitle")}
-                  confirmText={t("nodes.regenerateConfirmDesc", { host: r.hostname ?? `#${r.id}` })}
-                  disabled={!writable || !["pending", "expired", "failed"].includes(r.status)}
-                  disabledReason={!writable ? t("nodes.readonlyNoOp") : t("nodes.regenerateOnly")}
-                  onSubmit={async (reason) => {
-                    await regenerate.mutateAsync({ enrollmentId: r.id, data: { reason } });
-                  }}
-                />
-                {!["joined", "failed", "expired", "revoked"].includes(r.status) && (
+              <RowActions
+                primary={
+                  /* 重新生成:旧命令立即失效,先收原因 */
                   <ReasonAction
-                    label={t("nodes.revoke")}
+                    label={t("nodes.regenerate")}
                     target={r.hostname ?? `#${r.id}`}
-                    title={t("nodes.revokeTitle")}
-                    confirmText={t("nodes.revokeConfirm", { host: r.hostname ?? `#${r.id}` })}
-                    danger
-                    disabled={!writable}
-                    disabledReason={t("nodes.readonlyNoRevoke")}
+                    title={t("nodes.regenerateConfirmTitle")}
+                    confirmText={t("nodes.regenerateConfirmDesc", { host: r.hostname ?? `#${r.id}` })}
+                    disabled={!writable || !["pending", "expired", "failed"].includes(r.status)}
+                    disabledReason={!writable ? t("nodes.readonlyNoOp") : t("nodes.regenerateOnly")}
                     onSubmit={async (reason) => {
-                      await revoke.mutateAsync({ enrollmentId: r.id, data: { reason } });
+                      await regenerate.mutateAsync({ enrollmentId: r.id, data: { reason } });
                     }}
                   />
-                )}
-              </Space>
+                }
+                more={
+                  !["joined", "failed", "expired", "revoked"].includes(r.status) ? (
+                    <RowMoreMenu>
+                      <ReasonAction
+                        label={t("nodes.revoke")}
+                        type="text"
+                        target={r.hostname ?? `#${r.id}`}
+                        title={t("nodes.revokeTitle")}
+                        confirmText={t("nodes.revokeConfirm", { host: r.hostname ?? `#${r.id}` })}
+                        danger
+                        disabled={!writable}
+                        disabledReason={t("nodes.readonlyNoRevoke")}
+                        onSubmit={async (reason) => {
+                          await revoke.mutateAsync({ enrollmentId: r.id, data: { reason } });
+                        }}
+                      />
+                    </RowMoreMenu>
+                  ) : undefined
+                }
+              />
             ),
           },
         ]}

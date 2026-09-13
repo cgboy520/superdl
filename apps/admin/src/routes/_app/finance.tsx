@@ -19,7 +19,7 @@ import { useAnomalies } from "../../api";
 import { AuditTable } from "../../components/AuditTable";
 import { canReadInvoices, useAdminRole } from "../../stores/auth";
 import { SettlementGapsTab } from "./-SettlementGapsTab";
-import { DAY_RE, FINANCE_TABS, FinanceSearch, FinanceTab, PERIOD_RE } from "./-financeFilters";
+import { DAY_RE, FINANCE_TABS, FinanceSearch, FinanceTab, GAP_KINDS, GapKind, PERIOD_RE } from "./-financeFilters";
 import { ReconciliationCard } from "./-ReconciliationCard";
 import { OrdersTab } from "./-OrdersTab";
 import { AdjustmentsTab } from "./-AdjustmentsTab";
@@ -49,6 +49,8 @@ export const Route = createFileRoute("/_app/finance")({
         : typeof search.a_uid === "string" && /^\d+$/.test(search.a_uid)
           ? Number(search.a_uid)
           : undefined,
+    g_kind: GAP_KINDS.includes(search.g_kind as GapKind) ? (search.g_kind as GapKind) : undefined,
+    g_open: search.g_open === "0" ? "0" : undefined,
   }),
   component: FinancePage,
 });

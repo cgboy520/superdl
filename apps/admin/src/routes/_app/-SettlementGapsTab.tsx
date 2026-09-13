@@ -1,7 +1,7 @@
-/** 结算缺口:重放补结 / 人工核销入口(告警 superdl_settlement_gap_unresolved)。 */
+/** 结算缺口:FilterBar(类型 / 只看未核销,入 URL ?g_kind= / ?g_open=)+ 重放补结 / 人工核销(告警 superdl_settlement_gap_unresolved)。 */
 
-import { flattenPages, formatDateTime } from "@superdl/ui";
-import { CursorTable, useConfirm } from "@superdl/ui/components";
+import { controlWidth, flattenPages, formatDateTime, useUrlFilters } from "@superdl/ui";
+import { CursorTable, FilterBar, GatedButton, RowActions, useConfirm } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { App, Button, Select, Space, Switch, Tag, Typography } from "antd";
 import { useState } from "react";
@@ -14,6 +14,7 @@ import { BulkBar, runBulk } from "../../components/BulkBar";
 import { ReasonAction } from "../../components/ReasonAction";
 import { useApiErrorText } from "@superdl/ui";
 import { canWriteFinance, useAdminRole } from "../../stores/auth";
+import { GAP_KINDS, type GapKind, useFinanceFilters } from "./-financeFilters";
 
 const REASON_LABEL_KEY = {
   catchup_truncated: "finance.gapReasonCatchupTruncated",
@@ -26,11 +27,10 @@ type GapReason = keyof typeof REASON_LABEL_KEY;
 const KIND_LABEL_KEY = {
   hourly: "finance.gapKindHourly",
   daily_disk: "finance.gapKindDailyDisk",
-} as const;
-type GapKind = keyof typeof KIND_LABEL_KEY;
+} as const satisfies Record<GapKind, string>;
 
 export function SettlementGapsTab() {
-  const { t } = useTranslation();
+  const { t } = useTranslation(["admin", "shared"]);
   // 未知 kind 原样回显,不进 t()(与状态表同规约)
   const gapKindText = (v: string): string => {
     const labelKey = v in KIND_LABEL_KEY ? KIND_LABEL_KEY[v as GapKind] : undefined;
@@ -42,8 +42,15 @@ export function SettlementGapsTab() {
   const role = useAdminRole();
   const writable = canWriteFinance(role);
 
-  const [kind, setKind] = useState<GapKind | undefined>(undefined);
-  const [unresolvedOnly, setUnresolvedOnly] = useState(true);
+  // 筛选入 URL:类型 g_kind;g_open="0" = 含已核销(默认只看未核销)
+  const { search, setFilters } = useFinanceFilters();
+  const kind = search.g_kind;
+  const unresolvedOnly = search.g_open !== "0";
+  const filters = useUrlFilters({
+    search: { g_kind: kind, g_open: search.g_open },
+    keys: ["g_kind", "g_open"],
+    commit: setFilters,
+  });
   const params = {
     ...(kind ? { kind } : {}),
     unresolved: unresolvedOnly,
@@ -57,6 +64,7 @@ export function SettlementGapsTab() {
   const confirm = useConfirm();
 
   const items = flattenPages(data);
+  const total = data?.pages[0]?.total ?? undefined;
   // 批量重放:勾选未核销行,逐条并发(幂等原语,只补不重扣)
   const [selected, setSelected] = useState<number[]>([]);
   const [bulkPending, setBulkPending] = useState(false);
@@ -81,25 +89,31 @@ export function SettlementGapsTab() {
 
   return (
     <>
-      <Space style={{ marginBottom: 12 }} wrap>
+      <FilterBar
+        hasFilter={filters.hasFilter}
+        onClear={filters.clear}
+        count={total}
+        extra={
+          /* 手动刷新重置回第一页 */
+          <Button onClick={() => void qc.resetQueries({ queryKey })}>{t("common.refresh")}</Button>
+        }
+      >
         <Select
           allowClear
           placeholder={t("finance.gapKind")}
-          style={{ width: 160 }}
+          style={{ width: controlWidth.sm }}
           value={kind}
-          onChange={(v) => setKind(v)}
-          options={(Object.keys(KIND_LABEL_KEY) as GapKind[]).map((k) => ({
+          onChange={(v: GapKind | undefined) => setFilters({ g_kind: v })}
+          options={GAP_KINDS.map((k) => ({
             value: k,
             label: t(KIND_LABEL_KEY[k]),
           }))}
         />
         <Space size={6}>
-          <Switch checked={unresolvedOnly} onChange={setUnresolvedOnly} />
+          <Switch checked={unresolvedOnly} onChange={(on) => setFilters({ g_open: on ? undefined : "0" })} />
           <Typography.Text type="secondary">{t("finance.gapUnresolvedOnly")}</Typography.Text>
         </Space>
-        {/* 手动刷新重置回第一页 */}
-        <Button onClick={() => void qc.resetQueries({ queryKey })}>{t("common.refresh")}</Button>
-      </Space>
+      </FilterBar>
       <BulkBar count={selected.length} onClear={() => setSelected([])}>
         <Button type="primary" size="small" disabled={!writable} loading={bulkPending} onClick={bulkReplay}>
           {t("bulk.replaySelected", { count: selected.length })}
@@ -108,8 +122,8 @@ export function SettlementGapsTab() {
       <CursorTable<AdminSettlementGapOut>
         query={gapsQ}
         rows={items}
+        empty={filters.hasFilter ? t("empty.search", { ns: "shared" }) : undefined}
         rowKey="id"
-        size="small"
         rowSelection={
           writable
             ? {
@@ -165,46 +179,48 @@ export function SettlementGapsTab() {
             width: 180,
             render: (_, row) =>
               row.resolved_at ? null : (
-                <Space size={4}>
-                  {/* 重放端点无 reason 负载:L2 useConfirm,目标 = 缺口 id */}
-                  <Button
-                    type="link"
-                    size="small"
-                    disabled={!writable}
-                    style={{ whiteSpace: "nowrap" }}
-                    onClick={() =>
-                      confirm({
-                        title: t("finance.gapReplayTitle", { id: row.id }),
-                        consequences: [t("finance.gapReplayConfirm")],
-                        okText: t("finance.gapReplay"),
-                        onOk: async () => {
-                          try {
-                            await replay.mutateAsync({ gapId: row.id });
-                            message.success(t("finance.gapReplayed"));
-                            refresh();
-                          } catch (e) {
-                            message.error(errText(e, t("common.actionFailed", { action: t("finance.gapReplay") })));
-                          }
-                        },
-                      })
-                    }
-                  >
-                    {t("finance.gapReplay")}
-                  </Button>
-                  <ReasonAction
-                    label={t("finance.gapResolve")}
-                    target={`#${row.id} · ${gapKindText(row.kind)} · ${row.object_id}`}
-                    title={t("finance.gapResolveTitle")}
-                    confirmText={t("finance.gapResolveConfirm", { id: row.id })}
-                    disabled={!writable}
-                    disabledReason={t("finance.financeOnlyGap")}
-                    onSubmit={async (reason) => {
-                      await resolve.mutateAsync({ gapId: row.id, data: { note: reason } });
-                      refresh();
-                      return t("finance.gapResolved");
-                    }}
-                  />
-                </Space>
+                <RowActions
+                  primary={
+                    /* 重放端点无 reason 负载:L2 useConfirm,目标 = 缺口 id */
+                    <GatedButton
+                      size="small"
+                      reason={writable ? undefined : t("finance.financeOnlyGap")}
+                      onClick={() =>
+                        confirm({
+                          title: t("finance.gapReplayTitle", { id: row.id }),
+                          consequences: [t("finance.gapReplayConfirm")],
+                          okText: t("finance.gapReplay"),
+                          onOk: async () => {
+                            try {
+                              await replay.mutateAsync({ gapId: row.id });
+                              message.success(t("finance.gapReplayed"));
+                              refresh();
+                            } catch (e) {
+                              message.error(errText(e, t("common.actionFailed", { action: t("finance.gapReplay") })));
+                            }
+                          },
+                        })
+                      }
+                    >
+                      {t("finance.gapReplay")}
+                    </GatedButton>
+                  }
+                  secondary={
+                    <ReasonAction
+                      label={t("finance.gapResolve")}
+                      target={`#${row.id} · ${gapKindText(row.kind)} · ${row.object_id}`}
+                      title={t("finance.gapResolveTitle")}
+                      confirmText={t("finance.gapResolveConfirm", { id: row.id })}
+                      disabled={!writable}
+                      disabledReason={t("finance.financeOnlyGap")}
+                      onSubmit={async (reason) => {
+                        await resolve.mutateAsync({ gapId: row.id, data: { note: reason } });
+                        refresh();
+                        return t("finance.gapResolved");
+                      }}
+                    />
+                  }
+                />
               ),
           },
         ]}

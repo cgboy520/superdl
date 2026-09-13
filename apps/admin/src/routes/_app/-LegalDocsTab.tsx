@@ -336,7 +336,7 @@ function CellEditor({
                 pagination={false}
                 dataSource={versions}
                 columns={[
-                  { title: t("settings.legal.colVersion"), dataIndex: "version", width: 80 },
+                  { title: t("settings.legal.colVersion"), dataIndex: "version", width: 80, align: "right" },
                   {
                     title: t("settings.legal.colStatus"),
                     dataIndex: "status",

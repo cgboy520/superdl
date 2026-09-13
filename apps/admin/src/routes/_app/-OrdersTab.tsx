@@ -1,13 +1,13 @@
-/** 充值订单 Tab:订单号 / 日期筛选、核验与补单。 */
+/** 充值订单 Tab:FilterBar(状态 / 订单号 / 日期,入 URL)+ 导出。 */
 
-import { Button, DatePicker, Input, Select, Space } from "antd";
+import { Button, DatePicker, Input, Select } from "antd";
 import dayjs from "dayjs";
 import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 
-import { flattenPages, orderStatusMap } from "@superdl/ui";
-import { CursorTable } from "@superdl/ui/components";
-import { useCsvExport, useUrlCommittedInput } from "@superdl/ui";
+import { controlWidth, flattenPages, orderStatusMap } from "@superdl/ui";
+import { CursorTable, FilterBar } from "@superdl/ui/components";
+import { useCsvExport, useUrlCommittedInput, useUrlFilters } from "@superdl/ui";
 
 import { type OrderRow, exportOrdersCsv, useOrders } from "../../api";
 import { useOrderColumns } from "../../components/orderColumns";
@@ -20,6 +20,11 @@ export function OrdersTab() {
   const { search, setFilters } = useFinanceFilters();
   const status = search.o_status;
   const orderNo = search.o_no;
+  const filters = useUrlFilters({
+    search: { o_status: status, o_no: orderNo, o_day: search.o_day },
+    keys: ["o_status", "o_no", "o_day"],
+    commit: setFilters,
+  });
   // 检索防抖回写 URL;URL 回流同步进输入框
   const commitOrderNo = useCallback((next: string | undefined) => setFilters({ o_no: next }), [setFilters]);
   const { value: orderNoInput, setValue: setOrderNoInput } = useUrlCommittedInput(orderNo, commitOrderNo);
@@ -31,14 +36,24 @@ export function OrdersTab() {
   };
   const q = useOrders(params);
   const orders = flattenPages(q.data);
+  const total = q.data?.pages[0]?.total ?? undefined;
   const { doExport, exporting } = useCsvExport((tz, lang) => exportOrdersCsv(params, tz, lang));
   return (
     <>
-      <Space wrap style={{ marginBottom: 12 }}>
+      <FilterBar
+        hasFilter={filters.hasFilter}
+        onClear={filters.clear}
+        count={total}
+        extra={
+          <Button onClick={() => void doExport()} loading={exporting}>
+            {t("common.exportCsv")}
+          </Button>
+        }
+      >
         <Select
           allowClear
           placeholder={t("common.statusFilter")}
-          style={{ width: 160 }}
+          style={{ width: controlWidth.sm }}
           value={status}
           onChange={(v) => setFilters({ o_status: v })}
           options={Object.entries(orderStatusMap).map(([v, m]) => ({ value: v, label: t(m.labelKey) }))}
@@ -46,7 +61,7 @@ export function OrdersTab() {
         <Input.Search
           allowClear
           placeholder={t("finance.searchOrderPlaceholder")}
-          style={{ width: 260 }}
+          style={{ width: controlWidth.md }}
           value={orderNoInput}
           onChange={(e) => setOrderNoInput(e.target.value)}
           onSearch={(v) => commitOrderNo(v.trim() || undefined)}
@@ -56,11 +71,15 @@ export function OrdersTab() {
           onChange={(d) => setFilters({ o_day: d ? d.format("YYYY-MM-DD") : undefined })}
           allowClear
         />
-        <Button onClick={() => void doExport()} loading={exporting}>
-          {t("common.exportCsv")}
-        </Button>
-      </Space>
-      <CursorTable<OrderRow> query={q} rows={orders} scroll={{ x: 900 }} rowKey="order_no" columns={orderColumns} />
+      </FilterBar>
+      <CursorTable<OrderRow>
+        query={q}
+        rows={orders}
+        empty={filters.hasFilter ? t("empty.search", { ns: "shared" }) : undefined}
+        scroll={{ x: 900 }}
+        rowKey="order_no"
+        columns={orderColumns}
+      />
     </>
   );
 }

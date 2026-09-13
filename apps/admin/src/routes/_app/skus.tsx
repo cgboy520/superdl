@@ -1,4 +1,4 @@
-/** SKU 与定价:列表(上下架 / 改价确认带影响面);新建 / 编辑抽屉在 -SkuDrawerForm,表单常量与联动纯函数在 -skuForm。 */
+/** SKU 与定价:列表(状态列在售 / 已下架;操作固定右:编辑 + 更多 ▾ 上架 / 下架,改价确认带影响面);新建 / 编辑抽屉在 -SkuDrawerForm,表单常量与联动纯函数在 -skuForm。 */
 
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
@@ -7,7 +7,15 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { layout, skuTierMap, skuVariant } from "@superdl/ui";
-import { GatedButton, PageContainer, TableErrorEmpty, useConfirm } from "@superdl/ui/components";
+import {
+  EmptyState,
+  GatedButton,
+  PageContainer,
+  RowActions,
+  RowMoreMenu,
+  TableErrorEmpty,
+  useConfirm,
+} from "@superdl/ui/components";
 import { useFormat } from "@superdl/ui";
 import { useApiErrorText } from "@superdl/ui";
 
@@ -58,12 +66,14 @@ function SkusPage() {
           rowKey="id"
           loading={isLoading}
           locale={{
-            emptyText: (
+            emptyText: isError ? (
               <TableErrorEmpty
-                isError={isError}
+                isError
                 isForbidden={isApiError(error) && error.status === 403}
                 onRetry={() => void refetch()}
               />
+            ) : (
+              <EmptyState scene="list" compact />
             ),
           }}
           dataSource={skus ?? []}
@@ -91,24 +101,37 @@ function SkusPage() {
               // 容量 = 匹配型号×池的物理卡数;CPU 规格不带卡
               title: t("skus.colCapacity"),
               dataIndex: "capacity_gpus",
+              align: "right",
               render: (v: number, r) =>
                 r.tier === "cpu" ? "—" : v === 0 && r.status === "on" ? <Tag color="red">0</Tag> : v,
             },
             {
               title: t("skus.colSoldShare"),
               dataIndex: "sold_share",
+              align: "right",
               render: (v: string | null) => (v == null ? "—" : `${Math.round(Number(v) * 100)}%`),
             },
             {
               title: t("skus.colActualOversell"),
+              align: "right",
               render: (_, r) => {
                 if (r.actual_oversell == null) return "—";
                 const over = Number(r.actual_oversell) >= Number(r.oversell_cores);
                 return over ? <Tag color="red">{r.actual_oversell}×</Tag> : `${r.actual_oversell}×`;
               },
             },
-            { title: t("skus.colOversellCores"), dataIndex: "oversell_cores", render: (v: string) => `${v}×` },
-            { title: t("skus.colPrice"), dataIndex: "price_hourly", render: (v: string) => formatHourlyPrice(v) },
+            {
+              title: t("skus.colOversellCores"),
+              dataIndex: "oversell_cores",
+              align: "right",
+              render: (v: string) => `${v}×`,
+            },
+            {
+              title: t("skus.colPrice"),
+              dataIndex: "price_hourly",
+              align: "right",
+              render: (v: string) => formatHourlyPrice(v),
+            },
             {
               title: t("skus.colPeriod"),
               dataIndex: "period_enabled",
@@ -124,83 +147,95 @@ function SkusPage() {
                 v ? <Tag color="orange">{t("skus.spotOn")}</Tag> : <Tag>{t("skus.spotOff")}</Tag>,
             },
             {
-              title: t("skus.colOnSale"),
+              title: t("skus.colStatus"),
               dataIndex: "status",
-              render: (v: string, r) =>
-                v === "on" ? (
-                  <ReasonAction
-                    label={t("skus.offSale")}
-                    target={r.name}
-                    danger
-                    title={t("skus.offSaleTitle")}
-                    confirmText={t("skus.offSaleConfirm", { name: r.name })}
-                    disabled={!writable}
-                    disabledReason={t("nodes.readonlyNoOp")}
-                    onSubmit={async (reason) => {
-                      await skuRowUpdate.mutateAsync(
-                        { skuId: r.id, data: { status: "off", reason } },
-                        { onSuccess: refresh },
-                      );
-                    }}
-                  />
-                ) : (
-                  // 上架:规格缺要素被拒时给「强制上架」出口
-                  <ReasonAction
-                    label={t("skus.onSale")}
-                    target={r.name}
-                    title={t("skus.onSaleTitle")}
-                    confirmText={t("skus.onSaleConfirm", { name: r.name })}
-                    disabled={!writable}
-                    disabledReason={t("nodes.readonlyNoOp")}
-                    onSubmit={async (reason) => {
-                      try {
-                        await skuRowUpdate.mutateAsync(
-                          { skuId: r.id, data: { status: "on", reason } },
-                          { onSuccess: refresh },
-                        );
-                      } catch (e) {
-                        // SKU_NOT_SELLABLE:确认后带 force 重放;其他错误继续抛给 ReasonAction
-                        if (isApiError(e) && e.code === "SKU_NOT_SELLABLE") {
-                          confirm({
-                            title: t("skus.notSellableTitle"),
-                            consequences: [errText(e, t("skus.toggleFailed"))],
-                            okText: t("skus.forceOn"),
-                            danger: true,
-                            onOk: () => {
-                              skuRowUpdate.mutate(
-                                {
-                                  skuId: r.id,
-                                  data: { status: "on", reason },
-                                  force: true,
-                                },
-                                {
-                                  onSuccess: refresh,
-                                  onError: (err) => {
-                                    message.error(errText(err, t("skus.toggleFailed")));
-                                  },
-                                },
-                              );
-                            },
-                          });
-                        }
-                        throw e;
-                      }
-                    }}
-                  />
-                ),
+              width: 100,
+              render: (v: string) =>
+                v === "on" ? <Tag color="green">{t("skus.statusOnSale")}</Tag> : <Tag>{t("skus.statusOffShelf")}</Tag>,
             },
             {
               title: t("skus.colActions"),
               fixed: "right",
-              width: 90,
+              width: 140,
               render: (_, r) => (
-                <GatedButton
-                  size="small"
-                  reason={writable ? undefined : t("common.readonlyNoEdit")}
-                  onClick={() => setEditing(r)}
-                >
-                  {t("skus.edit")}
-                </GatedButton>
+                <RowActions
+                  primary={
+                    <GatedButton
+                      size="small"
+                      reason={writable ? undefined : t("common.readonlyNoEdit")}
+                      onClick={() => setEditing(r)}
+                    >
+                      {t("skus.edit")}
+                    </GatedButton>
+                  }
+                  more={
+                    <RowMoreMenu>
+                      {r.status === "on" ? (
+                        <ReasonAction
+                          label={t("skus.offSale")}
+                          type="text"
+                          target={r.name}
+                          danger
+                          title={t("skus.offSaleTitle")}
+                          confirmText={t("skus.offSaleConfirm", { name: r.name })}
+                          disabled={!writable}
+                          disabledReason={t("nodes.readonlyNoOp")}
+                          onSubmit={async (reason) => {
+                            await skuRowUpdate.mutateAsync(
+                              { skuId: r.id, data: { status: "off", reason } },
+                              { onSuccess: refresh },
+                            );
+                          }}
+                        />
+                      ) : (
+                        // 上架:规格缺要素被拒时给「强制上架」出口
+                        <ReasonAction
+                          label={t("skus.onSale")}
+                          type="text"
+                          target={r.name}
+                          title={t("skus.onSaleTitle")}
+                          confirmText={t("skus.onSaleConfirm", { name: r.name })}
+                          disabled={!writable}
+                          disabledReason={t("nodes.readonlyNoOp")}
+                          onSubmit={async (reason) => {
+                            try {
+                              await skuRowUpdate.mutateAsync(
+                                { skuId: r.id, data: { status: "on", reason } },
+                                { onSuccess: refresh },
+                              );
+                            } catch (e) {
+                              // SKU_NOT_SELLABLE:确认后带 force 重放;其他错误继续抛给 ReasonAction
+                              if (isApiError(e) && e.code === "SKU_NOT_SELLABLE") {
+                                confirm({
+                                  title: t("skus.notSellableTitle"),
+                                  consequences: [errText(e, t("skus.toggleFailed"))],
+                                  okText: t("skus.forceOn"),
+                                  danger: true,
+                                  onOk: () => {
+                                    skuRowUpdate.mutate(
+                                      {
+                                        skuId: r.id,
+                                        data: { status: "on", reason },
+                                        force: true,
+                                      },
+                                      {
+                                        onSuccess: refresh,
+                                        onError: (err) => {
+                                          message.error(errText(err, t("skus.toggleFailed")));
+                                        },
+                                      },
+                                    );
+                                  },
+                                });
+                              }
+                              throw e;
+                            }
+                          }}
+                        />
+                      )}
+                    </RowMoreMenu>
+                  }
+                />
               ),
             },
           ]}

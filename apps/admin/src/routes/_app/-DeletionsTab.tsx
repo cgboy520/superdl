@@ -1,12 +1,21 @@
-/** 注销申请 Tab:列表 + 执行(L3)/ 驳回(ReasonAction)。 */
+/** 注销申请 Tab:状态筛选入 URL(?dstatus=)+ 执行(L3,主动作)/ 驳回(ReasonAction,更多)。 */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { App, Input, Select, Space, Table, Tag, Typography } from "antd";
-import { useState } from "react";
+import { useNavigate, getRouteApi } from "@tanstack/react-router";
+import { App, Button, Input, Select, Space, Table, Tag, Typography } from "antd";
+import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { deletionStatusMap, fontSize, formatDateTime, layout, useNow } from "@superdl/ui";
-import { GatedButton, TableErrorEmpty, TypeConfirmModal } from "@superdl/ui/components";
+import { controlWidth, deletionStatusMap, fontSize, formatDateTime, layout, useNow, useUrlFilters } from "@superdl/ui";
+import {
+  EmptyState,
+  FilterBar,
+  GatedButton,
+  RowActions,
+  RowMoreMenu,
+  TableErrorEmpty,
+  TypeConfirmModal,
+} from "@superdl/ui/components";
 import { useApiErrorText, useFormat } from "@superdl/ui";
 
 import { type DeletionRow, isApiError, useApproveDeletion, useDeletionRequests, useRejectDeletion } from "../../api";
@@ -17,6 +26,8 @@ import { TenantLink } from "../../components/TenantLink";
 import { REASON_MAX_LEN } from "../../lib/validators";
 import { useAdminRole } from "../../stores/auth";
 
+const routeApi = getRouteApi("/_app/tenants");
+
 /** 注销申请:列表 + 处理。执行仅超管;校验计数全 0 且过冷静期才可点。 */
 export function DeletionsTab() {
   const { t } = useTranslation(["admin", "shared"]);
@@ -25,7 +36,15 @@ export function DeletionsTab() {
   const { formatMoney, formatCountdown } = useFormat();
   const role = useAdminRole();
   const isAdmin = role === "admin";
-  const [status, setStatus] = useState<string | undefined>();
+  const navigate = useNavigate({ from: "/tenants" });
+  // 状态筛选入 URL(?dstatus=)
+  const status = routeApi.useSearch({ select: (s) => s.dstatus });
+  const commitFilters = useCallback(
+    (patch: { dstatus?: string }) =>
+      void navigate({ to: "/tenants", replace: true, search: (prev) => ({ ...prev, ...patch }) }),
+    [navigate],
+  );
+  const filters = useUrlFilters({ search: { dstatus: status }, keys: ["dstatus"], commit: commitFilters });
   const qc = useQueryClient();
   const { data, queryKey, isLoading, isError, error, refetch } = useDeletionRequests(status ? { status } : undefined);
   const rows: DeletionRow[] = data ?? [];
@@ -64,30 +83,42 @@ export function DeletionsTab() {
 
   return (
     <>
-      <Space style={{ marginBottom: 12 }}>
+      <FilterBar hasFilter={filters.hasFilter} onClear={filters.clear}>
         <Select
           allowClear
           placeholder={t("tenants.deletion.statusFilter")}
-          style={{ width: 160 }}
+          style={{ width: controlWidth.sm }}
           value={status}
-          onChange={setStatus}
+          onChange={(v: string | undefined) => commitFilters({ dstatus: v })}
           options={Object.entries(deletionStatusMap).map(([v, m]) => ({
             value: v,
             label: t(m.labelKey),
           }))}
         />
-      </Space>
+      </FilterBar>
       <Table<DeletionRow>
         scroll={{ x: 1100 }}
         sticky={{ offsetHeader: layout.topBarHeight }}
         rowKey="id"
         loading={isLoading}
         locale={{
-          emptyText: (
+          emptyText: isError ? (
             <TableErrorEmpty
-              isError={isError}
+              isError
               isForbidden={isApiError(error) && error.status === 403}
               onRetry={() => void refetch()}
+            />
+          ) : (
+            <EmptyState
+              scene={filters.hasFilter ? "search" : "list"}
+              compact
+              secondaryAction={
+                filters.hasFilter ? (
+                  <Button size="small" onClick={filters.clear}>
+                    {t("filter.clear", { ns: "shared" })}
+                  </Button>
+                ) : undefined
+              }
             />
           ),
         }}
@@ -160,31 +191,38 @@ export function DeletionsTab() {
           {
             title: t("tenants.colActions"),
             fixed: "right",
-            width: 170,
+            width: 150,
             render: (_, r) =>
               r.status === "pending" ? (
-                <Space>
-                  <GatedButton
-                    size="small"
-                    danger
-                    reason={isAdmin ? undefined : t("tenants.deletion.noPermission")}
-                    onClick={() => setApproving(r)}
-                  >
-                    {t("tenants.deletion.approve")}
-                  </GatedButton>
-                  <ReasonAction
-                    label={t("tenants.deletion.reject")}
-                    target={`#${r.user_id} · ${r.phone_masked}`}
-                    title={t("tenants.deletion.rejectTitle")}
-                    confirmText={t("tenants.deletion.rejectConfirm")}
-                    disabled={!isAdmin}
-                    disabledReason={t("tenants.deletion.noPermission")}
-                    onSubmit={async (note) => {
-                      await reject.mutateAsync({ requestId: r.id, data: { note } });
-                      refresh();
-                    }}
-                  />
-                </Space>
+                <RowActions
+                  primary={
+                    <GatedButton
+                      size="small"
+                      danger
+                      reason={isAdmin ? undefined : t("tenants.deletion.noPermission")}
+                      onClick={() => setApproving(r)}
+                    >
+                      {t("tenants.deletion.approve")}
+                    </GatedButton>
+                  }
+                  more={
+                    <RowMoreMenu>
+                      <ReasonAction
+                        label={t("tenants.deletion.reject")}
+                        type="text"
+                        target={`#${r.user_id} · ${r.phone_masked}`}
+                        title={t("tenants.deletion.rejectTitle")}
+                        confirmText={t("tenants.deletion.rejectConfirm")}
+                        disabled={!isAdmin}
+                        disabledReason={t("tenants.deletion.noPermission")}
+                        onSubmit={async (note) => {
+                          await reject.mutateAsync({ requestId: r.id, data: { note } });
+                          refresh();
+                        }}
+                      />
+                    </RowMoreMenu>
+                  }
+                />
               ) : null,
           },
         ]}

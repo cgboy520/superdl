@@ -1,10 +1,10 @@
-/** 在线服务:全局服务表(不限租户),检索与「含已删除」入 URL;处置只有强制停止。 */
+/** 在线服务:全局服务表(不限租户),FilterBar(检索 / 含已删除,入 URL);处置只有强制停止。 */
 
-import { PageContainer } from "@superdl/ui/components";
+import { FilterBar, PageContainer } from "@superdl/ui/components";
 import { adminKeys } from "../../api";
-import { useUrlCommittedInput } from "@superdl/ui";
+import { controlWidth, useUrlCommittedInput, useUrlFilters } from "@superdl/ui";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Button, Card, Checkbox, Input, Space } from "antd";
+import { Button, Card, Checkbox, Input } from "antd";
 import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -43,19 +43,34 @@ function ServicesPage() {
     [navigate],
   );
   const { value: input, setValue: setInput } = useUrlCommittedInput(q, commitQ);
-  const setUrl = (next: Partial<ServicesSearch>) =>
-    void navigate({ to: "/services", replace: true, search: (prev) => ({ ...prev, ...next }) });
+  const setUrl = useCallback(
+    (next: Partial<ServicesSearch>) =>
+      void navigate({ to: "/services", replace: true, search: (prev) => ({ ...prev, ...next }) }),
+    [navigate],
+  );
+  // user_id 由抽屉「看全部」带入,也算筛选(清除筛选一并清掉)
+  const filters = useUrlFilters({
+    search: { q, user_id: userId, released },
+    keys: ["q", "user_id", "released"],
+    commit: setUrl,
+  });
 
   return (
     <PageContainer
       width="full"
       title={t("menu.services")}
       extra={
-        <Space wrap>
+        <Button onClick={() => void qc.invalidateQueries({ queryKey: adminKeys.services })}>
+          {t("common.refresh")}
+        </Button>
+      }
+    >
+      <Card>
+        <FilterBar hasFilter={filters.hasFilter} onClear={filters.clear}>
           <Input.Search
             allowClear
             placeholder={t("services.searchPlaceholder")}
-            style={{ width: 240 }}
+            style={{ width: controlWidth.md }}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onSearch={(v) => commitQ(v || undefined)}
@@ -66,14 +81,8 @@ function ServicesPage() {
           >
             {t("services.includeReleased")}
           </Checkbox>
-          <Button onClick={() => void qc.invalidateQueries({ queryKey: adminKeys.services })}>
-            {t("common.refresh")}
-          </Button>
-        </Space>
-      }
-    >
-      <Card>
-        <AdminServicesTable userId={userId} q={q} includeReleased={released === "1"} />
+        </FilterBar>
+        <AdminServicesTable userId={userId} q={q} includeReleased={released === "1"} hasFilter={filters.hasFilter} />
       </Card>
     </PageContainer>
   );

@@ -1,4 +1,4 @@
-/** 支付异常 Tab:渠道回调与订单状态不一致的清单与处置。 */
+/** 支付异常 Tab:渠道回调与订单状态不一致的清单与处置(补单主动作 / 核验次动作)。 */
 
 import { useQueryClient } from "@tanstack/react-query";
 import { App, Button, Form, Input, Modal, Space, Table, Tag } from "antd";
@@ -6,7 +6,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { adminColors, fontSize, formatDateTime, idemKeyOf } from "@superdl/ui";
-import { GatedButton, TableErrorEmpty } from "@superdl/ui/components";
+import { EmptyState, GatedButton, Mono, RowActions, TableErrorEmpty } from "@superdl/ui/components";
 import { useApiErrorText } from "@superdl/ui";
 import { useFormat } from "@superdl/ui";
 
@@ -96,14 +96,14 @@ export function AnomaliesTab() {
         loading={isLoading}
         dataSource={rows}
         locale={{
-          emptyText: (
+          emptyText: isError ? (
             <TableErrorEmpty
-              isError={isError}
+              isError
               isForbidden={isApiError(error) && error.status === 403}
               onRetry={() => void refetch()}
-            >
-              {t("finance.noAnomalies")}
-            </TableErrorEmpty>
+            />
+          ) : (
+            <EmptyState scene="list" compact description={t("finance.noAnomalies")} />
           ),
         }}
         columns={[
@@ -117,12 +117,18 @@ export function AnomaliesTab() {
             title: t("finance.colSubject"),
             render: (_, r) => (
               <>
-                {r.order_no ?? <TenantLink id={r.user_id} />}
+                {r.order_no ? <Mono>{r.order_no}</Mono> : <TenantLink id={r.user_id} />}
                 <div style={{ color: adminColors.textSecondary, fontSize: fontSize.caption }}>{r.detail}</div>
               </>
             ),
           },
-          { title: t("finance.colAmount"), dataIndex: "amount", width: 110, render: (v: string) => formatMoney(v) },
+          {
+            title: t("finance.colAmount"),
+            dataIndex: "amount",
+            width: 110,
+            align: "right",
+            render: (v: string) => formatMoney(v),
+          },
           { title: t("finance.colFoundAt"), dataIndex: "created_at", width: 150, render: formatDateTime },
           {
             title: t("finance.colAction"),
@@ -135,19 +141,23 @@ export function AnomaliesTab() {
               const orderNo = r.order_no;
               if (!orderNo) return null;
               return (
-                <Space>
-                  <Button size="small" onClick={() => void doVerify(orderNo)}>
-                    {t("finance.verifyChannel")}
-                  </Button>
-                  <GatedButton
-                    size="small"
-                    type="primary"
-                    reason={writable ? undefined : t("finance.financeOnlyBackfill")}
-                    onClick={() => setBackfillTarget(r)}
-                  >
-                    {t("finance.backfill")}
-                  </GatedButton>
-                </Space>
+                <RowActions
+                  primary={
+                    <GatedButton
+                      size="small"
+                      type="primary"
+                      reason={writable ? undefined : t("finance.financeOnlyBackfill")}
+                      onClick={() => setBackfillTarget(r)}
+                    >
+                      {t("finance.backfill")}
+                    </GatedButton>
+                  }
+                  secondary={
+                    <Button size="small" onClick={() => void doVerify(orderNo)}>
+                      {t("finance.verifyChannel")}
+                    </Button>
+                  }
+                />
               );
             },
           },

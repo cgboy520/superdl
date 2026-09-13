@@ -10,6 +10,9 @@ export type FinanceTab = (typeof FINANCE_TABS)[number];
 // URL 筛选白名单:状态取共享映射表,日期 YYYY-MM-DD,账期 YYYY-MM,租户 id 正整数
 export const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 export const PERIOD_RE = /^\d{4}-\d{2}$/;
+// 结算缺口类型(与 AdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetKind 一致)
+export const GAP_KINDS = ["hourly", "daily_disk"] as const;
+export type GapKind = (typeof GAP_KINDS)[number];
 
 export interface FinanceSearch {
   tab?: FinanceTab;
@@ -28,6 +31,9 @@ export interface FinanceSearch {
   a_status?: string;
   a_day?: string;
   a_uid?: number;
+  // 结算缺口 Tab:类型;g_open="0" = 含已核销(默认只看未核销,默认值不入 URL)
+  g_kind?: GapKind;
+  g_open?: "0";
 }
 
 /** 各 Tab 共用的 URL 筛选读写(replace,保留他项)。 */

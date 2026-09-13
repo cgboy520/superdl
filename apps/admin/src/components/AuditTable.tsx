@@ -1,8 +1,8 @@
-/** 审计检索。detail(JSONB)承载原因、变更前后值与金额。 */
+/** 审计检索:FilterBar(操作者类型 / ID / 关键字 / 分钟级时间窗 / limit)+ 游标翻页。detail(JSONB)承载原因、变更前后值与金额。 */
 
-import { adminColors, fontSize, formatDateTime, useCsvExport } from "@superdl/ui";
-import { LoadMore, TableErrorEmpty } from "@superdl/ui/components";
-import { Button, DatePicker, Input, Select, Space, Table, Tag, Tooltip, Typography } from "antd";
+import { adminColors, controlWidth, fontSize, formatDateTime, useCsvExport } from "@superdl/ui";
+import { EmptyState, FilterBar, LoadMore, TableErrorEmpty } from "@superdl/ui/components";
+import { Button, DatePicker, Input, Select, Table, Tag, Tooltip, Typography } from "antd";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
 import { useState } from "react";
@@ -43,7 +43,7 @@ export function AuditTable({
   /** 筛选提交后回写 URL;不传则纯本地状态 */
   onCommit?: (filters: AuditFilters) => void;
 }) {
-  const { t } = useTranslation();
+  const { t } = useTranslation(["admin", "shared"]);
   const [actorType, setActorType] = useState<string | undefined>(initial?.actor_type);
   const [actorIdInput, setActorIdInput] = useState(initial?.actor_id ?? "");
   const [actorId, setActorId] = useState(initial?.actor_id ?? "");
@@ -82,17 +82,36 @@ export function AuditTable({
     ...(range?.[1] ? { until: range[1].toISOString() } : {}),
     limit,
   };
+  // limit 是页大小不算筛选
+  const hasFilter = Boolean(actorType || actorId || q || range?.[0] || range?.[1]);
+  const clearFilters = () => {
+    setActorType(undefined);
+    setActorIdInput("");
+    setActorId("");
+    setQInput("");
+    setQ("");
+    setRange(null);
+    commit({ limit });
+  };
   const audit = useAuditLog(filters);
   const rows: AuditRow[] = audit.data?.pages.flatMap((p) => p) ?? [];
   const { doExport, exporting } = useCsvExport((tz, lang) => exportAuditCsv(filters, tz, lang));
 
   return (
     <>
-      <Space wrap style={{ marginBottom: 12 }}>
+      <FilterBar
+        hasFilter={hasFilter}
+        onClear={clearFilters}
+        extra={
+          <Button onClick={() => void doExport()} loading={exporting}>
+            {t("common.exportCsv")}
+          </Button>
+        }
+      >
         <Select
           allowClear
           placeholder={t("audit.actorTypePlaceholder")}
-          style={{ width: 140 }}
+          style={{ width: controlWidth.sm }}
           value={actorType}
           onChange={(v) => {
             setActorType(v);
@@ -107,7 +126,7 @@ export function AuditTable({
         <Input.Search
           allowClear
           placeholder={t("audit.actorIdPlaceholder")}
-          style={{ width: 150 }}
+          style={{ width: controlWidth.sm }}
           value={actorIdInput}
           onChange={(e) => setActorIdInput(e.target.value)}
           onSearch={(v) => {
@@ -118,7 +137,7 @@ export function AuditTable({
         <Input.Search
           allowClear
           placeholder={t("audit.keywordPlaceholder")}
-          style={{ width: 200 }}
+          style={{ width: controlWidth.md }}
           value={qInput}
           onChange={(e) => setQInput(e.target.value)}
           onSearch={(v) => {
@@ -141,7 +160,7 @@ export function AuditTable({
         />
         <Select<number>
           value={limit}
-          style={{ width: 130 }}
+          style={{ width: controlWidth.sm }}
           onChange={(v) => {
             setLimit(v);
             commit({ ...filters, limit: v });
@@ -151,22 +170,30 @@ export function AuditTable({
             label: t("audit.limitOption", { count: v }),
           }))}
         />
-        <Button onClick={() => void doExport()} loading={exporting}>
-          {t("common.exportCsv")}
-        </Button>
-      </Space>
+      </FilterBar>
       <Table<AuditRow>
         scroll={{ x: 900 }}
         rowKey="id"
         dataSource={rows}
-        size="small"
         loading={audit.isLoading}
         locale={{
-          emptyText: (
+          emptyText: audit.isError ? (
             <TableErrorEmpty
-              isError={audit.isError}
+              isError
               isForbidden={isApiError(audit.error) && audit.error.status === 403}
               onRetry={() => void audit.refetch()}
+            />
+          ) : (
+            <EmptyState
+              scene={hasFilter ? "search" : "list"}
+              compact
+              secondaryAction={
+                hasFilter ? (
+                  <Button size="small" onClick={clearFilters}>
+                    {t("filter.clear", { ns: "shared" })}
+                  </Button>
+                ) : undefined
+              }
             />
           ),
         }}

@@ -86,11 +86,22 @@ export function ReconciliationCard() {
           pagination={false}
           columns={[
             { title: t("finance.colInstanceId"), dataIndex: "instance_id" },
-            { title: t("finance.colBilled"), dataIndex: "billed", render: (v: string) => formatMoney(v) },
-            { title: t("finance.colEstimated"), dataIndex: "estimated", render: (v: string) => formatMoney(v) },
+            {
+              title: t("finance.colBilled"),
+              dataIndex: "billed",
+              align: "right",
+              render: (v: string) => formatMoney(v),
+            },
+            {
+              title: t("finance.colEstimated"),
+              dataIndex: "estimated",
+              align: "right",
+              render: (v: string) => formatMoney(v),
+            },
             {
               title: "diff%",
               dataIndex: "diff_pct",
+              align: "right",
               render: (v: number) => <Tag color="red">{v}%</Tag>,
             },
           ]}

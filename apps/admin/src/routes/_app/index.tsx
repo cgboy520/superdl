@@ -3,9 +3,12 @@ import {
   moneyOr,
   DataErrorAlert,
   EChart,
+  EmptyState,
   GatedButton,
   KpiGrid,
   PageContainer,
+  RowActions,
+  RowMoreMenu,
   TableErrorEmpty,
 } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
@@ -16,7 +19,6 @@ import {
   Card,
   Col,
   Collapse,
-  Empty,
   Row,
   Select,
   Skeleton,
@@ -281,7 +283,7 @@ function DeadTasksCard() {
                         <code style={{ fontSize: fontSize.caption }}>{JSON.stringify(v)}</code>
                       ),
                     },
-                    { title: t("overview.colRetries"), dataIndex: "retries", width: 70 },
+                    { title: t("overview.colRetries"), dataIndex: "retries", width: 70, align: "right" },
                     {
                       title: t("overview.colLastError"),
                       dataIndex: "last_error",
@@ -309,34 +311,41 @@ function DeadTasksCard() {
                       title: t("overview.colActions"),
                       width: 170,
                       render: (_, r) => (
-                        <Space>
-                          <ReasonAction
-                            label={t("overview.replay")}
-                            target={`#${r.id} · ${r.type}`}
-                            title={t("overview.replayTitle")}
-                            confirmText={t("overview.replayConfirmMeta", { id: r.id, type: r.type })}
-                            disabled={!writable}
-                            disabledReason={t("overview.opsOnly")}
-                            onSubmit={async (reason) => {
-                              await retry.mutateAsync({ taskId: r.id, data: { reason } });
-                              refresh();
-                              return t("overview.requeued");
-                            }}
-                          />
-                          <ReasonAction
-                            label={t("overview.ignore")}
-                            target={`#${r.id} · ${r.type}`}
-                            title={t("overview.ignoreTitle")}
-                            confirmText={t("overview.ignoreConfirm", { id: r.id, type: r.type })}
-                            danger
-                            disabled={!writable}
-                            disabledReason={t("overview.opsOnly")}
-                            onSubmit={async (reason) => {
-                              await discard.mutateAsync({ taskId: r.id, data: { reason } });
-                              refresh();
-                            }}
-                          />
-                        </Space>
+                        <RowActions
+                          primary={
+                            <ReasonAction
+                              label={t("overview.replay")}
+                              target={`#${r.id} · ${r.type}`}
+                              title={t("overview.replayTitle")}
+                              confirmText={t("overview.replayConfirmMeta", { id: r.id, type: r.type })}
+                              disabled={!writable}
+                              disabledReason={t("overview.opsOnly")}
+                              onSubmit={async (reason) => {
+                                await retry.mutateAsync({ taskId: r.id, data: { reason } });
+                                refresh();
+                                return t("overview.requeued");
+                              }}
+                            />
+                          }
+                          more={
+                            <RowMoreMenu>
+                              <ReasonAction
+                                label={t("overview.ignore")}
+                                type="text"
+                                target={`#${r.id} · ${r.type}`}
+                                title={t("overview.ignoreTitle")}
+                                confirmText={t("overview.ignoreConfirm", { id: r.id, type: r.type })}
+                                danger
+                                disabled={!writable}
+                                disabledReason={t("overview.opsOnly")}
+                                onSubmit={async (reason) => {
+                                  await discard.mutateAsync({ taskId: r.id, data: { reason } });
+                                  refresh();
+                                }}
+                              />
+                            </RowMoreMenu>
+                          }
+                        />
                       ),
                     },
                   ]}
@@ -384,7 +393,7 @@ function AlertStreamCard() {
         <TableErrorEmpty compact isError onRetry={() => void refetch()} />
       ) : (
         <>
-          {alerts.length === 0 && <Empty description={t("shell.noAlerts")} />}
+          {alerts.length === 0 && <EmptyState scene="notification" compact description={t("shell.noAlerts")} />}
           {alerts.map((a) => {
             const link = alertLink(a);
             return (
@@ -628,7 +637,7 @@ function Overview() {
             ) : oversellRows.length ? (
               <OversellChart rows={oversellRows} />
             ) : (
-              <Empty description={t("overview.oversellEmpty")} />
+              <EmptyState scene="list" compact description={t("overview.oversellEmpty")} />
             )}
           </Card>
           <Card title={t("overview.poolOccupancy")} style={{ marginTop: 16 }}>
@@ -637,7 +646,7 @@ function Overview() {
             ) : ov && ov.pools.length ? (
               <PoolOccupancy pools={ov.pools} />
             ) : (
-              <Empty description={t("overview.poolEmpty")} />
+              <EmptyState scene="list" compact description={t("overview.poolEmpty")} />
             )}
           </Card>
         </Col>

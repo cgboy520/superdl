@@ -1,18 +1,24 @@
-/** 工单:status/category 筛选 + user_id/ticket_no 检索(游标分页)+ 详情抽屉。读:全角色;写:ops/admin。 */
+/** 工单:FilterBar(待回复 Segmented / 状态 / 分类 / user_id / 工单号,入 URL;游标分页)+ 详情抽屉。读:全角色;写:ops/admin。 */
 
 import {
+  controlWidth,
+  drawerWidth,
   flattenPages,
   formatDateTime,
   isTicketRepliable,
   metaOf,
   ticketCategoryMap,
   ticketStatusMap,
+  useUrlFilters,
 } from "@superdl/ui";
 import {
   CursorTable,
+  FilterBar,
   GatedButton,
   HexTag,
+  Mono,
   PageContainer,
+  RowActions,
   TableErrorEmpty,
   TicketBubble,
   useConfirm,
@@ -22,12 +28,12 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   Alert,
   App,
-  Badge,
   Button,
   Card,
   Drawer,
   Input,
   InputNumber,
+  Segmented,
   Select,
   Skeleton,
   Space,
@@ -150,7 +156,7 @@ function TicketDrawer({
     <Drawer
       open={ticketId !== null}
       onClose={onClose}
-      size="min(640px, 100vw)"
+      size={drawerWidth.md}
       title={
         ticket ? (
           <Space size={8} wrap>
@@ -183,7 +189,7 @@ function TicketDrawer({
               </Typography.Text>
               {ticket.instance_uuid && (
                 <Typography.Text type="secondary">
-                  {t("tickets.instanceUuid")}: {ticket.instance_uuid}
+                  {t("tickets.instanceUuid")}: <Mono>{ticket.instance_uuid}</Mono>
                 </Typography.Text>
               )}
             </Space>
@@ -293,9 +299,10 @@ function TicketsPage() {
     ...(ticketNo?.trim() ? { ticket_no: ticketNo.trim() } : {}),
   });
   const { data, queryKey } = ticketsQ;
-  // 待客服计数角标(60s 轮询);点击按该口径过滤
+  // 待客服计数角标(60s 轮询);Segmented 常驻按该口径过滤
   const pendingQ = useTicketPendingCount();
   const rows = flattenPages(data);
+  const total = data?.pages[0]?.total ?? undefined;
   const [openId, setOpenId] = useState<number | null>(null);
   // 告警深链(/tickets?id=<id>)自动开详情抽屉
   const [prevSearchId, setPrevSearchId] = useState(search.id);
@@ -312,18 +319,60 @@ function TicketsPage() {
       }),
     [navigate],
   );
+  const filters = useUrlFilters({
+    search: { status, category, user_id: search.user_id, ticket_no: ticketNo },
+    keys: ["status", "category", "user_id", "ticket_no"],
+    commit: setFilters,
+  });
   // 工单号检索:防抖回写 URL;URL 回流同步进输入框
   const commitTicketNo = useCallback((next: string | undefined) => setFilters({ ticket_no: next }), [setFilters]);
   const { value: ticketNoInput, setValue: setTicketNoInput } = useUrlCommittedInput(ticketNo, commitTicketNo);
+  const pendingLabel =
+    pendingQ.data != null ? t("tickets.pendingStaffCount", { count: pendingQ.data.count }) : t("tickets.pendingStaff");
 
   return (
-    <PageContainer
-      title={t("tickets.title")}
-      extra={
-        <Space wrap>
+    <PageContainer title={t("tickets.title")}>
+      <Card>
+        <FilterBar
+          hasFilter={filters.hasFilter}
+          onClear={filters.clear}
+          count={total}
+          extra={<Button onClick={() => void qc.resetQueries({ queryKey })}>{t("common.refresh")}</Button>}
+        >
+          {/* 「待回复 N」常驻视图切换,与状态筛选共用 ?status= */}
+          <Segmented
+            value={status === "pending_staff" ? "pending_staff" : "all"}
+            onChange={(v) => setFilters({ status: v === "pending_staff" ? "pending_staff" : undefined })}
+            options={[
+              { value: "all", label: t("tickets.filterAll") },
+              { value: "pending_staff", label: pendingLabel },
+            ]}
+          />
+          <Select
+            allowClear
+            placeholder={t("tickets.filterStatus")}
+            style={{ width: controlWidth.sm }}
+            value={status}
+            onChange={(v) => setFilters({ status: v })}
+            options={Object.entries(ticketStatusMap).map(([v, m]) => ({
+              value: v,
+              label: t(m.labelKey),
+            }))}
+          />
+          <Select
+            allowClear
+            placeholder={t("tickets.filterCategory")}
+            style={{ width: controlWidth.sm }}
+            value={category}
+            onChange={(v) => setFilters({ category: v })}
+            options={Object.entries(ticketCategoryMap).map(([v, m]) => ({
+              value: v,
+              label: t(m.labelKey),
+            }))}
+          />
           <InputNumber
             placeholder={t("tickets.filterUserId")}
-            style={{ width: 130 }}
+            style={{ width: controlWidth.sm }}
             value={userIdInput}
             onChange={(v) => setUserIdInput(v)}
             onBlur={() => setFilters({ user_id: userIdInput ?? undefined })}
@@ -335,54 +384,26 @@ function TicketsPage() {
           <Input.Search
             allowClear
             placeholder={t("tickets.filterTicketNo")}
-            style={{ width: 180 }}
+            style={{ width: controlWidth.sm }}
             value={ticketNoInput}
             onChange={(e) => setTicketNoInput(e.target.value)}
             onSearch={(v) => commitTicketNo(v || undefined)}
           />
-          <Select
-            allowClear
-            placeholder={t("tickets.filterStatus")}
-            style={{ width: 160 }}
-            value={status}
-            onChange={(v) => setFilters({ status: v })}
-            options={Object.entries(ticketStatusMap).map(([v, m]) => ({
-              value: v,
-              label: t(m.labelKey),
-            }))}
-          />
-          <Select
-            allowClear
-            placeholder={t("tickets.filterCategory")}
-            style={{ width: 160 }}
-            value={category}
-            onChange={(v) => setFilters({ category: v })}
-            options={Object.entries(ticketCategoryMap).map(([v, m]) => ({
-              value: v,
-              label: t(m.labelKey),
-            }))}
-          />
-          <Button onClick={() => void qc.resetQueries({ queryKey })}>{t("common.refresh")}</Button>
-          {pendingQ.data != null && pendingQ.data.count > 0 && (
-            <Button type="primary" ghost onClick={() => setFilters({ status: "pending_staff" })}>
-              <Badge count={pendingQ.data.count} size="small" offset={[6, -2]}>
-                {t("tickets.pendingStaff")}
-              </Badge>
-            </Button>
-          )}
-        </Space>
-      }
-    >
-      <Card>
+        </FilterBar>
         <CursorTable<AdminTicketOut>
           query={ticketsQ}
           rows={rows}
-          empty={t("tickets.empty")}
+          empty={filters.hasFilter ? t("empty.search", { ns: "shared" }) : t("tickets.empty")}
           scroll={{ x: 960 }}
           rowKey="id"
           onRow={(r) => ({ onClick: () => setOpenId(r.id), style: { cursor: "pointer" } })}
           columns={[
-            { title: t("tickets.colTicketNo"), dataIndex: "ticket_no", width: 140 },
+            {
+              title: t("tickets.colTicketNo"),
+              dataIndex: "ticket_no",
+              width: 140,
+              render: (v: string) => <Mono>{v}</Mono>,
+            },
             {
               title: t("tickets.colTenant"),
               dataIndex: "user_id",
@@ -414,16 +435,20 @@ function TicketsPage() {
               title: t("tickets.colActions"),
               width: 80,
               render: (_, r) => (
-                <Button
-                  type="link"
-                  size="small"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setOpenId(r.id);
-                  }}
-                >
-                  {t("tickets.detail")}
-                </Button>
+                <RowActions
+                  primary={
+                    <Button
+                      type="link"
+                      size="small"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpenId(r.id);
+                      }}
+                    >
+                      {t("tickets.detail")}
+                    </Button>
+                  }
+                />
               ),
             },
           ]}

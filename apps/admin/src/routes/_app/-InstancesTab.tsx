@@ -1,14 +1,15 @@
-/** 实例 Tab:全局实例表(状态 / 节点 / 名称检索入 URL)+ 强制停止 / 强制回收。 */
+/** 实例 Tab:全局实例表(状态 / 节点 / 名称检索入 URL)+ 强制停止(主动作)/ 强制回收(更多)。 */
 
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, getRouteApi } from "@tanstack/react-router";
-import { Input, Select, Space } from "antd";
+import { Input, Select, Space, Typography } from "antd";
 import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
   controlWidth,
   flattenPages,
+  fontSize,
   formatDateTime,
   instanceStatusMap,
   layout,
@@ -21,7 +22,7 @@ import {
   workloadTypeMap,
   type InstanceStatus,
 } from "@superdl/ui";
-import { CursorTable, FilterBar, HexTag } from "@superdl/ui/components";
+import { CursorTable, FilterBar, HexTag, Mono, RowActions, RowMoreMenu } from "@superdl/ui/components";
 
 import { type AdminInstanceOut, useAdminInstances, useForceStop, usePreemptInstance } from "../../api";
 import { ReasonAction } from "../../components/ReasonAction";
@@ -66,11 +67,12 @@ export function InstancesTab() {
   const refresh = () => void qc.invalidateQueries({ queryKey });
 
   const total = data?.pages[0]?.total ?? undefined;
+  const hasFilter = Boolean(status || instQ || nodeName);
   return (
     <>
       {/* 筛选条:控件 + 清除筛选 + 精确总数(服务端 total) */}
       <FilterBar
-        hasFilter={Boolean(status || instQ || nodeName)}
+        hasFilter={hasFilter}
         onClear={() => setUrl({ istatus: undefined, iq: undefined, inode: undefined })}
         count={total ?? undefined}
       >
@@ -105,17 +107,31 @@ export function InstancesTab() {
       <CursorTable<AdminInstanceOut>
         query={instancesQ}
         rows={instances}
+        empty={hasFilter ? t("empty.search", { ns: "shared" }) : undefined}
         scroll={{ x: 1250 }}
         sticky={{ offsetHeader: layout.topBarHeight }}
         rowKey="uuid"
         columns={[
-          { title: t("tenants.colInstance"), dataIndex: "name", fixed: "left", width: 180 },
+          {
+            title: t("tenants.colInstance"),
+            fixed: "left",
+            width: 180,
+            // 名称下副行 uuid 前 8 位
+            render: (_, r) => (
+              <Space orientation="vertical" size={0}>
+                <span>{r.name}</span>
+                <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                  <Mono truncate={8}>{r.uuid}</Mono>
+                </Typography.Text>
+              </Space>
+            ),
+          },
           tenantColumn(t("tenants.colOwner"), 90),
           {
             title: t("tenants.colNode"),
             dataIndex: "node_name",
             width: 160,
-            render: (v: string | null) => v ?? "—",
+            render: (v: string | null) => (v ? <Mono>{v}</Mono> : "—"),
           },
           {
             title: t("tenants.colStatus"),
@@ -162,52 +178,60 @@ export function InstancesTab() {
               return <HexTag color={metaOf(marketMap, v)?.color}>{labelKey ? t(labelKey) : v}</HexTag>;
             },
           },
-          { title: t("tenants.colSshPort"), dataIndex: "ssh_port", width: 100 },
+          { title: t("tenants.colSshPort"), dataIndex: "ssh_port", width: 100, align: "right" },
           { title: t("tenants.colCreatedAt"), dataIndex: "created_at", render: formatDateTime },
           {
             title: t("tenants.colActions"),
             fixed: "right",
-            width: 190,
+            width: 170,
             render: (_, r) => {
+              const target = `${r.name} · ${r.uuid.slice(0, 8)}`;
               return (
-                <Space>
-                  <ReasonAction
-                    label={t("tenants.forceStop")}
-                    target={`${r.name} · ${r.uuid.slice(0, 8)}`}
-                    danger
-                    title={t("tenants.forceStopTitle")}
-                    confirmText={t("tenants.forceStopConfirm", { name: r.name, id: r.uuid.slice(0, 8) })}
-                    disabled={!writable || r.status !== "running"}
-                    disabledReason={!writable ? t("tenants.noPermission") : t("tenants.forceStopNeedsRunning")}
-                    onSubmit={async (reason) => {
-                      await forceStop.mutateAsync({ uuid: r.uuid, data: { reason } });
-                      refresh();
-                    }}
-                  />
-                  {/* 强制回收:走自动抢占同一路径(通知 + 宽限窗);与强制停止分开 */}
-                  <ReasonAction
-                    label={t("tenants.preempt")}
-                    target={`${r.name} · ${r.uuid.slice(0, 8)}`}
-                    danger
-                    title={t("tenants.preemptTitle")}
-                    confirmText={t("tenants.preemptConfirm", {
-                      name: r.name,
-                      id: r.uuid.slice(0, 8),
-                    })}
-                    disabled={!writable || r.market !== "spot" || r.status !== "running"}
-                    disabledReason={
-                      !writable
-                        ? t("tenants.noPermission")
-                        : r.market !== "spot"
-                          ? t("tenants.preemptNeedsSpot")
-                          : t("tenants.preemptNeedsRunning")
-                    }
-                    onSubmit={async (reason) => {
-                      await preempt.mutateAsync({ uuid: r.uuid, data: { reason } });
-                      refresh();
-                    }}
-                  />
-                </Space>
+                <RowActions
+                  primary={
+                    <ReasonAction
+                      label={t("tenants.forceStop")}
+                      target={target}
+                      danger
+                      title={t("tenants.forceStopTitle")}
+                      confirmText={t("tenants.forceStopConfirm", { name: r.name, id: r.uuid.slice(0, 8) })}
+                      disabled={!writable || r.status !== "running"}
+                      disabledReason={!writable ? t("tenants.noPermission") : t("tenants.forceStopNeedsRunning")}
+                      onSubmit={async (reason) => {
+                        await forceStop.mutateAsync({ uuid: r.uuid, data: { reason } });
+                        refresh();
+                      }}
+                    />
+                  }
+                  more={
+                    <RowMoreMenu>
+                      {/* 强制回收:走自动抢占同一路径(通知 + 宽限窗);与强制停止分开 */}
+                      <ReasonAction
+                        label={t("tenants.preempt")}
+                        type="text"
+                        target={target}
+                        danger
+                        title={t("tenants.preemptTitle")}
+                        confirmText={t("tenants.preemptConfirm", {
+                          name: r.name,
+                          id: r.uuid.slice(0, 8),
+                        })}
+                        disabled={!writable || r.market !== "spot" || r.status !== "running"}
+                        disabledReason={
+                          !writable
+                            ? t("tenants.noPermission")
+                            : r.market !== "spot"
+                              ? t("tenants.preemptNeedsSpot")
+                              : t("tenants.preemptNeedsRunning")
+                        }
+                        onSubmit={async (reason) => {
+                          await preempt.mutateAsync({ uuid: r.uuid, data: { reason } });
+                          refresh();
+                        }}
+                      />
+                    </RowMoreMenu>
+                  }
+                />
               );
             },
           },

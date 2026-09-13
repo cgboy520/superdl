@@ -24,4 +24,9 @@ describe("tenants validateSearch", () => {
     });
     expect(validate({ istatus: "bogus" })).toEqual({});
   });
+
+  it("注销申请筛选 dstatus:走注销状态白名单", () => {
+    expect(validate({ dstatus: "pending" })).toEqual({ dstatus: "pending" });
+    expect(validate({ dstatus: "bogus" })).toEqual({});
+  });
 });

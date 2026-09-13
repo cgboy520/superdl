@@ -4,7 +4,7 @@ import { App, Alert, Button, Card, Drawer, Form, Input, InputNumber, Select, Spi
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { adminColors, skuTierMap, skuVariant, type SkuVariant } from "@superdl/ui";
+import { adminColors, drawerWidth, skuTierMap, skuVariant, type SkuVariant } from "@superdl/ui";
 import { useFormat } from "@superdl/ui";
 import { useApiErrorText } from "@superdl/ui";
 import { useConfirm } from "@superdl/ui/components";
@@ -263,7 +263,7 @@ export function SkuDrawerForm({
       title={isNew ? t("skus.newSku") : t("skus.editTitle", { name: record?.name ?? "" })}
       open={editing !== null}
       onClose={handleClose}
-      size="min(760px, 100vw)"
+      size={drawerWidth.lg}
       extra={
         <Button type="primary" loading={create.isPending || update.isPending} onClick={() => void submit()}>
           {t("skus.submit")}

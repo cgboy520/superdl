@@ -1,6 +1,8 @@
 /** 租户下钻抽屉:实名摘要 + 账单/流水/订单/实例/在线服务/配额/事件 七 Tab + 跳审计。 */
 
 import {
+  controlWidth,
+  drawerWidth,
   flattenPages,
   fontSize,
   formatDate,
@@ -12,7 +14,7 @@ import {
   metaOf,
   subscriptionStatusMap,
 } from "@superdl/ui";
-import { CursorTable, DataErrorAlert, HexTag } from "@superdl/ui/components";
+import { CursorTable, DataErrorAlert, HexTag, Mono } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
@@ -86,7 +88,7 @@ export function TenantDrawer({
 
   return (
     <Drawer
-      size="min(880px, 100vw)"
+      size={drawerWidth.lg}
       open={tenant !== null}
       onClose={onClose}
       title={tenant ? t("tenants.drawerTitle", { id: tenant.id, phone: tenant.phone_masked }) : undefined}
@@ -185,7 +187,7 @@ function BillsTab({ userId, instances }: { userId: number; instances: AdminInsta
         allowClear
         showSearch={{ optionFilterProp: "label" }}
         placeholder={t("tenants.billsInstanceFilter")}
-        style={{ width: 280, marginBottom: 12 }}
+        style={{ width: controlWidth.md, marginBottom: 12 }}
         value={instanceId}
         onChange={(v: number | undefined) => setInstanceId(v ?? null)}
         options={instances.map((i) => ({
@@ -205,14 +207,16 @@ function BillsTab({ userId, instances }: { userId: number; instances: AdminInsta
           {
             title: t("tenants.colSeconds"),
             dataIndex: "seconds_used",
+            align: "right",
             render: (v: number) => formatDuration(v),
           },
           {
             title: t("tenants.colUnitPrice"),
             dataIndex: "unit_price",
+            align: "right",
             render: (v: string) => formatHourlyPrice(v),
           },
-          { title: t("tenants.colAmount"), dataIndex: "amount", render: (v: string) => formatMoney(v) },
+          { title: t("tenants.colAmount"), dataIndex: "amount", align: "right", render: (v: string) => formatMoney(v) },
         ]}
       />
     </>
@@ -252,11 +256,13 @@ function LedgerTab({ userId }: { userId: number }) {
           {
             title: t("tenants.colAmount"),
             dataIndex: "amount",
+            align: "right",
             render: (v: string) => <SignedAmount value={v} highlightNegative={false} />,
           },
           {
             title: t("tenants.colBalanceAfter"),
             dataIndex: "balance_after",
+            align: "right",
             render: (v: string) => formatMoney(v),
           },
           { title: t("tenants.colRemark"), dataIndex: "remark", ellipsis: true },
@@ -310,7 +316,7 @@ function TenantInstancesTab({ instances, total }: { instances: AdminInstanceOut[
               <Space size={8}>
                 <span>{r.name}</span>
                 <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                  {r.uuid.slice(0, 8)}
+                  <Mono truncate={8}>{r.uuid}</Mono>
                 </Typography.Text>
               </Space>
             ),
@@ -360,7 +366,7 @@ function TenantInstancesTab({ instances, total }: { instances: AdminInstanceOut[
           {
             title: t("tenants.colNode"),
             dataIndex: "node_name",
-            render: (v: string | null) => v ?? "—",
+            render: (v: string | null) => (v ? <Mono>{v}</Mono> : "—"),
           },
           { title: t("tenants.colCreatedAt"), dataIndex: "created_at", render: formatDateTime },
         ]}
@@ -496,7 +502,7 @@ function EventsTab({ instances }: { instances: AdminInstanceOut[] }) {
         allowClear
         showSearch={{ optionFilterProp: "label" }}
         placeholder={t("tenants.events.instancePlaceholder")}
-        style={{ width: 320, marginBottom: 12 }}
+        style={{ width: controlWidth.lg, marginBottom: 12 }}
         value={uuid}
         onChange={(v: string | undefined) => setUuid(v ?? null)}
         options={instances.map((i) => ({

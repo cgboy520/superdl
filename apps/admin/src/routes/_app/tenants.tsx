@@ -4,7 +4,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Card, Tabs } from "antd";
 import { useTranslation } from "react-i18next";
 
-import { instanceStatusMap } from "@superdl/ui";
+import { deletionStatusMap, instanceStatusMap } from "@superdl/ui";
 import { PageContainer } from "@superdl/ui/components";
 
 import { DRAWER_TABS, type DrawerTab } from "./-TenantDrawer";
@@ -15,7 +15,7 @@ import { DeletionsTab } from "./-DeletionsTab";
 const TENANTS_TABS = ["tenants", "instances", "deletions"] as const;
 type TenantsTabKey = (typeof TENANTS_TABS)[number];
 export const Route = createFileRoute("/_app/tenants")({
-  // q:检索;tab/dtab:页内与抽屉 Tab;istatus/inode/iq:实例 Tab 筛选;tstatus:租户状态;order:注册排序
+  // q:检索;tab/dtab:页内与抽屉 Tab;istatus/inode/iq:实例 Tab 筛选;tstatus:租户状态;order:注册排序;dstatus:注销申请状态
   validateSearch: (
     search: Record<string, unknown>,
   ): {
@@ -27,6 +27,7 @@ export const Route = createFileRoute("/_app/tenants")({
     iq?: string;
     tstatus?: string;
     order?: "asc";
+    dstatus?: string;
     /** 打开抽屉的租户 id(可转达的视图,入 URL) */
     tenant?: number;
   } => ({
@@ -38,6 +39,7 @@ export const Route = createFileRoute("/_app/tenants")({
     iq: typeof search.iq === "string" && search.iq ? search.iq : undefined,
     tstatus: search.tstatus === "active" || search.tstatus === "frozen" ? search.tstatus : undefined,
     order: search.order === "asc" ? "asc" : undefined,
+    dstatus: typeof search.dstatus === "string" && search.dstatus in deletionStatusMap ? search.dstatus : undefined,
     tenant: Number.isInteger(Number(search.tenant)) && Number(search.tenant) > 0 ? Number(search.tenant) : undefined,
   }),
   component: TenantsPage,

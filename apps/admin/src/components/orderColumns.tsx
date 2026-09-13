@@ -1,6 +1,7 @@
 /** 充值订单列(两处共用);withTenant 决定是否带「租户」列。 */
 
 import { formatDateTime, metaOf, orderStatusMap, paymentChannelMap } from "@superdl/ui";
+import { Mono } from "@superdl/ui/components";
 import type { TableColumnsType } from "antd";
 import { useTranslation } from "react-i18next";
 
@@ -13,9 +14,9 @@ export function useOrderColumns({ withTenant }: { withTenant: boolean }): TableC
   const { t } = useTranslation(["admin", "shared"]);
   const { formatMoney } = useFormat();
   return [
-    { title: t("finance.colOrderNo"), dataIndex: "order_no" },
+    { title: t("finance.colOrderNo"), dataIndex: "order_no", render: (v: string) => <Mono>{v}</Mono> },
     ...(withTenant ? [tenantColumn<OrderRow>(t("finance.colTenant"))] : []),
-    { title: t("finance.colAmount"), dataIndex: "amount", render: (v: string) => formatMoney(v) },
+    { title: t("finance.colAmount"), dataIndex: "amount", align: "right", render: (v: string) => formatMoney(v) },
     {
       title: t("finance.colChannel"),
       dataIndex: "channel",

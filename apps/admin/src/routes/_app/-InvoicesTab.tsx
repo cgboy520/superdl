@@ -1,13 +1,21 @@
-/** 发票 Tab:开具 / 驳回。 */
+/** 发票 Tab:FilterBar(状态 / 账期,入 URL)+ 开具(主动作)/ 驳回(更多);操作列固定右且为最后一列。 */
 
 import { useQueryClient } from "@tanstack/react-query";
 import { Button, Form, Input, Modal, Select, Space, Table, Tag, Tooltip, Typography } from "antd";
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { adminColors, fontSize, formatDateTime, invoiceStatusMap, layout } from "@superdl/ui";
-import { GatedButton, TableErrorEmpty } from "@superdl/ui/components";
-import { useCsvExport, useUrlCommittedInput } from "@superdl/ui";
+import { adminColors, controlWidth, fontSize, formatDateTime, invoiceStatusMap, layout } from "@superdl/ui";
+import {
+  EmptyState,
+  FilterBar,
+  GatedButton,
+  Mono,
+  RowActions,
+  RowMoreMenu,
+  TableErrorEmpty,
+} from "@superdl/ui/components";
+import { useCsvExport, useUrlCommittedInput, useUrlFilters } from "@superdl/ui";
 import { useFormat } from "@superdl/ui";
 
 import {
@@ -80,6 +88,11 @@ export function InvoicesTab() {
   const { search, setFilters } = useFinanceFilters();
   const status = search.i_status;
   const urlPeriod = search.i_period;
+  const filters = useUrlFilters({
+    search: { i_status: status, i_period: urlPeriod },
+    keys: ["i_status", "i_period"],
+    commit: setFilters,
+  });
   // 账期 commit 制;URL 回流走渲染期派生态
   const commitPeriod = useCallback((next: string | undefined) => setFilters({ i_period: next }), [setFilters]);
   const { value: periodInput, setValue: setPeriodInput } = useUrlCommittedInput(urlPeriod, commitPeriod);
@@ -111,11 +124,30 @@ export function InvoicesTab() {
 
   return (
     <>
-      <Space wrap style={{ marginBottom: 12 }} align="start">
+      <FilterBar
+        hasFilter={filters.hasFilter}
+        onClear={filters.clear}
+        extra={
+          <>
+            <Tooltip title={revealReason !== null ? t("finance.exportRevealNote") : ""}>
+              <Button onClick={() => void doExport()} loading={exporting}>
+                {t("common.exportCsv")}
+              </Button>
+            </Tooltip>
+            {revealReason === null ? (
+              <Button onClick={() => setRevealOpen(true)}>{t("finance.revealIdentity")}</Button>
+            ) : (
+              <Tag color="orange" closable onClose={() => setReveal(null)}>
+                {t("finance.revealActive", { reason: revealReason })}
+              </Tag>
+            )}
+          </>
+        }
+      >
         <Select
           allowClear
           placeholder={t("common.statusFilter")}
-          style={{ width: 150 }}
+          style={{ width: controlWidth.sm }}
           value={status}
           onChange={(v) => setFilters({ i_status: v })}
           options={Object.entries(invoiceStatusMap).map(([v, m]) => ({
@@ -131,25 +163,13 @@ export function InvoicesTab() {
           <Input.Search
             allowClear
             placeholder={t("finance.filterPeriod")}
-            style={{ width: 200 }}
+            style={{ width: controlWidth.sm }}
             value={periodInput}
             onChange={(e) => setPeriodInput(e.target.value)}
             onSearch={(v) => commitPeriod(v.trim() || undefined)}
           />
         </Form.Item>
-        <Tooltip title={revealReason !== null ? t("finance.exportRevealNote") : ""}>
-          <Button onClick={() => void doExport()} loading={exporting}>
-            {t("common.exportCsv")}
-          </Button>
-        </Tooltip>
-        {revealReason === null ? (
-          <Button onClick={() => setRevealOpen(true)}>{t("finance.revealIdentity")}</Button>
-        ) : (
-          <Tag color="orange" closable onClose={() => setReveal(null)}>
-            {t("finance.revealActive", { reason: revealReason })}
-          </Tag>
-        )}
-      </Space>
+      </FilterBar>
       <Modal
         title={t("finance.revealTitle")}
         open={revealOpen}
@@ -180,11 +200,23 @@ export function InvoicesTab() {
         rowKey="id"
         loading={isLoading}
         locale={{
-          emptyText: (
+          emptyText: isError ? (
             <TableErrorEmpty
-              isError={isError}
+              isError
               isForbidden={isApiError(error) && error.status === 403}
               onRetry={() => void refetch()}
+            />
+          ) : (
+            <EmptyState
+              scene={filters.hasFilter ? "search" : "list"}
+              compact
+              secondaryAction={
+                filters.hasFilter ? (
+                  <Button size="small" onClick={filters.clear}>
+                    {t("filter.clear", { ns: "shared" })}
+                  </Button>
+                ) : undefined
+              }
             />
           ),
         }}
@@ -196,6 +228,7 @@ export function InvoicesTab() {
             title: t("finance.colAmount"),
             dataIndex: "amount",
             width: 100,
+            align: "right",
             render: (v: string) => formatMoney(v),
           },
           {
@@ -229,7 +262,7 @@ export function InvoicesTab() {
               if (r.status === "issued") {
                 return (
                   <span>
-                    {r.invoice_no}
+                    {r.invoice_no ? <Mono>{r.invoice_no}</Mono> : "-"}
                     <div style={{ color: adminColors.textMuted, fontSize: fontSize.caption }}>
                       #{r.issued_by} · {r.issued_at ? formatDateTime(r.issued_at) : ""}
                     </div>
@@ -242,40 +275,47 @@ export function InvoicesTab() {
               return "-";
             },
           },
+          { title: t("finance.colCreatedAt"), dataIndex: "created_at", width: 150, render: formatDateTime },
           {
             title: t("finance.colAction"),
-            width: 150,
+            width: 130,
             fixed: "right",
             render: (_, r) => {
               if (r.status !== "submitted") return null;
               return (
-                <Space wrap>
-                  <GatedButton
-                    size="small"
-                    type="primary"
-                    reason={writable ? undefined : noPerm}
-                    onClick={() => setIssueTarget(r)}
-                  >
-                    {t("finance.invoiceIssue")}
-                  </GatedButton>
-                  <ReasonAction
-                    label={t("finance.invoiceReject")}
-                    target={`#${r.id} · ${formatMoney(r.amount)}`}
-                    title={t("finance.invoiceRejectTitle")}
-                    confirmText={t("finance.invoiceRejectConfirm", { id: r.id, amount: formatMoney(r.amount) })}
-                    danger
-                    disabled={!writable}
-                    disabledReason={noPerm}
-                    onSubmit={async (reason) => {
-                      await reject.mutateAsync({ invoiceId: r.id, data: { reason } });
-                      refresh();
-                    }}
-                  />
-                </Space>
+                <RowActions
+                  primary={
+                    <GatedButton
+                      size="small"
+                      type="primary"
+                      reason={writable ? undefined : noPerm}
+                      onClick={() => setIssueTarget(r)}
+                    >
+                      {t("finance.invoiceIssue")}
+                    </GatedButton>
+                  }
+                  more={
+                    <RowMoreMenu>
+                      <ReasonAction
+                        label={t("finance.invoiceReject")}
+                        type="text"
+                        target={`#${r.id} · ${formatMoney(r.amount)}`}
+                        title={t("finance.invoiceRejectTitle")}
+                        confirmText={t("finance.invoiceRejectConfirm", { id: r.id, amount: formatMoney(r.amount) })}
+                        danger
+                        disabled={!writable}
+                        disabledReason={noPerm}
+                        onSubmit={async (reason) => {
+                          await reject.mutateAsync({ invoiceId: r.id, data: { reason } });
+                          refresh();
+                        }}
+                      />
+                    </RowMoreMenu>
+                  }
+                />
               );
             },
           },
-          { title: t("finance.colCreatedAt"), dataIndex: "created_at", width: 150, render: formatDateTime },
         ]}
       />
       <ListCapNote rows={rows.length} cap={LIST_CAPS.invoices} />

@@ -114,7 +114,6 @@ function PoliciesTab() {
       )}
       <Table
         rowKey="key"
-        size="small"
         loading={isLoading}
         pagination={false}
         scroll={{ x: 760 }}
@@ -130,7 +129,7 @@ function PoliciesTab() {
               </>
             ),
           },
-          { title: t("settings.colEffective"), dataIndex: "effective", width: 130 },
+          { title: t("settings.colEffective"), dataIndex: "effective", width: 130, align: "right" },
           { title: t("settings.colUnit"), dataIndex: "unit", width: 110 },
           {
             title: t("settings.colRange"),
@@ -140,10 +139,11 @@ function PoliciesTab() {
           {
             title: t("settings.colNewValue"),
             width: 160,
+            align: "right",
             render: (_, r) => (
               <InputNumber
                 size="small"
-                style={{ width: 140 }}
+                style={{ width: "100%" }}
                 disabled={!writable}
                 stringMode
                 min={r.spec?.min}
@@ -298,7 +298,6 @@ function AnnouncementTab() {
       )}
       <Table<AnnouncementRow>
         rowKey="id"
-        size="small"
         loading={isLoading}
         locale={{
           emptyText: (

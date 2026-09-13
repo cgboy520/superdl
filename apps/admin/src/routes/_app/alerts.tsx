@@ -1,11 +1,11 @@
-/** 告警中心:severity 服务端过滤、确认状态客户端过滤,入 URL;深链与确认闭环走 alertLink(ops/admin 可写)。 */
+/** 告警中心:FilterBar(severity 服务端过滤、确认状态客户端过滤,入 URL);深链与确认闭环走 alertLink(ops/admin 可写)。 */
 
-import { controlWidth, fontSize, formatDateTime, POLL, space, useAutoRefresh } from "@superdl/ui";
-import { EmptyState, GatedButton, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
+import { controlWidth, fontSize, formatDateTime, POLL, space, useAutoRefresh, useUrlFilters } from "@superdl/ui";
+import { EmptyState, FilterBar, GatedButton, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { App, Badge, Button, Checkbox, List, Select, Space, Typography } from "antd";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { adminKeys, type AlertRow, useAckAlert, useAlerts } from "../../api";
@@ -66,8 +66,12 @@ function AlertsPage() {
       setBulkPending(false);
     }
   };
-  const setFilters = (next: { severity?: string; acked?: string }) =>
-    void navigate({ to: "/alerts", replace: true, search: (prev) => ({ ...prev, ...next }) });
+  const setFilters = useCallback(
+    (next: { severity?: string; acked?: string }) =>
+      void navigate({ to: "/alerts", replace: true, search: (prev) => ({ ...prev, ...next }) }),
+    [navigate],
+  );
+  const filters = useUrlFilters({ search: { severity, acked }, keys: ["severity", "acked"], commit: setFilters });
 
   return (
     <PageContainer
@@ -80,33 +84,31 @@ function AlertsPage() {
         onRefresh: () => void alertsQ.refetch(),
         refreshing: alertsQ.isRefetching,
       }}
-      extra={
-        <Space wrap>
-          <Select
-            allowClear
-            placeholder={t("overview.severityFilter")}
-            style={{ width: controlWidth.sm }}
-            value={severity}
-            onChange={(v) => setFilters({ severity: v })}
-            options={SEVERITIES.map((s) => ({
-              value: s,
-              label: t(SEVERITY_LABEL_KEY[s]),
-            }))}
-          />
-          <Select
-            allowClear
-            placeholder={t("alerts.ackFilter")}
-            style={{ width: controlWidth.sm }}
-            value={acked}
-            onChange={(v) => setFilters({ acked: v })}
-            options={[
-              { value: "unacked", label: t("alerts.ackUnacked") },
-              { value: "acked", label: t("alerts.ackAcked") },
-            ]}
-          />
-        </Space>
-      }
     >
+      <FilterBar hasFilter={filters.hasFilter} onClear={filters.clear}>
+        <Select
+          allowClear
+          placeholder={t("overview.severityFilter")}
+          style={{ width: controlWidth.sm }}
+          value={severity}
+          onChange={(v) => setFilters({ severity: v })}
+          options={SEVERITIES.map((s) => ({
+            value: s,
+            label: t(SEVERITY_LABEL_KEY[s]),
+          }))}
+        />
+        <Select
+          allowClear
+          placeholder={t("alerts.ackFilter")}
+          style={{ width: controlWidth.sm }}
+          value={acked}
+          onChange={(v) => setFilters({ acked: v })}
+          options={[
+            { value: "unacked", label: t("alerts.ackUnacked") },
+            { value: "acked", label: t("alerts.ackAcked") },
+          ]}
+        />
+      </FilterBar>
       {writable && unacked.length > 0 && (
         <div style={{ marginBottom: space.sm, paddingInline: space.md }}>
           <Checkbox
@@ -129,8 +131,19 @@ function AlertsPage() {
         locale={{
           emptyText: alertsQ.isError ? (
             <TableErrorEmpty isError onRetry={() => void alertsQ.refetch()} />
+          ) : filters.hasFilter ? (
+            <EmptyState
+              scene="search"
+              compact
+              description={t("alerts.empty")}
+              secondaryAction={
+                <Button size="small" onClick={filters.clear}>
+                  {t("filter.clear", { ns: "shared" })}
+                </Button>
+              }
+            />
           ) : (
-            <EmptyState scene="notification" compact description={t("alerts.empty")} />
+            <EmptyState scene="notification" compact description={t("shell.noAlerts")} />
           ),
         }}
         renderItem={(a: AlertRow) => {
