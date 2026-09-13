@@ -11,6 +11,7 @@ import {
   controlWidth,
   formatDateTime,
   layout,
+  nodeStatusMap,
   POLL,
   space,
   useAutoRefresh,
@@ -25,6 +26,7 @@ import {
   PageContainer,
   RowActions,
   TableErrorEmpty,
+  StatusTag,
 } from "@superdl/ui/components";
 import { useApiErrorText } from "@superdl/ui";
 
@@ -245,7 +247,7 @@ function NodesPage() {
             style={{ width: controlWidth.sm }}
             value={statusFilter}
             onChange={(v: NodeStatus | undefined) => setUrl({ status: v })}
-            options={NODE_STATUSES.map((s) => ({ value: s, label: s }))}
+            options={NODE_STATUSES.map((s) => ({ value: s, label: t(nodeStatusMap[s].labelKey) }))}
           />
         </FilterBar>
         <BulkBar count={bulkSelected.length} onClear={() => setBulkSelected([])}>
@@ -407,13 +409,7 @@ function NodesPage() {
             {
               title: t("nodes.colStatus"),
               dataIndex: "status",
-              render: (v: string) => (
-                <Tag
-                  color={v === "Ready" ? "green" : v === "Cordoned" ? "orange" : v === "Missing" ? "default" : "red"}
-                >
-                  {v}
-                </Tag>
-              ),
+              render: (v: string) => <StatusTag map={nodeStatusMap} value={v} variant="badge" icon />,
             },
             {
               title: t("nodes.colActions"),

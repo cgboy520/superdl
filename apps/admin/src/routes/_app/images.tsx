@@ -56,7 +56,7 @@ import {
 } from "../../api";
 import { useApiErrorText } from "@superdl/ui";
 import { ReasonAction } from "../../components/ReasonAction";
-import { StatusTag } from "../../components/StatusTag";
+import { StatusTag } from "@superdl/ui/components";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 export const Route = createFileRoute("/_app/images")({

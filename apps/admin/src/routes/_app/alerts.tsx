@@ -1,16 +1,25 @@
 /** 告警中心:FilterBar(severity 服务端过滤、确认状态客户端过滤,入 URL);深链与确认闭环走 alertLink(ops/admin 可写)。 */
 
-import { controlWidth, fontSize, formatDateTime, POLL, space, useAutoRefresh, useUrlFilters } from "@superdl/ui";
-import { EmptyState, FilterBar, GatedButton, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
+import {
+  controlWidth,
+  fontSize,
+  formatDateTime,
+  POLL,
+  severityMap,
+  space,
+  useAutoRefresh,
+  useUrlFilters,
+} from "@superdl/ui";
+import { EmptyState, FilterBar, GatedButton, PageContainer, StatusTag, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { App, Badge, Button, Checkbox, List, Select, Space, Typography } from "antd";
+import { App, Button, Checkbox, List, Select, Space, Typography } from "antd";
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { adminKeys, type AlertRow, useAckAlert, useAlerts } from "../../api";
 import { BulkBar, runBulk } from "../../components/BulkBar";
-import { alertLink, SEVERITY_LABEL_KEY, severityColor, useAckAlertWithFeedback } from "../../lib/alertLink";
+import { alertLink, useAckAlertWithFeedback } from "../../lib/alertLink";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 const SEVERITIES = ["info", "warning", "critical"] as const;
@@ -94,7 +103,7 @@ function AlertsPage() {
           onChange={(v) => setFilters({ severity: v })}
           options={SEVERITIES.map((s) => ({
             value: s,
-            label: t(SEVERITY_LABEL_KEY[s]),
+            label: t(severityMap[s].labelKey),
           }))}
         />
         <Select
@@ -181,7 +190,7 @@ function AlertsPage() {
                 }
                 title={
                   <Space size={8} wrap>
-                    <Badge color={severityColor(a.severity)} />
+                    <StatusTag map={severityMap} value={a.severity} variant="text" icon />
                     {link ? (
                       <Link to={link.to} search={link.search}>
                         {a.title}

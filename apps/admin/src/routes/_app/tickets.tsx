@@ -52,7 +52,7 @@ import {
   useTickets,
   useUpdateTicketStatus,
 } from "../../api";
-import { StatusTag } from "../../components/StatusTag";
+import { StatusTag } from "@superdl/ui/components";
 import { TenantLink } from "../../components/TenantLink";
 import { useApiErrorText, useUrlCommittedInput } from "@superdl/ui";
 import { canWriteOps, useAdminRole } from "../../stores/auth";

@@ -1,10 +1,8 @@
-/** 小件:状态徽标 / 档位标 / 复制按钮。 */
+/** 小件:状态徽标(StatusTag 的 ≤5 行包装)/ 档位标 / 购买模式标 / 复制按钮。 */
 
 import { CheckOutlined, CopyOutlined } from "@ant-design/icons";
 import type { InstanceSubscriptionOut } from "@superdl/api-client";
 import {
-  colorPrimary,
-  diskStatusMap,
   instanceEventReasonMap,
   instanceStatusMap,
   isSubscriptionExpired,
@@ -17,61 +15,47 @@ import {
   spotReclaimTag,
   statusColors,
   subscriptionStatusMap,
+  useThemeColors,
 } from "@superdl/ui";
-import { HexTag } from "@superdl/ui/components";
-import { App, Badge, Button, Tag, Tooltip } from "antd";
+import { HexTag, StatusTag } from "@superdl/ui/components";
+import { App, Button, Tag, Tooltip } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useFormat } from "@superdl/ui";
 
+/** 冻结态附回收倒计时 */
+function FrozenCountdown({ status, deadline }: { status: string; deadline?: string | null }) {
+  const { formatReclaimCountdown } = useFormat();
+  if (status !== "frozen" || !deadline) return null;
+  return <Tag color="red">{formatReclaimCountdown(deadline)}</Tag>;
+}
+
 export function InstanceStatusBadge({ status, frozenDeadline }: { status: string; frozenDeadline?: string | null }) {
-  const { t } = useTranslation(["web", "shared"]);
-  const { formatReclaimCountdown } = useFormat();
-  const meta = metaOf(instanceStatusMap, status);
   return (
-    <span>
-      <Badge status={meta?.badge ?? "default"} text={meta ? t(meta.labelKey) : status} />
-      {status === "frozen" && frozenDeadline && (
-        <Tag color="red" style={{ marginInlineStart: 8 }}>
-          {formatReclaimCountdown(frozenDeadline)}
-        </Tag>
-      )}
-    </span>
+    <StatusTag
+      map={instanceStatusMap}
+      value={status}
+      variant="badge"
+      extra={<FrozenCountdown status={status} deadline={frozenDeadline} />}
+    />
   );
 }
 
-/** 在线服务的派生状态徽标;unready 带解释 tooltip(不是故障态)。 */
+/** 在线服务的派生状态徽标;unready 的解释 tooltip 由表里的 hintKey 自动出。 */
 export function ServiceStatusBadge({ status, frozenDeadline }: { status: string; frozenDeadline?: string | null }) {
-  const { t } = useTranslation(["web", "shared"]);
-  const { formatReclaimCountdown } = useFormat();
-  const meta = metaOf(serviceStatusMap, status);
-  const badge = <Badge status={meta?.badge ?? "default"} text={meta ? t(meta.labelKey) : status} />;
   return (
-    <span>
-      {meta && "hintKey" in meta ? <Tooltip title={t(meta.hintKey)}>{badge}</Tooltip> : badge}
-      {status === "frozen" && frozenDeadline && (
-        <Tag color="red" style={{ marginInlineStart: 8 }}>
-          {formatReclaimCountdown(frozenDeadline)}
-        </Tag>
-      )}
-    </span>
+    <StatusTag
+      map={serviceStatusMap}
+      value={status}
+      variant="badge"
+      extra={<FrozenCountdown status={status} deadline={frozenDeadline} />}
+    />
   );
-}
-
-export function DiskStatusBadge({ status }: { status: string }) {
-  const { t } = useTranslation(["web", "shared"]);
-  const meta = metaOf(diskStatusMap, status);
-  return <Badge status={meta?.badge ?? "default"} text={meta ? t(meta.labelKey) : status} />;
 }
 
 export function TierTag({ tier, pool }: { tier: string; pool?: string | null }) {
-  const { t } = useTranslation(["web", "shared"]);
-  const variant = skuVariant(tier, pool);
-  const meta = metaOf(skuTierMap, variant);
-  if (!meta) return <Tag>{variant}</Tag>;
-  const tag = <HexTag color={meta.color}>{t(meta.labelKey)}</HexTag>;
-  return "hintKey" in meta ? <Tooltip title={t(meta.hintKey)}>{tag}</Tooltip> : tag;
+  return <StatusTag map={skuTierMap} value={skuVariant(tier, pool)} />;
 }
 
 export function SubscriptionTag({
@@ -83,6 +67,7 @@ export function SubscriptionTag({
 }) {
   const { t } = useTranslation(["web", "shared"]);
   const { formatExpiry } = useFormat();
+  const colors = useThemeColors();
   if (market !== "subscription" || !subscription) return null;
   const labelKey = marketLabelKey(market, subscription.period);
   const periodLabel = labelKey ? t(labelKey) : subscription.period;
@@ -94,7 +79,7 @@ export function SubscriptionTag({
       : subscription.status
     : formatExpiry(subscription.expires_at);
   return (
-    <HexTag color={expired ? statusColors.orange : colorPrimary}>
+    <HexTag color={expired ? statusColors.orange : colors.primary}>
       {tail ? t("period.tagWithExpiry", { period: periodLabel, expiry: tail }) : periodLabel}
     </HexTag>
   );

@@ -31,7 +31,7 @@ import {
   useReviewRefund,
 } from "../../api";
 import { ReasonAction } from "../../components/ReasonAction";
-import { StatusTag } from "../../components/StatusTag";
+import { StatusTag } from "@superdl/ui/components";
 import { RowActionModal } from "../../components/RowActionModal";
 import { tenantColumn } from "../../components/TenantLink";
 import { canWriteFinance, useAdminRole, useAuth } from "../../stores/auth";

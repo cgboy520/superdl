@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 
 import type { OrderRow } from "../api";
 import { useFormat } from "@superdl/ui";
-import { StatusTag } from "./StatusTag";
+import { StatusTag } from "@superdl/ui/components";
 import { tenantColumn } from "./TenantLink";
 
 export function useOrderColumns({ withTenant }: { withTenant: boolean }): TableColumnsType<OrderRow> {

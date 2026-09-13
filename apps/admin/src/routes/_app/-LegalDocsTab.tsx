@@ -20,7 +20,7 @@ import {
   type LegalLocale,
 } from "../../api";
 import { ReasonAction } from "../../components/ReasonAction";
-import { StatusTag } from "../../components/StatusTag";
+import { StatusTag } from "@superdl/ui/components";
 import { useAdminRole } from "../../stores/auth";
 
 const DOC_KEYS = ["terms", "privacy", "deletion_notice"] as const;

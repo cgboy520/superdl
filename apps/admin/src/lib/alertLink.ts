@@ -4,29 +4,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { App } from "antd";
 import { useTranslation } from "react-i18next";
 
-import { adminColors, useApiErrorText } from "@superdl/ui";
+import { useApiErrorText } from "@superdl/ui";
 
 import { adminKeys, type AlertRow, useAckAlert } from "../api";
-
-export const SEVERITY_LABEL_KEY = {
-  info: "overview.severityInfo",
-  warning: "overview.severityWarning",
-  critical: "overview.severityCritical",
-} as const;
-
-/** 级别码 → 徽标色;未知级别回落灰蓝。 */
-export function severityColor(severity: string): string {
-  switch (severity) {
-    case "critical":
-      return adminColors.critical;
-    case "warning":
-      return adminColors.alertAccent;
-    case "info":
-      return adminColors.dataAccent;
-    default:
-      return adminColors.chartNeutral;
-  }
-}
 
 /** 告警确认闭环:成功文案 + 失效 adminKeys.alerts 前缀;错误文案走后端 message_key。 */
 export function useAckAlertWithFeedback() {

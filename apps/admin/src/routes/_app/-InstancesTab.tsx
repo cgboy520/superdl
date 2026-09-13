@@ -26,7 +26,7 @@ import { CursorTable, FilterBar, HexTag, Mono, RowActions, RowMoreMenu } from "@
 
 import { type AdminInstanceOut, useAdminInstances, useForceStop, usePreemptInstance } from "../../api";
 import { ReasonAction } from "../../components/ReasonAction";
-import { StatusTag } from "../../components/StatusTag";
+import { StatusTag } from "@superdl/ui/components";
 import { tenantColumn } from "../../components/TenantLink";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 

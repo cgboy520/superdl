@@ -1,4 +1,4 @@
-import { brand, cssVars, webDarkColors, webDarkTheme, webTheme } from "@superdl/ui";
+import { brand, cssVars, ThemeProvider, webDarkColors, webDarkTheme, webTheme } from "@superdl/ui";
 import { NotFoundView, RouteErrorFallbackView } from "@superdl/ui/components";
 import { createRootRoute, Outlet, type ErrorComponentProps } from "@tanstack/react-router";
 import { App as AntApp, ConfigProvider, theme as antdTheme } from "antd";
@@ -34,10 +34,13 @@ function AppProviders({ children }: { children: ReactNode }) {
       locale={antdLocale}
       theme={mode === "dark" ? { algorithm: antdTheme.darkAlgorithm, ...webDarkTheme } : webTheme}
     >
-      {/* 跟随系统「减弱动态效果」 */}
-      <MotionConfig reducedMotion="user">
-        <AntApp>{children}</AntApp>
-      </MotionConfig>
+      {/* JS 侧语义色随主题(useThemeColors) */}
+      <ThemeProvider value={mode === "dark" ? "web-dark" : "web-light"}>
+        {/* 跟随系统「减弱动态效果」 */}
+        <MotionConfig reducedMotion="user">
+          <AntApp>{children}</AntApp>
+        </MotionConfig>
+      </ThemeProvider>
     </ConfigProvider>
   );
 }

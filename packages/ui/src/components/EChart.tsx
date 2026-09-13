@@ -10,7 +10,15 @@ import type { CSSProperties, ReactNode } from "react";
 import { Spin, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
-import { adminColors, chartAccentColors, chartSeriesColors, colorPrimary, fontFamily, webDarkColors } from "../tokens";
+import {
+  adminColors,
+  chartAccentColors,
+  chartSeriesColors,
+  colorPrimary,
+  fontFamily,
+  webDarkColors,
+  chartAxisColors,
+} from "../tokens";
 
 echarts.use([
   BarChart,
@@ -66,24 +74,24 @@ echarts.registerTheme("web-light", {
     chartSeriesColors.light.neutral,
   ],
   backgroundColor: "transparent",
-  textStyle: { color: "rgba(0,0,0,0.60)", fontFamily },
-  title: { textStyle: { color: "rgba(0,0,0,0.60)" } },
-  legend: { textStyle: { color: "rgba(0,0,0,0.60)" } },
+  textStyle: { color: chartAxisColors.light.text, fontFamily },
+  title: { textStyle: { color: chartAxisColors.light.text } },
+  legend: { textStyle: { color: chartAxisColors.light.text } },
   categoryAxis: {
-    axisLine: { lineStyle: { color: "#E5E7EB" } },
-    axisTick: { lineStyle: { color: "#E5E7EB" } },
-    axisLabel: { color: "rgba(0,0,0,0.60)" },
-    splitLine: { lineStyle: { color: "#F0F1F5" } },
+    axisLine: { lineStyle: { color: chartAxisColors.light.axis } },
+    axisTick: { lineStyle: { color: chartAxisColors.light.axis } },
+    axisLabel: { color: chartAxisColors.light.text },
+    splitLine: { lineStyle: { color: chartAxisColors.light.grid } },
   },
   valueAxis: {
-    axisLine: { lineStyle: { color: "#E5E7EB" } },
-    axisLabel: { color: "rgba(0,0,0,0.60)" },
-    splitLine: { lineStyle: { color: "#F0F1F5" } },
+    axisLine: { lineStyle: { color: chartAxisColors.light.axis } },
+    axisLabel: { color: chartAxisColors.light.text },
+    splitLine: { lineStyle: { color: chartAxisColors.light.grid } },
   },
   tooltip: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#E5E7EB",
-    textStyle: { color: "rgba(0,0,0,0.88)" },
+    backgroundColor: chartAxisColors.light.tooltipBg,
+    borderColor: chartAxisColors.light.axis,
+    textStyle: { color: chartAxisColors.light.tooltipText },
   },
 });
 

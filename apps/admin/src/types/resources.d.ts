@@ -1284,15 +1284,19 @@ export default interface Resources {
     },
     "common": {
       "cancel": "取消",
+      "copied": "已复制",
+      "copy": "复制",
       "forbidden": "无权限查看",
       "forbiddenDesc": "当前角色无权查看该数据,如需访问请联系管理员。",
+      "hide": "隐藏",
       "loadFailed": "加载失败,请重试",
       "loadMore": "加载更多",
       "loadedAll": "已加载全部 {{count}} 条",
       "more": "更多",
       "notAvailable": "暂无数据",
       "requestFailed": "请求失败",
-      "retry": "重试"
+      "retry": "重试",
+      "reveal": "显示"
     },
     "confirm": {
       "typeNameToConfirm": "键入 {{name}} 以确认"
@@ -1302,6 +1306,10 @@ export default interface Resources {
       "exportFailed": "导出失败,请稍后重试",
       "exportTruncated": "已达单次导出上限,文件末尾有截断标记;请缩小范围分次导出",
       "exporting": "导出中…"
+    },
+    "disk": {
+      "expandEstimate": "扩容到 {{size}}(新增 {{extra}}),新增部分约 ¥{{daily}}/日",
+      "sizeEstimate": "{{size}} · 约 ¥{{daily}}/日"
     },
     "empty": {
       "disk": "暂无数据盘",
@@ -1475,6 +1483,12 @@ export default interface Resources {
       "marketHint": {
         "spot": "容量紧张时,平台会按创建时间从新到旧回收竞价实例;回收前提前通知"
       },
+      "node": {
+        "Cordoned": "已封锁",
+        "Missing": "失联",
+        "NotReady": "未就绪",
+        "Ready": "就绪"
+      },
       "nodeEnroll": {
         "expired": "已过期",
         "failed": "已失败",
@@ -1484,6 +1498,11 @@ export default interface Resources {
         "pending": "待执行",
         "rebooting": "重启中",
         "revoked": "已吊销"
+      },
+      "nodeHint": {
+        "Cordoned": "已封锁,不再调度新实例;在跑实例不受影响",
+        "Missing": "台账有记录但集群里找不到该节点",
+        "NotReady": "kubelet 未上报就绪,新实例不会调度到此节点"
       },
       "order": {
         "closed": "已关闭",
@@ -1522,6 +1541,11 @@ export default interface Resources {
       },
       "serviceHint": {
         "unready": "容器已启动但健康检查未通过;实例照常计费,平台不会替你停"
+      },
+      "severity": {
+        "critical": "严重",
+        "info": "提示",
+        "warning": "警告"
       },
       "subscription": {
         "active": "在保",

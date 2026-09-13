@@ -12,36 +12,14 @@ import {
   heatColors,
   medalColors,
   statusColors,
+  themeColors,
   webDarkColors,
   webTheme,
 } from "./tokens";
-import { skuTierMap } from "./status";
+import { contrastRatio, textOnColor } from "./color";
+import { nodeStatusMap, severityMap, skuTierMap } from "./status";
 
-function relLuminance(hex: string): number {
-  const c = hex.replace("#", "");
-  const r = parseInt(c.slice(0, 2), 16) / 255;
-  const g = parseInt(c.slice(2, 4), 16) / 255;
-  const b = parseInt(c.slice(4, 6), 16) / 255;
-  const lin = (v: number) => (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
-  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-}
-
-/** hex 直接取;rgba(0,0,0,a) 先与白底合成 */
-function luminanceOf(color: string): number {
-  const m = /^rgba\(\s*0\s*,\s*0\s*,\s*0\s*,\s*([\d.]+)\s*\)$/.exec(color);
-  const alpha = m?.[1];
-  if (alpha !== undefined) {
-    const v = Math.round((1 - Number(alpha)) * 255);
-    const pair = v.toString(16).padStart(2, "0");
-    return relLuminance(`#${pair}${pair}${pair}`);
-  }
-  return relLuminance(color);
-}
-
-function contrast(fg: string, bg: string): number {
-  const [l1, l2] = [luminanceOf(fg), luminanceOf(bg)];
-  return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
-}
+const contrast = contrastRatio;
 
 const AA = 4.5;
 
@@ -134,6 +112,31 @@ describe("tokens 对比度(WCAG AA ≥4.5:1)", () => {
     }
     for (const [k, v] of Object.entries(chartSeriesColors.dark)) {
       expect(contrast(v, webDarkColors.bgBase), `chartSeriesColors.dark.${k}`).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("节点状态 / 告警严重度徽标深底白字", () => {
+    for (const [k, v] of Object.entries({ ...nodeStatusMap, ...severityMap })) {
+      expect(contrast("#FFFFFF", v.color), k).toBeGreaterThanOrEqual(AA);
+    }
+  });
+
+  it("HexTag 字色按底色亮度:亮绿 / 亮青底取深墨字,深红底取白字,且都 ≥4.5:1", () => {
+    for (const bg of [adminColors.positive, adminColors.dataAccent, adminColors.alertAccent]) {
+      expect(textOnColor(bg)).toBe(webDarkColors.bgBase);
+      expect(contrast(textOnColor(bg), bg)).toBeGreaterThanOrEqual(AA);
+    }
+    expect(textOnColor(statusColors.red)).toBe("#FFFFFF");
+    for (const v of Object.values(statusColors)) expect(contrast(textOnColor(v), v)).toBeGreaterThanOrEqual(AA);
+  });
+
+  it("themeColors:主色 / 正负向 / 警示于各自底面 ≥3:1(图形),主色于 primarySoft ≥4.5:1(文本)", () => {
+    for (const [name, tc] of Object.entries(themeColors)) {
+      const bg = tc.mode === "dark" ? (name === "admin" ? adminColors.bgBase : webDarkColors.bgBase) : "#FFFFFF";
+      for (const k of ["primary", "positive", "negative", "warning", "info"] as const) {
+        expect(contrast(tc[k], bg), `${name}.${k}`).toBeGreaterThanOrEqual(3);
+      }
+      expect(contrast(tc.primary, tc.primarySoft), `${name}.primary/primarySoft`).toBeGreaterThanOrEqual(AA);
     }
   });
 });

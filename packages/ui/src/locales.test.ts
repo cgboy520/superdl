@@ -6,26 +6,8 @@ import enUS from "../locales/en-US/shared.json";
 import errorsZh from "../locales/zh-CN/errors.json";
 import zhCN from "../locales/zh-CN/shared.json";
 import { assertLocaleParity } from "./localeParity";
-import {
-  adjustmentStatusMap,
-  announcementStatusMap,
-  diskStatusMap,
-  imageCacheStatusMap,
-  instanceStatusMap,
-  invoiceStatusMap,
-  legalDocStatusMap,
-  marketMap,
-  nodeEnrollStatusMap,
-  payoutChannelMap,
-  periodMap,
-  refundStatusMap,
-  serviceStatusMap,
-  skuTierMap,
-  subscriptionStatusMap,
-  ticketCategoryMap,
-  ticketStatusMap,
-  workloadTypeMap,
-} from "./status";
+import * as status from "./status";
+import { ALL_STATUS_MAPS } from "./status";
 
 /** 按 "a.b.c" 路径取目录值;缺失或非字符串返回 undefined。 */
 function lookup(catalog: Record<string, unknown>, dotted: string): string | undefined {
@@ -38,26 +20,7 @@ function lookup(catalog: Record<string, unknown>, dotted: string): string | unde
 }
 
 const usedKeys: string[] = [];
-for (const map of [
-  instanceStatusMap,
-  skuTierMap,
-  imageCacheStatusMap,
-  nodeEnrollStatusMap,
-  diskStatusMap,
-  refundStatusMap,
-  payoutChannelMap,
-  invoiceStatusMap,
-  ticketStatusMap,
-  ticketCategoryMap,
-  announcementStatusMap,
-  adjustmentStatusMap,
-  legalDocStatusMap,
-  workloadTypeMap,
-  serviceStatusMap,
-  marketMap,
-  periodMap,
-  subscriptionStatusMap,
-]) {
+for (const map of ALL_STATUS_MAPS) {
   for (const meta of Object.values<Record<string, unknown>>(map)) {
     for (const field of ["labelKey", "hintKey"]) {
       const v = meta[field];
@@ -67,6 +30,14 @@ for (const map of [
 }
 
 describe("packages/ui shared locale", () => {
+  it("status.ts 每张 *Map 都登记在 ALL_STATUS_MAPS(否则新表可以不带文案上线)", () => {
+    const registered = new Set<unknown>(ALL_STATUS_MAPS);
+    for (const [name, v] of Object.entries(status)) {
+      if (!name.endsWith("Map") || typeof v !== "object") continue;
+      expect(registered.has(v), `${name} 未登记`).toBe(true);
+    }
+  });
+
   it("每个 labelKey/hintKey 在 zh 与 en 均存在且非空", () => {
     for (const key of usedKeys) {
       const bare = key.slice("shared:".length);

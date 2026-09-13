@@ -1,6 +1,6 @@
 /**
  * 两端共享设计 token。用户端浅色靛蓝;管理端深色 NOC 风。
- * 改底色 token 须同步:brand.pageBg → apps/web/index.html 内联脚本、apps/web/src/routes/__root.tsx;
+ * 改底色 token 须同步:brand.pageBg → apps/web/index.html 内联脚本、apps/web/src/routes/__root.tsx;fontFamilyMono → src/base.css .mono;
  * webDarkColors.bgBase → apps/web/index.html 内联脚本;adminColors.bgBase → apps/admin/index.html、admin main.tsx CSS 变量。
  */
 
@@ -9,6 +9,10 @@ export const colorPrimary = "#4F46E5";
 export const fontFamily =
   '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", ' +
   '"Microsoft YaHei", "Helvetica Neue", Arial, sans-serif';
+
+/** 标识 / 价格 / 命令的等宽栈(公开层自托管 IBM Plex Mono 在前;base.css .mono 与此同步) */
+export const fontFamilyMono =
+  '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace';
 
 /** 品牌渐变端色(topBar/hero 渐变串与 BrandLogo SVG stop 由此派生) */
 export const brandGradientStops = {
@@ -28,6 +32,8 @@ export const brand = {
   indigo50: "#EEF2FF",
   /** 页面底色(= colorBgLayout) */
   pageBg: "#F5F6FA",
+  /** 公开层深墨面板(行情板 / 页脚) */
+  ink: "#14162B",
 } as const;
 export const adminColors = {
   bgBase: "#0B1220",
@@ -168,43 +174,34 @@ export const adminThemeComponents = {
 /** 间距阶梯(4 的倍数);padding/gap/margin 一律走这里(见 docs/ui-ux-spec.md) */
 export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
 
-/** 阴影阶梯:内容卡默认无阴影;sm = 可点击卡 hover,upMd = sticky 浮层向上,lg = Modal 级强调。 */
+/** 阴影两档:内容卡默认无阴影;sm = 可点击卡 / 选项 tile hover,upMd = sticky 底栏向上投影。 */
 export const shadow = {
   light: {
     sm: "0 1px 2px rgba(15, 20, 32, 0.06), 0 2px 8px rgba(15, 20, 32, 0.04)",
-    md: "0 4px 12px rgba(15, 20, 32, 0.08)",
-    lg: "0 8px 24px rgba(15, 20, 32, 0.12)",
-    /** sticky 底栏向上投影 */
     upMd: "0 -4px 12px rgba(15, 20, 32, 0.06)",
   },
   dark: {
     sm: "0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3)",
-    md: "0 4px 12px rgba(0, 0, 0, 0.45)",
-    lg: "0 8px 24px rgba(0, 0, 0, 0.5)",
     upMd: "0 -4px 12px rgba(0, 0, 0, 0.45)",
   },
 } as const;
 
-/** 字号层级:页面标题/区块标题/正文/辅助/KPI 五档 */
+/** 字号层级:页面标题/区块标题/正文/辅助/KPI 五档 + 公开层 display 档 */
 export const fontSize = {
   pageTitle: 20,
   sectionTitle: 16,
   body: 14,
   caption: 12,
   kpi: 28,
+  /** 公开层 Hero 标题 */
+  display: 48,
 } as const;
 
 /** 字重阶梯:正文 regular、按钮与强调 medium、标题与 KPI 大数 semibold */
 export const fontWeight = { regular: 400, medium: 500, semibold: 600 } as const;
 
-/** 行高:与 fontSize 五档一一配对 */
-export const lineHeight = {
-  pageTitle: 28,
-  sectionTitle: 24,
-  body: 22,
-  caption: 18,
-  kpi: 36,
-} as const;
+/** 图标三档(sm 行内 / md 按钮与菜单 / lg 顶栏与空态) */
+export const iconSize = { sm: 14, md: 16, lg: 20 } as const;
 
 /** 断点(与 antd Grid 同值);CSS 媒体查询一律走这里 */
 export const breakpoint = { xs: 480, sm: 576, md: 768, lg: 992, xl: 1200 } as const;
@@ -223,6 +220,11 @@ export const layout = {
   topBarHeight: 56,
   /** 锚点滚动目标的 scroll-margin-top(顶栏 + 一格留白) */
   scrollMarginTop: 56 + 16,
+  /** 侧栏宽度(两端一致)与桌面收起后的图标轨宽度 */
+  siderWidth: 200,
+  siderCollapsedWidth: 80,
+  /** 窄屏导航 Drawer 宽度 */
+  navDrawerWidth: 260,
 } as const;
 
 /** 控件宽度四档:短码 / 短文本 / 常规 / 长文本;输入框、下拉一律取这里,不写裸数字 */
@@ -231,14 +233,12 @@ export const controlWidth = { xs: 96, sm: 160, md: 260, lg: 320 } as const;
 /** Drawer 宽度两档(CSS 值,窄屏自动收到 100vw) */
 export const drawerWidth = { md: "min(640px, 100vw)", lg: "min(760px, 100vw)" } as const;
 
-/** 动效常量三档(与 MotionConfig reducedMotion="user" 配合);用法见 docs/ui-ux-spec.md §2。 */
+/** 动效常量两档(与 MotionConfig reducedMotion="user" 配合);用法见 docs/ui-ux-spec.md §2。 */
 export const motion = {
   /** 状态变更淡入 */
   fast: 0.15,
-  /** 常规过渡(徽标变色/浮层) */
+  /** 常规过渡(选中态 / 徽标变色 / 浮层) */
   normal: 0.2,
-  /** 强调过渡(KPI 数字滑动) */
-  slow: 0.25,
   /** 统一缓出曲线 */
   easeOut: [0.16, 1, 0.3, 1],
 } as const;
@@ -246,8 +246,8 @@ export const motion = {
 /** 层叠常量:自绘浮层统一走这里;antd 组件层(Modal 1000/Popover 1030)不覆写。 */
 export const zIndex = {
   stickyBar: 50,
-  floatingButton: 60,
-  commandPalette: 80,
+  topBar: 100,
+  skipLink: 200,
 } as const;
 
 /** 用户端暗色板:深靛灰基板,品牌靛蓝主色;对比度 ≥4.5:1,tokens.test.ts 回归。 */
@@ -308,3 +308,77 @@ export const cssVars = {
     "--sdl-scroll-thumb": "rgba(255,255,255,0.25)",
   },
 } as const;
+
+/** 图表轴 / 网格 / tooltip 底色(浅色主题 EChart 预设用;暗色与管理端取各自色板) */
+export const chartAxisColors = {
+  light: {
+    axis: "#E5E7EB",
+    grid: "#F0F1F5",
+    tooltipBg: "#FFFFFF",
+    text: "rgba(0,0,0,0.60)",
+    tooltipText: "rgba(0,0,0,0.88)",
+  },
+} as const;
+
+/** JS 侧语义色(经 useThemeColors() 取,不直接 import 单个色值):web 按主题两套,admin 固定一套。 */
+export type ThemeKey = "web-light" | "web-dark" | "admin";
+
+export interface ThemeColors {
+  mode: "light" | "dark";
+  chartTheme: "web-light" | "web-dark" | "noc";
+  primary: string;
+  primarySoft: string;
+  positive: string;
+  negative: string;
+  warning: string;
+  info: string;
+  neutral: string;
+  textSecondary: string;
+  surface: string;
+  border: string;
+}
+
+export const themeColors: Record<ThemeKey, ThemeColors> = {
+  "web-light": {
+    mode: "light",
+    chartTheme: "web-light",
+    primary: colorPrimary,
+    primarySoft: brand.indigo50,
+    positive: statusColors.green,
+    negative: statusColors.red,
+    warning: statusColors.orange,
+    info: statusColors.blue,
+    neutral: chartSeriesColors.light.neutral,
+    textSecondary: "rgba(0,0,0,0.60)",
+    surface: "#FFFFFF",
+    border: chartAxisColors.light.axis,
+  },
+  "web-dark": {
+    mode: "dark",
+    chartTheme: "web-dark",
+    primary: webDarkColors.menuSelectedColor,
+    primarySoft: webDarkColors.menuSelectedBg,
+    positive: chartSeriesColors.dark.green,
+    negative: adminColors.negative,
+    warning: chartSeriesColors.dark.orange,
+    info: chartAccentColors.indigo,
+    neutral: chartSeriesColors.dark.neutral,
+    textSecondary: webDarkColors.textSecondary,
+    surface: webDarkColors.bgContainer,
+    border: webDarkColors.border,
+  },
+  admin: {
+    mode: "dark",
+    chartTheme: "noc",
+    primary: adminColors.dataAccent,
+    primarySoft: adminColors.menuSelectedBg,
+    positive: adminColors.positive,
+    negative: adminColors.negative,
+    warning: adminColors.alertAccent,
+    info: adminColors.dataAccent,
+    neutral: adminColors.chartNeutral,
+    textSecondary: adminColors.textSecondary,
+    surface: adminColors.bgElevated,
+    border: adminColors.divider,
+  },
+};

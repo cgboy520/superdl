@@ -21,7 +21,7 @@ import { useApiErrorText, useFormat } from "@superdl/ui";
 import { type DeletionRow, isApiError, useApproveDeletion, useDeletionRequests, useRejectDeletion } from "../../api";
 import { LIST_CAPS, ListCapNote } from "../../components/ListCapNote";
 import { ReasonAction } from "../../components/ReasonAction";
-import { StatusTag } from "../../components/StatusTag";
+import { StatusTag } from "@superdl/ui/components";
 import { TenantLink } from "../../components/TenantLink";
 import { REASON_MAX_LEN } from "../../lib/validators";
 import { useAdminRole } from "../../stores/auth";

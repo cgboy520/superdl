@@ -49,7 +49,7 @@ import {
 } from "../../api";
 import { isValidReason, REASON_MAX_LEN } from "../../lib/validators";
 import { SignedAmount } from "../../components/SignedAmount";
-import { StatusTag } from "../../components/StatusTag";
+import { StatusTag } from "@superdl/ui/components";
 import { tenantColumn } from "../../components/TenantLink";
 import { canWriteFinance, useAdminRole, useAuth } from "../../stores/auth";
 import { useFinanceFilters } from "./-financeFilters";

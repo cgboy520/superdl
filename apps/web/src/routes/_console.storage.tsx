@@ -3,13 +3,14 @@
 import { POLL, useAutoRefresh } from "@superdl/ui";
 import { type DiskOut } from "@superdl/api-client";
 import {
-  colorPrimary,
   diskDailyEstimate,
+  diskStatusMap,
   fontSize,
   formatDateTime,
   formatSizeGb,
   idemKeyOf,
   statusColors,
+  useThemeColors,
 } from "@superdl/ui";
 import { GatedButton, PageContainer, TableErrorEmpty, TypeConfirmModal } from "@superdl/ui/components";
 import { createFileRoute } from "@tanstack/react-router";
@@ -38,7 +39,7 @@ import { useState } from "react";
 import { useFormat } from "@superdl/ui";
 import { useCreateDisk, useDeleteDisk, useExpandDisk } from "../api/mutations";
 import { useDisks, useInstances, usePolicies } from "../api/queries";
-import { DiskStatusBadge } from "../components/common";
+import { StatusTag } from "@superdl/ui/components";
 import { requireAuth } from "../lib/guard";
 
 export const Route = createFileRoute("/_console/storage")({
@@ -52,6 +53,7 @@ const EXPAND_DEFAULT_STEP_GB = 50;
 function MountOverview({ priceText }: { priceText: string }) {
   const { t } = useTranslation();
   const { token } = theme.useToken();
+  const colors = useThemeColors();
   // md 以下改竖排
   const screens = Grid.useBreakpoint();
   const seg = (title: string, desc: string, color: string) => (
@@ -74,7 +76,7 @@ function MountOverview({ priceText }: { priceText: string }) {
     <Card size="small" title={t("storage.mountOverviewTitle")}>
       <div style={{ display: "flex", gap: 8, flexDirection: screens.md ? "row" : "column" }}>
         {seg("/root", t("storage.segRoot"), statusColors.blue)}
-        {seg("/root/data", t("storage.segData", { price: priceText }), colorPrimary)}
+        {seg("/root/data", t("storage.segData", { price: priceText }), colors.primary)}
       </div>
     </Card>
   );
@@ -257,7 +259,7 @@ function StoragePage() {
                   title: t("storage.colStatus"),
                   render: (_, r) => (
                     <Space size={4}>
-                      <DiskStatusBadge status={r.status} />
+                      <StatusTag map={diskStatusMap} value={r.status} variant="badge" />
                       {!r.quota_synced && r.status !== "deleting" && (
                         <Tooltip title={t("storage.quotaPendingHint")}>
                           <Tag color="gold" style={{ marginInlineEnd: 0 }}>

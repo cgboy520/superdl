@@ -35,7 +35,7 @@ import {
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { StatusTag } from "../../components/StatusTag";
+import { StatusTag } from "@superdl/ui/components";
 
 import {
   type AdminInstanceOut,

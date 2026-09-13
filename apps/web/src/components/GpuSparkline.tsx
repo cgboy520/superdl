@@ -1,11 +1,12 @@
 /** GPU 利用率迷你 sparkline(实例列表列,近 1h),自绘 SVG。纵轴 0~100%;points 为 (unix_ts, util%) 稀疏序列,空序列由调用方过滤。 */
 
-import { colorPrimary } from "@superdl/ui";
+import { useThemeColors } from "@superdl/ui";
 
 const WIDTH = 110;
 const HEIGHT = 28;
 
 export function GpuSparkline({ points }: { points: readonly (readonly [number, number])[] }) {
+  const { primary } = useThemeColors();
   const first = points[0];
   if (!first) return null;
   const t0 = first[0];
@@ -23,8 +24,8 @@ export function GpuSparkline({ points }: { points: readonly (readonly [number, n
 
   return (
     <svg width={WIDTH} height={HEIGHT} aria-hidden style={{ display: "block" }}>
-      <polygon points={area} fill={colorPrimary} opacity={0.1} />
-      <polyline points={line} fill="none" stroke={colorPrimary} strokeWidth={1.5} />
+      <polygon points={area} fill={primary} opacity={0.1} />
+      <polyline points={line} fill="none" stroke={primary} strokeWidth={1.5} />
     </svg>
   );
 }

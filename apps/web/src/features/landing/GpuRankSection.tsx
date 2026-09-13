@@ -1,7 +1,7 @@
 /** GPU 算力排名:gpuSpecs 静态表驱动(理论峰值口径);在售型号标记联动价格墙。 */
 
 import { LandingSection } from "./LandingSection";
-import { chartAccentColors, colorPrimary, fontSize, gpuSpecs, medalColors, normalizeGpuModel } from "@superdl/ui";
+import { chartAccentColors, fontSize, gpuSpecs, medalColors, normalizeGpuModel, useThemeColors } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
 import { Grid, Tabs, Tag, theme, Typography } from "antd";
 import { useMemo, useState } from "react";
@@ -15,6 +15,7 @@ const MEDALS = medalColors;
 export function GpuRankSection() {
   const { t } = useTranslation();
   const { token } = theme.useToken();
+  const { primary } = useThemeColors();
   const [metric, setMetric] = useState<"fp16" | "fp32">("fp16");
   const { data: skus } = useSkus();
   // 窄屏紧凑模式:收缩定宽列
@@ -84,7 +85,7 @@ export function GpuRankSection() {
                   width: `${Math.max((r.value / max) * 100, 2)}%`,
                   height: "100%",
                   borderRadius: 4,
-                  background: `linear-gradient(90deg, ${colorPrimary}, ${chartAccentColors.indigo})`,
+                  background: `linear-gradient(90deg, ${primary}, ${chartAccentColors.indigo})`,
                 }}
               />
             </div>
@@ -102,7 +103,7 @@ export function GpuRankSection() {
             <span style={{ width: wide ? 56 : 40, flexShrink: 0, fontSize: wide ? fontSize.body : fontSize.caption }}>
               {onSale.has(r.model) && (
                 <Link to="/" hash="pricing">
-                  <Tag color={colorPrimary} style={{ marginInlineEnd: 0 }}>
+                  <Tag color={primary} style={{ marginInlineEnd: 0 }}>
                     {t("landing.ranking.onSale")}
                   </Tag>
                 </Link>

@@ -2,15 +2,13 @@
  *  指标只做展示,不参与计费;非 running 仍可查历史(无数据时按 range 给空态);503 = 监控源未接入 / 断源(专用文案),其余错误不渲染成空图。实例详情页与服务详情页共用。 */
 
 import { isApiError } from "@superdl/api-client";
-import { fontSize, layout, POLL, space, useAutoRefresh } from "@superdl/ui";
-import { DataErrorAlert, EChart } from "@superdl/ui/components";
-import { ReloadOutlined } from "@ant-design/icons";
-import { Alert, Button, Card, Radio, Space, Tooltip, Typography, theme } from "antd";
+import { fontSize, layout, POLL, space, useAutoRefresh, useChartTheme } from "@superdl/ui";
+import { DataErrorAlert, EChart, Freshness } from "@superdl/ui/components";
+import { Alert, Card, Radio, Space, Typography, theme } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useInstanceMetrics } from "../../api/queries";
-import { useThemeMode } from "../../stores/theme";
 
 type Unit = "%" | "MB";
 
@@ -30,7 +28,7 @@ function scaleOf(points: [number, number][], unit: Unit): { factor: number; labe
 
 export function MetricsPanel({ uuid, running }: { uuid: string; running: boolean }) {
   const { t } = useTranslation(["web", "shared"]);
-  const mode = useThemeMode();
+  const chartTheme = useChartTheme();
   const { token } = theme.useToken();
   const [range, setRange] = useState<"1h" | "6h" | "24h">("1h");
   // running 时自动刷新;停机后只看历史(不轮询),仍可手动刷新
@@ -49,7 +47,6 @@ export function MetricsPanel({ uuid, running }: { uuid: string; running: boolean
   }
   const series = (data?.series ?? {}) as Record<string, [number, number][]>;
   const group = `metrics-${uuid}`;
-  const updated = dataUpdatedAt > 0 ? new Date(dataUpdatedAt).toLocaleTimeString() : null;
 
   return (
     <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
@@ -77,23 +74,19 @@ export function MetricsPanel({ uuid, running }: { uuid: string; running: boolean
             { value: "24h", label: t("instances.range24h") },
           ]}
         />
-        <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-          {!running
-            ? t("instances.metricsHistoryOnly")
-            : updated
-              ? t("freshness.updatedAt", { ns: "shared", time: updated })
-              : t("freshness.noData", { ns: "shared" })}
-        </Typography.Text>
-        <Tooltip title={t("freshness.refresh", { ns: "shared" })}>
-          <Button
-            type="text"
-            size="small"
-            aria-label={t("freshness.refresh", { ns: "shared" })}
-            icon={<ReloadOutlined />}
-            loading={isRefetching}
-            onClick={() => void refetch()}
-          />
-        </Tooltip>
+        {!running && (
+          <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+            {t("instances.metricsHistoryOnly")}
+          </Typography.Text>
+        )}
+        <Freshness
+          updatedAt={dataUpdatedAt}
+          intervalMs={running ? autoRefresh.intervalMs : false}
+          paused={autoRefresh.paused}
+          onTogglePause={running ? autoRefresh.toggle : undefined}
+          onRefresh={() => void refetch()}
+          refreshing={isRefetching}
+        />
       </div>
       <div
         style={{
@@ -123,7 +116,7 @@ export function MetricsPanel({ uuid, running }: { uuid: string; running: boolean
               }
             >
               <EChart
-                theme={mode === "dark" ? "web-dark" : "web-light"}
+                theme={chartTheme}
                 group={group}
                 style={{ height: 200 }}
                 ariaLabel={t(meta.nameKey)}

@@ -9,7 +9,7 @@ import { useTranslation } from "react-i18next";
 import { formatDateTime, metaOf, nodeEnrollStatusMap, type NodeEnrollStatus } from "@superdl/ui";
 import { Mono, RowActions, RowMoreMenu, TableErrorEmpty } from "@superdl/ui/components";
 
-import { StatusTag } from "../../components/StatusTag";
+import { StatusTag } from "@superdl/ui/components";
 
 import {
   type EnrollmentCommandOut,

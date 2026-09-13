@@ -1,8 +1,8 @@
 import { AlertOutlined, LogoutOutlined, MenuOutlined, SearchOutlined } from "@ant-design/icons";
-import { POLL } from "@superdl/ui";
+import { POLL, severityMap } from "@superdl/ui";
 import { adminLogoutApiAdminV1AuthLogoutPost } from "@superdl/api-client";
 import { adminColors, fontSize, formatDateTime, layout, metaOf } from "@superdl/ui";
-import { GatedButton, LangSwitcher } from "@superdl/ui/components";
+import { GatedButton, LangSwitcher, StatusTag } from "@superdl/ui/components";
 import { Link, Outlet, createFileRoute, redirect, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   Badge,
@@ -23,7 +23,7 @@ import { useTranslation } from "react-i18next";
 
 import { type AlertRow, fetchAdminMe, useAlertUnreadCount, useAlerts } from "../api";
 import { COMMAND_KBD_HINT, COMMAND_PALETTE_OPEN_EVENT, CommandPalette } from "../components/CommandPalette";
-import { alertLink, severityColor, useAckAlertWithFeedback } from "../lib/alertLink";
+import { alertLink, useAckAlertWithFeedback } from "../lib/alertLink";
 import { MENU, MENU_GROUP_LABEL_KEY, MENU_GROUP_ORDER, ROLE_LABEL_KEY, canSeeMenu } from "../lib/menu";
 import { queryClient } from "../lib/queryClient";
 import { authStore, canWriteOps, useAdminRole, useAuth } from "../stores/auth";
@@ -85,21 +85,19 @@ function AlertBell() {
                 const link = alertLink(a);
                 return (
                   <div key={a.id} style={{ padding: "6px 0", borderBottom: `1px solid ${adminColors.divider}` }}>
-                    <Badge
-                      color={severityColor(a.severity)}
-                      text={
-                        <Typography.Text style={{ fontSize: fontSize.body }} delete={a.acked_at != null}>
-                          {link ? (
-                            <Link to={link.to} search={link.search} onClick={() => setPopoverOpen(false)}>
-                              {a.title}
-                            </Link>
-                          ) : (
-                            a.title
-                          )}{" "}
-                          · {formatDateTime(a.created_at)}
-                        </Typography.Text>
-                      }
-                    />
+                    <Space size={6} align="start">
+                      <StatusTag map={severityMap} value={a.severity} variant="text" icon />
+                      <Typography.Text style={{ fontSize: fontSize.body }} delete={a.acked_at != null}>
+                        {link ? (
+                          <Link to={link.to} search={link.search} onClick={() => setPopoverOpen(false)}>
+                            {a.title}
+                          </Link>
+                        ) : (
+                          a.title
+                        )}{" "}
+                        · {formatDateTime(a.created_at)}
+                      </Typography.Text>
+                    </Space>
                     <div
                       style={{
                         color: adminColors.textSecondary,

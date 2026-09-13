@@ -9,7 +9,11 @@
     "forbiddenDesc": "当前角色无权查看该数据,如需访问请联系管理员。",
     "requestFailed": "请求失败",
     "more": "更多",
-    "notAvailable": "暂无数据"
+    "notAvailable": "暂无数据",
+    "copy": "复制",
+    "copied": "已复制",
+    "hide": "隐藏",
+    "reveal": "显示"
   },
   "csv": {
     "exportDone": "已导出 CSV",
@@ -267,6 +271,22 @@
       "tenant_frozen": "账号被冻结",
       "user_start": "用户开机",
       "user_stop": "用户关机"
+    },
+    "node": {
+      "Ready": "就绪",
+      "NotReady": "未就绪",
+      "Cordoned": "已封锁",
+      "Missing": "失联"
+    },
+    "nodeHint": {
+      "NotReady": "kubelet 未上报就绪,新实例不会调度到此节点",
+      "Cordoned": "已封锁,不再调度新实例;在跑实例不受影响",
+      "Missing": "台账有记录但集群里找不到该节点"
+    },
+    "severity": {
+      "info": "提示",
+      "warning": "警告",
+      "critical": "严重"
     }
   },
   "filter": {
@@ -283,5 +303,9 @@
     "body": "已填写的内容将丢弃,确定离开吗?",
     "ok": "丢弃并离开",
     "cancel": "继续编辑"
+  },
+  "disk": {
+    "sizeEstimate": "{{size}} · 约 ¥{{daily}}/日",
+    "expandEstimate": "扩容到 {{size}}(新增 {{extra}}),新增部分约 ¥{{daily}}/日"
   }
 }

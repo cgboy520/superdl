@@ -5,16 +5,25 @@ import { colorPrimary, statusColors } from "./tokens";
 export type InstanceStatus =
   "creating" | "running" | "stopping" | "stopped" | "starting" | "frozen" | "releasing" | "released" | "failed";
 
-export interface StatusMeta {
+/** 状态表条目的三种形状:只有文案 / 带颜色 / 带徽标语义(可选图标)。 */
+export interface LabelMeta {
   labelKey: string;
-  color: string;
-  /** antd Badge status 语义 */
-  badge: "success" | "processing" | "default" | "warning" | "error";
-  /** 是否显示动效(创建/启动中) */
-  animated?: boolean;
   /** Tooltip 解释文案 key */
   hintKey?: string;
 }
+export interface ColorMeta extends LabelMeta {
+  color: string;
+}
+/** 图标键(由 StatusTag 映射到图标库,本表不依赖图标库) */
+export type StatusIcon = "check" | "sync" | "pause" | "warning" | "close" | "clock" | "minus";
+export interface StatusMeta extends ColorMeta {
+  /** antd Badge status 语义 */
+  badge: "success" | "processing" | "default" | "warning" | "error";
+  icon?: StatusIcon;
+}
+export type AnyMeta = LabelMeta | ColorMeta | StatusMeta;
+export const isColorMeta = (m: AnyMeta): m is ColorMeta => "color" in m;
+export const isStatusMeta = (m: AnyMeta): m is StatusMeta => "badge" in m;
 
 /** 按运行时字符串取表项,未知枚举返回 undefined。 */
 export function metaOf<M extends Record<string, unknown>>(map: M, key: string): M[keyof M] | undefined {
@@ -26,26 +35,31 @@ export const instanceStatusMap = {
     labelKey: "shared:status.instance.creating",
     color: statusColors.blue,
     badge: "processing",
-    animated: true,
+    icon: "sync",
   },
-  running: { labelKey: "shared:status.instance.running", color: statusColors.green, badge: "success" },
+  running: { labelKey: "shared:status.instance.running", color: statusColors.green, badge: "success", icon: "check" },
   stopping: {
     labelKey: "shared:status.instance.stopping",
     color: statusColors.blue,
     badge: "processing",
-    animated: true,
+    icon: "sync",
   },
-  stopped: { labelKey: "shared:status.instance.stopped", color: statusColors.gray, badge: "default" },
+  stopped: { labelKey: "shared:status.instance.stopped", color: statusColors.gray, badge: "default", icon: "pause" },
   starting: {
     labelKey: "shared:status.instance.starting",
     color: statusColors.blue,
     badge: "processing",
-    animated: true,
+    icon: "sync",
   },
-  frozen: { labelKey: "shared:status.instance.frozen", color: statusColors.orange, badge: "warning" },
-  releasing: { labelKey: "shared:status.instance.releasing", color: statusColors.red, badge: "error", animated: true },
-  released: { labelKey: "shared:status.instance.released", color: statusColors.gray, badge: "default" },
-  failed: { labelKey: "shared:status.instance.failed", color: statusColors.red, badge: "error" },
+  frozen: { labelKey: "shared:status.instance.frozen", color: statusColors.orange, badge: "warning", icon: "warning" },
+  releasing: {
+    labelKey: "shared:status.instance.releasing",
+    color: statusColors.red,
+    badge: "error",
+    icon: "minus",
+  },
+  released: { labelKey: "shared:status.instance.released", color: statusColors.gray, badge: "default", icon: "minus" },
+  failed: { labelKey: "shared:status.instance.failed", color: statusColors.red, badge: "error", icon: "close" },
 } as const satisfies Record<InstanceStatus, StatusMeta>;
 
 /** 过渡态:列表/详情据此高频轮询。 */
@@ -81,7 +95,7 @@ export const skuTierMap = {
     hintKey: "shared:status.tierHint.shared_hami",
   },
   cpu: { labelKey: "shared:status.tier.cpu", color: "#475569", hintKey: "shared:status.tierHint.cpu" },
-} as const satisfies Record<SkuVariant, { labelKey: string; color: string; hintKey?: string }>;
+} as const satisfies Record<SkuVariant, ColorMeta>;
 
 /** 实例形态,与 instances.workload_type 严格一致:dev = SSH + JupyterLab 开发机(默认,列表不挂标记),service = 对外 HTTPS 服务容器。 */
 export type WorkloadType = "dev" | "service";
@@ -89,7 +103,7 @@ export type WorkloadType = "dev" | "service";
 export const workloadTypeMap = {
   dev: { labelKey: "shared:status.workload.dev", color: statusColors.gray },
   service: { labelKey: "shared:status.workload.service", color: colorPrimary },
-} as const satisfies Record<WorkloadType, { labelKey: string; color: string }>;
+} as const satisfies Record<WorkloadType, ColorMeta>;
 
 /** 在线服务派生状态(后端 services/state.py::derive_status,不落库)。unready = 容器在跑但健康检查未过,照常计费;released 译作「已删除」。 */
 export type ServiceStatus =
@@ -100,26 +114,32 @@ export const serviceStatusMap = {
     labelKey: "shared:status.service.deploying",
     color: statusColors.blue,
     badge: "processing",
-    animated: true,
+    icon: "sync",
   },
-  running: { labelKey: "shared:status.service.running", color: statusColors.green, badge: "success" },
+  running: { labelKey: "shared:status.service.running", color: statusColors.green, badge: "success", icon: "check" },
   unready: {
     labelKey: "shared:status.service.unready",
     color: statusColors.orange,
     badge: "warning",
+    icon: "warning",
     hintKey: "shared:status.serviceHint.unready",
   },
   stopping: {
     labelKey: "shared:status.service.stopping",
     color: statusColors.blue,
     badge: "processing",
-    animated: true,
+    icon: "sync",
   },
-  stopped: { labelKey: "shared:status.service.stopped", color: statusColors.gray, badge: "default" },
-  frozen: { labelKey: "shared:status.service.frozen", color: statusColors.orange, badge: "warning" },
-  failed: { labelKey: "shared:status.service.failed", color: statusColors.red, badge: "error" },
-  releasing: { labelKey: "shared:status.service.releasing", color: statusColors.red, badge: "error", animated: true },
-  released: { labelKey: "shared:status.service.released", color: statusColors.gray, badge: "default" },
+  stopped: { labelKey: "shared:status.service.stopped", color: statusColors.gray, badge: "default", icon: "pause" },
+  frozen: { labelKey: "shared:status.service.frozen", color: statusColors.orange, badge: "warning", icon: "warning" },
+  failed: { labelKey: "shared:status.service.failed", color: statusColors.red, badge: "error", icon: "close" },
+  releasing: {
+    labelKey: "shared:status.service.releasing",
+    color: statusColors.red,
+    badge: "error",
+    icon: "minus",
+  },
+  released: { labelKey: "shared:status.service.released", color: statusColors.gray, badge: "default", icon: "minus" },
 } as const satisfies Record<ServiceStatus, StatusMeta>;
 
 /** 服务过渡态:列表 / 详情据此高频轮询;unready 不算过渡态。 */
@@ -149,14 +169,14 @@ export const marketMap = {
     hintKey: "shared:status.marketHint.spot",
   },
   subscription: { labelKey: "shared:status.market.subscription", color: colorPrimary },
-} as const satisfies Record<Market, { labelKey: string; color: string; hintKey?: string }>;
+} as const satisfies Record<Market, ColorMeta>;
 
 /** 竞价实例「可回收」行内标记,与 `marketMap.spot` 同色。 */
 export const spotReclaimTag = {
   labelKey: "shared:status.market.spotReclaimable",
   hintKey: "shared:status.marketHint.spot",
   color: statusColors.orange,
-} as const satisfies { labelKey: string; hintKey: string; color: string };
+} as const satisfies ColorMeta;
 
 /** 实例事件 `reason` → 文案,值与后端 `transition(reason=...)` 字面量一致;自由文本 reason 由调用方经 metaOf 回退原样渲染。 */
 export const instanceEventReasonMap = {
@@ -185,7 +205,7 @@ export const instanceEventReasonMap = {
   // services/service.py 版本更新:旧版本关机 / 释放
   rollout: { labelKey: "shared:status.eventReason.rollout" },
   rollout_retire: { labelKey: "shared:status.eventReason.rollout_retire" },
-} as const satisfies Record<string, { labelKey: string }>;
+} as const satisfies Record<string, LabelMeta>;
 
 /** 计费周期,与 subscriptions.period 严格一致(定长小时,见 PERIOD_HOURS)。 */
 export type BillingPeriod = "day" | "week" | "month" | "year";
@@ -201,7 +221,7 @@ export const periodMap = {
   week: { labelKey: "shared:status.period.week" },
   month: { labelKey: "shared:status.period.month" },
   year: { labelKey: "shared:status.period.year" },
-} as const satisfies Record<BillingPeriod, { labelKey: string }>;
+} as const satisfies Record<BillingPeriod, LabelMeta>;
 
 /** 购买方式列文案 key:包周期按周期分化成 包日/包周/包月/包年,其余取 market;未知 market 返回 undefined。 */
 export function marketLabelKey(market: string, period?: string | null) {
@@ -238,7 +258,6 @@ export const imageCacheStatusMap = {
     labelKey: "shared:status.imageCache.pulling",
     color: statusColors.blue,
     badge: "processing",
-    animated: true,
   },
   cached: { labelKey: "shared:status.imageCache.cached", color: statusColors.green, badge: "success" },
   failed: { labelKey: "shared:status.imageCache.failed", color: statusColors.red, badge: "error" },
@@ -254,19 +273,16 @@ export const nodeEnrollStatusMap = {
     labelKey: "shared:status.nodeEnroll.installing",
     color: statusColors.blue,
     badge: "processing",
-    animated: true,
   },
   rebooting: {
     labelKey: "shared:status.nodeEnroll.rebooting",
     color: statusColors.blue,
     badge: "processing",
-    animated: true,
   },
   joining: {
     labelKey: "shared:status.nodeEnroll.joining",
     color: statusColors.blue,
     badge: "processing",
-    animated: true,
   },
   joined: { labelKey: "shared:status.nodeEnroll.joined", color: statusColors.green, badge: "success" },
   failed: { labelKey: "shared:status.nodeEnroll.failed", color: statusColors.red, badge: "error" },
@@ -281,16 +297,16 @@ export const ledgerTypeMap = {
   consume: { labelKey: "shared:status.ledger.consume", color: statusColors.blue },
   refund: { labelKey: "shared:status.ledger.refund", color: statusColors.orange },
   adjust: { labelKey: "shared:status.ledger.adjust", color: statusColors.purple },
-} as const satisfies Record<LedgerType, { labelKey: string; color: string }>;
+} as const satisfies Record<LedgerType, ColorMeta>;
 
 export type OrderStatus = "pending" | "paid" | "closed" | "failed";
 
 export const orderStatusMap = {
-  pending: { labelKey: "shared:status.order.pending", color: statusColors.blue },
-  paid: { labelKey: "shared:status.order.paid", color: statusColors.green },
-  closed: { labelKey: "shared:status.order.closed", color: statusColors.gray },
-  failed: { labelKey: "shared:status.order.failed", color: statusColors.red },
-} as const satisfies Record<OrderStatus, { labelKey: string; color: string }>;
+  pending: { labelKey: "shared:status.order.pending", color: statusColors.blue, badge: "processing" },
+  paid: { labelKey: "shared:status.order.paid", color: statusColors.green, badge: "success" },
+  closed: { labelKey: "shared:status.order.closed", color: statusColors.gray, badge: "default" },
+  failed: { labelKey: "shared:status.order.failed", color: statusColors.red, badge: "error" },
+} as const satisfies Record<OrderStatus, StatusMeta>;
 
 export type PaymentChannel = "wechat" | "alipay" | "mock";
 
@@ -298,36 +314,36 @@ export const paymentChannelMap = {
   wechat: { labelKey: "shared:status.channel.wechat" },
   alipay: { labelKey: "shared:status.channel.alipay" },
   mock: { labelKey: "shared:status.channel.mock" },
-} as const satisfies Record<PaymentChannel, { labelKey: string }>;
+} as const satisfies Record<PaymentChannel, LabelMeta>;
 
 /** 调账单状态(与后端严格一致) */
 export type AdjustmentStatus = "pending" | "approved" | "rejected";
 
 export const adjustmentStatusMap = {
-  pending: { labelKey: "shared:status.adjustment.pending", color: statusColors.blue },
-  approved: { labelKey: "shared:status.adjustment.approved", color: statusColors.green },
-  rejected: { labelKey: "shared:status.adjustment.rejected", color: statusColors.red },
-} as const satisfies Record<AdjustmentStatus, { labelKey: string; color: string }>;
+  pending: { labelKey: "shared:status.adjustment.pending", color: statusColors.blue, badge: "processing" },
+  approved: { labelKey: "shared:status.adjustment.approved", color: statusColors.green, badge: "success" },
+  rejected: { labelKey: "shared:status.adjustment.rejected", color: statusColors.red, badge: "error" },
+} as const satisfies Record<AdjustmentStatus, StatusMeta>;
 
 /** 法务文档版本状态(与后端严格一致) */
 export type LegalDocStatus = "draft" | "published" | "archived";
 
 export const legalDocStatusMap = {
-  draft: { labelKey: "shared:status.legalDoc.draft", color: statusColors.orange },
-  published: { labelKey: "shared:status.legalDoc.published", color: statusColors.green },
-  archived: { labelKey: "shared:status.legalDoc.archived", color: statusColors.gray },
-} as const satisfies Record<LegalDocStatus, { labelKey: string; color: string }>;
+  draft: { labelKey: "shared:status.legalDoc.draft", color: statusColors.orange, badge: "warning" },
+  published: { labelKey: "shared:status.legalDoc.published", color: statusColors.green, badge: "success" },
+  archived: { labelKey: "shared:status.legalDoc.archived", color: statusColors.gray, badge: "default" },
+} as const satisfies Record<LegalDocStatus, StatusMeta>;
 
 /** 退款单状态(与 refund_requests.status 严格一致) */
 export type RefundStatus = "pending" | "approved" | "rejected" | "paid" | "cancelled";
 
 export const refundStatusMap = {
-  pending: { labelKey: "shared:status.refund.pending", color: statusColors.blue },
-  approved: { labelKey: "shared:status.refund.approved", color: statusColors.orange },
-  rejected: { labelKey: "shared:status.refund.rejected", color: statusColors.red },
-  paid: { labelKey: "shared:status.refund.paid", color: statusColors.green },
-  cancelled: { labelKey: "shared:status.refund.cancelled", color: statusColors.gray },
-} as const satisfies Record<RefundStatus, { labelKey: string; color: string }>;
+  pending: { labelKey: "shared:status.refund.pending", color: statusColors.blue, badge: "processing" },
+  approved: { labelKey: "shared:status.refund.approved", color: statusColors.orange, badge: "warning" },
+  rejected: { labelKey: "shared:status.refund.rejected", color: statusColors.red, badge: "error" },
+  paid: { labelKey: "shared:status.refund.paid", color: statusColors.green, badge: "success" },
+  cancelled: { labelKey: "shared:status.refund.cancelled", color: statusColors.gray, badge: "default" },
+} as const satisfies Record<RefundStatus, StatusMeta>;
 
 /** 退款线下打款渠道(与 schemas.PayoutChannel 严格一致) */
 export type PayoutChannel = "offline" | "alipay_transfer" | "wechat_transfer";
@@ -336,16 +352,16 @@ export const payoutChannelMap = {
   offline: { labelKey: "shared:status.payoutChannel.offline" },
   alipay_transfer: { labelKey: "shared:status.payoutChannel.alipay_transfer" },
   wechat_transfer: { labelKey: "shared:status.payoutChannel.wechat_transfer" },
-} as const satisfies Record<PayoutChannel, { labelKey: string }>;
+} as const satisfies Record<PayoutChannel, LabelMeta>;
 
 /** 发票申请状态(与 invoice_requests.status 严格一致) */
 export type InvoiceStatus = "submitted" | "issued" | "rejected";
 
 export const invoiceStatusMap = {
-  submitted: { labelKey: "shared:status.invoice.submitted", color: statusColors.blue },
-  issued: { labelKey: "shared:status.invoice.issued", color: statusColors.green },
-  rejected: { labelKey: "shared:status.invoice.rejected", color: statusColors.red },
-} as const satisfies Record<InvoiceStatus, { labelKey: string; color: string }>;
+  submitted: { labelKey: "shared:status.invoice.submitted", color: statusColors.blue, badge: "processing" },
+  issued: { labelKey: "shared:status.invoice.issued", color: statusColors.green, badge: "success" },
+  rejected: { labelKey: "shared:status.invoice.rejected", color: statusColors.red, badge: "error" },
+} as const satisfies Record<InvoiceStatus, StatusMeta>;
 
 /** 工单状态(与 tickets.status 严格一致);两端共用 */
 export type TicketStatus = "open" | "pending_staff" | "pending_user" | "resolved" | "closed";
@@ -374,7 +390,7 @@ export const ticketCategoryMap = {
   data: { labelKey: "shared:status.ticketCategory.data" },
   account: { labelKey: "shared:status.ticketCategory.account" },
   other: { labelKey: "shared:status.ticketCategory.other" },
-} as const satisfies Record<TicketCategory, { labelKey: string }>;
+} as const satisfies Record<TicketCategory, LabelMeta>;
 
 /** 注销申请状态(与 account_deletion_requests.status 严格一致) */
 export type DeletionStatus = "pending" | "completed" | "rejected" | "cancelled";
@@ -403,3 +419,89 @@ export const announcementStatusMap = {
   published: { labelKey: "shared:status.announcement.published", color: statusColors.green, badge: "success" },
   revoked: { labelKey: "shared:status.announcement.revoked", color: statusColors.gray, badge: "default" },
 } as const satisfies Record<AnnouncementStatus, StatusMeta>;
+
+/** 节点状态(与 nodes 台账 status 严格一致,键保后端大小写);?status= 白名单靠 isNodeStatus。 */
+export type NodeStatus = "Ready" | "NotReady" | "Cordoned" | "Missing";
+
+export const NODE_STATUSES: readonly NodeStatus[] = ["Ready", "NotReady", "Cordoned", "Missing"];
+
+export function isNodeStatus(value: unknown): value is NodeStatus {
+  return typeof value === "string" && (NODE_STATUSES as readonly string[]).includes(value);
+}
+
+export const nodeStatusMap = {
+  Ready: { labelKey: "shared:status.node.Ready", color: statusColors.green, badge: "success", icon: "check" },
+  NotReady: {
+    labelKey: "shared:status.node.NotReady",
+    color: statusColors.red,
+    badge: "error",
+    icon: "close",
+    hintKey: "shared:status.nodeHint.NotReady",
+  },
+  Cordoned: {
+    labelKey: "shared:status.node.Cordoned",
+    color: statusColors.orange,
+    badge: "warning",
+    icon: "pause",
+    hintKey: "shared:status.nodeHint.Cordoned",
+  },
+  Missing: {
+    labelKey: "shared:status.node.Missing",
+    color: statusColors.gray,
+    badge: "default",
+    icon: "minus",
+    hintKey: "shared:status.nodeHint.Missing",
+  },
+} as const satisfies Record<NodeStatus, StatusMeta>;
+
+/** 告警严重度(与 alerts.severity 严格一致);徽标 = 图标 + 文字,不只靠颜色。 */
+export type AlertSeverity = "info" | "warning" | "critical";
+
+export const SEVERITY_ORDER: readonly AlertSeverity[] = ["critical", "warning", "info"];
+
+export const severityMap = {
+  info: { labelKey: "shared:status.severity.info", color: statusColors.blue, badge: "processing", icon: "clock" },
+  warning: {
+    labelKey: "shared:status.severity.warning",
+    color: statusColors.orange,
+    badge: "warning",
+    icon: "warning",
+  },
+  critical: { labelKey: "shared:status.severity.critical", color: statusColors.red, badge: "error", icon: "close" },
+} as const satisfies Record<AlertSeverity, StatusMeta>;
+
+/** 告警严重度 → AttentionBar 严重度。 */
+export function attentionSeverityOf(s: AlertSeverity): "info" | "warning" | "error" {
+  return s === "critical" ? "error" : s;
+}
+
+/** 全部状态表(locales.test 遍历它保证 zh/en 键齐全;StatusTag 只接受这里的表)。 */
+export const ALL_STATUS_MAPS = [
+  instanceStatusMap,
+  serviceStatusMap,
+  subscriptionStatusMap,
+  imageCacheStatusMap,
+  nodeEnrollStatusMap,
+  nodeStatusMap,
+  severityMap,
+  ticketStatusMap,
+  deletionStatusMap,
+  diskStatusMap,
+  announcementStatusMap,
+  orderStatusMap,
+  adjustmentStatusMap,
+  legalDocStatusMap,
+  refundStatusMap,
+  invoiceStatusMap,
+  skuTierMap,
+  workloadTypeMap,
+  marketMap,
+  ledgerTypeMap,
+  periodMap,
+  paymentChannelMap,
+  payoutChannelMap,
+  ticketCategoryMap,
+  instanceEventReasonMap,
+] as const;
+
+export type AnyStatusMap = (typeof ALL_STATUS_MAPS)[number];

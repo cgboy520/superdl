@@ -1,16 +1,6 @@
 /** 底部通栏结算条(sticky,市场页与创建页共用):费用项逐项摊开,日常费用与配置费用分栏。 */
 
-import {
-  brand,
-  colorPrimary,
-  fontSize,
-  fontWeight,
-  motion as motionToken,
-  shadow,
-  space,
-  webDarkColors,
-  zIndex,
-} from "@superdl/ui";
+import { fontSize, fontWeight, motion as motionToken, shadow, space, useThemeColors, zIndex } from "@superdl/ui";
 import { moneyOr } from "@superdl/ui/components";
 import { Button, Grid, Popover, Space, theme, Typography } from "antd";
 import { AnimatePresence, motion } from "motion/react";
@@ -19,8 +9,6 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useFormat } from "@superdl/ui";
-import { useThemeMode } from "../stores/theme";
-
 /** 选中变更淡入过渡(motion token fast 档;reducedMotion 下归零,见根 MotionConfig) */
 const FADE_TRANSITION = {
   duration: motionToken.fast,
@@ -69,7 +57,8 @@ export function CheckoutBar({
   const { token } = theme.useToken();
   const { t } = useTranslation();
   const { formatMoney } = useFormat();
-  const dark = useThemeMode() === "dark";
+  const colors = useThemeColors();
+  const dark = colors.mode === "dark";
   // <sm 断点动作按钮竖排整行(走类)
   const narrow = !Grid.useBreakpoint().sm;
   return (
@@ -93,9 +82,8 @@ export function CheckoutBar({
         {summary && (
           <div
             style={{
-              // 暗色下换「菜单选中」配对(menuSelectedBg/Color,tokens.test 回归的 AA 对)
-              background: dark ? webDarkColors.menuSelectedBg : brand.indigo50,
-              color: dark ? webDarkColors.menuSelectedColor : colorPrimary,
+              background: colors.primarySoft,
+              color: colors.primary,
               padding: `${space.sm}px 14px`,
               borderRadius: token.borderRadius,
               fontSize: fontSize.caption,
@@ -134,7 +122,7 @@ export function CheckoutBar({
                     gap: space.xs,
                     fontSize: it.muted ? fontSize.body : fontSize.pageTitle,
                     fontWeight: it.muted ? fontWeight.regular : fontWeight.semibold,
-                    color: it.muted ? token.colorText : colorPrimary,
+                    color: it.muted ? token.colorText : colors.primary,
                   }}
                 >
                   {it.value}

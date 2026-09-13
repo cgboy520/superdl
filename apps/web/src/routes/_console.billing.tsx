@@ -1,6 +1,6 @@
 /** 费用中心:余额卡 / 充值 Modal / 消费概览 / 账单与收支明细(服务端 CSV 导出)。Tab 与月份入 URL;充值幂等键按 (amount, channel) 派生。 */
 
-import { POLL, useAutoRefresh } from "@superdl/ui";
+import { POLL, useAutoRefresh, useChartTheme } from "@superdl/ui";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import dayjs from "dayjs";
@@ -15,7 +15,6 @@ import { useFormat } from "@superdl/ui";
 import { WarnThresholdField } from "../components/WarnThresholdField";
 import { useBillSummary, useDailySummary, useMe, usePolicies, useWallet } from "../api/queries";
 import { requireAuth } from "../lib/guard";
-import { useThemeMode } from "../stores/theme";
 import { RechargeModal } from "./-RechargeModal";
 import { MonthlyBillsTab } from "./-MonthlyBillsTab";
 import { LEDGER_FILTERS, LedgerFilter, LedgerTable } from "./-LedgerTable";
@@ -47,7 +46,7 @@ export const Route = createFileRoute("/_console/billing")({
 function BillingPage() {
   const { formatMoney } = useFormat();
   const { t } = useTranslation();
-  const mode = useThemeMode();
+  const chartTheme = useChartTheme();
   const navigate = useNavigate();
   const { tab, month: monthParam } = Route.useSearch();
   const [rechargeOpen, setRechargeOpen] = useState(false);
@@ -192,7 +191,7 @@ function BillingPage() {
                 </Col>
                 <Col xs={24} md={14}>
                   <EChart
-                    theme={mode === "dark" ? "web-dark" : "web-light"}
+                    theme={chartTheme}
                     style={{ height: 160 }}
                     ariaLabel={t("billing.monthSpend", { month })}
                     empty={pieData.length === 0 ? t("billing.noSpendThisMonth") : false}

@@ -2,7 +2,7 @@
 
 import { LandingSection } from "./LandingSection";
 import { AccountBookOutlined, AimOutlined, DatabaseOutlined, ThunderboltOutlined } from "@ant-design/icons";
-import { colorPrimary, fontSize } from "@superdl/ui";
+import { fontSize, useThemeColors } from "@superdl/ui";
 import { useNavigate } from "@tanstack/react-router";
 import { Card, Col, Row, Typography } from "antd";
 import type { ReactNode } from "react";
@@ -25,6 +25,7 @@ const FAQ_ANCHOR = {
 export function QuickEntrySection() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { primary } = useThemeColors();
 
   const go = (key: string) => {
     if (key === "gpu") {
@@ -69,7 +70,7 @@ export function QuickEntrySection() {
                 }
               }}
             >
-              <div style={{ fontSize: fontSize.pageTitle, color: colorPrimary, marginBottom: 8 }}>{e.icon}</div>
+              <div style={{ fontSize: fontSize.pageTitle, color: primary, marginBottom: 8 }}>{e.icon}</div>
               <Typography.Text strong style={{ display: "block", marginBottom: 4 }}>
                 {TITLE[e.key]}
               </Typography.Text>

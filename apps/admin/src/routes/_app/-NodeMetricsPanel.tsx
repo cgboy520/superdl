@@ -3,7 +3,7 @@
 import { Radio, Button, Card, Space, Tag, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
-import { fontSize } from "@superdl/ui";
+import { fontSize, useChartTheme } from "@superdl/ui";
 import { EChart } from "@superdl/ui/components";
 
 import { type NodeMetricsOut, type NodeRow } from "../../api";
@@ -21,12 +21,13 @@ export function NodeMetricsPanel({
   onRangeChange: (r: string) => void;
 }) {
   const { t } = useTranslation();
+  const chartTheme = useChartTheme();
   const gpus = metrics?.gpus ?? [];
   const chart = (key: "util" | "mem_used_mb", title: string, unit: string) => (
     <Card size="small" title={title}>
       <EChart
         style={{ height: 200 }}
-        theme="noc"
+        theme={chartTheme}
         ariaLabel={title}
         option={{
           grid: { left: 48, right: 16, top: 28, bottom: 24 },

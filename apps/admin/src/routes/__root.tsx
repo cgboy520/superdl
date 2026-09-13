@@ -1,4 +1,4 @@
-import { adminThemeComponents, adminThemeToken } from "@superdl/ui";
+import { adminThemeComponents, adminThemeToken, ThemeProvider } from "@superdl/ui";
 import { NotFoundView, RouteErrorFallbackView } from "@superdl/ui/components";
 import { createRootRoute, Outlet, type ErrorComponentProps } from "@tanstack/react-router";
 import { App as AntApp, ConfigProvider, theme } from "antd";
@@ -24,7 +24,8 @@ function DarkShell({ children }: { children: ReactNode }) {
         components: adminThemeComponents,
       }}
     >
-      {children}
+      {/* JS 侧语义色固定管理端色板 */}
+      <ThemeProvider value="admin">{children}</ThemeProvider>
     </ConfigProvider>
   );
 }

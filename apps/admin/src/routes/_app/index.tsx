@@ -1,14 +1,23 @@
-import { adminColors, fontSize, formatDateTime, statusColors } from "@superdl/ui";
 import {
-  moneyOr,
+  adminColors,
+  fontSize,
+  formatDateTime,
+  SEVERITY_ORDER,
+  severityMap,
+  statusColors,
+  useChartTheme,
+} from "@superdl/ui";
+import {
   DataErrorAlert,
   EChart,
   EmptyState,
   GatedButton,
   KpiGrid,
+  moneyOr,
   PageContainer,
   RowActions,
   RowMoreMenu,
+  StatusTag,
   TableErrorEmpty,
 } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
@@ -51,7 +60,7 @@ import {
 } from "../../api";
 import { BulkBar, runBulk } from "../../components/BulkBar";
 import { ReasonAction } from "../../components/ReasonAction";
-import { alertLink, SEVERITY_LABEL_KEY, severityColor, useAckAlertWithFeedback } from "../../lib/alertLink";
+import { alertLink, useAckAlertWithFeedback } from "../../lib/alertLink";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 export const Route = createFileRoute("/_app/")({
@@ -60,6 +69,7 @@ export const Route = createFileRoute("/_app/")({
 
 function OversellChart({ rows }: { rows: OversellRow[] }) {
   const { t } = useTranslation();
+  const chartTheme = useChartTheme();
   const pools = rows.map((r) => r.pool);
   const option = {
     backgroundColor: "transparent",
@@ -107,11 +117,14 @@ function OversellChart({ rows }: { rows: OversellRow[] }) {
       },
     ],
   };
-  return <EChart option={option} style={{ height: 320 }} theme="noc" ariaLabel={t("overview.oversellChartTitle")} />;
+  return (
+    <EChart option={option} style={{ height: 320 }} theme={chartTheme} ariaLabel={t("overview.oversellChartTitle")} />
+  );
 }
 
 function PoolOccupancy({ pools }: { pools: OverviewOut["pools"] }) {
   const { t } = useTranslation();
+  const chartTheme = useChartTheme();
   const names = pools.map((p) => p.pool);
   // 「已租」拆竞价与非竞价两段;gpu_spot_used 服务端已截断,前端不再 clamp
   const spotUsed = pools.map((p) => p.gpu_spot_used);
@@ -160,7 +173,7 @@ function PoolOccupancy({ pools }: { pools: OverviewOut["pools"] }) {
   };
   return (
     <>
-      <EChart option={option} style={{ height: 220 }} theme="noc" ariaLabel={t("overview.poolOccupancy")} />
+      <EChart option={option} style={{ height: 220 }} theme={chartTheme} ariaLabel={t("overview.poolOccupancy")} />
       <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
         {t("overview.spotReclaimable", { used: usedTotal, spot: spotTotal })}
       </Typography.Text>
@@ -361,7 +374,7 @@ function DeadTasksCard() {
 
 /** 实时告警流:severity 过滤、确认闭环、深链跳受影响节点/租户(lib/alertLink)。 */
 function AlertStreamCard() {
-  const { t } = useTranslation();
+  const { t } = useTranslation(["admin", "shared"]);
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const [severity, setSeverity] = useState<string | undefined>();
@@ -380,10 +393,7 @@ function AlertStreamCard() {
           style={{ width: 120 }}
           value={severity}
           onChange={(v) => setSeverity(v)}
-          options={(Object.keys(SEVERITY_LABEL_KEY) as (keyof typeof SEVERITY_LABEL_KEY)[]).map((s) => ({
-            value: s,
-            label: t(SEVERITY_LABEL_KEY[s]),
-          }))}
+          options={SEVERITY_ORDER.map((s) => ({ value: s, label: t(severityMap[s].labelKey) }))}
         />
       }
       styles={{ body: { maxHeight: 560, overflow: "auto" } }}
@@ -398,18 +408,16 @@ function AlertStreamCard() {
             const link = alertLink(a);
             return (
               <div key={a.id} style={{ marginBottom: 12 }}>
-                <Badge
-                  color={severityColor(a.severity)}
-                  text={
-                    link ? (
-                      <Link to={link.to} search={link.search}>
-                        <b>{a.title}</b>
-                      </Link>
-                    ) : (
+                <Space size={6} align="start">
+                  <StatusTag map={severityMap} value={a.severity} variant="text" icon />
+                  {link ? (
+                    <Link to={link.to} search={link.search}>
                       <b>{a.title}</b>
-                    )
-                  }
-                />
+                    </Link>
+                  ) : (
+                    <b>{a.title}</b>
+                  )}
+                </Space>
                 <div style={{ color: adminColors.textSecondary, fontSize: fontSize.caption, paddingLeft: 14 }}>
                   {formatDateTime(a.created_at)} · {a.content}
                 </div>

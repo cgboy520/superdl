@@ -19,7 +19,7 @@ import {
 import { useFormat } from "@superdl/ui";
 import { useApiErrorText } from "@superdl/ui";
 
-import { StatusTag } from "../../components/StatusTag";
+import { StatusTag } from "@superdl/ui/components";
 import { type SkuAdminOut, isApiError, useAdminSkus, useUpdateSku } from "../../api";
 import { ReasonAction } from "../../components/ReasonAction";
 import { canWriteOps, useAdminRole } from "../../stores/auth";

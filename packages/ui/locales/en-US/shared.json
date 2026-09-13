@@ -10,7 +10,11 @@
     "forbiddenDesc": "Your role does not have access to this data. Contact an administrator if you need access.",
     "requestFailed": "Request failed",
     "more": "More",
-    "notAvailable": "Not available"
+    "notAvailable": "Not available",
+    "copy": "Copy",
+    "copied": "Copied",
+    "hide": "Hide",
+    "reveal": "Show"
   },
   "csv": {
     "exportDone": "CSV exported",
@@ -274,6 +278,22 @@
       "tenant_frozen": "Account frozen",
       "user_start": "Started by you",
       "user_stop": "Stopped by you"
+    },
+    "node": {
+      "Ready": "Ready",
+      "NotReady": "Not ready",
+      "Cordoned": "Cordoned",
+      "Missing": "Missing"
+    },
+    "nodeHint": {
+      "NotReady": "kubelet has not reported ready; new instances will not be scheduled here",
+      "Cordoned": "Cordoned: no new instances are scheduled; running instances are unaffected",
+      "Missing": "Recorded in the ledger but not found in the cluster"
+    },
+    "severity": {
+      "info": "Info",
+      "warning": "Warning",
+      "critical": "Critical"
     }
   },
   "filter": {
@@ -292,5 +312,9 @@
     "body": "What you entered will be discarded. Leave anyway?",
     "ok": "Discard and leave",
     "cancel": "Keep editing"
+  },
+  "disk": {
+    "sizeEstimate": "{{size}} · about ¥{{daily}}/day",
+    "expandEstimate": "Expand to {{size}} (+{{extra}}); the added part costs about ¥{{daily}}/day"
   }
 }

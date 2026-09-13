@@ -28,7 +28,7 @@ import {
 } from "../../api";
 import { LIST_CAPS, ListCapNote } from "../../components/ListCapNote";
 import { ReasonAction } from "../../components/ReasonAction";
-import { StatusTag } from "../../components/StatusTag";
+import { StatusTag } from "@superdl/ui/components";
 import { isValidReason, REASON_MAX_LEN } from "../../lib/validators";
 import { RowActionModal } from "../../components/RowActionModal";
 import { tenantColumn } from "../../components/TenantLink";
