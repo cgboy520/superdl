@@ -1,0 +1,87 @@
+# CephCluster + CephFS。数据盘后端:租户共享文件系统,支持 idmapped mount
+# (fs/ceph/super.c 声明 FS_ALLOW_IDMAP),所以能挂进 hostUsers: false 的租户 Pod
+# ——这是它相对 JuiceFS(FUSE,未声明 FUSE_ALLOW_IDMAP)的唯一理由。
+#
+# OSD 后端是 TopoLVM 的 Block PVC,不是裸盘:8 台机每台一块 NVMe 全被根分区占,
+# 没有空闲块设备(VG superdl-nvme 自身建在 /dev/loop* 上)。
+# 代价:与租户实例盘共用同一个 VG,且 GB10 是统一内存,Ceph 吃掉的 RAM 直接减少可售显存。
+operatorNamespace: rook-ceph
+
+toolbox:
+  enabled: true   # ceph status / df 等排障命令的入口
+
+cephClusterSpec:
+  mon:
+    count: 3
+    allowMultiplePerNode: false
+  mgr:
+    count: 1          # 单机控制面,不做 mgr HA;省一份内存
+    allowMultiplePerNode: false
+  dashboard:
+    enabled: false    # 北向入口统一走 Envoy Gateway,不另开面板
+  storage:
+    useAllNodes: false
+    useAllDevices: false
+    storageClassDeviceSets:
+      - name: superdl-nvme
+        count: 3
+        # TopoLVM 是节点本地卷,OSD 不能漂到别的节点
+        portable: false
+        encrypted: false
+        placement:
+          # 三个 OSD 必须落三台不同机器,否则 failureDomain: host 的副本是假的
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchExpressions:
+                    - {key: app, operator: In, values: [rook-ceph-osd]}
+                topologyKey: kubernetes.io/hostname
+        volumeClaimTemplates:
+          - metadata:
+              name: data
+            spec:
+              resources:
+                requests:
+                  storage: 500Gi
+              storageClassName: topolvm-provisioner
+              volumeMode: Block
+              accessModes: [ReadWriteOnce]
+
+# 只要文件系统,不建块池与对象存储
+cephBlockPools: []
+cephObjectStores: []
+
+cephFileSystems:
+  - name: superdl-fs
+    spec:
+      metadataPool:
+        replicated:
+          size: 3        # 元数据三副本:3 个 OSD 各一份,丢一台仍可写
+      dataPools:
+        - name: data0
+          failureDomain: host
+          replicated:
+            size: 2      # 数据两副本:1.5T 裸容量出 ~750G 可用
+      metadataServer:
+        activeCount: 1
+        activeStandby: true
+        priorityClassName: system-cluster-critical
+        resources:
+          requests: {cpu: 500m, memory: 2Gi}
+          limits: {memory: 4Gi}
+    storageClass:
+      enabled: true
+      name: superdl-cephfs
+      isDefault: false
+      pool: data0
+      reclaimPolicy: Retain      # 与数据盘语义一致:删 PVC 不立刻销毁数据
+      allowVolumeExpansion: true
+      mountOptions: []
+      parameters:
+        csi.storage.k8s.io/provisioner-secret-name: rook-csi-cephfs-provisioner
+        csi.storage.k8s.io/provisioner-secret-namespace: rook-ceph
+        csi.storage.k8s.io/controller-expand-secret-name: rook-csi-cephfs-provisioner
+        csi.storage.k8s.io/controller-expand-secret-namespace: rook-ceph
+        csi.storage.k8s.io/node-stage-secret-name: rook-csi-cephfs-node
+        csi.storage.k8s.io/node-stage-secret-namespace: rook-ceph
+        csi.storage.k8s.io/fstype: ext4

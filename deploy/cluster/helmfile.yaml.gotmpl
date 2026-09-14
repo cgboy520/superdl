@@ -21,6 +21,8 @@ repositories:
     url: https://juicedata.github.io/charts
   - name: seaweedfs
     url: https://seaweedfs.github.io/seaweedfs/helm
+  - name: rook-release
+    url: https://charts.rook.io/release
   - name: topolvm
     url: https://topolvm.github.io/topolvm
   - name: jetstack
@@ -101,6 +103,25 @@ releases:
       - values/light/kps-light.yaml
       {{- end }}
     # helm diff 不装 crds/ 目录的 CRD,首装 diff 免校验
+    disableValidationOnInstall: true
+
+  # 数据盘的 CephFS 后端:内核 cephfs 声明 FS_ALLOW_IDMAP,能挂进 hostUsers: false 的租户 Pod
+  # (JuiceFS 走 FUSE 不行)。OSD 落 TopoLVM 的 Block PVC,见 values/rook-ceph-cluster.yaml
+  - name: rook-ceph
+    condition: rookCeph.enabled
+    namespace: rook-ceph
+    chart: rook-release/rook-ceph
+    version: "v1.20.7"
+    values: [values/rook-ceph.yaml]
+
+  - name: rook-ceph-cluster
+    condition: rookCeph.enabled
+    namespace: rook-ceph
+    chart: rook-release/rook-ceph-cluster
+    version: "v1.20.7"
+    values: [values/rook-ceph-cluster.yaml]
+    # CephCluster/CephFilesystem 是 operator 建的 CRD,首装 diff 读不到
+    needs: [rook-ceph/rook-ceph]
     disableValidationOnInstall: true
 
   # JuiceFS 的自建 S3 后端;用云 OSS 时置 seaweedfs.enabled=false

@@ -12,6 +12,8 @@ juicefs: {enabled: true}
 # 数据盘后端自建在集群内(内网无云 OSS);存储走 topolvm,见 values/seaweedfs.yaml
 seaweedfs: {enabled: true}
 topolvm: {enabled: true}
+# 数据盘后端(CephFS);OSD 用 TopoLVM 的 Block PVC,与实例盘共用 VG superdl-nvme
+rookCeph: {enabled: true}
 certManager: {enabled: true}
 # acme-dns 不装(见 helmfile 注释);通配证书手工灌成 superdl/superdl-jupyter-wildcard-tls 与 superdl-svc-wildcard-tls
 acmeDns: {enabled: false}

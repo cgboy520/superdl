@@ -8,6 +8,8 @@ juicefs: {enabled: true}
 # 自建 S3 后端;用云 OSS(full 档默认)时保持 false,凭据走 superdl-juicefs-secret
 seaweedfs: {enabled: false}
 topolvm: {enabled: true}
+# full 档默认用云 OSS + JuiceFS;自建 Ceph 时置 true
+rookCeph: {enabled: false}
 certManager: {enabled: true}
 acmeDns: {enabled: true}   # DNS01 中转(公网 53 经真实 LB 暴露);随 cert-manager presync 应用
 envoyGateway: {enabled: true}   # 北向唯一入口(Gateway API);ns envoy-gateway-system 控制面与 Envoy 数据面同住

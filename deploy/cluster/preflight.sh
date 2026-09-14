@@ -344,6 +344,9 @@ check_sc() { # <sc 名称> <用途>
   fi
 }
 check_sc topolvm-provisioner "实例盘/监控组件/acme-dns 存储(full+light 均为强制依赖)"
+if grep -qE '^\s*rookCeph:\s*\{[^}]*enabled:\s*true' "environments/$env_name.yaml"; then
+  check_sc superdl-cephfs "数据盘(CephFS;唯一支持 idmapped mount 的共享文件系统)"
+fi
 check_sc superdl-juicefs "共享数据盘/监控栈存储(两档均为强制依赖)"
 
 if [[ "$env_name" == "light" ]]; then
