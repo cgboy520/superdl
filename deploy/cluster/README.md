@@ -138,7 +138,7 @@ kubectl label nodes -l node-role.kubernetes.io/control-plane \
 **Cilium 与 kube-router 的两处语义差异必须靠 `cilium-policies.yaml` 补上**(随 cilium release 的 postsync 下发),否则表现是「组件都 Running 但平台连不上库、租户 SSH 不通」:
 
 - **`ipBlock` 选不中节点**。节点在 Cilium 里是 `host` / `remote-node` 保留身份,与 IP 无关。`values/cilium.yaml` 的 `policyCIDRMatchMode: [nodes]` 只让 CIDR 选择器覆盖 `remote-node`,本机 `host`(平台库跑在节点宿主上)仍要按身份放行。
-- **NodePort 的 SNAT 来源变了**。flannel 是 Pod 子网的 `.0/.1`(`real.py` 的 `pod_cidr_gateways` 按此写死),Cilium 换成入口节点的 `cilium_host`——该地址从子网池**动态分配**(实测 `.40` / `.59`),而且落在 `tenant-default` 的 `except 10.42.0.0/16` 里,按地址放行必然选不中。
+- **NodePort 的 SNAT 来源变了**。flannel 是 Pod 子网的 `.0/.1`,Cilium 换成入口节点的 `cilium_host`——该地址从子网池**动态分配**(实测 `.40` / `.59`),而且落在 `tenant-default` 的 `except 10.42.0.0/16` 里,按地址放行必然选不中。
 
 换完必须实测:平台三域、租户 Jupyter、以及**从至少两台不同节点**连租户 SSH 的 NodePort。
 

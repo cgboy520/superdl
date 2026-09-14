@@ -29,7 +29,6 @@ spec:
 # 租户实例入向 SSH:跨节点 NodePort 的 SNAT 来源是入口节点的 cilium_host,
 # 该地址从 Pod 子网池动态分配(实测 .40 / .59,不是 .1),且落在 tenant-default 的
 # `except 10.42.0.0/16` 里,按地址放行必然选不中。
-# 等价于 flannel 时代 real.py pod_cidr_gateways 放行的各节点 .0/.1
 apiVersion: cilium.io/v2
 kind: CiliumClusterwideNetworkPolicy
 metadata:

@@ -217,34 +217,6 @@ def _statuses_from_listing(
     return [by_key.get((ns, uuid), _MISSING_POD) for _id, _status, ns, uuid, _created in rows]
 
 
-# 各租户 ns 最近一次成功下发 NetPol 时的节点集合(进程内);集合变化即重下发该 ns
-_netpol_synced_nodes: dict[str, frozenset[str]] = {}
-
-
-async def _resync_tenant_netpols_on_node_change(
-    orch: K8sOrchestrator, readiness: dict[str, bool] | None, namespaces: Iterable[str]
-) -> None:
-    """节点集合变化(或首轮)时重跑 ensure_namespace(租户 NetPol 按节点放行 Pod 子网网关);
-    逐 ns 记账:成功的 ns 下一轮不再重跑,失败的单独重试;节点视图不可用则跳过。"""
-    if readiness is None:
-        return
-    current = frozenset(readiness)
-    active = set(namespaces)
-    for stale in set(_netpol_synced_nodes) - active:
-        _netpol_synced_nodes.pop(stale, None)
-    pending = [ns for ns in sorted(active) if _netpol_synced_nodes.get(ns) != current]
-    failed = 0
-    for ns in pending:
-        try:
-            await orch.ensure_namespace(ns)
-            _netpol_synced_nodes[ns] = current
-        except Exception:
-            failed += 1
-            logger.exception("tenant_netpol_resync_failed", namespace=ns)
-    if failed:
-        logger.warning("tenant_netpol_resync_partial", failed=failed, total=len(pending))
-
-
 async def _node_readiness() -> dict[str, bool] | None:
     """节点 → 是否 NotReady;节点视图不可用返回 None。"""
     try:
@@ -293,9 +265,6 @@ async def _reconcile_instances(
         return
     statuses = _statuses_from_listing(rows, listing)
     not_ready_by_node = await _node_readiness()
-    await _resync_tenant_netpols_on_node_change(
-        orch, not_ready_by_node, (ns for _id, _st, ns, _uuid, _created in rows)
-    )
     ctx = _Round(
         orch=orch,
         settings=get_settings(),

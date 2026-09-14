@@ -57,7 +57,7 @@
 
 ### reconciler 与保留期
 
-- reconciler(30s,advisory lock)是唯一收敛点:Pod Ready 而 DB creating/starting → running;Pod 消失而 DB running → failed;Pod 存在而 DB 终态 → 强删;creating 超 5min → failed(包周期实例首次 creating 超时同事务退回预付)。每轮一次 `list_instance_pods` 即状态源,不逐实例 `get_status`。节点集合变化触发的租户 NetPol 重下发逐 ns 记账(`_netpol_synced_nodes`):成功的 ns 下轮不重跑,失败的单独重试,一个 ns 出错不阻塞其余。
+- reconciler(30s,advisory lock)是唯一收敛点:Pod Ready 而 DB creating/starting → running;Pod 消失而 DB running → failed;Pod 存在而 DB 终态 → 强删;creating 超 5min → failed(包周期实例首次 creating 超时同事务退回预付)。每轮一次 `list_instance_pods` 即状态源,不逐实例 `get_status`。
 - stopping/releasing 悬挂两档超时(`stopping_timeout_seconds`/`releasing_timeout_seconds`):一档经 outbox 重发删除,二档 force 强删后按正常边收敛。悬挂实例数见 `superdl_reconcile_stuck_instances`。
 - 泄漏回收熔断:未知 Pod 占比超 `leak_reclaim_abort_ratio` 即中止本轮并计 `superdl_reconcile_leak_aborted_total`;在途删除宽限同两档超时,其余 force 强删。
 - 保留期 GC 在 reconciler 内:failed 超 `failed_retention_days` → 通知并转 releasing;stopped 超 `stopped_retention_days` → 转 releasing,提前 `stopped_retention_warn_days` 预警。数据盘不受影响。阈值见 [limits.md](./limits.md)。

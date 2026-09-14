@@ -5,9 +5,8 @@
 
 import asyncio
 import hashlib
-import ipaddress
 import math
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, cast
@@ -49,22 +48,6 @@ PREWARM_LABEL = "superdl.io/prewarm"  # 预热 Job 专用标签
 # Envoy 数据面 Pod 所在 ns(≠ base.GATEWAY_NAMESPACE),与 deploy/cluster/helmfile.yaml.gotmpl
 # 的 envoy-gateway release namespace 一致
 GATEWAY_DATAPLANE_NAMESPACE = "envoy-gateway-system"
-
-
-def pod_cidr_gateways(cidrs: Iterable[str]) -> list[str]:
-    """各节点 Pod 子网的 .0 与 .1 地址的 /32 列表(flannel 跨节点 NodePort 的 SNAT 来源),排序去重;
-    IPv6 / 非法串忽略。"""
-    out: set[str] = set()
-    for raw in cidrs:
-        try:
-            net = ipaddress.ip_network(raw, strict=False)
-        except ValueError:
-            continue
-        if net.version != 4:
-            continue
-        out.add(f"{net.network_address}/32")
-        out.add(f"{net.network_address + 1}/32")
-    return sorted(out, key=lambda c: ipaddress.ip_address(c.split("/")[0]))
 
 
 # 租户 ns 的 PSA 标签:enforce baseline(平台镜像以 root 运行),audit/warn restricted
@@ -465,12 +448,10 @@ class RealOrchestrator:
             lambda: self.core.patch_namespaced_limit_range("tenant-defaults", namespace, limits),
         )
 
-    def _tenant_netpol(
-        self, namespace: str, node_gateways: list[str] | None = None
-    ) -> "client.V1NetworkPolicy":
+    def _tenant_netpol(self, namespace: str) -> "client.V1NetworkPolicy":
         """租户 NetworkPolicy。入方向:默认拒东西向,放行网关数据面(不限端口)与 SSH 22
-        (from 排 Pod 网段、逐节点放回 .0/32 与 .1/32,不排私网);出方向:公网除私网/元数据网段,
-        TCP 扣黑名单,UDP 白名单 53/443,+ CoreDNS。见 docs/reference/security.md「已接受取舍」。
+        (from 排 Pod 网段,不排私网);出方向:公网除私网/元数据网段,TCP 扣黑名单,
+        UDP 白名单 53/443,+ CoreDNS。见 docs/reference/security.md「已接受取舍」。
         """
         return client.V1NetworkPolicy(
             metadata=client.V1ObjectMeta(name="tenant-default", namespace=namespace),
@@ -490,9 +471,9 @@ class RealOrchestrator:
                             )
                         ],
                     ),
-                    # SSH NodePort 入流量:排 Pod 网段,逐节点放回子网网关
+                    # SSH NodePort 入流量:排 Pod 网段
                     client.V1NetworkPolicyIngressRule(
-                        _from=self._ssh_ingress_peers(node_gateways),
+                        _from=self._ssh_ingress_peers(),
                         ports=[client.V1NetworkPolicyPort(protocol="TCP", port=22)],
                     ),
                 ],
@@ -539,41 +520,18 @@ class RealOrchestrator:
             ),
         )
 
-    def _ssh_ingress_except(self) -> list[str] | None:
-        """SSH 入方向的 except 列表(只排 Pod 网段);空配置返回 None,不下发 except。"""
+    def _ssh_ingress_peers(self) -> list[Any]:
+        """0.0.0.0/0 排 Pod 网段(空配置不下发 except)。跨节点 NodePort 的 SNAT 来源是入口节点
+        cilium_host,落在排掉的网段里,按身份放行见 deploy/cluster/cilium-policies.yaml。"""
         cidr = (self.settings.tenant_pod_cidr or "").strip()
-        return [cidr] if cidr else None
-
-    def _ssh_ingress_peers(self, node_gateways: list[str] | None) -> list[Any]:
-        """0.0.0.0/0 排 Pod 网段,再逐个放回节点 Pod 子网网关。"""
-        peers: list[Any] = [
+        return [
             client.V1NetworkPolicyPeer(
-                ip_block=client.V1IPBlock(cidr="0.0.0.0/0", _except=self._ssh_ingress_except())
+                ip_block=client.V1IPBlock(cidr="0.0.0.0/0", _except=[cidr] if cidr else None)
             )
         ]
-        if self._ssh_ingress_except():
-            peers += [
-                client.V1NetworkPolicyPeer(ip_block=client.V1IPBlock(cidr=g))
-                for g in (node_gateways or [])
-            ]
-        return peers
-
-    def _node_pod_gateways_sync(self) -> list[str]:
-        """全部节点 spec.podCIDR(s) 的网关 /32;读不到返回空并告警(节点集合变化时重下发)。"""
-        try:
-            nodes = self._list_all(self.core.list_node)
-        except Exception:
-            logger.exception("netpol_node_gateways_unavailable")
-            return []
-        cidrs: list[str] = []
-        for n in nodes:
-            spec = n.spec
-            cidrs += list(spec.pod_cidrs or ([spec.pod_cidr] if spec.pod_cidr else []))
-        return pod_cidr_gateways(cidrs)
 
     def _ensure_default_netpol_sync(self, namespace: str) -> None:
-        gateways = self._node_pod_gateways_sync() if self._ssh_ingress_except() else None
-        policy = self._tenant_netpol(namespace, gateways)
+        policy = self._tenant_netpol(namespace)
         _create_or_patch(
             lambda: self.net.create_namespaced_network_policy(namespace, policy),
             lambda: self.net.patch_namespaced_network_policy("tenant-default", namespace, policy),

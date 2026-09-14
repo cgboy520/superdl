@@ -3,7 +3,6 @@ kubeProxyReplacement: true
 # IPAM 跟着发行版已分配的 node.spec.podCIDR 走。chart 默认是 cluster-pool + 10.0.0.0/8,
 # 装上去 Pod 会全部落到 10.0.x.x:与 config.py 的 tenant_pod_cidr、00-namespace-config 的
 # FORWARDED_ALLOW_IPS、平台库 pg_hba 放行段(均为 10.42.0.0/16)全部对不上,平台连不上库。
-# 这个模式也让 real.py 的 pod_cidr_gateways(读 node.spec.podCIDR)继续成立
 ipam:
   mode: kubernetes
 # ipBlock 默认不匹配集群内的节点 IP:节点在 Cilium 里是 host / remote-node 保留身份,不归 CIDR 选择器管。

@@ -16,7 +16,6 @@ from app.core.k8s.real import (
     GATEWAY_DATAPLANE_NAMESPACE,
     PRIVATE_CIDRS,
     RealOrchestrator,
-    pod_cidr_gateways,
 )
 
 
@@ -81,6 +80,8 @@ class TestTenantNetpol:
             "kubernetes.io/metadata.name": GATEWAY_DATAPLANE_NAMESPACE
         }
         assert [(p.protocol, p.port) for p in ssh.ports] == [("TCP", 22)]
+        # 只有一条 0.0.0.0/0:节点侧来源按身份放行(deploy/cluster/cilium-policies.yaml),不按地址
+        assert len(ssh._from) == 1
         assert ssh._from[0].ip_block.cidr == "0.0.0.0/0"
         # 排 Pod 网段,不排整个私网
         assert ssh._from[0].ip_block._except == ["10.42.0.0/16"]
@@ -104,21 +105,6 @@ class TestTenantNetpol:
         ip_block: Any = ssh._from[0].ip_block
         assert ip_block._except == ["10.244.0.0/16"]
         assert not set(PRIVATE_CIDRS) <= set(ip_block._except)
-
-    def test_ssh_ingress_allows_node_pod_subnet_gateways(self):
-        """逐节点放回 Pod 子网的 .0/32 与 .1/32(flannel 跨节点 NodePort 的 SNAT 来源)。"""
-        gws = pod_cidr_gateways(["10.42.5.0/24", "10.42.0.0/24", "fd00::/64", "not-a-cidr"])
-        assert gws == ["10.42.0.0/32", "10.42.0.1/32", "10.42.5.0/32", "10.42.5.1/32"]
-        spec: Any = self._orch()._tenant_netpol("tenant-x", gws).spec
-        peers = spec.ingress[1]._from
-        assert peers[0].ip_block._except == ["10.42.0.0/16"]
-        assert [p.ip_block.cidr for p in peers[1:]] == gws
-        assert all(p.ip_block._except is None for p in peers[1:])
-
-    def test_no_gateway_peers_when_pod_cidr_not_excluded(self):
-        """不排 Pod 网段时不下发网关 /32。"""
-        spec: Any = self._orch("")._tenant_netpol("tenant-x", ["10.42.0.0/32"]).spec
-        assert len(spec.ingress[1]._from) == 1
 
     def test_empty_pod_cidr_emits_no_except(self):
         """留空时 except 字段整个缺席,不是 []。"""
