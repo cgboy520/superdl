@@ -32,7 +32,7 @@ COMPONENT_OUTBOX_TYPES: dict[WorkerComponent, frozenset[str]] = {
             "service.retire",
         }
     ),
-    WorkerComponent.NODE_MGR: frozenset({"node.cordon", "node.decommission"}),
+    WorkerComponent.NODE_MGR: frozenset({"node.cordon", "node.decommission", "node.switch_pool"}),
     WorkerComponent.PREWARM: frozenset({"image.prewarm"}),
     WorkerComponent.DISK_OPS: frozenset({"disk.provision", "disk.deprovision"}),
 }
