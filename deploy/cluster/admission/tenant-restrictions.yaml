@@ -165,7 +165,9 @@ spec:
   validationActions: [Deny]
 
 ---
-# 策略三:平台 SA 对 Node 的字段级写白名单:只许 spec.unschedulable(cordon)与 superdl.io/* 标签。
+# 策略三:平台 SA 对 Node 的字段级写白名单:只许 spec.unschedulable(cordon)、superdl.io/* 标签,
+# 以及两个具名的 GPU operand 落点键(切池要随池标签一起收敛,见 docs/reference/nodes.md)。
+# 白名单保持具名,不要放宽成 nvidia.com/* 前缀:gpu.deploy.* 决定特权 operand 往哪落。
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -200,6 +202,9 @@ spec:
       expression: >-
         (!has(object.spec.providerID) && !has(oldObject.spec.providerID)) ||
         (has(object.spec.providerID) && has(oldObject.spec.providerID) && object.spec.providerID == oldObject.spec.providerID)
+    # 切池收敛需要的 GPU operand 落点键;新增键要先在 docs/decisions.md 补条目
+    - name: gpuOperandKeys
+      expression: "['nvidia.com/gpu.workload.config', 'nvidia.com/gpu.deploy.device-plugin']"
     - name: annotationsSame
       expression: >-
         (!has(object.metadata.annotations) && !has(oldObject.metadata.annotations)) ||
@@ -214,14 +219,14 @@ spec:
     # spec 仅 unschedulable 可变
     - expression: "variables.taintsSame && variables.podCIDRSame && variables.podCIDRsSame && variables.providerIDSame"
       message: "平台 SA 对 Node spec 仅允许变更 unschedulable(cordon);taints/podCIDR/providerID 锁死"
-    # labels 仅 superdl.io/* 键可增删改
+    # labels 仅 superdl.io/* 与两个 GPU operand 键可增删改
     - expression: >-
         has(object.metadata.labels) && has(oldObject.metadata.labels) &&
-        object.metadata.labels.all(k, k.startsWith('superdl.io/') ||
+        object.metadata.labels.all(k, k.startsWith('superdl.io/') || k in variables.gpuOperandKeys ||
           (k in oldObject.metadata.labels && object.metadata.labels[k] == oldObject.metadata.labels[k])) &&
-        oldObject.metadata.labels.all(k, k.startsWith('superdl.io/') ||
+        oldObject.metadata.labels.all(k, k.startsWith('superdl.io/') || k in variables.gpuOperandKeys ||
           (k in object.metadata.labels && oldObject.metadata.labels[k] == object.metadata.labels[k]))
-      message: "平台 SA 对 Node labels 仅允许变更 superdl.io/* 键"
+      message: "平台 SA 对 Node labels 仅允许变更 superdl.io/* 与 GPU operand 落点键"
     # annotations 与 finalizers 锁死
     - expression: "variables.annotationsSame && variables.finalizersSame"
       message: "平台 SA 禁止变更 Node annotations/finalizers"

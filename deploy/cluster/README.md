@@ -79,7 +79,7 @@ full 档另需 `cert-manager/acme-dns-account`(DNS01 账户,见 `runbooks/acme-d
 
 ## 平台组件落点标签
 
-平台组件(api / 5 个 worker / 前端 / Envoy 数据面)的 `nodeSelector` 统一锚点是 `node-restriction.kubernetes.io/superdl-infra=true`,**由 `../ansible/site.yml` 在装机后用管理凭据打到控制面节点上**,不走发行版的 `node-label`。`node-restriction.kubernetes.io/` 前缀被 NodeRestriction 准入插件拉黑(`rke2/server-config.yaml` 与 `k3s/server-config.yaml` 的 `kube-apiserver-arg` 显式钉住),kubelet 打不上也改不掉;平台 SA 也无权改(准入策略③只放行 `superdl.io/*`)。
+平台组件(api / 5 个 worker / 前端 / Envoy 数据面)的 `nodeSelector` 统一锚点是 `node-restriction.kubernetes.io/superdl-infra=true`,**由 `../ansible/site.yml` 在装机后用管理凭据打到控制面节点上**,不走发行版的 `node-label`。`node-restriction.kubernetes.io/` 前缀被 NodeRestriction 准入插件拉黑(`rke2/server-config.yaml` 与 `k3s/server-config.yaml` 的 `kube-apiserver-arg` 显式钉住),kubelet 打不上也改不掉;平台 SA 也无权改——准入策略③ 对 Node labels 只放行 `superdl.io/*` 与两个具名的 GPU operand 键(`nvidia.com/gpu.workload.config`、`nvidia.com/gpu.deploy.device-plugin`,管理端切池要随池标签一起收敛,见 [`runbooks/node-pool-switch.md`](./runbooks/node-pool-switch.md))。白名单保持具名,不放宽成 `nvidia.com/*` 前缀:`gpu.deploy.*` 决定特权 operand 往哪落。
 
 `preflight.sh` 三项复核:NodeRestriction 已启用、至少一台节点带该标签、**GPU 池节点严禁带该标签**。手工补标:
 

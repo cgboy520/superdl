@@ -7,6 +7,7 @@
 |---|---|---|
 | [gpu-fault-sop.md](./gpu-fault-sop.md) | 事件处置 | GPU Xid 致命错误:隔离 → 停机结算 → 通知 → 补偿 → 回归 |
 | [pg-backup-restore.md](./pg-backup-restore.md) | 事件处置 + SOP | 资金库备份分层、逻辑备份恢复、季度演练与 RTO 记录 |
+| [node-pool-switch.md](./node-pool-switch.md) | SOP | 节点在 kata / hami / mig 池之间切换:前置、执行、核对 |
 | [image-prewarm.md](./image-prewarm.md) | SOP | Harbor 接入与拉取凭据、平台镜像上线、Spegel P2P 与预热 |
 | [acme-dns.md](./acme-dns.md) | SOP | 泛域名证书 DNS01(acme-dns)部署与凭据轮换;**仅 full 档** |
 | [loki-logging.md](./loki-logging.md) | 参考 | 日志留存口径、LogQL 排障查询、采集自检 |

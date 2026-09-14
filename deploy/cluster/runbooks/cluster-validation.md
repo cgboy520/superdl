@@ -59,6 +59,7 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 ## F. 节点一键加入
 
 - [ ] kata / hami / mig 三池各跑通一次全流程,节点最终 Ready 且池标签正确
+- [ ] **切池**:空节点经管理端 hami → kata 再切回,两次都核对池标签与 operand 标签整套收敛(旧池残留键已删)、组件落位正确、目标档位实例真能开机;步骤与核对清单见 [node-pool-switch.md](./node-pool-switch.md)
 - [ ] kata 池重启断点:重启后 systemd oneshot 自动续跑至完成
 - [ ] `registries.yaml` 已落到 `/etc/rancher/<rke2|k3s>/` 并生效(Harbor 自签时 `harbor-ca.crt` 同目录 0644,`configs.tls.ca_file` 指向它)
 - [ ] 管理端 cordon/uncordon 落到真实节点(patch_node)
