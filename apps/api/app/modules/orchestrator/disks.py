@@ -47,7 +47,7 @@ async def create_disk(
         )
         if existing is not None:
             return existing, False
-    # JuiceFS SC 缺位先拦
+    # 数据盘 StorageClass 缺位先拦
     await nodes_service.require_storage_classes(session, with_data_disk=True)
     policies = await get_runtime_config(session)
     if not policies.disk_min_gb <= size_gb <= policies.disk_max_gb:

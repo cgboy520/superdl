@@ -103,7 +103,7 @@ async def test_full_lifecycle_drill(client, sm, fake):
     assert access["jupyter_url"].startswith("https://")
     assert "/superdl-bootstrap?" in access["jupyter_url"]
     assert "token=" not in access["jupyter_url"]
-    # Pod 规格:HAMi 资源 + userns 加固 + JuiceFS 子路径
+    # Pod 规格:HAMi 资源 + userns 加固 + 数据盘 PVC
     pod_spec = fake.pods[(f"tenant-{user_id}", uuid)].spec
     assert pod_spec.gpu_resources["nvidia.com/gpucores"] == "50"
     assert pod_spec.host_users is False

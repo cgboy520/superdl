@@ -345,7 +345,7 @@ spec:
           command: ["python", "-m", "app.workers.main"]
           envFrom:
             - configMapRef: {name: superdl-api-config}
-            # disk-ops:仅 DB + 指标;JuiceFS metaurl 由配额 Job 按 key 引用 superdl-db(core/k8s/real.py set_disk_quota)
+            # disk-ops:仅 DB + 指标
             - secretRef: {name: superdl-db}
             - secretRef: {name: superdl-metrics}
           env:
