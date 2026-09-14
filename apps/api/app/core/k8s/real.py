@@ -8,12 +8,13 @@ import hashlib
 import math
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, cast
 
 from kubernetes import client, config
 
 from app.core.config import get_settings
+from app.core.k8s import health
 from app.core.k8s.base import (
     DATA_DISK_STORAGE_CLASS,
     GATEWAY_API_GROUP,
@@ -39,6 +40,13 @@ from app.core.k8s.base import (
     instance_env_secret_name,
     jupyter_service_name,
     service_endpoint_service_name,
+)
+from app.core.k8s.health import (
+    ListenerRow,
+    NodeRow,
+    RuntimeClassRow,
+    StorageClassRow,
+    WorkloadRow,
 )
 from app.core.logging import get_logger
 from app.core.registry import PULL_SECRET_FINGERPRINT_ANNOTATION, PULL_SECRET_NAME
@@ -316,15 +324,247 @@ def build_instance_pod(spec: InstancePodSpec) -> "client.V1Pod":
     )
 
 
+# 平台组件的对象名:体检按这些认对象,与 deploy/cluster 的 helmfile release 一致
+_HAMI_SCHEDULER = "hami-scheduler"
+_HAMI_DEVICE_PLUGIN = "hami-device-plugin"
+_CERT_MANAGER_DEPLOYS = ("cert-manager", "cert-manager-webhook", "cert-manager-cainjector")
+_GPU_ALLOCATABLE = "nvidia.com/gpu"
+# GFD 写的驱动版本标签;台账同源(见 nodes 模块)
+_DRIVER_LABEL = "nvidia.com/cuda.driver-version.full"
+
+
 @dataclass
 class _Workloads:
-    """能力探测里的平台工作负载存在性 / 就绪位。"""
+    """能力探测取回的平台工作负载,按体检项归位。
 
-    hami_ready: bool = False
-    dcgm: bool = False
-    kps: bool = False
-    gpu_operator: bool = False
-    cert_manager_ready: bool = False
+    每项留的是 WorkloadRow(就绪数 / 期望数 / 镜像 / 未就绪 reason),不是布尔:
+    「名字存在」证明不了「在工作」,0/8 全崩的 operand 不能判绿。
+    """
+
+    hami_scheduler: WorkloadRow = field(default_factory=lambda: WorkloadRow(_HAMI_SCHEDULER))
+    hami_device_plugin: WorkloadRow = field(
+        default_factory=lambda: WorkloadRow(_HAMI_DEVICE_PLUGIN)
+    )
+    # gpu-operator 的 operand:取它 Deployment 所在 ns 下的全部 DaemonSet,不写死名单
+    gpu_operator_ns: str = ""
+    gpu_operands: list[WorkloadRow] = field(default_factory=list)
+    dcgm: list[WorkloadRow] = field(default_factory=list)
+    cert_manager: list[WorkloadRow] = field(default_factory=list)
+    kata_deploy: WorkloadRow = field(default_factory=lambda: WorkloadRow("kata-deploy"))
+    prometheus: WorkloadRow = field(default_factory=lambda: WorkloadRow("prometheus"))
+    alertmanager: WorkloadRow = field(default_factory=lambda: WorkloadRow("alertmanager"))
+    gpu_operator_present: bool = False
+    kps_present: bool = False
+
+
+def _safe_int(v: Any) -> int:
+    try:
+        return int(v or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _first_image(template: Any) -> str:
+    containers = getattr(getattr(template, "spec", None), "containers", None) or []
+    return str(getattr(containers[0], "image", "") or "") if containers else ""
+
+
+def _condition_reason(conditions: Any) -> str:
+    """conditions 里第一条非 True 的 reason。Deployment 卡住的真原因在这里,今天被丢掉。"""
+    for c in conditions or []:
+        if getattr(c, "status", "") != "True":
+            reason = str(getattr(c, "reason", "") or "")
+            if reason:
+                return reason
+    return ""
+
+
+def _deploy_row(d: Any) -> WorkloadRow:
+    return WorkloadRow(
+        name=str(d.metadata.name or ""),
+        namespace=str(d.metadata.namespace or ""),
+        ready=_safe_int(d.status.ready_replicas),
+        desired=_safe_int(d.spec.replicas),
+        image=_first_image(d.spec.template),
+        reason=_condition_reason(d.status.conditions),
+    )
+
+
+def _ds_row(ds: Any) -> WorkloadRow:
+    return WorkloadRow(
+        name=str(ds.metadata.name or ""),
+        namespace=str(ds.metadata.namespace or ""),
+        ready=_safe_int(ds.status.number_ready),
+        desired=_safe_int(ds.status.desired_number_scheduled),
+        image=_first_image(ds.spec.template),
+    )
+
+
+def _sts_row(st: Any) -> WorkloadRow:
+    return WorkloadRow(
+        name=str(st.metadata.name or ""),
+        namespace=str(st.metadata.namespace or ""),
+        ready=_safe_int(st.status.ready_replicas),
+        desired=_safe_int(st.spec.replicas),
+        image=_first_image(st.spec.template),
+    )
+
+
+def _listener_rows(gw: dict[str, Any]) -> list[ListenerRow]:
+    """status.listeners 与 spec.listeners 按名对齐:端口协议在 spec,挂载数与条件在 status。"""
+    status: dict[str, Any] = gw.get("status") or {}
+    spec_by_name = {
+        str(lis.get("name", "")): lis for lis in ((gw.get("spec") or {}).get("listeners") or [])
+    }
+    rows: list[ListenerRow] = []
+    for lis in status.get("listeners") or []:
+        name = str(lis.get("name", ""))
+        spec_lis: dict[str, Any] = spec_by_name.get(name) or {}
+        conds = lis.get("conditions") or []
+        rows.append(
+            ListenerRow(
+                name=name,
+                port=_safe_int(spec_lis.get("port")),
+                protocol=str(spec_lis.get("protocol") or ""),
+                attached=_safe_int(lis.get("attachedRoutes")),
+                programmed=any(
+                    c.get("type") == "Programmed" and c.get("status") == "True" for c in conds
+                ),
+                reason=next(
+                    (str(c.get("reason") or "") for c in conds if c.get("status") != "True"), ""
+                ),
+            )
+        )
+    return rows
+
+
+@dataclass
+class _GatewayProbe:
+    """Gateway 对象的探测结果。programmed 是整体条件,listeners 逐个再判。"""
+
+    programmed: bool = False
+    address: str = ""
+    listeners: list[ListenerRow] = field(default_factory=list)
+    reason: str = "NotFound"
+
+
+@dataclass
+class _NodeProbe:
+    """节点探测结果。pools / pools_ready 由行派生,不单独探。"""
+
+    rows: list[NodeRow] = field(default_factory=list)
+    allocatable_gpu: int = 0
+    driver_version: str = ""
+
+
+_SC_DEFAULT_ANNOTATION = "storageclass.kubernetes.io/is-default-class"
+
+
+def _selector_text(rc: Any) -> str:
+    selector = getattr(getattr(rc, "scheduling", None), "node_selector", None) or {}
+    return ", ".join(f"{k}={v}" for k, v in sorted(selector.items()))
+
+
+def _node_not_ready_reason(node: Any) -> str:
+    """Ready 条件为非 True 时的 reason(KubeletNotReady 等);Ready 时留空。"""
+    for c in node.status.conditions or []:
+        if c.type == "Ready" and c.status != "True":
+            return str(getattr(c, "reason", "") or "")
+    return ""
+
+
+def _index_deployment(out: "_Workloads", d: Any) -> None:
+    name = str(d.metadata.name or "")
+    if name == _HAMI_SCHEDULER:
+        out.hami_scheduler = _deploy_row(d)
+    if "gpu-operator" in name:
+        out.gpu_operator_present = True
+        out.gpu_operator_ns = str(d.metadata.namespace or "")
+    if "kube-prometheus-stack" in name:
+        out.kps_present = True
+    if name in _CERT_MANAGER_DEPLOYS:
+        out.cert_manager.append(_deploy_row(d))
+
+
+def _index_daemonset(out: "_Workloads", ds: Any) -> None:
+    name = str(ds.metadata.name or "")
+    row = _ds_row(ds)
+    if name == _HAMI_DEVICE_PLUGIN:
+        out.hami_device_plugin = row
+    if "dcgm" in name:
+        out.dcgm.append(row)
+    if "kata-deploy" in name:
+        out.kata_deploy = row
+    if out.gpu_operator_ns and row.namespace == out.gpu_operator_ns:
+        out.gpu_operands.append(row)
+
+
+def _index_statefulset(out: "_Workloads", st: Any) -> None:
+    name = str(st.metadata.name or "")
+    if name.startswith("prometheus-"):
+        out.kps_present = True
+        out.prometheus = _sts_row(st)
+    elif name.startswith("alertmanager-"):
+        out.alertmanager = _sts_row(st)
+
+
+def _assemble_probe(
+    git_version: str | None,
+    w: "_Workloads",
+    gw: "_GatewayProbe",
+    rcs: list[RuntimeClassRow],
+    scs: list[StorageClassRow],
+    nodes: "_NodeProbe",
+    *,
+    error: str | None,
+) -> ClusterProbe:
+    """事实 → 布尔列(门禁用,口径不变)+ component_facts(体检面板用)。"""
+    pools, pools_ready = health.pool_counts(nodes.rows)
+    nodes_ready = sum(pools_ready.values())
+    rc_names = {r.name for r in rcs}
+    facts = health.build_facts(
+        health.ProbeRows(
+            nodes=nodes.rows,
+            hami_scheduler=w.hami_scheduler,
+            hami_device_plugin=w.hami_device_plugin,
+            gpu_operands=w.gpu_operands,
+            dcgm=w.dcgm,
+            cert_manager=w.cert_manager,
+            kata_deploy=w.kata_deploy,
+            prometheus=w.prometheus,
+            alertmanager=w.alertmanager,
+            runtime_classes=rcs,
+            storage_classes=scs,
+            gateway_programmed=gw.programmed,
+            gateway_address=gw.address,
+            listeners=gw.listeners,
+            gateway_reason=gw.reason,
+            allocatable_gpu=nodes.allocatable_gpu,
+            driver_version=nodes.driver_version,
+        ),
+        instance_disk_sc=INSTANCE_DISK_STORAGE_CLASS,
+        data_disk_sc=DATA_DISK_STORAGE_CLASS,
+    )
+    return ClusterProbe(
+        api_reachable=True,
+        k8s_version=git_version,
+        distro=derive_distro(git_version),
+        hami_ready=w.hami_scheduler.ready > 0,
+        dcgm_present=bool(w.dcgm),
+        kps_present=w.kps_present,
+        gpu_operator_present=w.gpu_operator_present,
+        kata_runtimeclass="kata-qemu" in rc_names,
+        nvidia_runtimeclass="nvidia" in rc_names,
+        gateway_ready=gw.programmed,
+        cert_manager_ready=any(d.name == "cert-manager" and d.ready > 0 for d in w.cert_manager),
+        nodes_ready=nodes_ready,
+        nodes_total=len(nodes.rows),
+        storage_classes=tuple(r.name for r in scs),
+        pools=pools,
+        pools_ready=pools_ready,
+        component_facts=facts,
+        error=error,
+    )
 
 
 class RealOrchestrator:
@@ -1210,63 +1450,64 @@ class RealOrchestrator:
 
         workloads = step("apps", self._probe_workloads_sync, _Workloads())
         # 网关就绪 = Gateway 对象的 Programmed 条件;404(CRD 未装 / 未下发)是没就绪,不算 error
-        gateway_ready = step("gateway", self._probe_gateway_sync, False, ignore=(404,))
-        runtime_classes = step("runtimeclasses", self._runtime_class_names_sync, ())
-        storage_classes = step("storageclasses", self._storage_class_names_sync, ())
-        pools, nodes_ready, nodes_total = step("nodes", self._probe_nodes_sync, ({}, 0, 0))
-        return ClusterProbe(
-            api_reachable=True,
-            k8s_version=git_version,
-            distro=derive_distro(git_version),
-            hami_ready=workloads.hami_ready,
-            dcgm_present=workloads.dcgm,
-            kps_present=workloads.kps,
-            gpu_operator_present=workloads.gpu_operator,
-            kata_runtimeclass="kata-qemu" in runtime_classes,
-            nvidia_runtimeclass="nvidia" in runtime_classes,
-            gateway_ready=gateway_ready,
-            cert_manager_ready=workloads.cert_manager_ready,
-            nodes_ready=nodes_ready,
-            nodes_total=nodes_total,
-            storage_classes=storage_classes,
-            pools=pools,
+        gateway = step("gateway", self._probe_gateway_sync, _GatewayProbe(), ignore=(404,))
+        runtime_classes = step("runtimeclasses", self._runtime_class_rows_sync, [])
+        storage_classes = step("storageclasses", self._storage_class_rows_sync, [])
+        nodes = step("nodes", self._probe_nodes_sync, _NodeProbe())
+        return _assemble_probe(
+            git_version,
+            workloads,
+            gateway,
+            runtime_classes,
+            storage_classes,
+            nodes,
             error="; ".join(errors) or None,
         )
 
     def _probe_workloads_sync(self) -> "_Workloads":
-        """平台组件存在性 / 就绪位:hami-scheduler、gpu-operator、kube-prometheus-stack、dcgm、
-        cert-manager。"""
+        """平台工作负载:一次列全量,按体检项归位。
+
+        StatefulSet 由「kps 没找到才列」改为常列 —— 监控栈要判就绪数,不能只认名字。
+        """
         out = _Workloads()
         deployments: Any = self._apps.list_deployment_for_all_namespaces()
         for d in deployments.items:
-            name = d.metadata.name or ""
-            if name == "hami-scheduler":
-                out.hami_ready = bool(d.status.ready_replicas)
-            if "gpu-operator" in name:
-                out.gpu_operator = True
-            if "kube-prometheus-stack" in name:
-                out.kps = True
-            # 租户域名 TLS 证书
-            if name == "cert-manager":
-                out.cert_manager_ready = bool(d.status.ready_replicas)
+            _index_deployment(out, d)
+        # operand 归属靠 gpu-operator Deployment 的 ns,Deployment 先扫完才知道
         daemonsets: Any = self._apps.list_daemon_set_for_all_namespaces()
-        out.dcgm = any("dcgm" in (ds.metadata.name or "") for ds in daemonsets.items)
-        if not out.kps:
-            statefulsets: Any = self._apps.list_stateful_set_for_all_namespaces()
-            out.kps = any(
-                (st.metadata.name or "").startswith("prometheus-") for st in statefulsets.items
-            )
+        for ds in daemonsets.items:
+            _index_daemonset(out, ds)
+        statefulsets: Any = self._apps.list_stateful_set_for_all_namespaces()
+        for st in statefulsets.items:
+            _index_statefulset(out, st)
         return out
 
-    def _runtime_class_names_sync(self) -> tuple[str, ...]:
+    def _runtime_class_rows_sync(self) -> list[RuntimeClassRow]:
         rcs: Any = self._node.list_runtime_class()
-        return tuple(rc.metadata.name for rc in rcs.items)
+        return [
+            RuntimeClassRow(
+                name=str(rc.metadata.name or ""),
+                handler=str(getattr(rc, "handler", "") or ""),
+                node_selector=_selector_text(rc),
+            )
+            for rc in rcs.items
+        ]
 
-    def _storage_class_names_sync(self) -> tuple[str, ...]:
+    def _storage_class_rows_sync(self) -> list[StorageClassRow]:
         scs: Any = self._storage.list_storage_class()
-        return tuple(sc.metadata.name for sc in scs.items)
+        return [
+            StorageClassRow(
+                name=str(sc.metadata.name or ""),
+                provisioner=str(getattr(sc, "provisioner", "") or ""),
+                binding_mode=str(getattr(sc, "volume_binding_mode", "") or ""),
+                expandable=bool(getattr(sc, "allow_volume_expansion", False)),
+                reclaim=str(getattr(sc, "reclaim_policy", "") or ""),
+                is_default=(sc.metadata.annotations or {}).get(_SC_DEFAULT_ANNOTATION) == "true",
+            )
+            for sc in scs.items
+        ]
 
-    def _probe_gateway_sync(self) -> bool:
+    def _probe_gateway_sync(self) -> "_GatewayProbe":
         gw: Any = self.custom.get_namespaced_custom_object(
             GATEWAY_API_GROUP,
             GATEWAY_API_VERSION,
@@ -1274,23 +1515,46 @@ class RealOrchestrator:
             GATEWAY_PLURAL,
             GATEWAY_NAME,
         )
-        return any(
-            c.get("type") == "Programmed" and c.get("status") == "True"
-            for c in ((gw.get("status") or {}).get("conditions") or [])
+        status: dict[str, Any] = gw.get("status") or {}
+        conditions = status.get("conditions") or []
+        programmed = any(
+            c.get("type") == "Programmed" and c.get("status") == "True" for c in conditions
+        )
+        addresses = status.get("addresses") or []
+        return _GatewayProbe(
+            programmed=programmed,
+            address=str((addresses[0] or {}).get("value", "")) if addresses else "",
+            listeners=_listener_rows(gw),
+            # 整体未 Programmed 的真原因(AddressNotAssigned / NoValidListeners …)
+            reason=next(
+                (
+                    str(c.get("reason") or "")
+                    for c in conditions
+                    if c.get("type") == "Programmed" and c.get("status") != "True"
+                ),
+                "",
+            ),
         )
 
-    def _probe_nodes_sync(self) -> tuple[dict[str, int], int, int]:
-        """(池 → 节点数,含 unlabeled;Ready 且可调度数;总数)。只按池标签粗略分组,
-        不走 _list_nodes_sync。"""
-        pools: dict[str, int] = {}
-        nodes_ready = nodes_total = 0
+    def _probe_nodes_sync(self) -> "_NodeProbe":
+        """节点行 + 可分配卡数 + 驱动版本。只按池标签粗略分组,不走 _list_nodes_sync。"""
+        out = _NodeProbe()
         for node in self._list_all(self.core.list_node):
-            key = (node.metadata.labels or {}).get(POOL_NODE_LABEL, "unlabeled")
-            pools[key] = pools.get(key, 0) + 1
-            nodes_total += 1
-            if _ready_condition(node) and not node.spec.unschedulable:
-                nodes_ready += 1
-        return pools, nodes_ready, nodes_total
+            labels: dict[str, str] = node.metadata.labels or {}
+            node_info = getattr(node.status, "node_info", None)
+            out.rows.append(
+                NodeRow(
+                    name=str(node.metadata.name or ""),
+                    pool=labels.get(POOL_NODE_LABEL, "unlabeled"),
+                    ready=_ready_condition(node),
+                    schedulable=not node.spec.unschedulable,
+                    kubelet=str(getattr(node_info, "kubelet_version", "") or ""),
+                    reason=_node_not_ready_reason(node),
+                )
+            )
+            out.allocatable_gpu += _safe_int((node.status.allocatable or {}).get(_GPU_ALLOCATABLE))
+            out.driver_version = out.driver_version or labels.get(_DRIVER_LABEL, "")
+        return out
 
     async def set_node_unschedulable(self, node_name: str, unschedulable: bool) -> None:
         await self._run(self._set_node_unschedulable_sync, node_name, unschedulable)

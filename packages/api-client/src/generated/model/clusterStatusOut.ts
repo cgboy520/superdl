@@ -7,6 +7,7 @@
 import type { ClusterComponentOut } from './clusterComponentOut';
 import type { ClusterConfigStateOut } from './clusterConfigStateOut';
 import type { ClusterStatusOutPools } from './clusterStatusOutPools';
+import type { ClusterStatusOutPoolsReady } from './clusterStatusOutPoolsReady';
 
 /**
  * 集群页数据(纯 DB 读能力缓存;「测试连接」同步探测后返回同形)。
@@ -19,5 +20,6 @@ export interface ClusterStatusOut {
   error: string | null;
   k8s_version: string | null;
   pools: ClusterStatusOutPools;
+  pools_ready: ClusterStatusOutPoolsReady;
   probed_at: string | null;
 }

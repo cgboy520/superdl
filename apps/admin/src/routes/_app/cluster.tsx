@@ -1,9 +1,13 @@
+/** 集群页:连接状态 / 配置就绪 / 组件体检(面板网格)/ 池分布。
+ *  组件体检整幅铺开,一项一个小面板,故障项置顶;点面板进 /cluster/<key> 的诊断抽屉(子路由遮罩)。
+ *  页顶横幅经 AttentionBar 聚合为一条(ui-ux-spec §1 规则 1:一页至多一条)。 */
+
 import { CheckCircleFilled, CloseCircleFilled } from "@ant-design/icons";
-import { adminColors, formatDateTime, metaOf, space } from "@superdl/ui";
-import { CopyField, DataErrorAlert, GatedButton, PageContainer } from "@superdl/ui/components";
+import { COMPONENT_HEALTH_ORDER, adminColors, formatDateTime, isComponentAttention, metaOf, space } from "@superdl/ui";
+import { AttentionBar, type AttentionItem, DataErrorAlert, GatedButton, PageContainer } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { Alert, App, Badge, Card, Col, Row, Space, Tag, Typography } from "antd";
+import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
+import { App, Badge, Card, Col, Row, Space, Tag, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { type ClusterComponent, useClusterStatus, useTestClusterConnection } from "../../api";
@@ -11,23 +15,17 @@ import { type ClusterComponent, useClusterStatus, useTestClusterConnection } fro
 import { useApiErrorText } from "@superdl/ui";
 import { POOL_LABEL_KEY } from "../../lib/pools";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
+import { ComponentPanel } from "./-ComponentPanel";
 
 export const Route = createFileRoute("/_app/cluster")({
   component: ClusterPage,
 });
 
-const COMPONENT_LABEL = {
-  nodes: "cluster.comp.nodes",
-  hami: "cluster.comp.hami",
-  gpu_operator: "cluster.comp.gpuOperator",
-  dcgm: "cluster.comp.dcgm",
-  nvidia_runtimeclass: "cluster.comp.nvidiaRuntimeclass",
-  kata_runtimeclass: "cluster.comp.kataRuntimeclass",
-  storage: "cluster.comp.storage",
-  gateway: "cluster.comp.gateway",
-  cert_manager: "cluster.comp.certManager",
-  monitoring: "cluster.comp.monitoring",
-} as const satisfies Record<ClusterComponent["key"], string>;
+/** 故障 → 降级 → 未启用 → 未知 → 正常;同态内保持后端给的链路顺序。 */
+function byAttention(a: ClusterComponent, b: ClusterComponent): number {
+  const rank = (c: ClusterComponent) => COMPONENT_HEALTH_ORDER.indexOf(c.state);
+  return rank(a) - rank(b);
+}
 
 function ClusterPage() {
   const { t } = useTranslation(["admin", "shared"]);
@@ -53,16 +51,34 @@ function ClusterPage() {
 
   const unlabeled = data?.pools.unlabeled ?? 0;
   const isK3s = data?.distro === "k3s";
+  const components = [...(data?.components ?? [])].sort(byAttention);
+  const attentionCount = components.filter((c) => isComponentAttention(c.state)).length;
+
+  const attention: AttentionItem[] = [];
+  if (isError) attention.push({ key: "fetch", severity: "error", title: t("shared:common.loadFailed") });
+  if (data && !data.api_reachable && data.error)
+    attention.push({
+      key: "unreachable",
+      severity: "error",
+      title: t("cluster.unreachable"),
+      description: data.error,
+    });
+  if (isK3s) attention.push({ key: "light", severity: "warning", title: t("cluster.lightWarning") });
+  if (unlabeled > 0)
+    attention.push({
+      key: "unlabeled",
+      severity: "warning",
+      title: t("cluster.unlabeledWarn", { count: unlabeled }),
+      action: <Link to="/nodes">{t("cluster.viewNodes")}</Link>,
+    });
+  if (data && !data.config.prometheus_url_set)
+    attention.push({ key: "prom", severity: "info", title: t("cluster.promHint") });
 
   return (
-    <PageContainer title={t("menu.cluster")}>
+    <PageContainer title={t("menu.cluster")} width="full">
       <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
         {isError && <DataErrorAlert onRetry={() => void refetch()} />}
-        {isK3s && <Alert type="warning" showIcon title={t("cluster.lightWarning")} />}
-        {data && !data.api_reachable && data.error && (
-          <Alert type="error" showIcon title={t("cluster.unreachable")} description={data.error} />
-        )}
-        {data && !data.config.prometheus_url_set && <Alert type="info" showIcon title={t("cluster.promHint")} />}
+        {attention.length > 0 && <AttentionBar items={attention} />}
         <Row gutter={[16, 16]}>
           <Col xs={24} lg={12}>
             <Card
@@ -138,62 +154,49 @@ function ClusterPage() {
               </Space>
             </Card>
           </Col>
-          <Col xs={24} lg={12}>
-            <Card title={t("cluster.healthCard")}>
-              <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
-                {data && data.components.length === 0 && (
-                  <Typography.Text type="secondary">{t("cluster.noComponents")}</Typography.Text>
-                )}
-                {(data?.components ?? []).map((c) => (
-                  <div key={c.key}>
-                    <Space size={space.sm}>
-                      {c.ok ? (
-                        <CheckCircleFilled style={{ color: adminColors.positive }} />
-                      ) : (
-                        <CloseCircleFilled style={{ color: adminColors.negative }} />
-                      )}
-                      <Typography.Text strong={!c.ok}>{t(COMPONENT_LABEL[c.key])}</Typography.Text>
-                      {c.detail && <Typography.Text type="secondary">{c.detail}</Typography.Text>}
-                    </Space>
-                    {!c.ok && c.fix_hint && (
-                      <div style={{ marginLeft: 24, marginTop: 4 }}>
-                        <Typography.Text type="secondary">{t("cluster.fixHint")}:</Typography.Text>{" "}
-                        <CopyField value={c.fix_hint} code />
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </Space>
+          <Col span={24}>
+            <Card
+              title={
+                attentionCount > 0 ? t("cluster.healthCardCount", { count: attentionCount }) : t("cluster.healthCard")
+              }
+            >
+              {components.length === 0 ? (
+                <Typography.Text type="secondary">{t("cluster.noComponents")}</Typography.Text>
+              ) : (
+                <Row gutter={[16, 16]}>
+                  {components.map((c) => (
+                    <Col key={c.key} xs={24} sm={12} lg={8} xxl={6}>
+                      <ComponentPanel component={c} />
+                    </Col>
+                  ))}
+                </Row>
+              )}
             </Card>
           </Col>
           <Col xs={24} lg={12}>
             <Card title={t("cluster.poolCard")}>
-              <Space orientation="vertical" size={space.md}>
+              <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
                 <Space size={space.sm} wrap>
                   {Object.entries(data?.pools ?? {})
                     .filter(([k]) => k !== "unlabeled")
                     .map(([pool, count]) => {
                       const labelKey = metaOf(POOL_LABEL_KEY, pool);
+                      const ready = data?.pools_ready[pool] ?? 0;
                       return (
-                        <Tag key={pool} color="cyan">
-                          {labelKey ? t(labelKey) : pool} · {count}
+                        <Tag key={pool} color={ready > 0 ? "cyan" : "default"}>
+                          {labelKey ? t(labelKey) : pool} · {ready}/{count}
                         </Tag>
                       );
                     })}
                 </Space>
-                {unlabeled > 0 && (
-                  <Alert
-                    type="warning"
-                    showIcon
-                    title={t("cluster.unlabeledWarn", { count: unlabeled })}
-                    action={<Link to="/nodes">{t("cluster.viewNodes")}</Link>}
-                  />
-                )}
+                {/* 档位能不能卖看池里有没有 Ready 节点;组件体检只说组件事实,不掺库存解读 */}
+                <Typography.Text type="secondary">{t("cluster.poolReadyHint")}</Typography.Text>
               </Space>
             </Card>
           </Col>
         </Row>
       </Space>
+      <Outlet />
     </PageContainer>
   );
 }

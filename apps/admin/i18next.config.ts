@@ -21,6 +21,11 @@ export default defineConfig({
       "nodes.pool*",
       "nodes.heatLegend*",
       "cluster.comp*",
+      // 体检面板按 key 动态取:事实 label / 对象表列名 / 判据 / 影响面
+      "cluster.fact.*",
+      "cluster.objcol.*",
+      "cluster.criterion.*",
+      "cluster.impact.*",
       "cluster.cfg*",
       "finance.anomaly*",
       "platform.source*",

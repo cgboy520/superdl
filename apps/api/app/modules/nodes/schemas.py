@@ -114,13 +114,39 @@ ComponentKey = Literal[
 ]
 
 
+# 体检五态:ok 全就绪 / degraded 部分就绪 / down 缺位或全挂 / disabled 能力未开 / unknown 快照过期
+ComponentStateOut = Literal["ok", "degraded", "down", "disabled", "unknown"]
+
+
+class ComponentFactOut(BaseModel):
+    """一条可核对的事实。key 由前端映射 label;value 是纯数据(计数 / 版本 / 对象名 / 地址),
+    不随语言。tone 供前端着色,文案里不写形容词。"""
+
+    key: str
+    value: str
+    tone: Literal["normal", "warn", "bad"] = "normal"
+
+
+class ComponentObjectOut(BaseModel):
+    """抽屉对象表的一行(DaemonSet / listener / StorageClass / 节点);fields 的键由前端映射列名。"""
+
+    name: str
+    fields: dict[str, str]
+
+
 class ClusterComponentOut(BaseModel):
-    """组件体检项:key 由前端映射文案;fix_hint 为可复制修复命令(不随语言)。"""
+    """组件体检项。文案全部由 key 映射(判据 / 影响面 / 事实 label 在两端 locales),
+    后端只出事实数据;两个 hint 是命令,不随语言。"""
 
     key: ComponentKey
-    ok: bool
-    detail: str | None = None
+    state: ComponentStateOut
+    headline: ComponentFactOut | None = None
+    facts: list[ComponentFactOut] = Field(default_factory=list)
+    objects: list[ComponentObjectOut] = Field(default_factory=list)
+    # 修复命令:仅 down / degraded 时给
     fix_hint: str | None = None
+    # 排障第一步,一直给(取自 deploy/cluster/runbooks/cluster-validation.md)
+    diag_hint: str | None = None
 
 
 class ClusterConfigStateOut(BaseModel):
@@ -143,6 +169,8 @@ class ClusterStatusOut(BaseModel):
     distro: str | None
     probed_at: datetime | None
     pools: dict[str, int]
+    # 池→Ready 且可调度的节点数:档位能不能卖看这个,组件体检不再掺业务解读
+    pools_ready: dict[str, int]
     components: list[ClusterComponentOut]
     config: ClusterConfigStateOut
     error: str | None

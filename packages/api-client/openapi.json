@@ -2293,9 +2293,9 @@
         "type": "object"
       },
       "ClusterComponentOut": {
-        "description": "组件体检项:key 由前端映射文案;fix_hint 为可复制修复命令(不随语言)。",
+        "description": "组件体检项。文案全部由 key 映射(判据 / 影响面 / 事实 label 在两端 locales),\n后端只出事实数据;两个 hint 是命令,不随语言。",
         "properties": {
-          "detail": {
+          "diag_hint": {
             "anyOf": [
               {
                 "type": "string"
@@ -2304,7 +2304,14 @@
                 "type": "null"
               }
             ],
-            "title": "Detail"
+            "title": "Diag Hint"
+          },
+          "facts": {
+            "items": {
+              "$ref": "#/components/schemas/ComponentFactOut"
+            },
+            "title": "Facts",
+            "type": "array"
           },
           "fix_hint": {
             "anyOf": [
@@ -2316,6 +2323,16 @@
               }
             ],
             "title": "Fix Hint"
+          },
+          "headline": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ComponentFactOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "key": {
             "enum": [
@@ -2333,14 +2350,28 @@
             "title": "Key",
             "type": "string"
           },
-          "ok": {
-            "title": "Ok",
-            "type": "boolean"
+          "objects": {
+            "items": {
+              "$ref": "#/components/schemas/ComponentObjectOut"
+            },
+            "title": "Objects",
+            "type": "array"
+          },
+          "state": {
+            "enum": [
+              "ok",
+              "degraded",
+              "down",
+              "disabled",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
           }
         },
         "required": [
           "key",
-          "ok"
+          "state"
         ],
         "title": "ClusterComponentOut",
         "type": "object"
@@ -2462,6 +2493,13 @@
             "title": "Pools",
             "type": "object"
           },
+          "pools_ready": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Pools Ready",
+            "type": "object"
+          },
           "probed_at": {
             "anyOf": [
               {
@@ -2481,11 +2519,63 @@
           "distro",
           "probed_at",
           "pools",
+          "pools_ready",
           "components",
           "config",
           "error"
         ],
         "title": "ClusterStatusOut",
+        "type": "object"
+      },
+      "ComponentFactOut": {
+        "description": "一条可核对的事实。key 由前端映射 label;value 是纯数据(计数 / 版本 / 对象名 / 地址),\n不随语言。tone 供前端着色,文案里不写形容词。",
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "tone": {
+            "default": "normal",
+            "enum": [
+              "normal",
+              "warn",
+              "bad"
+            ],
+            "title": "Tone",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "value"
+        ],
+        "title": "ComponentFactOut",
+        "type": "object"
+      },
+      "ComponentObjectOut": {
+        "description": "抽屉对象表的一行(DaemonSet / listener / StorageClass / 节点);fields 的键由前端映射列名。",
+        "properties": {
+          "fields": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Fields",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "fields"
+        ],
+        "title": "ComponentObjectOut",
         "type": "object"
       },
       "DailySummaryOut": {

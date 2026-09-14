@@ -220,6 +220,8 @@ export type {
   InstanceEventOut as InstanceEvent,
   GpuModelAggregateOut as GpuModelAggregate,
   ClusterComponentOut as ClusterComponent,
+  ComponentFactOut as ComponentFact,
+  ComponentObjectOut as ComponentObject,
   CapacityWarningOut as CapacityWarning,
   RefundPayout,
 } from "@superdl/api-client";

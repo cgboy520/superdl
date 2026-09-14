@@ -9,7 +9,7 @@
 型号优先级:装机登记 nvidia-smi > GFD label > 存量;驱动/CUDA 版本 GFD label 优先。
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -18,12 +18,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
 from app.core.gpu_models import canonical_gpu_model, default_vram_gb
-from app.core.k8s import K8sOrchestrator, get_orchestrator
+from app.core.k8s import K8sOrchestrator, get_orchestrator, health
 from app.core.k8s.base import GPU_MODEL_NODE_LABEL, POOL_NODE_LABEL, ClusterProbe, NodeInfo
 from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.metrics import LIGHT_DISTRO_IN_PROD, NODE_POOL_LABEL_MISMATCH_TOTAL
 from app.core.timeutil import now_utc
+from app.modules.metering import service as metering_service
 from app.modules.nodes import service
 from app.modules.nodes.models import NodeEnrollment, NodeSpec
 from app.modules.nodes.service import pool_matches
@@ -112,6 +113,7 @@ async def node_spec_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, in
             logger.warning("cluster_probe_unreachable", error=probe.error)
             return counts
         counts["probe_ok"] = 1
+        probe = await _merge_prometheus_facts(probe)
         _report_light_distro(probe)
         nodes = await orch.list_nodes(include_unlabeled=True)
         plan = await _converge_ledger(sm, probe, nodes, counts)
@@ -119,6 +121,25 @@ async def node_spec_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, in
         await _fix_pool_labels(sm, orch, plan.pool_fixes, counts)
         await _converge_cordon(sm, orch, nodes, counts)
     return counts
+
+
+async def _merge_prometheus_facts(probe: ClusterProbe) -> ClusterProbe:
+    """把 Prometheus 侧事实并进体检快照(抓取健康、DCGM 样本新鲜度、firing 数)。
+
+    在巡检里取而不在请求路径取:集群页保持纯 DB 读。Prometheus 挂了只是少几条事实,
+    不改任何组件的状态位。
+    """
+    extra = await metering_service.cluster_component_metrics()
+    if not extra:
+        return probe
+    facts = dict(probe.component_facts)
+    for comp, keys in (("dcgm", ("dcgm",)), ("monitoring", ("monitoring", "monitoring_alerts"))):
+        target = facts.get(comp)
+        if target is None:
+            continue
+        added = [extra[k] for k in keys if k in extra]
+        facts[comp] = health.merge_facts(target, added)
+    return replace(probe, component_facts=facts)
 
 
 def _report_light_distro(probe: ClusterProbe) -> None:

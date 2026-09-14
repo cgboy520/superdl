@@ -97,5 +97,9 @@ class ClusterStatus(Base):
     nodes_total: Mapped[int] = mapped_column(default=0, server_default="0")
     storage_classes: Mapped[list[str] | None] = mapped_column(JSONB)
     pools: Mapped[dict[str, Any] | None] = mapped_column(JSONB)  # 池→节点数
+    # 池→Ready 且可调度的节点数;档位可用性看这个,不看 pools
+    pools_ready: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # 体检项 key → 探测事实(状态 / 主数字 / 事实行 / 对象表)。布尔列只够门禁用
+    component_facts: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     error: Mapped[str | None] = mapped_column(Text)
     probed_at: Mapped[datetime]

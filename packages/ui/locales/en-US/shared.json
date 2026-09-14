@@ -290,6 +290,18 @@
       "Cordoned": "Cordoned: no new instances are scheduled; running instances are unaffected",
       "Missing": "Recorded in the ledger but not found in the cluster"
     },
+    "component": {
+      "ok": "Healthy",
+      "degraded": "Degraded",
+      "down": "Down",
+      "disabled": "Not enabled",
+      "unknown": "Unknown"
+    },
+    "componentHint": {
+      "degraded": "Partially ready; the capability works with reduced redundancy",
+      "disabled": "Component present, capability not turned on",
+      "unknown": "Snapshot expired; showing the last probe result"
+    },
     "severity": {
       "info": "Info",
       "warning": "Warning",

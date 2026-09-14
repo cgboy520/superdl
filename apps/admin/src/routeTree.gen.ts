@@ -24,6 +24,7 @@ import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppSkusRouteImport } from './routes/_app/skus'
 import { Route as AppTenantsRouteImport } from './routes/_app/tenants'
 import { Route as AppTicketsRouteImport } from './routes/_app/tickets'
+import { Route as AppClusterComponentRouteImport } from './routes/_app/cluster.$component'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -99,13 +100,18 @@ const AppTicketsRoute = AppTicketsRouteImport.update({
   path: '/tickets',
   getParentRoute: () => AppRoute,
 } as any)
+const AppClusterComponentRoute = AppClusterComponentRouteImport.update({
+  id: '/$component',
+  path: '/$component',
+  getParentRoute: () => AppClusterRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/login': typeof LoginRoute
   '/alerts': typeof AppAlertsRoute
   '/audit': typeof AppAuditRoute
-  '/cluster': typeof AppClusterRoute
+  '/cluster': typeof AppClusterRouteWithChildren
   '/finance': typeof AppFinanceRoute
   '/images': typeof AppImagesRoute
   '/nodes': typeof AppNodesRoute
@@ -115,12 +121,13 @@ export interface FileRoutesByFullPath {
   '/skus': typeof AppSkusRoute
   '/tenants': typeof AppTenantsRoute
   '/tickets': typeof AppTicketsRoute
+  '/cluster/$component': typeof AppClusterComponentRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/alerts': typeof AppAlertsRoute
   '/audit': typeof AppAuditRoute
-  '/cluster': typeof AppClusterRoute
+  '/cluster': typeof AppClusterRouteWithChildren
   '/finance': typeof AppFinanceRoute
   '/images': typeof AppImagesRoute
   '/nodes': typeof AppNodesRoute
@@ -131,6 +138,7 @@ export interface FileRoutesByTo {
   '/tenants': typeof AppTenantsRoute
   '/tickets': typeof AppTicketsRoute
   '/': typeof AppIndexRoute
+  '/cluster/$component': typeof AppClusterComponentRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -138,7 +146,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/_app/alerts': typeof AppAlertsRoute
   '/_app/audit': typeof AppAuditRoute
-  '/_app/cluster': typeof AppClusterRoute
+  '/_app/cluster': typeof AppClusterRouteWithChildren
   '/_app/finance': typeof AppFinanceRoute
   '/_app/images': typeof AppImagesRoute
   '/_app/nodes': typeof AppNodesRoute
@@ -149,6 +157,7 @@ export interface FileRoutesById {
   '/_app/tenants': typeof AppTenantsRoute
   '/_app/tickets': typeof AppTicketsRoute
   '/_app/': typeof AppIndexRoute
+  '/_app/cluster/$component': typeof AppClusterComponentRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -167,6 +176,7 @@ export interface FileRouteTypes {
     | '/skus'
     | '/tenants'
     | '/tickets'
+    | '/cluster/$component'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -183,6 +193,7 @@ export interface FileRouteTypes {
     | '/tenants'
     | '/tickets'
     | '/'
+    | '/cluster/$component'
   id:
     | '__root__'
     | '/_app'
@@ -200,6 +211,7 @@ export interface FileRouteTypes {
     | '/_app/tenants'
     | '/_app/tickets'
     | '/_app/'
+    | '/_app/cluster/$component'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -314,13 +326,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppTicketsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/cluster/$component': {
+      id: '/_app/cluster/$component'
+      path: '/$component'
+      fullPath: '/cluster/$component'
+      preLoaderRoute: typeof AppClusterComponentRouteImport
+      parentRoute: typeof AppClusterRoute
+    }
   }
 }
+
+interface AppClusterRouteChildren {
+  AppClusterComponentRoute: typeof AppClusterComponentRoute
+}
+
+const AppClusterRouteChildren: AppClusterRouteChildren = {
+  AppClusterComponentRoute: AppClusterComponentRoute,
+}
+
+const AppClusterRouteWithChildren = AppClusterRoute._addFileChildren(
+  AppClusterRouteChildren,
+)
 
 interface AppRouteChildren {
   AppAlertsRoute: typeof AppAlertsRoute
   AppAuditRoute: typeof AppAuditRoute
-  AppClusterRoute: typeof AppClusterRoute
+  AppClusterRoute: typeof AppClusterRouteWithChildren
   AppFinanceRoute: typeof AppFinanceRoute
   AppImagesRoute: typeof AppImagesRoute
   AppNodesRoute: typeof AppNodesRoute
@@ -336,7 +367,7 @@ interface AppRouteChildren {
 const AppRouteChildren: AppRouteChildren = {
   AppAlertsRoute: AppAlertsRoute,
   AppAuditRoute: AppAuditRoute,
-  AppClusterRoute: AppClusterRoute,
+  AppClusterRoute: AppClusterRouteWithChildren,
   AppFinanceRoute: AppFinanceRoute,
   AppImagesRoute: AppImagesRoute,
   AppNodesRoute: AppNodesRoute,

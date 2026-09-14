@@ -51,6 +51,15 @@ NODE_QUERIES = {
 # XID 指标是「最近一次 XID 码」的 gauge:按值变化次数近似 24h 事件数
 NODE_XID_QUERY = f"sum(changes(DCGM_FI_DEV_XID_ERRORS{_NODE_SEL}[24h]))"
 
+# 组件体检的集群维查询:只给体检面板用,不带租户维度。模板同样集中在这里,不接受任意 PromQL
+COMPONENT_QUERIES = {
+    # DCGM 最新样本距今秒数:exporter 全 Ready 但指标不流动时,这是唯一能看出来的地方
+    "dcgm_sample_age": f'time() - max(timestamp(DCGM_FI_DEV_GPU_UTIL{{{DCGM_NODE_LABEL}=~".+"}}))',
+    "scrape_up": "count(up == 1)",
+    "scrape_total": "count(up)",
+    "alerts_firing": 'count(ALERTS{alertstate="firing"})',
+}
+
 RANGE_STEPS = {"1h": "60s", "6h": "300s", "24h": "1200s"}
 
 _client: httpx.AsyncClient | None = None

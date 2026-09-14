@@ -7,6 +7,7 @@ fail_next_quota / fail_next_logs / fail_probe(单次失败注入)。容量按 po
 
 from dataclasses import dataclass, field
 
+from app.core.k8s import health
 from app.core.k8s.base import (
     DATA_DISK_STORAGE_CLASS,
     GPU_MODEL_NODE_LABEL,
@@ -21,8 +22,34 @@ from app.core.k8s.base import (
     PrewarmJobStatus,
     derive_distro,
 )
+from app.core.k8s.health import (
+    ListenerRow,
+    NodeRow,
+    RuntimeClassRow,
+    StorageClassRow,
+    WorkloadRow,
+)
 
 _FAKE_K8S_VERSION = "v1.36.2+rke2r1"  # 探测默认健康 RKE2
+# 与 deploy/app/k8s/04-gateway.yaml 的 listener 集合同形
+_FAKE_LISTENERS = (
+    ("http", 80, "HTTP"),
+    ("api-https", 443, "HTTPS"),
+    ("console-https", 443, "HTTPS"),
+    ("admin-https", 443, "HTTPS"),
+    ("app-https", 443, "HTTPS"),
+    ("svc-https", 443, "HTTPS"),
+)
+
+
+_FAKE_PROVISIONERS = {
+    INSTANCE_DISK_STORAGE_CLASS: "topolvm.io",
+    DATA_DISK_STORAGE_CLASS: "rook-ceph.cephfs.csi.ceph.com",
+}
+
+
+def _fake_ds(name: str, ready: int, desired: int, image: str = "") -> WorkloadRow:
+    return WorkloadRow(name, "gpu-operator", ready, desired, image)
 
 
 @dataclass
@@ -77,6 +104,13 @@ class FakeOrchestrator:
     instance_secrets: dict[tuple[str, str], dict[str, str]] = field(default_factory=dict)
     # 能力探测:默认健康 RKE2;fail_probe 模拟断连
     probe_hami_ready: bool = True
+    # 体检降级注入:operand 就绪数(None = 铺满)、未 Programmed 的 listener 名、SC 名单
+    probe_gpu_operand_ready: int | None = None
+    probe_unprogrammed_listeners: tuple[str, ...] = ()
+    probe_storage_classes: tuple[str, ...] = (
+        INSTANCE_DISK_STORAGE_CLASS,
+        DATA_DISK_STORAGE_CLASS,
+    )
     probe_k8s_version: str = _FAKE_K8S_VERSION  # 改成 +k3s1 即模拟 light 档
     fail_probe: bool = False
     # 容器日志:fail_next_logs 注入一次读取失败;log_calls 记录调用参数供断言
@@ -97,26 +131,99 @@ class FakeOrchestrator:
     async def probe_cluster(self) -> ClusterProbe:
         if self.fail_probe:
             return ClusterProbe(api_reachable=False, error="fake: connection refused")
-        pools: dict[str, int] = {}
-        for n in await self.list_nodes(include_unlabeled=True):
-            key = n.pool_label if n.pool_label not in ("", "unknown") else "unlabeled"
-            pools[key] = pools.get(key, 0) + 1
+        rows = await self._fake_probe_rows()
+        pools, pools_ready = health.pool_counts(rows.nodes)
         return ClusterProbe(
             api_reachable=True,
             k8s_version=self.probe_k8s_version,
             distro=derive_distro(self.probe_k8s_version),
             hami_ready=self.probe_hami_ready,
-            dcgm_present=True,
+            dcgm_present=bool(rows.dcgm),
             kps_present=True,
             gpu_operator_present=True,
             kata_runtimeclass=True,
             nvidia_runtimeclass=True,
-            gateway_ready=True,
+            gateway_ready=rows.gateway_programmed,
             cert_manager_ready=True,
-            nodes_ready=sum(pools.values()),
-            nodes_total=sum(pools.values()),
-            storage_classes=(DATA_DISK_STORAGE_CLASS, INSTANCE_DISK_STORAGE_CLASS),
+            nodes_ready=sum(pools_ready.values()),
+            nodes_total=len(rows.nodes),
+            storage_classes=tuple(r.name for r in rows.storage_classes),
             pools=pools,
+            pools_ready=pools_ready,
+            component_facts=health.build_facts(
+                rows,
+                instance_disk_sc=INSTANCE_DISK_STORAGE_CLASS,
+                data_disk_sc=DATA_DISK_STORAGE_CLASS,
+            ),
+            error=None,
+        )
+
+    async def _fake_probe_rows(self) -> health.ProbeRows:
+        """合成与 real 同形状的探测行:节点由 pool_capacity 派生,工作负载按节点数铺开。"""
+        nodes = [
+            NodeRow(
+                name=n.name,
+                pool=n.pool_label if n.pool_label not in ("", "unknown") else "unlabeled",
+                ready=n.status != "NotReady",
+                schedulable=n.status != "Cordoned",
+                kubelet=self.probe_k8s_version,
+                reason="" if n.status == "Ready" else n.status,
+            )
+            for n in await self.list_nodes(include_unlabeled=True)
+        ]
+        _, pools_ready = health.pool_counts(nodes)
+        gpu_nodes = sum(v for k, v in pools_ready.items() if k in ("hami", "kata", "mig"))
+        operand_ready = (
+            gpu_nodes if self.probe_gpu_operand_ready is None else self.probe_gpu_operand_ready
+        )
+        dcgm = [_fake_ds("nvidia-dcgm-exporter", operand_ready, gpu_nodes, "dcgm-exporter:4.8.3")]
+        operands = [
+            _fake_ds(name, operand_ready, gpu_nodes, "gpu-operator:25.3.0")
+            for name in ("gpu-feature-discovery", "nvidia-device-plugin-daemonset")
+        ] + dcgm
+        return health.ProbeRows(
+            nodes=nodes,
+            hami_scheduler=WorkloadRow(
+                "hami-scheduler", "kube-system", int(self.probe_hami_ready), 1, "hami:2.9"
+            ),
+            hami_device_plugin=_fake_ds(
+                "hami-device-plugin", pools_ready.get("hami", 0), pools_ready.get("hami", 0)
+            ),
+            gpu_operands=operands,
+            dcgm=dcgm,
+            cert_manager=[
+                WorkloadRow(name, "cert-manager", 1, 1, "cert-manager:v1.19.1")
+                for name in ("cert-manager", "cert-manager-webhook", "cert-manager-cainjector")
+            ],
+            kata_deploy=_fake_ds(
+                "kata-deploy", pools_ready.get("kata", 0), pools_ready.get("kata", 0)
+            ),
+            prometheus=WorkloadRow("prometheus-kps", "monitoring", 1, 1),
+            alertmanager=WorkloadRow("alertmanager-kps", "monitoring", 1, 1),
+            runtime_classes=[
+                RuntimeClassRow("nvidia", "nvidia"),
+                RuntimeClassRow("kata-qemu", "kata-qemu"),
+            ],
+            storage_classes=[
+                StorageClassRow(name, _FAKE_PROVISIONERS.get(name, "fake.io"), "Immediate")
+                for name in self.probe_storage_classes
+            ],
+            gateway_programmed=True,
+            gateway_address="10.0.0.1",
+            listeners=[
+                ListenerRow(
+                    name=name,
+                    port=port,
+                    protocol=proto,
+                    attached=1,
+                    programmed=name not in self.probe_unprogrammed_listeners,
+                    reason="" if name not in self.probe_unprogrammed_listeners else "Invalid",
+                )
+                for name, port, proto in _FAKE_LISTENERS
+            ],
+            gateway_reason="",
+            allocatable_gpu=sum(self.pool_capacity.values()),
+            driver_version="580.173.02",
         )
 
     async def ensure_data_disk(self, namespace: str, name: str, size_gb: int) -> None:

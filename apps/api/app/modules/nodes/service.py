@@ -24,6 +24,10 @@ from app.core.k8s.base import (
     DATA_DISK_STORAGE_CLASS,
     INSTANCE_DISK_STORAGE_CLASS,
     ClusterProbe,
+    ComponentFact,
+    ComponentFacts,
+    component_facts_from_json,
+    component_facts_to_json,
     derive_distro,
 )
 from app.core.logging import get_logger
@@ -32,7 +36,14 @@ from app.core.platform_config import RuntimeConfig, get_runtime_config
 from app.core.registry import parse_proxy_projects
 from app.core.timeutil import now_utc
 from app.modules.nodes.models import ClusterStatus, NodeEnrollment, NodeSpec
-from app.modules.nodes.schemas import ClusterComponentOut, ComponentKey, EnrollmentCreate
+from app.modules.nodes.schemas import (
+    ClusterComponentOut,
+    ComponentFactOut,
+    ComponentKey,
+    ComponentObjectOut,
+    ComponentStateOut,
+    EnrollmentCreate,
+)
 
 logger = get_logger(__name__)
 
@@ -479,6 +490,8 @@ async def save_cluster_probe(session: AsyncSession, probe: ClusterProbe) -> Clus
     row.nodes_total = probe.nodes_total
     row.storage_classes = list(probe.storage_classes)
     row.pools = dict(probe.pools)
+    row.pools_ready = dict(probe.pools_ready)
+    row.component_facts = component_facts_to_json(probe.component_facts)
     row.error = probe.error
     row.probed_at = now_utc()
     return row
@@ -597,104 +610,92 @@ def _helmfile(distro: str | None, release: str) -> str:
     return f"deploy/cluster/apply.sh {env} -l name={release}"
 
 
-# 就绪位直接来自 cluster_status 列的组件:(key, 列名, 未就绪说明, helm release;None = 自定义修复提示)
-_FLAG_COMPONENTS: tuple[tuple[ComponentKey, str, str, str | None], ...] = (
-    ("hami", "hami_ready", "hami-scheduler Deployment 未就绪(共享档不可开机)", "hami"),
-    # 两档都装(light 只关掉 toolkit,见 values/light/gpu-operator-light.yaml)
-    (
-        "gpu_operator",
-        "gpu_operator_present",
-        "gpu-operator 未发现(GFD/DCGM/MIG/VFIO 均缺位)",
-        "gpu-operator",
-    ),
-    ("dcgm", "dcgm_present", "dcgm-exporter DaemonSet 未发现(节点 GPU 曲线不可用)", "gpu-operator"),
-    # 租户 Pod 靠这个 RuntimeClass 见到卡
-    (
-        "nvidia_runtimeclass",
-        "nvidia_runtimeclass",
-        "RuntimeClass nvidia 不存在(租户 Pod 看不到 GPU)",
-        None,
-    ),
-    # 判据是 Gateway 对象的 Programmed 条件
-    ("gateway", "gateway_ready", "Gateway 未 Programmed(实例入口不可达)", "envoy-gateway"),
-    (
-        "cert_manager",
-        "cert_manager_ready",
-        "cert-manager 未就绪(泛域名证书签发与续期停摆)",
-        "cert-manager",
-    ),
-    (
-        "monitoring",
-        "kps_present",
-        "kube-prometheus-stack 未发现(监控曲线降级显示)",
-        "kube-prometheus-stack",
-    ),
-)
 _NVIDIA_RC_FIX = "节点装 nvidia-container-toolkit 后重启 k3s/rke2"
+
+# 体检项元数据。顺序即契约顺序与面板默认顺序(按用户可见链路排)。
+# helm_release:None = 该项不靠 helm 修;diag:排障第一步,取自
+# deploy/cluster/runbooks/cluster-validation.md。两者都是命令,不随语言。
+_COMPONENT_META: tuple[tuple[ComponentKey, str | None, str], ...] = (
+    ("nodes", None, "kubectl get node -o wide -L superdl.io/pool"),
+    ("hami", "hami", "kubectl -n kube-system get pod -l app=hami-scheduler -o wide"),
+    ("gpu_operator", "gpu-operator", "kubectl -n gpu-operator get ds"),
+    ("dcgm", "gpu-operator", "kubectl -n gpu-operator get ds | grep dcgm"),
+    ("nvidia_runtimeclass", None, "kubectl get runtimeclass"),
+    (
+        "kata_runtimeclass",
+        "kata-deploy",
+        "kubectl get runtimeclass kata-qemu; kubectl get node -l superdl.io/pool=kata",
+    ),
+    ("storage", "topolvm", "kubectl get sc"),
+    ("gateway", "envoy-gateway", "kubectl -n superdl get gateway superdl -o yaml"),
+    ("cert_manager", "cert-manager", "kubectl -n superdl get certificate"),
+    ("monitoring", "kube-prometheus-stack", "kubectl -n monitoring get sts,ds"),
+)
 
 
 def cluster_components(row: ClusterStatus | None) -> list[ClusterComponentOut]:
-    """组件体检,按用户可见链路顺序排;detail 只写实况。"""
+    """组件体检:事实来自巡检快照,文案一律由前端按 key 映射,后端只出数据。
+
+    快照陈旧或 API 不可达时全部判 unknown —— worker 停了还渲染成十项全绿,
+    比显示不出来更危险(下发门禁一直有这个保鲜判定,体检卡此前没有)。
+    """
+    facts = component_facts_from_json(row.component_facts if row else None)
+    unknown = _probe_unknown(row)
     distro = row.distro if row else None
-    flags = {key: bool(row and getattr(row, attr)) for key, attr, _d, _r in _FLAG_COMPONENTS}
-    details = {key: (None if flags[key] else missing) for key, _a, missing, _r in _FLAG_COMPONENTS}
-    fixes = {
-        key: (None if flags[key] else (_helmfile(distro, release) if release else _NVIDIA_RC_FIX))
-        for key, _a, _m, release in _FLAG_COMPONENTS
-    }
-
-    def flag(key: ComponentKey) -> ClusterComponentOut:
-        return ClusterComponentOut(key=key, ok=flags[key], detail=details[key], fix_hint=fixes[key])
-
-    nodes_ready = int(row.nodes_ready) if row else 0
-    nodes_total = int(row.nodes_total) if row else 0
-    pools: dict[str, int] = dict(row.pools or {}) if row else {}
-    scs = set(row.storage_classes or []) if row else set()
-    # 实例盘 SC 是两档强制依赖,缺它判红;JuiceFS 可选(light 默认不装),缺它不判红
-    instance_disk_ok = INSTANCE_DISK_STORAGE_CLASS in scs
-    data_disk_ok = DATA_DISK_STORAGE_CLASS in scs
-    kata_ok = bool(row and row.kata_runtimeclass)
     return [
-        ClusterComponentOut(
-            key="nodes",
-            # 不可调度的那部分(NotReady/cordon)要看得见
-            ok=nodes_ready > 0 and nodes_ready == nodes_total,
-            detail=f"{nodes_ready}/{nodes_total} 可调度",
-        ),
-        flag("hami"),
-        flag("gpu_operator"),
-        flag("dcgm"),
-        flag("nvidia_runtimeclass"),
-        ClusterComponentOut(
-            key="kata_runtimeclass",
-            ok=kata_ok,
-            detail=_kata_detail(kata_ok, pools.get("kata", 0)),
-            fix_hint=None if kata_ok else _helmfile(distro, "kata-deploy"),
-        ),
-        ClusterComponentOut(
-            key="storage",
-            # 按名核对,与下发门禁 require_storage_classes 同一口径
-            ok=instance_disk_ok,
-            detail=_storage_detail(instance_disk_ok, data_disk_ok, scs),
-            fix_hint=None if instance_disk_ok else _helmfile(distro, "topolvm"),
-        ),
-        flag("gateway"),
-        flag("cert_manager"),
-        flag("monitoring"),
+        _component_out(
+            key,
+            facts.get(key),
+            release,
+            diag,
+            unknown=unknown,
+            never_probed=row is None,
+            distro=distro,
+        )
+        for key, release, diag in _COMPONENT_META
     ]
 
 
-def _storage_detail(instance_disk_ok: bool, data_disk_ok: bool, scs: set[str]) -> str:
-    if not instance_disk_ok:
-        return f"缺 {INSTANCE_DISK_STORAGE_CLASS}(实例盘不可用,全站开不了机)"
-    listed = ", ".join(sorted(scs))
-    return listed if data_disk_ok else f"{listed}(无 {DATA_DISK_STORAGE_CLASS},数据盘不可售)"
+def _probe_unknown(row: ClusterStatus | None) -> bool:
+    """没探过 / 探测超过保鲜窗 / API 不可达:事实都不可信,判据与下发门禁同一个窗口。"""
+    if row is None or not row.api_reachable:
+        return True
+    return now_utc() - row.probed_at > HAMI_GATE_MAX_AGE
 
 
-def _kata_detail(kata_ok: bool, kata_nodes: int) -> str | None:
-    """RuntimeClass 在但 kata 池没节点,dedicated 一样开不了机。"""
-    if not kata_ok:
-        return "RuntimeClass kata-qemu 不存在(独享档不可用)"
-    if kata_nodes == 0:
-        return "RuntimeClass 就绪,kata 池无节点(独享档暂无库存)"
-    return f"kata 池 {kata_nodes} 节点"
+def _component_out(
+    key: ComponentKey,
+    cf: ComponentFacts | None,
+    release: str | None,
+    diag: str,
+    *,
+    unknown: bool,
+    never_probed: bool,
+    distro: str | None,
+) -> ClusterComponentOut:
+    state: ComponentStateOut = "unknown" if (unknown or cf is None) else cf.state
+    # 从未探测时体检卡兼作装机清单,给安装命令;探测只是陈旧则不给 —— 对健康集群
+    # 报十条修复命令是谎报,状态位已经说明事实不可信
+    show_fix = state in ("down", "degraded") or never_probed
+    # 陈旧时仍回上次事实:知道「上次是 8/8」比什么都不显示有用
+    return ClusterComponentOut(
+        key=key,
+        state=state,
+        headline=_fact_out(cf.headline) if cf and cf.headline else None,
+        facts=[_fact_out(f) for f in cf.facts if f.value] if cf else [],
+        objects=[ComponentObjectOut(name=o.name, fields=o.fields) for o in cf.objects]
+        if cf
+        else [],
+        fix_hint=_fix_hint(key, release, distro) if show_fix else None,
+        diag_hint=diag,
+    )
+
+
+def _fix_hint(key: ComponentKey, release: str | None, distro: str | None) -> str | None:
+    if key == "nvidia_runtimeclass":
+        return _NVIDIA_RC_FIX
+    return _helmfile(distro, release) if release else None
+
+
+def _fact_out(f: ComponentFact) -> ComponentFactOut:
+    return ComponentFactOut(key=f.key, value=f.value, tone=f.tone)

@@ -2,7 +2,7 @@
 import kubernetes 客户端。"""
 
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Any, Literal, Protocol
 
 # StorageClass 名,与 deploy/cluster/values/{topolvm,rook-ceph-cluster}.yaml 一致;下发门禁按名核对
 INSTANCE_DISK_STORAGE_CLASS = "topolvm-provisioner"  # 实例盘:节点本地 NVMe LV
@@ -114,6 +114,105 @@ class PodStatus:
     labels: dict[str, str] = field(default_factory=dict)
 
 
+# 体检项五态。ok/degraded/down/disabled 由探测侧按事实判;unknown 只由渲染侧在快照过期时覆写。
+ComponentState = Literal["ok", "degraded", "down", "disabled", "unknown"]
+# 事实的着色意图;由探测侧标注,前端按语义色渲染,不在文案里写形容词
+FactTone = Literal["normal", "warn", "bad"]
+
+
+@dataclass(frozen=True)
+class ComponentFact:
+    """一条可核对的事实。key 是文案后缀(前端出 label),value 是纯数据:计数、版本、对象名、
+    地址、时长。value 不含语言,不随 locale 变。"""
+
+    key: str
+    value: str
+    tone: FactTone = "normal"
+
+
+@dataclass(frozen=True)
+class ComponentObject:
+    """抽屉对象表的一行。name 是对象名;fields 的键是列名后缀,值同样是纯数据。"""
+
+    name: str
+    fields: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ComponentFacts:
+    """单个体检项的探测结果。headline 是面板主数字,facts 是面板与抽屉的事实行,
+    objects 是抽屉里的对象级明细(DaemonSet / listener / StorageClass / 节点)。"""
+
+    state: ComponentState
+    headline: ComponentFact | None = None
+    facts: tuple[ComponentFact, ...] = ()
+    objects: tuple[ComponentObject, ...] = ()
+
+
+def _fact_to_json(f: ComponentFact) -> dict[str, str]:
+    return {"key": f.key, "value": f.value, "tone": f.tone}
+
+
+def component_facts_to_json(facts: dict[str, ComponentFacts]) -> dict[str, Any]:
+    """落 JSONB。dataclass → 原始 dict,不用 asdict:tuple 要显式转 list 才好序列化。"""
+    return {
+        key: {
+            "state": cf.state,
+            "headline": _fact_to_json(cf.headline) if cf.headline else None,
+            "facts": [_fact_to_json(f) for f in cf.facts],
+            "objects": [{"name": o.name, "fields": dict(o.fields)} for o in cf.objects],
+        }
+        for key, cf in facts.items()
+    }
+
+
+def component_facts_from_json(raw: Any) -> dict[str, ComponentFacts]:
+    """读 JSONB。库里可能是上一版写的行,结构对不上就整项丢弃(渲染侧按缺项处理)。"""
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, ComponentFacts] = {}
+    for key, item in raw.items():
+        if not isinstance(item, dict) or not isinstance(item.get("state"), str):
+            continue
+        head = item.get("headline")
+        out[str(key)] = ComponentFacts(
+            state=item["state"],
+            headline=_fact_from_json(head),
+            facts=tuple(
+                f
+                for f in (_fact_from_json(x) for x in _as_list(item.get("facts")))
+                if f is not None
+            ),
+            objects=tuple(
+                ComponentObject(name=str(o.get("name", "")), fields=_as_str_map(o.get("fields")))
+                for o in _as_list(item.get("objects"))
+                if isinstance(o, dict)
+            ),
+        )
+    return out
+
+
+def _as_list(v: Any) -> list[Any]:
+    return v if isinstance(v, list) else []
+
+
+def _as_str_map(v: Any) -> dict[str, str]:
+    if not isinstance(v, dict):
+        return {}
+    return {str(k): str(val) for k, val in v.items()}
+
+
+def _fact_from_json(v: Any) -> ComponentFact | None:
+    if not isinstance(v, dict) or not isinstance(v.get("key"), str):
+        return None
+    tone = v.get("tone")
+    return ComponentFact(
+        key=v["key"],
+        value=str(v.get("value", "")),
+        tone=tone if tone in ("normal", "warn", "bad") else "normal",
+    )
+
+
 @dataclass(frozen=True)
 class ClusterProbe:
     """集群能力探测快照(nodes 巡检落 cluster_status 表,门禁与集群页读表不实时探测)。"""
@@ -134,6 +233,10 @@ class ClusterProbe:
     nodes_total: int = 0  # 集群节点总数(含未打池标签)
     storage_classes: tuple[str, ...] = ()
     pools: dict[str, int] = field(default_factory=dict)  # 池→节点数,未打标计 unlabeled
+    # 池→Ready 且可调度的节点数。档位可用性看这个,不看 pools:池里三台全 NotReady 一样开不了机
+    pools_ready: dict[str, int] = field(default_factory=dict)
+    # 体检项 key → 探测事实。布尔列只够门禁用,面板与抽屉读这里
+    component_facts: dict[str, ComponentFacts] = field(default_factory=dict)
     error: str | None = None
 
 

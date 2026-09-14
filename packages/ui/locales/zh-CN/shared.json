@@ -283,6 +283,18 @@
       "Cordoned": "已封锁,不再调度新实例;在跑实例不受影响",
       "Missing": "台账有记录但集群里找不到该节点"
     },
+    "component": {
+      "ok": "正常",
+      "degraded": "降级",
+      "down": "故障",
+      "disabled": "未启用",
+      "unknown": "未知"
+    },
+    "componentHint": {
+      "degraded": "部分就绪,能力可用但有冗余损失",
+      "disabled": "组件在位,这项能力没有开启",
+      "unknown": "快照已过期,显示的是上次探测结果"
+    },
     "severity": {
       "info": "提示",
       "warning": "警告",

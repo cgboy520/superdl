@@ -6,7 +6,7 @@
 
 - `node_enrollments`:token_hash(sha256 唯一)、progress_token_hash?(sha256 唯一,首次 bootstrap 换发)、pool(kata/hami/mig/cpu)、hostname?、note?、nvme_devices JSONB?、status、phase、error、node_name、reported_ip、os_info JSONB、gpu_info JSONB、expires_at(默认 24h,1~168h,绝对截止)、last_report_at、joined_at、created_by、idempotency_key(与 created_by 联合唯一)
 - `node_specs`:node_name 唯一、pool_label?、unlabeled、gpu_model_raw?、gpu_model?(canonical)、label_synced、gpu_count、gpu_used、vram_gb、vcpu、mem_gb、disk_gb、driver_version?、cuda_version?、status(Ready/NotReady/Cordoned/Missing)、last_seen
-- `cluster_status`:单行 id=1,api_reachable、k8s_version?、distro?(rke2/k3s)、hami_ready、dcgm_present、kps_present、gpu_operator_present、kata_runtimeclass、nvidia_runtimeclass、gateway_ready、cert_manager_ready、nodes_ready、nodes_total、storage_classes JSONB?、pools JSONB?、error?、probed_at
+- `cluster_status`:单行 id=1,api_reachable、k8s_version?、distro?(rke2/k3s)、hami_ready、dcgm_present、kps_present、gpu_operator_present、kata_runtimeclass、nvidia_runtimeclass、gateway_ready、cert_manager_ready、nodes_ready、nodes_total、storage_classes JSONB?、pools JSONB?、pools_ready JSONB?(池→Ready 且可调度的节点数)、component_facts JSONB?(体检项 key → 状态 / 主数字 / 事实行 / 对象表)、error?、probed_at。布尔列是下发门禁的判据,`component_facts` 是集群页体检面板的数据源,两者互不替代
 
 装机状态机:pending → installing → rebooting ⇆ installing → joining → joined,旁路终态 failed / expired / revoked(非终态均可因绝对过期落 expired)。终态 joined / failed / expired 另有一条通向 revoked 的边,**只有节点退役走得到**(手工 `revoke_enrollment` 对终态 409)。
 
@@ -25,7 +25,7 @@
 | `POST /api/admin/v1/nodes/{node_name}/cordon\|uncordon` | ops                     | reason 必填,只 enqueue `node.cordon`                                                                                                                                                                                                       |
 | `POST /api/admin/v1/nodes/{node_name}/decommission`     | ops                     | **不可逆**,reason 必填。同事务:停调度期望态落台账 + 该主机名下全部登记置 revoked + enqueue `node.decommission`(worker 删 Node 对象);台账无此节点 404 `nodes.nodeNotFound`。响应 `{node_name, revoked_enrollments, queued}`                 |
 | `GET /api/admin/v1/cluster/gpu-models`                  | ops/readonly            | 台账聚合 `[{gpu_model, gpu_model_raw, pool_label, node_count, gpu_total, ready_gpu_total, vram_gb}]`,canonical×pool 分组,未识别入 `unrecognized`                                                                                           |
-| `GET /api/admin/v1/cluster/status`                      | ops/readonly            | 纯 DB:`{api_reachable, distro, k8s_version, probed_at, components:[{key,label,ok,detail,fix_hint}], pools, config:{server_url_set, join_token_set, prometheus_url_set, grafana_url, registry_host, registry_project}}`                     |
+| `GET /api/admin/v1/cluster/status`                      | ops/readonly            | 纯 DB:`{api_reachable, distro, k8s_version, probed_at, components:[{key, state, headline, facts, objects, fix_hint, diag_hint}], pools, pools_ready, config:{server_url_set, join_token_set, prometheus_url_set, grafana_url, registry_host, registry_project}}`。`state` 五态;`headline`/`facts` 的 `value` 是纯数据(计数 / 版本 / 对象名 / 地址),label 由前端按 key 映射 |
 | `POST /api/admin/v1/cluster/test-connection`            | ops                     | 同步只读探测,upsert `cluster_status` 后返回;超时 5s → 502                                                                                                                                                                                  |
 
 ## 规则与不变量
@@ -57,7 +57,15 @@
 
 ### 集群能力
 
-- 集群页组件体检十项:节点就绪 / HAMi / gpu-operator / DCGM / RuntimeClass nvidia / RuntimeClass kata-qemu / 存储类 / 实例入口(key `gateway`)/ 证书签发 / 监控栈。`storage` 按名核对 `topolvm-provisioner`(强制)与 `superdl-cephfs`(可选,缺它只提示数据盘不可售);`kata_runtimeclass` 绿灯时另报 kata 池节点数。
+- 集群页组件体检十项:节点就绪 / HAMi / gpu-operator / DCGM / RuntimeClass nvidia / RuntimeClass kata-qemu / 存储类 / 实例入口(key `gateway`)/ 证书签发 / 监控栈。
+- **体检五态**:`ok` 全就绪 / `degraded` 部分就绪 / `down` 缺位或全挂 / `disabled` 组件在位但该能力未开 / `unknown` 快照不可信。判定逻辑集中在 `app/core/k8s/health.py`,real 与 fake 共用同一份。
+- **就绪判据看就绪数,不看对象存在**:`gpu_operator` 取 gpu-operator 所在 ns 下每个 operand DaemonSet 的 `numberReady == desiredNumberScheduled`,`dcgm` 取 dcgm-exporter DaemonSet 的同一比值,`monitoring` 取 Prometheus StatefulSet 的就绪副本数。按名字存在与否判会把全崩的组件判绿。
+- **`unknown` 的窗口与下发门禁同源**:`probed_at` 超 `HAMI_GATE_MAX_AGE`(10 分钟)或 `api_reachable` 为假 → 十项全判 `unknown`,仍回上次事实供参考。从未探测过(无缓存行)时额外给安装命令,体检卡在装机阶段兼作清单;只是陈旧则不给,对健康集群报十条修复命令是谎报。
+- **`kata_runtimeclass` 的池节点数只算 Ready 且可调度的**:RuntimeClass 在、池内没有 Ready 节点 → `disabled`。库存与可售性解读不进体检项,看 `pools_ready`。
+- `storage` 按名核对 `topolvm-provisioner`(强制,缺它判 `down`)与 `superdl-cephfs`(可选,缺它只把数据盘那条事实标 warn)。
+- `gateway` 逐 listener 单独判:整体 `Programmed=True` 但某个 listener 未就绪 → `degraded`,对象表给出端口 / 协议 / attachedRoutes / 条件 reason,与 `deploy/cluster/runbooks/cluster-validation.md` 的北向入口清单同判据。
+- **组件文案全部由 key 映射到两端 locales**,后端只出事实数据;`fix_hint`(修复命令,仅 `down` / `degraded` / 从未探测时给)与 `diag_hint`(排障第一步,一直给)是命令,不随语言。
+- Prometheus 侧事实(DCGM 样本新鲜度、抓取目标健康、触发中告警数)在巡检里经 `metering/service.py` 取并并入快照,集群页保持纯 DB 读;Prometheus 不可用只少几条事实,不改任何组件的状态位。
 - **实例入口的判据是 `Gateway superdl` 对象 `status.conditions` 的 `Programmed=True`**,不是控制器 Deployment ready。CRD 未装或对象未下发都是 404,计「未就绪」不记 `error`。探测需 `gateway.networking.k8s.io/gateways` 的 get/list(`deploy/app/k8s/01-rbac.yaml` node-mgr 角色)。
 - HAMi 门禁不做调度回落:shared 档能力未就绪直接 `CLUSTER_NOT_READY`,schedulerName 静态钉死。dedicated 档看 RuntimeClass `kata-qemu`(`require_kata_runtimeclass`)。门禁判据与 `build_gpu_request` 同源:**先看要不要卡,再看落哪个池**;`gpu_count == 0` 的实例不申请 `nvidia.com/*`、`schedulerName` 为空,只过 StorageClass。
 - 发行版不设运行期配置,由平台探测 gitVersion(含 `+k3s`/`+rke2`)派生;两档装同一套组件,差异只在 `deploy/cluster/values/light/`。档位可用性看池里有没有 Ready 节点与运行时是否到位。

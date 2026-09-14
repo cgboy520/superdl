@@ -281,6 +281,7 @@ async def _cluster_status_out(session: DbSession) -> ClusterStatusOut:
         distro=row.distro if row else None,
         probed_at=row.probed_at if row else None,
         pools=dict(row.pools or {}) if row else {},
+        pools_ready=dict(row.pools_ready or {}) if row else {},
         components=nodes_service.cluster_components(row),
         config=ClusterConfigStateOut(
             server_url_set=bool(cfg.cluster_server_url),

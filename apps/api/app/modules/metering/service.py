@@ -1,5 +1,6 @@
 """用量服务:实例监控代理 + usage_hourly 聚合 + 事件计费 vs 指标估算对账。"""
 
+import asyncio
 import re
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -11,6 +12,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.errors import AppError, ErrorCode
+from app.core.k8s.base import ComponentFact
 from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.money import as_amount, money_str
@@ -232,3 +234,37 @@ async def node_gpu_metrics(node_name: str, range_key: str) -> NodeMetricsOut:
     return NodeMetricsOut(
         available=True, range=range_key, gpus=list(gpus.values()), xid_count_24h=int(xid or 0)
     )
+
+
+async def cluster_component_metrics() -> dict[str, ComponentFact]:
+    """组件体检的 Prometheus 事实:体检项 key → 追加事实。
+
+    断源、未配置、查不到都返回空 —— 监控自己挂了不该把别的体检项拖成红牌,
+    面板对应位置留空值(前端出「—」)。
+    """
+    try:
+        age, up, total, firing = await asyncio.gather(
+            prom.query_instant(prom.COMPONENT_QUERIES["dcgm_sample_age"]),
+            prom.query_instant(prom.COMPONENT_QUERIES["scrape_up"]),
+            prom.query_instant(prom.COMPONENT_QUERIES["scrape_total"]),
+            prom.query_instant(prom.COMPONENT_QUERIES["alerts_firing"]),
+        )
+    except prom.PrometheusUnavailable:
+        return {}
+    out: dict[str, ComponentFact] = {}
+    if age is not None:
+        # 样本超过两个抓取周期没动 = 指标断流,exporter 就绪数看不出这个
+        out["dcgm"] = ComponentFact(
+            key="sampleAgeSeconds", value=str(int(age)), tone="warn" if age > 120 else "normal"
+        )
+    if up is not None and total is not None:
+        out["monitoring"] = ComponentFact(
+            key="scrapeTargets",
+            value=f"{int(up)}/{int(total)}",
+            tone="warn" if up < total else "normal",
+        )
+    if firing is not None:
+        out["monitoring_alerts"] = ComponentFact(
+            key="alertsFiring", value=str(int(firing)), tone="warn" if firing else "normal"
+        )
+    return out

@@ -8,9 +8,11 @@
 
 import pathlib
 
+# 第三项是豁免文件名:布局父路由自身、以及渲染成遮罩层的嵌套子路由
+# (页容器由父路由自持,子路由再套一个 PageContainer 会套两层页头)
 TARGETS = (
     ("apps/web/src/routes", "_console*.tsx", {"_console.tsx"}),
-    ("apps/admin/src/routes/_app", "*.tsx", set()),
+    ("apps/admin/src/routes/_app", "*.tsx", {"cluster.$component.tsx"}),
 )
 
 

@@ -34,6 +34,7 @@
 - 每日数据保洁:验证码、refresh 记录、已完成 outbox、超保留期审计。保留期见 [limits.md](./limits.md)。
 - 管理端监控自绘、不做 Grafana iframe:节点页每卡热力格(util%/显存/温度,XID>0 红点)+ 节点详情 ECharts 曲线;`grafana_url` 仅作外链。指标断源时管理端降级为「已租/空闲」形态。
 - 抓取 HAMi 需在 kps values 加 additionalScrapeConfigs(scheduler + vGPUmonitor)并配 `absent(up{job="hami-scheduler"})` 告警。
+- 集群维查询模板在 `apps/api/app/modules/metering/prom.py` 的 `COMPONENT_QUERIES`(DCGM 样本新鲜度 / 抓取目标 up 比 / 触发中告警数),经 `metering/service.py` 的 `cluster_component_metrics()` 供节点巡检取用,并入组件体检快照。Prometheus 未配或查询失败返回空:对应事实留空,不改任何组件的状态位。
 - light 档用同一 kube-prometheus-stack 的精简 values(grafana off / retention 3d / 资源收紧),由 helmfile environments 选用。
 - 备份 Job 用 initContainer pg_dump + 官方 aws-cli 镜像;备份失败与超期有告警。
 - 指标源与用户端指标端点见 [metering.md](./metering.md)。

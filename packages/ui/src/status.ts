@@ -454,6 +454,51 @@ export const nodeStatusMap = {
   },
 } as const satisfies Record<NodeStatus, StatusMeta>;
 
+/**
+ * 集群组件体检五态。两态(绿/红)表达不了「部分就绪」与「能力未开」:
+ * operand 铺了 3/8 和全崩都显示红、kata 池没节点却显示绿,都是假信号。
+ */
+export type ComponentHealth = "ok" | "degraded" | "down" | "disabled" | "unknown";
+
+export const componentHealthMap = {
+  ok: { labelKey: "shared:status.component.ok", color: statusColors.green, badge: "success", icon: "check" },
+  degraded: {
+    labelKey: "shared:status.component.degraded",
+    color: statusColors.orange,
+    badge: "warning",
+    icon: "warning",
+    hintKey: "shared:status.componentHint.degraded",
+  },
+  down: {
+    labelKey: "shared:status.component.down",
+    color: statusColors.red,
+    badge: "error",
+    icon: "close",
+  },
+  disabled: {
+    labelKey: "shared:status.component.disabled",
+    color: statusColors.gray,
+    badge: "default",
+    icon: "minus",
+    hintKey: "shared:status.componentHint.disabled",
+  },
+  unknown: {
+    labelKey: "shared:status.component.unknown",
+    color: statusColors.gray,
+    badge: "default",
+    icon: "clock",
+    hintKey: "shared:status.componentHint.unknown",
+  },
+} as const satisfies Record<ComponentHealth, StatusMeta>;
+
+/** 面板排序:要处理的在前,健康的在后。 */
+export const COMPONENT_HEALTH_ORDER: readonly ComponentHealth[] = ["down", "degraded", "disabled", "unknown", "ok"];
+
+/** 需要人处理的态:标题计数与横幅按它算。 */
+export function isComponentAttention(state: ComponentHealth): boolean {
+  return state === "down" || state === "degraded";
+}
+
 /** 告警严重度(与 alerts.severity 严格一致);徽标 = 图标 + 文字,不只靠颜色。 */
 export type AlertSeverity = "info" | "warning" | "critical";
 
@@ -483,6 +528,7 @@ export const ALL_STATUS_MAPS = [
   imageCacheStatusMap,
   nodeEnrollStatusMap,
   nodeStatusMap,
+  componentHealthMap,
   severityMap,
   ticketStatusMap,
   deletionStatusMap,

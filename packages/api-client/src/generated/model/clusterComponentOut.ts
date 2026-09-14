@@ -5,13 +5,20 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ClusterComponentOutKey } from './clusterComponentOutKey';
+import type { ClusterComponentOutState } from './clusterComponentOutState';
+import type { ComponentFactOut } from './componentFactOut';
+import type { ComponentObjectOut } from './componentObjectOut';
 
 /**
- * 组件体检项:key 由前端映射文案;fix_hint 为可复制修复命令(不随语言)。
+ * 组件体检项。文案全部由 key 映射(判据 / 影响面 / 事实 label 在两端 locales),
+ * 后端只出事实数据;两个 hint 是命令,不随语言。
  */
 export interface ClusterComponentOut {
-  detail?: string | null;
+  diag_hint?: string | null;
+  facts?: ComponentFactOut[];
   fix_hint?: string | null;
+  headline?: ComponentFactOut | null;
   key: ClusterComponentOutKey;
-  ok: boolean;
+  objects?: ComponentObjectOut[];
+  state: ClusterComponentOutState;
 }
