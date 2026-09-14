@@ -42,6 +42,12 @@ releases:
       {{- if eq .Environment.Name "light" }}
       - values/light/cilium-light.yaml
       {{- end }}
+    hooks:
+      # CiliumClusterwideNetworkPolicy 的 CRD 由 chart 建,只能排在 release 之后
+      - events: ["postsync"]
+        showlogs: true
+        command: "kubectl"
+        args: ["apply", "-f", "cilium-policies.yaml"]
 
   - name: gpu-operator
     condition: gpuOperator.enabled

@@ -130,7 +130,12 @@ kubectl label nodes -l node-role.kubernetes.io/control-plane \
 6. 残留的 `cni0` / `flannel.1` 接口与 flannel / kube-proxy(`KUBE-*` 链)的 iptables 规则**重启节点才清干净**;不重启则手工 `ip link delete cni0`、`ip link delete flannel.1` 并清 `KUBE-*` 链,留着会和 Cilium 的 eBPF 数据面抢同一条流。
 7. 回读:`kubectl -n kube-system exec ds/cilium -- cilium-dbg status`、全节点 Ready、租户 SSH 的 NodePort 能连、Envoy 的 LoadBalancer 外部 IP 未变。
 
-`pod_cidr_gateways`(`apps/api/app/core/k8s/real.py`)按各节点 Pod 子网的 `.0/.1` 放行 NodePort 的 SNAT 来源——Cilium 的 `cilium_host` 同样取子网首地址,规则不用改,但换完必须实测一次租户 SSH。
+**Cilium 与 kube-router 的两处语义差异必须靠 `cilium-policies.yaml` 补上**(随 cilium release 的 postsync 下发),否则表现是「组件都 Running 但平台连不上库、租户 SSH 不通」:
+
+- **`ipBlock` 选不中节点**。节点在 Cilium 里是 `host` / `remote-node` 保留身份,与 IP 无关。`values/cilium.yaml` 的 `policyCIDRMatchMode: [nodes]` 只让 CIDR 选择器覆盖 `remote-node`,本机 `host`(平台库跑在节点宿主上)仍要按身份放行。
+- **NodePort 的 SNAT 来源变了**。flannel 是 Pod 子网的 `.0/.1`(`real.py` 的 `pod_cidr_gateways` 按此写死),Cilium 换成入口节点的 `cilium_host`——该地址从子网池**动态分配**(实测 `.40` / `.59`),而且落在 `tenant-default` 的 `except 10.42.0.0/16` 里,按地址放行必然选不中。
+
+换完必须实测:平台三域、租户 Jupyter、以及**从至少两台不同节点**连租户 SSH 的 NodePort。
 
 4. **GPU 节点**:同 full 第 5 步。单机时 server 本机直接跑管理端生成的 node-join 命令:脚本检测到本机 `k3s.service` 在运行即走 server 路径(不装 agent、不改 server config,池标签经 `k3s kubectl` 打到节点;首次装 toolkit 后重启一次 k3s)。实例盘 VG `superdl-nvme` 不由 node-join 建时(令牌未登记 NVMe),须在 `./apply.sh light` 之前手工建好(空盘 `pvcreate`/`vgcreate`,或 loop 文件兜底)。
 5. 能力边界:组件面不阉割(kata / mig 池同样可用),档位可用性看**池里有没有 Ready 节点**;单机只有一个池标签,选了 hami 就没有 kata/mig 池,专用整卡与共享·标准的 SKU 上架被硬校验拦下。纯 CPU 规格挂 hami 池即可在这台机上卖。管理端「集群」页常驻「轻量集群」黄条与组件体检。

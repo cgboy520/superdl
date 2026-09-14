@@ -6,6 +6,12 @@ kubeProxyReplacement: true
 # 这个模式也让 real.py 的 pod_cidr_gateways(读 node.spec.podCIDR)继续成立
 ipam:
   mode: kubernetes
+# ipBlock 默认不匹配集群内的节点 IP:节点在 Cilium 里是 host / remote-node 保留身份,不归 CIDR 选择器管。
+# app/k8s/09-networkpolicy.yaml 放行平台库与 K8s API 用的正是节点 IP,不开这项则 Pod 连不上库。
+# 只覆盖 remote-node,本机 host 还要 cilium-policies.yaml 那条按身份放行;
+# 不开 pods:身份数会随 Pod 数膨胀,有耗尽风险
+policyCIDRMatchMode:
+  - nodes
 # HA 集群填控制面 VIP
 k8sServiceHost: "CHANGE_ME_API_VIP"
 k8sServicePort: 6443
