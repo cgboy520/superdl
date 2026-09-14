@@ -1,0 +1,10 @@
+# light(k3s)覆盖。CNI 路径必须跟着 k3s 的 containerd 走:
+# /var/lib/rancher/k3s/agent/etc/containerd/config.toml 里 conf_dir 与 bin_dirs 都不是 Cilium 默认的
+# /etc/cni/net.d 与 /opt/cni/bin(后者在 k3s 节点上根本不存在),写错则 conflist 与 cilium-cni 二进制
+# containerd 都看不见,全节点 Pod 卡 ContainerCreating
+cni:
+  confPath: /var/lib/rancher/k3s/agent/etc/cni/net.d
+  binPath: /var/lib/rancher/k3s/data/cni
+# 单 server 无 VIP:kubeProxyReplacement 下 Cilium 必须绕开 kubernetes Service 直连 server 自身 6443
+# (占位由环境化脚本替换,见 README「路径 B」)
+k8sServiceHost: "CHANGE_ME_K3S_SERVER_IP"

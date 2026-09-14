@@ -33,7 +33,7 @@ flowchart LR
 | 组件                    | 角色                                                                                                                              |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | RKE2 / k3s              | 容器平台,钉 v1.36                                                                                                                 |
-| Cilium                  | 仅 full 档;light 档用 k3s 内置 flannel                                                                                            |
+| Cilium                  | 两档同装(CNI + NetworkPolicy + 带宽限额);light 档保留 k3s 自带 kube-proxy 与 ServiceLB                                           |
 | GPU Operator            | 两档同装(NFD/GFD/DCGM/MIG/VFIO);light 档关 toolkit(宿主 toolkit 由装机基线装)                                                     |
 | kata-deploy             | 两档同装,只落 kata 池节点                                                                                                         |
 | Kata                    | RuntimeClass `kata-qemu`,VFIO 整卡直通                                                                                            |

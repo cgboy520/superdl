@@ -1,12 +1,14 @@
-# light 档(k3s 单机/小规模):helmfile -e light apply。差异在 values/light/ 覆盖;CNI 用 k3s 内置 flannel。
-# TopoLVM 必装(实例盘,需 VG superdl-nvme);JuiceFS 可选(数据盘)
-cilium: {enabled: false}
+# light 档(k3s 单机/小规模):helmfile -e light apply。差异在 values/light/ 覆盖;CNI 与 full 同为 Cilium。
+# TopoLVM 必装(实例盘,需 VG superdl-nvme);JuiceFS 必装(数据盘)
+# k3s 须 flannel-backend=none + disable-network-policy(k3s/server-config.yaml,server 端一处即全集群生效);
+# CNI 路径与 LB 归属见 values/light/cilium-light.yaml
+cilium: {enabled: true}
 # GPU 栈同 full;k3s 覆盖见 values/light/gpu-operator-light.yaml
 gpuOperator: {enabled: true}
 hami: {enabled: true}
 kataDeploy: {enabled: true}   # dedicated 档运行时;chart 按 k8sDistribution=k3s 写 k3s 的 containerd 配置
 kps: {enabled: true}
-juicefs: {enabled: false}
+juicefs: {enabled: true}
 topolvm: {enabled: true}
 certManager: {enabled: true}
 # acme-dns 不装(见 helmfile 注释);通配证书手工灌成 superdl/superdl-jupyter-wildcard-tls 与 superdl-svc-wildcard-tls

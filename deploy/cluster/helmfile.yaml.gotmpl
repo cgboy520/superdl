@@ -37,7 +37,11 @@ releases:
     namespace: kube-system
     chart: cilium/cilium
     version: "1.20.0"
-    values: [values/cilium.yaml]
+    values:
+      - values/cilium.yaml
+      {{- if eq .Environment.Name "light" }}
+      - values/light/cilium-light.yaml
+      {{- end }}
 
   - name: gpu-operator
     condition: gpuOperator.enabled

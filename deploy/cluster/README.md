@@ -1,7 +1,7 @@
 # 集群部署:full / light 两条路径
 
 选档:**full** = RKE2 多机生产,全池齐备(kata / mig / hami,外加可选的 cpu 池);
-**light** = k3s 单机/小规模验证与轻量运营,仅共享·经济档(hami 池)SKU。
+**light** = k3s 单机/小规模验证与轻量运营,组件集与 full 相同(CNI 同为 Cilium,kata / mig 池一样可用),差异只在 `values/light/` 的覆盖。
 发行版由平台探测(管理端「集群」页可见),业务侧无需声明。
 
 **cpu 池是无卡机池**,不承载 GPU 组件,只供纯 CPU 实例(`tier=cpu`)使用;没有无卡服务器时,CPU 规格也可挂 hami 池,每节点让出多少由策略 `gpu_node_cpu_instance_vcpu_cap` 封顶(0 = 不许)。详见 `docs/reference/nodes.md` 与 `docs/reference/catalog.md`。
@@ -15,8 +15,13 @@ helm 不代建 Secret,先建好再 `./preflight.sh <full|light>`(只读,缺什�
 
 ```bash
 kubectl create ns monitoring --dry-run=client -o yaml | kubectl apply -f -
+# JuiceFS(两档必需):六个键缺一不可,storage/bucket 按后端写(oss / s3 / minio …)
 kubectl -n kube-system create secret generic superdl-juicefs-secret \
-  --from-literal=metaurl=<postgres://juicefs:…@<pg-host>:5432/juicefs_meta?sslmode=require> --from-literal=access-key=<…> --from-literal=secret-key=<…>
+  --from-literal=name=superdl-data \
+  --from-literal=metaurl=<postgres://juicefs:…@<pg-host>:5432/juicefs_meta?sslmode=require> \
+  --from-literal=storage=<oss|s3|minio> --from-literal=bucket=<https://…> \
+  --from-literal=access-key=<…> --from-literal=secret-key=<…>
+# 配额 Job 另从 superdl-db 的 juicefs-metaurl 键取同一串(app/core/k8s/real.py)
 kubectl -n monitoring create secret generic superdl-alert-token --from-literal=token=<与 SUPERDL_ALERTMANAGER_TOKEN 一致>
 kubectl -n monitoring create secret generic superdl-smtp-password --from-literal=password=<SMTP 口令>
 kubectl -n monitoring create secret generic grafana-admin \
@@ -98,7 +103,9 @@ kubectl label nodes -l node-role.kubernetes.io/control-plane \
    cp rke2/audit-policy.yaml /etc/rancher/k3s/audit-policy.yaml   # 与 rke2 同规,缺失则 apiserver 起不来
    curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh | INSTALL_K3S_MIRROR=cn sh -s - server
    ```
-   (config 已含 `disable: traefik` 与 `embedded-registry: true`=Spegel)
+   (config 已含 `disable: traefik`、`embedded-registry: true`=Spegel,以及 `flannel-backend: none` / `disable-network-policy: true` / `disable-kube-proxy: true`——CNI、NetworkPolicy、kube-proxy 全归 Cilium。
+   这几项都必须**装机即设**:事后改要全集群重启 k3s 并重建全部 Pod,见下「给已有集群换 CNI」)
+   再把 `values/light/cilium-light.yaml` 的 `CHANGE_ME_K3S_SERVER_IP` 换成 server 自己的 IP(单 server 没有 VIP;`preflight.sh` 会拦占位符)。
 2. **平台接入**:同 full 第 2 步(k3s 同样配 `agent-token`,见 k3s/server-config.yaml;禁止用 `/var/lib/rancher/k3s/server/node-token`;server 地址 `https://<ip>:6443`)。
 3. **组件**:`./preflight.sh light && ./apply.sh light`(presync 先装 Gateway API CRD;准入策略同 full 第 3 步)。
 
@@ -108,7 +115,22 @@ kubectl label nodes -l node-role.kubernetes.io/control-plane \
    - gpu-operator 关掉 toolkit(宿主 toolkit 由 node-join 装、k3s 自行探测生成 RuntimeClass nvidia)。`nvidia.com/gpu.count` 由 gpu-operator 自带的 GFD 提供。
    - kps / Loki 精简(盘紧可在 `environments/light.yaml` 关掉日志栈);开了 ServiceMonitor 的 release 必须 `needs: [monitoring/kube-prometheus-stack]`。
    - Envoy Gateway 控制面降到 1 副本并关掉 PDB。
-   - Cilium 不装(用 k3s 内置 flannel);acme-dns 不装;租户 Jupyter 泛域名证书由现成通配证书灌成 `superdl/superdl-jupyter-wildcard-tls`。
-   - **TopoLVM 必开**(VG `superdl-nvme` 由 node-join.sh 建出);JuiceFS 可选(只有数据盘用),在 `environments/light.yaml` 打开。
+   - Cilium 同装并接管 kube-proxy;CNI 路径按 k3s 的 containerd 改、`k8sServiceHost` 填 server 实 IP(`values/light/cilium-light.yaml`)。
+   - acme-dns 不装;租户 Jupyter 泛域名证书由现成通配证书灌成 `superdl/superdl-jupyter-wildcard-tls`。
+   - **TopoLVM 必开**(VG `superdl-nvme` 由 node-join.sh 建出);**JuiceFS 必开**(数据盘),对象存储与元数据库见「前置检查」。
+### 给已有集群换 CNI(flannel → Cilium)
+
+装机时没设 `flannel-backend: none` 的老集群要补装 Cilium,是**全集群网络中断**的操作,不是滚动升级:k3s 的 flannel 开关是 server 端标志(agent 从 server 取节点配置,不必逐台改),但每个节点的 CNI 配置与全部 Pod 的网络都要重来。
+
+1. 停租户侧入口(或挑无实例运行的窗口):切换期间跨节点 Pod 通信与 NodePort 全断。
+2. server `/etc/rancher/k3s/config.yaml` 加 `flannel-backend: none`、`disable-network-policy: true`、`disable-kube-proxy: true`,`systemctl restart k3s`。此刻起 ClusterIP 无人处理,集群内服务发现全断,直到第 3 步 Cilium 起来。
+3. `./apply.sh light -l name=cilium` 装上 Cilium;等 `cilium` DaemonSet 在**全部**节点 Ready(它跑 hostNetwork,没有 CNI 也能起来)。
+4. 逐台 agent `systemctl restart k3s-agent`,让 kubelet 重读 CNI 配置;Cilium 的 `cni-exclusive` 会把旧的 `10-flannel.conflist` 挪走。
+5. 重建全部非 hostNetwork 的 Pod(`kubectl delete pod -A --field-selector spec.nodeName=<node>` 逐台,或整机重启),旧 Pod 仍持有 flannel 的 IP 与路由。
+6. 残留的 `cni0` / `flannel.1` 接口与 flannel / kube-proxy(`KUBE-*` 链)的 iptables 规则**重启节点才清干净**;不重启则手工 `ip link delete cni0`、`ip link delete flannel.1` 并清 `KUBE-*` 链,留着会和 Cilium 的 eBPF 数据面抢同一条流。
+7. 回读:`kubectl -n kube-system exec ds/cilium -- cilium-dbg status`、全节点 Ready、租户 SSH 的 NodePort 能连、Envoy 的 LoadBalancer 外部 IP 未变。
+
+`pod_cidr_gateways`(`apps/api/app/core/k8s/real.py`)按各节点 Pod 子网的 `.0/.1` 放行 NodePort 的 SNAT 来源——Cilium 的 `cilium_host` 同样取子网首地址,规则不用改,但换完必须实测一次租户 SSH。
+
 4. **GPU 节点**:同 full 第 5 步。单机时 server 本机直接跑管理端生成的 node-join 命令:脚本检测到本机 `k3s.service` 在运行即走 server 路径(不装 agent、不改 server config,池标签经 `k3s kubectl` 打到节点;首次装 toolkit 后重启一次 k3s)。实例盘 VG `superdl-nvme` 不由 node-join 建时(令牌未登记 NVMe),须在 `./apply.sh light` 之前手工建好(空盘 `pvcreate`/`vgcreate`,或 loop 文件兜底)。
 5. 能力边界:组件面不阉割(kata / mig 池同样可用),档位可用性看**池里有没有 Ready 节点**;单机只有一个池标签,选了 hami 就没有 kata/mig 池,专用整卡与共享·标准的 SKU 上架被硬校验拦下。纯 CPU 规格挂 hami 池即可在这台机上卖。管理端「集群」页常驻「轻量集群」黄条与组件体检。

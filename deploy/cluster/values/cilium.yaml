@@ -1,5 +1,11 @@
 # Cilium 1.20:CNI + LB(SSH 端口池)。北向入口(含 JupyterLab 泛域名)走 Envoy Gateway
 kubeProxyReplacement: true
+# IPAM 跟着发行版已分配的 node.spec.podCIDR 走。chart 默认是 cluster-pool + 10.0.0.0/8,
+# 装上去 Pod 会全部落到 10.0.x.x:与 config.py 的 tenant_pod_cidr、00-namespace-config 的
+# FORWARDED_ALLOW_IPS、平台库 pg_hba 放行段(均为 10.42.0.0/16)全部对不上,平台连不上库。
+# 这个模式也让 real.py 的 pod_cidr_gateways(读 node.spec.podCIDR)继续成立
+ipam:
+  mode: kubernetes
 # HA 集群填控制面 VIP
 k8sServiceHost: "CHANGE_ME_API_VIP"
 k8sServicePort: 6443

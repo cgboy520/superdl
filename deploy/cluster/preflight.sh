@@ -79,10 +79,12 @@ fi
 # 只查 helmfile apply 直接消费的 values/ 与 raw manifest;rke2/*.yaml 是分发模板,占位由 ansible / node-join.sh 替换
 say "== values/ 占位符残留(未替换直接 apply 会让组件起不来;kps.yaml 未替换则告警静默)=="
 placeholder_files=(values/cilium.yaml values/kps.yaml acme-dns.yaml)
+# light 的 k8sServiceHost 在覆盖文件里(单 server 直连该机 6443,没有 VIP)
+[[ "$env_name" == "light" ]] && placeholder_files+=(values/light/cilium-light.yaml)
 for f in "${placeholder_files[@]}"; do
   [[ -f "$f" ]] || continue
-  # cilium 只在 full 档装
-  if [[ "$f" == values/cilium.yaml ]] && ! grep -qE '^\s*cilium:\s*\{[^}]*enabled:\s*true' "environments/$env_name.yaml"; then
+  if [[ "$f" == values/cilium.yaml || "$f" == values/light/cilium-light.yaml ]] \
+    && ! grep -qE '^\s*cilium:\s*\{[^}]*enabled:\s*true' "environments/$env_name.yaml"; then
     ok "$f 不适用(environments/$env_name.yaml cilium.enabled=false)"
     continue
   fi
@@ -333,9 +335,7 @@ check_sc() { # <sc 名称> <用途>
   fi
 }
 check_sc topolvm-provisioner "实例盘/监控组件/acme-dns 存储(full+light 均为强制依赖)"
-if [[ "$env_name" == "full" ]]; then
-  check_sc superdl-juicefs "共享数据盘/监控栈存储"
-fi
+check_sc superdl-juicefs "共享数据盘/监控栈存储(两档均为强制依赖)"
 
 if [[ "$env_name" == "light" ]]; then
   say "== light(k3s)专项 =="

@@ -2,6 +2,12 @@
 # 安装(国内镜像):curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh \
 #   | INSTALL_K3S_MIRROR=cn sh -s - server --config /etc/rancher/k3s/config.yaml
 write-kubeconfig-mode: "0640"
+# CNI / NetworkPolicy / kube-proxy 全部交给 Cilium(同 full 档)。三项都是 server 端标志,
+# agent 从 server 取节点配置,不必逐台改;但必须装机即设——事后改要全集群重启 k3s
+# 并重建全部 Pod(见 deploy/cluster/README.md「给已有集群换 CNI」)
+flannel-backend: none
+disable-network-policy: true   # 关掉 k3s 自带 kube-router;NetworkPolicy 由 Cilium 执行
+disable-kube-proxy: true       # Cilium kubeProxyReplacement;配套 values/light/cilium-light.yaml 的 k8sServiceHost
 disable:
   - traefik                  # 北向入口统一走 helmfile 装的 Envoy Gateway(与 full 档一致)。
                              # 必须装机即禁(事后禁用会连带删掉 Gateway API CRD)
