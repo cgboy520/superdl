@@ -55,6 +55,9 @@ s3:
   # chart 默认把 s3 的日志也写 hostPath /storage/logs,同样过不了准入策略④
   logs:
     type: "emptyDir"
+  # chart 4.47.0 的默认值 0 会被无条件渲染成 Service/containerPort 的 0,apiserver 直接拒;
+  # 置 null 才真正关掉这个监听(不对外发 TLS,S3 只在集群内)
+  httpsPort: null
   enableAuth: true
   existingConfigSecret: superdl-seaweedfs-s3
   createBuckets:
