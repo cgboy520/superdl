@@ -7,7 +7,7 @@
 #           (禁掉官方 device-plugin;其他组件照常)
 #   mig 池: 无需标签(container 默认;MIG 机型自动获得 mig-manager)。
 #           切分按需:kubectl label node <节点> nvidia.com/mig.config=all-1g.10gb --overwrite
-# 切池(管理端「切换池」)时这两个键随池标签整套收敛,**旧池残留键必须删掉**:operator 派生
+# 这两个键与池标签一样由平台写(入网对账时打、切池时整套换),**旧池残留键必须删掉**:operator 派生
 # nvidia.com/gpu.deploy.* 时不覆盖已存在的值,hami 的 device-plugin=false 留在 kata/mig 节点上
 # 会让官方 device-plugin 永远起不来。收敛表在 apps/api/app/core/gpu_adapter.pool_node_labels,
 # 平台 SA 的写权限在 deploy/cluster/admission/tenant-restrictions.yaml 策略三白名单。

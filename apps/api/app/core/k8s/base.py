@@ -374,7 +374,8 @@ class K8sOrchestrator(Protocol):
 GPU_MODEL_NODE_LABEL = (
     "superdl.io/gpu-model"  # 平台 canonical 型号标签(巡检写入,调度 nodeSelector 依赖)
 )
-POOL_NODE_LABEL = "superdl.io/pool"  # 节点池标签(装机时定,空节点可切;kata / hami / mig 分池铁律)
+# 节点池标签:**只由平台写**(入网对账时打、切池时整套换),节点侧不自声明;kata 与 hami 永不混布
+POOL_NODE_LABEL = "superdl.io/pool"
 # GPU Operator 的 operand 落点标签:切池时随池标签一起收敛(准入策略③ 白名单里的两个具名键)
 GPU_WORKLOAD_CONFIG_LABEL = "nvidia.com/gpu.workload.config"
 GPU_DEPLOY_DEVICE_PLUGIN_LABEL = "nvidia.com/gpu.deploy.device-plugin"

@@ -3,7 +3,10 @@
 把一台节点在 `kata` / `hami` / `mig` 三个池之间换过去。场景:为整卡直通做实机验证、按库存需要调整档位配比、
 验证失败后切回原池。`cpu` 池是无卡机的物理属性,不参与切换。
 
-平台负责 K8s 标签与台账,主机侧改造(IOMMU、驱动、agent 配置)由节点上重跑装机脚本补齐。
+**不需要登录节点,也不重启。** 池是一个纯标签:池间差异的节点侧软件全部由 DaemonSet 按标签投送
+(`kata-deploy` 认 `superdl.io/pool=kata`、HAMi device-plugin 认 `superdl.io/pool=hami`、
+gpu-operator 的 vfio-manager 与 sandbox 插件认 `nvidia.com/gpu.deploy.*`),整卡直通的绑定与解绑
+由 vfio-manager 在运行时做。IOMMU 是装机基线,不随池变。
 端点与不变量见 [`docs/reference/nodes.md`](../../../docs/reference/nodes.md)。
 
 ## 前置
@@ -22,11 +25,8 @@ kubectl apply -f deploy/cluster/admission/tenant-restrictions.yaml
 ## 步骤
 
 1. 管理端 节点与 GPU → 目标节点行「切换池」→ 选目标池 → 填原因 → 确认。
-   受理后节点立即封锁,池标签与 GPU operand 标签经 outbox 收敛(秒级,60s 巡检兜底)。
-2. 复制回执里的命令,在**该节点上**执行。命令带 `--force`(节点已完成加入,不带会被脚本的幂等入口直接退出)。
-   切到 kata 时脚本会写 GRUB 的 `intel_iommu=on iommu=pt` 并**重启一次**,重启后 systemd oneshot 自动续跑。
-3. 进度在管理端「待加入节点」卡里看;节点重新 Ready 且池标签匹配后登记转 `joined`。
-4. 逐项核对(下节),全绿后在管理端「解封」。**平台不自动解封**,这是有意的:标签到位不等于能卖。
+2. 受理后节点立即封锁,池标签与 GPU operand 标签经 outbox 收敛(秒级,60s 巡检兜底)。
+3. 逐项核对(下节)。**平台不自动解封**——标签到位不等于能卖,全绿后在管理端「解封」。
 
 ## 核对
 
@@ -50,10 +50,12 @@ kubectl get node <node> -o jsonpath='{.status.allocatable}' | tr ',' '\n' | grep
 
 ## 坑
 
-- **`node-label` 只在节点首次注册时生效**(k3s / RKE2 同),所以重跑脚本改不动已注册节点的标签,标签一律由平台改。
-  脚本重写 `config.yaml` 是为了将来 Node 对象若被删除重建时,kubelet 带上来的标签与新池一致。
-- 期望池(`node_specs.desired_pool`)**切完不清空**,它是平台认定的池;巡检以它为准纠偏,所以手工
-  `kubectl label` 改池会在 60s 内被改回去。要改池走管理端。
-- gpu-operator 按 `nvidia.com/gpu.workload.config` 派生 `nvidia.com/gpu.deploy.*` 且**已存在的值不覆盖**,
-  所以切池必须把旧池残留键删掉——平台已整套下发,手工操作时别只改一半。
-- 切池期间登记停在 `installing` 属正常:标签没收敛到位时对账器不判,等收敛后转 `joined`。
+- **手工 `kubectl label` 改池会被顶回去**:期望池(`node_specs.desired_pool`)是事实源,巡检 C2 按它纠偏,
+  而且「标签不符且节点仍可调度」会计 critical 指标 `NodePoolLabelMismatch` 并自动封锁该节点。要改池走管理端。
+- **期望池切完不清空**,它是平台认定的池。Node 对象若被删除重建,kubelet 不带池标签回来,C2 按它补齐。
+- gpu-operator 派生 `nvidia.com/gpu.deploy.*` 时**不覆盖已存在的值**,所以切池必须把旧池残留键删掉
+  ——平台下发的是整套完备集(`core/gpu_adapter.pool_node_labels`),手工操作时别只改一半。
+- `kata-deploy` 没有清理钩子(`command: kata-deploy install`,无 preStop),kata → 其他池会在节点上留下
+  没人用的 containerd runtime handler。无害,不用管。
+- MIG 模式开关需要 GPU reset,mig-manager 在运行时做,但部分驱动/机型组合仍要整机重启——这是唯一
+  可能需要节点侧动作的场景,且只影响 mig 池。

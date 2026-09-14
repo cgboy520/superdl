@@ -1,5 +1,5 @@
-"""节点池在线切换:前置闸(实例 / 机型 / 目标池 / 运行时)、期望态落库、标签整套收敛、
-以及切池期间对账器不把新登记打成终态。退役的实例闸与 force 旁路同在此。"""
+"""节点池在线切换:前置闸(实例 / 机型 / 目标池 / 运行时)、期望态落库、标签整套收敛,
+以及入网时池标签由平台(而非节点)写入。退役的实例闸与 force 旁路同在此。"""
 
 import pytest
 from sqlalchemy import select
@@ -11,8 +11,10 @@ from app.core.k8s.base import (
     POOL_NODE_LABEL,
 )
 from app.core.outbox import OutboxTask
-from app.modules.nodes import handlers as _node_handlers  # noqa: F401 注册 node.* handlers
-from app.modules.nodes import service
+from app.modules.nodes import (
+    handlers as _node_handlers,
+    service,
+)
 from app.modules.nodes.models import NodeEnrollment, NodeSpec
 from tests.helpers import drain, seed_instance, seed_node_spec, set_platform_setting
 
@@ -38,8 +40,6 @@ async def _switch(sm, node_name: str, pool: str, *, reason: str = "实机验证"
             node_name,
             pool=pool,
             reason=reason,
-            created_by=1,
-            idempotency_key=None,
         )
 
 
@@ -141,23 +141,22 @@ async def test_target_runtime_must_be_ready(sm, fake_auto_ready):
     assert (await _spec(sm, "sw-4")).desired_pool is None
 
 
-async def test_switch_writes_desired_state_and_issues_token(sm):
-    """成功路径:停调度 + 期望池 + 绑新池的注册令牌 + outbox 同一事务落地。
-    挂了说明四件事会各自半途,节点停在既非旧池也非新池的中间态。"""
+async def test_switch_writes_desired_state_only(sm):
+    """成功路径:停调度 + 期望池 + outbox 同一事务落地,且**不签发任何注册令牌**。
+    挂了说明切池又回到「要运维上节点重跑」的老路——池间差异全由 DaemonSet 按标签投送,
+    节点侧没有任何需要同步的状态。"""
     await _cluster_configured(sm)
     await _probe(sm)
     await seed_node_spec(sm, node_name="sw-5", pool_label="hami", gpu_count=8)
 
-    row, enrollment, token = await _switch(sm, "sw-5", "kata")
+    row, from_pool = await _switch(sm, "sw-5", "kata")
     assert row.desired_pool == "kata" and row.desired_unschedulable is True
-    assert enrollment.pool == "kata" and enrollment.hostname == "sw-5"
-    assert enrollment.status == "pending"
+    assert from_pool == "hami"
     tasks = await _switch_tasks(sm)
     assert [t.payload["to_pool"] for t in tasks] == ["kata"]
     assert tasks[0].payload["from_pool"] == "hami"
-    # 回执命令必须带 --force:节点已 completed,不带会被 node-join 的幂等入口直接退出
-    curl_cmd, wget_cmd = service.enrollment_commands(token, force=True)
-    assert "--force" in curl_cmd and "--force" in wget_cmd
+    async with sm() as session:
+        assert (await session.execute(select(NodeEnrollment))).scalars().all() == []
 
 
 async def test_handler_converges_full_label_set(sm, fake_auto_ready):
@@ -204,17 +203,100 @@ async def test_switch_back_restores_hami_operand_label(sm, fake_auto_ready):
     assert GPU_WORKLOAD_CONFIG_LABEL not in labels
 
 
-async def test_reconciler_waits_out_switch(sm, fake_auto_ready):
-    """切池收敛期间新登记不落终态 failed。挂了说明切池会把刚签发的令牌打成不可恢复,
-    运维只能重新签发,而 failed 是终态、regenerate 之外无路可走。"""
+async def _enroll(sm, hostname: str, pool: str) -> int:
+    """签发令牌并 bootstrap 到 installing,返回登记 id(节点侧不打任何池标签)。"""
+    from app.modules.nodes.schemas import EnrollmentCreate
+
+    async with sm() as session:
+        enrollment, token = await service.create_enrollment(
+            session,
+            EnrollmentCreate(pool=pool, hostname=hostname),  # type: ignore[arg-type]
+            created_by=1,
+            idempotency_key=None,
+        )
+        enrollment_id = enrollment.id
+    async with sm() as session:
+        await service.bootstrap(
+            session,
+            token,
+            hostname=hostname,
+            os_info={"os_release": "Ubuntu 24.04"},
+            gpu_details=[],
+            client_ip=None,
+        )
+    return enrollment_id
+
+
+async def test_reconciler_labels_unlabeled_node_then_joins(sm, fake_auto_ready):
+    """入网时池标签由**平台**打:节点自己不声明,对账器看到 Ready 就打整套标签再判 joined。
+    挂了说明池标签又有了第二个写入方(节点的 config.yaml),切池后它永远过时,
+    Node 对象一重建就把旧池带回来。"""
     from app.core.k8s.base import NodeInfo
     from app.modules.nodes.reconciler import reconcile_enrollments_once
 
     await _cluster_configured(sm)
-    # 节点自声明仍是旧池(标签还没收敛)
+    # 节点注册时不带池标签(node-join 不再写 node-label)
     fake_auto_ready.inject_node(
         NodeInfo(
-            name="sw-8",
+            name="join-1",
+            pool_label="",
+            gpu_model_label="RTX4090",
+            gpu_total=8,
+            gpu_used=0,
+            status="Ready",
+        )
+    )
+    enrollment_id = await _enroll(sm, "join-1", "hami")
+
+    counts = await reconcile_enrollments_once(sm)
+
+    assert counts["labeled"] == 1 and counts["joined"] == 1
+    labels = fake_auto_ready.node_labels["join-1"]
+    assert labels[POOL_NODE_LABEL] == "hami"
+    assert labels[GPU_DEPLOY_DEVICE_PLUGIN_LABEL] == "false"
+    async with sm() as session:
+        row = await session.get(NodeEnrollment, enrollment_id)
+        assert row is not None and row.status == "joined"
+
+
+async def test_reconciler_label_failure_keeps_installing(sm, fake_auto_ready):
+    """打标签失败就不推进状态。挂了说明会出现「登记已 joined 但节点没有池标签」的空档,
+    节点看着入网了却永远接不到实例。"""
+    from app.core.k8s.base import NodeInfo
+    from app.modules.nodes.reconciler import reconcile_enrollments_once
+
+    await _cluster_configured(sm)
+    fake_auto_ready.inject_node(
+        NodeInfo(name="join-2", pool_label="", gpu_total=8, gpu_used=0, status="Ready")
+    )
+    enrollment_id = await _enroll(sm, "join-2", "hami")
+
+    async def boom(*_a, **_kw):
+        raise RuntimeError("apiserver 抖动")
+
+    orig = fake_auto_ready.set_node_labels
+    fake_auto_ready.set_node_labels = boom
+    try:
+        counts = await reconcile_enrollments_once(sm)
+    finally:
+        fake_auto_ready.set_node_labels = orig
+
+    assert counts["joined"] == 0
+    async with sm() as session:
+        row = await session.get(NodeEnrollment, enrollment_id)
+        assert row is not None and row.status == "installing"
+
+
+async def test_reconciler_honours_desired_pool_over_enrollment(sm, fake_auto_ready):
+    """装机途中被切池:对账器按期望池打标签,不按登记池。
+    挂了说明对账器与巡检 C2 会对着同一个节点来回改标签。"""
+    from app.core.k8s.base import NodeInfo
+    from app.modules.nodes.reconciler import reconcile_enrollments_once
+
+    await _cluster_configured(sm)
+    fake_auto_ready.inject_node(
+        NodeInfo(
+            name="join-3",
             pool_label="hami",
             gpu_model_label="RTX4090",
             gpu_total=8,
@@ -222,22 +304,14 @@ async def test_reconciler_waits_out_switch(sm, fake_auto_ready):
             status="Ready",
         )
     )
+    # 巡检建台账行(池 hami),再在装机途中切到 kata
     await _probe(sm)
-    _, enrollment, token = await _switch(sm, "sw-8", "kata")
-    async with sm() as session:
-        await service.bootstrap(
-            session,
-            token,
-            hostname="sw-8",
-            os_info={"os_release": "Ubuntu 24.04"},
-            gpu_details=[],
-            client_ip=None,
-        )
+    await _switch(sm, "join-3", "kata")
+    await _enroll(sm, "join-3", "hami")
 
     await reconcile_enrollments_once(sm)
-    async with sm() as session:
-        row = await session.get(NodeEnrollment, enrollment.id)
-        assert row is not None and row.status == "installing"
+
+    assert fake_auto_ready.node_labels["join-3"][POOL_NODE_LABEL] == "kata"
 
 
 async def test_decommission_instance_gate_and_force(sm):

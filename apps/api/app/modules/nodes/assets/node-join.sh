@@ -9,9 +9,9 @@
 # - 注册令牌一次性:bootstrap 后换发 progress 令牌落 $STATE_DIR/token(0600),续跑只用它。
 # - k8s_distro 由服务端下发(rke2 / k3s)。
 # - 全幂等:每步落 marker($STATE_DIR/done.d/);已完成重跑直接退出,从头重装须 --force + 新令牌。
-# - 切池(管理端「切换池」)走的就是 --force + 新令牌这条路:脚本按新池补 IOMMU/驱动/toolkit 并
-#   重写 config.yaml 的 node-label。节点对象上的标签**不由本脚本改**——node-label 只在节点首次
-#   注册时生效,已注册节点的标签由平台侧改(见 docs/reference/nodes.md)。
+# - 池标签与 GPU operand 标签**一律由平台写,本脚本不碰**:发行版的 node-label 只在首次注册时生效,
+#   留在节点侧只会变成第二事实源。切池因此不需要重跑本脚本(见 docs/reference/nodes.md)。
+# - IOMMU 是装机基线,对全部带卡池都做:它只能开机生效,做成 kata 专属就把重启绑进了切池。
 # - 需重启的步骤合并为一次重启,systemd oneshot 断点续跑,最多 2 次;重启前从 API 重拉自身并校验 script_sha256。
 # - k3s/rke2 安装器先落临时文件、校验内置 sha256 pin 再执行。
 # - phase 取值与后端契约一致:bootstrap precheck nouveau sysctl iommu driver
@@ -300,9 +300,12 @@ step_sysctl() {
   sysctl --system >/dev/null
 }
 
+# IOMMU 是**装机基线**,对全部带卡池都做,不按池分支:它只能开机生效,做成 kata 专属就等于把
+# 一次重启绑进「切池」。iommu=pt 让宿主设备跳过 DMA 翻译,对不做直通的节点没有成本。
 step_iommu() {
-  [[ "$(cfg_get pool)" == "kata" ]] || { echo "-- 非 kata 池,跳过 IOMMU"; return 0; }
-  if [[ ! -f "$ETC_DIR"/default/grub.d/99-superdl.cfg ]]; then
+  if is_cpu_pool; then echo "-- cpu 池:无卡机,跳过 IOMMU"; return 0; fi
+  # intel_iommu / iommu=pt 是 x86 参数;aarch64 的 SMMU 由固件 ACPI IORT 描述,内核启动即绑,无需 cmdline
+  if [[ "$(uname -m)" == "x86_64" && ! -f "$ETC_DIR"/default/grub.d/99-superdl.cfg ]]; then
     mkdir -p "$ETC_DIR"/default/grub.d
     # shellcheck disable=SC2016  # 变量须由 GRUB 展开,单引号是预期
     echo 'GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT intel_iommu=on iommu=pt"' \
@@ -311,7 +314,9 @@ step_iommu() {
   fi
   if [[ -z "$(ls -A "$IOMMU_GROUPS_DIR" 2>/dev/null)" ]]; then
     NEED_REBOOT=1
-    echo "-- IOMMU 未生效,需重启(重启后仍未生效请检查 BIOS VT-d/AMD-Vi)"
+    echo "-- IOMMU 未生效,需重启(重启后仍未生效请检查 BIOS VT-d/AMD-Vi 或固件 SMMU 设置)"
+  else
+    echo "-- IOMMU 已生效(${IOMMU_GROUPS_DIR} 有分组)"
   fi
 }
 
@@ -516,26 +521,15 @@ step_registries() {
   chmod 600 "$RANCHER_DIR"/registries.yaml
 }
 
-# GPU Operator operand 落点标签(见 deploy/cluster/values/gpu-operator.yaml),与池标签同时落;mig / cpu 池不打
-pool_gpu_labels() {  # pool_gpu_labels <pool> —— 输出 0 个或多个 key=value(mig / cpu 池无需额外标签)
-  case "$1" in
-    hami) echo "nvidia.com/gpu.deploy.device-plugin=false" ;;
-    kata) echo "nvidia.com/gpu.workload.config=vm-passthrough" ;;
-  esac
-}
-
+# 池标签与 GPU Operator operand 标签**一律由平台写**,本脚本不碰:发行版的 node-label 只在节点首次
+# 注册时生效,改不了已注册节点,留在这里只会变成第二事实源(切池后 config.yaml 永远过时,Node 对象
+# 一旦重建就把旧池带回来)。节点不自声明池,顺带也没有冒名可伪造。见 docs/reference/nodes.md。
 step_agent_config() {
-  local pool extra
-  pool="$(cfg_get pool)"
-  # shellcheck disable=SC2207  # 逐行切词正是所需(每行一个 key=value,不含空格)
-  extra=($(pool_gpu_labels "$pool"))
   if is_server_node; then
-    # 不写 agent config;池标签用本机 kubectl 打到节点对象
-    echo "-- 本机是 $SERVER_UNIT:不写 agent config,池标签直接打到节点 $(hostname)"
-    # 驱动/CUDA 版本必须在打标签之前上报(打标签后对账器即判 joined,上报 404)
+    echo "-- 本机是 $SERVER_UNIT:不写 agent config;池标签由平台打到节点 $(hostname)"
+    # 驱动/CUDA 版本趁早上报(平台打完标签即判 joined,之后上报 404 属预期)
     collect_driver_versions
-    report agent_config running "server 本机:先上报驱动版本,再打池标签"
-    server_kubectl label node "$(hostname)" "superdl.io/pool=$pool" "${extra[@]}" --overwrite
+    report agent_config running "server 本机:上报驱动版本,等平台打池标签"
     return 0
   fi
   mkdir -p "$RANCHER_DIR"
@@ -560,10 +554,6 @@ step_agent_config() {
   {
     echo "server: \"$server_url\""
     echo "token: \"$join_token\""
-    echo "node-label:"
-    echo "  - \"superdl.io/pool=$pool\""
-    local l
-    for l in "${extra[@]}"; do echo "  - \"$l\""; done
   } > "$RANCHER_DIR"/config.yaml
   chmod 600 "$RANCHER_DIR"/config.yaml
   # podPidsLimit 走 kubelet 配置 drop-in(不是 kubelet flag)

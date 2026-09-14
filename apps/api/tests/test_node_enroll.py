@@ -409,7 +409,8 @@ class TestEnrollRouterAnonymous:
 
 
 class TestEnrollReconciler:
-    async def test_joined_when_node_ready_and_pool_matches(self, client, sm) -> None:
+    async def test_platform_labels_node_then_joins(self, client, sm) -> None:
+        """入网时池标签由平台打:节点以未打标状态注册,对账器打整套标签后才判 joined。"""
         from app.core.k8s import set_orchestrator
         from app.core.k8s.base import NodeInfo
         from app.core.k8s.fake import FakeOrchestrator
@@ -441,13 +442,13 @@ class TestEnrollReconciler:
 
             # 节点未出现 → 不推进
             counts = await reconcile_enrollments_once(sm)
-            assert counts == {"joined": 0, "failed": 0, "expired": 0}
+            assert counts == {"joined": 0, "failed": 0, "expired": 0, "labeled": 0}
 
-            # K8s 出现 Ready 且池匹配 → joined,令牌即死;重复对账零动作
+            # K8s 出现 Ready(未打标)→ 平台打整套标签 → joined,令牌即死;重复对账零动作
             fake.inject_node(
                 NodeInfo(
                     name="gpu-b1-02",
-                    pool_label="hami",
+                    pool_label="",
                     gpu_model_label="RTX4090",
                     gpu_total=8,
                     gpu_used=0,
@@ -455,15 +456,21 @@ class TestEnrollReconciler:
                 )
             )
             counts = await reconcile_enrollments_once(sm)
-            assert counts["joined"] == 1
+            assert counts["labeled"] == 1 and counts["joined"] == 1
+            labels = fake.node_labels["gpu-b1-02"]
+            assert labels["superdl.io/pool"] == "hami"
+            assert labels["nvidia.com/gpu.deploy.device-plugin"] == "false"
             rows = (await client.get("/api/admin/v1/node-enrollments", headers=ah)).json()
             assert rows[0]["status"] == "joined" and rows[0]["joined_at"] is not None
             counts = await reconcile_enrollments_once(sm)
-            assert counts == {"joined": 0, "failed": 0, "expired": 0}
+            assert counts == {"joined": 0, "failed": 0, "expired": 0, "labeled": 0}
         finally:
             set_orchestrator(None)
 
-    async def test_pool_mismatch_fails(self, client, sm) -> None:
+    async def test_node_self_declared_pool_is_overwritten(self, client, sm) -> None:
+        """节点自带的池标签一律被平台按登记盖掉,入网照常成功。
+        挂了说明拿到令牌的机器能自选进哪个池——旧设计里这是要判 failed 的冒名,
+        现在平台是唯一写入方,压根没得伪造。"""
         from app.core.k8s import set_orchestrator
         from app.core.k8s.base import NodeInfo
         from app.core.k8s.fake import FakeOrchestrator
@@ -498,9 +505,11 @@ class TestEnrollReconciler:
                 )
             )
             counts = await reconcile_enrollments_once(sm)
-            assert counts["failed"] == 1
+            assert counts["failed"] == 0 and counts["joined"] == 1
+            # 节点自称 hami,平台按登记盖成 kata
+            assert fake.node_labels["wrong-pool-node"]["superdl.io/pool"] == "kata"
             rows = (await client.get("/api/admin/v1/node-enrollments", headers=ah)).json()
-            assert rows[0]["status"] == "failed" and "池标签不符" in rows[0]["error"]
+            assert rows[0]["status"] == "joined"
         finally:
             set_orchestrator(None)
 
@@ -601,12 +610,12 @@ class TestEnrollReconciler:
                 row.status = "revoked"
                 # 对账器跳过被锁行
                 counts = await reconcile_enrollments_once(sm)
-                assert counts == {"joined": 0, "failed": 0, "expired": 0}
+                assert counts == {"joined": 0, "failed": 0, "expired": 0, "labeled": 0}
                 await locker.commit()
 
             # 吊销提交后:revoked 不被覆盖成 expired
             counts = await reconcile_enrollments_once(sm)
-            assert counts == {"joined": 0, "failed": 0, "expired": 0}
+            assert counts == {"joined": 0, "failed": 0, "expired": 0, "labeled": 0}
             rows = (await client.get("/api/admin/v1/node-enrollments", headers=ah)).json()
             assert rows[0]["status"] == "revoked"
         finally:

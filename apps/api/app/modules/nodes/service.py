@@ -48,7 +48,6 @@ from app.modules.nodes.schemas import (
     ComponentProbeOut,
     ComponentStateOut,
     EnrollmentCreate,
-    Pool,
 )
 from app.modules.orchestrator import queries as orchestrator_queries
 
@@ -107,18 +106,19 @@ def _new_token(prefix: str = TOKEN_PREFIX) -> tuple[str, str]:
     return token, hash_node_token(token)
 
 
-def enrollment_commands(token: str, *, force: bool = False) -> tuple[str, str]:
-    """注册命令两种形态:管道式 / 先下载可审阅式。token 经 stdin 落 0600 文件,不进 argv。
-    force=True 用于切池:节点已 completed,不带 --force 会直接退出(node-join.sh 的幂等入口)。"""
+def enrollment_commands(token: str) -> tuple[str, str]:
+    """注册命令两种形态:管道式 / 先下载可审阅式。token 经 stdin 落 0600 文件,不进 argv。"""
     base = get_settings().public_base_url.rstrip("/")
     script_url = f"{base}/api/v1/node-enroll/script"
     token_file = "/run/superdl-join.token"
-    args = f"--token-file {token_file}{' --force' if force else ''}"
     # echo 是 shell 内建,不产生含 token 的 argv
     load = f"echo '{token}' | sudo sh -c 'umask 077; cat > {token_file}; "
     cleanup = f"; s=$?; rm -f {token_file}; exit $s'"
-    curl_cmd = f"{load}curl -fsSL {script_url} | bash -s -- {args}{cleanup}"
-    wget_cmd = f"wget -qO node-join.sh {script_url} && {load}bash node-join.sh {args}{cleanup}"
+    curl_cmd = f"{load}curl -fsSL {script_url} | bash -s -- --token-file {token_file}{cleanup}"
+    wget_cmd = (
+        f"wget -qO node-join.sh {script_url} && "
+        f"{load}bash node-join.sh --token-file {token_file}{cleanup}"
+    )
     return curl_cmd, wget_cmd
 
 
@@ -266,16 +266,14 @@ async def switch_node_pool(
     *,
     pool: str,
     reason: str,
-    created_by: int,
-    idempotency_key: str | None,
-) -> tuple[NodeSpec, NodeEnrollment, str]:
-    """切换节点池(kata / hami / mig 三者互切)。同事务:停调度与期望池落台账、签发绑新池的
-    注册令牌、outbox 入队 node.switch_pool。返回 (台账行, 新登记, token 明文)。
+) -> tuple[NodeSpec, str]:
+    """切换节点池(kata / hami / mig 三者互切)。同事务:停调度与期望池落台账 + outbox 入队
+    node.switch_pool。返回 (台账行, 原池)。
 
-    平台只做 K8s 标签与台账;主机侧改造(kata 的 IOMMU / GRUB / 重启、驱动与 toolkit、
-    agent config.yaml 与新池一致)靠运维在节点上重跑 node-join.sh --force 补齐。
+    **不需要任何节点侧动作**:池间差异的节点侧软件全部由 DaemonSet 按标签投送
+    (kata-deploy / HAMi device-plugin / gpu-operator 的 vfio-manager 与 sandbox 插件),
+    VFIO 绑定与解绑由 vfio-manager 在运行时做;IOMMU 是装机基线,不随池变。
     """
-    await require_cluster_config(session)
     row = (
         await session.execute(
             select(NodeSpec).where(NodeSpec.node_name == node_name).with_for_update()
@@ -302,15 +300,6 @@ async def switch_node_pool(
 
     row.desired_unschedulable = True
     row.desired_pool = pool
-    enrollment, token = _add_enrollment(
-        session,
-        # 上面的成员校验已把取值收到 SWITCHABLE_POOLS 内
-        EnrollmentCreate(
-            pool=cast(Pool, pool), hostname=node_name, note=f"切池 {current} → {pool}"
-        ),
-        created_by=created_by,
-        idempotency_key=idempotency_key,
-    )
     enqueue(
         session,
         "node.switch_pool",
@@ -318,7 +307,6 @@ async def switch_node_pool(
     )
     await session.commit()
     await session.refresh(row)
-    await session.refresh(enrollment)
     logger.warning(
         "node_pool_switch_requested",
         node=node_name,
@@ -326,7 +314,7 @@ async def switch_node_pool(
         to_pool=pool,
         reason=reason,
     )
-    return row, enrollment, token
+    return row, current or ""
 
 
 async def decommission_node(

@@ -55,7 +55,6 @@ import type {
   AdminResolveReversalApiAdminV1FinanceReversalsOrderNoResolvePost200,
   AdminSelfPasswordRequest,
   AdminSettlementGapOut,
-  AdminSwitchNodePoolApiAdminV1NodesNodeNameSwitchPoolPostHeaders,
   AdminTenantBillsApiAdminV1TenantsUserIdBillsGetParams,
   AdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetParams,
   AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetParams,
@@ -1981,18 +1980,17 @@ export const getAdminSwitchNodePoolApiAdminV1NodesNodeNameSwitchPoolPostUrl = (n
 /**
  * 切换节点池(kata / hami / mig 互切)。前置:节点上无未释放实例、机型与目标池匹配、
  * 目标池运行时就绪。受理后节点即停止调度,池标签与 GPU operand 标签经 outbox 改;
- * 响应里的命令须在节点上重跑以补齐主机侧改造(kata 的 IOMMU 与一次重启),token 仅此一次。
+ * 池间差异的节点侧软件由 DaemonSet 按标签自行投送,无需登录节点、不重启。
  * @summary Admin Switch Node Pool
  */
 export const adminSwitchNodePoolApiAdminV1NodesNodeNameSwitchPoolPost = async (nodeName: string,
-    nodeSwitchPoolRequest: NodeSwitchPoolRequest,
-    headers?: AdminSwitchNodePoolApiAdminV1NodesNodeNameSwitchPoolPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<NodeSwitchPoolOut> => {
+    nodeSwitchPoolRequest: NodeSwitchPoolRequest, options?: Parameters<typeof customFetch>[1]): Promise<NodeSwitchPoolOut> => {
 
   return customFetch<NodeSwitchPoolOut>(getAdminSwitchNodePoolApiAdminV1NodesNodeNameSwitchPoolPostUrl(nodeName),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
     body: JSON.stringify(nodeSwitchPoolRequest)
   }
 );}

@@ -186,18 +186,18 @@ async def _converge_ledger(
             else:
                 # 型号未知不沿用上一轮真值
                 row.label_synced = bool(canonical)
-            # 池标签对账:期望池是事实源,优先级 desired_pool(管理端切池)> 注册登记
-            switching = row.desired_pool is not None
+            # 池标签对账:期望池是事实源,优先级 desired_pool(管理端切池)> 注册登记。
+            # 平台是池标签唯一写入方,所以「未打标」与「标签不符」都由这里补齐:
+            # 未打标 = 装机中或 Node 对象被删重建(kubelet 重注册不带池标签),补上即可。
             wanted_pool = row.desired_pool or enrolled_pools.get(n.name)
-            if (
-                wanted_pool
-                and n.pool_label not in ("", "unknown")
-                and not pool_matches(wanted_pool, n.pool_label)
-            ):
-                if not switching:
-                    # 冒名:节点自称的池与登记不符,指标在发现时计数
-                    NODE_POOL_LABEL_MISMATCH_TOTAL.inc()
-                plan.pool_fixes.append((n.name, wanted_pool, n.pool_label, switching))
+            if wanted_pool and not pool_matches(wanted_pool, n.pool_label):
+                observed = n.pool_label or ""
+                # 标签不符且节点仍可调度 = 平台以外的写入方改过它(切池必先 cordon,收敛窗口内
+                # 节点一定是停止调度的;cordon 中的节点不接实例,漂移也不产生后果)
+                tampered = observed not in ("", "unknown") and row.desired_unschedulable is not True
+                if tampered:
+                    NODE_POOL_LABEL_MISMATCH_TOTAL.inc()  # 指标在发现时计数
+                plan.pool_fixes.append((n.name, wanted_pool, observed, tampered))
         for name, row in list(rows.items()):
             if name in seen:
                 continue
@@ -267,11 +267,11 @@ async def _fix_pool_labels(
     fixes: list[tuple[str, str, str, bool]],
     counts: dict[str, int],
 ) -> None:
-    """C2:池标签收敛(期望池 > 节点自声明;逐节点独立 try),整套下发含 GPU operand 标签。
-    切池(desired_pool)是运维动作,标签已由 handler 下发过,这里只兜底重试;
-    冒名(与注册登记不符)先 cordon(service.request_cordon,与管理端同路径)再改标签。"""
-    for name, pool, observed, switching in fixes:
-        if not switching:
+    """C2:池标签收敛(期望池 > 节点实况;逐节点独立 try),整套下发含 GPU operand 标签。
+    未打标(装机中 / Node 对象重建)只补标签;标签被手工改过才先 cordon
+    (service.request_cordon,与管理端同路径)再改回,并已在发现时计了 critical 指标。"""
+    for name, pool, observed, tampered in fixes:
+        if tampered:
             async with sm() as session:
                 row = (
                     await session.execute(select(NodeSpec).where(NodeSpec.node_name == name))
@@ -282,7 +282,7 @@ async def _fix_pool_labels(
                         name,
                         unschedulable=True,
                         reason=(
-                            f"池标签与注册登记不符(节点自称 {observed},登记为 {pool}),"
+                            f"池标签被手工改动(节点上是 {observed},平台期望 {pool}),"
                             "已自动停止调度待人工核查"
                         ),
                     )
@@ -293,15 +293,15 @@ async def _fix_pool_labels(
             logger.warning("node_pool_label_fix_failed", node=name, pool=pool)
             continue
         counts["pool_label_corrected"] += 1
-        if switching:
-            logger.info("node_pool_switch_converged", node=name, pool=pool, observed=observed)
+        if not tampered:
+            logger.info("node_pool_label_applied", node=name, pool=pool)
             continue
         logger.warning(
             "node_pool_label_corrected",
             node=name,
             pool=pool,
             observed=observed,
-            hint="节点自声明池标签与注册登记不符,已按登记纠正并停止调度;需排查节点凭据",
+            hint="池标签被平台以外的写入方改过,已按期望池改回并停止调度;需排查谁有 Node 写权限",
         )
 
 

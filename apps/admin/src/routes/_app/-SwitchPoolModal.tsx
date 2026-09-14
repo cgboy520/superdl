@@ -1,17 +1,16 @@
-/** 切换节点池:表单态(当前池 / 目标池 / 原因)→ L2 二次确认 → 回执态(重跑命令,令牌只显示一次)。
+/** 切换节点池:表单(当前池 / 目标池 / 原因)→ L2 二次确认 → 提交。
+ *  不需要任何节点侧动作:池间差异的节点侧软件由 DaemonSet 按标签投送,所以没有回执命令。
  *  前置由节点行的 GatedButton 挡住,这里只做取值闸(排除当前池、机型不支持 MIG 的灰置)。 */
 
 import { Alert, App, Button, Form, Input, Modal, Select, Space, Typography } from "antd";
-import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { fontSize, space, useApiErrorText } from "@superdl/ui";
 import { useConfirm } from "@superdl/ui/components";
 
-import { type NodeRow, type NodeSwitchPoolOut, useSwitchNodePool } from "../../api";
-import { REASON_MAX_LEN } from "../../lib/validators";
+import { type NodeRow, useSwitchNodePool } from "../../api";
 import { POOL_LABEL_KEY, SWITCHABLE_POOLS, supportsMig, type SwitchablePool } from "../../lib/pools";
-import { CommandPanel } from "./-AddNodeModal";
+import { REASON_MAX_LEN } from "../../lib/validators";
 
 interface FormValues {
   pool: SwitchablePool;
@@ -49,22 +48,19 @@ export function SwitchPoolModal({
   const confirm = useConfirm();
   const { message } = App.useApp();
   const [form] = Form.useForm<FormValues>();
-  const [result, setResult] = useState<NodeSwitchPoolOut | null>(null);
-  const [idemKey, setIdemKey] = useState(() => crypto.randomUUID());
   const switchPool = useSwitchNodePool({
     mutation: {
       onSuccess: (r) => {
-        setResult(r);
+        message.success(t("nodes.switchPoolSubmitted", { to: r.to_pool }));
         onDone();
+        close();
       },
       onError: (e) => message.error(errText(e, t("nodes.switchPoolFailed"))),
     },
   });
 
   const close = () => {
-    setResult(null);
     form.resetFields();
-    setIdemKey(crypto.randomUUID());
     onClose();
   };
 
@@ -90,7 +86,7 @@ export function SwitchPoolModal({
         consequences: [
           t("nodes.switchPoolConsequenceCordon"),
           t("nodes.switchPoolConsequenceLabels"),
-          t("nodes.switchPoolConsequenceRerun"),
+          t("nodes.switchPoolConsequenceOperands"),
           t("nodes.switchPoolConsequenceCapacity", { from, to: values.pool }),
         ],
         impact: t("nodes.switchPoolReasonEcho", { reason: values.reason }),
@@ -100,7 +96,6 @@ export function SwitchPoolModal({
           await switchPool.mutateAsync({
             nodeName: node.name,
             data: { pool: values.pool, reason: values.reason },
-            idempotencyKey: idemKey,
           });
         },
       });
@@ -109,24 +104,18 @@ export function SwitchPoolModal({
 
   return (
     <Modal
-      title={result ? t("nodes.switchPoolDoneTitle") : t("nodes.switchPoolTitle")}
+      title={t("nodes.switchPoolTitle")}
       open
       onCancel={close}
       width="min(640px, 100vw)"
       destroyOnHidden
       footer={
-        result ? (
-          <Button type="primary" onClick={close}>
-            {t("nodes.done")}
+        <Space>
+          <Button onClick={close}>{t("common.cancel", { ns: "shared" })}</Button>
+          <Button type="primary" danger loading={switchPool.isPending} onClick={submit}>
+            {t("common.next")}
           </Button>
-        ) : (
-          <Space>
-            <Button onClick={close}>{t("common.cancel", { ns: "shared" })}</Button>
-            <Button type="primary" danger loading={switchPool.isPending} onClick={submit}>
-              {t("common.next")}
-            </Button>
-          </Space>
-        )
+        </Space>
       }
     >
       <Typography.Text
@@ -135,45 +124,28 @@ export function SwitchPoolModal({
       >
         {t("common.targetLabel")}:{node.name}
       </Typography.Text>
-      {result ? (
-        <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
-          <Alert
-            type="info"
-            showIcon
-            title={t("nodes.switchPoolDoneTitle")}
-            description={t("nodes.switchPoolDoneDesc", { to: result.to_pool })}
-          />
-          <CommandPanel result={result} />
-        </Space>
-      ) : (
-        <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
-          <Alert type="warning" showIcon title={t("nodes.switchPoolNotice")} />
-          <Form form={form} layout="vertical" initialValues={{ pool: options.find((o) => !o.disabled)?.value }}>
-            <Form.Item label={t("nodes.switchPoolFrom")}>
-              <Typography.Text>{from ? t(POOL_LABEL_KEY[from as SwitchablePool]) : "—"}</Typography.Text>
-            </Form.Item>
-            <Form.Item
-              name="pool"
-              label={t("nodes.switchPoolTo")}
-              rules={[{ required: true, message: t("nodes.switchPoolToRule") }]}
-            >
-              <Select options={options} />
-            </Form.Item>
-            <Form.Item
-              name="reason"
-              label={t("common.reasonLabel")}
-              rules={[{ required: true, min: 2, message: t("common.reasonRule") }]}
-            >
-              <Input.TextArea
-                rows={3}
-                maxLength={REASON_MAX_LEN}
-                showCount
-                placeholder={t("common.reasonPlaceholder")}
-              />
-            </Form.Item>
-          </Form>
-        </Space>
-      )}
+      <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
+        <Alert type="warning" showIcon title={t("nodes.switchPoolNotice")} />
+        <Form form={form} layout="vertical" initialValues={{ pool: options.find((o) => !o.disabled)?.value }}>
+          <Form.Item label={t("nodes.switchPoolFrom")}>
+            <Typography.Text>{from ? t(POOL_LABEL_KEY[from as SwitchablePool]) : "—"}</Typography.Text>
+          </Form.Item>
+          <Form.Item
+            name="pool"
+            label={t("nodes.switchPoolTo")}
+            rules={[{ required: true, message: t("nodes.switchPoolToRule") }]}
+          >
+            <Select options={options} />
+          </Form.Item>
+          <Form.Item
+            name="reason"
+            label={t("common.reasonLabel")}
+            rules={[{ required: true, min: 2, message: t("common.reasonRule") }]}
+          >
+            <Input.TextArea rows={3} maxLength={REASON_MAX_LEN} showCount placeholder={t("common.reasonPlaceholder")} />
+          </Form.Item>
+        </Form>
+      </Space>
     </Modal>
   );
 }

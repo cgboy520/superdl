@@ -389,8 +389,8 @@ class NodeSwitchPoolRequest(ReasonBody):
     pool: SwitchablePool
 
 
-class NodeSwitchPoolOut(EnrollmentCommandOut):
-    """切池回执:池标签经 outbox 异步改;命令带 --force,用于在节点上补主机侧改造。"""
+class NodeSwitchPoolOut(BaseModel):
+    """切池受理回执:停调度与期望池已落台账;标签收敛经 outbox,不需要任何节点侧动作。"""
 
     node_name: str
     from_pool: str
@@ -400,28 +400,14 @@ class NodeSwitchPoolOut(EnrollmentCommandOut):
 
 @router.post("/nodes/{node_name}/switch-pool", dependencies=[require_roles("ops")])
 async def admin_switch_node_pool(
-    node_name: str,
-    body: NodeSwitchPoolRequest,
-    session: DbSession,
-    request: Request,
-    admin: CurrentAdmin,
-    idempotency_key: IdempotencyKey = None,
+    node_name: str, body: NodeSwitchPoolRequest, session: DbSession, request: Request
 ) -> NodeSwitchPoolOut:
     """切换节点池(kata / hami / mig 互切)。前置:节点上无未释放实例、机型与目标池匹配、
     目标池运行时就绪。受理后节点即停止调度,池标签与 GPU operand 标签经 outbox 改;
-    响应里的命令须在节点上重跑以补齐主机侧改造(kata 的 IOMMU 与一次重启),token 仅此一次。
+    池间差异的节点侧软件由 DaemonSet 按标签自行投送,无需登录节点、不重启。
     """
-    from_pool = ""
-    row = await nodes_service.get_node_spec(session, node_name)
-    if row is not None:
-        from_pool = row.desired_pool or row.pool_label or ""
-    _, enrollment, token = await nodes_service.switch_node_pool(
-        session,
-        node_name,
-        pool=body.pool,
-        reason=body.reason,
-        created_by=admin.id,
-        idempotency_key=idempotency_key,
+    _, from_pool = await nodes_service.switch_node_pool(
+        session, node_name, pool=body.pool, reason=body.reason
     )
     set_audit_target(
         request,
@@ -431,19 +417,9 @@ async def admin_switch_node_pool(
             "from_pool": from_pool,
             "to_pool": body.pool,
             "reason": body.reason,
-            "enrollment_id": enrollment.id,
         },
     )
-    curl_command, wget_command = nodes_service.enrollment_commands(token, force=True)
-    return NodeSwitchPoolOut(
-        enrollment=NodeEnrollmentOut.model_validate(enrollment),
-        token=token,
-        curl_command=curl_command,
-        wget_command=wget_command,
-        node_name=node_name,
-        from_pool=from_pool,
-        to_pool=body.pool,
-    )
+    return NodeSwitchPoolOut(node_name=node_name, from_pool=from_pool, to_pool=body.pool)
 
 
 @router.post("/nodes/{node_name}/decommission", dependencies=[require_roles("ops")])

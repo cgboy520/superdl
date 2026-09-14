@@ -4,18 +4,13 @@
  * SuperDL API
  * OpenAPI spec version: 0.1.0
  */
-import type { NodeEnrollmentOut } from './nodeEnrollmentOut';
 
 /**
- * 切池回执:池标签经 outbox 异步改;命令带 --force,用于在节点上补主机侧改造。
+ * 切池受理回执:停调度与期望池已落台账;标签收敛经 outbox,不需要任何节点侧动作。
  */
 export interface NodeSwitchPoolOut {
-  curl_command: string;
-  enrollment: NodeEnrollmentOut;
   from_pool: string;
   node_name: string;
   queued?: boolean;
   to_pool: string;
-  token: string;
-  wget_command: string;
 }

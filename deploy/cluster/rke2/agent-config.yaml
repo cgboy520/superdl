@@ -1,10 +1,10 @@
-# /etc/rancher/rke2/config.yaml —— GPU agent 节点(装机后按池打标签)
+# /etc/rancher/rke2/config.yaml —— GPU agent 节点(池标签由平台打,不在本文件)
 # 配套:registries.yaml 必须同步分发到本节点(Spegel P2P + registry mirror)
 # 新节点首选管理端「添加节点」一键命令,会自动生成本文件与 registries.yaml
 # HA 集群填控制面 VIP;单 server 集群填该 server IP
 server: https://<api-vip>:9345
 # token 必须是专用 agent token(server-config.yaml 的 agent-token),禁止填 server node-token;平台「集群接入」录的也是它
 token: <cluster-token>
-node-label:
-  - "superdl.io/pool=<kata|hami|mig|cpu>" # 装机时定池,Kata 与 HAMi 永不混布;cpu = 无卡机池
+# 不写 node-label:池标签与 GPU operand 标签由平台在入网对账时打(node-label 只在首次注册生效,
+# 留在这里会变成第二事实源,切池后永远过时)。见 docs/reference/nodes.md
 # podPidsLimit 不在这里(非 kubelet flag),node-join.sh 落 drop-in /var/lib/rancher/rke2/agent/etc/kubelet.conf.d/50-superdl.conf

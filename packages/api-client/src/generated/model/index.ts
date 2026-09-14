@@ -69,7 +69,6 @@ export * from './adminResolveReversalApiAdminV1FinanceReversalsOrderNoResolvePos
 export * from './adminSelfPasswordRequest';
 export * from './adminServiceOut';
 export * from './adminSettlementGapOut';
-export * from './adminSwitchNodePoolApiAdminV1NodesNodeNameSwitchPoolPostHeaders';
 export * from './adminTenantBillsApiAdminV1TenantsUserIdBillsGetParams';
 export * from './adminTenantLedgerApiAdminV1TenantsUserIdLedgerGetParams';
 export * from './adminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetLang';

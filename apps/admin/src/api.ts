@@ -758,14 +758,9 @@ export const useCordonNode = adminMutation((v: { nodeName: string; on: boolean; 
     : adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost(v.nodeName, v.data),
 );
 
-/** 切池:池标签经 outbox 异步改;响应含只显示一次的令牌与带 --force 的重跑命令。 */
-export const useSwitchNodePool = adminMutation(
-  (v: { nodeName: string; data: NodeSwitchPoolRequest; idempotencyKey?: string }) =>
-    adminSwitchNodePoolApiAdminV1NodesNodeNameSwitchPoolPost(
-      v.nodeName,
-      v.data,
-      v.idempotencyKey ? { "Idempotency-Key": v.idempotencyKey } : undefined,
-    ),
+/** 切池:期望池落台账,标签收敛经 outbox;不创建任何行,重复提交由同池闸挡住。 */
+export const useSwitchNodePool = adminMutation((v: { nodeName: string; data: NodeSwitchPoolRequest }) =>
+  adminSwitchNodePoolApiAdminV1NodesNodeNameSwitchPoolPost(v.nodeName, v.data),
 );
 
 /** 退役(不可逆);节点上有未释放实例时后端 409,force 才放行。 */

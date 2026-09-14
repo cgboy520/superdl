@@ -1,3 +1,5 @@
+# 断言 Prometheus 计数器的 ._value(白盒直探)
+# pyright: reportPrivateUsage=false
 """节点台账巡检:铺行收敛/未打标可见/装机登记兜底/Missing 保留删行/label 收敛与失败自愈。"""
 
 from dataclasses import replace
@@ -196,49 +198,50 @@ async def _enroll_and_join_attempt(sm, *, hostname: str, pool: str) -> None:
     await reconcile_enrollments_once(sm)
 
 
-async def test_pool_label_spoof_is_corrected_and_cordoned(sm, fake_auto_ready):
-    """冒名节点(登记 cpu 池、自声明 kata 池,登记行落 failed):池标签按登记纠回并 cordon。"""
+async def test_tampered_pool_label_is_corrected_and_cordoned(sm, fake_auto_ready):
+    """节点上出现平台没写过的池标签(只有 cluster-admin 手工 kubectl 能造成):
+    按期望池改回、cordon、计 critical 指标。登记本身照常 joined——池标签不是节点说了算的,
+    所以不存在「因池不符而入网失败」这条路。"""
     from app.modules.nodes.models import NodeEnrollment
 
     fake_auto_ready.inject_node(
         NodeInfo(
-            name="spoofer-1",
-            pool_label="kata",  # 节点自声明:kubelet --node-labels,不可信
+            name="tampered-1",
+            pool_label="kata",  # 有人手工打上的,平台登记的是 cpu
             gpu_model_label="RTX4090",
             gpu_total=8,
             gpu_used=0,
             status="Ready",
         )
     )
-    await _enroll_and_join_attempt(sm, hostname="spoofer-1", pool="cpu")
+    await _enroll_and_join_attempt(sm, hostname="tampered-1", pool="cpu")
     async with sm() as session:
         enrollment = (
             await session.execute(
-                select(NodeEnrollment).where(NodeEnrollment.node_name == "spoofer-1")
+                select(NodeEnrollment).where(NodeEnrollment.node_name == "tampered-1")
             )
         ).scalar_one()
-        # 登记行落在 failed
-        assert enrollment.status == "failed" and enrollment.pool == "cpu"
+        assert enrollment.status == "joined" and enrollment.pool == "cpu"
 
     counts = await node_spec_patrol(sm)
 
-    # (a) 标签按登记纠回 cpu
+    # (a) 标签按登记改回 cpu
     assert counts["pool_label_corrected"] == 1
-    assert fake_auto_ready.node_labels["spoofer-1"]["superdl.io/pool"] == "cpu"
+    assert fake_auto_ready.node_labels["tampered-1"]["superdl.io/pool"] == "cpu"
     # (b) 同时停调度
     assert counts["pool_mismatch_cordoned"] == 1
     async with sm() as session:
         row = (
-            await session.execute(select(NodeSpec).where(NodeSpec.node_name == "spoofer-1"))
+            await session.execute(select(NodeSpec).where(NodeSpec.node_name == "tampered-1"))
         ).scalar_one()
         assert row.desired_unschedulable is True
         # 与管理端手工 cordon 同一条路径:期望态落台账 + outbox 入队
         tasks = (
             await session.execute(select(OutboxTask).where(OutboxTask.type == "node.cordon"))
         ).scalars()
-        assert [t.payload["node_name"] for t in tasks] == ["spoofer-1"]
+        assert [t.payload["node_name"] for t in tasks] == ["tampered-1"]
     # 本轮巡检阶段 D 已按期望态收敛
-    assert "spoofer-1" in fake_auto_ready.cordoned_nodes
+    assert "tampered-1" in fake_auto_ready.cordoned_nodes
 
     # 二轮不重复入队 cordon,自声明标签没变就继续纠偏
     counts2 = await node_spec_patrol(sm)
@@ -271,8 +274,6 @@ async def test_switch_pool_converges_without_spoof_alarm(sm, fake_auto_ready):
             "switcher-1",
             pool="kata",
             reason="实机验证",
-            created_by=1,
-            idempotency_key=None,
         )
 
     before = NODE_POOL_LABEL_MISMATCH_TOTAL._value.get()

@@ -245,10 +245,10 @@ run_script() { run bash "$SCRIPT" --token-file "$TMP/token" --api-base http://fa
 @test "全流程(驱动就绪免重启):写出 rke2 config/registries,marker 齐全,进度上报到位" {
   run_script
   [ "$status" -eq 0 ]
-  # rke2 config:server/token/池标签,0600
-  grep -q "superdl.io/pool=hami" "$TMP/etc/rancher/rke2/config.yaml"
-  grep -q "nvidia.com/gpu.deploy.device-plugin=false" "$TMP/etc/rancher/rke2/config.yaml"
+  # rke2 config 只有 server/token,0600:池标签一律平台写,节点不自声明(不写 node-label)
   grep -q "K10fixture::server:secret" "$TMP/etc/rancher/rke2/config.yaml"
+  ! grep -q "node-label" "$TMP/etc/rancher/rke2/config.yaml"
+  ! grep -q "superdl.io/pool" "$TMP/etc/rancher/rke2/config.yaml"
   [ "$(stat -c %a "$TMP/etc/rancher/rke2/config.yaml")" = "600" ]
   # registries.yaml 落位,600
   grep -q 'mirrors:' "$TMP/etc/rancher/rke2/registries.yaml"
@@ -268,8 +268,7 @@ run_script() { run bash "$SCRIPT" --token-file "$TMP/token" --api-base http://fa
   # 进度上报含关键阶段与收尾
   grep -q '"phase":"agent_start","state":"ok"' "$CURL_LOG"
   grep -q '"phase":"waiting_node","state":"ok"' "$CURL_LOG"
-  # 非 kata 池不写 GRUB
-  [ ! -f "$TMP/etc/default/grub.d/99-superdl.cfg" ]
+  # IOMMU 是基线,带卡池一律写 GRUB(断言在专门的用例里)
   # bootstrap 上报全卡清单(名称+显存 MiB)
   grep -q '"gpu_details": \[{"name": "NVIDIA GeForce RTX 4090", "memory_mib": 24564}\]' "$CURL_LOG"
   # 驱动/CUDA 版本随收尾上报
@@ -409,23 +408,30 @@ RKESHIM
   ! grep -q "sh INSTALL_RKE2_MIRROR" "$SHIM_CALLS"
 }
 
-@test "kata 池写 GRUB IOMMU 配置" {
-  _write_fixture kata
+@test "IOMMU 是装机基线:hami 池也写 GRUB(x86),不因池而异" {
+  # 这一条是「切池不需要重启」的前提:IOMMU 只能开机生效,做成 kata 专属就把重启绑进了切池
+  _write_fixture hami
   run_script
   [ "$status" -eq 0 ]
   grep -q "intel_iommu=on iommu=pt" "$TMP/etc/default/grub.d/99-superdl.cfg"
   grep -q "update-grub" "$SHIM_CALLS"
-  # kata 池的 GPU Operator 落点标签:vm-passthrough 才会部署 vfio-manager 与 kata 沙箱插件
-  grep -q "nvidia.com/gpu.workload.config=vm-passthrough" "$TMP/etc/rancher/rke2/config.yaml"
 }
 
-@test "cpu 池(无卡机):跳过 NVIDIA 探测/驱动/toolkit,只打池标签,不上报驱动版本" {
+@test "IOMMU 未生效则要求重启" {
+  _write_fixture kata
+  rmdir "$SUPERDL_JOIN_IOMMU_DIR/0"
+  run_script
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"IOMMU 未生效,需重启"* ]]
+}
+
+@test "cpu 池(无卡机):跳过 NVIDIA 探测/驱动/toolkit/IOMMU,不写 node-label,不上报驱动版本" {
   _write_fixture cpu
   export NVIDIA_OK=0 LSPCI_NVIDIA=0   # 无卡机:nvidia-smi 不存在、lspci 报不出 NVIDIA
   run_script
   [ "$status" -eq 0 ]
-  # 池标签落地,且不带任何 GPU Operator operand 标签(operand 不该落到无卡机上)
-  grep -q "superdl.io/pool=cpu" "$TMP/etc/rancher/rke2/config.yaml"
+  # 池标签不进 config.yaml(平台写);无卡机也不该有任何 GPU Operator operand 标签
+  ! grep -q "node-label" "$TMP/etc/rancher/rke2/config.yaml"
   ! grep -q "nvidia.com/" "$TMP/etc/rancher/rke2/config.yaml"
   # 整条 NVIDIA 链路跳过:不装驱动、不装 toolkit、不写 nouveau 黑名单、不写 GRUB
   ! grep -q "apt-get install" "$SHIM_CALLS"
@@ -473,7 +479,7 @@ EOF
   chmod +x "$TMP/bin/k3s"
   run_script
   [ "$status" -eq 0 ]
-  grep -q "superdl.io/pool=hami" "$TMP/etc/rancher/k3s/config.yaml"
+  ! grep -q "node-label" "$TMP/etc/rancher/k3s/config.yaml"
   grep -q 'podPidsLimit: 4096' "$TMP/rancher/k3s/agent/etc/kubelet.conf.d/50-superdl.conf"
   ! grep -q 'podPidsLimit' "$TMP/etc/rancher/k3s/config.yaml"
   [ "$(stat -c %a "$TMP/etc/rancher/k3s/config.yaml")" = "600" ]
@@ -564,7 +570,7 @@ PYEOF
   [[ "$output" == *"kubectl delete node"* ]]
 }
 
-@test "server 本机(k3s 在跑):不写 agent config、不装/不起 agent,池标签经 k3s kubectl 打到节点" {
+@test "server 本机(k3s 在跑):不写 agent config、不装/不起 agent、不打池标签(平台写)" {
   _write_fixture hami k3s
   export SERVER_ACTIVE=1
   cat > "$TMP/bin/k3s" <<'EOF'
@@ -577,9 +583,9 @@ EOF
   run_script
   [ "$status" -eq 0 ]
   [ ! -e "$TMP/etc/rancher/k3s/config.yaml" ]
-  # 池标签与 GPU Operator 落点标签同一条命令落下
-  grep -q "k3s kubectl label node $(hostname) superdl.io/pool=hami nvidia.com/gpu.deploy.device-plugin=false --overwrite" "$SHIM_CALLS"
-  # 驱动版本在打标签前随 agent_config 上报
+  # server 本机也不打池标签:平台是唯一写入方
+  ! grep -q "kubectl label node" "$SHIM_CALLS"
+  # 驱动版本随 agent_config 上报(平台打完标签即判 joined,之后上报 404)
   grep -q '"phase":"agent_config".*"driver_version":"580.65.06"' "$CURL_LOG"
   ! grep -q "k3s-install.sh" "$CURL_LOG"
   ! grep -q "systemctl enable --now k3s-agent.service" "$SHIM_CALLS"
