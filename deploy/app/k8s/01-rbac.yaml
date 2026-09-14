@@ -203,6 +203,10 @@ rules:
   - apiGroups: [""]
     resources: ["persistentvolumes"]
     verbs: ["get"]
+  # 擦盘前判租户 ns 是否还在(real.py _wipe_disk_sync 的 NamespaceMissing 分支);只读
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
