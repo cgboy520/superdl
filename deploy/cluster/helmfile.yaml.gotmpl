@@ -23,6 +23,9 @@ repositories:
     url: https://seaweedfs.github.io/seaweedfs/helm
   - name: rook-release
     url: https://charts.rook.io/release
+  # Ceph CSI 驱动单独成 chart(Rook 1.20 的 csi-operator 模型,见 values/ceph-csi-drivers.yaml)
+  - name: ceph-csi-operator
+    url: https://ceph.github.io/ceph-csi-operator
   - name: topolvm
     url: https://topolvm.github.io/topolvm
   - name: jetstack
@@ -113,6 +116,15 @@ releases:
     chart: rook-release/rook-ceph
     version: "v1.20.7"
     values: [values/rook-ceph.yaml]
+
+  - name: ceph-csi-drivers
+    condition: rookCeph.enabled
+    namespace: rook-ceph
+    chart: ceph-csi-operator/ceph-csi-drivers
+    version: "1.0.5"
+    values: [values/ceph-csi-drivers.yaml]
+    needs: [rook-ceph/rook-ceph]
+    disableValidationOnInstall: true
 
   - name: rook-ceph-cluster
     condition: rookCeph.enabled

@@ -34,7 +34,17 @@ cephClusterSpec:
             requiredDuringSchedulingIgnoredDuringExecution:
               - labelSelector:
                   matchExpressions:
-                    - {key: app, operator: In, values: [rook-ceph-osd]}
+                    - {key: app, operator: In, values: [rook-ceph-osd, rook-ceph-osd-prepare]}
+                topologyKey: kubernetes.io/hostname
+        # prepare 作业也要反亲和:portable: false 时 PVC 是按 prepare 作业的落点绑定的
+        # (TopoLVM 是 WaitForFirstConsumer),只给 OSD 设反亲和会让两个 PVC 绑到同一台,
+        # 随后 OSD 因反亲和排不进去而 PV 又钉死在那台 —— 死锁
+        preparePlacement:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchExpressions:
+                    - {key: app, operator: In, values: [rook-ceph-osd, rook-ceph-osd-prepare]}
                 topologyKey: kubernetes.io/hostname
         volumeClaimTemplates:
           - metadata:
