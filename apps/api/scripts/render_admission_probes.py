@@ -1,6 +1,6 @@
-"""渲染平台会生成的 Pod / Job(租户实例五种形态、数据盘擦除 Job、配额 Job、预热 Job)成清单目录,
+"""渲染平台会生成的 Pod / Job(租户实例五种形态、挂盘实例、预热 Job)成清单目录,
 供 CI 在准入策略生效的集群上 `kubectl create --dry-run=server` 对账。
-挂了说明:平台自己生成的对象会被自家 VAP 拒(如擦除 Job 漏了 hostUsers)。
+挂了说明:平台自己生成的对象会被自家 VAP 拒(如预热 Job 漏了 hostUsers)。
 
 用法: uv run python scripts/render_admission_probes.py <输出目录>
 输出:<name>.yaml(对象)与 <name>.as(dry-run 时 --as 的身份;空 = 当前身份)。
