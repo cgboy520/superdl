@@ -1,4 +1,4 @@
-# Loki 日志聚合:Monolithic 单副本,chunks/index 走 filesystem 存 JuiceFS 共享卷。
+# Loki 日志聚合:Monolithic 单副本,chunks/index 走 filesystem 存 CephFS 共享卷。
 # chart 版本钉在 ../helmfile.yaml.gotmpl;仓库必须是 grafana-community/loki。
 deploymentMode: Monolithic
 loki:
@@ -32,8 +32,8 @@ singleBinary:
   replicas: 1
   persistence:
     enabled: true
-    # JuiceFS RWX;light 档由 values/light/loki-light.yaml 回落 topolvm
-    storageClass: superdl-juicefs
+    # CephFS RWX;light 档由 values/light/loki-light.yaml 回落 topolvm
+    storageClass: superdl-cephfs
     accessModes: ["ReadWriteMany"]
     size: 50Gi
   # 只限内存;日志量上涨先升 memory limit

@@ -15,7 +15,7 @@ prometheus:
       limits: {memory: 1Gi}
 grafana:
   enabled: false
-# Alertmanager 存储随档覆盖(full 档是 superdl-juicefs)
+# Alertmanager 存储随档覆盖(full 档是 superdl-cephfs)
 alertmanager:
   alertmanagerSpec:
     storage:
