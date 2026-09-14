@@ -501,8 +501,13 @@ class FakeOrchestrator:
         """模拟新 GPU 节点加入集群。传 NodeInfo。"""
         self.extra_nodes.append(node)
 
-    async def set_node_labels(self, node_name: str, labels: dict[str, str]) -> None:
-        self.node_labels.setdefault(node_name, {}).update(labels)
+    async def set_node_labels(self, node_name: str, labels: dict[str, str | None]) -> None:
+        current = self.node_labels.setdefault(node_name, {})
+        for key, value in labels.items():
+            if value is None:
+                current.pop(key, None)  # merge-patch 的 null = 删键
+            else:
+                current[key] = value
 
     async def set_node_unschedulable(self, node_name: str, unschedulable: bool) -> None:
         if unschedulable:

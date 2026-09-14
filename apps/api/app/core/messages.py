@@ -220,7 +220,15 @@ MESSAGES: dict[str, str] = {
     "nodes.componentProbeFailed": "集群实时探测未取到结果,下方仍是最近一次巡检的快照",
     "nodes.enrollTransition": "注册状态不允许 {from} → {to}",
     "nodes.hostnameMismatch": "主机名与登记不符,令牌已作废,请在管理端核对后重新生成",
+    "nodes.nodeHasInstances": (
+        "节点上还有 {count} 台未释放实例:先释放后再操作"
+        "(已关机实例的实例盘也钉在本节点,换池后开不了机)"
+    ),
     "nodes.nodeNotFound": "节点不在台账中:请确认节点名,或等待下一轮巡检(60 秒)收录后再试",
+    "nodes.poolIncompatible": "无卡节点只能留在 cpu 池,带卡节点不能切到 cpu 池",
+    "nodes.poolMigUnsupported": "{model} 不支持 MIG 切分,不能切到 mig 池",
+    "nodes.poolNotSwitchable": "只支持在 {pools} 之间切换节点池",
+    "nodes.poolUnchanged": "节点已在 {pool} 池,无需切换",
     "nodes.regenerateNotAllowed": "状态 {status} 不允许重新生成(仅 待执行/已过期/已失败)",
     "nodes.storageClassMissing": "集群存储未就绪(缺少 {names}),暂时无法开通;请联系平台运维",
     # 实例编排

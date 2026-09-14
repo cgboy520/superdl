@@ -9,7 +9,7 @@ from app.core.k8s import get_orchestrator
 from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.timeutil import now_utc
-from app.modules.nodes.models import NodeEnrollment
+from app.modules.nodes.models import NodeEnrollment, NodeSpec
 from app.modules.nodes.service import pool_matches, transition_enrollment
 
 logger = get_logger(__name__)
@@ -28,6 +28,15 @@ async def reconcile_enrollments_once(sm: async_sessionmaker[AsyncSession]) -> di
         nodes = {n.name: n for n in await get_orchestrator().list_nodes()}
         now = now_utc()
         async with sm() as session:
+            # 切池期望态:标签还没收敛到位时不判「池不符」,否则新登记会落不可恢复的终态 failed
+            desired_pools = {
+                r.node_name: r.desired_pool
+                for r in (
+                    await session.execute(
+                        select(NodeSpec).where(NodeSpec.desired_pool.is_not(None))
+                    )
+                ).scalars()
+            }
             # FOR UPDATE + skip_locked:被请求路径锁住的行本轮跳过
             rows = list(
                 (
@@ -52,6 +61,9 @@ async def reconcile_enrollments_once(sm: async_sessionmaker[AsyncSession]) -> di
                         # joined 即终态,令牌作废
                         transition_enrollment(row, "joined", phase="joined")
                         counts["joined"] += 1
+                    elif desired_pools.get(row.node_name or "") == row.pool:
+                        # 切池收敛中(handler / 巡检 C2 还没改到位):本轮不判,等下一轮
+                        continue
                     else:
                         transition_enrollment(
                             row,

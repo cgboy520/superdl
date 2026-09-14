@@ -169,7 +169,7 @@ worker 其余定时任务:outbox 卡单回收、小时结算、数据盘日结�
 
 ## 8. 硬约束
 
-1. **Kata 与 HAMi 不能共用同一批 GPU,必须分池**。节点池标签 `superdl.io/pool` 装机时定死。**隔离机制的派发键是池,不是档位**:`core/gpu_adapter` 按 kata / mig / hami / cpu 决定 RuntimeClass、资源语法、userns 与调度器;`skus.tier`(dedicated / shared / cpu)只是售卖分类,合法配对由 `TIER_POOLS` 与 catalog 的 `_check_tier_pool` 收口。
+1. **Kata 与 HAMi 不能共用同一批 GPU,必须分池**。节点池标签 `superdl.io/pool` 装机时定;空节点(零未释放实例)可经管理端在 kata / hami / mig 间切换,`cpu` 池不参与,见 `reference/nodes.md`。**隔离机制的派发键是池,不是档位**:`core/gpu_adapter` 按 kata / mig / hami / cpu 决定 RuntimeClass、资源语法、userns 与调度器;`skus.tier`(dedicated / shared / cpu)只是售卖分类,合法配对由 `TIER_POOLS` 与 catalog 的 `_check_tier_pool` 收口。
 2. **`gpu_count == 0`(纯 CPU 实例)的判定先于池分支。** 计费份数收口到 `core/money.billing_units`(GPU 实例 = 卡数,CPU 实例 = 1 份整机),不散写 `单价 × gpu_count`。
 3. **超卖只发生在 HAMi 池。** kata 与 mig 不超卖。`oversell_cores` 是纯定价参数,不下发调度(schema 上界 9.99)。HAMi 池的隔离是软件限额,不是安全边界。见 `reference/security.md` 隔离级别分级。
 4. **hami / mig / cpu 池的 Pod 必须 `hostUsers: false`(userns)**;kata 池不加。

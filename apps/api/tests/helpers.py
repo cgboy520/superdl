@@ -523,9 +523,11 @@ async def seed_instance(
     name: str = "t",
     spec: dict | None = None,
     sku_id: int = 1,
+    node_name: str | None = None,
 ) -> tuple[int, str]:
     """直接落库实例 + 事件,返回 (instance_id, uuid)。
-    events 元素:(ts, from, to) 或 (ts, from, to, metadata);wallet_credit=True 预存 100.00。"""
+    events 元素:(ts, from, to) 或 (ts, from, to, metadata);wallet_credit=True 预存 100.00。
+    node_name 模拟实例已落在某节点(实例盘钉死在那台)。"""
     async with sm() as session:
         inst = Instance(
             uuid=f"u{user_id}i{uuid4().hex[:12]}",
@@ -551,6 +553,7 @@ async def seed_instance(
             k8s_namespace=f"tenant-{user_id}",
             jupyter_token="tok",
             authorized_keys=[],
+            node_name=node_name,
         )
         session.add(inst)
         await session.flush()

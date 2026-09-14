@@ -19,6 +19,7 @@ import type {
   AdminCreateAdjustmentApiAdminV1AdjustmentsPostHeaders,
   AdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostHeaders,
   AdminCreateRequest,
+  AdminDecommissionNodeApiAdminV1NodesNodeNameDecommissionPostParams,
   AdminDeletionApprove,
   AdminDeletionReject,
   AdminDeletionRequestOut,
@@ -54,6 +55,7 @@ import type {
   AdminResolveReversalApiAdminV1FinanceReversalsOrderNoResolvePost200,
   AdminSelfPasswordRequest,
   AdminSettlementGapOut,
+  AdminSwitchNodePoolApiAdminV1NodesNodeNameSwitchPoolPostHeaders,
   AdminTenantBillsApiAdminV1TenantsUserIdBillsGetParams,
   AdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetParams,
   AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetParams,
@@ -106,6 +108,8 @@ import type {
   NodeEnrollmentOut,
   NodeMetricsOut,
   NodeOut,
+  NodeSwitchPoolOut,
+  NodeSwitchPoolRequest,
   OrderBackfillOut,
   OrderBackfillRequest,
   OrderVerifyOut,
@@ -1896,23 +1900,33 @@ export const adminCordonNodeApiAdminV1NodesNodeNameCordonPost = async (nodeName:
 );}
 
 
-export const getAdminDecommissionNodeApiAdminV1NodesNodeNameDecommissionPostUrl = (nodeName: string,) => {
+export const getAdminDecommissionNodeApiAdminV1NodesNodeNameDecommissionPostUrl = (nodeName: string,
+    params?: AdminDecommissionNodeApiAdminV1NodesNodeNameDecommissionPostParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/admin/v1/nodes/${nodeName}/decommission`
+  return stringifiedParams.length > 0 ? `/api/admin/v1/nodes/${nodeName}/decommission?${stringifiedParams}` : `/api/admin/v1/nodes/${nodeName}/decommission`
 }
 
 /**
  * 节点退役(不可逆):停止调度 + 作废该机全部注册令牌 + 经 outbox 删除 Node 对象。
+ * 节点上有未释放实例即 409,`force=true` 跳过该闸(机器已救不回来时用)。
  * 集群 join token 轮换与 kubelet 证书吊销不在本端点内。
  * @summary Admin Decommission Node
  */
 export const adminDecommissionNodeApiAdminV1NodesNodeNameDecommissionPost = async (nodeName: string,
-    nodeDecommissionRequest: NodeDecommissionRequest, options?: Parameters<typeof customFetch>[1]): Promise<NodeDecommissionOut> => {
+    nodeDecommissionRequest: NodeDecommissionRequest,
+    params?: AdminDecommissionNodeApiAdminV1NodesNodeNameDecommissionPostParams, options?: Parameters<typeof customFetch>[1]): Promise<NodeDecommissionOut> => {
 
-  return customFetch<NodeDecommissionOut>(getAdminDecommissionNodeApiAdminV1NodesNodeNameDecommissionPostUrl(nodeName),
+  return customFetch<NodeDecommissionOut>(getAdminDecommissionNodeApiAdminV1NodesNodeNameDecommissionPostUrl(nodeName,params),
   {
     ...options,
     method: 'POST',
@@ -1952,6 +1966,34 @@ export const adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet = async (nodeName
     method: 'GET'
 
 
+  }
+);}
+
+
+export const getAdminSwitchNodePoolApiAdminV1NodesNodeNameSwitchPoolPostUrl = (nodeName: string,) => {
+
+
+
+
+  return `/api/admin/v1/nodes/${nodeName}/switch-pool`
+}
+
+/**
+ * 切换节点池(kata / hami / mig 互切)。前置:节点上无未释放实例、机型与目标池匹配、
+ * 目标池运行时就绪。受理后节点即停止调度,池标签与 GPU operand 标签经 outbox 改;
+ * 响应里的命令须在节点上重跑以补齐主机侧改造(kata 的 IOMMU 与一次重启),token 仅此一次。
+ * @summary Admin Switch Node Pool
+ */
+export const adminSwitchNodePoolApiAdminV1NodesNodeNameSwitchPoolPost = async (nodeName: string,
+    nodeSwitchPoolRequest: NodeSwitchPoolRequest,
+    headers?: AdminSwitchNodePoolApiAdminV1NodesNodeNameSwitchPoolPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<NodeSwitchPoolOut> => {
+
+  return customFetch<NodeSwitchPoolOut>(getAdminSwitchNodePoolApiAdminV1NodesNodeNameSwitchPoolPostUrl(nodeName),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
+    body: JSON.stringify(nodeSwitchPoolRequest)
   }
 );}
 

@@ -9,6 +9,9 @@
 # - 注册令牌一次性:bootstrap 后换发 progress 令牌落 $STATE_DIR/token(0600),续跑只用它。
 # - k8s_distro 由服务端下发(rke2 / k3s)。
 # - 全幂等:每步落 marker($STATE_DIR/done.d/);已完成重跑直接退出,从头重装须 --force + 新令牌。
+# - 切池(管理端「切换池」)走的就是 --force + 新令牌这条路:脚本按新池补 IOMMU/驱动/toolkit 并
+#   重写 config.yaml 的 node-label。节点对象上的标签**不由本脚本改**——node-label 只在节点首次
+#   注册时生效,已注册节点的标签由平台侧改(见 docs/reference/nodes.md)。
 # - 需重启的步骤合并为一次重启,systemd oneshot 断点续跑,最多 2 次;重启前从 API 重拉自身并校验 script_sha256。
 # - k3s/rke2 安装器先落临时文件、校验内置 sha256 pin 再执行。
 # - phase 取值与后端契约一致:bootstrap precheck nouveau sysctl iommu driver

@@ -46,6 +46,7 @@ class NodeEnrollment(Base):
 class NodeSpec(Base):
     """节点规格台账:巡检(nodes/patrol.py,60s)从 K8s 实况 + 装机登记收敛;业务只读它。
     节点消失先置 Missing,last_seen 超 7 天删行;上架校验只认 Ready;未打池标签节点 unlabeled=True。
+    两个期望态列由管理端写、handler 与巡检收敛:desired_unschedulable(cordon)、desired_pool(切池)。
     """
 
     __tablename__ = "node_specs"
@@ -69,6 +70,9 @@ class NodeSpec(Base):
     status: Mapped[str] = mapped_column(String(16), index=True)  # Ready/NotReady/Cordoned/Missing
     # cordon 期望态:管理端写入,handler/巡检按它收敛
     desired_unschedulable: Mapped[bool | None]
+    # 期望池:管理端切池写入,handler/巡检按它收敛。**非空即覆盖注册登记作为池事实源,且不清空**
+    # (Node 对象被删重建时 kubelet 按旧 config.yaml 带回旧池标签,只认登记就纠不回来)
+    desired_pool: Mapped[str | None] = mapped_column(String(8))
     last_seen: Mapped[datetime]  # 最近一次 K8s 可见
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())

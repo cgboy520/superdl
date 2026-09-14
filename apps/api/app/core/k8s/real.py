@@ -1388,7 +1388,8 @@ class RealOrchestrator:
     async def list_nodes(self, include_unlabeled: bool = False) -> list[NodeInfo]:
         return await self._run(self._list_nodes_sync, include_unlabeled)
 
-    async def set_node_labels(self, node_name: str, labels: dict[str, str]) -> None:
+    async def set_node_labels(self, node_name: str, labels: dict[str, str | None]) -> None:
+        # None 值原样进 patch body:merge-patch 里 null 即删键
         await self._run(self.core.patch_node, node_name, {"metadata": {"labels": labels}})
 
     @staticmethod

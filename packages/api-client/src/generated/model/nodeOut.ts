@@ -6,7 +6,9 @@
  */
 
 export interface NodeOut {
+  active_instances?: number;
   cuda_version?: string;
+  desired_pool?: string;
   disk_gb: number;
   driver_version?: string;
   gpu_model: string;

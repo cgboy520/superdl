@@ -245,6 +245,47 @@ async def test_pool_label_spoof_is_corrected_and_cordoned(sm, fake_auto_ready):
     assert counts2["pool_mismatch_cordoned"] == 0
 
 
+async def test_switch_pool_converges_without_spoof_alarm(sm, fake_auto_ready):
+    """管理端切池:巡检按期望池整套下发标签,但**不**计冒名指标、不重复 cordon。
+    挂了说明运维每切一次池就触发一条 critical NodePoolLabelMismatch,告警失去意义。"""
+    from app.core.k8s.base import GPU_WORKLOAD_CONFIG_LABEL
+    from app.core.metrics import NODE_POOL_LABEL_MISMATCH_TOTAL
+    from app.modules.nodes import service
+
+    fake_auto_ready.inject_node(
+        NodeInfo(
+            name="switcher-1",
+            pool_label="hami",  # 标签还没收敛
+            gpu_model_label="RTX4090",
+            gpu_total=8,
+            gpu_used=0,
+            status="Ready",
+        )
+    )
+    await set_platform_setting(sm, "cluster_server_url", "https://10.0.0.10:9345")
+    await set_platform_setting(sm, "cluster_join_token", "K10abcdef0123456789::server:secrettoken")
+    await node_spec_patrol(sm)
+    async with sm() as session:
+        await service.switch_node_pool(
+            session,
+            "switcher-1",
+            pool="kata",
+            reason="实机验证",
+            created_by=1,
+            idempotency_key=None,
+        )
+
+    before = NODE_POOL_LABEL_MISMATCH_TOTAL._value.get()
+    counts = await node_spec_patrol(sm)
+
+    assert counts["pool_label_corrected"] == 1
+    assert counts["pool_mismatch_cordoned"] == 0  # 切池时已 cordon,不重复入队
+    assert NODE_POOL_LABEL_MISMATCH_TOTAL._value.get() == before  # 切池不是冒名
+    labels = fake_auto_ready.node_labels["switcher-1"]
+    assert labels["superdl.io/pool"] == "kata"
+    assert labels[GPU_WORKLOAD_CONFIG_LABEL] == "vm-passthrough"
+
+
 async def test_matching_pool_label_is_left_alone(sm, fake_auto_ready):
     """登记与自声明一致的正常节点不被 cordon。"""
     fake_auto_ready.inject_node(

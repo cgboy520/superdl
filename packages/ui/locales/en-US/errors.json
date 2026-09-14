@@ -171,7 +171,12 @@
     "componentProbeFailed": "Live cluster probe returned nothing — the values below are still the latest patrol snapshot",
     "enrollTransition": "Enrollment status transition {{from}} → {{to}} is not allowed",
     "hostnameMismatch": "Hostname does not match the registration; the token is revoked — verify in the admin console and regenerate",
+    "nodeHasInstances": "This node still has {{count}} instance(s) that are not released. Release them first (a stopped instance's instance disk is pinned to this node and will not start after a pool change).",
     "nodeNotFound": "Node is not in the ledger: check the node name, or wait for the next patrol round (60s) to pick it up and retry",
+    "poolIncompatible": "A node without GPUs can only stay in the cpu pool, and a node with GPUs cannot move into it.",
+    "poolMigUnsupported": "{{model}} does not support MIG partitioning, so it cannot move to the mig pool.",
+    "poolNotSwitchable": "Node pools can only be switched among {{pools}}.",
+    "poolUnchanged": "This node is already in the {{pool}} pool.",
     "regenerateNotAllowed": "Status {{status}} does not allow regeneration (only pending/expired/failed)",
     "storageClassMissing": "Cluster storage is not ready (missing {{names}}), so this cannot be provisioned right now — please contact platform operations"
   },

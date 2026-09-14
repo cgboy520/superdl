@@ -5,6 +5,8 @@ from pydantic import BaseModel, Field
 
 # cpu = 无卡节点池;装机不打 NVIDIA operand 标签、跳过 GPU 探测
 Pool = Literal["kata", "hami", "mig", "cpu"]
+# 可在线互切的池(core/gpu_adapter.SWITCHABLE_POOLS 的 Literal 版);cpu 是无卡机的物理属性
+SwitchablePool = Literal["kata", "hami", "mig"]
 
 HOSTNAME_PATTERN = r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$"
 
@@ -207,6 +209,10 @@ class NodeOut(BaseModel):
     unlabeled: bool = False
     label_synced: bool = False
     last_seen: str = ""  # ISO;空=尚无台账行
+    # 期望池:非空 = 管理端已发起切池,标签收敛前与 pool_label 不一致
+    desired_pool: str = ""
+    # 节点上未释放实例数(含已关机/冻结/失败);切池与退役的前置判据
+    active_instances: int = 0
 
 
 class GpuModelAggregateOut(BaseModel):

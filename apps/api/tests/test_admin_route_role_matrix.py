@@ -91,6 +91,7 @@ MATRIX: dict[str, str | frozenset[str]] = {
     # 退役与 cordon / force-stop 同档
     "POST /api/admin/v1/nodes/{node_name}/decommission": _OPS,
     "GET /api/admin/v1/nodes/{node_name}/metrics": _OPS_RO,
+    "POST /api/admin/v1/nodes/{node_name}/switch-pool": _OPS,
     "POST /api/admin/v1/nodes/{node_name}/uncordon": _OPS,
     "GET /api/admin/v1/orders": _FIN_RO,
     "GET /api/admin/v1/orders/export": _FIN_RO,

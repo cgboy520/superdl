@@ -3,7 +3,8 @@
   A 纯 K8s 读:能力探测 + list_nodes(含未打标);
   B 单事务 DB 收敛:upsert;消失节点置 Missing,超保留期删行;顺带算出 C / C2 的待办;
   C label 收敛:canonical 写 superdl.io/gpu-model(逐节点独立 try);
-  C2 池标签纠偏:自声明与注册登记不符 → 先 cordon(经 outbox)再按登记改标签;
+  C2 池标签收敛:自声明与期望池不符 → 按期望池整套下发标签;期望池来自管理端切池(desired_pool)
+     或注册登记,后者不符属冒名,另加 critical 指标并先 cordon;
   D cordon 期望态收敛。
 
 型号优先级:装机登记 nvidia-smi > GFD label > 存量;驱动/CUDA 版本 GFD label 优先。
@@ -17,9 +18,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
+from app.core.gpu_adapter import pool_node_labels
 from app.core.gpu_models import canonical_gpu_model, default_vram_gb
 from app.core.k8s import K8sOrchestrator, get_orchestrator, health
-from app.core.k8s.base import GPU_MODEL_NODE_LABEL, POOL_NODE_LABEL, ClusterProbe, NodeInfo
+from app.core.k8s.base import GPU_MODEL_NODE_LABEL, ClusterProbe, NodeInfo
 from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.metrics import LIGHT_DISTRO_IN_PROD, NODE_POOL_LABEL_MISMATCH_TOTAL
@@ -83,7 +85,8 @@ class _Plan:
     """B 阶段产出、C / C2 阶段消费的 K8s 写待办。"""
 
     labels: list[tuple[str, str]] = field(default_factory=list)  # (节点, canonical 型号)
-    pool_fixes: list[tuple[str, str, str]] = field(default_factory=list)  # (节点, 登记池, 自声明池)
+    # (节点, 期望池, 自声明池, 是否管理端切池);切池是运维动作,冒名是入侵事件,两者处置不同
+    pool_fixes: list[tuple[str, str, str, bool]] = field(default_factory=list)
 
 
 async def node_spec_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]:
@@ -183,15 +186,18 @@ async def _converge_ledger(
             else:
                 # 型号未知不沿用上一轮真值
                 row.label_synced = bool(canonical)
-            # 池标签对账:注册登记(node_enrollments.pool)是事实源,节点自声明不一致即纠正
-            enrolled_pool = enrolled_pools.get(n.name)
+            # 池标签对账:期望池是事实源,优先级 desired_pool(管理端切池)> 注册登记
+            switching = row.desired_pool is not None
+            wanted_pool = row.desired_pool or enrolled_pools.get(n.name)
             if (
-                enrolled_pool
+                wanted_pool
                 and n.pool_label not in ("", "unknown")
-                and not pool_matches(enrolled_pool, n.pool_label)
+                and not pool_matches(wanted_pool, n.pool_label)
             ):
-                NODE_POOL_LABEL_MISMATCH_TOTAL.inc()  # 指标在发现时计数
-                plan.pool_fixes.append((n.name, enrolled_pool, n.pool_label))
+                if not switching:
+                    # 冒名:节点自称的池与登记不符,指标在发现时计数
+                    NODE_POOL_LABEL_MISMATCH_TOTAL.inc()
+                plan.pool_fixes.append((n.name, wanted_pool, n.pool_label, switching))
         for name, row in list(rows.items()):
             if name in seen:
                 continue
@@ -258,33 +264,38 @@ async def _sync_model_labels(
 async def _fix_pool_labels(
     sm: async_sessionmaker[AsyncSession],
     orch: K8sOrchestrator,
-    fixes: list[tuple[str, str, str]],
+    fixes: list[tuple[str, str, str, bool]],
     counts: dict[str, int],
 ) -> None:
-    """C2:池标签纠偏(注册登记 > 节点自声明;逐节点独立 try):
-    先 cordon(service.request_cordon,与管理端同路径)再改标签。"""
-    for name, pool, observed in fixes:
-        async with sm() as session:
-            row = (
-                await session.execute(select(NodeSpec).where(NodeSpec.node_name == name))
-            ).scalar_one_or_none()
-            if row is not None and row.desired_unschedulable is not True:
-                await service.request_cordon(
-                    session,
-                    name,
-                    unschedulable=True,
-                    reason=(
-                        f"池标签与注册登记不符(节点自称 {observed},登记为 {pool}),"
-                        "已自动停止调度待人工核查"
-                    ),
-                )
-                counts["pool_mismatch_cordoned"] += 1
+    """C2:池标签收敛(期望池 > 节点自声明;逐节点独立 try),整套下发含 GPU operand 标签。
+    切池(desired_pool)是运维动作,标签已由 handler 下发过,这里只兜底重试;
+    冒名(与注册登记不符)先 cordon(service.request_cordon,与管理端同路径)再改标签。"""
+    for name, pool, observed, switching in fixes:
+        if not switching:
+            async with sm() as session:
+                row = (
+                    await session.execute(select(NodeSpec).where(NodeSpec.node_name == name))
+                ).scalar_one_or_none()
+                if row is not None and row.desired_unschedulable is not True:
+                    await service.request_cordon(
+                        session,
+                        name,
+                        unschedulable=True,
+                        reason=(
+                            f"池标签与注册登记不符(节点自称 {observed},登记为 {pool}),"
+                            "已自动停止调度待人工核查"
+                        ),
+                    )
+                    counts["pool_mismatch_cordoned"] += 1
         try:
-            await orch.set_node_labels(name, {POOL_NODE_LABEL: pool})
+            await orch.set_node_labels(name, pool_node_labels(pool))
         except Exception:
             logger.warning("node_pool_label_fix_failed", node=name, pool=pool)
             continue
         counts["pool_label_corrected"] += 1
+        if switching:
+            logger.info("node_pool_switch_converged", node=name, pool=pool, observed=observed)
+            continue
         logger.warning(
             "node_pool_label_corrected",
             node=name,

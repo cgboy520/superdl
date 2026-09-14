@@ -10,7 +10,12 @@ Kata 与 HAMi 不混布同一节点池;gpu_count == 0 先于池分支判定。
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.core.k8s.base import GPU_MODEL_NODE_LABEL, POOL_NODE_LABEL
+from app.core.k8s.base import (
+    GPU_DEPLOY_DEVICE_PLUGIN_LABEL,
+    GPU_MODEL_NODE_LABEL,
+    GPU_WORKLOAD_CONFIG_LABEL,
+    POOL_NODE_LABEL,
+)
 
 # HAMi 型号白名单 annotation,值为 HAMi 登记的原文串(nvidia-smi 名)
 HAMI_USE_GPUTYPE_ANNOTATION = "nvidia.com/use-gputype"
@@ -29,6 +34,9 @@ TIERS = (TIER_DEDICATED, TIER_SHARED, TIER_CPU)
 
 # 档位 → 允许落的池(catalog 建 SKU 与改池同一处校验);cpu 档挂 hami 池由
 # gpu_node_cpu_instance_vcpu_cap 封顶
+# 可在线互切的池:cpu 是「无卡机」的物理属性,不参与切换
+SWITCHABLE_POOLS: tuple[str, ...] = (POOL_KATA, POOL_HAMI, POOL_MIG)
+
 TIER_POOLS: dict[str, tuple[str, ...]] = {
     TIER_DEDICATED: (POOL_KATA,),
     TIER_SHARED: (POOL_MIG, POOL_HAMI),
@@ -102,6 +110,21 @@ def build_gpu_request(
             annotations={HAMI_USE_GPUTYPE_ANNOTATION: hami_gputype} if hami_gputype else {},
         )
     raise ValueError(f"unknown pool: {pool_label}")
+
+
+def pool_node_labels(pool_label: str) -> dict[str, str | None]:
+    """池 → 节点标签的**完备期望集**(None = 删键),切池时整套下发。
+    与 node-join.sh 的 pool_gpu_labels 同源,区别是那边只打该打的、这边还要删旧池残留:
+    hami 的 deploy.device-plugin=false 留在 kata 节点上会让 mig/kata 的官方 device-plugin 起不来。
+    hami / mig / cpu 一律删 workload.config 回落 chart 默认(container),不写显式值。
+    """
+    if pool_label not in (POOL_KATA, POOL_HAMI, POOL_MIG, POOL_CPU):
+        raise ValueError(f"unknown pool: {pool_label}")
+    return {
+        POOL_NODE_LABEL: pool_label,
+        GPU_WORKLOAD_CONFIG_LABEL: "vm-passthrough" if pool_label == POOL_KATA else None,
+        GPU_DEPLOY_DEVICE_PLUGIN_LABEL: "false" if pool_label == POOL_HAMI else None,
+    }
 
 
 def spec_to_gpu_request(

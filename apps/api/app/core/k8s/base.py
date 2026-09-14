@@ -333,8 +333,9 @@ class K8sOrchestrator(Protocol):
         """节点视图;默认仅带 superdl.io/pool 标签的节点,include_unlabeled=True 含未打标节点。"""
         ...
 
-    async def set_node_labels(self, node_name: str, labels: dict[str, str]) -> None:
-        """merge-patch 节点 labels(巡检收敛 superdl.io/gpu-model 用)。幂等。"""
+    async def set_node_labels(self, node_name: str, labels: dict[str, str | None]) -> None:
+        """merge-patch 节点 labels(巡检收敛 superdl.io/gpu-model、切池收敛池与 operand 标签)。
+        值为 None = 删该键(merge-patch 原生语义)。幂等。"""
         ...
 
     async def prewarm_image(
@@ -373,7 +374,10 @@ class K8sOrchestrator(Protocol):
 GPU_MODEL_NODE_LABEL = (
     "superdl.io/gpu-model"  # 平台 canonical 型号标签(巡检写入,调度 nodeSelector 依赖)
 )
-POOL_NODE_LABEL = "superdl.io/pool"  # 节点池标签(装机时定死;kata / hami / mig 分池铁律)
+POOL_NODE_LABEL = "superdl.io/pool"  # 节点池标签(装机时定,空节点可切;kata / hami / mig 分池铁律)
+# GPU Operator 的 operand 落点标签:切池时随池标签一起收敛(准入策略③ 白名单里的两个具名键)
+GPU_WORKLOAD_CONFIG_LABEL = "nvidia.com/gpu.workload.config"
+GPU_DEPLOY_DEVICE_PLUGIN_LABEL = "nvidia.com/gpu.deploy.device-plugin"
 # 平台受管对象标签:实例 Pod/Service/HTTPRoute/受管 Job/租户 ns 均打;兼作 Gateway listener 的
 # allowedRoutes Selector
 MANAGED_LABEL = "superdl.io/managed"

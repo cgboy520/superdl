@@ -3,6 +3,7 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.gpu_adapter import pool_node_labels
 from app.core.k8s import get_orchestrator
 from app.core.logging import get_logger
 from app.core.outbox import OutboxTask, RetryPolicy, outbox_handler
@@ -27,6 +28,29 @@ async def handle_node_cordon(session: AsyncSession, task: OutboxTask) -> None:
         "node_cordon_applied",
         node=node_name,
         unschedulable=row.desired_unschedulable,
+        reason=task.payload.get("reason"),
+    )
+
+
+@outbox_handler("node.switch_pool", retry=RetryPolicy(timeout_seconds=120))
+async def handle_node_switch_pool(session: AsyncSession, task: OutboxTask) -> None:
+    """切池的 K8s 侧:先停调度再整套下发池标签与 GPU operand 标签(旧池残留键随之删掉)。
+    读台账期望态(desired_pool)而非 payload,乱序重试幂等收敛;60s 巡检 C2 兜底重下发。
+    主机侧改造(IOMMU / 驱动 / agent config)不在这里,由运维重跑 node-join 补齐。"""
+    node_name = task.payload["node_name"]
+    row = (
+        await session.execute(select(NodeSpec).where(NodeSpec.node_name == node_name))
+    ).scalar_one_or_none()
+    if row is None or not row.desired_pool:
+        logger.warning("node_switch_pool_no_desired_state", node=node_name, task_id=task.id)
+        return  # 无期望态(台账未收录/行被清理):不重放陈旧 payload
+    orch = get_orchestrator()
+    await orch.set_node_unschedulable(node_name, True)
+    await orch.set_node_labels(node_name, pool_node_labels(row.desired_pool))
+    logger.warning(
+        "node_switch_pool_applied",
+        node=node_name,
+        to_pool=row.desired_pool,
         reason=task.payload.get("reason"),
     )
 

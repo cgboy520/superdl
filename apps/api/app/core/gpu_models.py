@@ -93,6 +93,20 @@ def canonical_gpu_model(raw: str | None) -> str | None:
     return None
 
 
+# 支持 MIG 硬件切分的家族(canonical 取 "-" 前一段比对):数据中心 Ampere 及以后的大核。
+# L4/L20/L40/L40S、RTX、CMP、GB10 均不支持;切到 mig 池的机型闸按此判。
+MIG_CAPABLE_FAMILIES = frozenset(
+    {"A100", "A800", "A30", "H100", "H800", "H200", "H20", "B200", "GB200"}
+)
+
+
+def supports_mig(canonical: str | None) -> bool:
+    """canonical 型号是否支持 MIG 切分;未识别(None)一律 False(fail-closed)。"""
+    if not canonical:
+        return False
+    return canonical.split("-")[0] in MIG_CAPABLE_FAMILIES
+
+
 def model_matches(sku_model: str | None, node_model: str | None) -> bool:
     """canonical 匹配:相等,或 SKU 只写家族而节点带显存后缀(A100 匹配 A100-80G);反向不成立。"""
     if not sku_model or not node_model:

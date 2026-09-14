@@ -221,6 +221,34 @@ async def count_instances_by_status(session: AsyncSession) -> dict[str, int]:
     return {str(status): int(n) for status, n in rows}
 
 
+async def count_active_instances_on_node(session: AsyncSession, node_name: str) -> int:
+    """节点上未释放的实例数。口径是 status != released——**已关机 / 冻结 / 失败也算**:
+    实例盘是节点本地 LV,开机会 pin 回原节点(service.start_instance_row),节点一换池就永远开不了机。
+    releasing 也计入,避免清理在途时切池。切池与退役的前置闸共用。"""
+    return int(
+        (
+            await session.execute(
+                select(func.count())
+                .select_from(Instance)
+                .where(Instance.node_name == node_name, Instance.status != sm_def.RELEASED)
+            )
+        ).scalar_one()
+    )
+
+
+async def count_active_instances_by_node(session: AsyncSession) -> dict[str, int]:
+    """节点名 → 未释放实例数(GROUP BY 一条 SQL);口径同 count_active_instances_on_node。
+    管理端节点台账逐行展示用,不逐节点发查询。"""
+    rows = (
+        await session.execute(
+            select(Instance.node_name, func.count())
+            .where(Instance.node_name.is_not(None), Instance.status != sm_def.RELEASED)
+            .group_by(Instance.node_name)
+        )
+    ).all()
+    return {str(name): int(n) for name, n in rows}
+
+
 async def list_instances_by_status(session: AsyncSession, status: str) -> list[Instance]:
     return list(
         (await session.execute(select(Instance).where(Instance.status == status))).scalars()

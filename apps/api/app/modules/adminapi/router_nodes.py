@@ -35,6 +35,7 @@ from app.modules.nodes.schemas import (
     NodeEnrollmentOut,
     NodeOut,
     OversellPoolOut,
+    SwitchablePool,
 )
 from app.modules.orchestrator import (
     ports as orchestrator_ports,
@@ -240,6 +241,8 @@ async def admin_node_metrics(
 async def admin_list_nodes(session: DbSession) -> list[NodeOut]:
     """节点视图(台账口径,60s 巡检刷新):含 Missing/未打池标签节点。"""
     rows = await nodes_service.list_node_specs(session)
+    # 一条 GROUP BY 取全部节点的未释放实例数,不逐行发查询
+    active = await orchestrator_queries.count_active_instances_by_node(session)
     return [
         NodeOut(
             name=r.node_name,
@@ -258,6 +261,8 @@ async def admin_list_nodes(session: DbSession) -> list[NodeOut]:
             unlabeled=r.unlabeled,
             label_synced=r.label_synced,
             last_seen=r.last_seen.isoformat() if r.last_seen else "",
+            desired_pool=r.desired_pool or "",
+            active_instances=active.get(r.node_name, 0),
         )
         for r in rows
     ]
@@ -380,18 +385,91 @@ async def admin_uncordon_node(
     return await _cordon(node_name, body, session, request, on=False)
 
 
-@router.post("/nodes/{node_name}/decommission", dependencies=[require_roles("ops")])
-async def admin_decommission_node(
-    node_name: str, body: NodeDecommissionRequest, session: DbSession, request: Request
-) -> NodeDecommissionOut:
-    """节点退役(不可逆):停止调度 + 作废该机全部注册令牌 + 经 outbox 删除 Node 对象。
-    集群 join token 轮换与 kubelet 证书吊销不在本端点内。
+class NodeSwitchPoolRequest(ReasonBody):
+    pool: SwitchablePool
+
+
+class NodeSwitchPoolOut(EnrollmentCommandOut):
+    """切池回执:池标签经 outbox 异步改;命令带 --force,用于在节点上补主机侧改造。"""
+
+    node_name: str
+    from_pool: str
+    to_pool: str
+    queued: bool = True
+
+
+@router.post("/nodes/{node_name}/switch-pool", dependencies=[require_roles("ops")])
+async def admin_switch_node_pool(
+    node_name: str,
+    body: NodeSwitchPoolRequest,
+    session: DbSession,
+    request: Request,
+    admin: CurrentAdmin,
+    idempotency_key: IdempotencyKey = None,
+) -> NodeSwitchPoolOut:
+    """切换节点池(kata / hami / mig 互切)。前置:节点上无未释放实例、机型与目标池匹配、
+    目标池运行时就绪。受理后节点即停止调度,池标签与 GPU operand 标签经 outbox 改;
+    响应里的命令须在节点上重跑以补齐主机侧改造(kata 的 IOMMU 与一次重启),token 仅此一次。
     """
-    revoked = await nodes_service.decommission_node(session, node_name, reason=body.reason)
+    from_pool = ""
+    row = await nodes_service.get_node_spec(session, node_name)
+    if row is not None:
+        from_pool = row.desired_pool or row.pool_label or ""
+    _, enrollment, token = await nodes_service.switch_node_pool(
+        session,
+        node_name,
+        pool=body.pool,
+        reason=body.reason,
+        created_by=admin.id,
+        idempotency_key=idempotency_key,
+    )
     set_audit_target(
         request,
         f"node:{node_name}",
-        detail={"action": "decommission", "reason": body.reason, "revoked_enrollments": revoked},
+        detail={
+            "action": "switch_pool",
+            "from_pool": from_pool,
+            "to_pool": body.pool,
+            "reason": body.reason,
+            "enrollment_id": enrollment.id,
+        },
+    )
+    curl_command, wget_command = nodes_service.enrollment_commands(token, force=True)
+    return NodeSwitchPoolOut(
+        enrollment=NodeEnrollmentOut.model_validate(enrollment),
+        token=token,
+        curl_command=curl_command,
+        wget_command=wget_command,
+        node_name=node_name,
+        from_pool=from_pool,
+        to_pool=body.pool,
+    )
+
+
+@router.post("/nodes/{node_name}/decommission", dependencies=[require_roles("ops")])
+async def admin_decommission_node(
+    node_name: str,
+    body: NodeDecommissionRequest,
+    session: DbSession,
+    request: Request,
+    force: bool = False,
+) -> NodeDecommissionOut:
+    """节点退役(不可逆):停止调度 + 作废该机全部注册令牌 + 经 outbox 删除 Node 对象。
+    节点上有未释放实例即 409,`force=true` 跳过该闸(机器已救不回来时用)。
+    集群 join token 轮换与 kubelet 证书吊销不在本端点内。
+    """
+    revoked = await nodes_service.decommission_node(
+        session, node_name, reason=body.reason, force=force
+    )
+    set_audit_target(
+        request,
+        f"node:{node_name}",
+        detail={
+            "action": "decommission",
+            "reason": body.reason,
+            "revoked_enrollments": revoked,
+            "force": force,
+        },
     )
     return NodeDecommissionOut(node_name=node_name, revoked_enrollments=revoked)
 

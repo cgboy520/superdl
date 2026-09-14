@@ -5102,9 +5102,19 @@
       },
       "NodeOut": {
         "properties": {
+          "active_instances": {
+            "default": 0,
+            "title": "Active Instances",
+            "type": "integer"
+          },
           "cuda_version": {
             "default": "",
             "title": "Cuda Version",
+            "type": "string"
+          },
+          "desired_pool": {
+            "default": "",
+            "title": "Desired Pool",
             "type": "string"
           },
           "disk_gb": {
@@ -5186,6 +5196,79 @@
           "disk_gb"
         ],
         "title": "NodeOut",
+        "type": "object"
+      },
+      "NodeSwitchPoolOut": {
+        "description": "切池回执:池标签经 outbox 异步改;命令带 --force,用于在节点上补主机侧改造。",
+        "properties": {
+          "curl_command": {
+            "title": "Curl Command",
+            "type": "string"
+          },
+          "enrollment": {
+            "$ref": "#/components/schemas/NodeEnrollmentOut"
+          },
+          "from_pool": {
+            "title": "From Pool",
+            "type": "string"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          },
+          "queued": {
+            "default": true,
+            "title": "Queued",
+            "type": "boolean"
+          },
+          "to_pool": {
+            "title": "To Pool",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          },
+          "wget_command": {
+            "title": "Wget Command",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enrollment",
+          "token",
+          "curl_command",
+          "wget_command",
+          "node_name",
+          "from_pool",
+          "to_pool"
+        ],
+        "title": "NodeSwitchPoolOut",
+        "type": "object"
+      },
+      "NodeSwitchPoolRequest": {
+        "properties": {
+          "pool": {
+            "enum": [
+              "kata",
+              "hami",
+              "mig"
+            ],
+            "title": "Pool",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 256,
+            "minLength": 2,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "pool"
+        ],
+        "title": "NodeSwitchPoolRequest",
         "type": "object"
       },
       "NotificationOut": {
@@ -13515,7 +13598,7 @@
     },
     "/api/admin/v1/nodes/{node_name}/decommission": {
       "post": {
-        "description": "节点退役(不可逆):停止调度 + 作废该机全部注册令牌 + 经 outbox 删除 Node 对象。\n集群 join token 轮换与 kubelet 证书吊销不在本端点内。",
+        "description": "节点退役(不可逆):停止调度 + 作废该机全部注册令牌 + 经 outbox 删除 Node 对象。\n节点上有未释放实例即 409,`force=true` 跳过该闸(机器已救不回来时用)。\n集群 join token 轮换与 kubelet 证书吊销不在本端点内。",
         "operationId": "admin_decommission_node_api_admin_v1_nodes__node_name__decommission_post",
         "parameters": [
           {
@@ -13525,6 +13608,16 @@
             "schema": {
               "title": "Node Name",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "force",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Force",
+              "type": "boolean"
             }
           }
         ],
@@ -13624,6 +13717,81 @@
           }
         ],
         "summary": "Admin Node Metrics",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/nodes/{node_name}/switch-pool": {
+      "post": {
+        "description": "切换节点池(kata / hami / mig 互切)。前置:节点上无未释放实例、机型与目标池匹配、\n目标池运行时就绪。受理后节点即停止调度,池标签与 GPU operand 标签经 outbox 改;\n响应里的命令须在节点上重跑以补齐主机侧改造(kata 的 IOMMU 与一次重启),token 仅此一次。",
+        "operationId": "admin_switch_node_pool_api_admin_v1_nodes__node_name__switch_pool_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "node_name",
+            "required": true,
+            "schema": {
+              "title": "Node Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeSwitchPoolRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeSwitchPoolOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Switch Node Pool",
         "tags": [
           "admin"
         ]
