@@ -66,8 +66,16 @@ rules:
     resources: ["runtimeclasses"]
     verbs: ["get", "list"]
   - apiGroups: ["gateway.networking.k8s.io"]
-    # probe_cluster 读 Gateway 的 status.conditions[Programmed]
+    # probe_cluster 读 Gateway 的 status.conditions[Programmed] 与逐 listener 的 attachedRoutes
     resources: ["gateways"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    # 组件深探读未就绪对象的 Warning 事件(nodes/service.probe_component_detail)
+    resources: ["events"]
+    verbs: ["get", "list"]
+  - apiGroups: ["cert-manager.io"]
+    # 组件深探读证书到期日与 Ready 条件;CRD 未装时按无证书处理
+    resources: ["certificates"]
     verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

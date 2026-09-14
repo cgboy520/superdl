@@ -42,6 +42,7 @@ MATRIX: dict[str, str | frozenset[str]] = {
     "POST /api/admin/v1/auth/mfa/setup/begin": "anon",
     "POST /api/admin/v1/auth/mfa/setup/confirm": "anon",
     "POST /api/admin/v1/auth/refresh": "anon",
+    "GET /api/admin/v1/cluster/components/{component_key}/probe": _OPS_RO,
     "GET /api/admin/v1/cluster/gpu-models": _OPS_RO,
     "GET /api/admin/v1/cluster/status": _OPS_RO,
     "POST /api/admin/v1/cluster/test-connection": _OPS,

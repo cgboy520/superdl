@@ -37,7 +37,7 @@
 
 - 状态迁移只经 `orchestrator/service.py` 的 transition 函数(同事务写 `instance_events`);非法迁移 `INSTANCE_INVALID_TRANSITION`。
 - 生命周期分两层:`create_instance_row` / `stop_instance_row` / `start_instance_row` / `release_instance_row` 是不 commit 的 row 级核心(services 模块在自己的事务里调),用户端入口 `create_instance` 等只做取实例 + commit。`create_instance_row` 的 `service=ServiceBinding(...)` 把实例建成某个在线服务的一个版本;`exclude_instance_id` 让即将被替换的旧实例不占配额与软准入名额(余额不让)。锁序 instance → service → disk → wallet。
-- 请求路径不许调 K8s:业务写入与 `outbox_tasks` 同事务。唯一例外是日志端点只读直读,由 owner / 限流 / 超时三道闸兜住。
+- 请求路径不许调 K8s:业务写入与 `outbox_tasks` 同事务。只读直读有两个例外,都由限流 / 超时 / 失败降级三道闸兜住:实例日志端点(另加 owner 校验),以及管理端组件体检的实时深探(`GET /api/admin/v1/cluster/components/{key}/probe`,见 [nodes.md](./nodes.md))。
 - **购买模式变更不写 `instance_events`**(`subscribe_instance` 与 `convert_to_on_demand`);变更痕迹在审计日志与资金流水。
 - K8s 访问收敛在 `app/core/k8s`,`K8sOrchestrator` 协议是唯一接口面(`app/core/k8s/base.py`)。FakeOrchestrator 与 RealOrchestrator 同步实现协议全部方法。
 - RealOrchestrator 每租户:独立 namespace(PSA enforce=baseline + audit=restricted)、ResourceQuota 兜底、Egress 隔离 NetworkPolicy;数据盘一盘一 PVC,`disk.provision` 建/扩、`disk.deprovision` 删(幂等 + 退避,无作业)。ns/NetPol/Quota 已存在时 patch 收敛;K8s list 一律分页(limit=500 + continue),同步调用走专属有界执行器。对象构造是纯函数(`build_instance_pod` / `build_prewarm_job`),`scripts/render_admission_probes.py` 用它们渲染成清单供 CI 在准入策略下 `--dry-run=server` 对账。

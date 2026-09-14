@@ -73,6 +73,7 @@ import type {
   AuditLogOut,
   CapacityPreviewOut,
   ClusterStatusOut,
+  ComponentProbeOut,
   DeadTaskOut,
   EnrollmentCommandOut,
   EnrollmentCreate,
@@ -751,6 +752,32 @@ export const adminRefreshApiAdminV1AuthRefreshPost = async (adminRefreshRequest:
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     body: JSON.stringify(adminRefreshRequest)
+  }
+);}
+
+
+export const getAdminComponentProbeApiAdminV1ClusterComponentsComponentKeyProbeGetUrl = (componentKey: string,) => {
+
+
+
+
+  return `/api/admin/v1/cluster/components/${componentKey}/probe`
+}
+
+/**
+ * 体检项实时深探:请求路径直连 K8s 只读(规则的第二个例外,见 docs/decisions.md)。
+ *
+ * 硬超时 5s + 每管理员每小时 120 次;失败 503,前端退化为只显示巡检快照。
+ * @summary Admin Component Probe
+ */
+export const adminComponentProbeApiAdminV1ClusterComponentsComponentKeyProbeGet = async (componentKey: string, options?: Parameters<typeof customFetch>[1]): Promise<ComponentProbeOut> => {
+
+  return customFetch<ComponentProbeOut>(getAdminComponentProbeApiAdminV1ClusterComponentsComponentKeyProbeGetUrl(componentKey),
+  {
+    ...options,
+    method: 'GET'
+
+
   }
 );}
 

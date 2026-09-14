@@ -15,6 +15,9 @@ from app.core.k8s.base import (
     MANAGED_LABEL,
     POOL_NODE_LABEL,
     ClusterProbe,
+    ComponentDetail,
+    ComponentFact,
+    ComponentObject,
     InstancePodSpec,
     NodeInfo,
     NodePortTaken,
@@ -32,6 +35,19 @@ from app.core.k8s.health import (
 
 _FAKE_K8S_VERSION = "v1.36.2+rke2r1"  # 探测默认健康 RKE2
 # 与 deploy/app/k8s/04-gateway.yaml 的 listener 集合同形
+# 有 Pod 可深探的体检项(与 real 的 _DETAIL_POD_PATTERNS 同集合)
+_DETAIL_CAPABLE = frozenset(
+    {
+        "hami",
+        "gpu_operator",
+        "dcgm",
+        "kata_runtimeclass",
+        "storage",
+        "gateway",
+        "cert_manager",
+        "monitoring",
+    }
+)
 _FAKE_LISTENERS = (
     ("http", 80, "HTTP"),
     ("api-https", 443, "HTTPS"),
@@ -111,6 +127,9 @@ class FakeOrchestrator:
         INSTANCE_DISK_STORAGE_CLASS,
         DATA_DISK_STORAGE_CLASS,
     )
+    # 深探注入:体检项 → 现场未就绪对象 / 告警事件
+    detail_pods: dict[str, tuple[ComponentObject, ...]] = field(default_factory=dict)
+    detail_events: dict[str, tuple[ComponentObject, ...]] = field(default_factory=dict)
     probe_k8s_version: str = _FAKE_K8S_VERSION  # 改成 +k3s1 即模拟 light 档
     fail_probe: bool = False
     # 容器日志:fail_next_logs 注入一次读取失败;log_calls 记录调用参数供断言
@@ -156,6 +175,31 @@ class FakeOrchestrator:
                 data_disk_sc=DATA_DISK_STORAGE_CLASS,
             ),
             error=None,
+        )
+
+    async def probe_component_detail(self, key: str) -> ComponentDetail:
+        """合成深探结果:默认全就绪(空表);fail_probe 时抛,供 503 降级路径断言。"""
+        if self.fail_probe:
+            raise RuntimeError("fake: connection refused")
+        rows = await self._fake_probe_rows()
+        pods = self.detail_pods.get(key, ())
+        if key == "nodes":
+            return ComponentDetail(
+                facts=(ComponentFact(key="nodesWithPressure", value=str(len(pods))),),
+                pods=pods,
+            )
+        if key not in _DETAIL_CAPABLE:
+            return ComponentDetail()
+        total = len(rows.nodes) if key != "cert_manager" else 3
+        return ComponentDetail(
+            facts=(
+                ComponentFact(key="podsTotal", value=str(total)),
+                ComponentFact(
+                    key="podsNotReady", value=str(len(pods)), tone="bad" if pods else "normal"
+                ),
+            ),
+            pods=pods,
+            events=self.detail_events.get(key, ()),
         )
 
     async def _fake_probe_rows(self) -> health.ProbeRows:

@@ -2578,6 +2578,59 @@
         "title": "ComponentObjectOut",
         "type": "object"
       },
+      "ComponentProbeOut": {
+        "description": "体检项的实时深探结果。快照答「就绪几个」,深探答「为什么不就绪」。",
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/ComponentObjectOut"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "facts": {
+            "items": {
+              "$ref": "#/components/schemas/ComponentFactOut"
+            },
+            "title": "Facts",
+            "type": "array"
+          },
+          "key": {
+            "enum": [
+              "nodes",
+              "hami",
+              "gpu_operator",
+              "dcgm",
+              "nvidia_runtimeclass",
+              "kata_runtimeclass",
+              "storage",
+              "gateway",
+              "cert_manager",
+              "monitoring"
+            ],
+            "title": "Key",
+            "type": "string"
+          },
+          "pods": {
+            "items": {
+              "$ref": "#/components/schemas/ComponentObjectOut"
+            },
+            "title": "Pods",
+            "type": "array"
+          },
+          "probed_at": {
+            "format": "date-time",
+            "title": "Probed At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "probed_at"
+        ],
+        "title": "ComponentProbeOut",
+        "type": "object"
+      },
       "DailySummaryOut": {
         "description": "当日消费汇总(本地日界由 tz_offset_minutes 折算)。",
         "properties": {
@@ -10991,6 +11044,54 @@
           }
         },
         "summary": "Admin Refresh",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/cluster/components/{component_key}/probe": {
+      "get": {
+        "description": "体检项实时深探:请求路径直连 K8s 只读(规则的第二个例外,见 docs/decisions.md)。\n\n硬超时 5s + 每管理员每小时 120 次;失败 503,前端退化为只显示巡检快照。",
+        "operationId": "admin_component_probe_api_admin_v1_cluster_components__component_key__probe_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "component_key",
+            "required": true,
+            "schema": {
+              "title": "Component Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComponentProbeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Component Probe",
         "tags": [
           "admin"
         ]

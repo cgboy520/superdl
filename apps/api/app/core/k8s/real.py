@@ -30,6 +30,9 @@ from app.core.k8s.base import (
     MANAGED_LABEL,
     POOL_NODE_LABEL,
     ClusterProbe,
+    ComponentDetail,
+    ComponentFact,
+    ComponentObject,
     InstancePodSpec,
     NodeInfo,
     NodePortTaken,
@@ -455,6 +458,45 @@ class _NodeProbe:
     rows: list[NodeRow] = field(default_factory=list)
     allocatable_gpu: int = 0
     driver_version: str = ""
+
+
+# 深探按 Pod 名片段定位对象(与探测侧同口径,不写死命名空间)。不在表里的项没有可深探的 Pod
+_DETAIL_POD_PATTERNS: dict[str, tuple[str, ...]] = {
+    "hami": ("hami-",),
+    "gpu_operator": ("nvidia-", "gpu-feature-discovery", "node-feature-discovery"),
+    "dcgm": ("dcgm",),
+    "kata_runtimeclass": ("kata-deploy",),
+    "storage": ("topolvm", "csi-cephfs", "rook-ceph"),
+    "gateway": ("envoy-",),
+    "cert_manager": ("cert-manager",),
+    "monitoring": ("prometheus-", "alertmanager-"),
+}
+# 深探每张表的行数上限:现场明细只为定位问题,不做全量台账
+_DETAIL_MAX_ROWS = 20
+_CERT_MANAGER_GROUP = "cert-manager.io"
+_CERT_MANAGER_VERSION = "v1"
+_CERTIFICATES_PLURAL = "certificates"
+
+
+def _pod_not_ready_reason(pod: Any) -> str:
+    """容器级卡住原因(ImagePullBackOff / CrashLoopBackOff / OOMKilled …)。
+
+    Pod phase 只说 Pending/Running,真原因在 containerStatuses 的 waiting/terminated 里。
+    """
+    for cs in (pod.status.container_statuses or []) + (pod.status.init_container_statuses or []):
+        state = cs.state
+        for sub in (getattr(state, "waiting", None), getattr(state, "terminated", None)):
+            reason = str(getattr(sub, "reason", "") or "")
+            if reason and reason != "Completed":
+                return reason
+    for c in pod.status.conditions or []:
+        if c.type == "PodScheduled" and c.status != "True":
+            return str(getattr(c, "reason", "") or "")
+    return ""
+
+
+def _pod_ready(pod: Any) -> bool:
+    return any(c.type == "Ready" and c.status == "True" for c in (pod.status.conditions or []))
 
 
 _SC_DEFAULT_ANNOTATION = "storageclass.kubernetes.io/is-default-class"
@@ -1425,6 +1467,149 @@ class RealOrchestrator:
                 )
             )
         return out
+
+    async def probe_component_detail(self, key: str) -> ComponentDetail:
+        return await self._run(self._probe_component_detail_sync, key)
+
+    def _probe_component_detail_sync(self, key: str) -> ComponentDetail:
+        if key == "nodes":
+            return self._detail_nodes_sync()
+        if key == "cert_manager":
+            return health.merge_details(
+                self._detail_pods_sync(_DETAIL_POD_PATTERNS[key]), self._detail_certificates_sync()
+            )
+        patterns = _DETAIL_POD_PATTERNS.get(key)
+        return self._detail_pods_sync(patterns) if patterns else ComponentDetail()
+
+    def _detail_pods_sync(self, patterns: tuple[str, ...]) -> ComponentDetail:
+        """匹配 Pod 的现场状态 + 它们最近的 Warning 事件。未就绪的排前面。"""
+        pods = [
+            p
+            for p in self._list_all(self.core.list_pod_for_all_namespaces)
+            if any(pat in (p.metadata.name or "") for pat in patterns)
+        ]
+        not_ready = [p for p in pods if not _pod_ready(p)]
+        shown = (not_ready + [p for p in pods if _pod_ready(p)])[:_DETAIL_MAX_ROWS]
+        return ComponentDetail(
+            facts=(
+                ComponentFact(key="podsTotal", value=str(len(pods))),
+                ComponentFact(
+                    key="podsNotReady",
+                    value=str(len(not_ready)),
+                    tone="bad" if not_ready else "normal",
+                ),
+            ),
+            pods=tuple(
+                ComponentObject(
+                    name=str(p.metadata.name or ""),
+                    fields={
+                        "namespace": str(p.metadata.namespace or ""),
+                        "phase": str(p.status.phase or ""),
+                        "node": str(p.spec.node_name or ""),
+                        "reason": _pod_not_ready_reason(p),
+                        "restarts": str(
+                            sum(
+                                _safe_int(cs.restart_count)
+                                for cs in (p.status.container_statuses or [])
+                            )
+                        ),
+                    },
+                )
+                for p in shown
+            ),
+            events=self._detail_events_sync({str(p.metadata.name or "") for p in not_ready}),
+        )
+
+    def _detail_events_sync(self, object_names: set[str]) -> tuple[ComponentObject, ...]:
+        """未就绪对象的 Warning 事件。需 ClusterRole events 只读(deploy/app/k8s/01-rbac.yaml)。"""
+        if not object_names:
+            return ()
+        events = self._list_all(
+            self.core.list_event_for_all_namespaces, field_selector="type=Warning"
+        )
+        rows = [e for e in events if str(e.involved_object.name or "") in object_names]
+        rows.sort(key=lambda e: str(e.last_timestamp or ""), reverse=True)
+        return tuple(
+            ComponentObject(
+                name=str(e.involved_object.name or ""),
+                fields={
+                    "reason": str(e.reason or ""),
+                    "message": str(e.message or "")[:200],
+                    "count": str(_safe_int(e.count)),
+                    "lastSeen": str(e.last_timestamp or ""),
+                },
+            )
+            for e in rows[:_DETAIL_MAX_ROWS]
+        )
+
+    def _detail_nodes_sync(self) -> ComponentDetail:
+        """节点的非 Ready 压力条件与污点 —— 快照只留 Ready 一位,压力条件在这里才看得见。"""
+        rows: list[ComponentObject] = []
+        for node in self._list_all(self.core.list_node):
+            pressure = [
+                str(c.type)
+                for c in (node.status.conditions or [])
+                if c.type != "Ready" and c.status == "True"
+            ]
+            taints = [str(t.key) for t in (node.spec.taints or [])]
+            if not pressure and not taints:
+                continue
+            rows.append(
+                ComponentObject(
+                    name=str(node.metadata.name or ""),
+                    fields={
+                        "pressure": ", ".join(pressure),
+                        "taints": ", ".join(taints),
+                    },
+                )
+            )
+        return ComponentDetail(
+            facts=(ComponentFact(key="nodesWithPressure", value=str(len(rows))),),
+            pods=tuple(rows[:_DETAIL_MAX_ROWS]),
+        )
+
+    def _detail_certificates_sync(self) -> ComponentDetail:
+        """cert-manager 证书到期日。需 ClusterRole cert-manager.io/certificates 只读;
+        CRD 未装(404)按无证书处理。"""
+        try:
+            items = self._list_all_custom(
+                self.custom.list_cluster_custom_object,
+                _CERT_MANAGER_GROUP,
+                _CERT_MANAGER_VERSION,
+                _CERTIFICATES_PLURAL,
+            )
+        except client.ApiException as exc:
+            if exc.status != 404:
+                raise
+            return ComponentDetail()
+        rows: list[ComponentObject] = []
+        soonest = ""
+        for cert in items:
+            status: dict[str, Any] = cert.get("status") or {}
+            not_after = str(status.get("notAfter") or "")
+            ready = next(
+                (c for c in (status.get("conditions") or []) if c.get("type") == "Ready"), {}
+            )
+            rows.append(
+                ComponentObject(
+                    name=str((cert.get("metadata") or {}).get("name") or ""),
+                    fields={
+                        "namespace": str((cert.get("metadata") or {}).get("namespace") or ""),
+                        "ready": str(ready.get("status") or ""),
+                        "notAfter": not_after,
+                        "reason": str(ready.get("reason") or ""),
+                    },
+                )
+            )
+            if not_after and (not soonest or not_after < soonest):
+                soonest = not_after
+        return ComponentDetail(
+            facts=(
+                ComponentFact(key="certificates", value=str(len(rows))),
+                ComponentFact(key="soonestExpiry", value=soonest),
+            ),
+            pods=tuple(rows[:_DETAIL_MAX_ROWS]),
+        )
 
     async def probe_cluster(self) -> ClusterProbe:
         return await self._run(self._probe_cluster_sync)

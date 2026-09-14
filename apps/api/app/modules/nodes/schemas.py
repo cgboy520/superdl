@@ -149,6 +149,16 @@ class ClusterComponentOut(BaseModel):
     diag_hint: str | None = None
 
 
+class ComponentProbeOut(BaseModel):
+    """体检项的实时深探结果。快照答「就绪几个」,深探答「为什么不就绪」。"""
+
+    key: ComponentKey
+    probed_at: datetime
+    facts: list[ComponentFactOut] = Field(default_factory=list)
+    pods: list[ComponentObjectOut] = Field(default_factory=list)
+    events: list[ComponentObjectOut] = Field(default_factory=list)
+
+
 class ClusterConfigStateOut(BaseModel):
     """配置就绪位(不回明文)。"""
 

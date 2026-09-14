@@ -4,11 +4,12 @@
 状态迁移集中于 transition_enrollment。
 """
 
+import asyncio
 import secrets
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any
+from typing import Any, cast
 
 from fastapi import status as http_status
 from sqlalchemy import select
@@ -20,6 +21,7 @@ from app.core.crypto import hash_node_token, hash_node_token_candidates
 from app.core.errors import AppError, ErrorCode, conflict, not_found
 from app.core.gpu_models import model_matches
 from app.core.idempotency import find_replay
+from app.core.k8s import get_orchestrator
 from app.core.k8s.base import (
     DATA_DISK_STORAGE_CLASS,
     INSTANCE_DISK_STORAGE_CLASS,
@@ -33,6 +35,7 @@ from app.core.k8s.base import (
 from app.core.logging import get_logger
 from app.core.outbox import enqueue
 from app.core.platform_config import RuntimeConfig, get_runtime_config
+from app.core.ratelimit import check_rate_limit
 from app.core.registry import parse_proxy_projects
 from app.core.timeutil import now_utc
 from app.modules.nodes.models import ClusterStatus, NodeEnrollment, NodeSpec
@@ -41,6 +44,7 @@ from app.modules.nodes.schemas import (
     ComponentFactOut,
     ComponentKey,
     ComponentObjectOut,
+    ComponentProbeOut,
     ComponentStateOut,
     EnrollmentCreate,
 )
@@ -699,3 +703,43 @@ def _fix_hint(key: ComponentKey, release: str | None, distro: str | None) -> str
 
 def _fact_out(f: ComponentFact) -> ComponentFactOut:
     return ComponentFactOut(key=f.key, value=f.value, tone=f.tone)
+
+
+# 深探是请求路径上唯一的第二个 K8s 只读直连(第一个是实例日志),见 docs/decisions.md。
+# 硬超时 + 限流 + 失败降级,三者缺一都会让集群 API 抖动直接打到管理端页面上。
+COMPONENT_PROBE_TIMEOUT = 5.0
+COMPONENT_PROBE_MAX_PER_HOUR = 120
+
+_COMPONENT_KEYS = frozenset(key for key, _r, _d in _COMPONENT_META)
+
+
+async def probe_component_detail(admin_id: int, key: str) -> ComponentProbeOut:
+    """单个体检项的实时深探(只读,不记审计,不写库)。
+
+    未知 key → 404;探测失败或超时 → 503,由前端退化为只显示快照,不阻断页面。
+    """
+    if key not in _COMPONENT_KEYS:
+        raise not_found(key="nodes.nodeNotFound")
+    await check_rate_limit(
+        f"component-probe:{admin_id}",
+        max_attempts=COMPONENT_PROBE_MAX_PER_HOUR,
+        window_seconds=3600.0,
+    )
+    try:
+        detail = await asyncio.wait_for(
+            get_orchestrator().probe_component_detail(key), timeout=COMPONENT_PROBE_TIMEOUT
+        )
+    except Exception as exc:  # 超时与探测失败对调用方是同一种降级,不分流
+        logger.warning("component_probe_failed", component=key, error=str(exc))
+        raise AppError(
+            ErrorCode.INTERNAL,
+            key="nodes.componentProbeFailed",
+            http_status=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+        ) from exc
+    return ComponentProbeOut(
+        key=cast(ComponentKey, key),
+        probed_at=now_utc(),
+        facts=[_fact_out(f) for f in detail.facts],
+        pods=[ComponentObjectOut(name=o.name, fields=o.fields) for o in detail.pods],
+        events=[ComponentObjectOut(name=o.name, fields=o.fields) for o in detail.events],
+    )

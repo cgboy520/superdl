@@ -545,3 +545,88 @@ class TestClusterEndpoints:
         async with sm() as session:
             row = await service.get_cluster_status(session)
         assert row is not None and row.api_reachable is False and row.error
+
+
+class TestComponentProbe:
+    """实时深探:请求路径直连 K8s 的第二个只读例外,降级路径必须兜住。"""
+
+    async def test_probe_returns_pod_level_reasons(self, sm, fake_auto_ready, client):
+        """快照答「就绪几个」,深探答「为什么不就绪」。
+
+        挂了说明面板又只剩 x/y:DaemonSet 5/8 时管理员还是得自己去敲 kubectl describe。
+        """
+        from app.core.k8s.base import ComponentObject
+
+        fake_auto_ready.detail_pods = {
+            "hami": (
+                ComponentObject(
+                    name="hami-scheduler-abc",
+                    fields={
+                        "namespace": "kube-system",
+                        "phase": "Pending",
+                        "node": "spark-fdd3",
+                        "reason": "ImagePullBackOff",
+                        "restarts": "0",
+                    },
+                ),
+            )
+        }
+        fake_auto_ready.detail_events = {
+            "hami": (
+                ComponentObject(
+                    name="hami-scheduler-abc",
+                    fields={
+                        "reason": "Failed",
+                        "message": "Back-off pulling image",
+                        "count": "7",
+                        "lastSeen": "2026-09-14T10:00:00Z",
+                    },
+                ),
+            )
+        }
+        headers = await admin_headers(sm, client, role="readonly")
+        resp = await client.get("/api/admin/v1/cluster/components/hami/probe", headers=headers)
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["key"] == "hami"
+        assert body["pods"][0]["fields"]["reason"] == "ImagePullBackOff"
+        assert body["events"][0]["fields"]["count"] == "7"
+        assert _fact(body, "podsNotReady") == ("1", "bad")
+
+    async def test_probe_failure_degrades_to_503_not_500(self, sm, fake_auto_ready, client):
+        """集群 API 抖动不能打穿管理端:503 + 快照仍可读。
+
+        挂了说明深探把集群故障放大成了页面故障。
+        """
+        fake_auto_ready.fail_probe = True
+        headers = await admin_headers(sm, client, role="readonly")
+        resp = await client.get("/api/admin/v1/cluster/components/gateway/probe", headers=headers)
+        assert resp.status_code == 503, resp.text
+        assert resp.json()["message_key"] == "nodes.componentProbeFailed"
+        # 快照端点不受影响
+        assert (
+            await client.get("/api/admin/v1/cluster/status", headers=headers)
+        ).status_code == 200
+
+    async def test_probe_unknown_key_404(self, sm, fake_auto_ready, client):
+        headers = await admin_headers(sm, client, role="readonly")
+        resp = await client.get("/api/admin/v1/cluster/components/nope/probe", headers=headers)
+        assert resp.status_code == 404, resp.text
+
+    async def test_probe_rate_limited(self, sm, fake_auto_ready, client):
+        """限流护住集群 API:管理端刷新再快也打不爆 apiserver。"""
+        from app.modules.nodes import service as nodes_service
+
+        headers = await admin_headers(sm, client, role="readonly")
+        for _ in range(nodes_service.COMPONENT_PROBE_MAX_PER_HOUR):
+            assert (
+                await client.get("/api/admin/v1/cluster/components/dcgm/probe", headers=headers)
+            ).status_code == 200
+        resp = await client.get("/api/admin/v1/cluster/components/dcgm/probe", headers=headers)
+        assert resp.status_code == 429, resp.text
+
+    async def test_probe_denied_for_finance_role(self, sm, fake_auto_ready, client):
+        """角色边界:财务角色读不到集群诊断。"""
+        headers = await admin_headers(sm, client, role="finance")
+        resp = await client.get("/api/admin/v1/cluster/components/hami/probe", headers=headers)
+        assert resp.status_code == 403, resp.text

@@ -106,6 +106,8 @@
 - **集群配置键中性化。** 键统一 `cluster_*`,发行版由平台探测 gitVersion 派生,无 `k8s_distro` 键。
 - **不引 Sentry 类 SaaS。** 未捕获异常统一 500 留痕并经 Loki / Prometheus 告警。
 - **管理端监控自绘,Grafana 只作外链。** 不做 iframe,`grafana_url` 未配置只显示一行提示。
+- **管理端组件体检的实时深探是请求路径直连 K8s 的第二个只读例外。** 巡检快照(60s)回答「就绪几个」,深探回答「为什么不就绪」——Pod 级失败原因、Warning 事件、证书到期日,这些变化快、体量大,不适合常驻落库,也不值得为它把巡检频率拉高。约束:只读、不写库、不记审计;硬超时 5s + 每管理员每小时 120 次限流;失败一律 503 且前端退化为只显示快照,集群 API 抖动不得放大成页面故障;仅管理端 ops/readonly 可用,不进用户端;需 ClusterRole 增 `events` 与 `cert-manager.io/certificates` 只读。判定与事实组装仍在 `app/core/k8s/health.py`,深探只补现场明细,不改组件状态位。
+- **组件体检的文案单一事实源是两端 locales,后端只出事实数据。** 后端曾把布尔位拼成中文 `detail` 字符串直接渲染,绕过 `core/messages.py` 与 locales,en-US 下管理员看到中文。改为 `{key, value, tone}` 结构化事实:`value` 是计数 / 版本 / 对象名 / 地址等纯数据,label、判据、影响面按 key 映射到 locales;`fix_hint` 与 `diag_hint` 是命令,不随语言。约束:新增事实项要同步 `apps/admin/i18next.config.ts` 的 `preservePatterns`,否则 `removeUnusedKeys` 会删掉动态取的键。
 - **告警 `runbook_url` 只加在有专属 runbook 的规则上。** 其余告警第一步写在 summary 与 `deploy/cluster/runbooks/README.md` 索引表。
 - **北向唯一入口是 Gateway API + Envoy Gateway。** `GatewayClass superdl` + 一个 `Gateway superdl`(ns `superdl`)带 6 个 listener(`http` / `api-https` / `console-https` / `admin-https` / `app-https` / `svc-https`)+ 4 条平台域 HTTPRoute 与 1 条 80→443 跳转;租户 Jupyter 与服务端点**每实例一条 HTTPRoute**,建在租户 ns,跨 ns 靠 `allowedRoutes.namespaces.from: Selector` + `superdl.io/managed=true`。约束:`deploy/cluster/values/cilium.yaml` 的 `gatewayAPI` 保持 false。
   - **CRD 的 channel 首装即定(experimental)。** CRD 生命周期单点收进 `deploy/cluster/gateway-api-crds.sh`(chart 侧一律 `crds.enabled=false`),脚本自带 channel 前置闸门,`deploy/cluster/preflight.sh` 复核。

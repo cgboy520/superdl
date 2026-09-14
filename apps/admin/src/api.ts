@@ -16,6 +16,7 @@ import {
   adminGetPlatformConfigApiAdminV1PlatformConfigGet,
   adminClusterStatusApiAdminV1ClusterStatusGet,
   adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost,
+  adminComponentProbeApiAdminV1ClusterComponentsComponentKeyProbeGet,
   adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet,
   adminGetPoliciesApiAdminV1PoliciesGet,
   adminTestRegistryApiAdminV1PlatformConfigTestRegistryPost,
@@ -222,6 +223,7 @@ export type {
   ClusterComponentOut as ClusterComponent,
   ComponentFactOut as ComponentFact,
   ComponentObjectOut as ComponentObject,
+  ComponentProbeOut as ComponentProbe,
   CapacityWarningOut as CapacityWarning,
   RefundPayout,
 } from "@superdl/api-client";
@@ -306,6 +308,15 @@ export function useClusterStatus() {
 export const useTestClusterConnection = adminMutation(() =>
   adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost(),
 );
+
+/** 体检项实时深探:抽屉打开即取一次。失败不重试 —— 集群 API 已经在抖,重试只会加剧。 */
+export function useComponentProbe(componentKey: string) {
+  return useKeyedQuery(
+    ["admin", "component-probe", componentKey],
+    () => adminComponentProbeApiAdminV1ClusterComponentsComponentKeyProbeGet(componentKey),
+    { retry: false, staleTime: POLL.steady },
+  );
+}
 
 export function useGpuModelAggregates(options?: { enabled?: boolean }) {
   return useKeyedQuery(["admin", "gpu-models"], () => adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet(), {

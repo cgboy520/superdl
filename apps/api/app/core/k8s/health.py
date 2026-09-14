@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
 from app.core.k8s.base import (
+    ComponentDetail,
     ComponentFact,
     ComponentFacts,
     ComponentObject,
@@ -487,3 +488,10 @@ def build_facts(
         "cert_manager": cert_manager_facts(rows.cert_manager),
         "monitoring": monitoring_facts(rows.prometheus, rows.alertmanager),
     }
+
+
+def merge_details(a: ComponentDetail, b: ComponentDetail) -> ComponentDetail:
+    """合并两次深探结果(如 cert-manager 的 Pod 现场 + 证书列表)。"""
+    return ComponentDetail(
+        facts=a.facts + b.facts, pods=a.pods + b.pods, events=a.events + b.events
+    )

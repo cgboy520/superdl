@@ -26,6 +26,7 @@ from app.modules.nodes import service as nodes_service
 from app.modules.nodes.schemas import (
     ClusterConfigStateOut,
     ClusterStatusOut,
+    ComponentProbeOut,
     EnrollmentCommandOut,
     EnrollmentCreate,
     GpuModelAggregateOut,
@@ -299,6 +300,17 @@ async def _cluster_status_out(session: DbSession) -> ClusterStatusOut:
 async def admin_cluster_status(session: DbSession) -> ClusterStatusOut:
     """集群页数据:纯读能力缓存(worker 巡检 60s 刷新),不实时探测。"""
     return await _cluster_status_out(session)
+
+
+@router.get(
+    "/cluster/components/{component_key}/probe", dependencies=[require_roles("ops", "readonly")]
+)
+async def admin_component_probe(component_key: str, admin: CurrentAdmin) -> ComponentProbeOut:
+    """体检项实时深探:请求路径直连 K8s 只读(规则的第二个例外,见 docs/decisions.md)。
+
+    硬超时 5s + 每管理员每小时 120 次;失败 503,前端退化为只显示巡检快照。
+    """
+    return await nodes_service.probe_component_detail(admin.id, component_key)
 
 
 @router.post("/cluster/test-connection", dependencies=[require_roles("ops")])

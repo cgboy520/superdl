@@ -120,6 +120,8 @@ export * from './componentFactOut';
 export * from './componentFactOutTone';
 export * from './componentObjectOut';
 export * from './componentObjectOutFields';
+export * from './componentProbeOut';
+export * from './componentProbeOutKey';
 export * from './createDiskApiV1DisksPostHeaders';
 export * from './createInstanceApiV1InstancesPostHeaders';
 export * from './createInvoiceApiV1BillingInvoicesPostHeaders';

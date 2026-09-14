@@ -104,6 +104,15 @@ export const OBJECT_COLUMN_LABEL = {
   default: "cluster.objcol.default",
   handler: "cluster.objcol.handler",
   nodeSelector: "cluster.objcol.nodeSelector",
+  phase: "cluster.objcol.phase",
+  node: "cluster.objcol.node",
+  restarts: "cluster.objcol.restarts",
+  message: "cluster.objcol.message",
+  count: "cluster.objcol.count",
+  lastSeen: "cluster.objcol.lastSeen",
+  pressure: "cluster.objcol.pressure",
+  taints: "cluster.objcol.taints",
+  notAfter: "cluster.objcol.notAfter",
 } as const;
 
 /** 抽屉对象表的列顺序:后端 fields 是无序 map,列由这里定;列名必须在 OBJECT_COLUMN_LABEL 里。 */
@@ -121,3 +130,13 @@ export const OBJECT_COLUMNS = {
   cert_manager: ["namespace", "ready", "image", "reason"],
   monitoring: ["namespace", "ready", "image", "reason"],
 } as const satisfies Record<ComponentKey, readonly ObjectColumn[]>;
+
+/** 深探两张表的列:现场对象 / Warning 事件。节点项的现场表复用同一组件,列不同。 */
+export const LIVE_POD_COLUMNS = [
+  "namespace",
+  "phase",
+  "node",
+  "reason",
+  "restarts",
+] as const satisfies readonly ObjectColumn[];
+export const LIVE_EVENT_COLUMNS = ["reason", "message", "count", "lastSeen"] as const satisfies readonly ObjectColumn[];

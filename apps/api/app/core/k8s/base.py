@@ -214,6 +214,19 @@ def _fact_from_json(v: Any) -> ComponentFact | None:
 
 
 @dataclass(frozen=True)
+class ComponentDetail:
+    """体检项的实时深探结果:快照之外的现场明细。
+
+    快照是 60s 一轮的巡检产物,回答「就绪几个」;深探回答「为什么不就绪」——
+    Pod 级失败原因、最近告警事件、证书到期日,这些变化快、体量大,不适合常驻落库。
+    """
+
+    facts: tuple[ComponentFact, ...] = ()
+    pods: tuple[ComponentObject, ...] = ()
+    events: tuple[ComponentObject, ...] = ()
+
+
+@dataclass(frozen=True)
 class ClusterProbe:
     """集群能力探测快照(nodes 巡检落 cluster_status 表,门禁与集群页读表不实时探测)。"""
 
@@ -340,6 +353,11 @@ class K8sOrchestrator(Protocol):
 
     async def probe_cluster(self) -> "ClusterProbe":
         """只读能力探测:版本/发行版/组件存在性/RuntimeClass/StorageClass/池分布。"""
+        ...
+
+    async def probe_component_detail(self, key: str) -> "ComponentDetail":
+        """单个体检项的实时深探(只读):Pod 级失败原因、最近告警事件、证书到期。
+        未知 key 或该项无可深探的对象时返回空结果,不抛。"""
         ...
 
     async def set_node_unschedulable(self, node_name: str, unschedulable: bool) -> None:

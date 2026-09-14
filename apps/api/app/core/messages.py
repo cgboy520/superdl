@@ -217,6 +217,7 @@ MESSAGES: dict[str, str] = {
     "nodes.clusterNotConfigured": (
         "集群接入参数未配置:请超管在「平台配置 · 集群接入」录入 RKE2 Server 地址与 join token"
     ),
+    "nodes.componentProbeFailed": "集群实时探测未取到结果,下方仍是最近一次巡检的快照",
     "nodes.enrollTransition": "注册状态不允许 {from} → {to}",
     "nodes.hostnameMismatch": "主机名与登记不符,令牌已作废,请在管理端核对后重新生成",
     "nodes.nodeNotFound": "节点不在台账中:请确认节点名,或等待下一轮巡检(60 秒)收录后再试",
