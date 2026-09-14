@@ -1,0 +1,62 @@
+# SeaweedFS 4.4x:JuiceFS 的自建对象存储后端(架构文档的「云 OSS 或自建 SeaweedFS」中的后者)。
+# 只对集群内提供 S3(ClusterIP),不开公网入口;JuiceFS 以 storage=s3 指向它。
+# 凭据预建 Secret,values 只引用(同 juicefs.yaml):
+#   kubectl -n seaweedfs create secret generic superdl-seaweedfs-s3 \
+#     --from-literal=seaweedfs_s3_config='{"identities":[{"name":"superdl","credentials":[{"accessKey":"<ak>","secretKey":"<sk>"}],"actions":["Read","Write","List","Tagging","Admin"]}]}'
+#
+# 存储一律 PVC:准入策略④ superdl-global-pod-guard 禁止非豁免 ns 用 hostPath(chart 默认就是 hostPath),
+# 而 seaweedfs ns 不在豁免名单里。用 topolvm 而非 local-path:local-path 没有容量感知,
+# 写满节点根分区会连带拖死 containerd 与 kubelet;topolvm 走 LVM 且调度器知道余量。
+# 代价是与租户实例盘共用 VG superdl-nvme,总占用按下面的配额约 1.6T。
+global:
+  # 两副本跨 server(001 = 同机架不同机);节点本地盘 + 单副本 = 掉一台丢数据
+  enableReplication: true
+  replicationPlacement: "001"
+
+master:
+  replicas: 1
+  defaultReplication: "001"
+  # 单卷 30G:卷越小,掉盘时要重平衡的粒度越细
+  volumeSizeLimitMB: 30000
+  data:
+    type: "persistentVolumeClaim"
+    size: "10Gi"
+    storageClass: "topolvm-provisioner"
+  logs:
+    type: "emptyDir"
+
+volume:
+  replicas: 3
+  dataDirs:
+    - name: data1
+      type: "persistentVolumeClaim"
+      size: "500Gi"
+      storageClass: "topolvm-provisioner"
+      maxVolumes: 0
+  logs:
+    type: "emptyDir"
+
+filer:
+  replicas: 1
+  # 元数据用内置 leveldb 落在自己的 PVC 上;JuiceFS 自己的元数据在 PG,不叠在这里
+  data:
+    type: "persistentVolumeClaim"
+    size: "50Gi"
+    storageClass: "topolvm-provisioner"
+  logs:
+    type: "emptyDir"
+  # S3 用独立 deployment(下面 s3.enabled),不挂在 filer 里
+  s3:
+    enabled: false
+
+s3:
+  enabled: true
+  replicas: 1
+  # chart 默认把 s3 的日志也写 hostPath /storage/logs,同样过不了准入策略④
+  logs:
+    type: "emptyDir"
+  enableAuth: true
+  existingConfigSecret: superdl-seaweedfs-s3
+  createBuckets:
+    - name: superdl-data
+      anonymousRead: false

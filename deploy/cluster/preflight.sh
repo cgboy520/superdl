@@ -33,6 +33,11 @@ check_secret() { # <ns> <name> <用途>
     miss "$1/$2($3)—— 建法见 README「前置检查」节"
   fi
 }
+if grep -qE '^\s*seaweedfs:\s*\{[^}]*enabled:\s*true' "environments/$env_name.yaml"; then
+  check_secret seaweedfs superdl-seaweedfs-s3 "SeaweedFS S3 凭据(键 seaweedfs_s3_config)"
+else
+  ok "seaweedfs/superdl-seaweedfs-s3 不需要(environments/$env_name.yaml seaweedfs.enabled=false)"
+fi
 if grep -qE '^\s*juicefs:\s*\{[^}]*enabled:\s*true' "environments/$env_name.yaml"; then
   check_secret kube-system superdl-juicefs-secret "JuiceFS 元数据/对象存储凭据"
 else

@@ -15,6 +15,10 @@ helm 不代建 Secret,先建好再 `./preflight.sh <full|light>`(只读,缺什�
 
 ```bash
 kubectl create ns monitoring --dry-run=client -o yaml | kubectl apply -f -
+# SeaweedFS(自建 S3 后端,seaweedfs.enabled=true 时必需;用云 OSS 则跳过)
+kubectl create ns seaweedfs --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n seaweedfs create secret generic superdl-seaweedfs-s3 \
+  --from-literal=seaweedfs_s3_config='{"identities":[{"name":"superdl","credentials":[{"accessKey":"<ak>","secretKey":"<sk>"}],"actions":["Read","Write","List","Tagging","Admin"]}]}'
 # JuiceFS(两档必需):六个键缺一不可,storage/bucket 按后端写(oss / s3 / minio …)
 kubectl -n kube-system create secret generic superdl-juicefs-secret \
   --from-literal=name=superdl-data \
@@ -117,6 +121,7 @@ kubectl label nodes -l node-role.kubernetes.io/control-plane \
    - Envoy Gateway 控制面降到 1 副本并关掉 PDB。
    - Cilium 同装并接管 kube-proxy;CNI 路径按 k3s 的 containerd 改、`k8sServiceHost` 填 server 实 IP、北向 LoadBalancer 仍归 k3s ServiceLB(`values/light/cilium-light.yaml`)。
    - acme-dns 不装;租户 Jupyter 泛域名证书由现成通配证书灌成 `superdl/superdl-jupyter-wildcard-tls`。
+   - **SeaweedFS 同装**(内网没有云 OSS):master/filer 各 1 副本、volume 3 副本两副本跨机,存储一律 `topolvm-provisioner`(准入策略④ 不许 seaweedfs ns 用 hostPath,而 chart 默认就是 hostPath);S3 只开 ClusterIP。占用实例盘 VG 约 1.6T。
    - **TopoLVM 必开**(VG `superdl-nvme` 由 node-join.sh 建出);**JuiceFS 必开**(数据盘),对象存储与元数据库见「前置检查」。
 ### 给已有集群换 CNI(flannel → Cilium)
 

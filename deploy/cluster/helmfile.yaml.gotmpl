@@ -19,6 +19,8 @@ repositories:
     url: https://prometheus-community.github.io/helm-charts
   - name: juicefs
     url: https://juicedata.github.io/charts
+  - name: seaweedfs
+    url: https://seaweedfs.github.io/seaweedfs/helm
   - name: topolvm
     url: https://topolvm.github.io/topolvm
   - name: jetstack
@@ -101,8 +103,20 @@ releases:
     # helm diff 不装 crds/ 目录的 CRD,首装 diff 免校验
     disableValidationOnInstall: true
 
+  # JuiceFS 的自建 S3 后端;用云 OSS 时置 seaweedfs.enabled=false
+  - name: seaweedfs
+    condition: seaweedfs.enabled
+    namespace: seaweedfs
+    chart: seaweedfs/seaweedfs
+    version: "4.47.0"
+    values: [values/seaweedfs.yaml]
+
   - name: juicefs-csi-driver
     condition: juicefs.enabled
+    {{- if .Values.seaweedfs.enabled }}
+    # 自建后端时 CSI 排在 S3 之后;用云 OSS 时无此依赖
+    needs: [seaweedfs/seaweedfs]
+    {{- end }}
     namespace: kube-system
     chart: juicefs/juicefs-csi-driver
     version: "0.32.3"

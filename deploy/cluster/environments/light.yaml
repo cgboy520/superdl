@@ -9,6 +9,8 @@ hami: {enabled: true}
 kataDeploy: {enabled: true}   # dedicated 档运行时;chart 按 k8sDistribution=k3s 写 k3s 的 containerd 配置
 kps: {enabled: true}
 juicefs: {enabled: true}
+# 数据盘后端自建在集群内(内网无云 OSS);存储走 topolvm,见 values/seaweedfs.yaml
+seaweedfs: {enabled: true}
 topolvm: {enabled: true}
 certManager: {enabled: true}
 # acme-dns 不装(见 helmfile 注释);通配证书手工灌成 superdl/superdl-jupyter-wildcard-tls 与 superdl-svc-wildcard-tls

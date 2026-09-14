@@ -39,7 +39,8 @@ flowchart LR
 | Kata                    | RuntimeClass `kata-qemu`,VFIO 整卡直通                                                                                            |
 | HAMi                    | 共享档 CUDA 层软切分与限额                                                                                                        |
 | kube-prometheus-stack   | Prometheus 本地留 15 天,长期数据进 PostgreSQL                                                                                     |
-| JuiceFS CSI             | 数据盘;后端云 OSS 或自建 SeaweedFS                                                                                                |
+| JuiceFS CSI             | 数据盘;元数据在 PostgreSQL,数据在对象存储                                                                                         |
+| SeaweedFS               | 自建 S3 后端(`seaweedfs.enabled`);用云 OSS 时关掉                                                                                |
 | TopoLVM                 | 实例盘本地 NVMe,销毁为 lvremove(擦盘需节点开 issue_discards)                                                                      |
 | Envoy Gateway           | 北向唯一入口(Gateway API,`GatewayClass superdl`):三个平台域 + 租户 Jupyter 泛域名 + 服务端点泛域名                                |
 | cert-manager + acme-dns | 平台三域与泛域名证书(DNS01 经 acme-dns);Gateway `certificateRefs` 引 `deploy/app/k8s/05-cert-manager.yaml` 显式声明的 Certificate |
