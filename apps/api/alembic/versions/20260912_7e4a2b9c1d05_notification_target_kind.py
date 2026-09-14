@@ -1,4 +1,5 @@
-"""notifications 增加 target_kind(管理端告警流深链种类),写入侧给全;历史 gpu_fault 行按 user_id 回填。
+"""notifications 增加 target_kind(管理端告警流深链种类),写入侧给全;
+历史 gpu_fault 行按 user_id 回填。
 
 Revision ID: 7e4a2b9c1d05
 Revises: 6d2f8a1c0b77

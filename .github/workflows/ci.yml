@@ -73,8 +73,8 @@ jobs:
       - run: uv run ruff check .
       - run: uv run pyright
       - run: uv run lint-imports
-      # real_k8s 用例归 k8s-real-smoke job
-      - run: uv run pytest -m "not real_k8s"
+      # real_k8s 用例归 k8s-real-smoke job;-n auto 按 runner 核数并行(每个 worker 起自己的 PG 容器)
+      - run: uv run pytest -m "not real_k8s" -n auto
       # 模型与迁移一致性:upgrade head 后 alembic check
       - name: alembic check (migrations match models)
         run: |

@@ -29,7 +29,8 @@ uv run python -m app.workers.main        # worker(outbox + 定时任务)
 uv run ruff format . && uv run ruff check --fix .
 uv run pyright
 uv run lint-imports                      # 模块边界(import-linter)
-uv run pytest                            # 需要 Docker(testcontainers PG18)
+uv run pytest -n 8                       # 需要 Docker(testcontainers PG18);每 worker 一个容器,全量约 90s
+uv run pytest tests/test_x.py            # 跑单个文件不加 -n(省掉多余容器启动)
 uv run alembic revision --autogenerate -m "..."
 uv run alembic check                     # 模型与迁移一致
 uv run python -m app.export_openapi      # 导出 openapi.json 到 packages/api-client/
@@ -70,7 +71,11 @@ python3 scripts/check-page-skeleton.py   # 控制台路由页自持 PageContaine
 ## 禁改清单
 
 - `packages/api-client/src/generated/**`(orval 产物)
-- `apps/api/alembic/versions/*`(只许新增)
+- `apps/api/alembic/versions/*`(只许新增:**不许改已上线迁移的 DDL / 数据语句,也不许改 revision 链**)
+
+「禁改」约束的是迁移的行为,不是文件本身:注释与 docstring 换行、把超长函数按原顺序拆成辅助函数
+这类零行为改动照做——闸门长期挂红会把真回归淹掉。改完须证明行为未变:语句序列逐条比对 + 空库
+`alembic upgrade head` + `alembic check`。
 
 ## 提交约定
 

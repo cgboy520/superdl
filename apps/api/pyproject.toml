@@ -31,6 +31,7 @@ dev = [
     "pytest>=8.4",
     "pytest-asyncio>=1.0",
     "pytest-cov>=6.0",
+    "pytest-xdist>=3.6",
     "testcontainers[postgres]>=4.9",
     "import-linter>=2.3",
     "greenlet>=3.1",
