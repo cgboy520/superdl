@@ -83,16 +83,20 @@ fi
 # Harbor 不在本脚本校验范围(管理端「平台配置 · 镜像仓库」测试连接;superdl-registry-pull 由 scripts/release.sh 校验)。
 # 只查 helmfile apply 直接消费的 values/ 与 raw manifest;rke2/*.yaml 是分发模板,占位由 ansible / node-join.sh 替换
 say "== values/ 占位符残留(未替换直接 apply 会让组件起不来;kps.yaml 未替换则告警静默)=="
-placeholder_files=(values/cilium.yaml values/kps.yaml acme-dns.yaml)
-# light 的 k8sServiceHost 在覆盖文件里(单 server 直连该机 6443,没有 VIP)
-[[ "$env_name" == "light" ]] && placeholder_files+=(values/light/cilium-light.yaml)
+placeholder_files=(values/kps.yaml acme-dns.yaml)
+# k8sServiceHost 的真值按档位分处:full 填控制面 VIP(基础文件),light 单 server 无 VIP,
+# 由覆盖文件填该机 IP 并压过基础文件——所以两档各扫各的,别扫对方那份
+if grep -qE '^\s*cilium:\s*\{[^}]*enabled:\s*true' "environments/$env_name.yaml"; then
+  if [[ "$env_name" == "light" ]]; then
+    placeholder_files+=(values/light/cilium-light.yaml)
+  else
+    placeholder_files+=(values/cilium.yaml)
+  fi
+else
+  ok "values/cilium.yaml 不适用(environments/$env_name.yaml cilium.enabled=false)"
+fi
 for f in "${placeholder_files[@]}"; do
   [[ -f "$f" ]] || continue
-  if [[ "$f" == values/cilium.yaml || "$f" == values/light/cilium-light.yaml ]] \
-    && ! grep -qE '^\s*cilium:\s*\{[^}]*enabled:\s*true' "environments/$env_name.yaml"; then
-    ok "$f 不适用(environments/$env_name.yaml cilium.enabled=false)"
-    continue
-  fi
   if [[ "$f" == acme-dns.yaml ]] && ! grep -qE '^\s*acmeDns:\s*\{[^}]*enabled:\s*true' "environments/$env_name.yaml"; then
     ok "$f 不适用(environments/$env_name.yaml acmeDns.enabled=false)"
     continue
