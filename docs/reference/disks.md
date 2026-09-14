@@ -2,6 +2,8 @@
 
 JuiceFS 子路径数据盘:独立生命周期、配额、扩容与日结。表与代码在 orchestrator 模块。
 
+> **当前不可售**:租户实例 Pod 一律 `hostUsers: false`(userns),而 userns Pod 挂卷要求 idmapped mount,JuiceFS 的 FUSE 不支持——实例挂盘与 `disk.wipe` 都起不来(`failed to set MOUNT_ATTR_IDMAP ... invalid argument`)。CSI 的 sidecar/serverless 模式不是出路:挂载传播跨不过 userns 边界,应用容器拿到的是 emptyDir,写入静默丢失。取舍见 `../decisions.md`。
+
 ## 数据模型
 
 - `data_disks`:uuid、user_id、name、size_gb、juicefs_subpath、status(active/grace/frozen/deleting/deleted)、mounted_instance_id?、quota_synced
