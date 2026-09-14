@@ -16,8 +16,8 @@ flowchart LR
     API -- 查询 --> PROM[Prometheus + dcgm-exporter]
     API -- outbox 异步编排 --> K8S[RKE2 / k3s]
     K8S --> P1[kata 池:整卡直通] & P2[hami 池:runc+userns 超卖] & P3[mig 池]
-    P1 & P2 & P3 --- LVM[TopoLVM 实例盘] & JFS[JuiceFS 数据盘]
-    JFS --> OSS[(云 OSS 或 SeaweedFS)]
+    P1 & P2 & P3 --- LVM[TopoLVM 实例盘] & CFS[CephFS 数据盘]
+    CFS --> ROOK[(Rook-Ceph)]
 ```
 
 ## 2. 技术栈
@@ -33,14 +33,13 @@ flowchart LR
 | 组件                    | 角色                                                                                                                              |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | RKE2 / k3s              | 容器平台,钉 v1.36                                                                                                                 |
-| Cilium                  | 两档同装(CNI + NetworkPolicy + 带宽限额);light 档保留 k3s 自带 kube-proxy 与 ServiceLB                                           |
+| Cilium                  | 两档同装(CNI + NetworkPolicy + 带宽限额);light 档保留 k3s 自带 kube-proxy 与 ServiceLB                                            |
 | GPU Operator            | 两档同装(NFD/GFD/DCGM/MIG/VFIO);light 档关 toolkit(宿主 toolkit 由装机基线装)                                                     |
 | kata-deploy             | 两档同装,只落 kata 池节点                                                                                                         |
 | Kata                    | RuntimeClass `kata-qemu`,VFIO 整卡直通                                                                                            |
 | HAMi                    | 共享档 CUDA 层软切分与限额                                                                                                        |
 | kube-prometheus-stack   | Prometheus 本地留 15 天,长期数据进 PostgreSQL                                                                                     |
-| JuiceFS CSI             | 数据盘;元数据在 PostgreSQL,数据在对象存储                                                                                         |
-| SeaweedFS               | 自建 S3 后端(`seaweedfs.enabled`);用云 OSS 时关掉                                                                                |
+| Rook-Ceph + CephFS      | 数据盘;一盘一 PVC,容量即硬配额。选它是因为内核 cephfs 声明 `FS_ALLOW_IDMAP`,能挂进 `hostUsers: false` 的租户 Pod                  |
 | TopoLVM                 | 实例盘本地 NVMe,销毁为 lvremove(擦盘需节点开 issue_discards)                                                                      |
 | Envoy Gateway           | 北向唯一入口(Gateway API,`GatewayClass superdl`):三个平台域 + 租户 Jupyter 泛域名 + 服务端点泛域名                                |
 | cert-manager + acme-dns | 平台三域与泛域名证书(DNS01 经 acme-dns);Gateway `certificateRefs` 引 `deploy/app/k8s/05-cert-manager.yaml` 显式声明的 Certificate |
@@ -140,7 +139,7 @@ worker 其余定时任务:outbox 卡单回收、小时结算、数据盘日结�
 
 ### 7.2 创建实例
 
-`POST /api/v1/instances`(带 `Idempotency-Key`)在一个事务里校验余额覆盖 `afford_cover_hours`(默认 1)小时预估费用,写 `instances(creating)` + `instance_events` + `outbox_tasks`,返回 202。worker 领取后 ensure Namespace / NetworkPolicy / Quota / JuiceFS PVC,建 Pod(RuntimeClass 与 GPU 资源语法按**节点池**经 gpu_adapter 派发,注入公钥与 jupyter token)、SSH 与 Jupyter 两个 Service、HTTPRoute;Pod Ready 后转 `running` 并写计费起点事件,超时转 `failed` 并退款清理。包周期下单同事务另做:按周期总价一次性预扣 + 落一行 `subscriptions`(§7.5)。
+`POST /api/v1/instances`(带 `Idempotency-Key`)在一个事务里校验余额覆盖 `afford_cover_hours`(默认 1)小时预估费用,写 `instances(creating)` + `instance_events` + `outbox_tasks`,返回 202。worker 领取后 ensure Namespace / NetworkPolicy / Quota,建 Pod(RuntimeClass 与 GPU 资源语法按**节点池**经 gpu_adapter 派发,注入公钥与 jupyter token)、SSH 与 Jupyter 两个 Service、HTTPRoute;Pod Ready 后转 `running` 并写计费起点事件,超时转 `failed` 并退款清理。包周期下单同事务另做:按周期总价一次性预扣 + 落一行 `subscriptions`(§7.5)。
 
 ### 7.3 小时结算
 

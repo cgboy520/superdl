@@ -205,10 +205,8 @@ class Settings(BaseSettings):
     shared_tier_allowed_pools: str = "mig,hami"
     hami_use_gputype: bool = False  # 共享档 Pod 注 HAMi use-gputype annotation;仅混卡池需要
     k8s_namespace_prefix: str = "tenant-"
-    # 平台侧 Job(JuiceFS 配额等)所在 ns,与 superdl-db 同 ns,Job 以 secretKeyRef 读 juicefs-metaurl
+    # 平台侧 Job(镜像预热)所在 ns,与 superdl-db 同 ns
     k8s_platform_namespace: str = "superdl"
-    # JuiceFS CLI 镜像,与 deploy/cluster/helmfile 的 CSI chart 版本对齐
-    juicefs_cli_image: str = "juicedata/juicefs-csi-driver:v0.32.3"
     # 每次 K8s 请求超时(连接, 读)
     k8s_connect_timeout_seconds: float = 5.0
     k8s_read_timeout_seconds: float = 30.0

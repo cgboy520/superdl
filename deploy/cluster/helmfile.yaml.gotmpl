@@ -17,10 +17,6 @@ repositories:
     url: https://project-hami.github.io/HAMi
   - name: prometheus-community
     url: https://prometheus-community.github.io/helm-charts
-  - name: juicefs
-    url: https://juicedata.github.io/charts
-  - name: seaweedfs
-    url: https://seaweedfs.github.io/seaweedfs/helm
   - name: rook-release
     url: https://charts.rook.io/release
   # Ceph CSI 驱动单独成 chart(Rook 1.20 的 csi-operator 模型,见 values/ceph-csi-drivers.yaml)
@@ -108,8 +104,8 @@ releases:
     # helm diff 不装 crds/ 目录的 CRD,首装 diff 免校验
     disableValidationOnInstall: true
 
-  # 数据盘的 CephFS 后端:内核 cephfs 声明 FS_ALLOW_IDMAP,能挂进 hostUsers: false 的租户 Pod
-  # (JuiceFS 走 FUSE 不行)。OSD 落 TopoLVM 的 Block PVC,见 values/rook-ceph-cluster.yaml
+  # 数据盘后端:内核 cephfs 声明 FS_ALLOW_IDMAP,是唯一能挂进 hostUsers: false 租户 Pod 的共享文件系统。
+  # OSD 落 TopoLVM 的 Block PVC,见 values/rook-ceph-cluster.yaml
   - name: rook-ceph
     condition: rookCeph.enabled
     namespace: rook-ceph
@@ -135,25 +131,6 @@ releases:
     # CephCluster/CephFilesystem 是 operator 建的 CRD,首装 diff 读不到
     needs: [rook-ceph/rook-ceph]
     disableValidationOnInstall: true
-
-  # JuiceFS 的自建 S3 后端;用云 OSS 时置 seaweedfs.enabled=false
-  - name: seaweedfs
-    condition: seaweedfs.enabled
-    namespace: seaweedfs
-    chart: seaweedfs/seaweedfs
-    version: "4.47.0"
-    values: [values/seaweedfs.yaml]
-
-  - name: juicefs-csi-driver
-    condition: juicefs.enabled
-    {{- if .Values.seaweedfs.enabled }}
-    # 自建后端时 CSI 排在 S3 之后;用云 OSS 时无此依赖
-    needs: [seaweedfs/seaweedfs]
-    {{- end }}
-    namespace: kube-system
-    chart: juicefs/juicefs-csi-driver
-    version: "0.32.3"
-    values: [values/juicefs.yaml]
 
   - name: topolvm
     condition: topolvm.enabled

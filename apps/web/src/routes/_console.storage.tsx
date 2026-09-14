@@ -281,10 +281,10 @@ function StoragePage() {
                   render: (_, r) => (
                     <Space size={space.xs}>
                       <StatusTag map={diskStatusMap} value={r.status} variant="badge" />
-                      {!r.quota_synced && r.status !== "deleting" && (
-                        <Tooltip title={t("storage.quotaPendingHint")}>
+                      {!r.provisioned && r.status !== "deleting" && (
+                        <Tooltip title={t("storage.provisioningHint")}>
                           <Tag color="gold" style={{ marginInlineEnd: 0 }}>
-                            {t("storage.quotaPending")}
+                            {t("storage.provisioning")}
                           </Tag>
                         </Tooltip>
                       )}

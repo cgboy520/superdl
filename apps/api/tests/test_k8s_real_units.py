@@ -192,51 +192,56 @@ class TestInstanceSecretHandling:
         assert body_holder["stringData"] == {"JUPYTER_TOKEN": "plain-token-1"}
 
 
-class TestDiskQuotaJob:
-    """配额 Job 的 metaurl 密码走 META_PASSWORD env,不出现在 argv。"""
+class TestDataDiskPvc:
+    """一盘一 PVC 的下发面:建 / 幂等 / 只扩不缩。挂了 = 配额语义(PVC 容量)被破坏。"""
 
-    def _capture_container(self, monkeypatch: Any, is_set: bool) -> Any:
+    def _orch_with_pvc(self, existing_gi: int | None) -> tuple[Any, list[tuple[str, Any]]]:
         orch = _bare()
-        orch.settings = cast(  # cast:离线单测的 settings 桩(只用到这两个字段)
+        calls: list[tuple[str, Any]] = []
+
+        def read(name: str, ns: str) -> Any:
+            if existing_gi is None:
+                raise k8s_client.ApiException(status=404)
+            return SimpleNamespace(
+                spec=SimpleNamespace(
+                    resources=SimpleNamespace(requests={"storage": f"{existing_gi}Gi"})
+                )
+            )
+
+        orch.core = cast(
             Any,
             SimpleNamespace(
-                juicefs_cli_image="juicedata/juicefs-ce:v1.3.0", k8s_platform_namespace="superdl"
+                read_namespaced_persistent_volume_claim=read,
+                create_namespaced_persistent_volume_claim=lambda ns, pvc: calls.append(
+                    ("create", pvc.spec.resources.requests["storage"])
+                ),
+                patch_namespaced_persistent_volume_claim=lambda name, ns, body: calls.append(
+                    ("patch", body["spec"]["resources"]["requests"]["storage"])
+                ),
             ),
         )
-        captured: dict[str, Any] = {}
+        return orch, calls
 
-        def fake_run_managed(namespace: str, job_name: str, container: Any, **kwargs: Any) -> None:
-            captured["container"] = container
+    def test_creates_when_absent(self):
+        orch, calls = self._orch_with_pvc(None)
+        orch._ensure_data_disk_sync("tenant-u1", "disk-abc", 10)
+        assert calls == [("create", "10Gi")]
 
-        monkeypatch.setattr(orch, "_run_managed_job_sync", fake_run_managed)
-        # 桩掉文件系统根子目录解析
-        monkeypatch.setattr(orch, "_juicefs_fs_base_sync", lambda namespace: "pvc-stub")
-        orch._disk_quota_sync("tenant-u1", "disk-subpath-1", 100, is_set)
-        return captured["container"]
+    def test_idempotent_when_same_size(self):
+        orch, calls = self._orch_with_pvc(10)
+        orch._ensure_data_disk_sync("tenant-u1", "disk-abc", 10)
+        assert calls == []
 
-    def test_password_not_in_argv(self, monkeypatch: Any):
-        for is_set in (True, False):
-            container = self._capture_container(monkeypatch, is_set)
-            script = " ".join(container.command)
-            # argv 不含 metaurl 值;$JUICEFS_METAURL 只是 shell 间接引用
-            assert 'quota set "$JUICEFS_METAURL"' not in script
-            assert 'quota delete "$JUICEFS_METAURL"' not in script
-            assert '"$METAURL_NOPASS"' in script
-            assert "META_PASSWORD" in script
-            # metaurl 经 secretKeyRef 注入
-            metaurl_env = next(e for e in container.env if e.name == "JUICEFS_METAURL")
-            assert metaurl_env.value_from.secret_key_ref.name == "superdl-db"
+    def test_expands_when_smaller(self):
+        orch, calls = self._orch_with_pvc(10)
+        orch._ensure_data_disk_sync("tenant-u1", "disk-abc", 50)
+        assert calls == [("patch", "50Gi")]
 
-    def test_subpath_and_capacity_stay_env_indirect(self, monkeypatch: Any):
-        container = self._capture_container(monkeypatch, True)
-        script = " ".join(container.command)
-        assert "disk-subpath-1" not in script  # 防注入:值只走 env
-        # 配额路径 = 文件系统根下该租户 PVC 的 PV 子目录 + 数据盘子路径
-        assert '"/$QUOTA_BASE/$QUOTA_SUBPATH"' in script
-        env = {e.name: e.value for e in container.env if e.value is not None}
-        assert env["QUOTA_BASE"] == "pvc-stub"
-        assert env["QUOTA_SUBPATH"] == "disk-subpath-1"
-        assert env["QUOTA_CAPACITY_GB"] == "100"
+    def test_never_shrinks(self):
+        """缩容会被 apiserver 拒;这里先于请求拦住,免得反复进死信。"""
+        orch, calls = self._orch_with_pvc(50)
+        orch._ensure_data_disk_sync("tenant-u1", "disk-abc", 10)
+        assert calls == []
 
 
 def _page(items: list[Any], cont: str | None = None) -> Any:
@@ -616,26 +621,39 @@ class TestServiceWorkloadObjects:
         assert c.startup_probe is None and c.readiness_probe is None
 
 
-class TestManagedJobAdmission:
-    """受管 Job 的 Pod 模板显式 hostUsers=false。挂了说明:租户 ns 的准入策略
-    (superdl-tenant-pod-baseline)会拒掉擦除 Job 的 Pod,数据盘永远擦不掉。"""
+class TestDataDiskMount:
+    """挂数据盘的实例 Pod:直挂该盘自己的 PVC、不带 subPath,且仍满足租户准入基线。
+    挂了说明:要么盘挂错(串到别人的盘),要么 Pod 被 superdl-tenant-pod-baseline 拒掉。"""
 
-    def test_wipe_job_template_sets_host_users_false(self):
-        from app.core.k8s.real import build_managed_job
+    def _pod_with_disk(self) -> Any:
+        from app.core.k8s.real import build_instance_pod
 
-        container = RealOrchestrator.batch_container("wipe", "busybox:1.36", ["true"], env=[])
-        job = build_managed_job("tenant-1", "wipe-x", container, volumes=[], pod_labels={})
-        pod_spec = cast(Any, job.spec).template.spec
+        # runc 档(hami/mig/cpu)一律 host_users=False,数据盘就是挂进这种 Pod 的
+        spec = InstancePodSpec(
+            **{**_spec().__dict__, "data_disk_pvc": "disk-" + "a" * 32, "host_users": False}
+        )
+        return build_instance_pod(spec)
+
+    def test_mounts_own_pvc_without_subpath(self):
+        pod = self._pod_with_disk()
+        pod_spec = cast(Any, pod).spec
+        vol = next(v for v in pod_spec.volumes if v.name == "data-disk")
+        assert vol.persistent_volume_claim.claim_name == "disk-" + "a" * 32
+        mount = next(m for m in pod_spec.containers[0].volume_mounts if m.name == "data-disk")
+        assert mount.mount_path == "/root/data"
+        # subPath 是共享 PVC 时代的产物;一盘一 PVC 后再带它就是挂错层级
+        assert mount.sub_path is None
+
+    def test_keeps_tenant_baseline(self):
+        pod_spec = cast(Any, self._pod_with_disk()).spec
         assert pod_spec.host_users is False
         assert pod_spec.automount_service_account_token is False
 
-    def test_quota_container_password_stays_env_indirect(self):
-        from app.core.k8s.real import build_disk_quota_container
+    def test_no_data_disk_means_no_volume(self):
+        from app.core.k8s.real import build_instance_pod
 
-        c = build_disk_quota_container("juicedata/juicefs-ce:v1.3.0", "pvc-x", "sub-1", 5, True)
-        assert "sub-1" not in " ".join(c.command)
-        metaurl = next(e for e in c.env if e.name == "JUICEFS_METAURL")
-        assert metaurl.value_from.secret_key_ref.key == "juicefs-metaurl"
+        pod_spec = cast(Any, build_instance_pod(_spec())).spec
+        assert all(v.name != "data-disk" for v in pod_spec.volumes)
 
 
 class TestInstancePodBandwidth:

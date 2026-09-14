@@ -29,6 +29,7 @@ from app.core.idempotency import (
     request_fingerprint,
 )
 from app.core.k8s import InstancePodSpec, get_orchestrator
+from app.core.k8s.base import data_disk_pvc_name
 from app.core.logging import get_logger
 from app.core.money import hourly_cost, money_str
 from app.core.outbox import enqueue
@@ -1234,10 +1235,10 @@ def build_pod_spec(
     instance: Instance,
     *,
     distro: str | None = None,
-    data_disk_subpath: str | None = None,
+    data_disk_pvc: str | None = None,
     image_pull_secret: str | None = None,
 ) -> InstancePodSpec:
-    """构造 Pod spec。data_disk_subpath 由调用方从 `data_disks.juicefs_subpath` 读出传入;
+    """构造 Pod spec。data_disk_pvc 由调用方按盘 uuid 算出传入(data_disk_pvc_name);
     image_pull_secret 是该 ns 的拉取凭据 Secret 名;服务形态只读实例行的快照列。
     dev/service 两形态差别集中在此,k8s 层只按 spec 字段建对象。
     """
@@ -1284,7 +1285,7 @@ def build_pod_spec(
         secret_env=secrets_,
         authorized_keys=tuple(instance.authorized_keys),
         node_selector=gpu_req.node_selector,
-        data_disk_subpath=data_disk_subpath,
+        data_disk_pvc=data_disk_pvc,
         scheduler_name=gpu_req.scheduler_name,
         annotations={**gpu_req.annotations, **bandwidth_annotations(settings)},
         image_pull_secret=image_pull_secret,
@@ -1308,16 +1309,16 @@ async def build_pod_spec_with_cluster(
 ) -> InstancePodSpec:
     """outbox handler 用:带集群发行版上下文与数据盘 subPath(从盘记录读)。"""
     row = await nodes_service.get_cluster_status(session)
-    subpath: str | None = None
+    disk_pvc: str | None = None
     if instance.data_disk_id is not None:
         disk = await session.get(DataDisk, instance.data_disk_id)
         if disk is None:
             raise RuntimeError(f"data disk {instance.data_disk_id} missing for {instance.uuid}")
-        subpath = disk.juicefs_subpath
+        disk_pvc = data_disk_pvc_name(disk.uuid)
     return build_pod_spec(
         instance,
         distro=row.distro if row else None,
-        data_disk_subpath=subpath,
+        data_disk_pvc=disk_pvc,
         image_pull_secret=image_pull_secret,
     )
 

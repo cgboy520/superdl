@@ -25,8 +25,8 @@ from app.core.k8s.base import JOB_NAME_LABEL
 from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.metrics import (
+    DISK_PROVISION_FAILED_TOTAL,
     INSTANCE_NODE_LOST_TOTAL,
-    JUICEFS_QUOTA_FAILED_TOTAL,
     RECONCILE_LEAK_ABORTED_TOTAL,
     RECONCILE_LEAKED_TOTAL,
     RECONCILE_STUCK_INSTANCES,
@@ -84,8 +84,8 @@ async def reconcile_once(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]
         "gc_warned": 0,
         "gc_released": 0,
         "ports_unblocked": 0,
-        "wipe_redriven": 0,
-        "quota_redriven": 0,
+        "deprovision_redriven": 0,
+        "provision_redriven": 0,
     }
     async with advisory_lock(sm, LockKey.RECONCILER) as got:
         if not got:
@@ -724,31 +724,31 @@ async def _redrive_dead_disk_tasks(
 async def _redrive_dead_disk_wipes(
     sm: async_sessionmaker[AsyncSession], counts: dict[str, int]
 ) -> None:
-    """disk.wipe 死信立即重派(盘仍在 deleting)。"""
-    counts["wipe_redriven"] = await _redrive_dead_disk_tasks(
+    """disk.deprovision 死信立即重派(盘仍在 deleting)。"""
+    counts["deprovision_redriven"] = await _redrive_dead_disk_tasks(
         sm,
-        task_type="disk.wipe",
+        task_type="disk.deprovision",
         cooldown=timedelta(0),
         should_redrive=lambda disk: disk.status == "deleting",
-        log_event="disk_wipe_redriven",
+        log_event="disk_deprovision_redriven",
     )
 
 
 async def _reconcile_disk_quotas(
     sm: async_sessionmaker[AsyncSession], counts: dict[str, int]
 ) -> None:
-    """disk.quota 死信超 1 小时重派并计指标;只看死信,不按 quota_synced=false 补发。"""
+    """disk.provision 死信超 1 小时重派并计指标;只看死信,不按 provisioned=false 补发。"""
     redriven = await _redrive_dead_disk_tasks(
         sm,
-        task_type="disk.quota",
+        task_type="disk.provision",
         cooldown=timedelta(hours=1),
         should_redrive=lambda disk: (
-            disk.status not in ("deleting", "deleted") and not disk.quota_synced
+            disk.status not in ("deleting", "deleted") and not disk.provisioned
         ),
-        log_event="disk_quota_redriven",
+        log_event="disk_provision_redriven",
     )
-    JUICEFS_QUOTA_FAILED_TOTAL.inc(redriven)
-    counts["quota_redriven"] = redriven
+    DISK_PROVISION_FAILED_TOTAL.inc(redriven)
+    counts["provision_redriven"] = redriven
 
 
 async def _gc_retention(sm: async_sessionmaker[AsyncSession], counts: dict[str, int]) -> None:

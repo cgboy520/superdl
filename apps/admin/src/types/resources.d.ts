@@ -1376,7 +1376,7 @@ export default interface Resources {
       "inUseDelete": "数据盘挂载中,请先释放对应实例",
       "mountedElsewhere": "数据盘已挂载到其他实例",
       "notMountable": "数据盘当前状态不可挂载",
-      "quotaNotSynced": "存储配额同步中,请稍后重试;长时间未恢复请联系客服",
+      "notProvisioned": "数据盘开通中,请稍后重试;长时间未恢复请联系客服",
       "realNameRequired": "按监管要求,开通存储前需完成实名认证",
       "shrinkForbidden": "数据盘只支持扩容,不支持缩容",
       "sizeMax": "容量上限 {{max}} GB",

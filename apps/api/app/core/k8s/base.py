@@ -4,10 +4,11 @@ import kubernetes 客户端。"""
 from dataclasses import dataclass, field
 from typing import Protocol
 
-# StorageClass 名,与 deploy/cluster/values/{topolvm,juicefs}.yaml 一致;下发门禁按名核对
+# StorageClass 名,与 deploy/cluster/values/{topolvm,rook-ceph-cluster}.yaml 一致;下发门禁按名核对
 INSTANCE_DISK_STORAGE_CLASS = "topolvm-provisioner"  # 实例盘:节点本地 NVMe LV
-JUICEFS_STORAGE_CLASS = "superdl-juicefs"  # 数据盘:JuiceFS 共享后端
-JUICEFS_PVC_NAME = "juicefs-shared"  # 每租户 ns 一只共享 PVC(数据盘按 subPath 切分)
+# 数据盘:CephFS。一盘一 PVC,PVC 容量即硬配额(CSI 建带配额的 subvolume),不另下发。
+# 选 CephFS 而非 FUSE 类后端:内核 cephfs 声明 FS_ALLOW_IDMAP,能挂进 hostUsers: false 的租户 Pod
+DATA_DISK_STORAGE_CLASS = "superdl-cephfs"
 
 # 北向入口坐标,与 deploy/app/k8s/04-gateway.yaml 的 Gateway 逐字一致
 GATEWAY_NAMESPACE = "superdl"  # Gateway 对象所在 ns(= 平台自身 ns)
@@ -38,6 +39,11 @@ def instance_disk_pvc_name(instance_name: str) -> str:
     return f"{instance_name}-root"
 
 
+def data_disk_pvc_name(disk_uuid: str) -> str:
+    """数据盘 PVC 名(租户 ns 内唯一);uuid 是 32 位 hex,拼出来天然是合法 DNS 名。"""
+    return f"disk-{disk_uuid}"
+
+
 def instance_env_secret_name(instance_name: str) -> str:
     """per-instance 敏感 env 的 Secret 名(JUPYTER_TOKEN 等),随实例删除。"""
     return f"jupyter-{instance_name}"
@@ -66,7 +72,7 @@ class InstancePodSpec:
     secret_env: dict[str, str] = field(default_factory=dict)
     authorized_keys: tuple[str, ...] = ()
     node_selector: dict[str, str] = field(default_factory=dict)  # 池标签
-    data_disk_subpath: str | None = None  # JuiceFS 子路径(挂 /root/data)
+    data_disk_pvc: str | None = None  # 数据盘 PVC 名(挂 /root/data);None = 未挂盘
     scheduler_name: str | None = None  # 指定调度器(HAMi 池 = hami-scheduler)
     annotations: dict[str, str] = field(default_factory=dict)  # 如 HAMi use-gputype
     # 镜像拉取凭据 Secret 名(core/registry.PULL_SECRET_NAME);None = 不引用
@@ -90,14 +96,6 @@ class NodePortTaken(Exception):
     def __init__(self, port: int) -> None:
         super().__init__(f"node port {port} already allocated")
         self.port = port
-
-
-class NamespaceMissing(Exception):
-    """目标租户 namespace 不存在(apiserver 404);擦盘等清理动作视为已完成。"""
-
-    def __init__(self, namespace: str) -> None:
-        super().__init__(f"namespace {namespace} not found")
-        self.namespace = namespace
 
 
 @dataclass(frozen=True)
@@ -205,17 +203,14 @@ class K8sOrchestrator(Protocol):
         """集群内受管 Service 当前占用的 NodePort 集合。blocked 端口复检用。"""
         ...
 
-    async def wipe_disk(self, namespace: str, subpath: str) -> None:
-        """擦除数据盘的 JuiceFS 子路径(集群侧 Job)。幂等;未完成时抛异常交 outbox 重试。"""
+    async def ensure_data_disk(self, namespace: str, name: str, size_gb: int) -> None:
+        """建或扩数据盘 PVC(幂等):不存在则建,已存在且更小则扩容。
+        PVC 容量即硬配额,不另下发。扩容后端不支持时抛异常交 outbox 重试。"""
         ...
 
-    async def set_disk_quota(self, namespace: str, subpath: str, capacity_gb: int) -> None:
-        """下发 JuiceFS 目录硬配额(平台 ns 的 CLI Job)。幂等;进行中/失败抛异常交 outbox 重试。
-        namespace 用于定位该租户共享 PVC 的 PV 子目录前缀。"""
-        ...
-
-    async def delete_disk_quota(self, namespace: str, subpath: str) -> None:
-        """删盘前摘除目录配额(无配额记录视为成功)。幂等;失败抛异常。"""
+    async def delete_data_disk(self, namespace: str, name: str) -> None:
+        """删除数据盘 PVC(reclaimPolicy=Delete,CSI 随之销毁 subvolume)。
+        不存在或 ns 已消失视为成功。"""
         ...
 
     async def list_nodes(self, include_unlabeled: bool = False) -> list["NodeInfo"]:

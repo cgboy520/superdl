@@ -245,7 +245,7 @@ spec:
   matchConstraints:
     namespaceSelector:
       matchExpressions:
-        # 豁免需要特权/host 面的基础设施 ns:cilium/hami/juicefs-csi(kube-system)、gpu-operator、node-exporter+alloy(monitoring)、
+        # 豁免需要特权/host 面的基础设施 ns:cilium/hami(kube-system)、gpu-operator、node-exporter+alloy(monitoring)、
         # Envoy 数据面(envoy-gateway-system)、topolvm node plugin(topolvm-system)、
         # Rook 的 OSD 与 Ceph CSI 插件(rook-ceph,同 topolvm 的理由:要 privileged 与 hostPath)。
         # 按 ns 名匹配,改 ns 名须同步。**加 ns 进本名单等于放弃该 ns 的 Pod 安全基线,只给基础设施用**
@@ -333,24 +333,21 @@ spec:
           (s.name == 'superdl-registry-pull' ||
            (!variables.strict && !s.name.startsWith('superdl-'))))
       message: "superdl 命名空间内平台/Job 建的 Pod 只允许 imagePullSecrets: superdl-registry-pull"
-    # ② secretKeyRef:只许 superdl-db/juicefs-metaurl(real.py _disk_quota_sync),按 name/key 成对比对;name 缺失即拒
+    # ② secretKeyRef:平台 SA 一律不许引 superdl-* 密钥(配额 Job 取消后已无合法用途);name 缺失即拒
     - expression: >-
         object.spec.containers.all(c, !has(c.env) || c.env.all(e,
           !has(e.valueFrom) || !has(e.valueFrom.secretKeyRef) ||
           (has(e.valueFrom.secretKeyRef.name) &&
-           ((e.valueFrom.secretKeyRef.name + '/' + e.valueFrom.secretKeyRef.key) == 'superdl-db/juicefs-metaurl' ||
-            (!variables.strict && !e.valueFrom.secretKeyRef.name.startsWith('superdl-')))))) &&
+           !variables.strict && !e.valueFrom.secretKeyRef.name.startsWith('superdl-')))) &&
         (!has(object.spec.initContainers) || object.spec.initContainers.all(c, !has(c.env) || c.env.all(e,
           !has(e.valueFrom) || !has(e.valueFrom.secretKeyRef) ||
           (has(e.valueFrom.secretKeyRef.name) &&
-           ((e.valueFrom.secretKeyRef.name + '/' + e.valueFrom.secretKeyRef.key) == 'superdl-db/juicefs-metaurl' ||
-            (!variables.strict && !e.valueFrom.secretKeyRef.name.startsWith('superdl-'))))))) &&
+           !variables.strict && !e.valueFrom.secretKeyRef.name.startsWith('superdl-'))))) &&
         (!has(object.spec.ephemeralContainers) || object.spec.ephemeralContainers.all(c, !has(c.env) || c.env.all(e,
           !has(e.valueFrom) || !has(e.valueFrom.secretKeyRef) ||
           (has(e.valueFrom.secretKeyRef.name) &&
-           ((e.valueFrom.secretKeyRef.name + '/' + e.valueFrom.secretKeyRef.key) == 'superdl-db/juicefs-metaurl' ||
-            (!variables.strict && !e.valueFrom.secretKeyRef.name.startsWith('superdl-')))))))
-      message: "superdl 命名空间内只允许 secretKeyRef superdl-db/juicefs-metaurl(配额 Job)"
+           !variables.strict && !e.valueFrom.secretKeyRef.name.startsWith('superdl-')))))
+      message: "superdl 命名空间内的平台 Pod 不得用 secretKeyRef 引 superdl-* 密钥"
     # ③ envFrom.secretRef:平台 SA 全禁;job-controller 放行 superdl-db-migrate(迁移 Job,库 owner)与 superdl-pg-backup(备份 CronJob)
     - expression: >-
         object.spec.containers.all(c, !has(c.envFrom) || c.envFrom.all(f,
@@ -419,17 +416,17 @@ spec:
         !has(variables.podSpec.imagePullSecrets) ||
         variables.podSpec.imagePullSecrets.all(s, has(s.name) && s.name == 'superdl-registry-pull')
       message: "平台 SA 建的 Job 只允许 imagePullSecrets: superdl-registry-pull(预热 Job)"
-    # 唯一合法 secretKeyRef:superdl-db/juicefs-metaurl(real.py _disk_quota_sync)
+    # 平台 SA 建的 Job 不得用 secretKeyRef 引 superdl-* 密钥(配额 Job 取消后已无合法用途)
     - expression: >-
         variables.podSpec.containers.all(c, !has(c.env) || c.env.all(e,
           !has(e.valueFrom) || !has(e.valueFrom.secretKeyRef) ||
           (has(e.valueFrom.secretKeyRef.name) &&
-           (e.valueFrom.secretKeyRef.name + '/' + e.valueFrom.secretKeyRef.key) == 'superdl-db/juicefs-metaurl'))) &&
+           !e.valueFrom.secretKeyRef.name.startsWith('superdl-')))) &&
         (!has(variables.podSpec.initContainers) || variables.podSpec.initContainers.all(c, !has(c.env) || c.env.all(e,
           !has(e.valueFrom) || !has(e.valueFrom.secretKeyRef) ||
           (has(e.valueFrom.secretKeyRef.name) &&
-           (e.valueFrom.secretKeyRef.name + '/' + e.valueFrom.secretKeyRef.key) == 'superdl-db/juicefs-metaurl'))))
-      message: "平台 SA 建的 Job 只允许 secretKeyRef superdl-db/juicefs-metaurl(配额 Job)"
+           !e.valueFrom.secretKeyRef.name.startsWith('superdl-')))))
+      message: "平台 SA 建的 Job 不得用 secretKeyRef 引 superdl-* 密钥"
     # envFrom.secretRef 与 Secret 卷全禁
     - expression: >-
         variables.podSpec.containers.all(c, !has(c.envFrom) || c.envFrom.all(f, !has(f.secretRef))) &&

@@ -57,7 +57,7 @@ async def test_full_lifecycle_drill(client, sm, fake):
     disk = (
         await client.post("/api/v1/disks", json={"name": "drill-data", "size_gb": 100}, headers=h)
     ).json()
-    await drain(sm)  # 配额下发完成(quota_synced=true)后才可挂载
+    await drain(sm)  # PVC 建出(provisioned=true)后才可挂载
 
     # ── 4. 市场选共享档 → 创建实例(挂盘,Idempotency-Key)──
     sku_id = await create_test_sku(sm)  # 共享标准档 1.68/时 hami 池
@@ -107,7 +107,7 @@ async def test_full_lifecycle_drill(client, sm, fake):
     pod_spec = fake.pods[(f"tenant-{user_id}", uuid)].spec
     assert pod_spec.gpu_resources["nvidia.com/gpucores"] == "50"
     assert pod_spec.host_users is False
-    assert pod_spec.data_disk_subpath == f"disk-{disk['uuid']}"
+    assert pod_spec.data_disk_pvc == f"disk-{disk['uuid']}"
 
     # ── 6. 跑 30 分钟后停机 → 尾账 ─────────────────────────
     expected_secs = await backdate_running_event(sm, uuid, 30)

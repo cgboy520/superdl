@@ -8,10 +8,9 @@ fail_next_quota / fail_next_logs / fail_probe(单次失败注入)。容量按 po
 from dataclasses import dataclass, field
 
 from app.core.k8s.base import (
+    DATA_DISK_STORAGE_CLASS,
     GPU_MODEL_NODE_LABEL,
     INSTANCE_DISK_STORAGE_CLASS,
-    JOB_NAME_LABEL,
-    JUICEFS_STORAGE_CLASS,
     MANAGED_LABEL,
     POOL_NODE_LABEL,
     ClusterProbe,
@@ -49,14 +48,11 @@ class FakeOrchestrator:
     namespaces: set[str] = field(default_factory=set)
     # 实例盘 PVC:(ns, name) -> 盘标记;只有释放/回收才删,标记值供断言同一块盘
     instance_disks: dict[tuple[str, str], str] = field(default_factory=dict)
-    wiped_disks: list[tuple[str, str]] = field(default_factory=list)
-    # 数据盘目录配额:subpath -> capacity_gb;fail_next_quota 注入一次下发失败
-    disk_quotas: dict[tuple[str, str], int] = field(default_factory=dict)  # (namespace, subpath)
-    fail_next_quota: bool = False
-    # auto_wipe=False 时 wipe_disk 抛错(进行中),finish_wipe 后返回
-    auto_wipe: bool = True
-    wipe_completed: set[tuple[str, str]] = field(default_factory=set)
-    # 受管 Job(wipe)运行中的 Pod:(ns, pod_name) -> labels(全量 LIST 会命中,对齐 real)
+    # 数据盘 PVC:(ns, pvc 名) -> 容量 GiB;fail_next_disk 注入一次下发失败
+    data_disks: dict[tuple[str, str], int] = field(default_factory=dict)
+    deleted_data_disks: list[tuple[str, str]] = field(default_factory=list)
+    fail_next_disk: bool = False
+    # 受管 Job 运行中的 Pod:(ns, pod_name) -> labels(全量 LIST 会命中,对齐 real)
     job_pods: dict[tuple[str, str], dict[str, str]] = field(default_factory=dict)
     # 预热:(node_name, image_ref) -> state;auto_prewarm=True 时创建即 succeeded
     prewarm_jobs: dict[tuple[str, str], str] = field(default_factory=dict)
@@ -119,40 +115,21 @@ class FakeOrchestrator:
             cert_manager_ready=True,
             nodes_ready=sum(pools.values()),
             nodes_total=sum(pools.values()),
-            storage_classes=(JUICEFS_STORAGE_CLASS, INSTANCE_DISK_STORAGE_CLASS),
+            storage_classes=(DATA_DISK_STORAGE_CLASS, INSTANCE_DISK_STORAGE_CLASS),
             pools=pools,
         )
 
-    async def wipe_disk(self, namespace: str, subpath: str) -> None:
-        key = (namespace, subpath)
-        if key in self.wipe_completed:
-            # Job 已成功 → 清理并返回
-            self.wipe_completed.discard(key)
-            self.wiped_disks.append(key)
-            return
-        if self.auto_wipe:
-            self.wiped_disks.append(key)
-            return
-        # 进行中:抛错交 outbox 重试(对齐 real._run_managed_job_sync),同时登记 wipe Job 的 Pod
-        self.job_pods[(namespace, f"wipe-{subpath}")] = {
-            MANAGED_LABEL: "true",
-            JOB_NAME_LABEL: f"wipe-{subpath}",
-        }
-        raise RuntimeError(f"fake: wipe in progress: {subpath}")
+    async def ensure_data_disk(self, namespace: str, name: str, size_gb: int) -> None:
+        if self.fail_next_disk:
+            self.fail_next_disk = False
+            raise RuntimeError("fake: ensure_data_disk failed (injected)")
+        # 对齐 real:只扩不缩
+        self.data_disks[(namespace, name)] = max(self.data_disks.get((namespace, name), 0), size_gb)
 
-    def finish_wipe(self, namespace: str, subpath: str) -> None:
-        """测试注入:擦除作业完成;下次 wipe_disk 调用清理并返回成功。"""
-        self.wipe_completed.add((namespace, subpath))
-        self.job_pods.pop((namespace, f"wipe-{subpath}"), None)
-
-    async def set_disk_quota(self, namespace: str, subpath: str, capacity_gb: int) -> None:
-        if self.fail_next_quota:
-            self.fail_next_quota = False
-            raise RuntimeError("fake: set_disk_quota failed (injected)")
-        self.disk_quotas[(namespace, subpath)] = capacity_gb
-
-    async def delete_disk_quota(self, namespace: str, subpath: str) -> None:
-        self.disk_quotas.pop((namespace, subpath), None)
+    async def delete_data_disk(self, namespace: str, name: str) -> None:
+        # 对齐 real:PVC 不存在也算成功;调用一律登记,断言的是「回收已发起」
+        self.data_disks.pop((namespace, name), None)
+        self.deleted_data_disks.append((namespace, name))
 
     async def create_instance(self, spec: InstancePodSpec) -> None:
         if spec.with_ssh and spec.ssh_node_port is None:

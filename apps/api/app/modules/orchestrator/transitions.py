@@ -172,7 +172,7 @@ async def arrears_transition_disks(
         elif disk.status == "frozen" and disk.frozen_started_at is not None:
             if now - disk.frozen_started_at > timedelta(days=policies.disk_frozen_days):
                 disk.status = "deleting"
-                enqueue(session, "disk.wipe", {"disk_id": disk.id})
+                enqueue(session, "disk.deprovision", {"disk_id": disk.id})
                 changed += 1
                 logger.warning("disk_arrears_wipe_scheduled", disk_id=disk.id)
     return changed

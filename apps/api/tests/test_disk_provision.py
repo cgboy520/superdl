@@ -1,4 +1,5 @@
-"""数据盘 JuiceFS 目录配额:创建/扩容下发、失败自愈与死信重派、删盘摘除。"""
+"""数据盘 PVC 下发:创建/扩容、失败自愈与死信重派、删盘回收。
+一盘一 PVC 后 PVC 容量即硬配额,不再有目录配额下发这一步。"""
 
 from datetime import timedelta
 
@@ -6,6 +7,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import select, update
 
+from app.core.k8s.base import data_disk_pvc_name
 from app.core.outbox import OutboxTask
 from app.core.timeutil import now_utc
 from tests.helpers import create_disk, create_user_with_key, drain, fund_wallet
@@ -13,7 +15,7 @@ from tests.helpers import create_disk, create_user_with_key, drain, fund_wallet
 pytestmark = pytest.mark.usefixtures("fake")
 
 
-class TestQuotaDispatch:
+class TestProvisionDispatch:
     async def test_expand_redispatches_new_capacity(self, client: AsyncClient, sm, fake):
         headers, user_id, _key = await create_user_with_key(client)
         await fund_wallet(sm, user_id)
@@ -23,7 +25,7 @@ class TestQuotaDispatch:
             f"/api/v1/disks/{disk['uuid']}", json={"size_gb": 200}, headers=headers
         )
         assert resp.status_code == 200, resp.text
-        assert resp.json()["quota_synced"] is False  # 重下发前立即回落
+        assert resp.json()["provisioned"] is False  # 扩容前立即回落
         await drain(sm)
         from app.modules.orchestrator.models import DataDisk
 
@@ -31,15 +33,17 @@ class TestQuotaDispatch:
             row = (
                 await session.execute(select(DataDisk).where(DataDisk.uuid == disk["uuid"]))
             ).scalar_one()
-            assert row.quota_synced is True
-            assert fake.disk_quotas[(f"tenant-{user_id}", row.juicefs_subpath)] == 200
+            assert row.provisioned is True
+        assert fake.data_disks[(f"tenant-{user_id}", data_disk_pvc_name(disk["uuid"]))] == 200
 
 
-class TestQuotaFailureAndReconcile:
-    async def test_failure_keeps_unsynced_then_retry_recovers(self, client: AsyncClient, sm, fake):
+class TestProvisionFailureAndReconcile:
+    async def test_failure_keeps_unprovisioned_then_retry_recovers(
+        self, client: AsyncClient, sm, fake
+    ):
         headers, user_id, _key = await create_user_with_key(client)
         await fund_wallet(sm, user_id)
-        fake.fail_next_quota = True
+        fake.fail_next_disk = True
         disk = await create_disk(client, headers, size_gb=100)
         await drain(sm)
         from app.modules.orchestrator.models import DataDisk
@@ -48,12 +52,12 @@ class TestQuotaFailureAndReconcile:
             row = (
                 await session.execute(select(DataDisk).where(DataDisk.uuid == disk["uuid"]))
             ).scalar_one()
-            assert row.quota_synced is False
-            assert fake.disk_quotas == {}
+            assert row.provisioned is False
+            assert fake.data_disks == {}
             # 退避中的重试任务回拨到期后再冲刷:恢复下发
             await session.execute(
                 update(OutboxTask)
-                .where(OutboxTask.type == "disk.quota")
+                .where(OutboxTask.type == "disk.provision")
                 .values(next_retry_at=now_utc() - timedelta(seconds=1))
             )
             await session.commit()
@@ -62,40 +66,40 @@ class TestQuotaFailureAndReconcile:
             row = (
                 await session.execute(select(DataDisk).where(DataDisk.uuid == disk["uuid"]))
             ).scalar_one()
-            assert row.quota_synced is True
-            assert fake.disk_quotas[(f"tenant-{user_id}", row.juicefs_subpath)] == 100
+            assert row.provisioned is True
+        assert fake.data_disks[(f"tenant-{user_id}", data_disk_pvc_name(disk["uuid"]))] == 100
 
     async def test_discarded_dead_letter_not_revived(self, client: AsyncClient, sm, fake):
-        """人工 discarded 的 disk.quota 不被对账环复活:reconciler 只重派 dead。"""
+        """人工 discarded 的 disk.provision 不被对账环复活:reconciler 只重派 dead。"""
         from app.modules.orchestrator.reconciler import reconcile_once
 
         headers, user_id, _key = await create_user_with_key(client)
         await fund_wallet(sm, user_id)
-        await create_disk(client, headers, size_gb=100)  # 配额任务在途,盘 quota_synced=false
+        await create_disk(client, headers, size_gb=100)  # 下发任务在途,盘 provisioned=false
         async with sm() as session:
             await session.execute(
                 update(OutboxTask)
-                .where(OutboxTask.type == "disk.quota")
+                .where(OutboxTask.type == "disk.provision")
                 .values(status="discarded", updated_at=now_utc() - timedelta(hours=2))
             )
             await session.commit()
         counts = await reconcile_once(sm)
-        assert counts["quota_redriven"] == 0
+        assert counts["provision_redriven"] == 0
         async with sm() as session:
             statuses = (
                 (
                     await session.execute(
-                        select(OutboxTask.status).where(OutboxTask.type == "disk.quota")
+                        select(OutboxTask.status).where(OutboxTask.type == "disk.provision")
                     )
                 )
                 .scalars()
                 .all()
             )
         assert statuses == ["discarded"]  # 未补发新任务
-        assert fake.disk_quotas == {}
+        assert fake.data_disks == {}
 
-    async def test_reconciler_redrives_dead_quota(self, client: AsyncClient, sm, fake):
-        """死信超 1 小时的配额任务被重派(无在途同盘任务时补发一条)。"""
+    async def test_reconciler_redrives_dead_provision(self, client: AsyncClient, sm, fake):
+        """死信超 1 小时的下发任务被重派(无在途同盘任务时补发一条)。"""
         from app.modules.orchestrator.models import DataDisk
         from app.modules.orchestrator.reconciler import reconcile_once
 
@@ -108,41 +112,30 @@ class TestQuotaFailureAndReconcile:
             ).scalar_one()
             await session.execute(
                 update(OutboxTask)
-                .where(OutboxTask.type == "disk.quota")
-                .values(
-                    status="dead",
-                    retries=8,
-                    updated_at=now_utc() - timedelta(hours=2),
-                )
+                .where(OutboxTask.type == "disk.provision")
+                .values(status="dead", retries=8, updated_at=now_utc() - timedelta(hours=2))
             )
             await session.execute(
-                update(DataDisk).where(DataDisk.id == row.id).values(quota_synced=False)
+                update(DataDisk).where(DataDisk.id == row.id).values(provisioned=False)
             )
             await session.commit()
-            subpath = row.juicefs_subpath
         counts = await reconcile_once(sm)
-        assert counts["quota_redriven"] == 1
+        assert counts["provision_redriven"] == 1
         await drain(sm)
-        assert fake.disk_quotas[(f"tenant-{user_id}", subpath)] == 100
+        assert fake.data_disks[(f"tenant-{user_id}", data_disk_pvc_name(disk["uuid"]))] == 100
 
 
-class TestQuotaDeleteOnWipe:
-    async def test_wipe_deletes_quota_first(self, client: AsyncClient, sm, fake):
+class TestDeprovisionOnDelete:
+    async def test_delete_removes_pvc(self, client: AsyncClient, sm, fake):
         headers, user_id, _key = await create_user_with_key(client)
         await fund_wallet(sm, user_id)
         disk = await create_disk(client, headers, size_gb=100)
         await drain(sm)
-        from app.modules.orchestrator.models import DataDisk
-
-        async with sm() as session:
-            subpath = (
-                await session.execute(
-                    select(DataDisk.juicefs_subpath).where(DataDisk.uuid == disk["uuid"])
-                )
-            ).scalar_one()
-        assert fake.disk_quotas[(f"tenant-{user_id}", subpath)] == 100
+        key = (f"tenant-{user_id}", data_disk_pvc_name(disk["uuid"]))
+        assert fake.data_disks[key] == 100
         resp = await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
         assert resp.status_code == 200, resp.text
         await drain(sm)
-        assert (f"tenant-{user_id}", subpath) not in fake.disk_quotas  # 配额已摘除
-        assert any(sp == subpath for _ns, sp in fake.wiped_disks)  # 目录已擦除
+        # PVC 删掉 = CSI 随之销毁 subvolume,不再有单独的擦除步
+        assert key not in fake.data_disks
+        assert key in fake.deleted_data_disks

@@ -57,7 +57,7 @@
 
 ### 集群能力
 
-- 集群页组件体检十项:节点就绪 / HAMi / gpu-operator / DCGM / RuntimeClass nvidia / RuntimeClass kata-qemu / 存储类 / 实例入口(key `gateway`)/ 证书签发 / 监控栈。`storage` 按名核对 `topolvm-provisioner`(强制)与 `superdl-juicefs`(可选,缺它只提示数据盘不可售);`kata_runtimeclass` 绿灯时另报 kata 池节点数。
+- 集群页组件体检十项:节点就绪 / HAMi / gpu-operator / DCGM / RuntimeClass nvidia / RuntimeClass kata-qemu / 存储类 / 实例入口(key `gateway`)/ 证书签发 / 监控栈。`storage` 按名核对 `topolvm-provisioner`(强制)与 `superdl-cephfs`(可选,缺它只提示数据盘不可售);`kata_runtimeclass` 绿灯时另报 kata 池节点数。
 - **实例入口的判据是 `Gateway superdl` 对象 `status.conditions` 的 `Programmed=True`**,不是控制器 Deployment ready。CRD 未装或对象未下发都是 404,计「未就绪」不记 `error`。探测需 `gateway.networking.k8s.io/gateways` 的 get/list(`deploy/app/k8s/01-rbac.yaml` node-mgr 角色)。
 - HAMi 门禁不做调度回落:shared 档能力未就绪直接 `CLUSTER_NOT_READY`,schedulerName 静态钉死。dedicated 档看 RuntimeClass `kata-qemu`(`require_kata_runtimeclass`)。门禁判据与 `build_gpu_request` 同源:**先看要不要卡,再看落哪个池**;`gpu_count == 0` 的实例不申请 `nvidia.com/*`、`schedulerName` 为空,只过 StorageClass。
 - 发行版不设运行期配置,由平台探测 gitVersion(含 `+k3s`/`+rke2`)派生;两档装同一套组件,差异只在 `deploy/cluster/values/light/`。档位可用性看池里有没有 Ready 节点与运行时是否到位。

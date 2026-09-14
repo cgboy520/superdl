@@ -2744,8 +2744,8 @@
             "title": "Price Gb Month",
             "type": "string"
           },
-          "quota_synced": {
-            "title": "Quota Synced",
+          "provisioned": {
+            "title": "Provisioned",
             "type": "boolean"
           },
           "size_gb": {
@@ -2771,7 +2771,7 @@
           "mounted_instance_id",
           "grace_started_at",
           "frozen_started_at",
-          "quota_synced",
+          "provisioned",
           "created_at"
         ],
         "title": "DiskOut",

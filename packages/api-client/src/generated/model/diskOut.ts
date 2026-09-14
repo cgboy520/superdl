@@ -13,7 +13,7 @@ export interface DiskOut {
   mounted_instance_id: number | null;
   name: string;
   price_gb_month: string;
-  quota_synced: boolean;
+  provisioned: boolean;
   size_gb: number;
   status: string;
   uuid: string;

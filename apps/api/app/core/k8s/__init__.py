@@ -6,7 +6,6 @@ from app.core.config import get_settings
 from app.core.k8s.base import (
     InstancePodSpec,
     K8sOrchestrator,
-    NamespaceMissing,
     NodePortTaken,
     PodStatus,
 )
@@ -18,7 +17,6 @@ __all__ = [
     "FakeOrchestrator",
     "InstancePodSpec",
     "K8sOrchestrator",
-    "NamespaceMissing",
     "NodePortTaken",
     "PodStatus",
     "ensure_registry_pull_secret",

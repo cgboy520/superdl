@@ -9,8 +9,8 @@ prometheus:
     storageSpec:
       volumeClaimTemplate:
         spec:
-          # JuiceFS(RWX);light 档由 values/light/kps-light.yaml 覆盖回 topolvm
-          storageClassName: superdl-juicefs
+          # CephFS(RWX);light 档由 values/light/kps-light.yaml 覆盖回 topolvm
+          storageClassName: superdl-cephfs
           accessModes: ["ReadWriteMany"]
           resources:
             requests: {storage: 50Gi}
@@ -244,8 +244,8 @@ alertmanager:
     storage:
       volumeClaimTemplate:
         spec:
-          # 同 Prometheus:JuiceFS(RWX)
-          storageClassName: superdl-juicefs
+          # 同 Prometheus:CephFS(RWX)
+          storageClassName: superdl-cephfs
           accessModes: ["ReadWriteMany"]
           resources:
             requests: {storage: 2Gi}
@@ -298,10 +298,11 @@ additionalPrometheusRulesMap:
             for: 30m
             labels: {severity: warning}
             annotations: {summary: "共享池节点持续打满(超卖回调阈值 85% 参考)"}
-          - alert: JuiceFSMountFailed
-            expr: increase(juicefs_mount_errors_total[10m]) > 0
+          - alert: CephUnhealthy
+            expr: ceph_health_status > 0
+            for: 15m
             labels: {severity: critical}
-            annotations: {summary: "JuiceFS 挂载失败,数据盘可用性受影响", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/cluster-validation.md#d-存储"}
+            annotations: {summary: "Ceph 集群非 HEALTH_OK 超 15 分钟,数据盘可用性受影响", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/cluster-validation.md#d-存储"}
           - alert: HamiSchedulerDown
             expr: absent(up{job="hami-scheduler"} == 1)
             for: 5m
@@ -424,10 +425,10 @@ additionalPrometheusRulesMap:
             expr: increase(superdl_payment_channel_reversed_total[15m]) > 0
             labels: {severity: warning}
             annotations: {summary: "已入账订单收到渠道关单/退款类通知:平台不自动冲账,财务异常清单人工核销"}
-          - alert: JuiceFSQuotaFailed
-            expr: increase(superdl_juicefs_quota_failed_total[15m]) > 0
+          - alert: DiskProvisionFailed
+            expr: increase(superdl_disk_provision_failed_total[15m]) > 0
             labels: {severity: warning}
-            annotations: {summary: "数据盘 JuiceFS 配额下发进入死信(reconciler 周期重派):配额未生效期间盘容量不被强制,查 disk-ops worker 日志与 juicefs-metaurl 密钥"}
+            annotations: {summary: "数据盘 PVC 建/扩进入死信(reconciler 周期重派):未就绪的盘挂不上实例,查 disk-ops worker 日志与 CephFS CSI"}
           # Gauge(当前滞留数):>0 持续 15 分钟即告警
           - alert: ReconcileStuckInstances
             expr: max(superdl_reconcile_stuck_instances) > 0

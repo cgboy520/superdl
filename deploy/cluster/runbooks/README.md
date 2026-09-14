@@ -26,8 +26,8 @@
 | GPUHighTemperature | GPU >85°C 持续 5 分钟 | 查机房散热;持续则 cordon 观察 | [gpu-fault-sop.md](./gpu-fault-sop.md) |
 | NodeGPUUnavailable | GPU 节点 NotReady | 查节点;运行中实例由 reconciler 判 node_lost 并停费 | `docs/reference/orchestrator.md`、`docs/reference/nodes.md` |
 | SharedPoolUtilSaturated | 共享池持续打满 | 复核该 SKU 超卖参数与容量 | `docs/reference/catalog.md` |
-| JuiceFSMountFailed | 数据盘挂载失败 | 查 CSI Pod 与 metaurl Secret | [cluster-validation.md](./cluster-validation.md) D 节 |
-| JuiceFSQuotaFailed | 数据盘配额下发进死信 | 查 disk-ops worker 日志与 `juicefs-metaurl` 键;期间容量上限不被强制 | [cluster-validation.md](./cluster-validation.md) D 节 |
+| CephUnhealthy | Ceph 非 HEALTH_OK 超 15 分钟 | `kubectl -n rook-ceph exec deploy/rook-ceph-tools -- ceph -s` | [cluster-validation.md](./cluster-validation.md) D 节 |
+| DiskProvisionFailed | 数据盘 PVC 建/扩进死信 | 查 disk-ops worker 日志与 CephFS CSI;未就绪的盘挂不上实例 | [cluster-validation.md](./cluster-validation.md) D 节 |
 | HamiSchedulerDown | 共享池调度器指标缺失 | 查 `hami-scheduler` Pod;期间共享档下单报 CLUSTER_NOT_READY | [cluster-validation.md](./cluster-validation.md) C 节 |
 | CertExpiringSoon / CertExpiringCritical / CertNotReady / CertManagerMetricsMissing | 证书续签链路异常 | `kubectl describe certificate`;full 档查 DNS01 委托与 acme-dns 账户,light 档确认手工灌入的通配证书未过期 | [acme-dns.md](./acme-dns.md) |
 | OutboxTaskDead | 编排任务进死信 | 管理端总览死信卡:看原因后重放或忽略(需原因) | `docs/reference/orchestrator.md` |

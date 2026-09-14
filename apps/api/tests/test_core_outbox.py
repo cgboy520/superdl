@@ -166,12 +166,12 @@ async def test_reaper_dead_letter_after_budget_exhausted(sm: async_sessionmaker[
 
 class TestRetryPolicy:
     async def test_per_type_budget_overrides_default(self, sm):
-        """disk.wipe 有更长的重试预算。"""
+        """disk.deprovision 有更长的重试预算。"""
         from app.core.outbox import DEFAULT_RETRY_POLICY, retry_policy_for
         from app.modules.orchestrator import handlers as _handlers  # noqa: F401 注册重试预算
 
         assert retry_policy_for("instance.create") is DEFAULT_RETRY_POLICY
-        wipe = retry_policy_for("disk.wipe")
+        wipe = retry_policy_for("disk.deprovision")
         assert wipe.max_retries > DEFAULT_RETRY_POLICY.max_retries
         # 预算总时长 > 30 分钟
         total = sum(

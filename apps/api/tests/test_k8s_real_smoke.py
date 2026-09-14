@@ -17,8 +17,8 @@ from app.core.k8s.base import (
     GATEWAY_APP_LISTENER,
     GATEWAY_NAME,
     HTTPROUTE_PLURAL,
-    JUICEFS_PVC_NAME,
     InstancePodSpec,
+    data_disk_pvc_name,
     instance_disk_pvc_name,
     jupyter_service_name,
 )
@@ -120,11 +120,26 @@ async def test_namespace_security_baseline(orch: RealOrchestrator, namespace: st
     assert ssh_block is not None and ssh_block.cidr == "0.0.0.0/0"
     assert ssh_block._except == [get_settings().tenant_pod_cidr]
 
-    # 配额(对象数 + 资源总量)与共享数据盘 PVC 就位(Pending 即可)
+    # 配额(对象数 + 资源总量)就位;数据盘 PVC 不在建 ns 时创建,一盘一只按需建
     quota: Any = orch.core.read_namespaced_resource_quota("tenant-quota", namespace)
     assert quota.spec is not None and "pods" in quota.spec.hard
     assert "requests.cpu" in quota.spec.hard and "limits.ephemeral-storage" in quota.spec.hard
-    orch.core.read_namespaced_persistent_volume_claim(JUICEFS_PVC_NAME, namespace)
+
+    # 数据盘 PVC 往返:建 → 幂等重入 → 扩容 → 删;挂了 = 一盘一 PVC 的下发面漂了
+    pvc_name = data_disk_pvc_name("a" * 32)
+    await orch.ensure_data_disk(namespace, pvc_name, 10)
+    created: Any = orch.core.read_namespaced_persistent_volume_claim(pvc_name, namespace)
+    assert created.spec.resources.requests["storage"] == "10Gi"
+    assert created.spec.access_modes == ["ReadWriteMany"]
+    await orch.ensure_data_disk(namespace, pvc_name, 10)  # 幂等
+    await orch.ensure_data_disk(namespace, pvc_name, 20)  # 扩容
+    grown: Any = orch.core.read_namespaced_persistent_volume_claim(pvc_name, namespace)
+    assert grown.spec.resources.requests["storage"] == "20Gi"
+    await orch.ensure_data_disk(namespace, pvc_name, 5)  # 缩容不动
+    same: Any = orch.core.read_namespaced_persistent_volume_claim(pvc_name, namespace)
+    assert same.spec.resources.requests["storage"] == "20Gi"
+    await orch.delete_data_disk(namespace, pvc_name)
+    await orch.delete_data_disk(namespace, pvc_name)  # 删两遍不报错
 
 
 async def test_ensure_namespace_under_tenant_mgr_sa(orch_restricted: RealOrchestrator) -> None:

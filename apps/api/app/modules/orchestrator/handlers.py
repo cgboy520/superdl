@@ -6,11 +6,11 @@ from app.core.config import get_settings
 from app.core.db import get_sessionmaker
 from app.core.errors import AppError, ErrorCode
 from app.core.k8s import (
-    NamespaceMissing,
     NodePortTaken,
     ensure_registry_pull_secret,
     get_orchestrator,
 )
+from app.core.k8s.base import data_disk_pvc_name
 from app.core.logging import get_logger
 from app.core.money import hourly_cost
 from app.core.outbox import OutboxTask, RetryPolicy, outbox_handler
@@ -192,38 +192,32 @@ async def handle_instance_disk_cleanup(session: AsyncSession, task: OutboxTask) 
     await orch.delete_instance_disk(instance.k8s_namespace, instance.uuid)
 
 
-@outbox_handler("disk.quota", retry=RetryPolicy(max_retries=8, backoff_base_seconds=30))
-async def handle_disk_quota(session: AsyncSession, task: OutboxTask) -> None:
-    """下发 JuiceFS 目录硬配额(CLI Job),成功置 quota_synced;死信由 reconciler 重派。"""
+@outbox_handler("disk.provision", retry=RetryPolicy(max_retries=8, backoff_base_seconds=30))
+async def handle_disk_provision(session: AsyncSession, task: OutboxTask) -> None:
+    """建或扩数据盘 PVC(容量即硬配额),成功置 provisioned;死信由 reconciler 重派。"""
     disk = await session.get(DataDisk, task.payload["disk_id"])
     if disk is None or disk.status in ("deleting", "deleted"):
-        return  # 删除链路有自己的配额摘除步,不下发
+        return  # 删除链路已接手,不再下发
     namespace = f"{get_settings().k8s_namespace_prefix}{disk.user_id}"
-    await get_orchestrator().set_disk_quota(namespace, disk.juicefs_subpath, disk.size_gb)
-    disk.quota_synced = True
-    logger.info("disk_quota_synced", disk_id=disk.id, capacity_gb=disk.size_gb)
+    await get_orchestrator().ensure_data_disk(
+        namespace, data_disk_pvc_name(disk.uuid), disk.size_gb
+    )
+    disk.provisioned = True
+    logger.info("disk_provisioned", disk_id=disk.id, capacity_gb=disk.size_gb)
 
 
-# 轮询集群 Job 完成,预算约 1.5 小时
+# 删 PVC 由 CSI 异步销毁 subvolume,预算宽松
 @outbox_handler(
-    "disk.wipe", retry=RetryPolicy(max_retries=12, backoff_base_seconds=30, timeout_seconds=120)
+    "disk.deprovision",
+    retry=RetryPolicy(max_retries=12, backoff_base_seconds=30, timeout_seconds=120),
 )
-async def handle_disk_wipe(session: AsyncSession, task: OutboxTask) -> None:
-    """擦除 JuiceFS 子路径(集群侧 Job,未完成抛错重试)后置 deleted;
-    擦除前摘除目录配额(失败仅告警)。"""
+async def handle_disk_deprovision(session: AsyncSession, task: OutboxTask) -> None:
+    """删数据盘 PVC(reclaimPolicy=Delete,CSI 随之销毁 subvolume)后置 deleted。"""
     disk = await session.get(DataDisk, task.payload["disk_id"])
     if disk is None or disk.status != "deleting":
         return
     namespace = f"{get_settings().k8s_namespace_prefix}{disk.user_id}"
-    try:
-        await get_orchestrator().delete_disk_quota(namespace, disk.juicefs_subpath)
-    except Exception:
-        logger.warning("disk_quota_delete_failed", disk_id=disk.id, exc_info=True)
-    try:
-        await get_orchestrator().wipe_disk(namespace, disk.juicefs_subpath)
-    except NamespaceMissing:
-        # 租户 ns 不存在视为完成
-        logger.warning("disk_wipe_namespace_missing", disk_id=disk.id, namespace=namespace)
-    logger.info("disk_wiped", disk_id=disk.id, subpath=disk.juicefs_subpath)
+    await get_orchestrator().delete_data_disk(namespace, data_disk_pvc_name(disk.uuid))
+    logger.info("disk_deprovisioned", disk_id=disk.id)
     disk.status = "deleted"
     disk.mounted_instance_id = None

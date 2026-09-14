@@ -34,7 +34,7 @@ COMPONENT_OUTBOX_TYPES: dict[WorkerComponent, frozenset[str]] = {
     ),
     WorkerComponent.NODE_MGR: frozenset({"node.cordon", "node.decommission"}),
     WorkerComponent.PREWARM: frozenset({"image.prewarm"}),
-    WorkerComponent.DISK_OPS: frozenset({"disk.quota", "disk.wipe"}),
+    WorkerComponent.DISK_OPS: frozenset({"disk.provision", "disk.deprovision"}),
 }
 
 

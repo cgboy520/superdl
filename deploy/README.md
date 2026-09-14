@@ -4,7 +4,7 @@
 |---|---|
 | `app/` | 平台自身部署:本地 compose(PG18)+ 生产 K8s 清单(`k8s/`:API/worker/前端/网关与 TLS/RBAC/迁移 Job/PG 备份 CronJob)+ 前端镜像(`frontend.Dockerfile`+nginx) |
 | `ansible/` | 初始控制面装机([servers] 组 rke2/k3s server:审计策略、server config 渲染、安装器 sha256 校验后安装)。GPU 节点走管理端「添加节点」一键命令(node-join.sh),不走 ansible |
-| `cluster/` | 集群组件 helmfile(RKE2/k3s + Cilium + GPU Operator + HAMi + kube-prometheus-stack + JuiceFS CSI + TopoLVM + Envoy Gateway + Loki/Alloy),full/light 双档与版本锁定见 `cluster/README.md`;Gateway API CRD 由 `cluster/gateway-api-crds.sh` 单点管(helmfile presync 调用);`cluster/admission/` 为七条 VAP 准入策略(非 helm release,`cluster/apply.sh` 在 helmfile 之前 apply 并回读,`cluster/preflight.sh` 与 `scripts/release.sh` 各再断言一次全部为 Deny) |
+| `cluster/` | 集群组件 helmfile(RKE2/k3s + Cilium + GPU Operator + HAMi + kube-prometheus-stack + Rook-Ceph + TopoLVM + Envoy Gateway + Loki/Alloy),full/light 双档与版本锁定见 `cluster/README.md`;Gateway API CRD 由 `cluster/gateway-api-crds.sh` 单点管(helmfile presync 调用);`cluster/admission/` 为七条 VAP 准入策略(非 helm release,`cluster/apply.sh` 在 helmfile 之前 apply 并回读,`cluster/preflight.sh` 与 `scripts/release.sh` 各再断言一次全部为 Deny) |
 
 平台代码不依赖真实集群:K8s 走 `app/core/k8s` 抽象层,dev/test 用 FakeOrchestrator。
 
@@ -37,7 +37,6 @@
 - [ ] `curl -s https://<api-domain>/api/admin/v1/auth/login -X POST` 返回 404
 - [ ] `curl -s https://<api-domain>/metrics` 返回 404 或 401
 - [ ] Alertmanager critical 告警端到端实测一次(管理端告警流与值班邮箱到人;启用了钉钉 sidecar 或 `oncall_phone` 的一并验证)
-- [ ] `superdl-db` 含 `juicefs-metaurl` 键(值同 kube-system/superdl-juicefs-secret 的 metaurl);缺失则数据盘配额 Job 死信(`superdl_juicefs_quota_failed_total`)
 
 ## 生产数据库要求(必读)
 

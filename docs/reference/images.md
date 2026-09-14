@@ -27,7 +27,7 @@
 
 - 公开 `GET /api/v1/images` 的 `is_prewarmed` 是计算值:`prewarm_enabled AND`(无 cache 行 → 等于 prewarm_enabled;有行 → coverage ≥ `prewarm_min_coverage_pct`)。
 - 策略参数(ops 可调):`prewarm_min_coverage_pct` 与 `prewarm_recheck_hours`,默认值见 [limits.md](./limits.md)。
-- 预热由 `image.prewarm` outbox handler(幂等)+ `prewarm_patrol` 巡检(60s,advisory lock 1008)铺行、收敛与复检;节点增删由巡检自行发现。执行体是每节点定点 Job,与 `disk.wipe` 同构。
+- 预热由 `image.prewarm` outbox handler(幂等)+ `prewarm_patrol` 巡检(60s,advisory lock 1008)铺行、收敛与复检;节点增删由巡检自行发现。执行体是每节点定点 Job。
 - cpu 池不预热(巡检 `target_nodes` 排除 `pool_label == cpu`):CPU 规格首次启动现拉镜像,创建页对它不承诺秒级启动。
 - 删除镜像不影响运行中实例:实例存 image_ref 快照。
 - 实例的 image_ref 快照终身不变:停机/开机/重启都用它,无「实例换镜像」端点;镜像修复只对新建实例生效。

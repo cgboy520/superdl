@@ -53,8 +53,8 @@ class TestDiskCrud:
         await drain(sm)
         disks = (await client.get("/api/v1/disks", headers=headers)).json()
         assert disks == []
-        # 擦除打在盘记录登记的子路径上
-        assert fake.wiped_disks[-1] == (f"tenant-{user_id}", f"disk-{disk['uuid']}")
+        # PVC 随删盘回收(CSI 销毁 subvolume),不再有单独的擦除步
+        assert fake.deleted_data_disks[-1] == (f"tenant-{user_id}", f"disk-{disk['uuid']}")
 
     async def test_create_requires_balance(self, client, sm, fake):
         headers, _user_id, _key = await create_user_with_key(client, "13500000001")
@@ -88,12 +88,12 @@ class TestDiskCrud:
 
 
 class TestMountLifecycle:
-    async def test_attach_rejected_until_quota_synced(self, client, sm, fake):
+    async def test_attach_rejected_until_provisioned(self, client, sm, fake):
         """配额未下发成功的盘不得挂载;同步完成后即可挂。"""
         headers, _user_id, key_id = await funded_user(client, sm, "13500000013", "500.00")
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
-        # 不 drain:disk.quota 任务仍在途,quota_synced=false → 409
+        # 不 drain:disk.provision 任务仍在途,provisioned=false → 409
         resp = await client.post(
             "/api/v1/instances",
             json={
@@ -105,7 +105,7 @@ class TestMountLifecycle:
             headers=headers,
         )
         assert resp.status_code == 409
-        assert resp.json()["message_key"] == "disks.quotaNotSynced"
+        assert resp.json()["message_key"] == "disks.notProvisioned"
         # 配额下发完成后挂载放行
         await drain(sm)
         resp = await client.post(
@@ -125,7 +125,7 @@ class TestMountLifecycle:
         headers, user_id, key_id = await funded_user(client, sm, "13500000011", "500.00")
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
-        await drain(sm)  # 配额下发完成(quota_synced=true)后才可挂载
+        await drain(sm)  # PVC 建出(provisioned=true)后才可挂载
         resp = await client.post(
             "/api/v1/instances",
             json={
@@ -157,12 +157,12 @@ class TestMountLifecycle:
                 await session.execute(select(Instance).where(Instance.uuid == a_uuid))
             ).scalar_one()
             assert inst.data_disk_id is None
-        # 开机:不带数据盘,不报错;新 Pod 无 subPath
+        # 开机:不带数据盘,不报错;新 Pod 不引用任何数据盘 PVC
         resp = await client.post(f"/api/v1/instances/{a_uuid}/start", headers=headers)
         assert resp.status_code == 200, resp.text
         await drain(sm)
         pod = fake.pods[(f"tenant-{user_id}", a_uuid)]
-        assert pod.spec.data_disk_subpath is None
+        assert pod.spec.data_disk_pvc is None
 
     async def test_start_rejected_when_disk_deleting(self, client, sm, fake):
         """盘处于 deleting(擦除中)时开机被拒绝:不能挂到正在被擦除的目录。"""
@@ -224,9 +224,9 @@ class TestMountLifecycle:
         assert resp.status_code == 202, resp.text
         a_uuid = resp.json()["uuid"]
         await drain(sm)
-        # Pod spec 带 JuiceFS 子路径(挂 /root/data),取 data_disks.juicefs_subpath
+        # Pod spec 直挂该盘自己的 PVC(挂 /root/data),名字按盘 uuid 算
         pod = fake.pods[(f"tenant-{user_id}", a_uuid)]
-        assert pod.spec.data_disk_subpath == f"disk-{disk['uuid']}"
+        assert pod.spec.data_disk_pvc == f"disk-{disk['uuid']}"
 
         d = (await client.get("/api/v1/disks", headers=headers)).json()[0]
         assert d["mounted_instance_id"] is not None
@@ -373,7 +373,7 @@ class TestDailyDiskBilling:
 
 
 class TestDiskArrearsChain:
-    async def test_grace_frozen_wipe_and_recovery(self, client, sm, fake):
+    async def test_grace_frozen_reclaim_and_recovery(self, client, sm, fake):
         headers, user_id, _key = await funded_user(client, sm, "13500000030")
         await create_disk(client, headers)
         # 清空余额 → grace

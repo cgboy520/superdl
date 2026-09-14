@@ -591,7 +591,6 @@ async def seed_disk(
             user_id=user_id,
             name="t",
             size_gb=size_gb,
-            juicefs_subpath=f"disk-{user_id}-{now_utc().timestamp()}".replace(".", ""),
             price_gb_month=Decimal(price),
             status=status,
             created_at=created_at or now_utc(),

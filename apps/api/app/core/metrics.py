@@ -38,9 +38,9 @@ PAYMENT_RECOVER_FAILED_TOTAL = Counter(
     ["error"],
 )
 RECONCILE_LEAKED_TOTAL = Counter("superdl_reconcile_leaked_total", "reconciler 回收的泄漏 Pod 数")
-JUICEFS_QUOTA_FAILED_TOTAL = Counter(
-    "superdl_juicefs_quota_failed_total",
-    "数据盘 JuiceFS 目录配额下发死信次数(每次重派前计一次;配额未强制期间盘仍可写)",
+DISK_PROVISION_FAILED_TOTAL = Counter(
+    "superdl_disk_provision_failed_total",
+    "数据盘 PVC 建/扩死信次数(每次重派前计一次;未就绪的盘不可挂载)",
 )
 INSTANCE_NODE_LOST_TOTAL = Counter(
     "superdl_instance_node_lost_total",

@@ -33,16 +33,6 @@ check_secret() { # <ns> <name> <用途>
     miss "$1/$2($3)—— 建法见 README「前置检查」节"
   fi
 }
-if grep -qE '^\s*seaweedfs:\s*\{[^}]*enabled:\s*true' "environments/$env_name.yaml"; then
-  check_secret seaweedfs superdl-seaweedfs-s3 "SeaweedFS S3 凭据(键 seaweedfs_s3_config)"
-else
-  ok "seaweedfs/superdl-seaweedfs-s3 不需要(environments/$env_name.yaml seaweedfs.enabled=false)"
-fi
-if grep -qE '^\s*juicefs:\s*\{[^}]*enabled:\s*true' "environments/$env_name.yaml"; then
-  check_secret kube-system superdl-juicefs-secret "JuiceFS 元数据/对象存储凭据"
-else
-  ok "kube-system/superdl-juicefs-secret 不需要(environments/$env_name.yaml juicefs.enabled=false)"
-fi
 check_secret monitoring superdl-alert-token "Alertmanager→平台告警 webhook token"
 check_secret monitoring superdl-smtp-password "Alertmanager 邮件通道"
 # JWT 签发密钥占位检测(只报键名,不回显值)
@@ -347,7 +337,6 @@ check_sc topolvm-provisioner "实例盘/监控组件/acme-dns 存储(full+light 
 if grep -qE '^\s*rookCeph:\s*\{[^}]*enabled:\s*true' "environments/$env_name.yaml"; then
   check_sc superdl-cephfs "数据盘(CephFS;唯一支持 idmapped mount 的共享文件系统)"
 fi
-check_sc superdl-juicefs "共享数据盘/监控栈存储(两档均为强制依赖)"
 
 if [[ "$env_name" == "light" ]]; then
   say "== light(k3s)专项 =="

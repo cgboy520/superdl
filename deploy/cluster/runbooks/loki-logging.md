@@ -7,7 +7,7 @@
 
 ## 留存口径(合规基线)
 
-- **Loki `retention_period: 4320h`(180 天)**,`values/loki.yaml`(compactor `retention_enabled`);磁盘 full 档 50Gi JuiceFS,light 档 10Gi TopoLVM。
+- **Loki `retention_period: 4320h`(180 天)**,`values/loki.yaml`(compactor `retention_enabled`);磁盘 full 档 50Gi CephFS,light 档 10Gi TopoLVM。
 - DB `audit_log` 表:365 天(`SUPERDL_AUDIT_RETENTION_DAYS`),结构化审计第一事实源;Loki 是请求链/异常/apiserver 审计的第二路留存。
 
 ## 查询方式

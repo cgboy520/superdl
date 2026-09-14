@@ -21,8 +21,8 @@ from app.core.errors import AppError, ErrorCode, conflict, not_found
 from app.core.gpu_models import model_matches
 from app.core.idempotency import find_replay
 from app.core.k8s.base import (
+    DATA_DISK_STORAGE_CLASS,
     INSTANCE_DISK_STORAGE_CLASS,
-    JUICEFS_STORAGE_CLASS,
     ClusterProbe,
     derive_distro,
 )
@@ -576,7 +576,7 @@ async def require_storage_classes(session: AsyncSession, *, with_data_disk: bool
     present = set(row.storage_classes or ())
     required = [INSTANCE_DISK_STORAGE_CLASS]
     if with_data_disk:
-        required.append(JUICEFS_STORAGE_CLASS)
+        required.append(DATA_DISK_STORAGE_CLASS)
     missing = [sc for sc in required if sc not in present]
     if missing:
         raise AppError(
@@ -652,7 +652,7 @@ def cluster_components(row: ClusterStatus | None) -> list[ClusterComponentOut]:
     scs = set(row.storage_classes or []) if row else set()
     # 实例盘 SC 是两档强制依赖,缺它判红;JuiceFS 可选(light 默认不装),缺它不判红
     instance_disk_ok = INSTANCE_DISK_STORAGE_CLASS in scs
-    data_disk_ok = JUICEFS_STORAGE_CLASS in scs
+    data_disk_ok = DATA_DISK_STORAGE_CLASS in scs
     kata_ok = bool(row and row.kata_runtimeclass)
     return [
         ClusterComponentOut(
@@ -688,7 +688,7 @@ def _storage_detail(instance_disk_ok: bool, data_disk_ok: bool, scs: set[str]) -
     if not instance_disk_ok:
         return f"缺 {INSTANCE_DISK_STORAGE_CLASS}(实例盘不可用,全站开不了机)"
     listed = ", ".join(sorted(scs))
-    return listed if data_disk_ok else f"{listed}(无 {JUICEFS_STORAGE_CLASS},数据盘不可售)"
+    return listed if data_disk_ok else f"{listed}(无 {DATA_DISK_STORAGE_CLASS},数据盘不可售)"
 
 
 def _kata_detail(kata_ok: bool, kata_nodes: int) -> str | None:

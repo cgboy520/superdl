@@ -80,7 +80,6 @@ async def create_disk(
         user_id=user_id,
         name=name,
         size_gb=size_gb,
-        juicefs_subpath=f"disk-{disk_uuid}",
         price_gb_month=price,
         idempotency_key=idempotency_key,
         request_fingerprint=fingerprint,
@@ -97,8 +96,8 @@ async def create_disk(
     if result is not disk:
         # 并发同幂等键:按重放返回既有盘
         return result, False
-    # 同事务入队 JuiceFS 目录配额下发;handler 成功才置 quota_synced
-    enqueue(session, "disk.quota", {"disk_id": disk.id})
+    # 同事务入队 PVC 下发;handler 成功才置 provisioned(PVC 容量即配额)
+    enqueue(session, "disk.provision", {"disk_id": disk.id})
     await session.commit()
     await session.refresh(disk)
     logger.info("disk_created", disk_id=disk.id, user_id=user_id, size_gb=size_gb)
@@ -170,16 +169,16 @@ async def expand_disk(session: AsyncSession, user_id: int, uuid: str, new_size_g
         disk.price_gb_month, disk.size_gb
     )
     await billing_service.assert_can_afford(session, user_id, additional_daily_disk=delta_daily)
-    # 重下发 JuiceFS 目录配额(quota_synced=false 直到 handler 成功)
+    # 扩 PVC(provisioned=false 直到 handler 成功)
     disk.size_gb = new_size_gb
-    disk.quota_synced = False
-    enqueue(session, "disk.quota", {"disk_id": disk.id})
+    disk.provisioned = False
+    enqueue(session, "disk.provision", {"disk_id": disk.id})
     await session.commit()
     return disk
 
 
 async def delete_disk(session: AsyncSession, user_id: int, uuid: str) -> DataDisk:
-    """删除:挂载中禁止;进入 deleting,由 outbox 擦除后置 deleted。"""
+    """删除:挂载中禁止;进入 deleting,由 outbox 删 PVC 后置 deleted。"""
     # FOR UPDATE 锁盘行(与 attach_for_instance 同纪律)
     disk = (
         await session.execute(
@@ -205,7 +204,7 @@ async def delete_disk(session: AsyncSession, user_id: int, uuid: str) -> DataDis
     await session.execute(
         update(Instance).where(Instance.data_disk_id == disk.id).values(data_disk_id=None)
     )
-    enqueue(session, "disk.wipe", {"disk_id": disk.id})
+    enqueue(session, "disk.deprovision", {"disk_id": disk.id})
     await session.commit()
     return disk
 
@@ -217,9 +216,9 @@ async def attach_for_instance(session: AsyncSession, user_id: int, disk_id: int,
         raise not_found("数据盘不存在")
     if disk.status != "active":
         raise AppError(ErrorCode.VALIDATION_ERROR, key="disks.notMountable")
-    # 配额未下发的盘不得挂载
-    if not disk.quota_synced:
-        raise conflict(key="disks.quotaNotSynced")
+    # PVC 未就绪的盘不得挂载
+    if not disk.provisioned:
+        raise conflict(key="disks.notProvisioned")
     if disk.mounted_instance_id is not None and disk.mounted_instance_id != instance_id:
         raise AppError(ErrorCode.DISK_IN_USE, key="disks.mountedElsewhere")
     disk.mounted_instance_id = instance_id

@@ -8,6 +8,7 @@
 
 import pathlib
 import sys
+from dataclasses import replace
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))  # 允许 scripts/ 直跑
 
@@ -17,11 +18,7 @@ from kubernetes import client
 from app.core.gpu_adapter import POOL_HAMI, POOL_KATA, POOL_MIG, build_gpu_request
 from app.core.k8s.base import InstancePodSpec
 from app.core.k8s.real import (
-    JUICEFS_PVC_NAME,
-    RealOrchestrator,
-    build_disk_quota_container,
     build_instance_pod,
-    build_managed_job,
     build_prewarm_job,
 )
 
@@ -102,34 +99,15 @@ def main(out_dir: pathlib.Path) -> None:
             (name, build_instance_pod(_instance_spec(name, req)), SA + "superdl-tenant-mgr")
         )
 
-    wipe = RealOrchestrator._batch_container(
-        "wipe", "busybox:1.36", ["rm", "-rf", "/data/probe"], env=[]
-    )
-    wipe.volume_mounts = [client.V1VolumeMount(name="juicefs", mount_path="/data")]
-    wipe_job = build_managed_job(
-        TENANT_NS,
-        "wipe-probe",
-        wipe,
-        volumes=[
-            client.V1Volume(
-                name="juicefs",
-                persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
-                    claim_name=JUICEFS_PVC_NAME
-                ),
-            )
-        ],
-        pod_labels={},
-    )
-    objects.append(("wipe-job", wipe_job, SA + "superdl-disk-ops"))
-    objects.append(("wipe-pod", _pod_from_job(wipe_job, "wipe-probe", TENANT_NS), JOB_CONTROLLER))
-
-    quota = build_disk_quota_container("juicedata/juicefs-ce:v1.3.0", "pvc-probe", "sub", 10, True)
-    quota_job = build_managed_job(
-        PLATFORM_NS, "quota-set-probe", quota, volumes=[], pod_labels={"app": "superdl-disk-quota"}
-    )
-    objects.append(("quota-job", quota_job, SA + "superdl-disk-ops"))
+    # 挂数据盘的实例形态:租户 ns 内唯一会引用 PVC 的 Pod(旧的 wipe Job 已随一盘一 PVC 取消)
+    disk_spec = _instance_spec("instance-with-disk", shapes["instance-hami-k3s"])
+    disk_spec = replace(disk_spec, data_disk_pvc="disk-probe")
     objects.append(
-        ("quota-pod", _pod_from_job(quota_job, "quota-set-probe", PLATFORM_NS), JOB_CONTROLLER)
+        (
+            "instance-with-disk",
+            build_instance_pod(disk_spec),
+            SA + "superdl-tenant-mgr",
+        )
     )
 
     prewarm_job = build_prewarm_job(

@@ -36,7 +36,7 @@ class DiskOut(BaseModel):
     grace_started_at: datetime | None
     frozen_started_at: datetime | None
     # False = 目录硬配额未生效
-    quota_synced: bool
+    provisioned: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -84,8 +84,8 @@ async def _seed_baseline(smaker: async_sessionmaker[AsyncSession]) -> None:
     """每个用例的 DB 基线:集群能力缓存健康态(等价 worker 已跑过一轮巡检)
     + 法务文档预置(等价迁移已跑)。"""
     from app.core.k8s.base import (
+        DATA_DISK_STORAGE_CLASS,
         INSTANCE_DISK_STORAGE_CLASS,
-        JUICEFS_STORAGE_CLASS,
         ClusterProbe,
     )
     from app.modules.nodes.service import save_cluster_probe
@@ -100,7 +100,7 @@ async def _seed_baseline(smaker: async_sessionmaker[AsyncSession]) -> None:
                 distro="rke2",
                 hami_ready=True,
                 kata_runtimeclass=True,  # dedicated 档门禁的正例基线
-                storage_classes=(INSTANCE_DISK_STORAGE_CLASS, JUICEFS_STORAGE_CLASS),
+                storage_classes=(INSTANCE_DISK_STORAGE_CLASS, DATA_DISK_STORAGE_CLASS),
             ),
         )
         await seed_preset_docs(session)

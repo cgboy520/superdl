@@ -142,7 +142,7 @@ class PortAllocation(Base):
 
 
 class DataDisk(Base):
-    """数据盘:独立于实例生命周期;JuiceFS 子路径,挂载点 /root/data。"""
+    """数据盘:独立于实例生命周期;一盘一只 CephFS PVC(名 disk-<uuid>),挂载点 /root/data。"""
 
     __tablename__ = "data_disks"
     # 一台实例至多挂一块盘(部分唯一)
@@ -161,7 +161,6 @@ class DataDisk(Base):
     user_id: Mapped[int] = mapped_column(index=True)
     name: Mapped[str] = mapped_column(String(64))
     size_gb: Mapped[int]
-    juicefs_subpath: Mapped[str] = mapped_column(String(128), unique=True)
     price_gb_month: Mapped[Decimal] = mapped_column(Numeric(12, 4))  # 创建时快照
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
     # 请求体指纹 sha256(user_id|name|size_gb):同键异参 409
@@ -173,6 +172,6 @@ class DataDisk(Base):
     # 最近一次离开 grace/frozen 的时刻;日结按 [grace_started, grace_ended) 判宽限日
     grace_ended_at: Mapped[datetime | None]
     frozen_started_at: Mapped[datetime | None]
-    # JuiceFS 目录配额是否已按 size_gb 下发(创建/扩容置 false 并入队 disk.quota);false 时不可挂载
-    quota_synced: Mapped[bool] = mapped_column(default=False, server_default="false")
+    # PVC 是否已按 size_gb 建出/扩到位(创建与扩容置 false 并入队 disk.provision);false 时不可挂载
+    provisioned: Mapped[bool] = mapped_column(default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

@@ -16,6 +16,7 @@ from kubernetes import client, config
 
 from app.core.config import get_settings
 from app.core.k8s.base import (
+    DATA_DISK_STORAGE_CLASS,
     GATEWAY_API_GROUP,
     GATEWAY_API_VERSION,
     GATEWAY_APP_LISTENER,
@@ -26,13 +27,10 @@ from app.core.k8s.base import (
     GPU_MODEL_NODE_LABEL,
     HTTPROUTE_PLURAL,
     INSTANCE_DISK_STORAGE_CLASS,
-    JUICEFS_PVC_NAME,
-    JUICEFS_STORAGE_CLASS,
     MANAGED_LABEL,
     POOL_NODE_LABEL,
     ClusterProbe,
     InstancePodSpec,
-    NamespaceMissing,
     NodeInfo,
     NodePortTaken,
     PodStatus,
@@ -215,12 +213,6 @@ def _health_probe(spec: InstancePodSpec, *, failure_threshold: int) -> "client.V
     )
 
 
-def _check_subpath(subpath: str) -> None:
-    """JuiceFS 子路径只许单段目录名(拒绝 /、.. 与空串)。"""
-    if "/" in subpath or ".." in subpath or not subpath:
-        raise ValueError(f"illegal juicefs subpath: {subpath!r}")
-
-
 def _allowed_tcp_port_ranges() -> list["client.V1NetworkPolicyPort"]:
     """1-65535 扣除黑名单端口后的允许区间(endPort)。"""
     ports: list[client.V1NetworkPolicyPort] = []
@@ -287,20 +279,16 @@ def build_instance_pod(spec: InstancePodSpec) -> "client.V1Pod":
         )
     ]
     mounts = [client.V1VolumeMount(name="instance-disk", mount_path="/root")]
-    if spec.data_disk_subpath:
+    if spec.data_disk_pvc:
         volumes.append(
             client.V1Volume(
                 name="data-disk",
                 persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
-                    claim_name=JUICEFS_PVC_NAME
+                    claim_name=spec.data_disk_pvc
                 ),
             )
         )
-        mounts.append(
-            client.V1VolumeMount(
-                name="data-disk", mount_path="/root/data", sub_path=spec.data_disk_subpath
-            )
-        )
+        mounts.append(client.V1VolumeMount(name="data-disk", mount_path="/root/data"))
     return client.V1Pod(
         metadata=client.V1ObjectMeta(
             name=spec.name,
@@ -341,38 +329,6 @@ def build_instance_pod(spec: InstancePodSpec) -> "client.V1Pod":
                 )
             ],
             volumes=volumes,
-        ),
-    )
-
-
-def build_managed_job(
-    namespace: str,
-    job_name: str,
-    container: Any,
-    volumes: list[Any],
-    pod_labels: dict[str, str],
-) -> "client.V1Job":
-    """受管 Job 对象(wipe/quota 共用,纯构造)。hostUsers=false 显式写出:租户 ns 的准入策略
-    (superdl-tenant-pod-baseline)要求非 Kata Pod 必须带它,缺了 Job 会被建出而 Pod 永远被拒。"""
-    return client.V1Job(
-        metadata=client.V1ObjectMeta(
-            name=job_name,
-            namespace=namespace,
-            labels={MANAGED_LABEL: "true", **pod_labels},
-        ),
-        spec=client.V1JobSpec(
-            backoff_limit=1,
-            ttl_seconds_after_finished=3600,
-            template=client.V1PodTemplateSpec(
-                metadata=client.V1ObjectMeta(labels={MANAGED_LABEL: "true", **pod_labels}),
-                spec=client.V1PodSpec(
-                    restart_policy="Never",
-                    automount_service_account_token=False,
-                    host_users=False,
-                    containers=[container],
-                    volumes=volumes,
-                ),
-            ),
         ),
     )
 
@@ -443,7 +399,6 @@ class RealOrchestrator:
         self._ensure_default_netpol_sync(namespace)
         self._ensure_quota_sync(namespace)
         self._ensure_limit_range_sync(namespace)
-        self._ensure_juicefs_pvc_sync(namespace)
 
     def _ensure_tenant_rbac_sync(self, namespace: str) -> None:
         """租户 ns 内授予 tenant-mgr 的 secrets Role/RoleBinding(存量 ns 由 patch 收敛)。"""
@@ -633,20 +588,6 @@ class RealOrchestrator:
             lambda: self.core.create_namespaced_resource_quota(namespace, quota),
             lambda: self.core.patch_namespaced_resource_quota("tenant-quota", namespace, quota),
         )
-
-    def _ensure_juicefs_pvc_sync(self, namespace: str) -> None:
-        """每租户 ns 一只共享 JuiceFS PVC(数据盘 subPath 底座);容量为名义值,额度由目录配额管。"""
-        pvc = client.V1PersistentVolumeClaim(
-            metadata=client.V1ObjectMeta(
-                name=JUICEFS_PVC_NAME, namespace=namespace, labels={MANAGED_LABEL: "true"}
-            ),
-            spec=client.V1PersistentVolumeClaimSpec(
-                access_modes=["ReadWriteMany"],
-                storage_class_name=JUICEFS_STORAGE_CLASS,
-                resources=client.V1VolumeResourceRequirements(requests={"storage": "10Ti"}),
-            ),
-        )
-        _ignore(lambda: self.core.create_namespaced_persistent_volume_claim(namespace, pvc), 409)
 
     # ---------- instance ----------
 
@@ -1048,124 +989,73 @@ class RealOrchestrator:
                     ports.add(p.node_port)
         return ports
 
-    # ---------- 数据盘擦除 ----------
-
-    def _run_managed_job_sync(
-        self,
-        namespace: str,
-        job_name: str,
-        container: Any,
-        volumes: list[Any],
-        pod_labels: dict[str, str],
-    ) -> None:
-        """受管 Job 生命周期(wipe/quota 共用):已成功 → 清理返回;进行中 → 抛错待重试;
-        失败 → 删 Job 重建;不存在 → 创建并抛错等下轮。"""
-        existing: Any = _ignore(lambda: self.batch.read_namespaced_job(job_name, namespace), 404)
-        if existing is not None:
-            if (existing.status.succeeded or 0) >= 1:
-                self.batch.delete_namespaced_job(
-                    job_name, namespace, propagation_policy="Background"
-                )
-                return
-            if (existing.status.failed or 0) >= 1:
-                self.batch.delete_namespaced_job(
-                    job_name, namespace, propagation_policy="Background"
-                )
-                raise RuntimeError(f"job failed, recreated next retry: {job_name}")
-            raise RuntimeError(f"job still running: {job_name}")
-        job = build_managed_job(namespace, job_name, container, volumes, pod_labels)
-        _ignore(lambda: self.batch.create_namespaced_job(namespace, job), 409)
-        raise RuntimeError(f"job created, awaiting completion: {job_name}")
-
     @staticmethod
-    def batch_container(
-        name: str, image: str, command: list[str], env: list[Any], *, non_root: bool = False
-    ) -> Any:
-        """一次性 Job 容器基座(wipe/quota/prewarm 共用):资源声明 + 安全上下文;
-        non_root=True 走 platform_job_security_context,wipe 在租户 ns 保持 root。"""
+    def batch_container(name: str, image: str, command: list[str], env: list[Any]) -> Any:
+        """一次性 Job 容器基座(现只剩镜像预热):资源声明 + 非 root 安全上下文。
+        租户 ns 的 ResourceQuota 要求显式声明 request/limit。"""
         return client.V1Container(
             name=name,
             image=image,
             command=command,
             env=env,
-            # 租户 ns ResourceQuota 要求声明 request/limit
             resources=client.V1ResourceRequirements(
                 requests={"cpu": "10m", "memory": "16Mi", "ephemeral-storage": "16Mi"},
                 limits={"cpu": "100m", "memory": "64Mi", "ephemeral-storage": "64Mi"},
             ),
-            security_context=(
-                platform_job_security_context() if non_root else tenant_security_context()
-            ),
+            security_context=platform_job_security_context(),
         )
 
-    async def wipe_disk(self, namespace: str, subpath: str) -> None:
-        await self._run(self._wipe_disk_sync, namespace, subpath)
+    # ---------- 数据盘 ----------
 
-    def _wipe_disk_sync(self, namespace: str, subpath: str) -> None:
-        """租户 ns 内起 Job 挂 JuiceFS PVC 删除子目录(幂等,见 _run_managed_job_sync);
-        ns 不存在抛 NamespaceMissing。"""
-        _check_subpath(subpath)
-        if _ignore(lambda: self.core.read_namespace(namespace), 404) is None:
-            raise NamespaceMissing(namespace)
-        container = self.batch_container(
-            "wipe", WIPE_IMAGE, ["rm", "-rf", f"/data/{subpath}"], env=[]
+    async def ensure_data_disk(self, namespace: str, name: str, size_gb: int) -> None:
+        await self._run(self._ensure_data_disk_sync, namespace, name, size_gb)
+
+    @staticmethod
+    def _requested_gi(pvc: Any) -> int:
+        """PVC 已申领容量(GiB);非 Gi 单位或读不到按 0,促使调用方按目标值 patch。"""
+        spec = getattr(pvc, "spec", None)
+        res = getattr(spec, "resources", None) if spec else None
+        value = (getattr(res, "requests", None) or {}).get("storage") if res else None
+        if isinstance(value, str) and value.endswith("Gi") and value[:-2].isdigit():
+            return int(value[:-2])
+        return 0
+
+    def _ensure_data_disk_sync(self, namespace: str, name: str, size_gb: int) -> None:
+        """一盘一 PVC(幂等):PVC 容量即硬配额——CephFS CSI 建带配额的 subvolume,
+        不再起 CLI Job 下发。已存在且不足则扩容(SC 开 allowVolumeExpansion);缩容不做。"""
+        want = f"{size_gb}Gi"
+        existing: Any = _ignore(
+            lambda: self.core.read_namespaced_persistent_volume_claim(name, namespace), 404
         )
-        container.volume_mounts = [client.V1VolumeMount(name="juicefs", mount_path="/data")]
-        self._run_managed_job_sync(
-            namespace,
-            f"wipe-{subpath[-40:]}".lower(),
-            container,
-            volumes=[
-                client.V1Volume(
-                    name="juicefs",
-                    persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
-                        claim_name=JUICEFS_PVC_NAME
-                    ),
-                )
-            ],
-            pod_labels={},
+        if existing is None:
+            pvc = client.V1PersistentVolumeClaim(
+                metadata=client.V1ObjectMeta(
+                    name=name, namespace=namespace, labels={MANAGED_LABEL: "true"}
+                ),
+                spec=client.V1PersistentVolumeClaimSpec(
+                    # RWX:同一盘可先后被不同节点上的实例挂载
+                    access_modes=["ReadWriteMany"],
+                    storage_class_name=DATA_DISK_STORAGE_CLASS,
+                    resources=client.V1VolumeResourceRequirements(requests={"storage": want}),
+                ),
+            )
+            _ignore(
+                lambda: self.core.create_namespaced_persistent_volume_claim(namespace, pvc), 409
+            )
+            return
+        if self._requested_gi(existing) >= size_gb:
+            return
+        self.core.patch_namespaced_persistent_volume_claim(
+            name, namespace, {"spec": {"resources": {"requests": {"storage": want}}}}
         )
 
-    # ---------- JuiceFS 目录配额(平台 ns,纯元数据操作,不挂卷) ----------
+    async def delete_data_disk(self, namespace: str, name: str) -> None:
+        await self._run(self._delete_data_disk_sync, namespace, name)
 
-    def _juicefs_fs_base_sync(self, namespace: str) -> str:
-        """租户共享 PVC 在 JuiceFS 文件系统根下的子目录名(PV volumeAttributes.subPath,默认 PV 名);
-        配额 --path 必须带这层前缀。"""
-        pvc: Any = self.core.read_namespaced_persistent_volume_claim(JUICEFS_PVC_NAME, namespace)
-        pv_name = pvc.spec.volume_name if pvc.spec else None
-        if not pv_name:
-            raise RuntimeError(f"pvc {namespace}/{JUICEFS_PVC_NAME} not bound yet")
-        pv: Any = self.core.read_persistent_volume(pv_name)
-        attrs = (pv.spec.csi.volume_attributes if pv.spec and pv.spec.csi else None) or {}
-        base = attrs.get("subPath") or pv_name
-        _check_subpath(base)
-        return base
-
-    async def set_disk_quota(self, namespace: str, subpath: str, capacity_gb: int) -> None:
-        await self._run(self._disk_quota_sync, namespace, subpath, capacity_gb, True)
-
-    async def delete_disk_quota(self, namespace: str, subpath: str) -> None:
-        await self._run(self._disk_quota_sync, namespace, subpath, 0, False)
-
-    def _disk_quota_sync(
-        self, namespace: str, subpath: str, capacity_gb: int, is_set: bool
-    ) -> None:
-        """平台 ns 起 juicefs CLI Job 下发/摘除目录配额(幂等,见 _run_managed_job_sync)。
-        metaurl 经 secretKeyRef 注入;subpath/capacity 走 env;密码拆到 META_PASSWORD,不进 argv。"""
-        _check_subpath(subpath)
-        fs_base = self._juicefs_fs_base_sync(namespace)
-        container = build_disk_quota_container(
-            self.settings.juicefs_cli_image, fs_base, subpath, capacity_gb, is_set
-        )
-        action = "set" if is_set else "del"
-        self._run_managed_job_sync(
-            self.settings.k8s_platform_namespace,
-            f"quota-{action}-{subpath[-36:]}".lower(),
-            container,
-            volumes=[],
-            # NetworkPolicy jobs-egress 按此标签放行 PG 出向
-            pod_labels={"app": "superdl-disk-quota"},
-        )
+    def _delete_data_disk_sync(self, namespace: str, name: str) -> None:
+        """删数据盘 PVC;SC 的 reclaimPolicy=Delete,CSI 随之销毁 subvolume。
+        PVC 不存在或租户 ns 已消失都视为成功(删盘链路幂等)。"""
+        _ignore(lambda: self.core.delete_namespaced_persistent_volume_claim(name, namespace), 404)
 
     # ---------- 节点 ----------
 
@@ -1542,46 +1432,6 @@ class RealOrchestrator:
         )
 
 
-def build_disk_quota_container(
-    image: str, fs_base: str, subpath: str, capacity_gb: int, is_set: bool
-) -> Any:
-    """配额 Job 容器(纯构造):metaurl 经 secretKeyRef 注入;subpath/capacity 走 env;
-    密码拆到 META_PASSWORD,不进 argv。"""
-    # 密码拆分在容器内 shell 完成;metaurl 密码段约定不含 @
-    split = (
-        'export META_PASSWORD="$(printf \'%s\' "$JUICEFS_METAURL"'
-        " | sed -n 's|^[^:]*://[^:]*:\\([^@]*\\)@.*|\\1|p')\"; "
-        'METAURL_NOPASS="$(printf \'%s\' "$JUICEFS_METAURL"'
-        " | sed 's|^\\([^:]*://[^:]*\\):[^@]*@|\\1@|')\"; "
-    )
-    if is_set:
-        script = (
-            split + 'juicefs quota set "$METAURL_NOPASS" --path "/$QUOTA_BASE/$QUOTA_SUBPATH"'
-            ' --capacity "$QUOTA_CAPACITY_GB" --create'
-        )
-    else:
-        # 删盘链路:无配额记录不算失败
-        script = (
-            split + 'juicefs quota delete "$METAURL_NOPASS" --path "/$QUOTA_BASE/$QUOTA_SUBPATH"'
-            " || true"
-        )
-    container = RealOrchestrator.batch_container(
-        "quota", image, ["sh", "-c", script], env=[], non_root=True
-    )
-    container.env = [
-        client.V1EnvVar(
-            name="JUICEFS_METAURL",
-            value_from=client.V1EnvVarSource(
-                secret_key_ref=client.V1SecretKeySelector(name="superdl-db", key="juicefs-metaurl")
-            ),
-        ),
-        client.V1EnvVar(name="QUOTA_BASE", value=fs_base),
-        client.V1EnvVar(name="QUOTA_SUBPATH", value=subpath),
-        client.V1EnvVar(name="QUOTA_CAPACITY_GB", value=str(capacity_gb)),
-    ]
-    return container
-
-
 def build_prewarm_job(
     platform_namespace: str,
     job_name: str,
@@ -1592,7 +1442,7 @@ def build_prewarm_job(
     """预热 Job 对象(纯构造):nodeName 定点、纯拉取触发(命令为 true)、restricted 非 root 上下文;
     镜像缺 sh 由巡检记 failed。"""
     container = RealOrchestrator.batch_container(
-        "prewarm", image_ref, ["/bin/sh", "-c", "true"], env=[], non_root=True
+        "prewarm", image_ref, ["/bin/sh", "-c", "true"], []
     )
     # IfNotPresent;换版本靠目录 image_ref 钉 digest,见 deploy/instance-images/README.md
     container.image_pull_policy = "IfNotPresent"

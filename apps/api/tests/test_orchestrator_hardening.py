@@ -182,8 +182,8 @@ class TestFailedRecovery:
         assert ("failed", "stopped") in chain
         assert ("stopped", "starting") in chain
 
-    async def test_start_from_failed_rejects_unsynced_disk(self, client, sm, fake):
-        """failed 恢复开机走挂载门禁:数据盘 quota_synced=false → 409,实例留在 failed。"""
+    async def test_start_from_failed_rejects_unprovisioned_disk(self, client, sm, fake):
+        """failed 恢复开机走挂载门禁:数据盘 provisioned=false → 409,实例留在 failed。"""
         headers, user_id, key_id = await funded_user(client, sm, "13900000109", "500.00")
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
@@ -207,16 +207,16 @@ class TestFailedRecovery:
         fake.kill_pod(ns, uuid)
         await reconcile_once(sm)
         assert (await get_instance(client, headers, uuid))["status"] == "failed"
-        # 扩容:quota_synced 回落 false(不 drain)
+        # 扩容:provisioned 回落 false(不 drain)
         resp = await client.patch(
             f"/api/v1/disks/{disk['uuid']}", json={"size_gb": 200}, headers=headers
         )
         assert resp.status_code == 200, resp.text
-        assert resp.json()["quota_synced"] is False
+        assert resp.json()["provisioned"] is False
 
         resp = await client.post(f"/api/v1/instances/{uuid}/start", headers=headers)
         assert resp.status_code == 409, resp.text
-        assert resp.json()["message_key"] == "disks.quotaNotSynced"
+        assert resp.json()["message_key"] == "disks.notProvisioned"
         assert (await get_instance(client, headers, uuid))["status"] == "failed"
 
     async def test_release_from_stuck_stopping(self, client, sm, fake):
@@ -400,20 +400,25 @@ class TestLeakReclaim:
         assert (ns, uuid) not in fake.pods
         assert (await get_instance(client, headers, uuid))["status"] == "stopped"
 
-    async def test_wipe_job_pod_not_counted_in_breaker_ratio(self, client, sm, fake):
-        """wipe Job Pod 不进 unknown 占比(靠 job-name 豁免),真泄漏照删。"""
+    async def test_job_pod_not_counted_in_breaker_ratio(self, client, sm, fake):
+        """带 job-name 的 Pod 不进 unknown 占比(靠标签豁免),真泄漏照删。
+        挂了说明:平台自己起的 Job 子孙 Pod 会被当泄漏强删,或把熔断顶穿放过真泄漏。"""
+        from app.core.k8s.base import JOB_NAME_LABEL
+        from app.core.k8s.fake import MANAGED_LABEL
+
         _headers, uuid, user_id = await provision_running(client, sm, fake, "13900000114")
         ns = f"tenant-{user_id}"
         spec = fake.pods[(ns, uuid)].spec
-        fake.auto_wipe = False
-        with pytest.raises(RuntimeError, match="wipe in progress"):
-            await fake.wipe_disk(ns, f"disk-{uuid}")  # 登记 wipe Job Pod(对齐 real 创建后抛错)
+        fake.job_pods[(ns, "some-job-pod")] = {
+            MANAGED_LABEL: "true",
+            JOB_NAME_LABEL: "some-job",
+        }
         fake.inject_leaked_pod(ns, "leaked000000000000000000", spec)  # DB 无记录的真泄漏
         counts = await reconcile_once(sm)
-        assert counts["leaked"] == 1  # 熔断未触发(若把 wipe Pod 计入,2/3 > 50% 会熔断放行)
+        assert counts["leaked"] == 1  # 熔断未触发(若把 Job Pod 计入,2/3 > 50% 会熔断放行)
         assert counts["job_pod_skipped"] == 1
-        assert len(fake.job_pods) == 1  # wipe Pod 完好
-        counts = await reconcile_once(sm)  # 再来一轮:wipe Pod 仍不被当泄漏强删
+        assert len(fake.job_pods) == 1  # Job Pod 完好
+        counts = await reconcile_once(sm)  # 再来一轮:仍不被当泄漏强删
         assert counts["leaked"] == 0 and len(fake.job_pods) == 1
 
 
@@ -703,17 +708,12 @@ class TestDiskArrearsHardening:
             assert d2.status == "grace"
             assert d2.grace_started_at == first_grace_at
 
-    async def test_wipe_namespace_missing_is_done(self, client, sm, fake, monkeypatch):
-        """租户 ns 不存在时擦盘视为完成。"""
-
-        from app.core.k8s import NamespaceMissing
-
-        async def raise404(namespace, subpath):
-            raise NamespaceMissing(namespace)
-
-        monkeypatch.setattr(fake, "wipe_disk", raise404)
+    async def test_delete_done_when_pvc_already_gone(self, client, sm, fake):
+        """PVC 已不在(或租户 ns 已消失)时删盘仍走完:删除链路幂等,不会卡在 deleting。"""
         headers, _user_id, _key = await funded_user(client, sm, "13900000134")
         disk = await create_disk(client, headers)
+        await drain(sm)
+        fake.data_disks.clear()  # 模拟 PVC 已被外部清掉
         await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
         await drain(sm)
         assert (await client.get("/api/v1/disks", headers=headers)).json() == []

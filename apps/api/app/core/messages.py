@@ -197,7 +197,7 @@ MESSAGES: dict[str, str] = {
     "disks.inUseDelete": "数据盘挂载中,请先释放对应实例",
     "disks.mountedElsewhere": "数据盘已挂载到其他实例",
     "disks.notMountable": "数据盘当前状态不可挂载",
-    "disks.quotaNotSynced": "存储配额同步中,请稍后重试;长时间未恢复请联系客服",
+    "disks.notProvisioned": "数据盘开通中,请稍后重试;长时间未恢复请联系客服",
     "disks.shrinkForbidden": "数据盘只支持扩容,不支持缩容",
     "disks.sizeMax": "容量上限 {max} GB",
     "disks.sizeRange": "容量须在 {min}~{max} GB 之间",

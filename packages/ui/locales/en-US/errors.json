@@ -146,7 +146,7 @@
     "inUseDelete": "The data disk is mounted — release the instance first",
     "mountedElsewhere": "The data disk is mounted on another instance",
     "notMountable": "The data disk cannot be mounted in its current state",
-    "quotaNotSynced": "Storage quota is still syncing — retry shortly; contact support if it persists",
+    "notProvisioned": "Data disk is still being provisioned — retry shortly; contact support if it persists",
     "realNameRequired": "Regulations require identity verification before provisioning storage — complete it under Settings · Identity Verification first",
     "shrinkForbidden": "Data disks can only be expanded, not shrunk",
     "sizeMax": "Maximum size is {{max}} GB",

@@ -4,7 +4,7 @@
 #   superdl-tenant-mgr → 租户资源全生命周期(instance.* + reconciler)
 #   superdl-node-mgr   → nodes:patch(cordon/巡检回写标签)+ nodes:delete(退役)+ 只读探测
 #   superdl-prewarm    → superdl ns 预热 Job + nodes 只读
-#   superdl-disk-ops   → 配额下发/擦除 Job(superdl + tenant ns)+ PVC/PV 只读(取配额路径前缀)
+#   superdl-disk-ops   → 租户 ns 内数据盘 PVC 的建/扩/删(容量即配额)
 #
 # 写权限只能给 ClusterRole(tenant-* 动态创建),可达面由 deploy/cluster/admission/tenant-restrictions.yaml 收窄;
 # ns 内 pods:create / batch/jobs:create 等价于该 ns 的 secrets:get,由策略⑤⑥ 兜。本文件动词面 + 策略①③⑤⑥⑦ 才是完整边界
@@ -186,27 +186,17 @@ subjects:
     name: superdl-prewarm
     namespace: superdl
 ---
-# disk-ops:配额下发(superdl ns juicefs CLI Job)与数据盘擦除(tenant ns busybox Job)
+# disk-ops:租户 ns 内数据盘 PVC 的建/扩/删;PVC 容量即硬配额,无配额下发作业
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: superdl-disk-ops
 rules:
-  - apiGroups: ["batch"]
-    resources: ["jobs"]
-    verbs: ["get", "list", "create", "delete"]
-  # 配额 --path 的前缀取自租户共享 PVC 绑定的 PV 的 volumeAttributes.subPath
-  # (app/core/k8s/real.py _juicefs_fs_base_sync 先读 PVC 拿 volumeName,再读 PV);只读
+  # 一盘一 PVC:建(disk.provision)、扩(同一 handler patch 容量)、删(disk.deprovision)。
+  # 不再需要 batch/jobs 与 persistentvolumes——目录配额与擦除 Job 随一盘一 PVC 取消
   - apiGroups: [""]
     resources: ["persistentvolumeclaims"]
-    verbs: ["get"]
-  - apiGroups: [""]
-    resources: ["persistentvolumes"]
-    verbs: ["get"]
-  # 擦盘前判租户 ns 是否还在(real.py _wipe_disk_sync 的 NamespaceMissing 分支);只读
-  - apiGroups: [""]
-    resources: ["namespaces"]
-    verbs: ["get"]
+    verbs: ["get", "create", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
