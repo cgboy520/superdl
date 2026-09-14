@@ -5,3 +5,6 @@ export const POOL_LABEL_KEY = {
   mig: "nodes.poolMig",
   cpu: "nodes.poolCpu",
 } as const;
+
+/** 池标识联合;新增池只改 POOL_LABEL_KEY 一处。 */
+export type Pool = keyof typeof POOL_LABEL_KEY;

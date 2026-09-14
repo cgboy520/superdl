@@ -10,7 +10,7 @@ import { useApiErrorText } from "@superdl/ui";
 import { useFormDraft } from "@superdl/ui";
 
 import { type EnrollmentCommandOut, useCreateEnrollment } from "../../api";
-import { POOL_LABEL_KEY } from "../../lib/pools";
+import { POOL_LABEL_KEY, type Pool } from "../../lib/pools";
 
 /** 命令展示(创建/重新生成共用):令牌只显示这一次 */
 export function CommandPanel({ result }: { result: EnrollmentCommandOut }) {
@@ -41,7 +41,7 @@ export function CommandPanel({ result }: { result: EnrollmentCommandOut }) {
 }
 
 export interface EnrollFormValues {
-  pool: "kata" | "hami" | "mig";
+  pool: Pool;
   hostname: string;
   note?: string;
   nvme_devices?: string[];
