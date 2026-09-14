@@ -42,6 +42,7 @@ import {
   revenueReportApiAdminV1ReportsRevenueGet,
   adminCreateAdjustmentApiAdminV1AdjustmentsPost,
   adminCordonNodeApiAdminV1NodesNodeNameCordonPost,
+  adminDecommissionNodeApiAdminV1NodesNodeNameDecommissionPost,
   adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost,
   adminCreateImageApiAdminV1ImagesPost,
   adminCreateSkuApiAdminV1SkusPost,
@@ -53,6 +54,7 @@ import {
   adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost,
   adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost,
   adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost,
+  adminSwitchNodePoolApiAdminV1NodesNodeNameSwitchPoolPost,
   adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost,
   adminUpdateImageApiAdminV1ImagesImageIdPatch,
   adminForceStopApiAdminV1InstancesUuidForceStopPost,
@@ -151,6 +153,8 @@ import type {
   ImageDeleteRequest,
   ImageUpdate,
   NodeCordonRequest,
+  NodeDecommissionRequest,
+  NodeSwitchPoolRequest,
   OutboxRetryRequest,
   OrderBackfillRequest,
   OutboxDiscardRequest,
@@ -189,6 +193,7 @@ import { downloadCsvChecked, POLL } from "@superdl/ui";
 export { isApiError } from "@superdl/api-client";
 export type {
   EnrollmentCommandOut,
+  NodeSwitchPoolOut,
   AdminInstanceOut,
   AdminServiceOut,
   NodeMetricsOut,
@@ -254,6 +259,8 @@ export const adminKeys = {
   tickets: { all: ["admin", "tickets"], detail: (id: number | null) => ["admin", "ticket", id] },
   services: ["admin", "services"],
   nodes: ["admin", "nodes"],
+  // 前缀匹配:useEnrollments 的键是 ["admin","node-enrollments",active]
+  enrollments: ["admin", "node-enrollments"],
   skus: ["admin", "skus"],
 };
 
@@ -749,6 +756,26 @@ export const useCordonNode = adminMutation((v: { nodeName: string; on: boolean; 
   v.on
     ? adminCordonNodeApiAdminV1NodesNodeNameCordonPost(v.nodeName, v.data)
     : adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost(v.nodeName, v.data),
+);
+
+/** 切池:池标签经 outbox 异步改;响应含只显示一次的令牌与带 --force 的重跑命令。 */
+export const useSwitchNodePool = adminMutation(
+  (v: { nodeName: string; data: NodeSwitchPoolRequest; idempotencyKey?: string }) =>
+    adminSwitchNodePoolApiAdminV1NodesNodeNameSwitchPoolPost(
+      v.nodeName,
+      v.data,
+      v.idempotencyKey ? { "Idempotency-Key": v.idempotencyKey } : undefined,
+    ),
+);
+
+/** 退役(不可逆);节点上有未释放实例时后端 409,force 才放行。 */
+export const useDecommissionNode = adminMutation(
+  (v: { nodeName: string; data: NodeDecommissionRequest; force?: boolean }) =>
+    adminDecommissionNodeApiAdminV1NodesNodeNameDecommissionPost(
+      v.nodeName,
+      v.data,
+      v.force ? { force: true } : undefined,
+    ),
 );
 
 export const useCreateImage = adminMutation((v: { data: ImageCreate }) => adminCreateImageApiAdminV1ImagesPost(v.data));

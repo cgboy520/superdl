@@ -1,4 +1,4 @@
-/** 节点抽屉(?node= 入 URL 可直链):EntityHeader(名称 / 状态 / 池 / GPU / 驱动 / CUDA / 心跳 + 操作)+ 时间范围 + 每卡热力格(-GpuGrid)+ 节点级曲线(-NodeMetricsPanel)。
+/** 节点抽屉(?node= 入 URL 可直链):EntityHeader(名称 / 状态 / 池 / GPU / 实例 / 驱动 / CUDA / 心跳 + 操作)+ 时间范围 + 每卡热力格(-GpuGrid)+ 节点级曲线(-NodeMetricsPanel)。
  *  NodeActions / PoolTag / GpuModelCell / LastSeenCell 与节点表列共用一份实现。 */
 
 import { Link } from "@tanstack/react-router";
@@ -6,6 +6,7 @@ import { Card, Drawer, Segmented, Space, Tag, Tooltip } from "antd";
 import dayjs from "dayjs";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 
 import { drawerWidth, fontSize, fontWeight, formatDateTime, nodeStatusMap, space } from "@superdl/ui";
 import { EntityHeader, GatedButton, RowActions, StatusTag, type KeyValueItem } from "@superdl/ui/components";
@@ -22,8 +23,17 @@ export function isUnlabeled(n: NodeRow): boolean {
   return n.unlabeled || !n.pool_label;
 }
 
+/** 切池进行中:期望池非空且与自声明池不同(标签还没收敛到位)。 */
+export function isSwitching(n: NodeRow): boolean {
+  return !!n.desired_pool && n.desired_pool !== n.pool_label;
+}
+
+/** 切池中显示「旧 → 新」,未打标红标,其余青标。 */
 export function PoolTag({ node }: { node: NodeRow }) {
   const { t } = useTranslation();
+  if (isSwitching(node)) {
+    return <Tag color="processing">{`${node.pool_label || "—"} → ${node.desired_pool}`}</Tag>;
+  }
   return isUnlabeled(node) ? (
     <Tag color="red">{t("nodes.unlabeledTag")}</Tag>
   ) : (
@@ -48,6 +58,18 @@ export function GpuModelCell({ node }: { node: NodeRow }) {
   );
 }
 
+/** 未释放实例数(含已关机);>0 链到「租户与实例 › 实例」按节点过滤。
+ *  与「已用」列各表一义:那是 GPU 卡当量,超卖池上与实例条数并不相等。 */
+export function InstancesCell({ node }: { node: NodeRow }) {
+  const n = activeInstances(node);
+  if (n === 0) return 0;
+  return (
+    <Link to="/tenants" search={{ tab: "instances", inode: node.name }}>
+      {n}
+    </Link>
+  );
+}
+
 /** 相对时间,hover 给绝对时间;空 = 尚无台账行。 */
 export function LastSeenCell({ value }: { value: string | null | undefined }) {
   if (!value) return "—";
@@ -58,20 +80,40 @@ export function LastSeenCell({ value }: { value: string | null | undefined }) {
   );
 }
 
-/** 封锁 / 解封(ReasonAction;解封是恢复方向,只填原因不做二次确认)+ drain 占位(可见但禁用 + tooltip);表格行 small、抽屉头 middle。 */
+/** 节点上未释放实例数(含已关机):切池与退役的共同前置。 */
+export function activeInstances(n: NodeRow): number {
+  return n.active_instances ?? 0;
+}
+
+/** 切池 / 退役的前置不满足时的灰置原因;undefined = 可用。 */
+function blockedReason(node: NodeRow, writable: boolean, t: TFunction): string | undefined {
+  if (!writable) return t("nodes.readonlyNoOp");
+  if (activeInstances(node) > 0) return t("nodes.nodeBusy", { count: activeInstances(node) });
+  return undefined;
+}
+
+/** 封锁 / 解封(ReasonAction;解封是恢复方向,只填原因不做二次确认)+ 切换池 + 更多(驱逐占位 / 退役);
+ *  表格行 small、抽屉头 middle。 */
 export function NodeActions({
   node,
   writable,
   onCordon,
+  onSwitchPool,
+  onDecommission,
   size = "small",
 }: {
   node: NodeRow;
   writable: boolean;
   onCordon: CordonFn;
+  onSwitchPool: (node: NodeRow) => void;
+  onDecommission: (node: NodeRow) => void;
   size?: "small" | "middle";
 }) {
   const { t } = useTranslation();
   const cordoned = node.status === "Cordoned";
+  const blocked = blockedReason(node, writable, t);
+  // 切池只在 GPU 三池之间;无卡机与未打标节点没有可切目标
+  const switchable = !isUnlabeled(node) && node.gpu_total > 0 && node.pool_label !== "cpu";
   return (
     <RowActions
       size={size}
@@ -94,19 +136,47 @@ export function NodeActions({
         />
       }
       secondary={
-        <GatedButton size={size} reason={t("nodes.drainDeferred")}>
-          {t("nodes.drainBtn")}
+        <GatedButton
+          size={size}
+          reason={switchable ? blocked : t("nodes.switchPoolUnavailable")}
+          onClick={() => onSwitchPool(node)}
+        >
+          {t("nodes.switchPoolBtn")}
         </GatedButton>
       }
+      more={[
+        { key: "drain", label: t("nodes.drainBtn"), reason: t("nodes.drainDeferred"), onClick: () => undefined },
+        {
+          key: "decommission",
+          label: t("nodes.decommissionBtn"),
+          danger: true,
+          // 有实例时不灰置:节点已救不回来时要能强制退役,由确认框里的红色出口承担
+          reason: writable ? undefined : t("nodes.readonlyNoOp"),
+          onClick: () => onDecommission(node),
+        },
+      ]}
     />
   );
 }
 
-function NodeHeader({ node, writable, onCordon }: { node: NodeRow; writable: boolean; onCordon: CordonFn }) {
+function NodeHeader({
+  node,
+  writable,
+  onCordon,
+  onSwitchPool,
+  onDecommission,
+}: {
+  node: NodeRow;
+  writable: boolean;
+  onCordon: CordonFn;
+  onSwitchPool: (node: NodeRow) => void;
+  onDecommission: (node: NodeRow) => void;
+}) {
   const { t } = useTranslation();
   const meta: KeyValueItem[] = [
     { label: t("nodes.colGpu"), value: <GpuModelCell node={node} /> },
     { label: t("nodes.colVram"), value: node.vram_gb ? `${node.vram_gb} G` : null },
+    { label: t("nodes.colInstances"), value: <InstancesCell node={node} /> },
     {
       label: t("nodes.colUsed"),
       // 已用卡数链到「租户与实例 › 实例」按节点过滤
@@ -133,11 +203,20 @@ function NodeHeader({ node, writable, onCordon }: { node: NodeRow; writable: boo
         size="drawer"
         name={node.name}
         status={<StatusTag map={nodeStatusMap} value={node.status} variant="badge" icon />}
-        subtitle={isUnlabeled(node) ? undefined : node.pool_label}
-        // 池标签只在未标注时以红标提示;已标注的池进副标题
-        tags={isUnlabeled(node) ? <PoolTag node={node} /> : undefined}
+        subtitle={isUnlabeled(node) || isSwitching(node) ? undefined : node.pool_label}
+        // 池标签在未标注或切池中以标签提示;稳态的池进副标题
+        tags={isUnlabeled(node) || isSwitching(node) ? <PoolTag node={node} /> : undefined}
         meta={meta}
-        actions={<NodeActions node={node} writable={writable} onCordon={onCordon} size="middle" />}
+        actions={
+          <NodeActions
+            node={node}
+            writable={writable}
+            onCordon={onCordon}
+            onSwitchPool={onSwitchPool}
+            onDecommission={onDecommission}
+            size="middle"
+          />
+        }
       />
     </div>
   );
@@ -172,12 +251,16 @@ export function NodeDrawer({
   onClose,
   writable,
   onCordon,
+  onSwitchPool,
+  onDecommission,
 }: {
   /** undefined = 关闭 */
   node: NodeRow | undefined;
   onClose: () => void;
   writable: boolean;
   onCordon: CordonFn;
+  onSwitchPool: (node: NodeRow) => void;
+  onDecommission: (node: NodeRow) => void;
 }) {
   return (
     <Drawer
@@ -187,7 +270,17 @@ export function NodeDrawer({
       size={drawerWidth.lg}
       mask={{ closable: true }}
       destroyOnHidden
-      title={node && <NodeHeader node={node} writable={writable} onCordon={onCordon} />}
+      title={
+        node && (
+          <NodeHeader
+            node={node}
+            writable={writable}
+            onCordon={onCordon}
+            onSwitchPool={onSwitchPool}
+            onDecommission={onDecommission}
+          />
+        )
+      }
     >
       {node && <NodeDrawerBody node={node} />}
     </Drawer>

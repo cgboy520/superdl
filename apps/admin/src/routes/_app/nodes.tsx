@@ -1,4 +1,4 @@
-/** 节点与 GPU:待加入节点卡(-EnrollmentsCard)+ FilterBar(名称 / 池 / 状态,入 URL)+ 节点台账(添加节点 -AddNodeModal);点行 / 告警深链 ?node= 打开右侧节点抽屉(-NodeDrawer:热力格 + 指标曲线)。 */
+/** 节点与 GPU:待加入节点卡(-EnrollmentsCard)+ FilterBar(名称 / 池 / 状态,入 URL)+ 节点台账(添加节点 -AddNodeModal、切换池 -SwitchPoolModal、退役 L3 确认);点行 / 告警深链 ?node= 打开右侧节点抽屉(-NodeDrawer:热力格 + 指标曲线)。 */
 
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -25,24 +25,36 @@ import {
   PageContainer,
   TableErrorEmpty,
   StatusTag,
+  TypeConfirmModal,
 } from "@superdl/ui/components";
 import { useApiErrorText } from "@superdl/ui";
 
-import { adminKeys, type NodeRow, isApiError, useCordonNode, useNodes, usePortPool } from "../../api";
+import {
+  adminKeys,
+  type NodeRow,
+  isApiError,
+  useCordonNode,
+  useDecommissionNode,
+  useNodes,
+  usePortPool,
+} from "../../api";
 import { BulkBar, runBulk } from "../../components/BulkBar";
 import { ReasonAction } from "../../components/ReasonAction";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 import { AddNodeModal } from "./-AddNodeModal";
 import { EnrollmentsCard } from "./-EnrollmentsCard";
 import {
+  activeInstances,
   type CordonFn,
   GpuModelCell,
+  InstancesCell,
   isUnlabeled,
   LastSeenCell,
   NodeActions,
   NodeDrawer,
   PoolTag,
 } from "./-NodeDrawer";
+import { SwitchPoolModal } from "./-SwitchPoolModal";
 
 const NODE_STATUSES = ["Ready", "NotReady", "Cordoned", "Missing"] as const;
 type NodeStatus = (typeof NODE_STATUSES)[number];
@@ -169,6 +181,38 @@ function NodesPage() {
   const cordonNode: CordonFn = async (nodeName, on, reason) => {
     await cordon.mutateAsync({ nodeName, on, data: { reason } });
   };
+  // 切池:池标签经 outbox 改,回执给重跑命令;弹窗自持表单与二次确认
+  const [switching, setSwitching] = useState<NodeRow | undefined>();
+  const refreshNodes = useCallback(() => {
+    void qc.invalidateQueries({ queryKey: adminKeys.nodes });
+    void qc.invalidateQueries({ queryKey: adminKeys.enrollments });
+    cordonTimer.current = setTimeout(() => void qc.invalidateQueries({ queryKey: adminKeys.nodes }), 3_000);
+  }, [qc]);
+  // 退役:L3(键入节点名 + 勾选 + 必填原因);有实例时后端 409,确认框给强制出口
+  const [retiring, setRetiring] = useState<NodeRow | undefined>();
+  const [retireReason, setRetireReason] = useState("");
+  const [retireForce, setRetireForce] = useState(false);
+  const decommission = useDecommissionNode({
+    mutation: {
+      onSuccess: (r) => {
+        message.success(t("nodes.decommissionSubmitted", { count: r.revoked_enrollments }));
+        setRetiring(undefined);
+        setRetireReason("");
+        setRetireForce(false);
+        refreshNodes();
+      },
+      onError: (e) => {
+        // 有未释放实例:不是操作失败,是前置没过 —— 就地给强制出口
+        if (isApiError(e) && e.status === 409) setRetireForce(true);
+        message.error(errText(e, t("common.actionFailed", { action: t("nodes.decommissionTitle") })));
+      },
+    },
+  });
+  const openRetire = useCallback((n: NodeRow) => {
+    setRetiring(n);
+    setRetireReason("");
+    setRetireForce(false);
+  }, []);
   // 批量 cordon / uncordon:一条原因作用于全部所选,逐条并发
   const [bulkSelected, setBulkSelected] = useState<string[]>([]);
   const bulkCordon = async (on: boolean, reason: string) => {
@@ -374,6 +418,13 @@ function NodesPage() {
                   v
                 ),
             },
+            {
+              title: t("nodes.colInstances"),
+              dataIndex: "active_instances",
+              align: "right",
+              sorter: (a, b) => activeInstances(a) - activeInstances(b),
+              render: (_, r) => <InstancesCell node={r} />,
+            },
             { title: t("nodes.colDriver"), render: (_, r) => r.driver_version || "—" },
             { title: "CUDA", render: (_, r) => r.cuda_version || "—" },
             { title: t("nodes.colCpu"), align: "right", render: (_, r) => t("nodes.coreCount", { count: r.vcpu }) },
@@ -398,15 +449,79 @@ function NodesPage() {
             },
             {
               title: t("nodes.colActions"),
-              width: 170,
+              width: 230,
               fixed: "right",
-              render: (_, r) => <NodeActions node={r} writable={writable} onCordon={cordonNode} />,
+              render: (_, r) => (
+                <NodeActions
+                  node={r}
+                  writable={writable}
+                  onCordon={cordonNode}
+                  onSwitchPool={setSwitching}
+                  onDecommission={openRetire}
+                />
+              ),
             },
           ]}
         />
       </Card>
       <AddNodeModal open={addOpen} onClose={() => setAddOpen(false)} />
-      <NodeDrawer node={node} onClose={closeNode} writable={writable} onCordon={cordonNode} />
+      <SwitchPoolModal node={switching} onClose={() => setSwitching(undefined)} onDone={refreshNodes} />
+      {retiring && (
+        <TypeConfirmModal
+          open
+          title={t("nodes.decommissionTitle")}
+          targetName={retiring.name}
+          body={
+            <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
+              <span>{t("nodes.decommissionBody", { name: retiring.name })}</span>
+              <span>{t("nodes.decommissionBoundary")}</span>
+              {activeInstances(retiring) > 0 && (
+                <Alert
+                  type="error"
+                  showIcon
+                  title={t("nodes.nodeBusy", { count: activeInstances(retiring) })}
+                  description={t("nodes.decommissionForceHint")}
+                />
+              )}
+              <Input.TextArea
+                rows={2}
+                maxLength={200}
+                showCount
+                value={retireReason}
+                onChange={(e) => setRetireReason(e.target.value)}
+                placeholder={t("common.reasonPlaceholder")}
+                aria-label={t("common.reasonLabel")}
+              />
+            </Space>
+          }
+          checkboxLabel={t("nodes.decommissionAck")}
+          confirmLabel={activeInstances(retiring) > 0 ? t("nodes.decommissionForce") : t("nodes.decommissionBtn")}
+          cancelLabel={t("common.cancel", { ns: "shared" })}
+          loading={decommission.isPending}
+          extraDisabled={retireReason.trim().length < 2}
+          onConfirm={() =>
+            decommission.mutate({
+              nodeName: retiring.name,
+              data: { reason: retireReason.trim() },
+              // 有实例时必须显式强制:前端不替运维决定,红色按钮文案已改成「强制退役」
+              force: retireForce || activeInstances(retiring) > 0,
+            })
+          }
+          onCancel={() => {
+            setRetiring(undefined);
+            setRetireReason("");
+            setRetireForce(false);
+          }}
+        />
+      )}
+      <NodeDrawer
+        node={node}
+        onClose={closeNode}
+        writable={writable}
+        onCordon={cordonNode}
+        onSwitchPool={setSwitching}
+        onDecommission={openRetire}
+      />
     </PageContainer>
   );
 }
