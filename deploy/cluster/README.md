@@ -115,7 +115,7 @@ kubectl label nodes -l node-role.kubernetes.io/control-plane \
    - gpu-operator 关掉 toolkit(宿主 toolkit 由 node-join 装、k3s 自行探测生成 RuntimeClass nvidia)。`nvidia.com/gpu.count` 由 gpu-operator 自带的 GFD 提供。
    - kps / Loki 精简(盘紧可在 `environments/light.yaml` 关掉日志栈);开了 ServiceMonitor 的 release 必须 `needs: [monitoring/kube-prometheus-stack]`。
    - Envoy Gateway 控制面降到 1 副本并关掉 PDB。
-   - Cilium 同装并接管 kube-proxy;CNI 路径按 k3s 的 containerd 改、`k8sServiceHost` 填 server 实 IP(`values/light/cilium-light.yaml`)。
+   - Cilium 同装并接管 kube-proxy;CNI 路径按 k3s 的 containerd 改、`k8sServiceHost` 填 server 实 IP、北向 LoadBalancer 仍归 k3s ServiceLB(`values/light/cilium-light.yaml`)。
    - acme-dns 不装;租户 Jupyter 泛域名证书由现成通配证书灌成 `superdl/superdl-jupyter-wildcard-tls`。
    - **TopoLVM 必开**(VG `superdl-nvme` 由 node-join.sh 建出);**JuiceFS 必开**(数据盘),对象存储与元数据库见「前置检查」。
 ### 给已有集群换 CNI(flannel → Cilium)
