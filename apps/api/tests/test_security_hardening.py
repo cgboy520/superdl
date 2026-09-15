@@ -554,6 +554,13 @@ class TestSecurityHeaders:
         resp = await client.get("/docs")
         assert "content-security-policy" not in resp.headers
 
+    async def test_api_and_docs_responses_are_no_store(self, client: AsyncClient):
+        """API / 指标 / 文档响应带 no-store,CDN 不得缓存;健康探针不加。"""
+        for path in ("/api/v1/skus", "/api/v1/no-such-route", "/docs", "/openapi.json"):
+            resp = await client.get(path)
+            assert resp.headers["cache-control"] == "no-store", path
+        assert "cache-control" not in (await client.get("/healthz")).headers
+
 
 class TestEdgeGuard:
     """prod 边缘收口(恒开):/api/admin 与 /metrics 不从公网 api 域暴露。"""

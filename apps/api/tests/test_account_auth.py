@@ -53,6 +53,19 @@ class TestRegister:
         assert too_long.status_code == 422
         assert too_long.json()["code"] == "VALIDATION_ERROR"
 
+    async def test_login_accepts_every_registrable_password_length(self, client: AsyncClient):
+        """注册允许 ≤128 字符 / ≤72 字节的口令,登录契约同上限:72 字符口令能登录。"""
+        password = "p" * 72
+        await register(client, "13800000073", password=password)
+        resp = await client.post(
+            "/api/v1/auth/login", json={"phone": "13800000073", "password": password}
+        )
+        assert resp.status_code == 200, resp.text
+        resp = await client.post(
+            "/api/v1/auth/login", json={"phone": "13800000073", "password": "p" * 129}
+        )
+        assert resp.status_code == 422
+
     async def test_duplicate_phone(self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]):
         await register(client)
         await age_sms_codes(sm)
@@ -325,3 +338,113 @@ class TestSmsQuotaAndBackoff:
             with pytest.raises(AppError) as exc:
                 await account_service._consume_sms_code(session, phone, codes[0], "login")
             assert exc.value.code == ErrorCode.RATE_LIMITED
+
+
+class TestLoginBurst:
+    async def test_concurrent_burst_cannot_exceed_pair_bucket(self, client: AsyncClient):
+        """并发突发下 bcrypt 前先计数:到达口令校验的请求至多 5 个(IP+手机号桶),其余全部 429;
+        并发放大不了配额。挂了说明登录限流回到「只读预检」的 TOCTOU。"""
+        import asyncio
+
+        phone = "13800000083"
+        await register(client, phone, password="secret123456")
+        bodies = [{"phone": phone, "password": "wrong-pass"} for _ in range(11)]
+        bodies.append({"phone": phone, "password": "secret123456"})
+        responses = await asyncio.gather(
+            *(client.post("/api/v1/auth/login", json=b) for b in bodies)
+        )
+        verified = [r for r in responses if r.status_code != 429]
+        assert len(verified) <= 5
+        assert sum(1 for r in responses if r.json().get("code") == "RATE_LIMITED") >= 7
+        assert all(r.status_code == 200 or r.json()["code"] == "LOGIN_FAILED" for r in verified)
+
+    async def test_success_refunds_precount_but_keeps_failures(self, client: AsyncClient):
+        """成功登录退还本次预计数:账号日窗只累计失败次数。"""
+        from app.core.ratelimit import read_hits
+
+        phone = "13800000084"
+        await register(client, phone, password="secret123456")
+        for _ in range(2):
+            await client.post("/api/v1/auth/login", json={"phone": phone, "password": "bad-pass-1"})
+        ok = await client.post(
+            "/api/v1/auth/login", json={"phone": phone, "password": "secret123456"}
+        )
+        assert ok.status_code == 200, ok.text
+        assert await read_hits(f"user-login-acct-daily:{phone}", window_seconds=86400.0) == 2
+
+
+class TestSmsBackoffHardening:
+    async def test_burning_a_code_does_not_reset_backoff(
+        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
+    ):
+        """连错 5 次烧掉验证码后立即重发仍 429:退避按「未成功消费」计,不按 used_at。"""
+        phone = "13800000085"
+        await send_code(client, phone)
+        for _ in range(5):
+            resp = await client.post(
+                "/api/v1/auth/register",
+                json={"phone": phone, "sms_code": "000000", "accept_terms": True},
+            )
+            assert resp.status_code == 400, resp.text
+        async with sm() as session:
+            row = (
+                await session.execute(select(SmsCode).where(SmsCode.phone == phone))
+            ).scalar_one()
+            assert row.used_at is not None and row.consumed_at is None
+        resp = await client.post(
+            "/api/v1/auth/sms-code", json={"phone": phone, "purpose": "register"}
+        )
+        assert resp.status_code == 429
+        assert resp.json()["code"] == "SMS_TOO_FREQUENT"
+
+    async def test_base_interval_applies_after_consumed_code(
+        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
+    ):
+        """刚成功消费一条码,60 秒内再发码仍 429(基础间隔无条件生效),过期后放行。"""
+        phone = "13800000086"
+        await register(client, phone)
+        resp = await client.post("/api/v1/auth/sms-code", json={"phone": phone, "purpose": "login"})
+        assert resp.status_code == 429
+        assert resp.json()["params"]["seconds"] <= 60
+        async with sm() as session:
+            await session.execute(
+                update(SmsCode)
+                .where(SmsCode.phone == phone)
+                .values(created_at=now_utc() - timedelta(seconds=61))
+            )
+            await session.commit()
+        resp = await client.post("/api/v1/auth/sms-code", json={"phone": phone, "purpose": "login"})
+        assert resp.status_code == 204, resp.text
+
+    async def test_phone_daily_send_cap(self, client: AsyncClient):
+        """按号日发送上限独立于消费侧:桶满后发码 429 RATE_LIMITED。"""
+        from app.core.ratelimit import check_rate_limit
+        from app.modules.account.service import SMS_SEND_PHONE_DAILY_MAX
+
+        phone = "13800000087"
+        for _ in range(SMS_SEND_PHONE_DAILY_MAX):
+            await check_rate_limit(
+                f"sms-send-phone:{phone}",
+                max_attempts=SMS_SEND_PHONE_DAILY_MAX,
+                window_seconds=86400.0,
+            )
+        resp = await client.post(
+            "/api/v1/auth/sms-code", json={"phone": phone, "purpose": "register"}
+        )
+        assert resp.status_code == 429
+        assert resp.json()["code"] == "RATE_LIMITED"
+
+    @pytest.mark.usefixtures("sm")
+    async def test_notify_budget_is_separate_from_verify(self):
+        """平台预算按 kind 分桶:打满 verify 不影响 notify(依赖 sm 以便计数被清理)。"""
+        from app.core.ratelimit import check_rate_limit
+        from app.core.sms import SMS_PLATFORM_LIMITS, ensure_sms_platform_quota
+
+        hourly, _ = SMS_PLATFORM_LIMITS["verify"]
+        for _ in range(hourly):
+            await check_rate_limit(
+                "sms-platform:verify:hourly", max_attempts=hourly, window_seconds=3600.0
+            )
+        with pytest.raises(AppError):
+            await ensure_sms_platform_quota("verify")
+        await ensure_sms_platform_quota("notify")

@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.crypto import decrypt_str, encrypt_str
 from app.core.errors import AppError, ErrorCode, conflict, not_found, unauthorized
 from app.core.logging import get_logger
-from app.core.loginguard import LoginBucket, login_failed, login_preflight, login_succeeded
+from app.core.loginguard import LoginBucket, login_attempt, login_failed, login_succeeded
 from app.core.metrics import (
     ADMIN_PRIVILEGE_CHANGE_TOTAL,
     AUTHZ_DENIED_TOTAL,
@@ -78,7 +78,7 @@ def ensure_reveal_allowed(*, role: str, reason: str | None) -> str:
 
 
 def _login_buckets(client_ip: str | None, username: str) -> list[LoginBucket]:
-    """返回四层失败计数桶;成功只清配对桶与账号短窗,账号日窗不参与预检。"""
+    """返回四层桶;前三层先计数再校验,成功清配对桶与账号短窗、退还 IP 桶;账号日窗只计失败。"""
     ip = client_ip or "-"
     return [
         LoginBucket(f"admin-login-ip:{ip}", LOGIN_IP_MAX_ATTEMPTS, LOGIN_IP_WINDOW_SECONDS),
@@ -112,12 +112,12 @@ async def login(
         await session.execute(select(AdminUser).where(AdminUser.username == username))
     ).scalar_one_or_none()
     buckets = _login_buckets(client_ip, username)
-    await login_preflight(buckets)
+    await login_attempt(buckets)
     password_ok = await verify_password(
         password, admin.password_hash if admin else dummy_password_hash()
     )
     if admin is None or not password_ok:
-        await login_failed(buckets)
+        await login_failed(buckets, precounted=True)
         LOGIN_FAILED_TOTAL.labels(actor_type="admin").inc()
         logger.warning("admin_login_failed", username=username, ip=client_ip)
         raise AppError(ErrorCode.LOGIN_FAILED, key="adminapi.loginFailed")
@@ -127,7 +127,7 @@ async def login(
             key="adminapi.userDisabled",
             http_status=status.HTTP_403_FORBIDDEN,
         )
-    await login_succeeded(buckets)
+    await login_succeeded(buckets, precounted=True)
     cfg = await get_runtime_config(session)
     if not cfg.admin_mfa_enabled:
         token = create_token(

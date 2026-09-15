@@ -7,11 +7,29 @@ from app.core.gpu_adapter import (
     HAMI_USE_GPUTYPE_ANNOTATION,
     POOL_NODE_LABEL,
     build_gpu_request,
+    pool_node_labels,
     spec_to_gpu_request,
 )
-from app.core.k8s.base import GPU_MODEL_NODE_LABEL
+from app.core.k8s.base import (
+    GPU_DEPLOY_DEVICE_PLUGIN_LABEL,
+    GPU_MODEL_NODE_LABEL,
+    GPU_WORKLOAD_CONFIG_LABEL,
+    LEGACY_POOL_NODE_LABEL,
+)
 from app.modules.orchestrator.service import build_pod_spec
 from tests.helpers import gpu_spec, make_instance
+
+
+def test_pool_label_lives_under_node_restriction_prefix():
+    """池标签键在 NodeRestriction 保护前缀下,kubelet --node-label 打不上;老键随收敛删除。"""
+    assert POOL_NODE_LABEL.startswith("node-restriction.kubernetes.io/")
+    assert LEGACY_POOL_NODE_LABEL == "superdl.io/pool"
+    labels = pool_node_labels("hami")
+    assert labels[POOL_NODE_LABEL] == "hami" and labels[LEGACY_POOL_NODE_LABEL] is None
+    assert labels[GPU_DEPLOY_DEVICE_PLUGIN_LABEL] == "false"
+    assert labels[GPU_WORKLOAD_CONFIG_LABEL] is None
+    with pytest.raises(ValueError):
+        pool_node_labels("gpu")
 
 
 def test_gpu_model_pins_node_selector():

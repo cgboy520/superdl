@@ -128,6 +128,7 @@ class Settings(BaseSettings):
     max_gpus_per_user: int = 8
     max_vcpus_per_user: int = 64
     max_disks_per_user: int = 20
+    max_disk_gb_per_user: int = 8192
     gpu_node_cpu_instance_vcpu_cap: int = 16
     tenant_egress_bandwidth_mbps: int = 200
     tenant_ingress_bandwidth_mbps: int = 0

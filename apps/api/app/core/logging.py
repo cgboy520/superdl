@@ -22,8 +22,13 @@ _LEVELS = {
     "CRITICAL": logging.CRITICAL,
 }
 
-_SENSITIVE_KEY_RE = re.compile(r"(phone|id_number|token|secret|password|code)", re.IGNORECASE)
+_SENSITIVE_KEY_RE = re.compile(
+    r"(phone|id_number|token|secret|password|passwd|code|api_key|apikey|jwt|authorization"
+    r"|credential|private_key|cookie|session|totp|recovery)",
+    re.IGNORECASE,
+)
 _PHONE_VALUE_RE = re.compile(PHONE_RE_LOOSE)
+_MASK_MAX_DEPTH = 4
 
 
 def mask_phone_value(value: str) -> str:
@@ -41,19 +46,40 @@ def _mask_value(key: str, value: object) -> object:
     return "******"
 
 
+def _mask_all_strings(key: str, value: object, depth: int) -> object:
+    """敏感键下的容器:所有字符串叶子一律打码,深度封顶。"""
+    if isinstance(value, str):
+        return _mask_value(key, value)
+    if depth >= _MASK_MAX_DEPTH:
+        return value
+    if isinstance(value, dict):
+        return {k: _mask_all_strings(key, v, depth + 1) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_mask_all_strings(key, v, depth + 1) for v in value]
+    return value
+
+
+def _mask_field(key: str, value: object, depth: int) -> object:
+    """按键名遮蔽;非敏感键的 dict / list 递归检查内层键,深度封顶 4。"""
+    if _SENSITIVE_KEY_RE.search(key):
+        return _mask_all_strings(key, value, depth)
+    if depth >= _MASK_MAX_DEPTH:
+        return value
+    if isinstance(value, dict):
+        return {k: _mask_field(str(k), v, depth + 1) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_mask_field("", v, depth + 1) for v in value]
+    return value
+
+
 def _mask_sensitive_processor(
     logger: WrappedLogger,  # noqa: ARG001
     method: str,  # noqa: ARG001
     event_dict: EventDict,
 ) -> EventDict:
-    """按敏感键名遮蔽字符串;非敏感顶层键的 dict 值只检查下一层,不递归。"""
+    """按敏感键名遮蔽字符串,嵌套 dict / list 递归到第 4 层。"""
     for key, value in event_dict.items():
-        if _SENSITIVE_KEY_RE.search(key):
-            event_dict[key] = _mask_value(key, value)
-        elif isinstance(value, dict):
-            event_dict[key] = {
-                k: _mask_value(k, v) if _SENSITIVE_KEY_RE.search(k) else v for k, v in value.items()
-            }
+        event_dict[key] = _mask_field(key, value, 0)
     return event_dict
 
 

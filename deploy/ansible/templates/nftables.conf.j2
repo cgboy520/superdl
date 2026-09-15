@@ -1,0 +1,35 @@
+#!/usr/sbin/nft -f
+# deploy/ansible/harden.yml 渲染;只管理 table inet superdl,不 flush ruleset(Docker / Cilium / kubelet 的 iptables-nft 表各归其主)。
+{% set ssh_v4 = ssh_allow_cidrs | reject('search', ':') | list %}
+{% set ssh_v6 = ssh_allow_cidrs | select('search', ':') | list %}
+table inet superdl
+flush table inet superdl
+table inet superdl {
+  chain input {
+    type filter hook input priority 0; policy drop;
+    iif "lo" accept
+    ct state established,related accept
+    ip protocol icmp accept
+    meta l4proto ipv6-icmp accept
+    udp sport 67 udp dport 68 accept comment "dhcp client"
+{% if '0.0.0.0/0' in ssh_v4 or '::/0' in ssh_v6 %}
+    tcp dport {{ ssh_port }} accept comment "ssh"
+{% else %}
+{% if ssh_v4 %}
+    ip saddr { {{ ssh_v4 | join(', ') }} } tcp dport {{ ssh_port }} accept comment "ssh"
+{% endif %}
+{% if ssh_v6 %}
+    ip6 saddr { {{ ssh_v6 | join(', ') }} } tcp dport {{ ssh_port }} accept comment "ssh"
+{% endif %}
+{% endif %}
+    ip saddr { {{ pod_cidr }}, {{ service_cidr }} } accept comment "pod / service cidr"
+    ip saddr { {{ cluster_cidrs | join(', ') }} } tcp dport { {{ fw_cluster_tcp_ports | join(', ') }} } accept comment "cluster tcp"
+    ip saddr { {{ cluster_cidrs | join(', ') }} } udp dport { {{ fw_cluster_udp_ports | join(', ') }} } accept comment "cluster udp"
+{% if fw_public_tcp_ports %}
+    tcp dport { {{ fw_public_tcp_ports | join(', ') }} } accept comment "public tcp"
+{% endif %}
+{% if 'servers' in group_names and fw_server_public_tcp_ports %}
+    tcp dport { {{ fw_server_public_tcp_ports | join(', ') }} } accept comment "server public tcp"
+{% endif %}
+  }
+}

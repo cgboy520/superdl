@@ -1,6 +1,7 @@
-"""请求可观测性(纯 ASGI):X-Request-ID 沿用或生成并回带,绑定 structlog contextvars;
+"""请求可观测性(纯 ASGI):X-Request-ID 合规则沿用、否则生成并回带,绑定 structlog contextvars;
 HTTP 时延直方图 route 取路由模板,未命中记 "unmatched"。"""
 
+import re
 import time
 from uuid import uuid4
 
@@ -9,6 +10,15 @@ from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.metrics import HTTP_REQUEST_DURATION
+
+_REQUEST_ID_RE = re.compile(r"[A-Za-z0-9._-]{1,64}")
+
+
+def request_id_from_header(value: str | None) -> str:
+    """入站 X-Request-ID 只在匹配 `[A-Za-z0-9._-]{1,64}` 时沿用,否则生成 16 位十六进制。"""
+    if value is not None and _REQUEST_ID_RE.fullmatch(value):
+        return value
+    return uuid4().hex[:16]
 
 
 def _full_route_template(scope: Scope) -> str:
@@ -33,7 +43,7 @@ class ObservabilityMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        request_id = Headers(scope=scope).get("x-request-id") or uuid4().hex[:16]
+        request_id = request_id_from_header(Headers(scope=scope).get("x-request-id"))
         structlog.contextvars.bind_contextvars(request_id=request_id)
         start = time.perf_counter()
         status_holder = {"status": 500}

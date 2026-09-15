@@ -24,9 +24,14 @@
 - 统一错误体覆盖框架层异常:路由 404/405 也渲染 `{code, message, message_key, params, detail}`(405 用 `METHOD_NOT_ALLOWED` / `common.methodNotAllowed`);未捕获异常由内层 `Uniform500Middleware` 渲染成 500,审计中间件落 `result=500`。
 - 安全响应头由纯 ASGI 中间件注入;`/metrics` 须 Bearer(见 [observability.md](./observability.md))。
 - 边缘收口中间件(`app/core/edge_guard.py`)prod 恒开、无开关(`environment` 只有 dev / test / prod;dev / test 不启用):`/api/admin/*` 双闸 —— Host 命中 `admin_host` **且** `X-Admin-Edge-Token` 命中 `admin_edge_token`(admin 域 nginx 同源反代注入,见 `deploy/app/nginx.admin.conf`),任一不符 404;`/metrics` 与 `/api/internal*` 带 `X-Forwarded-For` 一律 404。`/api/internal` 下只有服务端点鉴权回调,这条收口是它唯一的保护(见 [services.md](./services.md))。
+- 公网真实入口是 console 域(CDN → 前置反代 → Envoy `console-https` listener),`api-https` listener 公网不可达:`/api/v1` 由 HTTPRoute `superdl-console-api` 直达 `superdl-api`(nginx 同源反代只在 compose / dev 生效),边缘 404 清单在 `superdl-console-edge-deny` 与 API 域同一份,限流与请求体上限同 API 域。链路上每一跳前置地址都必须同时进 ConfigMap `FORWARDED_ALLOW_IPS` 与 `ClientTrafficPolicy.clientIPDetection.xForwardedFor.numTrustedHops`(少一跳,按 IP 的限流桶与 `audit_log.ip` 全部塌成那一跳的地址),拓扑见 [../architecture.md](../architecture.md)「公网真实链路」。
 - Bearer token 常量时间比较统一走 `app/core/http.py` 的 `bearer_matches`(先 `.encode()` 成 bytes),/metrics(API 与 worker)与 Alertmanager webhook 共用。
+- 登录限流「先计数再判定」:密码路径在 bcrypt 前对 IP / IP+账号 / 账号短窗三桶各记一次并判定(`core/loginguard.login_attempt`),并发突发按桶容量截断而不是按在途并发放大;成功后清零 / 退还,账号日窗只计失败。bcrypt 线程池(4 线程)在途上限 64,超出直接 429(`core/security._BCRYPT_MAX_INFLIGHT`),不无限排队。发码闸门顺序与按号 / 按 IP / 平台分桶见 [account.md](./account.md)。
+- `client_ip` 取 uvicorn 按 `FORWARDED_ALLOW_IPS` 改写后的 `scope["client"]`:每一跳前置代理 / CDN 回源地址都必须列入该网段(`deploy/app/k8s/00-namespace-config.yaml`),漏一跳即全部公网请求坍缩成同一个 IP,按 IP 的限流桶与 `audit_log.ip` 一并失真。
 - 短信渠道走 `app/core/sms.py` 的 Protocol + 工厂(mock / 阿里云 dysmsapi);落日志时手机号与验证码由全局日志处理器(`app/core/logging.py`)按键名打码。
 - 高危管理操作「原因必填 → 二次确认 → 审计」;审计不落 token、密钥与配置值。
+- 入站 `X-Request-ID` 只在匹配 `[A-Za-z0-9._-]{1,64}` 时沿用,否则服务端生成 16 位十六进制 id 回带(`app/core/observability.py`)。
+- `/api/*`、`/metrics`、`/docs`、`/redoc`、`/openapi.json` 响应带 `Cache-Control: no-store`(`app/core/security_headers.py`),CDN 与浏览器不得缓存 API 响应;`/healthz` `/readyz` 不加。
 - 审计行带 `request_id`(与响应头 `X-Request-ID`、结构化日志同值)与 `user_agent`。中间件路径的 `request_id` 从响应头抄回,资金域同步审计直接读 contextvar。
 - `action` / `target` / `user_agent` 入库前按列宽截断;`Idempotency-Key` 请求头在契约层按承载列宽(64)拦下。
 
@@ -57,27 +62,36 @@
 - 入方向默认拒东西向,只放行 `envoy-gateway-system`(Envoy **数据面 Pod** 所在 ns,`core/k8s/real.py` 的 `GATEWAY_DATAPLANE_NAMESPACE`)到租户 Pod(**不限端口**)与 SSH 22。**SSH 22 来源是 `0.0.0.0/0` 除去 Pod 网段**(`tenant_pod_cidr`,默认 `10.42.0.0/16`;改 CNI 网段必须同步改它);整段私网不排;Pod 网段必须排。留空 = 不下发 except,仅排障回退。**排掉的网段里含跨节点 NodePort 的 SNAT 来源**(入口节点的 `cilium_host`,从 Pod 子网池动态分配),由 `deploy/cluster/cilium-policies.yaml` 的 `superdl-tenant-ssh-from-nodes` 按身份放行 22。**不是 `Gateway` 对象所在的 `superdl` ns**。平台自身前端与 API 的入向 NetworkPolicy(`deploy/app/k8s/09-networkpolicy.yaml`)同源。
 - 每租户独立 namespace + ResourceQuota,数据盘一盘一只 CephFS PVC(RWX);租户 ns 打 PSA 标签(enforce=baseline、audit/warn=restricted),容器有 ephemeral-storage 限额(请求 10Gi / 上限 64Gi)与带宽上限注解(`kubernetes.io/egress-bandwidth`,默认 200 Mbit/s,`SUPERDL_TENANT_EGRESS_BANDWIDTH_MBPS`;ingress 默认不限;两档均由 Cilium `bandwidthManager` 执行)。数据盘 PVC 名由盘 uuid 算出(`data_disk_pvc_name`),租户之间天然隔离,无共享卷与子路径。
 - **租户手里没有任何 K8s 凭据,`httproutes` 写权限只给 `superdl-tenant-mgr` 这一个 SA**(`deploy/app/k8s/01-rbac.yaml`)。listener 侧消歧:平台三个 listener 写**精确 hostname**、租户 listener 写通配,SNI 与 Host 按「精确优先于通配」匹配;租户域与平台域共用一级域是支持的形态。
+- 租户 ns 的 secrets 权限是预置 ClusterRole `superdl-tenant-secrets`(无 ClusterRoleBinding)经 tenant-mgr 在每个 tenant ns 建的 RoleBinding 生效(`core/k8s/real.py::_ensure_tenant_rbac_sync`):tenant-mgr 对 `clusterroles` 只有 `bind` 且 `resourceNames` 锁定该名,对 `roles` 无 create / patch / escalate / bind(只留 `delete` 清旧版 Role);存量 binding 的 roleRef 不可改,指向旧 Role 的删掉重建。`superdl-api` 另持 `pods/log: get`(ClusterRole `superdl-api-logs`,实例日志直读),其余平台 SA 无;任何平台 SA 都无 `pods/exec|attach|portforward|ephemeralcontainers`(RBAC 不给,准入 ① 再拦一道)。
+- **任何非 `superdl` 命名空间的 SA 都不得持有 secrets 读权**(Alloy / node-exporter 是 DaemonSet,跑在租户 GPU 节点上,节点 root 即可取其 token):监控栈 RBAC 由 values(`alloy` 的 `rbac.rules` 收窄到 pods / pods/log / namespaces / services / endpoints / nodes,`loki` 关 ruler sidecar 且 SA 与 Pod 均不挂 token,kps `global.rbac.create=false` + kube-state-metrics 去掉 secrets 采集器)+ `deploy/cluster/monitoring-rbac.yaml`(prometheus-operator 的 configmaps / secrets 只在 `monitoring` ns 的 Role,集群级只留 CRD / statefulsets / pods 等;Prometheus SA 无 secrets 动词)收窄;引用凭据的 ServiceMonitor / PodMonitor 一律放 `monitoring` ns,Bearer 取 `monitoring/superdl-metrics-token`(`deploy/app/k8s/08-monitoring.yaml`)。CI helm 渲染断言(`monitoring-rbac` job)+ kind `auth can-i` 断言 + `preflight.sh` 各一道;Grafana(仅 full 档)的 dashboard / datasource sidecar 是唯一豁免。
 - 创建实例只校验镜像引用形态(`core/registry.is_valid_image_ref`),来源白名单默认关;收紧时在平台配置·镜像仓库填 `image_allowed_registries`(每行一个仓库前缀),生效白名单 = 配置行 ∪ Harbor 地址前缀(`core/registry.effective_image_allowlist`),配置后只放行平台镜像目录内的引用与这些前缀;prod 下生效白名单为空(既无配置行也未配 Harbor)拒绝启动(`assert_prod_image_allowlist`)。实例镜像 `ENV NVIDIA_VISIBLE_DEVICES=void` 覆盖 nvidia/cuda 基座的 `all`,可见卡只来自分配链注入。**每条前缀一律补成以 `/` 结尾**(匹配是裸 `startswith`)。
-- **准入层是七条 ValidatingAdmissionPolicy,全部 `Deny`**(`deploy/cluster/admission/tenant-restrictions.yaml`):① 平台 SA 的写操作范围(`superdl` / `tenant-*` ns + nodes;集群级请求无 `request.namespace` 键,表达式一律 `has()` 守卫)、② 租户 ns Pod 安全基线、③ 平台 SA 对 Node 的字段级写白名单(cordon + `superdl.io/*` 标签)、④ 全局 Pod 兜底、⑤ `superdl` ns 内 Pod 的 Secret 引用白名单、⑥ 平台 SA 建 Job 时 Pod 模板的 Secret 引用白名单、⑦ 平台 SA 只能删 GPU 工作节点。**缺 Binding 是静默 fail-open**(`failurePolicy: Fail` 只在策略被求值时生效);由 `deploy/cluster/apply.sh` 在 helmfile 之前无条件 apply 并回读,`deploy/cluster/preflight.sh` 与 `scripts/release.sh` 各再断言一次。
+- **准入层是七条 ValidatingAdmissionPolicy,全部 `Deny`**(`deploy/cluster/admission/tenant-restrictions.yaml`):① 平台 SA 的写操作范围(`superdl` / `tenant-*` ns + nodes,含子资源 `*/*`;禁 `pods/exec|attach|portforward|ephemeralcontainers`;集群级请求无 `request.namespace` 键,表达式一律 `has()` 守卫)、② 租户 ns Pod 安全基线(`containers + initContainers + ephemeralContainers` 同一份 securityContext 基线;不得指定非 `default` 的 serviceAccountName)、③ 平台 SA 对 Node 的字段级写白名单(cordon + `superdl.io/*`、池标签 `node-restriction.kubernetes.io/superdl-pool` 与两个 GPU operand 键;`superdl-infra` 落点键不在其列)、④ 全局 Pod 兜底(只拦显式 `hostUsers: true`)、⑤ `superdl` ns 内 Pod 的 Secret 引用白名单(平台 SA 直建的 Pod 另须 `automountServiceAccountToken: false` 且不指定 SA)、⑥ 平台 SA 建 Job 时 Pod 模板的 Secret 引用白名单(模板同 ⑤ 两条 SA 约束)、⑦ 平台 SA 只能删 GPU 工作节点。**缺 Binding 是静默 fail-open**(`failurePolicy: Fail` 只在策略被求值时生效);由 `deploy/cluster/apply.sh` 在 helmfile 之前无条件 apply 并回读,`deploy/cluster/preflight.sh` 与 `scripts/release.sh` 各再断言一次。
 - **「不给 `secrets` 动词」不等于「读不到 Secret」**:命名空间内 `pods:create` 或 `batch/jobs:create` 等价于该 ns 的 `secrets:get`(kubelet 代创建者解析 `secretKeyRef` / `envFrom` / secret 卷 / `imagePullSecrets`,不做 secrets 授权检查,PSA `restricted` 也不约束)。真正的防线是策略⑤⑥的「能引用哪个 Secret」白名单;⑤ 另覆盖 Job 派生 Pod 的创建者 `system:serviceaccount:kube-system:job-controller`。
 - 服务端点的 API Key 摘要、鉴权链路与网关策略约束见 [services.md](./services.md)。
 - 合规:前端 `/legal/terms` 与 `/legal/privacy` 为模板页,注册勾选前后端强校验,备案号运行期下发。
-- 公网 API 域上 `/api/admin`、`/api/internal`、`/metrics`、`/docs`、`/redoc`、`/openapi.json` 在边缘直接 404(`04-gateway.yaml` 的 `HTTPRoute superdl-api-edge-deny` + `HTTPRouteFilter superdl-edge-not-found`),应用层 `edge_guard` 是第二道。
-- 平台库:api / worker 以无 DDL 的应用角色连接(`deploy/pg/roles.sql`;`balance_ledger` 只追加、`audit_log` 不可改),owner 连接串只给迁移 Job(`superdl-db-migrate`);非本机 PG 连接串 `sslmode=verify-full&sslrootcert=...`(自签 CA 经 ConfigMap `superdl-db-ca` 挂载,`db._split_db_tls` 翻成校验主机名的 SSLContext)。
+- 公网 API 域与 console 域上 `/api/admin`、`/api/internal`、`/metrics`、`/docs`、`/redoc`、`/openapi.json` 在边缘直接 404(`04-gateway.yaml` 的 `HTTPRoute superdl-api-edge-deny` / `superdl-console-edge-deny` + `HTTPRouteFilter superdl-edge-not-found`),应用层 `edge_guard` 是第二道。
+- 平台库:api / worker 以无 DDL 的应用角色连接(`deploy/pg/roles.sql`;`balance_ledger`、`audit_log`、`instance_events` 只追加,`alembic_version` 只读;审计保洁只经 SECURITY DEFINER 函数 `audit_log_prune(days ≥ 30)`),owner 连接串只给迁移 Job(`superdl-db-migrate`,须为非 SUPERUSER 的库 owner,见 `deploy/pg/README.md`);非本机 PG 连接串 `sslmode=verify-full&sslrootcert=...`(自签 CA 经 ConfigMap `superdl-db-ca` 挂载,`db._split_db_tls` 翻成校验主机名的 SSLContext)。
 - 部署层(env)进入平台配置的值同样过 `SETTING_SPECS` 格式白名单(`platform_config.env_layer_problems`,prod 不合格拒启);`cluster_join_token` 字符集锁死 `[A-Za-z0-9:._~+/=-]{16,512}`,node-join.sh 写 agent config.yaml 前再校验一次并用双引号标量。
 
 ### 限流分层
 
-两层:边缘层(Envoy Gateway,`deploy/app/k8s/04-gateway.yaml` 的 `BackendTrafficPolicy superdl-api-ratelimit`)对公网 API 域按**每源 IP** 兜底;精细化限流在应用层(`app/core/ratelimit.py`,PG 固定窗口,多副本共享)。管理面不配边缘限流,靠源 IP 白名单。数值见 [limits.md](./limits.md)。
+两层:边缘层(Envoy Gateway,`deploy/app/k8s/04-gateway.yaml`)按**每源 IP** 兜底 —— API 域 `BackendTrafficPolicy superdl-api-ratelimit`,console 域的 `/api/v1` 路由(公网真实入口)挂同一份数值的 `superdl-console-api-ratelimit`,管理端路由挂自己的 `superdl-admin-ratelimit`(白名单不是限流);精细化限流在应用层(`app/core/ratelimit.py`,PG 固定窗口,多副本共享)。数值见 [limits.md](./limits.md)。
 
 边缘层这几条「配错不报错、静默失效」,改动后须 `kubectl describe backendtrafficpolicy/securitypolicy/clienttrafficpolicy -n superdl` 看 `Accepted=True`:
 
 - **每源 IP 靠 `sourceCIDR.type: Distinct`**(默认 `Exact` 是全网一个桶)。EG v1.9.0 的 local 限流支持 distinct,升版按源码复核。
 - **没有每源 IP 并发连接数限制**:`ClientTrafficPolicy.connection.connectionLimit` 是每个 Envoy 实例的连接总量,只作防内存耗尽兜底。
-- **管理端源 IP 白名单**(`SecurityPolicy superdl-admin-allowlist`,挂 `superdl-admin` 路由):`authorization.defaultAction: Deny` + 一条 `action: Allow` 的 `principal.clientCIDRs`。占位符是 `192.0.2.0/24`(RFC 5737 文档网段,未替换即 fail-closed);`deploy/cluster/preflight.sh` 按这个网段扫描,未替换不放行。
-- **每 IP 限流与管理端白名单都建立在 `envoyService.externalTrafficPolicy: Local` 之上**(`EnvoyProxy superdl-proxy`,显式写死)。
+- **管理端源 IP 白名单**(`SecurityPolicy superdl-admin-allowlist`,挂 `superdl-admin` 路由):`authorization.defaultAction: Deny` + 一条 `action: Allow` 的 `principal.clientCIDRs`。占位符是 `192.0.2.0/24`(RFC 5737 文档网段,未替换即 fail-closed);`deploy/cluster/preflight.sh` 按这个网段扫描,未替换不放行。白名单只许具体出口 /32 或办公网段;禁止 `100.64.0.0/10`、`10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16` 这类整段(preflight 同样拦)。
+- **每 IP 限流与管理端白名单都建立在 `envoyService.externalTrafficPolicy: Local` 之上**(`EnvoyProxy superdl-proxy`,显式写死)与 `ClientTrafficPolicy.clientIPDetection.xForwardedFor.numTrustedHops` 之上(仓库值 `0` = 以 TCP 对端为客户端 IP;公网前置 CDN / 反代时改成实际前置层数,并把前置地址同步进 `FORWARDED_ALLOW_IPS`)。
 - **租户 Jupyter 的 `app-https` listener 挂一条 local 限流**(`BackendTrafficPolicy superdl-app-ratelimit`,每端点 100/s),与 `superdl-svc-ratelimit` 同构(一实例一条 HTTPRoute ⇒ 一个端点一个桶):**不许**加 `sourceCIDR.type: Distinct`(EG 的 `alwaysConsumeDefaultTokenBucket` 钉死 false,命中 descriptor 后默认桶不消耗)。同一 targetRef 不能再挂第二条同类策略(EG 不合并,最老者生效)。
 - local 限流是每个 Envoy 实例本地计数,多副本全局上限约为配置值 × 副本数。
+
+### 宿主机与备份
+
+- 全部宿主机 sshd 只公钥(口令 / 键盘交互关、root 只公钥)+ nftables `input` 默认拒(SSH 按 `ssh_allow_cidrs`、集群端口只对 `cluster_cidrs`、NodePort 与 server 的 80/443 对外),由 `deploy/ansible/harden.yml` 下发,关口令前断言目标机已有公钥。
+- 自建单实例 PG 三条备份链(每日 dump、每周 basebackup、每 5 分钟 WAL)全部 gpg 后才离开本机,各有 node-exporter textfile 指标(`superdl_pg_backup_last_success_timestamp_seconds` / `superdl_pg_basebackup_last_success_timestamp_seconds` / `superdl_pg_wal_sync_last_success_timestamp_seconds`),`pg_hba.conf` 生产与仓库漂移写 `superdl_pg_hba_drift`(`deploy/pg/README.md`)。
+- k3s 集群状态(`server/token`、`cred`、`tls`、etcd 快照或 SQLite 副本)每 6 小时 gpg 加密异机(`deploy/cluster/k3s/state-backup.sh`,指标 `superdl_k3s_state_backup_last_success_timestamp_seconds`);server 损毁而无此备份 = 全部 Secret 含配置主密钥不可恢复。
+- 备份镜像机不得是承载租户负载的节点。
 
 ## 已接受取舍
 

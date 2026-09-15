@@ -209,7 +209,7 @@ async def node_gpu_metrics(node_name: str, range_key: str) -> NodeMetricsOut:
     """先校验范围与节点名,再插入 PromQL 查询每卡曲线及 24h XID 计数;断源返回 unavailable。"""
     if range_key not in RANGES:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="metering.badRange")
-    if not _NODE_NAME_RE.match(node_name):
+    if not _NODE_NAME_RE.fullmatch(node_name):
         raise AppError(ErrorCode.VALIDATION_ERROR, key="metering.badNodeName")
     end = now_utc().timestamp()
     start = end - RANGES[range_key]

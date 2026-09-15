@@ -17,6 +17,7 @@ helm 不代建 Secret,先建好再 `./preflight.sh <full|light>`(只读,缺什�
 kubectl create ns monitoring --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n monitoring create secret generic superdl-alert-token --from-literal=token=<与 SUPERDL_ALERTMANAGER_TOKEN 一致>
 kubectl -n monitoring create secret generic superdl-smtp-password --from-literal=password=<SMTP 口令>
+kubectl -n monitoring create secret generic superdl-metrics-token --from-literal=token=<与 SUPERDL_METRICS_TOKEN 一致>
 kubectl -n monitoring create secret generic grafana-admin \
   --from-literal=admin-user=admin --from-literal=admin-password=<口令>
 ```
@@ -24,6 +25,8 @@ kubectl -n monitoring create secret generic grafana-admin \
 full 档另需 `cert-manager/acme-dns-account`(DNS01 账户,见 `runbooks/acme-dns.md`);light 档不签发证书,手工把现成通配证书灌成 `superdl/superdl-jupyter-wildcard-tls` 与 `superdl/superdl-svc-wildcard-tls`。`grafana-admin` 仅 full 档需要,light 关闭 Grafana。
 
 启用 cnpg 时,还需在 `superdl` 命名空间预建 `cnpg-backup-s3`,键为 `ACCESS_KEY_ID` 与 `ACCESS_SECRET_KEY`,并替换 `values/cnpg-cluster.yaml` 中的对象存储占位符。凭据使用受限权限文件供给,不放在命令行。
+
+监控栈的 RBAC 收窄在两处:`values/`(alloy `rbac.rules` 只留 pods / pods/log / namespaces / services / endpoints / nodes 读;loki 关 ruler sidecar 且不挂 token;kps `global.rbac.create=false` + kube-state-metrics 去掉 secrets 采集器)与 `monitoring-rbac.yaml`(prometheus-operator / Prometheus / admission Job 的 RBAC 手写版,operator 的 configmaps / secrets 只在 `monitoring` ns 的 Role;随 kube-prometheus-stack release 的 presync 下发)。引用凭据的 ServiceMonitor / PodMonitor 一律放 `monitoring` ns(`../app/k8s/08-monitoring.yaml`,Bearer 取上面的 `superdl-metrics-token`)。不变量「monitoring 之外的 SA 没有 secrets 读权」由 CI `monitoring-rbac` job(helm 渲染断言)、kind 冒烟的 `auth can-i` 与 `./preflight.sh` 各守一道。
 
 存储与监控变更前核对:
 
@@ -42,7 +45,7 @@ full 档另需 `cert-manager/acme-dns-account`(DNS01 账户,见 `runbooks/acme-d
 
 **升级 Envoy Gateway**:`helmfile.yaml.gotmpl`、`gateway-api-crds.sh` 与 `scripts/check-gateway-manifests.py` 三处版本号一起改,再**先 `./gateway-api-crds.sh` 升 CRD,后 `./apply.sh <full|light> -l name=envoy-gateway` 升控制面**。
 
-入口的**配置**在 `../app/k8s/04-gateway.yaml`(GatewayClass / 6 个 listener / 5 条路由 / 7 条策略;数据面 Envoy 的副本与资源在那里的 `EnvoyProxy`);本目录 `values/envoy-gateway.yaml` 只管**控制面**。
+入口的**配置**在 `../app/k8s/04-gateway.yaml`(GatewayClass / 6 个 listener / 8 条路由 / 9 条策略;数据面 Envoy 的副本与资源在那里的 `EnvoyProxy`);本目录 `values/envoy-gateway.yaml` 只管**控制面**。公网真实入口是 console 域(CDN → 前置反代 → `console-https`),`/api/v1` 由 HTTPRoute `superdl-console-api` 直达 API;每一跳前置地址同时登记进 `ClientTrafficPolicy` 的 `numTrustedHops` 与 ConfigMap `FORWARDED_ALLOW_IPS`,见 `docs/architecture.md`「公网真实链路」。
 
 **light 档单机**:租户 Jupyter 一实例一条 HTTPRoute,给足 `EnvoyProxy` 的 memory limit 或对单机实例数设硬上限,取值实机压过再定。
 
@@ -76,7 +79,9 @@ full 档另需 `cert-manager/acme-dns-account`(DNS01 账户,见 `runbooks/acme-d
 
 ## 平台组件落点标签
 
-平台组件(api / 5 个 worker / 前端 / Envoy 数据面)的 `nodeSelector` 统一锚点是 `node-restriction.kubernetes.io/superdl-infra=true`,**由 `../ansible/site.yml` 在装机后用管理凭据打到控制面节点上**,不走发行版的 `node-label`。`node-restriction.kubernetes.io/` 前缀被 NodeRestriction 准入插件拉黑(`rke2/server-config.yaml` 与 `k3s/server-config.yaml` 的 `kube-apiserver-arg` 显式钉住),kubelet 打不上也改不掉;平台 SA 也无权改——准入策略③ 对 Node labels 只放行 `superdl.io/*` 与两个具名的 GPU operand 键(`nvidia.com/gpu.workload.config`、`nvidia.com/gpu.deploy.device-plugin`,管理端切池要随池标签一起收敛,见 [`runbooks/node-pool-switch.md`](./runbooks/node-pool-switch.md))。白名单保持具名,不放宽成 `nvidia.com/*` 前缀。
+平台组件(api / 5 个 worker / 前端 / Envoy 数据面)的 `nodeSelector` 统一锚点是 `node-restriction.kubernetes.io/superdl-infra=true`,**由 `../ansible/site.yml` 在装机后用管理凭据打到控制面节点上**,不走发行版的 `node-label`。`node-restriction.kubernetes.io/` 前缀被 NodeRestriction 准入插件拉黑(`rke2/server-config.yaml` 与 `k3s/server-config.yaml` 的 `kube-apiserver-arg` 显式钉住),kubelet 打不上也改不掉;平台 SA 也无权改——准入策略③ 对 Node labels 只放行 `superdl.io/*`、池标签键 `node-restriction.kubernetes.io/superdl-pool`(同前缀,kubelet 打不上,只有平台写;hami / kata-deploy 的 nodeSelector 认它)与两个具名的 GPU operand 键(`nvidia.com/gpu.workload.config`、`nvidia.com/gpu.deploy.device-plugin`,管理端切池要随池标签一起收敛,见 [`runbooks/node-pool-switch.md`](./runbooks/node-pool-switch.md))。白名单保持具名,不放宽成 `nvidia.com/*` 前缀。
+
+**infra 落点节点 ≥2 台才有冗余**:api / worker(core、tenant-mgr)/ web / admin / Envoy 数据面各 2 副本,按 `kubernetes.io/hostname` 的 topologySpread 是 `DoNotSchedule`(zone 维仍 `ScheduleAnyway`,节点可能没有 zone 标签)。只有一台 infra 节点时两副本同机、可调度但无冗余;两台时副本必分两机;其中一台失联后替补副本保持 Pending 直到该节点恢复或被删 —— Pending 就是可见信号(`kubectl -n superdl get pods | grep Pending`),不要为此放宽约束。单副本的 node-mgr / prewarm / disk-ops 不受影响。
 
 `preflight.sh` 三项复核:NodeRestriction 已启用、至少一台节点带该标签、**GPU 池节点严禁带该标签**。手工补标:
 
@@ -140,3 +145,29 @@ kubectl label nodes -l node-role.kubernetes.io/control-plane \
 
 4. **GPU 节点**:同 full 第 5 步。单机时 server 本机直接跑管理端生成的 node-join 命令:脚本检测到本机 `k3s.service` 在运行即走 server 路径(不装 agent、不改 server config,池标签经 `k3s kubectl` 打到节点;首次装 toolkit 后重启一次 k3s)。实例盘 VG `superdl-nvme` 不由 node-join 建时(令牌未登记 NVMe),须在 `./apply.sh light` 之前手工建好(空盘 `pvcreate`/`vgcreate`,或 loop 文件兜底)。
 5. 能力边界:组件面不阉割(kata / mig 池同样可用),档位可用性看**池里有没有 Ready 节点**;单机只有一个池标签,选了 hami 就没有 kata/mig 池,专用整卡与共享·标准的 SKU 上架被硬校验拦下。纯 CPU 规格挂 hami 池即可在这台机上卖。管理端「集群」页常驻「轻量集群」黄条与组件体检。
+
+## 集群状态备份与恢复(light / k3s)
+
+`k3s/server-config.yaml` 的 `cluster-init: true` 让单 server 也用内嵌 etcd(已有 SQLite 库的 server 带此项重启即自动迁入;迁移前先手动跑一次 `superdl-k3s-state-backup`),每 6 小时落一份 etcd 快照到 `/var/lib/rancher/k3s/server/db/snapshots`(留 28 份,只在本机)。异机由 `k3s/state-backup.sh` 承担(`../ansible/site.yml` 装成 `/usr/local/sbin/superdl-k3s-state-backup`,cron `/etc/cron.d/superdl-k3s-state-backup` 每 6 小时;手工安装时同样这两处):
+
+- 打包 `server/token`、`server/agent-token`、`server/cred`(含 secrets-encryption 密钥)、`server/tls`(CA)与最新 etcd 快照;仍是 SQLite(`server/db/state.db` 存在且无 `server/db/etcd/`)时用 `sqlite3 .backup` 做在线一致副本(需 `sqlite3`,缺则报错退出);顺带把 `state.db` 收成 0600。
+- gpg AES256(口令 `/etc/superdl/pg/backup-passphrase`)→ `/var/lib/superdl/k3s-state/k3s-state-<主机>-<ts>.tar.gz.gpg`(本机留 14 天)→ rsync 到 PG 镜像机 `k3s/`(`/etc/superdl/pg/backup.env` 的 `SUPERDL_PG_MIRROR`、密钥 `backup-ssh-key`;镜像机 `rrsync -wo` 目录下须预建 `k3s/`)。**镜像机不得是承载租户负载的节点。**
+- 成功写 `/var/lib/node_exporter/textfile/superdl_k3s_state_backup.prom` 的 `superdl_k3s_state_backup_last_success_timestamp_seconds`;季度演练清单在 `runbooks/pg-backup-restore.md`。
+
+没有这份备份时 server 机器损毁 = 全部 Secret(含 `superdl-crypto` 的配置主密钥:平台库里的密文与实名摘要随之作废)、CA 与 token 全丢,agent 无法重新接入,只能重建集群并按 `../app/secrets.example.yaml` 重灌 Secret,租户实例与数据盘对象全部重建。
+
+恢复到新 server(同版本 k3s、同一份 `/etc/rancher/k3s/config.yaml` 与 audit-policy,沿用原 IP;换 IP 要同步改 agent config 的 `server:`、`values/light/cilium-light.yaml` 的 `k8sServiceHost`、DNS 与 `/etc/hosts`):
+
+```bash
+mkdir -p /tmp/k3s-state && gpg --batch --decrypt --passphrase-file /etc/superdl/pg/backup-passphrase k3s-state-<主机>-<ts>.tar.gz.gpg | tar -xzf - -C /tmp/k3s-state
+curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh | INSTALL_K3S_MIRROR=cn INSTALL_K3S_SKIP_START=true sh -s - server
+mkdir -p /var/lib/rancher/k3s/server/db && cp -a /tmp/k3s-state/server/{token,agent-token,cred,tls} /var/lib/rancher/k3s/server/
+# etcd:用快照重置(token 必须是备份里那份,快照内引导数据靠它解密);命令结束后再 start
+k3s server --cluster-reset --cluster-reset-restore-path=/tmp/k3s-state/server/db/snapshots/<快照文件>
+# SQLite(备份里是 state.db 而非快照):放回数据库文件即可
+cp -a /tmp/k3s-state/server/db/state.db /var/lib/rancher/k3s/server/db/
+systemctl start k3s
+rm -rf /tmp/k3s-state
+```
+
+起来后:`kubectl get nodes` 里 agent 自动回连(证书与 token 未变);`kubectl delete node <旧 server 名>`(主机名变了才有);`./preflight.sh light` 全绿;租户实例是无 ownerReference 的裸 Pod,已丢的按管理端实例详情逐台重建。

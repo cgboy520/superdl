@@ -82,15 +82,30 @@ worker 其余定时任务:outbox 卡单回收、小时结算、数据盘日结�
 
 ## 5. 接入层
 
-| 通道               | 机制                                                                                                                                                                                                                                                                                                                                  |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SSH                | 端口池表 `port_allocations`,每实例一个 NodePort;仅密钥登录。**SSH 与 Jupyter 是两个独立的 Service**(SSH `NodePort`,Jupyter `ClusterIP`)                                                                                                                                                                                               |
-| JupyterLab         | Pod 内 8888,**每实例一条 HTTPRoute**(租户 ns,挂 `app-https` listener)按 host 路由到 ClusterIP Service,token 由控制面注入,泛域名证书一张                                                                                                                                                                                               |
-| 对外服务端点       | 在线服务(`services`)公网入口 `<slug>.svc.<域名>`;服务持有一台 `workload_type='service'` 版本实例,**每实例一条 HTTPRoute** 挂 `svc-https` listener。API Key 在网关校验(一条 `SecurityPolicy.extAuth` 挂 listener),用户容器不实现鉴权;**鉴权结果无缓存**,控制面是全部端点的同步依赖,见 [reference/services.md](./reference/services.md) |
-| 租户 NetworkPolicy | 默认拒东西向。入方向只放行 `envoy-gateway-system`(Envoy 数据面 ns,不是 `superdl`)**不限端口**,以及 TCP 22(来源 `0.0.0.0/0` **排掉 Pod 网段**,不排整段私网)。出方向 DNS 收敛到 CoreDNS,公网 TCP 扣滥用端口与数据存储端口黑名单、UDP 白名单,私网与云元数据网段拒                                                                        |
-| 网关策略           | 源 IP 白名单(管理端)、边缘限流(API 域,匿名回调路由更严请求体上限)、服务端点鉴权与限流、租户 Jupyter listener 限流、全局超时与连接兜底,7 个策略对象挂 Gateway / HTTPRoute(`deploy/app/k8s/04-gateway.yaml`)。挂载点是 listener 的 `sectionName`,**写错不报错**,线索在策略对象 `status.ancestors[].conditions`;6 个 listener 名锁死     |
+| 通道               | 机制                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SSH                | 端口池表 `port_allocations`,每实例一个 NodePort;仅密钥登录。**SSH 与 Jupyter 是两个独立的 Service**(SSH `NodePort`,Jupyter `ClusterIP`)                                                                                                                                                                                                                                                                       |
+| JupyterLab         | Pod 内 8888,**每实例一条 HTTPRoute**(租户 ns,挂 `app-https` listener)按 host 路由到 ClusterIP Service,token 由控制面注入,泛域名证书一张                                                                                                                                                                                                                                                                       |
+| 对外服务端点       | 在线服务(`services`)公网入口 `<slug>.svc.<域名>`;服务持有一台 `workload_type='service'` 版本实例,**每实例一条 HTTPRoute** 挂 `svc-https` listener。API Key 在网关校验(一条 `SecurityPolicy.extAuth` 挂 listener),用户容器不实现鉴权;**鉴权结果无缓存**,控制面是全部端点的同步依赖,见 [reference/services.md](./reference/services.md)                                                                         |
+| 租户 NetworkPolicy | 默认拒东西向。入方向只放行 `envoy-gateway-system`(Envoy 数据面 ns,不是 `superdl`)**不限端口**,以及 TCP 22(来源 `0.0.0.0/0` **排掉 Pod 网段**,不排整段私网)。出方向 DNS 收敛到 CoreDNS,公网 TCP 扣滥用端口与数据存储端口黑名单、UDP 白名单,私网与云元数据网段拒                                                                                                                                                |
+| 网关策略           | 源 IP 白名单(管理端)、边缘限流(API 域、console 域 `/api/v1`、管理端路由各一条,匿名回调路由更严请求体上限)、服务端点鉴权与限流、租户 Jupyter listener 限流、全局超时 / 连接兜底与客户端 IP 识别(`numTrustedHops`),10 个策略对象挂 Gateway / HTTPRoute(`deploy/app/k8s/04-gateway.yaml`)。挂载点是 listener 的 `sectionName`,**写错不报错**,线索在策略对象 `status.ancestors[].conditions`;6 个 listener 名锁死 |
 
 控制面 ServiceAccount 按 worker 组件拆分;租户资源写权限是 ClusterRole,可达面由 `deploy/cluster/admission/tenant-restrictions.yaml` 的**七条 ValidatingAdmissionPolicy(全部 `Deny`)**收窄:平台 SA 写范围(`superdl` / `tenant-*` ns 与 nodes)、租户 Pod 安全基线、Node 字段级写白名单、全局 Pod 兜底、Pod 与 Job 模板各一条 Secret 引用白名单、Node 删除对象白名单。机制见 [`reference/security.md`](./reference/security.md)。HTTPRoute 条数随活跃实例线性增长,是 Envoy 数据面内存的容量变量。
+
+### 公网真实链路
+
+`api-https` listener(API 域)公网不可达;用户端与支付 / 短信回调走 console 域,`/api/v1` 在 Envoy 上由 HTTPRoute `superdl-console-api` 直达 API,不再经 web 站 nginx 同源反代(那段只在 compose / dev 生效)。
+
+```mermaid
+flowchart LR
+    U[用户] --> CDN["CDN(回源携带真实 IP)"]
+    CDN --> RP[前置反代]
+    RP --> ENVOY["Envoy(console-https listener)"]
+    ENVOY -- "/api/v1  HTTPRoute superdl-console-api" --> API[superdl-api]
+    ENVOY -- "其余路径  HTTPRoute superdl-console" --> WEB[superdl-web nginx]
+```
+
+不变量:链路上每一跳(Envoy 数据面 Pod 网段、前置反代出口、CDN 回源地址段)都必须同时进 ConfigMap `FORWARDED_ALLOW_IPS`(`deploy/app/k8s/00-namespace-config.yaml`)与 `ClientTrafficPolicy superdl-gateway` 的 `clientIPDetection.xForwardedFor.numTrustedHops`;漏一跳,边缘每 IP 限流桶、管理端白名单判定与 `audit_log.ip` 看到的都是那一跳的地址。console 域 `/api/v1` 路由挂与 API 域同一份每 IP 限流与 1 MiB 请求体上限(`superdl-console-api-ratelimit`),边缘 404 清单同 API 域(`superdl-console-edge-deny`);管理端路由另挂 `superdl-admin-ratelimit`。
 
 ## 6. 数据模型
 
@@ -169,7 +184,7 @@ worker 其余定时任务:outbox 卡单回收、小时结算、数据盘日结�
 
 ## 8. 硬约束
 
-1. **Kata 与 HAMi 不能共用同一批 GPU,必须分池**。节点池标签 `superdl.io/pool` **只由平台写**;空节点(零未释放实例)可经管理端在 kata / hami / mig 间无感切换(不登录节点、不重启),`cpu` 池不参与,见 `reference/nodes.md`。**隔离机制的派发键是池,不是档位**:`core/gpu_adapter` 按 kata / mig / hami / cpu 决定 RuntimeClass、资源语法、userns 与调度器;`skus.tier`(dedicated / shared / cpu)只是售卖分类,合法配对由 `TIER_POOLS` 与 catalog 的 `_check_tier_pool` 收口。
+1. **Kata 与 HAMi 不能共用同一批 GPU,必须分池**。节点池标签 `node-restriction.kubernetes.io/superdl-pool` **只由平台写**(NodeRestriction 前缀,kubelet 自打不上);空节点(零未释放实例)可经管理端在 kata / hami / mig 间无感切换(不登录节点、不重启),`cpu` 池不参与,见 `reference/nodes.md`。**隔离机制的派发键是池,不是档位**:`core/gpu_adapter` 按 kata / mig / hami / cpu 决定 RuntimeClass、资源语法、userns 与调度器;`skus.tier`(dedicated / shared / cpu)只是售卖分类,合法配对由 `TIER_POOLS` 与 catalog 的 `_check_tier_pool` 收口。
 2. **`gpu_count == 0`(纯 CPU 实例)的判定先于池分支。** 计费份数收口到 `core/money.billing_units`(GPU 实例 = 卡数,CPU 实例 = 1 份整机),不散写 `单价 × gpu_count`。
 3. **超卖只发生在 HAMi 池。** kata 与 mig 不超卖。`oversell_cores` 是纯定价参数,不下发调度(schema 上界 9.99)。HAMi 池的隔离是软件限额,不是安全边界。见 `reference/security.md` 隔离级别分级。
 4. **hami / mig / cpu 池的 Pod 必须 `hostUsers: false`(userns)**;kata 池不加。

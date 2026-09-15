@@ -1,0 +1,178 @@
+# kube-prometheus-stack 的 RBAC(values/kps.yaml 置 global.rbac.create=false 后由 helmfile presync 下发)。
+# 与 chart 自带版本的差别:operator 的 configmaps/secrets 从集群级 ClusterRole 挪到 monitoring 命名空间的 Role;
+# 其余规则逐条照抄 chart 88.0.0。对象名带 superdl- 前缀,升级时 helm 删掉旧同名对象不影响这里。
+# Prometheus SA 无 secrets 动词;monitoring 之外任何 SA 都不得持有 secrets 读权(CI helm 渲染断言 + preflight can-i)。
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: superdl-prometheus-operator
+rules:
+  - apiGroups: ["monitoring.coreos.com"]
+    resources:
+      - alertmanagers
+      - alertmanagers/finalizers
+      - alertmanagers/status
+      - alertmanagerconfigs
+      - prometheuses
+      - prometheuses/finalizers
+      - prometheuses/status
+      - prometheusagents
+      - prometheusagents/finalizers
+      - prometheusagents/status
+      - thanosrulers
+      - thanosrulers/finalizers
+      - thanosrulers/status
+      - scrapeconfigs
+      - scrapeconfigs/status
+      - servicemonitors
+      - servicemonitors/status
+      - podmonitors
+      - podmonitors/status
+      - probes
+      - probes/status
+      - prometheusrules
+      - prometheusrules/status
+    verbs: ["*"]
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["*"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["list", "delete"]
+  - apiGroups: [""]
+    resources: ["services", "services/finalizers", "endpoints"]
+    verbs: ["get", "create", "update", "delete"]
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["list", "watch"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["", "events.k8s.io"]
+    resources: ["events"]
+    verbs: ["patch", "create"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "create", "list", "watch", "update", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: superdl-prometheus-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: superdl-prometheus-operator
+subjects:
+  - kind: ServiceAccount
+    name: kube-prometheus-stack-operator
+    namespace: monitoring
+---
+# operator 生成的 Prometheus/Alertmanager 配置 Secret、tls-assets、web-config 与 monitor 引用的凭据都在 monitoring
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: superdl-prometheus-operator
+  namespace: monitoring
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: superdl-prometheus-operator
+  namespace: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: superdl-prometheus-operator
+subjects:
+  - kind: ServiceAccount
+    name: kube-prometheus-stack-operator
+    namespace: monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: superdl-prometheus
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "nodes/metrics", "services", "endpoints", "pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
+  - nonResourceURLs: ["/metrics", "/metrics/cadvisor"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: superdl-prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: superdl-prometheus
+subjects:
+  - kind: ServiceAccount
+    name: kube-prometheus-stack-prometheus
+    namespace: monitoring
+---
+# admission webhook 证书 Job(pre/post-install hook,SA kube-prometheus-stack-admission 由 chart 随 hook 建)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: superdl-prometheus-admission
+rules:
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["validatingwebhookconfigurations", "mutatingwebhookconfigurations"]
+    verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: superdl-prometheus-admission
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: superdl-prometheus-admission
+subjects:
+  - kind: ServiceAccount
+    name: kube-prometheus-stack-admission
+    namespace: monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: superdl-prometheus-admission
+  namespace: monitoring
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: superdl-prometheus-admission
+  namespace: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: superdl-prometheus-admission
+subjects:
+  - kind: ServiceAccount
+    name: kube-prometheus-stack-admission
+    namespace: monitoring

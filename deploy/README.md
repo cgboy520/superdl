@@ -3,7 +3,7 @@
 | 目录 | 内容 |
 |---|---|
 | `app/` | 平台自身部署:本地 compose(PG18)+ 生产 K8s 清单(`k8s/`:API/worker/前端/网关与 TLS/RBAC/迁移 Job/PG 备份 CronJob)+ 前端镜像(`frontend.Dockerfile`+nginx) |
-| `ansible/` | 初始控制面装机([servers] 组 rke2/k3s server:审计策略、server config 渲染、安装器 sha256 校验后安装)。GPU 节点走管理端「添加节点」一键命令(node-join.sh),不走 ansible |
+| `ansible/` | 初始控制面装机(`site.yml`,[servers] 组 rke2/k3s server:审计策略、server config 渲染、安装器 sha256 校验后安装,k3s 另装集群状态备份 cron)与宿主机加固(`harden.yml`,[servers] + [agents]:sshd 只公钥、nftables 默认拒、账号清理、sysctl)。GPU 节点入池走管理端「添加节点」一键命令(node-join.sh),不走 ansible |
 | `cluster/` | 集群组件 helmfile(RKE2/k3s + Cilium + GPU Operator + HAMi + kube-prometheus-stack + Rook-Ceph + TopoLVM + Envoy Gateway + Loki/Alloy),full/light 双档与版本锁定见 `cluster/README.md`;Gateway API CRD 由 `cluster/gateway-api-crds.sh` 单点管(helmfile presync 调用);`cluster/admission/` 为七条 VAP 准入策略(非 helm release,`cluster/apply.sh` 在 helmfile 之前 apply 并回读,`cluster/preflight.sh` 与 `scripts/release.sh` 各再断言一次全部为 Deny) |
 
 平台代码不依赖真实集群:K8s 走 `app/core/k8s` 抽象层,dev/test 用 FakeOrchestrator。
@@ -28,7 +28,7 @@ GitHub 仓库的 `production` environment 必须设置 required reviewers,`HARBO
    - 第 4 步等全部 Deployment(api + 5 个 worker 组件 + web/admin)滚动完成(readinessProbe 即 `/readyz`);
    - 第 5 步经网关从集群外 `curl -fsS https://<api-domain>/readyz`:域名取环境变量 `SUPERDL_API_BASE_URL`,缺省读 ConfigMap `superdl-api-config` 的 `SUPERDL_PUBLIC_BASE_URL`,取不到或仍是占位则跳过并提示。失败先查迁移 Job 与网关链路,修复后重新发布,不回滚。
 4. 首个管理员(库迁移后、仅首发一次):`cd apps/api && uv run python scripts/bootstrap_admin.py`(`seed_dev.py` 只允许 dev/test),口令只打印一次,首次登录强制绑定 TOTP
-5. 备份:`06-pg-backup.yaml` 每日逻辑备份(自建单实例 PG 形态用 `pg/backup.sh` + `pg/wal-sync.sh`);恢复演练见 `cluster/runbooks/pg-backup-restore.md`
+5. 备份:`06-pg-backup.yaml` 每日逻辑备份(自建单实例 PG 形态用 `pg/backup.sh` + `pg/wal-sync.sh`,dump / basebackup / WAL 三条链全部 gpg 并各有 textfile 指标);k3s 集群状态(token / cred / tls / datastore)由 `cluster/k3s/state-backup.sh` 每 6 小时加密到同一镜像机;镜像机不得是承载租户负载的节点;恢复演练见 `cluster/runbooks/pg-backup-restore.md`
 
 ### 发布与迁移约定
 

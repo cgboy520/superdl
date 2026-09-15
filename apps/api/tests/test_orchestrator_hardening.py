@@ -6,19 +6,25 @@
 import asyncio
 from datetime import timedelta
 from decimal import Decimal
+from typing import Any
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import select, update
 
 from app.core.k8s import NodePortTaken
 from app.core.outbox import RUNNING_TIMEOUT, OutboxTask
 from app.core.timeutil import BILLING_DAY_OFFSET, billing_day_floor, now_utc
+from app.modules.account.schemas import LoginRequest
 from app.modules.billing import wallet
 from app.modules.billing.models import BillDailyDisk, BillHourly
 from app.modules.billing.patrol import balance_patrol
 from app.modules.billing.settlement import settle_daily_disks
+from app.modules.nodes.schemas import BootstrapRequest
 from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent, PortAllocation
 from app.modules.orchestrator.reconciler import reconcile_once
+from app.modules.orchestrator.schemas import InstanceCreate
+from app.modules.services.schemas import ServiceSpecIn
 from tests.helpers import (
     H_END,
     IMAGE_PYTORCH,
@@ -693,6 +699,65 @@ class TestDiskArrearsHardening:
             assert d2.grace_started_at == first_grace_at
 
 
+class TestSchemaCaps:
+    """契约层上限:挂了说明大请求体能绕过入参上限打到服务层。"""
+
+    def test_instance_create_caps_and_strips(self):
+        base: dict[str, Any] = {
+            "sku_id": 1,
+            "image_ref": "  reg.example.com/pytorch:2.9  ",
+            "ssh_key_ids": [1],
+        }
+        assert InstanceCreate.model_validate(base).image_ref == "reg.example.com/pytorch:2.9"
+        with pytest.raises(ValidationError):
+            InstanceCreate.model_validate({**base, "ssh_key_ids": list(range(1, 52))})
+        with pytest.raises(ValidationError):
+            InstanceCreate.model_validate({**base, "image_ref": "   "})
+
+    def test_service_spec_caps(self):
+        base: dict[str, Any] = {
+            "sku_id": 1,
+            "image_ref": " reg.example.com/vllm:0.11.0 ",
+            "service_port": 8000,
+        }
+        assert ServiceSpecIn.model_validate(base).image_ref == "reg.example.com/vllm:0.11.0"
+        big = ServiceSpecIn.model_validate({**base, "container_args": ["x" * 4096] * 64})
+        assert big.container_args is not None and len(big.container_args) == 64
+        bad_cases: list[dict[str, Any]] = [
+            {"ssh_key_ids": list(range(1, 52))},
+            {"container_command": ["x"] * 65},
+            {"container_args": ["x" * 4097]},
+            {"env": {f"K{i}": "v" for i in range(65)}},
+            {"env": {"K" * 129: "v"}},
+            {"env": {"K": "v" * 4097}},
+            {"env_secret_keys": [f"K{i}" for i in range(65)]},
+            {"health_path": "health"},
+        ]
+        for bad in bad_cases:
+            with pytest.raises(ValidationError):
+                ServiceSpecIn.model_validate({**base, **bad})
+        ok = ServiceSpecIn.model_validate({**base, "env": {f"K{i}": "v" * 4096 for i in range(64)}})
+        assert ok.env is not None and len(ok.env) == 64
+
+    def test_bootstrap_request_dict_caps(self):
+        base: dict[str, Any] = {"hostname": "node-1"}
+        ok = BootstrapRequest.model_validate({**base, "os_info": {f"k{i}": 1 for i in range(32)}})
+        assert len(ok.os_info) == 32
+        with pytest.raises(ValidationError):
+            BootstrapRequest.model_validate({**base, "os_info": {f"k{i}": 1 for i in range(33)}})
+        with pytest.raises(ValidationError):
+            BootstrapRequest.model_validate(
+                {**base, "gpu_details": [{f"k{i}": 1 for i in range(33)}]}
+            )
+        with pytest.raises(ValidationError):
+            BootstrapRequest.model_validate({**base, "gpu_details": [{}] * 17})
+
+    def test_login_password_bound_matches_registration(self):
+        assert LoginRequest(phone="13800000001", password="p" * 128).password
+        with pytest.raises(ValidationError):
+            LoginRequest(phone="13800000001", password="p" * 129)
+
+
 class TestRestartPortConflict:
     async def test_port_conflict_keeps_tail_bill(self, client, sm, fake, monkeypatch):
         """重启撞 NodePortTaken:stopping→stopped 与尾账已独立提交,不被回滚吞掉。"""
@@ -739,4 +804,178 @@ class TestRestartPortConflict:
         await drain(sm)
         fake.mark_ready(f"tenant-{user_id}", uuid)
         await reconcile_once(sm)
+        assert (await get_instance(client, headers, uuid))["status"] == "running"
+
+
+class TestNeverReadyOccupancy:
+    """服务型实例 health_path 永不就绪:容器已实际运行的时段按量出账,包周期不退款、实例盘保留。
+    挂了说明「永不就绪 = 免费 GPU」回来了。"""
+
+    async def _deploy_never_ready(self, client, sm, fake, phone: str, **over):
+        from tests.helpers import new_user, service_body
+
+        headers, user_id, _key_id, sku_id = await new_user(client, sm, phone)
+        fake.auto_ready = False
+        resp = await client.post(
+            "/api/v1/services",
+            json=service_body(sku_id, health_path="/never-ready", **over),
+            headers=headers,
+        )
+        assert resp.status_code == 202, resp.text
+        svc = resp.json()
+        await drain(sm)
+        uuid = svc["current_instance"]["uuid"]
+        ns = f"tenant-{user_id}"
+        fake.mark_started(ns, uuid, started_at=now_utc() - timedelta(minutes=4))
+        await _backdate_status(sm, uuid, "creating", timedelta(minutes=6))
+        return headers, user_id, uuid, ns, svc
+
+    async def test_on_demand_occupancy_is_billed(self, client, sm, fake):
+        headers, user_id, uuid, ns, _svc = await self._deploy_never_ready(
+            client, sm, fake, "13900000601"
+        )
+        before = None
+        async with sm() as session:
+            before = await wallet.get_balance(session, user_id)
+        counts = await reconcile_once(sm)
+        assert counts["to_failed"] == 1
+        async with sm() as session:
+            inst = (
+                await session.execute(select(Instance).where(Instance.uuid == uuid))
+            ).scalar_one()
+            assert inst.status == "failed"
+            event = (
+                await session.execute(
+                    select(InstanceEvent).where(
+                        InstanceEvent.instance_id == inst.id, InstanceEvent.to_status == "failed"
+                    )
+                )
+            ).scalar_one()
+            assert event.reason == "schedule_timeout"
+            assert event.event_metadata and "occupied_since" in event.event_metadata
+            bills = (
+                (await session.execute(select(BillHourly).where(BillHourly.instance_id == inst.id)))
+                .scalars()
+                .all()
+            )
+            assert sum(b.seconds_used for b in bills) >= 230
+            assert all(b.detail and b.detail["source"] == "tail" for b in bills)
+            assert sum(b.amount for b in bills) > 0
+            assert await wallet.get_balance(session, user_id) < before
+        await drain(sm)
+        assert (ns, uuid) in fake.instance_disks
+        notes = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
+        assert any("健康检查超时" in n["title"] for n in notes)
+
+    async def test_occupancy_spanning_hours_bills_each_hour(self, sm):
+        """占用跨整点:两个自然小时各出一行尾账,秒数合计等于占用时长。"""
+        from app.modules.billing.edge_listener import on_instance_transition
+
+        since = H_END - timedelta(minutes=2)
+        edge = H_END + timedelta(minutes=3)
+        inst_id, _ = await seed_instance(sm, status="failed", events=[])
+        async with sm() as session:
+            inst = await session.get(Instance, inst_id)
+            assert inst is not None
+            event = InstanceEvent(
+                instance_id=inst_id,
+                from_status="creating",
+                to_status="failed",
+                reason="schedule_timeout",
+                actor="system",
+                event_metadata={"occupied_since": since.isoformat()},
+                created_at=edge,
+            )
+            session.add(event)
+            await session.flush()
+            await on_instance_transition(session, inst, event)
+            await session.commit()
+        async with sm() as session:
+            bills = (
+                (await session.execute(select(BillHourly).order_by(BillHourly.hour_start)))
+                .scalars()
+                .all()
+            )
+        assert [b.seconds_used for b in bills] == [120, 180]
+        assert all(b.detail["occupied_since"] == since.isoformat() for b in bills)
+
+    async def test_subscription_never_ready_keeps_prepay(self, client, sm, fake):
+        """包周期服务永不就绪:不退预付、订阅仍 active、不出小时账。"""
+        from app.modules.billing.models import Subscription
+
+        _headers, user_id, _uuid, _ns, _svc = await self._deploy_never_ready(
+            client, sm, fake, "13900000602", market="subscription", period="day"
+        )
+        async with sm() as session:
+            before = await wallet.get_balance(session, user_id)
+        await reconcile_once(sm)
+        async with sm() as session:
+            sub = (
+                await session.execute(select(Subscription).where(Subscription.user_id == user_id))
+            ).scalar_one()
+            assert sub.status == "active"
+            assert await wallet.get_balance(session, user_id) == before
+            assert (await session.execute(select(BillHourly))).scalars().all() == []
+
+    async def test_dev_instance_timeout_stays_free(self, client, sm, fake):
+        """开发机(无 health_path)超时属平台责任:不出账、实例盘照旧清理。"""
+        headers, user_id, key_id = await funded_user(client, sm, "13900000603")
+        sku_id = await create_test_sku(sm)
+        fake.auto_ready = False
+        resp = await client.post(
+            "/api/v1/instances",
+            json={"sku_id": sku_id, "image_ref": IMAGE_PYTORCH, "ssh_key_ids": [key_id]},
+            headers=headers,
+        )
+        uuid = resp.json()["uuid"]
+        await drain(sm)
+        ns = f"tenant-{user_id}"
+        fake.mark_started(ns, uuid, started_at=now_utc() - timedelta(minutes=4))
+        await _backdate_status(sm, uuid, "creating", timedelta(minutes=6))
+        await reconcile_once(sm)
+        await drain(sm)
+        async with sm() as session:
+            assert (await session.execute(select(BillHourly))).scalars().all() == []
+        assert (ns, uuid) not in fake.instance_disks
+
+    async def test_billing_candidates_include_boot_failures(self, sm):
+        inst, _ = await seed_instance(
+            sm,
+            user_id=6,
+            events=[
+                (H - timedelta(minutes=10), None, "creating"),
+                (H + timedelta(minutes=5), "creating", "failed"),
+            ],
+        )
+        from app.modules.orchestrator import queries as orchestrator_queries
+
+        async with sm() as session:
+            ids = {row[0] for row in await orchestrator_queries.billing_candidates(session, H)}
+        assert inst in ids
+
+    def test_startup_probe_threshold_below_platform_timeout(self):
+        from app.core.k8s.base import STARTUP_PROBE_PERIOD_SECONDS
+        from app.modules.orchestrator.service import startup_failure_threshold
+
+        assert startup_failure_threshold(300) * STARTUP_PROBE_PERIOD_SECONDS < 300
+        assert startup_failure_threshold(10) == 3
+
+
+class TestLifecycleRateLimit:
+    async def test_start_stop_share_hourly_bucket(self, client, sm, fake):
+        """开关机共用每用户小时桶:桶满后 stop / start / restart 与服务 start 一律 429。"""
+        from app.core.ratelimit import check_rate_limit
+        from app.modules.orchestrator.service import LIFECYCLE_MAX_PER_HOUR
+
+        headers, uuid, user_id = await provision_running(client, sm, fake, "13900000604")
+        for _ in range(LIFECYCLE_MAX_PER_HOUR):
+            await check_rate_limit(
+                f"instance-lifecycle:{user_id}",
+                max_attempts=LIFECYCLE_MAX_PER_HOUR,
+                window_seconds=3600.0,
+            )
+        for path in ("stop", "restart", "start"):
+            resp = await client.post(f"/api/v1/instances/{uuid}/{path}", headers=headers)
+            assert resp.status_code == 429, (path, resp.text)
+            assert resp.json()["code"] == "RATE_LIMITED"
         assert (await get_instance(client, headers, uuid))["status"] == "running"

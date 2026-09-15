@@ -21,6 +21,7 @@ from app.modules.billing.models import BillHourly, Wallet
 from app.modules.billing.settlement import (
     DiskBillingInput,
     bill_amount,
+    billing_view,
     get_watermark,
     running_seconds_in_window,
     settle_disk_pending_days,
@@ -98,12 +99,12 @@ async def _unsettled_burn(
 ) -> Decimal:
     """估算未出账消耗,不入账;从当前小时与水位线次小时的较早者开始。
 
-    事件 running 秒数减已出账秒数,不按失联 metadata 截断;最多允许 31 天秒数。
+    事件按计费视图(占用边展开、失联边截断)重建 running 秒数减已出账秒数;最多允许 31 天秒数。
     """
     h0 = hour_floor(now)
     start = h0 if settled_through is None else min(h0, settled_through + timedelta(hours=1))
-    events = await orchestrator_queries.billing_events_before(session, inst.id, now)
-    seconds = running_seconds_in_window([(ts, f, t) for ts, f, t, _m in events], start, now)
+    events = await orchestrator_queries.billing_events(session, inst.id)
+    seconds = running_seconds_in_window(billing_view(events), start, now)
     billed = (
         await session.execute(
             select(func.coalesce(func.sum(BillHourly.seconds_used), 0)).where(

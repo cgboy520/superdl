@@ -81,8 +81,8 @@ class TestPlatformQuota:
         from app.core import sms as sms_module
         from app.modules.account.models import SmsCode
 
-        monkeypatch.setattr(sms_module, "SMS_PLATFORM_HOURLY_MAX", 1)
-        await sms_module.ensure_sms_platform_quota()
+        monkeypatch.setitem(sms_module.SMS_PLATFORM_LIMITS, "verify", (1, 5000))
+        await sms_module.ensure_sms_platform_quota("verify")
         resp = await client.post(
             "/api/v1/auth/sms-code",
             json={"phone": "13800000093", "purpose": "register"},
@@ -108,8 +108,8 @@ class TestPlatformQuota:
                 sent.append(phone)
 
         set_sms_channel(_CountingChannel())
-        monkeypatch.setattr(sms_module, "SMS_PLATFORM_HOURLY_MAX", 1)
-        await sms_module.ensure_sms_platform_quota()
+        monkeypatch.setitem(sms_module.SMS_PLATFORM_LIMITS, "notify", (1, 2000))
+        await sms_module.ensure_sms_platform_quota("notify")
         task = OutboxTask(type="notify.sms", payload={"phone": "13800000094", "title": "余额预警"})
         async with sm() as session:
             await handle_notify_sms(session, task)
