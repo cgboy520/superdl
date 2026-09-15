@@ -46,7 +46,7 @@ jobs:
             echo "api=$(hit '^(apps/api/|packages/api-client/openapi\.json$|pyrightconfig\.json$|\.python-version$|\.github/workflows/ci\.yml$)')"
             echo "frontend=$(hit '^(apps/web/|apps/admin/|packages/|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|package\.json$|turbo\.json$|eslint\.config\.mjs$|\.prettierrc$|\.prettierignore$|scripts/check-cjk\.sh$|scripts/check-copy-banned\.sh$|scripts/check-csp-hash\.sh$|scripts/check-page-skeleton\.py$|deploy/app/security-headers-web-csp\.conf$|\.github/workflows/ci\.yml$)')"
             echo "e2e=$(hit '^(apps/|packages/|e2e/|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|package\.json$|turbo\.json$|\.python-version$|\.github/workflows/ci\.yml$)')"
-            echo "k8s=$(hit '^(apps/api/|deploy/|\.python-version$|\.github/workflows/ci\.yml$)')"
+            echo "k8s=$(hit '^(apps/api/|deploy/|\.python-version$|\.github/workflows/ci\.yml$|\.github/kind-config\.yaml$)')"
             echo "manifest=$(hit '^(deploy/app/k8s/|scripts/check-gateway-manifests\.py$|\.github/workflows/ci\.yml$)')"
             echo "nodejoin=$(hit '^(deploy/node-join/|apps/api/app/modules/nodes/assets/node-join\.sh$|\.github/workflows/ci\.yml$)')"
           } >> "$GITHUB_OUTPUT"
@@ -161,6 +161,8 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3
+        with:
+          config: .github/kind-config.yaml
       - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081
         with:
           python-version: "3.13"
@@ -409,6 +411,17 @@ jobs:
             pod-security.kubernetes.io/enforce=baseline pod-security.kubernetes.io/audit=restricted \
             pod-security.kubernetes.io/warn=restricted
           kubectl label namespace superdl pod-security.kubernetes.io/enforce=restricted --overwrite
+          kubectl apply -f - <<'EOF'
+          apiVersion: node.k8s.io/v1
+          kind: RuntimeClass
+          metadata: {name: nvidia}
+          handler: runc
+          ---
+          apiVersion: node.k8s.io/v1
+          kind: RuntimeClass
+          metadata: {name: kata-qemu}
+          handler: runc
+          EOF
           uv run python scripts/render_admission_probes.py /tmp/admission-probes
           fail=0
           for f in /tmp/admission-probes/*.yaml; do
