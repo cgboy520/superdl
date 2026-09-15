@@ -13,7 +13,7 @@ import { EntityHeader, GatedButton, RowActions, StatusTag, type KeyValueItem } f
 import { type NodeRow, useNodeMetrics } from "../../api";
 import { ReasonAction } from "../../components/ReasonAction";
 import { GpuGrid } from "./-GpuGrid";
-import { canSwitchPool } from "./-SwitchPoolModal";
+import { canSwitchPool, inSwitchablePool } from "./-SwitchPoolModal";
 import { NodeMetricsPanel } from "./-NodeMetricsPanel";
 
 /** 封锁 / 解封提交(经 outbox);反馈与失效由页面处理 */
@@ -112,6 +112,7 @@ export function NodeActions({
   const cordoned = node.status === "Cordoned";
   const blocked = blockedReason(node, writable, t);
   const switchable = !isUnlabeled(node) && canSwitchPool(node);
+  const switchBlocked = inSwitchablePool(node) ? t("nodes.switchPoolNoTarget") : t("nodes.switchPoolUnavailable");
   return (
     <RowActions
       size={size}
@@ -133,11 +134,7 @@ export function NodeActions({
         />
       }
       secondary={
-        <GatedButton
-          size={size}
-          reason={switchable ? blocked : t("nodes.switchPoolUnavailable")}
-          onClick={() => onSwitchPool(node)}
-        >
+        <GatedButton size={size} reason={switchable ? blocked : switchBlocked} onClick={() => onSwitchPool(node)}>
           {t("nodes.switchPoolBtn")}
         </GatedButton>
       }

@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 
 import { type NodeRow } from "../../api";
-import { canSwitchPool, currentPool, switchTargets } from "./-SwitchPoolModal";
+import { canSwitchPool, currentPool, inSwitchablePool, switchTargets } from "./-SwitchPoolModal";
 
 function node(over: Partial<NodeRow> = {}): NodeRow {
   return {
@@ -57,5 +57,11 @@ describe("canSwitchPool", () => {
 
   it("观测卡数掉到 0 但还在 GPU 池:仍可切回,否则节点锁死在坏池里", () => {
     expect(canSwitchPool(node({ pool_label: "kata", gpu_model: "GB10", gpu_total: 0 }))).toBe(true);
+  });
+
+  it("目标池全被机型灰置时按钮不可用:免得弹窗开出来没得选、提交必被拒", () => {
+    const gb10 = node({ pool_label: "hami", gpu_model: "GB10" });
+    expect(inSwitchablePool(gb10)).toBe(true);
+    expect(canSwitchPool(gb10)).toBe(false);
   });
 });

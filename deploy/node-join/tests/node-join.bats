@@ -410,6 +410,15 @@ RKESHIM
   grep -q '"phase":"waiting_node","state":"ok"' "$CURL_LOG"
 }
 
+@test "kata 池:驱动装了但没加载(nvidia-smi 不通)同样判失败" {
+  _write_fixture kata
+  export NVIDIA_OK=0 DPKG_INSTALLED=1
+  run_script
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"kata 池要求宿主无 NVIDIA 驱动"* ]]
+  grep -q '"phase":"driver","state":"failed"' "$CURL_LOG"
+}
+
 @test "kata 池:宿主预装驱动时 driver 阶段判失败,不带病入群" {
   _write_fixture kata
   export NVIDIA_OK=1

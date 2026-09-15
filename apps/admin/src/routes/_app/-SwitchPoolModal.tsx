@@ -26,11 +26,16 @@ export function currentPool(node: NodeRow): string {
   return node.desired_pool || node.pool_label || "";
 }
 
-/** 能否切池:已打标的带卡节点;观测卡数因目标池组件没起来掉到 0 时,只要还在 GPU 池里就仍可切回。 */
-export function canSwitchPool(node: NodeRow): boolean {
+/** 节点是否参与切池:已打标的带卡节点;观测卡数因目标池组件没起来掉到 0 时,只要还在 GPU 池里就算。 */
+export function inSwitchablePool(node: NodeRow): boolean {
   const from = currentPool(node);
   if (!from || from === "cpu") return false;
   return node.gpu_total > 0 || (SWITCHABLE_POOLS as readonly string[]).includes(from);
+}
+
+/** 能否切池:参与切池,且机型至少还剩一个可选目标池。 */
+export function canSwitchPool(node: NodeRow): boolean {
+  return inSwitchablePool(node) && switchTargets(node).some((target) => !target.disabled);
 }
 
 /** 排除当前池;机型不支持 MIG 切分的禁用 mig,不支持整卡直通的禁用 kata。 */
@@ -60,6 +65,7 @@ export function SwitchPoolModal({
   const confirm = useConfirm();
   const { message } = App.useApp();
   const [form] = Form.useForm<FormValues>();
+  const target = Form.useWatch("pool", form);
   const switchPool = useSwitchNodePool({
     mutation: {
       onSuccess: (r) => {
@@ -78,9 +84,12 @@ export function SwitchPoolModal({
 
   if (!node) return null;
   const from = currentPool(node);
+  // 未识别机型在接口里是占位 "GPU"(router_nodes:gpu_model or "GPU"),回落到原始探测串
+  const model =
+    node.gpu_model && node.gpu_model !== "GPU" ? node.gpu_model : node.gpu_model_raw || t("nodes.unrecognizedTag");
   const blockedReason: Partial<Record<SwitchablePool, string>> = {
-    kata: t("nodes.switchPoolPassthroughUnsupported", { model: node.gpu_model }),
-    mig: t("nodes.switchPoolMigUnsupported", { model: node.gpu_model }),
+    kata: t("nodes.switchPoolPassthroughUnsupported", { model }),
+    mig: t("nodes.switchPoolMigUnsupported", { model }),
   };
   const options = switchTargets(node).map(({ pool, disabled }) => ({
     value: pool,
@@ -141,7 +150,11 @@ export function SwitchPoolModal({
         {t("common.targetLabel")}:{node.name}
       </Typography.Text>
       <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
-        <Alert type="warning" showIcon title={t("nodes.switchPoolNotice")} />
+        <Alert
+          type="warning"
+          showIcon
+          title={target === "kata" ? t("nodes.switchPoolNoticeKata") : t("nodes.switchPoolNotice")}
+        />
         <Form form={form} layout="vertical" initialValues={{ pool: options.find((o) => !o.disabled)?.value }}>
           <Form.Item label={t("nodes.switchPoolFrom")}>
             <Typography.Text>{from ? t(POOL_LABEL_KEY[from as SwitchablePool]) : "—"}</Typography.Text>
