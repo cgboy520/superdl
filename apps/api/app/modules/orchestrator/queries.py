@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import func, select, union
+from sqlalchemy import and_, func, or_, select, union
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import not_found
@@ -68,11 +68,11 @@ async def lock_instance_for_billing(session: AsyncSession, instance_id: int) -> 
     await session.execute(select(Instance.id).where(Instance.id == instance_id).with_for_update())
 
 
-async def billing_events_before(
-    session: AsyncSession, instance_id: int, before: Any
+async def billing_events(
+    session: AsyncSession, instance_id: int
 ) -> list[tuple[Any, str | None, str, Any]]:
-    """实例截至某时刻的事件 (created_at, from_status, to_status, event_metadata),按发生序;
-    node_lost/pod_lost 边的 metadata 带 unready_since 供结算截断。"""
+    """实例全部事件 (created_at, from_status, to_status, event_metadata),按发生序;窗口裁剪由
+    结算侧做(晚于窗口的失败边可能带 occupied_since / unready_since,决定窗口内的计费起止)。"""
     return list(
         (
             await session.execute(
@@ -82,10 +82,7 @@ async def billing_events_before(
                     InstanceEvent.to_status,
                     InstanceEvent.event_metadata,
                 )
-                .where(
-                    InstanceEvent.instance_id == instance_id,
-                    InstanceEvent.created_at < before,
-                )
+                .where(InstanceEvent.instance_id == instance_id)
                 .order_by(InstanceEvent.id)
             )
         )
@@ -107,12 +104,19 @@ async def billing_candidates(
     session: AsyncSession, window_start: Any
 ) -> list[tuple[int, int, Any, int]]:
     """小时结算候选:(instance_id, user_id, price_hourly, gpu_count) =
-    当前 running ∪ 窗口起点以来离开过 running 的实例;包周期实例只在此处跳过。"""
+    当前 running ∪ 窗口起点以来离开过 running 或 creating/starting→failed 的实例;
+    包周期实例只在此处跳过。"""
     running_now = select(Instance.id.label("iid")).where(Instance.status == sm_def.RUNNING)
     exited = (
         select(InstanceEvent.instance_id.label("iid"))
         .where(
-            InstanceEvent.from_status == sm_def.RUNNING,
+            or_(
+                InstanceEvent.from_status == sm_def.RUNNING,
+                and_(
+                    InstanceEvent.to_status == sm_def.FAILED,
+                    InstanceEvent.from_status.in_((sm_def.CREATING, sm_def.STARTING)),
+                ),
+            ),
             InstanceEvent.created_at >= window_start,
         )
         .distinct()

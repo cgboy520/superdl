@@ -1,17 +1,41 @@
 """可观测性与运维健壮性:request-id 贯穿、业务指标、异常兜底、健康探针、数据保洁。"""
 
+import re
 from datetime import timedelta
 
+import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select, text, update
 
+from app.core.observability import request_id_from_header
 from app.core.timeutil import now_utc
+
+_HEX16 = re.compile(r"^[0-9a-f]{16}$")
 
 
 class TestRequestId:
     async def test_generated_and_echoed(self, client: AsyncClient):
         resp = await client.get("/healthz")
         assert len(resp.headers["x-request-id"]) >= 8
+
+    async def test_wellformed_inbound_id_reused(self, client: AsyncClient):
+        resp = await client.get("/healthz", headers={"X-Request-ID": "gw-1.a_B"})
+        assert resp.headers["x-request-id"] == "gw-1.a_B"
+
+    @pytest.mark.parametrize("bad", ["has space", "a" * 65, "x\ty", "<script>", ""])
+    async def test_malformed_inbound_id_replaced(self, client: AsyncClient, bad: str):
+        """不合规则的 X-Request-ID 不沿用:响应头与错误体都是服务端生成的 16 位十六进制。"""
+        resp = await client.get("/api/v1/no-such-route", headers={"X-Request-ID": bad})
+        rid = resp.headers["x-request-id"]
+        assert _HEX16.match(rid) and rid != bad
+        assert resp.json()["request_id"] == rid
+
+    def test_request_id_from_header_rules(self):
+        assert request_id_from_header("abc-123_x.y") == "abc-123_x.y"
+        assert request_id_from_header("a" * 64) == "a" * 64
+        assert _HEX16.match(request_id_from_header("a" * 65))
+        assert _HEX16.match(request_id_from_header(None))
+        assert _HEX16.match(request_id_from_header("bad id"))
 
     async def test_error_body_carries_request_id(self, client: AsyncClient):
         """错误响应体回带 request_id。"""

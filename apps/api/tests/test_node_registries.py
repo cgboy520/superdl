@@ -57,7 +57,7 @@ async def test_bootstrap_carries_registries_and_ca(client, sm):
     from app.core.platform_config import set_platform_settings
 
     await set_platform_setting(sm, "cluster_server_url", "https://10.0.0.10:9345")
-    await set_platform_setting(sm, "cluster_join_token", "K10abcdef0123456789::server:secrettoken")
+    await set_platform_setting(sm, "cluster_join_token", "agent-fixture-0123456789-secrettoken")
     async with sm() as session:
         await set_platform_settings(
             session,

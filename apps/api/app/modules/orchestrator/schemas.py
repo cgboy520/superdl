@@ -2,7 +2,7 @@ import re
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.messages import render_message
 from app.core.money import MoneyOut
@@ -21,6 +21,16 @@ _RESERVED_ENV_PREFIXES = ("JUPYTER_", "SUPERDL_", "NVIDIA_")
 _RESERVED_ENV_NAMES = frozenset({"AUTHORIZED_KEYS"})
 _ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
+MAX_SSH_KEYS_PER_REQUEST = 50
+MAX_ENV_VARS = 64
+MAX_ENV_KEY_LEN = 128
+MAX_ENV_VALUE_LEN = 4096
+
+
+def strip_image_ref(value: object) -> object:
+    """镜像引用去首尾空白,再交长度与形态校验。"""
+    return value.strip() if isinstance(value, str) else value
+
 
 def validate_market_shape(market: str, period: str | None, fields_set: set[str]) -> None:
     """包周期必带 period;按量、竞价请求不得显式传 period 或 period_count。"""
@@ -37,9 +47,18 @@ def validate_health_path(health_path: str | None) -> None:
 
 
 def validate_user_env(env: dict[str, str] | None, secret_keys: list[str] | None) -> None:
-    """校验环境变量键名与保留名;secret_keys 须为 env 键名的子集。"""
+    """校验环境变量条数、键名、保留名与键值长度;secret_keys 须为 env 键名的子集。"""
     env = env or {}
-    for name in env:
+    if len(env) > MAX_ENV_VARS:
+        raise ValueError(render_message("orchestrator.envTooMany", {"max": MAX_ENV_VARS}))
+    for name, value in env.items():
+        if len(name) > MAX_ENV_KEY_LEN or len(value) > MAX_ENV_VALUE_LEN:
+            raise ValueError(
+                render_message(
+                    "orchestrator.envEntryTooLong",
+                    {"name": name[:32], "key_max": MAX_ENV_KEY_LEN, "value_max": MAX_ENV_VALUE_LEN},
+                )
+            )
         if not _ENV_NAME_RE.match(name):
             raise ValueError(render_message("orchestrator.envKeyInvalid", {"name": name}))
         if name in _RESERVED_ENV_NAMES or name.startswith(_RESERVED_ENV_PREFIXES):
@@ -88,13 +107,15 @@ class InstanceCreate(BaseModel):
     sku_id: int
     gpu_count: int = Field(default=1, ge=0, le=8)
     image_ref: str = Field(min_length=1, max_length=256)
-    ssh_key_ids: list[int] = Field(min_length=1)
+    ssh_key_ids: list[int] = Field(min_length=1, max_length=MAX_SSH_KEYS_PER_REQUEST)
     name: str | None = Field(default=None, max_length=64)
     data_disk_id: int | None = None
 
     market: Literal["on_demand", "subscription", "spot"] = MARKET_ON_DEMAND
     period: Literal["day", "week", "month", "year"] | None = None
     period_count: int = Field(default=1, ge=1, le=MAX_PERIOD_COUNT)
+
+    _strip_image_ref = field_validator("image_ref", mode="before")(strip_image_ref)
 
     @model_validator(mode="after")
     def _market_shape(self) -> "InstanceCreate":

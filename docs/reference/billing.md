@@ -34,7 +34,8 @@
 - 尾账:stop/release 时对当前小时已用秒数立即入账,同一 UNIQUE 键幂等。
 - 平台责任失联(node_lost/pod_lost):计费截断到 Pod 首次 not-ready 时刻(事件 `metadata.unready_since`);截断口径只有一处 `settlement.truncated_at`:整点/追平在事件重建层用它,尾账监听器对本次退出边用它(并把 `truncated_at` / `truncate_reason` 留进 `bills_hourly.detail`)。`unready_since` 由 reconciler 跨轮累积、清零只有两处,见 [orchestrator.md](./orchestrator.md)。pod_unready(节点正常)不截断。
 - 无水位线行只结最近窗口,落 `{kind}_watermark_missing` 告警日志,更早窗口需人工补结。
-- 退款:creating 失败全额退;未产生 running 时段即无账。
+- 退款:creating 失败(平台责任)全额退;未产生 running 时段即无账。
+- 占用出账:服务型实例 `health_path` 非空且 workspace 容器已实际运行、却在 `creating_timeout_seconds` 内未就绪(reconciler `schedule_timeout`)时,失败边 `metadata.occupied_since` = 容器起始时刻;计费视图 `settlement.billing_view` 把该边展开成「occupied_since 进 running + 边时刻离开 running」,尾账监听器按自然小时逐段出账(`bills_hourly.detail.occupied_since`),整点候选集也纳入 creating/starting→failed 边。开发机与无 `health_path` 的服务超时属平台责任,不出账。计数 `superdl_schedule_timeout_occupied_total`。
 - 开户前校验(`assert_can_afford`):余额 ≥ (在途 running 实例时费 + 新增时费) × `afford_cover_hours` + (在途盘日费 + 新增盘日费) × `disk_grace_days`;钱包 FOR UPDATE 锁内统计,与资源创建同事务。不足报 `INSUFFICIENT_BALANCE`。
 - 欠费链路(5min 巡检):预估可用时长低于用户预警阈值 → 预警;可用余额 − 当前小时未结算实时估算消耗 ≤ 0 → 停机 → frozen → releasing。实时估算与结算同口径:事件重建秒数 − 已出账秒数。
 - 欠费巡检全链路判据是可用余额(balance − frozen,`wallet.available_of` / `get_available_balance`),与 `assert_can_afford` 同口径:粗筛、锁内二次读、低余额预警 payload、stopped→frozen、frozen→解冻、数据盘欠费链一律取它。
@@ -115,15 +116,16 @@ frozen 到期回收那一支不过滤,回收由余额巡检统一做。创建路
 
 1. 临期预警 `expires_at - now < period_expire_warn_days` → 短信 + 站内信。去重锚点 `subscriptions.warned_for_expiry`(存「已预警到哪个到期时刻」);站内信另有按日分桶的 dedup_key。
 2. 自动续费:到期 + `auto_renew` + 可用余额够 → 扣款、新开一行、通知。先算价再比可用余额,不靠 `debit` 抛错兜底。余额不够发「自动续费失败」通知,落到停机链路。
-3. 到期停机:订阅行转 `expired`;running → `system_stop(reason='subscription_expired')`;stopped → 直接冻结。creating/starting/stopping/frozen/releasing 本轮不动,下一轮接手。
-4. 冻结:单独一趟把「最后一期已到期且已停稳」的实例转 `frozen`(reason `subscription_freeze`),写 `frozen_deadline = now + freeze_grace_hours`。与上一步分两趟。候选集是「status='expired' 且 expires_at ≤ now」减去在保集合。
-5. 回收:由 `balance_patrol` 的 frozen 分支做。冻结窗口复用 `freeze_grace_hours`。
+3. 到期停机:订阅行转 `expired`;running → `system_stop(reason='subscription_expired')`;stopped → 直接冻结。creating/starting/stopping/frozen/releasing 本轮不动。
+4. 到期扫描(`_patrol_expired_sweep`,同一轮的第二趟):候选集是「status='expired' 且 expires_at ≤ now」减去在保集合,取其中 running 与 stopped 的实例,逐台独立事务锁行复核后 running → 停机、stopped → 冻结(reason `subscription_freeze`,`frozen_deadline = now + freeze_grace_hours`)。到期时刻落在 creating/starting/stopping 的实例由后续轮次的这一趟接手,不存在只看 active 行而漏掉的实例。
+5. 指标 `superdl_subscription_unpaid_running_instances`:market=subscription 且 creating/starting/running 但无在保订阅的实例数,每轮刷新;>0 超一轮巡检即告警 `SubscriptionUnpaidRunning`。
+6. 回收:由 `balance_patrol` 的 frozen 分支做。冻结窗口复用 `freeze_grace_hours`。
 
 到期与欠费用不同的 `instance_events.reason`(`subscription_expired` / `subscription_freeze` 对 `arrears_stop` / `arrears_freeze`)。
 
 ### 预付语义的三条硬规矩
 
-- 中途释放不退款。实例进入 `releasing` 时由计费边监听器把 active 订阅转 `cancelled`,不生成退款流水;确需退款走人工 `refund_requests`(见 [payment.md](./payment.md))。挂在迁移监听器上,覆盖用户释放、欠费回收、到期回收、管理端强制回收四条路径。已 `expired` 的历史行不动。**唯一例外:从未运行即 failed**(首次 creating 调度超时,reconciler `schedule_timeout`)——同事务作废 active 订阅并把 `amount_paid` 原额退回余额(ledger type=refund / ref_type=subscription,`subscriptions.refund_unstarted`),通知写明退回金额。
+- 中途释放不退款。实例进入 `releasing` 时由计费边监听器把 active 订阅转 `cancelled`,不生成退款流水;确需退款走人工 `refund_requests`(见 [payment.md](./payment.md))。挂在迁移监听器上,覆盖用户释放、欠费回收、到期回收、管理端强制回收四条路径。已 `expired` 的历史行不动。**唯一例外:从未运行即 failed 且属平台责任**(首次 creating 调度超时,reconciler `schedule_timeout`,失败边不带 `occupied_since`)——同事务作废 active 订阅并把 `amount_paid` 原额退回余额(ledger type=refund / ref_type=subscription,`subscriptions.refund_unstarted`),通知写明退回金额。服务型实例 `health_path` 永不就绪(带 `occupied_since`)不退款、订阅保持 active、实例盘保留,修复后可重新启动。
 - 到期不自动转按量,到期即停机。
 - 余额为零不停机:停机判据、燃烧率、冻结与解冻四处都排除(见上表)。
 

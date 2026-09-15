@@ -40,7 +40,7 @@ data = {
     "pool": sys.argv[1],
     "cluster_agent_version": "v1.36.2+rke2r1" if distro == "rke2" else "v1.36.3+k3s1",
     "cluster_server_url": "https://10.0.0.10:9345" if distro == "rke2" else "https://10.0.0.10:6443",
-    "cluster_join_token": os.environ.get("FIXTURE_JOIN_TOKEN", "K10fixture::server:secret"),
+    "cluster_join_token": os.environ.get("FIXTURE_JOIN_TOKEN", "superdl-agent-fixture-token-0123456789"),
     "driver_version": "580",
     "nvme_devices": [],
     "registries_yaml": os.environ.get("FIXTURE_REGISTRIES_YAML", 'mirrors:\n  "*": {}\n'),
@@ -206,12 +206,29 @@ run_script() { run bash "$SCRIPT" --token-file "$TMP/token" --api-base http://fa
 }
 
 @test "join token 含换行(YAML 注入)时拒绝写 agent config.yaml" {
-  export FIXTURE_JOIN_TOKEN=$'K10fixture::server:secret\nkubelet-arg:\n  - "anonymous-auth=true"'
+  export FIXTURE_JOIN_TOKEN=$'superdl-agent-fixture-token-0123456789\nkubelet-arg:\n  - "anonymous-auth=true"'
   _write_fixture hami
   run_script
   [ "$status" -ne 0 ]
   [[ "$output" == *"cluster_join_token 含非法字符"* ]]
   [ ! -f "$TMP/etc/rancher/rke2/config.yaml" ]
+}
+
+@test "拒绝 server node-token(K10<64hex>::server:…):不写 agent config.yaml" {
+  export FIXTURE_JOIN_TOKEN="K10$(printf 'a%.0s' $(seq 1 64))::server:secret"
+  _write_fixture hami
+  run_script
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"server node-token"* ]]
+  [ ! -f "$TMP/etc/rancher/rke2/config.yaml" ]
+}
+
+@test "agent token 取 K10<64hex>::node:<pw> 形态时放行" {
+  export FIXTURE_JOIN_TOKEN="K10$(printf 'a%.0s' $(seq 1 64))::node:secret"
+  _write_fixture hami
+  run_script
+  [ "$status" -eq 0 ]
+  grep -q "::node:secret" "$TMP/etc/rancher/rke2/config.yaml"
 }
 
 @test "无 CA:不落 harbor-ca.crt,registries.yaml 只有 Spegel 段" {
@@ -224,8 +241,9 @@ run_script() { run bash "$SCRIPT" --token-file "$TMP/token" --api-base http://fa
 @test "全流程(驱动就绪免重启):写出 rke2 config/registries,marker 齐全,进度上报到位" {
   run_script
   [ "$status" -eq 0 ]
-  grep -q "K10fixture::server:secret" "$TMP/etc/rancher/rke2/config.yaml"
+  grep -q "superdl-agent-fixture-token-0123456789" "$TMP/etc/rancher/rke2/config.yaml"
   ! grep -q "node-label" "$TMP/etc/rancher/rke2/config.yaml"
+  ! grep -q "superdl-pool" "$TMP/etc/rancher/rke2/config.yaml"
   ! grep -q "superdl.io/pool" "$TMP/etc/rancher/rke2/config.yaml"
   [ "$(stat -c %a "$TMP/etc/rancher/rke2/config.yaml")" = "600" ]
   grep -q 'mirrors:' "$TMP/etc/rancher/rke2/registries.yaml"
@@ -500,7 +518,7 @@ RKESHIM
   python3 - > "$BOOTSTRAP_FIXTURE" <<'PYEOF'
 import json
 print(json.dumps({"pool":"hami","k8s_distro":"rke2","install_mirror":"cn",
-  "cluster_agent_version":"v1.36.2+rke2r1","cluster_server_url":"https://10.0.0.10:9345","cluster_join_token":"K10::server:secret",
+  "cluster_agent_version":"v1.36.2+rke2r1","cluster_server_url":"https://10.0.0.10:9345","cluster_join_token":"superdl-agent-fixture-token-0123456789",
   "driver_version":"580","nvme_devices":["loop:80G"],"registries_yaml":"","progress_token":"sdlp_fixturetoken"}))
 PYEOF
   run_script

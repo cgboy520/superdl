@@ -104,6 +104,7 @@ async def rename_instance(
 async def stop_instance(
     uuid: str, user: CurrentUser, session: DbSession, request: Request
 ) -> InstanceOut:
+    await service.check_lifecycle_rate_limit(user.id)
     instance = await service.stop_instance(session, user.id, uuid)
     set_audit_target(request, f"instance:{uuid}")
     return await service.instance_view(session, instance)
@@ -116,6 +117,7 @@ async def start_instance(
     await account_service.require_real_name_if_required(
         session, user, key="orchestrator.realNameRequired"
     )
+    await service.check_lifecycle_rate_limit(user.id)
     instance = await service.start_instance(session, user.id, uuid)
     set_audit_target(request, f"instance:{uuid}")
     return await service.instance_view(session, instance)
@@ -125,6 +127,7 @@ async def start_instance(
 async def restart_instance(
     uuid: str, user: CurrentUser, session: DbSession, request: Request
 ) -> InstanceOut:
+    await service.check_lifecycle_rate_limit(user.id)
     instance = await service.restart_instance(session, user.id, uuid)
     set_audit_target(request, f"instance:{uuid}")
     return await service.instance_view(session, instance)

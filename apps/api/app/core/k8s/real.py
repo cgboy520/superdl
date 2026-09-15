@@ -26,9 +26,13 @@ from app.core.k8s.base import (
     GATEWAY_SVC_LISTENER,
     GPU_MODEL_NODE_LABEL,
     HTTPROUTE_PLURAL,
+    INFRA_NODE_LABEL,
+    INFRA_ROLE_LABELS,
     INSTANCE_DISK_STORAGE_CLASS,
     MANAGED_LABEL,
     POOL_NODE_LABEL,
+    STARTUP_PROBE_PERIOD_SECONDS,
+    WORKSPACE_CONTAINER,
     ClusterProbe,
     ComponentDetail,
     ComponentFact,
@@ -116,6 +120,27 @@ def _ready_condition(obj: Any) -> bool:
     return any(c.type == "Ready" and c.status == "True" for c in (obj.status.conditions or []))
 
 
+def _container_started_at(pod: Any) -> Any:
+    """workspace 容器最早一次 running / terminated 的 startedAt(重启后仍取首次);未起过为 None。"""
+    starts: list[Any] = []
+    for cs in pod.status.container_statuses or []:
+        if cs.name != WORKSPACE_CONTAINER:
+            continue
+        for state in (cs.state, cs.last_state):
+            if state is None:
+                continue
+            if state.running is not None and state.running.started_at is not None:
+                starts.append(state.running.started_at)
+            if state.terminated is not None and state.terminated.started_at is not None:
+                starts.append(state.terminated.started_at)
+    return min(starts) if starts else None
+
+
+def _node_is_infra(labels: dict[str, str]) -> bool:
+    """平台组件落点标签或控制面角色标签任一在即 infra 节点。"""
+    return INFRA_NODE_LABEL in labels or any(k in labels for k in INFRA_ROLE_LABELS)
+
+
 def _is_node_port_taken(exc: client.ApiException) -> bool:
     """apiserver 拒绝显式 nodePort 的形状:422 + "provided port is already allocated";
     同名 Service 幂等重放也会命中,占用者是否自己须读对象判。"""
@@ -136,6 +161,7 @@ TENANT_QUOTA = {
 TENANT_LIMIT_DEFAULT_REQUEST = {"cpu": "100m", "memory": "256Mi", "ephemeral-storage": "1Gi"}
 TENANT_LIMIT_DEFAULT = {"cpu": "8", "memory": "32Gi", "ephemeral-storage": "64Gi"}
 TENANT_MGR_ROLE_NAME = "superdl-tenant-mgr-secrets"
+TENANT_SECRETS_CLUSTER_ROLE = "superdl-tenant-secrets"
 TENANT_MGR_SA_NAME = "superdl-tenant-mgr"
 PRIVATE_CIDRS = [
     "10.0.0.0/8",
@@ -181,12 +207,13 @@ def _container_ports(spec: InstancePodSpec) -> list["client.V1ContainerPort"]:
 
 
 def _health_probe(spec: InstancePodSpec, *, failure_threshold: int) -> "client.V1Probe | None":
-    """health_path 非空时的 httpGet 探针(startup 与 readiness 同形状,只差阈值);dev 实例无探针。"""
+    """health_path 非空时的 httpGet 探针(startup 与 readiness 同形状,只差阈值);dev 实例无探针。
+    startup 阈值由 spec.startup_failure_threshold 给,总时长须小于平台 creating 超时。"""
     if not spec.health_path or spec.service_port is None:
         return None
     return client.V1Probe(
         http_get=client.V1HTTPGetAction(path=spec.health_path, port=spec.service_port),
-        period_seconds=10,
+        period_seconds=STARTUP_PROBE_PERIOD_SECONDS,
         timeout_seconds=3,
         failure_threshold=failure_threshold,
     )
@@ -289,7 +316,7 @@ def build_instance_pod(spec: InstancePodSpec) -> "client.V1Pod":
             ),
             containers=[
                 client.V1Container(
-                    name="workspace",
+                    name=WORKSPACE_CONTAINER,
                     image=spec.image,
                     resources=client.V1ResourceRequirements(limits=limits, requests=requests),
                     env=env,
@@ -298,7 +325,9 @@ def build_instance_pod(spec: InstancePodSpec) -> "client.V1Pod":
                     ports=_container_ports(spec),
                     volume_mounts=mounts,
                     security_context=tenant_security_context(),
-                    startup_probe=_health_probe(spec, failure_threshold=90),
+                    startup_probe=_health_probe(
+                        spec, failure_threshold=spec.startup_failure_threshold
+                    ),
                     readiness_probe=_health_probe(spec, failure_threshold=3),
                 )
             ],
@@ -628,29 +657,17 @@ class RealOrchestrator:
         self._ensure_limit_range_sync(namespace)
 
     def _ensure_tenant_rbac_sync(self, namespace: str) -> None:
-        """租户 ns 内授予 tenant-mgr 的 secrets Role/RoleBinding(存量 ns 由 patch 收敛)。"""
-        role = client.V1Role(
-            metadata=client.V1ObjectMeta(
-                name=TENANT_MGR_ROLE_NAME, namespace=namespace, labels={MANAGED_LABEL: "true"}
-            ),
-            rules=[
-                client.V1PolicyRule(
-                    api_groups=[""],
-                    resources=["secrets"],
-                    verbs=["get", "create", "patch", "delete"],
-                )
-            ],
-        )
-        _create_or_patch(
-            lambda: self.rbac.create_namespaced_role(namespace, role),
-            lambda: self.rbac.patch_namespaced_role(TENANT_MGR_ROLE_NAME, namespace, role),
-        )
+        """租户 ns 内把预置 ClusterRole superdl-tenant-secrets(01-rbac.yaml,无集群级绑定)
+        经 RoleBinding 绑给 tenant-mgr;不现写 Role。存量 binding 仍指向旧版 namespaced Role 时
+        (roleRef 不可改)删掉重建,并清掉那只旧 Role(404 容忍)。"""
         binding = client.V1RoleBinding(
             metadata=client.V1ObjectMeta(
                 name=TENANT_MGR_ROLE_NAME, namespace=namespace, labels={MANAGED_LABEL: "true"}
             ),
             role_ref=client.V1RoleRef(
-                api_group="rbac.authorization.k8s.io", kind="Role", name=TENANT_MGR_ROLE_NAME
+                api_group="rbac.authorization.k8s.io",
+                kind="ClusterRole",
+                name=TENANT_SECRETS_CLUSTER_ROLE,
             ),
             subjects=[
                 client.RbacV1Subject(
@@ -661,14 +678,30 @@ class RealOrchestrator:
             ],
         )
 
-        def _patch_binding() -> None:
+        def _patch_subjects() -> None:
             self.rbac.patch_namespaced_role_binding(
                 TENANT_MGR_ROLE_NAME, namespace, {"subjects": binding.subjects}
             )
 
+        def _converge_existing() -> None:
+            existing: Any = self.rbac.read_namespaced_role_binding(TENANT_MGR_ROLE_NAME, namespace)
+            ref = existing.role_ref
+            if ref.kind == "ClusterRole" and ref.name == TENANT_SECRETS_CLUSTER_ROLE:
+                _patch_subjects()
+                return
+            _ignore(
+                lambda: self.rbac.delete_namespaced_role_binding(TENANT_MGR_ROLE_NAME, namespace),
+                404,
+            )
+            _create_or_patch(
+                lambda: self.rbac.create_namespaced_role_binding(namespace, binding),
+                _patch_subjects,
+            )
+            _ignore(lambda: self.rbac.delete_namespaced_role(TENANT_MGR_ROLE_NAME, namespace), 404)
+
         _create_or_patch(
             lambda: self.rbac.create_namespaced_role_binding(namespace, binding),
-            _patch_binding,
+            _converge_existing,
         )
 
     def _ensure_limit_range_sync(self, namespace: str) -> None:
@@ -1107,6 +1140,7 @@ class RealOrchestrator:
             namespace=pod.metadata.namespace,
             name=pod.metadata.name,
             labels=dict(pod.metadata.labels or {}),
+            started_at=_container_started_at(pod),
         )
 
     async def read_instance_logs(self, namespace: str, name: str, *, tail_lines: int) -> str:
@@ -1118,7 +1152,7 @@ class RealOrchestrator:
             self.core.read_namespaced_pod_log(
                 name,
                 namespace,
-                container="workspace",
+                container=WORKSPACE_CONTAINER,
                 tail_lines=tail_lines,
                 timestamps=True,
                 _request_timeout=(5.0, 5.0),
@@ -1403,6 +1437,7 @@ class RealOrchestrator:
                     model_label_current=labels.get(GPU_MODEL_NODE_LABEL, ""),
                     driver_version_label=self._gfd_version(labels, "driver")[:32],
                     cuda_version_label=self._gfd_version(labels, "runtime")[:16],
+                    infra=_node_is_infra(labels),
                 )
             )
         return out

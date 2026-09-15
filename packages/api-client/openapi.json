@@ -3579,6 +3579,7 @@
             "items": {
               "type": "integer"
             },
+            "maxItems": 50,
             "minItems": 1,
             "title": "Ssh Key Ids",
             "type": "array"
@@ -4577,7 +4578,7 @@
           "password": {
             "anyOf": [
               {
-                "maxLength": 64,
+                "maxLength": 128,
                 "minLength": 1,
                 "type": "string"
               },
@@ -6701,6 +6702,7 @@
             "additionalProperties": {
               "type": "string"
             },
+            "maxProperties": 64,
             "minProperties": 1,
             "title": "Updates",
             "type": "object"
@@ -7523,8 +7525,10 @@
             "anyOf": [
               {
                 "items": {
+                  "maxLength": 4096,
                   "type": "string"
                 },
+                "maxItems": 64,
                 "type": "array"
               },
               {
@@ -7537,8 +7541,10 @@
             "anyOf": [
               {
                 "items": {
+                  "maxLength": 4096,
                   "type": "string"
                 },
+                "maxItems": 64,
                 "type": "array"
               },
               {
@@ -7578,6 +7584,7 @@
                 "items": {
                   "type": "string"
                 },
+                "maxItems": 64,
                 "type": "array"
               },
               {
@@ -7682,6 +7689,7 @@
             "items": {
               "type": "integer"
             },
+            "maxItems": 50,
             "title": "Ssh Key Ids",
             "type": "array"
           },
@@ -7930,8 +7938,10 @@
             "anyOf": [
               {
                 "items": {
+                  "maxLength": 4096,
                   "type": "string"
                 },
+                "maxItems": 64,
                 "type": "array"
               },
               {
@@ -7944,8 +7954,10 @@
             "anyOf": [
               {
                 "items": {
+                  "maxLength": 4096,
                   "type": "string"
                 },
+                "maxItems": 64,
                 "type": "array"
               },
               {
@@ -7993,6 +8005,7 @@
                 "items": {
                   "type": "string"
                 },
+                "maxItems": 64,
                 "type": "array"
               },
               {
@@ -8074,6 +8087,7 @@
             "items": {
               "type": "integer"
             },
+            "maxItems": 50,
             "title": "Ssh Key Ids",
             "type": "array"
           },
@@ -14434,7 +14448,7 @@
         ]
       },
       "put": {
-        "description": "在线调整策略参数(即时生效;只收 policy 组的键)。审计 detail 记变更前后值与原因。",
+        "description": "在线调整策略参数(仅 admin,每管理员 20 次/时;即时生效;只收 policy 组的键)。\n审计 detail 记变更前后值与原因;敏感键相对变化 ≥50% 同事务落 critical 管理端告警。",
         "operationId": "admin_update_policies_api_admin_v1_policies_put",
         "requestBody": {
           "content": {
@@ -15214,6 +15228,7 @@
         ]
       },
       "post": {
+        "description": "建 SKU:仅 admin,每管理员 20 次/时。",
         "operationId": "admin_create_sku_api_admin_v1_skus_post",
         "requestBody": {
           "content": {
@@ -15394,6 +15409,7 @@
     },
     "/api/admin/v1/skus/{sku_id}": {
       "patch": {
+        "description": "改 SKU:仅 admin,每管理员 20 次/时;改价告警规则见 catalog.service。",
         "operationId": "admin_update_sku_api_admin_v1_skus__sku_id__patch",
         "parameters": [
           {
@@ -20054,6 +20070,7 @@
     },
     "/api/v1/services/{slug}/start": {
       "post": {
+        "description": "启动:当前实例开机。限流与实例开关机同桶。",
         "operationId": "start_service_api_v1_services__slug__start_post",
         "parameters": [
           {
@@ -20101,7 +20118,7 @@
     },
     "/api/v1/services/{slug}/stop": {
       "post": {
-        "description": "停止:当前实例关机,端点随之 503;服务端点与密钥保留。",
+        "description": "停止:当前实例关机,端点随之 503;服务端点与密钥保留。限流与实例开关机同桶。",
         "operationId": "stop_service_api_v1_services__slug__stop_post",
         "parameters": [
           {

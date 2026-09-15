@@ -62,6 +62,10 @@ NODE_POOL_LABEL_MISMATCH_TOTAL = Counter(
     "superdl_node_pool_label_mismatch_total",
     "节点自声明池标签与平台注册登记(node_enrollments.pool)不符的纠正次数;非零即异常",
 )
+NODE_UNENROLLED = Gauge(
+    "superdl_node_unenrolled",
+    "无登记行、无期望池且未打池标签的非 infra 节点数;非零即有未知节点入群,巡检已自动 cordon",
+)
 RECONCILE_LEAK_ABORTED_TOTAL = Counter(
     "superdl_reconcile_leak_aborted_total",
     "泄漏回收因未知 Pod 占比超阈被熔断中止的轮数(单调不降,告警按 increase 判)",
@@ -149,4 +153,12 @@ RUNTIME_CONFIG = Gauge(
     "superdl_runtime_config",
     "生效的运行时加固面(恒 1;标签即生效值:environment/k8s_backend/payment_mock)",
     ["environment", "k8s_backend", "payment_mock"],
+)
+SUBSCRIPTION_UNPAID_RUNNING = Gauge(
+    "superdl_subscription_unpaid_running_instances",
+    "market=subscription 且处于 creating/starting/running 但无在保订阅的实例数(订阅巡检每轮刷新)",
+)
+SCHEDULE_TIMEOUT_OCCUPIED_TOTAL = Counter(
+    "superdl_schedule_timeout_occupied_total",
+    "服务型实例 health_path 超时判失败且容器已实际运行的次数(占用时段已按量出账)",
 )

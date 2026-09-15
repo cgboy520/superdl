@@ -56,7 +56,7 @@ if [[ "$UNINSTALL" == "1" ]]; then
       [[ -x "$us" ]] && { echo "-- 执行 $us"; "$us"; }
     done
   elif [[ "$SERVER_HERE" == "1" ]]; then
-    echo "-- 本机是 ${DISTRO_NAME} server:不卸载发行版、不动 server 配置;池标签需在平台侧摘除(kubectl label node ... superdl.io/pool-)"
+    echo "-- 本机是 ${DISTRO_NAME} server:不卸载发行版、不动 server 配置;池标签需在平台侧摘除(kubectl label node ... node-restriction.kubernetes.io/superdl-pool-)"
   fi
   systemctl disable "${RESUME_UNIT}.service" 2>/dev/null || true
   rm -f "$ETC_DIR/systemd/system/${RESUME_UNIT}.service"
@@ -487,6 +487,12 @@ step_agent_config() {
   fi
   if [[ ! "$join_token" =~ ^[A-Za-z0-9:._~+/=-]{16,512}$ ]]; then
     echo "!! cluster_join_token 含非法字符(只许 [A-Za-z0-9:._~+/=-]):拒绝写 agent 配置" >&2
+    return 1
+  fi
+  # server node-token(K10<64hex>::server:<pw>)会让本机以 server 身份入群:只许 agent token
+  if [[ "$join_token" =~ ^K10[0-9A-Fa-f]{64}::server: ]]; then
+    echo "!! cluster_join_token 是 server node-token(K10…::server:…),只许 agent token:拒绝写 agent 配置。" \
+         "管理端「平台配置 · 集群接入」改填 server config 的 agent-token 值" >&2
     return 1
   fi
   if [[ ! "$server_url" =~ ^https://[][0-9A-Za-z.:-]+:[0-9]{1,5}$ ]]; then

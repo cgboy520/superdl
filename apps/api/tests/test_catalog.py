@@ -1,11 +1,118 @@
 # pyright: reportPrivateUsage=false
+from datetime import timedelta
 from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select, update
 
+from app.core.audit import AuditLog
 from app.core.errors import AppError
+from app.core.timeutil import now_utc
+from app.modules.notify.models import Notification
 from tests.helpers import admin_headers, seed_node_spec, seed_skus
+
+_SKU_BODY = {
+    "name": "A100 · 告警用例",
+    "gpu_model": "A100",
+    "tier": "dedicated",
+    "vram_gb": 80,
+    "pool_label": "kata",
+    "vcpu": 8,
+    "mem_gb": 32,
+    "price_hourly": "10.0000",
+}
+
+
+async def _admin_alerts(sm) -> list[Notification]:
+    """只取改价告警(管理员绑定 MFA 等其它 admin_alert 不算)。"""
+    async with sm() as session:
+        return list(
+            (
+                await session.execute(
+                    select(Notification)
+                    .where(
+                        Notification.type == "admin_alert",
+                        Notification.title.like("SKU 单价%"),
+                    )
+                    .order_by(Notification.id)
+                )
+            ).scalars()
+        )
+
+
+async def _set_price(client, headers, sku_id: int, price: str):
+    return await client.patch(
+        f"/api/admin/v1/skus/{sku_id}",
+        json={"price_hourly": price, "reason": "告警用例"},
+        headers=headers,
+    )
+
+
+class TestPriceChangeAlerts:
+    async def test_cumulative_24h_change_is_critical(self, client: AsyncClient, sm):
+        """两步各不到 50%,但相对 24 小时前基准累计 ≥50%:critical 告警;
+        单步不足 50% 且无累计:不告警;审计行超过 24 小时后不再计入基准。"""
+        headers = await admin_headers(sm, client)
+        resp = await client.post("/api/admin/v1/skus", json=_SKU_BODY, headers=headers)
+        assert resp.status_code == 201, resp.text
+        sku_id = resp.json()["id"]
+
+        assert (await _set_price(client, headers, sku_id, "13.0000")).status_code == 200
+        assert await _admin_alerts(sm) == []
+
+        assert (await _set_price(client, headers, sku_id, "16.0000")).status_code == 200
+        alerts = await _admin_alerts(sm)
+        assert [a.severity for a in alerts] == ["critical"]
+        assert alerts[0].title.startswith("SKU 单价 24 小时累计大幅调整")
+        assert "10.0000 → 现 16.0000" in alerts[0].content and "60%" in alerts[0].content
+
+        async with sm() as session:
+            await session.execute(
+                update(AuditLog).values(created_at=now_utc() - timedelta(hours=25))
+            )
+            await session.commit()
+        assert (await _set_price(client, headers, sku_id, "17.0000")).status_code == 200
+        assert len(await _admin_alerts(sm)) == 1
+
+    async def test_single_step_change_is_warning(self, client: AsyncClient, sm):
+        """单步 ≥50% 且相对 24 小时基准也 ≥50%:只落一条 critical;
+        单步 ≥50% 但回到基准附近(累计 <50%):落 warning。"""
+        headers = await admin_headers(sm, client)
+        resp = await client.post("/api/admin/v1/skus", json=_SKU_BODY, headers=headers)
+        sku_id = resp.json()["id"]
+        assert (await _set_price(client, headers, sku_id, "5.0000")).status_code == 200
+        alerts = await _admin_alerts(sm)
+        assert [a.severity for a in alerts] == ["critical"]
+
+        assert (await _set_price(client, headers, sku_id, "10.0000")).status_code == 200
+        alerts = await _admin_alerts(sm)
+        assert [a.severity for a in alerts] == ["critical", "warning"]
+        assert alerts[1].title.startswith("SKU 单价大幅调整")
+        assert "100%" in alerts[1].content
+
+    async def test_pricing_writes_rate_limited_per_admin(self, client: AsyncClient, sm):
+        """SKU 建/改共用每管理员 20 次/时:第 21 次 429。"""
+        headers = await admin_headers(sm, client)
+        resp = await client.post("/api/admin/v1/skus", json=_SKU_BODY, headers=headers)
+        sku_id = resp.json()["id"]
+        for _ in range(19):
+            resp = await client.patch(
+                f"/api/admin/v1/skus/{sku_id}",
+                json={"vcpu": 8, "reason": "限流用例"},
+                headers=headers,
+            )
+            assert resp.status_code == 200, resp.text
+        resp = await client.patch(
+            f"/api/admin/v1/skus/{sku_id}", json={"vcpu": 8, "reason": "限流用例"}, headers=headers
+        )
+        assert resp.status_code == 429
+        assert resp.json()["code"] == "RATE_LIMITED"
+        other = await admin_headers(sm, client, username="admin-two")
+        resp = await client.patch(
+            f"/api/admin/v1/skus/{sku_id}", json={"vcpu": 8, "reason": "另一人"}, headers=other
+        )
+        assert resp.status_code == 200, resp.text
 
 
 class TestMarket:

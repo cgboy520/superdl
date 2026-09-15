@@ -3,7 +3,9 @@
 组件:helmfile 的 `loki`(grafana-community/loki,Monolithic 单副本)+ `alloy`(grafana/alloy)。
 采集面:全部命名空间的容器日志(discovery.kubernetes)+ 控制面节点 apiserver 审计文件(`/var/lib/rancher/{rke2,k3s}/server/logs/audit.log`)。
 
-多租户(`auth_enabled: true`):Alloy 按 namespace 打租户,平台组件与 apiserver 审计进 `platform`,`tenant-*` 工作负载进 `tenant`;摄入限流按租户独立计。入库前 `stage.replace` 把日志行里 `token=` 的值抹成 `<redacted>`。租户头自声明,网络边界是 `../monitoring-netpol.yaml`(仅 alloy/grafana/prometheus 可到 loki:3100)。
+多租户(`auth_enabled: true`):Alloy 按 namespace 打租户,平台组件与 apiserver 审计进 `platform`,`tenant-*` 工作负载进 `tenant`;摄入限流按租户独立计。入库前两段 `stage.replace`:日志行里 `token=` 的值,以及 apiserver 审计行里 Pod 模板的 `"name":"JUPYTER_TOKEN"` / `"name":"AUTHORIZED_KEYS"` 的 `value`,都抹成 `<redacted>`。租户头自声明,网络边界是 `../monitoring-netpol.yaml`(仅 alloy/grafana/prometheus 可到 loki:3100)。
+
+RBAC:Alloy 的 ClusterRole 只有 pods / pods/log / namespaces / services / endpoints / endpointslices / nodes 的读(`values/alloy.yaml` 的 `rbac.rules` / `rbac.clusterRules`),无 secrets / configmaps;Loki 关掉 ruler sidecar(`sidecar.rules.enabled: false`),SA 与 Pod 均不挂 token。两者都由 CI `monitoring-rbac` job 的 helm 渲染断言与 `../preflight.sh` 守着。
 
 ## 留存口径(合规基线)
 

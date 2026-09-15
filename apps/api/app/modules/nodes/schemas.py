@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 Pool = Literal["kata", "hami", "mig", "cpu"]
 SwitchablePool = Literal["kata", "hami", "mig"]
@@ -58,10 +58,27 @@ class NodeDecommissionOut(BaseModel):
     queued: bool = True
 
 
+MAX_BOOTSTRAP_DICT_KEYS = 32
+
+
 class BootstrapRequest(BaseModel):
     hostname: str = Field(min_length=1, max_length=253, pattern=HOSTNAME_PATTERN)
     os_info: dict[str, Any] = Field(default_factory=dict)
     gpu_details: list[dict[str, Any]] = Field(default_factory=list, max_length=16)
+
+    @field_validator("os_info")
+    @classmethod
+    def _cap_os_info(cls, v: dict[str, Any]) -> dict[str, Any]:
+        if len(v) > MAX_BOOTSTRAP_DICT_KEYS:
+            raise ValueError(f"os_info 最多 {MAX_BOOTSTRAP_DICT_KEYS} 个键")
+        return v
+
+    @field_validator("gpu_details")
+    @classmethod
+    def _cap_gpu_details(cls, v: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if any(len(item) > MAX_BOOTSTRAP_DICT_KEYS for item in v):
+            raise ValueError(f"gpu_details 每项最多 {MAX_BOOTSTRAP_DICT_KEYS} 个键")
+        return v
 
 
 class BootstrapOut(BaseModel):

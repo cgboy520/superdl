@@ -24,7 +24,7 @@ import { useUrlCommittedInput, useUrlFilters } from "@superdl/ui";
 import { StatusTag } from "@superdl/ui/components";
 import { type SkuAdminOut, isApiError, useAdminSkus, useUpdateSku } from "../../api";
 import { ReasonAction } from "../../components/ReasonAction";
-import { canWriteOps, useAdminRole } from "../../stores/auth";
+import { useAdminRole } from "../../stores/auth";
 import { SkuDrawerForm } from "./-SkuDrawerForm";
 
 export interface SkusSearch {
@@ -60,7 +60,8 @@ function SkusPage() {
   const { message } = App.useApp();
   const confirm = useConfirm();
   const role = useAdminRole();
-  const writable = canWriteOps(role);
+  /** SKU 增改(含改价 / 上下架)后端仅 admin。 */
+  const writable = role === "admin";
   const qc = useQueryClient();
   const { data: skus, queryKey, isLoading, isError, error, refetch } = useAdminSkus();
   const [editing, setEditing] = useState<SkuAdminOut | "new" | null>(null);

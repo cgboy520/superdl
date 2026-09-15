@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from app.core import audit
 from app.core.audit import ACTION_MAX_LENGTH, AuditLog
-from tests.helpers import create_user_with_key
+from tests.helpers import age_sms_codes, create_user_with_key
 
 pytestmark = pytest.mark.usefixtures("fake")
 
@@ -59,6 +59,7 @@ class TestFailedCredentialAttempts:
     async def test_successful_login_target_is_the_user_id(self, client: AsyncClient, sm):
         """成功后目标被覆盖成 user:{id}。"""
         _, user_id, _ = await create_user_with_key(client, "13800000231")
+        await age_sms_codes(sm)
         await client.post(
             "/api/v1/auth/sms-code", json={"phone": "13800000231", "purpose": "login"}
         )

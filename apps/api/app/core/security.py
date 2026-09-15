@@ -1,6 +1,7 @@
 """密码哈希(bcrypt)与 JWT。用户端与管理端 audience 隔离,token 不可互用。"""
 
 import asyncio
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from functools import cache
@@ -12,7 +13,7 @@ import jwt
 from pydantic import AfterValidator, Field
 
 from app.core.config import get_settings
-from app.core.errors import unauthorized
+from app.core.errors import AppError, ErrorCode, unauthorized
 from app.core.timeutil import now_utc
 
 TokenScope = Literal["user", "admin"]
@@ -53,19 +54,34 @@ def verify_password_sync(plain: str, hashed: str) -> bool:
 
 
 _BCRYPT_MAX_PARALLEL = 4
+_BCRYPT_MAX_INFLIGHT = 64
 _BCRYPT_EXECUTOR = ThreadPoolExecutor(max_workers=_BCRYPT_MAX_PARALLEL, thread_name_prefix="bcrypt")
+_bcrypt_inflight = 0
+
+
+async def _run_bcrypt[T](fn: Callable[..., T], *args: Any) -> T:
+    """有界排队:在途(含排队)超过 _BCRYPT_MAX_INFLIGHT 直接 429,不无限排队。"""
+    global _bcrypt_inflight
+    if _bcrypt_inflight >= _BCRYPT_MAX_INFLIGHT:
+        raise AppError(
+            ErrorCode.RATE_LIMITED,
+            key="common.rateLimited",
+            http_status=429,
+            headers={"Retry-After": "1"},
+        )
+    _bcrypt_inflight += 1
+    try:
+        return await asyncio.get_running_loop().run_in_executor(_BCRYPT_EXECUTOR, fn, *args)
+    finally:
+        _bcrypt_inflight -= 1
 
 
 async def hash_password(plain: str) -> str:
-    return await asyncio.get_running_loop().run_in_executor(
-        _BCRYPT_EXECUTOR, hash_password_sync, plain
-    )
+    return await _run_bcrypt(hash_password_sync, plain)
 
 
 async def verify_password(plain: str, hashed: str) -> bool:
-    return await asyncio.get_running_loop().run_in_executor(
-        _BCRYPT_EXECUTOR, verify_password_sync, plain, hashed
-    )
+    return await _run_bcrypt(verify_password_sync, plain, hashed)
 
 
 def _audience(scope: TokenScope) -> str:

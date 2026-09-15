@@ -1,3 +1,56 @@
+# chart 自带的 ClusterRole 给 operator 集群级 secrets/configmaps *,关掉;等价且收窄的一套在 ../monitoring-rbac.yaml
+# (helmfile presync 下发,名字带 superdl- 前缀,不与 chart 旧对象同名)。kube-state-metrics / node-exporter 子 chart 各自的 rbac 不受此键影响。
+global:
+  rbac:
+    create: false
+prometheusOperator:
+  # operator 只在这些 ns 找 ServiceMonitor/PodMonitor/PrometheusRule;Prometheus/Alertmanager 实例与其 Secret informer 只在 monitoring。
+  # 监控对象引用的 Secret 由 operator 按名 GET:引用凭据的 monitor 一律放 monitoring ns(../../app/k8s/08-monitoring.yaml)。
+  namespaces:
+    releaseNamespace: true
+    additional:
+      - superdl
+      - kube-system
+      - rook-ceph
+      - gpu-operator
+      - envoy-gateway-system
+      - cert-manager
+      - topolvm-system
+      - cnpg-system
+  prometheusInstanceNamespaces: [monitoring]
+  alertmanagerInstanceNamespaces: [monitoring]
+  alertmanagerConfigNamespaces: [monitoring]
+  thanosRulerInstanceNamespaces: [monitoring]
+kube-state-metrics:
+  # 默认采集器去掉 secrets(其 ClusterRole 会随之少掉 secrets list/watch)
+  collectors:
+    - certificatesigningrequests
+    - configmaps
+    - cronjobs
+    - daemonsets
+    - deployments
+    - endpointslices
+    - horizontalpodautoscalers
+    - ingresses
+    - jobs
+    - leases
+    - limitranges
+    - mutatingwebhookconfigurations
+    - namespaces
+    - networkpolicies
+    - nodes
+    - persistentvolumeclaims
+    - persistentvolumes
+    - poddisruptionbudgets
+    - pods
+    - replicasets
+    - replicationcontrollers
+    - resourcequotas
+    - services
+    - statefulsets
+    - storageclasses
+    - validatingwebhookconfigurations
+    - volumeattachments
 prometheus:
   prometheusSpec:
     maximumStartupDurationSeconds: 900
@@ -260,6 +313,11 @@ additionalPrometheusRulesMap:
             for: 5m
             labels: {severity: warning}
             annotations: {summary: "HAMi scheduler 指标缺失:共享池调度器可能不可用,新建共享档实例将被拒绝", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/cluster-validation.md#c-hami-共享池"}
+          - alert: GpuTelemetryMissing
+            expr: absent(DCGM_FI_DEV_GPU_UTIL) or absent(hami_host_gpu_utilization_ratio)
+            for: 30m
+            labels: {severity: warning}
+            annotations: {summary: "GPU 遥测缺失:无法发现配额逃逸与滥用(dcgm-exporter 或 HAMi vGPUmonitor 抓取断了)", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/cluster-validation.md#e-监控与告警"}
   superdl-certmanager:
     groups:
       - name: superdl.certmanager
@@ -277,6 +335,16 @@ additionalPrometheusRulesMap:
             for: 1h
             labels: {severity: warning}
             annotations: {summary: "cert-manager 指标缺失 1 小时:ServiceMonitor/组件异常,证书过期将无预警", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/acme-dns.md"}
+          - alert: PlatformCertExpiringSoon
+            expr: (superdl_cert_not_after_seconds - time()) < 14 * 24 * 3600
+            for: 1h
+            labels: {severity: warning}
+            annotations: {summary: "平台域证书 {{ $labels.domain }} 14 天内到期:三个平台域由宿主机 acme 续期脚本管理,查其 cron 日志"}
+          - alert: PlatformCertExpiringCritical
+            expr: (superdl_cert_not_after_seconds - time()) < 3 * 24 * 3600
+            for: 1h
+            labels: {severity: critical}
+            annotations: {summary: "平台域证书 {{ $labels.domain }} 3 天内到期:三个平台域由宿主机 acme 续期脚本管理,立即人工续签并灌入 TLS Secret"}
   superdl-platform:
     groups:
       - name: superdl.platform
@@ -344,6 +412,35 @@ additionalPrometheusRulesMap:
             for: 5m
             labels: {severity: critical}
             annotations: {summary: "自建 PG 每日备份(dump + 异地同步 + 恢复冒烟)超 28h 无成功:查控制面宿主机 cron 邮件与 /var/lib/superdl/pg/backup", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
+          - alert: PgBaseBackupStale
+            expr: (time() - max(superdl_pg_basebackup_last_success_timestamp_seconds)) > 8 * 86400 or absent(superdl_pg_basebackup_last_success_timestamp_seconds)
+            for: 1h
+            labels: {severity: critical}
+            annotations: {summary: "每周 pg_basebackup 超 8 天无成功:PITR 基准缺失", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
+          - alert: PgWalSyncStale
+            expr: (time() - max(superdl_pg_wal_sync_last_success_timestamp_seconds)) > 1800 or absent(superdl_pg_wal_sync_last_success_timestamp_seconds)
+            for: 10m
+            labels: {severity: critical}
+            annotations: {summary: "WAL 归档异地同步超 30 分钟无成功:PITR 可恢复点正在拉长", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
+          - alert: K3sStateBackupStale
+            expr: (time() - max(superdl_k3s_state_backup_last_success_timestamp_seconds)) > 13 * 3600 or absent(superdl_k3s_state_backup_last_success_timestamp_seconds)
+            for: 30m
+            labels: {severity: critical}
+            annotations: {summary: "k3s 集群状态备份超 13 小时无成功:查控制面宿主机 cron 与备份目标可写性"}
+          - alert: NodeUnenrolledJoined
+            expr: max(superdl_node_unenrolled) > 0
+            for: 5m
+            labels: {severity: critical}
+            annotations: {summary: "有未登记节点加入集群并已被 cordon:核对 agent token 是否泄漏", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/README.md#server-token-与-agent-token轮换-快照托管"}
+          - alert: SubscriptionUnpaidRunning
+            expr: max(superdl_subscription_unpaid_running_instances) > 0
+            for: 45m
+            labels: {severity: critical}
+            annotations: {summary: "包周期已到期的实例仍在运行超一轮巡检:到期停机巡检未生效,管理端逐台核对"}
+          - alert: ScheduleTimeoutOccupiedBurst
+            expr: sum(increase(superdl_schedule_timeout_occupied_total[1h])) > 10
+            labels: {severity: warning}
+            annotations: {summary: "服务型实例反复永不就绪(租户控制 health_path):已按占用时长计费,核对是否刷免费算力"}
           - alert: FundReconcileMismatch
             expr: increase(superdl_fund_reconcile_mismatch_total[5m]) > 0
             labels: {severity: critical}

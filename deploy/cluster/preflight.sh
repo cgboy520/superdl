@@ -34,6 +34,7 @@ check_secret() {
 }
 check_secret monitoring superdl-alert-token "Alertmanager→平台告警 webhook token"
 check_secret monitoring superdl-smtp-password "Alertmanager 邮件通道"
+check_secret monitoring superdl-metrics-token "Prometheus 抓 API/worker /metrics 的 Bearer(token 键 = SUPERDL_METRICS_TOKEN;monitor 在 monitoring ns)"
 if kubectl -n superdl get secret superdl-auth >/dev/null 2>&1; then
   jwt_secret=$(kubectl -n superdl get secret superdl-auth \
     -o jsonpath='{.data.SUPERDL_JWT_SECRET}' 2>/dev/null | base64 -d 2>/dev/null || true)
@@ -141,6 +142,16 @@ if [[ -f "$app_gateway" ]]; then
   else
     ok "$app_gateway 管理端白名单已配真实网段"
   fi
+  admin_cidrs="$(awk '/^  name: superdl-admin-allowlist$/{f=1} f && /^---/{exit} f' "$app_gateway" \
+    | grep -vE '^\s*#' | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}' || true)"
+  admin_wide=0
+  for cidr in 0.0.0.0/0 100.64.0.0/10 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16; do
+    if grep -qxF "$cidr" <<< "$admin_cidrs"; then
+      miss "$app_gateway 管理端白名单含整段 $cidr(只许具体出口 /32 或办公网段;CGNAT/私网整段 = 任何同网段租户或前置层都能进管理端)"
+      admin_wide=1
+    fi
+  done
+  [[ "$admin_wide" == "0" ]] && ok "$app_gateway 管理端白名单不含 CGNAT/私网整段"
 fi
 
 say "== 资金库 PITR(实际 RPO 保障:cnpg 档或托管 PG 书面确认,二者其一)=="
@@ -215,13 +226,54 @@ if [[ "$infra_nodes" -ge 1 ]]; then
 else
   miss "无节点带 node-restriction.kubernetes.io/superdl-infra=true:deploy/app/k8s 的 api/worker/前端/Envoy 数据面全部 Pending。由 deploy/ansible/site.yml 装机后打;手工补:kubectl label nodes -l node-role.kubernetes.io/control-plane node-restriction.kubernetes.io/superdl-infra=true"
 fi
-gpu_infra=$(kubectl get nodes -l 'node-restriction.kubernetes.io/superdl-infra=true,superdl.io/pool' \
+gpu_infra=$(kubectl get nodes -l 'node-restriction.kubernetes.io/superdl-infra=true,node-restriction.kubernetes.io/superdl-pool' \
   -o name 2>/dev/null | grep -c . || true)
 if [[ "$gpu_infra" -eq 0 ]]; then
   ok "无 GPU 池节点带 infra 标签"
 else
-  miss "$gpu_infra 台带 superdl.io/pool 的 GPU 节点同时带 infra 标签:平台组件会调度到租户计算节点上(kubectl label node <name> node-restriction.kubernetes.io/superdl-infra-)"
+  miss "$gpu_infra 台带 node-restriction.kubernetes.io/superdl-pool 的 GPU 节点同时带 infra 标签:平台组件会调度到租户计算节点上(kubectl label node <name> node-restriction.kubernetes.io/superdl-infra-)"
 fi
+legacy_pool=$(kubectl get nodes -l 'superdl.io/pool' -o name 2>/dev/null | grep -c . || true)
+if [[ "$legacy_pool" -eq 0 ]]; then
+  ok "无节点带旧池标签 superdl.io/pool"
+else
+  miss "$legacy_pool 台节点仍带旧池标签 superdl.io/pool(池标签键已改为 node-restriction.kubernetes.io/superdl-pool,由平台巡检改写;hami/kata-deploy 的 nodeSelector 只认新键,迁移顺序见 runbooks/node-pool-switch.md「池标签键迁移」)"
+fi
+if [[ "$infra_nodes" -lt 2 ]]; then
+  say "  ⚠ infra 落点节点只有 $infra_nodes 台:api / worker / 前端 / Envoy 的 2 副本同机无冗余;补第二台后副本按 hostname DoNotSchedule 分开,之后任一 infra 节点失联时替补副本 Pending 是预期信号(提示项,不阻断)"
+fi
+
+say "== 监控栈 SA 不得读 Secret(values + monitoring-rbac.yaml 收窄;DaemonSet 跑在租户 GPU 节点上,节点 root 即可取其 token)=="
+for sa in alloy loki kube-prometheus-stack-operator kube-prometheus-stack-prometheus kube-prometheus-stack-kube-state-metrics; do
+  subj="system:serviceaccount:monitoring:$sa"
+  if kubectl auth can-i --as="$subj" get secrets -n superdl >/dev/null 2>&1; then
+    miss "$subj 能 get secrets -n superdl(chart 自带 RBAC 未被 values 关掉?对照 monitoring-rbac.yaml)"
+  elif kubectl auth can-i --as="$subj" list secrets --all-namespaces >/dev/null 2>&1; then
+    miss "$subj 能 list secrets --all-namespaces"
+  else
+    ok "$subj 读不到 superdl 的 Secret"
+  fi
+done
+for ns in monitoring kube-system; do
+  while IFS=$'\t' read -r ds_name ds_sa ds_automount; do
+    [[ -n "$ds_name" ]] || continue
+    ds_sa="${ds_sa:-default}"
+    if [[ -z "$ds_automount" ]]; then
+      ds_automount="$(kubectl -n "$ns" get serviceaccount "$ds_sa" \
+        -o jsonpath='{.automountServiceAccountToken}' 2>/dev/null || true)"
+    fi
+    subj="system:serviceaccount:$ns:$ds_sa"
+    if [[ "$ds_automount" == "false" ]]; then
+      ok "DaemonSet $ns/$ds_name 不挂 SA token"
+    elif kubectl auth can-i --as="$subj" get secrets -n superdl >/dev/null 2>&1 \
+      || kubectl auth can-i --as="$subj" list secrets --all-namespaces >/dev/null 2>&1; then
+      miss "DaemonSet $ns/$ds_name 挂着 $subj 的 token 且该 SA 能读平台 Secret:任一节点 root 即可取平台密钥"
+    else
+      ok "DaemonSet $ns/$ds_name 挂 $subj token,但该 SA 无 secrets 读权"
+    fi
+  done < <(kubectl -n "$ns" get daemonsets \
+    -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.template.spec.serviceAccountName}{"\t"}{.spec.template.spec.automountServiceAccountToken}{"\n"}{end}' 2>/dev/null)
+done
 
 say "== 节点加入凭据(agent token 必须 ≠ server node-token)=="
 tok_seen=0
@@ -309,6 +361,22 @@ check_sc() {
 check_sc topolvm-provisioner "实例盘/监控组件/acme-dns 存储(full+light 均为强制依赖)"
 if grep -qE '^\s*rookCeph:\s*\{[^}]*enabled:\s*true' "environments/$env_name.yaml"; then
   check_sc superdl-cephfs "数据盘(CephFS;唯一支持 idmapped mount 的共享文件系统)"
+  if kubectl get storageclass superdl-cephfs >/dev/null 2>&1; then
+    cephfs_rp="$(kubectl get storageclass superdl-cephfs -o jsonpath='{.reclaimPolicy}' 2>/dev/null || true)"
+    if [[ "$cephfs_rp" == "Delete" ]]; then
+      ok "StorageClass superdl-cephfs reclaimPolicy=Delete"
+    else
+      miss "StorageClass superdl-cephfs reclaimPolicy=${cephfs_rp:-未知}(代码按 Delete 假设:删盘即删子卷;SC 字段不可改,先 kubectl delete sc superdl-cephfs 再 ./apply.sh $env_name -l name=rook-ceph-cluster 重建,见 runbooks/cluster-validation.md「D. 存储」)"
+    fi
+    cephfs_pvs="$(kubectl get pv -o jsonpath='{range .items[?(@.spec.storageClassName=="superdl-cephfs")]}{.metadata.name}{" "}{.spec.persistentVolumeReclaimPolicy}{" "}{.status.phase}{"\n"}{end}' 2>/dev/null || true)"
+    pv_retain="$(awk '$2=="Retain"' <<< "$cephfs_pvs" | grep -c . || true)"
+    pv_released="$(awk '$3=="Released"' <<< "$cephfs_pvs" | grep -c . || true)"
+    if [[ "$pv_retain" -eq 0 && "$pv_released" -eq 0 ]]; then
+      ok "superdl-cephfs 的 PV 均为 Delete 且无 Released 残留"
+    else
+      miss "superdl-cephfs 的 PV:$pv_retain 只仍是 Retain、$pv_released 只 Released(已删租户盘的子卷还占着 Ceph 容量;逐只 kubectl patch pv <pv> -p '{\"spec\":{\"persistentVolumeReclaimPolicy\":\"Delete\"}}',Released 的直接 kubectl delete pv,见 runbooks/cluster-validation.md「D. 存储」)"
+    fi
+  fi
 fi
 
 if [[ "$env_name" == "light" ]]; then

@@ -17,9 +17,15 @@ from app.core.idempotency import (
 )
 from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
+from app.core.metrics import SUBSCRIPTION_UNPAID_RUNNING
 from app.core.patrol import for_each
 from app.core.platform_config import get_runtime_config
-from app.core.pricing import SubscriptionQuote, period_delta, quote_subscription
+from app.core.pricing import (
+    MARKET_SUBSCRIPTION,
+    SubscriptionQuote,
+    period_delta,
+    quote_subscription,
+)
 from app.core.timeutil import ensure_utc, now_utc
 from app.modules.billing import wallet
 from app.modules.billing.models import Subscription
@@ -522,7 +528,8 @@ async def subscription_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str,
         if not got:
             return counts
         await _patrol_due(sm, counts)
-        await _patrol_freeze_expired(sm, counts)
+        await _patrol_expired_sweep(sm, counts)
+        await _refresh_unpaid_running_gauge(sm)
     logger.info("subscription_patrol_done", **counts)
     return counts
 
@@ -663,8 +670,8 @@ async def _try_auto_renew(
 async def _expire_instance(
     session: AsyncSession, instance: "Instance", counts: dict[str, int]
 ) -> None:
-    """到期处置:running → 停机(停稳后由 _patrol_freeze_expired 冻结);stopped → 直接冻结;
-    其余状态本轮不动。"""
+    """到期处置:running → 停机;stopped → 直接冻结;其余状态不动,
+    由 _patrol_expired_sweep 每轮按「已到期且不在保」重扫直到落入这两态。"""
     if instance.status == sm_def.RUNNING:
         await orchestrator_transitions.system_stop(session, instance, reason=REASON_EXPIRED_STOP)
         counts["stopped"] += 1
@@ -694,32 +701,57 @@ async def _freeze(session: AsyncSession, instance: "Instance") -> None:
     )
 
 
-async def _patrol_freeze_expired(
+_SWEEP_STATUSES = (sm_def.RUNNING, sm_def.STOPPED)
+
+
+async def _patrol_expired_sweep(
     sm: async_sessionmaker[AsyncSession], counts: dict[str, int]
 ) -> None:
-    """逐实例独立事务冻结已到期且仍为 stopped 的订阅实例。"""
+    """逐实例独立事务处置「订阅已到期且不在保」的 running / stopped 实例:
+    running → 停机,stopped → 冻结。到期时刻落在 creating/starting/stopping 的实例由本趟接手。"""
     async with sm() as session:
         expired = await expired_instance_ids(session)
         if not expired:
             return
         candidates = [
             inst
-            for inst in await orchestrator_queries.list_instances_by_status(session, sm_def.STOPPED)
+            for status in _SWEEP_STATUSES
+            for inst in await orchestrator_queries.list_instances_by_status(session, status)
             if inst.id in expired
         ]
 
-    async def freeze_if_still_stopped(inst: "Instance") -> None:
+    async def expire_if_still_due(inst: "Instance") -> None:
         async with sm() as session:
-            fresh = await orchestrator_queries.instance_by_id(session, inst.id)
-            if fresh.status != sm_def.STOPPED:
+            fresh = await orchestrator_queries.lock_instance(session, inst.id)
+            if fresh is None or fresh.status not in _SWEEP_STATUSES:
                 return
-            await _freeze(session, fresh)
+            if fresh.id in await reserved_instance_ids(session, [fresh.id]):
+                return
+            await _expire_instance(session, fresh, counts)
             await session.commit()
-            counts["frozen"] += 1
 
     await for_each(
         candidates,
-        freeze_if_still_stopped,
-        stage="subscription_freeze",
+        expire_if_still_due,
+        stage="subscription_sweep",
         ident=lambda inst: {"instance_id": inst.id},
     )
+
+
+_UNPAID_GAUGE_STATUSES = (sm_def.CREATING, sm_def.STARTING, sm_def.RUNNING)
+
+
+async def _refresh_unpaid_running_gauge(sm: async_sessionmaker[AsyncSession]) -> None:
+    """刷新「包周期实例活跃但无在保订阅」计数;>0 即到期链路有漏网。"""
+    async with sm() as session:
+        active = [
+            inst
+            for status in _UNPAID_GAUGE_STATUSES
+            for inst in await orchestrator_queries.list_instances_by_status(session, status)
+            if inst.market == MARKET_SUBSCRIPTION
+        ]
+        reserved = await reserved_instance_ids(session, [inst.id for inst in active])
+    unpaid = sum(1 for inst in active if inst.id not in reserved)
+    SUBSCRIPTION_UNPAID_RUNNING.set(unpaid)
+    if unpaid:
+        logger.error("subscription_unpaid_running", count=unpaid)

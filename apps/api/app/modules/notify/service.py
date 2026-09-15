@@ -96,7 +96,7 @@ async def handle_notify_sms(session: AsyncSession, task: OutboxTask) -> None:
     cfg = await get_runtime_config(session)
     channel = await get_sms_channel(session)
     try:
-        await ensure_sms_platform_quota()
+        await ensure_sms_platform_quota("notify")
     except AppError:
         logger.warning("sms_platform_quota_exhausted", task_id=task.id)
         return

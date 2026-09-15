@@ -25,7 +25,7 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     phone: str = PhoneStr
     sms_code: str | None = Field(default=None, min_length=4, max_length=8)
-    password: str | None = Field(default=None, min_length=1, max_length=64)
+    password: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class PasswordResetRequest(BaseModel):

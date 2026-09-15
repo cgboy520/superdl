@@ -54,6 +54,7 @@ async def engine(pg_url: str) -> AsyncIterator[AsyncEngine]:
     engine = get_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(text(_audit_log_prune_ddl()))
         await conn.execute(
             text("CREATE TABLE IF NOT EXISTS alembic_version (version_num VARCHAR(32) NOT NULL)")
         )
@@ -64,6 +65,19 @@ async def engine(pg_url: str) -> AsyncIterator[AsyncEngine]:
         )
     yield engine
     await dispose_engine()
+
+
+def _audit_log_prune_ddl() -> str:
+    """create_all 不跑迁移;审计保洁函数 DDL 直接取自其迁移文件,与生产同一份。"""
+    import importlib.util
+    from pathlib import Path
+
+    path = next(Path(__file__).parent.parent.glob("alembic/versions/*_audit_log_prune_fn.py"))
+    spec = importlib.util.spec_from_file_location("audit_log_prune_migration", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return str(module._FN)
 
 
 async def _seed_baseline(smaker: async_sessionmaker[AsyncSession]) -> None:

@@ -1,4 +1,5 @@
-"""安全响应头(纯 ASGI):CSP `default-src 'none'` + 禁嵌入,/docs /redoc 豁免 CSP;HSTS 仅 prod。"""
+"""安全响应头(纯 ASGI):CSP `default-src 'none'` + 禁嵌入,/docs /redoc 豁免 CSP;HSTS 仅 prod;
+API、文档与指标响应 `Cache-Control: no-store`。"""
 
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -6,6 +7,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from app.core.config import get_settings
 
 _DOCS_PATHS = ("/docs", "/redoc")
+_NO_STORE_PATHS = ("/api/", "/metrics", "/docs", "/redoc", "/openapi.json")
 
 
 class SecurityHeadersMiddleware:
@@ -35,6 +37,8 @@ class SecurityHeadersMiddleware:
                     headers.setdefault(
                         "Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'"
                     )
+                if path.startswith(_NO_STORE_PATHS):
+                    headers.setdefault("Cache-Control", "no-store")
                 if get_settings().environment == "prod":
                     headers.setdefault(
                         "Strict-Transport-Security", "max-age=15552000; includeSubDomains"

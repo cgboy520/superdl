@@ -1,7 +1,9 @@
 """管理端路由(总览/工单/审计/策略/平台配置/公告/outbox 死信)。"""
 
 import secrets
+from collections.abc import Iterable
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Literal
 
 from fastapi import APIRouter, Query, Request, Response
@@ -243,15 +245,47 @@ async def admin_get_policies(session: DbSession) -> PoliciesAdminOut:
 
 
 class PolicyUpdateRequest(BaseModel):
-    updates: dict[str, str] = Field(min_length=1)
+    updates: dict[str, str] = Field(min_length=1, max_length=64)
     reason: str = Field(min_length=2, max_length=200)
 
 
-@router.put("/policies", dependencies=[require_roles("ops")])
+POLICY_ALERT_KEYS: frozenset[str] = frozenset(
+    {
+        "spot_discount_pct",
+        "disk_price_gb_month",
+        "max_gpus_per_user",
+        "disk_grace_days",
+        "disk_frozen_days",
+        "period_discount_day",
+        "period_discount_week",
+        "period_discount_month",
+        "period_discount_year",
+    }
+)
+POLICY_ALERT_RATIO = Decimal("0.5")
+
+
+def large_policy_moves(
+    before: dict[str, str], after: dict[str, str], keys: Iterable[str]
+) -> list[str]:
+    """敏感策略键里相对上一生效值变化 ≥50% 的,格式 `key: old → new`。"""
+    moves: list[str] = []
+    for key in sorted(keys):
+        if key not in POLICY_ALERT_KEYS or not before.get(key) or not after.get(key):
+            continue
+        old, new = Decimal(before[key]), Decimal(after[key])
+        if old != 0 and abs(new - old) / old >= POLICY_ALERT_RATIO:
+            moves.append(f"{key}: {old} → {new}")
+    return moves
+
+
+@router.put("/policies", dependencies=[require_roles()])
 async def admin_update_policies(
-    body: PolicyUpdateRequest, session: DbSession, request: Request
+    body: PolicyUpdateRequest, session: DbSession, request: Request, admin: CurrentAdmin
 ) -> UpdatedKeysOut:
-    """在线调整策略参数(即时生效;只收 policy 组的键)。审计 detail 记变更前后值与原因。"""
+    """在线调整策略参数(仅 admin,每管理员 20 次/时;即时生效;只收 policy 组的键)。
+    审计 detail 记变更前后值与原因;敏感键相对变化 ≥50% 同事务落 critical 管理端告警。"""
+    await check_rate_limit(f"admin-pricing:{admin.id}", max_attempts=20, window_seconds=3600.0)
     before_all = await effective_strings(session)
     try:
         await set_platform_settings(
@@ -259,6 +293,16 @@ async def admin_update_policies(
         )
     except ValueError as exc:
         raise AppError(ErrorCode.VALIDATION_ERROR, str(exc)) from exc
+    moves = large_policy_moves(before_all, await effective_strings(session), body.updates)
+    if moves:
+        await notify_service.notify(
+            session,
+            None,
+            type_="admin_alert",
+            title="策略参数大幅调整",
+            content=";".join(moves) + f";原因:{body.reason}",
+            severity="critical",
+        )
     await session.commit()
     set_audit_target(
         request,

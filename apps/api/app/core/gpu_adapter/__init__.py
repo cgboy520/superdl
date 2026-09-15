@@ -14,6 +14,7 @@ from app.core.k8s.base import (
     GPU_DEPLOY_DEVICE_PLUGIN_LABEL,
     GPU_MODEL_NODE_LABEL,
     GPU_WORKLOAD_CONFIG_LABEL,
+    LEGACY_POOL_NODE_LABEL,
     POOL_NODE_LABEL,
 )
 
@@ -104,11 +105,12 @@ def build_gpu_request(
 
 
 def pool_node_labels(pool_label: str) -> dict[str, str | None]:
-    """返回池标签的完整期望集(None 表示删除);未知池抛 ValueError。池标签只允许平台写入。"""
+    """返回池标签的完整期望集(None 表示删除,含老键);未知池抛 ValueError。池标签只允许平台写入。"""
     if pool_label not in (POOL_KATA, POOL_HAMI, POOL_MIG, POOL_CPU):
         raise ValueError(f"unknown pool: {pool_label}")
     return {
         POOL_NODE_LABEL: pool_label,
+        LEGACY_POOL_NODE_LABEL: None,
         GPU_WORKLOAD_CONFIG_LABEL: "vm-passthrough" if pool_label == POOL_KATA else None,
         GPU_DEPLOY_DEVICE_PLUGIN_LABEL: "false" if pool_label == POOL_HAMI else None,
     }

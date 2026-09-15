@@ -34,7 +34,7 @@ spec:
           topologySpreadConstraints:
             - maxSkew: 1
               topologyKey: kubernetes.io/hostname
-              whenUnsatisfiable: ScheduleAnyway
+              whenUnsatisfiable: DoNotSchedule
               labelSelector:
                 matchLabels:
                   gateway.envoyproxy.io/owning-gateway-name: superdl
@@ -213,6 +213,45 @@ spec:
     - backendRefs:
         - {name: superdl-web, port: 80}
 ---
+# 公网真实入口是 console 域(CDN → 前置反代 → 本 listener),/api/v1 在此直达 API,不再经 nginx 同源反代;
+# 前缀比 superdl-console 的兜底更长,Envoy 优先命中。限流与请求体上限同 api-https(下方 BackendTrafficPolicy)。
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: superdl-console-api
+  namespace: superdl
+spec:
+  parentRefs:
+    - {name: superdl, sectionName: console-https}
+  rules:
+    - matches:
+        - path: {type: PathPrefix, value: /api/v1}
+      backendRefs:
+        - {name: superdl-api, port: 80}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: superdl-console-edge-deny
+  namespace: superdl
+spec:
+  parentRefs:
+    - {name: superdl, sectionName: console-https}
+  rules:
+    - matches:
+        - path: {type: PathPrefix, value: /api/admin}
+        - path: {type: PathPrefix, value: /api/internal}
+        - path: {type: PathPrefix, value: /metrics}
+        - path: {type: Exact, value: /docs}
+        - path: {type: Exact, value: /redoc}
+        - path: {type: Exact, value: /openapi.json}
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: gateway.envoyproxy.io
+            kind: HTTPRouteFilter
+            name: superdl-edge-not-found
+---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -238,7 +277,48 @@ spec:
     rules:
       - action: Allow
         principal:
+          # 只许具体出口 /32 或办公网段;禁止 100.64.0.0/10、10/8、172.16/12、192.168/16 整段(preflight 拦)
           clientCIDRs: ["192.0.2.0/24"]
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: superdl-admin-ratelimit
+  namespace: superdl
+spec:
+  targetRefs:
+    - {group: gateway.networking.k8s.io, kind: HTTPRoute, name: superdl-admin}
+  requestBuffer:
+    limit: 1Mi
+  rateLimit:
+    local:
+      rules:
+        - limit: {requests: 30, unit: Second}
+          clientSelectors:
+            - sourceCIDR: {value: 0.0.0.0/0, type: Distinct}
+        - limit: {requests: 600, unit: Minute}
+          clientSelectors:
+            - sourceCIDR: {value: 0.0.0.0/0, type: Distinct}
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: superdl-console-api-ratelimit
+  namespace: superdl
+spec:
+  targetRefs:
+    - {group: gateway.networking.k8s.io, kind: HTTPRoute, name: superdl-console-api}
+  requestBuffer:
+    limit: 1Mi
+  rateLimit:
+    local:
+      rules:
+        - limit: {requests: 20, unit: Second}
+          clientSelectors:
+            - sourceCIDR: {value: 0.0.0.0/0, type: Distinct}
+        - limit: {requests: 600, unit: Minute}
+          clientSelectors:
+            - sourceCIDR: {value: 0.0.0.0/0, type: Distinct}
 ---
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: BackendTrafficPolicy
@@ -345,6 +425,12 @@ metadata:
 spec:
   targetRefs:
     - {group: gateway.networking.k8s.io, kind: Gateway, name: superdl}
+  # 0 = 以 TCP 对端地址为客户端 IP(externalTrafficPolicy: Local 下即真实来源)。
+  # 公网前置 CDN/反代时把跳数改成实际前置层数(从 XFF 右侧数),并把这些前置地址加进 ConfigMap FORWARDED_ALLOW_IPS;
+  # 跳数写少,每 IP 限流桶与管理端白名单看到的都是前置层地址。
+  clientIPDetection:
+    xForwardedFor:
+      numTrustedHops: 0
   timeout:
     http:
       streamIdleTimeout: 1h
