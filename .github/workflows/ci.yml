@@ -437,6 +437,29 @@ jobs:
           exit "$fail"
       - name: 删准入策略
         run: kubectl delete -f deploy/cluster/admission/tenant-restrictions.yaml
+      - name: 预置数据盘 StorageClass 与静态 PV(kind 无 Rook/CephFS,扩容要求 PVC 已绑定且 SC 允许扩容)
+        run: |
+          kubectl apply -f - <<'EOF'
+          apiVersion: storage.k8s.io/v1
+          kind: StorageClass
+          metadata: {name: superdl-cephfs}
+          provisioner: kubernetes.io/no-provisioner
+          allowVolumeExpansion: true
+          volumeBindingMode: Immediate
+          EOF
+          for i in 1 2 3 4; do
+            kubectl apply -f - <<EOF
+          apiVersion: v1
+          kind: PersistentVolume
+          metadata: {name: smoke-data-$i}
+          spec:
+            storageClassName: superdl-cephfs
+            capacity: {storage: 100Gi}
+            accessModes: [ReadWriteMany]
+            persistentVolumeReclaimPolicy: Retain
+            hostPath: {path: /tmp/smoke-data-$i}
+          EOF
+          done
       - name: 生成 superdl-tenant-mgr 受限 kubeconfig
         run: |
           TOKEN=$(kubectl create token superdl-tenant-mgr -n superdl --duration=1h)

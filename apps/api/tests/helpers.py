@@ -2,6 +2,7 @@
 
 # pyright: reportPrivateUsage=false
 
+import asyncio
 import base64
 import json
 import os
@@ -9,6 +10,7 @@ import secrets
 import struct
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import Any
 from uuid import uuid4
 
 import httpx
@@ -38,6 +40,23 @@ def use_kubeconfig(path: str) -> None:
     """设置 KUBECONFIG 环境变量与 Kubernetes 客户端默认路径。"""
     os.environ["KUBECONFIG"] = path
     kube_config.KUBE_CONFIG_DEFAULT_LOCATION = path
+
+
+PVC_BOUND_TIMEOUT = 30.0
+
+
+async def wait_pvc_bound(core: Any, namespace: str, name: str) -> None:
+    """等 PVC 进入 Bound(apiserver 只允许已绑定的 PVC 扩容)。"""
+    deadline = asyncio.get_running_loop().time() + PVC_BOUND_TIMEOUT
+    while True:
+        pvc: Any = await asyncio.to_thread(
+            core.read_namespaced_persistent_volume_claim, name, namespace
+        )
+        if pvc.status is not None and pvc.status.phase == "Bound":
+            return
+        if asyncio.get_running_loop().time() > deadline:
+            raise TimeoutError(f"pvc {name} 未在 {PVC_BOUND_TIMEOUT}s 内绑定")
+        await asyncio.sleep(0.5)
 
 
 async def drain(
