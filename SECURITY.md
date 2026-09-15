@@ -2,9 +2,9 @@
 
 ## 报告漏洞
 
-- 仓库为私有(见 `docs/decisions.md`「私有仓库,不放 LICENSE」)。协作者直接私信维护者,或在仓库内开 issue 并加 `security` 标签;不要在提交信息里描述漏洞细节。转公开时改用 Settings → Code security 的 Private vulnerability reporting。
-- 附:影响组件(api / web / admin / deploy / node-join.sh / 实例镜像)、复现步骤、影响面判断。凭据、租户数据脱敏。
-- 收到后先确认并给出处置方向,修复随下一次 `main` 提交发布。不设漏洞赏金。
+- 私密渠道报告,不开公开 issue、不在提交信息或 PR 描述里写漏洞细节:优先用 GitHub 仓库 Security → Advisories 的私密报告;不可用时直接私信仓库维护者。
+- 报告内容:影响组件(api / web / admin / deploy / node-join.sh / 实例镜像)、复现步骤、影响面判断;凭据与租户数据脱敏。
+- 处置:收到后先确认并给出处置方向,修复随下一次 `main` 合并发布。不设漏洞赏金。
 
 ## 支持范围
 

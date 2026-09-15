@@ -88,7 +88,7 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 - [ ] **light 档 gpu-operator(k3s)**:`toolkit.enabled=false` 下 operand 全部 Running,且 `kubectl get node -o json | jq '.items[].metadata.labels'` 里 `nvidia.com/gpu.count` 与 `nvidia.com/cuda.driver-version.full` 仍在
 - [ ] **light 档 kata-deploy(k3s)**:`kubectl get runtimeclass kata-qemu` 存在;kata 池有节点时 `kata-deploy` DaemonSet Ready,节点上 `/var/lib/rancher/k3s/agent/etc/containerd/` 下有 kata 的 drop-in,且真跑一个 `runtimeClassName: kata-qemu` 的 Pod
 - [ ] 集群相关环境变量全部留空,仅经管理端「平台配置 · 集群接入」完成节点加入
-- [ ] k3s kube-router NetworkPolicy 对租户 Egress 黑名单与 Cilium 等效
+- [ ] light 档 Cilium NetworkPolicy 对租户 Egress 黑名单生效(与 full 档同一份策略)
 - [ ] RKE2 / k3s 的 cn 镜像源可用
 - [ ] 集群能力探测(probe)所需 RBAC 在 RKE2 与 k3s 上均足够
 

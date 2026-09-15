@@ -110,7 +110,7 @@
 
 |                             | `dev`(SSH + JupyterLab) | `service`(在线服务的版本)                                                                         |
 | --------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------- |
-| `restartPolicy`             | `Never`                 | `Always`(kubelet 原地重启容器,Pod 不重建;reconciler 建立在「Pod 名 = 实例 uuid」上)               |
+| `restartPolicy`             | `Never`                 | `Always`(kubelet 原地重启容器,Pod 不重建;Pod 名 = 实例 uuid)                                      |
 | command / args              | 不设                    | 用户可覆盖(`container_command` / `container_args`)                                                |
 | 用户 env                    | 无                      | `env_encrypted`(整包 AES-GCM,AAD 绑实例 uuid);密文项经 per-instance Secret 以 `secretKeyRef` 引用 |
 | SSH NodePort Service        | 恒建                    | `with_ssh` 才建;为假时**不进端口池**                                                              |
@@ -125,7 +125,7 @@
 - **服务路由只能挂 `svc-https` listener**:`app-https` 上没有 `SecurityPolicy.extAuth`,挂过去照样通、不鉴权、无报错。两个 listener 名在 `core/k8s/base.py` 的 `GATEWAY_APP_LISTENER` / `GATEWAY_SVC_LISTENER` 钉死,离线用例 `tests/test_k8s_real_units.py::TestServiceWorkloadObjects` 逐条断言。
 - **租户 HTTPRoute 的挂载契约**由 `core/k8s/base.py` 三个常量钉死(`GATEWAY_NAMESPACE` / `GATEWAY_NAME` / `GATEWAY_APP_LISTENER`,须与 `deploy/app/k8s/04-gateway.yaml` 逐字一致;无对应 `SUPERDL_*` 配置):路由建在**租户 ns**,`parentRefs` 指平台 ns 的 `Gateway superdl`,`sectionName` 钉死 `app-https`。跨 ns 挂载由 listener 的 `allowedRoutes.namespaces.from: Selector` 授权,选择器是 `ensure_namespace` 打在租户 ns 上的 `superdl.io/managed=true`;**不需要 ReferenceGrant**。三个名字任一写错都不报错:`create` 返 201,路由停在 `status.parents[].conditions` 的 `Accepted=False` / `NotAllowedByListeners`。不写 `sectionName` 则路由挂到全部同端口 listener。
 - **Jupyter 的 WebSocket 与 SSE 靠网关 `streamIdleTimeout: 1h`**(`ClientTrafficPolicy superdl-gateway`);调整网关策略别落回默认 5 分钟。
-- **路由规模是容量变量**:一实例一条 HTTPRoute,数据面与 EG 控制面内存随路由数涨。light 档要么给足 `EnvoyProxy` memory limit,要么对单机实例数设硬上限;取值实机压过再定,见 `deploy/app/k8s/04-gateway.yaml`。
+- **路由规模是容量变量**:一实例一条 HTTPRoute,数据面与 EG 控制面内存随路由数涨。light 档要么给足 `EnvoyProxy` memory limit,要么对单机实例数设硬上限,见 `deploy/app/k8s/04-gateway.yaml`。
 - 孤儿端点清理按 `superdl.io/managed` 标签全集群 LIST(Service 与 HTTPRoute),HTTPRoute 无 typed model,走 `CustomObjectsApi` 收发裸 dict,分页游标在 `metadata.continue`。
 - SSH 仅密钥登录;连接串 `ssh root@<实例域名> -p 3xxxx`:主机名就是实例自己的域名(与 Jupyter 同名,`orchestrator/service.jupyter_host`),靠 NodePort 区分。部署约束:泛域名解析到的地址必须同时转发 80/443 与 `ssh_port_range` 端口段。
 - SSH 依赖租户容器的三个 capability(`SYS_CHROOT` / `SETUID` / `SETGID`,见 [security.md](./security.md))与 entrypoint 起 sshd 前对 `/root` 的 `chmod g-w,o-w`。

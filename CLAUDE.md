@@ -1,6 +1,6 @@
 # SuperDL 工程规范(人与 AI 代理共用)
 
-GPU 算力租赁平台。架构 `docs/architecture.md`,模块契约与不变量 `docs/reference/`(索引 `docs/README.md`),UI/UX 规格 `docs/ui-ux-spec.md`,决策记录 `docs/decisions.md`。
+GPU 算力租赁平台。架构 `docs/architecture.md`,模块契约与不变量 `docs/reference/`(索引 `docs/README.md`),UI/UX 规格 `docs/ui-ux-spec.md`,决策记录 `docs/decisions.md`,上手与工作流 `CONTRIBUTING.md`。
 
 ## 仓库布局
 
@@ -74,23 +74,19 @@ python3 scripts/check-page-skeleton.py
 
 ## 禁改清单
 
-- `packages/api-client/src/generated/**`(orval 产物)
-- `apps/api/alembic/versions/*`(只许新增:**不许改已上线迁移的 DDL / 数据语句,也不许改 revision 链**)
+- `packages/api-client/src/generated/**`(orval 产物,只经 `pnpm api-client` 再生成)
+- `apps/api/alembic/versions/*`:只许新增;已上线迁移的 DDL / 数据语句与 revision 链不许改。零行为改动(注释与 docstring 换行、按原顺序拆辅助函数)允许,须附行为未变的证明:语句序列逐条比对 + 空库 `alembic upgrade head` + `alembic check`
 
-「禁改」约束的是迁移的行为,不是文件本身:注释与 docstring 换行、把超长函数按原顺序拆成辅助函数
-这类零行为改动照做——闸门长期挂红会把真回归淹掉。改完须证明行为未变:语句序列逐条比对 + 空库
-`alembic upgrade head` + `alembic check`。
+## 工作流与提交约定
 
-## 提交约定
-
-- 直接在 `main` 提交,不建分支、不发 PR(见 `docs/decisions.md`)。
-- 前缀 `feat:` / `fix:` / `chore:` / `docs:` / `test:` / `ci:` / `refactor:`,一句话说清改了什么。
-- 一个提交一件事,自身过全部闸门、可单独回滚。纯机械改动单独成提交;契约再生成(openapi.json / orval 产物 / errors 文案 / i18n 类型)随引发它的改动同一提交。
-- 闸门按改动范围跑,带红不提交,以本地为准:
+- `main` 受保护:改动在短生命周期分支上提交,经 PR 合入;PR 须 CI 全绿并至少一人评审,squash 合并;不 force-push `main`。
+- 提交信息前缀 `feat:` / `fix:` / `chore:` / `docs:` / `test:` / `ci:` / `refactor:`,一句话说清改了什么。
+- 一个 PR 一件事,可单独回滚。纯机械改动单独成 PR;契约再生成(openapi.json / orval 产物 / errors 文案 / i18n 类型)随引发它的改动同一提交。
+- 本地闸门按改动范围跑,带红不推送;CI(`.github/workflows/ci.yml`)是合并闸门与全部闸门清单:
   - 后端:ruff format/check → pyright → import-linter → pytest;动模型/迁移加 `alembic check`,动路由/schema 加 openapi.json 无 diff
     - ruff 复杂度上限(圈复杂度 12 / 分支 14 / 语句 60,`apps/api/pyproject.toml`)超了拆函数,不加 noqa;pyright 配置只认仓库根 `pyrightconfig.json`(standard + 多余 ignore / 多余比较 / 私有访问报错),白盒测试直探模块内部时文件头声明 `# pyright: reportPrivateUsage=false`
   - 前端:prettier --check → eslint → tsc → vitest;动文案/locale 加 `pnpm i18n`,动构建配置加 build
   - 脚本:bash -n → shellcheck → bats
-  - 文档:`python3 scripts/check-docs-links.py`;只改文档或注释不跑测试
+  - 文档:`python3 scripts/check-docs-links.py`;`deploy/` 与 `apps/api/` 之外的 Markdown 另过 `pnpm format:check`;只改文档或注释只需跑这两项
   - 用户可见主链路:Playwright 冒烟
-  - 只在 CI:pip-audit / pnpm audit、gitleaks、kubeconform(`deploy/app/k8s`)、kind 上的 RealOrchestrator 冒烟;`.github/workflows/ci.yml` 是全部闸门清单
+  - 只在 CI:pip-audit / pnpm audit、gitleaks、kubeconform(`deploy/app/k8s`)、kind 上的 RealOrchestrator 冒烟

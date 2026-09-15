@@ -116,7 +116,7 @@ frozen 到期回收那一支不过滤,回收由余额巡检统一做。创建路
 1. 临期预警 `expires_at - now < period_expire_warn_days` → 短信 + 站内信。去重锚点 `subscriptions.warned_for_expiry`(存「已预警到哪个到期时刻」);站内信另有按日分桶的 dedup_key。
 2. 自动续费:到期 + `auto_renew` + 可用余额够 → 扣款、新开一行、通知。先算价再比可用余额,不靠 `debit` 抛错兜底。余额不够发「自动续费失败」通知,落到停机链路。
 3. 到期停机:订阅行转 `expired`;running → `system_stop(reason='subscription_expired')`;stopped → 直接冻结。creating/starting/stopping/frozen/releasing 本轮不动,下一轮接手。
-4. 冻结:单独一趟把「最后一期已到期且已停稳」的实例转 `frozen`(reason `subscription_freeze`),写 `frozen_deadline = now + freeze_grace_hours`。与上一步分两趟(停机是异步的)。候选集是「status='expired' 且 expires_at ≤ now」减去在保集合。
+4. 冻结:单独一趟把「最后一期已到期且已停稳」的实例转 `frozen`(reason `subscription_freeze`),写 `frozen_deadline = now + freeze_grace_hours`。与上一步分两趟。候选集是「status='expired' 且 expires_at ≤ now」减去在保集合。
 5. 回收:由 `balance_patrol` 的 frozen 分支做。冻结窗口复用 `freeze_grace_hours`。
 
 到期与欠费用不同的 `instance_events.reason`(`subscription_expired` / `subscription_freeze` 对 `arrears_stop` / `arrears_freeze`)。
@@ -146,7 +146,7 @@ frozen 到期回收那一支不过滤,回收由余额巡检统一做。创建路
 
 竞价时价 = SKU 原价 × `spot_discount_pct` / 100,由 `app/core/pricing.py` 的 `price_for` 单点算出,建实例时快照进 `instances.price_hourly`。此后与按量实例同路径:出 `bills_hourly`、走水位线与尾账、计入燃烧率与欠费巡检。`spot_discount_pct` 取值见 [limits.md](./limits.md)。
 
-被抢占不免单:迁 `stopping` 时由计费边监听器(`billing/edge_listener.py`)照常出尾账,按到那一刻的实际运行秒数结算。宽限窗那段不计费:状态机在发通知那一刻迁到 `stopping`,计费边随之落定,之后 Pod 多活的几十秒在计费窗口之外。
+被抢占不免单:迁 `stopping` 时由计费边监听器(`billing/edge_listener.py`)照常出尾账,按到那一刻的实际运行秒数结算。宽限窗不计费:计费边在迁 `stopping` 时落定。
 
 ### 转按量:一小时一价
 
@@ -155,7 +155,7 @@ frozen 到期回收那一支不过滤,回收由余额巡检统一做。创建路
 - 这一行不存在(常见路径):什么都不做,之后的整点结算按新单价出账;
 - 已出过账且新价更高:按新单价重算 `amount`、改写 `unit_price`、补扣差价、`detail` 打 `repriced`;三件事一起做。
 
-只在涨价时动这一行,降价整行不动(`unit_price` 也不改)。降价路径经 `/to-on-demand` 不可达;真出现了整行原样留着,退款一律走人工 `refund_requests`(见 [payment.md](./payment.md)),不由结算原语写负数流水。用例锁降价路径:整行未动、无扣款流水。
+只在涨价时改写该行;降价整行不动(`unit_price` 也不改),退款一律走人工 `refund_requests`(见 [payment.md](./payment.md))。用例锁降价路径:整行未动、无扣款流水。
 
 转换对用户是一次涨价,必须写进转换确认弹窗(见 [../ui-ux-spec.md](../ui-ux-spec.md) §3.5)。转完再过一次 `assert_can_afford`。
 

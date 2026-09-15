@@ -32,15 +32,15 @@ flowchart LR
 
 | 组件                    | 角色                                                                                                                              |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| RKE2 / k3s              | 容器平台,钉 v1.36                                                                                                                 |
-| Cilium                  | 两档同装(CNI + NetworkPolicy + 带宽限额);light 档保留 k3s 自带 kube-proxy 与 ServiceLB                                            |
+| RKE2 / k3s              | 容器平台;版本由安装器 channel 决定,实机验证清单核对 v1.36.x                                                                       |
+| Cilium                  | 两档同装(CNI + NetworkPolicy + kube-proxy 替代 + 带宽限额);light 档北向 LoadBalancer 仍用 k3s ServiceLB                           |
 | GPU Operator            | 两档同装(NFD/GFD/DCGM/MIG/VFIO);light 档关 toolkit(宿主 toolkit 由装机基线装)                                                     |
 | kata-deploy             | 两档同装,只落 kata 池节点                                                                                                         |
 | Kata                    | RuntimeClass `kata-qemu`,VFIO 整卡直通                                                                                            |
 | HAMi                    | 共享档 CUDA 层软切分与限额                                                                                                        |
 | kube-prometheus-stack   | Prometheus 本地留 15 天,长期数据进 PostgreSQL                                                                                     |
-| Rook-Ceph + CephFS      | 数据盘;一盘一 PVC,容量即硬配额。选它是因为内核 cephfs 声明 `FS_ALLOW_IDMAP`,能挂进 `hostUsers: false` 的租户 Pod                  |
-| TopoLVM                 | 实例盘本地 NVMe,销毁为 lvremove(擦盘需节点开 issue_discards)                                                                      |
+| Rook-Ceph + CephFS      | 数据盘;一盘一 PVC,容量即硬配额;支持 idmapped mount,可挂进 `hostUsers: false` 的租户 Pod                                           |
+| TopoLVM                 | 实例盘本地 NVMe,销毁为 lvremove(lvmd `issue_discards=1`)                                                                          |
 | Envoy Gateway           | 北向唯一入口(Gateway API,`GatewayClass superdl`):三个平台域 + 租户 Jupyter 泛域名 + 服务端点泛域名                                |
 | cert-manager + acme-dns | 平台三域与泛域名证书(DNS01 经 acme-dns);Gateway `certificateRefs` 引 `deploy/app/k8s/05-cert-manager.yaml` 显式声明的 Certificate |
 
@@ -84,13 +84,13 @@ worker 其余定时任务:outbox 卡单回收、小时结算、数据盘日结�
 
 | 通道               | 机制                                                                                                                                                                                                                                                                                                                                  |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SSH                | 端口池表 `port_allocations`,每实例一个 NodePort;仅密钥登录。**SSH 与 Jupyter 拆成两个 Service**(合并后 `type=NodePort` 会给 Jupyter 端口也分配 NodePort)                                                                                                                                                                              |
+| SSH                | 端口池表 `port_allocations`,每实例一个 NodePort;仅密钥登录。**SSH 与 Jupyter 是两个独立的 Service**(SSH `NodePort`,Jupyter `ClusterIP`)                                                                                                                                                                                               |
 | JupyterLab         | Pod 内 8888,**每实例一条 HTTPRoute**(租户 ns,挂 `app-https` listener)按 host 路由到 ClusterIP Service,token 由控制面注入,泛域名证书一张                                                                                                                                                                                               |
 | 对外服务端点       | 在线服务(`services`)公网入口 `<slug>.svc.<域名>`;服务持有一台 `workload_type='service'` 版本实例,**每实例一条 HTTPRoute** 挂 `svc-https` listener。API Key 在网关校验(一条 `SecurityPolicy.extAuth` 挂 listener),用户容器不实现鉴权;**鉴权结果无缓存**,控制面是全部端点的同步依赖,见 [reference/services.md](./reference/services.md) |
 | 租户 NetworkPolicy | 默认拒东西向。入方向只放行 `envoy-gateway-system`(Envoy 数据面 ns,不是 `superdl`)**不限端口**,以及 TCP 22(来源 `0.0.0.0/0` **排掉 Pod 网段**,不排整段私网)。出方向 DNS 收敛到 CoreDNS,公网 TCP 扣滥用端口与数据存储端口黑名单、UDP 白名单,私网与云元数据网段拒                                                                        |
 | 网关策略           | 源 IP 白名单(管理端)、边缘限流(API 域,匿名回调路由更严请求体上限)、服务端点鉴权与限流、租户 Jupyter listener 限流、全局超时与连接兜底,7 个策略对象挂 Gateway / HTTPRoute(`deploy/app/k8s/04-gateway.yaml`)。挂载点是 listener 的 `sectionName`,**写错不报错**,线索在策略对象 `status.ancestors[].conditions`;6 个 listener 名锁死     |
 
-控制面 ServiceAccount 按 worker 组件拆分;租户资源写权限是 ClusterRole,可达面由 `deploy/cluster/admission/tenant-restrictions.yaml` 的**七条 ValidatingAdmissionPolicy(全部 `Deny`)**收窄:平台 SA 写范围(`superdl` / `tenant-*` ns 与 nodes)、租户 Pod 安全基线、Node 字段级写白名单、全局 Pod 兜底、Pod 与 Job 模板各一条 Secret 引用白名单、Node 删除对象白名单。机制见 [`reference/security.md`](./reference/security.md)。HTTPRoute 条数随活跃实例线性增长,是 Envoy 数据面内存的主要变量。
+控制面 ServiceAccount 按 worker 组件拆分;租户资源写权限是 ClusterRole,可达面由 `deploy/cluster/admission/tenant-restrictions.yaml` 的**七条 ValidatingAdmissionPolicy(全部 `Deny`)**收窄:平台 SA 写范围(`superdl` / `tenant-*` ns 与 nodes)、租户 Pod 安全基线、Node 字段级写白名单、全局 Pod 兜底、Pod 与 Job 模板各一条 Secret 引用白名单、Node 删除对象白名单。机制见 [`reference/security.md`](./reference/security.md)。HTTPRoute 条数随活跃实例线性增长,是 Envoy 数据面内存的容量变量。
 
 ## 6. 数据模型
 

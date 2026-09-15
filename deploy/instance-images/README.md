@@ -33,9 +33,9 @@
 | SSH host key | 首次生成后持久化到实例盘(`/root/.ssh/host_keys`),`/etc/ssh` 下为符号链接 |
 | SSH 公钥 | 读环境变量 `AUTHORIZED_KEYS`(多行)**无条件覆写** `~/.ssh/authorized_keys`(空值也要清空文件),sshd 监听 `22`,仅密钥登录 |
 | 工作目录 | 用户数据放 `/root`(实例盘挂载点);数据盘挂 `/root/data` |
-| HOME 与运行目录 | `HOME=/root`,Jupyter 的 data 目录落在 `/root` 下。**runtime 与 config 两个目录放容器可写层**:`JUPYTER_RUNTIME_DIR=/run/jupyter`(含 token 明文)、`JUPYTER_CONFIG_DIR=/run/jupyter-config`(配置文件可改鉴权,不落实例盘) |
+| HOME 与运行目录 | `HOME=/root`,Jupyter 的 data 目录落在 `/root` 下。**runtime 与 config 两个目录放容器可写层**:`JUPYTER_RUNTIME_DIR=/run/jupyter`、`JUPYTER_CONFIG_DIR=/run/jupyter-config`,均不落实例盘 |
 | 基础镜像 | 与 SKU 的 `cuda_max` 兼容的 CUDA 运行时;Dockerfile 末尾 `ENV NVIDIA_VISIBLE_DEVICES=void` 覆盖 nvidia/cuda 基座的 `all`,可见卡只来自 HAMi / device-plugin 注入的容器 env |
-| 容器日志 | entrypoint 把自身与 Jupyter 的 stdout/stderr 经 `sed` 抹掉 `token=` 值再落容器日志(Jupyter 启动横幅带 `?token=`);日志管道侧 Alloy 再抹一次 |
+| 容器日志 | entrypoint 把自身与 Jupyter 的 stdout/stderr 经 `sed` 抹掉 `token=` 值再落容器日志;日志管道侧 Alloy 再抹一次 |
 
 ## 默认镜像矩阵(平台自带目录)
 
@@ -44,7 +44,7 @@
 - **框架版本**:只上「最新稳定版」+「最后一个支持 CUDA 11.8 的稳定版」;最新版本自己覆盖 11.8 时只留一个。不收 rc/beta。
 - **CUDA 线**:`13.2` / `12.9` / `11.8` 三条,取值以**框架官方轮子实际发布的 CUDA**为准,基座 `nvidia/cuda` 的小版本与之对齐。
 - **Python**:取该框架支持的**最高**版本;封顶了才降(TF 2.14 → 3.11),PaddlePaddle 用厂商基座自带的 3.10。
-- **框架镜像以同线 Miniconda 镜像为父镜像**,推送时只上传框架 wheel 那一层。
+- **框架镜像以同线 Miniconda 镜像为父镜像**。
 
 | 镜像 tag | 框架 | Python | CUDA | 基座 |
 |---|---|---|---|---|

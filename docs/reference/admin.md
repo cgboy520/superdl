@@ -81,7 +81,7 @@
 - 日对账卡覆盖包周期:出账侧含 `subscriptions.amount_paid`,消费侧含 `ref_type='subscription'` 的流水,两侧同一切窗(见 [billing.md](./billing.md))。
 - 全局实例表「购买模式」取 `AdminInstanceOut.market`,到期日取 `AdminInstanceOut.subscription.expires_at`;管理端与用户端走同一条批量回填路径(`attach_instance_details`);按量实例 `subscription` 为 null,渲染「—」。
 - `OverviewPoolOut.gpu_spot_used` 来自实例侧(`orchestrator/queries.py::running_spot_gpus_by_pool`),是 `gpu_used`(节点台账)的子段,组装时按 `min(spot, gpu_used)` 截断;不可拿 `gpu_used − gpu_spot_used` 当「非竞价已租」精确值。
-- `running_spot_gpus_by_pool` 必须在 Python 侧聚合(PG 不支持参数化的 `spec ->> $1` 与 GROUP BY 列做相等比较),与 `running_gpu_share_by_pool` 同写法。
+- `running_spot_gpus_by_pool` 必须在 Python 侧聚合,与 `running_gpu_share_by_pool` 同写法。
 - 总览的 `subscriptions_active` 是在保订阅数,不是实例状态计数(停机的包月实例周期未满仍在保)。
 - adminapi 端点全部声明响应模型(kind/group/source 用 Literal);前端行类型从生成契约再导出,不手写。
 - 「强制回收」与「强制停止」两个入口不合并:不同 reason。两者都走 `ReasonAction`,回收另走抢占路径(宽限窗 + 通知,见 [orchestrator.md](./orchestrator.md));强制回收终态 stopped、实例盘保留。

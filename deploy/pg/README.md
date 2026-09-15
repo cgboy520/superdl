@@ -7,12 +7,12 @@
 | 文件 | 落位 | 说明 |
 |---|---|---|
 | `compose.yaml` | `/etc/superdl/pg/compose.yaml` | 镜像按 digest 钉死;`archive_mode=on` + 本地 WAL 归档目录;`hba_file` 指向下面的文件 |
-| `pg_hba.conf` | `/etc/superdl/pg/pg_hba.conf` | Unix socket `trust`(只有 `docker exec` 能到);TCP 一律 `hostssl` + `scram-sha-256`,`hostnossl` 全拒 |
+| `pg_hba.conf` | `/etc/superdl/pg/pg_hba.conf` | Unix socket `trust`;TCP 一律 `hostssl` + `scram-sha-256`,`hostnossl` 全拒 |
 | `roles.sql` | `psql -v app_password="'…'" -v ON_ERROR_STOP=1 -f roles.sql`(幂等)| 建应用角色 `superdl_app`(非 superuser、非 owner、只有 DML;`balance_ledger` 只读+追加,`audit_log` 不可 UPDATE)+ 默认权限,让后续迁移建的表自动授权 |
 | `backup.sh` | `/etc/cron.daily/superdl-pg-backup` | 每日 `pg_dump -Fc` → gpg AES256 → 本机留 14 天 → rsync 到镜像机(`rrsync` 只写) → 恢复冒烟(恢复到临时库,数三张资金表) → 写 `.last-success` |
 | `wal-sync.sh` | `/etc/cron.d/superdl-pg-wal-sync`(每 5 分钟) | WAL 归档目录 rsync 到镜像机;每周日做一份 `pg_basebackup`(gpg)同步过去;本机与镜像机各留 21 天 |
 
-口令与密钥:`/etc/superdl/pg/pg.env`(`POSTGRES_PASSWORD` = owner `superdl`)、`/etc/superdl/pg/app.env`(`SUPERDL_APP_PASSWORD`)、`/etc/superdl/pg/backup-passphrase`(gpg 口令,**必须另存一份到密码管理器**,宿主机没了它就是唯一解密钥)、`/etc/superdl/pg/backup-ssh-key`(到镜像机 root 的 rsync 专用密钥,镜像机 `authorized_keys` 用 `restrict,command="/usr/bin/rrsync -wo <目录>"` 锁成只写)。全部 0600 root。
+口令与密钥:`/etc/superdl/pg/pg.env`(`POSTGRES_PASSWORD` = owner `superdl`)、`/etc/superdl/pg/app.env`(`SUPERDL_APP_PASSWORD`)、`/etc/superdl/pg/backup-passphrase`(gpg 口令,**必须另存一份到密码管理器**)、`/etc/superdl/pg/backup-ssh-key`(到镜像机 root 的 rsync 专用密钥,镜像机 `authorized_keys` 用 `restrict,command="/usr/bin/rrsync -wo <目录>"` 锁成只写)。全部 0600 root。
 
 ## 角色
 
@@ -28,7 +28,7 @@
 - 告警:`PgBackupStale` / `PgBackupFailed` 看 K8s CronJob;本形态不跑 CronJob,由 `backup.sh` 把 `.last-success` 时间戳写进 node-exporter 的 textfile 目录(`/var/lib/node_exporter/textfile/superdl_pg_backup.prom`,指标 `superdl_pg_backup_last_success_timestamp_seconds`),kps 的 `PgBackupStandaloneStale` 据此告警。
 - 演练:`backup.sh` 每天自带恢复冒烟;完整恢复每季度一次,记录进 runbook 的 RTO 表。
 
-## 风险(与托管 PG / cnpg 相比)
+## 风险
 
 - 宿主机故障 = 库停机,恢复靠镜像机上的 dump/WAL 重建,RTO 按 runbook 目标 30 分钟内。
 - WAL 归档在本地目录,镜像机同步失败时本地继续累积:`wal-sync.sh` 失败会连续告警(`.last-success` 不更新),不会阻塞库写入。

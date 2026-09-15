@@ -6,7 +6,7 @@
 
 **cpu 池是无卡机池**,不承载 GPU 组件,只供纯 CPU 实例(`tier=cpu`)使用;没有无卡服务器时,CPU 规格也可挂 hami 池,每节点让出多少由策略 `gpu_node_cpu_instance_vcpu_cap` 封顶(0 = 不许)。详见 `docs/reference/nodes.md` 与 `docs/reference/catalog.md`。
 
-chart 版本钉在 `helmfile.yaml.gotmpl`,K8s 版本钉在 `rke2/` 与 `k3s/` 的 server-config;升级走变更评审。
+chart 版本钉在 `helmfile.yaml.gotmpl`,K8s 版本由安装器 channel 决定(ansible `rke2_channel`,默认 `latest`);实机验证清单核对为 v1.36.x;升级走变更评审。
 Gateway API 的 CRD 由 `gateway-api-crds.sh` 单点管,channel 首装即定,首装前先读「北向入口」一节。
 
 ## 前置检查(两档通用)
@@ -27,7 +27,7 @@ full 档另需 `cert-manager/acme-dns-account`(DNS01 账户,见 `runbooks/acme-d
 
 存储与监控变更前核对:
 
-- `values/rook-ceph-cluster.yaml` 的三个 OSD 必须落在三台不同机器上,才满足 `failureDomain: host` 的副本要求。
+- `values/rook-ceph-cluster.yaml` 的三个 OSD 必须落在三台不同机器上(`failureDomain: host`)。
 - 修改 Prometheus 存储参数前,先以 `--cascade=orphan` 删除 `monitoring` 中的 StatefulSet `prometheus-kube-prometheus-stack-prometheus`,保留 Pod/PVC,再通过 `./apply.sh <full|light>` 重建 StatefulSet。
 - 钉钉接收器使用 Alertmanager 内的 `localhost:8060/dingtalk/oncall/send`;使用前须在 `values/kps.yaml` 的 `alertmanager.alertmanagerSpec.containers` 配置 `prometheus-webhook-dingtalk` sidecar,固定镜像版本,profile 为 `oncall`,机器人凭据引用 `monitoring/superdl-dingtalk-token` 的 `token` 键。启用机器人加签时,同时配置转换器支持的签名参数与 Secret。
 
@@ -37,7 +37,7 @@ full 档另需 `cert-manager/acme-dns-account`(DNS01 账户,见 `runbooks/acme-d
 
 **CRD 由 `./gateway-api-crds.sh` 单点管**(helmfile 侧 `crds.enabled=false`),脚本封的是 `helm template | kubectl apply --server-side`。首装不必手工执行:`./apply.sh` 经 envoy-gateway release 的 presync 钩子自动跑。
 
-> **channel 只有一次机会。** 边缘限流用到 Gateway API 的 **experimental** channel;CRD 以 standard 装进后换不回来(唯一出路是删净 Gateway API CRD 重装,删 CRD 连带删掉全部 Gateway/HTTPRoute)。脚本自带前置闸门(channel 不符直接停手),`./preflight.sh` 复核 channel=experimental、bundle-version=v1.6.1。
+> **channel 只有一次机会。** Gateway API CRD 必须装 **experimental** channel;CRD 以 standard 装进后换不回来(唯一出路是删净 Gateway API CRD 重装,删 CRD 连带删掉全部 Gateway/HTTPRoute)。脚本自带前置闸门(channel 不符直接停手),`./preflight.sh` 复核 channel=experimental、bundle-version=v1.6.1。
 > k3s 的 traefik 必须**装机即禁**(`k3s/server-config.yaml` 已写好),不能「先启用后禁用」。
 
 **升级 Envoy Gateway**:`helmfile.yaml.gotmpl`、`gateway-api-crds.sh` 与 `scripts/check-gateway-manifests.py` 三处版本号一起改,再**先 `./gateway-api-crds.sh` 升 CRD,后 `./apply.sh <full|light> -l name=envoy-gateway` 升控制面**。
@@ -76,7 +76,7 @@ full 档另需 `cert-manager/acme-dns-account`(DNS01 账户,见 `runbooks/acme-d
 
 ## 平台组件落点标签
 
-平台组件(api / 5 个 worker / 前端 / Envoy 数据面)的 `nodeSelector` 统一锚点是 `node-restriction.kubernetes.io/superdl-infra=true`,**由 `../ansible/site.yml` 在装机后用管理凭据打到控制面节点上**,不走发行版的 `node-label`。`node-restriction.kubernetes.io/` 前缀被 NodeRestriction 准入插件拉黑(`rke2/server-config.yaml` 与 `k3s/server-config.yaml` 的 `kube-apiserver-arg` 显式钉住),kubelet 打不上也改不掉;平台 SA 也无权改——准入策略③ 对 Node labels 只放行 `superdl.io/*` 与两个具名的 GPU operand 键(`nvidia.com/gpu.workload.config`、`nvidia.com/gpu.deploy.device-plugin`,管理端切池要随池标签一起收敛,见 [`runbooks/node-pool-switch.md`](./runbooks/node-pool-switch.md))。白名单保持具名,不放宽成 `nvidia.com/*` 前缀:`gpu.deploy.*` 决定特权 operand 往哪落。
+平台组件(api / 5 个 worker / 前端 / Envoy 数据面)的 `nodeSelector` 统一锚点是 `node-restriction.kubernetes.io/superdl-infra=true`,**由 `../ansible/site.yml` 在装机后用管理凭据打到控制面节点上**,不走发行版的 `node-label`。`node-restriction.kubernetes.io/` 前缀被 NodeRestriction 准入插件拉黑(`rke2/server-config.yaml` 与 `k3s/server-config.yaml` 的 `kube-apiserver-arg` 显式钉住),kubelet 打不上也改不掉;平台 SA 也无权改——准入策略③ 对 Node labels 只放行 `superdl.io/*` 与两个具名的 GPU operand 键(`nvidia.com/gpu.workload.config`、`nvidia.com/gpu.deploy.device-plugin`,管理端切池要随池标签一起收敛,见 [`runbooks/node-pool-switch.md`](./runbooks/node-pool-switch.md))。白名单保持具名,不放宽成 `nvidia.com/*` 前缀。
 
 `preflight.sh` 三项复核:NodeRestriction 已启用、至少一台节点带该标签、**GPU 池节点严禁带该标签**。手工补标:
 
@@ -106,7 +106,7 @@ kubectl label nodes -l node-role.kubernetes.io/control-plane \
    ```
    (config 已含 `disable: traefik`、`embedded-registry: true`=Spegel,以及 `flannel-backend: none` / `disable-network-policy: true` / `disable-kube-proxy: true`——CNI、NetworkPolicy、kube-proxy 全归 Cilium。
    这几项都必须**装机即设**:事后改要全集群重启 k3s 并重建全部 Pod,见下「给已有集群换 CNI」)
-   再把 `values/light/cilium-light.yaml` 的 `CHANGE_ME_K3S_SERVER_IP` 换成 server 自己的 IP(单 server 没有 VIP;`preflight.sh` 会拦占位符)。
+   再把 `values/light/cilium-light.yaml` 的 `CHANGE_ME_K3S_SERVER_IP` 换成 server 自己的 IP(`preflight.sh` 会拦占位符)。
 2. **平台接入**:同 full 第 2 步(k3s 同样配 `agent-token`,见 k3s/server-config.yaml;禁止用 `/var/lib/rancher/k3s/server/node-token`;server 地址 `https://<ip>:6443`)。
 3. **组件**:`./preflight.sh light && ./apply.sh light`(presync 先装 Gateway API CRD;准入策略同 full 第 3 步)。
 
@@ -116,25 +116,25 @@ kubectl label nodes -l node-role.kubernetes.io/control-plane \
    - gpu-operator 关掉 toolkit(宿主 toolkit 由 node-join 装、k3s 自行探测生成 RuntimeClass nvidia)。`nvidia.com/gpu.count` 由 gpu-operator 自带的 GFD 提供。
    - kps / Loki 精简(盘紧可在 `environments/light.yaml` 关掉日志栈);开了 ServiceMonitor 的 release 必须 `needs: [monitoring/kube-prometheus-stack]`。
    - Envoy Gateway 控制面降到 1 副本并关掉 PDB。
-   - Cilium 同装并接管 kube-proxy;CNI 路径按 k3s 的 containerd 改、`k8sServiceHost` 填 server 实 IP、北向 LoadBalancer 仍归 k3s ServiceLB(`values/light/cilium-light.yaml`)。
+   - Cilium 同装并接管 kube-proxy;`values/light/cilium-light.yaml` 只覆盖 `k8sServiceHost`(server 实 IP)并关闭 `l2announcements`,北向 LoadBalancer 仍归 k3s ServiceLB。
    - acme-dns 不装;租户 Jupyter 泛域名证书由现成通配证书灌成 `superdl/superdl-jupyter-wildcard-tls`。
    - **TopoLVM 必开**(VG `superdl-nvme` 由 node-join.sh 建出);**Rook-Ceph 必开**(数据盘 CephFS,OSD 落 TopoLVM 的 Block PVC,`values/rook-ceph-cluster.yaml`)。
 ### 给已有集群换 CNI(flannel → Cilium)
 
-装机时没设 `flannel-backend: none` 的老集群要补装 Cilium,是**全集群网络中断**的操作,不是滚动升级:k3s 的 flannel 开关是 server 端标志(agent 从 server 取节点配置,不必逐台改),但每个节点的 CNI 配置与全部 Pod 的网络都要重来。
+装机时没设 `flannel-backend: none` 的老集群要补装 Cilium,是**全集群网络中断**的操作,不是滚动升级:k3s 的 flannel 开关是 server 端标志(agent 不必逐台改),但每个节点的 CNI 配置与全部 Pod 的网络都要重来。
 
 1. 停租户侧入口(或挑无实例运行的窗口):切换期间跨节点 Pod 通信与 NodePort 全断。
 2. server `/etc/rancher/k3s/config.yaml` 加 `flannel-backend: none`、`disable-network-policy: true`、`disable-kube-proxy: true`,`systemctl restart k3s`。此刻起 ClusterIP 无人处理,集群内服务发现全断,直到第 3 步 Cilium 起来。
-3. `./apply.sh light -l name=cilium` 装上 Cilium;等 `cilium` DaemonSet 在**全部**节点 Ready(它跑 hostNetwork,没有 CNI 也能起来)。
+3. `./apply.sh light -l name=cilium` 装上 Cilium;等 `cilium` DaemonSet 在**全部**节点 Ready。
 4. 逐台 agent `systemctl restart k3s-agent`,让 kubelet 重读 CNI 配置;Cilium 的 `cni-exclusive` 会把旧的 `10-flannel.conflist` 挪走。
-5. 重建全部非 hostNetwork 的 Pod(`kubectl delete pod -A --field-selector spec.nodeName=<node>` 逐台,或整机重启),旧 Pod 仍持有 flannel 的 IP 与路由。
-6. 残留的 `cni0` / `flannel.1` 接口与 flannel / kube-proxy(`KUBE-*` 链)的 iptables 规则**重启节点才清干净**;不重启则手工 `ip link delete cni0`、`ip link delete flannel.1` 并清 `KUBE-*` 链,留着会和 Cilium 的 eBPF 数据面抢同一条流。
+5. 重建全部非 hostNetwork 的 Pod(`kubectl delete pod -A --field-selector spec.nodeName=<node>` 逐台,或整机重启)。
+6. 残留的 `cni0` / `flannel.1` 接口与 flannel / kube-proxy(`KUBE-*` 链)的 iptables 规则**重启节点才清干净**;不重启则手工 `ip link delete cni0`、`ip link delete flannel.1` 并清 `KUBE-*` 链。
 7. 回读:`kubectl -n kube-system exec ds/cilium -- cilium-dbg status`、全节点 Ready、租户 SSH 的 NodePort 能连、Envoy 的 LoadBalancer 外部 IP 未变。
 
-**Cilium 与 kube-router 的两处语义差异必须靠 `cilium-policies.yaml` 补上**(随 cilium release 的 postsync 下发),否则表现是「组件都 Running 但平台连不上库、租户 SSH 不通」:
+**Cilium 的两处策略语义必须靠 `cilium-policies.yaml` 补上**(随 cilium release 的 postsync 下发);缺失时的现场是「组件都 Running 但平台连不上库、租户 SSH 不通」:
 
 - **`ipBlock` 选不中节点**。节点在 Cilium 里是 `host` / `remote-node` 保留身份,与 IP 无关。`values/cilium.yaml` 的 `policyCIDRMatchMode: [nodes]` 只让 CIDR 选择器覆盖 `remote-node`,本机 `host`(平台库跑在节点宿主上)仍要按身份放行。
-- **NodePort 的 SNAT 来源变了**。flannel 是 Pod 子网的 `.0/.1`,Cilium 换成入口节点的 `cilium_host`——该地址从子网池**动态分配**(实测 `.40` / `.59`),而且落在 `tenant-default` 的 `except 10.42.0.0/16` 里,按地址放行必然选不中。
+- **NodePort 的 SNAT 来源是入口节点的 `cilium_host`**。该地址从 Pod CIDR **动态分配**,且落在 `tenant-default` 的 `except 10.42.0.0/16` 里,按地址放行选不中;`cilium-policies.yaml` 按身份放行。
 
 换完必须实测:平台三域、租户 Jupyter、以及**从至少两台不同节点**连租户 SSH 的 NodePort。
 

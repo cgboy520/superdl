@@ -70,7 +70,7 @@
 端点主机名 = `<public_slug>.<SUPERDL_SERVICE_DOMAIN_SUFFIX>`,例如 `svc-a1b2c3d4e5.svc.superdl.example.com`。
 
 - slug 形如 `svc-` + 10 位小写 base32,部署时生成,UNIQUE,碰撞重试(每次插入包在 SAVEPOINT)。**不用 `instances.uuid`**。
-- **服务端点与 Jupyter 必须落在两个不同的 listener 上**(只有服务那个挂 `SecurityPolicy.extAuth`)。分开方式二选一:
+- **服务端点与 Jupyter 必须落在两个不同的 listener 上**;只有服务 listener 挂 `SecurityPolicy.extAuth`。分开方式二选一:
   - **按 hostname 分(默认)**:`SUPERDL_SERVICE_DOMAIN_SUFFIX` 与 `SUPERDL_JUPYTER_DOMAIN_SUFFIX` 两个不同后缀(`*.svc.<域>` / `*.app.<域>`),两个 listener 同在 443,两张泛域名证书。
   - **按端口分**:只有一张**一级**通配证书(`*.<域>`)时两个后缀都写裸域(Gateway API listener hostname 只允许整标签通配);443 留给服务端点,Jupyter 用 `SUPERDL_JUPYTER_URL_PORT` 让到非 443;把关的只剩 `svc-` 前缀(`endpoint_slug_from_host`)。
 - 泛域名解析到网关入口(只需 80/443);证书由 listener 的 `certificateRefs` 引用(默认形态 `deploy/app/k8s/05-cert-manager.yaml` 签发的泛域名证书,按端口分则共用一张一级通配证书)。

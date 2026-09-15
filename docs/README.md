@@ -14,6 +14,7 @@
 | 用户可见文案怎么写、禁词                               | [copy-style-guide.md](./copy-style-guide.md)                          |
 | 跨模块决定与其约束                                     | [decisions.md](./decisions.md)                                        |
 | 硬性规范、闸门、提交约定                               | [../CLAUDE.md](../CLAUDE.md)                                          |
+| 上手与 PR 工作流                                       | [../CONTRIBUTING.md](../CONTRIBUTING.md)                              |
 | 生产部署、发布、数据库要求                             | [../deploy/README.md](../deploy/README.md)                            |
 | 集群装机、双档、北向入口与 Gateway API CRD、token 轮换 | [../deploy/cluster/README.md](../deploy/cluster/README.md)            |
 | 告警响了先做什么                                       | [../deploy/cluster/runbooks/](../deploy/cluster/runbooks/README.md)   |
@@ -47,7 +48,7 @@
 ## 维护约定
 
 - **文档随代码同一提交**:改了端点、表、角色、默认值、巡检周期、命令或流程,同一提交更新对应 reference / runbook / README。
-- **只写事实**:reference 记「现在是什么」与「不可破坏的约束」;不写评审编号、变更史与日期;跨模块决策写 [decisions.md](./decisions.md)。
+- **只写事实,不写理由**:reference 记「现在是什么」与「不可破坏的约束」;不写论证、历史、评审编号、变更史与日期;跨模块决策写 [decisions.md](./decisions.md),每条只写「决定」与「约束」。
 - **数字要能在代码里找到**:限额、周期、默认值给出承载它的文件或配置键(如 `platform_config.py` 的 `SETTING_SPECS`、`SUPERDL_*`)。
 - **引用必须存在**:相对链接与反引号仓库路径由 `python3 scripts/check-docs-links.py` 检查(含告警规则 `runbook_url` 的文件与锚点),CI 的 `docs` job 同款。
 - **模块参考固定结构**:`数据模型` → `契约`(端点 / 角色 / 说明表)→ `规则与不变量`;无自有表的省去 `数据模型`,`limits.md` 是跨模块汇总。新模块照此新建并在上表登记。

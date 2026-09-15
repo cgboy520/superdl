@@ -12,7 +12,7 @@ GPU 算力租赁平台:租户按量租用整卡 / MIG / 共享 GPU 容器实例(
 - [docs/architecture.md](docs/architecture.md) —— 架构、模块边界、数据模型、核心流程与硬约束
 - [docs/reference/](docs/README.md) —— 各模块契约与不变量
 - [docs/decisions.md](docs/decisions.md) —— 跨模块决策与约束
-- [CLAUDE.md](CLAUDE.md) —— 工程规范、闸门、提交约定;上手见 [CONTRIBUTING.md](CONTRIBUTING.md)
+- [CLAUDE.md](CLAUDE.md) —— 工程规范、闸门、提交约定;上手与 PR 工作流见 [CONTRIBUTING.md](CONTRIBUTING.md)
 - [deploy/README.md](deploy/README.md) —— 部署、发布、集群装机与 runbook
 - [SECURITY.md](SECURITY.md) —— 报告安全漏洞
 
@@ -45,7 +45,7 @@ K8s 默认 `FakeOrchestrator`(进程内存态);接真实集群把 `SUPERDL_K8S_B
 
 ## 闸门
 
-按改动范围跑,红了不提交。命令清单只有一份:[CLAUDE.md](CLAUDE.md)「常用命令」与「提交约定」。
+本地按改动范围跑,红了不推送;PR 须 CI 全绿才可合入。命令清单只有一份:[CLAUDE.md](CLAUDE.md)「常用命令」与「工作流与提交约定」。
 
 ## 工程结构
 

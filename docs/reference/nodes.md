@@ -44,17 +44,17 @@
 
 ### 台账与巡检
 
-- 对账器(30s,advisory lock 1009)判定 joined:K8s 中该 node_name 出现且 Ready → 平台打上该池的整套标签 → 打成功才迁 `joined`(两阶段,事务内只收集待办,K8s 写在事务外逐节点独立 try;打失败留在原状态下一轮重试)。装机中的节点未打标,故对账器按 `include_unlabeled` 取节点。2h 无心跳 → failed。读取走 `FOR UPDATE SKIP LOCKED`。
+- 对账器(30s,advisory lock 1009)判定 joined:K8s 中该 node_name 出现且 Ready → 平台打上该池的整套标签 → 打成功才迁 `joined`(两阶段,事务内只收集待办,K8s 写在事务外逐节点独立 try;打失败留在原状态下一轮重试)。装机中的节点未打标,对账器按 `include_unlabeled` 取节点。2h 无心跳 → failed。读取走 `FOR UPDATE SKIP LOCKED`。
 - 节点巡检(60s,advisory lock 1010)是节点事实源:阶段 A 纯 K8s 读 → B 单事务 DB 收敛 → C 型号 label 收敛 → C2 池标签纠偏 → D cordon 期望态收敛(C / C2 / D 逐节点独立 try)。`enrollment.gpu_info` 只是装机一次性快照。
-- **池标签收敛(阶段 C2)的事实源是期望池,优先级 `node_specs.desired_pool` > 注册登记**;登记侧同时看 joined 与 failed 两态,同主机名多次登记取 id 最大的那行。规格快照(型号 / 显存 / 驱动 / CUDA)只认 joined。**未打标与标签不符都由 C2 补齐**:未打标是 Node 对象被删重建(kubelet 重注册不带池标签),补上即可。
-- **C2 下发的是该池的完整标签集**(`core/gpu_adapter.pool_node_labels`):池标签 + 新池的 GPU operand 标签 + **删掉旧池残留键**。gpu-operator 派生 `nvidia.com/gpu.deploy.*` 时不覆盖已存在的值,hami 的 `device-plugin=false` 留在 kata/mig 节点上会让官方 device-plugin 永远起不来。平台 SA 的写权限由准入策略③ 的具名白名单给。
+- **池标签收敛(阶段 C2)的事实源是期望池,优先级 `node_specs.desired_pool` > 注册登记**;登记侧同时看 joined 与 failed 两态,同主机名多次登记取 id 最大的那行。规格快照(型号 / 显存 / 驱动 / CUDA)只认 joined。**未打标与标签不符都由 C2 补齐**(Node 对象被删重建后 kubelet 重注册不带池标签,即未打标)。
+- **C2 下发的是该池的完整标签集**(`core/gpu_adapter.pool_node_labels`):池标签 + 新池的 GPU operand 标签 + **必须删掉旧池残留键**(gpu-operator 派生 `nvidia.com/gpu.deploy.*` 时不覆盖已存在的值)。平台 SA 的写权限由准入策略③ 的具名白名单给。
 - 纠偏顺序**先 cordon 再改标签**;cordon 走 `service.request_cordon`(期望态落台账 + outbox),与管理端手工 cordon 同一条路径,阶段 D 按期望态复收敛。
-- `superdl_node_pool_label_mismatch_total` 在**发现**时自增,不在纠正成功后。消费方 `NodePoolLabelMismatch`(critical)。判据是「标签不符**且**节点仍可调度」:平台是唯一写入方,切池必先 cordon,所以收敛窗口内节点一定是停止调度的;可调度却标签不符只能是平台以外的写入方改过它。未打标不计该指标。
+- `superdl_node_pool_label_mismatch_total` 在**发现**时自增,不在纠正成功后。消费方 `NodePoolLabelMismatch`(critical)。判据是「标签不符**且**节点仍可调度」。未打标不计该指标。
 - **切池**(`switch_node_pool`)只在 `kata` / `hami` / `mig` 三池之间;`cpu` 池是无卡机的物理属性,不参与。前置闸按序:节点在台账 → 目标池合法且不同于当前 → `gpu_count > 0` 且当前非 cpu → 切 mig 须 `core/gpu_models.supports_mig` → **该节点上零未释放实例** → 目标池运行时就绪(`require_pool_runtime`)。同事务只做两件事:写 `desired_unschedulable=True` 与 `desired_pool`、enqueue `node.switch_pool`。
 - **切池不需要任何节点侧动作,也不重启**:池间差异的节点侧软件全部由 DaemonSet 按标签投送(`kata-deploy` 认 `superdl.io/pool=kata`、HAMi device-plugin 认 `superdl.io/pool=hami`、gpu-operator 的 vfio-manager 与 sandbox 插件认它自己从 `workload.config` 派生的 `gpu.deploy.*`),整卡直通的绑定与解绑由 vfio-manager 在运行时做(启动 `vfio-manage bind --all`,preStop `vfio-manage unbind --all`)。**IOMMU 是装机基线,不随池变**(见「配置与装机」)。
-- **未释放实例的口径是 `status != released`,含已关机 / 冻结 / 失败**(`orchestrator/queries.count_active_instances_on_node`):实例盘是节点本地 LV,开机 pin 回原节点,换池或退役后这些实例永远开不了机。切池与退役共用这道闸,退役另有 `force` 旁路(机器已救不回来时用)。
-- **`desired_pool` 非空即覆盖注册登记,且切完不清空**:Node 对象若被删除重建,kubelet 重注册时不带任何池标签,清空了就没有权威值可供 C2 收敛(注册登记记的还是切池前那个池)。
-- **池标签只有平台一个写入方**:`node-label` 只在节点首次注册时生效(k3s / RKE2 同,已注册节点只能用 kubectl 改),留在节点侧只会变成第二事实源——切池后 `config.yaml` 永远过时,Node 对象一旦重建就把旧池带回来。所以 `node-join.sh` 不写任何池标签,节点以未打标状态注册,由对账器在判 Ready 时打整套标签、打成功才判 `joined`(打失败不推进状态,下一轮重试)。节点不自声明池,也就没有冒名可伪造。
+- **未释放实例的口径是 `status != released`,含已关机 / 冻结 / 失败**(`orchestrator/queries.count_active_instances_on_node`);实例盘是节点本地 LV,开机 pin 回原节点。切池与退役共用这道闸,退役另有 `force` 旁路(机器已救不回来时用)。
+- **`desired_pool` 非空即覆盖注册登记,且切完不清空**:Node 对象重建后由 C2 按它补齐。
+- **池标签只由平台写入**:`node-join.sh` 不写任何池标签;节点以未打标状态注册,对账器在判 Ready 时下发整套标签,打成功才迁 `joined`(失败不推进状态,下一轮重试)。
 - **切池不自动解封**:handler 只到「标签收敛」,核对完组件落位由运维手工 uncordon。步骤见 [node-pool-switch.md](../../deploy/cluster/runbooks/node-pool-switch.md)。
 - **节点退役**(`decommission_node`)三件事同一事务:停调度期望态落台账 → 该主机名下所有登记置 revoked → enqueue `node.decommission` 由 worker 删 Node 对象。两条平台管不到的边界交回运维(管理端退役确认框提示):删 Node 对象**不吊销 kubelet 证书**(kubelet 存活会重新注册,巡检按期望态再 cordon);join token 轮换与 kubelet 证书吊销是控制面动作。
 - **能删哪些节点由准入层界定,不由 RBAC**:`deploy/cluster/admission/tenant-restrictions.yaml` 策略⑦,带控制面 / etcd 角色或 infra 落点标签的节点不可删。删掉控制面 Node 对象后 kubelet 重新注册,但 `node-restriction.kubernetes.io/superdl-infra` 不会跟着回来。
@@ -68,8 +68,8 @@
 
 - 集群页组件体检十项:节点就绪 / HAMi / gpu-operator / DCGM / RuntimeClass nvidia / RuntimeClass kata-qemu / 存储类 / 实例入口(key `gateway`)/ 证书签发 / 监控栈。
 - **体检五态**:`ok` 全就绪 / `degraded` 部分就绪 / `down` 缺位或全挂 / `disabled` 组件在位但该能力未开 / `unknown` 快照不可信。判定逻辑集中在 `app/core/k8s/health.py`,real 与 fake 共用同一份。
-- **就绪判据看就绪数,不看对象存在**:`gpu_operator` 取 gpu-operator 所在 ns 下每个 operand DaemonSet 的 `numberReady == desiredNumberScheduled`,`dcgm` 取 dcgm-exporter DaemonSet 的同一比值,`monitoring` 取 Prometheus StatefulSet 的就绪副本数。按名字存在与否判会把全崩的组件判绿。
-- **`unknown` 的窗口与下发门禁同源**:`probed_at` 超 `HAMI_GATE_MAX_AGE`(10 分钟)或 `api_reachable` 为假 → 十项全判 `unknown`,仍回上次事实供参考。从未探测过(无缓存行)时额外给安装命令,体检卡在装机阶段兼作清单;只是陈旧则不给,对健康集群报十条修复命令是谎报。
+- **就绪判据看就绪数,不看对象存在**:`gpu_operator` 取 gpu-operator 所在 ns 下每个 operand DaemonSet 的 `numberReady == desiredNumberScheduled`,`dcgm` 取 dcgm-exporter DaemonSet 的同一比值,`monitoring` 取 Prometheus StatefulSet 的就绪副本数。
+- **`unknown` 的窗口与下发门禁同源**:`probed_at` 超 `HAMI_GATE_MAX_AGE`(10 分钟)或 `api_reachable` 为假 → 十项全判 `unknown`,仍回上次事实供参考。从未探测过(无缓存行)时额外给安装命令;仅陈旧不给。
 - **`kata_runtimeclass` 的池节点数只算 Ready 且可调度的**:RuntimeClass 在、池内没有 Ready 节点 → `disabled`。库存与可售性解读不进体检项,看 `pools_ready`。
 - `storage` 按名核对 `topolvm-provisioner`(强制,缺它判 `down`)与 `superdl-cephfs`(可选,缺它只把数据盘那条事实标 warn)。
 - `gateway` 逐 listener 单独判:整体 `Programmed=True` 但某个 listener 未就绪 → `degraded`,对象表给出端口 / 协议 / attachedRoutes / 条件 reason,与 `deploy/cluster/runbooks/cluster-validation.md` 的北向入口清单同判据。
@@ -86,8 +86,8 @@
 - cluster 配置组键面:`cluster_server_url` / `cluster_join_token`(secret)/ `cluster_agent_version` / `node_driver_version` / `node_registries_yaml`(留空 = 平台生成;不得含凭据)/ `node_install_mirror`(`cn` | `official`,默认 `cn`)。
 - cluster 键不做启动 fail-fast:由 lifespan 在 DB 就绪后查生效配置打 error + 集群页红牌 + 创建注册命令 409。
 - `render_registries_yaml`(`node_registries_yaml` 留空时的默认)按镜像仓库组生成:Spegel `"*"` + `registry_proxy_projects` 的每个上游 mirror + rewrite 到 Harbor 代理缓存项目 + `registry_ca_pem` 非空时 `configs.<host>.tls.ca_file`(占位 `__RANCHER_DIR__` 由 node-join 按发行版目录替换并落 `harbor-ca.crt` 0644);不含 auth。server 节点的同一份文件由 ansible 分发 `deploy/cluster/rke2/registries.yaml`。
-- 池标签与 GPU Operator 的 operand 落点标签**由平台写,node-join 一律不碰**(agent `config.yaml` 只有 server 与 token)。完备期望集在 `core/gpu_adapter.pool_node_labels`:kata 池 `workload.config=vm-passthrough` 且删 `deploy.device-plugin`,hami 池 `deploy.device-plugin=false` 且删 `workload.config`,mig 与 cpu 池两个键都删。删旧池残留是必须的——gpu-operator 派生 `gpu.deploy.*` 时不覆盖已存在的值。
-- **IOMMU 是装机基线,对全部带卡池都做,不按池分支**:它只能开机生效,做成 kata 专属就等于把一次重启绑进「切池」。`iommu=pt` 让宿主设备跳过 DMA 翻译,对不做直通的节点没有成本。`intel_iommu=on iommu=pt` 只在 x86_64 写 GRUB;aarch64 的 SMMU 由固件 ACPI IORT 描述、内核启动即绑,不需要 cmdline(DGX Spark 实测开机即有 IOMMU 分组)。判据一律是 `/sys/kernel/iommu_groups` 非空,空则要求重启一次。
+- 池标签与 GPU Operator 的 operand 落点标签**由平台写,node-join 一律不碰**(agent `config.yaml` 只有 server 与 token)。完备期望集在 `core/gpu_adapter.pool_node_labels`:kata 池 `workload.config=vm-passthrough` 且删 `deploy.device-plugin`,hami 池 `deploy.device-plugin=false` 且删 `workload.config`,mig 与 cpu 池两个键都删。必须删掉旧池残留键;gpu-operator 派生 `gpu.deploy.*` 时不覆盖已存在的值。
+- **IOMMU 在装机时开启,对全部带卡池都做,不按池分支**:`intel_iommu=on iommu=pt` 只在 x86_64 写 GRUB,aarch64 不写;判据一律是 `/sys/kernel/iommu_groups` 非空,空则要求重启一次;cpu 池跳过。
 - **cpu 池 = 无卡机**,承载纯 CPU 实例(`tier=cpu`,见 [catalog.md](./catalog.md))。装机时整条 NVIDIA 链路跳过:不做 NVIDIA 探测、不写 nouveau 黑名单、不装驱动与 container-toolkit、不上报驱动/CUDA 版本、不打 NVIDIA operand 标签。其余步骤与 GPU 节点相同。
 - `node-join.sh` 随 API 镜像下发,步骤 marker 可无限重跑;需重启的场景用 systemd oneshot 断点续跑。phase 名:bootstrap/precheck/nouveau/sysctl/iommu/driver/nvidia_toolkit/nvme_vg/reboot/registries/agent_config/agent_install/agent_start/waiting_node。
 - **server 本机跑 node-join(light 单机)**:判据是本机 `k3s.service` / `rke2-server.service` 在运行,此时不写 agent `config.yaml`、不装不起 agent,池标签经本机 kubectl(`k3s kubectl` / `/var/lib/rancher/rke2/bin/kubectl`)打到节点对象;toolkit 补装后重启 server 服务;`--uninstall` 不执行发行版卸载脚本、不删 server 的 config/registries。

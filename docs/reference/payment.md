@@ -37,7 +37,7 @@
 
 - 回调靠 `channel_txn_id` 唯一约束幂等;金额不匹配的回调拒绝并告警。
 - 回调时间戳新鲜度窗口 ±15 分钟(`CALLBACK_FRESHNESS_SECONDS`;微信 `Wechatpay-Timestamp` / 支付宝 `notify_time` 北京时间),超窗或缺失即验签失败;渠道重试每次重新签名带新时间戳,不受影响。
-- 微信回调进 SDK 之前先核对 `Wechatpay-Serial == wechat_public_key_id`:陌生序列号直接拒,不让未验签的外部请求触发 SDK 拉平台证书的出网请求。
+- 微信回调进 SDK 之前先核对 `Wechatpay-Serial == wechat_public_key_id`:陌生序列号直接拒。
 - 支付宝通知带非空 `refund_fee`(部分退款,`trade_status` 仍是 TRADE_SUCCESS)按反向通知处理(`CallbackResult.refund_amount`),不当成功回调。
 - 已入账订单收到反向通知:只对首次置标那一次等额冻结;人工处置(`/finance/reversals/{order_no}/resolve`)写 `channel_reversal_resolved_at` + `channel_reversal_action`,**不清 `channel_reversed_at`**,同一通知重放只留痕计数(`superdl_payment_channel_reversed_total`)不再冻结。release 过的订单恢复退款与开票资格,chargeback 的不恢复。release 单操作人,每次都告警(`PaymentReversalReleased`,`superdl_payment_reversal_resolved_total{action}`)。
 - 微信回调核对 resource 的 mchid/appid 为己方商户;支付宝验签串按官方口径剔除空值参数。

@@ -21,7 +21,7 @@
 
 ## 规则与不变量
 
-- `SETTING_SPECS` 是白名单:未知键一律拒绝;写入口按配置组隔离(`/policies` 只许 policy 组,`/platform-config` 不许 policy 组)。取值为 env 默认 + DB 覆盖;env 层非空值在启动时同样过格式校验(`env_layer_problems`,prod 不合格拒启)。每次写入按配置组计数 `superdl_platform_config_write_total{domain}`,payment / crypto 组条条告警 `PaymentConfigWritten`(单 admin 即可换收款验签公钥,告警是唯一的第二双眼)。
+- `SETTING_SPECS` 是白名单:未知键一律拒绝;写入口按配置组隔离(`/policies` 只许 policy 组,`/platform-config` 不许 policy 组)。取值为 env 默认 + DB 覆盖;env 层非空值在启动时同样过格式校验(`env_layer_problems`,prod 不合格拒启)。每次写入按配置组计数 `superdl_platform_config_write_total{domain}`,payment / crypto 组条条告警 `PaymentConfigWritten`。
 - 生效配置不做进程内缓存(`get_runtime_config` → `RuntimeConfig`;管理端展示用字符串映射 `effective_strings`):每次全量 SELECT + 解密,写入即生效;单行密文解密失败 fail-closed 抛错,禁止静默回落 env。业务代码只经 `RuntimeConfig` 的类型化字段取值,不比较字符串 `"true"`。
 - prod 禁止取值(`SettingSpec.prod_forbidden`)是单一事实源:在线写入与清除覆盖拒绝、配置页红牌(`compute_config_warnings`,`prod_gate=True` 的为 error、其余 warning)、启动合规闸(`assert_prod_compliance_gates`,只看 `prod_gate=True` 的键)全部从它派生。
 - 敏感项以 AES-256-GCM 加密落库(`app/core/crypto.py`),AAD 绑定行的键名;密文带 kid,加密用钥经 HKDF 从主密钥派生。

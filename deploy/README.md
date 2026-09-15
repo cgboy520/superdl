@@ -55,7 +55,7 @@ GitHub 仓库的 `production` environment 必须设置 required reviewers,`HARBO
 
 硬性要求(备份分层见 `cluster/runbooks/pg-backup-restore.md`):
 
-- **WAL 归档必须开**;每日 `pg_dump` 只有 RPO=24h。
+- **WAL 归档必须开**;每日 `pg_dump` RPO=24h。
 - **每季度按 runbook 做一次恢复演练**(含 ledger 链抽检)。
 
 连接数对齐(改副本数或 `SUPERDL_DB_POOL_SIZE` 时复核):
@@ -67,13 +67,13 @@ max_connections ≥ 进程数 × (db_pool_size + max_overflow) + 迁移/运维�
 
 - SQLAlchemy 异步引擎默认 `max_overflow=10`:每进程峰值是 pool_size **+10**;
 - 五个 worker Deployment 各自建池,副本数按 `app/k8s/03-worker.yaml` 计入;
-- PG 默认 `max_connections=100` 不够,生产按上式取值并留余量;
+- PG 默认 `max_connections=100`;生产按上式取值并留余量;
 - api/worker 进程内带 `statement_timeout=30s / lock_timeout=5s / idle_in_transaction_session_timeout=60s`。
 
 ## 前端可用性与 HPA 结论
 
 web/admin 前端:各 2 副本 + PDB `minAvailable: 1` + liveness/readiness 同探 `/`(见 `app/k8s/07-frontends.yaml`)。
-**不配置 HPA**:双端 `requests == limits`(Guaranteed QoS)。引入 SSR/BFF 再重估。
+**不配置 HPA**;双端 `requests == limits`(Guaranteed QoS);引入 SSR/BFF 再重估。
 
 ## 独立环境副本(预发/演示)
 
@@ -84,7 +84,7 @@ web/admin 前端:各 2 副本 + PDB `minAvailable: 1` + liveness/readiness 同�
 
 - 管理端 API 在公网 api 域下不可达(prod 下 Host 非 admin 域一律 404,恒开、无开关,见 `docs/reference/security.md`);`admin.superdl.example.com` 本身仅 TLS + 管理端 JWT + TOTP(全角色强制)。
 - 生产必须再叠加网络边界:`app/k8s/04-gateway.yaml` 的 `SecurityPolicy superdl-admin-allowlist`(挂在 `superdl-admin` HTTPRoute 上)**默认启用**源 IP 白名单:`authorization.defaultAction: Deny` 加一条 `action: Allow` 的 `principal.clientCIDRs`,填办公网/跳板机出口 CIDR(多个多写几条)。VPN 或身份感知代理(oauth2-proxy 等)可替代。
-- 占位符是 `192.0.2.0/24`(`clientCIDRs` 有 CRD 正则校验);`preflight.sh` 按这个网段扫描,未替换不予放行。
+- 占位符是 `192.0.2.0/24`;`preflight.sh` 按这个网段扫描,未替换不予放行。
 - `defaultAction: Deny` 不可漏写。
 - 源 IP 真实性依赖 `EnvoyProxy` 的 `envoyService.externalTrafficPolicy: Local`,不可改 `Cluster`。
 - 应急通道:白名单误伤时用 `kubectl port-forward`,勿放开 0.0.0.0/0。
