@@ -1,5 +1,4 @@
-/** 状态标统一入口(两端共用):只接受 packages/ui 的状态表;四形态 tag(实心)/ badge(点 + 文字)/ dot(只有点,带 aria)/ text;
- *  hintKey 自动出 Tooltip;icon 由表里的 StatusIcon 键映射;未知值原样回显灰标,不进 t()。 */
+/** 状态徽标:tag、badge、dot 或 text 形态,支持图标与提示;未知状态原样回显。 */
 
 import {
   CheckCircleFilled,
@@ -49,15 +48,11 @@ export function StatusTag({
   /** 尾部附加(冻结倒计时等) */
   extra?: ReactNode;
 }) {
-  // 默认命名空间由各端决定;labelKey 自带 "shared:" 前缀。多张表的键联合会让各端强类型 t 的重载归并失效,
-  // 这里只取字符串:键集齐全由 locales.test 遍历 ALL_STATUS_MAPS 保证。
   const { t: typedT } = useTranslation();
   const t = typedT as unknown as (key: string) => string;
   const meta: KnownMeta | undefined = metaOf(map as Record<string, KnownMeta>, value);
-  // labelKey 内嵌 "shared:" 前缀(字面量联合,t() 强类型校验)
   const label = meta ? t(meta.labelKey) : value;
   const color = meta && isColorMeta(meta) ? meta.color : undefined;
-  // 经显式标注拓宽到 StatusMeta,再读可选的 icon
   const statusMeta: StatusMeta | undefined = meta && isStatusMeta(meta) ? meta : undefined;
   const iconNode = icon && statusMeta?.icon ? ICONS[statusMeta.icon] : null;
   const hintText = hint && meta && "hintKey" in meta ? t(meta.hintKey) : undefined;

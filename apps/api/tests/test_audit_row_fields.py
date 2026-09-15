@@ -18,7 +18,7 @@ class TestOverLongPath:
         long_path = "/api/v1/" + "z" * 400
         for _ in range(audit.AUDIT_FAIL_CLOSED_THRESHOLD + 2):
             resp = await client.post(long_path, json={})
-            assert resp.status_code == 404  # 路由不存在,但审计中间件照样要落行
+            assert resp.status_code == 404
         assert audit.audit_gate_open(), "审计闸被超长路径顶死"
 
         async with sm() as session:
@@ -53,7 +53,7 @@ class TestFailedCredentialAttempts:
                 )
             ).scalar_one()
         assert row.target == "phone:138****0230"
-        assert "13800000230" not in (row.target or "")  # 明文号码不得入审计表
+        assert "13800000230" not in (row.target or "")
         assert row.detail == {"action": "login"}
 
     async def test_successful_login_target_is_the_user_id(self, client: AsyncClient, sm):

@@ -1,6 +1,4 @@
-"""SSH 端口池 30000–32767(由 service.py 再导出)。
-`ssh_port_excluded` 预先跳过已知占用,`blocked` 由 handle_create 撞占后标记;分配在段内随机。
-"""
+"""SSH 端口池:段内随机分配,排除 ssh_port_excluded 与 blocked 端口。"""
 
 from typing import TYPE_CHECKING, Any
 
@@ -34,7 +32,6 @@ async def ensure_port(session: AsyncSession, instance: Instance) -> int:
     if mine is not None:
         return mine.port
     for _ in range(8):
-        # 复用空闲行:随机取
         free = (
             await session.execute(
                 select(PortAllocation)
@@ -48,7 +45,6 @@ async def ensure_port(session: AsyncSession, instance: Instance) -> int:
             free.instance_id = instance.id
             await session.flush()
             return free.port
-        # 扩段:段内随机挑未占端口(generate_series 差集)
         candidate = (
             await session.execute(
                 text(
@@ -76,7 +72,6 @@ async def ensure_port(session: AsyncSession, instance: Instance) -> int:
         ).scalar_one_or_none()
         if inserted is not None:
             return inserted
-        # 撞段:下一轮重查
     raise AppError(ErrorCode.NO_CAPACITY, key="orchestrator.sshPortsExhausted")
 
 

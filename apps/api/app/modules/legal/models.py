@@ -16,9 +16,7 @@ from app.core.db import Base
 
 
 class LegalDocVersion(Base):
-    """法务文档版本。(doc_key, locale, version) 唯一;每 (doc_key, locale) 至多一条 published。
-    published_by/published_at 仅 published 落;预置版本发布人留空。
-    """
+    """法务文档版本;每文档、语言与版本号唯一,每文档与语言至多一条 published。"""
 
     __tablename__ = "legal_doc_versions"
     __table_args__ = (
@@ -34,21 +32,21 @@ class LegalDocVersion(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    doc_key: Mapped[str] = mapped_column(String(32))  # terms / privacy / deletion_notice,可扩展
-    locale: Mapped[str] = mapped_column(String(16))  # zh-CN / en-US
+    doc_key: Mapped[str] = mapped_column(String(32))
+    locale: Mapped[str] = mapped_column(String(16))
     version: Mapped[int]
     title: Mapped[str] = mapped_column(String(128))
     content_md: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(16), default="draft", index=True)
-    effective_note: Mapped[str | None] = mapped_column(String(512))  # 生效说明(可空)
-    created_by: Mapped[int | None]  # admin_users.id;预置为空
+    effective_note: Mapped[str | None] = mapped_column(String(512))
+    created_by: Mapped[int | None]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    published_by: Mapped[int | None]  # admin_users.id;预置为空
+    published_by: Mapped[int | None]
     published_at: Mapped[datetime | None]
 
 
 class UserConsent(Base):
-    """注册同意存证(合规举证):注册必勾时按当前 published 版本落 terms/privacy 各一条。"""
+    """用户同意的法务文档版本、时间与客户端 IP。"""
 
     __tablename__ = "user_consents"
 
@@ -57,4 +55,4 @@ class UserConsent(Base):
     doc_key: Mapped[str] = mapped_column(String(32))
     version: Mapped[int]
     accepted_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    client_ip: Mapped[str | None] = mapped_column(String(45))  # IPv6 最长 45
+    client_ip: Mapped[str | None] = mapped_column(String(45))

@@ -49,7 +49,6 @@ export function useOrderActions(onDone: () => void): OrderActions {
             <StatusTag map={orderStatusMap} value={r.order_status} />
             <span>{t("finance.verifyOrderAmount", { amount: formatMoney(r.order_amount) })}</span>
           </Space>
-          {/* 渠道状态是第三方原值,不进 t() */}
           <Space size={space.xs}>
             <span>{t("finance.verifyChannelStatusLabel")}</span>
             <Mono>{r.channel_status}</Mono>
@@ -64,7 +63,6 @@ export function useOrderActions(onDone: () => void): OrderActions {
         </Space>
       );
       const title = t("finance.verifyTitle", { no: orderNo });
-      // 渠道已支付而订单未入账:对话框底部直接给补单出口
       if (r.matches && r.order_status !== "paid" && writable) {
         modal.confirm({
           title,
@@ -86,14 +84,13 @@ export function useOrderActions(onDone: () => void): OrderActions {
     try {
       v = await form.validateFields();
     } catch {
-      return; // 校验失败:antd 已就地标红
+      return;
     }
     if (target === null) return;
     try {
       await backfill.mutateAsync({
         orderNo: target,
         data: { reason: v.reason },
-        // 幂等键从快照派生
         idempotencyKey: idemKeyOf("backfill", [target, v.reason]),
       });
       message.success(t("finance.backfilled"));

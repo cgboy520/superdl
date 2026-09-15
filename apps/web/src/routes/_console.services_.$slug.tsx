@@ -1,4 +1,4 @@
-/** 服务详情:EntityHeader(名称行内改名 / 状态 / 版本 / 元信息 / 操作组)+ 常驻服务端点卡 + Tab `概览(含小时账单)/ 访问密钥(公开访问时不出)/ 监控 / 日志 / 历史(版本 + 事件)/ 设置`(危险区在设置里);「更新版本」是抽屉。只有一条服务轮询(过渡态 / 运行中 / 已删除停);监控与日志打当前版本实例。`?tab=` 非法值回默认(URL 不做旧名兼容)。 */
+/** 服务详情:端点、概览、密钥、监控、日志、历史与设置;版本更新使用抽屉。 */
 
 import { POLL, space } from "@superdl/ui";
 import type { InstanceOut, ServiceOut } from "@superdl/api-client";
@@ -41,7 +41,7 @@ import { requireAuth } from "../lib/guard";
 export const SERVICE_DETAIL_TABS = ["overview", "keys", "metrics", "logs", "history", "settings"] as const;
 export type ServiceDetailTab = (typeof SERVICE_DETAIL_TABS)[number];
 
-/** tab 白名单:非法值回默认 Tab(URL 不做旧名兼容,见 docs/decisions.md)。 */
+/** Tab 白名单;非法值回默认 Tab。 */
 export function serviceDetailValidateSearch(search: Record<string, unknown>): { tab?: ServiceDetailTab } {
   const tab = search.tab;
   if (typeof tab !== "string") return {};
@@ -58,11 +58,9 @@ export const Route = createFileRoute("/_console/services_/$slug")({
 function OverviewTab({ service }: { service: ServiceOut }) {
   const { t } = useTranslation();
   const c = service.container;
-  // 两列网格里的长值(镜像 / 命令 / 参数 / 环境变量)独占一行;xs 单列时 span 回 1
   const screens = Grid.useBreakpoint();
   const full = screens.sm ? 2 : 1;
   const keysQ = useServiceApiKeys(service.slug, { enabled: service.require_api_key });
-  // 调用示例里的 Key 用「某把未吊销 Key 的前缀 + 省略号」占位
   const livePrefix = (keysQ.data ?? []).find((k) => k.revoked_at == null)?.key_prefix;
   const curl = [
     `curl ${service.url}`,
@@ -170,7 +168,7 @@ function OverviewTab({ service }: { service: ServiceOut }) {
   );
 }
 
-/** 版本历史:该服务下全部实例(含已释放),版本号降序;当前版本打标。 */
+/** 版本历史:按实例 ID 降序展示首 50 条(含已释放),不提供翻页;当前版本打标。 */
 function RevisionsTab({ service }: { service: ServiceOut }) {
   const { t } = useTranslation(["web", "shared"]);
   const q = useServiceRevisions(service.slug);
@@ -258,7 +256,6 @@ function ServiceDetail() {
   });
   const { date, tzOffsetMinutes } = localToday();
   const { data: daily } = useDailySummary(date, tzOffsetMinutes, { refetchInterval: POLL.daily });
-  // 头部行内改名(设置 Tab 不再有改名卡)
   const update = useUpdateService(slug);
 
   if (serviceError && !service) {
@@ -287,7 +284,6 @@ function ServiceDetail() {
   const released = service.released_at != null;
   const todayAmount = (inst && daily?.items.find((it) => it.instance_id === inst.id)?.total_amount) ?? "0.00";
   const requested: ServiceDetailTab = tab ?? "overview";
-  // 公开访问时无「访问密钥」Tab:深链落到设置(鉴权开关在那)
   const activeTab: ServiceDetailTab = requested === "keys" && !service.require_api_key ? "settings" : requested;
   const goTab = (k: string, replace: boolean) =>
     void navigate({ to: "/services/$slug", params: { slug }, search: { tab: k as ServiceDetailTab }, replace });
@@ -341,7 +337,6 @@ function ServiceDetail() {
                 },
             { label: t("services.detail.createdAt"), value: formatDateTime(service.created_at) },
           ]}
-          // 已删除的服务不再改名(与设置 Tab 的灰置同判据)
           rename={
             released
               ? undefined
@@ -372,7 +367,6 @@ function ServiceDetail() {
 
         <Tabs
           activeKey={activeTab}
-          // Tab activeKey 入 URL 用 replace(ui-ux-spec §1-8)
           onChange={(k) => goTab(k, true)}
           items={[
             {
@@ -381,14 +375,12 @@ function ServiceDetail() {
               children: (
                 <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
                   <OverviewTab service={service} />
-                  {/* 小时账单并入概览(全部版本实例) */}
                   <Card size="small" title={t("services.detail.tabBills")}>
                     <BillsTab slug={service.slug} />
                   </Card>
                 </Space>
               ),
             },
-            // 公开访问时网关不校验 Key,不出该 Tab(设置里开回鉴权后再出)
             ...(service.require_api_key
               ? [
                   {
@@ -416,7 +408,6 @@ function ServiceDetail() {
             {
               key: "logs",
               label: t("services.detail.tabLogs"),
-              // deploying / running / unready 都可读日志
               children: (
                 <LogsTab
                   subject={{ kind: "service", slug: service.slug }}
@@ -425,7 +416,6 @@ function ServiceDetail() {
               ),
             },
             {
-              // 版本与事件都是历史轴,合成一个 Tab
               key: "history",
               label: t("services.detail.tabHistory"),
               children: (
@@ -444,7 +434,6 @@ function ServiceDetail() {
               label: t("services.detail.tabSettings"),
               children: (
                 <SettingsTab
-                  // 换服务时重置本地草稿
                   key={service.slug}
                   service={service}
                   onGoKeys={() => goTab("keys", false)}

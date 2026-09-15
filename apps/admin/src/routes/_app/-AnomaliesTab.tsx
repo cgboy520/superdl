@@ -78,7 +78,6 @@ export function AnomaliesTab() {
               if (r.kind === "negative_balance") {
                 return <span style={{ color: adminColors.textSecondary }}>{t("finance.negativeBalanceHint")}</span>;
               }
-              // 渠道核验/补单只对有订单号的异常有意义
               const orderNo = r.order_no;
               if (!orderNo) return null;
               return (

@@ -1,33 +1,24 @@
-# /etc/rancher/rke2/audit-policy.yaml —— apiserver 审计策略
-# server-config.yaml 的 audit-policy-file 指向本文件,两个文件一起拷到 /etc/rancher/rke2/。
-# 取向:租户隔离与凭据访问全留痕,高频只读噪声降级或丢弃
 apiVersion: audit.k8s.io/v1
 kind: Policy
-# 认证阶段失败(RequestReceived 之外)不重复记
 omitStages:
   - RequestReceived
 rules:
-  # 高频系统读噪声:不记
   - level: None
     users: ["system:kube-proxy", "system:apiserver", "system:kube-scheduler", "system:kube-controller-manager"]
     verbs: ["get", "list", "watch"]
-  # Secret/ConfigMap/Token 必须先于 system:nodes 降噪规则(首条匹配即生效);只记元数据
   - level: Metadata
     resources:
       - group: ""
         resources: ["secrets", "configmaps", "serviceaccounts/token"]
-  # 节点身份的其余高频读(kubelet 常规 reconcile)不记
   - level: None
     userGroups: ["system:nodes"]
     verbs: ["get", "list", "watch"]
   - level: None
     nonResourceURLs: ["/healthz*", "/readyz*", "/livez*", "/metrics", "/version", "/openapi*"]
-  # lease 心跳(每节点每秒级)不记
   - level: None
     resources:
       - group: "coordination.k8s.io"
         resources: ["leases"]
-  # 平台与租户命名空间内的写操作:记请求体
   - level: Request
     verbs: ["create", "update", "patch", "delete", "deletecollection"]
     resources:
@@ -36,18 +27,14 @@ rules:
       - group: "batch"
       - group: "networking.k8s.io"
       - group: "rbac.authorization.k8s.io"
-  # 其余资源的写操作:记元数据
   - level: Metadata
     verbs: ["create", "update", "patch", "delete", "deletecollection"]
-  # 以下三条必须在最后的 None 兜底之前:pods/log、exec/attach/portforward、nodes/proxy 记元数据
   - level: Metadata
     resources:
       - group: ""
         resources: ["pods/log", "pods/exec", "pods/attach", "pods/portforward", "nodes/proxy"]
-  # 匿名与未认证主体的任何请求(含读)
   - level: Metadata
     users: ["system:anonymous"]
   - level: Metadata
     userGroups: ["system:unauthenticated"]
-  # 兜底:其余读操作不记(含被拒绝的读;要补这一面只能整体抬到 Metadata 或在 Loki 侧按 403 抽取)
   - level: None

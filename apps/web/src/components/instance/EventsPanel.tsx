@@ -35,14 +35,12 @@ export function EventsPanel({
   const { t } = useTranslation(["web", "shared"]);
   const reasonText = useEventReasonText();
   const [filter, setFilter] = useState<EventFilter>("all");
-  // 状态枚举走共享映射表翻译,未知值原样回显
   const statusText = (s: string | null | undefined) => {
     if (!s) return "—";
     const meta = metaOf(instanceStatusMap, s);
     return meta ? t(meta.labelKey) : s;
   };
   const isBoundary = (e: InstanceEventOut) => e.from_status === "running" || e.to_status === "running";
-  // 过滤只作用于已加载页(游标分页),LoadMore 照常
   const visible = events.filter((e) =>
     filter === "billing" ? isBoundary(e) : filter === "failed" ? e.to_status === "failed" : true,
   );

@@ -1,10 +1,6 @@
-"""资金账实核对(只报不改;只写核对游标 reconcile_checkpoints)。
+"""核对钱包流水链、账单与预付消费额、消费引用;不改资金记录。
 
-三个不变式:
-1. 每个用户 wallets.balance == balance_ledger 逐笔链式累计(增量扫描);
-2. 窗口内 bills_* 出账合计 == ledger consume 合计(两侧按账单归属期切窗);
-3. consume 流水的 ref_id 必须能回连到账单行。
-差异打 error 日志 + 指标 + 管理端告警。
+更新 reconcile_checkpoints,差异写日志、指标与管理端通知。
 """
 
 from dataclasses import dataclass
@@ -79,7 +75,6 @@ async def _scan_user_chain(
                 prev,
             )
         prev = e.balance_after
-    # 末端快照必须等于钱包余额
     if prev != wallet_row.balance:
         return (
             WalletMismatch(
@@ -103,15 +98,12 @@ async def _verify_user_once(
 ) -> WalletMismatch | None:
     """验一次;自洽则推进游标(同事务),有差异不动游标。"""
     async with sm() as session:
-        # t0 取库时钟、先于一切读取
         t0 = (await session.execute(select(func.now()))).scalar_one()
-        # 候选集出自 wallets 表且行从不删
         wallet_row = (
             await session.execute(select(Wallet).where(Wallet.user_id == user_id))
         ).scalar_one()
         checkpoint = await session.get(ReconcileCheckpoint, user_id)
         if checkpoint is not None:
-            # 游标边界行复核:被删/被改则直接报差
             boundary = await session.get(BalanceLedger, checkpoint.last_ledger_id)
             if (
                 boundary is None
@@ -194,7 +186,7 @@ async def wallet_ledger_chain_check(sm: async_sessionmaker[AsyncSession]) -> lis
         mismatch = await _verify_user_once(sm, user_id)
         if mismatch is None:
             continue
-        mismatch = await _verify_user_once(sm, user_id)  # 复核
+        mismatch = await _verify_user_once(sm, user_id)
         if mismatch is not None:
             mismatches.append(mismatch)
     return mismatches
@@ -207,10 +199,9 @@ class _BillSource:
     ref_type: str
     table: type[BillHourly] | type[BillDailyDisk] | type[Subscription]
     amount_col: SQLColumnExpression[Decimal]
-    period_col: SQLColumnExpression[datetime]  # 归属期(切窗用)
+    period_col: SQLColumnExpression[datetime]
 
 
-# 三类出账:小时账按 hour_start、盘日结按 day、包周期预付按 subscriptions.created_at 切窗
 _BILL_SOURCES: tuple[_BillSource, ...] = (
     _BillSource("bill_hourly", BillHourly, BillHourly.amount, BillHourly.hour_start),
     _BillSource("bill_daily_disk", BillDailyDisk, BillDailyDisk.amount, BillDailyDisk.day),
@@ -221,8 +212,10 @@ _BILL_SOURCES: tuple[_BillSource, ...] = (
 async def bills_vs_consume(
     session: AsyncSession, since: datetime, until: datetime
 ) -> tuple[Decimal, Decimal]:
-    """窗口内 (出账合计, 消费流水合计的绝对值)。两者必须相等。
-    两侧都按账单归属期切窗:bills 用归属列,ledger 经 ref_id 回连账单取归属期。"""
+    """返回 [since, until) 的出账合计与关联 consume 流水合计的相反数,两者应相等。
+
+    小时账按 hour_start、盘费按 day、订阅按 created_at 切窗;流水经 ref_id 关联。
+    """
     billed = consumed = Decimal("0.00")
     for src in _BILL_SOURCES:
         in_window: tuple[ColumnElement[bool], ...] = (
@@ -241,7 +234,7 @@ async def bills_vs_consume(
 
 
 async def dangling_consume_refs(session: AsyncSession) -> int:
-    """ref_id 回连不到账单的 consume 流水数(理论为零)。"""
+    """统计 _BILL_SOURCES 各类中 ref_id 无法关联账单的 consume 流水数。"""
     total = 0
     for src in _BILL_SOURCES:
         total += int(
@@ -265,12 +258,12 @@ async def dangling_consume_refs(session: AsyncSession) -> int:
 async def reconcile_funds(
     sm: async_sessionmaker[AsyncSession], *, at: datetime | None = None
 ) -> dict[str, int]:
-    """每日资金账实核对。返回 {"wallet_mismatch": n, "bill_mismatch": 0/1}。"""
+    """持咨询锁核对钱包链、上一北京日出账与消费引用,返回钱包差异数及账单差异标志。"""
     counts = {"wallet_mismatch": 0, "bill_mismatch": 0}
     async with advisory_lock(sm, LockKey.FUND_RECONCILE) as got:
         if not got:
             return counts
-        until = billing_day_floor(at or now_utc())  # 与盘费日界同口径(北京日)
+        until = billing_day_floor(at or now_utc())
         since = until - timedelta(days=1)
         mismatches = await wallet_ledger_chain_check(sm)
         async with sm() as session:

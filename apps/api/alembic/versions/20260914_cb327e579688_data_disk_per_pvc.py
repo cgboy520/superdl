@@ -1,14 +1,6 @@
-"""数据盘改为一盘一 PVC:配额即 PVC 容量,不再有 JuiceFS 子路径与目录配额下发。
+"""data_disks 新增非空 provisioned 列,默认值为 false。
 
-juicefs_subpath 去掉(PVC 名按 uuid 算,见 core/k8s/base.data_disk_pvc_name);
-quota_synced 改名 provisioned(语义从「目录配额已下发」变为「PVC 已建/扩到位」)。
-数据影响:两列连同唯一约束一并删除,存量盘的 provisioned 落到 false,
-由 reconciler 的 disk.provision 死信重派补齐;删列不可逆。
-
-Revision ID: cb327e579688
-Revises: 8f1c3d5e2a46
-Create Date: 2026-09-14 14:25:35.825626
-
+删除 quota_synced、juicefs_subpath 及后者的唯一约束;旧列数据不回填到 provisioned。
 """
 
 from collections.abc import Sequence
@@ -27,7 +19,6 @@ def upgrade() -> None:
         "data_disks",
         sa.Column("provisioned", sa.Boolean(), server_default="false", nullable=False),
     )
-    # 存量 active 盘的 PVC 由 disk.provision 建出,这里不假定已就绪
     op.drop_constraint(op.f("uq_data_disks_juicefs_subpath"), "data_disks", type_="unique")
     op.drop_column("data_disks", "quota_synced")
     op.drop_column("data_disks", "juicefs_subpath")

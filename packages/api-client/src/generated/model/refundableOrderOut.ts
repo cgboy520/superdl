@@ -10,7 +10,9 @@
  *
  * refundable=False 时 reason_code:not_paid / already_applied / fully_refunded / invoiced
  * / no_balance。
- * 同单可多次部分退款:max_amount = min(订单剩余可退, 当前余额),剩余可退 = 订单额 − Σ已打款。
+ * 同单可多次部分退款:max_amount = min(订单剩余可退, 非负可用余额, 流水可退余额)。
+ * 剩余可退 = 订单额 − Σ已打款退款;可用余额 = balance − frozen。
+ * 流水可退余额为排除正向 adjust 后的流水净额,下限为零。
  */
 export interface RefundableOrderOut {
   amount: string;

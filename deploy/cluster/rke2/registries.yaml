@@ -1,14 +1,2 @@
-# /etc/rancher/<rke2|k3s>/registries.yaml —— server 节点由 ansible 分发(改后重启 server);GPU 节点由 node-join.sh 按「平台配置 · 镜像仓库」生成。
-# ①Spegel P2P 共享的仓库(embedded-registry,见 server-config.yaml)②可选:公网上游 mirror 到 Harbor 代理缓存 ③可选:Harbor 私有 CA(harbor_ca_pem)。
-# 不含 auth(拉取凭据托管为 Secret superdl-registry-pull)
 mirrors:
-  "*": {}                    # 所有仓库参与 P2P:任一节点已缓存的镜像,其余节点内网互拉(latest tag 除外)
-  # docker.io:               # 与管理端「平台配置 · 镜像仓库」的 registry_proxy_projects 保持一致
-  #   endpoint:
-  #     - "https://harbor.example.com"
-  #   rewrite:
-  #     "^(.*)$": "dockerhub/$1"
-# configs:                   # 仅 Harbor 自签/私有 CA 时打开;路径与 harbor_ca_pem 落盘位置一致
-#   "harbor.example.com":
-#     tls:
-#       ca_file: /etc/rancher/rke2/harbor-ca.crt
+  "*": {}

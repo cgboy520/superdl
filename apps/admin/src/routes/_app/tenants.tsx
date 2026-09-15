@@ -15,7 +15,6 @@ import { DeletionsTab } from "./-DeletionsTab";
 const TENANTS_TABS = ["tenants", "instances", "deletions"] as const;
 type TenantsTabKey = (typeof TENANTS_TABS)[number];
 export const Route = createFileRoute("/_app/tenants")({
-  // q:检索;tab/dtab:页内与抽屉 Tab;istatus/inode/iq:实例 Tab 筛选;tstatus:租户状态;order:注册排序;dstatus:注销申请状态
   validateSearch: (
     search: Record<string, unknown>,
   ): {

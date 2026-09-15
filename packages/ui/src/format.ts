@@ -1,8 +1,8 @@
-/** 金额/时长/倒计时格式化。金额入参是后端 numeric 字符串,禁浮点;t 由调用方传入(应用侧经 useFormat() 绑定)。 */
+/** 金额、时长与倒计时格式化;金额使用十进制字符串,文案函数由调用方传入。 */
 
 import { isBillingPeriod, type BillingPeriod } from "./status";
 
-/** 本包用到的 shared.json 文案 key 全集(locales.test 守护)。 */
+/** 格式化函数使用的共享文案键。 */
 type SharedFormatKey =
   | "shared:format.perHour"
   | "shared:format.perPeriod"
@@ -31,7 +31,7 @@ function currencySymbol(locale: string): string {
   return locale.startsWith("zh") ? "¥" : "CN¥";
 }
 
-/** "1234.5" → "¥1,234.50"(zh)/ "CN¥1,234.50"(en),负号在最前。入参是后端 numeric 字符串;查询未就绪走 moneyOr 显「—」,这里不接受 null(不显假 ¥0.00)。 */
+/** 金额字符串加货币符号与千分位;小数补齐或截取到两位,负号在最前。 */
 export function formatMoney(amount: string, locale: string): string {
   const currency = currencySymbol(locale);
   const neg = amount.startsWith("-");
@@ -71,14 +71,14 @@ export function mulPrice(price: string, count: number): string {
   return unscale(scaleAmount(price, 4) * BigInt(count), 4);
 }
 
-/** 「约 ¥X/日」:GB·月单价 × GB ÷ 30,HALF_EVEN 到分(与后端 as_amount 同舍入)。展示层估算。 */
+/** 数据盘日价估算:GB·月单价 × GB ÷ 30,HALF_EVEN 到分。 */
 export function diskDailyEstimate(priceGbMonth: string, gb: number): string {
   if (gb <= 0 || !Number.isInteger(gb)) return "0.00";
   const monthlyScaled = scaleAmount(priceGbMonth, 4) * BigInt(gb);
   return unscale(halfEvenDiv(monthlyScaled, 3000n), 2);
 }
 
-/** 非负整数除法,ROUND_HALF_EVEN(与后端同语义)。 */
+/** 非负整数除法,ROUND_HALF_EVEN 舍入。 */
 function halfEvenDiv(numerator: bigint, denominator: bigint): bigint {
   const q = numerator / denominator;
   const twice = (numerator - q * denominator) * 2n;
@@ -87,7 +87,7 @@ function halfEvenDiv(numerator: bigint, denominator: bigint): bigint {
   return q % 2n === 0n ? q : q + 1n;
 }
 
-/** 周期定长小时,与后端 core/pricing.py PERIOD_HOURS 逐值一致。 */
+/** 计费周期的固定小时数。 */
 export const PERIOD_HOURS: Record<BillingPeriod, number> = {
   day: 24,
   week: 24 * 7,
@@ -95,15 +95,15 @@ export const PERIOD_HOURS: Record<BillingPeriod, number> = {
   year: 24 * 365,
 };
 
-/** 单次下单/续费的周期数上限(与后端 pricing.MAX_PERIOD_COUNT 一致)。 */
+/** 单次下单/续费的周期数上限。 */
 export const MAX_PERIOD_COUNT = 36;
 
-/** 一小时收几份 price_hourly(与后端 money.billing_units 同口径;CPU 实例恒 1)。 */
+/** 每小时计费份数;GPU 数为 0 时按整机 1 份。 */
 export function billingUnits(gpuCount: number): number {
   return gpuCount || 1;
 }
 
-/** 包周期报价(字段与后端 SubscriptionQuoteOut 同名同序)。仅预览,成交以接口 quote 为准。 */
+/** 本地包周期报价预览,金额字段为十进制字符串。 */
 export interface PeriodQuote {
   period: BillingPeriod;
   periodCount: number;
@@ -116,8 +116,7 @@ export interface PeriodQuote {
   amount: string;
 }
 
-/** 本地报价(BigInt)。运算顺序与后端 pricing.quote_subscription 一致:折后时价先量化到 4 位,再乘份数与小时数量化到分。
- *  base:下单取 SKU 现价,续费取 `subscription.unit_price`。 */
+/** 本地报价:折后时价先 HALF_EVEN 到四位,再乘计费份数与小时数并舍入到分。 */
 export function quoteSubscription(
   baseHourly: string,
   opts: { units: number; period: BillingPeriod; periodCount: number; discountPct: number },
@@ -142,7 +141,7 @@ export function quoteSubscription(
   };
 }
 
-/** 竞价时价 = 按量时价 × `spot_discount_pct` / 100(HALF_EVEN 到 4 位,与后端 `pricing.price_for` 一致)。折扣只从 `/policies` 取。 */
+/** 按量时价 × 折扣百分数 / 100,HALF_EVEN 到四位小数。 */
 export function spotHourlyPrice(baseHourly: string, discountPct: number): string {
   return unscale(halfEvenDiv(scaleAmount(baseHourly, 4) * BigInt(discountPct), 100n), 4);
 }
@@ -222,7 +221,7 @@ export function formatExpiry(expiresAt: string | null | undefined, t: SharedT, n
   return expiresAt ? formatDaysUntil(expiresAt, t, now) : null;
 }
 
-/** useFormat() 绑定 t/locale 后的格式化件集合。属性式签名(非方法简写),解构不触 unbound-method。 */
+/** useFormat() 绑定 t 与 locale 后的格式化函数集合。 */
 export interface Formatters {
   currencySymbol: string;
   formatMoney: (amount: string) => string;
@@ -282,7 +281,7 @@ export function localToday(now: Date = new Date()): { date: string; tzOffsetMinu
 
 /** 时区后缀:"(UTC+8)" / "(UTC-5)" / "(UTC+5:30)"。 */
 function tzSuffix(d: Date = new Date()): string {
-  const offsetMin = -d.getTimezoneOffset(); // getTimezoneOffset 以西为正,取反成 UTC 以东为正
+  const offsetMin = -d.getTimezoneOffset();
   const sign = offsetMin >= 0 ? "+" : "-";
   const abs = Math.abs(offsetMin);
   const h = Math.floor(abs / 60);
@@ -290,14 +289,14 @@ function tzSuffix(d: Date = new Date()): string {
   return `(UTC${sign}${h}${m ? `:${pad2(m)}` : ""})`;
 }
 
-/** ISO 时间 → "2026-08-19 10:30 (UTC+8)"(浏览器本地时区) */
+/** ISO 时间转本地日期时间与 UTC 偏移;空值返回 "-"。 */
 export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "-";
   const d = new Date(iso);
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())} ${tzSuffix(d)}`;
 }
 
-/** ISO 时间 → "2026-09-03"(本地日期) */
+/** ISO 时间转本地 YYYY-MM-DD;空值返回 "-"。 */
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return "-";
   const d = new Date(iso);
@@ -313,7 +312,7 @@ export function formatSizeGb(gb: number): string {
   return `${gb} GB`;
 }
 
-/** 手机号脱敏:前 3 + 后 4,短串全掩(与后端 core/logging.py mask_phone_value 同口径)。 */
+/** 手机号保留前 3 与后 4 位,中间显示四个星号;不足 7 位返回三个星号。 */
 export function maskPhone(phone: string): string {
   return phone.length >= 7 ? `${phone.slice(0, 3)}****${phone.slice(-4)}` : "***";
 }

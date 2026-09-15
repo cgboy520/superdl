@@ -1,5 +1,4 @@
-/** 节点抽屉(?node= 入 URL 可直链):EntityHeader(名称 / 状态 / 池 / GPU / 实例 / 驱动 / CUDA / 心跳 + 操作)+ 时间范围 + 每卡热力格(-GpuGrid)+ 节点级曲线(-NodeMetricsPanel)。
- *  NodeActions / PoolTag / GpuModelCell / LastSeenCell 与节点表列共用一份实现。 */
+/** 节点抽屉:节点信息、操作、GPU 热力格与历史指标。 */
 
 import { Link } from "@tanstack/react-router";
 import { Card, Drawer, Segmented, Space, Tag, Tooltip } from "antd";
@@ -58,8 +57,7 @@ export function GpuModelCell({ node }: { node: NodeRow }) {
   );
 }
 
-/** 未释放实例数(含已关机);>0 链到「租户与实例 › 实例」按节点过滤。
- *  与「已用」列各表一义:那是 GPU 卡当量,超卖池上与实例条数并不相等。 */
+/** 未释放实例数(含已关机);非零时链接到该节点的实例列表。 */
 export function InstancesCell({ node }: { node: NodeRow }) {
   const n = activeInstances(node);
   if (n === 0) return 0;
@@ -112,7 +110,6 @@ export function NodeActions({
   const { t } = useTranslation();
   const cordoned = node.status === "Cordoned";
   const blocked = blockedReason(node, writable, t);
-  // 切池只在 GPU 三池之间;无卡机与未打标节点没有可切目标
   const switchable = !isUnlabeled(node) && node.gpu_total > 0 && node.pool_label !== "cpu";
   return (
     <RowActions
@@ -127,7 +124,6 @@ export function NodeActions({
             cordoned ? t("nodes.uncordonConfirm", { name: node.name }) : t("nodes.cordonConfirm", { name: node.name })
           }
           danger={!cordoned}
-          // 封锁可逆,且每行都有一个;触发钮不标红,红色留给确认框,免得整张表都是红按钮
           triggerDanger={false}
           confirm={!cordoned}
           disabled={!writable}
@@ -150,7 +146,6 @@ export function NodeActions({
           key: "decommission",
           label: t("nodes.decommissionBtn"),
           danger: true,
-          // 有实例时不灰置:节点已救不回来时要能强制退役,由确认框里的红色出口承担
           reason: writable ? undefined : t("nodes.readonlyNoOp"),
           onClick: () => onDecommission(node),
         },
@@ -179,7 +174,6 @@ function NodeHeader({
     { label: t("nodes.colInstances"), value: <InstancesCell node={node} /> },
     {
       label: t("nodes.colUsed"),
-      // 已用卡数链到「租户与实例 › 实例」按节点过滤
       value:
         node.gpu_used > 0 ? (
           <Link to="/tenants" search={{ tab: "instances", inode: node.name }}>
@@ -197,14 +191,12 @@ function NodeHeader({
     { label: t("nodes.colLastSeen"), value: node.last_seen ? <LastSeenCell value={node.last_seen} /> : null },
   ];
   return (
-    // Drawer 标题区默认加粗,元信息条回落正文字重
     <div style={{ fontWeight: fontWeight.regular, fontSize: fontSize.body }}>
       <EntityHeader
         size="drawer"
         name={node.name}
         status={<StatusTag map={nodeStatusMap} value={node.status} variant="badge" icon />}
         subtitle={isUnlabeled(node) || isSwitching(node) ? undefined : node.pool_label}
-        // 池标签在未标注或切池中以标签提示;稳态的池进副标题
         tags={isUnlabeled(node) || isSwitching(node) ? <PoolTag node={node} /> : undefined}
         meta={meta}
         actions={

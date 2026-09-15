@@ -1,5 +1,4 @@
-"""人机校验渠道(阿里云验证码 2.0,Protocol + 工厂)。开关 `captcha_enabled`,关闭即跳过,无 mock 渠道
-(测试经 set_captcha_channel 注入);渠道故障抛 CaptchaError,调用方拒绝后续动作。"""
+"""阿里云验证码 2.0 渠道;调用方负责 captcha_enabled 开关,渠道故障必须拒绝后续动作。"""
 
 from typing import Protocol
 
@@ -39,14 +38,13 @@ class AliyunCaptchaChannel:
         self._ak = access_key_id
         self._secret = access_key_secret
         self._scene_id = scene_id
-        self._transport = transport  # 测试注入 MockTransport
+        self._transport = transport
 
     def request_params(self, captcha_verify_param: str) -> dict[str, str]:
         """VerifyIntelligentCaptcha 业务参数(公共参数与签名由 core/aliyun 补齐)。"""
         return {
             "Action": "VerifyIntelligentCaptcha",
             "Version": "2023-03-05",
-            # 服务端强制写入场景
             "SceneId": self._scene_id,
             "CaptchaVerifyParam": captcha_verify_param,
         }
@@ -60,7 +58,6 @@ class AliyunCaptchaChannel:
             transport=self._transport,
             error_cls=CaptchaError,
         )
-        # Code 为请求级结果;人机判定在 Result.VerifyResult
         if body.get("Code") not in ("Success", "OK"):
             raise CaptchaError(f"captcha rejected: {body.get('Code')} {body.get('Message')}")
         result = body.get("Result")

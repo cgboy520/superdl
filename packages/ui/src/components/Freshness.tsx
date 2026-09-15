@@ -21,7 +21,6 @@ export interface FreshnessProps {
 
 export function Freshness({ updatedAt, intervalMs, paused, onTogglePause, onRefresh, refreshing }: FreshnessProps) {
   const { t } = useTranslation("shared");
-  // 每秒 tick 让「N 秒前」滚动;组件卸载即停
   const now = useNow(1_000);
   const seconds = updatedAt > 0 ? Math.max(0, Math.round((now - updatedAt) / 1000)) : null;
   return (

@@ -1,11 +1,4 @@
-"""支付渠道抽象。
-
-- mock:dev/test 默认,POST /api/v1/webhooks/mock 直接标记支付成功
-- wechat:wechatpayv3(微信支付公钥验签)
-- alipay:alipay-sdk-python
-
-微信/支付宝需真实商户凭据;未配置时报 PAYMENT_CHANNEL_ERROR。
-"""
+"""微信公钥验签、支付宝 RSA2 验签与开发环境 mock 支付渠道。"""
 
 import asyncio
 import functools
@@ -27,7 +20,7 @@ if TYPE_CHECKING:
 
 
 class CallbackResult:
-    """验签解析后的回调结果。refund_amount:渠道侧(部分)退款金额,有值即视为反向通知(success=False)。"""
+    """解析后的支付回调;success 表示支付成功,refund_amount 为渠道退款额。"""
 
     def __init__(
         self,
@@ -44,10 +37,8 @@ class CallbackResult:
         self.refund_amount = refund_amount
 
 
-# 渠道 SDK 全是阻塞 HTTP:专属线程池 + 连接/读超时,不与 bcrypt 等共用默认执行器;
-# 回调携带的时间戳超窗即拒(渠道重试每次重新签名带新时间戳,不受影响)
-SDK_TIMEOUT = (5, 10)  # requests 口径 (connect, read) 秒
-SDK_TIMEOUT_SECONDS = 10  # 支付宝 SDK 单值超时(秒)
+SDK_TIMEOUT = (5, 10)
+SDK_TIMEOUT_SECONDS = 10
 CALLBACK_FRESHNESS_SECONDS = 15 * 60
 _SDK_EXECUTOR = ThreadPoolExecutor(max_workers=8, thread_name_prefix="payment-sdk")
 
@@ -58,7 +49,7 @@ async def run_in_sdk_pool(fn: Callable[..., Any], /, *args: Any, **kwargs: Any) 
 
 
 def header_value(headers: Mapping[str, str], name: str) -> str:
-    """大小写无关取头(Starlette 传小写,SDK 兼容两种)。"""
+    """忽略大小写读取首个同名头,缺失时返回空串。"""
     lowered = name.lower()
     for k, v in headers.items():
         if k.lower() == lowered:
@@ -72,13 +63,13 @@ def channel_error(key: str) -> AppError:
 
 
 def assert_callback_fresh(ts: datetime | None, *, key: str) -> None:
-    """回调时间戳须在 ±CALLBACK_FRESHNESS_SECONDS 内;缺失/不可解析同拒。"""
+    """拒绝缺失或超出 ±CALLBACK_FRESHNESS_SECONDS 的回调时间戳。"""
     if ts is None or abs((now_utc() - ts).total_seconds()) > CALLBACK_FRESHNESS_SECONDS:
         raise channel_error(key)
 
 
 class QueryResult:
-    """主动查单结果(丢回调收敛/人工补单核验的事实源)。"""
+    """渠道查单状态、交易号与金额。"""
 
     def __init__(
         self,
@@ -103,15 +94,12 @@ class PaymentChannel(Protocol):
         ...
 
     async def query_order(self, order: "Order") -> QueryResult:
-        """向渠道主动查单。渠道不可达抛 AppError(PAYMENT_CHANNEL_ERROR)。"""
+        """查询渠道订单状态、交易号与金额;失败抛异常。"""
         ...
 
 
 class MockChannel:
-    """dev/test 渠道:qr_url 为占位;回调体 {"order_no", "txn_id", "amount"}。
-    类级 `_channel_side` 模拟渠道侧账本:mock webhook 入账时同步记录;
-    mark_paid() 只造「渠道已付但回调丢失」。
-    """
+    """无验签的开发测试渠道;成功回调记录到类级内存账本,查单读取该账本。"""
 
     name = "mock"
 
@@ -128,7 +116,7 @@ class MockChannel:
     async def create_payment(self, order: "Order") -> str:
         return f"superdl-mock-pay://{order.order_no}?amount={order.amount}"
 
-    async def parse_callback(self, headers: dict[str, str], body: bytes) -> CallbackResult:  # noqa: ARG002 协议签名
+    async def parse_callback(self, headers: dict[str, str], body: bytes) -> CallbackResult:  # noqa: ARG002
         import json
 
         try:
@@ -139,7 +127,6 @@ class MockChannel:
                 amount=Decimal(str(data["amount"])),
                 success=bool(data.get("success", True)),
             )
-        # InvalidOperation:amount 非数值;TypeError:报文不是 JSON 对象
         except (ValueError, KeyError, TypeError, InvalidOperation) as exc:
             raise channel_error("billing.mockCallbackParseFailed") from exc
         if result.success:
@@ -153,7 +140,6 @@ class MockChannel:
         return QueryResult("paid", channel_txn_id=hit[0], amount=hit[1])
 
 
-# 参与渠道构造的配置键(实例缓存指纹;配置变更即重建)
 WECHAT_CFG_KEYS = (
     "wechat_mchid",
     "wechat_appid",
@@ -177,7 +163,7 @@ class WechatChannel:
 
     name = "wechat"
 
-    def __init__(self, cfg: RuntimeConfig) -> None:  # pragma: no cover - 需真实商户凭据
+    def __init__(self, cfg: RuntimeConfig) -> None:  # pragma: no cover
         if not all(getattr(cfg, k) for k in WECHAT_CFG_KEYS):
             raise channel_error("billing.wechatCredentialsIncomplete")
         from wechatpayv3 import WeChatPay, WeChatPayType
@@ -198,8 +184,7 @@ class WechatChannel:
         self._appid = cfg.wechat_appid
         self._public_key_id = cfg.wechat_public_key_id
 
-    async def create_payment(self, order: "Order") -> str:  # pragma: no cover - 需真实商户凭据
-        # time_expire:渠道侧与本地 expires_at 同步过期(RFC3339)
+    async def create_payment(self, order: "Order") -> str:  # pragma: no cover
         code, message = await run_in_sdk_pool(
             self._wxpay.pay,
             description=f"SuperDL 充值 {order.order_no}",
@@ -218,9 +203,10 @@ class WechatChannel:
         return json.loads(message)["code_url"]
 
     async def parse_callback(self, headers: dict[str, str], body: bytes) -> CallbackResult:
-        """验签 + AES-GCM 解密 + 核对商户身份。SDK 的裸 Exception 在此归一化。
-        进 SDK 前先核对 Wechatpay-Serial == 公钥 ID(否则 SDK 会去微信拉平台证书,未验签的外部请求
-        不许触发出网)与时间戳新鲜度。"""
+        """先核对公钥 ID 与时间戳,再由 SDK 验签解密;未验签请求不得触发证书下载。
+
+        要求 TRANSACTION.SUCCESS、匹配的商户与应用、完整交易字段及 CNY 币种。
+        """
         if header_value(headers, "Wechatpay-Serial") != self._public_key_id:
             raise channel_error("billing.wechatCallbackVerifyFailed")
         try:
@@ -239,10 +225,8 @@ class WechatChannel:
         resource = result.get("resource")
         if not isinstance(resource, dict):
             raise channel_error("billing.wechatCallbackVerifyFailed")
-        # 核对通知里的商户号/应用号;缺失即判失败
         if resource.get("mchid") != self._mchid or resource.get("appid") != self._appid:
             raise channel_error("billing.wechatCallbackMerchantMismatch")
-        # 缺字段显式 4xx
         out_trade_no = resource.get("out_trade_no")
         transaction_id = resource.get("transaction_id")
         trade_state = resource.get("trade_state")
@@ -251,7 +235,6 @@ class WechatChannel:
         currency = amount_obj.get("currency") if isinstance(amount_obj, dict) else None
         if not out_trade_no or not transaction_id or not trade_state or total is None:
             raise channel_error("billing.wechatCallbackVerifyFailed")
-        # 币种必须是人民币
         if currency != "CNY":
             raise channel_error("billing.wechatCallbackMerchantMismatch")
         return CallbackResult(
@@ -261,7 +244,7 @@ class WechatChannel:
             success=trade_state == "SUCCESS",
         )
 
-    async def query_order(self, order: "Order") -> QueryResult:  # pragma: no cover - 需真实商户
+    async def query_order(self, order: "Order") -> QueryResult:  # pragma: no cover
         import json
 
         code, message = await run_in_sdk_pool(self._wxpay.query, out_trade_no=order.order_no)
@@ -287,16 +270,13 @@ class WechatChannel:
 
 
 class AlipayChannel:
-    """支付宝当面付(precreate 扫码 + 异步通知 RSA2 验签 + 主动查单)。
-
-    凭据(应用私钥 + 支付宝公钥)取自平台配置中心,env SUPERDL_ALIPAY_* 为默认值层。
-    """
+    """支付宝当面付、异步通知 RSA2 验签与主动查单;生产环境须配置收款方 seller_id。"""
 
     name = "alipay"
 
     GATEWAY = "https://openapi.alipay.com/gateway.do"
 
-    def __init__(self, cfg: RuntimeConfig) -> None:  # pragma: no cover - 需真实商户凭据
+    def __init__(self, cfg: RuntimeConfig) -> None:  # pragma: no cover
         if not (cfg.alipay_app_id and cfg.alipay_private_key and cfg.alipay_public_key):
             raise channel_error("billing.alipayCredentialsIncomplete")
         from alipay.aop.api.AlipayClientConfig import (
@@ -316,12 +296,11 @@ class AlipayChannel:
         self._public_key = cfg.alipay_public_key
         self._app_id = cfg.alipay_app_id
         self._seller_id = cfg.alipay_seller_id or ""
-        # prod 强制 seller_id:回调须核对收款方身份
         if get_settings().environment == "prod" and not self._seller_id:
             raise channel_error("billing.alipaySellerIdRequired")
         self._notify_url = f"{get_settings().public_base_url}/api/v1/webhooks/alipay"
 
-    async def create_payment(self, order: "Order") -> str:  # pragma: no cover - 需真实商户凭据
+    async def create_payment(self, order: "Order") -> str:  # pragma: no cover
         import json
 
         from alipay.aop.api.domain.AlipayTradePrecreateModel import (
@@ -337,7 +316,6 @@ class AlipayChannel:
         model.out_trade_no = order.order_no
         model.total_amount = str(order.amount)
         model.subject = f"SuperDL 充值 {order.order_no}"
-        # 渠道侧与本地 expires_at 同步过期(相对分钟数,至少 1m)
         remaining_min = int((order.expires_at - now_utc()).total_seconds() // 60)
         model.timeout_express = f"{max(1, remaining_min)}m"
         req = AlipayTradePrecreateRequest(biz_model=model)
@@ -358,14 +336,14 @@ class AlipayChannel:
             )
         return resp["qr_code"]
 
-    async def parse_callback(self, headers: dict[str, str], body: bytes) -> CallbackResult:  # noqa: ARG002 支付宝验签不看头
+    async def parse_callback(self, headers: dict[str, str], body: bytes) -> CallbackResult:  # noqa: ARG002
+        """验签并核对 app_id、seller_id 与北京时间通知时效;正退款额视为反向通知。"""
         from urllib.parse import parse_qsl
 
         from alipay.aop.api.util.SignatureUtils import (
             verify_with_rsa,
         )
 
-        # 官方验签口径:剔除空值参数
         params = dict(parse_qsl(body.decode("utf-8")))
         sign = params.pop("sign", "")
         params.pop("sign_type", None)
@@ -376,13 +354,10 @@ class AlipayChannel:
             raise channel_error("billing.alipayCallbackVerifyFailed") from exc
         if not ok:
             raise channel_error("billing.alipayCallbackVerifyFailed")
-        # app_id 与 seller_id 须为已方
         if params.get("app_id") != self._app_id:
             raise channel_error("billing.alipayCallbackMerchantMismatch")
-        # seller_id 缺失或不符一律拒收
         if params.get("seller_id") != self._seller_id:
             raise channel_error("billing.alipayCallbackMerchantMismatch")
-        # notify_time 为北京时间 yyyy-MM-dd HH:mm:ss
         try:
             ts: datetime | None = datetime.strptime(
                 params.get("notify_time", ""), "%Y-%m-%d %H:%M:%S"
@@ -390,7 +365,6 @@ class AlipayChannel:
         except ValueError:
             ts = None
         assert_callback_fresh(ts, key="billing.alipayCallbackVerifyFailed")
-        # 部分退款通知:trade_status 仍是 TRADE_SUCCESS,退款额在 refund_fee(gmt_refund 同批出现)
         refund_amount: Decimal | None = None
         refund_fee = params.get("refund_fee", "")
         if refund_fee:
@@ -409,7 +383,7 @@ class AlipayChannel:
             refund_amount=refund_amount,
         )
 
-    async def query_order(self, order: "Order") -> QueryResult:  # pragma: no cover - 需真实商户
+    async def query_order(self, order: "Order") -> QueryResult:  # pragma: no cover
         import json
 
         from alipay.aop.api.domain.AlipayTradeQueryModel import (
@@ -442,7 +416,7 @@ class AlipayChannel:
                 return QueryResult("closed")
             return QueryResult("pending")
         if resp.get("sub_code") == "ACQ.TRADE_NOT_EXIST":
-            return QueryResult("pending")  # 用户未扫码
+            return QueryResult("pending")
         raise AppError(
             ErrorCode.PAYMENT_CHANNEL_ERROR,
             key="billing.alipayQueryFailed",
@@ -450,14 +424,13 @@ class AlipayChannel:
         )
 
 
-# 真实渠道实例缓存:按配置指纹缓存,配置变更即重建
 _real_channel_cache: dict[str, tuple[tuple[str, ...], PaymentChannel]] = {}
 
 
 async def get_channel(name: str, session: AsyncSession) -> PaymentChannel:
+    """按配置指纹缓存真实渠道;mock 仅在 payment_mock 开启时可用。"""
     settings = get_settings()
     if name == "mock":
-        # 无验签渠道只在显式开启时可用;prod 下 payment_mock 必为 false(Settings 校验)
         if not settings.payment_mock:
             raise channel_error("billing.mockDevOnly")
         return MockChannel()
@@ -471,7 +444,6 @@ async def get_channel(name: str, session: AsyncSession) -> PaymentChannel:
     cached = _real_channel_cache.get(name)
     if cached is not None and cached[0] == fingerprint:
         return cached[1]
-    # 构造函数同步解析 PEM,出让事件循环
     channel: PaymentChannel = await run_in_sdk_pool(
         WechatChannel if name == "wechat" else AlipayChannel, cfg
     )

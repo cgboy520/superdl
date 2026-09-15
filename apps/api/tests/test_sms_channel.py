@@ -70,7 +70,7 @@ class TestVerifyCodeSendFailure:
             row = (
                 await session.execute(select(SmsCode).where(SmsCode.phone == "13800000090"))
             ).scalar_one()
-            assert row.used_at is not None  # 已作废,不可被消费
+            assert row.used_at is not None
 
 
 class TestPlatformQuota:
@@ -82,7 +82,7 @@ class TestPlatformQuota:
         from app.modules.account.models import SmsCode
 
         monkeypatch.setattr(sms_module, "SMS_PLATFORM_HOURLY_MAX", 1)
-        await sms_module.ensure_sms_platform_quota()  # 占满配额
+        await sms_module.ensure_sms_platform_quota()
         resp = await client.post(
             "/api/v1/auth/sms-code",
             json={"phone": "13800000093", "purpose": "register"},
@@ -109,8 +109,8 @@ class TestPlatformQuota:
 
         set_sms_channel(_CountingChannel())
         monkeypatch.setattr(sms_module, "SMS_PLATFORM_HOURLY_MAX", 1)
-        await sms_module.ensure_sms_platform_quota()  # 占满配额
+        await sms_module.ensure_sms_platform_quota()
         task = OutboxTask(type="notify.sms", payload={"phone": "13800000094", "title": "余额预警"})
         async with sm() as session:
-            await handle_notify_sms(session, task)  # 不抛 = 已消化
+            await handle_notify_sms(session, task)
         assert sent == []

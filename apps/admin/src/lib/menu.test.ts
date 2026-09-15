@@ -1,4 +1,4 @@
-/** MENU 与 MENU_ROLES 键集一致;canSeeMenu 按角色矩阵断言。挂了 = 菜单与权限表漂移。 */
+/** 菜单键集与角色可见性矩阵测试。 */
 import { describe, expect, it } from "vitest";
 
 import { MENU, MENU_ROLES, canSeeMenu } from "./menu";

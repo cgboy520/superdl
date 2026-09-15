@@ -1,4 +1,3 @@
-# 白盒用例:直探模块内部
 # pyright: reportPrivateUsage=false
 import base64
 
@@ -9,7 +8,7 @@ from tests.helpers import admin_headers, register
 
 class TestLoginRateLimit:
     async def test_admin_login_locked_after_5_attempts(self, client: AsyncClient, sm):
-        await admin_headers(sm, client)  # 创建 admin-user(成功登录不计数)
+        await admin_headers(sm, client)
         for _ in range(5):
             resp = await client.post(
                 "/api/admin/v1/auth/login", json={"username": "admin-user", "password": "wrong"}
@@ -20,9 +19,7 @@ class TestLoginRateLimit:
         )
         assert resp.status_code == 429
         assert resp.json()["code"] == "RATE_LIMITED"
-        # 限流响应带 Retry-After
         assert resp.headers["retry-after"].isdigit()
-        # 封禁期内正确密码也 429(准入先于 bcrypt)
         resp = await client.post(
             "/api/admin/v1/auth/login", json={"username": "admin-user", "password": "pass1234"}
         )
@@ -35,7 +32,6 @@ class TestLoginRateLimit:
 
         monkeypatch.setattr(auth_service, "LOGIN_IP_MAX_ATTEMPTS", 3)
         await admin_headers(sm, client)
-        # 账号桶每桶仅 1 次,压力落在纯 IP 桶
         for i in range(3):
             resp = await client.post(
                 "/api/admin/v1/auth/login", json={"username": f"spray{i}", "password": "wrong"}
@@ -54,7 +50,6 @@ class TestLoginRateLimit:
         from app.core.ratelimit import RateLimitCounter
 
         for _ in range(3):
-            # 手机号不存在 → LOGIN_FAILED,业务 session 未 commit
             await client.post("/api/v1/auth/login", json={"phone": "13800000078", "password": "x"})
         async with sm() as session:
             rows = (
@@ -72,7 +67,7 @@ class TestLoginRateLimit:
 
 
 class TestAccountLevelLock:
-    """账号级锁定:换 IP 换不了目标账号;测试层换 IP 直接调 service。"""
+    """账号级锁定跨 IP 生效。"""
 
     async def test_user_login_account_lock_across_ips(self, client: AsyncClient, sm):
         """10 个不同 IP 各失败 1 次,第 11 次账号桶锁死。"""
@@ -89,7 +84,6 @@ class TestAccountLevelLock:
                         session, "13800000081", None, "wrong-pass", client_ip=f"10.0.0.{i}"
                     )
                 assert exc_info.value.code is ErrorCode.LOGIN_FAILED
-        # 第 11 个新 IP:账号桶已满 → 拦下
         async with sm() as session:
             with pytest.raises(AppError) as exc_info:
                 await account_service.login(
@@ -105,7 +99,7 @@ class TestAccountLevelLock:
         from app.core.errors import AppError, ErrorCode
         from app.modules.adminapi import auth_service
 
-        await admin_headers(sm, client)  # 创建 admin-user(成功登录不计数)
+        await admin_headers(sm, client)
         for i in range(10):
             async with sm() as session:
                 with pytest.raises(AppError) as exc_info:
@@ -131,7 +125,6 @@ class TestAccountLevelLock:
         from app.modules.notify.models import Notification
 
         data = await register(client, "13800000082", password="secret123456")
-        # 另两个 IP 撞库失败 2 次
         for ip in ("10.2.0.1", "10.2.0.2"):
             async with sm() as session:
                 with pytest.raises(AppError):
@@ -139,7 +132,6 @@ class TestAccountLevelLock:
                         session, "13800000082", None, "wrong-pass", client_ip=ip
                     )
         assert await read_hits("user-login-acct:13800000082", window_seconds=900.0) == 2
-        # 本人成功登录
         async with sm() as session:
             pair = await account_service.login(
                 session, "13800000082", None, "secret123456", client_ip="10.2.0.3"
@@ -153,7 +145,6 @@ class TestAccountLevelLock:
             ).scalar_one()
             assert "异常登录" in row.title
             assert row.severity == "warning"
-        # 账号桶已清零:后续登录不再通知
         assert await read_hits("user-login-acct:13800000082", window_seconds=900.0) == 0
 
 
@@ -175,9 +166,8 @@ class TestProdConfigValidation:
     def _complete_prod_kwargs() -> dict:
         """能通过 prod 校验的最小配置(只含 provider 选择与基础设施项)。"""
         return {
-            "_env_file": None,  # 运行时参数,stub 未暴露
+            "_env_file": None,
             "environment": "prod",
-            # 合法形态:64 字符十六进制
             "jwt_secret": "9f4a1c7e2b8d0f63a5e9c417b3d68f02a1c4e7958b0d326f7a9c1e4b58d2f603",
             "sms_provider": "aliyun",
             "k8s_backend": "real",
@@ -192,7 +182,7 @@ class TestProdConfigValidation:
             "metrics_token": "mtoken",
             "config_encryption_key": base64.urlsafe_b64encode(b"k" * 32).decode(),
             "image_allowed_registries": "registry.superdl.internal/",
-            "bcrypt_rounds": 12,  # conftest 给测试环境压到 4,prod 基线要显式压回
+            "bcrypt_rounds": 12,
         }
 
     def test_prod_rejects_dev_defaults(self):
@@ -204,7 +194,7 @@ class TestProdConfigValidation:
 
         with pytest.raises(ValidationError) as ei:
             Settings(
-                _env_file=None,  # pyright: ignore[reportCallIssue] - 运行时参数,stub 未暴露
+                _env_file=None,  # pyright: ignore[reportCallIssue]
                 environment="prod",
                 database_url="postgresql+asyncpg://superdl:superdl@localhost:5432/superdl",
             )
@@ -220,9 +210,9 @@ class TestProdConfigValidation:
         from app.core.config import Settings
 
         for bad in (
-            "CHANGE_ME_32_CHARS_MINIMUM_______",  # 占位符形态
+            "CHANGE_ME_32_CHARS_MINIMUM_______",
             "CHANGE_ME",
-            "x" * 40,  # 长度足够但唯一字符 1 个
+            "x" * 40,
         ):
             kwargs = {**self._complete_prod_kwargs(), "jwt_secret": bad}
             with pytest.raises(ValidationError, match="jwt_secret"):
@@ -238,7 +228,7 @@ class TestProdConfigValidation:
         assert s.sms_access_key_id is None
 
     def test_prod_rejects_weak_bcrypt_cost(self):
-        """prod 下 bcrypt cost <12 拒启;非 prod 允许降到 4 换速度。"""
+        """prod 下 bcrypt cost 小于 12 拒启;非 prod 允许 4。"""
         import pytest
         from pydantic import ValidationError
 
@@ -263,7 +253,6 @@ class TestProdConfigValidation:
         assert Settings(**worker).process_role == "worker"
         with pytest.raises(ValidationError, match="sms_provider"):
             Settings(**{**worker, "sms_provider": "mock"})
-        # 非 core 组件不校验渠道 provider,其余照拒
         tenant_mgr = {
             **worker,
             "worker_component": "tenant-mgr",
@@ -273,7 +262,6 @@ class TestProdConfigValidation:
         assert Settings(**tenant_mgr).worker_component == "tenant-mgr"
         with pytest.raises(ValidationError, match="k8s_backend"):
             Settings(**{**tenant_mgr, "k8s_backend": "fake"})
-        # disk-ops 不校验配置主密钥;tenant-mgr 照拒
         assert Settings(
             **{**tenant_mgr, "worker_component": "disk-ops", "config_encryption_key": None}
         )
@@ -295,7 +283,7 @@ class TestProdConfigValidation:
             Settings(**kwargs)
         with pytest.raises(ValidationError, match="real_name_enabled"):
             Settings(
-                _env_file=None,  # pyright: ignore[reportCallIssue] - 运行时参数,stub 未暴露
+                _env_file=None,  # pyright: ignore[reportCallIssue]
                 environment="dev",
                 real_name_required_for_recharge=True,
             )
@@ -327,7 +315,7 @@ class TestProdConfigValidation:
 
         with pytest.raises(ValidationError, match="cors_origins"):
             Settings(
-                _env_file=None,  # pyright: ignore[reportCallIssue] - 运行时参数,stub 未暴露
+                _env_file=None,  # pyright: ignore[reportCallIssue]
                 environment="dev",
                 cors_origins=["*"],
             )
@@ -347,7 +335,6 @@ class TestProdConfigValidation:
             "postgresql+asyncpg://svc:strongpass@pg.internal:5432/superdl?sslmode=verify-full"
         )
         assert Settings(**kwargs).environment == "prod"
-        # 本机回环豁免
         kwargs["database_url"] = "postgresql+asyncpg://svc:strongpass@127.0.0.1:5432/superdl"
         assert Settings(**kwargs).environment == "prod"
 
@@ -369,7 +356,6 @@ class TestDbTlsTranslate:
         assert _split_db_tls(url) == (url, {})
 
     def test_sslrootcert_builds_verifying_context(self, tmp_path):
-        """挂了说明:自签 CA 的 verify-full 不再校验主机名 / 证书链,或 CA 路径没从 URL 摘干净。"""
         import ssl
 
         from app.core.db import _split_db_tls
@@ -389,7 +375,6 @@ class TestDbTlsTranslate:
         assert args_ca["ssl"].check_hostname is False
 
     def test_sslrootcert_missing_file_or_mode_rejected(self, tmp_path):
-        """挂了说明:CA 文件缺失被静默降级成不校验,或 sslrootcert 脱离 sslmode 被放过。"""
         import pytest
 
         from app.core.db import _split_db_tls
@@ -436,7 +421,6 @@ class TestSmsCodeBruteForce:
             async with sm() as session:
                 with pytest.raises(AppError):
                     await account_service._consume_sms_code(session, phone, "000000", "register")
-        # 达上限置 used_at,不再被选中
         from sqlalchemy import select
 
         async with sm() as session:
@@ -447,7 +431,7 @@ class TestSmsCodeBruteForce:
             ).scalar_one()
         assert row.used_at is not None
         async with sm() as session:
-            with pytest.raises(AppError):  # mock 固定码 123456 本是正确码
+            with pytest.raises(AppError):
                 await account_service._consume_sms_code(session, phone, "123456", "register")
 
     async def test_code_is_single_use(self, client: AsyncClient, sm):
@@ -542,7 +526,7 @@ class TestRequestBodyLimit:
 
         async def stream():
             chunk = b"y" * (256 * 1024)
-            for _ in range(5):  # 1.25Mi,无 Content-Length
+            for _ in range(5):
                 yield chunk
 
         resp = await client.post(
@@ -573,7 +557,6 @@ class TestSecurityHeaders:
         assert resp.headers["referrer-policy"] == "strict-origin-when-cross-origin"
         assert "camera=()" in resp.headers["permissions-policy"]
         assert resp.headers["cross-origin-opener-policy"] == "same-origin"
-        # same-site:console/admin 与 api 是同站兄弟子域
         assert resp.headers["cross-origin-resource-policy"] == "same-site"
 
     async def test_docs_exempt_from_csp(self, client: AsyncClient):
@@ -591,21 +574,18 @@ class TestEdgeGuard:
         monkeypatch.setattr(settings, "environment", "prod", raising=False)
         monkeypatch.setattr(settings, "admin_host", "admin.superdl.cn", raising=False)
         monkeypatch.setattr(settings, "admin_edge_token", "edge-secret-1", raising=False)
-        # 公网 api 域:管理端登录面 404
         resp = await client.post(
             "/api/admin/v1/auth/login",
             json={"username": "x", "password": "y"},
             headers={"Host": "api.superdl.cn"},
         )
         assert resp.status_code == 404
-        # admin 域 + 边缘密钥头:到达路由(凭据错 400)
         resp = await client.post(
             "/api/admin/v1/auth/login",
             json={"username": "x", "password": "y"},
             headers={"Host": "admin.superdl.cn", "X-Admin-Edge-Token": "edge-secret-1"},
         )
         assert resp.status_code == 400
-        # 用户端 API 不受影响
         assert (await client.get("/healthz", headers={"Host": "api.superdl.cn"})).status_code == 200
 
     async def test_admin_api_rejects_host_match_without_edge_token(
@@ -618,14 +598,12 @@ class TestEdgeGuard:
         monkeypatch.setattr(settings, "environment", "prod", raising=False)
         monkeypatch.setattr(settings, "admin_host", "admin.superdl.cn", raising=False)
         monkeypatch.setattr(settings, "admin_edge_token", "edge-secret-2", raising=False)
-        # 缺头
         resp = await client.post(
             "/api/admin/v1/auth/login",
             json={"username": "x", "password": "y"},
             headers={"Host": "admin.superdl.cn"},
         )
         assert resp.status_code == 404
-        # 错头
         resp = await client.post(
             "/api/admin/v1/auth/login",
             json={"username": "x", "password": "y"},
@@ -639,7 +617,6 @@ class TestEdgeGuard:
         settings = get_settings()
         monkeypatch.setattr(settings, "environment", "prod", raising=False)
         monkeypatch.setattr(settings, "metrics_token", "mtok", raising=False)
-        # 经 ingress(带 XFF)→ 404;集群内直刮 → 到达 Bearer 校验(401)
         assert (
             await client.get("/metrics/", headers={"X-Forwarded-For": "1.2.3.4"})
         ).status_code == 404
@@ -651,7 +628,7 @@ class TestEdgeGuard:
 
 class TestMetricsGuard:
     async def test_non_ascii_authorization_rejected_not_500(self, client: AsyncClient):
-        """非 ASCII 的 Authorization 头:先 encode 再 compare_digest。"""
+        """非 ASCII 的 Authorization 头返回 401。"""
         from app.core.config import get_settings
 
         settings = get_settings()
@@ -678,7 +655,7 @@ class TestProdDocsClosed:
         assert app.docs_url is None
         assert app.redoc_url is None
         assert app.openapi_url is None
-        assert app.openapi()["paths"]  # schema 本身照常可导出
+        assert app.openapi()["paths"]
 
 
 class TestSmsCodeAtRest:
@@ -697,10 +674,8 @@ class TestSmsCodeAtRest:
             row = (
                 await session.execute(select(SmsCode).where(SmsCode.phone == "13800000777"))
             ).scalar_one()
-        # mock 渠道固定发 123456
         assert "123456" not in row.code_hash
         assert len(row.code_hash) == 64
-        # 域分离:同一个码换手机号/用途摘要不同
         from app.core.crypto import hash_sms_code
 
         assert row.code_hash == hash_sms_code("13800000777", "register", "123456")
@@ -713,9 +688,9 @@ class TestGhostEnvKeys:
         """启动扫描揪出拼错/残留的 SUPERDL_* 变量。"""
         from app.core.config import unknown_superdl_env_keys
 
-        monkeypatch.setenv("SUPERDL_JWT_SECRET", "x")  # 合法键
-        monkeypatch.setenv("SUPERDL_JWT_SECERT", "typo")  # 拼写错误
-        monkeypatch.setenv("SUPERDL_OLD_REMOVED_KEY", "y")  # 改名残留
+        monkeypatch.setenv("SUPERDL_JWT_SECRET", "x")
+        monkeypatch.setenv("SUPERDL_JWT_SECERT", "typo")
+        monkeypatch.setenv("SUPERDL_OLD_REMOVED_KEY", "y")
         unknown = unknown_superdl_env_keys()
         assert "SUPERDL_JWT_SECERT" in unknown
         assert "SUPERDL_OLD_REMOVED_KEY" in unknown
@@ -736,7 +711,7 @@ class TestBootstrapAdminGate:
                 await ensure_bootstrap_admin(session, "short")
         async with sm() as session:
             with pytest.raises(RuntimeError, match="引导口令"):
-                await ensure_bootstrap_admin(session, "汉" * 25)  # 75 字节
+                await ensure_bootstrap_admin(session, "汉" * 25)
         async with sm() as session:
             await ensure_bootstrap_admin(session, "l0ng-enough-pass")
             admins = (await session.execute(select(AdminUser))).scalars().all()
@@ -754,7 +729,7 @@ class TestUnifiedErrorBodyForHttpException:
         assert body["message"] == "资源不存在"
 
     async def test_405_returns_unified_body_and_allow_header(self, client: AsyncClient):
-        resp = await client.post("/healthz")  # 仅注册了 GET
+        resp = await client.post("/healthz")
         assert resp.status_code == 405
         body = resp.json()
         assert body["code"] == "METHOD_NOT_ALLOWED"
@@ -776,7 +751,6 @@ class TestAdminTokenRenewal:
     async def test_renew_rejects_garbage_and_user_token(self, client: AsyncClient):
         garbage = await client.post("/api/admin/v1/auth/refresh", json={"access_token": "xx"})
         assert garbage.status_code == 401
-        # 用户端 token 不可换管理端
         data = await register(client, "13900000071")
         cross = await client.post(
             "/api/admin/v1/auth/refresh", json={"access_token": data["access_token"]}
@@ -794,7 +768,6 @@ class TestAdminTokenRenewal:
         async with sm() as session:
             admin = await create_admin(session, "grace-admin", "pass1234", "ops")
         ver = admin.token_version
-        # 过期 5 分钟:可续
         expired = create_token(
             str(admin.id),
             "admin",
@@ -803,7 +776,6 @@ class TestAdminTokenRenewal:
         )
         resp = await client.post("/api/admin/v1/auth/refresh", json={"access_token": expired})
         assert resp.status_code == 200
-        # sess_iat 超 12h:拒
         ancient = create_token(
             str(admin.id),
             "admin",
@@ -816,7 +788,6 @@ class TestAdminTokenRenewal:
         )
         resp2 = await client.post("/api/admin/v1/auth/refresh", json={"access_token": ancient})
         assert resp2.status_code == 401
-        # token_version 变(改密/停用)即不可续
         async with sm() as session:
             admin.token_version += 1
             session.add(admin)
@@ -835,21 +806,17 @@ class TestAuditGate:
                 raise RuntimeError("audit db down (injected)")
 
         monkeypatch.setattr(audit_mod, "get_sessionmaker", _Boom())
-        # 每试一号:登录失败按 IP+手机号分桶
         for i in range(audit_mod.AUDIT_FAIL_CLOSED_THRESHOLD):
             resp = await client.post(
                 "/api/v1/auth/login", json={"phone": f"138{i:08d}", "password": "x"}
             )
-            assert resp.status_code == 400  # 抖动期 fail-open:业务照常,失败只计数
-        # 超阈值:写 503
+            assert resp.status_code == 400
         resp = await client.post("/api/v1/auth/login", json={"phone": "13800000000"})
         assert resp.status_code == 503
         assert resp.json()["code"] == "AUDIT_UNAVAILABLE"
-        # 读不受影响
         assert (await client.get("/api/v1/auth/captcha-config")).status_code == 200
         assert (await client.get("/healthz")).status_code == 200
         monkeypatch.undo()
-        # 探活成功 → 复位
         resp = await client.post("/api/v1/auth/login", json={"phone": "13800000000"})
         assert resp.status_code == 400
 

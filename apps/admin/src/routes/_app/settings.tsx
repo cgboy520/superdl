@@ -29,7 +29,6 @@ const SETTINGS_TABS = ["policies", "announcement", "legal", "admins"] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 export const Route = createFileRoute("/_app/settings")({
-  // Tab 入 URL,非法值回落默认
   validateSearch: (search: Record<string, unknown>): { tab?: SettingsTab } => ({
     tab: SETTINGS_TABS.includes(search.tab as SettingsTab) ? (search.tab as SettingsTab) : undefined,
   }),
@@ -130,7 +129,7 @@ const POLICY_LABELS = {
   },
 } as const satisfies Record<string, { label: string; unit: string; hint?: string }>;
 type PolicyMeta = (typeof POLICY_LABELS)[keyof typeof POLICY_LABELS];
-/** 统一形状:联合体上直接取可选 hint 过不了 TS,先补齐再索引。 */
+/** 配置项的统一形状,含可选 hint。 */
 interface PolicyEntry {
   label: PolicyMeta["label"];
   unit: PolicyMeta["unit"];
@@ -254,7 +253,7 @@ function PoliciesTab() {
               const { reason } = await reasonForm.validateFields();
               update.mutate({ data: { updates: Object.fromEntries(changed), reason } });
             } catch {
-              /* 校验失败:antd 已给红字 */
+              /* ignored */
             }
           })();
         }}
@@ -289,12 +288,10 @@ function AnnouncementTab() {
   const writable = canWriteOps(role);
   const qc = useQueryClient();
   const [form] = Form.useForm<{ title: string; content: string }>();
-  // 公告草稿(sessionStorage),发布成功清除
   const draft = useFormDraft<{ title: string; content: string }>("announcement-new");
   const { data, queryKey, isLoading, isError, error, refetch } = useAnnouncements();
   const revoke = useRevokeAnnouncement();
   const rows: AnnouncementRow[] = data ?? [];
-  // 「上次发布」= 最新一条 published 公告
   const lastPublished = rows.find((r) => r.status === "published");
   const refresh = () => void qc.invalidateQueries({ queryKey });
 
@@ -352,11 +349,10 @@ function AnnouncementTab() {
                 const values = await form.validateFields();
                 publish.mutate({
                   data: values,
-                  // 幂等键从表单快照派生
                   idempotencyKey: idemKeyOf("ann", [values.title, values.content]),
                 });
               } catch {
-                /* 校验失败:antd 已给红字 */
+                /* ignored */
               }
             },
           });

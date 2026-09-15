@@ -35,7 +35,6 @@ class TestReconcilePoller:
         """渠道已付但回调丢失 → poller 查单入账;重复执行零重复入账。"""
         headers = await user_headers(client, "13700000021")
         order = await create_order(client, headers, "66.00")
-        # 渠道侧已支付,无回调
         MockChannel.mark_paid(order["order_no"], "txn-lost-1", "66.00")
         await _backdate_order(sm, order["order_no"], 2)
 
@@ -43,7 +42,6 @@ class TestReconcilePoller:
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "66.00"
 
-        # 幂等:再跑一轮不重复入账
         assert await reconcile_pending_orders(sm) == 0
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "66.00"
@@ -73,7 +71,6 @@ class TestReconcilePoller:
         assert await reconcile_pending_orders(sm) == 1
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "33.00"
-        # 幂等:再跑一轮不重复入账
         assert await reconcile_pending_orders(sm) == 0
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "33.00"
@@ -93,7 +90,6 @@ class TestReconcilePoller:
         assert await reconcile_pending_orders(sm) == 1
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "55.00"
-        # 幂等:再跑一轮不重复入账
         assert await reconcile_pending_orders(sm) == 0
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "55.00"
@@ -113,7 +109,7 @@ class TestReconcilePoller:
             )
             await session.commit()
         MockChannel.mark_paid(order["order_no"], "txn-stale-closed", "45.00")
-        await _backdate_order(sm, order["order_no"], 2)  # created_at 在窗内:仅靠 expires_at 排除
+        await _backdate_order(sm, order["order_no"], 2)
         assert await reconcile_pending_orders(sm) == 0
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "0.00"
@@ -163,17 +159,16 @@ class TestReconcilePoller:
         bad = await create_order(client, headers_bad, "66.00")
         headers_good = await user_headers(client, "13700000032")
         good = await create_order(client, headers_good, "20.00")
-        # 坏单:渠道侧金额不符 → handle_callback 抛 PAYMENT_CHANNEL_ERROR
         MockChannel.mark_paid(bad["order_no"], "txn-bad-amount", "65.90")
         MockChannel.mark_paid(good["order_no"], "txn-good", "20.00")
         await _backdate_order(sm, bad["order_no"], 2)
         await _backdate_order(sm, good["order_no"], 2)
 
-        assert await reconcile_pending_orders(sm) == 1  # 只有好单入账
+        assert await reconcile_pending_orders(sm) == 1
         bad_detail = (
             await client.get(f"/api/v1/wallet/recharges/{bad['order_no']}", headers=headers_bad)
         ).json()
-        assert bad_detail["status"] == "pending"  # 留给人工核验,不静默入账
+        assert bad_detail["status"] == "pending"
         w = (await client.get("/api/v1/wallet", headers=headers_good)).json()
         assert w["balance"] == "20.00"
 
@@ -207,7 +202,6 @@ class TestBackfill:
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "88.00"
 
-        # 重复补单 → 409 冲突,余额不变
         resp = await client.post(
             f"/api/admin/v1/finance/orders/{order['order_no']}/backfill",
             json={"reason": "重复操作"},
@@ -233,7 +227,6 @@ class TestBackfill:
         )
         assert r1.status_code == 200, r1.text
         assert r1.json()["status"] == "paid"
-        # 同键重放:返回当前状态 + X-Idempotent-Replay,不重复入账
         r2 = await client.post(
             f"/api/admin/v1/finance/orders/{order['order_no']}/backfill",
             json={"reason": "回调丢失"},
@@ -268,7 +261,6 @@ class TestBackfill:
         )
         assert r2.status_code == 409
         assert r2.json()["message_key"] == "billing.backfillKeyInUse"
-        # order_b 未入账
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "61.00"
 
@@ -334,7 +326,7 @@ class TestAnomalies:
         await _backdate_order(sm, stale["order_no"], 15)
         closed = await create_order(client, headers, "25.00")
         failed = await create_order(client, headers, "35.00")
-        await client.get("/api/v1/wallet", headers=headers)  # 触发钱包创建
+        await client.get("/api/v1/wallet", headers=headers)
         async with sm() as session:
             await session.execute(
                 update(Order).where(Order.order_no == closed["order_no"]).values(status="closed")
@@ -342,7 +334,6 @@ class TestAnomalies:
             await session.execute(
                 update(Order).where(Order.order_no == failed["order_no"]).values(status="failed")
             )
-            # 负余额钱包
             wallet_row = (await session.execute(select(Wallet).limit(1))).scalar_one_or_none()
             if wallet_row is not None:
                 wallet_row.balance = -5

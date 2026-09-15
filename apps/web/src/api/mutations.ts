@@ -82,7 +82,7 @@ import { keys } from "./keys";
 interface MutationOpts<TData> {
   onSuccess?: (data: TData) => void;
   silentError?: boolean;
-  /** 成功后失效的查询键(前缀匹配);空数组 = 不失效。一律取 keys.ts 的键,不写字面量 */
+  /** 成功后按前缀失效的查询键;空数组表示不失效。 */
   invalidates: readonly (readonly unknown[])[];
 }
 /** 页面侧可传的项;失效域由各 hook 声明 */
@@ -98,7 +98,6 @@ export function useApiMutation<TVars = void, TData = unknown>(
   return useMutation<TData, ApiError, TVars>({
     mutationFn: fn,
     onSuccess: (data) => {
-      // 不 await refetch
       for (const key of opts.invalidates) void queryClient.invalidateQueries({ queryKey: key });
       opts.onSuccess?.(data);
     },
@@ -114,7 +113,7 @@ export const useRegister = (o?: CallerOpts) =>
   useApiMutation((body: RegisterRequest) => registerApiV1AuthRegisterPost(body), { ...o, invalidates: [] });
 export const useLogin = (o?: CallerOpts) =>
   useApiMutation((body: LoginRequest) => loginApiV1AuthLoginPost(body), { ...o, invalidates: [] });
-/** 设置/修改/找回密码(手机号 + 验证码);返回新 token 对。 */
+/** 用手机号与验证码设置、修改或找回密码。 */
 export const useResetPassword = (o?: CallerOpts) =>
   useApiMutation((body: PasswordResetRequest) => resetPasswordApiV1AuthPasswordResetPost(body), {
     ...o,
@@ -128,19 +127,16 @@ export function useLogout() {
       if (scope === "all") {
         await logoutAllApiV1AuthLogoutAllPost();
       } else {
-        // cookie 路径必须带 CSRF 头,不带请求体
         await logoutApiV1AuthLogoutPost({ headers: { "X-Requested-With": "fetch" } });
       }
     } catch {
-      // 登出尽力而为
+      /* ignored */
     }
     authStore.getState().logout();
-    // 整页刷新清全部内存态
     window.location.assign("/login");
   }, []);
 }
 
-// instances:失效实例域与钱包余额
 const INSTANCE_INVALIDATES = [keys.instances.all, keys.wallet, keys.bills.all, keys.billDailySummary.all] as const;
 export const useCreateInstance = (o?: { onSuccess?: (d: unknown) => void; silentError?: boolean }) =>
   useApiMutation(
@@ -170,7 +166,7 @@ export const useRenameInstance = () =>
     ({ uuid, name }: { uuid: string; name: string }) => renameInstanceApiV1InstancesUuidPatch(uuid, { name }),
     { invalidates: [keys.instances.all] },
   );
-/** 包周期续费带幂等键;键由 modal 每次打开生成,关掉重开才换。 */
+/** 包周期续费,幂等键由调用方传入。 */
 export const useRenewInstance = (uuid: string, o?: CallerOpts<RenewOut>) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: InstanceRenew; idempotencyKey: string }) =>
@@ -203,7 +199,6 @@ export const useResetJupyterToken = () =>
     invalidates: [keys.instances.all],
   });
 
-// 在线服务:失效服务域与钱包余额
 const SERVICE_INVALIDATES = [keys.services.all, keys.wallet, keys.bills.all, keys.billDailySummary.all] as const;
 /** 部署服务:幂等键按表单快照派生。 */
 export const useCreateService = (o?: { onSuccess?: (d: ServiceOut) => void; silentError?: boolean }) =>

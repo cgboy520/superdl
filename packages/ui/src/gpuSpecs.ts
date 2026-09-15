@@ -1,7 +1,4 @@
-/**
- * 加速卡公开规格静态表(厂商白皮书理论峰值:FP32 shader 单精,FP16 Tensor 稠密)。
- * 展示处带「理论峰值」脚注(landing.ranking.footnote);key 与后端 `gpu_model` 一致,查询经 getGpuSpec 归一。
- */
+/** 加速卡理论峰值规格表:FP32 shader 单精与 FP16 Tensor 稠密算力。 */
 
 export interface GpuSpec {
   /** 展示名(带空格排版) */

@@ -22,20 +22,19 @@ export const listSearchStore = createStore<{
 }>()((set, get) => ({
   byPath: load(),
   remember: (path, search) => {
-    // 剥离 undefined,避免 JSON 序列化后键残留
     const clean: ListSearch = {};
     for (const [k, v] of Object.entries(search)) if (v !== undefined) clean[k] = v;
     const byPath = { ...get().byPath, [path]: clean };
     try {
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(byPath));
     } catch {
-      /* 存储不可用时只留内存 */
+      /* ignored */
     }
     set({ byPath });
   },
 }));
 
-/** 无记录时的稳定空对象(selector 必须返回稳定引用,否则 useSyncExternalStore 会无限重渲染) */
+/** 无记录时返回的稳定空对象。 */
 const EMPTY: ListSearch = Object.freeze({});
 
 /** 读取某列表路径最近的筛选态(无记录返回稳定的空对象)。 */

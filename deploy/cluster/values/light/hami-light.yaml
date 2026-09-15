@@ -1,9 +1,6 @@
-# HAMi light(k3s)叠加值(在 values/hami.yaml 之上)
 scheduler:
   kubeScheduler:
-    # 上游 scheduler 镜像,钉与集群同版本(键是 image.tag);升级 k3s 时同步改
     image:
       tag: "v1.36.3"
 devicePlugin:
-  # k3s 不设默认运行时:device plugin 与租户 Pod 都显式 runtimeClassName(租户侧由 gpu_adapter 按 distro=k3s 下发)
   runtimeClassName: "nvidia"

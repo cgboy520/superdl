@@ -1,4 +1,4 @@
-"""公告管理:列表含历史、撤回后用户端不可见、撤回幂等(重复 409)。"""
+"""公告列表、发布幂等与撤回契约。"""
 
 from httpx import AsyncClient
 
@@ -32,9 +32,9 @@ class TestAnnouncementAdmin:
         await _publish(client, ops, "公告乙")
         resp = await client.get("/api/admin/v1/announcements", headers=ops)
         rows = resp.json()
-        assert [r["title"] for r in rows] == ["公告乙", "公告甲"]  # 最新在前,含历史
+        assert [r["title"] for r in rows] == ["公告乙", "公告甲"]
         assert all(r["status"] == "published" for r in rows)
-        assert all(r["reached"] == 0 for r in rows)  # 无注册用户时触达 0
+        assert all(r["reached"] == 0 for r in rows)
 
     async def test_publish_idempotent_replay_no_duplicate_fanout(self, client: AsyncClient, sm):
         """同 Idempotency-Key 重放不新建公告。"""
@@ -56,9 +56,9 @@ class TestAnnouncementAdmin:
         assert r2.headers["x-idempotent-replay"] == "true"
         assert r2.json()["reached"] == r1.json()["reached"]
         ids = await _announcement_ids(client, ops)
-        assert len(ids) == 1  # 只落了一条公告
+        assert len(ids) == 1
         notes = (await client.get("/api/v1/notifications", headers=uh)).json()["items"]
-        assert len([n for n in notes if n["type"] == "announcement"]) == 1  # 用户只收到一条
+        assert len([n for n in notes if n["type"] == "announcement"]) == 1
 
     async def test_revoke_hides_from_user_side(self, client: AsyncClient, sm):
         uh = await user_headers(client, "13700000401")
@@ -76,7 +76,6 @@ class TestAnnouncementAdmin:
         assert resp.status_code == 200, resp.text
         assert resp.json()["status"] == "revoked"
 
-        # 用户端不再展示(未读/全部)
         notes = (await client.get("/api/v1/notifications", headers=uh)).json()["items"]
         assert [n for n in notes if n["type"] == "announcement"] == []
         unread = (
@@ -84,7 +83,6 @@ class TestAnnouncementAdmin:
         ).json()["items"]
         assert [n for n in unread if n["type"] == "announcement"] == []
 
-        # 管理端历史保留,撤回信息留痕
         row = (await client.get("/api/admin/v1/announcements", headers=ops)).json()[0]
         assert row["status"] == "revoked"
         assert row["revoked_at"] is not None

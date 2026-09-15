@@ -1,6 +1,6 @@
-"""网关鉴权回调:Envoy `SecurityPolicy.extAuth` 对 `svc-https` listener 的每个请求同步回调,
-2xx 放行、401 拒绝。本端点不带鉴权,靠 core/edge_guard 边缘收口;不过审计中间件、不过通用限流
-(限流在网关 BackendTrafficPolicy);精确路径,网关侧用 `extAuth.http.pathOverride`。
+"""Envoy extAuth 内部回调,须由 edge_guard 限制访问并由网关限流。
+
+成功响应必须显式覆盖端点与密钥归属头,匿名端点也须返回 key-id。
 """
 
 from typing import Annotated
@@ -12,7 +12,6 @@ from app.modules.services import service
 
 router = APIRouter(tags=["endpoint-auth"], include_in_schema=False)
 
-# ext_authz 用客户端原始请求的方法回调,全方法接住
 _EXT_AUTH_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
 
 
@@ -37,7 +36,6 @@ async def authorize_endpoint(
     return Response(
         status_code=200,
         headers={
-            # headersToBackend 是覆盖语义:匿名放行也必须显式回 key-id
             "x-superdl-endpoint": result.slug,
             "x-superdl-key-id": str(result.key_id) if result.key_id is not None else "anonymous",
         },

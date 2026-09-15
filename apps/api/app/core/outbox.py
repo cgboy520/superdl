@@ -1,7 +1,7 @@
 """事务性 outbox:业务写入与 enqueue() 同事务提交;worker 领取执行,失败指数退避,超限进 dead。
 
 领取三段式:claim(FOR UPDATE SKIP LOCKED → running,commit)→ 执行 handler(独立事务,须幂等)
-→ done / 退避回 pending / dead。崩溃遗留的 running 行由 reaper 按 locked_at 超时打回 pending。
+→ done / 退避回 pending / dead。reaper 按 locked_at 回收超时任务,计一次失败并退避或转 dead。
 """
 
 import asyncio
@@ -26,22 +26,19 @@ logger = get_logger(__name__)
 
 MAX_RETRIES = 5
 BACKOFF_BASE_SECONDS = 10
-BACKOFF_MAX_SECONDS = 600  # 退避上限
-# 单个 handler 的执行上限(只取消协程,底层同步线程会跑完但结果丢弃)
+BACKOFF_MAX_SECONDS = 600
 TASK_TIMEOUT_SECONDS = 600.0
-# reaper 把超时 running 打回 pending;须显著大于任何 handler 超时,取默认超时的 2 倍
 RUNNING_TIMEOUT = timedelta(seconds=2 * TASK_TIMEOUT_SECONDS)
 
 
 @dataclass(frozen=True)
 class RetryPolicy:
-    """按任务类型的重试预算与执行超时;默认 5 次 × 10s 指数退避、单轮 600s。
-    在 @outbox_handler(retry=...) 上声明,与 handler 同处一地。"""
+    """任务类型的重试预算、退避和超时;timeout_seconds 为 None 或 0 时用全局超时。"""
 
     max_retries: int = MAX_RETRIES
     backoff_base_seconds: int = BACKOFF_BASE_SECONDS
     backoff_max_seconds: int = BACKOFF_MAX_SECONDS
-    timeout_seconds: float | None = None  # None = TASK_TIMEOUT_SECONDS(测试可 monkeypatch)
+    timeout_seconds: float | None = None
 
 
 DEFAULT_RETRY_POLICY = RetryPolicy()
@@ -65,19 +62,15 @@ class OutboxTask(Base):
         CheckConstraint(
             "status IN ('pending', 'running', 'done', 'dead', 'discarded')", name="status"
         ),
-        # 领取查询 ORDER BY next_retry_at, id
         Index("ix_outbox_tasks_status_next_retry_at_id", "status", "next_retry_at", "id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     type: Mapped[str] = mapped_column(String(64), index=True)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
-    status: Mapped[str] = mapped_column(
-        String(16), default="pending", index=True
-    )  # pending / running / done / dead / discarded(管理端人工忽略)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     retries: Mapped[int] = mapped_column(default=0)
     next_retry_at: Mapped[datetime] = mapped_column(server_default=func.now(), index=True)
-    # 与 workers/main.make_worker_id 的长度预算同步
     locked_by: Mapped[str | None] = mapped_column(String(128))
     locked_at: Mapped[datetime | None]
     last_error: Mapped[str | None] = mapped_column(Text)
@@ -87,12 +80,10 @@ class OutboxTask(Base):
 
 Handler = Callable[[AsyncSession, "OutboxTask"], Awaitable[None]]
 
-# 单次执行结局:done / retry(退避回 pending)/ dead
 Outcome = Literal["done", "retry", "dead"]
 
 _registry: dict[str, Handler] = {}
 
-# payload 内的请求链键:发起请求的 request_id
 REQUEST_ID_KEY = "_request_id"
 
 
@@ -132,11 +123,11 @@ def enqueue(
 async def _claim_one(
     session: AsyncSession, worker_id: str, task_types: frozenset[str] | None = None
 ) -> OutboxTask | None:
-    """领取一个到期任务;task_types 非空时按组件过滤。"""
+    """按到期时间、id 领取并提交一个任务;None 不过滤类型,空集合不领取。"""
     stmt = (
         select(OutboxTask)
         .where(OutboxTask.status == "pending", OutboxTask.next_retry_at <= now_utc())
-        .order_by(OutboxTask.next_retry_at, OutboxTask.id)  # 到期最早优先,id 决胜
+        .order_by(OutboxTask.next_retry_at, OutboxTask.id)
         .limit(1)
         .with_for_update(skip_locked=True)
     )
@@ -180,7 +171,6 @@ async def _process_one(
         new_values = {"status": "dead", "retries": attempt, "last_error": error}
 
     async with sm() as session:
-        # 终态/回退写按 locked_by 校验归属;rowcount==0 = 已被 reaper 回收,放弃本次结果
         result = cast(
             CursorResult[Any],
             await session.execute(
@@ -212,9 +202,10 @@ async def _run_handler(
     attempt: int,
     will_retry: bool,
 ) -> str | None:
-    """在独立事务里执行 handler(带超时,回填发起请求的 request_id 到日志上下文);
-    返回错误摘要(None = 成功)。「还没完成」型任务用抛错表达重试:预算内 warning 不带 traceback,
-    耗尽才记 ERROR。"""
+    """在独立事务中执行 handler,成功时提交;返回错误摘要或 None。
+
+    应用协程超时并绑定 payload 中的 request_id;超时不终止底层同步线程。
+    """
     timeout = policy.timeout_seconds or TASK_TIMEOUT_SECONDS
     request_id = task.payload.get(REQUEST_ID_KEY)
     try:
@@ -306,12 +297,12 @@ async def reap_stuck_running(sm: async_sessionmaker[AsyncSession]) -> int:
 
 
 async def report_pending_metrics(sm: async_sessionmaker[AsyncSession]) -> None:
-    """上报积压指标(定时任务,60s):最老 pending 任务年龄;告警按持续 >600s 判。"""
+    """上报最老 pending 任务自创建以来的秒数;无任务时为 0。"""
     async with sm() as session:
         oldest = (
             await session.execute(
                 select(func.min(OutboxTask.created_at)).where(OutboxTask.status == "pending")
             )
-        ).scalar_one_or_none()  # 无 pending 行时 min() 为 NULL
+        ).scalar_one_or_none()
     age = 0.0 if oldest is None else (now_utc() - ensure_utc(oldest)).total_seconds()
     OUTBOX_PENDING_OLDEST_AGE.set(max(age, 0.0))

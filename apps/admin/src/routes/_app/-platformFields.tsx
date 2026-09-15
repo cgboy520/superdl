@@ -74,7 +74,6 @@ export function useFieldLabel(): (key: string) => string {
   };
 }
 
-// 字段级指引 prose 的 locale 键(platform.fieldExtra.*)
 export const FIELD_EXTRA_KEYS = {
   admin_mfa_enabled: "platform.fieldExtra.admin_mfa_enabled",
   captcha_enabled: "platform.fieldExtra.captcha_enabled",

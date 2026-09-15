@@ -1,4 +1,4 @@
-"""GET /api/v1/bills/daily-summary:本地日界折 UTC 窗口的当日消费聚合。"""
+"""本地日期的消费摘要:日界、金额精度、租户隔离及日/月汇总一致性。"""
 
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -43,12 +43,11 @@ class TestDailySummary:
     async def test_day_boundary_attribution_utc8(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """东八区本地日 D = UTC [D-1 16:00, D 16:00):边界内计入,边界外排除。"""
         headers, uid = await user_headers_with_id(client, "13900010001")
-        inside_first = datetime(2026, 8, 18, 16, 0, tzinfo=UTC)  # 本地 8-19 00:00
-        inside_last = datetime(2026, 8, 19, 15, 0, tzinfo=UTC)  # 本地 8-19 23:00
-        before = datetime(2026, 8, 18, 15, 0, tzinfo=UTC)  # 本地 8-18 23:00
-        after = datetime(2026, 8, 19, 16, 0, tzinfo=UTC)  # 本地 8-20 00:00
+        inside_first = datetime(2026, 8, 18, 16, 0, tzinfo=UTC)
+        inside_last = datetime(2026, 8, 19, 15, 0, tzinfo=UTC)
+        before = datetime(2026, 8, 18, 15, 0, tzinfo=UTC)
+        after = datetime(2026, 8, 19, 16, 0, tzinfo=UTC)
         await seed_bill_hourly(
             sm,
             uid,
@@ -67,7 +66,6 @@ class TestDailySummary:
     async def test_decimal_sum_precision(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """0.01 级金额累加 10 次 = 0.10。"""
         headers, uid = await user_headers_with_id(client, "13900010002")
         await seed_bill_hourly(
             sm,
@@ -89,7 +87,6 @@ class TestDailySummary:
     async def test_disk_daily_counted(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """当日窗口内的数据盘日结计入 disk_total。"""
         headers, uid = await user_headers_with_id(client, "13900010005")
         await seed_disk_daily(sm, uid, datetime(2026, 8, 19, 0, 0, tzinfo=UTC), "3.50")
         await seed_disk_daily(sm, uid, datetime(2026, 8, 20, 0, 0, tzinfo=UTC), "3.50")
@@ -126,9 +123,7 @@ class TestMonthMatchesDays:
     async def test_daily_summaries_sum_to_month_summary(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """整月的日账单相加等于月账单。"""
         headers, uid = await user_headers_with_id(client, "13900010009")
-        # 边界(东八区):7-31 23:00 在 8 月之外;8-01 00:00 与 8-31 23:00 在内
         await seed_bill_hourly(
             sm,
             uid,
@@ -148,7 +143,6 @@ class TestMonthMatchesDays:
         assert resp.status_code == 200, resp.text
         assert resp.json()["gpu_total"] == "3.00"
 
-        # 逐日相加 == 月合计
         total = Decimal("0.00")
         for day in range(1, 32):
             body = await get_summary(client, headers, f"2026-08-{day:02d}")

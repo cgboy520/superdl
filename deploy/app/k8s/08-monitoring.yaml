@@ -1,5 +1,3 @@
-# 平台指标抓取接线(superdl_* 告警规则依赖)。CRD 由 kube-prometheus-stack 提供。
-# /metrics 有 Bearer 门禁(SUPERDL_METRICS_TOKEN),凭据引用同命名空间的 superdl-metrics
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -11,7 +9,7 @@ spec:
     matchLabels: {app: superdl-api}
   endpoints:
     - port: http
-      path: /metrics/   # Starlette mount 对 /metrics 裸路径先 307 跳 /metrics/
+      path: /metrics/
       interval: 30s
       authorization:
         type: Bearer
@@ -19,7 +17,6 @@ spec:
           name: superdl-metrics
           key: SUPERDL_METRICS_TOKEN
 ---
-# worker 无 Service,用 PodMonitor 直抓;/metrics 与 API 同一 Bearer 门禁(workers/main.py)
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:

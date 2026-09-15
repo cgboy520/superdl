@@ -9,7 +9,7 @@ import type { ComponentObjectOut } from './componentObjectOut';
 import type { ComponentProbeOutKey } from './componentProbeOutKey';
 
 /**
- * 体检项的实时深探结果。快照答「就绪几个」,深探答「为什么不就绪」。
+ * 组件实时探测事实、Pod 与事件。
  */
 export interface ComponentProbeOut {
   events?: ComponentObjectOut[];

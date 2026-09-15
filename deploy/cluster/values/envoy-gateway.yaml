@@ -1,24 +1,17 @@
-# Envoy Gateway 控制面参数(数据面参数在 deploy/app/k8s/04-gateway.yaml 的 EnvoyProxy superdl-proxy)。
-# CRD 由 presync 的 ../gateway-api-crds.sh 单点管(helmfile 侧 crds.enabled=false)
 
 deployment:
-  # 2 副本热备选主
   replicas: 2
   priorityClassName: system-cluster-critical
   envoyGateway:
-    # 内存随 HTTPRoute 条数涨,按实测复核;只限内存不限 CPU
     resources:
       requests: {cpu: 100m, memory: 256Mi}
       limits: {memory: 1024Mi}
   pod:
     nodeSelector:
-      # 平台组件落点锚点(与 deploy/app/k8s 一致,由 deploy/ansible/site.yml 打);不许换成节点可自述的键;GPU 节点禁止打
       node-restriction.kubernetes.io/superdl-infra: "true"
     tolerations:
-      # 与 nodeSelector 成对(server 带 CriticalAddonsOnly=true:NoExecute,rke2/server-config.yaml)
       - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
     topologySpreadConstraints:
-      # 选择器只用 chart 恒定的 control-plane / app.kubernetes.io/name 标签,不用 instance
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
         whenUnsatisfiable: ScheduleAnyway
@@ -35,11 +28,9 @@ deployment:
             app.kubernetes.io/name: gateway-helm
 
 podDisruptionBudget:
-  # chart 默认 0
   minAvailable: 1
 
 certgen:
-  # pre-install/pre-upgrade 钩子 Job(生成控制面自签证书),与控制面同落 infra;nodeSelector 与容忍成对
   job:
     nodeSelector:
       node-restriction.kubernetes.io/superdl-infra: "true"
@@ -50,5 +41,4 @@ config:
   envoyGateway:
     logging:
       level:
-        # 路由不生效(sectionName / certificateRefs 写错)只在控制面日志与策略 status 里留痕
         default: info

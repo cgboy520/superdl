@@ -1,6 +1,4 @@
-/** 集群页:连接状态 / 配置就绪 / 组件体检(面板网格)/ 池分布。
- *  组件体检整幅铺开,一项一个小面板,故障项置顶;点面板进 /cluster/<key> 的诊断抽屉(子路由遮罩)。
- *  页顶横幅经 AttentionBar 聚合为一条(ui-ux-spec §1 规则 1:一页至多一条)。 */
+/** 集群页:连接状态、配置就绪、组件体检与池分布。 */
 
 import { CheckCircleFilled, CloseCircleFilled } from "@ant-design/icons";
 import { COMPONENT_HEALTH_ORDER, adminColors, formatDateTime, isComponentAttention, metaOf, space } from "@superdl/ui";
@@ -44,7 +42,7 @@ function ClusterPage() {
       },
       onError: (e) => {
         message.error(errText(e, t("cluster.testFailed")));
-        void qc.invalidateQueries({ queryKey }); // 失败也要刷新:error 已落缓存,刷新后红牌才可见
+        void qc.invalidateQueries({ queryKey });
       },
     },
   });
@@ -189,7 +187,6 @@ function ClusterPage() {
                       );
                     })}
                 </Space>
-                {/* 档位能不能卖看池里有没有 Ready 节点;组件体检只说组件事实,不掺库存解读 */}
                 <Typography.Text type="secondary">{t("cluster.poolReadyHint")}</Typography.Text>
               </Space>
             </Card>

@@ -1,6 +1,6 @@
-"""生产 K8s 编排(kubernetes 官方同步客户端,全部调用经 _run 出让到专属执行器)。
+"""K8s 编排实现;异步入口通过专属执行器调用官方同步客户端。
 
-对象命名:pod/svc/httproute 同名 = instance uuid;统一打标 superdl.io/instance。
+实例 Pod、SSH Service 和 HTTPRoute 使用实例名;Jupyter 和服务端点 Service 分别加后缀。
 """
 
 import asyncio
@@ -55,13 +55,10 @@ from app.core.logging import get_logger
 from app.core.registry import PULL_SECRET_FINGERPRINT_ANNOTATION, PULL_SECRET_NAME
 
 INSTANCE_LABEL = "superdl.io/instance"
-PREWARM_LABEL = "superdl.io/prewarm"  # 预热 Job 专用标签
-# Envoy 数据面 Pod 所在 ns(≠ base.GATEWAY_NAMESPACE),与 deploy/cluster/helmfile.yaml.gotmpl
-# 的 envoy-gateway release namespace 一致
+PREWARM_LABEL = "superdl.io/prewarm"
 GATEWAY_DATAPLANE_NAMESPACE = "envoy-gateway-system"
 
 
-# 租户 ns 的 PSA 标签:enforce baseline(平台镜像以 root 运行),audit/warn restricted
 TENANT_NS_PSA_LABELS = {
     "pod-security.kubernetes.io/enforce": "baseline",
     "pod-security.kubernetes.io/audit": "restricted",
@@ -70,8 +67,7 @@ TENANT_NS_PSA_LABELS = {
 
 
 def tenant_security_context() -> "client.V1SecurityContext":
-    """租户容器加固基线(无条件下发):不设 runAsNonRoot;drop ALL 后 add 回
-    SYS_CHROOT/SETUID/SETGID(sshd 预认证特权分离所需)。见 docs/decisions.md。"""
+    """租户容器基线:禁提权、RuntimeDefault seccomp,仅保留 SYS_CHROOT/SETUID/SETGID。"""
     return client.V1SecurityContext(
         allow_privilege_escalation=False,
         capabilities=client.V1Capabilities(drop=["ALL"], add=["SYS_CHROOT", "SETUID", "SETGID"]),
@@ -80,8 +76,7 @@ def tenant_security_context() -> "client.V1SecurityContext":
 
 
 def platform_job_security_context() -> "client.V1SecurityContext":
-    """superdl ns 一次性 Job(预热/配额)的 PSA restricted 上下文:非 root + 零 capability。
-    擦除 Job 不用它(在租户 ns 以 root 运行)。"""
+    """平台 Job 的非 root 上下文:UID/GID 65534、禁提权、零 capability、RuntimeDefault seccomp。"""
     return client.V1SecurityContext(
         run_as_non_root=True,
         run_as_user=65534,
@@ -127,7 +122,6 @@ def _is_node_port_taken(exc: client.ApiException) -> bool:
     return exc.status == 422 and "already allocated" in str(exc.body or "")
 
 
-# 租户 ns 兜底配额(主闸是每用户配额);含 cpu/memory/ephemeral 后 ns 内 Pod 必须声明 request/limit
 TENANT_QUOTA = {
     "pods": "64",
     "services": "64",
@@ -139,13 +133,10 @@ TENANT_QUOTA = {
     "limits.memory": "1Ti",
     "limits.ephemeral-storage": "500Gi",
 }
-# LimitRange:给未声明 request/limit 的容器注默认值;PID 上限由 kubelet podPidsLimit 承担
 TENANT_LIMIT_DEFAULT_REQUEST = {"cpu": "100m", "memory": "256Mi", "ephemeral-storage": "1Gi"}
 TENANT_LIMIT_DEFAULT = {"cpu": "8", "memory": "32Gi", "ephemeral-storage": "64Gi"}
-# 租户 ns 内授予 tenant-mgr 的 secrets Role/RoleBinding 名(与 deploy/app/k8s/01-rbac.yaml 同源)
 TENANT_MGR_ROLE_NAME = "superdl-tenant-mgr-secrets"
 TENANT_MGR_SA_NAME = "superdl-tenant-mgr"
-# 租户 Egress 禁访的内网/元数据网段(100.64.0.0/10 = CGNAT,198.18.0.0/15 = 基准测试段);IPv6 不入表
 PRIVATE_CIDRS = [
     "10.0.0.0/8",
     "172.16.0.0/12",
@@ -154,8 +145,6 @@ PRIVATE_CIDRS = [
     "100.64.0.0/10",
     "198.18.0.0/15",
 ]
-# Egress TCP 端口黑名单:SMTP(25/465/587)、SMB/NetBIOS(135/139/445)、Telnet(23)、RDP(3389)、
-# MySQL/PG/Redis/ES/Memcached/MongoDB(3306/5432/6379/9200/11211/27017);例外走工单白名单
 EGRESS_BLOCKED_TCP_PORTS = (
     23,
     25,
@@ -172,13 +161,9 @@ EGRESS_BLOCKED_TCP_PORTS = (
     11211,
     27017,
 )
-# 公网 UDP 白名单:53 / 443(QUIC);其余走工单白名单
 EGRESS_ALLOWED_UDP_PORTS = (53, 443)
 
-# 数据盘擦除 Job 镜像:digest 钉死(与 scripts/release.sh 的清单镜像同规矩)
 WIPE_IMAGE = "busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662"
-# 租户容器 ephemeral-storage(可写层 + 日志 + emptyDir);超 limit 即驱逐。
-# request 是调度器预留量:每节点超卖比 = limit/request,压到 6.4 倍(ns 配额 500Gi 同时约束总量)
 TENANT_EPHEMERAL_REQUEST = "10Gi"
 TENANT_EPHEMERAL_LIMIT = "64Gi"
 
@@ -242,8 +227,7 @@ logger = get_logger(__name__)
 
 
 def build_instance_pod(spec: InstancePodSpec) -> "client.V1Pod":
-    """实例 Pod 对象(纯构造,不触 API);CI 用它对准入策略做 dry-run 对账
-    (scripts/render_admission_probes.py)。"""
+    """构造实例 Pod,不调用 API;secret_env 通过 Secret 引用注入。"""
     requests = {
         "cpu": str(spec.vcpu),
         "memory": f"{spec.mem_gb}Gi",
@@ -252,7 +236,6 @@ def build_instance_pod(spec: InstancePodSpec) -> "client.V1Pod":
     }
     limits = {**requests, "ephemeral-storage": TENANT_EPHEMERAL_LIMIT}
     env = [client.V1EnvVar(name=k, value=v) for k, v in spec.env.items()]
-    # 敏感值以 secretKeyRef 引用 per-instance Secret
     secret_name = instance_env_secret_name(spec.name)
     env.extend(
         client.V1EnvVar(
@@ -292,16 +275,13 @@ def build_instance_pod(spec: InstancePodSpec) -> "client.V1Pod":
         ),
         spec=client.V1PodSpec(
             runtime_class_name=spec.runtime_class,
-            scheduler_name=spec.scheduler_name,  # HAMi 池 = hami-scheduler(不赖 webhook)
-            # 共享池 hostUsers: false(userns);独享 Kata 走默认
+            scheduler_name=spec.scheduler_name,
             host_users=False if spec.host_users is False else None,
-            # dev Never;service Always(kubelet 原地重启容器)
             restart_policy=spec.restart_policy,
             node_selector=spec.node_selector or None,
             termination_grace_period_seconds=30,
             automount_service_account_token=False,
             enable_service_links=False,
-            # Harbor 拉取凭据(未配机器人则不引用)
             image_pull_secrets=(
                 [client.V1LocalObjectReference(name=spec.image_pull_secret)]
                 if spec.image_pull_secret
@@ -327,28 +307,21 @@ def build_instance_pod(spec: InstancePodSpec) -> "client.V1Pod":
     )
 
 
-# 平台组件的对象名:体检按这些认对象,与 deploy/cluster 的 helmfile release 一致
 _HAMI_SCHEDULER = "hami-scheduler"
 _HAMI_DEVICE_PLUGIN = "hami-device-plugin"
 _CERT_MANAGER_DEPLOYS = ("cert-manager", "cert-manager-webhook", "cert-manager-cainjector")
 _GPU_ALLOCATABLE = "nvidia.com/gpu"
-# GFD 写的驱动版本标签;台账同源(见 nodes 模块)
 _DRIVER_LABEL = "nvidia.com/cuda.driver-version.full"
 
 
 @dataclass
 class _Workloads:
-    """能力探测取回的平台工作负载,按体检项归位。
-
-    每项留的是 WorkloadRow(就绪数 / 期望数 / 镜像 / 未就绪 reason),不是布尔:
-    「名字存在」证明不了「在工作」,0/8 全崩的 operand 不能判绿。
-    """
+    """按体检项归类的平台工作负载就绪事实。"""
 
     hami_scheduler: WorkloadRow = field(default_factory=lambda: WorkloadRow(_HAMI_SCHEDULER))
     hami_device_plugin: WorkloadRow = field(
         default_factory=lambda: WorkloadRow(_HAMI_DEVICE_PLUGIN)
     )
-    # gpu-operator 的 operand:取它 Deployment 所在 ns 下的全部 DaemonSet,不写死名单
     gpu_operator_ns: str = ""
     gpu_operands: list[WorkloadRow] = field(default_factory=list)
     dcgm: list[WorkloadRow] = field(default_factory=list)
@@ -373,7 +346,7 @@ def _first_image(template: Any) -> str:
 
 
 def _condition_reason(conditions: Any) -> str:
-    """conditions 里第一条非 True 的 reason。Deployment 卡住的真原因在这里,今天被丢掉。"""
+    """返回非 True 条件中的首个非空 reason,没有则返回空串。"""
     for c in conditions or []:
         if getattr(c, "status", "") != "True":
             reason = str(getattr(c, "reason", "") or "")
@@ -460,7 +433,6 @@ class _NodeProbe:
     driver_version: str = ""
 
 
-# 深探按 Pod 名片段定位对象(与探测侧同口径,不写死命名空间)。不在表里的项没有可深探的 Pod
 _DETAIL_POD_PATTERNS: dict[str, tuple[str, ...]] = {
     "hami": ("hami-",),
     "gpu_operator": ("nvidia-", "gpu-feature-discovery", "node-feature-discovery"),
@@ -471,7 +443,6 @@ _DETAIL_POD_PATTERNS: dict[str, tuple[str, ...]] = {
     "cert_manager": ("cert-manager",),
     "monitoring": ("prometheus-", "alertmanager-"),
 }
-# 深探每张表的行数上限:现场明细只为定位问题,不做全量台账
 _DETAIL_MAX_ROWS = 20
 _CERT_MANAGER_GROUP = "cert-manager.io"
 _CERT_MANAGER_VERSION = "v1"
@@ -479,10 +450,7 @@ _CERTIFICATES_PLURAL = "certificates"
 
 
 def _pod_not_ready_reason(pod: Any) -> str:
-    """容器级卡住原因(ImagePullBackOff / CrashLoopBackOff / OOMKilled …)。
-
-    Pod phase 只说 Pending/Running,真原因在 containerStatuses 的 waiting/terminated 里。
-    """
+    """返回容器 waiting/terminated 的首个非 Completed 原因,否则取未调度原因。"""
     for cs in (pod.status.container_statuses or []) + (pod.status.init_container_statuses or []):
         state = cs.state
         for sub in (getattr(state, "waiting", None), getattr(state, "terminated", None)):
@@ -560,7 +528,7 @@ def _assemble_probe(
     *,
     error: str | None,
 ) -> ClusterProbe:
-    """事实 → 布尔列(门禁用,口径不变)+ component_facts(体检面板用)。"""
+    """将探测行转换为能力快照和组件事实。"""
     pools, pools_ready = health.pool_counts(nodes.rows)
     nodes_ready = sum(pools_ready.values())
     rc_names = {r.name for r in rcs}
@@ -620,7 +588,7 @@ class RealOrchestrator:
             self.settings.k8s_connect_timeout_seconds,
             self.settings.k8s_read_timeout_seconds,
         )
-        self._timeout = timeout  # 供探测等裸客户端包装(见 _probe_cluster_sync)
+        self._timeout = timeout
         self.core = cast(client.CoreV1Api, _TimeoutApi(client.CoreV1Api(), timeout))
         self.net = cast(client.NetworkingV1Api, _TimeoutApi(client.NetworkingV1Api(), timeout))
         self.batch = cast(client.BatchV1Api, _TimeoutApi(client.BatchV1Api(), timeout))
@@ -628,9 +596,7 @@ class RealOrchestrator:
             client.RbacAuthorizationV1Api,
             _TimeoutApi(client.RbacAuthorizationV1Api(), timeout),
         )
-        # Gateway API 无 typed model,HTTPRoute 走 CustomObjectsApi
         self.custom = cast(client.CustomObjectsApi, _TimeoutApi(client.CustomObjectsApi(), timeout))
-        # 探测专用客户端共享同一个 ApiClient(单 PoolManager)
         probe_client = client.ApiClient()
         self._version = cast(
             client.VersionApi, _TimeoutApi(client.VersionApi(probe_client), timeout)
@@ -640,14 +606,11 @@ class RealOrchestrator:
         self._storage = cast(
             client.StorageV1Api, _TimeoutApi(client.StorageV1Api(probe_client), timeout)
         )
-        # K8s 同步调用走专属有界执行器,与默认执行器隔离
         self._executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="k8s")
 
     async def _run(self, fn: Any, *args: Any) -> Any:
-        """asyncio.to_thread 等价物,换专属执行器。"""
+        """在专属线程池执行同步调用;不传播 contextvars。"""
         return await asyncio.get_running_loop().run_in_executor(self._executor, fn, *args)
-
-    # ---------- namespace ----------
 
     async def ensure_namespace(self, namespace: str) -> None:
         await self._run(self._ensure_namespace_sync, namespace)
@@ -655,7 +618,6 @@ class RealOrchestrator:
     def _ensure_namespace_sync(self, namespace: str) -> None:
         labels = {MANAGED_LABEL: "true", **TENANT_NS_PSA_LABELS}
         ns = client.V1Namespace(metadata=client.V1ObjectMeta(name=namespace, labels=labels))
-        # 既有 ns 也 patch 补标
         _create_or_patch(
             lambda: self.core.create_namespace(ns),
             lambda: self.core.patch_namespace(namespace, {"metadata": {"labels": labels}}),
@@ -700,7 +662,6 @@ class RealOrchestrator:
         )
 
         def _patch_binding() -> None:
-            # roleRef 不可变,存量绑定只收敛 subjects
             self.rbac.patch_namespaced_role_binding(
                 TENANT_MGR_ROLE_NAME, namespace, {"subjects": binding.subjects}
             )
@@ -733,7 +694,7 @@ class RealOrchestrator:
     def _tenant_netpol(self, namespace: str) -> "client.V1NetworkPolicy":
         """租户 NetworkPolicy。入方向:默认拒东西向,放行网关数据面(不限端口)与 SSH 22
         (from 排 Pod 网段,不排私网);出方向:公网除私网/元数据网段,TCP 扣黑名单,
-        UDP 白名单 53/443,+ CoreDNS。见 docs/reference/security.md「已接受取舍」。
+        UDP 白名单 53/443,+ CoreDNS。
         """
         return client.V1NetworkPolicy(
             metadata=client.V1ObjectMeta(name="tenant-default", namespace=namespace),
@@ -741,7 +702,6 @@ class RealOrchestrator:
                 pod_selector=client.V1LabelSelector(),
                 policy_types=["Ingress", "Egress"],
                 ingress=[
-                    # 北向:Envoy 数据面 → 租户 Pod,不限端口
                     client.V1NetworkPolicyIngressRule(
                         _from=[
                             client.V1NetworkPolicyPeer(
@@ -753,14 +713,12 @@ class RealOrchestrator:
                             )
                         ],
                     ),
-                    # SSH NodePort 入流量:排 Pod 网段
                     client.V1NetworkPolicyIngressRule(
                         _from=self._ssh_ingress_peers(),
                         ports=[client.V1NetworkPolicyPort(protocol="TCP", port=22)],
                     ),
                 ],
                 egress=[
-                    # DNS:只放 CoreDNS Pod
                     client.V1NetworkPolicyEgressRule(
                         to=[
                             client.V1NetworkPolicyPeer(
@@ -777,7 +735,6 @@ class RealOrchestrator:
                             client.V1NetworkPolicyPort(protocol="TCP", port=53),
                         ],
                     ),
-                    # 公网 TCP:除私网/元数据网段,端口扣黑名单
                     client.V1NetworkPolicyEgressRule(
                         to=[
                             client.V1NetworkPolicyPeer(
@@ -786,7 +743,6 @@ class RealOrchestrator:
                         ],
                         ports=_allowed_tcp_port_ranges(),
                     ),
-                    # 公网 UDP 白名单(EGRESS_ALLOWED_UDP_PORTS)
                     client.V1NetworkPolicyEgressRule(
                         to=[
                             client.V1NetworkPolicyPeer(
@@ -803,8 +759,7 @@ class RealOrchestrator:
         )
 
     def _ssh_ingress_peers(self) -> list[Any]:
-        """0.0.0.0/0 排 Pod 网段(空配置不下发 except)。跨节点 NodePort 的 SNAT 来源是入口节点
-        cilium_host,落在排掉的网段里,按身份放行见 deploy/cluster/cilium-policies.yaml。"""
+        """允许 IPv4 SSH 来源但排除配置的 Pod 网段;空配置不设置 except。"""
         cidr = (self.settings.tenant_pod_cidr or "").strip()
         return [
             client.V1NetworkPolicyPeer(
@@ -829,8 +784,6 @@ class RealOrchestrator:
             lambda: self.core.patch_namespaced_resource_quota("tenant-quota", namespace, quota),
         )
 
-    # ---------- instance ----------
-
     async def create_instance(self, spec: InstancePodSpec) -> None:
         await self._run(self._create_instance_sync, spec)
 
@@ -840,8 +793,6 @@ class RealOrchestrator:
         self._create_pod_sync(spec)
         self._create_service_sync(spec)
         self._create_httproute_sync(spec)
-
-    # ---------- 平台托管的镜像拉取凭据 ----------
 
     async def ensure_pull_secret(
         self, namespace: str, dockerconfigjson: str, fingerprint: str
@@ -928,7 +879,6 @@ class RealOrchestrator:
         except client.ApiException as exc:
             if not _is_conflict(exc):
                 raise
-            # 同名对象 Terminating 时也是 409,不当幂等成功
             existing: Any = self.core.read_namespaced_pod(spec.name, spec.namespace)
             if existing.metadata.deletion_timestamp is not None:
                 raise RuntimeError(
@@ -975,7 +925,6 @@ class RealOrchestrator:
         try:
             self.core.create_namespaced_service(spec.namespace, svc)
         except client.ApiException as exc:
-            # 409 / 422 都可能是自己的幂等重放,由 _reconcile_ssh_service_conflict_sync 核对
             if not (_is_conflict(exc) or _is_node_port_taken(exc)):
                 raise
             self._reconcile_ssh_service_conflict_sync(spec, exc)
@@ -1005,8 +954,10 @@ class RealOrchestrator:
     def _reconcile_ssh_service_conflict_sync(
         self, spec: InstancePodSpec, create_exc: "client.ApiException"
     ) -> None:
-        """SSH Service 409/422 核对:同名对象存在且 nodePort 一致 = 幂等成功,漂移则 patch 回;
-        同名不存在 = 端口真被占,抛 NodePortTaken。"""
+        """核对冲突的 SSH Service;端口相同则跳过,漂移则 patch,删除中则报错。
+
+        分配冲突且同名对象不存在,或 patch 遇分配冲突时抛 NodePortTaken。
+        """
         port = spec.ssh_node_port
         if port is None:
             raise RuntimeError(f"instance {spec.name} ssh service conflict without a node port")
@@ -1023,7 +974,7 @@ class RealOrchestrator:
         ports = (existing.spec and existing.spec.ports) or []
         current = ports[0].node_port if ports else None
         if current == spec.ssh_node_port:
-            return  # 幂等成功:已创建的就是期望端口
+            return
         try:
             self.core.patch_namespaced_service(
                 spec.name,
@@ -1042,7 +993,6 @@ class RealOrchestrator:
                 },
             )
         except client.ApiException as patch_exc:
-            # 期望端口被其它对象占用,交编排层换端口
             if _is_node_port_taken(patch_exc):
                 raise NodePortTaken(port) from patch_exc
             raise
@@ -1111,7 +1061,6 @@ class RealOrchestrator:
         await self._run(self._delete_instance_sync, namespace, name, force)
 
     def _delete_instance_sync(self, namespace: str, name: str, force: bool = False) -> None:
-        # 强删(grace 0)直接摘对象
         pod_kwargs = {"grace_period_seconds": 0} if force else {}
         for deleter in (
             lambda: self.core.delete_namespaced_pod(name, namespace, **pod_kwargs),
@@ -1164,7 +1113,6 @@ class RealOrchestrator:
         return await self._run(self._read_instance_logs_sync, namespace, name, tail_lines)
 
     def _read_instance_logs_sync(self, namespace: str, name: str, tail_lines: int) -> str:
-        # 日志读超时收紧到 5s
         return cast(
             str,
             self.core.read_namespaced_pod_log(
@@ -1198,7 +1146,6 @@ class RealOrchestrator:
             if not ns.startswith(prefix):
                 continue
             name = svc.metadata.name
-            # 副名归并到实例名(<uuid>-jupyter / <uuid>-svc → <uuid>)
             for suffix in ("-jupyter", "-svc"):
                 if name.endswith(suffix):
                     name = name[: -len(suffix)]
@@ -1221,7 +1168,6 @@ class RealOrchestrator:
         return await self._run(self._used_node_ports_sync)
 
     def _used_node_ports_sync(self) -> set[int]:
-        # 列全集群 Service 的 NodePort,不按 MANAGED_LABEL 过滤(blocked 端口的占用者是非平台对象)
         ports: set[int] = set()
         for svc in self._list_all(self.core.list_service_for_all_namespaces):
             for p in svc.spec.ports or []:
@@ -1231,8 +1177,7 @@ class RealOrchestrator:
 
     @staticmethod
     def batch_container(name: str, image: str, command: list[str], env: list[Any]) -> Any:
-        """一次性 Job 容器基座(现只剩镜像预热):资源声明 + 非 root 安全上下文。
-        租户 ns 的 ResourceQuota 要求显式声明 request/limit。"""
+        """构造一次性 Job 容器,声明资源请求/上限并应用非 root 安全上下文。"""
         return client.V1Container(
             name=name,
             image=image,
@@ -1245,14 +1190,12 @@ class RealOrchestrator:
             security_context=platform_job_security_context(),
         )
 
-    # ---------- 数据盘 ----------
-
     async def ensure_data_disk(self, namespace: str, name: str, size_gb: int) -> None:
         await self._run(self._ensure_data_disk_sync, namespace, name, size_gb)
 
     @staticmethod
     def _requested_gi(pvc: Any) -> int:
-        """PVC 已申领容量(GiB);非 Gi 单位或读不到按 0,促使调用方按目标值 patch。"""
+        """读取整数字符串 Gi 容量;缺失或其它格式返回 0。"""
         spec = getattr(pvc, "spec", None)
         res = getattr(spec, "resources", None) if spec else None
         value = (getattr(res, "requests", None) or {}).get("storage") if res else None
@@ -1261,8 +1204,7 @@ class RealOrchestrator:
         return 0
 
     def _ensure_data_disk_sync(self, namespace: str, name: str, size_gb: int) -> None:
-        """一盘一 PVC(幂等):PVC 容量即硬配额——CephFS CSI 建带配额的 subvolume,
-        不再起 CLI Job 下发。已存在且不足则扩容(SC 开 allowVolumeExpansion);缩容不做。"""
+        """创建 CephFS RWX PVC;已有容量不足则申请扩容,不主动缩容。"""
         want = f"{size_gb}Gi"
         existing: Any = _ignore(
             lambda: self.core.read_namespaced_persistent_volume_claim(name, namespace), 404
@@ -1273,7 +1215,6 @@ class RealOrchestrator:
                     name=name, namespace=namespace, labels={MANAGED_LABEL: "true"}
                 ),
                 spec=client.V1PersistentVolumeClaimSpec(
-                    # RWX:同一盘可先后被不同节点上的实例挂载
                     access_modes=["ReadWriteMany"],
                     storage_class_name=DATA_DISK_STORAGE_CLASS,
                     resources=client.V1VolumeResourceRequirements(requests={"storage": want}),
@@ -1297,8 +1238,6 @@ class RealOrchestrator:
         PVC 不存在或租户 ns 已消失都视为成功(删盘链路幂等)。"""
         _ignore(lambda: self.core.delete_namespaced_persistent_volume_claim(name, namespace), 404)
 
-    # ---------- 节点 ----------
-
     @staticmethod
     def _gpu_amount(resources: dict[str, Any] | None) -> int:
         """整卡 + MIG 分片统一计数(HAMi 池的 nvidia.com/gpu 为虚拟化后份额)。"""
@@ -1310,8 +1249,10 @@ class RealOrchestrator:
 
     @staticmethod
     def _physical_gpu_amount(node: Any) -> int:
-        """节点物理卡数:以 GFD 标签 nvidia.com/gpu.count 为准;非切分池无标签按 allocatable;
-        hami 池缺标签计 0 并告警。"""
+        """GFD 正整数卡数小于 allocatable 时取 GFD;否则有配额的 HAMi 节点报错并计 0。
+
+        其余情况返回 allocatable 的整卡/MIG 份数。
+        """
         labels = node.metadata.labels or {}
         gfd = labels.get("nvidia.com/gpu.count")
         allocatable = RealOrchestrator._gpu_amount(node.status.allocatable)
@@ -1369,7 +1310,7 @@ class RealOrchestrator:
                 return items
 
     def _used_gpus_by_node(self) -> dict[str, int]:
-        """全部受管 Pod 按节点聚合已用份额(物理卡当量,HAMi 折算后向上取整);未调度 Pod 跳过。"""
+        """按节点汇总非 Failed 的受管 Pod GPU 当量并向上取整;跳过未调度 Pod。"""
         pods = self._list_all(
             self.core.list_pod_for_all_namespaces,
             label_selector=MANAGED_LABEL,
@@ -1389,7 +1330,6 @@ class RealOrchestrator:
         return await self._run(self._list_nodes_sync, include_unlabeled)
 
     async def set_node_labels(self, node_name: str, labels: dict[str, str | None]) -> None:
-        # None 值原样进 patch body:merge-patch 里 null 即删键
         await self._run(self.core.patch_node, node_name, {"metadata": {"labels": labels}})
 
     @staticmethod
@@ -1397,7 +1337,6 @@ class RealOrchestrator:
         """K8s 资源量(如 49192080Ki / 200Gi / 500M)转字节。无法解析返回 0。"""
         if not q:
             return 0
-        # 节点容量只见过二进制单位(memory 为 Ki,ephemeral-storage 为 Ki 或裸字节)与十进制 G/M
         units = {
             "Ki": 1024,
             "Mi": 1024**2,
@@ -1406,7 +1345,6 @@ class RealOrchestrator:
             "G": 1000**3,
             "M": 1000**2,
         }
-        # 长后缀优先("Gi" 先于 "G")
         for suf in sorted(units, key=len, reverse=True):
             if q.endswith(suf):
                 try:
@@ -1443,7 +1381,7 @@ class RealOrchestrator:
     def _list_nodes_sync(self, include_unlabeled: bool = False) -> list[NodeInfo]:
         selector = None if include_unlabeled else POOL_NODE_LABEL
         nodes = self._list_all(self.core.list_node, label_selector=selector)
-        used_by_node = self._used_gpus_by_node()  # 一次拉取全量,避免逐节点扫 Pod
+        used_by_node = self._used_gpus_by_node()
         out: list[NodeInfo] = []
         for node in nodes:
             labels = node.metadata.labels or {}
@@ -1544,7 +1482,7 @@ class RealOrchestrator:
         )
 
     def _detail_nodes_sync(self) -> ComponentDetail:
-        """节点的非 Ready 压力条件与污点 —— 快照只留 Ready 一位,压力条件在这里才看得见。"""
+        """列出存在非 Ready 真值条件或污点的节点,明细按上限截断。"""
         rows: list[ComponentObject] = []
         for node in self._list_all(self.core.list_node):
             pressure = [
@@ -1616,7 +1554,6 @@ class RealOrchestrator:
         return await self._run(self._probe_cluster_sync)
 
     def _probe_cluster_sync(self) -> ClusterProbe:
-        # 版本失败 = API 不可达,后续列不再试;其余逐项独立探测,单项 ApiException 只记进 error
         try:
             version: Any = self._version.get_code()
             git_version = getattr(version, "git_version", None)
@@ -1635,7 +1572,6 @@ class RealOrchestrator:
                 return default
 
         workloads = step("apps", self._probe_workloads_sync, _Workloads())
-        # 网关就绪 = Gateway 对象的 Programmed 条件;404(CRD 未装 / 未下发)是没就绪,不算 error
         gateway = step("gateway", self._probe_gateway_sync, _GatewayProbe(), ignore=(404,))
         runtime_classes = step("runtimeclasses", self._runtime_class_rows_sync, [])
         storage_classes = step("storageclasses", self._storage_class_rows_sync, [])
@@ -1651,15 +1587,11 @@ class RealOrchestrator:
         )
 
     def _probe_workloads_sync(self) -> "_Workloads":
-        """平台工作负载:一次列全量,按体检项归位。
-
-        StatefulSet 由「kps 没找到才列」改为常列 —— 监控栈要判就绪数,不能只认名字。
-        """
+        """分别列出 Deployment、DaemonSet 和 StatefulSet,按体检项归类。"""
         out = _Workloads()
         deployments: Any = self._apps.list_deployment_for_all_namespaces()
         for d in deployments.items:
             _index_deployment(out, d)
-        # operand 归属靠 gpu-operator Deployment 的 ns,Deployment 先扫完才知道
         daemonsets: Any = self._apps.list_daemon_set_for_all_namespaces()
         for ds in daemonsets.items:
             _index_daemonset(out, ds)
@@ -1711,7 +1643,6 @@ class RealOrchestrator:
             programmed=programmed,
             address=str((addresses[0] or {}).get("value", "")) if addresses else "",
             listeners=_listener_rows(gw),
-            # 整体未 Programmed 的真原因(AddressNotAssigned / NoValidListeners …)
             reason=next(
                 (
                     str(c.get("reason") or "")
@@ -1746,7 +1677,6 @@ class RealOrchestrator:
         await self._run(self._set_node_unschedulable_sync, node_name, unschedulable)
 
     def _set_node_unschedulable_sync(self, node_name: str, unschedulable: bool) -> None:
-        # 需 ClusterRole nodes patch(deploy/app/k8s/01-rbac.yaml)
         self.core.patch_node(node_name, {"spec": {"unschedulable": unschedulable}})
 
     async def delete_node(self, node_name: str) -> None:
@@ -1759,8 +1689,6 @@ class RealOrchestrator:
             404,
         )
         _ignore(lambda: self.core.delete_node(node_name), 404)
-
-    # ---------- 镜像预热 ----------
 
     @staticmethod
     def _prewarm_job_name(node_name: str, image_ref: str) -> str:
@@ -1784,7 +1712,7 @@ class RealOrchestrator:
             lambda: self.batch.read_namespaced_job(job_name, self.settings.k8s_platform_namespace),
             404,
         ):
-            return  # 幂等:任意状态的既有 Job 都交巡检收敛
+            return
         job = build_prewarm_job(
             self.settings.k8s_platform_namespace, job_name, node_name, image_ref, image_pull_secret
         )
@@ -1810,7 +1738,7 @@ class RealOrchestrator:
         return PrewarmJobStatus(state="running")
 
     def _prewarm_failure_sync(self, job_name: str) -> str:
-        """失败原因:优先 Pod 容器态(ErrImagePull 等),兜底 Job condition。"""
+        """返回首个 Pod 容器 waiting/terminated 失败原因;取不到时返回固定失败摘要。"""
         try:
             pods: Any = self.core.list_namespaced_pod(
                 self.settings.k8s_platform_namespace, label_selector=f"job-name={job_name}"
@@ -1852,7 +1780,6 @@ def build_prewarm_job(
     container = RealOrchestrator.batch_container(
         "prewarm", image_ref, ["/bin/sh", "-c", "true"], []
     )
-    # IfNotPresent;换版本靠目录 image_ref 钉 digest,见 deploy/instance-images/README.md
     container.image_pull_policy = "IfNotPresent"
     return client.V1Job(
         metadata=client.V1ObjectMeta(
@@ -1862,13 +1789,13 @@ def build_prewarm_job(
             annotations={"superdl.io/node": node_name, "superdl.io/image": image_ref},
         ),
         spec=client.V1JobSpec(
-            backoff_limit=0,  # 失败不原地重试,由巡检删 Job 后重建(带退避节流)
+            backoff_limit=0,
             ttl_seconds_after_finished=600,
-            active_deadline_seconds=1800,  # 20GB 级镜像上限
+            active_deadline_seconds=1800,
             template=client.V1PodTemplateSpec(
                 metadata=client.V1ObjectMeta(labels={PREWARM_LABEL: "true"}),
                 spec=client.V1PodSpec(
-                    node_name=node_name,  # 绕过调度器定点拉取
+                    node_name=node_name,
                     restart_policy="Never",
                     automount_service_account_token=False,
                     image_pull_secrets=(
@@ -1876,7 +1803,6 @@ def build_prewarm_job(
                         if image_pull_secret
                         else None
                     ),
-                    # 容忍一切污点(预热覆盖 cordon 节点)
                     tolerations=[client.V1Toleration(operator="Exists")],
                     containers=[container],
                 ),

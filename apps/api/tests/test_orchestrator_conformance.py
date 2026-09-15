@@ -1,6 +1,4 @@
-"""编排协议 Fake/Real 契约一致性:同一组用例参数化跑两个后端;Real 由 SUPERDL_TEST_KUBECONFIG 门控。
-数据盘一盘一 PVC 后没有异步作业,两侧都是同步语义。
-"""
+"""Fake/Real 数据盘契约;Real 用例由 SUPERDL_TEST_KUBECONFIG 门控。"""
 
 import os
 import uuid
@@ -19,10 +17,10 @@ from tests.helpers import use_kubeconfig
 @dataclass
 class Backend:
     impl: K8sOrchestrator
-    kind: str  # "fake" / "real"
-    namespace: str  # 租户 ns(Real 侧已建,fixture 收尾即删)
+    kind: str
+    namespace: str
     fake: FakeOrchestrator | None = None
-    real: Any = None  # RealOrchestrator(直访 batch/core 做 Job 状态注入)
+    real: Any = None
 
 
 @pytest.fixture(
@@ -46,7 +44,6 @@ async def backend(request: pytest.FixtureRequest) -> AsyncIterator[Backend]:
     real = RealOrchestrator()
     ns = f"tenant-conf-{uuid.uuid4().hex[:8]}"
     await real.ensure_namespace(ns)
-    # 平台 ns + metaurl secret:quota Job 的创建前提
     platform_ns: str = real.settings.k8s_platform_namespace
     try:
         real.core.create_namespace(
@@ -63,21 +60,14 @@ async def backend(request: pytest.FixtureRequest) -> AsyncIterator[Backend]:
             raise
 
 
-# ---------- Real 侧注入助手 ----------
-
-
-# ---------- 契约用例(双后端同跑) ----------
-
-
 class TestDataDiskContract:
-    """ensure/delete_data_disk:同步语义(PVC 容量即配额,没有异步作业)、幂等、只扩不缩。
-    挂了说明 Fake 与 Real 对数据盘的下发面漂了,离线用例的结论对生产不成立。"""
+    """数据盘 PVC 创建、扩容与删除为同步操作,幂等且只扩不缩。"""
 
     async def test_create_expand_delete(self, backend: Backend) -> None:
         ns = backend.namespace
         name = f"disk-{uuid.uuid4().hex}"
         await backend.impl.ensure_data_disk(ns, name, 1)
-        await backend.impl.ensure_data_disk(ns, name, 1)  # 幂等重放
+        await backend.impl.ensure_data_disk(ns, name, 1)
         if backend.kind == "fake":
             assert backend.fake is not None
             assert backend.fake.data_disks[(ns, name)] == 1
@@ -86,7 +76,7 @@ class TestDataDiskContract:
             assert pvc.spec.resources.requests["storage"] == "1Gi"
             assert pvc.spec.access_modes == ["ReadWriteMany"]
 
-        await backend.impl.ensure_data_disk(ns, name, 2)  # 扩容
+        await backend.impl.ensure_data_disk(ns, name, 2)
         if backend.kind == "fake":
             assert backend.fake is not None
             assert backend.fake.data_disks[(ns, name)] == 2
@@ -94,7 +84,7 @@ class TestDataDiskContract:
             grown: Any = backend.real.core.read_namespaced_persistent_volume_claim(name, ns)
             assert grown.spec.resources.requests["storage"] == "2Gi"
 
-        await backend.impl.ensure_data_disk(ns, name, 1)  # 缩容不动(apiserver 会拒,先于请求拦住)
+        await backend.impl.ensure_data_disk(ns, name, 1)
         if backend.kind == "fake":
             assert backend.fake is not None
             assert backend.fake.data_disks[(ns, name)] == 2
@@ -103,7 +93,7 @@ class TestDataDiskContract:
             assert same.spec.resources.requests["storage"] == "2Gi"
 
         await backend.impl.delete_data_disk(ns, name)
-        await backend.impl.delete_data_disk(ns, name)  # 不存在视为成功
+        await backend.impl.delete_data_disk(ns, name)
         if backend.kind == "fake":
             assert backend.fake is not None
             assert (ns, name) not in backend.fake.data_disks

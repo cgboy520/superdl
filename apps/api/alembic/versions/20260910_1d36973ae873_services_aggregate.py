@@ -1,12 +1,7 @@
-"""在线服务聚合根:services 表、instances 服务快照列、密钥归属改服务、删 service_endpoints。
+"""创建 services 表,从关联实例的 service_endpoints 行回填服务及实例快照。
 
-数据影响:service_endpoints 每行升格为一条 services(含已释放实例,作已删除服务保留归属);
-instances 的 service_* 快照列从端点行回填;service_api_keys.instance_id 改为 service_id
-后删列;service_endpoints 整表删除。create_instance 幂等指纹随参数集变形:发布前 24h 内
-带 Idempotency-Key 的建实例重试会 409(同键异参)。
-
-Revision ID: 1d36973ae873
-Revises: 1620c05976ce
+service_api_keys 新增并回填 service_id,删除无服务归属的行及 instance_id 列;
+添加实例服务约束,删除 service_endpoints 表。
 """
 
 from collections.abc import Sequence
@@ -63,7 +58,6 @@ def upgrade() -> None:
     op.create_index(op.f("ix_instances_service_id"), "instances", ["service_id"], unique=False)
     op.add_column("service_api_keys", sa.Column("service_id", sa.Integer(), nullable=True))
 
-    # 数据回填:每个端点升格为一条服务(实例已释放的也建,作已删除服务保留归属)
     op.execute(
         sa.text(
             """
@@ -103,7 +97,6 @@ def upgrade() -> None:
             """
         )
     )
-    # 删除孤儿密钥行(无端点归属)
     op.execute(sa.text("DELETE FROM service_api_keys WHERE service_id IS NULL"))
 
     op.alter_column("service_api_keys", "service_id", nullable=False)

@@ -1,5 +1,4 @@
-/** echarts 按需注册封装(两端共用);新增图型在此登记,页面禁止直接 import echarts。
- *  option 整量 setOption(notMerge);ResizeObserver 自动 resize;aria.enabled 常开。theme="noc" 为管理端深色预设,option 显式色优先。 */
+/** ECharts 封装:整量更新 option、自动 resize、可访问标签与加载/空/错误覆盖层。 */
 
 import { BarChart, LineChart, PieChart } from "echarts/charts";
 import { AriaComponent, GridComponent, LegendComponent, MarkLineComponent, TooltipComponent } from "echarts/components";
@@ -160,7 +159,6 @@ export default function EChart({
   const chartRef = useRef<echarts.ECharts | null>(null);
   const { t } = useTranslation("shared");
 
-  // theme / group 变化整体重建实例
   useEffect(() => {
     if (!ref.current) return;
     const chart = echarts.init(ref.current, theme);
@@ -182,7 +180,6 @@ export default function EChart({
     chartRef.current?.setOption({ ...option, aria: { enabled: true, label: { description: ariaLabel ?? "" } } }, true);
   }, [option, ariaLabel]);
 
-  // 三态盖层:图表 div 始终挂载(visibility 切换)
   const covered = Boolean(loading || empty || degraded);
   const overlay = loading ? (
     <Spin />

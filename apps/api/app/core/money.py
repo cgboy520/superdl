@@ -12,7 +12,6 @@ def money_str(v: Decimal) -> str:
     return format(v, "f")
 
 
-# API 出参金额序列化为字符串
 MoneyOut = Annotated[Decimal, PlainSerializer(money_str, return_type=str, when_used="json")]
 
 PRICE_QUANT = Decimal("0.0001")

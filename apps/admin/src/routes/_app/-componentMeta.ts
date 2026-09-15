@@ -1,6 +1,4 @@
-/** 组件体检的文案映射:组件名、事实 label、对象表列名。
- *  后端只出数据(计数 / 版本 / 对象名 / 地址),所有语言相关的部分都在这里映射到 locales。
- *  事实 key 与列名 key 各自扁平命名空间,同名只翻一次(reason / image / handler …)。 */
+/** 组件体检的文案键映射与对象表列顺序。 */
 
 import type { ClusterComponent } from "../../api";
 
@@ -19,7 +17,7 @@ export const COMPONENT_LABEL = {
   monitoring: "cluster.comp.monitoring",
 } as const satisfies Record<ComponentKey, string>;
 
-/** 判据:这一项到底在判什么。抽屉首段,讲事实不讲形容词。 */
+/** 组件体检判据的文案键。 */
 export const COMPONENT_CRITERION = {
   nodes: "cluster.criterion.nodes",
   hami: "cluster.criterion.hami",
@@ -115,7 +113,7 @@ export const OBJECT_COLUMN_LABEL = {
   notAfter: "cluster.objcol.notAfter",
 } as const;
 
-/** 抽屉对象表的列顺序:后端 fields 是无序 map,列由这里定;列名必须在 OBJECT_COLUMN_LABEL 里。 */
+/** 抽屉对象表的列顺序。 */
 export type ObjectColumn = keyof typeof OBJECT_COLUMN_LABEL;
 
 export const OBJECT_COLUMNS = {

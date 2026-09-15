@@ -1,7 +1,4 @@
-/** 组件诊断抽屉(/cluster/<key>):嵌套在集群页里的遮罩路由。
- *  是真路由所以可直链、可转达、浏览器后退即关;渲染成 Drawer 所以背景的体检网格不丢。
- *  页容器由父路由 cluster.tsx 自持,本文件是遮罩层,不带 PageContainer
- *  (scripts/check-page-skeleton.py 对本文件有显式豁免)。 */
+/** 集群页的组件诊断抽屉子路由(/cluster/<key>)。 */
 
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router";
 import { Drawer } from "antd";

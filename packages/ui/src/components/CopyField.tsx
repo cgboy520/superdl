@@ -1,4 +1,4 @@
-/** 可复制的值(两端统一):等宽显示 + 复制按钮(成功即变勾并提示);code=true 才渲染 <code>(e2e 以 code 定位密钥 / 端点);secret=true 默认打码。 */
+/** 可复制的值,支持等宽/code 展示与可切换的打码状态。 */
 
 import { CheckOutlined, CopyOutlined, EyeInvisibleOutlined, EyeOutlined } from "@ant-design/icons";
 import { App, Button, Space, Tooltip, Typography } from "antd";
@@ -60,13 +60,13 @@ export function CopyField({
   /** 复制按钮文字 */
   label?: ReactNode;
   mono?: boolean;
-  /** 渲染为 <code>(e2e 定位用),默认 span */
+  /** 渲染为 <code>,默认 span。 */
   code?: boolean;
   /** 打码直到点眼睛 */
   secret?: boolean;
   block?: boolean;
   size?: "small" | "middle";
-  /** 只给 testIds.ts 白名单里的两处值用(密钥 / 端点 URL) */
+  /** 值节点的 data-testid。 */
   testId?: string;
   onCopied?: () => void;
 }) {

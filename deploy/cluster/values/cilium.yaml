@@ -1,35 +1,19 @@
-# Cilium 1.20:CNI + LB(SSH 端口池)。北向入口(含 JupyterLab 泛域名)走 Envoy Gateway
 kubeProxyReplacement: true
-# IPAM 跟着发行版已分配的 node.spec.podCIDR 走。chart 默认是 cluster-pool + 10.0.0.0/8,
-# 装上去 Pod 会全部落到 10.0.x.x:与 config.py 的 tenant_pod_cidr、00-namespace-config 的
-# FORWARDED_ALLOW_IPS、平台库 pg_hba 放行段(均为 10.42.0.0/16)全部对不上,平台连不上库。
 ipam:
   mode: kubernetes
-# ipBlock 默认不匹配集群内的节点 IP:节点在 Cilium 里是 host / remote-node 保留身份,不归 CIDR 选择器管。
-# app/k8s/09-networkpolicy.yaml 放行平台库与 K8s API 用的正是节点 IP,不开这项则 Pod 连不上库。
-# 只覆盖 remote-node,本机 host 还要 cilium-policies.yaml 那条按身份放行;
-# 不开 pods:身份数会随 Pod 数膨胀,有耗尽风险
 policyCIDRMatchMode:
   - nodes
-# HA 集群填控制面 VIP
 k8sServiceHost: "CHANGE_ME_API_VIP"
 k8sServicePort: 6443
 gatewayAPI:
-  # 保持 false:Gateway API 由 Envoy Gateway 实现,CRD 由 ../gateway-api-crds.sh 单点管
   enabled: false
 l2announcements:
-  enabled: true            # 裸金属 LB 通告(或按机房改 BGP)
-# 不开 externalIPs(SSH 走 NodePort+LB 池)
-# 租户 Pod 带宽上限靠 kubernetes.io/egress-bandwidth 注解(orchestrator/service.bandwidth_annotations);
-# light 档 k3s 的 flannel conflist 自带 bandwidth 插件,full 档要开 Cilium 的带宽管理器
+  enabled: true
 bandwidthManager:
   enabled: true
 hubble:
   enabled: true
   relay:
     enabled: true
-  # hubble-ui(默认关,无认证):只经 `kubectl -n kube-system port-forward svc/hubble-ui 12000:80` 本地访问
-  # ui:
-  #   enabled: true
 operator:
   replicas: 1

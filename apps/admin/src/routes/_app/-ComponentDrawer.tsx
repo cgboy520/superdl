@@ -1,5 +1,4 @@
-/** 组件诊断抽屉体:判据 → 事实 → 对象明细 → 影响面 → 下一步。
- *  判据放第一段是刻意的:先说清这一项在判什么,再给数字,读者不必猜绿勾代表什么。 */
+/** 组件诊断抽屉:判据、事实、对象明细、影响面与下一步。 */
 
 import { Alert, Card, Space, Table, Typography } from "antd";
 import { useTranslation } from "react-i18next";
@@ -25,7 +24,6 @@ export function ComponentDrawerBody({ component, probedAt }: { component: Cluste
   const state = component.state;
   const columns: readonly ObjectColumn[] = OBJECT_COLUMNS[component.key];
   const objects = component.objects ?? [];
-  // 抽屉打开即取一次现场:快照答「就绪几个」,深探答「为什么不就绪」
   const probe = useComponentProbe(component.key);
 
   const facts: KeyValueItem[] = [...(component.facts ?? []), ...(probe.data?.facts ?? [])].map((f) => ({
@@ -113,8 +111,7 @@ export function ComponentDrawerBody({ component, probedAt }: { component: Cluste
   );
 }
 
-/** 实时深探区:未就绪对象的现场状态与它们的 Warning 事件。
- *  取不到只提示一行,不阻断抽屉 —— 集群 API 抖动不该放大成页面故障。 */
+/** 未就绪对象的现场状态与 Warning 事件;取数失败显示提示。 */
 function LiveDetail({ probe }: { probe: ReturnType<typeof useComponentProbe> }) {
   const { t } = useTranslation(["admin", "shared"]);
   const errText = useApiErrorText();

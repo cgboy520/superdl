@@ -1,8 +1,4 @@
-/** 创建实例(开发机):SectionRail 分段长表单(基本信息 → 计费方式 → 镜像 → 数据盘 → SSH 密钥)+ 底部结算条。
- *  一键创建:镜像默认推荐项、单把公钥自动选中、必填卡标红星、未完成项在结算条上方给可点击清单(不靠禁用按钮的 tooltip)。
- *  段状态由 deriveSectionStatus 派生(首屏不出红叉:未触碰且没点过提交的问题段只标 wait)。
- *  知情同意合并为一个分节 modal(ConsentGate);数据盘「新建」为行内直建:先建盘再建实例,建盘成功而实例失败用不自动消失的 Alert 告知并给存储页入口。
- *  返回市场的两个出口(页头 back / 「更换规格」)都带回 listSearchStore 记下的市场筛选态。部署在线服务走 /services/new。 */
+/** 开发机创建页:分段表单、计费预览与知情同意;新盘先于实例创建。 */
 
 import { isApiError, type DiskOut, type InstanceOut, type SkuMarketOut } from "@superdl/api-client";
 import {
@@ -58,7 +54,6 @@ import { TierTag } from "../components/common";
 import type { MarketSearch } from "./_console.market";
 
 export const Route = createFileRoute("/_console/market_/create/$skuId")({
-  // 深链解析与 /services/new 共用;sku 在路径参数里,查询串的 sku_id 无意义
   validateSearch: (search: Record<string, unknown>): Omit<DeploySearch, "sku_id"> => {
     const parsed = parseDeployDeepLink(search);
     delete parsed.sku_id;
@@ -93,7 +88,6 @@ const RECOMMENDED_FRAMEWORK_ORDER = ["PyTorch", "TensorFlow", "Paddle", "Minicon
 
 function CreatePage() {
   const { t } = useTranslation(["web", "shared"]);
-  // 「镜像必须钉死版本」文案事实源在后端 messages.py
   const { t: tErr } = useTranslation("errors");
   const fmt = useFormat();
   const { formatHourlyPrice } = fmt;
@@ -125,7 +119,6 @@ function CreatePage() {
   );
   const [periodCount, setPeriodCount] = useState(countFromMarket ?? 1);
   const [imageTab, setImageTab] = useState<"platform" | "custom">("platform");
-  // 平台镜像:常用框架卡片 + 「更多」级联;两者同写 platformImage(image_ref 数组路径)
   const [platformImage, setPlatformImage] = useState<string[]>();
   const [imageTouched, setImageTouched] = useState(false);
   const [moreImages, setMoreImages] = useState(false);
@@ -137,25 +130,18 @@ function CreatePage() {
   const [keyIds, setKeyIds] = useState<number[]>([]);
   const [name, setName] = useState("");
   const [phase, setPhase] = useState<"disk" | "instance" | null>(null);
-  // 建盘成功而建实例失败:页内常驻告知,直到用户处理
   const [diskCreatedButFailed, setDiskCreatedButFailed] = useState<DiskOut | null>(null);
-  // 空闲 GPU 不足:结算条上方常驻 Alert + 「换个规格」,不用 toast(ui-ux-spec §3.5)
   const [noCapacity, setNoCapacity] = useState(false);
-  // 段状态:碰过的段(改字段 / 点进段内)+ 点过主 CTA;首屏两者皆空,问题段只标 wait 不出红叉
   const [touchedIds, setTouchedIds] = useState<ReadonlySet<string>>(() => new Set());
   const [submitted, setSubmitted] = useState(false);
   const touch = (id: string) => setTouchedIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
-  // 幂等键 = 本次挂载的 nonce + 参数快照
   const [formNonce] = useState(() => crypto.randomUUID());
   const [mountedAt] = useState(() => Date.now());
-  // 「取消」脏判定的挂载快照
   const [mountSnapshot] = useState(() => ({ gpuCount, billingMode, newDiskName }));
 
   const isCpu = sku?.tier === "cpu";
-  // 盘容量初值取策略下限(不写死 100)
   const diskGbValue = newDiskGb ?? policies?.disk_min_gb ?? 100;
 
-  // 镜像清单:CPU 规格只给不带 CUDA 的镜像,GPU 规格只给带 CUDA 的
   const usableImages = useMemo(
     () => (images ?? []).filter((img) => (/^\d/.test(img.cuda_version) ? !isCpu : isCpu)),
     [images, isCpu],
@@ -163,7 +149,6 @@ function CreatePage() {
   const cascade = useMemo(() => {
     const tree: Record<string, Record<string, Record<string, Record<string, string>>>> = {};
     for (const img of usableImages) {
-      // CPU 向镜像的 cuda_version 不是版本号,原样显示
       const cudaLabel = /^\d/.test(img.cuda_version) ? `CUDA ${img.cuda_version}` : img.cuda_version;
       (((tree[img.framework] ??= {})[img.framework_version] ??= {})[img.python_version] ??= {})[cudaLabel] =
         img.image_ref;
@@ -200,15 +185,12 @@ function CreatePage() {
     img.python_version,
     img.image_ref,
   ];
-  // 默认镜像 = 推荐框架的第一条(用户未动过镜像时);渲染期派生,不用 effect 回写 state
   const defaultImage = quickImages[0];
   const effectivePlatformImage = platformImage ?? (!imageTouched && defaultImage ? pathOf(defaultImage) : undefined);
 
-  // 表单脏 = 任一字段非挂载初值
   const formDirty =
     gpuCount !== mountSnapshot.gpuCount ||
     billingMode !== mountSnapshot.billingMode ||
-    // 市场页透传时长时初值不是 1
     periodCount !== (countFromMarket ?? 1) ||
     imageTab !== "platform" ||
     imageTouched ||
@@ -224,13 +206,11 @@ function CreatePage() {
   const pageTitle = t("create.title");
   const errText = useApiErrorText();
   const create = useCreateInstance({
-    // 错误统一在 doCreate 的 catch 里出
     silentError: true,
     onSuccess: (data) => {
       const inst = data as InstanceOut;
       message.success(t("create.creating", { name: inst.name }));
       leave.bypass();
-      // 成功直接落到这台实例的「连接」Tab,不丢回列表自己找
       void navigate({ to: "/instances/$uuid", params: { uuid: inst.uuid }, search: { tab: "access" } });
     },
   });
@@ -246,10 +226,8 @@ function CreatePage() {
       : diskMode === "existing"
         ? ((disks ?? []).find((d) => d.id === existingDiskId)?.size_gb ?? 0)
         : 0;
-  // 「约 ¥X/日」为展示层估算(月价/30,BigInt);入账以后端日结为准;单价未就绪不估算(不显假 0.00)
   const diskDaily = diskPriceGbMonth === undefined ? undefined : diskDailyEstimate(diskPriceGbMonth, diskGb);
 
-  // 未开包周期 / 未上竞价时按量兜底,提交体不带 period 或 market=spot
   const periodBlocked = sku != null && !sku.period_enabled;
   const spotBlocked = (sku != null && !sku.spot_enabled) || spotPolicy == null;
   const mode: BillingMode =
@@ -258,19 +236,15 @@ function CreatePage() {
       : billingMode;
   const isSpot = mode === "spot";
   const period = isBillingPeriod(mode) ? mode : null;
-  // 竞价单价 = SKU 现价 × spot_discount_pct / 100,与后端 pricing.effective_price_hourly 同算法
   const basePrice = sku?.price_hourly ?? "0";
   const unitHourly = (isSpot ? spotPriceOf(basePrice, spotPolicy) : null) ?? basePrice;
   const hourlyTotal = mulPrice(unitHourly, priceUnits);
-  // base = SKU 现价,与后端下单同一个数
   const quote =
     period && sku
       ? periodQuoteOf(sku.price_hourly, { units: billingUnits(gpus), period, periodCount }, discounts)
       : undefined;
-  // 「现在」在挂载时定一次(mountedAt)
   const expiresAt = period ? new Date(mountedAt + PERIOD_HOURS[period] * periodCount * 3_600_000).toISOString() : null;
 
-  // BigInt 比较:按量门槛 = 1 小时费用(同后端 require_balance_at_least),包周期 = 应付全额;报价未就绪不放行
   const needAmount = period ? quote?.amount : hourlyTotal;
   const balanceReady = wallet != null && (!period || quote != null);
   const enough = balanceReady && needAmount != null && compareAmounts(wallet.balance, needAmount) >= 0;
@@ -279,7 +253,6 @@ function CreatePage() {
   const selectedImage = usableImages.find((i) => i.image_ref === imageRef);
   const customInvalid = imageTab === "custom" && customImage.trim() !== "" && !isPinnedImageRef(customImage.trim());
 
-  // 每段的第一个问题(rail 段状态与未完成项清单同一事实源)
   const imageIssue = !imageRef
     ? t("create.issueImage")
     : !isPinnedImageRef(imageRef)
@@ -288,7 +261,6 @@ function CreatePage() {
   const sshIssue = keyIds.length === 0 ? t("create.issueSsh") : null;
   const diskIssue = diskMode === "existing" && existingDiskId == null ? t("create.issueDisk") : null;
 
-  // 未完成项清单(结算条上方,可点击跳到对应段)
   const issues: { key: string; label: string; anchor: string }[] = [];
   if (imageIssue) issues.push({ key: "image", label: imageIssue, anchor: ANCHOR.image });
   if (sshIssue) issues.push({ key: "ssh", label: sshIssue, anchor: ANCHOR.ssh });
@@ -303,7 +275,6 @@ function CreatePage() {
     { id: ANCHOR.ssh, title: t("create.sshCard"), issue: sshIssue, touched: touchedIds.has(ANCHOR.ssh) },
   ];
 
-  // 返回市场的唯一出口(页头 back 与「更换规格」同一个):带回市场页记下的筛选态,脏表单先确认
   const marketSearch = useRememberedListSearch("/market") as MarketSearch;
   const goMarket = () =>
     leave.confirmLeave(() => {
@@ -314,12 +285,10 @@ function CreatePage() {
 
   const doCreate = async () => {
     if (!imageRef || !sku) return;
-    // 幂等键由参数派生且失败不轮换
     const idempotencyKey = idemKeyOf("inst", [
       formNonce,
       sku.id,
       gpus,
-      // 计费方式进快照
       mode,
       period ? periodCount : null,
       imageRef,
@@ -338,11 +307,10 @@ function CreatePage() {
         try {
           createdDisk = await createDisk.mutateAsync({
             body: { name: newDiskName.trim() || defaultDiskName(), size_gb: diskGbValue },
-            // 与实例同一个参数快照派生
             idempotencyKey,
           });
         } catch {
-          return; // 建盘失败,错误已由 useApiMutation 弹出
+          return;
         }
       }
       if (createdDisk) diskId = createdDisk.id;
@@ -367,13 +335,11 @@ function CreatePage() {
         setDiskCreatedButFailed(null);
         setNoCapacity(false);
       } catch (err) {
-        // silentError 模式下提示统一在这里出:库存不足给常驻 Alert + 换规格入口(toast 会自己消失,用户回头就找不到原因了)
         if (isApiError(err) && err.code === "NO_CAPACITY") {
           setNoCapacity(true);
         } else {
           message.error(errText(err));
         }
-        // 建盘成功而实例失败:常驻告知(不用 toast),再点提交会复用这块盘不再重建
         if (diskMode === "new" && createdDisk) setDiskCreatedButFailed(createdDisk);
       }
     } finally {
@@ -392,7 +358,6 @@ function CreatePage() {
     onProceed: () => doCreate(),
   });
 
-  // 规格三态:加载中骨架 / 加载失败可重试 / 真不存在才提示下架
   if (skusError && !skus) {
     return (
       <PageContainer title={pageTitle} back={back}>
@@ -426,7 +391,6 @@ function CreatePage() {
     );
   }
 
-  // 三态守卫已早返回,此处 sku 必非空
   const skuNN: SkuMarketOut = sku;
   const maxGpus = skuNN.max_gpus_per_instance;
   const gpuOptions = Array.from({ length: maxGpus }, (_, i) => i + 1).filter(
@@ -442,10 +406,8 @@ function CreatePage() {
 
   return (
     <PageContainer title={pageTitle} back={back}>
-      {/* 不用 Space(ant-space-item 包装会破坏 sticky 结算条的包含块) */}
       <div style={{ display: "flex", flexDirection: "column", gap: space.lg, width: "100%" }}>
         <SectionRail sections={sections} submitted={submitted} ariaLabel={t("create.railAria")}>
-          {/* ① 基本信息:已选规格一行摘要 + 名称 + GPU 数量 */}
           <div onFocusCapture={() => touch(ANCHOR.basic)} onClickCapture={() => touch(ANCHOR.basic)}>
             <SectionAnchor
               id={ANCHOR.basic}
@@ -457,7 +419,6 @@ function CreatePage() {
               }
             >
               <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
-                {/* 规格回显是一行摘要,不是表格:本页不再做规格比价 */}
                 <Space size={space.sm} align="center" wrap>
                   <Typography.Text>
                     {isCpu
@@ -484,14 +445,12 @@ function CreatePage() {
                     style={{ width: controlWidth.lg }}
                   />
                 </Space>
-                {/* 卡数选择受 available_count 约束:无库存档位禁用 + 提示。CPU 规格不带卡,整行不出 */}
                 {!isCpu && (
                   <ChipRow
                     label={t("market.chipGpuCount")}
                     value={gpuCount}
                     onChange={(n) => {
                       setGpuCount(n);
-                      // 换了卡数 = 换了库存诉求,上一次的「空闲不足」结论作废
                       setNoCapacity(false);
                     }}
                     options={gpuOptions.map((n) => ({
@@ -506,7 +465,6 @@ function CreatePage() {
             </SectionAnchor>
           </div>
 
-          {/* ② 计费方式(风险摘要贴在 chip 下方,由 BillingModeCard 出) */}
           <div onFocusCapture={() => touch(ANCHOR.billing)} onClickCapture={() => touch(ANCHOR.billing)}>
             <SectionAnchor id={ANCHOR.billing} card={false}>
               <BillingModeCard
@@ -520,13 +478,11 @@ function CreatePage() {
             </SectionAnchor>
           </div>
 
-          {/* ③ 镜像(必填):常用卡片 + 更多级联 / 自定义 */}
           <div onFocusCapture={() => touch(ANCHOR.image)} onClickCapture={() => touch(ANCHOR.image)}>
             <SectionAnchor id={ANCHOR.image} title={<RequiredTitle>{t("create.imageCard")}</RequiredTitle>}>
               <Tabs
                 activeKey={imageTab}
                 onChange={(k) => {
-                  // 切 Tab 清另一侧的选择,当前生效的镜像只有一个来源
                   setImageTab(k as "platform" | "custom");
                   setImageTouched(true);
                   touch(ANCHOR.image);
@@ -538,11 +494,9 @@ function CreatePage() {
                     key: "platform",
                     label: t("create.tabPlatform"),
                     children: imagesQ.isError ? (
-                      // 镜像清单加载失败不伪装成「没有可用镜像」
                       <DataErrorAlert onRetry={() => void imagesQ.refetch()} />
                     ) : (
                       <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
-                        {/* 常用镜像 tile:每框架首条,副行 CUDA · Py · 预热状态;CPU 规格不承诺预热 */}
                         <OptionTileGroup
                           label={t("create.tabPlatform")}
                           hideLabel
@@ -582,7 +536,6 @@ function CreatePage() {
                             showSearch
                           />
                         )}
-                        {/* 选定后回显完整镜像地址与预热状态,便于核对 */}
                         {selectedImage && (
                           <Space size={space.sm} wrap>
                             <CopyField value={selectedImage.image_ref} code />
@@ -628,7 +581,6 @@ function CreatePage() {
             </SectionAnchor>
           </div>
 
-          {/* ④ 数据盘(可选) */}
           <div onFocusCapture={() => touch(ANCHOR.disk)} onClickCapture={() => touch(ANCHOR.disk)}>
             <SectionAnchor id={ANCHOR.disk} card={false}>
               <DataDiskCard
@@ -644,7 +596,6 @@ function CreatePage() {
             </SectionAnchor>
           </div>
 
-          {/* ⑤ SSH 密钥(必填) */}
           <div onFocusCapture={() => touch(ANCHOR.ssh)} onClickCapture={() => touch(ANCHOR.ssh)}>
             <SectionAnchor id={ANCHOR.ssh} title={<RequiredTitle>{t("create.sshCard")}</RequiredTitle>}>
               <SshKeyPicker value={keyIds} onChange={setKeyIds} />
@@ -652,7 +603,6 @@ function CreatePage() {
           </div>
         </SectionRail>
 
-        {/* 余额查询失败绝不静默转圈:结算条上方给可重试错误条,CTA 改普通禁用态 */}
         {walletQ.isError && <DataErrorAlert onRetry={() => void walletQ.refetch()} />}
         <CheckoutBar
           notice={
@@ -670,7 +620,6 @@ function CreatePage() {
                   }
                 />
               )}
-              {/* 空闲 GPU 不足:常驻在条上方并给换规格出口,不用会自己消失的 toast */}
               {noCapacity && (
                 <Alert
                   type="warning"
@@ -717,7 +666,6 @@ function CreatePage() {
           items={
             period && quote
               ? [
-                  // 包周期:主数字 = 周期费用;数据盘一栏只在真挂了盘时出;到期时间降级为正文
                   {
                     label: t("period.costLabel", { period: t(periodMap[period].labelKey) }),
                     value: fmt.formatPeriodPrice(quote.amount, period, periodCount),
@@ -765,7 +713,6 @@ function CreatePage() {
                 <PeriodQuoteRows quote={quote} gpuCount={gpuCount} cpu={isCpu} />
               ) : (
                 <span>
-                  {/* 竞价档摊开折后单价,与结算条大字同数 */}
                   {isCpu
                     ? t("create.detailInstanceLineCpu", { total: formatHourlyPrice(hourlyTotal) })
                     : t("create.detailInstanceLine", {
@@ -791,15 +738,12 @@ function CreatePage() {
           balance={wallet?.balance ?? null}
           balanceReady={balanceReady}
           actions={
-            // 点过主 CTA 后所有问题段都标红(首屏不标);「取消」不放结算条,页头返回是唯一出口
             <span onClickCapture={() => setSubmitted(true)}>
               {walletQ.isError ? (
-                // 余额查询失败:CTA 门控并提示原因
                 <GatedButton type="primary" size="large" reason={t("create.walletQueryFailedRetry")}>
                   {submitLabel}
                 </GatedButton>
               ) : !balanceReady ? (
-                // 余额未就绪:主 CTA 保持 primary + loading
                 <Button type="primary" size="large" loading disabled>
                   {submitLabel}
                 </Button>

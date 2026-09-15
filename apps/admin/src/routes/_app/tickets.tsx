@@ -64,7 +64,6 @@ const TICKET_STATUSES = Object.keys(ticketStatusMap);
 const TICKET_CATEGORIES = Object.keys(ticketCategoryMap);
 
 export const Route = createFileRoute("/_app/tickets")({
-  // 筛选入 URL;id = 告警深链(自动开详情抽屉)
   validateSearch: (
     search: Record<string, unknown>,
   ): {
@@ -172,11 +171,9 @@ function TicketDrawer({
           t("tickets.detailTitle")
         )
       }
-      // 处置动作固定在 footer,正文只留对话与回复框
       footer={
         ticket ? (
           <Space wrap style={{ display: "flex", justifyContent: "flex-end" }}>
-            {/* L1 确认(useConfirm):后果前置,目标 = 当前工单号 */}
             {ticket.status !== "resolved" && ticket.status !== "closed" && (
               <GatedButton
                 type="primary"
@@ -214,7 +211,6 @@ function TicketDrawer({
         ) : null
       }
     >
-      {/* 详情查询三态:骨架 / 失败可重试 */}
       {detail.isPending && ticketId !== null && <Skeleton active paragraph={{ rows: 6 }} />}
       {detail.isError && (
         <TableErrorEmpty isError onRetry={() => void detail.refetch()} compact>
@@ -222,7 +218,6 @@ function TicketDrawer({
         </TableErrorEmpty>
       )}
       {ticket && (
-        // 列布局撑满抽屉高度,回复框才有贴底的空间
         <div style={{ display: "flex", flexDirection: "column", minHeight: "100%" }}>
           <Space orientation="vertical" size={space.lg} style={{ width: "100%", flex: 1 }}>
             <div>
@@ -254,7 +249,6 @@ function TicketDrawer({
               ))}
             </Space>
           </Space>
-          {/* 回复框贴底,对话流在其上滚动 */}
           <div
             style={{
               position: "sticky",
@@ -304,11 +298,9 @@ function TicketsPage() {
   const search = Route.useSearch();
   const status = search.status;
   const category = search.category;
-  // 文本检索 commit 制:回车/失焦/点搜索才回写 URL
   const userId = search.user_id ?? null;
   const ticketNo = search.ticket_no;
   const [userIdInput, setUserIdInput] = useState<number | null>(userId);
-  // 用户 id 是数值提交框(blur/回车提交):URL 变化回流(渲染期派生态)
   const [prevUserId, setPrevUserId] = useState(userId);
   if (userId !== prevUserId) {
     setPrevUserId(userId);
@@ -321,12 +313,10 @@ function TicketsPage() {
     ...(ticketNo?.trim() ? { ticket_no: ticketNo.trim() } : {}),
   });
   const { data, queryKey } = ticketsQ;
-  // 待客服计数角标(60s 轮询);Segmented 常驻按该口径过滤
   const pendingQ = useTicketPendingCount();
   const rows = flattenPages(data);
   const total = data?.pages[0]?.total ?? undefined;
   const [openId, setOpenId] = useState<number | null>(null);
-  // 告警深链(/tickets?id=<id>)自动开详情抽屉
   const [prevSearchId, setPrevSearchId] = useState(search.id);
   if (search.id !== prevSearchId) {
     setPrevSearchId(search.id);
@@ -346,7 +336,6 @@ function TicketsPage() {
     keys: ["status", "category", "user_id", "ticket_no"],
     commit: setFilters,
   });
-  // 工单号检索:防抖回写 URL;URL 回流同步进输入框
   const commitTicketNo = useCallback((next: string | undefined) => setFilters({ ticket_no: next }), [setFilters]);
   const { value: ticketNoInput, setValue: setTicketNoInput } = useUrlCommittedInput(ticketNo, commitTicketNo);
   const pendingLabel =
@@ -361,7 +350,6 @@ function TicketsPage() {
           count={total}
           extra={<Button onClick={() => void qc.resetQueries({ queryKey })}>{t("common.refresh")}</Button>}
         >
-          {/* 「待回复 N」常驻视图切换,与状态筛选共用 ?status= */}
           <Segmented
             value={status === "pending_staff" ? "pending_staff" : "all"}
             onChange={(v) => setFilters({ status: v === "pending_staff" ? "pending_staff" : undefined })}
@@ -466,7 +454,6 @@ function TicketsPage() {
             { title: t("tickets.colUpdatedAt"), dataIndex: "updated_at", width: 150, render: formatDateTime },
             { title: t("tickets.colCreatedAt"), dataIndex: "created_at", width: 150, render: formatDateTime },
             {
-              // 文字按钮保证键盘可达
               title: t("tickets.colActions"),
               width: 80,
               render: (_, r) => (

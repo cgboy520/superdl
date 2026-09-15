@@ -1,5 +1,4 @@
-"""测试用法务预置文档:与基线迁移 20260901_1620c05976ce 写入的 published v1 同文,
-conftest 经 seed_preset_docs 播种。"""
+"""供 conftest 播种的预置法务文档。"""
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -85,7 +84,6 @@ DELETION_NOTICE_MD = """\
 
 提交申请后进入 7 天冷静期,期间可随时撤销;冷静期届满由管理员审核执行。"""
 
-# (doc_key, title, content_md);locale 恒 zh-CN,版本恒 1
 PRESET_DOCS: list[tuple[str, str, str]] = [
     ("terms", TERMS_TITLE, TERMS_MD),
     ("privacy", PRIVACY_TITLE, PRIVACY_MD),
@@ -94,7 +92,7 @@ PRESET_DOCS: list[tuple[str, str, str]] = [
 
 
 async def seed_preset_docs(session: AsyncSession) -> None:
-    """预置 published v1(terms/privacy/deletion_notice,zh-CN)。已有任意版本即跳过。"""
+    """为 DEFAULT_LOCALE 写入 published v1;每个文档已有任意版本时跳过。"""
     for doc_key, title, content_md in PRESET_DOCS:
         exists = (
             await session.execute(

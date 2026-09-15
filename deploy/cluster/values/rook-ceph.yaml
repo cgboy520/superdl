@@ -1,7 +1,1 @@
-# Rook operator。CSI 驱动由 Rook 1.20 起的 CSI operator 托管(csi.installCsiOperator,
-# 老的 enableRbdDriver / enableCephfsDriver 开关已移除),这里只留 operator 自身设置。
-# 资源用 chart 默认(request 200m/128Mi,limit 512Mi)。
-# 落点:operator 与 CSI 不选节点;OSD 的落点在 rook-ceph-cluster.yaml 的 deviceSet 里定
-# 注意:rook-ceph ns 必须在 admission/tenant-restrictions.yaml 策略④的豁免名单里
-# ——OSD 与 CSI 插件需要 privileged 与 hostPath(同 topolvm-system)
-enableDiscoveryDaemon: false   # 不扫物理盘:OSD 后端是 TopoLVM 的 PVC,不是裸设备
+enableDiscoveryDaemon: false

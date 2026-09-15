@@ -8,7 +8,6 @@ import { AUDIT_DEFAULT_LIMIT } from "../../api";
 import { AuditTable } from "../../components/AuditTable";
 
 export const Route = createFileRoute("/_app/audit")({
-  // actor_type/actor_id/q/时间窗/limit 入 URL
   validateSearch: (
     search: Record<string, unknown>,
   ): {
@@ -27,7 +26,6 @@ export const Route = createFileRoute("/_app/audit")({
       q: typeof search.q === "string" && search.q ? search.q : undefined,
       since: iso(search.since),
       until: iso(search.until),
-      // 默认值剥离出 URL
       limit: [50, 100, 200, 500].includes(limit) && limit !== AUDIT_DEFAULT_LIMIT ? limit : undefined,
     };
   },

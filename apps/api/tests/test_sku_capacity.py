@@ -15,7 +15,7 @@ from tests.helpers import (
 async def seed_4090_node(
     sm, *, node_name: str = "gpu-node-1", gpu_count: int = 4, status: str = "Ready"
 ) -> None:
-    """本文件节点基线:RTX4090 × hami、24G 显存、标签已收敛。"""
+    """写入标签已收敛的 hami 节点,型号为 RTX4090、显存为 24G。"""
     await seed_node_spec(
         sm,
         node_name=node_name,
@@ -43,7 +43,7 @@ class TestSellableGate:
 
     async def test_matching_ready_node_passes(self, client: AsyncClient, sm):
         await seed_4090_node(sm)
-        sku_id = await create_test_sku(sm, status="off")  # RTX4090 × hami
+        sku_id = await create_test_sku(sm, status="off")
         headers = await admin_headers(sm, client)
         resp = await client.patch(
             f"/api/admin/v1/skus/{sku_id}", json={"status": "on", "reason": "用例"}, headers=headers
@@ -76,7 +76,7 @@ class TestSellableGate:
 
 class TestCapacityPreview:
     async def test_numbers_and_est(self, client: AsyncClient, sm):
-        await seed_4090_node(sm)  # 4 卡 Ready
+        await seed_4090_node(sm)
         await seed_4090_node(sm, node_name="gpu-node-2", gpu_count=2, status="NotReady")
         headers = await admin_headers(sm, client, role="readonly")
         resp = await client.get(
@@ -93,11 +93,11 @@ class TestCapacityPreview:
         body = resp.json()
         assert body["matching_nodes"] == 2
         assert body["ready_gpus"] == 4 and body["total_gpus"] == 6
-        assert body["est_instances"] == 4 * 3  # ⌊100×1.5/50⌋=3
+        assert body["est_instances"] == 4 * 3
         assert body["warnings"] == []
 
     async def test_vram_warning_and_no_node(self, client: AsyncClient, sm):
-        await seed_4090_node(sm)  # vram 24
+        await seed_4090_node(sm)
         headers = await admin_headers(sm, client)
         resp = await client.get(
             "/api/admin/v1/skus/capacity-preview",
@@ -132,8 +132,8 @@ class TestCapacityPreview:
 
 class TestSkuListAssembly:
     async def test_capacity_and_sold_columns(self, client: AsyncClient, sm):
-        await seed_4090_node(sm)  # RTX4090×hami 4 卡 Ready
-        sku_id = await create_test_sku(sm)  # 共享 50%, oversell 1.50
+        await seed_4090_node(sm)
+        sku_id = await create_test_sku(sm)
         await seed_instance(
             sm,
             user_id=1,
@@ -148,7 +148,6 @@ class TestSkuListAssembly:
         resp = await client.get("/api/admin/v1/skus", headers=headers)
         row = next(r for r in resp.json() if r["id"] == sku_id)
         assert row["capacity_gpus"] == 4
-        # 名义算力 2×0.5=1.0;物理 4 卡 → actual 0.25;可售 4×1.5=6 → share≈0.17
         assert row["actual_oversell"] == "0.25"
         assert Decimal(row["sold_share"]) == Decimal("0.17")
 
@@ -163,8 +162,8 @@ class TestSkuListAssembly:
 
 class TestGpuModelAggregates:
     async def test_per_gpu_ratio_min_across_nodes(self, client: AsyncClient, sm):
-        await seed_4090_node(sm)  # 4 卡 64c/256G → 16c/64G 每卡
-        await seed_4090_node(sm, node_name="gpu-node-2", gpu_count=8)  # 8c/32G
+        await seed_4090_node(sm)
+        await seed_4090_node(sm, node_name="gpu-node-2", gpu_count=8)
         headers = await admin_headers(sm, client, role="readonly")
         resp = await client.get("/api/admin/v1/cluster/gpu-models", headers=headers)
         row = next(r for r in resp.json() if r["gpu_model"] == "RTX4090")

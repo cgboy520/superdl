@@ -1,7 +1,6 @@
-/** 当前时刻按间隔刷新(倒计时/到期天数用);intervalMs<=0 或 undefined 不 tick。 */
-
 import { useEffect, useState } from "react";
 
+/** 按间隔刷新当前时间戳,默认 30 秒;intervalMs<=0 时不刷新。 */
 export function useNow(intervalMs = 30_000): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {

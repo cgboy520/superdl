@@ -1,6 +1,4 @@
-/** GPU 价格墙:一个型号一张卡,卡内按档位(专用整卡 / 共享·标准 / 共享·经济)分行,每行自带价格与可开台数。
- *  行 CTA 进市场并带上型号与规格(不直落创建页:档位、卡数、计费方式还没选);售罄行给同型号其它档位入口。
- *  接口失败整区降级为「前往算力市场」,不渲染假数字。 */
+/** GPU 价格墙:按型号分卡、按档位分行,显示价格、可开台数与市场入口。 */
 
 import type { SkuMarketOut } from "@superdl/api-client";
 import {
@@ -41,14 +39,13 @@ interface ModelCard {
 function groupByModel(skus: readonly SkuMarketOut[]): ModelCard[] {
   const byModel = new Map<string, Map<string, TierRow>>();
   for (const sku of skus) {
-    if (!sku.gpu_model) continue; // CPU 规格不进 GPU 价格墙
+    if (!sku.gpu_model) continue;
     const variant = skuVariant(sku.tier, sku.pool_label);
     const tiers = byModel.get(sku.gpu_model) ?? new Map<string, TierRow>();
     const cur = tiers.get(variant);
     if (cur === undefined || compareAmounts(sku.price_hourly, cur.sku.price_hourly) < 0) {
       tiers.set(variant, { sku, variant, available: sku.available_count ?? 0 });
     } else if (cur.available === 0 && (sku.available_count ?? 0) > 0) {
-      // 同档位里有货的那条更适合摆出来
       tiers.set(variant, { sku, variant, available: sku.available_count ?? 0 });
     }
     byModel.set(sku.gpu_model, tiers);
@@ -63,7 +60,7 @@ function groupByModel(skus: readonly SkuMarketOut[]): ModelCard[] {
   return cards.sort((a, b) => compareAmounts(a.minPrice, b.minPrice));
 }
 
-/** 档位规格副行。t 走宽签名:嵌套插值下泛型 t 会把类型实例化撑爆(TS2589),键的完整性由 locales.test 兜底。 */
+/** 档位规格副行。 */
 type LooseT = (key: string, opts?: Record<string, unknown>) => string;
 
 function tierSpecText(row: TierRow, t: LooseT): string {

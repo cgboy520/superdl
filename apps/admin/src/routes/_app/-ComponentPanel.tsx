@@ -1,6 +1,4 @@
-/** 组件体检的单个小面板:状态点 + 组件名 + 主数字 + 两条事实。
- *  正面只放可核对的数字与标识符(x/y、版本号、对象名、地址),形容词与影响面留给抽屉。
- *  整卡是按钮:点开 /cluster/<key> 的诊断抽屉。 */
+/** 组件体检卡:状态、名称、主数字与两条事实;点击打开诊断抽屉。 */
 
 import { RightOutlined } from "@ant-design/icons";
 import { Link } from "@tanstack/react-router";
@@ -13,7 +11,7 @@ import { CopyField, Mono, StatusTag } from "@superdl/ui/components";
 import type { ClusterComponent, ComponentFact } from "../../api";
 import { COMPONENT_LABEL, FACT_LABEL } from "./-componentMeta";
 
-/** 面板正面最多两条事实:再多就该去抽屉看,面板要一眼扫完。 */
+/** 面板正面最多显示两条事实。 */
 const FACE_FACTS = 2;
 
 export function ComponentPanel({ component }: { component: ClusterComponent }) {

@@ -1,4 +1,4 @@
-/** ServiceActions 三槽位与「端点 ▾」。挂了说明:运行中的服务拿不到访问地址 / 调用示例,或停止键从行里消失,或未运行时端点条目还能点(拿到打不通的地址)。写操作 hooks 全 mock。 */
+/** 服务操作槽位、端点菜单与未运行状态门控测试。 */
 import type { ServiceOut } from "@superdl/api-client";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -20,14 +20,13 @@ vi.mock("../../api/mutations", () => ({
   useDeleteService: () => ({ mutate: deleteMutate, isPending: false }),
 }));
 
-// 无 Router 上下文:Link 降级为原生 <a>,navigate 为空实现
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ to, children }: { to: string; children: ReactNode }) => <a href={to}>{children}</a>,
   useNavigate: () => vi.fn(),
 }));
 
 const writeText = vi.fn().mockResolvedValue(undefined);
-/** userEvent.setup() 会装自己的剪贴板替身,覆盖须在它之后 */
+/** 带剪贴板 spy 的 userEvent 实例。 */
 function stubClipboard(): void {
   Object.defineProperty(navigator, "clipboard", { configurable: true, writable: true, value: { writeText } });
 }
@@ -45,7 +44,6 @@ function makeService(status: string, extra?: Partial<ServiceOut>): ServiceOut {
   } as ServiceOut;
 }
 
-// antd 两字按钮插空格,可访问名是「停 止」
 const BTN_ENDPOINT = /端\s*点/;
 const BTN_STOP = /停\s*止/;
 const BTN_START = /启\s*动/;

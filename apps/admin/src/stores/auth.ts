@@ -10,7 +10,7 @@ const TOKEN_KEY = "superdl.admin.accessToken";
 export interface AdminInfo {
   id: number;
   username: string;
-  role: string; // admin / ops / finance / readonly
+  role: string;
 }
 
 interface AuthState {
@@ -24,7 +24,6 @@ interface AuthState {
   logout: () => void;
 }
 
-// 管理员身份只放内存,进入受保护路由经 /me 校准(_app.tsx beforeLoad)
 export const authStore = createStore<AuthState>()((set) => ({
   accessToken: localStorage.getItem(TOKEN_KEY),
   admin: null,
@@ -44,7 +43,6 @@ export const authStore = createStore<AuthState>()((set) => ({
   },
 }));
 
-// 其他标签页登出/续期后同步本页登录态(storage 事件,与用户端同规约)
 window.addEventListener("storage", (e) => {
   if (e.key !== null && e.key !== TOKEN_KEY) return;
   authStore.setState({ accessToken: readAdminToken() });

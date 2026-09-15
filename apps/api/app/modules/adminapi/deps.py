@@ -20,13 +20,13 @@ async def get_current_admin(
     session: DbSession,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)] = None,
 ) -> AdminUser:
+    """校验管理员 access token 与 active 状态;版本缺失或不匹配时拒绝,成功后设置审计 actor。"""
     if credentials is None:
         raise unauthorized()
     payload = decode_token(credentials.credentials, "admin")
     admin = await session.get(AdminUser, int(payload["sub"]))
     if admin is None or admin.status != "active":
         raise unauthorized()
-    # 撤销闸(AdminUser.token_version):ver 缺失一律视为不匹配(401),不得给默认值
     if payload.get("ver") != admin.token_version:
         raise unauthorized()
     request.state.audit_actor = AuditActor("admin", str(admin.id))
@@ -43,11 +43,9 @@ def require_roles(*roles: str) -> Any:
         admin: Annotated[AdminUser, Depends(get_current_admin)],
     ) -> AdminUser:
         if admin.role != "admin" and admin.role not in roles:
-            # 全站唯一的角色拒绝汇聚点(越权探测指标)
             AUTHZ_DENIED_TOTAL.labels(actor_type="admin").inc()
             if roles:
                 raise forbidden(key="adminapi.roleRequired", params={"roles": "/".join(roles)})
-            # 无参分支单独给文案
             raise forbidden(key="adminapi.roleRequiredAdmin")
         return admin
 

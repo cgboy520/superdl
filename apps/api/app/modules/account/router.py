@@ -28,9 +28,6 @@ from app.modules.account.schemas import (
 
 router = APIRouter(tags=["account"])
 
-# refresh token 只走 HttpOnly Cookie(SameSite=Strict,path=/),不进响应体。
-# Cookie 名分环境:prod 用 `__Host-` 前缀,非 prod(http)无前缀;
-# Jupyter 侧同款,见 instance-images/superdl_jupyter_auth.py。
 _REFRESH_COOKIE_PROD = "__Host-superdl_refresh"
 _REFRESH_COOKIE_DEV = "superdl_refresh"
 
@@ -53,7 +50,7 @@ def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
 
 
 def _refresh_token_from(request: Request) -> str:
-    """refresh 只收 Cookie,且必须带 X-Requested-With 双提交头。"""
+    """从 Cookie 读取 refresh,要求 X-Requested-With: fetch;缺 Cookie 回 422,头错误回 403。"""
     cookie_token = request.cookies.get(_refresh_cookie_name())
     if cookie_token is not None:
         if request.headers.get("x-requested-with") != "fetch":
@@ -97,7 +94,6 @@ async def captcha_config(session: DbSession) -> CaptchaConfigOut:
     )
 
 
-# 凭据类端点在调用 service 之前先落审计目标(号码掩码入库),成功后再覆盖成 user:{id}。
 def _mark_credential_attempt(request: Request, phone: str, action: str) -> None:
     set_audit_target(request, f"phone:{mask_phone_value(phone)}", detail={"action": action})
 

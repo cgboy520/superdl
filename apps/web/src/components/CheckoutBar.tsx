@@ -63,7 +63,6 @@ export function CheckoutBar({
   const { formatMoney } = useFormat();
   const colors = useThemeColors();
   const dark = colors.mode === "dark";
-  // <sm 断点:价格 + 主按钮一行,其余进底部 sheet
   const narrow = !Grid.useBreakpoint().sm;
   const [sheetOpen, setSheetOpen] = useState(false);
 
@@ -156,7 +155,6 @@ export function CheckoutBar({
     >
       {narrow ? (
         <>
-          {/* 未完成项清单收成一行,点开进 sheet;没有摘要时(只有告警条)原样常驻 */}
           {noticeSummary != null ? (
             <Button
               type="link"
@@ -188,7 +186,6 @@ export function CheckoutBar({
             title={t("common.costDetail")}
           >
             <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
-              {/* 清单项点了要滚到对应段,滚之前先收起 sheet */}
               {notice && <div onClickCapture={() => setSheetOpen(false)}>{notice}</div>}
               {summaryChip}
               {itemBlocks}
@@ -207,7 +204,6 @@ export function CheckoutBar({
               {itemBlocks}
               {detail && (
                 <Popover content={detail} title={t("common.costDetail")} placement="topLeft">
-                  {/* 纯动作触发器用 Button 不用 Typography.Link(键盘语义) */}
                   <Button type="link" size="small">
                     {t("common.costDetail")}
                   </Button>

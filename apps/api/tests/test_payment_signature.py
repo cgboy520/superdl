@@ -1,6 +1,5 @@
-"""真实收款渠道的验签路径(/webhooks/wechatpay、/webhooks/alipay),用测试内现生成的密钥真实签名。"""
+"""微信支付与支付宝回调的签名、时效和商户校验。"""
 
-# 白盒用例:直探模块内部
 # pyright: reportPrivateUsage=false
 
 import base64
@@ -61,7 +60,7 @@ def _alipay_channel(keypair: tuple[str, str]) -> AlipayChannel:
 
 
 def _alipay_notify(private_pem: str, **overrides: str) -> bytes:
-    """按官方加签口径构造通知体:去 sign/sign_type 与空值,按 key 排序,k=v 用 & 连。"""
+    """构造 URL 编码的支付宝签名通知体。"""
     notify_time = (datetime.now(UTC) + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")
     params = {
         "app_id": APP_ID,
@@ -74,7 +73,6 @@ def _alipay_notify(private_pem: str, **overrides: str) -> bytes:
         "notify_time": notify_time,
         **overrides,
     }
-    # 加签口径是解码后的值,发送体须 urlencode
     message = "&".join(f"{k}={v}" for k, v in sorted(params.items()))
     params["sign_type"] = "RSA2"
     params["sign"] = _sign(private_pem, message.encode())
@@ -124,7 +122,6 @@ class TestAlipayCallbackSignature:
         assert result.success is False
 
     async def test_partial_refund_is_a_reversal(self, keypair):
-        """挂了说明:部分退款通知(trade_status 仍 TRADE_SUCCESS,refund_fee 有值)被当成功回调放过。"""
         priv, _pub = keypair
         result = await _alipay_channel(keypair).parse_callback(
             {}, _alipay_notify(priv, refund_fee="30.00", gmt_refund="2026-08-19 12:00:00")
@@ -133,7 +130,6 @@ class TestAlipayCallbackSignature:
         assert result.refund_amount == Decimal("30.00")
 
     async def test_stale_notify_time_rejected(self, keypair):
-        """挂了说明:回调没有新鲜度窗口,截获的通知可无限期重放。"""
         priv, _pub = keypair
         stale = (datetime.now(UTC) + timedelta(hours=8) - timedelta(hours=2)).strftime(
             "%Y-%m-%d %H:%M:%S"
@@ -150,7 +146,6 @@ class TestAlipayCallbackSignature:
 
         priv, _pub = keypair
         body = _alipay_notify(priv) + b"&body=&extend="
-        # 解析侧丢掉空值参数
         assert dict(parse_qsl(body.decode())).get("body") is None
         result = await _alipay_channel(keypair).parse_callback({}, body)
         assert result.success is True
@@ -300,7 +295,6 @@ class TestWechatCallbackSignature:
         assert exc.value.message_key == "billing.wechatCallbackMerchantMismatch"
 
     async def test_unknown_serial_never_reaches_sdk(self, keypair, monkeypatch):
-        """挂了说明:陌生 Wechatpay-Serial 会让 SDK 去微信拉平台证书,未验签的外部请求触发出网。"""
         priv, _pub = keypair
         channel = _wechat_channel(keypair)
         called = []
@@ -312,7 +306,6 @@ class TestWechatCallbackSignature:
         assert called == []
 
     async def test_stale_timestamp_rejected(self, keypair):
-        """挂了说明:回调没有新鲜度窗口,截获的通知可无限期重放。"""
         priv, _pub = keypair
         headers, body = _wechat_notify(priv, _wx_resource())
         headers["Wechatpay-Timestamp"] = str(int(time.time()) - 3600)

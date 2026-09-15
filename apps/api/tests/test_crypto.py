@@ -1,6 +1,5 @@
 """主密钥版本化:v2 密文带 kid、HKDF 子密钥分离、双密钥读迁移、解密 fail-closed。"""
 
-# 白盒用例:直探模块内部
 # pyright: reportPrivateUsage=false
 
 import base64
@@ -14,8 +13,8 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from app.core import crypto
 
-_KEY_A = base64.urlsafe_b64encode(bytes(range(32))).decode()  # 当前主密钥
-_KEY_B = base64.urlsafe_b64encode(bytes(range(32, 64))).decode()  # 轮换前旧主密钥
+_KEY_A = base64.urlsafe_b64encode(bytes(range(32))).decode()
+_KEY_B = base64.urlsafe_b64encode(bytes(range(32, 64))).decode()
 
 
 def _settings(key: str | None = _KEY_A, prev: str | None = None) -> SimpleNamespace:
@@ -28,7 +27,7 @@ def _settings(key: str | None = _KEY_A, prev: str | None = None) -> SimpleNamesp
 
 @pytest.fixture
 def set_keys(monkeypatch: pytest.MonkeyPatch):
-    """钉住 crypto 看到的钥匙串。"""
+    """提供 crypto 当前及旧主密钥的配置替换函数。"""
 
     def _set(key: str | None = _KEY_A, prev: str | None = None) -> None:
         monkeypatch.setattr(crypto, "get_settings", lambda: _settings(key, prev))
@@ -44,7 +43,7 @@ class TestV2Format:
     def test_kid_segment_matches_active_key_fingerprint(self, set_keys):
         set_keys()
         token = crypto.encrypt_str("plain", aad="k")
-        parts = token.split(":", 3)  # enc | v2 | kid | b64(nonce+ct)
+        parts = token.split(":", 3)
         assert parts[0] == "enc" and parts[1] == "v2"
         assert parts[2] == hashlib.sha256(_raw_key(_KEY_A)).hexdigest()[:12]
 
@@ -67,10 +66,8 @@ class TestV2Format:
 class TestDecryptDualRead:
     def test_v2_readable_via_previous_during_rotation(self, set_keys):
         """轮换窗口:旧钥匙写的 v2 密文经 PREVIOUS 可读,新写入只认新钥匙。"""
-        # 先以旧钥匙为 active 造密文
         set_keys(_KEY_B)
         rotated_v2 = crypto.encrypt_str("v2-secret", aad="k")
-        # 轮换:新钥匙上位,旧钥匙挂 previous
         set_keys(_KEY_A, prev=_KEY_B)
         assert crypto.decrypt_str(rotated_v2, aad="k") == "v2-secret"
         fresh = crypto.encrypt_str("new-secret", aad="k")
@@ -87,7 +84,6 @@ class TestDecryptDualRead:
         set_keys()
         with pytest.raises(ValueError, match="版本前缀"):
             crypto.decrypt_str("not-a-token", aad="k")
-        # 非当前版本的 enc: 前缀一律拒绝
         with pytest.raises(ValueError, match="版本前缀"):
             crypto.decrypt_str("enc:v9:AAAA", aad="k")
         with pytest.raises(ValueError, match="kid"):
@@ -119,7 +115,7 @@ class TestDigestGenerations:
         set_keys(_KEY_A, prev=_KEY_B)
         rotated = crypto.hash_api_key_candidates("sk-test")
         assert len(rotated) == 2
-        assert rotated[0] == single[0]  # 当前世代恒在最前(写路径同序)
+        assert rotated[0] == single[0]
         prev_gen = hmac.new(
             crypto._derive(_raw_key(_KEY_B), crypto._MAC_INFO),
             b"service-api-key|sk-test",

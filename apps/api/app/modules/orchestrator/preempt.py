@@ -1,5 +1,5 @@
 """竞价抢占:按量/包周期请求容量不足时回收竞价实例腾位置。
-规则(知情同意承诺):只在同池同型号内选;按 `created_at DESC`;凑不够一台都不动。
+只在同池同型号内选;按 `created_at DESC`;凑不够一台都不动。
 与请求方的建实例同事务;状态机立刻迁 stopping,`instance.stop` 推迟 `spot_grace_seconds` 执行。
 """
 
@@ -35,7 +35,7 @@ async def pick_victims(
     need_cards: int,
 ) -> list[Instance]:
     """选出够腾 `need_cards` 张卡的竞价实例(最晚创建先选);凑不够返回空列表。
-    「一台腾出 gpu_count 张卡」是近似口径,与 `_sku_free_capacity` 同源。"""
+    每台按 gpu_count 近似计卡数。"""
     if need_cards <= 0:
         return []
     rows = list(
@@ -61,7 +61,7 @@ async def pick_victims(
         freed += max(1, inst.gpu_count)
         if freed >= need_cards:
             return picked
-    return []  # 凑不够:一台都不动
+    return []
 
 
 def cards_needed(*, deficit_slots: int, slots_per_card: int) -> int:

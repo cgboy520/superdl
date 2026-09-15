@@ -9,11 +9,9 @@ export default defineConfig({
       mode: "tags-split",
       target: "src/generated/endpoints",
       schemas: "src/generated/model",
-      // 只生成 fetcher 与 model 类型;hooks 两端自建
       client: "fetch",
       clean: true,
       indexFiles: true,
-      // header 参数(Idempotency-Key 等)生成进函数签名
       headers: true,
       override: {
         mutator: {

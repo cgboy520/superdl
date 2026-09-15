@@ -1,3 +1,5 @@
+"""管理端 API 模型;审计 detail 禁止凭据明文,平台配置只记键名不记值。"""
+
 from datetime import datetime
 from typing import Any, Literal
 
@@ -10,7 +12,6 @@ from app.modules.billing.schemas import LedgerEntryOut, RechargeOut
 
 class AdminLoginRequest(BaseModel):
     username: str = Field(min_length=1, max_length=64)
-    # 与创建/重置同标准(128)
     password: str = Field(min_length=1, max_length=128)
 
 
@@ -24,7 +25,6 @@ class AdminOut(BaseModel):
 
 AdminRole = Literal["admin", "ops", "finance", "readonly"]
 
-# 只含 reason 的请求体共用的原因长度上限。不合并成一个 ReasonBody:orval 按 schema 名生成前端类型
 REASON_MAX_LENGTH = 256
 
 
@@ -75,7 +75,7 @@ class MfaChallengeOut(BaseModel):
 class AdminLoginTokenOut(BaseModel):
     """登录响应·直发分支(admin_mfa_enabled 关闭时)。"""
 
-    status: Literal["ok"]  # 前端按 status 判别联合类型
+    status: Literal["ok"]
     access_token: str
     admin: AdminOut
 
@@ -93,7 +93,7 @@ class MfaSetupOut(BaseModel):
 
 class MfaCodeRequest(BaseModel):
     ticket: str = Field(min_length=1)
-    code: str = Field(min_length=6, max_length=16)  # 6 位 TOTP 或 11 位恢复码(XXXXX-XXXXX)
+    code: str = Field(min_length=6, max_length=16)
 
 
 class MfaSetupConfirmOut(BaseModel):
@@ -134,10 +134,6 @@ class AdminRefreshOut(BaseModel):
     access_token: str
 
 
-# ---------- 管理端响应模型 ----------
-# 金额一律 str(禁 float);时间为 isoformat 字符串。
-
-
 class TenantOut(BaseModel):
     id: int
     phone_masked: str
@@ -147,7 +143,6 @@ class TenantOut(BaseModel):
     instances: int
     disk_gb: int
     created_at: str
-    # 实名信息透出:readonly 角色脱敏;ops/finance/admin 明文(响应含实名字段即落审计)
     verification_status: str = "unverified"
     id_name: str | None = None
 
@@ -179,7 +174,6 @@ class TenantQuotaUpdate(BaseModel):
 class TenantStatusOut(BaseModel):
     id: int
     status: str
-    # 仅冻结时返回:本次一并停掉的 running 实例台数
     instances_stopped: int | None = None
 
 
@@ -189,7 +183,6 @@ class OverviewPoolOut(BaseModel):
     pool: str
     gpu_total: int
     gpu_used: int
-    # 已租中属于竞价实例的卡数,按 gpu_used 截断
     gpu_spot_used: int
     ready_gpu_total: int
 
@@ -197,10 +190,10 @@ class OverviewPoolOut(BaseModel):
 class OverviewOut(BaseModel):
     """总览聚合:全部精确计数。"""
 
-    instances_by_status: dict[str, int]  # 非终态分状态计数(不含 released)
-    tenants_total: int  # active 用户口径
-    paying_tenants: int  # ledger consume > 0 的精确人数
-    subscriptions_active: int  # 在保(未到期)的包周期实例数
+    instances_by_status: dict[str, int]
+    tenants_total: int
+    paying_tenants: int
+    subscriptions_active: int
     nodes_total: int
     nodes_ready: int
     nodes_missing: int
@@ -225,11 +218,10 @@ class AdminAlertOut(BaseModel):
     content: str
     severity: str
     created_at: str
-    # 告警闭环:确认留痕 + 跳转目标
     acked_by: int | None = None
     acked_by_username: str | None = None
     acked_at: str | None = None
-    target_kind: str | None = None  # tenant / node / ticket
+    target_kind: str | None = None
     target_id: str | None = None
 
 
@@ -244,7 +236,7 @@ class AnnouncementOut(BaseModel):
     id: int
     title: str
     content: str
-    status: str  # published / revoked
+    status: str
     reached: int
     created_by: int
     created_at: str
@@ -277,7 +269,6 @@ class AuditLogOut(BaseModel):
     target: str | None
     ip: str | None
     result: int
-    # 原因、变更前后值、金额都在这里。detail 禁止落凭据明文(平台配置只落键名不落值)。
     detail: dict[str, Any] | None = None
     created_at: str
 

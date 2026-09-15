@@ -47,7 +47,6 @@ export function RefundTab() {
   const [orderNo, setOrderNo] = useState<string>();
   const [amount, setAmount] = useState("0");
   const [reason, setReason] = useState("");
-  // 幂等键按「提交序号 + 表单快照」派生,成功后序号 +1 即新单
   const [submitSeq, setSubmitSeq] = useState(0);
   const selected = orders.find((o) => o.order_no === orderNo);
   const create = useCreateRefund({
@@ -73,7 +72,6 @@ export function RefundTab() {
     <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
       <Card size="small" title={t("billing.refundApply")}>
         {ordersQ.isError ? (
-          // 加载失败不伪装成「无充值订单」
           <DataErrorAlert onRetry={() => void ordersQ.refetch()} />
         ) : orders.length === 0 && !ordersQ.isLoading ? (
           <EmptyState scene="list" compact description={t("billing.refundNoOrders")} />
@@ -86,7 +84,6 @@ export function RefundTab() {
               value={orderNo}
               onChange={(v: string) => {
                 setOrderNo(v);
-                // 默认退满上限:min(订单额, 当前余额),与服务端同口径
                 setAmount(orders.find((o) => o.order_no === v)?.max_amount ?? "0");
               }}
               options={orders.map((o) => ({

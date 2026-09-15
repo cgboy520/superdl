@@ -49,9 +49,7 @@ logger = get_logger(__name__)
 
 
 def sellable_per_gpu(pool_label: str, gpu_cores_pct: int, oversell_cores: Decimal) -> int:
-    """每张物理卡可售实例数:hami 池 = ⌊100 × oversell_cores ÷ gpu_cores_pct⌋(Decimal,至少 1),
-    kata / mig 池恒 1。市场库存、创建软准入、容量预览共用。
-    """
+    """hami 池每卡可售数为 max(1, ⌊100×oversell_cores/max(1,gpu_cores_pct)⌋),其余池为 1。"""
     if pool_label != POOL_HAMI:
         return 1
     return max(1, int(Decimal(100) * oversell_cores // max(1, gpu_cores_pct)))
@@ -105,7 +103,7 @@ async def list_market_skus(
     if gpu_model:
         stmt = stmt.where(Sku.gpu_model == gpu_model)
     skus = list((await session.execute(stmt)).scalars().all())
-    counts = await inventory.get_available_counts(session, skus)  # 批量一次,免 N+1 扇出
+    counts = await inventory.get_available_counts(session, skus)
     out: list[SkuMarketOut] = []
     for sku in skus:
         item = SkuMarketOut.model_validate(sku)
@@ -166,7 +164,7 @@ async def image_coverage(session: AsyncSession) -> dict[int, tuple[int, int, int
 
 
 def _is_prewarmed(img: PlatformImage, cached: int, total: int, threshold: int) -> bool:
-    """prewarm_enabled 且(零 cache 行回落旧语义 / 覆盖率 ≥ prewarm_min_coverage_pct)。"""
+    """启用预热且(无缓存行或缓存覆盖百分比达到 threshold)时返回 True。"""
     return img.prewarm_enabled and (total == 0 or cached * 100 >= threshold * total)
 
 
@@ -228,9 +226,6 @@ def _admin_image_out(
     )
 
 
-# ---------- 管理端 ----------
-
-
 async def admin_list_skus(session: AsyncSession) -> list[Sku]:
     return list((await session.execute(select(Sku).order_by(Sku.id))).scalars())
 
@@ -247,7 +242,7 @@ def _checked_price(value: Decimal) -> Decimal:
 
 
 async def _commit_or_conflict(session: AsyncSession, *, key: str) -> None:
-    """提交;业务唯一键冲突回滚并转 409(session 回到可用态)。"""
+    """提交事务;IntegrityError 回滚并转换为指定文案的 409。"""
     try:
         await session.commit()
     except IntegrityError as exc:
@@ -266,7 +261,6 @@ async def admin_create_sku(session: AsyncSession, data: SkuCreate) -> Sku:
     return sku
 
 
-# 单次改价幅度超过这个比例即告警,不阻断
 PRICE_CHANGE_ALERT_RATIO = Decimal("0.5")
 
 
@@ -277,7 +271,6 @@ async def admin_update_sku(
     sku = await get_sku(session, sku_id)
     was_on_sale = sku.status == "on"
     updates = data.model_dump(exclude_unset=True, exclude={"reason"})
-    # 改池或改切片只在下架态放行;在应用更新之前判
     if was_on_sale and any(
         field in updates and updates[field] != getattr(sku, field)
         for field in ("pool_label", "mig_profile")
@@ -292,10 +285,8 @@ async def admin_update_sku(
         if old != value:
             before[field] = str(old) if isinstance(old, Decimal) else old
         setattr(sku, field, value)
-    # 池与切片任一动了都复核配对
     if "pool_label" in before or "mig_profile" in before:
         _check_tier_pool(sku.tier, sku.pool_label, sku.mig_profile)
-    # 「带不带卡」规则按合并后的终态复核
     cpu_key = cpu_spec_error(
         tier=sku.tier,
         gpu_model=sku.gpu_model,
@@ -330,7 +321,7 @@ async def _alert_large_price_change(
     )
     await notify_service.notify(
         session,
-        None,  # user_id=None → 平台告警流(管理端总览右栏)
+        None,
         type_="admin_alert",
         title=f"SKU 单价大幅调整:{sku.name}",
         content=f"{old} → {new} 元/时(幅度 {ratio:.0%});原因:{reason}",
@@ -362,9 +353,6 @@ async def _ensure_sellable(session: AsyncSession, sku: Sku) -> None:
     )
 
 
-# ---------- 管理端:镜像与预热 ----------
-
-
 async def get_image(session: AsyncSession, image_id: int) -> PlatformImage:
     img = await session.get(PlatformImage, image_id)
     if img is None:
@@ -386,7 +374,6 @@ async def admin_update_image(
     img = await get_image(session, image_id)
     updates = data.model_dump(exclude_unset=True)
     if updates.get("image_ref") and updates["image_ref"] != img.image_ref:
-        # ref 变更:同事务清缓存行
         await session.execute(delete(ImageNodeCache).where(ImageNodeCache.image_id == image_id))
     for field, value in updates.items():
         setattr(img, field, value)
@@ -424,7 +411,7 @@ async def admin_prewarm_image(session: AsyncSession, image_id: int) -> int:
 
 
 async def image_node_rows(session: AsyncSession, image_id: int) -> list[ImageNodeCache]:
-    await get_image(session, image_id)  # 404 门禁
+    await get_image(session, image_id)
     return list(
         (
             await session.execute(
@@ -434,9 +421,6 @@ async def image_node_rows(session: AsyncSession, image_id: int) -> list[ImageNod
             )
         ).scalars()
     )
-
-
-# ---------- 管理端 SKU 视图与容量预览(纯台账推算) ----------
 
 
 async def admin_skus_out(session: AsyncSession) -> list[SkuAdminOut]:

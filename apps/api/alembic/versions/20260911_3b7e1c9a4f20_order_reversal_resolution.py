@@ -1,10 +1,4 @@
-"""orders 增加渠道冲正处置标记:channel_reversal_resolved_at / channel_reversal_action。
-
-Revision ID: 3b7e1c9a4f20
-Revises: 1d36973ae873
-Create Date: 2026-09-11 18:40:00.000000
-
-"""
+"""orders 增加可空的 channel_reversal_resolved_at、channel_reversal_action 及动作约束。"""
 
 from collections.abc import Sequence
 

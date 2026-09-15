@@ -14,7 +14,7 @@ export function GpuSparkline({ points }: { points: readonly (readonly [number, n
   const span = Math.max(t1 - t0, 1);
   const xy = points.map(([ts, util]) => {
     const x = points.length === 1 ? WIDTH / 2 : ((ts - t0) / span) * (WIDTH - 2) + 1;
-    const v = Math.min(Math.max(util, 0), 100); // 越界数据钉住画布
+    const v = Math.min(Math.max(util, 0), 100);
     const y = HEIGHT - 2 - (v / 100) * (HEIGHT - 4);
     return [x, y] as const;
   });

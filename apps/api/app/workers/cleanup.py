@@ -1,4 +1,4 @@
-"""数据保洁(每日):过期验证码 / 已用 refresh 记录 / 已完成 outbox / 超保留期审计 / 过期限流计数。"""
+"""按保留期清理验证码、refresh 记录、done/discarded outbox、审计和限流计数。"""
 
 from typing import Any, cast
 
@@ -12,7 +12,7 @@ logger = get_logger(__name__)
 
 
 async def cleanup_expired_rows(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]:
-    """数据保洁(每日):过期验证码/已用 refresh 记录/已完成 outbox/超保留期审计。"""
+    """同事务清理并提交,返回各类删除行数;审计按 audit_retention_days 保留。"""
     retention = get_settings().audit_retention_days
     stmts = {
         "sms_codes": "DELETE FROM sms_codes WHERE expires_at < now() - interval '7 days'",
@@ -21,11 +21,9 @@ async def cleanup_expired_rows(sm: async_sessionmaker[AsyncSession]) -> dict[str
             "DELETE FROM outbox_tasks WHERE status IN ('done', 'discarded') "
             "AND updated_at < now() - interval '7 days'"
         ),
-        # 保留期走绑定参数(make_interval)
         "audit_log": (
             "DELETE FROM audit_log WHERE created_at < now() - make_interval(days => :days)"
         ),
-        # 限流计数窗口最长 24h,留 2 天余量
         "rate_limit_counters": (
             "DELETE FROM rate_limit_counters WHERE updated_at < now() - interval '2 days'"
         ),

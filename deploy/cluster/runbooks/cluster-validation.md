@@ -24,9 +24,8 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 3. 性能基准:
    ```bash
    python -c "import torch;print(torch.cuda.is_available())"
-   # 跑 3 轮 resnet50 训练吞吐 vs 裸金属基线,记录差值
    ```
-   判据:损耗 <5%。
+   跑 3 轮 ResNet-50 训练,记录吞吐与同硬件裸金属基线的差值;判据:损耗 <5%。
 
 ## C. HAMi 共享池
 
@@ -65,7 +64,7 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 - [ ] 管理端 cordon/uncordon 落到真实节点(patch_node)
 - [ ] server 侧 agent token(非 node-token)录入管理端的引导路径可走通
 - [ ] 装机顺序:gpu-operator 先于节点加入(顺序颠倒时重打一次标签)
-- [ ] GPU Operator 工作负载标签就位(由平台在入网对账时打,契约见 `values/gpu-operator.yaml` 头注释):kata 池 `nvidia.com/gpu.workload.config=vm-passthrough`、hami 池 `nvidia.com/gpu.deploy.device-plugin=false`;kata 池注册 `nvidia.com/gpu` 的是 kata-sandbox-device-plugin
+- [ ] GPU Operator 工作负载标签就位(由平台在入网对账时打,契约见 [node-pool-switch.md](./node-pool-switch.md)「核对」):kata 池 `nvidia.com/gpu.workload.config=vm-passthrough`、hami 池 `nvidia.com/gpu.deploy.device-plugin=false`;kata 池注册 `nvidia.com/gpu` 的是 kata-sandbox-device-plugin
 - [ ] **GPU 可见性伪造防线**:① 应用层:管理端/ API 建服务型实例显式传 `NVIDIA_*` env 必须 422;② 准入层:`kubectl -n tenant-<uuid> apply` 一个带 `env: [{name: NVIDIA_VISIBLE_DEVICES, value: all}]` 的 Pod 必须被 `superdl-tenant-pod-baseline` 拒绝;③ 运行时纵深(测试集群验证 CDI 注入生效后才上生产):`values/gpu-operator.yaml` 的 toolkit 段加 `ACCEPT_NVIDIA_VISIBLE_DEVICES_ENVVAR_WHEN_UNPRIVILEGED=false`。验证矩阵:kata / mig / hami 三池各建一台实例,容器内 `nvidia-smi` 只见分配到的卡,hami 池显存超限仍在容器内被拒
 
 ## G. 镜像缓存与预热

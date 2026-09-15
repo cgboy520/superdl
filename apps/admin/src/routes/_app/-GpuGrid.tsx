@@ -73,7 +73,6 @@ export function GpuGrid({ node, metrics }: { node: NodeRow; metrics: NodeMetrics
                   fontSize: fontSize.caption,
                   lineHeight: 1.2,
                   background: bg,
-                  // 字色随底:深底浅字,亮青(断源已租)深字
                   color: !live
                     ? used
                       ? adminColors.bgBase
@@ -91,7 +90,6 @@ export function GpuGrid({ node, metrics }: { node: NodeRow; metrics: NodeMetrics
           );
         })}
       </div>
-      {/* 色阶图例:四档 + 断源两态 */}
       <Space size={space.md} wrap style={{ marginTop: 12 }}>
         {(Object.keys(HEAT_LEGEND_KEY) as (keyof typeof HEAT_LEGEND_KEY)[]).map((key) => (
           <Space key={key} size={space.xs}>

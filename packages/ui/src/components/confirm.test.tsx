@@ -48,7 +48,6 @@ function renderModal(
   );
 }
 
-// antd Button 两字中文自动插空,可访问名按原样匹配
 describe("TypeConfirmModal", () => {
   it("键入匹配 + 勾选两道闸全过才解锁确认按钮", async () => {
     const user = userEvent.setup();
@@ -58,7 +57,6 @@ describe("TypeConfirmModal", () => {
     expect(within(dialog).getByText("键入 demo-vm 以确认")).toBeInTheDocument();
     const confirmBtn = within(dialog).getByRole("button", { name: "确认释放" });
     expect(confirmBtn).toBeDisabled();
-    // 只过键入闸仍锁着
     await user.type(within(dialog).getByPlaceholderText("demo-vm"), "demo-vm");
     expect(confirmBtn).toBeDisabled();
     await user.click(within(dialog).getByRole("checkbox"));
@@ -136,10 +134,8 @@ describe("useConfirm", () => {
         </App>
       </I18nextProvider>,
     );
-    // 两字中文按钮可访问名带空格
     await user.click(screen.getByRole("button", { name: /触\s*发/ }));
     const dialog = await screen.findByRole("dialog");
-    // antd 6 confirm 标题渲染两处
     expect(within(dialog).getAllByText("确认关机?").length).toBeGreaterThan(0);
     expect(within(dialog).getByText("GPU 立即释放,再开机可能库存不足")).toBeInTheDocument();
     expect(within(dialog).getByText("该操作影响 3 台在跑实例")).toBeInTheDocument();

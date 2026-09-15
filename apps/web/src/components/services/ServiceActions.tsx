@@ -1,4 +1,4 @@
-/** 服务操作组(RowActions 三槽位):主动作随状态变(可启动 → 启动 / 其余 → 端点 ▾)+ 次动作(停止或启动灰置,详情页再加「更新版本」)+ 更多 ▾(访问密钥 / 设置直达与删除)。条目永不隐藏,灰置带原因。停止二次确认;删除走键入名称 + 勾选的多级防护,运行中须先停(后端 409 同判据)。 */
+/** 服务操作组:状态门控的启停与端点菜单、版本更新、设置入口和删除确认。 */
 
 import { LinkOutlined } from "@ant-design/icons";
 import type { ServiceOut } from "@superdl/api-client";
@@ -89,7 +89,6 @@ function EndpointMenu({ service, size }: { service: ServiceOut; size: "small" | 
   const { t } = useTranslation();
   const { message } = App.useApp();
   const [curlOpen, setCurlOpen] = useState(false);
-  // running / unready 的端点已解析到实例;其余状态网关打不通
   const reason =
     service.status === "running" || service.status === "unready" ? undefined : t("services.endpointUnreachable");
   const curl = curlExampleOf(service);
@@ -114,7 +113,6 @@ function EndpointMenu({ service, size }: { service: ServiceOut; size: "small" | 
   ];
   return (
     <>
-      {/* 行内主动作:外观与实例「连接 ▾」一致 */}
       <RowMoreMenu
         items={items}
         size={size}
@@ -200,7 +198,6 @@ export function ServiceActions({
       },
     });
 
-  // 主动作随状态变:可启动 → 启动;其余 → 端点 ▾(未运行时条目灰置带原因)
   const primary = startable ? (
     <Button size={size} type="primary" loading={start.isPending} onClick={() => start.mutate(service.slug)}>
       {t("services.actions.start")}
@@ -209,7 +206,6 @@ export function ServiceActions({
     <EndpointMenu service={service} size={size} />
   );
 
-  // 次动作:可停止 → 停止;既不可启动也不可停止 → 启动灰置带原因(冻结 / 过渡态)
   const stopOrStart = stoppable ? (
     <Button size={size} loading={stop.isPending} onClick={confirmStop}>
       {t("services.actions.stop")}
@@ -222,7 +218,6 @@ export function ServiceActions({
       {t("services.actions.start")}
     </GatedButton>
   );
-  // 详情页头多一个「更新版本」(ui-ux-spec §3.8)
   const rolloutButton = onRollout ? (
     <GatedButton
       size={size}

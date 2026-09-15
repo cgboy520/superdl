@@ -30,7 +30,6 @@ class LedgerEntryOut(BaseModel):
 class BillHourlyOut(BaseModel):
     id: int
     instance_id: int
-    # 展示用冗余(当前实例名),不参与对账
     instance_name: str | None = None
     hour_start: datetime
     seconds_used: int
@@ -56,7 +55,7 @@ class BillSummaryOut(BaseModel):
 
 
 class PoliciesOut(BaseModel):
-    """计费/回收策略常量(公开只读;前端展示口径的唯一来源,禁止硬编码)。"""
+    """公开只读的计费与回收策略。"""
 
     disk_price_gb_month: MoneyOut
     disk_min_gb: int
@@ -64,31 +63,29 @@ class PoliciesOut(BaseModel):
     disk_grace_days: int
     disk_frozen_days: int
     freeze_grace_hours: int
-    # 包周期折扣(百分数,80 = 8 折)与到期预警窗;前端一律读这里
     period_discount_day: int
     period_discount_week: int
     period_discount_month: int
     period_discount_year: int
     period_expire_warn_days: int
-    # 竞价折扣与抢占宽限窗;前端一律读这里
     spot_discount_pct: int
     spot_grace_seconds: int
-    real_name_enabled: bool = False  # 用户端实名表单是否可用
+    real_name_enabled: bool = False
     real_name_required_for_recharge: bool = False
 
 
 class SubscriptionQuoteOut(BaseModel):
-    """包周期报价。金额三件套由后端算好逐行下发,前端不自己做乘法。"""
+    """包周期报价,包含后端计算的原价、折扣与实付金额。"""
 
     period: str
     period_count: int
     hours: int
     discount_pct: int
-    base_hourly: MoneyOut  # SKU 原价时价
-    unit_price: MoneyOut  # 折后时价
-    list_amount: MoneyOut  # 原价总额
-    discount_amount: MoneyOut  # 优惠额
-    amount: MoneyOut  # 应付(实扣)
+    base_hourly: MoneyOut
+    unit_price: MoneyOut
+    list_amount: MoneyOut
+    discount_amount: MoneyOut
+    amount: MoneyOut
 
 
 class SubscriptionOut(BaseModel):
@@ -117,15 +114,13 @@ class DailySummaryOut(BaseModel):
     items: list[BillSummaryItem]
 
 
-# 充值金额上下限:只在契约层校验一次
 MIN_RECHARGE = Decimal("1.00")
 MAX_RECHARGE = Decimal("50000.00")
 
 
 class RechargeCreate(BaseModel):
-    # 先校验后量化:契约层边界直接 422,且进 OpenAPI
     amount: Decimal = Field(ge=MIN_RECHARGE, le=MAX_RECHARGE)
-    channel: str  # wechat / alipay / mock(dev);必填
+    channel: str
 
 
 class RechargeOut(BaseModel):
@@ -140,15 +135,11 @@ class RechargeOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-# ---------- 退款 ----------
-
-# 线下打款渠道;不做渠道原路退回
 PayoutChannel = Literal["offline", "alipay_transfer", "wechat_transfer"]
 
 
 class RefundCreate(BaseModel):
     order_no: str = Field(min_length=4, max_length=40)
-    # 契约层先挡负数/超大值;≤ min(订单额,余额) 在服务层校验
     amount: Decimal = Field(gt=0, le=MAX_RECHARGE)
     reason: str = Field(min_length=2, max_length=256)
 
@@ -162,7 +153,7 @@ class RefundOut(BaseModel):
     amount: MoneyOut
     reason: str
     status: str
-    review_comment: str | None  # 驳回理由/审批意见
+    review_comment: str | None
     payout_channel: str | None
     payout_ref: str | None
     payout_at: datetime | None
@@ -176,7 +167,9 @@ class RefundableOrderOut(BaseModel):
 
     refundable=False 时 reason_code:not_paid / already_applied / fully_refunded / invoiced
     / no_balance。
-    同单可多次部分退款:max_amount = min(订单剩余可退, 当前余额),剩余可退 = 订单额 − Σ已打款。
+    同单可多次部分退款:max_amount = min(订单剩余可退, 非负可用余额, 流水可退余额)。
+    剩余可退 = 订单额 − Σ已打款退款;可用余额 = balance − frozen。
+    流水可退余额为排除正向 adjust 后的流水净额,下限为零。
     """
 
     order_no: str
@@ -186,7 +179,7 @@ class RefundableOrderOut(BaseModel):
     paid_at: datetime | None
     refundable: bool
     reason_code: str | None
-    max_amount: MoneyOut  # min(订单剩余可退, 当前钱包余额)
+    max_amount: MoneyOut
 
 
 class AdminRefundOut(RefundOut):
@@ -201,27 +194,22 @@ class AdminRefundOut(RefundOut):
 
 class RefundReview(BaseModel):
     approve: bool
-    comment: str = Field(min_length=2, max_length=256)  # 同意/驳回都须填意见
+    comment: str = Field(min_length=2, max_length=256)
 
 
 class RefundPayout(BaseModel):
     channel: PayoutChannel
-    ref: str = Field(min_length=2, max_length=128)  # 线下打款凭证号
+    ref: str = Field(min_length=2, max_length=128)
 
 
 class RefundCancel(BaseModel):
     reason: str = Field(min_length=2, max_length=256)
 
 
-# ---------- 发票 ----------
-
 InvoiceTitleType = Literal["personal", "company"]
 
-# 账期 YYYY-MM(北京月界);能否申请在服务层判定
 INVOICE_PERIOD_PATTERN = r"^\d{4}-(0[1-9]|1[0-2])$"
-# 宽松的邮箱格式校验
 EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
-# 统一社会信用代码(GB 32100-2015):18 位,字符集为数字与大写字母(不含 I/O/Z/S/V)
 TAX_ID_PATTERN = r"^[0-9A-HJ-NPQRTUWXY]{2}\d{6}[0-9A-HJ-NPQRTUWXY]{10}$"
 
 
@@ -231,7 +219,6 @@ class InvoiceCreate(BaseModel):
     period: str = Field(pattern=INVOICE_PERIOD_PATTERN)
     title_type: InvoiceTitleType
     title: str = Field(min_length=2, max_length=128)
-    # 企业抬头为 18 位统一社会信用代码,格式校验在 model_validator(个人抬头忽略入参)
     tax_id: str | None = Field(default=None, max_length=32)
     email: str = Field(pattern=EMAIL_PATTERN, max_length=128)
 
@@ -248,7 +235,7 @@ class InvoiceCreate(BaseModel):
             if not re.fullmatch(TAX_ID_PATTERN, self.tax_id):
                 raise ValueError("tax_id must be an 18-character unified social credit code")
         if self.title_type == "personal":
-            self.tax_id = None  # 个人抬头无税号
+            self.tax_id = None
         return self
 
 
@@ -286,24 +273,21 @@ class InvoiceEligibleOut(BaseModel):
 
 
 class InvoiceIssue(BaseModel):
-    invoice_no: str = Field(min_length=2, max_length=64)  # 发票号(人工开票后回填)
+    invoice_no: str = Field(min_length=2, max_length=64)
 
 
 class InvoiceReject(BaseModel):
     reason: str = Field(min_length=2, max_length=256)
 
 
-# ---------- 结算缺口(管理端) ----------
-
-
 class AdminSettlementGapOut(BaseModel):
     """管理端结算缺口视图。"""
 
     id: int
-    kind: str  # hourly / daily_disk
-    window_start: datetime  # 缺口窗口起点(小时/自然日)
-    object_id: int  # 实例/盘 id;0 = 整窗
-    reason: str  # catchup_truncated / dead_letter / watermark_missing / grace_overlap
+    kind: str
+    window_start: datetime
+    object_id: int
+    reason: str
     resolved_at: datetime | None
     created_at: datetime
 
@@ -313,4 +297,4 @@ class AdminSettlementGapOut(BaseModel):
 class SettlementGapResolve(BaseModel):
     """人工核销(不重放)。说明必填。"""
 
-    note: str = Field(min_length=2, max_length=256)  # 核销说明
+    note: str = Field(min_length=2, max_length=256)

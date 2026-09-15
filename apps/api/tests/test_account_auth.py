@@ -1,4 +1,3 @@
-# 白盒用例:直探模块内部
 # pyright: reportPrivateUsage=false
 from datetime import timedelta
 
@@ -35,7 +34,7 @@ class TestRegister:
             json={
                 "phone": "13800000071",
                 "sms_code": "123456",
-                "password": "汉" * 24,  # 72 字节
+                "password": "汉" * 24,
                 "accept_terms": True,
             },
         )
@@ -47,7 +46,7 @@ class TestRegister:
             json={
                 "phone": "13800000072",
                 "sms_code": "123456",
-                "password": "汉" * 25,  # 75 字节
+                "password": "汉" * 25,
                 "accept_terms": True,
             },
         )
@@ -111,7 +110,6 @@ class TestLogin:
         r.pop("request_id")
         u.pop("request_id")
         assert r == u
-        # 验证码路径同理
         bad_code_registered = await client.post(
             "/api/v1/auth/login", json={"phone": PHONE, "sms_code": "000000"}
         )
@@ -162,13 +160,11 @@ class TestLogin:
             "/api/v1/auth/login", json={"phone": phone, "password": "secret123456"}
         )
         assert ok.status_code == 200, ok.text
-        # 计数已清零:再错 5 次仍是 LOGIN_FAILED,桶满 5/5
         for _ in range(5):
             resp = await client.post(
                 "/api/v1/auth/login", json={"phone": phone, "password": "wrong-pass"}
             )
             assert resp.json()["code"] == "LOGIN_FAILED"
-        # 桶已满:正确密码同样 429
         resp = await client.post(
             "/api/v1/auth/login", json={"phone": phone, "password": "secret123456"}
         )
@@ -218,7 +214,6 @@ class TestPasswordReset:
         assert resp.status_code == 200, resp.text
         new_pair = resp.json()
 
-        # 旧 access token 立即失效
         assert (
             await client.get("/api/v1/me", headers={"Authorization": f"Bearer {old_access}"})
         ).status_code == 401
@@ -227,7 +222,6 @@ class TestPasswordReset:
                 "/api/v1/me", headers={"Authorization": f"Bearer {new_pair['access_token']}"}
             )
         ).status_code == 200
-        # 新密码可登录
         resp = await client.post(
             "/api/v1/auth/login", json={"phone": "13800000090", "password": "newpass123456"}
         )
@@ -249,7 +243,6 @@ class TestSmsQuotaAndBackoff:
         """替受害者请求验证码耗不到其 10 次/日配额(日配额只按消费计)。"""
         phone = "13800000096"
         async with sm() as session:
-            # 同号已有 10 条未消费验证码
             for _ in range(10):
                 session.add(
                     SmsCode(
@@ -261,13 +254,11 @@ class TestSmsQuotaAndBackoff:
                     )
                 )
             await session.commit()
-        # 受害者自己请求:不被日配额挡
         resp = await client.post(
             "/api/v1/auth/sms-code",
             json={"phone": phone, "purpose": "register"},
         )
         assert resp.status_code == 204, resp.text
-        # 消费(注册)不受未消费记录影响
         resp = await client.post(
             "/api/v1/auth/register",
             json={"phone": phone, "sms_code": "123456", "accept_terms": True},
@@ -277,7 +268,7 @@ class TestSmsQuotaAndBackoff:
     async def test_send_backoff_escalates_on_unconsumed_codes(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """同号连续未消费 → 发送间隔递增(60s → 120s);正常消费后连续计数归零。"""
+        """同号验证码连续未消费时,发送间隔从 60 秒递增至 120 秒。"""
         phone = "13800000097"
         await send_code(client, phone)
         resp = await client.post(
@@ -286,9 +277,8 @@ class TestSmsQuotaAndBackoff:
         )
         assert resp.status_code == 429
         assert resp.json()["code"] == "SMS_TOO_FREQUENT"
-        assert resp.json()["params"]["seconds"] <= 60  # 第一条:基础间隔
+        assert resp.json()["params"]["seconds"] <= 60
 
-        # 越过基础间隔后第二条放行;两条未消费 → 退避升到 120s
         async with sm() as session:
             await session.execute(
                 update(SmsCode)
@@ -329,16 +319,13 @@ class TestSmsQuotaAndBackoff:
                     )
                 )
             await session.commit()
-        # 失败尝试不占配额
         async with sm() as session:
             with pytest.raises(AppError):
                 await account_service._consume_sms_code(session, phone, "999999", "login")
-        # 消费与发送逆序(每次选中最新一条未消费记录)
         for code in reversed(codes[1:]):
             async with sm() as session:
                 await account_service._consume_sms_code(session, phone, code, "login")
                 await session.commit()
-        # 第 11 次消费超出日配额
         async with sm() as session:
             with pytest.raises(AppError) as exc:
                 await account_service._consume_sms_code(session, phone, codes[0], "login")

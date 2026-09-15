@@ -1,38 +1,20 @@
-# GPU Operator:驱动由 node-join.sh 预装(driver.enabled=false)。
-# 分池靠节点标签(ClusterPolicy 不接受 nodeSelector):operand 按 `nvidia.com/gpu.deploy.<组件>=true` 调度,
-# operator 依据 `nvidia.com/gpu.workload.config` 自动打这套标签,已存在的值不覆盖。
-#   kata 池: kubectl label node <节点> nvidia.com/gpu.workload.config=vm-passthrough
-#           (部署 kata-sandbox-device-plugin + vfio-manager,撤掉普通 device-plugin)
-#   hami 池: kubectl label node <节点> nvidia.com/gpu.deploy.device-plugin=false
-#           (禁掉官方 device-plugin;其他组件照常)
-#   mig 池: 无需标签(container 默认;MIG 机型自动获得 mig-manager)。
-#           切分按需:kubectl label node <节点> nvidia.com/mig.config=all-1g.10gb --overwrite
-# 这两个键与池标签一样由平台写(入网对账时打、切池时整套换),**旧池残留键必须删掉**:operator 派生
-# nvidia.com/gpu.deploy.* 时不覆盖已存在的值,hami 的 device-plugin=false 留在 kata/mig 节点上
-# 会让官方 device-plugin 永远起不来。收敛表在 apps/api/app/core/gpu_adapter.pool_node_labels,
-# 平台 SA 的写权限在 deploy/cluster/admission/tenant-restrictions.yaml 策略三白名单。
-# MIG 切分与 Kata 开机须实机验证(runbooks/cluster-validation.md),未验证前不上架 dedicated/mig 档 SKU
 driver:
-  enabled: false           # 装机基线已装宿主驱动
+  enabled: false
 toolkit:
   enabled: true
 devicePlugin:
   enabled: true
-  # 服务 kata 与 mig 两池;HAMi 池节点打 nvidia.com/gpu.deploy.device-plugin=false 与其互斥
 migManager:
-  enabled: true             # 自动落在 MIG 机型节点(container 负载),无需 selector
+  enabled: true
 mig:
-  # 必须 mixed:平台申请 nvidia.com/mig-{profile} 资源(apps/api/app/core/gpu_adapter)
   strategy: mixed
 dcgmExporter:
-  enabled: true            # DCGM 指标 → usage_hourly 聚合 + 大盘 24450
-  # 版本钉死:节点维标签是小写 hostname(prom.py DCGM_NODE_LABEL 与 values/kps.yaml 按此写死),升版前核对
+  enabled: true
   version: 4.6.0-4.8.3-distroless
   serviceMonitor:
     enabled: true
 sandboxWorkloads:
   enabled: true
-  # kata 模式:vm-passthrough 节点部署 kata-sandbox-device-plugin
   mode: kata
 vfioManager:
-  enabled: true            # kata 池 VFIO 直通;落点由 workload 标签驱动(vm-passthrough)
+  enabled: true

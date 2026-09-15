@@ -1,4 +1,4 @@
-/** 实例详情:EntityHeader(名称行内改名 / 状态 / 标签 / 元信息 / 操作组)+ 连接 / 监控 / 日志 / 事件时间线(= 计费依据)/ 账单 / 设置(只剩危险区)。默认 Tab 按状态(running → 连接,其余 → 事件);事件/账单 Tab 游标分页;面包屑返回列表不丢筛选态。服务的版本实例不进列表但直链可达:「连接」按 with_ssh 出 SSH 卡,Jupyter 卡不出。 */
+/** 实例详情:连接、监控、日志、事件、账单与设置;默认 Tab 由实例状态决定。 */
 
 import { type InstanceOut } from "@superdl/api-client";
 import { formatDateTime, isTransientInstanceStatus, localToday, POLL, space } from "@superdl/ui";
@@ -28,13 +28,11 @@ import { InstanceActions, ReleaseModal, canReleaseStatus } from "../components/I
 import { requireAuth } from "../lib/guard";
 import { useRememberedListSearch } from "../stores/listSearch";
 
-// 旧链接的 ?tab=service 不在白名单,回默认 Tab
 const DETAIL_TABS = ["access", "metrics", "logs", "events", "bills", "settings"] as const;
 
 export const Route = createFileRoute("/_console/instances_/$uuid")({
   beforeLoad: requireAuth,
   validateSearch: (search: Record<string, unknown>): { tab?: string } => {
-    // tab 白名单:非法值回默认 Tab
     const tab = search.tab;
     return typeof tab === "string" && (DETAIL_TABS as readonly string[]).includes(tab) ? { tab } : {};
   },
@@ -52,7 +50,6 @@ function AccessTab({ instance, running }: { instance: InstanceOut; running: bool
   if (!running) {
     return <Alert type="info" showIcon title={t("instances.accessNotRunning")} />;
   }
-  // 服务型 + 不开 SSH:指到「服务」Tab
   if (isService && !instance.with_ssh) {
     return <Alert type="info" showIcon title={t("instances.accessServiceOnly")} />;
   }
@@ -133,7 +130,6 @@ function InstanceDetail() {
   const { t } = useTranslation();
   const { message } = App.useApp();
   const { formatHourlyPrice, formatMoney, formatPeriodPrice } = useFormat();
-  // 头部行内改名(设置 Tab 不再有改名卡)
   const rename = useRenameInstance();
   const { uuid } = Route.useParams();
   const { tab } = Route.useSearch();
@@ -159,7 +155,6 @@ function InstanceDetail() {
       </PageContainer>
     );
   }
-  // 首载骨架
   if (!instance) {
     return (
       <PageContainer>
@@ -176,13 +171,11 @@ function InstanceDetail() {
   }
   const running = instance.status === "running";
   const canRelease = canReleaseStatus(instance.status);
-  // 默认 Tab 按状态:running 最想做的是连接;其余(停机 / 失败 / 过渡态)看事件最有用
   const activeTab = tab ?? (running ? "access" : "events");
 
   return (
     <PageContainer>
       <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
-        {/* 面包屑:带回列表页最近一次筛选态(stores/listSearch) */}
         <Breadcrumb
           items={[
             {
@@ -216,7 +209,6 @@ function InstanceDetail() {
             },
             {
               label: t("instances.labelBilling"),
-              // 包周期实例时价是折后价且不出小时账,不报「¥X/时 × N 卡」
               value: instance.subscription
                 ? formatPeriodPrice(
                     instance.subscription.amount_paid,
@@ -248,7 +240,6 @@ function InstanceDetail() {
             maxLength: 64,
           }}
           actions={
-            /* 「事件日志」跳到本页事件 Tab */
             <InstanceActions
               instance={instance}
               size="middle"
@@ -262,7 +253,6 @@ function InstanceDetail() {
         <Tabs
           activeKey={activeTab}
           onChange={(k) =>
-            // Tab activeKey 入 URL 用 replace(ui-ux-spec §1-8)
             void navigate({ to: "/instances/$uuid", params: { uuid }, search: { tab: k }, replace: true })
           }
           items={[

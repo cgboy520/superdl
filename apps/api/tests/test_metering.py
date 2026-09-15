@@ -1,4 +1,4 @@
-"""用量:Prometheus 代理/聚合/对账。验收:Prometheus 停机不影响计费。"""
+"""Prometheus 用量代理、聚合、对账与故障降级。"""
 
 import json
 from datetime import UTC, datetime, timedelta
@@ -49,7 +49,7 @@ class TestAggregation:
         prom.set_client(prom_mock([(1e9, 50.0), (1e9 + 60, 70.0), (1e9 + 120, 90.0)]))
         at = datetime.now(UTC) + timedelta(hours=1)
         assert await aggregate_previous_hour(sm, at=at) == 1
-        assert await aggregate_previous_hour(sm, at=at) == 1  # UNIQUE DO NOTHING,不重复插入
+        assert await aggregate_previous_hour(sm, at=at) == 1
         async with sm() as session:
             rows = (await session.execute(select(UsageHourly))).scalars().all()
         assert len(rows) == 1
@@ -59,7 +59,7 @@ class TestAggregation:
         await provision_running(client, sm, fake)
         prom.set_client(prom_mock(fail=True))
         at = datetime.now(UTC) + timedelta(hours=1)
-        assert await aggregate_previous_hour(sm, at=at) == 0  # 静默跳过,计费不受影响
+        assert await aggregate_previous_hour(sm, at=at) == 0
 
 
 def prom_mock_routed(routes: dict[str, list[dict]], *, default: list[dict] | None = None):
@@ -134,7 +134,6 @@ class TestTierSource:
             "gpu_util", "tenant-1", "u1", pool_label="kata", start=0, end=1, step="60s"
         )
         assert kata == [(1.0, 70.0)]
-        # HAMi 查空 → 回落 DCGM
         prom.set_client(prom_mock_routed({"DCGM_FI_DEV_GPU_UTIL": dcgm_point}))
         fallback = await prom.query_instance_metric(
             "gpu_util", "tenant-1", "u1", pool_label="hami", start=0, end=1, step="60s"
@@ -181,7 +180,7 @@ class TestAggregationPartialFailure:
             httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://p")
         )
         at = datetime.now(UTC) + timedelta(hours=1)
-        assert await aggregate_previous_hour(sm, at=at) == 1  # uuid2 正常写入
+        assert await aggregate_previous_hour(sm, at=at) == 1
         async with sm() as session:
             rows = (await session.execute(select(UsageHourly))).scalars().all()
         assert len(rows) == 1

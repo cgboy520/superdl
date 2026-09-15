@@ -1,5 +1,4 @@
-/** 「三步开机」:充值 → 选规格 → SSH 连接,每步带真实入口;第三步给真实命令形状(占位符与帮助页、实例详情同一口径,不编造主机名)。
- *  编号是真序列(必须按序做),不是装饰。 */
+/** 三步开机指引:充值、选规格与 SSH 连接。 */
 
 import { brand, fontFamilyMono, fontSize, fontWeight, layout, space, textOnAccent } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
@@ -49,7 +48,6 @@ export function QuickStartSection() {
         }}
       >
         <StepCard n={1} title={t("landing.quickStart.step1")} desc={t("landing.quickStart.step1Desc")}>
-          {/* 已登录直接去费用中心充值,未登录先注册 */}
           <Link to={loggedIn ? "/billing" : "/login"} search={loggedIn ? {} : { mode: "register" }}>
             {loggedIn ? t("landing.quickStart.step1LinkIn") : t("landing.quickStart.step1Link")}
           </Link>

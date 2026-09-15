@@ -2293,7 +2293,7 @@
         "type": "object"
       },
       "ClusterComponentOut": {
-        "description": "组件体检项。文案全部由 key 映射(判据 / 影响面 / 事实 label 在两端 locales),\n后端只出事实数据;两个 hint 是命令,不随语言。",
+        "description": "组件事实与状态;文案由 key 映射,两个 hint 为不随语言变化的命令。",
         "properties": {
           "diag_hint": {
             "anyOf": [
@@ -2528,7 +2528,7 @@
         "type": "object"
       },
       "ComponentFactOut": {
-        "description": "一条可核对的事实。key 由前端映射 label;value 是纯数据(计数 / 版本 / 对象名 / 地址),\n不随语言。tone 供前端着色,文案里不写形容词。",
+        "description": "key 由前端映射文案,value 为不随语言变化的数据,tone 为显示色调。",
         "properties": {
           "key": {
             "title": "Key",
@@ -2579,7 +2579,7 @@
         "type": "object"
       },
       "ComponentProbeOut": {
-        "description": "体检项的实时深探结果。快照答「就绪几个」,深探答「为什么不就绪」。",
+        "description": "组件实时探测事实、Pod 与事件。",
         "properties": {
           "events": {
             "items": {
@@ -6583,7 +6583,7 @@
         "type": "object"
       },
       "PoliciesOut": {
-        "description": "计费/回收策略常量(公开只读;前端展示口径的唯一来源,禁止硬编码)。",
+        "description": "公开只读的计费与回收策略。",
         "properties": {
           "disk_frozen_days": {
             "title": "Disk Frozen Days",
@@ -7186,7 +7186,7 @@
         "type": "object"
       },
       "RefundableOrderOut": {
-        "description": "可申请退款口径的充值订单。\n\nrefundable=False 时 reason_code:not_paid / already_applied / fully_refunded / invoiced\n/ no_balance。\n同单可多次部分退款:max_amount = min(订单剩余可退, 当前余额),剩余可退 = 订单额 − Σ已打款。",
+        "description": "可申请退款口径的充值订单。\n\nrefundable=False 时 reason_code:not_paid / already_applied / fully_refunded / invoiced\n/ no_balance。\n同单可多次部分退款:max_amount = min(订单剩余可退, 非负可用余额, 流水可退余额)。\n剩余可退 = 订单额 − Σ已打款退款;可用余额 = balance − frozen。\n流水可退余额为排除正向 adjust 后的流水净额,下限为零。",
         "properties": {
           "amount": {
             "title": "Amount",
@@ -8956,7 +8956,7 @@
         "type": "object"
       },
       "SubscriptionQuoteOut": {
-        "description": "包周期报价。金额三件套由后端算好逐行下发,前端不自己做乘法。",
+        "description": "包周期报价,包含后端计算的原价、折扣与实付金额。",
         "properties": {
           "amount": {
             "title": "Amount",
@@ -19841,7 +19841,7 @@
     },
     "/api/v1/services/{slug}/logs": {
       "get": {
-        "description": "当前版本的容器日志:只读、限流 20/h/user、K8s 读 5s 超时;非运行中 409。不记审计。",
+        "description": "优先读取 rollout 版本的容器日志,无 rollout 时读取当前版本。\n\n仅支持 running/stopping,否则 409;与实例日志共用限流,不记审计。",
         "operationId": "get_service_logs_api_v1_services__slug__logs_get",
         "parameters": [
           {
@@ -19900,7 +19900,7 @@
     },
     "/api/v1/services/{slug}/revisions": {
       "get": {
-        "description": "版本历史 = 该服务下全部实例(含已释放),按版本号降序。",
+        "description": "分页查询该服务的版本实例(含已释放),按实例 ID 降序。",
         "operationId": "list_revisions_api_v1_services__slug__revisions_get",
         "parameters": [
           {

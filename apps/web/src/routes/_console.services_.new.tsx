@@ -1,6 +1,4 @@
-/** 部署服务:SectionRail 分段长表单(① 基本信息 → ② 容器配置(含数据盘)→ ③ 服务配置 → ④ 高级配置)+ 底部结算条(未完成项清单在条上方)。
- *  不用 antd Form,全部受控 state + 派生 issue,每段独立标状态(首屏不出红叉:未触碰且没点过提交的问题段只标 wait);字段级错误就地显示。
- *  数据盘「新建」先建盘再部署,建盘成功而部署失败须提示盘已计费。 */
+/** 服务部署页:基本信息、容器、服务与高级配置分段表单,附结算预览。 */
 
 import { isApiError, type DiskOut, type SkuMarketOut } from "@superdl/api-client";
 import {
@@ -92,7 +90,6 @@ function DeployPage() {
   const discounts = usePeriodDiscounts();
   const spotPolicy = useSpotPolicy();
 
-  // ① 基本信息
   const [name, setName] = useState("");
   const [skuId, setSkuId] = useState<number | undefined>(skuFromUrl);
   const [gpuCount, setGpuCount] = useState(gpusFromUrl ?? 1);
@@ -100,7 +97,6 @@ function DeployPage() {
     periodFromUrl ?? (marketFromUrl === "spot" ? "spot" : "on_demand"),
   );
   const [periodCount, setPeriodCount] = useState(countFromUrl ?? 1);
-  // ② 容器配置
   const [image, setImage] = useState("");
   const [command, setCommand] = useState("");
   const [argRows, setArgRows] = useState<ArgRow[]>([]);
@@ -109,19 +105,15 @@ function DeployPage() {
   const [newDiskName, setNewDiskName] = useState(defaultDiskName);
   const [newDiskGb, setNewDiskGb] = useState<number>();
   const [existingDiskId, setExistingDiskId] = useState<number>();
-  // ③ 服务配置
   const [servicePort, setServicePort] = useState<number | null>(null);
   const [healthPath, setHealthPath] = useState("");
   const [requireApiKey, setRequireApiKey] = useState(true);
-  // ④ 高级配置
   const [withSsh, setWithSsh] = useState(false);
   const [keyIds, setKeyIds] = useState<number[]>([]);
   const [submitting, setSubmitting] = useState(false);
-  // 段状态:碰过的段(改字段 / 点进段内)+ 点过主 CTA;首屏两者皆空,问题段只标 wait 不出红叉
   const [touchedIds, setTouchedIds] = useState<ReadonlySet<string>>(() => new Set());
   const [submitted, setSubmitted] = useState(false);
   const touch = (id: string) => setTouchedIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
-  // 幂等键 = 本次挂载的 nonce + 参数快照
   const [formNonce] = useState(() => crypto.randomUUID());
   const [mountedAt] = useState(() => Date.now());
   const [mountSnapshot] = useState(() => ({ skuId, gpuCount, billingMode, newDiskName }));
@@ -149,7 +141,6 @@ function DeployPage() {
 
   const errText = useApiErrorText();
   const createService = useCreateService({
-    // 错误统一在 doCreate 的 catch 里出
     silentError: true,
     onSuccess: (svc) => {
       message.success(t("services.deploying", { name: svc.name }));
@@ -161,7 +152,6 @@ function DeployPage() {
 
   const sku: SkuMarketOut | undefined = (skus ?? []).find((s) => s.id === skuId);
   const isCpu = sku?.tier === "cpu";
-  // 盘容量初值取策略下限(不写死 100)
   const diskGbValue = newDiskGb ?? policies?.disk_min_gb ?? 100;
   const gpus = isCpu ? 0 : gpuCount;
   const priceUnits = isCpu ? 1 : gpuCount;
@@ -188,7 +178,6 @@ function DeployPage() {
         ? ((disks ?? []).find((d) => d.id === existingDiskId)?.size_gb ?? 0)
         : 0;
   const diskDaily = diskPriceGbMonth === undefined ? undefined : diskDailyEstimate(diskPriceGbMonth, diskGb);
-  // BigInt 比较:按量门槛 = 1 小时费用,包周期 = 应付全额;报价未就绪不放行
   const needAmount = period ? quote?.amount : hourlyTotal;
   const balanceReady = wallet != null && (!period || quote != null);
   const enough = balanceReady && needAmount != null && compareAmounts(wallet.balance, needAmount) >= 0;
@@ -247,7 +236,6 @@ function DeployPage() {
   const doCreate = async () => {
     if (!sku || !imageRef || servicePort == null) return;
     setSubmitting(true);
-    // 幂等键由参数派生且失败不轮换
     const idempotencyKey = idemKeyOf("svc", [
       formNonce,
       sku.id,
@@ -277,11 +265,10 @@ function DeployPage() {
         try {
           disk = await createDisk.mutateAsync({
             body: { name: newDiskName.trim() || defaultDiskName(), size_gb: diskGbValue },
-            // 与服务同一个参数快照派生
             idempotencyKey,
           });
         } catch {
-          return; // 建盘失败,错误已由 useApiMutation 弹出
+          return;
         }
         diskId = disk.id;
       }
@@ -327,7 +314,6 @@ function DeployPage() {
 
   const submitLabel = period ? t("services.payAndDeploy") : t("services.deploy");
   const pending = submitting || createService.isPending;
-  // 知情同意合并为一个分节 modal:竞价 / 共享·经济(hami 池)命中几节出几节
   const gate = useConsentGate({
     spot: isSpot,
     eco: sku != null && skuVariant(sku.tier, sku.pool_label) === "shared_hami",
@@ -340,7 +326,6 @@ function DeployPage() {
 
   const cards = (
     <>
-      {/* ① 基本信息:名称 + 算力规格 + 计费方式 */}
       <div onFocusCapture={() => touch(SECTION_IDS[0])} onClickCapture={() => touch(SECTION_IDS[0])}>
         <SectionAnchor id={SECTION_IDS[0]} title={t("services.form.section1")}>
           <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
@@ -377,7 +362,6 @@ function DeployPage() {
               count={periodCount}
               onCountChange={setPeriodCount}
             />
-            {/* 竞价只警示不禁止;回收会断对外地址,下单前必须出现(贴在计费卡下,不做页顶常驻) */}
             {isSpot && (
               <Typography.Text type="warning" style={{ fontSize: fontSize.caption }}>
                 {t("copy.spotNotForService")}
@@ -387,7 +371,6 @@ function DeployPage() {
         </SectionAnchor>
       </div>
 
-      {/* ② 容器配置(数据盘归在本段) */}
       <div onFocusCapture={() => touch(SECTION_IDS[1])} onClickCapture={() => touch(SECTION_IDS[1])}>
         <SectionAnchor id={SECTION_IDS[1]} title={t("services.form.section2")}>
           <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
@@ -416,7 +399,6 @@ function DeployPage() {
         </SectionAnchor>
       </div>
 
-      {/* ③ 服务配置 */}
       <div onFocusCapture={() => touch(SECTION_IDS[2])} onClickCapture={() => touch(SECTION_IDS[2])}>
         <SectionAnchor id={SECTION_IDS[2]} title={t("services.form.section3")}>
           <PublicAccessFields
@@ -430,7 +412,6 @@ function DeployPage() {
         </SectionAnchor>
       </div>
 
-      {/* ④ 高级配置:调试 SSH + 更新策略说明 + 配置摘要 */}
       <div onFocusCapture={() => touch(SECTION_IDS[3])} onClickCapture={() => touch(SECTION_IDS[3])}>
         <SectionAnchor id={SECTION_IDS[3]} title={t("services.form.section4")}>
           <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
@@ -439,7 +420,6 @@ function DeployPage() {
                 {t("services.form.withSsh")}
               </Checkbox>
               <Typography.Text type="secondary">{t("services.form.withSshHint")}</Typography.Text>
-              {/* 勾了才要公钥:后端对 with_ssh 服务要求 ssh_key_ids 非空 */}
               {withSsh && <SshKeyPicker value={keyIds} onChange={setKeyIds} />}
             </Space>
             <Space orientation="vertical" size={space.xs} style={{ width: "100%" }}>
@@ -502,7 +482,6 @@ function DeployPage() {
 
   return (
     <PageContainer title={t("services.deploy")} back={{ label: t("services.backToList"), onClick: onCancel }}>
-      {/* 不用 Space(ant-space-item 包装会破坏 sticky 结算条的包含块) */}
       <div style={{ display: "flex", flexDirection: "column", gap: 16, width: "100%" }}>
         <SectionRail sections={sections} submitted={submitted} ariaLabel={t("services.form.railAria")}>
           {cards}
@@ -626,7 +605,6 @@ function DeployPage() {
           balance={wallet?.balance ?? null}
           balanceReady={balanceReady}
           actions={
-            // 点过主 CTA 后所有问题段都标红(首屏不标);「取消」不放结算条,页头返回是唯一出口
             <span onClickCapture={() => setSubmitted(true)}>
               {walletQ.isError ? (
                 <GatedButton type="primary" size="large" reason={t("services.form.walletQueryFailedRetry")}>

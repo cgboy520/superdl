@@ -1,5 +1,4 @@
-/** 租户下钻抽屉:EntityHeader(租户 #id / 手机 / 状态 / 余额 / 累计消费 / 实例 / 数据盘 / 实名 / 注册时间 + 冻结·解冻)
- *  + 四 Tab:账务(小时账单 + 资金流水 + 订单)/ 实例(配额覆盖 + 实例列表)/ 在线服务 / 事件 + 跳审计。 */
+/** 租户抽屉:身份与账务摘要、冻结操作、账务/实例/服务/事件四个 Tab。 */
 
 import {
   controlWidth,
@@ -72,7 +71,6 @@ import { useFormat } from "@superdl/ui";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 import { AdminServicesTable } from "./-AdminServicesTable";
 
-// 抽屉 Tab 白名单(tenants 路由 ?dtab= 校验共用);账单 / 流水 / 订单并进「账务」一屏
 export const DRAWER_TABS = ["billing", "instances", "services", "events"] as const;
 export type DrawerTab = (typeof DRAWER_TABS)[number];
 
@@ -110,7 +108,6 @@ export function TenantFreezeAction({
       onSubmit={async (reason) => {
         const r = await freeze.mutateAsync({ userId: tenant.id, data: { reason } });
         onDone();
-        // 回显后端实停台数
         return t("tenants.freezeDone", { count: r.instances_stopped ?? 0 });
       }}
     />
@@ -160,13 +157,11 @@ export function TenantDrawer({
   onChanged: () => void;
 }) {
   const { t } = useTranslation(["admin", "shared"]);
-  // 抽屉级实例列表(前 100 条),三处复用
   const tenantInstances = useAdminInstances(tenant ? { user_id: tenant.id } : undefined, {
     enabled: tenant !== null,
     limit: 100,
   });
   const instances = flattenPages(tenantInstances.data);
-  // 租户实例精确计数(判断是否截断)
   const instancesTotal = tenantInstances.data?.pages[0]?.total ?? null;
 
   return (
@@ -244,7 +239,6 @@ function TenantHeader({ tenant, onChanged }: { tenant: TenantRow; onChanged: () 
       size="drawer"
       name={t("tenants.drawerName", { id: tenant.id })}
       subtitle={tenant.phone_masked}
-      // 租户没有共享状态映射表,冻结 / 正常两态直接出 Tag
       status={
         tenant.status === "active" ? (
           <Tag color="green">{t("tenants.active")}</Tag>
@@ -430,7 +424,6 @@ function TenantInstancesTab({
         <QuotaTab userId={userId} />
       </DrawerSection>
       <DrawerSection title={t("tenants.drawerTabInstances")}>
-        {/* 超过 100 台明示截断 */}
         {total !== null && total > instances.length && (
           <Typography.Text type="warning" style={{ display: "block", marginBottom: 8, fontSize: fontSize.caption }}>
             {t("tenants.instancesCapped", { shown: instances.length, total })}
@@ -463,7 +456,6 @@ function TenantInstancesTab({
               },
             },
             {
-              // 购买模式标签取 packages/ui 映射;到期信息取内联 subscription
               title: t("tenants.colMarket"),
               width: 150,
               render: (_, r) => {

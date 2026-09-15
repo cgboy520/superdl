@@ -5,7 +5,6 @@ import { afterEach } from "vitest";
 
 import i18n from "../i18n";
 
-// vitest 未开 globals,RTL 自动 cleanup 不生效,手动挂
 afterEach(() => cleanup());
 
 if (!i18n.isInitialized) {

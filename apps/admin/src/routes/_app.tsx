@@ -39,7 +39,6 @@ export const Route = createFileRoute("/_app")({
     if (!auth.accessToken) {
       throw redirect({ to: "/login", search: { returnTo: location.href } });
     }
-    // 进入受保护路由调 /me 校准角色(缓存 15s),token 失效直跳登录
     try {
       const me = await queryClient.ensureQueryData({
         queryKey: ["admin", "me"],
@@ -62,13 +61,10 @@ function AlertBell() {
   const { message } = App.useApp();
   const qc = useQueryClient();
   const [popoverOpen, setPopoverOpen] = useState(false);
-  // 告警列表只在 Popover 打开时取数;角标 = 未确认告警数(30s 轮询)
   const alertsQ = useAlerts(undefined, { enabled: popoverOpen });
   const { data: unread, isError: unreadError } = useAlertUnreadCount({ refetchInterval: POLL.steady });
-  // 确认闭环见 lib/alertLink
   const ack = useAckAlertWithFeedback();
   const alerts: AlertRow[] = alertsQ.data ?? [];
-  // 「全部确认」只作用于已加载的这批(后端无批量端点,逐条并发)
   const ackRaw = useAckAlert();
   const [ackAllPending, setAckAllPending] = useState(false);
   const unacked = alerts.filter((a) => a.acked_at == null);
@@ -85,7 +81,6 @@ function AlertBell() {
   };
   const ackAllReason = !writable ? t("overview.opsOnly") : unacked.length === 0 ? t("shell.ackAllNone") : undefined;
   return (
-    // click 触发 + Button 包裹图标(键盘与读屏可达)
     <Popover
       trigger="click"
       placement="bottomRight"
@@ -157,7 +152,6 @@ function AlertBell() {
               </>
             )}
           </div>
-          {/* 常驻页脚:出口(告警中心)+ 批量确认 */}
           <div
             style={{
               display: "flex",
@@ -246,7 +240,6 @@ function AppLayout() {
   const { admin } = useAuth();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  // 桌面:侧栏常显,可手动收成图标轨(localStorage);窄屏:不渲染侧栏,导航走带遮罩的 Drawer
   const desktop = screens.lg === true;
   const [manualCollapsed, setManualCollapsed] = useState(() => localStorage.getItem(SIDER_COLLAPSED_KEY) === "1");
   const [navOpen, setNavOpen] = useState(false);
@@ -256,8 +249,6 @@ function AppLayout() {
     .map((m) => m.key)
     .filter((k) => (k === "/" ? pathname === "/" : pathname.startsWith(k)))
     .slice(-1);
-  // 分组渲染:overview 单项直出;其余组出组标题(type: group)。展开态 label 是 Link(可中键 / 新标签、带 aria-current);
-  // 收起成图标轨时 label 不可见,由 Menu.onClick 兜底导航
   const menuItemsFor = (collapsed: boolean): NonNullable<MenuProps["items"]> =>
     MENU_GROUP_ORDER.flatMap((g) => {
       const items = visible.filter((m) => m.group === g);
@@ -271,7 +262,6 @@ function AppLayout() {
           </Link>
         ),
       }));
-      // 收起态不出组标题(antd 在收起时不渲染 group label,只留缝隙)
       if (g === "overview" || collapsed) return children;
       return [{ key: `group:${g}`, type: "group" as const, label: t(MENU_GROUP_LABEL_KEY[g]), children }];
     });
@@ -289,7 +279,6 @@ function AppLayout() {
           collapsible
           collapsed={siderCollapsed}
           onCollapse={(v, type) => {
-            // 只有 trigger 点击落盘
             if (type === "clickTrigger") {
               setManualCollapsed(v);
               localStorage.setItem(SIDER_COLLAPSED_KEY, v ? "1" : "0");
@@ -305,7 +294,6 @@ function AppLayout() {
               items={menuItemsFor(siderCollapsed)}
               style={{ borderRight: 0 }}
               onClick={({ key }) => {
-                // 收起态 label(Link)不可见:点图标由这里导航;展开态 Link 自己处理,避免重复 push
                 if (siderCollapsed && typeof key === "string" && key.startsWith("/")) {
                   void navigate({ to: key });
                 }
@@ -314,7 +302,6 @@ function AppLayout() {
           </nav>
         </Layout.Sider>
       ) : (
-        // 窄屏导航:带遮罩、Esc 关闭;与侧栏同一份 MENU
         <Drawer
           placement="left"
           size={layout.navDrawerWidth}
@@ -335,14 +322,12 @@ function AppLayout() {
         </Drawer>
       )}
       <Layout>
-        {/* 顶栏 sticky:表格 sticky 表头以 layout.topBarHeight 为 offset */}
         <Layout.Header
           style={{
             position: "sticky",
             top: 0,
             zIndex: 100,
             background: token.colorBgContainer,
-            // 生产环境顶栏加 3px 红色上边线
             borderTop: isProd ? `3px solid ${colors.negative}` : undefined,
             borderBottom: `1px solid ${adminColors.divider}`,
             display: "flex",
@@ -365,7 +350,6 @@ function AppLayout() {
             <Tag color={isProd ? "red" : "cyan"}>{isProd ? t("shell.envProd") : t("shell.envDev")}</Tag>
           </Space>
           <Space size={space.xl}>
-            {/* md 以下命令面板触发器/语言切换/铃铛收入用户下拉 */}
             {screens.md && (
               <>
                 <CommandTrigger />
@@ -382,11 +366,10 @@ function AppLayout() {
                     label: t("shell.logout"),
                     onClick: () => {
                       void (async () => {
-                        // 服务端登出(吊销全部会话)再清本地态;网络失败也照常本地登出
                         try {
                           await adminLogoutApiAdminV1AuthLogoutPost();
                         } catch {
-                          /* 登出不受阻 */
+                          /* ignored */
                         }
                         authStore.getState().logout();
                         void navigate({ to: "/login" });
@@ -437,7 +420,6 @@ function AppLayout() {
             </Dropdown>
           </Space>
         </Layout.Header>
-        {/* antd Layout.Content 即 <main>;id 供 skip-link 定位 */}
         <Layout.Content id="main" tabIndex={-1} style={{ padding: 24, outline: "none" }}>
           <Outlet />
         </Layout.Content>

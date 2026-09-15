@@ -22,16 +22,12 @@ async def on_instance_transition(
     session: AsyncSession, instance: "Instance", event: "InstanceEvent"
 ) -> None:
     if event.to_status == sm_def.RELEASING and instance.market == MARKET_SUBSCRIPTION:
-        # 中途释放不退款,订阅转 cancelled;挂在迁移监听器上覆盖用户释放/欠费回收/到期回收/强制回收
         await subscriptions.cancel_for_instance(session, instance.id)
     if event.from_status != sm_def.RUNNING:
         return
     if instance.market == MARKET_SUBSCRIPTION:
-        # 包周期离开 running 不出尾账。三处配套过滤之一
-        # (另两处:wallet.assert_can_afford、billing.patrol)
         return
     edge_at = ensure_utc(event.created_at)
-    # 本次退出边的 metadata 只有这里能读到;截断口径与整点 / 追平结算同源
     at = truncated_at(edge_at, event.from_status, event.event_metadata)
     detail_extra = (
         {"truncated_at": at.isoformat(), "truncate_reason": event.reason} if at < edge_at else None

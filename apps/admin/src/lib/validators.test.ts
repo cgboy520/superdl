@@ -1,4 +1,4 @@
-/** 手输原因校验:必填、trim 后 2~200 字。挂了 = 空理由进审计。 */
+/** 原因校验:必填、trim 后 2~200 字。 */
 import { describe, expect, it } from "vitest";
 
 import { isValidReason } from "./validators";

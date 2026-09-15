@@ -1,4 +1,4 @@
-/** 状态计数条(用户端列表页的「一眼看全」):Segmented 视图切换,每项可带计数(未知不显示数字)与提醒色点;写 ?status=。 */
+/** 受控状态切换条,每项可带计数与提醒色点。 */
 
 import { Segmented, Space, Typography } from "antd";
 import type { ReactNode } from "react";

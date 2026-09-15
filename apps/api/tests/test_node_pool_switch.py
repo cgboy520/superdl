@@ -62,8 +62,7 @@ async def _switch_tasks(sm) -> list[OutboxTask]:
 
 
 async def test_stopped_instance_blocks_switch(sm):
-    """已关机实例也拦住切池。挂了说明:实例盘是节点本地 LV、开机 pin 回原节点,
-    换池后 nodeSelector 再也匹配不上,用户的停机实例永远开不了机。"""
+    """已关机实例阻止切池。"""
     await _cluster_configured(sm)
     await _probe(sm)
     await seed_node_spec(sm, node_name="sw-1", pool_label="hami", gpu_count=8)
@@ -73,7 +72,6 @@ async def test_stopped_instance_blocks_switch(sm):
         await _switch(sm, "sw-1", "kata")
     assert e.value.message_key == "nodes.nodeHasInstances"
     assert e.value.params == {"count": 1}
-    # 前置不过就什么都没写:期望态、登记、outbox 全干净
     assert (await _spec(sm, "sw-1")).desired_pool is None
     assert await _switch_tasks(sm) == []
     async with sm() as session:
@@ -81,7 +79,7 @@ async def test_stopped_instance_blocks_switch(sm):
 
 
 async def test_released_instance_does_not_block(sm):
-    """已释放实例不算占用(实例盘已销毁)。挂了说明切池会被历史实例永久挡住。"""
+    """已释放实例不阻止切池。"""
     await _cluster_configured(sm)
     await _probe(sm)
     await seed_node_spec(sm, node_name="sw-2", pool_label="hami", gpu_count=8)
@@ -92,8 +90,7 @@ async def test_released_instance_does_not_block(sm):
 
 
 async def test_pool_target_gates(sm):
-    """目标池的三道取值闸:非可切池 / 同池 / 无卡机。挂了说明会把有卡机切进 cpu 池
-    (库存口径错乱)或把无卡机切进 GPU 池(建出永远调度不上的容量)。"""
+    """拒绝非法目标池、当前池及无卡节点切池。"""
     await _cluster_configured(sm)
     await _probe(sm)
     await seed_node_spec(sm, node_name="sw-3", pool_label="hami", gpu_count=8)
@@ -113,8 +110,7 @@ async def test_pool_target_gates(sm):
 
 
 async def test_mig_needs_capable_model(sm):
-    """切 mig 池要机型支持。挂了说明会给 GB10 这类不支持 MIG 的机型建出
-    nvidia.com/mig-* 永远注册不出来的库存。"""
+    """切入 mig 池要求机型支持 MIG。"""
     await _cluster_configured(sm)
     await _probe(sm)
     await seed_node_spec(sm, node_name="sw-gb10", pool_label="hami", gpu_model="GB10", gpu_count=1)
@@ -129,7 +125,7 @@ async def test_mig_needs_capable_model(sm):
 
 
 async def test_target_runtime_must_be_ready(sm, fake_auto_ready):
-    """目标池运行时未就绪即拒。挂了说明会切到一个开不了机的池,节点白白离线。"""
+    """目标池运行时未就绪时拒绝切池。"""
     await _cluster_configured(sm)
     fake_auto_ready.probe_hami_ready = False
     await _probe(sm)
@@ -142,9 +138,7 @@ async def test_target_runtime_must_be_ready(sm, fake_auto_ready):
 
 
 async def test_switch_writes_desired_state_only(sm):
-    """成功路径:停调度 + 期望池 + outbox 同一事务落地,且**不签发任何注册令牌**。
-    挂了说明切池又回到「要运维上节点重跑」的老路——池间差异全由 DaemonSet 按标签投送,
-    节点侧没有任何需要同步的状态。"""
+    """切池同事务写入停调度、期望池和 outbox,不签发注册令牌。"""
     await _cluster_configured(sm)
     await _probe(sm)
     await seed_node_spec(sm, node_name="sw-5", pool_label="hami", gpu_count=8)
@@ -160,12 +154,10 @@ async def test_switch_writes_desired_state_only(sm):
 
 
 async def test_handler_converges_full_label_set(sm, fake_auto_ready):
-    """handler 整套下发:新池标签 + 新池 operand 标签,且删掉旧池残留。
-    挂了说明 hami 的 deploy.device-plugin=false 会留在 kata 节点上,官方 device-plugin 起不来。"""
+    """handler 下发目标池及 operand 标签,删除旧池标签。"""
     await _cluster_configured(sm)
     await _probe(sm)
     await seed_node_spec(sm, node_name="sw-6", pool_label="hami", gpu_count=8)
-    # 旧池残留:hami 装机时打的 operand 标签
     await fake_auto_ready.set_node_labels("sw-6", {GPU_DEPLOY_DEVICE_PLUGIN_LABEL: "false"})
 
     await _switch(sm, "sw-6", "kata")
@@ -177,7 +169,6 @@ async def test_handler_converges_full_label_set(sm, fake_auto_ready):
     assert GPU_DEPLOY_DEVICE_PLUGIN_LABEL not in labels
     assert "sw-6" in fake_auto_ready.cordoned_nodes
 
-    # 幂等:重放同一任务不改变结果
     async with sm() as session:
         task = (
             await session.execute(select(OutboxTask).where(OutboxTask.type == "node.switch_pool"))
@@ -187,8 +178,7 @@ async def test_handler_converges_full_label_set(sm, fake_auto_ready):
 
 
 async def test_switch_back_restores_hami_operand_label(sm, fake_auto_ready):
-    """切回 hami 要补回 deploy.device-plugin=false 并撤掉 vm-passthrough。
-    挂了说明官方 device-plugin 与 HAMi 会在同一节点上抢卡。"""
+    """切回 hami 恢复 deploy.device-plugin=false,移除 vm-passthrough。"""
     await _cluster_configured(sm)
     await _probe(sm)
     await seed_node_spec(sm, node_name="sw-7", pool_label="kata", gpu_count=8)
@@ -228,14 +218,11 @@ async def _enroll(sm, hostname: str, pool: str) -> int:
 
 
 async def test_reconciler_labels_unlabeled_node_then_joins(sm, fake_auto_ready):
-    """入网时池标签由**平台**打:节点自己不声明,对账器看到 Ready 就打整套标签再判 joined。
-    挂了说明池标签又有了第二个写入方(节点的 config.yaml),切池后它永远过时,
-    Node 对象一重建就把旧池带回来。"""
+    """节点 Ready 后,对账器写入池标签再推进 joined。"""
     from app.core.k8s.base import NodeInfo
     from app.modules.nodes.reconciler import reconcile_enrollments_once
 
     await _cluster_configured(sm)
-    # 节点注册时不带池标签(node-join 不再写 node-label)
     fake_auto_ready.inject_node(
         NodeInfo(
             name="join-1",
@@ -260,8 +247,7 @@ async def test_reconciler_labels_unlabeled_node_then_joins(sm, fake_auto_ready):
 
 
 async def test_reconciler_label_failure_keeps_installing(sm, fake_auto_ready):
-    """打标签失败就不推进状态。挂了说明会出现「登记已 joined 但节点没有池标签」的空档,
-    节点看着入网了却永远接不到实例。"""
+    """写标签失败时登记保持 installing。"""
     from app.core.k8s.base import NodeInfo
     from app.modules.nodes.reconciler import reconcile_enrollments_once
 
@@ -288,8 +274,7 @@ async def test_reconciler_label_failure_keeps_installing(sm, fake_auto_ready):
 
 
 async def test_reconciler_honours_desired_pool_over_enrollment(sm, fake_auto_ready):
-    """装机途中被切池:对账器按期望池打标签,不按登记池。
-    挂了说明对账器与巡检 C2 会对着同一个节点来回改标签。"""
+    """装机途中切池后,对账器按期望池而非登记池写标签。"""
     from app.core.k8s.base import NodeInfo
     from app.modules.nodes.reconciler import reconcile_enrollments_once
 
@@ -304,7 +289,6 @@ async def test_reconciler_honours_desired_pool_over_enrollment(sm, fake_auto_rea
             status="Ready",
         )
     )
-    # 巡检建台账行(池 hami),再在装机途中切到 kata
     await _probe(sm)
     await _switch(sm, "join-3", "kata")
     await _enroll(sm, "join-3", "hami")
@@ -315,7 +299,7 @@ async def test_reconciler_honours_desired_pool_over_enrollment(sm, fake_auto_rea
 
 
 async def test_decommission_instance_gate_and_force(sm):
-    """退役同样卡未释放实例,force 才放行。挂了说明会在用户实例还在的节点上直接删 Node 对象。"""
+    """存在未释放实例时退役须指定 force。"""
     await seed_node_spec(sm, node_name="dec-1", pool_label="hami", gpu_count=8)
     await seed_instance(sm, status="stopped", node_name="dec-1")
 

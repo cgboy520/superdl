@@ -27,7 +27,6 @@ export function ApiKeyModal({ slug, open, onClose }: { slug: string; open: boole
       <Modal
         open={open}
         title={t("services.keys.created")}
-        // X 与遮罩关闭封掉,只留勾选后的按钮
         closable={false}
         mask={{ closable: false }}
         keyboard={false}
@@ -43,7 +42,6 @@ export function ApiKeyModal({ slug, open, onClose }: { slug: string; open: boole
             {t("services.keys.onceWarn")}
           </Typography.Text>
           <Card size="small">
-            {/* 明文全值不打码:本来就只显示这一次 */}
             <CopyField value={created.key} code secret={false} label={t("services.keys.copy")} />
           </Card>
           <Checkbox checked={saved} onChange={(e) => setSaved(e.target.checked)}>

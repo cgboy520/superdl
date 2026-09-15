@@ -1,4 +1,4 @@
-/** 表单联动纯函数:recommendFields(集群推荐折规格)与 buildSkuPayload(提交负载派生)。挂了说明:HAMi 份额折算错 / CPU 档补零漏字段 / 编辑把型号、新建把 reason 发给了后端(400)。 */
+/** SKU 推荐值、CPU 字段补零与新建/编辑提交负载测试。 */
 import { describe, expect, it } from "vitest";
 
 import type { GpuModelAggregate, SkuAdminOut } from "../../api";

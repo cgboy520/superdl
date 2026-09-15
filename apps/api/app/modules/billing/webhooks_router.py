@@ -12,8 +12,6 @@ from app.modules.billing.payment_channels import get_channel
 
 router = APIRouter(tags=["webhooks"])
 
-# 回调端点无鉴权且每次 RSA 验签 + 订单行 FOR UPDATE,故限流;
-# 阈值在渠道重试节奏之上(微信 15 次、支付宝 8 次)
 CALLBACK_RATE_LIMIT = 120
 CALLBACK_RATE_WINDOW = 60.0
 
@@ -27,7 +25,6 @@ async def _guard(request: Request) -> None:
     )
 
 
-# mock 回调路由仅非 prod 注册
 if get_settings().environment != "prod":
 
     @router.post("/webhooks/mock")
@@ -54,5 +51,4 @@ async def alipay_webhook(request: Request, session: DbSession) -> PlainTextRespo
     channel = await get_channel("alipay", session)
     result = await channel.parse_callback(dict(request.headers), await request.body())
     await payment_service.handle_callback(session, "alipay", result)
-    # 支付宝要求应答纯文本 success
     return PlainTextResponse("success")

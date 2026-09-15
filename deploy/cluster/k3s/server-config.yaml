@@ -1,32 +1,16 @@
-# /etc/rancher/k3s/config.yaml —— light 档 server 节点(单机/小规模)
-# 安装(国内镜像):curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh \
-#   | INSTALL_K3S_MIRROR=cn sh -s - server --config /etc/rancher/k3s/config.yaml
 write-kubeconfig-mode: "0640"
-# CNI / NetworkPolicy / kube-proxy 全部交给 Cilium(同 full 档)。三项都是 server 端标志,
-# agent 从 server 取节点配置,不必逐台改;但必须装机即设——事后改要全集群重启 k3s
-# 并重建全部 Pod(见 deploy/cluster/README.md「给已有集群换 CNI」)
 flannel-backend: none
-disable-network-policy: true   # 关掉 k3s 自带 kube-router;NetworkPolicy 由 Cilium 执行
-disable-kube-proxy: true       # Cilium kubeProxyReplacement;配套 values/light/cilium-light.yaml 的 k8sServiceHost
+disable-network-policy: true
+disable-kube-proxy: true
 disable:
-  - traefik                  # 北向入口统一走 helmfile 装的 Envoy Gateway(与 full 档一致)。
-                             # 必须装机即禁(事后禁用会连带删掉 Gateway API CRD)
-# 平台组件落点标签 node-restriction.kubernetes.io/superdl-infra 不在这里打,由 deploy/ansible/site.yml 装机后打(同 rke2/server-config.yaml)
-secrets-encryption: true     # etcd/sqlite 静态加密;快照仍需异地加密保存(见 rke2/server-config.yaml 注释)
-# 节点加入用专用 agent token,禁止下发 server node-token(见 deploy/cluster/README.md「server token 与 agent token」)。
-# 恒开;占位由 deploy/ansible/site.yml 渲染
+  - traefik
+secrets-encryption: true
 agent-token: "CHANGE_ME_AGENT_TOKEN"
-embedded-registry: true      # Spegel P2P 镜像共享;配套 registries.yaml 由平台生成下发
-                             # (管理端·平台配置·集群接入,node-join.sh 自动落位)
-# API 审计:策略文件复用 rke2/audit-policy.yaml,装机时拷到 /etc/rancher/k3s/(deploy/cluster/README.md 路径 B)
+embedded-registry: true
 kube-apiserver-arg:
-  # NodeRestriction 显式钉死(同 rke2/server-config.yaml);同名 flag 是覆盖语义,插件须列全
   - enable-admission-plugins=NodeRestriction
   - audit-policy-file=/etc/rancher/k3s/audit-policy.yaml
   - audit-log-path=/var/lib/rancher/k3s/server/logs/audit.log
   - audit-log-maxage=30
-  # 同 rke2:100MiB × 10 份封顶
   - audit-log-maxsize=100
   - audit-log-maxbackup=10
-# podPidsLimit 由 ansible 落 kubelet drop-in /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/50-superdl.conf(模板 rke2/kubelet-superdl.conf)。
-# 单机 server 兼跑业务负载,不打 CriticalAddonsOnly taint;多机 light 给 server 补 taint

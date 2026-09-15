@@ -1,4 +1,4 @@
-"""管理端账号与登录:四层登录桶、TOTP MFA、账号增删改、口令、token 续期、PII 明文开闸。"""
+"""管理员认证、MFA、账号管理与 PII 明文读取授权。"""
 
 import asyncio
 import secrets
@@ -44,36 +44,26 @@ logger = get_logger(__name__)
 
 LOGIN_MAX_ATTEMPTS = 5
 LOGIN_WINDOW_SECONDS = 300.0
-# 纯 IP 桶(只计失败)
 LOGIN_IP_MAX_ATTEMPTS = 30
 LOGIN_IP_WINDOW_SECONDS = 3600.0
-# 纯账号桶:15 分钟窗成功即清零,日窗只计失败不清零
 LOGIN_ACCT_MAX_ATTEMPTS = 10
 LOGIN_ACCT_WINDOW_SECONDS = 900.0
 LOGIN_ACCT_DAILY_MAX_ATTEMPTS = 30
 LOGIN_ACCT_DAILY_WINDOW_SECONDS = 86400.0
 
-# 与 AdminCreateRequest.password 的 min_length 对齐(引导口令不经 schema)
 PASSWORD_MIN_LENGTH = 12
 
-# ---------- TOTP MFA(admin_mfa_enabled,默认开,全部管理角色) ----------
-# 开关只有全员开/全员关两档。开启时登录只签发挑战票,
-# 正式 token 经 confirm_totp_setup / verify_mfa_login 签发
-MFA_SETUP_TICKET_SECONDS = 600  # 绑定票 10 分钟,一次性(typ=mfa_setup)
-MFA_VERIFY_TICKET_SECONDS = 300  # 二要素票 5 分钟
-MFA_MAX_ATTEMPTS = 5  # 同账号 5 次/10min
+MFA_SETUP_TICKET_SECONDS = 600
+MFA_VERIFY_TICKET_SECONDS = 300
+MFA_MAX_ATTEMPTS = 5
 MFA_WINDOW_SECONDS = 600.0
 RECOVERY_CODE_COUNT = 10
 
-# 明文 PII 事由的最短长度
 REVEAL_REASON_MIN_LENGTH = 2
 
 
 def ensure_reveal_allowed(*, role: str, reason: str | None) -> str:
-    """PII 明文读取的统一开闸(租户实名 / 发票抬头邮箱共用)。返回规范化后的事由。
-
-    readonly 永不给明文;事由必填。所有明文出口都必须过这里。
-    """
+    """PII 明文出口须调用:拒绝 readonly,校验必填事由并返回去除首尾空白的事由。"""
     if role == "readonly":
         AUTHZ_DENIED_TOTAL.labels(actor_type="admin").inc()
         raise AppError(ErrorCode.FORBIDDEN, key="common.forbidden", http_status=403)
@@ -88,8 +78,7 @@ def ensure_reveal_allowed(*, role: str, reason: str | None) -> str:
 
 
 def _login_buckets(client_ip: str | None, username: str) -> list[LoginBucket]:
-    """四层登录桶,全部只计失败。IP 桶与日桶不清零;日窗账号桶不进 bcrypt 前的准入预检
-    (只在失败后计数)。每次调用重读阈值常量(测试可 monkeypatch)。"""
+    """返回四层失败计数桶;成功只清配对桶与账号短窗,账号日窗不参与预检。"""
     ip = client_ip or "-"
     return [
         LoginBucket(f"admin-login-ip:{ip}", LOGIN_IP_MAX_ATTEMPTS, LOGIN_IP_WINDOW_SECONDS),
@@ -123,7 +112,6 @@ async def login(
         await session.execute(select(AdminUser).where(AdminUser.username == username))
     ).scalar_one_or_none()
     buckets = _login_buckets(client_ip, username)
-    # 已封禁的桶在 bcrypt 之前拦下;日窗账号桶不进预检(见 _login_buckets)
     await login_preflight(buckets)
     password_ok = await verify_password(
         password, admin.password_hash if admin else dummy_password_hash()
@@ -140,7 +128,6 @@ async def login(
             http_status=status.HTTP_403_FORBIDDEN,
         )
     await login_succeeded(buckets)
-    # 两步验证关闭:密码即登录
     cfg = await get_runtime_config(session)
     if not cfg.admin_mfa_enabled:
         token = create_token(
@@ -149,22 +136,21 @@ async def login(
         return AdminLoginTokenOut(
             status="ok", access_token=token, admin=AdminOut.model_validate(admin)
         ), admin
-    # 未绑定 → 绑定票(10min);已绑定 → 二要素票(5min)
     if admin.totp_enabled:
         return MfaChallengeOut(status="mfa_required", ticket=_mfa_ticket(admin, setup=False)), admin
     return MfaChallengeOut(status="mfa_setup", ticket=_mfa_ticket(admin, setup=True)), admin
 
 
-# 静默续期:access 过期后 15 分钟宽限内可换发;自首次登录(sess_iat)起 12 小时绝对上限
 RENEW_GRACE_SECONDS = 15 * 60
 SESSION_MAX_SECONDS = 12 * 3600
 
 
 async def renew_access_token(session: AsyncSession, token: str) -> str:
-    """有效或刚过期(宽限内)的管理端 access token 换发新 token。
-    token_version 变或超绝对会话上限即 401。"""
+    """在 RENEW_GRACE_SECONDS 宽限内续发管理员 access token。
+
+    会话上限按 sess_iat(缺失时 iat)计算;超限、非 active 或版本不匹配时回 401。
+    """
     payload = decode_token(token, "admin", leeway_seconds=RENEW_GRACE_SECONDS)
-    # 绝对上限锚定首次登录时刻(sess_iat)
     session_iat = int(payload.get("sess_iat") or payload["iat"])
     issued_at = datetime.fromtimestamp(session_iat, tz=UTC)
     if now_utc() - issued_at > timedelta(seconds=SESSION_MAX_SECONDS):
@@ -180,7 +166,6 @@ async def renew_access_token(session: AsyncSession, token: str) -> str:
     )
 
 
-# ---------- TOTP 票据与校验 ----------
 def _mfa_ticket(admin: AdminUser, *, setup: bool) -> str:
     return create_token(
         str(admin.id),
@@ -244,17 +229,16 @@ def _accept_totp_step(locked: AdminUser, matched_step: int) -> bool:
 
 
 def _gen_plain_recovery_codes() -> list[str]:
-    """10 个 XXXXX-XXXXX 恢复码(40 bit/个)。落库只有 bcrypt 哈希。"""
+    """生成 RECOVERY_CODE_COUNT 个 40 bit 恢复码;持久化时必须存哈希。"""
     return [f"{(raw := secrets.token_hex(5))[:5]}-{raw[5:]}" for _ in range(RECOVERY_CODE_COUNT)]
 
 
 async def _hash_recovery_codes(plain: list[str]) -> list[str]:
-    """并发受 _bcrypt_permits(4)约束。"""
     return list(await asyncio.gather(*(hash_password(code) for code in plain)))
 
 
 async def _consume_recovery_code(admin: AdminUser, code: str) -> bool:
-    """匹配即作废。bcrypt 逐个比对,并发受信号量约束。"""
+    """比对并移除匹配的恢复码哈希;调用方须持管理员行锁并提交。"""
     hashes = list(admin.totp_recovery or [])
     if not hashes:
         return False
@@ -266,24 +250,23 @@ async def _consume_recovery_code(admin: AdminUser, code: str) -> bool:
 
 
 async def begin_totp_setup(session: AsyncSession, ticket: str) -> tuple[str, str]:
-    """生成(或复用进行中的)TOTP 密钥,返回 (secret, otpauth_uri)。
-    行锁下读改写;已绑定即拒(MFA_TICKET_INVALID);确认绑定前 totp_enabled 恒为 false。
+    """重读并锁定管理员行,创建或复用未确认的 TOTP 密钥,提交后返回密钥与 otpauth URI。
+
+    已绑定时回滚并抛 MFA_TICKET_INVALID。
     """
     admin = await _admin_from_ticket(session, ticket, expected="mfa_setup")
-    # 与 confirm/verify 同一配额桶
     await _check_mfa_rate(admin.id)
-    # populate_existing 不可省:该行已在 identity map,须强制重读加锁后的值
     locked = await session.get(AdminUser, admin.id, with_for_update=True, populate_existing=True)
     assert locked is not None
     if locked.totp_enabled:
-        await session.rollback()  # 锁不留到请求结束
+        await session.rollback()
         raise AppError(ErrorCode.MFA_TICKET_INVALID, key="adminapi.mfaTicketInvalid")
     if locked.totp_secret is None:
         secret = pyotp.random_base32()
         locked.totp_secret = encrypt_str(secret, aad=f"totp:{locked.id}")
     else:
         secret = _decrypt_totp_secret(locked)
-    await session.commit()  # 未改也要提交,锁随事务释放
+    await session.commit()
     uri = pyotp.TOTP(secret).provisioning_uri(name=locked.username, issuer_name="SuperDL 管理端")
     return secret, uri
 
@@ -291,14 +274,14 @@ async def begin_totp_setup(session: AsyncSession, ticket: str) -> tuple[str, str
 async def confirm_totp_setup(
     session: AsyncSession, ticket: str, code: str
 ) -> tuple[str, AdminUser, list[str]]:
-    """校验首个动态码 → 启用 + 发恢复码(明文仅本次) → 签发正式 token。
-    绑定成功即 token_version+1(绑定票作废,踢掉其它在外会话)。
+    """重读并锁定管理员行,校验动态码并推进防重放步,启用 TOTP 后提交。
+
+    成功时递增 token_version 撤销旧会话,返回新 access token、账号及仅本次可见的恢复码。
     """
     admin = await _admin_from_ticket(session, ticket, expected="mfa_setup")
     await _check_mfa_rate(admin.id)
     if admin.totp_secret is None:
         raise AppError(ErrorCode.MFA_TICKET_INVALID, key="adminapi.mfaTicketInvalid")
-    # 行锁内匹配 + 防重放推进
     locked = await session.get(AdminUser, admin.id, with_for_update=True, populate_existing=True)
     assert locked is not None
     matched = _match_totp_timestep(_decrypt_totp_secret(locked), code)
@@ -306,16 +289,13 @@ async def confirm_totp_setup(
         await _count_mfa_attempt(admin.id)
         logger.warning("mfa_bind_failed", admin_id=admin.id)
         raise AppError(ErrorCode.MFA_CODE_INVALID, key="adminapi.mfaCodeInvalid")
-    await _count_mfa_attempt(admin.id)  # 成功也计配额
+    await _count_mfa_attempt(admin.id)
     if locked.totp_enabled:
-        # 并发两张票同时 confirm 时后到者不得重发恢复码
         raise AppError(ErrorCode.MFA_TICKET_INVALID, key="adminapi.mfaTicketInvalid")
     plain = _gen_plain_recovery_codes()
     locked.totp_recovery = await _hash_recovery_codes(plain)
     locked.totp_enabled = True
-    locked.token_version += 1  # 绑定票即刻作废;access token 用 bump 后的版本
-    # 绑定即告警(管理端告警流)
-
+    locked.token_version += 1
     await notify_service.notify(
         session,
         None,
@@ -338,10 +318,12 @@ async def confirm_totp_setup(
 async def verify_mfa_login(
     session: AsyncSession, ticket: str, code: str
 ) -> tuple[str, AdminUser, int | None]:
-    """二要素验证:6 位 TOTP,或恢复码(用后作废)。返回 (token, admin, 剩余恢复码数)。"""
+    """重读并锁定管理员行,验证并消费 TOTP 步或恢复码后提交。
+
+    返回 (access token, admin, 剩余恢复码数);使用 TOTP 时剩余数为 None。
+    """
     admin = await _admin_from_ticket(session, ticket, expected="mfa_ticket")
     await _check_mfa_rate(admin.id)
-    # 行锁内验证:timestep 推进/恢复码作废与「是否已用」判定原子化
     locked = await session.get(AdminUser, admin.id, with_for_update=True, populate_existing=True)
     assert locked is not None
     ok = False
@@ -355,7 +337,7 @@ async def verify_mfa_login(
         await _count_mfa_attempt(admin.id)
         logger.warning("mfa_verify_failed", admin_id=admin.id)
         raise AppError(ErrorCode.MFA_CODE_INVALID, key="adminapi.mfaCodeInvalid")
-    await _count_mfa_attempt(admin.id)  # 成功也计配额
+    await _count_mfa_attempt(admin.id)
     await session.commit()
     if used_recovery:
         logger.info("mfa_recovery_used", admin_id=admin.id)
@@ -378,7 +360,7 @@ async def regenerate_recovery_codes(session: AsyncSession, admin: AdminUser) -> 
 
 
 async def reset_totp(session: AsyncSession, actor: AdminUser, target_id: int) -> AdminUser:
-    """超管为他人重置 TOTP:清空绑定与恢复码并踢掉全部会话,下次登录重新绑定。本人不可自重置。"""
+    """重置他人 TOTP 绑定与恢复码、撤销会话并提交;调用方须校验超管权限。"""
     if actor.id == target_id:
         raise AppError(
             ErrorCode.MFA_RESET_SELF_FORBIDDEN,
@@ -403,7 +385,7 @@ async def create_admin(session: AsyncSession, username: str, password: str, role
     session.add(admin)
     try:
         await session.commit()
-    except IntegrityError as exc:  # username 唯一
+    except IntegrityError as exc:
         await session.rollback()
         raise conflict(key="adminapi.adminUsernameTaken") from exc
     await session.refresh(admin)
@@ -412,11 +394,10 @@ async def create_admin(session: AsyncSession, username: str, password: str, role
 
 
 async def ensure_bootstrap_admin(session: AsyncSession, password: str) -> None:
-    """首个管理员引导(scripts/seed_dev.py 调用):表为空时创建 admin 账号。"""
+    """管理员表为空时校验引导口令长度并创建 admin 账号。"""
     existing = (await session.execute(select(AdminUser).limit(1))).scalar_one_or_none()
     if existing is not None:
         return
-    # 引导口令不经请求 schema,长度须与 AdminCreateRequest 同标准
     if len(password) < PASSWORD_MIN_LENGTH or len(password.encode()) > PASSWORD_MAX_BYTES:
         raise RuntimeError(
             f"引导口令不合规:须 ≥{PASSWORD_MIN_LENGTH} 字符且 UTF-8 编码后 "
@@ -449,10 +430,9 @@ async def update_admin(
     new_status: str | None,
     actor_id: int,
 ) -> tuple[AdminUser, dict[str, Any]]:
-    """改角色/停用。返回 (账号, 旧值快照),旧值交调用方落审计。"""
+    """持行锁更新角色或状态并提交;变更时撤销会话,返回账号与供审计使用的旧值。"""
     admin = await _get_admin(session, admin_id)
     if admin.id == actor_id and (new_status == "disabled" or (role and role != admin.role)):
-        # 禁止自停用/自降权
         raise AppError(
             ErrorCode.VALIDATION_ERROR,
             key="adminapi.cannotChangeSelf",
@@ -466,7 +446,6 @@ async def update_admin(
         before["status"] = admin.status
         admin.status = new_status
     if before:
-        # 角色变更/停用即失效已签发的 token
         admin.token_version += 1
     await session.commit()
     await session.refresh(admin)
@@ -478,7 +457,7 @@ async def update_admin(
 async def reset_admin_password(session: AsyncSession, admin_id: int, password: str) -> AdminUser:
     admin = await _get_admin(session, admin_id)
     admin.password_hash = await hash_password(password)
-    admin.token_version += 1  # 改密即踢掉全部在外会话
+    admin.token_version += 1
     await session.commit()
     await session.refresh(admin)
     ADMIN_PRIVILEGE_CHANGE_TOTAL.inc()

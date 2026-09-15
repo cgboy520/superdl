@@ -1,5 +1,4 @@
-/** 数据盘卡:「不需要 / 新建 / 挂载已有盘」三个 tile(副行写口径与可挂载盘数)。新建为行内直建(DiskSizeField 在前,名称折在「高级」里;单价来自 /policies 折日展示),建盘动作由页面在提交时执行;盘清单加载失败不伪装成「没有可挂载的盘」。
- *  实例盘为本地盘、不做冗余的说明放在本卡脚注(与「要不要数据盘」这个决定直接相关),不做页顶常驻条。 */
+/** 数据盘选择卡:不挂载、新建或挂载已有盘;建盘由调用方提交。 */
 
 import { controlWidth, fontSize, formatSizeGb, space } from "@superdl/ui";
 import { DataErrorAlert, DiskSizeField, OptionTileGroup } from "@superdl/ui/components";
@@ -44,7 +43,6 @@ export function DataDiskCard({
   const { t } = useTranslation();
   const disksQ = useDisks();
   const { data: policies } = usePolicies();
-  // 可挂载 = 正常状态且未挂在别的实例上
   const mountable = (disksQ.data ?? []).filter((d) => d.status === "active" && d.mounted_instance_id == null);
 
   const body = (
@@ -68,7 +66,6 @@ export function DataDiskCard({
       />
       {mode === "new" && (
         <>
-          {/* 容量:滑块与数字框联动;min/max 与单价取 /policies,折日估算由 DiskSizeField 出 */}
           <DiskSizeField
             value={newGb}
             onChange={onNewGbChange}

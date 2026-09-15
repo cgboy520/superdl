@@ -27,7 +27,6 @@ export function useAckAlertWithFeedback() {
 
 export function alertLink(a: AlertRow): { to: string; search?: Record<string, string | number> } | null {
   if (a.target_kind === "tenant" && a.target_id) {
-    // 租户告警直接打开该租户抽屉(?tenant=),不只是检索到行
     const id = Number(a.target_id);
     return {
       to: "/tenants",

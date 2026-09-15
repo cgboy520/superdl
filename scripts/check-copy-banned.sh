@@ -1,13 +1,11 @@
 #!/usr/bin/env bash
-# 禁词闸门:扫 zh locales JSON 值 + 后端 MESSAGES。禁词表与 docs/copy-style-guide.md「禁则」同步。
-# 白名单:「一键加入」「一键添加」先剥离再匹配
 set -euo pipefail
 cd "$(dirname "$0")/.."
 python3 - <<'PY'
 import json, pathlib, re, sys
 
 BANNED = ["智能", "强大", "轻松", "一键", "全方位", "高效", "极速", "助力", "赋能", "颠覆", "极致"]
-ALLOW = re.compile(r"一键(加入|添加)")  # 产品名词语境豁免:先剥离再匹配
+ALLOW = re.compile(r"一键(加入|添加)")
 
 
 def hits(text: str) -> list[str]:

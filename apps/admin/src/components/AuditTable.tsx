@@ -55,7 +55,6 @@ export function AuditTable({
       ? [initial.since ? dayjs(initial.since) : null, initial.until ? dayjs(initial.until) : null]
       : null,
   );
-  // URL 预筛变化回流进输入框(渲染期派生态)
   const initialKey = `${initial?.actor_type ?? ""} ${initial?.actor_id ?? ""} ${initial?.q ?? ""} ${initial?.since ?? ""} ${initial?.until ?? ""} ${initial?.limit ?? ""}`;
   const [prevKey, setPrevKey] = useState(initialKey);
   if (initialKey !== prevKey) {
@@ -77,12 +76,10 @@ export function AuditTable({
     ...(actorType ? { actor_type: actorType } : {}),
     ...(actorId ? { actor_id: actorId } : {}),
     ...(q ? { q } : {}),
-    // 分钟级窗口,不强制整天
     ...(range?.[0] ? { since: range[0].toISOString() } : {}),
     ...(range?.[1] ? { until: range[1].toISOString() } : {}),
     limit,
   };
-  // limit 是页大小不算筛选
   const hasFilter = Boolean(actorType || actorId || q || range?.[0] || range?.[1]);
   const clearFilters = () => {
     setActorType(undefined);
@@ -223,7 +220,6 @@ export function AuditTable({
             dataIndex: "detail",
             render: (d: Record<string, unknown> | null) => {
               const text = detailSummary(d);
-              // 一行截断 + 悬浮看全文
               return text ? (
                 <Tooltip title={text}>
                   <Typography.Text

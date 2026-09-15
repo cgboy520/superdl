@@ -1,7 +1,4 @@
-/** 算力市场:一张「选择规格」卡(筛选 chips → 购买数量 → 工具行含计费方式 chips → SKU 表)+ 底部结算条。
- *  CTA 即库存,不可选行灰置排末不隐藏;购买数量不是筛选(不清空已选、不进「清除筛选」,库存不足只灰置 CTA)。
- *  未登录可看,CTA「登录后租用」带回完整筛选态;筛选态同时记入 listSearchStore,创建页返回时带回。
- *  规格不支持所选计费方式时用 message 明示并切回按量,不让 chip 静默跳动。 */
+/** 算力市场:规格筛选、购买数量、计费方式与结算预览;选择状态写入 URL。 */
 
 import { QuestionCircleOutlined } from "@ant-design/icons";
 import type { SkuMarketOut } from "@superdl/api-client";
@@ -58,14 +55,13 @@ function posInt(v: unknown): number | undefined {
   return Number.isInteger(n) && n > 0 ? n : undefined;
 }
 
-/** 独立导出供单测往返验证(与 Route.validateSearch 同一函数)。 */
+/** 解析市场页 URL 状态,剔除非法值与默认值。 */
 export function marketValidateSearch(search: Record<string, unknown>): MarketSearch {
   const out: MarketSearch = {};
-  if (search.kind === "cpu") out.kind = "cpu"; // gpu 为默认栏,剥离
+  if (search.kind === "cpu") out.kind = "cpu";
   const mode = search.mode;
   if (mode === "spot") out.mode = "spot";
   else if (typeof mode === "string" && isBillingPeriod(mode)) out.mode = mode;
-  // on_demand 为默认,剥离
   if (typeof search.model === "string" && search.model !== "") out.model = search.model;
   if (typeof search.tier === "string" && search.tier !== "" && search.tier !== "cpu" && search.tier in skuTierMap) {
     out.tier = search.tier;
@@ -73,7 +69,7 @@ export function marketValidateSearch(search: Record<string, unknown>): MarketSea
   const vram = posInt(search.vram);
   if (vram != null) out.vram = vram;
   const qty = posInt(search.qty);
-  if (qty != null && qty > 1) out.qty = qty; // 1 卡为默认,剥离
+  if (qty != null && qty > 1) out.qty = qty;
   const vcpu = posInt(search.vcpu);
   if (vcpu != null) out.vcpu = vcpu;
   const mem = posInt(search.mem);
@@ -81,7 +77,6 @@ export function marketValidateSearch(search: Record<string, unknown>): MarketSea
   const sku = posInt(search.sku);
   if (sku != null) out.sku = sku;
   const count = posInt(search.count);
-  // 1 份为默认,剥离;超上限丢弃
   if (count != null && count > 1 && count <= MAX_PERIOD_COUNT) out.count = count;
   return out;
 }
@@ -124,26 +119,20 @@ function MarketPage() {
   const { message } = App.useApp();
   const loggedIn = useIsLoggedIn();
   const [rulesOpen, setRulesOpen] = useState(false);
-  // 筛选/选中全部入 URL(replace)
   const search = Route.useSearch();
   const filters = filtersOf(search);
   const isCpu = filters.kind === "cpu";
-  // 购买数量:CPU 规格恒为整机 1 份
   const qty = search.qty ?? 1;
   const billingMode: BillingMode = search.mode ?? "on_demand";
   const selectedId = search.sku;
-  // 购买时长(1~36 个周期):入 URL 并透传创建页
   const periodCount = search.count ?? 1;
   const update = (next: MarketSearch) => void navigate({ to: "/market", search: next, replace: true });
-  // 购买数量改动不碰 sku:它不是筛选
   const setQty = (n: number) => update({ ...search, qty: n > 1 ? n : undefined });
 
-  // 创建页「← 返回算力市场」/「更换规格」带回本页筛选态
   useEffect(() => {
     listSearchStore.getState().remember("/market", search);
   }, [search]);
 
-  // 库存稳态轮询,页头新鲜度条可暂停
   const auto = useAutoRefresh(POLL.steady);
   const {
     data: allSkus,
@@ -155,17 +144,14 @@ function MarketPage() {
   } = useSkus({
     refetchInterval: auto.refetchInterval,
   });
-  // 冻结宽限小时数读 /policies;未就绪用无数字兜底句
   const { data: policies } = usePolicies();
   const discounts = usePeriodDiscounts();
   const spotPolicy = useSpotPolicy();
 
   const selected = (allSkus ?? []).find((s) => s.id === selectedId);
   const needed = isCpu ? 1 : qty;
-  // 购买数量改大后已选规格库存不够:保持选中(行内出「不足 N 卡」),只灰置 CTA
   const shortOfStock = selected != null && (selected.available_count ?? 0) < needed;
 
-  // 选中规格不接受包周期 / 未上竞价:URL 里已是按量(选中时即切回并提示),这里只做兜底
   const periodBlocked = selected != null && !selected.period_enabled;
   const spotUnavailable = selected != null && !selected.spot_enabled;
   const spotBlocked = spotUnavailable || spotPolicy == null;
@@ -176,7 +162,7 @@ function MarketPage() {
   const isSpot = mode === "spot";
   const period = isBillingPeriod(mode) ? mode : null;
 
-  /** 选中规格:若当前计费方式对它不可用,明示并切回按量(不让 chip 静默跳动) */
+  /** 选中规格;不支持当前计费方式时提示并切回按量。 */
   const onSelectSku = (s: SkuMarketOut | undefined) => {
     let nextMode: BillingMode | undefined = search.mode;
     if (s) {
@@ -191,13 +177,11 @@ function MarketPage() {
     update({ ...search, sku: s?.id, mode: nextMode });
   };
 
-  // 明细区单价:竞价档报折后价,其余报 SKU 原价
   const unitPrice =
     selected && isSpot
       ? (spotPriceOf(selected.price_hourly, spotPolicy) ?? selected.price_hourly)
       : selected?.price_hourly;
 
-  // 市场页无报价端点,按 policies 折扣本地估算(展示值,创建页报价为准)
   const quote =
     selected && period
       ? periodQuoteOf(selected.price_hourly, { units: billingUnits(isCpu ? 0 : qty), period, periodCount }, discounts)
@@ -205,7 +189,6 @@ function MarketPage() {
 
   const selectedVariant = selected ? skuVariant(selected.tier, selected.pool_label) : null;
   const createSearch = {
-    // 创建页深链的卡数参数名是 gpus(与 /services/new 共用解析)
     ...(isCpu ? {} : { gpus: qty }),
     ...(period ? { period } : {}),
     ...(period && periodCount > 1 ? { count: periodCount } : {}),
@@ -214,7 +197,6 @@ function MarketPage() {
   /** 未登录去登录:带回完整市场筛选态 */
   const marketHref = () => {
     const qs = new URLSearchParams();
-    // validateSearch 只产出有值的键,entries 无 undefined
     for (const [k, v] of Object.entries(search)) qs.set(k, String(v));
     const s = qs.toString();
     return s ? `/market?${s}` : "/market";
@@ -237,7 +219,6 @@ function MarketPage() {
         refreshing: isRefetching,
       }}
     >
-      {/* 不用 Space(ant-space-item 包装会破坏 sticky 结算条的包含块) */}
       <div style={{ display: "flex", flexDirection: "column", gap: space.lg, width: "100%" }}>
         <Card title={t("market.selectSpec")} styles={{ body: { paddingBlock: 16 } }}>
           <SkuPicker
@@ -256,7 +237,6 @@ function MarketPage() {
             {...(isCpu
               ? {}
               : {
-                  // 购买数量是独立一行:改它不清空已选行,也不进「清除筛选」
                   qtyRow: (
                     <ChipRow
                       label={t("market.chipGpuCount")}
@@ -281,7 +261,6 @@ function MarketPage() {
             }
             {...(isSpot && spotPolicy ? { spot: spotPolicy } : {})}
           />
-          {/* 选中共享·经济时,在选择处就地给风险摘要(完整条款在创建页提交前的知情同意里) */}
           {selectedVariant === "shared_hami" && (
             <Typography.Text
               type="warning"
@@ -292,13 +271,11 @@ function MarketPage() {
           )}
         </Card>
 
-        {/* 合规声明只在市场页脚(ui-ux-spec §1 规则 1) */}
         <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
           {t("copy.antiMiningNotice")}
         </Typography.Text>
 
         <CheckoutBar
-          // 选中规格/计费方式/时长变化时汇总数字淡入
           changeKey={selected ? `${selected.id}-${mode}-${periodCount}-${qty}` : "none"}
           summary={
             selected
@@ -328,7 +305,6 @@ function MarketPage() {
                 }
               : {
                   label: t("create.configCostLabel"),
-                  // 大字带「× N 卡」/「整机」后缀(价格口径显性化);CPU 规格 price_hourly 已是整机时价
                   suffix: !selected ? undefined : isCpu ? t("sku.wholeMachine") : t("sku.timesCards", { count: qty }),
                   value: !selected ? (
                     "--"

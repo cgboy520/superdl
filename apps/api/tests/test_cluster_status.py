@@ -1,6 +1,5 @@
 """probe_cluster(fake)、distro 派生、cluster_status 单行 upsert。"""
 
-# 白盒用例:直探模块内部
 # pyright: reportPrivateUsage=false
 
 import pytest
@@ -69,7 +68,6 @@ async def test_require_hami_ready_gate(sm, fake_auto_ready):
 
     from app.core.errors import AppError, ErrorCode
 
-    # 无缓存 → 拒
     async with sm() as session:
         row = await service.get_cluster_status(session)
         if row is not None:
@@ -79,13 +77,11 @@ async def test_require_hami_ready_gate(sm, fake_auto_ready):
         with pytest.raises(AppError) as exc:
             await service.require_hami_ready(session)
         assert exc.value.code == ErrorCode.CLUSTER_NOT_READY
-    # 新鲜且就绪 → 放行
     async with sm() as session:
         await service.save_cluster_probe(session, await fake_auto_ready.probe_cluster())
         await session.commit()
     async with sm() as session:
         await service.require_hami_ready(session)
-    # HAMi 未就绪 → 拒
     fake_auto_ready.probe_hami_ready = False
     async with sm() as session:
         await service.save_cluster_probe(session, await fake_auto_ready.probe_cluster())
@@ -93,7 +89,6 @@ async def test_require_hami_ready_gate(sm, fake_auto_ready):
     async with sm() as session:
         with pytest.raises(AppError):
             await service.require_hami_ready(session)
-    # 陈旧 → 拒(即使 hami_ready=True)
     fake_auto_ready.probe_hami_ready = True
     async with sm() as session:
         row = await service.save_cluster_probe(session, await fake_auto_ready.probe_cluster())
@@ -136,7 +131,6 @@ class TestGateWiring:
         resp = await client.post("/api/v1/instances", json=body, headers=headers)
         assert resp.status_code == 409, resp.text
         assert resp.json()["code"] == "CLUSTER_NOT_READY"
-        # dedicated 不受门禁影响
         resp2 = await client.post(
             "/api/v1/instances", json={**body, "sku_id": dedicated["id"]}, headers=headers
         )
@@ -183,7 +177,7 @@ class TestGateWiring:
         async with sm() as session:
             row = await session.get(ClusterStatus, 1)
             assert row is not None
-            row.storage_classes = ["local-path"]  # 有 SC,但不是实例盘要的那只
+            row.storage_classes = ["local-path"]
             await session.commit()
         skus = (await client.get("/api/v1/skus")).json()
         images = (await client.get("/api/v1/images")).json()
@@ -199,7 +193,6 @@ class TestGateWiring:
         )
         assert resp.status_code == 409, resp.text
         assert resp.json()["detail"]["missing"] == ["topolvm-provisioner"]
-        # 数据盘同理
         resp = await client.post(
             "/api/v1/disks", json={"name": "d", "size_gb": 100}, headers=headers
         )
@@ -279,7 +272,6 @@ async def test_derive_node_distro_chain(sm, fake_auto_ready):
     from app.core.k8s.base import ClusterProbe
     from app.core.platform_config import runtime_config_from_strings as rc
 
-    # conftest 预置 rke2 探测
     async with sm() as session:
         assert await service.derive_node_distro(session, rc({})) == "rke2"
     async with sm() as session:
@@ -289,7 +281,6 @@ async def test_derive_node_distro_chain(sm, fake_auto_ready):
         await session.commit()
     async with sm() as session:
         assert await service.derive_node_distro(session, rc({})) == "k3s"
-        # 缓存无 distro → 回落 agent 版本后缀
         row = await service.get_cluster_status(session)
         assert row is not None
         row.distro = None
@@ -319,40 +310,33 @@ class TestClusterEndpoints:
         assert comp["hami"]["state"] == "ok"
         assert comp["monitoring"]["state"] == "ok" and comp["storage"]["state"] == "ok"
         assert comp["hami"]["fix_hint"] is None
-        # 排障命令一直给(与状态无关),修复命令只在故障时给
         assert comp["gateway"]["diag_hint"] and "kubectl" in comp["gateway"]["diag_hint"]
-        assert body["config"]["server_url_set"] is False  # 测试未配置 cluster 键
-        assert body["config"]["prometheus_url_set"] is False  # 默认 localhost
+        assert body["config"]["server_url_set"] is False
+        assert body["config"]["prometheus_url_set"] is False
 
     async def test_panel_carries_checkable_numbers_not_prose(self, sm, fake_auto_ready, client):
-        """面板正面是可核对的数字与标识符。
-
-        挂了说明后端又在拼中文散文:detail 字符串绕过两端 locales,en-US 下管理员看到中文,
-        且 x/y 这类事实被压进句子里没法着色、没法排序。
-        """
+        """面板事实返回数字与标识符。"""
         from app.modules.nodes.patrol import node_spec_patrol
 
         await node_spec_patrol(sm)
         headers = await admin_headers(sm, client, role="readonly")
         body = (await client.get("/api/admin/v1/cluster/status", headers=headers)).json()
         comp = {c["key"]: c for c in body["components"]}
-        assert "detail" not in comp["nodes"]  # 中文散文字段已删
+        assert "detail" not in comp["nodes"]
         assert comp["nodes"]["headline"] == {"key": "ready", "value": "4/4", "tone": "normal"}
         gateway = comp["gateway"]
         assert gateway["headline"]["value"] == "6/6"
-        # 抽屉对象表:每个 listener 的端口、挂载路由数、条件都在
         names = {o["name"] for o in gateway["objects"]}
         assert {"api-https", "app-https", "svc-https"} <= names
         listener = next(o for o in gateway["objects"] if o["name"] == "svc-https")
         assert listener["fields"]["port"] == "443"
         assert listener["fields"]["programmed"] == "true"
-        # 事实里不该出现中文:value 一律是纯数据
         for c in body["components"]:
             for f in [*c["facts"], c["headline"] or {"value": ""}]:
                 assert not any("\u4e00" <= ch <= "\u9fff" for ch in f["value"]), f
 
     async def test_status_empty_cache_shows_checklist(self, sm, client):
-        """从未探测:十项判 unknown,但仍给安装命令 —— 体检卡在装机阶段兼作清单。"""
+        """无探测缓存时组件状态为 unknown,仍返回安装命令。"""
         from app.modules.nodes.models import ClusterStatus
 
         async with sm() as session:
@@ -366,15 +350,10 @@ class TestClusterEndpoints:
         comp = {c["key"]: c for c in body["components"]}
         assert comp["hami"]["state"] == "unknown" and comp["hami"]["fix_hint"]
         assert "apply.sh" in comp["monitoring"]["fix_hint"]
-        # 无探测缓存:档位留占位
         assert "apply.sh <full|light>" in comp["monitoring"]["fix_hint"]
 
     async def test_stale_probe_is_unknown_not_green(self, sm, fake_auto_ready, client):
-        """快照超保鲜窗 → 全部 unknown,且不谎报修复命令。
-
-        挂了说明陈旧假绿回归了:worker 停掉三小时,体检卡照样十项全绿,
-        管理员据此判断集群健康。下发门禁一直有这个保鲜判定,体检卡此前没有。
-        """
+        """过期快照返回 unknown,不返回修复命令。"""
         from datetime import timedelta
 
         from app.modules.nodes.models import ClusterStatus
@@ -392,12 +371,11 @@ class TestClusterEndpoints:
         body = (await client.get("/api/admin/v1/cluster/status", headers=headers)).json()
         assert all(c["state"] == "unknown" for c in body["components"])
         assert all(c["fix_hint"] is None for c in body["components"])
-        # 上次事实仍回:知道「上次是 4/4」比什么都不显示有用
         comp = {c["key"]: c for c in body["components"]}
         assert comp["nodes"]["headline"]["value"] == "4/4"
 
     async def test_api_unreachable_is_unknown(self, sm, fake_auto_ready, client):
-        """探测到 API 不可达:事实全部不可信,不能拿上一轮的绿勾顶着。"""
+        """API 不可达时组件状态为 unknown。"""
         from app.modules.nodes.patrol import node_spec_patrol
 
         await node_spec_patrol(sm)
@@ -423,20 +401,16 @@ class TestClusterEndpoints:
     async def test_storage_component_uses_the_same_names_as_the_gate(
         self, sm, fake_auto_ready, client
     ):
-        """体检页 storage 与 require_storage_classes 同一口径(按名核对)。
-
-        缺数据盘 SC 不判红:数据盘不可售不影响开机。
-        """
+        """存储组件按名称核对 SC;仅缺数据盘 SC 时返回警告。"""
         from app.modules.nodes.patrol import node_spec_patrol
 
-        fake_auto_ready.probe_storage_classes = ("local-path",)  # 不是实例盘要的那只
+        fake_auto_ready.probe_storage_classes = ("local-path",)
         await node_spec_patrol(sm)
         headers = await admin_headers(sm, client, role="readonly")
         body = (await client.get("/api/admin/v1/cluster/status", headers=headers)).json()
         storage = {c["key"]: c for c in body["components"]}["storage"]
         assert storage["state"] == "down"
         assert _fact(storage, "instanceDisk") == ("-", "bad")
-        # 数据盘 SC 可选:缺它 tone 转 warn,状态仍 ok
         fake_auto_ready.probe_storage_classes = ("local-path", "topolvm-provisioner")
         await node_spec_patrol(sm)
         body = (await client.get("/api/admin/v1/cluster/status", headers=headers)).json()
@@ -445,10 +419,7 @@ class TestClusterEndpoints:
         assert _fact(storage, "dataDisk") == ("-", "warn")
 
     async def test_kata_with_empty_pool_is_disabled_not_ok(self, sm, fake_auto_ready, client):
-        """RuntimeClass 在、kata 池没有 Ready 节点 → disabled(未启用),不是绿勾。
-
-        挂了说明独享档开不了机却显示全绿。库存解读不进体检项:能不能卖看 pools_ready。
-        """
+        """kata 池无 Ready 节点时状态为 disabled。"""
         from app.modules.nodes.patrol import node_spec_patrol
 
         fake_auto_ready.pool_capacity.pop("kata", None)
@@ -462,11 +433,7 @@ class TestClusterEndpoints:
         assert body["pools_ready"].get("kata", 0) == 0
 
     async def test_kata_pool_counts_only_ready_nodes(self, sm, fake_auto_ready, client):
-        """池里节点全 NotReady = 没有节点。
-
-        挂了说明又在数原始池成员:三台全 NotReady 的 kata 节点会显示「kata 池 3 节点」
-        并判绿,独享档实际一台也开不了。
-        """
+        """kata 池节点数只统计 Ready 节点。"""
         from app.core.k8s.base import NodeInfo
         from app.modules.nodes.patrol import node_spec_patrol
 
@@ -487,15 +454,10 @@ class TestClusterEndpoints:
         assert body["pools"]["kata"] == 3 and body["pools_ready"].get("kata", 0) == 0
         kata = {c["key"]: c for c in body["components"]}["kata_runtimeclass"]
         assert kata["state"] == "disabled" and kata["headline"]["value"] == "0"
-        # 三台都在抽屉对象表里,各自带状态
         assert {o["fields"]["status"] for o in kata["objects"]} == {"NotReady"}
 
     async def test_partial_operand_rollout_is_degraded(self, sm, fake_auto_ready, client):
-        """gpu-operator operand 没铺满 → degraded。
-
-        挂了说明退回了「名字存在即绿」:今天判据是 Deployment 名字子串匹配,
-        0/8 全崩的 operator 照样绿,体检等于没做。
-        """
+        """gpu-operator operand 未全部就绪时状态为 degraded。"""
         from app.modules.nodes.patrol import node_spec_patrol
 
         fake_auto_ready.probe_gpu_operand_ready = 1
@@ -509,11 +471,7 @@ class TestClusterEndpoints:
         assert comp["dcgm"]["state"] == "degraded" and comp["dcgm"]["headline"]["value"] == "1/3"
 
     async def test_one_bad_listener_degrades_gateway(self, sm, fake_auto_ready, client):
-        """单个 listener 未 Programmed → 整体降级,对象表点名是哪个。
-
-        挂了说明又只看整体 Programmed 条件:svc 子域全挂而面板显示绿勾,
-        runbook J 节要人手敲 kubectl 才看得见。
-        """
+        """任一 listener 未 Programmed 时网关降级,对象表返回其状态。"""
         from app.modules.nodes.patrol import node_spec_patrol
 
         fake_auto_ready.probe_unprogrammed_listeners = ("svc-https",)
@@ -548,13 +506,10 @@ class TestClusterEndpoints:
 
 
 class TestComponentProbe:
-    """实时深探:请求路径直连 K8s 的第二个只读例外,降级路径必须兜住。"""
+    """组件实时探测的诊断、降级和权限契约。"""
 
     async def test_probe_returns_pod_level_reasons(self, sm, fake_auto_ready, client):
-        """快照答「就绪几个」,深探答「为什么不就绪」。
-
-        挂了说明面板又只剩 x/y:DaemonSet 5/8 时管理员还是得自己去敲 kubectl describe。
-        """
+        """实时探测返回 Pod 级诊断与事件。"""
         from app.core.k8s.base import ComponentObject
 
         fake_auto_ready.detail_pods = {
@@ -594,16 +549,12 @@ class TestComponentProbe:
         assert _fact(body, "podsNotReady") == ("1", "bad")
 
     async def test_probe_failure_degrades_to_503_not_500(self, sm, fake_auto_ready, client):
-        """集群 API 抖动不能打穿管理端:503 + 快照仍可读。
-
-        挂了说明深探把集群故障放大成了页面故障。
-        """
+        """实时探测失败返回 503,快照仍可读取。"""
         fake_auto_ready.fail_probe = True
         headers = await admin_headers(sm, client, role="readonly")
         resp = await client.get("/api/admin/v1/cluster/components/gateway/probe", headers=headers)
         assert resp.status_code == 503, resp.text
         assert resp.json()["message_key"] == "nodes.componentProbeFailed"
-        # 快照端点不受影响
         assert (
             await client.get("/api/admin/v1/cluster/status", headers=headers)
         ).status_code == 200
@@ -614,7 +565,7 @@ class TestComponentProbe:
         assert resp.status_code == 404, resp.text
 
     async def test_probe_rate_limited(self, sm, fake_auto_ready, client):
-        """限流护住集群 API:管理端刷新再快也打不爆 apiserver。"""
+        """组件探测超过限流阈值时返回 429。"""
         from app.modules.nodes import service as nodes_service
 
         headers = await admin_headers(sm, client, role="readonly")

@@ -1,4 +1,3 @@
-# 白盒用例:直探模块内部
 # pyright: reportPrivateUsage=false
 from datetime import timedelta
 
@@ -69,8 +68,8 @@ async def test_enqueue_carries_request_id_into_handler_context(
         structlog.contextvars.unbind_contextvars("request_id")
 
     assert await process_one(sm) is True
-    assert seen == ["rid-test-1"]  # handler 执行期回填
-    assert structlog.contextvars.get_contextvars().get("request_id") is None  # 执行完已解绑
+    assert seen == ["rid-test-1"]
+    assert structlog.contextvars.get_contextvars().get("request_id") is None
 
 
 async def test_process_failure_retries_then_dead(sm: async_sessionmaker[AsyncSession], monkeypatch):
@@ -78,14 +77,12 @@ async def test_process_failure_retries_then_dead(sm: async_sessionmaker[AsyncSes
         raise RuntimeError("boom")
 
     monkeypatch.setitem(outbox._registry, "t_bad", bad_handler)
-    # 退避清零,便于连续处理
     monkeypatch.setattr(outbox, "DEFAULT_RETRY_POLICY", outbox.RetryPolicy(backoff_base_seconds=0))
 
     async with sm() as session:
         enqueue(session, "t_bad", {})
         await session.commit()
 
-    # 首次 + MAX_RETRIES 次重试全部失败后进 dead
     for _ in range(outbox.MAX_RETRIES + 1):
         assert await process_one(sm) is True
 
@@ -95,7 +92,6 @@ async def test_process_failure_retries_then_dead(sm: async_sessionmaker[AsyncSes
         assert task.retries == outbox.MAX_RETRIES + 1
         assert "boom" in (task.last_error or "")
 
-    # dead 任务不再被领取
     assert await process_one(sm) is False
 
 
@@ -109,14 +105,13 @@ async def test_backoff_schedule(sm: async_sessionmaker[AsyncSession], monkeypatc
         enqueue(session, "t_backoff", {})
         await session.commit()
 
-    assert await process_one(sm) is True  # 第一次失败
+    assert await process_one(sm) is True
     async with sm() as session:
         task = (await session.execute(select(OutboxTask))).scalar_one()
         assert task.status == "pending"
         assert task.retries == 1
-        assert task.next_retry_at > now_utc()  # 退避生效
+        assert task.next_retry_at > now_utc()
 
-    # 未到期 → 不领取
     assert await process_one(sm) is False
 
 
@@ -137,7 +132,6 @@ async def test_reaper_requeues_stuck_running(sm: async_sessionmaker[AsyncSession
         task = (await session.execute(select(OutboxTask))).scalar_one()
         assert task.status == "pending"
         assert task.locked_by is None
-        # 复活计一次失败并退避
         assert task.retries == 1
         assert task.next_retry_at > now_utc()
 
@@ -149,7 +143,7 @@ async def test_reaper_dead_letter_after_budget_exhausted(sm: async_sessionmaker[
             type="t_stuck",
             payload={},
             status="running",
-            retries=outbox.MAX_RETRIES,  # 已达预算上限,再复活即越界
+            retries=outbox.MAX_RETRIES,
             locked_by="dead-worker",
             locked_at=now_utc() - timedelta(minutes=30),
         )
@@ -168,12 +162,11 @@ class TestRetryPolicy:
     async def test_per_type_budget_overrides_default(self, sm):
         """disk.deprovision 有更长的重试预算。"""
         from app.core.outbox import DEFAULT_RETRY_POLICY, retry_policy_for
-        from app.modules.orchestrator import handlers as _handlers  # noqa: F401 注册重试预算
+        from app.modules.orchestrator import handlers as _handlers  # noqa: F401
 
         assert retry_policy_for("instance.create") is DEFAULT_RETRY_POLICY
         wipe = retry_policy_for("disk.deprovision")
         assert wipe.max_retries > DEFAULT_RETRY_POLICY.max_retries
-        # 预算总时长 > 30 分钟
         total = sum(
             min(wipe.backoff_base_seconds * 2**i, wipe.backoff_max_seconds)
             for i in range(wipe.max_retries)
@@ -193,7 +186,6 @@ class TestTaskTimeout:
         async def _hang(session, task):
             await asyncio.sleep(5)
 
-        # setitem 注入(monkeypatch 收尾回滚),不用 @outbox_handler 永久注册
         monkeypatch.setitem(outbox_mod._registry, "test.hang", _hang)
 
         async with sm() as session:
@@ -204,7 +196,7 @@ class TestTaskTimeout:
             row = (
                 await session.execute(select(OutboxTask).where(OutboxTask.type == "test.hang"))
             ).scalar_one()
-        assert row.status == "pending"  # 退避重试,不是 done
+        assert row.status == "pending"
         assert row.retries == 1
         assert "TimeoutError" in (row.last_error or "")
 
@@ -222,7 +214,6 @@ class TestClaimOrder:
         monkeypatch.setitem(outbox._registry, "t_order", handler)
 
         async with sm() as session:
-            # late 先入库但更晚到期;early 先领取
             session.add(OutboxTask(type="t_order", payload={"k": "late"}, next_retry_at=now_utc()))
             session.add(
                 OutboxTask(
@@ -241,7 +232,7 @@ class TestConcurrency:
     async def test_concurrent_workers_claim_distinct_tasks(
         self, sm: async_sessionmaker[AsyncSession], monkeypatch
     ):
-        """SKIP LOCKED 下多个领取协程并发执行不同任务(Barrier(3) 汇合,串行则超时判负)。"""
+        """SKIP LOCKED 下多个领取协程并发执行不同任务。"""
         import asyncio
 
         gate = asyncio.Barrier(3)
@@ -249,7 +240,7 @@ class TestConcurrency:
 
         async def gated_handler(_session: AsyncSession, task: OutboxTask) -> None:
             started.append(task.payload["k"])
-            await gate.wait()  # 两路 handler 同时在场才放行
+            await gate.wait()
 
         monkeypatch.setitem(outbox._registry, "t_gated", gated_handler)
 
@@ -258,7 +249,6 @@ class TestConcurrency:
             enqueue(session, "t_gated", {"k": "b"})
             await session.commit()
 
-        # 超时余量放宽(Windows 本机 asyncpg 建联可达十几秒)
         r0, r1, _ = await asyncio.wait_for(
             asyncio.gather(process_one(sm, "w-0"), process_one(sm, "w-1"), gate.wait()),
             timeout=60,
@@ -279,7 +269,6 @@ class TestTerminalWriteOwnership:
         from sqlalchemy import update
 
         async def handler(_session: AsyncSession, task: OutboxTask) -> None:
-            # reaper 在 handler 执行期回收本任务(独立事务)
             async with sm() as s2:
                 await s2.execute(
                     update(OutboxTask)
@@ -294,10 +283,10 @@ class TestTerminalWriteOwnership:
             enqueue(session, "t_race", {})
             await session.commit()
 
-        assert await process_one(sm, "w-victim") is True  # handler 本身成功
+        assert await process_one(sm, "w-victim") is True
         async with sm() as session:
             row = (await session.execute(select(OutboxTask))).scalar_one()
-            assert row.status == "pending"  # 没被写成 done
+            assert row.status == "pending"
             assert row.locked_by is None
 
 

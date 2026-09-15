@@ -17,7 +17,7 @@ interface ClientConfig {
   baseUrl: string;
   getToken: () => string | null;
   onUnauthorized: (() => void) | null;
-  /** 401 时尝试静默续期(返回是否成功);未配置则直接 onUnauthorized。 */
+  /** 非 /auth/ 路径的 401 尝试静默续期(返回是否成功);未配置或重试后仍为 401 时调用 onUnauthorized。 */
   refreshToken: (() => Promise<boolean>) | null;
 }
 
@@ -28,14 +28,10 @@ const config: ClientConfig = {
   refreshToken: null,
 };
 
-/** 跨标签页续期互斥锁名。后端 refresh 是一次性消费,重放即被判定泄露并撤销全部会话。 */
+/** 跨标签页续期互斥锁名。 */
 const REFRESH_LOCK = "superdl:token-refresh";
 
-/**
- * 续期一次。staleToken 是发起该请求时用的 access token:进入临界区后 token 已变,
- * 说明别的标签页/并发请求刚续期成功,直接重放。
- * 互斥走 Web Locks(目标浏览器全支持;jsdom 测试经 fakeLocks 替身)。
- */
+/** 在 Web Locks 内串行续期;当前 token 不同于请求时的 token 时直接返回成功。 */
 async function refreshOnce(staleToken: string | null): Promise<boolean> {
   return navigator.locks.request(REFRESH_LOCK, async () => {
     if (config.getToken() !== staleToken) return true;
@@ -47,15 +43,12 @@ export function configureApiClient(opts: Partial<ClientConfig>): void {
   Object.assign(config, opts);
 }
 
-/**
- * 生成代码的请求 options。orval 把 spec 可空 header(如 Idempotency-Key)类型化为
- * string | null,与 HeadersInit 的 Record<string, string> 不兼容,这里显式放宽。
- */
+/** 请求选项,支持值为 null 或 undefined 的 header 记录。 */
 export interface ApiRequestOptions extends Omit<RequestInit, "headers"> {
   headers?: HeadersInit | Record<string, string | null | undefined>;
 }
 
-/** 构造 Headers 前剔除 null/undefined:直接 new Headers(record) 会把 null 变成 "null" 字面量发出去。 */
+/** 构造 Headers 时剔除记录中的 null 与 undefined 值。 */
 function toHeaders(init: ApiRequestOptions["headers"]): Headers {
   if (!init) return new Headers();
   if (init instanceof Headers || Array.isArray(init)) return new Headers(init);
@@ -70,7 +63,7 @@ export function isApiError(e: unknown): e is ApiError {
   return typeof e === "object" && e !== null && "code" in e && "status" in e;
 }
 
-/** 直连刷新接口(绕过拦截器,避免 401→refresh 递归)。失败返回 null。 */
+/** 直接 POST 刷新接口,失败返回 null。 */
 async function postRefresh(path: string, init: RequestInit): Promise<{ access_token: string } | null> {
   try {
     const resp = await fetch(`${config.baseUrl}${path}`, { method: "POST", ...init });
@@ -81,9 +74,7 @@ async function postRefresh(path: string, init: RequestInit): Promise<{ access_to
   }
 }
 
-/** 用户端:refresh 走 HttpOnly Cookie(同源反代自动随路),不带 body;
- *  响应体只含新 access token(refresh 不进 JS 可读面,服务端轮换并回写 Cookie)。
- *  X-Requested-With 是 cookie 路径的 CSRF 纵深头(服务端强制)。 */
+/** 使用同源 Cookie 与 X-Requested-With 请求用户端续期,不带请求体。 */
 export function requestTokenRefresh(): Promise<{ access_token: string } | null> {
   return postRefresh("/api/v1/auth/refresh", {
     credentials: "same-origin",
@@ -91,7 +82,7 @@ export function requestTokenRefresh(): Promise<{ access_token: string } | null> 
   });
 }
 
-/** 管理端静默续期(滑动窗口,15 分钟过期宽限):access token 换新。 */
+/** 使用当前 access token 请求管理端续期。 */
 export function requestAdminTokenRefresh(accessToken: string): Promise<{ access_token: string } | null> {
   return postRefresh("/api/admin/v1/auth/refresh", {
     headers: { "Content-Type": "application/json" },
@@ -125,7 +116,6 @@ export const customFetch = async <T>(url: string, options: ApiRequestOptions): P
     return fetch(`${config.baseUrl}${url}`, { ...options, headers });
   };
 
-  // fetch 抛 TypeError 即网络层失败,其余异常原样抛出
   const guardedFetch = async (): Promise<Response> => {
     try {
       return await doFetch();
@@ -137,7 +127,6 @@ export const customFetch = async <T>(url: string, options: ApiRequestOptions): P
 
   let response = await guardedFetch();
 
-  // 401 先静默续期重放一次(登录/刷新接口本身除外),失败才交给 onUnauthorized
   if (response.status === 401 && config.refreshToken && !url.includes("/auth/")) {
     if (await refreshOnce(usedToken)) {
       response = await guardedFetch();
@@ -149,20 +138,17 @@ export const customFetch = async <T>(url: string, options: ApiRequestOptions): P
   }
 
   const text = await response.text();
-  // 网关 502/504 返回 HTML 而非错误体,直接 JSON.parse 会抛 SyntaxError
   let body: unknown = null;
   if (text) {
     try {
       body = JSON.parse(text);
     } catch {
-      // 非 JSON 的成功响应(如 text/csv 导出端点)原样透传文本;失败响应按无错误体处理
       if (response.ok) return text as T;
     }
   }
 
   if (!response.ok) {
     const err = (body ?? {}) as Partial<ApiError>;
-    // 服务端给了非空 message 就原样透出;否则按无错误体合成兜底
     const serverMessage = typeof err.message === "string" && err.message !== "" ? err.message : undefined;
     const apiError: ApiError = {
       code: err.code ?? "HTTP_ERROR",

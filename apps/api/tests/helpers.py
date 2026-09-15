@@ -1,7 +1,5 @@
-"""测试共享助手:造用户/密钥/SKU/管理员/钱包,注册登录,驱动 outbox 与 reconciler。
-跨用例复用的助手一律落在这里,测试模块之间不互相 import。"""
+"""共享测试数据构造、API 请求与 outbox/reconciler 驱动助手。"""
 
-# 白盒用例:直探模块内部
 # pyright: reportPrivateUsage=false
 
 import base64
@@ -33,12 +31,11 @@ from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent
 from app.modules.orchestrator.reconciler import reconcile_once
 from app.modules.orchestrator.service import _encode_token
 
-# 平台预置镜像(与 seed_skus 的 PlatformImage 同源)
 IMAGE_PYTORCH = "registry.superdl.local/pytorch:2.9.0-cu128"
 
 
 def use_kubeconfig(path: str) -> None:
-    """把 kubeconfig 路径喂给官方客户端;环境变量与模块常量须同时改,只改环境变量不生效。"""
+    """设置 KUBECONFIG 环境变量与 Kubernetes 客户端默认路径。"""
     os.environ["KUBECONFIG"] = path
     kube_config.KUBE_CONFIG_DEFAULT_LOCATION = path
 
@@ -49,7 +46,7 @@ async def drain(
     limit: int = 100,
     task_types: frozenset[str] | None = None,
 ) -> int:
-    """连续处理 outbox 直到队列空(或到 limit),返回处理个数;失败任务滑进重试。"""
+    """处理最多 limit 个可执行 outbox 任务,返回处理次数。"""
     n = 0
     while n < limit and await outbox.process_one(sm, task_types=task_types):
         n += 1
@@ -59,7 +56,7 @@ async def drain(
 async def drain_strict(
     sm: async_sessionmaker[AsyncSession], *, limit: int = 100
 ) -> tuple[int, int]:
-    """drain 的严格变体:返回 (done_count, failed_count);任一任务未成功即抛 RuntimeError。"""
+    """处理最多 limit 个任务;有失败则抛 RuntimeError,否则返回 (完成数, 0)。"""
     done = failed = 0
     while done + failed < limit:
         result = await outbox._process_one(sm)
@@ -75,7 +72,7 @@ async def drain_strict(
 
 
 def gen_ed25519_key(comment: str = "t@test") -> str:
-    """构造合法 ed25519 公钥,每次指纹唯一。"""
+    """生成随机字节填充的 SSH ed25519 公钥文本。"""
     blob = struct.pack(">I", 11) + b"ssh-ed25519" + struct.pack(">I", 32) + secrets.token_bytes(32)
     return f"ssh-ed25519 {base64.b64encode(blob).decode()} {comment}"
 
@@ -106,8 +103,7 @@ async def create_user_with_key(
 
 
 async def create_test_sku(sm: async_sessionmaker[AsyncSession], **overrides) -> int:
-    """按业务唯一键 get-or-create(键与 catalog/models.py 的 uq_skus_business_key 一致);
-    同键异字段直接报错。"""
+    """按业务键复用或创建 SKU;已有 SKU 的价格或最大卡数不匹配时抛 AssertionError。"""
     async with sm() as session:
         wanted = make_sku(**overrides)
         existing = (
@@ -157,7 +153,7 @@ async def seed_node_spec(
     vram_gb: int = 0,
     disk_gb: int = 0,
 ) -> None:
-    """写一条节点台账(node_specs),等价于巡检已跑过一轮。"""
+    """写入一条节点台账,最后发现时间为当前时间。"""
     from app.core.timeutil import now_utc
     from app.modules.nodes.models import NodeSpec
 
@@ -173,7 +169,6 @@ async def seed_node_spec(
                 gpu_count=gpu_count,
                 gpu_used=gpu_used,
                 vram_gb=vram_gb,
-                # CPU 档库存口径
                 vcpu=vcpu,
                 mem_gb=mem_gb,
                 disk_gb=disk_gb,
@@ -195,7 +190,7 @@ async def send_code(
 
 
 async def age_sms_codes(sm: async_sessionmaker[AsyncSession]) -> None:
-    """把既有验证码的 created_at 回拨,越过 60s 限频窗口。"""
+    """将所有验证码的 created_at 设为两分钟前。"""
     async with sm() as session:
         await session.execute(update(SmsCode).values(created_at=now_utc() - timedelta(minutes=2)))
         await session.commit()
@@ -213,12 +208,10 @@ async def register(
     return resp.json()
 
 
-# refresh token 的 cookie 名(非 prod;prod 为 __Host- 前缀,见 account/router.py)
 REFRESH_COOKIE = "superdl_refresh"
 
 
 def current_refresh_token(client: AsyncClient) -> str:
-    """jar 里的当前 refresh token。"""
     token = next(
         (c.value for c in client.cookies.jar if c.name == REFRESH_COOKIE),
         None,
@@ -228,15 +221,14 @@ def current_refresh_token(client: AsyncClient) -> str:
 
 
 async def refresh_via_cookie(client: AsyncClient, token: str | None = None) -> Response:
-    """cookie 通道刷新(带 X-Requested-With):给定 token 先覆写 jar。
-    并发多路刷新各起一个 client(共享 jar 有竞态)。"""
+    """经 cookie 刷新,附带 X-Requested-With;给定 token 时先写入 cookie jar。"""
     if token is not None:
         client.cookies.set(REFRESH_COOKIE, token, path="/")
     return await client.post("/api/v1/auth/refresh", headers={"X-Requested-With": "fetch"})
 
 
 async def issue_code(sm, phone: str, purpose: str, code: str = "123456") -> None:
-    """直接落一条验证码(绕开 60s 发送间隔)。"""
+    """直接写入一条五分钟后过期的验证码记录。"""
     async with sm() as session:
         session.add(
             SmsCode(
@@ -274,11 +266,11 @@ async def seed_bill_hourly(
     sm: async_sessionmaker[AsyncSession],
     user_id: int,
     *,
-    rows: list[tuple[int, datetime, str]],  # (instance_id, hour_start, amount)
+    rows: list[tuple[int, datetime, str]],
     unit_price: str = "1.0000",
     seconds: int = 3600,
 ) -> None:
-    """批量播种小时账单(bill_hourly)。"""
+    """批量写入小时账单;rows 元素为 (instance_id, hour_start, amount)。"""
     from app.modules.billing.models import BillHourly
 
     async with sm() as session:
@@ -335,7 +327,7 @@ async def seed_skus(sm: async_sessionmaker[AsyncSession]) -> None:
 
 
 async def admin_login(client: AsyncClient, username: str, password: str = "pass1234") -> Response:
-    """管理端密码登录(第一步):返回原始响应(status:mfa_setup/mfa_required/ok)。"""
+    """发起管理端密码登录,返回未经解析的响应。"""
     return await client.post(
         "/api/admin/v1/auth/login", json={"username": username, "password": password}
     )
@@ -378,7 +370,6 @@ async def admin_headers(
 
 
 def _with_idem(headers: dict[str, str], idem: str | None) -> dict[str, str]:
-    """复制 headers 并按需并入 Idempotency-Key。"""
     h = dict(headers)
     if idem:
         h["Idempotency-Key"] = idem
@@ -430,7 +421,6 @@ async def user_headers(client: AsyncClient, phone: str = "13700000001") -> dict[
 
 
 async def user_headers_with_id(client: AsyncClient, phone: str) -> tuple[dict[str, str], int]:
-    """user_headers 的变体:连带返回 user_id。"""
     data = await register(client, phone)
     return {"Authorization": f"Bearer {data['access_token']}"}, data["user"]["id"]
 
@@ -451,7 +441,7 @@ async def pay_mock(client: AsyncClient, order_no: str, amount: str, txn_id: str 
 
 
 async def paid_order(client: AsyncClient, headers: dict, amount: str = "50.00") -> dict:
-    """mock 渠道充值并支付,返回已入账订单。"""
+    """创建充值订单并完成 mock 支付;返回创建订单时的响应数据。"""
     order = await create_order(client, headers, amount)
     resp = await pay_mock(client, order["order_no"], amount)
     assert resp.status_code == 200, resp.text
@@ -473,7 +463,7 @@ async def apply_refund(
 
 
 async def finance_pair(sm, client: AsyncClient) -> tuple[dict, dict]:
-    """两名 finance 管理员(审批人与打款人必须不同)。"""
+    """返回两名不同 finance 管理员的认证 headers。"""
     reviewer = await admin_headers(sm, client, role="finance")
     payer = await admin_headers(sm, client, role="finance", username="finance-payer")
     return reviewer, payer
@@ -506,7 +496,7 @@ async def backdate_running_event(
     return int((now - start).total_seconds())
 
 
-H = datetime(2026, 8, 19, 10, 0, tzinfo=UTC)  # 结算窗口 [10:00, 11:00)
+H = datetime(2026, 8, 19, 10, 0, tzinfo=UTC)
 H_END = datetime(2026, 8, 19, 11, 0, tzinfo=UTC)
 
 
@@ -527,7 +517,7 @@ async def seed_instance(
 ) -> tuple[int, str]:
     """直接落库实例 + 事件,返回 (instance_id, uuid)。
     events 元素:(ts, from, to) 或 (ts, from, to, metadata);wallet_credit=True 预存 100.00。
-    node_name 模拟实例已落在某节点(实例盘钉死在那台)。"""
+    """
     async with sm() as session:
         inst = Instance(
             uuid=f"u{user_id}i{uuid4().hex[:12]}",
@@ -604,7 +594,7 @@ async def seed_disk(
 
 
 def prom_mock(values: list[tuple[float, float]] | None = None, *, fail: bool = False):
-    """构造假 Prometheus:MockTransport 注入。"""
+    """返回固定 Prometheus 矩阵响应的客户端;fail=True 时返回 HTTP 500。"""
 
     def handler(request: httpx.Request) -> httpx.Response:
         if fail:
@@ -626,14 +616,13 @@ CREATE_BODY = {"pool": "hami", "hostname": "gpu-node-7", "note": "机柜 A3", "t
 
 
 async def set_platform_setting(sm: async_sessionmaker[AsyncSession], key: str, value: str) -> None:
-    """单行平台配置覆盖(走 set_platform_settings)。"""
     async with sm() as session:
         await set_platform_settings(session, {key: value}, updated_by=None)
         await session.commit()
 
 
 def service_body(sku_id: int, **over) -> dict:
-    """POST /services 的最小请求体(不开 SSH、需要 API Key、端口 8000)。"""
+    """构造在线服务请求体,默认不附 SSH 公钥、服务端口为 8000;over 可覆盖字段。"""
     body = {
         "sku_id": sku_id,
         "gpu_count": 1,
@@ -700,7 +689,7 @@ def gpu_spec(tier: str, pool: str, **extra):
 
 
 def make_instance(**overrides) -> Instance:
-    """不落库构造 Instance(纯内存对象);差异经 overrides 传入,jupyter_token 按最终 uuid 现签。"""
+    """构造不落库的 Instance;默认签发绑定 uuid 的 jupyter_token,字段可由 overrides 覆盖。"""
     uuid = overrides.get("uuid") or f"inst-{uuid4().hex[:8]}"
     defaults: dict = {
         "user_id": 1,

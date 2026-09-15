@@ -1,4 +1,4 @@
-/** 挂了说明:门控按钮退回原生 disabled(不可聚焦、原因不可读)或漏拦截点击。antd 两字按钮插空格,名字用正则。 */
+/** 门控按钮的焦点、原因提示与点击拦截测试。 */
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";

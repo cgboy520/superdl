@@ -1,5 +1,4 @@
-/** 服务端点卡(详情页常驻):URL + 复制 / 打开、就绪位、鉴权方式、容器端口 / 健康检查。就绪为「否」不是故障态,如实显示并引到日志。
- *  停机类四态分开说:stopped / stopping(启动后恢复)、frozen(欠费,去充值)、failed(部署失败,看日志 / 看事件)。 */
+/** 服务端点卡:访问地址、就绪状态、鉴权方式、端口与健康检查。 */
 
 import type { ServiceOut } from "@superdl/api-client";
 import { CopyField, GatedButton } from "@superdl/ui/components";
@@ -24,7 +23,6 @@ export function EndpointCard({
     <Card size="small" title={t("services.detail.endpointCard")}>
       <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
         <Space wrap size={space.sm}>
-          {/* 端点 URL 是 testIds 白名单里的两处之一(值本身没有可定位语义) */}
           <CopyField value={service.url} code label={t("services.copyEndpoint")} testId={TEST_IDS.endpointUrl} />
           <GatedButton
             size="small"

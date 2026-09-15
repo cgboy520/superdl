@@ -1,5 +1,4 @@
-/** 选项 tile(两端统一):表单里的互斥大项(镜像 / 数据盘模式 / 充值渠道 / 访问鉴权 / 协议)。
- *  role=radiogroup + 方向键切换;禁用项带原因(aria-disabled + tooltip),永不隐藏(ui-ux-spec §1 规则 14)。 */
+/** 单选 tile 组:方向键切换,禁用项保持可见并显示原因。 */
 
 import { CheckCircleFilled } from "@ant-design/icons";
 import { Tooltip, theme, Typography } from "antd";
@@ -96,7 +95,6 @@ export function OptionTileGroup<T extends string>({
         {options.map((o, i) => {
           const selected = o.value === value;
           const gated = Boolean(o.reason);
-          // 无选中项时首个可用项进 Tab 序
           const tabbable = selected || (selectedIndex < 0 && enabled[0] === i);
           const tile = (
             <div

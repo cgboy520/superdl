@@ -1,5 +1,4 @@
-/** 注意事项聚合条(两端统一,页顶唯一横幅):只放「有时效、可行动」的事;1 条直接显示,多条折成「N 件需要处理」+ 展开列表,严重度取最高(ui-ux-spec §1 规则 1)。
- *  条目来源由页面组装(web:通知 / 到期 / 冻结 / 失败;admin:配置风险 / 取数失败 / 死信)。 */
+/** 注意事项聚合条:单条直接显示,多条折叠展开,严重度取最高。 */
 
 import { DownOutlined, UpOutlined } from "@ant-design/icons";
 import { Alert, Button, Space, Typography } from "antd";

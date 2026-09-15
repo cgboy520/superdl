@@ -1,4 +1,4 @@
-"""billing 对外服务门面:只导出有跨模块消费者的名字;模块内部直接 import 实现文件。"""
+"""计费模块的跨模块公开接口。"""
 
 from app.modules.billing.export import (
     stream_admin_invoices_csv,

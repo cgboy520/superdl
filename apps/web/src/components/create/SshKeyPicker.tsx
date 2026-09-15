@@ -24,7 +24,6 @@ export function SshKeyPicker({ value, onChange }: { value: number[]; onChange: (
       if (!value.includes(key.id)) onChange([...value, key.id]);
     },
   });
-  // 只有一把公钥时默认选中(一键创建的前提之一)
   const firstKey = keys[0];
   const onlyKeyId = keys.length === 1 && firstKey ? firstKey.id : undefined;
   useEffect(() => {
@@ -38,7 +37,6 @@ export function SshKeyPicker({ value, onChange }: { value: number[]; onChange: (
     return (
       <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
         <Typography.Text type="secondary">{t("copy.sshKeyOnly")}</Typography.Text>
-        {/* 怎么拿到公钥:给命令 + 复制,不只说「必须有」 */}
         <Space size={space.sm} wrap align="center">
           <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
             {t("create.keygenHint")}

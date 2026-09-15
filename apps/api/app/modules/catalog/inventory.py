@@ -1,6 +1,4 @@
-"""近似库存:市场页可售实例数,每请求按节点台账直接算,不配缓存。
-估算 provider 由 orchestrator 在 wire_modules() 注入;未接线即报错。
-"""
+"""近似库存 provider 注册与批量调用;调用前须完成注册。"""
 
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
@@ -10,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 if TYPE_CHECKING:
     from app.modules.catalog.models import Sku
 
-# (session, skus) -> {sku_id: 可售实例数},批量接口
 InventoryProvider = Callable[[AsyncSession, list["Sku"]], Awaitable[dict[int, int]]]
 
 _provider: InventoryProvider | None = None

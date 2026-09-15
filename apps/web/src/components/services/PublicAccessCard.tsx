@@ -57,7 +57,6 @@ export function PublicAccessFields({
           onBlur={() => setPortTouched(true)}
         />
       </Field>
-      {/* TCP / gRPC 未上线:灰置不隐藏,原因写在 tile 里 */}
       <OptionTileGroup<Protocol>
         label={t("services.form.protocolLabel")}
         columns={3}

@@ -29,7 +29,6 @@ export function LedgerTable() {
   const { data, isLoading, isError, refetch, isFetchingNextPage, isFetchNextPageError, hasNextPage, fetchNextPage } =
     useLedgerPages(20);
   const merged = useMemo(() => flattenPages(data), [data]);
-  // 类型筛选为客户端筛选,只作用于已加载页
   const filtered = useMemo<LedgerEntryOut[]>(
     () => (ledgerFilter ? merged.filter((r) => r.type === ledgerFilter) : merged),
     [merged, ledgerFilter],
@@ -45,7 +44,6 @@ export function LedgerTable() {
           void navigate({
             to: "/billing",
             search: (prev) => ({
-              // prev 必带本页 search;tab 在此文件内联合类型收窄
               tab: prev.tab as BillingTab | undefined,
               month: prev.month,
               ledger: v === "all" ? undefined : (v as LedgerFilter),
@@ -57,7 +55,6 @@ export function LedgerTable() {
           { value: "all", label: t("billing.ledgerFilterAll") },
           ...LEDGER_FILTERS.map((f) => {
             const meta = metaOf(ledgerTypeMap, f);
-            // 裸类型码不进 t()(extract 会当成新键)
             return { value: f, label: meta ? t(meta.labelKey) : f };
           }),
         ]}
@@ -88,7 +85,6 @@ export function LedgerTable() {
           {
             title: t("billing.colAmount"),
             render: (_, r) => (
-              // 收入绿/支出红
               <span style={{ color: r.amount.startsWith("-") ? token.colorError : token.colorSuccess }}>
                 {r.amount.startsWith("-") ? "" : "+"}
                 {formatMoney(r.amount)}

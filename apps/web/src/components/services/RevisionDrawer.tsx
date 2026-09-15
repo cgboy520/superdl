@@ -1,5 +1,4 @@
-/** 更新版本抽屉(基于当前版本预填):容器 / 服务 / 高级配置可改,规格与计费沿用,鉴权在「设置」改。密文 env 不回显:每个密文键默认「沿用」(进 env_secret_keep),可覆盖或删除。
- *  提交按钮固定在 Drawer footer;脏表单点遮罩 / 关闭 / 路由跳走都走离开确认(useLeaveGuard);提交前 L2 确认;幂等键按表单快照派生,失败不轮换。 */
+/** 版本更新抽屉:预填当前配置,支持沿用/覆盖/删除密文变量与脏表单离开确认。 */
 
 import { isApiError, type ServiceOut, type ServiceRevisionCreate } from "@superdl/api-client";
 import { drawerWidth, idemKeyOf, marketLabelKey, space, useApiErrorText } from "@superdl/ui";
@@ -33,7 +32,6 @@ export function RevisionDrawer({
   open: boolean;
   onClose: () => void;
 }) {
-  // 每次打开从当前版本重新预填;表单持有 Drawer 以便把提交钮放进 footer
   if (!open) return null;
   return <RevisionForm key={service.revision} service={service} onClose={onClose} />;
 }
@@ -61,7 +59,6 @@ function RevisionForm({ service, onClose }: { service: ServiceOut; onClose: () =
   const [keyIds, setKeyIds] = useState<number[]>([]);
   const [nonce] = useState(() => crypto.randomUUID());
   const create = useCreateRevision(service.slug, { silentError: true });
-  // 脏判定:任一字段偏离预填值
   const dirty =
     image !== (c?.image_ref ?? "") ||
     command !== (c?.container_command?.join(" ") ?? "") ||
@@ -72,7 +69,6 @@ function RevisionForm({ service, onClose }: { service: ServiceOut; onClose: () =
     port !== (c?.service_port ?? null) ||
     healthPath !== (c?.health_path ?? "") ||
     withSsh !== (c?.with_ssh ?? false);
-  // 路由跳走由 useLeaveGuard 拦;抽屉自身关闭走 confirmLeave
   const leave = useLeaveGuard(dirty);
   const requestClose = () =>
     leave.confirmLeave(() => {
@@ -131,7 +127,6 @@ function RevisionForm({ service, onClose }: { service: ServiceOut; onClose: () =
       title: t("services.revision.confirmTitle", { no: nextNo }),
       consequences: [t("services.revision.confirmBody"), t("services.revision.confirmKeep")],
       onOk: async () => {
-        // 幂等键 = 抽屉 nonce + 表单快照
         const idempotencyKey = idemKeyOf("svc-rev", [nonce, service.slug, service.revision, JSON.stringify(body)]);
         try {
           await create.mutateAsync({ body, idempotencyKey });

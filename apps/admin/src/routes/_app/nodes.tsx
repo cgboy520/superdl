@@ -1,4 +1,4 @@
-/** 节点与 GPU:待加入节点卡(-EnrollmentsCard)+ FilterBar(名称 / 池 / 状态,入 URL)+ 节点台账(添加节点 -AddNodeModal、切换池 -SwitchPoolModal、退役 L3 确认);点行 / 告警深链 ?node= 打开右侧节点抽屉(-NodeDrawer:热力格 + 指标曲线)。 */
+/** 节点页:注册记录、台账筛选、节点操作与 ?node= 详情抽屉。 */
 
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -62,7 +62,6 @@ type NodeStatus = (typeof NODE_STATUSES)[number];
 const POOL_UNLABELED = "unlabeled";
 
 export const Route = createFileRoute("/_app/nodes")({
-  // node:抽屉目标(/nodes?node=<name>,告警深链同源);q/pool/status:客户端筛选
   validateSearch: (
     search: Record<string, unknown>,
   ): { node?: string; q?: string; pool?: string; status?: NodeStatus } => ({
@@ -88,7 +87,6 @@ function NodesPage() {
   const writable = canWriteOps(role);
   const qc = useQueryClient();
   const navigate = useNavigate({ from: "/nodes" });
-  // 节点台账稳态轮询(可暂停),页头出新鲜度条
   const autoRefresh = useAutoRefresh(POLL.steady);
   const {
     data,
@@ -103,7 +101,6 @@ function NodesPage() {
   const { data: portPool } = usePortPool();
   const { node: nodeParam, q: urlQ, pool, status: statusFilter } = Route.useSearch();
   const [addOpen, setAddOpen] = useState(false);
-  // 名称 / 池 / 状态筛选与抽屉目标都入 URL,客户端过滤全量小表
   const setUrl = useCallback(
     (patch: { q?: string; pool?: string; status?: NodeStatus; node?: string }) =>
       void navigate({ to: "/nodes", replace: true, search: (prev) => ({ ...prev, ...patch }) }),
@@ -135,18 +132,15 @@ function NodesPage() {
     if (nodes.some(isUnlabeled)) opts.push({ value: POOL_UNLABELED, label: t("nodes.unlabeledTag") });
     return opts;
   }, [nodes, t]);
-  // 抽屉目标 = ?node= 对应的台账行;目标不存在时顶部提示、抽屉不开
   const node = nodeParam === undefined ? undefined : nodes.find((n) => n.name === nodeParam);
   const deepLinkMissing = nodeParam !== undefined && data !== undefined && node === undefined;
   const openNode = useCallback((name: string) => setUrl({ node: name }), [setUrl]);
   const closeNode = useCallback(() => setUrl({ node: undefined }), [setUrl]);
-  // 告警深链:目标行滚动到可视区(data-row-key 定位)
   useEffect(() => {
     if (!nodeParam || nodes.length === 0) return;
     const row = document.querySelector(`[data-row-key="${CSS.escape(nodeParam)}"]`);
     row?.scrollIntoView({ block: "center" });
   }, [nodeParam, nodes.length]);
-  // cordon 经 outbox 异步生效,3s 后补拉一次
   const cordonTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
@@ -181,14 +175,12 @@ function NodesPage() {
   const cordonNode: CordonFn = async (nodeName, on, reason) => {
     await cordon.mutateAsync({ nodeName, on, data: { reason } });
   };
-  // 切池:池标签经 outbox 改,回执给重跑命令;弹窗自持表单与二次确认
   const [switching, setSwitching] = useState<NodeRow | undefined>();
   const refreshNodes = useCallback(() => {
     void qc.invalidateQueries({ queryKey: adminKeys.nodes });
     void qc.invalidateQueries({ queryKey: adminKeys.enrollments });
     cordonTimer.current = setTimeout(() => void qc.invalidateQueries({ queryKey: adminKeys.nodes }), 3_000);
   }, [qc]);
-  // 退役:L3(键入节点名 + 勾选 + 必填原因);有实例时后端 409,确认框给强制出口
   const [retiring, setRetiring] = useState<NodeRow | undefined>();
   const [retireReason, setRetireReason] = useState("");
   const [retireForce, setRetireForce] = useState(false);
@@ -202,7 +194,6 @@ function NodesPage() {
         refreshNodes();
       },
       onError: (e) => {
-        // 有未释放实例:不是操作失败,是前置没过 —— 就地给强制出口
         if (isApiError(e) && e.status === 409) setRetireForce(true);
         message.error(errText(e, t("common.actionFailed", { action: t("nodes.decommissionTitle") })));
       },
@@ -213,7 +204,6 @@ function NodesPage() {
     setRetireReason("");
     setRetireForce(false);
   }, []);
-  // 批量 cordon / uncordon:一条原因作用于全部所选,逐条并发
   const [bulkSelected, setBulkSelected] = useState<string[]>([]);
   const bulkCordon = async (on: boolean, reason: string) => {
     const { ok, failed } = await runBulk(bulkSelected, (name) =>
@@ -306,7 +296,6 @@ function NodesPage() {
             disabledReason={t("nodes.readonlyNoOp")}
             onSubmit={(reason) => bulkCordon(true, reason)}
           />
-          {/* 恢复方向:只填原因,不做二次确认 */}
           <ReasonAction
             label={t("nodes.uncordonBtn")}
             target={t("bulk.selected", { count: bulkSelected.length })}
@@ -351,7 +340,6 @@ function NodesPage() {
             ),
           }}
           dataSource={filteredNodes}
-          // >200 行改 100/页分页,不上虚拟化
           pagination={
             filteredNodes.length > 200 ? { pageSize: 100, showSizeChanger: false, hideOnSinglePage: true } : false
           }
@@ -359,7 +347,6 @@ function NodesPage() {
             onClick: (e) => {
               if (!fromInteractive(e.target)) openNode(r.name);
             },
-            // 整行即按钮(Enter/Space 打开抽屉;行内控件自己的键盘事件不代管)
             tabIndex: 0,
             onKeyDown: (e) => {
               if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) {
@@ -408,7 +395,6 @@ function NodesPage() {
               dataIndex: "gpu_used",
               align: "right",
               sorter: (a, b) => a.gpu_used - b.gpu_used,
-              // 已用卡数链到「租户与实例 › 实例」按节点过滤:从节点直达上面跑着谁
               render: (v: number, r) =>
                 v > 0 ? (
                   <Link to="/tenants" search={{ tab: "instances", inode: r.name }}>
@@ -503,7 +489,6 @@ function NodesPage() {
             decommission.mutate({
               nodeName: retiring.name,
               data: { reason: retireReason.trim() },
-              // 有实例时必须显式强制:前端不替运维决定,红色按钮文案已改成「强制退役」
               force: retireForce || activeInstances(retiring) > 0,
             })
           }

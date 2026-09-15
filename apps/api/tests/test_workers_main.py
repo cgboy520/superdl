@@ -1,6 +1,5 @@
 """worker 入口组件:worker_id 定长化、metrics Bearer 门禁、定时任务耗时观测。"""
 
-# 白盒用例:直探模块内部
 # pyright: reportPrivateUsage=false
 
 import hashlib
@@ -55,7 +54,6 @@ class TestMakeWorkerId:
         wid = make_worker_id()
         assert len(wid) <= MAX_WORKER_ID_LEN
         assert wid.endswith("-7")
-        # 中段有全名哈希
         assert hashlib.sha256(long_name.encode()).hexdigest()[:8] in wid
 
     def test_truncated_ids_stay_unique_across_same_prefix_hosts(self, monkeypatch):
@@ -85,14 +83,13 @@ class TestWorkerMetricsAuth:
         assert b"superdl_" in body or b"go_" in body or b"python_" in body
 
     def test_no_token_configured_is_open(self):
-        # dev/test 未配 SUPERDL_METRICS_TOKEN 时不要求鉴权
         status, _ = _call_wsgi(_metrics_wsgi_app(None), None)
         assert status.startswith("200")
 
 
 class TestTimedJob:
     async def test_slow_tick_warns(self):
-        """单轮耗时超过周期 80% 打 warning;用 structlog 事件捕获(capsys 全量跑时抓不到)。"""
+        """单轮耗时超过周期 80% 时记录 warning。"""
         from structlog.testing import capture_logs
 
         async def slow() -> None:
@@ -101,5 +98,5 @@ class TestTimedJob:
             await asyncio.sleep(0.05)
 
         with capture_logs() as logs:
-            await _timed_job("t_slow", slow, 0.01)()  # 周期 10ms,必然超 80%
+            await _timed_job("t_slow", slow, 0.01)()
         assert any(e.get("event") == "scheduled_tick_slow" for e in logs)

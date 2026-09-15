@@ -6,7 +6,7 @@
  */
 
 /**
- * 计费/回收策略常量(公开只读;前端展示口径的唯一来源,禁止硬编码)。
+ * 公开只读的计费与回收策略。
  */
 export interface PoliciesOut {
   disk_frozen_days: number;

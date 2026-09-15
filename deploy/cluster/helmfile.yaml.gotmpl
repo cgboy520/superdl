@@ -1,7 +1,3 @@
-# 平台组件(版本锁定)。双档:
-#   helmfile -e full apply    # RKE2 生产全组件
-#   helmfile -e light apply   # k3s 单机/小规模(组件集同 full,k3s 侧 values 覆盖见 values/light/)
-# 前置检查:./preflight.sh <full|light>
 environments:
   full:
     values: [environments/full.yaml]
@@ -19,7 +15,6 @@ repositories:
     url: https://prometheus-community.github.io/helm-charts
   - name: rook-release
     url: https://charts.rook.io/release
-  # Ceph CSI 驱动单独成 chart(Rook 1.20 的 csi-operator 模型,见 values/ceph-csi-drivers.yaml)
   - name: ceph-csi-operator
     url: https://ceph.github.io/ceph-csi-operator
   - name: topolvm
@@ -28,7 +23,6 @@ repositories:
     url: https://charts.jetstack.io
   - name: cloudnative-pg
     url: https://cloudnative-pg.github.io/charts
-  # Loki(OSS)在社区仓(grafana/loki 转 GEL 专用);采集器 Alloy 在 grafana 仓
   - name: grafana-community
     url: https://grafana-community.github.io/helm-charts
   - name: grafana
@@ -46,7 +40,6 @@ releases:
       - values/light/cilium-light.yaml
       {{- end }}
     hooks:
-      # CiliumClusterwideNetworkPolicy 的 CRD 由 chart 建,只能排在 release 之后
       - events: ["postsync"]
         showlogs: true
         command: "kubectl"
@@ -56,24 +49,19 @@ releases:
     condition: gpuOperator.enabled
     namespace: gpu-operator
     chart: nvidia/gpu-operator
-    # 不得低于 v26.3.3;升版前复核 labels/ClusterPolicy 字段变化
     version: "v26.3.3"
     values:
       - values/gpu-operator.yaml
       {{- if eq .Environment.Name "light" }}
       - values/light/gpu-operator-light.yaml
       {{- end }}
-    # 开了 ServiceMonitor:排在 kube-prometheus-stack 之后,首装 diff 不做 API 校验
     needs: [monitoring/kube-prometheus-stack]
     disableValidationOnInstall: true
 
-  # Kata(dedicated 档运行时):装 shim、写 containerd drop-in、建 RuntimeClass kata-qemu。
-  # k8sDistribution 决定 containerd 配置目录;只装 kata 池节点
   - name: kata-deploy
     condition: kataDeploy.enabled
     namespace: kube-system
     chart: oci://ghcr.io/kata-containers/kata-deploy-charts/kata-deploy
-    # 4.x 只发 helm chart(无 kustomize overlays)
     version: "4.1.0"
     values: [values/kata-deploy.yaml]
     set:
@@ -101,11 +89,8 @@ releases:
       {{- if eq .Environment.Name "light" }}
       - values/light/kps-light.yaml
       {{- end }}
-    # helm diff 不装 crds/ 目录的 CRD,首装 diff 免校验
     disableValidationOnInstall: true
 
-  # 数据盘后端:内核 cephfs 声明 FS_ALLOW_IDMAP,是唯一能挂进 hostUsers: false 租户 Pod 的共享文件系统。
-  # OSD 落 TopoLVM 的 Block PVC,见 values/rook-ceph-cluster.yaml
   - name: rook-ceph
     condition: rookCeph.enabled
     namespace: rook-ceph
@@ -128,7 +113,6 @@ releases:
     chart: rook-release/rook-ceph-cluster
     version: "v1.20.7"
     values: [values/rook-ceph-cluster.yaml]
-    # CephCluster/CephFilesystem 是 operator 建的 CRD,首装 diff 读不到
     needs: [rook-ceph/rook-ceph]
     disableValidationOnInstall: true
 
@@ -143,7 +127,6 @@ releases:
       - values/light/topolvm-light.yaml
       {{- end }}
     hooks:
-      # lvmd 挂载的 lvm.conf ConfigMap(issue_discards=1)必须先于 chart 存在
       - events: ["presync"]
         showlogs: true
         command: "kubectl"
@@ -158,25 +141,20 @@ releases:
     set:
       - name: crds.enabled
         value: "true"
-    # 开了 ServiceMonitor:排在 kps 之后,首装 diff 不做 API 校验
     needs: [monitoring/kube-prometheus-stack]
     disableValidationOnInstall: true
     {{- if .Values.acmeDns.enabled }}
     hooks:
-      # acme-dns(DNS01 中转)与 cert-manager 同 ns,先于此 chart 落地;只在 acmeDns.enabled 的档位应用
-      # (k3s klipper-lb 会把 LoadBalancer 53 变成节点 hostPort 53,light 档不装,通配证书手工灌入)
       - events: ["presync"]
         showlogs: true
         command: "kubectl"
         args: ["apply", "-f", "acme-dns.yaml"]
     {{- end }}
 
-  # 北向唯一入口:Envoy Gateway。数据面与控制面同 ns envoy-gateway-system(NetworkPolicy 来源、准入豁免名单按此 ns 名)
   - name: envoy-gateway
     condition: envoyGateway.enabled
     namespace: envoy-gateway-system
     chart: oci://docker.io/envoyproxy/gateway-helm
-    # chart v1.9.0 = 控制面 v1.9.0 + Envoy distroless-v1.39.0,对齐 Gateway API v1.6.1;升版前先跑 ./gateway-api-crds.sh 升 CRD
     version: "v1.9.0"
     values:
       - values/envoy-gateway.yaml
@@ -184,51 +162,42 @@ releases:
       - values/light/envoy-gateway-light.yaml
       {{- end }}
     set:
-      # CRD 由下面的 presync 钩子单点管理(helm 的 crds/ 目录 upgrade 时不更新)
       - name: crds.enabled
         value: "false"
     hooks:
-      # CRD 必须先于 chart 存在;channel 首装即定,事后换不回去(见脚本头注释)
       - events: ["presync"]
         showlogs: true
         command: "./gateway-api-crds.sh"
 
-  # CloudNativePG:平台库进 K8s 的唯一受支持形态(见 ../README.md「生产数据库要求」)。默认关闭
   - name: cloudnative-pg
     condition: cnpg.enabled
     namespace: cnpg-system
     chart: cloudnative-pg/cloudnative-pg
-    # chart 0.29.0 = operator 1.30.0
     version: "0.29.0"
 
   - name: cnpg-cluster
     condition: cnpg.enabled
     namespace: superdl
     chart: cloudnative-pg/cluster
-    # 升版时 values 键名以新版为准(先 helm template 验证)
     version: "0.8.1"
     needs:
       - cnpg-system/cloudnative-pg
-    disableValidationOnInstall: true   # Cluster/ScheduledBackup 的 CRD 来自 operator release,首装 diff 免校验
+    disableValidationOnInstall: true
     values: [values/cnpg-cluster.yaml]
 
-  # 日志栈:Loki 单副本 + Alloy 采集(全 Pod 日志 + apiserver 审计文件);可在 environments/light.yaml 整栈关掉
   - name: loki
     condition: loki.enabled
     namespace: monitoring
     chart: grafana-community/loki
-    # chart 18.9.1 = Loki 3.7.6;values 按 Monolithic 部署形态
     version: "18.9.1"
     values:
       - values/loki.yaml
       {{- if eq .Environment.Name "light" }}
       - values/light/loki-light.yaml
       {{- end }}
-    # 开了 ServiceMonitor:排在 kps 之后,首装免校验
     needs: [monitoring/kube-prometheus-stack]
     disableValidationOnInstall: true
     hooks:
-      # Loki 访问边界:monitoring ns 存在后 apply;幂等
       - events: ["presync"]
         showlogs: true
         command: "kubectl"
@@ -238,11 +207,7 @@ releases:
     condition: logCollector.enabled
     namespace: monitoring
     chart: grafana/alloy
-    # chart 1.11.1 = Alloy v1.18.1
     version: "1.11.1"
     needs:
       - monitoring/loki
     values: [values/alloy.yaml]
-
-# admission/tenant-restrictions.yaml 不是 helm release,由 ./apply.sh(本目录唯一 apply 入口)在 helmfile 之前 kubectl apply;
-# preflight.sh 与 scripts/release.sh 校验七个 Binding 含 Deny。不要绕过 apply.sh 直接跑 helmfile

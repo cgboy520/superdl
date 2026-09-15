@@ -40,7 +40,6 @@ export function useNotificationOpen(afterNavigate?: () => void) {
   return useCallback(
     (n: NotificationOut) => {
       if (!n.read_at) markRead.mutate(n.id);
-      // 结构化深链优先:实例类 → /instances/$uuid;工单 → /support/$ticketId
       if (n.target_id && INSTANCE_TYPES.has(n.type)) {
         void navigate({ to: "/instances/$uuid", params: { uuid: n.target_id } });
         afterNavigate?.();

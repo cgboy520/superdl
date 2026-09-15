@@ -66,21 +66,16 @@ export function SkuDrawerForm({
   const { message } = App.useApp();
   const confirm = useConfirm();
   const role = useAdminRole();
-  // 聚合端点只放 ops/readonly,按角色关停查询
   const { data: aggregates } = useGpuModelAggregates({
     enabled: canWriteOps(role) || role === "readonly",
   });
   const [clusterPick, setClusterPick] = useState<GpuModelAggregate | null>(null);
   const [form] = Form.useForm<SkuFormValues>();
-  // 新建草稿(sessionStorage);编辑态不写草稿
   const draft = useFormDraft<SkuFormValues>("sku-new");
-  // 动过表单即脏:离开 / 关抽屉先确认(提交成功走 closeNow,不再拦)。
-  // 记「哪一条被改过」而不是布尔:换记录 / 关抽屉自动回到不脏,不必在 effect 里 setState
   const editingKey = editing === null ? null : editing === "new" ? "new" : String(editing.id);
   const [dirtyKey, setDirtyKey] = useState<string | null>(null);
   const dirty = dirtyKey !== null && dirtyKey === editingKey;
   const leave = useLeaveGuard(dirty);
-  // 关闭即清集群选择(下次打开重新选;所有关闭路径都经这里)
   const closeNow = () => {
     setClusterPick(null);
     setDirtyKey(null);
@@ -117,7 +112,6 @@ export function SkuDrawerForm({
     },
   });
 
-  // 开合时初始化表单:新建 = 默认值 + 草稿覆盖;编辑 = 记录回显
   useEffect(() => {
     if (editing === null) return;
     if (editing === "new") {
@@ -131,11 +125,8 @@ export function SkuDrawerForm({
         pool_label: "hami",
         vcpu: 8,
         mem_gb: 32,
-        // 与后端 SkuCreate.period_enabled 默认值一致
         period_enabled: true,
-        // 与后端 SkuCreate.spot_enabled 默认值一致
         spot_enabled: false,
-        // 草稿覆盖默认值(仅新建)
         ...draft.load(),
       });
     } else {
@@ -148,9 +139,7 @@ export function SkuDrawerForm({
     }
   }, [editing, form, draft]);
 
-  // 容量预览参数(编辑态型号/档位取自记录)
   const record = editing !== null && editing !== "new" ? editing : null;
-  // 改价影响面(编辑态才查)
   const impact = useSkuImpact(record?.id ?? null);
   const wModel = useWatchSkuField(form, "gpu_model");
   const wVariant = useWatchSkuField(form, "variant");
@@ -163,7 +152,6 @@ export function SkuDrawerForm({
   const isCpuVariant = (wVariant ?? (record ? skuVariant(record.tier, record.pool_label) : undefined)) === "cpu";
   const pModel = wModel ?? record?.gpu_model;
   const pPool = wPool ?? record?.pool_label;
-  // 折算口径只看池,端点不收 tier;CPU 规格 gpu_model 留空
   const previewParams = useMemo(() => {
     if (editing === null || !pPool) return null;
     if (isCpuVariant) {
@@ -202,7 +190,6 @@ export function SkuDrawerForm({
     const variant = current && variants.includes(current) ? current : variants[0];
     if (!variant) return;
     onVariantChange(variant);
-    // CPU 规格不套型号推荐
     if (variant !== "cpu") {
       applyRecommend(agg, variant, (form.getFieldValue("gpu_cores_pct") as number | undefined) ?? 50);
     } else {
@@ -214,9 +201,7 @@ export function SkuDrawerForm({
     const { pool } = VARIANT_SPEC[variant];
     form.setFieldsValue({
       variant,
-      // cpu 档默认 cpu 池,hami 需运营显式改
       pool_label: pool,
-      // 切片只属于 mig 池,换走时清掉
       ...(variant === "shared_mig" ? {} : { mig_profile: null }),
     });
     if (variant === "cpu") {
@@ -234,21 +219,18 @@ export function SkuDrawerForm({
     try {
       await form.validateFields();
     } catch {
-      return; // 校验失败:antd 已就地标红
+      return;
     }
-    // 取值用 getFieldsValue(true):validateFields() 只回已挂载 Form.Item 的字段
     const values = form.getFieldsValue(true) as SkuFormValues;
     const doSubmit = () => {
       const payload = buildSkuPayload(values, editing);
       if (payload?.kind === "create") create.mutate({ data: payload.data });
       else if (payload?.kind === "update") update.mutate({ skuId: payload.skuId, data: payload.data });
     };
-    // 改价二次确认(带影响预览)
     if (record === null || Number(values.price_hourly) === Number(record.price_hourly)) {
       doSubmit();
       return;
     }
-    // L2 确认(useConfirm):变更行 + 影响面 + 范围说明;影响面查询在途时禁点确认
     confirm({
       title: t("skus.submitConfirmTitle"),
       consequences: [
@@ -274,13 +256,11 @@ export function SkuDrawerForm({
   };
 
   const isNew = editing === "new";
-  // 新建按选中集群资源限定池;编辑只放行同 tier 变体
   const variantOptions: SkuVariant[] = isNew
     ? clusterPick?.pool_label
       ? (POOL_VARIANTS[clusterPick.pool_label] ?? ALL_VARIANTS)
       : ALL_VARIANTS
     : ALL_VARIANTS.filter((v) => VARIANT_SPEC[v].tier === record?.tier);
-  // 在售规格改池后端 409,先灰置并说明
   const variantLocked = !isNew && record?.status === "on";
 
   return (
@@ -334,13 +314,11 @@ export function SkuDrawerForm({
             <Form.Item name="name" label={t("skus.colName")} rules={[{ required: true }]}>
               <Input />
             </Form.Item>
-            {/* 型号只在新建时出现;CPU 规格不带型号 */}
             {isNew && !isCpuVariant && (
               <Form.Item name="gpu_model" label={t("skus.gpuModelLabel")} rules={[{ required: true }]}>
                 <Input placeholder={t("skus.gpuModelPlaceholder")} disabled={clusterPick !== null} />
               </Form.Item>
             )}
-            {/* 档位与切片编辑态也挂载 */}
             <Form.Item
               name="variant"
               label={t("skus.colTier")}
@@ -367,7 +345,6 @@ export function SkuDrawerForm({
                 />
               </Form.Item>
             )}
-            {/* 池由档位派生;CPU 档可选 cpu / hami */}
             <Form.Item
               name="pool_label"
               label={t("nodes.poolLabel")}
@@ -381,7 +358,6 @@ export function SkuDrawerForm({
                   .map(([value, labelKey]) => ({ value, label: t(labelKey) }))}
               />
             </Form.Item>
-            {/* CPU 规格不挂载,提交时由 CPU_ZERO_FIELDS 补零 */}
             {!isCpuVariant && (
               <>
                 <Form.Item name="gpu_cores_pct" label={t("skus.coresPctLabel")} rules={[{ required: true }]}>
@@ -400,7 +376,6 @@ export function SkuDrawerForm({
                 <Form.Item name="vram_gb" label={t("skus.vramLabel")} rules={[{ required: true }]}>
                   <InputNumber min={1} max={clusterPick?.vram_gb || undefined} style={{ width: "100%" }} />
                 </Form.Item>
-                {/* 超卖风险说明挂字段 extra,不做常驻 Alert */}
                 <Form.Item
                   name="oversell_cores"
                   label={t("skus.oversellCoresLabel")}
@@ -432,7 +407,6 @@ export function SkuDrawerForm({
             <Form.Item name="price_hourly" label={t("skus.priceLabel")} rules={[{ required: true }]}>
               <InputNumber min="0.0001" step="0.01" precision={4} stringMode style={{ width: "100%" }} />
             </Form.Item>
-            {/* 包周期开关:关掉只挡新单 */}
             <Form.Item
               name="period_enabled"
               label={t("skus.periodEnabledLabel")}
@@ -441,7 +415,6 @@ export function SkuDrawerForm({
             >
               <Switch />
             </Form.Item>
-            {/* 竞价开关:关掉只挡新单 */}
             <Form.Item
               name="spot_enabled"
               label={t("skus.spotEnabledLabel")}
@@ -455,13 +428,11 @@ export function SkuDrawerForm({
                 <InputNumber min={1} max={8} style={{ width: "100%" }} />
               </Form.Item>
             )}
-            {/* 最高 CUDA:CPU 档不出现 */}
             {!isCpuVariant && (
               <Form.Item name="cuda_max" label={t("skus.cudaMaxLabel")}>
                 <Input placeholder={t("images.cudaPlaceholder")} />
               </Form.Item>
             )}
-            {/* 编辑必填原因(入审计):审计原因永远是最后一个字段 */}
             {editing !== "new" && (
               <Form.Item
                 name="reason"

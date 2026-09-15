@@ -1,7 +1,7 @@
-"""节点注册:令牌生命周期 + 加入状态机。
-注册令牌 `sdln_` + token_urlsafe(32),库中只存 HMAC-SHA256(core/crypto.hash_node_token);
-首次 bootstrap 即消费,换发 progress 令牌 `sdlp_`。令牌绝对过期;无效/过期/吊销/终态统一 404;
-状态迁移集中于 transition_enrollment。
+"""节点注册、池管理与集群能力视图。
+
+注册与进度令牌仅存 HMAC 摘要;bootstrap 要求 pending,进度上报使用独立令牌。
+匿名解析对无效、过期或终态令牌统一回 404。
 """
 
 import asyncio
@@ -63,7 +63,6 @@ _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     "installing": frozenset({"rebooting", "joining", "failed", "revoked", "joined", "expired"}),
     "rebooting": frozenset({"installing", "joining", "failed", "revoked", "joined", "expired"}),
     "joining": frozenset({"joined", "failed", "revoked", "expired"}),
-    # 终态 → revoked 只有退役(decommission_node)一条入口;手工吊销对终态仍 409
     "joined": frozenset({"revoked"}),
     "failed": frozenset({"revoked"}),
     "expired": frozenset({"revoked"}),
@@ -77,7 +76,7 @@ def transition_enrollment(
     phase: str | None = None,
     error: str | None = None,
 ) -> None:
-    """唯一状态迁移入口(不 commit)。非法迁移 409。"""
+    """按允许边迁移登记状态,非法迁移回 409;同状态不更新,不提交。"""
     if enrollment.status == new_status:
         return
     allowed = _ALLOWED_TRANSITIONS.get(enrollment.status, frozenset())
@@ -111,7 +110,6 @@ def enrollment_commands(token: str) -> tuple[str, str]:
     base = get_settings().public_base_url.rstrip("/")
     script_url = f"{base}/api/v1/node-enroll/script"
     token_file = "/run/superdl-join.token"
-    # echo 是 shell 内建,不产生含 token 的 argv
     load = f"echo '{token}' | sudo sh -c 'umask 077; cat > {token_file}; "
     cleanup = f"; s=$?; rm -f {token_file}; exit $s'"
     curl_cmd = f"{load}curl -fsSL {script_url} | bash -s -- --token-file {token_file}{cleanup}"
@@ -123,8 +121,7 @@ def enrollment_commands(token: str) -> tuple[str, str]:
 
 
 def pool_matches(enrolled_pool: str, observed_pool: str | None) -> bool:
-    """节点自声明的池标签是否与注册登记一致(登记是事实源);未打标 / unknown 一律不算一致。
-    入网对账(joined 判据)与规格巡检(池标签纠偏)共用。"""
+    """池标签是否一致;未打标或 unknown 返回 False。"""
     return bool(observed_pool) and observed_pool != "unknown" and observed_pool == enrolled_pool
 
 
@@ -154,11 +151,10 @@ async def create_enrollment(
             key=idempotency_key,
         )
         if existing is not None:
-            # 与 regenerate 同守卫
             if existing.status not in REGENERATABLE_STATUSES:
                 raise conflict(key="nodes.regenerateNotAllowed", params={"status": existing.status})
             token, existing.token_hash = _new_token()
-            existing.progress_token_hash = None  # 旧 progress 令牌随注册令牌一并作废
+            existing.progress_token_hash = None
             await session.commit()
             await session.refresh(existing)
             return existing, token
@@ -178,7 +174,7 @@ def _add_enrollment(
     created_by: int,
     idempotency_key: str | None,
 ) -> tuple[NodeEnrollment, str]:
-    """建注册登记行并返回 token 明文,**不 commit**——切池要与期望态、outbox 同一事务。"""
+    """添加注册登记行,返回登记行与仅本次可见的令牌明文;不提交。"""
     token, token_hash = _new_token()
     enrollment = NodeEnrollment(
         token_hash=token_hash,
@@ -207,7 +203,6 @@ async def list_enrollments(
     for r in rows:
         if r.status == "revoked":
             continue
-        # joined 不进「待加入」视图
         if r.status == "joined":
             continue
         if r.status == "expired" and r.updated_at < now - timedelta(days=7):
@@ -232,7 +227,7 @@ async def regenerate_enrollment(
     if enrollment.status not in REGENERATABLE_STATUSES:
         raise conflict(key="nodes.regenerateNotAllowed", params={"status": enrollment.status})
     token, enrollment.token_hash = _new_token()
-    enrollment.progress_token_hash = None  # 旧 progress 令牌随注册令牌一并作废
+    enrollment.progress_token_hash = None
     enrollment.status = "pending"
     enrollment.phase = None
     enrollment.error = None
@@ -253,8 +248,7 @@ async def revoke_enrollment(session: AsyncSession, enrollment_id: int) -> NodeEn
 
 
 async def _assert_node_empty(session: AsyncSession, node_name: str) -> None:
-    """节点上不得有未释放实例。已关机 / 冻结 / 失败也算:实例盘是节点本地 LV,
-    开机 pin 回原节点,节点换池或退役后这些实例永远开不了机。切池与退役共用。"""
+    """节点存在未释放实例时回 409,包含 stopped/frozen/failed 实例。"""
     active = await orchestrator_queries.count_active_instances_on_node(session, node_name)
     if active:
         raise conflict(key="nodes.nodeHasInstances", params={"count": active})
@@ -267,12 +261,9 @@ async def switch_node_pool(
     pool: str,
     reason: str,
 ) -> tuple[NodeSpec, str]:
-    """切换节点池(kata / hami / mig 三者互切)。同事务:停调度与期望池落台账 + outbox 入队
-    node.switch_pool。返回 (台账行, 原池)。
+    """持台账行锁校验空节点、目标池与运行时,同事务写停调度及期望池并入队切池后提交。
 
-    **不需要任何节点侧动作**:池间差异的节点侧软件全部由 DaemonSet 按标签投送
-    (kata-deploy / HAMi device-plugin / gpu-operator 的 vfio-manager 与 sandbox 插件),
-    VFIO 绑定与解绑由 vfio-manager 在运行时做;IOMMU 是装机基线,不随池变。
+    返回 (台账行, 原期望池或观测池);仅允许 SWITCHABLE_POOLS 内的 GPU 池。
     """
     row = (
         await session.execute(
@@ -290,7 +281,6 @@ async def switch_node_pool(
     current = row.desired_pool or row.pool_label
     if current == pool:
         raise conflict(key="nodes.poolUnchanged", params={"pool": pool})
-    # cpu 池 = 无卡机,是物理属性不是配置
     if row.gpu_count <= 0 or current == POOL_CPU:
         raise conflict(key="nodes.poolIncompatible")
     if pool == POOL_MIG and not supports_mig(row.gpu_model):
@@ -320,10 +310,9 @@ async def switch_node_pool(
 async def decommission_node(
     session: AsyncSession, node_name: str, *, reason: str, force: bool = False
 ) -> int:
-    """节点退役(不可逆),返回置 revoked 的登记行数。同事务三件事:停调度期望态落台账、
-    该主机名全部登记置 revoked、outbox 入队 node.decommission。
-    节点上有未释放实例即 409,force=True 跳过该闸(机器已经救不回来时用)。
-    集群 join token 轮换与 kubelet 证书吊销需人工。
+    """持台账行锁,同事务停调度、吊销该节点登记并入队退役后提交,返回吊销数。
+
+    未释放实例阻断退役,force=True 跳过此校验;集群加入令牌与 kubelet 证书须另行撤销。
     """
     row = (
         await session.execute(
@@ -362,7 +351,7 @@ async def decommission_node(
 async def request_cordon(
     session: AsyncSession, node_name: str, *, unschedulable: bool, reason: str
 ) -> None:
-    """cordon 期望态落台账 + outbox 入队;handler 读期望态而非 payload。"""
+    """更新已有节点的可调度期望态并提交 node.cordon 任务。"""
     row = (
         await session.execute(select(NodeSpec).where(NodeSpec.node_name == node_name))
     ).scalar_one_or_none()
@@ -374,9 +363,6 @@ async def request_cordon(
         {"node_name": node_name, "unschedulable": unschedulable, "reason": reason},
     )
     await session.commit()
-
-
-# ---------- 匿名侧(令牌即鉴权;统一 404) ----------
 
 
 def _check_usable(row: NodeEnrollment | None) -> NodeEnrollment:
@@ -418,14 +404,14 @@ async def bootstrap(
     gpu_details: list[dict[str, Any]],
     client_ip: str | None,
 ) -> tuple[NodeEnrollment, RuntimeConfig, str]:
-    """令牌换装机参数,返回 (enrollment, cluster 最小配置, progress 令牌)。
-    只有 pending 行能 bootstrap,首跑即消费并迁 installing。
+    """校验 pending 登记与主机名,迁 installing 并提交,返回登记、运行时配置与进度令牌。
+
+    主机名不符时提交 failed 后回 409;调用方须限制配置对外字段。
     """
     row = await _resolve_token(session, token)
     if row.status != "pending":
         raise not_found()
     if row.hostname != hostname:
-        # 主机名与签发时不符即 failed
         transition_enrollment(
             row, "failed", error=f"主机名不符:期望 {row.hostname},实际上报 {hostname}(防令牌串用)"
         )
@@ -456,30 +442,25 @@ async def report_progress(
 ) -> NodeEnrollment:
     row = await _resolve_progress_token(session, token)
     if row.status == "pending":
-        raise not_found()  # 未 bootstrap 就上报进度:非法序列,按无效令牌处理
+        raise not_found()
     row.phase = phase
     row.last_report_at = now_utc()
     versions = {
         k: v for k, v in (("driver_version", driver_version), ("cuda_version", cuda_version)) if v
     }
     if versions:
-        # 驱动/CUDA 版本并进登记快照,巡检据此填台账
         row.os_info = {**(row.os_info or {}), **versions}
     if state == "failed":
         transition_enrollment(row, "failed", phase=phase, error=message or f"{phase} 失败")
     elif state == "rebooting":
         transition_enrollment(row, "rebooting", phase=phase)
     elif row.status == "rebooting" and state in ("running", "ok"):
-        # oneshot 续跑后的第一条进度:回到 installing
         transition_enrollment(row, "installing", phase=phase)
     if phase == "agent_start" and state == "ok" and row.status == "installing":
         transition_enrollment(row, "joining", phase=phase)
     await session.commit()
     await session.refresh(row)
     return row
-
-
-# ---------- 节点规格台账(巡检写入,业务只读) ----------
 
 
 async def list_node_specs(session: AsyncSession) -> list[NodeSpec]:
@@ -512,7 +493,7 @@ def matching_specs(
 
 
 def pool_specs(specs: Iterable[NodeSpec], pool_label: str) -> list[NodeSpec]:
-    """台账里只按池匹配的行,不看型号与状态(CPU 档口径);不复用 matching_specs。"""
+    """返回池标签匹配的台账行,不按型号或状态过滤。"""
     return [s for s in specs if s.pool_label == pool_label]
 
 
@@ -534,7 +515,6 @@ async def gpu_model_aggregates(session: AsyncSession) -> list["GpuModelAggregate
             item.ready_gpu_total += r.gpu_count
             item.ready_gpu_free += max(0, r.gpu_count - r.gpu_used)
             if r.gpu_count > 0:
-                # 整机配比取各节点最小值;0 = 未知
                 per_vcpu, per_mem = r.vcpu // r.gpu_count, r.mem_gb // r.gpu_count
                 item.vcpu_per_gpu = min(item.vcpu_per_gpu or per_vcpu, per_vcpu)
                 item.mem_gb_per_gpu = min(item.mem_gb_per_gpu or per_mem, per_mem)
@@ -557,9 +537,6 @@ class GpuModelAggregate:
     vram_gb: int = 0
     vcpu_per_gpu: int = 0
     mem_gb_per_gpu: int = 0
-
-
-# ---------- 集群能力缓存 ----------
 
 
 async def save_cluster_probe(session: AsyncSession, probe: ClusterProbe) -> ClusterStatus:
@@ -594,7 +571,6 @@ async def get_cluster_status(session: AsyncSession) -> ClusterStatus | None:
     return await session.get(ClusterStatus, 1)
 
 
-# Harbor CA 在节点上的落点占位符,node-join 按本机发行版目录替换
 REGISTRY_CA_PATH_TEMPLATE = "__RANCHER_DIR__/harbor-ca.crt"
 
 
@@ -636,7 +612,7 @@ async def derive_node_distro(session: AsyncSession, cfg: RuntimeConfig) -> str:
     return derive_distro(cfg.cluster_agent_version) or "rke2"
 
 
-HAMI_GATE_MAX_AGE = timedelta(minutes=10)  # 能力缓存陈旧窗:超时视为未知,拒绝下发
+HAMI_GATE_MAX_AGE = timedelta(minutes=10)
 
 
 async def _fresh_cluster_status(session: AsyncSession) -> ClusterStatus:
@@ -677,8 +653,7 @@ async def require_kata_runtimeclass(session: AsyncSession) -> None:
 
 
 async def require_pool_runtime(session: AsyncSession, pool_label: str) -> None:
-    """切池门禁:目标池的运行时能力缺位即 409,避免切到一个开不了机的池。
-    判据与 `_require_cluster_for_pool` 同源;mig 池看 gpu-operator(官方 device-plugin 由它铺)。"""
+    """校验目标 GPU 池运行时;hami 查 HAMi,kata 查 RuntimeClass,mig 查 GPU Operator。"""
     if pool_label == POOL_HAMI:
         await require_hami_ready(session)
         return
@@ -714,20 +689,14 @@ async def require_storage_classes(session: AsyncSession, *, with_data_disk: bool
         )
 
 
-# ---------- 集群页组件体检 ----------
-
-
 def _helmfile(distro: str | None, release: str) -> str:
-    """修复命令按实测发行版给出档位;走 apply.sh 而非裸 helmfile。"""
+    """按发行版返回 apply.sh 修复命令。"""
     env = {"k3s": "light", "rke2": "full"}.get(distro or "", "<full|light>")
     return f"deploy/cluster/apply.sh {env} -l name={release}"
 
 
 _NVIDIA_RC_FIX = "节点装 nvidia-container-toolkit 后重启 k3s/rke2"
 
-# 体检项元数据。顺序即契约顺序与面板默认顺序(按用户可见链路排)。
-# helm_release:None = 该项不靠 helm 修;diag:排障第一步,取自
-# deploy/cluster/runbooks/cluster-validation.md。两者都是命令,不随语言。
 _COMPONENT_META: tuple[tuple[ComponentKey, str | None, str], ...] = (
     ("nodes", None, "kubectl get node -o wide -L superdl.io/pool"),
     ("hami", "hami", "kubectl -n kube-system get pod -l app=hami-scheduler -o wide"),
@@ -747,11 +716,7 @@ _COMPONENT_META: tuple[tuple[ComponentKey, str | None, str], ...] = (
 
 
 def cluster_components(row: ClusterStatus | None) -> list[ClusterComponentOut]:
-    """组件体检:事实来自巡检快照,文案一律由前端按 key 映射,后端只出数据。
-
-    快照陈旧或 API 不可达时全部判 unknown —— worker 停了还渲染成十项全绿,
-    比显示不出来更危险(下发门禁一直有这个保鲜判定,体检卡此前没有)。
-    """
+    """从巡检快照组装组件事实;快照缺失、陈旧或 API 不可达时状态为 unknown。"""
     facts = component_facts_from_json(row.component_facts if row else None)
     unknown = _probe_unknown(row)
     distro = row.distro if row else None
@@ -787,10 +752,7 @@ def _component_out(
     distro: str | None,
 ) -> ClusterComponentOut:
     state: ComponentStateOut = "unknown" if (unknown or cf is None) else cf.state
-    # 从未探测时体检卡兼作装机清单,给安装命令;探测只是陈旧则不给 —— 对健康集群
-    # 报十条修复命令是谎报,状态位已经说明事实不可信
     show_fix = state in ("down", "degraded") or never_probed
-    # 陈旧时仍回上次事实:知道「上次是 8/8」比什么都不显示有用
     return ClusterComponentOut(
         key=key,
         state=state,
@@ -814,8 +776,6 @@ def _fact_out(f: ComponentFact) -> ComponentFactOut:
     return ComponentFactOut(key=f.key, value=f.value, tone=f.tone)
 
 
-# 深探是请求路径上唯一的第二个 K8s 只读直连(第一个是实例日志),见 docs/decisions.md。
-# 硬超时 + 限流 + 失败降级,三者缺一都会让集群 API 抖动直接打到管理端页面上。
 COMPONENT_PROBE_TIMEOUT = 5.0
 COMPONENT_PROBE_MAX_PER_HOUR = 120
 
@@ -823,9 +783,9 @@ _COMPONENT_KEYS = frozenset(key for key, _r, _d in _COMPONENT_META)
 
 
 async def probe_component_detail(admin_id: int, key: str) -> ComponentProbeOut:
-    """单个体检项的实时深探(只读,不记审计,不写库)。
+    """请求路径限流、限时直连 K8s 只读深探;结果不落库,限流计数独立提交,不记审计。
 
-    未知 key → 404;探测失败或超时 → 503,由前端退化为只显示快照,不阻断页面。
+    未知 key 回 404,探测失败或超时回 503。
     """
     if key not in _COMPONENT_KEYS:
         raise not_found(key="nodes.nodeNotFound")
@@ -838,7 +798,7 @@ async def probe_component_detail(admin_id: int, key: str) -> ComponentProbeOut:
         detail = await asyncio.wait_for(
             get_orchestrator().probe_component_detail(key), timeout=COMPONENT_PROBE_TIMEOUT
         )
-    except Exception as exc:  # 超时与探测失败对调用方是同一种降级,不分流
+    except Exception as exc:
         logger.warning("component_probe_failed", component=key, error=str(exc))
         raise AppError(
             ErrorCode.INTERNAL,

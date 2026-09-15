@@ -1,8 +1,4 @@
-/**
- * 两端共享设计 token。用户端浅色靛蓝;管理端深色 NOC 风。
- * 改底色 token 须同步:brand.pageBg → apps/web/index.html 内联脚本、apps/web/src/routes/__root.tsx;fontFamilyMono → src/base.css .mono;
- * webDarkColors.bgBase → apps/web/index.html 内联脚本;adminColors.bgBase → apps/admin/index.html、admin main.tsx CSS 变量。
- */
+/** 两端共享设计 token:用户端浅色/暗色主题与管理端深色主题。 */
 
 export const colorPrimary = "#4F46E5";
 
@@ -124,7 +120,6 @@ export const webTheme = {
     colorWarning: statusColors.orange,
     colorError: statusColors.red,
     colorBgLayout: brand.pageBg,
-    // 次级/描述文本加深到白底 ≥4.5:1(WCAG AA)
     colorTextSecondary: "rgba(0,0,0,0.60)",
     colorTextDescription: "rgba(0,0,0,0.58)",
     borderRadius: 6,
@@ -145,8 +140,7 @@ export const webTheme = {
   },
 } as const;
 
-/** 墨色面板(公开层行情板)局部主题的 token,配合 `theme.darkAlgorithm` 传给嵌套 ConfigProvider。
- *  面板恒为深底,与页面主题无关;webTheme 把次级/描述文本写死成深色值,darkAlgorithm 不会推翻它们,必须在这里显式压回。 */
+/** 墨色面板的局部主题 token,与 theme.darkAlgorithm 配合使用。 */
 export const inkPanelTokens = {
   colorBgContainer: brand.ink,
   colorBgElevated: brand.ink,
@@ -190,7 +184,7 @@ export const adminThemeComponents = {
   Tabs: { inkBarColor: adminColors.dataAccent, itemSelectedColor: adminColors.dataAccent },
 } as const;
 
-/** 间距阶梯(4 的倍数);padding/gap/margin 一律走这里(见 docs/ui-ux-spec.md) */
+/** 间距阶梯,均为 4 的倍数。 */
 export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
 
 /** 阴影两档:内容卡默认无阴影;sm = 可点击卡 / 选项 tile hover,upMd = sticky 底栏向上投影。 */
@@ -222,7 +216,7 @@ export const fontWeight = { regular: 400, medium: 500, semibold: 600 } as const;
 /** 图标三档(sm 行内 / md 按钮与菜单 / lg 顶栏与空态) */
 export const iconSize = { sm: 14, md: 16, lg: 20 } as const;
 
-/** 断点(与 antd Grid 同值);CSS 媒体查询一律走这里 */
+/** 响应式断点。 */
 export const breakpoint = { xs: 480, sm: 576, md: 768, lg: 992, xl: 1200 } as const;
 
 /** 版式常量:页容器与卡片网格;页宽四档:控制台 / 落地页 section / 长文页 / 全宽(管理端宽表) */
@@ -246,7 +240,7 @@ export const layout = {
   navDrawerWidth: 260,
 } as const;
 
-/** 控件宽度四档:短码 / 短文本 / 常规 / 长文本;输入框、下拉一律取这里,不写裸数字 */
+/** 控件宽度四档:短码、短文本、常规与长文本。 */
 export const controlWidth = { xs: 96, sm: 160, md: 260, lg: 320 } as const;
 
 /** Drawer 宽度两档(CSS 值,窄屏自动收到 100vw) */
@@ -262,7 +256,7 @@ export const motion = {
   easeOut: [0.16, 1, 0.3, 1],
 } as const;
 
-/** 层叠常量:自绘浮层统一走这里;antd 组件层(Modal 1000/Popover 1030)不覆写。 */
+/** 自绘浮层的 z-index 常量。 */
 export const zIndex = {
   stickyBar: 50,
   topBar: 100,

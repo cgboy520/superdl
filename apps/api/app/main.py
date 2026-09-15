@@ -22,7 +22,6 @@ from app.wiring import wire_modules
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     setup_logging()
     settings = get_settings()
-    # 生效的加固面上报成指标
     from app.core.metrics import RUNTIME_CONFIG
 
     RUNTIME_CONFIG.labels(
@@ -31,7 +30,6 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         payment_mock=str(settings.payment_mock).lower(),
     ).set(1)
     log = get_logger("app.lifespan")
-    # 幽灵 SUPERDL_* 变量:启动告警,不 fail
     unknown_keys = unknown_superdl_env_keys()
     if unknown_keys:
         log.warning(
@@ -40,7 +38,6 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             hint="这些 SUPERDL_* 变量不匹配任何配置项,将被忽略;请核对拼写",
         )
     if settings.environment == "prod":
-        # 非阻断项只告警
         if not settings.alertmanager_token:
             log.warning(
                 "alertmanager_token_missing",
@@ -52,7 +49,6 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                 prometheus_url=settings.prometheus_url,
                 hint="监控代理仍指向本地默认地址:计费不受影响,但用量面板与对账全空",
             )
-        # cluster 键查 effective 配置(含 DB 覆盖层),缺键只打 error
         from app.core.db import get_sessionmaker
         from app.core.platform_config import (
             assert_prod_compliance_gates,
@@ -71,22 +67,18 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                 keys=missing,
                 hint="管理端「平台配置 · 集群接入」录入;加节点将被 409 拦截",
             )
-        # 安全开关 prod 关闭:启动日志告警
         for w in compute_config_warnings(cfg, settings.environment):
             (log.error if w.level == "error" else log.warning)(
                 "config_warning", key=w.key, hint=w.message
             )
-        # 合规闸门 fail-fast(platform_config 的两条 assert_prod_*)
         assert_prod_compliance_gates(cfg, settings.environment)
         assert_prod_image_allowlist(cfg, settings.environment)
-        # env 层取值同样过格式白名单(如 SUPERDL_CLUSTER_JOIN_TOKEN 带换行);prod 拒启,其余环境记错
         env_problems = env_layer_problems()
         if env_problems:
             if settings.environment == "prod":
                 raise RuntimeError("部署层平台配置格式不合格,拒绝启动:" + ";".join(env_problems))
             log.error("config_env_invalid", problems=env_problems)
     yield
-    # 关闭 Prometheus 代理客户端单例
     from app.modules.metering import prom as metering_prom
 
     await metering_prom.close_client()
@@ -100,16 +92,11 @@ def create_app() -> FastAPI:
         title="SuperDL API",
         version="0.1.0",
         lifespan=lifespan,
-        # prod 关 docs / redoc / openapi 三条路由(export_openapi 直取 app.openapi())
         docs_url=None if is_prod else "/docs",
         redoc_url=None if is_prod else "/redoc",
         openapi_url=None if is_prod else "/openapi.json",
     )
     install_error_handlers(app)
-    # add_middleware 后注册者在外层。自内向外:
-    # Uniform500(未捕获异常渲染 500)→ BodyLimit(流式计数,超限 413)→ Observability(x-request-id)
-    # → Audit(fail-closed 503 也要带安全头,故安全头在它外层)→ SecurityHeaders → CORS
-    # → EdgeGuard(prod 边缘收口,404 是刻意的「不存在」语义,不挂头)
     app.add_middleware(Uniform500Middleware)
     app.add_middleware(RequestBodyLimitMiddleware)
     app.add_middleware(ObservabilityMiddleware)
@@ -119,10 +106,8 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=True,
-        # 方法与头部枚举双端实际使用面(X-Requested-With 是 refresh/logout 的 CSRF 头)
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Requested-With"],
-        # 前端需读这两个响应头
         expose_headers=["X-Request-ID", "X-Idempotent-Replay"],
     )
     app.add_middleware(EdgeGuardMiddleware)
@@ -149,7 +134,6 @@ def create_app() -> FastAPI:
             state = schema_state(list(rows))
         except Exception:
             state = "db_unavailable"
-        # 只在状态翻转时留日志
         prev = getattr(app.state, "readyz_state", "ready")
         if state != prev:
             get_logger("app.readyz").warning("readyz_state_change", previous=prev, current=state)
@@ -158,7 +142,6 @@ def create_app() -> FastAPI:
             return JSONResponse(status_code=503, content={"status": state})
         return JSONResponse(content={"status": "ready"})
 
-    # /metrics:配置了 SUPERDL_METRICS_TOKEN 即要求 Bearer
     metrics_app = make_asgi_app()
 
     async def metrics_guard(scope, receive, send):
@@ -213,7 +196,6 @@ def _register_module_routers(app: FastAPI) -> None:
     app.include_router(tickets_router, prefix="/api/v1")
     app.include_router(legal_router, prefix="/api/v1")
     app.include_router(admin_router, prefix="/api/admin/v1")
-    # 网关 extAuth 回调:独立前缀 /api/internal(core/edge_guard 据此判定)
     app.include_router(endpoint_auth_router, prefix="/api/internal/v1")
 
 

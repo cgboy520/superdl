@@ -1,26 +1,21 @@
 """GPU 型号归一化:SKU 手填 / nvidia-smi / lspci / GFD label / fake 注入 → canonical 短名,
 未识别返回 None。
 
-规则:RTX 消费卡 = RTX<数字><后缀>;多容量家族(A100/A800/H100/H800/H200/V100)带 -{显存}G;
+规则:RTX 消费卡 = RTX<数字><后缀>;多容量家族识别出显存时追加 -{显存}G,否则只取家族名;
 单容量卡(T4/L4/L40S/A10/GB10 等)取家族名;CMP 矿卡取 CMP<数字>HX。
-巡检写入节点 label `superdl.io/gpu-model`。
 """
 
 import re
 
-# 多容量家族:canonical 追加 -{n}G;无显存信息退家族名(见 model_matches)
 _MULTI_VRAM_FAMILIES = frozenset({"A100", "A800", "H100", "H800", "H200", "V100"})
 
-# 单容量/免后缀白名单(数据中心与推理卡)
 _PLAIN_FAMILIES = frozenset(
     {"T4", "L4", "L20", "L40", "L40S", "A10", "A16", "A30", "A40", "H20", "B200", "GB200", "GB10"}
 )
 
-# 噪声 token(厂牌/系列词)与形态 token(封装/显存介质)
 _NOISE = frozenset({"NVIDIA", "CORPORATION", "GEFORCE", "TESLA", "QUADRO", "GRAPHICS", "DEVICE"})
 _FORM = frozenset({"SXM", "SXM2", "SXM4", "SXM5", "PCIE", "NVL", "HBM2", "HBM2E", "HBM3", "OEM"})
 
-# 常见卡型默认单卡显存(GB),bootstrap 未上报时兜底;未知=0
 DEFAULT_VRAM_GB: dict[str, int] = {
     "RTX3090": 24,
     "RTX4090": 24,
@@ -41,7 +36,6 @@ DEFAULT_VRAM_GB: dict[str, int] = {
     "V100-16G": 16,
     "V100-32G": 32,
     "CMP170HX": 8,
-    # 统一内存(nvidia-smi 显存 N/A):按 HAMi preConfiguredDeviceMemory 口径
     "GB10": 96,
 }
 
@@ -56,13 +50,11 @@ def canonical_gpu_model(raw: str | None) -> str | None:
     if not raw:
         return None
     text = raw.strip()
-    # lspci 剥壳:取方括号内容
     m = re.search(r"\[([^\]]+)\]", text)
     if m:
         text = m.group(1)
-    # 统一分隔与大小写
     text = re.sub(r"[-_]", " ", text).upper()
-    text = re.sub(r"\(.*?\)", " ", text)  # (rev a1) 之类
+    text = re.sub(r"\(.*?\)", " ", text)
     tokens = [t for t in text.split() if t and t not in _NOISE]
     vram: int | None = None
     kept: list[str] = []
@@ -93,8 +85,6 @@ def canonical_gpu_model(raw: str | None) -> str | None:
     return None
 
 
-# 支持 MIG 硬件切分的家族(canonical 取 "-" 前一段比对):数据中心 Ampere 及以后的大核。
-# L4/L20/L40/L40S、RTX、CMP、GB10 均不支持;切到 mig 池的机型闸按此判。
 MIG_CAPABLE_FAMILIES = frozenset(
     {"A100", "A800", "A30", "H100", "H800", "H200", "H20", "B200", "GB200"}
 )

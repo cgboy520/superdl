@@ -22,8 +22,7 @@ import { useCreateInvoice } from "../api/mutations";
 import { useInvoiceEligible, useInvoicePages } from "../api/queries";
 
 /** 发票申请弹窗:账期(仅 eligible 列表)+ 抬头信息;金额由服务端按账期计算。 */
-export const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/; // 与服务端契约同一口径
-// 统一社会信用代码(GB 32100-2015):18 位,数字与大写字母(不含 I/O/Z/S/V);与服务端 schemas.TAX_ID_PATTERN 同口径
+export const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 export const TAX_ID_RE = /^[0-9A-HJ-NPQRTUWXY]{2}\d{6}[0-9A-HJ-NPQRTUWXY]{10}$/;
 
 export function InvoiceApplyModal({
@@ -43,7 +42,6 @@ export function InvoiceApplyModal({
   const [title, setTitle] = useState("");
   const [taxId, setTaxId] = useState("");
   const [email, setEmail] = useState("");
-  // 幂等键按「提交序号 + 表单快照」派生,成功后序号 +1 即新单
   const [submitSeq, setSubmitSeq] = useState(0);
   const create = useCreateInvoice({
     onSuccess: () => {
@@ -118,7 +116,6 @@ export function InvoiceApplyModal({
           status={title !== "" && title.trim().length < 2 ? "error" : undefined}
           aria-label={t("billing.invoiceTitleLabel")}
         />
-        {/* 红框必须配文字说明(与税号字段同一标准) */}
         {title !== "" && title.trim().length < 2 ? (
           <Typography.Text type="danger" style={{ fontSize: fontSize.caption }}>
             {t("billing.invoiceTitleInvalid")}
@@ -165,7 +162,6 @@ export function InvoiceTab() {
   const { formatMoney } = useFormat();
   const eligibleQ = useInvoiceEligible();
   const periods = useMemo<InvoiceEligibleOut[]>(() => eligibleQ.data ?? [], [eligibleQ.data]);
-  // 总额逐账期字符串相加(2 位小数),不过 Number
   const total = useMemo(() => periods.reduce((acc, p) => addAmounts(acc, p.amount), "0.00"), [periods]);
   const [applyOpen, setApplyOpen] = useState(false);
   const invoices = useInvoicePages(20);
@@ -184,7 +180,6 @@ export function InvoiceTab() {
           </Button>
         </Space>
         {eligibleQ.isError ? (
-          // 加载失败不伪装成「无可开票账期」
           <DataErrorAlert onRetry={() => void eligibleQ.refetch()} />
         ) : periods.length > 0 ? (
           <Space wrap size={space.sm} style={{ marginTop: 12 }}>

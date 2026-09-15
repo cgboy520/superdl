@@ -1,4 +1,4 @@
-/** ApiKeyModal 一次性展示守护。挂了说明:用户能在没保存 Key 时关掉窗口。写操作 hook 全 mock。 */
+/** API Key 成功态的保存确认与关闭限制测试。 */
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "antd";
@@ -69,7 +69,6 @@ describe("ApiKeyModal", () => {
     const { user, onClose, dialog } = await openSuccessState();
     const closeBtn = within(dialog).getByRole("button", { name: /已保存,关\s*闭/ });
     expect(closeBtn).toBeDisabled();
-    // closable=false:成功态不给右上角 X
     expect(within(dialog).queryByRole("button", { name: /close/i })).toBeNull();
 
     await user.click(within(dialog).getByRole("checkbox"));

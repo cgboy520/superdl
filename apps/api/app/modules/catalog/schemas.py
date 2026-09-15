@@ -9,7 +9,6 @@ from app.core.messages import render_message
 from app.core.money import MoneyOut
 from app.core.registry import is_valid_image_ref
 
-# 档位枚举的事实源在 core/gpu_adapter
 _TIER_PATTERN = f"^({'|'.join(TIERS)})$"
 
 
@@ -28,7 +27,6 @@ class SiteConfigOut(BaseModel):
     police_record_number: str | None
     support_email: str | None
     support_wechat: str | None
-    # 经营主体;留空 = 前端不展示
     company_name: str | None = None
     company_address: str | None = None
     company_phone: str | None = None
@@ -52,11 +50,10 @@ class SkuMarketOut(BaseModel):
     price_hourly: MoneyOut
     max_gpus_per_instance: int
     cuda_max: str | None
-    # 池标签:同一 (pool, model) 物理池上的档位可售数不可相加(前端按组取 max)
     pool_label: str
-    period_enabled: bool  # 是否接受包周期下单(市场页据此决定包日/包周/包月/包年 chips)
-    spot_enabled: bool  # 是否上竞价档(市场页据此决定竞价入口可不可选)
-    available_count: int = 0  # 近似库存(节点台账口径,每请求直接算),service 填充
+    period_enabled: bool
+    spot_enabled: bool
+    available_count: int = 0
 
     model_config = {"from_attributes": True}
 
@@ -83,10 +80,9 @@ class SkuAdminOut(BaseModel):
     spot_enabled: bool
     status: str
     created_at: datetime
-    # 台账/占用组装列(仅列表端点填充)
-    capacity_gpus: int = 0  # 匹配「型号×池」的 Ready 物理卡数
-    sold_share: str | None = None  # 已售算力 ÷ 可售总算力(含超卖),台账空为 None
-    actual_oversell: str | None = None  # 已售算力 ÷ 物理算力,对照 oversell_cores 看余量
+    capacity_gpus: int = 0
+    sold_share: str | None = None
+    actual_oversell: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -100,9 +96,9 @@ def cpu_spec_error(
     max_gpus_per_instance: int,
     mig_profile: str | None,
 ) -> str | None:
-    """档位与「带不带卡」的跨字段规则,返回文案键(None=通过);SkuCreate 契约层调用(422),
-    SkuUpdate 由 service 合并终态后调用(400)。CPU 规格三项恒 0 + 型号空串 + 无切片;
-    GPU 规格三项都不为 0。
+    """校验 CPU/GPU 字段组合,返回错误文案键或 None。
+
+    CPU 要求型号、算力、显存、最大卡数与切片为空或零;GPU 要求前四项非空非零。
     """
     if tier == TIER_CPU:
         if gpu_model or gpu_cores_pct or vram_gb or max_gpus_per_instance or mig_profile:
@@ -115,7 +111,6 @@ def cpu_spec_error(
 
 class SkuCreate(BaseModel):
     name: str = Field(min_length=1, max_length=64)
-    # 下界 0 给 CPU 档;档位配对由 model_validator 兜住
     gpu_model: str = Field(max_length=32)
     tier: str = Field(pattern=_TIER_PATTERN)
     mig_profile: str | None = None
@@ -149,9 +144,7 @@ class SkuCreate(BaseModel):
 
 class SkuUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=64)
-    # 与 pool_label 成对可改,只在下架态放行(service.admin_update_sku)
     mig_profile: str | None = None
-    # 下界 0 给 CPU 档;终态配对在 service.admin_update_sku 复核
     gpu_cores_pct: int | None = Field(default=None, ge=0, le=100)
     vram_gb: int | None = Field(default=None, ge=0)
     oversell_cores: Decimal | None = Field(default=None, ge=Decimal("1.00"), le=Decimal("9.99"))
@@ -165,7 +158,6 @@ class SkuUpdate(BaseModel):
     period_enabled: bool | None = None
     spot_enabled: bool | None = None
     status: str | None = Field(default=None, pattern="^(on|off)$")
-    # 原因必填,落审计;同策略参数 PUT
     reason: str = Field(min_length=2, max_length=200)
 
 
@@ -176,7 +168,6 @@ class ImageOut(BaseModel):
     python_version: str
     cuda_version: str
     image_ref: str
-    # 计算值:prewarm_enabled 且节点覆盖率达标(无缓存行回落 prewarm_enabled)
     is_prewarmed: bool
 
     model_config = {"from_attributes": True}
@@ -222,9 +213,6 @@ class ImageUpdate(BaseModel):
         return None if v is None else _check_image_ref(v)
 
 
-# ---------- 管理端 ----------
-
-
 class SkuImpactOut(BaseModel):
     """改价影响面:该 SKU 活跃(creating/starting/running)实例数/用户数/卡数。"""
 
@@ -253,7 +241,7 @@ class AdminImageOut(ImageOut):
 
 class ImageNodeCacheOut(BaseModel):
     node_name: str
-    status: str  # pending / pulling / cached / failed
+    status: str
     last_error: str | None
     checked_at: datetime | None
     updated_at: datetime
@@ -276,9 +264,7 @@ class CapacityPreviewOut(BaseModel):
     """SKU 表单容量预览(纯台账推算)。"""
 
     matching_nodes: int
-    ready_gpus: int  # CPU 规格恒 0
-    total_gpus: int  # 同上
-    # 共享档 = ready_gpus × ⌊100×oversell/pct⌋;dedicated/mig = ready_gpus;
-    # CPU 规格 = 按节点 vCPU/内存上限折算(catalog.sellable_cpu_slots)
+    ready_gpus: int
+    total_gpus: int
     est_instances: int
     warnings: list[CapacityWarningOut]

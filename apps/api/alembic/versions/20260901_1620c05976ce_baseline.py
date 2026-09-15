@@ -1,13 +1,7 @@
-"""基线迁移:全量 schema + 必备预置数据。
+"""创建 43 张基线表、索引与约束。
 
-预置数据(seed 脚本不种):legal_doc_versions 三条 zh-CN published v1
-(terms/privacy/deletion_notice,正文内联)与 port_allocations 30500 封禁行;
-另设 rate_limit_counters / outbox_tasks 的 fillfactor(不入 SQLAlchemy metadata)。
-
-Revision ID: 1620c05976ce
-Revises:
-Create Date: 2026-09-01 13:46:01.534141
-
+预置三条 zh-CN published v1 法务文档与端口 30500 的封禁行,
+设置 rate_limit_counters 与 outbox_tasks 的 fillfactor。
 """
 
 from collections.abc import Sequence
@@ -101,7 +95,6 @@ DELETION_NOTICE_MD = """\
 提交申请后进入 7 天冷静期,期间可随时撤销;冷静期届满由管理员审核执行。"""
 
 
-# squash 基线一次建完 43 张表,顺序即 alembic 的依赖序(FK 在后),分段只为压语句数,**不可重排**。
 def _create_schema_a_to_legal() -> None:
     """account_deletion_requests … legal_doc_versions。"""
     op.create_table(
@@ -1062,7 +1055,7 @@ def _create_schema_nodes_to_sshkeys() -> None:
 
 
 def _create_schema_subscriptions_to_dependent() -> None:
-    """subscriptions … ticket_messages;末两张带 FK,必须最后建。"""
+    """subscriptions … ticket_messages。"""
     op.create_table(
         "subscriptions",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -1345,11 +1338,8 @@ def _create_schema_subscriptions_to_dependent() -> None:
 
 
 def _seed_preset_and_storage_params() -> None:
-    """手工维护段:autogenerate 不产出的预置数据与存储参数。"""
-    # —— 手工维护段:预置数据与存储参数(autogenerate 不产出)——
+    """预置法务文档与封禁端口,设置表存储参数。"""
 
-    # 法务文档预置:zh-CN published v1(发布人留空 = 系统预置)
-    # 不可删除:legal/service.py 要求生产必有 published 行;seed 脚本不种
     versions = sa.table(
         "legal_doc_versions",
         sa.column("doc_key", sa.String),
@@ -1382,13 +1372,11 @@ def _seed_preset_and_storage_params() -> None:
         ],
     )
 
-    # 已知占用端口预置封禁,必须与 Settings.ssh_port_excluded 同源
     op.execute(
         "INSERT INTO port_allocations (port, instance_id, blocked) VALUES (30500, NULL, true) "
         "ON CONFLICT (port) DO UPDATE SET blocked = true"
     )
 
-    # fillfactor 存储参数(不入 SQLAlchemy metadata)
     op.execute("ALTER TABLE rate_limit_counters SET (fillfactor=80)")
     op.execute("ALTER TABLE outbox_tasks SET (fillfactor=85)")
 

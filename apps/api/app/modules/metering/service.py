@@ -60,12 +60,11 @@ async def instance_metrics(
     return InstanceMetricsOut(range=range_key, series=series)
 
 
-SUMMARY_CAP = 20  # 列表 sparkline 最多取前 N 台 running,防批量放大 Prometheus 压力
+SUMMARY_CAP = 20
 
 
 async def instances_gpu_summary(targets: list[tuple[str, str]]) -> InstanceMetricsSummaryOut:
-    """批量取各实例近 1h gpu_util 稀疏序列(targets: [(uuid, ns)]);
-    断源 available=false,单实例失败跳过。"""
+    """查询前 SUMMARY_CAP 个 (uuid, ns) 的近一小时 GPU 序列;任一断源即返回 unavailable 与空列表。"""
     end = now_utc().timestamp()
     start = end - RANGES["1h"]
     items: list[InstanceGpuSeries] = []
@@ -83,7 +82,7 @@ async def instances_gpu_summary(targets: list[tuple[str, str]]) -> InstanceMetri
 async def aggregate_previous_hour(
     sm: async_sessionmaker[AsyncSession], *, at: datetime | None = None
 ) -> int:
-    """每小时 :05 聚合上一小时用量入 usage_hourly,幂等(UNIQUE DO NOTHING);Prometheus 不可用跳过。"""
+    """持咨询锁聚合上一小时用量,逐实例提交且不覆盖已有行;断源跳过该实例。"""
     window_start, window_end = prev_hour_range(at or now_utc())
     written = 0
     async with advisory_lock(sm, LockKey.USAGE_AGGREGATION) as got:
@@ -106,7 +105,6 @@ async def aggregate_previous_hour(
                     step="60s",
                 )
             except prom.PrometheusUnavailable:
-                # 单实例失败不拖垮整轮
                 failed += 1
                 logger.warning("usage_aggregation_prom_down", instance_id=inst_id)
                 continue
@@ -124,7 +122,6 @@ async def aggregate_previous_hour(
                 await session.commit()
                 written += 1
         if failed:
-            # 缺口不自动回填,需要时按 hour_start 人工补跑
             logger.warning(
                 "usage_aggregation_partial",
                 hour_start=window_start.isoformat(),
@@ -158,7 +155,6 @@ async def reconciliation_report(session: AsyncSession, day: datetime) -> Reconci
     est_total = Decimal("0.00")
     diffs: list[ReconciliationOutlier] = []
     all_ids = set(billed) | set(usage_by_instance)
-    # 按 id 精确取价
     price_by_id = await orchestrator_queries.instance_hourly_prices(session, all_ids)
     for iid in all_ids:
         est = as_amount(price_by_id.get(iid, Decimal("0")) * usage_by_instance.get(iid, 0))
@@ -200,19 +196,17 @@ async def gpu_util_last_24h_by_instance(session: AsyncSession) -> dict[int, tupl
     return {int(iid): (float(total), int(n)) for iid, total, n in rows}
 
 
-# 与 NodeGpuSeriesOut 的三个序列字段一一对应
 NODE_METRIC_KEYS: tuple[Literal["util", "mem_used_mb", "temp"], ...] = (
     "util",
     "mem_used_mb",
     "temp",
 )
 
-# K8s 节点名(RFC1123 子域);node_name 进 PromQL 前必须校验
 _NODE_NAME_RE = re.compile(r"^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$")
 
 
 async def node_gpu_metrics(node_name: str, range_key: str) -> NodeMetricsOut:
-    """管理端节点每卡曲线(DCGM per-GPU 多序列)+ 24h XID 计数;断源 available=False(200)。"""
+    """先校验范围与节点名,再插入 PromQL 查询每卡曲线及 24h XID 计数;断源返回 unavailable。"""
     if range_key not in RANGES:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="metering.badRange")
     if not _NODE_NAME_RE.match(node_name):
@@ -237,11 +231,7 @@ async def node_gpu_metrics(node_name: str, range_key: str) -> NodeMetricsOut:
 
 
 async def cluster_component_metrics() -> dict[str, ComponentFact]:
-    """组件体检的 Prometheus 事实:体检项 key → 追加事实。
-
-    断源、未配置、查不到都返回空 —— 监控自己挂了不该把别的体检项拖成红牌,
-    面板对应位置留空值(前端出「—」)。
-    """
+    """返回有数据的组件指标事实;Prometheus 不可用时返回空字典。"""
     try:
         age, up, total, firing = await asyncio.gather(
             prom.query_instant(prom.COMPONENT_QUERIES["dcgm_sample_age"]),
@@ -253,7 +243,6 @@ async def cluster_component_metrics() -> dict[str, ComponentFact]:
         return {}
     out: dict[str, ComponentFact] = {}
     if age is not None:
-        # 样本超过两个抓取周期没动 = 指标断流,exporter 就绪数看不出这个
         out["dcgm"] = ComponentFact(
             key="sampleAgeSeconds", value=str(int(age)), tone="warn" if age > 120 else "normal"
         )

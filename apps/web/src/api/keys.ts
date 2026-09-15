@@ -1,5 +1,4 @@
-/** 查询键唯一事实源:定义查询与失效都从这里取,组件里禁止手拼键字面量。
- *  分页键的「前缀」成员用于失效(前缀匹配杀掉全部参数组合);根级资源的 all 即前缀。 */
+/** 查询键与批量失效前缀;all 表示资源域前缀。 */
 
 import type {
   GetInstanceLogsApiV1InstancesUuidLogsGetParams,
@@ -92,7 +91,6 @@ export const keys = {
   },
   tickets: {
     all: ["tickets"],
-    // pages 与 detail 历史上同为 ["tickets", number] 会撞缓存;pages 键带字面量段隔开
     pages: (limit: number) => ["tickets", "pages", limit],
     detail: (ticketId: number) => ["tickets", ticketId],
   },

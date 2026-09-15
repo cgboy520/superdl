@@ -54,7 +54,6 @@ ACTIVE_STATUSES = (
     sm_def.RELEASING,
 )
 
-# 单台实例 commit 后要执行的 K8s 动作(至多一个:删 Pod 或强删);None = 无
 PostCommit = Callable[[], Awaitable[None]] | None
 
 
@@ -64,10 +63,10 @@ class _Round:
 
     orch: K8sOrchestrator
     settings: Settings
-    entered_at: dict[int, datetime]  # instance_id → 进入当前状态的时刻
-    not_ready_by_node: dict[str, bool] | None  # 节点 → NotReady;节点视图不可用为 None
+    entered_at: dict[int, datetime]
+    not_ready_by_node: dict[str, bool] | None
     counts: dict[str, int]
-    stuck: dict[str, int]  # stopping / releasing 悬挂台数(进指标)
+    stuck: dict[str, int]
 
 
 async def reconcile_once(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]:
@@ -101,8 +100,7 @@ async def reconcile_once(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]
 
 
 async def _refresh_port_pool_gauge(sm: async_sessionmaker[AsyncSession]) -> None:
-    """SSH 端口池水位进指标(停机实例不释放端口,池被占满前要看得见)。
-    port_allocations 只在分配时扩行,容量按配置段算:段长 − 段内排除端口。"""
+    """上报端口池指标;容量为配置段长减去段内排除端口数。"""
     settings = get_settings()
     excluded_in_range = sum(
         1
@@ -162,13 +160,12 @@ async def _running_pod_lost_reason(
     if not st.exists or st.phase in ("Failed", "Succeeded"):
         return "pod_lost"
     if st.deleting:
-        return "pod_lost"  # 被驱逐/被外部删除:running 态的删除一定不是我们发起的
+        return "pod_lost"
     if st.ready:
         if instance.unready_since is not None:
-            instance.unready_since = None  # 抖动恢复,重新计时
+            instance.unready_since = None
             await session.flush()
         return None
-    # not-ready 宽限
     if instance.unready_since is None:
         instance.unready_since = now_utc()
         await session.flush()
@@ -248,7 +245,6 @@ async def _reconcile_instances(
             .tuples()
             .all()
         )
-        # 超时/悬挂判定基准时刻一次批量算好
         entered_at = await _entered_status_map(
             session, [(iid, status, created) for iid, status, _ns, _uuid, created in rows]
         )
@@ -257,10 +253,8 @@ async def _reconcile_instances(
         RECONCILE_STUCK_INSTANCES.labels(status=sm_def.RELEASING).set(0)
         return
     try:
-        # 一次全量 LIST 建状态索引
         listing = await orch.list_instance_pods()
     except Exception:
-        # 拿不到状态索引本轮全跳过
         logger.exception("reconcile_list_pods_failed")
         return
     statuses = _statuses_from_listing(rows, listing)
@@ -283,7 +277,6 @@ async def _reconcile_instances(
                     continue
                 post_commit = await _reconcile_one(session, ctx, instance, st)
                 await session.commit()
-            # commit 后执行 K8s 清理;失败仅记日志,由泄漏回收 / 下轮 / outbox 兜底
             if post_commit is not None:
                 try:
                     await post_commit()
@@ -337,7 +330,6 @@ async def _reconcile_booting(
 ) -> PostCommit:
     """creating / starting:Pod Ready(且 SSH 端口已落库)→ running;超时 → failed + 清理。"""
     ready = st.exists and st.ready
-    # 端口就位只对开了 SSH 的实例要求
     port_ok = instance.ssh_port is not None or not instance.with_ssh
     if ready and port_ok:
         instance.node_name = st.node_name
@@ -347,19 +339,16 @@ async def _reconcile_booting(
     timeout = timedelta(seconds=ctx.settings.creating_timeout_seconds)
     if now_utc() - ctx.entered_at[instance.id] <= timeout:
         if ready:
-            # 开了 SSH 却无端口落库:不推进 running,等超时转 failed
             logger.warning("instance_ready_without_port", instance_id=instance.id)
         return None
     first_boot = instance.status == sm_def.CREATING
     post_commit = await _fail_instance(session, ctx, instance, reason="schedule_timeout")
-    # 包周期实例从未运行:预付同事务原额退回(中途释放不退款的规矩不适用于此)
     refunded: Decimal | None = None
     if first_boot and instance.market == MARKET_SUBSCRIPTION:
         refunded = await billing_service.refund_unstarted_subscription(
             session, instance.id, instance.user_id
         )
     if first_boot:
-        # 只有 creating 超时删实例盘;交 outbox 等 Pod 消失再删
         enqueue(session, "instance.disk_cleanup", {"instance_id": instance.id})
     logger.warning("instance_schedule_timeout", instance_id=instance.id)
     await notify_service.notify(
@@ -394,10 +383,8 @@ async def _reconcile_running(
     )
     unready_timeout = timedelta(seconds=ctx.settings.running_unready_timeout_seconds)
     lost = await _running_pod_lost_reason(session, instance, st, unready_timeout, node_not_ready)
-    # lost is None 时不动 unready_since(清零只在 _running_pod_lost_reason)
     if lost is None:
         return None
-    # node_lost/pod_lost:unready_since 写进事件 metadata 供计费截断
     meta: dict[str, Any] = {"phase": st.phase if st.exists else "Missing", "ready": st.ready}
     if lost in ("node_lost", "pod_lost") and instance.unready_since is not None:
         meta["unready_since"] = ensure_utc(instance.unready_since).isoformat()
@@ -478,7 +465,6 @@ async def _reconcile_terminating(
     if target == sm_def.RELEASED:
         await free_port(session, instance.id)
         await detach_for_instance(session, instance.id)
-        # 实例盘唯一销毁时点:交 outbox 等 Pod 消失再删
         enqueue(session, "instance.disk_cleanup", {"instance_id": instance.id})
     ctx.counts[counter] += 1
     return None
@@ -523,7 +509,6 @@ async def _reclaim_leaked_pods(
     settings = get_settings()
     orch = get_orchestrator()
     entries = await orch.list_instance_pods()
-    # Job 子孙 Pod 不计入熔断占比
     pods = [e for e in entries if JOB_NAME_LABEL not in e.labels]
     by_uuid, entered_at = await _instances_by_object_name(sm, [e.name for e in pods])
     unknown = sum(1 for e in pods if e.name not in by_uuid)
@@ -541,13 +526,11 @@ async def _reclaim_leaked_pods(
             continue
         if instance.status in (sm_def.CREATING, sm_def.STARTING, sm_def.RUNNING):
             continue
-        # 在途删除与 restart 窗口给宽限(与主对账同阈值)
         grace = release_grace if instance.status == sm_def.RELEASING else stop_grace
         if now - entered_at[instance.id] <= grace:
             continue
         await _reclaim(orch, e.namespace, e.name, "leaked_pod_reclaimed", instance.status, counts)
 
-    # 孤儿 Service/Ingress 同一熔断比例下清理
     try:
         endpoints = await orch.list_instance_endpoints()
     except Exception:
@@ -729,7 +712,6 @@ async def _gc_retention(sm: async_sessionmaker[AsyncSession], counts: dict[str, 
     stop_after = timedelta(days=settings.stopped_retention_days)
     warn_after = stop_after - timedelta(days=settings.stopped_retention_warn_days)
     fail_after = timedelta(days=settings.failed_retention_days)
-    # 按 created_at 超集过滤(进入当前状态不早于创建时刻)
     oldest_relevant = now - min(warn_after, fail_after)
     async with sm() as session:
         instances = list(

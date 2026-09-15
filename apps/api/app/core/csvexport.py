@@ -1,6 +1,6 @@
 """CSV 导出原语(billing 与 adminapi 共用,不含业务查询)。BOM 头;含 ",\\n\\r 的字段加引号;
 公式前导字符(= + @ 制表/回车,或 - 开头非纯数字)置 ' 文本化;金额保持 numeric 字符串;
-时间按调用方时区偏移折算并带 (UTC+x) 后缀;单响应行数硬上限,触顶在末尾写截断标记行。
+时间按调用方时区偏移折算并带 (UTC+x) 后缀;数据超过单响应行数上限时追加截断标记行。
 """
 
 import re
@@ -18,10 +18,8 @@ from app.core.money import money_str
 
 EXPORT_MAX_ROWS = 50_000
 TRUNCATED_MARKER = "#SUPERDL_EXPORT_TRUNCATED#"
-# 单次导出批拉粒度
 EXPORT_BATCH = 1_000
 
-# 触顶截断提示(双语)
 TRUNCATED_NOTES: dict[str, str] = {
     "zh-CN": "已达单次导出上限({limit} 行),仅导出前 {limit} 行;请缩小范围分次导出",
     "en-US": (
@@ -31,7 +29,6 @@ TRUNCATED_NOTES: dict[str, str] = {
 }
 
 
-# 路由 responses= 的 OpenAPI 声明(流式 CSV 端点共用)
 CSV_RESPONSES: dict[int | str, dict[str, Any]] = {
     200: {"description": "CSV 导出", "content": {"text/csv": {"schema": {"type": "string"}}}}
 }
@@ -90,7 +87,7 @@ async def stream_rows(
 ) -> AsyncIterator[str]:
     """流式 CSV:BOM + 表头,按 id 降序分批拉 stmt 的 ORM 行,最多 EXPORT_MAX_ROWS 行,触顶且有剩余
     则在末尾写截断标记行(truncated_note 用 {limit} 占位)。stmt 只带过滤条件。"""
-    yield "\ufeff" + csv_line(headers)  # BOM:防 Excel 中文乱码
+    yield "\ufeff" + csv_line(headers)
     sent = 0
     last_id: int | None = None
     while True:

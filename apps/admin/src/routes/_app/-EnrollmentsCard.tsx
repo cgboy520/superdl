@@ -43,7 +43,6 @@ export const PHASE_LABEL = {
 export function EnrollmentsCard({ writable }: { writable: boolean }) {
   const { t } = useTranslation(["admin", "shared"]);
   const qc = useQueryClient();
-  // 进行中 = 活跃行(5s 轮询);全部 = 含 joined/expired/revoked
   const [scope, setScope] = useState<"active" | "all">("active");
   const { data, queryKey, isLoading, isError, error, refetch } = useEnrollments({
     active: scope === "active" ? true : undefined,
@@ -51,7 +50,6 @@ export function EnrollmentsCard({ writable }: { writable: boolean }) {
   });
   const rows: EnrollmentRow[] = data ?? [];
   const [regenResult, setRegenResult] = useState<EnrollmentCommandOut | null>(null);
-  // 错误提示统一由 ReasonAction 弹出
   const regenerate = useRegenerateEnrollment({
     mutation: {
       onSuccess: (r) => {
@@ -64,7 +62,6 @@ export function EnrollmentsCard({ writable }: { writable: boolean }) {
     mutation: { onSuccess: () => void qc.invalidateQueries({ queryKey }) },
   });
 
-  // 无数据照常渲染空态;查询失败由表内空态明示
   return (
     <Card
       title={scope === "active" ? t("nodes.pendingTitle") : t("nodes.allEnrollmentsTitle")}
@@ -140,7 +137,6 @@ export function EnrollmentsCard({ writable }: { writable: boolean }) {
           {
             title: t("nodes.colHeartbeat"),
             dataIndex: "last_report_at",
-            // 秒级精度(formatDateTime 只到分)
             render: (v: string | null) => (v ? dayjs(v).format("MM-DD HH:mm:ss") : "-"),
           },
           {
@@ -164,7 +160,6 @@ export function EnrollmentsCard({ writable }: { writable: boolean }) {
             render: (_, r) => (
               <RowActions
                 primary={
-                  /* 重新生成:旧命令立即失效,先收原因 */
                   <ReasonAction
                     label={t("nodes.regenerate")}
                     target={r.hostname ?? `#${r.id}`}

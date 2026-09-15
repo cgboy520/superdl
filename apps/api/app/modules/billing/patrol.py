@@ -1,8 +1,4 @@
-"""余额巡检(5 分钟):预警 → 欠费停机 → 冻结 72h → 到期回收 → 充值解冻。
-
-每步落事件与通知。数据盘独立宽限。全链路判据一律是可用余额(balance − frozen,
-`wallet.available_of`),与 `wallet.assert_can_afford` 同口径。
-"""
+"""按可用余额巡检欠费预警、停机、冻结、回收与解冻;宽限时长取运行时策略。"""
 
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -59,13 +55,12 @@ async def balance_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]
         await _patrol_frozen_and_arrears_stopped(sm, counts)
         await _patrol_disks(sm, counts)
         await _refresh_negative_balance_gauges(sm)
-    # 无条件打 done:counts 全 0 也留完成痕迹
     logger.info("balance_patrol_done", **counts)
     return counts
 
 
 async def _refresh_negative_balance_gauges(sm: async_sessionmaker[AsyncSession]) -> None:
-    """透支敞口进指标(结算允许透支,巡检 5 分钟才停机;敞口要看得见)。"""
+    """刷新负余额钱包数量与负余额绝对值合计指标。"""
     async with sm() as session:
         count, total = (
             await session.execute(
@@ -81,7 +76,7 @@ async def _refresh_negative_balance_gauges(sm: async_sessionmaker[AsyncSession])
 async def _patrol_frozen_tenants(
     sm: async_sessionmaker[AsyncSession], counts: dict[str, int]
 ) -> None:
-    """被冻结账号仍在跑的实例 → 停机(兜冻结时还在 creating/starting、随后收敛到 running 的实例)。"""
+    """逐用户独立事务停止 frozen 账号的运行实例。"""
     async with sm() as session:
         frozen_user_ids = await account_service.frozen_user_ids(session)
 
@@ -101,14 +96,13 @@ async def _patrol_frozen_tenants(
 async def _unsettled_burn(
     session: AsyncSession, inst: "Instance", now: datetime, settled_through: datetime | None
 ) -> Decimal:
-    """该实例「已跑未出账」的实时估算消耗(2 位小数),只用于停机/预警判据,永不入账。
+    """估算未出账消耗,不入账;从当前小时与水位线次小时的较早者开始。
 
-    窗口下界取 min(当前自然小时, 水位线+1h);与结算同口径:事件重建 running 秒数 − 已出账秒数。
+    事件 running 秒数减已出账秒数,不按失联 metadata 截断;最多允许 31 天秒数。
     """
     h0 = hour_floor(now)
     start = h0 if settled_through is None else min(h0, settled_through + timedelta(hours=1))
     events = await orchestrator_queries.billing_events_before(session, inst.id, now)
-    # 巡检估算不截断失联宽限(多估口径)
     seconds = running_seconds_in_window([(ts, f, t) for ts, f, t, _m in events], start, now)
     billed = (
         await session.execute(
@@ -118,21 +112,18 @@ async def _unsettled_burn(
         )
     ).scalar_one()
     unsettled_seconds = max(0, seconds - billed)
-    # 多小时估算口径:上限 31 天,越界报错不截断
     return bill_amount(
         inst.price_hourly, inst.gpu_count, unsettled_seconds, max_seconds=31 * 24 * 3600
     )
 
 
 async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str, int]) -> None:
-    """按用户看 running 实例:可用余额 − 未结算消耗 ≤ 0 → 停机;否则按预估可用时长预警。"""
+    """按用户检查非包周期 running 实例;可用余额扣除未结消耗后判定停机或预警。"""
     async with sm() as session:
         by_user = await orchestrator_queries.list_running_instances_by_user(session)
         thresholds = await account_service.get_warn_thresholds(session, list(by_user))
         settled_through = await get_watermark(session, "hourly")
 
-    # 包周期实例不参与燃烧率与欠费停机。三处配套过滤之一
-    # (另两处:wallet.assert_can_afford、billing.edge_listener)
     on_demand = {
         uid: [i for i in insts if i.market != MARKET_SUBSCRIPTION] for uid, insts in by_user.items()
     }
@@ -165,20 +156,20 @@ async def _check_user_burn(
     warn_hours: int | None,
     counts: dict[str, int],
 ) -> None:
-    """单用户判据与处置(同一事务):停机 → 尾账 + 通知;未停机且预估时长低于阈值 → 预警。"""
+    """检查用户未结消耗;欠费时按实例 id 升序锁实例,再锁钱包复核余额。
+
+    停机、尾账与通知同事务提交;未停机时按可用时长阈值预警。
+    """
     available = await wallet.get_available_balance(session, user_id)
     burn_per_hour = sum(
         (hourly_cost(i.price_hourly, i.gpu_count) for i in instances), Decimal("0.00")
     )
-    # 停机判据:可用余额 − 未结算消耗 ≤ 0
     now = now_utc()
     unsettled = Decimal("0.00")
     for inst in instances:
         unsettled += await _unsettled_burn(session, inst, now, settled_through)
     effective = as_amount(available - unsettled)
     if effective <= 0:
-        # 锁序 instance → wallet,与结算(instance → bill → wallet)同向,避免 ABBA 死锁;
-        # 锁内二次读(credit 与本锁互斥),同样走可用口径
         locked_instances = [
             fresh
             for inst in sorted(instances, key=lambda i: i.id)
@@ -199,7 +190,7 @@ async def _check_user_burn(
             await session.commit()
             return
     if warn_hours is None or burn_per_hour <= 0:
-        return  # 阈值来自 users.low_balance_warn_hours;无用户行(残留实例)不预警
+        return
     est_hours = float(effective / burn_per_hour)
     if est_hours < warn_hours:
         await notify_service.send_low_balance_warning(
@@ -220,8 +211,6 @@ async def _patrol_frozen_and_arrears_stopped(
         frozen = await orchestrator_queries.list_instances_by_status(session, sm_def.FROZEN)
 
     async def freeze_if_in_arrears(inst: "Instance") -> None:
-        # 欠费用户的 stopped 实例 → 冻结。包周期的冻结由 subscriptions.subscription_patrol
-        # 写 frozen_deadline,回收归下面统一做
         async with sm() as session:
             available = await wallet.get_available_balance(session, inst.user_id)
             if available > 0:
@@ -241,12 +230,10 @@ async def _patrol_frozen_and_arrears_stopped(
             counts["frozen"] += 1
 
     async def unfreeze_or_reclaim(inst: "Instance") -> None:
-        # frozen:充值 → 解冻;到期 → 回收
         async with sm() as session:
             fresh = await orchestrator_queries.get_instance(session, inst.user_id, inst.uuid)
             if fresh.status != sm_def.FROZEN:
                 return
-            # 解冻条件按购买模式分:按量看可用余额,包周期看续费
             available = await wallet.get_available_balance(session, inst.user_id)
             if available > 0 and fresh.market != MARKET_SUBSCRIPTION:
                 await orchestrator_transitions.unfreeze_instance(session, fresh)
@@ -273,7 +260,7 @@ async def _patrol_frozen_and_arrears_stopped(
 
 
 async def _settle_disk_pending(session: AsyncSession, disk: "DataDisk") -> None:
-    """进入欠费宽限前结清在账天数(与删盘 / 扩容前同一函数)。"""
+    """结算数据盘进入欠费宽限前的在账日费,不提交。"""
     await settle_disk_pending_days(
         session,
         DiskBillingInput(

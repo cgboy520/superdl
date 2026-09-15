@@ -77,7 +77,6 @@ def get_engine() -> AsyncEngine:
             max_overflow=settings.db_max_overflow,
             pool_timeout=settings.db_pool_timeout_seconds,
             pool_pre_ping=True,
-            # 三个 timeout 都要有;迁移 Job 另有更严的 PGOPTIONS
             connect_args={
                 **tls_args,
                 "server_settings": {
@@ -98,7 +97,7 @@ def get_sessionmaker() -> async_sessionmaker[AsyncSession]:
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
-    """请求级 session;调用方自行 commit,异常自动 rollback。"""
+    """提供请求级 session;调用方自行提交,退出时回滚未提交事务并关闭 session。"""
     async with get_sessionmaker()() as session:
         yield session
 
@@ -117,12 +116,12 @@ async def dispose_engine() -> None:
 @cache
 def _script_directory() -> "ScriptDirectory":
     """alembic 脚本目录(进程内解析一次)。"""
-    api_root = Path(__file__).resolve().parents[2]  # app/core/db.py → apps/api
+    api_root = Path(__file__).resolve().parents[2]
     return ScriptDirectory(str(api_root / "alembic"))
 
 
 def code_schema_head() -> str:
-    """代码侧 schema head(alembic/versions);多 head 视为仓库事故。"""
+    """返回唯一的 Alembic head;零个或多个 head 时抛出 RuntimeError。"""
     heads = _script_directory().get_heads()
     if len(heads) != 1:
         raise RuntimeError(f"alembic 多 head:{heads}——须保持线性历史,先 merge 出单 head")
@@ -130,8 +129,10 @@ def code_schema_head() -> str:
 
 
 def schema_state(db_revisions: list[str]) -> str:
-    """比对 DB alembic_version 与代码 head:单行且相等 → ready;否则 never_migrated / multi_head /
-    schema_mismatch → 503。"""
+    """返回 schema 状态:代码无唯一 head 为 multi_head,DB 无版本为 never_migrated。
+
+    DB 版本列表恰为代码的单个 head 时为 ready,否则为 schema_mismatch。
+    """
     try:
         head = code_schema_head()
     except RuntimeError:

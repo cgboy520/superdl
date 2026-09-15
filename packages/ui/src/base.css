@@ -1,17 +1,11 @@
-/* 两端共用基线样式:等宽数字、标识符字体、门控按钮、跳转链接、焦点框、行内 hover 动作、行内更多菜单。
- * 色值只经 CSS 变量:--sdl-color-primary 由 web __root.tsx(随主题)与 admin main.tsx(dataAccent)注入。 */
-
 body {
   font-variant-numeric: tabular-nums;
 }
 
-/* 标识符(UUID / 订单号 / slug / 节点名)等宽;取值与 tokens.ts fontFamilyMono 同步 */
 .mono {
-  /* 与 tokens.ts fontFamilyMono 同一串;字体文件只在 web 自托管(apps/web/src/styles.css @font-face),admin 回落系统等宽 */
   font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
 
-/* 门控按钮:视觉同 disabled,但保持可聚焦(tooltip 里的原因键盘可达) */
 .btn-aria-disabled,
 .btn-aria-disabled:hover,
 .btn-aria-disabled:active {
@@ -24,7 +18,6 @@ body {
   outline-offset: 2px;
 }
 
-/* 跳到主内容(键盘用户):默认移出视口,聚焦时出现在顶栏左上 */
 .skip-link {
   position: absolute;
   left: 12px;
@@ -43,7 +36,6 @@ body {
   outline-offset: 2px;
 }
 
-/* 手写 role="button" / tabIndex 元素的统一焦点框 */
 [role="button"][tabindex]:focus-visible,
 .focus-ring:focus-visible {
   outline: 2px solid var(--sdl-color-primary);
@@ -51,7 +43,6 @@ body {
   border-radius: 4px;
 }
 
-/* 行内次级动作(改名铅笔):行 hover 或键盘聚焦时才出现 */
 .row-hover-only {
   opacity: 0;
   transition: opacity 0.15s;
@@ -62,7 +53,6 @@ body {
   opacity: 1;
 }
 
-/* 行内「更多 ▾」菜单:项目为文本按钮,左对齐撑满 */
 .row-more-menu .ant-btn {
   justify-content: flex-start;
   width: 100%;

@@ -7,8 +7,7 @@
 import type { ComponentFactOutTone } from './componentFactOutTone';
 
 /**
- * 一条可核对的事实。key 由前端映射 label;value 是纯数据(计数 / 版本 / 对象名 / 地址),
- * 不随语言。tone 供前端着色,文案里不写形容词。
+ * key 由前端映射文案,value 为不随语言变化的数据,tone 为显示色调。
  */
 export interface ComponentFactOut {
   key: string;

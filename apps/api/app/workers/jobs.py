@@ -1,6 +1,4 @@
-"""定时任务清单(单一事实源):id、执行函数、归属组件、触发器与周期。
-`workers/main.py` 据此注册 APScheduler,`components.scheduled_jobs_for` 据此分片;
-新增定时任务只在这里加一行,并给它归属组件(K8s 权限随组件收窄)。"""
+"""定时任务清单及组件过滤;workers/main.py 据此注册 APScheduler。"""
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -31,12 +29,12 @@ class ScheduledJob:
     id: str
     fn: JobFn
     component: WorkerComponent
-    period_seconds: float  # 单轮超过其 80% 打 warning(_timed_job)
-    trigger: dict[str, Any]  # APScheduler 触发器参数:{"trigger": "interval", "minutes": 5} 或 cron
-    max_instances: int | None = None  # 上一轮未完不并发起第二轮
-    coalesce: bool = True  # 积压的多次触发合并成一次
-    misfire_grace_time: int | None = None  # misfire 宽限(APScheduler 默认 1 秒)
-    run_immediately: bool = False  # 启动即首跑
+    period_seconds: float
+    trigger: dict[str, Any]
+    max_instances: int | None = None
+    coalesce: bool = True
+    misfire_grace_time: int | None = None
+    run_immediately: bool = False
 
 
 def _interval(**kwargs: int) -> dict[str, Any]:
@@ -54,8 +52,6 @@ CORE, TENANT_MGR, NODE_MGR, PREWARM = (
     WorkerComponent.PREWARM,
 )
 
-# 定时任务先抢 pg advisory lock 单实例执行(例外:outbox_reaper / close_expired_orders /
-# cleanup_expired_rows 为条件 UPDATE/DELETE,不抢锁)。日界类任务按北京日(UTC 16:xx)。
 JOBS: tuple[ScheduledJob, ...] = (
     ScheduledJob(
         "outbox_reaper", reap_stuck_running, CORE, 300, _interval(minutes=5), coalesce=False
@@ -72,7 +68,6 @@ JOBS: tuple[ScheduledJob, ...] = (
         _cron(minute=2),
         misfire_grace_time=1800,
     ),
-    # UTC 16:10 = 北京 00:10:盘费日界按北京日(见 timeutil.billing_day_floor)
     ScheduledJob(
         "daily_disk_settlement",
         settle_daily_disks,
@@ -81,7 +76,6 @@ JOBS: tuple[ScheduledJob, ...] = (
         _cron(hour=16, minute=10),
         misfire_grace_time=3600,
     ),
-    # 排在日结之后:UTC 16:30 = 北京 00:30
     ScheduledJob(
         "fund_reconcile",
         reconcile_funds,
@@ -107,7 +101,6 @@ JOBS: tuple[ScheduledJob, ...] = (
         _interval(minutes=2),
         max_instances=1,
     ),
-    # UTC 19 = 北京 03:00 低峰
     ScheduledJob(
         "cleanup_expired_rows",
         cleanup_expired_rows,
@@ -122,7 +115,6 @@ JOBS: tuple[ScheduledJob, ...] = (
     ScheduledJob(
         "prewarm_patrol", prewarm_patrol, PREWARM, 60, _interval(seconds=60), max_instances=1
     ),
-    # 立即首跑:shared 档门禁读能力缓存,不能等首个周期
     ScheduledJob(
         "node_spec_patrol",
         node_spec_patrol,
@@ -140,7 +132,6 @@ JOBS: tuple[ScheduledJob, ...] = (
         _interval(seconds=30),
         max_instances=1,
     ),
-    # 包周期到期链路:预警 → 自动续费 → 到期停机 → 冻结(回收仍由 balance_patrol 做)
     ScheduledJob(
         "subscription_patrol",
         subscription_patrol,
@@ -149,7 +140,6 @@ JOBS: tuple[ScheduledJob, ...] = (
         _interval(minutes=30),
         max_instances=1,
     ),
-    # 工单滞留巡检:pending_staff 超 24h → admin_alerts warning
     ScheduledJob(
         "ticket_stale_patrol",
         stale_ticket_patrol,

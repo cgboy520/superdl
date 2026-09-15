@@ -1,4 +1,3 @@
-# 断言 Prometheus 计数器的 ._value(白盒直探)
 # pyright: reportPrivateUsage=false
 """节点台账巡检:铺行收敛/未打标可见/装机登记兜底/Missing 保留删行/label 收敛与失败自愈。"""
 
@@ -19,23 +18,20 @@ pytestmark = pytest.mark.usefixtures("fake_auto_ready")
 
 async def test_patrol_converges_and_labels(sm, fake_auto_ready):
     counts = await node_spec_patrol(sm)
-    assert counts["upserted"] == 4  # fake 四池各一节点(kata / hami / mig / cpu)
+    assert counts["upserted"] == 4
     async with sm() as session:
         rows = {r.node_name: r for r in (await session.execute(select(NodeSpec))).scalars()}
     assert rows["fake-hami-node-1"].gpu_model == "RTX4090"
-    assert rows["fake-hami-node-1"].vram_gb == 24  # DEFAULT_VRAM_GB 兜底
+    assert rows["fake-hami-node-1"].vram_gb == 24
     assert rows["fake-mig-node-1"].gpu_model == "H100"
-    # cpu 池无卡机:0 卡、无型号,台账照样收敛
     assert rows["fake-cpu-node-1"].gpu_count == 0
     assert not rows["fake-cpu-node-1"].gpu_model
-    # label 收敛已写入 fake
     assert fake_auto_ready.node_labels["fake-hami-node-1"]["superdl.io/gpu-model"] == "RTX4090"
     async with sm() as session:
         row = (
             await session.execute(select(NodeSpec).where(NodeSpec.node_name == "fake-hami-node-1"))
         ).scalar_one()
         assert row.label_synced is True
-    # 二轮幂等
     counts2 = await node_spec_patrol(sm)
     assert counts2["upserted"] == 4 and counts2["removed"] == 0
 
@@ -57,7 +53,7 @@ async def test_unlabeled_node_visible(sm, fake_auto_ready):
             await session.execute(select(NodeSpec).where(NodeSpec.node_name == "rogue-node"))
         ).scalar_one()
     assert row.unlabeled is True and row.pool_label is None
-    assert row.gpu_model == "RTX4090"  # GFD 标签兜底归一化
+    assert row.gpu_model == "RTX4090"
 
 
 async def test_missing_then_removed(sm, fake_auto_ready):
@@ -79,7 +75,6 @@ async def test_missing_then_removed(sm, fake_auto_ready):
             await session.execute(select(NodeSpec).where(NodeSpec.node_name == "gone-node"))
         ).scalar_one()
         assert row.status == "Missing"
-        # 篡改 last_seen 到 8 天前 → 下轮删行
         row.last_seen = datetime.now(UTC) - timedelta(days=8)
         await session.commit()
     counts = await node_spec_patrol(sm)
@@ -110,7 +105,6 @@ async def test_gfd_version_labels_fill_and_follow_upgrade(sm, fake_auto_ready):
             await session.execute(select(NodeSpec).where(NodeSpec.node_name == "gfd-node"))
         ).scalar_one()
     assert row.driver_version == "580.65" and row.cuda_version == "12.8"
-    # 节点升级驱动 → GFD 标签变 → 下一轮巡检跟随
     fake_auto_ready.unlabeled_nodes[-1] = replace(
         fake_auto_ready.unlabeled_nodes[-1],
         driver_version_label="610.57.04",
@@ -160,7 +154,7 @@ async def test_enrollment_report_wins_over_gfd(sm, fake_auto_ready):
             driver_version="580.65",
             cuda_version="12.8",
         )
-    await reconcile_enrollments_once(sm)  # fake 集群里该节点 Ready 且池匹配 → joined
+    await reconcile_enrollments_once(sm)
     await node_spec_patrol(sm)
     async with sm() as session:
         row = (
@@ -199,15 +193,13 @@ async def _enroll_and_join_attempt(sm, *, hostname: str, pool: str) -> None:
 
 
 async def test_tampered_pool_label_is_corrected_and_cordoned(sm, fake_auto_ready):
-    """节点上出现平台没写过的池标签(只有 cluster-admin 手工 kubectl 能造成):
-    按期望池改回、cordon、计 critical 指标。登记本身照常 joined——池标签不是节点说了算的,
-    所以不存在「因池不符而入网失败」这条路。"""
+    """池标签漂移时恢复期望池、cordon 并记录指标,登记仍为 joined。"""
     from app.modules.nodes.models import NodeEnrollment
 
     fake_auto_ready.inject_node(
         NodeInfo(
             name="tampered-1",
-            pool_label="kata",  # 有人手工打上的,平台登记的是 cpu
+            pool_label="kata",
             gpu_model_label="RTX4090",
             gpu_total=8,
             gpu_used=0,
@@ -225,32 +217,26 @@ async def test_tampered_pool_label_is_corrected_and_cordoned(sm, fake_auto_ready
 
     counts = await node_spec_patrol(sm)
 
-    # (a) 标签按登记改回 cpu
     assert counts["pool_label_corrected"] == 1
     assert fake_auto_ready.node_labels["tampered-1"]["superdl.io/pool"] == "cpu"
-    # (b) 同时停调度
     assert counts["pool_mismatch_cordoned"] == 1
     async with sm() as session:
         row = (
             await session.execute(select(NodeSpec).where(NodeSpec.node_name == "tampered-1"))
         ).scalar_one()
         assert row.desired_unschedulable is True
-        # 与管理端手工 cordon 同一条路径:期望态落台账 + outbox 入队
         tasks = (
             await session.execute(select(OutboxTask).where(OutboxTask.type == "node.cordon"))
         ).scalars()
         assert [t.payload["node_name"] for t in tasks] == ["tampered-1"]
-    # 本轮巡检阶段 D 已按期望态收敛
     assert "tampered-1" in fake_auto_ready.cordoned_nodes
 
-    # 二轮不重复入队 cordon,自声明标签没变就继续纠偏
     counts2 = await node_spec_patrol(sm)
     assert counts2["pool_mismatch_cordoned"] == 0
 
 
 async def test_switch_pool_converges_without_spoof_alarm(sm, fake_auto_ready):
-    """管理端切池:巡检按期望池整套下发标签,但**不**计冒名指标、不重复 cordon。
-    挂了说明运维每切一次池就触发一条 critical NodePoolLabelMismatch,告警失去意义。"""
+    """管理端切池后巡检收敛标签,不计冒名指标、不重复 cordon。"""
     from app.core.k8s.base import GPU_WORKLOAD_CONFIG_LABEL
     from app.core.metrics import NODE_POOL_LABEL_MISMATCH_TOTAL
     from app.modules.nodes import service
@@ -258,7 +244,7 @@ async def test_switch_pool_converges_without_spoof_alarm(sm, fake_auto_ready):
     fake_auto_ready.inject_node(
         NodeInfo(
             name="switcher-1",
-            pool_label="hami",  # 标签还没收敛
+            pool_label="hami",
             gpu_model_label="RTX4090",
             gpu_total=8,
             gpu_used=0,
@@ -280,8 +266,8 @@ async def test_switch_pool_converges_without_spoof_alarm(sm, fake_auto_ready):
     counts = await node_spec_patrol(sm)
 
     assert counts["pool_label_corrected"] == 1
-    assert counts["pool_mismatch_cordoned"] == 0  # 切池时已 cordon,不重复入队
-    assert NODE_POOL_LABEL_MISMATCH_TOTAL._value.get() == before  # 切池不是冒名
+    assert counts["pool_mismatch_cordoned"] == 0
+    assert NODE_POOL_LABEL_MISMATCH_TOTAL._value.get() == before
     labels = fake_auto_ready.node_labels["switcher-1"]
     assert labels["superdl.io/pool"] == "kata"
     assert labels[GPU_WORKLOAD_CONFIG_LABEL] == "vm-passthrough"

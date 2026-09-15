@@ -1,4 +1,4 @@
-/** nodes 路由 validateSearch:node 深链与 q/pool/status 筛选白名单。挂了 = 节点筛选不再落 URL,或非法状态穿透到客户端过滤。 */
+/** 节点路由深链与 q/pool/status 筛选白名单测试。 */
 import { describe, expect, it } from "vitest";
 
 import { Route } from "./nodes";

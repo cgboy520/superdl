@@ -84,7 +84,7 @@ async def credit(
     user_id: int,
     amount: Decimal,
     *,
-    type_: str,  # recharge / refund / adjust
+    type_: str,
     ref_type: str | None = None,
     ref_id: str | None = None,
     remark: str | None = None,
@@ -110,12 +110,10 @@ async def debit(
     allow_negative: bool,
     allow_frozen: bool = False,
 ) -> BalanceLedger:
-    """扣款。allow_negative 为必填关键字,每个调用点显式表态:
-    结算扣款(小时账单、盘日费)与管理员调账扣减允许透支;「先付后用」的同步消费不允许。
+    """持钱包行锁扣款并写流水,返回已 flush 的流水行;不提交。
 
-    allow_frozen(默认 False):扣款后余额不得击穿 frozen;唯一合法 True 的场景是对已发生消费的
-    事后收款(小时结算/盘日费,搭配 allow_negative=True)。
-    返回刚写入的流水行(已 flush,id 可用)。
+    allow_negative=False 禁止负余额;allow_frozen=False 禁止余额低于 frozen。
+    仅已发生消费的小时结算与盘日费可同时启用两项;预付消费不得启用。
     """
     amount = as_amount(amount)
     if amount <= 0:
@@ -125,7 +123,6 @@ async def debit(
     if not allow_negative and new_balance < 0:
         raise AppError(ErrorCode.INSUFFICIENT_BALANCE, key="billing.insufficientBalance")
     if not allow_frozen and new_balance < wallet.frozen:
-        # 击穿冻结额:文案与裸余额不足区分开
         raise AppError(
             ErrorCode.INSUFFICIENT_BALANCE,
             key="billing.insufficientAvailableFrozen",
@@ -158,14 +155,11 @@ async def get_available_balance(session: AsyncSession, user_id: int) -> Decimal:
 
 
 async def refundable_capacity(session: AsyncSession, user_id: int) -> Decimal:
-    """可退余额:Σ充值 − Σ消费 − Σ已退 − Σ负向调账,下限 0。正向 adjust 不进可退额。
-    退款申请与打款两处都按此封顶。
-    """
+    """返回排除正向 adjust 后的流水净额,下限为零;退款申请与打款须按此封顶。"""
     total = (
         await session.execute(
             select(
                 func.coalesce(
-                    # adjust 只计负向
                     func.sum(
                         case(
                             (BalanceLedger.type == "adjust", func.least(BalanceLedger.amount, 0)),
@@ -211,24 +205,19 @@ async def assert_can_afford(
     additional_hourly: Decimal = Decimal("0.00"),
     additional_daily_disk: Decimal = Decimal("0.00"),
 ) -> None:
-    """燃烧率感知的开户前校验:余额 ≥ (在途实例时费 + 待燃时费 + additional_hourly)
-    × afford_cover_hours + (在途盘日费 + additional_daily_disk) × disk_grace_days。
+    """先锁钱包,再校验可用余额是否覆盖现有、待启动与新增资源的费用;不扣款。
 
-    必须在调用方事务内调用,调用方同一事务内完成资源创建/开机并 commit
-    (本函数先 FOR UPDATE 锁钱包行)。「在途」= running 实例 + active 数据盘;
-    「待燃」= creating/starting 实例(orchestrator.pending_hourly,内部并入)。
-    不足抛 INSUFFICIENT_BALANCE,params 含 balance / required / inflight。只校验不扣款。
+    小时费按 afford_cover_hours、盘日费按 disk_grace_days 计,运行中的包周期实例不计时费。
+    不足抛 INSUFFICIENT_BALANCE,params 含 balance/required/inflight。
+    调用方须在同一事务内完成资源创建或开机并提交。
     """
-    # 必须延迟 import:orchestrator.service 与本模块循环依赖
-    locked = await lock_wallet(session, user_id)  # 先锁再统计
+    locked = await lock_wallet(session, user_id)
     policies = await get_runtime_config(session)
 
-    # 锁内只查本用户
     running = await orchestrator_queries.running_instances_of_user(session, user_id)
     pending = await orchestrator_queries.pending_hourly(session, user_id)
     inflight_hourly = (
         sum(
-            # 包周期实例不进燃烧率
             (
                 hourly_cost(i.price_hourly, i.gpu_count)
                 for i in running
@@ -308,7 +297,6 @@ async def hourly_bills_page(
     page_items, next_cursor = await paginate_by_id(
         session, stmt, id_col=BillHourly.id, cursor=cursor, limit=limit
     )
-    # 补实例名供账单页展示(实例行释放后仍保留)
     names = await orchestrator_queries.instance_names(session, [r.instance_id for r in page_items])
     items = []
     for r in page_items:
@@ -328,9 +316,7 @@ class ConsumptionSummary:
 async def consumption_summary(
     session: AsyncSession, user_id: int, start: datetime, end: datetime
 ) -> ConsumptionSummary:
-    """[start, end) 窗口内的消费汇总:GPU 时费按实例归因 + 数据盘日费合计。
-    月度汇总与当日消费共用同一口径;items 补实例名。
-    """
+    """按账单归属期汇总 [start, end) 的实例时费与盘日费;items 含实例名与计费秒数。"""
     gpu_rows = (
         (
             await session.execute(
@@ -377,7 +363,7 @@ async def consumption_summary(
 
 
 async def billed_by_instance(session: AsyncSession, start, end) -> dict[int, Decimal]:
-    """对账用:窗口内各实例的事件计费合计(bills_hourly)。"""
+    """按 hour_start 汇总 [start, end) 内各实例的小时账单金额。"""
     rows = (
         (
             await session.execute(
@@ -395,7 +381,7 @@ async def billed_by_instance(session: AsyncSession, start, end) -> dict[int, Dec
 async def balances_by_user(
     session: AsyncSession, user_ids: list[int] | None = None
 ) -> dict[int, Decimal]:
-    """各用户余额。user_ids 给定则只聚合这些用户。"""
+    """返回已有钱包的用户余额;user_ids 非 None 时仅查询指定用户。"""
     stmt = select(Wallet.user_id, Wallet.balance)
     if user_ids is not None:
         stmt = stmt.where(Wallet.user_id.in_(user_ids))
@@ -406,7 +392,7 @@ async def balances_by_user(
 async def consumed_by_user(
     session: AsyncSession, user_ids: list[int] | None = None
 ) -> dict[int, Decimal]:
-    """累计消费(ledger consume 合计的绝对值)。user_ids 给定则只聚合这些用户。"""
+    """返回各用户 consume 流水合计的相反数;user_ids 非 None 时仅查询指定用户。"""
     stmt = (
         select(BalanceLedger.user_id, func.coalesce(-func.sum(BalanceLedger.amount), 0))
         .where(BalanceLedger.type == "consume")

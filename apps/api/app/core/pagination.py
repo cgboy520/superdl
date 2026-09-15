@@ -19,7 +19,6 @@ MAX_LIMIT = 100
 class Page[T](BaseModel):
     items: list[T]
     next_cursor: str | None = None
-    # 可选精确计数(默认不算)
     total: int | None = None
 
 
@@ -55,7 +54,7 @@ def clamp_limit(limit: int | None) -> int:
 def slice_page[T](
     rows: Sequence[T], lim: int, key: Callable[[T], int]
 ) -> tuple[list[T], str | None]:
-    """lim+1 取行切页:满页回 (前 lim 行, 第 lim 行 key 编码的 next_cursor),否则 (全部行, None)。"""
+    """行数超过 lim 时截取前 lim 行并生成末行游标,否则返回全部行和 None;lim 须为正。"""
     if len(rows) > lim:
         return list(rows[:lim]), encode_cursor(key(rows[lim - 1]))
     return list(rows), None
@@ -69,8 +68,7 @@ async def paginate_by_id[RowT](
     cursor: str | None,
     limit: int | None,
 ) -> tuple[list[RowT], str | None]:
-    """id 降序游标分页骨架:stmt 只带过滤与 .order_by(id_col.desc());本函数 clamp_limit → 解游标 →
-    id < last → limit(lim+1) → slice_page,返回 (前 lim 行, next_cursor)。"""
+    """按 id 降序分页;调用方须在 stmt 设置 id_col.desc() 排序,本函数只过滤和限行。"""
     lim = clamp_limit(limit)
     last_id = decode_cursor_int(cursor)
     if last_id is not None:

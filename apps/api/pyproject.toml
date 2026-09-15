@@ -12,7 +12,7 @@ dependencies = [
     "pydantic>=2.13",
     "pydantic-settings>=2.15",
     "pyjwt>=2.13",
-    "bcrypt>=5.0,<6", # 5.x 起 72 字节上限抛 ValueError,主版本钉住防行为漂移
+    "bcrypt>=5.0,<6",
     "structlog>=26.1",
     "prometheus-client>=0.26",
     "apscheduler>=3.11,<4",
@@ -48,12 +48,9 @@ target-version = "py313"
 select = [
     "E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF", "ASYNC", "DTZ", "T20",
     "ARG", "PERF", "PIE",
-    # 函数内 import 只许出现在 wiring / lifespan 这类副作用注册点(per-file-ignores 放行)
     "PLC0415",
-    # 复杂度上限:超了就拆函数,不加 noqa
     "C901", "PLR0912", "PLR0915",
 ]
-# B008: FastAPI Depends() 默认参数;RUF001/2/3: 中文注释里的 ×、· 等符号
 ignore = ["SIM108", "B008", "RUF001", "RUF002", "RUF003"]
 
 [tool.ruff.lint.isort]
@@ -68,10 +65,8 @@ max-statements = 60
 
 [tool.ruff.lint.per-file-ignores]
 "alembic/*" = ["I"]
-# 副作用注册 / 生命周期内的延迟 import
 "app/wiring.py" = ["PLC0415"]
 "app/main.py" = ["PLC0415"]
-# 第三方支付 SDK 无 stub 且构造期加载,按需 import
 "app/modules/billing/payment_channels.py" = ["PLC0415"]
 "tests/*" = ["PLC0415", "ARG", "C901", "PLR0912", "PLR0915"]
 
@@ -80,7 +75,6 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
-# warning 即错误;豁免 testcontainers 的 DeprecationWarning 与第三方 __del__ 的 PytestUnraisableExceptionWarning
 filterwarnings = [
     "error",
     "ignore::DeprecationWarning:testcontainers",
@@ -90,9 +84,7 @@ markers = ["real_k8s: 需真实集群（SUPERDL_TEST_KUBECONFIG 门控，CI kind
 
 [tool.coverage.run]
 source = ["app"]
-# real.py 需真实集群,单测不覆盖
 omit = ["app/export_openapi.py", "app/core/k8s/real.py"]
-# SQLAlchemy async 经 greenlet 跑同步核心
 concurrency = ["greenlet", "thread"]
 
 [tool.coverage.report]
@@ -112,7 +104,6 @@ forbidden_modules = ["app.modules", "app.workers"]
 [[tool.importlinter.contracts]]
 name = "业务模块跨模块访问只经各模块的公开面(service/schemas;orchestrator 另开放 queries/transitions/statemachine/ports;认证依赖经 account.deps)"
 type = "independence"
-# independence 对列出模块两两断言无依赖;ignore 通配逐条列出允许跨模块 import 的公开面
 modules = [
     "app.modules.account",
     "app.modules.catalog",
@@ -131,8 +122,6 @@ ignore_imports = [
     "app.modules.** -> app.modules.*.schemas",
     "app.modules.** -> app.modules.account.deps",
     "app.modules.** -> app.modules.account.deletion",
-    # orchestrator 的只读查询 / 系统侧迁移 / 状态机常量 / 端口池不依赖 billing,
-    # billing 结算与巡检直接 import 它们(service.py 依赖 billing,反向只能走这里)
     "app.modules.** -> app.modules.orchestrator.queries",
     "app.modules.** -> app.modules.orchestrator.transitions",
     "app.modules.** -> app.modules.orchestrator.statemachine",

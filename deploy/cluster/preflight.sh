@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# 只读前置检查(helmfile apply 之前跑)。用法:./preflight.sh <full|light>(在 deploy/cluster/ 下执行)
 set -euo pipefail
 
 env_name="${1:-}"
@@ -26,7 +25,7 @@ else
 fi
 
 say "== 前置 Secret(helm 不代建,缺失则组件起不来)=="
-check_secret() { # <ns> <name> <用途>
+check_secret() {
   if kubectl -n "$1" get secret "$2" >/dev/null 2>&1; then
     ok "$1/$2($3)"
   else
@@ -35,7 +34,6 @@ check_secret() { # <ns> <name> <用途>
 }
 check_secret monitoring superdl-alert-token "Alertmanager→平台告警 webhook token"
 check_secret monitoring superdl-smtp-password "Alertmanager 邮件通道"
-# JWT 签发密钥占位检测(只报键名,不回显值)
 if kubectl -n superdl get secret superdl-auth >/dev/null 2>&1; then
   jwt_secret=$(kubectl -n superdl get secret superdl-auth \
     -o jsonpath='{.data.SUPERDL_JWT_SECRET}' 2>/dev/null | base64 -d 2>/dev/null || true)
@@ -51,11 +49,9 @@ else
 fi
 if grep -qE '^\s*acmeDns:\s*\{[^}]*enabled:\s*true' "environments/$env_name.yaml"; then
   check_secret cert-manager acme-dns-account "acme-dns 账户凭据(acmeDNS solver,建法见 runbooks/acme-dns.md)"
-  # acmedns.json 以被验证的域为键,两张泛域名证书各要一个键(app.<域> / svc.<域>)
   if kubectl -n cert-manager get secret acme-dns-account >/dev/null 2>&1; then
     acmedns_keys="$(kubectl -n cert-manager get secret acme-dns-account       -o jsonpath='{.data.acmedns\.json}' 2>/dev/null | base64 -d 2>/dev/null || true)"
     for zone in app svc; do
-      # 键名与 05-cert-manager.yaml 的域同源,换域一起改
       if [[ "$acmedns_keys" == *"\"$zone."* ]]; then
         ok "acme-dns 账户含 $zone.<域> 的委托键"
       else
@@ -70,12 +66,8 @@ if [[ "$env_name" == "full" ]]; then
   check_secret monitoring grafana-admin "Grafana 管理员口令(light 档关 Grafana,不需要)"
 fi
 
-# Harbor 不在本脚本校验范围(管理端「平台配置 · 镜像仓库」测试连接;superdl-registry-pull 由 scripts/release.sh 校验)。
-# 只查 helmfile apply 直接消费的 values/ 与 raw manifest;rke2/*.yaml 是分发模板,占位由 ansible / node-join.sh 替换
 say "== values/ 占位符残留(未替换直接 apply 会让组件起不来;kps.yaml 未替换则告警静默)=="
 placeholder_files=(values/kps.yaml acme-dns.yaml)
-# k8sServiceHost 的真值按档位分处:full 填控制面 VIP(基础文件),light 单 server 无 VIP,
-# 由覆盖文件填该机 IP 并压过基础文件——所以两档各扫各的,别扫对方那份
 if grep -qE '^\s*cilium:\s*\{[^}]*enabled:\s*true' "environments/$env_name.yaml"; then
   if [[ "$env_name" == "light" ]]; then
     placeholder_files+=(values/light/cilium-light.yaml)
@@ -91,7 +83,6 @@ for f in "${placeholder_files[@]}"; do
     ok "$f 不适用(environments/$env_name.yaml acmeDns.enabled=false)"
     continue
   fi
-  # 只扫非注释行
   if grep -vE '^\s*#' "$f" | grep -qE '<server-ip>|CHANGE_ME|example\.com'; then
     miss "$f 仍有 <server-ip>/CHANGE_ME/example.com 占位符未替换"
   else
@@ -100,8 +91,6 @@ for f in "${placeholder_files[@]}"; do
 done
 
 say "== 分发模板卫生(rke2/k3s server-config 是模板,不是渲染产物)=="
-# agent-token 必须在模板里且不被注释(否则 agent 回落用 server token);值必须保持 CHANGE_ME 占位,
-# 真值经 group_vars/servers.yml(不入 git)或 -e 注入
 for tpl in rke2/server-config.yaml k3s/server-config.yaml; do
   [[ -f "$tpl" ]] || continue
   if grep -qE '^\s*#\s*agent-token:' "$tpl"; then
@@ -124,8 +113,6 @@ if [[ "$env_name" == "full" ]]; then
 fi
 
 say "== Gateway API CRD(channel 首装即定,事后换不回去)=="
-# 必须是 experimental channel(standard→experimental 被 safe-upgrades VAP 拒绝,只能删净 CRD 重装)。
-# CRD 由 helmfile presync 的 ./gateway-api-crds.sh 装,首装时无 CRD 属正常
 gw_crd=gateways.gateway.networking.k8s.io
 if kubectl get crd "$gw_crd" >/dev/null 2>&1; then
   gw_channel=$(kubectl get crd "$gw_crd" \
@@ -148,9 +135,7 @@ fi
 
 say "== 应用入口(../app)=="
 app_gateway=../app/k8s/04-gateway.yaml
-# 管理端白名单占位符是 192.0.2.0/24(../app/k8s/04-gateway.yaml superdl-admin-allowlist)
 if [[ -f "$app_gateway" ]]; then
-  # 只扫非注释行
   if grep -vE '^\s*#' "$app_gateway" | grep -q '192\.0\.2\.0/24'; then
     miss "$app_gateway 管理端白名单仍是 192.0.2.0/24 占位(替换为办公网/跳板机出口 CIDR)"
   else
@@ -159,9 +144,7 @@ if [[ -f "$app_gateway" ]]; then
 fi
 
 say "== 资金库 PITR(实际 RPO 保障:cnpg 档或托管 PG 书面确认,二者其一)=="
-# 每日 pg_dump RPO=24h;分钟级 RPO 靠 cnpg WAL 归档或托管 PG PITR
 if grep -qE '^\s*cnpg:\s*\{[^}]*enabled:\s*true' "environments/$env_name.yaml"; then
-  # 自建 cnpg 档:S3 归档占位符必须替换 + 集群内 ScheduledBackup 在跑
   if grep -qE 'CHANGE_ME' values/cnpg-cluster.yaml; then
     miss "values/cnpg-cluster.yaml 仍有 CHANGE_ME 占位(S3 endpoint/bucket/region 未替换,PITR 不会真正工作)"
   else
@@ -177,16 +160,13 @@ else
   if [[ "${SUPERDL_MANAGED_PG_PITR_ACK:-}" == "yes" ]]; then
     ok "托管 PG PITR 已书面确认(SUPERDL_MANAGED_PG_PITR_ACK=yes)"
   elif [[ "$env_name" == "full" ]]; then
-    # full 档阻断:须启用 cnpg 或书面确认托管 PG PITR
     miss "full 档必须启用 cnpg(environments/$env_name.yaml 置 cnpg.enabled=true)或确认托管 PG 已开 PITR 后以 SUPERDL_MANAGED_PG_PITR_ACK=yes 重跑——资金库 24h RPO 不可接受"
   else
-    # light 档提示不阻断
     say "  ⚠ cnpg.enabled=false 且未登记托管 PG PITR 确认:确认托管 PG 已开 PITR+保留策略后以 SUPERDL_MANAGED_PG_PITR_ACK=yes 重跑可消除本提示;或启用 cnpg 档(environments/$env_name.yaml)。提示项,不阻断"
   fi
 fi
 
 say "== 准入策略(ValidatingAdmissionPolicy 必须 Deny 生效)=="
-# 七个 Binding 全部按 Deny 卡(缺 Binding = fail-open)。策略由 ./apply.sh 下发,scripts/release.sh 滚动前二次断言
 for binding in superdl-platform-sa-scope superdl-tenant-pod-baseline superdl-node-field-scope \
   superdl-global-pod-guard superdl-platform-pod-secret-scope superdl-platform-job-secret-scope \
   superdl-node-delete-scope; do
@@ -199,15 +179,12 @@ for binding in superdl-platform-sa-scope superdl-tenant-pod-baseline superdl-nod
   else
     miss "ValidatingAdmissionPolicyBinding $binding validationActions=[$actions] 不含 Deny(仓库里七条都是 Deny:集群里被人改成 Audit 了?)"
   fi
-  # Binding 在而 Policy 不在 = 静默失效
   if ! kubectl get validatingadmissionpolicy "$binding" >/dev/null 2>&1; then
     miss "ValidatingAdmissionPolicy $binding 不存在而 Binding 在:策略被 apiserver 拒收(多为 CEL 写错),当前等于全放行"
   fi
 done
 
 say "== apiserver 准入插件 NodeRestriction(平台落点标签不可被 kubelet 自打的唯一依据)=="
-# deploy/app/k8s 的 nodeSelector 用 node-restriction.kubernetes.io/superdl-infra,依赖此插件。
-# rke2 读 kube-system 静态 Pod 的 command;k3s 读本机 /etc/rancher/<distro>/config.yaml
 nr_seen=0
 nr_ok=0
 api_cmd="$(kubectl -n kube-system get pods -l component=kube-apiserver,tier=control-plane \
@@ -238,7 +215,6 @@ if [[ "$infra_nodes" -ge 1 ]]; then
 else
   miss "无节点带 node-restriction.kubernetes.io/superdl-infra=true:deploy/app/k8s 的 api/worker/前端/Envoy 数据面全部 Pending。由 deploy/ansible/site.yml 装机后打;手工补:kubectl label nodes -l node-role.kubernetes.io/control-plane node-restriction.kubernetes.io/superdl-infra=true"
 fi
-# 反向:GPU 池节点禁止带 infra 标签
 gpu_infra=$(kubectl get nodes -l 'node-restriction.kubernetes.io/superdl-infra=true,superdl.io/pool' \
   -o name 2>/dev/null | grep -c . || true)
 if [[ "$gpu_infra" -eq 0 ]]; then
@@ -248,20 +224,17 @@ else
 fi
 
 say "== 节点加入凭据(agent token 必须 ≠ server node-token)=="
-# 两个文件只在 server 节点上,只有在 server 上跑才能自动核对;别处以 SUPERDL_AGENT_TOKEN_ACK=yes 登记人工核对
 tok_seen=0
 for d in rke2 k3s; do
   cfg="/etc/rancher/$d/config.yaml"
   ntok="/var/lib/rancher/$d/server/node-token"
   [[ -r "$cfg" && -r "$ntok" ]] || continue
   tok_seen=1
-  # 取不到即空串
   agent_tok="$(sed -nE 's/^agent-token:[[:space:]]*"([^"]*)".*$/\1/p' "$cfg" | head -1)"
-  if [[ -z "$agent_tok" ]]; then   # 未加引号的写法
+  if [[ -z "$agent_tok" ]]; then
     agent_tok="$(sed -nE 's/^agent-token:[[:space:]]*([^"[:space:]#]+).*$/\1/p' "$cfg" | head -1)"
   fi
   srv_tok="$(tr -d '\n' < "$ntok")"
-  # node-token 形如 K10<ca-hash>::server:<password>,凭据是最后一段
   srv_pass="${srv_tok##*:}"
   if [[ -z "$agent_tok" || "$agent_tok" == *CHANGE_ME* ]]; then
     miss "$cfg 的 agent-token 未设置或仍是占位:agent 会回落用 server token 认证"
@@ -326,7 +299,7 @@ if [[ "$env_name" == "full" ]]; then
 fi
 
 say "== PVC 引用的 StorageClass 存在性(SC 不存在则 PVC 永不绑定,组件静默起不来)=="
-check_sc() { # <sc 名称> <用途>
+check_sc() {
   if kubectl get storageclass "$1" >/dev/null 2>&1; then
     ok "StorageClass $1($2)"
   else
@@ -340,7 +313,6 @@ fi
 
 if [[ "$env_name" == "light" ]]; then
   say "== light(k3s)专项 =="
-  # light 档禁止面向公众生产,须显式确认内网定位
   if [[ "${SUPERDL_LIGHT_INTERNAL_ACK:-}" == "yes" ]]; then
     ok "light 档内网定位已确认(SUPERDL_LIGHT_INTERNAL_ACK=yes)"
   else

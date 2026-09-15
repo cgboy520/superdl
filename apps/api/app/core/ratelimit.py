@@ -22,7 +22,6 @@ class RateLimitCounter(Base):
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
 
-# 单条原子语句:窗口过期重置为 1,否则自增;RETURNING 计数与窗口剩余秒数(DB 侧计算)
 _HIT_SQL = text("""
     INSERT INTO rate_limit_counters AS c (key, window_start, hits, updated_at)
     VALUES (:key, now(), 1, now())
@@ -75,7 +74,6 @@ async def clear_rate_limit(key: str) -> None:
         await session.commit()
 
 
-# 只读预检:不建行、不计数
 _BLOCKED_SQL = text("""
     SELECT hits,
         GREATEST(
@@ -87,8 +85,7 @@ _BLOCKED_SQL = text("""
 
 
 async def ensure_not_rate_limited(key: str, *, max_attempts: int, window_seconds: float) -> None:
-    """已达上限的键直接 429(不计数)。与 check_rate_limit 的口径对齐:
-    现有 hits ≥ max_attempts 时,下一次计数判定必然超限。"""
+    """窗口内 hits >= max_attempts 时抛 429;只读,不计数。"""
     row = await _fetch_window_row(key, window_seconds)
     if row is not None and row.hits >= max_attempts:
         _raise_429(row.retry_after)

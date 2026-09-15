@@ -1,4 +1,4 @@
-"""SSH 公钥的增删列。删除同步摘掉实例快照(依赖 orchestrator.service,故独立于 service.py)。"""
+"""SSH 公钥的增删与查询。"""
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,7 +32,6 @@ async def add_ssh_key(session: AsyncSession, user_id: int, name: str, public_key
         normalized, fingerprint = parse_public_key(public_key)
     except ValueError as exc:
         raise AppError(ErrorCode.SSH_KEY_INVALID, str(exc)) from exc
-    # 查重按本用户口径
     dup = (
         await session.execute(
             select(SshKey).where(SshKey.user_id == user_id, SshKey.fingerprint == fingerprint)
@@ -53,11 +52,11 @@ async def add_ssh_key(session: AsyncSession, user_id: int, name: str, public_key
 
 
 async def delete_ssh_key(session: AsyncSession, user_id: int, key_id: int) -> None:
+    """同事务删除公钥并更新未释放实例的密钥快照;运行中实例下次启动生效。"""
     key = await session.get(SshKey, key_id)
     if key is None or key.user_id != user_id:
         raise not_found()
     await session.delete(key)
-    # 同步摘除该用户未释放实例上的 authorized_keys 快照(实例行是开机下发源);运行中实例下次重启才生效
     stripped = await orchestrator_service.strip_ssh_key_from_instances(
         session, user_id, key.public_key
     )

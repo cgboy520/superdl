@@ -1,7 +1,5 @@
-"""RealOrchestrator 离线单测(不连集群):单位换算、端口区间、NetPol 结构、分页、
-节点容量与份额归账、Service 409/422 核对。真实集群见 test_k8s_real_smoke.py。"""
+"""RealOrchestrator 的对象规约、资源换算与冲突处理。"""
 
-# 白盒用例:直探模块内部
 # pyright: reportPrivateUsage=false
 
 from types import SimpleNamespace
@@ -20,7 +18,7 @@ from app.core.k8s.real import (
 
 
 def _bare() -> RealOrchestrator:
-    """不跑 __init__,只挂方法需要的属性。"""
+    """创建未执行 __init__ 的 RealOrchestrator。"""
     return RealOrchestrator.__new__(RealOrchestrator)
 
 
@@ -56,7 +54,7 @@ class TestEgressPortRanges:
 
 
 class TestTenantNetpol:
-    """NetworkPolicy 离线结构断言(模型字段按 Any 处理)。"""
+    """租户 NetworkPolicy 的入站与出站规则。"""
 
     @staticmethod
     def _orch(pod_cidr: str = "10.42.0.0/16") -> RealOrchestrator:
@@ -69,24 +67,18 @@ class TestTenantNetpol:
         spec: Any = policy.spec
         assert set(spec.policy_types) == {"Ingress", "Egress"}
 
-        # 入方向:网关数据面 ns(不限端口)+ SSH(22,NodePort 显式放行)
         assert len(spec.ingress) == 2
         gateway, ssh = spec.ingress
-        # 网关入方向不限端口(容器端口由用户声明)
         assert gateway.ports is None
-        assert gateway._from[0].pod_selector is None  # 不放行同 ns 其它 Pod
-        # 放行来源 = Envoy 数据面 ns(与 deploy/cluster/helmfile 的 release namespace 同源)
+        assert gateway._from[0].pod_selector is None
         assert gateway._from[0].namespace_selector.match_labels == {
             "kubernetes.io/metadata.name": GATEWAY_DATAPLANE_NAMESPACE
         }
         assert [(p.protocol, p.port) for p in ssh.ports] == [("TCP", 22)]
-        # 只有一条 0.0.0.0/0:节点侧来源按身份放行(deploy/cluster/cilium-policies.yaml),不按地址
         assert len(ssh._from) == 1
         assert ssh._from[0].ip_block.cidr == "0.0.0.0/0"
-        # 排 Pod 网段,不排整个私网
         assert ssh._from[0].ip_block._except == ["10.42.0.0/16"]
 
-        # 出方向:DNS(收敛 CoreDNS Pod)+ 公网 TCP(端口区间)+ 公网 UDP(白名单 53/443)
         assert len(spec.egress) == 3
         dns = spec.egress[0].to[0]
         assert dns.namespace_selector.match_labels == {"kubernetes.io/metadata.name": "kube-system"}
@@ -153,7 +145,7 @@ class TestInstanceSecretHandling:
         orch._create_pod_sync(spec)
         env = created["pod"].spec.containers[0].env
         token_env = next(e for e in env if e.name == "JUPYTER_TOKEN")
-        assert token_env.value is None  # 明文不落 spec
+        assert token_env.value is None
         assert token_env.value_from.secret_key_ref.name == "jupyter-inst-1"
         assert token_env.value_from.secret_key_ref.key == "JUPYTER_TOKEN"
 
@@ -179,7 +171,7 @@ class TestInstanceSecretHandling:
 
 
 class TestDataDiskPvc:
-    """一盘一 PVC 的下发面:建 / 幂等 / 只扩不缩。挂了 = 配额语义(PVC 容量)被破坏。"""
+    """每块数据盘独立 PVC,下发幂等且只扩不缩。"""
 
     def _orch_with_pvc(self, existing_gi: int | None) -> tuple[Any, list[tuple[str, Any]]]:
         orch = _bare()
@@ -224,7 +216,7 @@ class TestDataDiskPvc:
         assert calls == [("patch", "50Gi")]
 
     def test_never_shrinks(self):
-        """缩容会被 apiserver 拒;这里先于请求拦住,免得反复进死信。"""
+        """缩容请求不修改 PVC。"""
         orch, calls = self._orch_with_pvc(50)
         orch._ensure_data_disk_sync("tenant-u1", "disk-abc", 10)
         assert calls == []
@@ -294,7 +286,6 @@ class TestHamiCapacityAccounting:
         )
 
     def test_physical_count_prefers_gfd_label(self):
-        # 2 物理卡 × deviceSplitCount 10 → allocatable 20;物理口径 2
         node = self._node(allocatable_gpu=20, gfd_count="2")
         assert RealOrchestrator._physical_gpu_amount(node) == 2
 
@@ -332,14 +323,12 @@ class TestHamiCapacityAccounting:
         assert RealOrchestrator._gfd_version({}, "driver") == ""
 
     def test_occupancy_by_gpucores(self):
-        # 1 虚卡 × 50% 算力 = 0.5 物理卡当量
         assert (
             RealOrchestrator._pod_gpu_occupancy(
                 {"nvidia.com/gpu": "1", "nvidia.com/gpucores": "50"}
             )
             == 0.5
         )
-        # 2 虚卡 × 30% = 0.6;整卡无 gpucores = 1
         assert (
             RealOrchestrator._pod_gpu_occupancy(
                 {"nvidia.com/gpu": "2", "nvidia.com/gpucores": "30"}
@@ -391,7 +380,6 @@ class TestServiceConflict:
 
         class CoreStub:
             def create_namespaced_service(self, ns: str, svc: Any) -> None:
-                # 只测 SSH(NodePort);jupyter(ClusterIP)恒 409
                 if svc.spec.type != "NodePort":
                     raise _api_exc(409)
                 raise create_exc or _api_exc(409)
@@ -416,7 +404,7 @@ class TestServiceConflict:
 
     def test_same_node_port_is_idempotent_noop(self):
         orch, calls = self._orch(self._existing_svc(31001))
-        orch._create_service_sync(_spec(31001))  # 不抛错
+        orch._create_service_sync(_spec(31001))
         assert calls["patch"] == []
 
     def test_drifted_node_port_is_patched(self):
@@ -435,7 +423,7 @@ class TestServiceConflict:
         orch, calls = self._orch(
             self._existing_svc(31001), _api_exc(422, "provided port is already allocated")
         )
-        orch._create_service_sync(_spec(31001))  # 不抛错
+        orch._create_service_sync(_spec(31001))
         assert calls["patch"] == []
 
     def test_port_taken_by_other_object_raises_nodeporttaken(self):
@@ -582,7 +570,7 @@ class TestServiceWorkloadObjects:
         assert {p.name for p in c.ports} == {"ssh", "jupyter"}
 
     def test_service_pod_restart_always_and_command(self):
-        """restartPolicy=Always(Pod 名 = 实例 uuid,不可重建换名)。"""
+        """服务 Pod 使用 Always 重启策略及配置的启动命令。"""
         pod = self._pod(
             self._svc(command=("python",), args=("-m", "vllm.entrypoints.openai.api_server"))
         )
@@ -590,7 +578,6 @@ class TestServiceWorkloadObjects:
         c = pod.spec.containers[0]
         assert c.command == ["python"]
         assert c.args == ["-m", "vllm.entrypoints.openai.api_server"]
-        # 服务型实例不声明 8888
         assert {p.name for p in c.ports} == {"svc"}
 
     def test_health_path_yields_startup_and_readiness(self):
@@ -608,13 +595,11 @@ class TestServiceWorkloadObjects:
 
 
 class TestDataDiskMount:
-    """挂数据盘的实例 Pod:直挂该盘自己的 PVC、不带 subPath,且仍满足租户准入基线。
-    挂了说明:要么盘挂错(串到别人的盘),要么 Pod 被 superdl-tenant-pod-baseline 拒掉。"""
+    """实例 Pod 直接挂载数据盘 PVC,不带 subPath,并设置 hostUsers=false。"""
 
     def _pod_with_disk(self) -> Any:
         from app.core.k8s.real import build_instance_pod
 
-        # runc 档(hami/mig/cpu)一律 host_users=False,数据盘就是挂进这种 Pod 的
         spec = InstancePodSpec(
             **{**_spec().__dict__, "data_disk_pvc": "disk-" + "a" * 32, "host_users": False}
         )
@@ -627,7 +612,6 @@ class TestDataDiskMount:
         assert vol.persistent_volume_claim.claim_name == "disk-" + "a" * 32
         mount = next(m for m in pod_spec.containers[0].volume_mounts if m.name == "data-disk")
         assert mount.mount_path == "/root/data"
-        # subPath 是共享 PVC 时代的产物;一盘一 PVC 后再带它就是挂错层级
         assert mount.sub_path is None
 
     def test_keeps_tenant_baseline(self):
@@ -643,7 +627,7 @@ class TestDataDiskMount:
 
 
 class TestInstancePodBandwidth:
-    """带宽注解随 spec.annotations 落到 Pod。挂了说明:限速注解丢了,租户出向无上限。"""
+    """带宽注解随 spec.annotations 写入 Pod。"""
 
     def test_annotations_reach_pod_metadata(self):
         from app.core.k8s.real import build_instance_pod
@@ -654,4 +638,4 @@ class TestInstancePodBandwidth:
         )
         pod = cast(Any, build_instance_pod(spec))
         assert pod.metadata.annotations["kubernetes.io/egress-bandwidth"] == "200M"
-        assert pod.spec.host_users is None  # host_users=True 的样板不写该字段
+        assert pod.spec.host_users is None

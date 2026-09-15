@@ -12,7 +12,6 @@ from app.core.timeutil import now_utc
 
 
 def percent_encode(value: str) -> str:
-    # RFC3986:仅 A-Za-z0-9-_.~ 不编码,空格 %20,* %2A
     return urllib.parse.quote(value, safe="")
 
 

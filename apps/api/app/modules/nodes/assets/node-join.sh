@@ -1,33 +1,13 @@
 #!/usr/bin/env bash
-# SuperDL GPU 节点一键加入脚本。
-# 用法(命令由管理端生成;token 经 stdin 落 0600 文件,不进 URL 也不进任何进程 argv):
-#   echo 'sdln_xxx' | sudo sh -c 'umask 077; cat > /run/superdl-join.token; curl -fsSL <API>/api/v1/node-enroll/script | bash -s -- --token-file /run/superdl-join.token; s=$?; rm -f /run/superdl-join.token; exit $s'
-#   wget -qO node-join.sh <API>/api/v1/node-enroll/script && echo 'sdln_xxx' | sudo sh -c 'umask 077; cat > /run/superdl-join.token; bash node-join.sh --token-file /run/superdl-join.token; s=$?; rm -f /run/superdl-join.token; exit $s'
-#
-# 约束:
-# - 脚本本体零密钥;server 地址与 join token 凭注册令牌 POST /bootstrap 换取。
-# - 注册令牌一次性:bootstrap 后换发 progress 令牌落 $STATE_DIR/token(0600),续跑只用它。
-# - k8s_distro 由服务端下发(rke2 / k3s)。
-# - 全幂等:每步落 marker($STATE_DIR/done.d/);已完成重跑直接退出,从头重装须 --force + 新令牌。
-# - 池标签与 GPU operand 标签**一律由平台写,本脚本不碰**:发行版的 node-label 只在首次注册时生效,
-#   留在节点侧只会变成第二事实源。切池因此不需要重跑本脚本(见 docs/reference/nodes.md)。
-# - IOMMU 是装机基线,对全部带卡池都做:它只能开机生效,做成 kata 专属就把重启绑进了切池。
-# - 需重启的步骤合并为一次重启,systemd oneshot 断点续跑,最多 2 次;重启前从 API 重拉自身并校验 script_sha256。
-# - k3s/rke2 安装器先落临时文件、校验内置 sha256 pin 再执行。
-# - phase 取值与后端契约一致:bootstrap precheck nouveau sysctl iommu driver
-#   nvidia_toolkit nvme_vg reboot registries agent_config agent_install agent_start waiting_node
 set -eEuo pipefail
-# umask 077:令牌/配置落盘即 0600;仅日志显式放宽 0644
 umask 077
 
-API_BASE="__API_BASE__" # 服务端下发时替换;可用 --api-base 覆盖(测试用)
-# 路径可经 env 覆盖(仅 bats 测试隔离)
+API_BASE="__API_BASE__"
 STATE_DIR="${SUPERDL_JOIN_STATE_DIR:-/var/lib/superdl-node-join}"
 LOG_FILE="${SUPERDL_JOIN_LOG_FILE:-/var/log/superdl-node-join.log}"
 ETC_DIR="${SUPERDL_JOIN_ETC_DIR:-/etc}"
-RANCHER_STATE_DIR="${SUPERDL_JOIN_RANCHER_STATE_DIR:-/var/lib/rancher}"  # kubelet drop-in 落点 <distro>/agent/etc/kubelet.conf.d
-LVM_IMG_DIR="${SUPERDL_JOIN_LVM_DIR:-/var/lib/superdl-lvm}"  # loop 兜底镜像目录(仅显式选择时用)
-# IOMMU 分组目录:非空 = 直通已生效(可覆盖仅为 bats 造状态)
+RANCHER_STATE_DIR="${SUPERDL_JOIN_RANCHER_STATE_DIR:-/var/lib/rancher}"
+LVM_IMG_DIR="${SUPERDL_JOIN_LVM_DIR:-/var/lib/superdl-lvm}"
 IOMMU_GROUPS_DIR="${SUPERDL_JOIN_IOMMU_DIR:-/sys/kernel/iommu_groups}"
 RESUME_UNIT="superdl-node-join-resume"
 TOKEN=""
@@ -39,18 +19,14 @@ NEED_REBOOT=0
 DRIVER_VERSION=""
 CUDA_VERSION=""
 
-# k3s/rke2 安装器 sha256 pin;上游更新后同步改本值与 deploy/ansible/site.yml 的同名 pin。SUPERDL_JOIN_PIN_* 为 bats 与应急覆盖口
 PIN_K3S_OFFICIAL="${SUPERDL_JOIN_PIN_K3S_OFFICIAL:-ed01f89fd977bf20ac1516bbebf8370bf3ddbaa55dac8aba610956a4c78cc00b}"
 PIN_K3S_CN="${SUPERDL_JOIN_PIN_K3S_CN:-3944aa467eb945b5ff2151a8e4f8d4a5f3a210d31ab39aec81f37606936d0863}"
 PIN_RKE2_OFFICIAL="${SUPERDL_JOIN_PIN_RKE2_OFFICIAL:-42983c86d1da64a92061d83afb57630cedd69241989f1b0673f3db6c3d92ee6b}"
 PIN_RKE2_CN="${SUPERDL_JOIN_PIN_RKE2_CN:-5541410b86d4d19d927d820be85156e787be3fdb24be72507af52932a1d12de1}"
 
-# nvidia-container-toolkit 版本下限(CVE-2025-23266 修复版起)
 NVCTK_MIN_VERSION="${SUPERDL_JOIN_NVCTK_MIN_VERSION:-1.17.8}"
-# 单 Pod PID 上限,落 kubelet.conf.d drop-in;与 deploy/cluster/rke2/kubelet-superdl.conf 同值
 POD_PIDS_LIMIT="${SUPERDL_JOIN_POD_PIDS_LIMIT:-4096}"
 
-# ---------- 参数 ----------
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --token-file) TOKEN_FILE="$2"; shift 2 ;;
@@ -62,15 +38,12 @@ while [[ $# -gt 0 ]]; do
 done
 [[ "$(id -u)" == "0" ]] || { echo "必须 root 执行(sudo bash ...)" >&2; exit 2; }
 
-# ---------- 卸载(本地拆除,不碰业务数据) ----------
-# superdl-nvme VG 与 loop 镜像一律保留,不 vgremove
 if [[ "$UNINSTALL" == "1" ]]; then
   echo "==== $(date -Is) node-join --uninstall ===="
   DISTRO_NAME=""
   for d in rke2 k3s; do
     if [[ -d "$ETC_DIR/rancher/$d" ]] || command -v "$d" >/dev/null 2>&1; then DISTRO_NAME="$d"; fi
   done
-  # 本机是 server 时 agent 相关与 server 配置一律不动
   SERVER_HERE=0
   if [[ "$DISTRO_NAME" == "k3s" ]] && systemctl is-active --quiet k3s.service 2>/dev/null; then SERVER_HERE=1; fi
   if [[ "$DISTRO_NAME" == "rke2" ]] && systemctl is-active --quiet rke2-server.service 2>/dev/null; then SERVER_HERE=1; fi
@@ -78,7 +51,6 @@ if [[ "$UNINSTALL" == "1" ]]; then
   if [[ -n "$AGENT" && "$SERVER_HERE" == "0" ]]; then
     systemctl disable --now "$AGENT" 2>/dev/null || true
   fi
-  # 发行版卸载脚本存在即执行;server 本机跳过
   if [[ -n "$DISTRO_NAME" && "$SERVER_HERE" == "0" ]]; then
     for us in "/usr/local/bin/${DISTRO_NAME}-agent-uninstall.sh" "/usr/local/bin/${DISTRO_NAME}-uninstall.sh"; do
       [[ -x "$us" ]] && { echo "-- 执行 $us"; "$us"; }
@@ -86,13 +58,11 @@ if [[ "$UNINSTALL" == "1" ]]; then
   elif [[ "$SERVER_HERE" == "1" ]]; then
     echo "-- 本机是 ${DISTRO_NAME} server:不卸载发行版、不动 server 配置;池标签需在平台侧摘除(kubectl label node ... superdl.io/pool-)"
   fi
-  # 续跑 oneshot 与 loop 重建 unit
   systemctl disable "${RESUME_UNIT}.service" 2>/dev/null || true
   rm -f "$ETC_DIR/systemd/system/${RESUME_UNIT}.service"
   systemctl disable superdl-nvme-loop.service 2>/dev/null || true
   rm -f "$ETC_DIR/systemd/system/superdl-nvme-loop.service"
   systemctl daemon-reload || true
-  # 本脚本写入的 sysctl / GRUB IOMMU / nouveau 黑名单 / 集群配置
   rm -f "$ETC_DIR/sysctl.d/99-superdl.conf"
   sysctl --system >/dev/null || true
   if [[ -f "$ETC_DIR/default/grub.d/99-superdl.cfg" ]]; then
@@ -120,28 +90,23 @@ fi
 
 mkdir -p "$STATE_DIR/done.d"
 chmod 700 "$STATE_DIR"
-# 日志 0644(不含令牌)
 touch "$LOG_FILE"
 chmod 644 "$LOG_FILE"
 exec > >(tee -a "$LOG_FILE") 2>&1
 echo "==== $(date -Is) node-join 启动 (api=$API_BASE) ===="
 
-# ---------- 基础函数 ----------
 json_escape() { python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'; }
 
-# 令牌经 curl --config 注入 Authorization 头,不进 argv
-use_token_file() { # use_token_file <path>
+use_token_file() {
   TOKEN="$(cat "$1")"
   printf 'header = "Authorization: Bearer %s"\n' "$TOKEN" > "$STATE_DIR/curl.conf"
   chmod 600 "$STATE_DIR/curl.conf"
 }
 
-report() { # report <phase> <state> [message]
+report() {
   local phase="$1" state="$2" message="${3:-}"
   local msg_json extra=""
-  # json_escape 失败不得触发 ERR trap 递归
   msg_json="$(printf '%s' "$message" | json_escape || true)"
-  # 驱动/CUDA 版本在 collect_driver_versions 之后才有值
   if [[ -n "$DRIVER_VERSION" ]]; then extra+=",\"driver_version\":\"$DRIVER_VERSION\""; fi
   if [[ -n "$CUDA_VERSION" ]]; then extra+=",\"cuda_version\":\"$CUDA_VERSION\""; fi
   curl -fsS -m 10 --retry 2 --config "$STATE_DIR/curl.conf" \
@@ -151,11 +116,8 @@ report() { # report <phase> <state> [message]
 }
 
 collect_driver_versions() {
-  # cpu 池留空
   if is_cpu_pool; then return 0; fi
-  # 驱动版本在收尾采集(首装 bootstrap 时驱动未加载);只留数字与点
   DRIVER_VERSION="$({ nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null || true; } | head -1 | tr -cd '0-9.')"
-  # 兼容 "CUDA Version: 12.8" 与新驱动的 "CUDA UMD Version: 13.3"
   CUDA_VERSION="$({ nvidia-smi 2>/dev/null || true; } | sed -n 's/.*CUDA[^:]*Version: \([0-9.]*\).*/\1/p' | head -1)"
 }
 
@@ -167,13 +129,12 @@ on_error() {
 }
 trap on_error ERR
 
-# cpu 池跳过整条 NVIDIA 链路;只在 bootstrap 之后可用
 is_cpu_pool() { [[ "$(cfg_get pool)" == "cpu" ]]; }
 
 marker() { [[ -f "$STATE_DIR/done.d/$1" ]]; }
 mark_done() { touch "$STATE_DIR/done.d/$1"; }
 
-run_step() { # run_step <phase> <fn>
+run_step() {
   CURRENT_PHASE="$1"
   if marker "$1"; then echo "-- $1: 已完成,跳过"; return 0; fi
   echo "== $1 =="
@@ -185,7 +146,6 @@ run_step() { # run_step <phase> <fn>
 
 cfg_get() { python3 -c "import json,sys; v=json.load(open('$STATE_DIR/bootstrap.json')).get('$1',''); print(v if not isinstance(v,list) else ' '.join(v))"; }
 
-# 装载发行版参数(k8s_distro:rke2 / k3s)
 load_distro() {
   DISTRO="$(cfg_get k8s_distro)"
   RANCHER_DIR="$ETC_DIR/rancher/$DISTRO"
@@ -193,7 +153,6 @@ load_distro() {
   SERVER_UNIT="$([[ "$DISTRO" == "k3s" ]] && echo k3s.service || echo rke2-server.service)"
 }
 
-# 本机已是 server(light 单机):不装 agent、不改 server config.yaml,池标签经本机 kubectl 打
 is_server_node() { systemctl is-active --quiet "$SERVER_UNIT" 2>/dev/null; }
 
 server_kubectl() {
@@ -204,15 +163,13 @@ server_kubectl() {
   fi
 }
 
-# ---------- 步骤实现 ----------
 step_bootstrap() {
   local hostname kernel arch os_release gpu_details payload
   hostname="$(hostname)"
   kernel="$(uname -r)"
   arch="$(uname -m)"
-  # shellcheck disable=SC1091  # 运行期 source 目标机文件
+  # shellcheck disable=SC1091
   os_release="$(. /etc/os-release && echo "$PRETTY_NAME")"
-  # 全卡清单 [{name, memory_mib}]:优先 nvidia-smi(无驱动返回非零,须 || true 兜住),取不到退回 lspci 名称
   gpu_details="$({ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits 2>/dev/null || true; } | head -8 | python3 -c '
 import json, sys
 out = []
@@ -225,7 +182,6 @@ for line in sys.stdin:
         entry["memory_mib"] = int(parts[1])
     out.append(entry)
 print(json.dumps(out))')"
-  # 无驱动 → lspci 名称;驱动只报 "NVIDIA Graphics Device" → 名称改用 lspci 方括号内型号
   gpu_details="$(python3 - "$gpu_details" "$({ lspci 2>/dev/null | grep -i 'nvidia' || true; } | sed 's/.*: //' | head -8)" <<'PYEOF'
 import json, re, sys
 smi = json.loads(sys.argv[1])
@@ -242,7 +198,6 @@ elif pci:
 print(json.dumps(smi))
 PYEOF
 )"
-  # 驱动/CUDA 版本在收尾上报(collect_driver_versions)
   payload="$(python3 - "$hostname" "$os_release" "$kernel" "$arch" "$gpu_details" <<'PYEOF'
 import json, sys
 print(json.dumps({"hostname": sys.argv[1],
@@ -254,7 +209,6 @@ PYEOF
     -H "Content-Type: application/json" \
     -d "$payload" "$API_BASE/api/v1/node-enroll/bootstrap" -o "$STATE_DIR/bootstrap.json"
   chmod 600 "$STATE_DIR/bootstrap.json"
-  # 换发的 progress 令牌落盘,此后只用它
   printf '%s' "$(cfg_get progress_token)" > "$STATE_DIR/token"
   chmod 600 "$STATE_DIR/token"
   use_token_file "$STATE_DIR/token"
@@ -265,7 +219,6 @@ step_precheck() {
   case "$(uname -m)" in x86_64 | aarch64) ;; *) echo "仅支持 x86_64 / aarch64(当前 $(uname -m))"; return 1 ;; esac
   command -v python3 >/dev/null || { echo "缺少 python3"; return 1; }
   command -v systemctl >/dev/null || { echo "需要 systemd"; return 1; }
-  # 不用 grep -q(pipefail 下 SIGPIPE 误判);cpu 池不检查
   if is_cpu_pool; then
     echo "-- cpu 池:跳过 NVIDIA GPU 探测"
   else
@@ -274,7 +227,6 @@ step_precheck() {
   local avail_kb
   avail_kb="$(df --output=avail -k / | tail -1 | tr -d ' ')"
   [[ "$avail_kb" -ge $((50 * 1024 * 1024)) ]] || { echo "/ 分区可用空间不足 50G"; return 1; }
-  # server 端口连通性(rke2 缺省 9345,k3s 缺省 6443)
   local server host port default_port=9345
   [[ "$DISTRO" == "k3s" ]] && default_port=6443
   server="$(cfg_get cluster_server_url)"
@@ -294,20 +246,16 @@ EOF
 }
 
 step_sysctl() {
-  # inotify 实例数默认 128,GPU 栈起齐即耗尽
   printf 'user.max_user_namespaces=65536\nfs.inotify.max_user_instances=8192\nfs.inotify.max_user_watches=1048576\n' \
     > "$ETC_DIR"/sysctl.d/99-superdl.conf
   sysctl --system >/dev/null
 }
 
-# IOMMU 是**装机基线**,对全部带卡池都做,不按池分支:它只能开机生效,做成 kata 专属就等于把
-# 一次重启绑进「切池」。iommu=pt 让宿主设备跳过 DMA 翻译,对不做直通的节点没有成本。
 step_iommu() {
   if is_cpu_pool; then echo "-- cpu 池:无卡机,跳过 IOMMU"; return 0; fi
-  # intel_iommu / iommu=pt 是 x86 参数;aarch64 的 SMMU 由固件 ACPI IORT 描述,内核启动即绑,无需 cmdline
   if [[ "$(uname -m)" == "x86_64" && ! -f "$ETC_DIR"/default/grub.d/99-superdl.cfg ]]; then
     mkdir -p "$ETC_DIR"/default/grub.d
-    # shellcheck disable=SC2016  # 变量须由 GRUB 展开,单引号是预期
+    # shellcheck disable=SC2016
     echo 'GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT intel_iommu=on iommu=pt"' \
       > "$ETC_DIR"/default/grub.d/99-superdl.cfg
     update-grub
@@ -341,7 +289,6 @@ step_driver() {
 
 step_nvidia_toolkit() {
   if is_cpu_pool; then echo "-- cpu 池:跳过 nvidia-container-toolkit"; return 0; fi
-  # 已装但低于 NVCTK_MIN_VERSION 的必须升级
   local installed
   installed="$(dpkg-query -W -f='${Version}' nvidia-container-toolkit 2>/dev/null || true)"
   if [[ -n "$installed" ]] && dpkg --compare-versions "$installed" ge "$NVCTK_MIN_VERSION"; then
@@ -361,13 +308,11 @@ step_nvidia_toolkit() {
     apt-get update -qq
     apt-get install -y -qq nvidia-container-toolkit
     installed="$(dpkg-query -W -f='${Version}' nvidia-container-toolkit 2>/dev/null || true)"
-    # 装/升完仍低于下限即失败
     if [[ -z "$installed" ]] || dpkg --compare-versions "$installed" lt "$NVCTK_MIN_VERSION"; then
       echo "!! nvidia-container-toolkit 版本 ${installed:-缺失} 低于安全下限 $NVCTK_MIN_VERSION" >&2
       return 1
     fi
   fi
-  # agent / server 已在跑时重启一次,让 containerd 重新探测 nvidia runtime
   if systemctl is-active --quiet "$AGENT_UNIT" 2>/dev/null; then
     echo "-- $AGENT_UNIT 已运行,重启以探测 nvidia runtime"
     systemctl restart "$AGENT_UNIT"
@@ -380,7 +325,6 @@ step_nvidia_toolkit() {
 step_nvme_vg() {
   local devices
   devices="$(cfg_get nvme_devices)"
-  # 未登记 NVMe 时不自动兜底
   if [[ -z "$devices" ]]; then
     echo "!! 未登记 NVMe 设备:不创建 superdl-nvme VG,也不自动兜底。" \
          "该节点无本地实例盘能力;如需 TopoLVM 本地盘,请在管理端为本节点新建" \
@@ -389,10 +333,8 @@ step_nvme_vg() {
       "未登记 NVMe 设备:跳过实例盘 VG(superdl-nvme),不自动兜底。该节点暂无 TopoLVM 本地实例盘;新建带 NVMe 登记的注册令牌并 --force 重跑即可补齐。"
     return 0
   fi
-  # lvm.conf 落地不新增 phase
   step_lvm_discards
   if vgs superdl-nvme >/dev/null 2>&1; then echo "-- VG 已存在,跳过"; return 0; fi
-  # loop:<GB> 是登记时的显式选择(测试兜底)
   local dev size pvs=()
   for dev in $devices; do
     if [[ "$dev" == loop:* ]]; then
@@ -403,7 +345,6 @@ step_nvme_vg() {
       _write_loop_unit
       echo "-- 按登记选择:用 loop 文件做实例盘(${size}G,仅测试,非专用盘性能)"
     else
-      # pvcreate 前硬检查:设备存在且无签名
       if [[ ! -b "$dev" ]]; then
         echo "!! NVMe 设备不存在:$dev(登记信息有误?管理端核对节点 NVMe 登记)" >&2
         return 1
@@ -421,7 +362,6 @@ step_nvme_vg() {
   vgcreate superdl-nvme "${pvs[@]}"
 }
 
-# lvm.conf issue_discards=1(与 deploy/cluster/topolvm/lvm-config.configmap.yaml 同义);幂等
 step_lvm_discards() {
   local conf="$ETC_DIR/lvm/lvm.conf"
   if grep -q "^[[:space:]]*issue_discards[[:space:]]*=" "$conf" 2>/dev/null; then
@@ -433,7 +373,6 @@ step_lvm_discards() {
 }
 
 _write_loop_unit() {
-  # 开机重建 loop,先于 k3s/rke2-agent
   cat > "$ETC_DIR/systemd/system/superdl-nvme-loop.service" <<EOF
 [Unit]
 Description=SuperDL TopoLVM loop-backed VG (superdl-nvme)
@@ -461,7 +400,6 @@ maybe_reboot() {
     exit 1
   fi
   echo $((count + 1)) > "$STATE_DIR/reboot_count"
-  # 自持久化(管道执行时从 API 重拉自身并校验指纹)
   if [[ -f "${BASH_SOURCE[0]:-/nonexistent}" ]]; then
     cp "${BASH_SOURCE[0]}" "$STATE_DIR/node-join.sh"
   else
@@ -481,7 +419,6 @@ maybe_reboot() {
     fi
   fi
   chmod 700 "$STATE_DIR/node-join.sh"
-  # 续跑用 $STATE_DIR/token
   cat > "$ETC_DIR/systemd/system/${RESUME_UNIT}.service" <<EOF
 [Unit]
 Description=SuperDL node join resume
@@ -510,30 +447,23 @@ step_registries() {
   mkdir -p "$RANCHER_DIR"
   ca="$(cfg_get registry_ca_pem)"
   if [[ -n "$ca" ]]; then
-    # Harbor 私有 CA 0644;registries.yaml 的 ca_file 占位替换为本机发行版目录
     printf '%s\n' "$ca" > "$RANCHER_DIR"/harbor-ca.crt
     chmod 644 "$RANCHER_DIR"/harbor-ca.crt
   else
     rm -f "$RANCHER_DIR"/harbor-ca.crt
   fi
   printf '%s\n' "${content//__RANCHER_DIR__/$RANCHER_DIR}" > "$RANCHER_DIR"/registries.yaml
-  # 600(高级覆盖可能含仓库配置)
   chmod 600 "$RANCHER_DIR"/registries.yaml
 }
 
-# 池标签与 GPU Operator operand 标签**一律由平台写**,本脚本不碰:发行版的 node-label 只在节点首次
-# 注册时生效,改不了已注册节点,留在这里只会变成第二事实源(切池后 config.yaml 永远过时,Node 对象
-# 一旦重建就把旧池带回来)。节点不自声明池,顺带也没有冒名可伪造。见 docs/reference/nodes.md。
 step_agent_config() {
   if is_server_node; then
     echo "-- 本机是 $SERVER_UNIT:不写 agent config;池标签由平台打到节点 $(hostname)"
-    # 驱动/CUDA 版本趁早上报(平台打完标签即判 joined,之后上报 404 属预期)
     collect_driver_versions
     report agent_config running "server 本机:上报驱动版本,等平台打池标签"
     return 0
   fi
   mkdir -p "$RANCHER_DIR"
-  # join token 必须非空
   local join_token server_url
   join_token="$(cfg_get cluster_join_token)"
   server_url="$(cfg_get cluster_server_url)"
@@ -542,7 +472,6 @@ step_agent_config() {
          "检查管理端「平台配置 · 集群接入」与 ansible agent_token(site.yml 有渲染前断言)" >&2
     return 1
   fi
-  # 两个值原样进 YAML:字符集锁死(与 platform_config 的 pattern 同口径),换行/引号 = 注入任意 agent 参数
   if [[ ! "$join_token" =~ ^[A-Za-z0-9:._~+/=-]{16,512}$ ]]; then
     echo "!! cluster_join_token 含非法字符(只许 [A-Za-z0-9:._~+/=-]):拒绝写 agent 配置" >&2
     return 1
@@ -556,7 +485,6 @@ step_agent_config() {
     echo "token: \"$join_token\""
   } > "$RANCHER_DIR"/config.yaml
   chmod 600 "$RANCHER_DIR"/config.yaml
-  # podPidsLimit 走 kubelet 配置 drop-in(不是 kubelet flag)
   local dropin_dir="$RANCHER_STATE_DIR/$DISTRO/agent/etc/kubelet.conf.d"
   mkdir -p "$dropin_dir"
   printf 'apiVersion: kubelet.config.k8s.io/v1beta1\nkind: KubeletConfiguration\npodPidsLimit: %s\n' \
@@ -576,7 +504,6 @@ step_agent_install() {
     echo "-- $DISTRO $want 已安装,跳过"
     return 0
   fi
-  # 安装源受 node_install_mirror 控制(默认 cn,用 rancher-mirror.rancher.cn 的 install 脚本)
   if [[ "$DISTRO" == "k3s" ]]; then
     if [[ "$mirror" == "official" ]]; then
       url="https://get.k3s.io"; pin="$PIN_K3S_OFFICIAL"
@@ -590,7 +517,6 @@ step_agent_install() {
       url="https://rancher-mirror.rancher.cn/rke2/install.sh"; pin="$PIN_RKE2_CN"
     fi
   fi
-  # 先落临时文件,校验 sha256 pin 后执行
   local installer
   installer="$(mktemp "$STATE_DIR/installer.XXXXXX")"
   curl -fsSL "$url" -o "$installer"
@@ -622,7 +548,6 @@ step_agent_start() {
     echo "-- 本机是 $SERVER_UNIT,无 agent 可启动"
     return 0
   fi
-  # Type=notify:enable --now 阻塞到就绪
   systemctl enable --now "$AGENT_UNIT"
   echo "-- ${AGENT_UNIT%.service} 已运行"
 }
@@ -638,13 +563,11 @@ finalize() {
   fi
   rm -f "$ETC_DIR/systemd/system/${RESUME_UNIT}.service"
   systemctl daemon-reload
-  # 清敏感落盘
   rm -f "$STATE_DIR/bootstrap.json" "$STATE_DIR/token" "$STATE_DIR/curl.conf"
   mark_done completed
   echo "==== 完成:节点已启动 ${unit%.service},加入结果以管理端为准 ===="
 }
 
-# ---------- 幂等入口与令牌装载 ----------
 if [[ "$FORCE" == "1" ]]; then
   echo "-- --force:清除本地断点/已下发配置/旧令牌,从头装机(须用管理端新签发的令牌)"
   rm -rf "$STATE_DIR/done.d" "$STATE_DIR/bootstrap.json" "$STATE_DIR/token" \
@@ -655,13 +578,11 @@ elif marker completed; then
   exit 0
 fi
 if marker bootstrap; then
-  # 断点续跑只用盘上的 progress 令牌
   use_token_file "$STATE_DIR/token"
 else
   use_token_file "$TOKEN_FILE"
 fi
 
-# ---------- 主流程 ----------
 if marker bootstrap; then
   echo "-- bootstrap: 已完成,跳过(沿用已下发配置;注册令牌一次性,不重复 bootstrap)"
 else

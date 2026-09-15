@@ -1,9 +1,4 @@
-/** 规格选择器(市场页 full / 部署页 compact 共用一份表格、库存口径与灰置规则)。
- *  full:GPU / CPU 分栏 + GPU 两行 chips(型号 / 档位)或 CPU 无一级 chips,显存 / vCPU / 内存折进「更多筛选」二级行;
- *        chip 只在 0 结果时灰置,facet 数字不进 chip(结果数只在「共 N 个规格」行);
- *        购买数量与计费方式由调用方经 qtyRow / toolbarExtra 插槽给(它们不是筛选)。
- *  compact:型号 / 档位两行 + 已选时折叠成一行回显 +「更换规格」+ 自持 GPU 数量 chips。
- *  不可选行(库存不足所选卡数 / 竞价档未上)弱化底色 + 原因,排到末尾,不隐藏。 */
+/** 规格选择器:full 提供 GPU/CPU 分栏与工具插槽;compact 可折叠已选规格并选择卡数。 */
 
 import type { SkuMarketOut } from "@superdl/api-client";
 import { fontSize, GPU_COUNT_STEPS, skuTierMap, skuVariant, space, useFormat } from "@superdl/ui";
@@ -19,7 +14,7 @@ import type { SpotPolicy } from "../spotBilling";
 const ALL = "";
 export type SkuKind = "gpu" | "cpu";
 
-/** 筛选态(0 / 空串 = 全部);受控时由调用方持有(市场页入 URL)。购买数量不在其中:它不是筛选。 */
+/** 规格筛选态;0 或空串表示该项不限,不含购买数量。 */
 export interface SkuFilters {
   kind: SkuKind;
   model: string;
@@ -38,7 +33,7 @@ export const DEFAULT_SKU_FILTERS: SkuFilters = {
   mem: 0,
 };
 
-/** 行是否进结果集:分栏 + 筛选 chips,外加「单实例卡数上限装得下所选数量」(装不下的规格买不到,不是筛选)。 */
+/** 按分栏与筛选值匹配规格;GPU 规格同时校验单实例卡数上限。 */
 function matches(s: SkuMarketOut, f: SkuFilters, qty: number): boolean {
   const isCpu = f.kind === "cpu";
   if ((s.tier === "cpu") !== isCpu) return false;
@@ -112,7 +107,7 @@ export function SkuPicker({
   const needed = isCpu ? 1 : gpuCount;
   const selectable = (s: SkuMarketOut) => skuSelectable(s, needed, spot != null);
 
-  /** 某个 chip 选项在「其余筛选不变」下的剩余结果数(facet 计数);0 结果灰置但不隐藏,数字不进 chip */
+  /** 仅替换一个筛选值后的匹配规格数。 */
   const facet = <K extends keyof SkuFilters>(key: K, v: SkuFilters[K]) =>
     all.filter((s) => matches(s, { ...f, [key]: v }, needed)).length;
   const gate = <T extends string | number>(key: keyof SkuFilters, v: T): Omit<ChipOption<T>, "label"> => {
@@ -133,7 +128,6 @@ export function SkuPicker({
       .sort((a, b) => a - b)
       .map((v) => ({ ...gate(key, v), label: unit(v) })),
   ];
-  // 型号 chip 只带一个数字:该型号当前可开实例数(结果数在「共 N 个规格」行)
   const modelOptions: ChipOption<string>[] = [
     { value: ALL, label: t("market.all") },
     ...Array.from(freeByModel.entries()).map(([m, free]) => ({
@@ -170,11 +164,9 @@ export function SkuPicker({
     (v) => `${v} GB`,
   );
 
-  // 结果:可选行在前,不可选行(库存不足 / 未上竞价)排到末尾
   const filtered = all.filter((s) => matches(s, f, needed));
   const rows = [...filtered].sort((a, b) => Number(selectable(b)) - Number(selectable(a)));
   const hasFilter = f.model !== ALL || f.tier !== ALL || f.vram !== 0 || f.vcpu !== 0 || f.mem !== 0;
-  // 二级筛选有值时自动展开(不让筛选态藏在收起的行里)
   const showMore = moreOpen || f.vram !== 0 || f.vcpu !== 0 || f.mem !== 0;
 
   const columns = skuColumns({
@@ -187,7 +179,6 @@ export function SkuPicker({
     ...(spot ? { spot } : {}),
   });
 
-  // compact 变体:已选后出「GPU 数量」行(受 SKU 上限与库存约束);full 的购买数量由调用方经 qtyRow 给
   const gpuCountRow = variant === "compact" && value && value.tier !== "cpu" && (
     <ChipRow
       label={t("market.chipGpuCount")}
@@ -231,7 +222,6 @@ export function SkuPicker({
           { value: "cpu", label: t("market.kindCpu") },
         ]}
         onChange={(v) => {
-          // 换栏清选中,筛选回默认
           setF({ ...DEFAULT_SKU_FILTERS, kind: v });
           onChange(undefined);
         }}
@@ -289,7 +279,6 @@ export function SkuPicker({
               />
             ))}
           {qtyRow}
-          {/* 工具行:结果数 + 清除筛选(左)|计费方式 chips(右,窄屏换行) */}
           <div
             style={{
               display: "flex",
@@ -309,7 +298,6 @@ export function SkuPicker({
                   size="small"
                   style={{ paddingInline: 0, fontSize: fontSize.caption }}
                   onClick={() => {
-                    // 购买数量不是筛选,不在清除范围内
                     setF({ ...DEFAULT_SKU_FILTERS, kind: f.kind });
                   }}
                 >

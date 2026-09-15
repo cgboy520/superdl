@@ -38,7 +38,6 @@ function diffStats(oldText: string, newText: string): { added: number; removed: 
     const next = dp[i + 1];
     if (!row || !next) continue;
     for (let j = n - 1; j >= 0; j--) {
-      // 单元格在构造时已零填充,?? 0 只为满足 noUncheckedIndexedAccess
       row[j] = a[i] === b[j] ? (next[j + 1] ?? 0) + 1 : Math.max(next[j] ?? 0, row[j + 1] ?? 0);
     }
   }
@@ -171,14 +170,11 @@ function CellEditor({
   const [content, setContent] = useState("");
   const [note, setNote] = useState("");
   const [publishOpen, setPublishOpen] = useState(false);
-  // 编辑器草稿(sessionStorage),保存/发布成功后清除
   const localDraft = useFormDraft<{ title: string; content: string; note: string }>(`legal-doc-${docKey}-${locale}`);
-  // 数据源切换时同步表单(渲染期派生态)
   const sourceKey = draft ? `d${draft.id}` : published ? `p${published.id}` : "none";
   const [loadedKey, setLoadedKey] = useState("");
   if (!versionsQ.isLoading && loadedKey !== sourceKey) {
     setLoadedKey(sourceKey);
-    // 本地草稿优先于服务端值
     const saved = localDraft.load();
     setTitle(saved?.title ?? draft?.title ?? published?.title ?? "");
     setContent(saved?.content ?? draft?.content_md ?? published?.content_md ?? "");
@@ -186,7 +182,7 @@ function CellEditor({
   }
   useEffect(() => {
     if (loadedKey !== "") localDraft.save({ title, content, note });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- localDraft 引用稳定(纯 storage 封装)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadedKey, title, content, note]);
 
   const invalidate = () => {
@@ -222,7 +218,6 @@ function CellEditor({
   });
   const archive = useArchiveLegalDocVersion({
     mutation: {
-      // 反馈由 ReasonAction 承担,这里只刷新数据
       onSuccess: () => invalidate(),
     },
   });

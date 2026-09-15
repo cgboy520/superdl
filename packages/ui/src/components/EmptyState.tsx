@@ -10,7 +10,6 @@ import { fontSize, space } from "../tokens";
 export type EmptyScene = "list" | "search" | "notification" | "disk" | "ticket";
 
 const SCENE_PATHS: Record<EmptyScene, ReactNode> = {
-  // 空托盘(列表无数据)
   list: (
     <>
       <path d="M20 44h80l-8 36a8 8 0 0 1-8 6H36a8 8 0 0 1-8-6l-8-36Z" />
@@ -18,7 +17,6 @@ const SCENE_PATHS: Record<EmptyScene, ReactNode> = {
       <path d="M48 58h24" strokeLinecap="round" strokeDasharray="2 5" />
     </>
   ),
-  // 放大镜 + 空(搜索/筛选无结果)
   search: (
     <>
       <circle cx="54" cy="54" r="24" />
@@ -26,7 +24,6 @@ const SCENE_PATHS: Record<EmptyScene, ReactNode> = {
       <path d="M46 54h16" strokeLinecap="round" strokeDasharray="2 5" />
     </>
   ),
-  // 铃铛(无通知)
   notification: (
     <>
       <path d="M60 88a8 8 0 0 0 16 0" />
@@ -34,7 +31,6 @@ const SCENE_PATHS: Record<EmptyScene, ReactNode> = {
       <path d="M56 30a4 4 0 0 1 8 0" strokeLinecap="round" />
     </>
   ),
-  // 硬盘(无数据盘)
   disk: (
     <>
       <rect x="26" y="42" width="68" height="40" rx="6" />
@@ -43,7 +39,6 @@ const SCENE_PATHS: Record<EmptyScene, ReactNode> = {
       <path d="M34 34h52" strokeLinecap="round" strokeDasharray="2 5" />
     </>
   ),
-  // 对话气泡(无工单)
   ticket: (
     <>
       <path d="M28 40h64a8 8 0 0 1 8 8v24a8 8 0 0 1-8 8H56l-14 12v-12h-14a8 8 0 0 1-8-8V48a8 8 0 0 1 8-8Z" />

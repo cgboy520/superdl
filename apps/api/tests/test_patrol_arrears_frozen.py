@@ -18,7 +18,7 @@ pytestmark = pytest.mark.usefixtures("fake")
 
 
 async def _freeze(sm, user_id: int, amount: str) -> None:
-    """等额冻结(等价收到已入账订单的冲正通知)。"""
+    """冻结指定金额。"""
     async with sm() as session:
         await wallet.freeze(
             session, user_id, Decimal(amount), ref_id="ord-reversed", remark="渠道冲正冻结"
@@ -52,10 +52,8 @@ class TestFrozenWalletArrears:
         counts = await balance_patrol(sm)
         assert counts["stopped"] == 1
         assert (await get_instance(client, headers, uuid))["status"] == "stopping"
-        # 冻结不动 balance
         w = await _wallet_of(sm, user_id)
         assert w.balance == Decimal("100.00") and w.frozen == Decimal("100.00")
-        # 停机边留痕
         events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
             "items"
         ]
@@ -71,7 +69,6 @@ class TestFrozenWalletArrears:
         assert data["status"] == "frozen"
         assert data["frozen_deadline"] is not None
 
-        # 到期照常回收
         async with sm() as session:
             await session.execute(
                 update(Instance)
@@ -97,7 +94,6 @@ class TestFrozenWalletArrears:
     async def test_partial_freeze_warns_on_available_and_keeps_running(self, client, sm, fake):
         """部分冻结仍有可用额度:不停机,预警按可用余额算。"""
         headers, uuid, user_id = await provision_running(client, sm, fake)
-        # 100 − 70 = 30 可用,单价 1.68/h ≈ 17.9h < 默认预警阈值 24h
         await _freeze(sm, user_id, "70.00")
 
         counts = await balance_patrol(sm)

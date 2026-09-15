@@ -1,4 +1,4 @@
-/** TOTP(RFC 6238,SHA1/30s/6 位)最小实现,与后端 pyotp 默认参数一致;管理端 e2e 用它现算动态码。 */
+/** 管理端 E2E 的 TOTP 实现:RFC 6238、SHA1、30 秒、6 位。 */
 import { createHmac } from "node:crypto";
 
 const B32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
@@ -34,7 +34,7 @@ export function totp(secret: string, atMs: number = Date.now()): string {
   return String(binary % 1_000_000).padStart(6, "0");
 }
 
-/** 同一密钥上次提交过的时间步(服务端要求 timestep 单调)。 */
+/** 每个密钥上次填入的时间步。 */
 const lastStepBySecret = new Map<string, number>();
 
 /** 填入当前 TOTP:距时间窗边界 <3s 先等下一步;同一密钥同一 30s 窗内已提交过则等到下一窗。 */

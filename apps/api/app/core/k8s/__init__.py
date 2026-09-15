@@ -30,8 +30,7 @@ _override: K8sOrchestrator | None = None
 @lru_cache
 def _default_orchestrator() -> K8sOrchestrator:
     settings = get_settings()
-    if settings.k8s_backend == "real":  # pragma: no cover - 需要真实集群
-        # kubernetes 客户端只在 real 后端加载
+    if settings.k8s_backend == "real":  # pragma: no cover
         from app.core.k8s.real import RealOrchestrator  # noqa: PLC0415
 
         return RealOrchestrator()
@@ -49,7 +48,10 @@ def set_orchestrator(orch: K8sOrchestrator | None) -> None:
 
 
 async def ensure_registry_pull_secret(session: AsyncSession, namespace: str) -> str | None:
-    """在 namespace 托管拉取凭据 Secret,返回 Secret 名;未配机器人返回 None。只在 worker 侧调用。"""
+    """在 namespace 托管拉取凭据,返回 Secret 名;host、robot、secret 缺任一项则返回 None。
+
+    只允许在 worker 侧调用。
+    """
     cfg = await get_runtime_config(session)
     host, robot, secret = (
         cfg.registry_host,

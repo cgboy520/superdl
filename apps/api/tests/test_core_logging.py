@@ -30,17 +30,16 @@ def test_stdlib_logs_enter_structlog_pipeline(restore_logging: None, monkeypatch
     get_settings.cache_clear()
     buf = io.StringIO()
     monkeypatch.setattr(sys, "stdout", buf)
-    setup_logging()  # environment=test → ConsoleRenderer(prod 为 JSON,同一管道)
+    setup_logging()
 
     structlog.contextvars.bind_contextvars(request_id="rid-bridge-1")
     try:
         get_logger("t.struct").info("evt_struct_side")
-        logging.getLogger("t.stdlib").warning("evt_stdlib_side")  # 第三方库形态
+        logging.getLogger("t.stdlib").warning("evt_stdlib_side")
     finally:
         structlog.contextvars.unbind_contextvars("request_id")
 
     out = buf.getvalue()
-    # 两侧事件同一输出,stdlib 侧同样合并 contextvars
     assert "evt_struct_side" in out
     assert "evt_stdlib_side" in out
     assert "rid-bridge-1" in out
@@ -84,7 +83,7 @@ def test_sensitive_fields_masked(restore_logging: None, monkeypatch):
         id_number="110101199001011234",
         token="sdln_secret-token",
         params={"code": "123456", "note": "keep"},
-        unrelated="13800002222",  # 键名不命中:不打码(防误伤业务值)
+        unrelated="13800002222",
     )
 
     out = buf.getvalue()
@@ -92,9 +91,9 @@ def test_sensitive_fields_masked(restore_logging: None, monkeypatch):
     assert "13800001111" not in out
     assert "110101199001011234" not in out
     assert "sdln_secret-token" not in out
-    assert "123456" not in out  # 嵌套 dict 的 code 键同样打码
+    assert "123456" not in out
     assert "keep" in out
-    assert "13800002222" in out  # 键名不命中原样保留
+    assert "13800002222" in out
 
 
 def test_exception_traceback_never_carries_frame_locals(restore_logging: None, monkeypatch):
@@ -109,7 +108,6 @@ def test_exception_traceback_never_carries_frame_locals(restore_logging: None, m
     setup_logging()
 
     def _raise_holding_a_secret() -> None:
-        # 帧里握着一个含凭据的对象
         leaky_config = {"database_url": "postgresql://u:hunter2-marker@h/db"}
         assert leaky_config
         raise ValueError("boom-marker")
@@ -120,7 +118,7 @@ def test_exception_traceback_never_carries_frame_locals(restore_logging: None, m
         get_logger("t.exc").exception("evt_with_traceback")
 
     out = buf.getvalue()
-    assert "boom-marker" in out  # 栈仍在:排障要的行号与异常消息没丢
+    assert "boom-marker" in out
     assert "_raise_holding_a_secret" in out
-    assert "hunter2-marker" not in out  # 帧内局部变量不得出现
+    assert "hunter2-marker" not in out
     assert "leaky_config" not in out

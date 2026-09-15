@@ -1,4 +1,4 @@
-"""通知服务:站内信 + 短信(outbox 异步)+ 告警接入;同类型预警 24h 去重(dedup_key 唯一约束)。"""
+"""站内信、outbox 异步短信与告警接入;dedup_key 唯一去重。"""
 
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -80,9 +80,7 @@ SMS_TASK_TYPE = "notify.sms"
 
 @outbox_handler(SMS_TASK_TYPE, retry=RetryPolicy(timeout_seconds=60))
 async def handle_notify_sms(session: AsyncSession, task: OutboxTask) -> None:
-    """通知短信发送(outbox 执行,尽力而为,at-least-once)。
-    收件人两形态:{"user_id": N} 或 {"phone": "1xx"}。
-    """
+    """按 payload.phone 或 user_id 发送通知短信;收件人缺失或预算校验失败时返回而不重试。"""
     phone: str | None = task.payload.get("phone")
     user_id = task.payload.get("user_id")
     if phone is None and user_id is not None:
@@ -90,17 +88,16 @@ async def handle_notify_sms(session: AsyncSession, task: OutboxTask) -> None:
             user = await get_user(session, user_id)
         except AppError:
             logger.warning("sms_user_missing", user_id=user_id, task_id=task.id)
-            return  # 用户不存在:无重试价值,直接消化
+            return
         phone = user.phone
     if not phone:
         logger.warning("sms_no_recipient", task_id=task.id)
-        return  # 无收件人:配置错误,无重试价值
+        return
     cfg = await get_runtime_config(session)
     channel = await get_sms_channel(session)
     try:
         await ensure_sms_platform_quota()
     except AppError:
-        # 平台预算池耗尽(RATE_LIMITED):消化不重试
         logger.warning("sms_platform_quota_exhausted", task_id=task.id)
         return
     await channel.send(phone, cfg.sms_template_notice or "", {"title": task.payload["title"]})
@@ -109,7 +106,7 @@ async def handle_notify_sms(session: AsyncSession, task: OutboxTask) -> None:
 async def send_low_balance_warning(
     session: AsyncSession, user_id: int, *, est_hours: float, balance: str
 ) -> None:
-    """余额预警(24h 同类去重),站内信 + 短信。"""
+    """按用户与 UTC 自然日去重写余额站内信及短信任务,并提交。"""
     await notify(
         session,
         user_id,
@@ -126,6 +123,7 @@ async def send_low_balance_warning(
 async def send_arrears_notice(
     session: AsyncSession, user_id: int, *, action: str, detail: str
 ) -> None:
+    """按动作、用户与 UTC 日桶写欠费通知及短信任务;调用方负责提交。"""
     titles = {
         "auto_stop": "余额耗尽,实例已自动关机",
         "freeze": "实例已冻结",
@@ -141,7 +139,6 @@ async def send_arrears_notice(
         dedup_key=f"arrears:{action}:{user_id}:{_day_bucket(now_utc())}",
         sms=True,
     )
-    # 由调用方 commit
 
 
 async def send_subscription_notice(
@@ -153,7 +150,7 @@ async def send_subscription_notice(
     dedup_suffix: str,
     target_id: str | None = None,
 ) -> None:
-    """包周期到期链路通知(站内信 + 短信);dedup_key 带 subscription/instance id + 日桶。"""
+    """按动作、dedup_suffix 与 UTC 日桶写订阅通知及短信任务;调用方负责提交。"""
     titles = {
         "expiring": "包周期即将到期",
         "expired": "包周期已到期,实例已停机",
@@ -171,7 +168,6 @@ async def send_subscription_notice(
         target_id=target_id,
         sms=True,
     )
-    # 由调用方 commit
 
 
 async def send_preemption_notice(
@@ -200,7 +196,6 @@ async def send_preemption_notice(
     )
 
 
-# 群发的单语句行数上限(PG 单条语句 65535 个绑定参数)
 _ANNOUNCEMENT_CHUNK = 1000
 
 
@@ -216,7 +211,7 @@ async def publish_announcement(
             session, Announcement, owner_col=None, owner_id=None, key=idempotency_key
         )
         if existing is not None:
-            return existing.reached, False  # 幂等重放
+            return existing.reached, False
 
     announcement = Announcement(
         title=title,
@@ -234,7 +229,7 @@ async def publish_announcement(
         key=idempotency_key,
     )
     if result is not announcement:
-        return result.reached, False  # 同键并发:返回胜出方的公告
+        return result.reached, False
     user_ids = await list_active_user_ids(session)
     announcement.reached = len(user_ids)
     for i in range(0, len(user_ids), _ANNOUNCEMENT_CHUNK):
@@ -361,7 +356,6 @@ async def mark_all_read(session: AsyncSession, user_id: int) -> None:
     await session.commit()
 
 
-# 管理端告警流(admin_alerts)覆盖的通知类型:平台级告警 + 映射到租户的 GPU 故障
 ALERT_STREAM_TYPES = ("admin_alert", "gpu_fault")
 
 
@@ -409,8 +403,9 @@ async def unread_alert_count(session: AsyncSession) -> tuple[int, int]:
 
 
 async def ingest_alertmanager(session: AsyncSession, payload: dict) -> int:
-    """Alertmanager webhook:按 fingerprint+startsAt 幂等;GPU 告警映射到受影响租户;
-    critical 平台告警短信直发值班手机(oncall_phone),同 dedup_key 幂等。
+    """按 fingerprint+startsAt 去重接入告警,同事务写通知及短信 outbox 后提交。
+
+    critical 平台告警通知值班手机;GPU 告警仅映射到已核实的 active 租户并受用户限流。
     """
     cfg = await get_runtime_config(session)
     oncall_phone = cfg.oncall_phone
@@ -424,10 +419,8 @@ async def ingest_alertmanager(session: AsyncSession, payload: dict) -> int:
         alertname = labels.get("alertname", "unknown")
         summary = annotations.get("summary") or annotations.get("description") or alertname
         dedup = f"am:{fingerprint}:{starts_at}"
-        # 节点维告警(DCGM 等带小写 hostname 标签)深链到节点页
         node_name = labels.get("hostname") or None
 
-        # 平台级告警流
         ok = await notify(
             session,
             None,
@@ -448,7 +441,6 @@ async def ingest_alertmanager(session: AsyncSession, payload: dict) -> int:
                     {"phone": oncall_phone, "title": f"[平台critical]{alertname}"},
                 )
 
-        # GPU 故障映射受影响租户(namespace=tenant-N)
         ns = labels.get("namespace", "")
         prefix = get_settings().k8s_namespace_prefix
         if alertname.startswith("GPU") and ns.startswith(prefix):
@@ -456,8 +448,6 @@ async def ingest_alertmanager(session: AsyncSession, payload: dict) -> int:
                 user_id = int(ns.removeprefix(prefix))
             except ValueError:
                 continue
-            # namespace 归属查库核实(存在且活跃),再按用户限流
-
             if not await account_service.is_active_user(session, user_id):
                 continue
             try:
@@ -465,7 +455,7 @@ async def ingest_alertmanager(session: AsyncSession, payload: dict) -> int:
                     f"am-gpu-tenant:{user_id}", max_attempts=5, window_seconds=3600.0
                 )
             except AppError:
-                continue  # 该用户此路径已超频:跳过(平台告警流在上方已落,不受影响)
+                continue
             await notify(
                 session,
                 user_id,

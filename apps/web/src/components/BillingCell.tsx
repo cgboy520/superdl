@@ -30,7 +30,6 @@ export function BillingCell({
       <span>{formatPeriodPrice(r.subscription.amount_paid, r.subscription.period, r.subscription.period_count)}</span>
     </Space>
   ) : (
-    // 竞价与按量共用;price_hourly 在竞价实例上已是折后价
     <Space orientation="vertical" size={0}>
       <Space size={space.sm}>
         {r.market === "spot" ? (
@@ -43,7 +42,6 @@ export function BillingCell({
       <Space size={space.sm}>
         <SpotReclaimTag market={r.market} />
         <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-          {/* 查询未就绪走 moneyOr 显「—」,不显假 ¥0.00(与详情页同口径) */}
           {t("instances.todayCost", { amount: moneyOr(formatMoney(todayByInstance.get(r.id) ?? "0.00"), dailyReady) })}
         </Typography.Text>
       </Space>

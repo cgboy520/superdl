@@ -51,8 +51,8 @@ class TestCanonical:
 class TestMatch:
     def test_exact_and_prefix(self):
         assert model_matches("RTX4090", "RTX4090")
-        assert model_matches("A100", "A100-80G")  # SKU 写家族可匹配带显存节点
-        assert not model_matches("A100-80G", "A100")  # 反向不成立:显存不确定不许卖
+        assert model_matches("A100", "A100-80G")
+        assert not model_matches("A100-80G", "A100")
         assert not model_matches("RTX4090", "RTX4090D")
         assert not model_matches(None, "RTX4090")
         assert not model_matches("RTX4090", None)

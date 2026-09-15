@@ -47,7 +47,7 @@ class TestImageCrud:
     async def test_delete_cascades_and_audits_reason(self, client, sm) -> None:
         ah = await admin_headers(sm, client, role="ops")
         image_id = await create_image(client, ah)
-        await prewarm_patrol(sm)  # 铺 3 行
+        await prewarm_patrol(sm)
         resp = await client.request(
             "DELETE",
             f"/api/admin/v1/images/{image_id}",
@@ -82,7 +82,7 @@ class TestPrewarmContract:
     async def test_manual_prewarm_enqueues_non_cached(self, client, sm) -> None:
         ah = await admin_headers(sm, client, role="ops")
         image_id = await create_image(client, ah)
-        await prewarm_patrol(sm)  # 3 行 pending(已各带 1 个任务)
+        await prewarm_patrol(sm)
         resp = await client.post(f"/api/admin/v1/images/{image_id}/prewarm", headers=ah)
         assert resp.status_code == 200
         assert resp.json()["enqueued"] == 3
@@ -96,7 +96,7 @@ class TestPrewarmContract:
                     )
                 ).scalars()
             )
-            assert len(tasks) == 6  # 巡检 3 + 手动 3(handler 幂等,重复无害)
+            assert len(tasks) == 6
 
     async def test_disabled_image_prewarm_rejected(self, client, sm) -> None:
         ah = await admin_headers(sm, client, role="ops")
@@ -116,11 +116,9 @@ class TestPublicIsPrewarmed:
         ah = await admin_headers(sm, client, role="ops")
         image_id = await create_image(client, ah)
 
-        # 零 cache 行:回落 prewarm_enabled
         imgs = (await client.get("/api/v1/images")).json()
         assert imgs[0]["is_prewarmed"] is True
 
-        # 全链路 cached → true
         await prewarm_patrol(sm)
         await drain(sm)
         await prewarm_patrol(sm)
@@ -129,7 +127,6 @@ class TestPublicIsPrewarmed:
         admin_row = (await client.get("/api/admin/v1/images", headers=ah)).json()[0]
         assert admin_row["coverage"] == {"cached": 3, "total": 3, "pct": 100}
 
-        # 一节点失效重拉失败 → 覆盖率 2/3 < 90% → false,failed_nodes=1
         fake.auto_prewarm = False
         fake.set_prewarm_state("fake-kata-node-1", IMAGE_BODY["image_ref"], "failed")
         async with sm() as session:
@@ -138,7 +135,7 @@ class TestPublicIsPrewarmed:
                     select(ImageNodeCache).where(ImageNodeCache.node_name == "fake-kata-node-1")
                 )
             ).scalar_one()
-            row.status = "pulling"  # 模拟复检中失败
+            row.status = "pulling"
             await session.commit()
         await prewarm_patrol(sm)
         imgs = (await client.get("/api/v1/images")).json()
@@ -147,7 +144,6 @@ class TestPublicIsPrewarmed:
         assert admin_row["coverage"]["cached"] == 2
         assert admin_row["failed_nodes"] == 1
 
-        # 关闭预热 → 公开标志立刻 false
         await client.patch(
             f"/api/admin/v1/images/{image_id}", json={"prewarm_enabled": False}, headers=ah
         )

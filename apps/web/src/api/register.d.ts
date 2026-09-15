@@ -1,4 +1,4 @@
-/** TanStack Query 全局默认错误类型注册:useQuery/useMutation 的 error 一律是 ApiError,不再逐处手写泛型。 */
+/** 将 TanStack Query 的全局默认错误类型设为 ApiError。 */
 
 import type { ApiError } from "@superdl/api-client";
 

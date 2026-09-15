@@ -1,6 +1,4 @@
-/** 「怎么计费」:三条事实 + 一条计费时间轴(开机 → 运行中计费 → 关机停表 → 释放;数据盘按日通贯)。
- *  取代原来的泛营销四宫格 —— 用户在首页要判断的是「这钱怎么算」,不是「我们有多好」。
- *  时间轴用 SVG 只在 ≥md 出;窄屏换成同内容的文字节拍(SVG 缩到手机宽度字会小到读不了)。 */
+/** 计费说明:三条事实与时间轴;窄屏使用文字时间轴。 */
 
 import { ClockCircleOutlined, DatabaseOutlined, PauseCircleOutlined } from "@ant-design/icons";
 import { fontSize, fontWeight, iconSize, layout, space, useThemeColors } from "@superdl/ui";
@@ -49,7 +47,6 @@ function BillingTimeline() {
       role="img"
       aria-label={t("landing.billing.timelineAria")}
     >
-      {/* 事件名 */}
       <text x={60} y={22} textAnchor="start" {...eventLabel}>
         {t("landing.billing.evStart")}
       </text>
@@ -59,9 +56,7 @@ function BillingTimeline() {
       <text x={840} y={22} textAnchor="end" {...eventLabel}>
         {t("landing.billing.evRelease")}
       </text>
-      {/* 运行中:GPU 时费 */}
       <rect x={60} y={39} width={500} height={10} rx={5} fill={colors.primary} />
-      {/* 关机后:实例盘保留但不计费 */}
       <line x1={560} y1={44} x2={840} y2={44} stroke={token.colorBorder} strokeWidth={2} strokeDasharray="6 6" />
       {dot(60)}
       {dot(560)}
@@ -72,7 +67,6 @@ function BillingTimeline() {
       <text x={700} y={72} textAnchor="middle" {...label}>
         {t("landing.billing.afterStop")}
       </text>
-      {/* 数据盘:全程按日 */}
       <rect x={60} y={92} width={780} height={6} rx={3} fill={colors.positive} />
       <text x={450} y={120} textAnchor="middle" {...label}>
         {t("landing.billing.diskBar")}

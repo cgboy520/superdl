@@ -36,7 +36,6 @@ async def create_service(
 ) -> ServiceOut:
     """部署服务:同事务落 services 行 + 第 1 版实例(creating)+ 事件 + outbox,202 异步。
     幂等键重放回 200 + X-Idempotent-Replay。"""
-    # 实名闸门与资源创建限流,与创建实例同口径
     await account_service.require_real_name_if_required(
         session, user, key="orchestrator.realNameRequired"
     )
@@ -160,7 +159,7 @@ async def list_revisions(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[InstanceOut]:
-    """版本历史 = 该服务下全部实例(含已释放),按版本号降序。"""
+    """分页查询该服务的版本实例(含已释放),按实例 ID 降序。"""
     svc = await service.get_service(session, user.id, slug)
     return await service.list_revisions(session, user.id, svc, cursor=cursor, limit=limit)
 
@@ -172,7 +171,10 @@ async def get_service_logs(
     session: DbSession,
     tail_lines: int = Query(default=200, ge=1),
 ) -> InstanceLogsOut:
-    """当前版本的容器日志:只读、限流 20/h/user、K8s 读 5s 超时;非运行中 409。不记审计。"""
+    """优先读取 rollout 版本的容器日志,无 rollout 时读取当前版本。
+
+    仅支持 running/stopping,否则 409;与实例日志共用限流,不记审计。
+    """
     return await service.read_service_logs(session, user.id, slug, tail_lines=tail_lines)
 
 
@@ -202,7 +204,6 @@ async def create_api_key(
 ) -> ApiKeyCreateOut:
     """新建访问密钥;响应里的 key 是明文,只在这一次出现。不收 Idempotency-Key。"""
     row, plaintext = await service.create_api_key(session, user.id, slug, name=body.name)
-    # 审计只落 id 与名字,不落明文
     set_audit_target(request, f"service:{slug}", {"api_key_id": row.id, "name": row.name})
     return ApiKeyCreateOut(**ApiKeyOut.model_validate(row).model_dump(), key=plaintext)
 

@@ -28,12 +28,11 @@ class PlatformSetting(Base):
     __tablename__ = "platform_settings"
 
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
-    value: Mapped[str] = mapped_column(Text)  # secret 类为 enc:v2:<kid>: 密文
-    updated_by: Mapped[int | None]  # AdminUser.id(仅追溯,不建外键)
+    value: Mapped[str] = mapped_column(Text)
+    updated_by: Mapped[int | None]
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
 
-# /platform-config 展示与写入的配置组(管理端按组分页,前端对这组枚举穷举)
 PlatformConfigGroup = Literal[
     "security",
     "payment_wechat",
@@ -47,7 +46,6 @@ PlatformConfigGroup = Literal[
     "registry",
     "observability",
 ]
-# 运营策略参数组:ops 经 /policies 在线调
 SettingGroup = Literal[PlatformConfigGroup, "policy"]
 PlatformConfigKind = Literal["str", "text", "bool", "choice", "secret"]
 SettingKind = Literal[PlatformConfigKind, "int", "decimal"]
@@ -57,32 +55,29 @@ POLICY_GROUP: SettingGroup = "policy"
 
 @dataclass(frozen=True)
 class SettingSpec:
+    """配置校验规则;正则须避免灾难性回溯,数值项须提供 lo 和 hi。"""
+
     group: SettingGroup
     kind: SettingKind
     choices: tuple[str, ...] = ()
-    pattern: str | None = None  # fullmatch 校验(str/secret 适用;必须为无线性外迭代的简单模式)
-    line_pattern: str | None = None  # text 多行值:逐行 fullmatch(锚定单行,防嵌套量词 ReDoS)
-    must_contain: str | None = None  # 子串校验(PEM 头等)
-    forbid_contains: str | None = None  # 反向校验(如支付宝密钥禁 PEM 头)
+    pattern: str | None = None
+    line_pattern: str | None = None
+    must_contain: str | None = None
+    forbid_contains: str | None = None
     max_len: int = 8192
-    # 数值项取值区间(int / decimal 必填)
     lo: Decimal | None = None
     hi: Decimal | None = None
-    # prod 禁止的取值:在线写入与清除覆盖一律拒;生效值命中即进配置页红牌
     prod_forbidden: tuple[str, ...] = field(default=())
-    # True = 生效值命中 prod_forbidden 时启动 fail-fast(合规闸);False = 只告警
     prod_gate: bool = False
-    hint: str = ""  # 校验失败时的人话提示
-    prod_hint: str = ""  # 生效值命中 prod_forbidden 时的红牌文案
+    hint: str = ""
+    prod_hint: str = ""
 
 
 def _num(kind: Literal["int", "decimal"], lo: str, hi: str, hint: str = "") -> SettingSpec:
     return SettingSpec(POLICY_GROUP, kind, lo=Decimal(lo), hi=Decimal(hi), hint=hint)
 
 
-# key 与 Settings 同名字段一一对应(env 为默认值层)
 SETTING_SPECS: dict[str, SettingSpec] = {
-    # ---- 安全策略(开关:关闭即跳过;凭据在各渠道组;prod 在线禁关) ----
     "captcha_enabled": SettingSpec(
         "security",
         "bool",
@@ -118,7 +113,6 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "prod 在线关闭已禁且启动 fail-fast(境内合规要求)",
         prod_hint="生产环境未强制实名后充值:境内合规要求",
     ),
-    # ---- 微信支付(APIv3,公钥模式) ----
     "payment_wechat_enabled": SettingSpec("payment_wechat", "bool"),
     "wechat_mchid": SettingSpec(
         "payment_wechat", "str", pattern=r"\d{8,12}", hint="商户号为 8~12 位数字"
@@ -150,7 +144,6 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         must_contain="-----BEGIN PUBLIC KEY-----",
         hint="需粘贴完整微信支付公钥 PEM(pub_key.pem 内容)",
     ),
-    # ---- 支付宝(当面付,RSA2 公钥模式) ----
     "payment_alipay_enabled": SettingSpec("payment_alipay", "bool"),
     "alipay_app_id": SettingSpec(
         "payment_alipay", "str", pattern=r"\d{13,16}", hint="应用 APPID 为 13~16 位数字"
@@ -167,14 +160,12 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         forbid_contains="-----",
         hint="粘贴纯 base64 支付宝公钥体(开放平台·接口加签方式·支付宝公钥)",
     ),
-    # 收款方 PID(2088 开头 16 位);prod 启用支付宝时必填
     "alipay_seller_id": SettingSpec(
         "payment_alipay",
         "str",
         pattern=r"|2088\d{12}",
         hint="收款账号 PID(2088 开头 16 位),开放平台·账户中心可查;prod 启用支付宝时必填",
     ),
-    # ---- 阿里云短信(dysmsapi) ----
     "sms_provider": SettingSpec(
         "sms",
         "choice",
@@ -194,12 +185,10 @@ SETTING_SPECS: dict[str, SettingSpec] = {
     "sms_template_notice": SettingSpec(
         "sms", "str", pattern=r"SMS_[0-9A-Za-z]+", hint="通知模板码,形如 SMS_123456789(变量 title)"
     ),
-    # ---- 实名认证(阿里云手机号三要素;开关在 security 组) ----
     "real_name_access_key_id": SettingSpec(
         "real_name", "str", pattern=r"[0-9A-Za-z]{16,30}", hint="AccessKey ID(建议独立 RAM 子账号)"
     ),
     "real_name_access_key_secret": SettingSpec("real_name", "secret", max_len=128),
-    # ---- 人机校验(阿里云验证码 2.0,/auth/sms-code 前置闸) ----
     "captcha_scene_id": SettingSpec(
         "captcha", "str", max_len=64, hint="场景 ID(控制台·场景管理;服务端验签强制写入防篡改)"
     ),
@@ -213,14 +202,12 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         hint="AccessKey ID(建议独立 RAM 子账号,仅授 AliyunYundunAFSFullAccess)",
     ),
     "captcha_access_key_secret": SettingSpec("captcha", "secret", max_len=128),
-    # ---- 合规备案(页脚) ----
     "icp_number": SettingSpec(
         "compliance", "str", max_len=64, hint="ICP 备案号,形如 京ICP备2026012345号-1"
     ),
     "police_record_number": SettingSpec(
         "compliance", "str", max_len=64, hint="公安备案号,形如 京公网安备11010502000000号"
     ),
-    # 经营主体信息(页脚;留空不展示)
     "company_name": SettingSpec(
         "compliance", "str", max_len=128, hint="营业执照上的公司全称,如 某某科技(北京)有限公司"
     ),
@@ -237,7 +224,6 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         max_len=256,
         hint="营业执照电子版链接(亮照);留空则不展示",
     ),
-    # ---- 客服联系方式(页脚与帮助页;留空不展示) ----
     "support_email": SettingSpec(
         "support",
         "str",
@@ -248,7 +234,6 @@ SETTING_SPECS: dict[str, SettingSpec] = {
     "support_wechat": SettingSpec(
         "support", "str", max_len=64, hint="企业微信/微信客服号(展示为文本,用户自行搜索添加)"
     ),
-    # ---- 集群接入(仅 admin 可读写;ops 生成注册命令时由服务端代读) ----
     "cluster_server_url": SettingSpec(
         "cluster",
         "str",
@@ -258,7 +243,6 @@ SETTING_SPECS: dict[str, SettingSpec] = {
     "cluster_join_token": SettingSpec(
         "cluster",
         "secret",
-        # 原样写进节点 agent config.yaml(node-join.sh),字符集锁死:换行/引号即 YAML 注入
         pattern=r"[A-Za-z0-9:._~+/=\-]{16,512}",
         max_len=512,
         hint="专用 agent token(server 的 .../server/agent-token;禁止填 node-token)",
@@ -287,7 +271,6 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         choices=("cn", "official"),
         hint="装机安装源:cn=国内镜像(rancher-mirror.rancher.cn),official=官方源",
     ),
-    # ---- 镜像仓库(Harbor);拉取凭据托管为 K8s Secret ----
     "registry_host": SettingSpec(
         "registry",
         "str",
@@ -340,21 +323,18 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         hint="创建实例的镜像来源白名单,每行一个仓库前缀(如 docker.io/);留空 = 不限制;"
         "Harbor 地址自动放行,平台镜像目录内的引用恒放行",
     ),
-    # ---- 可观测性(Grafana 仅作外链) ----
     "grafana_url": SettingSpec(
         "observability",
         "str",
         pattern=r"https?://\S+",
         hint="可选:Grafana 地址,配置后管理端节点页显示「在 Grafana 打开」外链",
     ),
-    # 值班手机号:critical 告警短信直发;pattern 为「空串或手机号」,fullmatch 语义不带锚点
     "oncall_phone": SettingSpec(
         "observability",
         "str",
         pattern=r"|1[3-9]\d{9}",
         hint="值班手机号:critical 告警短信直发;留空则不启用",
     ),
-    # ---- 运营策略参数(ops 经 /policies 在线调;取值区间见 lo/hi) ----
     "disk_price_gb_month": _num("decimal", "0.0010", "1.0000", "元/GB·月,新盘快照价"),
     "disk_min_gb": _num("int", "1", "1024"),
     "disk_max_gb": _num("int", "10", "65536"),
@@ -364,29 +344,22 @@ SETTING_SPECS: dict[str, SettingSpec] = {
     "afford_cover_hours": _num("int", "1", "24", "开机前余额须覆盖的小时数"),
     "prewarm_min_coverage_pct": _num("int", "1", "100"),
     "prewarm_recheck_hours": _num("int", "1", "168"),
-    # 每用户配额:用户级覆盖 → 本层 → env 默认
     "max_instances_per_user": _num("int", "1", "1000"),
     "max_gpus_per_user": _num("int", "1", "1024"),
     "max_vcpus_per_user": _num("int", "1", "4096"),
     "max_disks_per_user": _num("int", "1", "1000"),
-    # 每个 GPU 节点让给 CPU 实例的 vCPU 上限(catalog/service);0 = 不许 CPU 实例落 GPU 节点
     "gpu_node_cpu_instance_vcpu_cap": _num("int", "0", "1024"),
-    # 包周期折扣(百分数,80 = 8 折;100 = 不打折)
     "period_discount_day": _num("int", "50", "100"),
     "period_discount_week": _num("int", "50", "100"),
     "period_discount_month": _num("int", "50", "100"),
     "period_discount_year": _num("int", "50", "100"),
-    # 包周期到期前预警天数(每个到期时刻至多一条)
     "period_expire_warn_days": _num("int", "1", "30"),
-    # 竞价价 = 按量价 × pct/100(上界 90)
     "spot_discount_pct": _num("int", "10", "90"),
-    # 抢占通知到真删 Pod 的宽限窗(秒);与 creating_timeout_seconds 耦合,见 docs/reference/limits.md
     "spot_grace_seconds": _num("int", "30", "600"),
 }
 
 POLICY_KEYS: tuple[str, ...] = tuple(k for k, s in SETTING_SPECS.items() if s.group == POLICY_GROUP)
 
-# creating 超时预算里宽限窗之外须留给「删 Pod → 释放卡 → 调度 → 拉起」的余量(秒)
 PREEMPT_TIME_RESERVE_SECONDS = 120
 
 
@@ -395,12 +368,10 @@ class RuntimeConfig:
     """生效配置(env 默认 + DB 覆盖)的强类型视图;字段与 SETTING_SPECS 一一对应,类型由 kind 决定。
     secret 已解密,整体禁止入日志 / 响应。"""
 
-    # security
     captcha_enabled: bool
     admin_mfa_enabled: bool
     real_name_enabled: bool
     real_name_required_for_recharge: bool
-    # payment_wechat
     payment_wechat_enabled: bool
     wechat_mchid: str
     wechat_appid: str
@@ -409,45 +380,37 @@ class RuntimeConfig:
     wechat_apiv3_key: str
     wechat_public_key_id: str
     wechat_public_key: str
-    # payment_alipay
     payment_alipay_enabled: bool
     alipay_app_id: str
     alipay_private_key: str
     alipay_public_key: str
     alipay_seller_id: str
-    # sms
     sms_provider: str
     sms_access_key_id: str
     sms_access_key_secret: str
     sms_sign_name: str
     sms_template_verify: str
     sms_template_notice: str
-    # real_name
     real_name_access_key_id: str
     real_name_access_key_secret: str
-    # captcha
     captcha_scene_id: str
     captcha_prefix: str
     captcha_access_key_id: str
     captcha_access_key_secret: str
-    # compliance
     icp_number: str
     police_record_number: str
     company_name: str
     company_address: str
     company_phone: str
     business_license_url: str
-    # support
     support_email: str
     support_wechat: str
-    # cluster
     cluster_server_url: str
     cluster_join_token: str
     cluster_agent_version: str
     node_driver_version: str
     node_registries_yaml: str
     node_install_mirror: str
-    # registry
     registry_host: str
     registry_project: str
     registry_robot_name: str
@@ -455,10 +418,8 @@ class RuntimeConfig:
     registry_ca_pem: str
     registry_proxy_projects: str
     image_allowed_registries: str
-    # observability
     grafana_url: str
     oncall_phone: str
-    # policy
     disk_price_gb_month: Decimal
     disk_min_gb: int
     disk_max_gb: int
@@ -505,12 +466,12 @@ def _coerce(key: str, raw: str) -> Any:
 
 
 def runtime_config_from_strings(values: Mapping[str, str]) -> RuntimeConfig:
-    """字符串映射 → 强类型视图;缺键取 env 默认。生效读取与测试构造共用。"""
+    """合并 env 默认并转换类型;忽略未知键和空的数值覆盖,不执行取值校验。"""
     merged = _env_layer()
     for key, value in values.items():
         spec = SETTING_SPECS.get(key)
         if spec is None or (value == "" and spec.kind in ("int", "decimal")):
-            continue  # 数值项空串 = 未设置,保留 env 默认
+            continue
         merged[key] = value
     return RuntimeConfig(**{k: _coerce(k, v) for k, v in merged.items()})
 
@@ -519,9 +480,9 @@ def runtime_config_from_strings(values: Mapping[str, str]) -> RuntimeConfig:
 class ConfigWarning:
     """配置风险(服务端计算):管理端配置页顶部红牌与 prod lifespan 启动日志共用同一份规则。"""
 
-    key: str  # 关联配置键(前端据此定位分组导航)
+    key: str
     level: Literal["error", "warning"]
-    message: str  # 运营文案,与 hint 同为 i18n-exempt
+    message: str
 
 
 def _prod_violations(cfg: RuntimeConfig) -> list[tuple[str, SettingSpec]]:
@@ -638,7 +599,6 @@ def _validate_shape(key: str, value: str, spec: SettingSpec) -> None:
     if spec.pattern and not re.fullmatch(spec.pattern, value):
         raise ValueError(f"{key} 格式不符{suffix}")
     if spec.line_pattern is not None:
-        # 逐行锚定校验(不整串匹配);逗号与换行同为分隔符,与 effective_image_allowlist 同口径
         for line in value.replace(",", "\n").splitlines():
             line = line.strip()
             if line and not re.fullmatch(spec.line_pattern, line):
@@ -660,7 +620,6 @@ def _validate_number(key: str, value: str, spec: SettingSpec) -> str:
     if not spec.lo <= num <= spec.hi:
         raise ValueError(f"{key} 取值须在 {spec.lo}~{spec.hi} 之间")
     if key == "spot_grace_seconds":
-        # 跨键约束:宽限窗 + 余量 ≤ creating 超时
         budget = get_settings().creating_timeout_seconds - PREEMPT_TIME_RESERVE_SECONDS
         if num > budget:
             raise ValueError(
@@ -689,7 +648,7 @@ def _env_layer() -> dict[str, str]:
 
 
 def env_layer_problems() -> list[str]:
-    """部署层(env)取值也过白名单格式校验(写库路径之外唯一的进值口);返回不合格项描述。"""
+    """校验非空 env 配置的格式、范围及生产环境禁用值,返回错误描述。"""
     problems: list[str] = []
     for key, value in _env_layer().items():
         if value == "":
@@ -716,7 +675,7 @@ async def effective_strings(session: AsyncSession) -> dict[str, str]:
     for row in (await session.execute(select(PlatformSetting))).scalars():
         spec = SETTING_SPECS.get(row.key)
         if spec is None:
-            continue  # 不在白名单内的键忽略
+            continue
         eff[row.key] = (
             _decrypt_row(row.key, row.value, aad=row.key) if spec.kind == "secret" else row.value
         )
@@ -744,7 +703,6 @@ async def set_platform_settings(
             raise ValueError(f"未知配置键:{key}")
         PLATFORM_CONFIG_WRITE_TOTAL.labels(domain=spec.group).inc()
         if raw.strip() == "":
-            # 清除 = 回落 env 层,prod_forbidden 守卫同样覆盖清除路径
             fallback = _env_default(key)
             if (
                 spec.prod_forbidden
@@ -765,7 +723,6 @@ async def set_platform_settings(
             .values(key=key, value=value, updated_by=updated_by)
             .on_conflict_do_update(
                 index_elements=["key"],
-                # upsert 语句里 onupdate 不生效,updated_at 显式 bump
                 set_={"value": value, "updated_by": updated_by, "updated_at": func.now()},
             )
         )

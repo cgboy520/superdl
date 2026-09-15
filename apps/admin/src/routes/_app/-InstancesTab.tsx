@@ -37,7 +37,6 @@ export function InstancesTab() {
   const navigate = useNavigate({ from: "/tenants" });
   const role = useAdminRole();
   const writable = canWriteOps(role);
-  // status/node_name/实例名检索入 URL(commit 制)
   const status = routeApi.useSearch({ select: (s) => s.istatus });
   const nodeName = routeApi.useSearch({ select: (s) => s.inode });
   const instQ = routeApi.useSearch({ select: (s) => s.iq });
@@ -71,7 +70,6 @@ export function InstancesTab() {
   const clearFilters = () => setUrl({ istatus: undefined, iq: undefined, inode: undefined });
   return (
     <>
-      {/* 筛选条:控件 + 清除筛选 + 精确总数(服务端 total) */}
       <FilterBar hasFilter={hasFilter} onClear={clearFilters} count={total ?? undefined}>
         <Select
           allowClear
@@ -125,7 +123,6 @@ export function InstancesTab() {
             title: t("tenants.colInstance"),
             fixed: "left",
             width: 180,
-            // 名称下副行 uuid 前 8 位
             render: (_, r) => (
               <Space orientation="vertical" size={0}>
                 <span>{r.name}</span>
@@ -162,7 +159,6 @@ export function InstancesTab() {
             },
           },
           {
-            // 形态列;服务行链到在线服务页
             title: t("tenants.colWorkload"),
             width: 110,
             render: (_, r) => {
@@ -178,7 +174,6 @@ export function InstancesTab() {
             },
           },
           {
-            // 购买模式标签取 packages/ui 映射
             title: t("tenants.colMarket"),
             dataIndex: "market",
             width: 110,
@@ -214,7 +209,6 @@ export function InstancesTab() {
                   }
                   more={
                     <RowMoreMenu>
-                      {/* 强制回收:走自动抢占同一路径(通知 + 宽限窗);与强制停止分开 */}
                       <ReasonAction
                         label={t("tenants.preempt")}
                         type="text"

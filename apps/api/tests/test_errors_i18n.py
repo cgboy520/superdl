@@ -1,4 +1,4 @@
-"""message_key 机制:key 渲染/params 插值/旧签名兼容/缺键回落/422 兜底键/导出脚本幂等。"""
+"""消息参数插值、缺键与缺参数回退,以及中文错误目录导出一致性。"""
 
 from pathlib import Path
 from typing import Any
@@ -30,7 +30,6 @@ def test_params_mismatch_falls_back_to_template() -> None:
 
 
 def test_export_script_matches_checked_in_catalog(tmp_path: Path) -> None:
-    """入库的 zh errors.json 与 MESSAGES 同步(导出到 tmp_path 比对)。"""
     import importlib.util
 
     repo = Path(__file__).resolve().parents[3]
@@ -40,7 +39,7 @@ def test_export_script_matches_checked_in_catalog(tmp_path: Path) -> None:
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     out = tmp_path / "errors.json"
-    mod_any: Any = mod  # 动态加载的模块,pyright 不认其属性; ruff 禁常量 setattr
+    mod_any: Any = mod
     mod_any.OUT = out
     mod_any.main()
     checked_in = (repo / "packages" / "ui" / "locales" / "zh-CN" / "errors.json").read_text(

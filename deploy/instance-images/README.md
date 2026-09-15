@@ -69,19 +69,22 @@
 
 ## 构建与推送
 
-一份 `Dockerfile` + `entrypoint.sh` + `superdl_jupyter_auth.py` + `lab-overrides.json`,三种用法靠 build-arg 区分(文件头注释有全表)。构建上下文是本目录。基座一律钉 digest。
+一份 `Dockerfile` + `entrypoint.sh` + `superdl_jupyter_auth.py` + `lab-overrides.json`,构建上下文是本目录。`BASE_IMAGE` 必填,基座一律钉 digest。
+
+- CUDA 基座 → Miniconda 镜像:同时传 `MINICONDA_INSTALLER`、对应官方 SHA-256 的 `MINICONDA_SHA256`、`CONDA_PATH_PREFIX` 与 `JUPYTER_PACKAGES`;换安装包时同步换哈希。
+- Miniconda 镜像 → 框架镜像:以同 CUDA 线 Miniconda 产物为 `BASE_IMAGE`,传 `FRAMEWORK_PIP` 与可选 `FRAMEWORK_PIP_INDEX`。
+- 厂商框架基座 → 平台镜像:传 `JUPYTER_PACKAGES`,使用基座自带 Python/pip,不传 Miniconda 安装参数或 `CONDA_PATH_PREFIX`。
+
 所有安装步骤之后统一跑一次 `apt full-upgrade`;OpenSSH 版本由基座 OS 决定(24.04 → 9.6p1、22.04 → 8.9p1),不从源码自建;该层在 CUDA 基座上约 **4GB**,不 hold CUDA 包。
 
 ```bash
 cd deploy/instance-images
 REG=<registry>/superdl
 JUP="jupyterlab==4.6.3 jupyter-ai[jupyternaut,magics]==3.1.3 jupyter-resource-usage==1.3.0 jupyterlab-language-pack-zh-CN==4.5.post3 ipykernel==7.3.0"
-CONDA=/opt/conda/bin:   # 只有自建 conda 的那几步传;厂商基座不传(它们没有 /opt/conda)
-# 安装包 SHA-256 钉版(缺了构建即拒;值 = 官方发布哈希,换安装包版本时同步换):
-CONDA_SHA313=66f7c434bbdc7a4c5687b7e56cde724f73954d1322ffb273c6e387f12fbcdc03  # Miniconda3-py313_26.5.3-2-Linux-x86_64.sh
-CONDA_SHA311=cdca3dd8440759bb87c60b227e26946263fe2856b30b2bcfdd964c38254fb8eb  # Miniconda3-py311_26.5.3-2-Linux-x86_64.sh
+CONDA=/opt/conda/bin:
+CONDA_SHA313=66f7c434bbdc7a4c5687b7e56cde724f73954d1322ffb273c6e387f12fbcdc03
+CONDA_SHA311=cdca3dd8440759bb87c60b227e26946263fe2856b30b2bcfdd964c38254fb8eb
 
-# ---- CUDA 13.2 线 ----
 docker build -t $REG/miniconda:26.5.3-cu132-py313 \
   --build-arg BASE_IMAGE=nvidia/cuda:13.2.1-cudnn-devel-ubuntu24.04 \
   --build-arg MINICONDA_INSTALLER=Miniconda3-py313_26.5.3-2-Linux-x86_64.sh \
@@ -92,7 +95,6 @@ docker build -t $REG/pytorch:2.13.0-cu132-py313 \
   --build-arg FRAMEWORK_PIP="torch==2.13.0+cu132 torchvision==0.28.0+cu132" \
   --build-arg FRAMEWORK_PIP_INDEX=https://download.pytorch.org/whl/cu132 .
 
-# ---- CUDA 12.9 线 ----
 docker build -t $REG/miniconda:26.5.3-cu129-py313 \
   --build-arg BASE_IMAGE=nvidia/cuda:12.9.2-cudnn-devel-ubuntu24.04 \
   --build-arg MINICONDA_INSTALLER=Miniconda3-py313_26.5.3-2-Linux-x86_64.sh \
@@ -105,7 +107,6 @@ docker build -t $REG/tensorflow:2.21.0-cu129-py313 \
   --build-arg BASE_IMAGE=$REG/miniconda:26.5.3-cu129-py313 \
   --build-arg FRAMEWORK_PIP="tensorflow[and-cuda]==2.21.0" .
 
-# ---- CUDA 11.8 线 ----
 docker build -t $REG/miniconda:26.5.3-cu118-py313 \
   --build-arg BASE_IMAGE=nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04 \
   --build-arg MINICONDA_INSTALLER=Miniconda3-py313_26.5.3-2-Linux-x86_64.sh \
@@ -119,16 +120,11 @@ docker build -t $REG/tensorflow:2.14.1-cu118-py311 \
   --build-arg MINICONDA_INSTALLER=Miniconda3-py311_26.5.3-2-Linux-x86_64.sh \
   --build-arg CONDA_PATH_PREFIX=$CONDA --build-arg JUPYTER_PACKAGES="$JUP" \
   --build-arg FRAMEWORK_PIP="tensorflow==2.14.1" .
-# TF 2.14 不用 [and-cuda](tensorrt==8.5.3.1 已从 PyPI 下架),直接用基座系统 CUDA。
 
-# ---- DataScience(jupyter docker-stacks 基座,只补平台契约层;CPU 向,无 CUDA)----
-# 上游只有滚动的 latest,构建时钉当次 digest;版本号用镜像快照月份
 docker build -t $REG/datascience:2026.08-py313 \
   --build-arg BASE_IMAGE=quay.io/jupyter/datascience-notebook@sha256:<当次 digest> \
   --build-arg JUPYTER_PACKAGES="$JUP" .
-# 不要 chown -R /opt/conda;Lab 设置放 root 属主的 /opt/superdl/labsettings,用户装包走 PYTHONUSERBASE/JULIA_DEPOT_PATH 落实例盘。
 
-# ---- PaddlePaddle(厂商基座,只补平台契约层;基座自带 python3.10 与 paddle)----
 PADDLE=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle
 for pair in "cu130:3.3.1-gpu-cuda13.0-cudnn9.13" "cu129:3.3.1-gpu-cuda12.9-cudnn9.9" "cu118:3.3.1-gpu-cuda11.8-cudnn8.9"; do
   docker build -t "$REG/paddle:3.3.1-${pair%%:*}-py310" \
@@ -136,35 +132,34 @@ for pair in "cu130:3.3.1-gpu-cuda13.0-cudnn9.13" "cu129:3.3.1-gpu-cuda12.9-cudnn
 done
 ```
 
-推送前自检(五步;`deploy/instance-images` 下任何文件改动后重建都要重跑):
+推送前自检(五步;`deploy/instance-images` 下任何文件改动后重建都要重跑)。前四步全部通过才可推送:
+
+1. 扩展能在目标基座的 jupyter_server 上 import,输出 `ok`。
+2. Jupyter 套件齐全,jupyternaut persona 与 jupyter-ai-litellm 在位,输出 `ai ok`。
+3. 使用生产 capabilities 与 `2777` 的实例盘启动容器:无效票据返回 403,有效票据跳转 `/lab`,语言设置的默认值为 `zh_CN`。
+4. 实际 SSH 公钥认证成功,输出 `SSHOK`,Python 与补充组正常;会话环境中的敏感测试值匹配数为 0(`grep -c` 无匹配时退出码为 1)。
+5. 用有 push 权限的机器人推送,再取本次 digest,管理端登记 digest 而不是可变 tag。
 
 ```bash
 IMG=$REG/pytorch:2.13.0-cu132-py313
-# ① 扩展能在目标基座的 jupyter_server 上 import
 docker run --rm --entrypoint python $IMG -c "import sys; sys.path.insert(0,'/opt/superdl'); import superdl_jupyter_auth; print('ok')"
-# ② Jupyter 套件齐全,jupyter-ai 的 jupyternaut persona 在位
 docker run --rm --entrypoint bash $IMG -lc 'pip list | grep -iE "jupyterlab |jupyter_ai|jupyter-resource-usage|language-pack|ipykernel";
   python -c "from importlib.metadata import entry_points,version; assert \"jupyternaut\" in [e.name for e in entry_points(group=\"jupyter_ai.personas\")]; version(\"jupyter-ai-litellm\"); print(\"ai ok\")"'
-# ③ 真起一次(生产 capabilities + 2777 的 /root),验票据、界面语言默认值、SSH
 FAKE=$(mktemp -d); chmod 2777 $FAKE; ssh-keygen -q -t ed25519 -f /tmp/tkey -N ""
 docker run -d --name jcheck --cap-drop=ALL --cap-add=SYS_CHROOT --cap-add=SETUID --cap-add=SETGID \
   -e JUPYTER_TOKEN=selfcheck -e AUTHORIZED_KEYS="$(cat /tmp/tkey.pub)" \
   -v $FAKE:/root -p 127.0.0.1:18888:8888 $IMG && sleep 28
-curl -s -o /dev/null -w '%{http_code}\n' 'http://127.0.0.1:18888/superdl-bootstrap?code=x&exp=1&sig=y'   # 期望 403
+curl -s -o /dev/null -w '%{http_code}\n' 'http://127.0.0.1:18888/superdl-bootstrap?code=x&exp=1&sig=y'
 TIK=$(python3 -c 'import hmac,hashlib,time;e=str(int(time.time())+60);print(f"code=c0&exp={e}&sig="+hmac.new(b"selfcheck",f"c0.{e}".encode(),hashlib.sha256).hexdigest())')
-curl -s -o /dev/null -D - -c /tmp/jar "http://127.0.0.1:18888/superdl-bootstrap?$TIK" | grep -i '^location:'  # 期望 /lab
-# 界面语言验「默认值」,不验「语言包装了没」
+curl -s -o /dev/null -D - -c /tmp/jar "http://127.0.0.1:18888/superdl-bootstrap?$TIK" | grep -i '^location:'
 curl -s -b /tmp/jar 'http://127.0.0.1:18888/lab/api/settings/@jupyterlab/translation-extension:plugin' \
-  | python3 -c 'import sys,json;print(json.load(sys.stdin)["schema"]["properties"]["locale"]["default"])'   # 期望 zh_CN
-# ④ 真连一次 SSH(验认证,不只验 sshd 起没起)
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["schema"]["properties"]["locale"]["default"])'
 IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' jcheck)
 ssh -i /tmp/tkey -o StrictHostKeyChecking=no -o BatchMode=yes root@$IP 'echo SSHOK; python -V; id -Gn'
-docker exec jcheck sh -c 'cat /etc/environment /etc/profile.d/superdl-env.sh | grep -ciE "selfcheck|ssh-ed25519"'  # 期望 0
+docker exec jcheck sh -c 'cat /etc/environment /etc/profile.d/superdl-env.sh | grep -ciE "selfcheck|ssh-ed25519"'
 docker rm -f jcheck; rm -rf $FAKE
-# ⑤ 推送(push 权限机器人;tag 可覆盖重推,不搞 -rN 后缀)
 docker login <registry> -u 'robot$superdl+push'
 docker push $IMG
-# 取本次 digest(管理端登记填它,不是 tag)
 echo "$IMG@$(docker inspect --format '{{index .RepoDigests 0}}' $IMG | cut -d@ -f2)"
 ```
 

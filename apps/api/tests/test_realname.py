@@ -50,9 +50,8 @@ class TestRealName:
             assert user.id_number is not None
             assert user.id_number.startswith("1101")
             assert "*" in user.id_number
-            assert "199001011234" not in user.id_number  # 不落明文
+            assert "199001011234" not in user.id_number
 
-        # 重复提交被拒
         resp = await client.post(
             "/api/v1/me/real-name",
             json={"name": "张三", "id_number": "110101199001011234"},
@@ -112,7 +111,6 @@ class TestRealName:
             assert resp.status_code == 403
             assert resp.json()["code"] == "REAL_NAME_REQUIRED"
 
-            # 完成实名后放行
             await client.post(
                 "/api/v1/me/real-name",
                 json={"name": "王五", "id_number": "110101199001011111"},
@@ -147,7 +145,6 @@ class TestRealName:
             assert resp.json()["code"] == "REAL_NAME_REQUIRED"
             assert resp.json()["message_key"] == "orchestrator.realNameRequired"
 
-            # 完成实名后放行(202 异步受理)
             await client.post(
                 "/api/v1/me/real-name",
                 json={"name": "赵六", "id_number": "110101199001012222"},
@@ -173,18 +170,15 @@ class TestRealName:
             headers, user_id, _key_id = await funded_user(client, sm, "13800000166")
             await create_test_sku(sm)
             await seed_node_spec(sm)
-            # 建盘:未实名 403
             resp = await client.post(
                 "/api/v1/disks", json={"name": "d1", "size_gb": 10}, headers=headers
             )
             assert resp.status_code == 403
             assert resp.json()["message_key"] == "disks.realNameRequired"
-            # 开机:未实名 403(直接 seed 一台 stopped)
             _, uuid = await seed_instance(sm, user_id=user_id, status="stopped")
             resp = await client.post(f"/api/v1/instances/{uuid}/start", headers=headers)
             assert resp.status_code == 403
             assert resp.json()["message_key"] == "orchestrator.realNameRequired"
-            # 实名后两路放行
             await client.post(
                 "/api/v1/me/real-name",
                 json={"name": "钱七", "id_number": "110101199001013333"},

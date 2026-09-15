@@ -6,7 +6,7 @@
  */
 
 /**
- * 包周期报价。金额三件套由后端算好逐行下发,前端不自己做乘法。
+ * 包周期报价,包含后端计算的原价、折扣与实付金额。
  */
 export interface SubscriptionQuoteOut {
   amount: string;

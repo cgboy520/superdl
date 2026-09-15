@@ -30,7 +30,6 @@ class SecurityHeadersMiddleware:
                     "bluetooth=(), serial=(), accelerometer=(), gyroscope=(), magnetometer=()",
                 )
                 headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
-                # same-site:console/admin 与 api 是同站兄弟子域
                 headers.setdefault("Cross-Origin-Resource-Policy", "same-site")
                 if not path.startswith(_DOCS_PATHS):
                     headers.setdefault(

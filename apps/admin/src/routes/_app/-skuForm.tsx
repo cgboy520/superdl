@@ -13,7 +13,7 @@ import {
   type SkuUpdate,
 } from "../../api";
 
-/** antd useWatch 的类型不含「字段未初始化」的 undefined,运行时会拿到;这里统一收窄出真实类型。 */
+/** 订阅表单字段,返回类型包含未初始化时的 undefined。 */
 export function useWatchSkuField<K extends keyof SkuFormValues>(
   form: FormInstance<SkuFormValues>,
   name: K,
@@ -34,7 +34,7 @@ export interface SkuFormValues {
   vcpu: number;
   mem_gb: number;
   disk_gb: number;
-  price_hourly: string; // stringMode:单价 4 位小数,不经二进制浮点
+  price_hourly: string;
   max_gpus_per_instance: number;
   cuda_max?: string | null;
   /** 是否接受包周期下单(与档位正交) */
@@ -45,12 +45,10 @@ export interface SkuFormValues {
   reason?: string;
 }
 
-// 展示档位 →(落库档位, 节点池);与后端 catalog._check_tier_pool 同款约束
 export const VARIANT_SPEC: Record<SkuVariant, { tier: SkuTier; pool: string }> = {
   dedicated: { tier: "dedicated", pool: "kata" },
   shared_mig: { tier: "shared", pool: "mig" },
   shared_hami: { tier: "shared", pool: "hami" },
-  // CPU 档默认 cpu 池,可改挂 hami(后端 TIER_POOLS 两者放行)
   cpu: { tier: "cpu", pool: "cpu" },
 };
 export const POOL_VARIANTS: Record<string, SkuVariant[]> = {
@@ -117,7 +115,6 @@ export function buildSkuPayload(
   if (editing === "new") {
     return { kind: "create", data: { tier, ...gpuFields, ...base } };
   }
-  // 型号不可改(SkuUpdate 无该字段)
   const { gpu_model, ...gpuUpdatable } = gpuFields;
   void gpu_model;
   return { kind: "update", skuId: editing.id, data: { ...base, ...gpuUpdatable, reason: values.reason ?? "" } };

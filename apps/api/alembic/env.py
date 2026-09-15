@@ -20,12 +20,11 @@ target_metadata = Base.metadata
 
 
 def get_url() -> str:
-    # 必须优先读 SUPERDL_DATABASE_URL:prod 迁移 Job 只注入该变量;未设时回落 Settings
     return os.environ.get("SUPERDL_DATABASE_URL") or get_settings().database_url
 
 
 def get_url_and_connect_args() -> tuple[str, dict[str, str]]:
-    """sslmode → asyncpg ssl 参数,与 app.core.db._split_db_tls 同口径。"""
+    """返回迁移数据库 URL 与 TLS 连接参数。"""
     return _split_db_tls(get_url())
 
 

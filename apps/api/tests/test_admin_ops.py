@@ -1,6 +1,5 @@
 """管理端运营 API:租户/调账双复核/节点与超卖报表/审计检索/死信重放/收入报表/公告。"""
 
-# 白盒用例:直探模块内部
 # pyright: reportPrivateUsage=false
 
 import asyncio
@@ -65,7 +64,6 @@ class TestAdjustments:
         assert resp.status_code == 201, resp.text
         adj_id = resp.json()["id"]
 
-        # 发起人自审 → 403
         resp = await client.post(
             f"/api/admin/v1/adjustments/{adj_id}/review",
             json={"approve": True},
@@ -74,7 +72,6 @@ class TestAdjustments:
         assert resp.status_code == 403
         assert resp.json()["code"] == "ADMIN_SECOND_REVIEW_REQUIRED"
 
-        # 第二管理员复核 → 生效
         resp = await client.post(
             f"/api/admin/v1/adjustments/{adj_id}/review",
             json={"approve": True, "comment": "属实"},
@@ -84,7 +81,6 @@ class TestAdjustments:
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "125.50"
 
-        # 已处理的单不可重复复核
         resp = await client.post(
             f"/api/admin/v1/adjustments/{adj_id}/review",
             json={"approve": True},
@@ -110,7 +106,7 @@ class TestAdjustments:
         )
         assert resp.json()["status"] == "rejected"
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
-        assert w["balance"] == "100.00"  # 驳回不动账
+        assert w["balance"] == "100.00"
 
     async def test_idempotency_scope_and_fingerprint(self, client, sm, fake):
         """同键同体重放 → replay;同键异体 → 409;同键同体跨租户 → 各开各的单。"""
@@ -123,7 +119,6 @@ class TestAdjustments:
             "/api/admin/v1/adjustments", json=body, headers={**finance, "Idempotency-Key": "k-1"}
         )
         assert r1.status_code == 201, r1.text
-        # 同键同体重放 → 200 + 重放头,同一单
         r2 = await client.post(
             "/api/admin/v1/adjustments", json=body, headers={**finance, "Idempotency-Key": "k-1"}
         )
@@ -132,7 +127,6 @@ class TestAdjustments:
         assert r2.json()["id"] == r1.json()["id"]
         async with sm() as session:
             assert len((await session.execute(select(AdminAdjustment))).scalars().all()) == 1
-        # 同键异体(金额不同)→ 409 指纹不符
         r3 = await client.post(
             "/api/admin/v1/adjustments",
             json={**body, "amount": "20.00"},
@@ -140,7 +134,6 @@ class TestAdjustments:
         )
         assert r3.status_code == 409
         assert r3.json()["message_key"] == "common.idempotencyKeyMismatch"
-        # 同键同体跨租户 → 新单
         r4 = await client.post(
             "/api/admin/v1/adjustments",
             json={**body, "user_id": u2id},
@@ -180,7 +173,7 @@ class TestAdjustments:
         results = await asyncio.gather(review(r1_id), review(r2_id))
         assert sorted(results) == [str(ErrorCode.CONFLICT), "approved"]
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
-        assert w["balance"] == "110.00"  # 100 + 10,并发只入账一次
+        assert w["balance"] == "110.00"
         async with sm() as session:
             entries = (
                 (await session.execute(select(BalanceLedger).where(BalanceLedger.type == "adjust")))
@@ -201,7 +194,6 @@ class TestAdjustments:
         assert resp.status_code == 201, resp.text
         adj_id = resp.json()["id"]
 
-        # 发起后才创建的账号:不能充当第二复核人
         fin_b = await admin_headers(sm, client, role="finance", username="fin-late-b")
         resp = await client.post(
             f"/api/admin/v1/adjustments/{adj_id}/review",
@@ -211,7 +203,6 @@ class TestAdjustments:
         assert resp.status_code == 403
         assert resp.json()["message_key"] == "adminapi.adjustReviewerTooNew"
 
-        # 发起前已存在的账号:正常复核通过
         fin_c = await admin_headers(sm, client, role="finance", username="fin-late-c")
         resp = await client.post(
             "/api/admin/v1/adjustments",
@@ -255,7 +246,7 @@ class TestTenantAggregations:
 
         _headers, _uuid, id1 = await provision_running(client, sm, fake, "13600000061")
         id2 = (await register(client, "13600000062"))["user"]["id"]
-        id3 = (await register(client, "13600000063"))["user"]["id"]  # 从未充值:无钱包行
+        id3 = (await register(client, "13600000063"))["user"]["id"]
         await fund_wallet(sm, id2, "20.00")
         async with sm() as session:
             await billing_service.debit(
@@ -279,7 +270,7 @@ class TestNodesAndReports:
         """端口池水位:assigned=已分配实例数;blocked=撞占标记(周期复检会放回)。"""
         from app.modules.orchestrator.ports import block_port
 
-        _headers, _uuid, _user_id = await provision_running(client, sm, fake)  # 占 1 端口
+        _headers, _uuid, _user_id = await provision_running(client, sm, fake)
         await block_port(sm, 31999, reason="test_orphan_endpoint", expected_instance_id=None)
         ah = await admin_headers(sm, client, role="readonly")
         pool = (await client.get("/api/admin/v1/nodes/port-pool", headers=ah)).json()
@@ -288,8 +279,7 @@ class TestNodesAndReports:
         assert pool["total"] >= 2
 
     async def test_oversell_report(self, client, sm, fake):
-        _headers, _uuid, _user_id = await provision_running(client, sm, fake)  # hami 池 50% × 1
-        # 先跑一轮巡检把 fake 节点写进台账(node_specs)
+        _headers, _uuid, _user_id = await provision_running(client, sm, fake)
         from app.modules.nodes.patrol import node_spec_patrol
 
         await node_spec_patrol(sm)
@@ -305,8 +295,8 @@ class TestNodesAndReports:
         from app.modules.nodes.patrol import node_spec_patrol
         from app.modules.orchestrator.models import Instance
 
-        _headers, _uuid, _user_id = await provision_running(client, sm, fake)  # hami 池实例
-        await node_spec_patrol(sm)  # 台账播种:报表物理口径来自 node_specs
+        _headers, _uuid, _user_id = await provision_running(client, sm, fake)
+        await node_spec_patrol(sm)
         hour = now_utc().replace(minute=0, second=0, microsecond=0)
         async with sm() as session:
             inst_id = (await session.execute(select(Instance.id))).scalar_one()
@@ -329,7 +319,7 @@ class TestNodesAndReports:
         ah = await admin_headers(sm, client, role="finance")
         report = (await client.get("/api/admin/v1/reports/oversell", headers=ah)).json()
         by_pool = {r["pool"]: r for r in report}
-        assert by_pool["hami"]["util_avg_24h"] == 45.0  # (30+60)/2,仅 hami 池
+        assert by_pool["hami"]["util_avg_24h"] == 45.0
         assert by_pool["kata"]["util_avg_24h"] is None
         assert by_pool["mig"]["util_avg_24h"] is None
 
@@ -352,7 +342,6 @@ class TestOutboxDead:
         rows = (await client.get("/api/admin/v1/outbox/dead", headers=ah)).json()
         assert any(r["id"] == task_id for r in rows)
 
-        # 重放:需原因(与忽略对齐),置回 pending,计数清零
         resp = await client.post(
             f"/api/admin/v1/outbox/{task_id}/retry",
             json={"reason": "调度抖动已恢复"},
@@ -363,7 +352,6 @@ class TestOutboxDead:
             task = await session.get(OutboxTask, task_id)
             assert task is not None and task.status == "pending" and task.retries == 0
 
-        # 非 dead 状态不可重放/忽略
         resp = await client.post(
             f"/api/admin/v1/outbox/{task_id}/retry",
             json={"reason": "再试一次"},
@@ -371,7 +359,6 @@ class TestOutboxDead:
         )
         assert resp.status_code == 409
 
-        # 忽略需原因
         task2 = await _make_dead_task(sm)
         resp = await client.post(
             f"/api/admin/v1/outbox/{task2}/discard", json={"reason": "实例已人工清理"}, headers=ah
@@ -410,7 +397,7 @@ class TestRevenueReport:
             hour=0, minute=0, second=0, microsecond=0
         ) - timedelta(hours=8)
         expected_today = "12.50" if hour >= beijing_day_start else "0"
-        assert body["today_revenue"] == expected_today  # 缺省 tz_offset=480
+        assert body["today_revenue"] == expected_today
         assert body["month_revenue"] == "12.50"
         assert body["today_signups"] >= 1
 
@@ -444,7 +431,6 @@ class TestAnnouncement:
             )
             assert {r.user_id for r in rows} == {u1["user"]["id"], u2["user"]["id"]}
 
-        # 用户端可见
         headers = {"Authorization": f"Bearer {u1['access_token']}"}
         notifications = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
         assert any(n["type"] == "announcement" for n in notifications)
@@ -457,7 +443,6 @@ class TestAnnouncement:
         from app.modules.notify import service as notify_service
 
         async def _no_per_user_notify(session, user_id, *args, **kwargs):
-            # 只拦逐用户通知;平台告警流(user_id=None)放行
             if user_id is not None:
                 raise AssertionError("公告群发不得逐用户调用 notify()")
 
@@ -475,7 +460,7 @@ class TestAnnouncement:
             headers=ah,
         )
         assert resp.status_code == 201, resp.text
-        assert resp.json()["reached"] == 1  # 冻结用户不触达
+        assert resp.json()["reached"] == 1
         async with sm() as session:
             rows = (
                 (
@@ -516,7 +501,7 @@ class TestTenantBillingDrilldown:
         assert resp.status_code == 200, resp.text
         page = resp.json()
         assert len(page["items"]) == 2
-        assert page["next_cursor"]  # 续页行为见 test_billing_flow.test_ledger_cursor_pagination
+        assert page["next_cursor"]
 
 
 class TestFreezeStopsInstances:
@@ -532,9 +517,7 @@ class TestFreezeStopsInstances:
         )
         assert resp.status_code == 200, resp.text
         assert resp.json()["status"] == "frozen"
-        # 回显停掉的 running 台数
         assert resp.json()["instances_stopped"] == 1
-        # 冻结即刻生效:用户端凭据被拒
         assert (await client.get("/api/v1/me", headers=user_headers)).status_code == 403
 
         async with sm() as session:
@@ -549,13 +532,11 @@ class TestFreezeStopsInstances:
             )
         assert len(tasks) == 1
 
-        # 用管理端列表核对状态
         listed = (await client.get("/api/admin/v1/instances", headers=h)).json()["items"]
         assert [i["status"] for i in listed if i["uuid"] == uuid] == ["stopping"]
         await drain(sm)
         await reconcile_once(sm)
         listed = (await client.get("/api/admin/v1/instances", headers=h)).json()["items"]
-        # 计费边(running→stopping→stopped)已闭合
         assert [i["status"] for i in listed if i["uuid"] == uuid] == ["stopped"]
 
     async def test_unfreeze_does_not_auto_start(self, client, sm, fake):
@@ -588,13 +569,12 @@ class TestAdminSearch:
             await client.get("/api/admin/v1/tenants", params={"q": "13611110001"}, headers=h)
         ).json()["items"]
         assert [t["phone_masked"] for t in exact] == ["136****0001"]
-        # 后缀命中
         resp = await client.get("/api/admin/v1/tenants", params={"q": "0002"}, headers=h)
         suffix = resp.json()["items"]
         assert [t["phone_masked"] for t in suffix] == ["136****0002"]
 
     async def test_tenant_search_escapes_like_metachars(self, client, sm, fake):
-        """q 的 LIKE 元字符按字面匹配,后缀检索行为不变。"""
+        """q 的 LIKE 元字符按字面匹配,支持手机号后缀检索。"""
         h = await admin_headers(sm, client)
         await register(client, "13611110001")
 
@@ -631,7 +611,7 @@ class TestAdminSearch:
             )
         ).json()
         asc_ids = [t["id"] for t in page1["items"] + page2["items"]]
-        assert asc_ids == sorted(asc_ids)  # 全局升序不重不漏
+        assert asc_ids == sorted(asc_ids)
         assert len(asc_ids) == len(set(asc_ids))
 
     async def test_tenant_search_is_audited(self, client, sm, fake):
@@ -652,7 +632,7 @@ class TestAdminSearch:
                 .all()
             )
         assert len(rows) == 1
-        assert rows[0].target == "tenant-search:136****0003"  # 审计里也只留掩码
+        assert rows[0].target == "tenant-search:136****0003"
 
     async def test_plain_tenant_list_is_not_audited(self, client, sm, fake):
         """不带查询的普通列表不落审计。"""
@@ -681,7 +661,6 @@ class TestAdminSearch:
             )
         ).json()["items"]
         assert [i["uuid"] for i in by_node] == [uuid]
-        # 管理端实例视图带租户与节点
         assert by_node[0]["user_id"] == user_id
         assert by_node[0]["node_name"] == "fake-node-1"
         by_uuid = (
@@ -724,11 +703,9 @@ class TestTenantLookupById:
         resp = await client.get("/api/admin/v1/tenants", params={"q": str(uid)}, headers=h)
         rows = resp.json()["items"]
         assert rows[0]["id"] == uid
-        # id 无命中时回落手机号后缀
         assert (
             await client.get("/api/admin/v1/tenants", params={"q": "99999999"}, headers=h)
         ).json()["items"] == []
-        # 手机号后缀检索行为不变
         resp = await client.get("/api/admin/v1/tenants", params={"q": "0003"}, headers=h)
         rows = resp.json()["items"]
         assert any(t["id"] == uid for t in rows)
@@ -747,7 +724,7 @@ class TestAdjustContext:
         assert "****" in ctx["phone_masked"]
         assert ctx["balance"] == "100.00"
         assert ctx["running_instances"] == 1
-        assert len(ctx["recent_ledger"]) >= 1  # fund_wallet 的 recharge 入账
+        assert len(ctx["recent_ledger"]) >= 1
 
         resp = await client.get("/api/admin/v1/tenants/999999/adjust-context", headers=fin)
         assert resp.status_code == 404
@@ -775,7 +752,6 @@ class TestAdjustContext:
             )
             assert resp.status_code == 400
             assert resp.json()["code"] == "VALIDATION_ERROR"
-        # 上限边界值仍放行
         resp = await client.post(
             "/api/admin/v1/adjustments",
             json={"user_id": user_id, "amount": "100000.00", "reason": "边界值"},
@@ -802,15 +778,14 @@ class TestOverview:
         body = resp.json()
         assert body["instances_by_status"]["running"] == 1
         assert body["tenants_total"] >= 1
-        assert body["paying_tenants"] == 0  # 只有 recharge,没有 consume 流水
+        assert body["paying_tenants"] == 0
         assert body["nodes_total"] == 3
         assert body["nodes_ready"] == 1
         assert body["nodes_missing"] == 1
         hami = next(p for p in body["pools"] if p["pool"] == "hami")
-        assert hami["gpu_total"] == 16  # 含 NotReady 节点
+        assert hami["gpu_total"] == 16
         assert hami["ready_gpu_total"] == 8
 
-        # 落一条 consume 流水后,付费租户精确 +1
         async with sm() as session:
             session.add(
                 BalanceLedger(
@@ -961,7 +936,6 @@ class TestTenantQuotaOverride:
         assert body["max_disks"] == 1 and body["effective_max_disks"] == 1
         assert body["note"] == "防滥用限一块"
 
-        # updated_by = 写覆盖的管理员 id
         from app.modules.adminapi.models import AdminUser
 
         async with sm() as session:
@@ -971,7 +945,6 @@ class TestTenantQuotaOverride:
         assert body["updated_by"] == admin_id and body["updated_at"]
 
         await create_disk(client, headers, name="d1", size_gb=50)
-        # 覆盖(1)优先于 env 默认(20):第 2 块被拒
         blocked = await client.post(
             "/api/v1/disks", json={"name": "d2", "size_gb": 50}, headers=headers
         )
@@ -979,7 +952,6 @@ class TestTenantQuotaOverride:
         assert blocked.json()["message_key"] == "disks.countQuota"
         assert blocked.json()["params"]["max"] == 1
 
-        # 清空覆盖(三项全空)→ 恢复默认链,第 2 块放行
         resp = await client.put(
             f"/api/admin/v1/tenants/{user_id}/quota",
             json={"note": "复核后恢复默认"},
@@ -989,12 +961,10 @@ class TestTenantQuotaOverride:
         body = resp.json()
         assert body["max_disks"] is None and body["effective_max_disks"] == 20
         assert body["updated_by"] is None
-        # 读端点:无覆盖时回默认链生效值
         got = (await client.get(f"/api/admin/v1/tenants/{user_id}/quota", headers=ah)).json()
         assert got["max_disks"] is None and got["effective_max_disks"] == 20
         await create_disk(client, headers, name="d2", size_gb=50)
 
-        # 清空操作也过审计
         from app.core.audit import AuditLog
 
         async with sm() as session:
@@ -1063,7 +1033,6 @@ class TestAdminListPagination:
                     )
                 )
             await session.commit()
-        # 最旧的一单改到昨天
         async with sm() as session:
             oldest = (
                 await session.execute(select(Order).where(Order.order_no == "SDL-PAGE-0"))
@@ -1081,7 +1050,6 @@ class TestAdminListPagination:
             await client.get("/api/admin/v1/orders", params={"day": yesterday}, headers=h)
         ).json()["items"]
         assert [o["order_no"] for o in y_rows] == ["SDL-PAGE-0"]
-        # 非法日期格式 → 400
         bad = await client.get("/api/admin/v1/orders", params={"day": "2026-13-99"}, headers=h)
         assert bad.status_code == 400
 
@@ -1110,7 +1078,6 @@ class TestAdminListPagination:
             await client.get("/api/admin/v1/adjustments", params={"limit": 2}, headers=fin)
         ).json()
         assert len(p1["items"]) == 2 and p1["next_cursor"]
-        # status / user_id 过滤
         pending = (
             await client.get("/api/admin/v1/adjustments", params={"status": "pending"}, headers=fin)
         ).json()["items"]
@@ -1133,7 +1100,6 @@ class TestAdminListPagination:
 
 class TestRealNameIdentityCap:
     async def test_same_id_number_bound_accounts_capped(self, client, sm, monkeypatch):
-        """挂了说明:同一证件可无限开号(只存脱敏串无法去重),每个号都带满额配额。"""
         from app.core.config import get_settings
         from app.modules.account import service as account_service
         from app.modules.account.realname import set_realname_provider
@@ -1169,7 +1135,6 @@ class TestRealNameIdentityCap:
 
 class TestPortPoolGauge:
     async def test_free_is_capacity_minus_used(self, client, sm, fake):
-        """挂了说明:free 按 port_allocations 行数算(行只在分配时扩),空池报 0 触发误报。"""
         from app.core.config import get_settings
         from app.core.metrics import SSH_PORT_POOL
         from app.modules.orchestrator.reconciler import _refresh_port_pool_gauge

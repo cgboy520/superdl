@@ -1,4 +1,4 @@
-"""镜像预热:巡检铺行/收敛/复检/清理 + handler 幂等(FakeOrchestrator 全链路)。"""
+"""镜像预热巡检、复检、清理与 handler 幂等。"""
 
 from datetime import timedelta
 
@@ -69,12 +69,11 @@ class TestPrewarmFullChain:
         """建镜像 → 巡检铺行(=节点数) → drain 置 pulling → 巡检收敛 cached。"""
         await make_image(sm)
         counts = await prewarm_patrol(sm)
-        assert counts["planned"] == 3  # kata/hami/mig 三节点
+        assert counts["planned"] == 3
         rows = await cache_rows(sm)
         assert [r.status for r in rows] == ["pending"] * 3
         assert await pending_tasks(sm) == 3
 
-        # handler:建 Job + 行置 pulling
         assert await drain_strict(sm) == (3, 0)
         rows = await cache_rows(sm)
         assert [r.status for r in rows] == ["pulling"] * 3
@@ -85,14 +84,13 @@ class TestPrewarmFullChain:
         rows = await cache_rows(sm)
         assert [r.status for r in rows] == ["cached"] * 3
         assert all(r.checked_at is not None for r in rows)
-        assert fake.prewarm_jobs == {}  # 收敛后 Job 已清理
+        assert fake.prewarm_jobs == {}
 
     async def test_handler_idempotent_no_duplicate_job(self, sm, fake: FakeOrchestrator) -> None:
         """同一(镜像,节点)任务重复执行:Job 唯一、行不重复。"""
         image_id = await make_image(sm)
         await prewarm_patrol(sm)
         await drain(sm)
-        # 重复入队同一目标再 drain
         async with sm() as session:
             from app.core.outbox import enqueue
 
@@ -112,7 +110,7 @@ class TestPrewarmFailure:
         fake.auto_prewarm = False
         await make_image(sm)
         await prewarm_patrol(sm)
-        await drain(sm)  # rows → pulling,jobs → running
+        await drain(sm)
         fake.set_prewarm_state("fake-kata-node-1", IMAGE_REF, "failed")
 
         counts = await prewarm_patrol(sm)
@@ -122,11 +120,9 @@ class TestPrewarmFailure:
         assert len(failed) == 1
         assert "ErrImagePull" in (failed[0].last_error or "")
 
-        # 节流窗口内不自动重试
         counts = await prewarm_patrol(sm)
         assert counts["requeued"] == 0
 
-        # 回拨 updated_at 超过 30min → 自动回 pending 并重新入队
         async with sm() as session:
             await session.execute(
                 update(ImageNodeCache)
@@ -144,7 +140,7 @@ class TestPrewarmFailure:
         await make_image(sm)
         await prewarm_patrol(sm)
         await drain(sm)
-        fake.prewarm_jobs.clear()  # 模拟 TTL 清理
+        fake.prewarm_jobs.clear()
         counts = await prewarm_patrol(sm)
         assert counts["requeued"] == 3
         rows = await cache_rows(sm)
@@ -169,7 +165,6 @@ class TestPrewarmLifecycle:
         await make_image(sm)
         await prewarm_patrol(sm)
         assert len(await cache_rows(sm)) == 3
-        # 新节点加入(新池)→ 补行;节点消失 → 行删除
         fake.pool_capacity["kata2"] = 8
         counts = await prewarm_patrol(sm)
         assert counts["planned"] == 1
@@ -183,13 +178,13 @@ class TestPrewarmLifecycle:
         await make_image(sm)
         await prewarm_patrol(sm)
         await drain(sm)
-        await prewarm_patrol(sm)  # 全部 cached
+        await prewarm_patrol(sm)
         async with sm() as session:
             await session.execute(
                 update(ImageNodeCache).values(checked_at=now_utc() - timedelta(hours=25))
             )
             await session.commit()
-        counts = await prewarm_patrol(sm)  # 默认复检窗口 24h
+        counts = await prewarm_patrol(sm)
         assert counts["requeued"] == 3
         rows = await cache_rows(sm)
         assert [r.status for r in rows] == ["pending"] * 3
@@ -201,7 +196,7 @@ class TestPrewarmLifecycle:
         image_id = await make_image(sm)
         await prewarm_patrol(sm)
         await drain(sm)
-        await prewarm_patrol(sm)  # 全部 cached,cached_ref = 旧 ref
+        await prewarm_patrol(sm)
         rows = await cache_rows(sm)
         assert [r.status for r in rows] == ["cached"] * 3
         assert {r.cached_ref for r in rows} == {IMAGE_REF}
@@ -225,7 +220,6 @@ class TestPrewarmLifecycle:
         await make_image(sm)
         await prewarm_patrol(sm)
         assert await pending_tasks(sm) == 3
-        # 任务丢失:删掉 pending 任务,行仍 pending
         async with sm() as session:
             for t in (await session.execute(select(OutboxTask))).scalars().all():
                 await session.delete(t)
@@ -253,8 +247,7 @@ class TestPrewarmLifecycle:
         )
         image_id = await make_image(sm)
         counts = await prewarm_patrol(sm)
-        assert counts["planned"] == 3  # 只铺 Ready 三节点,sick-node 不在期望集
-        # sick-node 的 failed 行:重试不派发
+        assert counts["planned"] == 3
         async with sm() as session:
             session.add(
                 ImageNodeCache(

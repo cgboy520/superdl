@@ -47,7 +47,6 @@ export function AdminServicesTable({
     },
     compact ? { limit: 100 } : undefined,
   );
-  // compact(抽屉)形态截断前 100 条、不出「加载更多」,该分支保留裸 Table 所需字段
   const { data, queryKey, isLoading, isError, error, refetch } = servicesQ;
   const forbidden = isApiError(error) && error.status === 403;
   const rows = flattenPages(data);
@@ -92,7 +91,6 @@ export function AdminServicesTable({
       },
     },
     {
-      // 链到全局实例表按 uuid 前缀检索
       title: t("services.colInstance"),
       width: 120,
       render: (_, r) => {

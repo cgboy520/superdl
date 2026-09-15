@@ -1,4 +1,3 @@
-# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -10,31 +9,25 @@ htmlcov/
 coverage.xml
 coverage.json
 
-# Node
 node_modules/
 dist/
 .turbo/
 *.tsbuildinfo
 .eslintcache
 
-# Env & local
 .env
 .env.local
 *.local.yaml
 
-# IDE / OS
 .idea/
 .vscode/
 .DS_Store
 
-# Test artifacts
 .playwright-mcp/
 playwright-report/
 test-results/
 
-# 本地 UX 审计产物
 /ux-audit/
 /audit-landing.png
 
-# Generated(packages/api-client/src 与 openapi.json 是入库产物,不在此列)
 .trae/

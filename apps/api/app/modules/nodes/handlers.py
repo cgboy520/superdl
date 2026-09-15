@@ -14,15 +14,14 @@ logger = get_logger(__name__)
 
 @outbox_handler("node.cordon", retry=RetryPolicy(timeout_seconds=120))
 async def handle_node_cordon(session: AsyncSession, task: OutboxTask) -> None:
-    """cordon/uncordon:执行台账期望态(desired_unschedulable),不读 payload(乱序重试幂等收敛)。
-    节点不存在 404,退避重试后进死信。"""
+    """按台账 desired_unschedulable 收敛 cordon;无期望态返回,节点不存在则重试。"""
     node_name = task.payload["node_name"]
     row = (
         await session.execute(select(NodeSpec).where(NodeSpec.node_name == node_name))
     ).scalar_one_or_none()
     if row is None or row.desired_unschedulable is None:
         logger.warning("node_cordon_no_desired_state", node=node_name, task_id=task.id)
-        return  # 无期望态(台账未收录/行被清理):不重放陈旧 payload
+        return
     await get_orchestrator().set_node_unschedulable(node_name, row.desired_unschedulable)
     logger.info(
         "node_cordon_applied",
@@ -34,16 +33,14 @@ async def handle_node_cordon(session: AsyncSession, task: OutboxTask) -> None:
 
 @outbox_handler("node.switch_pool", retry=RetryPolicy(timeout_seconds=120))
 async def handle_node_switch_pool(session: AsyncSession, task: OutboxTask) -> None:
-    """切池的 K8s 侧:先停调度再整套下发池标签与 GPU operand 标签(旧池残留键随之删掉)。
-    读台账期望态(desired_pool)而非 payload,乱序重试幂等收敛;60s 巡检 C2 兜底重下发。
-    主机侧改造(IOMMU / 驱动 / agent config)不在这里,由运维重跑 node-join 补齐。"""
+    """按台账 desired_pool 先停调度再下发池与 GPU operand 标签;无期望态返回。"""
     node_name = task.payload["node_name"]
     row = (
         await session.execute(select(NodeSpec).where(NodeSpec.node_name == node_name))
     ).scalar_one_or_none()
     if row is None or not row.desired_pool:
         logger.warning("node_switch_pool_no_desired_state", node=node_name, task_id=task.id)
-        return  # 无期望态(台账未收录/行被清理):不重放陈旧 payload
+        return
     orch = get_orchestrator()
     await orch.set_node_unschedulable(node_name, True)
     await orch.set_node_labels(node_name, pool_node_labels(row.desired_pool))
@@ -56,7 +53,7 @@ async def handle_node_switch_pool(session: AsyncSession, task: OutboxTask) -> No
 
 
 @outbox_handler("node.decommission")
-async def handle_node_decommission(session: AsyncSession, task: OutboxTask) -> None:  # noqa: ARG001 handler 签名
+async def handle_node_decommission(session: AsyncSession, task: OutboxTask) -> None:  # noqa: ARG001
     """节点退役的 K8s 侧:cordon 后删 Node 对象(delete_node);读 payload(单向终态);
     节点已不在集群按成功返回。"""
     node_name = task.payload["node_name"]

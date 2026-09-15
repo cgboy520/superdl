@@ -1,8 +1,4 @@
-"""镜像预热:outbox handler + 巡检。
-巡检 prewarm_patrol(60s):铺行(enabled 镜像 × Ready/Cordoned 节点)、收敛 pulling、失败重试、
-cached 复检、清理;
-handler image.prewarm:确保定点拉取 Job 存在,行置 pulling,完成态由巡检收敛。
-"""
+"""镜像预热 outbox 与巡检;目标为启用镜像及非 CPU 池的 Ready/Cordoned 节点。"""
 
 from datetime import timedelta
 
@@ -21,11 +17,8 @@ from app.modules.catalog.models import ImageNodeCache, PlatformImage
 
 logger = get_logger(__name__)
 
-# failed 行自动重试的节流窗口
 FAILED_RETRY_INTERVAL = timedelta(minutes=30)
-# pending 行卡死后的重派超时
 PENDING_REQUEUE_TIMEOUT = timedelta(minutes=10)
-# 预热覆盖的节点状态;NotReady 保留行但不派新任务
 TARGET_NODE_STATUSES = ("Ready", "Cordoned")
 
 
@@ -45,8 +38,7 @@ async def handle_image_prewarm(session: AsyncSession, task: OutboxTask) -> None:
         return
     image = await session.get(PlatformImage, image_id)
     if image is None or not image.prewarm_enabled:
-        return  # 行由巡检清理
-    # 预热 Job 落平台 ns,拉取凭据托管到该 ns
+        return
     pull_secret = await ensure_registry_pull_secret(session, get_settings().k8s_platform_namespace)
     await get_orchestrator().prewarm_image(
         node_name, image.image_ref, image_pull_secret=pull_secret
@@ -64,7 +56,6 @@ async def prewarm_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]
         orch = get_orchestrator()
         nodes = await orch.list_nodes()
         known_nodes = {n.name for n in nodes}
-        # cpu 池不预热
         target_nodes = {
             n.name for n in nodes if n.status in TARGET_NODE_STATUSES and n.pool_label != POOL_CPU
         }
@@ -94,17 +85,14 @@ async def _plan(
         now = now_utc()
         alive: set[tuple[int, str]] = set()
         for row in rows:
-            # 清理:节点已消失 / 镜像已禁用
             if row.node_name not in known_nodes or row.image_id not in enabled:
                 await session.delete(row)
                 counts["removed"] += 1
                 continue
             alive.add((row.image_id, row.node_name))
-            # NotReady 节点保留行但不派新任务
             if row.node_name not in target_nodes:
                 continue
             if row.cached_ref is not None and row.cached_ref != ref_by_id.get(row.image_id):
-                # ref 变了:作废重拉
                 row.status = "pending"
                 row.cached_ref = None
                 row.checked_at = None
@@ -113,13 +101,12 @@ async def _plan(
                 )
                 counts["requeued"] += 1
             elif row.status == "failed" and row.updated_at < now - FAILED_RETRY_INTERVAL:
-                row.status = "pending"  # last_error 保留供 UI 展示直至下次收敛
+                row.status = "pending"
                 enqueue(
                     session, "image.prewarm", {"image_id": row.image_id, "node_name": row.node_name}
                 )
                 counts["requeued"] += 1
             elif row.status == "pending" and row.updated_at < now - PENDING_REQUEUE_TIMEOUT:
-                # pending 超时重派;拨 updated_at 节流
                 row.updated_at = now
                 enqueue(
                     session, "image.prewarm", {"image_id": row.image_id, "node_name": row.node_name}
@@ -130,12 +117,11 @@ async def _plan(
                 and row.checked_at is not None
                 and row.checked_at < now - recheck
             ):
-                row.status = "pending"  # 复检:镜像仍在时 Job IfNotPresent 秒完,被 GC 则真实重拉
+                row.status = "pending"
                 enqueue(
                     session, "image.prewarm", {"image_id": row.image_id, "node_name": row.node_name}
                 )
                 counts["requeued"] += 1
-        # 铺行:期望集补缺(行 + 任务同事务)
         for image_id in enabled:
             for node in target_nodes:
                 if (image_id, node) not in alive:
@@ -178,10 +164,9 @@ async def _converge_pulling(
                 elif status.state == "failed":
                     row.status = "failed"
                     row.last_error = status.message or "prewarm job failed"
-                    await orch.delete_prewarm_job(row.node_name, ref)  # 重试时重建
+                    await orch.delete_prewarm_job(row.node_name, ref)
                     counts["failed"] += 1
                 elif status.state == "absent":
-                    # Job 不存在:回 pending 重派
                     row.status = "pending"
                     enqueue(
                         session,
@@ -189,7 +174,6 @@ async def _converge_pulling(
                         {"image_id": row.image_id, "node_name": row.node_name},
                     )
                     counts["requeued"] += 1
-                # running → 留待下轮
                 await session.commit()
         except Exception:
             logger.exception("prewarm_converge_error", row_id=row_id)

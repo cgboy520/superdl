@@ -74,7 +74,7 @@ class TestUnhandledException:
             resp = await c.get("/boom2", headers={"X-Request-ID": "gw-boom-1"})
         assert resp.status_code == 500
         assert resp.json()["code"] == "INTERNAL"
-        assert "kaboom" not in resp.text  # 不泄露内部细节
+        assert "kaboom" not in resp.text
         assert resp.headers["x-request-id"] == "gw-boom-1"
         assert resp.headers["x-content-type-options"] == "nosniff"
         assert resp.json()["request_id"] == "gw-boom-1"
@@ -98,7 +98,6 @@ class TestCleanup:
                 UsedRefreshToken(jti="deadbeef" * 4, expires_at=now_utc() - timedelta(hours=1))
             )
             await session.commit()
-            # created_at 回拨越过 7 天窗口
             await session.execute(
                 update(SmsCode)
                 .where(SmsCode.phone == "13800000150")

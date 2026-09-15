@@ -30,19 +30,21 @@ kubectl apply -f deploy/cluster/admission/tenant-restrictions.yaml
 
 ## 核对
 
+按下面命令依次核对,不满足判据时保持封锁:
+
+- kata 池:`nvidia.com/gpu.workload.config=vm-passthrough`,不保留 `nvidia.com/gpu.deploy.device-plugin`;有 kata-deploy、vfio-manager、sandbox-device-plugin,没有 hami-device-plugin。
+- kata 池的 GPU 绑定到 `vfio-pci`,且每张卡独立一个 IOMMU 组;同组多卡时禁止在该节点售卖整卡档。
+- 回到 hami 池:HAMi device plugin 在、官方 device plugin 不在,GPU 绑定回 `nvidia`,节点重新注册 `nvidia.com/gpu` 可分配资源。
+
 ```bash
-# 池标签与 operand 标签(kata 池:vm-passthrough 在、deploy.device-plugin 不在)
 kubectl get node <node> -L superdl.io/pool -L nvidia.com/gpu.workload.config \
   -L nvidia.com/gpu.deploy.device-plugin
 
-# 组件落位:kata 池应有 kata-deploy / vfio-manager / sandbox-device-plugin,且没有 hami-device-plugin
 kubectl -n kube-system get pod -o wide --field-selector spec.nodeName=<node>
 kubectl -n gpu-operator get pod -o wide --field-selector spec.nodeName=<node>
 
-# kata 池:卡已绑到 vfio-pci,且 IOMMU 每卡独立成组(同组多卡则整卡档不可在该节点售卖)
 ssh <node> 'lspci -nnk -d 10de:; for g in /sys/kernel/iommu_groups/*/devices/*; do echo "$g"; done | grep -i nvidia'
 
-# 回到 hami 池:HAMi device plugin 在、官方 device plugin 不在,节点重新注册出 nvidia.com/gpu
 kubectl get node <node> -o jsonpath='{.status.allocatable}' | tr ',' '\n' | grep nvidia
 ```
 

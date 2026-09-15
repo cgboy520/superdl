@@ -8,7 +8,6 @@ from typing import Any
 from app.core.logging import get_logger
 
 MESSAGES: dict[str, str] = {
-    # 账户
     "account.accountDeleted": "账号已注销",
     "account.credentialRequired": "需提供验证码或密码",
     "account.deletionBalanceRemaining": (
@@ -21,7 +20,6 @@ MESSAGES: dict[str, str] = {
     "account.deletionNotCancellable": "注销申请状态为 {status},不可撤销",
     "account.deletionNotPending": "注销申请状态为 {status},不可处理",
     "account.deletionPhoneMismatch": "手机号与当前账号不一致,请核对后重试",
-    # 密码错 / 验证码错 / 未注册共用本条
     "account.loginFailed": "手机号或凭证错误",
     "account.phoneTaken": "该手机号已注册,请直接登录",
     "account.realNameChannelError": "实名核验服务暂不可用,请稍后重试",
@@ -39,7 +37,6 @@ MESSAGES: dict[str, str] = {
     "account.realNameIdentityLimit": "该证件已绑定 {max} 个账号,不能再绑定新账号",
     "account.termsNotAccepted": "请先阅读并同意《用户协议》与《隐私政策》",
     "account.userFrozen": "账号已被冻结,请联系客服",
-    # 管理端
     "adminapi.adjustAlreadyProcessed": "调账单已处理",
     "adminapi.adjustNotZero": "调账金额不能为 0",
     "adminapi.alertAlreadyAcked": "该告警已确认",
@@ -61,7 +58,6 @@ MESSAGES: dict[str, str] = {
     "adminapi.mfaCodeInvalid": "动态码错误或已过期,请重试",
     "adminapi.mfaNotBound": "该账号未绑定动态口令",
     "adminapi.mfaResetSelfForbidden": "不能重置本人的动态口令:请用恢复码登录或找另一位超管",
-    # 计费/支付
     "billing.alipayCallbackMerchantMismatch": "支付宝回调的商户信息与本平台不符",
     "billing.alipayCallbackVerifyFailed": "支付宝回调验签失败",
     "billing.alipayCreateFailed": "支付宝下单失败:{message}",
@@ -143,7 +139,6 @@ MESSAGES: dict[str, str] = {
     "billing.wechatCreateFailed": "微信下单失败:{message}",
     "billing.wechatCredentialsIncomplete": "微信支付商户凭据不完整(管理端·平台配置)",
     "billing.wechatQueryFailed": "微信查单失败:{message}",
-    # 商品/镜像
     "catalog.imageRefExists": "镜像 image_ref 已存在",
     "catalog.prewarmDisabled": "该镜像已关闭预热,请先开启",
     "catalog.priceTooSmall": "单价过小:精确到 0.0001 元/时后不能为 0",
@@ -173,7 +168,6 @@ MESSAGES: dict[str, str] = {
     "catalog.skuBusinessKeyExists": (
         "相同型号、档位、池、切片、算力份额与 vCPU/内存的规格已存在,请直接编辑该规格"
     ),
-    # 通用兜底
     "common.forbidden": "无权访问",
     "common.httpError": "请求失败({status})",
     "common.internal": "服务器内部错误,请稍后重试",
@@ -190,7 +184,6 @@ MESSAGES: dict[str, str] = {
     "common.rateLimited": "尝试过于频繁,请稍后再试",
     "common.retryableConflict": "请求与另一个进行中的操作冲突,请重试",
     "common.validation": "参数校验失败",
-    # 数据盘
     "disks.countQuota": "数据盘数量已达上限({max} 块),请删除不用的盘或联系客服提额",
     "disks.realNameRequired": "按监管要求,开通存储前需完成实名认证",
     "disks.expandNeedsActive": "仅正常状态的数据盘可以扩容",
@@ -201,16 +194,13 @@ MESSAGES: dict[str, str] = {
     "disks.shrinkForbidden": "数据盘只支持扩容,不支持缩容",
     "disks.sizeMax": "容量上限 {max} GB",
     "disks.sizeRange": "容量须在 {min}~{max} GB 之间",
-    # 法务文档
     "legal.docNotFound": "法务文档不存在或尚未发布",
     "legal.draftExists": "该文档与语言已存在草稿,请先处理现有草稿",
     "legal.versionNotDraft": "版本状态为 {status},仅草稿可执行该操作",
     "legal.publishedNotArchivable": "已发布版本不可直接归档",
-    # 计量/监控
     "metering.badNodeName": "节点名不合法",
     "metering.badRange": "range 须为 1h/6h/24h",
     "metering.unavailable": "监控数据暂不可用,不影响计费(计费依据为实例事件流水)",
-    # 节点接入
     "nodes.alreadyTerminal": "状态 {status} 已是终态,无需吊销",
     "nodes.clusterNotReady": "集群调度组件未就绪,暂时无法开机;平台正在自动检测恢复,请稍后重试",
     "nodes.clusterProbeFailed": "集群连接失败:{error}",
@@ -231,7 +221,6 @@ MESSAGES: dict[str, str] = {
     "nodes.poolUnchanged": "节点已在 {pool} 池,无需切换",
     "nodes.regenerateNotAllowed": "状态 {status} 不允许重新生成(仅 待执行/已过期/已失败)",
     "nodes.storageClassMissing": "集群存储未就绪(缺少 {names}),暂时无法开通;请联系平台运维",
-    # 实例编排
     "orchestrator.accessNeedsRunning": "实例运行中才能获取接入信息",
     "orchestrator.envKeyInvalid": (
         "环境变量名「{name}」不合法:只能用字母、数字和下划线,且不能以数字开头"
@@ -293,8 +282,6 @@ MESSAGES: dict[str, str] = {
     "orchestrator.vcpuQuota": (
         "CPU 实例的 vCPU 总数将超过上限({max} 核),请释放后再创建或联系客服提额"
     ),
-    # 在线服务
-    # 网关 extAuth 回调的统一拒绝文案(不区分密钥错 / 已吊销 / 不属端点 / 实例未运行)
     "services.apiKeyInvalid": "访问密钥无效",
     "services.apiKeyNotFound": "访问密钥不存在",
     "services.apiKeyQuota": "单个服务的访问密钥已达上限({max} 把),请先吊销不用的密钥",
@@ -305,7 +292,6 @@ MESSAGES: dict[str, str] = {
     "services.rolloutNeedsSettled": "当前版本正在变更中(部署 / 停止 / 释放),稳定后再更新版本",
     "services.rolloutSubscriptionUnsupported": "包周期服务暂不支持更新版本",
     "services.envKeepUnknown": "要沿用的密文变量在当前版本里不存在:{keys}",
-    # 工单
     "tickets.notFound": "工单不存在",
     "tickets.messageLimitReached": "本工单回复已达上限({max} 条),请新建工单继续",
     "tickets.openLimitReached": "进行中的工单已达上限({max} 个),请等待客服处理或关闭后再提交",

@@ -16,11 +16,9 @@ logger = get_logger(__name__)
 
 
 async def overview(session: AsyncSession) -> dict[str, Any]:
-    """运营总览聚合:精确 COUNT 口径。
+    """聚合非终态实例、active 租户、净消费为正的租户及在保订阅实例数。
 
-    实例分状态计数不含 released;付费租户 = ledger consume 全表聚合;租户总数取 active 用户;
-    包周期在保数 = 未到期的订阅行数;节点/GPU 取台账全量(含 NotReady/Missing),
-    竞价占用按台账 gpu_used 截断。
+    节点/GPU 含非 Ready 台账,竞价占用以台账 gpu_used 为上限。
     """
     counted = await orchestrator_queries.count_instances_by_status(session)
     status_counts: dict[str, int] = {st: counted.get(st, 0) for st in NON_TERMINAL_STATUSES}

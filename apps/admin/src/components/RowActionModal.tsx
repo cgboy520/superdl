@@ -32,7 +32,6 @@ export function RowActionModal<Values>({
   const errText = useApiErrorText();
   const { message } = App.useApp();
   const [loading, setLoading] = useState(false);
-  // form 实例由调用方持有,关闭时清空 store
   const close = () => {
     form.resetFields();
     onClose();
@@ -42,7 +41,6 @@ export function RowActionModal<Values>({
     try {
       values = await form.validateFields();
     } catch {
-      // 校验失败:antd 已给红字
       return;
     }
     setLoading(true);

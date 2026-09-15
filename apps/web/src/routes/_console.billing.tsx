@@ -1,4 +1,4 @@
-/** 费用中心:AttentionBar(余额 / 概览取数失败 + 实名)→ 余额卡 / 充值 Modal → 月度概览(三张 StatCard + 按实例横条)→ 账单与收支明细(服务端 CSV 导出)。Tab 与月份入 URL;充值幂等键按 (amount, channel) 派生。 */
+/** 费用中心:余额与充值、月度概览、账单、收支明细及 CSV 导出;Tab 与月份写入 URL。 */
 
 import { POLL, useAutoRefresh, useThemeColors } from "@superdl/ui";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -38,7 +38,6 @@ const BY_INSTANCE_ROWS = 8;
 
 export const Route = createFileRoute("/_console/billing")({
   beforeLoad: requireAuth,
-  // Tab/月份/流水类型入 URL;非法值回默认
   validateSearch: (search: Record<string, unknown>): { tab?: BillingTab; month?: string; ledger?: LedgerFilter } => {
     const out: { tab?: BillingTab; month?: string; ledger?: LedgerFilter } = {};
     if (typeof search.tab === "string" && (BILLING_TABS as readonly string[]).includes(search.tab)) {
@@ -55,7 +54,7 @@ export const Route = createFileRoute("/_console/billing")({
   component: BillingPage,
 });
 
-/** 按实例消费横条:条长按最大值归一,右侧金额右对齐;饼图换成可读的排序条(ui-ux-spec §3.9)。 */
+/** 按实例消费横条:条长按最大值归一,金额右对齐。 */
 function ByInstanceBar({ name, amount, ratio }: { name: string; amount: string; ratio: number }) {
   const colors = useThemeColors();
   const { formatMoney } = useFormat();
@@ -86,7 +85,6 @@ function BillingPage() {
   const { tab, month: monthParam } = Route.useSearch();
   const [rechargeOpen, setRechargeOpen] = useState(false);
   const activeTab: BillingTab = tab ?? "bills";
-  // 余额轮询,页头新鲜度条可暂停
   const auto = useAutoRefresh(POLL.logs);
   const walletQ = useWallet({ refetchInterval: auto.refetchInterval });
   const { data: wallet } = walletQ;
@@ -107,7 +105,6 @@ function BillingPage() {
       search: (prev: { tab?: string; month?: string; ledger?: LedgerFilter }) => ({
         tab: patch.tab ?? (prev.tab as BillingTab | undefined),
         month: patch.month ?? prev.month,
-        // 流水类型筛选与 Tab/月份切换共存
         ledger: prev.ledger,
       }),
       replace: true,
@@ -123,7 +120,6 @@ function BillingPage() {
     return downloadCsvChecked(isBills ? `superdl-hourly-${month}.csv` : "superdl-ledger.csv", csv);
   });
 
-  // 同名实例合并后按金额降序:第一行即最大值,条长以它为分母
   const byInstance = useMemo(() => {
     const byName = new Map<string, string>();
     for (const i of summary?.items ?? []) {
@@ -136,7 +132,6 @@ function BillingPage() {
   }, [summary, t]);
   const maxAmount = amountToScaledNumber(byInstance[0]?.amount ?? "0");
 
-  // 三条横幅(余额 / 概览取数失败 / 实名)聚合成一条(ui-ux-spec §1 规则 1)
   const attention: AttentionItem[] = [];
   if (walletQ.isError) {
     attention.push({
@@ -170,7 +165,6 @@ function BillingPage() {
       ),
     });
   }
-  // /me 未就绪(加载/失败)时不弹实名条目:已实名用户绝不能被误判成未认证
   if (policies?.real_name_required_for_recharge && me != null && me.verification_status !== "verified") {
     attention.push({
       key: "realName",
@@ -222,7 +216,6 @@ function BillingPage() {
                   {t("billing.recharge")}
                 </Button>
               </div>
-              {/* 阈值本身在账户设置里改,这里只回显 + 深链 */}
               {me?.low_balance_warn_hours != null && (
                 <Typography.Text
                   type="secondary"
@@ -312,8 +305,6 @@ function BillingPage() {
           </Col>
         </Row>
 
-        {/* 导出与 Tab 同一行:按钮在 Tabs 之外顶对齐(补一格 padding 对齐标签栏);
-            tabBarExtraContent 会把 button 塞进 role="tablist"(axe aria-required-children),禁用。 */}
         <Card>
           <div style={{ display: "flex", alignItems: "flex-start", gap: space.md }}>
             <Tabs
@@ -331,7 +322,6 @@ function BillingPage() {
                 { key: "invoices", label: t("billing.tabInvoices"), children: <InvoiceTab /> },
               ]}
             />
-            {/* CSV 导出仅覆盖账单/流水两个 Tab */}
             {(activeTab === "bills" || activeTab === "ledger") && (
               <div style={{ paddingTop: space.md }}>
                 <Button size="small" loading={exporting} onClick={() => void exportCsv()}>
@@ -340,7 +330,6 @@ function BillingPage() {
               </div>
             )}
           </div>
-          {/* 日结口径只解释小时账单 */}
           {activeTab === "bills" && (
             <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
               {t("copy.dailyCostNote")}

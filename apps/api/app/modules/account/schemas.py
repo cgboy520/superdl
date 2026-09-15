@@ -12,7 +12,6 @@ PhoneStr = Field(pattern=PHONE_RE, description="中国大陆手机号")
 class SmsCodeRequest(BaseModel):
     phone: str = PhoneStr
     purpose: Literal["register", "login", "reset_password"]
-    # 人机校验 token:captcha_enabled 开启时必填(缺失 400 CAPTCHA_REQUIRED),关闭时忽略
     captcha_token: str | None = Field(default=None, max_length=4096)
 
 
@@ -20,7 +19,7 @@ class RegisterRequest(BaseModel):
     phone: str = PhoneStr
     sms_code: str = Field(min_length=4, max_length=8)
     password: PasswordStr | None = None
-    accept_terms: bool = False  # 必须显式同意用户协议与隐私政策
+    accept_terms: bool = False
 
 
 class LoginRequest(BaseModel):
@@ -42,7 +41,7 @@ class UserOut(BaseModel):
     phone: str
     status: str
     low_balance_warn_hours: int
-    verification_status: str  # unverified / verified
+    verification_status: str
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -89,9 +88,6 @@ class RealNameRequest(BaseModel):
     id_number: str = Field(pattern=r"^\d{17}[\dXx]$")
 
 
-# ---------- 账号注销 ----------
-
-
 class DeletionRequestCreate(BaseModel):
     """申请注销:须键入与账号一致的完整手机号(二次确认)+ 原因。"""
 
@@ -119,9 +115,9 @@ class AdminDeletionRequestOut(DeletionRequestOut):
     user_id: int
     phone_masked: str
     processed_by: int | None
-    instances_active: int  # 未释放实例数
-    disks_active: int  # 未删除数据盘数
-    balance: str  # 当前余额(Decimal 字符串)
+    instances_active: int
+    disks_active: int
+    balance: str
 
 
 class AdminDeletionReject(BaseModel):

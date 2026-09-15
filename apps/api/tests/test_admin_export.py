@@ -1,4 +1,4 @@
-"""管理端 CSV 导出:订单/租户流水/审计/日对账(截断标记见 test_billing_export)。"""
+"""管理端 CSV 导出的筛选、脱敏和审计契约。"""
 
 from datetime import timedelta
 from decimal import Decimal
@@ -41,12 +41,11 @@ class TestOrdersExport:
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/csv")
         text = resp.text
-        assert text.startswith("﻿")  # BOM 防 Excel 中文乱码
+        assert text.startswith("﻿")
         lines = text.splitlines()
         assert lines[0].lstrip("﻿").startswith("订单号")
         assert "(UTC+8)" in text
         assert any("SDL-EXP-0" in line and "已支付" in line for line in lines)
-        # 状态过滤与列表端点同口径
         resp = await client.get(
             "/api/admin/v1/orders/export", params={"status": "pending"}, headers=fin
         )
@@ -87,17 +86,14 @@ class TestRefundsExport:
         assert lines[0].lstrip("﻿").startswith("退款单号")
         assert "(UTC+8)" in text
         assert any("R20260101-E0" in line and "待审批" in line for line in lines)
-        # 已打款行带渠道文案与凭证号
         assert any(
             "R20260101-E1" in line and "线下转账" in line and "PAY-REF-1" in line for line in lines
         )
-        # 状态过滤与列表端点同口径
         resp = await client.get(
             "/api/admin/v1/refunds/export", params={"status": "paid"}, headers=fin
         )
         only_paid = resp.text
         assert "R20260101-E1" in only_paid and "R20260101-E0" not in only_paid
-        # day 过滤:申请日(UTC 今日)命中,昨日为空(仅表头)
         today = now_utc().date().isoformat()
         by_day = (
             await client.get("/api/admin/v1/refunds/export", params={"day": today}, headers=fin)
@@ -118,7 +114,6 @@ async def _make_invoices(sm: async_sessionmaker[AsyncSession], count: int = 2) -
             session.add(
                 InvoiceRequest(
                     user_id=1,
-                    # 同 (user_id, period) 非 rejected 唯一:逐行错开账期
                     period=f"2026-{7 + i:02d}",
                     title_type="company",
                     title=f"示例科技(深圳)有限公司{i}号",
@@ -144,7 +139,6 @@ class TestInvoicesExport:
         assert lines[0].lstrip("﻿").startswith("发票号")
         assert any("2026-07" in line and "审核中" in line for line in lines)
         assert any("INV-2026-0001" in line and "已开票" in line for line in lines)
-        # status/period 过滤与列表端点同口径
         by_status = (
             await client.get(
                 "/api/admin/v1/invoices/export", params={"status": "issued"}, headers=fin
@@ -163,15 +157,14 @@ class TestInvoicePiiGate:
     """发票导出:只给财务、默认脱敏、明文要事由、每次导出留痕。"""
 
     async def test_masked_by_default_and_reason_required(self, client: AsyncClient, sm):
-        """不给 reveal:抬头与邮箱脱敏;给了 reveal 却不给事由:422,不吐明文。"""
+        """默认脱敏抬头与邮箱;reveal 未提供事由时返回 400。"""
         await _make_invoices(sm)
         fin = await admin_headers(sm, client, role="finance", username="fin-mask-iv")
 
         csv_text = (await client.get("/api/admin/v1/invoices/export", headers=fin)).text
         assert "示例科技(深圳)有限公司0号" not in csv_text
         assert "ap0@example.com" not in csv_text
-        assert "示***********" in csv_text  # 留首字符掩其余(与租户实名同一档)
-        # 税号与金额不脱敏
+        assert "示***********" in csv_text
         assert "91440300MA5F000000" in csv_text
 
         rows = (await client.get("/api/admin/v1/invoices", headers=fin)).json()
@@ -208,14 +201,13 @@ class TestInvoicePiiGate:
             ).scalar_one()
         assert row.actor_type == "admin"
         assert row.detail == {
-            "rows": 1,  # status=submitted 只命中一条
+            "rows": 1,
             "reveal": True,
             "reason": "月末开票核对",
             "status": "submitted",
             "period": None,
             "format": "csv",
         }
-        # 审计行与该次请求的日志之间有连接键
         assert row.request_id == resp.headers["x-request-id"]
 
     async def test_json_reveal_is_audited(self, client: AsyncClient, sm):
@@ -271,7 +263,6 @@ class TestAdjustmentsExport:
         assert lines[0].lstrip("﻿").startswith("ID,用户ID")
         assert any("赔付工单 T20260" in line and "待复核" in line for line in lines)
         assert any("赔付工单 T20261" in line and "已生效" in line for line in lines)
-        # status/user_id 过滤与列表端点同口径
         by_status = (
             await client.get(
                 "/api/admin/v1/adjustments/export", params={"status": "approved"}, headers=fin
@@ -295,7 +286,6 @@ class TestTenantLedgerExport:
         text = resp.text
         assert "充值" in text and "66.00" in text and "test-fund" in text
         assert csvexport.TRUNCATED_MARKER not in text
-        # 管理端导出与用户端导出同一数据源:行数一致
         user_headers = {"Authorization": f"Bearer {data['access_token']}"}
         mine_resp = await client.get("/api/v1/billing/export?dataset=ledger", headers=user_headers)
         assert len(mine_resp.text.splitlines()) == len(text.splitlines())
@@ -307,7 +297,6 @@ class TestAuditExport:
 
         h = await admin_headers(sm, client)
         await register(client, "13688880002")
-        # 造一条已知审计:按手机号检索租户
         await client.get("/api/admin/v1/tenants", params={"q": "13688880002"}, headers=h)
 
         resp = await client.get(
@@ -317,12 +306,10 @@ class TestAuditExport:
         text = resp.text
         assert "tenant-search:" in text
         assert csvexport.TRUNCATED_MARKER not in text
-        # 过滤口径与 GET /audit 一致:actor_type=user 时刚才那条 admin 检索不得出现
         by_user = (
             await client.get("/api/admin/v1/audit/export", params={"actor_type": "user"}, headers=h)
         ).text
         assert "tenant-search:" not in by_user
-        # 导出本身是敏感读,落一条 audit:export(只记筛选参数)
         async with sm() as session:
             hits = (
                 (await session.execute(select(AuditLog).where(AuditLog.target == "audit:export")))
@@ -340,9 +327,7 @@ class TestReconciliationExport:
             "/api/admin/v1/reconciliation/export", params={"day": day}, headers=fin
         )
         assert resp.status_code == 200
-        # 表头之后第一行 = 合计行
         assert resp.text.splitlines()[1].startswith("合计,")
-        # 非法日期 → 400(与 GET /reconciliation 同一 parse_day)
         bad = await client.get(
             "/api/admin/v1/reconciliation/export", params={"day": "bad"}, headers=fin
         )

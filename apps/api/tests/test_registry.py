@@ -34,7 +34,6 @@ def test_allowlist_merges_harbor_host_and_lines():
     assert effective_image_allowlist(
         allowed_registries="docker.io/\nquay.io/", registry_host="harbor.example.com"
     ) == ["harbor.example.com/", "docker.io/", "quay.io/"]
-    # 已手填 Harbor 前缀则不重复
     assert effective_image_allowlist(
         allowed_registries="docker.io/, harbor.example.com/", registry_host="harbor.example.com"
     ) == ["docker.io/", "harbor.example.com/"]
@@ -46,7 +45,6 @@ def test_allowlist_normalizes_trailing_slash_against_prefix_spoofing():
     assert allowed == ["docker.io/"]
     assert not any("docker.io.attacker.example/evil:1".startswith(p) for p in allowed)
     assert any("docker.io/library/pytorch:2.9".startswith(p) for p in allowed)
-    # 多余斜杠归一;registry_host 同样归一后再比对
     assert effective_image_allowlist(
         allowed_registries="docker.io//\nquay.io", registry_host="harbor.example.com/"
     ) == ["harbor.example.com/", "docker.io/", "quay.io/"]

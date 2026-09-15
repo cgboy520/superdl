@@ -1,12 +1,8 @@
-/* 管理端专属样式(两端共用基线在 @superdl/ui/base.css);色值由 main.tsx 从 packages/ui adminColors 注入 CSS 变量。 */
-
 body {
   margin: 0;
-  /* 防 FOUC(index.html 内联同款) */
   background: var(--admin-bg);
 }
 
-/* 深色滚动条 */
 *::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -23,7 +19,6 @@ html {
   scrollbar-width: thin;
 }
 
-/* 命令面板选中行底色 = 主色 12% 透明(--admin-accent 由 main.tsx 注入) */
 .command-palette [cmdk-item][data-selected="true"] {
   background: color-mix(in srgb, var(--admin-accent) 12%, transparent);
 }
@@ -31,7 +26,6 @@ html {
   opacity: 0.45;
 }
 
-/* 抽屉标题放的是多行 EntityHeader:关闭钮默认垂直居中会吊在半空,拉回顶部(antd 的 flex 容器是 header-title) */
 .ant-drawer-header .ant-drawer-header-title {
   align-items: flex-start;
 }

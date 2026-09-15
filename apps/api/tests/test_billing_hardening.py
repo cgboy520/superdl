@@ -1,6 +1,5 @@
 """计费与钱包:燃烧率开户校验、巡检实时估算停机、结算缺口、增量核对、营收归属。"""
 
-# 白盒用例:直探模块内部
 # pyright: reportPrivateUsage=false
 
 import asyncio
@@ -91,7 +90,7 @@ class TestDebitFrozenGuard:
             await s.commit()
         async with sm() as s:
             w = await wallet.lock_wallet(s, 1)
-            assert w.balance == Decimal("50.00")  # 已击穿冻结额,但结算是合法豁免
+            assert w.balance == Decimal("50.00")
             assert w.frozen == Decimal("90.00")
 
     async def test_unfreeze_then_debit_is_unblocked(self, sm):
@@ -107,12 +106,12 @@ class TestDebitFrozenGuard:
 
 
 class TestWalletLockGuards:
-    """钱包行锁守护:挂了 = with_for_update 没了,或锁内读到旧值。"""
+    """钱包行锁与锁内余额读取。"""
 
     async def test_concurrent_credit_debit_no_lost_update(self, sm):
         """同一钱包并发 credit/debit:无丢失更新,且 balance_after 链单调接续。"""
         await fund_wallet(sm, 1, "100.00")
-        gate = asyncio.Barrier(9)  # 4 credit + 4 debit + 主控,对齐起跑线
+        gate = asyncio.Barrier(9)
 
         async def do_credit():
             await gate.wait()
@@ -142,8 +141,7 @@ class TestWalletLockGuards:
             entries = (
                 (await s.execute(select(BalanceLedger).order_by(BalanceLedger.id))).scalars().all()
             )
-        assert w.balance == Decimal("128.00")  # 100 + 4×10 − 4×3,一分不差
-        # 流水链:每行 balance_after = 上行 balance_after + 本行 amount
+        assert w.balance == Decimal("128.00")
         expected = Decimal("0.00")
         for e in entries:
             assert e.balance_after == expected + e.amount
@@ -151,8 +149,7 @@ class TestWalletLockGuards:
         assert expected == w.balance
 
     async def test_payout_balance_recheck_reads_fresh_row(self, sm, client):
-        """锁内余额复检读行锁后的新值,不读 identity map 里的旧 Wallet 副本。
-        用例须持强引用留住陈旧副本(identity map 是弱引用)。"""
+        """锁内余额复检读取数据库当前值。"""
         from app.modules.adminapi.models import AdminUser
         from app.modules.billing import refunds
         from app.modules.billing.models import Order
@@ -174,14 +171,13 @@ class TestWalletLockGuards:
             payer_id = (
                 await s.execute(select(AdminUser.id).where(AdminUser.username == "finance-payer"))
             ).scalar_one()
-        # 陈旧副本(50)留在 identity map,另一事务消费 30(行真值 20)
         async with sm() as session:
             _stale_wallet = (
                 await session.execute(select(Wallet).where(Wallet.user_id == uid))
             ).scalar_one()
             async with sm() as s2:
                 await wallet.debit(s2, uid, Decimal("30.00"), allow_negative=True)
-                await s2.commit()  # 行真值 20 < 应退 40
+                await s2.commit()
             with pytest.raises(AppError) as exc:
                 await refunds.payout_refund(
                     session, rid, channel="offline", ref="OFF-TOCTOU", operator_id=payer_id
@@ -189,7 +185,7 @@ class TestWalletLockGuards:
             assert exc.value.http_status == 409
         async with sm() as s:
             w = (await s.execute(select(Wallet).where(Wallet.user_id == uid))).scalar_one()
-        assert w.balance == Decimal("20.00")  # 未出金,未被写成 10(50−40 的错觉)
+        assert w.balance == Decimal("20.00")
 
 
 class TestAffordGuard:
@@ -214,7 +210,6 @@ class TestAffordGuard:
                 await wallet.assert_can_afford(session, 1, additional_hourly=Decimal("1.68"))
         assert exc.value.code is ErrorCode.INSUFFICIENT_BALANCE
         assert exc.value.message_key == "billing.insufficientForInFlight"
-        # 文案参数含在途资源预计消耗
         assert exc.value.params == {
             "balance": "1.68",
             "required": "3.36",
@@ -249,7 +244,6 @@ class TestAffordGuard:
 
     async def test_inflight_disk_daily_fee_counted(self, sm):
         """在途数据盘按「日费 × 宽限天数」计入门槛。"""
-        # 100GB × 0.35/GB·月 → 均摊日费 1.17;× 默认 7 天宽限 = 8.19
         await seed_disk(sm, 1, size_gb=100, price="0.3500")
         await fund_wallet(sm, 1, "5.00")
         async with sm() as session:
@@ -257,7 +251,7 @@ class TestAffordGuard:
                 await wallet.assert_can_afford(session, 1)
         assert exc.value.params is not None
         assert exc.value.params["inflight"] == "8.19"
-        async with sm() as session:  # 余额盖过宽限期消耗 → 放行
+        async with sm() as session:
             await session.execute(
                 update(Wallet).where(Wallet.user_id == 1).values(balance=Decimal("8.19"))
             )
@@ -297,17 +291,17 @@ class TestAffordGuard:
                 update(Wallet).where(Wallet.user_id == 1).values(balance=Decimal("3.36"))
             )
             await session.commit()
-        async with sm() as session:  # 在途 1.68 × 2h = 3.36,刚好覆盖
+        async with sm() as session:
             await wallet.assert_can_afford(session, 1)
         async with sm() as session:
-            with pytest.raises(AppError):  # 再加 1 台 → 需 6.72
+            with pytest.raises(AppError):
                 await wallet.assert_can_afford(session, 1, additional_hourly=Decimal("1.68"))
 
 
 class TestPatrolUnsettledBurn:
     """停机判据 = 余额 − 未结算消耗 ≤ 0。"""
 
-    FIXED_NOW = datetime(2026, 8, 22, 10, 35, tzinfo=UTC)  # 当前小时已过半
+    FIXED_NOW = datetime(2026, 8, 22, 10, 35, tzinfo=UTC)
 
     @pytest.fixture
     def _freeze_now(self, monkeypatch):
@@ -315,7 +309,7 @@ class TestPatrolUnsettledBurn:
 
     async def test_unsettled_burn_triggers_stop_before_settlement(self, sm, _freeze_now):
         """余额 > 0 但盖不住当前小时已跑消耗 → 当轮停机。"""
-        h0 = hour_floor(self.FIXED_NOW)  # 10:00
+        h0 = hour_floor(self.FIXED_NOW)
         inst_id, _ = await seed_instance(
             sm,
             user_id=1,
@@ -328,7 +322,6 @@ class TestPatrolUnsettledBurn:
                 update(Wallet).where(Wallet.user_id == 1).values(balance=Decimal("0.40"))
             )
             await session.commit()
-        # 已跑 30 分钟 ≈ ¥0.84 未结算;0.40 − 0.84 ≤ 0 → 停机
         counts = await patrol.balance_patrol(sm)
         assert counts["stopped"] == 1
         async with sm() as session:
@@ -336,7 +329,6 @@ class TestPatrolUnsettledBurn:
 
             inst = await session.get(Instance, inst_id)
             assert inst.status == "stopping"
-            # 欠费通知短信走 outbox
             from app.core.outbox import OutboxTask
 
             tasks = (await session.execute(select(OutboxTask))).scalars().all()
@@ -346,7 +338,6 @@ class TestPatrolUnsettledBurn:
     async def test_tail_billed_segment_not_double_counted(self, sm, _freeze_now):
         """当前小时已尾账出费的时段不重复估进未结算消耗。"""
         h0 = hour_floor(self.FIXED_NOW)
-        # 10:00–10:10 跑过一段(已尾账 600 秒),10:30 又开机至今(10:35,300 秒未结)
         inst_id, _ = await seed_instance(
             sm,
             user_id=1,
@@ -375,7 +366,6 @@ class TestPatrolUnsettledBurn:
                 update(Wallet).where(Wallet.user_id == 1).values(balance=Decimal("0.20"))
             )
             await session.commit()
-        # 未结算仅第二段 300 秒 ≈ ¥0.14;0.20 − 0.14 > 0 → 不停机
         counts = await patrol.balance_patrol(sm)
         assert counts["stopped"] == 0
 
@@ -383,8 +373,7 @@ class TestPatrolUnsettledBurn:
         """结算水位线滞后 5 小时:未落账小时全量计入停机判据。"""
         from app.modules.billing.settlement import _advance_watermark
 
-        h0 = hour_floor(self.FIXED_NOW)  # 10:00
-        # 06:35 起跑至今(4h);水位线停在 05:00,06:00 起的小时全未落账
+        h0 = hour_floor(self.FIXED_NOW)
         await seed_instance(
             sm,
             user_id=1,
@@ -398,7 +387,6 @@ class TestPatrolUnsettledBurn:
                 update(Wallet).where(Wallet.user_id == 1).values(balance=Decimal("1.00"))
             )
             await session.commit()
-        # 未结算 4h × 1.68 = 6.72;1.00 − 6.72 ≤ 0 → 停机
         counts = await patrol.balance_patrol(sm)
         assert counts["stopped"] == 1
 
@@ -416,7 +404,6 @@ class TestPatrolUnsettledBurn:
         )
         await _advance_watermark(sm, "hourly", h0 - timedelta(hours=3))
         async with sm() as session:
-            # 08:00、09:00 两小时已落账(各 3600 秒 × 1.68 = 1.68),仅当前小时未结
             for h in (h0 - timedelta(hours=2), h0 - timedelta(hours=1)):
                 session.add(
                     BillHourly(
@@ -433,7 +420,6 @@ class TestPatrolUnsettledBurn:
                 update(Wallet).where(Wallet.user_id == 1).values(balance=Decimal("1.00"))
             )
             await session.commit()
-        # 未结算仅当前小时 35 分钟 ≈ 0.98;1.00 − 0.98 > 0 → 不停机
         counts = await patrol.balance_patrol(sm)
         assert counts["stopped"] == 0
 
@@ -448,12 +434,11 @@ class TestSettlementGaps:
         await seed_instance(
             sm, events=[(H - timedelta(hours=1), "creating", "running")], status="running"
         )
-        await settle_due_hours(sm, at=H_END + timedelta(minutes=2))  # 水位线落在 H
+        await settle_due_hours(sm, at=H_END + timedelta(minutes=2))
         far = H_END + timedelta(hours=MAX_CATCHUP_HOURS + 10)
-        # 只结最近 MAX_CATCHUP_HOURS 个窗口
         assert await settle_due_hours(sm, at=far) == MAX_CATCHUP_HOURS
 
-        target = H_END + timedelta(hours=MAX_CATCHUP_HOURS + 10 - 1)  # far 的上一整点
+        target = H_END + timedelta(hours=MAX_CATCHUP_HOURS + 10 - 1)
         floor = target - timedelta(hours=MAX_CATCHUP_HOURS - 1)
         skipped = int((floor - (H + timedelta(hours=1))).total_seconds() // 3600)
         async with sm() as session:
@@ -462,7 +447,7 @@ class TestSettlementGaps:
         assert skipped > 0
         assert len([g for g in gaps if g.reason == "catchup_truncated"]) == skipped
         assert all(g.kind == "hourly" and g.object_id == 0 for g in gaps)
-        assert wm == target  # 水位线推进了,但缺口留痕,不静默跳过
+        assert wm == target
 
     async def test_dead_letter_after_consecutive_failures(self, sm, monkeypatch):
         """单实例连续失败 N 轮 → 死信记缺口,水位线越过。"""
@@ -496,21 +481,19 @@ class TestSettlementGaps:
             async with sm() as session:
                 wm = await get_watermark(session, "hourly")
             if round_ < DEAD_LETTER_AFTER:
-                assert wm is None  # 水位线被坏实例卡住
+                assert wm is None
             else:
-                assert wm == H  # 死信后水位线越过
+                assert wm == H
         async with sm() as session:
             gaps = (await session.execute(select(SettlementGap))).scalars().all()
             bills = (await session.execute(select(BillHourly))).scalars().all()
         gap_set = {(g.kind, g.object_id, g.reason) for g in gaps}
         assert gap_set == {
-            # 前两轮水位线未建立:watermark_missing 留痕(一轮一行)
             ("hourly", 0, "watermark_missing"),
             ("hourly", bad, "dead_letter"),
         }
-        assert [b.instance_id for b in bills] == [good]  # 好实例正常入账
+        assert [b.instance_id for b in bills] == [good]
 
-        # 下一轮:死信窗口已越过,不再失败
         settlement._failure_streaks.clear()
         assert await settle_due_hours(sm, at=at) == 0
 
@@ -531,7 +514,7 @@ class TestSettlementGaps:
             events=[(H - timedelta(hours=1), "creating", "running")],
             status="running",
         )
-        await _advance_watermark(sm, "hourly", H)  # 水位线就位,坏实例从下一窗开始失败
+        await _advance_watermark(sm, "hourly", H)
 
         async def always_fail_lock(session, instance_id):
             if instance_id == bad:
@@ -539,7 +522,6 @@ class TestSettlementGaps:
 
         monkeypatch.setattr(orchestrator_queries, "lock_instance_for_billing", always_fail_lock)
 
-        # 3 个窗口(H+1h..H+3h):坏实例每窗连败 DEAD_LETTER_AFTER 轮才死信,最后水位线追平到 H+3h
         at = H_END + timedelta(hours=3, minutes=2)
         for round_ in range(1, DEAD_LETTER_AFTER + 1):
             await settle_due_hours(sm, at=at)
@@ -567,11 +549,11 @@ class TestSettlementGaps:
                 .all()
             )
             wm = await get_watermark(session, "hourly")
-        assert len(good_bills) == 3  # 一笔不丢
+        assert len(good_bills) == 3
         assert len(bad_bills) == 0
-        assert len(gaps) == 3  # 坏实例每窗一条死信缺口
+        assert len(gaps) == 3
         assert all(g.object_id == bad for g in gaps)
-        assert wm == H + timedelta(hours=3)  # 水位线不再被卡死
+        assert wm == H + timedelta(hours=3)
 
     async def test_daily_disk_truncation_records_gaps(self, sm):
         """日结超追平上限的日期登记 settlement_gaps(kind=daily_disk)。"""
@@ -595,11 +577,10 @@ class TestSettlementGaps:
             )
             bills = (await session.execute(select(BillDailyDisk))).scalars().all()
         assert all(g.reason == "catchup_truncated" and g.object_id == 0 for g in gaps)
-        # 水位线在 MAX+10 天前 → first_day=水位+1,截到 floor=昨日-(MAX-1) → 缺 9 天
         target_day = billing_day_floor(now_utc()) - timedelta(days=1)
         expected = (target_day - timedelta(days=MAX_CATCHUP_DAYS - 1) - old_day).days - 1
         assert len(gaps) == expected == 9
-        assert len(bills) == MAX_CATCHUP_DAYS  # 追平上限内的日子照常出账
+        assert len(bills) == MAX_CATCHUP_DAYS
 
 
 class TestReconcileAttribution:
@@ -617,13 +598,12 @@ class TestReconcileAttribution:
                 seconds_used=3000,
                 unit_price=Decimal("1.6800"),
                 gpu_count=1,
-                amount=Decimal("1.40"),  # 补差价后的当前值
+                amount=Decimal("1.40"),
                 detail={"topped_up": True},
-                created_at=yesterday_23h + timedelta(minutes=30),  # 首笔尾账在昨天写入
+                created_at=yesterday_23h + timedelta(minutes=30),
             )
             session.add(bill)
             await session.flush()
-            # 尾账(昨天)与补差(今天)两笔流水,ref 同一账单
             await wallet.debit(
                 session,
                 1,
@@ -656,7 +636,7 @@ class TestReconcileAttribution:
                 Decimal("3.00"),
                 type_="consume",
                 ref_type="bill_hourly",
-                ref_id="999999999",  # 不存在的账单
+                ref_id="999999999",
                 allow_negative=True,
             )
             await session.commit()
@@ -678,7 +658,7 @@ class TestWalletChainCheck:
         assert (await reconcile_funds(sm))["wallet_mismatch"] == 0
         async with sm() as session:
             cp2 = await session.get(ReconcileCheckpoint, 1)
-        assert cp2.last_ledger_id == first_last_id  # 没被无谓推进
+        assert cp2.last_ledger_id == first_last_id
 
     async def test_new_entries_verified_incrementally(self, sm):
         """新流水触发重验,游标跟进到最新一笔。"""
@@ -698,7 +678,7 @@ class TestWalletChainCheck:
         assert cp.last_ledger_id == last
 
     async def test_chain_break_localized_to_entry(self, sm):
-        """手工塞进一笔 balance_after 造假的流水:报差且游标停在断链之前。"""
+        """balance_after 链不一致时报差,游标停在断链之前。"""
         await fund_wallet(sm, 1, "100.00")
         await reconcile_funds(sm)
         async with sm() as session:
@@ -707,7 +687,7 @@ class TestWalletChainCheck:
                     user_id=1,
                     type="consume",
                     amount=Decimal("-5.00"),
-                    balance_after=Decimal("999.00"),  # 应为 95.00
+                    balance_after=Decimal("999.00"),
                 )
             )
             await session.commit()
@@ -720,7 +700,7 @@ class TestWalletChainCheck:
                 .scalars()
                 .all()
             )
-        assert cp.last_ledger_id == entries[0].id  # 游标停在断链之前,下一轮重验
+        assert cp.last_ledger_id == entries[0].id
 
     async def test_checkpoint_boundary_row_deleted_detected(self, sm):
         """游标所指的流水行被删/被改:边界复核报差。"""
@@ -760,7 +740,7 @@ class TestRevenueAttribution:
                 unit_price=Decimal("1.6800"),
                 gpu_count=1,
                 amount=Decimal("1.68"),
-                created_at=today_00_30,  # 次小时 :02 才入账
+                created_at=today_00_30,
             )
             session.add(bill)
             await session.flush()
@@ -778,7 +758,6 @@ class TestRevenueAttribution:
             summary = await wallet.revenue_summary(session, tz_offset_minutes=0)
         assert summary["yesterday_revenue"] == "1.68"
         assert summary["today_revenue"] == "0"
-        # 月合计跟归属期走
         month_start = _utc_day_start().replace(day=1)
         assert summary["month_revenue"] == ("1.68" if yesterday_23h >= month_start else "0")
 
@@ -797,7 +776,6 @@ class TestSmsOutbox:
             async def send(self, phone, template, params):
                 sent.append({"phone": phone, "params": params})
 
-        # 先注册再装探针
         data = await register(client, "13900000077")
         set_sms_channel(SpySms())
         try:
@@ -813,7 +791,7 @@ class TestSmsOutbox:
                 )
                 await session.commit()
             assert ok
-            assert sent == []  # 事务里不发短信,只入队
+            assert sent == []
             async with sm() as session:
                 tasks = (await session.execute(select(OutboxTask))).scalars().all()
             sms_tasks = [t for t in tasks if t.type == "notify.sms"]

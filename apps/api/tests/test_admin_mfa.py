@@ -71,7 +71,6 @@ class TestSetupFlow:
         )
         assert a.json()["secret"] == b.json()["secret"]
         assert a.json()["otpauth_uri"].startswith("otpauth://totp/")
-        # 判据:返回的密钥能绑定成功
         resp = await client.post(
             "/api/admin/v1/auth/mfa/setup/confirm",
             json={"ticket": ticket, "code": pyotp.TOTP(a.json()["secret"]).now()},
@@ -117,7 +116,6 @@ class TestSetupFlow:
         await complete_mfa_setup(client, ticket)
         again = await client.post("/api/admin/v1/auth/mfa/setup/begin", json={"ticket": ticket})
         assert again.json()["code"] == "MFA_TICKET_INVALID", again.text
-        # confirm 侧同样不认这张票
         reconfirm = await client.post(
             "/api/admin/v1/auth/mfa/setup/confirm", json={"ticket": ticket, "code": "000000"}
         )
@@ -184,7 +182,6 @@ class TestVerifyLogin:
         codes = confirm.json()["recovery_codes"]
         assert len(codes) == 10
 
-        # 重新登录:绑定已用当前步,登录用下一枚(valid_window=1)
         ticket2 = (await admin_login(client, "totp-admin")).json()["ticket"]
         resp = await client.post(
             "/api/admin/v1/auth/login/mfa",
@@ -193,7 +190,6 @@ class TestVerifyLogin:
         assert resp.status_code == 200
         assert resp.json()["recovery_codes_left"] is None
 
-        # 恢复码:用后作废,重放即拒
         ticket3 = (await admin_login(client, "totp-admin")).json()["ticket"]
         use = await client.post(
             "/api/admin/v1/auth/login/mfa", json={"ticket": ticket3, "code": codes[0]}
@@ -219,7 +215,6 @@ class TestVerifyLogin:
             "/api/admin/v1/auth/mfa/setup/confirm", json={"ticket": ticket, "code": code}
         )
         assert confirm.status_code == 200
-        # 同码重放:绑定路径与登录路径都拒
         again = await client.post(
             "/api/admin/v1/auth/mfa/setup/confirm", json={"ticket": ticket, "code": code}
         )
@@ -231,9 +226,8 @@ class TestVerifyLogin:
         assert replay.json()["code"] == "MFA_CODE_INVALID"
 
     async def test_mfa_rate_limited_after_5_failures(self, client: AsyncClient, sm):
-        await self._bound_admin(client, sm, "brute-admin")  # 绑定成功验证计 1 次配额
+        await self._bound_admin(client, sm, "brute-admin")
         ticket = (await admin_login(client, "brute-admin")).json()["ticket"]
-        # 成功也计配额:5 次/10min 中绑定已耗 1,剩 4 次
         for _ in range(4):
             resp = await client.post(
                 "/api/admin/v1/auth/login/mfa", json={"ticket": ticket, "code": "000000"}
@@ -264,7 +258,6 @@ class TestRecoveryRegenAndReset:
         assert regen.status_code == 200
         new_codes = regen.json()["recovery_codes"]
         assert set(new_codes) != set(old_codes)
-        # 旧码已作废
         ticket2 = (await admin_login(client, "regen-admin")).json()["ticket"]
         stale = await client.post(
             "/api/admin/v1/auth/login/mfa", json={"ticket": ticket2, "code": old_codes[1]}
@@ -277,7 +270,7 @@ class TestRecoveryRegenAndReset:
 
         from app.modules.adminapi.models import AdminUser
 
-        h = await admin_headers(sm, client)  # admin-user(超管)
+        h = await admin_headers(sm, client)
         await _create(client, sm, "rescue-admin", "admin")
         ticket = (await admin_login(client, "rescue-admin")).json()["ticket"]
         victim_token = await complete_mfa_setup(client, ticket)
@@ -295,12 +288,10 @@ class TestRecoveryRegenAndReset:
         )
         assert resp.status_code == 200, resp.text
         assert resp.json()["totp_enabled"] is False
-        # 旧 token 已踢(token_version+1)
         me = await client.get(
             "/api/admin/v1/me", headers={"Authorization": f"Bearer {victim_token}"}
         )
         assert me.status_code == 401
-        # 下次登录重新走绑定流
         assert (await admin_login(client, "rescue-admin")).json()["status"] == "mfa_setup"
 
     async def test_reset_self_forbidden(self, client: AsyncClient, sm):

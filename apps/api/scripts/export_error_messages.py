@@ -1,11 +1,11 @@
-"""把 core/messages.py 导出为 packages/ui/locales/zh-CN/errors.json(CI no-diff 校验);en-US 手译。"""
+"""将 MESSAGES 导出为 i18next 格式的 packages/ui/locales/zh-CN/errors.json。"""
 
 import json
 import re
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 允许 scripts/ 直跑
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.core.messages import MESSAGES
 

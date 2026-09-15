@@ -1,10 +1,4 @@
-"""users 增加证件号带密钥摘要 id_number_hmac;租户列表页 (等值列, id) 复合索引五条。
-
-Revision ID: 6d2f8a1c0b77
-Revises: 3b7e1c9a4f20
-Create Date: 2026-09-11 18:50:00.000000
-
-"""
+"""users 增加可空的 id_number_hmac 及索引;五张表增加 (归属列, id) 复合索引。"""
 
 from collections.abc import Sequence
 

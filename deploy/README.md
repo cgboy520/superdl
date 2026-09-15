@@ -13,6 +13,11 @@
 唯一入口 `SUPERDL_IMAGE_PREFIX=harbor.<域>/superdl scripts/release.sh <tag>`,禁止绕过脚本手改清单 tag:
 准入策略断言 → 迁移 Job → kustomize 渲染后替换占位 `CHANGE_IMAGE_PREFIX`、平台镜像钉**不可变 digest** 再 apply → rollout status → 经网关从集群外 GET `/readyz`;任一步失败即非零退出。
 
+首次发布前,将 `app/secrets.example.yaml` 复制到仓库外并填真实值,或用 External Secrets / SealedSecrets 按其字段供给;禁止直接 apply 示例或把凭据入 git。
+私有 Harbor 项目还需在 `superdl` 命名空间预建 `superdl-registry-pull`:类型 `kubernetes.io/dockerconfigjson`,键 `.dockerconfigjson`,内容来自仅有 Pull + List Repository 权限机器人的 Docker 登录配置。使用受限权限的本地配置文件创建,不要把机器人口令放在命令行。
+GitHub 仓库的 `production` environment 必须设置 required reviewers,`HARBOR_HOST` / `HARBOR_ROBOT_NAME` / `HARBOR_ROBOT_SECRET` 放在该 environment 下;`.github/workflows/release.yml` 的发布 job 使用此环境审批闸门。
+发布前按真实网段配置 `app/k8s/00-namespace-config.yaml` 的 `FORWARDED_ALLOW_IPS`(禁止 `*`),把 `app/k8s/04-gateway.yaml` 的管理端白名单占位网段换成办公网/跳板机出口 CIDR,并替换 `app/k8s/09-networkpolicy.yaml` 的数据库等端点 CIDR;端点 IP 漂移时同步更新。
+
 1. `helmfile -e <full|light> apply`(cluster/,先 `./preflight.sh`;双档见 `cluster/README.md`)→ 按 `app/secrets.example.yaml` 建分域 Secret(`superdl-db`(应用角色)/`superdl-db-migrate`(库 owner,仅迁移 Job)/`superdl-auth`/`superdl-crypto`/`superdl-metrics`/`superdl-edge`/`superdl-cloud`/`superdl-payment`/`superdl-registry`/`superdl-pg-backup`)与 `superdl-registry-pull`(Harbor 拉取机器人;项目 public 可省);库用自签/私有 CA 时另建 ConfigMap `superdl-db-ca`(key `ca.crt`,各 Deployment 以 optional 卷挂到 `/etc/superdl/db-ca`)。字段清单见 `app/k8s/00-namespace-config.yaml`(非密)与 `app/secrets.example.yaml`(密),prod 必配项以 `docs/reference/security.md` 的 `_validate_prod` 清单为准
 2. 打 tag:`gh release create vX.Y.Z --generate-notes`(不维护 CHANGELOG)。tag 触发 `.github/workflows/release.yml`:CI 闸门复跑 → 构建 api/web/admin 三镜像 + Trivy 扫描 + 推 Harbor(仓库 secrets `HARBOR_HOST` / `HARBOR_ROBOT_NAME` / `HARBOR_ROBOT_SECRET`,variables `HARBOR_PROJECT` 缺省 superdl)。api 镜像三环境同一产物;mock 支付回调路由仅在非 prod 注册
 3. `SUPERDL_IMAGE_PREFIX=harbor.<域>/superdl scripts/release.sh vX.Y.Z`(前置工具:`kubectl` + `crane` / `skopeo` / `docker buildx` 三选一,需对 Harbor 有读权限且已 `docker login`;三个都没有即拒绝发布):

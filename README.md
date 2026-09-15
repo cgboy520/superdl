@@ -19,24 +19,26 @@ GPU 算力租赁平台:租户按量租用整卡 / MIG / 共享 GPU 容器实例(
 ## 快速开始
 
 前置:Docker、uv、Python 3.13、Node 24、pnpm 11(版本见 `.python-version`、`package.json` 与 CI workflow)。
+后端命令从仓库根开始;API 与 worker 分别在 `apps/api` 下的独立终端运行。`seed_dev.py` 仅供 dev/test,创建 SKU、平台镜像与管理员,管理员口令只打印一次(固定口令可用 `SUPERDL_SEED_ADMIN_PASSWORD`)。
 
 ```bash
-# 1. 本地依赖(PostgreSQL 18 + mock 短信/支付)
 docker compose -f deploy/app/compose.yaml up -d
 
-# 2. 后端
 cd apps/api
-cp .env.example .env                        # SUPERDL_ENVIRONMENT=dev 等
+cp .env.example .env
 uv sync
 uv run alembic upgrade head
-uv run python scripts/seed_dev.py           # SKU + 平台镜像 + 管理员(口令只打印一次;固定口令用 SUPERDL_SEED_ADMIN_PASSWORD)
-uv run uvicorn app.main:app --reload        # http://localhost:8000/docs
-uv run python -m app.workers.main           # 另开终端:outbox worker + 定时任务
+uv run python scripts/seed_dev.py
+uv run uvicorn app.main:app --reload
+uv run python -m app.workers.main
+```
 
-# 3. 前端(仓库根)
+前端在仓库根执行,web 与 admin 各开一个终端。API 文档位于 `http://localhost:8000/docs`,web 位于 `http://localhost:5173`,admin 位于 `http://localhost:5174`,使用 seed 创建的管理员登录。
+
+```bash
 pnpm install
-pnpm --filter web dev                       # 用户控制台 http://localhost:5173(短信 mock 固定码 123456)
-pnpm --filter admin dev                     # 管理控制台 http://localhost:5174(seed 的 admin 账号)
+pnpm --filter web dev
+pnpm --filter admin dev
 ```
 
 K8s 默认 `FakeOrchestrator`(进程内存态);接真实集群把 `SUPERDL_K8S_BACKEND` 设为 `real`,与 `SUPERDL_ENVIRONMENT` 无关(prod 不允许 `fake`)。

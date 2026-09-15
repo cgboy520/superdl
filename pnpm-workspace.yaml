@@ -7,7 +7,6 @@ allowBuilds:
   "@swc/core": true
   esbuild: true
 overrides:
-  # orval 8.24 精确钉 js-yaml 4.3.2(GHSA-2883-xcg3-v3hh);升 orval 会改生成产物,先只补补丁位
   "orval>js-yaml": 4.3.2
 minimumReleaseAgeExclude:
   - "@turbo/darwin-64@2.10.11"

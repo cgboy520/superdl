@@ -4,7 +4,6 @@ import { QueryClient } from "@tanstack/react-query";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
-    // 不设全局轮询,各查询自行声明 refetchInterval
     queries: { retry: 1, refetchOnWindowFocus: true, staleTime: 10_000 },
   },
 });

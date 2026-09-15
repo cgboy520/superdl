@@ -6,7 +6,7 @@ export const POOL_LABEL_KEY = {
   cpu: "nodes.poolCpu",
 } as const;
 
-/** 池标识联合;新增池只改 POOL_LABEL_KEY 一处。 */
+/** 已登记池标识的联合类型。 */
 export type Pool = keyof typeof POOL_LABEL_KEY;
 
 /** 可在线互切的池(与后端 core/gpu_adapter.SWITCHABLE_POOLS 同口径);cpu 是无卡机的物理属性。 */

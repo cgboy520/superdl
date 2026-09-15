@@ -1,5 +1,4 @@
-"""业务指标(prometheus_client),/metrics 暴露。命名 superdl_<domain>_<event>_total;每个指标都要有
-消费方(deploy/cluster/values/kps.yaml 告警规则或管理端)。"""
+"""通过 /metrics 暴露的 Prometheus 计数器、仪表和直方图。"""
 
 from prometheus_client import Counter, Gauge, Histogram
 
@@ -71,7 +70,6 @@ AUDIT_WRITE_FAILED_TOTAL = Counter(
     "superdl_audit_write_failed_total",
     "审计行写入失败次数(fail-open 独立 session 路径;资金域动作为同事务同步审计,不受影响)",
 )
-# 安全域计数(失败登录 / 越权 / 提权 / PII 明文读)
 LOGIN_FAILED_TOTAL = Counter(
     "superdl_login_failed_total",
     "登录失败次数(凭据错/账号不存在;actor_type 区分用户端与管理端)",
@@ -132,7 +130,6 @@ WALLET_NEGATIVE_SUM = Gauge(
     "superdl_wallet_negative_sum_yuan",
     "负余额绝对值合计(元,展示口径;结算允许透支,此处只看敞口)",
 )
-# WorkerDown 告警据此判活(无 label,首次 inc 前也有序列)
 WORKER_HEARTBEAT_TS = Gauge(
     "superdl_worker_heartbeat_timestamp_seconds",
     "worker 主循环最近一次心跳的 Unix 时间戳",
@@ -148,7 +145,6 @@ HTTP_REQUEST_DURATION = Histogram(
     "HTTP 请求时延(route 为路由模板,避免高基数)",
     ["method", "route", "status"],
 )
-# 生效的加固面进指标;告警口径:environment="prod" 且 payment_mock="true"
 RUNTIME_CONFIG = Gauge(
     "superdl_runtime_config",
     "生效的运行时加固面(恒 1;标签即生效值:environment/k8s_backend/payment_mock)",

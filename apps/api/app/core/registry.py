@@ -11,7 +11,6 @@ from typing import Literal
 
 import httpx
 
-# 拉取凭据 Secret 名:superdl ns 与每个租户 ns 各一份,由配置中心 registry_* 生成
 PULL_SECRET_NAME = "superdl-registry-pull"
 PULL_SECRET_FINGERPRINT_ANNOTATION = "superdl.io/pull-secret-fingerprint"
 
@@ -26,7 +25,7 @@ def dockerconfigjson(host: str, username: str, password: str) -> str:
 
 
 def pull_secret_fingerprint(host: str, username: str, password: str) -> str:
-    """凭据指纹(sha256 前 16 位),写在 Secret annotation 上;可出现在日志与 UI。"""
+    """返回 host、username、password 换行拼接后 SHA-256 的前 16 个十六进制字符。"""
     return hashlib.sha256(f"{host}\n{username}\n{password}".encode()).hexdigest()[:16]
 
 
@@ -43,7 +42,6 @@ def parse_proxy_projects(text: str) -> dict[str, str]:
     return out
 
 
-# 镜像引用形态:域名[:端口]/路径[:tag][@sha256:...];tag 与 digest 允许同时出现
 _IMAGE_REF_RE = re.compile(
     r"^[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[0-9]+)?"
     r"(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*"
@@ -63,10 +61,9 @@ def is_pinned_image_ref(image_ref: str) -> bool:
         return False
     if "@sha256:" in image_ref:
         return True
-    # tag 只看最后一段路径(主机可带端口)
     last = image_ref.rsplit("/", 1)[-1]
     if ":" not in last:
-        return False  # 无 tag = 隐含 latest
+        return False
     return last.rsplit(":", 1)[1] != "latest"
 
 
@@ -93,10 +90,10 @@ def ssl_verify(ca_pem: str) -> ssl.SSLContext | bool:
 @dataclass(frozen=True)
 class HarborProbe:
     ok: bool
-    step: Literal["health", "project", "done"]  # 失败发生在哪一步(可行动的错误)
+    step: Literal["health", "project", "done"]
     detail: str
     harbor_version: str | None = None
-    repositories: int | None = None  # 机器人在平台项目里可见的仓库数
+    repositories: int | None = None
 
 
 async def probe_harbor(
@@ -108,8 +105,7 @@ async def probe_harbor(
     ca_pem: str,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> HarborProbe:
-    """两步探测:GET /api/v2.0/health(免鉴权)→ GET /api/v2.0/projects/{project}/repositories
-    (机器人 Basic 鉴权:401 凭据错、403 无权限、404 项目不存在)。"""
+    """探测 Harbor health、systeminfo 和项目仓库;配置 robot 时对仓库请求使用 Basic 鉴权。"""
     base = f"https://{host}/api/v2.0"
     try:
         async with httpx.AsyncClient(
@@ -147,5 +143,5 @@ async def probe_harbor(
                 )
             total = r.headers.get("x-total-count", "")
             return HarborProbe(True, "done", "ok", version, int(total) if total.isdigit() else None)
-    except httpx.HTTPError as exc:  # DNS / TLS / 超时:连 Harbor 都没碰到
+    except httpx.HTTPError as exc:
         return HarborProbe(False, "health", f"连接失败:{exc.__class__.__name__}: {exc}")

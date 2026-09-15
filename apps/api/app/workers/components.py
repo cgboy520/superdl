@@ -1,7 +1,6 @@
-"""worker 组件划分:outbox 任务类型与定时任务按组件分片,每个 Deployment 经 SUPERDL_WORKER_COMPONENT
-声明身份(K8s 权限随组件收窄,见 deploy/app/k8s/01-rbac.yaml);ALL 为 dev/test 单进程全量。
-新增 outbox handler 必须登记到某个组件(tests/test_workers_components.py 锚定);
-定时任务的归属在 workers/jobs.py 的 JOBS 清单里声明。
+"""按 SUPERDL_WORKER_COMPONENT 划分 outbox 任务;定时任务归属见 workers/jobs.py。
+
+每种 outbox 任务必须归属一个组件;ALL 处理全部组件的任务。
 """
 
 from enum import StrEnum
@@ -11,14 +10,13 @@ from app.core.config import get_settings
 
 class WorkerComponent(StrEnum):
     ALL = "all"
-    CORE = "core"  # 计费/通知/保洁:纯 DB + 外部渠道,零 K8s 权限(SA 无 ClusterRoleBinding)
-    TENANT_MGR = "tenant-mgr"  # 租户编排:instance.* 生命周期 + reconciler
-    NODE_MGR = "node-mgr"  # 节点:cordon/标签收敛/注册 reconciliation
-    PREWARM = "prewarm"  # 镜像预热 Job(superdl ns)
-    DISK_OPS = "disk-ops"  # 数据盘配额下发/擦除 Job(superdl + tenant ns)
+    CORE = "core"
+    TENANT_MGR = "tenant-mgr"
+    NODE_MGR = "node-mgr"
+    PREWARM = "prewarm"
+    DISK_OPS = "disk-ops"
 
 
-# outbox 任务类型 → 组件
 COMPONENT_OUTBOX_TYPES: dict[WorkerComponent, frozenset[str]] = {
     WorkerComponent.CORE: frozenset({"notify.sms"}),
     WorkerComponent.TENANT_MGR: frozenset(

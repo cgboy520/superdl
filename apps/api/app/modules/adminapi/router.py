@@ -1,4 +1,4 @@
-"""管理端路由门面:装配 auth/admins/catalog/nodes/tenants/finance/ops/legal 子路由。"""
+"""管理端子路由装配。"""
 
 from fastapi import APIRouter
 
@@ -13,7 +13,6 @@ from app.modules.adminapi import (
     router_tenants,
 )
 
-# tags 只挂在各子路由上
 router = APIRouter()
 
 router.include_router(router_auth.router)

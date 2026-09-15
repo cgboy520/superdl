@@ -25,9 +25,6 @@ class LegalDocVersionArchive(ReasonBody):
     """归档草稿的请求体:原因必填。"""
 
 
-# ---------- 法务文档(读全角色,写仅 admin) ----------
-
-
 @router.get("/legal-docs", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_list_legal_docs(session: DbSession) -> list[LegalDocCellOut]:
     """法务文档总览:doc_key × locale 状态格(当前 published + 最新 draft)。"""

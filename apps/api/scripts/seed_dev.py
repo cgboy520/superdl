@@ -1,7 +1,7 @@
-"""dev 种子:五条 SKU(整卡 / MIG / HAMi 两档 / 纯 CPU)+ 平台镜像 + 管理员。幂等;仅 dev/test 可跑
-(prod 用 scripts/bootstrap_admin.py)。管理员口令随机生成只打印一次,或取 SUPERDL_SEED_ADMIN_PASSWORD
+"""仅 dev/test:补齐 SKU、平台镜像,管理员表为空时创建管理员并打印口令。
 
 用法:cd apps/api && uv run python scripts/seed_dev.py
+生产环境使用 scripts/bootstrap_admin.py。
 """
 
 import asyncio
@@ -11,7 +11,7 @@ import sys
 from decimal import Decimal
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 允许 scripts/ 直跑
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from sqlalchemy import select
 
@@ -22,7 +22,6 @@ from app.modules.adminapi.auth_service import ensure_bootstrap_admin
 from app.modules.adminapi.models import AdminUser
 from app.modules.catalog.models import PlatformImage, Sku
 
-# dev 种子全部 SKU 开竞价档(生产默认关,见 catalog/models.spot_enabled)
 SKUS = [
     {
         "name": "RTX4090-FULL",
@@ -72,7 +71,6 @@ SKUS = [
         "status": "on",
     },
     {
-        # 纯 CPU 规格:gpu_model 空串,算力/显存/卡数全 0,price_hourly 为整机时价
         "name": "CPU-8C16G",
         "gpu_model": "",
         "tier": "cpu",
@@ -106,8 +104,6 @@ SKUS = [
 ]
 
 IMAGES = [
-    # 平台默认镜像目录(见 deploy/instance-images/README.md);dev 只写 tag,生产 image_ref 须钉 digest
-    # (framework, framework_version, python, cuda, image_ref, sort)
     (
         "PyTorch",
         "2.13.0",

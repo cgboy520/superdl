@@ -1,4 +1,4 @@
-/** 市场页 validateSearch:10 个筛选/选中参数的 URL 往返。挂了说明:刷新/分享/返回丢筛选,或默认值把 URL 弄脏。 */
+/** 市场页筛选、选择与购买参数的 URL 往返测试。 */
 import { describe, expect, it } from "vitest";
 
 import { marketValidateSearch } from "./_console.market";

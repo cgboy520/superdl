@@ -1,6 +1,4 @@
-/** 切换节点池:表单(当前池 / 目标池 / 原因)→ L2 二次确认 → 提交。
- *  不需要任何节点侧动作:池间差异的节点侧软件由 DaemonSet 按标签投送,所以没有回执命令。
- *  前置由节点行的 GatedButton 挡住,这里只做取值闸(排除当前池、机型不支持 MIG 的灰置)。 */
+/** 切池弹窗:填写目标池与原因,二次确认后提交。 */
 
 import { Alert, App, Button, Form, Input, Modal, Select, Space, Typography } from "antd";
 import { useTranslation } from "react-i18next";
@@ -22,8 +20,7 @@ export function currentPool(node: NodeRow): string {
   return node.desired_pool || node.pool_label || "";
 }
 
-/** 目标池候选:排除当前池,机型不支持 MIG 时 mig 灰置而非隐藏(条件操作可见但禁用)。
- *  与后端 switch_node_pool 的取值闸同口径,纯函数以便单测。 */
+/** 排除当前池;机型不支持 MIG 时将 mig 标为禁用。 */
 export function switchTargets(node: NodeRow): { pool: SwitchablePool; disabled: boolean }[] {
   const from = currentPool(node);
   const migOk = supportsMig(node.gpu_model);
@@ -79,7 +76,7 @@ export function SwitchPoolModal({
       try {
         values = await form.validateFields();
       } catch {
-        return; // antd 已给红字
+        return;
       }
       confirm({
         title: t("nodes.switchPoolConfirmTitle", { name: node.name, from, to: values.pool }),

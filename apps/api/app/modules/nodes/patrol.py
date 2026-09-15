@@ -1,13 +1,7 @@
-"""节点规格台账巡检(60s):K8s 实况 + 装机登记 → node_specs。
-
-  A 纯 K8s 读:能力探测 + list_nodes(含未打标);
-  B 单事务 DB 收敛:upsert;消失节点置 Missing,超保留期删行;顺带算出 C / C2 的待办;
-  C label 收敛:canonical 写 superdl.io/gpu-model(逐节点独立 try);
-  C2 池标签收敛:自声明与期望池不符 → 按期望池整套下发标签;期望池来自管理端切池(desired_pool)
-     或注册登记,后者不符属冒名,另加 critical 指标并先 cordon;
-  D cordon 期望态收敛。
+"""节点规格巡检:读 K8s、事务内收敛台账、再收敛标签与 cordon。
 
 型号优先级:装机登记 nvidia-smi > GFD label > 存量;驱动/CUDA 版本 GFD label 优先。
+期望池优先级:desired_pool > 注册登记。
 """
 
 from dataclasses import dataclass, field, replace
@@ -33,7 +27,7 @@ from app.modules.nodes.service import pool_matches
 
 logger = get_logger(__name__)
 
-MISSING_RETENTION = timedelta(days=7)  # Missing 超此时长删行
+MISSING_RETENTION = timedelta(days=7)
 
 
 def _gpu_entry_vram_gb(entry: dict[str, Any]) -> int:
@@ -64,7 +58,6 @@ async def _enrollment_specs(session: AsyncSession) -> dict[str, dict[str, Any]]:
     return out
 
 
-# 池归属的事实源状态:joined + failed(对账器判「标签与登记不符」后落的状态,纠偏必须覆盖)
 POOL_AUTHORITY_STATUSES = ("joined", "failed")
 
 
@@ -82,10 +75,9 @@ async def _enrolled_pools(session: AsyncSession) -> dict[str, str]:
 
 @dataclass
 class _Plan:
-    """B 阶段产出、C / C2 阶段消费的 K8s 写待办。"""
+    """标签待办为 (节点, 型号),池待办为 (节点, 期望池, 观测池, 是否篡改)。"""
 
-    labels: list[tuple[str, str]] = field(default_factory=list)  # (节点, canonical 型号)
-    # (节点, 期望池, 自声明池, 是否管理端切池);切池是运维动作,冒名是入侵事件,两者处置不同
+    labels: list[tuple[str, str]] = field(default_factory=list)
     pool_fixes: list[tuple[str, str, str, bool]] = field(default_factory=list)
 
 
@@ -106,10 +98,8 @@ async def node_spec_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, in
         if not got:
             return counts
         orch = get_orchestrator()
-        # ---- A:纯 K8s 读(锁内、事务外) ----
         probe = await orch.probe_cluster()
         if not probe.api_reachable:
-            # API 不可达也落缓存;节点收敛本轮跳过
             async with sm() as session:
                 await service.save_cluster_probe(session, probe)
                 await session.commit()
@@ -127,11 +117,7 @@ async def node_spec_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, in
 
 
 async def _merge_prometheus_facts(probe: ClusterProbe) -> ClusterProbe:
-    """把 Prometheus 侧事实并进体检快照(抓取健康、DCGM 样本新鲜度、firing 数)。
-
-    在巡检里取而不在请求路径取:集群页保持纯 DB 读。Prometheus 挂了只是少几条事实,
-    不改任何组件的状态位。
-    """
+    """合并 Prometheus 抓取健康、DCGM 新鲜度与 firing 数;不改变组件状态位。"""
     extra = await metering_service.cluster_component_metrics()
     if not extra:
         return probe
@@ -162,7 +148,7 @@ async def _converge_ledger(
     nodes: list[NodeInfo],
     counts: dict[str, int],
 ) -> _Plan:
-    """B:单事务写台账(探测缓存、逐节点 upsert、消失节点 Missing / 删行),返回 K8s 写待办。"""
+    """单事务收敛探测缓存与台账,返回 K8s 写待办;消失节点置 Missing 或按保留期删除。"""
     plan = _Plan()
     now = now_utc()
     async with sm() as session:
@@ -184,19 +170,13 @@ async def _converge_ledger(
                 row.label_synced = False
                 plan.labels.append((n.name, canonical))
             else:
-                # 型号未知不沿用上一轮真值
                 row.label_synced = bool(canonical)
-            # 池标签对账:期望池是事实源,优先级 desired_pool(管理端切池)> 注册登记。
-            # 平台是池标签唯一写入方,所以「未打标」与「标签不符」都由这里补齐:
-            # 未打标 = 装机中或 Node 对象被删重建(kubelet 重注册不带池标签),补上即可。
             wanted_pool = row.desired_pool or enrolled_pools.get(n.name)
             if wanted_pool and not pool_matches(wanted_pool, n.pool_label):
                 observed = n.pool_label or ""
-                # 标签不符且节点仍可调度 = 平台以外的写入方改过它(切池必先 cordon,收敛窗口内
-                # 节点一定是停止调度的;cordon 中的节点不接实例,漂移也不产生后果)
                 tampered = observed not in ("", "unknown") and row.desired_unschedulable is not True
                 if tampered:
-                    NODE_POOL_LABEL_MISMATCH_TOTAL.inc()  # 指标在发现时计数
+                    NODE_POOL_LABEL_MISMATCH_TOTAL.inc()
                 plan.pool_fixes.append((n.name, wanted_pool, observed, tampered))
         for name, row in list(rows.items()):
             if name in seen:
@@ -243,7 +223,7 @@ async def _sync_model_labels(
     labels: list[tuple[str, str]],
     counts: dict[str, int],
 ) -> None:
-    """C:canonical 型号写节点标签(逐节点独立 try),成功即回写 label_synced。"""
+    """逐节点写 canonical 型号标签,成功即回写 label_synced;失败不阻断后续节点。"""
     for name, canonical in labels:
         try:
             await orch.set_node_labels(name, {GPU_MODEL_NODE_LABEL: canonical})
@@ -267,9 +247,7 @@ async def _fix_pool_labels(
     fixes: list[tuple[str, str, str, bool]],
     counts: dict[str, int],
 ) -> None:
-    """C2:池标签收敛(期望池 > 节点实况;逐节点独立 try),整套下发含 GPU operand 标签。
-    未打标(装机中 / Node 对象重建)只补标签;标签被手工改过才先 cordon
-    (service.request_cordon,与管理端同路径)再改回,并已在发现时计了 critical 指标。"""
+    """逐节点下发期望池与 GPU operand 标签;篡改节点先请求 cordon,未打标节点只补标签。"""
     for name, pool, observed, tampered in fixes:
         if tampered:
             async with sm() as session:
@@ -311,7 +289,7 @@ async def _converge_cordon(
     nodes: list[NodeInfo],
     counts: dict[str, int],
 ) -> None:
-    """D:cordon 期望态收敛(逐节点独立 try)。"""
+    """逐节点收敛 cordon 期望态;失败不阻断后续节点。"""
     async with sm() as session:
         desired_rows = list(
             (

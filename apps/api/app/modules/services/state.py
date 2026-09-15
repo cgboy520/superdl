@@ -1,4 +1,4 @@
-"""服务状态派生:纯函数、不落库;由 desired_state + 当前 / 候选实例翻译成用户看到的状态。"""
+"""从 released_at、当前与候选实例派生服务状态;不读取 desired_state,不落库。"""
 
 from typing import TYPE_CHECKING
 
@@ -19,7 +19,6 @@ FAILED = "failed"
 RELEASING = "releasing"
 RELEASED = "released"
 
-# 实例状态 → 服务状态(creating/starting 归并为部署中;running 另按就绪位分 RUNNING / UNREADY)
 _BY_INSTANCE_STATUS: dict[str, str] = {
     sm_def.CREATING: DEPLOYING,
     sm_def.STARTING: DEPLOYING,
@@ -41,7 +40,6 @@ def derive_status(
     if rollout is not None:
         return DEPLOYING, False
     if current is None:
-        # 没有实例可指的服务按已停止呈现
         return STOPPED, False
     if current.status == "running":
         ready = current.unready_since is None

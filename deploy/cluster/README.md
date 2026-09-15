@@ -18,10 +18,18 @@ kubectl create ns monitoring --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n monitoring create secret generic superdl-alert-token --from-literal=token=<与 SUPERDL_ALERTMANAGER_TOKEN 一致>
 kubectl -n monitoring create secret generic superdl-smtp-password --from-literal=password=<SMTP 口令>
 kubectl -n monitoring create secret generic grafana-admin \
-  --from-literal=admin-user=admin --from-literal=admin-password=<口令>   # 仅 full;light 关 Grafana
+  --from-literal=admin-user=admin --from-literal=admin-password=<口令>
 ```
 
-full 档另需 `cert-manager/acme-dns-account`(DNS01 账户,见 `runbooks/acme-dns.md`);light 档不签发证书,手工把现成通配证书灌成 `superdl/superdl-jupyter-wildcard-tls` 与 `superdl/superdl-svc-wildcard-tls`。
+full 档另需 `cert-manager/acme-dns-account`(DNS01 账户,见 `runbooks/acme-dns.md`);light 档不签发证书,手工把现成通配证书灌成 `superdl/superdl-jupyter-wildcard-tls` 与 `superdl/superdl-svc-wildcard-tls`。`grafana-admin` 仅 full 档需要,light 关闭 Grafana。
+
+启用 cnpg 时,还需在 `superdl` 命名空间预建 `cnpg-backup-s3`,键为 `ACCESS_KEY_ID` 与 `ACCESS_SECRET_KEY`,并替换 `values/cnpg-cluster.yaml` 中的对象存储占位符。凭据使用受限权限文件供给,不放在命令行。
+
+存储与监控变更前核对:
+
+- `values/rook-ceph-cluster.yaml` 的三个 OSD 必须落在三台不同机器上,才满足 `failureDomain: host` 的副本要求。
+- 修改 Prometheus 存储参数前,先以 `--cascade=orphan` 删除 `monitoring` 中的 StatefulSet `prometheus-kube-prometheus-stack-prometheus`,保留 Pod/PVC,再通过 `./apply.sh <full|light>` 重建 StatefulSet。
+- 钉钉接收器使用 Alertmanager 内的 `localhost:8060/dingtalk/oncall/send`;使用前须在 `values/kps.yaml` 的 `alertmanager.alertmanagerSpec.containers` 配置 `prometheus-webhook-dingtalk` sidecar,固定镜像版本,profile 为 `oncall`,机器人凭据引用 `monitoring/superdl-dingtalk-token` 的 `token` 键。启用机器人加签时,同时配置转换器支持的签名参数与 Secret。
 
 ## 北向入口:Envoy Gateway 与 Gateway API CRD(两档通用,首装前必读)
 
@@ -43,11 +51,11 @@ full 档另需 `cert-manager/acme-dns-account`(DNS01 账户,见 `runbooks/acme-d
 1. **server 节点**(装机基线见 `../ansible/`):
    ```bash
    curl -sfL https://rancher-mirror.rancher.cn/rke2/install.sh | INSTALL_RKE2_MIRROR=cn INSTALL_RKE2_CHANNEL=latest sh -
-   cp rke2/audit-policy.yaml /etc/rancher/rke2/audit-policy.yaml   # 缺失则 apiserver 起不来
+   cp rke2/audit-policy.yaml /etc/rancher/rke2/audit-policy.yaml
    cp rke2/server-config.yaml /etc/rancher/rke2/config.yaml
    systemctl enable --now rke2-server
    ```
-   **控制面 HA(公众生产强制)**:3 台 server 堆叠 etcd + 控制面 VIP(kube-vip/keepalived/SLB 任一)。ansible 在 `group_vars/servers.yml` 定义 `api_vip` + `server_ips`(奇数台 ≥3)即自动渲染 tls-san(模板内注释块保持不动);手工部署照 `rke2/server-config.yaml` 头注释取消 tls-san 注释并填真实值。
+   **控制面 HA(公众生产强制)**:3 台 server 堆叠 etcd + 控制面 VIP(kube-vip/keepalived/SLB 任一)。ansible 在 `group_vars/servers.yml` 定义 `api_vip` + `server_ips`(奇数台 ≥3)即自动追加 `tls-san`。手工部署时在每台 server 的 config.yaml 添加同一份 `tls-san` 列表,包含 VIP、全部 server IP,以及需要用于访问 API 的 server 主机名;单 server 可省略。
    第 2/3 台 server 加入:config.yaml 与首台同一渲染产物,另放 `rke2/server-join-config.yaml` 到 `/etc/rancher/rke2/config.yaml.d/50-join.yaml`(server 指 VIP:9345 + server token,首台严禁放)。
    VIP 就绪前可先单台上线,扩到 3 台前:tls-san 补齐 → 滚动重启全部 server → agent/cilium/netpol 统一切 VIP。
 2. **平台接入**:管理端「平台配置 · 集群接入」录入 server 地址(HA 录 `https://<VIP>:9345`,单 server 录该机 IP)与 **agent token**(server-config.yaml 里 `agent-token` 的值);**禁止**录入 `/var/lib/rancher/rke2/server/node-token`(见「server token 与 agent token」)。
@@ -55,7 +63,7 @@ full 档另需 `cert-manager/acme-dns-account`(DNS01 账户,见 `runbooks/acme-d
 3. **组件**:`./preflight.sh full && ./apply.sh full`(含 Loki/Alloy,见 `runbooks/loki-logging.md`;presync 先跑 `./gateway-api-crds.sh`)。
    准入策略不需要手工 apply:`admission/tenant-restrictions.yaml` 的七条 VAP 由 `apply.sh` 在 helmfile 之前下发并回读,七条全部 `Deny`、无 Audit 观察期;`preflight.sh` 与 `scripts/release.sh` 各再断言一次七个 Binding 存在且 `validationActions` 含 Deny。
 4. **镜像仓库(Harbor)**:平台镜像与租户实例镜像的权威源,镜像引用一律 Harbor 全限定名。
-   Harbor 侧:建平台项目(默认 `superdl`)、仅 Pull + List Repository 权限的机器人账户、(可选)Docker Hub 等代理缓存项目(设 public)。管理端「平台配置 · 镜像仓库」录入地址 / 项目 / 机器人 / 自签 CA / 代理映射并「测试连接」。拉取凭据不落节点:首装按 `../app/secrets.example.yaml` 手建 `superdl-registry-pull`,之后配置中心录入机器人后由 worker 按指纹覆写同名 Secret 并托管到各租户 ns;server 节点的 `registries.yaml` 由 ansible 分发。镜像发布与凭据轮换 SOP:`runbooks/image-prewarm.md`。
+   Harbor 侧:建平台项目(默认 `superdl`)、仅 Pull + List Repository 权限的机器人账户、(可选)Docker Hub 等代理缓存项目(设 public)。管理端「平台配置 · 镜像仓库」录入地址 / 项目 / 机器人 / 自签 CA / 代理映射并「测试连接」。拉取凭据不落节点:首装按 `../README.md`「生产发布流程」手建 `superdl-registry-pull`,之后配置中心录入机器人后由 worker 按指纹覆写同名 Secret 并托管到各租户 ns;server 节点的 `registries.yaml` 由 ansible 分发。镜像发布与凭据轮换 SOP:`runbooks/image-prewarm.md`。
 5. **GPU 节点**:管理端「节点 · 新增」生成一键命令,节点上执行即完成打标加入(池标签 + GPU Operator 落点标签 / 驱动 / registries 全自动)。
    **先装 gpu-operator 再加节点**;顺序颠倒时重打一次标签。
    MIG 切分是唯一还要手工打的标签:
@@ -93,7 +101,7 @@ kubectl label nodes -l node-role.kubernetes.io/control-plane \
 1. **server(可兼跑业务)**:
    ```bash
    mkdir -p /etc/rancher/k3s && cp k3s/server-config.yaml /etc/rancher/k3s/config.yaml
-   cp rke2/audit-policy.yaml /etc/rancher/k3s/audit-policy.yaml   # 与 rke2 同规,缺失则 apiserver 起不来
+   cp rke2/audit-policy.yaml /etc/rancher/k3s/audit-policy.yaml
    curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh | INSTALL_K3S_MIRROR=cn sh -s - server
    ```
    (config 已含 `disable: traefik`、`embedded-registry: true`=Spegel,以及 `flannel-backend: none` / `disable-network-policy: true` / `disable-kube-proxy: true`——CNI、NetworkPolicy、kube-proxy 全归 Cilium。

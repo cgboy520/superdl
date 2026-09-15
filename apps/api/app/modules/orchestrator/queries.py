@@ -1,5 +1,4 @@
-"""编排只读查询:实例 / 事件 / 数据盘的读取与聚合。
-不依赖 billing;billing 与各巡检直接 import 本模块。"""
+"""实例、事件与数据盘查询及聚合。"""
 
 from collections.abc import Iterable
 from decimal import Decimal
@@ -14,7 +13,6 @@ from app.core.pricing import MARKET_SPOT, MARKET_SUBSCRIPTION
 from app.modules.orchestrator import statemachine as sm_def
 from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent
 
-# 数据盘计费态 / 欠费链状态:日结、燃烧率与欠费巡检据此选盘;grace(欠费宽限)停计费,frozen 不计费
 DISK_BILLABLE_STATUSES: tuple[str, ...] = ("active",)
 DISK_ARREARS_CHAIN_STATUSES: tuple[str, ...] = ("active", "grace", "frozen")
 
@@ -55,7 +53,6 @@ async def pending_hourly(session: AsyncSession, user_id: int) -> Decimal:
                 select(Instance.price_hourly, Instance.gpu_count).where(
                     Instance.user_id == user_id,
                     Instance.status.in_((sm_def.CREATING, sm_def.STARTING)),
-                    # 包周期实例已预付,不计
                     Instance.market != MARKET_SUBSCRIPTION,
                 )
             )
@@ -68,12 +65,7 @@ async def pending_hourly(session: AsyncSession, user_id: int) -> Decimal:
 
 async def lock_instance_for_billing(session: AsyncSession, instance_id: int) -> None:
     """结算前 FOR UPDATE 锁实例行再读事件;锁序 instance → bill_hourly → wallet。"""
-    await session.execute(
-        select(Instance.id)
-        .where(Instance.id == instance_id)
-        # 必须 FOR UPDATE(FOR KEY SHARE 挡不住 transition 的 UPDATE)
-        .with_for_update()
-    )
+    await session.execute(select(Instance.id).where(Instance.id == instance_id).with_for_update())
 
 
 async def billing_events_before(
@@ -138,7 +130,7 @@ def _billing_row(i: Instance) -> tuple[int, int, Any, int]:
 
 
 async def instances_by_ids(session: AsyncSession, instance_ids: Iterable[int]) -> list[Instance]:
-    """按 id 批量取实例(不限状态);下面各投影都从这一份取。"""
+    """按 id 批量取实例,不限状态。"""
     ids = list(instance_ids)
     if not ids:
         return []
@@ -214,7 +206,7 @@ async def billable_disks_of_user(session: AsyncSession, user_id: int) -> list[Da
 
 
 async def count_instances_by_status(session: AsyncSession) -> dict[str, int]:
-    """各状态实例数(GROUP BY,一条 SQL,不物化行)。"""
+    """按状态聚合实例数。"""
     rows = (
         await session.execute(select(Instance.status, func.count()).group_by(Instance.status))
     ).all()
@@ -222,9 +214,7 @@ async def count_instances_by_status(session: AsyncSession) -> dict[str, int]:
 
 
 async def count_active_instances_on_node(session: AsyncSession, node_name: str) -> int:
-    """节点上未释放的实例数。口径是 status != released——**已关机 / 冻结 / 失败也算**:
-    实例盘是节点本地 LV,开机会 pin 回原节点(service.start_instance_row),节点一换池就永远开不了机。
-    releasing 也计入,避免清理在途时切池。切池与退役的前置闸共用。"""
+    """节点上 status != released 的实例数,包含 stopped/frozen/failed/releasing。"""
     return int(
         (
             await session.execute(
@@ -237,8 +227,7 @@ async def count_active_instances_on_node(session: AsyncSession, node_name: str) 
 
 
 async def count_active_instances_by_node(session: AsyncSession) -> dict[str, int]:
-    """节点名 → 未释放实例数(GROUP BY 一条 SQL);口径同 count_active_instances_on_node。
-    管理端节点台账逐行展示用,不逐节点发查询。"""
+    """节点名 → 未释放实例数;口径同 count_active_instances_on_node。"""
     rows = (
         await session.execute(
             select(Instance.node_name, func.count())
@@ -372,7 +361,6 @@ async def running_gpu_share_by_pool(session: AsyncSession) -> dict[str, float]:
 async def running_spot_gpus_by_pool(session: AsyncSession) -> dict[str, int]:
     """池 → running 竞价实例占用卡数合计(device 计数);
     超卖档可能大于台账 gpu_used,调用方按已租截断。"""
-    # Python 侧聚合(参数化 JSONB 表达式不能进 GROUP BY)
     rows = (
         (
             await session.execute(
@@ -395,9 +383,6 @@ async def running_spot_gpus_by_pool(session: AsyncSession) -> dict[str, int]:
 async def pool_by_instance(session: AsyncSession, instance_ids: Iterable[int]) -> dict[int, str]:
     """实例 → 池标签(不限状态,含已释放)。"""
     return {i.id: i.spec["pool_label"] for i in await instances_by_ids(session, instance_ids)}
-
-
-# ---------- 数据盘(计费与巡检的读取面) ----------
 
 
 async def instance_billing_snapshot(

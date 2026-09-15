@@ -1,14 +1,4 @@
-"""node_specs 加 desired_pool(期望池)。
-
-管理端切池写入的期望态,与 desired_unschedulable 同款:handler 与巡检阶段 C2 按它收敛
-节点池标签与 GPU operand 标签。非空即覆盖 node_enrollments.pool 作为池事实源,切完不清空。
-数据影响:可空列,存量行留 NULL,巡检仍以注册登记为池事实源,行为不变。
-
-Revision ID: c8437eb43a7a
-Revises: 38ee65082b81
-Create Date: 2026-09-14 21:20:21.362497
-
-"""
+"""node_specs 增加可空的 desired_pool VARCHAR(8) 列,存量行留 NULL。"""
 
 from collections.abc import Sequence
 

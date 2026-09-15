@@ -84,7 +84,6 @@ export function InvoicesTab() {
   const role = useAdminRole();
   const writable = canWriteFinance(role);
   const qc = useQueryClient();
-  // 筛选条件入 URL(status/账期)
   const { search, setFilters } = useFinanceFilters();
   const status = search.i_status;
   const urlPeriod = search.i_period;
@@ -93,12 +92,9 @@ export function InvoicesTab() {
     keys: ["i_status", "i_period"],
     commit: setFilters,
   });
-  // 账期 commit 制;URL 回流走渲染期派生态
   const commitPeriod = useCallback((next: string | undefined) => setFilters({ i_period: next }), [setFilters]);
   const { value: periodInput, setValue: setPeriodInput } = useUrlCommittedInput(urlPeriod, commitPeriod);
-  // 非 YYYY-MM 标红提示,不阻止提交
   const periodBad = periodInput.trim() !== "" && !PERIOD_RE.test(periodInput.trim());
-  // 抬头与邮箱默认脱敏;reveal=true + 必填事由回明文,授权绑定当时筛选口径,换筛选即删授权
   const filterKey = `${status ?? ""}|${urlPeriod}`;
   const [reveal, setReveal] = useState<{ reason: string; filterKey: string } | null>(null);
   const [prevFilterKey, setPrevFilterKey] = useState(filterKey);

@@ -46,7 +46,6 @@ export function DeletionsTab() {
   const role = useAdminRole();
   const isAdmin = role === "admin";
   const navigate = useNavigate({ from: "/tenants" });
-  // 状态筛选入 URL(?dstatus=)
   const status = routeApi.useSearch({ select: (s) => s.dstatus });
   const commitFilters = useCallback(
     (patch: { dstatus?: string }) =>
@@ -63,7 +62,6 @@ export function DeletionsTab() {
   const [approving, setApproving] = useState<DeletionRow | null>(null);
   const [approveNote, setApproveNote] = useState("");
   const [approveLoading, setApproveLoading] = useState(false);
-  // 冷静期倒计时 30s tick
   const nowTs = useNow(30_000);
 
   const closeApprove = () => {
@@ -78,7 +76,6 @@ export function DeletionsTab() {
       message.success(t("tenants.deletion.executed"));
       closeApprove();
     } catch (e) {
-      // 校验不过 / 冷静期未满 → 409
       message.error(errText(e, t("common.actionFailed", { action: t("tenants.deletion.approveTitle") })));
     } finally {
       setApproveLoading(false);
@@ -238,7 +235,6 @@ export function DeletionsTab() {
       />
       <ListCapNote rows={rows.length} cap={LIST_CAPS.deletions} />
 
-      {/* L3 确认:键入用户 ID + 必填操作原因;校验未过 / 冷静期未满时按钮保持禁用(ui-ux-spec §1 规则 7) */}
       {approving && (
         <TypeConfirmModal
           open

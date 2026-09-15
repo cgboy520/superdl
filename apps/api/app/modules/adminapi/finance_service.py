@@ -26,7 +26,6 @@ from app.modules.billing import service as billing_service
 
 logger = get_logger(__name__)
 
-# 单笔调账绝对值上限:超出走线下流程
 ADJUST_MAX_ABS = Decimal("100000.00")
 
 
@@ -39,13 +38,14 @@ async def create_adjustment(
     created_by: int,
     idempotency_key: str | None = None,
 ) -> tuple["AdminAdjustment", bool]:
-    """发起调账。返回 (调账单, created):created=False = 幂等重放,路由回 200 + 重放区分头。
-    幂等键作用域为 (发起人,租户,键);同键重放比对请求体指纹,不一致 409。"""
+    """提交调账申请,返回 (调账单, created);created=False 表示幂等重放。
+
+    幂等键作用域为 (发起人,租户,键);同键异参回 409,并发唯一冲突不回查。
+    """
     amount = as_amount(Decimal(str(amount)))
     fingerprint = request_fingerprint(user_id, amount, reason)
 
     if idempotency_key:
-        # 幂等归属为 (created_by, user_id) 双列,不可用 find_replay(仅支持单列)
         existing = (
             await session.execute(
                 select(AdminAdjustment).where(
@@ -58,7 +58,7 @@ async def create_adjustment(
         if existing is not None:
             if existing.request_fingerprint != fingerprint:
                 raise conflict(key="common.idempotencyKeyMismatch")
-            return existing, False  # 幂等重放
+            return existing, False
 
     await account_service.get_user(session, user_id)
     if amount == 0:
@@ -78,7 +78,6 @@ async def create_adjustment(
         request_fingerprint=fingerprint,
     )
     session.add(adj)
-    # 并发同键撞 uq_admin_adjustments_idem_scope 由唯一约束兜底(500),不回查
     await session.commit()
     await session.refresh(adj)
     return adj, True
@@ -93,9 +92,10 @@ async def review_adjustment(
     comment: str | None,
     audit_writer: Callable[[AsyncSession], Awaitable[None]] | None = None,
 ):
-    """双人复核:复核人不得是发起人,且须为调账发起前已存在的账号;通过即生效(钱包+流水,同事务)。
-    audit_writer 在 approve 分支 commit 前调用,写失败即整体回滚。"""
-    # 行锁:后到者看到非 pending 即 409
+    """持调账行锁复核;复核人须非发起人且账号创建时间早于调账。
+
+    通过时同事务更新钱包与流水,并在提交前调用可选 audit_writer;失败不提交。
+    """
     adj = await session.get(AdminAdjustment, adjustment_id, with_for_update=True)
     if adj is None:
         raise not_found()
@@ -109,7 +109,6 @@ async def review_adjustment(
         )
     reviewer = await session.get(AdminUser, reviewer_id)
     if reviewer is None or ensure_utc(reviewer.created_at) >= ensure_utc(adj.created_at):
-        # 发起后才创建的账号不构成独立的第二人
         raise AppError(
             ErrorCode.ADMIN_SECOND_REVIEW_REQUIRED,
             key="adminapi.adjustReviewerTooNew",
@@ -145,7 +144,7 @@ async def review_adjustment(
             allow_negative=True,
         )
     if audit_writer is not None:
-        await audit_writer(session)  # 与生效同事务
+        await audit_writer(session)
     await session.commit()
     return adj
 
@@ -159,12 +158,9 @@ async def resolve_reversal(
     operator_id: int,
     audit_writer: Callable[[AsyncSession], Awaitable[None]] | None = None,
 ) -> None:
-    """核销渠道冲正(channel_reversed 分桶的唯一出口)。
+    """持订单行锁核销待处理冲正;release 解冻,chargeback 解冻并等额扣减(允许透支)。
 
-    - release:解冻等额冻结额,订单恢复退款资格;
-    - chargeback:解冻 + 等额扣减(ledger adjust,允许透支)。
-    两种都只写 resolved_at + action,不清 channel_reversed_at(同一通知重放不再二次冻结)。
-    单操作人 + 同步审计 + 计数(release 条条告警 PaymentReversalReleased)。
+    保留 channel_reversed_at,同事务登记核销时间与动作并调用可选 audit_writer 后提交。
     """
     order = (
         await session.execute(
@@ -189,10 +185,10 @@ async def resolve_reversal(
             ref_type="reversal",
             ref_id=order.order_no,
             remark=f"渠道冲正核销:{reason}",
-            allow_negative=True,  # 核销后余额为负走欠费链路
+            allow_negative=True,
         )
     if audit_writer is not None:
-        await audit_writer(session)  # 与核销同事务
+        await audit_writer(session)
     await session.commit()
     PAYMENT_REVERSAL_RESOLVED_TOTAL.labels(action=action).inc()
     logger.info(

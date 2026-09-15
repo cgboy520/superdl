@@ -1,6 +1,5 @@
 """纯 CPU 实例(tier=cpu / gpu_count=0):资源申请、计费份数、Pod 规格、容量与配额。"""
 
-# 白盒用例:直探模块内部
 # pyright: reportPrivateUsage=false
 
 from decimal import Decimal
@@ -91,11 +90,9 @@ class TestGpuRequest:
             await nodes_service.save_cluster_probe(session, await fake.probe_cluster())
             await session.commit()
         async with sm() as session:
-            # 要卡的:hami 未就绪 → 409
             with pytest.raises(AppError) as exc:
                 await _require_cluster_for_pool(session, "hami", 1)
             assert exc.value.code == ErrorCode.CLUSTER_NOT_READY
-            # 不要卡的:同一个池、同样未就绪 → 放行
             await _require_cluster_for_pool(session, "hami", 0)
 
     def test_cpu_on_hami_pool_still_requests_no_gpu(self):
@@ -103,7 +100,7 @@ class TestGpuRequest:
         req = build_gpu_request(
             pool_label="hami",
             gpu_count=0,
-            gpu_cores_pct=50,  # 即便 SKU 侧脏数据带了份额,也不许拼进资源请求
+            gpu_cores_pct=50,
             vram_gb=24,
             mig_profile=None,
             gpu_model="RTX4090",
@@ -112,7 +109,6 @@ class TestGpuRequest:
         assert not any(k.startswith("nvidia.com/") for k in req.resources)
         assert req.resources == {}
         assert req.scheduler_name is None
-        # 不钉型号
         assert req.node_selector == {POOL_NODE_LABEL: "hami"}
         assert GPU_MODEL_NODE_LABEL not in req.node_selector
 
@@ -133,7 +129,7 @@ class TestBillingUnits:
         assert billing_units(1) == 1
         assert billing_units(8) == 8
         assert bill_amount(Decimal("0.4900"), 0, 3600) == Decimal("0.49")
-        assert bill_amount(Decimal("0.4900"), 0, 1800) == Decimal("0.24")  # 0.245 → HALF_EVEN
+        assert bill_amount(Decimal("0.4900"), 0, 1800) == Decimal("0.24")
         assert hourly_cost(Decimal("0.4900"), 0) == Decimal("0.49")
         assert hourly_cost(Decimal("1.6800"), 2) == Decimal("3.36")
 
@@ -222,13 +218,13 @@ class TestCapacity:
             return sku.id
 
     async def test_cpu_pool_node_yields_slots(self, client: AsyncClient, sm):
-        """无卡节点整机可售:32 vCPU / 128G 上放 8C16G,受内存维封顶为 4 台。"""
+        """无卡节点按 vCPU 与内存预算计算可售台数。"""
         await seed_node_spec(sm, node_name="cpu-1", pool_label="cpu", gpu_model=None, gpu_count=0)
         await self._set_node_size(sm, "cpu-1", vcpu=32, mem_gb=64)
         sku_id = await self._cpu_sku(sm)
         market = (await client.get("/api/v1/skus")).json()
         row = next(s for s in market if s["id"] == sku_id)
-        assert row["available_count"] == 4  # min(32//8, 64//16)
+        assert row["available_count"] == 4
 
     async def test_cpu_on_gpu_node_capped_by_policy(self, client: AsyncClient, sm):
         """挂 hami 池时每节点只让出 gpu_node_cpu_instance_vcpu_cap 核;0 = 一台不卖。"""
@@ -240,7 +236,7 @@ class TestCapacity:
             market = (await client.get("/api/v1/skus")).json()
             return next(s for s in market if s["id"] == sku_id)["available_count"]
 
-        assert await free() == 2  # 默认 cap=16 → 16//8=2,内存按同比例折算 64//16=4
+        assert await free() == 2
         async with sm() as session:
             await set_platform_settings(
                 session, {"gpu_node_cpu_instance_vcpu_cap": "0"}, updated_by=None
@@ -345,7 +341,6 @@ class TestFullChain:
             "status"
         ] == "running"
 
-        # 跑 30 分钟后停机 → 尾账 > 0(0.49/时 × 0.5h ≈ 0.25)
         await backdate_running_event(sm, uuid, 30)
         assert (await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)).status_code
         async with sm() as session:
@@ -361,7 +356,6 @@ class TestFullChain:
             )
         assert bills, "CPU 实例必须出账单行"
         assert sum(b.amount for b in bills) > Decimal("0.00")
-        # 账单行照实存 gpu_count=0,份数由 billing_units 还原
         assert all(b.gpu_count == 0 for b in bills)
 
     async def test_gpu_count_must_be_zero_for_cpu_sku(self, client: AsyncClient, sm, fake):
@@ -411,9 +405,7 @@ class TestVcpuQuota:
         async with sm() as session:
             sku = Sku(**{**CPU_SKU, "status": "on"})
             session.add(sku)
-            await set_platform_settings(
-                session, {"max_vcpus_per_user": "8"}, updated_by=None
-            )  # 只放得下一台
+            await set_platform_settings(session, {"max_vcpus_per_user": "8"}, updated_by=None)
             await session.commit()
             sku_id = sku.id
 
@@ -437,11 +429,9 @@ class TestVcpuQuota:
 
         second = await create()
         assert second.status_code == 400, second.text
-        # 三个同族配额同码不同 message_key(reference/i18n.md)
         assert second.json()["code"] == "VALIDATION_ERROR"
         assert second.json()["message_key"] == "orchestrator.vcpuQuota"
 
-        # 释放后名额归还
         await drain(sm)
         fake.mark_ready(f"tenant-{user_id}", uuid)
         await reconcile_once(sm)
@@ -498,7 +488,6 @@ class TestSellableCpuSlots:
     def test_gpu_node_capped_and_memory_prorated(self):
         """GPU 节点按 cap 折算,内存按同比例折算。"""
         nodes = [self._node("hami", 64, 256)]
-        # cap=16 → vCPU 预算 16(2 台),内存预算 256×16//64=64(1 台)→ 取 1
         assert catalog_service.sellable_cpu_slots(8, 64, nodes, gpu_node_vcpu_cap=16) == 1
 
     def test_non_ready_nodes_excluded(self):

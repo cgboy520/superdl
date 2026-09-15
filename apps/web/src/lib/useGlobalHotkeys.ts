@@ -1,5 +1,3 @@
-/** 控制台全局快捷键(挂在 _console 布局,与 ⌘K 并存):`/` 聚焦当前页第一个 data-search-input;`g`+序列 500ms 内两键导航(g i→/instances,g s→/services,g b→/billing,g m→/market);输入框聚焦时不触发。 */
-
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 
@@ -11,10 +9,10 @@ function isTypingTarget(el: Element | null): boolean {
   return el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable;
 }
 
+/** 控制台快捷键:/ 聚焦搜索框,g+i/s/b/m 导航;输入框、文本域或可编辑内容内不触发。 */
 export function useGlobalHotkeys() {
   const navigate = useNavigate();
   useEffect(() => {
-    // 最近一次 `g` 按下的时间戳(0 = 无挂起序列)
     let pendingG = 0;
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;

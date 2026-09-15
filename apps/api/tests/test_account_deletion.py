@@ -38,7 +38,7 @@ async def _create_request(
 
 
 async def _backdate_request(sm: async_sessionmaker[AsyncSession], user_id: int, days: int) -> None:
-    """把申请的 requested_at 回拨,越过冷静期。"""
+    """将用户注销申请的 requested_at 回拨指定天数。"""
     async with sm() as session:
         await session.execute(
             update(AccountDeletionRequest)
@@ -62,7 +62,6 @@ class TestCreate:
         assert first.json()["status"] == "pending"
         second = await _create_request(client, headers, reason="第二次")
         assert second.status_code == 201
-        # 幂等:重复提交返回既有申请,不产生第二条
         assert second.json()["id"] == first.json()["id"]
         assert second.json()["reason"] == "第一次"
 
@@ -122,7 +121,6 @@ class TestCooldown:
         )
         assert resp.status_code == 409
         assert resp.json()["message_key"] == "account.deletionCooldown"
-        # 冷静期内拦截,申请仍 pending
         async with sm() as session:
             req = await session.get(AccountDeletionRequest, req_id)
             assert req is not None and req.status == "pending"
@@ -157,7 +155,6 @@ class TestApproveGuards:
         body = resp.json()
         assert body["message_key"] == "account.deletionLeftovers"
         assert uuid in body["detail"]["instances"]
-        # 校验不过自动驳回,残留清单写进 note
         async with sm() as session:
             req = await session.get(AccountDeletionRequest, req_id)
             assert req is not None and req.status == "rejected"
@@ -209,7 +206,6 @@ class TestApproveGuards:
         body = resp.json()
         assert body["message_key"] == "account.deletionBalanceRemaining"
         assert body["params"]["balance"] == "88.00"
-        # 自动驳回,note 引导先经退款流程提现
         async with sm() as session:
             req = await session.get(AccountDeletionRequest, req_id)
             assert req is not None and req.status == "rejected"
@@ -219,7 +215,6 @@ class TestApproveGuards:
 class TestApproveSuccess:
     async def test_anonymization_and_token_revocation(self, client: AsyncClient, sm):
         headers, user_id, _ = await create_user_with_key(client, PHONE)
-        # 实名字段(直接落库,绕开实名渠道)
         async with sm() as session:
             await session.execute(
                 update(User)
@@ -231,7 +226,6 @@ class TestApproveSuccess:
                 )
             )
             await session.commit()
-        # 登录拿 refresh token(从 jar 取)
         await client.post(
             "/api/v1/auth/sms-code",
             json={"phone": PHONE, "purpose": "login"},
@@ -251,13 +245,11 @@ class TestApproveSuccess:
         )
         assert resp.status_code == 200, resp.text
         assert resp.json()["status"] == "completed"
-        # 执行原因回写 note(不可逆操作留痕)
         assert resp.json()["note"] == "已核对身份与资源清单"
 
         async with sm() as session:
             user = await session.get(User, user_id)
             assert user is not None
-            # 匿名化占位串 del:{user_id}:{16 位随机 hex}(≤40 列宽);实名字段清空;状态 deleted
             assert re.fullmatch(rf"del:{user_id}:[0-9a-f]{{16}}", user.phone), user.phone
             assert len(user.phone) <= 40
             assert PHONE not in user.phone
@@ -266,16 +258,13 @@ class TestApproveSuccess:
             assert user.verification_status == "unverified"
             assert user.status == "deleted"
 
-        # 旧 access → 401「账号已注销」
         me = await client.get("/api/v1/me", headers={"Authorization": f"Bearer {old_access}"})
         assert me.status_code == 401
         assert me.json()["message_key"] == "account.accountDeleted"
         assert me.json()["message"] == "账号已注销"
-        # 旧 refresh → 401「账号已注销」
         refresh = await refresh_via_cookie(client, old_refresh)
         assert refresh.status_code == 401
         assert refresh.json()["message_key"] == "account.accountDeleted"
-        # 登录 → loginFailed(400)
         await client.post(
             "/api/v1/auth/sms-code",
             json={"phone": PHONE, "purpose": "login"},
@@ -285,7 +274,6 @@ class TestApproveSuccess:
         )
         assert relogin.status_code == 400
         assert relogin.json()["message_key"] == "account.loginFailed"
-        # 同手机号可重新注册;回拨上一条验证码越过发码退避窗
         await age_sms_codes(sm)
         send = await client.post(
             "/api/v1/auth/sms-code",
@@ -300,7 +288,7 @@ class TestApproveSuccess:
         assert reregister.json()["user"]["id"] != user_id
 
     async def test_anonymized_phone_is_not_derivable_from_the_number(self, client: AsyncClient, sm):
-        """占位串与原号码无函数关系:同号注销两次得到不同占位串,且不等于任何常见摘要形态。"""
+        """同号注销两次生成不同占位串,不等于被检验的 SHA-256 和 MD5 摘要。"""
         admin = await admin_headers(sm, client)
         tokens: list[str] = []
         for _ in range(2):
@@ -317,13 +305,11 @@ class TestApproveSuccess:
                 user = await session.get(User, user_id)
                 assert user is not None
                 tokens.append(user.phone.split(":")[-1])
-            # 下一轮重新注册同号(回拨发码退避窗)
             await age_sms_codes(sm)
 
         assert tokens[0] != tokens[1], "同号两次注销得到同一串 = 占位串是号码的函数"
         digest = hashlib.sha256(PHONE.encode()).hexdigest()
         for token in tokens:
-            # 无密钥摘要的截断/全长形态都不命中
             assert token not in (digest, digest[:12], digest[:16], digest[: len(token)])
             assert token != hashlib.md5(PHONE.encode()).hexdigest()[: len(token)]
 
@@ -339,7 +325,6 @@ class TestApproveSuccess:
                 )
             ).scalar_one()
             assert before > 0
-            # 余额清零(保留账本行)
             await session.execute(
                 update(Wallet).where(Wallet.user_id == user_id).values(balance=Decimal("0.00"))
             )
@@ -373,7 +358,6 @@ class TestAdminRoles:
         assert pending.status_code == 200
         assert len(pending.json()) == 1
         row = pending.json()[0]
-        # 行内校验计数:无实例/盘/余额
         assert row["instances_active"] == 0
         assert row["disks_active"] == 0
         assert row["balance"] == "0.00"

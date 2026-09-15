@@ -1,5 +1,4 @@
-/** 控制台顶栏右区(中性底,图标走 antd token 色):余额入口 · ⌘K · 通知铃 · 主题切换 · 用户菜单(账户设置 / 通知中心 / 帮助 / 语言 / 主题 / 退出)。
- *  语言与帮助收进用户菜单以精简顶栏;窄屏(<md)只留余额 / 铃 / 用户,主题改走用户菜单(ui-ux-spec §1 规则 15)。未登录(公开市场页)显示登录入口。 */
+/** 顶栏用户区:余额、命令面板、通知、主题与用户菜单;未登录时显示登录入口。 */
 
 import { POLL, space } from "@superdl/ui";
 import {
@@ -51,7 +50,6 @@ function NotificationBell() {
       onOpenChange={setOpen}
       content={
         pagesQ.isError ? (
-          // 失败不渲染成「无通知」
           <div style={{ width: 360 }}>
             <TableErrorEmpty isError onRetry={() => void pagesQ.refetch()} />
           </div>
@@ -152,7 +150,6 @@ export function TopBarUser() {
         disabled: l === currentLang,
       })),
     },
-    // 主题项常驻:窄屏不出顶栏图标钮,暗色只能从这里切(ui-ux-spec §1 规则 15)
     {
       key: "theme",
       icon: dark ? <SunOutlined /> : <MoonOutlined />,

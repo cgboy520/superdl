@@ -3,7 +3,7 @@ from pydantic import BaseModel
 
 class InstanceGpuSeries(BaseModel):
     uuid: str
-    points: list[tuple[float, float]]  # (unix_ts, gpu_util%)
+    points: list[tuple[float, float]]
     last: float | None
 
 

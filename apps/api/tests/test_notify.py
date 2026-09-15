@@ -1,4 +1,4 @@
-"""通知:站内信/24h 去重/Alertmanager 接入。验收:阈值可配、预警可审计、告警幂等。"""
+"""站内信、预警去重与 Alertmanager 接入契约。"""
 
 import pytest
 from sqlalchemy import select
@@ -84,13 +84,12 @@ class TestBalanceWarnNotification:
 
         counts = await balance_patrol(sm)
         assert counts["warned"] == 1
-        await balance_patrol(sm)  # 同日重复巡检 → 去重
+        await balance_patrol(sm)
 
         rows = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
         warns = [r for r in rows if r["type"] == "balance_warn"]
         assert len(warns) == 1
         assert "小时" in warns[0]["content"]
-        # 实例不停机
         assert (await get_instance(client, headers, uuid))["status"] == "running"
 
     async def test_read_all_marks_everything_and_is_idempotent(self, client, sm, fake):
@@ -115,7 +114,6 @@ class TestBalanceWarnNotification:
             await client.get("/api/v1/notifications", params={"unread": True}, headers=headers)
         ).json()["items"]
         assert unread == []
-        # 重复调用幂等;已读不消失
         resp = await client.post("/api/v1/notifications/read-all", headers=headers)
         assert resp.status_code == 204
         all_items = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
@@ -177,7 +175,7 @@ class TestBalanceWarnNotification:
             )
         ).json()
         ids = [n["id"] for n in page1["items"] + page2["items"]]
-        assert ids == sorted(ids, reverse=True)  # 全局降序
+        assert ids == sorted(ids, reverse=True)
         assert len(ids) == 60
         assert page2["next_cursor"] is None
 
@@ -205,7 +203,7 @@ class TestAlertmanagerWebhook:
     async def test_ingest_and_dedup(self, client, sm, fake):
         from app.core.outbox import OutboxTask
 
-        headers, _uuid, _user_id = await provision_running(client, sm, fake)  # user_id=1
+        headers, _uuid, _user_id = await provision_running(client, sm, fake)
         resp = await client.post(
             "/api/v1/webhooks/alertmanager", json=AM_PAYLOAD, headers=AM_HEADERS
         )
@@ -217,7 +215,6 @@ class TestAlertmanagerWebhook:
                     await session.execute(select(OutboxTask).where(OutboxTask.type == "notify.sms"))
                 ).scalars()
             )
-        # 重放(同 fingerprint+startsAt)幂等
         resp = await client.post(
             "/api/v1/webhooks/alertmanager", json=AM_PAYLOAD, headers=AM_HEADERS
         )
@@ -230,11 +227,9 @@ class TestAlertmanagerWebhook:
             )
         assert len(again) == len(sms_tasks)
 
-        # 受影响租户收到 gpu_fault 通知
         rows = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
         assert any(r["type"] == "gpu_fault" for r in rows)
 
-        # 平台级告警流(admin)
         ah = await admin_headers(sm, client, role="ops")
         alerts = (await client.get("/api/admin/v1/alerts", headers=ah)).json()
         assert any(a["title"] == "GPUXidCriticalError" for a in alerts)
@@ -260,7 +255,7 @@ class TestAlertmanagerWebhook:
             balance = await wallet.get_balance(session, user_id)
             await wallet.debit(session, user_id, balance, type_="adjust", allow_negative=True)
             await session.commit()
-        await balance_patrol(sm)  # 停机 + 欠费通知
+        await balance_patrol(sm)
         async with sm() as session:
             rows = (await session.execute(select(Notification))).scalars().all()
         assert any(r.type == "arrears" for r in rows)
@@ -275,7 +270,6 @@ class TestAlertAck:
         alerts = (await client.get("/api/admin/v1/alerts", headers=ops)).json()
         target = next(a for a in alerts if a["title"] == "GPUXidCriticalError")
         assert target["acked_at"] is None
-        # 节点维告警按 hostname 标签深链到节点页
         assert target["target_kind"] == "node" and target["target_id"] == "gpu-01"
 
         resp = await client.post(f"/api/admin/v1/alerts/{target['id']}/ack", headers=ops)
@@ -296,7 +290,6 @@ class TestAlertAck:
             headers=AM_HEADERS,
         )
         ops = await admin_headers(sm, client, role="ops")
-        # 告警流 3 行:admin_alert + gpu_fault(critical)+ 管理员绑定 TOTP(warning);ack 后剩 2
         body = (await client.get("/api/admin/v1/alerts/unread-count", headers=ops)).json()
         assert body["count"] == 3
         assert body["critical_count"] == 2
@@ -312,9 +305,7 @@ class TestAlertAck:
 
     async def test_forged_namespace_without_real_user_no_tenant_notify(self, client, sm, fake):
         """namespace=tenant-<不存在的用户>:平台流照落,租户短信/站内信不出。"""
-        await client.post(
-            "/api/v1/webhooks/alertmanager", json=AM_PAYLOAD, headers=AM_HEADERS
-        )  # tenant-1 无此用户
+        await client.post("/api/v1/webhooks/alertmanager", json=AM_PAYLOAD, headers=AM_HEADERS)
         async with sm() as session:
             rows = (await session.execute(select(Notification))).scalars().all()
         assert [r.type for r in rows] == ["admin_alert"]
@@ -332,7 +323,6 @@ class TestAlertAck:
         ).json()
         assert len(critical) == 2
         assert all(a["severity"] == "critical" for a in critical)
-        # warning 桶里只有管理员绑定 TOTP 的告警
         warning = (
             await client.get("/api/admin/v1/alerts", params={"severity": "warning"}, headers=ops)
         ).json()
@@ -355,7 +345,7 @@ class TestAlertAck:
 
 class TestAlertmanagerAuthHardening:
     async def test_unconfigured_token_rejects_all(self, client, sm, fake, monkeypatch):
-        """未配置 token 时任何环境一律 401(不存在测试后门)。"""
+        """未配置 token 时任何环境一律返回 401。"""
         from app.core.config import get_settings
 
         monkeypatch.setattr(get_settings(), "alertmanager_token", None)
@@ -423,7 +413,7 @@ class TestAlertmanagerWebhookHardening:
         assert resp.json()["ingested"] == 3
 
     async def test_ip_rate_limited(self, client, sm, fake, monkeypatch):
-        """IP 限流;阈值在 Alertmanager 重试节奏之上。"""
+        """Alertmanager 接入按 IP 限流。"""
         from app.modules.notify import router as notify_router
 
         monkeypatch.setattr(notify_router, "ALERT_RATE_LIMIT", 2)

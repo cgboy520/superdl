@@ -1,6 +1,3 @@
-/** 行内「更多 ▾」(两端统一):items 声明式条目(灰置项经 GatedButton 带原因,永不隐藏;危险项 danger),或 children 自带弹窗流程的按钮(ReasonAction)。
- *  显式 role=menu / menuitem(e2e 以 menuitem 定位);点击条目后收起。 */
-
 import { DownOutlined } from "@ant-design/icons";
 import { Button, Dropdown, theme } from "antd";
 import { useState, type ReactNode } from "react";
@@ -21,6 +18,7 @@ export type RowMenuItem =
     }
   | { type: "divider"; key: string };
 
+/** 行内更多菜单:可用的 items 条目点击后收起;自定义 children 不自动收起菜单。 */
 export function RowMoreMenu({
   items,
   children,

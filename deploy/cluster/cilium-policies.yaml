@@ -1,12 +1,4 @@
-# Cilium 语义补偿:标准 NetworkPolicy 表达不了「实体」,而 Cilium 按身份而非地址判定。
-# 随 cilium release 的 postsync 钩子下发(CRD 由 chart 建,presync 时还不存在)。
-# 两条都是把 app/k8s/09-networkpolicy.yaml 与 real.py 里按地址写的放行翻译成按身份放行,
-# 不放宽既有姿态。cilium.enabled=false 的档位不需要本文件。
 ---
-# 平台组件出向:平台库(节点宿主 Docker 上的 PG)与 K8s API。
-# ipBlock 选不中节点:节点在 Cilium 里是 host / remote-node 保留身份,与 IP 无关,
-# values/cilium.yaml 的 policyCIDRMatchMode=nodes 也只覆盖 remote-node,不覆盖本机 host。
-# 现场:cilium-dbg monitor 报 `Policy denied ... identity N->host: <pod> -> <node>:5432`
 apiVersion: cilium.io/v2
 kind: CiliumClusterwideNetworkPolicy
 metadata:
@@ -20,21 +12,16 @@ spec:
       toPorts:
         - ports:
             - {port: "5432", protocol: TCP}
-    # kubeProxyReplacement 把 ClusterIP 译成 <node>:6443,策略在译后判定
     - toEntities: [host, remote-node, kube-apiserver]
       toPorts:
         - ports:
             - {port: "6443", protocol: TCP}
 ---
-# 租户实例入向 SSH:跨节点 NodePort 的 SNAT 来源是入口节点的 cilium_host,
-# 该地址从 Pod 子网池动态分配(实测 .40 / .59,不是 .1),且落在 tenant-default 的
-# `except 10.42.0.0/16` 里,按地址放行必然选不中。
 apiVersion: cilium.io/v2
 kind: CiliumClusterwideNetworkPolicy
 metadata:
   name: superdl-tenant-ssh-from-nodes
 spec:
-  # superdl.io/instance 只打在实例 Pod 上,不会选中平台组件
   endpointSelector:
     matchExpressions:
       - {key: superdl.io/instance, operator: Exists}

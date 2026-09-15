@@ -37,7 +37,7 @@ class TestAliyunChannel:
         assert await ch.verify("token-abc") is True
         assert seen[0]["Action"] == "VerifyIntelligentCaptcha"
         assert seen[0]["Version"] == "2023-03-05"
-        assert seen[0]["SceneId"] == "scene-1"  # 服务端强制写场景,防前端篡改
+        assert seen[0]["SceneId"] == "scene-1"
         assert seen[0]["CaptchaVerifyParam"] == "token-abc"
 
     async def test_verify_result_false(self):
@@ -56,7 +56,7 @@ class TestAliyunChannel:
             await ch.verify("t")
 
         def malformed(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={"Code": "Success"})  # 缺 Result
+            return httpx.Response(200, json={"Code": "Success"})
 
         ch2 = AliyunCaptchaChannel("ak", "sk", "s", transport=httpx.MockTransport(malformed))
         with pytest.raises(CaptchaError, match="unexpected"):
@@ -110,7 +110,7 @@ class TestSmsCodeGate:
             row = (
                 await session.execute(select(SmsCode).where(SmsCode.phone == "13800000095"))
             ).scalar_one_or_none()
-            assert row is None  # 未落库:闸门在写库之前
+            assert row is None
 
     async def test_enabled_without_credentials_is_fail_closed(self, client: AsyncClient, sm):
         """开启但凭据未配 → 502。"""

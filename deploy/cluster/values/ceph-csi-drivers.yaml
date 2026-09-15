@@ -1,8 +1,3 @@
-# Ceph CSI 驱动。Rook 1.20 起 CSI 走 ceph-csi-operator 模型:rook-ceph chart 只装
-# operator 与 CRD,**不发 OperatorConfig 与 Driver CR**,不补这个 release 则
-# CSI 驱动根本不存在(现象:PVC 永远 Pending,provisioner 未注册),
-# 而 rook 文档仍写着「驱动由 operator 自动启用」——已不成立。
-# imageSet 指向 rook-ceph chart 建的 ConfigMap,两个 release 靠它对齐镜像版本。
 operatorConfig:
   create: true
   driverSpecDefaults:
@@ -10,18 +5,13 @@ operatorConfig:
       name: rook-csi-operator-image-set-configmap
     nodePlugin:
       priorityClassName: system-node-critical
-    # 内核 CephFS 客户端,不用 ceph-fuse:整个选型就建立在
-    # fs/ceph/super.c 声明 FS_ALLOW_IDMAP 上;换成 FUSE 则和 JuiceFS 一样挂不进
-    # hostUsers: false 的租户 Pod
     cephFsClientType: kernel
 
 drivers:
   cephfs:
     enabled: true
-    # 名字必须是 <operator ns>.cephfs.csi.ceph.com,与 StorageClass 的 provisioner 对上
     name: rook-ceph.cephfs.csi.ceph.com
     cephFsClientType: kernel
-  # 只用文件系统;要块存储时再开(会多一组 provisioner + nodeplugin,统一内存下省着点用)
   rbd:
     enabled: false
   nfs:

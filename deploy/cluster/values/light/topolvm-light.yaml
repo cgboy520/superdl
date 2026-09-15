@@ -1,3 +1,2 @@
-# TopoLVM 的 k3s/单机覆盖(叠在 values/topolvm.yaml 之上):controller 单副本(chart 默认 2 + hostname 反亲和);多节点 light 改回 2
 controller:
   replicaCount: 1

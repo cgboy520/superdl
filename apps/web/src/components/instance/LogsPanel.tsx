@@ -37,10 +37,8 @@ export function LogsPanel({
   const { t } = useTranslation();
   const { token } = theme.useToken();
   const scrollRef = useRef<HTMLDivElement>(null);
-  // 贴底判定:距底 ≤40px;上滚即暂停跟随,新行计数在浮动钮上
   const [pinned, setPinned] = useState(true);
   const [newCount, setNewCount] = useState(0);
-  // 关键词过滤只作用于已拉取的末 N 行;换行开关默认开
   const [keyword, setKeyword] = useState("");
   const [wrap, setWrap] = useState(true);
   const kw = keyword.trim().toLowerCase();
@@ -53,7 +51,6 @@ export function LogsPanel({
     setNewCount(0);
   };
 
-  // 渲染期派生:非贴底时新行数累计到浮动钮;tail 档变化整体替换内容并复位贴底
   const [prevLen, setPrevLen] = useState(lines.length);
   if (lines.length !== prevLen) {
     const grew = lines.length - prevLen;
@@ -68,7 +65,6 @@ export function LogsPanel({
     setNewCount(0);
   }
 
-  // 自动跟随:仅在贴底时滚到底部(纯 DOM 操作)
   useEffect(() => {
     if (!pinned) return;
     const el = scrollRef.current;
@@ -107,7 +103,6 @@ export function LogsPanel({
           options={LOG_TAIL_OPTIONS.map((n) => ({ value: n, label: String(n) }))}
           onChange={onTail}
         />
-        {/* 文字包在 label 里:点文字也切换 */}
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
           <Switch checked={autoRefresh} onChange={onAutoRefresh} aria-label={t("instances.logsAutoRefresh")} />
           <Typography.Text>{t("instances.logsAutoRefresh")}</Typography.Text>
@@ -164,7 +159,6 @@ export function LogsPanel({
             ) : visible.length === 0 ? (
               <Typography.Text type="secondary">{t("instances.logsFilterNoMatch")}</Typography.Text>
             ) : (
-              // key 用行内容 + 序号:滚动追加时旧行不重渲染
               visible.map((line, i) => <div key={`${i}:${line}`}>{line}</div>)
             )}
           </div>

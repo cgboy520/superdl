@@ -16,7 +16,6 @@ from app.modules.notify.schemas import NotificationOut, UnreadCountOut
 
 router = APIRouter(tags=["notify"])
 
-# 告警接入端点(Bearer token 即鉴权):IP 限流 + 体积与字段长度上限
 ALERT_RATE_LIMIT = 120
 ALERT_RATE_WINDOW = 60.0
 ALERT_MAX_BODY_BYTES = 1024 * 1024

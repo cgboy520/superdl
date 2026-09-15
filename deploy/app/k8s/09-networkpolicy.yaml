@@ -1,7 +1,3 @@
-# superdl 命名空间网络边界:入向默认拒绝 + 按服务放行;出向默认拒绝 + 按端点精确放行。
-# 出向端点:PG 5432 / 对象存储 443 / 支付·短信网关 443 / K8s API 6443 / monitoring 9090;DNS 由 allow-dns-egress 统一放行。
-# CHANGE_ME_* 为占位,apply 前替换为真实端点(preflight.sh 有检查);网关类域名 apply 时解析为 CIDR,IP 漂移时同步更新。
-# 新增 Pod 必须补放行规则。kubelet 探针不受 NetworkPolicy 影响
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -11,7 +7,6 @@ spec:
   podSelector: {}
   policyTypes: ["Ingress", "Egress"]
 ---
-# 全命名空间放行 DNS(CoreDNS 在 kube-system)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -28,7 +23,6 @@ spec:
         - {protocol: UDP, port: 53}
         - {protocol: TCP, port: 53}
 ---
-# 前端入向:仅 Envoy 数据面(ns envoy-gateway-system,不是 superdl)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -46,7 +40,6 @@ spec:
       ports:
         - {protocol: TCP, port: 8080}
 ---
-# 前端出向:/api 反代(../nginx.web.conf / nginx.admin.conf),目标仅 superdl-api
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -64,7 +57,6 @@ spec:
       ports:
         - {protocol: TCP, port: 8000}
 ---
-# API 入向:Envoy 数据面、monitoring(Prometheus 抓 /metrics、Alertmanager webhook)、前端 nginx
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -86,7 +78,6 @@ spec:
       ports:
         - {protocol: TCP, port: 8000}
 ---
-# API 出向:PG / 对象存储 / 支付·短信网关 / K8s API。K8s API 按控制面子网 CIDR 放行(含 VIP 与全部 server IP)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -98,31 +89,27 @@ spec:
   policyTypes: ["Egress"]
   egress:
     - to:
-        - ipBlock: {cidr: "CHANGE_ME_PG_IP/32"}       # 平台库地址(托管 PG / cnpg,resolve 后填 /32)
+        - ipBlock: {cidr: "CHANGE_ME_PG_IP/32"}
       ports:
         - {protocol: TCP, port: 5432}
     - to:
-        - ipBlock: {cidr: "CHANGE_ME_OSS_CIDR"}       # 对象存储 endpoint 网段(JuiceFS 后端/备份上传)
+        - ipBlock: {cidr: "CHANGE_ME_OSS_CIDR"}
       ports:
         - {protocol: TCP, port: 443}
     - to:
-        # 支付/短信网关域名 apply 时解析为 CIDR
         - ipBlock: {cidr: "CHANGE_ME_GATEWAY_CIDR"}
       ports:
         - {protocol: TCP, port: 443}
     - to:
-        # 控制面子网 CIDR(含 VIP 与全部 server IP,不写 /32)
         - ipBlock: {cidr: "CHANGE_ME_K8S_API_CIDR"}
       ports:
         - {protocol: TCP, port: 6443}
     - to:
-        # Prometheus(00-namespace-config.yaml SUPERDL_PROMETHEUS_URL)
         - namespaceSelector:
             matchLabels: {kubernetes.io/metadata.name: monitoring}
       ports:
         - {protocol: TCP, port: 9090}
 ---
-# worker 入向:仅 Prometheus(PodMonitor 直抓 Pod :9000)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -139,7 +126,6 @@ spec:
       ports:
         - {protocol: TCP, port: 9000}
 ---
-# worker 出向:PG / 对象存储 / 支付·短信网关 / K8s API。开 SMTP 发信时追加 465/587 到邮件服务商 CIDR
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -151,32 +137,27 @@ spec:
   policyTypes: ["Egress"]
   egress:
     - to:
-        - ipBlock: {cidr: "CHANGE_ME_PG_IP/32"}       # 平台库地址
+        - ipBlock: {cidr: "CHANGE_ME_PG_IP/32"}
       ports:
         - {protocol: TCP, port: 5432}
     - to:
-        - ipBlock: {cidr: "CHANGE_ME_OSS_CIDR"}       # 对象存储 endpoint 网段
+        - ipBlock: {cidr: "CHANGE_ME_OSS_CIDR"}
       ports:
         - {protocol: TCP, port: 443}
     - to:
-        # 支付/短信网关域名 apply 时解析为 CIDR
         - ipBlock: {cidr: "CHANGE_ME_GATEWAY_CIDR"}
       ports:
         - {protocol: TCP, port: 443}
     - to:
-        # 控制面子网 CIDR(同 api-egress)
         - ipBlock: {cidr: "CHANGE_ME_K8S_API_CIDR"}
       ports:
         - {protocol: TCP, port: 6443}
     - to:
-        # Prometheus(同 api-egress)
         - namespaceSelector:
             matchLabels: {kubernetes.io/metadata.name: monitoring}
       ports:
         - {protocol: TCP, port: 9090}
 ---
-# 一次性 Job(迁移 / PG 备份 / 数据盘配额)出向:PG + 对象存储;无入向。
-# 标签在 10-migrate-job.yaml / 06-pg-backup.yaml 的 Pod 模板上
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -189,10 +170,10 @@ spec:
   policyTypes: ["Egress"]
   egress:
     - to:
-        - ipBlock: {cidr: "CHANGE_ME_PG_IP/32"}       # 平台库地址
+        - ipBlock: {cidr: "CHANGE_ME_PG_IP/32"}
       ports:
         - {protocol: TCP, port: 5432}
     - to:
-        - ipBlock: {cidr: "CHANGE_ME_OSS_CIDR"}       # 对象存储 endpoint 网段(备份上传)
+        - ipBlock: {cidr: "CHANGE_ME_OSS_CIDR"}
       ports:
         - {protocol: TCP, port: 443}

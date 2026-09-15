@@ -1,5 +1,3 @@
-# 各清单镜像写 CHANGE_IMAGE_PREFIX/superdl-<name>:CHANGE_TAG 占位,由 scripts/release.sh 替换后 apply;禁止手改、禁止 latest。
-# 10-migrate-job.yaml 不入 resources,由 release.sh 滚动前单独 create + wait
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:

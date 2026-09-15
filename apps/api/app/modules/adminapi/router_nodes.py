@@ -55,9 +55,6 @@ from app.modules.services.schemas import AdminServiceOut
 router = APIRouter(tags=["admin"])
 
 
-# ---------- 全局实例(角色:admin / ops) ----------
-
-
 @router.get("/instances", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_list_instances(
     session: DbSession,
@@ -79,9 +76,7 @@ async def admin_list_instances(
         limit=limit,
     )
     items = [AdminInstanceOut.model_validate(i) for i in page.items]
-    # 与用户端列表同一条回填路径(端点 slug 与包周期到期日)
     await orchestrator_service.attach_instance_details(session, items)
-    # total 仅租户视角(service 层只在 user_id 过滤时算)
     return Page[AdminInstanceOut](items=items, next_cursor=page.next_cursor, total=page.total)
 
 
@@ -138,16 +133,12 @@ async def admin_list_instance_events(
     return await orchestrator_service.list_events(session, instance.id, cursor=cursor, limit=limit)
 
 
-# ---------- 节点注册(读:ops/readonly,写:ops,admin 恒许) ----------
-
-
 class EnrollmentRevokeRequest(ReasonBody):
     pass
 
 
 class EnrollmentRegenerateRequest(BaseModel):
     ttl_hours: int = Field(default=24, ge=1, le=168)
-    # 可选原因,只落审计 detail
     reason: str | None = Field(default=None, max_length=200)
 
 
@@ -222,9 +213,6 @@ async def admin_revoke_enrollment(
     return NodeEnrollmentOut.model_validate(enrollment)
 
 
-# ---------- 节点与超卖报表(角色:admin / ops / readonly) ----------
-
-
 @router.get("/nodes/{node_name}/metrics", dependencies=[require_roles("ops", "readonly")])
 async def admin_node_metrics(
     node_name: str, session: DbSession, range: str = "1h"
@@ -241,7 +229,6 @@ async def admin_node_metrics(
 async def admin_list_nodes(session: DbSession) -> list[NodeOut]:
     """节点视图(台账口径,60s 巡检刷新):含 Missing/未打池标签节点。"""
     rows = await nodes_service.list_node_specs(session)
-    # 一条 GROUP BY 取全部节点的未释放实例数,不逐行发查询
     active = await orchestrator_queries.count_active_instances_by_node(session)
     return [
         NodeOut(
@@ -352,13 +339,12 @@ class NodeCordonRequest(ReasonBody):
 class NodeCordonOut(BaseModel):
     node_name: str
     unschedulable: bool
-    queued: bool = True  # 经 outbox 异步执行
+    queued: bool = True
 
 
 async def _cordon(
     node_name: str, body: NodeCordonRequest, session: DbSession, request: Request, on: bool
 ) -> NodeCordonOut:
-    # 读台账(node_specs)而非请求路径直连 K8s
     names = {n.node_name for n in await nodes_service.list_node_specs(session)}
     if node_name not in names:
         raise not_found("节点不存在或未打池标签")
@@ -453,7 +439,6 @@ async def admin_decommission_node(
 @router.get("/reports/oversell", dependencies=[require_roles("ops", "finance", "readonly")])
 async def oversell_report(session: DbSession) -> list[OversellPoolOut]:
     """超卖报表:各池 已售份额 / 实际超卖率(已售 ÷ Ready 物理卡数)/ 近 24h 真实利用率。"""
-    # 台账口径(node_specs,Ready 节点),不直连 K8s
     nodes = await nodes_service.list_node_specs(session)
     physical: dict[str, int] = {}
     for n in nodes:
@@ -461,7 +446,6 @@ async def oversell_report(session: DbSession) -> list[OversellPoolOut]:
             continue
         physical[n.pool_label] = physical.get(n.pool_label, 0) + n.gpu_count
     sold = await orchestrator_queries.running_gpu_share_by_pool(session)
-    # 按池加权平均:实例小时数据在 metering,池归属在 orchestrator
     util_by_instance = await metering_service.gpu_util_last_24h_by_instance(session)
     pool_of = await orchestrator_queries.pool_by_instance(session, util_by_instance.keys())
     util_sum: dict[str, float] = {}

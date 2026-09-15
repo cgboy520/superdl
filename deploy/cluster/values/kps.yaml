@@ -1,15 +1,11 @@
-# kube-prometheus-stack 88.x:Prometheus 本地 15 天,长期数据进 PostgreSQL(usage_hourly)
 prometheus:
   prometheusSpec:
-    # 须 ≥60(CRD 校验);900 = prometheus-operator 默认
     maximumStartupDurationSeconds: 900
     retention: 15d
-    retentionSize: "40GB"      # 约为 PVC 的 80%
-    # 持久化必配。改存储参数须先 `kubectl -n monitoring delete sts prometheus-kube-prometheus-stack-prometheus --cascade=orphan` 再 helmfile apply
+    retentionSize: "40GB"
     storageSpec:
       volumeClaimTemplate:
         spec:
-          # CephFS(RWX);light 档由 values/light/kps-light.yaml 覆盖回 topolvm
           storageClassName: superdl-cephfs
           accessModes: ["ReadWriteMany"]
           resources:
@@ -17,13 +13,10 @@ prometheus:
     replicas: 1
     ruleSelectorNilUsesHelmValues: false
     serviceMonitorSelectorNilUsesHelmValues: false
-    # worker 无 Service,08-monitoring.yaml 用 PodMonitor 直抓;不放开则只选带 release 标签的 PodMonitor,worker 指标与 WorkerDown 全失效
     podMonitorSelectorNilUsesHelmValues: false
     resources:
       requests: {cpu: 500m, memory: 2Gi}
-      limits: {memory: 4Gi}    # 只限内存,不限 CPU
-    # PG 监控由 cnpg operator 自带(values/cnpg-cluster.yaml),不加 postgres_exporter。
-    # HAMi 指标:scheduler 池级 vGPU 分配 + vGPUmonitor 容器级利用率(端口/标签为 HAMi v2.9 默认值)
+      limits: {memory: 4Gi}
     additionalScrapeConfigs:
       - job_name: hami-scheduler
         kubernetes_sd_configs:
@@ -44,7 +37,6 @@ prometheus:
           - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_component]
             regex: hami-device-plugin
             action: keep
-          # vGPUmonitor 容器不声明 containerPort:只保留每 Pod 第一个容器条目,地址拼成 podIP:9394
           - source_labels: [__meta_kubernetes_pod_container_name]
             regex: vgpu-monitor
             action: keep
@@ -55,16 +47,12 @@ prometheus:
           - source_labels: [__meta_kubernetes_pod_node_name]
             target_label: node
 grafana:
-  # 管理员口令经 Secret 注入:
-  #   kubectl -n monitoring create secret generic grafana-admin \
-  #     --from-literal=admin-user=admin --from-literal=admin-password=<强口令>
   admin:
     existingSecret: grafana-admin
     userKey: admin-user
     passwordKey: admin-password
   grafana.ini:
     security:
-      # 管理端不做 iframe 嵌入;改用 iframe 方案时以下三项一起改
       allow_embedding: false
       content_security_policy: true
       content_security_policy_template: >-
@@ -75,8 +63,6 @@ grafana:
       cookie_samesite: lax
     auth.anonymous:
       enabled: false
-  # Loki 多租户两个数据源(X-Scope-OrgID):platform = superdl/系统组件 + apiserver 审计;tenant = tenant-* 工作负载日志。
-  # 网络边界见 monitoring-netpol.yaml
   additionalDataSources:
     - name: Loki(平台)
       uid: loki-platform
@@ -96,7 +82,6 @@ grafana:
         httpHeaderName1: X-Scope-OrgID
       secureJsonData:
         httpHeaderValue1: tenant
-  # 大盘随 provisioning 下发;改盘只改本 values(UI 手改不落盘)。light 档 grafana.enabled=false 时忽略
   dashboards:
     superdl:
       superdl-overview:
@@ -194,24 +179,19 @@ alertmanager:
       group_by: [alertname, namespace]
       repeat_interval: 4h
       routes:
-        # critical 多通道:平台 webhook + 邮件 + 钉钉
         - matchers: ['severity="critical"']
           receiver: superdl-oncall-mail
           continue: true
         - matchers: ['severity="critical"']
           receiver: superdl-dingtalk
           continue: true
-        # Watchdog(severity=none)进 null
         - matchers: ['severity="none"']
           receiver: "null"
-        # 其余走平台 webhook(管理端告警中心)
         - matchers: ['severity=~".+"']
           receiver: superdl-api
     inhibit_rules:
-      # 真实告警 firing 期间抑制 Watchdog
       - source_matchers: ['severity=~"warning|critical"']
         target_matchers: ['alertname="Watchdog"']
-      # critical 抑制同名同 namespace 的 warning
       - source_matchers: ['severity="critical"']
         target_matchers: ['severity="warning"']
         equal: ['alertname', 'namespace']
@@ -223,61 +203,34 @@ alertmanager:
             http_config:
               authorization:
                 type: Bearer
-                # kubectl -n monitoring create secret generic superdl-alert-token \
-                #   --from-literal=token=<随机强 token>
                 credentials_file: /etc/alertmanager/secrets/superdl-alert-token/token
-      # 第二通道必填:外部 SMTP,不经过平台任何组件。四个 CHANGE_ME_* 未替换时 preflight.sh 阻断 apply
       - name: superdl-oncall-mail
         email_configs:
-          - to: "CHANGE_ME_ONCALL_MAIL"            # 值班邮件组
-            from: "CHANGE_ME_ALERT_FROM_MAIL"      # 发件地址
-            smarthost: "CHANGE_ME_SMTP_HOST:465"   # 外部邮件服务商,不得指向集群内服务
+          - to: "CHANGE_ME_ONCALL_MAIL"
+            from: "CHANGE_ME_ALERT_FROM_MAIL"
+            smarthost: "CHANGE_ME_SMTP_HOST:465"
             auth_username: "CHANGE_ME_SMTP_USERNAME"
             auth_password_file: /etc/alertmanager/secrets/superdl-smtp-password/password
             require_tls: true
-      # 第三通道(仅 critical):钉钉群机器人,经 prometheus-webhook-dingtalk sidecar 中转(见 alertmanagerSpec)
       - name: superdl-dingtalk
         webhook_configs:
           - url: "http://localhost:8060/dingtalk/oncall/send"
   alertmanagerSpec:
-    # silence/通知状态持久化
     storage:
       volumeClaimTemplate:
         spec:
-          # 同 Prometheus:CephFS(RWX)
           storageClassName: superdl-cephfs
           accessModes: ["ReadWriteMany"]
           resources:
             requests: {storage: 2Gi}
     secrets:
       - superdl-alert-token
-      # kubectl -n monitoring create secret generic superdl-smtp-password \
-      #   --from-literal=password=<SMTP 口令>
       - superdl-smtp-password
-    # 钉钉转换器 sidecar(superdl-dingtalk receiver 指 http://localhost:8060/dingtalk/oncall/send)。
-    # 启用时取消下面注释并钉死镜像版本;access_token 经 Secret 注入:
-    #   kubectl -n monitoring create secret generic superdl-dingtalk-token \
-    #     --from-literal=token=<钉钉机器人 access_token>
-    # containers:
-    #   - name: dingtalk-transformer
-    #     image: timonwong/prometheus-webhook-dingtalk:v2.1.0   # 上线前钉死最新稳定版
-    #     args:
-    #       - --ding.profile=oncall=https://oapi.dingtalk.com/robot/send?access_token=$(DINGTALK_TOKEN)
-    #     env:
-    #       - name: DINGTALK_TOKEN
-    #         valueFrom: {secretKeyRef: {name: superdl-dingtalk-token, key: token}}
-    #     ports:
-    #       - {containerPort: 8060}
-    #     resources:
-    #       requests: {cpu: 10m, memory: 32Mi}
-    #       limits: {memory: 64Mi}
-    # 机器人若开加签,image 版本需支持 secret 参数(一并经 Secret 注入)
 additionalPrometheusRulesMap:
   superdl-gpu:
     groups:
       - name: superdl.gpu
         rules:
-          # DCGM_FI_DEV_XID_ERRORS 是「最近一次 XID 码」的 gauge:按值变化 + 当前值命中致命码判定
           - alert: GPUXidCriticalError
             expr: (changes(DCGM_FI_DEV_XID_ERRORS[5m]) > 0) and (DCGM_FI_DEV_XID_ERRORS == 48 or DCGM_FI_DEV_XID_ERRORS == 63 or DCGM_FI_DEV_XID_ERRORS == 64 or DCGM_FI_DEV_XID_ERRORS == 79 or DCGM_FI_DEV_XID_ERRORS == 94 or DCGM_FI_DEV_XID_ERRORS == 95)
             labels: {severity: critical}
@@ -292,7 +245,6 @@ additionalPrometheusRulesMap:
             for: 2m
             labels: {severity: critical}
             annotations: {summary: "GPU 节点 NotReady:{{ $labels.node }}"}
-          # 共享池饱和:用 HAMi vGPUmonitor 节点级利用率(带 node 标签,只在 hami 池产出)
           - alert: SharedPoolUtilSaturated
             expr: avg by (node) (hami_host_gpu_utilization_ratio) > 95
             for: 30m
@@ -308,7 +260,6 @@ additionalPrometheusRulesMap:
             for: 5m
             labels: {severity: warning}
             annotations: {summary: "HAMi scheduler 指标缺失:共享池调度器可能不可用,新建共享档实例将被拒绝", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/cluster-validation.md#c-hami-共享池"}
-  # 证书过期预警:指标来自 cert-manager ServiceMonitor(values/cert-manager.yaml)
   superdl-certmanager:
     groups:
       - name: superdl.certmanager
@@ -326,7 +277,6 @@ additionalPrometheusRulesMap:
             for: 1h
             labels: {severity: warning}
             annotations: {summary: "cert-manager 指标缺失 1 小时:ServiceMonitor/组件异常,证书过期将无预警", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/acme-dns.md"}
-  # 平台业务指标,抓取接线见 deploy/app/k8s/08-monitoring.yaml
   superdl-platform:
     groups:
       - name: superdl.platform
@@ -369,13 +319,11 @@ additionalPrometheusRulesMap:
             expr: increase(superdl_outbox_task_timeout_total[30m]) > 0
             labels: {severity: warning}
             annotations: {summary: "outbox 有任务被执行超时中断:队列全局串行,队头卡死会让全部编排请求排队", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md"}
-          # 以心跳 Gauge 判定存活(Counter 首次 inc 前无序列)
           - alert: WorkerDown
             expr: (time() - max(superdl_worker_heartbeat_timestamp_seconds)) > 120 or absent(superdl_worker_heartbeat_timestamp_seconds)
             for: 5m
             labels: {severity: critical}
             annotations: {summary: "worker 心跳缺失超 2 分钟:outbox/结算/巡检/查单全部停摆"}
-          # 心跳正常但消费停滞:按积压年龄发现
           - alert: OutboxBacklogStale
             expr: superdl_outbox_pending_oldest_age_seconds > 600
             for: 10m
@@ -387,7 +335,6 @@ additionalPrometheusRulesMap:
             labels: {severity: critical}
             annotations: {summary: "PG 每日备份 Job 失败:资金库 RPO 正在拉长,立即处理", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
           - alert: PgBackupStale
-            # CronJob 形态;自建单实例形态(deploy/pg,指标 superdl_pg_backup_last_success_timestamp_seconds 存在)不按 CronJob 缺失判
             expr: (time() - max(kube_job_status_completion_time{namespace="superdl", job_name=~"pg-backup-daily-.*"})) > 100800 or (absent(kube_job_status_completion_time{namespace="superdl", job_name=~"pg-backup-daily-.*"}) and absent(superdl_pg_backup_last_success_timestamp_seconds))
             for: 5m
             labels: {severity: warning}
@@ -397,18 +344,15 @@ additionalPrometheusRulesMap:
             for: 5m
             labels: {severity: critical}
             annotations: {summary: "自建 PG 每日备份(dump + 异地同步 + 恢复冒烟)超 28h 无成功:查控制面宿主机 cron 邮件与 /var/lib/superdl/pg/backup", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
-          # 资金/结算/巡检/查单/编排收尾(指标定义见 apps/api/app/core/metrics.py)
           - alert: FundReconcileMismatch
             expr: increase(superdl_fund_reconcile_mismatch_total[5m]) > 0
             labels: {severity: critical}
             annotations: {summary: "资金账实不平({{ $labels.kind }}):余额与流水不一致,先冻结出账再人工核对"}
-          # DB 口径 Gauge:核销前持续告警,管理端「财务 › 结算缺口」闭环后自愈
           - alert: SettlementGapUnresolved
             expr: max(superdl_settlement_gap_unresolved) > 0
             for: 15m
             labels: {severity: critical}
             annotations: {summary: "未核销结算缺口 {{ $value }} 条({{ $labels.kind }})持续超 15 分钟:管理端财务 › 结算缺口处理"}
-          # 审计 fail-open 路径写失败(资金域出金为同事务审计,不走此路径)
           - alert: AuditWriteFailed
             expr: increase(superdl_audit_write_failed_total[5m]) > 0
             labels: {severity: critical}
@@ -429,7 +373,6 @@ additionalPrometheusRulesMap:
             expr: increase(superdl_disk_provision_failed_total[15m]) > 0
             labels: {severity: warning}
             annotations: {summary: "数据盘 PVC 建/扩进入死信(reconciler 周期重派):未就绪的盘挂不上实例,查 disk-ops worker 日志与 CephFS CSI"}
-          # Gauge(当前滞留数):>0 持续 15 分钟即告警
           - alert: ReconcileStuckInstances
             expr: max(superdl_reconcile_stuck_instances) > 0
             for: 15m
@@ -439,7 +382,6 @@ additionalPrometheusRulesMap:
             expr: increase(superdl_reconcile_leak_aborted_total[15m]) > 0
             labels: {severity: warning}
             annotations: {summary: "泄漏回收被熔断中止(未知 Pod 占比超阈):本轮泄漏未回收,人工核对节点残留"}
-          # SSH 端口池(停机实例不释放端口;耗尽表现为所有人开机 schedule 超时转 failed)
           - alert: SshPortPoolLow
             expr: superdl_ssh_port_pool_ports{state="free"} < 0.1 * sum(superdl_ssh_port_pool_ports)
             for: 10m
@@ -450,7 +392,6 @@ additionalPrometheusRulesMap:
             for: 5m
             labels: {severity: critical}
             annotations: {summary: "SSH NodePort 端口池即将耗尽(空闲 {{ $value }}):新建带 SSH 的实例将失败,立即处理"}
-          # 透支敞口(结算允许透支;巡检 5 分钟停机,敞口持续上涨 = 停机链路失效)
           - alert: WalletNegativeExposure
             expr: superdl_wallet_negative_sum_yuan > 1000
             for: 30m
@@ -465,38 +406,31 @@ additionalPrometheusRulesMap:
             for: 10m
             labels: {severity: warning}
             annotations: {summary: "证书 {{ $labels.name }}({{ $labels.namespace }})持续 10 分钟未就绪:查 cert-manager 签发事件与 DNS01 solver", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/acme-dns.md"}
-  # 安全域告警(4xx 侧)。指标定义见 apps/api/app/core/metrics.py;排查入口是 Loki(按 request_id)
   superdl-security:
     groups:
       - name: superdl.security
         rules:
-          # 撞库/爆破(应用层限流见 core/ratelimit.py)
           - alert: LoginFailureSpike
             expr: sum by (actor_type) (increase(superdl_login_failed_total[5m])) > 50
             labels: {severity: warning}
             annotations: {summary: "5 分钟内登录失败 {{ $value }} 次({{ $labels.actor_type }} 端):疑似撞库/爆破,按源 IP 查 Loki 决定是否临时封禁", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
-          # 管理端登录失败单独一条,阈值更严
           - alert: AdminLoginFailureSpike
             expr: sum(increase(superdl_login_failed_total{actor_type="admin"}[10m])) > 10
             labels: {severity: critical}
             annotations: {summary: "管理端 10 分钟内登录失败 {{ $value }} 次:管理员账号正被爆破(先核对 04-gateway.yaml 的源 IP 白名单是否生效)", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
-          # 越权探测:持续的 403 速率
           - alert: AuthzDenialSustained
             expr: sum by (actor_type) (rate(superdl_authz_denied_total[10m])) > 0.5
             for: 15m
             labels: {severity: warning}
             annotations: {summary: "鉴权拒绝持续 {{ $value }}/s({{ $labels.actor_type }} 端)超 15 分钟:有人在遍历越权面,或某个客户端在拿错凭据重试", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
-          # 管理端权限变更条条告警
           - alert: AdminPrivilegeChanged
             expr: increase(superdl_admin_privilege_change_total[5m]) > 0
             labels: {severity: critical}
             annotations: {summary: "管理端权限发生变更({{ $value }} 次):逐条与变更单核对,非计划内变更按失陷处置", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
-          # 节点池标签与注册登记不符(巡检已纠偏并 cordon)
           - alert: NodePoolLabelMismatch
             expr: increase(superdl_node_pool_label_mismatch_total[10m]) > 0
             labels: {severity: critical}
             annotations: {summary: "节点池标签与注册登记不符({{ $value }} 次):平台已纠偏并停调度,核对该机是谁装的、config.yaml 被谁改过", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/gpu-fault-sop.md"}
-          # PII 批量拉取,按 kind 分组
           - alert: PiiRevealVolumeHigh
             expr: sum by (kind) (increase(superdl_pii_reveal_rows_total[1h])) > 200
             labels: {severity: warning}
@@ -505,24 +439,20 @@ additionalPrometheusRulesMap:
             expr: sum(increase(superdl_pii_reveal_rows_total[5m])) > 500
             labels: {severity: critical}
             annotations: {summary: "5 分钟内明文查看 PII {{ $value }} 行:批量脱库特征,立即冻结相关管理账号并保留审计", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
-          # 401/403 占比(含中间件层拒绝),口径与 ApiHighErrorRate 对称
           - alert: ApiUnauthorizedRateHigh
             expr: sum(rate(superdl_http_request_duration_seconds_count{status=~"40[13]"}[5m])) / clamp_min(sum(rate(superdl_http_request_duration_seconds_count[5m])), 0.001) > 0.3
             for: 10m
             labels: {severity: warning}
             annotations: {summary: "API 401/403 占比 >30% 持续 10 分钟:大概率是自动化探测,而不是用户在误操作", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
-          # 收款验签根变更:支付/加密配置组任一写入都告警(单 admin 即可换验签公钥,告警是唯一的第二双眼)
           - alert: PaymentConfigWritten
             expr: increase(superdl_platform_config_write_total{domain=~"payment|crypto"}[5m]) > 0
             labels: {severity: critical}
             annotations: {summary: "平台配置 {{ $labels.domain }} 组被写入({{ $value }} 次):换掉验签公钥/商户号即可自签回调充值,逐条与变更单核对,非计划内按失陷处置", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
-          # 服务端点 key 猜测(回调不过审计与通用限流,此计数是唯一信号)
           - alert: EndpointAuthDenialSustained
             expr: rate(superdl_endpoint_auth_denied_total[10m]) > 1
             for: 15m
             labels: {severity: warning}
             annotations: {summary: "服务端点网关鉴权拒绝持续 {{ $value }}/s 超 15 分钟:有人在猜 x-api-key,按 slug 查 Loki 后临时冻结该服务", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
-  # 滥用域(注册速率 / 短信 / 限流 / 租户出向)。租户出向流量取 cAdvisor 网卡计数
   superdl-abuse:
     groups:
       - name: superdl.abuse
@@ -535,20 +465,16 @@ additionalPrometheusRulesMap:
             expr: sum by (purpose) (increase(superdl_sms_sent_total[10m])) > 300
             labels: {severity: warning}
             annotations: {summary: "10 分钟内发出短信 {{ $value }} 条({{ $labels.purpose }}):短信轰炸或撞库,先核对人机校验开关再看源 IP"}
-          # 应用层 429(边缘 Envoy 本地限流的 429 不经应用,不在此口径)
           - alert: ApiRateLimitedHigh
             expr: sum(rate(superdl_http_request_duration_seconds_count{status="429"}[5m])) > 5
             for: 10m
             labels: {severity: warning}
             annotations: {summary: "应用层限流 429 持续 {{ $value }}/s 超 10 分钟:单点被打,按 route/源 IP 查 Loki", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
-          # 单租户 ns 出向 >40 MB/s 持续 15 分钟(Pod 级已限 200 Mbit/s,多实例叠加仍可达此值)
           - alert: TenantEgressHigh
             expr: sum by (namespace) (rate(container_network_transmit_bytes_total{namespace=~"tenant-.*"}[10m])) > 40e6
             for: 15m
             labels: {severity: warning}
             annotations: {summary: "租户 {{ $labels.namespace }} 出向 {{ $value | humanize }}B/s 持续 15 分钟:扫描/外发/中继特征,管理端查该租户实例,必要时冻结"}
-# node-exporter:控制面节点带 CriticalAddonsOnly=true:NoExecute(server 污点),不容忍就没有 server 的节点指标,
-# 自建 PG 的备份时间戳(textfile)也正好写在 server 上;textfile 目录由 deploy/pg/backup.sh 写
 prometheus-node-exporter:
   tolerations:
     - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}

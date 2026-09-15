@@ -66,7 +66,6 @@ class TestCreate:
     async def test_open_limit_10_conflict(self, client: AsyncClient, sm):
         """进行中(open/pending_staff/pending_user)工单 >10 时第 11 单 409。"""
         headers, uid = await user_headers_with_id(client, "13700000303")
-        # 直接播种 10 张进行中工单
         async with sm() as session:
             for i in range(10):
                 session.add(
@@ -104,7 +103,7 @@ class TestCreate:
         assert len(created) == 1
         assert created[0].severity == "info"
         assert ticket_no in created[0].content
-        assert created[0].user_id is None  # 平台级告警,不属于任何租户
+        assert created[0].user_id is None
 
 
 class TestConversation:
@@ -120,7 +119,6 @@ class TestConversation:
         tid = ticket["id"]
         ops = await admin_headers(sm, client, role="ops")
 
-        # 客服回复 → pending_user
         resp = await client.post(
             f"/api/admin/v1/tickets/{tid}/reply", json={"body": "已为您重启,请再试"}, headers=ops
         )
@@ -128,7 +126,6 @@ class TestConversation:
         assert resp.json()["status"] == "pending_user"
         assert [m["sender_kind"] for m in resp.json()["messages"]] == ["user", "staff"]
 
-        # 用户回复 → pending_staff
         resp = await client.post(
             f"/api/v1/tickets/{tid}/messages", json={"body": "还是不行"}, headers=headers
         )
@@ -137,7 +134,6 @@ class TestConversation:
         assert detail["status"] == "pending_staff"
         assert [m["sender_kind"] for m in detail["messages"]] == ["user", "staff", "user"]
 
-        # 客服标记解决 → resolved
         resp = await client.post(
             f"/api/admin/v1/tickets/{tid}/status", json={"action": "resolve"}, headers=ops
         )
@@ -150,12 +146,10 @@ class TestConversation:
         tid = ticket["id"]
         ops = await admin_headers(sm, client, role="ops")
 
-        # open 状态不可直接关闭(用户端)
         resp = await client.post(f"/api/v1/tickets/{tid}/close", headers=headers)
         assert resp.status_code == 409
         assert resp.json()["message_key"] == "tickets.stateNotClosable"
 
-        # 标记解决后:双方回复均 409
         resp = await client.post(
             f"/api/admin/v1/tickets/{tid}/status", json={"action": "resolve"}, headers=ops
         )
@@ -170,14 +164,12 @@ class TestConversation:
         )
         assert resp.status_code == 409
         assert resp.json()["message_key"] == "tickets.stateNotRepliable"
-        # resolved → resolved 重复标记 409
         resp = await client.post(
             f"/api/admin/v1/tickets/{tid}/status", json={"action": "resolve"}, headers=ops
         )
         assert resp.status_code == 409
         assert resp.json()["message_key"] == "tickets.stateNotResolvable"
 
-        # resolved → closed:closed_at 落;此后回复/关闭/解决均 409
         resp = await client.post(f"/api/v1/tickets/{tid}/close", headers=headers)
         assert resp.status_code == 200, resp.text
         assert resp.json()["status"] == "closed"
@@ -259,7 +251,6 @@ class TestAdmin:
             await client.get("/api/admin/v1/tickets", params={"category": "billing"}, headers=ops)
         ).json()["items"]
         assert [r["id"] for r in rows] == [t2["id"]]
-        # 标记 t1 解决后按 status 过滤
         resp = await client.post(
             f"/api/admin/v1/tickets/{t1['id']}/status", json={"action": "resolve"}, headers=ops
         )
@@ -279,7 +270,6 @@ class TestAdmin:
         t1 = (await create_ticket(client, headers, category="instance")).json()
         await create_ticket(client, headers, category="billing", subject="发票咨询")
         ops = await admin_headers(sm, client, role="ops")
-        # 新建工单默认 open;计数口径随 status 参数
         open_count = (
             await client.get("/api/admin/v1/tickets/count", params={"status": "open"}, headers=ops)
         ).json()["count"]
@@ -292,16 +282,13 @@ class TestAdmin:
             )
         ).json()["count"]
         assert billing_count == 1
-        # 客服回复后 → pending_staff,默认口径命中
         await client.post(
             f"/api/admin/v1/tickets/{t1['id']}/reply", json={"body": "收到,处理中"}, headers=ops
         )
         default_count = (await client.get("/api/admin/v1/tickets/count", headers=ops)).json()[
             "count"
         ]
-        # 回复 → pending_user,不在待客服口径
         assert default_count == 0
-        # "count" 不被当 ticket_id 解析
         resp = await client.get("/api/admin/v1/tickets/count", headers=ops)
         assert resp.status_code == 200
 
@@ -313,20 +300,17 @@ class TestAdmin:
         other = await user_headers(client, "13700000336")
         t3 = (await create_ticket(client, other, category="account", subject="注销咨询")).json()
         ops = await admin_headers(sm, client, role="ops")
-        # user_id 检索
         uid = (await client.get("/api/v1/me", headers=headers)).json()["id"]
         rows = (
             await client.get("/api/admin/v1/tickets", params={"user_id": uid}, headers=ops)
         ).json()["items"]
         assert {r["id"] for r in rows} == {t1["id"], t2["id"]}
-        # ticket_no 精确检索
         rows = (
             await client.get(
                 "/api/admin/v1/tickets", params={"ticket_no": t3["ticket_no"]}, headers=ops
             )
         ).json()["items"]
         assert [r["id"] for r in rows] == [t3["id"]]
-        # 组合检索:user_id + category
         rows = (
             await client.get(
                 "/api/admin/v1/tickets",
@@ -363,8 +347,7 @@ class TestStaleTicketPatrol:
         stale = [a for a in await admin_alerts(sm) if a.dedup_key == f"ticket-stale:{ticket_id}"]
         assert len(stale) == 1
         assert stale[0].severity == "warning"
-        assert stale[0].user_id is None  # 平台级告警
-        # 第二次巡检不重复(dedup_key)
+        assert stale[0].user_id is None
         assert await stale_ticket_patrol(sm) == 0
 
     async def test_fresh_pending_staff_not_alerted(self, client: AsyncClient, sm):
@@ -377,10 +360,9 @@ class TestStaleTicketPatrol:
 
 class TestMessageCap:
     async def test_replies_per_ticket_capped(self, client: AsyncClient, sm, monkeypatch):
-        """挂了说明:单工单回复无上限、无限流,未计量写入喂出无界详情响应。"""
         from app.modules.tickets import service as tickets_service
 
-        monkeypatch.setattr(tickets_service, "MAX_MESSAGES_PER_TICKET", 1)  # 首条是开单正文
+        monkeypatch.setattr(tickets_service, "MAX_MESSAGES_PER_TICKET", 1)
         headers = await user_headers(client, "13700000399")
         resp = await create_ticket(client, headers)
         assert resp.status_code == 201, resp.text

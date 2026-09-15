@@ -1,4 +1,4 @@
-/** 账户设置的 Tab 状态入 URL。挂了说明:?tab= 非法值不再回默认(白屏 Tab),或 #ssh / #notify 旧深链落不到对应 Tab。 */
+/** 账户设置的 Tab 白名单与 hash 深链映射测试。 */
 import { describe, expect, it } from "vitest";
 
 import { settingsValidateSearch, tabOfHash } from "./_console.settings";

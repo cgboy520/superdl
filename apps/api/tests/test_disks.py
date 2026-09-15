@@ -1,4 +1,4 @@
-"""数据盘:CRUD/挂载生命周期/日结幂等/欠费链路。验收:跨实例挂载,释放实例盘保留。"""
+"""数据盘 CRUD、跨实例挂载、日结幂等与欠费链路。"""
 
 from datetime import timedelta
 from decimal import Decimal
@@ -53,7 +53,6 @@ class TestDiskCrud:
         await drain(sm)
         disks = (await client.get("/api/v1/disks", headers=headers)).json()
         assert disks == []
-        # PVC 随删盘回收(CSI 销毁 subvolume),不再有单独的擦除步
         assert fake.deleted_data_disks[-1] == (f"tenant-{user_id}", f"disk-{disk['uuid']}")
 
     async def test_create_requires_balance(self, client, sm, fake):
@@ -66,10 +65,9 @@ class TestDiskCrud:
     async def test_expand_requires_balance(self, client, sm, fake):
         """扩容走与创建同一条燃烧率护栏。"""
         headers, user_id, _key = await create_user_with_key(client, "13500000003")
-        await fund_wallet(sm, user_id)  # 100.00
+        await fund_wallet(sm, user_id)
         disk = await create_disk(client, headers, size_gb=100)
         await drain(sm)
-        # 余额接近零:4096GB 的增量日费过不了护栏
         async with sm() as session:
             await wallet.debit(session, user_id, Decimal("99.99"), allow_negative=False)
             await session.commit()
@@ -77,7 +75,6 @@ class TestDiskCrud:
             f"/api/v1/disks/{disk['uuid']}", json={"size_gb": 4096}, headers=headers
         )
         assert resp.json()["code"] == "INSUFFICIENT_BALANCE"
-        # 容量未被更新
         d = (await client.get("/api/v1/disks", headers=headers)).json()[0]
         assert d["size_gb"] == 100
 
@@ -93,7 +90,6 @@ class TestMountLifecycle:
         headers, _user_id, key_id = await funded_user(client, sm, "13500000013", "500.00")
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
-        # 不 drain:disk.provision 任务仍在途,provisioned=false → 409
         resp = await client.post(
             "/api/v1/instances",
             json={
@@ -106,7 +102,6 @@ class TestMountLifecycle:
         )
         assert resp.status_code == 409
         assert resp.json()["message_key"] == "disks.notProvisioned"
-        # 配额下发完成后挂载放行
         await drain(sm)
         resp = await client.post(
             "/api/v1/instances",
@@ -121,11 +116,11 @@ class TestMountLifecycle:
         assert resp.status_code == 202, resp.text
 
     async def test_start_after_delete_disk_detaches(self, client, sm, fake):
-        """停机→删盘→开机:挂载引用随删盘同事务摘除,开机不挂到擦除中的旧 subPath。"""
+        """停机后删盘摘除挂载引用,再次开机不引用该盘 PVC。"""
         headers, user_id, key_id = await funded_user(client, sm, "13500000011", "500.00")
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
-        await drain(sm)  # PVC 建出(provisioned=true)后才可挂载
+        await drain(sm)
         resp = await client.post(
             "/api/v1/instances",
             json={
@@ -141,12 +136,10 @@ class TestMountLifecycle:
         await drain(sm)
         fake.mark_ready(f"tenant-{user_id}", a_uuid)
         await reconcile_once(sm)
-        # 停机(数据盘保持挂载标记,删盘时按 stopped 自动解挂)
         await client.post(f"/api/v1/instances/{a_uuid}/stop", headers=headers)
         await drain(sm)
         await reconcile_once(sm)
         assert (await get_instance(client, headers, a_uuid))["status"] == "stopped"
-        # 删盘 → 引用摘除 + 擦除完成
         resp = await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
         assert resp.status_code == 200, resp.text
         await drain(sm)
@@ -157,7 +150,6 @@ class TestMountLifecycle:
                 await session.execute(select(Instance).where(Instance.uuid == a_uuid))
             ).scalar_one()
             assert inst.data_disk_id is None
-        # 开机:不带数据盘,不报错;新 Pod 不引用任何数据盘 PVC
         resp = await client.post(f"/api/v1/instances/{a_uuid}/start", headers=headers)
         assert resp.status_code == 200, resp.text
         await drain(sm)
@@ -165,11 +157,11 @@ class TestMountLifecycle:
         assert pod.spec.data_disk_pvc is None
 
     async def test_start_rejected_when_disk_deleting(self, client, sm, fake):
-        """盘处于 deleting(擦除中)时开机被拒绝:不能挂到正在被擦除的目录。"""
+        """挂载盘处于 deleting 时拒绝开机。"""
         headers, user_id, key_id = await funded_user(client, sm, "13500000012", "500.00")
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
-        await drain(sm)  # 配额下发完成后才可挂载
+        await drain(sm)
         resp = await client.post(
             "/api/v1/instances",
             json={
@@ -189,7 +181,6 @@ class TestMountLifecycle:
         await drain(sm)
         await reconcile_once(sm)
         assert (await get_instance(client, headers, a_uuid))["status"] == "stopped"
-        # 删盘不 drain:盘停在 deleting;手工恢复引用模拟竞态
         resp = await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
         assert resp.status_code == 200, resp.text
         async with sm() as session:
@@ -204,13 +195,12 @@ class TestMountLifecycle:
         assert resp.json()["code"] == "VALIDATION_ERROR"
 
     async def test_cross_instance_mount(self, client, sm, fake):
-        """验收:A 挂载 → A 释放(盘保留)→ B 挂载同一块盘。"""
+        """实例释放后数据盘保留,可挂载到另一实例。"""
         headers, user_id, key_id = await funded_user(client, sm, "13500000010", "500.00")
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
-        await drain(sm)  # 配额下发完成后才可挂载
+        await drain(sm)
 
-        # 挂到实例 A
         resp = await client.post(
             "/api/v1/instances",
             json={
@@ -224,18 +214,15 @@ class TestMountLifecycle:
         assert resp.status_code == 202, resp.text
         a_uuid = resp.json()["uuid"]
         await drain(sm)
-        # Pod spec 直挂该盘自己的 PVC(挂 /root/data),名字按盘 uuid 算
         pod = fake.pods[(f"tenant-{user_id}", a_uuid)]
         assert pod.spec.data_disk_pvc == f"disk-{disk['uuid']}"
 
         d = (await client.get("/api/v1/disks", headers=headers)).json()[0]
         assert d["mounted_instance_id"] is not None
 
-        # 挂载中不可删
         resp = await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
         assert resp.json()["code"] == "DISK_IN_USE"
 
-        # 挂载中不可被第二实例占用
         resp = await client.post(
             "/api/v1/instances",
             json={
@@ -248,7 +235,6 @@ class TestMountLifecycle:
         )
         assert resp.json()["code"] == "DISK_IN_USE"
 
-        # A:running → stop → release → released(盘保留且解挂)
         fake.mark_ready(f"tenant-{user_id}", a_uuid)
         await reconcile_once(sm)
         await client.post(f"/api/v1/instances/{a_uuid}/stop", headers=headers)
@@ -263,7 +249,6 @@ class TestMountLifecycle:
         assert d["status"] == "active"
         assert d["mounted_instance_id"] is None
 
-        # B 挂载同一块盘
         resp = await client.post(
             "/api/v1/instances",
             json={
@@ -281,17 +266,15 @@ class TestDailyDiskBilling:
     async def test_daily_settlement_idempotent(self, client, sm, fake):
         headers, _user_id, _key = await funded_user(client, sm, "13500000020")
         await create_disk(client, headers, size_gb=100)
-        # 把盘的创建时间拨到昨天之前,进入昨日账期
         async with sm() as session:
             await session.execute(update(DataDisk).values(created_at=now_utc() - timedelta(days=2)))
             await session.commit()
 
         assert await settle_daily_disks(sm) == 1
-        assert await settle_daily_disks(sm) == 0  # 幂等:零重复扣款
+        assert await settle_daily_disks(sm) == 0
         async with sm() as session:
             bill = (await session.execute(select(BillDailyDisk))).scalar_one()
             entries = (await session.execute(select(BalanceLedger))).scalars().all()
-        # 日费按「前 k 天累计 − 前 k−1 天累计」出账,单日金额在 0.11/0.12 之间摆动
         yesterday = (billing_day_floor(now_utc()) - timedelta(days=1) + BILLING_DAY_OFFSET).date()
         expected = disk_daily_charge(Decimal("0.0350"), 100, yesterday)
         assert bill.amount == expected
@@ -302,7 +285,7 @@ class TestDailyDiskBilling:
 
     async def test_new_disk_not_billed_for_yesterday(self, client, sm, fake):
         headers, _user_id, _key = await funded_user(client, sm, "13500000021")
-        await create_disk(client, headers)  # 今天建的盘
+        await create_disk(client, headers)
         assert await settle_daily_disks(sm) == 0
 
     async def test_delete_same_day_pays_final_day(self, client, sm, fake):
@@ -333,7 +316,7 @@ class TestDailyDiskBilling:
                 .scalars()
                 .all()
             )
-        assert len(bills) == 4  # 建盘日..当日,逐日一张
+        assert len(bills) == 4
         expected = sum(
             disk_daily_charge(
                 Decimal("0.0350"),
@@ -354,7 +337,7 @@ class TestDailyDiskBilling:
         assert resp.status_code == 200, resp.text
         async with sm() as session:
             bill = (await session.execute(select(BillDailyDisk))).scalar_one()
-        assert bill.size_gb == 100  # 当日按旧容量
+        assert bill.size_gb == 100
         today = (billing_day_floor(now_utc()) + BILLING_DAY_OFFSET).date()
         assert bill.amount == disk_daily_charge(Decimal("0.0350"), 100, today)
 
@@ -376,7 +359,6 @@ class TestDiskArrearsChain:
     async def test_grace_frozen_reclaim_and_recovery(self, client, sm, fake):
         headers, user_id, _key = await funded_user(client, sm, "13500000030")
         await create_disk(client, headers)
-        # 清空余额 → grace
         async with sm() as session:
             balance = await wallet.get_balance(session, user_id)
             await wallet.debit(
@@ -389,7 +371,6 @@ class TestDiskArrearsChain:
         assert d["status"] == "grace"
         assert d["grace_started_at"] is not None
 
-        # 宽限超 7 天 → frozen
         async with sm() as session:
             await session.execute(
                 update(DataDisk).values(grace_started_at=now_utc() - timedelta(days=8))
@@ -399,7 +380,6 @@ class TestDiskArrearsChain:
         d = (await client.get("/api/v1/disks", headers=headers)).json()[0]
         assert d["status"] == "frozen"
 
-        # 冻结超 30 天 → 清除
         async with sm() as session:
             await session.execute(
                 update(DataDisk).values(frozen_started_at=now_utc() - timedelta(days=31))
@@ -411,7 +391,7 @@ class TestDiskArrearsChain:
         assert disks == []
 
     async def test_recharge_restores_frozen_disk(self, client, sm, fake):
-        """frozen 之后充值能解冻(巡检集合须含有 frozen 盘的用户)。"""
+        """充值后巡检将 frozen 数据盘恢复为 active。"""
         headers, user_id, _key = await funded_user(client, sm, "13500000032")
         await create_disk(client, headers)
         async with sm() as session:
@@ -435,7 +415,6 @@ class TestDiskArrearsChain:
         await balance_patrol(sm)
         d = (await client.get("/api/v1/disks", headers=headers)).json()[0]
         assert d["status"] == "active"
-        # grace_started_at 不随充值清零;frozen_started_at 出冻结态即清零
         assert d["frozen_started_at"] is None and d["grace_started_at"] is not None
 
 

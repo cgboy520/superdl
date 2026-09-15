@@ -32,7 +32,7 @@ class TestInstanceLogs:
         assert resp.status_code == 200, resp.text
 
     async def test_tail_lines_clamped_to_2000(self, client, sm, fake):
-        """tail_lines 传 5000 不 422,按上限 2000 截断下发(+1 行探路 = 2001)。"""
+        """tail_lines 超过 2000 时按上限截断,多取一行检测截断。"""
         headers, uuid, _user_id = await provision_running(client, sm, fake)
         resp = await _get_logs(client, headers, uuid, tail_lines=5000)
         assert resp.status_code == 200, resp.text
@@ -51,8 +51,8 @@ class TestInstanceLogs:
         """running/stopping 之外的状态取日志 → 409。"""
         headers, uuid, _user_id = await provision_running(client, sm, fake)
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
-        await drain(sm)  # 删 Pod
-        await reconcile_once(sm)  # → stopped
+        await drain(sm)
+        await reconcile_once(sm)
         resp = await _get_logs(client, headers, uuid)
         assert resp.status_code == 409
         assert resp.json()["message_key"] == "orchestrator.logsNeedsRunning"
@@ -67,7 +67,7 @@ class TestInstanceLogs:
             other_headers, _other_uuid, _ = await provision_running(
                 client, sm, fake, phone="13900000011"
             )
-            resp = await _get_logs(client, other_headers, uuid)  # 他人 token 取我的实例
+            resp = await _get_logs(client, other_headers, uuid)
         assert resp.status_code == 404
         assert resp.json()["code"] == "NOT_FOUND"
 

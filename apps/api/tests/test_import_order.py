@@ -1,6 +1,4 @@
-"""各进程入口在全新解释器里能独立导入:worker 先导 billing.edge_listener,api 先导 main。
-挂了说明:模块级互相 import 形成环(billing 只许经 orchestrator.queries / transitions /
-statemachine / ports 访问编排,不许经 orchestrator.service),某个入口起不来。"""
+"""在独立解释器中检查业务模块与 API/worker 入口可导入。"""
 
 import os
 import subprocess
@@ -26,7 +24,6 @@ def test_entry_imports_in_fresh_interpreter(entry: str) -> None:
         "SUPERDL_K8S_BACKEND": "fake",
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
     }
-    # Windows 上 asyncio 初始化 winsock 需要 SYSTEMROOT
     if "SYSTEMROOT" in os.environ:
         env["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
     proc = subprocess.run(

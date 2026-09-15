@@ -1,4 +1,4 @@
-"""支付:充值单/mock 渠道/回调幂等。验收:重放回调不重复入账。"""
+"""充值订单、支付渠道与回调幂等。"""
 
 from datetime import timedelta
 from decimal import Decimal
@@ -31,7 +31,7 @@ class TestRecharge:
         assert w["balance"] == "50.00"
 
     async def test_replay_callback_no_double_credit(self, client: AsyncClient, sm):
-        """验收核心:重放回调不重复入账。"""
+        """重放回调不重复入账。"""
         headers = await user_headers(client)
         order = await create_order(client, headers, "30.00")
         for _ in range(3):
@@ -74,7 +74,7 @@ class TestRecharge:
             json={"amount": "20.00", "channel": "mock"},
             headers=headers,
         )
-        assert resp.status_code == 200  # 重放:200 + X-Idempotent-Replay,而非 201
+        assert resp.status_code == 200
         assert resp.headers["x-idempotent-replay"] == "true"
         b = resp.json()
         assert a["order_no"] == b["order_no"]
@@ -143,20 +143,18 @@ class TestRecharge:
         assert resp.status_code == 200
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "20.00"
-        # 渠道侧反转通知到达
         resp = await client.post(
             "/api/v1/webhooks/mock",
             json={"order_no": order["order_no"], "amount": "20.00", "success": False},
         )
         assert resp.status_code == 200
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
-        assert w["balance"] == "20.00"  # 不自动冲账
+        assert w["balance"] == "20.00"
         async with sm() as session:
             row = (
                 await session.execute(select(Order).where(Order.order_no == order["order_no"]))
             ).scalar_one()
             assert row.channel_reversed_at is not None
-        # 异常清单出现 channel_reversed 分桶
         ah = await admin_headers(sm, client, role="finance")
         anomalies = (await client.get("/api/admin/v1/finance/anomalies", headers=ah)).json()
         assert any(
@@ -165,7 +163,6 @@ class TestRecharge:
         )
 
     async def test_reversal_release_then_replay_does_not_refreeze(self, client: AsyncClient, sm):
-        """挂了说明:财务 release 解冻后,重放同一条渠道反向通知又把钱包冻住(反复可用)。"""
         headers = await user_headers(client, "13700000046")
         order = await create_order(client, headers, "20.00")
         assert (await pay_mock(client, order["order_no"], "20.00")).status_code == 200
@@ -192,7 +189,6 @@ class TestRecharge:
             headers=ah,
         )
         assert resp.status_code == 200, resp.text
-        # 同一通知重放:不再冻结,订单也不回到待处置桶
         assert (await client.post("/api/v1/webhooks/mock", json=reversal)).status_code == 200
         assert await frozen_of(uid) == Decimal("0.00")
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
@@ -208,7 +204,6 @@ class TestRecharge:
             a["kind"] == "channel_reversed" and a["order_no"] == order["order_no"]
             for a in anomalies
         )
-        # 二次核销 409(已处置)
         resp = await client.post(
             f"/api/admin/v1/finance/reversals/{order['order_no']}/resolve",
             json={"action": "chargeback", "reason": "重复核销:应被拒"},
@@ -245,7 +240,6 @@ class TestCallbackOnNonPendingOrders:
             await client.get(f"/api/v1/wallet/recharges/{order['order_no']}", headers=headers)
         ).json()
         assert detail["status"] == "closed"
-        # 关单后的有效成功回调(验签 + 金额一致):自动入账
         resp = await pay_mock(client, order["order_no"], "20.00")
         assert resp.status_code == 200
         detail = (

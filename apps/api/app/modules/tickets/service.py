@@ -1,9 +1,6 @@
-"""工单闭环:用户创建 → 客服/用户交替回复 → 标记解决 → 关闭。
-- 用户侧 owner 校验在 SQL WHERE(id + user_id),查不到即 404。
-- 状态迁移只在行锁内:open → pending_staff → pending_user → resolved → closed(仅 resolved 后);
-  resolved/closed 不可再回复。
-- 创建幂等((user_id, idempotency_key) 唯一);每用户进行中 ≤ 10;创建限流 5/h。
-- 联动:客服回复 → 用户站内信;新工单/用户回复 → admin_alerts info。
+"""工单创建、回复与关闭;用户操作按归属查询,状态变更须持行锁。
+
+resolved/closed 不可回复,关闭须先为 resolved。
 """
 
 from datetime import datetime
@@ -31,17 +28,16 @@ from app.modules.tickets.schemas import (
 
 logger = get_logger(__name__)
 
-# 进行中状态(计入每用户 ≤10 上限,也是可回复状态)
 ACTIVE_STATUSES = ("open", "pending_staff", "pending_user")
 TERMINAL_STATUSES = ("resolved", "closed")
 
 MAX_OPEN_TICKETS = 10
-CREATE_RATE_LIMIT = 5  # 次/小时
+CREATE_RATE_LIMIT = 5
 CREATE_RATE_WINDOW = 3600.0
 
 
 async def list_stale_pending_staff(session: AsyncSession, *, older_than: datetime) -> list[Ticket]:
-    """滞留工单:pending_staff(等客服回复)且最后更新时间早于阈值。供滞留巡检告警。"""
+    """返回 updated_at 早于阈值的 pending_staff 工单,按 id 升序。"""
     return list(
         (
             await session.execute(
@@ -86,7 +82,7 @@ async def create_ticket(
             session, Ticket, owner_col=Ticket.user_id, owner_id=user_id, key=idempotency_key
         )
         if existing is not None:
-            return existing, False  # 幂等重放
+            return existing, False
 
     await check_rate_limit(
         f"ticket-create:{user_id}",
@@ -103,7 +99,6 @@ async def create_ticket(
     if open_count >= MAX_OPEN_TICKETS:
         raise conflict(key="tickets.openLimitReached", params={"max": MAX_OPEN_TICKETS})
 
-    # ticket_no = T+yyyymmdd+两位日内序列;撞唯一索引换下一个序列重试
     prefix = f"T{now_utc():%Y%m%d}"
     for _ in range(8):
         ticket = Ticket(
@@ -124,10 +119,9 @@ async def create_ticket(
                 key=idempotency_key,
             )
         except IntegrityError:
-            continue  # 按 ticket_no 序列撞车处理:重试下一序列
+            continue
         if result is not ticket:
-            return result, False  # 同键并发:返回胜出方的单
-        # 首条消息同单 commit
+            return result, False
         session.add(
             TicketMessage(ticket_id=ticket.id, sender_kind="user", sender_id=user_id, body=body)
         )
@@ -245,12 +239,9 @@ async def close_ticket(session: AsyncSession, user_id: int, ticket_id: int) -> T
     ticket.status = "closed"
     ticket.closed_at = now_utc()
     await session.commit()
-    await session.refresh(ticket)  # updated_at 是 onupdate SQL 表达式,UPDATE 后已被 expire
+    await session.refresh(ticket)
     logger.info("ticket_closed", ticket_no=ticket.ticket_no, by="user")
     return ticket
-
-
-# ---------- 管理端(读 ops/finance/readonly,写 ops/admin) ----------
 
 
 async def admin_list_tickets(
@@ -284,7 +275,7 @@ async def admin_list_tickets(
 async def admin_count_tickets(
     session: AsyncSession, status: str | None = None, category: str | None = None
 ) -> int:
-    """工单计数(待办角标轻端点),与列表同一过滤口径。"""
+    """按可选状态与分类精确过滤并统计工单数。"""
     stmt = select(func.count()).select_from(Ticket)
     if status:
         stmt = stmt.where(Ticket.status == status)
@@ -319,7 +310,7 @@ async def admin_reply(
     msg = TicketMessage(ticket_id=ticket.id, sender_kind="staff", sender_id=operator_id, body=body)
     session.add(msg)
     ticket.status = "pending_user"
-    await session.flush()  # 先取 msg.id:站内信 dedup_key 以消息粒度防重
+    await session.flush()
     await notify_service.notify(
         session,
         ticket.user_id,
@@ -341,12 +332,12 @@ async def admin_update_status(session: AsyncSession, ticket_id: int, *, action: 
         if ticket.status in TERMINAL_STATUSES:
             raise conflict(key="tickets.stateNotResolvable", params={"status": ticket.status})
         ticket.status = "resolved"
-    else:  # close
+    else:
         if ticket.status != "resolved":
             raise conflict(key="tickets.stateNotClosable", params={"status": ticket.status})
         ticket.status = "closed"
         ticket.closed_at = now_utc()
     await session.commit()
-    await session.refresh(ticket)  # updated_at 是 onupdate SQL 表达式,UPDATE 后已被 expire
+    await session.refresh(ticket)
     logger.info("ticket_status", ticket_no=ticket.ticket_no, action=action)
     return ticket

@@ -1,6 +1,4 @@
-"""渲染平台会生成的 Pod / Job(租户实例五种形态、挂盘实例、预热 Job)成清单目录,
-供 CI 在准入策略生效的集群上 `kubectl create --dry-run=server` 对账。
-挂了说明:平台自己生成的对象会被自家 VAP 拒(如预热 Job 漏了 hostUsers)。
+"""将实例 Pod、预热 Job 及其 Pod 模板导出为准入探测清单。
 
 用法: uv run python scripts/render_admission_probes.py <输出目录>
 输出:<name>.yaml(对象)与 <name>.as(dry-run 时 --as 的身份;空 = 当前身份)。
@@ -10,7 +8,7 @@ import pathlib
 import sys
 from dataclasses import replace
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))  # 允许 scripts/ 直跑
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 import yaml
 from kubernetes import client
@@ -29,7 +27,7 @@ JOB_CONTROLLER = "system:serviceaccount:kube-system:job-controller"
 
 
 def _instance_spec(name: str, gpu_req: object) -> InstancePodSpec:
-    req = gpu_req  # GpuRequest
+    req = gpu_req
     return InstancePodSpec(
         namespace=TENANT_NS,
         name=name,
@@ -51,7 +49,7 @@ def _instance_spec(name: str, gpu_req: object) -> InstancePodSpec:
 
 
 def _pod_from_job(job: client.V1Job, name: str, namespace: str) -> client.V1Pod:
-    """Job 的 Pod 模板 → 独立 Pod(job-controller 派生 Pod 的准入面)。"""
+    """将 Job 的 Pod 模板转换为独立 Pod。"""
     tpl = job.spec.template
     return client.V1Pod(
         api_version="v1",
@@ -64,7 +62,7 @@ def _pod_from_job(job: client.V1Job, name: str, namespace: str) -> client.V1Pod:
 def main(out_dir: pathlib.Path) -> None:
     api = client.ApiClient()
     out_dir.mkdir(parents=True, exist_ok=True)
-    objects: list[tuple[str, object, str]] = []  # (name, obj, as-user)
+    objects: list[tuple[str, object, str]] = []
 
     shapes = {
         "instance-cpu": build_gpu_request(
@@ -99,7 +97,6 @@ def main(out_dir: pathlib.Path) -> None:
             (name, build_instance_pod(_instance_spec(name, req)), SA + "superdl-tenant-mgr")
         )
 
-    # 挂数据盘的实例形态:租户 ns 内唯一会引用 PVC 的 Pod(旧的 wipe Job 已随一盘一 PVC 取消)
     disk_spec = _instance_spec("instance-with-disk", shapes["instance-hami-k3s"])
     disk_spec = replace(disk_spec, data_disk_pvc="disk-probe")
     objects.append(
@@ -123,7 +120,6 @@ def main(out_dir: pathlib.Path) -> None:
     )
 
     for name, obj, as_user in objects:
-        # 构造器不写 apiVersion/kind(client 按端点补),清单文件必须带
         if isinstance(obj, client.V1Pod):
             obj.api_version, obj.kind = "v1", "Pod"
         elif isinstance(obj, client.V1Job):

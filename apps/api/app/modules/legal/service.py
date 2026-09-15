@@ -19,11 +19,9 @@ from app.modules.legal.schemas import (
 
 logger = get_logger(__name__)
 
-# 预置正文由迁移写入(published v1);新增文档要先加迁移
 VALID_DOC_KEYS: tuple[str, ...] = ("terms", "privacy", "deletion_notice")
 SUPPORTED_LOCALES: tuple[str, ...] = get_args(Locale)
 DEFAULT_LOCALE = "zh-CN"
-# 注册必勾落证的两份文档
 CONSENT_DOC_KEYS: tuple[str, ...] = ("terms", "privacy")
 
 
@@ -47,7 +45,10 @@ async def _published(session: AsyncSession, doc_key: str, locale: str) -> LegalD
 async def get_public_doc(
     session: AsyncSession, doc_key: str, lang: str | None
 ) -> tuple[LegalDocVersion, bool]:
-    """当前 published 版 + 是否回落 zh-CN。doc_key 非法/无 published 均 404。"""
+    """返回 published 文档与回落标志;非法文档或无发布版本回 404。
+
+    不支持的语言直接使用 zh-CN,标志为 False;支持的非默认语言缺版本时回落并标 True。
+    """
     _validate_doc_key(doc_key)
     locale = lang if lang in SUPPORTED_LOCALES else DEFAULT_LOCALE
     row = await _published(session, doc_key, locale)
@@ -73,9 +74,6 @@ async def record_registration_consents(
         session.add(
             UserConsent(user_id=user_id, doc_key=doc_key, version=row.version, client_ip=client_ip)
         )
-
-
-# ---------- 管理端 ----------
 
 
 def _brief(row: LegalDocVersion) -> LegalDocVersionBrief:
@@ -134,8 +132,10 @@ async def admin_list_versions(
 async def admin_create_draft(
     session: AsyncSession, doc_key: str, locale: Locale, *, admin_id: int
 ) -> LegalDocVersion:
-    """基于当前 published 复制新 draft(version=max+1),同语言无 published 时以 zh-CN 为底稿;
-    每 (doc_key, locale) 同时仅一个 draft。"""
+    """无已有 draft 时提交新草稿,版本号为 max+1。
+
+    优先复制同语言 published,其次 zh-CN;无底稿时标题与正文为空。
+    """
     _validate_doc_key(doc_key)
     existing_draft = (
         await session.execute(
@@ -207,7 +207,7 @@ async def admin_update_draft(
 async def admin_publish(
     session: AsyncSession, version_id: int, *, admin_id: int
 ) -> LegalDocVersion:
-    """发布:同事务把同 (doc_key, locale) 旧 published 转 archived;部分唯一索引兜底并发。"""
+    """锁定草稿与旧 published,同事务发布新版本并归档旧版本;唯一冲突回滚后回 409。"""
     row = await session.get(LegalDocVersion, version_id, with_for_update=True)
     if row is None:
         raise not_found(key="legal.docNotFound")
@@ -231,7 +231,6 @@ async def admin_publish(
     try:
         await session.commit()
     except IntegrityError as exc:
-        # 并发发布同 (doc_key, locale):部分唯一索引兜底 → 409
         await session.rollback()
         raise conflict(key="common.retryableConflict") from exc
     await session.refresh(row)

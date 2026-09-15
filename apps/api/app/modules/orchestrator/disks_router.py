@@ -35,7 +35,6 @@ class DiskOut(BaseModel):
     mounted_instance_id: int | None
     grace_started_at: datetime | None
     frozen_started_at: datetime | None
-    # False = 目录硬配额未生效
     provisioned: bool
     created_at: datetime
 
@@ -51,9 +50,7 @@ async def create_disk(
     response: Response,
     idempotency_key: IdempotencyKey = None,
 ) -> DiskOut:
-    # 实名闸门(与开通算力同一开关)
     await account_service.require_real_name_if_required(session, user, key="disks.realNameRequired")
-    # 资源创建按用户限流
     await check_rate_limit(f"disk-create:{user.id}", max_attempts=20, window_seconds=3600.0)
     disk, created = await service.create_disk(
         session, user.id, body.name, body.size_gb, idempotency_key

@@ -62,7 +62,6 @@ class TestDeploy:
         assert instance.service_slug == svc["slug"]
         assert instance.service_port == 8000 and instance.health_path == "/health"
         assert instance.workload_type == "service"
-        # 实例与服务同名
         assert instance.name == svc["name"] == inst["name"]
 
     async def test_no_ssh_means_no_port_pool_slot(self, client, sm, fake):
@@ -78,7 +77,7 @@ class TestDeploy:
         assert spec.authorized_keys == ()
 
     async def test_with_ssh_still_allocates_port(self, client, sm, fake):
-        """勾了 SSH 的服务照旧占端口池。"""
+        """启用 SSH 的服务占用端口池。"""
         _headers, svc, user_id = await provision_service(
             client, sm, fake, phone="13900000302", with_ssh=True
         )
@@ -107,12 +106,11 @@ class TestDeploy:
         assert spec.args == ("--port", "8000")
         assert spec.service_port == 8000 and spec.health_path == "/health"
         assert spec.service_host == f"{svc['slug']}.{get_settings().service_domain_suffix}"
-        # 服务容器无 Jupyter token 与 JUPYTER_ALLOW_ORIGIN
         assert "JUPYTER_TOKEN" not in spec.secret_env
         assert "JUPYTER_ALLOW_ORIGIN" not in spec.env
 
     async def test_dev_fork_unchanged(self, client, sm, fake):
-        """dev 形态逐字不变:Never + 无对外 Service + Jupyter token 走 Secret。"""
+        """dev Pod 使用 Never 重启策略,无服务端点,Jupyter token 走 Secret。"""
         headers, user_id, key_id, sku_id = await new_user(client, sm, "13900000304")
         resp = await client.post(
             "/api/v1/instances",
@@ -153,7 +151,6 @@ class TestInstanceBoundary:
         uuid = svc["current_instance"]["uuid"]
         listed = (await client.get("/api/v1/instances", headers=headers)).json()["items"]
         assert uuid not in [i["uuid"] for i in listed]
-        # 只读端点仍可达
         detail = await client.get(f"/api/v1/instances/{uuid}", headers=headers)
         assert detail.status_code == 200 and detail.json()["service_slug"] == svc["slug"]
 
@@ -209,7 +206,6 @@ class TestEnvHandling:
         spec = fake.pods[(f"tenant-{user_id}", svc["current_instance"]["uuid"])].spec
         assert spec.env == {"MAX_MODEL_LEN": "8192"}
         assert spec.secret_env == {"HF_TOKEN": "hf_super_secret"}
-        # 视图只回明文项的值,密文项只回键名
         assert svc["container"]["env"] == {"MAX_MODEL_LEN": "8192"}
         assert svc["container"]["env_secret_keys"] == ["HF_TOKEN"]
 
@@ -246,7 +242,6 @@ class TestPinnedImage:
         )
         assert resp.status_code == 400, resp.text
         assert resp.json()["message_key"] == "orchestrator.imageRefNotPinned"
-        # 失败的部署不留孤儿 services 行
         async with sm() as session:
             assert (
                 await session.execute(select(func.count()).select_from(Service))
@@ -380,7 +375,6 @@ class TestServiceApi:
         _, _other, _ = await provision_service(client, sm, fake, phone="13900000334")
         items = (await client.get("/api/v1/services", headers=headers)).json()["items"]
         assert [i["slug"] for i in items] == [svc["slug"]]
-        # 按名字 / slug 前缀过滤
         by_slug = (
             await client.get("/api/v1/services", params={"name": svc["slug"][:6]}, headers=headers)
         ).json()["items"]
@@ -405,7 +399,6 @@ class TestLifecycle:
         await reconcile_once(sm)
         svc2 = (await client.get(f"/api/v1/services/{slug}", headers=headers)).json()
         assert svc2["status"] == "stopped" and svc2["ready"] is False
-        # 停机时再停 → 409
         assert (
             await client.post(f"/api/v1/services/{slug}/stop", headers=headers)
         ).status_code == 400
@@ -444,7 +437,6 @@ class TestLifecycle:
         deleted = await client.delete(f"/api/v1/services/{slug}", headers=headers)
         assert deleted.status_code == 200, deleted.text
         assert deleted.json()["status"] == "releasing"
-        # 重复删除幂等
         assert (await client.delete(f"/api/v1/services/{slug}", headers=headers)).status_code == 200
         await drain(sm)
         await reconcile_once(sm)
@@ -453,7 +445,6 @@ class TestLifecycle:
         assert (await client.get("/api/v1/services", headers=headers)).json()["items"] == []
         keys = (await client.get(f"/api/v1/services/{slug}/api-keys", headers=headers)).json()
         assert keys[0]["id"] == key["id"] and keys[0]["revoked_at"] is not None
-        # 已删除的服务不能再建钥 / 启动
         assert (
             await client.post(
                 f"/api/v1/services/{slug}/api-keys", json={"name": "x"}, headers=headers

@@ -1,6 +1,3 @@
-# cert-manager ClusterIssuer(本体经 helm 安装,见 deploy/cluster/helmfile.yaml.gotmpl)。只适用于 acmeDns.enabled=true 的档位(full):
-# 泛域名证书 DNS-01,solver 走 deploy/cluster/acme-dns.yaml 的集群内 acme-dns;委托与账户注册见 deploy/cluster/runbooks/acme-dns.md。
-# light 档不用本文件,通配证书手工灌成 superdl/superdl-jupyter-wildcard-tls 与 superdl-svc-wildcard-tls
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
@@ -14,15 +11,11 @@ spec:
     solvers:
       - dns01:
           acmeDNS:
-            # 集群内 acme-dns 的注册/更新 API(ClusterIP)
             host: http://acme-dns-api.cert-manager.svc.cluster.local:8080
-            # 账户 JSON 以被验证的域为键(app.<域> / svc.<域> 各一个键),建法见 runbooks/acme-dns.md;preflight.sh 校验
             accountSecretRef:
               name: acme-dns-account
               key: acmedns.json
 ---
-# 三张平台域证书显式声明(不走 gateway-shim);04-gateway.yaml 的 certificateRefs 引这里的 Secret。
-# 首装顺序:先 apply 本文件、等全部 Certificate Ready(kubectl get certificate -n superdl),再切 DNS 到 Gateway
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -45,7 +38,6 @@ spec:
   dnsNames:
     - console.superdl.example.com
 ---
-# 管理端独立一张
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -57,7 +49,6 @@ spec:
   dnsNames:
     - admin.superdl.example.com
 ---
-# 泛域名证书:Jupyter per-instance 子域共用一张
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -69,8 +60,6 @@ spec:
   dnsNames:
     - "*.app.superdl.example.com"
 ---
-# 泛域名证书:服务型实例端点(svc-<slug>.svc.<域>)共用一张,给 04-gateway.yaml 的 svc-https listener;与 *.app 不合并。
-# 首装前完成本域 acme-dns 前置(注册账户、`_acme-challenge.svc.<域> CNAME <fulldomain>`、acmedns.json 追加 `svc.<域>` 键;见 cluster/runbooks/acme-dns.md)
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:

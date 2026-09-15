@@ -1,6 +1,4 @@
-/** 登录/注册:左品牌渐变区(lg 以下隐藏,展示 /skus 实时行情摘要),右侧表单(字段带可见标签)。登录方式(验证码 / 密码)用 Segmented 二选一;
- *  注册与登录分离,经底部「免费注册」/「去登录」链接切换;「忘记密码」两种登录模式都可见。
- *  e2e 契约:placeholder「手机号」「短信验证码」、按钮「获取验证码」「注册并登录」「免费注册」「登录」。 */
+/** 登录/注册页:验证码与密码登录、找回密码、字段标签及宽屏行情摘要。 */
 
 import { CheckCircleOutlined } from "@ant-design/icons";
 import type { SkuMarketOut, TokenPairOut } from "@superdl/api-client";
@@ -45,7 +43,7 @@ export const Route = createFileRoute("/login")({
           out.redirect = `${u.pathname}${u.search}${u.hash}`;
         }
       } catch {
-        // 非法 redirect 丢弃
+        /* ignored */
       }
     }
     if (search.mode === "register") out.mode = "register";
@@ -121,7 +119,6 @@ function BrandPane() {
     <div
       style={{
         width: "45%",
-        // 网格纹理叠渐变(渐变即 background-image)
         backgroundImage: `${GRID_TEXTURE}, ${brand.heroBg}`,
         display: "flex",
         flexDirection: "column",
@@ -180,7 +177,6 @@ function LoginPage() {
 
   const onLoggedIn = (data: unknown) => {
     const pair = data as TokenPairOut;
-    // refresh token 由服务端经 HttpOnly Cookie 下发,JS 只留 access token
     authStore.getState().login(pair.access_token);
     if (redirectTo) {
       router.history.push(redirectTo);
@@ -260,7 +256,6 @@ function LoginPage() {
                 ? t("login.registerTitle")
                 : t("login.title")}
           </Typography.Title>
-          {/* 登录方式二选一;注册与登录分离,经底部链接切换 */}
           {(mode === "sms" || mode === "password") && (
             <Segmented
               block
@@ -323,7 +318,6 @@ function LoginPage() {
               >
                 <Input.Password
                   autoComplete={mode === "password" ? "current-password" : "new-password"}
-                  // 密码登录的 placeholder 与标签同字不再重复;注册/重置的 placeholder 带位数提示,留作补充
                   placeholder={
                     mode === "password"
                       ? undefined
@@ -380,7 +374,6 @@ function LoginPage() {
               gap: 8,
             }}
           >
-            {/* 左:登录 ↔ 注册切换;右:忘记密码 / 返回登录 */}
             <span>
               {(mode === "sms" || mode === "password") && (
                 <Typography.Text type="secondary">

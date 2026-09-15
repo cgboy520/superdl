@@ -1,4 +1,4 @@
-/** alerts 路由 validateSearch:severity/acked 白名单与往返。挂了 = 筛选不再落 URL,或非法值穿透到查询参数。 */
+/** 告警路由 severity/acked 白名单与 URL 往返测试。 */
 import { describe, expect, it } from "vitest";
 
 import { Route } from "./alerts";

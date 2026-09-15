@@ -1,7 +1,6 @@
 """编排器加固:恢复边与超时边、悬挂逃逸、泄漏回收熔断、并发开户、幂等键、软准入、
 结算候选、保留期 GC、欠费盘 grace、重启撞端口。"""
 
-# 白盒用例:直探模块内部
 # pyright: reportPrivateUsage=false
 
 import asyncio
@@ -92,7 +91,7 @@ class TestEnsurePortRace:
                 return port
 
         ports = await asyncio.gather(*(alloc(owner) for owner in range(1, 5)))
-        assert len(set(ports)) == 4  # 各得一个端口,无人失败
+        assert len(set(ports)) == 4
         async with sm() as session:
             rows = (await session.execute(select(PortAllocation))).scalars().all()
         assert {r.port: r.instance_id for r in rows} == {p: o for o, p in enumerate(ports, start=1)}
@@ -143,17 +142,17 @@ class TestStartingTimeout:
         disk_marker = fake.instance_disks[(ns, uuid)]
 
         await client.post(f"/api/v1/instances/{uuid}/start", headers=headers)
-        await drain(sm)  # Pod 已建但永不 Ready(auto_ready=False)
+        await drain(sm)
         await _backdate_status(sm, uuid, "starting", timedelta(minutes=6))
         counts = await reconcile_once(sm)
         assert counts["to_failed"] == 1
         assert (await get_instance(client, headers, uuid))["status"] == "failed"
         assert (ns, uuid) not in fake.pods
-        await drain(sm)  # 不入队 disk_cleanup:盘仍是原来那块
+        await drain(sm)
         assert fake.instance_disks[(ns, uuid)] == disk_marker
         async with sm() as session:
             ports = (await session.execute(select(PortAllocation.instance_id))).scalars().all()
-        assert all(p is None for p in ports)  # 端口已回收
+        assert all(p is None for p in ports)
 
 
 class TestFailedRecovery:
@@ -173,7 +172,6 @@ class TestFailedRecovery:
         fake.mark_ready(ns, uuid)
         await reconcile_once(sm)
         assert (await get_instance(client, headers, uuid))["status"] == "running"
-        # 同一块盘,事件链留下恢复轨迹
         assert fake.instance_disks[(ns, uuid)] == disk_marker
         events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
             "items"
@@ -187,7 +185,7 @@ class TestFailedRecovery:
         headers, user_id, key_id = await funded_user(client, sm, "13900000109", "500.00")
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
-        await drain(sm)  # 配额下发完成后才可挂载
+        await drain(sm)
         resp = await client.post(
             "/api/v1/instances",
             json={
@@ -207,7 +205,6 @@ class TestFailedRecovery:
         fake.kill_pod(ns, uuid)
         await reconcile_once(sm)
         assert (await get_instance(client, headers, uuid))["status"] == "failed"
-        # 扩容:provisioned 回落 false(不 drain)
         resp = await client.patch(
             f"/api/v1/disks/{disk['uuid']}", json={"size_gb": 200}, headers=headers
         )
@@ -224,7 +221,6 @@ class TestFailedRecovery:
         headers, uuid, _user_id = await provision_running(client, sm, fake, "13900000102")
         resp = await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         assert resp.json()["status"] == "stopping"
-        # 不 drain:删除任务在途,Pod 仍在
         resp = await client.delete(f"/api/v1/instances/{uuid}", headers=headers)
         assert resp.status_code == 200, resp.text
         assert resp.json()["status"] == "releasing"
@@ -240,7 +236,7 @@ class TestReadyWithoutPort:
         sku_id = await create_test_sku(sm)
         resp = await _raw_create(client, headers, sku_id, key_id)
         uuid = resp.json()["uuid"]
-        await drain(sm)  # 建 Pod + 端口落库
+        await drain(sm)
         async with sm() as session:
             await session.execute(
                 update(Instance).where(Instance.uuid == uuid).values(ssh_port=None)
@@ -250,7 +246,6 @@ class TestReadyWithoutPort:
         counts = await reconcile_once(sm)
         assert counts["to_running"] == 0
         assert (await get_instance(client, headers, uuid))["status"] == "creating"
-        # 超时兜底:转 failed 并清理 Pod
         await _backdate_status(sm, uuid, "creating", timedelta(minutes=6))
         counts = await reconcile_once(sm)
         assert counts["to_failed"] == 1
@@ -262,12 +257,11 @@ class TestStuckEscape:
         """stopping 悬挂:一档超时重发删除任务,二档超时 force 强删后收敛 stopped。"""
         headers, uuid, user_id = await provision_running(client, sm, fake, "13900000103")
         ns = f"tenant-{user_id}"
-        fake.graceful_delete = True  # 优雅期内对象仍在 etcd
+        fake.graceful_delete = True
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
-        assert (ns, uuid) in fake.pods  # 优雅期,Pod 还在
+        assert (ns, uuid) in fake.pods
 
-        # 一档(> stopping_timeout_seconds):经 outbox 重发删除
         await _backdate_status(sm, uuid, "stopping", timedelta(minutes=11))
         counts = await reconcile_once(sm)
         assert counts["delete_requeued"] == 1
@@ -285,9 +279,8 @@ class TestStuckEscape:
                 .scalars()
                 .all()
             )
-        assert len(pending) == 1  # 重发一次,不堆重复任务
+        assert len(pending) == 1
 
-        # 二档(> 2×):force 强删
         await _backdate_status(sm, uuid, "stopping", timedelta(minutes=21))
         counts = await reconcile_once(sm)
         assert counts["force_deleted"] == 1
@@ -295,7 +288,6 @@ class TestStuckEscape:
         counts = await reconcile_once(sm)
         assert counts["to_stopped"] == 1
         assert (await get_instance(client, headers, uuid))["status"] == "stopped"
-        # 停机不回收 SSH 端口
         assert (await get_instance(client, headers, uuid))["ssh_port"] is not None
 
     async def test_releasing_two_tier_escape(self, client, sm, fake):
@@ -304,7 +296,6 @@ class TestStuckEscape:
         ns = f"tenant-{user_id}"
         fake.graceful_delete = True
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
-        # 直接在 stopping 释放
         await client.delete(f"/api/v1/instances/{uuid}", headers=headers)
         await drain(sm)
         assert (ns, uuid) in fake.pods
@@ -315,8 +306,8 @@ class TestStuckEscape:
         counts = await reconcile_once(sm)
         assert counts["to_released"] == 1
         assert (await get_instance(client, headers, uuid))["status"] == "released"
-        await drain(sm)  # disk_cleanup outbox:实例盘销毁(两阶段)
-        assert (ns, uuid) not in fake.instance_disks  # 实例盘已销毁
+        await drain(sm)
+        assert (ns, uuid) not in fake.instance_disks
 
     async def test_stopping_reenqueue_ignores_expired_lease(self, client, sm, fake):
         """running 删除任务 locked_at 租约过期不算在途,悬挂判定照常重发。"""
@@ -325,7 +316,6 @@ class TestStuckEscape:
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
 
-        # running 行,locked_at 已超 RUNNING_TIMEOUT
         async with sm() as session:
             inst_id = (
                 await session.execute(select(Instance.id).where(Instance.uuid == uuid))
@@ -376,11 +366,11 @@ class TestLeakReclaim:
         _headers, uuid, user_id = await provision_running(client, sm, fake, "13900000105")
         ns = f"tenant-{user_id}"
         spec = fake.pods[(ns, uuid)].spec
-        for i in range(4):  # 4 个 DB 无记录的 Pod,占比 4/5 > 50%
+        for i in range(4):
             fake.inject_leaked_pod(ns, f"unknown{i:024x}", spec)
         counts = await reconcile_once(sm)
         assert counts["leaked"] == 0
-        assert len(fake.pods) == 5  # 一个没动
+        assert len(fake.pods) == 5
 
     async def test_stopped_instance_leftover_pod_force_reclaimed(self, client, sm, fake):
         """已 stopped 实例的残留 Pod 过宽限期被强删;宽限内不动。"""
@@ -391,9 +381,9 @@ class TestLeakReclaim:
         await drain(sm)
         await reconcile_once(sm)
         assert (await get_instance(client, headers, uuid))["status"] == "stopped"
-        fake.inject_leaked_pod(ns, uuid, spec)  # 停机的 Pod 又冒出来了
+        fake.inject_leaked_pod(ns, uuid, spec)
         counts = await reconcile_once(sm)
-        assert counts["leaked"] == 0  # 宽限内(restart 窗口保护)
+        assert counts["leaked"] == 0
         await _backdate_status(sm, uuid, "stopped", timedelta(minutes=21))
         counts = await reconcile_once(sm)
         assert counts["leaked"] == 1
@@ -401,8 +391,7 @@ class TestLeakReclaim:
         assert (await get_instance(client, headers, uuid))["status"] == "stopped"
 
     async def test_job_pod_not_counted_in_breaker_ratio(self, client, sm, fake):
-        """带 job-name 的 Pod 不进 unknown 占比(靠标签豁免),真泄漏照删。
-        挂了说明:平台自己起的 Job 子孙 Pod 会被当泄漏强删,或把熔断顶穿放过真泄漏。"""
+        """带 job-name 标签的 Pod 不计入未知占比,无主 Pod 仍被回收。"""
         from app.core.k8s.base import JOB_NAME_LABEL
         from app.core.k8s.fake import MANAGED_LABEL
 
@@ -413,12 +402,12 @@ class TestLeakReclaim:
             MANAGED_LABEL: "true",
             JOB_NAME_LABEL: "some-job",
         }
-        fake.inject_leaked_pod(ns, "leaked000000000000000000", spec)  # DB 无记录的真泄漏
+        fake.inject_leaked_pod(ns, "leaked000000000000000000", spec)
         counts = await reconcile_once(sm)
-        assert counts["leaked"] == 1  # 熔断未触发(若把 Job Pod 计入,2/3 > 50% 会熔断放行)
+        assert counts["leaked"] == 1
         assert counts["job_pod_skipped"] == 1
-        assert len(fake.job_pods) == 1  # Job Pod 完好
-        counts = await reconcile_once(sm)  # 再来一轮:仍不被当泄漏强删
+        assert len(fake.job_pods) == 1
+        counts = await reconcile_once(sm)
         assert counts["leaked"] == 0 and len(fake.job_pods) == 1
 
 
@@ -426,8 +415,8 @@ class TestCreateCriticalSection:
     async def test_concurrent_create_second_rejected(self, client, sm, fake):
         """余额只够一台时,两台并发创建一台成功一台余额不足。"""
         headers, user_id, key_id = await create_user_with_key(client, "13900000111")
-        await fund_wallet(sm, user_id, "1.68")  # 恰好一台一小时
-        sku_id = await create_test_sku(sm)  # 1.68/时
+        await fund_wallet(sm, user_id, "1.68")
+        sku_id = await create_test_sku(sm)
         r1, r2 = await asyncio.gather(
             _raw_create(client, headers, sku_id, key_id),
             _raw_create(client, headers, sku_id, key_id),
@@ -472,13 +461,13 @@ class TestCreateCriticalSection:
             old = (
                 await session.execute(select(Instance).where(Instance.uuid == r1.json()["uuid"]))
             ).scalar_one()
-        assert old.idempotency_key is None  # 旧记录已让出键位
+        assert old.idempotency_key is None
 
     async def test_soft_admission_no_capacity(self, client, sm, fake):
         """软准入:(池,型号) 可分配量为 0 → 409 NO_CAPACITY。"""
         headers, _user_id, key_id = await funded_user(client, sm, "13900000114")
         sku_id = await create_test_sku(sm)
-        await seed_node_spec(sm, gpu_count=1, gpu_used=1)  # hami 池唯一一张卡已占满
+        await seed_node_spec(sm, gpu_count=1, gpu_used=1)
         resp = await _raw_create(client, headers, sku_id, key_id)
         assert resp.status_code == 409
         assert resp.json()["code"] == "NO_CAPACITY"
@@ -487,13 +476,13 @@ class TestCreateCriticalSection:
 class TestBillingCandidatesCompleteness:
     async def test_candidates_cover_all_running_segments(self, sm):
         """结算候选 = 当前 running ∪ 窗口内/后离开 running 的实例。"""
-        a, _ = await seed_instance(  # 窗口前进入,至今仍 running
+        a, _ = await seed_instance(
             sm,
             user_id=1,
             events=[(H - timedelta(hours=1), "creating", "running")],
             status="running",
         )
-        b, _ = await seed_instance(  # 窗口内离开 running
+        b, _ = await seed_instance(
             sm,
             user_id=2,
             events=[
@@ -501,7 +490,7 @@ class TestBillingCandidatesCompleteness:
                 (H + timedelta(minutes=30), "running", "stopping"),
             ],
         )
-        c, _ = await seed_instance(  # 窗口末仍 running,之后才停机(核心回归)
+        c, _ = await seed_instance(
             sm,
             user_id=3,
             events=[
@@ -509,10 +498,10 @@ class TestBillingCandidatesCompleteness:
                 (H_END + timedelta(minutes=30), "running", "stopping"),
             ],
         )
-        d, _ = await seed_instance(  # 从未 running(窗口内 creating 即失败)
+        d, _ = await seed_instance(
             sm, user_id=4, events=[(H + timedelta(minutes=5), None, "creating")]
         )
-        e, _ = await seed_instance(  # 窗口前已完整跑完离开
+        e, _ = await seed_instance(
             sm,
             user_id=5,
             events=[
@@ -550,7 +539,7 @@ class TestRetentionGC:
         assert any("失败实例已自动释放" in n["title"] for n in notes)
         await drain(sm)
         await reconcile_once(sm)
-        await drain(sm)  # disk_cleanup outbox:实例盘销毁(两阶段)
+        await drain(sm)
         assert (ns, uuid) not in fake.instance_disks
 
     async def test_stopped_instance_gc_warn_then_reclaim(self, client, sm, fake):
@@ -590,7 +579,7 @@ class TestDiskArrearsHardening:
         disk = await create_disk(client, headers)
         t0 = now_utc()
         await self._drain_wallet(sm, user_id)
-        await balance_patrol(sm)  # active → grace(进 grace 结清当日)
+        await balance_patrol(sm)
         async with sm() as session:
             d = (
                 await session.execute(select(DataDisk).where(DataDisk.uuid == disk["uuid"]))
@@ -601,11 +590,9 @@ class TestDiskArrearsHardening:
                 for b in (await session.execute(select(BillDailyDisk))).scalars().all()
             }
         billing_t0 = (billing_day_floor(t0) + BILLING_DAY_OFFSET).date()
-        assert billing_t0 in billed_days  # 进 grace 当日已结清
+        assert billing_t0 in billed_days
 
-        # 宽限中推进两天日结:不出账
         await settle_daily_disks(sm, at=t0 + timedelta(days=3))
-        # 回款恢复 active,再推进两天:只结恢复后的日子
         async with sm() as session:
             await wallet.credit(session, user_id, Decimal("10.00"), type_="recharge")
             await session.commit()
@@ -620,9 +607,9 @@ class TestDiskArrearsHardening:
         def _billing_date(dt) -> object:
             return (billing_day_floor(dt) + BILLING_DAY_OFFSET).date()
 
-        assert _billing_date(t0 + timedelta(days=1)) not in days  # grace 日
-        assert _billing_date(t0 + timedelta(days=2)) not in days  # grace 日
-        assert _billing_date(t0 + timedelta(days=3)) in days  # 恢复后正常出账
+        assert _billing_date(t0 + timedelta(days=1)) not in days
+        assert _billing_date(t0 + timedelta(days=2)) not in days
+        assert _billing_date(t0 + timedelta(days=3)) in days
 
     async def test_catchup_across_grace_records_gaps(self, client, sm, fake):
         """日结停摆跨越 grace 转换:宽限区间内部日不出账且登记 grace_overlap 缺口;
@@ -634,7 +621,6 @@ class TestDiskArrearsHardening:
         await create_disk(client, headers)
         t0 = now_utc()
         t_day = billing_day_floor(t0)
-        # 盘创建于 4 个计费日前;grace 区间 [T-3, T-1];水位线停在 T-4;盘已恢复 active
         async with sm() as session:
             await session.execute(
                 update(DataDisk).values(
@@ -645,7 +631,7 @@ class TestDiskArrearsHardening:
             )
             await session.commit()
         await _advance_watermark(sm, "daily_disk", t_day - timedelta(days=4))
-        await settle_daily_disks(sm)  # 追平窗口:T-3、T-2、T-1
+        await settle_daily_disks(sm)
 
         async with sm() as session:
             billed = {
@@ -663,9 +649,8 @@ class TestDiskArrearsHardening:
                 ).scalars()
             )
         day = lambda back: (t_day - timedelta(days=back) + BILLING_DAY_OFFSET).date()  # noqa: E731
-        assert billed == {day(3), day(1)}  # 边界日照常出账
+        assert billed == {day(3), day(1)}
         assert {(g.window_start + BILLING_DAY_OFFSET).date() for g in gaps} == {day(2)}
-        # 幂等:再跑一轮不重复扣款、不重复登记
         await settle_daily_disks(sm)
         async with sm() as session:
             billed2 = (await session.execute(select(BillDailyDisk))).scalars().all()
@@ -694,7 +679,6 @@ class TestDiskArrearsHardening:
             assert d1.status == "grace"
             first_grace_at = d1.grace_started_at
             assert first_grace_at is not None
-        # 充值 → active → 再欠费 → 再 grace:起点仍是第一次
         async with sm() as session:
             await wallet.credit(session, user_id, Decimal("10.00"), type_="recharge")
             await session.commit()
@@ -713,7 +697,7 @@ class TestDiskArrearsHardening:
         headers, _user_id, _key = await funded_user(client, sm, "13900000134")
         disk = await create_disk(client, headers)
         await drain(sm)
-        fake.data_disks.clear()  # 模拟 PVC 已被外部清掉
+        fake.data_disks.clear()
         await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
         await drain(sm)
         assert (await client.get("/api/v1/disks", headers=headers)).json() == []
@@ -723,7 +707,7 @@ class TestRestartPortConflict:
     async def test_port_conflict_keeps_tail_bill(self, client, sm, fake, monkeypatch):
         """重启撞 NodePortTaken:stopping→stopped 与尾账已独立提交,不被回滚吞掉。"""
         headers, uuid, user_id = await provision_running(client, sm, fake, "13900000141")
-        await backdate_running_event(sm, uuid, 30)  # 已跑约 30 分钟,尾账非零
+        await backdate_running_event(sm, uuid, 30)
         original = fake.create_instance
         fired = {"hit": False}
 
@@ -735,10 +719,9 @@ class TestRestartPortConflict:
 
         monkeypatch.setattr(fake, "create_instance", guarded)
         await client.post(f"/api/v1/instances/{uuid}/restart", headers=headers)
-        await drain(sm)  # 第一次:STOPPED 落库 → STARTING 落库 → 撞端口回滚
+        await drain(sm)
 
         data = await get_instance(client, headers, uuid)
-        # 撞端口回滚后停在 starting(不回退到 stopping),重试续建
         assert data["status"] == "starting"
         events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
             "items"
@@ -754,9 +737,8 @@ class TestRestartPortConflict:
                     .where(Instance.uuid == uuid)
                 )
             ).scalar_one()
-            assert bill.seconds_used > 0  # 尾账在案
+            assert bill.seconds_used > 0
 
-        # 退避重试:换端口完成重启
         async with sm() as session:
             await session.execute(
                 update(OutboxTask)

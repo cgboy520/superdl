@@ -1,5 +1,3 @@
-/** 通知中心(PageContainer narrow):全量通知列表 + 已读管理。全部/未读筛选入 URL(?filter=);行点击复用 notificationNav 的 useNotificationOpen。 */
-
 import { flattenPages, space } from "@superdl/ui";
 import { EmptyState, LoadMore, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
@@ -16,7 +14,6 @@ type Filter = "all" | "unread";
 
 export const Route = createFileRoute("/_console/notifications")({
   beforeLoad: requireAuth,
-  // 筛选入 URL(默认「全部」剥离);非法值回默认
   validateSearch: (search: Record<string, unknown>): { filter?: Filter } =>
     search.filter === "unread" ? { filter: "unread" } : {},
   component: NotificationsPage,

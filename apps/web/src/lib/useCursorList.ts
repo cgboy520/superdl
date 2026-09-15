@@ -23,7 +23,6 @@ export function useCursorList<T, Q extends { data?: { pages: { items: T[] }[] } 
   const deferredQ = debouncedKeyword.trim() || undefined;
   const pagesQ = usePages(deferredQ);
 
-  // 列表检索入 URL(replace)
   useEffect(() => {
     if ((urlQ ?? "") === (deferredQ ?? "")) return;
     commitQ(deferredQ);

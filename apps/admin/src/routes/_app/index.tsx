@@ -1,4 +1,4 @@
-/** 运营总览:TriageBar 置顶(深链预筛选列表)→ 两行 StatCard(各卡只等自己的 query,整卡可点)→ 左栏超卖率 / 利用率 / 池占用图表 + 任务死信卡(有死信默认展开,#dead-tasks 锚点)、右栏实时告警流(severity 入 URL);页头新鲜度条(POLL.steady 可暂停)。 */
+/** 运营总览:待处理项、指标卡、资源图表、死信任务与告警流。 */
 
 import { QuestionCircleOutlined } from "@ant-design/icons";
 import {
@@ -65,7 +65,6 @@ import { alertLink, useAckAlertWithFeedback } from "../../lib/alertLink";
 import { canReadInvoices, canWriteFinance, canWriteOps, useAdminRole } from "../../stores/auth";
 
 export const Route = createFileRoute("/_app/")({
-  // severity:告警流级别筛选(白名单 SEVERITY_ORDER)
   validateSearch: (search: Record<string, unknown>): { severity?: AlertSeverity } => ({
     severity:
       typeof search.severity === "string" && (SEVERITY_ORDER as readonly string[]).includes(search.severity)
@@ -133,7 +132,6 @@ function UtilChart({ rows }: { rows: OversellRow[] }) {
         markLine: {
           symbol: "none",
           lineStyle: { type: "dashed" },
-          // 默认 end 会把标签画到网格右侧、被画布裁掉;贴到线内上方
           label: { position: "insideEndTop", color: adminColors.textSecondary },
           data: [
             { yAxis: 60, label: { formatter: t("overview.raiseThreshold") } },
@@ -150,10 +148,8 @@ function PoolOccupancy({ pools }: { pools: OverviewOut["pools"] }) {
   const { t } = useTranslation();
   const chartTheme = useChartTheme();
   const names = pools.map((p) => p.pool);
-  // 「已租」拆竞价与非竞价两段;gpu_spot_used 服务端已截断,前端不再 clamp
   const spotUsed = pools.map((p) => p.gpu_spot_used);
   const usedOther = pools.map((p) => p.gpu_used - p.gpu_spot_used);
-  // 空闲只算 Ready 节点的卡;非 Ready 单独一段
   const free = pools.map((p) => Math.max(0, p.ready_gpu_total - p.gpu_used));
   const notReady = pools.map((p) => Math.max(0, p.gpu_total - p.ready_gpu_total));
   const usedTotal = pools.reduce((n, p) => n + p.gpu_used, 0);
@@ -161,7 +157,6 @@ function PoolOccupancy({ pools }: { pools: OverviewOut["pools"] }) {
   const option = {
     backgroundColor: "transparent",
     tooltip: { trigger: "axis" },
-    // 图例不显式定位会落到底部压住 x 轴刻度;放顶部并给网格留出这一行
     legend: { top: 0, textStyle: { color: adminColors.textSecondary } },
     grid: { left: 80, right: 24, top: 44, bottom: 28 },
     xAxis: {
@@ -178,7 +173,6 @@ function PoolOccupancy({ pools }: { pools: OverviewOut["pools"] }) {
         data: usedOther,
         itemStyle: { color: statusColors.green },
       },
-      // 竞价段取 marketMap.spot 色
       {
         name: t("overview.rentedSpot"),
         type: "bar",
@@ -212,17 +206,14 @@ function DeadTasksCard() {
   const qc = useQueryClient();
   const role = useAdminRole();
   const writable = canWriteOps(role);
-  // 读死信需 ops/readonly
   const canRead = canWriteOps(role) || role === "readonly";
   const { data, queryKey, isLoading, isError, error, refetch } = useDeadTasks({ enabled: canRead });
   const rows: DeadTaskRow[] = data ?? [];
   const retry = useRetryDeadTask();
   const discard = useDiscardDeadTask();
   const refresh = () => void qc.invalidateQueries({ queryKey });
-  // 用户手动折叠 / 展开后尊重其选择;未动过则按有无死信决定
   const [collapsed, setCollapsed] = useState<boolean | null>(null);
   const expanded = collapsed === null ? rows.length > 0 : !collapsed;
-  // 批量:勾选后一条原因作用于全部所选(后端无批量端点,逐条并发)
   const [selected, setSelected] = useState<number[]>([]);
   const { message } = App.useApp();
   const bulk = async (kind: "retry" | "discard", reason: string) => {
@@ -237,7 +228,6 @@ function DeadTasksCard() {
     return t("bulk.done", { count: ok });
   };
 
-  // 查询失败由表内空态明示;首响未到渲染骨架占位
   if (!canRead) return null;
   if (!isError && !isLoading && rows.length === 0) return null;
   return (
@@ -260,7 +250,6 @@ function DeadTasksCard() {
                 {!isLoading && (
                   <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                     {t("overview.deadTasksSummary", {
-                      // Intl.ListFormat 随界面语言给分隔符
                       types: new Intl.ListFormat(i18n.resolvedLanguage ?? "zh-CN", {
                         style: "narrow",
                         type: "conjunction",
@@ -330,7 +319,6 @@ function DeadTasksCard() {
                     {
                       title: t("overview.colLastError"),
                       dataIndex: "last_error",
-                      // 一行截断 + 悬浮看全文
                       render: (v: string | null) => (
                         <Tooltip title={<span style={{ whiteSpace: "pre-wrap" }}>{v ?? "-"}</span>}>
                           <span
@@ -431,7 +419,6 @@ function AlertStreamCard({ refetchInterval }: { refetchInterval: number | false 
       }
       styles={{ body: { maxHeight: 560, overflow: "auto" } }}
     >
-      {/* 查询失败不渲染成「暂无告警」 */}
       {isError ? (
         <TableErrorEmpty compact isError onRetry={() => void refetch()} />
       ) : (
@@ -488,8 +475,7 @@ function pageCount(data: { pages: { items: unknown[]; total?: number | null }[] 
   return data.pages[0]?.total ?? flattenPages(data).length;
 }
 
-/** 待处理条五项的计数来源:严重告警 = 未确认计数端点 critical_count;失联节点 = 总览聚合;死信 = 死信列表长度;结算缺口 = 未核销缺口页 total;
- *  待审批 = 待审退款(pending)+ 待开发票(submitted)+ 待处理注销(pending)。无权限的项不取数,计数显示 —,不伪造 0。 */
+/** 汇总严重告警、失联节点、死信、结算缺口与待审批计数。 */
 function useTriageItems({
   criticalUnacked,
   nodesMissing,
@@ -570,14 +556,13 @@ function triageLink(item: TriageItem, children: ReactNode): ReactNode {
   }
 }
 
-/** 整卡链接:块级 + 继承文字色,避免卡内大数染成链接蓝。 */
+/** 继承文字色的块级整卡链接。 */
 const cardLinkStyle = { display: "block", textDecoration: "none", color: "inherit" } as const;
 
 function Overview() {
   const { t } = useTranslation();
   const { formatMoney } = useFormat();
   const qc = useQueryClient();
-  // 页面级稳态轮询(可暂停):总览聚合 / 未确认计数 / 告警流同一节拍;报表类仍按各自周期
   const autoRefresh = useAutoRefresh(POLL.steady);
   const ovQ = useOverview({ refetchInterval: autoRefresh.refetchInterval });
   const unreadQ = useAlertUnreadCount({ refetchInterval: autoRefresh.refetchInterval });
@@ -592,11 +577,9 @@ function Overview() {
   const byStatus = ov?.instances_by_status ?? {};
   const activeInstances = (byStatus.creating ?? 0) + (byStatus.starting ?? 0) + (byStatus.running ?? 0);
   const signupDelta = revenue ? revenue.today_signups - revenue.yesterday_signups : 0;
-  // KPI 查询失败嵌错误条;按数据源分卡归属
   const revenueErr = revenueQ.isError ? <DataErrorAlert onRetry={() => void revenueQ.refetch()} /> : undefined;
   const ovErr = ovQ.isError ? <DataErrorAlert onRetry={() => void ovQ.refetch()} /> : undefined;
   const unreadErr = unreadQ.isError ? <DataErrorAlert onRetry={() => void unreadQ.refetch()} /> : undefined;
-  // 超卖率 / 利用率两张卡共用同一份报表的三态
   const oversellBody = (chart: ReactNode) =>
     oversellQ.isError ? (
       <DataErrorAlert title={t("overview.loadFailed")} description={null} onRetry={() => void oversellQ.refetch()} />
@@ -614,7 +597,6 @@ function Overview() {
         intervalMs: autoRefresh.intervalMs,
         paused: autoRefresh.paused,
         onTogglePause: autoRefresh.toggle,
-        // adminKeys.alerts 前缀同时覆盖告警流与未确认计数
         onRefresh: () => {
           void ovQ.refetch();
           void qc.invalidateQueries({ queryKey: adminKeys.alerts });
@@ -626,7 +608,6 @@ function Overview() {
         <Col span={24}>
           <TriageBar items={triage} renderLink={triageLink} ariaLabel={t("overview.triageAria")} />
         </Col>
-        {/* KPI 分两行:资金与租户 / 运行与风险;各卡独立等待,整卡深链 */}
         <Col span={24}>
           <KpiGrid
             items={[
@@ -640,7 +621,6 @@ function Overview() {
                     <>
                       {t("overview.yesterdayPrefix", { amount: formatMoney(revenue.yesterday_revenue) })}
                       <br />
-                      {/* 收入含包周期预付,单列摊开 */}
                       {t("overview.prepaidPart", { amount: formatMoney(revenue.today_prepaid) })}
                     </>
                   )
@@ -716,7 +696,6 @@ function Overview() {
               <StatCard
                 key="subs"
                 title={t("overview.subscriptionsActive")}
-                // 按订阅行数计,可大于活跃实例数
                 value={ov?.subscriptions_active}
                 error={ovErr}
                 footer={ov && t("overview.subscriptionsActiveHint")}
@@ -749,7 +728,6 @@ function Overview() {
                 title={t("overview.alertsTotal")}
                 value={unread?.count}
                 error={unreadErr}
-                // 红色取精确计数端点的 critical
                 tone={(unread?.critical_count ?? 0) > 0 ? "negative" : "default"}
                 link={(c) => (
                   <Link to="/alerts" search={{ acked: "unacked" }} style={cardLinkStyle}>

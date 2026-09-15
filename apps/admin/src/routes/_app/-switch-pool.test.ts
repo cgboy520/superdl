@@ -1,5 +1,4 @@
-/** 切池目标候选与 MIG 机型判据:前端闸与后端 switch_node_pool 的取值闸必须同口径,
- *  否则用户点得下去、后端回 409(或更糟:切到一个开不了机的池)。 */
+/** 切池目标候选与 MIG 机型判据测试。 */
 
 import { describe, expect, it } from "vitest";
 
@@ -30,7 +29,6 @@ describe("supportsMig", () => {
   });
 
   it("不支持 MIG 的机型与未识别一律 false", () => {
-    // GB10 是当前生产机型:切进 mig 池会建出永远调度不上的库存
     expect(supportsMig("GB10")).toBe(false);
     expect(supportsMig("RTX4090")).toBe(false);
     expect(supportsMig("L40S")).toBe(false);

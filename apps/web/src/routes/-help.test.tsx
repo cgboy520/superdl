@@ -1,5 +1,4 @@
-/** 帮助中心:搜索过滤与空态、「没解决?提交工单」按登录态分流。
- *  挂了说明:搜索框筛不掉无关问答(或筛没了不给清除出口)、未登录的提单入口没带回跳(登录后落不回 /support)。 */
+/** 帮助中心的搜索、空态与按登录态分流的提单入口测试。 */
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "antd";
@@ -10,22 +9,18 @@ import { Route } from "./help";
 
 const HelpPage = (Route as unknown as { component: ComponentType }).component;
 
-/** lazyRouteComponent 首次解析要过一次 vite transform,给足超时 */
 const LAZY = { timeout: 10_000 };
 
 const { loggedIn } = vi.hoisted(() => ({ loggedIn: { current: false } }));
 
 vi.mock("../stores/auth", () => ({ useIsLoggedIn: () => loggedIn.current }));
 
-// 顶栏 / 页脚 / 联系卡另有归属,本用例只看帮助中心主体
 vi.mock("../components/layout/AppTopBar", () => ({ AppTopBar: () => null }));
 vi.mock("../components/layout/SiteFooter", () => ({ SiteFooter: () => null }));
 vi.mock("../components/ContactCard", () => ({ ContactCard: () => null }));
 
-// 无 Router 上下文:Link 降级成原生 <a>,search.redirect 拼进 href 以便断言回跳
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (opts: unknown) => opts,
-  // autoCodeSplitting 后组件经 lazyRouteComponent 异步加载:测试里还原成 React.lazy
   lazyRouteComponent: (loader: () => Promise<Record<string, ComponentType>>, name: string) =>
     lazy(async () => ({ default: (await loader())[name] as ComponentType })),
   useRouterState: () => "",
@@ -57,7 +52,6 @@ describe("帮助中心", () => {
     await user.type(screen.getByLabelText("搜索帮助"), "jupyter");
     expect(screen.getByText("JupyterLab 打不开怎么办?")).toBeInTheDocument();
     expect(screen.queryByText("数据盘怎么算钱?")).not.toBeInTheDocument();
-    // 分类锚点跟着收敛:只剩命中分类
     expect(screen.queryByRole("link", { name: "计费" })).not.toBeInTheDocument();
 
     await user.clear(screen.getByLabelText("搜索帮助"));

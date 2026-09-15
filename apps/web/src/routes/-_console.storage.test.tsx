@@ -1,4 +1,4 @@
-/** 删除数据盘的两道闸(ui-ux-spec §1 规则 7)。挂了说明:只键入盘名就能删盘,用户会在没意识到数据被清除的情况下确认。写操作 hook 全 mock。 */
+/** 删除数据盘的名称输入与数据清除勾选测试。 */
 import type { DiskOut } from "@superdl/api-client";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";

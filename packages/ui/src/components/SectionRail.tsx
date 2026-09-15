@@ -1,5 +1,4 @@
-/** 分段长表单骨架(创建实例 / 部署服务共用):左侧竖向锚点 rail(≥md sticky;<md 顶部横向)+ 右侧带锚点的段;
- *  段状态由 deriveSectionStatus 派生:无问题且触碰过 = finish,无问题未触碰 = wait,第一个有问题的段 = process,其它有问题的段只在触碰或提交后才 error(首屏不出红叉)。 */
+/** 分段表单导航:宽屏竖向固定、窄屏横向排列,段状态由问题、触碰与提交状态派生。 */
 
 import { Card, Grid, Steps } from "antd";
 import type { ReactNode } from "react";
@@ -70,7 +69,7 @@ export function SectionRail({
   ariaLabel,
 }: {
   sections: SectionDef[];
-  /** 点过提交后所有问题段都标 error */
+  /** 提交后其余问题段标为 error;首个问题段仍为 process。 */
   submitted?: boolean;
   children: ReactNode;
   railWidth?: number;
@@ -82,7 +81,6 @@ export function SectionRail({
   const items = sections.map((s, i) => ({
     title: s.title,
     status: statuses[i],
-    // 问题写在 description;wait 段不出描述
     description: s.issue && statuses[i] !== "wait" ? s.issue : undefined,
   }));
   const steps = (

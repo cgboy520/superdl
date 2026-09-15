@@ -61,7 +61,6 @@ export function RowsEditor<T extends { id: string }>({
   const submitBulk = () => {
     if (!bulk || !preview) return;
     if (preview.rows.length > 0) onChange([...rows, ...preview.rows]);
-    // 有跳过留在 Modal 里看预览,全部通过才关
     if (preview.skipped === 0) closeBulk();
     else setBulkText("");
   };

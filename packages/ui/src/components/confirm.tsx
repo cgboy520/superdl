@@ -89,7 +89,6 @@ export function TypeConfirmModal({
   const { t } = useTranslation("shared");
   const [typed, setTyped] = useState("");
   const [acked, setAcked] = useState(false);
-  // 关闭后重开重置(渲染期派生)
   const [prevOpen, setPrevOpen] = useState(open);
   if (open !== prevOpen) {
     setPrevOpen(open);

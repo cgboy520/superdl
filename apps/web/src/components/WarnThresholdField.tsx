@@ -14,7 +14,6 @@ export function WarnThresholdField({ size, style }: { size?: "small" | "middle";
   const { message } = App.useApp();
   const { data: me } = useMe();
   const [warnHours, setWarnHours] = useState<number>();
-  // 保存成功 1.5s「已保存」视觉态;卸载清定时器
   const [saved, setSaved] = useState(false);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
@@ -33,7 +32,7 @@ export function WarnThresholdField({ size, style }: { size?: "small" | "middle";
   });
   const save = () => {
     const v = warnHours ?? me?.low_balance_warn_hours;
-    if (v != null) setThreshold.mutate(v); // 范围校验在 InputNumber min/max 与后端 ge/le
+    if (v != null) setThreshold.mutate(v);
   };
   return (
     <Space style={style}>

@@ -1,5 +1,4 @@
-/** 门控按钮:reason 非空 = 可见但不可用(aria-disabled + 可聚焦 + 拦截点击 + Tooltip 原因);reason 为空 = 普通按钮。
- *  antd 6 的原生 disabled 按钮无鼠标事件、不可聚焦,Tooltip 弹不出原因;条件禁用一律用本件(ui-ux-spec §1 规则 4)。 */
+/** reason 非空时保持可聚焦、拦截点击并显示 Tooltip;否则为普通按钮。 */
 
 import { Button, Tooltip, type ButtonProps, type TooltipProps } from "antd";
 import type { MouseEvent, ReactNode } from "react";

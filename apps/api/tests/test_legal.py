@@ -73,8 +73,8 @@ class TestRegistrationConsents:
             )
         assert {r.doc_key for r in rows} == {"terms", "privacy"}
         for row in rows:
-            assert row.version == 1  # 当前 published v1
-            assert row.client_ip  # 注册请求 IP 落库
+            assert row.version == 1
+            assert row.client_ip
             assert row.accepted_at is not None
 
 
@@ -84,19 +84,16 @@ class TestVersionFlow:
     ):
         headers = await admin_headers(sm, client)
 
-        # 新建 draft:基于当前 published 复制,version 递增
         draft = await _create_draft(client, headers)
         assert draft["version"] == 2
         assert draft["status"] == "draft"
-        assert draft["content_md"]  # 复制自 published v1
-        # 同 (doc_key, locale) 已有 draft:重复创建 409
+        assert draft["content_md"]
         dup = await client.post(
             "/api/admin/v1/legal-docs/terms/versions", json={"locale": "zh-CN"}, headers=headers
         )
         assert dup.status_code == 409
         assert dup.json()["code"] == "CONFLICT"
 
-        # 编辑:仅 draft 可改
         resp = await client.put(
             f"/api/admin/v1/legal-docs/versions/{draft['id']}",
             json={"title": "SuperDL 用户协议(修订)", "content_md": NEW_CONTENT},
@@ -105,7 +102,6 @@ class TestVersionFlow:
         assert resp.status_code == 200, resp.text
         assert resp.json()["content_md"] == NEW_CONTENT
 
-        # 非 draft 不可编辑(拿当前 published v1 试)
         async with sm() as session:
             published_v1 = (
                 await session.execute(
@@ -123,7 +119,6 @@ class TestVersionFlow:
         )
         assert resp.status_code == 409
 
-        # 发布:旧 published 自动 archived,审计 detail 含 sha256
         resp = await client.post(
             f"/api/admin/v1/legal-docs/versions/{draft['id']}/publish", headers=headers
         )
@@ -156,12 +151,10 @@ class TestVersionFlow:
         assert audit.detail["version"] == 2
         assert audit.detail["sha256"] == hashlib.sha256(NEW_CONTENT.encode()).hexdigest()
 
-        # 公开端点立即读新版
         resp = await client.get("/api/v1/legal/terms")
         assert resp.json()["version"] == 2
         assert resp.json()["content_md"] == NEW_CONTENT
 
-        # 再发布:旧版 archived,公开端点读新版
         draft3 = await _create_draft(client, headers)
         assert draft3["version"] == 3
         resp = await client.put(
@@ -183,7 +176,6 @@ class TestVersionFlow:
     async def test_archive_rules(self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]):
         headers = await admin_headers(sm, client)
         draft = await _create_draft(client, headers)
-        # published 不可直接归档
         async with sm() as session:
             published = (
                 (
@@ -201,12 +193,10 @@ class TestVersionFlow:
             json={"reason": "清理废弃草稿"},
         )
         assert resp.status_code == 409
-        # 原因必填:空体 422
         resp = await client.post(
             f"/api/admin/v1/legal-docs/versions/{draft['id']}/archive", headers=headers
         )
         assert resp.status_code == 422
-        # draft → archived,原因入审计
         resp = await client.post(
             f"/api/admin/v1/legal-docs/versions/{draft['id']}/archive",
             headers=headers,
@@ -214,7 +204,6 @@ class TestVersionFlow:
         )
         assert resp.status_code == 200, resp.text
         assert resp.json()["status"] == "archived"
-        # archived 再归档 409
         resp = await client.post(
             f"/api/admin/v1/legal-docs/versions/{draft['id']}/archive",
             headers=headers,
@@ -232,7 +221,6 @@ class TestVersionFlow:
         terms_zh = cells[("terms", "zh-CN")]
         assert terms_zh["published"]["version"] == 1
         assert terms_zh["draft"] is None
-        # en-US 缺失:published/draft 均空
         assert cells[("terms", "en-US")]["published"] is None
 
         resp = await client.get(
@@ -243,7 +231,6 @@ class TestVersionFlow:
         assert resp.status_code == 200, resp.text
         assert [v["version"] for v in resp.json()] == [1]
 
-        # en-US 新建 draft:以 zh-CN published 为翻译底稿
         draft_en = await _create_draft(client, headers, locale="en-US")
         assert draft_en["locale"] == "en-US"
         assert draft_en["version"] == 1

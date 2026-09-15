@@ -42,7 +42,6 @@ class TestIdempotencyKeyLength:
         assert any(e["loc"][-1] == "Idempotency-Key" for e in resp.json()["detail"]), resp.json()[
             "detail"
         ]
-        # 没有任何写入落地
         async with sm() as session:
             rows = (
                 (await session.execute(select(Ticket).where(Ticket.user_id == user_id)))

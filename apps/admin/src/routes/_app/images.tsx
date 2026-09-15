@@ -1,4 +1,4 @@
-/** 镜像与预热:镜像表(框架固定左 / 覆盖率右对齐 + 预热说明 ? tooltip / 操作固定右:立即预热 · 编辑 + 更多 ▾ 删除)+ 行展开节点缓存面板(?image= 入 URL)+ 编辑抽屉(footer 提交 / 取消 + useLeaveGuard)。 */
+/** 镜像页:清单、预热操作、节点缓存展开面板与编辑抽屉。 */
 
 import { QuestionCircleOutlined } from "@ant-design/icons";
 import {
@@ -66,7 +66,6 @@ import { StatusTag } from "@superdl/ui/components";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 export const Route = createFileRoute("/_app/images")({
-  // image:展开该镜像的节点缓存面板(告警 / 节点页可直链到失败节点清单)
   validateSearch: (search: Record<string, unknown>): { image?: number } => ({
     image: Number.isInteger(Number(search.image)) && Number(search.image) > 0 ? Number(search.image) : undefined,
   }),
@@ -151,7 +150,6 @@ function ImagesPage() {
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();
-  // 镜像清单轮询(拉取进度在变),可暂停;页头出新鲜度条
   const autoRefresh = useAutoRefresh(POLL.ticket);
   const {
     data: images,
@@ -164,21 +162,18 @@ function ImagesPage() {
     refetch,
   } = useAdminImages({ refetchInterval: autoRefresh.refetchInterval });
   const [editing, setEditing] = useState<ImageRow | "new" | null>(null);
-  // 动过表单即脏:关抽屉先确认(提交成功走 closeEdit,不再拦)
   const [dirty, setDirty] = useState(false);
   const leave = useLeaveGuard(dirty);
   const closeEdit = () => {
     setDirty(false);
     setEditing(null);
   };
-  // 新建镜像默认仓库前缀:取平台配置的 Harbor 地址与项目
   const { data: cluster } = useClusterStatus();
   const registryPrefix = cluster?.config.registry_host
     ? `${cluster.config.registry_host}/${cluster.config.registry_project ?? "superdl"}/`
     : "harbor.example.com/superdl/";
   const [form] = Form.useForm<ImageFormValues>();
   const confirm = useConfirm();
-  // 展开行入 URL(?image=):失败计数标可点开对应节点面板
   const navigate = useNavigate({ from: "/images" });
   const expandedImage = Route.useSearch({ select: (s) => s.image });
   const setExpandedImage = (id: number | undefined) =>
@@ -198,7 +193,6 @@ function ImagesPage() {
   const update = useUpdateImage({
     mutation: {
       onSuccess: (_d, v) => {
-        // 预热开关与整表保存共用本 mutation,反馈文案按补丁形态分开
         const toggleOnly = Object.keys(v.data).length === 1 && "prewarm_enabled" in v.data;
         message.success(t(toggleOnly ? "images.prewarmToggled" : "images.saved"));
         closeEdit();
@@ -240,12 +234,11 @@ function ImagesPage() {
     try {
       values = await form.validateFields();
     } catch {
-      return; // 校验失败:antd 已就地标红
+      return;
     }
     if (editing === "new") {
       create.mutate({ data: values });
     } else if (editing) {
-      // ImageUpdate 无 reason 字段
       update.mutate({ imageId: editing.id, data: values });
     }
   };
@@ -328,10 +321,8 @@ function ImagesPage() {
                   <Switch
                     checked={v}
                     disabled={!writable}
-                    // 行级 loading
                     loading={update.isPending && update.variables.imageId === r.id}
                     onChange={(on) => {
-                      // 关闭预热影响新节点的秒级启动承诺:L1 确认;开启直接生效
                       if (on) {
                         update.mutate({ imageId: r.id, data: { prewarm_enabled: true } });
                         return;
@@ -348,7 +339,6 @@ function ImagesPage() {
               ),
             },
             {
-              // 预热说明进表头 ? tooltip,不做常驻条
               title: (
                 <Space size={space.xs}>
                   {t("images.colCoverage")}
@@ -411,7 +401,6 @@ function ImagesPage() {
               render: (_, r) => (
                 <RowActions
                   primary={
-                    /* 可用时 tooltip 是动作说明;未开预热 / 无权时门控并给原因 */
                     writable && r.prewarm_enabled ? (
                       <Tooltip title={t("images.prewarmTip")}>
                         <Button

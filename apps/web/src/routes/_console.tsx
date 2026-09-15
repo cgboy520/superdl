@@ -31,7 +31,6 @@ function ConsoleLayout() {
       </a>
       <AppTopBar variant="console" right={<TopBarUser />} />
       <Layout style={{ flex: 1 }}>
-        {/* 窄屏不渲染 Sider(导航走 Drawer),避免两套并行 */}
         {screens.lg && (
           <Layout.Sider
             width={200}
@@ -44,7 +43,6 @@ function ConsoleLayout() {
           </Layout.Sider>
         )}
         <Layout>
-          {/* antd Layout.Content 即 <main>;id 供 skip-link 定位 */}
           <Layout.Content
             id="main"
             tabIndex={-1}

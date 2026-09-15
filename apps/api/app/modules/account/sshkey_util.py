@@ -29,7 +29,6 @@ def parse_public_key(text: str) -> tuple[str, str]:
         blob = base64.b64decode(b64, validate=True)
     except binascii.Error as exc:
         raise ValueError("公钥 base64 解码失败") from exc
-    # blob 内嵌的类型字符串必须与声明一致
     if len(blob) < 4:
         raise ValueError("公钥内容非法")
     (type_len,) = struct.unpack(">I", blob[:4])

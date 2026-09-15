@@ -1,4 +1,4 @@
-/** 发票读门只放 finance/admin。挂了 = 前端角色表与后端 require_roles 漂移。 */
+/** 发票读取权限只允许 finance/admin。 */
 import { describe, expect, it } from "vitest";
 
 import { canReadInvoices } from "./auth";

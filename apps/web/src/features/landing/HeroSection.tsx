@@ -1,5 +1,4 @@
-/** 主页 Hero:左标题 + 两个 CTA,右实时行情板(第一屏就给价格与库存,而不是口号)。
- *  ≥lg 左右分栏;<lg 行情板落到 CTA 下方(整块,不隐藏 —— 手机上更需要先看到价格)。 */
+/** 主页 Hero:标题、两个 CTA 与实时行情板;窄屏纵向排列。 */
 
 import { brand, brandInverseButtonStyle, fontSize, fontWeight, layout, space } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
@@ -18,7 +17,6 @@ export function HeroSection() {
   return (
     <section
       style={{
-        // 多重背景:网格纹理叠在渐变上
         backgroundImage: `${GRID_TEXTURE}, ${brand.heroBg}`,
         padding: `${space.xxl * 2}px ${layout.contentPadding}px ${space.xxl * 2}px`,
       }}
@@ -58,7 +56,6 @@ export function HeroSection() {
             {t("landing.hero.subtitle")}
           </Typography.Paragraph>
           <div style={{ display: "flex", gap: space.lg, flexWrap: "wrap" }}>
-            {/* 未登录主 CTA 直达注册态 */}
             <Link to={loggedIn ? "/instances" : "/login"} search={loggedIn ? {} : { mode: "register" }}>
               <Button size="large" style={{ ...brandInverseButtonStyle, paddingInline: space.xxl }}>
                 {loggedIn ? t("common.enterConsole") : t("landing.hero.ctaPrimary")}

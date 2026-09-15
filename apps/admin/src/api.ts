@@ -253,18 +253,17 @@ interface CursorPage {
   next_cursor?: string | null;
 }
 
-/** 跨文件共享的查询键前缀:定义在本文件下方各 hook,失效在页面/lib,两边只认这里。 */
+/** 跨文件共享的查询键、详情键工厂与失效前缀。 */
 export const adminKeys = {
   alerts: ["admin", "alerts"],
   tickets: { all: ["admin", "tickets"], detail: (id: number | null) => ["admin", "ticket", id] },
   services: ["admin", "services"],
   nodes: ["admin", "nodes"],
-  // 前缀匹配:useEnrollments 的键是 ["admin","node-enrollments",active]
   enrollments: ["admin", "node-enrollments"],
   skus: ["admin", "skus"],
 };
 
-/** 查询 hook 骨架:结果附带 queryKey 供调用方失效/刷新;条件查询的 queryFn 传 skipToken(禁止断言配 enabled)。 */
+/** 查询 hook:结果附带 queryKey,queryFn 支持 skipToken。 */
 function useKeyedQuery<T>(
   queryKey: readonly unknown[],
   queryFn: (() => Promise<T>) | SkipToken,
@@ -316,7 +315,7 @@ export const useTestClusterConnection = adminMutation(() =>
   adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost(),
 );
 
-/** 体检项实时深探:抽屉打开即取一次。失败不重试 —— 集群 API 已经在抖,重试只会加剧。 */
+/** 体检项实时深探,失败不重试。 */
 export function useComponentProbe(componentKey: string) {
   return useKeyedQuery(
     ["admin", "component-probe", componentKey],
@@ -623,8 +622,6 @@ export function useTicketDetail(ticketId: number | null) {
   );
 }
 
-// 法务文档(读全角色,写仅 admin)
-
 export type {
   LegalDocCellOut as LegalDocCell,
   LegalDocVersionOut as LegalDocVersion,
@@ -695,14 +692,11 @@ export function useAuditLog(filters: AuditFilters) {
   return { ...q, queryKey };
 }
 
-// 变更 hooks
-
-/** 登录返回二要素挑战票;正式 token 经 useMfaSetupConfirm / useMfaVerify。 */
+/** 登录请求。 */
 export const useAdminLogin = adminMutation((v: { data: AdminLoginRequest }) =>
   adminLoginApiAdminV1AuthLoginPost(v.data),
 );
 
-// TOTP MFA
 export const useMfaSetupBegin = adminMutation((v: { ticket: string }) =>
   mfaSetupBeginApiAdminV1AuthMfaSetupBeginPost({ ticket: v.ticket }),
 );
@@ -816,8 +810,6 @@ export const useReviewAdjustment = adminMutation((v: { adjustmentId: number; dat
   adminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPost(v.adjustmentId, v.data),
 );
 
-// 运营:死信重放 / 收入报表 / 公告
-
 export function useAnomalies() {
   return useKeyedQuery(["admin", "anomalies"], () => adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet(), {
     refetchInterval: POLL.daily,
@@ -886,11 +878,8 @@ export const useUpdatePolicies = adminMutation((v: { data: PolicyUpdateRequest }
   adminUpdatePoliciesApiAdminV1PoliciesPut(v.data),
 );
 
-// 平台配置(仅 admin 角色)
-
 export function usePlatformConfig(options?: { enabled?: boolean }) {
   return useKeyedQuery(["admin", "platform-config"], () => adminGetPlatformConfigApiAdminV1PlatformConfigGet(), {
-    // 非 admin 角色 403,调用方按角色传 enabled
     enabled: options?.enabled,
     refetchOnWindowFocus: false,
     retry: false,
@@ -906,8 +895,6 @@ export const useTestRegistry = adminMutation(() => adminTestRegistryApiAdminV1Pl
 export const useTestSms = adminMutation((v: { data: SmsTestRequest }) =>
   adminTestSmsApiAdminV1PlatformConfigTestSmsPost(v.data),
 );
-
-// 管理员账号
 
 export function useAdminAccounts() {
   return useKeyedQuery(["admin", "admins"], () => adminListAdminsApiAdminV1AdminsGet());
@@ -928,8 +915,6 @@ export const useResetAdminPassword = adminMutation((v: { id: number; data: Admin
 export const useChangeOwnPassword = adminMutation((v: { data: AdminSelfPasswordRequest }) =>
   adminChangeOwnPasswordApiAdminV1MePasswordPost(v.data),
 );
-
-// 总览/上下文
 
 /** /me 校准角色(路由守卫用)。 */
 export function fetchAdminMe(): Promise<AdminOut> {
@@ -962,8 +947,6 @@ export function useSkuImpact(skuId: number | null) {
   });
 }
 
-// CSV 导出(截断判定见 @superdl/ui downloadCsvChecked)
-
 type CsvLang = "zh-CN" | "en-US";
 
 /** CSV 导出工厂:fetcher 文本响应 → downloadCsvChecked;name 为串或按入参派生。 */
@@ -989,14 +972,14 @@ export const exportOrdersCsv = makeCsvExporter(
     `superdl-orders-${params?.day ?? "all"}.csv`,
 );
 
-/** 调账导出:跟随当前筛选(status)。 */
+/** 按传入筛选导出调账 CSV,附时区与语言。 */
 export const exportAdjustmentsCsv = makeCsvExporter(
   (params: AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetParams | undefined, tz: number, lang: CsvLang) =>
     adminAdjustmentsExportApiAdminV1AdjustmentsExportGet(withTzLang(params, tz, lang)),
   "superdl-adjustments.csv",
 );
 
-/** 退款导出:跟随当前筛选(status/channel)。 */
+/** 按传入筛选导出退款 CSV,附时区与语言。 */
 export const exportRefundsCsv = makeCsvExporter(
   (params: AdminRefundsExportApiAdminV1RefundsExportGetParams | undefined, tz: number, lang: CsvLang) =>
     adminRefundsExportApiAdminV1RefundsExportGet(withTzLang(params, tz, lang)),

@@ -1,5 +1,4 @@
-/** 表格错误/空态(两端共用),作 Table locale.emptyText;查询失败明示错误,不渲染成「没有数据」。
- *  isForbidden = 403;isError=false 渲染空态(文案经 children,CTA 经 action);compact = 行内紧凑形态。 */
+/** 表格的无权限、加载失败或空态展示;支持重试与自定义引导动作。 */
 
 import { Button, Empty, Result, Space, Typography } from "antd";
 import type { ReactNode } from "react";

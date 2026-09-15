@@ -10,8 +10,7 @@ import type { ComponentFactOut } from './componentFactOut';
 import type { ComponentObjectOut } from './componentObjectOut';
 
 /**
- * 组件体检项。文案全部由 key 映射(判据 / 影响面 / 事实 label 在两端 locales),
- * 后端只出事实数据;两个 hint 是命令,不随语言。
+ * 组件事实与状态;文案由 key 映射,两个 hint 为不随语言变化的命令。
  */
 export interface ClusterComponentOut {
   diag_hint?: string | null;

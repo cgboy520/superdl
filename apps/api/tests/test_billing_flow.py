@@ -53,9 +53,8 @@ class TestTailBilling:
             w = (await session.execute(select(Wallet))).scalar_one()
         assert expected - 2 <= bill.seconds_used <= expected + 15
         assert bill.detail is not None and bill.detail["source"] == "tail"
-        assert w.balance == Decimal("100.00") - bill.amount  # 尾账与迁移同事务入账
+        assert w.balance == Decimal("100.00") - bill.amount
 
-        # 账单接口可见
         bills = (await client.get("/api/v1/bills/hourly", headers=headers)).json()
         assert len(bills["items"]) == 1
 
@@ -73,7 +72,6 @@ class TestTailBilling:
 class TestArrearsChain:
     async def test_zero_balance_stops_then_freezes_then_reclaims(self, client, sm, fake):
         headers, uuid, user_id = await provision_running(client, sm, fake)
-        # 清空余额
         async with sm() as session:
             balance = await wallet.get_balance(session, user_id)
             await wallet.debit(
@@ -81,7 +79,6 @@ class TestArrearsChain:
             )
             await session.commit()
 
-        # 巡检 → 自动停机
         counts = await balance_patrol(sm)
         assert counts["stopped"] == 1
         assert (await get_instance(client, headers, uuid))["status"] == "stopping"
@@ -89,14 +86,12 @@ class TestArrearsChain:
         await reconcile_once(sm)
         assert (await get_instance(client, headers, uuid))["status"] == "stopped"
 
-        # 巡检 → 冻结(72h 倒计时)
         counts = await balance_patrol(sm)
         assert counts["frozen"] == 1
         data = await get_instance(client, headers, uuid)
         assert data["status"] == "frozen"
         assert data["frozen_deadline"] is not None
 
-        # 到期 → 回收
         async with sm() as session:
             await session.execute(
                 update(Instance)
@@ -111,7 +106,6 @@ class TestArrearsChain:
         await reconcile_once(sm)
         assert (await get_instance(client, headers, uuid))["status"] == "released"
 
-        # 事件链完整可追溯
         events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
             "items"
         ]
@@ -128,13 +122,12 @@ class TestArrearsChain:
                 session, user_id, balance, type_="adjust", remark="drain", allow_negative=True
             )
             await session.commit()
-        await balance_patrol(sm)  # 停机
+        await balance_patrol(sm)
         await drain(sm)
         await reconcile_once(sm)
-        await balance_patrol(sm)  # 冻结
+        await balance_patrol(sm)
         assert (await get_instance(client, headers, uuid))["status"] == "frozen"
 
-        # 充值 → 解冻回 stopped
         async with sm() as session:
             await wallet.credit(session, user_id, Decimal("50.00"), type_="recharge")
             await session.commit()
@@ -156,7 +149,6 @@ class TestArrearsChain:
             )
             await session.commit()
 
-        # 无锁粗筛看到旧值 0;随后充值落库,锁内读到真值
         async def stale_get_balance(session, uid):
             return Decimal("0.00")
 
@@ -165,9 +157,8 @@ class TestArrearsChain:
             await wallet.credit(session, user_id, Decimal("50.00"), type_="recharge")
             await session.commit()
         counts = await balance_patrol(sm)
-        assert counts["stopped"] == 0  # 锁内读到 50,不停机
+        assert counts["stopped"] == 0
         assert (await get_instance(client, headers, uuid))["status"] == "running"
-        # 对照:锁内真值仍为负时照常停机
         async with sm() as session:
             await wallet.debit(
                 session, user_id, Decimal("50.00"), type_="adjust", allow_negative=True
@@ -202,7 +193,7 @@ class TestBillingApiEdges:
         ).json()
         ids1 = {e["id"] for e in page1["items"]}
         ids2 = {e["id"] for e in page2["items"]}
-        assert not ids1 & ids2  # 无重叠
+        assert not ids1 & ids2
 
     async def test_bills_filters(self, client, sm, fake):
         headers, uuid, _user_id = await provision_running(client, sm, fake)
@@ -219,7 +210,6 @@ class TestBillingApiEdges:
             )
         ).json()
         assert len(bills["items"]) == 1
-        # 月度汇总按实例归因并补实例名
         summary = (
             await client.get("/api/v1/bills/summary", params={"month": month}, headers=headers)
         ).json()

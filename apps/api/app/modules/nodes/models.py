@@ -9,44 +9,42 @@ from app.core.db import Base
 
 
 class NodeEnrollment(Base):
-    """GPU 服务器注册令牌与加入进度。一节点一令牌,库中只存 HMAC-SHA256。
-    状态机:pending → installing → rebooting ⇆ installing → joining → joined,
-    旁路终态 failed / expired / revoked;迁移集中在 service.transition_enrollment。
+    """节点注册与进度令牌仅存 HMAC-SHA256 摘要。
+
+    状态:pending → installing → rebooting ⇆ installing → joining → joined;
+    旁路终态 failed / expired / revoked。
     """
 
     __tablename__ = "node_enrollments"
     __table_args__ = (UniqueConstraint("created_by", "idempotency_key"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    token_hash: Mapped[str] = mapped_column(String(64), unique=True)  # HMAC-SHA256 hex
-    # bootstrap 换发的窄权限令牌(仅 /progress),只存 HMAC 摘要;NULL = 尚未 bootstrap 或已轮换
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     progress_token_hash: Mapped[str | None] = mapped_column(String(64), unique=True)
-    pool: Mapped[str] = mapped_column(String(8))  # kata / hami / mig / cpu(分池铁律)
-    hostname: Mapped[str | None] = mapped_column(String(253))  # 期望主机名(签发时必填,防令牌串用)
+    pool: Mapped[str] = mapped_column(String(8))
+    hostname: Mapped[str | None] = mapped_column(String(253))
     note: Mapped[str | None] = mapped_column(String(128))
-    nvme_devices: Mapped[list[str] | None] = mapped_column(JSONB)  # TopoLVM VG 设备(可选)
+    nvme_devices: Mapped[list[str] | None] = mapped_column(JSONB)
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
-    phase: Mapped[str | None] = mapped_column(String(32))  # 脚本细粒度进度
+    phase: Mapped[str | None] = mapped_column(String(32))
     error: Mapped[str | None] = mapped_column(Text)
-    node_name: Mapped[str | None] = mapped_column(String(253))  # bootstrap 上报
+    node_name: Mapped[str | None] = mapped_column(String(253))
     reported_ip: Mapped[str | None] = mapped_column(String(64))
     os_info: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    gpu_info: Mapped[list[dict[str, Any]] | None] = mapped_column(
-        JSONB
-    )  # 全卡清单 [{name, memory_mib?}]
+    gpu_info: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
     expires_at: Mapped[datetime]
-    last_report_at: Mapped[datetime | None]  # 心跳:对账器判失联
+    last_report_at: Mapped[datetime | None]
     joined_at: Mapped[datetime | None]
-    created_by: Mapped[int]  # AdminUser.id(仅追溯,不建外键,同 platform_settings 惯例)
+    created_by: Mapped[int]
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
 
 class NodeSpec(Base):
-    """节点规格台账:巡检(nodes/patrol.py,60s)从 K8s 实况 + 装机登记收敛;业务只读它。
-    节点消失先置 Missing,last_seen 超 7 天删行;上架校验只认 Ready;未打池标签节点 unlabeled=True。
-    两个期望态列由管理端写、handler 与巡检收敛:desired_unschedulable(cordon)、desired_pool(切池)。
+    """巡检收敛的节点台账;消失置 Missing,last_seen 超 7 天删行。
+
+    管理端写 desired_unschedulable 与 desired_pool;非空 desired_pool 优先于注册登记。
     """
 
     __tablename__ = "node_specs"
@@ -54,26 +52,22 @@ class NodeSpec(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     node_name: Mapped[str] = mapped_column(String(253), unique=True)
     pool_label: Mapped[str | None] = mapped_column(String(32))
-    unlabeled: Mapped[bool] = mapped_column(default=False)  # 无 superdl.io/pool 标签
-    gpu_model_raw: Mapped[str | None] = mapped_column(String(128))  # nvidia-smi/GFD 原文
-    gpu_model: Mapped[str | None] = mapped_column(String(32))  # canonical;None=未识别
-    label_synced: Mapped[bool] = mapped_column(default=False)  # superdl.io/gpu-model 已收敛
+    unlabeled: Mapped[bool] = mapped_column(default=False)
+    gpu_model_raw: Mapped[str | None] = mapped_column(String(128))
+    gpu_model: Mapped[str | None] = mapped_column(String(32))
+    label_synced: Mapped[bool] = mapped_column(default=False)
     gpu_count: Mapped[int] = mapped_column(default=0)
-    gpu_used: Mapped[int] = mapped_column(default=0)  # 展示用,60s 粒度
-    vram_gb: Mapped[int] = mapped_column(default=0)  # 单卡显存;0=未知
+    gpu_used: Mapped[int] = mapped_column(default=0)
+    vram_gb: Mapped[int] = mapped_column(default=0)
     vcpu: Mapped[int] = mapped_column(default=0)
     mem_gb: Mapped[int] = mapped_column(default=0)
     disk_gb: Mapped[int] = mapped_column(default=0)
-    # 来自装机登记快照 os_info;未经本平台装机则为空
     driver_version: Mapped[str | None] = mapped_column(String(32))
     cuda_version: Mapped[str | None] = mapped_column(String(16))
-    status: Mapped[str] = mapped_column(String(16), index=True)  # Ready/NotReady/Cordoned/Missing
-    # cordon 期望态:管理端写入,handler/巡检按它收敛
+    status: Mapped[str] = mapped_column(String(16), index=True)
     desired_unschedulable: Mapped[bool | None]
-    # 期望池:管理端切池写入,handler/巡检按它收敛。**非空即覆盖注册登记作为池事实源,且不清空**
-    # (Node 对象被删重建时 kubelet 按旧 config.yaml 带回旧池标签,只认登记就纠不回来)
     desired_pool: Mapped[str | None] = mapped_column(String(8))
-    last_seen: Mapped[datetime]  # 最近一次 K8s 可见
+    last_seen: Mapped[datetime]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
@@ -84,26 +78,23 @@ class ClusterStatus(Base):
     __tablename__ = "cluster_status"
     __table_args__ = (CheckConstraint("id = 1", name="singleton"),)
 
-    id: Mapped[int] = mapped_column(primary_key=True)  # 恒为 1
+    id: Mapped[int] = mapped_column(primary_key=True)
     api_reachable: Mapped[bool] = mapped_column(default=False)
     k8s_version: Mapped[str | None] = mapped_column(String(64))
-    distro: Mapped[str | None] = mapped_column(String(16))  # rke2 / k3s / None=未知
+    distro: Mapped[str | None] = mapped_column(String(16))
     hami_ready: Mapped[bool] = mapped_column(default=False)
     dcgm_present: Mapped[bool] = mapped_column(default=False)
     kps_present: Mapped[bool] = mapped_column(default=False)
     gpu_operator_present: Mapped[bool] = mapped_column(default=False)
     kata_runtimeclass: Mapped[bool] = mapped_column(default=False)
     nvidia_runtimeclass: Mapped[bool] = mapped_column(default=False, server_default="false")
-    # Gateway 对象 status Programmed=True
     gateway_ready: Mapped[bool] = mapped_column(default=False, server_default="false")
     cert_manager_ready: Mapped[bool] = mapped_column(default=False, server_default="false")
     nodes_ready: Mapped[int] = mapped_column(default=0, server_default="0")
     nodes_total: Mapped[int] = mapped_column(default=0, server_default="0")
     storage_classes: Mapped[list[str] | None] = mapped_column(JSONB)
-    pools: Mapped[dict[str, Any] | None] = mapped_column(JSONB)  # 池→节点数
-    # 池→Ready 且可调度的节点数;档位可用性看这个,不看 pools
+    pools: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     pools_ready: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    # 体检项 key → 探测事实(状态 / 主数字 / 事实行 / 对象表)。布尔列只够门禁用
     component_facts: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     error: Mapped[str | None] = mapped_column(Text)
     probed_at: Mapped[datetime]

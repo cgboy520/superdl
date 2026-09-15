@@ -61,7 +61,6 @@ function MountOverview({ priceText }: { priceText: string }) {
   const { t } = useTranslation();
   const { token } = theme.useToken();
   const colors = useThemeColors();
-  // md 以下改竖排
   const screens = Grid.useBreakpoint();
   const seg = (title: string, desc: string, color: string) => (
     <div
@@ -98,7 +97,6 @@ export function DeleteDiskModal({ disk, onClose }: { disk: DiskOut | null; onClo
       onClose();
     },
   });
-  // 两道闸:键入盘名 + 勾选数据清除(ui-ux-spec §1 规则 7);取消键复用 create.cancel
   return (
     <TypeConfirmModal
       open={Boolean(disk)}
@@ -133,7 +131,6 @@ function ExpiryCell({
 }) {
   const { formatDaysLeft } = useFormat();
   const { t } = useTranslation();
-  // 宽限/冻结天数读 /policies;未就绪用无数字兜底句
   const policyTip =
     graceDays != null && frozenDays != null
       ? t("copy.diskExpirePolicy", { graceDays, frozenDays })
@@ -166,7 +163,6 @@ function ExpiryCell({
 function StoragePage() {
   const { t } = useTranslation();
   const { message } = App.useApp();
-  // 数据盘状态由欠费巡检驱动(小时级):稳态 30s 单档
   const auto = useAutoRefresh(POLL.steady);
   const {
     data: disks,
@@ -184,7 +180,6 @@ function StoragePage() {
   const [expandTarget, setExpandTarget] = useState<DiskOut | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DiskOut | null>(null);
   const [newSize, setNewSize] = useState(100);
-  // 新建盘:名称可选(空则自动生成),容量初值取策略下限
   const [createName, setCreateName] = useState("");
   const [createSize, setCreateSize] = useState<number>();
   const createSizeValue = createSize ?? policies?.disk_min_gb ?? 100;
@@ -195,7 +190,6 @@ function StoragePage() {
   const graceDays = policies?.disk_grace_days;
   const frozenDays = policies?.disk_frozen_days;
 
-  // 幂等键按「提交序号 + 盘名 + 容量」派生;建成才递增序号
   const [submitSeq, setSubmitSeq] = useState(0);
   const createDisk = useCreateDisk({
     onSuccess: () => {
@@ -384,7 +378,6 @@ function StoragePage() {
         >
           {expandTarget && policies && (
             <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
-              {/* 基线 = 当前容量,估算只算新增部分;差价按本盘快照价 */}
               <DiskSizeField
                 value={newSize}
                 onChange={setNewSize}

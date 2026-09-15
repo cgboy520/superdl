@@ -1,17 +1,13 @@
-# full 档(RKE2 生产):全组件。用法:helmfile -e full apply
 cilium: {enabled: true}
 gpuOperator: {enabled: true}
 hami: {enabled: true}
-kataDeploy: {enabled: true}   # dedicated 档运行时;chart 按 k8sDistribution=rke2 写 rke2 的 containerd 配置
+kataDeploy: {enabled: true}
 kps: {enabled: true}
 topolvm: {enabled: true}
-# 数据盘后端,两档都必须有:应用层按名核对 superdl-cephfs,缺了数据盘不可售
 rookCeph: {enabled: true}
 certManager: {enabled: true}
-acmeDns: {enabled: true}   # DNS01 中转(公网 53 经真实 LB 暴露);随 cert-manager presync 应用
-envoyGateway: {enabled: true}   # 北向唯一入口(Gateway API);ns envoy-gateway-system 控制面与 Envoy 数据面同住
-# 平台库进 K8s(CloudNativePG),full 档默认启用;改 false = 托管 PG,preflight 要求 SUPERDL_MANAGED_PG_PITR_ACK=yes(deploy/README.md「生产数据库要求」)
+acmeDns: {enabled: true}
+envoyGateway: {enabled: true}
 cnpg: {enabled: true}
-# 日志栈:Loki + Alloy;API 审计日志留存 ≥6 个月
 loki: {enabled: true}
 logCollector: {enabled: true}

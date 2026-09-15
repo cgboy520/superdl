@@ -24,7 +24,6 @@ function DarkShell({ children }: { children: ReactNode }) {
         components: adminThemeComponents,
       }}
     >
-      {/* JS 侧语义色固定管理端色板 */}
       <ThemeProvider value="admin">{children}</ThemeProvider>
     </ConfigProvider>
   );

@@ -34,7 +34,7 @@ def test_billing_month_range():
 
 def test_local_day_range():
     """参数化本地日界:东八区 8/19 全天 = UTC 8/18 16:00 ~ 8/19 16:00。"""
-    at = datetime(2026, 8, 19, 3, 30, tzinfo=UTC)  # 北京 11:30
+    at = datetime(2026, 8, 19, 3, 30, tzinfo=UTC)
     start, end = local_day_range(480, at=at)
     assert start == datetime(2026, 8, 18, 16, 0, tzinfo=UTC)
     assert end == datetime(2026, 8, 19, 16, 0, tzinfo=UTC)

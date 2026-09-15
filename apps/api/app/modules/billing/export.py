@@ -1,7 +1,4 @@
-"""账单 CSV 导出:流式生成,单响应行数硬上限 + 截断标记行。
-
-转义/时区/上限/流式骨架在 app.core.csvexport(管理端导出共用);本文件只留业务表查询与列定义。
-"""
+"""计费 CSV 流式导出;行数受上限约束,超限写截断标记行。"""
 
 from collections.abc import AsyncIterator
 from datetime import datetime
@@ -118,7 +115,6 @@ _ORDER_CHANNEL_LABEL: dict[str, dict[str, str]] = {
     "en-US": {"wechat": "WeChat Pay", "alipay": "Alipay", "mock": "Mock"},
 }
 
-# 状态/渠道文案与 packages/ui shared.json 同一口径
 _REFUND_STATUS_LABEL: dict[str, dict[str, str]] = {
     "zh-CN": {
         "pending": "待审批",
@@ -230,7 +226,7 @@ def stream_admin_orders_csv(
     tz_offset_minutes: int = BILLING_TZ_OFFSET_MINUTES,
     lang: str = "zh-CN",
 ) -> AsyncIterator[str]:
-    """管理端充值订单 CSV(降序;筛选口径与 GET /admin/v1/orders 一致)。"""
+    """按状态、订单号、用户与创建日窗口导出充值订单 CSV,按 id 降序。"""
     stmt = wallet.admin_orders_query(
         status=status, order_no=order_no, user_id=user_id, day_range=day_range
     )
@@ -266,7 +262,7 @@ def stream_admin_refunds_csv(
     tz_offset_minutes: int = BILLING_TZ_OFFSET_MINUTES,
     lang: str = "zh-CN",
 ) -> AsyncIterator[str]:
-    """管理端退款单 CSV(降序;筛选口径与 GET /admin/v1/refunds 一致)。"""
+    """按状态与申请日窗口导出退款单 CSV,按 id 降序。"""
     stmt = refunds.admin_refunds_query(status=status, day_range=day_range)
     status_labels = _REFUND_STATUS_LABEL[lang]
     channel_labels = _PAYOUT_CHANNEL_LABEL[lang]
@@ -295,7 +291,7 @@ def stream_admin_refunds_csv(
 
 
 def mask_invoice_identity(value: str) -> str:
-    """发票抬头/邮箱的默认脱敏(复用 mask_id_name:留首字符,其余打星)。"""
+    """脱敏发票抬头或邮箱;保留多字串首字,单字全掩,空串不变。"""
     return account_service.mask_id_name(value) if value else value
 
 
@@ -309,9 +305,9 @@ def stream_admin_invoices_csv(
     reveal: bool = False,
     row_counter: dict[str, Any] | None = None,
 ) -> AsyncIterator[str]:
-    """管理端发票申请 CSV(降序;筛选口径与 GET /admin/v1/invoices 一致)。
+    """按状态与账期导出发票 CSV,按 id 降序;默认脱敏抬头与邮箱,税号不脱敏。
 
-    reveal=False(默认)脱敏抬头与邮箱;row_counter 由 row() 边吐边记实际行数,供调用方落审计。
+    reveal=True 时调用方须校验权限与事由并落审计;row_counter 累计已格式化的数据行数。
     """
     stmt = invoices.admin_invoices_query(status=status, period=period)
     status_labels = _INVOICE_STATUS_LABEL[lang]

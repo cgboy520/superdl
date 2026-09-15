@@ -1,6 +1,4 @@
-/** 顶栏(56px)。public:品牌渐变底,中部锚点导航 + 右侧登录 / 免费注册(已登录换「进入控制台」);
- *  console:中性底(与侧栏同色 + 下边线),只留 logo 与右区(余额 / ⌘K / 通知 / 主题 / 用户菜单,由壳经 right 注入)。
- *  窄屏(<lg)左侧出汉堡:console 打开控制台导航 Drawer,public 打开锚点导航 Drawer。 */
+/** 顶栏:public 使用品牌渐变与锚点导航;console 使用中性底与 right 插槽。 */
 
 import { MenuOutlined, MoonOutlined, SunOutlined } from "@ant-design/icons";
 import { brand, brandInverseButtonStyle, fontSize, layout, space } from "@superdl/ui";

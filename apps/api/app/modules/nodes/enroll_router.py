@@ -30,7 +30,7 @@ def _script_body() -> str:
 
 
 def _served_script() -> str:
-    """实际下发的脚本正文:只替换第一次出现的 __API_BASE__(另一处是护栏比较字面量)。"""
+    """脚本正文仅替换首个 __API_BASE__。"""
     return _script_body().replace("__API_BASE__", get_settings().public_base_url.rstrip("/"), 1)
 
 

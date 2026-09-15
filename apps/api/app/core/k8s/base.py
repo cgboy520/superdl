@@ -4,20 +4,13 @@ import kubernetes 客户端。"""
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
-# StorageClass 名,与 deploy/cluster/values/{topolvm,rook-ceph-cluster}.yaml 一致;下发门禁按名核对
-INSTANCE_DISK_STORAGE_CLASS = "topolvm-provisioner"  # 实例盘:节点本地 NVMe LV
-# 数据盘:CephFS。一盘一 PVC,PVC 容量即硬配额(CSI 建带配额的 subvolume),不另下发。
-# 选 CephFS 而非 FUSE 类后端:内核 cephfs 声明 FS_ALLOW_IDMAP,能挂进 hostUsers: false 的租户 Pod
+INSTANCE_DISK_STORAGE_CLASS = "topolvm-provisioner"
 DATA_DISK_STORAGE_CLASS = "superdl-cephfs"
 
-# 北向入口坐标,与 deploy/app/k8s/04-gateway.yaml 的 Gateway 逐字一致
-GATEWAY_NAMESPACE = "superdl"  # Gateway 对象所在 ns(= 平台自身 ns)
+GATEWAY_NAMESPACE = "superdl"
 GATEWAY_NAME = "superdl"
-# 租户 Jupyter listener(*.app.<域名>),唯一开 allowedRoutes Selector 的
 GATEWAY_APP_LISTENER = "app-https"
-# 服务端点 listener(*.svc.<域名>),只有它挂 SecurityPolicy.extAuth
 GATEWAY_SVC_LISTENER = "svc-https"
-# Gateway API 资源坐标(CustomObjectsApi)
 GATEWAY_API_GROUP = "gateway.networking.k8s.io"
 GATEWAY_API_VERSION = "v1"
 HTTPROUTE_PLURAL = "httproutes"
@@ -35,12 +28,12 @@ def service_endpoint_service_name(instance_name: str) -> str:
 
 
 def instance_disk_pvc_name(instance_name: str) -> str:
-    """实例盘 PVC 名。平台自管生命周期,只在释放/回收时删,不用 Pod 拥有的 ephemeral volume。"""
+    """返回平台管理的实例盘 PVC 名。"""
     return f"{instance_name}-root"
 
 
 def data_disk_pvc_name(disk_uuid: str) -> str:
-    """数据盘 PVC 名(租户 ns 内唯一);uuid 是 32 位 hex,拼出来天然是合法 DNS 名。"""
+    """返回数据盘 PVC 名;调用方须提供合法的 disk_uuid。"""
     return f"disk-{disk_uuid}"
 
 
@@ -51,42 +44,34 @@ def instance_env_secret_name(instance_name: str) -> str:
 
 @dataclass(frozen=True)
 class InstancePodSpec:
-    """创建一个租户实例所需的全部 K8s 参数(由 orchestrator + gpu_adapter 产出)。"""
+    """租户实例的 K8s 参数;敏感环境变量必须放入 secret_env,不得放入 env。"""
 
     namespace: str
-    name: str  # pod/svc/ingress 同名,= instance uuid
+    name: str
     image: str
-    gpu_resources: dict[
-        str, str
-    ]  # 资源请求,如 {"nvidia.com/gpu": "1", "nvidia.com/gpucores": "50"}
-    runtime_class: str | None  # kata-qemu(整卡)/ None(runc)
-    host_users: bool  # False = 开 user namespaces(共享池加固)
+    gpu_resources: dict[str, str]
+    runtime_class: str | None
+    host_users: bool
     vcpu: int
     mem_gb: int
     disk_gb: int
-    # NodePort;None = 不开 SSH
     ssh_node_port: int | None
-    jupyter_host: str  # <uuid>.app.<域名>,HTTPRoute hostname
-    env: dict[str, str] = field(default_factory=dict)  # 非敏感环境变量
-    # 敏感环境变量(JUPYTER_TOKEN 等):写 per-instance Secret,Pod 以 secretKeyRef 引用
+    jupyter_host: str
+    env: dict[str, str] = field(default_factory=dict)
     secret_env: dict[str, str] = field(default_factory=dict)
     authorized_keys: tuple[str, ...] = ()
-    node_selector: dict[str, str] = field(default_factory=dict)  # 池标签
-    data_disk_pvc: str | None = None  # 数据盘 PVC 名(挂 /root/data);None = 未挂盘
-    scheduler_name: str | None = None  # 指定调度器(HAMi 池 = hami-scheduler)
-    annotations: dict[str, str] = field(default_factory=dict)  # 如 HAMi use-gputype
-    # 镜像拉取凭据 Secret 名(core/registry.PULL_SECRET_NAME);None = 不引用
+    node_selector: dict[str, str] = field(default_factory=dict)
+    data_disk_pvc: str | None = None
+    scheduler_name: str | None = None
+    annotations: dict[str, str] = field(default_factory=dict)
     image_pull_secret: str | None = None
 
-    # 服务型实例专用;dev 形态全取默认。Never = 容器退出即终态;Always = kubelet 原地重启容器
     restart_policy: str = "Never"
-    command: tuple[str, ...] | None = None  # 覆盖镜像 ENTRYPOINT;None = 用镜像自带
+    command: tuple[str, ...] | None = None
     args: tuple[str, ...] | None = None
-    service_port: int | None = None  # 非空 → 建 <name>-svc ClusterIP + 服务 HTTPRoute
-    service_host: str | None = None  # <slug>.svc.<域名>,服务 HTTPRoute 的 hostname
-    # 非空 → 挂 readinessProbe + startupProbe(httpGet)
+    service_port: int | None = None
+    service_host: str | None = None
     health_path: str | None = None
-    # False → 不建 SSH NodePort Service
     with_ssh: bool = True
 
 
@@ -100,23 +85,19 @@ class NodePortTaken(Exception):
 
 @dataclass(frozen=True)
 class PodStatus:
-    """Pod 状态(get_status 与 list_instance_pods 同形状);LIST 条目带 namespace/name 与 labels
-    (泄漏回收据 labels 豁免受管 Job 的子 Pod)。"""
+    """Pod 状态;deleting 表示已请求删除但对象仍存在,独立于 phase。"""
 
     exists: bool
     ready: bool = False
-    phase: str = "Unknown"  # Pending / Running / Succeeded / Failed / Unknown
+    phase: str = "Unknown"
     node_name: str | None = None
-    # deletionTimestamp 已设 = Terminating(phase 仍 Running),判活看这个字段
     deleting: bool = False
     namespace: str = ""
     name: str = ""
     labels: dict[str, str] = field(default_factory=dict)
 
 
-# 体检项五态。ok/degraded/down/disabled 由探测侧按事实判;unknown 只由渲染侧在快照过期时覆写。
 ComponentState = Literal["ok", "degraded", "down", "disabled", "unknown"]
-# 事实的着色意图;由探测侧标注,前端按语义色渲染,不在文案里写形容词
 FactTone = Literal["normal", "warn", "bad"]
 
 
@@ -154,7 +135,7 @@ def _fact_to_json(f: ComponentFact) -> dict[str, str]:
 
 
 def component_facts_to_json(facts: dict[str, ComponentFacts]) -> dict[str, Any]:
-    """落 JSONB。dataclass → 原始 dict,不用 asdict:tuple 要显式转 list 才好序列化。"""
+    """将组件事实转换为可写入 JSONB 的字典和列表。"""
     return {
         key: {
             "state": cf.state,
@@ -167,7 +148,7 @@ def component_facts_to_json(facts: dict[str, ComponentFacts]) -> dict[str, Any]:
 
 
 def component_facts_from_json(raw: Any) -> dict[str, ComponentFacts]:
-    """读 JSONB。库里可能是上一版写的行,结构对不上就整项丢弃(渲染侧按缺项处理)。"""
+    """解析组件事实;跳过非字典或 state 非字符串的项,过滤无效明细并归一化字段。"""
     if not isinstance(raw, dict):
         return {}
     out: dict[str, ComponentFacts] = {}
@@ -215,11 +196,7 @@ def _fact_from_json(v: Any) -> ComponentFact | None:
 
 @dataclass(frozen=True)
 class ComponentDetail:
-    """体检项的实时深探结果:快照之外的现场明细。
-
-    快照是 60s 一轮的巡检产物,回答「就绪几个」;深探回答「为什么不就绪」——
-    Pod 级失败原因、最近告警事件、证书到期日,这些变化快、体量大,不适合常驻落库。
-    """
+    """体检项实时明细:事实、Pod 或证书对象、告警事件。"""
 
     facts: tuple[ComponentFact, ...] = ()
     pods: tuple[ComponentObject, ...] = ()
@@ -231,24 +208,21 @@ class ClusterProbe:
     """集群能力探测快照(nodes 巡检落 cluster_status 表,门禁与集群页读表不实时探测)。"""
 
     api_reachable: bool
-    k8s_version: str | None = None  # gitVersion 原文,如 v1.36.2+rke2r1
-    distro: str | None = None  # rke2 / k3s / None=未知(derive_distro)
-    hami_ready: bool = False  # hami-scheduler Deployment ready≥1
+    k8s_version: str | None = None
+    distro: str | None = None
+    hami_ready: bool = False
     dcgm_present: bool = False
     kps_present: bool = False
     gpu_operator_present: bool = False
-    kata_runtimeclass: bool = False  # RuntimeClass kata-qemu 存在
-    nvidia_runtimeclass: bool = False  # RuntimeClass nvidia 存在(k3s 上 shared 档下发的前提)
-    # Gateway 对象 status.conditions 的 Programmed=True
+    kata_runtimeclass: bool = False
+    nvidia_runtimeclass: bool = False
     gateway_ready: bool = False
-    cert_manager_ready: bool = False  # cert-manager ready≥1(泛域名证书签发与续期)
-    nodes_ready: int = 0  # Ready 且可调度的节点数
-    nodes_total: int = 0  # 集群节点总数(含未打池标签)
+    cert_manager_ready: bool = False
+    nodes_ready: int = 0
+    nodes_total: int = 0
     storage_classes: tuple[str, ...] = ()
-    pools: dict[str, int] = field(default_factory=dict)  # 池→节点数,未打标计 unlabeled
-    # 池→Ready 且可调度的节点数。档位可用性看这个,不看 pools:池里三台全 NotReady 一样开不了机
+    pools: dict[str, int] = field(default_factory=dict)
     pools_ready: dict[str, int] = field(default_factory=dict)
-    # 体检项 key → 探测事实。布尔列只够门禁用,面板与抽屉读这里
     component_facts: dict[str, ComponentFacts] = field(default_factory=dict)
     error: str | None = None
 
@@ -268,15 +242,15 @@ def derive_distro(git_version: str | None) -> str | None:
 class PrewarmJobStatus:
     """镜像预热 Job 状态。"""
 
-    state: str  # absent / running / succeeded / failed
-    message: str | None = None  # 失败原因(Job condition / Pod waiting reason)
+    state: str
+    message: str | None = None
 
 
 class K8sOrchestrator(Protocol):
     """全部操作必须幂等(outbox at-least-once 语义)。"""
 
     async def ensure_namespace(self, namespace: str) -> None:
-        """创建租户 namespace + 默认拒东西向 NetworkPolicy + ResourceQuota。已存在则跳过。"""
+        """创建或更新租户 namespace 标签、RBAC、NetworkPolicy、ResourceQuota 和 LimitRange。"""
         ...
 
     async def ensure_pull_secret(
@@ -287,13 +261,16 @@ class K8sOrchestrator(Protocol):
         ...
 
     async def create_instance(self, spec: InstancePodSpec) -> None:
-        """创建 Pod + Service + HTTPRoute,已存在则跳过。dev 建 SSH NodePort + Jupyter ClusterIP +
-        Jupyter HTTPRoute;service 建(with_ssh 时 SSH)+ <name>-svc ClusterIP + 服务 HTTPRoute。"""
+        """创建实例盘、环境变量 Secret、Pod、Service 和 HTTPRoute,支持重放。
+
+        Secret 和 SSH 端口可收敛;删除中的 Pod/SSH Service 须等待消失后重试。
+        """
         ...
 
     async def delete_instance(self, namespace: str, name: str, *, force: bool = False) -> None:
-        """删除该实例的 Pod/Service/HTTPRoute(两种形态的对象都试删,不存在即跳过);不动实例盘。
-        force=True 强删(gracePeriodSeconds=0),只在节点失联时用。"""
+        """删除实例 Pod、Service、HTTPRoute 和环境变量 Secret;忽略不存在的对象,保留实例盘。
+        force=True 使用零宽限期删除,只在节点失联时用。
+        """
         ...
 
     async def delete_instance_disk(self, namespace: str, name: str) -> None:
@@ -304,11 +281,11 @@ class K8sOrchestrator(Protocol):
     async def get_status(self, namespace: str, name: str) -> PodStatus: ...
 
     async def read_instance_logs(self, namespace: str, name: str, *, tail_lines: int) -> str:
-        """读取实例容器日志末尾 tail_lines 行(请求路径直读的唯一例外);调用方自行做鉴权与限流。"""
+        """读取实例容器日志末尾 tail_lines 行;允许请求路径直读,调用方必须鉴权和限流。"""
         ...
 
     async def list_instance_pods(self) -> list[PodStatus]:
-        """全量列出租户实例 Pod 状态(reconciler 每轮一次,替代逐实例 get_status)。"""
+        """列出租户命名空间内受管 Pod 的状态,包含受管 Job 的 Pod。"""
         ...
 
     async def list_instance_endpoints(self) -> list[tuple[str, str]]:
@@ -316,7 +293,7 @@ class K8sOrchestrator(Protocol):
         ...
 
     async def used_node_ports(self) -> set[int]:
-        """集群内受管 Service 当前占用的 NodePort 集合。blocked 端口复检用。"""
+        """返回集群全部 Service 占用的 NodePort,包含非平台对象。"""
         ...
 
     async def ensure_data_disk(self, namespace: str, name: str, size_gb: int) -> None:
@@ -371,18 +348,11 @@ class K8sOrchestrator(Protocol):
         ...
 
 
-GPU_MODEL_NODE_LABEL = (
-    "superdl.io/gpu-model"  # 平台 canonical 型号标签(巡检写入,调度 nodeSelector 依赖)
-)
-# 节点池标签:**只由平台写**(入网对账时打、切池时整套换),节点侧不自声明;kata 与 hami 永不混布
+GPU_MODEL_NODE_LABEL = "superdl.io/gpu-model"
 POOL_NODE_LABEL = "superdl.io/pool"
-# GPU Operator 的 operand 落点标签:切池时随池标签一起收敛(准入策略③ 白名单里的两个具名键)
 GPU_WORKLOAD_CONFIG_LABEL = "nvidia.com/gpu.workload.config"
 GPU_DEPLOY_DEVICE_PLUGIN_LABEL = "nvidia.com/gpu.deploy.device-plugin"
-# 平台受管对象标签:实例 Pod/Service/HTTPRoute/受管 Job/租户 ns 均打;兼作 Gateway listener 的
-# allowedRoutes Selector
 MANAGED_LABEL = "superdl.io/managed"
-# Job 控制器打在子 Pod 上的标签:泄漏回收的豁免依据
 JOB_NAME_LABEL = "batch.kubernetes.io/job-name"
 
 
@@ -394,14 +364,11 @@ class NodeInfo:
     pool_label: str
     gpu_total: int
     gpu_used: int
-    status: str  # Ready / NotReady / Cordoned
-    # 节点物理规格(node.status.capacity;0 = 未上报)
+    status: str
     vcpu: int = 0
     mem_gb: int = 0
     disk_gb: int = 0
-    # GFD 型号原文标签(nvidia.com/gpu.product)与平台 canonical 标签当前值(空串=无)
     gpu_model_label: str = ""
     model_label_current: str = ""
-    # GFD 驱动/CUDA 版本(nvidia.com/cuda.{driver,runtime}-version.full;空串=无)
     driver_version_label: str = ""
     cuda_version_label: str = ""

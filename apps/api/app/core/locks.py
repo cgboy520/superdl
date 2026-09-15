@@ -25,7 +25,10 @@ class LockKey(IntEnum):
 
 @asynccontextmanager
 async def try_advisory_lock(session: AsyncSession, key: LockKey) -> AsyncIterator[bool]:
-    """会话级 try-lock,yield 是否拿到;锁随 session 存续,退出时释放。"""
+    """尝试获取 PostgreSQL 连接级锁并 yield 是否成功,退出时解锁。
+
+    持锁期间调用方不得提交、回滚或更换底层连接。
+    """
     got = (
         await session.execute(text("SELECT pg_try_advisory_lock(:key)"), {"key": int(key)})
     ).scalar_one()

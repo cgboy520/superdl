@@ -25,18 +25,15 @@ vi.mock("../api/mutations", () => ({
   useReleaseInstance: () => ({ mutate: releaseMutate, isPending: false }),
   useSetAutoRenew: () => ({ mutate: autoRenewMutate, isPending: false }),
   useConvertToOnDemand: () => ({ mutateAsync: toOnDemandMutateAsync, isPending: false }),
-  // RenewModal 的两个提交 hook 也要有桩
   useRenewInstance: () => ({ mutate: vi.fn(), isPending: false }),
   useSubscribeInstance: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
-// 无 Router 上下文:Link 降级为原生 <a>,navigate 为空实现
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ to, children }: { to: string; children: ReactNode }) => <a href={to}>{children}</a>,
   useNavigate: () => vi.fn(),
 }));
 
-// RenewModal 会拉钱包与策略,给最小数据;ConnectMenu 打开后拉 access
 vi.mock("../api/queries", () => ({
   useInstanceAccess: () => ({
     data: { ssh_command: "ssh -p 30022 root@gpu.example.com", jupyter_url: "https://j.example.com" },
@@ -113,12 +110,10 @@ function renderWithApp(ui: React.ReactElement) {
   return render(<App>{ui}</App>);
 }
 
-// hoisted mock 调用历史逐用例清零
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
-// antd 两字按钮插空格,可访问名是「开 机」(菜单项也是按钮,「续 费」同理)
 const BTN_START = /开\s*机/;
 const BTN_STOP = /关\s*机/;
 const BTN_MORE = /更\s*多/;
@@ -153,7 +148,6 @@ describe("InstanceActions", () => {
     renderWithApp(<InstanceActions instance={makeInstance("running")} />);
     await user.click(screen.getByRole("button", { name: BTN_STOP }));
     const dialog = await screen.findByRole("dialog");
-    // antd v6 confirm 标题渲染两处(.ant-modal-title 与 .ant-modal-confirm-title)
     expect(within(dialog).getAllByText("确认关机?").length).toBeGreaterThan(0);
     await user.click(within(dialog).getByRole("button", { name: BTN_STOP }));
     expect(stopMutateAsync).toHaveBeenCalledWith("u-1");
@@ -180,7 +174,6 @@ describe("InstanceActions", () => {
     const dialog = await screen.findByRole("dialog");
     const confirm = within(dialog).getByRole("button", { name: "确认释放" });
     expect(confirm).toBeDisabled();
-    // 两道闸缺一不可(ui-ux-spec 规则 4)
     await user.type(within(dialog).getByPlaceholderText("demo-vm"), "demo-vm");
     expect(confirm).toBeDisabled();
     await user.click(within(dialog).getByRole("checkbox"));
@@ -334,7 +327,6 @@ describe("ReleaseModal", () => {
       <ReleaseModal instance={makeSubscription("stopped", { expiresAt: FUTURE })} open onClose={() => {}} />,
     );
     const dialog = await screen.findByRole("dialog");
-    // FUTURE = 20 天后到期
     expect(within(dialog).getByText(/预付费用不退款,剩余 20 天将一并作废/)).toBeInTheDocument();
   });
 

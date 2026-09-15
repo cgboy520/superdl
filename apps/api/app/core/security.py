@@ -16,21 +16,18 @@ from app.core.errors import unauthorized
 from app.core.timeutil import now_utc
 
 TokenScope = Literal["user", "admin"]
-# access/refresh 之外:mfa_setup(绑定票 10min)/mfa_ticket(登录二要素票 5min)
 TokenType = Literal["access", "refresh", "mfa_setup", "mfa_ticket"]
 
-# bcrypt 只认前 72 字节,口令须按字节数再拦一道
 PASSWORD_MAX_BYTES = 72
 
 
 def check_password_bytes(plain: str) -> str:
-    """哈希前按字节数拦截超长口令(max_length 数的是字符,这里按字节再拦一道)。"""
+    """拒绝 UTF-8 编码超过 PASSWORD_MAX_BYTES 的口令,否则原样返回。"""
     if len(plain.encode()) > PASSWORD_MAX_BYTES:
         raise ValueError("密码过长:UTF-8 编码后不得超过 72 字节")
     return plain
 
 
-# 请求体里的新口令:≥12 字符、≤72 字节(bcrypt 上限);两端注册 / 改密 / 重置共用,校验失败即 422
 PasswordStr = Annotated[
     str, Field(min_length=12, max_length=128), AfterValidator(check_password_bytes)
 ]
@@ -44,7 +41,7 @@ def hash_password_sync(plain: str) -> str:
 
 @cache
 def dummy_password_hash() -> str:
-    """不存在的账号也走一次哈希校验(拉平时序);惰性生成,cost 与真实哈希一致。"""
+    """惰性生成并缓存占位口令哈希,使用当前配置的 bcrypt cost。"""
     return hash_password_sync("dummy-timing-equalizer")
 
 
@@ -55,7 +52,6 @@ def verify_password_sync(plain: str, hashed: str) -> bool:
         return False
 
 
-# bcrypt 专属线程池(固定小上限),不与默认执行器共用:渠道 SDK 等阻塞调用打满默认池时登录不受牵连
 _BCRYPT_MAX_PARALLEL = 4
 _BCRYPT_EXECUTOR = ThreadPoolExecutor(max_workers=_BCRYPT_MAX_PARALLEL, thread_name_prefix="bcrypt")
 
@@ -87,7 +83,10 @@ def create_token(
     iat: datetime | None = None,
     ttl_seconds: int | None = None,
 ) -> str:
-    """签发 JWT。jti/iat 仅 refresh 宽限重放路径传入;ttl_seconds 仅 mfa_* 短票传入。"""
+    """签发 HS256 JWT;非 access 类型默认使用 refresh TTL,mfa_* 调用方须显式传短 TTL。
+
+    extra 可覆盖标准 claims,只允许传入受信任的数据。
+    """
     settings = get_settings()
     if ttl_seconds is not None:
         ttl = ttl_seconds
@@ -119,7 +118,7 @@ def decode_token(
     expected_type: TokenType = "access",
     leeway_seconds: int = 0,
 ) -> dict[str, Any]:
-    """leeway_seconds:exp 校验宽限(管理端续期用)。"""
+    """验证签名、audience、issuer、时间及 typ;leeway_seconds 为时间校验宽限,失败抛 401。"""
     settings = get_settings()
     try:
         payload = jwt.decode(

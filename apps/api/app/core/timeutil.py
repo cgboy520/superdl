@@ -22,7 +22,6 @@ def hour_floor(dt: datetime) -> datetime:
     return dt.replace(minute=0, second=0, microsecond=0)
 
 
-# 计费日界按北京时间(UTC+8)
 BILLING_TZ_OFFSET_MINUTES = 480
 BILLING_DAY_OFFSET = timedelta(minutes=BILLING_TZ_OFFSET_MINUTES)
 

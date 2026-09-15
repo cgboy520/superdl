@@ -16,9 +16,6 @@ from app.modules.adminapi.schemas import (
 router = APIRouter(tags=["admin"])
 
 
-# ---------- 管理员账号(角色:仅 admin) ----------
-
-
 @router.get("/admins", dependencies=[require_roles()])
 async def admin_list_admins(session: DbSession) -> list[AdminAccountOut]:
     return [AdminAccountOut.model_validate(a) for a in await auth_service.list_admins(session)]

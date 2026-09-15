@@ -8,7 +8,6 @@ import { useEffect, type CSSProperties, type ReactNode } from "react";
 import { fontSize } from "../tokens";
 
 export function isMacPlatform(): boolean {
-  // navigator.platform 已废弃;userAgent 覆盖 macOS 与 iOS(iPadOS 桌面模式同样含 Mac)
   return typeof navigator !== "undefined" && /mac|iphone|ipad/i.test(navigator.userAgent);
 }
 

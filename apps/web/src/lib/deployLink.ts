@@ -18,7 +18,6 @@ export function parseDeployDeepLink(search: Record<string, unknown>): DeploySear
   if (Number.isInteger(g) && g >= 1 && g <= 8) out.gpus = g;
   if (typeof search.period === "string" && isBillingPeriod(search.period)) {
     out.period = search.period;
-    // 市场页购买时长透传(1~36)
     const c = Number(search.count);
     if (Number.isInteger(c) && c >= 1 && c <= MAX_PERIOD_COUNT) out.count = c;
   } else if (search.market === "spot") out.market = "spot";

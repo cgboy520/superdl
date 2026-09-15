@@ -1,4 +1,3 @@
-# loki 轻量档:同 chart,存储回落 topolvm(RWO),收紧占用。retention_period 不许砍(API 审计日志 ≥6 个月)
 singleBinary:
   persistence:
     storageClass: topolvm-provisioner

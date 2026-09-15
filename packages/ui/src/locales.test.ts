@@ -1,4 +1,3 @@
-/** 状态表每个 labelKey/hintKey 在 zh/en shared.json 同时存在且非空;shared/errors 目录 zh/en 齐平。 */
 import { describe, expect, it } from "vitest";
 
 import errorsEn from "../locales/en-US/errors.json";
@@ -47,7 +46,6 @@ describe("packages/ui shared locale", () => {
   });
 
   it("shared.json zh/en 齐平(键集、非空、占位符)", () => {
-    // lang.zh「中文」是语言固有名称
     assertLocaleParity(zhCN, enUS, { allowCjkInEn: ["lang.zh"] });
   });
 });

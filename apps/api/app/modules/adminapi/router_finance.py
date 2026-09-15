@@ -57,9 +57,6 @@ if TYPE_CHECKING:
 router = APIRouter(tags=["admin"])
 
 
-# ---------- 财务对账(角色:finance / admin) ----------
-
-
 @router.get("/reconciliation", dependencies=[require_roles("finance", "readonly")])
 async def reconciliation(session: DbSession, day: str) -> ReconciliationOut:
     """日对账:事件计费 vs 指标估算 + diff%(>2% 列差异实例)。"""
@@ -140,12 +137,8 @@ async def admin_ack_alert(
     return _alert_out(row, usernames)
 
 
-# ---------- 调账(发起:finance;复核:另一名 finance/admin) ----------
-
-
 class AdjustmentCreate(BaseModel):
     user_id: int
-    # 带符号金额字符串:严格十进制,禁科学计数法/前导零/超 2 位小数;pattern 自带 ^$ 锚
     amount: str = Field(pattern=r"^-?(0|[1-9]\d{0,11})(\.\d{1,2})?$")
     reason: str = Field(min_length=2, max_length=256)
 
@@ -220,7 +213,6 @@ async def admin_create_adjustment(
     admin: AdminUser = require_roles("finance"),
 ) -> AdjustmentStatusOut:
     """发起调账(双人复核前置)。Idempotency-Key 重放返回已受理的单(200 + X-Idempotent-Replay)。"""
-    # 资金端点限流(每管理员)
     await check_rate_limit(f"admin-adjust:{admin.id}", max_attempts=20, window_seconds=3600.0)
     adj, created = await finance_service.create_adjustment(
         session,
@@ -278,9 +270,6 @@ async def admin_resolve_reversal(
         audit_writer=lambda s: write_audit_sync(request, s),
     )
     return {"status": "resolved", "action": body.action}
-
-
-# ---------- 退款(审批/打款双人制衡;角色:finance / admin) ----------
 
 
 @router.get("/refunds", dependencies=[require_roles("finance", "readonly")])
@@ -361,7 +350,6 @@ async def admin_payout_refund(
         f"refund:{refund_id}",
         detail={"channel": body.channel, "ref": body.ref},
     )
-    # audit_writer 总是要传:重放路径在调用它之前返回,不重复写审计
     req, replayed = await billing_service.payout_refund(
         session,
         refund_id,
@@ -391,12 +379,8 @@ async def admin_cancel_refund(
     return AdminRefundOut.model_validate(req)
 
 
-# ---------- 发票(人工开票;读写均限 finance/admin) ----------
-# 脱敏只覆盖抬头与邮箱;公司票税号不脱敏。
-
-
 def _invoice_reveal(admin: AdminUser, reveal: bool, reason: str | None) -> str:
-    """明文开闸:与 /tenants 实名同一套(readonly 不可 reveal、事由必填)。返回规范化事由。"""
+    """reveal 时校验角色与事由并返回规范化事由,否则返回空串。"""
     return auth_service.ensure_reveal_allowed(role=admin.role, reason=reason) if reveal else ""
 
 
@@ -414,8 +398,6 @@ async def admin_list_invoices(
 
     抬头与邮箱默认脱敏;reveal=true + reason 回明文,按条数与事由落审计。
     """
-    # 脱敏与 CSV 导出同一实现(billing/export.mask_invoice_identity)
-
     reveal_reason = _invoice_reveal(admin, reveal, reason)
     rows = await billing_service.admin_list_invoices(session, status=status, period=period)
     if not reveal:
@@ -462,7 +444,6 @@ async def admin_invoices_export(
     须注册在 /invoices/{invoice_id} 之前。默认脱敏,明文要 reveal + 事由;每次导出都落审计。
     """
     reveal_reason = _invoice_reveal(admin, reveal, reason)
-    # 行数由生成器边吐边记;审计 detail 即计数器,中间件在响应写完后读到最终值
     detail: dict[str, Any] = {
         "rows": 0,
         "reveal": reveal,
@@ -534,9 +515,6 @@ async def admin_reject_invoice(
     return AdminInvoiceOut.model_validate(req)
 
 
-# ---------- 财务流水(角色:finance) ----------
-
-
 @router.get("/orders", dependencies=[require_roles("finance", "readonly")])
 async def admin_list_orders(
     session: DbSession,
@@ -592,9 +570,6 @@ async def admin_orders_export(
     )
 
 
-# ---------- 收入报表(总览 KPI) ----------
-
-
 @router.get("/reports/revenue", dependencies=[require_roles("ops", "finance", "readonly")])
 async def revenue_report(session: DbSession, tz_offset_minutes: int = TzOffset) -> RevenueReportOut:
     """今日/本月消费额(ledger consume 绝对值)与新注册数。本地日界经 tz_offset。"""
@@ -645,9 +620,6 @@ async def admin_backfill_order(
     if replayed:
         mark_idempotent_replay(response)
     return OrderBackfillOut(order_no=order.order_no, status=order.status)
-
-
-# ---------- 结算缺口(角色:finance 读/写) ----------
 
 
 @router.get("/finance/settlement-gaps", dependencies=[require_roles("finance", "readonly")])

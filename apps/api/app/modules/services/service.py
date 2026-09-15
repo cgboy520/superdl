@@ -1,7 +1,4 @@
-"""在线服务门面:部署 / 停止 / 启动 / 删除 / 密钥 / 网关鉴权回调。
-生命周期动作委托 orchestrator.service 的 row 级函数,自己只写 services 行。
-锁序 instance → service → disk → wallet。
-"""
+"""在线服务生命周期、访问密钥与网关鉴权;锁序 instance → service → disk → wallet。"""
 
 import base64
 import secrets
@@ -54,14 +51,9 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-# 单服务活跃密钥上限
 MAX_API_KEYS_PER_SERVICE = 20
-# 端点公网域名左标签前缀,与 deploy 侧 Gateway listener 的 hostname 通配同源
 ENDPOINT_SLUG_PREFIX = "svc-"
 _SLUG_ATTEMPTS = 3
-
-
-# ---------- slug 与域名 ----------
 
 
 def service_url(slug: str) -> str:
@@ -77,7 +69,6 @@ def endpoint_slug_from_host(host: str | None) -> str | None:
     if not name.endswith(suffix):
         return None
     slug = name[: -len(suffix)]
-    # 只收单段左标签 + svc- 前缀
     if "." in slug or not slug.startswith(ENDPOINT_SLUG_PREFIX):
         return None
     return slug
@@ -115,9 +106,6 @@ async def _insert_service(
     raise AssertionError("unreachable")  # pragma: no cover
 
 
-# ---------- 部署 ----------
-
-
 def _instance_request(spec: "ServiceSpecIn", *, name: str | None) -> InstanceRequest:
     """服务表单 → 建实例请求(service_port 非空即服务形态)。"""
     return InstanceRequest(
@@ -143,11 +131,8 @@ def _instance_request(spec: "ServiceSpecIn", *, name: str | None) -> InstanceReq
 async def create_service(
     session: AsyncSession, user_id: int, *, spec: ServiceCreate, idempotency_key: str | None
 ) -> tuple[Service, bool]:
-    """部署服务(202 异步)。返回 (服务, created);created=False = 幂等重放。
-    幂等键落在 instances 行,重放经实例反查服务。
-    """
+    """提交服务与实例部署请求,返回 (服务, created);按实例幂等键重放时 created=False。"""
     req = _instance_request(spec, name=spec.name)
-    # 指纹不含 slug / service_id
     fingerprint = req.fingerprint(user_id, extra=("service", spec.require_api_key, spec.protocol))
     if idempotency_key:
         existing = await orchestrator_service.find_instance_replay(
@@ -172,10 +157,8 @@ async def create_service(
         fingerprint=fingerprint,
     )
     if not created:
-        # 并发同键:按重放返回对方的服务(本事务的 services 行已回滚)
         assert instance.service_id is not None
         return await _service_by_id(session, instance.service_id), False
-    # 实例名与服务同名(在指纹之后落)
     instance.name = svc.name
     svc.current_instance_id = instance.id
     await session.commit()
@@ -184,7 +167,6 @@ async def create_service(
 
 
 RETIRE_TASK_TYPE = "service.retire"
-# 版本更新允许的旧版本状态
 _ROLLOUT_SETTLED = (
     sm_def.RUNNING,
     sm_def.STOPPED,
@@ -207,7 +189,6 @@ async def create_revision(
     """
     svc = await get_service(session, user_id, slug)
     req = _instance_request(spec, name=svc.name)
-    # 指纹按请求原样算(密文沿用只进键名),并入 service_id
     fingerprint = req.fingerprint(
         user_id, extra=("revision", svc.id, tuple(sorted(spec.env_secret_keep)))
     )
@@ -272,11 +253,8 @@ async def create_revision(
     return await _reload(session, svc), True
 
 
-# ---------- 读 ----------
-
-
 async def _reload(session: AsyncSession, svc: Service) -> Service:
-    """commit 后重读(server 侧 onupdate 列不回填,async 会话不可懒加载)。"""
+    """刷新服务行及数据库生成字段。"""
     await session.refresh(svc)
     return svc
 
@@ -325,7 +303,7 @@ async def build_views(
     *,
     instances: dict[int, "Instance"] | None = None,
 ) -> list[ServiceOut]:
-    """批量出参:两次批量查询(实例、包周期概要)。"""
+    """批量组装服务状态、实例详情与容器配置;密文环境变量只返回键名。"""
     by_id = instances if instances is not None else await _instances_of(session, services)
     instance_outs = [InstanceOut.model_validate(i) for i in by_id.values()]
     await orchestrator_service.attach_instance_details(session, instance_outs)
@@ -438,9 +416,6 @@ async def admin_list_services_page(
     return Page[AdminServiceOut](items=items, next_cursor=next_cursor, total=total)
 
 
-# ---------- 生命周期 ----------
-
-
 def _require_live(svc: Service) -> None:
     if svc.released_at is not None:
         raise conflict(key="services.released")
@@ -456,7 +431,7 @@ async def _lock_current(session: AsyncSession, svc: Service) -> tuple["Instance"
     if instance is None:
         raise conflict(key="services.released")
     locked = await session.get(Service, svc.id, with_for_update=True, populate_existing=True)
-    assert locked is not None  # 上面刚取到,同事务内不可能消失
+    assert locked is not None
     _require_live(locked)
     return instance, locked
 
@@ -526,9 +501,6 @@ async def delete_service(session: AsyncSession, user_id: int, slug: str) -> Serv
     return await _reload(session, svc)
 
 
-# ---------- 时间线 / 日志 / 账单 / 版本 ----------
-
-
 async def list_service_events(
     session: AsyncSession, svc: Service, *, cursor: str | None, limit: int | None
 ) -> Page[ServiceEventOut]:
@@ -564,7 +536,7 @@ def _event_fields(e: "InstanceEvent") -> dict[str, Any]:
 async def read_service_logs(
     session: AsyncSession, user_id: int, slug: str, *, tail_lines: int
 ) -> "InstanceLogsOut":
-    """当前版本的容器日志;闸门在 orchestrator 里。"""
+    """读取 rollout 版本的容器日志,无 rollout 时读取当前版本;校验委托编排服务。"""
     svc = await get_service(session, user_id, slug)
     shown = svc.rollout_instance_id or svc.current_instance_id
     if shown is None:
@@ -589,13 +561,10 @@ async def service_bills_page(
 async def list_revisions(
     session: AsyncSession, user_id: int, svc: Service, *, cursor: str | None, limit: int | None
 ):
-    """版本历史 = 该服务下全部实例(含已释放),按版本号降序。"""
+    """分页查询服务的全部版本实例,含已释放实例。"""
     return await orchestrator_service.list_instances_page(
         session, user_id, service_id=svc.id, include_released=True, cursor=cursor, limit=limit
     )
-
-
-# ---------- 访问密钥 ----------
 
 
 async def list_api_keys(session: AsyncSession, user_id: int, slug: str) -> list[ServiceApiKey]:
@@ -615,11 +584,13 @@ async def list_api_keys(session: AsyncSession, user_id: int, slug: str) -> list[
 async def create_api_key(
     session: AsyncSession, user_id: int, slug: str, *, name: str
 ) -> tuple[ServiceApiKey, str]:
-    """新建访问密钥。返回 (行, 明文);明文只此一次,库里只有 HMAC 摘要。不支持 Idempotency-Key。"""
+    """持服务行锁校验活跃密钥配额并创建密钥后提交,返回 (行, 明文)。
+
+    明文仅返回一次,数据库只存 HMAC 摘要与前缀;不支持幂等键。
+    """
     svc = await get_service(session, user_id, slug)
     if svc.released_at is not None:
         raise conflict(key="services.released")
-    # FOR UPDATE 锁服务行,计数串行
     await session.execute(select(Service.id).where(Service.id == svc.id).with_for_update())
     live = (
         await session.execute(
@@ -640,7 +611,6 @@ async def create_api_key(
         service_id=svc.id,
         name=name,
         key_hash=hash_api_key(plaintext),
-        # 前 11 位(sk- + 8 位)
         key_prefix=plaintext[:11],
     )
     session.add(row)
@@ -665,14 +635,10 @@ async def revoke_api_key(
     if row.revoked_at is None:
         row.revoked_at = now_utc()
         await session.commit()
-        # 鉴权缓存主动失效(跨副本最坏一个 TTL)
         invalidate_endpoint_auth_cache(key_id=row.id)
     return row
 
 
-# ---------- 网关 extAuth 鉴权(缓存 + 校验链) ----------
-# 正向结果进程内缓存 5s:吊销 / 开关翻转 / 删除 / 停机主动失效本进程条目,跨副本最坏一个 TTL;
-# 负结果不缓存
 _ENDPOINT_AUTH_CACHE_TTL_SECONDS = 5.0
 _ENDPOINT_AUTH_CACHE_MAX = 4096
 _LAST_USED_WRITE_INTERVAL_SECONDS = 60.0
@@ -692,7 +658,7 @@ class _EndpointAuthCacheEntry:
     service_id: int
     instance_id: int
     key_id: int | None
-    expires_at: float  # time.monotonic 口径
+    expires_at: float
 
 
 _endpoint_auth_cache: dict[tuple[str, str], _EndpointAuthCacheEntry] = {}
@@ -718,7 +684,6 @@ def _cache_get(slug: str, key_hash: str) -> _EndpointAuthCacheEntry | None:
 def _cache_put(slug: str, key_hash: str, entry: _EndpointAuthCacheEntry) -> None:
     cache = _endpoint_auth_cache
     if len(cache) >= _ENDPOINT_AUTH_CACHE_MAX:
-        # 表有界:先清过期,仍满则整表清空
         now = time.monotonic()
         for k in [k for k, v in cache.items() if v.expires_at <= now]:
             del cache[k]
@@ -746,7 +711,7 @@ def invalidate_endpoint_auth_cache(
 
 
 def clear_endpoint_auth_cache() -> None:
-    """测试隔离用:清进程内缓存。"""
+    """清空进程内鉴权缓存与密钥使用时间写入节流记录。"""
     _endpoint_auth_cache.clear()
     _endpoint_key_last_write.clear()
 
@@ -769,11 +734,13 @@ async def _touch_key_last_used(session: AsyncSession, key_id: int | None) -> Non
 async def verify_endpoint_key(
     session: AsyncSession, *, slug: str | None, key: str | None
 ) -> EndpointAuthResult:
-    """网关 extAuth 回调的校验链:服务存在且未删除 → 当前实例 running → 密钥有效且属于该服务;
-    任一环节不过都抛同一个 401。"""
+    """校验未删除服务、running 当前实例及服务所需密钥;公开服务无需密钥,失败统一 401。
+
+    成功结果按单调时钟缓存 _ENDPOINT_AUTH_CACHE_TTL_SECONDS 秒,失败不缓存;
+    吊销与状态变更主动失效仅影响本进程,其他副本可沿用缓存至到期。
+    """
     if not slug:
         raise _endpoint_denied()
-    # candidates 兼读主密钥轮换世代(crypto.py);缓存键取当前世代([0])
     key_hashes = hash_api_key_candidates(key) if key else []
     key_hash = key_hashes[0] if key_hashes else ""
     cached = _cache_get(slug, key_hash)
@@ -787,7 +754,6 @@ async def verify_endpoint_key(
     ).scalar_one_or_none()
     if svc is None or svc.current_instance_id is None:
         raise _endpoint_denied()
-    # 非 running 一律拒;主键级读且不抛
     if await orchestrator_queries.instance_status(session, svc.current_instance_id) != "running":
         raise _endpoint_denied()
     expires = time.monotonic() + _ENDPOINT_AUTH_CACHE_TTL_SECONDS
@@ -806,7 +772,6 @@ async def verify_endpoint_key(
             select(ServiceApiKey).where(ServiceApiKey.key_hash.in_(key_hashes)).limit(1)
         )
     ).scalar_one_or_none()
-    # service_id 比对:密钥必须属于该服务
     if row is None or row.revoked_at is not None or row.service_id != svc.id:
         raise _endpoint_denied()
     result = EndpointAuthResult(slug=svc.public_slug, key_id=row.id)
@@ -818,8 +783,6 @@ async def verify_endpoint_key(
     await _touch_key_last_used(session, row.id)
     return result
 
-
-# ---------- 迁移监听器(services 行的唯一非请求写入点) ----------
 
 _listener_registered = False
 
@@ -853,7 +816,6 @@ def register_service_listeners() -> None:
             old_id = svc.current_instance_id
             svc.current_instance_id = instance.id
             svc.rollout_instance_id = None
-            # 翻转即失效缓存(缓存里还指着旧版本)
             invalidate_endpoint_auth_cache(service_id=svc.id)
             if old_id is not None and old_id != instance.id:
                 enqueue(session, RETIRE_TASK_TYPE, {"service_id": svc.id, "instance_id": old_id})

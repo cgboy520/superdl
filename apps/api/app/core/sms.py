@@ -13,7 +13,6 @@ from app.core.ratelimit import check_rate_limit
 
 logger = get_logger(__name__)
 
-# 平台级短信预算闸门(验证码与通知共享;计数落 PG):小时窗 + 日窗
 SMS_PLATFORM_HOURLY_MAX = 1000
 SMS_PLATFORM_DAILY_MAX = 5000
 
@@ -40,7 +39,6 @@ class SmsChannel(Protocol):
 
 class MockSmsChannel:
     async def send(self, phone: str, template: str, params: dict[str, str]) -> None:
-        # 手机号与 params.code 由 logging._mask_sensitive_processor 打码
         logger.info("mock_sms_sent", phone=phone, template=template, params=params)
 
 
@@ -60,7 +58,7 @@ class AliyunSmsChannel:
         self._ak = access_key_id
         self._secret = access_key_secret
         self._sign_name = sign_name
-        self._transport = transport  # 测试注入 MockTransport
+        self._transport = transport
 
     def request_params(self, phone: str, template: str, params: dict[str, str]) -> dict[str, str]:
         """SendSms 业务参数(公共参数与签名由 core/aliyun 补齐)。"""

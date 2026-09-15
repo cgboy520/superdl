@@ -118,7 +118,6 @@ async def bill_daily_summary(
     tz_offset_minutes: int = TzOffset,
 ) -> DailySummaryOut:
     """当日消费,本地日界经 tz_offset 折算。"""
-    # hour_start 为 UTC 整点,offset 为整分时窗口边界不切开小时账单
     start, end = parse_local_date(date, tz_offset_minutes)
     s = await wallet.consumption_summary(session, user.id, start, end)
     return DailySummaryOut(date=date, gpu_total=s.gpu_total, disk_total=s.disk_total, items=s.items)
@@ -155,9 +154,6 @@ async def export_billing(
     return csv_response(stream, f"superdl-{dataset}-{month or 'all'}.csv")
 
 
-# ---------- 充值 ----------
-
-
 @router.post("/wallet/recharges", status_code=201)
 async def create_recharge(
     body: RechargeCreate,
@@ -167,11 +163,9 @@ async def create_recharge(
     response: Response,
     idempotency_key: IdempotencyKey = None,
 ) -> RechargeOut:
-    # 实名闸门(统一实现)
     await account_service.require_real_name_if_required(
         session, user, key="billing.realNameRequiredForRecharge"
     )
-    # 资金端点限流(每用户)
     await check_rate_limit(f"billing-recharge:{user.id}", max_attempts=10, window_seconds=3600.0)
     order, created = await payment_service.create_recharge(
         session, user.id, body.amount, body.channel, idempotency_key
@@ -186,9 +180,6 @@ async def create_recharge(
 async def get_recharge(order_no: str, user: CurrentUser, session: DbSession) -> RechargeOut:
     order = await payment_service.get_order(session, user.id, order_no)
     return RechargeOut.model_validate(order)
-
-
-# ---------- 退款 ----------
 
 
 @router.get("/wallet/refunds/eligible-orders")
@@ -209,7 +200,6 @@ async def create_refund(
 ) -> RefundOut:
     """申请退款。Idempotency-Key 重放返回既有单(200 + X-Idempotent-Replay);
     同订单活跃申请被部分唯一索引拦截。"""
-    # 资金端点限流(每用户)
     await check_rate_limit(f"billing-refund:{user.id}", max_attempts=10, window_seconds=3600.0)
     req, created = await refunds.create_refund(
         session,
@@ -234,9 +224,6 @@ async def list_my_refunds(
 ) -> Page[RefundOut]:
     """本人退款单(游标分页)。"""
     return await refunds.list_my_refunds(session, user.id, cursor=cursor, limit=limit)
-
-
-# ---------- 发票 ----------
 
 
 @router.get("/billing/invoices/eligible")

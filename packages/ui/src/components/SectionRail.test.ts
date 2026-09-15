@@ -1,4 +1,4 @@
-/** 挂了说明:段状态派生回到「首屏全红」或漏掉提交后的错误标记。 */
+/** 表单段状态的首次展示、触碰与提交测试。 */
 import { describe, expect, it } from "vitest";
 
 import { deriveSectionStatus } from "./SectionRail";

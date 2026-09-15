@@ -1,5 +1,3 @@
-# monitoring 命名空间网络边界:只有 Alloy / Grafana / Prometheus 能到 loki:3100(X-Scope-OrgID 是自声明的)。
-# 由 helmfile loki release 的 presync 钩子 apply
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -10,7 +8,6 @@ spec:
     matchLabels: {app.kubernetes.io/name: loki}
   policyTypes: ["Ingress"]
   ingress:
-    # memberlist 自环
     - from:
         - podSelector:
             matchLabels: {app.kubernetes.io/name: loki}

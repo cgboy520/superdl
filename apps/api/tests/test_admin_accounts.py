@@ -18,12 +18,11 @@ async def _create_admin(sm: async_sessionmaker[AsyncSession], username: str) -> 
         await create_admin(session, username, "pass1234", "admin")
 
 
-# TOTP 密钥注册表(进程级):同一账号多次 login_headers 共享密钥
 _TOTP_SECRETS: dict[str, str] = {}
 
 
 async def login_headers(client: AsyncClient, username: str, password: str) -> dict[str, str]:
-    """登录并拿到 token:首次绑定走 setup 流并记下密钥,已绑定账号走二要素验证流。"""
+    """返回管理端认证 headers:首次绑定走 setup 流并记下密钥,已绑定账号走二要素验证流。"""
     import pyotp
 
     resp = await admin_login(client, username, password)
@@ -32,8 +31,7 @@ async def login_headers(client: AsyncClient, username: str, password: str) -> di
     if body["status"] == "mfa_setup":
         token, secret = await complete_mfa_setup_with_secret(client, body["ticket"])
         _TOTP_SECRETS[username] = secret
-    else:  # mfa_required:已绑定账号的二要素登录
-        # 绑定已用当前步,登录用下一枚(valid_window=1)
+    else:
         import time
 
         verify = await client.post(
@@ -71,7 +69,6 @@ class TestAdminAccounts:
         listing = (await client.get("/api/admin/v1/admins", headers=h)).json()
         assert {a["username"] for a in listing} == {"admin-user", "finance01"}
 
-        # 新建的账号能登录
         assert (await admin_login(client, "finance01", STRONG)).status_code == 200
 
     async def test_username_conflict_is_409_not_500(
@@ -103,7 +100,6 @@ class TestAdminAccounts:
             headers=h,
         )
         assert resp.status_code == 200, resp.text
-        # 停用即刻生效
         assert (await client.get("/api/admin/v1/me", headers=h2)).status_code == 401
         assert (await admin_login(client, "ops01", STRONG)).status_code == 403
 
@@ -119,13 +115,11 @@ class TestAdminAccounts:
         tid = created.json()["id"]
         h2 = await login_headers(client, "ops02", STRONG)
 
-        # 改角色 → 旧 token 失效
         await client.patch(
             f"/api/admin/v1/admins/{tid}", json={"role": "readonly", "reason": "转岗"}, headers=h
         )
         assert (await client.get("/api/admin/v1/me", headers=h2)).status_code == 401
 
-        # 重置密码 → 新密码可登录,旧密码不行
         h3 = await login_headers(client, "ops02", STRONG)
         assert (await client.get("/api/admin/v1/me", headers=h3)).status_code == 200
         resp = await client.post(
@@ -184,7 +178,6 @@ class TestAdminAccounts:
         resp = await client.get("/api/admin/v1/admins", headers=h_ops)
         assert resp.status_code == 403
         assert resp.json()["message_key"] == "adminapi.roleRequiredAdmin"
-        # 有参分支走角色清单键
         resp = await client.post(
             "/api/admin/v1/adjustments",
             json={"user_id": 1, "amount": "1.00", "reason": "角色门验证"},
@@ -202,26 +195,23 @@ class TestAdminLoginLockout:
         """日窗账号桶只计数,不封禁:打满之后正确口令仍能登录。"""
         from app.modules.adminapi import auth_service
 
-        # 只留日桶做闸,其余三桶放宽
         monkeypatch.setattr(auth_service, "LOGIN_ACCT_DAILY_MAX_ATTEMPTS", 3)
         monkeypatch.setattr(auth_service, "LOGIN_IP_MAX_ATTEMPTS", 10_000)
         monkeypatch.setattr(auth_service, "LOGIN_MAX_ATTEMPTS", 10_000)
         monkeypatch.setattr(auth_service, "LOGIN_ACCT_MAX_ATTEMPTS", 10_000)
         await _create_admin(sm, "lockout-admin")
 
-        for _ in range(4):  # 打满并越过日桶阈值
+        for _ in range(4):
             resp = await client.post(
                 "/api/admin/v1/auth/login",
                 json={"username": "lockout-admin", "password": "wrong-password"},
             )
             assert resp.status_code in (400, 429), resp.text
-        # 越阈之后错口令继续被限速
         blocked = await client.post(
             "/api/admin/v1/auth/login",
             json={"username": "lockout-admin", "password": "wrong-password"},
         )
         assert blocked.status_code == 429
-        # 正确口令照常放行
         ok = await admin_login(client, "lockout-admin")
         assert ok.status_code == 200, ok.text
         assert ok.json()["status"] == "mfa_setup"
@@ -239,7 +229,6 @@ class TestAdminPasswordByteLimit:
         )
         assert too_long.status_code == 422
         assert too_long.json()["code"] == "VALIDATION_ERROR"
-        # 72 字节整(24 个汉字)可建可登录
         ok = await client.post(
             "/api/admin/v1/admins",
             json={"username": "ops-cn2", "password": "汉" * 24, "role": "ops", "reason": "入职"},

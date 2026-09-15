@@ -1,6 +1,5 @@
 """worker 组件划分:每个 outbox handler 与定时任务恰好归属一个组件;组件进程只领自己的任务。"""
 
-# 白盒用例:直探模块内部
 # pyright: reportPrivateUsage=false
 
 import pytest
@@ -42,9 +41,7 @@ class TestPartition:
         )
 
     async def test_scheduled_jobs_table_matches_scheduler(self, pg_url):
-        """JOBS 清单即事实源:每个任务恰归属一个非 ALL 组件、各组件切片互不重叠且并集 == 全表,
-        register_scheduled_jobs 注册的 id 集 == 全表。
-        依赖 pg_url:注册会创建 engine,须先指向测试库。"""
+        """各组件任务互斥且完整覆盖 JOBS,调度器注册的 id 集与 JOBS 一致。"""
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
         from app.workers.main import register_scheduled_jobs
@@ -55,7 +52,7 @@ class TestPartition:
         assert set().union(*by_component) == {j.id for j in JOBS}
         scheduler = AsyncIOScheduler(timezone="UTC")
         register_scheduled_jobs(scheduler)
-        scheduler.start(paused=True)  # paused:只取注册清单,不触发任何任务执行
+        scheduler.start(paused=True)
         try:
             registered = {job.id for job in scheduler.get_jobs()}
         finally:
@@ -65,7 +62,6 @@ class TestPartition:
 
 class TestComponentEnv:
     def test_invalid_component_fails_closed(self, monkeypatch):
-        # patch 缓存的 Settings 实例属性(monkeypatch env 对 lru_cache 不可见)
         monkeypatch.setattr(get_settings(), "worker_component", "typo-worker")
         with pytest.raises(RuntimeError, match="SUPERDL_WORKER_COMPONENT"):
             current_component()
@@ -85,17 +81,13 @@ class TestClaimFilter:
             enqueue(session, "notify.sms", {"phone": "13800000096", "title": "x"})
             await session.commit()
 
-        # node-mgr 的类型集合对这两个任务都不可见
         assert await process_one(sm, "w-node", outbox_types_for(WorkerComponent.NODE_MGR)) is False
-        # tenant-mgr 领走 instance.create
         assert (
             await process_one(sm, "w-tenant", outbox_types_for(WorkerComponent.TENANT_MGR)) is True
         )
-        # notify.sms 对 tenant-mgr 不可见
         assert (
             await process_one(sm, "w-tenant", outbox_types_for(WorkerComponent.TENANT_MGR)) is False
         )
-        # core 领走 notify.sms
         assert await process_one(sm, "w-core", outbox_types_for(WorkerComponent.CORE)) is True
         async with sm() as session:
             rows = (await session.execute(select(OutboxTask))).scalars().all()

@@ -40,9 +40,9 @@ describe("HexTag 替换后的 Tag 渲染", () => {
     );
     const styles = [...container.querySelectorAll(".ant-tag")].map((el) => getComputedStyle(el));
     expect(styles).toHaveLength(3);
-    expect(styles[0]?.backgroundColor).toBe("rgb(79, 70, 229)"); // skuTierMap.dedicated #4F46E5
-    expect(styles[1]?.backgroundColor).toBe("rgb(194, 65, 12)"); // statusColors.orange #C2410C
-    expect(styles[2]?.backgroundColor).toBe("rgb(79, 70, 229)"); // colorPrimary
+    expect(styles[0]?.backgroundColor).toBe("rgb(79, 70, 229)");
+    expect(styles[1]?.backgroundColor).toBe("rgb(194, 65, 12)");
+    expect(styles[2]?.backgroundColor).toBe("rgb(79, 70, 229)");
     for (const s of styles) {
       expect(s.color).toBe("rgb(255, 255, 255)");
     }
@@ -53,9 +53,6 @@ describe("HexTag 替换后的 Tag 渲染", () => {
     const { container } = renderThemed(<SubscriptionTag market="subscription" subscription={expired} />, true);
     const tag = container.querySelector(".ant-tag");
     expect(tag).not.toBeNull();
-    expect(getComputedStyle(tag as Element).backgroundColor).toBe(
-      // statusColors.orange 原值,暗色下不调亮
-      `rgb(${[194, 65, 12].join(", ")})`,
-    );
+    expect(getComputedStyle(tag as Element).backgroundColor).toBe(`rgb(${[194, 65, 12].join(", ")})`);
   });
 });

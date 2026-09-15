@@ -71,16 +71,10 @@ from app.modules.tickets.schemas import (
 router = APIRouter(tags=["admin"])
 
 
-# ---------- 总览聚合(只读,全角色) ----------
-
-
 @router.get("/overview", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_overview(session: DbSession) -> OverviewOut:
     """值班首屏聚合:实例分状态 COUNT、付费租户 COUNT、池级 GPU 台账。全是精确计数。"""
     return OverviewOut.model_validate(await overview.overview(session))
-
-
-# ---------- 工单(读 ops/finance/readonly,写 ops/admin) ----------
 
 
 @router.get("/tickets", dependencies=[require_roles("ops", "finance", "readonly")])
@@ -151,9 +145,6 @@ async def admin_update_ticket_status(
     return AdminTicketOut.model_validate(ticket)
 
 
-# ---------- 审计检索(所有已认证管理角色可读) ----------
-
-
 @router.get("/audit", dependencies=[require_roles("readonly", "ops", "finance")])
 async def admin_audit_log(
     session: DbSession,
@@ -166,7 +157,6 @@ async def admin_audit_log(
     cursor: str | None = None,
 ) -> list[AuditLogOut]:
     """审计检索:actor_id / 动作前缀 / 时间区间;cursor 向前翻页(满页即还有更早)。"""
-    # 筛选条件与审计 CSV 导出同一函数
     stmt = admin_export.audit_filters(
         sa_select(AuditLog).order_by(AuditLog.id.desc()).limit(limit),
         actor_type=actor_type,
@@ -233,9 +223,6 @@ async def admin_audit_export(
     )
 
 
-# ---------- 系统设置:策略参数在线调整(角色:ops) ----------
-
-
 @router.get("/policies", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_get_policies(session: DbSession) -> PoliciesAdminOut:
     """当前生效策略 + 取值范围 + DB 覆盖项(平台配置里 policy 组的切片)。"""
@@ -285,9 +272,6 @@ async def admin_update_policies(
     return UpdatedKeysOut(updated=sorted(body.updates))
 
 
-# ---------- 平台配置:支付/短信/实名/合规(角色:仅 admin) ----------
-
-
 @router.get("/platform-config", dependencies=[require_roles()])
 async def admin_get_platform_config(session: DbSession) -> PlatformConfigOut:
     """分组配置项:生效值 + 来源(env 默认/DB 覆盖)+ 配置风险 warnings。secret 只回尾 4 位预览。"""
@@ -296,7 +280,7 @@ async def admin_get_platform_config(session: DbSession) -> PlatformConfigOut:
     items = []
     for key, spec in SETTING_SPECS.items():
         if spec.group == "policy" or spec.kind in ("int", "decimal"):
-            continue  # 策略参数走 /policies
+            continue
         value = eff[key]
         row = overrides.get(key)
         items.append(
@@ -367,7 +351,7 @@ class SmsTestRequest(BaseModel):
 async def admin_test_sms(body: SmsTestRequest, session: DbSession, request: Request) -> SmsTestOut:
     """按当前生效短信配置实发一条验证码短信(有限流,过审计)。"""
     await check_rate_limit("admin:test-sms", max_attempts=10, window_seconds=3600.0)
-    await ensure_sms_platform_quota()  # 实发同样消耗平台预算池
+    await ensure_sms_platform_quota()
     cfg = await get_runtime_config(session)
     channel = await get_sms_channel(session)
     code = f"{secrets.randbelow(10**6):06d}"
@@ -407,9 +391,6 @@ async def admin_test_registry(session: DbSession, request: Request) -> RegistryT
         harbor_version=probe.harbor_version,
         repositories=probe.repositories,
     )
-
-
-# ---------- 公告(角色:读 ops/finance/readonly,写 ops) ----------
 
 
 class AnnouncementCreate(BaseModel):
@@ -481,9 +462,6 @@ async def admin_revoke_announcement(
     return _announcement_out(announcement)
 
 
-# ---------- outbox 死信(角色:ops) ----------
-
-
 @router.get("/outbox/dead", dependencies=[require_roles("ops", "readonly")])
 async def admin_list_dead_tasks(session: DbSession) -> list[DeadTaskOut]:
     """死信任务列表(另有 outbox_dead_total 指标接告警)。"""
@@ -522,7 +500,7 @@ class OutboxRetryRequest(ReasonBody):
 
 
 async def _load_dead_task(session: AsyncSession, task_id: int, *, conflict_key: str) -> OutboxTask:
-    """重放/忽略共用前奏:任务不存在 404;非 dead 状态 CONFLICT(conflict_key 区分文案)。"""
+    """读取 dead 任务;不存在回 404,非 dead 状态按 conflict_key 抛 CONFLICT。"""
     task = await session.get(OutboxTask, task_id)
     if task is None:
         raise AppError(ErrorCode.NOT_FOUND, key="adminapi.taskNotFound", http_status=404)

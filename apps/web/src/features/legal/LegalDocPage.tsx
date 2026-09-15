@@ -1,5 +1,4 @@
-/** 法务文档页:GET /api/v1/legal/{doc_key} 当前 published 版;en-US 缺失服务端回落 zh-CN(fallback=true),顶部一行提示。
- *  顶部 Segmented 切三份文档,版本行紧跟标题;≥lg 右侧 h2 目录(id 在渲染后按正文顺序补到 h2 上,LegalMarkdown 不改);打印样式只留正文。 */
+/** 法务文档页:文档切换、版本信息、二级标题目录与正文打印样式。 */
 
 import { fontSize, formatDateTime, layout, space } from "@superdl/ui";
 import { DataErrorAlert, LegalMarkdown, PageContainer } from "@superdl/ui/components";
@@ -14,7 +13,7 @@ import { SiteFooter } from "../../components/layout/SiteFooter";
 
 export type LegalDocKey = "terms" | "privacy" | "deletion_notice";
 
-/** 打印:去顶栏 / 页脚 / 切换器 / 目录,黑字白底无底纹(.legal-chrome 平时不参与布局,故 display: contents)。 */
+/** 打印时隐藏导航与目录,正文使用黑字白底。 */
 const PRINT_CSS = `
 .legal-chrome { display: contents; }
 @media print {
@@ -56,7 +55,6 @@ export function LegalDocPage({ docKey }: { docKey: LegalDocKey }) {
   const { data, isLoading, isError, refetch } = useLegalDoc(docKey, lang);
   const bodyRef = useRef<HTMLDivElement>(null);
   const toc = useMemo(() => parseTocHeadings(data?.content_md ?? ""), [data?.content_md]);
-  // LegalMarkdown 渲染的 h2 没有 id:渲染后按顺序补上,目录锚点才有落点
   useEffect(() => {
     const nodes = bodyRef.current?.querySelectorAll("h2");
     nodes?.forEach((el, i) => {

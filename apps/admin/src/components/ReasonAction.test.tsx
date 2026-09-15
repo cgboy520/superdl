@@ -14,7 +14,6 @@ import { ReasonAction } from "./ReasonAction";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 beforeAll(async () => {
-  // 文案取真实 locales
   await i18n.use(initReactI18next).init({
     lng: "zh-CN",
     resources: { "zh-CN": { admin: zhCNAdmin } },
@@ -62,7 +61,6 @@ function renderAction(onSubmit: (reason: string) => Promise<string> | Promise<vo
   act(() => {
     root.render(
       <I18nextProvider i18n={i18n}>
-        {/* 关掉 motion:jsdom 不跑 transition */}
         <ConfigProvider theme={{ token: { motion: false } }}>
           <App>
             <ReasonAction
@@ -83,13 +81,12 @@ function renderAction(onSubmit: (reason: string) => Promise<string> | Promise<vo
 
 function setTextareaValue(el: HTMLTextAreaElement, value: string) {
   act(() => {
-    // 走原生 setter 才能触发 React onChange(jsdom 直赋 value 不触发)
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(el, value);
     el.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
 
-/** 取不到即测试失败,省掉满屏非空断言 */
+/** 缺失值使测试失败。 */
 function must<T>(v: T | null | undefined): T {
   if (v == null) throw new Error("expected element to exist");
   return v;
@@ -110,17 +107,13 @@ afterEach(() => {
 describe("ReasonAction", () => {
   it("第二步取消返回第一步,已填原因保留", async () => {
     renderAction(vi.fn().mockResolvedValue(undefined));
-    // 打开第一步(原因弹窗)
     click(must(findButton("下架")));
     await flush();
     setTextareaValue(must(document.body.querySelector("textarea")), "滞销规格下架");
-    // 进入第二步
     click(must(findButton("下一步")));
     await flush();
     expect(document.body.textContent).toContain("下架后不可新租");
-    // 第一步 destroyOnHidden,原因输入框已卸载
     await waitFor(() => document.body.querySelector("textarea") === null);
-    // 第二步取消 → 返回第一步,原因还在;取消钮文案是 Cancel(未配中文 locale)
     const cancelBtn = [...document.body.querySelectorAll(".ant-modal-footer button")].find(
       (b) => !b.classList.contains("ant-btn-primary"),
     );
@@ -130,18 +123,15 @@ describe("ReasonAction", () => {
   });
 
   it("confirm={false} 填完原因直接提交,不出二次确认", async () => {
-    // 挂了说明:恢复类动作(解封 / 解冻 / 上架)又被要求二次确认
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     renderAction(onSubmit, false);
     click(must(findButton("下架")));
     await flush();
     setTextareaValue(must(document.body.querySelector("textarea")), "节点已恢复");
-    // 原因弹窗的确认钮即提交,没有「下一步」
     expect(findButton("下一步")).toBeUndefined();
     click(must(findButton("确认执行")));
     await waitFor(() => onSubmit.mock.calls.length > 0);
     expect(onSubmit).toHaveBeenCalledWith("节点已恢复");
-    // 二次确认弹窗从未出现,原因正文也不会被复述
     expect(document.body.textContent).not.toContain("二次确认");
     expect(document.body.textContent).not.toContain("下架后不可新租");
   });
@@ -160,18 +150,15 @@ describe("ReasonAction", () => {
     setTextareaValue(must(document.body.querySelector("textarea")), "滞销规格下架");
     click(must(findButton("下一步")));
     await flush();
-    // 确认执行 → 请求在途
     click(must(findButton("确认执行")));
     await flush();
     expect(onSubmit).toHaveBeenCalledWith("滞销规格下架");
-    // 在途时点蒙层不关
     const wrap = [...document.body.querySelectorAll<HTMLElement>(".ant-modal-wrap")].find((w) =>
       w.textContent.includes("下架后不可新租"),
     );
     click(must(wrap));
     await flush();
     expect(document.body.textContent).toContain("下架后不可新租");
-    // 请求完成 → 弹窗关闭
     await act(async () => {
       must(resolveSubmit)();
       await new Promise((r) => setTimeout(r, 30));

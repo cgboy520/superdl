@@ -22,7 +22,6 @@ export function TenantsTab() {
   const { t: tt } = useTranslation();
   const { formatMoney } = useFormat();
   const navigate = useNavigate({ from: "/tenants" });
-  // 抽屉开合入 URL(?tenant=):告警 / 财务页可直链到某租户抽屉
   const urlTenant = routeApi.useSearch({ select: (s) => s.tenant });
   const setDrilldown = (row: TenantRow | null) =>
     void navigate({
@@ -33,7 +32,6 @@ export function TenantsTab() {
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();
-  // 检索落审计,提交才触发:输入框即时值 ↔ URL 的 q(useUrlCommittedInput:防抖回写 + 外部变化同步)
   const urlQ = routeApi.useSearch({ select: (s) => s.q });
   const commitQ = useCallback(
     (next: string | undefined) =>
@@ -41,7 +39,6 @@ export function TenantsTab() {
     [navigate],
   );
   const { value: input, setValue: setInput } = useUrlCommittedInput(urlQ, commitQ);
-  // 状态筛选与注册排序:服务端参数入 URL
   const statusFilter = routeApi.useSearch({ select: (s) => s.tstatus });
   const order = routeApi.useSearch({ select: (s) => s.order });
   const commitFilters = useCallback(
@@ -54,7 +51,6 @@ export function TenantsTab() {
     keys: ["q", "tstatus"],
     commit: commitFilters,
   });
-  // 抽屉 Tab 入 URL(?dtab=)
   const dtab = routeApi.useSearch({ select: (s) => s.dtab });
   const onDrawerTabChange = (key: DrawerTab) =>
     void navigate({
@@ -62,7 +58,6 @@ export function TenantsTab() {
       replace: true,
       search: (prev) => ({ ...prev, dtab: key === "billing" ? undefined : key }),
     });
-  // 实名明文查看:必填事由,落审计;readonly 不渲染入口(后端 403)
   const canReveal = role === "ops" || role === "finance" || role === "admin";
   const [revealReason, setRevealReason] = useState<string | null>(null);
   const [revealOpen, setRevealOpen] = useState(false);
@@ -105,7 +100,6 @@ export function TenantsTab() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onSearch={(v) => {
-            // 回车/点按钮立即提交
             setInput(v);
             commitFilters({ q: v || undefined });
           }}
@@ -169,7 +163,6 @@ export function TenantsTab() {
         onChange={(_p, _f, sorter) => {
           const s = Array.isArray(sorter) ? sorter[0] : sorter;
           if (s?.columnKey !== "created_at") return;
-          // ascend → asc;descend 与取消都回默认 desc
           void navigate({
             to: "/tenants",
             replace: true,
@@ -230,7 +223,6 @@ export function TenantsTab() {
             title: tt("tenants.colCreatedAt"),
             dataIndex: "created_at",
             key: "created_at",
-            // 服务端排序仅注册先后;聚合列不提供排序
             sorter: true,
             sortOrder: order === "asc" ? "ascend" : "descend",
             render: formatDateTime,

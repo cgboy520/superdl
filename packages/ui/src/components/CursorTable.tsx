@@ -1,5 +1,4 @@
-/** 游标分页表格(两端共用):Table + 错误/空态(TableErrorEmpty)+「加载更多」(LoadMore)三件套一处收口。
- *  查询结果只需 CursorListQuery 形状(结构化,不依赖 TanStack 类型);403 经 error.status 结构判定。 */
+/** 游标分页表格,包含错误/空态与加载更多。 */
 
 import { Table } from "antd";
 import type { TableProps } from "antd";

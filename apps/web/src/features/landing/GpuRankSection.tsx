@@ -1,5 +1,4 @@
-/** GPU 算力排名:gpuSpecs 静态表驱动(理论峰值口径)+ 「每 TFLOPS 时价」(只算在售型号,取该型号最低单卡价 ÷ FP16 峰值)。
- *  在售型号带标记并链回价格墙;窄屏保留单位(数字不带单位读不出意义),行内自动换行。 */
+/** GPU 排名:理论算力与在售型号最低单卡时价/FP16 峰值。 */
 
 import type { GpuSpec } from "@superdl/ui";
 import {
@@ -63,8 +62,7 @@ export function GpuRankSection() {
       const priced: { model: string; spec: GpuSpec; perTflops: number }[] = [];
       for (const [model, spec] of entries) {
         const price = minPriceByModel.get(model);
-        if (price === undefined) continue; // 不在售就没有时价,不进榜
-        // 展示层派生比值(不是入账金额):元 = 万分位整数 / 10000
+        if (price === undefined) continue;
         priced.push({ model, spec, perTflops: amountToScaledNumber(price) / 10000 / spec.fp16Tflops });
       }
       priced.sort((a, b) => a.perTflops - b.perTflops);
@@ -74,7 +72,6 @@ export function GpuRankSection() {
         label: r.spec.label,
         vramGb: r.spec.vramGb,
         value: r.perTflops,
-        // 越便宜条越长
         ratio: best / r.perTflops,
         onSale: true,
         text: t("landing.ranking.perTflopsValue", { price: r.perTflops.toFixed(4) }),
@@ -90,7 +87,6 @@ export function GpuRankSection() {
       value: r.value,
       ratio: r.value / max,
       onSale: minPriceByModel.has(r.model),
-      // 两处都写成字面量键:i18next-cli 静态提取看不懂三元里的键,会当未使用删掉
       text:
         metric === "fp16"
           ? t("landing.ranking.fp16Value", { value: r.value })
@@ -106,7 +102,6 @@ export function GpuRankSection() {
       subtitle={t("landing.ranking.subtitle")}
     >
       <div style={{ display: "flex", justifyContent: "center", marginBottom: space.xl }}>
-        {/* Segmented 根节点是 generic div:aria-label 挂上去反而是 aria-prohibited-attr,靠区标题定位 */}
         <Segmented
           value={metric}
           onChange={(v: Metric) => setMetric(v)}

@@ -11,7 +11,6 @@ class NotificationOut(BaseModel):
     title: str
     content: str
     severity: str
-    # 结构化跳转目标(instance 类 = 实例 uuid,ticket 类 = 工单 id;空 = 前端按类型落列表页)
     target_id: str | None = None
     read_at: datetime | None
     created_at: datetime

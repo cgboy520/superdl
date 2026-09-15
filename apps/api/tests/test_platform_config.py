@@ -34,8 +34,6 @@ class TestSpecValidation:
 
 
 class TestClusterJoinTokenShape:
-    """挂了说明:join token 带换行/引号能进库,node-join.sh 会把它原样写进 agent config.yaml。"""
-
     @pytest.mark.parametrize(
         "token",
         [
@@ -83,7 +81,6 @@ class TestProdDegradeForbidden:
         )
         with pytest.raises(ValueError, match="生产环境禁止"):
             validate_setting_value(key, "false")
-        # 开启不受限
         assert validate_setting_value(key, "true") == "true"
 
     @pytest.mark.parametrize("key", ["captcha_enabled", "admin_mfa_enabled", "real_name_enabled"])
@@ -103,7 +100,6 @@ class TestClearOverrideFallbackGuard:
     ):
         """部署层 real_name_enabled=false(prod 禁止值)→ 清除覆盖被拒。"""
         ah = await admin_headers(sm, client, role="admin")
-        # 先取令牌再换桩
         monkeypatch.setattr(
             "app.core.platform_config.get_settings",
             lambda: SimpleNamespace(environment="prod", real_name_enabled=False),
@@ -115,7 +111,6 @@ class TestClearOverrideFallbackGuard:
         )
         assert resp.status_code == 400
         assert "不允许清除覆盖" in resp.json()["message"]
-        # 拒绝即不落库
         async with sm() as session:
             row = (
                 await session.execute(
@@ -188,7 +183,6 @@ class TestClearOverrideFallbackGuard:
         assert len(rows) >= 2
         assert rows[-2].detail["keys"] == {"icp_number": "set"}
         assert rows[-1].detail["keys"] == {"icp_number": "clear"}
-        # 值不落审计
         assert "京ICP备" not in str(rows[-2].detail)
 
 
@@ -205,7 +199,6 @@ class TestProdComplianceGates:
         }
         with pytest.raises(RuntimeError, match="合规开关未全开"):
             assert_prod_compliance_gates(rc(off), "prod")
-        # 只开一部分同样拒
         with pytest.raises(RuntimeError, match="real_name_enabled"):
             assert_prod_compliance_gates(rc(dict(off, captcha_enabled="true")), "prod")
 
@@ -217,8 +210,8 @@ class TestProdComplianceGates:
             "real_name_enabled": "true",
             "real_name_required_for_recharge": "true",
         }
-        assert_prod_compliance_gates(rc(on), "prod")  # 不抛
-        assert_prod_compliance_gates(rc({"captcha_enabled": "false"}), "dev")  # 非 prod 一律放行
+        assert_prod_compliance_gates(rc(on), "prod")
+        assert_prod_compliance_gates(rc({"captcha_enabled": "false"}), "dev")
         assert_prod_compliance_gates(rc({"captcha_enabled": "false"}), "test")
 
 
@@ -249,14 +242,12 @@ class TestAdminApi:
         assert items["icp_number"]["value"] == "京ICP备2026012345号-1"
         assert items["icp_number"]["source"] == "override"
         assert items["company_name"]["group"] == "compliance"
-        # secret:GET 只回状态与尾 4 位预览
         secret_item = items["sms_access_key_secret"]
         assert secret_item["value"] is None
         assert secret_item["configured"] is True
         assert secret_item["preview"] == "****9876"
         assert "PLAINTEXT-SECRET-9876" not in str(data)
 
-        # DB 落密文
         async with sm() as session:
             row = (
                 await session.execute(
@@ -266,7 +257,6 @@ class TestAdminApi:
             assert row.value.startswith("enc:v2:")
             assert "PLAINTEXT" not in row.value
 
-        # 公开 site-config 跟随备案号与经营主体
         site = (await client.get("/api/v1/site-config")).json()
         assert site["icp_number"] == "京ICP备2026012345号-1"
         assert site["company_name"] == "示例云算力(北京)有限公司"
@@ -275,7 +265,6 @@ class TestAdminApi:
         assert site["business_license_url"] == "https://example.com/license.png"
         assert site["payment_channels"] == {"wechat": False, "alipay": False, "mock": True}
 
-        # 空串 = 清除覆盖,回退 env 默认
         await client.put(
             "/api/admin/v1/platform-config",
             json={
@@ -314,10 +303,8 @@ class TestAdminApi:
         assert resp.status_code == 400, resp.text
         assert resp.json()["code"] == "VALIDATION_ERROR"
         assert "real_name_enabled" in resp.json()["message"]
-        # 同一批一起开:放行
         resp = await put({"real_name_required_for_recharge": "true", "real_name_enabled": "true"})
         assert resp.status_code == 200, resp.text
-        # 反向:强制实名开着,再关实名认证被拒
         assert (await put({"real_name_enabled": "false"})).status_code == 400
 
     async def test_real_name_flag_flows_to_policies_and_gate(self, client: AsyncClient, sm):
@@ -454,13 +441,11 @@ class TestRegistrySpecsAndProbeEndpoint:
         )
         with pytest.raises(ValueError, match="含非法行"):
             validate_setting_value("image_allowed_registries", "docker.io/\nBAD HOST!!")
-        # 对抗输入:全部合法字符 + 一个非法尾字符
         evil = "a" * 4000 + "!"
         t0 = time.perf_counter()
         with pytest.raises(ValueError):
             validate_setting_value("image_allowed_registries", evil)
-        assert time.perf_counter() - t0 < 1.0  # 线性时间
-        # 合法长输入同样线性放行
+        assert time.perf_counter() - t0 < 1.0
         t0 = time.perf_counter()
         assert validate_setting_value("image_allowed_registries", "a" * 4000)
         assert time.perf_counter() - t0 < 1.0
@@ -473,7 +458,7 @@ class TestRegistrySpecsAndProbeEndpoint:
 
         ah = await admin_headers(sm, client, role="admin")
         resp = await client.post("/api/admin/v1/platform-config/test-registry", headers=ah)
-        assert resp.status_code == 400  # 未填 host:不发探测
+        assert resp.status_code == 400
 
         async def fake_probe(**kwargs):
             assert kwargs["host"] == "harbor.example.com" and kwargs["project"] == "superdl"
@@ -494,7 +479,6 @@ class TestRegistrySpecsAndProbeEndpoint:
             "harbor_version": "v2.12.0",
             "repositories": 3,
         }
-        # 非 admin 角色不可探测
         ops = await admin_headers(sm, client, role="ops")
         assert (
             await client.post("/api/admin/v1/platform-config/test-registry", headers=ops)
@@ -503,8 +487,7 @@ class TestRegistrySpecsAndProbeEndpoint:
 
 class TestConfigWarnings:
     def test_rules_by_switch_and_credentials(self):
-        """warnings 每条规则一例;prod 禁止取值的红牌从 SettingSpec.prod_forbidden 派生,
-        合规闸键(prod_gate)为 error、其余为 warning。"""
+        """prod 禁止取值按 SettingSpec 派生警告;合规闸为 error,其余为 warning。"""
         from app.core.platform_config import SETTING_SPECS, compute_config_warnings
 
         base = dict.fromkeys(SETTING_SPECS, "")
@@ -513,10 +496,9 @@ class TestConfigWarnings:
             admin_mfa_enabled="true",
             real_name_enabled="false",
             real_name_required_for_recharge="false",
-            registry_host="harbor.example.com",  # Harbor 地址自动进白名单,不触发规则 6
+            registry_host="harbor.example.com",
         )
         assert compute_config_warnings(rc(base), "test") == []
-        # 镜像仓库:填了机器人未填 Secret → error;prod 无白名单且无 Harbor 地址 → error(启动闸另拒启)
         robot_only = dict(base, registry_robot_name="robot$superdl+pull")
         assert [(w.key, w.level) for w in compute_config_warnings(rc(robot_only), "test")] == [
             ("registry_robot_name", "error")
@@ -539,13 +521,11 @@ class TestConfigWarnings:
         assert [(w.key, w.level) for w in compute_config_warnings(rc(no_registry), "prod")] == [
             ("image_allowed_registries", "error")
         ]
-        # 三个合规闸开关全关:三条 error,顺序同 SETTING_SPECS 声明
         assert [(w.key, w.level) for w in compute_config_warnings(rc(base), "prod")] == [
             ("captcha_enabled", "error"),
             ("real_name_enabled", "error"),
             ("real_name_required_for_recharge", "error"),
         ]
-        # 开关开了凭据没录 → 组合规则 error;MFA 关闭只 warning;sms 切回 mock 也进红牌
         on = dict(compliant, admin_mfa_enabled="false", sms_provider="mock")
         keys = {(w.key, w.level) for w in compute_config_warnings(rc(on), "prod")}
         assert keys == {
@@ -605,7 +585,6 @@ class TestEffectiveConfig:
 
 class TestProdImageAllowlistGate:
     def test_empty_allowlist_refuses_prod_start(self):
-        """挂了说明:prod 下镜像白名单为空只给告警,租户可拉任意仓库镜像。"""
         from app.core.platform_config import assert_prod_image_allowlist
 
         with pytest.raises(RuntimeError, match="镜像来源白名单"):
@@ -621,9 +600,6 @@ class TestProdImageAllowlistGate:
 
 
 class TestSpecsMatchSettingsAndRuntimeConfig:
-    """挂了说明:SETTING_SPECS / RuntimeConfig / Settings 三处的键或类型对不上,某个配置项要么读不到
-    env 默认,要么在线覆盖后类型转换会炸。"""
-
     def test_every_key_has_env_default_with_matching_type(self):
         from decimal import Decimal
 
@@ -657,7 +633,7 @@ class TestPolicyOverrides:
 
     async def test_default_then_override_flows_to_public_endpoint(self, client: AsyncClient, sm):
         base = (await client.get("/api/v1/policies")).json()
-        assert base["disk_price_gb_month"] == "0.0350"  # env 默认
+        assert base["disk_price_gb_month"] == "0.0350"
 
         ah = await admin_headers(sm, client, role="ops")
         resp = await client.put(
@@ -712,14 +688,12 @@ class TestPolicyOverrides:
 
     async def test_invalid_updates_rejected(self, client: AsyncClient, sm):
         ah = await admin_headers(sm, client, role="ops")
-        # 越界
         resp = await client.put(
             "/api/admin/v1/policies",
             json={"updates": {"disk_price_gb_month": "9.99"}, "reason": "手滑"},
             headers=ah,
         )
         assert resp.status_code == 400
-        # 未知键(非 ops 角色 403 由 route×role 矩阵覆盖)
         resp = await client.put(
             "/api/admin/v1/policies",
             json={"updates": {"jwt_secret": "hack"}, "reason": "越权"},

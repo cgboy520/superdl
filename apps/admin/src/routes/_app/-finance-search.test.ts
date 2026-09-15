@@ -1,4 +1,4 @@
-/** finance 路由 validateSearch:对账日 day、Tab 白名单与结算缺口 g_kind/g_open 默认值剥离。挂了 = 对账日 / 缺口筛选不再落 URL,或非法值穿透到查询参数。 */
+/** 财务路由对账日、Tab 与结算缺口筛选的 URL 解析测试。 */
 import { describe, expect, it } from "vitest";
 
 import { Route } from "./finance";

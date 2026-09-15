@@ -1,5 +1,4 @@
-/** 实例监控面板:GPU 利用率 / 显存 / CPU / 内存 2×2 栅格,四图 axisPointer 联动(同 group);范围选择器 sticky;% 类固定 0~100,MB 按量级换 GB;每图右上给「当前 / 峰值」。
- *  指标只做展示,不参与计费;非 running 仍可查历史(无数据时按 range 给空态);503 = 监控源未接入 / 断源(专用文案),其余错误不渲染成空图。实例详情页与服务详情页共用。 */
+/** 实例监控面板:GPU、显存、CPU、内存四图联动,支持时间范围与刷新控制。 */
 
 import { isApiError } from "@superdl/api-client";
 import { fontSize, layout, POLL, space, useAutoRefresh, useChartTheme } from "@superdl/ui";
@@ -31,7 +30,6 @@ export function MetricsPanel({ uuid, running }: { uuid: string; running: boolean
   const chartTheme = useChartTheme();
   const { token } = theme.useToken();
   const [range, setRange] = useState<"1h" | "6h" | "24h">("1h");
-  // running 时自动刷新;停机后只看历史(不轮询),仍可手动刷新
   const autoRefresh = useAutoRefresh(POLL.daily);
   const { data, error, isLoading, isRefetching, refetch, dataUpdatedAt } = useInstanceMetrics(
     uuid,
@@ -50,7 +48,6 @@ export function MetricsPanel({ uuid, running }: { uuid: string; running: boolean
 
   return (
     <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
-      {/* 工具行 sticky:滚到第 4 张图仍看得到当前范围 */}
       <div
         style={{
           position: "sticky",
@@ -127,7 +124,6 @@ export function MetricsPanel({ uuid, running }: { uuid: string; running: boolean
                   xAxis: { type: "time" },
                   yAxis: {
                     type: "value",
-                    // 百分比类固定 0~100,低负载不再被自适应轴放大成「满载」
                     ...(meta.unit === "%" ? { min: 0, max: 100 } : { min: 0 }),
                     axisLabel: { formatter: (v: number) => fmt(v) },
                   },

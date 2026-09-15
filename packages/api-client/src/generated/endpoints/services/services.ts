@@ -315,7 +315,9 @@ export const getGetServiceLogsApiV1ServicesSlugLogsGetUrl = (slug: string,
 }
 
 /**
- * 当前版本的容器日志:只读、限流 20/h/user、K8s 读 5s 超时;非运行中 409。不记审计。
+ * 优先读取 rollout 版本的容器日志,无 rollout 时读取当前版本。
+ *
+ * 仅支持 running/stopping,否则 409;与实例日志共用限流,不记审计。
  * @summary Get Service Logs
  */
 export const getServiceLogsApiV1ServicesSlugLogsGet = async (slug: string,
@@ -348,7 +350,7 @@ export const getListRevisionsApiV1ServicesSlugRevisionsGetUrl = (slug: string,
 }
 
 /**
- * 版本历史 = 该服务下全部实例(含已释放),按版本号降序。
+ * 分页查询该服务的版本实例(含已释放),按实例 ID 降序。
  * @summary List Revisions
  */
 export const listRevisionsApiV1ServicesSlugRevisionsGet = async (slug: string,

@@ -12,7 +12,6 @@ from structlog.typing import EventDict, WrappedLogger
 from app.core.config import get_settings
 from app.core.regex import PHONE_RE_LOOSE
 
-# uvicorn 日志器:清空自带 handler 交 root 并管
 _BRIDGED_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
 
 _LEVELS = {
@@ -23,13 +22,12 @@ _LEVELS = {
     "CRITICAL": logging.CRITICAL,
 }
 
-# 敏感字段名(命中即打码)
 _SENSITIVE_KEY_RE = re.compile(r"(phone|id_number|token|secret|password|code)", re.IGNORECASE)
 _PHONE_VALUE_RE = re.compile(PHONE_RE_LOOSE)
 
 
 def mask_phone_value(value: str) -> str:
-    """手机号打码(前3后4):138****5678。全仓唯一打码实现。"""
+    """匹配手机号时保留前 3 后 4 位,否则返回六个星号。"""
     if _PHONE_VALUE_RE.match(value):
         return value[:3] + "****" + value[-4:]
     return "******"
@@ -44,11 +42,11 @@ def _mask_value(key: str, value: object) -> object:
 
 
 def _mask_sensitive_processor(
-    logger: WrappedLogger,  # noqa: ARG001 structlog processor 签名
+    logger: WrappedLogger,  # noqa: ARG001
     method: str,  # noqa: ARG001
     event_dict: EventDict,
 ) -> EventDict:
-    """按键名打码:phone 前3后4,其余敏感键整体 ******;dict 值逐内层键检查;非字符串不动。"""
+    """按敏感键名遮蔽字符串;非敏感顶层键的 dict 值只检查下一层,不递归。"""
     for key, value in event_dict.items():
         if _SENSITIVE_KEY_RE.search(key):
             event_dict[key] = _mask_value(key, value)
@@ -60,21 +58,20 @@ def _mask_sensitive_processor(
 
 
 def setup_logging() -> None:
+    """配置 structlog 和 stdlib 日志;异常栈不得包含局部变量。"""
     settings = get_settings()
     level = _LEVELS[settings.log_level]
     shared_processors: list[structlog.typing.Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
         structlog.processors.TimeStamper(fmt="iso", utc=True),
-        _mask_sensitive_processor,  # 渲染前兜底:structlog 侧与 stdlib 桥接侧共用
+        _mask_sensitive_processor,
     ]
     if settings.environment == "prod":
         renderer: structlog.typing.Processor = structlog.processors.JSONRenderer()
     else:
-        # 默认异常渲染在装了 rich 时带局部变量(含凭据,且深栈一次渲染几十秒),铉成纯文本栈
         renderer = structlog.dev.ConsoleRenderer(exception_formatter=structlog.dev.plain_traceback)
 
-    # structlog 侧:处理链末端交回 ProcessorFormatter 渲染
     structlog.configure(
         processors=[*shared_processors, structlog.stdlib.ProcessorFormatter.wrap_for_formatter],
         wrapper_class=structlog.make_filtering_bound_logger(level),
@@ -82,13 +79,10 @@ def setup_logging() -> None:
         cache_logger_on_first_use=True,
     )
 
-    # stdlib 侧:外来 LogRecord 过 foreign_pre_chain 再经同一 renderer
     formatter_processors: list[structlog.typing.Processor] = [
         structlog.stdlib.ProcessorFormatter.remove_processors_meta,
     ]
     if settings.environment == "prod":
-        # prod 把 exception 渲染成结构化栈帧;show_locals 必须关(局部变量含凭据);dev 的
-        # ConsoleRenderer 自己渲染 exc_info,不叠加
         formatter_processors.append(
             structlog.processors.ExceptionRenderer(
                 structlog.tracebacks.ExceptionDictTransformer(show_locals=False)

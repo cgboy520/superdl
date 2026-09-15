@@ -14,20 +14,17 @@
 
 Grafana(full 档)→ Explore → `Loki(平台)` / `Loki(租户)` 数据源(kps.yaml additionalDataSources);或 `logcli` 带 `--org-id`:`kubectl -n monitoring port-forward svc/loki 3100:3100` 后 `logcli --addr=http://localhost:3100 --org-id=platform query ...`(下面查询为 platform 租户口径;租户实例日志换 `--org-id=tenant`)。
 
+下面六条查询依次对应:请求 ID 全链路、API 未捕获异常、outbox 死信/重试、审计事件、apiserver 删除操作、平台 ServiceAccount 的 apiserver 操作。
+
 ```logql
-# 1. 按 request_id 串联一次请求的 API + worker(outbox)全链日志
 {namespace="superdl"} |~ `"request_id":"<request-id>"`
 
-# 2. API 未捕获异常
 {namespace="superdl", container="api"} |~ "unhandled_exception"
 
-# 3. outbox 死信/重试
 {namespace="superdl", container="worker"} |~ "outbox_task_(dead|failed)"
 
-# 4. 管理端写操作进程侧留痕与 audit_write_failed(DB audit_log 为主)
 {namespace="superdl", container="api"} |~ "audit"
 
-# 5. 控制面 apiserver 审计(按动词/用户过滤)
 {job="kube-apiserver-audit"} |~ `"verb":"delete"`
 {job="kube-apiserver-audit"} |~ `"user":{"username":"system:serviceaccount:superdl`
 ```
@@ -36,12 +33,13 @@ Grafana(full 档)→ Explore → `Loki(平台)` / `Loki(租户)` 数据源(kps.y
 
 ## 告警
 
-未捕获异常、outbox 死信等已有 Prometheus 指标告警(kps values 的 `superdl.platform` 规则组:`ApiHighErrorRate`/`OutboxTaskDead` 等)。按日志内容告警时,用 Loki ruler 对上面 2/3 号查询建 `count_over_time(...) > 0` 规则,接同一 Alertmanager。
+未捕获异常、outbox 死信等已有 Prometheus 指标告警(kps values 的 `superdl.platform` 规则组:`ApiHighErrorRate`/`OutboxTaskDead` 等)。按日志内容告警时,用 Loki ruler 对上面的 API 异常与 outbox 死信/重试查询建 `count_over_time(...) > 0` 规则,接同一 Alertmanager。
 
 ## 采集自检
 
+Alloy 应每节点一只 Pod,包括控制面节点;缺少 apiserver 审计流时先确认 server 上的 Alloy Pod 已就绪,再核对 `values/alloy.yaml` 的 tolerations 与审计文件挂载。
+
 ```bash
-kubectl -n monitoring get pods -l app.kubernetes.io/name=alloy   # 每节点一只,含控制面
-kubectl -n monitoring logs deploy/loki --tail=5                  # 单副本 loki
-# 无 apiserver 审计流时:确认 alloy DaemonSet 在 server 节点有 Pod(tolerations 见 values/alloy.yaml)
+kubectl -n monitoring get pods -l app.kubernetes.io/name=alloy
+kubectl -n monitoring logs deploy/loki --tail=5
 ```

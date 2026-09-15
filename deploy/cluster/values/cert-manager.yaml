@@ -1,5 +1,4 @@
-# cert-manager:指标暴露 + kps 抓取(告警规则在 values/kps.yaml 的 superdl-certmanager 组)
 prometheus:
   enabled: true
   servicemonitor:
-    enabled: true   # kps 已设 serviceMonitorSelectorNilUsesHelmValues: false,全 ns 可发现
+    enabled: true

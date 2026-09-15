@@ -21,7 +21,6 @@ from app.core.config import decode_master_key, get_settings
 
 _PREFIX_V2 = "enc:v2:"
 
-# HKDF 域分离:加密子密钥与摘要子密钥独立派生
 _ENC_INFO = b"superdl/enc/v2"
 _MAC_INFO = b"superdl/mac/v2"
 _KDF_SALT = b"superdl-crypto"
@@ -31,7 +30,6 @@ def _active_key() -> bytes:
     settings = get_settings()
     raw = settings.config_encryption_key
     if not raw:
-        # dev/test 兜底派生
         return hashlib.sha256(f"{settings.jwt_secret}:platform-config".encode()).digest()
     return decode_master_key(raw, label="SUPERDL_CONFIG_ENCRYPTION_KEY")
 
@@ -83,7 +81,7 @@ def _hmac_hex(mac_key: bytes, domain_msg: str) -> str:
 
 
 def _mac_candidates() -> list[bytes]:
-    """摘要用钥读候选:当前世代在前,轮换窗口内追加 previous 派生(主密钥不同则派生必不同)。"""
+    """按当前、previous 的顺序去重主密钥,派生摘要子密钥。"""
     masters = dict.fromkeys(k for k in (_active_key(), _previous_key()) if k is not None)
     return [_derive(master, _MAC_INFO) for master in masters]
 

@@ -1,13 +1,3 @@
-# 平台 ServiceAccount 拆身份:
-#   superdl-api        → API 进程:只读探测(集群页 test-connection / 容量预览),无写权限(K8s 写一律走 outbox)
-#   superdl-worker     → core worker(计费/通知/保洁):零 K8s 权限,SA 仅为身份锚点
-#   superdl-tenant-mgr → 租户资源全生命周期(instance.* + reconciler)
-#   superdl-node-mgr   → nodes:patch(cordon/巡检回写标签)+ nodes:delete(退役)+ 只读探测
-#   superdl-prewarm    → superdl ns 预热 Job + nodes 只读
-#   superdl-disk-ops   → 租户 ns 内数据盘 PVC 的建/扩/删(容量即配额)
-#
-# 写权限只能给 ClusterRole(tenant-* 动态创建),可达面由 deploy/cluster/admission/tenant-restrictions.yaml 收窄;
-# ns 内 pods:create / batch/jobs:create 等价于该 ns 的 secrets:get,由策略⑤⑥ 兜。本文件动词面 + 策略①③⑤⑥⑦ 才是完整边界
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -44,14 +34,13 @@ metadata:
   name: superdl-disk-ops
   namespace: superdl
 ---
-# 只读面:与 app/core/k8s/real.py 的 probe_cluster / list_nodes 一一对应;绑定 API 与 node-mgr
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: superdl-cluster-readonly
 rules:
   - apiGroups: [""]
-    resources: ["pods"]   # 容量预览(list_pod_for_all_namespaces)
+    resources: ["pods"]
     verbs: ["get", "list"]
   - apiGroups: [""]
     resources: ["nodes"]
@@ -66,15 +55,12 @@ rules:
     resources: ["runtimeclasses"]
     verbs: ["get", "list"]
   - apiGroups: ["gateway.networking.k8s.io"]
-    # probe_cluster 读 Gateway 的 status.conditions[Programmed] 与逐 listener 的 attachedRoutes
     resources: ["gateways"]
     verbs: ["get", "list"]
   - apiGroups: [""]
-    # 组件深探读未就绪对象的 Warning 事件(nodes/service.probe_component_detail)
     resources: ["events"]
     verbs: ["get", "list"]
   - apiGroups: ["cert-manager.io"]
-    # 组件深探读证书到期日与 Ready 条件;CRD 未装时按无证书处理
     resources: ["certificates"]
     verbs: ["get", "list"]
 ---
@@ -91,12 +77,9 @@ subjects:
     name: superdl-api
     namespace: superdl
   - kind: ServiceAccount
-    name: superdl-node-mgr   # 巡检 probe_cluster 同用
+    name: superdl-node-mgr
     namespace: superdl
 ---
-# tenant-mgr 编排面:租户 namespace/Pod/Service/HTTPRoute/NetworkPolicy/PVC/Quota/LimitRange 全生命周期。
-# patch 动词与 real.py _create_or_patch 一一对应。secrets 不在 ClusterRole:由编排器建 tenant-* 时下发同名
-# Role/RoleBinding(real.py _ensure_tenant_rbac_sync);superdl ns 内的 Secret 防线是策略⑤
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -104,20 +87,17 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["namespaces"]
-    verbs: ["get", "create", "patch"]   # patch:既有 ns 的 PSA/managed 标签收敛(real.py _ensure_namespace_sync)
+    verbs: ["get", "create", "patch"]
   - apiGroups: [""]
     resources: ["pods", "persistentvolumeclaims"]
     verbs: ["get", "list", "create", "delete"]
   - apiGroups: [""]
     resources: ["nodes"]
-    verbs: ["get", "list"]   # reconciler 判 node_lost(orchestrator/reconciler._node_readiness)
+    verbs: ["get", "list"]
   - apiGroups: [""]
     resources: ["services", "resourcequotas", "limitranges"]
-    # patch:SSH Service 端口漂移收敛(real.py _reconcile_ssh_service_conflict_sync)与 Quota/LimitRange 收敛
     verbs: ["get", "list", "create", "delete", "patch"]
   - apiGroups: ["rbac.authorization.k8s.io"]
-    # 下发租户 ns 内的 secrets Role/RoleBinding(落点由 VAP 策略①钉在 tenant-*);
-    # escalate/bind 必授(tenant-mgr 不持有集群级 secrets,授出 secrets Role 需要它们)
     resources: ["roles"]
     verbs: ["get", "create", "patch", "escalate", "bind"]
   - apiGroups: ["rbac.authorization.k8s.io"]
@@ -125,9 +105,8 @@ rules:
     verbs: ["get", "create", "patch"]
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
-    verbs: ["get", "create", "delete", "patch"]   # patch:NetPol 漂移收敛(real.py _ensure_default_netpol_sync)
+    verbs: ["get", "create", "delete", "patch"]
   - apiGroups: ["gateway.networking.k8s.io"]
-    # 每实例一条 HTTPRoute(租户 ns);list 供 reconciler 孤儿端点清理
     resources: ["httproutes"]
     verbs: ["get", "list", "create", "delete"]
 ---
@@ -144,8 +123,6 @@ subjects:
     name: superdl-tenant-mgr
     namespace: superdl
 ---
-# node-mgr:cordon/uncordon + 巡检回写标签 + 节点退役(node.decommission)。
-# 字段级收窄由 VAP 策略③完成;delete 的对象白名单由 VAP 策略⑦完成
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -153,7 +130,7 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["nodes"]
-    verbs: ["get", "list", "patch", "delete"]   # delete:节点退役(对象白名单由 VAP 策略⑦收窄)
+    verbs: ["get", "list", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -168,7 +145,6 @@ subjects:
     name: superdl-node-mgr
     namespace: superdl
 ---
-# prewarm:superdl ns 预热 Job 生命周期 + nodes 只读
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -194,14 +170,11 @@ subjects:
     name: superdl-prewarm
     namespace: superdl
 ---
-# disk-ops:租户 ns 内数据盘 PVC 的建/扩/删;PVC 容量即硬配额,无配额下发作业
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: superdl-disk-ops
 rules:
-  # 一盘一 PVC:建(disk.provision)、扩(同一 handler patch 容量)、删(disk.deprovision)。
-  # 不再需要 batch/jobs 与 persistentvolumes——目录配额与擦除 Job 随一盘一 PVC 取消
   - apiGroups: [""]
     resources: ["persistentvolumeclaims"]
     verbs: ["get", "create", "patch", "delete"]
@@ -219,8 +192,6 @@ subjects:
     name: superdl-disk-ops
     namespace: superdl
 ---
-# superdl ns 内拉取凭据写权限(仅 prewarm):get/patch 按 resourceNames 收窄到 superdl-registry-pull;
-# create 不可收窄(real.py _ensure_pull_secret_sync 首装要建),由策略①(类型)与⑤⑥(引用)兜
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:

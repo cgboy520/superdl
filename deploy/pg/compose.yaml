@@ -1,13 +1,9 @@
-# 自建单实例 PG 18(控制面宿主机 Docker)。落位 /etc/superdl/pg/compose.yaml;CHANGE_ME_PG_IP 换成宿主机内网地址。
-# host 网络:Pod 出向 NetworkPolicy 按 <宿主机 IP>/32 放行,而 Docker 端口映射会在 PREROUTING 先 DNAT 到
-# 容器 IP,netpol 在 FORWARD 看到的目的地址不在白名单而 REJECT;直接绑宿主地址即无 DNAT
 name: superdl-pg
 services:
   postgres:
-    # 与 deploy/app/k8s/06-pg-backup.yaml 同一 digest;升版本两处同改
     image: postgres:18@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
     restart: unless-stopped
-    env_file: [/etc/superdl/pg/pg.env]   # POSTGRES_USER=superdl / POSTGRES_PASSWORD=<owner 口令>
+    env_file: [/etc/superdl/pg/pg.env]
     network_mode: host
     volumes:
       - /var/lib/superdl/pg/data:/var/lib/postgresql

@@ -17,16 +17,14 @@ import time
 from jupyter_server.auth import User
 from jupyter_server.base.handlers import JupyterHandler
 
-# 基类 = PasswordIdentityProvider(jupyter_server 2.x 没有 TokenIdentityProvider)
 try:
     from jupyter_server.auth.identity import TokenIdentityProvider as _BaseIdentityProvider
-except ImportError:  # jupyter_server 2.x
+except ImportError:
     from jupyter_server.auth.identity import PasswordIdentityProvider as _BaseIdentityProvider
 from jupyter_server.utils import url_path_join
 from tornado import web
 
 COOKIE_NAME = "__Host-superdl_jupyter"
-# 单次核销记录(进程内存):code → 核销时刻;票据 TTL 60s,记录保留 120s,每次核销清扫过期项
 _used_codes: dict[str, float] = {}
 _USED_CODE_KEEP_SECONDS = 120.0
 
@@ -51,7 +49,7 @@ def _ticket_valid(token: str, code: str, exp: str, sig: str) -> bool:
 
 
 class SuperDLBootstrapHandler(JupyterHandler):
-    """登录入口本身,必须匿名可达(不能挂 @web.authenticated)。"""
+    """核销一次性票据并设置登录 cookie。"""
 
     async def get(self) -> None:
         token = os.environ.get("JUPYTER_TOKEN", "")
@@ -62,7 +60,6 @@ class SuperDLBootstrapHandler(JupyterHandler):
         if not token or code in _used_codes or not _ticket_valid(token, code, exp, sig):
             raise web.HTTPError(403)
         _used_codes[code] = time.time()
-        # __Host- cookie(Secure + Path=/ + 无 Domain)+ HttpOnly + SameSite=Lax
         self.set_cookie(
             COOKIE_NAME, token, secure=True, httponly=True, samesite="lax", path="/"
         )
@@ -70,7 +67,7 @@ class SuperDLBootstrapHandler(JupyterHandler):
 
 
 def _user_from_cookie(provider: _BaseIdentityProvider, handler: JupyterHandler):
-    """cookie 与 stock token 恒等比较,命中返回与 token 登录等价的最小身份;异常返回 None。"""
+    """校验 cookie,返回用户身份或 None。"""
     try:
         token = str(provider.token or "")
         cookie = handler.get_cookie(COOKIE_NAME)
@@ -81,7 +78,6 @@ def _user_from_cookie(provider: _BaseIdentityProvider, handler: JupyterHandler):
     return None
 
 
-# get_user 按基类的同步/异步形态适配
 if inspect.iscoroutinefunction(_BaseIdentityProvider.get_user):
 
     class SuperDLIdentityProvider(_BaseIdentityProvider):

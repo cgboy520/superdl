@@ -1,20 +1,16 @@
-# 本地开发依赖:只起 PostgreSQL 18。API 与 worker 在宿主机用 uv 运行(CLAUDE.md「常用命令」);mock 短信/支付由 API 自身提供
 name: superdl
 
 services:
   postgres:
     image: postgres:18
-    # 显式 stop 后不自动拉起
     restart: unless-stopped
     environment:
       POSTGRES_USER: superdl
       POSTGRES_PASSWORD: superdl
       POSTGRES_DB: superdl
     ports:
-      # 仅绑回环(弱口令 dev 库)
       - "127.0.0.1:5432:5432"
     volumes:
-      # postgres:18 挂载 /var/lib/postgresql(内含版本子目录)
       - pgdata:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U superdl"]

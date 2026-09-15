@@ -11,7 +11,7 @@ ExportLang = Query(default="zh-CN")
 
 
 def parse_day(day: str) -> tuple[datetime, datetime]:
-    """UTC 日窗口 [start, end)(与 reconciliation 的 day 参数同口径)。"""
+    """将 YYYY-MM-DD 解析为 UTC 日窗口 [start, end);格式错误抛 VALIDATION_ERROR。"""
     try:
         start = datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=UTC)
     except ValueError as exc:
@@ -24,7 +24,6 @@ def _day_range(day: str | None = Query(default=None)) -> tuple[datetime, datetim
     return parse_day(day) if day else None
 
 
-# 列表 / CSV 端点共用的可选日窗口查询参数
 DayRange = Annotated[tuple[datetime, datetime] | None, Depends(_day_range)]
 
 

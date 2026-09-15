@@ -51,7 +51,6 @@ export function PayoutModal({
   const { formatMoney } = useFormat();
   const [form] = Form.useForm<RefundPayout>();
   const payout = usePayoutRefund();
-  // 幂等键随目标单派生
   const [idemFor, setIdemFor] = useState<{ id: number; key: string } | null>(null);
   if (target && idemFor?.id !== target.id) {
     setIdemFor({ id: target.id, key: crypto.randomUUID() });
@@ -98,7 +97,6 @@ export function RefundsTab() {
   const { admin } = useAuth();
   const writable = canWriteFinance(role);
   const qc = useQueryClient();
-  // 筛选条件入 URL(status/发起日/渠道);渠道在客户端过滤已加载页
   const { search, setFilters } = useFinanceFilters();
   const status = search.r_status;
   const day = search.r_day ? dayjs(search.r_day) : null;
@@ -108,18 +106,15 @@ export function RefundsTab() {
     keys: ["r_status", "r_day", "r_channel"],
     commit: setFilters,
   });
-  // 渠道不进导出参数
   const params = {
     ...(status ? { status } : {}),
     ...(search.r_day ? { day: search.r_day } : {}),
   };
   const refundsQ = useRefunds(params);
-  // hasNextPage/isFetchNextPageError 还服务渠道过滤的汇总行,留在解构里
   const { data, queryKey, hasNextPage, isFetchNextPageError } = refundsQ;
   const { doExport, exporting } = useCsvExport((tz, lang) => exportRefundsCsv(params, tz, lang));
   const all = flattenPages(data);
   const rows = channel ? all.filter((r) => r.payout_channel === channel) : all;
-  // 渠道是客户端过滤,服务端 total 与所见不一致时不出计数
   const total = channel ? undefined : (data?.pages[0]?.total ?? undefined);
   const [payoutTarget, setPayoutTarget] = useState<RefundRow | null>(null);
   const review = useReviewRefund();
@@ -309,7 +304,6 @@ export function RefundsTab() {
                   }
                   more={
                     <RowMoreMenu>
-                      {/* 低频的「取消退款单」收进更多 */}
                       <ReasonAction
                         label={t("finance.cancelRefund")}
                         type="text"

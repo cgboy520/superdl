@@ -18,7 +18,7 @@ function mockFetch(responses: Response[]): { auth: (string | null)[] } {
 const ok = () => new Response(JSON.stringify({ ok: true }), { status: 200 });
 const unauthorized = () => new Response("", { status: 401 });
 
-/** 最小 LockManager:同名请求串行执行,模拟浏览器 Web Locks 的互斥语义(node/jsdom 均不实现)。 */
+/** 同名请求串行执行的 LockManager 替身。 */
 function fakeLocks(): Pick<LockManager, "request"> {
   const tails = new Map<string, Promise<unknown>>();
   return {
@@ -37,7 +37,6 @@ function fakeLocks(): Pick<LockManager, "request"> {
 describe("customFetch 401 静默续期", () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
-    // jsdom 不实现 Web Locks;续期互斥走 navigator.locks,统一挂最小替身
     vi.stubGlobal("navigator", { locks: fakeLocks() });
   });
 
@@ -74,12 +73,10 @@ describe("customFetch 401 静默续期", () => {
       customFetch("/api/v1/wallet", { method: "GET" }),
       customFetch("/api/v1/instances", { method: "GET" }),
     ]);
-    // 第二个请求进入临界区时 token 已是 new ≠ 发起时的 old,直接重放而不再消费 refresh token
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
   it("token 已被别的标签页换掉时不再续期,直接重放", async () => {
-    // 请求以 old 发出,进入临界区时 token 已被别的标签页续成 new;此时再 refresh = 重放已消费 token,后端撤销全部会话。
     const tokens = ["old", "new", "new"];
     let i = 0;
     const refresh = vi.fn(() => Promise.resolve(true));
@@ -128,7 +125,6 @@ describe("错误体解析", () => {
   });
 
   it("非 JSON 成功响应(text/csv 导出)原样透传文本", async () => {
-    // 注:Response.text() 按 UTF-8 解码会剥掉 BOM,下载落盘时由调用方补回
     mockFetch([
       new Response("a,b\r\n1,2\r\n", {
         status: 200,

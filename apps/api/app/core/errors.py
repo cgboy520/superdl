@@ -18,7 +18,6 @@ from app.core.messages import render_message
 
 
 class ErrorCode(StrEnum):
-    # 通用
     VALIDATION_ERROR = "VALIDATION_ERROR"
     NOT_FOUND = "NOT_FOUND"
     UNAUTHORIZED = "UNAUTHORIZED"
@@ -29,7 +28,6 @@ class ErrorCode(StrEnum):
     PAYLOAD_TOO_LARGE = "PAYLOAD_TOO_LARGE"
     AUDIT_UNAVAILABLE = "AUDIT_UNAVAILABLE"
     INTERNAL = "INTERNAL"
-    # 账户
     SMS_CODE_INVALID = "SMS_CODE_INVALID"
     SMS_TOO_FREQUENT = "SMS_TOO_FREQUENT"
     SMS_SEND_FAILED = "SMS_SEND_FAILED"
@@ -46,29 +44,21 @@ class ErrorCode(StrEnum):
     REAL_NAME_CHANNEL_ERROR = "REAL_NAME_CHANNEL_ERROR"
     REAL_NAME_DISABLED = "REAL_NAME_DISABLED"
     TERMS_NOT_ACCEPTED = "TERMS_NOT_ACCEPTED"
-    # 商品/库存
     SKU_NOT_ON_SALE = "SKU_NOT_ON_SALE"
     SKU_NOT_SELLABLE = "SKU_NOT_SELLABLE"
-    # 实例
     INSTANCE_INVALID_TRANSITION = "INSTANCE_INVALID_TRANSITION"
     CLUSTER_NOT_READY = "CLUSTER_NOT_READY"
     INSTANCE_NOT_STOPPED = "INSTANCE_NOT_STOPPED"
     INSTANCE_FROZEN = "INSTANCE_FROZEN"
     NO_CAPACITY = "NO_CAPACITY"
-    # 网关 extAuth 回调的唯一拒绝码:密钥错/已吊销/不属该服务/实例未运行同码同文案
     API_KEY_INVALID = "API_KEY_INVALID"
-    # 计费
     INSUFFICIENT_BALANCE = "INSUFFICIENT_BALANCE"
-    # 包周期(预付订阅)
     SUBSCRIPTION_EXPIRED = "SUBSCRIPTION_EXPIRED"
     SUBSCRIPTION_NOT_RENEWABLE = "SUBSCRIPTION_NOT_RENEWABLE"
-    # 存储
     DISK_IN_USE = "DISK_IN_USE"
     DISK_SHRINK_FORBIDDEN = "DISK_SHRINK_FORBIDDEN"
-    # 支付
     ORDER_NOT_FOUND = "ORDER_NOT_FOUND"
     PAYMENT_CHANNEL_ERROR = "PAYMENT_CHANNEL_ERROR"
-    # 管理端
     ADMIN_SECOND_REVIEW_REQUIRED = "ADMIN_SECOND_REVIEW_REQUIRED"
     MFA_TICKET_INVALID = "MFA_TICKET_INVALID"
     MFA_CODE_INVALID = "MFA_CODE_INVALID"
@@ -113,7 +103,7 @@ def _make(
     params: Mapping[str, Any] | None = None,
     detail: Any = None,
 ) -> AppError:
-    """四个便捷工厂的共同体:给了 message 就不带文案键;否则用 key 或该状态的默认键。"""
+    """给定 message 时不带文案键;否则用 key 或该状态的默认键。"""
     key = None if message is not None else (key or default_key)
     return AppError(code, message, key=key, params=params, http_status=http_status, detail=detail)
 
@@ -166,7 +156,7 @@ def _error_headers(http_status: int, headers: Mapping[str, str] | None) -> dict[
 
 
 def current_request_id() -> str | None:
-    """错误体回带 request_id(observability 中间件绑定的 contextvar),便于凭单排障。"""
+    """读取 structlog 上下文的 request_id;缺失或为空时返回 None。"""
     value = structlog.contextvars.get_contextvars().get("request_id")
     return str(value) if value else None
 
@@ -185,14 +175,13 @@ def _error_body(
     }
 
 
-# 框架层 HTTPException(路由 404 / 方法 405)→ 统一错误体
 _HTTP_STATUS_MAP: dict[int, tuple[ErrorCode, str]] = {
     status.HTTP_404_NOT_FOUND: (ErrorCode.NOT_FOUND, "common.notFound"),
     status.HTTP_405_METHOD_NOT_ALLOWED: (ErrorCode.METHOD_NOT_ALLOWED, "common.methodNotAllowed"),
 }
 
 
-def _unhandled_response(exc: Exception, *, path: str, method: str) -> JSONResponse:  # noqa: ARG001 异常已由 logger.exception 记录
+def _unhandled_response(exc: Exception, *, path: str, method: str) -> JSONResponse:  # noqa: ARG001
     """未捕获异常的统一渲染(structlog 留痕 + 统一错误体)。"""
     get_logger("app.errors").exception("unhandled_exception", path=path, method=method)
     return JSONResponse(
@@ -208,7 +197,7 @@ def _unhandled_response(exc: Exception, *, path: str, method: str) -> JSONRespon
 
 
 class Uniform500Middleware:
-    """中间件链内层的未捕获异常兜底:在此渲染 500 沿链返回,保住安全响应头与 request_id。"""
+    """捕获 HTTP 请求下游的未处理异常并渲染统一 500 响应。"""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -227,7 +216,7 @@ class Uniform500Middleware:
 
 
 def payload_too_large_response() -> JSONResponse:
-    """413 统一错误体。中间件直渲专用:该层在路由之外,抛 AppError 到不了 exception handler。"""
+    """返回统一的 413 错误响应。"""
     return JSONResponse(
         status_code=status.HTTP_413_CONTENT_TOO_LARGE,
         content=_error_body(
@@ -241,7 +230,7 @@ def payload_too_large_response() -> JSONResponse:
 
 
 def audit_unavailable_response() -> JSONResponse:
-    """503 统一错误体:审计闸 fail-closed(中间件直渲,同 payload_too_large_response)。"""
+    """返回审计不可用的统一 503 错误响应。"""
     return JSONResponse(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         content=_error_body(
@@ -290,7 +279,7 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def validation_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
-        # 只回位置/原因/类型,不回显 input
+        """返回校验错误的位置、原因和类型,不回显 input。"""
         detail = [
             {"loc": e.get("loc"), "msg": e.get("msg"), "type": e.get("type")} for e in exc.errors()
         ]

@@ -1,8 +1,4 @@
-"""管理端 CSV 导出:审计检索 / 日对账 / 调账单。
-
-转义/上限/截断标记/流式骨架同 app.core.csvexport;时间按调用方时区偏移折算并带 (UTC+x) 后缀。
-审计导出筛选口径与 GET /admin/v1/audit 一致;对账导出 = GET /admin/v1/reconciliation 同一报告。
-"""
+"""审计、日对账与调账单 CSV 导出;时间按调用方时区偏移折算。"""
 
 import json
 from collections.abc import AsyncIterator
@@ -65,7 +61,6 @@ _HEADERS: dict[tuple[str, str], list[str]] = {
     ],
 }
 
-# 状态文案与 packages/ui shared.json 同一口径
 _ADJUSTMENT_STATUS_LABEL: dict[str, dict[str, str]] = {
     "zh-CN": {"pending": "待复核", "approved": "已生效", "rejected": "已驳回"},
     "en-US": {"pending": "Pending review", "approved": "Effective", "rejected": "Rejected"},
@@ -75,7 +70,7 @@ _TOTAL_LABEL = {"zh-CN": "合计", "en-US": "TOTAL"}
 
 
 def audit_filters(stmt, *, actor_type, actor_id, q, since, until):
-    """GET /admin/v1/audit 与审计 CSV 导出共用的 where 条件(q 的 %/_ 按字面匹配)。"""
+    """按操作者、动作或目标子串及 [since, until) 时间窗过滤;q 的 %/_ 按字面匹配。"""
     if actor_type:
         stmt = stmt.where(AuditLog.actor_type == actor_type)
     if actor_id:
@@ -160,7 +155,7 @@ def stream_adjustments_csv(
     tz_offset_minutes: int = BILLING_TZ_OFFSET_MINUTES,
     lang: str = "zh-CN",
 ) -> AsyncIterator[str]:
-    """调账单 CSV(降序;筛选口径与 GET /admin/v1/adjustments 一致)。"""
+    """按状态、用户与创建日窗口导出调账单 CSV,按 id 降序。"""
     stmt = select(AdminAdjustment)
     if status:
         stmt = stmt.where(AdminAdjustment.status == status)

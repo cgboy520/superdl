@@ -69,7 +69,7 @@ import { keys } from "./keys";
 /** 查询可选项:只放行这四个;select 等结构变换在 hook 内固定。错误类型已由 register.d.ts 全局钉成 ApiError。 */
 export interface QueryOpts<T = unknown> {
   enabled?: boolean;
-  /** 数值,或函数式。入参是结构化的最小快照(TanStack 的 Query 类在泛型上不变,不能直接当参数类型用) */
+  /** 轮询间隔:数值、false,或根据查询状态快照计算的函数。 */
   refetchInterval?:
     | number
     | false
@@ -89,7 +89,7 @@ interface CursorPage {
   next_cursor?: string | null;
 }
 
-/** 游标分页骨架(useInfiniteQuery 样板)。infinite 查询禁止轮询与 focus 重拉;新鲜度靠手动刷新。 */
+/** 游标分页查询,关闭间隔轮询与窗口聚焦重取。 */
 function useCursorPages<TPage extends CursorPage, P extends CursorParams>(
   key: readonly unknown[],
   fetcher: (params?: P) => Promise<TPage>,
@@ -99,7 +99,6 @@ function useCursorPages<TPage extends CursorPage, P extends CursorParams>(
   return useInfiniteQuery<TPage, ApiError, InfiniteData<TPage>, readonly unknown[], string | undefined>({
     queryKey: key,
     initialPageParam: undefined,
-    // TS 证不出泛型展开,仅此处单点断言
     queryFn: ({ pageParam }) => fetcher({ ...params, limit, ...(pageParam ? { cursor: pageParam } : {}) } as P),
     getNextPageParam: (last) => last.next_cursor ?? undefined,
     refetchOnWindowFocus: false,
@@ -178,7 +177,6 @@ export function useTransientRefresh<T>(opts: {
     queries: transientIds.map((id) => ({
       queryKey: detailKey(id),
       queryFn: () => fetchOne(id),
-      // 到终态即停
       refetchInterval: (q: { state: { data: { status: string } | undefined } }) =>
         q.state.data && isTransient(q.state.data.status) ? POLL.transient : false,
     })),
@@ -195,12 +193,10 @@ export function useTransientRefresh<T>(opts: {
       lastSeen.current.set(id, status);
       if (prev !== undefined && prev !== status) changed = true;
     }
-    // 退出过渡态集合的 id 清出基线
     for (const id of [...lastSeen.current.keys()]) {
       if (!alive.has(id)) lastSeen.current.delete(id);
     }
     if (changed) void queryClient.invalidateQueries({ queryKey: listPrefix });
-    // statusesKey 聚合轮询结果变化;results 仅作取值通道
   }, [statusesKey, transientIds, results, queryClient, listPrefix]);
 }
 
@@ -222,7 +218,6 @@ export const useInstance = (uuid: string, opts?: QueryOpts<InstanceOut>) =>
 export const useInstanceEvents = (uuid: string, opts?: QueryOpts) =>
   useQuery({
     queryKey: keys.instances.events(uuid),
-    // 服务端降序游标分页;取大页覆盖「失败原因 / 是否运行过」判定
     queryFn: () => listInstanceEventsApiV1InstancesUuidEventsGet(uuid, { limit: 200 }),
     ...opts,
   });
@@ -241,7 +236,6 @@ export const useInstanceAccess = (uuid: string, opts?: QueryOpts) =>
     ...opts,
   });
 
-// ---------- 在线服务 ----------
 /** 轻量整表视图(首 100 条;概览计数 / 命令面板用);列表页走 useServicePages。 */
 export const useServices = (opts?: QueryOpts<PageServiceOut>) =>
   useQuery<PageServiceOut, ApiError, ServiceOut[]>({
@@ -278,7 +272,7 @@ export const useServiceEventPages = (slug: string) =>
     undefined,
     50,
   );
-/** 版本历史 = 该服务下全部实例(含已释放),版本号降序。 */
+/** 版本历史首 50 条(含已释放实例),按实例 ID 降序;不续取后续页。 */
 export const useServiceRevisions = (slug: string, opts?: QueryOpts) =>
   useQuery({
     queryKey: keys.services.revisions(slug),
@@ -296,7 +290,7 @@ export const useServiceLogs = (
     queryFn: () => getServiceLogsApiV1ServicesSlugLogsGet(slug, params),
     ...opts,
   });
-/** 服务 API Key 列表:只有前缀。 */
+/** 服务 API Key 列表:前缀与名称、创建/使用/吊销时间等元数据,不含明文密钥。 */
 export const useServiceApiKeys = (slug: string, opts?: QueryOpts<ApiKeyOut[]>) =>
   useQuery({
     queryKey: keys.services.apiKeys(slug),
@@ -332,7 +326,6 @@ export const useInstanceMetrics = (
     queryFn: () => getInstanceMetricsApiV1InstancesUuidMetricsGet(uuid, params),
     ...opts,
   });
-// ---------- 实例 / 服务共用 ----------
 /** 工作负载标识:实例(uuid)或服务(slug;打当前版本实例)。 */
 export type WorkloadSubject = { kind: "instance"; uuid: string } | { kind: "service"; slug: string };
 
@@ -369,7 +362,7 @@ export const useWorkloadEventPages = (subject: WorkloadSubject) =>
 /** 小时账单游标分页。 */
 export const useHourlyBillPages = (params?: Omit<ListHourlyBillsApiV1BillsHourlyGetParams, "cursor" | "limit">) =>
   useCursorPages(keys.bills.pages(params), listHourlyBillsApiV1BillsHourlyGet, params, 50);
-/** 资金流水游标分页,必须走 useInfiniteQuery。 */
+/** 资金流水游标分页。 */
 export const useLedgerPages = (limit = 20) =>
   useCursorPages(keys.ledger.pages(limit), getLedgerApiV1WalletLedgerGet, undefined, limit);
 /** 月度汇总:窗口按本地月界切,offset 与「今日消费」同一来源。 */

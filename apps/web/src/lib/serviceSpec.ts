@@ -1,4 +1,4 @@
-/** 服务容器规格的常量与纯函数校验,与后端 orchestrator/schemas.py 同源(后端是硬闸);判据两边一起改。 */
+/** 服务容器的输入约束、纯函数校验与提交负载转换。 */
 
 /** 与后端 schemas._ENV_NAME_RE 同源 */
 export const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -27,7 +27,6 @@ export function newRowId(): string {
 /** 引用是否钉死到具体版本,判据与后端 core.registry.is_pinned_image_ref 一致(不写 tag 不算钉死)。 */
 export function isPinnedImageRef(ref: string): boolean {
   if (ref.includes("@sha256:")) return true;
-  // 冒号可能是仓库主机端口,tag 只看最后一段路径
   const last = ref.split("/").pop() ?? "";
   const colon = last.lastIndexOf(":");
   return colon > 0 && last.slice(colon + 1) !== "latest";

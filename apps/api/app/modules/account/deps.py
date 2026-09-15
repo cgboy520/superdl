@@ -19,6 +19,7 @@ async def get_current_user(
     session: DbSession,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)] = None,
 ) -> User:
+    """校验用户 access token 与账户状态;版本缺失或不匹配时拒绝,成功后设置审计 actor。"""
     if credentials is None:
         raise unauthorized()
     payload = decode_token(credentials.credentials, "user")
@@ -35,7 +36,6 @@ async def get_current_user(
         raise AppError(
             ErrorCode.FORBIDDEN, key="account.userFrozen", http_status=status.HTTP_403_FORBIDDEN
         )
-    # 撤销闸:ver 缺失一律视为不匹配(401),不得给默认值
     if payload.get("ver") != user.token_version:
         raise unauthorized()
     request.state.audit_actor = AuditActor("user", str(user.id))

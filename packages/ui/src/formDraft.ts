@@ -12,7 +12,6 @@ export interface FormDraft<T extends object> {
 
 export function useFormDraft<T extends object>(key: string): FormDraft<T> {
   const storageKey = `superdl-form-draft:${key}`;
-  // 返回值按 key 记忆:effect 依赖 draft 时不会每渲染重放
   return useMemo(
     () => ({
       load: () => {
@@ -27,7 +26,7 @@ export function useFormDraft<T extends object>(key: string): FormDraft<T> {
         try {
           sessionStorage.setItem(storageKey, JSON.stringify(values));
         } catch {
-          // 存储不可用时静默失败
+          /* ignored */
         }
       },
       clear: () => {

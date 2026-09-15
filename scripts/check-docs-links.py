@@ -1,17 +1,9 @@
 #!/usr/bin/env python3
-"""文档引用检查(stdlib 零依赖):Markdown 相对链接与反引号仓库路径必须存在。
+"""检查 Markdown 相对链接、代码围栏外的反引号仓库路径及告警 runbook_url。
 
-范围:仓库内全部 *.md(排除 node_modules/.venv/.git/.claude/.trae/dist/generated/.turbo/.pytest_cache)。检查:
-1. Markdown 链接 `[text](target)`:非 http(s)/mailto/纯锚点时按所在目录解析,去掉 `#anchor` 后必须存在。
-2. 反引号内的仓库路径:依次按「文档所在目录 → 仓库根 → apps/api」解析,任一命中即通过;只检查首段是
-   仓库顶层目录(apps/packages/deploy/docs/e2e/scripts/.github)或 apps/api 内部目录(app/alembic/tests/scripts)
-   的 token,可带 glob。含 `<>{}$` 的占位路径不检查。
-3. 告警规则(`deploy/**/*.yaml`)的 `runbook_url`:GitHub blob URL 映射回仓库路径,文件必须存在,`#锚点` 须对上
-   目标文件标题(GitHub slug 规则)。只在全仓模式检查。
-
-用法: python3 scripts/check-docs-links.py            # 检查全仓
-      python3 scripts/check-docs-links.py a.md b.md  # 只检查给定文件
-退出码:0 通过;1 有断链(逐条打印 file:line: 说明)。
+用法:python3 scripts/check-docs-links.py [a.md b.md ...]。
+无参数时扫描全仓文档与告警规则;有参数时只检查指定文档。
+退出码:0 通过;1 有断链,逐条打印文件、行号与说明。
 """
 
 from __future__ import annotations
@@ -32,7 +24,6 @@ LINK_RE = re.compile(r"(?<!!)\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 CODE_RE = re.compile(r"`([^`\n]+)`")
 PATH_LIKE_RE = re.compile(r"^[A-Za-z0-9_.@*-]+(?:/[A-Za-z0-9_.@*-]+)*/?$")
 PLACEHOLDER_CHARS = set("<>{}$")
-# runbook_url: "https://github.com/<owner>/<repo>/blob/<ref>/<仓库路径>#<锚点>"
 RUNBOOK_URL_RE = re.compile(
     r'runbook_url:\s*"?https?://github\.com/[^/\s"]+/[^/\s"]+/blob/[^/\s"]+/([^\s"#]+)(?:#([^\s"]+))?'
 )
@@ -99,7 +90,7 @@ def check_file(path: str) -> list[str]:
                 if err:
                     findings.append(f"{rel}:{lineno}: {err}")
             if in_fence:
-                continue  # 代码块里是命令示例,不当路径引用检查
+                continue
             for m in CODE_RE.finditer(line):
                 err = check_code_path(m.group(1), base_dir)
                 if err:

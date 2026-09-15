@@ -1,4 +1,4 @@
-/** skus 路由 validateSearch:型号 / 档位 / 在售 / 名称白名单与往返。挂了 = SKU 筛选不再落 URL,或非法值污染查询参数。 */
+/** SKU 路由型号、档位、在售与名称筛选的 URL 往返测试。 */
 import { describe, expect, it } from "vitest";
 
 import { skusValidateSearch } from "./skus";

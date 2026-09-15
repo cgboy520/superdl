@@ -55,7 +55,6 @@ class TestAdminEnrollments:
         assert "/api/v1/node-enroll/script" in body["curl_command"]
         assert body["enrollment"]["status"] == "pending"
 
-        # 列表永不含 token;审计 detail 不落 token
         rows = (await client.get("/api/admin/v1/node-enrollments", headers=ah)).json()
         assert token not in str(rows)
         async with sm() as session:
@@ -79,7 +78,6 @@ class TestAdminEnrollments:
         assert r1.status_code == 201 and r2.status_code == 201
         assert r1.json()["enrollment"]["id"] == r2.json()["enrollment"]["id"]
         assert len(await enrollment_rows(sm)) == 1
-        # 重放已轮换 token:旧 token 失效,新 token 有效
         assert r1.json()["token"] != r2.json()["token"]
 
     async def test_idempotency_replay_guarded_when_inflight(self, client, sm) -> None:
@@ -108,14 +106,12 @@ class TestAdminEnrollments:
         ).json()
         eid = created["enrollment"]["id"]
 
-        # pending 可 regenerate:换 token 回 pending
         regen = await client.post(
             f"/api/admin/v1/node-enrollments/{eid}/regenerate", json={}, headers=ah
         )
         assert regen.status_code == 200
         assert regen.json()["token"] != created["token"]
 
-        # 吊销后 regenerate/再吊销均 409
         resp = await client.post(
             f"/api/admin/v1/node-enrollments/{eid}/revoke", json={"reason": "误发"}, headers=ah
         )
@@ -185,7 +181,6 @@ class TestEnrollmentStateMachine:
                 created_by=1,
                 idempotency_key=None,
             )
-        # bootstrap:pending→installing,拿到 join 参数与 progress 令牌
         async with sm() as session:
             row, cfg, progress = await nodes_service.bootstrap(
                 session,
@@ -197,10 +192,8 @@ class TestEnrollmentStateMachine:
             )
             assert row.status == "installing"
             assert cfg.cluster_join_token.endswith("secrettoken")
-            # 敏感键不出注册链路
             assert progress is not None and progress.startswith("sdlp_")
 
-        # 主机名不符 → failed + 409,令牌作废(后续 404)
         async with sm() as session:
             _e2, token2 = await nodes_service.create_enrollment(
                 session,
@@ -253,7 +246,6 @@ class TestEnrollmentStateMachine:
                 .values(expires_at=now_utc() - timedelta(minutes=1))
             )
             await session.commit()
-        # progress 令牌/注册令牌均随绝对过期失效
         async with sm() as session:
             with pytest.raises(AppError) as exc:
                 await nodes_service.report_progress(
@@ -275,7 +267,6 @@ class TestEnrollmentStateMachine:
                 session, token, hostname="mig-node-1", os_info={}, gpu_details=[], client_ip=None
             )
             assert progress is not None
-        # 需要重启 → rebooting;续跑第一条进度 → installing
         async with sm() as session:
             row = await nodes_service.report_progress(
                 session, progress, phase="reboot", state="rebooting", message=None
@@ -286,7 +277,6 @@ class TestEnrollmentStateMachine:
                 session, progress, phase="registries", state="ok", message=None
             )
             assert row.status == "installing"
-        # 失败上报 → failed 落 error;终态后再上报 → 404
         async with sm() as session:
             _e2, token2 = await nodes_service.create_enrollment(
                 session,
@@ -318,10 +308,9 @@ class TestEnrollRouterAnonymous:
         resp = await client.get("/api/v1/node-enroll/script")
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/x-shellscript")
-        # 只替换第一次出现(赋值行)
         base = get_settings().public_base_url.rstrip("/")
         assert f'API_BASE="{base}"' in resp.text
-        assert resp.text.count("__API_BASE__") == 1  # 仅剩护栏比较字面量
+        assert resp.text.count("__API_BASE__") == 1
         assert '!= "__API_BASE__"' in resp.text
         assert "/api/v1/node-enroll/bootstrap" in resp.text
 
@@ -338,7 +327,6 @@ class TestEnrollRouterAnonymous:
         token = created["token"]
         bearer = {"Authorization": f"Bearer {token}"}
 
-        # 无鉴权头 → 401;伪造令牌 → 统一 404
         assert (
             await client.post("/api/v1/node-enroll/bootstrap", json={"hostname": "n1"})
         ).status_code == 401
@@ -364,12 +352,10 @@ class TestEnrollRouterAnonymous:
         assert body["cluster_join_token"].endswith("secrettoken")
         assert body["pool"] == "hami"
         assert body["cluster_server_url"] == "https://10.0.0.10:9345"
-        # 首次 bootstrap 换发 progress 令牌,下发脚本指纹
         assert body["progress_token"].startswith("sdlp_")
         assert len(body["script_sha256"]) == 64
         progress_bearer = {"Authorization": f"Bearer {body['progress_token']}"}
 
-        # 注册令牌已消费:重复 bootstrap / 上报进度均 404
         assert (
             await client.post(
                 "/api/v1/node-enroll/bootstrap", json={"hostname": "gpu-a3-01"}, headers=bearer
@@ -383,7 +369,6 @@ class TestEnrollRouterAnonymous:
             )
         ).status_code == 404
 
-        # 进度推进:agent_start ok → joining;管理端列表可见且无 token
         for phase, state in [("driver", "ok"), ("agent_install", "ok"), ("agent_start", "ok")]:
             resp = await client.post(
                 "/api/v1/node-enroll/progress",
@@ -440,11 +425,9 @@ class TestEnrollReconciler:
                 headers=progress_bearer,
             )
 
-            # 节点未出现 → 不推进
             counts = await reconcile_enrollments_once(sm)
             assert counts == {"joined": 0, "failed": 0, "expired": 0, "labeled": 0}
 
-            # K8s 出现 Ready(未打标)→ 平台打整套标签 → joined,令牌即死;重复对账零动作
             fake.inject_node(
                 NodeInfo(
                     name="gpu-b1-02",
@@ -468,9 +451,7 @@ class TestEnrollReconciler:
             set_orchestrator(None)
 
     async def test_node_self_declared_pool_is_overwritten(self, client, sm) -> None:
-        """节点自带的池标签一律被平台按登记盖掉,入网照常成功。
-        挂了说明拿到令牌的机器能自选进哪个池——旧设计里这是要判 failed 的冒名,
-        现在平台是唯一写入方,压根没得伪造。"""
+        """平台按登记覆盖节点池标签,节点正常入网。"""
         from app.core.k8s import set_orchestrator
         from app.core.k8s.base import NodeInfo
         from app.core.k8s.fake import FakeOrchestrator
@@ -506,7 +487,6 @@ class TestEnrollReconciler:
             )
             counts = await reconcile_enrollments_once(sm)
             assert counts["failed"] == 0 and counts["joined"] == 1
-            # 节点自称 hami,平台按登记盖成 kata
             assert fake.node_labels["wrong-pool-node"]["superdl.io/pool"] == "kata"
             rows = (await client.get("/api/admin/v1/node-enrollments", headers=ah)).json()
             assert rows[0]["status"] == "joined"
@@ -527,7 +507,6 @@ class TestEnrollReconciler:
         try:
             await set_cluster_config(sm)
             ah = await admin_headers(sm, client, role="ops")
-            # pending 过期 → expired
             e1 = (
                 await client.post(
                     "/api/admin/v1/node-enrollments",
@@ -542,7 +521,6 @@ class TestEnrollReconciler:
                     .values(expires_at=now_utc() - timedelta(minutes=1))
                 )
                 await session.commit()
-            # installing 失联 → failed
             e2 = (
                 await client.post(
                     "/api/admin/v1/node-enrollments",
@@ -591,7 +569,6 @@ class TestEnrollReconciler:
                 json={"hostname": "lock-node"},
                 headers={"Authorization": f"Bearer {created['token']}"},
             )
-            # 满足「绝对过期 → expired」条件
             async with sm() as session:
                 await session.execute(
                     update(NodeEnrollment)
@@ -600,7 +577,6 @@ class TestEnrollReconciler:
                 )
                 await session.commit()
 
-            # 会话 A 持行锁并写入 revoked,未提交
             async with sm() as locker:
                 row = (
                     await locker.execute(
@@ -608,12 +584,10 @@ class TestEnrollReconciler:
                     )
                 ).scalar_one()
                 row.status = "revoked"
-                # 对账器跳过被锁行
                 counts = await reconcile_enrollments_once(sm)
                 assert counts == {"joined": 0, "failed": 0, "expired": 0, "labeled": 0}
                 await locker.commit()
 
-            # 吊销提交后:revoked 不被覆盖成 expired
             counts = await reconcile_enrollments_once(sm)
             assert counts == {"joined": 0, "failed": 0, "expired": 0, "labeled": 0}
             rows = (await client.get("/api/admin/v1/node-enrollments", headers=ah)).json()
@@ -632,8 +606,7 @@ class TestNodeCordon:
         set_orchestrator(fake)
         try:
             ah = await admin_headers(sm, client, role="ops")
-            await node_spec_patrol(sm)  # 台账就位(cordon 校验读 node_specs,不直连 K8s)
-            # 未知节点 → 404
+            await node_spec_patrol(sm)
             assert (
                 await client.post(
                     "/api/admin/v1/nodes/no-such-node/cordon",
@@ -642,23 +615,21 @@ class TestNodeCordon:
                 )
             ).status_code == 404
 
-            # cordon:入队,drain 后 K8s 侧生效
             resp = await client.post(
                 "/api/admin/v1/nodes/fake-hami-node-1/cordon",
                 json={"reason": "巡检维护"},
                 headers=ah,
             )
             assert resp.status_code == 200 and resp.json()["queued"] is True
-            assert "fake-hami-node-1" not in fake.cordoned_nodes  # 请求路径零 K8s 调用
-            assert await drain_strict(sm) == (1, 0)  # cordon 任务必须成功而非仅被处理
+            assert "fake-hami-node-1" not in fake.cordoned_nodes
+            assert await drain_strict(sm) == (1, 0)
             assert "fake-hami-node-1" in fake.cordoned_nodes
             from app.modules.nodes.patrol import node_spec_patrol
 
-            await node_spec_patrol(sm)  # 节点视图只认巡检台账
+            await node_spec_patrol(sm)
             nodes = (await client.get("/api/admin/v1/nodes", headers=ah)).json()
             assert next(n for n in nodes if n["name"] == "fake-hami-node-1")["status"] == "Cordoned"
 
-            # 重复 cordon 幂等;uncordon 恢复
             await client.post(
                 "/api/admin/v1/nodes/fake-hami-node-1/cordon",
                 json={"reason": "再次"},
@@ -673,7 +644,6 @@ class TestNodeCordon:
             )
             await drain(sm)
             assert "fake-hami-node-1" not in fake.cordoned_nodes
-            # readonly 403 由 test_admin_route_role_matrix 覆盖
         finally:
             set_orchestrator(None)
 
@@ -695,7 +665,6 @@ class TestNodeCordon:
                 json={"reason": "维护"},
                 headers=ah,
             )
-            # cordon 任务退避到未来,uncordon 先执行
             async with sm() as session:
                 cordon_task = (
                     await session.execute(
@@ -710,9 +679,8 @@ class TestNodeCordon:
                 json={"reason": "完成"},
                 headers=ah,
             )
-            assert await drain(sm) == 1  # 只有 uncordon 到期
+            assert await drain(sm) == 1
             assert "fake-hami-node-1" not in fake.cordoned_nodes
-            # cordon 重放:按台账期望态(False)执行
             async with sm() as session:
                 await session.execute(
                     update(OutboxTask)
@@ -738,7 +706,7 @@ class TestNodeDecommission:
 
     @staticmethod
     async def _joined_node(client, sm, *, hostname: str, pool: str = "hami") -> dict:
-        """走完登记链让节点进 joined 并入台账。"""
+        """推进节点登记为 joined,返回管理员 headers 与进度令牌。"""
         from app.core.k8s import get_orchestrator
         from app.core.k8s.base import NodeInfo
         from app.modules.nodes.reconciler import reconcile_enrollments_once
@@ -783,7 +751,7 @@ class TestNodeDecommission:
         try:
             ctx = await self._joined_node(client, sm, hostname="sold-node-1")
             ah = ctx["headers"]
-            await node_spec_patrol(sm)  # 台账收录(退役校验读 node_specs,不直连 K8s)
+            await node_spec_patrol(sm)
 
             resp = await client.post(
                 "/api/admin/v1/nodes/sold-node-1/decommission",
@@ -796,7 +764,6 @@ class TestNodeDecommission:
                 "revoked_enrollments": 1,
                 "queued": True,
             }
-            # 删除排到 outbox
             assert "sold-node-1" not in fake.deleted_nodes
             async with sm() as session:
                 enrollment = (
@@ -815,7 +782,6 @@ class TestNodeDecommission:
                 types = [t.type for t in (await session.execute(select(OutboxTask))).scalars()]
                 assert "node.decommission" in types
 
-            # 令牌当场失效:progress 上报 404
             assert (
                 await client.post(
                     "/api/v1/node-enroll/progress",
@@ -848,7 +814,6 @@ class TestNodeDecommission:
                 headers=ctx["headers"],
             )
             assert await drain_strict(sm) == (1, 0)
-            # 手工重放同一任务
             async with sm() as session:
                 enqueue(session, "node.decommission", {"node_name": "seized-node-1"})
                 await session.commit()

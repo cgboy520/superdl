@@ -146,7 +146,7 @@ class InstanceRequest:
 
 
 def jupyter_host(instance_uuid: str, settings: Settings | None = None) -> str:
-    """实例 Jupyter 主机名:<jupyter_host_prefix><uuid>.<jupyter_domain_suffix>;唯一拼接点。"""
+    """实例 Jupyter 主机名:<jupyter_host_prefix><uuid>.<jupyter_domain_suffix>。"""
     s = settings or get_settings()
     return f"{s.jupyter_host_prefix}{instance_uuid}.{s.jupyter_domain_suffix}"
 
@@ -161,7 +161,7 @@ def jupyter_origin(instance_uuid: str, settings: Settings | None = None) -> str:
 
 
 def service_endpoint_host(slug: str, settings: Settings | None = None) -> str:
-    """服务端点主机名:<slug>.<service_domain_suffix>;唯一拼接点。"""
+    """服务端点主机名:<slug>.<service_domain_suffix>。"""
     s = settings or get_settings()
     return f"{slug}.{s.service_domain_suffix}"
 
@@ -169,7 +169,6 @@ def service_endpoint_host(slug: str, settings: Settings | None = None) -> str:
 def _snapshot_spec(sku: "Sku") -> dict[str, Any]:
     return {
         "sku_name": sku.name,
-        # SKU 原价时价快照(字符串);竞价转按量据它还原原价
         "base_price_hourly": money_str(sku.price_hourly),
         "gpu_model": sku.gpu_model,
         "tier": sku.tier,
@@ -181,7 +180,6 @@ def _snapshot_spec(sku: "Sku") -> dict[str, Any]:
         "disk_gb": sku.disk_gb,
         "pool_label": sku.pool_label,
         "cuda_max": sku.cuda_max,
-        # canonical 型号 → Pod nodeSelector(None = 不钉)
         "gpu_model_selector": canonical_gpu_model(sku.gpu_model),
     }
 
@@ -193,8 +191,9 @@ async def _require_cluster_for_pool(
     *,
     with_data_disk: bool = False,
 ) -> None:
-    """下发门禁:集群能力缺位即 409。判据与 `build_gpu_request` 同源。
-    gpu_count == 0 不查池;hami 池查 HAMi、kata 池查 RuntimeClass;StorageClass 必查,数据盘按需。
+    """集群能力缺位回 409;gpu_count == 0 不查池。
+
+    hami 查 HAMi,kata 查 RuntimeClass;StorageClass 必查,数据盘按需。
     """
     if gpu_count > 0:
         if pool_label == POOL_HAMI:
@@ -202,9 +201,6 @@ async def _require_cluster_for_pool(
         elif pool_label == POOL_KATA:
             await nodes_service.require_kata_runtimeclass(session)
     await nodes_service.require_storage_classes(session, with_data_disk=with_data_disk)
-
-
-# ---------- Jupyter token(密文落库;bootstrap 票据入场) ----------
 
 
 def _encode_token(plaintext: str, *, instance_uuid: str) -> str:
@@ -260,7 +256,6 @@ async def _validate_image_ref(
     """
     if not is_valid_image_ref(image_ref):
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.imageRefInvalid")
-    # 服务型实例镜像必须钉版本
     if require_pinned and not is_pinned_image_ref(image_ref):
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.imageRefNotPinned")
     allowed = (await get_runtime_config(session)).image_allowlist()
@@ -293,7 +288,6 @@ async def _check_user_quota(
     stmt = select(
         func.count(),
         func.coalesce(func.sum(Instance.gpu_count), 0),
-        # CPU 实例(gpu_count=0)的 vCPU 合计
         func.coalesce(
             func.sum(cast(Instance.spec["vcpu"].astext, Integer)).filter(Instance.gpu_count == 0),
             0,
@@ -326,15 +320,11 @@ async def _check_user_quota(
         )
 
 
-# ---------- 容量估算((池, 型号) 双维度,数据源是节点台账) ----------
-
-
 def _sku_free_capacity(
     sku: "Sku", specs: list["NodeSpec"], *, gpu_node_vcpu_cap: int
 ) -> tuple[int | None, int]:
     """该 SKU 的近似可分配量:(台账哨兵, 可售实例数);哨兵 None = 台账无数据,放行交调度器。
     GPU 档按 (池, canonical 型号) 匹配 Ready 空闲卡;CPU 档只按池匹配节点行数。
-    与管理端容量预览同算法。
     """
     if sku.tier == TIER_CPU:
         matching = nodes_service.pool_specs(specs, sku.pool_label)
@@ -375,7 +365,6 @@ async def _soft_admit_capacity(
         return
     sellable -= (await _reserved_slots_by_sku(session, [sku.id])).get(sku.id, 0)
     sellable += freeing_slots
-    # GPU 实例按卡数占容量,CPU 实例占 1
     needed = gpu_count if gpu_count > 0 else 1
     if (
         sellable < needed
@@ -408,7 +397,7 @@ async def _soft_admit_capacity(
 
 async def _reserved_slots_by_sku(session: AsyncSession, sku_ids: list[int]) -> dict[int, int]:
     """sku_id → 被未到期包周期实例(含停机/冻结)占住的槽位数,只算同一条 SKU。
-    平台层预留、物理层不预留,见 docs/reference/billing.md。
+    平台层预留、物理层不预留。
     """
     if not sku_ids:
         return {}
@@ -468,7 +457,6 @@ async def create_instance_row(
     sku = await catalog_service.get_on_sale_sku(session, req.sku_id)
     await _validate_request(session, req, sku)
     await _admit(session, user_id, req, sku, exclude_instance_id=exclude_instance_id)
-    # 有效时价:唯一折扣计算点在 core/pricing
     policies = await get_runtime_config(session)
     unit_price = price_for(
         sku.price_hourly, market=req.market, policies=policies, period=req.period
@@ -498,7 +486,6 @@ async def create_instance_row(
         fingerprint=fingerprint,
     )
     if result is not instance:
-        # 并发同幂等键:按重放返回既有实例
         return result, False
     await _post_insert(session, user_id, req, sku, instance, service=service)
     return instance, True
@@ -506,7 +493,6 @@ async def create_instance_row(
 
 async def _validate_request(session: AsyncSession, req: InstanceRequest, sku: "Sku") -> None:
     """契约层拦不住的规格配对:卡数与 SKU 形态、镜像形态与来源、购买模式与 SKU 开关。"""
-    # CPU 规格(max_gpus_per_instance=0)只收 0 卡,GPU 规格只收 1..max
     if sku.max_gpus_per_instance == 0:
         if req.gpu_count != 0:
             raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.cpuSkuNoGpu")
@@ -568,7 +554,6 @@ async def _reserve_funds_and_quota(
         await billing_service.assert_can_afford(
             session, user_id, additional_hourly=hourly_cost(unit_price, req.gpu_count)
         )
-    # 只有 CPU 实例计 vCPU 维
     await _check_user_quota(
         session,
         user_id,
@@ -612,7 +597,6 @@ def _build_row(
         image_ref=req.image_ref,
         status=sm_def.CREATING,
         k8s_namespace=f"{get_settings().k8s_namespace_prefix}{user_id}",
-        # service 形态也签(列非空),不进 Pod spec
         jupyter_token=_encode_token(secrets.token_urlsafe(24), instance_uuid=instance_uuid),
         authorized_keys=authorized_keys,
         data_disk_id=disk_id,
@@ -646,8 +630,7 @@ async def _post_insert(
 ) -> None:
     """行已插入后的同事务收尾:包周期预扣、数据盘占用、创建事件、outbox。"""
     if req.market == MARKET_SUBSCRIPTION:
-        assert req.period is not None  # 契约层已拦,这里给类型收敛
-        # 先扣款再校验在途(校验扣后余额)
+        assert req.period is not None
         await billing_service.charge_new_subscription(
             session,
             user_id=user_id,
@@ -658,7 +641,6 @@ async def _post_insert(
             gpu_count=req.gpu_count,
             period=req.period,
             period_count=req.period_count,
-            # 幂等由 instances 行担保,订阅行不带键
             idempotency_key=None,
         )
         await billing_service.assert_can_afford(session, user_id)
@@ -737,7 +719,7 @@ async def _freeing_slots_of(session: AsyncSession, instance_id: int | None, sku:
 async def create_instance(
     session: AsyncSession, user_id: int, req: InstanceRequest, *, idempotency_key: str | None
 ) -> tuple[Instance, bool]:
-    """创建开发机(202 异步):create_instance_row + commit。created=False = 幂等重放(路由回 200)。"""
+    """创建并提交开发机请求,返回 (实例, created);幂等重放时 created=False。"""
     instance, created = await create_instance_row(
         session, user_id, req, idempotency_key=idempotency_key
     )
@@ -770,8 +752,9 @@ async def list_instances_page(
     service_id: int | None = None,
     include_released: bool = False,
 ):
-    """用户端实例列表:降序游标分页,status 精确 / name 模糊(含 uuid 前缀)。
-    默认只列开发机;给 service_id 即该服务的版本实例(版本号降序),include_released 含已释放。"""
+    """用户端实例列表:按实例 ID 降序游标分页,status 精确 / name 模糊(含 uuid 前缀)。
+    默认只列开发机;给 service_id 即该服务的版本实例,include_released 含已释放。
+    """
     stmt = select(Instance).where(Instance.user_id == user_id)
     if service_id is None:
         stmt = stmt.where(Instance.service_id.is_(None)).order_by(Instance.id.desc())
@@ -783,7 +766,6 @@ async def list_instances_page(
         stmt = stmt.where(Instance.status == status)
     name = (name or "").strip()
     if name:
-        # LIKE 元字符转义
         stmt = stmt.where(
             Instance.name.ilike(f"%{like_escape(name)}%", escape="\\")
             | Instance.uuid.like(f"{like_escape(name)}%", escape="\\")
@@ -797,7 +779,7 @@ async def list_instances_page(
 
 
 async def attach_instance_details(session: AsyncSession, items: "Sequence[InstanceOut]") -> None:
-    """回填包周期概要:一次批量查询。列表页、详情页、服务视图共用。"""
+    """批量回填实例包周期概要。"""
     await _attach_subscriptions(session, items)
 
 
@@ -884,9 +866,6 @@ async def rename_instance(
     return instance
 
 
-# ---------- 用户操作 ----------
-
-
 def _reject_service_instance(instance: Instance) -> None:
     """服务的版本实例拒绝实例级生命周期操作(stop / start / restart / release / 重置 token),
     统一由 /services 驱动;续费 / 转换与只读端点照常。"""
@@ -936,14 +915,12 @@ async def lock_instance_row(session: AsyncSession, instance: Instance) -> Instan
 async def start_instance_row(session: AsyncSession, user_id: int, instance: Instance) -> Instance:
     """开机的 row 级核心:锁实例 → 冻结 / 状态 / 节点 / 集群 / 订阅 / 数据盘 / 余额逐道闸
     → starting + outbox,**不 commit**。"""
-    # 锁序 instance → disk → wallet
     instance = await lock_instance_row(session, instance)
     if instance.status == sm_def.FROZEN:
         raise AppError(ErrorCode.INSTANCE_FROZEN, key="orchestrator.frozenNeedsRecharge")
     recovered = instance.status == sm_def.FAILED
     if instance.status != sm_def.STOPPED and not recovered:
         raise AppError(ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.startNeedsStopped")
-    # 实例盘钉在原节点:节点 Missing 前置拦掉;台账无该行放行,NotReady 不拦
     if instance.node_name:
         node = await nodes_service.get_node_spec(session, instance.node_name)
         if node is not None and node.status == "Missing":
@@ -959,18 +936,14 @@ async def start_instance_row(session: AsyncSession, user_id: int, instance: Inst
         with_data_disk=instance.data_disk_id is not None,
     )
     if instance.market == MARKET_SUBSCRIPTION:
-        # 包周期不看余额,只看周期未过
         await billing_service.assert_subscription_active(session, instance.id)
     if recovered:
-        # 故障恢复:failed → stopped → 正常开机链路
         await transition(session, instance, sm_def.STOPPED, reason="failed_recover", actor="user")
-    # 数据盘挂载校验(盘锁)在钱包锁之前
     await _rebind_data_disk(session, instance)
     if instance.market != MARKET_SUBSCRIPTION:
         estimate = hourly_cost(instance.price_hourly, instance.gpu_count)
         await billing_service.assert_can_afford(session, user_id, additional_hourly=estimate)
     await transition(session, instance, sm_def.STARTING, reason="user_start", actor="user")
-    # 开机必须清 unready_since(计费截断与 reconciler 宽限判定据它)
     instance.unready_since = None
     enqueue(session, "instance.start", {"instance_id": instance.id})
     return instance
@@ -1016,7 +989,6 @@ async def renew_instance(
     换周期续同时刷新 `instances.price_hourly`;冻结中续费即解冻回 stopped。
     """
     instance = await get_instance(session, user_id, uuid)
-    # 锁序 instance → wallet → subscription
     instance = await lock_instance_row(session, instance)
     if instance.market != MARKET_SUBSCRIPTION:
         raise AppError(
@@ -1033,7 +1005,6 @@ async def renew_instance(
         idempotency_key=idempotency_key,
     )
     if not created:
-        # 幂等重放:手上的 instance 已在 billing 侧 rollback,重新取
         return await get_instance(session, user_id, uuid), quoted, False
     policies = await get_runtime_config(session)
     instance.price_hourly = price_for(
@@ -1062,7 +1033,6 @@ async def subscribe_instance(
     """
     instance = await get_instance(session, user_id, uuid)
     if idempotency_key:
-        # 重放判定必须在状态守卫之前;三个定位参数给全才做异参检测(转换与续费共用幂等键命名空间)
         replayed = await billing_service.find_subscription_replay(
             session,
             user_id=user_id,
@@ -1079,7 +1049,6 @@ async def subscribe_instance(
                 ),
                 False,
             )
-    # 锁序 instance → bill → wallet
     instance = await lock_instance_row(session, instance)
     if instance.market != MARKET_ON_DEMAND:
         raise AppError(ErrorCode.SUBSCRIPTION_NOT_RENEWABLE, key="orchestrator.convertNotOnDemand")
@@ -1093,7 +1062,6 @@ async def subscribe_instance(
     if not sku.period_enabled:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.periodNotEnabled")
 
-    # 翻 market 前逐小时结清(含 48h 滞后熔断);stopped 同样要结
     await billing_service.settle_on_demand_up_to(
         session,
         instance_id=instance.id,
@@ -1116,7 +1084,6 @@ async def subscribe_instance(
     instance.price_hourly = price_for(
         row.unit_price, market=MARKET_SUBSCRIPTION, policies=policies, period=period
     )
-    # 转换后余额仍须撑住其它在途按量资源
     await billing_service.assert_can_afford(session, user_id)
     await session.commit()
     logger.info("instance_converted_to_subscription", instance_id=instance.id, period=period)
@@ -1129,8 +1096,7 @@ async def convert_to_on_demand(session: AsyncSession, user_id: int, uuid: str) -
     """
     instance = await get_instance(session, user_id, uuid)
     if instance.market == MARKET_ON_DEMAND:
-        return instance  # 幂等:目标状态已达成
-    # 锁序 instance → bill → wallet
+        return instance
     instance = await lock_instance_row(session, instance)
     if instance.market != MARKET_SPOT:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.toOnDemandNotSpot")
@@ -1141,7 +1107,6 @@ async def convert_to_on_demand(session: AsyncSession, user_id: int, uuid: str) -
             http_status=http_status.HTTP_409_CONFLICT,
         )
     base = Decimal(str(instance.spec.get("base_price_hourly") or instance.price_hourly))
-    # 翻价前把滞后的整点小时先按竞价价结清(与转包周期同一口径),只有当前小时整体改按量价
     await billing_service.settle_on_demand_up_to(
         session,
         instance_id=instance.id,
@@ -1161,7 +1126,6 @@ async def convert_to_on_demand(session: AsyncSession, user_id: int, uuid: str) -
         )
     instance.market = MARKET_ON_DEMAND
     instance.price_hourly = base
-    # 余额须撑住转换后的燃烧率
     await billing_service.assert_can_afford(session, user_id)
     await session.commit()
     logger.info("spot_converted_to_on_demand", instance_id=instance.id, user_id=user_id)
@@ -1189,14 +1153,13 @@ async def release_instance_row(
 ) -> Instance:
     """释放的 row 级核心:状态守卫 → releasing + outbox,**不 commit**;释放中 / 已释放幂等直回。"""
     if instance.status in (sm_def.RELEASING, sm_def.RELEASED):
-        # 幂等释放
         return instance
     if instance.status not in (
         sm_def.STOPPED,
         sm_def.FROZEN,
-        sm_def.FAILED,  # 清理失败实例,同走 releasing→released
-        sm_def.CREATING,  # 用户主动取消,不等 creating 超时
-        sm_def.STOPPING,  # 关机悬挂:允许用户直接放弃(reconciler 超时强删兜底)
+        sm_def.FAILED,
+        sm_def.CREATING,
+        sm_def.STOPPING,
     ):
         raise AppError(ErrorCode.INSTANCE_NOT_STOPPED, key="orchestrator.releaseNeedsStopped")
     await transition(
@@ -1218,9 +1181,6 @@ async def release_instance(
     return instance
 
 
-# ---------- K8s spec 构造 ----------
-
-
 def bandwidth_annotations(settings: Settings) -> dict[str, str]:
     """CNI bandwidth 插件识别的限速注解(k3s flannel 与 Cilium bandwidthManager 同口径);0 = 不加。"""
     out: dict[str, str] = {}
@@ -1240,7 +1200,6 @@ def build_pod_spec(
 ) -> InstancePodSpec:
     """构造 Pod spec。data_disk_pvc 由调用方按盘 uuid 算出传入(data_disk_pvc_name);
     image_pull_secret 是该 ns 的拉取凭据 Secret 名;服务形态只读实例行的快照列。
-    dev/service 两形态差别集中在此,k8s 层只按 spec 字段建对象。
     """
     settings = get_settings()
     gpu_req = spec_to_gpu_request(
@@ -1252,21 +1211,17 @@ def build_pod_spec(
     is_service = instance.workload_type == WORKLOAD_SERVICE
     if is_service and (instance.service_slug is None or instance.service_port is None):
         raise RuntimeError(f"service instance {instance.uuid} lacks service snapshot columns")
-    # SSH 只认 instances.with_ssh;不要 SSH 的实例 ssh_port 恒 None
     if instance.with_ssh and instance.ssh_port is None:
         raise RuntimeError("build_pod_spec requires allocated ssh_port")
     plain_env, secret_env = instance_env(instance)
     if is_service:
-        # 服务容器不注入 JUPYTER_*
         env = plain_env
         secrets_ = secret_env
     else:
         env = {
             "JUPYTER_ALLOW_ORIGIN": jupyter_origin(instance.uuid, settings),
         }
-        # token 走 per-instance Secret,不以明文 env 落 Pod spec
         secrets_ = {"JUPYTER_TOKEN": _token_plain(instance)}
-    # GPU 实例按卡数放大 CPU/内存,CPU 实例倍率 1;系统盘不随卡数放大
     spec_n = instance.gpu_count if instance.gpu_count > 0 else 1
     return InstancePodSpec(
         namespace=instance.k8s_namespace,
@@ -1279,7 +1234,6 @@ def build_pod_spec(
         mem_gb=instance.spec["mem_gb"] * spec_n,
         disk_gb=instance.spec["disk_gb"],
         ssh_node_port=instance.ssh_port,
-        # 同时是 SSH 的展示主机名,service 形态也填
         jupyter_host=jupyter_host(instance.uuid, settings),
         env=env,
         secret_env=secrets_,
@@ -1289,7 +1243,6 @@ def build_pod_spec(
         scheduler_name=gpu_req.scheduler_name,
         annotations={**gpu_req.annotations, **bandwidth_annotations(settings)},
         image_pull_secret=image_pull_secret,
-        # 服务容器 Always 原地重启(Pod 名 = 实例 uuid 不可变)
         restart_policy="Always" if is_service else "Never",
         command=tuple(instance.container_command) if instance.container_command else None,
         args=tuple(instance.container_args) if instance.container_args else None,
@@ -1323,9 +1276,6 @@ async def build_pod_spec_with_cluster(
     )
 
 
-# ---------- 接入信息 ----------
-
-
 def build_access(instance: Instance) -> InstanceAccessOut:
     """接入信息:按形态出字段,没有的入口留空。"""
     settings = get_settings()
@@ -1333,12 +1283,10 @@ def build_access(instance: Instance) -> InstanceAccessOut:
         raise AppError(ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.accessNeedsRunning")
     out = InstanceAccessOut()
     if instance.with_ssh:
-        # SSH 主机名 = 实例主机(走 NodePort 直连实例)
         out.ssh_host = jupyter_host(instance.uuid, settings)
         out.ssh_port = instance.ssh_port
         out.ssh_command = f"ssh root@{out.ssh_host} -p {instance.ssh_port}"
     if instance.workload_type == WORKLOAD_DEV:
-        # 一次性入场票据,token 不进 URL
         out.jupyter_url = _new_jupyter_ticket(instance, _token_plain(instance))
     if instance.service_slug:
         out.endpoint_url = f"https://{service_endpoint_host(instance.service_slug, settings)}"
@@ -1348,9 +1296,6 @@ def build_access(instance: Instance) -> InstanceAccessOut:
 async def get_access(session: AsyncSession, user_id: int, uuid: str) -> InstanceAccessOut:
     """取实例(owner 校验)并拼接入信息。"""
     return build_access(await get_instance(session, user_id, uuid))
-
-
-# ---------- SSH 公钥 ----------
 
 
 async def strip_ssh_key_from_instances(session: AsyncSession, user_id: int, public_key: str) -> int:
@@ -1380,15 +1325,12 @@ async def reset_jupyter_token(session: AsyncSession, user_id: int, uuid: str) ->
     instance = await get_instance(session, user_id, uuid)
     _reject_service_instance(instance)
     instance.jupyter_token = _encode_token(secrets.token_urlsafe(24), instance_uuid=instance.uuid)
-    # 重建 Pod 才生效;running 时走 restart
     if instance.status == sm_def.RUNNING:
         await transition(session, instance, sm_def.STOPPING, reason="restart", actor="user")
         enqueue(session, "instance.restart", {"instance_id": instance.id})
     await session.commit()
     return instance
 
-
-# ---------- 容器日志(请求路径直读 K8s 的唯一例外:owner 校验 + 限流 + 5s 超时) ----------
 
 LOGS_MAX_TAIL_LINES = 2000
 
@@ -1404,7 +1346,6 @@ async def read_instance_logs(
     await check_rate_limit(f"instance-logs:{user_id}", max_attempts=20, window_seconds=3600.0)
     tail = min(tail_lines, LOGS_MAX_TAIL_LINES)
     try:
-        # +1 行探路,超出即 truncated
         raw = await get_orchestrator().read_instance_logs(
             instance.k8s_namespace, instance.uuid, tail_lines=tail + 1
         )
@@ -1420,9 +1361,6 @@ async def read_instance_logs(
     return InstanceLogsOut(lines=lines[-tail:] if truncated else lines, truncated=truncated)
 
 
-# ---------- 近似库存 provider(注册进 catalog) ----------
-
-
 async def estimate_available_many(session: AsyncSession, skus: list["Sku"]) -> dict[int, int]:
     """市场近似库存(批量):sku_id → 可售实例数。数据源节点台账,无数据 → 0;
     减掉包周期预留(与软准入同源)。"""
@@ -1435,9 +1373,6 @@ async def estimate_available_many(session: AsyncSession, skus: list["Sku"]) -> d
         )
         for sku in skus
     }
-
-
-# ---------- 管理端 ----------
 
 
 async def admin_list_instances(
@@ -1460,7 +1395,6 @@ async def admin_list_instances(
         stmt = stmt.where(Instance.node_name == node_name)
     q = (q or "").strip()
     if q:
-        # LIKE 元字符转义
         stmt = stmt.where(
             Instance.uuid.like(f"{like_escape(q)}%", escape="\\")
             | Instance.name.ilike(f"%{like_escape(q)}%", escape="\\")

@@ -12,7 +12,6 @@ export default defineConfig({
     sort: true,
     indentation: 2,
     removeUnusedKeys: true,
-    // 动态取键的组显式保护:映射表 t(meta.nameKey);app.title(packages/ui useAppLocale);billing.refundOrder*(REFUND_REASON_CODE 映射)
     preservePatterns: [
       "app.title",
       "instances.series*",
@@ -22,7 +21,7 @@ export default defineConfig({
       "billing.refundOrder*",
       "nav.group*",
     ],
-    ignoreNamespaces: ["shared", "errors"], // shared/errors ns 属 packages/ui
+    ignoreNamespaces: ["shared", "errors"],
     primaryLanguage: "zh-CN",
   },
   types: {
@@ -31,6 +30,6 @@ export default defineConfig({
   },
   lint: {
     checkInterpolationParams: true,
-    checkConcatenation: "warn", // 复用句并排属有意组合
+    checkConcatenation: "warn",
   },
 });

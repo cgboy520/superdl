@@ -29,7 +29,6 @@ import { RefundsTab } from "./-RefundsTab";
 import { InvoicesTab } from "./-InvoicesTab";
 
 export const Route = createFileRoute("/_app/finance")({
-  // 筛选条件入 URL,非法值剥离
   validateSearch: (search: Record<string, unknown>): FinanceSearch => ({
     tab: FINANCE_TABS.includes(search.tab as FinanceTab) ? (search.tab as FinanceTab) : undefined,
     day: typeof search.day === "string" && DAY_RE.test(search.day) ? search.day : undefined,
@@ -66,7 +65,6 @@ function FinancePage() {
   const anomaliesQ = useAnomalies();
   const { data: anomalies, isError: anomaliesError } = anomaliesQ;
   const anomalyCount = anomalies?.length ?? 0;
-  // 发票 Tab 只给 finance/admin;无权直达 ?tab=invoices 回落订单 Tab 并明示原因
   const showInvoices = canReadInvoices(role);
   const activeTab = tab ?? "orders";
   const invoicesDenied = activeTab === "invoices" && !showInvoices;
@@ -78,7 +76,6 @@ function FinancePage() {
           void navigate({
             to: "/finance",
             replace: true,
-            // 今天是默认值,不入 URL
             search: (prev) => ({ ...prev, day: d === dayjs().format("YYYY-MM-DD") ? undefined : d }),
           })
         }
@@ -93,7 +90,6 @@ function FinancePage() {
             void navigate({
               to: "/finance",
               replace: true,
-              // 换 Tab 清掉其它 Tab 的筛选;对账日常驻,跟着走
               search: (prev) => (key === "orders" ? { day: prev.day } : { day: prev.day, tab: key as FinanceTab }),
             })
           }
@@ -108,7 +104,6 @@ function FinancePage() {
               label: (
                 <Space size={space.sm}>
                   {t("finance.tabAnomalies")}
-                  {/* 计数查询失败显示警示图标,不静默为 0 */}
                   {anomaliesError ? (
                     <Tooltip title={t("common.loadFailed", { ns: "shared" })}>
                       <WarningOutlined style={{ color: adminColors.alertAccent }} />

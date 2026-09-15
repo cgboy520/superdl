@@ -25,7 +25,6 @@ export function useOrderColumns({
     {
       title: t("finance.colOrderNo"),
       dataIndex: "order_no",
-      // 带操作列的宽表固定标识列
       ...(actions ? { fixed: "left" as const, width: 200 } : {}),
       render: (v: string) => <Mono>{v}</Mono>,
     },
@@ -69,7 +68,6 @@ export function useOrderColumns({
                   {
                     key: "backfill",
                     label: t("finance.backfill"),
-                    // 已入账的订单没有补单可做;无权角色给角色原因
                     reason: !actions.writable
                       ? t("finance.financeOnlyBackfill")
                       : r.status === "paid"

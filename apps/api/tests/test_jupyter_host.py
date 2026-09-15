@@ -1,7 +1,6 @@
 """实例 Jupyter 的主机名/origin 与端点 slug 反解:入场 URL / HTTPRoute hostname /
 JUPYTER_ALLOW_ORIGIN 同一口径。"""
 
-# 白盒用例:直探模块内部
 # pyright: reportPrivateUsage=false
 
 import base64
@@ -43,7 +42,6 @@ class TestOrigin:
             jupyter_url_port=8443,
         )
         assert jupyter_origin("abc-123", s) == "https://jupyter-abc-123.xiaocg.xyz:8443"
-        # 主机名不带端口(HTTPRoute hostname)
         assert jupyter_host("abc-123", s) == "jupyter-abc-123.xiaocg.xyz"
 
     def test_entry_ticket_carries_the_port(self, monkeypatch):

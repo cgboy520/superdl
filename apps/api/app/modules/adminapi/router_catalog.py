@@ -26,9 +26,6 @@ from app.modules.catalog.schemas import (
 router = APIRouter(tags=["admin"])
 
 
-# ---------- SKU 管理(角色:admin / ops) ----------
-
-
 @router.get("/skus", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_list_skus(session: DbSession) -> list[SkuAdminOut]:
     """SKU 列表,组装台账容量与占用列。"""
@@ -68,7 +65,6 @@ async def admin_sku_impact(sku_id: int, session: DbSession) -> SkuImpactOut:
 @router.post("/skus", dependencies=[require_roles("ops")], status_code=201)
 async def admin_create_sku(body: SkuCreate, session: DbSession, request: Request) -> SkuAdminOut:
     sku = await catalog_service.admin_create_sku(session, body)
-    # 记完整初始值,供后续改价对照
     set_audit_target(
         request,
         f"sku:{sku.id}",
@@ -86,15 +82,12 @@ async def admin_update_sku(
         request,
         f"sku:{sku.id}",
         detail={
-            "before": before,  # 只记本次实际变更字段的旧值
+            "before": before,
             "after": body.model_dump(exclude_unset=True, exclude={"reason"}, mode="json"),
             "reason": body.reason,
         },
     )
     return SkuAdminOut.model_validate(sku)
-
-
-# ---------- 镜像与预热(读:ops/readonly,写:ops,admin 恒许) ----------
 
 
 class ImageDeleteRequest(ReasonBody):

@@ -1,37 +1,24 @@
-# 初始控制面装机:[servers] 组的 rke2/k3s server 安装。
-#   ansible-playbook -i inventory.ini site.yml                        # rke2(full 档)
-#   ansible-playbook -i inventory.ini site.yml -e cluster_distro=k3s  # k3s(light 档)
-# 覆盖:审计策略分发、server config 渲染、安装器 sha256 校验后安装、enable + start。
-# GPU 节点不走 ansible,用管理端「添加节点」的 node-join.sh。变量清单见本目录 README.md
 
-# ───────────────────────── 控制面:初始 server 节点 ─────────────────────────
-# 幂等:已装跳过,config 变更才重启
 - hosts: servers
   become: true
   vars:
-    cluster_distro: rke2            # rke2(full 档)/ k3s(light 档)
+    cluster_distro: rke2
     rke2_channel: latest
-    # 安装器 sha256 pin;上游更新后同步改本值与 node-join.sh 的 PIN_*_CN
     rke2_installer_sha256: "5541410b86d4d19d927d820be85156e787be3fdb24be72507af52932a1d12de1"
     k3s_installer_sha256: "3944aa467eb945b5ff2151a8e4f8d4a5f3a210d31ab39aec81f37606936d0863"
-    # 敏感值(etcd 快照凭据、agent token)经 group_vars/servers.yml(不入 git)或 -e 注入;留空由渲染前断言拦截
     etcd_snapshot_bucket: ""
     etcd_s3_region: ""
     etcd_s3_endpoint: ""
     etcd_s3_access_key: ""
     etcd_s3_secret_key: ""
     agent_token: ""
-    # HA:定义 api_vip 即渲染 tls-san(VIP + 全部 server IP);单 server 保持空值
     api_vip: ""
-    server_ips: []                # 逐台 server IP,如 ["10.0.0.11","10.0.0.12","10.0.0.13"]
-    server_hostnames: []          # 可选:主机名 SAN,便于绕过 VIP 直连排障
-    # Harbor 私有 CA(PEM):非空即落 /etc/rancher/<distro>/harbor-ca.crt(配 ../cluster/rke2/registries.yaml 的 ca_file)
+    server_ips: []
+    server_hostnames: []
     harbor_ca_pem: ""
-    # 平台落点标签(见文末)
     kubectl_bin: "{{ '/var/lib/rancher/rke2/bin/kubectl' if cluster_distro == 'rke2' else '/usr/local/bin/kubectl' }}"
     kubeconfig_path: "/etc/rancher/{{ cluster_distro }}/{{ 'rke2.yaml' if cluster_distro == 'rke2' else 'k3s.yaml' }}"
   tasks:
-    # 渲染前断言输入(渲染后搜 CHANGE_ME 恒通过)
     - name: 输入变量完备性(渲染前断言,而非断言渲染产物)
       assert:
         that:
@@ -65,7 +52,6 @@
         state: directory
         mode: "0755"
 
-    # podPidsLimit 走 kubelet 配置 drop-in(非 kubelet-arg);与 node-join.sh 同值
     - name: 分发 kubelet 配置 drop-in(单 Pod PID 上限)
       copy:
         src: ../cluster/rke2/kubelet-superdl.conf
@@ -75,11 +61,10 @@
 
     - name: 分发 apiserver 审计策略(缺失则 apiserver 起不来)
       copy:
-        src: ../cluster/rke2/audit-policy.yaml   # rke2/k3s 共用同一策略文件
+        src: ../cluster/rke2/audit-policy.yaml
         dest: "/etc/rancher/{{ cluster_distro }}/audit-policy.yaml"
         mode: "0644"
 
-    # server 节点 registries.yaml(Spegel;Harbor 代理缓存 / CA 段按需打开);不含凭据
     - name: 分发 registries.yaml
       copy:
         src: ../cluster/rke2/registries.yaml
@@ -95,8 +80,6 @@
       when: harbor_ca_pem | length > 0
       notify: restart-server
 
-    # rke2:模板含 etcd-s3/agent-token 占位;渲染 + 无残留校验,一次落盘。
-    # 硬要求:no_log: true(产物含凭据);值一律经 | to_json 注入,不手工拼引号
     - name: 渲染 rke2 server config
       no_log: true
       set_fact:
@@ -110,7 +93,6 @@
              | replace('"CHANGE_ME_AGENT_TOKEN"', agent_token | to_json) }}
       when: cluster_distro == 'rke2'
 
-    # k3s:模板只有 agent-token 一处占位
     - name: 渲染 k3s server config
       no_log: true
       set_fact:
@@ -130,9 +112,8 @@
           单 server 集群请把 api_vip 留空(tls-san 维持注释)
       when: cluster_distro == 'rke2' and (api_vip | length > 0 or server_ips | length > 0)
 
-    # HA(rke2 且定义 api_vip):tls-san 实块追加到配置末尾
     - name: HA 集群渲染 tls-san(api_vip + 全部 server 地址入 apiserver 证书)
-      no_log: true   # server_config 此时已含 agent token 与 etcd-s3 密钥
+      no_log: true
       set_fact:
         server_config: >-
           {{ server_config }}
@@ -155,7 +136,7 @@
           etcd_s3_secret_key(rke2)与 agent_token,见 deploy/ansible/README.md
 
     - name: 落 server config(0600:含 etcd-s3 凭据与 agent token)
-      no_log: true   # copy 的 content 在 --diff / -v 下会被原样打印,那就是两把凭据
+      no_log: true
       copy:
         dest: "/etc/rancher/{{ cluster_distro }}/config.yaml"
         content: "{{ server_config }}"
@@ -217,7 +198,6 @@
         enabled: true
         state: started
 
-    # ── 平台组件落点标签:用管理凭据打,不能退回节点自述的 node-label(node-restriction.kubernetes.io/ 前缀 kubelet 打不上)──
     - name: 等待 kube-apiserver 就绪(打标签的前提)
       command: "{{ kubectl_bin }} --kubeconfig {{ kubeconfig_path }} get --raw=/readyz"
       register: apiserver_ready
@@ -227,7 +207,6 @@
       changed_when: false
 
     - name: 控制面节点打平台组件落点标签(--overwrite:幂等,可反复跑)
-      # 按 control-plane 角色选,不按主机名
       command: >-
         {{ kubectl_bin }} --kubeconfig {{ kubeconfig_path }}
         label nodes -l node-role.kubernetes.io/control-plane

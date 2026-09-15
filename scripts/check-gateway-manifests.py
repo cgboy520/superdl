@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""`deploy/app/k8s/04-gateway.yaml` 的 CRD schema 校验(CI 调用):schema 取自 helmfile 钉死的
-Envoy Gateway chart(CHART_VERSION)。挂了说明:清单里有字段名/取值不被 apiserver 接受。
+"""用 CHART_VERSION 指定的 Envoy Gateway chart 中的 CRD schema 校验网关清单。
 
-依赖 PyYAML、jsonschema(不进仓库依赖树)。
-用法: uv run --with pyyaml --with jsonschema python3 scripts/check-gateway-manifests.py
+目标:deploy/app/k8s/04-gateway.yaml;无匹配 schema 的对象跳过。
+运行依赖:helm、PyYAML、jsonschema。
 """
 
 import pathlib
@@ -14,7 +13,6 @@ import tempfile
 import jsonschema
 import yaml
 
-# 必须与 deploy/cluster/helmfile.yaml.gotmpl 里 envoy-gateway release 的 version 一致
 CHART_VERSION = "v1.9.0"
 CHART = "oci://docker.io/envoyproxy/gateway-helm"
 REPO = pathlib.Path(__file__).resolve().parent.parent
@@ -22,7 +20,7 @@ TARGETS = [REPO / "deploy/app/k8s/04-gateway.yaml"]
 
 
 def _load_schemas(crd_dir: pathlib.Path) -> dict[tuple[str, str], dict]:
-    """(apiVersion, kind) → openAPIV3Schema。chart 把两组 CRD 都放在 crds/ 下。"""
+    """读取目录内 CRD,按 (apiVersion, kind) 返回 openAPIV3Schema。"""
     out: dict[tuple[str, str], dict] = {}
     for f in sorted(crd_dir.rglob("*.yaml")):
         for doc in yaml.safe_load_all(f.read_text()):
@@ -37,7 +35,7 @@ def _load_schemas(crd_dir: pathlib.Path) -> dict[tuple[str, str], dict]:
 
 
 def _strip_kube(node):
-    """剥掉 x-kubernetes-* 扩展关键字(jsonschema 不认);保留字段名、类型、枚举与 pattern 校验。"""
+    """递归移除以 x-kubernetes 开头的字典键。"""
     if isinstance(node, dict):
         return {k: _strip_kube(v) for k, v in node.items() if not k.startswith("x-kubernetes")}
     if isinstance(node, list):
@@ -67,7 +65,6 @@ def main() -> int:
             key = (doc.get("apiVersion", ""), doc.get("kind", ""))
             schema = schemas.get(key)
             if schema is None:
-                # 内置资源由 kubeconform 管,这里只认 CRD
                 continue
             checked += 1
             name = doc.get("metadata", {}).get("name", "?")

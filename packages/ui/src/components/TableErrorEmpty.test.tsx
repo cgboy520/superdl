@@ -35,7 +35,6 @@ describe("TableErrorEmpty", () => {
     renderEmpty({ isError: true, onRetry });
     expect(screen.getByText("加载失败,请重试")).toBeInTheDocument();
     const btn = screen.getByRole("button");
-    // antd 6 Button 汉字间自动插空格,先归一化空白
     expect(btn.textContent.replace(/\s/g, "")).toBe("重试");
     await userEvent.click(btn);
     expect(onRetry).toHaveBeenCalledTimes(1);

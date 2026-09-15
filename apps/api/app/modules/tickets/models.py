@@ -7,9 +7,7 @@ from app.core.db import Base
 
 
 class Ticket(Base):
-    """工单。状态机:open → pending_staff(用户回复)→ pending_user(客服回复)→ resolved
-    → closed(仅 resolved 后);resolved/closed 不可再回复。(user_id, idempotency_key) 唯一。
-    """
+    """工单;每用户幂等键唯一,resolved/closed 不可回复,关闭须先为 resolved。"""
 
     __tablename__ = "tickets"
     __table_args__ = (
@@ -24,17 +22,16 @@ class Ticket(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    # T+yyyymmdd+两位日内序列(如 T20260823-01)
     ticket_no: Mapped[str] = mapped_column(String(20), unique=True)
     user_id: Mapped[int] = mapped_column(index=True)
     category: Mapped[str] = mapped_column(String(16))
     subject: Mapped[str] = mapped_column(String(128))
     status: Mapped[str] = mapped_column(String(16), default="open", index=True)
-    instance_uuid: Mapped[str | None] = mapped_column(String(32))  # 关联实例(可选,快照)
+    instance_uuid: Mapped[str | None] = mapped_column(String(32))
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
-    closed_at: Mapped[datetime | None]  # 仅 closed 落
+    closed_at: Mapped[datetime | None]
 
 
 class TicketMessage(Base):
@@ -45,7 +42,7 @@ class TicketMessage(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id"), index=True)
-    sender_kind: Mapped[str] = mapped_column(String(8))  # user / staff
-    sender_id: Mapped[int]  # users.id 或 admin_users.id(按 sender_kind 解读,不建外键)
+    sender_kind: Mapped[str] = mapped_column(String(8))
+    sender_id: Mapped[int]
     body: Mapped[str] = mapped_column(String(4000))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

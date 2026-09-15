@@ -37,7 +37,6 @@ from app.modules.billing.payment_channels import (
 
 logger = get_logger(__name__)
 
-# 渠道查单显式超时(SDK 走 asyncio.to_thread 且无自带超时)
 CHANNEL_QUERY_TIMEOUT_SECONDS = 15.0
 
 
@@ -57,9 +56,11 @@ async def create_recharge(
     channel_name: str,
     idempotency_key: str | None,
 ) -> tuple[Order, bool]:
-    """创建充值单。返回 (订单, created):created=False = 幂等重放(含补拉支付码),
-    路由回 200 + X-Idempotent-Replay。"""
-    amount = as_amount(amount)  # 上下限由 RechargeCreate 契约层校验
+    """提交充值单后获取支付码,返回 (订单, created);调用方校验金额上下限。
+
+    幂等重放 created=False,待支付且缺支付码时补取。
+    """
+    amount = as_amount(amount)
     cfg = await get_runtime_config(session)
     channel_enabled = {
         "wechat": cfg.payment_wechat_enabled,
@@ -69,7 +70,6 @@ async def create_recharge(
         raise channel_error("billing.channelNotEnabled")
     channel = await get_channel(channel_name, session)
 
-    # 异参检测指纹:同键改了金额/渠道 → 409
     fingerprint = request_fingerprint(user_id, amount, channel_name)
     if idempotency_key:
         existing = await find_replay(
@@ -82,7 +82,7 @@ async def create_recharge(
         )
         if existing is not None:
             if existing.status == "pending" and not existing.qr_url:
-                return await _attach_payment(session, existing, channel), False  # 补拉支付码
+                return await _attach_payment(session, existing, channel), False
             return existing, False
 
     order = Order(
@@ -94,7 +94,6 @@ async def create_recharge(
         request_fingerprint=fingerprint,
         expires_at=now_utc() + timedelta(seconds=get_settings().recharge_order_ttl_seconds),
     )
-    # 同 (user_id, idempotency_key) 并发首单由唯一约束兜底,insert_idempotent 回查胜出方
     result = await insert_idempotent(
         session,
         order,
@@ -103,18 +102,18 @@ async def create_recharge(
         owner_id=user_id,
         key=idempotency_key,
         fingerprint=fingerprint,
-        commit=True,  # 先落单再调渠道
+        commit=True,
     )
     if result is not order:
         if result.status == "pending" and not result.qr_url:
-            return await _attach_payment(session, result, channel), False  # 胜出方补拉
+            return await _attach_payment(session, result, channel), False
         return result, False
     logger.info("recharge_order_created", order_no=order.order_no, user_id=user_id)
     return await _attach_payment(session, order, channel), True
 
 
 async def _attach_payment(session: AsyncSession, order: Order, channel: PaymentChannel) -> Order:
-    """向渠道下单并回填二维码。不在事务里调渠道。失败的订单让出幂等键,用户按原键重试即开新单。"""
+    """调用渠道创建支付并提交二维码;失败时标记 failed、清空幂等键并提交后重抛。"""
     try:
         qr_url = await channel.create_payment(order)
     except Exception:
@@ -160,7 +159,10 @@ async def _credit_paid_order(
 
 
 async def handle_callback(session: AsyncSession, channel_name: str, result: CallbackResult) -> str:
-    """处理支付回调。返回 'ok'(含重放)或抛错。重放回调不重复入账。"""
+    """持订单行锁处理回调,返回 'ok' 或抛错;调用方须先验签。
+
+    支付成功同事务入账;已支付订单首次反向通知冻结等额余额,冲正通知重放不重复冻结。
+    """
     order = (
         await session.execute(
             select(Order).where(Order.order_no == result.order_no).with_for_update()
@@ -170,7 +172,6 @@ async def handle_callback(session: AsyncSession, channel_name: str, result: Call
         raise not_found("订单不存在")
     if order.status == "paid":
         if not result.success and order.channel_reversed_at is not None:
-            # 同一冲正的重放(含人工处置之后):不再冻结,只留痕 + 计数(PaymentChannelReversed 告警)
             logger.error(
                 "channel_reversal_replayed",
                 order_no=order.order_no,
@@ -179,8 +180,6 @@ async def handle_callback(session: AsyncSession, channel_name: str, result: Call
             )
             PAYMENT_CHANNEL_REVERSED_TOTAL.inc()
         elif not result.success:
-            # 渠道侧对已入账订单的关单/退款通知:不自动冲账,等额冻结钱包;解冻/扣回走管理端
-            # /finance/reversals/{order_no}/resolve。幂等:只对首次置标的那一次冻结
             order.channel_reversed_at = now_utc()
             await wallet.freeze(
                 session,
@@ -199,8 +198,7 @@ async def handle_callback(session: AsyncSession, channel_name: str, result: Call
                 refund_amount=str(result.refund_amount) if result.refund_amount else None,
             )
             PAYMENT_CHANNEL_REVERSED_TOTAL.inc()
-        return "ok"  # 重放
-    # 关单/失败单后到达的有效成功回调:按人工补单同等校验(渠道一致+金额一致)自动入账
+        return "ok"
     rescued = order.status in ("closed", "failed") and result.success
     if order.status != "pending" and not rescued:
         logger.warning("callback_on_closed_order", order_no=order.order_no, status=order.status)
@@ -233,10 +231,9 @@ async def handle_callback(session: AsyncSession, channel_name: str, result: Call
 
 
 async def reconcile_pending_orders(sm: async_sessionmaker[AsyncSession]) -> int:
-    """查单收敛(定时任务,每 2 分钟):对 pending 超 60s、近 48h failed 及近 48h closed 的订单
-    主动向渠道查单,渠道侧已支付则按回调同路径入账。closed 单以 expires_at 界定 48h 窗口。
+    """持咨询锁查验创建于 60 秒前至 48 小时内的 pending/failed/closed 订单,最多 50 笔。
 
-    advisory lock 防多副本重复;单轮 cap 50;渠道不可达跳过该单,下轮再试。
+    closed 还要求 expires_at 在近 48 小时内;渠道已支付时按回调处理,单笔失败不终止整轮。
     """
     credited = 0
     async with advisory_lock(sm, LockKey.PAYMENT_RECONCILE) as got:
@@ -250,7 +247,6 @@ async def reconcile_pending_orders(sm: async_sessionmaker[AsyncSession]) -> int:
                         .where(
                             or_(
                                 Order.status.in_(("pending", "failed")),
-                                # closed 单按关单时刻(expires_at)限定近 48h
                                 Order.status == "closed",
                             ),
                             Order.created_at < now_utc() - timedelta(seconds=60),
@@ -271,7 +267,6 @@ async def reconcile_pending_orders(sm: async_sessionmaker[AsyncSession]) -> int:
                     channel = await get_channel(order.channel, cfg_session)
                 result = await _query_with_timeout(channel, order)
             except Exception as exc:
-                # 渠道不可达/查单超时:跳过该单,下轮再试
                 logger.warning("order_query_failed", order_no=order.order_no, error=str(exc))
                 continue
             if not (
@@ -286,7 +281,6 @@ async def reconcile_pending_orders(sm: async_sessionmaker[AsyncSession]) -> int:
                         CallbackResult(order.order_no, result.channel_txn_id, result.amount, True),
                     )
             except Exception as exc:
-                # 单笔入账失败记日志+指标,不中断整轮
                 logger.exception("order_recover_failed", order_no=order.order_no)
                 PAYMENT_RECOVER_FAILED_TOTAL.labels(error=type(exc).__name__).inc()
                 continue
@@ -342,7 +336,7 @@ async def backfill_order(
 
     幂等:channel_txn_id 唯一约束 + 行锁 + 状态检查 + backfill_idempotency_key 唯一约束。
     渠道查单在无锁状态下进行(带显式超时),落账前在锁内复核订单状态。
-    返回 (订单, replayed):replayed=True 表示同键重放,路由据此回 X-Idempotent-Replay 头。
+    返回 (订单, replayed);首次入账在提交前调用可选 audit_writer,与入账同事务。
     """
     order = (
         await session.execute(select(Order).where(Order.order_no == order_no))
@@ -350,7 +344,7 @@ async def backfill_order(
     if order is None:
         raise AppError(ErrorCode.ORDER_NOT_FOUND, key="billing.orderNotFound", http_status=404)
     if _is_backfill_replay(order, idempotency_key):
-        return order, True  # 同键重放
+        return order, True
     channel = await get_channel(order.channel, session)
     result = await _query_with_timeout(channel, order)
     if result.status != "paid" or not result.channel_txn_id or result.amount is None:
@@ -365,12 +359,11 @@ async def backfill_order(
             key="billing.amountMismatchAdjust",
             params={"channel": str(result.amount), "order": str(order.amount)},
         )
-    # 锁内复核:查渠道期间订单可能已被回调/并发补单入账
     order = (
         await session.execute(select(Order).where(Order.order_no == order_no).with_for_update())
     ).scalar_one()
     if _is_backfill_replay(order, idempotency_key):
-        return order, True  # 并发同键补单已胜出
+        return order, True
     order.backfill_idempotency_key = idempotency_key
     try:
         await _credit_paid_order(
@@ -380,7 +373,6 @@ async def backfill_order(
             remark=f"{order.channel} 充值(人工补单)",
         )
     except IntegrityError as exc:
-        # backfill_idempotency_key 唯一约束兜底:同键被并发用到另一笔订单,回查持键方后 409
         await session.rollback()
         if idempotency_key is not None:
             holder = (
@@ -394,7 +386,7 @@ async def backfill_order(
                 ) from exc
         raise
     if audit_writer is not None:
-        await audit_writer(session)  # 与入账同事务
+        await audit_writer(session)
     await session.commit()
     logger.info("order_backfilled", order_no=order.order_no, amount=str(order.amount))
     return order, False
@@ -482,7 +474,7 @@ async def list_payment_anomalies(session: AsyncSession) -> list[dict[str, Any]]:
 
 
 async def close_expired_orders(sm: async_sessionmaker[AsyncSession]) -> int:
-    """关闭超时未支付订单(定时任务,每 10 分钟)。"""
+    """将 expires_at 已过期的 pending 订单置 closed 并提交,返回更新行数。"""
     async with sm() as session:
         result = await session.execute(
             update(Order)

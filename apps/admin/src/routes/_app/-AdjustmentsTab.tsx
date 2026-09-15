@@ -54,7 +54,6 @@ import { tenantColumn } from "../../components/TenantLink";
 import { canWriteFinance, useAdminRole, useAuth } from "../../stores/auth";
 import { useFinanceFilters } from "./-financeFilters";
 
-// 单笔绝对值上限,与 adminapi/service.ADJUST_MAX_ABS 对齐
 export const ADJUST_MAX_ABS = 100000;
 
 /** 复核确认框:租户/当前余额/调账后余额/发起人/原因;驳回必填理由(入审计)。 */
@@ -73,7 +72,6 @@ export function ReviewConfirmModal({
   const { message } = App.useApp();
   const ctx = useAdjustContext(target?.adj.user_id ?? null);
   const [rejectReason, setRejectReason] = useState("");
-  // 批准是入账动作:核对勾选后才放行(与驳回的必填理由对称)
   const [acked, setAcked] = useState(false);
   const review = useReviewAdjustment({
     mutation: {
@@ -88,7 +86,6 @@ export function ReviewConfirmModal({
   });
   if (!target) return null;
   const { adj, approve } = target;
-  // 事后余额:BigInt 相加(禁浮点)
   const after = ctx.data ? addAmounts(ctx.data.balance, adj.amount) : null;
   return (
     <Modal
@@ -166,7 +163,6 @@ export function AdjustmentsTab() {
   const { admin } = useAuth();
   const writable = canWriteFinance(role);
   const qc = useQueryClient();
-  // 筛选条件入 URL(status/发起日/租户 id)
   const { search, setFilters } = useFinanceFilters();
   const status = search.a_status;
   const day = search.a_day ? dayjs(search.a_day) : null;
@@ -175,7 +171,6 @@ export function AdjustmentsTab() {
     keys: ["a_status", "a_day", "a_uid"],
     commit: setFilters,
   });
-  // 租户 id commit 制;URL 回流走渲染期派生态
   const [uidInput, setUidInput] = useState<number | null>(search.a_uid ?? null);
   const [prevUid, setPrevUid] = useState(search.a_uid);
   if (search.a_uid !== prevUid) {
@@ -186,7 +181,6 @@ export function AdjustmentsTab() {
   const [creating, setCreating] = useState(false);
   const [reviewTarget, setReviewTarget] = useState<{ adj: AdjustmentRow; approve: boolean } | null>(null);
   const [form] = Form.useForm<{ user_id: number; amount: string; reason: string }>();
-  // 新建草稿(sessionStorage),发起成功后清除
   const draft = useFormDraft<{ user_id: number; amount: string; reason: string }>("adjustment-new");
   const refresh = () => void qc.invalidateQueries({ queryKey });
   const params = {
@@ -200,7 +194,6 @@ export function AdjustmentsTab() {
   const rows = flattenPages(data);
   const total = data?.pages[0]?.total ?? undefined;
 
-  // 输入 user_id 回显租户身份与资金现状;不存在阻止提交
   const wUserId = Form.useWatch("user_id", form);
   const ctxId = typeof wUserId === "number" && Number.isInteger(wUserId) && wUserId > 0 ? wUserId : null;
   const ctx = useAdjustContext(creating ? ctxId : null);
@@ -324,7 +317,6 @@ export function AdjustmentsTab() {
                 : isCreator
                   ? t("finance.noSelfReviewShort")
                   : undefined;
-              // 双向决定:批准 / 驳回并列可见
               return (
                 <RowActions
                   primary={
@@ -364,9 +356,8 @@ export function AdjustmentsTab() {
             try {
               values = await form.validateFields();
             } catch {
-              return; // 校验失败:antd 已就地标红
+              return;
             }
-            // 上下文未确认(不存在/查询失败)阻止提交
             if (!ctx.data) return;
             create.mutate({
               data: {
@@ -374,7 +365,6 @@ export function AdjustmentsTab() {
                 amount: values.amount,
                 reason: values.reason,
               },
-              // 幂等键从表单快照派生,失败不轮换
               idempotencyKey: idemKeyOf("adj", [values.user_id, values.amount, values.reason]),
             });
           })();
@@ -431,7 +421,6 @@ export function AdjustmentsTab() {
             </div>
           )}
           <Form.Item name="amount" label={t("finance.amountLabel")} rules={[{ required: true }]}>
-            {/* stringMode:金额以字符串提交;上限与后端 ADJUST_MAX_ABS 对齐 */}
             <InputNumber
               step="0.01"
               precision={2}

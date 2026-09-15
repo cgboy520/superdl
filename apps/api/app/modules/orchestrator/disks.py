@@ -32,10 +32,9 @@ async def create_disk(
     size_gb: int,
     idempotency_key: str | None = None,
 ) -> tuple[DataDisk, bool]:
-    """创建数据盘。返回 (盘, created),created=False = 幂等重放(路由回 200)。"""
+    """创建数据盘并提交下发任务;返回 (盘, created),幂等重放时 created=False。"""
     fingerprint = request_fingerprint(user_id, name, size_gb)
     if idempotency_key:
-        # 幂等键;同键异参 409
         existing = await find_replay(
             session,
             DataDisk,
@@ -47,7 +46,6 @@ async def create_disk(
         )
         if existing is not None:
             return existing, False
-    # 数据盘 StorageClass 缺位先拦
     await nodes_service.require_storage_classes(session, with_data_disk=True)
     policies = await get_runtime_config(session)
     if not policies.disk_min_gb <= size_gb <= policies.disk_max_gb:
@@ -58,9 +56,7 @@ async def create_disk(
         )
     price = as_price(policies.disk_price_gb_month)
     daily = disk_daily_charge(price, size_gb)
-    # 临界区:assert_can_afford 锁钱包行持有到 commit;配额与余额校验都在锁内
     await billing_service.assert_can_afford(session, user_id, additional_daily_disk=daily)
-    # 数量配额,生效值走 account.get_user_limits
     limits = await account_service.get_user_limits(session, user_id)
     max_disks = limits.max_disks
     live = (
@@ -94,9 +90,7 @@ async def create_disk(
         fingerprint=fingerprint,
     )
     if result is not disk:
-        # 并发同幂等键:按重放返回既有盘
         return result, False
-    # 同事务入队 PVC 下发;handler 成功才置 provisioned(PVC 容量即配额)
     enqueue(session, "disk.provision", {"disk_id": disk.id})
     await session.commit()
     await session.refresh(disk)
@@ -128,7 +122,7 @@ async def list_disks(session: AsyncSession, user_id: int) -> list[DataDisk]:
 
 
 def disk_billing_input(disk: DataDisk) -> billing_service.DiskBillingInput:
-    """DataDisk 行 → 结算入参(与 billing 巡检的欠费链共用同一构造)。"""
+    """将 DataDisk 行转换为结算入参。"""
     return billing_service.DiskBillingInput(
         id=disk.id,
         user_id=disk.user_id,
@@ -146,7 +140,6 @@ async def _settle_pending_days(session: AsyncSession, disk: DataDisk) -> None:
 
 
 async def expand_disk(session: AsyncSession, user_id: int, uuid: str, new_size_gb: int) -> DataDisk:
-    # FOR UPDATE 锁盘行;锁序 disk → bill → wallet
     disk = (
         await session.execute(
             select(DataDisk)
@@ -163,13 +156,11 @@ async def expand_disk(session: AsyncSession, user_id: int, uuid: str, new_size_g
     max_gb = (await get_runtime_config(session)).disk_max_gb
     if new_size_gb > max_gb:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="disks.sizeMax", params={"max": max_gb})
-    await _settle_pending_days(session, disk)  # 先按旧容量结清
-    # 增量日费过燃烧率校验(同事务)
+    await _settle_pending_days(session, disk)
     delta_daily = disk_daily_charge(disk.price_gb_month, new_size_gb) - disk_daily_charge(
         disk.price_gb_month, disk.size_gb
     )
     await billing_service.assert_can_afford(session, user_id, additional_daily_disk=delta_daily)
-    # 扩 PVC(provisioned=false 直到 handler 成功)
     disk.size_gb = new_size_gb
     disk.provisioned = False
     enqueue(session, "disk.provision", {"disk_id": disk.id})
@@ -179,7 +170,6 @@ async def expand_disk(session: AsyncSession, user_id: int, uuid: str, new_size_g
 
 async def delete_disk(session: AsyncSession, user_id: int, uuid: str) -> DataDisk:
     """删除:挂载中禁止;进入 deleting,由 outbox 删 PVC 后置 deleted。"""
-    # FOR UPDATE 锁盘行(与 attach_for_instance 同纪律)
     disk = (
         await session.execute(
             select(DataDisk)
@@ -190,7 +180,6 @@ async def delete_disk(session: AsyncSession, user_id: int, uuid: str) -> DataDis
     if disk is None or disk.status == "deleted":
         raise not_found("数据盘不存在")
     if disk.mounted_instance_id is not None:
-        # 挂载实例 stopped/frozen/failed 时放行并自动解挂
         inst = await session.get(Instance, disk.mounted_instance_id)
         if inst is not None and inst.status in ("stopped", "frozen", "failed"):
             disk.mounted_instance_id = None
@@ -198,9 +187,8 @@ async def delete_disk(session: AsyncSession, user_id: int, uuid: str) -> DataDis
             raise AppError(ErrorCode.DISK_IN_USE, key="disks.inUseDelete")
     if disk.status == "deleting":
         return disk
-    await _settle_pending_days(session, disk)  # 末日账:当日建当日删不能免单
+    await _settle_pending_days(session, disk)
     disk.status = "deleting"
-    # 同事务摘除所有实例的挂载引用
     await session.execute(
         update(Instance).where(Instance.data_disk_id == disk.id).values(data_disk_id=None)
     )
@@ -216,7 +204,6 @@ async def attach_for_instance(session: AsyncSession, user_id: int, disk_id: int,
         raise not_found("数据盘不存在")
     if disk.status != "active":
         raise AppError(ErrorCode.VALIDATION_ERROR, key="disks.notMountable")
-    # PVC 未就绪的盘不得挂载
     if not disk.provisioned:
         raise conflict(key="disks.notProvisioned")
     if disk.mounted_instance_id is not None and disk.mounted_instance_id != instance_id:

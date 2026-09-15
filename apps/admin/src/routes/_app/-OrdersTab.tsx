@@ -18,10 +18,8 @@ import { useFinanceFilters } from "./-financeFilters";
 export function OrdersTab() {
   const { t } = useTranslation(["admin", "shared"]);
   const qc = useQueryClient();
-  // 补单入账后订单状态变,整个 orders 前缀失效
   const actions = useOrderActions(() => void qc.invalidateQueries({ queryKey: ["admin", "orders"] }));
   const orderColumns = useOrderColumns({ withTenant: true, actions });
-  // 筛选条件入 URL(status/订单号/下单日)
   const { search, setFilters } = useFinanceFilters();
   const status = search.o_status;
   const orderNo = search.o_no;
@@ -30,7 +28,6 @@ export function OrdersTab() {
     keys: ["o_status", "o_no", "o_day"],
     commit: setFilters,
   });
-  // 检索防抖回写 URL;URL 回流同步进输入框
   const commitOrderNo = useCallback((next: string | undefined) => setFilters({ o_no: next }), [setFilters]);
   const { value: orderNoInput, setValue: setOrderNoInput } = useUrlCommittedInput(orderNo, commitOrderNo);
   const day = search.o_day ? dayjs(search.o_day) : null;

@@ -11,7 +11,6 @@ export function useLeaveGuard(dirty: boolean): {
   modal: ReactNode;
   confirmLeave: (then: () => void) => void;
 } {
-  // shouldBlockFn 在 core 之前求值,放行标记本地再记一份
   const bypassRef = useRef(false);
   const blocker = useBlocker({ shouldBlockFn: () => dirty && !bypassRef.current, withResolver: true });
   const core = useLeaveGuardCore(

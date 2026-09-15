@@ -65,7 +65,6 @@ function SettingsPage() {
   const meQ = useMe();
   const { data: me } = meQ;
   const { data: policies } = usePolicies();
-  // #ssh / #notify 深链:滚动到目标并高亮 2s(目标所在 Tab 由 tabOfHash 激活)
   useHashScroll({ highlight: true });
   const activeTab: SettingsTab = tab ?? tabOfHash(hash) ?? "ssh";
 
@@ -73,14 +72,12 @@ function SettingsPage() {
     <PageContainer width="narrow" title={t("settings.title")}>
       <Tabs
         activeKey={activeTab}
-        // Tab activeKey 入 URL 用 replace(ui-ux-spec §1 规则 10);hash 由导航自然清掉
         onChange={(k) => void navigate({ to: "/settings", search: { tab: k as SettingsTab }, replace: true })}
         items={[
           { key: "ssh", label: t("settings.sshCard"), children: <SshTab /> },
           {
             key: "notify",
             label: t("settings.notifyCard"),
-            // 费用中心余额卡「修改」深链落点
             children: (
               <div id="notify">
                 <WarnThresholdField />
@@ -125,7 +122,6 @@ function SshTab() {
   return (
     <Card id="ssh" extra={<Typography.Text type="secondary">{t("copy.sshKeyOnly")}</Typography.Text>}>
       <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
-        {/* 一把钥匙都没有时不摆空表:640 宽的表头在手机上只会拖出一条横向滚动条,提示语 + 下方表单就够了 */}
         {(keys ?? []).length === 0 && !isLoading && !isError ? (
           <Typography.Text type="secondary">{t("settings.noKeys")}</Typography.Text>
         ) : (
@@ -149,7 +145,6 @@ function SshTab() {
               {
                 title: t("storage.colActions"),
                 render: (_, r) => (
-                  // L1 确认(可逆、影响面 = 1),危险按钮配红色确认
                   <Button
                     size="small"
                     danger
@@ -225,7 +220,6 @@ function AccountTab({ me }: { me: { phone: string } | undefined }) {
             </Typography.Text>
           </Space>
           <Space>
-            {/* L2:后果前置但可恢复,确认按钮不标红(ui-ux-spec §1 规则 8) */}
             <Button
               onClick={() =>
                 confirm({
@@ -242,7 +236,6 @@ function AccountTab({ me }: { me: { phone: string } | undefined }) {
               {t("settings.logoutAllHint")}
             </Typography.Text>
           </Space>
-          {/* L0:可逆,不做确认 */}
           <Button onClick={() => void logout()}>{t("settings.logout")}</Button>
         </Space>
       </Card>
@@ -261,7 +254,6 @@ function PasswordModal({ open, phone, onClose }: { open: boolean; phone: string;
   const reset = useResetPassword({
     onSuccess: (data) => {
       const pair = data as TokenPairOut;
-      // 改密撤销全部在外会话,本设备用返回的新 token 继续
       authStore.getState().login(pair.access_token);
       message.success(t("settings.passwordChanged"));
       form.resetFields();
@@ -328,7 +320,6 @@ function DeletionZone({ phone }: { phone: string }) {
 
   const pending = req?.status === "pending";
   const statusMeta = req ? metaOf(deletionStatusMap, req.status) : undefined;
-  // 冷静期截止由服务端给出(cooldown_ends_at)
   const countdown = pending ? formatDaysUntil(req.cooldown_ends_at) : null;
 
   return (
@@ -461,7 +452,6 @@ function RealNameTab({
   const verified = me?.verification_status === "verified";
   return (
     <Card
-      // Tab 已给标题,卡头只留认证状态标
       extra={
         loading || error ? undefined : (
           <Tag color={verified ? "green" : "orange"}>

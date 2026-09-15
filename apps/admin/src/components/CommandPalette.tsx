@@ -1,5 +1,4 @@
-/** Cmd+K 命令面板:页面导航(按角色过滤,同侧栏 MENU 源)+ 实体检索(纯数字 → 租户 id;≥6 位十六进制 → 实例 uuid 前缀,输入即查;
- *  节点名 / SKU 名 / 服务名与 slug 只在已缓存的列表里子串匹配,不为面板发新请求)+ 快捷动作;壳在 @superdl/ui CommandPaletteShell。 */
+/** 命令面板:角色过滤导航、实体检索与快捷动作。 */
 
 import {
   AlertOutlined,
@@ -55,7 +54,6 @@ export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const q = query.trim();
-  // 实体检索:纯数字当租户 id;≥6 位十六进制当实例 uuid 前缀;都只在面板打开且命中形态时发请求
   const tenantId = /^\d{1,9}$/.test(q) ? q : null;
   const uuidPrefix = /^[0-9a-f]{6,32}$/i.test(q) ? q.toLowerCase() : null;
   const tenantsQ = useTenants(tenantId && canSeeMenu("/tenants", role) ? { q: tenantId } : undefined);
@@ -66,7 +64,6 @@ export function CommandPalette() {
   });
   const instanceHits = uuidPrefix ? (instancesQ.data?.pages[0]?.items ?? []) : [];
 
-  // 页面按侧栏分组分节(与 MENU.group 同源),角色不可见的页不出
   const pageGroups: CommandPaletteGroup[] = MENU_GROUP_ORDER.map((g) => ({
     heading: t(MENU_GROUP_LABEL_KEY[g]),
     items: MENU.filter((m) => m.group === g && canSeeMenu(m.key, role)).map((m) => ({
@@ -83,7 +80,6 @@ export function CommandPalette() {
     })),
   })).filter((g) => g.items.length > 0);
 
-  // 实体名检索:大小写不敏感子串,只在已缓存的列表里找(列表页访问过才有命中)
   const lower = q.toLowerCase();
   const hit = (...fields: (string | null | undefined)[]) =>
     q.length > 0 && fields.some((f) => (f ?? "").toLowerCase().includes(lower));
@@ -188,7 +184,6 @@ export function CommandPalette() {
     {
       heading: t("command.groupActions"),
       items: [
-        // 未确认告警深链:仅可见 /alerts 的角色
         ...(canSeeMenu("/alerts", role)
           ? [
               {
@@ -216,7 +211,6 @@ export function CommandPalette() {
           value: `${t("command.actionRefresh")} refresh`,
           keywords: ["refresh", "reload", "shuaxin"],
           run: () => {
-            // 失效重取当前页所有查询
             void queryClient.invalidateQueries();
             message.success(t("command.refreshDone"));
           },

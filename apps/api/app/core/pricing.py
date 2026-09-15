@@ -8,18 +8,15 @@ from decimal import Decimal
 from app.core.money import as_amount, as_price, billing_units
 from app.core.platform_config import RuntimeConfig
 
-# 购买模式(instances.market)
-MARKET_ON_DEMAND = "on_demand"  # 按量:小时结算,唯一进 bills_hourly 的模式
-MARKET_SPOT = "spot"  # 竞价:折扣价 + 可被平台回收
-MARKET_SUBSCRIPTION = "subscription"  # 包周期:下单一次性预扣,小时结算跳过
+MARKET_ON_DEMAND = "on_demand"
+MARKET_SPOT = "spot"
+MARKET_SUBSCRIPTION = "subscription"
 
-# 计费周期(subscriptions.period)
 PERIOD_DAY = "day"
 PERIOD_WEEK = "week"
 PERIOD_MONTH = "month"
 PERIOD_YEAR = "year"
 
-# 周期长度取定长小时(不取自然月),定价与到期时刻同源;见 docs/reference/billing.md
 PERIOD_HOURS: dict[str, int] = {
     PERIOD_DAY: 24,
     PERIOD_WEEK: 24 * 7,
@@ -27,12 +24,11 @@ PERIOD_HOURS: dict[str, int] = {
     PERIOD_YEAR: 24 * 365,
 }
 
-# 单次下单/续费的周期数上限
 MAX_PERIOD_COUNT = 36
 
 
 def period_hours(period: str, count: int = 1) -> int:
-    """周期总小时数;未知周期或非正数量抛 ValueError。"""
+    """返回固定周期小时数(月为 30 天,年为 365 天);未知周期或数量不在 1..36 时抛 ValueError。"""
     if period not in PERIOD_HOURS:
         raise ValueError(f"unknown period: {period!r}")
     if not 1 <= count <= MAX_PERIOD_COUNT:
@@ -41,7 +37,6 @@ def period_hours(period: str, count: int = 1) -> int:
 
 
 def period_delta(period: str, count: int = 1) -> timedelta:
-    """周期时长(与 period_hours 同源)。"""
     return timedelta(hours=period_hours(period, count))
 
 
@@ -85,11 +80,11 @@ class SubscriptionQuote:
     period_count: int
     hours: int
     discount_pct: int
-    base_hourly: Decimal  # SKU 原价(4 位)
-    unit_price: Decimal  # 折后时价(4 位),落 instances.price_hourly
-    list_amount: Decimal  # 原价总额(2 位)
-    discount_amount: Decimal  # 优惠额(2 位)
-    amount: Decimal  # 应付(2 位),即实扣金额
+    base_hourly: Decimal
+    unit_price: Decimal
+    list_amount: Decimal
+    discount_amount: Decimal
+    amount: Decimal
 
 
 def quote_subscription(

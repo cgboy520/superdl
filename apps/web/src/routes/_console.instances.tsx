@@ -1,7 +1,4 @@
-/** 容器实例列表(默认落地页):页头(标题 + 描述 + 新鲜度 + 主 CTA)→ AttentionBar(公告 / 余额 / 到期 / 冻结 / 失败聚合成一条)→ FilterBar(状态计数条 + 搜索)→ 表格。
- *  服务端游标分页 + status/name 过滤(状态入 URL);「需处理」不落服务端,拉全量后客户端筛;名称即详情链接,改名走 hover 铅笔;行内动作 RowActions 三槽位(InstanceActions);
- *  列表不挂 refetchInterval,过渡态由 useTransientInstanceRefresh 逐台轻轮询并在迁移时失效列表;指标与今日消费按页头新鲜度条轮询,暂停同停。
- *  真空态(无筛选且无实例)整页换新手引导,不渲染表头。 */
+/** 实例列表:URL 筛选、游标分页、过渡态轮询、注意事项与空态引导。 */
 
 import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { type InstanceMetricsSummaryOut, type InstanceOut } from "@superdl/api-client";
@@ -53,7 +50,7 @@ import { listSearchStore } from "../stores/listSearch";
 /** 状态计数条的视图键 = ?status= 白名单;running / stopped 直落服务端过滤,attention 是客户端派生集合。 */
 const SUMMARY_KEYS = ["running", "stopped", "attention"] as const;
 
-/** 「需处理」的状态集合:过渡态(会自己走完但要盯)+ 冻结 + 失败。 */
+/** 需处理状态集合:过渡态、冻结与失败。 */
 const ATTENTION_STATUSES = new Set(["creating", "starting", "stopping", "frozen", "failed"]);
 
 /** 需处理判据(与 §3.2 一致):上表状态,或包周期已到期 / 在 period_expire_warn_days 窗口内到期。 */
@@ -67,7 +64,6 @@ function needsAttention(i: InstanceOut, warnDays: number | undefined, now: numbe
 
 export const Route = createFileRoute("/_console/instances")({
   beforeLoad: requireAuth,
-  // 列表状态入 URL;非法值回默认
   validateSearch: (search: Record<string, unknown>): { q?: string; status?: string } => {
     const out: { q?: string; status?: string } = {};
     if (typeof search.q === "string" && search.q.trim()) out.q = search.q;
@@ -206,9 +202,7 @@ function InstanceCard({
 function InstancesPage() {
   const { t } = useTranslation(["web", "shared"]);
   const navigate = useNavigate();
-  // <md 表格换卡片流;数据同源同游标
   const narrow = !Grid.useBreakpoint().md;
-  // AttentionBar 到期条目与「更多」里的续费共用一个 modal
   const [renewTarget, setRenewTarget] = useState<InstanceOut | null>(null);
   const { q, status } = Route.useSearch();
   const { data: policies } = usePolicies();
@@ -231,11 +225,9 @@ function InstancesPage() {
   } = useCursorList({
     urlQ: q,
     commitQ,
-    // attention 是客户端派生集合:不带 status 拉全量,再按判据筛
     usePages: (name) => useInstancePages({ status: status === "attention" ? undefined : status, name }),
     keyOf: (i: InstanceOut) => i.uuid,
   });
-  // 指标与今日消费按页头新鲜度条轮询,暂停同停
   const auto = useAutoRefresh(POLL.metrics);
   const metricsQ = useMetricsSummary({ refetchInterval: auto.refetchInterval });
   const { data: metrics } = metricsQ;
@@ -249,20 +241,16 @@ function InstancesPage() {
     [daily],
   );
 
-  // 过渡态实例逐台轻轮询(终态即停),迁移时失效列表查询
   useTransientInstanceRefresh(rows);
 
   const warnDays = policies?.period_expire_warn_days;
-  // 临期窗口是天级,「现在」在挂载时定一次:轮询重渲染不抖动计数
   const [mountedAt] = useState(() => Date.now());
-  // 「需处理」在客户端筛;其余视图服务端已筛好
   const attentionRows = useMemo(
     () => rows.filter((r) => needsAttention(r, warnDays, mountedAt)),
     [rows, warnDays, mountedAt],
   );
   const visibleRows = status === "attention" ? attentionRows : rows;
 
-  // 公告 / 余额 / 欠费 + 到期 / 冻结 / 失败聚合成一条横幅
   const attention = [...useNotificationAttention(), ...useInstanceAttention(rows, setRenewTarget)];
 
   const setSearch = (patch: { q?: string; status?: string }) =>
@@ -278,7 +266,6 @@ function InstancesPage() {
       replace: true,
     });
 
-  // 记住当前筛选态,详情页「返回列表」带回
   useEffect(() => {
     listSearchStore.getState().remember("/instances", { q, status });
   }, [q, status]);
@@ -291,18 +278,13 @@ function InstancesPage() {
     });
 
   const hasFilter = Boolean(status) || keyword.trim() !== "";
-  // 已提交到 URL 的检索词也算筛选态:输入清空后 300ms 内行仍是旧结果,不能误判成真空态
   const filtered = hasFilter || Boolean(q);
   const clearFilters = () => {
-    // 检索词经防抖回写 URL(与输入框清空同一路径);状态直接清
     setKeyword("");
     setSearch({ status: undefined });
   };
-  // 真空态(无筛选且无实例)整页换新手引导;错误态 > 筛选无结果 > 真空态
   const trueEmpty = !isLoading && !isError && !filtered && rows.length === 0;
-  // 计数只在全部加载完才显示
   const count = isLoading || isError || hasNextPage ? undefined : visibleRows.length;
-  // 计数条数字只在「未按状态筛 + 全部加载完」时可信,否则整条不出数字
   const countsReady = status === undefined && !isLoading && !isError && !hasNextPage;
   const countOf = (n: number) => (countsReady ? n : undefined);
   const summaryItems = [
@@ -383,7 +365,6 @@ function InstancesPage() {
       pagination={false}
       scroll={{ x: 1000 }}
       sticky={{ offsetHeader: layout.topBarHeight }}
-      // 表格渲染且无行 = 首载 / 错误 / 筛选无结果(真空态已整页替换)
       locale={{ emptyText: isLoading ? <Skeleton active title={false} paragraph={{ rows: 3 }} /> : emptyState }}
       columns={[
         {

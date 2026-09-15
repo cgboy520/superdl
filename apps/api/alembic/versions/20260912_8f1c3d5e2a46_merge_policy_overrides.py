@@ -1,12 +1,4 @@
-"""策略参数并入平台配置中心:policy_overrides 行搬进 platform_settings 后删表。
-数据影响:policy_overrides 表消失;已有覆盖值原样保留在 platform_settings
-(同键已存在时以 platform_settings 为准)。
-
-Revision ID: 8f1c3d5e2a46
-Revises: 7e4a2b9c1d05
-Create Date: 2026-09-12 11:30:00.000000
-
-"""
+"""将 policy_overrides 中 platform_settings 尚无的键值写入后者,随后删除 policy_overrides 表。"""
 
 from collections.abc import Sequence
 

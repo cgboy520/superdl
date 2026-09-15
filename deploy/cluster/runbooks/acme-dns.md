@@ -33,7 +33,6 @@ cert-manager(acmeDNS solver)
    - `ns1.auth.superdl.example.com A <上一步 LB IP>`
 5. **注册账户**:每张泛域名证书各一个账户(`app.<域>` 与 `svc.<域>` 各做一次;镜像无 curl,用 wget):
    ```bash
-   # {"allowfrom":[]} = 任意来源可更新(8080 仅 ClusterIP)
    kubectl -n cert-manager exec deploy/acme-dns -- \
      wget -qO- --header='Content-Type: application/json' \
        --post-data='{"allowfrom":[]}' http://127.0.0.1:8080/register
@@ -50,7 +49,7 @@ cert-manager(acmeDNS solver)
    漏键的现场是证书长期 `Ready=False`、对应 listener 不 Programmed、无兜底证书。cert-manager 调的是 ClusterIssuer `acmeDNS.host` 指向的集群内 `acme-dns-api` Service,见 `deploy/app/k8s/05-cert-manager.yaml`。
 8. 验证:
    ```bash
-   kubectl -n superdl get certificate superdl-jupyter-wildcard superdl-svc-wildcard   # 均 Ready=True
+   kubectl -n superdl get certificate superdl-jupyter-wildcard superdl-svc-wildcard
    kubectl logs -n cert-manager deploy/cert-manager | grep -i acme
    ```
 

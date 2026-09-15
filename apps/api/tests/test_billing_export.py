@@ -20,7 +20,6 @@ class TestEscaping:
     def test_formula_lead_prefixed(self):
         assert csvexport.csv_line(["=1+1"]) == "'=1+1\r\n"
         assert csvexport.csv_line(["@who"]) == "'@who\r\n"
-        # 纯数字负数金额不受影响;非纯数字的 - 前导按文本化
         assert csvexport.csv_line(["-12.30"]) == "-12.30\r\n"
         assert csvexport.csv_line(["-2+3"]) == "'-2+3\r\n"
 
@@ -62,9 +61,7 @@ class TestHourlyExport:
         text = resp.text
         assert text.startswith("\ufeff小时,实例ID,运行秒数,单价(元/时),卡数,金额(元)\r\n")
         lines = [ln for ln in text.removeprefix("\ufeff").split("\r\n") if ln]
-        # 8 月窗口(UTC+8):7/31 20:00 UTC = 8/1 04:00 本地也在月内
         assert len(lines) == 1 + 3
-        # 行按 id 降序;时间按 UTC+8 折算并带后缀
         hours = {ln.split(",", 1)[0] for ln in lines[1:]}
         assert hours == {
             "2026-08-01 08:00 (UTC+8)",
@@ -78,7 +75,6 @@ class TestHourlyExport:
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
         headers, user_id, _ = await create_user_with_key(client, "13900000302")
-        # 6/30 17:00 UTC = 7/1 01:00 (UTC+8),不属于 6 月窗口
         await seed_bill_hourly(
             sm,
             user_id,
@@ -91,7 +87,7 @@ class TestHourlyExport:
             headers=headers,
         )
         lines = [ln for ln in resp.text.split("\r\n") if ln]
-        assert len(lines) == 1 + 1  # 只剩 6/15 那行
+        assert len(lines) == 1 + 1
 
     async def test_truncation_marker(
         self,
@@ -113,7 +109,7 @@ class TestHourlyExport:
             headers=headers,
         )
         lines = [ln for ln in resp.text.split("\r\n") if ln]
-        assert len(lines) == 1 + 2 + 1  # 表头 + 上限行数 + 截断标记行
+        assert len(lines) == 1 + 2 + 1
         assert lines[-1].startswith(csvexport.TRUNCATED_MARKER)
 
 

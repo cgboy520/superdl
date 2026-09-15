@@ -1,4 +1,4 @@
-/** 「给这台机器买一段周期」的 modal,两种模式共用:`renew` 续费(接在当前周期之后,基准 `subscription.unit_price`);`subscribe` 按量转包周期(从现在起算,基准 `instance.price_hourly`)。明细三个数取精确值,量化顺序与 pricing.quote_subscription 对齐;成功后用响应 quote 出扣款回执。幂等键每次打开生成一个,关掉重开才是新单;调用方按需挂载。 */
+/** 续费/转包周期弹窗:本地报价、余额校验与扣款回执;幂等键在组件挂载时生成。 */
 
 import type { InstanceOut, RenewOut } from "@superdl/api-client";
 import {
@@ -33,7 +33,7 @@ export function RenewModal({
   onClose,
 }: {
   instance: InstanceOut;
-  /** renew = 续费(接在当前周期之后);subscribe = 按量转包周期(从现在起算) */
+  /** renew 从到期时刻与挂载时刻的较晚者续期;subscribe 从挂载时刻起算。 */
   mode?: PeriodPurchaseMode;
   open: boolean;
   onClose: () => void;
@@ -44,7 +44,6 @@ export function RenewModal({
   const { message } = App.useApp();
   const isConvert = mode === "subscribe";
   const sub = instance.subscription;
-  // 转换默认包月;续费默认跟当前周期
   const current = isBillingPeriod(sub?.period) ? sub.period : "month";
   const [period, setPeriod] = useState(current);
   const [count, setCount] = useState(1);
@@ -62,7 +61,6 @@ export function RenewModal({
     );
     onClose();
   };
-  // 两个 hook 都无条件调用,按模式取其一提交
   const renew = useRenewInstance(instance.uuid, { onSuccess: onPaid });
   const subscribe = useSubscribeInstance(instance.uuid, { onSuccess: onPaid });
   const submit = isConvert ? subscribe : renew;
@@ -184,8 +182,7 @@ export function RenewModal({
                       before: formatMoney(balance),
                       after: formatMoney(afterBalance),
                     })
-                  : // 钱包未就绪不显假 ¥0.00
-                    balance !== null
+                  : balance !== null
                     ? formatMoney(balance)
                     : null,
             },

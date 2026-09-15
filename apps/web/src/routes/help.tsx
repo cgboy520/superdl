@@ -1,5 +1,4 @@
-/** 帮助中心(公开):快速开始卡(三步 + 真实 SSH 命令)+ 搜索过滤 + 分类锚点(≥lg 左侧 sticky rail,<lg 顶部 chips)
- *  + 分类下的问答(每条锚点 faq-<key>,直链到达即展开并滚动;末尾「没解决?提交工单」按登录态分流)+ 联系方式(未配置不展示)。 */
+/** 帮助中心:快速开始、问答搜索、分类锚点、提单入口与联系方式。 */
 
 import { SearchOutlined } from "@ant-design/icons";
 import { controlWidth, fontSize, layout, space } from "@superdl/ui";
@@ -46,10 +45,8 @@ function HelpPage() {
   const wide = screens.lg ?? false;
   const loggedIn = useIsLoggedIn();
   const [query, setQuery] = useState("");
-  // 锚点直达:展开目标条目并滚动(原生 hash 跳转落空,手动补)
   const hash = useRouterState({ select: (s) => s.location.hash });
   const [active, setActive] = useState<FaqKey[]>(["connectSsh"]);
-  // hash 变化 → 展开对应条目:渲染期派生态
   const [prevHash, setPrevHash] = useState(hash);
   if (hash !== prevHash) {
     setPrevHash(hash);
@@ -61,19 +58,16 @@ function HelpPage() {
   const targetKey = hash.replace(/^#?faq-/, "");
   useEffect(() => {
     if (!hash || !isFaqKey(targetKey)) return;
-    // 等展开动画与面板挂载后再滚
     const timer = setTimeout(() => {
       document.getElementById(`faq-${targetKey}`)?.scrollIntoView({ behavior: "smooth" });
     }, 50);
     return () => clearTimeout(timer);
   }, [hash, targetKey]);
 
-  // 静态键拼装(extract 只识别字面量键,故按既有写法断言到样板键)
   const faqQuestion = (k: FaqKey) => t(`help.faq.${k}.q` as "help.faq.connectSsh.q");
   const faqAnswer = (k: FaqKey) => t(`help.faq.${k}.a` as "help.faq.connectSsh.a");
   const categoryLabel = (k: CategoryKey) => t(`help.category.${k}` as "help.category.connect");
 
-  // 客户端过滤:问 + 答子串命中(大小写不敏感)
   const needle = query.trim().toLowerCase();
   const matched = (k: FaqKey) => needle === "" || `${faqQuestion(k)}\n${faqAnswer(k)}`.toLowerCase().includes(needle);
   const visible = CATEGORIES.map((c) => ({ key: c.key, faqs: c.faqs.filter(matched) })).filter(
@@ -89,7 +83,6 @@ function HelpPage() {
     </Link>
   );
 
-  // ≥lg 竖向 sticky rail;<lg 顶部横向 chips(同一份锚点)
   const rail =
     anchors.length === 0 ? null : wide ? (
       <nav
@@ -120,7 +113,6 @@ function HelpPage() {
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <AppTopBar variant="public" />
       <main style={{ flex: 1, padding: `${space.xxl}px ${layout.contentPadding}px` }}>
-        {/* 阅读宽度沿用 narrow:分类 rail 收在同一列内,快速开始卡与搜索框与问答同宽 */}
         <PageContainer width="narrow">
           <Typography.Title level={2}>{t("help.title")}</Typography.Title>
           <Typography.Paragraph type="secondary">{t("help.intro")}</Typography.Paragraph>

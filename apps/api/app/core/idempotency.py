@@ -15,7 +15,6 @@ from sqlalchemy.orm import InstrumentedAttribute, Mapped
 from app.core.errors import conflict
 from app.core.timeutil import ensure_utc, now_utc
 
-# 幂等键有效期(实例 / 数据盘):窗内重放,窗外按新单
 IDEMPOTENCY_WINDOW = timedelta(hours=24)
 
 
@@ -31,7 +30,7 @@ class _HasRequestFingerprint(_HasIdempotencyKey, Protocol):
 
 
 def request_fingerprint(*parts: object) -> str:
-    """异参检测指纹:全部业务形态参数按固定顺序取 sha256(dict 先排序成 items)。"""
+    """对各参数 repr 以 | 拼接后的 UTF-8 字节取 SHA-256;调用方负责顺序和规范化。"""
     return hashlib.sha256("|".join(repr(p) for p in parts).encode()).hexdigest()
 
 
@@ -100,8 +99,10 @@ async def insert_idempotent[RowT: _HasIdempotencyKey](
     fingerprint: str | None = None,
     commit: bool = False,
 ) -> RowT:
-    """幂等插入:add + flush/commit,撞 (归属列, key) 唯一约束时回滚并回查胜出方(返回值 `is row`
-    即新插入);撞其它约束重抛 IntegrityError;key=None 等价普通插入。"""
+    """插入并 flush 或 commit;返回值 is row 表示新插入。
+
+    IntegrityError 时回滚整个 session,按非空键回查重放行;无匹配行则重抛。
+    """
     session.add(row)
     try:
         if commit:
@@ -112,7 +113,6 @@ async def insert_idempotent[RowT: _HasIdempotencyKey](
         await session.rollback()
         if key is not None:
             if fingerprint is not None:
-                # 带指纹路径要求 model 有 request_fingerprint 列,经 Any 过桥到指纹版 overload
                 winner = await find_replay(
                     session,
                     cast(type[Any], model),

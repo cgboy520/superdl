@@ -57,7 +57,6 @@ function AlertsPage() {
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const { severity, acked } = Route.useSearch();
-  // severity 服务端参数;确认状态客户端过滤(后端只回最近一窗)
   const autoRefresh = useAutoRefresh(POLL.steady);
   const alertsQ = useAlerts(severity ? { severity } : undefined, {
     refetchInterval: autoRefresh.refetchInterval,
@@ -66,9 +65,7 @@ function AlertsPage() {
   const rows = loaded.filter((a) =>
     acked === "acked" ? a.acked_at != null : acked === "unacked" ? a.acked_at == null : true,
   );
-  // 确认闭环见 lib/alertLink
   const ack = useAckAlertWithFeedback();
-  // 批量确认:勾选未确认项,逐条并发(后端无批量端点)
   const { message } = App.useApp();
   const qc = useQueryClient();
   const ackRaw = useAckAlert();
@@ -99,7 +96,6 @@ function AlertsPage() {
       dataIndex: "severity",
       fixed: "left",
       width: 110,
-      // 严重度从不只靠颜色:图标 + 文字
       render: (v: string) => <StatusTag map={severityMap} value={v} variant="text" icon />,
     },
     {
@@ -212,7 +208,6 @@ function AlertsPage() {
         pagination={false}
         scroll={{ x: 1000 }}
         sticky={{ offsetHeader: layout.topBarHeight }}
-        // 只有未确认项可勾选:已确认的没有可执行动作
         rowSelection={
           writable
             ? {

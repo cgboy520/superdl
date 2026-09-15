@@ -1,8 +1,4 @@
-"""组件体检的事实组装:把探测到的对象行判成五态 + 面板事实 + 抽屉对象表。
-
-real 与 fake 只负责把 K8s 对象取成本模块的行结构,判定与组装只有这一份,
-两个后端的体检结果因此同形状、同口径。
-"""
+"""从 real/fake 探测行组装组件状态、面板事实和对象明细。"""
 
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
@@ -16,24 +12,18 @@ from app.core.k8s.base import (
     FactTone,
 )
 
-# 抽屉对象表的上限:大集群下 JSONB 不能无限涨,超出部分由「还有 N 个」事实代替
 MAX_OBJECTS = 20
 
 
 @dataclass(frozen=True)
 class WorkloadRow:
-    """一个 Deployment / DaemonSet / StatefulSet 的就绪事实。
-
-    desired=0 表示对象不存在(探测没找到),与「存在但 0 副本」区分不开也无须区分:
-    两者对平台的后果相同。
-    """
+    """工作负载的就绪事实;desired=0 可表示未找到对象或期望副本数为零。"""
 
     name: str
     namespace: str = ""
     ready: int = 0
     desired: int = 0
     image: str = ""
-    # conditions 里第一条非 True 的 reason;取不到留空
     reason: str = ""
 
 
@@ -83,7 +73,7 @@ def _ratio(ready: int, desired: int) -> str:
 
 
 def rollout_state(ready: int, desired: int) -> ComponentState:
-    """就绪比 → 三态。desired=0 是对象不存在,与全崩同判 down。"""
+    """desired 或 ready 非正时为 down;ready 达到 desired 为 ok,否则为 degraded。"""
     if desired <= 0 or ready <= 0:
         return "down"
     return "ok" if ready >= desired else "degraded"
@@ -172,8 +162,7 @@ def _node_status(r: NodeRow) -> str:
 def hami_facts(
     scheduler: WorkloadRow, device_plugin: WorkloadRow, allocatable_gpu: int
 ) -> ComponentFacts:
-    """判据:Deployment hami-scheduler 的 readyReplicas ≥ 1。device-plugin 未铺满判降级:
-    卡注册不上就排不进来。"""
+    """按 scheduler 副本就绪比判状态;其为 ok 时再采用 device-plugin 的状态。"""
     sched_state = rollout_state(scheduler.ready, scheduler.desired)
     plugin_state = rollout_state(device_plugin.ready, device_plugin.desired)
     state = sched_state if sched_state != "ok" else _worst(plugin_state, "ok")
@@ -200,8 +189,7 @@ def _tone(state: ComponentState) -> FactTone:
 
 
 def gpu_operator_facts(operands: Sequence[WorkloadRow], driver_version: str) -> ComponentFacts:
-    """判据:gpu-operator 的 operand DaemonSet 全部 numberReady == desiredNumberScheduled。
-    只看 Deployment 名字存在与否会把全崩的 operator 判绿。"""
+    """按 operand 汇总就绪数与期望数判状态;无 operand 为 down。"""
     ready, desired = _totals(operands)
     state = rollout_state(ready, desired) if operands else "down"
     return ComponentFacts(
@@ -217,7 +205,7 @@ def gpu_operator_facts(operands: Sequence[WorkloadRow], driver_version: str) -> 
 
 
 def dcgm_facts(exporters: Sequence[WorkloadRow]) -> ComponentFacts:
-    """判据:dcgm-exporter DaemonSet 全就绪。样本新鲜度由巡检侧的 Prometheus 事实补。"""
+    """按 exporter 汇总就绪数与期望数判状态;无 exporter 为 down。"""
     ready, desired = _totals(exporters)
     state = rollout_state(ready, desired) if exporters else "down"
     image = next((r.image for r in exporters if r.image), "")
@@ -253,11 +241,7 @@ def kata_runtimeclass_facts(
     kata_deploy: WorkloadRow,
     kata_nodes: Sequence[NodeRow],
 ) -> ComponentFacts:
-    """判据:RuntimeClass kata-qemu 存在。
-
-    RuntimeClass 在但池里没有 Ready 节点 = 独享档这条能力没开起来,判 disabled 而非 ok:
-    绿勾会让人以为独享档能开机。池节点数只算 Ready 且可调度的,池里三台全 NotReady 等于没有。
-    """
+    """缺 kata-qemu 为 down;无就绪且可调度节点为 disabled,否则按 kata-deploy 就绪比判定。"""
     row = next((r for r in runtime_classes if r.name == "kata-qemu"), None)
     ready_nodes = [n for n in kata_nodes if n.ready and n.schedulable]
     if row is None:
@@ -294,10 +278,7 @@ def _runtime_class_objects(rows: Sequence[RuntimeClassRow]) -> tuple[ComponentOb
 def storage_facts(
     rows: Sequence[StorageClassRow], instance_disk_sc: str, data_disk_sc: str
 ) -> ComponentFacts:
-    """判据:实例盘 SC 存在(强制,与 require_storage_classes 同名核对);数据盘 SC 可选。
-
-    缺数据盘 SC 不判红:数据盘不可售不影响开机。
-    """
+    """实例盘 SC 存在则为 ok,否则为 down;缺数据盘 SC 只标记 warning 事实。"""
     names = {r.name for r in rows}
     instance_ok = instance_disk_sc in names
     data_ok = data_disk_sc in names
@@ -336,11 +317,7 @@ def storage_facts(
 def gateway_facts(
     programmed: bool, address: str, listeners: Sequence[ListenerRow], reason: str
 ) -> ComponentFacts:
-    """判据:Gateway superdl 的 status.conditions 中 Programmed=True,逐 listener 再单独判。
-
-    整体 Programmed 为真但某个 listener 挂了,受影响的只是那个子域 —— 判降级而非全红,
-    也不该像今天这样整体判绿。
-    """
+    """Gateway 未 Programmed 为 down;否则任一 listener 未 Programmed 为 degraded,其余为 ok。"""
     ok_listeners = sum(1 for lis in listeners if lis.programmed)
     total = len(listeners)
     if not programmed:
@@ -375,8 +352,7 @@ def gateway_facts(
 
 
 def cert_manager_facts(deploys: Sequence[WorkloadRow]) -> ComponentFacts:
-    """判据:cert-manager 三个 Deployment(控制器 / webhook / cainjector)全就绪。
-    证书本身的到期日由深探补(需 cert-manager.io 读权限)。"""
+    """按 cert-manager 控制器就绪比判定;其为 ok 但组件汇总未全就绪时为 degraded。"""
     ready, desired = _totals(deploys)
     controller = next((d for d in deploys if d.name == "cert-manager"), WorkloadRow("cert-manager"))
     state = rollout_state(controller.ready, controller.desired)
@@ -396,10 +372,7 @@ def cert_manager_facts(deploys: Sequence[WorkloadRow]) -> ComponentFacts:
 
 
 def monitoring_facts(prometheus: WorkloadRow, alertmanager: WorkloadRow) -> ComponentFacts:
-    """判据:Prometheus StatefulSet readyReplicas ≥ 1。抓取健康与 firing 数由巡检侧补。
-
-    今天只匹配 Deployment 名字,Prometheus 崩了照样绿。
-    """
+    """按 Prometheus 就绪比判定;其为 ok 时再采用 Alertmanager 的状态。"""
     prom_state = rollout_state(prometheus.ready, prometheus.desired)
     am_state = rollout_state(alertmanager.ready, alertmanager.desired)
     state = prom_state if prom_state != "ok" else _worst(am_state, "ok")

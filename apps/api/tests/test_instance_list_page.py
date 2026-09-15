@@ -30,7 +30,6 @@ class TestInstanceListPage:
             await client.get("/api/v1/instances", params={"status": "stopped"}, headers=headers)
         ).json()["items"]
         assert [i["name"] for i in items] == ["stop-1"]
-        # released 永不出列表
         all_items = (await client.get("/api/v1/instances", headers=headers)).json()["items"]
         assert "gone" not in [i["name"] for i in all_items]
 
@@ -44,7 +43,7 @@ class TestInstanceListPage:
         by_name = (
             await client.get("/api/v1/instances", params={"name": "train"}, headers=headers)
         ).json()["items"]
-        assert [i["name"] for i in by_name] == ["Train-Job"]  # 大小写不敏感
+        assert [i["name"] for i in by_name] == ["Train-Job"]
 
         by_uuid = (
             await client.get("/api/v1/instances", params={"name": target[:12]}, headers=headers)
@@ -67,12 +66,12 @@ class TestInstanceListPage:
         literal = (
             await client.get("/api/v1/instances", params={"name": "100%"}, headers=headers)
         ).json()["items"]
-        assert [i["name"] for i in literal] == ["100%cotton"]  # % 通配则 "1000jobs" 也会命中
+        assert [i["name"] for i in literal] == ["100%cotton"]
 
         underscore = (
             await client.get("/api/v1/instances", params={"name": "100_cotton"}, headers=headers)
         ).json()["items"]
-        assert underscore == []  # _ 通配则会命中 "100%cotton"
+        assert underscore == []
 
     async def test_filter_composes_with_cursor(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]

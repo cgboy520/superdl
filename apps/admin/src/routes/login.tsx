@@ -13,7 +13,6 @@ import { authStore } from "../stores/auth";
 
 export const Route = createFileRoute("/login")({
   validateSearch: (search: Record<string, unknown>): { returnTo?: string } => {
-    // 仅接受站内路径(/ 开头且非 //)
     const r = search.returnTo;
     return { returnTo: typeof r === "string" && r.startsWith("/") && !r.startsWith("//") ? r : undefined };
   },
@@ -97,7 +96,6 @@ function MfaSetupForm({ ticket }: { ticket: string }) {
       onError: (e) => message.error(errText(e, t("login.failed"))),
     },
   });
-  // 进入绑定步即取密钥(服务端复用进行中密钥)
   const { mutate: beginSetup } = begin;
   useEffect(() => {
     beginSetup({ ticket });
@@ -160,7 +158,6 @@ function MfaSetupForm({ ticket }: { ticket: string }) {
             {t("login.mfaManualKey")}
           </Typography.Text>
           <br />
-          {/* 密钥是 testIds 白名单里的两处之一(同页还有别的 code) */}
           <CopyField value={begin.data.secret} code testId={TEST_IDS.mfaSecret} />
         </Typography.Paragraph>
       )}
@@ -186,7 +183,6 @@ function LoginPage() {
   const [challenge, setChallenge] = useState<{ status: "mfa_setup" | "mfa_required"; ticket: string } | null>(null);
   const login = useAdminLogin({
     mutation: {
-      // MFA 开启时只回挑战票,关闭时直接拿 token
       onSuccess: (data) => {
         if (data.status === "ok") finishLogin(data.access_token, data.admin);
         else setChallenge({ status: data.status, ticket: data.ticket });

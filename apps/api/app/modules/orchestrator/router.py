@@ -34,11 +34,9 @@ async def create_instance(
     response: Response,
     idempotency_key: IdempotencyKey = None,
 ) -> InstanceOut:
-    # 实名闸门(创建/开机/续费/转包周期/建盘同口径)
     await account_service.require_real_name_if_required(
         session, user, key="orchestrator.realNameRequired"
     )
-    # 资源创建按用户限流
     await check_rate_limit(f"instance-create:{user.id}", max_attempts=30, window_seconds=3600.0)
     instance, created = await service.create_instance(
         session,
@@ -78,7 +76,6 @@ async def list_instances(
     )
 
 
-# 必须在 /instances/{uuid} 之前注册
 @router.get("/instances/expiring")
 async def list_expiring_instances(
     user: CurrentUser,
@@ -116,7 +113,6 @@ async def stop_instance(
 async def start_instance(
     uuid: str, user: CurrentUser, session: DbSession, request: Request
 ) -> InstanceOut:
-    # 实名闸门(与创建同一开关)
     await account_service.require_real_name_if_required(
         session, user, key="orchestrator.realNameRequired"
     )

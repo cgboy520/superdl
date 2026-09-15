@@ -1,16 +1,15 @@
 import { defineConfig } from "@playwright/test";
 
-/** 冒烟用例:需 API(8000,已迁移 + seed)在跑(`cd apps/api && uv run uvicorn app.main:app --port 8000`);web(5173)由本配置拉起;SUPERDL_ADMIN_E2E=1 时再拉起 admin(5174)。 */
+/** 需已迁移并初始化的 API(8000)及 worker;配置启动 web,设置非空 SUPERDL_ADMIN_E2E 时也启动 admin。 */
 const adminE2E = Boolean(process.env.SUPERDL_ADMIN_E2E);
 
 export default defineConfig({
   testDir: "./tests",
-  // 重链路用例等 worker+reconciler(周期 30s)推进,统一 5min
   timeout: 300_000,
   retries: process.env.CI ? 1 : 0,
   use: {
     baseURL: "http://localhost:5173",
-    locale: "zh-CN", // 钉死语言,中文定位器依赖
+    locale: "zh-CN",
     trace: "retain-on-failure",
   },
   webServer: [

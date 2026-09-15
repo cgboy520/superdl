@@ -1,11 +1,8 @@
-# 行尾统一 LF(与 .editorconfig 一致)
 * text=auto eol=lf
 
-# shell 脚本 blob 必须 LF
 *.sh text eol=lf
 *.bats text eol=lf
 
-# 二进制不做行尾转换
 *.png  binary
 *.jpg  binary
 *.jpeg binary

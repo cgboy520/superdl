@@ -1,9 +1,4 @@
-"""实名认证 provider seam(三要素核验:姓名 + 身份证号 + 手机号)。
-
-开关 `real_name_enabled`(平台配置·安全策略);渠道只有阿里云 Mobile3MetaSimpleVerify,
-凭据走平台配置中心。无 mock 渠道:关闭即 409,测试经 set_realname_provider 注入。
-身份证号只存脱敏串(前 4 + 后 2),原文不留存、不进日志。
-"""
+"""姓名、身份证号与手机号三要素核验渠道及身份信息脱敏。"""
 
 from typing import Protocol
 
@@ -38,7 +33,7 @@ class AliyunRealNameProvider:
     ) -> None:
         self._ak = access_key_id
         self._secret = access_key_secret
-        self._transport = transport  # 测试注入 MockTransport
+        self._transport = transport
 
     def request_params(self, name: str, id_number: str, phone: str) -> dict[str, str]:
         """Mobile3MetaSimpleVerify 业务参数(公共参数与签名由 core/aliyun 补齐)。"""
@@ -66,7 +61,7 @@ class AliyunRealNameProvider:
         biz_code = (body.get("ResultObject") or {}).get("BizCode")
         if biz_code == "1":
             return True
-        if biz_code in ("2", "3"):  # 不一致 / 无记录 = 未通过
+        if biz_code in ("2", "3"):
             return False
         raise RealNameError(f"realname unexpected BizCode: {biz_code}")
 
@@ -96,7 +91,7 @@ def mask_id_number(id_number: str) -> str:
 
 
 def mask_id_name(name: str) -> str:
-    """姓名脱敏(管理端 readonly 角色):留姓掩名,单字全掩。"""
+    """姓名保留首字、其余打星;单字或空串返回一个星号。"""
     if len(name) <= 1:
         return "*"
     return name[0] + "*" * (len(name) - 1)

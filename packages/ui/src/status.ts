@@ -83,7 +83,6 @@ export function skuVariant(tier: string, poolLabel?: string | null): SkuVariant 
 
 export const skuTierMap = {
   dedicated: { labelKey: "shared:status.tier.dedicated", color: "#4F46E5" },
-  // 白字对比度 ≥4.5:1(WCAG AA)
   shared_mig: {
     labelKey: "shared:status.tier.shared_mig",
     color: "#0E7490",
@@ -200,9 +199,7 @@ export const instanceEventReasonMap = {
   recharge_unfreeze: { labelKey: "shared:status.eventReason.recharge_unfreeze" },
   admin_force_stop: { labelKey: "shared:status.eventReason.admin_force_stop" },
   tenant_frozen: { labelKey: "shared:status.eventReason.tenant_frozen" },
-  // preempt.py REASON_PREEMPTED
   preempted: { labelKey: "shared:status.eventReason.preempted" },
-  // services/service.py 版本更新:旧版本关机 / 释放
   rollout: { labelKey: "shared:status.eventReason.rollout" },
   rollout_retire: { labelKey: "shared:status.eventReason.rollout_retire" },
 } as const satisfies Record<string, LabelMeta>;
@@ -454,10 +451,7 @@ export const nodeStatusMap = {
   },
 } as const satisfies Record<NodeStatus, StatusMeta>;
 
-/**
- * 集群组件体检五态。两态(绿/红)表达不了「部分就绪」与「能力未开」:
- * operand 铺了 3/8 和全崩都显示红、kata 池没节点却显示绿,都是假信号。
- */
+/** 集群组件体检五态。 */
 export type ComponentHealth = "ok" | "degraded" | "down" | "disabled" | "unknown";
 
 export const componentHealthMap = {

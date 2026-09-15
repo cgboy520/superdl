@@ -32,15 +32,13 @@ logger = get_logger(__name__)
 
 POLL_INTERVAL_SECONDS = 1.0
 HEARTBEAT_INTERVAL_SECONDS = 10.0
-# 并发领取协程数(claim 是 FOR UPDATE SKIP LOCKED)
 OUTBOX_CONCURRENCY = get_settings().worker_outbox_concurrency
 
-# worker_id 长度预算:outbox_tasks.locked_by 为 String(128),留出 lane 后缀(-N)
 MAX_WORKER_ID_LEN = 120
 
 
 def make_worker_id() -> str:
-    """worker 标识 `<hostname>-<pid>`,最长 MAX_WORKER_ID_LEN;超预算时保留可读前缀 + 全名哈希。"""
+    """生成最长 MAX_WORKER_ID_LEN 的 hostname-pid 标识;超长主机名截断并附哈希。"""
     hostname = socket.gethostname()
     pid = str(os.getpid())
     budget = MAX_WORKER_ID_LEN - len(pid) - 1
@@ -50,10 +48,8 @@ def make_worker_id() -> str:
     return f"{hostname[: budget - 9]}-{digest}-{pid}"
 
 
-# K8s liveness 心跳文件(exec 探针查 mtime),由独立协程触碰
 HEARTBEAT_FILE = Path(get_settings().worker_heartbeat or "/tmp/superdl-worker-heartbeat")
 
-# worker 进程内 /metrics 端口(PodMonitor 直抓)
 METRICS_PORT = get_settings().worker_metrics_port
 
 _stop = asyncio.Event()
@@ -61,7 +57,7 @@ _stop = asyncio.Event()
 
 def _touch_heartbeat() -> None:
     WORKER_HEARTBEAT_TS.set(now_utc().timestamp())
-    with contextlib.suppress(OSError):  # 只读文件系统等场景放弃心跳
+    with contextlib.suppress(OSError):
         HEARTBEAT_FILE.write_text(now_utc().isoformat())
 
 
@@ -74,7 +70,7 @@ async def heartbeat_loop() -> None:
 
 
 async def outbox_loop(worker_id: str, task_types: frozenset[str] | None = None) -> None:
-    """N 条并发领取协程,按 next_retry_at, id 排序;task_types 非空时按组件过滤。"""
+    """并发处理 outbox;task_types 为 None 时不过滤,空集合不领取任务。"""
     sm = get_sessionmaker()
     logger.info(
         "outbox_worker_started",
@@ -84,7 +80,6 @@ async def outbox_loop(worker_id: str, task_types: frozenset[str] | None = None) 
     )
 
     async def claim_loop(lane: int) -> None:
-        # 各 lane 的 worker_id 互不相同(终态写按 locked_by 校验归属)
         lane_id = f"{worker_id}-{lane}"
         while not _stop.is_set():
             try:
@@ -100,7 +95,7 @@ async def outbox_loop(worker_id: str, task_types: frozenset[str] | None = None) 
 
 
 def _metrics_wsgi_app(token: str | None) -> Callable[..., Any]:
-    """worker /metrics 的 WSGI 应用:与 API 同一 SUPERDL_METRICS_TOKEN Bearer 门禁。"""
+    """Prometheus WSGI 应用;配置 token 时要求匹配的 Bearer 凭据。"""
     inner = make_wsgi_app()
 
     def app(environ: dict[str, Any], start_response: Callable[..., Any]) -> Any:
@@ -116,11 +111,11 @@ def _metrics_wsgi_app(token: str | None) -> Callable[..., Any]:
 
 
 def _start_metrics_server(port: int, token: str | None) -> None:
-    """线程内 wsgiref(PodMonitor 直抓;无 Ingress 仅集群内可达,仍要求 Bearer)。"""
+    """在守护线程监听所有 IPv4 接口;配置 token 时启用 Bearer 校验。"""
 
     class _QuietHandler(WSGIRequestHandler):
-        def log_message(self, format: str, *args: Any) -> None:  # noqa: ARG002 覆写 stdlib 签名
-            return  # 抓取高频,不打 stderr
+        def log_message(self, format: str, *args: Any) -> None:  # noqa: ARG002
+            return
 
     class _ThreadingWSGIServer(socketserver.ThreadingMixIn, WSGIServer):
         daemon_threads = True
@@ -153,8 +148,7 @@ def _timed_job(
 
 
 def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
-    """按 JOBS 清单注册本组件的定时任务(SUPERDL_WORKER_COMPONENT 过滤),每个经 _timed_job
-    包耗时观测。"""
+    """注册当前组件的定时任务,并记录超过周期 80% 的执行。"""
     sm = get_sessionmaker()
     for job in scheduled_jobs_for(current_component()):
         kwargs: dict[str, Any] = {
@@ -176,22 +170,21 @@ async def main() -> None:
     setup_logging()
     wire_modules()
     worker_id = make_worker_id()
-    component = current_component()  # 非法值在此即炸(fail-closed),不带病起跑
+    component = current_component()
     logger.info("worker_component_resolved", component=component.value)
 
     _start_metrics_server(METRICS_PORT, get_settings().metrics_token)
     logger.info("worker_metrics_listening", port=METRICS_PORT)
 
-    # SIGTERM/SIGINT 优雅停机:停调度器 → outbox 循环收尾当前任务后退出
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
-        with contextlib.suppress(NotImplementedError):  # pragma: no cover - win 兜底
+        with contextlib.suppress(NotImplementedError):  # pragma: no cover
             loop.add_signal_handler(sig, _stop.set)
 
     scheduler = AsyncIOScheduler(timezone="UTC")
     register_scheduled_jobs(scheduler)
     scheduler.start()
-    _touch_heartbeat()  # 起步先落一次,不让探针在首个 interval 前判死
+    _touch_heartbeat()
     heartbeat = asyncio.create_task(heartbeat_loop())
     try:
         await outbox_loop(worker_id, outbox_types_for(component))

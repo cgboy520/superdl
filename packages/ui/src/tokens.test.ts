@@ -24,7 +24,7 @@ const contrast = contrastRatio;
 
 const AA = 4.5;
 
-/** 半透明白叠在实色底上的等效实色(对比度只能对实色算) */
+/** 半透明白叠在实色底上的等效实色。 */
 function whiteOver(alpha: number, bgHex: string): string {
   const c = bgHex.replace("#", "");
   const mix = (i: number) => Math.round(alpha * 255 + (1 - alpha) * parseInt(c.slice(i, i + 2), 16));
@@ -48,7 +48,6 @@ describe("tokens 对比度(WCAG AA ≥4.5:1)", () => {
     for (const [k, v] of Object.entries(heatColors)) {
       expect(contrast("#FFFFFF", v), `heatColors.${k}`).toBeGreaterThanOrEqual(AA);
     }
-    // 空闲格:弱化文本色于网格底
     expect(contrast(adminColors.textMuted, adminColors.gridLine)).toBeGreaterThanOrEqual(AA);
   });
 
@@ -68,7 +67,6 @@ describe("tokens 对比度(WCAG AA ≥4.5:1)", () => {
   it("用户端次级/描述文本在白底上", () => {
     expect(contrast(webTheme.token.colorTextSecondary, "#FFFFFF")).toBeGreaterThanOrEqual(AA);
     expect(contrast(webTheme.token.colorTextDescription, "#FFFFFF")).toBeGreaterThanOrEqual(AA);
-    // 浅靛强调面上的主色文字(菜单选中)
     expect(contrast(webTheme.token.colorPrimary, "#FFFFFF")).toBeGreaterThanOrEqual(AA);
   });
 
@@ -83,10 +81,8 @@ describe("tokens 对比度(WCAG AA ≥4.5:1)", () => {
   });
 
   it("CSS 变量桥:主色/文本在各自底色上(focus 描边与选中态按文本级 AA)", () => {
-    // 浅色:主色/文本于 pageBg
     expect(contrast(cssVars.light["--sdl-color-primary"], cssVars.light["--sdl-color-bg"])).toBeGreaterThanOrEqual(AA);
     expect(contrast(cssVars.light["--sdl-color-text"], cssVars.light["--sdl-color-bg"])).toBeGreaterThanOrEqual(AA);
-    // 暗色:提浅主色/文本于 bgBase
     expect(contrast(cssVars.dark["--sdl-color-primary"], cssVars.dark["--sdl-color-bg"])).toBeGreaterThanOrEqual(AA);
     expect(contrast(cssVars.dark["--sdl-color-text"], cssVars.dark["--sdl-color-bg"])).toBeGreaterThanOrEqual(AA);
   });
@@ -101,7 +97,6 @@ describe("tokens 对比度(WCAG AA ≥4.5:1)", () => {
     expect(contrast(brand.onHero, brand.ink)).toBeGreaterThanOrEqual(AA);
     expect(contrast(themeColors["web-dark"].positive, brand.ink)).toBeGreaterThanOrEqual(AA);
     expect(contrast(brand.indigo50, brand.ink)).toBeGreaterThanOrEqual(AA);
-    // 弱化白字是半透明白:先与面板底合成再算
     const alpha = Number(/^rgba\(255,\s*255,\s*255,\s*([\d.]+)\)$/.exec(brand.inkTextMuted)?.[1] ?? "0");
     expect(alpha).toBeGreaterThan(0);
     expect(contrast(whiteOver(alpha, brand.ink), brand.ink)).toBeGreaterThanOrEqual(AA);
@@ -116,9 +111,7 @@ describe("tokens 对比度(WCAG AA ≥4.5:1)", () => {
   it("管理端:数据强调色非文本图形 ≥3:1,菜单选中配对与表头配对 ≥4.5:1", () => {
     expect(contrast(adminColors.dataAccent, adminColors.bgBase)).toBeGreaterThanOrEqual(3);
     expect(contrast(adminColors.dataAccent, adminColors.bgElevated)).toBeGreaterThanOrEqual(3);
-    // 菜单选中:青字于深靛底
     expect(contrast(adminColors.dataAccent, adminColors.menuSelectedBg)).toBeGreaterThanOrEqual(AA);
-    // 表头:次级文本于表头底
     expect(
       contrast(adminThemeComponents.Table.headerColor, adminThemeComponents.Table.headerBg),
     ).toBeGreaterThanOrEqual(AA);

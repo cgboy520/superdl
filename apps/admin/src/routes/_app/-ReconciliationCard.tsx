@@ -12,7 +12,6 @@ import { useFormat } from "@superdl/ui";
 
 import { type ReconciliationReport, exportReconciliationCsv, useReconciliation } from "../../api";
 
-// 对账 diff 标红阈值(%)
 export const RECONCILE_DIFF_WARN_PCT = 2;
 
 export function ReconciliationCard({
@@ -97,7 +96,6 @@ export function ReconciliationCard({
             {
               title: t("finance.colInstanceId"),
               dataIndex: "instance_id",
-              // 差异实例直链到全局实例表(按 id 检索)
               render: (v: number) => (
                 <Link to="/tenants" search={{ tab: "instances", iq: String(v) }}>
                   <Mono>{String(v)}</Mono>

@@ -1,4 +1,3 @@
-/** 短信发码三件套:人机校验 → 发码 → 60s 重发倒计时(登录页与改密弹窗共用)。倒计时递减走 updater 纯函数,清 timer 在 effect 里。 */
 import type { SmsCodeRequest } from "@superdl/api-client";
 import { App } from "antd";
 import { useEffect, useRef, useState } from "react";
@@ -9,6 +8,7 @@ import { requestCaptchaToken } from "./captcha";
 
 const RESEND_SECONDS = 60;
 
+/** 短信发码:人机校验、发送请求与 60 秒重发倒计时。 */
 export function useSmsCode(purpose: SmsCodeRequest["purpose"], sentText: string) {
   const { t } = useTranslation();
   const { message } = App.useApp();

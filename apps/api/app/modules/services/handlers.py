@@ -15,14 +15,15 @@ logger = get_logger(__name__)
 
 RETIRE_TASK_TYPE = "service.retire"
 
-# 等旧版本关机完成,预算 30 × 20s 指数退避
 _RETIRE_RETRY = RetryPolicy(max_retries=30, backoff_base_seconds=20)
 
 
 @outbox_handler(RETIRE_TASK_TYPE, retry=_RETIRE_RETRY)
 async def handle_retire(session: AsyncSession, task: OutboxTask) -> None:
-    """新版本 running 后释放旧版本实例。旧实例仍是当前版本 / 已在释放 → 直接返回;
-    还没停完 → 抛错退避。锁序 instance → service。"""
+    """先锁旧实例再读服务;非当前且处于 stopping/stopped/frozen/failed 时调用释放原语。
+
+    实例或服务缺失、仍为当前版本、已在释放时返回;其他状态抛错重试。
+    """
     old = await orchestrator_queries.lock_instance(session, task.payload["instance_id"])
     if old is None:
         return

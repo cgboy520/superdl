@@ -15,7 +15,7 @@ from tests.helpers import fund_wallet
 
 class TestWalletLedgerInvariant:
     async def test_balance_drift_detected_and_not_written_back(self, sm):
-        """手工改一笔余额被发现并告警;只报不改。"""
+        """余额与流水不符时告警,不修改余额或流水。"""
         await fund_wallet(sm, 1)
         async with sm() as session:
             await session.execute(update(Wallet).values(balance=Decimal("999.00")))
@@ -35,8 +35,8 @@ class TestWalletLedgerInvariant:
             w = (await session.execute(select(Wallet))).scalar_one()
             entries = (await session.execute(select(BalanceLedger))).scalars().all()
         assert any("账实核对" in a.title for a in alerts)
-        assert w.balance == Decimal("999.00")  # 没被改回去
-        assert len(entries) == 1  # 也没补一条「纠正」流水
+        assert w.balance == Decimal("999.00")
+        assert len(entries) == 1
 
     async def test_missing_ledger_row_is_detected(self, sm):
         """流水行被删掉(或压根没写)同样被发现。"""
@@ -80,7 +80,7 @@ class TestMoneyTableConstraints:
                 type_="consume",
                 ref_type="bill_hourly",
                 allow_negative=True,
-                allow_frozen=True,  # 结算扣款场景:对已发生消费的事后收款,冻结只拦新消费
+                allow_frozen=True,
             )
             await session.commit()
         async with sm() as session:

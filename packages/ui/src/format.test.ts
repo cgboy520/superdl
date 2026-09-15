@@ -184,7 +184,6 @@ describe("formatDateTime 时区后缀", () => {
   it("输出带 (UTC±x) 后缀,与运行时偏移一致", () => {
     const out = formatDateTime("2026-08-19T02:30:00Z");
     expect(out).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2} \(UTC[+-]\d+(:\d{2})?\)$/);
-    // 用同一时刻的运行时偏移现算期望后缀
     const d = new Date("2026-08-19T02:30:00Z");
     const offsetMin = -d.getTimezoneOffset();
     const sign = offsetMin >= 0 ? "+" : "-";
@@ -200,17 +199,14 @@ describe("formatDateTime 时区后缀", () => {
 
 describe("diskDailyEstimate", () => {
   it("月价折日价 HALF_EVEN 到分", () => {
-    expect(diskDailyEstimate("0.5000", 100)).toBe("1.67"); // 50/30=1.666…→1.67
-    expect(diskDailyEstimate("0.5000", 60)).toBe("1.00"); // 30/30=1.00
-    expect(diskDailyEstimate("0.1000", 10)).toBe("0.03"); // 1/30=0.0333→0.03
-    expect(diskDailyEstimate("1.2345", 30)).toBe("1.23"); // 37.035/30=1.2345→1.23
+    expect(diskDailyEstimate("0.5000", 100)).toBe("1.67");
+    expect(diskDailyEstimate("0.5000", 60)).toBe("1.00");
+    expect(diskDailyEstimate("0.1000", 10)).toBe("0.03");
+    expect(diskDailyEstimate("1.2345", 30)).toBe("1.23");
   });
   it("分位 tie 向偶,与后端 as_amount 同语义", () => {
-    // 0.035 分位 tie → 0.04
     expect(diskDailyEstimate("0.0350", 30)).toBe("0.04");
-    // 0.105 分位 tie → 0.10
     expect(diskDailyEstimate("0.0350", 90)).toBe("0.10");
-    // 0.025 → 0.02
     expect(diskDailyEstimate("0.0500", 15)).toBe("0.02");
   });
   it("边界:空价/0GB/非整数 GB 返回 0.00", () => {
@@ -222,7 +218,6 @@ describe("diskDailyEstimate", () => {
 
 describe("quoteSubscription", () => {
   it("逐步量化与后端 quote_subscription 对齐(折后时价先到 4 位,再乘份数与小时到分)", () => {
-    // ¥3.99/时 × 1 卡 × 720 小时,包月 8 折
     const q = quoteSubscription("3.9900", { units: 1, period: "month", periodCount: 1, discountPct: 80 });
     expect(q.hours).toBe(720);
     expect(q.unitPrice).toBe("3.1920");
@@ -241,14 +236,14 @@ describe("quoteSubscription", () => {
   it("份数与周期数是乘数:CPU 实例(units=1)不按卡放大", () => {
     const one = quoteSubscription("2.0000", { units: 1, period: "day", periodCount: 1, discountPct: 95 });
     const four = quoteSubscription("2.0000", { units: 4, period: "day", periodCount: 1, discountPct: 95 });
-    expect(one.amount).toBe("45.60"); // 2 × 0.95 × 24
+    expect(one.amount).toBe("45.60");
     expect(four.amount).toBe("182.40");
   });
   it("年付 8760 小时不溢出、不丢精度", () => {
     const q = quoteSubscription("3.9900", { units: 8, period: "year", periodCount: 3, discountPct: 70 });
     expect(q.hours).toBe(26280);
-    expect(q.unitPrice).toBe("2.7930"); // 3.99 × 0.7 恰好 4 位
-    expect(q.listAmount).toBe("838857.60"); // 3.99 × 8 × 26280
+    expect(q.unitPrice).toBe("2.7930");
+    expect(q.listAmount).toBe("838857.60");
     expect(q.amount).toBe("587200.32");
   });
   it("100% 折扣(不打折)照常自洽", () => {
@@ -280,12 +275,10 @@ describe.each([
 describe("spotHourlyPrice", () => {
   it("与后端 as_price(price × pct / 100) 同口径:HALF_EVEN 量化到 4 位", () => {
     expect(spotHourlyPrice("3.9900", 40)).toBe("1.5960");
-    expect(spotHourlyPrice("3.9900", 100)).toBe("3.9900"); // 不打折 = 原价
+    expect(spotHourlyPrice("3.9900", 100)).toBe("3.9900");
   });
   it("恰好半个万分位时向偶进(与 quoteSubscription 的折后时价同一条舍入规则)", () => {
-    // 0.00045 → 0.0004
     expect(spotHourlyPrice("0.0010", 45)).toBe("0.0004");
-    // 0.00135 → 0.0014
     expect(spotHourlyPrice("0.0030", 45)).toBe("0.0014");
     expect(spotHourlyPrice("0.0001", 45)).toBe("0.0000");
   });

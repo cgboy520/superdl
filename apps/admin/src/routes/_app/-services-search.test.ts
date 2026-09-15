@@ -1,4 +1,4 @@
-/** services 路由 validateSearch:q / user_id / released 白名单与往返。挂了 = 检索词不再落 URL,或非法值污染查询参数。 */
+/** 服务路由 q/user_id/released 白名单与 URL 往返测试。 */
 import { describe, expect, it } from "vitest";
 
 import { servicesValidateSearch } from "./services";

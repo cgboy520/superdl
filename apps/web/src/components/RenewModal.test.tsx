@@ -1,4 +1,4 @@
-/** 续费 modal:预览金额口径(原价快照 → 折扣 → 应付)、余额门槛、幂等键稳定性。挂了说明:预览与后端 quote_subscription 量化顺序脱钩、报价基准错取折后价或 SKU 现价、改周期/数量换了幂等键、余额不足仍可确认。网络与查询全部 mock。 */
+/** 续费弹窗的报价、余额门槛与幂等键测试。 */
 import type { InstanceOut } from "@superdl/api-client";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -26,7 +26,6 @@ vi.mock("../api/mutations", () => ({
 
 vi.mock("../api/queries", () => ({
   useWallet: () => ({ data: { balance: walletBalance.current } }),
-  // 折扣一律从 /policies 读,不硬编码
   usePolicies: () => ({
     data: {
       period_discount_day: 95,
@@ -38,7 +37,6 @@ vi.mock("../api/queries", () => ({
   }),
 }));
 
-// 余额不足的 CTA 是 TanStack Link:无 Router 上下文,降级成原生 <a> 断言 href
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ to, children }: { to: string; children: ReactNode }) => <a href={to}>{children}</a>,
 }));
@@ -46,7 +44,7 @@ vi.mock("@tanstack/react-router", () => ({
 const STARTED_AT = "2026-08-04T04:00:00Z";
 const EXPIRES_AT = "2026-09-03T04:00:00Z";
 
-/** 包月实例。price_hourly 是折后时价(3.99 × 0.8),unit_price 是原价快照(报价基准);SKU 现价 9.99,误取即红。 */
+/** 包月实例:折后时价、原价快照与 SKU 现价各不相同。 */
 function makeInstance(): InstanceOut {
   return {
     uuid: "u-2",
@@ -99,7 +97,6 @@ function renderConvert() {
 beforeEach(() => {
   vi.clearAllMocks();
   walletBalance.current = "3000.00";
-  // 新到期按 max(老到期, 现在) 起算,「现在」钉在周期内
   vi.setSystemTime(new Date("2026-08-20T00:00:00Z"));
 });
 
@@ -111,11 +108,9 @@ describe("RenewModal", () => {
   it("默认按当前周期报价:原价 / 优惠 / 应付三行与后端同口径", async () => {
     renderModal();
     const dialog = await screen.findByRole("dialog");
-    // 3.99/时 × 1 卡 × 720 小时 = 2872.80,包月 8 折后 2298.24,优惠 574.56
     expect(within(dialog).getByText("¥2,872.80")).toBeInTheDocument();
     expect(within(dialog).getByText("-¥574.56")).toBeInTheDocument();
     expect(within(dialog).getByText("¥2,298.24")).toBeInTheDocument();
-    // 余额变化用应付额扣减
     expect(within(dialog).getByText("¥3,000.00 → ¥701.76")).toBeInTheDocument();
   });
 
@@ -133,7 +128,6 @@ describe("RenewModal", () => {
   it("新到期时间从老到期时刻起算(提前续费不丢手上剩的天数)", async () => {
     renderModal();
     const dialog = await screen.findByRole("dialog");
-    // 老到期 + 30 天定长(与后端 period_delta 同源)
     const expected = new Date(new Date(EXPIRES_AT).getTime() + 30 * 86_400_000);
     const pad = (n: number) => String(n).padStart(2, "0");
     const ymd = `${expected.getFullYear()}-${pad(expected.getMonth() + 1)}-${pad(expected.getDate())}`;
@@ -145,7 +139,6 @@ describe("RenewModal", () => {
     renderModal();
     const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: /包\s*年/ }));
-    // 3.99 × 8760 = 34,952.40;7 折后 24,466.68
     expect(within(dialog).getByText("¥34,952.40")).toBeInTheDocument();
     expect(within(dialog).getByText("¥24,466.68")).toBeInTheDocument();
   });
@@ -169,7 +162,6 @@ describe("RenewModal", () => {
   it("转包周期:基准取按量实例锁定的 price_hourly,金额与建包周期实例逐分相同", async () => {
     renderConvert();
     const dialog = await screen.findByRole("dialog");
-    // 3.99/时 × 1 卡 × 720 小时 = 2872.80,包月 8 折后 2298.24,与续费那单同价
     expect(within(dialog).getByText("¥2,872.80")).toBeInTheDocument();
     expect(within(dialog).getByText("¥2,298.24")).toBeInTheDocument();
   });
@@ -203,7 +195,6 @@ describe("RenewModal", () => {
     const dialog = await screen.findByRole("dialog");
     const link = within(dialog).getByRole("link", { name: "余额不足,去充值" });
     expect(link).toHaveAttribute("href", "/billing");
-    // 链接可点且不触发续费提交
     const btn = within(link).getByRole("button");
     expect(btn).toBeEnabled();
     expect(renewMutate).not.toHaveBeenCalled();

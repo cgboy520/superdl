@@ -10,25 +10,20 @@ from app.core.pricing import MARKET_ON_DEMAND, MARKET_SUBSCRIPTION, MAX_PERIOD_C
 from app.modules.billing.schemas import SubscriptionQuoteOut
 from app.modules.orchestrator import statemachine as sm_def
 
-# 非终态清单(released 是唯一终态),跨模块导出
 NON_TERMINAL_STATUSES: tuple[str, ...] = tuple(sm_def.TRANSITIONS)
 
-# 实例形态:dev = SSH + JupyterLab 开发机;service = 对外 HTTPS 服务容器(唯一事实源)
 WORKLOAD_DEV = "dev"
 WORKLOAD_SERVICE = "service"
 
-# 平台在容器内占用的端口:22 = sshd,8888 = JupyterLab;与 DB CHECK(models.Instance)同源
 RESERVED_SERVICE_PORTS: tuple[int, ...] = (22, 8888)
 
-# 用户环境变量禁用的名段:平台注入的 JUPYTER_* / SUPERDL_* / AUTHORIZED_KEYS,以及 NVIDIA_*
-# (准入策略 superdl-tenant-pod-baseline 另有同口径 CEL 规则)
 _RESERVED_ENV_PREFIXES = ("JUPYTER_", "SUPERDL_", "NVIDIA_")
 _RESERVED_ENV_NAMES = frozenset({"AUTHORIZED_KEYS"})
 _ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def validate_market_shape(market: str, period: str | None, fields_set: set[str]) -> None:
-    """购买模式与周期字段配对(创建实例与部署服务共用):包周期必带周期,按量 / 竞价带周期即拒。"""
+    """包周期必带 period;按量、竞价请求不得显式传 period 或 period_count。"""
     if market == MARKET_SUBSCRIPTION:
         if period is None:
             raise ValueError(render_message("orchestrator.periodRequired", None))
@@ -42,7 +37,7 @@ def validate_health_path(health_path: str | None) -> None:
 
 
 def validate_user_env(env: dict[str, str] | None, secret_keys: list[str] | None) -> None:
-    """用户环境变量键名(与 build_pod_spec 注入项同源的黑名单)与密文键子集关系。"""
+    """校验环境变量键名与保留名;secret_keys 须为 env 键名的子集。"""
     env = env or {}
     for name in env:
         if not _ENV_NAME_RE.match(name):
@@ -59,7 +54,6 @@ class InstanceSubscriptionOut(BaseModel):
 
     period: str
     period_count: int
-    # 下单时的 SKU 原价时价快照;续费预览据它报价,前端不反推
     unit_price: MoneyOut
     started_at: datetime
     expires_at: datetime
@@ -89,19 +83,15 @@ class RenewOut(BaseModel):
 
 
 class InstanceCreate(BaseModel):
-    # 拒收未知字段(服务容器参数属于 /services)
     model_config = {"extra": "forbid"}
 
     sku_id: int
-    # 0 = CPU 实例;与 SKU 形态的配对在 service.create_instance 判
     gpu_count: int = Field(default=1, ge=0, le=8)
     image_ref: str = Field(min_length=1, max_length=256)
-    # 开发机只有密钥登录,至少一把
     ssh_key_ids: list[int] = Field(min_length=1)
     name: str | None = Field(default=None, max_length=64)
     data_disk_id: int | None = None
 
-    # ---- 购买模式(单值,spot 与 subscription 互斥)----
     market: Literal["on_demand", "subscription", "spot"] = MARKET_ON_DEMAND
     period: Literal["day", "week", "month", "year"] | None = None
     period_count: int = Field(default=1, ge=1, le=MAX_PERIOD_COUNT)
@@ -123,13 +113,10 @@ class InstanceOut(BaseModel):
     gpu_count: int
     image_ref: str
     workload_type: str
-    # 购买模式(on_demand / subscription / spot);subscription 由列表侧批量回填
     market: str
     subscription: InstanceSubscriptionOut | None = None
-    # 是否开 SSH(dev 恒 True,service 由用户勾选);creating 期间 ssh_port 恒空,不可代替
     with_ssh: bool
     ssh_port: int | None
-    # 所属在线服务的 slug 快照(dev 恒 None)
     service_slug: str | None = None
     service_revision: int | None = None
     data_disk_id: int | None

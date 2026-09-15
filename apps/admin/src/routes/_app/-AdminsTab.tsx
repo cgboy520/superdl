@@ -56,7 +56,6 @@ export function AdminsTab() {
   const { admin: me, logout } = useAuth();
   const isSuperAdmin = me?.role === "admin";
   const { data, queryKey, isLoading, isError, error, refetch } = useAdminAccounts();
-  // admin_mfa_enabled 仅超管可读,读不到按「开启」处理
   const mfaEnabled =
     usePlatformConfig({ enabled: isSuperAdmin }).data?.items.find((i) => i.key === "admin_mfa_enabled")?.value !==
     "false";
@@ -69,8 +68,6 @@ export function AdminsTab() {
   const [pwdForm] = Form.useForm<{ password: string; reason: string }>();
   const [selfForm] = Form.useForm<{ current_password: string; new_password: string }>();
   const [roleForm] = Form.useForm<{ role: Role; reason: string }>();
-  // 弹窗标题回显当前选中的新角色
-  // useWatch 在表单挂载前返回 undefined,antd 的类型没标出来
   const nextRole = Form.useWatch("role", roleForm) as Role | undefined;
 
   const refresh = () => void qc.invalidateQueries({ queryKey });
@@ -124,7 +121,6 @@ export function AdminsTab() {
         </Space>
       ),
       key: "mfa",
-      // MFA 关闭时列头标「已关闭」,行内仍区分已绑定/待绑定
       render: (_: unknown, row: AdminAccountOut) =>
         row.totp_enabled ? (
           <Tag color={adminColors.positive}>{t("admins.mfaBound")}</Tag>
@@ -170,7 +166,6 @@ export function AdminsTab() {
                     label: t("admins.changeRole"),
                     reason: noPerm ?? selfNote,
                     onClick: () => {
-                      // 改角色是显式动作:选新角色 + 填原因(入审计)
                       roleForm.resetFields();
                       setRoleTarget(row);
                     },
@@ -189,7 +184,6 @@ export function AdminsTab() {
                   }
                   danger={row.status === "active"}
                   disabled={!isSuperAdmin || isSelf}
-                  // 禁用时 noPerm/selfNote 必有一个
                   disabledReason={noPerm ?? selfNote ?? t("admins.superAdminOnly")}
                   onSubmit={async (reason) => {
                     await update.mutateAsync({
@@ -229,7 +223,7 @@ export function AdminsTab() {
     try {
       v = await createForm.validateFields();
     } catch {
-      return; // 校验失败:antd 已就地标红
+      return;
     }
     try {
       await create.mutateAsync({
@@ -252,7 +246,6 @@ export function AdminsTab() {
     }
     if (!pwdTarget) return;
     const target = pwdTarget;
-    // 二次确认带目标:重置会踢掉该管理员全部登录态
     confirm({
       title: t("admins.resetPasswordConfirmTitle", { name: target.username }),
       consequences: [t("admins.resetKicksSessions")],
@@ -282,7 +275,6 @@ export function AdminsTab() {
       await changeOwn.mutateAsync({ data: v });
       message.success(t("admins.ownPasswordChanged"));
       setSelfOpen(false);
-      // 改密撤销全部会话,回登录页
       logout();
       void navigate({ to: "/login" });
     } catch (e) {
@@ -299,7 +291,6 @@ export function AdminsTab() {
           {(data ?? []).find((a) => a.id === me?.id)?.totp_enabled && (
             <Button
               onClick={() => {
-                // 重新生成:旧恢复码立即失效
                 modal.confirm({
                   title: t("admins.regenCodesConfirmTitle"),
                   content: t("admins.regenCodesConfirmDesc"),
@@ -390,7 +381,6 @@ export function AdminsTab() {
             initialValue={roleTarget.role}
             rules={[
               { required: true },
-              // 同角色提交等于一次没意义的审计写入,就地拦下
               {
                 validator: (_rule, value: Role) =>
                   value === roleTarget.role ? Promise.reject(new Error(t("admins.roleUnchanged"))) : Promise.resolve(),

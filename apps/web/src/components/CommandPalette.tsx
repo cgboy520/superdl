@@ -1,5 +1,3 @@
-/** Cmd+K 命令面板(cmdk):静态导航 + 实例缓存模糊匹配 + 快捷动作。壳在 @superdl/ui 的 CommandPaletteShell,这里只组装数据;触发:顶栏触发器(自定义事件)或 ⌘K / Ctrl+K;实例分组只在已有缓存时渲染。 */
-
 import { ApiOutlined, CloudServerOutlined } from "@ant-design/icons";
 import { fontSize, instanceStatusMap, metaOf, serviceStatusMap } from "@superdl/ui";
 import { COMMAND_KBD_HINT, CommandPaletteShell, type CommandPaletteGroup } from "@superdl/ui/components";
@@ -19,7 +17,6 @@ export function CommandPalette() {
   const { t } = useTranslation(["web", "shared"]);
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  // 实例数据只取已缓存 / 打开后才拉(首 100 条)
   const { data: instances } = useInstances({ enabled: open });
   const { data: services } = useServices({ enabled: open });
 
@@ -33,7 +30,6 @@ export function CommandPalette() {
           keywords: [n.key.slice(1)],
           run: () => void navigate({ to: n.key }),
         })),
-        // 不在主导航的页面也可经命令面板直达
         {
           key: "/notifications",
           label: t("notifications.title"),
@@ -77,7 +73,6 @@ export function CommandPalette() {
     },
     {
       heading: t("command.groupServices"),
-      // key 加前缀(cmdk 的 key 全局唯一)
       items: (services ?? []).map((s) => {
         const meta = metaOf(serviceStatusMap, s.status);
         const inst = s.current_instance;

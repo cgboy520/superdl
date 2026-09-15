@@ -1,5 +1,3 @@
-# acme-dns(DNS01 中转,cert-manager acmeDNS solver 经其 HTTP API 更新 TXT)。只在 acmeDns.enabled=true 的档位应用。
-# 委托、账户注册、Secret、digest 见 runbooks/acme-dns.md;占位符由 preflight.sh 扫描
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -22,7 +20,6 @@ data:
     engine = "sqlite3"
     connection = "/var/lib/acme-dns/acme-dns.db"
     [api]
-    # 注册/更新 API 仅集群内可达(ClusterIP);键名是 ip/port(不是 listen)
     ip = "0.0.0.0"
     port = "8080"
     disable_registration = false
@@ -54,7 +51,7 @@ metadata:
 spec:
   replicas: 1
   strategy:
-    type: Recreate  # RWO PVC 不支持滚动
+    type: Recreate
   selector:
     matchLabels:
       app: acme-dns
@@ -63,8 +60,6 @@ spec:
       labels:
         app: acme-dns
     spec:
-      # 公网 53 端口进程:不给 SA token、非 root、零 capability(53 靠 net.ipv4.ip_unprivileged_port_start 默认 1024
-      # 以下由 kubelet sysctl 放行:hostPort 不用,Service 端口映射到容器 53 由 CNI 转发,进程绑定 53 需 NET_BIND_SERVICE)
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
@@ -74,7 +69,6 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: acme-dns
-          # digest 钉死(preflight 扫 CHANGE_ME 拦截)
           image: joohoi/acme-dns:v1.0@sha256:CHANGE_ME_ACME_DNS_DIGEST
           securityContext:
             allowPrivilegeEscalation: false
@@ -103,7 +97,6 @@ spec:
           persistentVolumeClaim:
             claimName: acme-dns-data
 ---
-# 公网 DNS 入口(_acme-challenge CNAME 委托链的落点);EXTERNAL-IP 即 config.cfg records 里 A 记录的地址
 apiVersion: v1
 kind: Service
 metadata:
@@ -117,7 +110,6 @@ spec:
     - {name: dns-udp, port: 53, protocol: UDP}
     - {name: dns-tcp, port: 53, protocol: TCP}
 ---
-# 注册/更新 API 的集群内入口(ClusterIP;账户注册经 kubectl exec/port-forward)
 apiVersion: v1
 kind: Service
 metadata:

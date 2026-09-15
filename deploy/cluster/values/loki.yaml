@@ -1,11 +1,8 @@
-# Loki 日志聚合:Monolithic 单副本,chunks/index 走 filesystem 存 CephFS 共享卷。
-# chart 版本钉在 ../helmfile.yaml.gotmpl;仓库必须是 grafana-community/loki。
 deploymentMode: Monolithic
 loki:
-  # 多租户:X-Scope-OrgID 由 Alloy 按 namespace 打(platform / tenant);网络边界见 monitoring-netpol.yaml,查询侧两个 Grafana 数据源(kps.yaml)
   auth_enabled: true
   commonConfig:
-    replication_factor: 1        # 单副本必须为 1,否则写入被拒(官方 Monolithic 安装文档明示)
+    replication_factor: 1
   schemaConfig:
     configs:
       - from: "2024-04-01"
@@ -14,38 +11,36 @@ loki:
         schema: v13
         index: {prefix: loki_index_, period: 24h}
   storage:
-    type: filesystem             # filesystem 仅单二进制受支持;扩容到多副本须迁对象存储(S3 等)
+    type: filesystem
   pattern_ingester: {enabled: true}
   limits_config:
     allow_structured_metadata: true
     volume_enabled: true
-    retention_period: 4320h      # 180 天
-    ingestion_rate_mb: 8         # 每租户摄入速率上限(MB/s)
-    ingestion_burst_size_mb: 16  # 突发余量
-    per_stream_rate_limit: 3MB   # 单 stream(单容器日产出)限速,防一个失控容器独占租户配额
+    retention_period: 4320h
+    ingestion_rate_mb: 8
+    ingestion_burst_size_mb: 16
+    per_stream_rate_limit: 3MB
     per_stream_rate_limit_burst: 10MB
-    max_global_streams_per_user: 10000  # 每租户活跃 stream 上限(标签基数爆炸兜底)
+    max_global_streams_per_user: 10000
   compactor:
-    retention_enabled: true      # retention_period 靠 compactor 实际生效
+    retention_enabled: true
     delete_request_store: filesystem
 singleBinary:
   replicas: 1
   persistence:
     enabled: true
-    # CephFS RWX;light 档由 values/light/loki-light.yaml 回落 topolvm
     storageClass: superdl-cephfs
     accessModes: ["ReadWriteMany"]
     size: 50Gi
-  # 只限内存;日志量上涨先升 memory limit
   resources:
     requests: {cpu: 100m, memory: 512Mi}
-    limits: {memory: 1Gi}        # 只限内存:CPU 限速拖慢摄入/查询,OOMKill 反而更可见
-minio: {enabled: false}          # 内置 MinIO 不可用(chart v17+ 开启即渲染失败)
+    limits: {memory: 1Gi}
+minio: {enabled: false}
 chunksCache: {enabled: false}
 resultsCache: {enabled: false}
 lokiCanary: {enabled: false}
 gateway: {enabled: false}
-test: {enabled: false}       # chart 键是 test.enabled(写成 testPod 不生效:test 默认开且要求 canary,渲染直接 fail)
+test: {enabled: false}
 monitoring:
   serviceMonitor:
     enabled: true

@@ -1,4 +1,4 @@
-/** 标识符(UUID / 订单号 / slug / 节点名)等宽渲染;truncate 取前 N 位并把全值放进 title。永不渲染 <code>(e2e 以 code 定位密钥与端点)。 */
+/** 等宽 span;truncate 截取前 N 位,完整值放入 title。 */
 
 import type { CSSProperties } from "react";
 

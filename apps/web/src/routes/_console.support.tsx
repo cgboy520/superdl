@@ -25,7 +25,6 @@ import { requireAuth } from "../lib/guard";
 
 export const Route = createFileRoute("/_console/support")({
   beforeLoad: requireAuth,
-  // ?new=1:命令面板「新建工单」深链,到达即开创建弹窗(消费后清掉);?status=:状态筛选入 URL(白名单 = 后端状态枚举)
   validateSearch: (search: Record<string, unknown>): { new?: "1"; status?: TicketStatus } => ({
     ...(search.new === "1" ? { new: "1" as const } : {}),
     ...(typeof search.status === "string" && search.status in ticketStatusMap
@@ -47,7 +46,6 @@ function SelfHelpCard() {
         dataSource={[...SELF_HELP_KEYS]}
         renderItem={(k) => (
           <List.Item style={{ paddingInline: 0 }}>
-            {/* 锚点直达对应 FAQ 并展开滚动(/help 的 faq-<key> 锚) */}
             <Link to="/help" hash={`faq-${k}`}>
               {t(`support.selfHelp.${k}` as "support.selfHelp.createFailed")}
             </Link>
@@ -65,7 +63,6 @@ function CreateTicketModal({ open, onClose }: { open: boolean; onClose: () => vo
   const navigate = useNavigate();
   const [form] = Form.useForm<TicketCreate>();
   const { data: instances } = useInstances();
-  // 幂等键按「提交序号 + 表单快照」派生,成功后序号 +1 即新单
   const [submitSeq, setSubmitSeq] = useState(0);
   const create = useCreateTicket({
     onSuccess: (ticket) => {
@@ -100,7 +97,7 @@ function CreateTicketModal({ open, onClose }: { open: boolean; onClose: () => vo
               ]),
             });
           })
-          .catch(() => undefined); // 校验失败:antd 已就地标红
+          .catch(() => undefined);
       }}
     >
       <Typography.Paragraph type="secondary" style={{ fontSize: fontSize.caption }}>
@@ -140,7 +137,6 @@ function SupportPage() {
   const navigate = useNavigate();
   const { new: openNew, status: statusFilter } = Route.useSearch();
   const [creating, setCreating] = useState(false);
-  // 渲染期派生态(同 help.tsx 锚点模式)
   const [prevNew, setPrevNew] = useState(openNew);
   if (openNew !== prevNew) {
     setPrevNew(openNew);
@@ -148,7 +144,6 @@ function SupportPage() {
   }
   const closeCreate = () => {
     setCreating(false);
-    // 深链参数消费后清掉;状态筛选保留(status 在本文件内收窄)
     if (openNew === "1")
       void navigate({
         to: "/support",
@@ -158,7 +153,6 @@ function SupportPage() {
   };
   const tickets = useTicketPages(20);
   const rows = useMemo(() => flattenPages(tickets.data), [tickets.data]);
-  // 状态筛选为客户端筛选,只作用于已加载页
   const filtered = useMemo<TicketOut[]>(
     () => (statusFilter ? rows.filter((r) => r.status === statusFilter) : rows),
     [rows, statusFilter],
@@ -210,7 +204,6 @@ function SupportPage() {
               }
               options={[
                 { value: "all", label: t("support.filterAll") },
-                // 状态枚举以共享映射表为准;裸状态码不进 t()
                 ...Object.keys(ticketStatusMap).map((s) => {
                   const meta = metaOf(ticketStatusMap, s);
                   return { value: s, label: meta ? t(meta.labelKey) : s };
@@ -224,10 +217,8 @@ function SupportPage() {
             dataSource={filtered}
             locale={{
               emptyText: tickets.isError ? (
-                // 失败不伪装成「暂无工单」
                 <TableErrorEmpty isError onRetry={() => void tickets.refetch()} />
               ) : statusFilter ? (
-                // 筛选态空 ≠ 没有工单
                 <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("support.noneWithStatus")} />
               ) : (
                 <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("support.none")}>
@@ -239,7 +230,6 @@ function SupportPage() {
             }}
             renderItem={(r) => {
               const cm = metaOf(ticketCategoryMap, r.category);
-              // 进详情只走标题链接,不整行点击(ui-ux-spec §3.12)
               return (
                 <List.Item>
                   <List.Item.Meta

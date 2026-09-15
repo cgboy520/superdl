@@ -21,7 +21,6 @@ import { RegistryTestCard, SmsTestCard } from "./-platformTestCards";
 import { RISK_OFF, type RiskOffKey, SecurityPanel } from "./-platformSecurity";
 
 export const Route = createFileRoute("/_app/platform")({
-  // group:当前配置分组入 URL(默认 security 剥离),可直链
   validateSearch: (search: Record<string, unknown>): { group?: Group } => ({
     group:
       typeof search.group === "string" && search.group !== "security" && search.group in GROUP_LABEL_KEY
@@ -44,17 +43,14 @@ function PlatformConfigPage() {
   const items = data?.items ?? [];
   const warnings: ConfigWarning[] = data?.warnings ?? [];
   const byKey = new Map(items.map((i) => [i.key, i]));
-  // 非 secret 字段变更草稿(sessionStorage);secret 禁入草稿
   const configDraft = useFormDraft<Record<string, string>>("platform-config");
   const [draftState, setDraftState] = useState<Record<string, string>>(() => {
     const d = configDraft.load();
-    // 草稿值收窄回 Record<string, string>
     return d
       ? Object.fromEntries(Object.entries(d).filter((e): e is [string, string] => typeof e[1] === "string"))
       : {};
   });
   const [reasonOpen, setReasonOpen] = useState(false);
-  // 当前分组 = URL(?group=),默认 security
   const navigate = useNavigate({ from: "/platform" });
   const active: Group = Route.useSearch({ select: (s) => s.group }) ?? "security";
   const setActive = (g: Group) =>
@@ -63,10 +59,8 @@ function PlatformConfigPage() {
       replace: true,
       search: (prev) => ({ ...prev, group: g === "security" ? undefined : g }),
     });
-  // 「前往」跳入的来源分组(回链)
   const [originGroup, setOriginGroup] = useState<Group | null>(null);
   const [reasonForm] = Form.useForm<{ reason: string }>();
-  // 每次变更同步写草稿(只落非 secret 字段;这是 secret 不进 sessionStorage 的唯一保证,不再做开机清洗——已下线的键由 changed 的 !item 分支排除)
   const setDraft: React.Dispatch<React.SetStateAction<Record<string, string>>> = (updater) => {
     setDraftState((prev) => {
       const next = typeof updater === "function" ? updater(prev) : updater;
@@ -101,9 +95,7 @@ function PlatformConfigPage() {
     return v !== (item.value ?? "");
   });
   const riskyOff = changed.filter(([k, v]) => k in RISK_OFF && v === "false");
-  // 有未保存修改的分组(导航打点)
   const dirtyGroups = new Set(changed.map(([k]) => byKey.get(k)?.group).filter((g): g is Group => g != null));
-  // 确认弹窗按配置分组列变更
   const changedByGroup = NAV.flatMap((n) => n.groups)
     .map((g) => ({ group: g, rows: changed.filter(([k]) => byKey.get(k)?.group === g) }))
     .filter((x) => x.rows.length > 0);
@@ -127,7 +119,6 @@ function PlatformConfigPage() {
   }
 
   const disabled = !isAdmin;
-  // 服务端配置风险聚合为页顶唯一横幅;「前往」跳到该键所属分组
   const attentionItems: AttentionItem[] = warnings.map((w) => ({
     key: `${w.key}:${w.message}`,
     severity: w.level,
@@ -167,7 +158,6 @@ function PlatformConfigPage() {
         disabled={disabled}
         byKey={byKey}
         warnings={warnings}
-        // 「前往」带出来源分组
         onGoTo={(g) => {
           setOriginGroup("security");
           setActive(g);
@@ -230,7 +220,6 @@ function PlatformConfigPage() {
               mode={screens.lg ? "inline" : "horizontal"}
               selectedKeys={[active]}
               items={menuItems}
-              // 手动切分组作废来源回链
               onClick={(e) => {
                 setOriginGroup(null);
                 setActive(e.key as Group);
@@ -252,7 +241,7 @@ function PlatformConfigPage() {
                 const { reason } = await reasonForm.validateFields();
                 update.mutate({ data: { updates: Object.fromEntries(changed), reason } });
               } catch {
-                /* 校验失败:antd 已给红字 */
+                /* ignored */
               }
             })();
           }}

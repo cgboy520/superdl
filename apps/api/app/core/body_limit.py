@@ -1,12 +1,10 @@
-"""请求体硬上限(纯 ASGI;外层另有 Envoy requestBuffer,见 04-gateway.yaml):Content-Length 超限直接
-413;否则流式计数缓冲,超限 413 短路。"""
+"""缓冲 HTTP 请求体;Content-Length 非法、为负或声明/实际大小超限时返回 413。"""
 
 from starlette.datastructures import Headers
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.errors import payload_too_large_response
 
-# 匿名 webhook 在边缘另有更严的 256Ki(04-gateway.yaml)
 MAX_REQUEST_BODY_BYTES = 1024 * 1024
 
 
@@ -24,14 +22,14 @@ class RequestBodyLimitMiddleware:
             try:
                 declared = int(content_length)
             except ValueError:
-                declared = -1  # 非法 Content-Length:与超限同等对待,不进读流
+                declared = -1
             if declared < 0 or declared > self.max_bytes:
                 await payload_too_large_response()(scope, receive, send)
                 return
         body = bytearray()
         while True:
             message = await receive()
-            if message["type"] != "http.request":  # http.disconnect 等:中止,不交路由
+            if message["type"] != "http.request":
                 return
             body.extend(message.get("body", b""))
             if len(body) > self.max_bytes:
@@ -47,6 +45,6 @@ class RequestBodyLimitMiddleware:
             if not delivered:
                 delivered = True
                 return {"type": "http.request", "body": buffered, "more_body": False}
-            return await receive()  # 流已收全,之后只剩 http.disconnect
+            return await receive()
 
         await self.app(scope, replay, send)

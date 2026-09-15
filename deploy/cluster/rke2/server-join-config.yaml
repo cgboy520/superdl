@@ -1,7 +1,2 @@
-# /etc/rancher/rke2/config.yaml.d/50-join.yaml —— 第 2/3 台 server 的加入覆盖层(仅这两台需要)
-#
-# 只放「加入」相关的两个键,其余配置与首台 server 的 /etc/rancher/rke2/config.yaml 全量一致;首台 server 禁止放本文件。
-# server 必须指向 VIP;VIP 未就绪时可临时填首台 IP,扩完改回并逐台 systemctl restart rke2-server
 server: https://<api-vip>:9345
-# server token(首台 /var/lib/rancher/rke2/server/node-token):只经密管分发到 server 节点,禁止下发到 GPU agent 或录入平台库
 token: <server-token>

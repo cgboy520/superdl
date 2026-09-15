@@ -23,7 +23,6 @@ class TestMetricsSummary:
         assert item["last"] == 82.5
 
     async def test_prom_down_returns_200_unavailable(self, client, sm, fake):
-        """断源回 200 + available=false,不 503。"""
         headers, _uuid, _user_id = await provision_running(client, sm, fake)
         prom.set_client(prom_mock(fail=True))
         resp = await client.get("/api/v1/metrics/instances", headers=headers)

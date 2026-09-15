@@ -47,12 +47,10 @@ class TestUserQuota:
         assert first.status_code == 202, first.text
         uuid = first.json()["uuid"]
 
-        # 第二台超实例数上限
         second = await _create(client, headers, sku_id, key_id)
         assert second.status_code == 400
         assert second.json()["message_key"] == "orchestrator.instanceQuota"
 
-        # 跑到 running 再释放,额度归还
         await drain(sm)
         fake.mark_ready(f"tenant-{user_id}", uuid)
         await reconcile_once(sm)

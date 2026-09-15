@@ -96,7 +96,6 @@ class TestAuthMatrix:
         )
         assert second.status_code == 202, second.text
         key = await issue_key(client, headers, first["slug"])
-        # 第二个服务未就绪也 401
         assert (await call_auth(client, slug=second.json()["slug"], key=key)).status_code == 401
         assert (await call_auth(client, slug=first["slug"], key=key)).status_code == 200
 
@@ -109,7 +108,6 @@ class TestAuthMatrix:
         resp = await call_auth(client, slug=slug)
         assert resp.status_code == 200, resp.text
         assert resp.headers["x-superdl-endpoint"] == slug
-        # 匿名也显式回 key-id
         assert resp.headers["x-superdl-key-id"] == "anonymous"
         patched = await client.patch(
             f"/api/v1/services/{slug}", json={"require_api_key": True}, headers=headers
@@ -189,7 +187,7 @@ class TestAuthCache:
         assert (await call_auth(client, slug=svc["slug"], key=key)).status_code == 200
         from app.modules.services import service as services_service
 
-        services_service.clear_endpoint_auth_cache()  # 等效 TTL 到期(不睡 5s)
+        services_service.clear_endpoint_auth_cache()
         assert (await call_auth(client, slug=svc["slug"], key=key)).status_code == 401
 
     async def test_concurrent_same_key_all_pass(self, client, sm, fake):
@@ -273,7 +271,7 @@ class TestApiKeyQuotaRace:
 
         headers, svc, user_id = await provision_service(client, sm, fake, phone="13900000460")
         monkeypatch.setattr(services_service, "MAX_API_KEYS_PER_SERVICE", 2)
-        await issue_key(client, headers, svc["slug"])  # 已有 1 把,余量 1
+        await issue_key(client, headers, svc["slug"])
 
         async def create() -> None:
             async with sm() as session:

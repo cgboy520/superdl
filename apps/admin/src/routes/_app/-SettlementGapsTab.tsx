@@ -31,7 +31,6 @@ const KIND_LABEL_KEY = {
 
 export function SettlementGapsTab() {
   const { t } = useTranslation(["admin", "shared"]);
-  // 未知 kind 原样回显,不进 t()(与状态表同规约)
   const gapKindText = (v: string): string => {
     const labelKey = v in KIND_LABEL_KEY ? KIND_LABEL_KEY[v as GapKind] : undefined;
     return labelKey ? t(labelKey) : v;
@@ -42,7 +41,6 @@ export function SettlementGapsTab() {
   const role = useAdminRole();
   const writable = canWriteFinance(role);
 
-  // 筛选入 URL:类型 g_kind;g_open="0" = 含已核销(默认只看未核销)
   const { search, setFilters } = useFinanceFilters();
   const kind = search.g_kind;
   const unresolvedOnly = search.g_open !== "0";
@@ -65,7 +63,6 @@ export function SettlementGapsTab() {
 
   const items = flattenPages(data);
   const total = data?.pages[0]?.total ?? undefined;
-  // 批量重放:勾选未核销行,逐条并发(幂等原语,只补不重扣)
   const [selected, setSelected] = useState<number[]>([]);
   const [bulkPending, setBulkPending] = useState(false);
   const bulkReplay = () =>
@@ -93,10 +90,7 @@ export function SettlementGapsTab() {
         hasFilter={filters.hasFilter}
         onClear={filters.clear}
         count={total}
-        extra={
-          /* 手动刷新重置回第一页 */
-          <Button onClick={() => void qc.resetQueries({ queryKey })}>{t("common.refresh")}</Button>
-        }
+        extra={<Button onClick={() => void qc.resetQueries({ queryKey })}>{t("common.refresh")}</Button>}
       >
         <Select
           allowClear
@@ -193,7 +187,6 @@ export function SettlementGapsTab() {
               row.resolved_at ? null : (
                 <RowActions
                   primary={
-                    /* 重放端点无 reason 负载:L2 useConfirm,目标 = 缺口 id */
                     <GatedButton
                       size="small"
                       reason={writable ? undefined : t("finance.financeOnlyGap")}

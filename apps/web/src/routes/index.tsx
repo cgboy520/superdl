@@ -1,5 +1,4 @@
-/** 公开主页:Hero(行情板)/ 计费三事实 / GPU 价格墙 / 算力排名 / 三步开机 / CTA 横幅 / 三栏页脚。
- *  整页跟随主题(顶栏主题钮在公开层也生效);/#pricing、/#ranking、/#quickstart 锚点挂载后 scrollIntoView。 */
+/** 公开主页:行情、计费说明、GPU 价格与排名、开机指引和 CTA。 */
 
 import { createFileRoute } from "@tanstack/react-router";
 import { theme } from "antd";

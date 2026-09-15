@@ -48,7 +48,6 @@ export interface EnrollFormValues {
   ttl_hours: number;
 }
 
-// 与后端 nodes/schemas.py HOSTNAME_PATTERN 对齐
 export const HOSTNAME_PATTERN = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/;
 
 export function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -56,7 +55,6 @@ export function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => 
   const errText = useApiErrorText();
   const { message } = App.useApp();
   const [form] = Form.useForm<EnrollFormValues>();
-  // 新建草稿(sessionStorage),生成命令成功后清除
   const draft = useFormDraft<EnrollFormValues>("node-new");
   const [result, setResult] = useState<EnrollmentCommandOut | null>(null);
   const [idemKey, setIdemKey] = useState(() => crypto.randomUUID());
@@ -73,7 +71,6 @@ export function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => 
   const close = () => {
     setResult(null);
     form.resetFields();
-    // 幂等键随下一次注册轮换
     setIdemKey(crypto.randomUUID());
     onClose();
   };
@@ -98,7 +95,7 @@ export function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => 
                   const values = await form.validateFields();
                   create.mutate({ data: values, idempotencyKey: idemKey });
                 } catch {
-                  // 校验失败:antd 已给红字
+                  /* ignored */
                 }
               })();
             }}

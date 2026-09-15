@@ -1,4 +1,4 @@
-/** 实例操作组(RowActions 三槽位):主动作随状态变(running 连接 ▾ / failed 重新创建 / 其余 开机)+ 次动作随状态变(running 关机 / 其余 事件记录)+ 更多 ▾(重启·事件·续费·自动续费·转换·释放)。条目永不隐藏,灰置带原因。按形态出计费项:按量出「转包周期」,包周期出「续费 / 自动续费」,竞价出「转按量」;转包周期确认在 RenewModal 里做。释放走多级防护:键入实例名 + 勾选盘数据清除(ui-ux-spec §1 规则 7)。 */
+/** 实例操作组:按状态与计费方式提供连接、启停、续费、转换及释放确认。 */
 
 import type { InstanceOut } from "@superdl/api-client";
 import { isSubscriptionExpired, space } from "@superdl/ui";
@@ -19,7 +19,6 @@ import {
 import { ConnectMenu } from "./ConnectMenu";
 import { RenewModal } from "./RenewModal";
 
-// creating 也可释放
 export function canReleaseStatus(s: string): boolean {
   return s === "stopped" || s === "frozen" || s === "failed" || s === "creating";
 }
@@ -37,9 +36,7 @@ export function ReleaseModal({
 }) {
   const { t } = useTranslation();
   const { message } = App.useApp();
-  // creating 尚未落盘,只过键入这道闸,不出清盘勾选
   const creating = instance.status === "creating";
-  // 包周期释放额外写明「预付不退款、剩余天数作废」(ui-ux-spec §3.5);「现在」在挂载时定一次
   const [mountedAt] = useState(() => Date.now());
   const subExpiresAt = instance.subscription?.expires_at;
   const subDaysLeft =
@@ -101,7 +98,6 @@ export function InstanceActions({
   size?: "small" | "middle";
 }) {
   const { t } = useTranslation();
-  // 「包周期已到期,请先续费再开机」文案事实源在后端 messages.py
   const { t: tErr } = useTranslation("errors");
   const { message } = App.useApp();
   const confirm = useConfirm();
@@ -127,10 +123,8 @@ export function InstanceActions({
   const isSpot = instance.market === "spot";
   const expired = isSubscriptionExpired(instance.market, sub);
 
-  // 转包周期只对按量实例出;状态不合适时灰置带原因(与后端 subscribe_instance 同判据)
   const canConvert = instance.market === "on_demand";
   const convertBlocked = canConvert && s !== "running" && s !== "stopped";
-  // 转按量同款状态判据(后端 convert_to_on_demand 只收 running / stopped)
   const toOnDemandBlocked = isSpot && s !== "running" && s !== "stopped";
 
   const canStart = s === "stopped" && !expired;
@@ -147,7 +141,6 @@ export function InstanceActions({
   const confirmStop = () =>
     confirm({
       title: t("instances.actions.stopConfirmTitle"),
-      // 按量强调「再开机可能没库存」;包周期关机不退费但保留库存(ui-ux-spec §3.5)
       consequences: [t(isSubscription ? "copy.stopConfirmSubscription" : "copy.stopConfirm")],
       okText: t("instances.actions.stopOk"),
       danger: true,
@@ -157,7 +150,6 @@ export function InstanceActions({
       },
     });
 
-  // 主动作随状态变(ui-ux-spec §1 规则 2):running → 连接 ▾;failed → 重新创建;其余 → 开机(不可用时灰置带原因)
   const primary =
     s === "running" ? (
       <ConnectMenu instance={instance} size={size} />
@@ -179,7 +171,6 @@ export function InstanceActions({
       </GatedButton>
     );
 
-  // 次动作随状态变:running → 关机;其余 → 事件记录
   const secondary = canStop ? (
     <Button size={size} loading={stop.isPending} onClick={confirmStop}>
       {t("instances.actions.stop")}
@@ -205,10 +196,8 @@ export function InstanceActions({
           },
         }),
     },
-    // running 时事件记录不在次动作槽,进更多
     ...(canStop ? [{ key: "events", label: t("instances.actions.eventsLog"), onClick: () => onShowEvents?.() }] : []),
     { type: "divider", key: "d-ops" },
-    // 按形态分化:按量出「转包周期」,包周期出「续费 / 自动续费」,竞价出「转按量」
     ...(isSubscription
       ? [
           { key: "renew", label: t("period.renewMenu"), onClick: () => setRenewOpen(true) },

@@ -2,7 +2,6 @@ from httpx import AsyncClient
 
 from tests.helpers import register, seed_instance
 
-# 合法的 ed25519 测试公钥(ssh-keygen 真实生成)
 ED25519_KEY = (
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOblF2Q+8knaANZllifZUQ6+S0sWDtiFm9UJtgAJtx5R dev@test"
 )
@@ -32,7 +31,6 @@ class TestSshKeys:
         assert resp.status_code == 204
         resp = await client.get("/api/v1/ssh-keys", headers=headers)
         assert resp.json() == []
-        # 硬删除:删过的指纹可直接重新添加
         resp = await client.post(
             "/api/v1/ssh-keys",
             json={"name": "laptop-2", "public_key": ED25519_KEY},
@@ -60,7 +58,6 @@ class TestSshKeys:
 
     async def test_type_mismatch_rejected(self, client: AsyncClient):
         headers = await auth_client(client)
-        # 声明 ssh-rsa 但 blob 是 ed25519
         blob_part = ED25519_KEY.split()[1]
         resp = await client.post(
             "/api/v1/ssh-keys",
@@ -91,7 +88,7 @@ class TestSshKeys:
         )
         assert resp.status_code == 201, resp.text
         key_id = resp.json()["id"]
-        stored_key = resp.json()["public_key"]  # 规范化后的形态(与实例快照同口径)
+        stored_key = resp.json()["public_key"]
         live_id, _ = await seed_instance(sm, user_id=data["user"]["id"], status="running")
         released_id, _ = await seed_instance(sm, user_id=data["user"]["id"], status="released")
         async with sm() as session:
@@ -112,7 +109,6 @@ class TestSshKeys:
 
 class TestSshKeyCap:
     async def test_limit_per_user(self, client: AsyncClient, monkeypatch):
-        """挂了说明:公钥数量无上限,未计量写入喂出无界列表(创建实例热路径也读它)。"""
         from app.modules.account import sshkeys as account_sshkeys
 
         monkeypatch.setattr(account_sshkeys, "MAX_SSH_KEYS_PER_USER", 1)

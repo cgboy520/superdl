@@ -12,7 +12,6 @@ export function LogsTab({ subject, viewable }: { subject: WorkloadSubject; viewa
   const { data, error, refetch } = useWorkloadLogs(
     subject,
     { tail_lines: tail },
-    // 页面不可见时间隔轮询自动暂停(未开 refetchIntervalInBackground)
     { enabled: viewable, refetchInterval: autoRefresh ? POLL.logs : false, retry: 0 },
   );
   const lines = useMemo(() => data?.lines ?? [], [data]);

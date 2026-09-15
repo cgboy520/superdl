@@ -1,11 +1,3 @@
-# worker 组件部署:单 Pod 单 SA,任务分片见 workers/components.py(SUPERDL_WORKER_COMPONENT 声明身份)。
-# 组件矩阵(全部 app=superdl-worker 标签):
-#   core        2 副本  计费/通知/保洁       SA superdl-worker(零 K8s 权限)
-#   tenant-mgr  2 副本  租户编排 instance.*  SA superdl-tenant-mgr
-#   node-mgr    1 副本  cordon/巡检/注册收敛  SA superdl-node-mgr
-#   prewarm     1 副本  镜像预热 Job         SA superdl-prewarm
-#   disk-ops    1 副本  配额下发/擦除 Job    SA superdl-disk-ops
-# 副本数可直接加(巡检 advisory lock 单 leader,outbox 领取 SKIP LOCKED)。liveness 用心跳文件 mtime(2 分钟未更新即重启)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -22,19 +14,15 @@ spec:
     metadata:
       labels: {app: superdl-worker, superdl.io/component: core}
     spec:
-      serviceAccountName: superdl-worker   # core:纯 DB + 外部渠道,零 K8s 权限(01-rbac.yaml)
-      # Harbor 拉取凭据:首装按 ../secrets.example.yaml 手建,之后由平台覆写(docs/reference/images.md)
+      serviceAccountName: superdl-worker
       imagePullSecrets:
         - {name: superdl-registry-pull}
       priorityClassName: system-cluster-critical
       nodeSelector:
-        # 平台组件落点锚点(见 02-api.yaml 同处注释)
         node-restriction.kubernetes.io/superdl-infra: "true"
       tolerations:
-        # 与 nodeSelector 成对(server 带 CriticalAddonsOnly=true:NoExecute)
         - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
       topologySpreadConstraints:
-        # 对齐 02-api
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
           whenUnsatisfiable: ScheduleAnyway
@@ -45,7 +33,7 @@ spec:
           whenUnsatisfiable: ScheduleAnyway
           labelSelector:
             matchLabels: {app: superdl-worker, superdl.io/component: core}
-      terminationGracePeriodSeconds: 660  # SIGTERM 后收尾当前 outbox 任务(执行超时上限 600s + 60s 余量)
+      terminationGracePeriodSeconds: 660
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -57,18 +45,17 @@ spec:
           command: ["python", "-m", "app.workers.main"]
           envFrom:
             - configMapRef: {name: superdl-api-config}
-            # core:DB + 配置解密 + 短信渠道 + 支付渠道
             - secretRef: {name: superdl-db}
             - secretRef: {name: superdl-crypto}
             - secretRef: {name: superdl-metrics}
             - secretRef: {name: superdl-cloud}
             - secretRef: {name: superdl-payment}
           env:
-            - {name: SUPERDL_PROCESS_ROLE, value: worker}   # 不挂 superdl-auth/superdl-edge,prod 校验按角色跳过那两项
+            - {name: SUPERDL_PROCESS_ROLE, value: worker}
             - {name: SUPERDL_WORKER_HEARTBEAT, value: /tmp/superdl-worker-heartbeat}
             - {name: SUPERDL_WORKER_COMPONENT, value: core}
           ports:
-            - {containerPort: 9000, name: metrics}  # PodMonitor 抓取(集群内,无 Ingress 暴露)
+            - {containerPort: 9000, name: metrics}
           livenessProbe:
             exec:
               command:
@@ -77,7 +64,6 @@ spec:
                 - test $(( $(date +%s) - $(stat -c %Y /tmp/superdl-worker-heartbeat) )) -lt 120
             initialDelaySeconds: 30
             periodSeconds: 30
-          # requests==limits(Guaranteed)
           resources:
             requests: {cpu: 500m, memory: 512Mi}
             limits: {cpu: 500m, memory: 512Mi}
@@ -90,7 +76,6 @@ spec:
             - {name: db-ca, mountPath: /etc/superdl/db-ca, readOnly: true}
       volumes:
         - {name: tmp, emptyDir: {}}
-        # 库 CA(自签/私有 CA 时由运维建 ConfigMap superdl-db-ca;公共 CA 可缺省)
         - {name: db-ca, configMap: {name: superdl-db-ca, optional: true}}
 ---
 apiVersion: apps/v1
@@ -100,7 +85,7 @@ metadata:
   namespace: superdl
   labels: {app: superdl-worker, superdl.io/component: tenant-mgr}
 spec:
-  replicas: 2  # 租户编排时延敏感(开机/关机链路),双副本保滚动与节点故障不停摆
+  replicas: 2
   strategy:
     type: RollingUpdate
   selector:
@@ -109,10 +94,9 @@ spec:
     metadata:
       labels: {app: superdl-worker, superdl.io/component: tenant-mgr}
     spec:
-      serviceAccountName: superdl-tenant-mgr   # 租户资源编排写权限(01-rbac.yaml)
+      serviceAccountName: superdl-tenant-mgr
       priorityClassName: system-cluster-critical
       nodeSelector:
-        # 见 02-api.yaml 同处注释:node-restriction.kubernetes.io/ 前缀 kubelet 不可自打
         node-restriction.kubernetes.io/superdl-infra: "true"
       tolerations:
         - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
@@ -139,13 +123,12 @@ spec:
           command: ["python", "-m", "app.workers.main"]
           envFrom:
             - configMapRef: {name: superdl-api-config}
-            # tenant-mgr:DB + 配置解密 + Harbor 机器人
             - secretRef: {name: superdl-db}
             - secretRef: {name: superdl-crypto}
             - secretRef: {name: superdl-metrics}
             - secretRef: {name: superdl-registry}
           env:
-            - {name: SUPERDL_PROCESS_ROLE, value: worker}   # 不挂 superdl-auth/superdl-edge,prod 校验按角色跳过那两项
+            - {name: SUPERDL_PROCESS_ROLE, value: worker}
             - {name: SUPERDL_WORKER_HEARTBEAT, value: /tmp/superdl-worker-heartbeat}
             - {name: SUPERDL_WORKER_COMPONENT, value: tenant-mgr}
           ports:
@@ -170,7 +153,6 @@ spec:
             - {name: db-ca, mountPath: /etc/superdl/db-ca, readOnly: true}
       volumes:
         - {name: tmp, emptyDir: {}}
-        # 库 CA(自签/私有 CA 时由运维建 ConfigMap superdl-db-ca;公共 CA 可缺省)
         - {name: db-ca, configMap: {name: superdl-db-ca, optional: true}}
 ---
 apiVersion: apps/v1
@@ -180,7 +162,7 @@ metadata:
   namespace: superdl
   labels: {app: superdl-worker, superdl.io/component: node-mgr}
 spec:
-  replicas: 1  # 巡检靠 advisory lock 单 leader,outbox 领取 SKIP LOCKED;需要时直接加副本
+  replicas: 1
   strategy:
     type: RollingUpdate
   selector:
@@ -189,10 +171,9 @@ spec:
     metadata:
       labels: {app: superdl-worker, superdl.io/component: node-mgr}
     spec:
-      serviceAccountName: superdl-node-mgr   # nodes patch(cordon/标签)+ 只读探测(01-rbac.yaml)
+      serviceAccountName: superdl-node-mgr
       priorityClassName: system-cluster-critical
       nodeSelector:
-        # 见 02-api.yaml 同处注释:node-restriction.kubernetes.io/ 前缀 kubelet 不可自打
         node-restriction.kubernetes.io/superdl-infra: "true"
       tolerations:
         - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
@@ -208,12 +189,11 @@ spec:
           command: ["python", "-m", "app.workers.main"]
           envFrom:
             - configMapRef: {name: superdl-api-config}
-            # node-mgr:DB + 配置解密
             - secretRef: {name: superdl-db}
             - secretRef: {name: superdl-crypto}
             - secretRef: {name: superdl-metrics}
           env:
-            - {name: SUPERDL_PROCESS_ROLE, value: worker}   # 不挂 superdl-auth/superdl-edge,prod 校验按角色跳过那两项
+            - {name: SUPERDL_PROCESS_ROLE, value: worker}
             - {name: SUPERDL_WORKER_HEARTBEAT, value: /tmp/superdl-worker-heartbeat}
             - {name: SUPERDL_WORKER_COMPONENT, value: node-mgr}
           ports:
@@ -238,7 +218,6 @@ spec:
             - {name: db-ca, mountPath: /etc/superdl/db-ca, readOnly: true}
       volumes:
         - {name: tmp, emptyDir: {}}
-        # 库 CA(自签/私有 CA 时由运维建 ConfigMap superdl-db-ca;公共 CA 可缺省)
         - {name: db-ca, configMap: {name: superdl-db-ca, optional: true}}
 ---
 apiVersion: apps/v1
@@ -257,10 +236,9 @@ spec:
     metadata:
       labels: {app: superdl-worker, superdl.io/component: prewarm}
     spec:
-      serviceAccountName: superdl-prewarm   # superdl ns 预热 Job + nodes 只读(01-rbac.yaml)
+      serviceAccountName: superdl-prewarm
       priorityClassName: system-cluster-critical
       nodeSelector:
-        # 见 02-api.yaml 同处注释:node-restriction.kubernetes.io/ 前缀 kubelet 不可自打
         node-restriction.kubernetes.io/superdl-infra: "true"
       tolerations:
         - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
@@ -276,13 +254,12 @@ spec:
           command: ["python", "-m", "app.workers.main"]
           envFrom:
             - configMapRef: {name: superdl-api-config}
-            # prewarm:DB + 配置解密 + Harbor 机器人
             - secretRef: {name: superdl-db}
             - secretRef: {name: superdl-crypto}
             - secretRef: {name: superdl-metrics}
             - secretRef: {name: superdl-registry}
           env:
-            - {name: SUPERDL_PROCESS_ROLE, value: worker}   # 不挂 superdl-auth/superdl-edge,prod 校验按角色跳过那两项
+            - {name: SUPERDL_PROCESS_ROLE, value: worker}
             - {name: SUPERDL_WORKER_HEARTBEAT, value: /tmp/superdl-worker-heartbeat}
             - {name: SUPERDL_WORKER_COMPONENT, value: prewarm}
           ports:
@@ -307,7 +284,6 @@ spec:
             - {name: db-ca, mountPath: /etc/superdl/db-ca, readOnly: true}
       volumes:
         - {name: tmp, emptyDir: {}}
-        # 库 CA(自签/私有 CA 时由运维建 ConfigMap superdl-db-ca;公共 CA 可缺省)
         - {name: db-ca, configMap: {name: superdl-db-ca, optional: true}}
 ---
 apiVersion: apps/v1
@@ -326,10 +302,9 @@ spec:
     metadata:
       labels: {app: superdl-worker, superdl.io/component: disk-ops}
     spec:
-      serviceAccountName: superdl-disk-ops   # 配额下发/擦除 Job(01-rbac.yaml)
+      serviceAccountName: superdl-disk-ops
       priorityClassName: system-cluster-critical
       nodeSelector:
-        # 见 02-api.yaml 同处注释:node-restriction.kubernetes.io/ 前缀 kubelet 不可自打
         node-restriction.kubernetes.io/superdl-infra: "true"
       tolerations:
         - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
@@ -345,11 +320,10 @@ spec:
           command: ["python", "-m", "app.workers.main"]
           envFrom:
             - configMapRef: {name: superdl-api-config}
-            # disk-ops:仅 DB + 指标
             - secretRef: {name: superdl-db}
             - secretRef: {name: superdl-metrics}
           env:
-            - {name: SUPERDL_PROCESS_ROLE, value: worker}   # 不挂 superdl-auth/superdl-edge,prod 校验按角色跳过那两项
+            - {name: SUPERDL_PROCESS_ROLE, value: worker}
             - {name: SUPERDL_WORKER_HEARTBEAT, value: /tmp/superdl-worker-heartbeat}
             - {name: SUPERDL_WORKER_COMPONENT, value: disk-ops}
           ports:
@@ -374,5 +348,4 @@ spec:
             - {name: db-ca, mountPath: /etc/superdl/db-ca, readOnly: true}
       volumes:
         - {name: tmp, emptyDir: {}}
-        # 库 CA(自签/私有 CA 时由运维建 ConfigMap superdl-db-ca;公共 CA 可缺省)
         - {name: db-ca, configMap: {name: superdl-db-ca, optional: true}}

@@ -18,39 +18,49 @@
 
 ## 恢复步骤(逻辑备份)
 
+分段执行,不要把本节作为连续脚本运行。先下载最近的密文备份并解密,解密口令来自 `superdl-pg-backup` 的 `BACKUP_ENCRYPT_KEY`;恢复后立即清理明文。
+
 ```bash
-# 1. 取最近备份(密文 .gpg)
 aws s3 ls s3://superdl-pg-backup/daily/ --endpoint-url $S3_ENDPOINT | tail -5
 aws s3 cp s3://superdl-pg-backup/daily/superdl-<ts>.dump.gpg /tmp/ --endpoint-url $S3_ENDPOINT
 
-# 1b. 解密(口令在 superdl-pg-backup 的 BACKUP_ENCRYPT_KEY;事后清明文)
 gpg --batch --yes --decrypt \
   --passphrase <(kubectl -n superdl get secret superdl-pg-backup -o jsonpath='{.data.BACKUP_ENCRYPT_KEY}' | base64 -d) \
   -o /tmp/superdl-<ts>.dump /tmp/superdl-<ts>.dump.gpg
 
-# 2. 停写入(api + 全部 5 个 worker Deployment:core/tenant-mgr/node-mgr/prewarm/disk-ops)
 kubectl -n superdl scale deploy superdl-api --replicas=0
 kubectl -n superdl scale deploy superdl-worker superdl-worker-tenant-mgr \
   superdl-worker-node-mgr superdl-worker-prewarm superdl-worker-disk-ops --replicas=0
 
-# 3. 恢复到新库(禁止原地覆盖),核验后再切换连接串
+```
+
+确认 API 与全部 5 个 worker Deployment 已停止写入后,恢复到新库;**禁止原地覆盖生产库**。
+
+```bash
 createdb superdl_restore
 pg_restore -d superdl_restore --no-owner /tmp/superdl-<ts>.dump
-shred -u /tmp/superdl-<ts>.dump 2>/dev/null || rm -f /tmp/superdl-<ts>.dump   # 清明文
+shred -u /tmp/superdl-<ts>.dump 2>/dev/null || rm -f /tmp/superdl-<ts>.dump
 
-# 4. 核验:行数量级、最新 ledger 时间、alembic 版本
 psql superdl_restore -c "SELECT max(created_at) FROM balance_ledger"
 psql superdl_restore -c "SELECT version_num FROM alembic_version"
 
-# 5. 切换 SUPERDL_DATABASE_URL → superdl_restore,起 api(worker 组件后起)
+```
+
+核验恢复库的行数量级、最新流水时间与 Alembic 版本。核验通过后,将应用连接配置 `SUPERDL_DATABASE_URL` 切换到 `superdl_restore`,确认 API 与各 worker 将使用新连接,再单独启动 API:
+
+```bash
 kubectl -n superdl scale deploy superdl-api --replicas=2
-# 冒烟通过后(worker 组件按 03-worker.yaml 的副本定义恢复)
+```
+
+API `/readyz` 与业务冒烟通过后,按 `03-worker.yaml` 的副本定义恢复全部 worker:
+
+```bash
 kubectl -n superdl scale deploy superdl-worker superdl-worker-tenant-mgr --replicas=2
 kubectl -n superdl scale deploy superdl-worker-node-mgr superdl-worker-prewarm \
   superdl-worker-disk-ops --replicas=1
-
-# 6. 公告用户:恢复点之后的充值以渠道对账单为准,走管理端「补单」逐笔补入
 ```
+
+公告用户恢复点;恢复点之后的充值以渠道对账单为准,走管理端「补单」逐笔补入。
 
 ## 恢复演练验收
 

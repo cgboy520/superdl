@@ -17,7 +17,6 @@ _ANY_READ: frozenset[str] = frozenset({"ops", "finance", "readonly"})
 _FIN: frozenset[str] = frozenset({"finance"})
 _FIN_RO: frozenset[str] = frozenset({"finance", "readonly"})
 
-# 角色矩阵:"anon" = 匿名可达;"any" = 任意已认证管理角色;frozenset = 白名单(admin 恒许)
 MATRIX: dict[str, str | frozenset[str]] = {
     "GET /api/admin/v1/adjustments": _FIN_RO,
     "GET /api/admin/v1/adjustments/export": _FIN_RO,
@@ -67,7 +66,6 @@ MATRIX: dict[str, str | frozenset[str]] = {
     "GET /api/admin/v1/instances/{uuid}/events": _ANY_READ,
     "POST /api/admin/v1/instances/{uuid}/force-stop": _OPS,
     "POST /api/admin/v1/instances/{uuid}/preempt": _OPS,
-    # 发票读权限收到 finance(与 issue/reject 同档)
     "GET /api/admin/v1/invoices": _FIN,
     "GET /api/admin/v1/invoices/export": _FIN,
     "POST /api/admin/v1/invoices/{invoice_id}/issue": _FIN,
@@ -88,7 +86,6 @@ MATRIX: dict[str, str | frozenset[str]] = {
     "GET /api/admin/v1/nodes": _OPS_RO,
     "GET /api/admin/v1/nodes/port-pool": _OPS_RO,
     "POST /api/admin/v1/nodes/{node_name}/cordon": _OPS,
-    # 退役与 cordon / force-stop 同档
     "POST /api/admin/v1/nodes/{node_name}/decommission": _OPS,
     "GET /api/admin/v1/nodes/{node_name}/metrics": _OPS_RO,
     "POST /api/admin/v1/nodes/{node_name}/switch-pool": _OPS,
@@ -153,7 +150,6 @@ def _collect_admin_endpoints() -> set[str]:
 
 
 def test_matrix_matches_openapi_table() -> None:
-    """端点表 ↔ 矩阵双向比对:新端点未登记/已删端点残留即红。"""
     endpoints = _collect_admin_endpoints()
     missing = endpoints - MATRIX.keys()
     stale = MATRIX.keys() - endpoints
@@ -175,7 +171,7 @@ def _sample_url(path: str) -> str:
             return "node-nope"
         if name == "doc_key":
             return "terms"
-        return "999999"  # int 主键类参数
+        return "999999"
 
     return re.sub(r"\{(\w+)\}", repl, path)
 
@@ -200,13 +196,12 @@ async def _mint_admin_headers(sm: async_sessionmaker[AsyncSession], role: str) -
 async def test_endpoint_role_gate(
     client: AsyncClient, sm: async_sessionmaker[AsyncSession]
 ) -> None:
-    """整张矩阵一趟跑完,失败汇总后一次性报出。"""
     headers_by_role = {role: await _mint_admin_headers(sm, role) for role in _ROLES}
 
     async def call(method: str, url: str, headers: dict[str, str] | None) -> int:
         kwargs: dict = {"headers": headers or {}}
         if method != "GET":
-            kwargs["json"] = {}  # 空体:参数校验 422 也属「已过鉴权」,与角色门正交
+            kwargs["json"] = {}
         resp = await client.request(method, url, **kwargs)
         return resp.status_code
 
@@ -216,7 +211,6 @@ async def test_endpoint_role_gate(
         allowed = MATRIX[endpoint]
         url = _sample_url(path)
 
-        # 匿名
         anon_status = await call(method, url, None)
         if allowed == "anon":
             if anon_status == 403:
@@ -224,7 +218,6 @@ async def test_endpoint_role_gate(
         elif anon_status != 401:
             failures.append(f"匿名应 401:{endpoint} -> {anon_status}")
 
-        # 已认证角色
         for role in _ROLES:
             status = await call(method, url, headers_by_role[role])
             if allowed == "anon":
@@ -238,7 +231,6 @@ async def test_endpoint_role_gate(
             elif status != 403:
                 failures.append(f"{role} 应被 403 拦截:{endpoint} -> {status}")
 
-        # 登出吊销全部 token,重铸供后续端点用
         if endpoint == "POST /api/admin/v1/auth/logout":
             headers_by_role = {role: await _mint_admin_headers(sm, role) for role in _ROLES}
 

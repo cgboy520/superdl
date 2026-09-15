@@ -13,16 +13,18 @@
 
 ## 用法
 
+在本目录执行,先把 `inventory.ini` 中的地址换成目标 server。两条 playbook 命令二选一:默认 RKE2(full),`cluster_distro=k3s` 为 light。
+控制面参数放在不入 git 的 `group_vars/servers.yml`,敏感值不要放命令行:
+
+- RKE2 快照:`etcd_snapshot_bucket`、`etcd_s3_region`、`etcd_s3_endpoint`、`etcd_s3_access_key`、`etcd_s3_secret_key`。
+- `agent_token`:全体 server 使用同一份独立随机凭据(至少 32 字符),录入管理端「平台配置 · 集群接入」,禁止使用 server node-token。
+- HA:`api_vip` 与 `server_ips`(奇数台 ≥3);可选 `server_hostnames` 一并加入证书 SAN。
+- 私有 Harbor CA:`harbor_ca_pem` 填 PEM 全文,公信证书留空;同时在 `../cluster/rke2/registries.yaml` 配置对应 Harbor 的 `configs` → 主机名 → `tls.ca_file`,指向目标机 `/etc/rancher/<distro>/harbor-ca.crt`。拉取凭据按 `../cluster/README.md`「镜像仓库」托管为 Secret。
+
 ```bash
-cp inventory.ini.example inventory.ini   # 填真实地址
-# 控制面敏感值(不入 git):group_vars/servers.yml 或 -e
-#   etcd_snapshot_bucket / etcd_s3_region / etcd_s3_endpoint /
-#   etcd_s3_access_key / etcd_s3_secret_key(rke2 快照上传凭据)
-#   agent_token(openssl rand -hex 32;全 server 同值,录入管理端「平台配置·集群接入」)
-#   api_vip / server_ips(HA:奇数台 ≥3 的 server + VIP,见 site.yml vars 注释)
-#   harbor_ca_pem(Harbor 自签/私有 CA 全文;公信证书留空。拉取凭据不经 ansible,见 deploy/cluster/README.md「镜像仓库」)
-ansible-playbook -i inventory.ini site.yml                          # rke2(full 档)
-ansible-playbook -i inventory.ini site.yml -e cluster_distro=k3s    # k3s(light 档)
+cp inventory.ini.example inventory.ini
+ansible-playbook -i inventory.ini site.yml
+ansible-playbook -i inventory.ini site.yml -e cluster_distro=k3s
 ```
 
 ## 行为约定

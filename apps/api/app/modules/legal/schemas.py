@@ -3,7 +3,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-# 法务文档支持的语言;公开端点 lang 不在此列即回落 zh-CN
 Locale = Literal["zh-CN", "en-US"]
 
 

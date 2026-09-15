@@ -25,7 +25,6 @@ export function InstanceNameCell({ instance }: { instance: InstanceOut }) {
           </Link>
         }
         onSave={async (next) => {
-          // 错误提示由 useApiMutation 统一弹出;InlineEdit 失败保持编辑态
           await rename.mutateAsync({ uuid: instance.uuid, name: next });
           message.success(t("instances.renamed"));
         }}

@@ -35,7 +35,6 @@ export function InlineEdit({
   const [draft, setDraft] = useState(value);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  // Esc 取消标记:随后的 blur 不再保存
   const cancelRef = useRef(false);
 
   const save = async () => {
@@ -60,7 +59,7 @@ export function InlineEdit({
       await onSave(next);
       setEditing(false);
     } catch {
-      // 保持编辑态
+      /* ignored */
     } finally {
       setSaving(false);
     }
@@ -71,7 +70,6 @@ export function InlineEdit({
       <Input
         size={size}
         autoFocus
-        // 编辑态的输入框沿用触发钮的标签,否则是无标签表单项(axe)
         aria-label={ariaLabel}
         maxLength={maxLength}
         value={draft}

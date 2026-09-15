@@ -1,8 +1,6 @@
-"""内存态 FakeOrchestrator:dev/test 默认后端。
+"""内存态 K8s 后端;支持 Pod、节点、预热和故障注入。
 
-行为可注入:auto_ready(Pod 立即 Ready)、graceful_delete(优雅删除期)、
-kill_pod / mark_unready / inject_leaked_pod(reconciler 场景)、
-fail_next_quota / fail_next_logs / fail_probe(单次失败注入)。容量按 pool 配置。
+fail_next_disk 和 fail_next_logs 消费后复位;fail_probe 持续生效直到显式清除。
 """
 
 from dataclasses import dataclass, field
@@ -33,9 +31,7 @@ from app.core.k8s.health import (
     WorkloadRow,
 )
 
-_FAKE_K8S_VERSION = "v1.36.2+rke2r1"  # 探测默认健康 RKE2
-# 与 deploy/app/k8s/04-gateway.yaml 的 listener 集合同形
-# 有 Pod 可深探的体检项(与 real 的 _DETAIL_POD_PATTERNS 同集合)
+_FAKE_K8S_VERSION = "v1.36.2+rke2r1"
 _DETAIL_CAPABLE = frozenset(
     {
         "hami",
@@ -74,65 +70,47 @@ class _FakePod:
     ready: bool
     phase: str = "Running"
     node_name: str = "fake-node-1"
-    deleting: bool = False  # Terminating:deletionTimestamp 已设,对象仍在
+    deleting: bool = False
     labels: dict[str, str] = field(default_factory=lambda: {MANAGED_LABEL: "true"})
 
 
 @dataclass
 class FakeOrchestrator:
     auto_ready: bool = True
-    # 优雅删除:删除后对象再留 terminationGracePeriodSeconds(read 200、phase Running);默认关
     graceful_delete: bool = False
-    # 池 → 该池合成节点的 GPU 数;cpu 池恒 0 卡
     pool_capacity: dict[str, int] = field(
         default_factory=lambda: {"kata": 16, "hami": 32, "mig": 16, "cpu": 0}
     )
     pods: dict[tuple[str, str], _FakePod] = field(default_factory=dict)
     namespaces: set[str] = field(default_factory=set)
-    # 实例盘 PVC:(ns, name) -> 盘标记;只有释放/回收才删,标记值供断言同一块盘
     instance_disks: dict[tuple[str, str], str] = field(default_factory=dict)
-    # 数据盘 PVC:(ns, pvc 名) -> 容量 GiB;fail_next_disk 注入一次下发失败
     data_disks: dict[tuple[str, str], int] = field(default_factory=dict)
     deleted_data_disks: list[tuple[str, str]] = field(default_factory=list)
     fail_next_disk: bool = False
-    # 受管 Job 运行中的 Pod:(ns, pod_name) -> labels(全量 LIST 会命中,对齐 real)
     job_pods: dict[tuple[str, str], dict[str, str]] = field(default_factory=dict)
-    # 预热:(node_name, image_ref) -> state;auto_prewarm=True 时创建即 succeeded
     prewarm_jobs: dict[tuple[str, str], str] = field(default_factory=dict)
-    # 预热 Job 引用的拉取凭据 Secret 名(None = 未配机器人)
     prewarm_pull_secrets: dict[tuple[str, str], str | None] = field(default_factory=dict)
-    # 平台托管的拉取凭据 Secret:ns -> 指纹(对齐 real 的 annotation 语义)
     pull_secrets: dict[str, str] = field(default_factory=dict)
     auto_prewarm: bool = True
-    # 注入节点:追加在合成节点之后
     extra_nodes: list = field(default_factory=list)
-    unlabeled_nodes: list = field(default_factory=list)  # include_unlabeled 时附加
-    node_labels: dict[str, dict[str, str]] = field(default_factory=dict)  # set_node_labels 落点
-    # cordon 状态:节点名集合,list_nodes 反映为 Cordoned
+    unlabeled_nodes: list = field(default_factory=list)
+    node_labels: dict[str, dict[str, str]] = field(default_factory=dict)
     cordoned_nodes: set[str] = field(default_factory=set)
-    # 退役已删除的节点名:list_nodes 不再出现
     deleted_nodes: set[str] = field(default_factory=set)
-    # Service/Ingress 端点(create 注册/delete 移除);测试可手工注入孤儿端点
     endpoints: set[tuple[str, str]] = field(default_factory=set)
-    # 外部占用的 NodePort:撞占时 create_instance 抛 NodePortTaken;used_node_ports 含它
     external_node_ports: set[int] = field(default_factory=set)
-    # per-instance 敏感 env 的「Secret」(对齐 real 的 instance_env_secret_name)
     instance_secrets: dict[tuple[str, str], dict[str, str]] = field(default_factory=dict)
-    # 能力探测:默认健康 RKE2;fail_probe 模拟断连
     probe_hami_ready: bool = True
-    # 体检降级注入:operand 就绪数(None = 铺满)、未 Programmed 的 listener 名、SC 名单
     probe_gpu_operand_ready: int | None = None
     probe_unprogrammed_listeners: tuple[str, ...] = ()
     probe_storage_classes: tuple[str, ...] = (
         INSTANCE_DISK_STORAGE_CLASS,
         DATA_DISK_STORAGE_CLASS,
     )
-    # 深探注入:体检项 → 现场未就绪对象 / 告警事件
     detail_pods: dict[str, tuple[ComponentObject, ...]] = field(default_factory=dict)
     detail_events: dict[str, tuple[ComponentObject, ...]] = field(default_factory=dict)
-    probe_k8s_version: str = _FAKE_K8S_VERSION  # 改成 +k3s1 即模拟 light 档
+    probe_k8s_version: str = _FAKE_K8S_VERSION
     fail_probe: bool = False
-    # 容器日志:fail_next_logs 注入一次读取失败;log_calls 记录调用参数供断言
     fail_next_logs: bool = False
     log_calls: list[tuple[str, str, int]] = field(default_factory=list)
 
@@ -142,7 +120,7 @@ class FakeOrchestrator:
     async def ensure_pull_secret(
         self,
         namespace: str,
-        dockerconfigjson: str,  # noqa: ARG002 协议签名
+        dockerconfigjson: str,  # noqa: ARG002
         fingerprint: str,
     ) -> None:
         self.pull_secrets[namespace] = fingerprint
@@ -274,35 +252,28 @@ class FakeOrchestrator:
         if self.fail_next_disk:
             self.fail_next_disk = False
             raise RuntimeError("fake: ensure_data_disk failed (injected)")
-        # 对齐 real:只扩不缩
         self.data_disks[(namespace, name)] = max(self.data_disks.get((namespace, name), 0), size_gb)
 
     async def delete_data_disk(self, namespace: str, name: str) -> None:
-        # 对齐 real:PVC 不存在也算成功;调用一律登记,断言的是「回收已发起」
         self.data_disks.pop((namespace, name), None)
         self.deleted_data_disks.append((namespace, name))
 
     async def create_instance(self, spec: InstancePodSpec) -> None:
         if spec.with_ssh and spec.ssh_node_port is None:
-            # 对齐 real:_create_service_sync 在这种组合下抛 RuntimeError
             raise RuntimeError(f"fake: instance {spec.name} wants ssh but has no node port")
         if spec.service_port is not None and not spec.service_host:
-            # 对齐 real:_httproute_body 缺 hostname 时抛 RuntimeError
             raise RuntimeError(f"fake: instance {spec.name} has service_port but no service_host")
         if spec.ssh_node_port is not None and spec.ssh_node_port in self.external_node_ports:
-            # 对齐 real:apiserver 422 "provided port is already allocated" 的归一化
             raise NodePortTaken(spec.ssh_node_port)
         key = (spec.namespace, spec.name)
         if spec.secret_env:
             self.instance_secrets[key] = dict(spec.secret_env)
-        # 实例盘已存在即复用;首次创建才落新 token
         self.instance_disks.setdefault(key, f"lv-{spec.name}")
         existing = self.pods.get(key)
         if existing is not None:
             if existing.deleting:
-                # 同名对象 Terminating 时 409,不当幂等跳过(对齐 real)
                 raise RuntimeError(f"fake: pod {spec.name} is terminating, create must wait")
-            return  # 幂等
+            return
         self.pods[key] = _FakePod(
             spec=spec, ready=self.auto_ready, phase="Running" if self.auto_ready else "Pending"
         )
@@ -312,22 +283,21 @@ class FakeOrchestrator:
         if self.graceful_delete and not force:
             pod = self.pods.get((namespace, name))
             if pod is not None:
-                pod.deleting = True  # Terminating:对象仍在,exists 仍为 True
+                pod.deleting = True
                 pod.ready = False
             return
-        self.pods.pop((namespace, name), None)  # 注意:不碰 instance_disks
+        self.pods.pop((namespace, name), None)
         self.instance_secrets.pop((namespace, name), None)
         self.endpoints.discard((namespace, name))
 
     def finish_delete(self, namespace: str, name: str) -> None:
-        """测试注入:优雅期结束,对象真正从 etcd 消失。"""
+        """移除内存中的 Pod;保留端点、Secret 和实例盘记录。"""
         self.pods.pop((namespace, name), None)
 
     async def list_instance_endpoints(self) -> list[tuple[str, str]]:
         return sorted(self.endpoints)
 
     async def used_node_ports(self) -> set[int]:
-        # 平台 Pod 占用 + 外部对象占用(对齐 real)
         return {
             p.spec.ssh_node_port for p in self.pods.values() if p.spec.ssh_node_port is not None
         } | set(self.external_node_ports)
@@ -398,13 +368,10 @@ class FakeOrchestrator:
         )
         return entries
 
-    # ---------- 预热 ----------
-
     async def prewarm_image(
         self, node_name: str, image_ref: str, *, image_pull_secret: str | None = None
     ) -> None:
         self.prewarm_pull_secrets[(node_name, image_ref)] = image_pull_secret
-        # 已有 Job(任意状态)不重建
         self.prewarm_jobs.setdefault(
             (node_name, image_ref), "succeeded" if self.auto_prewarm else "running"
         )
@@ -422,8 +389,6 @@ class FakeOrchestrator:
     def set_prewarm_state(self, node_name: str, image_ref: str, state: str) -> None:
         """测试注入:直接改 Job 状态(running/succeeded/failed)。"""
         self.prewarm_jobs[(node_name, image_ref)] = state
-
-    # ---------- 测试注入 ----------
 
     def kill_pod(self, namespace: str, name: str) -> None:
         """模拟 Pod 意外消失(节点故障)。"""
@@ -505,7 +470,7 @@ class FakeOrchestrator:
         current = self.node_labels.setdefault(node_name, {})
         for key, value in labels.items():
             if value is None:
-                current.pop(key, None)  # merge-patch 的 null = 删键
+                current.pop(key, None)
             else:
                 current[key] = value
 

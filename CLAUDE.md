@@ -18,35 +18,39 @@ scripts/       发布脚本与仓库级闸门脚本
 
 ## 常用命令
 
+后端命令在 `apps/api` 下执行;先从仓库根启动本地依赖(`docker compose -f deploy/app/compose.yaml up -d`)。API 与 worker 各用独立终端。`seed_dev.py` 仅供 dev/test,`bootstrap_admin.py` 用于创建生产首个管理员,口令只打印一次。
+后端 pytest 需要 Docker(testcontainers PG18);每个并行 worker 单独启动容器,单文件测试不加 `-n`。
+
 ```bash
-# 后端(在 apps/api 下;先 docker compose -f deploy/app/compose.yaml up -d)
 uv sync
 uv run alembic upgrade head
-uv run python scripts/seed_dev.py        # dev 种子:SKU / 镜像 / 管理员(口令只打印一次;仅 dev/test)
-uv run python scripts/bootstrap_admin.py # prod 首个管理员(admin_users 为空时才建)
+uv run python scripts/seed_dev.py
+uv run python scripts/bootstrap_admin.py
 uv run uvicorn app.main:app --reload
-uv run python -m app.workers.main        # worker(outbox + 定时任务)
+uv run python -m app.workers.main
 uv run ruff format . && uv run ruff check --fix .
 uv run pyright
-uv run lint-imports                      # 模块边界(import-linter)
-uv run pytest -n 8                       # 需要 Docker(testcontainers PG18);每 worker 一个容器,全量约 90s
-uv run pytest tests/test_x.py            # 跑单个文件不加 -n(省掉多余容器启动)
+uv run lint-imports
+uv run pytest -n 8
+uv run pytest tests/test_x.py
 uv run alembic revision --autogenerate -m "..."
-uv run alembic check                     # 模型与迁移一致
-uv run python -m app.export_openapi      # 导出 openapi.json 到 packages/api-client/
-uv run python scripts/export_error_messages.py   # 改 core/messages.py 后同步 errors 文案
+uv run alembic check
+uv run python -m app.export_openapi
+uv run python scripts/export_error_messages.py
+```
 
-# 前端(仓库根)
+以下命令在仓库根执行。浏览器冒烟需要 API 与 worker 正在运行;可设置 `SUPERDL_ADMIN_E2E=1` 启用管理端用例。
+
+```bash
 pnpm install
 pnpm dev / build / format / lint / typecheck / test / i18n
-pnpm api-client                          # orval 重新生成 fetcher 与 model 类型
-pnpm --filter @superdl/e2e test:e2e      # 需 API+worker 在跑;SUPERDL_ADMIN_E2E=1 再跑管理端用例
+pnpm api-client
+pnpm --filter @superdl/e2e test:e2e
 
-# 脚本与文档
 bash -n apps/api/app/modules/nodes/assets/node-join.sh && shellcheck apps/api/app/modules/nodes/assets/node-join.sh
-bats deploy/node-join/tests              # PATH shim 伪造系统命令
-python3 scripts/check-docs-links.py      # 文档相对链接、反引号路径、告警 runbook_url
-python3 scripts/check-page-skeleton.py   # 控制台路由页自持 PageContainer
+bats deploy/node-join/tests
+python3 scripts/check-docs-links.py
+python3 scripts/check-page-skeleton.py
 ```
 
 ## 硬性规范(违反即返工)

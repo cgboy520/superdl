@@ -20,7 +20,6 @@ function AppProviders({ children }: { children: ReactNode }) {
   const antdLocale = useAppLocale();
   const mode = useThemeMode();
   useEffect(() => {
-    // CSS 变量面(抽屉链接/滚动条/focus 描边/命令面板选中底)与 color-scheme 随主题
     document.documentElement.dataset.theme = mode;
     document.documentElement.style.colorScheme = mode;
     document.body.style.background = mode === "dark" ? webDarkColors.bgBase : brand.pageBg;
@@ -34,9 +33,7 @@ function AppProviders({ children }: { children: ReactNode }) {
       locale={antdLocale}
       theme={mode === "dark" ? { algorithm: antdTheme.darkAlgorithm, ...webDarkTheme } : webTheme}
     >
-      {/* JS 侧语义色随主题(useThemeColors) */}
       <ThemeProvider value={mode === "dark" ? "web-dark" : "web-light"}>
-        {/* 跟随系统「减弱动态效果」 */}
         <MotionConfig reducedMotion="user">
           <AntApp>{children}</AntApp>
         </MotionConfig>
@@ -70,7 +67,6 @@ function NotFoundPage() {
       <NotFoundView
         homeTo="/instances"
         homeLabel={t("common.backConsole")}
-        // 404 文案在 packages/ui shared ns(errorPage/notFound)
         subtitle={t("notFound.subtitle", { ns: "shared" })}
       />
     </AppProviders>

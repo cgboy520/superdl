@@ -1,5 +1,4 @@
-"""E2E 演练(FakeOrchestrator + mock 支付):注册 → 充值 → 建数据盘 → 买实例 → 接入 → 停机 →
-账单与事件 → 释放 → 数据盘保留 → 资金自洽。"""
+"""实例、服务与包周期生命周期的资源和资金契约。"""
 
 from decimal import Decimal
 
@@ -21,7 +20,6 @@ from tests.helpers import (
 
 
 async def test_full_lifecycle_drill(client, sm, fake):
-    # ── 1. 注册 ────────────────────────────────────────────────
     phone = "13411112222"
     await client.post(
         "/api/v1/auth/sms-code",
@@ -34,7 +32,6 @@ async def test_full_lifecycle_drill(client, sm, fake):
     h = {"Authorization": f"Bearer {reg.json()['access_token']}"}
     user_id = reg.json()["user"]["id"]
 
-    # ── 2. 充值(mock 渠道 + 回调)────────────────────────────
     order = (
         await client.post(
             "/api/v1/wallet/recharges", json={"amount": "200.00", "channel": "mock"}, headers=h
@@ -46,7 +43,6 @@ async def test_full_lifecycle_drill(client, sm, fake):
     )
     assert (await client.get("/api/v1/wallet", headers=h)).json()["balance"] == "200.00"
 
-    # ── 3. SSH 公钥 + 数据盘 ────────────────────────────────
     key = (
         await client.post(
             "/api/v1/ssh-keys",
@@ -57,11 +53,10 @@ async def test_full_lifecycle_drill(client, sm, fake):
     disk = (
         await client.post("/api/v1/disks", json={"name": "drill-data", "size_gb": 100}, headers=h)
     ).json()
-    await drain(sm)  # PVC 建出(provisioned=true)后才可挂载
+    await drain(sm)
 
-    # ── 4. 市场选共享档 → 创建实例(挂盘,Idempotency-Key)──
-    sku_id = await create_test_sku(sm)  # 共享标准档 1.68/时 hami 池
-    await seed_node_spec(sm)  # 台账:hami 池 32 张 RTX4090 全空闲(市场库存数据源)
+    sku_id = await create_test_sku(sm)
+    await seed_node_spec(sm)
     market = (await client.get("/api/v1/skus")).json()
     assert any(s["id"] == sku_id and s["available_count"] > 0 for s in market)
 
@@ -80,36 +75,29 @@ async def test_full_lifecycle_drill(client, sm, fake):
     uuid = inst["uuid"]
     assert inst["status"] == "creating"
 
-    # outbox 建 Pod → Ready → reconciler 计费开始
     await drain(sm)
-    # JUPYTER_TOKEN 不落 Pod spec(走 per-instance Secret + secretKeyRef)
     pod = fake.pods[(f"tenant-{user_id}", uuid)]
     assert "JUPYTER_TOKEN" not in pod.spec.env
     assert fake.instance_secrets[(f"tenant-{user_id}", uuid)]["JUPYTER_TOKEN"]
-    # 未配 Harbor 机器人:Pod 不引用 imagePullSecrets
     assert pod.spec.image_pull_secret is None and f"tenant-{user_id}" not in fake.pull_secrets
     fake.mark_ready(f"tenant-{user_id}", uuid)
     await reconcile_once(sm)
     inst = (await client.get(f"/api/v1/instances/{uuid}", headers=h)).json()
     assert inst["status"] == "running"
 
-    # ── 5. 接入信息(SSH 指令 + Jupyter URL)─────────────────
     access = (await client.get(f"/api/v1/instances/{uuid}/access", headers=h)).json()
     assert (
         access["ssh_command"].startswith("ssh root@")
         and str(access["ssh_port"]) in access["ssh_command"]
     )
-    # 一次性 bootstrap 票据:token 不出现在 URL
     assert access["jupyter_url"].startswith("https://")
     assert "/superdl-bootstrap?" in access["jupyter_url"]
     assert "token=" not in access["jupyter_url"]
-    # Pod 规格:HAMi 资源 + userns 加固 + 数据盘 PVC
     pod_spec = fake.pods[(f"tenant-{user_id}", uuid)].spec
     assert pod_spec.gpu_resources["nvidia.com/gpucores"] == "50"
     assert pod_spec.host_users is False
     assert pod_spec.data_disk_pvc == f"disk-{disk['uuid']}"
 
-    # ── 6. 跑 30 分钟后停机 → 尾账 ─────────────────────────
     expected_secs = await backdate_running_event(sm, uuid, 30)
     await client.post(f"/api/v1/instances/{uuid}/stop", headers=h)
     await drain(sm)
@@ -120,15 +108,13 @@ async def test_full_lifecycle_drill(client, sm, fake):
     assert len(bills) == 1
     assert expected_secs - 2 <= bills[0]["seconds_used"] <= expected_secs + 15
 
-    # ── 7. 事件时间线 = 计费依据,链路完整 ──────────────────
     events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=h)).json()["items"]
-    chain = [(e["from_status"], e["to_status"]) for e in reversed(events)]  # 降序 → 还原时序
+    chain = [(e["from_status"], e["to_status"]) for e in reversed(events)]
     assert chain[0] == (None, "creating")
     assert ("creating", "running") in chain
     assert ("running", "stopping") in chain
     assert ("stopping", "stopped") in chain
 
-    # ── 8. 释放(实例盘清除,数据盘保留)─────────────────────
     await client.delete(f"/api/v1/instances/{uuid}", headers=h)
     await drain(sm)
     await reconcile_once(sm)
@@ -138,7 +124,6 @@ async def test_full_lifecycle_drill(client, sm, fake):
     disks = (await client.get("/api/v1/disks", headers=h)).json()
     assert disks[0]["status"] == "active" and disks[0]["mounted_instance_id"] is None
 
-    # ── 9. 资金自洽:充值 - 消费 = 余额;流水快照链一致 ─────
     wallet = (await client.get("/api/v1/wallet", headers=h)).json()
     async with sm() as session:
         entries = (
@@ -204,8 +189,7 @@ async def test_pull_secret_managed_per_tenant_when_registry_configured(client, s
 
 
 async def test_service_container_drill(client, sm, fake):
-    """E2E 演练二:部署服务 → 建 Key → 经端点鉴权调用 → 吊销 → 401 → 停止 → 删除;
-    版本实例不占 SSH 端口池、不建 Jupyter 入口、密文 env 不落 Pod spec、不进实例列表。"""
+    """服务生命周期中端点鉴权、资源隔离与资金账保持一致。"""
     phone = "13411113333"
     await client.post("/api/v1/auth/sms-code", json={"phone": phone, "purpose": "register"})
     reg = await client.post(
@@ -226,7 +210,6 @@ async def test_service_container_drill(client, sm, fake):
     sku_id = await create_test_sku(sm)
     await seed_node_spec(sm)
 
-    # ── 部署服务:不开 SSH、带密文 env、要 API Key ──────────────
     svc = (
         await client.post(
             "/api/v1/services",
@@ -254,7 +237,6 @@ async def test_service_container_drill(client, sm, fake):
     svc = (await client.get(f"/api/v1/services/{slug}", headers=h)).json()
     assert svc["status"] == "running" and svc["ready"] is True
 
-    # 不占 SSH 端口池
     async with sm() as session:
         assigned = (
             await session.execute(
@@ -263,24 +245,19 @@ async def test_service_container_drill(client, sm, fake):
         ).scalars()
         assert list(assigned) == []
 
-    # 密文 env 不落 Pod spec
     pod_spec = fake.pods[(f"tenant-{user_id}", uuid)].spec
     assert "hf_drill_secret" not in str(pod_spec.env)
     assert pod_spec.secret_env["HF_TOKEN"] == "hf_drill_secret"
     assert pod_spec.env["MAX_MODEL_LEN"] == "8192"
-    # 服务形态:原地重启 + 走服务端口,不建 Jupyter 入口
     assert pod_spec.restart_policy == "Always"
     assert pod_spec.service_port == 8000 and pod_spec.with_ssh is False
 
-    # 版本实例不进实例列表,实例级只读端点仍可达
     listed = (await client.get("/api/v1/instances", headers=h)).json()["items"]
     assert [i["uuid"] for i in listed] == []
     assert (await client.get(f"/api/v1/instances/{uuid}", headers=h)).status_code == 200
 
-    # ── 端点与 Key ────────────────────────────────────────────
     assert svc["url"].endswith(f"{slug}.{get_settings().service_domain_suffix}")
     assert svc["require_api_key"] is True
-    # 容器配置回显:明文项给值,密文项只给键名
     assert svc["container"]["env"] == {"MAX_MODEL_LEN": "8192"}
     assert svc["container"]["env_secret_keys"] == ["HF_TOKEN"]
 
@@ -289,20 +266,16 @@ async def test_service_container_drill(client, sm, fake):
     ).json()
     plain = created["key"]
     assert plain.startswith("sk-")
-    # 明文只此一次
     listed_keys = (await client.get(f"/api/v1/services/{slug}/api-keys", headers=h)).json()
     assert plain not in str(listed_keys)
 
-    # ── 网关鉴权链路(模拟 Envoy extAuth 回调)────────────────
     auth_url = "/api/internal/v1/endpoint-auth"
     host = {"host": f"{slug}.{get_settings().service_domain_suffix}"}
     ok = await client.post(auth_url, headers={**host, "authorization": f"Bearer {plain}"})
     assert ok.status_code == 200
-    # 平台注入头回全
     assert ok.headers["x-superdl-endpoint"] == slug
     assert ok.headers["x-superdl-key-id"] == str(created["id"])
 
-    # ── 版本更新(重建):新镜像 + 沿用密文;slug / Key 不变,旧版本释放 ──
     rollout = (
         await client.post(
             f"/api/v1/services/{slug}/revisions",
@@ -320,10 +293,10 @@ async def test_service_container_drill(client, sm, fake):
     ).json()
     assert rollout["status"] == "deploying" and rollout["revision"] == 2
     uuid_v2 = rollout["rollout_instance"]["uuid"]
-    await drain(sm)  # 旧版本关机 + 新版本建 Pod
+    await drain(sm)
     fake.finish_delete(f"tenant-{user_id}", uuid)
     fake.mark_ready(f"tenant-{user_id}", uuid_v2)
-    await reconcile_once(sm)  # 新版本 running → 翻转 current、入队释放旧版本
+    await reconcile_once(sm)
     await drain(sm)
     await reconcile_once(sm)
     svc = (await client.get(f"/api/v1/services/{slug}", headers=h)).json()
@@ -334,13 +307,11 @@ async def test_service_container_drill(client, sm, fake):
         fake.pods[(f"tenant-{user_id}", uuid_v2)].spec.secret_env["HF_TOKEN"] == "hf_drill_secret"
     )
     assert (await client.get(f"/api/v1/instances/{uuid}", headers=h)).json()["status"] == "released"
-    # 更新前发的 Key 对新版本照样有效
     assert (
         await client.post(auth_url, headers={**host, "authorization": f"Bearer {plain}"})
     ).status_code == 200
     uuid = uuid_v2
 
-    # ── 吊销 → 立即 401 ──────────────────────────────────────
     assert (
         await client.delete(f"/api/v1/services/{slug}/api-keys/{created['id']}", headers=h)
     ).status_code == 200
@@ -348,7 +319,6 @@ async def test_service_container_drill(client, sm, fake):
     assert denied.status_code == 401
     assert denied.json()["code"] == "API_KEY_INVALID"
 
-    # ── 停止 → 删除;服务落终态,全程资金自洽 ─────────────────
     stopped = await client.post(f"/api/v1/services/{slug}/stop", headers=h)
     assert stopped.status_code == 200, stopped.text
     assert stopped.json()["status"] == "stopping"
@@ -367,7 +337,6 @@ async def test_service_container_drill(client, sm, fake):
     assert svc["status"] == "released" and svc["released_at"] is not None
     assert (await client.get("/api/v1/services", headers=h)).json()["items"] == []
 
-    # 充值 - 消费 = 余额
     async with sm() as session:
         entries = list(
             (
@@ -378,7 +347,6 @@ async def test_service_container_drill(client, sm, fake):
                 )
             ).scalars()
         )
-    # 流水金额带符号,逐条与 balance_after 快照对齐
     running = Decimal("0.00")
     for e in entries:
         running += e.amount
@@ -388,7 +356,7 @@ async def test_service_container_drill(client, sm, fake):
 
 
 async def test_subscription_drill(client, sm, fake):
-    """包周期主链路:充值 → 买包月 → 运行 → 到期 → 停机 → 冻结 → 回收,全程资金自洽。"""
+    """包周期实例到期停机并回收,不产生重复小时账单。"""
     from datetime import timedelta
 
     from sqlalchemy import update
@@ -399,7 +367,6 @@ async def test_subscription_drill(client, sm, fake):
     from app.modules.billing.subscriptions import subscription_patrol
     from app.modules.orchestrator.models import Instance
 
-    # ── 1. 注册 + 充值 ────────────────────────────────────────
     phone = "13411113333"
     await client.post("/api/v1/auth/sms-code", json={"phone": phone, "purpose": "register"})
     reg = await client.post(
@@ -419,7 +386,6 @@ async def test_subscription_drill(client, sm, fake):
         "3000.00"
     )
 
-    # ── 2. 买一个月(下单即预扣整段周期)────────────────────
     key = await client.post(
         "/api/v1/ssh-keys", json={"name": "k", "public_key": gen_ed25519_key()}, headers=h
     )
@@ -451,7 +417,6 @@ async def test_subscription_drill(client, sm, fake):
     )
     assert resp.status_code == 202, resp.text
     uuid = resp.json()["uuid"]
-    # ¥3.99/时 × 720 时 × 8 折
     assert Decimal((await client.get("/api/v1/wallet", headers=h)).json()["balance"]) == Decimal(
         "701.76"
     )
@@ -468,7 +433,6 @@ async def test_subscription_drill(client, sm, fake):
     assert item["market"] == "subscription"
     assert item["subscription"]["period"] == "month"
 
-    # ── 3. 到期 → 停机 → 冻结 → 回收 ──────────────────────────
     async with sm() as session:
         await session.execute(
             update(Subscription)
@@ -491,7 +455,7 @@ async def test_subscription_drill(client, sm, fake):
         )
         await session.commit()
         instance_id = inst.id
-    await balance_patrol(sm)  # 回收仍走欠费巡检的既有分支
+    await balance_patrol(sm)
     await drain(sm)
     await reconcile_once(sm)
     events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=h)).json()["items"]
@@ -501,7 +465,6 @@ async def test_subscription_drill(client, sm, fake):
     assert ("stopped", "frozen") in chain
     assert ("frozen", "releasing") in chain
 
-    # ── 4. 全程零小时账单:预付过的实例不进结算 ───────────────
     async with sm() as session:
         bills = (
             (await session.execute(select(BillHourly).where(BillHourly.instance_id == instance_id)))
@@ -510,7 +473,6 @@ async def test_subscription_drill(client, sm, fake):
         )
     assert bills == []
 
-    # ── 5. 资金自洽:充值 - 预扣 = 余额,流水快照链一致 ────────
     async with sm() as session:
         entries = (
             (
@@ -528,7 +490,7 @@ async def test_subscription_drill(client, sm, fake):
         running_total += e.amount
         assert e.balance_after == running_total
     consume = [e for e in entries if e.type == "consume"]
-    assert len(consume) == 1  # 只有下单那一笔,没有任何小时账
+    assert len(consume) == 1
     assert consume[0].ref_type == "subscription"
     assert consume[0].amount == Decimal("-2298.24")
     wallet = (await client.get("/api/v1/wallet", headers=h)).json()

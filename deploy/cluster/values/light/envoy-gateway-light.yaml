@@ -1,13 +1,8 @@
-# Envoy Gateway 控制面的 k3s/单机覆盖(叠在 values/envoy-gateway.yaml 之上;数据面 light 档取值在 deploy/app/k8s/04-gateway.yaml)。
-# 落点不在这里覆盖;两份用户 values 之间是纯 map 合并,null 不能删键
 deployment:
-  # 单机单副本
   replicas: 1
   envoyGateway:
-    # 内存随 HTTPRoute 条数走,放量前按实测复核
     resources:
       requests: {cpu: 50m, memory: 128Mi}
       limits: {memory: 512Mi}
 podDisruptionBudget:
-  # 0 = 不建 PDB(单副本配 1 会让 drain 卡死)
   minAvailable: 0

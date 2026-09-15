@@ -1,4 +1,3 @@
-# 迁移 Job:每次发布前跑(name 带 tag 后缀)。顺序:create → kubectl wait --for=condition=complete → 滚动 api/worker
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -9,16 +8,14 @@ spec:
   ttlSecondsAfterFinished: 86400
   template:
     metadata:
-      labels: {app: superdl-migrate}   # NetworkPolicy(09)按此标签放行出向
+      labels: {app: superdl-migrate}
     spec:
       restartPolicy: Never
-      automountServiceAccountToken: false   # 只连 PG,不访问 K8s API
-      # 与 02-api.yaml 同锚点:库 owner 连接串只能落在 infra 节点,不许调度到 GPU(租户)节点
+      automountServiceAccountToken: false
       nodeSelector:
         node-restriction.kubernetes.io/superdl-infra: "true"
       tolerations:
         - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
-      # Harbor 拉取凭据(见 02-api.yaml 同处注释)
       imagePullSecrets:
         - {name: superdl-registry-pull}
       securityContext:
@@ -32,10 +29,8 @@ spec:
           command: ["alembic", "upgrade", "head"]
           envFrom:
             - configMapRef: {name: superdl-api-config}
-            # 只拿库 owner 连接串(DDL 权限;api/worker 用的 superdl-db 是无 DDL 的应用角色)
             - secretRef: {name: superdl-db-migrate}
           env:
-            # lock_timeout 3s / statement_timeout 60s;大数据量变更走分批小迁移
             - {name: PGOPTIONS, value: "-c lock_timeout=3s -c statement_timeout=60s"}
           resources:
             requests: {cpu: 100m, memory: 256Mi}
@@ -49,5 +44,4 @@ spec:
             - {name: db-ca, mountPath: /etc/superdl/db-ca, readOnly: true}
       volumes:
         - {name: tmp, emptyDir: {}}
-        # 库 CA(自签/私有 CA 时由运维建 ConfigMap superdl-db-ca;公共 CA 可缺省)
         - {name: db-ca, configMap: {name: superdl-db-ca, optional: true}}

@@ -1,12 +1,4 @@
-"""退款闭环:申请 → 审批(finance) → 登记打款(双人) → 钱包核销。
-
-不变量:
-- 审批通过 ≠ 出金。只有 payout_refund 成功才同事务做钱包负向调账(ledger type='refund'),
-  并回写 wallet_entry_id。
-- 打款强制双人:payout_by ≠ review_by(应用层 409 + DB CHECK)。
-- 打款时在钱包行锁内再校验可用余额 ≥ 退款额,不足 409,可取消该单。
-- 出金的审计行与业务同事务(audit_writer 钩子,commit 前调用)。
-"""
+"""退款申请、双人审批打款与钱包核销;出金审计须通过 audit_writer 与业务同事务写入。"""
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -30,13 +22,10 @@ from app.modules.billing.schemas import AdminRefundOut, RefundOut
 
 logger = get_logger(__name__)
 
-# 活跃口径 = pending/approved:已打款不占位,同单可多次部分退款,累计上限 = 订单额 − Σpaid
 ACTIVE_STATUSES = ("pending", "approved")
 
-# 原路退回映射:订单支付渠道 → 打款渠道(offline 例外)
 _CHANNEL_TO_PAYOUT = {"wechat": "wechat_transfer", "alipay": "alipay_transfer"}
 
-# 用户端「可申请订单」候选集:最近 N 笔充值订单(含不可申请行)
 REFUNDABLE_ORDERS_CAP = 50
 
 
@@ -119,8 +108,7 @@ async def create_refund(
     reason: str,
     idempotency_key: str | None,
 ) -> tuple[RefundRequest, bool]:
-    """用户申请退款。幂等:Idempotency-Key 重放返回既有单;同键异参 409。同单可多次部分退款。
-    返回 (退款单, created):created=False = 幂等重放,路由回 200 + X-Idempotent-Replay。"""
+    """提交退款申请,返回 (退款单, created);同键同参重放 created=False,异参回 409。"""
     amount = as_amount(amount)
     fingerprint = request_fingerprint(user_id, order_no, amount, reason)
     if idempotency_key:
@@ -133,7 +121,7 @@ async def create_refund(
             fingerprint=fingerprint,
         )
         if existing is not None:
-            return existing, False  # 幂等重放
+            return existing, False
     order = await _refundable_order(session, user_id, order_no)
     refunded = await _paid_total_of_order(session, order_no)
     limit = _refund_limit(
@@ -165,18 +153,16 @@ async def create_refund(
 
 
 async def _refundable_order(session: AsyncSession, user_id: int, order_no: str) -> Order:
-    """申请前置:本人已支付订单、未被渠道冲正、账期未开票、无在途退款单。"""
+    """校验本人已支付订单、无阻断退款的冲正、未开票且无活跃退款;锁定账期活跃发票行。"""
     order = (
         await session.execute(
             select(Order).where(Order.order_no == order_no, Order.user_id == user_id)
         )
     ).scalar_one_or_none()
     if order is None:
-        # 他人的订单号同样回 404
         raise AppError(ErrorCode.ORDER_NOT_FOUND, key="billing.orderNotFound", http_status=404)
     if order.status != "paid":
         raise conflict(key="billing.refundOrderNotPaid")
-    # 渠道冲正(待处置/已坐实)后禁止平台侧二次退款出金;人工 release 的恢复资格
     if reversal_blocks_refund(order):
         raise conflict(key="billing.refundChannelReversed")
     if await _order_has_issued_invoice(session, order, lock=True):
@@ -196,8 +182,7 @@ async def _insert_refund(
     idempotency_key: str | None,
     fingerprint: str,
 ) -> tuple[RefundRequest, bool]:
-    """落退款单:refund_no = R+yyyymmdd+两位日内序列;并发同序列由唯一索引兜底,
-    撞车换下一个序列重试。"""
+    """提交退款单;单号为 R+UTC 日期+至少两位序列,序列冲突最多尝试八次。"""
     prefix = f"R{now_utc():%Y%m%d}"
     for _ in range(8):
         seq = await next_daily_seq(session, RefundRequest.refund_no, prefix)
@@ -223,11 +208,10 @@ async def _insert_refund(
             )
         except IntegrityError:
             if await _active_refund_of_order(session, order_no) is not None:
-                # 撞部分唯一索引(并发重复申请同一订单)
                 raise conflict(key="billing.refundAlreadyApplied") from None
-            continue  # refund_no 序列撞车:重试下一序列
+            continue
         if result is not req:
-            return result, False  # 同键并发:返回胜出方
+            return result, False
         logger.info("refund_created", refund_no=req.refund_no, order_no=order_no)
         return req, True
     raise AppError(ErrorCode.INTERNAL, key="common.internal", http_status=500)
@@ -251,8 +235,9 @@ async def list_my_refunds(
 
 
 async def refundable_orders(session: AsyncSession, user_id: int) -> list[dict]:
-    """用户端退款表单的订单候选集:最近充值订单逐单标注可否申请与置灰原因。
-    max_amount = min(订单剩余可退, 当前余额),订单剩余可退 = 订单额 − Σ已打款退款。
+    """返回最近充值订单的退款候选视图及不可申请原因。
+
+    max_amount 为订单剩余额、非负可用余额与流水可退余额的最小值;此视图不检查渠道冲正。
     """
     orders = list(
         (
@@ -313,9 +298,6 @@ async def refundable_orders(session: AsyncSession, user_id: int) -> list[dict]:
             }
         )
     return out
-
-
-# ---------- 管理端(finance/admin) ----------
 
 
 def admin_refunds_query(
@@ -384,11 +366,11 @@ async def payout_refund(
     audit_writer: Callable[[AsyncSession], Awaitable[None]] | None = None,
     idempotency_key: str | None = None,
 ) -> tuple[RefundRequest, bool]:
-    """登记打款:唯一出金点。同事务完成钱包负向调账 + 状态置 paid + 回写 wallet_entry_id。
-    audit_writer 在 commit 前调用,写失败即整体回滚。
+    """持退款行锁登记打款;同事务扣款、置 paid、关联流水并调用可选 audit_writer 后提交。
 
-    幂等(Idempotency-Key,与申请键分列),行锁内判定:已 paid 且键匹配 → 重放返回 (req, True);
-    键匹配但指纹不符 → 409;无键的重复打款走状态机 409(refundStateNotPayable)。"""
+    已 paid 且幂等键匹配时返回 (req, True);已存指纹不符回 409。
+    首次登记返回 (req, False),其余重复打款回状态冲突。
+    """
     req = await get_for_update_or_404(
         session, RefundRequest, refund_id, key="billing.refundNotFound"
     )
@@ -419,7 +401,7 @@ async def payout_refund(
         req.payout_idempotency_key = idempotency_key
         req.payout_request_fingerprint = fingerprint
     if audit_writer is not None:
-        await audit_writer(session)  # 与出金同事务
+        await audit_writer(session)
     await session.commit()
     logger.info("refund_paid", refund_no=req.refund_no, channel=channel)
     return req, False
@@ -433,23 +415,19 @@ async def _assert_payable(
     if req.status != "approved":
         raise conflict(key="billing.refundStateNotPayable", params={"status": req.status})
     if req.review_by == operator_id:
-        # 双人制衡(DB 另有 CHECK payout_not_reviewer)
         raise conflict(key="billing.refundPayoutSamePerson")
     order = (
         await session.execute(select(Order).where(Order.order_no == req.order_no))
     ).scalar_one_or_none()
     if order is not None:
-        # 出金前复核订单未被渠道冲正
         if reversal_blocks_refund(order):
             raise conflict(key="billing.refundChannelReversed")
-        # 原路退回:打款渠道须与订单支付渠道同源;offline 是唯一例外;mock 不映射,放行
         expected_payout = _CHANNEL_TO_PAYOUT.get(order.channel)
         if expected_payout is not None and channel not in (expected_payout, "offline"):
             raise conflict(
                 key="billing.refundPayoutChannelMismatch",
                 params={"expected": expected_payout},
             )
-        # 多次部分退款的出金闸:累计已退 + 本单 ≤ 订单额
         paid_total = await _paid_total_of_order(session, req.order_no)
         if paid_total + req.amount > order.amount:
             raise conflict(
@@ -460,8 +438,6 @@ async def _assert_payable(
                     "amount": money_str(req.amount),
                 },
             )
-    # 不复查账期是否已开票(打款的退款在开票重算时已从票额扣除)。
-    # 钱包行锁内再校验可用余额(balance - frozen),不足不出金
     locked = await wallet.lock_wallet(session, req.user_id)
     if wallet.available_of(locked) < req.amount:
         raise conflict(
@@ -471,7 +447,6 @@ async def _assert_payable(
                 "amount": money_str(req.amount),
             },
         )
-    # 可退余额硬闸(wallet.refundable_capacity 口径)
     refundable = await wallet.refundable_capacity(session, req.user_id)
     if refundable < req.amount:
         raise conflict(

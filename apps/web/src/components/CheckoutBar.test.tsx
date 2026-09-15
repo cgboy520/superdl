@@ -1,5 +1,4 @@
-/** CheckoutBar 组件测试(jsdom 的 matchMedia 恒 false,走 <sm 窄屏分支)。
- *  挂了说明:窄屏结算条不再是「价格 + 主按钮」一行,或余额未就绪时渲染了假 ¥0.00(查询失败 data 恒为 undefined)。 */
+/** 窄屏结算条的明细展开与余额未就绪展示测试。 */
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
@@ -17,7 +16,6 @@ describe("CheckoutBar", () => {
     expect(screen.getByText("¥2.50/时")).toBeInTheDocument();
     expect(screen.getByText("× 1 卡")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "创建并开机" })).toBeInTheDocument();
-    // 费用项标题只在 sheet 里
     expect(screen.queryByText("配置费用")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /明细/ }));
     expect(await screen.findByText("配置费用")).toBeInTheDocument();

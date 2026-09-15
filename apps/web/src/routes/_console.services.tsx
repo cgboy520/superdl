@@ -1,5 +1,4 @@
-/** 在线服务列表:页头(标题 + 策略 ? tooltip + 主 CTA)→ FilterBar(状态 + 搜索,入 URL replace)→ 表格(名称 / 状态 / 服务端点 / 规格 / 版本 / 费用 / 创建时间 / 操作)。
- *  列表不轮询;deploying / stopping / releasing 逐条 5s 轮询,迁移即回刷;unready 不算过渡态。进详情走名称链接,不做双击行。 */
+/** 在线服务列表:URL 筛选、游标分页与过渡态轮询。 */
 
 import { QuestionCircleOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import type { ServiceOut } from "@superdl/api-client";
@@ -107,17 +106,13 @@ function ServicesPage() {
     });
 
   const hasFilter = Boolean(status) || keyword.trim() !== "";
-  // 已提交到 URL 的检索词也算筛选态:输入清空后 300ms 内行仍是旧结果,不能误判成真空态
   const filtered = hasFilter || Boolean(q);
   const clearFilters = () => {
-    // 检索词经防抖回写 URL(与输入框清空同一路径);状态直接清
     setKeyword("");
     setSearch({ status: undefined });
   };
-  // 计数只在全部加载完才显示
   const count = isLoading || isError || hasNextPage ? undefined : rows.length;
 
-  // 错误态 > 筛选无结果 > 真空态;首载给骨架
   const emptyText = isError ? (
     <TableErrorEmpty isError onRetry={() => void refetch()} />
   ) : isLoading ? (
@@ -152,7 +147,6 @@ function ServicesPage() {
   return (
     <PageContainer
       title={t("services.title")}
-      // 停机 / 冻结策略不做常驻条:放标题旁 tooltip(ui-ux-spec §1 规则 1);宿主可聚焦、可点
       tags={
         <Tooltip
           trigger={["hover", "focus", "click"]}
@@ -194,7 +188,6 @@ function ServicesPage() {
           onChange={(v: string | null) => setSearch({ status: v ?? undefined })}
           options={SERVICE_FILTER_STATUSES.map((s) => {
             const meta = metaOf(serviceStatusMap, s);
-            // 裸状态码不进 t()(extract 会当成新键)
             return { value: s, label: meta ? t(meta.labelKey) : s };
           })}
         />

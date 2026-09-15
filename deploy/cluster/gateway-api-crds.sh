@@ -1,15 +1,7 @@
 #!/usr/bin/env bash
-# Gateway API + Envoy Gateway 的 CRD 安装/升级(helmfile envoy-gateway release 的 presync 调用;升版时先单独跑再 ./apply.sh)。
-#
-# 用法:./gateway-api-crds.sh [--dry-run]   (在 deploy/cluster/ 下执行;--dry-run 走 kubectl apply --dry-run=server)
-#
-# 约束:装法 `helm template | kubectl apply --server-side --force-conflicts`(CRD 在 chart 的 templates/,清单近 4 MB);
-# channel 必须 experimental,首装即定(safe-upgrades VAP 拒绝 standard→experimental,只能删净 CRD 重来)
 set -euo pipefail
 
-# EG_VERSION 必须与 helmfile.yaml.gotmpl 里 envoy-gateway release 的 version 一致
 EG_VERSION="v1.9.0"
-# 该 EG 版本对齐的 Gateway API 版本(装完自检;preflight.sh 也按它卡)
 GATEWAY_API_VERSION="v1.6.1"
 CRDS_CHART="oci://docker.io/envoyproxy/gateway-crds-helm"
 CHANNEL="experimental"
@@ -35,8 +27,7 @@ for bin in helm kubectl; do
   }
 done
 
-# channel 事实只在 CRD 注解上;CRD 不存在 = 首装
-crd_annotation() { # <注解名>
+crd_annotation() {
   kubectl get crd "$GW_CRD" -o "go-template={{index .metadata.annotations \"$1\"}}" 2>/dev/null || true
 }
 
@@ -47,7 +38,6 @@ if [[ -z "$existing_channel" || "$existing_channel" == "<no value>" ]]; then
 elif [[ "$existing_channel" == "$CHANNEL" ]]; then
   echo "    已是 channel=$existing_channel,bundle-version=$(crd_annotation "$BUNDLE_ANNOTATION")"
 else
-  # channel 不符即停
   echo "::error::集群里的 $GW_CRD 是 channel=$existing_channel,本脚本要装的是 $CHANNEL。" >&2
   echo "         safe-upgrades ValidatingAdmissionPolicy 拒绝 standard→experimental,换不回去。" >&2
   echo "         唯一出路是删净 Gateway API CRD 重装,而删 CRD 会连带删掉集群内全部" >&2
@@ -72,7 +62,6 @@ fi
 echo "==> 2/2 apply --server-side --force-conflicts"
 render | kubectl apply --server-side --force-conflicts -f -
 
-# 装完回读 channel 注解
 installed_channel="$(crd_annotation "$CHANNEL_ANNOTATION")"
 installed_bundle="$(crd_annotation "$BUNDLE_ANNOTATION")"
 echo "==> 完成:$GW_CRD channel=$installed_channel bundle-version=$installed_bundle"

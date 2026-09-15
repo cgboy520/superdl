@@ -1,14 +1,10 @@
-# Grafana Alloy 日志采集。chart 版本钉在 ../helmfile.yaml.gotmpl。
 alloy:
   configMap:
     content: |
-      // ── 集群容器日志:全命名空间 Pod ──
       discovery.kubernetes "pods" {
         role = "pod"
       }
 
-      // 标签收敛为 namespace/pod/container/app;再按 namespace 打 Loki 租户标签
-      // (auth_enabled=true 后 X-Scope-OrgID 必填):tenant-* = tenant,其余 = platform
       discovery.relabel "pod_logs" {
         targets = discovery.kubernetes.pods.targets
         rule {
@@ -27,7 +23,6 @@ alloy:
           source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
           target_label  = "app"
         }
-        // 顺序敏感:先全员 platform 兜底,再让 tenant-* 覆盖为 tenant
         rule {
           source_labels = ["__meta_kubernetes_namespace"]
           target_label  = "tenant"
@@ -46,9 +41,6 @@ alloy:
         forward_to = [loki.process.tenant.receiver]
       }
 
-      // ── 控制面 apiserver 审计日志(rke2/k3s server 节点宿主机文件,
-      //    路径见 ../rke2/server-config.yaml 与 ../k3s/server-config.yaml 的
-      //    audit-log-path;卷挂载已收窄到 server/logs,见本文件 alloy.mounts.extra)──
       local.file_match "apiserver_audit" {
         path_targets = [{
           __path__   = "/host-logs/*/server/logs/audit.log",
@@ -64,8 +56,6 @@ alloy:
         forward_to = [loki.process.tenant.receiver]
       }
 
-      // 按 tenant 标签打 X-Scope-OrgID(Loki auth_enabled=true 必需);入库前抹掉 URL 里的 token
-      // (Jupyter 启动横幅带 ?token=,该 token 在实例内等价 root)
       loki.process "tenant" {
         forward_to = [loki.write.default.receiver]
         stage.replace {
@@ -82,13 +72,11 @@ alloy:
           url = "http://loki.monitoring.svc:3100/loki/api/v1/push"
         }
       }
-  # 每节点一只
   resources:
     requests: {cpu: 50m, memory: 128Mi}
     limits: {memory: 256Mi}
   mounts:
     extra:
-      # 只挂 apiserver 审计日志目录(server/logs),不挂整棵 /var/lib/rancher;rke2/k3s 路径分开挂
       - name: rke2-audit-logs
         mountPath: /host-logs/rke2/server/logs
         readOnly: true
@@ -96,7 +84,6 @@ alloy:
         mountPath: /host-logs/k3s/server/logs
         readOnly: true
 controller:
-  # 控制面节点的审计文件也要采,容忍 server 侧 taint
   tolerations:
     - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
     - {key: node-role.kubernetes.io/control-plane, operator: Exists, effect: NoSchedule}

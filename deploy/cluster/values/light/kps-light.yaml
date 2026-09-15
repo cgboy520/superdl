@@ -1,9 +1,8 @@
-# kps 轻量档:同 chart,短 retention / 关 Grafana / 收紧限额。Alertmanager 必须保留(管理端告警流依赖 webhook)
 prometheus:
   prometheusSpec:
     retention: 3d
-    retentionSize: "3GB"     # 覆盖 full 档的 40GB
-    storageSpec:             # 覆盖 full 档的 50Gi
+    retentionSize: "3GB"
+    storageSpec:
       volumeClaimTemplate:
         spec:
           storageClassName: topolvm-provisioner
@@ -15,7 +14,6 @@ prometheus:
       limits: {memory: 1Gi}
 grafana:
   enabled: false
-# Alertmanager 存储随档覆盖(full 档是 superdl-cephfs)
 alertmanager:
   alertmanagerSpec:
     storage:

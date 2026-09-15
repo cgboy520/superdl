@@ -1,5 +1,3 @@
-# gitleaks:默认规则集 + 已复核误报的行级放行(condition="AND" + regexTarget="line":path 与行内容同时命中才放行)。
-# CI 只扫当前工作树(gitleaks dir)
 [extend]
 useDefault = true
 
@@ -45,7 +43,7 @@ regexTarget = "line"
 paths = ['''apps/api/tests/test_k8s_real_units\.py''']
 regexes = ['''secret_key_ref\.name == "jupyter-inst-1"''']
 
-# 该 bcrypt hash 已泄漏,禁止入库
+# 禁止将此 bcrypt 哈希用于真实账号。
 [[rules]]
 id = "superdl-leaked-registry-htpasswd"
 description = "已泄漏的 registry htpasswd bcrypt hash"

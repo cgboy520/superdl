@@ -31,18 +31,18 @@ export const ROLE_LABEL_KEY = {
 
 export const MENU_ROLES = {
   "/": ALL_ROLES,
-  "/nodes": ["admin", "ops", "readonly"], // finance 无 /nodes 权限
-  "/cluster": ["admin", "ops", "readonly"], // 对齐后端 /cluster require_roles(finance 无)
+  "/nodes": ["admin", "ops", "readonly"],
+  "/cluster": ["admin", "ops", "readonly"],
   "/skus": ALL_ROLES,
-  "/images": ["admin", "ops", "readonly"], // 对齐后端 /images require_roles(finance 无)
+  "/images": ["admin", "ops", "readonly"],
 
   "/tenants": ALL_ROLES,
-  "/services": ALL_ROLES, // 读全角色;强制停止按钮级 disable + 后端 403 兜底
-  "/finance": ["admin", "finance", "readonly"], // ops 无财务权限
-  "/tickets": ALL_ROLES, // 读全角色;写操作(ops/admin)由按钮级 disable + 后端 403 兜底
+  "/services": ALL_ROLES,
+  "/finance": ["admin", "finance", "readonly"],
+  "/tickets": ALL_ROLES,
   "/audit": ALL_ROLES,
-  "/platform": ["admin"], // 渠道凭据仅超管
-  "/alerts": ["admin", "ops", "readonly"], // finance 无告警权限
+  "/platform": ["admin"],
+  "/alerts": ["admin", "ops", "readonly"],
   "/settings": ALL_ROLES,
 } as const satisfies Record<string, readonly Role[]>;
 

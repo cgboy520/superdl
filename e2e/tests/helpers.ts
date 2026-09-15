@@ -1,9 +1,8 @@
-/** 跨 spec 共用工具与前置。UI 前置(registerViaUi/rechargeViaUi/addSshKeyViaUi)只由 smoke 使用;其余 spec 用 API 直达版(loginViaApi/rechargeViaApi/addSshKeyViaApi)。 */
+/** 浏览器冒烟的 UI 与 API 前置工具。 */
 
 import { expect, type Locator, type Page } from "@playwright/test";
 
-/** 点 antd Modal.confirm 的「确定」。不用 .ant-modal-confirm-btns(内部 class);页面可能同时开着抽屉,取最后一个匹配。
- *  antd 两字按钮会插空格,故用 /^确\s*定$/。 */
+/** 点击对话框中最后一个「确定」按钮。 */
 export async function confirmOk(page: Page): Promise<void> {
   await page
     .getByRole("dialog")
@@ -12,14 +11,14 @@ export async function confirmOk(page: Page): Promise<void> {
     .click();
 }
 
-/** 本轮唯一的测试手机号;spec 并行,必须带随机分量。 */
+/** 用时间戳与随机数生成测试手机号。 */
 export function uniquePhone(): string {
   const ms = String(Date.now()).slice(-5);
   const rand = String(Math.floor(Math.random() * 1000)).padStart(3, "0");
   return `139${ms}${rand}`;
 }
 
-/** 构造合法且指纹唯一的 ed25519 公钥(与后端 blob 校验一致)。 */
+/** 生成随机字节的 SSH ed25519 公钥测试数据。 */
 export function genEd25519Key(): string {
   const type = "ssh-ed25519";
   const typeBytes = new TextEncoder().encode(type);
@@ -43,7 +42,7 @@ export async function registerViaUi(page: Page, phone: string): Promise<void> {
   await page.getByPlaceholder("手机号").fill(phone);
   await page.getByRole("button", { name: "获取验证码" }).click();
   await page.getByPlaceholder("短信验证码").fill("123456");
-  await page.getByRole("checkbox").check(); // 同意用户协议/隐私政策
+  await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "注册并登录" }).click();
   await expect(page).not.toHaveURL(/login/, { timeout: 15_000 });
 }
@@ -51,7 +50,6 @@ export async function registerViaUi(page: Page, phone: string): Promise<void> {
 /** 经 API 建号并注入登录态:access token 由 addInitScript 写入 localStorage,refresh cookie 由浏览器托管;返回 access token。 */
 export async function loginViaApi(page: Page, phone: string): Promise<string> {
   const code = await page.request.post("/api/v1/auth/sms-code", {
-    // dev 的 captcha_enabled 默认关闭,发码不带人机校验 token
     data: { phone, purpose: "register" },
   });
   expect(code.status(), await code.text()).toBe(204);
@@ -60,7 +58,6 @@ export async function loginViaApi(page: Page, phone: string): Promise<string> {
   });
   expect(resp.status(), await resp.text()).toBe(201);
   const data = (await resp.json()) as { access_token: string };
-  // 键名对齐 apps/web stores/auth.ts 的 TOKEN_KEY(函数体序列化进浏览器,不能引用常量)
   await page.addInitScript((token) => window.localStorage.setItem("superdl.web.accessToken", token), data.access_token);
   return data.access_token;
 }
@@ -79,7 +76,7 @@ export async function rechargeViaApi(page: Page, token: string, amount: string):
   expect(paid.status(), await paid.text()).toBe(200);
 }
 
-/** 经 API 添加一把 e2e 公钥(开发机创建必须选一把)。 */
+/** 经 API 添加一把 e2e 公钥。 */
 export async function addSshKeyViaApi(page: Page, token: string): Promise<void> {
   const resp = await page.request.post("/api/v1/ssh-keys", {
     headers: { Authorization: `Bearer ${token}` },
@@ -88,7 +85,7 @@ export async function addSshKeyViaApi(page: Page, token: string): Promise<void> 
   expect(resp.status(), await resp.text()).toBe(201);
 }
 
-/** mock 渠道充值并关掉弹窗。amount 省略 = 弹窗默认额(¥100);包周期须显式给大额。 */
+/** mock 渠道充值并关闭弹窗;未传 amount 时使用弹窗默认金额。 */
 export async function rechargeViaUi(page: Page, amount?: string): Promise<void> {
   await page.goto("/billing");
   await page
@@ -102,7 +99,7 @@ export async function rechargeViaUi(page: Page, amount?: string): Promise<void> 
   await page.keyboard.press("Escape");
 }
 
-/** 添加一把 SSH 公钥(开发机创建必须选一把)。 */
+/** 经 UI 添加一把 SSH 公钥。 */
 export async function addSshKeyViaUi(page: Page): Promise<void> {
   await page.goto("/settings");
   await page.getByLabel("名称").fill("e2e-key");
@@ -111,7 +108,7 @@ export async function addSshKeyViaUi(page: Page): Promise<void> {
   await expect(page.getByText("公钥已添加")).toBeVisible({ timeout: 10_000 });
 }
 
-/** 市场页选中「共享·标准」SKU;计费方式与形态分叉由各 spec 自己接。 */
+/** 选中市场页首个「共享·标准」SKU。 */
 export async function pickSharedStandardSku(page: Page): Promise<void> {
   await page.goto("/market");
   const skuRow = page.locator("[data-row-key]", { hasText: "共享·标准" }).first();
@@ -119,7 +116,7 @@ export async function pickSharedStandardSku(page: Page): Promise<void> {
   await skuRow.getByRole("radio").check();
 }
 
-/** 创建页「自定义镜像」表单块:切自定义镜像 + 填 e2e 镜像 + 勾选 e2e 公钥;提交按钮由各 spec 自己点。 */
+/** 填写自定义镜像并勾选 e2e 公钥,不提交表单。 */
 export async function fillCustomImageForm(page: Page): Promise<void> {
   await page.getByText("自定义镜像").click();
   await page.getByPlaceholder("registry.example.com/your/image:tag").fill("registry.superdl.local/pytorch:2.9.0-cu128");

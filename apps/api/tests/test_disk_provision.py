@@ -1,5 +1,4 @@
-"""数据盘 PVC 下发:创建/扩容、失败自愈与死信重派、删盘回收。
-一盘一 PVC 后 PVC 容量即硬配额,不再有目录配额下发这一步。"""
+"""数据盘 PVC 的创建、扩容、失败重派与回收。"""
 
 from datetime import timedelta
 
@@ -25,7 +24,7 @@ class TestProvisionDispatch:
             f"/api/v1/disks/{disk['uuid']}", json={"size_gb": 200}, headers=headers
         )
         assert resp.status_code == 200, resp.text
-        assert resp.json()["provisioned"] is False  # 扩容前立即回落
+        assert resp.json()["provisioned"] is False
         await drain(sm)
         from app.modules.orchestrator.models import DataDisk
 
@@ -54,7 +53,6 @@ class TestProvisionFailureAndReconcile:
             ).scalar_one()
             assert row.provisioned is False
             assert fake.data_disks == {}
-            # 退避中的重试任务回拨到期后再冲刷:恢复下发
             await session.execute(
                 update(OutboxTask)
                 .where(OutboxTask.type == "disk.provision")
@@ -75,7 +73,7 @@ class TestProvisionFailureAndReconcile:
 
         headers, user_id, _key = await create_user_with_key(client)
         await fund_wallet(sm, user_id)
-        await create_disk(client, headers, size_gb=100)  # 下发任务在途,盘 provisioned=false
+        await create_disk(client, headers, size_gb=100)
         async with sm() as session:
             await session.execute(
                 update(OutboxTask)
@@ -95,7 +93,7 @@ class TestProvisionFailureAndReconcile:
                 .scalars()
                 .all()
             )
-        assert statuses == ["discarded"]  # 未补发新任务
+        assert statuses == ["discarded"]
         assert fake.data_disks == {}
 
     async def test_reconciler_redrives_dead_provision(self, client: AsyncClient, sm, fake):
@@ -136,6 +134,5 @@ class TestDeprovisionOnDelete:
         resp = await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
         assert resp.status_code == 200, resp.text
         await drain(sm)
-        # PVC 删掉 = CSI 随之销毁 subvolume,不再有单独的擦除步
         assert key not in fake.data_disks
         assert key in fake.deleted_data_disks

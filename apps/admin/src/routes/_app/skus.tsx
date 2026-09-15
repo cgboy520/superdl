@@ -1,4 +1,4 @@
-/** SKU 与定价:FilterBar(型号 / 档位 / 在售 / 名称,入 URL,客户端过滤)+ 列表(状态列在售 / 已下架;操作固定右:编辑 + 更多 ▾ 上架 / 下架,改价确认带影响面);新建 / 编辑抽屉在 -SkuDrawerForm,表单常量与联动纯函数在 -skuForm。 */
+/** SKU 页:URL 筛选、新建/编辑抽屉与上下架操作。 */
 
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
@@ -64,7 +64,6 @@ function SkusPage() {
   const qc = useQueryClient();
   const { data: skus, queryKey, isLoading, isError, error, refetch } = useAdminSkus();
   const [editing, setEditing] = useState<SkuAdminOut | "new" | null>(null);
-  // 筛选入 URL;SKU 一次取全量,过滤在客户端
   const navigate = useNavigate({ from: "/skus" });
   const { model, tier, sale, q } = Route.useSearch();
   const setUrl = useCallback(
@@ -79,7 +78,6 @@ function SkusPage() {
     keys: ["model", "tier", "sale", "q"],
     commit: setUrl,
   });
-  // 型号选项取当前列表的去重值(没有单独的型号字典端点)
   const modelOptions = useMemo(
     () => [...new Set((skus ?? []).map((s) => s.gpu_model).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
     [skus],
@@ -96,7 +94,6 @@ function SkusPage() {
   }, [skus, model, tier, sale, q]);
 
   const refresh = () => void qc.invalidateQueries({ queryKey });
-  // 行级上下架共一个变更实例;成功只刷新,文案由 ReasonAction / 强制上架确认各自承担
   const skuRowUpdate = useUpdateSku();
 
   return (
@@ -200,7 +197,6 @@ function SkusPage() {
                     : t("skus.sliceShared", { pct: r.gpu_cores_pct, vram: r.vram_gb }),
             },
             {
-              // 容量 = 匹配型号×池的物理卡数;CPU 规格不带卡
               title: t("skus.colCapacity"),
               dataIndex: "capacity_gpus",
               align: "right",
@@ -290,7 +286,6 @@ function SkusPage() {
                           }}
                         />
                       ) : (
-                        // 上架是恢复方向:只填原因,不做第二步确认;规格缺要素被拒时给「强制上架」出口
                         <ReasonAction
                           label={t("skus.onSale")}
                           type="text"
@@ -307,7 +302,6 @@ function SkusPage() {
                                 { onSuccess: refresh },
                               );
                             } catch (e) {
-                              // SKU_NOT_SELLABLE:确认后带 force 重放;其他错误继续抛给 ReasonAction
                               if (isApiError(e) && e.code === "SKU_NOT_SELLABLE") {
                                 confirm({
                                   title: t("skus.notSellableTitle"),

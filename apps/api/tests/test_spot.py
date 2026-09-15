@@ -118,7 +118,7 @@ class TestSpotPricing:
 
     async def test_sku_without_spot_refuses(self, client, sm, fake):
         """没上竞价档的规格直接拒。"""
-        sku_id = await create_test_sku(sm)  # 默认 spot_enabled=False
+        sku_id = await create_test_sku(sm)
         await seed_node_spec(sm, node_name="node-nospot")
         headers, _user_id, key_id = await funded_user(client, sm, "13922200002", "5000.00")
         body = await create(client, headers, sku_id, key_id, expect=400)
@@ -193,7 +193,7 @@ class TestPreemptionFlow:
         await seed_node_spec(sm, node_name="node-p1", pool_label="kata", gpu_count=1)
         _, victim_uuid, _victim_uid = await running_spot(client, sm, fake, "13922200010", sku_id)
         await self._fill_pool(sm, cards=1)
-        async with sm() as s:  # 台账反映那张卡已被占
+        async with sm() as s:
             await s.execute(update(NodeSpec).values(gpu_used=1))
             await s.commit()
 
@@ -242,7 +242,6 @@ class TestPreemptionFlow:
             )
         assert len(stop_tasks) == 1
         assert stop_tasks[0].next_retry_at > now_utc() + timedelta(seconds=30)
-        # 到期前 drain 领不到它,Pod 仍在
         await drain(sm)
         assert (f"tenant-{victim_uid}", victim_uuid) in fake.pods
 
@@ -256,7 +255,6 @@ class TestPreemptionFlow:
                 await s.execute(select(Instance).where(Instance.uuid == victim_uuid))
             ).scalar_one()
             victim_id, unit = inst.id, inst.price_hourly
-            # 本小时开头就在跑
             await s.execute(
                 update(InstanceEvent)
                 .where(InstanceEvent.instance_id == victim_id)
@@ -272,9 +270,8 @@ class TestPreemptionFlow:
             bill = (
                 await s.execute(select(BillHourly).where(BillHourly.instance_id == victim_id))
             ).scalar_one()
-        assert bill.unit_price == unit  # 竞价折后价,不是原价
+        assert bill.unit_price == unit
         assert bill.seconds_used > 0
-        # 尾账截到「迁 stopping」那一刻,宽限窗不计入
         assert bill.seconds_used <= 3600
 
     async def test_spot_request_never_preempts(self, client, sm, fake):
@@ -305,7 +302,7 @@ class TestPreemptionFlow:
             await s.commit()
 
         headers, uid, key_id = await create_user_with_key(client, "13922200019")
-        await fund_wallet(sm, uid, "0.50")  # 开不起按量
+        await fund_wallet(sm, uid, "0.50")
         body = await create(client, headers, sku_id, key_id, market=MARKET_ON_DEMAND, expect=400)
         assert body["code"] == "INSUFFICIENT_BALANCE"
         async with sm() as s:
@@ -329,7 +326,6 @@ class TestConvertToOnDemand:
         async with sm() as s:
             inst = (await s.execute(select(Instance).where(Instance.uuid == uuid))).scalar_one()
         assert inst.price_hourly == Decimal(inst.spec["base_price_hourly"])
-        # 转按量不删不建 Pod
         assert fake.pods[(f"tenant-{user_id}", uuid)] is pod_before
 
     async def test_repeat_is_idempotent(self, client, sm, fake):
@@ -353,7 +349,6 @@ class TestConvertToOnDemand:
             inst = (await s.execute(select(Instance).where(Instance.uuid == uuid))).scalar_one()
             instance_id, spot_price = inst.id, inst.price_hourly
             base = Decimal(inst.spec["base_price_hourly"])
-            # 造一行本小时的竞价账
             s.add(
                 BillHourly(
                     instance_id=instance_id,
@@ -379,11 +374,10 @@ class TestConvertToOnDemand:
             ).scalar_one()
             after = await wallet.get_balance(s, user_id)
         assert row.unit_price == base
-        assert row.amount == bill_amount(base, 1, row.seconds_used)  # 行内自洽
+        assert row.amount == bill_amount(base, 1, row.seconds_used)
         assert before - after == bill_amount(base, 1, 600) - bill_amount(spot_price, 1, 600)
 
     async def test_lagged_hours_settle_at_spot_price_before_repricing(self, client, sm, fake):
-        """挂了说明:转按量前滞后未结的整点小时被按按量价补扣(应按当时的竞价价,与转包周期同口径)。"""
         from app.modules.billing.models import SettlementWatermark
 
         sku_id = await spot_sku(sm)
@@ -393,7 +387,6 @@ class TestConvertToOnDemand:
         async with sm() as s:
             inst = (await s.execute(select(Instance).where(Instance.uuid == uuid))).scalar_one()
             instance_id, spot_price = inst.id, inst.price_hourly
-            # 整条事件流挪到 2 小时前,水位线停在 3 小时前:h0-2、h0-1 两个整点滞后未结
             await s.execute(
                 update(InstanceEvent)
                 .where(InstanceEvent.instance_id == instance_id)
@@ -420,7 +413,6 @@ class TestConvertToOnDemand:
             )
         lagged = [r for r in rows if r.hour_start < h0]
         assert [r.hour_start for r in lagged] == [h0 - timedelta(hours=2), h0 - timedelta(hours=1)]
-        # 两个滞后小时都按竞价价结;h0-2 从事件时刻起算(小时内部分秒),h0-1 整小时
         assert all(r.unit_price == spot_price and r.seconds_used > 0 for r in lagged)
         assert lagged[1].seconds_used == 3600
 
@@ -485,7 +477,7 @@ class TestGraceWindowGuard:
 
 class TestPreemptedBillingEqualsNormalStop:
     async def test_amount_matches_a_normally_stopped_twin(self, client, sm, fake):
-        """被抢占的实例与自己关机的同款实例出账逐分相等。"""
+        """抢占与主动停机的同款实例单价一致,计费秒数相差不超过一秒。"""
         sku_id = await spot_sku(sm)
         await seed_node_spec(sm, node_name="node-twin", pool_label="kata", gpu_count=8)
         _, victim_uuid, _victim_uid = await running_spot(client, sm, fake, "13922200040", sku_id)
@@ -493,7 +485,6 @@ class TestPreemptedBillingEqualsNormalStop:
             client, sm, fake, "13922200041", sku_id
         )
 
-        # 两台都从本小时开头起跑,窗口完全一致
         start = hour_floor(now_utc())
         async with sm() as s:
             rows = (
@@ -514,7 +505,6 @@ class TestPreemptedBillingEqualsNormalStop:
             await s.execute(update(NodeSpec).values(gpu_count=2, gpu_used=2))
             await s.commit()
 
-        # 一台被抢占,一台用户自己关机,同一时刻
         buyer_headers, _, buyer_key = await funded_user(client, sm, "13922200042", "5000.00")
         await client.post(f"/api/v1/instances/{twin_uuid}/stop", headers=twin_headers)
         await create(client, buyer_headers, sku_id, buyer_key, market=MARKET_ON_DEMAND)
@@ -533,7 +523,6 @@ class TestPreemptedBillingEqualsNormalStop:
         victim_bill = bills[ids[victim_uuid]]
         twin_bill = bills[ids[twin_uuid]]
         assert victim_bill.unit_price == twin_bill.unit_price
-        # 秒数差不超过 1 秒,同秒同额
         assert abs(victim_bill.seconds_used - twin_bill.seconds_used) <= 1
 
     async def test_repricing_never_leaves_an_inconsistent_row_on_a_price_drop(
@@ -564,7 +553,7 @@ class TestPreemptedBillingEqualsNormalStop:
                 s,
                 instance_id=inst.id,
                 user_id=user_id,
-                new_price=Decimal("1.0000"),  # 降价
+                new_price=Decimal("1.0000"),
                 gpu_count=1,
                 at=now_utc(),
             )
@@ -573,5 +562,5 @@ class TestPreemptedBillingEqualsNormalStop:
                 await s.execute(select(BillHourly).where(BillHourly.instance_id == inst.id))
             ).scalar_one()
         assert charged == Decimal("0.00")
-        assert row.unit_price == Decimal("2.0000")  # 整行不动
+        assert row.unit_price == Decimal("2.0000")
         assert row.amount == bill_amount(Decimal("2.0000"), 1, 600)

@@ -1,6 +1,3 @@
-/** 脏表单离开防护核心(不依赖路由库):路由阻断器由各端注入(TanStack useBlocker),刷新与关标签由 beforeunload 兜底;
- *  提交成功或「取消」已确认后调 bypass() 放行;抽屉 / 弹窗自身关闭用 confirmLeave(then)。 */
-
 import { Modal } from "antd";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -11,6 +8,7 @@ export interface LeaveBlocker {
   reset: () => void;
 }
 
+/** 脏表单离开确认:接收路由阻断器,监听 beforeunload;提供的 bypass 不绕过 beforeunload。 */
 export function useLeaveGuardCore(
   dirty: boolean,
   blocker: LeaveBlocker,

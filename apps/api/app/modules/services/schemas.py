@@ -19,22 +19,17 @@ class ServiceSpecIn(BaseModel):
     """一个版本的完整规格(部署与版本更新共用),快照到那一版的实例上,之后不可改。"""
 
     sku_id: int
-    # 0 = CPU 实例;与 SKU 形态的配对在 orchestrator 判
     gpu_count: int = Field(default=1, ge=0, le=8)
     image_ref: str = Field(min_length=1, max_length=256)
-    # with_ssh 时必须非空(validator)
     ssh_key_ids: list[int] = Field(default_factory=list)
     data_disk_id: int | None = None
-    # 服务默认不开 SSH
     with_ssh: bool = False
     container_command: list[str] | None = None
     container_args: list[str] | None = None
-    # 用户环境变量,整包加密落库;env_secret_keys 列出的键在 Pod 侧走 Secret
     env: dict[str, str] | None = None
     env_secret_keys: list[str] | None = None
     service_port: int = Field(ge=1, le=65535)
     health_path: str | None = Field(default=None, max_length=128)
-    # 购买模式(单值,spot 与 subscription 互斥)
     market: Literal["on_demand", "subscription", "spot"] = MARKET_ON_DEMAND
     period: Literal["day", "week", "month", "year"] | None = None
     period_count: int = Field(default=1, ge=1, le=MAX_PERIOD_COUNT)
@@ -48,7 +43,6 @@ class ServiceSpecIn(BaseModel):
             )
         validate_health_path(self.health_path)
         validate_user_env(self.env, self.env_secret_keys)
-        # 开了 SSH 至少一把公钥
         if self.with_ssh and not self.ssh_key_ids:
             raise ValueError(render_message("orchestrator.sshKeyRequired", None))
         return self
@@ -95,7 +89,6 @@ class ServiceOut(BaseModel):
     protocol: str
     require_api_key: bool
     desired_state: str
-    # 派生状态(state.py),不落库
     status: str
     ready: bool
     revision: int

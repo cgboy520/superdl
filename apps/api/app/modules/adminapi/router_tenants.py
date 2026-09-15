@@ -48,9 +48,6 @@ from app.modules.orchestrator import (
 router = APIRouter(tags=["admin"])
 
 
-# ---------- 租户管理(角色:admin / ops) ----------
-
-
 class TenantFreezeRequest(ReasonBody):
     pass
 
@@ -84,7 +81,6 @@ async def admin_list_tenants(
     )
     users = list(page.items)
     q_digits = (q or "").strip()
-    # 纯数字额外按租户 id 精确命中(仅首页注入);id 是 int32,超过 9 位跳过
     if cursor is None and q_digits.isdigit() and len(q_digits) <= 9:
         by_id = None
         try:
@@ -97,7 +93,6 @@ async def admin_list_tenants(
             and all(u.id != by_id.id for u in users)
         ):
             users.insert(0, by_id)
-    # 只聚合本页用户(IN 过滤)
     page_user_ids = [u.id for u in users]
     balances = await billing_service.balances_by_user(session, page_user_ids)
     consumed = await billing_service.consumed_by_user(session, page_user_ids)
@@ -125,7 +120,6 @@ async def admin_list_tenants(
             )
         )
     if realname_hits:
-        # 明文实名的敏感读逐次留痕:落条数与事由,不落内容
         PII_REVEAL_ROWS_TOTAL.labels(kind="tenant_realname").inc(realname_hits)
         mark_audited_read(
             request,
@@ -178,9 +172,6 @@ async def admin_tenant_bills(
     return await billing_service.hourly_bills_page(
         session, user_id, instance_id=instance_id, cursor=cursor, limit=limit
     )
-
-
-# ---------- 租户配额覆盖(读全角色,写 ops;校验链 override → policy → env) ----------
 
 
 async def _tenant_quota_out(session: AsyncSession, user_id: int) -> TenantQuotaOut:
@@ -262,7 +253,6 @@ async def admin_freeze_tenant(
     user_id: int, body: TenantFreezeRequest, session: DbSession, request: Request
 ) -> TenantStatusOut:
     user = await account_service.admin_set_user_status(session, user_id, "frozen")
-    # 封禁同时停机,与 status 变更同一事务;K8s 动作走 outbox
     stopped = await orchestrator_transitions.stop_all_for_user(
         session, user_id, reason="tenant_frozen"
     )
@@ -270,7 +260,6 @@ async def admin_freeze_tenant(
     set_audit_target(
         request, f"user:{user_id}", detail={"reason": body.reason, "instances_stopped": stopped}
     )
-    # 回显停机台数(creating/starting 由巡检收敛,不在此计数)
     return TenantStatusOut(id=user.id, status=user.status, instances_stopped=stopped)
 
 
@@ -279,7 +268,6 @@ async def admin_unfreeze_tenant(
     user_id: int, body: TenantFreezeRequest, session: DbSession, request: Request
 ) -> TenantStatusOut:
     user = await account_service.admin_set_user_status(session, user_id, "active")
-    # 解封不自动开机
     await notify_service.notify(
         session,
         user_id,
@@ -292,9 +280,6 @@ async def admin_unfreeze_tenant(
     await session.commit()
     set_audit_target(request, f"user:{user_id}", detail={"reason": body.reason})
     return TenantStatusOut(id=user.id, status=user.status)
-
-
-# ---------- 账号注销(读 ops/finance/readonly,写仅 admin) ----------
 
 
 @router.get("/deletion-requests", dependencies=[require_roles("ops", "finance", "readonly")])

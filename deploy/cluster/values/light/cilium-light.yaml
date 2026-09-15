@@ -1,14 +1,3 @@
-# light(k3s)覆盖。CNI 路径不要改:k3s 一旦 flannel-backend=none,它生成的 containerd
-# config.toml 里 [plugins.'io.containerd.cri.v1.runtime'.cni] 整段消失,containerd 回落到
-# 自己的默认 /etc/cni/net.d + /opt/cni/bin,正好是 Cilium chart 的默认值。
-# 照 flannel 时期那份配置写成 /var/lib/rancher/k3s/... 反而全节点 "cni plugin not initialized"
-# 单 server 无 VIP:kubeProxyReplacement 下 Cilium 必须绕开 kubernetes Service 直连 server 自身 6443
-# (占位由环境化脚本替换,见 README「路径 B」)
 k8sServiceHost: "CHANGE_ME_K3S_SERVER_IP"
-# 北向 LoadBalancer 仍归 k3s 自带的 ServiceLB(svclb-* DaemonSet,把 Envoy 挂到节点 IP 上):
-# klipper-lb 走 hostPort,kubeProxyReplacement 原生接管 hostPort,两者不冲突。
-# 换成 Cilium LB IPAM + L2 通告要另挑一个空闲 VIP(L2 不能通告节点自身 IP),连带改主域 A 记录与
-# 各机 /etc/hosts;要换时:k3s config 加 `disable: servicelb`、建 CiliumLoadBalancerIPPool 与
-# CiliumL2AnnouncementPolicy,再把这里置 true
 l2announcements:
   enabled: false

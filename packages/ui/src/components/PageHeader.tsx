@@ -13,7 +13,7 @@ export type { FreshnessProps } from "./Freshness";
 export interface PageHeaderProps {
   /** 不传则不渲染标题行(只有面包屑 / 返回的页面:详情页由 EntityHeader 承担标题) */
   title?: ReactNode;
-  /** 一句话描述(≤30 字;政策/口径说明不放这里,进 tooltip 或规则弹窗) */
+  /** 标题下方的描述。 */
   description?: ReactNode;
   /** 右侧动作区(主按钮 + 次按钮) */
   extra?: ReactNode;
@@ -58,7 +58,6 @@ export function PageHeader({ title, description, extra, breadcrumb, back, freshn
           <div style={{ display: "flex", flexDirection: "column", gap: space.xs, minWidth: 0 }}>
             {(title !== undefined || tags) && (
               <Space size={space.sm} wrap align="center">
-                {/* 空标题会被 axe 判为 empty-heading:没有 title 就不渲染 h4 */}
                 {title !== undefined && (
                   <Typography.Title level={4} style={{ margin: 0, fontSize: fontSize.pageTitle }}>
                     {title}

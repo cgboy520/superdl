@@ -42,12 +42,12 @@ async def _settle_rollout(client, sm, fake, headers, svc: dict, rollout: dict) -
     ns = f"tenant-{svc['_user_id']}"
     old_uuid = svc["current_instance"]["uuid"]
     new_uuid = rollout["rollout_instance"]["uuid"]
-    await drain(sm)  # instance.stop(旧) + instance.create(新)
+    await drain(sm)
     fake.finish_delete(ns, old_uuid)
     fake.mark_ready(ns, new_uuid)
-    await reconcile_once(sm)  # 旧 → stopped;新 → running(监听器翻转 + 入队 retire)
-    await drain(sm)  # service.retire → 旧 releasing
-    await reconcile_once(sm)  # 旧 → released
+    await reconcile_once(sm)
+    await drain(sm)
+    await reconcile_once(sm)
     return (await client.get(f"/api/v1/services/{svc['slug']}", headers=headers)).json()
 
 
@@ -90,7 +90,6 @@ class TestRecreate:
         assert rollout["current_instance"]["uuid"] == old_uuid
         new_uuid = rollout["rollout_instance"]["uuid"]
         assert new_uuid != old_uuid
-        # 旧版本同事务关机,事件 reason=rollout
         old = await _instance(sm, old_uuid)
         assert old.status == "stopping"
         async with sm() as session:
@@ -102,7 +101,6 @@ class TestRecreate:
                 ).scalars()
             )
         assert reasons[-1] == "rollout"
-        # 在途期间:再更新 / 停止 / 启动 / 删除全部 409
         for call in (
             client.post(
                 f"/api/v1/services/{slug}/revisions", json=revision_body(svc), headers=headers
@@ -119,16 +117,13 @@ class TestRecreate:
         assert final["revision"] == 2 and final["rollout_instance"] is None
         assert final["current_instance"]["uuid"] == new_uuid
         assert final["slug"] == slug and final["url"] == svc["url"]
-        # 密文沿用:新 Pod 的 Secret 里是 v1 的值;明文项是新值
         pod_spec = fake.pods[(f"tenant-{user_id}", new_uuid)].spec
         assert pod_spec.secret_env["HF_TOKEN"] == "hf_secret_v1"
         assert pod_spec.env["MAX_MODEL_LEN"] == "8192"
         assert final["container"]["env_secret_keys"] == ["HF_TOKEN"]
         assert final["container"]["image_ref"] == V2_IMAGE
-        # Key 跨版本存活
         ok = await client.post(AUTH_URL, headers=bearer)
         assert ok.status_code == 200 and ok.headers["x-superdl-endpoint"] == slug
-        # 旧版本已释放,reason 是 rollout_retire
         old = await _instance(sm, old_uuid)
         assert old.status == "released"
         async with sm() as session:
@@ -141,7 +136,6 @@ class TestRecreate:
                     )
                 ).scalars()
             )
-            # 零重复扣款:旧版本最多一条尾账
             old_bills = await session.scalar(
                 select(func.count()).select_from(BillHourly).where(BillHourly.instance_id == old.id)
             )
@@ -151,7 +145,6 @@ class TestRecreate:
         assert old_reasons[-2:] == ["rollout_retire", "released"]
         assert (old_bills or 0) <= 1
         assert svc_row.current_instance_id != old.id and svc_row.released_at is None
-        # 版本历史两条,降序;实例列表不含服务实例
         revisions = (await client.get(f"/api/v1/services/{slug}/revisions", headers=headers)).json()
         assert [r["uuid"] for r in revisions["items"]] == [new_uuid, old_uuid]
         events = (await client.get(f"/api/v1/services/{slug}/events", headers=headers)).json()
@@ -177,7 +170,6 @@ class TestRecreate:
             ).scalar_one()
             old = await _instance(sm, svc["current_instance"]["uuid"])
             enqueue(session, "service.retire", {"service_id": svc_row.id, "instance_id": old.id})
-            # 指向当前版本的 retire 也是 no-op
             enqueue(
                 session,
                 "service.retire",
@@ -201,14 +193,12 @@ class TestGuards:
         )
         assert sub.status_code == 409
         assert sub.json()["message_key"] == "services.rolloutSubscriptionUnsupported"
-        # 旧版本正在停止(未落定)→ 409 rolloutNeedsSettled
         await client.post(f"/api/v1/services/{slug}/stop", headers=headers)
         unsettled = await client.post(
             f"/api/v1/services/{slug}/revisions", json=revision_body(svc), headers=headers
         )
         assert unsettled.status_code == 409
         assert unsettled.json()["message_key"] == "services.rolloutNeedsSettled"
-        # 沿用一个当前版本没有的密文键 → 400
         await drain(sm)
         fake.finish_delete(f"tenant-{user_id}", svc["current_instance"]["uuid"])
         await reconcile_once(sm)
@@ -218,13 +208,12 @@ class TestGuards:
             headers=headers,
         )
         assert bad.status_code == 400 and bad.json()["message_key"] == "services.envKeepUnknown"
-        # 停机的旧版本可以直接更新
         ok = await client.post(
             f"/api/v1/services/{slug}/revisions", json=revision_body(svc), headers=headers
         )
         assert ok.status_code == 202, ok.text
         old = await _instance(sm, svc["current_instance"]["uuid"])
-        assert old.status == "stopped"  # 停机的旧版本不动,等新版本 running 后释放
+        assert old.status == "stopped"
 
     async def test_failed_rollout_keeps_old_and_allows_start(self, client, sm, fake):
         headers, svc, user_id = await _provision(client, sm, fake, "13900000404")
@@ -242,7 +231,7 @@ class TestGuards:
         saved = settings.creating_timeout_seconds
         settings.creating_timeout_seconds = 0
         try:
-            await reconcile_once(sm)  # 新版本不就绪且已超时 → failed;旧 → stopped
+            await reconcile_once(sm)
         finally:
             settings.creating_timeout_seconds = saved
         assert (await _instance(sm, new_uuid)).status == "failed"
@@ -259,7 +248,6 @@ class TestGuards:
                 )
             ).scalar_one()
         assert note.target_id == slug
-        # 回滚 = 启动上一版本
         started = await client.post(f"/api/v1/services/{slug}/start", headers=headers)
         assert started.status_code == 200, started.text
         await drain(sm)
@@ -298,7 +286,6 @@ class TestGuards:
         assert again.status_code == 200 and again.headers.get("x-idempotent-replay") == "true"
         assert again.json()["revision"] == 2
         assert again.json()["rollout_instance"]["uuid"] == first.json()["rollout_instance"]["uuid"]
-        # 同键异参 → 409
         other = await client.post(
             f"/api/v1/services/{slug}/revisions",
             json=revision_body(svc, image_ref="registry.superdl.local/vllm:0.13.0"),

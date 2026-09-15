@@ -1,4 +1,3 @@
-# 白盒用例:直探模块内部
 # pyright: reportPrivateUsage=false
 from decimal import Decimal
 
@@ -33,8 +32,8 @@ class TestSellablePerGpu:
 
         assert sellable_per_gpu("hami", 5, Decimal("1.15")) == 23
         assert sellable_per_gpu("hami", 50, Decimal("1.50")) == 3
-        assert sellable_per_gpu("kata", 100, Decimal("1.50")) == 1  # 整卡池不折算
-        assert sellable_per_gpu("mig", 100, Decimal("1.50")) == 1  # MIG 硬切分不超卖
+        assert sellable_per_gpu("kata", 100, Decimal("1.50")) == 1
+        assert sellable_per_gpu("mig", 100, Decimal("1.50")) == 1
 
 
 class TestAdminSku:
@@ -54,9 +53,8 @@ class TestAdminSku:
         resp = await client.post("/api/admin/v1/skus", json=body, headers=headers)
         assert resp.status_code == 201, resp.text
         sku_id = resp.json()["id"]
-        assert resp.json()["status"] == "off"  # 默认不上架
+        assert resp.json()["status"] == "off"
 
-        # 台账无匹配节点:force 上架
         resp = await client.patch(
             f"/api/admin/v1/skus/{sku_id}?force=true",
             json={"status": "on", "price_hourly": "2.8000", "reason": "上架调价"},
@@ -84,14 +82,12 @@ class TestAdminSku:
         }
         resp = await client.post("/api/admin/v1/skus", json=body, headers=headers)
         sku_id = resp.json()["id"]
-        # 台账有 mig × H100 Ready:直接上架
         resp = await client.patch(
             f"/api/admin/v1/skus/{sku_id}",
             json={"status": "on", "reason": "上架"},
             headers=headers,
         )
         assert resp.status_code == 200, resp.text
-        # 在售改池 → 409,force 也不放行
         for qs in ("", "?force=true"):
             resp = await client.patch(
                 f"/api/admin/v1/skus/{sku_id}{qs}",
@@ -100,7 +96,6 @@ class TestAdminSku:
             )
             assert resp.status_code == 409, resp.text
             assert resp.json()["message_key"] == "catalog.isolationChangeNeedsOffSale"
-        # 在售改切片同样 409
         resp = await client.patch(
             f"/api/admin/v1/skus/{sku_id}",
             json={"mig_profile": "2g.20gb", "reason": "换切片"},
@@ -108,14 +103,12 @@ class TestAdminSku:
         )
         assert resp.status_code == 409, resp.text
         assert resp.json()["message_key"] == "catalog.isolationChangeNeedsOffSale"
-        # 改其他字段(价格)不受影响
         resp = await client.patch(
             f"/api/admin/v1/skus/{sku_id}",
             json={"price_hourly": "2.6000", "reason": "调价"},
             headers=headers,
         )
         assert resp.status_code == 200, resp.text
-        # 下架后可改池,须连切片一起改
         resp = await client.patch(
             f"/api/admin/v1/skus/{sku_id}",
             json={"status": "off", "reason": "下架"},
@@ -185,7 +178,6 @@ class TestAdminSku:
         )
         assert resp.status_code == 400, resp.text
         assert resp.json()["message_key"] == "catalog.tierPoolMismatch"
-        # 共享档不能落 kata 池
         resp = await client.post(
             "/api/admin/v1/skus",
             json={**base, "name": "假共享", "tier": "shared", "pool_label": "kata"},
@@ -193,7 +185,6 @@ class TestAdminSku:
         )
         assert resp.status_code == 400, resp.text
         assert resp.json()["message_key"] == "catalog.tierPoolMismatch"
-        # mig 池必须带切片;非 mig 池不许带切片
         resp = await client.post(
             "/api/admin/v1/skus",
             json={**base, "name": "无切片 MIG", "tier": "shared", "pool_label": "mig"},

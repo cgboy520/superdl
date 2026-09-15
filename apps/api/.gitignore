@@ -1,4 +1,3 @@
 
-# Claude 会话工作目录
 .claude/worktrees/
 .claude/settings.local.json

@@ -9,7 +9,7 @@
 ## 拉取凭据(不落节点)
 
 - 平台在建实例 Pod / 预热 Job 之前,按生效配置把机器人凭据写成 `superdl-registry-pull`(`kubernetes.io/dockerconfigjson`)托管到平台 ns 与该租户 ns(annotation 指纹相同跳过),Pod / Job 以 `imagePullSecrets` 引用;项目为 public 时不生成、不引用。
-- 平台自身镜像(api / web / admin):首装按 `deploy/app/secrets.example.yaml` 手建同名 Secret;配置中心录入机器人后 worker 按指纹覆写。
+- 平台自身镜像(api / web / admin):首装按 `deploy/README.md`「生产发布流程」手建同名 Secret;配置中心录入机器人后 worker 按指纹覆写。
 - **轮换**:Harbor 生成新 Secret → 管理端「镜像仓库」保存 → 新建一台实例确认拉取成功 → 在 Harbor 撤销旧 Secret;不碰节点。
 - 节点 `registries.yaml`(GPU 节点由 node-join.sh 按平台配置生成;server 节点由 ansible 分发 `deploy/cluster/rke2/registries.yaml`)只承担 Spegel / 代理缓存 mirror / 自签 CA,不含 auth。
 

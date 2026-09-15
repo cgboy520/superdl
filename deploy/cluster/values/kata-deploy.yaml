@@ -1,10 +1,6 @@
-# kata-deploy(dedicated 档)。k8sDistribution 由 helmfile 按档位注入(light=k3s / full=rke2)。
-# DaemonSet 只落 kata 池节点,RuntimeClass 再带 scheduling.nodeSelector;dedicated 下发门禁见 apps/api/app/modules/nodes/service.py。
-# GPU 直通由 gpu-operator 侧负责(vm-passthrough 标签)
 nodeSelector:
   superdl.io/pool: kata
 
-# 只装 qemu 一种 shim(平台申请的 runtime_class 恒为 kata-qemu,apps/api/app/core/gpu_adapter)
 shims:
   disableAll: true
   qemu:
@@ -12,14 +8,13 @@ shims:
     runtimeClass:
       nodeSelector:
         superdl.io/pool: kata
-      overhead:                # VM 开销计入配额
+      overhead:
         memory: "512Mi"
         cpu: "250m"
 
 runtimeClasses:
   enabled: true
-  createDefault: false         # 只要 kata-qemu 这一个具名类,不建裸 "kata" 别名
+  createDefault: false
 
-# NFD 已由 gpu-operator 提供
 node-feature-discovery:
   enabled: false
