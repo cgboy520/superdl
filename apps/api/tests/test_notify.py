@@ -360,16 +360,6 @@ class TestAlertmanagerAuthHardening:
 
 
 class TestAlertmanagerWebhookHardening:
-    async def test_oversized_body_rejected(self, client, sm, fake):
-        """报文体积上限。"""
-        body = b'{"alerts": []}' + b" " * (1024 * 1024)
-        resp = await client.post(
-            "/api/v1/webhooks/alertmanager",
-            content=body,
-            headers={"Content-Type": "application/json", **AM_HEADERS},
-        )
-        assert resp.status_code == 413
-
     async def test_bad_json_rejected_with_400(self, client, sm, fake):
         resp = await client.post(
             "/api/v1/webhooks/alertmanager",

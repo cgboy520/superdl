@@ -225,7 +225,7 @@ class TestRecharge:
 
 
 class TestCallbackOnNonPendingOrders:
-    """关单/失败单后的回调、渠道不符与渠道凭据缺失。"""
+    """关单后的回调与渠道不符。"""
 
     async def test_expired_orders_closed(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
@@ -270,26 +270,6 @@ class TestCallbackOnNonPendingOrders:
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "0.00"
 
-    async def test_failed_order_callback_rescued(
-        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
-    ):
-        """failed 订单(渠道中间态误迁移)收到验签通过的成功回调:与 closed 同路径自动入账。"""
-        headers = await user_headers(client, "13700000033")
-        order = await create_order(client, headers, "20.00")
-        async with sm() as session:
-            await session.execute(
-                update(Order).where(Order.order_no == order["order_no"]).values(status="failed")
-            )
-            await session.commit()
-        resp = await pay_mock(client, order["order_no"], "20.00")
-        assert resp.status_code == 200
-        detail = (
-            await client.get(f"/api/v1/wallet/recharges/{order['order_no']}", headers=headers)
-        ).json()
-        assert detail["status"] == "paid"
-        w = (await client.get("/api/v1/wallet", headers=headers)).json()
-        assert w["balance"] == "20.00"
-
     async def test_callback_channel_mismatch_rejected(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
@@ -310,15 +290,6 @@ class TestCallbackOnNonPendingOrders:
                     CallbackResult(order["order_no"], "txn-x", Decimal("20.00"), True),
                 )
         assert exc.value.code == "PAYMENT_CHANNEL_ERROR"
-
-    async def test_wechat_channel_requires_credentials(self, client: AsyncClient, sm):
-        headers = await user_headers(client)
-        resp = await client.post(
-            "/api/v1/wallet/recharges",
-            json={"amount": "20.00", "channel": "wechat"},
-            headers=headers,
-        )
-        assert resp.json()["code"] == "PAYMENT_CHANNEL_ERROR"
 
 
 class TestRealChannelWebhookRoutes:

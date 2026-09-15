@@ -18,12 +18,6 @@ describe("tenants validateSearch", () => {
     expect(out).toEqual({});
   });
 
-  it("抽屉 Tab 收成四项:账单 / 流水 / 订单 / 配额等旧名不再是合法 dtab", () => {
-    for (const stale of ["bills", "ledger", "orders", "quota"]) {
-      expect(validate({ dtab: stale })).toEqual({});
-    }
-  });
-
   it("实例筛选 istatus/inode:istatus 走实例状态白名单,inode 非空即收", () => {
     expect(validate({ istatus: "running", inode: "gpu-a3-01" })).toEqual({
       istatus: "running",

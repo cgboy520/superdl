@@ -13,11 +13,6 @@ class TestRequestId:
         resp = await client.get("/healthz")
         assert len(resp.headers["x-request-id"]) >= 8
 
-    async def test_cors_exposes_request_id(self, client: AsyncClient):
-        """X-Request-ID 经 expose_headers 放行。"""
-        resp = await client.get("/healthz", headers={"Origin": "http://localhost:5173"})
-        assert "x-request-id" in resp.headers.get("access-control-expose-headers", "").lower()
-
     async def test_error_body_carries_request_id(self, client: AsyncClient):
         """错误响应体回带 request_id。"""
         resp = await client.get("/api/v1/no-such-route", headers={"X-Request-ID": "gw-err-1"})

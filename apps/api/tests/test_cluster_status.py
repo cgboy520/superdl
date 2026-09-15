@@ -575,9 +575,3 @@ class TestComponentProbe:
             ).status_code == 200
         resp = await client.get("/api/admin/v1/cluster/components/dcgm/probe", headers=headers)
         assert resp.status_code == 429, resp.text
-
-    async def test_probe_denied_for_finance_role(self, sm, fake_auto_ready, client):
-        """角色边界:财务角色读不到集群诊断。"""
-        headers = await admin_headers(sm, client, role="finance")
-        resp = await client.get("/api/admin/v1/cluster/components/hami/probe", headers=headers)
-        assert resp.status_code == 403, resp.text

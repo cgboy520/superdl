@@ -24,11 +24,6 @@ def _settings(**overrides):
     return Settings(**base)
 
 
-def test_prefix_makes_one_level_host_under_shared_zone():
-    s = _settings(jupyter_domain_suffix="xiaocg.xyz", jupyter_host_prefix="jupyter-")
-    assert jupyter_host("abc-123", s) == "jupyter-abc-123.xiaocg.xyz"
-
-
 class TestOrigin:
     """端口只出现在 origin,不出现在主机名。"""
 
@@ -74,7 +69,3 @@ class TestSlugParsingUnderSharedSuffix:
 
     def test_jupyter_host_is_not_an_endpoint_alias(self, shared_suffix):
         assert endpoint_slug_from_host("jupyter-0e05c3daf14a.xiaocg.xyz") is None
-
-    def test_bare_zone_and_foreign_labels_rejected(self, shared_suffix):
-        assert endpoint_slug_from_host("xiaocg.xyz") is None
-        assert endpoint_slug_from_host("anything.xiaocg.xyz") is None

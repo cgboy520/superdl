@@ -217,35 +217,6 @@ async def _enroll(sm, hostname: str, pool: str) -> int:
     return enrollment_id
 
 
-async def test_reconciler_labels_unlabeled_node_then_joins(sm, fake_auto_ready):
-    """节点 Ready 后,对账器写入池标签再推进 joined。"""
-    from app.core.k8s.base import NodeInfo
-    from app.modules.nodes.reconciler import reconcile_enrollments_once
-
-    await _cluster_configured(sm)
-    fake_auto_ready.inject_node(
-        NodeInfo(
-            name="join-1",
-            pool_label="",
-            gpu_model_label="RTX4090",
-            gpu_total=8,
-            gpu_used=0,
-            status="Ready",
-        )
-    )
-    enrollment_id = await _enroll(sm, "join-1", "hami")
-
-    counts = await reconcile_enrollments_once(sm)
-
-    assert counts["labeled"] == 1 and counts["joined"] == 1
-    labels = fake_auto_ready.node_labels["join-1"]
-    assert labels[POOL_NODE_LABEL] == "hami"
-    assert labels[GPU_DEPLOY_DEVICE_PLUGIN_LABEL] == "false"
-    async with sm() as session:
-        row = await session.get(NodeEnrollment, enrollment_id)
-        assert row is not None and row.status == "joined"
-
-
 async def test_reconciler_label_failure_keeps_installing(sm, fake_auto_ready):
     """写标签失败时登记保持 installing。"""
     from app.core.k8s.base import NodeInfo

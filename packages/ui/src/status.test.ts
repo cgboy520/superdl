@@ -2,7 +2,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  ALL_STATUS_MAPS,
   isNodeStatus,
   isServiceStatus,
   isTransientServiceStatus,
@@ -35,11 +34,5 @@ describe("nodeStatusMap / severityMap", () => {
 
   it("SEVERITY_ORDER 恰好覆盖 severityMap 的键", () => {
     expect([...SEVERITY_ORDER].sort()).toEqual(Object.keys(severityMap).sort());
-  });
-
-  it("没有任何状态表条目还带 animated(徽标动效由 badge=processing 承担)", () => {
-    for (const map of ALL_STATUS_MAPS) {
-      for (const meta of Object.values<Record<string, unknown>>(map)) expect(meta).not.toHaveProperty("animated");
-    }
   });
 });

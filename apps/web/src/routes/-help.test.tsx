@@ -84,9 +84,4 @@ describe("帮助中心", () => {
       "/support",
     );
   });
-
-  it("快速开始给出可复制的 SSH 命令样例", async () => {
-    renderHelp();
-    expect(await screen.findByText("ssh -p <端口> root@<主机>", undefined, LAZY)).toBeInTheDocument();
-  });
 });

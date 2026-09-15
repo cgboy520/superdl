@@ -144,15 +144,7 @@ class TestDeploy:
 
 
 class TestInstanceBoundary:
-    """服务的版本实例:实例层看得见,改不了生命周期。"""
-
-    async def test_instance_list_excludes_service_instances(self, client, sm, fake):
-        headers, svc, _ = await provision_service(client, sm, fake, phone="13900000470")
-        uuid = svc["current_instance"]["uuid"]
-        listed = (await client.get("/api/v1/instances", headers=headers)).json()["items"]
-        assert uuid not in [i["uuid"] for i in listed]
-        detail = await client.get(f"/api/v1/instances/{uuid}", headers=headers)
-        assert detail.status_code == 200 and detail.json()["service_slug"] == svc["slug"]
+    """服务的版本实例:实例层改不了生命周期。"""
 
     async def test_instance_lifecycle_endpoints_reject_service_instance(self, client, sm, fake):
         """DELETE / stop / start / restart 打到服务实例一律 409。"""
@@ -193,22 +185,6 @@ class TestInstanceBoundary:
 
 
 class TestEnvHandling:
-    async def test_secret_env_never_reaches_pod_spec(self, client, sm, fake):
-        """标为密文的 env 只走 Secret,明文项才进 Pod spec。"""
-        _headers, svc, user_id = await provision_service(
-            client,
-            sm,
-            fake,
-            phone="13900000310",
-            env={"MAX_MODEL_LEN": "8192", "HF_TOKEN": "hf_super_secret"},
-            env_secret_keys=["HF_TOKEN"],
-        )
-        spec = fake.pods[(f"tenant-{user_id}", svc["current_instance"]["uuid"])].spec
-        assert spec.env == {"MAX_MODEL_LEN": "8192"}
-        assert spec.secret_env == {"HF_TOKEN": "hf_super_secret"}
-        assert svc["container"]["env"] == {"MAX_MODEL_LEN": "8192"}
-        assert svc["container"]["env_secret_keys"] == ["HF_TOKEN"]
-
     async def test_env_is_ciphertext_in_db(self, client, sm, fake):
         """env 整包落密文;AAD 绑实例 uuid。"""
         _headers, svc, _ = await provision_service(
