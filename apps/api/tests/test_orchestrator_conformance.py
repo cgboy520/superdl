@@ -11,7 +11,7 @@ from kubernetes import client as k8s_client
 
 from app.core.k8s.base import K8sOrchestrator
 from app.core.k8s.fake import FakeOrchestrator
-from tests.helpers import use_kubeconfig
+from tests.helpers import use_kubeconfig, wait_pvc_bound
 
 
 @dataclass
@@ -75,6 +75,7 @@ class TestDataDiskContract:
             pvc: Any = backend.real.core.read_namespaced_persistent_volume_claim(name, ns)
             assert pvc.spec.resources.requests["storage"] == "1Gi"
             assert pvc.spec.access_modes == ["ReadWriteMany"]
+            await wait_pvc_bound(backend.real.core, ns, name)
 
         await backend.impl.ensure_data_disk(ns, name, 2)
         if backend.kind == "fake":

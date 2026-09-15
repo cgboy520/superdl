@@ -22,7 +22,7 @@ from app.core.k8s.base import (
     jupyter_service_name,
 )
 from app.core.k8s.real import MANAGED_LABEL, PRIVATE_CIDRS, RealOrchestrator
-from tests.helpers import use_kubeconfig
+from tests.helpers import use_kubeconfig, wait_pvc_bound
 
 pytestmark = [
     pytest.mark.real_k8s,
@@ -124,6 +124,7 @@ async def test_namespace_security_baseline(orch: RealOrchestrator, namespace: st
     assert created.spec.resources.requests["storage"] == "10Gi"
     assert created.spec.access_modes == ["ReadWriteMany"]
     await orch.ensure_data_disk(namespace, pvc_name, 10)
+    await wait_pvc_bound(orch.core, namespace, pvc_name)
     await orch.ensure_data_disk(namespace, pvc_name, 20)
     grown: Any = orch.core.read_namespaced_persistent_volume_claim(pvc_name, namespace)
     assert grown.spec.resources.requests["storage"] == "20Gi"
