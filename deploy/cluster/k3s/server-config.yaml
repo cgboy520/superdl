@@ -7,10 +7,15 @@ disable:
 secrets-encryption: true
 agent-token: "CHANGE_ME_AGENT_TOKEN"
 embedded-registry: true
+# 单 server 也用内嵌 etcd(已有 SQLite 库的 server 带此项重启即自动迁入);快照只落本机,异机加密由 k3s/state-backup.sh 承担
+cluster-init: true
+etcd-snapshot-schedule-cron: "0 */6 * * *"
+etcd-snapshot-retention: 28
+etcd-snapshot-dir: /var/lib/rancher/k3s/server/db/snapshots
 kube-apiserver-arg:
   - enable-admission-plugins=NodeRestriction
   - audit-policy-file=/etc/rancher/k3s/audit-policy.yaml
   - audit-log-path=/var/lib/rancher/k3s/server/logs/audit.log
   - audit-log-maxage=30
   - audit-log-maxsize=100
-  - audit-log-maxbackup=10
+  - audit-log-maxbackup=100

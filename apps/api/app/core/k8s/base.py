@@ -2,10 +2,14 @@
 import kubernetes 客户端。"""
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Literal, Protocol
 
 INSTANCE_DISK_STORAGE_CLASS = "topolvm-provisioner"
 DATA_DISK_STORAGE_CLASS = "superdl-cephfs"
+
+WORKSPACE_CONTAINER = "workspace"
+STARTUP_PROBE_PERIOD_SECONDS = 10
 
 GATEWAY_NAMESPACE = "superdl"
 GATEWAY_NAME = "superdl"
@@ -73,6 +77,7 @@ class InstancePodSpec:
     service_host: str | None = None
     health_path: str | None = None
     with_ssh: bool = True
+    startup_failure_threshold: int = 90
 
 
 class NodePortTaken(Exception):
@@ -85,7 +90,8 @@ class NodePortTaken(Exception):
 
 @dataclass(frozen=True)
 class PodStatus:
-    """Pod 状态;deleting 表示已请求删除但对象仍存在,独立于 phase。"""
+    """Pod 状态;deleting 表示已请求删除但对象仍存在,独立于 phase。
+    started_at = workspace 容器首次进入 running 的时刻(aware-UTC;未起过为 None)。"""
 
     exists: bool
     ready: bool = False
@@ -95,6 +101,7 @@ class PodStatus:
     namespace: str = ""
     name: str = ""
     labels: dict[str, str] = field(default_factory=dict)
+    started_at: datetime | None = None
 
 
 ComponentState = Literal["ok", "degraded", "down", "disabled", "unknown"]
@@ -307,7 +314,7 @@ class K8sOrchestrator(Protocol):
         ...
 
     async def list_nodes(self, include_unlabeled: bool = False) -> list["NodeInfo"]:
-        """节点视图;默认仅带 superdl.io/pool 标签的节点,include_unlabeled=True 含未打标节点。"""
+        """节点视图;默认仅带池标签(POOL_NODE_LABEL)的节点,include_unlabeled=True 含未打标节点。"""
         ...
 
     async def set_node_labels(self, node_name: str, labels: dict[str, str | None]) -> None:
@@ -349,7 +356,17 @@ class K8sOrchestrator(Protocol):
 
 
 GPU_MODEL_NODE_LABEL = "superdl.io/gpu-model"
-POOL_NODE_LABEL = "superdl.io/pool"
+# 池标签放 node-restriction.kubernetes.io/ 前缀:kubelet 不能自打,只由平台 SA 经准入策略③白名单写。
+POOL_NODE_LABEL = "node-restriction.kubernetes.io/superdl-pool"
+# 老键:pool_node_labels 收敛时删除。
+LEGACY_POOL_NODE_LABEL = "superdl.io/pool"
+# infra 判据:平台组件落点标签或控制面角色标签任一在;这类节点不纳入未登记隔离。
+INFRA_NODE_LABEL = "node-restriction.kubernetes.io/superdl-infra"
+INFRA_ROLE_LABELS = (
+    "node-role.kubernetes.io/control-plane",
+    "node-role.kubernetes.io/master",
+    "node-role.kubernetes.io/etcd",
+)
 GPU_WORKLOAD_CONFIG_LABEL = "nvidia.com/gpu.workload.config"
 GPU_DEPLOY_DEVICE_PLUGIN_LABEL = "nvidia.com/gpu.deploy.device-plugin"
 MANAGED_LABEL = "superdl.io/managed"
@@ -372,3 +389,4 @@ class NodeInfo:
     model_label_current: str = ""
     driver_version_label: str = ""
     cuda_version_label: str = ""
+    infra: bool = False

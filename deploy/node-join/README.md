@@ -24,5 +24,5 @@
 脚本读到的系统路径一律经 `SUPERDL_JOIN_*` 环境变量覆盖(状态目录 / `/etc` / loop 镜像目录 / IOMMU 分组目录),bats 在 setup 里把它们指向临时目录。**新增读宿主路径的代码必须照此加覆盖点。**
 数值类默认值同口径:`SUPERDL_JOIN_NVCTK_MIN_VERSION`(nvidia-container-toolkit 版本下限,默认 1.17.8)与 `SUPERDL_JOIN_POD_PIDS_LIMIT`(kubelet 单 Pod PID 上限,默认 4096,与 rke2/k3s server 配置同值)。
 
-覆盖:参数错误 / 全流程免重启 / 令牌不进 argv 与完成后落盘清理 / 完成后重跑直退 / --force 重装 / 断点续跑(令牌切换)/ 重启断点(oneshot + token 0600)/ 管道执行重拉脚本指纹校验 / 安装器 pin 不符拒执行 / 重启循环保护 / kata GRUB IOMMU / k3s 模式落位(含 podPidsLimit)/ 安装源 cn 与 official / NVMe 未登记不兜底 / loop 显式登记 / toolkit 版本下限(达标跳过、未装安装、装完仍低即失败、env 覆盖生效)。
+覆盖:参数错误 / 全流程免重启 / 令牌不进 argv 与完成后落盘清理 / join token 含换行或为 server node-token 时拒写 agent config / 完成后重跑直退 / --force 重装 / 断点续跑(令牌切换)/ 重启断点(oneshot + token 0600)/ 管道执行重拉脚本指纹校验 / 安装器 pin 不符拒执行 / 重启循环保护 / kata GRUB IOMMU / k3s 模式落位(含 podPidsLimit)/ 安装源 cn 与 official / NVMe 未登记不兜底 / loop 显式登记 / toolkit 版本下限(达标跳过、未装安装、装完仍低即失败、env 覆盖生效)。
 实机验证项见 `deploy/cluster/runbooks/cluster-validation.md`;节点域说明见 `docs/reference/nodes.md`。

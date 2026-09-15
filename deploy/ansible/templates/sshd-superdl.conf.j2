@@ -1,0 +1,13 @@
+# deploy/ansible/harden.yml 渲染;10- 前缀排在 50-cloud-init.conf 之前(sshd 取首个出现的值)
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+PermitEmptyPasswords no
+PermitRootLogin prohibit-password
+UsePAM yes
+MaxAuthTries 3
+LoginGraceTime 20
+X11Forwarding no
+{% if ssh_allow_users | length > 0 %}
+AllowUsers {{ ssh_allow_users | join(' ') }}
+{% endif %}

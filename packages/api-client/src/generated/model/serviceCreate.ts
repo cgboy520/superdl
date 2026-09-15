@@ -41,6 +41,7 @@ export interface ServiceCreate {
      */
   service_port: number;
   sku_id: number;
+  /** @maxItems 50 */
   ssh_key_ids?: number[];
   with_ssh?: boolean;
 }

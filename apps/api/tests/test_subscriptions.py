@@ -1166,3 +1166,70 @@ class TestUnstartedPrepay:
                 )
             ).scalar_one()
             assert "退回" in note.content and "未产生任何费用" not in note.content
+
+
+def _gauge_value(gauge) -> float:
+    return float(gauge.collect()[0].samples[0].value)
+
+
+class TestExpiredSweep:
+    async def test_expiry_during_starting_is_stopped_next_round(self, client, sm, fake):
+        """到期落在 starting 窗口:本轮不动、订阅转 expired、指标计 1;实例跑起来后下一轮停机再冻结。
+        挂了说明「creating/starting 漏过到期巡检即永久免费运行」回来了。"""
+        from app.core.metrics import SUBSCRIPTION_UNPAID_RUNNING
+
+        headers, uuid, user_id, _, _ = await provision_subscription(
+            client, sm, fake, "13911100201", period="day"
+        )
+        ns = f"tenant-{user_id}"
+        await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
+        await drain(sm)
+        await reconcile_once(sm)
+        assert (await get_instance(client, headers, uuid))["status"] == "stopped"
+        fake.auto_ready = False
+        resp = await client.post(f"/api/v1/instances/{uuid}/start", headers=headers)
+        assert resp.status_code == 200, resp.text
+        await drain(sm)
+        assert (await get_instance(client, headers, uuid))["status"] == "starting"
+        async with sm() as s:
+            await s.execute(
+                update(Subscription)
+                .where(Subscription.user_id == user_id)
+                .values(expires_at=now_utc() - timedelta(minutes=1))
+            )
+            await s.commit()
+
+        counts = await subscription_patrol(sm)
+        assert counts["stopped"] == 0 and counts["frozen"] == 0
+        assert (await get_instance(client, headers, uuid))["status"] == "starting"
+        async with sm() as s:
+            sub = (
+                await s.execute(select(Subscription).where(Subscription.user_id == user_id))
+            ).scalar_one()
+            assert sub.status == "expired"
+        assert _gauge_value(SUBSCRIPTION_UNPAID_RUNNING) == 1
+
+        fake.mark_ready(ns, uuid)
+        await reconcile_once(sm)
+        assert (await get_instance(client, headers, uuid))["status"] == "running"
+        counts = await subscription_patrol(sm)
+        assert counts["stopped"] == 1
+        async with sm() as s:
+            inst = (await s.execute(select(Instance).where(Instance.uuid == uuid))).scalar_one()
+            assert inst.status == "stopping"
+        await drain(sm)
+        await reconcile_once(sm)
+        assert (await get_instance(client, headers, uuid))["status"] == "stopped"
+        counts = await subscription_patrol(sm)
+        assert counts["frozen"] == 1
+        assert (await get_instance(client, headers, uuid))["status"] == "frozen"
+        assert _gauge_value(SUBSCRIPTION_UNPAID_RUNNING) == 0
+
+    async def test_renewed_instance_is_not_swept(self, client, sm, fake):
+        """续费后的 running 实例在保,不被到期扫描停机。"""
+        headers, uuid, _user_id, _, _ = await provision_subscription(
+            client, sm, fake, "13911100202"
+        )
+        counts = await subscription_patrol(sm)
+        assert counts["stopped"] == 0
+        assert (await get_instance(client, headers, uuid))["status"] == "running"

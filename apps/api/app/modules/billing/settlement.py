@@ -40,6 +40,10 @@ from app.modules.orchestrator import queries as orchestrator_queries
 logger = get_logger(__name__)
 
 RUNNING = "running"
+CREATING = "creating"
+STARTING = "starting"
+FAILED = "failed"
+OCCUPIED_SINCE_KEY = "occupied_since"
 
 MAX_CATCHUP_HOURS = 72
 MAX_CATCHUP_DAYS = 14
@@ -61,14 +65,34 @@ def truncated_at(
     return edge_at
 
 
-def _billing_view(
+def occupied_since(
+    from_status: str | None, to_status: str, meta: Mapping[str, Any] | None
+) -> datetime | None:
+    """creating/starting → failed 边带 `occupied_since` 时返回该 UTC 时刻
+    (服务型实例 health_path 未就绪但容器已实际运行的起点);其余边返回 None。"""
+    if to_status != FAILED or from_status not in (CREATING, STARTING) or not meta:
+        return None
+    raw = meta.get(OCCUPIED_SINCE_KEY)
+    if not raw:
+        return None
+    return ensure_utc(datetime.fromisoformat(str(raw)))
+
+
+def billing_view(
     events: list[tuple[datetime, str | None, str, Any]],
 ) -> list[tuple[datetime, str | None, str]]:
-    """事件流水 → 计费视图(3 元组),退出边按 truncated_at 截断。"""
-    return [
-        (truncated_at(created_at, from_status, meta), from_status, to_status)
-        for created_at, from_status, to_status, meta in events
-    ]
+    """事件流水 → 计费视图(3 元组):退出边按 truncated_at 截断;
+    带 occupied_since 的失败边展开成「occupied_since 进 running + 边时刻离开 running」两条。"""
+    view: list[tuple[datetime, str | None, str]] = []
+    for created_at, from_status, to_status, meta in events:
+        edge_at = ensure_utc(created_at)
+        since = occupied_since(from_status, to_status, meta)
+        if since is not None and since < edge_at:
+            view.append((since, from_status, RUNNING))
+            view.append((edge_at, RUNNING, to_status))
+            continue
+        view.append((truncated_at(created_at, from_status, meta), from_status, to_status))
+    return view
 
 
 def running_seconds_in_window(
@@ -229,8 +253,8 @@ async def settle_instance_window(
 ) -> Decimal:
     """先持实例行锁,再重建事件秒数并入账;窗口须在单一自然小时内,调用方负责提交。"""
     await orchestrator_queries.lock_instance_for_billing(session, instance_id)
-    rows = await orchestrator_queries.billing_events_before(session, instance_id, window_end)
-    seconds = running_seconds_in_window(_billing_view(rows), window_start, window_end)
+    rows = await orchestrator_queries.billing_events(session, instance_id)
+    seconds = running_seconds_in_window(billing_view(rows), window_start, window_end)
     return await upsert_hour_bill(
         session,
         instance_id=instance_id,

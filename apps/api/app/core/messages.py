@@ -42,7 +42,8 @@ MESSAGES: dict[str, str] = {
     "adminapi.alertAlreadyAcked": "该告警已确认",
     "adminapi.announcementAlreadyRevoked": "公告已撤回,无需重复操作",
     "adminapi.adjustSecondReviewer": "调账必须由第二位管理员复核",
-    "adminapi.adjustReviewerTooNew": "复核账号在调账发起后才创建,不构成双人复核",
+    "adminapi.adjustReviewerTooNew": "复核账号创建时间不早于调账发起前 24 小时,不构成双人复核",
+    "adminapi.reviewerNotIndependent": "复核账号在调账发起前没有任何管理操作记录,不构成独立复核",
     "adminapi.badDayFormat": "day 格式应为 YYYY-MM-DD",
     "adminapi.adminUsernameTaken": "该用户名已存在",
     "adminapi.cannotChangeSelf": "不能停用或降低自己的权限,请让另一位超级管理员操作",
@@ -184,6 +185,7 @@ MESSAGES: dict[str, str] = {
     "common.rateLimited": "尝试过于频繁,请稍后再试",
     "common.retryableConflict": "请求与另一个进行中的操作冲突,请重试",
     "common.validation": "参数校验失败",
+    "disks.capacityQuota": "数据盘总容量将超过上限({max} GB),请删除不用的盘或联系客服提额",
     "disks.countQuota": "数据盘数量已达上限({max} 块),请删除不用的盘或联系客服提额",
     "disks.realNameRequired": "按监管要求,开通存储前需完成实名认证",
     "disks.expandNeedsActive": "仅正常状态的数据盘可以扩容",
@@ -229,6 +231,10 @@ MESSAGES: dict[str, str] = {
         "环境变量名「{name}」由平台占用(JUPYTER_ / SUPERDL_ 前缀与 AUTHORIZED_KEYS),请换一个"
     ),
     "orchestrator.envSecretKeyUnknown": "标为密文的环境变量「{name}」不在环境变量列表里",
+    "orchestrator.envTooMany": "环境变量最多 {max} 个",
+    "orchestrator.envEntryTooLong": (
+        "环境变量「{name}」过长:名称不超过 {key_max} 字符,值不超过 {value_max} 字符"
+    ),
     "orchestrator.forceStopNeedsRunning": "仅运行中的实例可以强制停止",
     "orchestrator.healthPathSlash": "健康检查路径须以 / 开头",
     "orchestrator.frozenNeedsRecharge": "实例已因欠费冻结,充值解冻后可开机",

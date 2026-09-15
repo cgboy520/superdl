@@ -29,7 +29,7 @@
   "adminapi": {
     "adjustAlreadyProcessed": "调账单已处理",
     "adjustNotZero": "调账金额不能为 0",
-    "adjustReviewerTooNew": "复核账号在调账发起后才创建,不构成双人复核",
+    "adjustReviewerTooNew": "复核账号创建时间不早于调账发起前 24 小时,不构成双人复核",
     "adjustSecondReviewer": "调账必须由第二位管理员复核",
     "adminUsernameTaken": "该用户名已存在",
     "alertAlreadyAcked": "该告警已确认",
@@ -41,6 +41,7 @@
     "mfaNotBound": "该账号未绑定动态口令",
     "mfaResetSelfForbidden": "不能重置本人的动态口令:请用恢复码登录或找另一位超管",
     "mfaTicketInvalid": "登录票据已过期,请重新输入账号密码",
+    "reviewerNotIndependent": "复核账号在调账发起前没有任何管理操作记录,不构成独立复核",
     "roleRequired": "需要角色:{{roles}}",
     "roleRequiredAdmin": "需要超级管理员权限",
     "smsTestFailed": "发送失败:{{message}}",
@@ -141,6 +142,7 @@
     "validation": "参数校验失败"
   },
   "disks": {
+    "capacityQuota": "数据盘总容量将超过上限({{max}} GB),请删除不用的盘或联系客服提额",
     "countQuota": "数据盘数量已达上限({{max}} 块),请删除不用的盘或联系客服提额",
     "expandNeedsActive": "仅正常状态的数据盘可以扩容",
     "inUseDelete": "数据盘挂载中,请先释放对应实例",
@@ -185,9 +187,11 @@
     "convertNeedsRunningOrStopped": "只有运行中或已关机的实例可以转包周期",
     "convertNotOnDemand": "只有按量计费的实例可以转包周期",
     "cpuSkuNoGpu": "该规格为 CPU 实例(不带 GPU),不能选择 GPU 数量",
+    "envEntryTooLong": "环境变量「{{name}}」过长:名称不超过 {{key_max}} 字符,值不超过 {{value_max}} 字符",
     "envKeyInvalid": "环境变量名「{{name}}」不合法:只能用字母、数字和下划线,且不能以数字开头",
     "envKeyReserved": "环境变量名「{{name}}」由平台占用(JUPYTER_ / SUPERDL_ 前缀与 AUTHORIZED_KEYS),请换一个",
     "envSecretKeyUnknown": "标为密文的环境变量「{{name}}」不在环境变量列表里",
+    "envTooMany": "环境变量最多 {{max}} 个",
     "forceStopNeedsRunning": "仅运行中的实例可以强制停止",
     "frozenNeedsRecharge": "实例已因欠费冻结,充值解冻后可开机",
     "gpuCountRange": "GPU 数量须在 1~{{max}} 之间",

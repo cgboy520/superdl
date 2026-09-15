@@ -1,4 +1,5 @@
-"""余额巡检对「渠道冲正冻结」钱包一律走可用余额(balance − frozen)。"""
+"""余额巡检对「渠道冲正冻结」钱包一律走可用余额(balance − frozen);
+数据盘冻结删除钟回款不归零,再次冻结接着走。"""
 
 from datetime import timedelta
 from decimal import Decimal
@@ -10,9 +11,9 @@ from app.core.timeutil import now_utc
 from app.modules.billing import wallet
 from app.modules.billing.models import Wallet
 from app.modules.billing.patrol import balance_patrol
-from app.modules.orchestrator.models import Instance
+from app.modules.orchestrator.models import DataDisk, Instance
 from app.modules.orchestrator.reconciler import reconcile_once
-from tests.helpers import drain, get_instance, provision_running
+from tests.helpers import create_disk, drain, funded_user, get_instance, provision_running
 
 pytestmark = pytest.mark.usefixtures("fake")
 
@@ -91,3 +92,83 @@ class TestFrozenWalletArrears:
         notes = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
         warn = next(n for n in notes if n["title"] == "余额不足预警")
         assert "¥30.00" in warn["content"]
+
+
+async def _drain_wallet(sm, user_id: int) -> None:
+    async with sm() as session:
+        balance = await wallet.get_balance(session, user_id)
+        await wallet.debit(
+            session, user_id, balance, type_="adjust", remark="drain", allow_negative=True
+        )
+        await session.commit()
+
+
+async def _disk_row(sm, uuid: str) -> DataDisk:
+    async with sm() as session:
+        return (await session.execute(select(DataDisk).where(DataDisk.uuid == uuid))).scalar_one()
+
+
+async def _set_disk(sm, uuid: str, **values) -> None:
+    async with sm() as session:
+        await session.execute(update(DataDisk).where(DataDisk.uuid == uuid).values(**values))
+        await session.commit()
+
+
+async def _freeze_disk(client, sm, phone: str) -> tuple[str, int]:
+    """建盘 → 欠费 → grace → frozen。返回 (disk uuid, user_id)。"""
+    headers, user_id, _key = await funded_user(client, sm, phone)
+    disk = await create_disk(client, headers)
+    await _drain_wallet(sm, user_id)
+    await balance_patrol(sm)
+    await _set_disk(sm, disk["uuid"], grace_started_at=now_utc() - timedelta(days=8))
+    await balance_patrol(sm)
+    assert (await _disk_row(sm, disk["uuid"])).status == "frozen"
+    return disk["uuid"], user_id
+
+
+class TestFrozenDiskClock:
+    async def test_refreeze_resumes_original_deadline(self, client, sm, fake):
+        """冻结第 29 天充值、再欠费:frozen_started_at 沿用,按原截止日删除,而不是再等 30 天。"""
+        uuid, user_id = await _freeze_disk(client, sm, "13500000060")
+        t0 = now_utc() - timedelta(days=29)
+        await _set_disk(sm, uuid, frozen_started_at=t0)
+
+        async with sm() as session:
+            await wallet.credit(session, user_id, Decimal("10.00"), type_="recharge")
+            await session.commit()
+        await balance_patrol(sm)
+        row = await _disk_row(sm, uuid)
+        assert row.status == "active"
+        assert row.frozen_started_at == t0 and row.grace_ended_at is not None
+
+        await _drain_wallet(sm, user_id)
+        await balance_patrol(sm)
+        assert (await _disk_row(sm, uuid)).status == "grace"
+        await balance_patrol(sm)
+        row = await _disk_row(sm, uuid)
+        assert row.status == "frozen" and row.frozen_started_at == t0
+
+        await balance_patrol(sm)
+        assert (await _disk_row(sm, uuid)).status == "frozen"
+        await _set_disk(sm, uuid, frozen_started_at=t0 - timedelta(days=2))
+        await balance_patrol(sm)
+        assert (await _disk_row(sm, uuid)).status == "deleting"
+
+    async def test_long_paid_up_period_resets_frozen_clock(self, client, sm, fake):
+        """回款后保持正常超过 disk_frozen_days:再次冻结从头起算。"""
+        uuid, user_id = await _freeze_disk(client, sm, "13500000061")
+        t0 = now_utc() - timedelta(days=29)
+        await _set_disk(sm, uuid, frozen_started_at=t0)
+        async with sm() as session:
+            await wallet.credit(session, user_id, Decimal("10.00"), type_="recharge")
+            await session.commit()
+        await balance_patrol(sm)
+        await _set_disk(sm, uuid, grace_ended_at=now_utc() - timedelta(days=31))
+
+        await _drain_wallet(sm, user_id)
+        await balance_patrol(sm)
+        assert (await _disk_row(sm, uuid)).frozen_started_at is None
+        await balance_patrol(sm)
+        row = await _disk_row(sm, uuid)
+        assert row.status == "frozen"
+        assert row.frozen_started_at is not None and row.frozen_started_at > t0 + timedelta(days=28)

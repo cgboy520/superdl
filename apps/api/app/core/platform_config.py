@@ -243,9 +243,11 @@ SETTING_SPECS: dict[str, SettingSpec] = {
     "cluster_join_token": SettingSpec(
         "cluster",
         "secret",
-        pattern=r"[A-Za-z0-9:._~+/=\-]{16,512}",
+        # 负前瞻拒绝 server node-token 形态(K10<64hex>::server:<pw>),node-join.sh 同规则再拒
+        pattern=r"(?!K10[0-9A-Fa-f]{64}::server:)[A-Za-z0-9:._~+/=\-]{16,512}",
         max_len=512,
-        hint="专用 agent token(server 的 .../server/agent-token;禁止填 node-token)",
+        hint="专用 agent token(server config 的 agent-token 值);"
+        "不得填 server node-token(K10…::server:…),只许 agent token",
     ),
     "cluster_agent_version": SettingSpec(
         "cluster",
@@ -348,6 +350,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
     "max_gpus_per_user": _num("int", "1", "1024"),
     "max_vcpus_per_user": _num("int", "1", "4096"),
     "max_disks_per_user": _num("int", "1", "1000"),
+    "max_disk_gb_per_user": _num("int", "10", "1048576", "每用户数据盘总容量上限"),
     "gpu_node_cpu_instance_vcpu_cap": _num("int", "0", "1024"),
     "period_discount_day": _num("int", "50", "100"),
     "period_discount_week": _num("int", "50", "100"),
@@ -433,6 +436,7 @@ class RuntimeConfig:
     max_gpus_per_user: int
     max_vcpus_per_user: int
     max_disks_per_user: int
+    max_disk_gb_per_user: int
     gpu_node_cpu_instance_vcpu_cap: int
     period_discount_day: int
     period_discount_week: int

@@ -14,7 +14,9 @@ def mark_idempotent_replay(response: Response) -> None:
 
 
 def client_ip(request: Request) -> str | None:
-    """直连对端 IP(限流键/合规存证;不读 X-Forwarded-For)。"""
+    """客户端 IP(限流键 / 审计 / 合规存证)。取 scope["client"]:uvicorn 的 ProxyHeadersMiddleware
+    已按 FORWARDED_ALLOW_IPS 自右向左跳过可信代理改写它;每一跳前置代理 / CDN 回源地址都必须列入
+    该网段,否则全部公网请求坍缩成同一个 IP(deploy/app/k8s/00-namespace-config.yaml)。"""
     return request.client.host if request.client else None
 
 

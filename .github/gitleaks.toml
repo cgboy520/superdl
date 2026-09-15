@@ -43,6 +43,21 @@ regexTarget = "line"
 paths = ['''apps/api/tests/test_k8s_real_units\.py''']
 regexes = ['''secret_key_ref\.name == "jupyter-inst-1"''']
 
+# 历史提交里已存在的那份泄漏哈希(已作废,禁止复用):只放行这几个 SHA 里的这一串;新提交再出现仍拦
+[[allowlists]]
+description = "superdl-leaked-registry-htpasswd 的历史提交"
+condition = "AND"
+regexTarget = "line"
+commits = [
+  "7a8316a1325b4a05de3742e3e079e6c1e7b20d9b",
+  "91ae3b1364e047015e8b273a3ffefd7f48055edd",
+  "eab47256a185f5b0d8c1b71ef418ccc3f111b50d",
+  "bcba30c724c36af21b2169454c8e6c5de066cdee",
+  "0bbf5403082957d771607458c3a94ed41e7253c2",
+  "298593134d351607cc12b3ea62232c6dc9480e31",
+]
+regexes = ['''\$2y\$05\$0JWd7XLpA2WBKjaBnw4KqupCZERl2Yx3cg9giAruPDxz1km4OCfSW''']
+
 # 禁止将此 bcrypt 哈希用于真实账号。
 [[rules]]
 id = "superdl-leaked-registry-htpasswd"

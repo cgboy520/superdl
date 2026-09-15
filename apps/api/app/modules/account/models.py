@@ -105,7 +105,8 @@ class AccountDeletionRequest(Base):
 
 
 class SmsCode(Base):
-    """一次性短信验证码;code_hash 仅存带密钥摘要,禁止明文入库。"""
+    """一次性短信验证码;code_hash 仅存带密钥摘要,禁止明文入库。
+    used_at = 任何作废(消费成功 / 失败 5 次 / 发送失败);consumed_at 只在校验成功时写。"""
 
     __tablename__ = "sms_codes"
 
@@ -115,5 +116,6 @@ class SmsCode(Base):
     purpose: Mapped[str] = mapped_column(String(16))
     expires_at: Mapped[datetime]
     used_at: Mapped[datetime | None]
+    consumed_at: Mapped[datetime | None]
     attempts: Mapped[int] = mapped_column(default=0)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

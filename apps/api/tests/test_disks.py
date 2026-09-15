@@ -22,6 +22,7 @@ from tests.helpers import (
     fund_wallet,
     funded_user,
     get_instance,
+    set_platform_setting,
 )
 
 pytestmark = pytest.mark.usefixtures("fake")
@@ -415,7 +416,7 @@ class TestDiskArrearsChain:
         await balance_patrol(sm)
         d = (await client.get("/api/v1/disks", headers=headers)).json()[0]
         assert d["status"] == "active"
-        assert d["frozen_started_at"] is None and d["grace_started_at"] is not None
+        assert d["frozen_started_at"] is not None and d["grace_started_at"] is not None
 
 
 class TestDiskQuota:
@@ -431,6 +432,36 @@ class TestDiskQuota:
         )
         assert resp.status_code == 400
         assert resp.json()["message_key"] == "disks.countQuota"
+
+    async def test_capacity_quota_caps_total_size_on_create_and_expand(self, client, sm, fake):
+        """策略 max_disk_gb_per_user 限未删除盘 size_gb 之和:建盘与扩容都校验,删盘释放额度。"""
+        headers, _user_id, _key = await funded_user(client, sm, "13500000041")
+        await set_platform_setting(sm, "max_disk_gb_per_user", "250")
+        d1 = await create_disk(client, headers, name="d1", size_gb=100)
+        d2 = await create_disk(client, headers, name="d2", size_gb=100)
+        resp = await client.post(
+            "/api/v1/disks", json={"name": "d3", "size_gb": 100}, headers=headers
+        )
+        assert resp.status_code == 400
+        assert resp.json()["message_key"] == "disks.capacityQuota"
+        assert resp.json()["params"] == {"max": 250}
+
+        resp = await client.patch(
+            f"/api/v1/disks/{d1['uuid']}", json={"size_gb": 151}, headers=headers
+        )
+        assert resp.status_code == 400
+        assert resp.json()["message_key"] == "disks.capacityQuota"
+        resp = await client.patch(
+            f"/api/v1/disks/{d1['uuid']}", json={"size_gb": 150}, headers=headers
+        )
+        assert resp.status_code == 200, resp.text
+
+        await client.delete(f"/api/v1/disks/{d2['uuid']}", headers=headers)
+        await drain(sm)
+        resp = await client.post(
+            "/api/v1/disks", json={"name": "d3", "size_gb": 100}, headers=headers
+        )
+        assert resp.status_code == 201, resp.text
 
 
 class TestDiskIdempotency:

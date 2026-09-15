@@ -121,11 +121,64 @@ async def stop_all_for_user(session: AsyncSession, user_id: int, *, reason: str)
 SettleDiskPending = Callable[[AsyncSession, DataDisk], Awaitable[object]]
 
 
+def _frozen_clock_forgiven(disk: DataDisk, now: datetime, frozen_days: int) -> bool:
+    """回款后保持正常超过 disk_frozen_days,冻结删除钟才归零;否则下次冻结接着上次走。"""
+    return disk.grace_ended_at is not None and now - disk.grace_ended_at > timedelta(
+        days=frozen_days
+    )
+
+
+def _recover_disk(disk: DataDisk, now: datetime) -> bool:
+    """回款:grace / frozen → active,记 grace_ended_at;frozen_started_at 保留。"""
+    if disk.status not in ("grace", "frozen"):
+        return False
+    disk.status = "active"
+    disk.grace_ended_at = now
+    return True
+
+
+async def _advance_disk_arrears(
+    session: AsyncSession,
+    disk: DataDisk,
+    now: datetime,
+    *,
+    grace_days: int,
+    frozen_days: int,
+    settle_pending: SettleDiskPending,
+) -> bool:
+    """欠费:active → grace → frozen → deleting;grace 钟不归零,frozen 钟只在归零后重新起算。"""
+    if disk.status == "active":
+        await settle_pending(session, disk)
+        disk.status = "grace"
+        if disk.grace_started_at is None:
+            disk.grace_started_at = now
+        if _frozen_clock_forgiven(disk, now, frozen_days):
+            disk.frozen_started_at = None
+        disk.grace_ended_at = None
+        return True
+    if disk.status == "grace" and disk.grace_started_at is not None:
+        if now - disk.grace_started_at <= timedelta(days=grace_days):
+            return False
+        disk.status = "frozen"
+        if disk.frozen_started_at is None:
+            disk.frozen_started_at = now
+        return True
+    if disk.status == "frozen" and disk.frozen_started_at is not None:
+        if now - disk.frozen_started_at <= timedelta(days=frozen_days):
+            return False
+        disk.status = "deleting"
+        enqueue(session, "disk.deprovision", {"disk_id": disk.id})
+        logger.warning("disk_arrears_wipe_scheduled", disk_id=disk.id)
+        return True
+    return False
+
+
 async def arrears_transition_disks(
     session: AsyncSession, user_id: int, in_arrears: bool, *, settle_pending: SettleDiskPending
 ) -> int:
     """欠费巡检钩子:按可用余额推进 / 回退该用户数据盘的欠费链,返回变更数。
-    grace_started_at 首次进入宽限后不清零;frozen_started_at 每次进入 frozen 重新起算。
+    grace_started_at 首次进入宽限后不清零;frozen_started_at 回款不清零,再次冻结接着上次的钟走,
+    只有回款后保持正常超过 disk_frozen_days 才归零重新起算。
     """
     policies = await get_runtime_config(session)
     now = now_utc()
@@ -142,28 +195,14 @@ async def arrears_transition_disks(
     )
     for disk in disks:
         if not in_arrears:
-            if disk.status in ("grace", "frozen"):
-                disk.status = "active"
-                disk.frozen_started_at = None
-                disk.grace_ended_at = now
-                changed += 1
+            changed += _recover_disk(disk, now)
             continue
-        if disk.status == "active":
-            await settle_pending(session, disk)
-            disk.status = "grace"
-            if disk.grace_started_at is None:
-                disk.grace_started_at = now
-            disk.grace_ended_at = None
-            changed += 1
-        elif disk.status == "grace" and disk.grace_started_at is not None:
-            if now - disk.grace_started_at > timedelta(days=policies.disk_grace_days):
-                disk.status = "frozen"
-                disk.frozen_started_at = now
-                changed += 1
-        elif disk.status == "frozen" and disk.frozen_started_at is not None:
-            if now - disk.frozen_started_at > timedelta(days=policies.disk_frozen_days):
-                disk.status = "deleting"
-                enqueue(session, "disk.deprovision", {"disk_id": disk.id})
-                changed += 1
-                logger.warning("disk_arrears_wipe_scheduled", disk_id=disk.id)
+        changed += await _advance_disk_arrears(
+            session,
+            disk,
+            now,
+            grace_days=policies.disk_grace_days,
+            frozen_days=policies.disk_frozen_days,
+            settle_pending=settle_pending,
+        )
     return changed

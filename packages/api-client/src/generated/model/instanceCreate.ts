@@ -28,6 +28,9 @@ export interface InstanceCreate {
      */
   period_count?: number;
   sku_id: number;
-  /** @minItems 1 */
+  /**
+     * @minItems 1
+     * @maxItems 50
+     */
   ssh_key_ids: number[];
 }

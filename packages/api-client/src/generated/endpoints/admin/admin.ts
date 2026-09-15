@@ -2314,7 +2314,8 @@ export const getAdminUpdatePoliciesApiAdminV1PoliciesPutUrl = () => {
 }
 
 /**
- * 在线调整策略参数(即时生效;只收 policy 组的键)。审计 detail 记变更前后值与原因。
+ * 在线调整策略参数(仅 admin,每管理员 20 次/时;即时生效;只收 policy 组的键)。
+ * 审计 detail 记变更前后值与原因;敏感键相对变化 ≥50% 同事务落 critical 管理端告警。
  * @summary Admin Update Policies
  */
 export const adminUpdatePoliciesApiAdminV1PoliciesPut = async (policyUpdateRequest: PolicyUpdateRequest, options?: Parameters<typeof customFetch>[1]): Promise<UpdatedKeysOut> => {
@@ -2652,6 +2653,7 @@ export const getAdminCreateSkuApiAdminV1SkusPostUrl = () => {
 }
 
 /**
+ * 建 SKU:仅 admin,每管理员 20 次/时。
  * @summary Admin Create Sku
  */
 export const adminCreateSkuApiAdminV1SkusPost = async (skuCreate: SkuCreate, options?: Parameters<typeof customFetch>[1]): Promise<SkuAdminOut> => {
@@ -2714,6 +2716,7 @@ export const getAdminUpdateSkuApiAdminV1SkusSkuIdPatchUrl = (skuId: number,
 }
 
 /**
+ * 改 SKU:仅 admin,每管理员 20 次/时;改价告警规则见 catalog.service。
  * @summary Admin Update Sku
  */
 export const adminUpdateSkuApiAdminV1SkusSkuIdPatch = async (skuId: number,
