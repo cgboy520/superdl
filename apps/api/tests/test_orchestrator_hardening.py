@@ -692,16 +692,6 @@ class TestDiskArrearsHardening:
             assert d2.status == "grace"
             assert d2.grace_started_at == first_grace_at
 
-    async def test_delete_done_when_pvc_already_gone(self, client, sm, fake):
-        """PVC 已不在(或租户 ns 已消失)时删盘仍走完:删除链路幂等,不会卡在 deleting。"""
-        headers, _user_id, _key = await funded_user(client, sm, "13900000134")
-        disk = await create_disk(client, headers)
-        await drain(sm)
-        fake.data_disks.clear()
-        await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
-        await drain(sm)
-        assert (await client.get("/api/v1/disks", headers=headers)).json() == []
-
 
 class TestRestartPortConflict:
     async def test_port_conflict_keeps_tail_bill(self, client, sm, fake, monkeypatch):

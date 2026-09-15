@@ -79,7 +79,6 @@ describe("mulPrice", () => {
     expect(mulPrice("0.98", 3)).toBe("2.9400");
     expect(mulPrice("0.0001", 8)).toBe("0.0008");
   });
-  it("空值兜底", () => {});
 });
 
 describe.each([

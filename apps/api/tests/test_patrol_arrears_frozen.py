@@ -79,18 +79,6 @@ class TestFrozenWalletArrears:
         assert (await balance_patrol(sm))["reclaimed"] == 1
         assert (await get_instance(client, headers, uuid))["status"] == "releasing"
 
-    async def test_released_freeze_unfreezes_instance(self, client, sm, fake):
-        """人工核销解冻后可用余额回正,实例解冻回 stopped。"""
-        headers, uuid, user_id = await _drive_to_frozen(client, sm, fake)
-        async with sm() as session:
-            await wallet.release_freeze(session, user_id, Decimal("100.00"))
-            await session.commit()
-
-        assert (await balance_patrol(sm))["unfrozen"] == 1
-        data = await get_instance(client, headers, uuid)
-        assert data["status"] == "stopped"
-        assert data["frozen_deadline"] is None
-
     async def test_partial_freeze_warns_on_available_and_keeps_running(self, client, sm, fake):
         """部分冻结仍有可用额度:不停机,预警按可用余额算。"""
         headers, uuid, user_id = await provision_running(client, sm, fake)

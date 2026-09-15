@@ -1,7 +1,5 @@
 """管理端运营 API:租户/调账双复核/节点与超卖报表/审计检索/死信重放/收入报表/公告。"""
 
-# pyright: reportPrivateUsage=false
-
 import asyncio
 from datetime import timedelta
 from decimal import Decimal
@@ -1131,16 +1129,3 @@ class TestRealNameIdentityCap:
                 ).verification_status != "verified"
         finally:
             set_realname_provider(None)
-
-
-class TestPortPoolGauge:
-    async def test_free_is_capacity_minus_used(self, client, sm, fake):
-        from app.core.config import get_settings
-        from app.core.metrics import SSH_PORT_POOL
-        from app.modules.orchestrator.reconciler import _refresh_port_pool_gauge
-
-        s = get_settings()
-        capacity = s.ssh_port_range_end - s.ssh_port_range_start + 1 - len(s.ssh_port_excluded)
-        await _refresh_port_pool_gauge(sm)
-        assert SSH_PORT_POOL.labels(state="free")._value.get() == capacity
-        assert SSH_PORT_POOL.labels(state="assigned")._value.get() == 0

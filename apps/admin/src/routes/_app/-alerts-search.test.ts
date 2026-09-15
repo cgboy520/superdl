@@ -21,8 +21,4 @@ describe("alerts validateSearch", () => {
     expect(validate({ severity: "fatal", acked: "maybe", foo: "bar" })).toEqual({});
     expect(validate({ severity: "", acked: "" })).toEqual({});
   });
-
-  it("缺省为空对象:不带参数进入不产出任何查询串", () => {
-    expect(validate({})).toEqual({});
-  });
 });

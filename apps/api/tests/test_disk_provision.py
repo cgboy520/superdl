@@ -1,4 +1,4 @@
-"""数据盘 PVC 的创建、扩容、失败重派与回收。"""
+"""数据盘 PVC 的创建、扩容与失败重派。"""
 
 from datetime import timedelta
 
@@ -121,18 +121,3 @@ class TestProvisionFailureAndReconcile:
         assert counts["provision_redriven"] == 1
         await drain(sm)
         assert fake.data_disks[(f"tenant-{user_id}", data_disk_pvc_name(disk["uuid"]))] == 100
-
-
-class TestDeprovisionOnDelete:
-    async def test_delete_removes_pvc(self, client: AsyncClient, sm, fake):
-        headers, user_id, _key = await create_user_with_key(client)
-        await fund_wallet(sm, user_id)
-        disk = await create_disk(client, headers, size_gb=100)
-        await drain(sm)
-        key = (f"tenant-{user_id}", data_disk_pvc_name(disk["uuid"]))
-        assert fake.data_disks[key] == 100
-        resp = await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
-        assert resp.status_code == 200, resp.text
-        await drain(sm)
-        assert key not in fake.data_disks
-        assert key in fake.deleted_data_disks

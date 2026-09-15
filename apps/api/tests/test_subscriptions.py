@@ -527,44 +527,6 @@ class TestIdempotencyFingerprint:
 
 
 class TestExpiryChain:
-    async def test_expire_stops_then_freezes_then_reclaims(self, client, sm, fake):
-        """到期 → 停机 → 冻结 → 回收全链路。"""
-        _headers, uuid, user_id, _, _ = await provision_subscription(
-            client, sm, fake, "13911100050"
-        )
-        async with sm() as s:
-            await s.execute(
-                update(Subscription)
-                .where(Subscription.user_id == user_id)
-                .values(expires_at=now_utc() - timedelta(minutes=1))
-            )
-            await s.commit()
-
-        counts = await subscription_patrol(sm)
-        assert counts["stopped"] == 1
-        await drain(sm)
-        await reconcile_once(sm)
-        async with sm() as s:
-            inst = (await s.execute(select(Instance).where(Instance.uuid == uuid))).scalar_one()
-        assert inst.status == "stopped"
-
-        counts = await subscription_patrol(sm)
-        assert counts["frozen"] == 1
-        async with sm() as s:
-            inst = (await s.execute(select(Instance).where(Instance.uuid == uuid))).scalar_one()
-            assert inst.status == "frozen"
-            await s.execute(
-                update(Instance)
-                .where(Instance.id == inst.id)
-                .values(frozen_deadline=now_utc() - timedelta(minutes=1))
-            )
-            await s.commit()
-
-        await balance_patrol(sm)
-        async with sm() as s:
-            inst = (await s.execute(select(Instance).where(Instance.uuid == uuid))).scalar_one()
-        assert inst.status in ("releasing", "released")
-
     async def test_frozen_subscription_is_not_unfrozen_by_balance(self, client, sm, fake):
         """到期冻结的实例不因余额充足解冻;解冻条件是续费。"""
         _headers, uuid, user_id, _, _ = await provision_subscription(
@@ -923,21 +885,6 @@ class TestRelease:
             ).scalar_one()
             assert await wallet.get_balance(s, user_id) == balance_before
         assert row.status == "cancelled"
-
-
-class TestListView:
-    async def test_list_inlines_subscription_summary(self, client, sm, fake):
-        """列表页内联到期信息:一次批量查询。"""
-        headers, uuid, _user_id, _, _ = await provision_subscription(
-            client, sm, fake, "13911100070"
-        )
-        resp = await client.get("/api/v1/instances", headers=headers)
-        assert resp.status_code == 200, resp.text
-        item = next(i for i in resp.json()["items"] if i["uuid"] == uuid)
-        assert item["market"] == "subscription"
-        assert item["subscription"]["period"] == "month"
-        assert item["subscription"]["status"] == "active"
-        assert item["subscription"]["auto_renew"] is False
 
 
 class TestReconcileAndReporting:

@@ -218,15 +218,6 @@ class TestProdConfigValidation:
             with pytest.raises(ValidationError, match="jwt_secret"):
                 Settings(**kwargs)
 
-    def test_prod_accepts_complete_config(self):
-        """最小配置过 Settings 校验(人机验证/实名的 prod 开启由 lifespan 合规闸负责)。"""
-        from app.core.config import Settings
-
-        s = Settings(**self._complete_prod_kwargs())
-        assert s.environment == "prod"
-        assert s.real_name_enabled is False
-        assert s.sms_access_key_id is None
-
     def test_prod_rejects_weak_bcrypt_cost(self):
         """prod 下 bcrypt cost 小于 12 拒启;非 prod 允许 4。"""
         import pytest

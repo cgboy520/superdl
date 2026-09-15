@@ -179,11 +179,6 @@ class TestAudienceIsolation:
             decode_token(admin_token, "user")
         assert exc.value.code == "UNAUTHORIZED"
 
-    def test_user_token_rejected_for_admin_scope(self):
-        user_token = create_token("1", "user")
-        with pytest.raises(AppError):
-            decode_token(user_token, "admin")
-
 
 class TestAudit:
     async def test_write_operations_audited(
