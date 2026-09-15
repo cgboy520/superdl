@@ -182,6 +182,8 @@ import type {
 import {
   skipToken,
   useInfiniteQuery,
+  type InfiniteData,
+  type Query,
   useMutation,
   useQuery,
   type SkipToken,
@@ -279,7 +281,8 @@ function useKeyedQuery<T>(
   return { ...q, queryKey };
 }
 
-/** 游标分页 useInfiniteQuery 骨架;fetcher 传 null = 条件不满足不取数(skipToken)。结果附带 queryKey。 */
+/** 游标分页 useInfiniteQuery 骨架;fetcher 传 null = 条件不满足不取数(skipToken)。结果附带 queryKey。
+ *  轮询只在停留于第一页时进行:refetch 会把已加载的每一页都重拉一遍,翻页后自动刷新即停,靠手动刷新。 */
 function useCursorPages<TPage extends CursorPage, P extends CursorParams>(
   key: readonly unknown[],
   fetcher: ((params?: P) => Promise<TPage>) | null,
@@ -296,7 +299,8 @@ function useCursorPages<TPage extends CursorPage, P extends CursorParams>(
     queryKey: key,
     enabled: opts?.enabled ?? true,
     refetchOnWindowFocus: opts?.refetchOnWindowFocus,
-    refetchInterval: opts?.refetchInterval,
+    refetchInterval: (query: Query<TPage, Error, InfiniteData<TPage, string | undefined>>) =>
+      (query.state.data?.pages.length ?? 1) > 1 ? false : (opts?.refetchInterval ?? false),
     initialPageParam: undefined as string | undefined,
     queryFn:
       fetcher === null

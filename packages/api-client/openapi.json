@@ -10365,6 +10365,10 @@
             "schema": {
               "anyOf": [
                 {
+                  "enum": [
+                    "admin_alert",
+                    "gpu_fault"
+                  ],
                   "type": "string"
                 },
                 {

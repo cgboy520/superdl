@@ -40,10 +40,12 @@ const ALERT_TYPE_LABEL = {
   admin_alert: "alerts.typeAdminAlert",
   gpu_fault: "alerts.typeGpuFault",
 } as const;
-const ALERT_TYPES = Object.keys(ALERT_TYPE_LABEL) as (keyof typeof ALERT_TYPE_LABEL)[];
+type AlertType = keyof typeof ALERT_TYPE_LABEL;
+const ALERT_TYPES = Object.keys(ALERT_TYPE_LABEL) as AlertType[];
+const isAlertType = (v: unknown): v is AlertType => typeof v === "string" && v in ALERT_TYPE_LABEL;
 
 export const Route = createFileRoute("/_app/alerts")({
-  validateSearch: (search: Record<string, unknown>): { severity?: string; acked?: string; type?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { severity?: string; acked?: string; type?: AlertType } => ({
     severity:
       typeof search.severity === "string" && (SEVERITIES as readonly string[]).includes(search.severity)
         ? search.severity
@@ -52,10 +54,7 @@ export const Route = createFileRoute("/_app/alerts")({
       typeof search.acked === "string" && (ACK_FILTERS as readonly string[]).includes(search.acked)
         ? search.acked
         : undefined,
-    type:
-      typeof search.type === "string" && (ALERT_TYPES as readonly string[]).includes(search.type)
-        ? search.type
-        : undefined,
+    type: isAlertType(search.type) ? search.type : undefined,
   }),
   component: AlertsPage,
 });
@@ -95,7 +94,7 @@ function AlertsPage() {
     }
   };
   const setFilters = useCallback(
-    (next: { severity?: string; acked?: string; type?: string }) =>
+    (next: { severity?: string; acked?: string; type?: AlertType }) =>
       void navigate({ to: "/alerts", replace: true, search: (prev) => ({ ...prev, ...next }) }),
     [navigate],
   );

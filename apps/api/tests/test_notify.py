@@ -387,6 +387,8 @@ class TestAlertAck:
             await client.get("/api/admin/v1/alerts", params={"type": "gpu_fault"}, headers=ops)
         ).json()["items"]
         assert faults and all(a["type"] == "gpu_fault" for a in faults)
+        bad = await client.get("/api/admin/v1/alerts", params={"type": "typo"}, headers=ops)
+        assert bad.status_code == 422, "表外的 type 必须 422,不能当成空结果"
 
     async def test_ack_non_alert_404(self, client, sm, fake):
         """普通站内信不可确认:404。"""

@@ -115,7 +115,7 @@ async def _ack_usernames(session: AsyncSession, rows: "list[Notification]") -> d
 async def admin_alerts(
     session: DbSession,
     severity: str | None = None,
-    alert_type: str | None = Query(default=None, alias="type"),
+    alert_type: Literal["admin_alert", "gpu_fault"] | None = Query(default=None, alias="type"),
     acked: bool | None = None,
     cursor: str | None = Cursor,
     limit: int | None = Limit,
