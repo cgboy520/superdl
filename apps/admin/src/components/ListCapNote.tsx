@@ -10,7 +10,6 @@ export const LIST_CAPS = {
   invoices: 200,
   deletions: 200,
   announcements: 200,
-  alerts: 50,
 } as const;
 
 export function ListCapNote({ rows, cap, action }: { rows: number; cap: number; action?: ReactNode }) {

@@ -284,13 +284,19 @@ function useCursorPages<TPage extends CursorPage, P extends CursorParams>(
   key: readonly unknown[],
   fetcher: ((params?: P) => Promise<TPage>) | null,
   params: Omit<P, "cursor" | "limit"> | undefined,
-  opts?: { enabled?: boolean; limit?: number; refetchOnWindowFocus?: boolean },
+  opts?: {
+    enabled?: boolean;
+    limit?: number;
+    refetchOnWindowFocus?: boolean;
+    refetchInterval?: number | false;
+  },
 ) {
   const limit = opts?.limit ?? 50;
   const q = useInfiniteQuery({
     queryKey: key,
     enabled: opts?.enabled ?? true,
     refetchOnWindowFocus: opts?.refetchOnWindowFocus,
+    refetchInterval: opts?.refetchInterval,
     initialPageParam: undefined as string | undefined,
     queryFn:
       fetcher === null
@@ -470,13 +476,23 @@ export function useReconciliation(day: string) {
   });
 }
 
-/** 告警流:severity 服务端过滤;enabled=false 不取数。 */
+/** 告警流首页(顶栏铃铛 / 总览卡片):服务端过滤,只取第一页;enabled=false 不取数。 */
 export function useAlerts(
   params?: AdminAlertsApiAdminV1AlertsGetParams,
   options?: { refetchInterval?: number | false; enabled?: boolean },
 ) {
   return useKeyedQuery([...adminKeys.alerts, params], () => adminAlertsApiAdminV1AlertsGet(params), {
     enabled: options?.enabled,
+    refetchInterval: options?.refetchInterval,
+  });
+}
+
+/** 告警中心:游标分页,severity / type / 确认状态全在服务端过滤。 */
+export function useAlertPages(
+  params?: Omit<AdminAlertsApiAdminV1AlertsGetParams, "cursor" | "limit">,
+  options?: { refetchInterval?: number | false },
+) {
+  return useCursorPages([...adminKeys.alerts, "pages", params], adminAlertsApiAdminV1AlertsGet, params, {
     refetchInterval: options?.refetchInterval,
   });
 }

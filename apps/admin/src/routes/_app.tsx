@@ -61,10 +61,10 @@ function AlertBell() {
   const { message } = App.useApp();
   const qc = useQueryClient();
   const [popoverOpen, setPopoverOpen] = useState(false);
-  const alertsQ = useAlerts(undefined, { enabled: popoverOpen });
+  const alertsQ = useAlerts({ limit: 50 }, { enabled: popoverOpen });
   const { data: unread, isError: unreadError } = useAlertUnreadCount({ refetchInterval: POLL.steady });
   const ack = useAckAlertWithFeedback();
-  const alerts: AlertRow[] = alertsQ.data ?? [];
+  const alerts: AlertRow[] = alertsQ.data?.items ?? [];
   const ackRaw = useAckAlert();
   const [ackAllPending, setAckAllPending] = useState(false);
   const unacked = alerts.filter((a) => a.acked_at == null);

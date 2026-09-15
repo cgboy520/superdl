@@ -7,4 +7,8 @@
 
 export type AdminAlertsApiAdminV1AlertsGetParams = {
 severity?: string | null;
+type?: string | null;
+acked?: boolean | null;
+cursor?: string | null;
+limit?: number | null;
 };

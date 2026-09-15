@@ -68,7 +68,10 @@ export default interface Resources {
       "colTime": "时间",
       "colTitle": "标题",
       "empty": "当前筛选下没有告警",
-      "title": "告警中心"
+      "title": "告警中心",
+      "typeAdminAlert": "平台告警",
+      "typeFilter": "告警类型",
+      "typeGpuFault": "GPU 故障"
     },
     "app": {
       "title": "SuperDL 管理控制台"

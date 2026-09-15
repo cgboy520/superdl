@@ -231,7 +231,7 @@ class TestAlertmanagerWebhook:
         assert any(r["type"] == "gpu_fault" for r in rows)
 
         ah = await admin_headers(sm, client, role="ops")
-        alerts = (await client.get("/api/admin/v1/alerts", headers=ah)).json()
+        alerts = (await client.get("/api/admin/v1/alerts", headers=ah)).json()["items"]
         assert any(a["title"] == "GPUXidCriticalError" for a in alerts)
 
     async def test_token_enforced_when_configured(self, client, sm, fake, monkeypatch):
@@ -267,7 +267,7 @@ class TestAlertAck:
     async def test_ack_records_actor_and_time(self, client, sm, fake):
         await client.post("/api/v1/webhooks/alertmanager", json=AM_PAYLOAD, headers=AM_HEADERS)
         ops = await admin_headers(sm, client, role="ops")
-        alerts = (await client.get("/api/admin/v1/alerts", headers=ops)).json()
+        alerts = (await client.get("/api/admin/v1/alerts", headers=ops)).json()["items"]
         target = next(a for a in alerts if a["title"] == "GPUXidCriticalError")
         assert target["acked_at"] is None
         assert target["target_kind"] == "node" and target["target_id"] == "gpu-01"
@@ -294,7 +294,7 @@ class TestAlertAck:
         assert body["count"] == 3
         assert body["critical_count"] == 2
 
-        alerts = (await client.get("/api/admin/v1/alerts", headers=ops)).json()
+        alerts = (await client.get("/api/admin/v1/alerts", headers=ops)).json()["items"]
         gpu = next(a for a in alerts if a["type"] == "gpu_fault")
         assert gpu["target_kind"] == "tenant" and gpu["target_id"] == str(user["user"]["id"])
         resp = await client.post(f"/api/admin/v1/alerts/{gpu['id']}/ack", headers=ops)
@@ -320,13 +320,73 @@ class TestAlertAck:
         ops = await admin_headers(sm, client, role="ops")
         critical = (
             await client.get("/api/admin/v1/alerts", params={"severity": "critical"}, headers=ops)
-        ).json()
+        ).json()["items"]
         assert len(critical) == 2
         assert all(a["severity"] == "critical" for a in critical)
         warning = (
             await client.get("/api/admin/v1/alerts", params={"severity": "warning"}, headers=ops)
-        ).json()
+        ).json()["items"]
         assert [a["title"] for a in warning] == ["管理员完成二要素(TOTP)绑定"]
+
+    async def test_acked_filter_and_paging_reach_older_rows(self, client, sm, fake):
+        """确认状态在库里过滤、游标能翻到更早的告警:否则超出单页的异常在管理端永远看不到。"""
+        async with sm() as session:
+            for i in range(25):
+                session.add(
+                    Notification(
+                        user_id=None,
+                        type="admin_alert",
+                        severity="warning",
+                        title=f"告警{i:02d}",
+                        content="x",
+                        dedup_key=f"t-page:{i}",
+                    )
+                )
+            await session.commit()
+        ops = await admin_headers(sm, client, role="ops")
+
+        first = (await client.get("/api/admin/v1/alerts?limit=10", headers=ops)).json()
+        assert len(first["items"]) == 10 and first["next_cursor"]
+        oldest_seen = first["items"][-1]["id"]
+        second = (
+            await client.get(
+                "/api/admin/v1/alerts",
+                params={"limit": 10, "cursor": first["next_cursor"]},
+                headers=ops,
+            )
+        ).json()
+        assert len(second["items"]) == 10
+        assert all(a["id"] < oldest_seen for a in second["items"])
+
+        target = first["items"][0]["id"]
+        assert (
+            await client.post(f"/api/admin/v1/alerts/{target}/ack", headers=ops)
+        ).status_code == 200
+        acked = (
+            await client.get("/api/admin/v1/alerts", params={"acked": True}, headers=ops)
+        ).json()
+        assert [a["id"] for a in acked["items"]] == [target]
+        unacked = (
+            await client.get(
+                "/api/admin/v1/alerts", params={"acked": False, "limit": 100}, headers=ops
+            )
+        ).json()
+        assert target not in [a["id"] for a in unacked["items"]]
+        assert all(a["acked_at"] is None for a in unacked["items"])
+
+    async def test_type_filter(self, client, sm, fake):
+        """类型过滤在库里做:租户 GPU 故障与平台告警能分开看。"""
+        user = await register(client, "13900000993")
+        await client.post(
+            "/api/v1/webhooks/alertmanager",
+            json=am_payload_for(user["user"]["id"]),
+            headers=AM_HEADERS,
+        )
+        ops = await admin_headers(sm, client, role="ops")
+        faults = (
+            await client.get("/api/admin/v1/alerts", params={"type": "gpu_fault"}, headers=ops)
+        ).json()["items"]
+        assert faults and all(a["type"] == "gpu_fault" for a in faults)
 
     async def test_ack_non_alert_404(self, client, sm, fake):
         """普通站内信不可确认:404。"""

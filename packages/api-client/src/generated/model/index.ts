@@ -241,6 +241,7 @@ export * from './overviewOut';
 export * from './overviewOutInstancesByStatus';
 export * from './overviewPoolOut';
 export * from './pageAdjustmentOut';
+export * from './pageAdminAlertOut';
 export * from './pageAdminInstanceOut';
 export * from './pageAdminOrderOut';
 export * from './pageAdminRefundOut';

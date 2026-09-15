@@ -1,4 +1,4 @@
-/** 告警中心:FilterBar(severity 服务端过滤、确认状态客户端过滤,入 URL);表格勾选未确认项批量确认;深链与确认闭环走 alertLink(ops/admin 可写)。 */
+/** 告警中心:FilterBar(severity / 类型 / 确认状态全走服务端过滤,入 URL)+ 游标翻页;表格勾选未确认项批量确认;深链与确认闭环走 alertLink(ops/admin 可写)。 */
 
 import {
   controlWidth,
@@ -12,6 +12,7 @@ import {
   useUrlFilters,
 } from "@superdl/ui";
 import {
+  CursorTable,
   EmptyState,
   EmptyValue,
   FilterBar,
@@ -19,26 +20,30 @@ import {
   Mono,
   PageContainer,
   StatusTag,
-  TableErrorEmpty,
 } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { App, Button, Select, Space, Table, Typography } from "antd";
+import { App, Button, Select, Space, Typography } from "antd";
 import type { TableColumnsType } from "antd";
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { adminKeys, type AlertRow, useAckAlert, useAlerts } from "../../api";
+import { adminKeys, type AlertRow, useAckAlert, useAlertPages } from "../../api";
 import { BulkBar, runBulk } from "../../components/BulkBar";
-import { LIST_CAPS, ListCapNote } from "../../components/ListCapNote";
 import { alertLink, useAckAlertWithFeedback } from "../../lib/alertLink";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 const SEVERITIES = ["info", "warning", "critical"] as const;
 const ACK_FILTERS = ["unacked", "acked"] as const;
+/** 告警流的两类来源(与后端 notify.service.ALERT_STREAM_TYPES 同表)→ 文案键。 */
+const ALERT_TYPE_LABEL = {
+  admin_alert: "alerts.typeAdminAlert",
+  gpu_fault: "alerts.typeGpuFault",
+} as const;
+const ALERT_TYPES = Object.keys(ALERT_TYPE_LABEL) as (keyof typeof ALERT_TYPE_LABEL)[];
 
 export const Route = createFileRoute("/_app/alerts")({
-  validateSearch: (search: Record<string, unknown>): { severity?: string; acked?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { severity?: string; acked?: string; type?: string } => ({
     severity:
       typeof search.severity === "string" && (SEVERITIES as readonly string[]).includes(search.severity)
         ? search.severity
@@ -46,6 +51,10 @@ export const Route = createFileRoute("/_app/alerts")({
     acked:
       typeof search.acked === "string" && (ACK_FILTERS as readonly string[]).includes(search.acked)
         ? search.acked
+        : undefined,
+    type:
+      typeof search.type === "string" && (ALERT_TYPES as readonly string[]).includes(search.type)
+        ? search.type
         : undefined,
   }),
   component: AlertsPage,
@@ -56,15 +65,17 @@ function AlertsPage() {
   const navigate = useNavigate({ from: "/alerts" });
   const role = useAdminRole();
   const writable = canWriteOps(role);
-  const { severity, acked } = Route.useSearch();
+  const { severity, acked, type } = Route.useSearch();
   const autoRefresh = useAutoRefresh(POLL.steady);
-  const alertsQ = useAlerts(severity ? { severity } : undefined, {
-    refetchInterval: autoRefresh.refetchInterval,
-  });
-  const loaded = alertsQ.data ?? [];
-  const rows = loaded.filter((a) =>
-    acked === "acked" ? a.acked_at != null : acked === "unacked" ? a.acked_at == null : true,
+  const alertsQ = useAlertPages(
+    {
+      ...(severity ? { severity } : {}),
+      ...(type ? { type } : {}),
+      ...(acked ? { acked: acked === "acked" } : {}),
+    },
+    { refetchInterval: autoRefresh.refetchInterval },
   );
+  const rows = alertsQ.data?.pages.flatMap((p) => p.items) ?? [];
   const ack = useAckAlertWithFeedback();
   const { message } = App.useApp();
   const qc = useQueryClient();
@@ -84,11 +95,15 @@ function AlertsPage() {
     }
   };
   const setFilters = useCallback(
-    (next: { severity?: string; acked?: string }) =>
+    (next: { severity?: string; acked?: string; type?: string }) =>
       void navigate({ to: "/alerts", replace: true, search: (prev) => ({ ...prev, ...next }) }),
     [navigate],
   );
-  const filters = useUrlFilters({ search: { severity, acked }, keys: ["severity", "acked"], commit: setFilters });
+  const filters = useUrlFilters({
+    search: { severity, acked, type },
+    keys: ["severity", "acked", "type"],
+    commit: setFilters,
+  });
 
   const columns: TableColumnsType<AlertRow> = [
     {
@@ -185,6 +200,14 @@ function AlertsPage() {
         />
         <Select
           allowClear
+          placeholder={t("alerts.typeFilter")}
+          style={{ width: controlWidth.sm }}
+          value={type}
+          onChange={(v) => setFilters({ type: v })}
+          options={ALERT_TYPES.map((v) => ({ value: v, label: t(ALERT_TYPE_LABEL[v]) }))}
+        />
+        <Select
+          allowClear
           placeholder={t("alerts.ackFilter")}
           style={{ width: controlWidth.sm }}
           value={acked}
@@ -200,12 +223,11 @@ function AlertsPage() {
           {t("bulk.ackSelected", { count: selected.length })}
         </Button>
       </BulkBar>
-      <Table<AlertRow>
+      <CursorTable<AlertRow>
+        query={alertsQ}
+        rows={rows}
         rowKey="id"
-        loading={alertsQ.isLoading}
         columns={columns}
-        dataSource={rows}
-        pagination={false}
         scroll={{ x: 1000 }}
         sticky={{ offsetHeader: layout.topBarHeight }}
         rowSelection={
@@ -218,10 +240,8 @@ function AlertsPage() {
               }
             : undefined
         }
-        locale={{
-          emptyText: alertsQ.isError ? (
-            <TableErrorEmpty isError onRetry={() => void alertsQ.refetch()} />
-          ) : filters.hasFilter ? (
+        emptyNode={
+          filters.hasFilter ? (
             <EmptyState
               scene="search"
               compact
@@ -234,10 +254,9 @@ function AlertsPage() {
             />
           ) : (
             <EmptyState scene="notification" compact description={t("shell.noAlerts")} />
-          ),
-        }}
+          )
+        }
       />
-      <ListCapNote rows={loaded.length} cap={LIST_CAPS.alerts} />
     </PageContainer>
   );
 }

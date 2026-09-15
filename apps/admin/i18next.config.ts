@@ -16,6 +16,7 @@ export default defineConfig({
     preservePatterns: [
       "menu.*",
       "roles.*",
+      "alerts.type*",
       "nodes.phase*",
       "nodes.pool*",
       "nodes.heatLegend*",
