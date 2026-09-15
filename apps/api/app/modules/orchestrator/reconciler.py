@@ -1,6 +1,8 @@
 """reconciler:每 30s 全量比对「DB 期望 ↔ K8s 实际」并收敛。
 
 - creating/starting + Pod Ready → running;超时未 Ready → failed + 清理
+  (服务型且 health_path 非空、容器已实际运行的超时:事件带 occupied_since,按占用时段出账,
+  不退包周期预付、不清实例盘)
 - running + Pod 消失/异常/持续 not-ready → failed + 告警 + 通知
 - stopping + Pod 消失 → stopped;releasing + Pod 消失 → released
 - K8s 存在但 DB 已终态的 Pod → 超宽限期强删(未知 Pod 占比超阈即熔断)
@@ -30,6 +32,7 @@ from app.core.metrics import (
     RECONCILE_LEAK_ABORTED_TOTAL,
     RECONCILE_LEAKED_TOTAL,
     RECONCILE_STUCK_INSTANCES,
+    SCHEDULE_TIMEOUT_OCCUPIED_TOTAL,
     SSH_PORT_POOL,
 )
 from app.core.money import money_str
@@ -342,21 +345,56 @@ async def _reconcile_booting(
             logger.warning("instance_ready_without_port", instance_id=instance.id)
         return None
     first_boot = instance.status == sm_def.CREATING
-    post_commit = await _fail_instance(session, ctx, instance, reason="schedule_timeout")
+    occupied_since = _tenant_occupied_since(instance, st)
+    meta = {"occupied_since": occupied_since.isoformat()} if occupied_since else None
+    post_commit = await _fail_instance(
+        session, ctx, instance, reason="schedule_timeout", metadata=meta
+    )
+    platform_fault_first_boot = first_boot and occupied_since is None
     refunded: Decimal | None = None
-    if first_boot and instance.market == MARKET_SUBSCRIPTION:
+    if platform_fault_first_boot and instance.market == MARKET_SUBSCRIPTION:
         refunded = await billing_service.refund_unstarted_subscription(
             session, instance.id, instance.user_id
         )
-    if first_boot:
+    if platform_fault_first_boot:
         enqueue(session, "instance.disk_cleanup", {"instance_id": instance.id})
-    logger.warning("instance_schedule_timeout", instance_id=instance.id)
-    await notify_service.notify(
-        session,
-        instance.user_id,
-        type_="instance",
-        title="实例创建失败:调度超时",
-        content=(
+    if occupied_since is not None:
+        SCHEDULE_TIMEOUT_OCCUPIED_TOTAL.inc()
+        logger.warning(
+            "instance_schedule_timeout_occupied",
+            instance_id=instance.id,
+            occupied_seconds=int((now_utc() - occupied_since).total_seconds()),
+        )
+    else:
+        logger.warning("instance_schedule_timeout", instance_id=instance.id)
+    await _notify_schedule_timeout(
+        session, instance, refunded=refunded, tenant_fault=occupied_since is not None
+    )
+    return post_commit
+
+
+def _tenant_occupied_since(instance: Instance, st: PodStatus) -> datetime | None:
+    """就绪由租户控制(服务型 + health_path)且 workspace 容器已实际运行 → 占用起点;
+    其余超时按平台责任返回 None。"""
+    if instance.workload_type != "service" or not instance.health_path:
+        return None
+    if not st.exists or st.started_at is None:
+        return None
+    return ensure_utc(st.started_at)
+
+
+async def _notify_schedule_timeout(
+    session: AsyncSession, instance: Instance, *, refunded: Decimal | None, tenant_fault: bool
+) -> None:
+    if tenant_fault:
+        title = "服务启动失败:健康检查超时"
+        content = (
+            f"服务实例「{instance.name}」在超时内未通过 health_path 健康检查,已自动终止;"
+            "容器实际运行时段已按量计费,包周期预付不退。修复健康检查后可重新启动。"
+        )
+    else:
+        title = "实例创建失败:调度超时"
+        content = (
             f"实例「{instance.name}」调度或镜像拉取超时,已自动终止,"
             + (
                 f"包周期预付 {money_str(refunded)} 元已原额退回余额。"
@@ -364,12 +402,17 @@ async def _reconcile_booting(
                 else "未产生任何费用。"
             )
             + "可换个档位重试,或稍后再试;多次失败请联系客服。"
-        ),
+        )
+    await notify_service.notify(
+        session,
+        instance.user_id,
+        type_="instance",
+        title=title,
+        content=content,
         severity="warning",
         dedup_key=f"schedule_timeout:{instance.id}",
         target_id=instance.uuid,
     )
-    return post_commit
 
 
 async def _reconcile_running(

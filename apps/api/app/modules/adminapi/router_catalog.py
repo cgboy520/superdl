@@ -6,8 +6,9 @@ from fastapi import APIRouter, Request
 
 from app.core.audit import set_audit_target
 from app.core.db import DbSession
+from app.core.ratelimit import check_rate_limit
 from app.modules.adminapi import overview
-from app.modules.adminapi.deps import require_roles
+from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.schemas import ReasonBody
 from app.modules.catalog import service as catalog_service
 from app.modules.catalog.schemas import (
@@ -62,8 +63,22 @@ async def admin_sku_impact(sku_id: int, session: DbSession) -> SkuImpactOut:
     return SkuImpactOut.model_validate(await overview.sku_impact(session, sku_id))
 
 
-@router.post("/skus", dependencies=[require_roles("ops")], status_code=201)
-async def admin_create_sku(body: SkuCreate, session: DbSession, request: Request) -> SkuAdminOut:
+PRICING_WRITE_MAX_PER_HOUR = 20
+
+
+async def _throttle_pricing_writes(admin_id: int) -> None:
+    """SKU 建/改与策略写共用每管理员 20 次/时的桶。"""
+    await check_rate_limit(
+        f"admin-pricing:{admin_id}", max_attempts=PRICING_WRITE_MAX_PER_HOUR, window_seconds=3600.0
+    )
+
+
+@router.post("/skus", dependencies=[require_roles()], status_code=201)
+async def admin_create_sku(
+    body: SkuCreate, session: DbSession, request: Request, admin: CurrentAdmin
+) -> SkuAdminOut:
+    """建 SKU:仅 admin,每管理员 20 次/时。"""
+    await _throttle_pricing_writes(admin.id)
     sku = await catalog_service.admin_create_sku(session, body)
     set_audit_target(
         request,
@@ -73,10 +88,17 @@ async def admin_create_sku(body: SkuCreate, session: DbSession, request: Request
     return SkuAdminOut.model_validate(sku)
 
 
-@router.patch("/skus/{sku_id}", dependencies=[require_roles("ops")])
+@router.patch("/skus/{sku_id}", dependencies=[require_roles()])
 async def admin_update_sku(
-    sku_id: int, body: SkuUpdate, session: DbSession, request: Request, force: bool = False
+    sku_id: int,
+    body: SkuUpdate,
+    session: DbSession,
+    request: Request,
+    admin: CurrentAdmin,
+    force: bool = False,
 ) -> SkuAdminOut:
+    """改 SKU:仅 admin,每管理员 20 次/时;改价告警规则见 catalog.service。"""
+    await _throttle_pricing_writes(admin.id)
     sku, before = await catalog_service.admin_update_sku(session, sku_id, body, force=force)
     set_audit_target(
         request,

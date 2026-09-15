@@ -10,6 +10,7 @@
 | GPU 总数                          | 8                                                          | 1~1024                      | 同上 `max_gpus_per_user`(只计 GPU 实例)                                                                                                                                                 |
 | CPU 实例 vCPU 总数                | 64                                                         | 1~4096                      | 策略 `max_vcpus_per_user`(无用户级覆盖;只计 `gpu_count=0` 的实例)。超限报 `orchestrator.vcpuQuota`(ErrorCode `VALIDATION_ERROR`)                                                        |
 | 数据盘数                          | 20                                                         | 1~1000                      | 同上 `max_disks_per_user`                                                                                                                                                               |
+| 数据盘总容量                      | 8192 GB                                                    | 10~1048576                  | 策略 `max_disk_gb_per_user`(无用户级覆盖;未删除盘 `size_gb` 之和,建盘与扩容都校验)。超限报 `disks.capacityQuota`                                                                        |
 | 单盘容量                          | 10~4096 GB                                                 | 下限 1~~1024,上限 10~~65536 | 策略 `disk_min_gb` / `disk_max_gb`                                                                                                                                                      |
 | 单实例 GPU 数                     | 按 SKU `max_gpus_per_instance`(UI 给 1/2/4/8;CPU 规格为 0) | —                           | `skus`                                                                                                                                                                                  |
 | 单个 GPU 节点让给 CPU 实例的 vCPU | 16                                                         | 0~1024                      | 策略 `gpu_node_cpu_instance_vcpu_cap`;0 = 不许 CPU 实例落 GPU 节点。近似库存口径,见 [catalog.md](./catalog.md)                                                                          |
@@ -75,37 +76,43 @@
 
 ## 应用层限流
 
-固定窗口,计数落 PG(`rate_limit_counters`),多副本共享;429 带 `Retry-After`。边缘层(Envoy Gateway)对公网 API 域另有**每源 IP** 20 rps / 600 rpm 兜底(`deploy/app/k8s/04-gateway.yaml` 的 `BackendTrafficPolicy`,`sourceCIDR.type: Distinct`);管理面不配边缘限流,靠源 IP 白名单。
+固定窗口,计数落 PG(`rate_limit_counters`),多副本共享;429 带 `Retry-After`。边缘层(Envoy Gateway,`deploy/app/k8s/04-gateway.yaml` 的 `BackendTrafficPolicy`,`sourceCIDR.type: Distinct`)另有**每源 IP** 兜底:API 域与 console 域的 `/api/v1` 路由(公网真实入口)各 20 rps / 600 rpm(`superdl-api-ratelimit` / `superdl-console-api-ratelimit`),管理端路由 30 rps / 600 rpm(`superdl-admin-ratelimit`,源 IP 白名单之外再加的一层)。每 IP 桶以 `ClientTrafficPolicy` 的 `numTrustedHops` 与 ConfigMap `FORWARDED_ALLOW_IPS` 识别的客户端 IP 为键,前置层漏登记则全部请求落进同一个桶。
 
 **没有每源 IP 并发连接限制**:`ClientTrafficPolicy.connection.connectionLimit` 是每个 Envoy 实例的连接总量,现配 10000。见 [security.md](./security.md)「限流分层」。
 
-**请求体硬上限(双层)**:边缘层 `BackendTrafficPolicy.requestBuffer` 对平台 API 限 1 MiB、匿名支付回调(`/api/v1/webhooks`)限 256 KiB,超限 413;应用层 `RequestBodyLimitMiddleware`(`app/core/body_limit.py`)兜底 1 MiB。uvicorn `--limit-concurrency 1024`。`requestHeadersReceivedTimeout: 10s` / `requestReceivedTimeout: 60s` 在 `ClientTrafficPolicy superdl-gateway`。
+**请求体硬上限(双层)**:边缘层 `BackendTrafficPolicy.requestBuffer` 对平台 API(API 域、console 域 `/api/v1`、管理端路由)限 1 MiB、匿名支付回调(API 域 `/api/v1/webhooks`)限 256 KiB,超限 413;应用层 `RequestBodyLimitMiddleware`(`app/core/body_limit.py`)兜底 1 MiB。uvicorn `--limit-concurrency 1024`。`requestHeadersReceivedTimeout: 10s` / `requestReceivedTimeout: 60s` 在 `ClientTrafficPolicy superdl-gateway`。
 
-| 动作                                | 维度             | 限额                                            | 备注                                                                           |
-| ----------------------------------- | ---------------- | ----------------------------------------------- | ------------------------------------------------------------------------------ |
-| 用户登录                            | IP+手机号 / 账号 | 5 次/5min / 10 次/15min                         | 只计失败,成功清零                                                              |
-| 用户登录                            | IP / 账号日窗    | 60 次/时 / 30 次/日                             | 只计失败,不清零                                                                |
-| 注册、找回密码                      | IP+手机号        | 各 5 次/5min                                    |                                                                                |
-| 实名核验                            | 用户             | 5 次/时                                         |                                                                                |
-| 发码(尝试)                          | IP               | 20 次/时                                        |                                                                                |
-| 发码(消费)                          | 手机号           | 10 次/日                                        | 按验证码被消费计                                                               |
-| 发码(平台)                          | 全局             | 1000 次/时,5000 次/日                           | `core/sms.py`                                                                  |
-| 管理端登录                          | IP+账号 / 账号   | 5 次/5min / 10 次/15min                         | 只计失败,成功清零                                                              |
-| 管理端登录                          | IP / 账号日窗    | 30 次/时 / 30 次/日                             | 只计失败,不清零;**账号日窗不进 bcrypt 前的准入预检**,见 [admin.md](./admin.md) |
-| 管理端 TOTP 绑定与校验              | 账号             | 5 次/10min                                      | `setup/begin`、`setup/confirm`、`login/mfa` 共用一个桶                         |
-| 管理端试发短信                      | 全局             | 10 次/时                                        |                                                                                |
-| 支付回调                            | IP               | 120 次/分                                       | `webhooks_router.py`                                                           |
-| 充值创建                            | 用户             | 10 次/时                                        | `billing/router.py`                                                            |
-| 退款申请                            | 用户             | 10 次/时                                        | 同上                                                                           |
-| 实例创建                            | 用户             | 30 次/时                                        | `orchestrator/router.py`                                                       |
-| 续费 / 转包周期                     | 用户             | 各 20 次/时                                     | 同上                                                                           |
-| 数据盘创建 / 扩容                   | 用户             | 各 20 次/时                                     | `orchestrator/disks_router.py`                                                 |
-| 管理端调账发起                      | 管理员           | 20 次/时                                        | `adminapi/router_finance.py`                                                   |
-| Alertmanager webhook                | IP               | 120 次/分;报文 ≤1 MiB;≤500 条;字符串截 1024     | `notify/router.py`                                                             |
-| 节点注册脚本 / bootstrap / progress | IP               | 30 / 30 / 60 次/分                              | `nodes/enroll_router.py`                                                       |
-| 工单创建                            | 用户             | 5 次/时                                         |                                                                                |
-| 实例日志                            | 用户             | 20 次/时;tail 默认 200、≤2000 行;K8s 读 5s 超时 | `orchestrator/service.py`                                                      |
-| 指标批量端点                        | 用户             | 前 20 台 running 实例                           | `metering/service.py`                                                          |
+| 动作                                | 维度             | 限额                                            | 备注                                                                               |
+| ----------------------------------- | ---------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------- |
+| 用户登录                            | IP+手机号 / 账号 | 5 次/5min / 10 次/15min                         | bcrypt 前先计数再判定,成功清零                                                     |
+| 用户登录                            | IP / 账号日窗    | 60 次/时 / 30 次/日                             | IP 桶先计数、成功退还;账号日窗只计失败、不做准入                                   |
+| 口令校验(bcrypt)                    | 进程             | 在途 64                                         | `core/security._BCRYPT_MAX_INFLIGHT`,超出 429 不排队                               |
+| 注册、找回密码                      | IP+手机号        | 各 5 次/5min                                    |                                                                                    |
+| 实名核验                            | 用户             | 5 次/时                                         |                                                                                    |
+| 发码(预检)                          | 手机号           | 30 次/时                                        | 人机验证之前计,`sms-precheck-phone`                                                |
+| 发码(尝试)                          | IP               | 20 次/时                                        | 人机验证之后计                                                                     |
+| 发码(发送)                          | 手机号           | 15 次/日                                        | 退避通过后计,`sms-send-phone`                                                      |
+| 发码(消费)                          | 手机号           | 10 次/日                                        | 按验证码被消费计                                                                   |
+| 发码(平台 verify)                   | 全局             | 1000 次/时,5000 次/日                           | 注册 / 登录 / 找回,`core/sms.py`                                                   |
+| 短信(平台 notify)                   | 全局             | 500 次/时,2000 次/日                            | 平台通知,与 verify 分桶                                                            |
+| 管理端登录                          | IP+账号 / 账号   | 5 次/5min / 10 次/15min                         | bcrypt 前先计数再判定,成功清零                                                     |
+| 管理端登录                          | IP / 账号日窗    | 30 次/时 / 30 次/日                             | IP 桶先计数、成功退还;**账号日窗只计失败、不做准入**,见 [admin.md](./admin.md)     |
+| 管理端 TOTP 绑定与校验              | 账号             | 5 次/10min                                      | `setup/begin`、`setup/confirm`、`login/mfa` 共用一个桶                             |
+| 管理端试发短信                      | 全局             | 10 次/时                                        |                                                                                    |
+| 支付回调                            | IP               | 120 次/分                                       | `webhooks_router.py`                                                               |
+| 充值创建                            | 用户             | 10 次/时                                        | `billing/router.py`                                                                |
+| 退款申请                            | 用户             | 10 次/时                                        | 同上                                                                               |
+| 实例创建                            | 用户             | 30 次/时                                        | `orchestrator/router.py`                                                           |
+| 实例开机 / 关机 / 重启              | 用户             | 60 次/时                                        | 实例与在线服务同桶 `instance-lifecycle`,`orchestrator/service.py`                  |
+| 续费 / 转包周期                     | 用户             | 各 20 次/时                                     | 同上                                                                               |
+| 数据盘创建 / 扩容                   | 用户             | 各 20 次/时                                     | `orchestrator/disks_router.py`                                                     |
+| 管理端调账发起                      | 管理员           | 20 次/时                                        | `adminapi/router_finance.py`                                                       |
+| 管理端 SKU 建/改、策略写入          | 管理员           | 20 次/时(共用桶)                                | `admin-pricing:{admin_id}`;`adminapi/router_catalog.py` / `router_ops.py`,仅 admin |
+| Alertmanager webhook                | IP               | 120 次/分;报文 ≤1 MiB;≤500 条;字符串截 1024     | `notify/router.py`                                                                 |
+| 节点注册脚本 / bootstrap / progress | IP               | 30 / 30 / 60 次/分                              | `nodes/enroll_router.py`                                                           |
+| 工单创建                            | 用户             | 5 次/时                                         |                                                                                    |
+| 实例日志                            | 用户             | 20 次/时;tail 默认 200、≤2000 行;K8s 读 5s 超时 | `orchestrator/service.py`                                                          |
+| 指标批量端点                        | 用户             | 前 20 台 running 实例                           | `metering/service.py`                                                              |
 
 ## 分页与批量上限
 

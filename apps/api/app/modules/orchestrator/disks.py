@@ -25,6 +25,26 @@ from app.modules.orchestrator.queries import DISK_BILLABLE_STATUSES
 logger = get_logger(__name__)
 
 
+async def _disk_usage(session: AsyncSession, user_id: int) -> tuple[int, int]:
+    """(未删除盘数, 未删除盘总容量 GB)。"""
+    row = (
+        await session.execute(
+            select(func.count(), func.coalesce(func.sum(DataDisk.size_gb), 0)).where(
+                DataDisk.user_id == user_id, DataDisk.status != "deleted"
+            )
+        )
+    ).one()
+    return int(row[0]), int(row[1])
+
+
+def _check_capacity_quota(used_gb: int, delta_gb: int, max_gb: int) -> None:
+    """总容量走策略 max_disk_gb_per_user,超限拒绝。"""
+    if used_gb + delta_gb > max_gb:
+        raise AppError(
+            ErrorCode.VALIDATION_ERROR, key="disks.capacityQuota", params={"max": max_gb}
+        )
+
+
 async def create_disk(
     session: AsyncSession,
     user_id: int,
@@ -59,17 +79,12 @@ async def create_disk(
     await billing_service.assert_can_afford(session, user_id, additional_daily_disk=daily)
     limits = await account_service.get_user_limits(session, user_id)
     max_disks = limits.max_disks
-    live = (
-        await session.execute(
-            select(func.count())
-            .select_from(DataDisk)
-            .where(DataDisk.user_id == user_id, DataDisk.status != "deleted")
-        )
-    ).scalar_one()
+    live, used_gb = await _disk_usage(session, user_id)
     if live >= max_disks:
         raise AppError(
             ErrorCode.VALIDATION_ERROR, key="disks.countQuota", params={"max": max_disks}
         )
+    _check_capacity_quota(used_gb, size_gb, policies.max_disk_gb_per_user)
     disk_uuid = uuid4().hex
     disk = DataDisk(
         uuid=disk_uuid,
@@ -153,9 +168,12 @@ async def expand_disk(session: AsyncSession, user_id: int, uuid: str, new_size_g
         raise AppError(ErrorCode.VALIDATION_ERROR, key="disks.expandNeedsActive")
     if new_size_gb <= disk.size_gb:
         raise AppError(ErrorCode.DISK_SHRINK_FORBIDDEN, key="disks.shrinkForbidden")
-    max_gb = (await get_runtime_config(session)).disk_max_gb
+    policies = await get_runtime_config(session)
+    max_gb = policies.disk_max_gb
     if new_size_gb > max_gb:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="disks.sizeMax", params={"max": max_gb})
+    _live, used_gb = await _disk_usage(session, user_id)
+    _check_capacity_quota(used_gb - disk.size_gb, new_size_gb, policies.max_disk_gb_per_user)
     await _settle_pending_days(session, disk)
     delta_daily = disk_daily_charge(disk.price_gb_month, new_size_gb) - disk_daily_charge(
         disk.price_gb_month, disk.size_gb

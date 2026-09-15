@@ -1,13 +1,14 @@
 """管理端资金动作:调账(双人复核)、渠道冲正处置、调账列表。"""
 
 from collections.abc import Awaitable, Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Literal
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit import AuditLog
 from app.core.errors import AppError, ErrorCode, conflict, not_found
 from app.core.idempotency import request_fingerprint
 from app.core.logging import get_logger
@@ -27,6 +28,45 @@ from app.modules.billing import service as billing_service
 logger = get_logger(__name__)
 
 ADJUST_MAX_ABS = Decimal("100000.00")
+REVIEWER_MIN_ACCOUNT_AGE = timedelta(hours=24)
+_FINANCE_REVIEW_ACTION_PATTERN = "admin.POST /api/admin/v1/adjustments/%/review"
+
+
+async def _assert_reviewer_independent(
+    session: AsyncSession, adj: AdminAdjustment, reviewer_id: int
+) -> None:
+    """复核人:非发起人;账号早于调账发起 24 小时创建;调账发起前已有非复核类的成功管理操作。"""
+    if adj.created_by == reviewer_id:
+        raise AppError(
+            ErrorCode.ADMIN_SECOND_REVIEW_REQUIRED,
+            key="adminapi.adjustSecondReviewer",
+            http_status=403,
+        )
+    reviewer = await session.get(AdminUser, reviewer_id)
+    adj_created = ensure_utc(adj.created_at)
+    if reviewer is None or ensure_utc(reviewer.created_at) > adj_created - REVIEWER_MIN_ACCOUNT_AGE:
+        raise AppError(
+            ErrorCode.ADMIN_SECOND_REVIEW_REQUIRED,
+            key="adminapi.adjustReviewerTooNew",
+            http_status=403,
+        )
+    has_history = await session.scalar(
+        select(
+            exists().where(
+                AuditLog.actor_type == "admin",
+                AuditLog.actor_id == str(reviewer_id),
+                AuditLog.result < 400,
+                AuditLog.created_at < adj_created,
+                AuditLog.action.not_like(_FINANCE_REVIEW_ACTION_PATTERN),
+            )
+        )
+    )
+    if not has_history:
+        raise AppError(
+            ErrorCode.ADMIN_SECOND_REVIEW_REQUIRED,
+            key="adminapi.reviewerNotIndependent",
+            http_status=403,
+        )
 
 
 async def create_adjustment(
@@ -92,7 +132,7 @@ async def review_adjustment(
     comment: str | None,
     audit_writer: Callable[[AsyncSession], Awaitable[None]] | None = None,
 ):
-    """持调账行锁复核;复核人须非发起人且账号创建时间早于调账。
+    """持调账行锁复核;复核人须非发起人、账号早于调账 24 小时创建、此前有过非复核类管理操作。
 
     通过时同事务更新钱包与流水,并在提交前调用可选 audit_writer;失败不提交。
     """
@@ -101,19 +141,7 @@ async def review_adjustment(
         raise not_found()
     if adj.status != "pending":
         raise conflict(key="adminapi.adjustAlreadyProcessed")
-    if adj.created_by == reviewer_id:
-        raise AppError(
-            ErrorCode.ADMIN_SECOND_REVIEW_REQUIRED,
-            key="adminapi.adjustSecondReviewer",
-            http_status=403,
-        )
-    reviewer = await session.get(AdminUser, reviewer_id)
-    if reviewer is None or ensure_utc(reviewer.created_at) >= ensure_utc(adj.created_at):
-        raise AppError(
-            ErrorCode.ADMIN_SECOND_REVIEW_REQUIRED,
-            key="adminapi.adjustReviewerTooNew",
-            http_status=403,
-        )
+    await _assert_reviewer_independent(session, adj, reviewer_id)
     adj.reviewed_by = reviewer_id
     adj.review_comment = comment
     adj.reviewed_at = now_utc()

@@ -24,6 +24,7 @@ SKU 管理(管理端 CRUD)、用户端市场查询、平台镜像目录与近似
 ## 规则与不变量
 
 - SKU 变更只影响新实例:实例落库时快照 `price_hourly` 与规格。
+- 建/改 SKU 仅 admin,每管理员 `admin-pricing` 桶 20 次/时。改价告警(`catalog/service.py::_alert_large_price_change`,不阻断):基准取 `audit_log` 里该 SKU 24 小时内最早一次成功 `PATCH` 的 `detail.before.price_hourly`(没有则取本次改价前的价),新价相对基准累计变化 ≥50% 落 critical `admin_alert`「SKU 单价 24 小时累计大幅调整」;未触发累计规则时单步变化 ≥50% 落 warning「SKU 单价大幅调整」。
 - SKU 业务唯一键 `(gpu_model, tier, pool_label, mig_profile, gpu_cores_pct, vcpu, mem_gb)` 唯一索引(NULLS NOT DISTINCT),重复创建 409。
 - 近似库存按 (池, canonical 型号) 双维度估:数据源是 `node_specs`(巡检 60s 写,只算 Ready 节点空闲卡),请求路径不直连 K8s;每请求直接算、不缓存。
 - 创建路径软准入:台账明确该 (池,型号) 可分配量不足 → 409 `NO_CAPACITY`,台账无数据放行。不做库存预占,最终以调度结果为准。

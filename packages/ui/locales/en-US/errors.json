@@ -29,7 +29,7 @@
   "adminapi": {
     "adjustAlreadyProcessed": "Adjustment already processed",
     "adjustNotZero": "Adjustment amount cannot be 0",
-    "adjustReviewerTooNew": "The reviewer account was created after the adjustment — not a valid second review",
+    "adjustReviewerTooNew": "The reviewer account must be at least 24 hours older than the adjustment — not a valid second review",
     "adjustSecondReviewer": "Adjustments must be reviewed by a second administrator",
     "adminUsernameTaken": "That username already exists",
     "alertAlreadyAcked": "This alert has already been acknowledged",
@@ -41,6 +41,7 @@
     "mfaNotBound": "This account has no authenticator bound",
     "mfaResetSelfForbidden": "You cannot reset your own 2FA — use a recovery code or ask another super admin",
     "mfaTicketInvalid": "Login ticket expired — sign in with username and password again",
+    "reviewerNotIndependent": "The reviewer account has no administrative actions on record before this adjustment — not an independent review",
     "roleRequired": "Required role: {{roles}}",
     "roleRequiredAdmin": "Super admin privileges required",
     "smsTestFailed": "Send failed: {{message}}",
@@ -141,6 +142,7 @@
     "validation": "Request validation failed"
   },
   "disks": {
+    "capacityQuota": "Total data disk capacity would exceed the limit ({{max}} GB) — delete unused disks or contact support to raise it",
     "countQuota": "Data disk limit reached ({{max}}) — delete unused disks or contact support to raise it",
     "expandNeedsActive": "Only active data disks can be expanded",
     "inUseDelete": "The data disk is mounted — release the instance first",
@@ -186,9 +188,11 @@
     "convertNeedsRunningOrStopped": "Only running or stopped instances can be converted to a subscription",
     "convertNotOnDemand": "Only pay-as-you-go instances can be converted to a subscription",
     "cpuSkuNoGpu": "This spec is a CPU instance (no GPU); the GPU count cannot be set",
+    "envEntryTooLong": "Environment variable “{{name}}” is too long: names up to {{key_max}} characters, values up to {{value_max}} characters",
     "envKeyInvalid": "Environment variable name “{{name}}” is not valid: letters, digits and underscores only, and it cannot start with a digit",
     "envKeyReserved": "Environment variable name “{{name}}” is reserved by the platform (the JUPYTER_ and SUPERDL_ prefixes, and AUTHORIZED_KEYS) — pick another",
     "envSecretKeyUnknown": "Environment variable “{{name}}” is marked secret but is not in the variable list",
+    "envTooMany": "At most {{max}} environment variables are allowed",
     "forceStopNeedsRunning": "Only running instances can be force-stopped",
     "frozenNeedsRecharge": "Frozen due to arrears — top up to unfreeze, then start",
     "gpuCountRange": "GPU count must be between 1 and {{max}}",

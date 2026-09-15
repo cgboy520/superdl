@@ -9,6 +9,7 @@ from app.core.ratelimit import check_rate_limit
 from app.modules.account import service as account_service
 from app.modules.account.deps import CurrentUser
 from app.modules.billing.schemas import BillHourlyOut
+from app.modules.orchestrator import service as orchestrator_service
 from app.modules.orchestrator.schemas import InstanceLogsOut, InstanceOut
 from app.modules.services import service
 from app.modules.services.schemas import (
@@ -85,7 +86,8 @@ async def patch_service(
 async def stop_service(
     slug: str, user: CurrentUser, session: DbSession, request: Request
 ) -> ServiceOut:
-    """停止:当前实例关机,端点随之 503;服务端点与密钥保留。"""
+    """停止:当前实例关机,端点随之 503;服务端点与密钥保留。限流与实例开关机同桶。"""
+    await orchestrator_service.check_lifecycle_rate_limit(user.id)
     svc = await service.stop_service(session, user.id, slug)
     set_audit_target(request, f"service:{slug}")
     return await service.service_view(session, svc)
@@ -95,9 +97,11 @@ async def stop_service(
 async def start_service(
     slug: str, user: CurrentUser, session: DbSession, request: Request
 ) -> ServiceOut:
+    """启动:当前实例开机。限流与实例开关机同桶。"""
     await account_service.require_real_name_if_required(
         session, user, key="orchestrator.realNameRequired"
     )
+    await orchestrator_service.check_lifecycle_rate_limit(user.id)
     svc = await service.start_service(session, user.id, slug)
     set_audit_target(request, f"service:{slug}")
     return await service.service_view(session, svc)

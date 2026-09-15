@@ -3,10 +3,12 @@
 把一台节点在 `kata` / `hami` / `mig` 三个池之间换过去。场景:为整卡直通做实机验证、按库存需要调整档位配比、
 验证失败后切回原池。`cpu` 池是无卡机的物理属性,不参与切换。
 
-**除切到 kata 外不需要登录节点,也不重启。** 池是一个纯标签:池间差异的节点侧软件全部由 DaemonSet 按标签投送
-(`kata-deploy` 认 `superdl.io/pool=kata`、HAMi device-plugin 认 `superdl.io/pool=hami`、
-gpu-operator 的 vfio-manager 与 sandbox 插件认 `nvidia.com/gpu.deploy.*`),整卡直通的绑定与解绑
-由 vfio-manager 在运行时做。IOMMU 是装机基线,不随池变。
+**不需要登录节点,也不重启。** 池是一个纯标签:池间差异的节点侧软件全部由 DaemonSet 按标签投送
+(`kata-deploy` 认 `node-restriction.kubernetes.io/superdl-pool=kata`、HAMi device-plugin 认
+`node-restriction.kubernetes.io/superdl-pool=hami`、gpu-operator 的 vfio-manager 与 sandbox 插件认
+`nvidia.com/gpu.deploy.*`),整卡直通的绑定与解绑由 vfio-manager 在运行时做。IOMMU 是装机基线,不随池变。
+池标签键带 `node-restriction.kubernetes.io/` 前缀:NodeRestriction 准入插件禁止 kubelet 自打或改动,只有平台 SA
+(准入策略③ 放行这一个键)能写;`superdl-infra` 落点键同前缀但平台 SA 也不能动。
 端点与不变量见 [`docs/reference/nodes.md`](../../../docs/reference/nodes.md)。
 
 ## 前置
@@ -66,7 +68,7 @@ ssh <node> '! test -e /proc/driver/nvidia && ! lsmod | grep -q "^nvidia" && echo
 - 回到 hami 池:HAMi device plugin 在、官方 device plugin 不在,GPU 绑定回 `nvidia`,节点重新注册 `nvidia.com/gpu` 可分配资源。
 
 ```bash
-kubectl get node <node> -L superdl.io/pool -L nvidia.com/gpu.workload.config \
+kubectl get node <node> -L node-restriction.kubernetes.io/superdl-pool -L nvidia.com/gpu.workload.config \
   -L nvidia.com/gpu.deploy.device-plugin
 
 kubectl -n kube-system get pod -o wide --field-selector spec.nodeName=<node>
@@ -78,6 +80,16 @@ kubectl get node <node> -o jsonpath='{.status.allocatable}' | tr ',' '\n' | grep
 ```
 
 真开一台目标档位的实例跑通,再解封。
+
+## 池标签键迁移(`superdl.io/pool` → `node-restriction.kubernetes.io/superdl-pool`,一次性)
+
+存量集群的节点带旧键 `superdl.io/pool`,`hami` / `kata-deploy` 的 nodeSelector 只认新键。顺序固定,每步做完再下一步:
+
+1. 下发新准入策略(旧策略③ 不放行新键,平台写标签会被 Deny):`kubectl apply -f deploy/cluster/admission/tenant-restrictions.yaml`。
+2. 发布带新键的 api / worker(`scripts/release.sh`):节点巡检按 `node_specs.desired_pool` 给每台节点打新键并摘掉旧键 `superdl.io/pool`,不需要手工 label。核对:`kubectl get nodes -L node-restriction.kubernetes.io/superdl-pool -L superdl.io/pool`,新列齐全、旧列全空。
+3. `./apply.sh <full|light> -l name=hami` 与 `./apply.sh <full|light> -l name=kata-deploy`:DaemonSet 按新键重新落位。`./preflight.sh` 会在任何节点仍带旧键时 ✗。
+
+第 2 步摘旧键到第 3 步落位之间,hami-device-plugin / kata-deploy Pod 会离开节点:已运行实例不受影响(device plugin 只参与新分配),窗口内不要开新的共享档 / 整卡档实例。
 
 ## 坑
 

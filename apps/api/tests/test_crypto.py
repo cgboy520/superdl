@@ -63,6 +63,15 @@ class TestV2Format:
             crypto.decrypt_str(token, aad="wechat_apiv3_key")
 
 
+class TestIsEncrypted:
+    def test_shape_only(self, set_keys):
+        """轮换脚本靠它挑出待重加密的行:密文 True,明文与残缺前缀 False。"""
+        set_keys()
+        assert crypto.is_encrypted(crypto.encrypt_str("plain", aad="k")) is True
+        assert crypto.is_encrypted("plain") is False
+        assert crypto.is_encrypted("enc:v2:no-kid-separator") is False
+
+
 class TestDecryptDualRead:
     def test_v2_readable_via_previous_during_rotation(self, set_keys):
         """轮换窗口:旧钥匙写的 v2 密文经 PREVIOUS 可读,新写入只认新钥匙。"""

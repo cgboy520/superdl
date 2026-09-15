@@ -4,6 +4,7 @@ fail_next_disk 和 fail_next_logs 消费后复位;fail_probe 持续生效直到�
 """
 
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from app.core.k8s import health
 from app.core.k8s.base import (
@@ -30,6 +31,7 @@ from app.core.k8s.health import (
     StorageClassRow,
     WorkloadRow,
 )
+from app.core.timeutil import now_utc
 
 _FAKE_K8S_VERSION = "v1.36.2+rke2r1"
 _DETAIL_CAPABLE = frozenset(
@@ -72,6 +74,7 @@ class _FakePod:
     node_name: str = "fake-node-1"
     deleting: bool = False
     labels: dict[str, str] = field(default_factory=lambda: {MANAGED_LABEL: "true"})
+    started_at: datetime | None = None
 
 
 @dataclass
@@ -275,7 +278,10 @@ class FakeOrchestrator:
                 raise RuntimeError(f"fake: pod {spec.name} is terminating, create must wait")
             return
         self.pods[key] = _FakePod(
-            spec=spec, ready=self.auto_ready, phase="Running" if self.auto_ready else "Pending"
+            spec=spec,
+            ready=self.auto_ready,
+            phase="Running" if self.auto_ready else "Pending",
+            started_at=now_utc() if self.auto_ready else None,
         )
         self.endpoints.add(key)
 
@@ -321,6 +327,7 @@ class FakeOrchestrator:
             deleting=pod.deleting,
             namespace=namespace,
             name=name,
+            started_at=pod.started_at,
         )
 
     async def read_instance_logs(self, namespace: str, name: str, *, tail_lines: int) -> str:
@@ -352,6 +359,7 @@ class FakeOrchestrator:
                 namespace=ns,
                 name=name,
                 labels=dict(pod.labels),
+                started_at=pod.started_at,
             )
             for (ns, name), pod in self.pods.items()
         ]
@@ -404,6 +412,15 @@ class FakeOrchestrator:
         pod = self.pods[(namespace, name)]
         pod.ready = True
         pod.phase = "Running"
+        if pod.started_at is None:
+            pod.started_at = now_utc()
+
+    def mark_started(self, namespace: str, name: str, *, started_at: datetime) -> None:
+        """模拟容器已在跑但探针未过:phase Running、Ready False、记容器起始时刻。"""
+        pod = self.pods[(namespace, name)]
+        pod.ready = False
+        pod.phase = "Running"
+        pod.started_at = started_at
 
     def inject_leaked_pod(self, namespace: str, name: str, spec: InstancePodSpec) -> None:
         """模拟 DB 已 released 但 K8s 残留的泄漏 Pod。"""
@@ -457,6 +474,7 @@ class FakeOrchestrator:
                 or self.node_labels.get(n.name, {}).get(GPU_MODEL_NODE_LABEL, ""),
                 driver_version_label=n.driver_version_label,
                 cuda_version_label=n.cuda_version_label,
+                infra=n.infra,
             )
             for n in nodes
             if n.name not in self.deleted_nodes

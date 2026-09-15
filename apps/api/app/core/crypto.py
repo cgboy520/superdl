@@ -58,6 +58,16 @@ def encrypt_str(plaintext: str, *, aad: str) -> str:
     return f"{_PREFIX_V2}{_kid_of(master)}:{base64.b64encode(nonce + ct).decode()}"
 
 
+def is_encrypted(value: str) -> bool:
+    """value 是否为 `enc:v2:<kid>:<b64>` 形态(kid 12 hex、b64 非空);不验密钥与完整性。"""
+    if not value.startswith(_PREFIX_V2):
+        return False
+    kid, sep, b64 = value[len(_PREFIX_V2) :].partition(":")
+    if not sep or len(kid) != 12 or not b64:
+        return False
+    return all(c in "0123456789abcdef" for c in kid)
+
+
 def decrypt_str(token: str, *, aad: str) -> str:
     if not token.startswith(_PREFIX_V2):
         raise ValueError("密文缺少 enc: 版本前缀")

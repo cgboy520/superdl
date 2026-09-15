@@ -1023,6 +1023,11 @@
         "label": "欠费冻结时长(实例)",
         "unit": "小时"
       },
+      "max_disk_gb_per_user": {
+        "hint": "所有未删除数据盘 size_gb 之和",
+        "label": "每用户数据盘总容量上限",
+        "unit": "GB"
+      },
       "max_disks_per_user": {
         "hint": "用户级覆盖优先于本项",
         "label": "每用户数据盘数上限",

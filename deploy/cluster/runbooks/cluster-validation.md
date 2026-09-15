@@ -6,10 +6,10 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 
 - [ ] `nvidia-smi` 正常,驱动版本与 GPU Operator 兼容矩阵一致
 - [ ] `kubectl get node -o wide`:全部 Ready,K8s **v1.36.x**
-- [ ] `kubectl get node -L superdl.io/pool`:池标签齐全,**kata 与 hami 无交集**
+- [ ] `kubectl get node -L node-restriction.kubernetes.io/superdl-pool`:池标签齐全,**kata 与 hami 无交集**;`-L superdl.io/pool` 一列全空(旧键已由平台摘除,迁移见 [node-pool-switch.md](./node-pool-switch.md)「池标签键迁移」)
 - [ ] `kubectl explain pod.spec.hostUsers` 存在;跑一个 `hostUsers: false` 测试 Pod,容器内 `readlink /proc/self/ns/user` 与宿主不同
 - [ ] 内核 ≥6.3:`uname -r`
-- [ ] 平台组件落点标签只在控制面节点上:`kubectl get nodes -l node-restriction.kubernetes.io/superdl-infra=true` 至少一台,且**没有一台带 `superdl.io/pool`**;`preflight.sh` 同款正反两查
+- [ ] 平台组件落点标签只在控制面节点上:`kubectl get nodes -l node-restriction.kubernetes.io/superdl-infra=true` 至少一台,且**没有一台带 `node-restriction.kubernetes.io/superdl-pool`**;`preflight.sh` 同款正反两查。api / worker / 前端 / Envoy 的 2 副本按 hostname `DoNotSchedule` 分布:**infra 节点 ≥2 台才有冗余**(一台时两副本同机),两台时 `kubectl -n superdl get pods -o wide` 每个 Deployment 的两副本落在不同节点;拔掉一台 infra 节点后替补副本保持 Pending 直到节点恢复,这是预期信号
 - [ ] **全局 Pod 兜底策略是 `Deny`**(`superdl-global-pod-guard`,`admission/tenant-restrictions.yaml`):`kubectl debug node/<node>` 默认落 `default` ns 会被拒,排障加 `--namespace kube-system`(豁免 ns)
 
 ## B. Kata 整卡直通
@@ -32,19 +32,21 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 - [ ] 同卡 2 实例(各 50% 算力 / 8G 显存):互相 `nvidia-smi` 只见配额显存
 - [ ] 互扰压测:一实例满载,记录另一实例吞吐衰减(定超卖比率)
 - [ ] 显存超限被拒:申请超过 gpumem 的分配应 OOM 在容器内,不影响邻居
-- [ ] HAMi on k3s:`values/light/hami-light.yaml` 的 `kubeScheduler.image.tag` 与集群版本匹配、devicePlugin `runtimeClassName=nvidia` 生效、RuntimeClass `nvidia` 存在;渲染出的 hami-device-plugin DaemonSet nodeSelector 只有 `superdl.io/pool: hami`(chart 默认 `gpu: "on"` 已用 null 删除)
+- [ ] HAMi on k3s:`values/light/hami-light.yaml` 的 `kubeScheduler.image.tag` 与集群版本匹配、devicePlugin `runtimeClassName=nvidia` 生效、RuntimeClass `nvidia` 存在;渲染出的 hami-device-plugin DaemonSet nodeSelector 只有 `node-restriction.kubernetes.io/superdl-pool: hami`(chart 默认 `gpu: "on"` 已用 null 删除)
 - [ ] k3s 上未装 HAMi 时下单共享档:报错明确指出缺件,不是超时或 500
 
 ## D. 存储
 
 - [ ] CephFS:两 Pod(均 `hostUsers: false`)跨节点挂同一 PVC 读写一致;`ceph -s` HEALTH_OK;fio 顺序写基线记录于此:____
 - [ ] TopoLVM:PVC 创建/删除后 `lvs` 无残留;lvmd 容器 `/etc/lvm/lvm.conf` 已含 `issue_discards = 1`,大 LV(≥500Gi)`lvremove` 实测耗时记录于此:____
+- [ ] **数据盘 StorageClass `superdl-cephfs` 的 `reclaimPolicy` 为 `Delete`**(代码与文档按删盘即删子卷假设)。存量集群一次性迁移:① SC 字段不可改,`kubectl delete sc superdl-cephfs`(不影响已绑定的 PV/PVC)后 `./apply.sh <full|light> -l name=rook-ceph-cluster` 重建;② 存量 PV 各自带 `persistentVolumeReclaimPolicy`,逐只 `kubectl patch pv <pv> -p '{"spec":{"persistentVolumeReclaimPolicy":"Delete"}}'`(`kubectl get pv -o custom-columns=NAME:.metadata.name,SC:.spec.storageClassName,RECLAIM:.spec.persistentVolumeReclaimPolicy,PHASE:.status.phase | grep superdl-cephfs` 列全);③ `Released` 的 PV 是已删租户盘的残留,`kubectl delete pv <pv>` 让 CSI 删掉子卷。`preflight.sh` 对 SC 与 PV 各断言一次
 - [ ] 数据盘硬配额:建一块 1GB 测试盘,挂实例写超 1GB(`dd if=/dev/zero of=/root/data/fill bs=1M count=1200`)必须被拒(No space);管理端死信页无 disk.provision 死信,Prometheus 查 `superdl_disk_provision_failed_total` 为 0;删盘后 `kubectl -n tenant-<id> get pvc` 无残留
 
 ## E. 监控与告警
 
 - [ ] kube-prometheus-stack:DCGM 指标可查;导入 grafana.com **24450** 大盘
-- [ ] `superdl.gpu` 规则组 6 条告警各触发一次(人工触发 GPUHighTemperature 或用 amtool 注入)
+- [ ] `superdl.gpu` 规则组 7 条告警各触发一次(人工触发 GPUHighTemperature 或用 amtool 注入);停 dcgm-exporter 30 分钟 → `GpuTelemetryMissing` 进告警流
+- [ ] **监控栈拿不到平台 Secret**:`kubectl auth can-i --as=system:serviceaccount:monitoring:alloy get secrets -n superdl` 与 operator / prometheus / loki 同款均 `no`;`kubectl -n superdl get servicemonitor,podmonitor` 为空,两个 monitor 在 `monitoring` ns(`08-monitoring.yaml`),Prometheus `up{namespace="superdl"}` 两个抓取池都在(Bearer 来自 `monitoring/superdl-metrics-token`);`preflight.sh`「监控栈 SA 不得读 Secret」全绿
 - [ ] Alertmanager → 平台 webhook:`POST /api/v1/webhooks/alertmanager`(带 Bearer token)出现在管理端告警流
 - [ ] 停 HAMi scheduler → 5 分钟内 HamiSchedulerDown 进管理端告警流
 - [ ] `kubectl -n kube-system get svc hami-scheduler -o yaml`:存在名为 `monitor` 的端口(`values/kps.yaml` 的 additionalScrapeConfigs 按**端口名**保留目标);名字对不上改 values
@@ -96,7 +98,9 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 
 - [ ] `kubectl get crd gateways.gateway.networking.k8s.io -o jsonpath='{.metadata.annotations}'`:`gateway.networking.k8s.io/channel` = **experimental**、`bundle-version` = **v1.6.1**。不符即停手(channel 事后换不回去);`preflight.sh` 同款检查
 - [ ] `kubectl -n superdl get gateway superdl -o yaml`:`Programmed=True`,6 个 listener(`http` / `api-https` / `console-https` / `admin-https` / `app-https` / `svc-https`)各自 `Programmed=True`,`attachedRoutes` 与预期条数一致(管理端「集群」页「实例入口(网关)」同判据)
-- [ ] **策略已挂上**:`kubectl -n superdl describe securitypolicy superdl-admin-allowlist` / `securitypolicy superdl-svc-extauth` / `backendtrafficpolicy superdl-api-ratelimit` / `backendtrafficpolicy superdl-api-webhooks` / `backendtrafficpolicy superdl-svc-ratelimit` / `backendtrafficpolicy superdl-app-ratelimit` / `clienttrafficpolicy superdl-gateway`,七者 `status.ancestors[].conditions` 均 `Accepted=True`(`sectionName` 写错不报错,只在这里可见)
+- [ ] **策略已挂上**:`kubectl -n superdl describe securitypolicy superdl-admin-allowlist` / `securitypolicy superdl-svc-extauth` / `backendtrafficpolicy superdl-api-ratelimit` / `backendtrafficpolicy superdl-api-webhooks` / `backendtrafficpolicy superdl-console-api-ratelimit` / `backendtrafficpolicy superdl-admin-ratelimit` / `backendtrafficpolicy superdl-svc-ratelimit` / `backendtrafficpolicy superdl-app-ratelimit` / `clienttrafficpolicy superdl-gateway`,九者 `status.ancestors[].conditions` 均 `Accepted=True`(`sectionName` 写错不报错,只在这里可见)
+- [ ] **console 域的 `/api/v1` 走 Envoy 直达 API**:`curl -sI https://console.<域>/api/v1/catalog/skus` 响应头带 `x-request-id` 且 `superdl-web` 的 nginx 访问日志里没有这条;`curl -sI https://console.<域>/docs` 与 `/api/admin/v1/…` 为 404(`superdl-console-edge-deny`);同一客户端连打 console 域 `/api/v1` 30 次出现 429,管理端域同款(30/s)
+- [ ] **前置层都登记了**:经真实公网链路(CDN → 前置反代)打 `/api/v1/…` 后,`audit_log.ip` 与 API 日志 `client_ip` 是用户真实出口 IP,不是 CDN / 反代地址;不对时核对 `ClientTrafficPolicy` 的 `numTrustedHops` 与 ConfigMap `FORWARDED_ALLOW_IPS` 是否列全每一跳
 - [ ] 三个平台域各 `curl -I https://<域>` 证书链正确;`curl -I http://<域>` 返回 301
 - [ ] **源 IP 传到了 Envoy**:白名单网段外的机器访问 `admin.<域>` 应 403,网段内正常。失败查 `kubectl -n superdl get envoyproxy superdl-proxy -o jsonpath='{.spec.provider.kubernetes.envoyService.externalTrafficPolicy}'` 是否仍是 `Local`
 - [ ] 每源 IP 限流生效:同一客户端 `for i in $(seq 30); do curl -s -o /dev/null -w '%{http_code} ' https://<api域>/readyz; done` 出现 429;**换第二台机器同时打不受影响**。本地限流按 Envoy 实例计数,2 副本时全局上限约为配置值 × 副本数
@@ -124,3 +128,4 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 - [ ] **CSP 与第三方 SDK 域核对**:用真实 aliyun captcha provider 走通注册/登录/找回密码全链路,浏览器控制台无 CSP 违规;新增域先切 `Content-Security-Policy-Report-Only` 收敛再 enforce(见 `deploy/app/security-headers-web-csp.conf`)
 - [ ] admin 站响应头含 `X-Robots-Tag: noindex, nofollow`,web 站 CSP 含 `o.alicdn.com` 与 `*.captcha-open.aliyuncs.com`
 - [ ] 资金库 PITR:托管 PG 确认已开(设 `SUPERDL_MANAGED_PG_PITR_ACK`)或 cnpg 档启用且预检全绿(见 `preflight.sh`)
+- [ ] **切换 server-side apply 后一次性清理**(`scripts/release.sh` 已改为 `kubectl apply --server-side --force-conflicts`):五个 TLS Secret 若曾用客户端 apply 灌入,其 `last-applied-configuration` 注解里存着整份证书与私钥的副本,逐个摘掉:`for s in superdl-api-tls superdl-frontends-tls superdl-admin-tls superdl-jupyter-wildcard-tls superdl-svc-wildcard-tls; do kubectl -n superdl annotate secret "$s" kubectl.kubernetes.io/last-applied-configuration-; done`(`kubectl -n superdl get secret <name> -o jsonpath='{.metadata.annotations}'` 回读为空)

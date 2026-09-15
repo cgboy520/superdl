@@ -57,7 +57,7 @@
 
 ### reconciler 与保留期
 
-- reconciler(30s,advisory lock)是唯一收敛点:Pod Ready 而 DB creating/starting → running;Pod 消失而 DB running → failed;Pod 存在而 DB 终态 → 强删;creating 超 5min → failed(包周期实例首次 creating 超时同事务退回预付)。每轮一次 `list_instance_pods` 即状态源,不逐实例 `get_status`。
+- reconciler(30s,advisory lock)是唯一收敛点:Pod Ready 而 DB creating/starting → running;Pod 消失而 DB running → failed;Pod 存在而 DB 终态 → 强删;creating 超 5min → failed(平台责任的首次 creating 超时同事务退回包周期预付并清实例盘;服务型且 `health_path` 非空、workspace 容器已运行(`PodStatus.started_at`)的超时是租户责任:失败边带 `metadata.occupied_since`,按占用出账,不退款、不清盘,见 [billing.md](./billing.md))。每轮一次 `list_instance_pods` 即状态源,不逐实例 `get_status`。
 - stopping/releasing 悬挂两档超时(`stopping_timeout_seconds`/`releasing_timeout_seconds`):一档经 outbox 重发删除,二档 force 强删后按正常边收敛。悬挂实例数见 `superdl_reconcile_stuck_instances`。
 - 泄漏回收熔断:未知 Pod 占比超 `leak_reclaim_abort_ratio` 即中止本轮并计 `superdl_reconcile_leak_aborted_total`;在途删除宽限同两档超时,其余 force 强删。
 - 保留期 GC 在 reconciler 内:failed 超 `failed_retention_days` → 通知并转 releasing;stopped 超 `stopped_retention_days` → 转 releasing,提前 `stopped_retention_warn_days` 预警。数据盘不受影响。阈值见 [limits.md](./limits.md)。
@@ -108,15 +108,15 @@
 
 两种形态(`instances.workload_type`),差别只在 `build_pod_spec` 分叉与建哪些 K8s 对象;状态机、计费、配额、回收、reconciler、监控、审计全部共用。`service` 形态的实例是某个在线服务的一个版本(`service_id` 反指),暴露规格(`service_slug` / `service_port` / `health_path`)快照在实例行上:
 
-|                             | `dev`(SSH + JupyterLab) | `service`(在线服务的版本)                                                                         |
-| --------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------- |
-| `restartPolicy`             | `Never`                 | `Always`(kubelet 原地重启容器,Pod 不重建;Pod 名 = 实例 uuid)                                      |
-| command / args              | 不设                    | 用户可覆盖(`container_command` / `container_args`)                                                |
-| 用户 env                    | 无                      | `env_encrypted`(整包 AES-GCM,AAD 绑实例 uuid);密文项经 per-instance Secret 以 `secretKeyRef` 引用 |
-| SSH NodePort Service        | 恒建                    | `with_ssh` 才建;为假时**不进端口池**                                                              |
-| Jupyter Service + HTTPRoute | 恒建                    | 不建                                                                                              |
-| 服务 Service + HTTPRoute    | 无                      | `<uuid>-svc` ClusterIP + 挂 `svc-https` listener 的 HTTPRoute                                     |
-| 探针                        | 无                      | `health_path` 非空时 startupProbe(90 × 10s = 15 分钟)+ readinessProbe                             |
+|                             | `dev`(SSH + JupyterLab) | `service`(在线服务的版本)                                                                                         |
+| --------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `restartPolicy`             | `Never`                 | `Always`(kubelet 原地重启容器,Pod 不重建;Pod 名 = 实例 uuid)                                                      |
+| command / args              | 不设                    | 用户可覆盖(`container_command` / `container_args`)                                                                |
+| 用户 env                    | 无                      | `env_encrypted`(整包 AES-GCM,AAD 绑实例 uuid);密文项经 per-instance Secret 以 `secretKeyRef` 引用                 |
+| SSH NodePort Service        | 恒建                    | `with_ssh` 才建;为假时**不进端口池**                                                                              |
+| Jupyter Service + HTTPRoute | 恒建                    | 不建                                                                                                              |
+| 服务 Service + HTTPRoute    | 无                      | `<uuid>-svc` ClusterIP + 挂 `svc-https` listener 的 HTTPRoute                                                     |
+| 探针                        | 无                      | `health_path` 非空时 startupProbe(阈值 = `creating_timeout_seconds` // 10 − 1,总时长小于平台超时)+ readinessProbe |
 
 在线服务的域名规则、鉴权链路、状态派生与 API Key 生命周期见 [services.md](./services.md)。
 

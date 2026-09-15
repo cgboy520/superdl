@@ -1,0 +1,179 @@
+# 宿主机加固(servers + agents,幂等):sshd 只公钥、可选 AllowUsers、清理账号、nftables 默认拒、内核 sysctl。
+# 变量、锁死前置与运行顺序见 README.md「harden.yml」。
+- hosts: all
+  become: true
+  vars:
+    ssh_port: 22
+    ssh_allow_users: []
+    ssh_allow_cidrs: ["0.0.0.0/0"]
+    remove_users: []
+    firewall_enabled: true
+    cluster_cidrs: []
+    pod_cidr: "10.42.0.0/16"
+    service_cidr: "10.43.0.0/16"
+    # 只对 cluster_cidrs 放行的集群端口;扩展在这里加
+    fw_cluster_tcp_ports:
+      - "6443"       # kube-apiserver / k3s supervisor
+      - "9345"       # rke2 supervisor
+      - "10250"      # kubelet
+      - "2379-2380"  # etcd(server)
+      - "5001"       # 内嵌镜像仓库 P2P(embedded-registry)
+      - "4240"       # Cilium health
+      - "9962-9965"  # Cilium agent / operator / Hubble 指标
+      - "9100"       # node-exporter
+      - "8080"       # kube-state-metrics
+      - "9394"       # HAMi
+      - "9400"       # DCGM exporter
+      - "3300"       # Ceph mon v2
+      - "6789"       # Ceph mon v1
+      - "6800-7300"  # Ceph OSD / MDS / mgr
+    fw_cluster_udp_ports:
+      - "8472"   # Cilium VXLAN
+      - "51871"  # Cilium WireGuard
+    # 对任意来源放行
+    fw_public_tcp_ports:
+      - "30000-32767"  # NodePort(租户 SSH)
+    # 仅 servers 组对任意来源放行(Envoy 经 ServiceLB 挂在 server)
+    fw_server_public_tcp_ports:
+      - "80"
+      - "443"
+    sysctl_hardening:
+      kernel.dmesg_restrict: "1"
+      fs.protected_regular: "2"
+      fs.protected_fifos: "2"
+      fs.protected_hardlinks: "1"
+      fs.protected_symlinks: "1"
+  tasks:
+    - name: 连接用户不在 remove_users 里
+      assert:
+        that: ansible_user_id not in remove_users
+        fail_msg: "remove_users 含当前连接用户 {{ ansible_user_id }}"
+
+    - name: 防火墙前置:cluster_cidrs 必须给出
+      assert:
+        that: cluster_cidrs | length > 0
+        fail_msg: "cluster_cidrs 为空:填节点内网网段(如 10.0.0.0/24),否则集群端口全部被拒"
+      when: firewall_enabled
+
+    - name: 统计可登录公钥数(ssh_allow_users 非空只数这些用户,否则数 root 与 uid ≥ 1000 的用户)
+      shell: |
+        users="{{ ssh_allow_users | join(' ') }}"
+        [ -n "$users" ] || users="root $(getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 { print $1 }' | tr '\n' ' ')"
+        n=0
+        for u in $users; do
+          h=$(getent passwd "$u" | cut -d: -f6)
+          [ -n "$h" ] || continue
+          for f in "$h/.ssh/authorized_keys" "$h/.ssh/authorized_keys2"; do
+            [ -f "$f" ] || continue
+            c=$(grep -cE '^(ssh-|ecdsa-|sk-)' "$f" || true)
+            n=$((n + c))
+          done
+        done
+        echo "$n"
+      args:
+        executable: /bin/bash
+      register: pubkey_count
+      changed_when: false
+
+    - name: 关口令登录前必须已有公钥(否则锁死)
+      assert:
+        that: pubkey_count.stdout | int > 0
+        fail_msg: >-
+          目标机没有任何可用公钥(root / ssh_allow_users 的 authorized_keys 为空):
+          先 ssh-copy-id 再跑本 playbook
+
+    - name: sshd drop-in 落盘并自检
+      block:
+        - name: sshd 加固 drop-in(10- 前缀排在 50-cloud-init.conf 之前)
+          template:
+            src: templates/sshd-superdl.conf.j2
+            dest: /etc/ssh/sshd_config.d/10-superdl.conf
+            mode: "0600"
+            owner: root
+            group: root
+          notify: reload-sshd
+        - name: sshd -t
+          command: /usr/sbin/sshd -t
+          changed_when: false
+      rescue:
+        - name: 自检失败:撤回 drop-in
+          file:
+            path: /etc/ssh/sshd_config.d/10-superdl.conf
+            state: absent
+        - name: 中止
+          fail:
+            msg: "sshd -t 未通过,drop-in 已撤回;看上一步输出"
+
+    - name: 清理账号(remove_users;保留 home)
+      user:
+        name: "{{ item }}"
+        state: absent
+        remove: false
+      loop: "{{ remove_users }}"
+
+    - name: nftables 包
+      apt:
+        name: nftables
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+      when: firewall_enabled
+
+    - name: nftables.service drop-in 目录
+      file:
+        path: /etc/systemd/system/nftables.service.d
+        state: directory
+        mode: "0755"
+      when: firewall_enabled
+
+    - name: nftables.service 的 ExecStop 只删本表(发行版默认 flush ruleset 会连 Docker / Cilium / kubelet 的 iptables-nft 表一起清)
+      copy:
+        dest: /etc/systemd/system/nftables.service.d/superdl.conf
+        mode: "0644"
+        content: |
+          [Service]
+          ExecStop=
+          ExecStop=-/usr/sbin/nft delete table inet superdl
+      notify: daemon-reload
+      when: firewall_enabled
+
+    - name: 渲染 /etc/nftables.conf(nft -c 预检通过才落盘)
+      template:
+        src: templates/nftables.conf.j2
+        dest: /etc/nftables.conf
+        mode: "0600"
+        owner: root
+        group: root
+        validate: /usr/sbin/nft -c -f %s
+      notify: apply-nftables
+      when: firewall_enabled
+
+    - name: nftables 开机加载
+      systemd:
+        name: nftables
+        enabled: true
+        daemon_reload: true
+      when: firewall_enabled
+
+    - name: 内核加固 sysctl
+      copy:
+        dest: /etc/sysctl.d/60-superdl-harden.conf
+        mode: "0644"
+        content: |
+          {% for k, v in sysctl_hardening.items() %}
+          {{ k }} = {{ v }}
+          {% endfor %}
+      notify: apply-sysctl
+
+  handlers:
+    - name: reload-sshd
+      systemd:
+        name: ssh
+        state: reloaded
+    - name: daemon-reload
+      systemd:
+        daemon_reload: true
+    - name: apply-nftables
+      command: /usr/sbin/nft -f /etc/nftables.conf
+    - name: apply-sysctl
+      command: sysctl --system

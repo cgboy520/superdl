@@ -1,7 +1,7 @@
 """短信渠道(Protocol + 工厂):mock 落结构化日志;aliyun dysmsapi SendSms,凭据走平台配置中心。"""
 
 import json
-from typing import Protocol
+from typing import Literal, Protocol
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,18 +13,22 @@ from app.core.ratelimit import check_rate_limit
 
 logger = get_logger(__name__)
 
-SMS_PLATFORM_HOURLY_MAX = 1000
-SMS_PLATFORM_DAILY_MAX = 5000
+SmsQuotaKind = Literal["verify", "notify"]
+
+SMS_PLATFORM_LIMITS: dict[SmsQuotaKind, tuple[int, int]] = {
+    "verify": (1000, 5000),
+    "notify": (500, 2000),
+}
 
 
-async def ensure_sms_platform_quota() -> None:
-    """平台级短信闸门,超限抛 RATE_LIMITED(429);每个 channel.send 之前必须先过,计数含失败尝试。"""
+async def ensure_sms_platform_quota(kind: SmsQuotaKind = "verify") -> None:
+    """平台级短信闸门(每 kind 独立的小时 / 日预算;verify = 注册 / 登录 / 找回,notify = 平台通知),
+    超限抛 RATE_LIMITED(429);每个 channel.send 之前必须先过,计数含失败尝试。"""
+    hourly, daily = SMS_PLATFORM_LIMITS[kind]
     await check_rate_limit(
-        "sms-platform:hourly", max_attempts=SMS_PLATFORM_HOURLY_MAX, window_seconds=3600.0
+        f"sms-platform:{kind}:hourly", max_attempts=hourly, window_seconds=3600.0
     )
-    await check_rate_limit(
-        "sms-platform:daily", max_attempts=SMS_PLATFORM_DAILY_MAX, window_seconds=86400.0
-    )
+    await check_rate_limit(f"sms-platform:{kind}:daily", max_attempts=daily, window_seconds=86400.0)
 
 
 class SmsError(RuntimeError):

@@ -8,12 +8,18 @@ from typing import Any, cast
 import pytest
 from kubernetes import client as k8s_client
 
-from app.core.k8s.base import POOL_NODE_LABEL, InstancePodSpec, NodePortTaken
+from app.core.k8s.base import (
+    INFRA_NODE_LABEL,
+    POOL_NODE_LABEL,
+    InstancePodSpec,
+    NodePortTaken,
+)
 from app.core.k8s.real import (
     EGRESS_BLOCKED_TCP_PORTS,
     GATEWAY_DATAPLANE_NAMESPACE,
     PRIVATE_CIDRS,
     RealOrchestrator,
+    _node_is_infra,
 )
 
 
@@ -271,6 +277,63 @@ def _orch_with(pods: list[Any]) -> RealOrchestrator:
 
     orch.core = cast(Any, CoreStub())
     return orch
+
+
+def _k8s_node(name: str, labels: dict[str, str]) -> Any:
+    return SimpleNamespace(
+        metadata=SimpleNamespace(name=name, labels=labels),
+        spec=SimpleNamespace(unschedulable=False),
+        status=SimpleNamespace(
+            conditions=[SimpleNamespace(type="Ready", status="True")],
+            allocatable={"nvidia.com/gpu": "0"},
+            capacity={"cpu": "8", "memory": "16Gi", "ephemeral-storage": "100Gi"},
+        ),
+    )
+
+
+class TestListNodesInfra:
+    """节点视图的 infra 位与池标签选择器。"""
+
+    @pytest.mark.parametrize(
+        ("labels", "expected"),
+        [
+            ({INFRA_NODE_LABEL: "true"}, True),
+            ({"node-role.kubernetes.io/control-plane": "true"}, True),
+            ({"node-role.kubernetes.io/master": ""}, True),
+            ({"node-role.kubernetes.io/etcd": "true"}, True),
+            ({POOL_NODE_LABEL: "hami"}, False),
+            ({}, False),
+        ],
+    )
+    def test_node_is_infra(self, labels, expected):
+        assert _node_is_infra(labels) is expected
+
+    def test_list_nodes_marks_infra_and_selects_by_pool_label(self):
+        """默认只按新池标签键选节点;infra 位随控制面角色 / 落点标签而来。"""
+        calls: list[dict[str, Any]] = []
+        nodes = [
+            _k8s_node("cp-1", {"node-role.kubernetes.io/control-plane": "true"}),
+            _k8s_node("gpu-1", {POOL_NODE_LABEL: "hami"}),
+            _k8s_node("rogue-1", {"superdl.io/pool": "hami"}),
+        ]
+        orch = _bare()
+
+        class CoreStub:
+            def list_node(self, **kwargs: Any) -> Any:
+                calls.append(kwargs)
+                return _page(nodes)
+
+            def list_pod_for_all_namespaces(self, **kwargs: Any) -> Any:
+                return _page([])
+
+        orch.core = cast(Any, CoreStub())
+        out = {n.name: n for n in orch._list_nodes_sync(include_unlabeled=True)}
+        assert calls[-1]["label_selector"] is None
+        assert out["cp-1"].infra is True and out["cp-1"].pool_label == "unknown"
+        assert out["gpu-1"].infra is False and out["gpu-1"].pool_label == "hami"
+        assert out["rogue-1"].infra is False and out["rogue-1"].pool_label == "unknown"
+        orch._list_nodes_sync(include_unlabeled=False)
+        assert calls[-1]["label_selector"] == POOL_NODE_LABEL
 
 
 class TestHamiCapacityAccounting:
@@ -639,3 +702,102 @@ class TestInstancePodBandwidth:
         pod = cast(Any, build_instance_pod(spec))
         assert pod.metadata.annotations["kubernetes.io/egress-bandwidth"] == "200M"
         assert pod.spec.host_users is None
+
+
+class TestTenantRbacSync:
+    """租户 ns 的 secrets 授权只经 RoleBinding → ClusterRole superdl-tenant-secrets;不现写 Role,
+    旧版指向 namespaced Role 的 binding 被删掉重建并清掉旧 Role。"""
+
+    class _Rbac:
+        def __init__(self, existing_ref: tuple[str, str] | None = None):
+            self.existing_ref = existing_ref
+            self.calls: list[tuple[str, Any]] = []
+            self.role_deleted_status = 404
+
+        def create_namespaced_role(self, ns: str, body: Any) -> None:
+            raise AssertionError("不得现写 Role")
+
+        def create_namespaced_role_binding(self, ns: str, body: Any) -> None:
+            self.calls.append(("create_binding", body))
+            if self.existing_ref is not None:
+                self.existing_ref = None
+                raise k8s_client.ApiException(status=409)
+
+        def read_namespaced_role_binding(self, name: str, ns: str) -> Any:
+            self.calls.append(("read_binding", name))
+            assert self.existing_ref is not None or self.calls[-2][0] == "create_binding"
+            kind, ref_name = self._last_ref
+            return SimpleNamespace(role_ref=SimpleNamespace(kind=kind, name=ref_name))
+
+        def patch_namespaced_role_binding(self, name: str, ns: str, body: Any) -> None:
+            self.calls.append(("patch_binding", body))
+
+        def delete_namespaced_role_binding(self, name: str, ns: str) -> None:
+            self.calls.append(("delete_binding", name))
+
+        def delete_namespaced_role(self, name: str, ns: str) -> None:
+            self.calls.append(("delete_role", name))
+            raise k8s_client.ApiException(status=self.role_deleted_status)
+
+        @property
+        def _last_ref(self) -> tuple[str, str]:
+            return self._ref_at_conflict
+
+        def with_conflict_ref(self, kind: str, name: str) -> "TestTenantRbacSync._Rbac":
+            self._ref_at_conflict = (kind, name)
+            self.existing_ref = (kind, name)
+            return self
+
+    @staticmethod
+    def _orch(rbac: Any) -> RealOrchestrator:
+        orch = _bare()
+        orch.settings = cast(Any, SimpleNamespace(k8s_platform_namespace="superdl"))
+        orch.rbac = cast(Any, rbac)
+        return orch
+
+    def test_fresh_namespace_creates_binding_to_cluster_role_only(self):
+        from app.core.k8s.real import TENANT_SECRETS_CLUSTER_ROLE
+
+        rbac = self._Rbac()
+        self._orch(rbac)._ensure_tenant_rbac_sync("tenant-a")
+        assert [c[0] for c in rbac.calls] == ["create_binding"]
+        body = rbac.calls[0][1]
+        assert (body.role_ref.kind, body.role_ref.name) == (
+            "ClusterRole",
+            TENANT_SECRETS_CLUSTER_ROLE,
+        )
+        assert body.metadata.namespace == "tenant-a"
+        assert (body.subjects[0].name, body.subjects[0].namespace) == (
+            "superdl-tenant-mgr",
+            "superdl",
+        )
+
+    def test_existing_binding_with_cluster_role_ref_only_gets_subjects_patched(self):
+        from app.core.k8s.real import TENANT_SECRETS_CLUSTER_ROLE
+
+        rbac = self._Rbac().with_conflict_ref("ClusterRole", TENANT_SECRETS_CLUSTER_ROLE)
+        self._orch(rbac)._ensure_tenant_rbac_sync("tenant-a")
+        assert [c[0] for c in rbac.calls] == ["create_binding", "read_binding", "patch_binding"]
+        assert rbac.calls[-1][1]["subjects"][0].name == "superdl-tenant-mgr"
+
+    def test_legacy_role_ref_binding_is_recreated_and_role_removed(self):
+        from app.core.k8s.real import TENANT_MGR_ROLE_NAME
+
+        rbac = self._Rbac().with_conflict_ref("Role", TENANT_MGR_ROLE_NAME)
+        self._orch(rbac)._ensure_tenant_rbac_sync("tenant-a")
+        assert [c[0] for c in rbac.calls] == [
+            "create_binding",
+            "read_binding",
+            "delete_binding",
+            "create_binding",
+            "delete_role",
+        ]
+        assert rbac.calls[-1][1] == TENANT_MGR_ROLE_NAME
+
+    def test_legacy_role_delete_non_404_propagates(self):
+        from app.core.k8s.real import TENANT_MGR_ROLE_NAME
+
+        rbac = self._Rbac().with_conflict_ref("Role", TENANT_MGR_ROLE_NAME)
+        rbac.role_deleted_status = 403
+        with pytest.raises(k8s_client.ApiException):
+            self._orch(rbac)._ensure_tenant_rbac_sync("tenant-a")

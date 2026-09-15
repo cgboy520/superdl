@@ -1,5 +1,6 @@
 """节点注册(管理侧 + 状态机):令牌生命周期、角色矩阵、审计不落 token。"""
 
+import asyncio
 from datetime import timedelta
 
 import pytest
@@ -24,7 +25,7 @@ async def set_cluster_config(sm: async_sessionmaker[AsyncSession]) -> None:
             session,
             {
                 "cluster_server_url": "https://10.0.0.10:9345",
-                "cluster_join_token": "K10abcdef0123456789::server:secrettoken",
+                "cluster_join_token": "agent-fixture-0123456789-secrettoken",
             },
             updated_by=None,
         )
@@ -224,6 +225,36 @@ class TestEnrollmentStateMachine:
                 )
             assert exc.value.http_status == 404
 
+    async def test_concurrent_bootstrap_consumes_token_once(self, sm) -> None:
+        """同一注册令牌并发 bootstrap:行锁下只有一个成功,另一个 404;挂了说明令牌可被消费两次。"""
+        await set_cluster_config(sm)
+        async with sm() as session:
+            _e, token = await nodes_service.create_enrollment(
+                session,
+                EnrollmentCreate(pool="hami", hostname="gpu-race-1"),
+                created_by=1,
+                idempotency_key=None,
+            )
+
+        async def attempt():
+            async with sm() as session:
+                return await nodes_service.bootstrap(
+                    session,
+                    token,
+                    hostname="gpu-race-1",
+                    os_info={},
+                    gpu_details=[],
+                    client_ip=None,
+                )
+
+        results = await asyncio.gather(attempt(), attempt(), return_exceptions=True)
+        ok = [r for r in results if not isinstance(r, BaseException)]
+        failed = [r for r in results if isinstance(r, BaseException)]
+        assert len(ok) == 1 and len(failed) == 1
+        assert isinstance(failed[0], AppError) and failed[0].http_status == 404
+        rows = await enrollment_rows(sm)
+        assert [r.status for r in rows] == ["installing"]
+
     async def test_absolute_expiry_kills_inflight_token(self, sm) -> None:
         """令牌绝对过期:installing 也受 expires_at 约束,过期即 404。"""
         await set_cluster_config(sm)
@@ -397,7 +428,7 @@ class TestEnrollReconciler:
     async def test_platform_labels_node_then_joins(self, client, sm) -> None:
         """入网时池标签由平台打:节点以未打标状态注册,对账器打整套标签后才判 joined。"""
         from app.core.k8s import set_orchestrator
-        from app.core.k8s.base import NodeInfo
+        from app.core.k8s.base import POOL_NODE_LABEL, NodeInfo
         from app.core.k8s.fake import FakeOrchestrator
         from app.modules.nodes.reconciler import reconcile_enrollments_once
 
@@ -441,7 +472,7 @@ class TestEnrollReconciler:
             counts = await reconcile_enrollments_once(sm)
             assert counts["labeled"] == 1 and counts["joined"] == 1
             labels = fake.node_labels["gpu-b1-02"]
-            assert labels["superdl.io/pool"] == "hami"
+            assert labels[POOL_NODE_LABEL] == "hami"
             assert labels["nvidia.com/gpu.deploy.device-plugin"] == "false"
             rows = (await client.get("/api/admin/v1/node-enrollments", headers=ah)).json()
             assert rows[0]["status"] == "joined" and rows[0]["joined_at"] is not None
@@ -453,7 +484,7 @@ class TestEnrollReconciler:
     async def test_node_self_declared_pool_is_overwritten(self, client, sm) -> None:
         """平台按登记覆盖节点池标签,节点正常入网。"""
         from app.core.k8s import set_orchestrator
-        from app.core.k8s.base import NodeInfo
+        from app.core.k8s.base import POOL_NODE_LABEL, NodeInfo
         from app.core.k8s.fake import FakeOrchestrator
         from app.modules.nodes.reconciler import reconcile_enrollments_once
 
@@ -487,7 +518,7 @@ class TestEnrollReconciler:
             )
             counts = await reconcile_enrollments_once(sm)
             assert counts["failed"] == 0 and counts["joined"] == 1
-            assert fake.node_labels["wrong-pool-node"]["superdl.io/pool"] == "kata"
+            assert fake.node_labels["wrong-pool-node"][POOL_NODE_LABEL] == "kata"
             rows = (await client.get("/api/admin/v1/node-enrollments", headers=ah)).json()
             assert rows[0]["status"] == "joined"
         finally:

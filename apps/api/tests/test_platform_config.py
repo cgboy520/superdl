@@ -33,16 +33,28 @@ class TestSpecValidation:
         )
 
 
+SERVER_NODE_TOKEN = "K10" + "ab" * 32 + "::server:secretpassword"
+
+
 class TestClusterJoinTokenShape:
     @pytest.mark.parametrize(
         "token",
         [
-            "K10abcdef0123456789::server:secrettoken",
             "b9134731929da2d82187d52e83d7c6ab726fb0bed612005b3382f5d0e61ac300",
+            "K10" + "ab" * 32 + "::node:agentpassword",
+            "agent-fixture-0123456789-secrettoken",
         ],
     )
     def test_real_shapes_accepted(self, token):
         assert validate_setting_value("cluster_join_token", token) == token
+
+    @pytest.mark.parametrize(
+        "token", [SERVER_NODE_TOKEN, "K10" + "AB" * 32 + "::server:secretpassword"]
+    )
+    def test_server_node_token_rejected(self, token):
+        """server node-token(K10<64hex>::server:…,hex 不分大小写)会让节点以 server 入群:拒收。"""
+        with pytest.raises(ValueError, match="只许 agent token"):
+            validate_setting_value("cluster_join_token", token)
 
     @pytest.mark.parametrize(
         "token",
@@ -635,7 +647,7 @@ class TestPolicyOverrides:
         base = (await client.get("/api/v1/policies")).json()
         assert base["disk_price_gb_month"] == "0.0350"
 
-        ah = await admin_headers(sm, client, role="ops")
+        ah = await admin_headers(sm, client, role="admin")
         resp = await client.put(
             "/api/admin/v1/policies",
             json={"updates": {"disk_price_gb_month": "0.0500"}, "reason": "季度调价"},
@@ -653,7 +665,7 @@ class TestPolicyOverrides:
 
     async def test_new_disk_snapshots_overridden_price(self, client: AsyncClient, sm):
         """盘价是建盘时快照:覆盖后新盘用新价。"""
-        ah = await admin_headers(sm, client, role="ops")
+        ah = await admin_headers(sm, client, role="admin")
         await client.put(
             "/api/admin/v1/policies",
             json={"updates": {"disk_price_gb_month": "0.0700"}, "reason": "测试调价"},
@@ -687,7 +699,7 @@ class TestPolicyOverrides:
         assert all(i["group"] != "policy" for i in items)
 
     async def test_invalid_updates_rejected(self, client: AsyncClient, sm):
-        ah = await admin_headers(sm, client, role="ops")
+        ah = await admin_headers(sm, client, role="admin")
         resp = await client.put(
             "/api/admin/v1/policies",
             json={"updates": {"disk_price_gb_month": "9.99"}, "reason": "手滑"},

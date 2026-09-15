@@ -1,7 +1,8 @@
-"""节点规格巡检:读 K8s、事务内收敛台账、再收敛标签与 cordon。
+"""节点规格巡检:读 K8s、事务内收敛台账、隔离未登记节点、再收敛标签与 cordon。
 
 型号优先级:装机登记 nvidia-smi > GFD label > 存量;驱动/CUDA 版本 GFD label 优先。
 期望池优先级:desired_pool > 注册登记。
+未登记隔离:非 infra、无登记行、无期望池且未打池标签的节点请求 cordon。
 """
 
 from dataclasses import dataclass, field, replace
@@ -18,7 +19,11 @@ from app.core.k8s import K8sOrchestrator, get_orchestrator, health
 from app.core.k8s.base import GPU_MODEL_NODE_LABEL, ClusterProbe, NodeInfo
 from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
-from app.core.metrics import LIGHT_DISTRO_IN_PROD, NODE_POOL_LABEL_MISMATCH_TOTAL
+from app.core.metrics import (
+    LIGHT_DISTRO_IN_PROD,
+    NODE_POOL_LABEL_MISMATCH_TOTAL,
+    NODE_UNENROLLED,
+)
 from app.core.timeutil import now_utc
 from app.modules.metering import service as metering_service
 from app.modules.nodes import service
@@ -73,6 +78,23 @@ async def _enrolled_pools(session: AsyncSession) -> dict[str, str]:
     return {r.node_name: r.pool for r in rows if r.node_name}
 
 
+async def _enrolled_node_names(session: AsyncSession) -> set[str]:
+    """有登记行(任一状态)的节点名;bootstrap 即落 node_name,装机中的节点也在内。"""
+    rows = (
+        await session.execute(
+            select(NodeEnrollment.node_name).where(NodeEnrollment.node_name.is_not(None))
+        )
+    ).scalars()
+    return {name for name in rows if name}
+
+
+def _unlabeled(pool_label: str | None) -> bool:
+    return pool_label in (None, "", "unknown")
+
+
+UNENROLLED_CORDON_REASON = "未登记节点加入集群,已自动停止调度待人工核查"
+
+
 @dataclass
 class _Plan:
     """标签待办为 (节点, 型号),池待办为 (节点, 期望池, 观测池, 是否篡改)。"""
@@ -93,6 +115,7 @@ async def node_spec_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, in
         "cordon_converged": 0,
         "pool_label_corrected": 0,
         "pool_mismatch_cordoned": 0,
+        "unenrolled_cordoned": 0,
     }
     async with advisory_lock(sm, LockKey.NODE_SPEC_PATROL) as got:
         if not got:
@@ -110,6 +133,7 @@ async def node_spec_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, in
         _report_light_distro(probe)
         nodes = await orch.list_nodes(include_unlabeled=True)
         plan = await _converge_ledger(sm, probe, nodes, counts)
+        await _quarantine_unenrolled(sm, nodes, counts)
         await _sync_model_labels(sm, orch, plan.labels, counts)
         await _fix_pool_labels(sm, orch, plan.pool_fixes, counts)
         await _converge_cordon(sm, orch, nodes, counts)
@@ -189,6 +213,42 @@ async def _converge_ledger(
                 counts["missing"] += 1
         await session.commit()
     return plan
+
+
+async def _quarantine_unenrolled(
+    sm: async_sessionmaker[AsyncSession],
+    nodes: list[NodeInfo],
+    counts: dict[str, int],
+) -> None:
+    """未登记隔离:非 infra、无登记行、无期望池且未打池标签 → 请求 cordon(已请求不重复);
+    带池标签而无登记只告警(受保护前缀只有平台/管理员能写)。指标每轮重置。"""
+    async with sm() as session:
+        enrolled = await _enrolled_node_names(session)
+        rows = {r.node_name: r for r in (await session.execute(select(NodeSpec))).scalars()}
+        unenrolled: list[str] = []
+        to_cordon: list[str] = []
+        for n in nodes:
+            row = rows.get(n.name)
+            if n.infra or n.name in enrolled or (row is not None and row.desired_pool):
+                continue
+            if not _unlabeled(n.pool_label):
+                logger.warning("node_pool_label_without_enrollment", node=n.name, pool=n.pool_label)
+                continue
+            unenrolled.append(n.name)
+            if row is None or row.desired_unschedulable is not True:
+                to_cordon.append(n.name)
+        for name in to_cordon:
+            await service.request_cordon(
+                session, name, unschedulable=True, reason=UNENROLLED_CORDON_REASON
+            )
+            counts["unenrolled_cordoned"] += 1
+    NODE_UNENROLLED.set(len(unenrolled))
+    for name in unenrolled:
+        logger.error(
+            "node_unenrolled",
+            node=name,
+            hint="集群里出现无注册登记的节点,已停止调度;核实来源后退役或补登记",
+        )
 
 
 def _upsert_node_spec(
