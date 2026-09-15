@@ -10,13 +10,18 @@ spec:
     resourceRules:
       - apiGroups: ["*"]
         apiVersions: ["*"]
-        resources: ["*"]
+        # "*/*" = 全部资源及其子资源(apiserver 拒绝与 "*" 并列)
+        resources: ["*/*"]
         operations: ["CREATE", "UPDATE", "DELETE"]
         scope: "*"
   matchConditions:
     - name: platform-sa-only
       expression: "request.userInfo.username.startsWith('system:serviceaccount:superdl:')"
   validations:
+    - expression: >-
+        !(request.resource.group == '' && request.resource.resource == 'pods' && has(request.subResource) &&
+          request.subResource in ['exec', 'attach', 'portforward', 'ephemeralcontainers'])
+      message: "平台 SA 禁止 pods/exec、pods/attach、pods/portforward、pods/ephemeralcontainers"
     - expression: >-
         !(request.resource.group == '' && request.resource.resource == 'namespaces') ||
         (request.operation == 'DELETE'
@@ -79,14 +84,20 @@ spec:
         resources: ["pods", "pods/ephemeralcontainers"]
         operations: ["CREATE", "UPDATE"]
         scope: "Namespaced"
+  variables:
+    - name: allContainers
+      expression: >-
+        object.spec.containers +
+        (has(object.spec.initContainers) ? object.spec.initContainers : []) +
+        (has(object.spec.ephemeralContainers) ? object.spec.ephemeralContainers : [])
   validations:
     - expression: >-
-        !object.spec.containers.exists(c, has(c.securityContext) && has(c.securityContext.privileged) && c.securityContext.privileged) &&
-        (!has(object.spec.initContainers) || !object.spec.initContainers.exists(c, has(c.securityContext) && has(c.securityContext.privileged) && c.securityContext.privileged)) &&
-        (!has(object.spec.ephemeralContainers) || !object.spec.ephemeralContainers.exists(c, has(c.securityContext) && has(c.securityContext.privileged) && c.securityContext.privileged))
+        !variables.allContainers.exists(c, has(c.securityContext) && has(c.securityContext.privileged) && c.securityContext.privileged)
       message: "租户 Pod 禁止 privileged 容器"
     - expression: "!has(object.spec.volumes) || !object.spec.volumes.exists(v, has(v.hostPath))"
       message: "租户 Pod 禁止 hostPath 卷"
+    - expression: "!has(object.spec.serviceAccountName) || object.spec.serviceAccountName == 'default'"
+      message: "租户 Pod 不得指定非 default 的 serviceAccountName"
     - expression: >-
         (!has(object.spec.hostNetwork) || object.spec.hostNetwork == false) &&
         (!has(object.spec.hostPID) || object.spec.hostPID == false) &&
@@ -99,17 +110,17 @@ spec:
     - expression: "has(object.spec.automountServiceAccountToken) && object.spec.automountServiceAccountToken == false"
       message: "租户 Pod 必须 automountServiceAccountToken: false"
     - expression: >-
-        object.spec.containers.all(c, has(c.securityContext) && has(c.securityContext.allowPrivilegeEscalation) && c.securityContext.allowPrivilegeEscalation == false)
-      message: "租户容器必须显式 allowPrivilegeEscalation: false"
+        variables.allContainers.all(c, has(c.securityContext) && has(c.securityContext.allowPrivilegeEscalation) && c.securityContext.allowPrivilegeEscalation == false)
+      message: "租户容器(含 init/ephemeral)必须显式 allowPrivilegeEscalation: false"
     - expression: >-
-        object.spec.containers.all(c, has(c.securityContext) && has(c.securityContext.capabilities) &&
+        variables.allContainers.all(c, has(c.securityContext) && has(c.securityContext.capabilities) &&
           has(c.securityContext.capabilities.drop) && c.securityContext.capabilities.drop.exists(d, d == 'ALL') &&
           (!has(c.securityContext.capabilities.add) || c.securityContext.capabilities.add.all(a, a in ['SYS_CHROOT', 'SETUID', 'SETGID'])))
-      message: "租户容器必须 drop ALL capabilities,仅允许 add SYS_CHROOT/SETUID/SETGID(sshd 特权分离所需)"
+      message: "租户容器(含 init/ephemeral)必须 drop ALL capabilities,仅允许 add SYS_CHROOT/SETUID/SETGID(sshd 特权分离所需)"
     - expression: >-
-        object.spec.containers.all(c, has(c.securityContext) && has(c.securityContext.seccompProfile) &&
+        variables.allContainers.all(c, has(c.securityContext) && has(c.securityContext.seccompProfile) &&
           has(c.securityContext.seccompProfile.type) && c.securityContext.seccompProfile.type == 'RuntimeDefault')
-      message: "租户容器必须 seccompProfile: RuntimeDefault"
+      message: "租户容器(含 init/ephemeral)必须 seccompProfile: RuntimeDefault"
     - expression: >-
         !has(object.spec.nodeName) ||
         (request.operation == 'UPDATE' && has(oldObject.spec.nodeName) && object.spec.nodeName == oldObject.spec.nodeName)
@@ -119,9 +130,7 @@ spec:
         object.spec.runtimeClassName in ['kata-qemu', 'nvidia']
       message: "租户 Pod 的 runtimeClassName 仅允许 kata-qemu / nvidia"
     - expression: >-
-        object.spec.containers.all(c, !has(c.env) || !c.env.exists(e, e.name.startsWith('NVIDIA_'))) &&
-        (!has(object.spec.initContainers) ||
-          object.spec.initContainers.all(c, !has(c.env) || !c.env.exists(e, e.name.startsWith('NVIDIA_'))))
+        variables.allContainers.all(c, !has(c.env) || !c.env.exists(e, e.name.startsWith('NVIDIA_')))
       message: "租户 Pod 禁止 NVIDIA_* 环境变量(GPU 可见性由平台分配链控制;伪造可见性 = 看到同机全部显卡)"
 ---
 apiVersion: admissionregistration.k8s.io/v1
@@ -168,6 +177,8 @@ spec:
         (has(object.spec.providerID) && has(oldObject.spec.providerID) && object.spec.providerID == oldObject.spec.providerID)
     - name: gpuOperandKeys
       expression: "['nvidia.com/gpu.workload.config', 'nvidia.com/gpu.deploy.device-plugin']"
+    - name: poolKey
+      expression: "'node-restriction.kubernetes.io/superdl-pool'"
     - name: annotationsSame
       expression: >-
         (!has(object.metadata.annotations) && !has(oldObject.metadata.annotations)) ||
@@ -183,11 +194,11 @@ spec:
       message: "平台 SA 对 Node spec 仅允许变更 unschedulable(cordon);taints/podCIDR/providerID 锁死"
     - expression: >-
         has(object.metadata.labels) && has(oldObject.metadata.labels) &&
-        object.metadata.labels.all(k, k.startsWith('superdl.io/') || k in variables.gpuOperandKeys ||
+        object.metadata.labels.all(k, k.startsWith('superdl.io/') || k == variables.poolKey || k in variables.gpuOperandKeys ||
           (k in oldObject.metadata.labels && object.metadata.labels[k] == oldObject.metadata.labels[k])) &&
-        oldObject.metadata.labels.all(k, k.startsWith('superdl.io/') || k in variables.gpuOperandKeys ||
+        oldObject.metadata.labels.all(k, k.startsWith('superdl.io/') || k == variables.poolKey || k in variables.gpuOperandKeys ||
           (k in object.metadata.labels && oldObject.metadata.labels[k] == object.metadata.labels[k]))
-      message: "平台 SA 对 Node labels 仅允许变更 superdl.io/* 与 GPU operand 落点键"
+      message: "平台 SA 对 Node labels 仅允许变更 superdl.io/*、池标签 node-restriction.kubernetes.io/superdl-pool 与 GPU operand 落点键(superdl-infra 落点键不在其列)"
     - expression: "variables.annotationsSame && variables.finalizersSame"
       message: "平台 SA 禁止变更 Node annotations/finalizers"
 ---
@@ -232,7 +243,7 @@ spec:
         (!has(object.spec.hostIPC) || object.spec.hostIPC == false)
       message: "非豁免命名空间禁止 hostNetwork/hostPID/hostIPC"
     - expression: "!has(object.spec.hostUsers) || object.spec.hostUsers == false"
-      message: "非豁免命名空间禁止 hostUsers: true"
+      message: "非豁免命名空间禁止显式 hostUsers: true(未写该字段不拦;租户 ns 另由 superdl-tenant-pod-baseline 强制 hostUsers: false)"
     - expression: >-
         !has(object.spec.nodeName) ||
         (request.operation == 'UPDATE' && has(oldObject.spec.nodeName) && object.spec.nodeName == oldObject.spec.nodeName) ||
@@ -278,6 +289,11 @@ spec:
     - name: strict
       expression: "request.userInfo.username.startsWith('system:serviceaccount:superdl:')"
   validations:
+    - expression: >-
+        !variables.strict ||
+        ((!has(object.spec.serviceAccountName) || object.spec.serviceAccountName == 'default') &&
+         has(object.spec.automountServiceAccountToken) && object.spec.automountServiceAccountToken == false)
+      message: "平台 SA 在 superdl 命名空间建的 Pod 不得指定非 default 的 serviceAccountName,且必须 automountServiceAccountToken: false"
     - expression: >-
         !has(object.spec.imagePullSecrets) ||
         object.spec.imagePullSecrets.all(s,
@@ -359,6 +375,10 @@ spec:
     - name: podSpec
       expression: "object.spec.template.spec"
   validations:
+    - expression: >-
+        (!has(variables.podSpec.serviceAccountName) || variables.podSpec.serviceAccountName == 'default') &&
+        has(variables.podSpec.automountServiceAccountToken) && variables.podSpec.automountServiceAccountToken == false
+      message: "平台 SA 建的 Job 模板不得指定非 default 的 serviceAccountName,且必须 automountServiceAccountToken: false"
     - expression: >-
         !has(variables.podSpec.imagePullSecrets) ||
         variables.podSpec.imagePullSecrets.all(s, has(s.name) && s.name == 'superdl-registry-pull')

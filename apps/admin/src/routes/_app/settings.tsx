@@ -85,6 +85,11 @@ const POLICY_LABELS = {
     unit: "settings.policy.max_disks_per_user.unit",
     hint: "settings.policy.max_disks_per_user.hint",
   },
+  max_disk_gb_per_user: {
+    label: "settings.policy.max_disk_gb_per_user.label",
+    unit: "settings.policy.max_disk_gb_per_user.unit",
+    hint: "settings.policy.max_disk_gb_per_user.hint",
+  },
   prewarm_min_coverage_pct: {
     label: "settings.policy.prewarm_min_coverage_pct.label",
     unit: "settings.policy.prewarm_min_coverage_pct.unit",
@@ -142,7 +147,8 @@ function PoliciesTab() {
   const errText = useApiErrorText();
   const { message } = App.useApp();
   const role = useAdminRole();
-  const writable = canWriteOps(role);
+  /** PUT /policies 后端仅 admin。 */
+  const writable = role === "admin";
   const qc = useQueryClient();
   const { data, queryKey, isLoading, isError, refetch } = useAdminPolicies();
   const [draft, setDraft] = useState<Record<string, string>>({});

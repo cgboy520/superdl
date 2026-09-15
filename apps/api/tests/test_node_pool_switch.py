@@ -23,7 +23,7 @@ pytestmark = pytest.mark.usefixtures("fake_auto_ready")
 
 async def _cluster_configured(sm) -> None:
     await set_platform_setting(sm, "cluster_server_url", "https://10.0.0.10:9345")
-    await set_platform_setting(sm, "cluster_join_token", "K10abcdef0123456789::server:secrettoken")
+    await set_platform_setting(sm, "cluster_join_token", "agent-fixture-0123456789-secrettoken")
 
 
 async def _probe(sm) -> None:

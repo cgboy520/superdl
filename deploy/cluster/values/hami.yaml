@@ -1,12 +1,13 @@
 scheduler:
   defaultSchedulerPolicy:
     nodeSchedulerPolicy: binpack
-    gpuSchedulerPolicy: binpack
+    # 同卡尽量不放多个实例
+    gpuSchedulerPolicy: spread
 devicePlugin:
   runtimeClassName: ""
   nvidiaNodeSelector:
     gpu: null
-    superdl.io/pool: hami
+    node-restriction.kubernetes.io/superdl-pool: hami
 devices:
   nvidia:
     gpuCorePolicy: force

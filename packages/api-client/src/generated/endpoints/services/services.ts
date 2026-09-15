@@ -402,6 +402,7 @@ export const getStartServiceApiV1ServicesSlugStartPostUrl = (slug: string,) => {
 }
 
 /**
+ * 启动:当前实例开机。限流与实例开关机同桶。
  * @summary Start Service
  */
 export const startServiceApiV1ServicesSlugStartPost = async (slug: string, options?: Parameters<typeof customFetch>[1]): Promise<ServiceOut> => {
@@ -425,7 +426,7 @@ export const getStopServiceApiV1ServicesSlugStopPostUrl = (slug: string,) => {
 }
 
 /**
- * 停止:当前实例关机,端点随之 503;服务端点与密钥保留。
+ * 停止:当前实例关机,端点随之 503;服务端点与密钥保留。限流与实例开关机同桶。
  * @summary Stop Service
  */
 export const stopServiceApiV1ServicesSlugStopPost = async (slug: string, options?: Parameters<typeof customFetch>[1]): Promise<ServiceOut> => {

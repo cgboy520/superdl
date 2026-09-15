@@ -90,6 +90,13 @@ releases:
       - values/light/kps-light.yaml
       {{- end }}
     disableValidationOnInstall: true
+    hooks:
+      - events: ["presync"]
+        showlogs: true
+        command: "sh"
+        args:
+          - "-c"
+          - "kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f - && kubectl apply -f monitoring-rbac.yaml"
 
   - name: rook-ceph
     condition: rookCeph.enabled

@@ -97,12 +97,18 @@ rules:
   - apiGroups: [""]
     resources: ["services", "resourcequotas", "limitranges"]
     verbs: ["get", "list", "create", "delete", "patch"]
-  - apiGroups: ["rbac.authorization.k8s.io"]
-    resources: ["roles"]
-    verbs: ["get", "create", "patch", "escalate", "bind"]
+  # 租户 ns 的 secrets 权限不再由 tenant-mgr 现写 Role,而是把预置 ClusterRole superdl-tenant-secrets 用 RoleBinding 绑进 ns;
+  # bind 限定到该 ClusterRole 名。roles 只留 delete(清理旧版遗留的 superdl-tenant-mgr-secrets Role),无 create/patch/escalate/bind。
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["rolebindings"]
-    verbs: ["get", "create", "patch"]
+    verbs: ["get", "create", "patch", "delete"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles"]
+    verbs: ["delete"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterroles"]
+    resourceNames: ["superdl-tenant-secrets"]
+    verbs: ["bind"]
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
     verbs: ["get", "create", "delete", "patch"]
@@ -121,6 +127,39 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: superdl-tenant-mgr
+    namespace: superdl
+---
+# 无 ClusterRoleBinding:只经 tenant-mgr 在每个 tenant-* ns 建的 RoleBinding(core/k8s/real.py::_ensure_tenant_rbac_sync)生效
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: superdl-tenant-secrets
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "patch", "delete"]
+---
+# 实例日志只读直读(docs/reference/orchestrator.md),只绑 superdl-api
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: superdl-api-logs
+rules:
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: superdl-api-logs
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: superdl-api-logs
+subjects:
+  - kind: ServiceAccount
+    name: superdl-api
     namespace: superdl
 ---
 apiVersion: rbac.authorization.k8s.io/v1

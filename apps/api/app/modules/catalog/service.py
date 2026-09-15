@@ -1,4 +1,5 @@
 from collections.abc import Iterable
+from datetime import timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -7,6 +8,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit import AuditLog
 from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode, conflict, not_found
 from app.core.gpu_adapter import (
@@ -22,6 +24,7 @@ from app.core.logging import get_logger
 from app.core.money import as_amount, as_price
 from app.core.outbox import enqueue
 from app.core.platform_config import get_runtime_config
+from app.core.timeutil import now_utc
 from app.modules.catalog import inventory
 from app.modules.catalog.models import ImageNodeCache, PlatformImage, Sku
 from app.modules.catalog.schemas import (
@@ -262,6 +265,7 @@ async def admin_create_sku(session: AsyncSession, data: SkuCreate) -> Sku:
 
 
 PRICE_CHANGE_ALERT_RATIO = Decimal("0.5")
+PRICE_CHANGE_WINDOW = timedelta(hours=24)
 
 
 async def admin_update_sku(
@@ -308,14 +312,57 @@ async def admin_update_sku(
     return sku, before
 
 
+async def _price_baseline_24h(session: AsyncSession, sku_id: int, fallback: Decimal) -> Decimal:
+    """24 小时内最早一次成功改价审计行的旧价;没有则用本次改价前的价。"""
+    before_price = AuditLog.detail["before"]["price_hourly"].astext
+    stmt = (
+        select(before_price)
+        .where(
+            AuditLog.actor_type == "admin",
+            AuditLog.target == f"sku:{sku_id}",
+            AuditLog.action.like("admin.PATCH %"),
+            AuditLog.result < 400,
+            AuditLog.created_at >= now_utc() - PRICE_CHANGE_WINDOW,
+            before_price.isnot(None),
+        )
+        .order_by(AuditLog.created_at.asc(), AuditLog.id.asc())
+        .limit(1)
+    )
+    raw = (await session.execute(stmt)).scalar_one_or_none()
+    return Decimal(raw) if raw else fallback
+
+
 async def _alert_large_price_change(
     session: AsyncSession, sku: Sku, old: Decimal, new: Decimal, reason: str
 ) -> None:
-    """大幅改价落一条管理端告警,不阻断。"""
-    ratio = abs(new - old) / old
-    if ratio < PRICE_CHANGE_ALERT_RATIO:
+    """与 24 小时前基准比累计 ≥50% 落 critical 告警;否则单步 ≥50% 落 warning 告警。不阻断。"""
+    baseline = await _price_baseline_24h(session, sku.id, old)
+    cumulative = abs(new - baseline) / baseline
+    step = abs(new - old) / old
+    if cumulative >= PRICE_CHANGE_ALERT_RATIO:
+        logger.warning(
+            "sku_price_cumulative_change",
+            sku_id=sku.id,
+            baseline=str(baseline),
+            old=str(old),
+            new=str(new),
+            reason=reason,
+        )
+        await notify_service.notify(
+            session,
+            None,
+            type_="admin_alert",
+            title=f"SKU 单价 24 小时累计大幅调整:{sku.name}",
+            content=(
+                f"24 小时前 {baseline} → 现 {new} 元/时(累计幅度 {cumulative:.0%});"
+                f"本次 {old} → {new};原因:{reason}"
+            ),
+            severity="critical",
+            dedup_key=f"sku_price_24h:{sku.id}:{new}",
+        )
         return
-
+    if step < PRICE_CHANGE_ALERT_RATIO:
+        return
     logger.warning(
         "sku_price_large_change", sku_id=sku.id, old=str(old), new=str(new), reason=reason
     )
@@ -324,7 +371,7 @@ async def _alert_large_price_change(
         None,
         type_="admin_alert",
         title=f"SKU 单价大幅调整:{sku.name}",
-        content=f"{old} → {new} 元/时(幅度 {ratio:.0%});原因:{reason}",
+        content=f"{old} → {new} 元/时(幅度 {step:.0%});原因:{reason}",
         severity="warning",
         dedup_key=f"sku_price:{sku.id}:{new}",
     )

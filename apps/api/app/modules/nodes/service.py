@@ -26,6 +26,7 @@ from app.core.k8s import get_orchestrator
 from app.core.k8s.base import (
     DATA_DISK_STORAGE_CLASS,
     INSTANCE_DISK_STORAGE_CLASS,
+    POOL_NODE_LABEL,
     ClusterProbe,
     ComponentFact,
     ComponentFacts,
@@ -373,19 +374,22 @@ def _check_usable(row: NodeEnrollment | None) -> NodeEnrollment:
 
 
 async def _resolve_by_hash(
-    session: AsyncSession, column: InstrumentedAttribute[str | None], token: str
+    session: AsyncSession,
+    column: InstrumentedAttribute[str | None],
+    token: str,
+    *,
+    for_update: bool = False,
 ) -> NodeEnrollment | None:
-    """按 HMAC candidates(crypto.py)取行。"""
-    return (
-        await session.execute(
-            select(NodeEnrollment).where(column.in_(hash_node_token_candidates(token))).limit(1)
-        )
-    ).scalar_one_or_none()
+    """按 HMAC candidates(crypto.py)取行;for_update 加行锁。"""
+    stmt = select(NodeEnrollment).where(column.in_(hash_node_token_candidates(token))).limit(1)
+    if for_update:
+        stmt = stmt.with_for_update()
+    return (await session.execute(stmt)).scalar_one_or_none()
 
 
 async def _resolve_token(session: AsyncSession, token: str) -> NodeEnrollment:
-    """注册令牌(bootstrap 用):按哈希取行。"""
-    row = await _resolve_by_hash(session, NodeEnrollment.token_hash, token)
+    """注册令牌(bootstrap 用):按哈希取行并 FOR UPDATE,并发 bootstrap 只有一个能消费。"""
+    row = await _resolve_by_hash(session, NodeEnrollment.token_hash, token, for_update=True)
     return _check_usable(row)
 
 
@@ -698,7 +702,7 @@ def _helmfile(distro: str | None, release: str) -> str:
 _NVIDIA_RC_FIX = "节点装 nvidia-container-toolkit 后重启 k3s/rke2"
 
 _COMPONENT_META: tuple[tuple[ComponentKey, str | None, str], ...] = (
-    ("nodes", None, "kubectl get node -o wide -L superdl.io/pool"),
+    ("nodes", None, f"kubectl get node -o wide -L {POOL_NODE_LABEL}"),
     ("hami", "hami", "kubectl -n kube-system get pod -l app=hami-scheduler -o wide"),
     ("gpu_operator", "gpu-operator", "kubectl -n gpu-operator get ds"),
     ("dcgm", "gpu-operator", "kubectl -n gpu-operator get ds | grep dcgm"),
@@ -706,7 +710,7 @@ _COMPONENT_META: tuple[tuple[ComponentKey, str | None, str], ...] = (
     (
         "kata_runtimeclass",
         "kata-deploy",
-        "kubectl get runtimeclass kata-qemu; kubectl get node -l superdl.io/pool=kata",
+        f"kubectl get runtimeclass kata-qemu; kubectl get node -l {POOL_NODE_LABEL}=kata",
     ),
     ("storage", "topolvm", "kubectl get sc"),
     ("gateway", "envoy-gateway", "kubectl -n superdl get gateway superdl -o yaml"),

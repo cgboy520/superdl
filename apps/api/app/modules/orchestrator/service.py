@@ -29,7 +29,7 @@ from app.core.idempotency import (
     request_fingerprint,
 )
 from app.core.k8s import InstancePodSpec, get_orchestrator
-from app.core.k8s.base import data_disk_pvc_name
+from app.core.k8s.base import STARTUP_PROBE_PERIOD_SECONDS, data_disk_pvc_name
 from app.core.logging import get_logger
 from app.core.money import hourly_cost, money_str
 from app.core.outbox import enqueue
@@ -873,6 +873,16 @@ def _reject_service_instance(instance: Instance) -> None:
         raise conflict(key="orchestrator.serviceInstanceLifecycle")
 
 
+LIFECYCLE_MAX_PER_HOUR = 60
+
+
+async def check_lifecycle_rate_limit(user_id: int) -> None:
+    """开机 / 关机 / 重启共用桶(实例与在线服务同桶):每用户每小时 LIFECYCLE_MAX_PER_HOUR 次。"""
+    await check_rate_limit(
+        f"instance-lifecycle:{user_id}", max_attempts=LIFECYCLE_MAX_PER_HOUR, window_seconds=3600.0
+    )
+
+
 async def stop_instance_row(
     session: AsyncSession, instance: Instance, *, reason: str = "user_stop", actor: str = "user"
 ) -> Instance:
@@ -1254,7 +1264,13 @@ def build_pod_spec(
         ),
         health_path=instance.health_path if is_service else None,
         with_ssh=instance.with_ssh,
+        startup_failure_threshold=startup_failure_threshold(settings.creating_timeout_seconds),
     )
+
+
+def startup_failure_threshold(creating_timeout_seconds: int) -> int:
+    """startupProbe 失败阈值:总时长(阈值 × 周期)小于平台 creating 超时,下限 3 次。"""
+    return max(3, creating_timeout_seconds // STARTUP_PROBE_PERIOD_SECONDS - 1)
 
 
 async def build_pod_spec_with_cluster(

@@ -1,5 +1,5 @@
 nodeSelector:
-  superdl.io/pool: kata
+  node-restriction.kubernetes.io/superdl-pool: kata
 
 shims:
   disableAll: true
@@ -7,7 +7,7 @@ shims:
     enabled: true
     runtimeClass:
       nodeSelector:
-        superdl.io/pool: kata
+        node-restriction.kubernetes.io/superdl-pool: kata
       overhead:
         memory: "512Mi"
         cpu: "250m"
@@ -15,6 +15,3 @@ shims:
 runtimeClasses:
   enabled: true
   createDefault: false
-
-node-feature-discovery:
-  enabled: false

@@ -13,7 +13,7 @@ from app.core.config import get_settings
 from app.core.crypto import hash_id_number_candidates, hash_sms_code, hash_sms_code_candidates
 from app.core.errors import AppError, ErrorCode, conflict, not_found, unauthorized
 from app.core.logging import get_logger, mask_phone_value
-from app.core.loginguard import LoginBucket, login_failed, login_preflight, login_succeeded
+from app.core.loginguard import LoginBucket, login_attempt, login_failed, login_succeeded
 from app.core.metrics import LOGIN_FAILED_TOTAL, SMS_SENT_TOTAL, USER_SIGNUP_TOTAL
 from app.core.pagination import RawPage, clamp_limit, decode_cursor_int, slice_page
 from app.core.platform_config import get_runtime_config
@@ -54,40 +54,36 @@ SMS_SEND_BACKOFF_MAX_EXPONENT = 3
 
 SMS_CONSUME_DAILY_MAX = 10
 
+SMS_SEND_IP_HOURLY_MAX = 20
+
+SMS_SEND_PHONE_DAILY_MAX = 15
+
+SMS_PRECHECK_PHONE_HOURLY_MAX = 30
+
 REFRESH_REPLAY_GRACE_SECONDS = 10.0
 
 
-async def send_sms_code(
-    session: AsyncSession,
-    phone: str,
-    purpose: str,
-    *,
-    client_ip: str | None = None,
-    captcha_token: str | None = None,
-) -> None:
-    """按手机号加事务咨询锁创建验证码;提交后发送,渠道失败时作废验证码。"""
-    settings = get_settings()
-    await check_rate_limit(
-        f"sms-send-ip:{client_ip or '-'}", max_attempts=20, window_seconds=3600.0
-    )
-    cfg = await get_runtime_config(session)
-    if cfg.captcha_enabled:
-        if not captcha_token:
-            raise AppError(ErrorCode.CAPTCHA_REQUIRED, key="account.captchaRequired")
-        try:
-            channel = await get_captcha_channel(session)
-            captcha_ok = await channel.verify(captcha_token)
-        except CaptchaError as exc:
-            logger.error("captcha_channel_error", error=str(exc))
-            raise AppError(
-                ErrorCode.CAPTCHA_CHANNEL_ERROR,
-                key="account.captchaChannelError",
-                http_status=status.HTTP_502_BAD_GATEWAY,
-            ) from exc
-        if not captcha_ok:
-            raise AppError(ErrorCode.CAPTCHA_VERIFY_FAILED, key="account.captchaVerifyFailed")
-    await ensure_sms_platform_quota()
-    await session.execute(text("SELECT pg_advisory_xact_lock(hashtext(:phone))"), {"phone": phone})
+async def _verify_captcha(session: AsyncSession, captcha_token: str | None) -> None:
+    """captcha_enabled 时校验人机 token:缺失 400、渠道故障 502、不通过 400。"""
+    if not captcha_token:
+        raise AppError(ErrorCode.CAPTCHA_REQUIRED, key="account.captchaRequired")
+    try:
+        channel = await get_captcha_channel(session)
+        captcha_ok = await channel.verify(captcha_token)
+    except CaptchaError as exc:
+        logger.error("captcha_channel_error", error=str(exc))
+        raise AppError(
+            ErrorCode.CAPTCHA_CHANNEL_ERROR,
+            key="account.captchaChannelError",
+            http_status=status.HTTP_502_BAD_GATEWAY,
+        ) from exc
+    if not captcha_ok:
+        raise AppError(ErrorCode.CAPTCHA_VERIFY_FAILED, key="account.captchaVerifyFailed")
+
+
+async def _enforce_send_backoff(session: AsyncSession, phone: str) -> None:
+    """同号最新一条距今不足基础间隔即拒;连续 N 条未成功消费(含失败作废 / 过期)时
+    间隔 = 基础 × 2^(N-1),指数封顶 SMS_SEND_BACKOFF_MAX_EXPONENT。调用方须持手机号咨询锁。"""
     recent = list(
         (
             await session.execute(
@@ -98,23 +94,55 @@ async def send_sms_code(
             )
         ).scalars()
     )
+    if not recent:
+        return
     streak = 0
     for row in recent:
-        if row.used_at is None:
-            streak += 1
-        else:
+        if row.consumed_at is not None:
             break
-    if streak:
-        base = settings.sms_send_interval_seconds
-        required = base * (2 ** min(streak - 1, SMS_SEND_BACKOFF_MAX_EXPONENT))
-        elapsed = (now_utc() - ensure_utc(recent[0].created_at)).total_seconds()
-        if elapsed < required:
-            raise AppError(
-                ErrorCode.SMS_TOO_FREQUENT,
-                key="account.smsTooFrequent",
-                params={"seconds": math.ceil(required - elapsed)},
-                http_status=status.HTTP_429_TOO_MANY_REQUESTS,
-            )
+        streak += 1
+    base = get_settings().sms_send_interval_seconds
+    required = base * (2 ** min(max(streak, 1) - 1, SMS_SEND_BACKOFF_MAX_EXPONENT))
+    elapsed = (now_utc() - ensure_utc(recent[0].created_at)).total_seconds()
+    if elapsed < required:
+        raise AppError(
+            ErrorCode.SMS_TOO_FREQUENT,
+            key="account.smsTooFrequent",
+            params={"seconds": math.ceil(required - elapsed)},
+            http_status=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
+
+async def send_sms_code(
+    session: AsyncSession,
+    phone: str,
+    purpose: str,
+    *,
+    client_ip: str | None = None,
+    captcha_token: str | None = None,
+) -> None:
+    """按手机号加事务咨询锁创建验证码;提交后发送,渠道失败时作废验证码。
+    闸门顺序:按号预检桶 → 人机验证 → 按 IP 桶 → 退避 → 按号日发送上限 → 平台 verify 预算。"""
+    settings = get_settings()
+    await check_rate_limit(
+        f"sms-precheck-phone:{phone}",
+        max_attempts=SMS_PRECHECK_PHONE_HOURLY_MAX,
+        window_seconds=3600.0,
+    )
+    cfg = await get_runtime_config(session)
+    if cfg.captcha_enabled:
+        await _verify_captcha(session, captcha_token)
+    await check_rate_limit(
+        f"sms-send-ip:{client_ip or '-'}",
+        max_attempts=SMS_SEND_IP_HOURLY_MAX,
+        window_seconds=3600.0,
+    )
+    await session.execute(text("SELECT pg_advisory_xact_lock(hashtext(:phone))"), {"phone": phone})
+    await _enforce_send_backoff(session, phone)
+    await check_rate_limit(
+        f"sms-send-phone:{phone}", max_attempts=SMS_SEND_PHONE_DAILY_MAX, window_seconds=86400.0
+    )
+    await ensure_sms_platform_quota("verify")
     code = MOCK_SMS_CODE if cfg.sms_provider == "mock" else f"{secrets.randbelow(10**6):06d}"
     row = SmsCode(
         phone=phone,
@@ -173,7 +201,7 @@ async def _consume_sms_code(session: AsyncSession, phone: str, code: str, purpos
     await check_rate_limit(
         f"sms-consume-phone:{phone}", max_attempts=SMS_CONSUME_DAILY_MAX, window_seconds=86400.0
     )
-    row.used_at = now_utc()
+    row.used_at = row.consumed_at = now_utc()
 
 
 def _issue_tokens(
@@ -320,14 +348,16 @@ async def login(
     *,
     client_ip: str | None = None,
 ) -> TokenPair:
-    """密码或验证码登录。密码路径先过封禁预检;失败四层同计并留痕;成功清零配对桶并判异常登录。"""
+    """密码或验证码登录。密码路径 bcrypt 前四层桶先计数再判定;失败留痕;
+    成功退还预计数、清零配对桶并判异常登录。验证码路径只在失败后计数。"""
     buckets = _login_buckets(phone, client_ip)
-    if password is not None:
-        await login_preflight(buckets)
+    precounted = password is not None
+    if precounted:
+        await login_attempt(buckets)
     try:
         user = await _verify_credentials(session, phone, sms_code=sms_code, password=password)
     except _LoginFailed as exc:
-        await login_failed(buckets)
+        await login_failed(buckets, precounted=precounted)
         LOGIN_FAILED_TOTAL.labels(actor_type="user").inc()
         logger.warning(
             "user_login_failed",
@@ -337,7 +367,7 @@ async def login(
             registered=exc.registered,
         )
         raise
-    await login_succeeded(buckets)
+    await login_succeeded(buckets, precounted=precounted)
     if password is not None:
         await _notify_login_anomaly(session, user)
     if user.status == "frozen":

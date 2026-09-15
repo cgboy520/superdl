@@ -148,45 +148,48 @@
         path: "{{ '/etc/systemd/system/rke2-server.service' if cluster_distro == 'rke2' else '/etc/systemd/system/k3s.service' }}"
       register: server_installed
 
-    - name: 下载 rke2 安装器
+    - name: 安装器缓存目录(root 私有,不用 /tmp)
+      file:
+        path: /root/.cache/superdl
+        state: directory
+        mode: "0700"
+        owner: root
+        group: root
+      when: not server_installed.stat.exists
+
+    - name: 下载 rke2 安装器(get_url 按 sha256 校验后才落盘;force 覆盖旧文件)
       get_url:
         url: https://rancher-mirror.rancher.cn/rke2/install.sh
-        dest: /tmp/rke2-install.sh
+        dest: /root/.cache/superdl/rke2-install.sh
+        checksum: "sha256:{{ rke2_installer_sha256 }}"
+        force: true
         mode: "0700"
-      register: rke2_installer_dl
+        owner: root
+        group: root
       when: cluster_distro == 'rke2' and not server_installed.stat.exists
-
-    - name: 校验 rke2 安装器 sha256
-      command: sha256sum -c -
-      args:
-        stdin: "{{ rke2_installer_sha256 }}  /tmp/rke2-install.sh"
-      when: cluster_distro == 'rke2' and rke2_installer_dl.changed
 
     - name: 安装 rke2 server(幂等:已装跳过)
       shell: >
-        INSTALL_RKE2_MIRROR=cn INSTALL_RKE2_CHANNEL={{ rke2_channel }} sh /tmp/rke2-install.sh
+        INSTALL_RKE2_MIRROR=cn INSTALL_RKE2_CHANNEL={{ rke2_channel }} sh /root/.cache/superdl/rke2-install.sh
       args:
         executable: /bin/bash
         creates: /etc/systemd/system/rke2-server.service
       when: cluster_distro == 'rke2'
 
-    - name: 下载 k3s 安装器
+    - name: 下载 k3s 安装器(get_url 按 sha256 校验后才落盘;force 覆盖旧文件)
       get_url:
         url: https://rancher-mirror.rancher.cn/k3s/k3s-install.sh
-        dest: /tmp/k3s-install.sh
+        dest: /root/.cache/superdl/k3s-install.sh
+        checksum: "sha256:{{ k3s_installer_sha256 }}"
+        force: true
         mode: "0700"
-      register: k3s_installer_dl
+        owner: root
+        group: root
       when: cluster_distro == 'k3s' and not server_installed.stat.exists
-
-    - name: 校验 k3s 安装器 sha256
-      command: sha256sum -c -
-      args:
-        stdin: "{{ k3s_installer_sha256 }}  /tmp/k3s-install.sh"
-      when: cluster_distro == 'k3s' and k3s_installer_dl.changed
 
     - name: 安装 k3s server(幂等:已装跳过)
       shell: >
-        INSTALL_K3S_MIRROR=cn sh /tmp/k3s-install.sh -s - server
+        INSTALL_K3S_MIRROR=cn sh /root/.cache/superdl/k3s-install.sh -s - server
       args:
         executable: /bin/bash
         creates: /etc/systemd/system/k3s.service
@@ -214,6 +217,33 @@
         --overwrite
       register: infra_label
       changed_when: "'labeled' in infra_label.stdout"
+
+    - name: k3s 状态备份依赖(sqlite3 在线一致副本、gpg、rsync)
+      apt:
+        name: [sqlite3, gnupg, rsync]
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+      when: cluster_distro == 'k3s'
+
+    - name: k3s 状态备份脚本(cred / tls / token / datastore 加密到 PG 镜像机 k3s/)
+      copy:
+        src: ../cluster/k3s/state-backup.sh
+        dest: /usr/local/sbin/superdl-k3s-state-backup
+        mode: "0700"
+        owner: root
+        group: root
+      when: cluster_distro == 'k3s'
+
+    - name: k3s 状态备份 cron(每 6 小时;镜像机与口令沿用 /etc/superdl/pg/backup.env、backup-passphrase、backup-ssh-key)
+      copy:
+        dest: /etc/cron.d/superdl-k3s-state-backup
+        mode: "0644"
+        content: |
+          SHELL=/bin/bash
+          PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          23 */6 * * * root /usr/local/sbin/superdl-k3s-state-backup
+      when: cluster_distro == 'k3s'
 
   handlers:
     - name: restart-server

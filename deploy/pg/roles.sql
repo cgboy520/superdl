@@ -8,7 +8,11 @@ GRANT USAGE ON SCHEMA public TO superdl_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO superdl_app;
 GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO superdl_app;
 REVOKE UPDATE, DELETE ON balance_ledger FROM superdl_app;
-REVOKE UPDATE ON audit_log FROM superdl_app;
+REVOKE UPDATE, DELETE ON audit_log FROM superdl_app;
+REVOKE UPDATE, DELETE ON instance_events FROM superdl_app;
+REVOKE INSERT, UPDATE, DELETE ON alembic_version FROM superdl_app;
+REVOKE ALL ON FUNCTION audit_log_prune(integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION audit_log_prune(integer) TO superdl_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE superdl IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO superdl_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE superdl IN SCHEMA public

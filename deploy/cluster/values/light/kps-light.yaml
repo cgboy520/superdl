@@ -1,7 +1,8 @@
 prometheus:
   prometheusSpec:
-    retention: 3d
-    retentionSize: "3GB"
+    # retentionSize 先于 retention 生效:盘到 4GB 即按最老块淘汰,15d 只是上限
+    retention: 15d
+    retentionSize: "4GB"
     storageSpec:
       volumeClaimTemplate:
         spec:

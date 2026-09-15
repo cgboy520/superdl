@@ -1,5 +1,5 @@
 # pyright: reportPrivateUsage=false
-"""节点台账巡检:铺行收敛/未打标可见/装机登记兜底/Missing 保留删行/label 收敛与失败自愈。"""
+"""节点台账巡检:铺行收敛/未登记隔离/装机登记兜底/Missing 保留删行/label 收敛与失败自愈。"""
 
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -7,13 +7,16 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy import select
 
-from app.core.k8s.base import NodeInfo
+from app.core.k8s.base import POOL_NODE_LABEL, NodeInfo
+from app.core.metrics import NODE_UNENROLLED
 from app.core.outbox import OutboxTask
 from app.modules.nodes.models import NodeSpec
 from app.modules.nodes.patrol import node_spec_patrol
 from tests.helpers import set_platform_setting
 
 pytestmark = pytest.mark.usefixtures("fake_auto_ready")
+
+AGENT_TOKEN = "agent-fixture-0123456789-secrettoken"
 
 
 async def test_patrol_converges_and_labels(sm, fake_auto_ready):
@@ -36,7 +39,8 @@ async def test_patrol_converges_and_labels(sm, fake_auto_ready):
     assert counts2["upserted"] == 4 and counts2["removed"] == 0
 
 
-async def test_unlabeled_node_visible(sm, fake_auto_ready):
+async def test_unenrolled_unlabeled_node_is_quarantined(sm, fake_auto_ready):
+    """无登记、未打标的非 infra 节点请求 cordon(一次)并常驻指标;挂了说明未知节点仍可调度。"""
     fake_auto_ready.unlabeled_nodes.append(
         NodeInfo(
             name="rogue-node",
@@ -47,13 +51,77 @@ async def test_unlabeled_node_visible(sm, fake_auto_ready):
             gpu_model_label="NVIDIA-GeForce-RTX-4090",
         )
     )
-    await node_spec_patrol(sm)
+    counts = await node_spec_patrol(sm)
+    assert counts["unenrolled_cordoned"] == 1
+    assert NODE_UNENROLLED._value.get() == 1
     async with sm() as session:
         row = (
             await session.execute(select(NodeSpec).where(NodeSpec.node_name == "rogue-node"))
         ).scalar_one()
-    assert row.unlabeled is True and row.pool_label is None
-    assert row.gpu_model == "RTX4090"
+        assert row.unlabeled is True and row.pool_label is None
+        assert row.gpu_model == "RTX4090"
+        assert row.desired_unschedulable is True
+        tasks = (
+            await session.execute(select(OutboxTask).where(OutboxTask.type == "node.cordon"))
+        ).scalars()
+        assert [t.payload["node_name"] for t in tasks] == ["rogue-node"]
+    assert "rogue-node" in fake_auto_ready.cordoned_nodes
+
+    counts2 = await node_spec_patrol(sm)
+    assert counts2["unenrolled_cordoned"] == 0
+    assert NODE_UNENROLLED._value.get() == 1
+    fake_auto_ready.unlabeled_nodes.clear()
+    await node_spec_patrol(sm)
+    assert NODE_UNENROLLED._value.get() == 0
+
+
+async def test_infra_node_without_enrollment_is_left_alone(sm, fake_auto_ready):
+    """控制面 / infra 落点节点无登记也不隔离;池标签在但无登记的节点只告警不 cordon。"""
+    fake_auto_ready.unlabeled_nodes.append(
+        NodeInfo(
+            name="cp-1", pool_label="unknown", gpu_total=0, gpu_used=0, status="Ready", infra=True
+        )
+    )
+    counts = await node_spec_patrol(sm)
+    assert counts["unenrolled_cordoned"] == 0
+    assert NODE_UNENROLLED._value.get() == 0
+    assert fake_auto_ready.cordoned_nodes == set()
+    async with sm() as session:
+        rows = (await session.execute(select(NodeSpec))).scalars()
+        assert all(r.desired_unschedulable is None for r in rows)
+
+
+async def test_node_mid_join_is_left_alone(sm, fake_auto_ready):
+    """bootstrap 已落 node_name 的 installing 登记:节点未打标也不隔离。"""
+    from app.modules.nodes import service
+    from app.modules.nodes.schemas import EnrollmentCreate
+
+    await set_platform_setting(sm, "cluster_server_url", "https://10.0.0.10:9345")
+    await set_platform_setting(sm, "cluster_join_token", AGENT_TOKEN)
+    async with sm() as session:
+        _e, token = await service.create_enrollment(
+            session,
+            EnrollmentCreate(pool="hami", hostname="joining-1"),
+            created_by=1,
+            idempotency_key=None,
+        )
+    async with sm() as session:
+        row, _cfg, _progress = await service.bootstrap(
+            session,
+            token,
+            hostname="joining-1",
+            os_info={},
+            gpu_details=[],
+            client_ip=None,
+        )
+        assert row.status == "installing"
+    fake_auto_ready.inject_node(
+        NodeInfo(name="joining-1", pool_label="", gpu_total=8, gpu_used=0, status="Ready")
+    )
+    counts = await node_spec_patrol(sm)
+    assert counts["unenrolled_cordoned"] == 0
+    assert NODE_UNENROLLED._value.get() == 0
+    assert "joining-1" not in fake_auto_ready.cordoned_nodes
 
 
 async def test_missing_then_removed(sm, fake_auto_ready):
@@ -126,7 +194,7 @@ async def test_enrollment_report_wins_over_gfd(sm, fake_auto_ready):
     from app.modules.nodes.schemas import EnrollmentCreate
 
     await set_platform_setting(sm, "cluster_server_url", "https://10.0.0.10:9345")
-    await set_platform_setting(sm, "cluster_join_token", "K10abcdef0123456789::server:secrettoken")
+    await set_platform_setting(sm, "cluster_join_token", AGENT_TOKEN)
     async with sm() as session:
         _e, token = await service.create_enrollment(
             session,
@@ -172,7 +240,7 @@ async def _enroll_and_join_attempt(sm, *, hostname: str, pool: str) -> None:
     from app.modules.nodes.schemas import EnrollmentCreate
 
     await set_platform_setting(sm, "cluster_server_url", "https://10.0.0.10:9345")
-    await set_platform_setting(sm, "cluster_join_token", "K10abcdef0123456789::server:secrettoken")
+    await set_platform_setting(sm, "cluster_join_token", AGENT_TOKEN)
     async with sm() as session:
         _e, token = await service.create_enrollment(
             session,
@@ -218,7 +286,7 @@ async def test_tampered_pool_label_is_corrected_and_cordoned(sm, fake_auto_ready
     counts = await node_spec_patrol(sm)
 
     assert counts["pool_label_corrected"] == 1
-    assert fake_auto_ready.node_labels["tampered-1"]["superdl.io/pool"] == "cpu"
+    assert fake_auto_ready.node_labels["tampered-1"][POOL_NODE_LABEL] == "cpu"
     assert counts["pool_mismatch_cordoned"] == 1
     async with sm() as session:
         row = (
@@ -252,7 +320,7 @@ async def test_switch_pool_converges_without_spoof_alarm(sm, fake_auto_ready):
         )
     )
     await set_platform_setting(sm, "cluster_server_url", "https://10.0.0.10:9345")
-    await set_platform_setting(sm, "cluster_join_token", "K10abcdef0123456789::server:secrettoken")
+    await set_platform_setting(sm, "cluster_join_token", AGENT_TOKEN)
     await node_spec_patrol(sm)
     async with sm() as session:
         await service.switch_node_pool(
@@ -269,7 +337,7 @@ async def test_switch_pool_converges_without_spoof_alarm(sm, fake_auto_ready):
     assert counts["pool_mismatch_cordoned"] == 0
     assert NODE_POOL_LABEL_MISMATCH_TOTAL._value.get() == before
     labels = fake_auto_ready.node_labels["switcher-1"]
-    assert labels["superdl.io/pool"] == "kata"
+    assert labels[POOL_NODE_LABEL] == "kata"
     assert labels[GPU_WORKLOAD_CONFIG_LABEL] == "vm-passthrough"
 
 

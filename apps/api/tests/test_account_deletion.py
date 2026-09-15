@@ -226,6 +226,7 @@ class TestApproveSuccess:
                 )
             )
             await session.commit()
+        await age_sms_codes(sm)
         await client.post(
             "/api/v1/auth/sms-code",
             json={"phone": PHONE, "purpose": "login"},

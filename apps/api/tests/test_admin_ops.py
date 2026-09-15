@@ -6,14 +6,16 @@ from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import select, update
 
+from app.core.audit import AuditLog
 from app.core.errors import AppError, ErrorCode
 from app.core.outbox import OutboxTask
 from app.core.timeutil import now_utc
 from app.modules.adminapi import finance_service
 from app.modules.adminapi.auth_service import create_admin
-from app.modules.adminapi.models import AdminAdjustment
+from app.modules.adminapi.models import AdminAdjustment, AdminUser
+from app.modules.adminapi.router_ops import large_policy_moves
 from app.modules.billing.models import BalanceLedger
 from app.modules.notify.models import Notification
 from app.modules.orchestrator.reconciler import reconcile_once
@@ -32,6 +34,38 @@ from tests.helpers import (
 )
 
 pytestmark = pytest.mark.usefixtures("fake")
+
+
+async def _season_reviewer(
+    sm, username: str, *, days: int = 2, history: str | None = "admin.POST /api/admin/v1/tenants"
+) -> None:
+    """把管理员建号时间回拨 days 天,并按 history 补一条成功管理操作审计行(None = 不补)。"""
+    async with sm() as session:
+        admin = (
+            await session.execute(select(AdminUser).where(AdminUser.username == username))
+        ).scalar_one()
+        admin.created_at = now_utc() - timedelta(days=days)
+        if history is not None:
+            session.add(
+                AuditLog(
+                    actor_type="admin",
+                    actor_id=str(admin.id),
+                    action=history,
+                    target="tenant:1",
+                    result=200,
+                    created_at=now_utc() - timedelta(days=1),
+                )
+            )
+        await session.commit()
+
+
+async def _review(client, adj_id: int, headers: dict, *, approve: bool = True, comment=None):
+    body: dict = {"approve": approve}
+    if comment is not None:
+        body["comment"] = comment
+    return await client.post(
+        f"/api/admin/v1/adjustments/{adj_id}/review", json=body, headers=headers
+    )
 
 
 async def _make_dead_task(sm) -> int:
@@ -53,6 +87,7 @@ class TestAdjustments:
         headers, _uuid, user_id = await provision_running(client, sm, fake)
         finance_a = await admin_headers(sm, client, role="finance", username="fin-a")
         finance_b = await admin_headers(sm, client, role="finance", username="fin-b")
+        await _season_reviewer(sm, "fin-b")
 
         resp = await client.post(
             "/api/admin/v1/adjustments",
@@ -90,6 +125,7 @@ class TestAdjustments:
         headers, _uuid, user_id = await provision_running(client, sm, fake)
         fin_a = await admin_headers(sm, client, role="finance", username="fin-c")
         fin_b = await admin_headers(sm, client, role="finance", username="fin-d")
+        await _season_reviewer(sm, "fin-d")
 
         resp = await client.post(
             "/api/admin/v1/adjustments",
@@ -148,6 +184,8 @@ class TestAdjustments:
             r1 = await create_admin(session, "fin-race-b", "pass1234", "finance")
             r2 = await create_admin(session, "fin-race-c", "pass1234", "finance")
             creator_id, r1_id, r2_id = creator.id, r1.id, r2.id
+        await _season_reviewer(sm, "fin-race-b")
+        await _season_reviewer(sm, "fin-race-c")
         async with sm() as session:
             adj, _created = await finance_service.create_adjustment(
                 session,
@@ -181,7 +219,7 @@ class TestAdjustments:
         assert len(entries) == 1
 
     async def test_reviewer_created_after_adjustment_rejected(self, client, sm, fake):
-        """复核人必须是调账发起前已存在的账号。"""
+        """复核人账号须早于调账发起 24 小时创建:发起后建号与 23 小时前建号都拒,25 小时前放行。"""
         _headers, _uuid, user_id = await provision_running(client, sm, fake)
         fin_a = await admin_headers(sm, client, role="finance", username="fin-late-a")
         resp = await client.post(
@@ -193,28 +231,101 @@ class TestAdjustments:
         adj_id = resp.json()["id"]
 
         fin_b = await admin_headers(sm, client, role="finance", username="fin-late-b")
-        resp = await client.post(
-            f"/api/admin/v1/adjustments/{adj_id}/review",
-            json={"approve": True},
-            headers=fin_b,
-        )
+        resp = await _review(client, adj_id, fin_b)
+        assert resp.status_code == 403
+        assert resp.json()["message_key"] == "adminapi.adjustReviewerTooNew"
+
+        async with sm() as session:
+            await session.execute(
+                update(AdminUser)
+                .where(AdminUser.username == "fin-late-b")
+                .values(created_at=now_utc() - timedelta(hours=23))
+            )
+            await session.commit()
+        resp = await _review(client, adj_id, fin_b)
         assert resp.status_code == 403
         assert resp.json()["message_key"] == "adminapi.adjustReviewerTooNew"
 
         fin_c = await admin_headers(sm, client, role="finance", username="fin-late-c")
+        await _season_reviewer(sm, "fin-late-c", days=0)
+        async with sm() as session:
+            await session.execute(
+                update(AdminUser)
+                .where(AdminUser.username == "fin-late-c")
+                .values(created_at=now_utc() - timedelta(hours=25))
+            )
+            await session.commit()
+        resp = await _review(client, adj_id, fin_c)
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == "approved"
+
+    async def test_reviewer_without_prior_admin_action_rejected(self, client, sm, fake):
+        """先建小号、后发起:老账号但从未做过管理操作(或只做过复核)的复核人不构成独立复核。"""
+        _headers, _uuid, user_id = await provision_running(client, sm, fake)
+        fin_a = await admin_headers(sm, client, role="finance", username="fin-idle-a")
+        fin_b = await admin_headers(sm, client, role="finance", username="fin-idle-b")
+        await _season_reviewer(sm, "fin-idle-b", history=None)
+        fin_c = await admin_headers(sm, client, role="finance", username="fin-idle-c")
+        await _season_reviewer(
+            sm, "fin-idle-c", history="admin.POST /api/admin/v1/adjustments/7/review"
+        )
+        fin_d = await admin_headers(sm, client, role="finance", username="fin-idle-d")
+        await _season_reviewer(sm, "fin-idle-d", history="admin.GET /api/admin/v1/audit")
+
         resp = await client.post(
             "/api/admin/v1/adjustments",
             json={"user_id": user_id, "amount": "25.50", "reason": "故障补偿"},
             headers=fin_a,
         )
-        adj2_id = resp.json()["id"]
-        resp = await client.post(
-            f"/api/admin/v1/adjustments/{adj2_id}/review",
-            json={"approve": True},
-            headers=fin_c,
-        )
+        adj_id = resp.json()["id"]
+        for headers in (fin_b, fin_c):
+            resp = await _review(client, adj_id, headers)
+            assert resp.status_code == 403, resp.text
+            assert resp.json()["message_key"] == "adminapi.reviewerNotIndependent"
+        async with sm() as session:
+            adj = await session.get(AdminAdjustment, adj_id)
+            assert adj is not None and adj.status == "pending" and adj.reviewed_by is None
+        resp = await _review(client, adj_id, fin_d)
         assert resp.status_code == 200, resp.text
-        assert resp.json()["status"] == "approved"
+
+    async def test_reviewer_history_after_adjustment_does_not_count(self, client, sm, fake):
+        """只有调账发起之前的成功操作算数:发起后才有的操作与失败(4xx)操作都不算。"""
+        _headers, _uuid, user_id = await provision_running(client, sm, fake)
+        fin_a = await admin_headers(sm, client, role="finance", username="fin-after-a")
+        fin_b = await admin_headers(sm, client, role="finance", username="fin-after-b")
+        await _season_reviewer(sm, "fin-after-b", history=None)
+        resp = await client.post(
+            "/api/admin/v1/adjustments",
+            json={"user_id": user_id, "amount": "25.50", "reason": "故障补偿"},
+            headers=fin_a,
+        )
+        adj_id = resp.json()["id"]
+        async with sm() as session:
+            b = (
+                await session.execute(select(AdminUser).where(AdminUser.username == "fin-after-b"))
+            ).scalar_one()
+            session.add(
+                AuditLog(
+                    actor_type="admin",
+                    actor_id=str(b.id),
+                    action="admin.POST /api/admin/v1/tenants/1/freeze",
+                    result=403,
+                    created_at=now_utc() - timedelta(days=1),
+                )
+            )
+            session.add(
+                AuditLog(
+                    actor_type="admin",
+                    actor_id=str(b.id),
+                    action="admin.POST /api/admin/v1/announcements",
+                    result=201,
+                    created_at=now_utc() + timedelta(minutes=1),
+                )
+            )
+            await session.commit()
+        resp = await _review(client, adj_id, fin_b)
+        assert resp.status_code == 403
+        assert resp.json()["message_key"] == "adminapi.reviewerNotIndependent"
 
     async def test_adjustment_amount_strict_decimal(self, client, sm, fake):
         """调账金额严格十进制:科学计数法/超 2 位小数/非数字一律 422。"""
@@ -234,6 +345,67 @@ class TestAdjustments:
                 headers=fin,
             )
             assert resp.status_code == 201, (good, resp.text)
+
+
+class TestPolicyChangeAlert:
+    def test_large_policy_moves_only_on_sensitive_keys(self):
+        before = {"spot_discount_pct": "40", "disk_grace_days": "7", "disk_min_gb": "10"}
+        after = {"spot_discount_pct": "60", "disk_grace_days": "3", "disk_min_gb": "100"}
+        assert large_policy_moves(before, after, after) == [
+            "disk_grace_days: 7 → 3",
+            "spot_discount_pct: 40 → 60",
+        ]
+        assert large_policy_moves(before, {**after, "spot_discount_pct": "50"}, ["x"]) == []
+        assert large_policy_moves({}, after, after) == []
+
+    async def test_policy_write_alerts_on_large_move_and_rate_limits(self, client, sm, fake):
+        """敏感策略键相对变化 ≥50% 落 critical 告警(列出键);<50% 不告警;写入口每管理员 20 次/时。"""
+        ah = await admin_headers(sm, client, role="admin")
+        resp = await client.put(
+            "/api/admin/v1/policies",
+            json={"updates": {"spot_discount_pct": "50"}, "reason": "微调"},
+            headers=ah,
+        )
+        assert resp.status_code == 200, resp.text
+        policy_alerts = select(Notification).where(
+            Notification.type == "admin_alert", Notification.title == "策略参数大幅调整"
+        )
+        async with sm() as session:
+            assert (await session.execute(policy_alerts)).scalar_one_or_none() is None
+
+        resp = await client.put(
+            "/api/admin/v1/policies",
+            json={
+                "updates": {
+                    "spot_discount_pct": "80",
+                    "disk_frozen_days": "10",
+                    "disk_min_gb": "20",
+                },
+                "reason": "大调",
+            },
+            headers=ah,
+        )
+        assert resp.status_code == 200, resp.text
+        async with sm() as session:
+            alert = (await session.execute(policy_alerts)).scalar_one()
+        assert alert.severity == "critical"
+        assert "spot_discount_pct: 50 → 80" in alert.content
+        assert "disk_frozen_days: 30 → 10" in alert.content
+        assert "disk_min_gb" not in alert.content and "大调" in alert.content
+
+        for _ in range(18):
+            resp = await client.put(
+                "/api/admin/v1/policies",
+                json={"updates": {"disk_min_gb": "20"}, "reason": "限流用例"},
+                headers=ah,
+            )
+            assert resp.status_code == 200, resp.text
+        resp = await client.put(
+            "/api/admin/v1/policies",
+            json={"updates": {"disk_min_gb": "20"}, "reason": "限流用例"},
+            headers=ah,
+        )
+        assert resp.status_code == 429 and resp.json()["code"] == "RATE_LIMITED"
 
 
 class TestTenantAggregations:

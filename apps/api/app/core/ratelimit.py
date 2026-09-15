@@ -67,6 +67,20 @@ async def check_rate_limit(key: str, *, max_attempts: int, window_seconds: float
         _raise_429(retry_after)
 
 
+_REFUND_SQL = text("""
+    UPDATE rate_limit_counters
+    SET hits = GREATEST(hits - 1, 0), updated_at = now()
+    WHERE key = :key AND window_start > now() - make_interval(secs => :window)
+""")
+
+
+async def refund_hit(key: str, *, window_seconds: float) -> None:
+    """退还窗口内的一次命中(先计数后校验的桶在校验通过后调用);不建行、不低于 0。"""
+    async with get_sessionmaker()() as session:
+        await session.execute(_REFUND_SQL, {"key": key[:128], "window": window_seconds})
+        await session.commit()
+
+
 async def clear_rate_limit(key: str) -> None:
     """清零该键的计数(独立事务)。"""
     async with get_sessionmaker()() as session:

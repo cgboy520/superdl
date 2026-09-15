@@ -95,7 +95,7 @@ if ! kubectl -n "$NS" get secret superdl-registry-pull > /dev/null 2>&1; then
 fi
 
 echo "==> 2/5 迁移 Job(先于滚动)"
-kubectl apply -f "${K8S_DIR}/00-namespace-config.yaml"
+kubectl apply --server-side --force-conflicts -f "${K8S_DIR}/00-namespace-config.yaml"
 render_checked < "${K8S_DIR}/10-migrate-job.yaml" | kubectl create -f -
 if ! kubectl -n "$NS" wait --for=condition=complete --timeout=300s "job/superdl-migrate-${TAG}"; then
   echo "::error::迁移 Job 未成功,终止发布;日志:" >&2
@@ -103,8 +103,8 @@ if ! kubectl -n "$NS" wait --for=condition=complete --timeout=300s "job/superdl-
   exit 1
 fi
 
-echo "==> 3/5 set image + apply(镜像按 digest 钉死,CHANGE_IMAGE_PREFIX → ${IMAGE_PREFIX})"
-kubectl kustomize "${K8S_DIR}" | render_checked | kubectl apply -f -
+echo "==> 3/5 set image + apply(server-side apply,镜像按 digest 钉死,CHANGE_IMAGE_PREFIX → ${IMAGE_PREFIX})"
+kubectl kustomize "${K8S_DIR}" | render_checked | kubectl apply --server-side --force-conflicts -f -
 
 echo "==> 4/5 rollout status"
 for d in superdl-api superdl-worker superdl-worker-tenant-mgr superdl-worker-node-mgr \

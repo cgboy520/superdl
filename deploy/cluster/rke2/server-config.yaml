@@ -22,6 +22,6 @@ kube-apiserver-arg:
   - audit-log-path=/var/lib/rancher/rke2/server/logs/audit.log
   - audit-log-maxage=30
   - audit-log-maxsize=100
-  - audit-log-maxbackup=10
+  - audit-log-maxbackup=100
 node-taint:
   - "CriticalAddonsOnly=true:NoExecute"

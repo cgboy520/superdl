@@ -96,6 +96,48 @@ def test_sensitive_fields_masked(restore_logging: None, monkeypatch):
     assert "13800002222" in out
 
 
+def test_extended_sensitive_keys_and_nested_structures_masked(restore_logging: None, monkeypatch):
+    """api_key/jwt/authorization/credential/private_key/cookie/session/totp/recovery/passwd
+    键名命中即打码;嵌套 dict / list 递归到第 4 层,第 5 层不再处理;敏感键下的容器全体打码。"""
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    buf = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", buf)
+    setup_logging()
+
+    get_logger("t.mask").info(
+        "evt_mask_nested",
+        api_key="ak-marker-1",
+        Authorization="Bearer jwt-marker-2",
+        account={"user": "u-keep", "credential": "cred-marker-3"},
+        credentials={"value": "cred-marker-10", "note": "all-masked"},
+        items=[{"cookie": "ck-marker-4", "name": "item-keep"}, "plain-keep"],
+        deep={"l1": {"l2": {"l3": {"passwd": "pw-marker-5", "note": "deep-keep"}}}},
+        too_deep={"l1": {"l2": {"l3": {"l4": {"totp": "totp-marker-6"}}}}},
+        recovery_codes=["rc-marker-7", "rc-marker-8"],
+        session_id="sess-marker-9",
+    )
+
+    out = buf.getvalue()
+    for marker in (
+        "ak-marker-1",
+        "jwt-marker-2",
+        "cred-marker-3",
+        "ck-marker-4",
+        "pw-marker-5",
+        "rc-marker-7",
+        "rc-marker-8",
+        "sess-marker-9",
+        "cred-marker-10",
+        "all-masked",
+    ):
+        assert marker not in out, marker
+    assert "totp-marker-6" in out
+    for kept in ("u-keep", "item-keep", "plain-keep", "deep-keep"):
+        assert kept in out, kept
+
+
 def test_exception_traceback_never_carries_frame_locals(restore_logging: None, monkeypatch):
     """prod 的结构化栈帧不带局部变量。"""
     from app.core.config import get_settings

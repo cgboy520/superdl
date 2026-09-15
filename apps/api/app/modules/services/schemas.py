@@ -1,18 +1,24 @@
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.messages import render_message
 from app.core.pricing import MARKET_ON_DEMAND, MAX_PERIOD_COUNT
 from app.modules.orchestrator.schemas import (
+    MAX_SSH_KEYS_PER_REQUEST,
     RESERVED_SERVICE_PORTS,
     InstanceEventOut,
     InstanceOut,
+    strip_image_ref,
     validate_health_path,
     validate_market_shape,
     validate_user_env,
 )
+
+MAX_CONTAINER_ARGV = 64
+MAX_CONTAINER_ARG_LEN = 4096
+ArgvItem = Annotated[str, Field(max_length=MAX_CONTAINER_ARG_LEN)]
 
 
 class ServiceSpecIn(BaseModel):
@@ -21,18 +27,20 @@ class ServiceSpecIn(BaseModel):
     sku_id: int
     gpu_count: int = Field(default=1, ge=0, le=8)
     image_ref: str = Field(min_length=1, max_length=256)
-    ssh_key_ids: list[int] = Field(default_factory=list)
+    ssh_key_ids: list[int] = Field(default_factory=list, max_length=MAX_SSH_KEYS_PER_REQUEST)
     data_disk_id: int | None = None
     with_ssh: bool = False
-    container_command: list[str] | None = None
-    container_args: list[str] | None = None
+    container_command: list[ArgvItem] | None = Field(default=None, max_length=MAX_CONTAINER_ARGV)
+    container_args: list[ArgvItem] | None = Field(default=None, max_length=MAX_CONTAINER_ARGV)
     env: dict[str, str] | None = None
-    env_secret_keys: list[str] | None = None
+    env_secret_keys: list[str] | None = Field(default=None, max_length=64)
     service_port: int = Field(ge=1, le=65535)
     health_path: str | None = Field(default=None, max_length=128)
     market: Literal["on_demand", "subscription", "spot"] = MARKET_ON_DEMAND
     period: Literal["day", "week", "month", "year"] | None = None
     period_count: int = Field(default=1, ge=1, le=MAX_PERIOD_COUNT)
+
+    _strip_image_ref = field_validator("image_ref", mode="before")(strip_image_ref)
 
     @model_validator(mode="after")
     def _shape(self) -> "ServiceSpecIn":
