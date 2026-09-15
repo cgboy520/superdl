@@ -170,9 +170,15 @@ export default interface Resources {
       "clusterNotConfigured": "集群接入参数未配置:请超管在「平台配置 · 集群接入」录入 RKE2 Server 地址与 join token",
       "clusterNotReady": "集群调度组件未就绪,暂时无法开机;平台正在自动检测恢复,请稍后重试",
       "clusterProbeFailed": "集群连接失败:{{error}}",
+      "componentProbeFailed": "集群实时探测未取到结果,下方仍是最近一次巡检的快照",
       "enrollTransition": "注册状态不允许 {{from}} → {{to}}",
       "hostnameMismatch": "主机名与登记不符,令牌已作废,请在管理端核对后重新生成",
+      "nodeHasInstances": "节点上还有 {{count}} 台未释放实例:先释放后再操作(已关机实例的实例盘也钉在本节点,换池后开不了机)",
       "nodeNotFound": "节点不在台账中:请确认节点名,或等待下一轮巡检(60 秒)收录后再试",
+      "poolIncompatible": "无卡节点只能留在 cpu 池,带卡节点不能切到 cpu 池",
+      "poolMigUnsupported": "{{model}} 不支持 MIG 切分,不能切到 mig 池",
+      "poolNotSwitchable": "只支持在 {{pools}} 之间切换节点池",
+      "poolUnchanged": "节点已在 {{pool}} 池,无需切换",
       "regenerateNotAllowed": "状态 {{status}} 不允许重新生成(仅 待执行/已过期/已失败)",
       "storageClassMissing": "集群存储未就绪(缺少 {{names}}),暂时无法开通;请联系平台运维"
     },
@@ -370,6 +376,18 @@ export default interface Resources {
         "alipay": "支付宝",
         "mock": "模拟支付(开发)",
         "wechat": "微信支付"
+      },
+      "component": {
+        "degraded": "降级",
+        "disabled": "未启用",
+        "down": "故障",
+        "ok": "正常",
+        "unknown": "未知"
+      },
+      "componentHint": {
+        "degraded": "部分就绪,能力可用但有冗余损失",
+        "disabled": "组件在位,这项能力没有开启",
+        "unknown": "快照已过期,显示的是上次探测结果"
       },
       "deletion": {
         "cancelled": "已撤销",
