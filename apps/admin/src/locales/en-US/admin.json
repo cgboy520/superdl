@@ -678,6 +678,7 @@
     "switchPoolFrom": "Current pool",
     "switchPoolMigUnsupported": "{{model}} does not support MIG partitioning",
     "switchPoolNotice": "The node is cordoned right away. Everything that differs between pools is delivered by the cluster from the labels — no node login, no reboot.",
+    "switchPoolPassthroughUnsupported": "{{model}} does not support whole-GPU passthrough",
     "switchPoolReasonEcho": "Reason: {{reason}}",
     "switchPoolSubmitted": "Accepted; converging to the {{to}} pool. Uncordon by hand once the components are in place",
     "switchPoolTitle": "Switch node pool",

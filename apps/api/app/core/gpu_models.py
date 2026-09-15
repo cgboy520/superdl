@@ -85,6 +85,7 @@ def canonical_gpu_model(raw: str | None) -> str | None:
     return None
 
 
+# 与 NVIDIA MIG User Guide 的 Supported GPUs 对齐;A800 / H800 是 A100 / H100 的中国版,同样支持。
 MIG_CAPABLE_FAMILIES = frozenset(
     {"A100", "A800", "A30", "H100", "H800", "H200", "H20", "B200", "GB200"}
 )
@@ -95,6 +96,40 @@ def supports_mig(canonical: str | None) -> bool:
     if not canonical:
         return False
     return canonical.split("-")[0] in MIG_CAPABLE_FAMILIES
+
+
+# 整卡直通(kata 池)可落的数据中心家族:独立 PCIe / SXM 板卡,NVIDIA 对 Maxwell 之后的
+# 数据中心卡一律支持 pass-through。RTX 独立卡按前缀放行(R465 起官方开放 GeForce 直通)。
+# Grace 超级芯片的集成 GPU(GB10 / GB200)不在内:固件强制 1:1 IOMMU 映射,内核拒绝绑 vfio-pci。
+PASSTHROUGH_CAPABLE_FAMILIES = frozenset(
+    {
+        "A10",
+        "A16",
+        "A30",
+        "A40",
+        "A100",
+        "A800",
+        "B200",
+        "H20",
+        "H100",
+        "H200",
+        "H800",
+        "L4",
+        "L20",
+        "L40",
+        "L40S",
+        "T4",
+        "V100",
+    }
+)
+
+
+def supports_passthrough(canonical: str | None) -> bool:
+    """canonical 型号能否整卡直通给虚机;未识别(None)一律 False(fail-closed)。"""
+    if not canonical:
+        return False
+    family = canonical.split("-")[0]
+    return family.startswith("RTX") or family in PASSTHROUGH_CAPABLE_FAMILIES
 
 
 def model_matches(sku_model: str | None, node_model: str | None) -> bool:

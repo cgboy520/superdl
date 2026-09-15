@@ -13,6 +13,7 @@ import { EntityHeader, GatedButton, RowActions, StatusTag, type KeyValueItem } f
 import { type NodeRow, useNodeMetrics } from "../../api";
 import { ReasonAction } from "../../components/ReasonAction";
 import { GpuGrid } from "./-GpuGrid";
+import { canSwitchPool } from "./-SwitchPoolModal";
 import { NodeMetricsPanel } from "./-NodeMetricsPanel";
 
 /** 封锁 / 解封提交(经 outbox);反馈与失效由页面处理 */
@@ -110,7 +111,7 @@ export function NodeActions({
   const { t } = useTranslation();
   const cordoned = node.status === "Cordoned";
   const blocked = blockedReason(node, writable, t);
-  const switchable = !isUnlabeled(node) && node.gpu_total > 0 && node.pool_label !== "cpu";
+  const switchable = !isUnlabeled(node) && canSwitchPool(node);
   return (
     <RowActions
       size={size}

@@ -659,6 +659,7 @@
     "switchPoolFrom": "当前池",
     "switchPoolMigUnsupported": "{{model}} 不支持 MIG 切分",
     "switchPoolNotice": "切换后该节点立即封锁。池间差异的节点侧组件由集群按标签自动投送,不需要登录节点、不重启。",
+    "switchPoolPassthroughUnsupported": "{{model}} 不支持整卡直通",
     "switchPoolReasonEcho": "原因:{{reason}}",
     "switchPoolSubmitted": "已受理,正在收敛到 {{to}} 池;组件落位后请手工解封",
     "switchPoolTitle": "切换节点池",

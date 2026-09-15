@@ -7,7 +7,13 @@ import { fontSize, space, useApiErrorText } from "@superdl/ui";
 import { useConfirm } from "@superdl/ui/components";
 
 import { type NodeRow, useSwitchNodePool } from "../../api";
-import { POOL_LABEL_KEY, SWITCHABLE_POOLS, supportsMig, type SwitchablePool } from "../../lib/pools";
+import {
+  POOL_LABEL_KEY,
+  SWITCHABLE_POOLS,
+  supportsMig,
+  supportsPassthrough,
+  type SwitchablePool,
+} from "../../lib/pools";
 import { REASON_MAX_LEN } from "../../lib/validators";
 
 interface FormValues {
@@ -20,13 +26,22 @@ export function currentPool(node: NodeRow): string {
   return node.desired_pool || node.pool_label || "";
 }
 
-/** 排除当前池;机型不支持 MIG 时将 mig 标为禁用。 */
-export function switchTargets(node: NodeRow): { pool: SwitchablePool; disabled: boolean }[] {
+/** 能否切池:已打标的带卡节点;观测卡数因目标池组件没起来掉到 0 时,只要还在 GPU 池里就仍可切回。 */
+export function canSwitchPool(node: NodeRow): boolean {
   const from = currentPool(node);
-  const migOk = supportsMig(node.gpu_model);
+  if (!from || from === "cpu") return false;
+  return node.gpu_total > 0 || (SWITCHABLE_POOLS as readonly string[]).includes(from);
+}
+
+/** 排除当前池;机型不支持 MIG 切分的禁用 mig,不支持整卡直通的禁用 kata。 */
+export function switchTargets(node: NodeRow): { pool: SwitchablePool; disabled: boolean }[] {
+  const blockedPools = new Set<SwitchablePool>();
+  if (!supportsMig(node.gpu_model)) blockedPools.add("mig");
+  if (!supportsPassthrough(node.gpu_model)) blockedPools.add("kata");
+  const from = currentPool(node);
   return SWITCHABLE_POOLS.filter((p) => p !== from).map((p) => ({
     pool: p,
-    disabled: p === "mig" && !migOk,
+    disabled: blockedPools.has(p),
   }));
 }
 
@@ -63,11 +78,15 @@ export function SwitchPoolModal({
 
   if (!node) return null;
   const from = currentPool(node);
+  const blockedReason: Partial<Record<SwitchablePool, string>> = {
+    kata: t("nodes.switchPoolPassthroughUnsupported", { model: node.gpu_model }),
+    mig: t("nodes.switchPoolMigUnsupported", { model: node.gpu_model }),
+  };
   const options = switchTargets(node).map(({ pool, disabled }) => ({
     value: pool,
     label: t(POOL_LABEL_KEY[pool]),
     disabled,
-    title: disabled ? t("nodes.switchPoolMigUnsupported", { model: node.gpu_model }) : undefined,
+    title: disabled ? blockedReason[pool] : undefined,
   }));
 
   const submit = () => {

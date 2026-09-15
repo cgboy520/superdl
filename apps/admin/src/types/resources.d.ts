@@ -661,6 +661,7 @@ export default interface Resources {
       "switchPoolFrom": "当前池",
       "switchPoolMigUnsupported": "{{model}} 不支持 MIG 切分",
       "switchPoolNotice": "切换后该节点立即封锁。池间差异的节点侧组件由集群按标签自动投送,不需要登录节点、不重启。",
+      "switchPoolPassthroughUnsupported": "{{model}} 不支持整卡直通",
       "switchPoolReasonEcho": "原因:{{reason}}",
       "switchPoolSubmitted": "已受理,正在收敛到 {{to}} 池;组件落位后请手工解封",
       "switchPoolTitle": "切换节点池",
@@ -1538,6 +1539,7 @@ export default interface Resources {
       "poolIncompatible": "无卡节点只能留在 cpu 池,带卡节点不能切到 cpu 池",
       "poolMigUnsupported": "{{model}} 不支持 MIG 切分,不能切到 mig 池",
       "poolNotSwitchable": "只支持在 {{pools}} 之间切换节点池",
+      "poolPassthroughUnsupported": "{{model}} 不支持整卡直通,不能切到 kata 池",
       "poolUnchanged": "节点已在 {{pool}} 池,无需切换",
       "regenerateNotAllowed": "状态 {{status}} 不允许重新生成(仅 待执行/已过期/已失败)",
       "storageClassMissing": "集群存储未就绪(缺少 {{names}}),暂时无法开通;请联系平台运维"
