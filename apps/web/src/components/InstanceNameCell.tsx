@@ -1,4 +1,4 @@
-/** 名称列:名称即详情链接;hover 出铅笔进入行内改名(InlineEdit:Enter 保存 / Esc 取消 / blur 保存)。 */
+/** Name column: the name is the detail link; hover shows a pencil for inline rename (InlineEdit: Enter saves / Esc cancels / blur saves). */
 
 import { fontSize } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
@@ -36,7 +36,7 @@ export function InstanceNameCell({ instance }: { instance: InstanceOut }) {
   );
 }
 
-/** 行级 memo:仅 uuid / 名称变化才重渲染。 */
+/** Row-level memo: re-renders only when uuid / name change. */
 export const InstanceNameCellMemo = memo(
   InstanceNameCell,
   (prev, next) => prev.instance.uuid === next.instance.uuid && prev.instance.name === next.instance.name,

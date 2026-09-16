@@ -1,4 +1,4 @@
-/** 市场页 / 创建页 / 部署页共用的 SKU 表列与「计费方式」选择(市场页用 chips 进表格工具行,创建页与部署页用卡)。 */
+/** SKU table columns and "billing mode" selection shared by the market / create / deploy pages (the market page puts the chips into the table toolbar, create and deploy use a card). */
 
 import type { SkuMarketOut } from "@superdl/api-client";
 import {
@@ -27,7 +27,7 @@ import { TierTag } from "./common";
 import { discountOff, PeriodCountUnit, usePeriodDiscounts } from "./periodBilling";
 import { SpotOffLabel, SpotPriceInline, spotPriceOf, useSpotPolicy, type SpotPolicy } from "./spotBilling";
 
-/** GPU / 显存列文案:共享档报算力份额,MIG 档报切分规格,其余整卡;CPU 档报「不带 GPU」。 */
+/** GPU / VRAM column copy: the shared tier reports the compute share, MIG the slice spec, the rest whole cards; the CPU tier reports "no GPU". */
 function formatSkuGpu(s: SkuMarketOut, t: TFunction<readonly ["web", "shared"]>): string {
   const variant = skuVariant(s.tier, s.pool_label);
   if (variant === "cpu") {
@@ -42,17 +42,17 @@ function formatSkuGpu(s: SkuMarketOut, t: TFunction<readonly ["web", "shared"]>)
   return t("sku.gpuDedicated", { model: s.gpu_model, vram: s.vram_gb });
 }
 
-/** SKU 表列:规格、库存与价格;多卡选择时显示总价。 */
+/** SKU table columns: spec, stock and price; the total is shown when several cards are selected. */
 export function skuColumns(opts: {
   fmt: Formatters;
   t: TFunction<readonly ["web", "shared"]>;
   availability?: boolean;
   priceFontSize?: number;
-  /** CPU 规格表:价格是整机时价,表头写「整机」 */
+  /** CPU spec table: the price is the whole-machine hourly price, the header says "whole machine" */
   cpu?: boolean;
-  /** 竞价档选中时传入:上了竞价的规格价格列显「原价划线 + 折后价」,没上的显原价并挂标。 */
+  /** Passed while the spot tier is selected: specs with spot show "list price struck + discounted", the rest show the list price with a marker. */
   spot?: SpotPolicy;
-  /** 所选卡数(GPU 栏);>1 时价格列出总价副行,可开实例列按此判「不足」 */
+  /** Selected card count (GPU column); >1 adds a total sub-row to the price column and the available column judges "short" by it */
   units?: number;
 }): NonNullable<ComponentProps<typeof Table<SkuMarketOut>>["columns"]> {
   const { t } = opts;
@@ -151,12 +151,12 @@ export function skuColumns(opts: {
   ];
 }
 
-/** 行级可选判据:库存够所选卡数,且(竞价档下)该规格上了竞价。 */
+/** Row selectability: enough stock for the selected cards and (in the spot tier) spot enabled on the spec. */
 export function skuSelectable(s: SkuMarketOut, needed: number, spot: boolean): boolean {
   return (s.available_count ?? 0) >= needed && (!spot || s.spot_enabled);
 }
 
-/** 不可选行的原因文案(tooltip / 空态用)。 */
+/** Reason copy of an unselectable row (tooltip / empty state). */
 export function skuDisabledReason(
   s: SkuMarketOut,
   needed: number,
@@ -169,10 +169,10 @@ export function skuDisabledReason(
   return undefined;
 }
 
-/** 不可选规格行的弱化样式类。 */
+/** Muted style class of unselectable spec rows. */
 export const SKU_ROW_DISABLED_CLASS = "sku-row--disabled";
 
-/** 计费方式:按量 + 竞价 + 四个包周期,与档位正交;竞价与包周期互斥(market 单值),同行单选。 */
+/** Billing mode: on-demand + spot + the four periods, orthogonal to the tier; spot and periods exclude each other (market is single-valued), single select in one row. */
 export type BillingMode = "on_demand" | "spot" | BillingPeriod;
 
 interface BillingModeProps {
@@ -185,7 +185,7 @@ interface BillingModeProps {
   extra?: ReactNode;
 }
 
-/** 计费方式 chips:策略折扣、规格门控与可选周期数量选择器。 */
+/** Billing-mode chips: policy discounts, spec gating and the optional period count selector. */
 export function BillingModeChips({
   value,
   onChange,
@@ -279,7 +279,7 @@ export function BillingModeChips({
   );
 }
 
-/** 计费方式卡(创建页与部署页):BillingModeChips 加一张卡。市场页不用卡,chips 直接进表格工具行。 */
+/** Billing-mode card (create and deploy pages): BillingModeChips in a card. The market page uses no card, the chips sit in the table toolbar. */
 export function BillingModeCard(props: BillingModeProps) {
   return (
     <Card styles={{ body: { paddingBlock: 16 } }}>

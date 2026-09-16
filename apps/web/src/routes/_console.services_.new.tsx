@@ -1,4 +1,4 @@
-/** 服务部署页:基本信息、容器、服务与高级配置分段表单,附结算预览。 */
+/** Service deploy page: basics, container, service and advanced configuration as a sectioned form, with a checkout preview. */
 
 import { isApiError, type DiskOut, type SkuMarketOut } from "@superdl/api-client";
 import {
@@ -189,7 +189,7 @@ function DeployPage() {
   const commandList = commandToList(command);
   const argList = argRows.map((r) => r.value.trim()).filter((v) => v !== "");
 
-  /** 每段的第一个问题(禁用主按钮的 tooltip 与左侧步骤条用);顺序即填写顺序。 */
+  /** The first issue of each section (for the disabled primary button tooltip and the left step rail); the order is the fill-in order. */
   const sectionIssues: (string | null)[] = [
     sku ? null : t("services.form.specNeeded"),
     (() => {

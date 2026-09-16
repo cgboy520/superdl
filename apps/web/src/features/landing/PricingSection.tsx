@@ -1,4 +1,4 @@
-/** GPU 价格墙:按型号分卡、按档位分行,显示价格、可开台数与市场入口。 */
+/** GPU price wall: one card per model, rows per tier, with price, available instances and the market entry. */
 
 import type { SkuMarketOut } from "@superdl/api-client";
 import {
@@ -35,7 +35,7 @@ interface ModelCard {
   minPrice: string;
 }
 
-/** 按型号分组,组内按档位取最低价的一条,卡片按最低价排序。 */
+/** Group by model, the lowest-priced spec per tier inside the group, cards sorted by the lowest price. */
 function groupByModel(skus: readonly SkuMarketOut[]): ModelCard[] {
   const byModel = new Map<string, Map<string, TierRow>>();
   for (const sku of skus) {
@@ -60,7 +60,7 @@ function groupByModel(skus: readonly SkuMarketOut[]): ModelCard[] {
   return cards.sort((a, b) => compareAmounts(a.minPrice, b.minPrice));
 }
 
-/** 档位规格副行。 */
+/** Tier spec sub-line. */
 type LooseT = (key: string, opts?: Record<string, unknown>) => string;
 
 function tierSpecText(row: TierRow, t: LooseT): string {

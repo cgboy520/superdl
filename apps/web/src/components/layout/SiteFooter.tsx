@@ -1,4 +1,4 @@
-/** 三栏页脚(仅公开页;控制台单行合规页脚)。备案号等走后端 site-config。 */
+/** Three-column footer (public pages only; the console has a one-line compliance footer). Filing numbers come from the backend site-config. */
 
 import { fontSize, layout } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 
 import { useSiteConfig } from "../../api/queries";
 
-/** 站内路径(单 `/` 开头)走 SPA Link;锚点/mailto/外链保持 <a>。 */
+/** In-site paths (single leading `/`) use the SPA Link; anchors / mailto / external links stay <a>. */
 function isInternal(to: string): boolean {
   return to.startsWith("/") && !to.startsWith("/#");
 }

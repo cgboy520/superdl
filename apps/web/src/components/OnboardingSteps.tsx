@@ -1,4 +1,4 @@
-/** 新手引导三步(充值 → 选规格 → 开机):只在实例列表真空态出现;有已支付充值时第 1 步置完成。 */
+/** Three onboarding steps (top up → pick a spec → start): only in the instance list's true empty state; step 1 is done once a paid top-up exists. */
 
 import { Link } from "@tanstack/react-router";
 import { Button, Space, Steps, Typography } from "antd";

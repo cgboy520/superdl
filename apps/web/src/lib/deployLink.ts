@@ -1,4 +1,4 @@
-/** 部署/创建深链预填:规格 / 卡数 / 计费方式;竞价与包周期互斥,以 period 为准。/services/new 与 /market/create/:skuId 共用(后者 sku 在路径参数里,调用方丢弃 sku_id)。 */
+/** Deploy / create deep-link prefill: spec / card count / billing mode; spot and periods exclude each other, period wins. Shared by /services/new and /market/create/:skuId (the latter carries sku in the path, the caller drops sku_id). */
 
 import { isBillingPeriod, MAX_PERIOD_COUNT, type BillingPeriod } from "@superdl/ui";
 

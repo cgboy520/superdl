@@ -2,7 +2,7 @@ import { useThemeColors } from "@superdl/ui";
 import { useRouterState } from "@tanstack/react-router";
 import { useEffect } from "react";
 
-/** 滚动至 URL hash 对应元素;highlight=true 时添加 2s 主题色描边。 */
+/** Scroll to the element of the URL hash; highlight=true adds a 2 s theme-colour outline. */
 export function useHashScroll({ highlight = false }: { highlight?: boolean } = {}) {
   const hash = useRouterState({ select: (s) => s.location.hash });
   const { primary } = useThemeColors();

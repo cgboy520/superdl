@@ -1,4 +1,4 @@
-/** 三步开机指引:充值、选规格与 SSH 连接。 */
+/** Three-step start guide: top up, pick a spec and connect via SSH. */
 
 import { brand, fontFamilyMono, fontSize, fontWeight, layout, space, textOnAccent } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";

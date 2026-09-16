@@ -11,7 +11,7 @@ export interface ConsentSection {
   lines: string[];
 }
 
-/** 分节知情同意弹窗;取消按钮或关闭操作重置勾选,仅切换 open 不重置。 */
+/** Sectioned consent dialog; cancel or close resets the checkbox, toggling open alone does not. */
 export function ConsentGate({
   open,
   sections,
@@ -74,7 +74,7 @@ export function ConsentGate({
   );
 }
 
-/** 无同意条目时直接提交,否则显示分节确认弹窗。 */
+/** Submit directly without consent items, otherwise show the sectioned confirmation dialog. */
 export function useConsentGate({
   spot,
   eco,
@@ -84,12 +84,12 @@ export function useConsentGate({
   onProceed,
 }: {
   spot: boolean;
-  /** 共享·经济档位。 */
+  /** Shared · economy tier. */
   eco: boolean;
   spotPolicy: SpotPolicy | undefined;
   confirmLabel: string;
   loading?: boolean;
-  /** 返回 Promise 时等待其结束再关闭弹窗,否则立即关闭。 */
+  /** When a Promise is returned, wait for it before closing the dialog, otherwise close at once. */
   onProceed: () => void | Promise<void>;
 }): { submit: () => void; modal: ReactNode } {
   const { t } = useTranslation(["web", "shared"]);

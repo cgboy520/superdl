@@ -1,4 +1,4 @@
-/** 在线服务列表:URL 筛选、游标分页与过渡态轮询。 */
+/** Online service list: URL filters, cursor pagination and transitional polling. */
 
 import { QuestionCircleOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import type { ServiceOut } from "@superdl/api-client";
@@ -41,7 +41,7 @@ export interface ServicesSearch {
   status?: string;
 }
 
-/** 列表状态入 URL;非法值回默认(已删除不在筛选项里)。 */
+/** List state in the URL; invalid values fall back to defaults (deleted is not a filter option). */
 export function servicesValidateSearch(search: Record<string, unknown>): ServicesSearch {
   const out: ServicesSearch = {};
   if (typeof search.q === "string" && search.q.trim()) out.q = search.q;

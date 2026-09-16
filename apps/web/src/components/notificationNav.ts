@@ -1,4 +1,4 @@
-/** 通知行点击的统一行为(通知中心与顶栏 Popover 同一条路径):标已读 → 结构化 target_id 深链(实例详情/工单对话)→ 按类型落列表页。 */
+/** Unified behaviour of a notification row click (the notification centre and the top-bar Popover share it): mark read → structured target_id deep link (instance detail / ticket conversation) → list page by type. */
 
 import type { NotificationOut } from "@superdl/api-client";
 import { useNavigate } from "@tanstack/react-router";
@@ -6,12 +6,12 @@ import { useCallback } from "react";
 
 import { useMarkNotificationRead } from "../api/mutations";
 
-/** 实例类通知类型(target_id = 实例 uuid → 实例详情) */
+/** Instance notification types (target_id = instance uuid → instance detail) */
 const INSTANCE_TYPES = new Set(["instance", "preempted", "subscription", "gpu_fault"]);
-/** 在线服务类通知(target_id = 服务 slug → 服务详情) */
+/** Online-service notifications (target_id = service slug → service detail) */
 const SERVICE_TYPES = new Set(["service"]);
 
-/** 通知类型 → 兜底跳转目标(无 target_id 时落列表页) */
+/** Notification type → fallback target (list page without target_id) */
 function fallbackOf(type: string): "/billing" | "/instances" | "/services" | "/support" | null {
   switch (type) {
     case "balance_warn":
@@ -33,7 +33,7 @@ function fallbackOf(type: string): "/billing" | "/instances" | "/services" | "/s
   }
 }
 
-/** 通知行点击处理器;afterNavigate 供调用方在跳转后收尾。 */
+/** Notification row click handler; afterNavigate lets the caller wrap up after navigating. */
 export function useNotificationOpen(afterNavigate?: () => void) {
   const navigate = useNavigate();
   const markRead = useMarkNotificationRead();

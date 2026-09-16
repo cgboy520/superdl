@@ -1,4 +1,4 @@
-/** 读查询层:生成 fetcher + useQuery;查询键只在 ./keys.ts,轮询选项集中在此。错误类型经 ./register.d.ts 全局注册为 ApiError。 */
+/** Read query layer: generated fetcher + useQuery; query keys only in ./keys.ts, polling options centralised here. The error type is registered globally as ApiError via ./register.d.ts. */
 
 import { POLL } from "@superdl/ui";
 import {
@@ -66,10 +66,10 @@ import { useEffect, useMemo, useRef } from "react";
 
 import { keys } from "./keys";
 
-/** 查询可选项:只放行这四个;select 等结构变换在 hook 内固定。错误类型已由 register.d.ts 全局钉成 ApiError。 */
+/** Query options: only these four pass; select and other shape transforms are fixed inside the hooks. The error type is pinned globally to ApiError by register.d.ts. */
 export interface QueryOpts<T = unknown> {
   enabled?: boolean;
-  /** 轮询间隔:数值、false,或根据查询状态快照计算的函数。 */
+  /** Polling interval: a number, false, or a function of the query state snapshot. */
   refetchInterval?:
     | number
     | false
@@ -80,7 +80,7 @@ export interface QueryOpts<T = unknown> {
   staleTime?: number;
 }
 
-/** 游标分页公共形状:params 带 limit/cursor,响应带 next_cursor。 */
+/** Common cursor pagination shape: params carry limit/cursor, the response next_cursor. */
 interface CursorParams {
   limit?: number;
   cursor?: string;
@@ -89,7 +89,7 @@ interface CursorPage {
   next_cursor?: string | null;
 }
 
-/** 游标分页查询,关闭间隔轮询与窗口聚焦重取。 */
+/** Cursor-paginated query with interval polling and window-focus refetch off. */
 function useCursorPages<TPage extends CursorPage, P extends CursorParams>(
   key: readonly unknown[],
   fetcher: (params?: P) => Promise<TPage>,
@@ -106,7 +106,7 @@ function useCursorPages<TPage extends CursorPage, P extends CursorParams>(
 }
 
 export const useMe = (opts?: QueryOpts) => useQuery({ queryKey: keys.me, queryFn: () => meApiV1MeGet(), ...opts });
-/** 我的注销申请:pending 或最近一条;null = 从未申请。 */
+/** My deletion request: pending or the most recent; null = never requested. */
 export const useMyDeletionRequest = (opts?: QueryOpts) =>
   useQuery({ queryKey: keys.deletionRequest, queryFn: () => getDeletionRequestApiV1MeDeletionRequestGet(), ...opts });
 export const useWallet = (opts?: QueryOpts) =>
@@ -117,14 +117,14 @@ export const useNotifications = (params?: { unread?: boolean }, opts?: QueryOpts
     queryFn: () => listNotificationsApiV1NotificationsGet(params),
     ...opts,
   });
-/** 未读角标:30s 轮询只拿 count。 */
+/** Unread badge: 30 s polling of count only. */
 export const useUnreadCount = (opts?: QueryOpts) =>
   useQuery({
     queryKey: keys.notifications.unreadCount,
     queryFn: () => unreadCountApiV1NotificationsUnreadCountGet(),
     ...opts,
   });
-/** 通知弹层游标分页。 */
+/** Notification popover cursor pagination. */
 export const useNotificationPages = (params?: { unread?: boolean }) =>
   useCursorPages(keys.notifications.pages(params), listNotificationsApiV1NotificationsGet, params, 20);
 export const useSkus = (opts?: QueryOpts) =>
@@ -133,7 +133,7 @@ export const useImages = () => useQuery({ queryKey: keys.images, queryFn: () => 
 export const useSshKeys = () => useQuery({ queryKey: keys.sshKeys, queryFn: () => listSshKeysApiV1SshKeysGet() });
 export const useDisks = (opts?: QueryOpts) =>
   useQuery({ queryKey: keys.disks, queryFn: () => listDisksApiV1DisksGet(), ...opts });
-/** 轻量整表视图(首 100 条;dashboard 计数 / 存储页 / support 关联选择用);列表页走 useInstancePages。 */
+/** Lightweight whole-table view (first 100; dashboard counts / storage page / support link selection); the list page uses useInstancePages. */
 export const useInstances = (opts?: QueryOpts<PageInstanceOut>) =>
   useQuery<PageInstanceOut, ApiError, InstanceOut[]>({
     queryKey: keys.instances.first100,
@@ -141,7 +141,7 @@ export const useInstances = (opts?: QueryOpts<PageInstanceOut>) =>
     select: (p) => p.items,
     ...opts,
   });
-/** 临期包周期实例(到期横幅数据源):服务端按 within_days 过滤,不分页。 */
+/** Expiring subscription instances (expiry banner data source): filtered server-side by within_days, no pagination. */
 export const useExpiringInstances = (withinDays: number | undefined, opts?: QueryOpts) =>
   useQuery({
     queryKey: keys.instances.expiring(withinDays),
@@ -149,14 +149,14 @@ export const useExpiringInstances = (withinDays: number | undefined, opts?: Quer
     ...opts,
     enabled: withinDays !== undefined && (opts?.enabled ?? true),
   });
-/** 实例列表游标分页:status 精确 / name 模糊服务端过滤,不挂 refetchInterval;过渡态由 useTransientInstanceRefresh 逐台轮询驱动。 */
+/** Instance list cursor pagination: status exact / name fuzzy server-side filters, no refetchInterval; transitional states are polled per instance by useTransientInstanceRefresh. */
 export const useInstancePages = (params?: { status?: string; name?: string }) => {
   const status = params?.status;
   const name = params?.name?.trim() || undefined;
   return useCursorPages(keys.instances.pages({ status, name }), listInstancesApiV1InstancesGet, { status, name }, 20);
 };
 
-/** 过渡态条目逐条轻轮询:从已加载行派生过渡态 id,逐条轮询单条端点(POLL.transient,到终态即停);本轮 vs 上轮 status 变化即失效列表查询,首轮只落基线。 */
+/** Light per-item polling of transitional rows: derive transitional ids from the loaded rows, poll the single-item endpoint per row (POLL.transient, stopping at a terminal state); a status change between rounds invalidates the list query, the first round only records the baseline. */
 export function useTransientRefresh<T>(opts: {
   rows: T[];
   idOf: (row: T) => string;
@@ -200,7 +200,7 @@ export function useTransientRefresh<T>(opts: {
   }, [statusesKey, transientIds, results, queryClient, listPrefix]);
 }
 
-/** 过渡态实例逐台轻轮询(creating/starting/stopping/releasing)。 */
+/** Light per-instance polling of transitional instances (creating/starting/stopping/releasing). */
 export function useTransientInstanceRefresh(rows: InstanceOut[]) {
   useTransientRefresh({
     rows,
@@ -221,7 +221,7 @@ export const useInstanceEvents = (uuid: string, opts?: QueryOpts) =>
     queryFn: () => listInstanceEventsApiV1InstancesUuidEventsGet(uuid, { limit: 200 }),
     ...opts,
   });
-/** 事件时间线游标分页:不挂 refetchInterval;详情页轮询检测到 status 迁移后失效 keys.instances.events 前缀(立即 + 延迟各一次)。 */
+/** Event timeline cursor pagination: no refetchInterval; the detail poll invalidates the keys.instances.events prefix after a status transition (at once + delayed). */
 export const useInstanceEventPages = (uuid: string) =>
   useCursorPages(
     keys.instances.eventPages(uuid),
@@ -236,7 +236,7 @@ export const useInstanceAccess = (uuid: string, opts?: QueryOpts) =>
     ...opts,
   });
 
-/** 轻量整表视图(首 100 条;概览计数 / 命令面板用);列表页走 useServicePages。 */
+/** Lightweight whole-table view (first 100; overview counts / command palette); the list page uses useServicePages. */
 export const useServices = (opts?: QueryOpts<PageServiceOut>) =>
   useQuery<PageServiceOut, ApiError, ServiceOut[]>({
     queryKey: keys.services.first100,
@@ -244,13 +244,13 @@ export const useServices = (opts?: QueryOpts<PageServiceOut>) =>
     select: (p) => p.items,
     ...opts,
   });
-/** 服务列表游标分页:status(派生态)精确 / name 模糊(含 slug 前缀)服务端过滤,不挂轮询。 */
+/** Service list cursor pagination: status (derived) exact / name fuzzy (slug prefix included) server-side filters, no polling. */
 export const useServicePages = (params?: { status?: string; name?: string }) => {
   const status = params?.status;
   const name = params?.name?.trim() || undefined;
   return useCursorPages(keys.services.pages({ status, name }), listServicesApiV1ServicesGet, { status, name }, 20);
 };
-/** 过渡态服务逐条轻轮询(deploying / stopping / releasing)。 */
+/** Light per-item polling of transitional services (deploying / stopping / releasing). */
 export function useTransientServiceRefresh(rows: ServiceOut[]) {
   useTransientRefresh({
     rows,
@@ -264,7 +264,7 @@ export function useTransientServiceRefresh(rows: ServiceOut[]) {
 }
 export const useService = (slug: string, opts?: QueryOpts<ServiceOut>) =>
   useQuery({ queryKey: keys.services.detail(slug), queryFn: () => getServiceApiV1ServicesSlugGet(slug), ...opts });
-/** 服务级时间线(全部版本实例事件并集)游标分页;不挂轮询,由详情页服务轮询检测到迁移后失效。 */
+/** Service-level timeline (union of every revision instance's events) cursor pagination; no polling, invalidated by the detail page's service poll after a transition. */
 export const useServiceEventPages = (slug: string) =>
   useCursorPages(
     keys.services.eventPages(slug),
@@ -272,14 +272,14 @@ export const useServiceEventPages = (slug: string) =>
     undefined,
     50,
   );
-/** 版本历史首 50 条(含已释放实例),按实例 ID 降序;不续取后续页。 */
+/** Revision history first 50 (released instances included), by instance ID descending; no further pages. */
 export const useServiceRevisions = (slug: string, opts?: QueryOpts) =>
   useQuery({
     queryKey: keys.services.revisions(slug),
     queryFn: () => listRevisionsApiV1ServicesSlugRevisionsGet(slug, { limit: 50 }),
     ...opts,
   });
-/** 当前版本容器日志:tail / 自动刷新由调用方经 params 与 refetchInterval 控制。 */
+/** Current revision container log: tail / auto-refresh controlled by the caller via params and refetchInterval. */
 export const useServiceLogs = (
   slug: string,
   params: GetServiceLogsApiV1ServicesSlugLogsGetParams,
@@ -290,14 +290,14 @@ export const useServiceLogs = (
     queryFn: () => getServiceLogsApiV1ServicesSlugLogsGet(slug, params),
     ...opts,
   });
-/** 服务 API Key 列表:前缀与名称、创建/使用/吊销时间等元数据,不含明文密钥。 */
+/** Service API key list: prefixes, names and created / used / revoked metadata, no plaintext keys. */
 export const useServiceApiKeys = (slug: string, opts?: QueryOpts<ApiKeyOut[]>) =>
   useQuery({
     queryKey: keys.services.apiKeys(slug),
     queryFn: () => listApiKeysApiV1ServicesSlugApiKeysGet(slug),
     ...opts,
   });
-/** 服务小时账单(全部版本实例并集)游标分页。 */
+/** Service hourly bills (union of every revision instance) cursor pagination. */
 export const useServiceBillPages = (slug: string) =>
   useCursorPages(
     keys.services.billPages(slug),
@@ -305,7 +305,7 @@ export const useServiceBillPages = (slug: string) =>
     undefined,
     50,
   );
-/** 容器日志:tail / 自动刷新由调用方经 params 与 refetchInterval 控制。 */
+/** Container log: tail / auto-refresh controlled by the caller via params and refetchInterval. */
 export const useInstanceLogs = (
   uuid: string,
   params: GetInstanceLogsApiV1InstancesUuidLogsGetParams,
@@ -326,10 +326,10 @@ export const useInstanceMetrics = (
     queryFn: () => getInstanceMetricsApiV1InstancesUuidMetricsGet(uuid, params),
     ...opts,
   });
-/** 工作负载标识:实例(uuid)或服务(slug;打当前版本实例)。 */
+/** Workload identity: instance (uuid) or service (slug; targets the current revision instance). */
 export type WorkloadSubject = { kind: "instance"; uuid: string } | { kind: "service"; slug: string };
 
-/** 容器日志(实例或服务当前版本实例):tail / 自动刷新由调用方经 params 与 refetchInterval 控制。 */
+/** Container log (instance, or the service's current revision instance): tail / auto-refresh controlled by the caller via params and refetchInterval. */
 export const useWorkloadLogs = (
   subject: WorkloadSubject,
   params: GetInstanceLogsApiV1InstancesUuidLogsGetParams,
@@ -347,7 +347,7 @@ export const useWorkloadLogs = (
     ...opts,
   });
 
-/** 事件时间线游标分页(实例,或服务全部版本实例并集);不挂轮询,由外层轮询检测到迁移后失效。 */
+/** Event timeline cursor pagination (an instance, or the union of a service's revision instances); no polling, invalidated by the outer poll after a transition. */
 export const useWorkloadEventPages = (subject: WorkloadSubject) =>
   useCursorPages(
     subject.kind === "instance" ? keys.instances.eventPages(subject.uuid) : keys.services.eventPages(subject.slug),
@@ -359,35 +359,35 @@ export const useWorkloadEventPages = (subject: WorkloadSubject) =>
     50,
   );
 
-/** 小时账单游标分页。 */
+/** Hourly bill cursor pagination. */
 export const useHourlyBillPages = (params?: Omit<ListHourlyBillsApiV1BillsHourlyGetParams, "cursor" | "limit">) =>
   useCursorPages(keys.bills.pages(params), listHourlyBillsApiV1BillsHourlyGet, params, 50);
-/** 资金流水游标分页。 */
+/** Ledger cursor pagination. */
 export const useLedgerPages = (limit = 20) =>
   useCursorPages(keys.ledger.pages(limit), getLedgerApiV1WalletLedgerGet, undefined, limit);
-/** 月度汇总:窗口按本地月界切,offset 与「今日消费」同一来源。 */
+/** Monthly summary: window cut at the local month boundary, the offset shares its source with "today's spend". */
 export const useBillSummary = (month: string, tzOffsetMinutes: number) =>
   useQuery({
     queryKey: keys.billSummary.of(month, tzOffsetMinutes),
     queryFn: () => billSummaryApiV1BillsSummaryGet({ month, tz_offset_minutes: tzOffsetMinutes }),
   });
-/** 策略常量(盘价 / 回收天数等):公开端点,5 分钟内不重取。 */
+/** Policy constants (disk price / reclamation days ...): public endpoint, not refetched within 5 minutes. */
 export const usePolicies = () =>
   useQuery({ queryKey: keys.policies, queryFn: () => getPoliciesApiV1PoliciesGet(), staleTime: 5 * 60_000 });
-/** 站点公开配置(备案号 / 可用支付渠道):公开端点。 */
+/** Public site configuration (filing numbers / enabled payment channels): public endpoint. */
 export const useSiteConfig = () =>
   useQuery({ queryKey: keys.siteConfig, queryFn: () => getSiteConfigApiV1SiteConfigGet() });
-/** 法务文档:公开端点,按界面语言取 published 版(en-US 缺失服务端回落 zh-CN)。 */
+/** Legal documents: public endpoint, the published version by UI language (the server falls back along the profile locale chain). */
 export const useLegalDoc = (docKey: string, lang: string) =>
   useQuery({ queryKey: keys.legalDoc(docKey, lang), queryFn: () => getLegalDocApiV1LegalDocKeyGet(docKey, { lang }) });
-/** 实例列表 sparkline 批量摘要:断源时 available=false(200),独立于实例轮询。 */
+/** Instance list sparkline batch summary: available=false (200) when the source is down, independent of instance polling. */
 export const useMetricsSummary = (opts?: QueryOpts) =>
   useQuery({
     queryKey: keys.metricsSummary,
     queryFn: () => instancesMetricsSummaryApiV1MetricsInstancesGet(),
     ...opts,
   });
-/** 当日消费:date 为调用方本地 YYYY-MM-DD。 */
+/** Today's consumption: date is the caller's local YYYY-MM-DD. */
 export const useDailySummary = (date: string, tzOffsetMinutes: number, opts?: QueryOpts) =>
   useQuery({
     queryKey: keys.billDailySummary.of(date, tzOffsetMinutes),
@@ -400,30 +400,30 @@ export const useRecharge = (orderNo: string, opts?: QueryOpts<RechargeOut>) =>
     queryFn: () => getRechargeApiV1WalletRechargesOrderNoGet(orderNo),
     ...opts,
   });
-/** 退款表单候选集:可申请口径的充值订单(不可申请行带 reason_code)。 */
+/** Refund form candidates: top-up orders under the refundable definition (non-refundable rows carry reason_code). */
 export const useRefundableOrders = (opts?: QueryOpts) =>
   useQuery({
     queryKey: keys.refundableOrders,
     queryFn: () => listRefundableOrdersApiV1WalletRefundsEligibleOrdersGet(),
     ...opts,
   });
-/** 我的退款单游标分页。 */
+/** My refund requests cursor pagination. */
 export const useRefundPages = (limit = 20) =>
   useCursorPages(keys.refunds.pages(limit), listMyRefundsApiV1WalletRefundsGet, undefined, limit);
-/** 各账期可开票额度预览(仅 amount > 0 的已结束账期)。 */
+/** Invoiceable amount preview per period (finished periods with amount > 0 only). */
 export const useInvoiceEligible = (opts?: QueryOpts) =>
   useQuery({
     queryKey: keys.invoiceEligible,
     queryFn: () => listInvoiceEligibleApiV1BillingInvoicesEligibleGet(),
     ...opts,
   });
-/** 我的发票申请游标分页。 */
+/** My invoice requests cursor pagination. */
 export const useInvoicePages = (limit = 20) =>
   useCursorPages(keys.invoices.pages(limit), listMyInvoicesApiV1BillingInvoicesGet, undefined, limit);
-/** 我的工单游标分页。 */
+/** My tickets cursor pagination. */
 export const useTicketPages = (limit = 20) =>
   useCursorPages(keys.tickets.pages(limit), listMyTicketsApiV1TicketsGet, undefined, limit);
-/** 工单详情 + 消息流;他人工单 404 由错误页兜底。 */
+/** Ticket detail + message stream; someone else's ticket is 404, caught by the error page. */
 export const useTicketDetail = (ticketId: number, opts?: QueryOpts<TicketDetailOut>) =>
   useQuery({
     queryKey: keys.tickets.detail(ticketId),

@@ -1,4 +1,4 @@
-/** 开发机创建页:分段表单、计费预览与知情同意;新盘先于实例创建。 */
+/** Dev-box create page: sectioned form, billing preview and consent; a new disk is created before the instance. */
 
 import { isApiError, type DiskOut, type InstanceOut, type SkuMarketOut } from "@superdl/api-client";
 import {
@@ -63,7 +63,7 @@ export const Route = createFileRoute("/_console/market_/create/$skuId")({
   component: CreatePage,
 });
 
-/** 卡片锚点 id(未完成项清单跳转) */
+/** Card anchor ids (incomplete-items list jumps) */
 const ANCHOR = {
   basic: "card-basic",
   billing: "card-billing",
@@ -72,7 +72,7 @@ const ANCHOR = {
   ssh: "card-ssh",
 } as const;
 
-/** 必填卡标题:红星 + 标题 */
+/** Required card title: red star + title */
 function RequiredTitle({ children }: { children: ReactNode }) {
   return (
     <span>
@@ -167,7 +167,7 @@ function CreatePage() {
       })),
     }));
   }, [usableImages]);
-  /** 常用镜像卡片:每个框架取清单里的第一条(后端按框架 / 版本排好序),最多 4 个 */
+  /** Common image cards: the first entry per framework (the backend sorts by framework / version), at most 4 */
   const quickImages = useMemo(() => {
     const byFramework = new Map<string, (typeof usableImages)[number]>();
     for (const img of usableImages) if (!byFramework.has(img.framework)) byFramework.set(img.framework, img);

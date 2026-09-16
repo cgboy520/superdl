@@ -1,4 +1,4 @@
-/** 容器日志面板(纯展示):末 N 行 + 关键词过滤 + 换行开关 + 自动刷新开关 + 贴底跟随 + 下载。数据与 tail / 自动刷新状态由调用方持有;实例详情页与服务详情页共用。 */
+/** Container log panel (display only): last N lines + keyword filter + wrap toggle + auto-refresh toggle + follow bottom + download. Data and tail / auto-refresh state are held by the caller; shared by the instance and service detail pages. */
 
 import { SearchOutlined } from "@ant-design/icons";
 import { controlWidth, fontSize, space } from "@superdl/ui";
@@ -21,7 +21,7 @@ export function LogsPanel({
   onAutoRefresh,
   downloadName,
 }: {
-  /** 为假时渲染说明,不发请求 */
+  /** false renders an explanation without requesting */
   viewable: boolean;
   lines: string[];
   truncated?: boolean;
@@ -31,7 +31,7 @@ export function LogsPanel({
   onTail: (n: number) => void;
   autoRefresh: boolean;
   onAutoRefresh: (on: boolean) => void;
-  /** 下载文件名(不含 .log) */
+  /** Download file name (without .log) */
   downloadName: string;
 }) {
   const { t } = useTranslation();

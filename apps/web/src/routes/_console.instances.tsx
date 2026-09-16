@@ -1,4 +1,4 @@
-/** 实例列表:URL 筛选、游标分页、过渡态轮询、注意事项与空态引导。 */
+/** Instance list: URL filters, cursor pagination, transitional polling, attention items and the empty-state onboarding. */
 
 import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { type InstanceMetricsSummaryOut, type InstanceOut } from "@superdl/api-client";
@@ -47,13 +47,13 @@ import { requireAuth } from "../lib/guard";
 import { useCursorList } from "../lib/useCursorList";
 import { listSearchStore } from "../stores/listSearch";
 
-/** 状态计数条的视图键 = ?status= 白名单;running / stopped 直落服务端过滤,attention 是客户端派生集合。 */
+/** View keys of the status count bar = the ?status= allow-list; running / stopped go straight to the server filter, attention is a client-derived set. */
 const SUMMARY_KEYS = ["running", "stopped", "attention"] as const;
 
-/** 需处理状态集合:过渡态、冻结与失败。 */
+/** Needs-attention set: transitional, frozen and failed. */
 const ATTENTION_STATUSES = new Set(["creating", "starting", "stopping", "frozen", "failed"]);
 
-/** 需处理判据(与 §3.2 一致):上表状态,或包周期已到期 / 在 period_expire_warn_days 窗口内到期。 */
+/** Attention criterion (as in §3.2): a status above, or a subscription expired / expiring within period_expire_warn_days. */
 function needsAttention(i: InstanceOut, warnDays: number | undefined, now: number): boolean {
   if (ATTENTION_STATUSES.has(i.status)) return true;
   const sub = i.subscription;
@@ -99,7 +99,7 @@ function UtilCell({ instance, summary }: { instance: InstanceOut; summary: Insta
   );
 }
 
-/** 状态列(表格与移动卡片共用):stopped 时 tooltip 给冻结策略(政策说明不做常驻条)。 */
+/** Status column (shared by table and mobile cards): the stopped tooltip explains the freeze policy (policy notes are never permanent bars). */
 function StatusCell({ instance, freezeGraceHours }: { instance: InstanceOut; freezeGraceHours?: number }) {
   const { t } = useTranslation(["web", "shared"]);
   return (
@@ -119,7 +119,7 @@ function StatusCell({ instance, freezeGraceHours }: { instance: InstanceOut; fre
   );
 }
 
-/** 规格列:GPU 型号 × 数量 + 档位徽标,popover 展开完整配置(hover / focus / click 三触发,触屏可达)。 */
+/** Spec column: GPU model × count + tier badge, popover with the full configuration (hover / focus / click, reachable by touch). */
 function SpecCell({ instance }: { instance: InstanceOut }) {
   const { t } = useTranslation(["web", "shared"]);
   return (
@@ -165,7 +165,7 @@ const UtilCellMemo = memo(
       next.summary?.items.find((i) => i.uuid === prev.instance.uuid),
 );
 
-/** 移动端实例卡片(<md 替代表格):与表格共用名称/状态/规格/利用率/计费单元。 */
+/** Mobile instance card (<md replaces the table): shares the name / status / spec / utilisation / billing cells with the table. */
 function InstanceCard({
   instance,
   summary,

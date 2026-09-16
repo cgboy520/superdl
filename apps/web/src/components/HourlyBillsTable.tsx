@@ -1,4 +1,4 @@
-/** 小时账单表:费用中心(按月,带实例列)、实例详情账单 Tab、服务详情账单 Tab 同一张表,列口径一致。查询结果由调用方注入;金额一律按字符串渲染。 */
+/** Hourly bill table: billing page (per month, with the instance column), instance detail Bills tab and service detail Bills tab share one table with the same columns. Query results are injected by the caller; amounts are always rendered as strings. */
 
 import type { BillHourlyOut, PageBillHourlyOut } from "@superdl/api-client";
 import { flattenPages, formatDateTime } from "@superdl/ui";
@@ -17,7 +17,7 @@ export function HourlyBillsTable({
   showInstance = false,
 }: {
   query: HourlyBillsQuery;
-  /** 费用中心跨实例查需要实例列;实例 / 服务详情页不显示 */
+  /** The billing page's cross-instance query needs the instance column; instance / service details hide it */
   showInstance?: boolean;
 }) {
   const { t } = useTranslation();

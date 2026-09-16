@@ -1,4 +1,4 @@
-/** 查询键与批量失效前缀;all 表示资源域前缀。 */
+/** Query keys and bulk invalidation prefixes; all is the resource-domain prefix. */
 
 import type {
   GetInstanceLogsApiV1InstancesUuidLogsGetParams,

@@ -1,4 +1,4 @@
-/** 服务操作槽位、端点菜单与未运行状态门控测试。 */
+/** Service action slots, endpoint menu and not-running gating. */
 import type { ServiceOut } from "@superdl/api-client";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -26,7 +26,7 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 const writeText = vi.fn().mockResolvedValue(undefined);
-/** 带剪贴板 spy 的 userEvent 实例。 */
+/** userEvent instance with a clipboard spy. */
 function stubClipboard(): void {
   Object.defineProperty(navigator, "clipboard", { configurable: true, writable: true, value: { writeText } });
 }
@@ -44,9 +44,9 @@ function makeService(status: string, extra?: Partial<ServiceOut>): ServiceOut {
   } as ServiceOut;
 }
 
-const BTN_ENDPOINT = /端\s*点/;
-const BTN_STOP = /停\s*止/;
-const BTN_START = /启\s*动/;
+const BTN_ENDPOINT = /端\s*点/; // cjk-ok
+const BTN_STOP = /停\s*止/; // cjk-ok
+const BTN_START = /启\s*动/; // cjk-ok
 
 function renderWithApp(ui: ReactElement) {
   return render(<App>{ui}</App>);
@@ -57,41 +57,41 @@ beforeEach(() => {
 });
 
 describe("ServiceActions", () => {
-  it("running 服务:主动作是「端点 ▾」,停止降为次动作(行里仍可停)", () => {
+  it("running service: the primary action is Endpoint ▾, stop drops to secondary (still stoppable in the row)", () => {
     renderWithApp(<ServiceActions service={makeService("running")} />);
     expect(screen.getByRole("button", { name: BTN_ENDPOINT })).toBeEnabled();
     expect(screen.getByRole("button", { name: BTN_STOP })).toBeEnabled();
     expect(screen.queryByRole("button", { name: BTN_START })).toBeNull();
   });
 
-  it("stopped 服务:主动作回到「启动」,不给端点菜单(端点本来就打不通)", () => {
+  it("stopped service: the primary action is back to Start, no endpoint menu (the endpoint is unreachable anyway)", () => {
     renderWithApp(<ServiceActions service={makeService("stopped")} />);
     expect(screen.getByRole("button", { name: BTN_START })).toBeEnabled();
     expect(screen.queryByRole("button", { name: BTN_ENDPOINT })).toBeNull();
   });
 
-  it("端点菜单三条:复制访问地址写完整 URL,调用示例出 curl 弹窗", async () => {
+  it("three endpoint menu items: copy access URL writes the full URL, call example opens the curl dialog", async () => {
     const user = userEvent.setup();
     stubClipboard();
     renderWithApp(<ServiceActions service={makeService("running")} />);
     await user.click(screen.getByRole("button", { name: BTN_ENDPOINT }));
-    expect(await screen.findByRole("menuitem", { name: "打开端点" })).toBeEnabled();
-    await user.click(screen.getByRole("menuitem", { name: "复制访问地址" }));
+    expect(await screen.findByRole("menuitem", { name: "打开端点" })).toBeEnabled(); // cjk-ok
+    await user.click(screen.getByRole("menuitem", { name: "复制访问地址" })); // cjk-ok
     expect(writeText).toHaveBeenCalledWith("https://qwen-chat.svc.superdl.local");
 
     await user.click(screen.getByRole("button", { name: BTN_ENDPOINT }));
-    await user.click(await screen.findByRole("menuitem", { name: "调用示例" }));
+    await user.click(await screen.findByRole("menuitem", { name: "调用示例" })); // cjk-ok
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText(/curl https:\/\/qwen-chat\.svc\.superdl\.local/)).toBeInTheDocument();
   });
 
-  it("frozen 服务:端点条目灰置带原因,点击不复制;启动降为次动作且门控", async () => {
+  it("frozen service: endpoint items greyed with a reason, click does not copy; start drops to secondary and is gated", async () => {
     const user = userEvent.setup();
     stubClipboard();
     renderWithApp(<ServiceActions service={makeService("frozen")} />);
     expect(screen.getByRole("button", { name: BTN_START })).toHaveAttribute("aria-disabled", "true");
     await user.click(screen.getByRole("button", { name: BTN_ENDPOINT }));
-    const copy = await screen.findByRole("menuitem", { name: "复制访问地址" });
+    const copy = await screen.findByRole("menuitem", { name: "复制访问地址" }); // cjk-ok
     expect(copy).toHaveAttribute("aria-disabled", "true");
     await user.click(copy);
     expect(writeText).not.toHaveBeenCalled();

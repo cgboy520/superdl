@@ -1,4 +1,4 @@
-/** 运行中实例的主动作「连接 ▾」:复制 SSH 命令 / 打开 JupyterLab / 连接信息 / 实例监控。access 只在菜单打开后拉取;失败在菜单内给重试。 */
+/** Primary action "Connect ▾" of a running instance: copy SSH command / open JupyterLab / connection info / instance monitoring. access is fetched only once the menu opens; failures offer a retry inside the menu. */
 
 import { CodeOutlined, CopyOutlined, DownOutlined, LineChartOutlined, LinkOutlined } from "@ant-design/icons";
 import type { InstanceOut } from "@superdl/api-client";

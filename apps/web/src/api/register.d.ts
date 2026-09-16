@@ -1,4 +1,4 @@
-/** 将 TanStack Query 的全局默认错误类型设为 ApiError。 */
+/** Set TanStack Query's global default error type to ApiError. */
 
 import type { ApiError } from "@superdl/api-client";
 

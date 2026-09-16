@@ -1,4 +1,4 @@
-/** SSH 公钥选择块:查询失败可重试(不伪装成「你还没有密钥」)/ 只有一把时自动选中 / 无密钥时行内添加(多行公钥框 + ssh-keygen 指引)并自动选中 / 多选。开发机 SSH 卡与服务「同时开放 SSH」共用。 */
+/** SSH public key block: a failed query is retryable (never disguised as "you have no keys yet") / a single key is auto-selected / without keys inline add (multi-line key box + ssh-keygen hint) and auto-select / multi-select. Shared by the dev-box SSH card and the service "also enable SSH". */
 
 import { controlWidth, fontSize, space } from "@superdl/ui";
 import { CopyField, DataErrorAlert } from "@superdl/ui/components";

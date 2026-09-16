@@ -1,4 +1,4 @@
-/** 法务文档的二级标题目录、锚点、版本行与路由切换测试。 */
+/** Legal document page: h2 table of contents, anchors, version line and route switching. */
 import type { LegalDocOut } from "@superdl/api-client";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -48,7 +48,7 @@ function makeDoc(over: Partial<LegalDocOut> = {}): LegalDocOut {
   return {
     doc_key: "terms",
     locale: "zh-CN",
-    title: "用户协议",
+    title: "用户协议", // cjk-ok
     content_md: CONTENT,
     version: 3,
     published_at: "2026-08-01T02:00:00Z",
@@ -58,26 +58,26 @@ function makeDoc(over: Partial<LegalDocOut> = {}): LegalDocOut {
 }
 
 describe("parseTocHeadings", () => {
-  it("只取二级标题:跳过一级/三级标题与围栏代码块里的 ##", () => {
+  it("takes second-level headings only: skips h1 / h3 and ## inside fenced code blocks", () => {
     expect(parseTocHeadings(CONTENT)).toEqual([
       { id: "legal-h2-0", text: "First section" },
       { id: "legal-h2-1", text: "Second section" },
     ]);
   });
 
-  it("无二级标题时为空(页面据此不渲染目录)", () => {
+  it("empty without second-level headings (the page renders no table of contents)", () => {
     expect(parseTocHeadings("# Only title\n\nplain text")).toEqual([]);
   });
 });
 
-describe("法务文档页", () => {
+describe("legal document page", () => {
   beforeEach(() => {
     breakpoints.current = { lg: true };
     docState.current = { data: makeDoc(), isLoading: false, isError: false };
     navigateSpy.mockReset();
   });
 
-  it("渲染后的 h2 按顺序拿到目录 id,锚点有落点", () => {
+  it("rendered h2 elements get the table-of-contents ids in order, anchors have targets", () => {
     render(
       <App>
         <LegalDocPage docKey="terms" />
@@ -88,37 +88,37 @@ describe("法务文档页", () => {
     expect(screen.getByRole("link", { name: "Second section" })).toHaveAttribute("href", "#legal-h2-1");
   });
 
-  it("版本行紧跟标题,不落到页尾", () => {
+  it("the version line follows the title, not the page end", () => {
     render(
       <App>
         <LegalDocPage docKey="terms" />
       </App>,
     );
-    const title = screen.getByRole("heading", { name: "用户协议" });
-    const version = screen.getByText(/版本 v3/);
+    const title = screen.getByRole("heading", { name: "用户协议" }); // cjk-ok
+    const version = screen.getByText(/版本 v3/); // cjk-ok
     expect(title.compareDocumentPosition(version) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const firstH2 = document.querySelector("#legal-h2-0");
     expect(version.compareDocumentPosition(firstH2 as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("顶部切换器切到隐私政策走路由跳转", async () => {
+  it("the top switcher navigates to the privacy policy through the router", async () => {
     const user = userEvent.setup();
     render(
       <App>
         <LegalDocPage docKey="terms" />
       </App>,
     );
-    await user.click(screen.getByText("《隐私政策》"));
+    await user.click(screen.getByText("《隐私政策》")); // cjk-ok
     expect(navigateSpy).toHaveBeenCalledWith({ to: "/legal/privacy" });
   });
 
-  it("无二级标题时不渲染目录", () => {
+  it("renders no table of contents without second-level headings", () => {
     docState.current = { data: makeDoc({ content_md: "plain text only" }), isLoading: false, isError: false };
     render(
       <App>
         <LegalDocPage docKey="terms" />
       </App>,
     );
-    expect(screen.queryByRole("navigation", { name: "目录" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "目录" })).not.toBeInTheDocument(); // cjk-ok
   });
 });

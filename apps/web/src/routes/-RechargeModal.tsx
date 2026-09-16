@@ -26,7 +26,7 @@ import { keys } from "../api/keys";
 import { useCreateRecharge, useMockPay } from "../api/mutations";
 import { usePolicies, useRecharge, useSiteConfig, useWallet } from "../api/queries";
 
-/** 进行中的充值订单号(sessionStorage):关窗重开可恢复轮询。 */
+/** Order number of the top-up in progress (sessionStorage): closing and reopening resumes the poll. */
 export const PENDING_ORDER_KEY = "superdl.web.pendingRecharge";
 
 export function PayCountdown({ expiresAt }: { expiresAt: string }) {

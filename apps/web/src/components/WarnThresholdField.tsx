@@ -1,4 +1,4 @@
-/** 低余额预警阈值(提前 N 小时):数字输入 + 保存钮 + 说明;费用中心余额卡与账户设置共用。 */
+/** Low-balance warning threshold (N hours ahead): number input + save button + note; shared by the billing balance card and account settings. */
 import { CheckOutlined } from "@ant-design/icons";
 import { fontSize } from "@superdl/ui";
 import { App, Button, InputNumber, Space, Typography } from "antd";

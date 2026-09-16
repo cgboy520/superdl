@@ -1,4 +1,4 @@
-/** 首屏行情板:按型号与档位展示代表规格的价格、库存和租用入口。 */
+/** First-screen price board: representative specs per model and tier with price, stock and rent entry. */
 
 import type { SkuMarketOut } from "@superdl/api-client";
 import {
@@ -25,11 +25,11 @@ import { useTranslation } from "react-i18next";
 
 import { useSkus } from "../../api/queries";
 
-/** 面板上的一行:同型号同档位取最低价;有货的优先于无货的。 */
+/** One board row: the lowest price of the same model and tier; in stock before sold out. */
 interface BoardRow {
   key: string;
   sku: SkuMarketOut;
-  /** 非空型号(CPU 规格已在入口滤掉) */
+  /** Non-empty model (CPU specs are filtered at the entry) */
   model: string;
   variant: string;
   available: number;

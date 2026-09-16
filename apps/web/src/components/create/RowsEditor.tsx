@@ -1,4 +1,4 @@
-/** 行编辑器骨架(启动参数 / 环境变量共用):行渲染由调用方给(render prop),这里统一「新增行自动聚焦 / 图标删除钮 / 行分隔 / 批量粘贴 Modal(解析预览 + 跳过计数,有跳过留在 Modal)/ 可折叠为「N 项 · 展开编辑」」。 */
+/** Row editor skeleton (shared by command arguments / environment variables): the caller renders rows (render prop); this unifies "auto-focus on new rows / icon delete button / row separators / bulk paste Modal (parse preview + skip count, stays open with skips) / collapsible to "N items · expand to edit"". */
 
 import { DeleteOutlined } from "@ant-design/icons";
 import { fontSize, space } from "@superdl/ui";
@@ -10,26 +10,26 @@ export interface RowsEditorProps<T extends { id: string }> {
   label: string;
   rows: T[];
   onChange: (rows: T[]) => void;
-  /** 新建一行(空值) */
+  /** Create a new (empty) row */
   newRow: (id: string) => T;
   newRowId: () => string;
-  /** 行内控件(不含删除钮);autoFocus 为新增行 */
+  /** Row controls (without the delete button); autoFocus for the new row */
   renderRow: (row: T, index: number, autoFocus: boolean) => ReactNode;
-  /** 行级问题文案(红字在行下) */
+  /** Row-level issue copy (red text under the row) */
   rowIssue?: (row: T) => string | null;
   addLabel: string;
-  /** 批量粘贴:解析文本 → 新行 + 跳过条数;不传则不出批量按钮 */
+  /** Bulk paste: parse text → new rows + skipped count; omitted = no bulk button */
   bulk?: {
     title: string;
     hint: string;
     placeholder?: string;
     parse: (text: string) => { rows: T[]; skipped: number };
-    /** 预览表列(可选):预览解析结果 */
+    /** Preview table columns (optional): preview of the parse result */
     previewColumns?: { title: string; render: (row: T) => ReactNode }[];
   };
-  /** 底部说明 */
+  /** Footer note */
   hint?: string;
-  /** 可折叠:有行且未展开时只显示「N 项 · 展开编辑」 */
+  /** Collapsible: with rows and not expanded only "N items · expand to edit" is shown */
   collapsible?: boolean;
 }
 

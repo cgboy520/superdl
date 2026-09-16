@@ -1,4 +1,4 @@
-/** 落地页 section 骨架:满宽底色 + 内容区 1200 居中 + 统一纵向留白;可选居中标题 / 副标题。 */
+/** Landing section skeleton: full-width background + 1200 centred content + unified vertical spacing; optional centred title / subtitle. */
 
 import { layout, space } from "@superdl/ui";
 import { Typography } from "antd";
@@ -18,7 +18,7 @@ export function LandingSection({
   title?: ReactNode;
   subtitle?: ReactNode;
   children: ReactNode;
-  /** 覆盖底部留白(紧接下一段时收窄) */
+  /** Override the bottom spacing (tightened when the next section follows closely) */
   paddingBottom?: number;
   style?: CSSProperties;
 }) {

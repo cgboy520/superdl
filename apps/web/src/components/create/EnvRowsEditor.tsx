@@ -1,4 +1,4 @@
-/** 环境变量行编辑器(RowsEditor 特化):变量名 + 值(密文行用密码框)+ 密文勾选;行内即时报名字问题;批量粘贴 KEY=VALUE 带预览与跳过计数。密文值创建后不回显,只能整条覆盖。 */
+/** Environment-variable row editor (RowsEditor specialisation): name + value (password box for secret rows) + secret checkbox; name issues reported inline; bulk paste of KEY=VALUE with preview and skip count. Secret values are not echoed after creation and can only be overwritten whole. */
 
 import { Checkbox, Input } from "antd";
 import { useTranslation } from "react-i18next";
@@ -13,7 +13,7 @@ export function EnvRowsEditor({
 }: {
   rows: EnvRow[];
   onChange: (rows: EnvRow[]) => void;
-  /** 更新版本抽屉里折叠为「N 个变量 · 展开编辑」 */
+  /** In the revision drawer collapses to "N variables · expand to edit" */
   collapsible?: boolean;
 }) {
   const { t } = useTranslation();

@@ -1,4 +1,4 @@
-/** 数据删除说明(公开):正文来自后端当前 published 版;账号注销弹窗链接至此。 */
+/** Deletion notice (public): body from the backend's current published version; the account deletion dialog links here. */
 
 import { createFileRoute } from "@tanstack/react-router";
 

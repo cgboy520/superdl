@@ -1,4 +1,4 @@
-/** 三条服务路由的 URL 状态往返:非法值必须剥离回默认(URL 不做旧名兼容)。 */
+/** URL state round trip of the three service routes: invalid values must be stripped back to defaults (no legacy-name compatibility in the URL). */
 import { describe, expect, it } from "vitest";
 
 import { parseDeployDeepLink } from "../lib/deployLink";
@@ -6,7 +6,7 @@ import { servicesValidateSearch } from "./_console.services";
 import { serviceDetailValidateSearch } from "./_console.services_.$slug";
 
 describe("servicesValidateSearch", () => {
-  it("status 只认派生态白名单且不含 released;q 空白剥离", () => {
+  it("status accepts only the derived-status allow-list without released; blank q is stripped", () => {
     expect(servicesValidateSearch({ status: "running", q: " qwen " })).toEqual({
       status: "running",
       q: " qwen ",
@@ -17,7 +17,7 @@ describe("servicesValidateSearch", () => {
 });
 
 describe("serviceDetailValidateSearch", () => {
-  it("六个合法 tab 保留;旧名(revisions/events/bills/service)与未知值一律回默认", () => {
+  it("the six valid tabs are kept; legacy names (revisions/events/bills/service) and unknown values fall back to the default", () => {
     for (const tab of ["overview", "keys", "metrics", "logs", "history", "settings"]) {
       expect(serviceDetailValidateSearch({ tab })).toEqual({ tab });
     }
@@ -30,7 +30,7 @@ describe("serviceDetailValidateSearch", () => {
 });
 
 describe("parseDeployDeepLink", () => {
-  it("sku_id 正整数、gpus 1~8、period 压过 market=spot、count 只在包周期下有效", () => {
+  it("sku_id positive integer, gpus 1–8, period wins over market=spot, count only in subscription modes", () => {
     expect(parseDeployDeepLink({ sku_id: "3", gpus: "2", period: "month", market: "spot", count: "6" })).toEqual({
       sku_id: 3,
       gpus: 2,

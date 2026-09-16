@@ -1,4 +1,4 @@
-/** 游标列表页骨架:搜索框本地受控 + 防抖 300ms 回写 URL(replace)+ 分页按键去重行。实例列表与在线服务列表共用。 */
+/** Cursor list page skeleton: locally controlled search box + 300 ms debounce written back to the URL (replace) + rows deduplicated by key. Shared by the instance and online-service lists. */
 
 import { useDebouncedValue } from "@superdl/ui";
 import { useEffect, useMemo, useState } from "react";
@@ -9,13 +9,13 @@ export function useCursorList<T, Q extends { data?: { pages: { items: T[] }[] } 
   usePages,
   keyOf,
 }: {
-  /** URL 里已提交的检索词 */
+  /** Search term committed in the URL */
   urlQ: string | undefined;
-  /** 防抖后的检索词回写 URL;由调用方 useCallback 稳定化(带上路由与既有筛选) */
+  /** Write the debounced term back to the URL; stabilised by the caller with useCallback (carrying the route and existing filters) */
   commitQ: (q: string | undefined) => void;
-  /** 游标分页 hook(实例 / 服务列表),入参为防抖后的检索词 */
+  /** Cursor pagination hook (instance / service list), fed the debounced term */
   usePages: (name: string | undefined) => Q;
-  /** 行去重键(轮询替换首页与旧页可能短暂重叠,首页优先) */
+  /** Row dedup key (the first page replaced by polling may briefly overlap old pages, the first page wins) */
   keyOf: (row: T) => string;
 }) {
   const [keyword, setKeyword] = useState(urlQ ?? "");

@@ -1,5 +1,5 @@
-/** 控制台主导航事实源(侧栏 / 窄屏抽屉 / 命令面板共用)。分组:资源(实例 / 在线服务 / 存储)· 购买与账务(算力市场 / 费用中心)· 支持。
- *  通知与账户设置不在主导航(经顶栏铃铛与用户菜单到达);选中态为最长前缀匹配,不命中则无高亮。 */
+/** Source of truth of the console main navigation (shared by the sidebar / narrow-screen drawer / command palette). Groups: resources (instances / online services / storage) · purchasing & billing (market / billing) · support.
+ *  Notifications and account settings are not in the main navigation (reached via the top-bar bell and user menu); the selected state is the longest prefix match, no highlight without a match. */
 
 import {
   ApiOutlined,
@@ -38,15 +38,15 @@ export const CONSOLE_NAV_GROUPS = [
 export type ConsoleNavGroup = (typeof CONSOLE_NAV_GROUPS)[number];
 export type ConsoleNavItem = ConsoleNavGroup["items"][number];
 
-/** 扁平项(命令面板 / 选中态匹配用) */
+/** Flat items (for the command palette / selected-state matching) */
 export const CONSOLE_NAV: readonly ConsoleNavItem[] = CONSOLE_NAV_GROUPS.flatMap(
   (g): readonly ConsoleNavItem[] => g.items,
 );
 
-/** 登录后默认落地页 */
+/** Default landing page after login */
 export const CONSOLE_HOME = "/instances";
 
-/** 当前路径命中的导航 key;不命中(如 /settings、/notifications、/help)返回 undefined,不高亮任何项。 */
+/** Navigation key matched by the current path; undefined (e.g. /settings, /notifications, /help) highlights nothing. */
 export function consoleNavSelected(pathname: string): ConsoleNavItem["key"] | undefined {
   return CONSOLE_NAV.slice()
     .sort((a, b) => b.key.length - a.key.length)

@@ -1,4 +1,4 @@
-/** GPU 排名:理论算力与在售型号最低单卡时价/FP16 峰值。 */
+/** GPU ranking: theoretical compute and, for models on sale, lowest per-card hourly price / FP16 peak. */
 
 import type { GpuSpec } from "@superdl/ui";
 import {
@@ -30,9 +30,9 @@ interface RankRow {
   model: string;
   label: string;
   vramGb: number;
-  /** 排序值:算力档取 TFLOPS,性价比档取「每 TFLOPS 时价」 */
+  /** Sort value: TFLOPS for compute views, "hourly price per TFLOPS" for the value view */
   value: number;
-  /** 条长比例 0~1:算力越高越长;性价比越便宜越长 */
+  /** Bar length ratio 0–1: more compute = longer; cheaper = longer */
   ratio: number;
   onSale: boolean;
   text: string;
@@ -46,7 +46,7 @@ export function GpuRankSection() {
   const [metric, setMetric] = useState<Metric>("fp16");
   const { data: skus } = useSkus();
 
-  /** 型号 → 最低单卡时价(万分位整数转元,只用于展示层比值) */
+  /** Model → lowest per-card hourly price (ten-thousandths integer to units, display ratio only) */
   const minPriceByModel = useMemo(() => {
     const m = new Map<string, string>();
     for (const s of skus ?? []) {

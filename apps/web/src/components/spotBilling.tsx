@@ -1,4 +1,4 @@
-/** 竞价(spot)共用件:策略读取、折后时价、折扣角标;市场页 / 创建页 / 实例列表与详情共用。知情同意在 ConsentGate。折扣与宽限窗一律从 `/policies` 读。 */
+/** Spot shared pieces: policy reading, discounted hourly price, discount badge; shared by the market / create pages and the instance list / detail. Consent lives in ConsentGate. Discount and grace window are always read from `/policies`. */
 
 import { fontSize, mulPrice, space, spotHourlyPrice } from "@superdl/ui";
 import { Space, Typography } from "antd";
@@ -9,13 +9,13 @@ import { usePolicies } from "../api/queries";
 import { useFormat } from "@superdl/ui";
 
 export interface SpotPolicy {
-  /** 竞价价占按量价的百分数(40 = 4 折) */
+  /** Spot price as a percentage of the on-demand price (40 = 60 % off) */
   discountPct: number;
-  /** 抢占通知到真删 Pod 的宽限窗(秒) */
+  /** Grace window (seconds) from the preemption notice to the real Pod deletion */
   graceSeconds: number;
 }
 
-/** 竞价策略;policies 未就绪返回 undefined,调用方灰置竞价档。 */
+/** Spot policy; undefined while policies are pending, the caller greys the spot tier. */
 export function useSpotPolicy(): SpotPolicy | undefined {
   const { data: policies } = usePolicies();
   return useMemo(
@@ -25,12 +25,12 @@ export function useSpotPolicy(): SpotPolicy | undefined {
   );
 }
 
-/** 竞价时价(单份);策略未就绪返回 undefined。 */
+/** Spot hourly price (one unit); undefined while the policy is pending. */
 export function spotPriceOf(baseHourly: string, policy: SpotPolicy | undefined): string | undefined {
   return policy ? spotHourlyPrice(baseHourly, policy.discountPct) : undefined;
 }
 
-/** 折后时价 + 原价划线。`units` 是「一小时收几份」(GPU 卡数;CPU 恒 1)。 */
+/** Discounted hourly price + struck-through list price. `units` is "units per hour" (GPU card count; CPU always 1). */
 export function SpotPriceInline({
   baseHourly,
   units,

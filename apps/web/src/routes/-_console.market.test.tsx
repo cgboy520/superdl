@@ -1,10 +1,10 @@
-/** 市场页筛选、选择与购买参数的 URL 往返测试。 */
+/** URL round trip of the market page filters, selection and purchase parameters. */
 import { describe, expect, it } from "vitest";
 
 import { marketValidateSearch } from "./_console.market";
 
 describe("market validateSearch", () => {
-  it("10 参数全量往返:合法值全部保留(数字串归一为数字)", () => {
+  it("full round trip of the 10 parameters: valid values are all kept (numeric strings normalised to numbers)", () => {
     const input = {
       kind: "cpu",
       mode: "month",
@@ -31,7 +31,7 @@ describe("market validateSearch", () => {
     });
   });
 
-  it("默认值剥离:kind=gpu / mode=on_demand / qty=1 / count=1 / 空档与 0 值不进 URL", () => {
+  it("defaults stripped: kind=gpu / mode=on_demand / qty=1 / count=1 / empty tiers and 0 values stay out of the URL", () => {
     expect(
       marketValidateSearch({
         kind: "gpu",
@@ -47,7 +47,7 @@ describe("market validateSearch", () => {
     ).toEqual({});
   });
 
-  it("非法值丢弃:未知 kind/mode/tier、负数、浮点、超上限时长、非数字一律回默认", () => {
+  it("invalid values dropped: unknown kind/mode/tier, negatives, floats, over-cap durations and non-numbers fall back to defaults", () => {
     expect(
       marketValidateSearch({
         kind: "tpu",
@@ -63,14 +63,14 @@ describe("market validateSearch", () => {
     ).toEqual({});
   });
 
-  it("竞价与周期档位识别:mode=spot 保留,展示档位(shared_mig)保留", () => {
+  it("spot and period tiers recognised: mode=spot kept, display tier (shared_mig) kept", () => {
     expect(marketValidateSearch({ mode: "spot", tier: "shared_mig" })).toEqual({
       mode: "spot",
       tier: "shared_mig",
     });
   });
 
-  it("URL 往返序列化:validate 输出再 validate 幂等(控件受控于 search 不漂移)", () => {
+  it("URL round-trip serialisation: validating the validate output is idempotent (controls bound to search do not drift)", () => {
     const once = marketValidateSearch({
       kind: "cpu",
       mode: "week",

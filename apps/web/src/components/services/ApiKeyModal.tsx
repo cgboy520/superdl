@@ -1,4 +1,4 @@
-/** 新建服务访问 Key 弹窗。成功态一次性展示:大号等宽全值 + 复制 + 红字警告 + 必须勾「我已保存」才能关,X 与遮罩关闭封掉(与管理端 TOTP 恢复码同一套)。 */
+/** New service access key dialog. One-off success state: large monospace full value + copy + red warning + "I have saved it" must be ticked before closing, X and mask close disabled (the same pattern as the admin TOTP recovery codes). */
 
 import type { ApiKeyCreateOut } from "@superdl/api-client";
 import { CopyField } from "@superdl/ui/components";

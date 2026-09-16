@@ -1,4 +1,4 @@
-/** 事件时间线 Tab(实例详情 / 服务详情共用):游标分页,不挂 refetchInterval;外层轮询检测到 status 迁移后失效事件查询(立即 + 3s 延迟各一次)。 */
+/** Event timeline tab (shared by instance / service details): cursor pagination without refetchInterval; the outer poll invalidates the event query after a status transition (at once + after 3 s). */
 
 import { flattenPages } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";

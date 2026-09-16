@@ -1,4 +1,4 @@
-/** 服务端点卡:访问地址、就绪状态、鉴权方式、端口与健康检查。 */
+/** Service endpoint card: access URL, readiness, auth mode, port and health check. */
 
 import type { ServiceOut } from "@superdl/api-client";
 import { CopyField, GatedButton } from "@superdl/ui/components";

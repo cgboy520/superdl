@@ -1,4 +1,4 @@
-/** 发票 Tab:申请开票(抬头 / 税号 / 邮箱校验)+ 我的发票。 */
+/** Invoice tab: request an invoice (title / tax id / email validation) + my invoices. */
 
 import { useTranslation } from "react-i18next";
 import { Alert, App, Button, Card, Input, Modal, Radio, Select, Space, Statistic, Tag, Typography } from "antd";
@@ -21,7 +21,7 @@ import { useFormat } from "@superdl/ui";
 import { useCreateInvoice } from "../api/mutations";
 import { useInvoiceEligible, useInvoicePages, useSiteConfig } from "../api/queries";
 
-/** 发票申请弹窗:账期(仅 eligible 列表)+ 抬头信息;金额由服务端按账期计算。 */
+/** Invoice request dialog: period (eligible list only) + title information; the amount is computed server-side per period. */
 export const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 /** PRC unified social credit code — only enforced client-side when the site runs the `cn` profile. */
 export const CN_USCC_RE = /^[0-9A-HJ-NPQRTUWXY]{2}\d{6}[0-9A-HJ-NPQRTUWXY]{10}$/;
@@ -160,7 +160,7 @@ export function InvoiceApplyModal({
   );
 }
 
-/** 发票:可开票额度卡片(总额 + 各账期明细) + 申请弹窗 + 我的发票列表。 */
+/** Invoices: invoiceable amount card (total + per period) + request dialog + my invoice list. */
 export function InvoiceTab() {
   const { t } = useTranslation(["web", "shared"]);
   const { formatMoney } = useFormat();

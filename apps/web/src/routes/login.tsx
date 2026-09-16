@@ -55,7 +55,7 @@ export const Route = createFileRoute("/login")({
 
 type Mode = "code" | "password" | "register" | "reset";
 
-/** 密码强度三档:弱=仅满足长度;中=≥12 位且含两类字符;强=≥14 位且含三类字符 */
+/** Three password strength tiers: weak = length only; medium = ≥12 characters with two character classes; strong = ≥14 with three */
 type PasswordStrength = "weak" | "medium" | "strong";
 
 function passwordStrengthOf(pw: string): PasswordStrength {
@@ -65,7 +65,7 @@ function passwordStrengthOf(pw: string): PasswordStrength {
   return "weak";
 }
 
-/** 密码强度实时反馈(注册/重置模式):细进度条 + 分档文案 */
+/** Live password strength feedback (register / reset modes): thin progress bar + tier copy */
 function PasswordStrengthHint({ password }: { password: string }) {
   const { t } = useTranslation();
   const { token } = theme.useToken();
@@ -91,7 +91,7 @@ function PasswordStrengthHint({ password }: { password: string }) {
   );
 }
 
-/** GPU 规格里的最低单卡时价(金额串比较,不过 float);无在售 GPU 规格时为 null。 */
+/** Lowest per-card hourly price among GPU specs (amount-string comparison, no float); null without GPU specs on sale. */
 function minGpuHourlyPrice(skus: readonly SkuMarketOut[]): string | null {
   let min: string | null = null;
   for (const s of skus) {
@@ -101,7 +101,7 @@ function minGpuHourlyPrice(skus: readonly SkuMarketOut[]): string | null {
   return min;
 }
 
-/** 左侧品牌栏(lg+):行情摘要取 /skus 真实数据(最低时价 + 去重可开台数);加载中出骨架,失败回落静态三条。 */
+/** Left brand column (lg+): the market summary uses real /skus data (lowest hourly price + deduplicated available count); skeleton while loading, three static facts on failure. */
 function BrandPane() {
   const { t } = useTranslation();
   const { formatHourlyPrice } = useFormat();

@@ -1,4 +1,4 @@
-/** 实例操作组:按状态与计费方式提供连接、启停、续费、转换及释放确认。 */
+/** Instance action group: connect, start / stop, renew, conversions and release confirmation by status and billing mode. */
 
 import type { InstanceOut } from "@superdl/api-client";
 import { isSubscriptionExpired, space } from "@superdl/ui";
@@ -94,7 +94,7 @@ export function InstanceActions({
 }: {
   instance: InstanceOut;
   onShowEvents?: () => void;
-  /** 行内 small / 详情页头 middle */
+  /** Inline small / detail header middle */
   size?: "small" | "middle";
 }) {
   const { t } = useTranslation();
