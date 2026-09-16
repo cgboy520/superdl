@@ -1,35 +1,35 @@
-# 工单
+# Tickets
 
-用户与客服的对话流:用户建单 → 双方交替回复 → 标记解决 → 关闭;滞留巡检把久未回复的单推给值班。模块 `app/modules/tickets/`。
+The conversation between a user and support: the user opens a ticket → both sides reply in turn → marked resolved → closed; the stale patrol pushes tickets without a reply to the on-call. Module `app/modules/tickets/`.
 
-## 数据模型
+## Data model
 
-- `tickets`:ticket_no 唯一(`T` + yyyymmdd + 两位日内序列,如 `T20260823-01`)、user_id、category(instance/billing/data/account/other)、subject(≤128)、status(open/pending_staff/pending_user/resolved/closed)、instance_uuid?、idempotency_key(与 user_id 联合唯一)、closed_at(仅 closed 落)
-- `ticket_messages`:ticket_id、sender_kind(user/staff)、sender_id(按 sender_kind 解读为 users.id 或 admin_users.id,不建外键)、body(≤4000)
+- `tickets`: ticket_no unique (`T` + yyyymmdd + a two-digit sequence within the day, e.g. `T20260823-01`), user_id, category (instance/billing/data/account/other), subject (≤128), status (open/pending_staff/pending_user/resolved/closed), instance_uuid?, idempotency_key (unique together with user_id), closed_at (set only on closed)
+- `ticket_messages`: ticket_id, sender_kind (user/staff), sender_id (interpreted by sender_kind as users.id or admin_users.id, no foreign key), body (≤4000)
 
-状态机:open → pending_staff(用户回复)/ pending_user(客服回复);任一方标记 → resolved;resolved → closed。resolved / closed 不可再回复。
+State machine: open → pending_staff (user reply) / pending_user (staff reply); either side marks → resolved; resolved → closed. resolved / closed accept no further replies.
 
-## 契约
+## Contract
 
-| 端点                                                              | 角色/鉴权            | 说明                                                                                                                                        |
-| ----------------------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /api/v1/tickets`                                            | user                 | `{category, subject, body, instance_uuid?}` → 201;首条消息同单落库;`Idempotency-Key` 重放回既有单(200 + `X-Idempotent-Replay`,不耗限流配额) |
-| `GET /api/v1/tickets?cursor=&limit=`                              | user                 | 本人工单,降序游标分页                                                                                                                       |
-| `GET /api/v1/tickets/{ticket_id}`                                 | user                 | 详情 + 消息流(升序);owner 校验在 SQL WHERE,他人工单与不存在同回 404                                                                         |
-| `POST /api/v1/tickets/{ticket_id}/messages`                       | user                 | 追加回复 → pending_staff;终态单 409                                                                                                         |
-| `POST /api/v1/tickets/{ticket_id}/close`                          | user                 | 仅 resolved 可关                                                                                                                            |
-| `GET /api/admin/v1/tickets?status=&category=&user_id=&ticket_no=` | ops/finance/readonly | 游标分页,精确过滤与检索                                                                                                                     |
-| `GET /api/admin/v1/tickets/{ticket_id}`                           | ops/finance/readonly | 详情 + 消息流                                                                                                                               |
-| `POST /api/admin/v1/tickets/{ticket_id}/reply`                    | ops/admin            | 客服回复 → pending_user,站内信告知用户(dedup_key 防重);审计                                                                                 |
-| `POST /api/admin/v1/tickets/{ticket_id}/status`                   | ops/admin            | `{action: resolve \| close}`;close 仅 resolved 后可;审计                                                                                    |
+| Endpoint                                                          | Role / auth          | Notes                                                                                                                                                                                                               |
+| ----------------------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/v1/tickets`                                            | user                 | `{category, subject, body, instance_uuid?}` → 201; the first message is stored with the ticket; an `Idempotency-Key` replay returns the existing ticket (200 + `X-Idempotent-Replay`, no rate-limit quota consumed) |
+| `GET /api/v1/tickets?cursor=&limit=`                              | user                 | The caller's tickets, descending cursor pagination                                                                                                                                                                  |
+| `GET /api/v1/tickets/{ticket_id}`                                 | user                 | Detail + message stream (ascending); the owner check is in the SQL WHERE, someone else's ticket and a missing one both return 404                                                                                   |
+| `POST /api/v1/tickets/{ticket_id}/messages`                       | user                 | Append a reply → pending_staff; terminal tickets 409                                                                                                                                                                |
+| `POST /api/v1/tickets/{ticket_id}/close`                          | user                 | Only resolved tickets can be closed                                                                                                                                                                                 |
+| `GET /api/admin/v1/tickets?status=&category=&user_id=&ticket_no=` | ops/finance/readonly | Cursor pagination, exact filters and search                                                                                                                                                                         |
+| `GET /api/admin/v1/tickets/{ticket_id}`                           | ops/finance/readonly | Detail + message stream                                                                                                                                                                                             |
+| `POST /api/admin/v1/tickets/{ticket_id}/reply`                    | ops/admin            | Staff reply → pending_user, in-app notification to the user (dedup_key against duplicates); audited                                                                                                                 |
+| `POST /api/admin/v1/tickets/{ticket_id}/status`                   | ops/admin            | `{action: resolve \| close}`; close only after resolved; audited                                                                                                                                                    |
 
-前端:用户端 `/support`(FAQ + 我的工单)与 `/support/:ticketId`;管理端 `/tickets`。
+Frontend: user console `/support` (FAQ + my tickets) and `/support/:ticketId`; admin console `/tickets`.
 
-## 规则与不变量
+## Rules and invariants
 
-- 每用户进行中(open/pending_*)工单数与创建频次有上限(`MAX_OPEN_TICKETS` 与 `ticket-create:{user_id}` 限流键,见 [limits.md](./limits.md));幂等重放不计数。单工单回复数上限 `MAX_MESSAGES_PER_TICKET`(200)与 `ticket-reply:{user_id}` 限流(30/10 分钟),详情读取按上限截断。
-- 所有状态迁移在行锁(`FOR UPDATE`)内进行。
-- 用户回复落一条 admin_alert(info)进管理端告警流;客服回复落用户站内信。
-- 滞留巡检(30 分钟一轮,advisory lock):pending_staff 超 24h 的单落一条 admin_alert(warning),`dedup_key = ticket-stale:{ticket_id}` 整个生命周期只报一次。
-- ticket_no 日内序列由服务层计数 + 唯一冲突重试生成,不依赖序列对象。
-- 管理端写操作过审计中间件;工单正文不进审计 detail。
+- Open tickets per user (open/pending_*) and creation frequency are capped (`MAX_OPEN_TICKETS` and the `ticket-create:{user_id}` rate-limit key, see [limits.md](./limits.md)); idempotent replays do not count. Replies per ticket are capped by `MAX_MESSAGES_PER_TICKET` (200) and rate-limited by `ticket-reply:{user_id}` (30 per 10 minutes); detail reads truncate at the cap.
+- Every state transition happens under a row lock (`FOR UPDATE`).
+- A user reply writes one admin_alert (info) into the admin alert feed; a staff reply writes an in-app notification for the user.
+- Stale patrol (every 30 minutes, advisory lock): a ticket in pending_staff for more than 24 h writes one admin_alert (warning), `dedup_key = ticket-stale:{ticket_id}`, reported once per ticket lifetime.
+- The daily ticket_no sequence is generated by counting in the service layer + retrying on unique conflict, without a sequence object.
+- Admin writes go through the audit middleware; ticket bodies never enter the audit detail.
