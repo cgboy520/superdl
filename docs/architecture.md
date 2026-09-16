@@ -1,195 +1,195 @@
-# SuperDL 架构参考
+# SuperDL architecture reference
 
-技术栈、模块边界、数据模型、核心流程与硬约束。
-模块契约见 [`reference/`](./reference/),UI/UX 规格见 [`ui-ux-spec.md`](./ui-ux-spec.md),文档地图见 [`README.md`](./README.md)。
+Stack, module boundaries, data model, core flows and hard constraints.
+Module contracts live in [`reference/`](./reference/), the UI/UX spec in [`ui-ux-spec.md`](./ui-ux-spec.md), the documentation map in [`README.md`](./README.md).
 
-## 1. 系统上下文
+## 1. System context
 
 ```mermaid
 flowchart LR
-    U[租户浏览器] --- W[web 用户控制台] & NP[SSH NodePort 端口池] & ING["JupyterLab Envoy Gateway *.app.域名"]
-    A[运营/管理员] --- AD[admin 管理控制台]
-    W & AD -- REST/OpenAPI --> API[api 模块化单体 FastAPI]
+    U[Tenant browser] --- W[web user console] & NP[SSH NodePort pool] & ING["JupyterLab via Envoy Gateway *.app.<domain>"]
+    A[Operators / admins] --- AD[admin console]
+    W & AD -- REST/OpenAPI --> API[api modular monolith FastAPI]
     ALM[Alertmanager] -- webhook --> API
-    PAY[微信/支付宝] -- 回调 --> API
+    PAY[Payment channels: Stripe / WeChat Pay / Alipay] -- callbacks --> API
     API --> PG[(PostgreSQL 18)]
-    API -- 查询 --> PROM[Prometheus + dcgm-exporter]
-    API -- outbox 异步编排 --> K8S[RKE2 / k3s]
-    K8S --> P1[kata 池:整卡直通] & P2[hami 池:runc+userns 超卖] & P3[mig 池]
-    P1 & P2 & P3 --- LVM[TopoLVM 实例盘] & CFS[CephFS 数据盘]
+    API -- queries --> PROM[Prometheus + dcgm-exporter]
+    API -- outbox, async orchestration --> K8S[RKE2 / k3s]
+    K8S --> P1[kata pool: whole-GPU passthrough] & P2[hami pool: runc + userns, oversold] & P3[mig pool]
+    P1 & P2 & P3 --- LVM[TopoLVM instance disks] & CFS[CephFS data disks]
     CFS --> ROOK[(Rook-Ceph)]
 ```
 
-## 2. 技术栈
+## 2. Stack
 
-**后端**:Python 3.13(uv)+ FastAPI + SQLAlchemy 2.0(async)+ asyncpg + Alembic + PostgreSQL 18;APScheduler + 事务性 outbox;K8s 官方 `kubernetes` 客户端;`wechatpayv3` + `alipay-sdk-python`;structlog + prometheus-client。
+**Backend:** Python 3.13 (uv) + FastAPI + SQLAlchemy 2.0 (async) + asyncpg + Alembic + PostgreSQL 18; APScheduler + transactional outbox; the official `kubernetes` client; `stripe`, `wechatpayv3` and `alipay-sdk-python` payment SDKs; structlog + prometheus-client.
 
-**前端**:React 19 + Vite + Ant Design 6 + TanStack Router / Query + Zustand + ECharts;i18next + react-i18next(zh-CN / en-US);pnpm + Turborepo。antd 6 原生组件自封装,不引 `@ant-design/pro-components`;管理端监控图自绘(ECharts),Grafana 只作外链。
+**Frontend:** React 19 + Vite + Ant Design 6 + TanStack Router / Query + Zustand + ECharts; i18next + react-i18next (en-US / zh-CN); pnpm + Turborepo. antd 6 primitives wrapped locally, no `@ant-design/pro-components`; admin monitoring charts are drawn in-house (ECharts), Grafana is only linked.
 
-**平台层**:两档集群。**full** = RKE2 多机生产;**light** = k3s 单机。组件集相同,差异只在 k3s 侧 values 覆盖;发行版由平台探测。
+**Platform:** two cluster tiers. **full** = RKE2, multi-node production; **light** = k3s, single machine. Same component set; the only differences are k3s-side value overrides, and the distribution is probed by the platform.
 
-依赖版本事实源:`apps/api/pyproject.toml`、`package.json`、`deploy/cluster/helmfile.yaml.gotmpl`。
+Dependency versions are defined in `apps/api/pyproject.toml`, `package.json` and `deploy/cluster/helmfile.yaml.gotmpl`.
 
-| 组件                    | 角色                                                                                                                              |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| RKE2 / k3s              | 容器平台;版本由安装器 channel 决定,实机验证清单核对 v1.36.x                                                                       |
-| Cilium                  | 两档同装(CNI + NetworkPolicy + kube-proxy 替代 + 带宽限额);light 档北向 LoadBalancer 仍用 k3s ServiceLB                           |
-| GPU Operator            | 两档同装(NFD/GFD/DCGM/MIG/VFIO);light 档关 toolkit(宿主 toolkit 由装机基线装)                                                     |
-| kata-deploy             | 两档同装,只落 kata 池节点                                                                                                         |
-| Kata                    | RuntimeClass `kata-qemu`,VFIO 整卡直通                                                                                            |
-| HAMi                    | 共享档 CUDA 层软切分与限额                                                                                                        |
-| kube-prometheus-stack   | Prometheus 本地留 15 天,长期数据进 PostgreSQL                                                                                     |
-| Rook-Ceph + CephFS      | 数据盘;一盘一 PVC,容量即硬配额;支持 idmapped mount,可挂进 `hostUsers: false` 的租户 Pod                                           |
-| TopoLVM                 | 实例盘本地 NVMe,销毁为 lvremove(lvmd `issue_discards=1`)                                                                          |
-| Envoy Gateway           | 北向唯一入口(Gateway API,`GatewayClass superdl`):三个平台域 + 租户 Jupyter 泛域名 + 服务端点泛域名                                |
-| cert-manager + acme-dns | 平台三域与泛域名证书(DNS01 经 acme-dns);Gateway `certificateRefs` 引 `deploy/app/k8s/05-cert-manager.yaml` 显式声明的 Certificate |
+| Component               | Role                                                                                                                                                                                  |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| RKE2 / k3s              | Container platform; version follows the installer channel, the validation checklist expects v1.36.x                                                                                   |
+| Cilium                  | Both tiers (CNI + NetworkPolicy + kube-proxy replacement + bandwidth limits); the light tier keeps the k3s ServiceLB for the north-south LoadBalancer                                 |
+| GPU Operator            | Both tiers (NFD / GFD / DCGM / MIG / VFIO); the light tier disables the toolkit (the host toolkit is installed by the node baseline)                                                  |
+| kata-deploy             | Both tiers, lands only on kata-pool nodes                                                                                                                                             |
+| Kata                    | RuntimeClass `kata-qemu`, VFIO whole-GPU passthrough                                                                                                                                  |
+| HAMi                    | CUDA-level soft partitioning and limits for the shared tier                                                                                                                           |
+| kube-prometheus-stack   | Prometheus keeps 15 days locally; long-term data goes to PostgreSQL                                                                                                                   |
+| Rook-Ceph + CephFS      | Data disks; one PVC per disk, the PVC size is the hard quota; supports idmapped mounts and therefore `hostUsers: false` tenant Pods                                                   |
+| TopoLVM                 | Instance disks on local NVMe; destruction is an `lvremove` (lvmd `issue_discards=1`)                                                                                                  |
+| Envoy Gateway           | The only north-south entry (Gateway API, `GatewayClass superdl`): three platform domains + tenant Jupyter wildcard + service-endpoint wildcard                                        |
+| cert-manager + acme-dns | Certificates for the three platform domains and the wildcards (DNS01 via acme-dns); Gateway `certificateRefs` point at Certificates declared in `deploy/app/k8s/05-cert-manager.yaml` |
 
-GPU 资源申请语法集中在 `app/core/gpu_adapter`;切 DRA 还需改 PodSpec 的 resourceClaims(`core/k8s/real.py`)。
+GPU resource request syntax is centralised in `app/core/gpu_adapter`; moving to DRA additionally means changing the PodSpec `resourceClaims` in `core/k8s/real.py`.
 
-## 3. 模块化单体
+## 3. Modular monolith
 
 ```
 apps/api/app/
-├─ core/            # 配置、DB、JWT、审计、错误体、金额、时间、outbox、限流、策略与平台配置
-│  ├─ gpu_adapter/  # GPU 资源申请抽象层
-│  └─ k8s/          # base(接口)/ real(kubernetes 客户端)/ fake(dev 与测试)
+├─ core/            # config, DB, JWT, audit, error body, money, time, outbox, rate limits, policies and platform config
+│  ├─ gpu_adapter/  # GPU resource request abstraction
+│  └─ k8s/          # base (interface) / real (kubernetes client) / fake (dev and tests)
 ├─ modules/
-│  ├─ account/      # 注册登录、JWT、SSH 公钥、实名字段
-│  ├─ catalog/      # SKU、镜像目录、库存近似查询、镜像预热
-│  ├─ orchestrator/ # 实例状态机、K8s 编排、reconciler、SSH 端口池、数据盘
-│  ├─ services/     # 在线服务聚合根:部署 / 停止 / 删除 / 密钥、网关鉴权回调、状态派生
-│  ├─ billing/      # 钱包、账本、小时结算、数据盘日结、余额巡检、支付渠道与回调、资金核对
-│  ├─ metering/     # Prometheus 代理查询、usage_hourly 聚合
-│  ├─ nodes/        # 节点注册(node-join.sh)、规格巡检、集群状态
-│  ├─ notify/       # 短信 / 站内信 / 公告 / Alertmanager webhook
-│  ├─ legal/        # 法务文档版本流与注册同意存证
-│  ├─ tickets/      # 工单对话流与滞留巡检
-│  └─ adminapi/     # 管理端 API,独立 JWT audience 与审计动作前缀
-└─ workers/         # 同一镜像的第二入口:outbox worker + APScheduler 定时任务
+│  ├─ account/      # registration and login, JWT, SSH keys, identity verification
+│  ├─ catalog/      # SKUs, image catalog, approximate inventory, image prewarming
+│  ├─ orchestrator/ # instance state machine, K8s orchestration, reconciler, SSH port pool, data disks
+│  ├─ services/     # online-service aggregate: deploy / stop / delete / keys, gateway auth callback, derived state
+│  ├─ billing/      # wallet, ledger, hourly settlement, daily disk settlement, balance patrol, payment channels and callbacks, fund reconciliation
+│  ├─ metering/     # Prometheus proxy queries, usage_hourly aggregation
+│  ├─ nodes/        # node enrollment (node-join.sh), spec patrol, cluster status
+│  ├─ notify/       # SMS / in-app messages / announcements / Alertmanager webhook
+│  ├─ legal/        # legal document version flow and registration consents
+│  ├─ tickets/      # ticket conversation flow and stale-ticket patrol
+│  └─ adminapi/     # admin API, separate JWT audience and audit action prefix
+└─ workers/         # second entry point of the same image: outbox worker + APScheduler jobs
 ```
 
-模块之间只许 import 对方的公开面(`service.py` / `schemas.py`;`account/deps.py`、`account/deletion.py`;`orchestrator` 的 `queries.py` / `transitions.py` / `statemachine.py` / `ports.py`)。依赖方向:`orchestrator/service.py → billing/service.py`;billing 的结算与巡检只经 `orchestrator/queries.py`(只读)与 `orchestrator/transitions.py`(系统侧停机 / 冻结 / 回收、数据盘欠费链)反向访问编排,二者不依赖 billing。三条 import-linter 契约(`apps/api/pyproject.toml`)锁定;函数内 import 只在 `wiring.py` 与进程入口出现。
+Modules import only each other's public surface (`service.py` / `schemas.py`; `account/deps.py`, `account/deletion.py`; `orchestrator`'s `queries.py` / `transitions.py` / `statemachine.py` / `ports.py`). Dependency direction: `orchestrator/service.py → billing/service.py`; billing's settlement and patrols reach orchestration only through `orchestrator/queries.py` (read-only) and `orchestrator/transitions.py` (system-side stop / freeze / reclaim, data-disk arrears chain), neither of which depends on billing. Three import-linter contracts (`apps/api/pyproject.toml`) lock this; in-function imports appear only in `wiring.py` and process entry points.
 
-OpenAPI-first:FastAPI schema 导出 `openapi.json`,orval 生成 `packages/api-client`。用户 API `/api/v1/*` 与管理 API `/api/admin/v1/*` 物理分离,独立 JWT audience、限流与审计动作前缀。
+OpenAPI-first: the FastAPI schema is exported to `openapi.json` and orval generates `packages/api-client`. The user API `/api/v1/*` and the admin API `/api/admin/v1/*` are physically separate, with their own JWT audience, rate limits and audit action prefix.
 
-## 4. outbox 与 reconciler
+## 4. Outbox and reconciler
 
-**事务性 outbox。** 「改 DB + 动 K8s」在同一事务里完成业务写入与 `outbox_tasks` 插入,worker 用 `SELECT ... FOR UPDATE SKIP LOCKED` 领取后异步调 K8s(重试、退避、死信)。领取条件 `next_retry_at` 到期;`core/outbox.py` 的 `enqueue(delay_seconds=...)` 即延迟任务。
+**Transactional outbox.** "Change the DB and touch K8s" happens in one transaction: the business write and the `outbox_tasks` insert commit together; the worker claims tasks with `SELECT ... FOR UPDATE SKIP LOCKED` and calls K8s asynchronously (retries, backoff, dead letters). A task is claimable once `next_retry_at` has passed; `core/outbox.py`'s `enqueue(delay_seconds=...)` is the delayed-task primitive.
 
-**reconciler。** 每 30s 比对 DB 期望态与 K8s 实际态(按租户 namespace 前缀 list):Pod 消失而 DB running → `failed`、停止计费并告警;Pod 存在而 DB released → 强删并告警;`creating` 超时 → 失败退款。reconciler 不得关闭。
+**Reconciler.** Every 30 s it compares the desired state in the DB with the actual state in K8s (listing by tenant namespace prefix): Pod gone while the DB says running → `failed`, billing stops and an alert fires; Pod present while the DB says released → force-deleted and alerted; `creating` timed out → failed and refunded. The reconciler must never be switched off.
 
-worker 其余定时任务:outbox 卡单回收、小时结算、数据盘日结、资金核对、usage 聚合、余额巡检、包周期到期巡检、支付查单与超时关单、镜像预热巡检、节点规格巡检与入网 reconciler、工单滞留巡检、数据保洁。定时任务先抢 pg advisory lock,单实例执行;清单与周期见 `apps/api/app/workers/jobs.py`(每个任务声明归属组件)。
+Other scheduled worker jobs: stuck-outbox reaping, hourly settlement, daily disk settlement, fund reconciliation, usage aggregation, balance patrol, subscription expiry patrol, payment lookup and order expiry, image prewarm patrol, node spec patrol and enrollment reconciler, stale-ticket patrol, data cleanup. Each job first takes a PG advisory lock so it runs on one instance; the list and periods are in `apps/api/app/workers/jobs.py` (every job declares its worker component).
 
-## 5. 接入层
+## 5. Access layer
 
-| 通道               | 机制                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SSH                | 端口池表 `port_allocations`,每实例一个 NodePort;仅密钥登录。**SSH 与 Jupyter 是两个独立的 Service**(SSH `NodePort`,Jupyter `ClusterIP`)                                                                                                                                                                                                                                                                       |
-| JupyterLab         | Pod 内 8888,**每实例一条 HTTPRoute**(租户 ns,挂 `app-https` listener)按 host 路由到 ClusterIP Service,token 由控制面注入,泛域名证书一张                                                                                                                                                                                                                                                                       |
-| 对外服务端点       | 在线服务(`services`)公网入口 `<slug>.svc.<域名>`;服务持有一台 `workload_type='service'` 版本实例,**每实例一条 HTTPRoute** 挂 `svc-https` listener。API Key 在网关校验(一条 `SecurityPolicy.extAuth` 挂 listener),用户容器不实现鉴权;**鉴权结果无缓存**,控制面是全部端点的同步依赖,见 [reference/services.md](./reference/services.md)                                                                         |
-| 租户 NetworkPolicy | 默认拒东西向。入方向只放行 `envoy-gateway-system`(Envoy 数据面 ns,不是 `superdl`)**不限端口**,以及 TCP 22(来源 `0.0.0.0/0` **排掉 Pod 网段**,不排整段私网)。出方向 DNS 收敛到 CoreDNS,公网 TCP 扣滥用端口与数据存储端口黑名单、UDP 白名单,私网与云元数据网段拒                                                                                                                                                |
-| 网关策略           | 源 IP 白名单(管理端)、边缘限流(API 域、console 域 `/api/v1`、管理端路由各一条,匿名回调路由更严请求体上限)、服务端点鉴权与限流、租户 Jupyter listener 限流、全局超时 / 连接兜底与客户端 IP 识别(`numTrustedHops`),10 个策略对象挂 Gateway / HTTPRoute(`deploy/app/k8s/04-gateway.yaml`)。挂载点是 listener 的 `sectionName`,**写错不报错**,线索在策略对象 `status.ancestors[].conditions`;6 个 listener 名锁死 |
+| Channel                  | Mechanism                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SSH                      | Port-pool table `port_allocations`, one NodePort per instance; key-only login. **SSH and Jupyter are two separate Services** (SSH `NodePort`, Jupyter `ClusterIP`)                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| JupyterLab               | Port 8888 inside the Pod, **one HTTPRoute per instance** (tenant ns, attached to the `app-https` listener) routing by host to the ClusterIP Service; the token is injected by the control plane; one wildcard certificate                                                                                                                                                                                                                                                                                                                                                                 |
+| Public service endpoints | Online services (`services`) are reachable at `<slug>.svc.<domain>`; a service owns one `workload_type='service'` revision instance, **one HTTPRoute per instance** on the `svc-https` listener. API keys are verified at the gateway (one `SecurityPolicy.extAuth` on the listener), user containers implement no auth; **auth results are not cached**, so the control plane is a synchronous dependency of every endpoint — see [reference/services.md](./reference/services.md)                                                                                                       |
+| Tenant NetworkPolicy     | East-west denied by default. Ingress allows `envoy-gateway-system` (the Envoy data-plane ns, not `superdl`) **on any port**, plus TCP 22 from `0.0.0.0/0` **minus the Pod CIDR** (not the whole private range). Egress DNS is pinned to CoreDNS; public TCP excludes an abuse-port and data-store blacklist, UDP is an allow-list, private and cloud-metadata ranges are denied                                                                                                                                                                                                           |
+| Gateway policies         | Source-IP allow-list (admin), edge rate limits (API domain, console domain `/api/v1`, admin routes — one each; anonymous callback routes get a stricter body limit), service-endpoint auth and rate limits, tenant Jupyter listener limits, global timeout / connection fallbacks and client-IP detection (`numTrustedHops`): 10 policy objects attached to the Gateway / HTTPRoutes (`deploy/app/k8s/04-gateway.yaml`). Attachment is by listener `sectionName`, **a typo does not error** — the clue is in the policy's `status.ancestors[].conditions`; the 6 listener names are fixed |
 
-控制面 ServiceAccount 按 worker 组件拆分;租户资源写权限是 ClusterRole,可达面由 `deploy/cluster/admission/tenant-restrictions.yaml` 的**七条 ValidatingAdmissionPolicy(全部 `Deny`)**收窄:平台 SA 写范围(`superdl` / `tenant-*` ns 与 nodes)、租户 Pod 安全基线、Node 字段级写白名单、全局 Pod 兜底、Pod 与 Job 模板各一条 Secret 引用白名单、Node 删除对象白名单。机制见 [`reference/security.md`](./reference/security.md)。HTTPRoute 条数随活跃实例线性增长,是 Envoy 数据面内存的容量变量。
+Control-plane ServiceAccounts are split per worker component; write access to tenant resources is a ClusterRole whose reach is narrowed by the **seven ValidatingAdmissionPolicies (all `Deny`)** in `deploy/cluster/admission/tenant-restrictions.yaml`: platform SA write scope (`superdl` / `tenant-*` namespaces and nodes), tenant Pod security baseline, field-level Node write allow-list, global Pod fallback, Secret-reference allow-lists for Pod and Job templates, Node deletion allow-list. Mechanics in [`reference/security.md`](./reference/security.md). The number of HTTPRoutes grows linearly with active instances and is the capacity variable of the Envoy data plane's memory.
 
-### 公网真实链路
+### The real public path
 
-`api-https` listener(API 域)公网不可达;用户端与支付 / 短信回调走 console 域,`/api/v1` 在 Envoy 上由 HTTPRoute `superdl-console-api` 直达 API,不再经 web 站 nginx 同源反代(那段只在 compose / dev 生效)。
+The `api-https` listener (API domain) is not reachable from the public internet; the user console and the payment / SMS callbacks use the console domain, where `/api/v1` is routed by the HTTPRoute `superdl-console-api` straight to the API — the web nginx same-origin proxy only exists in compose / dev.
 
 ```mermaid
 flowchart LR
-    U[用户] --> CDN["CDN(回源携带真实 IP)"]
-    CDN --> RP[前置反代]
-    RP --> ENVOY["Envoy(console-https listener)"]
+    U[User] --> CDN["CDN (forwards the real client IP)"]
+    CDN --> RP[Front reverse proxy]
+    RP --> ENVOY["Envoy (console-https listener)"]
     ENVOY -- "/api/v1  HTTPRoute superdl-console-api" --> API[superdl-api]
-    ENVOY -- "其余路径  HTTPRoute superdl-console" --> WEB[superdl-web nginx]
+    ENVOY -- "everything else  HTTPRoute superdl-console" --> WEB[superdl-web nginx]
 ```
 
-不变量:链路上每一跳(Envoy 数据面 Pod 网段、前置反代出口、CDN 回源地址段)都必须同时进 ConfigMap `FORWARDED_ALLOW_IPS`(`deploy/app/k8s/00-namespace-config.yaml`)与 `ClientTrafficPolicy superdl-gateway` 的 `clientIPDetection.xForwardedFor.numTrustedHops`;漏一跳,边缘每 IP 限流桶、管理端白名单判定与 `audit_log.ip` 看到的都是那一跳的地址。console 域 `/api/v1` 路由挂与 API 域同一份每 IP 限流与 1 MiB 请求体上限(`superdl-console-api-ratelimit`),边缘 404 清单同 API 域(`superdl-console-edge-deny`);管理端路由另挂 `superdl-admin-ratelimit`。
+Invariant: every hop on this path (Envoy data-plane Pod CIDR, front-proxy egress, CDN origin ranges) must be listed both in the ConfigMap `FORWARDED_ALLOW_IPS` (`deploy/app/k8s/00-namespace-config.yaml`) and in `ClientTrafficPolicy superdl-gateway`'s `clientIPDetection.xForwardedFor.numTrustedHops`; miss one and the per-IP edge buckets, the admin allow-list and `audit_log.ip` all see that hop's address. The console-domain `/api/v1` route carries the same per-IP limits and 1 MiB body cap as the API domain (`superdl-console-api-ratelimit`) and the same edge 404 list (`superdl-console-edge-deny`); admin routes carry `superdl-admin-ratelimit`.
 
-## 6. 数据模型
+## 6. Data model
 
-`users` 一对多持有 `instances` / `data_disks` / `orders`,一对一持有 `wallets`;`skus` 定义规格;`services` 一对多持有 `instances`(每台是它的一个不可变版本);`instances` 派生 `instance_events`、`bills_hourly`、`usage_hourly`,可挂一块 `data_disks`(按日出 `bills_daily_disk`)。
+`users` own many `instances` / `data_disks` / `orders` and exactly one `wallets` row; `skus` define specs; `services` own many `instances` (each an immutable revision); `instances` derive `instance_events`, `bills_hourly`, `usage_hourly` and may attach one `data_disks` row (billed daily into `bills_daily_disk`).
 
-| 模块         | 表                                                                                                                                                                                           |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| account      | `users` `ssh_keys` `used_refresh_tokens` `sms_codes` `user_quota_overrides` `account_deletion_requests`                                                                                      |
-| catalog      | `skus` `images` `image_node_cache`                                                                                                                                                           |
-| orchestrator | `instances` `instance_events` `port_allocations` `data_disks`                                                                                                                                |
-| services     | `services` `service_api_keys`                                                                                                                                                                |
-| billing      | `wallets` `balance_ledger` `bills_hourly` `bills_daily_disk` `subscriptions` `settlement_watermarks` `settlement_gaps` `reconcile_checkpoints` `orders` `invoice_requests` `refund_requests` |
-| metering     | `usage_hourly`                                                                                                                                                                               |
-| nodes        | `node_enrollments` `node_specs` `cluster_status`                                                                                                                                             |
-| notify       | `notifications` `announcements`                                                                                                                                                              |
-| legal        | `legal_doc_versions` `user_consents`                                                                                                                                                         |
-| tickets      | `tickets` `ticket_messages`                                                                                                                                                                  |
-| adminapi     | `admin_users` `admin_adjustments`                                                                                                                                                            |
-| core         | `outbox_tasks` `audit_log` `platform_settings` `rate_limit_counters`                                                                                                                         |
+| Module       | Tables                                                                                                                                                                                                          |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| account      | `users` `ssh_keys` `used_refresh_tokens` `verification_codes` `user_quota_overrides` `account_deletion_requests`                                                                                                |
+| catalog      | `skus` `images` `image_node_cache`                                                                                                                                                                              |
+| orchestrator | `instances` `instance_events` `port_allocations` `data_disks`                                                                                                                                                   |
+| services     | `services` `service_api_keys`                                                                                                                                                                                   |
+| billing      | `wallets` `balance_ledger` `bills_hourly` `bills_daily_disk` `subscriptions` `settlement_watermarks` `settlement_gaps` `reconcile_checkpoints` `orders` `invoice_requests` `refund_requests` `billing_identity` |
+| metering     | `usage_hourly`                                                                                                                                                                                                  |
+| nodes        | `node_enrollments` `node_specs` `cluster_status`                                                                                                                                                                |
+| notify       | `notifications` `announcements`                                                                                                                                                                                 |
+| legal        | `legal_doc_versions` `user_consents`                                                                                                                                                                            |
+| tickets      | `tickets` `ticket_messages`                                                                                                                                                                                     |
+| adminapi     | `admin_users` `admin_adjustments`                                                                                                                                                                               |
+| core         | `outbox_tasks` `audit_log` `platform_settings` `rate_limit_counters`                                                                                                                                            |
 
-- 金额列一律 `numeric`:单价 `numeric(12,4)`,入账 `numeric(14,2)`。
-- 结算幂等键:`bills_hourly` UNIQUE(instance_id, hour_start)、`bills_daily_disk` UNIQUE(disk_id, day)、`usage_hourly` UNIQUE(instance_id, hour_start)。
-- 支付与创建幂等:`orders.channel_txn_id` / `order_no` 唯一;`orders`、`instances`、`data_disks` 带 UNIQUE(user_id, idempotency_key)。
-- `instance_events`、`balance_ledger` 追加式不可改,后者带 `balance_after`;`balance_ledger.ref_type` CHECK 白名单(含 `subscription`)。
-- **`instances.market`(on_demand / subscription / spot)是「怎么买」,`skus.tier` 是「买什么档」,两者正交**;不为包周期另建 SKU。包周期预付凭证落 `subscriptions`:续费**新开一行**并用 `renewed_from_id` 串链、老行转 expired。
-- 订阅行 UNIQUE(user_id, idempotency_key) 服务**转换与续费**两条路径,重放查询带 `subscriptions.request_fingerprint` 异参检测(同键异参 409);下单那条订阅行不带幂等键,由同事务的 `instances` 行担保。
-- 服务端点凭据只存摘要:`service_api_keys.key_hash` 唯一(HMAC-SHA256),明文只在创建响应出现一次,吊销写 `revoked_at`;`services.public_slug` 唯一,是公网域名左标签兼 API 路径标识;`instances.service_id` 与 `workload_type='service'` 同真同假(CHECK)。
-- `skus.oversell_cores` 变更仅影响新实例;`data_disks.price_gb_month` 是创建时快照价。
+- Money columns are always `numeric`: unit prices `numeric(12,4)`, booked amounts `numeric(14,2)`.
+- Settlement idempotency keys: `bills_hourly` UNIQUE(instance_id, hour_start), `bills_daily_disk` UNIQUE(disk_id, day), `usage_hourly` UNIQUE(instance_id, hour_start).
+- Payment and creation idempotency: `orders.channel_txn_id` / `order_no` unique; `orders`, `instances`, `data_disks` carry UNIQUE(user_id, idempotency_key).
+- `instance_events` and `balance_ledger` are append-only; the latter carries `balance_after`; `balance_ledger.ref_type` has a CHECK allow-list (including `subscription`).
+- **`instances.market` (on_demand / subscription / spot) is "how it is bought", `skus.tier` is "which tier is bought"; they are orthogonal** — no separate SKU for subscriptions. Prepaid subscriptions live in `subscriptions`: a renewal **inserts a new row** linked through `renewed_from_id`, the old row becomes expired.
+- Subscription rows are UNIQUE(user_id, idempotency_key) for the **convert and renew** paths; replay lookups compare `subscriptions.request_fingerprint` (same key, different params → 409); the row created at order time carries no key and is protected by the `instances` row of the same transaction.
+- Service endpoint credentials are stored as digests only: `service_api_keys.key_hash` unique (HMAC-SHA256), the plaintext appears once in the creation response, revocation writes `revoked_at`; `services.public_slug` is unique and is both the left-most public DNS label and the API path identifier; `instances.service_id` and `workload_type='service'` are both set or both unset (CHECK).
+- `skus.oversell_cores` changes affect new instances only; `data_disks.price_gb_month` is a snapshot taken at creation.
 
-## 7. 核心流程
+## 7. Core flows
 
-### 7.1 实例状态机
+### 7.1 Instance state machine
 
-| 状态      | 允许迁移到                                                                        |
-| --------- | --------------------------------------------------------------------------------- |
-| creating  | running(Pod Ready,计费开始)/ failed(调度或拉镜像超时,全额退)/ releasing(用户取消) |
-| running   | stopping(关机 / 欠费 / 到期 / 竞价被回收)/ failed(pod_lost,仅系统)                |
-| stopping  | stopped(Pod 删除,出尾账)/ releasing(悬挂超时或用户放弃)                           |
-| stopped   | starting(校验余额)/ frozen(欠费)/ releasing(用户释放)                             |
-| starting  | running / failed(库存不足)                                                        |
-| frozen    | stopped(充值解冻)/ releasing(宽限到期)                                            |
-| failed    | stopped(恢复重开,复用实例盘)/ releasing                                           |
-| releasing | released(实例盘 LV 已删除)                                                        |
+| State     | May move to                                                                                                               |
+| --------- | ------------------------------------------------------------------------------------------------------------------------- |
+| creating  | running (Pod Ready, billing starts) / failed (scheduling or image-pull timeout, full refund) / releasing (user cancelled) |
+| running   | stopping (shutdown / arrears / expiry / spot preemption) / failed (pod_lost, system only)                                 |
+| stopping  | stopped (Pod deleted, tail bill issued) / releasing (hang timeout or user gave up)                                        |
+| stopped   | starting (balance checked) / frozen (arrears) / releasing (user released)                                                 |
+| starting  | running / failed (no capacity)                                                                                            |
+| frozen    | stopped (top-up unfreezes) / releasing (grace expired)                                                                    |
+| failed    | stopped (recovery restart, reusing the instance disk) / releasing                                                         |
+| releasing | released (instance-disk LV deleted)                                                                                       |
 
-`released` 是唯一终态。迁移只经 `orchestrator/service.py` 的 transition 函数,同事务写 `instance_events`。`stopped` 保留实例盘(节点本地 LV,重开机 pin 回原节点),数据盘照常计费。
+`released` is the only terminal state. Transitions go only through the transition functions in `orchestrator/service.py`, which write `instance_events` in the same transaction. `stopped` keeps the instance disk (a node-local LV; restarts are pinned to the original node) and data disks keep billing.
 
-### 7.2 创建实例
+### 7.2 Creating an instance
 
-`POST /api/v1/instances`(带 `Idempotency-Key`)在一个事务里校验余额覆盖 `afford_cover_hours`(默认 1)小时预估费用,写 `instances(creating)` + `instance_events` + `outbox_tasks`,返回 202。worker 领取后 ensure Namespace / NetworkPolicy / Quota,建 Pod(RuntimeClass 与 GPU 资源语法按**节点池**经 gpu_adapter 派发,注入公钥与 jupyter token)、SSH 与 Jupyter 两个 Service、HTTPRoute;Pod Ready 后转 `running` 并写计费起点事件,超时转 `failed` 并退款清理。包周期下单同事务另做:按周期总价一次性预扣 + 落一行 `subscriptions`(§7.5)。
+`POST /api/v1/instances` (with `Idempotency-Key`) checks, in one transaction, that the balance covers `afford_cover_hours` (default 1) of estimated cost, writes `instances(creating)` + `instance_events` + `outbox_tasks`, and returns 202. The worker ensures Namespace / NetworkPolicy / Quota, creates the Pod (RuntimeClass and GPU resource syntax dispatched by **node pool** through gpu_adapter, public keys and the Jupyter token injected), the SSH and Jupyter Services and the HTTPRoute; once the Pod is Ready the instance becomes `running` with a billing-start event; on timeout it becomes `failed`, is refunded and cleaned up. A subscription order additionally, in the same transaction, pre-debits the whole period and inserts a `subscriptions` row (§7.5).
 
-### 7.3 小时结算
+### 7.3 Hourly settlement
 
-**计费事实源是 `instance_events`**;Prometheus 指标只做展示与对账。
+**The billing source of truth is `instance_events`**; Prometheus metrics are for display and reconciliation only.
 
-每小时 :02 触发(advisory lock),结算窗口由 `settlement_watermarks` 推进,漏掉的窗口下一轮补(追平有上限,超出登记缺口并告警)。每窗口扫 `instance_events` 重建 running 秒数 → 幂等 upsert `bills_hourly` → 同事务 `wallets` `FOR UPDATE` 扣减并写 `balance_ledger`。离开 running 时由计费边监听器即时出尾账,与状态迁移同事务。数据盘日结与资金核对按**北京日界**跑(UTC 16:10 / 16:30,见 `core/timeutil.billing_day_floor`);资金核对只报不改。口径见 [`reference/billing.md`](./reference/billing.md)。
+Triggered at :02 every hour (advisory lock); the settlement window advances through `settlement_watermarks`, missed windows are caught up next round (catch-up is capped; excess windows are recorded as gaps and alerted). Each window rebuilds running seconds from `instance_events` → idempotently upserts `bills_hourly` → debits `wallets` under `FOR UPDATE` and writes `balance_ledger` in the same transaction. Leaving `running` issues the tail bill immediately through the billing-edge listener, in the same transaction as the state transition. Daily disk settlement and fund reconciliation run on the **deployment's billing day** (00:10 / 00:30 in `SUPERDL_BILLING_TIMEZONE`, see `core/timeutil.billing_day_floor`); reconciliation only reports, never corrects. Details in [`reference/billing.md`](./reference/billing.md).
 
-### 7.4 欠费与回收
+### 7.4 Arrears and reclamation
 
-余额巡检每 5 分钟:预估可用时长低于预警阈值 → 短信与站内预警;余额耗尽 → 停机出尾账 → `frozen` 倒计时 → `releasing` → 删 K8s 资源 → 实例盘 lvremove → `released`。数据盘走独立时钟:宽限(只读)→ 冻结 → 清除。天数与盘价是在线策略参数(平台配置中心 `policy` 组),取值见 [`reference/billing.md`](./reference/billing.md) 与 [`reference/disks.md`](./reference/disks.md)。
+The balance patrol runs every 5 minutes: estimated remaining runtime below the warning threshold → SMS and in-app warning; balance exhausted → stop with a tail bill → `frozen` countdown → `releasing` → delete K8s resources → `lvremove` the instance disk → `released`. Data disks follow their own clock: grace (read-only) → frozen → purge. Day counts and disk price are online policy parameters (platform config `policy` group); values in [`reference/billing.md`](./reference/billing.md) and [`reference/disks.md`](./reference/disks.md).
 
-### 7.5 包周期(预付订阅)
+### 7.5 Subscriptions (prepaid)
 
-`market='subscription'` 下单时一次性预扣整段周期费用,不走小时结算。周期取**定长小时**(日 24 / 周 168 / 月 720 / 年 8760);折扣按周期四档,在线策略参数。下单、续费与到期链路在 `app/modules/billing/subscriptions.py`,折扣与报价的唯一计算点 `app/core/pricing.py`。
+An order with `market='subscription'` pre-debits the whole period up front and is not settled hourly. Periods are **fixed hour counts** (day 24 / week 168 / month 720 / year 8760); discounts are four online policy parameters. Ordering, renewal and expiry live in `app/modules/billing/subscriptions.py`; discount and quote maths have one home, `app/core/pricing.py`.
 
-进入包周期两条路:创建时直接买,或把按量实例就地转过来(`POST /api/v1/instances/{uuid}/subscribe`)。转换同事务**先结清转换前那段按量账、再翻 `market`**。
+Two ways into a subscription: buy one at creation, or convert a running on-demand instance in place (`POST /api/v1/instances/{uuid}/subscribe`). Conversion **first settles the on-demand usage up to now, then flips `market`**, in one transaction.
 
-到期链路由 `subscription_patrol`(30 分钟一轮)驱动:临期预警 → 到期且开了自动续费则扣款续期 → 否则停机 → 冻结并写 `frozen_deadline`;回收由余额巡检的 frozen 分支做。三条预付语义(中途释放不退款、到期不自动转按量、余额为零不停机)与四处配套过滤见 [`reference/billing.md`](./reference/billing.md)。
+Expiry is driven by `subscription_patrol` (every 30 minutes): warn before expiry → on expiry, renew and debit if auto-renew is on → otherwise stop → freeze with a `frozen_deadline`; reclamation is done by the balance patrol's frozen branch. The three prepaid semantics (no refund on early release, no automatic fallback to on-demand, zero balance does not stop the instance) and the four matching filters are listed in [`reference/billing.md`](./reference/billing.md).
 
-### 7.6 竞价(抢占与回收)
+### 7.6 Spot (preemption and reclamation)
 
-`market='spot'` 的实例拿折后价(按量价 × `spot_discount_pct`,默认 4 折),容量紧张时可被平台回收。折扣只落 `instances.price_hourly`,其余与按量实例相同:进小时结算、出尾账、走同一条欠费链。
+`market='spot'` instances pay a discounted price (on-demand × `spot_discount_pct`, default 40 %) and can be reclaimed by the platform under capacity pressure. The discount lands only in `instances.price_hourly`; everything else matches on-demand instances: hourly settlement, tail bills, the same arrears chain.
 
-按量或包周期用户建实例而软准入判容量不足时,`orchestrator/preempt.py` 挑竞价实例回收(候选规则见 §8.7),凑不够照旧 409。状态机立刻迁 `stopping`(用户收到短信与站内信),删 Pod 的 outbox 任务延迟 `spot_grace_seconds` 到期。终态 `stopped`,实例盘保留,用户可自行开机。
+When an on-demand or subscription creation fails soft admission for lack of capacity, `orchestrator/preempt.py` selects spot instances to reclaim (candidate rules in §8.7); if it cannot free enough, the request still gets 409. The state machine moves to `stopping` immediately (the user is notified by SMS and in-app) and the Pod-deletion outbox task is delayed by `spot_grace_seconds`. The terminal state is `stopped` with the instance disk kept; the user may start it again.
 
-用户可随时 `POST /api/v1/instances/{uuid}/to-on-demand` 转按量,不动 Pod、零中断,**当前整点小时整体改按按量价结算**。口径见 [`reference/orchestrator.md`](./reference/orchestrator.md) 与 [`reference/billing.md`](./reference/billing.md)。
+Users may call `POST /api/v1/instances/{uuid}/to-on-demand` at any time to convert to on-demand without touching the Pod, zero downtime; **the current clock hour is re-billed entirely at the on-demand price**. Details in [`reference/orchestrator.md`](./reference/orchestrator.md) and [`reference/billing.md`](./reference/billing.md).
 
-## 8. 硬约束
+## 8. Hard constraints
 
-1. **Kata 与 HAMi 不能共用同一批 GPU,必须分池**。节点池标签 `node-restriction.kubernetes.io/superdl-pool` **只由平台写**(NodeRestriction 前缀,kubelet 自打不上);空节点(零未释放实例)可经管理端在 kata / hami / mig 间无感切换(不登录节点、不重启),`cpu` 池不参与,见 `reference/nodes.md`。**隔离机制的派发键是池,不是档位**:`core/gpu_adapter` 按 kata / mig / hami / cpu 决定 RuntimeClass、资源语法、userns 与调度器;`skus.tier`(dedicated / shared / cpu)只是售卖分类,合法配对由 `TIER_POOLS` 与 catalog 的 `_check_tier_pool` 收口。
-2. **`gpu_count == 0`(纯 CPU 实例)的判定先于池分支。** 计费份数收口到 `core/money.billing_units`(GPU 实例 = 卡数,CPU 实例 = 1 份整机),不散写 `单价 × gpu_count`。
-3. **超卖只发生在 HAMi 池。** kata 与 mig 不超卖。`oversell_cores` 是纯定价参数,不下发调度(schema 上界 9.99)。HAMi 池的隔离是软件限额,不是安全边界。见 `reference/security.md` 隔离级别分级。
-4. **hami / mig / cpu 池的 Pod 必须 `hostUsers: false`(userns)**;kata 池不加。
-5. **数据盘独立于实例生命周期**:释放实例不删数据盘,关机照常计费。
-6. **包周期实例只在 `orchestrator/queries.py::billing_candidates` 一处跳过小时结算。** `upsert_hour_bill`、水位线、缺口机制不动。
-7. **竞价抢占只在同池同型号内选,按 `created_at` 从新到旧,凑不够一台都不动。** 三条逐字写进知情同意,改排序或候选谓词等同改文案,两边同提交。抢占与请求方建实例**同事务**;被抢占实例按实际运行秒数正常结算。
+1. **Kata and HAMi never share a set of GPUs; they are separate pools.** The pool label `node-restriction.kubernetes.io/superdl-pool` **is written only by the platform** (NodeRestriction prefix, kubelets cannot set it); an empty node (no unreleased instances) can be switched between kata / hami / mig from the admin console without logging in or rebooting; the `cpu` pool does not take part — see `reference/nodes.md`. **The isolation mechanism is dispatched by pool, not by tier**: `core/gpu_adapter` derives RuntimeClass, resource syntax, userns and scheduler from kata / mig / hami / cpu; `skus.tier` (dedicated / shared / cpu) is only a sales category, and the legal pairs are enforced by `TIER_POOLS` and catalog's `_check_tier_pool`.
+2. **`gpu_count == 0` (CPU-only instance) is decided before the pool branch.** Billing units are computed in `core/money.billing_units` (GPU instance = GPU count, CPU instance = one machine); never write `unit price × gpu_count` inline.
+3. **Overselling happens only in the HAMi pool.** kata and mig do not oversell. `oversell_cores` is a pure pricing parameter, never sent to the scheduler (schema cap 9.99). HAMi isolation is a software limit, not a security boundary; see the isolation levels in `reference/security.md`.
+4. **Pods in the hami / mig / cpu pools must run `hostUsers: false` (userns)**; kata Pods do not.
+5. **Data disks are independent of the instance lifecycle**: releasing an instance never deletes its data disk, and a stopped instance's disk keeps billing.
+6. **Subscription instances skip hourly settlement in exactly one place: `orchestrator/queries.py::billing_candidates`.** `upsert_hour_bill`, watermarks and the gap mechanism stay untouched.
+7. **Spot preemption selects only within the same pool and model, newest `created_at` first, and does nothing unless it can free enough.** The three rules are quoted verbatim in the informed-consent dialog; changing the ordering or candidate predicate is a copy change and ships in the same commit as the copy. Preemption and the requester's creation share **one transaction**; preempted instances are settled normally for the seconds they ran.
 
-编码级硬性规范与闸门见 `CLAUDE.md`。
+Code-level rules and gates are in `CLAUDE.md`.
