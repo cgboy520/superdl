@@ -9,6 +9,10 @@ ETC_DIR="${SUPERDL_JOIN_ETC_DIR:-/etc}"
 RANCHER_STATE_DIR="${SUPERDL_JOIN_RANCHER_STATE_DIR:-/var/lib/rancher}"
 LVM_IMG_DIR="${SUPERDL_JOIN_LVM_DIR:-/var/lib/superdl-lvm}"
 IOMMU_GROUPS_DIR="${SUPERDL_JOIN_IOMMU_DIR:-/sys/kernel/iommu_groups}"
+OS_RELEASE_FILE="${SUPERDL_JOIN_OS_RELEASE:-/etc/os-release}"
+CPUINFO_FILE="${SUPERDL_JOIN_CPUINFO:-/proc/cpuinfo}"
+# Kernel IOMMU arguments for x86_64; empty = derived from the CPU vendor (unknown vendors fail closed).
+IOMMU_ARGS="${SUPERDL_JOIN_IOMMU_ARGS:-}"
 RESUME_UNIT="superdl-node-join-resume"
 TOKEN=""
 TOKEN_FILE=""
@@ -169,8 +173,8 @@ step_bootstrap() {
   hostname="$(hostname)"
   kernel="$(uname -r)"
   arch="$(uname -m)"
-  # shellcheck disable=SC1091
-  os_release="$(. /etc/os-release && echo "$PRETTY_NAME")"
+  # shellcheck source=/dev/null
+  os_release="$(. "$OS_RELEASE_FILE" && echo "$PRETTY_NAME")"
   gpu_details="$({ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits 2>/dev/null || true; } | head -8 | python3 -c '
 import json, sys
 out = []
@@ -216,8 +220,40 @@ PYEOF
   echo "-- bootstrap done: pool=$(cfg_get pool) agent=$(cfg_get cluster_agent_version)"
 }
 
+# Every later step is apt / dpkg / update-initramfs / update-grub: only the Debian family is supported.
+check_distro() {
+  local id id_like pretty
+  # shellcheck source=/dev/null
+  id="$(. "$OS_RELEASE_FILE" 2>/dev/null && echo "${ID:-}")"
+  # shellcheck source=/dev/null
+  id_like="$(. "$OS_RELEASE_FILE" 2>/dev/null && echo "${ID_LIKE:-}")"
+  # shellcheck source=/dev/null
+  pretty="$(. "$OS_RELEASE_FILE" 2>/dev/null && echo "${PRETTY_NAME:-unknown}")"
+  case " $id $id_like " in
+    *" ubuntu "* | *" debian "*) echo "-- distribution: $pretty (Debian family)"; return 0 ;;
+  esac
+  echo "unsupported distribution: $pretty (ID=$id ID_LIKE=$id_like); a Debian/Ubuntu family system is required (apt, dpkg, update-initramfs, update-grub)"
+  return 1
+}
+
+# GRUB kernel arguments that enable the IOMMU for this CPU vendor (x86_64 only).
+iommu_kernel_args() {
+  if [[ -n "$IOMMU_ARGS" ]]; then echo "$IOMMU_ARGS"; return 0; fi
+  local vendor
+  vendor="$(awk -F': *' '/^vendor_id/ {print $2; exit}' "$CPUINFO_FILE" 2>/dev/null || true)"
+  case "$vendor" in
+    GenuineIntel) echo "intel_iommu=on iommu=pt" ;;
+    AuthenticAMD | HygonGenuine) echo "amd_iommu=on iommu=pt" ;;
+    *)
+      echo "!! unknown CPU vendor '${vendor:-?}' (from $CPUINFO_FILE): cannot pick the IOMMU kernel argument; set SUPERDL_JOIN_IOMMU_ARGS explicitly" >&2
+      return 1
+      ;;
+  esac
+}
+
 step_precheck() {
   case "$(uname -m)" in x86_64 | aarch64) ;; *) echo "only x86_64 / aarch64 are supported (this host: $(uname -m))"; return 1 ;; esac
+  check_distro || return 1
   command -v python3 >/dev/null || { echo "python3 is missing"; return 1; }
   command -v systemctl >/dev/null || { echo "systemd is required"; return 1; }
   if is_cpu_pool; then
@@ -255,10 +291,13 @@ step_sysctl() {
 step_iommu() {
   if is_cpu_pool; then echo "-- cpu pool: no GPU, skipping IOMMU"; return 0; fi
   if [[ "$(uname -m)" == "x86_64" && ! -f "$ETC_DIR"/default/grub.d/99-superdl.cfg ]]; then
+    local args
+    args="$(iommu_kernel_args)" || return 1
     mkdir -p "$ETC_DIR"/default/grub.d
     # shellcheck disable=SC2016
-    echo 'GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT intel_iommu=on iommu=pt"' \
+    echo "GRUB_CMDLINE_LINUX_DEFAULT=\"\$GRUB_CMDLINE_LINUX_DEFAULT $args\"" \
       > "$ETC_DIR"/default/grub.d/99-superdl.cfg
+    echo "-- GRUB: $args"
     update-grub
   fi
   if [[ -z "$(ls -A "$IOMMU_GROUPS_DIR" 2>/dev/null)" ]]; then
