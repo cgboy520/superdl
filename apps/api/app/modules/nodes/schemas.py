@@ -93,7 +93,7 @@ class BootstrapOut(BaseModel):
     nvme_devices: list[str]
     registries_yaml: str
     registry_ca_pem: str = ""
-    install_mirror: str = "cn"
+    install_mirror: str = "official"
     progress_token: str
     script_sha256: str
 

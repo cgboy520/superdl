@@ -365,8 +365,10 @@ SETTING_SPECS: dict[str, SettingSpec] = {
     "node_install_mirror": SettingSpec(
         "cluster",
         "choice",
-        choices=("cn", "official"),
-        hint="装机安装源:cn=国内镜像(rancher-mirror.rancher.cn),official=官方源",
+        choices=("official", "cn"),
+        hint="Installer source for node-join: official = get.k3s.io / get.rke2.io (default); "
+        "cn = mainland-China mirror rancher-mirror.rancher.cn (opt in when the official hosts "
+        "are unreachable)",
     ),
     "registry_host": SettingSpec(
         "registry",
