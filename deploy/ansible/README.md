@@ -4,8 +4,8 @@
 
 ## OS 基线
 
-- **Ubuntu Server 22.04 / 24.04 LTS**,x86_64 或 aarch64。
-- 目标机:root 或 sudo(`become: true`)、python3、ssh 可达、可出公网(从 `rancher-mirror.rancher.cn` 下载安装器)。
+- **Debian 系**(Ubuntu Server 22.04 / 24.04 LTS 为验证基线,Debian 12 同族),x86_64 或 aarch64;playbook 全程 apt。
+- 目标机:root 或 sudo(`become: true`)、python3、ssh 可达、可出公网:默认从官方源 `get.rke2.io` / `get.k3s.io` 下载安装器(`k8s_install_mirror: official`),中国大陆机房可 `-e k8s_install_mirror=cn` 改走 `rancher-mirror.rancher.cn`;其他取值 playbook 断言失败。
 
 ## inventory 分组
 
@@ -25,12 +25,13 @@
 cp inventory.ini.example inventory.ini
 ansible-playbook -i inventory.ini site.yml
 ansible-playbook -i inventory.ini site.yml -e cluster_distro=k3s
+ansible-playbook -i inventory.ini site.yml -e k8s_install_mirror=cn   # mainland-China mirror
 ```
 
 ### 行为约定
 
 - 顺序:kubelet 配置 drop-in(`../cluster/rke2/kubelet-superdl.conf`,podPidsLimit)+ audit-policy.yaml + registries.yaml(+ 非空时的 harbor-ca.crt)→ server config(仓库模板渲染,占位符无残留才落盘,0600)→ 安装 rke2/k3s server(安装器由 `get_url` 按 `checksum: sha256:…` 校验后才落到 root 私有目录 `/root/.cache/superdl/`,`force: true` 覆盖旧文件,再执行;幂等)→ enable+start → 等 kube-apiserver `/readyz` 就绪 → 给控制面节点打落点标签 `node-restriction.kubernetes.io/superdl-infra=true`(`--overwrite`,幂等)→ k3s 时装集群状态备份。config 变更才 `restart-server`。
-- 安装器 sha256 在 `site.yml` 的 `rke2_installer_sha256` / `k3s_installer_sha256`,镜像站更新安装器时同步改。
+- 安装器 sha256 在 `site.yml` 的 `rke2_installer_sha256_official` / `_cn` 与 `k3s_installer_sha256_official` / `_cn`,按 `k8s_install_mirror` 选用;与 `node-join.sh` 内置 pin 同值(bats 交叉校验),上游或镜像站更新安装器时两处同步改。
 - 落点标签必须在这里用管理凭据打,不能用发行版的 `node-label`;节点按 `node-role.kubernetes.io/control-plane` 角色选,不按主机名。口径见 `../cluster/README.md`「平台组件落点标签」。
 - 含凭据的 task 一律 `no_log: true`(server config 渲染、tls-san 追加、落盘);报错不带内容,排障看目标机 `/etc/rancher/<distro>/config.yaml`。值一律经 `| to_json` 注入,不手工拼引号。
 - HA 参数成对:`api_vip` 与 `server_ips` 必须同时给且奇数台 ≥3,否则 playbook 断言失败;单 server 集群 `api_vip` 留空。
