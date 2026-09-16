@@ -235,9 +235,17 @@ alertmanager:
         - matchers: ['severity="critical"']
           receiver: superdl-oncall-mail
           continue: true
-        - matchers: ['severity="critical"']
-          receiver: superdl-dingtalk
-          continue: true
+        # Optional chat / paging channels for critical alerts: uncomment ONE route + its receiver below
+        # and the matching alertmanagerSpec.secrets entry, then replace the CHANGE_ME values.
+        # - matchers: ['severity="critical"']
+        #   receiver: superdl-slack
+        #   continue: true
+        # - matchers: ['severity="critical"']
+        #   receiver: superdl-pagerduty
+        #   continue: true
+        # - matchers: ['severity="critical"']
+        #   receiver: superdl-dingtalk
+        #   continue: true
         - matchers: ['severity="none"']
           receiver: "null"
         - matchers: ['severity=~".+"']
@@ -265,9 +273,27 @@ alertmanager:
             auth_username: "CHANGE_ME_SMTP_USERNAME"
             auth_password_file: /etc/alertmanager/secrets/superdl-smtp-password/password
             require_tls: true
-      - name: superdl-dingtalk
-        webhook_configs:
-          - url: "http://localhost:8060/dingtalk/oncall/send"
+      # --- optional receivers (examples; disabled until routed above) ---
+      # Slack incoming webhook (Alertmanager reads the URL from a mounted Secret):
+      # - name: superdl-slack
+      #   slack_configs:
+      #     - api_url_file: /etc/alertmanager/secrets/superdl-slack-webhook/url
+      #       channel: "#CHANGE_ME_CHANNEL"
+      #       send_resolved: true
+      #       title: '{{ .CommonLabels.alertname }} ({{ .Status }})'
+      #       text: '{{ range .Alerts }}{{ .Annotations.summary }}{{ "\n" }}{{ end }}'
+      # PagerDuty Events API v2 (routing key from a mounted Secret):
+      # - name: superdl-pagerduty
+      #   pagerduty_configs:
+      #     - routing_key_file: /etc/alertmanager/secrets/superdl-pagerduty-key/routing-key
+      #       severity: critical
+      #       description: '{{ .CommonLabels.alertname }}: {{ .CommonAnnotations.summary }}'
+      # DingTalk group robot via the prometheus-webhook-dingtalk sidecar (add the sidecar under
+      # alertmanagerSpec.containers, pinned image, profile "oncall", robot token from
+      # monitoring/superdl-dingtalk-token):
+      # - name: superdl-dingtalk
+      #   webhook_configs:
+      #     - url: "http://localhost:8060/dingtalk/oncall/send"
   alertmanagerSpec:
     storage:
       volumeClaimTemplate:
@@ -279,6 +305,10 @@ alertmanager:
     secrets:
       - superdl-alert-token
       - superdl-smtp-password
+      # Mount the Secret of the optional receiver you enabled:
+      # - superdl-slack-webhook      # key: url
+      # - superdl-pagerduty-key      # key: routing-key
+      # - superdl-dingtalk-token     # key: token (used by the sidecar)
 additionalPrometheusRulesMap:
   superdl-gpu:
     groups:
@@ -542,7 +572,7 @@ additionalPrometheusRulesMap:
             labels: {severity: warning}
             annotations: {summary: "API 401/403 占比 >30% 持续 10 分钟:大概率是自动化探测,而不是用户在误操作", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
           - alert: PaymentConfigWritten
-            expr: increase(superdl_platform_config_write_total{domain=~"payment|crypto"}[5m]) > 0
+            expr: increase(superdl_platform_config_write_total{domain=~"payment_.*|crypto"}[5m]) > 0
             labels: {severity: critical}
             annotations: {summary: "平台配置 {{ $labels.domain }} 组被写入({{ $value }} 次):换掉验签公钥/商户号即可自签回调充值,逐条与变更单核对,非计划内按失陷处置", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
           - alert: EndpointAuthDenialSustained

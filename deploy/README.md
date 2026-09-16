@@ -42,7 +42,7 @@ GitHub 仓库的 `production` environment 必须设置 required reviewers,`HARBO
 - [ ] `curl -s https://<api-domain>/api/v1/webhooks/mock -X POST` 返回 404
 - [ ] `curl -s https://<api-domain>/api/admin/v1/auth/login -X POST` 返回 404
 - [ ] `curl -s https://<api-domain>/metrics` 返回 404 或 401
-- [ ] Alertmanager critical 告警端到端实测一次(管理端告警流与值班邮箱到人;启用了钉钉 sidecar 或 `oncall_phone` 的一并验证)
+- [ ] Alertmanager critical 告警端到端实测一次(管理端告警流与值班邮箱到人;启用了 Slack / PagerDuty / 钉钉接收器或 `oncall_phone` 的一并验证)
 
 ## 生产数据库要求(必读)
 
