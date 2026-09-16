@@ -753,9 +753,9 @@ class TestSchemaCaps:
             BootstrapRequest.model_validate({**base, "gpu_details": [{}] * 17})
 
     def test_login_password_bound_matches_registration(self):
-        assert LoginRequest(phone="13800000001", password="p" * 128).password
+        assert LoginRequest(handle="a@test.local", password="p" * 128).password
         with pytest.raises(ValidationError):
-            LoginRequest(phone="13800000001", password="p" * 129)
+            LoginRequest(handle="a@test.local", password="p" * 129)
 
 
 class TestRestartPortConflict:

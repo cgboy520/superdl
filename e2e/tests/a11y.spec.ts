@@ -2,7 +2,7 @@
 import { AxeBuilder } from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
-import { loginViaApi, uniquePhone } from "./helpers";
+import { loginViaApi, uniqueEmail } from "./helpers";
 
 async function expectNoCritical(page: Page, name: string) {
   const results = await new AxeBuilder({ page }).analyze();
@@ -31,7 +31,7 @@ test("公开层可访问性(落地页/登录/市场/帮助)", async ({ page }) =
 });
 
 test("控制台关键页可访问性(实例/费用/设置)", async ({ page }) => {
-  await loginViaApi(page, uniquePhone());
+  await loginViaApi(page, uniqueEmail());
   for (const [path, name] of [
     ["/instances", "容器实例"],
     ["/billing", "费用中心"],

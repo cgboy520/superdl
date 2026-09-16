@@ -7,14 +7,14 @@ import {
   pickSharedStandardSku,
   rechargeViaUi,
   registerViaUi,
-  uniquePhone,
+  uniqueEmail,
   waitFirstRowRunning,
 } from "./helpers";
 
 test("全生命周期冒烟", async ({ page }) => {
-  const phone = uniquePhone();
+  const email = uniqueEmail();
 
-  await registerViaUi(page, phone);
+  await registerViaUi(page, email);
 
   await rechargeViaUi(page);
   await expect(page.getByText("¥100.00").first()).toBeVisible({ timeout: 10_000 });

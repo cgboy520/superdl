@@ -7,9 +7,11 @@
 
 export interface UserOut {
   created_at: string;
+  email: string | null;
+  email_verified_at: string | null;
   id: number;
+  kyc_status: string;
   low_balance_warn_hours: number;
-  phone: string;
+  phone: string | null;
   status: string;
-  verification_status: string;
 }

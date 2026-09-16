@@ -5,17 +5,19 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * Email + email code are always required; phone + SMS code only when the compliance profile
+ * requires a phone number.
+ */
 export interface RegisterRequest {
   accept_terms?: boolean;
-  password?: string | null;
-  /**
-     * 中国大陆手机号
-     * @pattern ^1[3-9]\d{9}$
-     */
-  phone: string;
+  email: string;
   /**
      * @minLength 4
      * @maxLength 8
      */
-  sms_code: string;
+  email_code: string;
+  password?: string | null;
+  phone?: string | null;
+  phone_code?: string | null;
 }

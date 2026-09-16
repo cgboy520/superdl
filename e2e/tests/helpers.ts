@@ -11,11 +11,11 @@ export async function confirmOk(page: Page): Promise<void> {
     .click();
 }
 
-/** 用时间戳与随机数生成测试手机号。 */
-export function uniquePhone(): string {
-  const ms = String(Date.now()).slice(-5);
+/** Unique test email built from a timestamp and a random suffix. */
+export function uniqueEmail(): string {
+  const ms = String(Date.now()).slice(-6);
   const rand = String(Math.floor(Math.random() * 1000)).padStart(3, "0");
-  return `139${ms}${rand}`;
+  return `e2e-${ms}${rand}@test.local`;
 }
 
 /** 生成随机字节的 SSH ed25519 公钥测试数据。 */
@@ -35,26 +35,26 @@ export function genEd25519Key(): string {
   return `${type} ${b64} e2e@smoke`;
 }
 
-/** 注册一个新号并落到已登录态。 */
-export async function registerViaUi(page: Page, phone: string): Promise<void> {
+/** Register a new email account through the UI and land signed in. */
+export async function registerViaUi(page: Page, email: string): Promise<void> {
   await page.goto("/login");
   await page.getByRole("button", { name: "免费注册" }).click();
-  await page.getByPlaceholder("手机号").fill(phone);
+  await page.getByPlaceholder("邮箱").fill(email);
   await page.getByRole("button", { name: "获取验证码" }).click();
-  await page.getByPlaceholder("短信验证码").fill("123456");
+  await page.getByPlaceholder("邮箱验证码").fill("123456");
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "注册并登录" }).click();
   await expect(page).not.toHaveURL(/login/, { timeout: 15_000 });
 }
 
 /** 经 API 建号并注入登录态:access token 由 addInitScript 写入 localStorage,refresh cookie 由浏览器托管;返回 access token。 */
-export async function loginViaApi(page: Page, phone: string): Promise<string> {
-  const code = await page.request.post("/api/v1/auth/sms-code", {
-    data: { phone, purpose: "register" },
+export async function loginViaApi(page: Page, email: string): Promise<string> {
+  const code = await page.request.post("/api/v1/auth/verification-code", {
+    data: { handle: email, purpose: "register" },
   });
   expect(code.status(), await code.text()).toBe(204);
   const resp = await page.request.post("/api/v1/auth/register", {
-    data: { phone, sms_code: "123456", accept_terms: true },
+    data: { email, email_code: "123456", accept_terms: true },
   });
   expect(resp.status(), await resp.text()).toBe(201);
   const data = (await resp.json()) as { access_token: string };
@@ -132,7 +132,7 @@ export async function waitFirstRowRunning(page: Page): Promise<Locator> {
 }
 
 export async function setupUser(page: Page, amount: string): Promise<string> {
-  const token = await loginViaApi(page, uniquePhone());
+  const token = await loginViaApi(page, uniqueEmail());
   await rechargeViaApi(page, token, amount);
   await addSshKeyViaApi(page, token);
   return token;

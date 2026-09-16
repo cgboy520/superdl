@@ -5,7 +5,7 @@ import pytest
 from httpx import AsyncClient
 
 from app.core.captcha import AliyunCaptchaChannel, CaptchaError, set_captcha_channel
-from tests.helpers import set_platform_setting
+from tests.helpers import as_handle, set_platform_setting
 
 
 @pytest.fixture(autouse=True)
@@ -68,7 +68,8 @@ class TestSmsCodeGate:
         """开关关闭(默认):不带 token 直接发码,渠道不被调用。"""
         set_captcha_channel(_FailingChannel())
         resp = await client.post(
-            "/api/v1/auth/sms-code", json={"phone": "13800000094", "purpose": "register"}
+            "/api/v1/auth/verification-code",
+            json={"handle": as_handle("13800000094"), "purpose": "register"},
         )
         assert resp.status_code == 204, resp.text
 
@@ -77,7 +78,8 @@ class TestSmsCodeGate:
         await set_platform_setting(sm, "captcha_enabled", "true")
         set_captcha_channel(_RejectingChannel())
         resp = await client.post(
-            "/api/v1/auth/sms-code", json={"phone": "13800000095", "purpose": "register"}
+            "/api/v1/auth/verification-code",
+            json={"handle": as_handle("13800000095"), "purpose": "register"},
         )
         assert resp.status_code == 400
         assert resp.json()["code"] == "CAPTCHA_REQUIRED"
@@ -86,8 +88,12 @@ class TestSmsCodeGate:
         await set_platform_setting(sm, "captcha_enabled", "true")
         set_captcha_channel(_RejectingChannel())
         resp = await client.post(
-            "/api/v1/auth/sms-code",
-            json={"phone": "13800000095", "purpose": "register", "captcha_token": "wrong"},
+            "/api/v1/auth/verification-code",
+            json={
+                "handle": as_handle("13800000095"),
+                "purpose": "register",
+                "captcha_token": "wrong",
+            },
         )
         assert resp.status_code == 400
         assert resp.json()["code"] == "CAPTCHA_VERIFY_FAILED"
@@ -96,19 +102,23 @@ class TestSmsCodeGate:
         """渠道故障 → 502。"""
         from sqlalchemy import select
 
-        from app.modules.account.models import SmsCode
+        from app.modules.account.models import VerificationCode
 
         await set_platform_setting(sm, "captcha_enabled", "true")
         set_captcha_channel(_FailingChannel())
         resp = await client.post(
-            "/api/v1/auth/sms-code",
-            json={"phone": "13800000095", "purpose": "register", "captcha_token": "t"},
+            "/api/v1/auth/verification-code",
+            json={"handle": as_handle("13800000095"), "purpose": "register", "captcha_token": "t"},
         )
         assert resp.status_code == 502
         assert resp.json()["code"] == "CAPTCHA_CHANNEL_ERROR"
         async with sm() as session:
             row = (
-                await session.execute(select(SmsCode).where(SmsCode.phone == "13800000095"))
+                await session.execute(
+                    select(VerificationCode).where(
+                        VerificationCode.target == as_handle("13800000095")
+                    )
+                )
             ).scalar_one_or_none()
             assert row is None
 
@@ -116,8 +126,8 @@ class TestSmsCodeGate:
         """开启但凭据未配 → 502。"""
         await set_platform_setting(sm, "captcha_enabled", "true")
         resp = await client.post(
-            "/api/v1/auth/sms-code",
-            json={"phone": "13800000096", "purpose": "register", "captcha_token": "t"},
+            "/api/v1/auth/verification-code",
+            json={"handle": as_handle("13800000096"), "purpose": "register", "captcha_token": "t"},
         )
         assert resp.status_code == 502
         assert resp.json()["code"] == "CAPTCHA_CHANNEL_ERROR"

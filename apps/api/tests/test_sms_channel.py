@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from app.core.aliyun import rpc_signed_params
 from app.core.sms import AliyunSmsChannel, SmsError, TwilioSmsChannel, set_sms_channel
+from tests.helpers import as_handle
 
 
 @pytest.fixture(autouse=True)
@@ -125,19 +126,23 @@ class TestFactory:
 
 class TestVerifyCodeSendFailure:
     async def test_channel_failure_invalidates_code(self, client: AsyncClient, sm):
-        """渠道失败 → 502 SMS_SEND_FAILED,且刚落库的验证码被作废。"""
-        from app.modules.account.models import SmsCode
+        """渠道失败 → 502 CODE_SEND_FAILED,且刚落库的验证码被作废。"""
+        from app.modules.account.models import VerificationCode
 
         set_sms_channel(_FailingChannel())
         resp = await client.post(
-            "/api/v1/auth/sms-code",
-            json={"phone": "13800000090", "purpose": "register"},
+            "/api/v1/auth/verification-code",
+            json={"handle": as_handle("+8613800000090"), "purpose": "register"},
         )
         assert resp.status_code == 502
-        assert resp.json()["code"] == "SMS_SEND_FAILED"
+        assert resp.json()["code"] == "CODE_SEND_FAILED"
         async with sm() as session:
             row = (
-                await session.execute(select(SmsCode).where(SmsCode.phone == "13800000090"))
+                await session.execute(
+                    select(VerificationCode).where(
+                        VerificationCode.target == as_handle("+8613800000090")
+                    )
+                )
             ).scalar_one()
             assert row.used_at is not None
 
@@ -148,19 +153,23 @@ class TestPlatformQuota:
     async def test_sms_code_blocked_by_platform_quota(self, client: AsyncClient, sm, monkeypatch):
         """配额耗尽时验证码接口 429 RATE_LIMITED,且不落库无效验证码。"""
         from app.core import sms as sms_module
-        from app.modules.account.models import SmsCode
+        from app.modules.account.models import VerificationCode
 
         monkeypatch.setitem(sms_module.SMS_PLATFORM_LIMITS, "verify", (1, 5000))
         await sms_module.ensure_sms_platform_quota("verify")
         resp = await client.post(
-            "/api/v1/auth/sms-code",
-            json={"phone": "13800000093", "purpose": "register"},
+            "/api/v1/auth/verification-code",
+            json={"handle": as_handle("+8613800000093"), "purpose": "register"},
         )
         assert resp.status_code == 429
         assert resp.json()["code"] == "RATE_LIMITED"
         async with sm() as session:
             row = (
-                await session.execute(select(SmsCode).where(SmsCode.phone == "13800000093"))
+                await session.execute(
+                    select(VerificationCode).where(
+                        VerificationCode.target == as_handle("+8613800000093")
+                    )
+                )
             ).scalar_one_or_none()
             assert row is None
 

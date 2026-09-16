@@ -3,45 +3,65 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.core.regex import PHONE_RE
+from app.core.handles import NormalizedEmail, NormalizedHandle, NormalizedPhone
 from app.core.security import PasswordStr
 
-PhoneStr = Field(pattern=PHONE_RE, description="中国大陆手机号")
+CodeStr = Field(min_length=4, max_length=8)
 
 
-class SmsCodeRequest(BaseModel):
-    phone: str = PhoneStr
+class VerificationCodeRequest(BaseModel):
+    """Send a code to an email address or an E.164 phone number; the channel follows the handle."""
+
+    handle: NormalizedHandle
     purpose: Literal["register", "login", "reset_password"]
     captcha_token: str | None = Field(default=None, max_length=4096)
 
 
 class RegisterRequest(BaseModel):
-    phone: str = PhoneStr
-    sms_code: str = Field(min_length=4, max_length=8)
+    """Email + email code are always required; phone + SMS code only when the compliance profile
+    requires a phone number."""
+
+    email: NormalizedEmail
+    email_code: str = CodeStr
     password: PasswordStr | None = None
     accept_terms: bool = False
+    phone: NormalizedPhone | None = None
+    phone_code: str | None = Field(default=None, min_length=4, max_length=8)
 
 
 class LoginRequest(BaseModel):
-    phone: str = PhoneStr
-    sms_code: str | None = Field(default=None, min_length=4, max_length=8)
+    handle: NormalizedHandle
+    code: str | None = Field(default=None, min_length=4, max_length=8)
     password: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class PasswordResetRequest(BaseModel):
-    """设置/修改/找回密码:凭手机号 + 验证码,不需要旧密码。"""
+    """Set / change / recover the password with a verification code; no old password needed."""
 
-    phone: str = PhoneStr
-    sms_code: str = Field(min_length=4, max_length=8)
+    handle: NormalizedHandle
+    code: str = CodeStr
     new_password: PasswordStr
+
+
+class HandleCodeRequest(BaseModel):
+    """Start binding or replacing a contact handle on the signed-in account."""
+
+    handle: NormalizedHandle
+
+
+class HandleConfirmRequest(BaseModel):
+    handle: NormalizedHandle
+    code: str = CodeStr
 
 
 class UserOut(BaseModel):
     id: int
-    phone: str
+    email: str | None
+    email_verified_at: datetime | None
+    phone: str | None
     status: str
     low_balance_warn_hours: int
-    verification_status: str
+    kyc_status: str
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -89,9 +109,9 @@ class RealNameRequest(BaseModel):
 
 
 class DeletionRequestCreate(BaseModel):
-    """申请注销:须键入与账号一致的完整手机号(二次确认)+ 原因。"""
+    """Request deletion: retype one of the account's handles (email or phone) plus a reason."""
 
-    phone: str = PhoneStr
+    handle: NormalizedHandle
     reason: str = Field(min_length=2, max_length=256)
 
 
@@ -113,7 +133,8 @@ class AdminDeletionRequestOut(DeletionRequestOut):
     """管理端注销申请视图:附租户标识与执行前校验计数。"""
 
     user_id: int
-    phone_masked: str
+    email_masked: str | None
+    phone_masked: str | None
     processed_by: int | None
     instances_active: int
     disks_active: int

@@ -100,12 +100,12 @@ export function CommandPalette() {
       heading: t("command.groupTenants"),
       items: tenantHits.map((row) => ({
         key: `tenant:${row.id}`,
-        value: `${row.id} ${row.phone_masked}`,
+        value: `${row.id} ${row.email_masked ?? row.phone_masked ?? ""}`,
         label: (
           <>
             <TeamOutlined />
             <span>
-              #{row.id} · {row.phone_masked}
+              #{row.id} · {row.email_masked ?? row.phone_masked ?? "-"}
             </span>
           </>
         ),

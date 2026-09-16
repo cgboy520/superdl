@@ -90,7 +90,8 @@ export function TenantFreezeAction({
   const { t } = useTranslation(["admin", "shared"]);
   const freeze = useFreezeTenant();
   const unfreeze = useUnfreezeTenant();
-  const target = `#${tenant.id} · ${tenant.phone_masked}`;
+  const account = tenant.email_masked ?? tenant.phone_masked ?? "-";
+  const target = `#${tenant.id} · ${account}`;
   return tenant.status === "active" ? (
     <ReasonAction
       size={size}
@@ -100,7 +101,7 @@ export function TenantFreezeAction({
       title={t("tenants.freezeTitle")}
       confirmText={t("tenants.freezeConfirm", {
         id: tenant.id,
-        phone: tenant.phone_masked,
+        phone: account,
         count: tenant.instances,
       })}
       disabled={!writable}
@@ -223,10 +224,10 @@ function TenantHeader({ tenant, onChanged }: { tenant: TenantRow; onChanged: () 
     {
       label: t("tenants.realname"),
       value:
-        tenant.verification_status === "verified" ? (
+        tenant.kyc_status === "verified" ? (
           <Space size={space.xs}>
             <Tag color="green">{t("tenants.realnameVerified")}</Tag>
-            {tenant.id_name}
+            {tenant.kyc_name}
           </Space>
         ) : (
           <Tag>{t("tenants.realnameUnverified")}</Tag>
@@ -238,7 +239,7 @@ function TenantHeader({ tenant, onChanged }: { tenant: TenantRow; onChanged: () 
     <EntityHeader
       size="drawer"
       name={t("tenants.drawerName", { id: tenant.id })}
-      subtitle={tenant.phone_masked}
+      subtitle={tenant.email_masked ?? tenant.phone_masked ?? undefined}
       status={
         tenant.status === "active" ? (
           <Tag color="green">{t("tenants.active")}</Tag>

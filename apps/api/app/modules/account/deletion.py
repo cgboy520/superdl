@@ -1,7 +1,6 @@
 """账号注销申请、撤销、管理端执行与驳回。"""
 
 import math
-import secrets
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -9,7 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.constants import ADMIN_LIST_CAP
 from app.core.errors import AppError, ErrorCode, conflict, not_found
-from app.core.logging import get_logger, mask_phone_value
+from app.core.handles import mask_handle
+from app.core.logging import get_logger
 from app.core.money import money_str
 from app.core.timeutil import now_utc
 from app.modules.account.models import AccountDeletionRequest, User
@@ -35,11 +35,12 @@ async def _pending_deletion_of_user(
 
 
 async def request_deletion(
-    session: AsyncSession, user: User, *, phone: str, reason: str
+    session: AsyncSession, user: User, *, handle: str, reason: str
 ) -> AccountDeletionRequest:
-    """校验手机号并提交注销申请;已有 pending 时返回既有申请。"""
-    if user.phone != phone:
-        raise AppError(ErrorCode.VALIDATION_ERROR, key="account.deletionPhoneMismatch")
+    """The retyped handle must be one of the account's own; an existing pending request is
+    returned unchanged."""
+    if handle not in (user.email, user.phone):
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="account.deletionHandleMismatch")
     existing = await _pending_deletion_of_user(session, user.id)
     if existing is not None:
         return existing
@@ -98,7 +99,8 @@ def _deletion_out(
     return AdminDeletionRequestOut(
         id=req.id,
         user_id=req.user_id,
-        phone_masked=mask_phone_value(user.phone),
+        email_masked=mask_handle(user.email) if user.email else None,
+        phone_masked=mask_handle(user.phone) if user.phone else None,
         status=req.status,
         reason=req.reason,
         requested_at=req.requested_at,
@@ -184,8 +186,8 @@ async def approve_deletion(
     """锁定申请与用户后执行注销;调用方负责管理员授权与 note 校验。
 
     冷静期未满回 409;残留资源或余额非零时提交驳回后回 409。
-    通过时同事务改写手机号、清空姓名与脱敏证件号、撤销会话并标记 deleted;
-    证件摘要与账单保留。
+    On approval, the same transaction clears both handles and the KYC name / masked identity,
+    revokes sessions and marks the account deleted; the identity digest and bills are kept.
     """
     req = await _get_deletion_for_update(session, request_id)
     if req.status != "pending":
@@ -232,10 +234,15 @@ async def approve_deletion(
             params={"balance": money_str(balance)},
             detail={"balance": money_str(balance)},
         )
-    user.phone = f"del:{user.id}:{secrets.token_hex(8)}"
-    user.id_name = None
-    user.id_number = None
-    user.verification_status = "unverified"
+    user.email = None
+    user.email_verified_at = None
+    user.phone = None
+    user.kyc_name = None
+    user.kyc_identity_masked = None
+    user.kyc_provider = None
+    user.kyc_ref = None
+    user.kyc_verified_at = None
+    user.kyc_status = "unverified"
     user.token_version += 1
     user.status = "deleted"
     req.status = "completed"

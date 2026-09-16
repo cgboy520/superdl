@@ -1,18 +1,19 @@
 import { Button, Form, Input, Space } from "antd";
 
-import type { useSmsCode } from "../lib/useSmsCode";
+import type { VerificationCodeSender } from "../lib/useVerificationCode";
 
-export function SmsCodeField({
-  sms,
+/** One-time code input with the "send code" button and its countdown. */
+export function CodeField({
+  code,
   label,
   placeholder,
   requiredMessage,
   getCodeLabel,
   onSend,
-  name = "sms_code",
+  name = "code",
 }: {
-  sms: ReturnType<typeof useSmsCode>;
-  /** 可见标签;aria-label 始终使用 placeholder。 */
+  code: VerificationCodeSender;
+  /** Visible label; the aria-label is always the placeholder. */
   label?: string;
   placeholder: string;
   requiredMessage: string;
@@ -30,8 +31,8 @@ export function SmsCodeField({
         >
           <Input placeholder={placeholder} maxLength={6} autoComplete="one-time-code" aria-label={placeholder} />
         </Form.Item>
-        <Button disabled={sms.countdown > 0} loading={sms.sending} onClick={onSend}>
-          {sms.countdown > 0 ? `${sms.countdown}s` : getCodeLabel}
+        <Button disabled={code.countdown > 0} loading={code.sending} onClick={onSend}>
+          {code.countdown > 0 ? `${code.countdown}s` : getCodeLabel}
         </Button>
       </Space.Compact>
     </Form.Item>

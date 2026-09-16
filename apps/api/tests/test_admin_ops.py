@@ -12,6 +12,7 @@ from app.core.audit import AuditLog
 from app.core.errors import AppError, ErrorCode
 from app.core.outbox import OutboxTask
 from app.core.timeutil import now_utc
+from app.modules.account.models import User
 from app.modules.adminapi import finance_service
 from app.modules.adminapi.auth_service import create_admin
 from app.modules.adminapi.models import AdminAdjustment, AdminUser
@@ -21,6 +22,7 @@ from app.modules.notify.models import Notification
 from app.modules.orchestrator.reconciler import reconcile_once
 from tests.helpers import (
     admin_headers,
+    as_handle,
     create_disk,
     create_user_with_key,
     drain,
@@ -427,7 +429,9 @@ class TestTenantAggregations:
         ah = await admin_headers(sm, client, role="ops")
         rows = (await client.get("/api/admin/v1/tenants", headers=ah)).json()["items"]
         by_id = {t["id"]: t for t in rows}
-        assert by_id[id1]["phone_masked"] == "136****0061"
+        assert (
+            by_id[id1]["email_masked"] == "u***@test.local" and by_id[id1]["phone_masked"] is None
+        )
         assert by_id[id1]["instances"] == 1 and by_id[id1]["balance"] == "100.00"
         assert by_id[id1]["total_consumed"] == "0.00"
         assert by_id[id2]["instances"] == 0 and by_id[id2]["balance"] == "17.00"
@@ -730,23 +734,38 @@ class TestFreezeStopsInstances:
 class TestAdminSearch:
     """按手机号找人、按订单号找单、按节点找实例。"""
 
-    async def test_tenant_lookup_by_phone(self, client, sm, fake):
+    async def test_tenant_lookup_by_email_and_phone(self, client, sm, fake):
         h = await admin_headers(sm, client)
-        await register(client, "13611110001")
-        await register(client, "13622220002")
+        a = (await register(client, "13611110001"))["user"]["id"]
+        b = (await register(client, "13622220002"))["user"]["id"]
+        async with sm() as session:
+            await session.execute(update(User).where(User.id == b).values(phone="+8613622220002"))
+            await session.commit()
 
         exact = (
-            await client.get("/api/admin/v1/tenants", params={"q": "13611110001"}, headers=h)
+            await client.get(
+                "/api/admin/v1/tenants", params={"q": as_handle("13611110001")}, headers=h
+            )
         ).json()["items"]
-        assert [t["phone_masked"] for t in exact] == ["136****0001"]
-        resp = await client.get("/api/admin/v1/tenants", params={"q": "0002"}, headers=h)
-        suffix = resp.json()["items"]
-        assert [t["phone_masked"] for t in suffix] == ["136****0002"]
+        assert [t["id"] for t in exact] == [a]
+        assert exact[0]["email_masked"] == "u***@test.local"
+        prefix = (
+            await client.get("/api/admin/v1/tenants", params={"q": "u1362222"}, headers=h)
+        ).json()["items"]
+        assert [t["id"] for t in prefix] == [b]
+        by_phone = (
+            await client.get("/api/admin/v1/tenants", params={"q": "+8613622220002"}, headers=h)
+        ).json()["items"]
+        assert [t["id"] for t in by_phone] == [b] and by_phone[0]["phone_masked"] == "+86****0002"
+        suffix = (
+            await client.get("/api/admin/v1/tenants", params={"q": "0002"}, headers=h)
+        ).json()["items"]
+        assert [t["id"] for t in suffix] == [b]
 
     async def test_tenant_search_escapes_like_metachars(self, client, sm, fake):
-        """q 的 LIKE 元字符按字面匹配,支持手机号后缀检索。"""
+        """q 的 LIKE 元字符按字面匹配,支持邮箱前缀检索。"""
         h = await admin_headers(sm, client)
-        await register(client, "13611110001")
+        a = (await register(client, "13611110001"))["user"]["id"]
 
         pct = (await client.get("/api/admin/v1/tenants", params={"q": "%"}, headers=h)).json()
         assert pct["items"] == []
@@ -754,9 +773,8 @@ class TestAdminSearch:
             await client.get("/api/admin/v1/tenants", params={"q": "_"}, headers=h)
         ).json()
         assert underscore["items"] == []
-        resp = await client.get("/api/admin/v1/tenants", params={"q": "0001"}, headers=h)
-        suffix = resp.json()["items"]
-        assert [t["phone_masked"] for t in suffix] == ["136****0001"]
+        resp = await client.get("/api/admin/v1/tenants", params={"q": "u1361111"}, headers=h)
+        assert [t["id"] for t in resp.json()["items"]] == [a]
 
     async def test_tenant_order_asc_desc_with_cursor(self, client, sm, fake):
         """注册先后(id)正/倒序:游标语义随方向翻转,翻页不重不漏。"""
@@ -869,6 +887,9 @@ class TestTenantLookupById:
         h = await admin_headers(sm, client)
         data = await register(client, "13633330003")
         uid = data["user"]["id"]
+        async with sm() as session:
+            await session.execute(update(User).where(User.id == uid).values(phone="+8613633330003"))
+            await session.commit()
 
         resp = await client.get("/api/admin/v1/tenants", params={"q": str(uid)}, headers=h)
         rows = resp.json()["items"]
@@ -891,7 +912,7 @@ class TestAdjustContext:
         assert resp.status_code == 200, resp.text
         ctx = resp.json()
         assert ctx["user_id"] == user_id
-        assert "****" in ctx["phone_masked"]
+        assert ctx["email_masked"] == "u***@test.local"
         assert ctx["balance"] == "100.00"
         assert ctx["running_instances"] == 1
         assert len(ctx["recent_ledger"]) >= 1
@@ -1011,6 +1032,9 @@ class TestTenantRealnameExposure:
 
         data = await register(client, "13655550001")
         uid = data["user"]["id"]
+        async with sm() as session:
+            await session.execute(update(User).where(User.id == uid).values(phone="+8613655550001"))
+            await session.commit()
         set_realname_provider(_Pass())
         try:
             await set_platform_setting(sm, "real_name_enabled", "true")
@@ -1030,8 +1054,8 @@ class TestTenantRealnameExposure:
             headers = await admin_headers(sm, client, role=role, username=f"rn-{role}")
             rows = (await client.get("/api/admin/v1/tenants", headers=headers)).json()["items"]
             me = next(t for t in rows if t["id"] == uid)
-            assert me["verification_status"] == "verified"
-            assert me["id_name"] == "张*", role
+            assert me["kyc_status"] == "verified"
+            assert me["kyc_name"] == "张*", role
         async with sm() as session:
             hits = (
                 (
@@ -1052,7 +1076,7 @@ class TestTenantRealnameExposure:
         assert resp.status_code == 400
         assert resp.json()["message_key"] == "common.validation"
         rows = (await client.get("/api/admin/v1/tenants", headers=ah)).json()["items"]
-        assert next(t for t in rows if t["id"] == uid)["id_name"] == "张*"
+        assert next(t for t in rows if t["id"] == uid)["kyc_name"] == "张*"
 
     async def test_readonly_cannot_reveal(self, client, sm, fake):
         """readonly 带 reason 也不可 reveal(403)。"""
@@ -1072,8 +1096,8 @@ class TestTenantRealnameExposure:
         )
         assert resp.status_code == 200, resp.text
         me = next(t for t in resp.json()["items"] if t["id"] == uid)
-        assert me["verification_status"] == "verified"
-        assert me["id_name"] == "张三"
+        assert me["kyc_status"] == "verified"
+        assert me["kyc_name"] == "张三"
         async with sm() as session:
             hits = (
                 (
@@ -1281,13 +1305,17 @@ class TestRealNameIdentityCap:
         monkeypatch.setattr(get_settings(), "real_name_max_accounts_per_identity", 1)
         a = (await register(client, "13655550101"))["user"]["id"]
         b = (await register(client, "13655550102"))["user"]["id"]
+        async with sm() as session:
+            await session.execute(update(User).where(User.id == a).values(phone="+8613655550101"))
+            await session.execute(update(User).where(User.id == b).values(phone="+8613655550102"))
+            await session.commit()
         set_realname_provider(_Pass())
         try:
             await set_platform_setting(sm, "real_name_enabled", "true")
             async with sm() as session:
                 ua = await account_service.get_user(session, a)
                 await account_service.submit_real_name(session, ua, "张三", "110101199001011234")
-                assert ua.id_number_hmac and ua.id_number == "1101************34"
+                assert ua.kyc_identity_hmac and ua.kyc_identity_masked == "1101************34"
             async with sm() as session:
                 ub = await account_service.get_user(session, b)
                 with pytest.raises(AppError) as exc:
@@ -1296,8 +1324,6 @@ class TestRealNameIdentityCap:
                     )
                 assert exc.value.message_key == "account.realNameIdentityLimit"
             async with sm() as session:
-                assert (
-                    await account_service.get_user(session, b)
-                ).verification_status != "verified"
+                assert (await account_service.get_user(session, b)).kyc_status != "verified"
         finally:
             set_realname_provider(None)

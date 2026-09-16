@@ -12,6 +12,7 @@ from app.modules.account.models import UsedRefreshToken
 from tests.helpers import (
     REFRESH_COOKIE,
     admin_headers,
+    as_handle,
     current_refresh_token,
     issue_code,
     refresh_via_cookie,
@@ -116,7 +117,7 @@ class TestRefreshCookie:
         await register(client, "13800000105")
         await issue_code(sm, "13800000105", "login")
         resp = await client.post(
-            "/api/v1/auth/login", json={"phone": "13800000105", "sms_code": "123456"}
+            "/api/v1/auth/login", json={"handle": as_handle("13800000105"), "code": "123456"}
         )
         assert resp.status_code == 200, resp.text
         sc = resp.headers["set-cookie"]
@@ -216,7 +217,7 @@ class TestLogout:
         assert (await refresh_via_cookie(client, rotated_cookie)).status_code == 401
         await issue_code(sm, "13800000103", "login")
         relogin = await client.post(
-            "/api/v1/auth/login", json={"phone": "13800000103", "sms_code": "123456"}
+            "/api/v1/auth/login", json={"handle": as_handle("13800000103"), "code": "123456"}
         )
         assert relogin.status_code == 200, relogin.text
 

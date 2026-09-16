@@ -5,8 +5,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface LoginRequest {
-  code?: string | null;
+export interface HandleConfirmRequest {
+  /**
+     * @minLength 4
+     * @maxLength 8
+     */
+  code: string;
   handle: string;
-  password?: string | null;
 }

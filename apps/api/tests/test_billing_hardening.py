@@ -11,6 +11,7 @@ from sqlalchemy import func, select, update
 
 from app.core.errors import AppError, ErrorCode
 from app.core.timeutil import billing_day_floor, hour_floor, now_utc
+from app.modules.account.models import User
 from app.modules.billing import patrol, settlement, wallet
 from app.modules.billing.models import (
     BalanceLedger,
@@ -777,6 +778,11 @@ class TestSmsOutbox:
                 sent.append({"phone": phone, "params": params})
 
         data = await register(client, "13900000077")
+        async with sm() as session:
+            await session.execute(
+                update(User).where(User.id == data["user"]["id"]).values(phone="+8613900000077")
+            )
+            await session.commit()
         set_sms_channel(SpySms())
         try:
             async with sm() as session:

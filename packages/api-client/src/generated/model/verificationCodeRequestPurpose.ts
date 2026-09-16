@@ -5,10 +5,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type SmsCodeRequestPurpose = typeof SmsCodeRequestPurpose[keyof typeof SmsCodeRequestPurpose];
+export type VerificationCodeRequestPurpose = typeof VerificationCodeRequestPurpose[keyof typeof VerificationCodeRequestPurpose];
 
 
-export const SmsCodeRequestPurpose = {
+export const VerificationCodeRequestPurpose = {
   register: 'register',
   login: 'login',
   reset_password: 'reset_password',

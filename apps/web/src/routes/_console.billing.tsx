@@ -165,7 +165,7 @@ function BillingPage() {
       ),
     });
   }
-  if (policies?.real_name_required_for_recharge && me != null && me.verification_status !== "verified") {
+  if (policies?.real_name_required_for_recharge && me != null && me.kyc_status !== "verified") {
     attention.push({
       key: "realName",
       severity: "warning",

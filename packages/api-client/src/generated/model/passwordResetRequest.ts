@@ -6,22 +6,18 @@
  */
 
 /**
- * 设置/修改/找回密码:凭手机号 + 验证码,不需要旧密码。
+ * Set / change / recover the password with a verification code; no old password needed.
  */
 export interface PasswordResetRequest {
+  /**
+     * @minLength 4
+     * @maxLength 8
+     */
+  code: string;
+  handle: string;
   /**
      * @minLength 12
      * @maxLength 128
      */
   new_password: string;
-  /**
-     * 中国大陆手机号
-     * @pattern ^1[3-9]\d{9}$
-     */
-  phone: string;
-  /**
-     * @minLength 4
-     * @maxLength 8
-     */
-  sms_code: string;
 }

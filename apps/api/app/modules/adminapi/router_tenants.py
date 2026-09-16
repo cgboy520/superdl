@@ -10,7 +10,7 @@ from app.core.audit import mark_audited_read, set_audit_target
 from app.core.csvexport import CSV_RESPONSES, csv_response
 from app.core.db import DbSession
 from app.core.errors import AppError
-from app.core.logging import mask_phone_value
+from app.core.handles import mask_handle
 from app.core.metrics import PII_REVEAL_ROWS_TOTAL
 from app.core.money import as_amount, money_str
 from app.core.pagination import Page
@@ -65,8 +65,9 @@ async def admin_list_tenants(
     reveal: bool = False,
     reason: str | None = Query(default=None, max_length=REASON_MAX_LENGTH),
 ) -> Page[TenantOut]:
-    """租户列表(游标分页)。q = 手机号(完整号码精确,短串按后缀);纯数字额外按租户 id 精确命中,
-    插在首页最前。手机号只回掩码;按号码/id 检索显式落一条审计。
+    """Tenants (cursor paged). q = email (exact when it contains `@`, prefix otherwise), E.164
+    phone (exact with `+`, suffix for bare digits); bare digits also hit the tenant id exactly and
+    are pinned first on the first page. Handles are masked; every search writes an audit row.
     order = id 正/倒序;聚合列按页拼装,不支持排序。
     实名信息默认脱敏;reveal=true 且 reason 必填回明文(readonly 不可),每次按条数+事由落审计。
     """
@@ -74,7 +75,7 @@ async def admin_list_tenants(
         auth_service.ensure_reveal_allowed(role=admin.role, reason=reason) if reveal else ""
     )
     if q:
-        masked = mask_phone_value(q)
+        masked = mask_handle(q)
         mark_audited_read(request, f"tenant-search:{masked}", detail={"query_len": len(q)})
     page = await account_service.admin_list_users(
         session, q=q, status=status, cursor=cursor, limit=limit, order=order
@@ -102,21 +103,22 @@ async def admin_list_tenants(
     out = []
     for u in users:
         st = stats.get(u.id, {"instances": 0, "disk_gb": 0})
-        verification_status, id_name = account_service.realname_view(u, masked=mask_realname)
-        if not mask_realname and u.id_name:
+        kyc_status, kyc_name = account_service.realname_view(u, masked=mask_realname)
+        if not mask_realname and u.kyc_name:
             realname_hits += 1
         out.append(
             TenantOut(
                 id=u.id,
-                phone_masked=mask_phone_value(u.phone),
+                email_masked=mask_handle(u.email) if u.email else None,
+                phone_masked=mask_handle(u.phone) if u.phone else None,
                 status=u.status,
                 balance=money_str(as_amount(balances.get(u.id, 0))),
                 total_consumed=money_str(as_amount(consumed.get(u.id, 0))),
                 instances=st["instances"],
                 disk_gb=st["disk_gb"],
                 created_at=u.created_at.isoformat(),
-                verification_status=verification_status,
-                id_name=id_name,
+                kyc_status=kyc_status,
+                kyc_name=kyc_name,
             )
         )
     if realname_hits:

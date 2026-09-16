@@ -392,7 +392,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
     "oncall_phone": SettingSpec(
         "observability",
         "str",
-        pattern=r"|1[3-9]\d{9}",
+        pattern=r"|\+[1-9]\d{6,14}",
         hint="值班手机号:critical 告警短信直发;留空则不启用",
     ),
     "disk_price_gb_month": _num("decimal", "0.0010", "1.0000", "元/GB·月,新盘快照价"),

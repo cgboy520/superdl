@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import { Grid, Layout, theme } from "antd";
 
 import { CommandPalette } from "../components/CommandPalette";
+import { EmailClaimBanner } from "../components/layout/EmailClaimBanner";
 import { AppTopBar } from "../components/layout/AppTopBar";
 import { ConsoleNavMenu } from "../components/layout/ConsoleNavMenu";
 import { TopBarUser } from "../components/layout/TopBarUser";
@@ -48,6 +49,7 @@ function ConsoleLayout() {
             tabIndex={-1}
             style={{ padding: screens.md ? layout.contentPadding : space.lg, outline: "none" }}
           >
+            <EmailClaimBanner />
             <Outlet />
           </Layout.Content>
         </Layout>

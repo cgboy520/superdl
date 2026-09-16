@@ -6,14 +6,10 @@
  */
 
 /**
- * 申请注销:须键入与账号一致的完整手机号(二次确认)+ 原因。
+ * Request deletion: retype one of the account's handles (email or phone) plus a reason.
  */
 export interface DeletionRequestCreate {
-  /**
-     * 中国大陆手机号
-     * @pattern ^1[3-9]\d{9}$
-     */
-  phone: string;
+  handle: string;
   /**
      * @minLength 2
      * @maxLength 256

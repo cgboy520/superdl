@@ -1,3 +1,6 @@
+"""Email-primary auth: register / login (code or password) / reset, verification-code lifecycle
+(wrong, expired, burned, backoff, quotas), handle binding, compliance-profile phone rules."""
+
 # pyright: reportPrivateUsage=false
 from datetime import timedelta
 
@@ -7,116 +10,173 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.audit import AuditLog
-from app.core.errors import AppError
+from app.core.config import get_settings
+from app.core.errors import AppError, ErrorCode
+from app.core.handles import Handle
 from app.core.security import create_token, decode_token
 from app.core.timeutil import now_utc
-from app.modules.account.models import SmsCode, User
-from tests.helpers import age_sms_codes, issue_code, refresh_via_cookie, register, send_code
+from app.modules.account import verification
+from app.modules.account.models import User, VerificationCode
+from tests.helpers import (
+    age_sms_codes,
+    as_handle,
+    issue_code,
+    refresh_via_cookie,
+    register,
+    send_code,
+)
 
-PHONE = "13800000001"
+EMAIL = as_handle("13800000001")
+PHONE = "+8613800000001"
+
+
+def _register_body(email: str, code: str = "123456", **extra: object) -> dict:
+    return {"email": email, "email_code": code, "accept_terms": True, **extra}
+
+
+async def _register_with_phone(client: AsyncClient, sm, email: str, phone: str) -> dict:
+    await issue_code(sm, email, "register")
+    await issue_code(sm, phone, "register")
+    resp = await client.post(
+        "/api/v1/auth/register", json=_register_body(email, phone=phone, phone_code="123456")
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()
 
 
 class TestRegister:
     async def test_register_then_me(self, client: AsyncClient):
         data = await register(client)
-        assert data["user"]["phone"] == PHONE
+        user = data["user"]
+        assert user["email"] == EMAIL and user["email_verified_at"] is not None
+        assert user["phone"] is None and user["kyc_status"] == "unverified"
         resp = await client.get(
             "/api/v1/me", headers={"Authorization": f"Bearer {data['access_token']}"}
         )
         assert resp.status_code == 200
-        assert resp.json()["phone"] == PHONE
+        assert resp.json()["email"] == EMAIL
+
+    async def test_email_is_normalized(self, client: AsyncClient):
+        """Mixed-case / padded input registers and logs in as the lower-cased address."""
+        await send_code(client, "MiXed@Test.LOCAL", "register")
+        resp = await client.post(
+            "/api/v1/auth/register", json=_register_body("  MiXed@Test.LOCAL ")
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["user"]["email"] == "mixed@test.local"
 
     async def test_password_byte_boundary(self, client: AsyncClient):
-        """口令按字节拦 72 上限:24 个汉字可注册,25 个汉字 422。"""
-        await send_code(client, "13800000071", "register")
-        ok = await client.post(
-            "/api/v1/auth/register",
-            json={
-                "phone": "13800000071",
-                "sms_code": "123456",
-                "password": "汉" * 24,
-                "accept_terms": True,
-            },
-        )
+        """Passwords are capped at 72 bytes: 24 CJK characters register, 25 → 422."""
+        a, b = as_handle("13800000071"), as_handle("13800000072")
+        await send_code(client, a, "register")
+        ok = await client.post("/api/v1/auth/register", json=_register_body(a, password="汉" * 24))
         assert ok.status_code == 201, ok.text
-
-        await send_code(client, "13800000072", "register")
+        await send_code(client, b, "register")
         too_long = await client.post(
-            "/api/v1/auth/register",
-            json={
-                "phone": "13800000072",
-                "sms_code": "123456",
-                "password": "汉" * 25,
-                "accept_terms": True,
-            },
+            "/api/v1/auth/register", json=_register_body(b, password="汉" * 25)
         )
         assert too_long.status_code == 422
         assert too_long.json()["code"] == "VALIDATION_ERROR"
 
     async def test_login_accepts_every_registrable_password_length(self, client: AsyncClient):
-        """注册允许 ≤128 字符 / ≤72 字节的口令,登录契约同上限:72 字符口令能登录。"""
         password = "p" * 72
-        await register(client, "13800000073", password=password)
-        resp = await client.post(
-            "/api/v1/auth/login", json={"phone": "13800000073", "password": password}
-        )
+        email = as_handle("13800000073")
+        await register(client, email, password=password)
+        resp = await client.post("/api/v1/auth/login", json={"handle": email, "password": password})
         assert resp.status_code == 200, resp.text
         resp = await client.post(
-            "/api/v1/auth/login", json={"phone": "13800000073", "password": "p" * 129}
+            "/api/v1/auth/login", json={"handle": email, "password": "p" * 129}
         )
         assert resp.status_code == 422
 
-    async def test_duplicate_phone(self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]):
+    async def test_duplicate_email(self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]):
         await register(client)
         await age_sms_codes(sm)
         await send_code(client)
-        resp = await client.post(
-            "/api/v1/auth/register",
-            json={"phone": PHONE, "sms_code": "123456", "accept_terms": True},
-        )
+        resp = await client.post("/api/v1/auth/register", json=_register_body(EMAIL))
         assert resp.status_code == 400
-        assert resp.json()["code"] == "PHONE_TAKEN"
+        assert resp.json()["code"] == "HANDLE_TAKEN"
+        assert resp.json()["message_key"] == "account.emailTaken"
 
     async def test_wrong_code(self, client: AsyncClient):
         await send_code(client)
-        resp = await client.post(
-            "/api/v1/auth/register",
-            json={"phone": PHONE, "sms_code": "999999", "accept_terms": True},
-        )
+        resp = await client.post("/api/v1/auth/register", json=_register_body(EMAIL, "999999"))
         assert resp.status_code == 400
-        assert resp.json()["code"] == "SMS_CODE_INVALID"
+        assert resp.json()["code"] == "CODE_INVALID"
 
     async def test_expired_code(self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]):
         await send_code(client)
         async with sm() as session:
             await session.execute(
-                update(SmsCode).values(expires_at=now_utc() - timedelta(minutes=1))
+                update(VerificationCode).values(expires_at=now_utc() - timedelta(minutes=1))
             )
             await session.commit()
+        resp = await client.post("/api/v1/auth/register", json=_register_body(EMAIL))
+        assert resp.json()["code"] == "CODE_INVALID"
+
+    async def test_register_with_optional_phone_binds_it(self, client: AsyncClient, sm):
+        """Generic profile: a phone may be bound at sign-up when its own SMS code is supplied."""
+        data = await _register_with_phone(client, sm, EMAIL, PHONE)
+        assert data["user"]["phone"] == PHONE and data["user"]["email"] == EMAIL
+
+    async def test_phone_without_its_code_is_rejected(self, client: AsyncClient, sm):
+        await issue_code(sm, EMAIL, "register")
+        resp = await client.post("/api/v1/auth/register", json=_register_body(EMAIL, phone=PHONE))
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "CODE_INVALID"
+
+    async def test_duplicate_phone_rejected(self, client: AsyncClient, sm):
+        await _register_with_phone(client, sm, EMAIL, PHONE)
+        other = as_handle("13800000002")
+        await issue_code(sm, other, "register")
+        await issue_code(sm, PHONE, "register")
+        resp = await client.post(
+            "/api/v1/auth/register", json=_register_body(other, phone=PHONE, phone_code="123456")
+        )
+        assert resp.status_code == 400
+        assert resp.json()["message_key"] == "account.phoneTaken"
+
+
+class TestComplianceProfilePhoneRules:
+    async def test_cn_profile_requires_a_plus86_phone(self, client: AsyncClient, sm, monkeypatch):
+        monkeypatch.setattr(get_settings(), "compliance_profile", "cn")
+        await issue_code(sm, EMAIL, "register")
+        resp = await client.post("/api/v1/auth/register", json=_register_body(EMAIL))
+        assert resp.status_code == 400
+        assert resp.json()["message_key"] == "account.phoneRequired"
+        await issue_code(sm, "+14155550123", "register")
         resp = await client.post(
             "/api/v1/auth/register",
-            json={"phone": PHONE, "sms_code": "123456", "accept_terms": True},
+            json=_register_body(EMAIL, phone="+14155550123", phone_code="123456"),
         )
-        assert resp.json()["code"] == "SMS_CODE_INVALID"
+        assert resp.status_code == 400
+        assert resp.json()["message_key"] == "account.phoneRegionNotAllowed"
+        assert resp.json()["params"] == {"codes": "+86"}
+        data = await _register_with_phone(client, sm, EMAIL, PHONE)
+        assert data["user"]["phone"] == PHONE
+
+    async def test_generic_profile_accepts_any_region(self, client: AsyncClient, sm):
+        data = await _register_with_phone(client, sm, EMAIL, "+14155550123")
+        assert data["user"]["phone"] == "+14155550123"
 
 
 class TestLogin:
     async def test_login_with_password(self, client: AsyncClient):
         await register(client, password="secret123456")
         resp = await client.post(
-            "/api/v1/auth/login", json={"phone": PHONE, "password": "secret123456"}
+            "/api/v1/auth/login", json={"handle": EMAIL, "password": "secret123456"}
         )
         assert resp.status_code == 200
         assert resp.json()["access_token"]
 
     async def test_login_failure_is_indistinguishable(self, client: AsyncClient):
-        """未注册的号与已注册但密码错,响应逐字节相同(剔除 request_id)。"""
+        """Unknown account and wrong password produce byte-identical bodies (minus request_id)."""
         await register(client, password="secret123456")
         registered = await client.post(
-            "/api/v1/auth/login", json={"phone": PHONE, "password": "wrong-pass"}
+            "/api/v1/auth/login", json={"handle": EMAIL, "password": "wrong-pass"}
         )
         unknown = await client.post(
-            "/api/v1/auth/login", json={"phone": "13800009999", "password": "wrong-pass"}
+            "/api/v1/auth/login", json={"handle": "nobody@test.local", "password": "wrong-pass"}
         )
         assert registered.status_code == unknown.status_code
         r, u = registered.json(), unknown.json()
@@ -124,22 +184,36 @@ class TestLogin:
         u.pop("request_id")
         assert r == u
         bad_code_registered = await client.post(
-            "/api/v1/auth/login", json={"phone": PHONE, "sms_code": "000000"}
+            "/api/v1/auth/login", json={"handle": EMAIL, "code": "000000"}
         )
         bad_code_unknown = await client.post(
-            "/api/v1/auth/login", json={"phone": "13800009998", "sms_code": "000000"}
+            "/api/v1/auth/login", json={"handle": "nobody2@test.local", "code": "000000"}
         )
         br, bu = bad_code_registered.json(), bad_code_unknown.json()
         br.pop("request_id")
         bu.pop("request_id")
         assert br == bu
 
-    async def test_login_with_sms(self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]):
+    async def test_login_with_code(self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]):
         await register(client)
         await age_sms_codes(sm)
-        await send_code(client, PHONE, "login")
-        resp = await client.post("/api/v1/auth/login", json={"phone": PHONE, "sms_code": "123456"})
+        await send_code(client, EMAIL, "login")
+        resp = await client.post("/api/v1/auth/login", json={"handle": EMAIL, "code": "123456"})
         assert resp.status_code == 200
+
+    async def test_login_by_bound_phone_handle(self, client: AsyncClient, sm):
+        """A bound phone is a full login handle (existing phone-first accounts keep working)."""
+        await _register_with_phone(client, sm, EMAIL, PHONE)
+        await issue_code(sm, PHONE, "login")
+        resp = await client.post("/api/v1/auth/login", json={"handle": PHONE, "code": "123456"})
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["user"]["email"] == EMAIL
+
+    async def test_bare_digits_are_not_a_handle(self, client: AsyncClient):
+        resp = await client.post(
+            "/api/v1/auth/login", json={"handle": "13800000001", "password": "x"}
+        )
+        assert resp.status_code == 422
 
     async def test_frozen_user(self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]):
         await register(client, password="secret123456")
@@ -147,13 +221,12 @@ class TestLogin:
             await session.execute(update(User).values(status="frozen"))
             await session.commit()
         resp = await client.post(
-            "/api/v1/auth/login", json={"phone": PHONE, "password": "secret123456"}
+            "/api/v1/auth/login", json={"handle": EMAIL, "password": "secret123456"}
         )
         assert resp.status_code == 403
         assert resp.json()["code"] == "USER_FROZEN"
 
     async def test_access_token_cannot_refresh(self, client: AsyncClient):
-        """access token 充当 refresh(cookie 通道):类型不符,401。"""
         data = await register(client)
         resp = await refresh_via_cookie(client, data["access_token"])
         assert resp.status_code == 401
@@ -161,28 +234,100 @@ class TestLogin:
     async def test_failure_counter_reset_then_lock_blocks_even_correct_password(
         self, client: AsyncClient
     ):
-        """失败才计数、成功一次清零;桶满后正确密码也 429。"""
-        phone = "13800000082"
-        await register(client, phone, password="secret123456")
+        """Only failures count and one success clears; a full bucket rejects the right password."""
+        email = as_handle("13800000082")
+        await register(client, email, password="secret123456")
         for _ in range(4):
             resp = await client.post(
-                "/api/v1/auth/login", json={"phone": phone, "password": "wrong-pass"}
+                "/api/v1/auth/login", json={"handle": email, "password": "wrong-pass"}
             )
             assert resp.json()["code"] == "LOGIN_FAILED"
         ok = await client.post(
-            "/api/v1/auth/login", json={"phone": phone, "password": "secret123456"}
+            "/api/v1/auth/login", json={"handle": email, "password": "secret123456"}
         )
         assert ok.status_code == 200, ok.text
         for _ in range(5):
             resp = await client.post(
-                "/api/v1/auth/login", json={"phone": phone, "password": "wrong-pass"}
+                "/api/v1/auth/login", json={"handle": email, "password": "wrong-pass"}
             )
             assert resp.json()["code"] == "LOGIN_FAILED"
         resp = await client.post(
-            "/api/v1/auth/login", json={"phone": phone, "password": "secret123456"}
+            "/api/v1/auth/login", json={"handle": email, "password": "secret123456"}
         )
         assert resp.status_code == 429
         assert resp.json()["code"] == "RATE_LIMITED"
+
+
+class TestHandles:
+    async def _headers(self, client: AsyncClient) -> dict[str, str]:
+        data = await register(client)
+        return {"Authorization": f"Bearer {data['access_token']}"}
+
+    async def test_bind_phone_then_remove(self, client: AsyncClient, sm):
+        headers = await self._headers(client)
+        resp = await client.post("/api/v1/me/handles/code", json={"handle": PHONE}, headers=headers)
+        assert resp.status_code == 204, resp.text
+        resp = await client.post(
+            "/api/v1/me/handles/confirm", json={"handle": PHONE, "code": "123456"}, headers=headers
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["phone"] == PHONE
+        await issue_code(sm, PHONE, "login")
+        login = await client.post("/api/v1/auth/login", json={"handle": PHONE, "code": "123456"})
+        assert login.status_code == 200
+        removed = await client.delete("/api/v1/me/handles/phone", headers=headers)
+        assert removed.status_code == 200 and removed.json()["phone"] is None
+
+    async def test_change_email(self, client: AsyncClient, sm):
+        headers = await self._headers(client)
+        new = "new-address@test.local"
+        await issue_code(sm, new, "bind_handle")
+        resp = await client.post(
+            "/api/v1/me/handles/confirm", json={"handle": new, "code": "123456"}, headers=headers
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["email"] == new and resp.json()["email_verified_at"] is not None
+        async with sm() as session:
+            assert (await session.execute(select(User).where(User.email == EMAIL))).first() is None
+
+    async def test_handle_owned_by_another_account_is_refused(self, client: AsyncClient, sm):
+        other = as_handle("13800000002")
+        await register(client, other)
+        headers = await self._headers(client)
+        await issue_code(sm, other, "bind_handle")
+        resp = await client.post(
+            "/api/v1/me/handles/confirm", json={"handle": other, "code": "123456"}, headers=headers
+        )
+        assert resp.status_code == 409
+        assert resp.json()["message_key"] == "account.handleTaken"
+
+    async def test_remove_phone_refused_under_cn_or_without_email(
+        self, client: AsyncClient, sm, monkeypatch
+    ):
+        data = await _register_with_phone(client, sm, EMAIL, PHONE)
+        headers = {"Authorization": f"Bearer {data['access_token']}"}
+        monkeypatch.setattr(get_settings(), "compliance_profile", "cn")
+        resp = await client.delete("/api/v1/me/handles/phone", headers=headers)
+        assert resp.status_code == 409
+        assert resp.json()["message_key"] == "account.phoneRequiredByProfile"
+        monkeypatch.setattr(get_settings(), "compliance_profile", None)
+        async with sm() as session:
+            await session.execute(update(User).values(email=None, email_verified_at=None))
+            await session.commit()
+        resp = await client.delete("/api/v1/me/handles/phone", headers=headers)
+        assert resp.status_code == 409
+        assert resp.json()["message_key"] == "account.emailRequiredFirst"
+
+    async def test_bind_code_respects_profile_dial_codes(
+        self, client: AsyncClient, sm, monkeypatch
+    ):
+        headers = await self._headers(client)
+        monkeypatch.setattr(get_settings(), "compliance_profile", "cn")
+        resp = await client.post(
+            "/api/v1/me/handles/code", json={"handle": "+14155550123"}, headers=headers
+        )
+        assert resp.status_code == 400
+        assert resp.json()["message_key"] == "account.phoneRegionNotAllowed"
 
 
 class TestAudienceIsolation:
@@ -201,7 +346,7 @@ class TestAudit:
         async with sm() as session:
             rows = (await session.execute(select(AuditLog))).scalars().all()
         actions = {r.action for r in rows}
-        assert "POST /api/v1/auth/sms-code" in actions
+        assert "POST /api/v1/auth/verification-code" in actions
         assert "POST /api/v1/auth/register" in actions
         reg = next(r for r in rows if r.action == "POST /api/v1/auth/register")
         assert reg.result == 201
@@ -210,18 +355,17 @@ class TestAudit:
 
 class TestPasswordReset:
     async def test_set_then_login_with_new_password(self, client: AsyncClient, sm):
-        """无密码账号也能凭验证码设密码,旧会话被撤销,新 token 立即可用。"""
-        pair = await register(client, "13800000090")
+        """A password-less account sets one by code; old sessions die, the new pair works."""
+        email = as_handle("13800000090")
+        pair = await register(client, email)
         old_access = pair["access_token"]
-
-        await issue_code(sm, "13800000090", "reset_password")
+        await issue_code(sm, email, "reset_password")
         resp = await client.post(
             "/api/v1/auth/password/reset",
-            json={"phone": "13800000090", "sms_code": "123456", "new_password": "newpass123456"},
+            json={"handle": email, "code": "123456", "new_password": "newpass123456"},
         )
         assert resp.status_code == 200, resp.text
         new_pair = resp.json()
-
         assert (
             await client.get("/api/v1/me", headers={"Authorization": f"Bearer {old_access}"})
         ).status_code == 401
@@ -231,30 +375,30 @@ class TestPasswordReset:
             )
         ).status_code == 200
         resp = await client.post(
-            "/api/v1/auth/login", json={"phone": "13800000090", "password": "newpass123456"}
+            "/api/v1/auth/login", json={"handle": email, "password": "newpass123456"}
         )
         assert resp.status_code == 200, resp.text
 
-    async def test_unknown_phone_needs_code_first(self, client: AsyncClient):
-        """未注册手机号:先过验证码。"""
+    async def test_unknown_handle_needs_code_first(self, client: AsyncClient):
         resp = await client.post(
             "/api/v1/auth/password/reset",
-            json={"phone": "13800000092", "sms_code": "123456", "new_password": "newpass123456"},
+            json={"handle": "ghost@test.local", "code": "123456", "new_password": "newpass123456"},
         )
-        assert resp.json()["code"] == "SMS_CODE_INVALID"
+        assert resp.json()["code"] == "CODE_INVALID"
 
 
-class TestSmsQuotaAndBackoff:
+class TestCodeQuotaAndBackoff:
     async def test_unconsumed_sends_do_not_burn_victim_daily_quota(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """替受害者请求验证码耗不到其 10 次/日配额(日配额只按消费计)。"""
-        phone = "13800000096"
+        """Codes requested on someone's behalf do not eat their 10/day consume quota."""
+        email = as_handle("13800000096")
         async with sm() as session:
             for _ in range(10):
                 session.add(
-                    SmsCode(
-                        phone=phone,
+                    VerificationCode(
+                        channel="email",
+                        target=email,
                         code_hash="0" * 64,
                         purpose="register",
                         expires_at=now_utc() + timedelta(minutes=5),
@@ -263,45 +407,37 @@ class TestSmsQuotaAndBackoff:
                 )
             await session.commit()
         resp = await client.post(
-            "/api/v1/auth/sms-code",
-            json={"phone": phone, "purpose": "register"},
+            "/api/v1/auth/verification-code", json={"handle": email, "purpose": "register"}
         )
         assert resp.status_code == 204, resp.text
-        resp = await client.post(
-            "/api/v1/auth/register",
-            json={"phone": phone, "sms_code": "123456", "accept_terms": True},
-        )
+        resp = await client.post("/api/v1/auth/register", json=_register_body(email))
         assert resp.status_code == 201, resp.text
 
     async def test_send_backoff_escalates_on_unconsumed_codes(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """同号验证码连续未消费时,发送间隔从 60 秒递增至 120 秒。"""
-        phone = "13800000097"
-        await send_code(client, phone)
+        """Consecutive unconsumed codes double the interval: 60 s → 120 s."""
+        email = as_handle("13800000097")
+        await send_code(client, email)
         resp = await client.post(
-            "/api/v1/auth/sms-code",
-            json={"phone": phone, "purpose": "register"},
+            "/api/v1/auth/verification-code", json={"handle": email, "purpose": "register"}
         )
         assert resp.status_code == 429
-        assert resp.json()["code"] == "SMS_TOO_FREQUENT"
+        assert resp.json()["code"] == "CODE_TOO_FREQUENT"
         assert resp.json()["params"]["seconds"] <= 60
-
         async with sm() as session:
             await session.execute(
-                update(SmsCode)
-                .where(SmsCode.phone == phone)
+                update(VerificationCode)
+                .where(VerificationCode.target == email)
                 .values(created_at=now_utc() - timedelta(seconds=61))
             )
             await session.commit()
         resp = await client.post(
-            "/api/v1/auth/sms-code",
-            json={"phone": phone, "purpose": "register"},
+            "/api/v1/auth/verification-code", json={"handle": email, "purpose": "register"}
         )
         assert resp.status_code == 204, resp.text
         resp = await client.post(
-            "/api/v1/auth/sms-code",
-            json={"phone": phone, "purpose": "register"},
+            "/api/v1/auth/verification-code", json={"handle": email, "purpose": "register"}
         )
         assert resp.status_code == 429
         assert 60 < resp.json()["params"]["seconds"] <= 120
@@ -309,19 +445,19 @@ class TestSmsQuotaAndBackoff:
     async def test_consume_quota_counts_only_successful_reads(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """日配额计在消费侧:消费满 10 次才限;校验失败的尝试不占额度。"""
-        from app.core.crypto import hash_sms_code
-        from app.core.errors import ErrorCode
-        from app.modules.account import service as account_service
+        """The daily quota is charged on successful consumption only."""
+        from app.core.crypto import hash_verification_code
 
-        phone = "13800000098"
+        email = as_handle("13800000098")
+        handle = Handle("email", email)
         codes = [f"{200000 + i}" for i in range(11)]
         async with sm() as session:
             for code in codes:
                 session.add(
-                    SmsCode(
-                        phone=phone,
-                        code_hash=hash_sms_code(phone, "login", code),
+                    VerificationCode(
+                        channel="email",
+                        target=email,
+                        code_hash=hash_verification_code("email", email, "login", code),
                         purpose="login",
                         expires_at=now_utc() + timedelta(minutes=5),
                     )
@@ -329,27 +465,34 @@ class TestSmsQuotaAndBackoff:
             await session.commit()
         async with sm() as session:
             with pytest.raises(AppError):
-                await account_service._consume_sms_code(session, phone, "999999", "login")
+                await verification.consume_code(session, handle, "999999", "login")
         for code in reversed(codes[1:]):
             async with sm() as session:
-                await account_service._consume_sms_code(session, phone, code, "login")
+                await verification.consume_code(session, handle, code, "login")
                 await session.commit()
         async with sm() as session:
             with pytest.raises(AppError) as exc:
-                await account_service._consume_sms_code(session, phone, codes[0], "login")
+                await verification.consume_code(session, handle, codes[0], "login")
             assert exc.value.code == ErrorCode.RATE_LIMITED
+
+    async def test_channel_follows_the_handle(self, client: AsyncClient, sm):
+        """An email handle stores an email-channel row, a phone handle an sms-channel row."""
+        await send_code(client, EMAIL)
+        await send_code(client, PHONE)
+        async with sm() as session:
+            rows = (await session.execute(select(VerificationCode))).scalars().all()
+        assert {(r.channel, r.target) for r in rows} == {("email", EMAIL), ("sms", PHONE)}
 
 
 class TestLoginBurst:
     async def test_concurrent_burst_cannot_exceed_pair_bucket(self, client: AsyncClient):
-        """并发突发下 bcrypt 前先计数:到达口令校验的请求至多 5 个(IP+手机号桶),其余全部 429;
-        并发放大不了配额。挂了说明登录限流回到「只读预检」的 TOCTOU。"""
+        """Concurrency cannot amplify the IP+handle bucket: at most 5 reach bcrypt, the rest 429."""
         import asyncio
 
-        phone = "13800000083"
-        await register(client, phone, password="secret123456")
-        bodies = [{"phone": phone, "password": "wrong-pass"} for _ in range(11)]
-        bodies.append({"phone": phone, "password": "secret123456"})
+        email = as_handle("13800000083")
+        await register(client, email, password="secret123456")
+        bodies = [{"handle": email, "password": "wrong-pass"} for _ in range(11)]
+        bodies.append({"handle": email, "password": "secret123456"})
         responses = await asyncio.gather(
             *(client.post("/api/v1/auth/login", json=b) for b in bodies)
         )
@@ -359,84 +502,86 @@ class TestLoginBurst:
         assert all(r.status_code == 200 or r.json()["code"] == "LOGIN_FAILED" for r in verified)
 
     async def test_success_refunds_precount_but_keeps_failures(self, client: AsyncClient):
-        """成功登录退还本次预计数:账号日窗只累计失败次数。"""
         from app.core.ratelimit import read_hits
 
-        phone = "13800000084"
-        await register(client, phone, password="secret123456")
+        email = as_handle("13800000084")
+        await register(client, email, password="secret123456")
         for _ in range(2):
-            await client.post("/api/v1/auth/login", json={"phone": phone, "password": "bad-pass-1"})
+            await client.post(
+                "/api/v1/auth/login", json={"handle": email, "password": "bad-pass-1"}
+            )
         ok = await client.post(
-            "/api/v1/auth/login", json={"phone": phone, "password": "secret123456"}
+            "/api/v1/auth/login", json={"handle": email, "password": "secret123456"}
         )
         assert ok.status_code == 200, ok.text
-        assert await read_hits(f"user-login-acct-daily:{phone}", window_seconds=86400.0) == 2
+        assert await read_hits(f"user-login-acct-daily:{email}", window_seconds=86400.0) == 2
 
 
-class TestSmsBackoffHardening:
+class TestCodeBackoffHardening:
     async def test_burning_a_code_does_not_reset_backoff(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """连错 5 次烧掉验证码后立即重发仍 429:退避按「未成功消费」计,不按 used_at。"""
-        phone = "13800000085"
-        await send_code(client, phone)
+        """Five wrong attempts void the code; an immediate resend is still 429 (backoff counts
+        unconsumed codes, not used_at)."""
+        email = as_handle("13800000085")
+        await send_code(client, email)
         for _ in range(5):
-            resp = await client.post(
-                "/api/v1/auth/register",
-                json={"phone": phone, "sms_code": "000000", "accept_terms": True},
-            )
+            resp = await client.post("/api/v1/auth/register", json=_register_body(email, "000000"))
             assert resp.status_code == 400, resp.text
         async with sm() as session:
             row = (
-                await session.execute(select(SmsCode).where(SmsCode.phone == phone))
+                await session.execute(
+                    select(VerificationCode).where(VerificationCode.target == email)
+                )
             ).scalar_one()
             assert row.used_at is not None and row.consumed_at is None
         resp = await client.post(
-            "/api/v1/auth/sms-code", json={"phone": phone, "purpose": "register"}
+            "/api/v1/auth/verification-code", json={"handle": email, "purpose": "register"}
         )
         assert resp.status_code == 429
-        assert resp.json()["code"] == "SMS_TOO_FREQUENT"
+        assert resp.json()["code"] == "CODE_TOO_FREQUENT"
 
     async def test_base_interval_applies_after_consumed_code(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """刚成功消费一条码,60 秒内再发码仍 429(基础间隔无条件生效),过期后放行。"""
-        phone = "13800000086"
-        await register(client, phone)
-        resp = await client.post("/api/v1/auth/sms-code", json={"phone": phone, "purpose": "login"})
+        email = as_handle("13800000086")
+        await register(client, email)
+        resp = await client.post(
+            "/api/v1/auth/verification-code", json={"handle": email, "purpose": "login"}
+        )
         assert resp.status_code == 429
         assert resp.json()["params"]["seconds"] <= 60
         async with sm() as session:
             await session.execute(
-                update(SmsCode)
-                .where(SmsCode.phone == phone)
+                update(VerificationCode)
+                .where(VerificationCode.target == email)
                 .values(created_at=now_utc() - timedelta(seconds=61))
             )
             await session.commit()
-        resp = await client.post("/api/v1/auth/sms-code", json={"phone": phone, "purpose": "login"})
+        resp = await client.post(
+            "/api/v1/auth/verification-code", json={"handle": email, "purpose": "login"}
+        )
         assert resp.status_code == 204, resp.text
 
-    async def test_phone_daily_send_cap(self, client: AsyncClient):
-        """按号日发送上限独立于消费侧:桶满后发码 429 RATE_LIMITED。"""
+    async def test_target_daily_send_cap(self, client: AsyncClient):
+        """The per-target daily send cap is independent of the consume quota."""
         from app.core.ratelimit import check_rate_limit
-        from app.modules.account.service import SMS_SEND_PHONE_DAILY_MAX
 
-        phone = "13800000087"
-        for _ in range(SMS_SEND_PHONE_DAILY_MAX):
+        email = as_handle("13800000087")
+        for _ in range(verification.SEND_TARGET_DAILY_MAX):
             await check_rate_limit(
-                f"sms-send-phone:{phone}",
-                max_attempts=SMS_SEND_PHONE_DAILY_MAX,
+                f"code-send-target:{email}",
+                max_attempts=verification.SEND_TARGET_DAILY_MAX,
                 window_seconds=86400.0,
             )
         resp = await client.post(
-            "/api/v1/auth/sms-code", json={"phone": phone, "purpose": "register"}
+            "/api/v1/auth/verification-code", json={"handle": email, "purpose": "register"}
         )
         assert resp.status_code == 429
         assert resp.json()["code"] == "RATE_LIMITED"
 
     @pytest.mark.usefixtures("sm")
     async def test_notify_budget_is_separate_from_verify(self):
-        """平台预算按 kind 分桶:打满 verify 不影响 notify(依赖 sm 以便计数被清理)。"""
         from app.core.ratelimit import check_rate_limit
         from app.core.sms import SMS_PLATFORM_LIMITS, ensure_sms_platform_quota
 

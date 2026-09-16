@@ -9,8 +9,11 @@ from app.core.config import get_settings
 from app.modules.account.models import User
 from app.modules.account.realname import set_realname_provider
 from tests.helpers import (
+    as_handle,
     create_test_sku,
-    funded_user,
+    fund_wallet,
+    gen_ed25519_key,
+    issue_code,
     seed_instance,
     seed_node_spec,
     set_platform_setting,
@@ -32,25 +35,58 @@ def _reset_provider():
     set_realname_provider(None)
 
 
+async def _phone_user(client: AsyncClient, sm, digits: str) -> tuple[dict[str, str], int]:
+    """Register an email account that also binds a +86 phone (the three-factor check needs it)."""
+    email, phone = as_handle(digits), f"+86{digits}"
+    await issue_code(sm, email, "register")
+    await issue_code(sm, phone, "register")
+    resp = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": email,
+            "email_code": "123456",
+            "phone": phone,
+            "phone_code": "123456",
+            "accept_terms": True,
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    data = resp.json()
+    return {"Authorization": f"Bearer {data['access_token']}"}, data["user"]["id"]
+
+
+async def _funded_phone_user(
+    client: AsyncClient, sm, digits: str, amount: str = "100.00"
+) -> tuple[dict[str, str], int, int]:
+    headers, user_id = await _phone_user(client, sm, digits)
+    key = await client.post(
+        "/api/v1/ssh-keys", json={"name": "t", "public_key": gen_ed25519_key()}, headers=headers
+    )
+    assert key.status_code == 201, key.text
+    await fund_wallet(sm, user_id, amount)
+    return headers, user_id, key.json()["id"]
+
+
 class TestRealName:
     async def test_verify_success_masks_id_number(self, client: AsyncClient, sm):
         await set_platform_setting(sm, "real_name_enabled", "true")
         set_realname_provider(_Provider(True))
-        headers, user_id = await user_headers_with_id(client, "13800000160")
+        headers, user_id = await _phone_user(client, sm, "13800000160")
         resp = await client.post(
             "/api/v1/me/real-name",
             json={"name": "张三", "id_number": "110101199001011234"},
             headers=headers,
         )
         assert resp.status_code == 200, resp.text
-        assert resp.json()["verification_status"] == "verified"
+        assert resp.json()["kyc_status"] == "verified"
         async with sm() as session:
             user = (await session.execute(select(User).where(User.id == user_id))).scalar_one()
-            assert user.id_name == "张三"
-            assert user.id_number is not None
-            assert user.id_number.startswith("1101")
-            assert "*" in user.id_number
-            assert "199001011234" not in user.id_number
+            assert user.kyc_name == "张三"
+            assert user.kyc_identity_masked is not None
+            assert user.kyc_identity_masked.startswith("1101")
+            assert "*" in user.kyc_identity_masked
+            assert "199001011234" not in user.kyc_identity_masked
+            assert user.kyc_provider == "aliyun_mobile3" and user.kyc_verified_at is not None
 
         resp = await client.post(
             "/api/v1/me/real-name",
@@ -63,7 +99,7 @@ class TestRealName:
     async def test_mismatch_rejected(self, client: AsyncClient, sm):
         await set_platform_setting(sm, "real_name_enabled", "true")
         set_realname_provider(_Provider(False))
-        headers, _ = await user_headers_with_id(client, "13800000161")
+        headers, _ = await _phone_user(client, sm, "13800000161")
         resp = await client.post(
             "/api/v1/me/real-name",
             json={"name": "李四", "id_number": "110101199001010000"},
@@ -87,7 +123,7 @@ class TestRealName:
     async def test_enabled_without_credentials_is_502_not_500(self, client: AsyncClient, sm):
         """开关开启但凭据未配置:RealNameError → 502 渠道故障。"""
         await set_platform_setting(sm, "real_name_enabled", "true")
-        headers, _ = await user_headers_with_id(client, "13800000164")
+        headers, _ = await _phone_user(client, sm, "13800000164")
         resp = await client.post(
             "/api/v1/me/real-name",
             json={"name": "张三", "id_number": "110101199001011234"},
@@ -96,13 +132,26 @@ class TestRealName:
         assert resp.status_code == 502
         assert resp.json()["code"] == "REAL_NAME_CHANNEL_ERROR"
 
-    async def test_recharge_gate_when_required(self, client: AsyncClient):
+    async def test_email_only_account_cannot_verify(self, client: AsyncClient, sm):
+        """The +86 three-factor check needs a bound +86 phone: email-only → 400."""
+        await set_platform_setting(sm, "real_name_enabled", "true")
+        set_realname_provider(_Provider(True))
+        headers, _ = await user_headers_with_id(client, "13800000167")
+        resp = await client.post(
+            "/api/v1/me/real-name",
+            json={"name": "张三", "id_number": "110101199001011234"},
+            headers=headers,
+        )
+        assert resp.status_code == 400
+        assert resp.json()["message_key"] == "account.realNamePhoneRequired"
+
+    async def test_recharge_gate_when_required(self, client: AsyncClient, sm):
         settings = get_settings()
         settings.real_name_enabled = True
         settings.real_name_required_for_recharge = True
         set_realname_provider(_Provider(True))
         try:
-            headers, _ = await user_headers_with_id(client, "13800000162")
+            headers, _ = await _phone_user(client, sm, "13800000162")
             resp = await client.post(
                 "/api/v1/wallet/recharges",
                 json={"amount": "50.00", "channel": "mock"},
@@ -133,7 +182,7 @@ class TestRealName:
         settings.real_name_required_for_recharge = True
         set_realname_provider(_Provider(True))
         try:
-            headers, _user_id, key_id = await funded_user(client, sm, "13800000165")
+            headers, _user_id, key_id = await _funded_phone_user(client, sm, "13800000165")
             sku_id = await create_test_sku(sm)
             await seed_node_spec(sm)
             resp = await client.post(
@@ -167,7 +216,7 @@ class TestRealName:
         settings.real_name_required_for_recharge = True
         set_realname_provider(_Provider(True))
         try:
-            headers, user_id, _key_id = await funded_user(client, sm, "13800000166")
+            headers, user_id, _key_id = await _funded_phone_user(client, sm, "13800000166")
             await create_test_sku(sm)
             await seed_node_spec(sm)
             resp = await client.post(
@@ -196,11 +245,12 @@ class TestRealName:
 
     async def test_register_requires_terms(self, client: AsyncClient):
         await client.post(
-            "/api/v1/auth/sms-code",
-            json={"phone": "13800000163", "purpose": "register"},
+            "/api/v1/auth/verification-code",
+            json={"handle": as_handle("13800000163"), "purpose": "register"},
         )
         resp = await client.post(
-            "/api/v1/auth/register", json={"phone": "13800000163", "sms_code": "123456"}
+            "/api/v1/auth/register",
+            json={"email": as_handle("13800000163"), "email_code": "123456"},
         )
         assert resp.status_code == 400
         assert resp.json()["code"] == "TERMS_NOT_ACCEPTED"

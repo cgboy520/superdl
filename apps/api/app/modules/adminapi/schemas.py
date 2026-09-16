@@ -136,15 +136,16 @@ class AdminRefreshOut(BaseModel):
 
 class TenantOut(BaseModel):
     id: int
-    phone_masked: str
+    email_masked: str | None
+    phone_masked: str | None
     status: str
     balance: str
     total_consumed: str
     instances: int
     disk_gb: int
     created_at: str
-    verification_status: str = "unverified"
-    id_name: str | None = None
+    kyc_status: str = "unverified"
+    kyc_name: str | None = None
 
 
 class TenantQuotaOut(BaseModel):
@@ -204,7 +205,8 @@ class AdjustContextOut(BaseModel):
     """调账前置上下文:回显租户身份与资金现状。"""
 
     user_id: int
-    phone_masked: str
+    email_masked: str | None
+    phone_masked: str | None
     status: str
     balance: str
     running_instances: int

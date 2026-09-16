@@ -9,6 +9,7 @@ from sqlalchemy import select, text, update
 
 from app.core.observability import request_id_from_header
 from app.core.timeutil import now_utc
+from tests.helpers import as_handle
 
 _HEX16 = re.compile(r"^[0-9a-f]{16}$")
 
@@ -101,13 +102,14 @@ class TestUnhandledException:
 
 class TestCleanup:
     async def test_expired_rows_removed(self, client: AsyncClient, sm):
-        from app.modules.account.models import SmsCode, UsedRefreshToken
+        from app.modules.account.models import UsedRefreshToken, VerificationCode
         from app.workers.cleanup import cleanup_expired_rows
 
         async with sm() as session:
             session.add(
-                SmsCode(
-                    phone="13800000150",
+                VerificationCode(
+                    channel="email",
+                    target=as_handle("13800000150"),
                     code_hash="0" * 64,
                     purpose="register",
                     expires_at=now_utc() - timedelta(days=8),
@@ -118,19 +120,23 @@ class TestCleanup:
             )
             await session.commit()
             await session.execute(
-                update(SmsCode)
-                .where(SmsCode.phone == "13800000150")
+                update(VerificationCode)
+                .where(VerificationCode.target == as_handle("13800000150"))
                 .values(created_at=now_utc() - timedelta(days=9))
             )
             await session.commit()
 
         counts = await cleanup_expired_rows(sm)
-        assert counts["sms_codes"] >= 1
+        assert counts["verification_codes"] >= 1
         assert counts["used_refresh_tokens"] >= 1
 
         async with sm() as session:
             left = (
-                await session.execute(select(SmsCode).where(SmsCode.phone == "13800000150"))
+                await session.execute(
+                    select(VerificationCode).where(
+                        VerificationCode.target == as_handle("13800000150")
+                    )
+                )
             ).scalar_one_or_none()
             assert left is None
             assert (

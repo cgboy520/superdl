@@ -4,7 +4,8 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.logging import get_logger, mask_phone_value
+from app.core.handles import mask_handle
+from app.core.logging import get_logger
 from app.core.money import money_str
 from app.modules.account import service as account_service
 from app.modules.billing import service as billing_service
@@ -72,7 +73,8 @@ async def adjust_context(session: AsyncSession, user_id: int) -> dict[str, Any]:
     running_by_user = await orchestrator_queries.list_running_instances_by_user(session)
     return {
         "user_id": user.id,
-        "phone_masked": mask_phone_value(user.phone),
+        "email_masked": mask_handle(user.email) if user.email else None,
+        "phone_masked": mask_handle(user.phone) if user.phone else None,
         "status": user.status,
         "balance": money_str(balance),
         "running_instances": len(running_by_user.get(user_id, [])),

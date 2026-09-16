@@ -65,14 +65,14 @@
 
 ## 会话与凭据
 
-| 项                                             | 值                                                         | 承载                                                         |
-| ---------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------ |
-| 用户 access / refresh token                    | 1h / 7d(prod 上限同此)                                     | env `access_token_ttl_seconds` / `refresh_token_ttl_seconds` |
-| refresh 重放宽限                               | 同 jti 10s 内视为并发重试                                  | `account/service.py`                                         |
-| 管理端会话                                     | 续期宽限 15min,单次会话最长 12h                            | `adminapi/auth_service.py`                                   |
-| TOTP 绑定票 / 二要素票                         | 10min / 5min;恢复码 10 枚一次性                            | 同上                                                         |
-| 口令(用户密码 / 管理员口令,注册 / 改密 / 重置) | ≥12 字符,≤72 字节(bcrypt 上限),不合格 422                  | `core/security.py` `PasswordStr`,两端 schema 共用            |
-| 短信验证码                                     | 有效 300s;失败 5 次作废;同号重发 60s 起 ×2 递增、封顶 480s | env `sms_code_ttl_seconds` 等,`account/service.py`           |
+| 项                                             | 值                                                               | 承载                                                         |
+| ---------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------ |
+| 用户 access / refresh token                    | 1h / 7d(prod 上限同此)                                           | env `access_token_ttl_seconds` / `refresh_token_ttl_seconds` |
+| refresh 重放宽限                               | 同 jti 10s 内视为并发重试                                        | `account/service.py`                                         |
+| 管理端会话                                     | 续期宽限 15min,单次会话最长 12h                                  | `adminapi/auth_service.py`                                   |
+| TOTP 绑定票 / 二要素票                         | 10min / 5min;恢复码 10 枚一次性                                  | 同上                                                         |
+| 口令(用户密码 / 管理员口令,注册 / 改密 / 重置) | ≥12 字符,≤72 字节(bcrypt 上限),不合格 422                        | `core/security.py` `PasswordStr`,两端 schema 共用            |
+| 验证码(email / SMS)                            | 有效 300s;失败 5 次作废;同 target 重发 60s 起 ×2 递增、封顶 480s | env `sms_code_ttl_seconds` 等,`account/verification.py`      |
 
 ## 应用层限流
 
@@ -89,10 +89,10 @@
 | 口令校验(bcrypt)                    | 进程             | 在途 64                                         | `core/security._BCRYPT_MAX_INFLIGHT`,超出 429 不排队                               |
 | 注册、找回密码                      | IP+手机号        | 各 5 次/5min                                    |                                                                                    |
 | 实名核验                            | 用户             | 5 次/时                                         |                                                                                    |
-| 发码(预检)                          | 手机号           | 30 次/时                                        | 人机验证之前计,`sms-precheck-phone`                                                |
+| 发码(预检)                          | handle           | 30 次/时                                        | 人机验证之前计,`code-precheck`                                                     |
 | 发码(尝试)                          | IP               | 20 次/时                                        | 人机验证之后计                                                                     |
-| 发码(发送)                          | 手机号           | 15 次/日                                        | 退避通过后计,`sms-send-phone`                                                      |
-| 发码(消费)                          | 手机号           | 10 次/日                                        | 按验证码被消费计                                                                   |
+| 发码(发送)                          | handle           | 15 次/日                                        | 退避通过后计,`code-send-target`                                                    |
+| 发码(消费)                          | handle           | 10 次/日                                        | 按验证码被消费计,`code-consume`                                                    |
 | 发码(平台 verify)                   | 全局             | 1000 次/时,5000 次/日                           | 注册 / 登录 / 找回,`core/sms.py`                                                   |
 | 短信(平台 notify)                   | 全局             | 500 次/时,2000 次/日                            | 平台通知,与 verify 分桶                                                            |
 | Email (platform verify / notify)    | 全局             | 2000/h, 10000/d · 1000/h, 5000/d                | `core/email.py`, buckets `email-platform:*`, independent of the SMS budget         |
@@ -135,7 +135,7 @@
 | 数据                                        | 保留                                               | 承载                                                                               |
 | ------------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | `audit_log`                                 | 365 天                                             | env `audit_retention_days`(等保 ≥6 个月)                                           |
-| `sms_codes`                                 | 过期后 7 天删                                      | `workers/cleanup.py` `cleanup_expired_rows`(每日)                                  |
+| `verification_codes`                        | 过期后 7 天删                                      | `workers/cleanup.py` `cleanup_expired_rows`(每日)                                  |
 | `used_refresh_tokens`                       | 过期即删                                           | 同上                                                                               |
 | `outbox_tasks`(done / discarded)            | 7 天                                               | 同上                                                                               |
 | `rate_limit_counters`                       | 2 天                                               | 同上                                                                               |
