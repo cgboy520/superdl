@@ -1,12 +1,12 @@
-# 平台主密钥轮换 SOP
+# Platform master key rotation SOP
 
-`SUPERDL_CONFIG_ENCRYPTION_KEY` 保护:`platform_settings` secret 行(AAD = 配置键)、`admin_users.totp_secret`(AAD `totp:<admin.id>`)、`instances.jupyter_token`(AAD `jupyter-token:<instance.uuid>`)、`instances.env_encrypted`(AAD `instance-env:<instance.uuid>`);同一把钥匙派生 HMAC 摘要子密钥:`users.id_number_hmac`(实名证件号)、服务端点 API Key 摘要、节点注册令牌摘要、短信验证码摘要。怀疑泄漏或按季度轮换时走本流程。
+`SUPERDL_CONFIG_ENCRYPTION_KEY` protects: `platform_settings` secret rows (AAD = the setting key), `admin_users.totp_secret` (AAD `totp:<admin.id>`), `instances.jupyter_token` (AAD `jupyter-token:<instance.uuid>`), `instances.env_encrypted` (AAD `instance-env:<instance.uuid>`); the same key derives the HMAC digest subkey for `users.kyc_identity_hmac` (KYC identity number), service endpoint API key digests, node enrollment token digests and verification code digests. Follow this procedure on suspected leak or for the quarterly rotation.
 
-机制(`apps/api/app/core/crypto.py`):密文格式 `enc:v2:<kid>:<b64>`,kid = 主密钥指纹(SHA-256 前 12 hex),`crypto.is_encrypted()` 判形态;解密按 kid 在「当前 + PREVIOUS」钥匙串里选钥,未知 kid 拒;摘要读路径 candidates 兼容两个世代(当前、PREVIOUS),写路径只写当前世代。
+Mechanism (`apps/api/app/core/crypto.py`): ciphertext format `enc:v2:<kid>:<b64>`, kid = master key fingerprint (first 12 hex of SHA-256), `crypto.is_encrypted()` recognises the shape; decryption picks the key by kid from the "current + PREVIOUS" keyring and rejects unknown kids; digest read paths accept candidates of both generations (current, PREVIOUS), write paths write the current generation only.
 
-## 前置:先在 dev 库跑通
+## Prerequisite: run it on the dev database first
 
-每次执行前在本机 dev 库把第 5 步脚本完整跑一遍(不是只在首次):
+Before every execution run the step 5 script end to end against the local dev database (not only the first time):
 
 ```bash
 cd apps/api
@@ -14,29 +14,29 @@ docker compose -f ../../deploy/app/compose.yaml up -d
 gen() { python3 -c "import secrets,base64;print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())"; }
 export SUPERDL_CONFIG_ENCRYPTION_KEY=$(gen)
 uv run alembic upgrade head && uv run python scripts/seed_dev.py
-# 造存量密文:起 API,用户端建一台实例(带 env),管理端绑一次 TOTP,平台配置填一项 secret;然后停 API
+# produce existing ciphertexts: start the API, create one instance (with env) in the user console, enrol TOTP once in the admin console, fill one secret in platform configuration; then stop the API
 export SUPERDL_CONFIG_ENCRYPTION_KEY_PREVIOUS=$SUPERDL_CONFIG_ENCRYPTION_KEY SUPERDL_CONFIG_ENCRYPTION_KEY=$(gen)
 uv run python - <<'EOF'
-# 第 5 步脚本正文
+# body of the step 5 script
 EOF
 uv run python - <<'EOF'
-# 再跑一次,须输出 re-encrypted 0 rows, skipped 0
+# run again, must print re-encrypted 0 rows, skipped 0
 EOF
-uv run uvicorn app.main:app   # 启动无 decrypt 失败日志;实例详情能取到 Jupyter 链接;管理端 TOTP 能登录
+uv run uvicorn app.main:app   # no decrypt failure in the startup log; the instance detail returns the Jupyter link; admin TOTP login works
 ```
 
-## 步骤
+## Steps
 
-1. 生成新钥匙(urlsafe-base64 的 32 字节):
+1. Generate the new key (32 urlsafe-base64 bytes):
    `python3 -c "import secrets,base64;print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())"`
-2. 更新 `superdl-crypto` Secret(`deploy/app/secrets.example.yaml` 的键面):
-   - `SUPERDL_CONFIG_ENCRYPTION_KEY` = 新钥匙
-   - `SUPERDL_CONFIG_ENCRYPTION_KEY_PREVIOUS` = **旧**钥匙(不可写反)
-3. 滚动重启消费方:`kubectl -n superdl rollout restart deploy/superdl-api deploy/superdl-worker
+2. Update the `superdl-crypto` Secret (keys as in `deploy/app/secrets.example.yaml`):
+   - `SUPERDL_CONFIG_ENCRYPTION_KEY` = the new key
+   - `SUPERDL_CONFIG_ENCRYPTION_KEY_PREVIOUS` = the **old** key (do not swap them)
+3. Rolling restart of the consumers: `kubectl -n superdl rollout restart deploy/superdl-api deploy/superdl-worker
    deploy/superdl-worker-tenant-mgr deploy/superdl-worker-node-mgr deploy/superdl-worker-prewarm`
-   (disk-ops 与 10-migrate-job 不消费 crypto,无需处理)
-4. 验证:启动日志无 `platform_setting_decrypt_failed`;管理端「平台配置」secret 项预览正常;用一把既有 API Key 调一次服务端点;打开一台运行中实例的 Jupyter 链接。
-5. 重加密存量密文到新 kid(四张表;已是当前 kid 的行跳过;解不开的行计入 skipped 并打印,须为 0):
+   (disk-ops and 10-migrate-job do not consume crypto, nothing to do)
+4. Verify: no `platform_setting_decrypt_failed` in the startup log; secret previews under admin "Platform configuration" render; call one service endpoint with an existing API key; open the Jupyter link of a running instance.
+5. Re-encrypt existing ciphertexts to the new kid (four tables; rows already on the current kid are skipped; undecryptable rows count as skipped and are printed, must be 0):
 
 ```bash
 kubectl -n superdl exec deploy/superdl-api -- python - <<'EOF'
@@ -58,7 +58,7 @@ stats = {"re-encrypted": 0, "skipped": 0}
 
 
 def rotate(value: str | None, aad: str) -> str | None:
-    """返回新密文;非密文、已是当前 kid、解不开(未知 kid)时返回 None。"""
+    """Return the new ciphertext; None for non-ciphertext, current kid, or undecryptable (unknown kid)."""
     if not value or not crypto.is_encrypted(value) or value.split(":", 3)[2] == CUR_KID:
         return None
     try:
@@ -93,26 +93,26 @@ asyncio.run(main())
 EOF
 ```
 
-短信验证码与节点注册令牌短 TTL 自然过期,不需手工处理。
+Verification codes and node enrollment tokens have short TTLs and expire on their own; no manual work.
 
-## 摘要密钥(不可重算)
+## Digest keys (cannot be recomputed)
 
-HMAC 摘要由主密钥派生,读路径只兼容「当前 + PREVIOUS」两个世代,原文不落库、无法按新钥匙重算:
+The HMAC digests derive from the master key; read paths accept only the "current + PREVIOUS" generations, the plaintext is never stored, so digests cannot be recomputed under a new key:
 
-| 摘要 | 写路径 | 摘除 PREVIOUS 后 |
+| Digest | Write path | After dropping PREVIOUS |
 |---|---|---|
-| `users.id_number_hmac`(`hash_id_number`) | 实名通过时写入,库里只存打码证件号 | 旧世代用户的同证件账号上限(`real_name_max_accounts_per_identity`)对其失效,直到该用户重新实名 |
-| 服务端点 API Key `key_hash`(`hash_api_key`) | 签发时 | 旧世代 Key 即刻 401,用户须重签 |
-| 节点注册令牌(`hash_node_token`)、短信验证码(`hash_sms_code`) | 短 TTL | 自然过期,无需处理 |
+| `users.kyc_identity_hmac` (`hash_kyc_identity`) | Written when KYC passes; the database stores only the masked identity number | The per-identity account cap (`real_name_max_accounts_per_identity`) stops applying to old-generation users until they pass KYC again |
+| Service endpoint API key `key_hash` (`hash_api_key`) | At issue time | Old-generation keys answer 401 at once, users must issue new keys |
+| Node enrollment tokens (`hash_node_token`), verification codes (`hash_verification_code`) | Short TTL | Expire on their own, nothing to do |
 
-**受支持的做法:轮换后 `SUPERDL_CONFIG_ENCRYPTION_KEY_PREVIOUS` 永久保留**(candidates 读路径同时查两代,保留无功能代价)。只在确认旧钥匙已泄露时才摘除,摘除即接受上表后果并公告 API Key 重签。钥匙串只有两代:第二次轮换会把 PREVIOUS 换成上一代,第一代钥匙签发的 `id_number_hmac` 与 API Key 摘要从此不再匹配;需要多代轮换而不丢实名去重,要先改代码(摘要密钥与加密主密钥分离),不在本 SOP 范围。
+**The supported practice: keep `SUPERDL_CONFIG_ENCRYPTION_KEY_PREVIOUS` permanently after a rotation** (the candidate read path checks both generations at no functional cost). Drop it only once the old key is confirmed leaked, accepting the consequences above and announcing the API key re-issue. The keyring has two generations only: a second rotation replaces PREVIOUS with the previous generation, and the `kyc_identity_hmac` and API key digests issued under the first key stop matching from then on; multi-generation rotation without losing KYC deduplication needs a code change first (separating the digest key from the encryption master key), outside this SOP.
 
-## 摘除 PREVIOUS(仅旧钥匙已泄露时)
+## Dropping PREVIOUS (only when the old key has leaked)
 
-满足全部条件才可把 `SUPERDL_CONFIG_ENCRYPTION_KEY_PREVIOUS` 清空并再次滚动重启:
+Clear `SUPERDL_CONFIG_ENCRYPTION_KEY_PREVIOUS` and roll the restart again only when every condition holds:
 
-- 第 5 步已执行且重跑输出 `re-encrypted 0 rows, skipped 0`;
-- 全部用户已重签 API Key(未重签的 Key 在摘除即刻 401;轮换公告必须带这一条);
-- 已接受旧世代 `users.id_number_hmac` 失效(上表);
-- 存量密文 kid 均为当前钥匙指纹(打印 kid:`python3 -c "import hashlib,base64;
-  print(hashlib.sha256(base64.urlsafe_b64decode('<新钥匙>')).hexdigest()[:12])"`)。
+- step 5 has run and a re-run prints `re-encrypted 0 rows, skipped 0`;
+- every user has re-issued their API keys (keys not re-issued answer 401 the moment PREVIOUS is dropped; the rotation announcement must say so);
+- the loss of old-generation `users.kyc_identity_hmac` is accepted (table above);
+- every existing ciphertext kid is the current key's fingerprint (print the kid: `python3 -c "import hashlib,base64;
+  print(hashlib.sha256(base64.urlsafe_b64decode('<new key>')).hexdigest()[:12])"`).

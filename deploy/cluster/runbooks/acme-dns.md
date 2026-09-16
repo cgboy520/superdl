@@ -1,60 +1,60 @@
-# acme-dns(DNS01 中转)部署与轮换 Runbook
+# acme-dns (DNS01 relay) deployment and rotation runbook
 
-**适用范围:full 档**(`environments/full.yaml` `acmeDns.enabled=true`)。**light 档不启用**(`environments/light.yaml` `acmeDns.enabled=false`):把现成通配证书手工灌成 `superdl/superdl-jupyter-wildcard-tls` 与 `superdl/superdl-svc-wildcard-tls`,不签发、不续签,本文步骤不适用。
+**Scope: full tier** (`environments/full.yaml` `acmeDns.enabled=true`). **The light tier does not enable it** (`environments/light.yaml` `acmeDns.enabled=false`): load an existing wildcard certificate by hand as `superdl/superdl-jupyter-wildcard-tls` and `superdl/superdl-svc-wildcard-tls`; nothing is issued or renewed and the steps here do not apply.
 
-两张泛域名证书(Jupyter `*.app.<域>`、服务端点 `*.svc.<域>`,见 `../../app/k8s/05-cert-manager.yaml`)走 DNS-01:cert-manager 内置 acmeDNS solver(HTTP 注册/更新 API 写 TXT)→ acme-dns(凭据仅可更新自己子域的 TXT)→ 主域 DNS 一次性 CNAME 委托。
+The two wildcard certificates (Jupyter `*.app.<domain>`, service endpoints `*.svc.<domain>`, see `../../app/k8s/05-cert-manager.yaml`) use DNS-01: cert-manager's built-in acmeDNS solver (registers / updates TXT through the HTTP API) → acme-dns (credentials can only update the TXT of their own subdomain) → a one-time CNAME delegation in the primary DNS.
 
-## 架构与信任模型
+## Architecture and trust model
 
 ```
-Let's Encrypt 验证服务器
-  └─ 查 _acme-challenge.app.superdl.example.com TXT
-      └─ CNAME → <uuid>.auth.superdl.example.com(一次性,主域 DNS 控制台配置)
-          └─ NS: auth.superdl.example.com → acme-dns LoadBalancer IP(53,公网)
-cert-manager(acmeDNS solver)
-  └─ 账户凭据(acmedns.json:username/password/fulldomain/subdomain)→ acme-dns HTTP API 更新 TXT
+Let's Encrypt validation servers
+  └─ look up _acme-challenge.app.superdl.example.com TXT
+      └─ CNAME → <uuid>.auth.superdl.example.com (one-time, configured in the primary DNS console)
+          └─ NS: auth.superdl.example.com → acme-dns LoadBalancer IP (53, public)
+cert-manager (acmeDNS solver)
+  └─ account credentials (acmedns.json: username/password/fulldomain/subdomain) → acme-dns HTTP API updates TXT
 ```
 
-- acme-dns 账户只能更新自己 fulldomain 的 TXT,主域 DNS 凭据不进集群。
-- 53(UDP/TCP)公网开放;注册/更新 API(8080)仅 ClusterIP 集群内可达,需 username/password。
+- An acme-dns account can only update the TXT of its own fulldomain; the primary DNS credentials never enter the cluster.
+- 53 (UDP/TCP) is open to the public; the register / update API (8080) is ClusterIP only, reachable inside the cluster with username/password.
 
-## 一次性部署步骤
+## One-time deployment steps
 
-1. **替换占位符**(`deploy/cluster/acme-dns.yaml`,preflight 强制扫描):
-   - `CHANGE_ME_ACME_DNS_DIGEST`:`docker buildx imagetools inspect joohoi/acme-dns:v1.0` 取 digest 钉死
-   - `auth.superdl.example.com` → 实际 auth 子域(独立子域,勿与业务域混用)
-2. `helmfile -e full apply`(cert-manager 的 presync hook 自动 apply acme-dns.yaml)
-3. 取 LoadBalancer 公网 IP,回填 `config.cfg` records 的 `CHANGE_ME_ACME_DNS_LB_IP` 后 `kubectl apply` + 重启 Pod:
+1. **Replace the placeholders** (`deploy/cluster/acme-dns.yaml`, scanned by preflight):
+   - `CHANGE_ME_ACME_DNS_DIGEST`: pin the digest from `docker buildx imagetools inspect joohoi/acme-dns:v1.0`
+   - `auth.superdl.example.com` → the real auth subdomain (a dedicated subdomain, not mixed with business domains)
+2. `helmfile -e full apply` (the cert-manager presync hook applies acme-dns.yaml automatically)
+3. Read the public LoadBalancer IP, write it into `CHANGE_ME_ACME_DNS_LB_IP` in the `config.cfg` records, then `kubectl apply` + restart the Pod:
    ```bash
    kubectl -n cert-manager get svc acme-dns -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
    ```
-4. **主域 DNS 控制台(一次性手工)**:
+4. **Primary DNS console (one-time, by hand)**:
    - `auth.superdl.example.com NS ns1.auth.superdl.example.com`
-   - `ns1.auth.superdl.example.com A <上一步 LB IP>`
-5. **注册账户**:每张泛域名证书各一个账户(`app.<域>` 与 `svc.<域>` 各做一次;镜像无 curl,用 wget):
+   - `ns1.auth.superdl.example.com A <LB IP from the previous step>`
+5. **Register accounts**: one account per wildcard certificate (once for `app.<domain>` and once for `svc.<domain>`; the image has no curl, use wget):
    ```bash
    kubectl -n cert-manager exec deploy/acme-dns -- \
      wget -qO- --header='Content-Type: application/json' \
        --post-data='{"allowfrom":[]}' http://127.0.0.1:8080/register
    ```
-   保存返回的 `username/password/fulldomain/subdomain`。
-6. **主域 DNS 委托**(每个域一条,泛域名 `*.app.<域>` 的挑战名是 `app.<域>`):
-   - `_acme-challenge.app.superdl.example.com CNAME <app 账户的 fulldomain>`
-   - `_acme-challenge.svc.superdl.example.com CNAME <svc 账户的 fulldomain>`
-7. **建账户 secret**(preflight 校验存在与键名):JSON 以**被验证的域**为键,值是注册 API 返回的整个对象;两个域两个键写在同一份 `acmedns.json`。
+   Save the returned `username/password/fulldomain/subdomain`.
+6. **Primary DNS delegation** (one record per domain; the challenge name of the wildcard `*.app.<domain>` is `app.<domain>`):
+   - `_acme-challenge.app.superdl.example.com CNAME <fulldomain of the app account>`
+   - `_acme-challenge.svc.superdl.example.com CNAME <fulldomain of the svc account>`
+7. **Create the account secret** (preflight checks existence and key name): the JSON is keyed by the **validated domain**, each value is the whole object returned by the register API; both domains are two keys in the same `acmedns.json`.
    ```bash
    kubectl -n cert-manager create secret generic acme-dns-account \
      --from-literal=acmedns.json='{"app.superdl.example.com":{"username":"...","password":"...","fulldomain":"<fulldomain>","subdomain":"<subdomain>","allowfrom":[]},"svc.superdl.example.com":{"username":"...","password":"...","fulldomain":"<fulldomain>","subdomain":"<subdomain>","allowfrom":[]}}'
    ```
-   漏键的现场是证书长期 `Ready=False`、对应 listener 不 Programmed、无兜底证书。cert-manager 调的是 ClusterIssuer `acmeDNS.host` 指向的集群内 `acme-dns-api` Service,见 `deploy/app/k8s/05-cert-manager.yaml`。
-8. 验证:
+   A missing key shows up as a certificate stuck at `Ready=False`, the matching listener not Programmed and no fallback certificate. cert-manager calls the in-cluster `acme-dns-api` Service pointed at by the ClusterIssuer `acmeDNS.host`, see `deploy/app/k8s/05-cert-manager.yaml`.
+8. Verify:
    ```bash
    kubectl -n superdl get certificate superdl-jupyter-wildcard superdl-svc-wildcard
    kubectl logs -n cert-manager deploy/cert-manager | grep -i acme
    ```
 
-## 凭据轮换(每季度或泄漏时)
+## Credential rotation (quarterly or on leak)
 
-1. 重复「注册账户」取新 (username, password),更新 `acmedns.json` secret 中对应域的键
+1. Repeat "Register accounts" for a new (username, password) and update the matching domain key in the `acmedns.json` secret
 2. `kubectl -n cert-manager rollout restart deploy/cert-manager`
-3. 旧账户在 acme-dns 中失效(SQLite 删除对应行或整库重建后重注册)
+3. Invalidate the old account in acme-dns (delete the row in SQLite, or rebuild the database and register again)

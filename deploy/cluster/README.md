@@ -1,57 +1,57 @@
-# 集群部署:full / light 两条路径
+# Cluster deployment: the full and light paths
 
-选档:**full** = RKE2 多机生产,全池齐备(kata / mig / hami,外加可选的 cpu 池);
-**light** = k3s 单机/小规模验证与轻量运营,组件集与 full 相同(CNI 同为 Cilium,kata / mig 池一样可用),差异只在 `values/light/` 的覆盖。
-发行版由平台探测(管理端「集群」页可见),业务侧无需声明。
+Pick a tier: **full** = RKE2 multi-machine production with every pool available (kata / mig / hami, plus an optional cpu pool);
+**light** = k3s single-machine / small-scale validation and lightweight operation with the same component set as full (Cilium as CNI, the kata / mig pools usable alike); the only differences are the overrides in `values/light/`.
+The distribution is detected by the platform (visible on the admin "Cluster" page); the business side declares nothing.
 
-**cpu 池是无卡机池**,不承载 GPU 组件,只供纯 CPU 实例(`tier=cpu`)使用;没有无卡服务器时,CPU 规格也可挂 hami 池,每节点让出多少由策略 `gpu_node_cpu_instance_vcpu_cap` 封顶(0 = 不许)。详见 `docs/reference/nodes.md` 与 `docs/reference/catalog.md`。
+**The cpu pool is the pool of GPU-less machines**: it carries no GPU components and serves pure CPU instances only (`tier=cpu`); without GPU-less servers CPU specs can also sit on the hami pool, capped per node by the policy `gpu_node_cpu_instance_vcpu_cap` (0 = not allowed). Details in `docs/reference/nodes.md` and `docs/reference/catalog.md`.
 
-chart 版本钉在 `helmfile.yaml.gotmpl`,K8s 版本由安装器 channel 决定(ansible `rke2_channel`,默认 `latest`);实机验证清单核对为 v1.36.x;升级走变更评审。
-Gateway API 的 CRD 由 `gateway-api-crds.sh` 单点管,channel 首装即定,首装前先读「北向入口」一节。
+Chart versions are pinned in `helmfile.yaml.gotmpl`; the K8s version follows the installer channel (ansible `rke2_channel`, default `latest`); the real-hardware validation checklist was verified against v1.36.x; upgrades go through change review.
+The Gateway API CRDs are managed in one place by `gateway-api-crds.sh`; the channel is fixed at first install, read the "North-south entry" section before installing.
 
-## 前置检查(两档通用)
+## Preflight (both tiers)
 
-helm 不代建 Secret,先建好再 `./preflight.sh <full|light>`(只读,缺什么列全):
+helm creates no Secrets; create them first, then run `./preflight.sh <full|light>` (read-only, lists everything missing):
 
 ```bash
 kubectl create ns monitoring --dry-run=client -o yaml | kubectl apply -f -
-kubectl -n monitoring create secret generic superdl-alert-token --from-literal=token=<与 SUPERDL_ALERTMANAGER_TOKEN 一致>
-kubectl -n monitoring create secret generic superdl-smtp-password --from-literal=password=<SMTP 口令>
-kubectl -n monitoring create secret generic superdl-metrics-token --from-literal=token=<与 SUPERDL_METRICS_TOKEN 一致>
+kubectl -n monitoring create secret generic superdl-alert-token --from-literal=token=<same value as SUPERDL_ALERTMANAGER_TOKEN>
+kubectl -n monitoring create secret generic superdl-smtp-password --from-literal=password=<SMTP password>
+kubectl -n monitoring create secret generic superdl-metrics-token --from-literal=token=<same value as SUPERDL_METRICS_TOKEN>
 kubectl -n monitoring create secret generic grafana-admin \
-  --from-literal=admin-user=admin --from-literal=admin-password=<口令>
+  --from-literal=admin-user=admin --from-literal=admin-password=<password>
 ```
 
-full 档另需 `cert-manager/acme-dns-account`(DNS01 账户,见 `runbooks/acme-dns.md`);light 档不签发证书,手工把现成通配证书灌成 `superdl/superdl-jupyter-wildcard-tls` 与 `superdl/superdl-svc-wildcard-tls`。`grafana-admin` 仅 full 档需要,light 关闭 Grafana。
+The full tier also needs `cert-manager/acme-dns-account` (the DNS01 account, see `runbooks/acme-dns.md`); the light tier issues no certificates and loads an existing wildcard certificate by hand as `superdl/superdl-jupyter-wildcard-tls` and `superdl/superdl-svc-wildcard-tls`. `grafana-admin` is needed by the full tier only; light turns Grafana off.
 
-启用 cnpg 时,还需在 `superdl` 命名空间预建 `cnpg-backup-s3`,键为 `ACCESS_KEY_ID` 与 `ACCESS_SECRET_KEY`,并替换 `values/cnpg-cluster.yaml` 中的对象存储占位符。凭据使用受限权限文件供给,不放在命令行。
+With cnpg enabled, also pre-create `cnpg-backup-s3` in the `superdl` namespace with the keys `ACCESS_KEY_ID` and `ACCESS_SECRET_KEY`, and replace the object storage placeholders in `values/cnpg-cluster.yaml`. Feed credentials from files with restricted permissions, not on the command line.
 
-监控栈的 RBAC 收窄在两处:`values/`(alloy `rbac.rules` 只留 pods / pods/log / namespaces / services / endpoints / nodes 读;loki 关 ruler sidecar 且不挂 token;kps `global.rbac.create=false` + kube-state-metrics 去掉 secrets 采集器)与 `monitoring-rbac.yaml`(prometheus-operator / Prometheus / admission Job 的 RBAC 手写版,operator 的 configmaps / secrets 只在 `monitoring` ns 的 Role;随 kube-prometheus-stack release 的 presync 下发)。引用凭据的 ServiceMonitor / PodMonitor 一律放 `monitoring` ns(`../app/k8s/08-monitoring.yaml`,Bearer 取上面的 `superdl-metrics-token`)。不变量「monitoring 之外的 SA 没有 secrets 读权」由 CI `monitoring-rbac` job(helm 渲染断言)、kind 冒烟的 `auth can-i` 与 `./preflight.sh` 各守一道。
+The monitoring stack's RBAC is narrowed in two places: `values/` (alloy `rbac.rules` keeps only read on pods / pods/log / namespaces / services / endpoints / nodes; loki turns the ruler sidecar off and mounts no token; kps sets `global.rbac.create=false` and removes the secrets collector from kube-state-metrics) and `monitoring-rbac.yaml` (the hand-written RBAC of prometheus-operator / Prometheus / the admission Job; the operator's configmaps / secrets are a Role in the `monitoring` ns only; shipped by the kube-prometheus-stack release presync). ServiceMonitors / PodMonitors that reference credentials always live in the `monitoring` ns (`../app/k8s/08-monitoring.yaml`, Bearer from the `superdl-metrics-token` above). The invariant "no SA outside monitoring can read secrets" is guarded three times: the CI `monitoring-rbac` job (helm render assertion), the kind smoke's `auth can-i`, and `./preflight.sh`.
 
-存储与监控变更前核对:
+Check before storage and monitoring changes:
 
-- `values/rook-ceph-cluster.yaml` 的三个 OSD 必须落在三台不同机器上(`failureDomain: host`)。
-- 修改 Prometheus 存储参数前,先以 `--cascade=orphan` 删除 `monitoring` 中的 StatefulSet `prometheus-kube-prometheus-stack-prometheus`,保留 Pod/PVC,再通过 `./apply.sh <full|light>` 重建 StatefulSet。
-- critical 告警默认双通道:平台 webhook + 外部 SMTP。可选第三通道在 `values/kps.yaml` 以注释示例给出(Slack incoming webhook / PagerDuty Events v2 / 钉钉群机器人),启用时取消对应 route、receiver 与 `alertmanagerSpec.secrets` 的注释并建好 Secret;钉钉还须在 `alertmanager.alertmanagerSpec.containers` 配置 `prometheus-webhook-dingtalk` sidecar,固定镜像版本,profile 为 `oncall`,机器人凭据引用 `monitoring/superdl-dingtalk-token` 的 `token` 键。启用机器人加签时,同时配置转换器支持的签名参数与 Secret。
+- The three OSDs in `values/rook-ceph-cluster.yaml` must land on three different machines (`failureDomain: host`).
+- Before changing Prometheus storage parameters, delete the StatefulSet `prometheus-kube-prometheus-stack-prometheus` in `monitoring` with `--cascade=orphan` (keeping Pods/PVCs), then rebuild the StatefulSet through `./apply.sh <full|light>`.
+- Critical alerts use two channels by default: the platform webhook + external SMTP. An optional third channel is given as commented examples in `values/kps.yaml` (Slack incoming webhook / PagerDuty Events v2 / DingTalk group robot); to enable one, uncomment the matching route, receiver and `alertmanagerSpec.secrets` and create the Secret; DingTalk additionally needs the `prometheus-webhook-dingtalk` sidecar configured under `alertmanager.alertmanagerSpec.containers` with a fixed image version, profile `oncall`, and the robot credential referencing the `token` key of `monitoring/superdl-dingtalk-token`. When robot signing is on, also configure the signing parameters and Secret supported by the converter.
 
-## 北向入口:Envoy Gateway 与 Gateway API CRD(两档通用,首装前必读)
+## North-south entry: Envoy Gateway and the Gateway API CRDs (both tiers, read before the first install)
 
-北向唯一入口是 Gateway API + Envoy Gateway。EG 控制面与 Envoy 数据面同住 `envoy-gateway-system`(未开 Gateway Namespace Mode);按 ns 名认入口的地方(NetworkPolicy 来源、`admission/tenant-restrictions.yaml` 的豁免名单)都写这个 ns。
+The only north-south entry is Gateway API + Envoy Gateway. The EG control plane and the Envoy data plane share `envoy-gateway-system` (Gateway Namespace Mode is off); everywhere the entry is recognised by namespace name (NetworkPolicy sources, the exemption list in `admission/tenant-restrictions.yaml`) uses that ns.
 
-**CRD 由 `./gateway-api-crds.sh` 单点管**(helmfile 侧 `crds.enabled=false`),脚本封的是 `helm template | kubectl apply --server-side`。首装不必手工执行:`./apply.sh` 经 envoy-gateway release 的 presync 钩子自动跑。
+**The CRDs are managed in one place by `./gateway-api-crds.sh`** (`crds.enabled=false` on the helmfile side); the script wraps `helm template | kubectl apply --server-side`. No manual run is needed at first install: `./apply.sh` runs it automatically through the envoy-gateway release presync hook.
 
-> **channel 只有一次机会。** Gateway API CRD 必须装 **experimental** channel;CRD 以 standard 装进后换不回来(唯一出路是删净 Gateway API CRD 重装,删 CRD 连带删掉全部 Gateway/HTTPRoute)。脚本自带前置闸门(channel 不符直接停手),`./preflight.sh` 复核 channel=experimental、bundle-version=v1.6.1。
-> k3s 的 traefik 必须**装机即禁**(`k3s/server-config.yaml` 已写好),不能「先启用后禁用」。
+> **The channel is a one-shot choice.** The Gateway API CRDs must be installed from the **experimental** channel; once installed as standard they cannot be switched (the only way out is deleting every Gateway API CRD and reinstalling, which deletes all Gateways/HTTPRoutes with them). The script carries a gate (a channel mismatch stops it), `./preflight.sh` re-checks channel=experimental and bundle-version=v1.6.1.
+> k3s traefik must be **disabled at install time** (`k3s/server-config.yaml` has it), not "enabled first, disabled later".
 
-**升级 Envoy Gateway**:`helmfile.yaml.gotmpl`、`gateway-api-crds.sh` 与 `scripts/check-gateway-manifests.py` 三处版本号一起改,再**先 `./gateway-api-crds.sh` 升 CRD,后 `./apply.sh <full|light> -l name=envoy-gateway` 升控制面**。
+**Upgrading Envoy Gateway**: change the version in `helmfile.yaml.gotmpl`, `gateway-api-crds.sh` and `scripts/check-gateway-manifests.py` together, then **upgrade the CRDs first with `./gateway-api-crds.sh`, the control plane second with `./apply.sh <full|light> -l name=envoy-gateway`**.
 
-入口的**配置**在 `../app/k8s/04-gateway.yaml`(GatewayClass / 6 个 listener / 8 条路由 / 9 条策略;数据面 Envoy 的副本与资源在那里的 `EnvoyProxy`);本目录 `values/envoy-gateway.yaml` 只管**控制面**。公网真实入口是 console 域(CDN → 前置反代 → `console-https`),`/api/v1` 由 HTTPRoute `superdl-console-api` 直达 API;每一跳前置地址同时登记进 `ClientTrafficPolicy` 的 `numTrustedHops` 与 ConfigMap `FORWARDED_ALLOW_IPS`,见 `docs/architecture.md`「公网真实链路」。
+The entry's **configuration** is `../app/k8s/04-gateway.yaml` (GatewayClass / 6 listeners / 8 routes / 9 policies; the data-plane Envoy replicas and resources are in its `EnvoyProxy`); `values/envoy-gateway.yaml` here manages the **control plane** only. The real public entry is the console domain (CDN → front proxy → `console-https`), `/api/v1` reaches the API directly through the HTTPRoute `superdl-console-api`; every upstream hop is registered both in the `ClientTrafficPolicy` `numTrustedHops` and in the ConfigMap `FORWARDED_ALLOW_IPS`, see `docs/architecture.md` "Real public chain".
 
-**light 档单机**:租户 Jupyter 一实例一条 HTTPRoute,给足 `EnvoyProxy` 的 memory limit 或对单机实例数设硬上限,取值实机压过再定。
+**Light tier single machine**: tenant Jupyter is one HTTPRoute per instance; give the `EnvoyProxy` enough memory limit or set a hard cap on instances per machine, sized after a real load test.
 
-## 路径 A:full(RKE2 生产)
+## Path A: full (RKE2 production)
 
-1. **server 节点**(装机基线见 `../ansible/`):
+1. **server nodes** (install baseline in `../ansible/`):
    ```bash
    curl -sfL https://get.rke2.io | INSTALL_RKE2_CHANNEL=latest sh -
    # Mainland China: curl -sfL https://rancher-mirror.rancher.cn/rke2/install.sh | INSTALL_RKE2_MIRROR=cn INSTALL_RKE2_CHANNEL=latest sh -
@@ -59,117 +59,117 @@ full 档另需 `cert-manager/acme-dns-account`(DNS01 账户,见 `runbooks/acme-d
    cp rke2/server-config.yaml /etc/rancher/rke2/config.yaml
    systemctl enable --now rke2-server
    ```
-   **控制面 HA(公众生产强制)**:3 台 server 堆叠 etcd + 控制面 VIP(kube-vip/keepalived/SLB 任一)。ansible 在 `group_vars/servers.yml` 定义 `api_vip` + `server_ips`(奇数台 ≥3)即自动追加 `tls-san`。手工部署时在每台 server 的 config.yaml 添加同一份 `tls-san` 列表,包含 VIP、全部 server IP,以及需要用于访问 API 的 server 主机名;单 server 可省略。
-   第 2/3 台 server 加入:config.yaml 与首台同一渲染产物,另放 `rke2/server-join-config.yaml` 到 `/etc/rancher/rke2/config.yaml.d/50-join.yaml`(server 指 VIP:9345 + server token,首台严禁放)。
-   VIP 就绪前可先单台上线,扩到 3 台前:tls-san 补齐 → 滚动重启全部 server → agent/cilium/netpol 统一切 VIP。
-2. **平台接入**:管理端「平台配置 · 集群接入」录入 server 地址(HA 录 `https://<VIP>:9345`,单 server 录该机 IP)与 **agent token**(server-config.yaml 里 `agent-token` 的值);**禁止**录入 `/var/lib/rancher/rke2/server/node-token`(见「server token 与 agent token」)。
-   GPU 节点的 registries.yaml 由平台按「平台配置 · 镜像仓库」自动生成;server 节点由 ansible 分发 `rke2/registries.yaml`。
-3. **组件**:`./preflight.sh full && ./apply.sh full`(含 Loki/Alloy,见 `runbooks/loki-logging.md`;presync 先跑 `./gateway-api-crds.sh`)。
-   准入策略不需要手工 apply:`admission/tenant-restrictions.yaml` 的七条 VAP 由 `apply.sh` 在 helmfile 之前下发并回读,七条全部 `Deny`、无 Audit 观察期;`preflight.sh` 与 `scripts/release.sh` 各再断言一次七个 Binding 存在且 `validationActions` 含 Deny。
-4. **镜像仓库(Harbor)**:平台镜像与租户实例镜像的权威源,镜像引用一律 Harbor 全限定名。
-   Harbor 侧:建平台项目(默认 `superdl`)、仅 Pull + List Repository 权限的机器人账户、(可选)Docker Hub 等代理缓存项目(设 public)。管理端「平台配置 · 镜像仓库」录入地址 / 项目 / 机器人 / 自签 CA / 代理映射并「测试连接」。拉取凭据不落节点:首装按 `../README.md`「生产发布流程」手建 `superdl-registry-pull`,之后配置中心录入机器人后由 worker 按指纹覆写同名 Secret 并托管到各租户 ns;server 节点的 `registries.yaml` 由 ansible 分发。镜像发布与凭据轮换 SOP:`runbooks/image-prewarm.md`。
-5. **GPU 节点**:管理端「节点 · 新增」生成一键命令,节点上执行即完成打标加入(池标签 + GPU Operator 落点标签 / 驱动 / registries 全自动)。
-   **先装 gpu-operator 再加节点**;顺序颠倒时重打一次标签。
-   MIG 切分是唯一还要手工打的标签:
+   **Control-plane HA (mandatory for public production)**: 3 servers with stacked etcd + a control-plane VIP (kube-vip / keepalived / cloud SLB, any one). When ansible has `api_vip` + `server_ips` (odd count ≥3) in `group_vars/servers.yml` it appends `tls-san` automatically. For manual deployment add the same `tls-san` list to every server's config.yaml, containing the VIP, every server IP and any server hostname used to reach the API; a single server may omit it.
+   Joining servers 2/3: config.yaml is the same rendered artifact as the first, plus `rke2/server-join-config.yaml` at `/etc/rancher/rke2/config.yaml.d/50-join.yaml` (server pointing at VIP:9345 + server token; never on the first server).
+   A single server can go live before the VIP is ready; before growing to 3: complete tls-san → rolling restart of every server → switch agents / cilium / netpol to the VIP together.
+2. **Platform access**: enter under admin "Platform configuration · Cluster access" the server address (HA: `https://<VIP>:9345`, single server: that machine's IP) and the **agent token** (the `agent-token` value in server-config.yaml); **never** enter `/var/lib/rancher/rke2/server/node-token` (see "Server token and agent token").
+   The GPU nodes' registries.yaml is generated by the platform from "Platform configuration · Image registry"; server nodes receive `rke2/registries.yaml` from ansible.
+3. **Components**: `./preflight.sh full && ./apply.sh full` (includes Loki/Alloy, see `runbooks/loki-logging.md`; the presync runs `./gateway-api-crds.sh` first).
+   The admission policies need no manual apply: the seven VAPs in `admission/tenant-restrictions.yaml` are applied and read back by `apply.sh` before helmfile, all seven `Deny` with no Audit observation period; `preflight.sh` and `scripts/release.sh` each assert once more that the seven Bindings exist and `validationActions` contains Deny.
+4. **Image registry (Harbor)**: the authoritative source of platform images and tenant instance images; image references are always Harbor fully qualified names.
+   Harbor side: create the platform project (default `superdl`), a robot account with Pull + List Repository only, and optionally proxy cache projects for Docker Hub etc. (set public). Enter address / project / robot / self-signed CA / proxy mappings under admin "Platform configuration · Image registry" and "Test connection". Pull credentials never land on nodes: at first install create `superdl-registry-pull` by hand per `../README.md` "Production release flow"; once the robot is entered in the configuration centre the worker overwrites the Secret of that name by fingerprint and manages it in every tenant ns; the server nodes' `registries.yaml` comes from ansible. Image release and credential rotation SOP: `runbooks/image-prewarm.md`.
+5. **GPU nodes**: admin "Nodes · Add" generates a one-shot command; running it on the node completes labelling and joining (pool label + GPU Operator placement labels / driver / registries, all automatic).
+   **Install gpu-operator before adding nodes**; if the order is reversed, apply the labels once more.
+   MIG partitioning is the only label still applied by hand:
    ```bash
-   kubectl label node <mig池节点> nvidia.com/mig.config=all-1g.10gb --overwrite
+   kubectl label node <mig pool node> nvidia.com/mig.config=all-1g.10gb --overwrite
    ```
-6. 验证:`runbooks/cluster-validation.md`。
+6. Validate: `runbooks/cluster-validation.md`.
 
-`apply.sh` 是本目录唯一的 apply 入口,两步:先 `kubectl apply -f admission/tenant-restrictions.yaml` 并回读七条 Policy 与 Binding(cluster-scoped,不进 `../app/k8s/kustomization.yaml`),再跑 `helmfile apply` 并固定两个必带开关:`HELM_DIFF_USE_UPGRADE_DRY_RUN=true`(helm-diff 走服务端 dry-run)与 `--skip-diff-on-install`。别绕过它直接跑 helmfile。单个 release:`./apply.sh light -l name=gpu-operator`。
+`apply.sh` is the only apply entry of this directory, in two steps: first `kubectl apply -f admission/tenant-restrictions.yaml` and read back the seven Policies and Bindings (cluster-scoped, not in `../app/k8s/kustomization.yaml`), then `helmfile apply` with two switches always on: `HELM_DIFF_USE_UPGRADE_DRY_RUN=true` (helm-diff uses a server-side dry run) and `--skip-diff-on-install`. Do not bypass it with a bare helmfile. A single release: `./apply.sh light -l name=gpu-operator`.
 
-## 平台组件落点标签
+## Platform component placement label
 
-平台组件(api / 5 个 worker / 前端 / Envoy 数据面)的 `nodeSelector` 统一锚点是 `node-restriction.kubernetes.io/superdl-infra=true`,**由 `../ansible/site.yml` 在装机后用管理凭据打到控制面节点上**,不走发行版的 `node-label`。`node-restriction.kubernetes.io/` 前缀被 NodeRestriction 准入插件拉黑(`rke2/server-config.yaml` 与 `k3s/server-config.yaml` 的 `kube-apiserver-arg` 显式钉住),kubelet 打不上也改不掉;平台 SA 也无权改——准入策略③ 对 Node labels 只放行 `superdl.io/*`、池标签键 `node-restriction.kubernetes.io/superdl-pool`(同前缀,kubelet 打不上,只有平台写;hami / kata-deploy 的 nodeSelector 认它)与两个具名的 GPU operand 键(`nvidia.com/gpu.workload.config`、`nvidia.com/gpu.deploy.device-plugin`,管理端切池要随池标签一起收敛,见 [`runbooks/node-pool-switch.md`](./runbooks/node-pool-switch.md))。白名单保持具名,不放宽成 `nvidia.com/*` 前缀。
+The `nodeSelector` anchor of every platform component (api / 5 workers / frontends / Envoy data plane) is `node-restriction.kubernetes.io/superdl-infra=true`, **applied to the control-plane nodes by `../ansible/site.yml` with admin credentials after install**, not through the distribution's `node-label`. The `node-restriction.kubernetes.io/` prefix is blocked by the NodeRestriction admission plugin (pinned explicitly in the `kube-apiserver-arg` of `rke2/server-config.yaml` and `k3s/server-config.yaml`), so kubelets can neither set nor change it; the platform SA cannot either: admission policy ③ allows on Node labels only `superdl.io/*`, the pool label key `node-restriction.kubernetes.io/superdl-pool` (same prefix, kubelets cannot set it, only the platform writes it; the hami / kata-deploy nodeSelectors use it) and two named GPU operand keys (`nvidia.com/gpu.workload.config`, `nvidia.com/gpu.deploy.device-plugin`, which the admin pool switch converges together with the pool label, see [`runbooks/node-pool-switch.md`](./runbooks/node-pool-switch.md)). The allow-list stays named; it is not widened to the `nvidia.com/*` prefix.
 
-**infra 落点节点 ≥2 台才有冗余**:api / worker(core、tenant-mgr)/ web / admin / Envoy 数据面各 2 副本,按 `kubernetes.io/hostname` 的 topologySpread 是 `DoNotSchedule`(zone 维仍 `ScheduleAnyway`,节点可能没有 zone 标签)。只有一台 infra 节点时两副本同机、可调度但无冗余;两台时副本必分两机;其中一台失联后替补副本保持 Pending 直到该节点恢复或被删 —— Pending 就是可见信号(`kubectl -n superdl get pods | grep Pending`),不要为此放宽约束。单副本的 node-mgr / prewarm / disk-ops 不受影响。
+**Redundancy needs ≥2 infra placement nodes**: api / workers (core, tenant-mgr) / web / admin / Envoy data plane each run 2 replicas with a `kubernetes.io/hostname` topologySpread of `DoNotSchedule` (the zone dimension stays `ScheduleAnyway`, nodes may have no zone label). With a single infra node both replicas share the machine: schedulable but without redundancy; with two they must split; when one is lost the replacement replica stays Pending until the node returns or is deleted. Pending is the visible signal (`kubectl -n superdl get pods | grep Pending`); do not relax the constraint for it. The single-replica node-mgr / prewarm / disk-ops are unaffected.
 
-`preflight.sh` 三项复核:NodeRestriction 已启用、至少一台节点带该标签、**GPU 池节点严禁带该标签**。手工补标:
+`preflight.sh` checks three things: NodeRestriction is enabled, at least one node carries the label, and **GPU pool nodes must not carry it**. Manual labelling:
 
 ```bash
 kubectl label nodes -l node-role.kubernetes.io/control-plane \
   node-restriction.kubernetes.io/superdl-infra=true --overwrite
 ```
 
-## server token 与 agent token(轮换 + 快照托管)
+## Server token and agent token: rotation and snapshot custody
 
-- **职责分离**:server token(`/var/lib/rancher/<rke2|k3s>/server/node-token`)只留在 server 节点与保险柜;agent token(server config 的 `agent-token` 值)录入平台库(AES-GCM 加密)并下发到 GPU 节点 agent config(0600 root)。
-- **两份 server-config 模板里 `agent-token` 是取消注释的 `CHANGE_ME_AGENT_TOKEN` 占位行**,由 ansible 渲染(值经 `group_vars/servers.yml` 或 `-e` 注入)。**不许把它注释回去**(注释掉即静默回落用 server token 认证)。
-- `preflight.sh` 两道校验:模板侧该行原样存在且值仍是 `CHANGE_ME`;集群侧 `agent-token` ≠ `/var/lib/rancher/<distro>/server/node-token` 且长度 ≥32。两个文件只在 server 节点上,别处跑 preflight 人工核对后以 `SUPERDL_AGENT_TOKEN_ACK=yes` 登记(与 `SUPERDL_MANAGED_PG_PITR_ACK` / `SUPERDL_LIGHT_INTERNAL_ACK` 同款;脚本不回显 token 值)。
-- **agent token 轮换**:改全部 server 的 config → 滚动重启 server(逐一,等 etcd 健康再下一台)→ 更新平台「集群接入」配置。在册节点不受影响(join 后靠客户端证书认证)。
-- **server token 轮换**:仅在怀疑泄露时做;节点多时用「先加新 token 再撤旧 token」两阶段法,参考发行版官方文档。
-- **etcd 快照托管**:`secrets-encryption: true` 已开,快照仍含全部集群状态与 token 材料:异地加密保存,禁止只留 server 本机 `/var/lib/rancher`;访问快照纳入审计。
+- **Separation of duties**: the server token (`/var/lib/rancher/<rke2|k3s>/server/node-token`) stays on the server nodes and in the vault; the agent token (the `agent-token` value of the server config) is entered into the platform database (AES-GCM encrypted) and delivered to the GPU nodes' agent config (0600 root).
+- **In both server-config templates `agent-token` is an uncommented `CHANGE_ME_AGENT_TOKEN` placeholder line**, rendered by ansible (the value comes from `group_vars/servers.yml` or `-e`). **Never comment it back out** (commenting it out silently falls back to server token authentication).
+- `preflight.sh` checks twice: on the template side the line exists as-is with the value still `CHANGE_ME`; on the cluster side `agent-token` ≠ `/var/lib/rancher/<distro>/server/node-token` and its length is ≥32. Both files exist only on server nodes; when preflight runs elsewhere, verify by hand and record it with `SUPERDL_AGENT_TOKEN_ACK=yes` (same pattern as `SUPERDL_MANAGED_PG_PITR_ACK` / `SUPERDL_LIGHT_INTERNAL_ACK`; the script never echoes token values).
+- **Agent token rotation**: change the config on every server → restart the servers one by one (wait for etcd health before the next) → update the platform "Cluster access" configuration. Enrolled nodes are unaffected (after joining they authenticate with client certificates).
+- **Server token rotation**: only when a leak is suspected; with many nodes use the two-phase "add the new token, then revoke the old" method from the distribution's documentation.
+- **etcd snapshot custody**: `secrets-encryption: true` is on, yet snapshots still contain the whole cluster state and token material: store them encrypted off-site, never only in the server's local `/var/lib/rancher`; snapshot access is audited.
 
-## 路径 B:light(k3s 单机/小规模)
+## Path B: light (k3s single machine / small scale)
 
-> **定位边界**:light 档控制面即单点(单 server,etcd 与业务同机),只适用于内网试点/演示/开发联调;**禁止作为公众生产对外开放**,公众生产走路径 A。管理端「集群」页对 light 档常驻「轻量集群」黄条。
+> **Positioning**: the light tier's control plane is a single point of failure (one server, etcd and workloads on the same machine) and suits internal pilots / demos / development integration only; **it must not be exposed as public production**, which takes path A. The admin "Cluster" page shows a permanent "lightweight cluster" yellow bar on the light tier.
 
-1. **server(可兼跑业务)**:
+1. **server (may also run workloads)**:
    ```bash
    mkdir -p /etc/rancher/k3s && cp k3s/server-config.yaml /etc/rancher/k3s/config.yaml
    cp rke2/audit-policy.yaml /etc/rancher/k3s/audit-policy.yaml
    curl -sfL https://get.k3s.io | sh -s - server
    # Mainland China: curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh | INSTALL_K3S_MIRROR=cn sh -s - server
    ```
-   (config 已含 `disable: traefik`、`embedded-registry: true`=Spegel,以及 `flannel-backend: none` / `disable-network-policy: true` / `disable-kube-proxy: true`——CNI、NetworkPolicy、kube-proxy 全归 Cilium。
-   这几项都必须**装机即设**:事后改要全集群重启 k3s 并重建全部 Pod,见下「给已有集群换 CNI」)
-   再把 `values/light/cilium-light.yaml` 的 `CHANGE_ME_K3S_SERVER_IP` 换成 server 自己的 IP(`preflight.sh` 会拦占位符)。
-2. **平台接入**:同 full 第 2 步(k3s 同样配 `agent-token`,见 k3s/server-config.yaml;禁止用 `/var/lib/rancher/k3s/server/node-token`;server 地址 `https://<ip>:6443`)。
-3. **组件**:`./preflight.sh light && ./apply.sh light`(presync 先装 Gateway API CRD;准入策略同 full 第 3 步)。
+   (The config already contains `disable: traefik`, `embedded-registry: true` = Spegel, and `flannel-backend: none` / `disable-network-policy: true` / `disable-kube-proxy: true`: CNI, NetworkPolicy and kube-proxy all belong to Cilium.
+   All of these must be **set at install time**: changing them later restarts k3s cluster-wide and recreates every Pod, see "Switching an existing cluster's CNI" below.)
+   Then replace `CHANGE_ME_K3S_SERVER_IP` in `values/light/cilium-light.yaml` with the server's own IP (`preflight.sh` catches the placeholder).
+2. **Platform access**: as full step 2 (k3s also configures `agent-token`, see k3s/server-config.yaml; never `/var/lib/rancher/k3s/server/node-token`; server address `https://<ip>:6443`).
+3. **Components**: `./preflight.sh light && ./apply.sh light` (the presync installs the Gateway API CRDs first; admission policies as in full step 3).
 
-   light 与 full 装同一套组件,差异只在 `values/light/` 的覆盖:
+   light installs the same component set as full; the differences are only the overrides in `values/light/`:
 
-   - HAMi 钉 k3s 版 scheduler 镜像(键 `kubeScheduler.image.tag`,升 k3s 时同步改)+ devicePlugin `runtimeClassName=nvidia`;chart 默认的 `nvidiaNodeSelector: {gpu: "on"}` 用 `null` 删键。
-   - gpu-operator 关掉 toolkit(宿主 toolkit 由 node-join 装、k3s 自行探测生成 RuntimeClass nvidia)。`nvidia.com/gpu.count` 由 gpu-operator 自带的 GFD 提供。
-   - kps / Loki 精简(盘紧可在 `environments/light.yaml` 关掉日志栈);开了 ServiceMonitor 的 release 必须 `needs: [monitoring/kube-prometheus-stack]`。
-   - Envoy Gateway 控制面降到 1 副本并关掉 PDB。
-   - Cilium 同装并接管 kube-proxy;`values/light/cilium-light.yaml` 只覆盖 `k8sServiceHost`(server 实 IP)并关闭 `l2announcements`,北向 LoadBalancer 仍归 k3s ServiceLB。
-   - acme-dns 不装;租户 Jupyter 泛域名证书由现成通配证书灌成 `superdl/superdl-jupyter-wildcard-tls`。
-   - **TopoLVM 必开**(VG `superdl-nvme` 由 node-join.sh 建出);**Rook-Ceph 必开**(数据盘 CephFS,OSD 落 TopoLVM 的 Block PVC,`values/rook-ceph-cluster.yaml`)。
-### 给已有集群换 CNI(flannel → Cilium)
+   - HAMi pins the k3s scheduler image (key `kubeScheduler.image.tag`, change it when upgrading k3s) + devicePlugin `runtimeClassName=nvidia`; the chart default `nvidiaNodeSelector: {gpu: "on"}` is removed with `null`.
+   - gpu-operator turns the toolkit off (the host toolkit is installed by node-join, k3s detects it and generates the RuntimeClass nvidia itself). `nvidia.com/gpu.count` is provided by the GFD bundled with gpu-operator.
+   - kps / Loki trimmed (with tight disks the log stack can be turned off in `environments/light.yaml`); releases with ServiceMonitors enabled must `needs: [monitoring/kube-prometheus-stack]`.
+   - Envoy Gateway control plane down to 1 replica with the PDB off.
+   - Cilium installs alike and takes over kube-proxy; `values/light/cilium-light.yaml` overrides only `k8sServiceHost` (the server's real IP) and turns `l2announcements` off; the north-south LoadBalancer still belongs to k3s ServiceLB.
+   - acme-dns is not installed; the tenant Jupyter wildcard certificate is loaded from an existing wildcard certificate as `superdl/superdl-jupyter-wildcard-tls`.
+   - **TopoLVM must be on** (the VG `superdl-nvme` is created by node-join.sh); **Rook-Ceph must be on** (data disks on CephFS, OSDs on TopoLVM Block PVCs, `values/rook-ceph-cluster.yaml`).
+### Switching an existing cluster's CNI (flannel → Cilium)
 
-装机时没设 `flannel-backend: none` 的老集群要补装 Cilium,是**全集群网络中断**的操作,不是滚动升级:k3s 的 flannel 开关是 server 端标志(agent 不必逐台改),但每个节点的 CNI 配置与全部 Pod 的网络都要重来。
+An older cluster installed without `flannel-backend: none` that needs Cilium faces a **cluster-wide network outage**, not a rolling upgrade: the k3s flannel switch is a server-side flag (agents need no per-node change), but every node's CNI configuration and every Pod's network start over.
 
-1. 停租户侧入口(或挑无实例运行的窗口):切换期间跨节点 Pod 通信与 NodePort 全断。
-2. server `/etc/rancher/k3s/config.yaml` 加 `flannel-backend: none`、`disable-network-policy: true`、`disable-kube-proxy: true`,`systemctl restart k3s`。此刻起 ClusterIP 无人处理,集群内服务发现全断,直到第 3 步 Cilium 起来。
-3. `./apply.sh light -l name=cilium` 装上 Cilium;等 `cilium` DaemonSet 在**全部**节点 Ready。
-4. 逐台 agent `systemctl restart k3s-agent`,让 kubelet 重读 CNI 配置;Cilium 的 `cni-exclusive` 会把旧的 `10-flannel.conflist` 挪走。
-5. 重建全部非 hostNetwork 的 Pod(`kubectl delete pod -A --field-selector spec.nodeName=<node>` 逐台,或整机重启)。
-6. 残留的 `cni0` / `flannel.1` 接口与 flannel / kube-proxy(`KUBE-*` 链)的 iptables 规则**重启节点才清干净**;不重启则手工 `ip link delete cni0`、`ip link delete flannel.1` 并清 `KUBE-*` 链。
-7. 回读:`kubectl -n kube-system exec ds/cilium -- cilium-dbg status`、全节点 Ready、租户 SSH 的 NodePort 能连、Envoy 的 LoadBalancer 外部 IP 未变。
+1. Stop the tenant-facing entry (or pick a window with no running instances): cross-node Pod traffic and NodePorts are all down during the switch.
+2. Add `flannel-backend: none`, `disable-network-policy: true`, `disable-kube-proxy: true` to the server's `/etc/rancher/k3s/config.yaml`, then `systemctl restart k3s`. From this moment nothing serves ClusterIPs and in-cluster service discovery is down until Cilium comes up in step 3.
+3. `./apply.sh light -l name=cilium` installs Cilium; wait until the `cilium` DaemonSet is Ready on **every** node.
+4. `systemctl restart k3s-agent` on each agent so the kubelet re-reads the CNI configuration; Cilium's `cni-exclusive` moves the old `10-flannel.conflist` away.
+5. Recreate every non-hostNetwork Pod (`kubectl delete pod -A --field-selector spec.nodeName=<node>` node by node, or reboot the machines).
+6. Leftover `cni0` / `flannel.1` interfaces and the iptables rules of flannel / kube-proxy (`KUBE-*` chains) **are only fully cleared by a node reboot**; without a reboot run `ip link delete cni0`, `ip link delete flannel.1` by hand and clear the `KUBE-*` chains.
+7. Read back: `kubectl -n kube-system exec ds/cilium -- cilium-dbg status`, every node Ready, the tenant SSH NodePort connects, the Envoy LoadBalancer external IP unchanged.
 
-**Cilium 的两处策略语义必须靠 `cilium-policies.yaml` 补上**(随 cilium release 的 postsync 下发);缺失时的现场是「组件都 Running 但平台连不上库、租户 SSH 不通」:
+**Two Cilium policy semantics must be supplied by `cilium-policies.yaml`** (shipped by the cilium release postsync); when it is missing the symptom is "every component Running but the platform cannot reach the database and tenant SSH is dead":
 
-- **`ipBlock` 选不中节点**。节点在 Cilium 里是 `host` / `remote-node` 保留身份,与 IP 无关。`values/cilium.yaml` 的 `policyCIDRMatchMode: [nodes]` 只让 CIDR 选择器覆盖 `remote-node`,本机 `host`(平台库跑在节点宿主上)仍要按身份放行。
-- **NodePort 的 SNAT 来源是入口节点的 `cilium_host`**。该地址从 Pod CIDR **动态分配**,且落在 `tenant-default` 的 `except 10.42.0.0/16` 里,按地址放行选不中;`cilium-policies.yaml` 按身份放行。
+- **`ipBlock` does not select nodes.** In Cilium a node is the reserved identity `host` / `remote-node`, independent of its IP. `policyCIDRMatchMode: [nodes]` in `values/cilium.yaml` only lets CIDR selectors cover `remote-node`; the local `host` (the platform database runs on the node host) still has to be allowed by identity.
+- **The SNAT source of a NodePort is the entry node's `cilium_host`.** That address is **allocated dynamically** from the Pod CIDR and falls inside the `except 10.42.0.0/16` of `tenant-default`, so allowing by address does not match; `cilium-policies.yaml` allows by identity.
 
-换完必须实测:平台三域、租户 Jupyter、以及**从至少两台不同节点**连租户 SSH 的 NodePort。
+After the switch test for real: the three platform domains, tenant Jupyter, and the tenant SSH NodePort **from at least two different nodes**.
 
-4. **GPU 节点**:同 full 第 5 步。单机时 server 本机直接跑管理端生成的 node-join 命令:脚本检测到本机 `k3s.service` 在运行即走 server 路径(不装 agent、不改 server config,池标签经 `k3s kubectl` 打到节点;首次装 toolkit 后重启一次 k3s)。实例盘 VG `superdl-nvme` 不由 node-join 建时(令牌未登记 NVMe),须在 `./apply.sh light` 之前手工建好(空盘 `pvcreate`/`vgcreate`,或 loop 文件兜底)。
-5. 能力边界:组件面不阉割(kata / mig 池同样可用),档位可用性看**池里有没有 Ready 节点**;单机只有一个池标签,选了 hami 就没有 kata/mig 池,专用整卡与共享·标准的 SKU 上架被硬校验拦下。纯 CPU 规格挂 hami 池即可在这台机上卖。管理端「集群」页常驻「轻量集群」黄条与组件体检。
+4. **GPU nodes**: as full step 5. On a single machine the server host runs the node-join command generated by the admin console directly: the script detects the running local `k3s.service` and takes the server path (no agent install, no server config change, the pool label is applied through `k3s kubectl`; one k3s restart after the first toolkit install). When node-join does not create the instance disk VG `superdl-nvme` (no NVMe registered with the token), create it by hand before `./apply.sh light` (an empty disk with `pvcreate`/`vgcreate`, or a loop file as fallback).
+5. Capability boundary: the component surface is not cut down (the kata / mig pools work alike); tier availability depends on **whether the pool has Ready nodes**; a single machine carries a single pool label, so choosing hami leaves no kata/mig pool and listing dedicated whole-card and shared·standard SKUs is blocked by hard validation. Pure CPU specs on the hami pool can be sold on that machine. The admin "Cluster" page keeps the "lightweight cluster" yellow bar and the component health checks.
 
-## 集群状态备份与恢复(light / k3s)
+## Cluster state backup and restore (light / k3s)
 
-`k3s/server-config.yaml` 的 `cluster-init: true` 让单 server 也用内嵌 etcd(已有 SQLite 库的 server 带此项重启即自动迁入;迁移前先手动跑一次 `superdl-k3s-state-backup`),每 6 小时落一份 etcd 快照到 `/var/lib/rancher/k3s/server/db/snapshots`(留 28 份,只在本机)。异机由 `k3s/state-backup.sh` 承担(`../ansible/site.yml` 装成 `/usr/local/sbin/superdl-k3s-state-backup`,cron `/etc/cron.d/superdl-k3s-state-backup` 每 6 小时;手工安装时同样这两处):
+`cluster-init: true` in `k3s/server-config.yaml` gives even a single server embedded etcd (a server with an existing SQLite datastore migrates automatically when restarted with this option; run `superdl-k3s-state-backup` once by hand before migrating), and an etcd snapshot lands in `/var/lib/rancher/k3s/server/db/snapshots` every 6 hours (28 kept, local only). Off-host copies are the job of `k3s/state-backup.sh` (installed by `../ansible/site.yml` as `/usr/local/sbin/superdl-k3s-state-backup`, cron `/etc/cron.d/superdl-k3s-state-backup` every 6 hours; a manual install uses the same two paths):
 
-- 打包 `server/token`、`server/agent-token`、`server/cred`(含 secrets-encryption 密钥)、`server/tls`(CA)与最新 etcd 快照;仍是 SQLite(`server/db/state.db` 存在且无 `server/db/etcd/`)时用 `sqlite3 .backup` 做在线一致副本(需 `sqlite3`,缺则报错退出);顺带把 `state.db` 收成 0600。
-- gpg AES256(口令 `/etc/superdl/pg/backup-passphrase`)→ `/var/lib/superdl/k3s-state/k3s-state-<主机>-<ts>.tar.gz.gpg`(本机留 14 天)→ rsync 到 PG 镜像机 `k3s/`(`/etc/superdl/pg/backup.env` 的 `SUPERDL_PG_MIRROR`、密钥 `backup-ssh-key`;镜像机 `rrsync -wo` 目录下须预建 `k3s/`)。**镜像机不得是承载租户负载的节点。**
-- 成功写 `/var/lib/node_exporter/textfile/superdl_k3s_state_backup.prom` 的 `superdl_k3s_state_backup_last_success_timestamp_seconds`;季度演练清单在 `runbooks/pg-backup-restore.md`。
+- Packs `server/token`, `server/agent-token`, `server/cred` (including the secrets-encryption key), `server/tls` (CA) and the latest etcd snapshot; while still on SQLite (`server/db/state.db` exists and `server/db/etcd/` does not) it takes an online consistent copy with `sqlite3 .backup` (needs `sqlite3`, exits with an error when missing) and tightens `state.db` to 0600 on the way.
+- gpg AES256 (passphrase `/etc/superdl/pg/backup-passphrase`) → `/var/lib/superdl/k3s-state/k3s-state-<host>-<ts>.tar.gz.gpg` (kept locally 14 days) → rsync to the PG mirror host's `k3s/` (`SUPERDL_PG_MIRROR` from `/etc/superdl/pg/backup.env`, key `backup-ssh-key`; the `k3s/` directory must exist under the mirror host's `rrsync -wo` directory). **The mirror host must not be a node that carries tenant workloads.**
+- On success writes `superdl_k3s_state_backup_last_success_timestamp_seconds` to `/var/lib/node_exporter/textfile/superdl_k3s_state_backup.prom`; the quarterly drill checklist is in `runbooks/pg-backup-restore.md`.
 
-没有这份备份时 server 机器损毁 = 全部 Secret(含 `superdl-crypto` 的配置主密钥:平台库里的密文与实名摘要随之作废)、CA 与 token 全丢,agent 无法重新接入,只能重建集群并按 `../app/secrets.example.yaml` 重灌 Secret,租户实例与数据盘对象全部重建。
+Without this backup, losing the server machine = losing every Secret (including the configuration master key in `superdl-crypto`: the ciphertexts and KYC digests in the platform database become useless with it), the CA and the tokens; agents cannot re-join, the cluster must be rebuilt and the Secrets reloaded from `../app/secrets.example.yaml`, and every tenant instance and data disk object is recreated.
 
-恢复到新 server(同版本 k3s、同一份 `/etc/rancher/k3s/config.yaml` 与 audit-policy,沿用原 IP;换 IP 要同步改 agent config 的 `server:`、`values/light/cilium-light.yaml` 的 `k8sServiceHost`、DNS 与 `/etc/hosts`):
+Restore to a new server (same k3s version, the same `/etc/rancher/k3s/config.yaml` and audit-policy, keeping the original IP; a new IP also requires changing `server:` in the agent configs, `k8sServiceHost` in `values/light/cilium-light.yaml`, DNS and `/etc/hosts`):
 
 ```bash
-mkdir -p /tmp/k3s-state && gpg --batch --decrypt --passphrase-file /etc/superdl/pg/backup-passphrase k3s-state-<主机>-<ts>.tar.gz.gpg | tar -xzf - -C /tmp/k3s-state
+mkdir -p /tmp/k3s-state && gpg --batch --decrypt --passphrase-file /etc/superdl/pg/backup-passphrase k3s-state-<host>-<ts>.tar.gz.gpg | tar -xzf - -C /tmp/k3s-state
 curl -sfL https://get.k3s.io | INSTALL_K3S_SKIP_START=true sh -s - server   # mainland China: rancher-mirror.rancher.cn/k3s/k3s-install.sh with INSTALL_K3S_MIRROR=cn
 mkdir -p /var/lib/rancher/k3s/server/db && cp -a /tmp/k3s-state/server/{token,agent-token,cred,tls} /var/lib/rancher/k3s/server/
-# etcd:用快照重置(token 必须是备份里那份,快照内引导数据靠它解密);命令结束后再 start
-k3s server --cluster-reset --cluster-reset-restore-path=/tmp/k3s-state/server/db/snapshots/<快照文件>
-# SQLite(备份里是 state.db 而非快照):放回数据库文件即可
+# etcd: reset from the snapshot (the token must be the one from the backup; the bootstrap data inside the snapshot is decrypted with it); start only after the command finishes
+k3s server --cluster-reset --cluster-reset-restore-path=/tmp/k3s-state/server/db/snapshots/<snapshot file>
+# SQLite (the backup holds state.db instead of a snapshot): put the database file back
 cp -a /tmp/k3s-state/server/db/state.db /var/lib/rancher/k3s/server/db/
 systemctl start k3s
 rm -rf /tmp/k3s-state
 ```
 
-起来后:`kubectl get nodes` 里 agent 自动回连(证书与 token 未变);`kubectl delete node <旧 server 名>`(主机名变了才有);`./preflight.sh light` 全绿;租户实例是无 ownerReference 的裸 Pod,已丢的按管理端实例详情逐台重建。
+Once up: agents reconnect automatically in `kubectl get nodes` (certificates and tokens unchanged); `kubectl delete node <old server name>` (only when the hostname changed); `./preflight.sh light` all green; tenant instances are bare Pods without ownerReference, recreate the lost ones one by one from the admin instance details.

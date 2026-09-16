@@ -1,22 +1,22 @@
-# 日志与审计留存(Loki)
+# Logs and audit retention (Loki)
 
-组件:helmfile 的 `loki`(grafana-community/loki,Monolithic 单副本)+ `alloy`(grafana/alloy)。
-采集面:全部命名空间的容器日志(discovery.kubernetes)+ 控制面节点 apiserver 审计文件(`/var/lib/rancher/{rke2,k3s}/server/logs/audit.log`)。
+Components: the helmfile releases `loki` (grafana-community/loki, single-replica Monolithic) + `alloy` (grafana/alloy).
+Collection surface: container logs of every namespace (discovery.kubernetes) + the apiserver audit file on control-plane nodes (`/var/lib/rancher/{rke2,k3s}/server/logs/audit.log`).
 
-多租户(`auth_enabled: true`):Alloy 按 namespace 打租户,平台组件与 apiserver 审计进 `platform`,`tenant-*` 工作负载进 `tenant`;摄入限流按租户独立计。入库前两段 `stage.replace`:日志行里 `token=` 的值,以及 apiserver 审计行里 Pod 模板的 `"name":"JUPYTER_TOKEN"` / `"name":"AUTHORIZED_KEYS"` 的 `value`,都抹成 `<redacted>`。租户头自声明,网络边界是 `../monitoring-netpol.yaml`(仅 alloy/grafana/prometheus 可到 loki:3100)。
+Multi-tenancy (`auth_enabled: true`): Alloy assigns the tenant by namespace, platform components and the apiserver audit go to `platform`, `tenant-*` workloads to `tenant`; ingestion limits count per tenant. Two `stage.replace` steps run before ingestion: the value after `token=` in log lines, and the `value` of `"name":"JUPYTER_TOKEN"` / `"name":"AUTHORIZED_KEYS"` in Pod templates inside apiserver audit lines, are both replaced with `<redacted>`. The tenant header is self-declared; the network boundary is `../monitoring-netpol.yaml` (only alloy/grafana/prometheus can reach loki:3100).
 
-RBAC:Alloy 的 ClusterRole 只有 pods / pods/log / namespaces / services / endpoints / endpointslices / nodes 的读(`values/alloy.yaml` 的 `rbac.rules` / `rbac.clusterRules`),无 secrets / configmaps;Loki 关掉 ruler sidecar(`sidecar.rules.enabled: false`),SA 与 Pod 均不挂 token。两者都由 CI `monitoring-rbac` job 的 helm 渲染断言与 `../preflight.sh` 守着。
+RBAC: Alloy's ClusterRole has only read on pods / pods/log / namespaces / services / endpoints / endpointslices / nodes (`rbac.rules` / `rbac.clusterRules` in `values/alloy.yaml`), no secrets / configmaps; Loki turns the ruler sidecar off (`sidecar.rules.enabled: false`) and neither the SA nor the Pod mounts a token. Both are guarded by the helm render assertion in the CI `monitoring-rbac` job and by `../preflight.sh`.
 
-## 留存口径(合规基线)
+## Retention (compliance baseline)
 
-- **Loki `retention_period: 4320h`(180 天)**,`values/loki.yaml`(compactor `retention_enabled`);磁盘 full 档 50Gi CephFS,light 档 10Gi TopoLVM。
-- DB `audit_log` 表:365 天(`SUPERDL_AUDIT_RETENTION_DAYS`),结构化审计第一事实源;Loki 是请求链/异常/apiserver 审计的第二路留存。
+- **Loki `retention_period: 4320h` (180 days)**, `values/loki.yaml` (compactor `retention_enabled`); disk 50Gi CephFS on the full tier, 10Gi TopoLVM on light.
+- DB `audit_log` table: 365 days (`SUPERDL_AUDIT_RETENTION_DAYS`), the primary source of structured audit; Loki is the second retention path for request chains / exceptions / apiserver audit.
 
-## 查询方式
+## Querying
 
-Grafana(full 档)→ Explore → `Loki(平台)` / `Loki(租户)` 数据源(kps.yaml additionalDataSources);或 `logcli` 带 `--org-id`:`kubectl -n monitoring port-forward svc/loki 3100:3100` 后 `logcli --addr=http://localhost:3100 --org-id=platform query ...`(下面查询为 platform 租户口径;租户实例日志换 `--org-id=tenant`)。
+Grafana (full tier) → Explore → the `Loki (platform)` / `Loki (tenant)` data sources (kps.yaml additionalDataSources); or `logcli` with `--org-id`: after `kubectl -n monitoring port-forward svc/loki 3100:3100` run `logcli --addr=http://localhost:3100 --org-id=platform query ...` (the queries below use the platform tenant; for tenant instance logs use `--org-id=tenant`).
 
-下面六条查询依次对应:请求 ID 全链路、API 未捕获异常、outbox 死信/重试、审计事件、apiserver 删除操作、平台 ServiceAccount 的 apiserver 操作。
+The six queries below are, in order: full chain by request ID, API unhandled exceptions, outbox dead letters / retries, audit events, apiserver delete operations, apiserver operations by platform ServiceAccounts.
 
 ```logql
 {namespace="superdl"} |~ `"request_id":"<request-id>"`
@@ -31,15 +31,15 @@ Grafana(full 档)→ Explore → `Loki(平台)` / `Loki(租户)` 数据源(kps.y
 {job="kube-apiserver-audit"} |~ `"user":{"username":"system:serviceaccount:superdl`
 ```
 
-平台日志 prod 为 JSON 行(structlog;`request_id`/`level`/`event` 为键),`| json` 后按键过滤,如 `{namespace="superdl"} | json | level="error"`。
+Platform logs in prod are JSON lines (structlog; `request_id` / `level` / `event` are keys); filter by key after `| json`, e.g. `{namespace="superdl"} | json | level="error"`.
 
-## 告警
+## Alerting
 
-未捕获异常、outbox 死信等已有 Prometheus 指标告警(kps values 的 `superdl.platform` 规则组:`ApiHighErrorRate`/`OutboxTaskDead` 等)。按日志内容告警时,用 Loki ruler 对上面的 API 异常与 outbox 死信/重试查询建 `count_over_time(...) > 0` 规则,接同一 Alertmanager。
+Unhandled exceptions, outbox dead letters and the like already alert through Prometheus metrics (the `superdl.platform` rule group in the kps values: `ApiHighErrorRate` / `OutboxTaskDead` etc.). To alert on log content, build `count_over_time(...) > 0` rules in the Loki ruler over the API exception and outbox dead-letter / retry queries above and route them to the same Alertmanager.
 
-## 采集自检
+## Collection self-check
 
-Alloy 应每节点一只 Pod,包括控制面节点;缺少 apiserver 审计流时先确认 server 上的 Alloy Pod 已就绪,再核对 `values/alloy.yaml` 的 tolerations 与审计文件挂载。
+Alloy should run one Pod per node, control-plane nodes included; when the apiserver audit stream is missing, first confirm the Alloy Pod on the server is ready, then check the tolerations and the audit file mount in `values/alloy.yaml`.
 
 ```bash
 kubectl -n monitoring get pods -l app.kubernetes.io/name=alloy
