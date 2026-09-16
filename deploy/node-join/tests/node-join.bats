@@ -175,25 +175,25 @@ EOF
 
 run_script() { run bash "$SCRIPT" --token-file "$TMP/token" --api-base http://fake.local "$@"; }
 
-@test "缺少 --token-file 退出 2" {
+@test "missing --token-file exits 2" {
   run bash "$SCRIPT" --api-base http://fake.local
   [ "$status" -eq 2 ]
-  [[ "$output" == *"缺少 --token-file"* ]]
+  [[ "$output" == *"missing --token-file"* ]]
 }
 
-@test "token 文件不存在退出 2" {
+@test "missing token file exits 2" {
   run bash "$SCRIPT" --token-file "$TMP/no-such" --api-base http://fake.local
   [ "$status" -eq 2 ]
-  [[ "$output" == *"token 文件不存在"* ]]
+  [[ "$output" == *"token file not found"* ]]
 }
 
-@test "占位符未替换且未给 --api-base 退出 2" {
+@test "unreplaced placeholder without --api-base exits 2" {
   run bash "$SCRIPT" --token-file "$TMP/token"
   [ "$status" -eq 2 ]
-  [[ "$output" == *"占位符未替换"* ]]
+  [[ "$output" == *"placeholder not replaced"* ]]
 }
 
-@test "Harbor 自签 CA:落 harbor-ca.crt(0644),registries.yaml 的 __RANCHER_DIR__ 占位替换为本机目录" {
+@test "Harbor self-signed CA: writes harbor-ca.crt (0644) and replaces __RANCHER_DIR__ in registries.yaml with the local directory" {
   export FIXTURE_REGISTRY_CA=$'-----BEGIN CERTIFICATE-----\nMIIBfake\n-----END CERTIFICATE-----'
   export FIXTURE_REGISTRIES_YAML=$'mirrors:\n  "*": {}\nconfigs:\n  "harbor.example.com":\n    tls:\n      ca_file: "__RANCHER_DIR__/harbor-ca.crt"\n'
   _write_fixture hami
@@ -205,16 +205,16 @@ run_script() { run bash "$SCRIPT" --token-file "$TMP/token" --api-base http://fa
   ! grep -q '__RANCHER_DIR__' "$TMP/etc/rancher/rke2/registries.yaml"
 }
 
-@test "join token 含换行(YAML 注入)时拒绝写 agent config.yaml" {
+@test "join token with a newline (YAML injection) is refused for agent config.yaml" {
   export FIXTURE_JOIN_TOKEN=$'superdl-agent-fixture-token-0123456789\nkubelet-arg:\n  - "anonymous-auth=true"'
   _write_fixture hami
   run_script
   [ "$status" -ne 0 ]
-  [[ "$output" == *"cluster_join_token 含非法字符"* ]]
+  [[ "$output" == *"cluster_join_token contains illegal characters"* ]]
   [ ! -f "$TMP/etc/rancher/rke2/config.yaml" ]
 }
 
-@test "拒绝 server node-token(K10<64hex>::server:…):不写 agent config.yaml" {
+@test "server node-token (K10<64hex>::server:...) is refused: no agent config.yaml" {
   export FIXTURE_JOIN_TOKEN="K10$(printf 'a%.0s' $(seq 1 64))::server:secret"
   _write_fixture hami
   run_script
@@ -223,7 +223,7 @@ run_script() { run bash "$SCRIPT" --token-file "$TMP/token" --api-base http://fa
   [ ! -f "$TMP/etc/rancher/rke2/config.yaml" ]
 }
 
-@test "agent token 取 K10<64hex>::node:<pw> 形态时放行" {
+@test "agent token in K10<64hex>::node:<pw> form is accepted" {
   export FIXTURE_JOIN_TOKEN="K10$(printf 'a%.0s' $(seq 1 64))::node:secret"
   _write_fixture hami
   run_script
@@ -231,14 +231,14 @@ run_script() { run bash "$SCRIPT" --token-file "$TMP/token" --api-base http://fa
   grep -q "::node:secret" "$TMP/etc/rancher/rke2/config.yaml"
 }
 
-@test "无 CA:不落 harbor-ca.crt,registries.yaml 只有 Spegel 段" {
+@test "no CA: no harbor-ca.crt, registries.yaml has only the Spegel section" {
   run_script
   [ "$status" -eq 0 ]
   [ ! -f "$TMP/etc/rancher/rke2/harbor-ca.crt" ]
   ! grep -q 'configs:' "$TMP/etc/rancher/rke2/registries.yaml"
 }
 
-@test "全流程(驱动就绪免重启):写出 rke2 config/registries,marker 齐全,进度上报到位" {
+@test "full run (driver ready, no reboot): rke2 config/registries written, all markers present, progress reported" {
   run_script
   [ "$status" -eq 0 ]
   grep -q "superdl-agent-fixture-token-0123456789" "$TMP/etc/rancher/rke2/config.yaml"
@@ -253,7 +253,7 @@ run_script() { run bash "$SCRIPT" --token-file "$TMP/token" --api-base http://fa
   for m in bootstrap precheck nouveau sysctl iommu driver nvidia_toolkit nvme_vg registries agent_config agent_install agent_start completed; do
     [ -f "$SUPERDL_JOIN_STATE_DIR/done.d/$m" ]
   done
-  [[ "$output" == *"nvidia-container-toolkit 1.17.8 ≥ 1.17.8,跳过"* ]]
+  [[ "$output" == *"nvidia-container-toolkit 1.17.8 >= 1.17.8, skipping"* ]]
   grep -q 'podPidsLimit: 4096' "$TMP/rancher/rke2/agent/etc/kubelet.conf.d/50-superdl.conf"
   ! grep -q 'podPidsLimit' "$TMP/etc/rancher/rke2/config.yaml"
   grep -q '"phase":"agent_start","state":"ok"' "$CURL_LOG"
@@ -262,7 +262,7 @@ run_script() { run bash "$SCRIPT" --token-file "$TMP/token" --api-base http://fa
   grep -q '"phase":"waiting_node","state":"ok".*"driver_version":"580.65.06","cuda_version":"12.8"' "$CURL_LOG"
 }
 
-@test "令牌全程不进进程 argv;完成后 bootstrap.json 与令牌落盘即清" {
+@test "tokens never enter process argv; bootstrap.json and the token file are removed on completion" {
   run_script
   [ "$status" -eq 0 ]
   grep -q -- "--config" "$CURL_LOG"
@@ -273,26 +273,26 @@ run_script() { run bash "$SCRIPT" --token-file "$TMP/token" --api-base http://fa
   [ ! -e "$SUPERDL_JOIN_STATE_DIR/curl.conf" ]
 }
 
-@test "完成后重跑:直接退出,不重复 bootstrap 不重复装机" {
+@test "rerun after completion exits immediately without repeating bootstrap or install" {
   run_script
   [ "$status" -eq 0 ]
   run_script
   [ "$status" -eq 0 ]
-  [[ "$output" == *"已完成加入"* ]]
+  [[ "$output" == *"already joined"* ]]
   [ "$(grep -c 'node-enroll/bootstrap' "$CURL_LOG")" = "1" ]
   ! grep -q "vgcreate superdl-nvme" "$SHIM_CALLS"
 }
 
-@test "--force:清除断点从头重装(须管理端新签发令牌)" {
+@test "--force clears markers and reinstalls from scratch (needs a newly issued token)" {
   run_script
   [ "$status" -eq 0 ]
   run_script --force
   [ "$status" -eq 0 ]
-  [[ "$output" == *"--force:清除本地断点"* ]]
+  [[ "$output" == *"--force: clearing local markers"* ]]
   [ "$(grep -c 'node-enroll/bootstrap' "$CURL_LOG")" = "2" ]
 }
 
-@test "断点续跑:bootstrap 已有 marker 时跳过并用盘上 progress 令牌上报" {
+@test "resume: with the bootstrap marker present it is skipped and progress uses the on-disk token" {
   cat > "$TMP/bin/systemctl" <<'EOF'
 #!/usr/bin/env bash
 echo "systemctl $*" >> "$SHIM_CALLS"
@@ -321,12 +321,12 @@ EOF
   chmod +x "$TMP/bin/systemctl"
   run_script
   [ "$status" -eq 0 ]
-  [[ "$output" == *"bootstrap: 已完成,跳过"* ]]
+  [[ "$output" == *"bootstrap: already done, skipping"* ]]
   [ "$(grep -c 'node-enroll/bootstrap' "$CURL_LOG")" = "1" ]
   [ ! -e "$SUPERDL_JOIN_STATE_DIR/token" ]
 }
 
-@test "驱动未就绪触发重启断点:装驱动+写 oneshot+progress 令牌 0600+systemctl reboot,rke2 尚未配置" {
+@test "driver not ready triggers the reboot checkpoint: driver installed, oneshot written, token 0600, systemctl reboot, rke2 not configured yet" {
   export NVIDIA_OK=0
   run_script
   [ "$status" -eq 0 ]
@@ -343,23 +343,23 @@ EOF
   grep -q '"gpu_details": \[{"name": "NVIDIA Corporation AD102 RTX4090"}\]' "$CURL_LOG"
 }
 
-@test "管道执行的重启断点:从 API 重拉自身并校验 bootstrap 下发的指纹" {
+@test "piped execution reboot checkpoint: re-downloads itself from the API and verifies the bootstrap checksum" {
   export NVIDIA_OK=0
   run bash -s -- --token-file "$TMP/token" --api-base http://fake.local < "$SCRIPT"
   [ "$status" -eq 0 ]
   grep -q "systemctl reboot" "$SHIM_CALLS"
 }
 
-@test "重拉脚本指纹不符:中止重启并上报 failed" {
+@test "re-downloaded script checksum mismatch aborts the reboot and reports failed" {
   export NVIDIA_OK=0
   _write_fixture hami rke2 "" "0000000000000000000000000000000000000000000000000000000000000000"
   run bash -s -- --token-file "$TMP/token" --api-base http://fake.local < "$SCRIPT"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"指纹不符"* ]]
+  [[ "$output" == *"checksum mismatch"* ]]
   grep -q '"phase":"reboot","state":"failed"' "$CURL_LOG"
 }
 
-@test "bootstrap 未下发 script_sha256:管道续跑拒绝执行重拉脚本(fail-closed)" {
+@test "bootstrap without script_sha256: piped resume refuses the re-downloaded script (fail-closed)" {
   export NVIDIA_OK=0
   _write_fixture hami rke2 "" ""
   run bash -s -- --token-file "$TMP/token" --api-base http://fake.local < "$SCRIPT"
@@ -369,7 +369,7 @@ EOF
   ! grep -q "systemctl reboot" "$SHIM_CALLS"
 }
 
-@test "安装脚本 pin 校验和不符:拒绝执行并上报 failed" {
+@test "installer pin checksum mismatch refuses to run and reports failed" {
   cat > "$TMP/bin/rke2" <<'RKESHIM'
 #!/usr/bin/env bash
 echo "rke2 version v0.0.0+rke2r0"
@@ -378,12 +378,12 @@ RKESHIM
   export SUPERDL_JOIN_PIN_RKE2_CN="0000000000000000000000000000000000000000000000000000000000000000"
   run_script
   [ "$status" -eq 1 ]
-  [[ "$output" == *"校验和不符"* ]]
+  [[ "$output" == *"checksum mismatch"* ]]
   grep -q '"phase":"agent_install","state":"failed"' "$CURL_LOG"
   ! grep -q "sh INSTALL_RKE2_MIRROR" "$SHIM_CALLS"
 }
 
-@test "IOMMU 是装机基线:hami 池也写 GRUB(x86),不因池而异" {
+@test "IOMMU is a baseline: the hami pool also writes GRUB (x86), no per-pool branching" {
   _write_fixture hami
   run_script
   [ "$status" -eq 0 ]
@@ -391,16 +391,16 @@ RKESHIM
   grep -q "update-grub" "$SHIM_CALLS"
 }
 
-@test "IOMMU 未生效则要求重启" {
+@test "inactive IOMMU requires a reboot" {
   _write_fixture kata
   export NVIDIA_OK=0
   rmdir "$SUPERDL_JOIN_IOMMU_DIR/0"
   run_script
   [ "$status" -eq 0 ]
-  [[ "$output" == *"IOMMU 未生效,需重启"* ]]
+  [[ "$output" == *"IOMMU not active; reboot required"* ]]
 }
 
-@test "cpu 池(无卡机):跳过 NVIDIA 探测/驱动/toolkit/IOMMU,不写 node-label,不上报驱动版本" {
+@test "cpu pool (no GPU): skips NVIDIA detection/driver/toolkit/IOMMU, writes no node-label, reports no driver version" {
   _write_fixture cpu
   export NVIDIA_OK=0 LSPCI_NVIDIA=0
   run_script
@@ -410,43 +410,43 @@ RKESHIM
   ! grep -q "apt-get install" "$SHIM_CALLS"
   [ ! -f "$TMP/etc/modprobe.d/blacklist-nouveau.conf" ]
   [ ! -f "$TMP/etc/default/grub.d/99-superdl.cfg" ]
-  [[ "$output" == *"跳过 NVIDIA GPU 探测"* ]]
+  [[ "$output" == *"skipping NVIDIA GPU detection"* ]]
   grep -q '"phase":"waiting_node","state":"ok"' "$CURL_LOG"
   ! grep -q '"driver_version"' "$CURL_LOG"
   grep -q '"gpu_details": \[\]' "$CURL_LOG"
 }
 
-@test "kata 池:宿主无驱动时跳过驱动与 toolkit 安装" {
+@test "kata pool: without a host driver, driver and toolkit installs are skipped" {
   _write_fixture kata
   export NVIDIA_OK=0
   run_script
   [ "$status" -eq 0 ]
-  [[ "$output" == *"跳过 NVIDIA 驱动安装"* ]]
-  [[ "$output" == *"跳过 nvidia-container-toolkit"* ]]
+  [[ "$output" == *"skipping NVIDIA driver install"* ]]
+  [[ "$output" == *"skipping nvidia-container-toolkit"* ]]
   ! grep -q "apt-get install -y -qq nvidia-driver" "$SHIM_CALLS"
   ! grep -q "apt-get install -y -qq nvidia-container-toolkit" "$SHIM_CALLS"
   grep -q '"phase":"waiting_node","state":"ok"' "$CURL_LOG"
 }
 
-@test "kata 池:驱动装了但没加载(nvidia-smi 不通)同样判失败" {
+@test "kata pool: driver installed but not loaded (nvidia-smi fails) is also a failure" {
   _write_fixture kata
   export NVIDIA_OK=0 DPKG_INSTALLED=1
   run_script
   [ "$status" -eq 1 ]
-  [[ "$output" == *"kata 池要求宿主无 NVIDIA 驱动"* ]]
+  [[ "$output" == *"kata pool requires a host without the NVIDIA driver"* ]]
   grep -q '"phase":"driver","state":"failed"' "$CURL_LOG"
 }
 
-@test "kata 池:宿主预装驱动时 driver 阶段判失败,不带病入群" {
+@test "kata pool: a pre-installed host driver fails the driver phase instead of joining unhealthy" {
   _write_fixture kata
   export NVIDIA_OK=1
   run_script
   [ "$status" -eq 1 ]
-  [[ "$output" == *"kata 池要求宿主无 NVIDIA 驱动"* ]]
+  [[ "$output" == *"kata pool requires a host without the NVIDIA driver"* ]]
   grep -q '"phase":"driver","state":"failed"' "$CURL_LOG"
 }
 
-@test "toolkit 未安装:走安装分支,装完达下限继续" {
+@test "toolkit missing: install branch runs and continues once the minimum is met" {
   export DPKG_NVCTK_VERSION="" DPKG_NVCTK_VERSION_AFTER="1.17.8"
   run_script
   [ "$status" -eq 0 ]
@@ -454,22 +454,22 @@ RKESHIM
   grep -q '"phase":"nvidia_toolkit","state":"ok"' "$CURL_LOG"
 }
 
-@test "toolkit 装完仍低于下限:按 failed 上报,不带病入群" {
+@test "toolkit still below the minimum after install reports failed instead of joining unhealthy" {
   export DPKG_NVCTK_VERSION="" DPKG_NVCTK_VERSION_AFTER="1.16.0"
   run_script
   [ "$status" -eq 1 ]
-  [[ "$output" == *"低于安全下限"* ]]
+  [[ "$output" == *"below the security minimum"* ]]
   grep -q '"phase":"nvidia_toolkit","state":"failed"' "$CURL_LOG"
 }
 
-@test "toolkit 下限 env 覆盖:SUPERDL_JOIN_NVCTK_MIN_VERSION 生效" {
+@test "toolkit minimum env override: SUPERDL_JOIN_NVCTK_MIN_VERSION takes effect" {
   export SUPERDL_JOIN_NVCTK_MIN_VERSION="99.0.0"
   run_script
   [ "$status" -eq 1 ]
-  [[ "$output" == *"低于下限 99.0.0"* || "$output" == *"低于安全下限 99.0.0"* ]]
+  [[ "$output" == *"below the minimum 99.0.0"* || "$output" == *"below the security minimum 99.0.0"* ]]
 }
 
-@test "k3s 模式:config/registries 落 /etc/rancher/k3s,走中国镜像 agent 安装并起 k3s-agent" {
+@test "k3s mode: config/registries land in /etc/rancher/k3s, agent installed from the cn mirror and k3s-agent started" {
   _write_fixture hami k3s
   cat > "$TMP/bin/k3s" <<'EOF'
 #!/usr/bin/env bash
@@ -489,7 +489,7 @@ EOF
   grep -q "systemctl enable --now k3s-agent.service" "$SHIM_CALLS"
 }
 
-@test "rke2 安装默认走中国镜像(install_mirror=cn)" {
+@test "rke2 install uses the cn mirror when install_mirror=cn" {
   cat > "$TMP/bin/rke2" <<'RKESHIM'
 #!/usr/bin/env bash
 echo "rke2 version v0.0.0+rke2r0"
@@ -501,7 +501,7 @@ RKESHIM
   grep -q "sh INSTALL_RKE2_MIRROR=cn" "$SHIM_CALLS"
 }
 
-@test "install_mirror=official 走 get.rke2.io 官方源" {
+@test "install_mirror=official downloads from get.rke2.io" {
   _write_fixture hami rke2 official
   cat > "$TMP/bin/rke2" <<'RKESHIM'
 #!/usr/bin/env bash
@@ -514,7 +514,7 @@ RKESHIM
   ! grep -q "sh INSTALL_RKE2_MIRROR" "$SHIM_CALLS"
 }
 
-@test "loop 兜底须显式登记(nvme_devices=loop:80G):建 loop VG + 写开机重建 unit" {
+@test "loop fallback must be registered explicitly (nvme_devices=loop:80G): creates the loop VG and the boot-time unit" {
   python3 - > "$BOOTSTRAP_FIXTURE" <<'PYEOF'
 import json
 print(json.dumps({"pool":"hami","k8s_distro":"rke2","install_mirror":"cn",
@@ -527,18 +527,18 @@ PYEOF
   grep -q "losetup --find --show" "$SHIM_CALLS"
   grep -q "vgcreate superdl-nvme /dev/loop7" "$SHIM_CALLS"
   [ -f "$TMP/etc/systemd/system/superdl-nvme-loop.service" ]
-  [[ "$output" == *"用 loop 文件做实例盘"* ]]
+  [[ "$output" == *"loop file as the instance disk"* ]]
 }
 
-@test "未登记 NVMe:显式告警不兜底(不建任何 VG)" {
+@test "no NVMe registered: explicit warning, nothing guessed (no VG created)" {
   run_script
   [ "$status" -eq 0 ]
-  [[ "$output" == *"不自动兜底"* ]]
+  [[ "$output" == *"nothing guessed"* ]]
   ! grep -q "vgcreate superdl-nvme" "$SHIM_CALLS"
   [ ! -f "$TMP/etc/systemd/system/superdl-nvme-loop.service" ]
 }
 
-@test "重启循环保护:2 次后仍未就绪上报 failed 并退出 1" {
+@test "reboot loop guard: still not ready after 2 reboots reports failed and exits 1" {
   export NVIDIA_OK=0
   export DPKG_INSTALLED=1
   mkdir -p "$SUPERDL_JOIN_STATE_DIR"
@@ -548,7 +548,7 @@ PYEOF
   grep -q '"phase":"reboot","state":"failed"' "$CURL_LOG"
 }
 
-@test "--uninstall:停 agent、删本脚本写入的全部配置、清状态目录,不碰 VG 与驱动" {
+@test "--uninstall: stops the agent, removes everything this script wrote and the state dir, leaves the VG and driver alone" {
   run_script
   [ "$status" -eq 0 ]
   run bash "$SCRIPT" --uninstall --token-file "$TMP/token" --api-base http://fake.local
@@ -565,7 +565,7 @@ PYEOF
   [[ "$output" == *"kubectl delete node"* ]]
 }
 
-@test "server 本机(k3s 在跑):不写 agent config、不装/不起 agent、不打池标签(平台写)" {
+@test "server host (k3s running): no agent config, no agent install/start, no pool label (platform writes it)" {
   _write_fixture hami k3s
   export SERVER_ACTIVE=1
   cat > "$TMP/bin/k3s" <<'EOF'
@@ -583,11 +583,11 @@ EOF
   ! grep -q "k3s-install.sh" "$CURL_LOG"
   ! grep -q "systemctl enable --now k3s-agent.service" "$SHIM_CALLS"
   grep -q "waiting_node" "$CURL_LOG"
-  [[ "$output" == *"节点已启动 k3s"* ]]
+  [[ "$output" == *"done: k3s started"* ]]
   [ -f "$SUPERDL_JOIN_STATE_DIR/done.d/completed" ]
 }
 
-@test "server 本机 --uninstall:不执行发行版卸载脚本、不删 server 的 config/registries" {
+@test "server host --uninstall: no distribution uninstall script, server config/registries kept" {
   export SERVER_ACTIVE=1
   mkdir -p "$TMP/etc/rancher/k3s"
   echo "server: config" > "$TMP/etc/rancher/k3s/config.yaml"
@@ -602,10 +602,10 @@ EOF
   [ -f "$TMP/etc/rancher/k3s/config.yaml" ]
   [ -f "$TMP/etc/rancher/k3s/registries.yaml" ]
   ! grep -q "disable --now k3s-agent.service" "$SHIM_CALLS"
-  [[ "$output" == *"不卸载发行版"* ]]
+  [[ "$output" == *"distribution and server config left untouched"* ]]
 }
 
-@test "nvidia-smi 只报通用名(NVIDIA Graphics Device):bootstrap 型号回落 lspci 方括号名,显存沿用 nvidia-smi" {
+@test "nvidia-smi reports only a generic name (NVIDIA Graphics Device): bootstrap falls back to the lspci bracket name, memory from nvidia-smi" {
   cat > "$TMP/bin/nvidia-smi" <<'EOF'
 #!/usr/bin/env bash
 if [[ "$*" == *"name,memory.total"* ]]; then echo "NVIDIA Graphics Device, 65536"; exit 0; fi
