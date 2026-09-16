@@ -1,166 +1,166 @@
-# 计费
+# Billing
 
-钱包、账本、小时结算、尾账、包周期(预付订阅)、欠费冻结回收与策略参数下发。
+Wallets, ledger, hourly settlement, tail bills, subscriptions (prepaid periods), arrears freezing and reclamation, and the delivery of policy parameters.
 
-## 数据模型
+## Data model
 
-- `wallets`:user_id 唯一、balance numeric(14,2)
-- `balance_ledger`:user_id、type(recharge/consume/refund/adjust)、amount 带符号 numeric(14,2)、balance_after、ref_type/ref_id —— 追加式
-- `bills_hourly`:instance_id、hour_start、seconds_used、unit_price numeric(12,4)、gpu_count(照实存,CPU 实例为 0)、amount numeric(14,2)、detail jsonb、UNIQUE(instance_id, hour_start)。`detail.source`:`hourly`(整点结算与追平)/ `tail`(尾账)/ `convert`(按量转包周期前的结清)/ `gap_replay`(缺口人工重放);补差价的行另带 `topped_up`,竞价转按量改价的行另带 `repriced`
-- `bills_daily_disk`:disk_id、day、size_gb、unit_price、amount、UNIQUE(disk_id, day)
-- `subscriptions`:user_id、instance_id、sku_id、period(CHECK ∈ {day, week, month, year})、period_count(CHECK ≥1)、unit_price numeric(12,4)(下单时的 SKU 原价快照)、amount_paid numeric(14,2)(实扣,含折扣)、started_at、expires_at、status(active/expired/cancelled)、auto_renew(默认 false)、renewed_from_id?、warned_for_expiry?(存「已预警到哪个到期时刻」)、idempotency_key?、request_fingerprint?(`动作 + user_id + instance_id + period + period_count` 的 sha256,动作分 `subscription:new` / `subscription:renew`)、UNIQUE(user_id, idempotency_key);部分索引 `ix_subscriptions_active_expiry`(`expires_at` WHERE status='active')
-- `settlement_watermarks`:key(PK)、settled_through、updated_at
-- `settlement_gaps`:kind、window_start、object_id、reason(catchup_truncated / dead_letter / watermark_missing / grace_overlap)、resolved_at,UNIQUE(kind, window_start, object_id)。缺口不自愈,闭环是管理端「财务 › 结算缺口」人工重放(成功回写 resolved_at;grace_overlap 拒重放走人工核销)+ 告警 `superdl_settlement_gap_unresolved`
-- `reconcile_checkpoints`:user_id(PK)、last_ledger_id、balance_after、updated_at —— 资金核对增量游标
-- 策略参数:平台配置中心 `policy` 组(`platform_settings`),`GET /api/v1/policies` 读生效值
-- `billing_identity`: single row (`id = 1`), `currency` (ISO 4217), `timezone` (IANA), `locked_at` — the deployment's settlement currency and billing timezone, locked on first boot (see [platform-config.md](./platform-config.md) « Deployment identity »)
+- `wallets`: user_id unique, balance numeric(14,2)
+- `balance_ledger`: user_id, type (recharge/consume/refund/adjust), signed amount numeric(14,2), balance_after, ref_type/ref_id — append-only
+- `bills_hourly`: instance_id, hour_start, seconds_used, unit_price numeric(12,4), gpu_count (stored as-is, 0 for CPU instances), amount numeric(14,2), detail jsonb, UNIQUE(instance_id, hour_start). `detail.source`: `hourly` (clock-hour settlement and catch-up) / `tail` (tail bill) / `convert` (settlement before on-demand → subscription) / `gap_replay` (manual gap replay); rows that top up a difference also carry `topped_up`, rows repriced by spot → on-demand conversion carry `repriced`
+- `bills_daily_disk`: disk_id, day, size_gb, unit_price, amount, UNIQUE(disk_id, day)
+- `subscriptions`: user_id, instance_id, sku_id, period (CHECK ∈ {day, week, month, year}), period_count (CHECK ≥1), unit_price numeric(12,4) (the SKU list-price snapshot at order time), amount_paid numeric(14,2) (actually charged, discount included), started_at, expires_at, status (active/expired/cancelled), auto_renew (default false), renewed_from_id?, warned_for_expiry? (stores "the expiry instant already warned about"), idempotency_key?, request_fingerprint? (sha256 of `action + user_id + instance_id + period + period_count`, actions `subscription:new` / `subscription:renew`), UNIQUE(user_id, idempotency_key); partial index `ix_subscriptions_active_expiry` (`expires_at` WHERE status='active')
+- `settlement_watermarks`: key (PK), settled_through, updated_at
+- `settlement_gaps`: kind, window_start, object_id, reason (catchup_truncated / dead_letter / watermark_missing / grace_overlap), resolved_at, UNIQUE(kind, window_start, object_id). Gaps do not self-heal; the loop closes through manual replay in admin "Finance › Settlement gaps" (success writes resolved_at; grace_overlap refuses replay and goes to manual write-off) + the alert `superdl_settlement_gap_unresolved`
+- `reconcile_checkpoints`: user_id (PK), last_ledger_id, balance_after, updated_at — incremental cursor of the fund reconciliation
+- Policy parameters: the `policy` group of the platform configuration centre (`platform_settings`), effective values read via `GET /api/v1/policies`
+- `billing_identity`: single row (`id = 1`), `currency` (ISO 4217), `timezone` (IANA), `locked_at` — the deployment's settlement currency and billing time zone, locked on first boot (see the deployment identity section of [platform-config.md](./platform-config.md))
 
-## 契约
+## Contract
 
-| 端点                                                                                          | 角色/鉴权 | 说明                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| --------------------------------------------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `GET /api/v1/policies`                                                                        | 匿名      | 盘价(Decimal 串)、`disk_min_gb/disk_max_gb`、`disk_grace_days/disk_frozen_days`、`freeze_grace_hours`、`period_discount_day/week/month/year`(百分数,80 = 8 折)与 `period_expire_warn_days`、`spot_discount_pct`(40 = 4 折)与 `spot_grace_seconds`、`real_name_enabled`、`real_name_required_for_recharge`。折扣与宽限窗一律从这里读,前端禁止硬编码;`recharge_min` / `recharge_max` / `recharge_presets`(充值弹窗的档位与限额,金额串) |
-| `GET /api/v1/wallet`                                                                          | user      | 余额与冻结额                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `GET /api/v1/wallet/ledger`                                                                   | user      | 资金流水,游标分页                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `GET /api/v1/bills/hourly`                                                                    | user      | 小时账单,游标分页(含 instance_name 展示冗余)                                                                                                                                                                                                                                                                                                                                                                                         |
-| `GET /api/v1/bills/summary`                                                                   | user      | 消费概览与成本归因                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `GET /api/v1/bills/daily-summary?date=YYYY-MM-DD&tz_offset_minutes=480`                       | user      | 本地日界折 UTC 聚合小时账单(按实例)+ 当日数据盘日账(`tz_offset_minutes` 缺省 = 计费时区当前偏移)                                                                                                                                                                                                                                                                                                                                     |
-| `GET /api/v1/billing/export?dataset=hourly\|ledger&month=YYYY-MM&tz_offset_minutes=480&lang=` | user      | 小时账单 / 收支明细 CSV(流式);month 仅作用于 hourly;行数硬上限,触顶时文件末尾写 `#SUPERDL_EXPORT_TRUNCATED#`                                                                                                                                                                                                                                                                                                                         |
+| Endpoint                                                                                   | Role / auth | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------ | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/v1/policies`                                                                     | anonymous   | Disk price (Decimal string), `disk_min_gb/disk_max_gb`, `disk_grace_days/disk_frozen_days`, `freeze_grace_hours`, `period_discount_day/week/month/year` (percent, 80 = 20 % off) and `period_expire_warn_days`, `spot_discount_pct` (40 = 60 % off) and `spot_grace_seconds`, `real_name_enabled`, `real_name_required_for_recharge`, `currency`, `billing_timezone`. Discounts and grace windows are always read from here, never hard-coded in the frontend; `recharge_min` / `recharge_max` / `recharge_presets` (the top-up dialog's presets and bounds, amount strings) |
+| `GET /api/v1/wallet`                                                                       | user        | Balance and frozen amount                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `GET /api/v1/wallet/ledger`                                                                | user        | Ledger, cursor pagination                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `GET /api/v1/bills/hourly`                                                                 | user        | Hourly bills, cursor pagination (with the redundant `instance_name` for display)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `GET /api/v1/bills/summary`                                                                | user        | Spend overview and cost attribution                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `GET /api/v1/bills/daily-summary?date=YYYY-MM-DD&tz_offset_minutes=`                       | user        | Hourly bills aggregated per instance over the local day converted to UTC + that day's data-disk bills (`tz_offset_minutes` defaults to the billing zone's current offset)                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `GET /api/v1/billing/export?dataset=hourly\|ledger&month=YYYY-MM&tz_offset_minutes=&lang=` | user        | Hourly bills / ledger as streamed CSV; `month` applies to hourly only; hard row cap, when hit the file ends with `#SUPERDL_EXPORT_TRUNCATED#`                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
-## 规则与不变量
+## Rules and invariants
 
-- 计费主依据是 `instance_events` 的 running↔非 running 边;Prometheus 指标只做展示与对账。
+- The primary basis for billing is the running↔non-running edges of `instance_events`; Prometheus metrics are for display and reconciliation only.
 - One currency per deployment (`SUPERDL_PLATFORM_CURRENCY`): every money column is denominated in it; `orders.currency` records it per order. Changing it after money rows exist requires `SUPERDL_BILLING_IDENTITY_REKEY=true` and does not convert amounts.
-- 小时结算(每小时 :02,advisory lock):由 `settlement_watermarks` 驱动,从上次已结窗口追平到上一整点;每实例按事件重建窗口 running 秒数,`UNIQUE(instance_id, hour_start)` 幂等 upsert,秒数单调递增时只补差价。重复执行与并发执行零重复扣款。
-- 追平截断与单对象连续失败死信,跳窗前登记 `settlement_gaps`;阈值见 [limits.md](./limits.md)。
-- 尾账:stop/release 时对当前小时已用秒数立即入账,同一 UNIQUE 键幂等。
-- 平台责任失联(node_lost/pod_lost):计费截断到 Pod 首次 not-ready 时刻(事件 `metadata.unready_since`);截断口径只有一处 `settlement.truncated_at`:整点/追平在事件重建层用它,尾账监听器对本次退出边用它(并把 `truncated_at` / `truncate_reason` 留进 `bills_hourly.detail`)。`unready_since` 由 reconciler 跨轮累积、清零只有两处,见 [orchestrator.md](./orchestrator.md)。pod_unready(节点正常)不截断。
-- 无水位线行只结最近窗口,落 `{kind}_watermark_missing` 告警日志,更早窗口需人工补结。
-- 退款:creating 失败(平台责任)全额退;未产生 running 时段即无账。
-- 占用出账:服务型实例 `health_path` 非空且 workspace 容器已实际运行、却在 `creating_timeout_seconds` 内未就绪(reconciler `schedule_timeout`)时,失败边 `metadata.occupied_since` = 容器起始时刻;计费视图 `settlement.billing_view` 把该边展开成「occupied_since 进 running + 边时刻离开 running」,尾账监听器按自然小时逐段出账(`bills_hourly.detail.occupied_since`),整点候选集也纳入 creating/starting→failed 边。开发机与无 `health_path` 的服务超时属平台责任,不出账。计数 `superdl_schedule_timeout_occupied_total`。
-- 开户前校验(`assert_can_afford`):余额 ≥ (在途 running 实例时费 + 新增时费) × `afford_cover_hours` + (在途盘日费 + 新增盘日费) × `disk_grace_days`;钱包 FOR UPDATE 锁内统计,与资源创建同事务。不足报 `INSUFFICIENT_BALANCE`。
-- 欠费链路(5min 巡检):预估可用时长低于用户预警阈值 → 预警;可用余额 − 当前小时未结算实时估算消耗 ≤ 0 → 停机 → frozen → releasing。实时估算与结算同口径:事件重建秒数 − 已出账秒数。
-- 欠费巡检全链路判据是可用余额(balance − frozen,`wallet.available_of` / `get_available_balance`),与 `assert_can_afford` 同口径:粗筛、锁内二次读、低余额预警 payload、stopped→frozen、frozen→解冻、数据盘欠费链一律取它。
-- 可用余额恰好 0.00 即进入停机→冻结→回收链(解冻判据 `available > 0`,停机判据 `effective <= 0`);由 `tests/test_billing_flow.py::test_zero_balance_stops_then_freezes_then_reclaims` 锁定。见 [../decisions.md](../decisions.md)「余额归零即回收」。
-- 钱包更新 `SELECT ... FOR UPDATE`,同事务写 `balance_ledger`(带 balance_after)。
-- 金额全链路 Decimal:单价 4 位,入账 2 位,ROUND_HALF_EVEN;0 秒不出账。SKU 时价必须精确到分(2 位小数)且 4 位量化后不为 0,否则上架/改价拒绝(`catalog.priceHourlyTwoDecimals` / `catalog.priceTooSmall`)。 Billing days and invoice periods are civil days/months in `SUPERDL_BILLING_TIMEZONE` (`timeutil.billing_day_floor` / `billing_day_shift` / `billing_period_range`; DST-aware, never `+ timedelta(days=1)` on a day start); the daily jobs (`daily_disk_settlement` 00:10, `fund_reconcile` 00:30, `cleanup_expired_rows` 03:00) fire at those wall-clock times in the zone while the scheduler stays UTC; `tz_offset_minutes` on user/admin display endpoints defaults to the zone's current offset; admin `day=` filters are billing-zone days. `as_amount` quantizes to the platform currency's minor unit (`core/currencies.py`; JPY/KRW/VND → whole units); server-rendered text carries the ISO code via `money_label` ("100.00 CNY") / `price_label` (4 dp), never a symbol — error `params` for amounts are pre-labelled strings, so locale templates use bare `{{amount}}`; CSV header templates carry `{currency}` and `csvexport.header_row` fills it.
-- 计费份数只经 `core/money.billing_units(gpu_count)` 换算:GPU 实例 = 卡数(`price_hourly` 单卡时价),CPU 实例 `gpu_count=0` = 1 份整机(`price_hourly` 整机时价)。金额 = `单价 × 份数 × 秒 ÷ 3600`。`bill_amount`、`assert_can_afford` 在途时费、欠费巡检 `burn_per_hour`、对账实例时费、创建/开机预估全部走 `billing_units` / `hourly_cost`,不许散写 `max(1, n)` 或 `单价 × gpu_count`。账单行照实存 `gpu_count`(见 [../decisions.md](../decisions.md)「CPU 实例的计费份数收口到 `core/money.billing_units`」)。
-- 营收报表(revenue_summary)分两段切窗:计量出账(`bills_hourly` / `bills_daily_disk`)按账单归属期(hour_start / day);包周期预付(`subscriptions.amount_paid`)按 `subscriptions.created_at`。`today_revenue` / `yesterday_revenue` / `month_revenue` 是两段之和;`today_prepaid` / `month_prepaid` 单独拆出。
-- 日终资金核对:钱包侧按 `reconcile_checkpoints` 增量链式校验(逐笔 balance_after 链接 + 游标边界行复核,断链定位到 ledger id);出账 vs 消费两侧按账单归属期切窗(ledger 经 ref_id 回连)。包周期是第三条腿:出账侧 `SUM(subscriptions.amount_paid)`(按 `created_at`),消费侧 `ref_type='subscription'` 的 ledger 经 `ref_id` 回连订阅行;`dangling_consume_refs` 同样加了这条腿。
-- 策略参数改动即时生效,盘价快照、巡检、扩容全链路跟随。
-- 数据盘日计费见 [disks.md](./disks.md);充值与支付见 [payment.md](./payment.md);阈值与默认值见 [limits.md](./limits.md)。
+- Hourly settlement (every hour at :02, advisory lock): driven by `settlement_watermarks`, catching up from the last settled window to the previous clock hour; running seconds per instance are rebuilt per window from events, the `UNIQUE(instance_id, hour_start)` upsert is idempotent, and when the seconds only grow the difference is topped up. Repeated and concurrent runs never double-charge.
+- Catch-up truncation and per-object consecutive-failure dead letters register `settlement_gaps` before skipping the window; thresholds in [limits.md](./limits.md).
+- Tail bill: on stop/release the seconds used in the current hour are posted immediately, idempotent on the same UNIQUE key.
+- Platform-fault loss (node_lost/pod_lost): billing is cut off at the moment the Pod first became not-ready (event `metadata.unready_since`); the cut-off has one definition, `settlement.truncated_at`: clock-hour / catch-up settlement uses it in the event-rebuild layer, the tail-bill listener uses it for the exit edge (and leaves `truncated_at` / `truncate_reason` in `bills_hourly.detail`). `unready_since` accumulates across reconciler rounds and is reset in exactly two places, see [orchestrator.md](./orchestrator.md). pod_unready (node healthy) does not cut off.
+- Without a watermark row only the most recent window is settled and a `{kind}_watermark_missing` alert log is written; earlier windows need manual settlement.
+- Refunds: a creating failure that is the platform's fault refunds in full; no running stretch means no bill.
+- Occupancy billing: when a service instance with a non-empty `health_path` whose workspace container actually started does not become ready within `creating_timeout_seconds` (reconciler `schedule_timeout`), the failure edge's `metadata.occupied_since` = the container start; the billing view `settlement.billing_view` expands that edge into "enter running at occupied_since + leave running at the edge time", the tail-bill listener posts per calendar hour (`bills_hourly.detail.occupied_since`), and the clock-hour candidate set includes creating/starting→failed edges. Dev boxes and services without `health_path` that time out are the platform's fault and are not billed. Counter `superdl_schedule_timeout_occupied_total`.
+- Pre-creation check (`assert_can_afford`): balance ≥ (hourly cost of in-flight running instances + the new hourly cost) × `afford_cover_hours` + (daily cost of in-flight disks + the new daily cost) × `disk_grace_days`; computed under the wallet FOR UPDATE lock in the same transaction as the resource creation. Shortfall → `INSUFFICIENT_BALANCE`.
+- Arrears chain (5-minute patrol): estimated remaining hours below the user's warning threshold → warning; available balance − live estimate of the unsettled current hour ≤ 0 → stop → frozen → releasing. The live estimate shares the settlement definition: event-rebuilt seconds − billed seconds.
+- The whole arrears patrol judges by available balance (balance − frozen, `wallet.available_of` / `get_available_balance`), the same definition as `assert_can_afford`: coarse filter, second read under lock, low-balance warning payload, stopped→frozen, frozen→unfreeze and the data-disk arrears chain all use it.
+- An available balance of exactly 0.00 enters the stop→freeze→reclaim chain (unfreeze criterion `available > 0`, stop criterion `effective <= 0`); locked by `tests/test_billing_flow.py::test_zero_balance_stops_then_freezes_then_reclaims`. See the "zero balance reclaims" entry in [../decisions.md](../decisions.md).
+- Wallet updates use `SELECT ... FOR UPDATE` and write `balance_ledger` (with balance_after) in the same transaction.
+- Money is Decimal end to end: prices 4 dp, postings 2 dp, ROUND_HALF_EVEN; 0 seconds produce no bill. An SKU hourly price must be exact to the cent (2 dp) and non-zero after 4-dp quantisation, otherwise listing / repricing is rejected (`catalog.priceHourlyTwoDecimals` / `catalog.priceTooSmall`). Billing days and invoice periods are civil days/months in `SUPERDL_BILLING_TIMEZONE` (`timeutil.billing_day_floor` / `billing_day_shift` / `billing_period_range`; DST-aware, never `+ timedelta(days=1)` on a day start); the daily jobs (`daily_disk_settlement` 00:10, `fund_reconcile` 00:30, `cleanup_expired_rows` 03:00) fire at those wall-clock times in the zone while the scheduler stays UTC; `tz_offset_minutes` on user/admin display endpoints defaults to the zone's current offset; admin `day=` filters are billing-zone days. `as_amount` quantises to the platform currency's minor unit (`core/currencies.py`; JPY/KRW/VND → whole units); server-rendered text carries the ISO code via `money_label` ("100.00 CNY") / `price_label` (4 dp), never a symbol — error `params` for amounts are pre-labelled strings, so locale templates use bare `{{amount}}`; CSV header templates carry `{currency}` and `csvexport.header_row` fills it.
+- Billing units are converted only through `core/money.billing_units(gpu_count)`: GPU instances = card count (`price_hourly` is the per-card hourly price), CPU instances with `gpu_count=0` = 1 whole-machine unit (`price_hourly` is the whole-machine hourly price). Amount = `unit price × units × seconds ÷ 3600`. `bill_amount`, the in-flight hourly cost in `assert_can_afford`, the arrears patrol's `burn_per_hour`, the reconciliation's instance hourly cost and the create / start estimates all go through `billing_units` / `hourly_cost`; scattered `max(1, n)` or `price × gpu_count` is not allowed. Bill rows store `gpu_count` as-is (see the "CPU instance billing units converge on `core/money.billing_units`" entry in [../decisions.md](../decisions.md)).
+- The revenue report (revenue_summary) windows two segments: metered bills (`bills_hourly` / `bills_daily_disk`) by bill attribution period (hour_start / day); subscription prepayments (`subscriptions.amount_paid`) by `subscriptions.created_at`. `today_revenue` / `yesterday_revenue` / `month_revenue` are the sum of both; `today_prepaid` / `month_prepaid` are split out.
+- End-of-day fund reconciliation: the wallet side is verified incrementally as a chain through `reconcile_checkpoints` (row-by-row balance_after links + re-check of the cursor boundary row, a broken chain is located to a ledger id); the billed vs consumed sides are windowed by bill attribution period (ledger joined back through ref_id). Subscriptions are the third leg: billed side `SUM(subscriptions.amount_paid)` (by `created_at`), consumed side ledger rows with `ref_type='subscription'` joined back to the subscription row through `ref_id`; `dangling_consume_refs` has the same leg.
+- Policy parameter changes take effect immediately; disk price snapshots, the patrol and expansion all follow.
+- Daily data-disk billing in [disks.md](./disks.md); top-ups and payments in [payment.md](./payment.md); thresholds and defaults in [limits.md](./limits.md).
 
-## 包周期(预付订阅)
+## Subscriptions (prepaid periods)
 
-`instances.market='subscription'` 的实例下单时一次性预扣整段周期费用,不进小时结算。折扣与周期口径的唯一计算点 `app/core/pricing.py`;下单、续费、到期巡检在 `app/modules/billing/subscriptions.py`;用例 `apps/api/tests/test_subscriptions.py`。
+An instance with `instances.market='subscription'` prepays the whole period at order time and never enters hourly settlement. The single point for discounts and period definitions is `app/core/pricing.py`; ordering, renewal and the expiry patrol are in `app/modules/billing/subscriptions.py`; cases in `apps/api/tests/test_subscriptions.py`.
 
-### 计价口径
+### Pricing
 
-- 周期取定长小时(`PERIOD_HOURS`,值见 [limits.md](./limits.md));到期时刻与定价同源(`period_hours` 与 `period_delta` 同一个数)。
-- 应付 = 折后时价 × 计费份数 × 周期小时数;份数只经 `core/money.billing_units`。
-- 折扣按周期四档,策略参数;`period_count` 只收 `core/pricing.MAX_PERIOD_COUNT` 以内。取值见 [limits.md](./limits.md)。
-- 报价三件套由后端保证自洽:`SubscriptionQuote` 构造时满足 `discount_amount == list_amount - amount`,按 `SubscriptionQuoteOut` 逐行下发(period / period_count / hours / discount_pct / base_hourly / unit_price / list_amount / discount_amount / amount)。前端逐行渲染。
-- `instances.price_hourly` 落折后时价。续费重新定价的基准另存 `subscriptions.unit_price`(SKU 原价快照)。
+- A period is a fixed number of hours (`PERIOD_HOURS`, values in [limits.md](./limits.md)); the expiry instant and the price share the source (`period_hours` and `period_delta` are the same number).
+- Payable = discounted hourly price × billing units × period hours; units only through `core/money.billing_units`.
+- Discounts have four tiers by period, as policy parameters; `period_count` accepts at most `core/pricing.MAX_PERIOD_COUNT`. Values in [limits.md](./limits.md).
+- The quote triple is kept consistent by the backend: a `SubscriptionQuote` satisfies `discount_amount == list_amount - amount` on construction and is delivered line by line as `SubscriptionQuoteOut` (period / period_count / hours / discount_pct / base_hourly / unit_price / list_amount / discount_amount / amount). The frontend renders it line by line.
+- `instances.price_hourly` stores the discounted hourly price. The baseline for renewal repricing is stored separately in `subscriptions.unit_price` (the SKU list-price snapshot).
 
-### 下单预扣(与建实例同一个事务)
+### Order prepayment (the same transaction as instance creation)
 
-`POST /api/v1/instances` 带 `market=subscription` + `period`(必填)+ `period_count`(默认 1),钱包行锁内:落 `instances(creating, market='subscription')` → 写 `subscriptions` → `wallet.debit(type_='consume', ref_type='subscription', ref_id=<订阅 id>, allow_negative=False)` → `assert_can_afford` → `instance_events` + `outbox`。
+`POST /api/v1/instances` with `market=subscription` + `period` (required) + `period_count` (default 1), under the wallet row lock: write `instances(creating, market='subscription')` → write `subscriptions` → `wallet.debit(type_='consume', ref_type='subscription', ref_id=<subscription id>, allow_negative=False)` → `assert_can_afford` → `instance_events` + `outbox`.
 
-- 扣款 `allow_negative=False`:余额不足抛 `INSUFFICIENT_BALANCE`,实例不进 creating。
-- 扣完再过一次燃烧率校验(此刻余额已是扣后值);两种不足分开报错。
-- `market='on_demand'` 却带 `period` / `period_count` 一律 422;SKU `period_enabled=false` 报 `orchestrator.periodNotEnabled`。
-- 下单那条订阅行不带幂等键,整笔创建的幂等由同事务 `instances` 行担保。`subscriptions.idempotency_key` 服务转换与续费两条路径,共用 `UNIQUE(user_id, idempotency_key)`,两处重放查询都带 `request_fingerprint` 比对,同键异参 409 `common.idempotencyKeyMismatch`。
-- 流水:`type='consume'`、`ref_type='subscription'`、`ref_id` 为订阅行 id、remark 形如「<实例名> 包月×1」;续费同款,remark 多「续费」。
+- The debit uses `allow_negative=False`: insufficient balance raises `INSUFFICIENT_BALANCE` and the instance never enters creating.
+- The burn-rate check runs once more after the debit (the balance is already the post-debit value); the two shortfalls are reported separately.
+- `market='on_demand'` with `period` / `period_count` is always 422; an SKU with `period_enabled=false` reports `orchestrator.periodNotEnabled`.
+- The subscription row of the order carries no idempotency key; the idempotency of the whole creation is guaranteed by the `instances` row in the same transaction. `subscriptions.idempotency_key` serves the conversion and renewal paths, sharing `UNIQUE(user_id, idempotency_key)`; both replay lookups compare `request_fingerprint`, same key with different params → 409 `common.idempotencyKeyMismatch`.
+- Ledger: `type='consume'`, `ref_type='subscription'`, `ref_id` = the subscription row id, remark like "<instance name> monthly ×1"; renewal is the same with a "renewal" remark.
 
-### 结算跳过点与配套过滤
+### Settlement skip point and matching filters
 
-`orchestrator/queries.py::billing_candidates` 里的 `market != 'subscription'` 是唯一跳过点;`upsert_hour_bill`、水位线、缺口机制、幂等键不动。竞价实例不在排除之列。
+`market != 'subscription'` in `orchestrator/queries.py::billing_candidates` is the only skip point; `upsert_hour_bill`, watermarks, the gap mechanism and idempotency keys are untouched. Spot instances are not excluded.
 
-| 位置                                                            | 排除包周期实例                            |
-| --------------------------------------------------------------- | ----------------------------------------- |
-| `wallet.assert_can_afford` 的在途燃烧率                         | 已预付的实例不计入护栏                    |
-| `billing/patrol.py` `_patrol_running` 的停机判据                | `burn_per_hour` 与未结算实时估算的集合    |
-| `billing/patrol.py` `_patrol_frozen_and_arrears_stopped` 的两支 | stopped→frozen 与 frozen 的「充值即解冻」 |
-| `billing/edge_listener.py` 的尾账                               | 离开 running 不出小时尾账                 |
+| Location                                                                     | Excludes subscription instances                       |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------- |
+| The in-flight burn rate in `wallet.assert_can_afford`                        | Prepaid instances do not count towards the guard rail |
+| The stop criterion of `_patrol_running` in `billing/patrol.py`               | `burn_per_hour` and the unsettled live-estimate set   |
+| Both branches of `_patrol_frozen_and_arrears_stopped` in `billing/patrol.py` | stopped→frozen and frozen's "top-up unfreezes"        |
+| The tail bill in `billing/edge_listener.py`                                  | Leaving running produces no hourly tail bill          |
 
-frozen 到期回收那一支不过滤,回收由余额巡检统一做。创建路径上 `_pending_hourly`(creating/starting 的待燃时费)同样排除包周期实例。
+The frozen-expiry reclamation branch is not filtered; reclamation is done uniformly by the balance patrol. `_pending_hourly` on the creation path (the pending hourly cost of creating/starting instances) also excludes subscription instances.
 
-### 按量转包周期(`POST /api/v1/instances/{uuid}/subscribe`)
+### On-demand → subscription (`POST /api/v1/instances/{uuid}/subscribe`)
 
-入参与响应同 `/renew`,区别在起点:转换从现在起算,续费从老周期到期时刻接上。
+Request and response are the same as `/renew`; the difference is the starting point: conversion starts now, renewal continues from the old expiry.
 
-先结清转换前那段按量账,再翻 `market`。结清用转换前的按量时价。
+The on-demand stretch before the conversion is settled first, then `market` flips. The settlement uses the pre-conversion on-demand price.
 
-完整顺序(钱包行锁内、同一事务):幂等重放判定 → 前置校验 → `lock_wallet` → running 则 `settle_on_demand_up_to` 结清 → 落订阅行 + 预扣 → 翻 `market='subscription'` → 刷 `price_hourly` 为折后价 → `assert_can_afford`。
+Full order (under the wallet row lock, one transaction): idempotent replay check → preconditions → `lock_wallet` → if running, `settle_on_demand_up_to` → write the subscription row + prepay → flip `market='subscription'` → refresh `price_hourly` to the discounted price → `assert_can_afford`.
 
-- `settle_on_demand_up_to` 逐小时结,从「水位线 + 1 小时」到当前自然小时(水位线为空则只结当前小时);落下的行 `detail.source = "convert"`。`stopped` 实例跳过。
-- 结算滞后超过 `settlement.MAX_CONVERT_SETTLE_HOURS` 拒绝转换,409 `billing.settlementBehind`。
-- 幂等重放最先判,在「只有按量实例可以转」守卫之前;重放查询带 `instance_id` / `period` / `period_count` 做异参检测,指纹不符 409。
-- 报价基准是 `instance.price_hourly`(按量实例上即建实例时的 SKU 原价快照),不是 SKU 现价;这个原价落进新订阅行的 `unit_price`。
-- 前置:`market='on_demand'`;状态 `running` 或 `stopped`(其余 409 `orchestrator.convertNeedsRunningOrStopped`);SKU `period_enabled`。非按量报 `orchestrator.convertNotOnDemand`,已在保报 `billing.subscriptionAlreadyActive`。
-- 反向不开。
+- `settle_on_demand_up_to` settles hour by hour from "watermark + 1 hour" to the current calendar hour (only the current hour when the watermark is empty); the rows get `detail.source = "convert"`. `stopped` instances are skipped.
+- Settlement more than `settlement.MAX_CONVERT_SETTLE_HOURS` behind rejects the conversion, 409 `billing.settlementBehind`.
+- The idempotent replay is checked first, before the "only on-demand instances can convert" guard; the replay lookup carries `instance_id` / `period` / `period_count` for parameter-mismatch detection, a fingerprint mismatch is 409.
+- The quote baseline is `instance.price_hourly` (on an on-demand instance the SKU list-price snapshot from creation), not the SKU's current price; this list price goes into the new subscription row's `unit_price`.
+- Preconditions: `market='on_demand'`; status `running` or `stopped` (else 409 `orchestrator.convertNeedsRunningOrStopped`); SKU `period_enabled`. Not on-demand reports `orchestrator.convertNotOnDemand`, already covered reports `billing.subscriptionAlreadyActive`.
+- The reverse direction is not offered.
 
-### 续费
+### Renewal
 
-`POST /api/v1/instances/{uuid}/renew`(见 [orchestrator.md](./orchestrator.md);`Idempotency-Key`,重放 200 + `X-Idempotent-Replay`,响应带 `quote`):
+`POST /api/v1/instances/{uuid}/renew` (see [orchestrator.md](./orchestrator.md); `Idempotency-Key`, replay 200 + `X-Idempotent-Replay`, the response carries `quote`):
 
-- 按原价快照重新定价:基准 `subscriptions.unit_price`,不是 SKU 现价。
-- 可换周期续,按新周期折扣报价;同事务刷新 `instances.price_hourly`。
-- 起算时刻 = max(老到期时刻, 现在)。
-- 老行转 `expired`,新行 `renewed_from_id` 指向老行,不在原行累加 `expires_at`。
-- 冻结中的实例续费即解冻(回 `stopped` 并清 `frozen_deadline`),不自动开机。
-- 非包周期、releasing/released 报 `SUBSCRIPTION_NOT_RENEWABLE`(400)。没有订阅行报 `billing.subscriptionMissing`,`status='cancelled'` 报 `billing.subscriptionCancelled`。`auto-renew` 同一套判据。
-- 并发同幂等键由 `UNIQUE(user_id, idempotency_key)` 兜住:撞键方 rollback 后回查胜出方按重放返回;回查带 `request_fingerprint`,同键异参 409。
+- Repriced from the list-price snapshot: baseline `subscriptions.unit_price`, not the SKU's current price.
+- The period may change on renewal, quoted at the new period's discount; `instances.price_hourly` is refreshed in the same transaction.
+- Start instant = max(old expiry, now).
+- The old row becomes `expired`, the new row's `renewed_from_id` points at it; `expires_at` is never extended in place.
+- Renewing a frozen instance unfreezes it (back to `stopped`, `frozen_deadline` cleared) without starting it.
+- Not a subscription, releasing/released → `SUBSCRIPTION_NOT_RENEWABLE` (400). No subscription row → `billing.subscriptionMissing`, `status='cancelled'` → `billing.subscriptionCancelled`. `auto-renew` uses the same criteria.
+- Concurrent requests with the same idempotency key are caught by `UNIQUE(user_id, idempotency_key)`: the loser rolls back, re-reads the winner and returns it as a replay; the re-read carries `request_fingerprint`, same key with different params → 409.
 
-`POST /api/v1/instances/{uuid}/auto-renew` 开关自动续费,默认关。
+`POST /api/v1/instances/{uuid}/auto-renew` toggles auto-renewal, default off.
 
-### 到期链路(`subscription_patrol`,30 分钟一轮,advisory lock,worker `core` 组件)
+### Expiry chain (`subscription_patrol`, every 30 minutes, advisory lock, worker `core` component)
 
-1. 临期预警 `expires_at - now < period_expire_warn_days` → 短信 + 站内信。去重锚点 `subscriptions.warned_for_expiry`(存「已预警到哪个到期时刻」);站内信另有按日分桶的 dedup_key。
-2. 自动续费:到期 + `auto_renew` + 可用余额够 → 扣款、新开一行、通知。先算价再比可用余额,不靠 `debit` 抛错兜底。余额不够发「自动续费失败」通知,落到停机链路。
-3. 到期停机:订阅行转 `expired`;running → `system_stop(reason='subscription_expired')`;stopped → 直接冻结。creating/starting/stopping/frozen/releasing 本轮不动。
-4. 到期扫描(`_patrol_expired_sweep`,同一轮的第二趟):候选集是「status='expired' 且 expires_at ≤ now」减去在保集合,取其中 running 与 stopped 的实例,逐台独立事务锁行复核后 running → 停机、stopped → 冻结(reason `subscription_freeze`,`frozen_deadline = now + freeze_grace_hours`)。到期时刻落在 creating/starting/stopping 的实例由后续轮次的这一趟接手,不存在只看 active 行而漏掉的实例。
-5. 指标 `superdl_subscription_unpaid_running_instances`:market=subscription 且 creating/starting/running 但无在保订阅的实例数,每轮刷新;>0 超一轮巡检即告警 `SubscriptionUnpaidRunning`。
-6. 回收:由 `balance_patrol` 的 frozen 分支做。冻结窗口复用 `freeze_grace_hours`。
+1. Expiry warning `expires_at - now < period_expire_warn_days` → SMS + in-app notification. Dedup anchor `subscriptions.warned_for_expiry` (stores "the expiry instant already warned about"); the in-app notification additionally has a per-day dedup_key.
+2. Auto-renewal: expired + `auto_renew` + sufficient available balance → debit, new row, notification. The price is computed and compared with the available balance first; `debit` raising is not the safety net. Insufficient balance sends an "auto-renewal failed" notification and falls into the stop chain.
+3. Expiry stop: the subscription row becomes `expired`; running → `system_stop(reason='subscription_expired')`; stopped → frozen directly. creating/starting/stopping/frozen/releasing are left alone this round.
+4. Expiry sweep (`_patrol_expired_sweep`, the second pass of the same round): the candidate set is "status='expired' and expires_at ≤ now" minus the covered set, taking the running and stopped instances among them; each is re-checked under a row lock in its own transaction, then running → stop, stopped → freeze (reason `subscription_freeze`, `frozen_deadline = now + freeze_grace_hours`). Instances whose expiry fell into creating/starting/stopping are picked up by this pass in later rounds, so no instance is missed by looking at active rows only.
+5. Metric `superdl_subscription_unpaid_running_instances`: instances with market=subscription in creating/starting/running without a covering subscription, refreshed every round; > 0 for more than one patrol round alerts `SubscriptionUnpaidRunning`.
+6. Reclamation: done by the frozen branch of `balance_patrol`. The freeze window reuses `freeze_grace_hours`.
 
-到期与欠费用不同的 `instance_events.reason`(`subscription_expired` / `subscription_freeze` 对 `arrears_stop` / `arrears_freeze`)。
+Expiry and arrears use different `instance_events.reason` values (`subscription_expired` / `subscription_freeze` vs `arrears_stop` / `arrears_freeze`).
 
-### 预付语义的三条硬规矩
+### The three hard rules of prepayment
 
-- 中途释放不退款。实例进入 `releasing` 时由计费边监听器把 active 订阅转 `cancelled`,不生成退款流水;确需退款走人工 `refund_requests`(见 [payment.md](./payment.md))。挂在迁移监听器上,覆盖用户释放、欠费回收、到期回收、管理端强制回收四条路径。已 `expired` 的历史行不动。**唯一例外:从未运行即 failed 且属平台责任**(首次 creating 调度超时,reconciler `schedule_timeout`,失败边不带 `occupied_since`)——同事务作废 active 订阅并把 `amount_paid` 原额退回余额(ledger type=refund / ref_type=subscription,`subscriptions.refund_unstarted`),通知写明退回金额。服务型实例 `health_path` 永不就绪(带 `occupied_since`)不退款、订阅保持 active、实例盘保留,修复后可重新启动。
-- 到期不自动转按量,到期即停机。
-- 余额为零不停机:停机判据、燃烧率、冻结与解冻四处都排除(见上表)。
+- Releasing mid-period gives no refund. When the instance enters `releasing`, the billing edge listener turns the active subscription into `cancelled` without a refund ledger entry; a refund that is really needed goes through manual `refund_requests` (see [payment.md](./payment.md)). Attached to the transition listener, it covers user release, arrears reclamation, expiry reclamation and admin force reclamation. Already `expired` historical rows are untouched. **The only exception: never ran and failed for platform reasons** (first creating scheduling timeout, reconciler `schedule_timeout`, failure edge without `occupied_since`) — the same transaction voids the active subscription and returns `amount_paid` in full to the balance (ledger type=refund / ref_type=subscription, `subscriptions.refund_unstarted`), and the notification states the returned amount. A service instance whose `health_path` never becomes ready (with `occupied_since`) gets no refund, the subscription stays active, the instance disk is kept, and it can be started again once fixed.
+- Expiry does not convert to on-demand automatically; expiry stops the instance.
+- Zero balance does not stop it: the stop criterion, burn rate, freeze and unfreeze all exclude subscriptions (see the table above).
 
-### 与其它口径的边界
+### Boundaries with other definitions
 
-- 包周期扣款是 `type='consume'`,计入消费;发票口径不变(`invoices._period_billable_amount` 只认 `orders.status='paid'` 的充值额)。
-- 营收报表与日终资金核对各加包周期一条腿(见「规则与不变量」),切窗用 `subscriptions.created_at`。管理端总览另有 `subscriptions_active`(在保订阅数),见 [admin.md](./admin.md)。
-- 数据盘不在包周期覆盖范围内:仍按日出 `bills_daily_disk`,余额为 0 时照走数据盘欠费链。
-- 未到期的包周期实例即使已停机也仍占软准入库存,见 [orchestrator.md](./orchestrator.md)。
+- Subscription debits are `type='consume'` and count as consumption; the invoice definition is unchanged (`invoices._period_billable_amount` only counts top-ups with `orders.status='paid'`).
+- The revenue report and the end-of-day fund reconciliation each add a subscription leg (see "Rules and invariants"), windowed by `subscriptions.created_at`. The admin overview additionally has `subscriptions_active` (covered subscriptions), see [admin.md](./admin.md).
+- Data disks are not covered by subscriptions: they still bill daily into `bills_daily_disk`, and at zero balance the data-disk arrears chain applies as usual.
+- Unexpired subscription instances keep occupying soft-admission stock even when stopped, see [orchestrator.md](./orchestrator.md).
 
-### 结算引导
+### Settlement bootstrap
 
-无水位线时先看窗口起点之前有没有可计费对象(hourly 看 `instance_events`,daily_disk 看 `data_disks`,`orchestrator_service.billing_history_exists_before`):没有 = 首次部署,只建水位线不登记缺口;有 = 水位线行丢失,只结最近窗口并登记 `watermark_missing` 缺口。
+Without a watermark, first check whether billable objects existed before the window start (hourly looks at `instance_events`, daily_disk at `data_disks`, `orchestrator_service.billing_history_exists_before`): none = first deployment, only the watermark is created and no gap recorded; some = the watermark row was lost, only the most recent window is settled and a `watermark_missing` gap is recorded.
 
-## 竞价(spot)
+## Spot
 
-`instances.market='spot'` 的实例拿折后价,容量紧张时可被平台回收。抢占规则、宽限窗与两个入口在 [orchestrator.md](./orchestrator.md);这里只写钱的口径。用例 `apps/api/tests/test_spot.py`。
+An instance with `instances.market='spot'` gets the discounted price and may be reclaimed by the platform when capacity is tight. Preemption rules, the grace window and the two entry points are in [orchestrator.md](./orchestrator.md); this section covers only the money. Cases in `apps/api/tests/test_spot.py`.
 
-### 折扣与结算
+### Discount and settlement
 
-竞价时价 = SKU 原价 × `spot_discount_pct` / 100,由 `app/core/pricing.py` 的 `price_for` 单点算出,建实例时快照进 `instances.price_hourly`。此后与按量实例同路径:出 `bills_hourly`、走水位线与尾账、计入燃烧率与欠费巡检。`spot_discount_pct` 取值见 [limits.md](./limits.md)。
+Spot hourly price = SKU list price × `spot_discount_pct` / 100, computed in one place by `price_for` in `app/core/pricing.py` and snapshotted into `instances.price_hourly` at creation. From then on it shares the on-demand path: `bills_hourly`, watermarks and tail bills, burn rate and the arrears patrol. `spot_discount_pct` values in [limits.md](./limits.md).
 
-被抢占不免单:迁 `stopping` 时由计费边监听器(`billing/edge_listener.py`)照常出尾账,按到那一刻的实际运行秒数结算。宽限窗不计费:计费边在迁 `stopping` 时落定。
+Preemption is not free: on the move to `stopping` the billing edge listener (`billing/edge_listener.py`) posts the tail bill as usual, settling the actual seconds run up to that moment. The grace window is not billed: the billing edge is fixed when the instance moves to `stopping`.
 
-### 转按量:一小时一价
+### Conversion to on-demand: one price per hour
 
-`POST /api/v1/instances/{uuid}/to-on-demand` 把 `market` 翻成 `on_demand`、单价还原成 `spec.base_price_hourly`(不从折后价反推)。翻价前先 `settle_on_demand_up_to` 用竞价价把滞后未结的整点小时结清(与转包周期同一口径,48h 滞后熔断同款),只有当前小时改按量价。`bills_hourly` 一小时只有一行、一个 `unit_price`,口径是「一小时一价,以结算时的实例单价为准」:转换把当前整点小时整体改按按量价。`settlement.reprice_current_hour` 在钱包行锁内 `FOR UPDATE` 取当前小时那一行:
+`POST /api/v1/instances/{uuid}/to-on-demand` flips `market` to `on_demand` and restores the unit price to `spec.base_price_hourly` (never derived back from the discounted price). Before repricing, `settle_on_demand_up_to` settles the lagging unsettled clock hours at the spot price (the same definition as the subscription conversion, with the same 48 h lag circuit breaker); only the current hour changes to the on-demand price. `bills_hourly` has one row and one `unit_price` per hour, under the rule "one price per hour, the instance's unit price at settlement time": the conversion changes the current clock hour entirely to the on-demand price. `settlement.reprice_current_hour` takes the current hour's row `FOR UPDATE` under the wallet row lock:
 
-- 这一行不存在(常见路径):什么都不做,之后的整点结算按新单价出账;
-- 已出过账且新价更高:按新单价重算 `amount`、改写 `unit_price`、补扣差价、`detail` 打 `repriced`;三件事一起做。
+- the row does not exist (the common path): nothing happens, later clock-hour settlement bills at the new price;
+- already billed and the new price is higher: recompute `amount` at the new price, rewrite `unit_price`, charge the difference, mark `detail` with `repriced`; all three together.
 
-只在涨价时改写该行;降价整行不动(`unit_price` 也不改),退款一律走人工 `refund_requests`(见 [payment.md](./payment.md))。用例锁降价路径:整行未动、无扣款流水。
+The row is rewritten only when the price goes up; a price decrease leaves the row untouched (`unit_price` included), refunds always go through manual `refund_requests` (see [payment.md](./payment.md)). A case locks the decrease path: row untouched, no debit ledger entry.
 
-转换对用户是一次涨价,必须写进转换确认弹窗(见 [../ui-ux-spec.md](../ui-ux-spec.md) §3.5)。转完再过一次 `assert_can_afford`。
+For the user the conversion is a price increase and must be stated in the conversion confirmation dialog (see [../ui-ux-spec.md](../ui-ux-spec.md) §3.5). `assert_can_afford` runs once more after the conversion.
 
-反向不开:按量转不回竞价。
+The reverse direction is not offered: on-demand cannot go back to spot.
