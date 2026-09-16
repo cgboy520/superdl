@@ -21,6 +21,8 @@ export interface NodeOut {
   name: string;
   pool_label: string;
   status: string;
+  supports_mig?: boolean;
+  supports_passthrough?: boolean;
   unlabeled?: boolean;
   vcpu: number;
   vram_gb?: number;

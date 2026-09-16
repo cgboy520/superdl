@@ -7,13 +7,7 @@ import { fontSize, space, useApiErrorText } from "@superdl/ui";
 import { useConfirm } from "@superdl/ui/components";
 
 import { type NodeRow, useSwitchNodePool } from "../../api";
-import {
-  POOL_LABEL_KEY,
-  SWITCHABLE_POOLS,
-  supportsMig,
-  supportsPassthrough,
-  type SwitchablePool,
-} from "../../lib/pools";
+import { POOL_LABEL_KEY, SWITCHABLE_POOLS, type SwitchablePool } from "../../lib/pools";
 import { REASON_MAX_LEN } from "../../lib/validators";
 
 interface FormValues {
@@ -38,11 +32,11 @@ export function canSwitchPool(node: NodeRow): boolean {
   return inSwitchablePool(node) && switchTargets(node).some((target) => !target.disabled);
 }
 
-/** 排除当前池;机型不支持 MIG 切分的禁用 mig,不支持整卡直通的禁用 kata。 */
+/** 排除当前池;后端判定不支持 MIG 切分的禁用 mig,不支持整卡直通的禁用 kata。 */
 export function switchTargets(node: NodeRow): { pool: SwitchablePool; disabled: boolean }[] {
   const blockedPools = new Set<SwitchablePool>();
-  if (!supportsMig(node.gpu_model)) blockedPools.add("mig");
-  if (!supportsPassthrough(node.gpu_model)) blockedPools.add("kata");
+  if (!node.supports_mig) blockedPools.add("mig");
+  if (!node.supports_passthrough) blockedPools.add("kata");
   const from = currentPool(node);
   return SWITCHABLE_POOLS.filter((p) => p !== from).map((p) => ({
     pool: p,

@@ -5368,6 +5368,16 @@
             "title": "Status",
             "type": "string"
           },
+          "supports_mig": {
+            "default": false,
+            "title": "Supports Mig",
+            "type": "boolean"
+          },
+          "supports_passthrough": {
+            "default": false,
+            "title": "Supports Passthrough",
+            "type": "boolean"
+          },
           "unlabeled": {
             "default": false,
             "title": "Unlabeled",

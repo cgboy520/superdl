@@ -204,6 +204,10 @@ class NodeOut(BaseModel):
     last_seen: str = ""
     desired_pool: str = ""
     active_instances: int = 0
+    #: Pool-switch capabilities of the canonical GPU model (`core/gpu_models`, fail-closed for
+    #: unrecognised models); the consoles read these instead of keeping their own tables.
+    supports_mig: bool = False
+    supports_passthrough: bool = False
 
 
 class GpuModelAggregateOut(BaseModel):
