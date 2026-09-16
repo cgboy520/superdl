@@ -8,7 +8,7 @@ from app.core.db import Base
 
 
 class Sku(Base):
-    """商品规格;变更仅影响新实例(实例落库时快照)。"""
+    """Product spec; changes affect new instances only (snapshotted when the instance is stored)."""
 
     __tablename__ = "skus"
     __table_args__ = (
@@ -48,7 +48,7 @@ class Sku(Base):
 
 
 class PlatformImage(Base):
-    """平台镜像目录:框架→版本→Python→CUDA 级联的数据源。"""
+    """Platform image catalog: data source of the framework → version → Python → CUDA cascade."""
 
     __tablename__ = "images"
 
@@ -63,7 +63,7 @@ class PlatformImage(Base):
 
 
 class ImageNodeCache(Base):
-    """每镜像、每节点的缓存引用、状态与最近确认时间。"""
+    """Cached reference, status and last check time per image and node."""
 
     __tablename__ = "image_node_cache"
     __table_args__ = (UniqueConstraint("image_id", "node_name"),)

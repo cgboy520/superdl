@@ -10,7 +10,8 @@ import type { ClusterStatusOutPools } from './clusterStatusOutPools';
 import type { ClusterStatusOutPoolsReady } from './clusterStatusOutPoolsReady';
 
 /**
- * 集群页数据(纯 DB 读能力缓存;「测试连接」同步探测后返回同形)。
+ * Cluster page data (pure DB read of the capability cache; "test connection" probes
+ * synchronously and returns the same shape).
  */
 export interface ClusterStatusOut {
   api_reachable: boolean;

@@ -24,6 +24,7 @@ from app.core.logging import get_logger
 from app.core.money import as_amount, as_price, price_label
 from app.core.outbox import enqueue
 from app.core.platform_config import get_runtime_config
+from app.core.servercopy import copy as server_copy
 from app.core.timeutil import now_utc
 from app.modules.catalog import inventory
 from app.modules.catalog.models import ImageNodeCache, PlatformImage, Sku
@@ -52,7 +53,8 @@ logger = get_logger(__name__)
 
 
 def sellable_per_gpu(pool_label: str, gpu_cores_pct: int, oversell_cores: Decimal) -> int:
-    """hami 池每卡可售数为 max(1, ⌊100×oversell_cores/max(1,gpu_cores_pct)⌋),其余池为 1。"""
+    """Sellable instances per card in the hami pool = max(1, ⌊100×oversell_cores/max(1,
+    gpu_cores_pct)⌋), 1 in the other pools."""
     if pool_label != POOL_HAMI:
         return 1
     return max(1, int(Decimal(100) * oversell_cores // max(1, gpu_cores_pct)))
@@ -61,9 +63,12 @@ def sellable_per_gpu(pool_label: str, gpu_cores_pct: int, oversell_cores: Decima
 def sellable_cpu_slots(
     vcpu: int, mem_gb: int, specs: Iterable["NodeSpec"], *, gpu_node_vcpu_cap: int
 ) -> int:
-    """CPU 规格的近似可售实例数:逐 Ready 节点取 min(⌊预算 vCPU ÷ vcpu⌋, ⌊预算内存 ÷ mem_gb⌋) 求和。
-    预算:cpu 池整机;其它池每节点封顶 `gpu_node_cpu_instance_vcpu_cap` 核,内存同比例,cap=0 不卖。
-    上限估算,不扣已用。
+    """Approximate sellable CPU-SKU instances: per Ready node min(⌊budget vCPU ÷ vcpu⌋, ⌊budget
+    memory
+    ÷ mem_gb⌋), summed.
+    Budget: the whole machine in the cpu pool; other pools capped per node at
+    `gpu_node_cpu_instance_vcpu_cap` cores with memory scaled alike, cap=0 sells none.
+    Upper-bound estimate, usage is not subtracted.
     """
     if vcpu <= 0 or mem_gb <= 0:
         return 0
@@ -81,8 +86,10 @@ def sellable_cpu_slots(
 
 
 def _check_tier_pool(tier: str, pool_label: str, mig_profile: str | None) -> None:
-    """档位与池必须配对(core/gpu_adapter),mig 切片与 mig 池同有同无;
-    共享档叠加 SUPERDL_SHARED_TIER_ALLOWED_POOLS(空即停售)。建 SKU 与改池共用。
+    """Tier and pool must pair (core/gpu_adapter), the mig slice and the mig pool are present or
+    absent together;
+    the shared tier is further gated by SUPERDL_SHARED_TIER_ALLOWED_POOLS (empty = not sold). Shared
+    by SKU creation and pool changes.
     """
     allowed = TIER_POOLS.get(tier, ())
     if tier == TIER_SHARED:
@@ -118,12 +125,12 @@ async def list_market_skus(
 async def get_sku(session: AsyncSession, sku_id: int) -> Sku:
     sku = await session.get(Sku, sku_id)
     if sku is None:
-        raise not_found("规格不存在")
+        raise not_found(key="catalog.skuNotFound")
     return sku
 
 
 async def get_on_sale_sku(session: AsyncSession, sku_id: int) -> Sku:
-    """下单入口:必须在架。"""
+    """Order entry: must be listed."""
     sku = await get_sku(session, sku_id)
     if sku.status != "on":
         raise AppError(ErrorCode.SKU_NOT_ON_SALE, key="catalog.skuOffSale")
@@ -145,14 +152,14 @@ async def list_images(session: AsyncSession) -> list[PlatformImage]:
 
 
 async def is_catalog_image(session: AsyncSession, image_ref: str) -> bool:
-    """该镜像引用是否属于平台镜像目录。"""
+    """Whether the image reference belongs to the platform image catalog."""
     return (
         await session.execute(select(PlatformImage.id).where(PlatformImage.image_ref == image_ref))
     ).scalar_one_or_none() is not None
 
 
 async def image_coverage(session: AsyncSession) -> dict[int, tuple[int, int, int]]:
-    """预热覆盖聚合:image_id → (cached 节点数, 总行数, failed 节点数)。"""
+    """Prewarm coverage aggregate: image_id → (cached nodes, total rows, failed nodes)."""
     rows = (
         await session.execute(
             select(
@@ -167,12 +174,12 @@ async def image_coverage(session: AsyncSession) -> dict[int, tuple[int, int, int
 
 
 def _is_prewarmed(img: PlatformImage, cached: int, total: int, threshold: int) -> bool:
-    """启用预热且(无缓存行或缓存覆盖百分比达到 threshold)时返回 True。"""
+    """True when prewarm is enabled and (no cache rows or coverage percentage reaches threshold)."""
     return img.prewarm_enabled and (total == 0 or cached * 100 >= threshold * total)
 
 
 async def list_images_out(session: AsyncSession) -> list[ImageOut]:
-    """公开镜像目录,is_prewarmed 为计算值。"""
+    """Public image catalog, is_prewarmed is computed."""
     images = await list_images(session)
     coverage = await image_coverage(session)
     threshold = (await get_runtime_config(session)).prewarm_min_coverage_pct
@@ -194,14 +201,14 @@ async def list_images_out(session: AsyncSession) -> list[ImageOut]:
 
 
 async def admin_image_out(session: AsyncSession, img: PlatformImage) -> AdminImageOut:
-    """单镜像的管理端视图(建 / 改的响应)。"""
+    """Admin view of one image (create / update response)."""
     coverage = await image_coverage(session)
     threshold = (await get_runtime_config(session)).prewarm_min_coverage_pct
     return _admin_image_out(img, coverage, threshold)
 
 
 async def admin_list_images_out(session: AsyncSession) -> list[AdminImageOut]:
-    """镜像目录 + 每镜像预热覆盖率(纯 DB 聚合,不调 K8s)。"""
+    """Image catalog + prewarm coverage per image (pure DB aggregate, no K8s call)."""
     images = await list_images(session)
     coverage = await image_coverage(session)
     threshold = (await get_runtime_config(session)).prewarm_min_coverage_pct
@@ -234,8 +241,8 @@ async def admin_list_skus(session: AsyncSession) -> list[Sku]:
 
 
 def _checked_price(value: Decimal) -> Decimal:
-    """单价走 money.as_price(4 位),量化后为 0 拒绝;
-    按小时计费的 SKU 强制 2 位(price == as_amount(price))。"""
+    """Unit prices go through money.as_price (4 dp), zero after quantisation is rejected;
+    hourly-billed SKUs are forced to 2 dp (price == as_amount(price))."""
     price = as_price(value)
     if price <= 0:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="catalog.priceTooSmall")
@@ -245,7 +252,7 @@ def _checked_price(value: Decimal) -> Decimal:
 
 
 async def _commit_or_conflict(session: AsyncSession, *, key: str) -> None:
-    """提交事务;IntegrityError 回滚并转换为指定文案的 409。"""
+    """Commit the transaction; IntegrityError rolls back and becomes a 409 with the given copy."""
     try:
         await session.commit()
     except IntegrityError as exc:
@@ -271,7 +278,8 @@ PRICE_CHANGE_WINDOW = timedelta(hours=24)
 async def admin_update_sku(
     session: AsyncSession, sku_id: int, data: SkuUpdate, *, force: bool = False
 ) -> tuple[Sku, dict[str, Any]]:
-    """更新 SKU。返回 (sku, 本次实际变更字段的旧值快照),旧值交调用方落审计。"""
+    """Update the SKU. Returns (sku, snapshot of the old values of the fields actually changed); the
+    caller writes the old values to the audit."""
     sku = await get_sku(session, sku_id)
     was_on_sale = sku.status == "on"
     updates = data.model_dump(exclude_unset=True, exclude={"reason"})
@@ -313,7 +321,8 @@ async def admin_update_sku(
 
 
 async def _price_baseline_24h(session: AsyncSession, sku_id: int, fallback: Decimal) -> Decimal:
-    """24 小时内最早一次成功改价审计行的旧价;没有则用本次改价前的价。"""
+    """Old price of the earliest successful price-change audit row within 24 hours; the pre-change
+    price when there is none."""
     before_price = AuditLog.detail["before"]["price_hourly"].astext
     stmt = (
         select(before_price)
@@ -335,7 +344,8 @@ async def _price_baseline_24h(session: AsyncSession, sku_id: int, fallback: Deci
 async def _alert_large_price_change(
     session: AsyncSession, sku: Sku, old: Decimal, new: Decimal, reason: str
 ) -> None:
-    """与 24 小时前基准比累计 ≥50% 落 critical 告警;否则单步 ≥50% 落 warning 告警。不阻断。"""
+    """Cumulative ≥50 % against the 24-hour baseline writes a critical alert; otherwise a single
+    step ≥50 % writes a warning. Never blocks."""
     baseline = await _price_baseline_24h(session, sku.id, old)
     cumulative = abs(new - baseline) / baseline
     step = abs(new - old) / old
@@ -352,10 +362,15 @@ async def _alert_large_price_change(
             session,
             None,
             type_="admin_alert",
-            title=f"SKU 单价 24 小时累计大幅调整:{sku.name}",
-            content=(
-                f"24 小时前 {price_label(baseline)} → 现 {price_label(new)}/时"
-                f"(累计幅度 {cumulative:.0%});本次 {old} → {new};原因:{reason}"
+            title=server_copy("catalog.price_change_24h.title", sku=sku.name),
+            content=server_copy(
+                "catalog.price_change_24h.content",
+                baseline=price_label(baseline),
+                new=price_label(new),
+                pct=f"{cumulative:.0%}",
+                old=old,
+                new_raw=new,
+                reason=reason,
             ),
             severity="critical",
             dedup_key=f"sku_price_24h:{sku.id}:{new}",
@@ -370,15 +385,23 @@ async def _alert_large_price_change(
         session,
         None,
         type_="admin_alert",
-        title=f"SKU 单价大幅调整:{sku.name}",
-        content=f"{price_label(old)} → {price_label(new)}/时(幅度 {step:.0%});原因:{reason}",
+        title=server_copy("catalog.price_change.title", sku=sku.name),
+        content=server_copy(
+            "catalog.price_change.content",
+            old=price_label(old),
+            new=price_label(new),
+            pct=f"{step:.0%}",
+            reason=reason,
+        ),
         severity="warning",
         dedup_key=f"sku_price:{sku.id}:{new}",
     )
 
 
 async def _ensure_sellable(session: AsyncSession, sku: Sku) -> None:
-    """上架硬校验:台账须有「型号×池」匹配的 Ready 节点;未识别型号只能 force 上架;CPU 档只校验池。"""
+    """Listing hard check: the inventory must have a Ready node matching "model × pool";
+    unrecognised
+    models can only be force-listed; the CPU tier checks the pool only."""
     specs = await nodes_service.ready_specs(session)
     if sku.tier == TIER_CPU:
         if nodes_service.pool_specs(specs, sku.pool_label):
@@ -403,7 +426,7 @@ async def _ensure_sellable(session: AsyncSession, sku: Sku) -> None:
 async def get_image(session: AsyncSession, image_id: int) -> PlatformImage:
     img = await session.get(PlatformImage, image_id)
     if img is None:
-        raise not_found("镜像不存在")
+        raise not_found(key="catalog.imageNotFound")
     return img
 
 
@@ -430,14 +453,15 @@ async def admin_update_image(
 
 
 async def admin_delete_image(session: AsyncSession, image_id: int) -> None:
-    """删除目录条目(cache 行 FK CASCADE);运行中实例不受影响。"""
+    """Delete the catalog entry (cache rows FK CASCADE); running instances are unaffected."""
     img = await get_image(session, image_id)
     await session.delete(img)
     await session.commit()
 
 
 async def admin_prewarm_image(session: AsyncSession, image_id: int) -> int:
-    """立即预热:非 cached 行置 pending 并同事务 enqueue,返回入队数。"""
+    """Prewarm now: set non-cached rows to pending and enqueue in the same transaction, return the
+    enqueued count."""
     img = await get_image(session, image_id)
     if not img.prewarm_enabled:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="catalog.prewarmDisabled")
@@ -471,8 +495,9 @@ async def image_node_rows(session: AsyncSession, image_id: int) -> list[ImageNod
 
 
 async def admin_skus_out(session: AsyncSession) -> list[SkuAdminOut]:
-    """SKU 列表,组装台账容量与占用列:actual_oversell / sold_share 为已售名义算力(卡×pct/100)
-    对物理与对可售(×超卖)的比值,2 位小数。"""
+    """SKU list with inventory capacity and occupancy columns: actual_oversell / sold_share are the
+    sold nominal compute (cards × pct/100)
+    over physical and over sellable (× oversell), 2 dp."""
     skus = await admin_list_skus(session)
     specs = await nodes_service.ready_specs(session)
     sold = await orchestrator_ports.active_gpu_counts_by_sku(session)
@@ -503,8 +528,8 @@ async def capacity_preview(
     vcpu: int | None,
     mem_gb: int | None,
 ) -> CapacityPreviewOut:
-    """SKU 表单实时容量预览。gpu_model 留空 = CPU 规格:只按池匹配节点,
-    可售数走 sellable_cpu_slots。"""
+    """Live capacity preview of the SKU form. Empty gpu_model = CPU SKU: nodes matched by pool only,
+    sellable count via sellable_cpu_slots."""
     all_specs = await nodes_service.list_node_specs(session)
     warnings: list[CapacityWarningOut] = []
     if not gpu_model:

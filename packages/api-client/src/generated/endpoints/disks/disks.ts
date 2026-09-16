@@ -69,7 +69,7 @@ export const getDeleteDiskApiV1DisksUuidDeleteUrl = (uuid: string,) => {
 }
 
 /**
- * 删除数据盘(不可恢复);挂载中禁止。
+ * Delete the data disk (irreversible); forbidden while mounted.
  * @summary Delete Disk
  */
 export const deleteDiskApiV1DisksUuidDelete = async (uuid: string, options?: Parameters<typeof customFetch>[1]): Promise<DiskOut> => {
@@ -93,7 +93,7 @@ export const getExpandDiskApiV1DisksUuidPatchUrl = (uuid: string,) => {
 }
 
 /**
- * 扩容(只增不减)。
+ * Expand (grow only).
  * @summary Expand Disk
  */
 export const expandDiskApiV1DisksUuidPatch = async (uuid: string,

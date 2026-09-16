@@ -6,7 +6,8 @@
  */
 
 /**
- * 退役受理回执:停调度期望态 + 令牌作废已生效;删 Node 对象经 outbox 异步。
+ * Decommission acceptance receipt: cordon desired state + token revocation are effective;
+ * deleting the Node object is asynchronous via outbox.
  */
 export interface NodeDecommissionOut {
   node_name: string;

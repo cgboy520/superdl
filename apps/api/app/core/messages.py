@@ -265,6 +265,7 @@ MESSAGES: dict[str, str] = {
     "catalog.gpuSkuNeedsGpuFields": (
         "GPU specs need a GPU model, and compute share / VRAM / GPUs per instance cannot be 0"
     ),
+    "catalog.imageNotFound": "Image not found",
     "catalog.imageRefExists": "This image_ref already exists",
     "catalog.isolationChangeNeedsOffSale": (
         "A listed SKU cannot change its pool or MIG profile: both decide the isolation "
@@ -293,6 +294,7 @@ MESSAGES: dict[str, str] = {
         "No Ready node in the {pool} pool; users will not be able to start instances after "
         "listing. Confirm to force listing"
     ),
+    "catalog.skuNotFound": "Spec not found",
     "catalog.skuOffSale": "This spec has been delisted",
     "catalog.tierPoolMismatch": "Tier {tier} may only run on the {pools} pool, but this is {pool}",
     "common.auditUnavailable": (
@@ -370,6 +372,7 @@ MESSAGES: dict[str, str] = {
         "stopped instance's instance disk is pinned to this node and will not start after a "
         "pool change)."
     ),
+    "nodes.enrollmentNotFound": "Enrollment record not found",
     "nodes.nodeNotFound": (
         "Node is not in the ledger: check the node name, or wait for the next patrol round "
         "(60s) to pick it up and retry"
@@ -427,6 +430,7 @@ MESSAGES: dict[str, str] = {
     "orchestrator.imageRefInvalid": (
         "Invalid image reference. Example: registry.example.com/pytorch:2.9"
     ),
+    "orchestrator.diskNotFound": "Data disk not found",
     "orchestrator.imageRefNotAllowed": (
         "This image registry is not allowed. Use a platform image or one of: {registries}"
     ),
@@ -434,6 +438,7 @@ MESSAGES: dict[str, str] = {
         "Service images must pin a version; latest is not accepted. Use a fixed tag or "
         "digest, e.g. registry.example.com/vllm:v0.6.3"
     ),
+    "orchestrator.instanceNotFound": "Instance not found",
     "orchestrator.instanceQuota": (
         "Instance limit reached ({max}) — release some or contact support to raise it"
     ),

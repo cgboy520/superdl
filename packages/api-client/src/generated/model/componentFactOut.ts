@@ -7,7 +7,8 @@
 import type { ComponentFactOutTone } from './componentFactOutTone';
 
 /**
- * key 由前端映射文案,value 为不随语言变化的数据,tone 为显示色调。
+ * key is mapped to copy by the frontend, value is data that does not vary by language, tone is
+ * the display tone.
  */
 export interface ComponentFactOut {
   key: string;

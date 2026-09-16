@@ -6,7 +6,9 @@
  */
 
 /**
- * 接入信息:字段随形态出现或缺席。dev = SSH + Jupyter;服务版本实例 = 端点 URL。
+ * Access information: fields appear or are absent by form. dev = SSH + Jupyter; service
+ * revision
+ * instance = endpoint URL.
  */
 export interface InstanceAccessOut {
   endpoint_url?: string | null;

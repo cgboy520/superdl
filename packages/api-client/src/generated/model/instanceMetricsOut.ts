@@ -7,7 +7,8 @@
 import type { InstanceMetricsOutSeries } from './instanceMetricsOutSeries';
 
 /**
- * 实例监控曲线:指标名 → (unix_ts, 值) 序列;指标集见 prom.QUERIES。
+ * Instance monitoring curves: metric name → (unix_ts, value) series; metric set in
+ * prom.QUERIES.
  */
 export interface InstanceMetricsOut {
   range: string;

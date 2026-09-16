@@ -1,4 +1,5 @@
-"""在线服务身份、网关属性与访问密钥;服务状态由当前、候选实例及 released_at 派生。"""
+"""Online service identity, gateway attributes and access keys; the service status derives from the
+current / candidate instances and released_at."""
 
 from datetime import datetime
 
@@ -37,7 +38,8 @@ class Service(Base):
 
 
 class ServiceApiKey(Base):
-    """服务访问密钥;仅存 HMAC 摘要与展示前缀,明文只在创建时返回;吊销不删行。"""
+    """Service access key; only the HMAC digest and display prefix are stored, the plaintext is
+    returned at creation only; revocation keeps the row."""
 
     __tablename__ = "service_api_keys"
 

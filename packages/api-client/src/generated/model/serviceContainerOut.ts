@@ -7,7 +7,9 @@
 import type { ServiceContainerOutEnv } from './serviceContainerOutEnv';
 
 /**
- * 当前版本的容器配置回显(不可改,要改请更新版本);env 只回明文项,密文项只回键名。
+ * Echo of the current revision's container config (immutable; update the revision to change
+ * it);
+ * env returns plaintext entries only, secret entries return the key name.
  */
 export interface ServiceContainerOut {
   container_args: string[] | null;

@@ -1,6 +1,8 @@
-"""Envoy extAuth 内部回调,须由 edge_guard 限制访问并由网关限流。
+"""Internal Envoy extAuth callback; access must be restricted by edge_guard and rate-limited by the
+gateway.
 
-成功响应必须显式覆盖端点与密钥归属头,匿名端点也须返回 key-id。
+A success response must explicitly override the endpoint and key ownership headers; anonymous
+endpoints return a key-id as well.
 """
 
 from typing import Annotated
@@ -23,8 +25,9 @@ async def authorize_endpoint(
     authorization: Annotated[str | None, Header()] = None,
     x_api_key: Annotated[str | None, Header()] = None,
 ) -> Response:
-    """校验一次端点访问:通过回 200 + 归属头,不通过抛 401。
-    slug 从 Host 取(可带端口),x-forwarded-host 只在 Host 不含 slug 时兜底。
+    """Check one endpoint access: pass → 200 + ownership headers, fail → 401.
+    The slug comes from Host (port allowed); x-forwarded-host is only the fallback when Host has no
+    slug.
     """
     slug = service.endpoint_slug_from_host(host) or service.endpoint_slug_from_host(
         x_forwarded_host

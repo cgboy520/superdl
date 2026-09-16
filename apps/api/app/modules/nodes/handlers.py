@@ -1,4 +1,4 @@
-"""nodes 模块 outbox 任务处理器。K8s 副作用在这里发生,全部幂等。"""
+"""outbox task handlers of the nodes module. K8s side effects happen here, all idempotent."""
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,7 +14,8 @@ logger = get_logger(__name__)
 
 @outbox_handler("node.cordon", retry=RetryPolicy(timeout_seconds=120))
 async def handle_node_cordon(session: AsyncSession, task: OutboxTask) -> None:
-    """按台账 desired_unschedulable 收敛 cordon;无期望态返回,节点不存在则重试。"""
+    """Converge cordon from the inventory's desired_unschedulable; return without a desired state,
+    retry when the node is missing."""
     node_name = task.payload["node_name"]
     row = (
         await session.execute(select(NodeSpec).where(NodeSpec.node_name == node_name))
@@ -33,7 +34,8 @@ async def handle_node_cordon(session: AsyncSession, task: OutboxTask) -> None:
 
 @outbox_handler("node.switch_pool", retry=RetryPolicy(timeout_seconds=120))
 async def handle_node_switch_pool(session: AsyncSession, task: OutboxTask) -> None:
-    """按台账 desired_pool 先停调度再下发池与 GPU operand 标签;无期望态返回。"""
+    """From the inventory's desired_pool: stop scheduling first, then apply the pool and GPU operand
+    labels; return without a desired state."""
     node_name = task.payload["node_name"]
     row = (
         await session.execute(select(NodeSpec).where(NodeSpec.node_name == node_name))
@@ -54,8 +56,9 @@ async def handle_node_switch_pool(session: AsyncSession, task: OutboxTask) -> No
 
 @outbox_handler("node.decommission")
 async def handle_node_decommission(session: AsyncSession, task: OutboxTask) -> None:  # noqa: ARG001
-    """节点退役的 K8s 侧:cordon 后删 Node 对象(delete_node);读 payload(单向终态);
-    节点已不在集群按成功返回。"""
+    """K8s side of node decommissioning: cordon, then delete the Node object (delete_node); reads
+    the payload (one-way terminal state);
+    a node already gone from the cluster counts as success."""
     node_name = task.payload["node_name"]
     await get_orchestrator().delete_node(node_name)
     logger.warning("node_decommission_applied", node=node_name, reason=task.payload.get("reason"))

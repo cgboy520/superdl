@@ -7,7 +7,7 @@
 import type { CapacityWarningOut } from './capacityWarningOut';
 
 /**
- * SKU 表单容量预览(纯台账推算)。
+ * SKU form capacity preview (pure inventory estimate).
  */
 export interface CapacityPreviewOut {
   est_instances: number;

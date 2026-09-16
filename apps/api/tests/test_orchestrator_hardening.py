@@ -547,7 +547,7 @@ class TestRetentionGC:
         assert counts["gc_released"] == 1
         assert (await get_instance(client, headers, uuid))["status"] == "releasing"
         notes = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
-        assert any("失败实例已自动释放" in n["title"] for n in notes)
+        assert any("Failed instance released" in n["title"] for n in notes)
         await drain(sm)
         await reconcile_once(sm)
         await drain(sm)
@@ -567,7 +567,7 @@ class TestRetentionGC:
         assert counts["gc_warned"] == 1 and counts["gc_released"] == 0
         assert (await get_instance(client, headers, uuid))["status"] == "stopped"
         notes = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
-        assert any("即将到期释放" in n["title"] for n in notes)
+        assert any("released soon" in n["title"] for n in notes)
 
         await _backdate_status(sm, uuid, "stopped", timedelta(days=31))
         counts = await reconcile_once(sm)
@@ -870,7 +870,7 @@ class TestNeverReadyOccupancy:
         await drain(sm)
         assert (ns, uuid) in fake.instance_disks
         notes = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
-        assert any("健康检查超时" in n["title"] for n in notes)
+        assert any("health check timed out" in n["title"] for n in notes)
 
     async def test_occupancy_spanning_hours_bills_each_hour(self, sm):
         """占用跨整点:两个自然小时各出一行尾账,秒数合计等于占用时长。"""

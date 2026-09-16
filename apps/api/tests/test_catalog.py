@@ -34,7 +34,7 @@ async def _admin_alerts(sm) -> list[Notification]:
                     select(Notification)
                     .where(
                         Notification.type == "admin_alert",
-                        Notification.title.like("SKU 单价%"),
+                        Notification.title.like("SKU price%"),
                     )
                     .order_by(Notification.id)
                 )
@@ -65,8 +65,8 @@ class TestPriceChangeAlerts:
         assert (await _set_price(client, headers, sku_id, "16.0000")).status_code == 200
         alerts = await _admin_alerts(sm)
         assert [a.severity for a in alerts] == ["critical"]
-        assert alerts[0].title.startswith("SKU 单价 24 小时累计大幅调整")
-        expected = f"{price_label('10')} → 现 {price_label('16')}"
+        assert alerts[0].title.startswith("SKU price changed sharply within 24 hours")
+        expected = f"{price_label('10')}/h 24 hours ago → {price_label('16')}/h now"
         assert expected in alerts[0].content and "60%" in alerts[0].content
 
         async with sm() as session:
@@ -90,7 +90,7 @@ class TestPriceChangeAlerts:
         assert (await _set_price(client, headers, sku_id, "10.0000")).status_code == 200
         alerts = await _admin_alerts(sm)
         assert [a.severity for a in alerts] == ["critical", "warning"]
-        assert alerts[1].title.startswith("SKU 单价大幅调整")
+        assert alerts[1].title.startswith("SKU price changed sharply:")
         assert "100%" in alerts[1].content
 
     async def test_pricing_writes_rate_limited_per_admin(self, client: AsyncClient, sm):

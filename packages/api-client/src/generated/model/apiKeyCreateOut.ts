@@ -6,7 +6,7 @@
  */
 
 /**
- * 创建响应:明文 key 只在这一次出现。
+ * Create response: the plaintext key appears only this once.
  */
 export interface ApiKeyCreateOut {
   created_at: string;

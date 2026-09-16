@@ -1,6 +1,9 @@
-"""竞价抢占:按量/包周期请求容量不足时回收竞价实例腾位置。
-只在同池同型号内选;按 `created_at DESC`;凑不够一台都不动。
-与请求方的建实例同事务;状态机立刻迁 stopping,`instance.stop` 推迟 `spot_grace_seconds` 执行。
+"""Spot preemption: reclaim spot instances to make room when an on-demand / subscription request
+lacks capacity.
+Select only within the same pool and model; by `created_at DESC`; nothing moves unless one full
+instance can be freed.
+Same transaction as the caller's instance creation; the state machine moves to stopping at once,
+`instance.stop` runs after `spot_grace_seconds`.
 """
 
 import math
@@ -34,8 +37,8 @@ async def pick_victims(
     gpu_model_selector: str | None,
     need_cards: int,
 ) -> list[Instance]:
-    """选出够腾 `need_cards` 张卡的竞价实例(最晚创建先选);凑不够返回空列表。
-    每台按 gpu_count 近似计卡数。"""
+    """Pick spot instances freeing `need_cards` cards (newest first); an empty list when not enough.
+    Each instance counts about gpu_count cards."""
     if need_cards <= 0:
         return []
     rows = list(
@@ -65,7 +68,8 @@ async def pick_victims(
 
 
 def cards_needed(*, deficit_slots: int, slots_per_card: int) -> int:
-    """把「还差几个本 SKU 的槽位」换算成「还差几张卡」。槽位口径见 catalog.sellable_per_gpu。"""
+    """Convert "missing slots of this SKU" into "missing cards". Slot definition in
+    catalog.sellable_per_gpu."""
     if deficit_slots <= 0:
         return 0
     return math.ceil(deficit_slots / max(1, slots_per_card))
@@ -79,7 +83,8 @@ async def preempt(
     requested_by: int,
     admin_reason: str | None = None,
 ) -> None:
-    """回收选中的竞价实例,不 commit(与请求方建实例同事务);迁 stopping 即出尾账,宽限窗不计费。"""
+    """Reclaim the selected spot instances without commit (same transaction as the caller's
+    creation); moving to stopping posts the tail bill, the grace window is not billed."""
     for inst in victims:
         await transition(
             session,
@@ -127,7 +132,8 @@ async def try_free_capacity(
     grace_seconds: int,
     requested_by: int,
 ) -> bool:
-    """尝试靠抢占补齐缺口;腾得出返回 True(已在本事务下发回收),否则 False。"""
+    """Try to close the gap by preemption; True when room was made (reclamation issued in this
+    transaction), otherwise False."""
     need = cards_needed(deficit_slots=deficit_slots, slots_per_card=slots_per_card)
     victims = await pick_victims(
         session,

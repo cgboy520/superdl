@@ -6,7 +6,7 @@
  */
 
 /**
- * SSH 端口池水位(管理端);blocked = 被集群其它对象占用的端口。
+ * SSH port pool level (admin); blocked = ports held by other cluster objects.
  */
 export interface PortPoolStatsOut {
   assigned: number;

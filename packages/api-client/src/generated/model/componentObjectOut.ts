@@ -7,7 +7,8 @@
 import type { ComponentObjectOutFields } from './componentObjectOutFields';
 
 /**
- * 抽屉对象表的一行(DaemonSet / listener / StorageClass / 节点);fields 的键由前端映射列名。
+ * One row of the drawer object table (DaemonSet / listener / StorageClass / node); the keys of
+ * fields are mapped to column names by the frontend.
  */
 export interface ComponentObjectOut {
   fields: ComponentObjectOutFields;

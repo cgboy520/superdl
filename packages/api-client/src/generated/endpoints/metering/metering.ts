@@ -29,7 +29,8 @@ export const getGetInstanceMetricsApiV1InstancesUuidMetricsGetUrl = (uuid: strin
 }
 
 /**
- * 实例监控曲线(代理 Prometheus,按租户隔离)。断源 503,不影响计费。
+ * Instance monitoring curves (Prometheus proxy, tenant-isolated). Source down → 503, billing
+ * unaffected.
  * @summary Get Instance Metrics
  */
 export const getInstanceMetricsApiV1InstancesUuidMetricsGet = async (uuid: string,
@@ -54,7 +55,8 @@ export const getInstancesMetricsSummaryApiV1MetricsInstancesGetUrl = () => {
 }
 
 /**
- * 本人 running 实例近 1h gpu_util 批量摘要(列表 sparkline);断源 available=false(200)。
+ * Batch summary of the caller's running instances' gpu_util over the last hour (list
+ * sparklines); source down → available=false (200).
  * @summary Instances Metrics Summary
  */
 export const instancesMetricsSummaryApiV1MetricsInstancesGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<InstanceMetricsSummaryOut> => {

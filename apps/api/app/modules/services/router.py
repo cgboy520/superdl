@@ -35,8 +35,9 @@ async def create_service(
     response: Response,
     idempotency_key: IdempotencyKey = None,
 ) -> ServiceOut:
-    """部署服务:同事务落 services 行 + 第 1 版实例(creating)+ 事件 + outbox,202 异步。
-    幂等键重放回 200 + X-Idempotent-Replay。"""
+    """Deploy a service: services row + revision-1 instance (creating) + event + outbox in one
+    transaction, 202 asynchronous.
+    An idempotency-key replay returns 200 + X-Idempotent-Replay."""
     await account_service.require_real_name_if_required(
         session, user, key="orchestrator.realNameRequired"
     )
@@ -59,7 +60,8 @@ async def list_services(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[ServiceOut]:
-    """服务列表:降序游标分页;name 模糊(含 slug 前缀),status 按派生状态过滤;已删除不列。"""
+    """Service list: descending cursor pagination; name fuzzy (slug prefix included), status filters
+    by derived status; deleted services are not listed."""
     return await service.list_services_page(
         session, user.id, status=status, name=name, cursor=cursor, limit=limit
     )
@@ -74,7 +76,7 @@ async def get_service(slug: str, user: CurrentUser, session: DbSession) -> Servi
 async def patch_service(
     slug: str, body: ServicePatch, user: CurrentUser, session: DbSession, request: Request
 ) -> ServiceOut:
-    """改名 / 访问鉴权开关;不重新部署。"""
+    """Rename / access-auth switch; no redeployment."""
     svc = await service.patch_service(
         session, user.id, slug, name=body.name, require_api_key=body.require_api_key
     )
@@ -86,7 +88,8 @@ async def patch_service(
 async def stop_service(
     slug: str, user: CurrentUser, session: DbSession, request: Request
 ) -> ServiceOut:
-    """停止:当前实例关机,端点随之 503;服务端点与密钥保留。限流与实例开关机同桶。"""
+    """Stop: the current instance shuts down and the endpoint returns 503; endpoint and keys are
+    kept. Shares the rate-limit bucket with instance start / stop."""
     await orchestrator_service.check_lifecycle_rate_limit(user.id)
     svc = await service.stop_service(session, user.id, slug)
     set_audit_target(request, f"service:{slug}")
@@ -97,7 +100,8 @@ async def stop_service(
 async def start_service(
     slug: str, user: CurrentUser, session: DbSession, request: Request
 ) -> ServiceOut:
-    """启动:当前实例开机。限流与实例开关机同桶。"""
+    """Start: start the current instance. Shares the rate-limit bucket with instance start /
+    stop."""
     await account_service.require_real_name_if_required(
         session, user, key="orchestrator.realNameRequired"
     )
@@ -111,7 +115,8 @@ async def start_service(
 async def delete_service(
     slug: str, user: CurrentUser, session: DbSession, request: Request
 ) -> ServiceOut:
-    """删除服务:释放当前实例并吊销全部密钥;运行中须先停止。数据盘不受影响。"""
+    """Delete the service: release the current instance and revoke every key; must be stopped first.
+    Data disks are unaffected."""
     svc = await service.delete_service(session, user.id, slug)
     set_audit_target(request, f"service:{slug}")
     return await service.service_view(session, svc)
@@ -127,8 +132,10 @@ async def create_revision(
     response: Response,
     idempotency_key: IdempotencyKey = None,
 ) -> ServiceOut:
-    """版本更新(重建):新版本实例 creating,旧版本先关机;新版本就绪前端点返回 503;
-    服务端点与 API Key 不变。包周期服务、更新在途、旧版本变更中一律 409。幂等键重放回 200。"""
+    """Revision update (recreate): the new revision instance is creating, the old revision stops
+    first; the endpoint returns 503 until the new revision is ready;
+    endpoint and API keys do not change. Subscription services, an update in flight or an old
+    revision mid-transition are 409. An idempotency-key replay returns 200."""
     await account_service.require_real_name_if_required(
         session, user, key="orchestrator.realNameRequired"
     )
@@ -150,7 +157,8 @@ async def list_service_events(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[ServiceEventOut]:
-    """状态时间线(计费依据):全部版本实例的事件并集,降序游标分页。"""
+    """Status timeline (billing basis): union of every revision instance's events, descending cursor
+    pagination."""
     svc = await service.get_service(session, user.id, slug)
     return await service.list_service_events(session, svc, cursor=cursor, limit=limit)
 
@@ -163,7 +171,8 @@ async def list_revisions(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[InstanceOut]:
-    """分页查询该服务的版本实例(含已释放),按实例 ID 降序。"""
+    """Paginated revision instances of the service (released included), by instance ID
+    descending."""
     svc = await service.get_service(session, user.id, slug)
     return await service.list_revisions(session, user.id, svc, cursor=cursor, limit=limit)
 
@@ -175,9 +184,9 @@ async def get_service_logs(
     session: DbSession,
     tail_lines: int = Query(default=200, ge=1),
 ) -> InstanceLogsOut:
-    """优先读取 rollout 版本的容器日志,无 rollout 时读取当前版本。
+    """Read the rollout revision's container log first, the current revision without a rollout.
 
-    仅支持 running/stopping,否则 409;与实例日志共用限流,不记审计。
+    running/stopping only, otherwise 409; shares the rate limit with instance logs, not audited.
     """
     return await service.read_service_logs(session, user.id, slug, tail_lines=tail_lines)
 
@@ -190,14 +199,15 @@ async def list_service_bills(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[BillHourlyOut]:
-    """小时账单:该服务下全部版本实例的并集(账单主体仍是实例)。"""
+    """Hourly bills: union over every revision instance of the service (bills still belong to
+    instances)."""
     svc = await service.get_service(session, user.id, slug)
     return await service.service_bills_page(session, user.id, svc, cursor=cursor, limit=limit)
 
 
 @router.get("/services/{slug}/api-keys")
 async def list_api_keys(slug: str, user: CurrentUser, session: DbSession) -> list[ApiKeyOut]:
-    """访问密钥列表(含已吊销),不含明文。"""
+    """Access key list (revoked included), no plaintext."""
     rows = await service.list_api_keys(session, user.id, slug)
     return [ApiKeyOut.model_validate(r) for r in rows]
 
@@ -206,7 +216,8 @@ async def list_api_keys(slug: str, user: CurrentUser, session: DbSession) -> lis
 async def create_api_key(
     slug: str, body: ApiKeyCreate, user: CurrentUser, session: DbSession, request: Request
 ) -> ApiKeyCreateOut:
-    """新建访问密钥;响应里的 key 是明文,只在这一次出现。不收 Idempotency-Key。"""
+    """Create an access key; the key in the response is the plaintext and appears only this once. No
+    Idempotency-Key."""
     row, plaintext = await service.create_api_key(session, user.id, slug, name=body.name)
     set_audit_target(request, f"service:{slug}", {"api_key_id": row.id, "name": row.name})
     return ApiKeyCreateOut(**ApiKeyOut.model_validate(row).model_dump(), key=plaintext)
@@ -216,7 +227,8 @@ async def create_api_key(
 async def revoke_api_key(
     slug: str, key_id: int, user: CurrentUser, session: DbSession, request: Request
 ) -> ApiKeyOut:
-    """吊销访问密钥(写 revoked_at,不删行)。重复吊销幂等。"""
+    """Revoke an access key (writes revoked_at, keeps the row). Repeated revocation is
+    idempotent."""
     row = await service.revoke_api_key(session, user.id, slug, key_id)
     set_audit_target(request, f"service:{slug}", {"api_key_id": key_id})
     return ApiKeyOut.model_validate(row)

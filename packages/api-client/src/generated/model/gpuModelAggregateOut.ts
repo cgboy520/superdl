@@ -6,7 +6,7 @@
  */
 
 /**
- * 台账按 canonical×池聚合。gpu_model=None 为未识别桶。
+ * Inventory aggregated by canonical × pool. gpu_model=None is the unrecognised bucket.
  */
 export interface GpuModelAggregateOut {
   gpu_model: string | null;

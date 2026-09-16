@@ -70,7 +70,7 @@ async def list_disks(user: CurrentUser, session: DbSession) -> list[DiskOut]:
 async def expand_disk(
     uuid: str, body: DiskExpand, user: CurrentUser, session: DbSession, request: Request
 ) -> DiskOut:
-    """扩容(只增不减)。"""
+    """Expand (grow only)."""
     await check_rate_limit(f"disk-expand:{user.id}", max_attempts=20, window_seconds=3600.0)
     disk = await service.expand_disk(session, user.id, uuid, body.size_gb)
     set_audit_target(request, f"disk:{uuid}", detail={"size_gb": body.size_gb})
@@ -81,7 +81,7 @@ async def expand_disk(
 async def delete_disk(
     uuid: str, user: CurrentUser, session: DbSession, request: Request
 ) -> DiskOut:
-    """删除数据盘(不可恢复);挂载中禁止。"""
+    """Delete the data disk (irreversible); forbidden while mounted."""
     disk = await service.delete_disk(session, user.id, uuid)
     set_audit_target(request, f"disk:{uuid}")
     return DiskOut.model_validate(disk)

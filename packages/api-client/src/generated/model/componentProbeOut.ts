@@ -9,7 +9,7 @@ import type { ComponentObjectOut } from './componentObjectOut';
 import type { ComponentProbeOutKey } from './componentProbeOutKey';
 
 /**
- * 组件实时探测事实、Pod 与事件。
+ * Live component probe facts, Pods and events.
  */
 export interface ComponentProbeOut {
   events?: ComponentObjectOut[];

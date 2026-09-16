@@ -8,7 +8,7 @@ import type { InstanceOut } from './instanceOut';
 import type { SubscriptionQuoteOut } from './subscriptionQuoteOut';
 
 /**
- * 续费响应:实例最新态 + 这一单的报价明细。
+ * Renewal response: the latest instance state + this order's quote.
  */
 export interface RenewOut {
   instance: InstanceOut;

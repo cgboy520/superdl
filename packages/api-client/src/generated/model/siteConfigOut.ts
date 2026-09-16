@@ -7,7 +7,7 @@
 import type { PaymentChannelOut } from './paymentChannelOut';
 
 /**
- * 站点公开配置(页脚备案号与经营主体信息等,未登录可访问)。
+ * Public site configuration (footer filing numbers, operator information etc., no login).
  */
 export interface SiteConfigOut {
   billing_timezone: string;

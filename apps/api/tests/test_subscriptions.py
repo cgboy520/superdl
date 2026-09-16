@@ -844,7 +844,7 @@ class TestRestartGate:
                     )
                 )
             ).scalar_one()
-            assert "包周期已到期" in notice.title
+            assert "subscription expired" in notice.title
 
     async def test_payg_restart_insufficient_balance_aborts_at_stopped(self, client, sm, fake):
         """按量实例余额不足:重启中止在 stopped 并发通知。"""
@@ -865,7 +865,7 @@ class TestRestartGate:
                     )
                 )
             ).scalar_one()
-            assert "余额不足" in notice.title
+            assert "insufficient balance" in notice.title
 
 
 class TestRelease:
@@ -1165,7 +1165,10 @@ class TestUnstartedPrepay:
                     )
                 )
             ).scalar_one()
-            assert "退回" in note.content and "未产生任何费用" not in note.content
+            assert (
+                "returned to your balance" in note.content
+                and "nothing was charged" not in note.content
+            )
 
 
 def _gauge_value(gauge) -> float:

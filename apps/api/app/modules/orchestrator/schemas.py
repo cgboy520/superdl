@@ -28,12 +28,13 @@ MAX_ENV_VALUE_LEN = 4096
 
 
 def strip_image_ref(value: object) -> object:
-    """镜像引用去首尾空白,再交长度与形态校验。"""
+    """Strip the image reference, then hand it to the length and shape checks."""
     return value.strip() if isinstance(value, str) else value
 
 
 def validate_market_shape(market: str, period: str | None, fields_set: set[str]) -> None:
-    """包周期必带 period;按量、竞价请求不得显式传 period 或 period_count。"""
+    """Subscriptions must carry period; on-demand and spot requests must not pass period or
+    period_count."""
     if market == MARKET_SUBSCRIPTION:
         if period is None:
             raise ValueError(render_message("orchestrator.periodRequired", None))
@@ -47,7 +48,8 @@ def validate_health_path(health_path: str | None) -> None:
 
 
 def validate_user_env(env: dict[str, str] | None, secret_keys: list[str] | None) -> None:
-    """校验环境变量条数、键名、保留名与键值长度;secret_keys 须为 env 键名的子集。"""
+    """Validate env count, key names, reserved names and value lengths; secret_keys must be a subset
+    of the env keys."""
     env = env or {}
     if len(env) > MAX_ENV_VARS:
         raise ValueError(render_message("orchestrator.envTooMany", {"max": MAX_ENV_VARS}))
@@ -69,7 +71,7 @@ def validate_user_env(env: dict[str, str] | None, secret_keys: list[str] | None)
 
 
 class InstanceSubscriptionOut(BaseModel):
-    """列表/详情内联的包周期概要(完整明细在 billing.SubscriptionOut)。"""
+    """Subscription summary inlined in list / detail (full detail in billing.SubscriptionOut)."""
 
     period: str
     period_count: int
@@ -84,7 +86,8 @@ class InstanceSubscriptionOut(BaseModel):
 
 
 class InstanceRenew(BaseModel):
-    """续费入参;period 可与当前周期不同,按新周期折扣重新报价。"""
+    """Renewal input; period may differ from the current one, re-quoted at the new period's
+    discount."""
 
     period: Literal["day", "week", "month", "year"]
     period_count: int = Field(default=1, ge=1, le=MAX_PERIOD_COUNT)
@@ -95,7 +98,7 @@ class InstanceAutoRenew(BaseModel):
 
 
 class RenewOut(BaseModel):
-    """续费响应:实例最新态 + 这一单的报价明细。"""
+    """Renewal response: the latest instance state + this order's quote."""
 
     instance: "InstanceOut"
     quote: SubscriptionQuoteOut
@@ -148,7 +151,7 @@ class InstanceOut(BaseModel):
 
 
 class AdminInstanceOut(InstanceOut):
-    """管理端全局实例视图:含租户与调度节点(不暴露给用户端)。"""
+    """Admin global instance view: with tenant and node (not exposed to the user console)."""
 
     user_id: int
     node_name: str | None
@@ -167,7 +170,9 @@ class InstanceEventOut(BaseModel):
 
 
 class InstanceAccessOut(BaseModel):
-    """接入信息:字段随形态出现或缺席。dev = SSH + Jupyter;服务版本实例 = 端点 URL。"""
+    """Access information: fields appear or are absent by form. dev = SSH + Jupyter; service
+    revision
+    instance = endpoint URL."""
 
     ssh_host: str | None = None
     ssh_port: int | None = None
@@ -177,7 +182,8 @@ class InstanceAccessOut(BaseModel):
 
 
 class InstanceLogsOut(BaseModel):
-    """容器日志:按行切分;truncated=True 表示超过 tail_lines,只回末尾段。"""
+    """Container log split into lines; truncated=True means more than tail_lines, only the tail is
+    returned."""
 
     lines: list[str]
     truncated: bool
@@ -192,7 +198,7 @@ class AdminForceStopRequest(BaseModel):
 
 
 class PortPoolStatsOut(BaseModel):
-    """SSH 端口池水位(管理端);blocked = 被集群其它对象占用的端口。"""
+    """SSH port pool level (admin); blocked = ports held by other cluster objects."""
 
     total: int
     assigned: int

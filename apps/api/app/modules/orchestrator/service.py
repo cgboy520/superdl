@@ -1,5 +1,7 @@
-"""编排服务:用户 / 管理端发起的实例操作与 Pod spec 构造。状态变更只走 transition(),
-改 DB + 动 K8s 一律 outbox。只读查询在 queries.py,系统侧迁移在 transitions.py,端口池在 ports.py。
+"""Orchestration service: instance operations started by users / admins and Pod spec construction.
+Status changes go only through transition(),
+changing the DB + touching K8s always goes through the outbox. Read-only queries live in
+queries.py, system-side transitions in transitions.py, the port pool in ports.py.
 """
 
 import hashlib
@@ -44,6 +46,7 @@ from app.core.pricing import (
 )
 from app.core.ratelimit import check_rate_limit
 from app.core.registry import is_pinned_image_ref, is_valid_image_ref
+from app.core.servercopy import copy as server_copy
 from app.core.sqlutil import like_escape
 from app.core.timeutil import now_utc
 from app.modules.account import service as account_service
@@ -78,7 +81,8 @@ logger = get_logger(__name__)
 
 @dataclass(frozen=True)
 class ServiceBinding:
-    """建实例时绑定的在线服务版本身份(服务行已落库后才有);端口与健康路径在 InstanceRequest 里。"""
+    """Online-service revision identity bound at instance creation (only once the service row is
+    stored); port and health path live in InstanceRequest."""
 
     service_id: int
     revision: int
@@ -87,8 +91,11 @@ class ServiceBinding:
 
 @dataclass(frozen=True)
 class InstanceRequest:
-    """一次建实例的全部下单参数(开发机与服务版本共用),异参检测指纹由本对象派生。
-    service_port 非空 = 服务形态(镜像须钉版本、SSH 按 with_ssh);开发机恒开 SSH。"""
+    """All order parameters of one instance creation (shared by dev boxes and service revisions);
+    the
+    parameter-mismatch fingerprint derives from this object.
+    A non-null service_port = service form (the image must pin a version, SSH follows with_ssh);
+    dev boxes always have SSH."""
 
     sku_id: int
     gpu_count: int
@@ -117,11 +124,13 @@ class InstanceRequest:
 
     @property
     def wants_ssh(self) -> bool:
-        """dev 形态恒开 SSH;service 形态由用户勾选。"""
+        """dev form always has SSH; service form follows the user's choice."""
         return self.with_ssh if self.is_service else True
 
     def fingerprint(self, user_id: int, *, extra: tuple[object, ...] = ()) -> str:
-        """异参检测指纹:下单参数全集的 sha256;服务部署经 extra 并入服务级属性(不含 slug / id)。"""
+        """Parameter-mismatch fingerprint: sha256 over the full order parameters; service
+        deployments
+        merge service-level attributes via extra (without slug / id)."""
         return request_fingerprint(
             user_id,
             self.sku_id,
@@ -146,13 +155,14 @@ class InstanceRequest:
 
 
 def jupyter_host(instance_uuid: str, settings: Settings | None = None) -> str:
-    """实例 Jupyter 主机名:<jupyter_host_prefix><uuid>.<jupyter_domain_suffix>。"""
+    """Instance Jupyter hostname: <jupyter_host_prefix><uuid>.<jupyter_domain_suffix>."""
     s = settings or get_settings()
     return f"{s.jupyter_host_prefix}{instance_uuid}.{s.jupyter_domain_suffix}"
 
 
 def jupyter_origin(instance_uuid: str, settings: Settings | None = None) -> str:
-    """实例 Jupyter 的浏览器 origin(带端口);HTTPRoute hostname 与 SSH 连接串用 jupyter_host。"""
+    """Browser origin of the instance's Jupyter (with port); the HTTPRoute hostname and the SSH
+    connection string use jupyter_host."""
     s = settings or get_settings()
     host = jupyter_host(instance_uuid, s)
     return (
@@ -161,7 +171,7 @@ def jupyter_origin(instance_uuid: str, settings: Settings | None = None) -> str:
 
 
 def service_endpoint_host(slug: str, settings: Settings | None = None) -> str:
-    """服务端点主机名:<slug>.<service_domain_suffix>。"""
+    """Service endpoint hostname: <slug>.<service_domain_suffix>."""
     s = settings or get_settings()
     return f"{slug}.{s.service_domain_suffix}"
 
@@ -191,9 +201,10 @@ async def _require_cluster_for_pool(
     *,
     with_data_disk: bool = False,
 ) -> None:
-    """集群能力缺位回 409;gpu_count == 0 不查池。
+    """Missing cluster capability → 409; gpu_count == 0 skips the pool check.
 
-    hami 查 HAMi,kata 查 RuntimeClass;StorageClass 必查,数据盘按需。
+    hami checks HAMi, kata the RuntimeClass; the StorageClass is always checked, data disks on
+    demand.
     """
     if gpu_count > 0:
         if pool_label == POOL_HAMI:
@@ -204,12 +215,12 @@ async def _require_cluster_for_pool(
 
 
 def _encode_token(plaintext: str, *, instance_uuid: str) -> str:
-    """落库形态:AES-GCM 密文,AAD 绑定实例 uuid。"""
+    """Stored form: AES-GCM ciphertext, AAD bound to the instance uuid."""
     return encrypt_str(plaintext, aad=f"jupyter-token:{instance_uuid}")
 
 
 def _token_plain(instance: Instance) -> str:
-    """读出明文(见 _encode_token)。"""
+    """Read the plaintext (see _encode_token)."""
     return decrypt_str(instance.jupyter_token, aad=f"jupyter-token:{instance.uuid}")
 
 
@@ -218,7 +229,8 @@ def _env_aad(instance_uuid: str) -> str:
 
 
 def _encode_env(env: dict[str, str], secret_keys: set[str], *, instance_uuid: str) -> str:
-    """用户环境变量的落库形态:明文项与密文项整包 JSON 的 AES-GCM 密文,AAD 绑实例 uuid。"""
+    """Stored form of user environment variables: AES-GCM ciphertext of the JSON bundle of plaintext
+    and secret entries, AAD bound to the instance uuid."""
     payload = {
         "plain": {k: v for k, v in env.items() if k not in secret_keys},
         "secret": {k: v for k, v in env.items() if k in secret_keys},
@@ -227,7 +239,8 @@ def _encode_env(env: dict[str, str], secret_keys: set[str], *, instance_uuid: st
 
 
 def instance_env(instance: Instance) -> tuple[dict[str, str], dict[str, str]]:
-    """读出用户环境变量,返回 (明文项, 密文项)。未设置返回两个空字典。"""
+    """Read the user environment variables, returning (plaintext entries, secret entries). Two empty
+    dicts when unset."""
     if not instance.env_encrypted:
         return {}, {}
     data = json.loads(decrypt_str(instance.env_encrypted, aad=_env_aad(instance.uuid)))
@@ -235,8 +248,10 @@ def instance_env(instance: Instance) -> tuple[dict[str, str], dict[str, str]]:
 
 
 def _new_jupyter_ticket(instance: Instance, token_plain: str) -> str:
-    """一次性入场票据:code(单次)+ TTL + HMAC 签名(密钥 = Jupyter token 本体)。
-    镜像内 bootstrap handler 验签核销后 Set-Cookie;token 轮换即旧票据全部作废。
+    """One-off entry ticket: code (single use) + TTL + HMAC signature (key = the Jupyter token
+    itself).
+    The in-image bootstrap handler verifies, redeems and sets the cookie; a token rotation voids
+    every old ticket.
     """
     settings = get_settings()
     code = secrets.token_urlsafe(12)
@@ -251,8 +266,10 @@ def _new_jupyter_ticket(instance: Instance, token_plain: str) -> str:
 async def _validate_image_ref(
     session: AsyncSession, image_ref: str, *, require_pinned: bool = False
 ) -> None:
-    """镜像引用校验:形态(core.registry.is_valid_image_ref)→ 来源白名单(唯一闸门;
-    image_allowed_registries 为空即不限,Harbor 地址与平台镜像目录恒放行)。
+    """Image reference validation: shape (core.registry.is_valid_image_ref) → source allow-list (the
+    single gate;
+    an empty image_allowed_registries = unrestricted, the Harbor address and the platform image
+    catalog always pass).
     """
     if not is_valid_image_ref(image_ref):
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.imageRefInvalid")
@@ -268,7 +285,7 @@ async def _validate_image_ref(
     raise AppError(
         ErrorCode.VALIDATION_ERROR,
         key="orchestrator.imageRefNotAllowed",
-        params={"registries": "、".join(allowed)},
+        params={"registries": ", ".join(allowed)},
     )
 
 
@@ -280,8 +297,10 @@ async def _check_user_quota(
     *,
     exclude_instance_id: int | None = None,
 ) -> None:
-    """每用户配额(实例数 / GPU 总数 / CPU 实例 vCPU 总数),生效值走 account.get_user_limits。
-    GPU 实例只计 GPU 维、CPU 实例只计 vCPU 维;exclude_instance_id(即将被替换的旧实例)不占名额。
+    """Per-user quotas (instance count / total GPUs / CPU-instance vCPUs), effective values via
+    account.get_user_limits.
+    GPU instances count the GPU dimension only, CPU instances the vCPU dimension only;
+    exclude_instance_id (the old instance about to be replaced) takes no slot.
     """
     limits = await account_service.get_user_limits(session, user_id)
     policies = await get_runtime_config(session)
@@ -323,8 +342,10 @@ async def _check_user_quota(
 def _sku_free_capacity(
     sku: "Sku", specs: list["NodeSpec"], *, gpu_node_vcpu_cap: int
 ) -> tuple[int | None, int]:
-    """该 SKU 的近似可分配量:(台账哨兵, 可售实例数);哨兵 None = 台账无数据,放行交调度器。
-    GPU 档按 (池, canonical 型号) 匹配 Ready 空闲卡;CPU 档只按池匹配节点行数。
+    """Approximate allocatable capacity of the SKU: (inventory sentinel, sellable instances);
+    sentinel None = no inventory data, let the scheduler decide.
+    GPU tiers match Ready idle cards by (pool, canonical model); the CPU tier matches node rows by
+    pool only.
     """
     if sku.tier == TIER_CPU:
         matching = nodes_service.pool_specs(specs, sku.pool_label)
@@ -353,8 +374,10 @@ async def _soft_admit_capacity(
     user_id: int | None = None,
     freeing_slots: int = 0,
 ) -> None:
-    """创建软准入:台账可分配量不足 → 先抢占竞价实例,仍不足则 409;无数据一律放行。
-    抢占只对 GPU 档非竞价请求生效;freeing_slots = 同一请求里即将腾出的槽位,先加回可售数。
+    """Creation soft admission: insufficient allocatable capacity in the inventory → preempt spot
+    instances first, still short → 409; no data always passes.
+    Preemption applies only to non-spot GPU-tier requests; freeing_slots = slots the same request
+    is about to free, added back to the sellable count first.
     """
     policies = await get_runtime_config(session)
     specs = await nodes_service.list_node_specs(session)
@@ -396,8 +419,9 @@ async def _soft_admit_capacity(
 
 
 async def _reserved_slots_by_sku(session: AsyncSession, sku_ids: list[int]) -> dict[int, int]:
-    """sku_id → 被未到期包周期实例(含停机/冻结)占住的槽位数,只算同一条 SKU。
-    平台层预留、物理层不预留。
+    """sku_id → slots held by unexpired subscription instances (stopped / frozen included), same SKU
+    only.
+    Reserved at the platform level, not physically.
     """
     if not sku_ids:
         return {}
@@ -436,12 +460,15 @@ async def create_instance_row(
     exclude_instance_id: int | None = None,
     fingerprint: str | None = None,
 ) -> tuple[Instance, bool]:
-    """创建实例的 row 级核心:校验 → 软准入 → 钱包行锁内配额与余额 → 写 instances / 事件 / outbox,
-    **不 commit**。返回 (实例, created),created=False = 幂等重放。
-    service 非空 = 在线服务的一个版本(req.service_port 必须同时非空);
-    market='subscription' 同事务落 subscriptions 并一次性扣款(不许透支),再过在途燃烧率校验;
-    exclude_instance_id 的份额让给新实例(配额与软准入),余额不让;
-    fingerprint 由调用方给时须为同一 req 的 req.fingerprint(...)。
+    """Row-level core of instance creation: validation → soft admission → quotas and balance under
+    the wallet row lock → write instances / event / outbox,
+    **no commit**. Returns (instance, created), created=False = idempotent replay.
+    service set = one revision of an online service (req.service_port must be set too);
+    market='subscription' writes subscriptions and charges once in the same transaction (no
+    overdraft), then passes the in-flight burn-rate check;
+    exclude_instance_id's share goes to the new instance (quotas and soft admission), the balance
+    does not;
+    a caller-supplied fingerprint must be req.fingerprint(...) of the same req.
     """
     if (service is not None) != req.is_service:
         raise ValueError("service binding and req.service_port must be both set or both unset")
@@ -492,7 +519,9 @@ async def create_instance_row(
 
 
 async def _validate_request(session: AsyncSession, req: InstanceRequest, sku: "Sku") -> None:
-    """契约层拦不住的规格配对:卡数与 SKU 形态、镜像形态与来源、购买模式与 SKU 开关。"""
+    """Spec pairings the contract layer cannot catch: card count vs SKU form, image shape and
+    source,
+    purchase mode vs SKU switches."""
     if sku.max_gpus_per_instance == 0:
         if req.gpu_count != 0:
             raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.cpuSkuNoGpu")
@@ -517,7 +546,9 @@ async def _admit(
     *,
     exclude_instance_id: int | None,
 ) -> None:
-    """下发门禁(集群能力)+ 容量软准入(不足先抢占竞价实例,与建实例同事务)。"""
+    """Dispatch gate (cluster capability) + capacity soft admission (preempt spot instances first
+    when
+    short, same transaction as the creation)."""
     await _require_cluster_for_pool(
         session, sku.pool_label, req.gpu_count, with_data_disk=req.data_disk_id is not None
     )
@@ -532,7 +563,8 @@ async def _admit(
 
 
 async def _lock_disk(session: AsyncSession, user_id: int, data_disk_id: int | None) -> int | None:
-    """挂盘前锁盘行(锁序 disk → wallet,与删盘/扩盘链路同向);attach 在插入后同事务重入此锁。"""
+    """Lock the disk row before mounting (lock order disk → wallet, same direction as the delete /
+    expand chains); attach re-enters this lock after the insert in the same transaction."""
     if data_disk_id is None:
         return None
     return (await disks_service.lock_disk_for_attach(session, user_id, data_disk_id)).id
@@ -547,8 +579,11 @@ async def _reserve_funds_and_quota(
     *,
     exclude_instance_id: int | None,
 ) -> list[str]:
-    """临界区:FOR UPDATE 锁钱包行持有到 commit;在途统计、配额与公钥校验都在锁内。
-    余额口径:在途 + creating/starting 待燃(assert_can_afford 内部并入)+ 本次新增。返回下发公钥。"""
+    """Critical section: FOR UPDATE on the wallet row held until commit; in-flight statistics,
+    quotas
+    and key validation all inside the lock.
+    Balance definition: in flight + creating/starting pending burn (merged in by
+    assert_can_afford) + this addition. Returns the keys to hand down."""
     await billing_service.lock_wallet(session, user_id)
     if req.market != MARKET_SUBSCRIPTION:
         await billing_service.assert_can_afford(
@@ -582,8 +617,8 @@ def _build_row(
     fingerprint: str,
     service: ServiceBinding | None,
 ) -> Instance:
-    """instances 行(creating);Jupyter token 与用户 env 密文落库,
-    服务形态的快照列来自 req 与 service。"""
+    """instances row (creating); the Jupyter token and user env ciphertext are stored,
+    the service-form snapshot columns come from req and service."""
     instance_uuid = uuid4().hex
     return Instance(
         uuid=instance_uuid,
@@ -628,7 +663,8 @@ async def _post_insert(
     *,
     service: ServiceBinding | None,
 ) -> None:
-    """行已插入后的同事务收尾:包周期预扣、数据盘占用、创建事件、outbox。"""
+    """Same-transaction wrap-up after the row insert: subscription prepayment, data-disk occupation,
+    creation event, outbox."""
     if req.market == MARKET_SUBSCRIPTION:
         assert req.period is not None
         await billing_service.charge_new_subscription(
@@ -675,7 +711,8 @@ async def _post_insert(
 async def find_instance_replay(
     session: AsyncSession, user_id: int, *, key: str, fingerprint: str
 ) -> Instance | None:
-    """同 (user, Idempotency-Key) 24h 窗内的既有实例;同键异参 409。"""
+    """Existing instance for the same (user, Idempotency-Key) within the 24 h window; same key with
+    different params → 409."""
     return await find_replay(
         session,
         Instance,
@@ -688,7 +725,7 @@ async def find_instance_replay(
 
 
 async def instances_of_service(session: AsyncSession, service_id: int) -> list[Instance]:
-    """某在线服务的全部版本实例(含已释放),版本号降序。"""
+    """Every revision instance of an online service (released included), revision descending."""
     return list(
         (
             await session.execute(
@@ -701,7 +738,8 @@ async def instances_of_service(session: AsyncSession, service_id: int) -> list[I
 
 
 async def _freeing_slots_of(session: AsyncSession, instance_id: int | None, sku: "Sku") -> int:
-    """即将被替换的旧实例占的可售份额:running 且同池同 canonical 型号才算。"""
+    """Sellable share held by the old instance about to be replaced: only when running in the same
+    pool with the same canonical model."""
     if instance_id is None:
         return 0
     old = await session.get(Instance, instance_id)
@@ -719,7 +757,8 @@ async def _freeing_slots_of(session: AsyncSession, instance_id: int | None, sku:
 async def create_instance(
     session: AsyncSession, user_id: int, req: InstanceRequest, *, idempotency_key: str | None
 ) -> tuple[Instance, bool]:
-    """创建并提交开发机请求,返回 (实例, created);幂等重放时 created=False。"""
+    """Create and commit a dev-box request, returning (instance, created); created=False on an
+    idempotent replay."""
     instance, created = await create_instance_row(
         session, user_id, req, idempotency_key=idempotency_key
     )
@@ -752,8 +791,10 @@ async def list_instances_page(
     service_id: int | None = None,
     include_released: bool = False,
 ):
-    """用户端实例列表:按实例 ID 降序游标分页,status 精确 / name 模糊(含 uuid 前缀)。
-    默认只列开发机;给 service_id 即该服务的版本实例,include_released 含已释放。
+    """User instance list: cursor pagination by instance ID descending, status exact / name fuzzy
+    (uuid prefix included).
+    Dev boxes only by default; with service_id the revision instances of that service,
+    include_released adds released ones.
     """
     stmt = select(Instance).where(Instance.user_id == user_id)
     if service_id is None:
@@ -779,14 +820,15 @@ async def list_instances_page(
 
 
 async def attach_instance_details(session: AsyncSession, items: "Sequence[InstanceOut]") -> None:
-    """批量回填实例包周期概要。"""
+    """Back-fill subscription summaries in batch."""
     await _attach_subscriptions(session, items)
 
 
 async def list_expiring_instances(
     session: AsyncSession, user_id: int, *, within_days: int
 ) -> "list[InstanceOut]":
-    """临期包周期实例:active 订阅且 expires_at ≤ now+within_days,按到期升序,不分页。"""
+    """Expiring subscription instances: active subscription with expires_at ≤ now+within_days, by
+    expiry ascending, no pagination."""
     subs = await billing_service.list_expiring_subscriptions(
         session, user_id, within_days=within_days
     )
@@ -808,14 +850,14 @@ async def list_expiring_instances(
 
 
 async def instance_view(session: AsyncSession, instance: Instance) -> "InstanceOut":
-    """单实例出参,与列表项同形。"""
+    """Single-instance output, same shape as a list item."""
     items = [InstanceOut.model_validate(instance)]
     await attach_instance_details(session, items)
     return items[0]
 
 
 async def _attach_subscriptions(session: AsyncSession, items: "Sequence[InstanceOut]") -> None:
-    """给列表项回填包周期概要:一次查询。"""
+    """Back-fill the subscription summary of list items: one query."""
     ids = [i.id for i in items if i.market == MARKET_SUBSCRIPTION]
     if not ids:
         return
@@ -833,7 +875,8 @@ async def list_events_raw(
     cursor: str | None = None,
     limit: int | None = None,
 ) -> RawPage[InstanceEvent]:
-    """多台实例的事件并集:降序游标分页的 ORM 行(服务级时间线用)。"""
+    """Union of several instances' events: descending cursor-paginated ORM rows (for the
+    service-level timeline)."""
     if not instance_ids:
         return RawPage(items=[], next_cursor=None)
     stmt = (
@@ -850,7 +893,7 @@ async def list_events_raw(
 async def list_events(
     session: AsyncSession, instance_id: int, *, cursor: str | None = None, limit: int | None = None
 ):
-    """实例事件时间线:降序游标分页。"""
+    """Instance event timeline: descending cursor pagination."""
     raw = await list_events_raw(session, [instance_id], cursor=cursor, limit=limit)
     return Page[InstanceEventOut](
         items=[InstanceEventOut.model_validate(e) for e in raw.items], next_cursor=raw.next_cursor
@@ -867,8 +910,9 @@ async def rename_instance(
 
 
 def _reject_service_instance(instance: Instance) -> None:
-    """服务的版本实例拒绝实例级生命周期操作(stop / start / restart / release / 重置 token),
-    统一由 /services 驱动;续费 / 转换与只读端点照常。"""
+    """Revision instances of a service reject instance-level lifecycle operations (stop / start /
+    restart / release / token reset),
+    driven by /services instead; renewal / conversion and read-only endpoints work as usual."""
     if instance.service_id is not None:
         raise conflict(key="orchestrator.serviceInstanceLifecycle")
 
@@ -877,7 +921,8 @@ LIFECYCLE_MAX_PER_HOUR = 60
 
 
 async def check_lifecycle_rate_limit(user_id: int) -> None:
-    """开机 / 关机 / 重启共用桶(实例与在线服务同桶):每用户每小时 LIFECYCLE_MAX_PER_HOUR 次。"""
+    """Shared bucket of start / stop / restart (instances and online services alike):
+    LIFECYCLE_MAX_PER_HOUR per user per hour."""
     await check_rate_limit(
         f"instance-lifecycle:{user_id}", max_attempts=LIFECYCLE_MAX_PER_HOUR, window_seconds=3600.0
     )
@@ -886,7 +931,7 @@ async def check_lifecycle_rate_limit(user_id: int) -> None:
 async def stop_instance_row(
     session: AsyncSession, instance: Instance, *, reason: str = "user_stop", actor: str = "user"
 ) -> Instance:
-    """关机的 row 级核心:running 守卫 → stopping + outbox,**不 commit**。"""
+    """Row-level core of stop: running guard → stopping + outbox, **no commit**."""
     if instance.status != sm_def.RUNNING:
         raise AppError(ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.stopNeedsRunning")
     await transition(session, instance, sm_def.STOPPING, reason=reason, actor=actor)
@@ -903,7 +948,8 @@ async def stop_instance(session: AsyncSession, user_id: int, uuid: str) -> Insta
 
 
 async def _rebind_data_disk(session: AsyncSession, instance: Instance) -> None:
-    """(重新)占用数据盘:盘在则锁盘并经 attach_for_instance 校验挂载,已删则放弃挂载点。"""
+    """(Re-)occupy the data disk: lock the disk and validate the mount via attach_for_instance when
+    it exists, drop the mount point when deleted."""
     if instance.data_disk_id is None:
         return
     disk = await session.get(DataDisk, instance.data_disk_id, with_for_update=True)
@@ -916,15 +962,18 @@ async def _rebind_data_disk(session: AsyncSession, instance: Instance) -> None:
 
 
 async def lock_instance_row(session: AsyncSession, instance: Instance) -> Instance:
-    """对已取到的实例行加 FOR UPDATE 并重读(同事务内不会消失)。"""
+    """FOR UPDATE on an already fetched instance row and re-read (it cannot vanish within the
+    transaction)."""
     locked = await lock_instance(session, instance.id)
     assert locked is not None
     return locked
 
 
 async def start_instance_row(session: AsyncSession, user_id: int, instance: Instance) -> Instance:
-    """开机的 row 级核心:锁实例 → 冻结 / 状态 / 节点 / 集群 / 订阅 / 数据盘 / 余额逐道闸
-    → starting + outbox,**不 commit**。"""
+    """Row-level core of start: lock the instance → frozen / status / node / cluster / subscription
+    /
+    data disk / balance gates in turn
+    → starting + outbox, **no commit**."""
     instance = await lock_instance_row(session, instance)
     if instance.status == sm_def.FROZEN:
         raise AppError(ErrorCode.INSTANCE_FROZEN, key="orchestrator.frozenNeedsRecharge")
@@ -995,8 +1044,10 @@ async def renew_instance(
     period_count: int,
     idempotency_key: str | None,
 ) -> tuple[Instance, SubscriptionQuote, bool]:
-    """续费包周期实例。返回 (实例, 报价, created);created=False = 幂等重放。
-    换周期续同时刷新 `instances.price_hourly`;冻结中续费即解冻回 stopped。
+    """Renew a subscription instance. Returns (instance, quote, created); created=False = idempotent
+    replay.
+    Renewing with a different period refreshes `instances.price_hourly`; renewing while frozen
+    unfreezes back to stopped.
     """
     instance = await get_instance(session, user_id, uuid)
     instance = await lock_instance_row(session, instance)
@@ -1038,8 +1089,10 @@ async def subscribe_instance(
     period_count: int,
     idempotency_key: str | None,
 ) -> tuple[Instance, SubscriptionQuote, bool]:
-    """按量实例转包周期。返回 (实例, 报价, created);created=False = 幂等重放。
-    先按转换前时价结清按量账,再翻 `market`;只收 running / stopped。
+    """Convert an on-demand instance to a subscription. Returns (instance, quote, created);
+    created=False = idempotent replay.
+    The on-demand bill is settled at the pre-conversion price first, then `market` flips; running /
+    stopped only.
     """
     instance = await get_instance(session, user_id, uuid)
     if idempotency_key:
@@ -1101,8 +1154,10 @@ async def subscribe_instance(
 
 
 async def convert_to_on_demand(session: AsyncSession, user_id: int, uuid: str) -> Instance:
-    """竞价实例转按量;已是按量则原样返回。只翻 `market` 不动 Pod;
-    当前整点小时整体改按按量价(billing.reprice_current_hour),原价取 `spec.base_price_hourly`。
+    """Convert a spot instance to on-demand; already on-demand returns unchanged. Only `market`
+    flips, the Pod is untouched;
+    the current clock hour is settled entirely at the on-demand price
+    (billing.reprice_current_hour), the list price comes from `spec.base_price_hourly`.
     """
     instance = await get_instance(session, user_id, uuid)
     if instance.market == MARKET_ON_DEMAND:
@@ -1145,7 +1200,7 @@ async def convert_to_on_demand(session: AsyncSession, user_id: int, uuid: str) -
 async def set_instance_auto_renew(
     session: AsyncSession, user_id: int, uuid: str, *, enabled: bool
 ) -> Instance:
-    """开关自动续费。"""
+    """Toggle auto-renewal."""
     instance = await get_instance(session, user_id, uuid)
     if instance.market != MARKET_SUBSCRIPTION:
         raise AppError(
@@ -1161,7 +1216,8 @@ async def set_instance_auto_renew(
 async def release_instance_row(
     session: AsyncSession, instance: Instance, *, actor: str = "user", reason: str | None = None
 ) -> Instance:
-    """释放的 row 级核心:状态守卫 → releasing + outbox,**不 commit**;释放中 / 已释放幂等直回。"""
+    """Row-level core of release: status guard → releasing + outbox, **no commit**; releasing /
+    released return idempotently."""
     if instance.status in (sm_def.RELEASING, sm_def.RELEASED):
         return instance
     if instance.status not in (
@@ -1192,7 +1248,8 @@ async def release_instance(
 
 
 def bandwidth_annotations(settings: Settings) -> dict[str, str]:
-    """CNI bandwidth 插件识别的限速注解(k3s flannel 与 Cilium bandwidthManager 同口径);0 = 不加。"""
+    """Rate-limit annotation understood by the CNI bandwidth plugin (k3s flannel and Cilium
+    bandwidthManager alike); 0 = none."""
     out: dict[str, str] = {}
     if settings.tenant_egress_bandwidth_mbps > 0:
         out["kubernetes.io/egress-bandwidth"] = f"{settings.tenant_egress_bandwidth_mbps}M"
@@ -1208,8 +1265,10 @@ def build_pod_spec(
     data_disk_pvc: str | None = None,
     image_pull_secret: str | None = None,
 ) -> InstancePodSpec:
-    """构造 Pod spec。data_disk_pvc 由调用方按盘 uuid 算出传入(data_disk_pvc_name);
-    image_pull_secret 是该 ns 的拉取凭据 Secret 名;服务形态只读实例行的快照列。
+    """Build the Pod spec. data_disk_pvc is computed by the caller from the disk uuid
+    (data_disk_pvc_name);
+    image_pull_secret is the pull-credential Secret name in that ns; the service form reads the
+    snapshot columns of the instance row only.
     """
     settings = get_settings()
     gpu_req = spec_to_gpu_request(
@@ -1269,14 +1328,16 @@ def build_pod_spec(
 
 
 def startup_failure_threshold(creating_timeout_seconds: int) -> int:
-    """startupProbe 失败阈值:总时长(阈值 × 周期)小于平台 creating 超时,下限 3 次。"""
+    """startupProbe failure threshold: total (threshold × period) below the platform creating
+    timeout, at least 3."""
     return max(3, creating_timeout_seconds // STARTUP_PROBE_PERIOD_SECONDS - 1)
 
 
 async def build_pod_spec_with_cluster(
     session: AsyncSession, instance: Instance, *, image_pull_secret: str | None = None
 ) -> InstancePodSpec:
-    """outbox handler 用:带集群发行版上下文与数据盘 subPath(从盘记录读)。"""
+    """For outbox handlers: with the cluster distribution context and the data-disk subPath (read
+    from the disk record)."""
     row = await nodes_service.get_cluster_status(session)
     disk_pvc: str | None = None
     if instance.data_disk_id is not None:
@@ -1293,7 +1354,7 @@ async def build_pod_spec_with_cluster(
 
 
 def build_access(instance: Instance) -> InstanceAccessOut:
-    """接入信息:按形态出字段,没有的入口留空。"""
+    """Access information: fields by form, missing entries left empty."""
     settings = get_settings()
     if instance.status != sm_def.RUNNING:
         raise AppError(ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.accessNeedsRunning")
@@ -1310,13 +1371,14 @@ def build_access(instance: Instance) -> InstanceAccessOut:
 
 
 async def get_access(session: AsyncSession, user_id: int, uuid: str) -> InstanceAccessOut:
-    """取实例(owner 校验)并拼接入信息。"""
+    """Fetch the instance (owner check) and assemble the access information."""
     return build_access(await get_instance(session, user_id, uuid))
 
 
 async def strip_ssh_key_from_instances(session: AsyncSession, user_id: int, public_key: str) -> int:
-    """把公钥从该用户全部未释放实例的 authorized_keys 快照摘掉,返回实例数;
-    运行中 Pod 下次重建才生效。"""
+    """Remove the key from the authorized_keys snapshot of every unreleased instance of the user,
+    returning the instance count;
+    running Pods pick it up on their next rebuild."""
     rows = list(
         (
             await session.execute(
@@ -1354,8 +1416,9 @@ LOGS_MAX_TAIL_LINES = 2000
 async def read_instance_logs(
     session: AsyncSession, user_id: int, uuid: str, *, tail_lines: int
 ) -> "InstanceLogsOut":
-    """读取实例容器日志(只读,不记审计):非属主 404;仅 running/stopping,否则 409;
-    tail_lines 超上限截断。"""
+    """Read the instance container log (read-only, not audited): non-owner 404; running/stopping
+    only, otherwise 409;
+    tail_lines truncated at the cap."""
     instance = await get_instance(session, user_id, uuid)
     if instance.status not in (sm_def.RUNNING, sm_def.STOPPING):
         raise conflict(key="orchestrator.logsNeedsRunning")
@@ -1378,8 +1441,9 @@ async def read_instance_logs(
 
 
 async def estimate_available_many(session: AsyncSession, skus: list["Sku"]) -> dict[int, int]:
-    """市场近似库存(批量):sku_id → 可售实例数。数据源节点台账,无数据 → 0;
-    减掉包周期预留(与软准入同源)。"""
+    """Approximate market stock (batch): sku_id → sellable instances. Source is the node inventory,
+    no data → 0;
+    subscription reservations subtracted (same source as soft admission)."""
     specs = await nodes_service.list_node_specs(session)
     cap = (await get_runtime_config(session)).gpu_node_cpu_instance_vcpu_cap
     reserved = await _reserved_slots_by_sku(session, [s.id for s in skus])
@@ -1401,7 +1465,8 @@ async def admin_list_instances(
     cursor: str | None = None,
     limit: int | None = None,
 ) -> RawPage[Instance]:
-    """管理端实例列表(游标分页,降序):q 按实例名或 uuid 前缀,node_name 精确。"""
+    """Admin instance list (cursor pagination, descending): q by instance name or uuid prefix,
+    node_name exact."""
     stmt = select(Instance).order_by(Instance.id.desc())
     if status_filter:
         stmt = stmt.where(Instance.status == status_filter)
@@ -1422,12 +1487,12 @@ async def admin_list_instances(
 
 
 async def admin_get_instance(session: AsyncSession, instance_uuid: str) -> Instance:
-    """管理端按 uuid 取实例(不限租户);不存在 → 404。"""
+    """Admin fetch by uuid (any tenant); missing → 404."""
     instance = (
         await session.execute(select(Instance).where(Instance.uuid == instance_uuid))
     ).scalar_one_or_none()
     if instance is None:
-        raise not_found("实例不存在")
+        raise not_found(key="orchestrator.instanceNotFound")
     return instance
 
 
@@ -1450,8 +1515,10 @@ async def admin_force_stop(session: AsyncSession, instance_uuid: str, *, reason:
         session,
         instance.user_id,
         type_="instance",
-        title="实例已被管理员强制停止",
-        content=f"实例「{instance.name}」已被强制停止并结算尾账。原因:{reason}",
+        title=server_copy("orchestrator.admin_force_stop.title"),
+        content=server_copy(
+            "orchestrator.admin_force_stop.content", name=instance.name, reason=reason
+        ),
         severity="warning",
         target_id=instance.uuid,
     )
@@ -1460,7 +1527,8 @@ async def admin_force_stop(session: AsyncSession, instance_uuid: str, *, reason:
 
 
 async def admin_preempt(session: AsyncSession, instance_uuid: str, *, reason: str) -> Instance:
-    """管理端强制回收一台竞价实例,走与自动抢占同一条回收路径(reason 与 admin_force_stop 不同)。"""
+    """Admin force-reclaim of one spot instance, through the same reclamation path as automatic
+    preemption (reason differs from admin_force_stop)."""
     instance = await admin_get_instance(session, instance_uuid)
     if instance.market != MARKET_SPOT:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.preemptNotSpot")

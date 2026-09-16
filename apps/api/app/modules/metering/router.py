@@ -17,7 +17,8 @@ router = APIRouter(tags=["metering"])
 async def instances_metrics_summary(
     user: CurrentUser, session: DbSession
 ) -> InstanceMetricsSummaryOut:
-    """本人 running 实例近 1h gpu_util 批量摘要(列表 sparkline);断源 available=false(200)。"""
+    """Batch summary of the caller's running instances' gpu_util over the last hour (list
+    sparklines); source down → available=false (200)."""
     instances = await orchestrator_service.list_instances(session, user.id)
     targets = [(i.uuid, i.k8s_namespace) for i in instances if i.status == sm_def.RUNNING]
     await session.commit()
@@ -28,7 +29,8 @@ async def instances_metrics_summary(
 async def get_instance_metrics(
     uuid: str, user: CurrentUser, session: DbSession, range: str = "1h"
 ) -> InstanceMetricsOut:
-    """实例监控曲线(代理 Prometheus,按租户隔离)。断源 503,不影响计费。"""
+    """Instance monitoring curves (Prometheus proxy, tenant-isolated). Source down → 503, billing
+    unaffected."""
     instance = await orchestrator_queries.get_instance(session, user.id, uuid)
     pool_label = instance.spec.get("pool_label")
     await session.commit()

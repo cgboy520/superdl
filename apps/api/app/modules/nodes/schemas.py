@@ -18,7 +18,7 @@ class EnrollmentCreate(BaseModel):
 
 
 class NodeEnrollmentOut(BaseModel):
-    """列表/进度视图,不含 token。"""
+    """List / progress view, without the token."""
 
     id: int
     pool: str
@@ -38,7 +38,7 @@ class NodeEnrollmentOut(BaseModel):
 
 
 class EnrollmentCommandOut(BaseModel):
-    """创建/重生成响应:token 明文仅此一次出现。"""
+    """Create / regenerate response: the token plaintext appears here once only."""
 
     enrollment: NodeEnrollmentOut
     token: str
@@ -51,7 +51,8 @@ class NodeDecommissionRequest(BaseModel):
 
 
 class NodeDecommissionOut(BaseModel):
-    """退役受理回执:停调度期望态 + 令牌作废已生效;删 Node 对象经 outbox 异步。"""
+    """Decommission acceptance receipt: cordon desired state + token revocation are effective;
+    deleting the Node object is asynchronous via outbox."""
 
     node_name: str
     revoked_enrollments: int
@@ -70,19 +71,21 @@ class BootstrapRequest(BaseModel):
     @classmethod
     def _cap_os_info(cls, v: dict[str, Any]) -> dict[str, Any]:
         if len(v) > MAX_BOOTSTRAP_DICT_KEYS:
-            raise ValueError(f"os_info 最多 {MAX_BOOTSTRAP_DICT_KEYS} 个键")
+            raise ValueError(f"os_info may have at most {MAX_BOOTSTRAP_DICT_KEYS} keys")
         return v
 
     @field_validator("gpu_details")
     @classmethod
     def _cap_gpu_details(cls, v: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if any(len(item) > MAX_BOOTSTRAP_DICT_KEYS for item in v):
-            raise ValueError(f"gpu_details 每项最多 {MAX_BOOTSTRAP_DICT_KEYS} 个键")
+            raise ValueError(
+                f"each gpu_details item may have at most {MAX_BOOTSTRAP_DICT_KEYS} keys"
+            )
         return v
 
 
 class BootstrapOut(BaseModel):
-    """装机参数下发,含 join token 明文,不入日志。"""
+    """Install parameters handed to the node, join token plaintext included, never logged."""
 
     pool: str
     k8s_distro: str
@@ -124,7 +127,8 @@ ComponentStateOut = Literal["ok", "degraded", "down", "disabled", "unknown"]
 
 
 class ComponentFactOut(BaseModel):
-    """key 由前端映射文案,value 为不随语言变化的数据,tone 为显示色调。"""
+    """key is mapped to copy by the frontend, value is data that does not vary by language, tone is
+    the display tone."""
 
     key: str
     value: str
@@ -132,14 +136,16 @@ class ComponentFactOut(BaseModel):
 
 
 class ComponentObjectOut(BaseModel):
-    """抽屉对象表的一行(DaemonSet / listener / StorageClass / 节点);fields 的键由前端映射列名。"""
+    """One row of the drawer object table (DaemonSet / listener / StorageClass / node); the keys of
+    fields are mapped to column names by the frontend."""
 
     name: str
     fields: dict[str, str]
 
 
 class ClusterComponentOut(BaseModel):
-    """组件事实与状态;文案由 key 映射,两个 hint 为不随语言变化的命令。"""
+    """Component facts and state; copy is mapped by key, the two hints are commands that do not vary
+    by language."""
 
     key: ComponentKey
     state: ComponentStateOut
@@ -151,7 +157,7 @@ class ClusterComponentOut(BaseModel):
 
 
 class ComponentProbeOut(BaseModel):
-    """组件实时探测事实、Pod 与事件。"""
+    """Live component probe facts, Pods and events."""
 
     key: ComponentKey
     probed_at: datetime
@@ -161,7 +167,7 @@ class ComponentProbeOut(BaseModel):
 
 
 class ClusterConfigStateOut(BaseModel):
-    """配置就绪位(不回明文)。"""
+    """Configuration readiness flags (no plaintext)."""
 
     server_url_set: bool
     join_token_set: bool
@@ -172,7 +178,8 @@ class ClusterConfigStateOut(BaseModel):
 
 
 class ClusterStatusOut(BaseModel):
-    """集群页数据(纯 DB 读能力缓存;「测试连接」同步探测后返回同形)。"""
+    """Cluster page data (pure DB read of the capability cache; "test connection" probes
+    synchronously and returns the same shape)."""
 
     api_reachable: bool
     k8s_version: str | None
@@ -211,7 +218,7 @@ class NodeOut(BaseModel):
 
 
 class GpuModelAggregateOut(BaseModel):
-    """台账按 canonical×池聚合。gpu_model=None 为未识别桶。"""
+    """Inventory aggregated by canonical × pool. gpu_model=None is the unrecognised bucket."""
 
     gpu_model: str | None
     gpu_model_raw: str | None

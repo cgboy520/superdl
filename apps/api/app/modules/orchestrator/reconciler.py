@@ -1,15 +1,17 @@
-"""reconciler:每 30s 全量比对「DB 期望 ↔ K8s 实际」并收敛。
+"""reconciler: every 30 s compare "DB desired ↔ K8s actual" in full and converge.
 
-- creating/starting + Pod Ready → running;超时未 Ready → failed + 清理
-  (服务型且 health_path 非空、容器已实际运行的超时:事件带 occupied_since,按占用时段出账,
-  不退包周期预付、不清实例盘)
-- running + Pod 消失/异常/持续 not-ready → failed + 告警 + 通知
-- stopping + Pod 消失 → stopped;releasing + Pod 消失 → released
-- K8s 存在但 DB 已终态的 Pod → 超宽限期强删(未知 Pod 占比超阈即熔断)
-- 长期 stopped / failed 的实例盘保留期 GC(先预警,到期 releasing)
+- creating/starting + Pod Ready → running; not Ready within the timeout → failed + cleanup
+  (a service instance with health_path whose container actually ran: the event carries
+  occupied_since, the occupied stretch is billed,
+  no subscription refund, no instance-disk wipe)
+- running + Pod gone / abnormal / not-ready for too long → failed + alert + notification
+- stopping + Pod gone → stopped; releasing + Pod gone → released
+- Pod present in K8s while the DB is terminal → force-deleted past the grace period (circuit
+  breaker when the unknown-Pod share exceeds the threshold)
+- retention GC of long stopped / failed instance disks (warn first, releasing on expiry)
 
-每轮一次 list_instance_pods 即状态源,不逐实例 get_status。
-stopping/releasing 悬挂两档:一档 outbox 重发删除,二档 force 强删。
+One list_instance_pods per round is the status source, no per-instance get_status.
+Two stuck levels for stopping/releasing: first re-send the delete via outbox, then force delete.
 """
 
 from collections.abc import Awaitable, Callable, Iterable
@@ -38,6 +40,7 @@ from app.core.metrics import (
 from app.core.money import money_label
 from app.core.outbox import RUNNING_TIMEOUT, OutboxTask, enqueue
 from app.core.pricing import MARKET_SUBSCRIPTION
+from app.core.servercopy import copy as server_copy
 from app.core.timeutil import ensure_utc, now_utc
 from app.modules.billing import service as billing_service
 from app.modules.notify import service as notify_service
@@ -62,7 +65,7 @@ PostCommit = Callable[[], Awaitable[None]] | None
 
 @dataclass
 class _Round:
-    """一轮实例对账的共享上下文。"""
+    """Shared context of one instance reconciliation round."""
 
     orch: K8sOrchestrator
     settings: Settings
@@ -73,7 +76,7 @@ class _Round:
 
 
 async def reconcile_once(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]:
-    """单轮对账(advisory lock 单实例执行),返回动作计数。"""
+    """One reconciliation round (single instance via advisory lock), returns action counts."""
     counts = {
         "to_running": 0,
         "to_failed": 0,
@@ -103,7 +106,7 @@ async def reconcile_once(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]
 
 
 async def _refresh_port_pool_gauge(sm: async_sessionmaker[AsyncSession]) -> None:
-    """上报端口池指标;容量为配置段长减去段内排除端口数。"""
+    """Report the port pool metric; capacity = range length minus excluded ports in range."""
     settings = get_settings()
     excluded_in_range = sum(
         1
@@ -119,15 +122,16 @@ async def _refresh_port_pool_gauge(sm: async_sessionmaker[AsyncSession]) -> None
 
 
 def _status_keys(instances: Iterable[Instance]) -> list[tuple[int, str, Any]]:
-    """_entered_status_map 的输入形态:(instance_id, 当前状态, created_at)。"""
+    """Input shape of _entered_status_map: (instance_id, current status, created_at)."""
     return [(i.id, i.status, i.created_at) for i in instances]
 
 
 async def _entered_status_map(
     session: AsyncSession, keys: Iterable[tuple[int, str, Any]]
 ) -> dict[int, Any]:
-    """批量取「进入当前状态的时刻」:该状态最后一条事件的时刻(不用 updated_at),
-    无事件回落 created_at。"""
+    """Batch "moment of entering the current status": the time of the status's last event (not
+    updated_at),
+    falling back to created_at without events."""
     keys = list(keys)
     if not keys:
         return {}
@@ -156,9 +160,11 @@ async def _running_pod_lost_reason(
     unready_timeout: timedelta,
     node_not_ready: bool | None,
 ) -> str | None:
-    """running 实例是否已不可用:返回迁移 reason,None = 还活着。
-    持续 not-ready 超宽限后分流:节点失联(或节点视图不可用)→ node_lost,节点正常 → pod_unready;
-    服务型实例不判 pod_unready。unready_since 只在 st.ready 分支清零,调用方不得按 None 清零。
+    """Whether a running instance is gone: returns the transition reason, None = still alive.
+    Not-ready beyond the grace splits: node lost (or node view unavailable) → node_lost, node
+    healthy → pod_unready;
+    service instances are never judged pod_unready. unready_since is reset only in the st.ready
+    branch; callers must not reset it on None.
     """
     if not st.exists or st.phase in ("Failed", "Succeeded"):
         return "pod_lost"
@@ -181,8 +187,9 @@ async def _running_pod_lost_reason(
 
 
 async def _reenqueue_delete(session: AsyncSession, task_type: str, instance_id: int) -> bool:
-    """悬挂恢复第一档:重发删除任务;已有在途同型任务(pending,或 running 且租约未超
-    RUNNING_TIMEOUT)则跳过。"""
+    """Stuck recovery level one: re-send the delete task; skipped when a task of the same type is in
+    flight (pending, or running with a lease
+    within RUNNING_TIMEOUT)."""
     pending = (
         await session.execute(
             select(func.count())
@@ -212,13 +219,14 @@ _MISSING_POD = PodStatus(exists=False)
 def _statuses_from_listing(
     rows: list[tuple[int, str, str, str, Any]], listing: list[PodStatus]
 ) -> list[PodStatus]:
-    """全量 LIST 即状态源,与 get_status 同口径(ready/phase/node_name/deleting)。"""
+    """The full LIST is the status source, the same definition as get_status
+    (ready/phase/node_name/deleting)."""
     by_key = {(e.namespace, e.name): e for e in listing}
     return [by_key.get((ns, uuid), _MISSING_POD) for _id, _status, ns, uuid, _created in rows]
 
 
 async def _node_readiness() -> dict[str, bool] | None:
-    """节点 → 是否 NotReady;节点视图不可用返回 None。"""
+    """Node → whether NotReady; None when the node view is unavailable."""
     try:
         nodes = await get_orchestrator().list_nodes()
     except Exception:
@@ -230,7 +238,8 @@ async def _node_readiness() -> dict[str, bool] | None:
 async def _reconcile_instances(
     sm: async_sessionmaker[AsyncSession], counts: dict[str, int]
 ) -> None:
-    """活跃态实例逐台收敛:每实例独立事务,单个失败不拖垮整轮;K8s 清理动作在 commit 后执行。"""
+    """Converge active instances one by one: one transaction each, a failure does not take the round
+    down; K8s cleanup runs after commit."""
     orch = get_orchestrator()
     async with sm() as session:
         rows = list(
@@ -295,7 +304,8 @@ async def _reconcile_instances(
 async def _reconcile_one(
     session: AsyncSession, ctx: _Round, instance: Instance, st: PodStatus
 ) -> PostCommit:
-    """单台实例按状态派发;事务内只做状态迁移 / 标记 / enqueue,返回 commit 后要跑的 K8s 动作。"""
+    """Dispatch one instance by status; inside the transaction only transitions / marks / enqueues,
+    returning the K8s actions to run after commit."""
     match instance.status:
         case sm_def.CREATING | sm_def.STARTING:
             return await _reconcile_booting(session, ctx, instance, st)
@@ -331,7 +341,8 @@ async def _reconcile_one(
 async def _reconcile_booting(
     session: AsyncSession, ctx: _Round, instance: Instance, st: PodStatus
 ) -> PostCommit:
-    """creating / starting:Pod Ready(且 SSH 端口已落库)→ running;超时 → failed + 清理。"""
+    """creating / starting: Pod Ready (and the SSH port stored) → running; timeout → failed +
+    cleanup."""
     ready = st.exists and st.ready
     port_ok = instance.ssh_port is not None or not instance.with_ssh
     if ready and port_ok:
@@ -374,8 +385,9 @@ async def _reconcile_booting(
 
 
 def _tenant_occupied_since(instance: Instance, st: PodStatus) -> datetime | None:
-    """就绪由租户控制(服务型 + health_path)且 workspace 容器已实际运行 → 占用起点;
-    其余超时按平台责任返回 None。"""
+    """Readiness controlled by the tenant (service + health_path) and the workspace container
+    actually ran → occupancy start;
+    every other timeout is the platform's fault and returns None."""
     if instance.workload_type != "service" or not instance.health_path:
         return None
     if not st.exists or st.started_at is None:
@@ -387,21 +399,17 @@ async def _notify_schedule_timeout(
     session: AsyncSession, instance: Instance, *, refunded: Decimal | None, tenant_fault: bool
 ) -> None:
     if tenant_fault:
-        title = "服务启动失败:健康检查超时"
-        content = (
-            f"服务实例「{instance.name}」在超时内未通过 health_path 健康检查,已自动终止;"
-            "容器实际运行时段已按量计费,包周期预付不退。修复健康检查后可重新启动。"
-        )
+        title = server_copy("orchestrator.health_timeout.title")
+        content = server_copy("orchestrator.health_timeout.content", name=instance.name)
     else:
-        title = "实例创建失败:调度超时"
-        content = (
-            f"实例「{instance.name}」调度或镜像拉取超时,已自动终止,"
-            + (
-                f"包周期预付 {money_label(refunded)} 已原额退回余额。"
-                if refunded
-                else "未产生任何费用。"
-            )
-            + "可换个档位重试,或稍后再试;多次失败请联系客服。"
+        title = server_copy("orchestrator.schedule_timeout.title")
+        charge = (
+            server_copy("orchestrator.schedule_timeout.refunded", amount=money_label(refunded))
+            if refunded
+            else server_copy("orchestrator.schedule_timeout.no_charge")
+        )
+        content = server_copy(
+            "orchestrator.schedule_timeout.content", name=instance.name, charge=charge
         )
     await notify_service.notify(
         session,
@@ -418,7 +426,8 @@ async def _notify_schedule_timeout(
 async def _reconcile_running(
     session: AsyncSession, ctx: _Round, instance: Instance, st: PodStatus
 ) -> PostCommit:
-    """running:Pod 消失 / 异常 / 持续 not-ready 超宽限 → failed(node_lost 强删并通知)。"""
+    """running: Pod gone / abnormal / not-ready past the grace → failed (node_lost force-deletes and
+    notifies)."""
     node_not_ready = (
         None
         if ctx.not_ready_by_node is None or instance.node_name is None
@@ -443,13 +452,8 @@ async def _reconcile_running(
         session,
         instance.user_id,
         type_="instance",
-        title="实例已停止:所在节点失联",
-        content=(
-            f"实例「{instance.name}」所在节点与集群失去联系,"
-            "已停止计费并终止该实例。失联期间产生的费用如有异议请联系客服。"
-            "实例盘为该节点本地盘,平台不做冗余:节点恢复前该实例暂不可开机,"
-            "若节点最终无法恢复,盘中数据将无法找回——重要数据请务必自行备份到数据盘或站外。"
-        ),
+        title=server_copy("orchestrator.node_lost.title"),
+        content=server_copy("orchestrator.node_lost.content", name=instance.name),
         severity="error",
         dedup_key=f"node_lost:{instance.id}",
         target_id=instance.uuid,
@@ -466,8 +470,9 @@ async def _fail_instance(
     metadata: dict[str, Any] | None = None,
     force_delete: bool = False,
 ) -> PostCommit:
-    """→ failed 的公共收尾:迁移、放端口、解挂数据盘、计数;返回事务外删 Pod/Service/HTTPRoute 的动作
-    (404 容错;失败由泄漏回收兜底)。"""
+    """Shared wrap-up of → failed: transition, release the port, detach the data disk, count;
+    returns the out-of-transaction Pod/Service/HTTPRoute delete actions
+    (404 tolerated; failures are covered by leak reclamation)."""
     await transition(
         session, instance, sm_def.FAILED, reason=reason, actor="system", metadata=metadata
     )
@@ -494,7 +499,8 @@ async def _reconcile_terminating(
     stuck_after: timedelta,
     task_type: str,
 ) -> PostCommit:
-    """stopping / releasing:Pod 消失即到终点;仍在则按悬挂时长两档升级。"""
+    """stopping / releasing: the Pod gone = terminal reached; still present → escalate by stuck
+    duration in two levels."""
     if st.exists:
         return await _escalate_stuck(
             session,
@@ -522,8 +528,8 @@ async def _escalate_stuck(
     stuck_after: timedelta,
     task_type: str,
 ) -> PostCommit:
-    """stopping/releasing 悬挂两档:> stuck_after 经 outbox 重发删除;
-    > 2×stuck_after 返回事务外 force 强删动作。"""
+    """Two stuck levels for stopping/releasing: > stuck_after re-sends the delete via outbox;
+    > 2×stuck_after returns the out-of-transaction force-delete action."""
     status = instance.status
     age_s = int(age.total_seconds())
     if age > stuck_after * 2:
@@ -546,8 +552,10 @@ async def _escalate_stuck(
 async def _reclaim_leaked_pods(
     sm: async_sessionmaker[AsyncSession], counts: dict[str, int]
 ) -> None:
-    """K8s 存在但 DB 已终态/无记录的 Pod → 宽限期后 force 强删。
-    豁免带 batch.kubernetes.io/job-name 标签的 Pod(受管 Job 子孙);未知 Pod 占比超阈即熔断。
+    """Pods present in K8s while the DB is terminal / unknown → force-deleted after the grace
+    period.
+    Pods with the batch.kubernetes.io/job-name label (children of managed Jobs) are exempt; the
+    round trips when the unknown-Pod share exceeds the threshold.
     """
     settings = get_settings()
     orch = get_orchestrator()
@@ -598,7 +606,8 @@ async def _reclaim_leaked_pods(
 async def _instances_by_object_name(
     sm: async_sessionmaker[AsyncSession], names: Iterable[str]
 ) -> tuple[dict[str, Instance], dict[int, Any]]:
-    """K8s 对象名(= 实例 uuid)→ 实例,并为非活跃态实例算「进入状态时刻」。"""
+    """K8s object name (= instance uuid) → instance, plus the "entered status" moment for inactive
+    instances."""
     uuids = list(names)
     if not uuids:
         return {}, {}
@@ -616,7 +625,8 @@ async def _instances_by_object_name(
 
 
 def _breaker_tripped(unknown: int, total: int, *, label: str) -> bool:
-    """未知(DB 无记录)对象占比超阈 → 中止本轮并计指标。"""
+    """Unknown (no DB record) object share above the threshold → abort the round and count the
+    metric."""
     ratio = get_settings().leak_reclaim_abort_ratio
     if unknown and unknown / total > ratio:
         RECONCILE_LEAK_ABORTED_TOTAL.inc()
@@ -633,7 +643,7 @@ async def _reclaim(
     db_status: str | None,
     counts: dict[str, int],
 ) -> None:
-    """强删泄漏对象(404 容错,清 Pod/Service/Ingress)并计数。"""
+    """Force-delete leaked objects (404 tolerated, Pod/Service/Ingress cleared) and count."""
     logger.error(label, namespace=ns, name=name, db_status=db_status)
     RECONCILE_LEAKED_TOTAL.inc()
     await orch.delete_instance(ns, name, force=True)
@@ -643,7 +653,8 @@ async def _reclaim(
 async def _recheck_blocked_ports(
     sm: async_sessionmaker[AsyncSession], counts: dict[str, int]
 ) -> None:
-    """blocked 端口周期复检:集群侧占用已消失即放回池。"""
+    """Periodic re-check of blocked ports: returned to the pool once the cluster-side holder is
+    gone."""
     orch = get_orchestrator()
     try:
         used = await orch.used_node_ports()
@@ -675,8 +686,10 @@ async def _redrive_dead_disk_tasks(
     should_redrive: Callable[[DataDisk], bool],
     log_event: str,
 ) -> int:
-    """数据盘类 outbox 死信重派:死信行保留,盘仍需要该动作且无在途同盘任务时补发新任务。
-    cooldown = 死信静置多久才重派(0 = 立即)。返回重派数。"""
+    """Re-dispatch data-disk outbox dead letters: the dead row stays, a new task is sent when the
+    disk still needs the action and no task for the disk is in flight.
+    cooldown = how long a dead letter rests before re-dispatch (0 = at once). Returns the
+    re-dispatched count."""
     async with sm() as session:
         in_flight_ids = {
             int(r[0])
@@ -719,7 +732,7 @@ async def _redrive_dead_disk_tasks(
 async def _redrive_dead_disk_wipes(
     sm: async_sessionmaker[AsyncSession], counts: dict[str, int]
 ) -> None:
-    """disk.deprovision 死信立即重派(盘仍在 deleting)。"""
+    """disk.deprovision dead letters are re-dispatched at once (disk still deleting)."""
     counts["deprovision_redriven"] = await _redrive_dead_disk_tasks(
         sm,
         task_type="disk.deprovision",
@@ -732,7 +745,8 @@ async def _redrive_dead_disk_wipes(
 async def _reconcile_disk_quotas(
     sm: async_sessionmaker[AsyncSession], counts: dict[str, int]
 ) -> None:
-    """disk.provision 死信超 1 小时重派并计指标;只看死信,不按 provisioned=false 补发。"""
+    """disk.provision dead letters older than 1 hour are re-dispatched and counted; only dead
+    letters, never by provisioned=false."""
     redriven = await _redrive_dead_disk_tasks(
         sm,
         task_type="disk.provision",
@@ -747,8 +761,10 @@ async def _reconcile_disk_quotas(
 
 
 async def _gc_retention(sm: async_sessionmaker[AsyncSession], counts: dict[str, int]) -> None:
-    """长期 stopped / failed 实例盘保留期 GC:stopped 先预警(保留期 - warn_days)再转 releasing,
-    failed 到期直接转 releasing;都经 outbox 走正常释放链路,数据盘不受影响。
+    """Retention GC of long stopped / failed instance disks: stopped is warned first (retention −
+    warn_days) then moved to releasing,
+    failed moves to releasing on expiry; both go through the outbox release chain, data disks are
+    unaffected.
     """
     settings = get_settings()
     now = now_utc()
@@ -776,11 +792,11 @@ async def _gc_retention(sm: async_sessionmaker[AsyncSession], counts: dict[str, 
                     sm,
                     instance,
                     reason="failed_retention_reclaim",
-                    title="失败实例已自动释放",
-                    content=(
-                        f"实例「{instance.name}」启动失败后超过 "
-                        f"{settings.failed_retention_days} 天未处理,已自动释放"
-                        "(实例盘清除,数据盘不受影响)。"
+                    title=server_copy("orchestrator.failed_retention.title"),
+                    content=server_copy(
+                        "orchestrator.failed_retention.content",
+                        name=instance.name,
+                        days=settings.failed_retention_days,
                     ),
                     dedup_prefix="failed_retention",
                 )
@@ -790,11 +806,11 @@ async def _gc_retention(sm: async_sessionmaker[AsyncSession], counts: dict[str, 
                     sm,
                     instance,
                     reason="retention_reclaim",
-                    title="停机实例已自动释放",
-                    content=(
-                        f"实例「{instance.name}」已停机超过 "
-                        f"{settings.stopped_retention_days} 天,按保留期策略自动释放"
-                        "(实例盘清除,数据盘不受影响)。"
+                    title=server_copy("orchestrator.retention_reclaim.title"),
+                    content=server_copy(
+                        "orchestrator.retention_reclaim.content",
+                        name=instance.name,
+                        days=settings.stopped_retention_days,
                     ),
                     dedup_prefix="retention_reclaim",
                 )
@@ -806,11 +822,12 @@ async def _gc_retention(sm: async_sessionmaker[AsyncSession], counts: dict[str, 
                         session,
                         instance.user_id,
                         type_="instance",
-                        title="停机实例即将到期释放",
-                        content=(
-                            f"实例「{instance.name}」已停机超过 {warn_days} 天;"
-                            f"停机满 {settings.stopped_retention_days} 天将自动释放"
-                            "(实例盘清除,数据盘不受影响)。如需保留请开机或备份后释放。"
+                        title=server_copy("orchestrator.retention_warn.title"),
+                        content=server_copy(
+                            "orchestrator.retention_warn.content",
+                            name=instance.name,
+                            warn_days=warn_days,
+                            days=settings.stopped_retention_days,
                         ),
                         severity="warning",
                         dedup_key=f"retention_warn:{instance.id}",
@@ -831,7 +848,8 @@ async def _gc_release(
     content: str,
     dedup_prefix: str,
 ) -> int:
-    """保留期到期释放:重读复核状态未变 → releasing + outbox + 站内信,同事务提交。返回 0/1。"""
+    """Release on retention expiry: re-read, confirm the status is unchanged → releasing + outbox +
+    in-app notification, committed in one transaction. Returns 0/1."""
     async with sm() as session:
         fresh = await session.get(Instance, instance.id)
         if fresh is None or fresh.status != instance.status:

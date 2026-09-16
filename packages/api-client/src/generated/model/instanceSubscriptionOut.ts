@@ -6,7 +6,7 @@
  */
 
 /**
- * 列表/详情内联的包周期概要(完整明细在 billing.SubscriptionOut)。
+ * Subscription summary inlined in list / detail (full detail in billing.SubscriptionOut).
  */
 export interface InstanceSubscriptionOut {
   amount_paid: string;

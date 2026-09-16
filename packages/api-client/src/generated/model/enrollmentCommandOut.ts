@@ -7,7 +7,7 @@
 import type { NodeEnrollmentOut } from './nodeEnrollmentOut';
 
 /**
- * 创建/重生成响应:token 明文仅此一次出现。
+ * Create / regenerate response: the token plaintext appears here once only.
  */
 export interface EnrollmentCommandOut {
   curl_command: string;

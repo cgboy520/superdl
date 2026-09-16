@@ -8,7 +8,7 @@ import type { InstanceOut } from './instanceOut';
 import type { ServiceContainerOut } from './serviceContainerOut';
 
 /**
- * 管理端全局服务视图:含租户与当前版本实例的调度节点。
+ * Admin global service view: with the tenant and the current revision instance's node.
  */
 export interface AdminServiceOut {
   container: ServiceContainerOut | null;

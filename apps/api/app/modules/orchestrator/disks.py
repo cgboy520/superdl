@@ -1,4 +1,5 @@
-"""数据盘服务:创建/扩容/删除/挂载管理,独立于实例生命周期。"""
+"""Data-disk service: create / expand / delete / mount management, independent of the instance
+lifecycle."""
 
 from uuid import uuid4
 
@@ -26,7 +27,7 @@ logger = get_logger(__name__)
 
 
 async def _disk_usage(session: AsyncSession, user_id: int) -> tuple[int, int]:
-    """(未删除盘数, 未删除盘总容量 GB)。"""
+    """(non-deleted disk count, total non-deleted capacity in GB)."""
     row = (
         await session.execute(
             select(func.count(), func.coalesce(func.sum(DataDisk.size_gb), 0)).where(
@@ -38,7 +39,7 @@ async def _disk_usage(session: AsyncSession, user_id: int) -> tuple[int, int]:
 
 
 def _check_capacity_quota(used_gb: int, delta_gb: int, max_gb: int) -> None:
-    """总容量走策略 max_disk_gb_per_user,超限拒绝。"""
+    """Total capacity follows the policy max_disk_gb_per_user; exceeding is rejected."""
     if used_gb + delta_gb > max_gb:
         raise AppError(
             ErrorCode.VALIDATION_ERROR, key="disks.capacityQuota", params={"max": max_gb}
@@ -52,7 +53,8 @@ async def create_disk(
     size_gb: int,
     idempotency_key: str | None = None,
 ) -> tuple[DataDisk, bool]:
-    """创建数据盘并提交下发任务;返回 (盘, created),幂等重放时 created=False。"""
+    """Create the data disk and commit the provisioning task; returns (disk, created), created=False
+    on an idempotent replay."""
     fingerprint = request_fingerprint(user_id, name, size_gb)
     if idempotency_key:
         existing = await find_replay(
@@ -120,7 +122,7 @@ async def get_disk(session: AsyncSession, user_id: int, uuid: str) -> DataDisk:
         )
     ).scalar_one_or_none()
     if disk is None or disk.status == "deleted":
-        raise not_found("数据盘不存在")
+        raise not_found(key="orchestrator.diskNotFound")
     return disk
 
 
@@ -137,7 +139,7 @@ async def list_disks(session: AsyncSession, user_id: int) -> list[DataDisk]:
 
 
 def disk_billing_input(disk: DataDisk) -> billing_service.DiskBillingInput:
-    """将 DataDisk 行转换为结算入参。"""
+    """Convert the DataDisk row into settlement input."""
     return billing_service.DiskBillingInput(
         id=disk.id,
         user_id=disk.user_id,
@@ -148,7 +150,8 @@ def disk_billing_input(disk: DataDisk) -> billing_service.DiskBillingInput:
 
 
 async def _settle_pending_days(session: AsyncSession, disk: DataDisk) -> None:
-    """按变更前容量结清未出账的自然日(同事务)。非计费态的盘不补账。"""
+    """Settle the unbilled calendar days at the pre-change size (same transaction). Disks not in a
+    billable state are not back-billed."""
     if disk.status not in DISK_BILLABLE_STATUSES:
         return
     await billing_service.settle_disk_pending_days(session, disk_billing_input(disk))
@@ -163,7 +166,7 @@ async def expand_disk(session: AsyncSession, user_id: int, uuid: str, new_size_g
         )
     ).scalar_one_or_none()
     if disk is None or disk.status == "deleted":
-        raise not_found("数据盘不存在")
+        raise not_found(key="orchestrator.diskNotFound")
     if disk.status != "active":
         raise AppError(ErrorCode.VALIDATION_ERROR, key="disks.expandNeedsActive")
     if new_size_gb <= disk.size_gb:
@@ -187,7 +190,8 @@ async def expand_disk(session: AsyncSession, user_id: int, uuid: str, new_size_g
 
 
 async def delete_disk(session: AsyncSession, user_id: int, uuid: str) -> DataDisk:
-    """删除:挂载中禁止;进入 deleting,由 outbox 删 PVC 后置 deleted。"""
+    """Delete: forbidden while mounted; enters deleting, the outbox deletes the PVC and then marks
+    deleted."""
     disk = (
         await session.execute(
             select(DataDisk)
@@ -196,7 +200,7 @@ async def delete_disk(session: AsyncSession, user_id: int, uuid: str) -> DataDis
         )
     ).scalar_one_or_none()
     if disk is None or disk.status == "deleted":
-        raise not_found("数据盘不存在")
+        raise not_found(key="orchestrator.diskNotFound")
     if disk.mounted_instance_id is not None:
         inst = await session.get(Instance, disk.mounted_instance_id)
         if inst is not None and inst.status in ("stopped", "frozen", "failed"):
@@ -216,10 +220,12 @@ async def delete_disk(session: AsyncSession, user_id: int, uuid: str) -> DataDis
 
 
 async def attach_for_instance(session: AsyncSession, user_id: int, disk_id: int, instance_id: int):
-    """实例创建时挂载校验 + 占用(FOR UPDATE 锁盘行)。同事务调用,不 commit。"""
+    """Mount check + occupation at instance creation (FOR UPDATE on the disk row). Called in the
+    same
+    transaction, no commit."""
     disk = await session.get(DataDisk, disk_id, with_for_update=True)
     if disk is None or disk.user_id != user_id or disk.status == "deleted":
-        raise not_found("数据盘不存在")
+        raise not_found(key="orchestrator.diskNotFound")
     if disk.status != "active":
         raise AppError(ErrorCode.VALIDATION_ERROR, key="disks.notMountable")
     if not disk.provisioned:
@@ -231,7 +237,7 @@ async def attach_for_instance(session: AsyncSession, user_id: int, disk_id: int,
 
 
 async def detach_for_instance(session: AsyncSession, instance_id: int) -> None:
-    """实例终态(released/failed)时解除挂载。同事务调用。"""
+    """Detach when the instance reaches a terminal state (released/failed). Same transaction."""
     disk = (
         await session.execute(select(DataDisk).where(DataDisk.mounted_instance_id == instance_id))
     ).scalar_one_or_none()
@@ -240,8 +246,9 @@ async def detach_for_instance(session: AsyncSession, instance_id: int) -> None:
 
 
 async def lock_disk_for_attach(session: AsyncSession, user_id: int, disk_id: int) -> DataDisk:
-    """建实例挂盘前的归属校验 + FOR UPDATE 行锁;锁序 disk → wallet。"""
+    """Ownership check + FOR UPDATE row lock before mounting at instance creation; lock order disk →
+    wallet."""
     disk = await session.get(DataDisk, disk_id, with_for_update=True)
     if disk is None or disk.user_id != user_id or disk.status == "deleted":
-        raise not_found("数据盘不存在")
+        raise not_found(key="orchestrator.diskNotFound")
     return disk

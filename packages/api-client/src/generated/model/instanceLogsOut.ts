@@ -6,7 +6,8 @@
  */
 
 /**
- * 容器日志:按行切分;truncated=True 表示超过 tail_lines,只回末尾段。
+ * Container log split into lines; truncated=True means more than tail_lines, only the tail is
+ * returned.
  */
 export interface InstanceLogsOut {
   lines: string[];

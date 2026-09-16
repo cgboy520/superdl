@@ -1,4 +1,5 @@
-"""镜像预热 outbox 与巡检;目标为启用镜像及非 CPU 池的 Ready/Cordoned 节点。"""
+"""Image prewarm outbox and patrol; targets are enabled images and the Ready / Cordoned nodes of
+non-CPU pools."""
 
 from datetime import timedelta
 
@@ -24,7 +25,8 @@ TARGET_NODE_STATUSES = ("Ready", "Cordoned")
 
 @outbox_handler("image.prewarm", retry=RetryPolicy(timeout_seconds=120))
 async def handle_image_prewarm(session: AsyncSession, task: OutboxTask) -> None:
-    """幂等:行已 cached/已删、镜像已删/已禁用 → 跳过;K8s 报错抛出交退避重试。"""
+    """Idempotent: row already cached / deleted, image deleted / disabled → skip; K8s errors raise
+    for backoff retry."""
     image_id = task.payload["image_id"]
     node_name = task.payload["node_name"]
     row = (
@@ -48,7 +50,7 @@ async def handle_image_prewarm(session: AsyncSession, task: OutboxTask) -> None:
 
 
 async def prewarm_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]:
-    """单轮巡检(advisory lock 单实例执行),返回动作计数。"""
+    """One patrol round (single instance via advisory lock), returns action counts."""
     counts = {"planned": 0, "cached": 0, "failed": 0, "requeued": 0, "removed": 0}
     async with advisory_lock(sm, LockKey.PREWARM_PATROL) as got:
         if not got:
@@ -73,7 +75,8 @@ async def _plan(
     target_nodes: set[str],
     counts: dict[str, int],
 ) -> dict[int, str]:
-    """铺行/清理/重试,全部 DB 写与 enqueue 同一事务。返回 image_id → image_ref。"""
+    """Seed rows / clean up / retry, every DB write and enqueue in one transaction. Returns image_id
+    → image_ref."""
     async with sm() as session:
         policies = await get_runtime_config(session)
         recheck = timedelta(hours=policies.prewarm_recheck_hours)
@@ -135,7 +138,8 @@ async def _plan(
 async def _converge_pulling(
     sm: async_sessionmaker[AsyncSession], ref_by_id: dict[int, str], counts: dict[str, int]
 ) -> None:
-    """对 pulling 行逐一问 K8s Job 状态并收敛。每行独立事务,单行失败不拖垮整轮。"""
+    """Ask K8s for the Job status of each pulling row and converge. One transaction per row, a
+    failure does not take the round down."""
     orch = get_orchestrator()
     async with sm() as session:
         ids = list(

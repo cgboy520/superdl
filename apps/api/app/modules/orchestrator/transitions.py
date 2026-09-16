@@ -1,4 +1,5 @@
-"""实例状态迁移与数据盘欠费链原语;同事务落事件与 outbox,不提交。"""
+"""Instance state transitions and data-disk arrears chain primitives; event and outbox in the same
+transaction, no commit."""
 
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
@@ -36,7 +37,7 @@ async def transition(
     actor: str,
     metadata: dict[str, Any] | None = None,
 ) -> InstanceEvent:
-    """校验 + 乐观锁更新 + 落事件 + 触发监听器;不 commit。"""
+    """Validate + optimistic-lock update + event + listeners; no commit."""
     from_status = instance.status
     validate_transition(from_status, to_status)
     result = cast(
@@ -68,7 +69,7 @@ async def transition(
 
 
 async def system_stop(session: AsyncSession, instance: Instance, *, reason: str) -> None:
-    """平台侧停机;reason 由调用方给(arrears_stop / subscription_expired 等)。"""
+    """Platform-side stop; the caller supplies reason (arrears_stop / subscription_expired ...)."""
     await transition(session, instance, sm_def.STOPPING, reason=reason, actor="system")
     enqueue(session, "instance.stop", {"instance_id": instance.id})
 
@@ -99,8 +100,8 @@ async def reclaim_frozen(session: AsyncSession, instance: Instance) -> None:
 
 
 async def stop_all_for_user(session: AsyncSession, user_id: int, *, reason: str) -> int:
-    """停掉该用户全部 running 实例(封禁用),返回台数;
-    creating/starting 由 billing.patrol 后续兜住。"""
+    """Stop every running instance of the user (for freezing), returning the count;
+    creating/starting are caught later by billing.patrol."""
     rows = list(
         (
             await session.execute(
@@ -122,14 +123,15 @@ SettleDiskPending = Callable[[AsyncSession, DataDisk], Awaitable[object]]
 
 
 def _frozen_clock_forgiven(disk: DataDisk, now: datetime, frozen_days: int) -> bool:
-    """回款后保持正常超过 disk_frozen_days,冻结删除钟才归零;否则下次冻结接着上次走。"""
+    """The frozen-deletion clock resets only after staying in good standing for more than
+    disk_frozen_days after payment; otherwise the next freeze continues the old clock."""
     return disk.grace_ended_at is not None and now - disk.grace_ended_at > timedelta(
         days=frozen_days
     )
 
 
 def _recover_disk(disk: DataDisk, now: datetime) -> bool:
-    """回款:grace / frozen → active,记 grace_ended_at;frozen_started_at 保留。"""
+    """Payment: grace / frozen → active, grace_ended_at recorded; frozen_started_at kept."""
     if disk.status not in ("grace", "frozen"):
         return False
     disk.status = "active"
@@ -146,7 +148,8 @@ async def _advance_disk_arrears(
     frozen_days: int,
     settle_pending: SettleDiskPending,
 ) -> bool:
-    """欠费:active → grace → frozen → deleting;grace 钟不归零,frozen 钟只在归零后重新起算。"""
+    """Arrears: active → grace → frozen → deleting; the grace clock never resets, the frozen clock
+    restarts only after it was reset."""
     if disk.status == "active":
         await settle_pending(session, disk)
         disk.status = "grace"
@@ -176,9 +179,11 @@ async def _advance_disk_arrears(
 async def arrears_transition_disks(
     session: AsyncSession, user_id: int, in_arrears: bool, *, settle_pending: SettleDiskPending
 ) -> int:
-    """欠费巡检钩子:按可用余额推进 / 回退该用户数据盘的欠费链,返回变更数。
-    grace_started_at 首次进入宽限后不清零;frozen_started_at 回款不清零,再次冻结接着上次的钟走,
-    只有回款后保持正常超过 disk_frozen_days 才归零重新起算。
+    """Arrears patrol hook: advance / roll back the user's data-disk arrears chain by available
+    balance, returning the change count.
+    grace_started_at is not reset once grace was entered; frozen_started_at is not reset by payment
+    and the next freeze continues the old clock,
+    only staying in good standing for more than disk_frozen_days after payment resets it.
     """
     policies = await get_runtime_config(session)
     now = now_utc()

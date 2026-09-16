@@ -7,7 +7,8 @@
 import type { NodeGpuSeriesOut } from './nodeGpuSeriesOut';
 
 /**
- * 管理端节点每卡曲线 + 24h XID 计数。断源 available=false(200);grafana_url 可选。
+ * Admin per-card node curves + 24 h XID count. Source down → available=false (200); grafana_url
+ * optional.
  */
 export interface NodeMetricsOut {
   available: boolean;
