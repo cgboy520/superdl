@@ -37,6 +37,7 @@ class MockChannel:
                 channel_txn_id=data.get("txn_id", f"mock-{data['order_no']}"),
                 amount=Decimal(str(data["amount"])),
                 success=bool(data.get("success", True)),
+                currency=data.get("currency"),
             )
         except (ValueError, KeyError, TypeError, InvalidOperation) as exc:
             raise channel_error("billing.mockCallbackParseFailed") from exc

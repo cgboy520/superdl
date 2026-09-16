@@ -938,6 +938,10 @@
             "title": "Created At",
             "type": "string"
           },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
           "expires_at": {
             "format": "date-time",
             "title": "Expires At",
@@ -970,6 +974,7 @@
         "required": [
           "order_no",
           "amount",
+          "currency",
           "channel",
           "status",
           "qr_url",
@@ -5535,6 +5540,17 @@
             ],
             "title": "Channel Amount"
           },
+          "channel_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Currency"
+          },
           "channel_status": {
             "title": "Channel Status",
             "type": "string"
@@ -5558,6 +5574,10 @@
             "title": "Order Amount",
             "type": "string"
           },
+          "order_currency": {
+            "title": "Order Currency",
+            "type": "string"
+          },
           "order_no": {
             "title": "Order No",
             "type": "string"
@@ -5571,9 +5591,11 @@
           "order_no",
           "order_status",
           "order_amount",
+          "order_currency",
           "channel_status",
           "channel_txn_id",
           "channel_amount",
+          "channel_currency",
           "matches"
         ],
         "title": "OrderVerifyOut",
@@ -6800,6 +6822,14 @@
       "PoliciesOut": {
         "description": "公开只读的计费与回收策略。",
         "properties": {
+          "billing_timezone": {
+            "title": "Billing Timezone",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
           "disk_frozen_days": {
             "title": "Disk Frozen Days",
             "type": "integer"
@@ -6876,7 +6906,9 @@
           "period_discount_year",
           "period_expire_warn_days",
           "spot_discount_pct",
-          "spot_grace_seconds"
+          "spot_grace_seconds",
+          "currency",
+          "billing_timezone"
         ],
         "title": "PoliciesOut",
         "type": "object"
@@ -7071,6 +7103,10 @@
             "title": "Created At",
             "type": "string"
           },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
           "expires_at": {
             "format": "date-time",
             "title": "Expires At",
@@ -7099,6 +7135,7 @@
         "required": [
           "order_no",
           "amount",
+          "currency",
           "channel",
           "status",
           "qr_url",

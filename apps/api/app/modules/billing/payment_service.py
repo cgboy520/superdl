@@ -158,6 +158,35 @@ async def _credit_paid_order(
     )
 
 
+def _currency_matches(order: Order, reported: str | None) -> bool:
+    """A channel that reports no currency is trusted on amount alone."""
+    return reported is None or reported == order.currency
+
+
+def _assert_callback_matches(order: Order, channel_name: str, result: CallbackResult) -> None:
+    """Channel, currency and amount must match the order; a mismatch is a channel error."""
+    if order.channel != channel_name:
+        raise channel_error("billing.callbackChannelMismatch")
+    if not _currency_matches(order, result.currency):
+        logger.error(
+            "callback_currency_mismatch",
+            order_no=order.order_no,
+            expected=order.currency,
+            got=result.currency,
+        )
+        PAYMENT_CALLBACK_MISMATCH_TOTAL.inc()
+        raise channel_error("billing.currencyMismatch")
+    if as_amount(result.amount) != order.amount:
+        logger.error(
+            "callback_amount_mismatch",
+            order_no=order.order_no,
+            expected=str(order.amount),
+            got=str(result.amount),
+        )
+        PAYMENT_CALLBACK_MISMATCH_TOTAL.inc()
+        raise channel_error("billing.callbackAmountMismatch")
+
+
 async def handle_callback(session: AsyncSession, channel_name: str, result: CallbackResult) -> str:
     """持订单行锁处理回调,返回 'ok' 或抛错;调用方须先验签。
 
@@ -203,17 +232,7 @@ async def handle_callback(session: AsyncSession, channel_name: str, result: Call
     if order.status != "pending" and not rescued:
         logger.warning("callback_on_closed_order", order_no=order.order_no, status=order.status)
         return "ok"
-    if order.channel != channel_name:
-        raise channel_error("billing.callbackChannelMismatch")
-    if as_amount(result.amount) != order.amount:
-        logger.error(
-            "callback_amount_mismatch",
-            order_no=order.order_no,
-            expected=str(order.amount),
-            got=str(result.amount),
-        )
-        PAYMENT_CALLBACK_MISMATCH_TOTAL.inc()
-        raise channel_error("billing.callbackAmountMismatch")
+    _assert_callback_matches(order, channel_name, result)
     if not result.success:
         order.status = "failed"
         await session.commit()
@@ -273,12 +292,26 @@ async def reconcile_pending_orders(sm: async_sessionmaker[AsyncSession]) -> int:
                 result.status == "paid" and result.channel_txn_id and result.amount is not None
             ):
                 continue
+            if not _currency_matches(order, result.currency):
+                logger.error(
+                    "order_currency_mismatch",
+                    order_no=order.order_no,
+                    expected=order.currency,
+                    got=result.currency,
+                )
+                continue
             try:
                 async with sm() as session:
                     await handle_callback(
                         session,
                         order.channel,
-                        CallbackResult(order.order_no, result.channel_txn_id, result.amount, True),
+                        CallbackResult(
+                            order.order_no,
+                            result.channel_txn_id,
+                            result.amount,
+                            True,
+                            currency=result.currency,
+                        ),
                     )
             except Exception as exc:
                 logger.exception("order_recover_failed", order_no=order.order_no)
@@ -302,14 +335,17 @@ async def verify_order(session: AsyncSession, order_no: str) -> dict:
         result.status == "paid"
         and result.amount is not None
         and as_amount(result.amount) == order.amount
+        and _currency_matches(order, result.currency)
     )
     return {
         "order_no": order.order_no,
         "order_status": order.status,
         "order_amount": str(order.amount),
+        "order_currency": order.currency,
         "channel_status": result.status,
         "channel_txn_id": result.channel_txn_id,
         "channel_amount": str(result.amount) if result.amount is not None else None,
+        "channel_currency": result.currency,
         "matches": matches,
     }
 
@@ -353,6 +389,8 @@ async def backfill_order(
             key="billing.channelStateNotBackfillable",
             params={"status": result.status},
         )
+    if not _currency_matches(order, result.currency):
+        raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.currencyMismatch")
     if as_amount(result.amount) != order.amount:
         raise AppError(
             ErrorCode.PAYMENT_CHANNEL_ERROR,

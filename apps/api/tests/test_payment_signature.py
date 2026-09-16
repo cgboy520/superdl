@@ -250,15 +250,14 @@ class TestWechatCallbackSignature:
         assert str(result.amount) == "100"
         assert result.success is True
 
-    async def test_foreign_currency_rejected(self, keypair):
-        """外币通知拒收。"""
+    async def test_wire_currency_passed_through(self, keypair):
+        """The wire currency rides on the result; handle_callback compares it with the order."""
         priv, _pub = keypair
         headers, body = _wechat_notify(
             priv, _wx_resource(amount={"total": 10000, "currency": "USD"})
         )
-        with pytest.raises(AppError) as exc:
-            await _wechat_channel(keypair).parse_callback(headers, body)
-        assert exc.value.code.name == "PAYMENT_CHANNEL_ERROR"
+        result = await _wechat_channel(keypair).parse_callback(headers, body)
+        assert result.currency == "USD" and result.amount == Decimal("100.00")
 
     async def test_tampered_body_rejected(self, keypair):
         priv, _pub = keypair

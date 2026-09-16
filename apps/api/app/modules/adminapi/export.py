@@ -8,7 +8,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import AuditLog
-from app.core.csvexport import TRUNCATED_NOTES, csv_line, fmt_money, fmt_ts, stream_rows
+from app.core.csvexport import (
+    TRUNCATED_NOTES,
+    csv_line,
+    fmt_money,
+    fmt_ts,
+    header_row,
+    stream_rows,
+)
 from app.core.sqlutil import like_escape
 from app.core.timeutil import BILLING_TZ_OFFSET_MINUTES
 from app.modules.adminapi.models import AdminAdjustment
@@ -37,12 +44,22 @@ _HEADERS: dict[tuple[str, str], list[str]] = {
         "Detail",
         "Time",
     ],
-    ("reconciliation", "zh-CN"): ["实例ID", "事件计费(元)", "指标估算(元)", "diff%"],
-    ("reconciliation", "en-US"): ["Instance ID", "Billed (CNY)", "Estimated (CNY)", "diff%"],
+    ("reconciliation", "zh-CN"): [
+        "实例ID",
+        "事件计费({currency})",
+        "指标估算({currency})",
+        "diff%",
+    ],
+    ("reconciliation", "en-US"): [
+        "Instance ID",
+        "Billed ({currency})",
+        "Estimated ({currency})",
+        "diff%",
+    ],
     ("adjustments", "zh-CN"): [
         "ID",
         "用户ID",
-        "金额(元)",
+        "金额({currency})",
         "状态",
         "事由",
         "发起人",
@@ -52,7 +69,7 @@ _HEADERS: dict[tuple[str, str], list[str]] = {
     ("adjustments", "en-US"): [
         "ID",
         "User ID",
-        "Amount (CNY)",
+        "Amount ({currency})",
         "Status",
         "Reason",
         "Created by",
@@ -122,7 +139,7 @@ def stream_audit_csv(
         stmt,
         AuditLog.id,
         row,
-        _HEADERS[("audit", lang)],
+        header_row(_HEADERS[("audit", lang)]),
         truncated_note=TRUNCATED_NOTES[lang],
     )
 
@@ -133,7 +150,7 @@ async def stream_reconciliation_csv(
     lang: str = "zh-CN",
 ) -> AsyncIterator[str]:
     """日对账 CSV:首行合计,随后 diff 超阈实例明细。"""
-    yield "\ufeff" + csv_line(_HEADERS[("reconciliation", lang)])
+    yield "\ufeff" + csv_line(header_row(_HEADERS[("reconciliation", lang)]))
     yield csv_line(
         [
             _TOTAL_LABEL[lang],
@@ -185,6 +202,6 @@ def stream_adjustments_csv(
         stmt,
         AdminAdjustment.id,
         row,
-        _HEADERS[("adjustments", lang)],
+        header_row(_HEADERS[("adjustments", lang)]),
         truncated_note=TRUNCATED_NOTES[lang],
     )

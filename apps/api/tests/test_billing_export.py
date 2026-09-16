@@ -7,6 +7,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core import csvexport
+from app.core.money import platform_currency
 from tests.helpers import create_user_with_key, funded_user, seed_bill_hourly
 
 
@@ -59,7 +60,8 @@ class TestHourlyExport:
         assert "superdl-hourly-2026-08.csv" in resp.headers["content-disposition"]
 
         text = resp.text
-        assert text.startswith("\ufeff小时,实例ID,运行秒数,单价(元/时),卡数,金额(元)\r\n")
+        cur = platform_currency()
+        assert text.startswith(f"\ufeff小时,实例ID,运行秒数,单价({cur}/时),卡数,金额({cur})\r\n")
         lines = [ln for ln in text.removeprefix("\ufeff").split("\r\n") if ln]
         assert len(lines) == 1 + 3
         hours = {ln.split(",", 1)[0] for ln in lines[1:]}
@@ -123,7 +125,8 @@ class TestLedgerExport:
         )
         assert resp.status_code == 200
         text = resp.text
-        assert "时间,类型,金额(元),余额快照(元),关联,备注" in text
+        cur = platform_currency()
+        assert f"时间,类型,金额({cur}),余额快照({cur}),关联,备注" in text
         assert "充值,100.00,100.00" in text
         assert "(UTC+8)" in text
 

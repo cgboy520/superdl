@@ -7,6 +7,7 @@ from httpx import AsyncClient
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.config import get_settings
 from app.core.timeutil import now_utc
 from app.modules.billing.models import BalanceLedger, Order, Wallet
 from app.modules.billing.payment_service import close_expired_orders
@@ -42,6 +43,31 @@ class TestRecharge:
         async with sm() as session:
             entries = (await session.execute(select(BalanceLedger))).scalars().all()
         assert len([e for e in entries if e.type == "recharge"]) == 1
+
+    async def test_currency_mismatch_rejected(self, client: AsyncClient, sm):
+        """A channel reporting another currency never credits, even with the right amount; the
+        order stays pending and the matching callback still succeeds afterwards."""
+        headers = await user_headers(client, "13800000104")
+        order = await create_order(client, headers, "50.00")
+        assert order["currency"] == get_settings().platform_currency
+        resp = await client.post(
+            "/api/v1/webhooks/mock",
+            json={"order_no": order["order_no"], "amount": "50.00", "currency": "XXX"},
+        )
+        assert resp.status_code >= 400
+        assert resp.json()["code"] == "PAYMENT_CHANNEL_ERROR"
+        assert resp.json()["message_key"] == "billing.currencyMismatch"
+        resp = await client.post(
+            "/api/v1/webhooks/mock",
+            json={
+                "order_no": order["order_no"],
+                "amount": "50.00",
+                "currency": get_settings().platform_currency,
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        wallet = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert wallet["balance"] == "50.00"
 
     async def test_amount_mismatch_rejected(self, client: AsyncClient, sm):
         headers = await user_headers(client)

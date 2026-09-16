@@ -18,6 +18,7 @@ from app.core.idempotency import (
 from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.metrics import SUBSCRIPTION_UNPAID_RUNNING
+from app.core.money import money_label
 from app.core.patrol import for_each
 from app.core.platform_config import get_runtime_config
 from app.core.pricing import (
@@ -659,7 +660,8 @@ async def _try_auto_renew(
         row.user_id,
         action="renewed",
         detail=(
-            f"已自动续费 包{period_label(row.period)}×{row.period_count},扣款 ¥{quoted.amount}。"
+            f"已自动续费 包{period_label(row.period)}×{row.period_count},"
+            f"扣款 {money_label(quoted.amount)}。"
         ),
         dedup_suffix=str(row.id),
         target_id=instance.uuid,

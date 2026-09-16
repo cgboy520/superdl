@@ -393,9 +393,11 @@ class OrderVerifyOut(BaseModel):
     order_no: str
     order_status: str
     order_amount: str
+    order_currency: str
     channel_status: str
     channel_txn_id: str | None
     channel_amount: str | None
+    channel_currency: str | None
     matches: bool
 
 

@@ -10,7 +10,7 @@ from app.core.constants import ADMIN_LIST_CAP
 from app.core.errors import AppError, ErrorCode, conflict, not_found
 from app.core.handles import mask_handle
 from app.core.logging import get_logger
-from app.core.money import money_str
+from app.core.money import money_label, money_str
 from app.core.timeutil import now_utc
 from app.modules.account.models import AccountDeletionRequest, User
 from app.modules.account.schemas import AdminDeletionRequestOut
@@ -226,12 +226,12 @@ async def approve_deletion(
         _auto_reject_deletion(
             req,
             admin_id=admin_id,
-            note=f"自动驳回:余额 ¥{money_str(balance)} 未提现,请先经退款流程提现,到账后重新申请",
+            note=f"自动驳回:余额 {money_label(balance)} 未提现,请先经退款流程提现,到账后重新申请",
         )
         await session.commit()
         raise conflict(
             key="account.deletionBalanceRemaining",
-            params={"balance": money_str(balance)},
+            params={"balance": money_label(balance)},
             detail={"balance": money_str(balance)},
         )
     user.email = None

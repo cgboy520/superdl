@@ -490,10 +490,10 @@ additionalPrometheusRulesMap:
             labels: {severity: critical}
             annotations: {summary: "SSH NodePort 端口池即将耗尽(空闲 {{ $value }}):新建带 SSH 的实例将失败,立即处理"}
           - alert: WalletNegativeExposure
-            expr: superdl_wallet_negative_sum_yuan > 1000
+            expr: superdl_wallet_negative_sum > 1000
             for: 30m
             labels: {severity: warning}
-            annotations: {summary: "负余额敞口合计 {{ $value }} 元持续 30 分钟(钱包数见 superdl_wallet_negative_count):核对欠费停机巡检是否在跑,管理端财务 › 异常清单"}
+            annotations: {summary: "负余额敞口合计 {{ $value }}(平台币种)持续 30 分钟(钱包数见 superdl_wallet_negative_count):核对欠费停机巡检是否在跑,管理端财务 › 异常清单"}
           - alert: PaymentReversalReleased
             expr: increase(superdl_payment_reversal_resolved_total{action="release"}[10m]) > 0
             labels: {severity: critical}

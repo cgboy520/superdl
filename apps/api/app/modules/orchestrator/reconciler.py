@@ -35,7 +35,7 @@ from app.core.metrics import (
     SCHEDULE_TIMEOUT_OCCUPIED_TOTAL,
     SSH_PORT_POOL,
 )
-from app.core.money import money_str
+from app.core.money import money_label
 from app.core.outbox import RUNNING_TIMEOUT, OutboxTask, enqueue
 from app.core.pricing import MARKET_SUBSCRIPTION
 from app.core.timeutil import ensure_utc, now_utc
@@ -397,7 +397,7 @@ async def _notify_schedule_timeout(
         content = (
             f"实例「{instance.name}」调度或镜像拉取超时,已自动终止,"
             + (
-                f"包周期预付 {money_str(refunded)} 元已原额退回余额。"
+                f"包周期预付 {money_label(refunded)} 已原额退回余额。"
                 if refunded
                 else "未产生任何费用。"
             )

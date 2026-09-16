@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import AppError, ErrorCode, conflict
 from app.core.idempotency import find_replay, insert_idempotent, request_fingerprint
 from app.core.logging import get_logger
-from app.core.money import as_amount, money_str
+from app.core.money import as_amount, money_label
 from app.core.pagination import Page, paginate_by_id
 from app.core.sqlutil import get_for_update_or_404, next_daily_seq, sum_decimal, total
 from app.core.timeutil import now_utc
@@ -135,10 +135,10 @@ async def create_refund(
             ErrorCode.VALIDATION_ERROR,
             key="billing.refundAmountExceeded",
             params={
-                "max": money_str(limit.amount),
-                "order": money_str(order.amount),
-                "refunded": money_str(refunded),
-                "refundable": money_str(limit.refundable),
+                "max": money_label(limit.amount),
+                "order": money_label(order.amount),
+                "refunded": money_label(refunded),
+                "refundable": money_label(limit.refundable),
             },
         )
     return await _insert_refund(
@@ -433,9 +433,9 @@ async def _assert_payable(
             raise conflict(
                 key="billing.refundCumulativeExceeded",
                 params={
-                    "order": money_str(order.amount),
-                    "refunded": money_str(paid_total),
-                    "amount": money_str(req.amount),
+                    "order": money_label(order.amount),
+                    "refunded": money_label(paid_total),
+                    "amount": money_label(req.amount),
                 },
             )
     locked = await wallet.lock_wallet(session, req.user_id)
@@ -443,15 +443,15 @@ async def _assert_payable(
         raise conflict(
             key="billing.refundBalanceConsumed",
             params={
-                "balance": money_str(wallet.available_of(locked)),
-                "amount": money_str(req.amount),
+                "balance": money_label(wallet.available_of(locked)),
+                "amount": money_label(req.amount),
             },
         )
     refundable = await wallet.refundable_capacity(session, req.user_id)
     if refundable < req.amount:
         raise conflict(
             key="billing.refundNotRefundable",
-            params={"refundable": money_str(refundable), "amount": money_str(req.amount)},
+            params={"refundable": money_label(refundable), "amount": money_label(req.amount)},
         )
 
 

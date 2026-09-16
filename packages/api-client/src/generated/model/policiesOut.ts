@@ -9,6 +9,8 @@
  * 公开只读的计费与回收策略。
  */
 export interface PoliciesOut {
+  billing_timezone: string;
+  currency: string;
   disk_frozen_days: number;
   disk_grace_days: number;
   disk_max_gb: number;

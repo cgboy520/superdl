@@ -9,6 +9,7 @@ export interface AdminOrderOut {
   amount: string;
   channel: string;
   created_at: string;
+  currency: string;
   expires_at: string;
   order_no: string;
   qr_url: string | null;

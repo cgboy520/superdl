@@ -21,7 +21,7 @@ from app.core.gpu_adapter import (
 )
 from app.core.gpu_models import canonical_gpu_model
 from app.core.logging import get_logger
-from app.core.money import as_amount, as_price
+from app.core.money import as_amount, as_price, price_label
 from app.core.outbox import enqueue
 from app.core.platform_config import get_runtime_config
 from app.core.timeutil import now_utc
@@ -354,8 +354,8 @@ async def _alert_large_price_change(
             type_="admin_alert",
             title=f"SKU 单价 24 小时累计大幅调整:{sku.name}",
             content=(
-                f"24 小时前 {baseline} → 现 {new} 元/时(累计幅度 {cumulative:.0%});"
-                f"本次 {old} → {new};原因:{reason}"
+                f"24 小时前 {price_label(baseline)} → 现 {price_label(new)}/时"
+                f"(累计幅度 {cumulative:.0%});本次 {old} → {new};原因:{reason}"
             ),
             severity="critical",
             dedup_key=f"sku_price_24h:{sku.id}:{new}",
@@ -371,7 +371,7 @@ async def _alert_large_price_change(
         None,
         type_="admin_alert",
         title=f"SKU 单价大幅调整:{sku.name}",
-        content=f"{old} → {new} 元/时(幅度 {step:.0%});原因:{reason}",
+        content=f"{price_label(old)} → {price_label(new)}/时(幅度 {step:.0%});原因:{reason}",
         severity="warning",
         dedup_key=f"sku_price:{sku.id}:{new}",
     )

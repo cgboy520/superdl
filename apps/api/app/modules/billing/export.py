@@ -7,7 +7,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.csvexport import TRUNCATED_NOTES, fmt_money, fmt_ts, stream_rows
+from app.core.csvexport import TRUNCATED_NOTES, fmt_money, fmt_ts, header_row, stream_rows
 from app.core.timeutil import BILLING_TZ_OFFSET_MINUTES
 from app.modules.account import service as account_service
 from app.modules.billing import invoices, refunds, wallet
@@ -20,21 +20,42 @@ from app.modules.billing.models import (
 )
 
 _HEADERS: dict[tuple[str, str], list[str]] = {
-    ("hourly", "zh-CN"): ["小时", "实例ID", "运行秒数", "单价(元/时)", "卡数", "金额(元)"],
+    ("hourly", "zh-CN"): [
+        "小时",
+        "实例ID",
+        "运行秒数",
+        "单价({currency}/时)",
+        "卡数",
+        "金额({currency})",
+    ],
     ("hourly", "en-US"): [
         "Hour",
         "Instance ID",
         "Seconds",
-        "Unit price (CNY/hr)",
+        "Unit price ({currency}/hr)",
         "GPUs",
-        "Amount (CNY)",
+        "Amount ({currency})",
     ],
-    ("ledger", "zh-CN"): ["时间", "类型", "金额(元)", "余额快照(元)", "关联", "备注"],
-    ("ledger", "en-US"): ["Time", "Type", "Amount (CNY)", "Balance after (CNY)", "Ref", "Remark"],
+    ("ledger", "zh-CN"): [
+        "时间",
+        "类型",
+        "金额({currency})",
+        "余额快照({currency})",
+        "关联",
+        "备注",
+    ],
+    ("ledger", "en-US"): [
+        "Time",
+        "Type",
+        "Amount ({currency})",
+        "Balance after ({currency})",
+        "Ref",
+        "Remark",
+    ],
     ("admin_orders", "zh-CN"): [
         "订单号",
         "租户ID",
-        "金额(元)",
+        "金额({currency})",
         "渠道",
         "状态",
         "支付时间",
@@ -43,7 +64,7 @@ _HEADERS: dict[tuple[str, str], list[str]] = {
     ("admin_orders", "en-US"): [
         "Order no",
         "Tenant ID",
-        "Amount (CNY)",
+        "Amount ({currency})",
         "Channel",
         "Status",
         "Paid at",
@@ -53,7 +74,7 @@ _HEADERS: dict[tuple[str, str], list[str]] = {
         "退款单号",
         "用户ID",
         "订单号",
-        "金额(元)",
+        "金额({currency})",
         "状态",
         "审批人",
         "打款渠道",
@@ -64,7 +85,7 @@ _HEADERS: dict[tuple[str, str], list[str]] = {
         "Refund no",
         "User ID",
         "Order no",
-        "Amount (CNY)",
+        "Amount ({currency})",
         "Status",
         "Reviewer",
         "Payout channel",
@@ -75,7 +96,7 @@ _HEADERS: dict[tuple[str, str], list[str]] = {
         "发票号",
         "用户ID",
         "账期",
-        "金额(元)",
+        "金额({currency})",
         "抬头",
         "税号",
         "状态",
@@ -86,7 +107,7 @@ _HEADERS: dict[tuple[str, str], list[str]] = {
         "Invoice no",
         "User ID",
         "Period",
-        "Amount (CNY)",
+        "Amount ({currency})",
         "Title",
         "Tax ID",
         "Status",
@@ -181,7 +202,7 @@ def stream_hourly_csv(
         stmt,
         BillHourly.id,
         row,
-        _HEADERS[("hourly", lang)],
+        header_row(_HEADERS[("hourly", lang)]),
         truncated_note=TRUNCATED_NOTES[lang],
     )
 
@@ -211,7 +232,7 @@ def stream_ledger_csv(
         select(BalanceLedger).where(BalanceLedger.user_id == user_id),
         BalanceLedger.id,
         row,
-        _HEADERS[("ledger", lang)],
+        header_row(_HEADERS[("ledger", lang)]),
         truncated_note=TRUNCATED_NOTES[lang],
     )
 
@@ -249,7 +270,7 @@ def stream_admin_orders_csv(
         stmt,
         Order.id,
         row,
-        _HEADERS[("admin_orders", lang)],
+        header_row(_HEADERS[("admin_orders", lang)]),
         truncated_note=TRUNCATED_NOTES[lang],
     )
 
@@ -285,7 +306,7 @@ def stream_admin_refunds_csv(
         stmt,
         RefundRequest.id,
         row,
-        _HEADERS[("admin_refunds", lang)],
+        header_row(_HEADERS[("admin_refunds", lang)]),
         truncated_note=TRUNCATED_NOTES[lang],
     )
 
@@ -332,6 +353,6 @@ def stream_admin_invoices_csv(
         stmt,
         InvoiceRequest.id,
         row,
-        _HEADERS[("admin_invoices", lang)],
+        header_row(_HEADERS[("admin_invoices", lang)]),
         truncated_note=TRUNCATED_NOTES[lang],
     )

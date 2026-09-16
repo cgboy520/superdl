@@ -131,8 +131,8 @@ SSH_PORT_POOL = Gauge(
 )
 WALLET_NEGATIVE_COUNT = Gauge("superdl_wallet_negative_count", "余额为负的钱包数(余额巡检每轮刷新)")
 WALLET_NEGATIVE_SUM = Gauge(
-    "superdl_wallet_negative_sum_yuan",
-    "负余额绝对值合计(元,展示口径;结算允许透支,此处只看敞口)",
+    "superdl_wallet_negative_sum",
+    "Sum of negative balances (absolute, platform currency; display only; settlement may overdraw)",
 )
 WORKER_HEARTBEAT_TS = Gauge(
     "superdl_worker_heartbeat_timestamp_seconds",

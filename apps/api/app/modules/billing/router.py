@@ -4,6 +4,7 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import StreamingResponse
 
 from app.core.audit import set_audit_target
+from app.core.config import get_settings
 from app.core.csvexport import CSV_RESPONSES, csv_response
 from app.core.db import DbSession
 from app.core.http import mark_idempotent_replay
@@ -39,7 +40,8 @@ router = APIRouter(tags=["billing"])
 async def get_policies(session: DbSession) -> PoliciesOut:
     """计费/回收策略。公开;env 默认 + DB 覆盖,管理端在线调整。"""
     p = await get_runtime_config(session)
-    cfg = await get_runtime_config(session)
+    cfg = p
+    settings = get_settings()
     return PoliciesOut(
         disk_price_gb_month=p.disk_price_gb_month,
         disk_min_gb=p.disk_min_gb,
@@ -56,6 +58,8 @@ async def get_policies(session: DbSession) -> PoliciesOut:
         spot_grace_seconds=p.spot_grace_seconds,
         real_name_enabled=cfg.real_name_enabled,
         real_name_required_for_recharge=cfg.real_name_required_for_recharge,
+        currency=settings.platform_currency,
+        billing_timezone=settings.billing_timezone,
     )
 
 
