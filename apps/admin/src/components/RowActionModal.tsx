@@ -1,4 +1,4 @@
-/** 行级带表单动作弹窗(登记打款 / 开票共用):说明条 + 表单,校验 → 提交 → 成功提示 + onDone + 关闭。 */
+/** Row-level action modal with a form (shared by payout registration / invoice issue): note bar + form, validate → submit → success message + onDone + close. */
 
 import { Alert, App, Form, type FormInstance, Modal, Space } from "antd";
 import type { ReactNode } from "react";

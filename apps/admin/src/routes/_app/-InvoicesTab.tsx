@@ -1,4 +1,4 @@
-/** 发票 Tab:FilterBar(状态 / 账期,入 URL)+ 开具(主动作)/ 驳回(更多);操作列固定右且为最后一列。 */
+/** Invoices tab: FilterBar (status / period, in the URL) + issue (primary action) / reject (more); the action column is fixed right and last. */
 
 import { useQueryClient } from "@tanstack/react-query";
 import { Button, Form, Input, Modal, Select, Space, Table, Tag, Tooltip, Typography } from "antd";
@@ -35,7 +35,7 @@ import { tenantColumn } from "../../components/TenantLink";
 import { canWriteFinance, useAdminRole } from "../../stores/auth";
 import { PERIOD_RE, useFinanceFilters } from "./-financeFilters";
 
-/** 开票弹窗:填发票号;提交即站内信通知。 */
+/** Issue modal: enter the invoice number; submitting sends an in-app notification. */
 export function IssueInvoiceModal({
   target,
   onClose,

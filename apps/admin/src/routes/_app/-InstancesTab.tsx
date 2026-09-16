@@ -1,4 +1,4 @@
-/** 实例 Tab:全局实例表(状态 / 节点 / 名称检索入 URL)+ 强制停止(主动作)/ 强制回收(更多)。 */
+/** Instances tab: global instance table (status / node / name search in the URL) + force stop (primary action) / force reclaim (more). */
 
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, getRouteApi } from "@tanstack/react-router";

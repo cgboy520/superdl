@@ -1,4 +1,4 @@
-/** 原因必填的操作弹窗;confirm=false 时跳过二次确认。 */
+/** Action modal with a required reason; confirm=false skips the second confirmation. */
 
 import { fontSize, space } from "@superdl/ui";
 import { App, Form, Input, Modal, Space, Typography } from "antd";
@@ -15,22 +15,22 @@ interface Props {
   label: string;
   title: string;
   confirmText: string;
-  /** 目标标识(两步弹窗顶部回显) */
+  /** Target identifier (echoed at the top of the two-step modal) */
   target?: ReactNode;
-  /** 确认按钮标红。 */
+  /** Red confirm button. */
   danger?: boolean;
-  /** 触发按钮标红,默认跟随 danger。 */
+  /** Red trigger button, follows danger by default. */
   triggerDanger?: boolean;
   disabled?: boolean;
-  /** 禁用原因(tooltip) */
+  /** Disabled reason (tooltip) */
   disabledReason: string;
-  /** 触发按钮尺寸(默认 small) */
+  /** Trigger button size (default small) */
   size?: ButtonProps["size"];
-  /** 触发按钮形态(行内「更多」里用 link) */
+  /** Trigger button shape (link inside the inline "More") */
   type?: ButtonProps["type"];
-  /** 二次确认(默认开);恢复方向动作传 false,只填原因 */
+  /** Second confirmation (on by default); recovery-direction actions pass false, reason only */
   confirm?: boolean;
-  /** 返回非空字符串作成功提示,否则用通用文案。 */
+  /** A non-empty return value becomes the success message, otherwise the generic copy. */
   onSubmit: (reason: string) => Promise<string> | Promise<void>;
 }
 

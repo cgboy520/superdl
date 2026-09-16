@@ -1,4 +1,4 @@
-/** 节点页:注册记录、台账筛选、节点操作与 ?node= 详情抽屉。 */
+/** Nodes page: enrollments, ledger filters, node actions and the ?node= detail drawer. */
 
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -58,7 +58,7 @@ import { SwitchPoolModal } from "./-SwitchPoolModal";
 
 const NODE_STATUSES = ["Ready", "NotReady", "Cordoned", "Missing"] as const;
 type NodeStatus = (typeof NODE_STATUSES)[number];
-/** 池筛选里「未标注」的 URL 取值(与真实池标签不重名) */
+/** URL value of "unlabelled" in the pool filter (does not collide with real pool labels) */
 const POOL_UNLABELED = "unlabeled";
 
 export const Route = createFileRoute("/_app/nodes")({
@@ -73,7 +73,7 @@ export const Route = createFileRoute("/_app/nodes")({
   component: NodesPage,
 });
 
-/** 行内链接 / 按钮 / 勾选框自己处理点击,不再冒泡成「打开抽屉」 */
+/** Inline links / buttons / checkboxes handle their own clicks and no longer bubble into "open drawer" */
 function fromInteractive(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest("a, button, input, label") !== null;
 }

@@ -1,4 +1,4 @@
-/** 组件体检卡:状态、名称、主数字与两条事实;点击打开诊断抽屉。 */
+/** Component health card: state, name, headline figure and two facts; click opens the diagnosis drawer. */
 
 import { RightOutlined } from "@ant-design/icons";
 import { Link } from "@tanstack/react-router";
@@ -11,7 +11,7 @@ import { CopyField, Mono, StatusTag } from "@superdl/ui/components";
 import type { ClusterComponent, ComponentFact } from "../../api";
 import { COMPONENT_LABEL, FACT_LABEL } from "./-componentMeta";
 
-/** 面板正面最多显示两条事实。 */
+/** At most two facts on the front of the panel. */
 const FACE_FACTS = 2;
 
 export function ComponentPanel({ component }: { component: ClusterComponent }) {
@@ -89,7 +89,7 @@ export function FactLine({ fact }: { fact: ComponentFact }) {
   );
 }
 
-/** 事实 label;后端出了前端还不认识的 key 就原样回显,不进 t()。 */
+/** Fact label; a key the frontend does not know yet is echoed raw, not through t(). */
 export function FactLabel({ factKey }: { factKey: string }) {
   const { t } = useTranslation(["admin", "shared"]);
   const key = metaOf(FACT_LABEL, factKey);

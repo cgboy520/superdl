@@ -1,11 +1,11 @@
-/** 固定条数截断表的「只显示最近 N 条」提示;游标分页表不用。 */
+/** "Only the latest N rows are shown" note for fixed-cap truncated tables; cursor-paginated tables do not use it. */
 
 import { fontSize, space } from "@superdl/ui";
 import { Space, Typography } from "antd";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-/** 固定列表截断条数。 */
+/** Fixed list cap. */
 export const LIST_CAPS = {
   invoices: 200,
   deletions: 200,

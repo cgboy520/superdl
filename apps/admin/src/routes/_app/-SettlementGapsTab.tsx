@@ -1,4 +1,4 @@
-/** 结算缺口:FilterBar(类型 / 只看未核销,入 URL ?g_kind= / ?g_open=)+ 重放补结 / 人工核销(告警 superdl_settlement_gap_unresolved)。 */
+/** Settlement gaps: FilterBar (kind / unresolved only, in the URL ?g_kind= / ?g_open=) + replay settlement / manual write-off (alert superdl_settlement_gap_unresolved). */
 
 import { controlWidth, flattenPages, formatDateTime, space, useUrlFilters } from "@superdl/ui";
 import { CursorTable, EmptyState, FilterBar, GatedButton, RowActions, useConfirm } from "@superdl/ui/components";

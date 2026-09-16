@@ -1,6 +1,6 @@
 /**
- * 平台配置:左侧分组导航 + 顶部配置风险告警 + 右侧分组表单;安全策略页是开关行。
- * 仅超级管理员可读写;env 为默认值层,DB 覆盖即时生效。secret 只显示「已配置 + 尾 4 位」,留空 = 不变。
+ * Platform configuration: grouped navigation on the left + configuration risk alerts on top + grouped forms on the right; the security policy page is switch rows.
+ * Super admin read/write only; env is the default layer, DB overrides take effect at once. Secrets show only "configured + last 4"; blank = unchanged.
  */
 
 import { useQueryClient } from "@tanstack/react-query";

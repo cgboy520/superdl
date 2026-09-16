@@ -1,10 +1,10 @@
-/** 服务路由 q/user_id/released 白名单与 URL 往返测试。 */
+/** Service route q/user_id/released allow-lists and URL round trip. */
 import { describe, expect, it } from "vitest";
 
 import { servicesValidateSearch } from "./services";
 
 describe("services validateSearch", () => {
-  it("合法值原样保留,released 只认 1", () => {
+  it("valid values kept as-is, released accepts only 1", () => {
     expect(servicesValidateSearch({ q: "svc-ab", user_id: "7", released: "1" })).toEqual({
       q: "svc-ab",
       user_id: 7,
@@ -12,7 +12,7 @@ describe("services validateSearch", () => {
     });
   });
 
-  it("空 q、非正整数 user_id、其它 released 值与未知参数一律剥离", () => {
+  it("blank q, non-positive-integer user_id, other released values and unknown parameters are all stripped", () => {
     expect(servicesValidateSearch({ q: "  ", user_id: "0", released: "yes", foo: "bar" })).toEqual({});
     expect(servicesValidateSearch({ user_id: "abc" })).toEqual({});
   });

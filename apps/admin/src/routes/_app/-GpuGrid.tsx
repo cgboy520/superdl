@@ -1,4 +1,4 @@
-/** 节点 GPU 热力格:每卡利用率 / 显存 / 温度色块与图例。 */
+/** Node GPU heat grid: per-card utilisation / VRAM / temperature tiles and legend. */
 
 import { Space, Tooltip, Typography } from "antd";
 import { useTranslation } from "react-i18next";
@@ -28,7 +28,7 @@ export function last(points?: [number, number][] | null): number | null {
   return p ? p[1] : null;
 }
 
-/** 每卡热力格:有指标按 util 染色(tooltip 给 util/显存/温度);断源回落「已租/空闲」两态,断源空闲格斜纹底。 */
+/** Per-card tile: coloured by util when metrics exist (tooltip gives util/VRAM/temperature); without a source it falls back to the two states "rented / idle", idle tiles hatched. */
 export function GpuGrid({ node, metrics }: { node: NodeRow; metrics: NodeMetricsOut | undefined }) {
   const { t } = useTranslation();
   const byIndex = new Map((metrics?.gpus ?? []).map((g) => [g.index, g]));

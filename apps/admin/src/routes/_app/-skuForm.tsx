@@ -1,4 +1,4 @@
-/** SKU 表单事实源:表单值类型、档位 ↔ 池映射、CPU 规格清零字段、容量预警文案。 */
+/** SKU form source of truth: form value types, tier ↔ pool mapping, CPU spec zeroed fields, capacity warning copy. */
 
 import { Form, type FormInstance } from "antd";
 import { useTranslation } from "react-i18next";
@@ -13,7 +13,7 @@ import {
   type SkuUpdate,
 } from "../../api";
 
-/** 订阅表单字段,返回类型包含未初始化时的 undefined。 */
+/** Subscribe to form fields; the return type includes undefined before initialisation. */
 export function useWatchSkuField<K extends keyof SkuFormValues>(
   form: FormInstance<SkuFormValues>,
   name: K,
@@ -24,7 +24,7 @@ export function useWatchSkuField<K extends keyof SkuFormValues>(
 export interface SkuFormValues {
   name: string;
   gpu_model: string;
-  /** 表单只选展示档位,提交时派生 tier 与 pool_label;tier 不做表单字段。 */
+  /** The form only picks the display tier; tier and pool_label are derived on submit, tier is not a form field. */
   variant: SkuVariant;
   mig_profile?: string | null;
   gpu_cores_pct: number;
@@ -37,11 +37,11 @@ export interface SkuFormValues {
   price_hourly: string;
   max_gpus_per_instance: number;
   cuda_max?: string | null;
-  /** 是否接受包周期下单(与档位正交) */
+  /** Accepts subscription orders (orthogonal to the tier) */
   period_enabled: boolean;
-  /** 是否上竞价档(与档位正交) */
+  /** Listed in the spot tier (orthogonal to the tier) */
   spot_enabled: boolean;
-  /** 编辑必填(入审计);新建端点不接受 */
+  /** Required when editing (audited); the create endpoint rejects it */
   reason?: string;
 }
 
@@ -58,7 +58,7 @@ export const POOL_VARIANTS: Record<string, SkuVariant[]> = {
   cpu: ["cpu"],
 };
 export const ALL_VARIANTS = Object.keys(VARIANT_SPEC) as SkuVariant[];
-/** CPU 规格提交时补零的 GPU 字段(镜像后端 catalog.cpu_spec_error);超卖钉成 1。 */
+/** GPU fields zeroed when submitting a CPU spec (mirrors the backend catalog.cpu_spec_error); oversell pinned to 1. */
 export const CPU_ZERO_FIELDS = {
   gpu_model: "",
   mig_profile: null,
@@ -68,7 +68,7 @@ export const CPU_ZERO_FIELDS = {
   oversell_cores: 1,
 } as const;
 
-/** 「从集群资源创建」的推荐填表值:只有 HAMi 按算力份额折规格(pct%),整卡与 MIG 拿整份;agg 不带 vcpu/mem 时不写。 */
+/** Recommended values for "create from cluster resources": only HAMi scales the spec by compute share (pct%), whole cards and MIG take a full share; vcpu/mem are not written when agg lacks them. */
 export function recommendFields(agg: GpuModelAggregate, variant: SkuVariant, pct: number): Partial<SkuFormValues> {
   const shared = variant === "shared_hami";
   const factor = shared ? pct / 100 : 1;
@@ -82,7 +82,7 @@ export function recommendFields(agg: GpuModelAggregate, variant: SkuVariant, pct
   };
 }
 
-/** 提交负载派生:档位 →(tier, 池)(只有 cpu 档的池可选,其余由档位派生);CPU 档 GPU 字段补零;新建端点不接受 reason,编辑不带 gpu_model(型号不可改)。 */
+/** Submit payload derivation: tier → (tier, pool) (only the cpu tier lets the pool be chosen, the rest derive from the tier); CPU tier zeroes the GPU fields; the create endpoint rejects reason, edit omits gpu_model (the model cannot change). */
 export function buildSkuPayload(
   values: SkuFormValues,
   editing: SkuAdminOut | "new" | null,
@@ -122,7 +122,7 @@ export function buildSkuPayload(
 
 export type TFn = ReturnType<typeof useTranslation<["admin", "shared"]>>["t"];
 
-/** 告警 params 是后端自由 map({[key]: unknown});只接受字符串/数字,其余按缺失处理 */
+/** Alert params is a free backend map ({[key]: unknown}); accept strings/numbers only, treat the rest as missing */
 const strParam = (v: unknown): string => (typeof v === "string" || typeof v === "number" ? String(v) : "");
 
 export function warnText(t: TFn, w: CapacityWarning): string {

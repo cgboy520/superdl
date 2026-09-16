@@ -1,4 +1,4 @@
-/** 管理员账号:建号 / 改角色 / 停用 / 重置密码 + 自助改密。 */
+/** Admin accounts: create / change role / disable / reset password + self-service password change. */
 
 import { adminColors, controlWidth, fontSize, formatDateTime, layout, space } from "@superdl/ui";
 import {

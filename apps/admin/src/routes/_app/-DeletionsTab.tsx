@@ -1,4 +1,4 @@
-/** 注销申请 Tab:状态筛选入 URL(?dstatus=)+ 执行(L3,主动作)/ 驳回(ReasonAction,更多)。 */
+/** Deletion requests tab: status filter in the URL (?dstatus=) + execute (L3, primary action) / reject (ReasonAction, more). */
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, getRouteApi } from "@tanstack/react-router";
@@ -37,7 +37,7 @@ import { useAdminRole } from "../../stores/auth";
 
 const routeApi = getRouteApi("/_app/tenants");
 
-/** 注销申请:列表 + 处理。执行仅超管;校验计数全 0 且过冷静期才可点。 */
+/** Deletion requests: list + handling. Execute is super admin only; clickable only when every check count is 0 and the cooling-off period has passed. */
 export function DeletionsTab() {
   const { t } = useTranslation(["admin", "shared"]);
   const { message } = App.useApp();

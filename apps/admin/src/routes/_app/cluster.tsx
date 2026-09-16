@@ -1,4 +1,4 @@
-/** 集群页:连接状态、配置就绪、组件体检与池分布。 */
+/** Cluster page: connection state, configuration readiness, component health and pool distribution. */
 
 import { CheckCircleFilled, CloseCircleFilled } from "@ant-design/icons";
 import { COMPONENT_HEALTH_ORDER, adminColors, formatDateTime, isComponentAttention, metaOf, space } from "@superdl/ui";
@@ -19,7 +19,7 @@ export const Route = createFileRoute("/_app/cluster")({
   component: ClusterPage,
 });
 
-/** 故障 → 降级 → 未启用 → 未知 → 正常;同态内保持后端给的链路顺序。 */
+/** failed → degraded → disabled → unknown → healthy; within a state keep the chain order given by the backend. */
 function byAttention(a: ClusterComponent, b: ClusterComponent): number {
   const rank = (c: ClusterComponent) => COMPONENT_HEALTH_ORDER.indexOf(c.state);
   return rank(a) - rank(b);

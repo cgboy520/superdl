@@ -1,4 +1,4 @@
-/** 侧栏菜单可见性(与后端 require_roles 对齐);key 收窄到 MenuKey。分组(总览 / 资源 / 业务 / 治理)是侧栏与命令面板共用的事实源。 */
+/** Sidebar menu visibility (aligned with the backend require_roles); keys narrowed to MenuKey. The groups (overview / resources / business / governance) are the source of truth shared by the sidebar and the command palette. */
 
 import {
   AlertOutlined,
@@ -21,7 +21,7 @@ export const ALL_ROLES = ["admin", "ops", "finance", "readonly"] as const;
 
 export type Role = (typeof ALL_ROLES)[number];
 
-/** 角色 → 文案键(admin.json roles.*) */
+/** Role → locale key (admin.json roles.*) */
 export const ROLE_LABEL_KEY = {
   admin: "roles.admin",
   ops: "roles.ops",
@@ -52,7 +52,7 @@ export function canSeeMenu(key: MenuKey, role: string): boolean {
   return (MENU_ROLES[key] as readonly string[]).includes(role);
 }
 
-/** 菜单分组:overview 单项不出组标题;其余三组出标题。 */
+/** Menu groups: the single overview item has no group title; the other three groups do. */
 export const MENU_GROUP_LABEL_KEY = {
   overview: "menu.groupOverview",
   resources: "menu.groupResources",
@@ -62,7 +62,7 @@ export const MENU_GROUP_LABEL_KEY = {
 
 export type MenuGroup = keyof typeof MENU_GROUP_LABEL_KEY;
 
-/** 侧栏菜单项:_app.tsx 侧栏与 CommandPalette 共用;icon 存组件引用;group 决定侧栏分组与命令面板分组。 */
+/** Sidebar menu items: shared by the _app.tsx sidebar and the CommandPalette; icon holds the component reference; group decides the sidebar and command palette grouping. */
 export const MENU = [
   { key: "/", icon: DashboardOutlined, labelKey: "menu.overview", group: "overview" },
   { key: "/nodes", icon: ClusterOutlined, labelKey: "menu.nodes", group: "resources" },
@@ -86,5 +86,5 @@ export const MENU = [
 
 export type MenuItem = (typeof MENU)[number];
 
-/** 分组顺序(侧栏渲染顺序) */
+/** Group order (sidebar rendering order) */
 export const MENU_GROUP_ORDER: readonly MenuGroup[] = ["overview", "resources", "business", "governance"];

@@ -1,4 +1,4 @@
-/** 审计检索:FilterBar(操作者类型 / ID / 关键字 / 分钟级时间窗 / limit)+ 游标翻页。detail(JSONB)承载原因、变更前后值与金额。 */
+/** Audit search: FilterBar (actor type / ID / keyword / minute-level time window / limit) + cursor paging. detail (JSONB) carries the reason, before/after values and amounts. */
 
 import { adminColors, controlWidth, fontSize, formatDateTime, useCsvExport } from "@superdl/ui";
 import { EmptyState, FilterBar, LoadMore, TableErrorEmpty } from "@superdl/ui/components";
@@ -10,7 +10,7 @@ import { useTranslation } from "react-i18next";
 
 import { AUDIT_DEFAULT_LIMIT, type AuditRow, exportAuditCsv, isApiError, useAuditLog } from "../api";
 
-/** detail 摘要:优先显示 reason,其次 before→after,最后回落原始 JSON。 */
+/** detail summary: reason first, then before→after, finally the raw JSON. */
 function detailSummary(detail: Record<string, unknown> | null | undefined): string {
   if (!detail || Object.keys(detail).length === 0) return "";
   const parts: string[] = [];
@@ -28,7 +28,7 @@ export interface AuditFilters {
   actor_type?: string;
   actor_id?: string;
   q?: string;
-  /** 时间窗(ISO,分钟级) */
+  /** Time window (ISO, minute level) */
   since?: string;
   until?: string;
   limit?: number;
@@ -38,9 +38,9 @@ export function AuditTable({
   initial,
   onCommit,
 }: {
-  /** 路由 search 预筛;变化时回流进筛选框。 */
+  /** Route search prefilter; flows back into the filter box when it changes. */
   initial?: AuditFilters;
-  /** 筛选提交后回写 URL;不传则纯本地状态 */
+  /** Write the URL back after a filter submit; omitted = purely local state */
   onCommit?: (filters: AuditFilters) => void;
 }) {
   const { t } = useTranslation(["admin", "shared"]);

@@ -1,4 +1,4 @@
-/** 租户 Tab:FilterBar(检索落审计 / 状态,入 URL)+ 注册排序 + 行内账单·冻结·解冻 + 租户抽屉(?tenant=)。 */
+/** Tenants tab: FilterBar (search is audited / status, in the URL) + registration sort + inline bills · freeze · unfreeze + tenant drawer (?tenant=). */
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, getRouteApi } from "@tanstack/react-router";

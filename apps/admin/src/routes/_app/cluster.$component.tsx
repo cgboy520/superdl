@@ -1,4 +1,4 @@
-/** 集群页的组件诊断抽屉子路由(/cluster/<key>)。 */
+/** Component diagnosis drawer child route of the cluster page (/cluster/<key>). */
 
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router";
 import { Drawer } from "antd";

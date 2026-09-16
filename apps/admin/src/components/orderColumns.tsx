@@ -1,4 +1,4 @@
-/** 充值订单列(两处共用);withTenant 决定是否带「租户」列,actions 决定是否带行内动作列(核验 + 更多 ▾ 补单)。 */
+/** Recharge order columns (shared by two places); withTenant adds the "Tenant" column, actions adds the inline action column (verify + more ▾ backfill). */
 
 import { formatDateTime, metaOf, orderStatusMap, paymentChannelMap } from "@superdl/ui";
 import { GatedButton, Mono, RowActions } from "@superdl/ui/components";
@@ -16,7 +16,7 @@ export function useOrderColumns({
   actions,
 }: {
   withTenant: boolean;
-  /** 传入即出操作列(固定右);缺省 = 只读列表 */
+  /** Passing it renders the action column (fixed right); default = read-only list */
   actions?: OrderActions;
 }): TableColumnsType<OrderRow> {
   const { t } = useTranslation(["admin", "shared"]);

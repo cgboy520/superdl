@@ -1,5 +1,5 @@
-/** 充值订单的渠道核验与补单(充值流水行内与异常清单共用):核验结果对话框(订单状态走映射表,渠道原值 Mono)+ 补单原因弹窗。
- *  核验与补单都只给 finance / admin(后端同口径),其余角色由调用方用 GatedButton 灰置。 */
+/** Channel verification and backfill of recharge orders (shared by the recharge ledger rows and the anomaly list): verification result dialog (order status via the mapping table, raw channel value in Mono) + backfill reason modal.
+ *  Verification and backfill are finance / admin only (same rule as the backend); the caller greys other roles with GatedButton. */
 
 import { adminColors, idemKeyOf, orderStatusMap, space } from "@superdl/ui";
 import { useApiErrorText, useFormat } from "@superdl/ui";
@@ -12,13 +12,13 @@ import { useBackfillOrder, useVerifyOrder } from "../api";
 import { canWriteFinance, useAdminRole } from "../stores/auth";
 
 export interface OrderActions {
-  /** 渠道核验:结果进对话框;渠道已支付而订单未入账时对话框直接给「补单」 */
+  /** Channel verification: the result goes into a dialog; when the channel says paid but the order is not credited the dialog offers "Backfill" directly */
   verify: (orderNo: string) => void;
   openBackfill: (orderNo: string) => void;
-  /** finance / admin 才可写 */
+  /** finance / admin may write */
   writable: boolean;
   verifying: boolean;
-  /** 补单弹窗,调用方渲染一次 */
+  /** Backfill modal, rendered once by the caller */
   modals: ReactNode;
 }
 

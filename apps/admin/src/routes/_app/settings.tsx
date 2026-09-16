@@ -1,4 +1,4 @@
-/** 系统设置:策略参数(env 默认 + DB 覆盖,保存需原因)/ 公告发布(群发 active 租户)/ 法务文档 / 管理员账号。 */
+/** System settings: policy parameters (env defaults + DB overrides, saving needs a reason) / announcements (broadcast to active tenants) / legal documents / admin accounts. */
 
 import {
   adminColors,
@@ -44,7 +44,7 @@ export const Route = createFileRoute("/_app/settings")({
   component: SettingsPage,
 });
 
-/** 策略参数:值是 locale 键(settings.policy.*),渲染时 t() 查表。 */
+/** Policy parameters: values are locale keys (settings.policy.*), looked up with t() when rendering. */
 const POLICY_LABELS = {
   recharge_min: {
     label: "settings.policy.recharge_min.label",
@@ -158,7 +158,7 @@ const POLICY_LABELS = {
   },
 } as const satisfies Record<string, { label: string; unit: string; hint?: string }>;
 type PolicyMeta = (typeof POLICY_LABELS)[keyof typeof POLICY_LABELS];
-/** 配置项的统一形状,含可选 hint。 */
+/** Unified shape of a configuration item, with an optional hint. */
 interface PolicyEntry {
   label: PolicyMeta["label"];
   unit: PolicyMeta["unit"];
@@ -172,7 +172,7 @@ function PoliciesTab() {
   const errText = useApiErrorText();
   const { message } = App.useApp();
   const role = useAdminRole();
-  /** PUT /policies 后端仅 admin。 */
+  /** PUT /policies is admin only on the backend. */
   const writable = role === "admin";
   const qc = useQueryClient();
   const { data, queryKey, isLoading, isError, refetch } = useAdminPolicies();

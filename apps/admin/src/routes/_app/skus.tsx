@@ -1,4 +1,4 @@
-/** SKU 页:URL 筛选、新建/编辑抽屉与上下架操作。 */
+/** SKU page: URL filters, create/edit drawer and list/delist actions. */
 
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
@@ -28,17 +28,17 @@ import { useAdminRole } from "../../stores/auth";
 import { SkuDrawerForm } from "./-SkuDrawerForm";
 
 export interface SkusSearch {
-  /** 卡型(精确匹配 gpu_model) */
+  /** GPU model (exact gpu_model match) */
   model?: string;
-  /** 档位(skuTierMap 键) */
+  /** Tier (skuTierMap key) */
   tier?: SkuVariant;
-  /** 在售筛选:on = 在售,off = 已下架,缺省 = 全部 */
+  /** On-sale filter: on = on sale, off = delisted, omitted = all */
   sale?: "on" | "off";
-  /** 名称检索(子串,大小写不敏感) */
+  /** Name search (substring, case-insensitive) */
   q?: string;
 }
 
-/** 全部筛选项客户端生效(SKU 一次取全量),白名单外与空值一律剥离。 */
+/** All filters apply client-side (SKUs are fetched whole); values outside the allow-list and blanks are stripped. */
 export function skusValidateSearch(search: Record<string, unknown>): SkusSearch {
   const out: SkusSearch = {};
   if (typeof search.model === "string" && search.model.trim()) out.model = search.model;
@@ -60,7 +60,7 @@ function SkusPage() {
   const { message } = App.useApp();
   const confirm = useConfirm();
   const role = useAdminRole();
-  /** SKU 增改(含改价 / 上下架)后端仅 admin。 */
+  /** SKU create/update (repricing / listing included) is admin only on the backend. */
   const writable = role === "admin";
   const qc = useQueryClient();
   const { data: skus, queryKey, isLoading, isError, error, refetch } = useAdminSkus();

@@ -48,7 +48,6 @@ REPO_CJK_EXEMPT=(
 REPO_CJK_ALLOW=(
   ".github/"
   "CLAUDE.md"
-  "apps/admin/src/"
   "deploy/"
   "scripts/"
 )

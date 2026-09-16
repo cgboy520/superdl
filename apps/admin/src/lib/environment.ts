@@ -1,4 +1,4 @@
-/** 环境徽标使用 Vite 构建模式。 */
+/** The environment badge uses the Vite build mode. */
 
 export type AdminEnvironment = "prod" | "nonprod";
 

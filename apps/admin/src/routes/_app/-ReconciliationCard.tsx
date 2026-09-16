@@ -1,4 +1,4 @@
-/** 财务对账卡:事件流水 vs 指标估算的差异,超阈值给 warning;对账日期由财务页的 ?day= 持有。 */
+/** Finance reconciliation card: event ledger vs metric estimate difference, warning above the threshold; the reconciliation day is held by the finance page's ?day=. */
 
 import { Link } from "@tanstack/react-router";
 import { Button, Card, Col, DatePicker, Row, Space, Statistic, Table, Tag } from "antd";
@@ -18,7 +18,7 @@ export function ReconciliationCard({
   day: dayParam,
   onDayChange,
 }: {
-  /** ?day=(YYYY-MM-DD);缺省 = 今天(默认值不入 URL) */
+  /** ?day= (YYYY-MM-DD); omitted = today (the default stays out of the URL) */
   day?: string;
   onDayChange: (day: string) => void;
 }) {

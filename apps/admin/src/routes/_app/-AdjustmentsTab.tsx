@@ -1,4 +1,4 @@
-/** 调账 Tab:FilterBar(状态 / 租户 id / 发起日,入 URL)+ 发起(草稿)+ 双人复核(批准需核对勾选,驳回需理由;复核列固定右)。 */
+/** Adjustments tab: FilterBar (status / tenant id / creation day, in the URL) + create (draft) + two-person review (approval needs the check tick, rejection needs a reason; review column fixed right). */
 
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -56,7 +56,7 @@ import { useFinanceFilters } from "./-financeFilters";
 
 export const ADJUST_MAX_ABS = 100000;
 
-/** 复核确认框:租户/当前余额/调账后余额/发起人/原因;驳回必填理由(入审计)。 */
+/** Review confirmation: tenant / current balance / balance after / initiator / reason; rejection requires a reason (audited). */
 export function ReviewConfirmModal({
   target,
   onClose,

@@ -1,4 +1,4 @@
-/** 切池弹窗:填写目标池与原因,二次确认后提交。 */
+/** Pool switch modal: target pool and reason, submitted after a second confirmation. */
 
 import { Alert, App, Button, Form, Input, Modal, Select, Space, Typography } from "antd";
 import { useTranslation } from "react-i18next";
@@ -15,24 +15,24 @@ interface FormValues {
   reason: string;
 }
 
-/** 当前池取期望池优先(切换中时 pool_label 还是旧值)。 */
+/** The current pool prefers the desired pool (pool_label still holds the old value mid-switch). */
 export function currentPool(node: NodeRow): string {
   return node.desired_pool || node.pool_label || "";
 }
 
-/** 节点是否参与切池:已打标的带卡节点;观测卡数因目标池组件没起来掉到 0 时,只要还在 GPU 池里就算。 */
+/** Whether the node takes part in pool switching: labelled nodes with cards; when the observed card count drops to 0 because the target pool's component is down, being in a GPU pool still counts. */
 export function inSwitchablePool(node: NodeRow): boolean {
   const from = currentPool(node);
   if (!from || from === "cpu") return false;
   return node.gpu_total > 0 || (SWITCHABLE_POOLS as readonly string[]).includes(from);
 }
 
-/** 能否切池:参与切池,且机型至少还剩一个可选目标池。 */
+/** Switchable: takes part in switching and the model still has at least one selectable target pool. */
 export function canSwitchPool(node: NodeRow): boolean {
   return inSwitchablePool(node) && switchTargets(node).some((target) => !target.disabled);
 }
 
-/** 排除当前池;后端判定不支持 MIG 切分的禁用 mig,不支持整卡直通的禁用 kata。 */
+/** Exclude the current pool; models the backend marks as not MIG-capable disable mig, not passthrough-capable disable kata. */
 export function switchTargets(node: NodeRow): { pool: SwitchablePool; disabled: boolean }[] {
   const blockedPools = new Set<SwitchablePool>();
   if (!node.supports_mig) blockedPools.add("mig");
@@ -49,7 +49,7 @@ export function SwitchPoolModal({
   onClose,
   onDone,
 }: {
-  /** undefined = 关闭 */
+  /** undefined = closed */
   node: NodeRow | undefined;
   onClose: () => void;
   onDone: () => void;
@@ -78,7 +78,7 @@ export function SwitchPoolModal({
 
   if (!node) return null;
   const from = currentPool(node);
-  // 未识别机型在接口里是占位 "GPU"(router_nodes:gpu_model or "GPU"),回落到原始探测串
+  // an unrecognised model is the placeholder "GPU" in the API (router_nodes: gpu_model or "GPU"); fall back to the raw probe string
   const model =
     node.gpu_model && node.gpu_model !== "GPU" ? node.gpu_model : node.gpu_model_raw || t("nodes.unrecognizedTag");
   const blockedReason: Partial<Record<SwitchablePool, string>> = {

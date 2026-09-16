@@ -1,4 +1,4 @@
-/** 法务文档 Tab:doc_key × locale 状态格 + 左编辑右预览 + 版本历史;写仅 admin;发布确认带行级 diff 统计。 */
+/** Legal documents tab: doc_key × locale status grid + editor left, preview right + version history; write is admin only; publish confirmation carries line-level diff counts. */
 
 import { adminColors, formatDateTime, legalDocStatusMap, space, useApiErrorText, useFormDraft } from "@superdl/ui";
 import { DataErrorAlert, GatedButton, KeyValue, LegalMarkdown, TableErrorEmpty } from "@superdl/ui/components";
@@ -26,7 +26,7 @@ import { useAdminRole } from "../../stores/auth";
 const DOC_KEYS = ["terms", "privacy", "deletion_notice"] as const;
 const LOCALES: readonly LegalLocale[] = ["zh-CN", "en-US"];
 
-/** 行级 diff 统计(LCS):+added/−removed。 */
+/** Line-level diff counts (LCS): +added/−removed. */
 function diffStats(oldText: string, newText: string): { added: number; removed: number } {
   const a = oldText.split("\n");
   const b = newText.split("\n");

@@ -1,4 +1,4 @@
-/** 节点抽屉:节点信息、操作、GPU 热力格与历史指标。 */
+/** Node drawer: node facts, actions, GPU heat grid and historical metrics. */
 
 import { Link } from "@tanstack/react-router";
 import { Card, Drawer, Segmented, Space, Tag, Tooltip } from "antd";
@@ -16,19 +16,19 @@ import { GpuGrid } from "./-GpuGrid";
 import { canSwitchPool, inSwitchablePool } from "./-SwitchPoolModal";
 import { NodeMetricsPanel } from "./-NodeMetricsPanel";
 
-/** 封锁 / 解封提交(经 outbox);反馈与失效由页面处理 */
+/** Cordon / uncordon submit (through the outbox); feedback and invalidation handled by the page */
 export type CordonFn = (nodeName: string, on: boolean, reason: string) => Promise<void>;
 
 export function isUnlabeled(n: NodeRow): boolean {
   return n.unlabeled || !n.pool_label;
 }
 
-/** 切池进行中:期望池非空且与自声明池不同(标签还没收敛到位)。 */
+/** Pool switch in progress: desired pool set and different from the self-declared pool (labels not yet converged). */
 export function isSwitching(n: NodeRow): boolean {
   return !!n.desired_pool && n.desired_pool !== n.pool_label;
 }
 
-/** 切池中显示「旧 → 新」,未打标红标,其余青标。 */
+/** During a switch show "old → new"; unlabelled in red, the rest in cyan. */
 export function PoolTag({ node }: { node: NodeRow }) {
   const { t } = useTranslation();
   if (isSwitching(node)) {
@@ -41,7 +41,7 @@ export function PoolTag({ node }: { node: NodeRow }) {
   );
 }
 
-/** GPU 型号 × 数量;未识别型号 / 型号标签未同步各带标记。 */
+/** GPU model × count; unrecognised models / unsynced model labels each carry a marker. */
 export function GpuModelCell({ node }: { node: NodeRow }) {
   const { t } = useTranslation();
   const unrecognized = node.gpu_model === "GPU" && !!node.gpu_model_raw;
@@ -58,7 +58,7 @@ export function GpuModelCell({ node }: { node: NodeRow }) {
   );
 }
 
-/** 未释放实例数(含已关机);非零时链接到该节点的实例列表。 */
+/** Unreleased instance count (stopped included); non-zero links to the node's instance list. */
 export function InstancesCell({ node }: { node: NodeRow }) {
   const n = activeInstances(node);
   if (n === 0) return 0;
@@ -69,7 +69,7 @@ export function InstancesCell({ node }: { node: NodeRow }) {
   );
 }
 
-/** 相对时间,hover 给绝对时间;空 = 尚无台账行。 */
+/** Relative time, absolute time on hover; empty = no ledger row yet. */
 export function LastSeenCell({ value }: { value: string | null | undefined }) {
   if (!value) return "—";
   return (
@@ -79,20 +79,20 @@ export function LastSeenCell({ value }: { value: string | null | undefined }) {
   );
 }
 
-/** 节点上未释放实例数(含已关机):切池与退役的共同前置。 */
+/** Unreleased instances on the node (stopped included): the shared precondition of pool switch and decommission. */
 export function activeInstances(n: NodeRow): number {
   return n.active_instances ?? 0;
 }
 
-/** 切池 / 退役的前置不满足时的灰置原因;undefined = 可用。 */
+/** Greyed reason when the pool-switch / decommission precondition fails; undefined = available. */
 function blockedReason(node: NodeRow, writable: boolean, t: TFunction): string | undefined {
   if (!writable) return t("nodes.readonlyNoOp");
   if (activeInstances(node) > 0) return t("nodes.nodeBusy", { count: activeInstances(node) });
   return undefined;
 }
 
-/** 封锁 / 解封(ReasonAction;解封是恢复方向,只填原因不做二次确认)+ 切换池 + 更多(驱逐占位 / 退役);
- *  表格行 small、抽屉头 middle。 */
+/** Cordon / uncordon (ReasonAction; uncordon is the recovery direction, reason only without a second confirmation) + switch pool + more (evict placeholder / decommission);
+ *  small in table rows, middle in the drawer head. */
 export function NodeActions({
   node,
   writable,
@@ -212,7 +212,7 @@ function NodeHeader({
   );
 }
 
-/** 抽屉体:时间范围同时喂热力格(取末样本)与曲线;随抽屉销毁重置。 */
+/** Drawer body: the time range feeds both the heat grid (last sample) and the curves; reset when the drawer is destroyed. */
 function NodeDrawerBody({ node }: { node: NodeRow }) {
   const { t } = useTranslation();
   const [range, setRange] = useState("1h");
@@ -244,7 +244,7 @@ export function NodeDrawer({
   onSwitchPool,
   onDecommission,
 }: {
-  /** undefined = 关闭 */
+  /** undefined = closed */
   node: NodeRow | undefined;
   onClose: () => void;
   writable: boolean;
