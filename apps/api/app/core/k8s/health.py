@@ -1,4 +1,4 @@
-"""从 real/fake 探测行组装组件状态、面板事实和对象明细。"""
+"""Assemble component states, panel facts and object details from real/fake probe rows."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
@@ -17,7 +17,8 @@ MAX_OBJECTS = 20
 
 @dataclass(frozen=True)
 class WorkloadRow:
-    """工作负载的就绪事实;desired=0 可表示未找到对象或期望副本数为零。"""
+    """Readiness facts of a workload; desired=0 may mean no object found or zero desired
+    replicas."""
 
     name: str
     namespace: str = ""
@@ -29,7 +30,7 @@ class WorkloadRow:
 
 @dataclass(frozen=True)
 class NodeRow:
-    """一个 Node 的调度事实。"""
+    """Scheduling facts of one Node."""
 
     name: str
     pool: str = ""
@@ -41,7 +42,7 @@ class NodeRow:
 
 @dataclass(frozen=True)
 class ListenerRow:
-    """Gateway 的一个 listener。attached 是 status 里的 attachedRoutes。"""
+    """One Gateway listener. attached is attachedRoutes from status."""
 
     name: str
     port: int = 0
@@ -73,7 +74,8 @@ def _ratio(ready: int, desired: int) -> str:
 
 
 def rollout_state(ready: int, desired: int) -> ComponentState:
-    """desired 或 ready 非正时为 down;ready 达到 desired 为 ok,否则为 degraded。"""
+    """down when desired or ready is non-positive; ok when ready reaches desired, otherwise
+    degraded."""
     if desired <= 0 or ready <= 0:
         return "down"
     return "ok" if ready >= desired else "degraded"
@@ -92,7 +94,7 @@ def _totals(rows: Sequence[WorkloadRow]) -> tuple[int, int]:
 
 
 def workload_objects(rows: Sequence[WorkloadRow]) -> tuple[ComponentObject, ...]:
-    """对象表:未就绪的排前面,超出上限截断。"""
+    """Object table: unready first, truncated at the cap."""
     ordered = sorted(rows, key=lambda r: (r.desired > 0 and r.ready >= r.desired, r.name))
     return tuple(
         ComponentObject(
@@ -116,7 +118,7 @@ def _first_reason(rows: Sequence[WorkloadRow]) -> str:
 
 
 def nodes_facts(rows: Sequence[NodeRow], pools_ready: dict[str, int]) -> ComponentFacts:
-    """判据:每个 Node 的 Ready=True 且未被 cordon。"""
+    """Criterion: every Node has Ready=True and is not cordoned."""
     total = len(rows)
     ready = sum(1 for r in rows if r.ready and r.schedulable)
     cordoned = sum(1 for r in rows if r.schedulable is False)
@@ -162,7 +164,8 @@ def _node_status(r: NodeRow) -> str:
 def hami_facts(
     scheduler: WorkloadRow, device_plugin: WorkloadRow, allocatable_gpu: int
 ) -> ComponentFacts:
-    """按 scheduler 副本就绪比判状态;其为 ok 时再采用 device-plugin 的状态。"""
+    """Judged by the scheduler replica readiness ratio; when ok, the device-plugin state is
+    adopted."""
     sched_state = rollout_state(scheduler.ready, scheduler.desired)
     plugin_state = rollout_state(device_plugin.ready, device_plugin.desired)
     state = sched_state if sched_state != "ok" else _worst(plugin_state, "ok")
@@ -189,7 +192,7 @@ def _tone(state: ComponentState) -> FactTone:
 
 
 def gpu_operator_facts(operands: Sequence[WorkloadRow], driver_version: str) -> ComponentFacts:
-    """按 operand 汇总就绪数与期望数判状态;无 operand 为 down。"""
+    """Judged by ready vs desired summed over the operands; no operand = down."""
     ready, desired = _totals(operands)
     state = rollout_state(ready, desired) if operands else "down"
     return ComponentFacts(
@@ -205,7 +208,7 @@ def gpu_operator_facts(operands: Sequence[WorkloadRow], driver_version: str) -> 
 
 
 def dcgm_facts(exporters: Sequence[WorkloadRow]) -> ComponentFacts:
-    """按 exporter 汇总就绪数与期望数判状态;无 exporter 为 down。"""
+    """Judged by ready vs desired summed over the exporters; no exporter = down."""
     ready, desired = _totals(exporters)
     state = rollout_state(ready, desired) if exporters else "down"
     image = next((r.image for r in exporters if r.image), "")
@@ -223,7 +226,7 @@ def dcgm_facts(exporters: Sequence[WorkloadRow]) -> ComponentFacts:
 def nvidia_runtimeclass_facts(
     runtime_classes: Sequence[RuntimeClassRow], nvidia_nodes: int
 ) -> ComponentFacts:
-    """判据:RuntimeClass nvidia 存在。"""
+    """Criterion: RuntimeClass nvidia exists."""
     row = next((r for r in runtime_classes if r.name == "nvidia"), None)
     return ComponentFacts(
         state="ok" if row else "down",
@@ -241,7 +244,8 @@ def kata_runtimeclass_facts(
     kata_deploy: WorkloadRow,
     kata_nodes: Sequence[NodeRow],
 ) -> ComponentFacts:
-    """缺 kata-qemu 为 down;无就绪且可调度节点为 disabled,否则按 kata-deploy 就绪比判定。"""
+    """Missing kata-qemu = down; no ready schedulable node = disabled, otherwise judged by the
+    kata-deploy readiness ratio."""
     row = next((r for r in runtime_classes if r.name == "kata-qemu"), None)
     ready_nodes = [n for n in kata_nodes if n.ready and n.schedulable]
     if row is None:
@@ -278,7 +282,8 @@ def _runtime_class_objects(rows: Sequence[RuntimeClassRow]) -> tuple[ComponentOb
 def storage_facts(
     rows: Sequence[StorageClassRow], instance_disk_sc: str, data_disk_sc: str
 ) -> ComponentFacts:
-    """实例盘 SC 存在则为 ok,否则为 down;缺数据盘 SC 只标记 warning 事实。"""
+    """ok when the instance-disk SC exists, otherwise down; a missing data-disk SC only marks a
+    warning fact."""
     names = {r.name for r in rows}
     instance_ok = instance_disk_sc in names
     data_ok = data_disk_sc in names
@@ -317,7 +322,7 @@ def storage_facts(
 def gateway_facts(
     programmed: bool, address: str, listeners: Sequence[ListenerRow], reason: str
 ) -> ComponentFacts:
-    """Gateway 未 Programmed 为 down;否则任一 listener 未 Programmed 为 degraded,其余为 ok。"""
+    """Gateway not Programmed = down; otherwise any listener not Programmed = degraded, else ok."""
     ok_listeners = sum(1 for lis in listeners if lis.programmed)
     total = len(listeners)
     if not programmed:
@@ -352,7 +357,8 @@ def gateway_facts(
 
 
 def cert_manager_facts(deploys: Sequence[WorkloadRow]) -> ComponentFacts:
-    """按 cert-manager 控制器就绪比判定;其为 ok 但组件汇总未全就绪时为 degraded。"""
+    """Judged by the cert-manager controller readiness ratio; ok there but components not all ready
+    = degraded."""
     ready, desired = _totals(deploys)
     controller = next((d for d in deploys if d.name == "cert-manager"), WorkloadRow("cert-manager"))
     state = rollout_state(controller.ready, controller.desired)
@@ -372,7 +378,7 @@ def cert_manager_facts(deploys: Sequence[WorkloadRow]) -> ComponentFacts:
 
 
 def monitoring_facts(prometheus: WorkloadRow, alertmanager: WorkloadRow) -> ComponentFacts:
-    """按 Prometheus 就绪比判定;其为 ok 时再采用 Alertmanager 的状态。"""
+    """Judged by the Prometheus readiness ratio; when ok, the Alertmanager state is adopted."""
     prom_state = rollout_state(prometheus.ready, prometheus.desired)
     am_state = rollout_state(alertmanager.ready, alertmanager.desired)
     state = prom_state if prom_state != "ok" else _worst(am_state, "ok")
@@ -394,7 +400,8 @@ def monitoring_facts(prometheus: WorkloadRow, alertmanager: WorkloadRow) -> Comp
 
 
 def merge_facts(base: ComponentFacts, extra: Sequence[ComponentFact]) -> ComponentFacts:
-    """追加事实(巡检侧的 Prometheus 补充)。同 key 覆盖,不改 state。"""
+    """Append facts (Prometheus supplements from the patrol). Same key overrides, state
+    unchanged."""
     if not extra:
         return base
     by_key = {f.key: f for f in base.facts}
@@ -405,7 +412,8 @@ def merge_facts(base: ComponentFacts, extra: Sequence[ComponentFact]) -> Compone
 
 @dataclass(frozen=True)
 class ProbeRows:
-    """一次探测取到的全部原始行。real 从 K8s 对象取,fake 合成,装配只有 build_facts 一份。"""
+    """All raw rows of one probe. real takes them from K8s objects, fake synthesises them; assembly
+    happens only in build_facts."""
 
     nodes: Sequence[NodeRow] = ()
     hami_scheduler: WorkloadRow = WorkloadRow("hami-scheduler")
@@ -427,7 +435,8 @@ class ProbeRows:
 
 
 def pool_counts(nodes: Sequence[NodeRow]) -> tuple[dict[str, int], dict[str, int]]:
-    """(池→节点数,池→Ready 且可调度的节点数)。档位可用性只认后者。"""
+    """(pool → node count, pool → Ready and schedulable node count). Tier availability trusts the
+    latter only."""
     pools: dict[str, int] = {}
     ready: dict[str, int] = {}
     for n in nodes:
@@ -440,7 +449,8 @@ def pool_counts(nodes: Sequence[NodeRow]) -> tuple[dict[str, int], dict[str, int
 def build_facts(
     rows: ProbeRows, *, instance_disk_sc: str, data_disk_sc: str
 ) -> dict[str, ComponentFacts]:
-    """十个体检项的事实。键与 nodes 模块的 ComponentKey 一一对应。"""
+    """Facts of the ten health-check items. Keys map one to one to the nodes module's
+    ComponentKey."""
     _, pools_ready = pool_counts(rows.nodes)
     nodes_ready = sum(pools_ready.values())
     return {
@@ -464,7 +474,7 @@ def build_facts(
 
 
 def merge_details(a: ComponentDetail, b: ComponentDetail) -> ComponentDetail:
-    """合并两次深探结果(如 cert-manager 的 Pod 现场 + 证书列表)。"""
+    """Merge two deep-probe results (e.g. cert-manager's Pod scene + certificate list)."""
     return ComponentDetail(
         facts=a.facts + b.facts, pods=a.pods + b.pods, events=a.events + b.events
     )

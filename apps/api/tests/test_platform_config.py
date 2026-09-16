@@ -26,7 +26,7 @@ from tests.helpers import admin_headers, create_order, pay_mock, user_headers
 class TestSpecValidation:
     def test_unknown_key_and_javascript_url_rejected(self):
         """未知键拒;亮照链接只收 http(s) 绝对 URL(留空走清除覆盖);值 strip 后落库。"""
-        with pytest.raises(ValueError, match="未知配置键"):
+        with pytest.raises(ValueError, match="unknown setting key"):
             validate_setting_value("jwt_secret", "x")
         with pytest.raises(ValueError):
             validate_setting_value("business_license_url", "javascript:alert(1)")
@@ -56,7 +56,7 @@ class TestClusterJoinTokenShape:
     )
     def test_server_node_token_rejected(self, token):
         """server node-token(K10<64hex>::server:…,hex 不分大小写)会让节点以 server 入群:拒收。"""
-        with pytest.raises(ValueError, match="只许 agent token"):
+        with pytest.raises(ValueError, match="agent token only"):
             validate_setting_value("cluster_join_token", token)
 
     @pytest.mark.parametrize(
@@ -69,7 +69,7 @@ class TestClusterJoinTokenShape:
         ],
     )
     def test_injection_shapes_rejected(self, token):
-        with pytest.raises(ValueError, match="格式不符"):
+        with pytest.raises(ValueError, match="is malformed"):
             validate_setting_value("cluster_join_token", token)
 
     def test_env_layer_is_validated(self, monkeypatch):
@@ -94,7 +94,7 @@ class TestProdDegradeForbidden:
             "app.core.platform_config.get_settings",
             lambda: SimpleNamespace(environment="prod", compliance_profile="cn"),
         )
-        with pytest.raises(ValueError, match="生产环境禁止"):
+        with pytest.raises(ValueError, match="forbidden in production"):
             validate_setting_value(key, "false")
         assert validate_setting_value(key, "true") == "true"
 
@@ -107,7 +107,7 @@ class TestProdDegradeForbidden:
         )
         assert validate_setting_value("captcha_enabled", "false") == "false"
         assert validate_setting_value("real_name_enabled", "false") == "false"
-        with pytest.raises(ValueError, match="生产环境禁止"):
+        with pytest.raises(ValueError, match="forbidden in production"):
             validate_setting_value("admin_mfa_enabled", "false")
 
     @pytest.mark.parametrize("key", ["captcha_enabled", "admin_mfa_enabled", "real_name_enabled"])
@@ -139,7 +139,7 @@ class TestClearOverrideFallbackGuard:
             headers=ah,
         )
         assert resp.status_code == 400
-        assert "不允许清除覆盖" in resp.json()["message"]
+        assert "cannot clear the override" in resp.json()["message"]
         async with sm() as session:
             row = (
                 await session.execute(
@@ -228,7 +228,7 @@ class TestProdComplianceGates:
             "real_name_enabled": "false",
             "real_name_required_for_recharge": "false",
         }
-        with pytest.raises(RuntimeError, match="合规开关未全开"):
+        with pytest.raises(RuntimeError, match="compliance gates are not all on"):
             assert_prod_compliance_gates(rc(off), "prod")
         with pytest.raises(RuntimeError, match="real_name_enabled"):
             assert_prod_compliance_gates(rc(dict(off, captcha_enabled="true")), "prod")
@@ -515,7 +515,7 @@ class TestRegistrySpecsAndProbeEndpoint:
         assert validate_setting_value(
             "image_allowed_registries", "docker.io/\nregistry.example.com/team/"
         )
-        with pytest.raises(ValueError, match="含非法行"):
+        with pytest.raises(ValueError, match="has an invalid line"):
             validate_setting_value("image_allowed_registries", "docker.io/\nBAD HOST!!")
         evil = "a" * 4000 + "!"
         t0 = time.perf_counter()
@@ -709,7 +709,7 @@ class TestEffectiveConfig:
             )
             await session.commit()
         async with sm() as session:
-            with pytest.raises(ValueError, match="解密失败"):
+            with pytest.raises(ValueError, match="decryption failed"):
                 await get_runtime_config(session)
 
 
@@ -717,7 +717,7 @@ class TestProdImageAllowlistGate:
     def test_empty_allowlist_refuses_prod_start(self):
         from app.core.platform_config import assert_prod_image_allowlist
 
-        with pytest.raises(RuntimeError, match="镜像来源白名单"):
+        with pytest.raises(RuntimeError, match="image source allow-list"):
             assert_prod_image_allowlist(
                 rc({"registry_host": "", "image_allowed_registries": ""}), "prod"
             )

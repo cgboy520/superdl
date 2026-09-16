@@ -1,4 +1,5 @@
-"""密码哈希(bcrypt)与 JWT。用户端与管理端 audience 隔离,token 不可互用。"""
+"""Password hashing (bcrypt) and JWT. User and admin audiences are isolated, tokens are not
+interchangeable."""
 
 import asyncio
 from collections.abc import Callable
@@ -23,9 +24,9 @@ PASSWORD_MAX_BYTES = 72
 
 
 def check_password_bytes(plain: str) -> str:
-    """拒绝 UTF-8 编码超过 PASSWORD_MAX_BYTES 的口令,否则原样返回。"""
+    """Reject passwords whose UTF-8 encoding exceeds PASSWORD_MAX_BYTES, otherwise return as-is."""
     if len(plain.encode()) > PASSWORD_MAX_BYTES:
-        raise ValueError("密码过长:UTF-8 编码后不得超过 72 字节")
+        raise ValueError("password too long: at most 72 bytes when UTF-8 encoded")
     return plain
 
 
@@ -35,14 +36,14 @@ PasswordStr = Annotated[
 
 
 def hash_password_sync(plain: str) -> str:
-    """同步版本;请求路径用异步版。cost 取 settings.bcrypt_rounds。"""
+    """Synchronous variant; request paths use the async one. cost = settings.bcrypt_rounds."""
     salt = bcrypt.gensalt(rounds=get_settings().bcrypt_rounds)
     return bcrypt.hashpw(plain.encode(), salt).decode()
 
 
 @cache
 def dummy_password_hash() -> str:
-    """惰性生成并缓存占位口令哈希,使用当前配置的 bcrypt cost。"""
+    """Lazily build and cache the dummy password hash with the configured bcrypt cost."""
     return hash_password_sync("dummy-timing-equalizer")
 
 
@@ -60,7 +61,8 @@ _bcrypt_inflight = 0
 
 
 async def _run_bcrypt[T](fn: Callable[..., T], *args: Any) -> T:
-    """有界排队:在途(含排队)超过 _BCRYPT_MAX_INFLIGHT 直接 429,不无限排队。"""
+    """Bounded queueing: more than _BCRYPT_MAX_INFLIGHT in flight (queued included) → 429 straight
+    away, no unbounded queue."""
     global _bcrypt_inflight
     if _bcrypt_inflight >= _BCRYPT_MAX_INFLIGHT:
         raise AppError(
@@ -99,9 +101,10 @@ def create_token(
     iat: datetime | None = None,
     ttl_seconds: int | None = None,
 ) -> str:
-    """签发 HS256 JWT;非 access 类型默认使用 refresh TTL,mfa_* 调用方须显式传短 TTL。
+    """Issue an HS256 JWT; non-access types default to the refresh TTL, mfa_* callers must pass a
+    short TTL explicitly.
 
-    extra 可覆盖标准 claims,只允许传入受信任的数据。
+    extra may override the standard claims; pass trusted data only.
     """
     settings = get_settings()
     if ttl_seconds is not None:
@@ -134,7 +137,8 @@ def decode_token(
     expected_type: TokenType = "access",
     leeway_seconds: int = 0,
 ) -> dict[str, Any]:
-    """验证签名、audience、issuer、时间及 typ;leeway_seconds 为时间校验宽限,失败抛 401。"""
+    """Verify signature, audience, issuer, times and typ; leeway_seconds is the time-check leeway,
+    failure raises 401."""
     settings = get_settings()
     try:
         payload = jwt.decode(
@@ -148,5 +152,5 @@ def decode_token(
     except jwt.PyJWTError as exc:
         raise unauthorized() from exc
     if payload.get("typ") != expected_type:
-        raise unauthorized("token 类型不匹配")
+        raise unauthorized("token type mismatch")
     return payload

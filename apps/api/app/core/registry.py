@@ -1,6 +1,8 @@
-"""镜像仓库(Harbor)接入:拉取凭据 dockerconfigjson 与指纹、镜像来源白名单、代理缓存映射解析、
-Harbor API 探测(httpx,transport 参数供测试注入;目标先解析地址,内网/保留网段拒探)。
-不依赖 K8s 客户端。"""
+"""Image registry (Harbor) integration: pull-credential dockerconfigjson and fingerprint, image
+source allow-list, proxy-cache mapping parser,
+Harbor API probe (httpx, transport parameter for test injection; the target is resolved first and
+private / reserved ranges are refused).
+No dependency on the K8s client."""
 
 import asyncio
 import base64
@@ -20,7 +22,7 @@ PULL_SECRET_FINGERPRINT_ANNOTATION = "superdl.io/pull-secret-fingerprint"
 
 
 def dockerconfigjson(host: str, username: str, password: str) -> str:
-    """kubernetes.io/dockerconfigjson 的 .dockerconfigjson 正文。"""
+    """The .dockerconfigjson body of kubernetes.io/dockerconfigjson."""
     auth = base64.b64encode(f"{username}:{password}".encode()).decode()
     return json.dumps(
         {"auths": {host: {"username": username, "password": password, "auth": auth}}},
@@ -29,12 +31,14 @@ def dockerconfigjson(host: str, username: str, password: str) -> str:
 
 
 def pull_secret_fingerprint(host: str, username: str, password: str) -> str:
-    """返回 host、username、password 换行拼接后 SHA-256 的前 16 个十六进制字符。"""
+    """First 16 hex characters of the SHA-256 over host, username and password joined by
+    newlines."""
     return hashlib.sha256(f"{host}\n{username}\n{password}".encode()).hexdigest()[:16]
 
 
 def parse_proxy_projects(text: str) -> dict[str, str]:
-    """`<上游>=<Harbor 代理项目>` 每行一条 → {上游: 项目};空行与无 `=` 的行忽略。"""
+    """`<upstream>=<Harbor proxy project>` per line → {upstream: project}; blank lines and lines
+    without `=` are ignored."""
     out: dict[str, str] = {}
     for line in text.splitlines():
         line = line.strip()
@@ -55,12 +59,14 @@ _IMAGE_REF_RE = re.compile(
 
 
 def is_valid_image_ref(image_ref: str) -> bool:
-    """镜像引用形态是否合法。创建实例与管理端目录 CRUD 共用同一份判定。"""
+    """Whether the image reference shape is valid. Shared by instance creation and the admin catalog
+    CRUD."""
     return bool(_IMAGE_REF_RE.fullmatch(image_ref))
 
 
 def is_pinned_image_ref(image_ref: str) -> bool:
-    """引用是否钉到具体版本(带 digest,或带非 latest 的 tag;无 tag 视为 latest)。"""
+    """Whether the reference pins a version (digest, or a non-latest tag; no tag counts as
+    latest)."""
     if not is_valid_image_ref(image_ref):
         return False
     if "@sha256:" in image_ref:
@@ -72,8 +78,10 @@ def is_pinned_image_ref(image_ref: str) -> bool:
 
 
 def effective_image_allowlist(*, allowed_registries: str, registry_host: str) -> list[str]:
-    """镜像来源白名单:配置行(换行/逗号分隔的仓库前缀)∪ Harbor 地址前缀,每条补成 `/` 结尾;
-    空列表 = 不限制。平台镜像目录内的引用由调用方放行。"""
+    """Image source allow-list: configured lines (registry prefixes separated by newlines /
+    commas) ∪ the Harbor address prefix, each normalised to end with `/`;
+    an empty list = unrestricted. References from the platform image catalog are allowed by the
+    caller."""
     raw = allowed_registries.replace(",", "\n")
     prefixes: list[str] = []
     for line in raw.splitlines():
@@ -87,7 +95,8 @@ def effective_image_allowlist(*, allowed_registries: str, registry_host: str) ->
 
 
 def ssl_verify(ca_pem: str) -> ssl.SSLContext | bool:
-    """自签/私有 CA 时用其构造校验上下文;否则走系统信任链。"""
+    """With a self-signed / private CA build the verification context from it; otherwise use the
+    system trust chain."""
     return ssl.create_default_context(cadata=ca_pem) if ca_pem.strip() else True
 
 
@@ -103,23 +112,24 @@ class HarborProbe:
 _CGNAT_NET = ipaddress.ip_network("100.64.0.0/10")
 _getaddrinfo = socket.getaddrinfo
 
-PROBE_DETAIL_PRIVATE_TARGET = "目标地址属于内网/保留网段,拒绝探测"
-PROBE_DETAIL_DNS = "域名解析失败"
-PROBE_DETAIL_TIMEOUT = "连接超时"
-PROBE_DETAIL_TLS = "TLS 握手失败(证书或 CA 不匹配)"
-PROBE_DETAIL_CONNECT = "连接被拒绝或不可达"
-PROBE_DETAIL_NETWORK = "请求失败(网络层错误)"
+PROBE_DETAIL_PRIVATE_TARGET = "target address is in a private / reserved range, probe refused"
+PROBE_DETAIL_DNS = "DNS resolution failed"
+PROBE_DETAIL_TIMEOUT = "connection timed out"
+PROBE_DETAIL_TLS = "TLS handshake failed (certificate or CA mismatch)"
+PROBE_DETAIL_CONNECT = "connection refused or unreachable"
+PROBE_DETAIL_NETWORK = "request failed (network error)"
 
 
 def _hostname_of(host: str) -> str:
-    """去掉端口:`h:443` → `h`,`[::1]:443` → `::1`。"""
+    """Strip the port: `h:443` → `h`, `[::1]:443` → `::1`."""
     if host.startswith("["):
         return host[1 : host.index("]")] if "]" in host else host[1:]
     return host.rsplit(":", 1)[0] if host.count(":") == 1 else host
 
 
 def is_forbidden_probe_address(ip: str) -> bool:
-    """回环、链路本地、私网、CGNAT、组播、未指定、保留与 ULA 一律视为内网目标。"""
+    """Loopback, link-local, private, CGNAT, multicast, unspecified, reserved and ULA all count as
+    internal targets."""
     addr = ipaddress.ip_address(ip)
     if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
         addr = addr.ipv4_mapped
@@ -137,7 +147,8 @@ def is_forbidden_probe_address(ip: str) -> bool:
 
 
 async def _resolve_probe_target(host: str) -> str | None:
-    """解析主机名;任一地址落在禁探网段即返回拒绝原因,解析失败返回 DNS 原因,合规返回 None。"""
+    """Resolve the hostname; any address in a refused range returns the refusal reason, a resolution
+    failure returns the DNS reason, a clean target returns None."""
     hostname = _hostname_of(host.strip())
     try:
         infos = await asyncio.to_thread(_getaddrinfo, hostname, None)
@@ -152,7 +163,7 @@ async def _resolve_probe_target(host: str) -> str | None:
 
 
 def _coarse_error_detail(exc: httpx.HTTPError) -> str:
-    """异常按类别归并成固定文案,不回显异常正文。"""
+    """Fold exceptions into fixed copy by category, never echoing the exception text."""
     if isinstance(exc, httpx.TimeoutException):
         return PROBE_DETAIL_TIMEOUT
     if isinstance(exc, httpx.ConnectError):
@@ -172,16 +183,16 @@ async def _probe_project(
         auth=(robot, secret) if robot else None,
     )
     if r.status_code == 401:
-        return HarborProbe(False, "project", "401:机器人账户或 Secret 错误", version)
+        return HarborProbe(False, "project", "401: wrong robot account or secret", version)
     if r.status_code == 403:
         return HarborProbe(
             False,
             "project",
-            "403:机器人无 List Repository 权限(或项目为私有而未填机器人账户)",
+            "403: the robot lacks List Repository (or the project is private and no robot is set)",
             version,
         )
     if r.status_code == 404:
-        return HarborProbe(False, "project", f"404:项目 {project} 不存在", version)
+        return HarborProbe(False, "project", f"404: project {project} does not exist", version)
     if r.status_code != 200:
         return HarborProbe(False, "project", f"GET repositories → HTTP {r.status_code}", version)
     total = r.headers.get("x-total-count", "")
@@ -197,8 +208,10 @@ async def probe_harbor(
     ca_pem: str,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> HarborProbe:
-    """先解析目标地址(内网/保留网段拒探),再探测 Harbor health、systeminfo 和项目仓库;
-    配置 robot 时对仓库请求使用 Basic 鉴权。不跟随重定向;连接类错误只回固定分类文案。"""
+    """Resolve the target first (private / reserved ranges refused), then probe Harbor health,
+    systeminfo and the project repositories;
+    with a robot configured the repository request uses Basic auth. Redirects are not followed;
+    connection errors return fixed category copy only."""
     rejected = await _resolve_probe_target(host)
     if rejected is not None:
         return HarborProbe(False, "health", rejected)
@@ -212,7 +225,7 @@ async def probe_harbor(
                 return HarborProbe(False, "health", f"GET /api/v2.0/health → HTTP {r.status_code}")
             health_status = (r.json() or {}).get("status")
             if health_status != "healthy":
-                return HarborProbe(False, "health", f"Harbor 自检 status={health_status}")
+                return HarborProbe(False, "health", f"Harbor health check status={health_status}")
             version: str | None = None
             si = await client.get(f"{base}/systeminfo")
             if si.status_code == 200:

@@ -471,7 +471,7 @@ class TestGraceWindowGuard:
         from app.core.platform_config import validate_setting_value
 
         assert validate_setting_value("spot_grace_seconds", "60") == "60"
-        with pytest.raises(ValueError, match="不得超过"):
+        with pytest.raises(ValueError, match="must not exceed"):
             validate_setting_value("spot_grace_seconds", "600")
 
 

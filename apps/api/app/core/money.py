@@ -13,7 +13,7 @@ from app.core.currencies import CURRENCY_MINOR_UNITS
 
 
 def money_str(v: Decimal) -> str:
-    """Decimal → 字符串(保 scale,不科学计数)。"""
+    """Decimal → string (scale preserved, no scientific notation)."""
     return format(v, "f")
 
 
@@ -33,7 +33,7 @@ def minor_units(currency: str | None = None) -> int:
 
 
 def as_price(value: Decimal | str | int) -> Decimal:
-    """规整为 4 位小数单价。float 直接拒绝。"""
+    """Normalise to a 4-dp unit price. float is rejected outright."""
     if isinstance(value, float):
         raise TypeError("float is forbidden for money")
     return Decimal(value).quantize(PRICE_QUANT, rounding=ROUND_HALF_EVEN)
@@ -64,20 +64,22 @@ def price_label(value: Decimal | str | int, currency: str | None = None) -> str:
 
 
 def billing_units(gpu_count: int) -> int:
-    """一小时收几份 `price_hourly`:GPU SKU 单卡时价收 N 份,CPU SKU 整机时价收 1 份。"""
+    """How many `price_hourly` units an hour charges: GPU SKUs charge N per-card units, CPU SKUs one
+    whole-machine unit."""
     if gpu_count < 0:
         raise ValueError(f"gpu_count out of range: {gpu_count}")
     return gpu_count or 1
 
 
 def hourly_cost(price_hourly: Decimal, gpu_count: int) -> Decimal:
-    """实例时费(2 位入账口径)= 单价 × 计费份数。"""
+    """Instance hourly cost (2-dp posting) = unit price × billing units."""
     return as_amount(as_price(price_hourly) * billing_units(gpu_count))
 
 
 def disk_daily_charge(price_gb_month: Decimal, size_gb: int, day: date | None = None) -> Decimal:
-    """数据盘日结金额(2 位小数):第 k 天 = as_amount(月费 × k / 30) - as_amount(月费 × (k-1) / 30)。
-    day 省略时返回均摊日费,仅供展示与预估。"""
+    """Daily data-disk settlement amount (2 dp): day k = as_amount(monthly × k / 30) -
+    as_amount(monthly × (k-1) / 30).
+    Without day the flat daily fee is returned, for display and estimates only."""
     if size_gb < 0:
         raise ValueError(f"size_gb out of range: {size_gb}")
     monthly = as_price(price_gb_month) * Decimal(size_gb)

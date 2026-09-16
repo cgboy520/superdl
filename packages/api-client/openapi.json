@@ -10398,7 +10398,7 @@
                 }
               }
             },
-            "description": "CSV 导出"
+            "description": "CSV export"
           },
           "422": {
             "content": {
@@ -11364,7 +11364,7 @@
                 }
               }
             },
-            "description": "CSV 导出"
+            "description": "CSV export"
           },
           "422": {
             "content": {
@@ -13199,7 +13199,7 @@
                 }
               }
             },
-            "description": "CSV 导出"
+            "description": "CSV export"
           },
           "422": {
             "content": {
@@ -14588,7 +14588,7 @@
                 }
               }
             },
-            "description": "CSV 导出"
+            "description": "CSV export"
           },
           "422": {
             "content": {
@@ -15140,7 +15140,7 @@
                 }
               }
             },
-            "description": "CSV 导出"
+            "description": "CSV export"
           },
           "422": {
             "content": {
@@ -15350,7 +15350,7 @@
                 }
               }
             },
-            "description": "CSV 导出"
+            "description": "CSV export"
           },
           "422": {
             "content": {
@@ -16580,7 +16580,7 @@
                 }
               }
             },
-            "description": "CSV 导出"
+            "description": "CSV export"
           },
           "422": {
             "content": {
@@ -17448,7 +17448,7 @@
                 }
               }
             },
-            "description": "CSV 导出"
+            "description": "CSV export"
           },
           "422": {
             "content": {

@@ -1,8 +1,9 @@
-"""GPU 型号归一化:SKU 手填 / nvidia-smi / lspci / GFD label / fake 注入 → canonical 短名,
-未识别返回 None。
+"""GPU model normalisation: SKU input / nvidia-smi / lspci / GFD label / fake injection → canonical
+short name, None when unrecognised.
 
-规则:RTX 消费卡 = RTX<数字><后缀>;多容量家族识别出显存时追加 -{显存}G,否则只取家族名;
-单容量卡(T4/L4/L40S/A10/GB10 等)取家族名;CMP 矿卡取 CMP<数字>HX。
+Rules: RTX consumer cards = RTX<digits><suffix>; multi-capacity families append -{vram}G when the
+VRAM is known, otherwise the family name only; single-capacity cards (T4/L4/L40S/A10/GB10 ...) take
+the family name; CMP mining cards become CMP<digits>HX.
 """
 
 import re
@@ -46,7 +47,7 @@ _VRAM_RE = re.compile(r"\b(\d{2,3})\s*GB?\b")
 
 
 def canonical_gpu_model(raw: str | None) -> str | None:
-    """归一化到 canonical;未识别返回 None。"""
+    """Normalise to canonical; None when unrecognised."""
     if not raw:
         return None
     text = raw.strip()
@@ -85,21 +86,24 @@ def canonical_gpu_model(raw: str | None) -> str | None:
     return None
 
 
-# 与 NVIDIA MIG User Guide 的 Supported GPUs 对齐;A800 / H800 是 A100 / H100 的中国版,同样支持。
+# Aligned with the Supported GPUs list of the NVIDIA MIG User Guide; A800 / H800 are the China
+# variants of A100 / H100 and support MIG as well.
 MIG_CAPABLE_FAMILIES = frozenset(
     {"A100", "A800", "A30", "H100", "H800", "H200", "H20", "B200", "GB200"}
 )
 
 
 def supports_mig(canonical: str | None) -> bool:
-    """canonical 型号是否支持 MIG 切分;未识别(None)一律 False(fail-closed)。"""
+    """Whether the canonical model supports MIG partitioning; unrecognised (None) is always False
+    (fail-closed)."""
     if not canonical:
         return False
     return canonical.split("-")[0] in MIG_CAPABLE_FAMILIES
 
 
-# 整卡直通(kata 池)可落的数据中心家族:独立 PCIe / SXM 板卡,NVIDIA 对 Maxwell 之后的
-# 数据中心卡一律支持 pass-through。RTX 独立卡按前缀放行(R465 起官方开放 GeForce 直通)。
+# Data-centre families that can be passed through whole (kata pool): discrete PCIe / SXM boards;
+# NVIDIA supports pass-through for every data-centre card after Maxwell. RTX discrete cards pass by
+# prefix (GeForce passthrough is official since R465).
 # Grace superchip integrated GPUs (GB10 / GB200) are excluded: firmware forces a 1:1 IOMMU
 # mapping and the kernel refuses to bind them to vfio-pci (runbooks/hardware-notes.md).
 PASSTHROUGH_CAPABLE_FAMILIES = frozenset(
@@ -126,7 +130,8 @@ PASSTHROUGH_CAPABLE_FAMILIES = frozenset(
 
 
 def supports_passthrough(canonical: str | None) -> bool:
-    """canonical 型号能否整卡直通给虚机;未识别(None)一律 False(fail-closed)。"""
+    """Whether the canonical model can be passed through whole to a VM; unrecognised (None) is
+    always False (fail-closed)."""
     if not canonical:
         return False
     family = canonical.split("-")[0]
@@ -134,7 +139,8 @@ def supports_passthrough(canonical: str | None) -> bool:
 
 
 def model_matches(sku_model: str | None, node_model: str | None) -> bool:
-    """canonical 匹配:相等,或 SKU 只写家族而节点带显存后缀(A100 匹配 A100-80G);反向不成立。"""
+    """Canonical match: equal, or the SKU names only the family while the node carries a VRAM suffix
+    (A100 matches A100-80G); not the other way round."""
     if not sku_model or not node_model:
         return False
     if sku_model == node_model:

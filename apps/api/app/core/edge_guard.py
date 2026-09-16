@@ -1,6 +1,7 @@
-"""边缘收口(prod 恒开,dev/test 不启用):/api/admin/* 双闸 Host = admin_host 且
-X-Admin-Edge-Token = admin_edge_token(admin 域 nginx 注入,见 deploy/app/nginx.admin.conf);
-/metrics 与 /api/internal 带 X-Forwarded-For 的请求一律 404。"""
+"""Edge cut-off (always on in prod, off in dev/test): /api/admin/* needs both Host = admin_host and
+X-Admin-Edge-Token = admin_edge_token (injected by the admin-domain nginx, see
+deploy/app/nginx.admin.conf); /metrics and /api/internal requests carrying X-Forwarded-For
+get 404."""
 
 import hmac
 

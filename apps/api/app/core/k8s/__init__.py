@@ -42,15 +42,16 @@ def get_orchestrator() -> K8sOrchestrator:
 
 
 def set_orchestrator(orch: K8sOrchestrator | None) -> None:
-    """测试注入。传 None 恢复默认。"""
+    """Test injection. None restores the default."""
     global _override
     _override = orch
 
 
 async def ensure_registry_pull_secret(session: AsyncSession, namespace: str) -> str | None:
-    """在 namespace 托管拉取凭据,返回 Secret 名;host、robot、secret 缺任一项则返回 None。
+    """Manage the pull credentials in the namespace and return the Secret name; None when host,
+    robot or secret is missing.
 
-    只允许在 worker 侧调用。
+    Worker-side only.
     """
     cfg = await get_runtime_config(session)
     host, robot, secret = (

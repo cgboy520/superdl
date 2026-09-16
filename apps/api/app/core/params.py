@@ -1,4 +1,4 @@
-"""路由层共享的查询参数和幂等请求头声明。"""
+"""Query parameters and idempotency request headers shared by the routers."""
 
 from typing import Annotated
 

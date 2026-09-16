@@ -1,4 +1,5 @@
-"""限流计数:固定窗口,计数落 PostgreSQL;独立 session 即时 commit,不随业务事务回滚。"""
+"""Rate-limit counters: fixed windows stored in PostgreSQL; an independent session commits at once
+and never rolls back with the business transaction."""
 
 from datetime import datetime
 from typing import Any
@@ -12,7 +13,7 @@ from app.core.errors import AppError, ErrorCode
 
 
 class RateLimitCounter(Base):
-    """固定窗口计数。key 含维度前缀,如 'user-login:1.2.3.4:13800000000'。"""
+    """Fixed-window counter. key carries the dimension prefix, e.g. 'user-login:1.2.3.4:<h>'."""
 
     __tablename__ = "rate_limit_counters"
 
@@ -50,7 +51,7 @@ def _raise_429(retry_after: int) -> None:
 
 
 async def _fetch_window_row(key: str, window_seconds: float) -> Row[Any] | None:
-    """只读取窗口行,不建行不计数。"""
+    """Read the window row only, no row creation, no count."""
     async with get_sessionmaker()() as session:
         return (
             await session.execute(_BLOCKED_SQL, {"key": key[:128], "window": window_seconds})
@@ -58,7 +59,8 @@ async def _fetch_window_row(key: str, window_seconds: float) -> Row[Any] | None:
 
 
 async def check_rate_limit(key: str, *, max_attempts: int, window_seconds: float) -> None:
-    """记一次命中并判定。超限抛 RATE_LIMITED(429,带 Retry-After 窗口剩余秒数)。"""
+    """Count one hit and judge. Over the limit raises RATE_LIMITED (429 with Retry-After = seconds
+    left in the window)."""
     async with get_sessionmaker()() as session:
         row = (await session.execute(_HIT_SQL, {"key": key[:128], "window": window_seconds})).one()
         await session.commit()
@@ -75,14 +77,15 @@ _REFUND_SQL = text("""
 
 
 async def refund_hit(key: str, *, window_seconds: float) -> None:
-    """退还窗口内的一次命中(先计数后校验的桶在校验通过后调用);不建行、不低于 0。"""
+    """Refund one hit in the window (for count-first buckets after the check passed); no row
+    creation, never below 0."""
     async with get_sessionmaker()() as session:
         await session.execute(_REFUND_SQL, {"key": key[:128], "window": window_seconds})
         await session.commit()
 
 
 async def clear_rate_limit(key: str) -> None:
-    """清零该键的计数(独立事务)。"""
+    """Reset the key's count (independent transaction)."""
     async with get_sessionmaker()() as session:
         await session.execute(delete(RateLimitCounter).where(RateLimitCounter.key == key))
         await session.commit()
@@ -99,13 +102,13 @@ _BLOCKED_SQL = text("""
 
 
 async def ensure_not_rate_limited(key: str, *, max_attempts: int, window_seconds: float) -> None:
-    """窗口内 hits >= max_attempts 时抛 429;只读,不计数。"""
+    """429 when hits >= max_attempts in the window; read-only, no count."""
     row = await _fetch_window_row(key, window_seconds)
     if row is not None and row.hits >= max_attempts:
         _raise_429(row.retry_after)
 
 
 async def read_hits(key: str, *, window_seconds: float) -> int:
-    """窗口内当前命中数(只读,不计数)。"""
+    """Current hits in the window (read-only, no count)."""
     row = await _fetch_window_row(key, window_seconds)
     return 0 if row is None else int(row.hits)

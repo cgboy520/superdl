@@ -1,5 +1,6 @@
-"""安全响应头(纯 ASGI):CSP `default-src 'none'` + 禁嵌入,/docs /redoc 豁免 CSP;HSTS 仅 prod;
-API、文档与指标响应 `Cache-Control: no-store`。"""
+"""Security response headers (pure ASGI): CSP `default-src 'none'` + no framing, /docs /redoc exempt
+from CSP; HSTS in prod only;
+API, docs and metrics responses get `Cache-Control: no-store`."""
 
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send

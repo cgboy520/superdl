@@ -1,4 +1,5 @@
-"""巡检公用骨架:逐项独立执行,单项失败计指标 + 留痕,不拖垮整轮。"""
+"""Shared patrol skeleton: items run independently, a failure counts a metric + leaves a trace and
+never takes the round down."""
 
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 
@@ -15,8 +16,9 @@ async def for_each[T](
     stage: str,
     ident: Callable[[T], Mapping[str, object]],
 ) -> None:
-    """对每一项调用 handler(通常自开事务);异常 → `superdl_patrol_failed_total{stage}` +1,
-    日志事件 `patrol_<stage>_failed` 带 ident(item) 的定位字段,继续下一项。"""
+    """Call handler for each item (usually in its own transaction); an exception →
+    `superdl_patrol_failed_total{stage}` +1 and the log event `patrol_<stage>_failed` with the
+    ident(item) fields, then continue with the next item."""
     for item in items:
         try:
             await handler(item)

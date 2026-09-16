@@ -1,5 +1,5 @@
-"""结构化日志:structlog + stdlib 桥接(ProcessorFormatter),prod=JSON,dev/test=Console,
-合并 contextvars;级别由 SUPERDL_LOG_LEVEL 控制;_mask_sensitive_processor 按字段名打码。"""
+"""Structured logging: structlog + stdlib bridge (ProcessorFormatter), prod=JSON, dev/test=Console,
+contextvars merged; level from SUPERDL_LOG_LEVEL; _mask_sensitive_processor masks by field name."""
 
 import logging
 import re
@@ -39,7 +39,7 @@ def _mask_value(key: str, value: object) -> object:
 
 
 def _mask_all_strings(key: str, value: object, depth: int) -> object:
-    """敏感键下的容器:所有字符串叶子一律打码,深度封顶。"""
+    """Container under a sensitive key: every string leaf is masked, depth capped."""
     if isinstance(value, str):
         return _mask_value(key, value)
     if depth >= _MASK_MAX_DEPTH:
@@ -52,7 +52,8 @@ def _mask_all_strings(key: str, value: object, depth: int) -> object:
 
 
 def _mask_field(key: str, value: object, depth: int) -> object:
-    """按键名遮蔽;非敏感键的 dict / list 递归检查内层键,深度封顶 4。"""
+    """Mask by key name; dicts / lists under non-sensitive keys are checked recursively, depth
+    capped at 4."""
     if _SENSITIVE_KEY_RE.search(key):
         return _mask_all_strings(key, value, depth)
     if depth >= _MASK_MAX_DEPTH:
@@ -69,14 +70,14 @@ def _mask_sensitive_processor(
     method: str,  # noqa: ARG001
     event_dict: EventDict,
 ) -> EventDict:
-    """按敏感键名遮蔽字符串,嵌套 dict / list 递归到第 4 层。"""
+    """Mask strings by sensitive key name, recursing into nested dicts / lists down to depth 4."""
     for key, value in event_dict.items():
         event_dict[key] = _mask_field(key, value, 0)
     return event_dict
 
 
 def setup_logging() -> None:
-    """配置 structlog 和 stdlib 日志;异常栈不得包含局部变量。"""
+    """Configure structlog and stdlib logging; exception traces must not include local variables."""
     settings = get_settings()
     level = _LEVELS[settings.log_level]
     shared_processors: list[structlog.typing.Processor] = [

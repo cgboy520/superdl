@@ -1,4 +1,5 @@
-"""缓冲 HTTP 请求体;Content-Length 非法、为负或声明/实际大小超限时返回 413。"""
+"""Buffer the HTTP request body; 413 when Content-Length is invalid or negative, or the declared /
+actual size exceeds the cap."""
 
 from starlette.datastructures import Headers
 from starlette.types import ASGIApp, Message, Receive, Scope, Send

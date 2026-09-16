@@ -1,5 +1,6 @@
-"""请求可观测性(纯 ASGI):X-Request-ID 合规则沿用、否则生成并回带,绑定 structlog contextvars;
-HTTP 时延直方图 route 取路由模板,未命中记 "unmatched"。"""
+"""Request observability (pure ASGI): a well-formed X-Request-ID is kept, otherwise generated and
+returned, bound into structlog contextvars;
+the HTTP latency histogram takes the route template as route, "unmatched" when none matched."""
 
 import re
 import time
@@ -15,14 +16,16 @@ _REQUEST_ID_RE = re.compile(r"[A-Za-z0-9._-]{1,64}")
 
 
 def request_id_from_header(value: str | None) -> str:
-    """入站 X-Request-ID 只在匹配 `[A-Za-z0-9._-]{1,64}` 时沿用,否则生成 16 位十六进制。"""
+    """An inbound X-Request-ID is kept only when it matches `[A-Za-z0-9._-]{1,64}`, otherwise 16 hex
+    digits are generated."""
     if value is not None and _REQUEST_ID_RE.fullmatch(value):
         return value
     return uuid4().hex[:16]
 
 
 def _full_route_template(scope: Scope) -> str:
-    """完整路由模板(含 include_router 前缀),用 path_params 反推:/api/v1/instances/{uuid}。"""
+    """Full route template (including include_router prefixes), reconstructed from path_params:
+    /api/v1/instances/{uuid}."""
     template = getattr(scope.get("route"), "path", None)
     if not template:
         return "unmatched"
