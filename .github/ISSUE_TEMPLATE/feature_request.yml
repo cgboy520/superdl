@@ -1,0 +1,22 @@
+name: Feature request
+description: Propose a change to the platform
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What can't you do today, and who is affected (tenant, operator, finance, …)?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: The change you have in mind. Cross-module decisions are recorded in docs/decisions.md before code lands.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
