@@ -1,4 +1,4 @@
-/** 键值对列表(两端统一):antd Descriptions 的一份固定配置;空值 → EmptyValue,copy → CopyField,mono → Mono。 */
+/** Key-value list (shared by both consoles): one fixed configuration of antd Descriptions; empty → EmptyValue, copy → CopyField, mono → Mono. */
 
 import { Descriptions, type DescriptionsProps } from "antd";
 import type { ReactNode } from "react";
@@ -10,9 +10,9 @@ import { Mono } from "./Mono";
 export interface KeyValueItem {
   label: ReactNode;
   value: ReactNode | null | undefined;
-  /** 传入即在值后出复制按钮(复制该字符串) */
+  /** When given, a copy button follows the value (copying this string) */
   copy?: string;
-  /** 值为标识符,等宽渲染(value 须为字符串) */
+  /** The value is an identifier, rendered monospace (value must be a string) */
   mono?: boolean;
   hint?: ReactNode;
   span?: number;

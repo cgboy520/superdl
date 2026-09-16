@@ -1,4 +1,4 @@
-/** 等宽 span;truncate 截取前 N 位,完整值放入 title。 */
+/** Monospace span; truncate keeps the first N characters and puts the full value in title. */
 
 import type { CSSProperties } from "react";
 
@@ -10,7 +10,7 @@ export function Mono({
   style,
 }: {
   children: string;
-  /** 只显示前 N 位,全值进 title */
+  /** Show only the first N characters, full value in title */
   truncate?: number;
   block?: boolean;
   className?: string;

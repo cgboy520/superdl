@@ -1,4 +1,4 @@
-/** 服务过渡态集合与 isServiceStatus 白名单回归。 */
+/** Regression of the service transitional set and the isServiceStatus allow-list. */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -11,13 +11,13 @@ import {
 } from "./status";
 
 describe("serviceStatusMap", () => {
-  it("过渡态只有 deploying / stopping / releasing;unready 可能永远不就绪,不算过渡态", () => {
+  it("transitional states are only deploying / stopping / releasing; unready may never become ready and is not transitional", () => {
     const transient = Object.keys(serviceStatusMap).filter(isTransientServiceStatus);
     expect(transient).toEqual(["deploying", "stopping", "releasing"]);
     expect(isTransientServiceStatus("unready")).toBe(false);
   });
 
-  it("isServiceStatus 只认表里的值(URL 上的 ?status= 靠它做白名单)", () => {
+  it("isServiceStatus accepts only table values (the ?status= allow-list on the URL relies on it)", () => {
     expect(isServiceStatus("running")).toBe(true);
     expect(isServiceStatus("creating")).toBe(false);
     expect(isServiceStatus("toString")).toBe(false);
@@ -26,13 +26,13 @@ describe("serviceStatusMap", () => {
 });
 
 describe("nodeStatusMap / severityMap", () => {
-  it("isNodeStatus 只认表里的值(/nodes?status= 白名单靠它)", () => {
+  it("isNodeStatus accepts only table values (the /nodes?status= allow-list relies on it)", () => {
     expect(isNodeStatus("Cordoned")).toBe(true);
     expect(isNodeStatus("ready")).toBe(false);
     expect(isNodeStatus(null)).toBe(false);
   });
 
-  it("SEVERITY_ORDER 恰好覆盖 severityMap 的键", () => {
+  it("SEVERITY_ORDER covers exactly the severityMap keys", () => {
     expect([...SEVERITY_ORDER].sort()).toEqual(Object.keys(severityMap).sort());
   });
 });

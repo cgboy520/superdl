@@ -3,7 +3,7 @@
 
 import { isBillingPeriod, type BillingPeriod } from "./status";
 
-/** 格式化函数使用的共享文案键。 */
+/** Shared copy keys used by the format functions. */
 type SharedFormatKey =
   | "shared:format.perHour"
   | "shared:format.perPeriod"
@@ -114,12 +114,12 @@ export function formatPrice(price: string, locale: string, currency: string | nu
   return fmt ? fmt.format(value as unknown as number) : plainNumber(value, locale, digits, 4);
 }
 
-/** Hourly price: "1.68" → "¥1.68/时" / "$1.68/hr". */
+/** Hourly price: "1.68" → "¥1.68/时" / "$1.68/hr". */ // cjk-ok
 export function formatHourlyPrice(price: string, t: SharedT, locale: string, currency: string | null): string {
   return t("shared:format.perHour", { price: formatPrice(price, locale, currency) });
 }
 
-/** 十进制字符串 → BigInt 定点(带符号;空串按 0)。digits = 小数位数(金额 2 / 单价 4)。 */
+/** Decimal string → BigInt fixed point (signed; empty = 0). digits = fraction digits (amounts 2 / prices 4). */
 function scaleAmount(s: string, digits: 2 | 4): bigint {
   if (s === "") return 0n;
   const neg = s.startsWith("-");
@@ -128,7 +128,7 @@ function scaleAmount(s: string, digits: 2 | 4): bigint {
   return neg ? -v : v;
 }
 
-/** BigInt 定点 → 十进制字符串(带符号);digits 0 时无小数点。 */
+/** BigInt fixed point → decimal string (signed); no decimal point with digits 0. */
 function unscale(scaled: bigint, digits: 0 | 2 | 4): string {
   const neg = scaled < 0n;
   const s = (neg ? -scaled : scaled).toString().padStart(digits + 1, "0");
@@ -136,19 +136,19 @@ function unscale(scaled: bigint, digits: 0 | 2 | 4): string {
   return `${neg ? "-" : ""}${s.slice(0, -digits)}.${s.slice(-digits)}`;
 }
 
-/** 十进制字符串 × 整数(BigInt,4 位小数)。展示层用。 */
+/** Decimal string × integer (BigInt, 4 dp). Display layer only. */
 export function mulPrice(price: string, count: number): string {
   return unscale(scaleAmount(price, 4) * BigInt(count), 4);
 }
 
-/** 数据盘日价估算:GB·月单价 × GB ÷ 30,HALF_EVEN 到货币最小单位(默认 2 位)。 */
+/** Data-disk daily estimate: GB·month price × GB ÷ 30, HALF_EVEN to the currency's minor unit (default 2 dp). */
 export function diskDailyEstimate(priceGbMonth: string, gb: number, minorUnits: 0 | 2 = 2): string {
   if (gb <= 0 || !Number.isInteger(gb)) return unscale(0n, minorUnits);
   const monthlyScaled = scaleAmount(priceGbMonth, 4) * BigInt(gb);
   return unscale(halfEvenDiv(monthlyScaled, 30n * 10n ** BigInt(4 - minorUnits)), minorUnits);
 }
 
-/** 非负整数除法,ROUND_HALF_EVEN 舍入。 */
+/** Non-negative integer division with ROUND_HALF_EVEN. */
 function halfEvenDiv(numerator: bigint, denominator: bigint): bigint {
   const q = numerator / denominator;
   const twice = (numerator - q * denominator) * 2n;
@@ -157,7 +157,7 @@ function halfEvenDiv(numerator: bigint, denominator: bigint): bigint {
   return q % 2n === 0n ? q : q + 1n;
 }
 
-/** 计费周期的固定小时数。 */
+/** Fixed hours per billing period. */
 export const PERIOD_HOURS: Record<BillingPeriod, number> = {
   day: 24,
   week: 24 * 7,
@@ -165,15 +165,15 @@ export const PERIOD_HOURS: Record<BillingPeriod, number> = {
   year: 24 * 365,
 };
 
-/** 单次下单/续费的周期数上限。 */
+/** Cap on periods per order / renewal. */
 export const MAX_PERIOD_COUNT = 36;
 
-/** 每小时计费份数;GPU 数为 0 时按整机 1 份。 */
+/** Billing units per hour; a GPU count of 0 bills one whole-machine unit. */
 export function billingUnits(gpuCount: number): number {
   return gpuCount || 1;
 }
 
-/** 本地包周期报价预览,金额字段为十进制字符串。 */
+/** Local subscription quote preview, money fields as decimal strings. */
 export interface PeriodQuote {
   period: BillingPeriod;
   periodCount: number;
@@ -186,7 +186,7 @@ export interface PeriodQuote {
   amount: string;
 }
 
-/** 本地报价:折后时价先 HALF_EVEN 到四位,再乘计费份数与小时数并舍入到分。 */
+/** Local quote: the discounted hourly price is rounded HALF_EVEN to 4 dp first, then × units × hours and rounded to the cent. */
 export function quoteSubscription(
   baseHourly: string,
   opts: { units: number; period: BillingPeriod; periodCount: number; discountPct: number },
@@ -211,12 +211,12 @@ export function quoteSubscription(
   };
 }
 
-/** 按量时价 × 折扣百分数 / 100,HALF_EVEN 到四位小数。 */
+/** On-demand hourly price × discount percent / 100, HALF_EVEN to 4 dp. */
 export function spotHourlyPrice(baseHourly: string, discountPct: number): string {
   return unscale(halfEvenDiv(scaleAmount(baseHourly, 4) * BigInt(discountPct), 100n), 4);
 }
 
-/** 折扣短语:zh「4 折」,en「40% of on-demand」;调用方当一段值嵌进整句。 */
+/** Discount phrase: zh "4 折", en "40% of on-demand"; the caller embeds it as a value in a sentence. */ // cjk-ok
 export function formatSpotDiscount(discountPct: number, t: SharedT, locale: string): string {
   if (!locale.startsWith("zh")) return t("shared:format.spotDiscount", { off: discountPct });
   const whole = Math.trunc(discountPct / 10);
@@ -224,7 +224,7 @@ export function formatSpotDiscount(discountPct: number, t: SharedT, locale: stri
   return t("shared:format.spotDiscount", { off: rest === 0 ? `${whole}` : `${whole}.${rest}` });
 }
 
-/** 秒 → "X 小时 Y 分"(en 用缩写单位)。 */
+/** Seconds → "X hr Y min" (en uses abbreviated units). */
 export function formatDuration(seconds: number, t: SharedT): string {
   if (seconds < 60) {
     return seconds <= 0 ? t("shared:format.duration.zero") : t("shared:format.duration.lessThanMinute");
@@ -236,7 +236,7 @@ export function formatDuration(seconds: number, t: SharedT): string {
   return t("shared:format.duration.hm", { h, m });
 }
 
-/** 截止时间 → "剩 47h" / "剩 30m" / "已到期"。 */
+/** Deadline → "47h left" / "30m left" / "Expired". */
 export function formatCountdown(deadline: string | Date, t: SharedT, now: Date = new Date()): string {
   const end = typeof deadline === "string" ? new Date(deadline) : deadline;
   const ms = end.getTime() - now.getTime();
@@ -246,7 +246,7 @@ export function formatCountdown(deadline: string | Date, t: SharedT, now: Date =
   return t("shared:format.countdown.minutes", { count: Math.max(1, Math.floor(ms / 60_000)) });
 }
 
-/** 冻结行内标签整句:"剩 47h后回收"(单独成键)。 */
+/** Whole inline label of the frozen row: "reclaimed in 47h" (its own key). */
 export function formatReclaimCountdown(deadline: string | Date, t: SharedT, now: Date = new Date()): string {
   const end = typeof deadline === "string" ? new Date(deadline) : deadline;
   const ms = end.getTime() - now.getTime();
@@ -256,7 +256,7 @@ export function formatReclaimCountdown(deadline: string | Date, t: SharedT, now:
   return t("shared:format.countdown.reclaimMinutes", { count: Math.max(1, Math.floor(ms / 60_000)) });
 }
 
-/** 天级倒计时:截止时刻 → "剩 X 天" / "今日到期" / "已到期"。 */
+/** Day-level countdown: deadline → "X days left" / "Due today" / "Expired". */
 export function formatDaysUntil(deadline: string | Date, t: SharedT, now: Date = new Date()): string {
   const end = typeof deadline === "string" ? new Date(deadline) : deadline;
   const ms = end.getTime() - now.getTime();
@@ -265,7 +265,7 @@ export function formatDaysUntil(deadline: string | Date, t: SharedT, now: Date =
   return days === 0 ? t("shared:format.daysLeft.dueToday") : t("shared:format.daysLeft.count", { count: days });
 }
 
-/** 天级倒计时:起点 + 天数;起点缺失返回 null。 */
+/** Day-level countdown: start + days; null without a start. */
 export function formatDaysLeft(
   startedAt: string | null | undefined,
   totalDays: number,
@@ -276,7 +276,7 @@ export function formatDaysLeft(
   return formatDaysUntil(new Date(new Date(startedAt).getTime() + totalDays * 86_400_000), t, now);
 }
 
-/** 包周期价:"2298.24" + month + 1 → "¥2,298.24/月";份数 > 1 → "¥6,894.72/3 月";未知周期只回金额。 */
+/** Subscription price: "2298.24" + month + 1 → "¥2,298.24/month"; count > 1 → "¥6,894.72/3 months"; unknown periods return the amount only. */
 export function formatPeriodPrice(
   amount: string,
   period: string,
@@ -293,12 +293,12 @@ export function formatPeriodPrice(
     : t("shared:format.perPeriod", { price, unit });
 }
 
-/** 包周期到期倒计时:"剩 23 天" / "今日到期" / "已到期";无到期时刻返回 null。 */
+/** Subscription expiry countdown: "23 days left" / "Due today" / "Expired"; null without an expiry instant. */
 export function formatExpiry(expiresAt: string | null | undefined, t: SharedT, now: Date = new Date()): string | null {
   return expiresAt ? formatDaysUntil(expiresAt, t, now) : null;
 }
 
-/** useFormat() 绑定 t、locale 与部署货币后的格式化函数集合。 */
+/** The format function set of useFormat() bound to t, locale and the deployment currency. */
 export interface Formatters {
   /** ISO 4217 code of the deployment currency; null until site config is known. */
   currency: string | null;
@@ -337,26 +337,26 @@ export function makeFormatters(t: SharedT, locale: string, currency: string | nu
   };
 }
 
-/** 金额字符串比较(BigInt 万分位):a<b → -1,a==b → 0,a>b → 1。 */
+/** Compare amount strings (BigInt, 4 dp): a<b → -1, a==b → 0, a>b → 1. */
 export function compareAmounts(a: string, b: string): number {
   const d = scaleAmount(a, 4) - scaleAmount(b, 4);
   return d < 0n ? -1 : d > 0n ? 1 : 0;
 }
 
-/** 金额字符串 → 万分位整数 number(图表值用,与 compareAmounts 同口径)。 */
+/** Amount string → integer number in ten-thousandths (chart values, same basis as compareAmounts). */
 export function amountToScaledNumber(s: string): number {
   return Number(scaleAmount(s, 4));
 }
 
-/** 两个金额字符串相加(BigInt,2 位小数)。展示层用。 */
+/** Add two amount strings (BigInt, 2 dp). Display layer only. */
 export function addAmounts(a: string, b: string): string {
   return unscale(scaleAmount(a, 2) + scaleAmount(b, 2), 2);
 }
 
-/** 两位零填充(本地日期时间拼接用)。 */
+/** Two-digit zero padding (local date-time assembly). */
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
-/** 本地"今天"(YYYY-MM-DD)与时区偏移(分,UTC 以东为正):当日消费查询参数。 */
+/** Local "today" (YYYY-MM-DD) and time-zone offset (minutes, east of UTC positive): parameters of the daily consumption query. */
 export function localToday(now: Date = new Date()): { date: string; tzOffsetMinutes: number } {
   return {
     date: `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`,
@@ -364,7 +364,7 @@ export function localToday(now: Date = new Date()): { date: string; tzOffsetMinu
   };
 }
 
-/** 时区后缀:"(UTC+8)" / "(UTC-5)" / "(UTC+5:30)"。 */
+/** Time-zone suffix: "(UTC+8)" / "(UTC-5)" / "(UTC+5:30)". */
 function tzSuffix(d: Date = new Date()): string {
   const offsetMin = -d.getTimezoneOffset();
   const sign = offsetMin >= 0 ? "+" : "-";
@@ -374,21 +374,21 @@ function tzSuffix(d: Date = new Date()): string {
   return `(UTC${sign}${h}${m ? `:${pad2(m)}` : ""})`;
 }
 
-/** ISO 时间转本地日期时间与 UTC 偏移;空值返回 "-"。 */
+/** ISO time → local date-time with the UTC offset; "-" for empty values. */
 export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "-";
   const d = new Date(iso);
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())} ${tzSuffix(d)}`;
 }
 
-/** ISO 时间转本地 YYYY-MM-DD;空值返回 "-"。 */
+/** ISO time → local YYYY-MM-DD; "-" for empty values. */
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return "-";
   const d = new Date(iso);
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
-/** GB 容量 → "100 GB" / "1.5 TB" */
+/** GB size → "100 GB" / "1.5 TB" */
 export function formatSizeGb(gb: number): string {
   if (gb >= 1024) {
     const tb = gb / 1024;

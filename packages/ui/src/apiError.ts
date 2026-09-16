@@ -1,4 +1,4 @@
-/** API 错误 → 展示文案:有 message_key 查 errors ns(缺键回落服务端 message),无 key 用 message。应用侧经 useApiErrorText()。 */
+/** API error → display copy: with message_key look up the errors ns (falling back to the server message on a missing key), without a key use message. Apps go through useApiErrorText(). */
 
 export interface ApiErrorLike {
   code?: string;

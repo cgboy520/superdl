@@ -1,4 +1,4 @@
-/** 颜色计算(WCAG 2.x):相对亮度、对比度、按底色取黑 / 白字。tokens.test 与 HexTag 共用。 */
+/** Colour maths (WCAG 2.x): relative luminance, contrast ratio, black / white text by background. Shared by tokens.test and HexTag. */
 
 import { textOnAccent, webDarkColors } from "./tokens";
 
@@ -18,7 +18,7 @@ function relLuminanceHex(hex: string): number {
   return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
 }
 
-/** hex 直接取;rgba(0,0,0,a) 先与白底合成 */
+/** hex taken as-is; rgba(0,0,0,a) is composited onto white first */
 export function relativeLuminance(color: string): number {
   const m = /^rgba\(\s*0\s*,\s*0\s*,\s*0\s*,\s*([\d.]+)\s*\)$/.exec(color);
   const alpha = m?.[1];
@@ -35,7 +35,7 @@ export function contrastRatio(fg: string, bg: string): number {
   return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
 }
 
-/** 实心底上的文字色:白与深墨二选其一,取对比度更高者。 */
+/** Text colour on a solid background: white or deep ink, whichever has the higher contrast. */
 export function textOnColor(bg: string): string {
   return contrastRatio(textOnAccent, bg) >= contrastRatio(webDarkColors.bgBase, bg)
     ? textOnAccent

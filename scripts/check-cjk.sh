@@ -51,9 +51,6 @@ REPO_CJK_ALLOW=(
   "apps/admin/src/"
   "apps/web/"
   "deploy/"
-  "e2e/playwright.config.ts"
-  "packages/api-client/src/"
-  "packages/ui/src/"
   "scripts/"
 )
 

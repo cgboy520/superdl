@@ -1,23 +1,23 @@
-/** 状态枚举 → 徽标色 / 文案 key 映射表。枚举值与后端严格一致;labelKey 带 "shared:" 前缀,键集由 locales.test 守护。 */
+/** Status enum → badge colour / copy key tables. Enum values match the backend exactly; labelKey carries the "shared:" prefix, the key set is guarded by locales.test. */
 
 import { colorPrimary, statusColors } from "./tokens";
 
 export type InstanceStatus =
   "creating" | "running" | "stopping" | "stopped" | "starting" | "frozen" | "releasing" | "released" | "failed";
 
-/** 状态表条目的三种形状:只有文案 / 带颜色 / 带徽标语义(可选图标)。 */
+/** The three shapes of a status entry: copy only / with colour / with badge semantics (optional icon). */
 export interface LabelMeta {
   labelKey: string;
-  /** Tooltip 解释文案 key */
+  /** Tooltip explanation copy key */
   hintKey?: string;
 }
 export interface ColorMeta extends LabelMeta {
   color: string;
 }
-/** 图标键(由 StatusTag 映射到图标库,本表不依赖图标库) */
+/** Icon key (mapped to the icon library by StatusTag; this table has no icon dependency) */
 export type StatusIcon = "check" | "sync" | "pause" | "warning" | "close" | "clock" | "minus";
 export interface StatusMeta extends ColorMeta {
-  /** antd Badge status 语义 */
+  /** antd Badge status semantics */
   badge: "success" | "processing" | "default" | "warning" | "error";
   icon?: StatusIcon;
 }
@@ -25,7 +25,7 @@ export type AnyMeta = LabelMeta | ColorMeta | StatusMeta;
 export const isColorMeta = (m: AnyMeta): m is ColorMeta => "color" in m;
 export const isStatusMeta = (m: AnyMeta): m is StatusMeta => "badge" in m;
 
-/** 按运行时字符串取表项,未知枚举返回 undefined。 */
+/** Look up an entry by runtime string, undefined for unknown enums. */
 export function metaOf<M extends Record<string, unknown>>(map: M, key: string): M[keyof M] | undefined {
   return (map as Record<string, M[keyof M]>)[key];
 }
@@ -62,17 +62,17 @@ export const instanceStatusMap = {
   failed: { labelKey: "shared:status.instance.failed", color: statusColors.red, badge: "error", icon: "close" },
 } as const satisfies Record<InstanceStatus, StatusMeta>;
 
-/** 过渡态:列表/详情据此高频轮询。 */
+/** Transitional states: lists / details poll frequently on them. */
 const TRANSIENT_INSTANCE_STATUSES: readonly string[] = ["creating", "starting", "stopping", "releasing"];
 
 export function isTransientInstanceStatus(status: string): boolean {
   return TRANSIENT_INSTANCE_STATUSES.includes(status);
 }
 
-/** 售卖档位,与 skus.tier 严格一致;标准/经济由所在池派生,见 skuVariant。 */
+/** Sales tiers, matching skus.tier exactly; standard / economy derive from the pool, see skuVariant. */
 export type SkuTier = "dedicated" | "shared" | "cpu";
 
-/** 用户可见档位:tier × pool_label(与后端 core/gpu_adapter 同口径)。共享在 mig 池 = 标准,hami 池 = 经济;cpu 不按池分化。 */
+/** User-visible tier: tier × pool_label (same definition as the backend core/gpu_adapter). Shared on the mig pool = standard, hami pool = economy; cpu is not split by pool. */
 export type SkuVariant = "dedicated" | "shared_mig" | "shared_hami" | "cpu";
 
 export function skuVariant(tier: string, poolLabel?: string | null): SkuVariant {
@@ -96,7 +96,7 @@ export const skuTierMap = {
   cpu: { labelKey: "shared:status.tier.cpu", color: "#475569", hintKey: "shared:status.tierHint.cpu" },
 } as const satisfies Record<SkuVariant, ColorMeta>;
 
-/** 实例形态,与 instances.workload_type 严格一致:dev = SSH + JupyterLab 开发机(默认,列表不挂标记),service = 对外 HTTPS 服务容器。 */
+/** Instance form, matching instances.workload_type exactly: dev = SSH + JupyterLab dev box (default, unmarked in lists), service = public HTTPS service container. */
 export type WorkloadType = "dev" | "service";
 
 export const workloadTypeMap = {
@@ -104,7 +104,7 @@ export const workloadTypeMap = {
   service: { labelKey: "shared:status.workload.service", color: colorPrimary },
 } as const satisfies Record<WorkloadType, ColorMeta>;
 
-/** 在线服务派生状态(后端 services/state.py::derive_status,不落库)。unready = 容器在跑但健康检查未过,照常计费;released 译作「已删除」。 */
+/** Derived online-service status (backend services/state.py::derive_status, not stored). unready = the container runs but the health check has not passed, billed as usual; released is shown as "deleted". */
 export type ServiceStatus =
   "deploying" | "running" | "unready" | "stopping" | "stopped" | "frozen" | "failed" | "releasing" | "released";
 
@@ -141,7 +141,7 @@ export const serviceStatusMap = {
   released: { labelKey: "shared:status.service.released", color: statusColors.gray, badge: "default", icon: "minus" },
 } as const satisfies Record<ServiceStatus, StatusMeta>;
 
-/** 服务过渡态:列表 / 详情据此高频轮询;unready 不算过渡态。 */
+/** Service transitional states: lists / details poll frequently on them; unready is not transitional. */
 const TRANSIENT_SERVICE_STATUSES: readonly string[] = ["deploying", "stopping", "releasing"];
 
 export function isTransientServiceStatus(status: string): boolean {
@@ -152,12 +152,12 @@ export function isServiceStatus(value: unknown): value is ServiceStatus {
   return typeof value === "string" && Object.hasOwn(serviceStatusMap, value);
 }
 
-/** 列表状态筛选项(不含 released)。 */
+/** List status filter options (without released). */
 export const SERVICE_FILTER_STATUSES: readonly ServiceStatus[] = (
   Object.keys(serviceStatusMap) as ServiceStatus[]
 ).filter((s) => s !== "released");
 
-/** 购买模式,与 instances.market 严格一致(后端 core/pricing.py MARKET_* 常量);与 tier 正交。 */
+/** Purchase mode, matching instances.market exactly (backend core/pricing.py MARKET_* constants); orthogonal to tier. */
 export type Market = "on_demand" | "spot" | "subscription";
 
 export const marketMap = {
@@ -170,14 +170,14 @@ export const marketMap = {
   subscription: { labelKey: "shared:status.market.subscription", color: colorPrimary },
 } as const satisfies Record<Market, ColorMeta>;
 
-/** 竞价实例「可回收」行内标记,与 `marketMap.spot` 同色。 */
+/** Inline "reclaimable" marker of spot instances, the same colour as `marketMap.spot`. */
 export const spotReclaimTag = {
   labelKey: "shared:status.market.spotReclaimable",
   hintKey: "shared:status.marketHint.spot",
   color: statusColors.orange,
 } as const satisfies ColorMeta;
 
-/** 实例事件 `reason` → 文案,值与后端 `transition(reason=...)` 字面量一致;自由文本 reason 由调用方经 metaOf 回退原样渲染。 */
+/** Instance event `reason` → copy, values match the backend `transition(reason=...)` literals; free-text reasons are rendered as-is by the caller via metaOf. */
 export const instanceEventReasonMap = {
   create: { labelKey: "shared:status.eventReason.create" },
   pod_ready: { labelKey: "shared:status.eventReason.pod_ready" },
@@ -204,7 +204,7 @@ export const instanceEventReasonMap = {
   rollout_retire: { labelKey: "shared:status.eventReason.rollout_retire" },
 } as const satisfies Record<string, LabelMeta>;
 
-/** 计费周期,与 subscriptions.period 严格一致(定长小时,见 PERIOD_HOURS)。 */
+/** Billing period, matching subscriptions.period exactly (fixed hours, see PERIOD_HOURS). */
 export type BillingPeriod = "day" | "week" | "month" | "year";
 
 export const BILLING_PERIODS: readonly BillingPeriod[] = ["day", "week", "month", "year"];
@@ -220,13 +220,13 @@ export const periodMap = {
   year: { labelKey: "shared:status.period.year" },
 } as const satisfies Record<BillingPeriod, LabelMeta>;
 
-/** 购买方式列文案 key:包周期按周期分化成 包日/包周/包月/包年,其余取 market;未知 market 返回 undefined。 */
+/** Purchase-mode column copy key: subscriptions split by period into daily/weekly/monthly/yearly plans, the rest take market; unknown market returns undefined. */
 export function marketLabelKey(market: string, period?: string | null) {
   if (market === "subscription" && isBillingPeriod(period)) return periodMap[period].labelKey;
   return metaOf(marketMap, market)?.labelKey;
 }
 
-/** 订阅单状态,与 subscriptions.status 严格一致。 */
+/** Subscription status, matching subscriptions.status exactly. */
 export type SubscriptionStatus = "active" | "expired" | "cancelled";
 
 export const subscriptionStatusMap = {
@@ -235,7 +235,7 @@ export const subscriptionStatusMap = {
   cancelled: { labelKey: "shared:status.subscription.cancelled", color: statusColors.gray, badge: "default" },
 } as const satisfies Record<SubscriptionStatus, StatusMeta>;
 
-/** 包周期已到期(与后端 subscriptions.assert_active 同口径)。非包周期恒 false;缺 subscription 字段判已到期(fail-closed)。 */
+/** Subscription expired (same definition as the backend subscriptions.assert_active). Always false for non-subscriptions; a missing subscription field counts as expired (fail-closed). */
 export function isSubscriptionExpired(
   market: string,
   subscription: { status: string; expires_at: string } | null | undefined,
@@ -246,7 +246,7 @@ export function isSubscriptionExpired(
   return subscription.status !== "active" || new Date(subscription.expires_at).getTime() <= now.getTime();
 }
 
-/** 镜像节点缓存状态(与 image_node_cache.status 严格一致) */
+/** Image node cache status (matches image_node_cache.status exactly) */
 export type ImageCacheStatus = "pending" | "pulling" | "cached" | "failed";
 
 export const imageCacheStatusMap = {
@@ -260,7 +260,7 @@ export const imageCacheStatusMap = {
   failed: { labelKey: "shared:status.imageCache.failed", color: statusColors.red, badge: "error" },
 } as const satisfies Record<ImageCacheStatus, StatusMeta>;
 
-/** 节点注册/加入状态(与 node_enrollments.status 严格一致) */
+/** Node enrollment / join status (matches node_enrollments.status exactly) */
 export type NodeEnrollStatus =
   "pending" | "installing" | "rebooting" | "joining" | "joined" | "failed" | "expired" | "revoked";
 
@@ -325,7 +325,7 @@ export const payoutChannelForPayment: Partial<Record<string, PayoutChannel>> = {
   alipay: "alipay_transfer",
 };
 
-/** 调账单状态(与后端严格一致) */
+/** Adjustment status (matches the backend exactly) */
 export type AdjustmentStatus = "pending" | "approved" | "rejected";
 
 export const adjustmentStatusMap = {
@@ -334,7 +334,7 @@ export const adjustmentStatusMap = {
   rejected: { labelKey: "shared:status.adjustment.rejected", color: statusColors.red, badge: "error" },
 } as const satisfies Record<AdjustmentStatus, StatusMeta>;
 
-/** 法务文档版本状态(与后端严格一致) */
+/** Legal document version status (matches the backend exactly) */
 export type LegalDocStatus = "draft" | "published" | "archived";
 
 export const legalDocStatusMap = {
@@ -343,7 +343,7 @@ export const legalDocStatusMap = {
   archived: { labelKey: "shared:status.legalDoc.archived", color: statusColors.gray, badge: "default" },
 } as const satisfies Record<LegalDocStatus, StatusMeta>;
 
-/** 退款单状态(与 refund_requests.status 严格一致) */
+/** Refund status (matches refund_requests.status exactly) */
 export type RefundStatus = "pending" | "approved" | "rejected" | "paid" | "cancelled";
 
 export const refundStatusMap = {
@@ -354,7 +354,7 @@ export const refundStatusMap = {
   cancelled: { labelKey: "shared:status.refund.cancelled", color: statusColors.gray, badge: "default" },
 } as const satisfies Record<RefundStatus, StatusMeta>;
 
-/** 退款线下打款渠道(与 schemas.PayoutChannel 严格一致) */
+/** Refund offline payout channel (matches schemas.PayoutChannel exactly) */
 export type PayoutChannel = "offline" | "alipay_transfer" | "wechat_transfer";
 
 export const payoutChannelMap = {
@@ -363,7 +363,7 @@ export const payoutChannelMap = {
   wechat_transfer: { labelKey: "shared:status.payoutChannel.wechat_transfer" },
 } as const satisfies Record<PayoutChannel, LabelMeta>;
 
-/** 发票申请状态(与 invoice_requests.status 严格一致) */
+/** Invoice request status (matches invoice_requests.status exactly) */
 export type InvoiceStatus = "submitted" | "issued" | "rejected";
 
 export const invoiceStatusMap = {
@@ -372,7 +372,7 @@ export const invoiceStatusMap = {
   rejected: { labelKey: "shared:status.invoice.rejected", color: statusColors.red, badge: "error" },
 } as const satisfies Record<InvoiceStatus, StatusMeta>;
 
-/** 工单状态(与 tickets.status 严格一致);两端共用 */
+/** Ticket status (matches tickets.status exactly); shared by both consoles */
 export type TicketStatus = "open" | "pending_staff" | "pending_user" | "resolved" | "closed";
 
 export const ticketStatusMap = {
@@ -383,14 +383,14 @@ export const ticketStatusMap = {
   closed: { labelKey: "shared:status.ticket.closed", color: statusColors.gray, badge: "default" },
 } as const satisfies Record<TicketStatus, StatusMeta>;
 
-/** 可回复的工单状态(resolved/closed 不可回复,服务端同口径 409)。 */
+/** Ticket statuses that accept replies (resolved/closed do not, the server answers 409 alike). */
 const REPLIABLE_TICKET_STATUSES: readonly string[] = ["open", "pending_staff", "pending_user"];
 
 export function isTicketRepliable(status: string): boolean {
   return REPLIABLE_TICKET_STATUSES.includes(status);
 }
 
-/** 工单分类(与 tickets.category 严格一致) */
+/** Ticket category (matches tickets.category exactly) */
 export type TicketCategory = "instance" | "billing" | "data" | "account" | "other";
 
 export const ticketCategoryMap = {
@@ -401,7 +401,7 @@ export const ticketCategoryMap = {
   other: { labelKey: "shared:status.ticketCategory.other" },
 } as const satisfies Record<TicketCategory, LabelMeta>;
 
-/** 注销申请状态(与 account_deletion_requests.status 严格一致) */
+/** Deletion request status (matches account_deletion_requests.status exactly) */
 export type DeletionStatus = "pending" | "completed" | "rejected" | "cancelled";
 
 export const deletionStatusMap = {
@@ -421,7 +421,7 @@ export const diskStatusMap = {
   deleted: { labelKey: "shared:status.disk.deleted", color: statusColors.gray, badge: "default" },
 } as const satisfies Record<DiskStatus, StatusMeta>;
 
-/** 公告状态(与 announcements.status 严格一致) */
+/** Announcement status (matches announcements.status exactly) */
 export type AnnouncementStatus = "published" | "revoked";
 
 export const announcementStatusMap = {
@@ -429,7 +429,7 @@ export const announcementStatusMap = {
   revoked: { labelKey: "shared:status.announcement.revoked", color: statusColors.gray, badge: "default" },
 } as const satisfies Record<AnnouncementStatus, StatusMeta>;
 
-/** 节点状态(与 nodes 台账 status 严格一致,键保后端大小写);?status= 白名单靠 isNodeStatus。 */
+/** Node status (matches the nodes inventory status exactly, keys keep the backend casing); the ?status= allow-list relies on isNodeStatus. */
 export type NodeStatus = "Ready" | "NotReady" | "Cordoned" | "Missing";
 
 export const NODE_STATUSES: readonly NodeStatus[] = ["Ready", "NotReady", "Cordoned", "Missing"];
@@ -463,7 +463,7 @@ export const nodeStatusMap = {
   },
 } as const satisfies Record<NodeStatus, StatusMeta>;
 
-/** 集群组件体检五态。 */
+/** The five cluster component health states. */
 export type ComponentHealth = "ok" | "degraded" | "down" | "disabled" | "unknown";
 
 export const componentHealthMap = {
@@ -497,15 +497,15 @@ export const componentHealthMap = {
   },
 } as const satisfies Record<ComponentHealth, StatusMeta>;
 
-/** 面板排序:要处理的在前,健康的在后。 */
+/** Panel order: needs handling first, healthy last. */
 export const COMPONENT_HEALTH_ORDER: readonly ComponentHealth[] = ["down", "degraded", "disabled", "unknown", "ok"];
 
-/** 需要人处理的态:标题计数与横幅按它算。 */
+/** States that need a person: title counts and banners count them. */
 export function isComponentAttention(state: ComponentHealth): boolean {
   return state === "down" || state === "degraded";
 }
 
-/** 告警严重度(与 alerts.severity 严格一致);徽标 = 图标 + 文字,不只靠颜色。 */
+/** Alert severity (matches alerts.severity exactly); badge = icon + text, never colour alone. */
 export type AlertSeverity = "info" | "warning" | "critical";
 
 export const SEVERITY_ORDER: readonly AlertSeverity[] = ["critical", "warning", "info"];
@@ -521,12 +521,12 @@ export const severityMap = {
   critical: { labelKey: "shared:status.severity.critical", color: statusColors.red, badge: "error", icon: "close" },
 } as const satisfies Record<AlertSeverity, StatusMeta>;
 
-/** 告警严重度 → AttentionBar 严重度。 */
+/** Alert severity → AttentionBar severity. */
 export function attentionSeverityOf(s: AlertSeverity): "info" | "warning" | "error" {
   return s === "critical" ? "error" : s;
 }
 
-/** 全部状态表(locales.test 遍历它保证 zh/en 键齐全;StatusTag 只接受这里的表)。 */
+/** Every status table (locales.test walks it to guarantee complete zh/en keys; StatusTag accepts only these tables). */
 export const ALL_STATUS_MAPS = [
   instanceStatusMap,
   serviceStatusMap,

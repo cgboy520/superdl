@@ -8,7 +8,7 @@ export interface LeaveBlocker {
   reset: () => void;
 }
 
-/** 脏表单离开确认:接收路由阻断器,监听 beforeunload;提供的 bypass 不绕过 beforeunload。 */
+/** Dirty-form leave confirmation: takes the router blocker and listens to beforeunload; the provided bypass does not skip beforeunload. */
 export function useLeaveGuardCore(
   dirty: boolean,
   blocker: LeaveBlocker,

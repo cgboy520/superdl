@@ -1,4 +1,4 @@
-/** 查询状态呈现(两端共用):moneyOr 金额未就绪显示 "—";DataErrorAlert 页面级「部分数据加载失败」横幅。 */
+/** Query state rendering (shared by both consoles): moneyOr shows "—" for pending amounts; DataErrorAlert is the page-level "part of the data failed to load" banner. */
 
 import { Alert, Button } from "antd";
 import type { CSSProperties } from "react";
@@ -15,9 +15,9 @@ export function DataErrorAlert({
   style,
 }: {
   onRetry: () => void;
-  /** 覆盖默认文案 */
+  /** Override the default copy */
   title?: string;
-  /** null = 不出描述行(单行错误条) */
+  /** null = no description row (single-line error bar) */
   description?: string | null;
   style?: CSSProperties;
 }) {

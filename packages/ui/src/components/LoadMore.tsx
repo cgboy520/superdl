@@ -1,4 +1,4 @@
-/** 游标分页「加载更多」(两端共用):hasNextPage → 按钮;isFetchNextPageError → 重试;无下一页 → 「已加载全部 N 条」。 */
+/** Cursor pagination "load more" (shared by both consoles): hasNextPage → button; isFetchNextPageError → retry; no next page → "all N loaded". */
 
 import { Alert, Button, Typography } from "antd";
 import { useTranslation } from "react-i18next";
@@ -12,9 +12,9 @@ export function LoadMore({
 }: {
   hasNextPage: boolean;
   loading: boolean;
-  /** fetchNextPage 失败 */
+  /** fetchNextPage failed */
   isError?: boolean;
-  /** 已加载条数(收尾态文案);0 时不渲染收尾 */
+  /** Loaded count (end-state copy); nothing rendered at 0 */
   loadedCount?: number;
   onLoadMore: () => void;
 }) {

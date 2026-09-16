@@ -1,4 +1,4 @@
-/** 服务端 CSV 落盘(两端共用),补回 BOM。 */
+/** Save a server CSV to disk (shared by both consoles), restoring the BOM. */
 
 function downloadCsv(filename: string, content: string): void {
   const withBom = content.startsWith("﻿") ? content : "﻿" + content;
@@ -11,10 +11,10 @@ function downloadCsv(filename: string, content: string): void {
   URL.revokeObjectURL(url);
 }
 
-/** 服务端 CSV 截断标记(与 apps/api core/csvexport.py TRUNCATED_MARKER 一致)。 */
+/** Server CSV truncation marker (matches TRUNCATED_MARKER in apps/api core/csvexport.py). */
 export const TRUNCATED_MARKER = "#SUPERDL_EXPORT_TRUNCATED#";
 
-/** 落盘并返回是否截断。 */
+/** Save to disk and return whether it was truncated. */
 export function downloadCsvChecked(filename: string, content: string): "ok" | "truncated" {
   downloadCsv(filename, content);
   return content.includes(TRUNCATED_MARKER) ? "truncated" : "ok";

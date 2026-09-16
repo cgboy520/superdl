@@ -1,4 +1,4 @@
-/** CSV 导出:loading 态 + 截断/成功/失败提示;导出函数由调用方给。时区偏移 UTC 以东为正。 */
+/** CSV export: loading state + truncation / success / failure messages; the export function comes from the caller. Time-zone offset east of UTC is positive. */
 import { App } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";

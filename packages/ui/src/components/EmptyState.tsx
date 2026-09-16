@@ -1,5 +1,5 @@
-/** 空态(两端统一):线稿插画 + 一句话 + 至多两个动作;查询失败用 TableErrorEmpty/DataErrorAlert。
- *  插画 stroke=currentColor 随主题;scene 决定插画与默认文案(shared:empty.*)。 */
+/** Empty state (shared by both consoles): line illustration + one sentence + at most two actions; failed queries use TableErrorEmpty/DataErrorAlert.
+ *  The illustration uses stroke=currentColor and follows the theme; scene picks the illustration and the default copy (shared:empty.*). */
 
 import { theme, Typography } from "antd";
 import type { CSSProperties, ReactNode } from "react";
@@ -73,14 +73,14 @@ export function EmptyState({
   compact,
   style,
 }: {
-  /** 场景(决定插画与默认文案) */
+  /** Scene (picks the illustration and default copy) */
   scene?: EmptyScene;
   description?: ReactNode;
-  /** 主动作 */
+  /** Primary action */
   action?: ReactNode;
-  /** 次动作(如「清空筛选」) */
+  /** Secondary action (e.g. "Clear filters") */
   secondaryAction?: ReactNode;
-  /** 紧凑形态 */
+  /** Compact form */
   compact?: boolean;
   style?: CSSProperties;
 }) {

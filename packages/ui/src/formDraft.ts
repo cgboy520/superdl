@@ -1,11 +1,11 @@
-/** 表单草稿(sessionStorage)。仅非敏感新建表单;密码/凭据/支付字段禁入;提交成功后 clear。 */
+/** Form drafts (sessionStorage). Non-sensitive creation forms only; passwords / credentials / payment fields are banned; clear after a successful submit. */
 
 import { useMemo } from "react";
 
 export interface FormDraft<T extends object> {
-  /** 读出草稿(无或损坏 → undefined) */
+  /** Read the draft (undefined when missing or corrupt) */
   load: () => Partial<T> | undefined;
-  /** 覆盖写 */
+  /** Overwrite */
   save: (values: Partial<T>) => void;
   clear: () => void;
 }

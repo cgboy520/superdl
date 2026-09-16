@@ -1,4 +1,4 @@
-/** 筛选链 chip 行(市场/创建页)。单选,禁用项走 GatedButton(灰置 + 原因);聚合项由调用方用哨兵值表达。 */
+/** Filter chip row (market / create page). Single select, disabled items go through GatedButton (greyed + reason); aggregate items are expressed by the caller with a sentinel value. */
 
 import { useThemeColors } from "../hooks/useThemeColors";
 import { fontWeight, space } from "../tokens";
@@ -13,7 +13,7 @@ export interface ChipOption<T extends string | number> {
   disabledReason?: string;
 }
 
-/** chip 行左侧标签栏宽度。 */
+/** Width of the label column on the left of the chip row. */
 export const CHIP_LABEL_WIDTH = 84;
 
 export function ChipRow<T extends string | number>({

@@ -3,7 +3,7 @@
  *  `NodeOut.supports_mig` / `supports_passthrough` from `core/gpu_models`. */
 
 export interface GpuSpec {
-  /** 展示名(带空格排版) */
+  /** Display name (with spacing) */
   label: string;
   vramGb: number;
   fp32Tflops: number;
@@ -24,14 +24,14 @@ export const gpuSpecs: Record<string, GpuSpec> = {
   V100: { label: "V100", vramGb: 32, fp32Tflops: 15.7, fp16Tflops: 125, arch: "Volta" },
 };
 
-/** 可选卡数档位(市场筛选与创建页共用);SKU 上限不在档位内时创建页补一档。 */
+/** Selectable card-count tiers (shared by the market filter and the create page); the create page adds a tier when the SKU cap is not among them. */
 export const GPU_COUNT_STEPS: readonly number[] = [1, 2, 4, 8];
 
 export function normalizeGpuModel(model: string): string {
   return model.replace(/[\s-]/g, "").toUpperCase();
 }
 
-/** 归一后查表;查不到返回 undefined。 */
+/** Lookup after normalisation; undefined when not found. */
 export function getGpuSpec(model: string | null | undefined): GpuSpec | undefined {
   if (!model) return undefined;
   return gpuSpecs[normalizeGpuModel(model)];

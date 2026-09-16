@@ -1,6 +1,6 @@
 import { defineConfig } from "@playwright/test";
 
-/** 需已迁移并初始化的 API(8000)及 worker;配置启动 web,设置非空 SUPERDL_ADMIN_E2E 时也启动 admin。 */
+/** Needs a migrated, seeded API (8000) and a running worker; the config starts web, and admin too when SUPERDL_ADMIN_E2E is non-empty. */
 const adminE2E = Boolean(process.env.SUPERDL_ADMIN_E2E);
 
 export default defineConfig({

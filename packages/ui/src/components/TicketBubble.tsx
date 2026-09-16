@@ -1,4 +1,4 @@
-/** 工单对话气泡(两端共用):side 决定左右停靠与底色(右 = 本端发送)。 */
+/** Ticket conversation bubble (shared by both consoles): side decides alignment and background (right = sent by this side). */
 
 import { theme, Typography } from "antd";
 import type { ReactNode } from "react";
@@ -13,9 +13,9 @@ export function TicketBubble({
   maxWidth = "75%",
 }: {
   side: "left" | "right";
-  /** 发送者称谓 */
+  /** Sender label */
   label: ReactNode;
-  /** 已格式化时间串 */
+  /** Pre-formatted time string */
   time: ReactNode;
   body: ReactNode;
   maxWidth?: number | string;

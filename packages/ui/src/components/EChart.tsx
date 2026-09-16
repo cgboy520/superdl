@@ -1,4 +1,4 @@
-/** ECharts 封装:整量更新 option、自动 resize、可访问标签与加载/空/错误覆盖层。 */
+/** ECharts wrapper: full option updates, auto resize, accessible label and loading / empty / error overlays. */
 
 import { BarChart, LineChart, PieChart } from "echarts/charts";
 import { AriaComponent, GridComponent, LegendComponent, MarkLineComponent, TooltipComponent } from "echarts/components";
@@ -62,7 +62,7 @@ echarts.registerTheme("noc", {
   },
 });
 
-/** 用户端浅色图表预设 */
+/** Light chart preset for the user console */
 echarts.registerTheme("web-light", {
   color: [
     colorPrimary,
@@ -94,7 +94,7 @@ echarts.registerTheme("web-light", {
   },
 });
 
-/** 用户端暗色图表预设(色板同 webDarkColors) */
+/** Dark chart preset for the user console (palette = webDarkColors) */
 echarts.registerTheme("web-dark", {
   color: [
     webDarkColors.menuSelectedColor,
@@ -130,17 +130,17 @@ export interface EChartProps {
   option: Record<string, unknown>;
   style?: CSSProperties;
   className?: string;
-  /** 已注册主题名(如 "noc") */
+  /** Registered theme name (e.g. "noc") */
   theme?: string;
-  /** 图表可访问名称(读屏) */
+  /** Accessible chart name (screen readers) */
   ariaLabel?: string;
-  /** 加载中:图表区盖 Spin */
+  /** Loading: the chart area is covered by a Spin */
   loading?: boolean;
-  /** 无数据空态:true 默认文案,ReactNode 自定义(boolean 含于 ReactNode) */
+  /** Empty state: true = default copy, ReactNode = custom (boolean is part of ReactNode) */
   empty?: ReactNode;
-  /** 断源降级:true 默认文案,ReactNode 自定义 */
+  /** Source-down degradation: true = default copy, ReactNode = custom */
   degraded?: ReactNode;
-  /** 联动组名:同组图表 axisPointer / tooltip 联动(echarts.connect) */
+  /** Link group name: charts in the same group share axisPointer / tooltip (echarts.connect) */
   group?: string;
 }
 

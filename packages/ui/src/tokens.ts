@@ -1,4 +1,4 @@
-/** 两端共享设计 token:用户端浅色/暗色主题与管理端深色主题。 */
+/** Design tokens shared by both consoles: user light / dark themes and the admin dark theme. */
 
 export const colorPrimary = "#4F46E5";
 
@@ -6,11 +6,11 @@ export const fontFamily =
   '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", ' +
   '"Microsoft YaHei", "Helvetica Neue", Arial, sans-serif';
 
-/** 标识 / 价格 / 命令的等宽栈(公开层自托管 IBM Plex Mono 在前;base.css .mono 与此同步) */
+/** Monospace stack for identifiers / prices / commands (the public layer's self-hosted IBM Plex Mono first; base.css .mono stays in sync) */
 export const fontFamilyMono =
   '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace';
 
-/** 品牌渐变端色(topBar/hero 渐变串与 BrandLogo SVG stop 由此派生) */
+/** Brand gradient end colours (the topBar / hero gradient strings and the BrandLogo SVG stops derive from them) */
 export const brandGradientStops = {
   topBarFrom: "#4338CA",
   heroFrom: "#312E81",
@@ -18,22 +18,22 @@ export const brandGradientStops = {
   heroTo: "#6D28D9",
 } as const;
 
-/** 品牌渐变与品牌面(用户端公开层 + 控制台顶栏) */
+/** Brand gradient and brand surfaces (user public layer + console top bar) */
 export const brand = {
-  /** 控制台/公开页全宽顶栏底 */
+  /** Full-width top bar background of console / public pages */
   topBarBg: `linear-gradient(90deg, ${brandGradientStops.topBarFrom} 0%, ${brandGradientStops.heroMid} 100%)`,
-  /** 主页 Hero / 登录页左栏底 */
+  /** Home Hero / login left column background */
   heroBg: `linear-gradient(135deg, ${brandGradientStops.heroFrom} 0%, ${brandGradientStops.heroMid} 55%, ${brandGradientStops.heroTo} 100%)`,
-  /** 浅靛强调面(菜单选中底/高亮块) */
+  /** Light indigo accent surface (selected menu background / highlight block) */
   indigo50: "#EEF2FF",
-  /** 页面底色(= colorBgLayout) */
+  /** Page background (= colorBgLayout) */
   pageBg: "#F5F6FA",
-  /** 公开层深墨面板(行情板 / 页脚) */
+  /** Public deep ink panel (price board / footer) */
   ink: "#14162B",
-  /** 品牌渐变 / 深墨底上的文字(渐变端色对白字的 AA 由 tokens.test 回归) */
+  /** Text on the brand gradient / deep ink (gradient end colours vs white text AA regressed by tokens.test) */
   onHero: "#FFFFFF",
   onHeroMuted: "rgba(255,255,255,0.85)",
-  /** 深墨面板上的分隔线与弱化文字 */
+  /** Dividers and muted text on the deep ink panel */
   inkBorder: "rgba(255,255,255,0.12)",
   inkDivider: "rgba(255,255,255,0.08)",
   inkTextMuted: "rgba(255,255,255,0.65)",
@@ -43,30 +43,30 @@ export const adminColors = {
   bgElevated: "#111A2E",
   dataAccent: "#22D3EE",
   alertAccent: "#F59E0B",
-  /** 次要文本(表格副行/图表轴标) */
+  /** Secondary text (table sub-rows / chart axis labels) */
   textSecondary: "#94A3B8",
-  /** 弱化文本(说明/占位);对比度 ≥4.5:1,tokens.test.ts 回归 */
+  /** Muted text (notes / placeholders); contrast ≥4.5:1, regressed by tokens.test.ts */
   textMuted: "#8296AD",
-  /** 网格线/空块底 */
+  /** Grid lines / empty block background */
   gridLine: "#1E293B",
-  /** 图表中性条 */
+  /** Neutral chart bars */
   chartNeutral: "#334155",
-  /** 分隔线 */
+  /** Dividers */
   divider: "#1F2A44",
-  /** 深色下的涨/正向 */
+  /** Up / positive on dark */
   positive: "#4ADE80",
-  /** 深色下的跌/负向与错误 */
+  /** Down / negative and error on dark */
   negative: "#F87171",
-  /** critical 徽标底(与 statusColors.red 同源) */
+  /** critical badge background (same source as statusColors.red) */
   critical: "#DC2626",
-  /** 侧栏菜单选中底 */
+  /** Selected sidebar menu background */
   menuSelectedBg: "#22355E",
 } as const;
 
-/** 实心底徽标/热力格文字色(白字,tokens.test.ts 回归) */
+/** Text colour on solid badges / heat cells (white, regressed by tokens.test.ts) */
 export const textOnAccent = "#FFFFFF";
 
-/** 品牌渐变底上的反白 CTA(顶栏「免费注册」/ Hero / CTA 横幅共用) */
+/** Inverse CTA on the brand gradient (shared by the top-bar "Sign up free" / Hero / CTA banner) */
 export const brandInverseButtonStyle = {
   background: textOnAccent,
   color: colorPrimary,
@@ -74,43 +74,43 @@ export const brandInverseButtonStyle = {
   fontWeight: 600,
 } as const;
 
-/** 状态语义色(两端同一套);白字对比度 ≥4.5:1,tokens.test.ts 回归。 */
+/** Status semantic colours (one set for both consoles); white-text contrast ≥4.5:1, regressed by tokens.test.ts. */
 export const statusColors = {
   green: "#15803D",
   blue: "#2563EB",
   gray: "#6B7280",
   orange: "#C2410C",
   red: "#DC2626",
-  /** 第五类语义(调账等) */
+  /** Fifth semantic (adjustments etc.) */
   purple: "#6D28D9",
 } as const;
 
-/** 图表强调色(noc 主题调色板与落地页算力排名条共用) */
+/** Chart accent colours (shared by the noc theme palette and the landing compute ranking bars) */
 export const chartAccentColors = {
   indigo: "#818CF8",
   pink: "#F472B6",
 } as const;
 
-/** 图表系列色(web-light / web-dark EChart 调色板事实源;非文本图形对比度 ≥3:1,tokens.test.ts 回归) */
+/** Chart series colours (source of truth of the web-light / web-dark EChart palettes; non-text graphics contrast ≥3:1, regressed by tokens.test.ts) */
 export const chartSeriesColors = {
   light: { green: "#16A34A", orange: "#EA580C", neutral: "#64748B" },
   dark: { green: "#4ADE80", orange: "#FB923C", neutral: "#94A3B8" },
 } as const;
 
-/** 节点页 GPU 热力格底色 */
+/** GPU heat cell backgrounds on the nodes page */
 export const heatColors = {
-  /** 有指标且低载 */
+  /** Metrics present, low load */
   low: statusColors.green,
-  /** 中载 */
+  /** Medium load */
   mid: "#B45309",
-  /** 高载 */
+  /** High load */
   high: statusColors.red,
 } as const;
 
-/** 落地页算力排名奖牌(金/银/铜) */
+/** Landing compute ranking medals (gold / silver / bronze) */
 export const medalColors = ["#A16207", "#6B7280", "#92400E"] as const;
 
-/** antd 6 ConfigProvider theme —— 用户端(浅色) */
+/** antd 6 ConfigProvider theme — user console (light) */
 export const webTheme = {
   token: {
     colorPrimary,
@@ -140,7 +140,7 @@ export const webTheme = {
   },
 } as const;
 
-/** 墨色面板的局部主题 token,与 theme.darkAlgorithm 配合使用。 */
+/** Local theme tokens of the ink panel, used together with theme.darkAlgorithm. */
 export const inkPanelTokens = {
   colorBgContainer: brand.ink,
   colorBgElevated: brand.ink,
@@ -151,7 +151,7 @@ export const inkPanelTokens = {
   colorSplit: brand.inkDivider,
 } as const;
 
-/** antd 6 ConfigProvider theme —— 管理端(深色,配合 theme.darkAlgorithm 使用) */
+/** antd 6 ConfigProvider theme — admin console (dark, used with theme.darkAlgorithm) */
 export const adminThemeToken = {
   colorPrimary,
   colorInfo: adminColors.dataAccent,
@@ -161,7 +161,7 @@ export const adminThemeToken = {
   borderRadius: 6,
 } as const;
 
-/** 管理端组件级覆写(与 adminThemeToken 搭配传入 ConfigProvider)。密度取「紧凑」档:表格 13px / 行内边距 8,见 docs/ui-ux-spec.md §2。 */
+/** Admin component-level overrides (passed to ConfigProvider together with adminThemeToken). Density "compact": tables 13px / cell padding 8, see docs/ui-ux-spec.md §2. */
 export const adminThemeComponents = {
   Table: {
     headerBg: adminColors.gridLine,
@@ -184,10 +184,10 @@ export const adminThemeComponents = {
   Tabs: { inkBarColor: adminColors.dataAccent, itemSelectedColor: adminColors.dataAccent },
 } as const;
 
-/** 间距阶梯,均为 4 的倍数。 */
+/** Spacing scale, all multiples of 4. */
 export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
 
-/** 阴影两档:内容卡默认无阴影;sm = 可点击卡 / 选项 tile hover,upMd = sticky 底栏向上投影。 */
+/** Two shadow tiers: content cards have none by default; sm = clickable card / option tile hover, upMd = sticky bottom bar casting upwards. */
 export const shadow = {
   light: {
     sm: "0 1px 2px rgba(15, 20, 32, 0.06), 0 2px 8px rgba(15, 20, 32, 0.04)",
@@ -199,27 +199,27 @@ export const shadow = {
   },
 } as const;
 
-/** 字号层级:页面标题/区块标题/正文/辅助/KPI 五档 + 公开层 display 档 */
+/** Font-size hierarchy: page title / section title / body / caption / KPI, five tiers + the public display tier */
 export const fontSize = {
   pageTitle: 20,
   sectionTitle: 16,
   body: 14,
   caption: 12,
   kpi: 28,
-  /** 公开层 Hero 标题 */
+  /** Public Hero title */
   display: 48,
 } as const;
 
-/** 字重阶梯:正文 regular、按钮与强调 medium、标题与 KPI 大数 semibold */
+/** Font-weight scale: body regular, buttons and emphasis medium, titles and KPI numbers semibold */
 export const fontWeight = { regular: 400, medium: 500, semibold: 600 } as const;
 
-/** 图标三档(sm 行内 / md 按钮与菜单 / lg 顶栏与空态) */
+/** Three icon sizes (sm inline / md buttons and menus / lg top bar and empty states) */
 export const iconSize = { sm: 14, md: 16, lg: 20 } as const;
 
-/** 响应式断点。 */
+/** Responsive breakpoints. */
 export const breakpoint = { xs: 480, sm: 576, md: 768, lg: 992, xl: 1200 } as const;
 
-/** 版式常量:页容器与卡片网格;页宽四档:控制台 / 落地页 section / 长文页 / 全宽(管理端宽表) */
+/** Layout constants: page container and card grid; four page widths: console / landing section / long-form page / full (admin wide tables) */
 export const layout = {
   pageMaxWidth: 1280,
   pageMaxWidthWide: 1200,
@@ -227,43 +227,43 @@ export const layout = {
   contentPadding: 24,
   cardGap: 16,
   cardRadius: 10,
-  /** 落地页 section 纵向留白 */
+  /** Vertical spacing of landing sections */
   sectionPaddingY: 48,
-  /** 顶栏高度(两端一致);sticky 表头 offset 与锚点滚动补偿由此派生 */
+  /** Top bar height (same on both consoles); sticky header offset and anchor scroll compensation derive from it */
   topBarHeight: 56,
-  /** 锚点滚动目标的 scroll-margin-top(顶栏 + 一格留白) */
+  /** scroll-margin-top of anchor scroll targets (top bar + one spacing step) */
   scrollMarginTop: 56 + 16,
-  /** 侧栏宽度(两端一致)与桌面收起后的图标轨宽度 */
+  /** Sidebar width (same on both consoles) and the icon rail width when collapsed on desktop */
   siderWidth: 200,
   siderCollapsedWidth: 80,
-  /** 窄屏导航 Drawer 宽度 */
+  /** Narrow-screen navigation Drawer width */
   navDrawerWidth: 260,
 } as const;
 
-/** 控件宽度四档:短码、短文本、常规与长文本。 */
+/** Four control widths: short codes, short text, regular and long text. */
 export const controlWidth = { xs: 96, sm: 160, md: 260, lg: 320 } as const;
 
-/** Drawer 宽度两档(CSS 值,窄屏自动收到 100vw) */
+/** Two Drawer widths (CSS values, narrow screens collapse to 100vw automatically) */
 export const drawerWidth = { md: "min(640px, 100vw)", lg: "min(760px, 100vw)" } as const;
 
-/** 动效常量两档(与 MotionConfig reducedMotion="user" 配合);用法见 docs/ui-ux-spec.md §2。 */
+/** Two motion tiers (used with MotionConfig reducedMotion="user"); usage in docs/ui-ux-spec.md §2. */
 export const motion = {
-  /** 状态变更淡入 */
+  /** Status change fade-in */
   fast: 0.15,
-  /** 常规过渡(选中态 / 徽标变色 / 浮层) */
+  /** Regular transitions (selected state / badge colour / overlays) */
   normal: 0.2,
-  /** 统一缓出曲线 */
+  /** Shared ease-out curve */
   easeOut: [0.16, 1, 0.3, 1],
 } as const;
 
-/** 自绘浮层的 z-index 常量。 */
+/** z-index constants of hand-drawn overlays. */
 export const zIndex = {
   stickyBar: 50,
   topBar: 100,
   skipLink: 200,
 } as const;
 
-/** 用户端暗色板:深靛灰基板,品牌靛蓝主色;对比度 ≥4.5:1,tokens.test.ts 回归。 */
+/** Web dark palette: deep indigo-grey base, brand indigo primary; contrast ≥4.5:1, regressed by tokens.test.ts. */
 export const webDarkColors = {
   bgBase: "#0F1420",
   bgContainer: "#171E30",
@@ -271,12 +271,12 @@ export const webDarkColors = {
   text: "#E5E9F2",
   textSecondary: "#9AA7C2",
   border: "#2A3552",
-  /** 暗色 Menu 选中底/选中字 */
+  /** Dark Menu selected background / selected text */
   menuSelectedBg: "#26304D",
   menuSelectedColor: "#A5B4FC",
 } as const;
 
-/** antd 6 ConfigProvider theme —— 用户端暗色(配合 theme.darkAlgorithm);仅覆写底色/文本/边框系 */
+/** antd 6 ConfigProvider theme — web dark (with theme.darkAlgorithm); only background / text / border families are overridden */
 export const webDarkTheme = {
   token: {
     ...webTheme.token,
@@ -302,7 +302,7 @@ export const webDarkTheme = {
   },
 } as const;
 
-/** CSS 变量桥::root 注入值,由 apps/web/src/routes/__root.tsx 随主题注入;styles.css 只引用 var()。暗色主色取 #A5B4FC。 */
+/** CSS variable bridge: values injected on :root by apps/web/src/routes/__root.tsx per theme; styles.css only references var(). The dark primary is #A5B4FC. */
 export const cssVars = {
   light: {
     "--sdl-color-primary": colorPrimary,
@@ -322,7 +322,7 @@ export const cssVars = {
   },
 } as const;
 
-/** 图表轴 / 网格 / tooltip 底色(浅色主题 EChart 预设用;暗色与管理端取各自色板) */
+/** Chart axis / grid / tooltip backgrounds (light EChart preset; dark and admin use their own palettes) */
 export const chartAxisColors = {
   light: {
     axis: "#E5E7EB",
@@ -333,7 +333,7 @@ export const chartAxisColors = {
   },
 } as const;
 
-/** JS 侧语义色(经 useThemeColors() 取,不直接 import 单个色值):web 按主题两套,admin 固定一套。 */
+/** JS-side semantic colours (obtained via useThemeColors(), never by importing single values): two sets for web by theme, one fixed set for admin. */
 export type ThemeKey = "web-light" | "web-dark" | "admin";
 
 export interface ThemeColors {

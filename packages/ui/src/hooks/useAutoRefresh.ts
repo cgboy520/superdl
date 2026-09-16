@@ -1,11 +1,11 @@
-/** 页面级自动刷新开关:配合 PageHeader.freshness 使用。paused 时 refetchInterval=false,恢复时按 intervalMs 轮询。 */
+/** Page-level auto-refresh switch used with PageHeader.freshness. paused → refetchInterval=false, resumed → poll by intervalMs. */
 
 import { useCallback, useState } from "react";
 
 export function useAutoRefresh(intervalMs: number): {
   paused: boolean;
   toggle: () => void;
-  /** 直接喂给 react-query 的 refetchInterval */
+  /** Fed straight into react-query's refetchInterval */
   refetchInterval: number | false;
   intervalMs: number;
 } {

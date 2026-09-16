@@ -1,5 +1,5 @@
-/** 确认强度组件(ui-ux-spec §1 规则 7):useConfirm(L2)= 后果前置 + 影响说明的 modal.confirm;
- *  TypeConfirmModal(L3)= 键入名称 + 可选勾选双闸,用于终态动作。 */
+/** Confirmation strength components (ui-ux-spec §1 rule 8): useConfirm (L2) = modal.confirm with consequences first + impact;
+ *  TypeConfirmModal (L3) = type the name + optional checkbox, two gates, for terminal actions. */
 
 import { App, Button, Checkbox, Input, Modal, Space, Typography } from "antd";
 import { useCallback, useState, type ReactNode } from "react";
@@ -8,20 +8,20 @@ import { space } from "../tokens";
 
 export interface ConfirmOptions {
   title: ReactNode;
-  /** 后果条目(如「GPU 立即释放,再开机可能库存不足」) */
+  /** Consequence items (e.g. "The GPU is released at once, stock may be short at the next start") */
   consequences: ReactNode[];
-  /** 影响说明(如「该操作影响 3 台在跑实例」) */
+  /** Impact note (e.g. "This affects 3 running instances") */
   impact?: ReactNode;
   okText?: string;
   cancelText?: string;
-  /** 危险动作(红色按钮) */
+  /** Dangerous action (red button) */
   danger?: boolean;
-  /** 确认按钮禁用(如影响面查询在途) */
+  /** Confirm button disabled (e.g. impact query in flight) */
   okDisabled?: boolean;
   onOk: () => void | Promise<void>;
 }
 
-/** L2 确认:后果前置 + 影响说明。须在 <AntApp> 内使用。 */
+/** L2 confirmation: consequences first + impact. Must be used inside <AntApp>. */
 export function useConfirm() {
   const { modal } = App.useApp();
   return useCallback(
@@ -54,24 +54,24 @@ export function useConfirm() {
 export interface TypeConfirmModalProps {
   open: boolean;
   title: ReactNode;
-  /** 后果说明段落(必填) */
+  /** Consequence paragraph (required) */
   body: ReactNode;
-  /** 需键入以解锁的目标名(实例名/盘名/手机号) */
+  /** Target name to type for unlocking (instance name / disk name / handle) */
   targetName: string;
-  /** 第二道闸勾选文案;不传则只有键入一道闸 */
+  /** Second-gate checkbox copy; omitted = the typing gate only */
   checkboxLabel?: ReactNode;
   confirmLabel: ReactNode;
   cancelLabel: ReactNode;
   loading?: boolean;
-  /** 键入框 maxLength,默认 64 */
+  /** maxLength of the input, default 64 */
   maxLength?: number;
-  /** 附加解锁条件:true 时确认保持禁用 */
+  /** Extra unlock condition: true keeps confirm disabled */
   extraDisabled?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
 
-/** L3 破坏确认:键入目标名(+ 勾选)全过才解锁红色按钮;关闭即清空。 */
+/** L3 destructive confirmation: the red button unlocks only once the target name is typed (+ the checkbox ticked); closing clears everything. */
 export function TypeConfirmModal({
   open,
   title,

@@ -1,4 +1,4 @@
-/** antd locale / dayjs locale / html lang / document.title 四联动出口(两端共用);relativeTime 插件在此 extend。 */
+/** The single outlet keeping antd locale / dayjs locale / html lang / document.title in step (shared by both consoles); the relativeTime plugin is extended here. */
 import enUS from "antd/locale/en_US";
 import zhCN from "antd/locale/zh_CN";
 import dayjs from "dayjs";

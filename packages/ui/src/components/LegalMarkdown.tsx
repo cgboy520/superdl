@@ -1,4 +1,4 @@
-/** 法务文档 Markdown 渲染:react-markdown + rehype-sanitize(默认 schema 去 img);两端同一管线。 */
+/** Legal document Markdown rendering: react-markdown + rehype-sanitize (default schema without img); one pipeline for both consoles. */
 
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";

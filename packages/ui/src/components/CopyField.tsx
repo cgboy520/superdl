@@ -1,4 +1,4 @@
-/** 可复制的值,支持等宽/code 展示与可切换的打码状态。 */
+/** Copyable value with monospace / code rendering and a toggleable masked state. */
 
 import { CheckOutlined, CopyOutlined, EyeInvisibleOutlined, EyeOutlined } from "@ant-design/icons";
 import { App, Button, Space, Tooltip, Typography } from "antd";
@@ -55,18 +55,18 @@ export function CopyField({
   onCopied,
 }: {
   value: string;
-  /** 显示文本(默认 = value) */
+  /** Display text (default = value) */
   display?: ReactNode;
-  /** 复制按钮文字 */
+  /** Copy button text */
   label?: ReactNode;
   mono?: boolean;
-  /** 渲染为 <code>,默认 span。 */
+  /** Render as <code>, default span. */
   code?: boolean;
-  /** 打码直到点眼睛 */
+  /** Masked until the eye is clicked */
   secret?: boolean;
   block?: boolean;
   size?: "small" | "middle";
-  /** 值节点的 data-testid。 */
+  /** data-testid of the value node. */
   testId?: string;
   onCopied?: () => void;
 }) {

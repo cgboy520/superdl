@@ -1,4 +1,4 @@
-/** 受控状态切换条,每项可带计数与提醒色点。 */
+/** Controlled status switch bar, each item with an optional count and attention dot. */
 
 import { Segmented, Space, Typography } from "antd";
 import type { ReactNode } from "react";
@@ -10,7 +10,7 @@ export interface StatusSummaryItem {
   key: string;
   label: ReactNode;
   count?: number;
-  /** 提醒色点(需处理) */
+  /** Attention dot (needs handling) */
   tone?: "default" | "warning" | "error";
 }
 

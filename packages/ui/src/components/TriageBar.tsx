@@ -1,4 +1,4 @@
-/** 待处理条(管理端总览置顶):每项 = 严重度图标 + 计数 + 标签,整块是链接(深链到预筛选列表);0 计数弱化不隐藏;查询失败显示「—」。 */
+/** Triage bar (top of the admin overview): each item = severity icon + count + label, the whole block links to a pre-filtered list; zero counts are muted, not hidden; failed queries show "—". */
 
 import { Space, Typography, theme } from "antd";
 import type { ReactNode } from "react";
@@ -11,10 +11,10 @@ import { StatusTag } from "./StatusTag";
 export interface TriageItem {
   key: string;
   label: ReactNode;
-  /** undefined = 加载中或失败(显示 —) */
+  /** undefined = loading or failed (shows —) */
   count: number | undefined;
   severity: AlertSeverity;
-  /** 计数副注(如「退款 2 · 发票 1」) */
+  /** Count footnote (e.g. "refunds 2 · invoices 1") */
   detail?: ReactNode;
 }
 
@@ -24,7 +24,7 @@ export function TriageBar({
   ariaLabel,
 }: {
   items: TriageItem[];
-  /** 用路由 Link 包住整块 */
+  /** Wrap the whole block in a router Link */
   renderLink: (item: TriageItem, children: ReactNode) => ReactNode;
   ariaLabel: string;
 }) {

@@ -1,4 +1,4 @@
-/** 行内动作槽位(两端统一,ui-ux-spec §1 规则 2):至多 1 个主动作 + 1 个次动作 + 「更多 ▾」;主 / 次动作随状态变,其余进更多。 */
+/** Row action slots (shared by both consoles, ui-ux-spec §1 rule 2): at most 1 primary + 1 secondary + "More ▾"; primary / secondary follow the status, the rest go into more. */
 
 import { Space } from "antd";
 import type { ReactNode } from "react";
@@ -14,7 +14,7 @@ export function RowActions({
 }: {
   primary?: ReactNode;
   secondary?: ReactNode;
-  /** 条目数组走 RowMoreMenu;也可传自带的 RowMoreMenu 节点 */
+  /** An item array goes through RowMoreMenu; a ready RowMoreMenu node works too */
   more?: RowMenuItem[] | ReactNode;
   size?: "small" | "middle";
 }) {

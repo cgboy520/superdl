@@ -1,4 +1,4 @@
-/** 行内改名(两端统一):hover 出铅笔 → 输入框;Enter 保存 / Esc 取消 / blur 保存;保存失败保持编辑态(错误由调用方的 mutation 统一弹出)。 */
+/** Inline rename (shared by both consoles): hover shows the pencil → input; Enter saves / Esc cancels / blur saves; a failed save stays in edit mode (the error is shown by the caller's mutation). */
 
 import { EditOutlined } from "@ant-design/icons";
 import { Button, Input, Space } from "antd";
@@ -19,16 +19,16 @@ export function InlineEdit({
 }: {
   value: string;
   onSave: (next: string) => Promise<void>;
-  /** 铅笔按钮的 aria-label(含目标名) */
+  /** aria-label of the pencil button (with the target name) */
   ariaLabel: string;
-  /** 非编辑态的显示节点(默认 = value) */
+  /** Display node when not editing (default = value) */
   display?: ReactNode;
   maxLength?: number;
   size?: "small" | "middle";
-  /** hover = 行 hover 才显示铅笔;always = 常显 */
+  /** hover = the pencil shows only on row hover; always = always shown */
   trigger?: "hover" | "always";
   width?: number;
-  /** 返回错误文案即拒绝保存 */
+  /** Returning error copy rejects the save */
   validate?: (v: string) => string | null;
 }) {
   const [editing, setEditing] = useState(false);

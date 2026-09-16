@@ -1,4 +1,4 @@
-/** 路由级错误页(两端 __root.tsx 共用):全局错误边界 + 404。文案走 shared ns;Provider 外壳由各端自带;error.message 折叠展示。 */
+/** Route-level error pages (shared by both __root.tsx files): global error boundary + 404. Copy lives in the shared ns; each console brings its Provider shell; error.message is shown collapsed. */
 
 import { Button, Result } from "antd";
 import { useTranslation } from "react-i18next";
@@ -10,7 +10,7 @@ export function RouteErrorFallbackView({
 }: {
   error: unknown;
   reset: () => void;
-  /** 回首页按钮文案 */
+  /** Home button copy */
   homeLabel: string;
 }) {
   const { t } = useTranslation("shared");
@@ -47,10 +47,10 @@ export function NotFoundView({
   homeLabel,
   subtitle,
 }: {
-  /** 回跳目标 */
+  /** Return target */
   homeTo: string;
   homeLabel: string;
-  /** 副标题(可选) */
+  /** Subtitle (optional) */
   subtitle?: string;
 }) {
   const { t } = useTranslation("shared");

@@ -1,4 +1,4 @@
-/** confirm 共享件:TypeConfirmModal 双闸缺一不可、省略勾选闸只过键入、关闭重开重置;useConfirm 后果列表与影响说明按结构渲染,danger 透传。 */
+/** Shared confirm components: TypeConfirmModal needs both gates, omitting the checkbox leaves only typing, reopening resets; useConfirm renders consequences and impact structurally, danger passes through. */
 
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -14,7 +14,7 @@ beforeAll(async () => {
     lng: "zh-CN",
     resources: {
       "zh-CN": {
-        shared: { confirm: { typeNameToConfirm: "键入 {{name}} 以确认" } },
+        shared: { confirm: { typeNameToConfirm: "Type {{name}} to confirm" } },
       },
     },
     defaultNS: "shared",
@@ -24,11 +24,11 @@ beforeAll(async () => {
 
 const BASE: Omit<TypeConfirmModalProps, "checkboxLabel" | "onConfirm" | "onCancel"> = {
   open: true,
-  title: "释放实例",
-  body: "释放后实例盘全部数据立即清除",
+  title: "Release instance",
+  body: "All data on the instance disk is erased at once after release",
   targetName: "demo-vm",
-  confirmLabel: "确认释放",
-  cancelLabel: "取消",
+  confirmLabel: "Confirm release",
+  cancelLabel: "Cancel",
 };
 
 function renderModal(
@@ -49,13 +49,13 @@ function renderModal(
 }
 
 describe("TypeConfirmModal", () => {
-  it("键入匹配 + 勾选两道闸全过才解锁确认按钮", async () => {
+  it("unlocks the confirm button only once typing matches and the checkbox is ticked", async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();
-    renderModal({ checkboxLabel: "我确认将清除实例盘全部数据" }, { onConfirm });
+    renderModal({ checkboxLabel: "I confirm all data on the instance disk will be erased" }, { onConfirm });
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText("键入 demo-vm 以确认")).toBeInTheDocument();
-    const confirmBtn = within(dialog).getByRole("button", { name: "确认释放" });
+    expect(within(dialog).getByText("Type demo-vm to confirm")).toBeInTheDocument();
+    const confirmBtn = within(dialog).getByRole("button", { name: "Confirm release" });
     expect(confirmBtn).toBeDisabled();
     await user.type(within(dialog).getByPlaceholderText("demo-vm"), "demo-vm");
     expect(confirmBtn).toBeDisabled();
@@ -65,25 +65,25 @@ describe("TypeConfirmModal", () => {
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 
-  it("省略 checkboxLabel 时只有键入一道闸(不渲染勾选框)", async () => {
+  it("without checkboxLabel only the typing gate remains (no checkbox rendered)", async () => {
     const user = userEvent.setup();
     renderModal();
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).queryByRole("checkbox")).toBeNull();
-    const confirmBtn = within(dialog).getByRole("button", { name: "确认释放" });
+    const confirmBtn = within(dialog).getByRole("button", { name: "Confirm release" });
     expect(confirmBtn).toBeDisabled();
     await user.type(within(dialog).getByPlaceholderText("demo-vm"), "demo-vm");
     expect(confirmBtn).toBeEnabled();
   });
 
-  it("关闭重开后键入与勾选都重置(全新一轮)", async () => {
+  it("resets typing and checkbox after close and reopen (a fresh round)", async () => {
     const user = userEvent.setup();
     const tree = (open: boolean) => (
       <I18nextProvider i18n={i18n}>
         <TypeConfirmModal
           {...BASE}
           open={open}
-          checkboxLabel="我确认将清除实例盘全部数据"
+          checkboxLabel="I confirm all data on the instance disk will be erased"
           onConfirm={() => {}}
           onCancel={() => {}}
         />
@@ -98,7 +98,7 @@ describe("TypeConfirmModal", () => {
     const input = await screen.findByPlaceholderText("demo-vm");
     expect(input).toHaveValue("");
     expect(screen.getByRole("checkbox")).not.toBeChecked();
-    expect(screen.getByRole("button", { name: "确认释放" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Confirm release" })).toBeDisabled();
   });
 });
 
@@ -109,22 +109,22 @@ describe("useConfirm", () => {
       <Button
         onClick={() =>
           confirm({
-            title: "确认关机?",
-            consequences: ["GPU 立即释放,再开机可能库存不足"],
-            impact: "该操作影响 3 台在跑实例",
-            okText: "确认关机",
-            cancelText: "取消",
+            title: "Stop the instance?",
+            consequences: ["The GPU is released at once, stock may be short at the next start"],
+            impact: "This affects 3 running instances",
+            okText: "Confirm stop",
+            cancelText: "Cancel",
             danger: true,
             onOk,
           })
         }
       >
-        触发
+        trigger
       </Button>
     );
   }
 
-  it("渲染后果列表与影响说明,danger 透传红色按钮,确认触发 onOk", async () => {
+  it("renders consequences and impact, danger yields a red button, confirm fires onOk", async () => {
     const user = userEvent.setup();
     const onOk = vi.fn();
     render(
@@ -134,12 +134,14 @@ describe("useConfirm", () => {
         </App>
       </I18nextProvider>,
     );
-    await user.click(screen.getByRole("button", { name: /触\s*发/ }));
+    await user.click(screen.getByRole("button", { name: /trigger/ }));
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getAllByText("确认关机?").length).toBeGreaterThan(0);
-    expect(within(dialog).getByText("GPU 立即释放,再开机可能库存不足")).toBeInTheDocument();
-    expect(within(dialog).getByText("该操作影响 3 台在跑实例")).toBeInTheDocument();
-    const okBtn = within(dialog).getByRole("button", { name: "确认关机" });
+    expect(within(dialog).getAllByText("Stop the instance?").length).toBeGreaterThan(0);
+    expect(
+      within(dialog).getByText("The GPU is released at once, stock may be short at the next start"),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText("This affects 3 running instances")).toBeInTheDocument();
+    const okBtn = within(dialog).getByRole("button", { name: "Confirm stop" });
     expect(okBtn.className).toContain("ant-btn-dangerous");
     await user.click(okBtn);
     expect(onOk).toHaveBeenCalledTimes(1);

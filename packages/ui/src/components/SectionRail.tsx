@@ -1,4 +1,4 @@
-/** 分段表单导航:宽屏竖向固定、窄屏横向排列,段状态由问题、触碰与提交状态派生。 */
+/** Sectioned form navigation: vertical sticky on wide screens, horizontal on narrow ones; section state derives from issues, touch and submit state. */
 
 import { Card, Grid, Steps } from "antd";
 import type { ReactNode } from "react";
@@ -8,9 +8,9 @@ import { layout, space } from "../tokens";
 export interface SectionDef {
   id: string;
   title: ReactNode;
-  /** 当前段的第一个问题(无问题传 null / undefined) */
+  /** The section's first issue (null / undefined without issues) */
   issue?: ReactNode | null;
-  /** 用户是否碰过本段(默认 true) */
+  /** Whether the user touched this section (default true) */
   touched?: boolean;
 }
 
@@ -32,7 +32,7 @@ export function scrollToSection(id: string): void {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-/** 带锚点的段:默认渲染为 Card;card=false 时只包一层带 scroll-margin 的 div。 */
+/** Anchored section: rendered as a Card by default; card=false wraps only a div with scroll-margin. */
 export function SectionAnchor({
   id,
   title,
@@ -69,7 +69,7 @@ export function SectionRail({
   ariaLabel,
 }: {
   sections: SectionDef[];
-  /** 提交后其余问题段标为 error;首个问题段仍为 process。 */
+  /** After a submit attempt the other issue sections are error; the first issue section stays process. */
   submitted?: boolean;
   children: ReactNode;
   railWidth?: number;
