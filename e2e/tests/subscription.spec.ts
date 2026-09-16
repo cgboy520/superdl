@@ -1,7 +1,7 @@
 /** 包周期冒烟:市场页选包月 → 创建页「支付并创建」→ 余额一次性扣掉整段周期 → 列表显示「包月 · 剩 N 天」→ 续费 → 扣款回执。 */
 import { expect, test } from "@playwright/test";
 
-import { fillCustomImageForm, pickSharedStandardSku, setupUser, waitFirstRowRunning } from "./helpers";
+import { fillCustomImageForm, moneyPattern, pickSharedStandardSku, setupUser, waitFirstRowRunning } from "./helpers";
 
 test("买包月并续费", async ({ page }) => {
   await setupUser(page, "5000");
@@ -26,7 +26,7 @@ test("买包月并续费", async ({ page }) => {
 
   await page.goto("/billing");
   const balance = await page
-    .getByText(/¥\s*[\d,]+\.\d{2}/)
+    .getByText(await moneyPattern(page))
     .first()
     .innerText();
   expect(Number(balance.replace(/[^\d.]/g, ""))).toBeLessThan(5000);

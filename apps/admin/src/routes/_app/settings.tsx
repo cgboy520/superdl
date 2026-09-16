@@ -1,6 +1,15 @@
 /** 系统设置:策略参数(env 默认 + DB 覆盖,保存需原因)/ 公告发布(群发 active 租户)/ 法务文档 / 管理员账号。 */
 
-import { adminColors, announcementStatusMap, fontSize, formatDateTime, idemKeyOf, metaOf, space } from "@superdl/ui";
+import {
+  adminColors,
+  announcementStatusMap,
+  fontSize,
+  formatDateTime,
+  idemKeyOf,
+  metaOf,
+  space,
+  useFormat,
+} from "@superdl/ui";
 import { DataErrorAlert, GatedButton, HexTag, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
@@ -144,6 +153,7 @@ const POLICY_ENTRIES = Object.entries(POLICY_LABELS) as [string, PolicyEntry][];
 
 function PoliciesTab() {
   const { t } = useTranslation(["admin", "shared"]);
+  const { currency } = useFormat();
   const errText = useApiErrorText();
   const { message } = App.useApp();
   const role = useAdminRole();
@@ -175,7 +185,7 @@ function PoliciesTab() {
   const rows = POLICY_ENTRIES.map(([key, meta]) => ({
     key,
     label: t(meta.label),
-    unit: t(meta.unit),
+    unit: t(meta.unit, { currency: currency ?? "" }),
     hint: meta.hint ? t(meta.hint) : undefined,
     effective: data?.effective[key] ?? "",
     overridden: data?.overrides[key] != null,

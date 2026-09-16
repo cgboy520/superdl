@@ -335,7 +335,7 @@ function BillingPage() {
             <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
               {t("copy.dailyCostNote")}
               {" · "}
-              {t("copy.billingDayBoundary")}
+              {t("copy.billingDayBoundary", { tz: site?.billing_timezone ?? "UTC" })}
             </Typography.Text>
           )}
         </Card>

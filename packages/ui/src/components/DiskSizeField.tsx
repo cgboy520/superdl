@@ -4,6 +4,7 @@ import { Flex, InputNumber, Slider, Space, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { diskDailyEstimate, formatSizeGb } from "../format";
+import { useFormat } from "../hooks/useFormat";
 import { controlWidth, fontSize, space } from "../tokens";
 
 export function DiskSizeField({
@@ -32,9 +33,13 @@ export function DiskSizeField({
   maxWidth?: number;
 }) {
   const { t } = useTranslation("shared");
+  const { formatMoney, minorUnits } = useFormat();
   const ready = min !== undefined && max !== undefined && !disabled;
   const delta = baseline === undefined ? value : Math.max(0, value - baseline);
-  const daily = priceGbMonth === undefined ? undefined : diskDailyEstimate(priceGbMonth, delta);
+  const daily =
+    priceGbMonth === undefined
+      ? undefined
+      : formatMoney(diskDailyEstimate(priceGbMonth, delta, minorUnits === 0 ? 0 : 2));
   return (
     <Space orientation="vertical" size={space.xs} style={{ width: "100%" }}>
       <Flex gap={space.md} align="center">

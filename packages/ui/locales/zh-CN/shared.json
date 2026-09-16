@@ -317,7 +317,7 @@
     "cancel": "继续编辑"
   },
   "disk": {
-    "sizeEstimate": "{{size}} · 约 ¥{{daily}}/日",
-    "expandEstimate": "扩容到 {{size}}(新增 {{extra}}),新增部分约 ¥{{daily}}/日"
+    "sizeEstimate": "{{size}} · 约 {{daily}}/日",
+    "expandEstimate": "扩容到 {{size}}(新增 {{extra}}),新增部分约 {{daily}}/日"
   }
 }

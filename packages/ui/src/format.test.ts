@@ -6,6 +6,7 @@ import zhShared from "../locales/zh-CN/shared.json";
 import {
   addAmounts,
   compareAmounts,
+  currencySymbol,
   diskDailyEstimate,
   formatCountdown,
   formatDate,
@@ -20,6 +21,7 @@ import {
   formatSizeGb,
   formatSpotDiscount,
   maskHandle,
+  minorUnitsOf,
   mulPrice,
   quoteSubscription,
   spotHourlyPrice,
@@ -110,27 +112,47 @@ it("formatDaysLeft 起点缺失返回 null(与语言无关)", () => {
 });
 
 describe("formatMoney", () => {
-  it("zh:千分位与两位小数", () => {
-    expect(formatMoney("1234.5", "zh-CN")).toBe("¥1,234.50");
-    expect(formatMoney("0", "zh-CN")).toBe("¥0.00");
+  it("CNY: zh-CN uses ¥, en-US uses CN¥ (no yen ambiguity), grouping and two decimals", () => {
+    expect(formatMoney("1234.5", "zh-CN", "CNY")).toBe("¥1,234.50");
+    expect(formatMoney("0", "zh-CN", "CNY")).toBe("¥0.00");
+    expect(formatMoney("1234.5", "en-US", "CNY")).toBe("CN¥1,234.50");
+    expect(formatMoney("-12.3", "en-US", "CNY")).toBe("-CN¥12.30");
   });
-  it("en:CN¥ 符号避免日元歧义", () => {
-    expect(formatMoney("1234.5", "en-US")).toBe("CN¥1,234.50");
-    expect(formatMoney("-12.3", "en-US")).toBe("-CN¥12.30");
+  it("USD and JPY follow Intl: $ with cents, ¥ with whole units", () => {
+    expect(formatMoney("1234.5", "en-US", "USD")).toBe("$1,234.50");
+    expect(formatMoney("1234.5", "zh-CN", "USD")).toBe("US$1,234.50");
+    expect(formatMoney("1235", "en-US", "JPY")).toBe("¥1,235");
+    expect(formatMoney("1235.9", "ja-JP", "JPY")).toBe("￥1,235");
   });
-  it("截断而非四舍五入(展示层不做算术)", () => {
-    expect(formatMoney("1.999", "zh-CN")).toBe("¥1.99");
+  it("truncates instead of rounding (the display layer does no arithmetic)", () => {
+    expect(formatMoney("1.999", "zh-CN", "CNY")).toBe("¥1.99");
+    expect(formatMoney("1.999", "en-US", "JPY")).toBe("¥1");
+  });
+  it("unknown or unset currency renders a plain number without a symbol", () => {
+    expect(formatMoney("1234.5", "en-US", null)).toBe("1,234.50");
+    expect(formatMoney("1234.5", "en-US", "NOPE")).toBe("1,234.50");
+    expect(currencySymbol("en-US", null)).toBe("");
+  });
+  it("currencySymbol and minorUnitsOf agree with Intl", () => {
+    expect(currencySymbol("zh-CN", "CNY")).toBe("¥");
+    expect(currencySymbol("en-US", "CNY")).toBe("CN¥");
+    expect(currencySymbol("en-US", "USD")).toBe("$");
+    expect(minorUnitsOf("JPY")).toBe(0);
+    expect(minorUnitsOf("USD")).toBe(2);
+    expect(minorUnitsOf(null)).toBe(2);
   });
 });
 
 describe("formatHourlyPrice", () => {
-  it("zh:保留有效小数,至少两位", () => {
-    expect(formatHourlyPrice("1.6800", tZh, "zh-CN")).toBe("¥1.68/时");
-    expect(formatHourlyPrice("0.1250", tZh, "zh-CN")).toBe("¥0.125/时");
-    expect(formatHourlyPrice("3", tZh, "zh-CN")).toBe("¥3.00/时");
+  it("zh: keeps significant decimals, at least the minor units", () => {
+    expect(formatHourlyPrice("1.6800", tZh, "zh-CN", "CNY")).toBe("¥1.68/时");
+    expect(formatHourlyPrice("0.1250", tZh, "zh-CN", "CNY")).toBe("¥0.125/时");
+    expect(formatHourlyPrice("3", tZh, "zh-CN", "CNY")).toBe("¥3.00/时");
   });
-  it("en:/hr 量词", () => {
-    expect(formatHourlyPrice("1.6800", tEn, "en-US")).toBe("CN¥1.68/hr");
+  it("en: /hr unit, symbol from the currency", () => {
+    expect(formatHourlyPrice("1.6800", tEn, "en-US", "CNY")).toBe("CN¥1.68/hr");
+    expect(formatHourlyPrice("1.6800", tEn, "en-US", "USD")).toBe("$1.68/hr");
+    expect(formatHourlyPrice("0.5", tEn, "en-US", "JPY")).toBe("¥0.5/hr");
   });
 });
 
@@ -216,6 +238,12 @@ describe("diskDailyEstimate", () => {
     expect(diskDailyEstimate("0.50", 0)).toBe("0.00");
     expect(diskDailyEstimate("0.50", 1.5)).toBe("0.00");
   });
+  it("zero-decimal currencies round to whole units (HALF_EVEN)", () => {
+    expect(diskDailyEstimate("15.0000", 100, 0)).toBe("50");
+    expect(diskDailyEstimate("0.4500", 100, 0)).toBe("2");
+    expect(diskDailyEstimate("0.7500", 100, 0)).toBe("2");
+    expect(diskDailyEstimate("", 100, 0)).toBe("0");
+  });
 });
 
 describe("quoteSubscription", () => {
@@ -262,15 +290,15 @@ describe.each([
   const zh = lng === "zh-CN";
   const locale = lng;
   it("单个周期", () => {
-    expect(formatPeriodPrice("2298.24", "month", 1, t, locale)).toBe(zh ? "¥2,298.24/月" : "CN¥2,298.24/month");
+    expect(formatPeriodPrice("2298.24", "month", 1, t, locale, "CNY")).toBe(zh ? "¥2,298.24/月" : "CN¥2,298.24/month");
   });
   it("多个周期(en 走复数量词)", () => {
-    expect(formatPeriodPrice("6894.72", "month", 3, t, locale)).toBe(
+    expect(formatPeriodPrice("6894.72", "month", 3, t, locale, "CNY")).toBe(
       zh ? "¥6,894.72/3 月" : "CN¥6,894.72 per 3 months",
     );
   });
   it("未知周期只回金额,不编造量词", () => {
-    expect(formatPeriodPrice("10.00", "quarter", 1, t, locale)).toBe(zh ? "¥10.00" : "CN¥10.00");
+    expect(formatPeriodPrice("10.00", "quarter", 1, t, locale, "CNY")).toBe(zh ? "¥10.00" : "CN¥10.00");
   });
 });
 

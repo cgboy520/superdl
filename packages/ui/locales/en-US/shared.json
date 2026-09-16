@@ -326,7 +326,7 @@
     "cancel": "Keep editing"
   },
   "disk": {
-    "sizeEstimate": "{{size}} · about ¥{{daily}}/day",
-    "expandEstimate": "Expand to {{size}} (+{{extra}}); the added part costs about ¥{{daily}}/day"
+    "sizeEstimate": "{{size}} · about {{daily}}/day",
+    "expandEstimate": "Expand to {{size}} (+{{extra}}); the added part costs about {{daily}}/day"
   }
 }

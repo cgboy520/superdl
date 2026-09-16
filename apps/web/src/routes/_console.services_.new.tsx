@@ -538,7 +538,7 @@ function DeployPage() {
                         {
                           label: t("create.diskCostLabel"),
                           hint: t("create.dailyCostHint"),
-                          value: t("common.dailyApprox", { amount: diskDaily }),
+                          value: t("common.dailyApprox", { amount: fmt.formatMoney(diskDaily) }),
                         },
                       ]
                     : []),
@@ -566,7 +566,7 @@ function DeployPage() {
                         {
                           label: t("create.diskCostLabel"),
                           hint: t("create.dailyCostHint"),
-                          value: t("common.dailyApprox", { amount: diskDaily }),
+                          value: t("common.dailyApprox", { amount: fmt.formatMoney(diskDaily) }),
                         },
                       ]
                     : []),
@@ -592,7 +592,7 @@ function DeployPage() {
                   {diskGb > 0 && diskPriceGbMonth
                     ? t("create.detailDiskLine", {
                         size: diskGb,
-                        price: t("common.gbMonthPrice", { price: diskPriceGbMonth }),
+                        price: t("common.gbMonthPrice", { price: fmt.formatPrice(diskPriceGbMonth) }),
                       })
                     : t("create.detailDiskNone")}
                 </span>

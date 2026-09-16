@@ -13,6 +13,7 @@ import {
   normalizeGpuModel,
   space,
   textOnAccent,
+  useFormat,
   useThemeColors,
 } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
@@ -39,6 +40,7 @@ interface RankRow {
 
 export function GpuRankSection() {
   const { t } = useTranslation();
+  const { formatPrice } = useFormat();
   const { token } = theme.useToken();
   const colors = useThemeColors();
   const [metric, setMetric] = useState<Metric>("fp16");
@@ -74,7 +76,7 @@ export function GpuRankSection() {
         value: r.perTflops,
         ratio: best / r.perTflops,
         onSale: true,
-        text: t("landing.ranking.perTflopsValue", { price: r.perTflops.toFixed(4) }),
+        text: t("landing.ranking.perTflopsValue", { price: formatPrice(r.perTflops.toFixed(4)) }),
       }));
     }
     const key = metric === "fp16" ? "fp16Tflops" : "fp32Tflops";
@@ -92,7 +94,7 @@ export function GpuRankSection() {
           ? t("landing.ranking.fp16Value", { value: r.value })
           : t("landing.ranking.fp32Value", { value: r.value }),
     }));
-  }, [metric, minPriceByModel, t]);
+  }, [metric, minPriceByModel, t, formatPrice]);
 
   return (
     <LandingSection

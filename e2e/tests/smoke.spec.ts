@@ -4,6 +4,7 @@ import { expect, test } from "@playwright/test";
 import {
   addSshKeyViaUi,
   fillCustomImageForm,
+  moneyText,
   pickSharedStandardSku,
   rechargeViaUi,
   registerViaUi,
@@ -17,7 +18,7 @@ test("全生命周期冒烟", async ({ page }) => {
   await registerViaUi(page, email);
 
   await rechargeViaUi(page);
-  await expect(page.getByText("¥100.00").first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText(await moneyText(page, "100.00")).first()).toBeVisible({ timeout: 10_000 });
 
   await addSshKeyViaUi(page);
 

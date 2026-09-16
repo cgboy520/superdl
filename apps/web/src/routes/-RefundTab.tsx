@@ -40,7 +40,7 @@ export function refundReasonText(
 
 export function RefundTab() {
   const { t } = useTranslation(["web", "shared"]);
-  const { currencySymbol, formatMoney } = useFormat();
+  const { currencySymbol, formatMoney, minorUnits } = useFormat();
   const { message } = App.useApp();
   const ordersQ = useRefundableOrders();
   const orders = useMemo<RefundableOrderOut[]>(() => ordersQ.data ?? [], [ordersQ.data]);
@@ -97,9 +97,9 @@ export function RefundTab() {
             <Space wrap align="center">
               <InputNumber
                 style={{ width: 180 }}
-                min="0.01"
+                min={minorUnits === 0 ? "1" : "0.01"}
                 max={selected?.max_amount ?? "0"}
-                precision={2}
+                precision={minorUnits}
                 stringMode
                 disabled={!selected}
                 value={amount}
