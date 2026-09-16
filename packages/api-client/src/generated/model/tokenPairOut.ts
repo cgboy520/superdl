@@ -7,7 +7,7 @@
 import type { UserOut } from './userOut';
 
 /**
- * 认证响应:refresh token 只走 HttpOnly Cookie,不进响应体。
+ * Auth response: the refresh token travels only in the HttpOnly cookie, never in the body.
  */
 export interface TokenPairOut {
   access_token: string;

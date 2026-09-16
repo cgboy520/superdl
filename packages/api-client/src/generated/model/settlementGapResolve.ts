@@ -6,7 +6,7 @@
  */
 
 /**
- * 人工核销(不重放)。说明必填。
+ * Manual write-off (no replay). A note is required.
  */
 export interface SettlementGapResolve {
   /**

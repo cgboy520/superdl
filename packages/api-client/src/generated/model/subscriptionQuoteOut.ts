@@ -6,7 +6,7 @@
  */
 
 /**
- * 包周期报价,包含后端计算的原价、折扣与实付金额。
+ * Subscription quote with the server-computed list price, discount and payable amount.
  */
 export interface SubscriptionQuoteOut {
   amount: string;

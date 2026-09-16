@@ -80,7 +80,8 @@ export const getLogoutApiV1AuthLogoutPostUrl = () => {
 }
 
 /**
- * 登出当前会话(消费 refresh token + 清 Cookie)。token 无效也回 204。
+ * Log out the current session (consume the refresh token + clear the cookie). 204 even for an
+ * invalid token.
  * @summary Logout
  */
 export const logoutApiV1AuthLogoutPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<void> => {
@@ -104,7 +105,7 @@ export const getLogoutAllApiV1AuthLogoutAllPostUrl = () => {
 }
 
 /**
- * 登出全部会话:token_version+1,已签发的 access/refresh 即刻全部失效。
+ * Log out everywhere: token_version+1, every issued access/refresh token is invalid at once.
  * @summary Logout All
  */
 export const logoutAllApiV1AuthLogoutAllPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<void> => {
@@ -153,7 +154,8 @@ export const getRefreshApiV1AuthRefreshPostUrl = () => {
 }
 
 /**
- * 轮换刷新:refresh 只经 HttpOnly Cookie + X-Requested-With 头提交;成功写回新 Cookie。
+ * Rotating refresh: the refresh token travels only in the HttpOnly cookie + X-Requested-With
+ * header; success writes the new cookie.
  * @summary Refresh
  */
 export const refreshApiV1AuthRefreshPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<TokenPairOut> => {
@@ -247,7 +249,7 @@ export const getGetDeletionRequestApiV1MeDeletionRequestGetUrl = () => {
 }
 
 /**
- * 当前 pending 申请;无则最近一条;从未申请回 null。
+ * The current pending request; otherwise the most recent one; null when never requested.
  * @summary Get Deletion Request
  */
 export const getDeletionRequestApiV1MeDeletionRequestGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<DeletionRequestOut | null> => {
@@ -296,7 +298,7 @@ export const getCancelDeletionRequestApiV1MeDeletionRequestCancelPostUrl = () =>
 }
 
 /**
- * 冷静期内撤销注销申请(仅 pending 可撤)。
+ * Cancel the deletion request within the cooling-off period (pending only).
  * @summary Cancel Deletion Request
  */
 export const cancelDeletionRequestApiV1MeDeletionRequestCancelPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<DeletionRequestOut> => {

@@ -1,6 +1,7 @@
-"""已结束北京自然月的发票申请、开具与驳回。
+"""Invoice requests, issuance and rejection for finished calendar months of the billing zone.
 
-每用户每账期至多一条 submitted/issued 申请;开票须在申请行锁内重算金额,不符时拒绝。
+At most one submitted/issued request per user and period; issuing recomputes the amount under the
+request row lock and rejects on mismatch.
 """
 
 import re
@@ -19,6 +20,7 @@ from app.core.logging import get_logger
 from app.core.money import as_amount, money_label
 from app.core.pagination import Page, paginate_by_id
 from app.core.regions import cn
+from app.core.servercopy import copy as server_copy
 from app.core.sqlutil import get_for_update_or_404, sum_decimal, total
 from app.core.timeutil import billing_period_range, current_billing_period, now_utc
 from app.modules.billing.models import InvoiceRequest, Order, RefundRequest
@@ -55,7 +57,8 @@ REFUND_WITHHELD_STATUSES = ("pending", "approved", "paid")
 
 
 async def _period_paid_sum(session: AsyncSession, user_id: int, period: str) -> Decimal:
-    """汇总账期(计费时区自然月)内已支付充值额;冲正订单仅 action='release' 时计入。"""
+    """Paid top-ups within the period (calendar month of the billing zone); reversed orders count
+    only with action='release'."""
     start, end = billing_period_range(period)
     return await sum_decimal(
         session,
@@ -70,7 +73,8 @@ async def _period_paid_sum(session: AsyncSession, user_id: int, period: str) -> 
 
 
 async def _period_refund_sum(session: AsyncSession, user_id: int, period: str) -> Decimal:
-    """该账期订单的退款总额(已打款 + 在途 pending/approved),按关联订单 paid_at 归属。"""
+    """Refund total of the period's orders (paid + pending/approved in flight), attributed by the
+    linked order's paid_at."""
     start, end = billing_period_range(period)
     return await sum_decimal(
         session,
@@ -86,7 +90,7 @@ async def _period_refund_sum(session: AsyncSession, user_id: int, period: str) -
 
 
 async def _period_active_sum(session: AsyncSession, user_id: int, period: str) -> Decimal:
-    """该账期已占用额度:申请中(submitted)+ 已开票(issued)申请金额合计。"""
+    """Amount already used in the period: submitted + issued request amounts."""
     return await sum_decimal(
         session,
         select(total(InvoiceRequest.amount)).where(
@@ -100,9 +104,10 @@ async def _period_active_sum(session: AsyncSession, user_id: int, period: str) -
 async def _period_billable_amount(
     session: AsyncSession, user_id: int, period: str, *, excluding: Decimal = Decimal("0")
 ) -> Decimal:
-    """账期可开票额 = 可计入充值 − 已打款及在途退款 − 活跃发票额 + excluding。
+    """Invoiceable amount of the period = countable top-ups − paid and in-flight refunds − active
+    invoice amounts + excluding.
 
-    excluding 为开票重算时排除的本单金额。
+    excluding is this request's own amount, excluded when recomputing at issue time.
     """
     paid = await _period_paid_sum(session, user_id, period)
     refunded = await _period_refund_sum(session, user_id, period)
@@ -125,7 +130,8 @@ async def _active_of_period(
 
 
 async def eligible_periods(session: AsyncSession, user_id: int) -> list[InvoiceEligibleOut]:
-    """各账期可开票额度预览:有 paid 订单的已结束账期逐期计算,仅返回 > 0 的账期,倒序。"""
+    """Invoiceable amount preview per period: finished periods with paid orders, computed one by
+    one, only periods > 0 returned, descending."""
     period_col = func.to_char(
         func.timezone(get_settings().billing_timezone, Order.paid_at), "YYYY-MM"
     )
@@ -167,7 +173,8 @@ async def create_invoice(
     email: str,
     idempotency_key: str | None,
 ) -> tuple[InvoiceRequest, bool]:
-    """计算金额并提交开票申请,返回 (申请单, created);幂等重放 created=False。
+    """Compute the amount and submit the invoice request, returning (request, created); an
+    idempotent replay has created=False.
     Company tax IDs are validated by the compliance profile's rule (`TAX_ID_RULES`)."""
     tax_id = normalize_tax_id(title_type, tax_id)
     fingerprint = request_fingerprint(user_id, period, title_type, title, tax_id, email)
@@ -230,7 +237,7 @@ async def create_invoice(
 async def list_my_invoices(
     session: AsyncSession, user_id: int, *, cursor: str | None = None, limit: int | None = None
 ) -> Page[InvoiceOut]:
-    """本人发票申请(游标分页)。"""
+    """The caller's invoice requests (cursor pagination)."""
     stmt = (
         select(InvoiceRequest)
         .where(InvoiceRequest.user_id == user_id)
@@ -247,7 +254,7 @@ async def list_my_invoices(
 def admin_invoices_query(
     *, status: str | None = None, period: str | None = None
 ) -> Select[tuple[InvoiceRequest]]:
-    """管理端发票申请的筛选口径(列表与 CSV 共用):status / period 精确。"""
+    """Admin invoice request filters (shared by list and CSV): status / period exact."""
     stmt = select(InvoiceRequest)
     if status:
         stmt = stmt.where(InvoiceRequest.status == status)
@@ -259,7 +266,7 @@ def admin_invoices_query(
 async def admin_list_invoices(
     session: AsyncSession, status: str | None = None, period: str | None = None
 ) -> list[AdminInvoiceOut]:
-    """发票申请列表(固定截断)。status/period 精确过滤。"""
+    """Invoice request list (fixed cap). status/period exact filters."""
     stmt = (
         admin_invoices_query(status=status, period=period)
         .order_by(InvoiceRequest.id.desc())
@@ -272,7 +279,8 @@ async def admin_list_invoices(
 async def issue_invoice(
     session: AsyncSession, invoice_id: int, *, invoice_no: str, operator_id: int
 ) -> InvoiceRequest:
-    """开票(行锁内状态迁移):金额重算闸 + 回填发票号 + 操作人,站内信告知用户。"""
+    """Issue (status transition under the row lock): amount recomputation gate + invoice number +
+    operator, in-app notification to the user."""
     req = await get_for_update_or_404(
         session, InvoiceRequest, invoice_id, key="billing.invoiceNotFound"
     )
@@ -292,10 +300,13 @@ async def issue_invoice(
         session,
         req.user_id,
         type_="invoice",
-        title="发票已开具",
-        content=(
-            f"您 {req.period} 账期的发票(金额 {money_label(req.amount)})已开具,"
-            f"发票号 {invoice_no},将于 1-3 个工作日内发送至您的邮箱 {req.email}。"
+        title=server_copy("billing.invoice_issued.title"),
+        content=server_copy(
+            "billing.invoice_issued.content",
+            period=req.period,
+            amount=money_label(req.amount),
+            invoice_no=invoice_no,
+            email=req.email,
         ),
         dedup_key=f"invoice:issued:{req.id}",
     )
@@ -307,7 +318,8 @@ async def issue_invoice(
 async def reject_invoice(
     session: AsyncSession, invoice_id: int, *, reason: str, operator_id: int
 ) -> InvoiceRequest:
-    """锁定并驳回 submitted 申请,同事务写通知并提交;调用方须校验理由。"""
+    """Lock and reject a submitted request, write the notification in the same transaction and
+    commit; the caller validates the reason."""
     req = await get_for_update_or_404(
         session, InvoiceRequest, invoice_id, key="billing.invoiceNotFound"
     )
@@ -319,8 +331,8 @@ async def reject_invoice(
         session,
         req.user_id,
         type_="invoice",
-        title="发票申请被驳回",
-        content=f"您 {req.period} 账期的开票申请被驳回:{reason}。可修改抬头信息后重新提交。",
+        title=server_copy("billing.invoice_rejected.title"),
+        content=server_copy("billing.invoice_rejected.content", period=req.period, reason=reason),
         dedup_key=f"invoice:rejected:{req.id}",
     )
     await session.commit()

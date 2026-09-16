@@ -1,5 +1,7 @@
-"""计费边监听器:实例离开 running 时与状态迁移同事务出尾账(wire_modules() 注册);
-creating/starting→failed 且带 occupied_since 的边按实际占用时段出账。"""
+"""Billing edge listener: when an instance leaves running, the tail bill is posted in the same
+transaction as the transition (registered by wire_modules());
+a creating/starting→failed edge carrying occupied_since is billed for the actual occupied
+stretch."""
 
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -69,7 +71,8 @@ async def _settle_occupancy(
     *,
     reason: str,
 ) -> Decimal:
-    """[since, edge_at) 逐自然小时出账(占用可跨小时;此前的整点结算未把该实例列为候选)。"""
+    """Bill [since, edge_at) per calendar hour (occupancy may span hours; earlier clock-hour
+    settlement did not list this instance as a candidate)."""
     extra = {"occupied_since": since.isoformat(), "truncate_reason": reason}
     total = Decimal("0.00")
     cursor = hour_floor(since)

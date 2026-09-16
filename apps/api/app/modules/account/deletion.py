@@ -1,4 +1,4 @@
-"""账号注销申请、撤销、管理端执行与驳回。"""
+"""Account deletion requests: apply, cancel, admin execution and rejection."""
 
 import math
 from decimal import Decimal
@@ -11,6 +11,7 @@ from app.core.errors import AppError, ErrorCode, conflict, not_found
 from app.core.handles import mask_handle
 from app.core.logging import get_logger
 from app.core.money import money_label, money_str
+from app.core.servercopy import copy as server_copy
 from app.core.timeutil import now_utc
 from app.modules.account.models import AccountDeletionRequest, User
 from app.modules.account.schemas import AdminDeletionRequestOut
@@ -55,7 +56,7 @@ async def request_deletion(
 async def get_my_deletion_request(
     session: AsyncSession, user_id: int
 ) -> AccountDeletionRequest | None:
-    """当前 pending;无则最近一条。"""
+    """The current pending request; otherwise the most recent one."""
     pending = await _pending_deletion_of_user(session, user_id)
     if pending is not None:
         return pending
@@ -70,7 +71,7 @@ async def get_my_deletion_request(
 
 
 async def cancel_deletion_request(session: AsyncSession, user_id: int) -> AccountDeletionRequest:
-    """锁定并撤销最新的 pending 申请后提交;无申请回 404,终态回 409。"""
+    """Lock and cancel the latest pending request, then commit; no request → 404, terminal → 409."""
     req = (
         await session.execute(
             select(AccountDeletionRequest)
@@ -117,7 +118,7 @@ def _deletion_out(
 async def admin_list_deletion_requests(
     session: AsyncSession, status_: str | None = None
 ) -> list[AdminDeletionRequestOut]:
-    """注销申请列表(固定截断),行内附执行前校验计数。"""
+    """Deletion request list (fixed cap), each row with the pre-execution check counts."""
     stmt = (
         select(AccountDeletionRequest)
         .order_by(AccountDeletionRequest.id.desc())
@@ -148,7 +149,7 @@ async def admin_list_deletion_requests(
 
 
 async def admin_get_deletion_out(session: AsyncSession, request_id: int) -> AdminDeletionRequestOut:
-    """返回单条注销申请及当前残留资源数、余额。"""
+    """One deletion request with its current leftover resource counts and balance."""
     req = await session.get(AccountDeletionRequest, request_id)
     if req is None:
         raise not_found()
@@ -173,7 +174,7 @@ async def _get_deletion_for_update(
 
 
 def _auto_reject_deletion(req: AccountDeletionRequest, *, admin_id: int, note: str) -> None:
-    """执行前校验不过的自动驳回:残留清单/余额写进 note。"""
+    """Auto-rejection when the pre-execution checks fail: leftovers / balance go into note."""
     req.status = "rejected"
     req.processed_by = admin_id
     req.processed_at = now_utc()
@@ -183,9 +184,11 @@ def _auto_reject_deletion(req: AccountDeletionRequest, *, admin_id: int, note: s
 async def approve_deletion(
     session: AsyncSession, request_id: int, *, admin_id: int, note: str
 ) -> AccountDeletionRequest:
-    """锁定申请与用户后执行注销;调用方负责管理员授权与 note 校验。
+    """Lock the request and the user, then execute the deletion; the caller handles admin
+    authorisation and note validation.
 
-    冷静期未满回 409;残留资源或余额非零时提交驳回后回 409。
+    Cooling-off not over → 409; leftover resources or a non-zero balance commit a rejection and
+    return 409.
     On approval, the same transaction clears both handles and the KYC name / masked identity,
     revokes sessions and marks the account deleted; the identity digest and bills are kept.
     """
@@ -206,10 +209,12 @@ async def approve_deletion(
         _auto_reject_deletion(
             req,
             admin_id=admin_id,
-            note=(
-                f"自动驳回:名下仍有未释放实例 {len(leftovers['instances'])} 台"
-                f"({', '.join(leftovers['instances'])})、未删除数据盘 {len(leftovers['disks'])} 块"
-                f"({', '.join(leftovers['disks'])});请先清空资源后重新申请"
+            note=server_copy(
+                "account.deletion_reject.leftovers",
+                instances=len(leftovers["instances"]),
+                instance_list=", ".join(leftovers["instances"]),
+                disks=len(leftovers["disks"]),
+                disk_list=", ".join(leftovers["disks"]),
             ),
         )
         await session.commit()
@@ -226,7 +231,7 @@ async def approve_deletion(
         _auto_reject_deletion(
             req,
             admin_id=admin_id,
-            note=f"自动驳回:余额 {money_label(balance)} 未提现,请先经退款流程提现,到账后重新申请",
+            note=server_copy("account.deletion_reject.balance", balance=money_label(balance)),
         )
         await session.commit()
         raise conflict(
@@ -257,7 +262,8 @@ async def approve_deletion(
 async def reject_deletion(
     session: AsyncSession, request_id: int, *, admin_id: int, note: str
 ) -> AccountDeletionRequest:
-    """锁定并驳回 pending 申请后提交;不受冷静期限制,调用方校验 note。"""
+    """Lock and reject a pending request, then commit; not bound by the cooling-off period, the
+    caller validates note."""
     req = await _get_deletion_for_update(session, request_id)
     if req.status != "pending":
         raise conflict(key="account.deletionNotPending", params={"status": req.status})

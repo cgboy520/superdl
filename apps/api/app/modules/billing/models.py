@@ -20,10 +20,11 @@ from app.core.money import platform_currency
 
 
 class Wallet(Base):
-    """余额。更新必须 SELECT FOR UPDATE + 同事务写 ledger。
+    """Balance. Updates must SELECT FOR UPDATE and write the ledger in the same transaction.
 
-    frozen:渠道冲正冻结额;可用余额 = balance - frozen;冻结不记 ledger,
-    核销时 release 或 chargeback。"""
+    frozen: amount frozen by a channel reversal; available = balance - frozen; freezing writes no
+    ledger row,
+    the write-off is release or chargeback."""
 
     __tablename__ = "wallets"
     __table_args__ = (CheckConstraint("frozen >= 0", name="frozen_nonneg"),)
@@ -36,7 +37,8 @@ class Wallet(Base):
 
 
 class BalanceLedger(Base):
-    """追加式资金流水,对账基准。amount 带符号;balance_after 为扣/入账后的快照。"""
+    """Append-only ledger, the reconciliation baseline. amount is signed; balance_after is the
+    snapshot after the posting."""
 
     __tablename__ = "balance_ledger"
     __table_args__ = (
@@ -62,7 +64,7 @@ class BalanceLedger(Base):
 
 
 class BillHourly(Base):
-    """实例小时账单。UNIQUE(instance_id, hour_start) 即结算幂等键。"""
+    """Instance hourly bill. UNIQUE(instance_id, hour_start) is the settlement idempotency key."""
 
     __tablename__ = "bills_hourly"
     __table_args__ = (
@@ -86,7 +88,7 @@ class BillHourly(Base):
 
 
 class BillDailyDisk(Base):
-    """数据盘日结。UNIQUE(disk_id, day) 幂等;关机也扣。"""
+    """Daily data-disk settlement. UNIQUE(disk_id, day) idempotent; charged even when stopped."""
 
     __tablename__ = "bills_daily_disk"
     __table_args__ = (
@@ -107,7 +109,8 @@ class BillDailyDisk(Base):
 
 
 class SettlementWatermark(Base):
-    """已处理的最后一个窗口起点;hourly 为小时,daily_disk 为自然日,未结清窗口另记缺口。"""
+    """Start of the last processed window; hourly for hours, daily_disk for calendar days; unsettled
+    windows are recorded as gaps."""
 
     __tablename__ = "settlement_watermarks"
 
@@ -117,10 +120,11 @@ class SettlementWatermark(Base):
 
 
 class SettlementGap(Base):
-    """结算缺口登记:水位线越过但账未结清的窗口。
+    """Settlement gap record: a window the watermark passed without the bill being settled.
 
-    四种来源:catchup_truncated(整窗,object_id=0)/ dead_letter(单对象)/ watermark_missing(整窗)
-    / grace_overlap(单盘)。只登记不自动补,处理后标记 resolved_at。
+    Four sources: catchup_truncated (whole window, object_id=0) / dead_letter (single object) /
+    watermark_missing (whole window)
+    / grace_overlap (single disk). Recorded only, never auto-filled; resolved_at marks handling.
     """
 
     __tablename__ = "settlement_gaps"
@@ -136,7 +140,7 @@ class SettlementGap(Base):
 
 
 class ReconcileCheckpoint(Base):
-    """用户钱包核对游标:最后核验的流水 id、余额快照及核验时间。"""
+    """Wallet reconciliation cursor: last verified ledger id, balance snapshot and check time."""
 
     __tablename__ = "reconcile_checkpoints"
 
@@ -147,7 +151,7 @@ class ReconcileCheckpoint(Base):
 
 
 class Order(Base):
-    """充值订单。支付回调幂等靠 channel_txn_id 唯一 + status 检查。"""
+    """Top-up order. Callback idempotency relies on the unique channel_txn_id + status check."""
 
     __tablename__ = "orders"
     __table_args__ = (
@@ -197,17 +201,19 @@ class BillingIdentity(Base):
 
 
 def reversal_pending(order: "Order") -> bool:
-    """渠道冲正待处置:已收到反向通知且尚未核销。"""
+    """Channel reversal pending handling: a reversal notice arrived and is not written off yet."""
     return order.channel_reversed_at is not None and order.channel_reversal_resolved_at is None
 
 
 def reversal_blocks_refund(order: "Order") -> bool:
-    """待处置或已坐实(chargeback)的冲正都禁止平台侧再出金;release 过的订单恢复资格。"""
+    """Pending or confirmed (chargeback) reversals block any platform-side payout; released orders
+    regain eligibility."""
     return order.channel_reversed_at is not None and order.channel_reversal_action != "release"
 
 
 class InvoiceRequest(Base):
-    """按北京自然月计算金额的发票申请;每用户每账期至多一条 submitted/issued 申请。"""
+    """Invoice request computed per calendar month of the billing zone; at most one
+    submitted/issued request per user and period."""
 
     __tablename__ = "invoice_requests"
     __table_args__ = (
@@ -243,9 +249,10 @@ class InvoiceRequest(Base):
 
 
 class RefundRequest(Base):
-    """退款申请;每订单至多一条 pending/approved,打款人与审批人须不同。
+    """Refund request; at most one pending/approved per order, payer and reviewer must differ.
 
-    登记打款时同事务扣款并回写 wallet_entry_id;累计退款不得超过订单额。
+    Registering the payout debits in the same transaction and writes wallet_entry_id back; total
+    refunds must not exceed the order amount.
     """
 
     __tablename__ = "refund_requests"
@@ -290,7 +297,8 @@ class RefundRequest(Base):
 
 
 class Subscription(Base):
-    """包周期预付订单;每实例至多一条 active,续费新建行并由 renewed_from_id 关联旧行。"""
+    """Subscription prepayment order; at most one active per instance, a renewal creates a new row
+    linked by renewed_from_id."""
 
     __tablename__ = "subscriptions"
     __table_args__ = (

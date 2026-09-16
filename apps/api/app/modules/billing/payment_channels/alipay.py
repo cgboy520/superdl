@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode
 from app.core.platform_config import RuntimeConfig
+from app.core.servercopy import copy as server_copy
 from app.modules.billing.payment_channels.base import (
     SDK_TIMEOUT_SECONDS,
     CallbackResult,
@@ -30,7 +31,8 @@ ALIPAY_CFG_KEYS = (
 
 
 class AlipayChannel:
-    """支付宝当面付、异步通知 RSA2 验签与主动查单;生产环境须配置收款方 seller_id。"""
+    """Alipay face-to-face payment, RSA2 verification of async notices and active order queries;
+    production requires the payee seller_id."""
 
     name = "alipay"
 
@@ -81,7 +83,7 @@ class AlipayChannel:
         model = AlipayTradePrecreateModel()
         model.out_trade_no = order.order_no
         model.total_amount = str(order.amount)
-        model.subject = f"SuperDL 充值 {order.order_no}"
+        model.subject = server_copy("billing.recharge.subject", order_no=order.order_no)
         remaining_min = int((order.expires_at - now_utc()).total_seconds() // 60)
         model.timeout_express = f"{max(1, remaining_min)}m"
         req = AlipayTradePrecreateRequest(biz_model=model)
@@ -103,7 +105,8 @@ class AlipayChannel:
         return PaymentInit(resp["qr_code"])
 
     async def parse_callback(self, headers: dict[str, str], body: bytes) -> CallbackResult:  # noqa: ARG002
-        """验签并核对 app_id、seller_id 与北京时间通知时效;正退款额视为反向通知。"""
+        """Verify the signature and check app_id, seller_id and the Beijing-time notice freshness; a
+        positive refund amount counts as a reversal notice."""
         from urllib.parse import parse_qsl
 
         from alipay.aop.api.util.SignatureUtils import (

@@ -27,6 +27,7 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
+from app.core.servercopy import copy as server_copy
 from app.core.sqlutil import like_escape
 from app.core.timeutil import ensure_utc, local_day_range, now_utc
 from app.modules.account import verification
@@ -59,7 +60,8 @@ def _issue_tokens(
     access_jti: str | None = None,
     iat: datetime | None = None,
 ) -> TokenPair:
-    """签发 token 对;指定 jti/iat 可重建刷新宽限窗内的轮换结果。"""
+    """Issue a token pair; an explicit jti/iat rebuilds the rotation result within the refresh grace
+    window."""
     extra = {"ver": user.token_version}
     return TokenPair(
         access_token=create_token(
@@ -193,7 +195,8 @@ def _login_buckets(handle_key: str, client_ip: str | None) -> list[LoginBucket]:
 
 
 class _LoginFailed(AppError):
-    """凭据错误(「未注册」与「凭证错」对外不可区分);registered 只进日志。"""
+    """Wrong credentials ("not registered" and "wrong credential" are indistinguishable outside);
+    registered goes to the log only."""
 
     def __init__(self, *, registered: bool) -> None:
         super().__init__(ErrorCode.LOGIN_FAILED, key="account.loginFailed")
@@ -228,7 +231,8 @@ async def _verify_credentials(
 
 
 async def _notify_login_anomaly(session: AsyncSession, user: User) -> None:
-    """成功登录后通知账号 15 分钟窗内的失败记录,再清零该桶。"""
+    """After a successful login, notify about the account's failures within the 15-minute window,
+    then reset that bucket."""
     key = _acct_bucket_key(ratelimit_key(user.primary_handle))
     acct_hits = await read_hits(key, window_seconds=LOGIN_ACCT_WINDOW)
     if acct_hits > 0:
@@ -238,11 +242,8 @@ async def _notify_login_anomaly(session: AsyncSession, user: User) -> None:
             session,
             user.id,
             type_="account",
-            title="检测到异常登录尝试",
-            content=(
-                f"您的账号近 15 分钟内有 {acct_hits} 次登录失败记录,本次登录成功。"
-                "若非本人操作,请立即修改密码并检查账号安全。"
-            ),
+            title=server_copy("account.login_anomaly.title"),
+            content=server_copy("account.login_anomaly.content", hits=acct_hits),
             severity="warning",
             dedup_key=f"login-anomaly:{user.id}:{now_utc():%Y%m%d}",
         )
@@ -258,8 +259,10 @@ async def login(
     *,
     client_ip: str | None = None,
 ) -> TokenPair:
-    """密码或验证码登录。密码路径 bcrypt 前四层桶先计数再判定;失败留痕;
-    成功退还预计数、清零配对桶并判异常登录。验证码路径只在失败后计数。"""
+    """Password or code login. The password path counts the four buckets before bcrypt and then
+    decides; failures leave a trace;
+    success refunds the pre-count, resets the pair bucket and checks for anomalies. The code path
+    counts only after a failure."""
     buckets = _login_buckets(ratelimit_key(handle.value), client_ip)
     precounted = password is not None
     if precounted:
@@ -384,10 +387,12 @@ async def remove_phone(session: AsyncSession, user: User) -> User:
 
 
 async def refresh_tokens(session: AsyncSession, refresh_token: str) -> TokenPair:
-    """持用户行锁轮换 refresh;版本缺失或不匹配时拒绝。
+    """Rotate the refresh token under the user row lock; a missing or mismatching version is
+    rejected.
 
-    宽限窗内重放刷新返回登记的 token 对,缺失登记时补发;登出重放拒绝。
-    其余重放递增 token_version 并提交,撤销全部会话。
+    A replay within the grace window returns the recorded token pair, re-issued when the record is
+    missing; a replay after logout is rejected.
+    Any other replay bumps token_version, commits and revokes every session.
     """
     payload = decode_token(refresh_token, "user", expected_type="refresh")
     user = await session.get(User, int(payload["sub"]), with_for_update=True)
@@ -446,9 +451,10 @@ async def refresh_tokens(session: AsyncSession, refresh_token: str) -> TokenPair
 
 
 async def logout(session: AsyncSession, refresh_token: str) -> None:
-    """登记 refresh 为已登出并提交;无效、过期或已登出时静默返回。
+    """Record the refresh token as logged out and commit; invalid, expired or already logged out
+    returns silently.
 
-    已签发 access 的即时撤销由 logout_all 完成。
+    Immediate revocation of issued access tokens is done by logout_all.
     """
     try:
         payload = decode_token(refresh_token, "user", expected_type="refresh")
@@ -470,7 +476,8 @@ async def logout(session: AsyncSession, refresh_token: str) -> None:
 
 
 async def logout_all(session: AsyncSession, user_id: int) -> None:
-    """持用户行锁递增 token_version 并提交,撤销全部 access/refresh。"""
+    """Bump token_version under the user row lock and commit, revoking every access/refresh
+    token."""
     user = await session.get(User, user_id, with_for_update=True)
     if user is None:
         raise not_found()
@@ -564,7 +571,7 @@ async def set_warn_threshold(session: AsyncSession, user: User, hours: int) -> U
 
 
 async def ssh_keys_by_ids(session: AsyncSession, user_id: int, ids: list[int]) -> list[SshKey]:
-    """返回本用户名下给定 id 集合内的公钥,按 id 升序。"""
+    """The user's public keys within the given id set, by id ascending."""
     if not ids:
         return []
     return list(
@@ -579,7 +586,7 @@ async def ssh_keys_by_ids(session: AsyncSession, user_id: int, ids: list[int]) -
 
 
 async def is_active_user(session: AsyncSession, user_id: int) -> bool:
-    """归属校验:user_id 存在且 active。"""
+    """Ownership check: user_id exists and is active."""
     status = await session.scalar(select(User.status).where(User.id == user_id))
     return status == "active"
 
@@ -597,7 +604,7 @@ async def require_real_name_if_required(session: AsyncSession, user: User, *, ke
 
 
 async def get_warn_thresholds(session: AsyncSession, user_ids: list[int]) -> dict[int, int]:
-    """返回 user_id 到余额预警阈值小时数的映射。"""
+    """user_id → low-balance warning threshold in hours."""
     if not user_ids:
         return {}
     rows = (
@@ -613,12 +620,12 @@ async def get_warn_thresholds(session: AsyncSession, user_ids: list[int]) -> dic
 
 
 async def list_active_user_ids(session: AsyncSession) -> list[int]:
-    """返回全部 active 用户 id。"""
+    """Every active user id."""
     return list((await session.execute(select(User.id).where(User.status == "active"))).scalars())
 
 
 async def signup_counts(session: AsyncSession, *, tz_offset_minutes: int = 0) -> dict[str, int]:
-    """今日/昨日新注册数(本地日界)。"""
+    """New sign-ups today / yesterday (local day boundary)."""
     day_start, _ = local_day_range(tz_offset_minutes)
     prev_day_start = day_start - timedelta(days=1)
 
@@ -672,12 +679,13 @@ async def admin_list_users(
 
 
 async def frozen_user_ids(session: AsyncSession) -> list[int]:
-    """返回全部 frozen 租户 id。"""
+    """Every frozen tenant id."""
     return list((await session.execute(select(User.id).where(User.status == "frozen"))).scalars())
 
 
 async def admin_set_user_status(session: AsyncSession, user_id: int, status_: str) -> User:
-    """只管 users 表。不 commit,调用方把「停机」编排进同一事务。"""
+    """Touches the users table only. No commit; the caller puts the "stop" into the same
+    transaction."""
     user = await get_user(session, user_id)
     user.status = status_
     if status_ == "frozen":
@@ -688,7 +696,7 @@ async def admin_set_user_status(session: AsyncSession, user_id: int, status_: st
 
 @dataclass(frozen=True)
 class UserLimits:
-    """每用户配额生效值(实例数 / GPU 总数 / 数据盘块数)。"""
+    """Effective per-user quotas (instance count / total GPUs / data-disk count)."""
 
     max_instances: int
     max_gpus: int
@@ -696,7 +704,8 @@ class UserLimits:
 
 
 async def get_user_limits(session: AsyncSession, user_id: int) -> UserLimits:
-    """逐项返回用户配额覆盖值,未覆盖项使用平台运行时配置。"""
+    """The user's override values item by item; non-overridden items use the platform runtime
+    configuration."""
     policies = await get_runtime_config(session)
     override = await session.get(UserQuotaOverride, user_id)
     return UserLimits(
@@ -719,7 +728,7 @@ async def get_user_limits(session: AsyncSession, user_id: int) -> UserLimits:
 
 
 async def get_quota_override(session: AsyncSession, user_id: int) -> UserQuotaOverride | None:
-    """读覆盖行(无覆盖返回 None)。幽灵 id → 404。"""
+    """Read the override row (None without an override). Unknown id → 404."""
     await get_user(session, user_id)
     return await session.get(UserQuotaOverride, user_id)
 
@@ -734,7 +743,8 @@ async def set_quota_override(
     note: str,
     updated_by: int,
 ) -> UserQuotaOverride | None:
-    """写覆盖(upsert);三项全 None = 清除覆盖。不 commit,由调用方与审计同事务提交。"""
+    """Write the override (upsert); all three None = clear the override. No commit, the caller
+    commits together with the audit."""
     await get_user(session, user_id)
     row = await session.get(UserQuotaOverride, user_id)
     if max_gpus is None and max_instances is None and max_disks is None:

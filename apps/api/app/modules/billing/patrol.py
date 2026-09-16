@@ -1,4 +1,5 @@
-"""按可用余额巡检欠费预警、停机、冻结、回收与解冻;宽限时长取运行时策略。"""
+"""Arrears patrol by available balance: warnings, stops, freezes, reclamation and unfreezing;
+grace durations come from the runtime policy."""
 
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -14,6 +15,7 @@ from app.core.money import as_amount, hourly_cost, money_label
 from app.core.patrol import for_each
 from app.core.platform_config import get_runtime_config
 from app.core.pricing import MARKET_SUBSCRIPTION
+from app.core.servercopy import copy as server_copy
 from app.core.timeutil import hour_floor, now_utc
 from app.modules.account import service as account_service
 from app.modules.billing import wallet
@@ -61,7 +63,7 @@ async def balance_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]
 
 
 async def _refresh_negative_balance_gauges(sm: async_sessionmaker[AsyncSession]) -> None:
-    """刷新负余额钱包数量与负余额绝对值合计指标。"""
+    """Refresh the negative-wallet count and absolute negative-balance sum metrics."""
     async with sm() as session:
         count, total = (
             await session.execute(
@@ -77,7 +79,7 @@ async def _refresh_negative_balance_gauges(sm: async_sessionmaker[AsyncSession])
 async def _patrol_frozen_tenants(
     sm: async_sessionmaker[AsyncSession], counts: dict[str, int]
 ) -> None:
-    """逐用户独立事务停止 frozen 账号的运行实例。"""
+    """Stop the running instances of frozen accounts, one independent transaction per user."""
     async with sm() as session:
         frozen_user_ids = await account_service.frozen_user_ids(session)
 
@@ -97,9 +99,11 @@ async def _patrol_frozen_tenants(
 async def _unsettled_burn(
     session: AsyncSession, inst: "Instance", now: datetime, settled_through: datetime | None
 ) -> Decimal:
-    """估算未出账消耗,不入账;从当前小时与水位线次小时的较早者开始。
+    """Estimate unbilled consumption without posting; starts at the earlier of the current hour and
+    the hour after the watermark.
 
-    事件按计费视图(占用边展开、失联边截断)重建 running 秒数减已出账秒数;最多允许 31 天秒数。
+    Events are rebuilt through the billing view (occupancy edges expanded, loss edges truncated)
+    into running seconds minus billed seconds; at most 31 days of seconds.
     """
     h0 = hour_floor(now)
     start = h0 if settled_through is None else min(h0, settled_through + timedelta(hours=1))
@@ -119,7 +123,8 @@ async def _unsettled_burn(
 
 
 async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str, int]) -> None:
-    """按用户检查非包周期 running 实例;可用余额扣除未结消耗后判定停机或预警。"""
+    """Check the user's non-subscription running instances; the available balance minus unsettled
+    consumption decides stop or warning."""
     async with sm() as session:
         by_user = await orchestrator_queries.list_running_instances_by_user(session)
         thresholds = await account_service.get_warn_thresholds(session, list(by_user))
@@ -157,9 +162,11 @@ async def _check_user_burn(
     warn_hours: int | None,
     counts: dict[str, int],
 ) -> None:
-    """检查用户未结消耗;欠费时按实例 id 升序锁实例,再锁钱包复核余额。
+    """Check the user's unsettled consumption; in arrears lock the instances by id ascending, then
+    the wallet and re-check the balance.
 
-    停机、尾账与通知同事务提交;未停机时按可用时长阈值预警。
+    Stop, tail bill and notification commit together; without a stop, warn by the remaining-hours
+    threshold.
     """
     available = await wallet.get_available_balance(session, user_id)
     burn_per_hour = sum(
@@ -186,7 +193,10 @@ async def _check_user_burn(
                     )
                     counts["stopped"] += 1
             await notify_service.send_arrears_notice(
-                session, user_id, action="auto_stop", detail="余额耗尽,实例已自动关机"
+                session,
+                user_id,
+                action="auto_stop",
+                detail=server_copy("billing.arrears.auto_stop.detail"),
             )
             await session.commit()
             return
@@ -225,7 +235,9 @@ async def _patrol_frozen_and_arrears_stopped(
                 session,
                 inst.user_id,
                 action="freeze",
-                detail=f"欠费冻结,{policies.freeze_grace_hours} 小时后将回收实例盘",
+                detail=server_copy(
+                    "billing.arrears.freeze.detail", hours=policies.freeze_grace_hours
+                ),
             )
             await session.commit()
             counts["frozen"] += 1
@@ -245,7 +257,7 @@ async def _patrol_frozen_and_arrears_stopped(
                     session,
                     inst.user_id,
                     action="reclaim",
-                    detail="冻结期满,实例已回收(实例盘清除,数据盘保留)",
+                    detail=server_copy("billing.arrears.reclaim.detail"),
                 )
                 counts["reclaimed"] += 1
             await session.commit()
@@ -261,7 +273,7 @@ async def _patrol_frozen_and_arrears_stopped(
 
 
 async def _settle_disk_pending(session: AsyncSession, disk: "DataDisk") -> None:
-    """结算数据盘进入欠费宽限前的在账日费,不提交。"""
+    """Settle the disk's billed days before it enters the arrears grace, no commit."""
     await settle_disk_pending_days(
         session,
         DiskBillingInput(
@@ -275,9 +287,10 @@ async def _settle_disk_pending(session: AsyncSession, disk: "DataDisk") -> None:
 
 
 async def _patrol_disks(sm: async_sessionmaker[AsyncSession], counts: dict[str, int]) -> None:
-    """数据盘欠费链路:欠费 → grace(只读,disk_grace_days)→ frozen(disk_frozen_days)→ 清除;
-    回款即恢复。
-    巡检集合见 orchestrator.queries.arrears_chain_disk_user_ids。
+    """Data-disk arrears chain: arrears → grace (read-only, disk_grace_days) → frozen
+    (disk_frozen_days) → erased;
+    payment restores it.
+    The patrol set is orchestrator.queries.arrears_chain_disk_user_ids.
     """
     async with sm() as session:
         user_ids = await orchestrator_queries.arrears_chain_disk_user_ids(session)

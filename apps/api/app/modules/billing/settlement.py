@@ -1,6 +1,8 @@
-"""基于 instance_events 的小时结算、盘日结与缺口处理;事件经 orchestrator.queries 读取。
+"""Hourly settlement, daily disk settlement and gap handling based on instance_events; events are
+read through orchestrator.queries.
 
-账单与扣款同事务,按对象和窗口幂等;追平越过的未结清窗口登记 settlement_gaps。
+Bills and debits share a transaction, idempotent per object and window; unsettled windows the
+catch-up passes are recorded in settlement_gaps.
 """
 
 from collections.abc import Awaitable, Callable, Mapping
@@ -23,6 +25,7 @@ from app.core.metrics import (
 )
 from app.core.money import as_amount, as_price, billing_units, disk_daily_charge
 from app.core.pagination import Page, paginate_by_id
+from app.core.servercopy import copy as server_copy
 from app.core.sqlutil import get_for_update_or_404
 from app.core.timeutil import (
     billing_day_floor,
@@ -57,7 +60,8 @@ _failure_streaks: dict[tuple[str, datetime, int], int] = {}
 def truncated_at(
     edge_at: datetime, from_status: str | None, meta: Mapping[str, Any] | None
 ) -> datetime:
-    """返回 UTC 计费终点;离开 running 且 unready_since 早于边时刻时使用前者。"""
+    """UTC billing end; when leaving running with unready_since earlier than the edge, the former
+    wins."""
     edge_at = ensure_utc(edge_at)
     if from_status == RUNNING and meta and meta.get("unready_since"):
         unready_at = ensure_utc(datetime.fromisoformat(str(meta["unready_since"])))
@@ -69,8 +73,9 @@ def truncated_at(
 def occupied_since(
     from_status: str | None, to_status: str, meta: Mapping[str, Any] | None
 ) -> datetime | None:
-    """creating/starting → failed 边带 `occupied_since` 时返回该 UTC 时刻
-    (服务型实例 health_path 未就绪但容器已实际运行的起点);其余边返回 None。"""
+    """A creating/starting → failed edge carrying `occupied_since` returns that UTC instant
+    (start of a service instance whose health_path never passed while the container ran); other
+    edges return None."""
     if to_status != FAILED or from_status not in (CREATING, STARTING) or not meta:
         return None
     raw = meta.get(OCCUPIED_SINCE_KEY)
@@ -82,8 +87,9 @@ def occupied_since(
 def billing_view(
     events: list[tuple[datetime, str | None, str, Any]],
 ) -> list[tuple[datetime, str | None, str]]:
-    """事件流水 → 计费视图(3 元组):退出边按 truncated_at 截断;
-    带 occupied_since 的失败边展开成「occupied_since 进 running + 边时刻离开 running」两条。"""
+    """Event rows → billing view (3-tuples): exit edges truncated at truncated_at;
+    a failure edge with occupied_since expands into "enter running at occupied_since + leave
+    running at the edge time"."""
     view: list[tuple[datetime, str | None, str]] = []
     for created_at, from_status, to_status, meta in events:
         edge_at = ensure_utc(created_at)
@@ -101,10 +107,12 @@ def running_seconds_in_window(
     window_start: datetime,
     window_end: datetime,
 ) -> int:
-    """从事件流水重建 [window_start, window_end) 内的 running 秒数。
+    """Rebuild the running seconds within [window_start, window_end) from the event rows.
 
-    events:该实例截至 window_end 的全部事件 (created_at, from_status, to_status),按发生序。
-    仍在 running 则计到 window_end;累加整数微秒后按 HALF_EVEN 舍入为秒。
+    events: every event of the instance up to window_end (created_at, from_status, to_status), in
+    occurrence order.
+    Still running counts up to window_end; whole microseconds are summed, then rounded HALF_EVEN to
+    seconds.
     """
     window_start = ensure_utc(window_start)
     window_end = ensure_utc(window_end)
@@ -138,9 +146,9 @@ def running_seconds_in_window(
 def bill_amount(
     unit_price: Decimal, gpu_count: int, seconds: int, *, max_seconds: int = 3600
 ) -> Decimal:
-    """按时价与秒数计算金额,保留两位 HALF_EVEN;seconds 越界抛 ValueError。
+    """Amount from hourly price and seconds, 2 dp HALF_EVEN; out-of-range seconds raise ValueError.
 
-    gpu_count=0 按一份整机计费,否则按卡数计费。
+    gpu_count=0 bills one whole-machine unit, otherwise per card.
     """
     if not 0 <= seconds <= max_seconds:
         raise ValueError(f"seconds out of range: {seconds}")
@@ -162,10 +170,12 @@ async def upsert_hour_bill(
     source: str,
     detail_extra: dict[str, Any] | None = None,
 ) -> Decimal:
-    """按实例与小时幂等入账,返回实际扣款金额;调用方负责提交。
+    """Post idempotently per instance and hour, returning the amount actually charged; the caller
+    commits.
 
-    新行扣全额;已有行仅在秒数和金额均增长时持行锁补差价。零金额账单不写扣款流水。
-    detail_extra 合并进 detail。
+    A new row charges the full amount; an existing row tops up the difference under the row lock
+    only when seconds and amount both grew. Zero-amount bills write no debit.
+    detail_extra is merged into detail.
     """
     if seconds <= 0:
         return Decimal("0.00")
@@ -218,7 +228,7 @@ async def upsert_hour_bill(
         charged,
         ref_type="bill_hourly",
         ref_id=row_id,
-        remark=f"实例 GPU 时费({source})",
+        remark=server_copy("billing.remark.hourly", source=source),
     )
     return charged
 
@@ -226,7 +236,8 @@ async def upsert_hour_bill(
 async def _charge_bill(
     session: AsyncSession, user_id: int, amount: Decimal, *, ref_type: str, ref_id: int, remark: str
 ) -> None:
-    """已发生消费的结算扣款;允许透支及余额低于冻结额,不提交。"""
+    """Settlement debit for consumption that already happened; overdraft and balance below frozen
+    allowed, no commit."""
     await wallet.debit(
         session,
         user_id,
@@ -252,7 +263,8 @@ async def settle_instance_window(
     source: str,
     detail_extra: dict[str, Any] | None = None,
 ) -> Decimal:
-    """先持实例行锁,再重建事件秒数并入账;窗口须在单一自然小时内,调用方负责提交。"""
+    """Lock the instance row first, then rebuild the event seconds and post; the window must lie
+    within one calendar hour, the caller commits."""
     await orchestrator_queries.lock_instance_for_billing(session, instance_id)
     rows = await orchestrator_queries.billing_events(session, instance_id)
     seconds = running_seconds_in_window(billing_view(rows), window_start, window_end)
@@ -281,8 +293,10 @@ async def settle_on_demand_up_to(
     gpu_count: int,
     at: datetime,
 ) -> Decimal:
-    """把该实例截至 `at` 的按量账逐小时结清(水位线之后的第一个小时起)。返回本次扣款合计。
-    转包周期前必须调它。滞后超过 MAX_CONVERT_SETTLE_HOURS 抛 CONFLICT。
+    """Settle the instance's on-demand bill up to `at` hour by hour (from the first hour after the
+    watermark). Returns the total charged.
+    Must be called before converting to a subscription. Lagging beyond MAX_CONVERT_SETTLE_HOURS
+    raises CONFLICT.
     """
     watermark = await get_watermark(session, "hourly")
     last_hour = hour_floor(at)
@@ -323,8 +337,10 @@ async def reprice_current_hour(
     gpu_count: int,
     at: datetime,
 ) -> Decimal:
-    """把当前自然小时已出的账单行改按新单价重算,补扣差价。返回补扣金额。
-    口径「一小时一价,以结算时的实例单价为准」;只在涨价时动这一行,降价时整行不动。
+    """Recompute the already billed row of the current calendar hour at the new unit price and
+    charge the difference. Returns the top-up.
+    Rule "one price per hour, the instance unit price at settlement time"; the row changes only
+    when the price rose, a price cut leaves it alone.
     """
     row = (
         await session.execute(
@@ -348,7 +364,7 @@ async def reprice_current_hour(
         delta,
         ref_type="bill_hourly",
         ref_id=row.id,
-        remark="实例 GPU 时费(转按量补差价)",
+        remark=server_copy("billing.remark.reprice"),
     )
     return delta
 
@@ -359,7 +375,8 @@ async def get_watermark(session: AsyncSession, key: str) -> datetime | None:
 
 
 async def _clock_skew_exceeded(sm: async_sessionmaker[AsyncSession]) -> bool:
-    """worker/DB 时钟比对:偏差超 CLOCK_SKEW_MAX_SECONDS 时拒绝本轮结算并告警(返回 True)。"""
+    """worker / DB clock comparison: a skew above CLOCK_SKEW_MAX_SECONDS refuses this round's
+    settlement and alerts (returns True)."""
     async with sm() as session:
         db_now = ensure_utc((await session.execute(select(func.now()))).scalar_one())
     skew = abs((db_now - now_utc()).total_seconds())
@@ -369,7 +386,8 @@ async def _clock_skew_exceeded(sm: async_sessionmaker[AsyncSession]) -> bool:
     logger.error(
         "settlement_clock_skew",
         skew_seconds=skew,
-        hint="worker 与 DB 时钟偏差超阈值,本轮结算已拒绝;请校准 NTP 后重试",
+        hint="worker and DB clocks differ beyond the threshold, this settlement round was refused;"
+        " fix NTP and retry",
     )
     return True
 
@@ -377,7 +395,7 @@ async def _clock_skew_exceeded(sm: async_sessionmaker[AsyncSession]) -> bool:
 async def _advance_watermark(
     sm: async_sessionmaker[AsyncSession], key: str, value: datetime
 ) -> None:
-    """水位线只前进不后退。"""
+    """The watermark only moves forward."""
     async with sm() as session:
         await session.execute(
             pg_insert(SettlementWatermark)
@@ -399,7 +417,7 @@ async def _record_gaps(
     object_id: int,
     reason: str,
 ) -> None:
-    """缺口登记(幂等,独立事务):同一 (kind, window, object) 只留一行。"""
+    """Record a gap (idempotent, independent transaction): one row per (kind, window, object)."""
     if not windows:
         return
     async with sm() as session:
@@ -413,7 +431,9 @@ async def _record_gaps(
 
 
 async def _refresh_gap_gauge(session: AsyncSession) -> None:
-    """未核销缺口 Gauge 全量刷新(DB 口径):结算任务每轮末与重放/核销后调用。"""
+    """Full refresh of the unresolved-gap gauge (DB view): called at the end of every settlement
+    round
+    and after replay / write-off."""
     rows = (
         (
             await session.execute(
@@ -440,8 +460,10 @@ async def _settle_window_objects(
     window_start: datetime,
     attempts: list[tuple[int, SettleAttempt]],
 ) -> tuple[int, list[int]]:
-    """逐对象独立事务结算一个窗口。返回 (入账数, 仍失败且未死信的对象 id 列表)。
-    单对象失败不拖垮整窗;连续 DEAD_LETTER_AFTER 轮失败记缺口(dead_letter)后放过。
+    """Settle one window object by object in independent transactions. Returns (posted count, ids
+    still failing and not yet dead-lettered).
+    One failure does not take the window down; DEAD_LETTER_AFTER consecutive failures record a
+    dead_letter gap and let it pass.
     """
     settled = 0
     failed: list[int] = []
@@ -499,9 +521,11 @@ async def _catchup_settle(
     settle_window: Callable[[datetime, datetime], Awaitable[tuple[int, list[int]]]],
     shift: Callable[[datetime, int], datetime] | None = None,
 ) -> int:
-    """持咨询锁逐窗追平,仅连续成功或已记缺口的窗口推进水位线。
+    """Catch up window by window under the advisory lock; the watermark advances only past windows
+    that succeeded or recorded a gap.
 
-    无水位线时仅结目标窗口,有更早历史则记 watermark_missing;超上限窗口记截断缺口。
+    Without a watermark only the target window is settled, with earlier history a
+    watermark_missing gap is recorded; windows beyond the cap record a truncation gap.
     `shift(window_start, n)` steps windows (default `n × step`; daily windows pass a calendar
     shift so DST days keep one window per local date); `step` only sizes the lag gauge.
     """
@@ -520,7 +544,9 @@ async def _catchup_settle(
             if has_history:
                 logger.warning(
                     f"{kind}_watermark_missing",
-                    hint="无结算水位线但存在历史对象:水位线已丢失,只结最近窗口,更早窗口需人工核查补结",
+                    hint="no settlement watermark but historical objects exist: the watermark was"
+                    " lost,"
+                    " only the most recent window is settled, earlier windows need manual review",
                 )
                 await _record_gaps(
                     sm, kind=kind, windows=[target_start], object_id=0, reason="watermark_missing"
@@ -539,7 +565,8 @@ async def _catchup_settle(
                 f"{kind}_catchup_truncated",
                 watermark=watermark.isoformat() if watermark else None,
                 skipped_windows=len(skipped),
-                hint="超出追平上限的窗口已登记 settlement_gaps,需补结任务或人工处理",
+                hint="windows beyond the catch-up cap were recorded in settlement_gaps, they need a"
+                " replay task or manual handling",
             )
             await _record_gaps(
                 sm, kind=kind, windows=skipped, object_id=0, reason="catchup_truncated"
@@ -576,7 +603,8 @@ def _hourly_attempt(
     window_start: datetime,
     window_end: datetime,
 ) -> SettleAttempt:
-    """闭包绑定一个 (实例, 小时) 的结算参数;独立事务由 _settle_window_objects 开。"""
+    """Closure binding the settlement parameters of one (instance, hour); _settle_window_objects
+    opens the independent transaction."""
 
     async def attempt(session: AsyncSession) -> Decimal:
         return await settle_instance_window(
@@ -596,7 +624,8 @@ def _hourly_attempt(
 async def _hourly_window_attempts(
     sm: async_sessionmaker[AsyncSession], window_start: datetime, window_end: datetime
 ) -> list[tuple[int, SettleAttempt]]:
-    """构造一个小时窗口内全部计费候选实例的入账闭包(整点结算与整窗重放共用)。"""
+    """Build the posting closures of every billing candidate in one hour window (shared by
+    clock-hour settlement and whole-window replay)."""
     async with sm() as session:
         instances = await orchestrator_queries.billing_candidates(session, window_start)
     return [
@@ -608,8 +637,10 @@ async def _hourly_window_attempts(
 async def settle_due_hours(
     sm: async_sessionmaker[AsyncSession], *, at: datetime | None = None
 ) -> int:
-    """从水位线追平结算到上一自然小时(相对 at,默认现在)。返回入账实例数合计。
-    首次运行(无水位线)只结上一小时;某小时内有实例失败时水位线停在它之前,后续小时照常结算。
+    """Catch up from the watermark to the previous calendar hour (relative to at, default now).
+    Returns the total of posted instances.
+    The first run (no watermark) settles the previous hour only; when an instance fails within an
+    hour the watermark stops before it, later hours settle as usual.
     """
     if await _clock_skew_exceeded(sm):
         return 0
@@ -642,8 +673,9 @@ async def charge_disk_day(
     size_gb: int,
     day: datetime,
 ) -> Decimal:
-    """单盘单日入账原语。UNIQUE(disk_id, day) 幂等,返回本次扣款(0 = 该日已出过账)。
-    插入与扣款同一事务(RETURNING 判定新行);调用方负责 commit。
+    """Single disk, single day posting primitive. UNIQUE(disk_id, day) idempotent, returns the
+    amount charged (0 = that day was already billed).
+    Insert and debit share the transaction (RETURNING decides a new row); the caller commits.
     """
     day = billing_day_floor(day)
     amount = disk_daily_charge(price_gb_month, size_gb, billing_local_date(day))
@@ -671,14 +703,14 @@ async def charge_disk_day(
             amount,
             ref_type="bill_daily_disk",
             ref_id=inserted,
-            remark="数据盘日常费用",
+            remark=server_copy("billing.remark.disk_daily"),
         )
     return amount
 
 
 @dataclass(frozen=True)
 class DiskBillingInput:
-    """盘日费结算所需的身份、价格、容量与创建时间快照。"""
+    """Identity, price, capacity and creation-time snapshot needed for daily disk settlement."""
 
     id: int
     user_id: int
@@ -690,10 +722,13 @@ class DiskBillingInput:
 async def settle_disk_pending_days(
     session: AsyncSession, disk: DiskBillingInput, *, at: datetime | None = None
 ) -> Decimal:
-    """结清截至 at 所属计费日的盘费,最多追平 MAX_CATCHUP_DAYS 天;返回扣款合计,不提交。
+    """Settle disk fees up to the billing day of at, catching up at most MAX_CATCHUP_DAYS days;
+    returns the total charged, no commit.
 
-    从水位线次日与建盘日的较晚者开始,无水位线则从建盘日开始。
-    删盘、扩容或进入欠费宽限前须在同一事务内调用。
+    Starts at the later of the day after the watermark and the creation day; without a watermark
+    at the creation day.
+    Must be called in the same transaction before deletion, expansion or entering the arrears
+    grace.
     """
     target_day = billing_day_floor(at or now_utc())
     watermark = await get_watermark(session, "daily_disk")
@@ -723,7 +758,8 @@ async def settle_disk_pending_days(
 def _disk_attempt(
     disk_id: int, user_id: int, price: Decimal, size_gb: int, day: datetime
 ) -> SettleAttempt:
-    """闭包绑定一个 (盘, 日) 的结算参数;独立事务由 _settle_window_objects 开。"""
+    """Closure binding the settlement parameters of one (disk, day); _settle_window_objects opens
+    the independent transaction."""
 
     async def attempt(session: AsyncSession) -> Decimal:
         return await charge_disk_day(
@@ -741,7 +777,8 @@ def _disk_attempt(
 async def _billable_disk_rows(
     session: AsyncSession,
 ) -> list[tuple[int, int, Decimal, int, datetime, datetime | None, datetime | None]]:
-    """当前可计费盘的入账参数行(日结与整窗重放共用)。"""
+    """Posting parameter rows of the currently billable disks (shared by daily settlement and
+    whole-window replay)."""
     disks = await orchestrator_queries.billable_disks(session)
     return [
         (
@@ -763,7 +800,8 @@ async def _daily_disk_window_attempts(
     window_start: datetime,
     window_end: datetime,
 ) -> list[tuple[int, SettleAttempt]]:
-    """构造已创建盘的日结闭包;宽限区间内部日记 grace_overlap,边界日照常结算。"""
+    """Build the daily closures of already created disks; days inside a grace interval record
+    grace_overlap, boundary days settle as usual."""
     attempts: list[tuple[int, SettleAttempt]] = []
     for disk_id, user_id, price, size_gb, created_at, grace_started, grace_ended in disk_rows:
         if created_at >= window_end:
@@ -787,8 +825,10 @@ async def _daily_disk_window_attempts(
 async def settle_daily_disks(
     sm: async_sessionmaker[AsyncSession], *, at: datetime | None = None
 ) -> int:
-    """数据盘日结:从水位线追平到上一自然日。UNIQUE(disk_id, day) 幂等,关机也扣。
-    返回本轮实际扣款的「盘×日」数;截断/死信的跳窗登记 settlement_gaps。
+    """Daily disk settlement: catch up from the watermark to the previous calendar day.
+    UNIQUE(disk_id, day) idempotent, charged even when stopped.
+    Returns the number of (disk × day) actually charged this round; truncation / dead-letter skips
+    record settlement_gaps.
     """
     if await _clock_skew_exceeded(sm):
         return 0
@@ -829,7 +869,7 @@ async def admin_list_gaps(
     cursor: str | None = None,
     limit: int | None = None,
 ) -> Page[AdminSettlementGapOut]:
-    """缺口列表(游标分页,降序)。默认只看未核销。"""
+    """Gap list (cursor pagination, descending). Unresolved only by default."""
     stmt = select(SettlementGap).order_by(SettlementGap.id.desc())
     if kind:
         stmt = stmt.where(SettlementGap.kind == kind)
@@ -852,10 +892,12 @@ async def replay_gap(
     *,
     operator_id: int,
 ) -> AdminSettlementGapOut:
-    """独立事务重放单对象或整窗缺口,随后持缺口行锁登记 resolved_at。
+    """Replay a single-object or whole-window gap in an independent transaction, then record
+    resolved_at under the gap row lock.
 
-    grace_overlap 回 409;盘整窗使用当前可计费盘。整窗单对象失败由结算器记录,
-    不阻止本函数核销原缺口。返回管理端视图。
+    grace_overlap → 409; whole disk windows use the currently billable disks. A single-object
+    failure inside a whole window is recorded by the settler
+    and does not stop this function from resolving the original gap. Returns the admin view.
     """
     async with sm() as session:
         gap = await get_for_update_or_404(
@@ -895,7 +937,8 @@ async def _replay_hourly_gap(
     *,
     detail_extra: dict[str, Any],
 ) -> None:
-    """小时缺口:object_id>0 精确补结一台;=0 对该窗全量候选重放。"""
+    """Hourly gap: object_id>0 settles exactly one instance; =0 replays every candidate of the
+    window."""
     window_end = window_start + timedelta(hours=1)
     if not object_id:
         attempts = await _hourly_window_attempts(sm, window_start, window_end)
@@ -926,7 +969,8 @@ async def _replay_hourly_gap(
 async def _replay_daily_disk_gap(
     sm: async_sessionmaker[AsyncSession], day: datetime, object_id: int
 ) -> None:
-    """盘日结缺口:object_id>0 精确补结一块盘;=0 按当前可计费盘全量重放该日。"""
+    """Daily disk gap: object_id>0 settles exactly one disk; =0 replays the day for every currently
+    billable disk."""
     if not object_id:
         async with sm() as session:
             disk_rows = await _billable_disk_rows(session)
@@ -958,7 +1002,8 @@ async def resolve_gap(
     note: str,
     operator_id: int,
 ) -> SettlementGap:
-    """持行锁登记缺口已核销并提交,不重放;调用方负责校验说明与写审计。"""
+    """Record the gap as resolved under the row lock and commit, without replay; the caller
+    validates the note and writes the audit."""
     gap = await get_for_update_or_404(
         session, SettlementGap, gap_id, key="billing.settlementGapNotFound"
     )

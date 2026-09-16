@@ -373,7 +373,7 @@
         "type": "object"
       },
       "AdminDeletionApprove": {
-        "description": "执行注销(操作原因必填,回写 note 并进审计 detail;不可逆操作一律留痕)。",
+        "description": "Execute the deletion (operator reason required, written to note and the audit detail;\nirreversible actions always leave a trace).",
         "properties": {
           "note": {
             "maxLength": 512,
@@ -389,7 +389,7 @@
         "type": "object"
       },
       "AdminDeletionReject": {
-        "description": "驳回注销申请(理由必填,回写 note)。",
+        "description": "Reject a deletion request (reason required, written to note).",
         "properties": {
           "note": {
             "maxLength": 512,
@@ -405,7 +405,7 @@
         "type": "object"
       },
       "AdminDeletionRequestOut": {
-        "description": "管理端注销申请视图:附租户标识与执行前校验计数。",
+        "description": "Admin view of a deletion request: with the tenant identity and pre-execution check counts.",
         "properties": {
           "balance": {
             "title": "Balance",
@@ -762,7 +762,7 @@
         "type": "object"
       },
       "AdminInvoiceOut": {
-        "description": "管理端发票申请视图:多租户 id 与开票操作人/时间。",
+        "description": "Admin invoice request view: with the tenant id and the issuing operator / time.",
         "properties": {
           "amount": {
             "title": "Amount",
@@ -1045,7 +1045,7 @@
         "type": "object"
       },
       "AdminRefundOut": {
-        "description": "管理端退款单视图:多操作人/时间与核销流水关联;`order_channel` 决定可选打款渠道。",
+        "description": "Admin refund request view: operators / times and the write-off ledger link;\n`order_channel` decides the payout channel options.",
         "properties": {
           "amount": {
             "title": "Amount",
@@ -1381,7 +1381,7 @@
         "type": "object"
       },
       "AdminSettlementGapOut": {
-        "description": "管理端结算缺口视图。",
+        "description": "Admin settlement gap view.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -2716,7 +2716,7 @@
         "type": "object"
       },
       "DailySummaryOut": {
-        "description": "当日消费汇总(本地日界由 tz_offset_minutes 折算,缺省为计费时区当前偏移)。",
+        "description": "Today's consumption summary (local day boundary via tz_offset_minutes, default the billing\nzone's current offset).",
         "properties": {
           "date": {
             "title": "Date",
@@ -2820,7 +2820,7 @@
         "type": "object"
       },
       "DeletionRequestOut": {
-        "description": "用户端注销申请视图。cooldown_ends_at = requested_at + 7 天。",
+        "description": "User view of a deletion request. cooldown_ends_at = requested_at + 7 days.",
         "properties": {
           "cooldown_ends_at": {
             "format": "date-time",
@@ -4183,7 +4183,7 @@
         "type": "object"
       },
       "InvoiceCreate": {
-        "description": "开票申请。amount 不进契约:服务端按账期计算。",
+        "description": "Invoice request. amount is not part of the contract: computed server-side per period.",
         "properties": {
           "email": {
             "maxLength": 128,
@@ -4233,7 +4233,7 @@
         "type": "object"
       },
       "InvoiceEligibleOut": {
-        "description": "账期可开票额度预览项(仅 amount > 0 的账期)。",
+        "description": "Invoiceable amount preview item (periods with amount > 0 only).",
         "properties": {
           "amount": {
             "title": "Amount",
@@ -4267,7 +4267,7 @@
         "type": "object"
       },
       "InvoiceOut": {
-        "description": "用户端发票申请视图。不透出 issued_by。",
+        "description": "User invoice request view. issued_by is not exposed.",
         "properties": {
           "amount": {
             "title": "Amount",
@@ -6850,7 +6850,7 @@
         "type": "object"
       },
       "PoliciesOut": {
-        "description": "公开只读的计费与回收策略。",
+        "description": "Public read-only billing and reclamation policies.",
         "properties": {
           "billing_timezone": {
             "title": "Billing Timezone",
@@ -7350,7 +7350,7 @@
         "type": "object"
       },
       "RefundOut": {
-        "description": "用户端退款单视图。不透出 review_by/payout_by。",
+        "description": "User refund request view. review_by/payout_by are not exposed.",
         "properties": {
           "amount": {
             "title": "Amount",
@@ -7489,7 +7489,7 @@
         "type": "object"
       },
       "RefundableOrderOut": {
-        "description": "可申请退款口径的充值订单。\n\nrefundable=False 时 reason_code:not_paid / already_applied / fully_refunded / invoiced\n/ no_balance。\n同单可多次部分退款:max_amount = min(订单剩余可退, 非负可用余额, 流水可退余额)。\n剩余可退 = 订单额 − Σ已打款退款;可用余额 = balance − frozen。\n流水可退余额为排除正向 adjust 后的流水净额,下限为零。",
+        "description": "Top-up order under the refund-eligibility definition.\n\nWith refundable=False, reason_code: not_paid / already_applied / fully_refunded / invoiced\n/ no_balance.\nAn order may be partially refunded several times: max_amount = min(order remainder,\nnon-negative available balance, refundable ledger balance).\nRemainder = order amount − Σ paid refunds; available balance = balance − frozen.\nThe refundable ledger balance is the net ledger excluding positive adjustments, floored at\nzero.",
         "properties": {
           "amount": {
             "title": "Amount",
@@ -8430,7 +8430,7 @@
         "type": "object"
       },
       "SettlementGapResolve": {
-        "description": "人工核销(不重放)。说明必填。",
+        "description": "Manual write-off (no replay). A note is required.",
         "properties": {
           "note": {
             "maxLength": 256,
@@ -9305,7 +9305,7 @@
         "type": "object"
       },
       "SubscriptionQuoteOut": {
-        "description": "包周期报价,包含后端计算的原价、折扣与实付金额。",
+        "description": "Subscription quote with the server-computed list price, discount and payable amount.",
         "properties": {
           "amount": {
             "title": "Amount",
@@ -9880,7 +9880,7 @@
         "type": "object"
       },
       "TokenPairOut": {
-        "description": "认证响应:refresh token 只走 HttpOnly Cookie,不进响应体。",
+        "description": "Auth response: the refresh token travels only in the HttpOnly cookie, never in the body.",
         "properties": {
           "access_token": {
             "title": "Access Token",
@@ -17237,7 +17237,7 @@
     },
     "/api/v1/auth/logout": {
       "post": {
-        "description": "登出当前会话(消费 refresh token + 清 Cookie)。token 无效也回 204。",
+        "description": "Log out the current session (consume the refresh token + clear the cookie). 204 even for an\ninvalid token.",
         "operationId": "logout_api_v1_auth_logout_post",
         "responses": {
           "204": {
@@ -17252,7 +17252,7 @@
     },
     "/api/v1/auth/logout-all": {
       "post": {
-        "description": "登出全部会话:token_version+1,已签发的 access/refresh 即刻全部失效。",
+        "description": "Log out everywhere: token_version+1, every issued access/refresh token is invalid at once.",
         "operationId": "logout_all_api_v1_auth_logout_all_post",
         "responses": {
           "204": {
@@ -17314,7 +17314,7 @@
     },
     "/api/v1/auth/refresh": {
       "post": {
-        "description": "轮换刷新:refresh 只经 HttpOnly Cookie + X-Requested-With 头提交;成功写回新 Cookie。",
+        "description": "Rotating refresh: the refresh token travels only in the HttpOnly cookie + X-Requested-With\nheader; success writes the new cookie.",
         "operationId": "refresh_api_v1_auth_refresh_post",
         "responses": {
           "200": {
@@ -17412,7 +17412,7 @@
     },
     "/api/v1/billing/export": {
       "get": {
-        "description": "账单 CSV 导出(流式)。month 仅作用于 hourly;行数硬上限,触顶在文件末尾写\n#SUPERDL_EXPORT_TRUNCATED# 标记行。",
+        "description": "Billing CSV export (streamed). month applies to hourly only; hard row cap, when hit the file\nends with the\n#SUPERDL_EXPORT_TRUNCATED# marker row.",
         "operationId": "export_billing_api_v1_billing_export_get",
         "parameters": [
           {
@@ -17447,20 +17447,6 @@
           },
           {
             "in": "query",
-            "name": "lang",
-            "required": false,
-            "schema": {
-              "default": "zh-CN",
-              "enum": [
-                "zh-CN",
-                "en-US"
-              ],
-              "title": "Lang",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
             "name": "tz_offset_minutes",
             "required": false,
             "schema": {
@@ -17475,6 +17461,26 @@
                 }
               ],
               "title": "Tz Offset Minutes"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lang",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "zh-CN",
+                    "en-US"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lang"
             }
           }
         ],
@@ -17516,7 +17522,7 @@
     },
     "/api/v1/billing/invoices": {
       "get": {
-        "description": "本人发票申请(游标分页)。",
+        "description": "The caller's invoice requests (cursor pagination).",
         "operationId": "list_my_invoices_api_v1_billing_invoices_get",
         "parameters": [
           {
@@ -17586,7 +17592,7 @@
         ]
       },
       "post": {
-        "description": "申请开票。amount 由服务端按账期计算;Idempotency-Key 重放返回既有单\n(200 + X-Idempotent-Replay)。",
+        "description": "Request an invoice. amount is computed server-side per period; an Idempotency-Key replay\nreturns the existing request\n(200 + X-Idempotent-Replay).",
         "operationId": "create_invoice_api_v1_billing_invoices_post",
         "parameters": [
           {
@@ -17652,7 +17658,7 @@
     },
     "/api/v1/billing/invoices/eligible": {
       "get": {
-        "description": "各账期可开票额度预览(仅 amount > 0 的已结束账期)。",
+        "description": "Invoiceable amount preview per period (finished periods with amount > 0 only).",
         "operationId": "list_invoice_eligible_api_v1_billing_invoices_eligible_get",
         "responses": {
           "200": {
@@ -17683,7 +17689,7 @@
     },
     "/api/v1/bills/daily-summary": {
       "get": {
-        "description": "当日消费,本地日界经 tz_offset 折算(缺省取计费时区当前偏移)。",
+        "description": "Today's consumption, local day boundary via tz_offset (default: the billing zone's current\noffset).",
         "operationId": "bill_daily_summary_api_v1_bills_daily_summary_get",
         "parameters": [
           {
@@ -17870,7 +17876,7 @@
     },
     "/api/v1/bills/summary": {
       "get": {
-        "description": "月度汇总 + 按实例成本归因。窗口按本地月界切。",
+        "description": "Monthly summary + cost attribution per instance. Window cut at the local month boundary.",
         "operationId": "bill_summary_api_v1_bills_summary_get",
         "parameters": [
           {
@@ -19303,7 +19309,7 @@
     },
     "/api/v1/me/deletion-request": {
       "get": {
-        "description": "当前 pending 申请;无则最近一条;从未申请回 null。",
+        "description": "The current pending request; otherwise the most recent one; null when never requested.",
         "operationId": "get_deletion_request_api_v1_me_deletion_request_get",
         "responses": {
           "200": {
@@ -19383,7 +19389,7 @@
     },
     "/api/v1/me/deletion-request/cancel": {
       "post": {
-        "description": "冷静期内撤销注销申请(仅 pending 可撤)。",
+        "description": "Cancel the deletion request within the cooling-off period (pending only).",
         "operationId": "cancel_deletion_request_api_v1_me_deletion_request_cancel_post",
         "responses": {
           "200": {
@@ -19948,7 +19954,7 @@
     },
     "/api/v1/policies": {
       "get": {
-        "description": "计费/回收策略。公开;env 默认 + DB 覆盖,管理端在线调整。",
+        "description": "Billing / reclamation policies. Public; env defaults + DB overrides, adjusted online in the\nadmin console.",
         "operationId": "get_policies_api_v1_policies_get",
         "responses": {
           "200": {
@@ -21628,7 +21634,7 @@
     },
     "/api/v1/wallet/refunds": {
       "get": {
-        "description": "本人退款单(游标分页)。",
+        "description": "The caller's refund requests (cursor pagination).",
         "operationId": "list_my_refunds_api_v1_wallet_refunds_get",
         "parameters": [
           {
@@ -21698,7 +21704,7 @@
         ]
       },
       "post": {
-        "description": "申请退款。Idempotency-Key 重放返回既有单(200 + X-Idempotent-Replay);\n同订单活跃申请被部分唯一索引拦截。",
+        "description": "Request a refund. An Idempotency-Key replay returns the existing request (200 +\nX-Idempotent-Replay);\nan active request on the same order is caught by the partial unique index.",
         "operationId": "create_refund_api_v1_wallet_refunds_post",
         "parameters": [
           {
@@ -21764,7 +21770,7 @@
     },
     "/api/v1/wallet/refunds/eligible-orders": {
       "get": {
-        "description": "退款表单候选集:最近充值订单逐单标注可否申请(不可申请的给出原因码)。",
+        "description": "Refund form candidates: recent top-up orders each marked refundable or not (with a reason\ncode).",
         "operationId": "list_refundable_orders_api_v1_wallet_refunds_eligible_orders_get",
         "responses": {
           "200": {

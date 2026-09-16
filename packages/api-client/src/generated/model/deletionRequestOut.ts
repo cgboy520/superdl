@@ -6,7 +6,7 @@
  */
 
 /**
- * 用户端注销申请视图。cooldown_ends_at = requested_at + 7 天。
+ * User view of a deletion request. cooldown_ends_at = requested_at + 7 days.
  */
 export interface DeletionRequestOut {
   cooldown_ends_at: string;

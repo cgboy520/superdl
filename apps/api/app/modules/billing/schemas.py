@@ -54,7 +54,7 @@ class BillSummaryOut(BaseModel):
 
 
 class PoliciesOut(BaseModel):
-    """公开只读的计费与回收策略。"""
+    """Public read-only billing and reclamation policies."""
 
     disk_price_gb_month: MoneyOut
     disk_min_gb: int
@@ -79,7 +79,7 @@ class PoliciesOut(BaseModel):
 
 
 class SubscriptionQuoteOut(BaseModel):
-    """包周期报价,包含后端计算的原价、折扣与实付金额。"""
+    """Subscription quote with the server-computed list price, discount and payable amount."""
 
     period: str
     period_count: int
@@ -93,7 +93,7 @@ class SubscriptionQuoteOut(BaseModel):
 
 
 class SubscriptionOut(BaseModel):
-    """包周期订阅明细。"""
+    """Subscription detail."""
 
     id: int
     instance_id: int
@@ -110,7 +110,8 @@ class SubscriptionOut(BaseModel):
 
 
 class DailySummaryOut(BaseModel):
-    """当日消费汇总(本地日界由 tz_offset_minutes 折算,缺省为计费时区当前偏移)。"""
+    """Today's consumption summary (local day boundary via tz_offset_minutes, default the billing
+    zone's current offset)."""
 
     date: str
     gpu_total: MoneyOut
@@ -152,7 +153,7 @@ class RefundCreate(BaseModel):
 
 
 class RefundOut(BaseModel):
-    """用户端退款单视图。不透出 review_by/payout_by。"""
+    """User refund request view. review_by/payout_by are not exposed."""
 
     id: int
     refund_no: str
@@ -170,13 +171,15 @@ class RefundOut(BaseModel):
 
 
 class RefundableOrderOut(BaseModel):
-    """可申请退款口径的充值订单。
+    """Top-up order under the refund-eligibility definition.
 
-    refundable=False 时 reason_code:not_paid / already_applied / fully_refunded / invoiced
-    / no_balance。
-    同单可多次部分退款:max_amount = min(订单剩余可退, 非负可用余额, 流水可退余额)。
-    剩余可退 = 订单额 − Σ已打款退款;可用余额 = balance − frozen。
-    流水可退余额为排除正向 adjust 后的流水净额,下限为零。
+    With refundable=False, reason_code: not_paid / already_applied / fully_refunded / invoiced
+    / no_balance.
+    An order may be partially refunded several times: max_amount = min(order remainder,
+    non-negative available balance, refundable ledger balance).
+    Remainder = order amount − Σ paid refunds; available balance = balance − frozen.
+    The refundable ledger balance is the net ledger excluding positive adjustments, floored at
+    zero.
     """
 
     order_no: str
@@ -190,7 +193,8 @@ class RefundableOrderOut(BaseModel):
 
 
 class AdminRefundOut(RefundOut):
-    """管理端退款单视图:多操作人/时间与核销流水关联;`order_channel` 决定可选打款渠道。"""
+    """Admin refund request view: operators / times and the write-off ledger link;
+    `order_channel` decides the payout channel options."""
 
     user_id: int
     order_channel: str | None = None
@@ -221,7 +225,7 @@ EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 
 
 class InvoiceCreate(BaseModel):
-    """开票申请。amount 不进契约:服务端按账期计算。"""
+    """Invoice request. amount is not part of the contract: computed server-side per period."""
 
     period: str = Field(pattern=INVOICE_PERIOD_PATTERN)
     title_type: InvoiceTitleType
@@ -249,7 +253,7 @@ class InvoiceCreate(BaseModel):
 
 
 class InvoiceOut(BaseModel):
-    """用户端发票申请视图。不透出 issued_by。"""
+    """User invoice request view. issued_by is not exposed."""
 
     id: int
     period: str
@@ -267,7 +271,7 @@ class InvoiceOut(BaseModel):
 
 
 class AdminInvoiceOut(InvoiceOut):
-    """管理端发票申请视图:多租户 id 与开票操作人/时间。"""
+    """Admin invoice request view: with the tenant id and the issuing operator / time."""
 
     user_id: int
     issued_by: int | None
@@ -275,7 +279,7 @@ class AdminInvoiceOut(InvoiceOut):
 
 
 class InvoiceEligibleOut(BaseModel):
-    """账期可开票额度预览项(仅 amount > 0 的账期)。"""
+    """Invoiceable amount preview item (periods with amount > 0 only)."""
 
     period: str
     amount: MoneyOut
@@ -290,7 +294,7 @@ class InvoiceReject(BaseModel):
 
 
 class AdminSettlementGapOut(BaseModel):
-    """管理端结算缺口视图。"""
+    """Admin settlement gap view."""
 
     id: int
     kind: str
@@ -304,6 +308,6 @@ class AdminSettlementGapOut(BaseModel):
 
 
 class SettlementGapResolve(BaseModel):
-    """人工核销(不重放)。说明必填。"""
+    """Manual write-off (no replay). A note is required."""
 
     note: str = Field(min_length=2, max_length=256)

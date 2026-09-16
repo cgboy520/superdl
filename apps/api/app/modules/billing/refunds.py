@@ -1,4 +1,5 @@
-"""退款申请、双人审批打款与钱包核销;出金审计须通过 audit_writer 与业务同事务写入。"""
+"""Refund requests, two-person approval and payout, wallet write-off; the payout audit must be
+written through audit_writer in the same transaction."""
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -14,6 +15,7 @@ from app.core.idempotency import find_replay, insert_idempotent, request_fingerp
 from app.core.logging import get_logger
 from app.core.money import as_amount, money_label
 from app.core.pagination import Page, paginate_by_id
+from app.core.servercopy import copy as server_copy
 from app.core.sqlutil import get_for_update_or_404, next_daily_seq, sum_decimal, total
 from app.core.timeutil import billing_period, now_utc
 from app.modules.billing import invoices, wallet
@@ -31,8 +33,10 @@ REFUNDABLE_ORDERS_CAP = 50
 async def _order_has_issued_invoice(
     session: AsyncSession, order: Order, *, lock: bool = False
 ) -> bool:
-    """发票联动:该订单 paid 账期(北京时间)存在 status='issued' 的发票申请即「已开票」,不可退。
-    仅拦截 issued。lock=True 对该账期的活跃申请行 FOR UPDATE,与 issue_invoice 的行锁串行。
+    """Invoice link: a status='issued' invoice request for the order's paid period (billing zone)
+    means "invoiced" and blocks the refund.
+    Only issued blocks. lock=True takes FOR UPDATE on the period's active request row, serialised
+    with the issue_invoice row lock.
     """
     if order.paid_at is None:
         return False
@@ -64,7 +68,7 @@ async def _active_refund_of_order(session: AsyncSession, order_no: str) -> Refun
 
 
 async def _paid_total_of_order(session: AsyncSession, order_no: str) -> Decimal:
-    """该订单已打款退款合计。"""
+    """Total paid refunds of the order."""
     return await sum_decimal(
         session,
         select(total(RefundRequest.amount)).where(
@@ -75,9 +79,11 @@ async def _paid_total_of_order(session: AsyncSession, order_no: str) -> Decimal:
 
 @dataclass(frozen=True)
 class RefundLimit:
-    """退款上限的三个分量(用户端候选集与申请校验共用同一口径):
-    订单剩余可退 = 订单额 − Σ已打款退款;可用余额 = balance − frozen(负数按 0);可退余额见
-    wallet.refundable_capacity。上限 = 三者取小。"""
+    """The three components of the refund cap (the user-side candidate set and the request check
+    share the definition):
+    order remainder = order amount − Σ paid refunds; available balance = balance − frozen (negative
+    → 0); refundable balance see
+    wallet.refundable_capacity. Cap = the minimum of the three."""
 
     remaining: Decimal
     balance: Decimal
@@ -107,7 +113,8 @@ async def create_refund(
     reason: str,
     idempotency_key: str | None,
 ) -> tuple[RefundRequest, bool]:
-    """提交退款申请,返回 (退款单, created);同键同参重放 created=False,异参回 409。"""
+    """Submit a refund request, returning (request, created); a replay with the same key and params
+    has created=False, different params → 409."""
     amount = as_amount(amount)
     fingerprint = request_fingerprint(user_id, order_no, amount, reason)
     if idempotency_key:
@@ -152,7 +159,8 @@ async def create_refund(
 
 
 async def _refundable_order(session: AsyncSession, user_id: int, order_no: str) -> Order:
-    """校验本人已支付订单、无阻断退款的冲正、未开票且无活跃退款;锁定账期活跃发票行。"""
+    """Check the caller's paid order, no blocking reversal, not invoiced and no active refund; lock
+    the period's active invoice row."""
     order = (
         await session.execute(
             select(Order).where(Order.order_no == order_no, Order.user_id == user_id)
@@ -181,7 +189,9 @@ async def _insert_refund(
     idempotency_key: str | None,
     fingerprint: str,
 ) -> tuple[RefundRequest, bool]:
-    """提交退款单;单号为 R+UTC 日期+至少两位序列,序列冲突最多尝试八次。"""
+    """Insert the refund request; the number is R + UTC date + at least two sequence digits,
+    sequence
+    conflicts retried up to eight times."""
     prefix = f"R{now_utc():%Y%m%d}"
     for _ in range(8):
         seq = await next_daily_seq(session, RefundRequest.refund_no, prefix)
@@ -219,7 +229,7 @@ async def _insert_refund(
 async def list_my_refunds(
     session: AsyncSession, user_id: int, *, cursor: str | None = None, limit: int | None = None
 ) -> Page[RefundOut]:
-    """本人退款单(游标分页)。"""
+    """The caller's refund requests (cursor pagination)."""
     stmt = (
         select(RefundRequest)
         .where(RefundRequest.user_id == user_id)
@@ -234,9 +244,10 @@ async def list_my_refunds(
 
 
 async def refundable_orders(session: AsyncSession, user_id: int) -> list[dict]:
-    """返回最近充值订单的退款候选视图及不可申请原因。
+    """Refund candidate view of recent top-up orders with the reasons they cannot be requested.
 
-    max_amount 为订单剩余额、非负可用余额与流水可退余额的最小值;此视图不检查渠道冲正。
+    max_amount is the minimum of the order remainder, the non-negative available balance and the
+    refundable ledger balance; this view does not check channel reversals.
     """
     orders = list(
         (
@@ -302,8 +313,8 @@ async def refundable_orders(session: AsyncSession, user_id: int) -> list[dict]:
 def admin_refunds_query(
     *, status: str | None = None, day_range: tuple[datetime, datetime] | None = None
 ) -> Select[tuple[RefundRequest]]:
-    """管理端退款单的筛选口径(列表与 CSV 共用):status 精确;
-    day_range 为 [start, end) 的申请时间窗口。"""
+    """Admin refund request filters (shared by list and CSV): status exact;
+    day_range is the [start, end) request-time window."""
     stmt = select(RefundRequest)
     if status:
         stmt = stmt.where(RefundRequest.status == status)
@@ -322,7 +333,8 @@ async def admin_list_refunds(
     cursor: str | None = None,
     limit: int | None = None,
 ) -> Page[AdminRefundOut]:
-    """退款单列表(游标分页,降序)。day_range 为 [start, end) 的 created_at 窗口。"""
+    """Refund request list (cursor pagination, descending). day_range is the [start, end)
+    created_at window."""
     stmt = admin_refunds_query(status=status, day_range=day_range).order_by(RefundRequest.id.desc())
     page_items, next_cursor = await paginate_by_id(
         session, stmt, id_col=RefundRequest.id, cursor=cursor, limit=limit
@@ -361,7 +373,7 @@ async def review_refund(
     comment: str,
     reviewer_id: int,
 ) -> RefundRequest:
-    """审批(行锁内状态迁移)。通过 ≠ 出金:只置 approved。"""
+    """Review (status transition under the row lock). Approval ≠ payout: only sets approved."""
     req = await get_for_update_or_404(
         session, RefundRequest, refund_id, key="billing.refundNotFound"
     )
@@ -386,10 +398,12 @@ async def payout_refund(
     audit_writer: Callable[[AsyncSession], Awaitable[None]] | None = None,
     idempotency_key: str | None = None,
 ) -> tuple[RefundRequest, bool]:
-    """持退款行锁登记打款;同事务扣款、置 paid、关联流水并调用可选 audit_writer 后提交。
+    """Register the payout under the refund row lock; debit, set paid, link the ledger row and call
+    the optional audit_writer in the same transaction, then commit.
 
-    已 paid 且幂等键匹配时返回 (req, True);已存指纹不符回 409。
-    首次登记返回 (req, False),其余重复打款回状态冲突。
+    Already paid with a matching idempotency key returns (req, True); a stored fingerprint mismatch
+    → 409.
+    The first registration returns (req, False), other repeated payouts hit the status conflict.
     """
     req = await get_for_update_or_404(
         session, RefundRequest, refund_id, key="billing.refundNotFound"
@@ -408,7 +422,7 @@ async def payout_refund(
         type_="refund",
         ref_type="refund_request",
         ref_id=req.refund_no,
-        remark=f"退款 {req.refund_no}(订单 {req.order_no})",
+        remark=server_copy("billing.remark.refund", refund_no=req.refund_no, order_no=req.order_no),
         allow_negative=False,
     )
     req.status = "paid"
@@ -430,8 +444,10 @@ async def payout_refund(
 async def _assert_payable(
     session: AsyncSession, req: RefundRequest, *, channel: str, operator_id: int
 ) -> None:
-    """出金前的六道闸(顺序即优先级):状态 approved → 双人制衡 → 订单未被渠道冲正 → 原路退回渠道
-    → 累计已退不超订单额 → 钱包行锁内可用余额与可退余额都够。全部在退款单行锁内执行。"""
+    """The six gates before payout (in priority order): status approved → two-person rule → order
+    not reversed by the channel → original channel
+    → total refunded within the order amount → available and refundable balance sufficient under
+    the wallet row lock. All under the refund row lock."""
     if req.status != "approved":
         raise conflict(key="billing.refundStateNotPayable", params={"status": req.status})
     if req.review_by == operator_id:
@@ -477,7 +493,7 @@ async def _assert_payable(
 
 
 async def cancel_refund(session: AsyncSession, refund_id: int) -> RefundRequest:
-    """取消(仅 pending/approved)。不动钱包。"""
+    """Cancel (pending/approved only). The wallet is untouched."""
     req = await get_for_update_or_404(
         session, RefundRequest, refund_id, key="billing.refundNotFound"
     )

@@ -1,6 +1,7 @@
-"""核对钱包流水链、账单与预付消费额、消费引用;不改资金记录。
+"""Verify the wallet ledger chain, bills vs prepaid consumption and consume references; money
+records are never changed.
 
-更新 reconcile_checkpoints,差异写日志、指标与管理端通知。
+Updates reconcile_checkpoints; discrepancies go to logs, metrics and an admin notification.
 """
 
 from dataclasses import dataclass
@@ -14,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.metrics import FUND_RECONCILE_MISMATCH_TOTAL
+from app.core.servercopy import copy as server_copy
 from app.core.sqlutil import sum_decimal, total
 from app.core.timeutil import billing_day_floor, billing_day_shift, now_utc
 from app.modules.billing.models import (
@@ -31,7 +33,8 @@ logger = get_logger(__name__)
 
 @dataclass
 class WalletMismatch:
-    """钱包核对差异。kind: chain_break(逐笔断链)/ balance_drift(末端快照≠余额)。"""
+    """Wallet discrepancy. kind: chain_break (row-by-row break) / balance_drift (end snapshot ≠
+    balance)."""
 
     user_id: int
     kind: str
@@ -43,8 +46,10 @@ class WalletMismatch:
 async def _scan_user_chain(
     session: AsyncSession, wallet_row: Wallet, checkpoint: ReconcileCheckpoint | None
 ) -> tuple[WalletMismatch | None, int, Decimal]:
-    """扫一个用户 checkpoint 之后的增量流水,逐笔验链:按 id 序,e.balance_after == 前一笔 + e.amount
-    (无 checkpoint 以 0.00 起算)。返回 (差异|None, 新游标 last_ledger_id, 新游标 balance_after)。
+    """Scan one user's ledger rows after the checkpoint and verify the chain row by row: by id,
+    e.balance_after == previous + e.amount
+    (starting from 0.00 without a checkpoint). Returns (discrepancy|None, new cursor
+    last_ledger_id, new cursor balance_after).
     """
     last_id = checkpoint.last_ledger_id if checkpoint else 0
     prev = checkpoint.balance_after if checkpoint else Decimal("0.00")
@@ -67,8 +72,8 @@ async def _scan_user_chain(
                     wallet_balance=wallet_row.balance,
                     expected=want,
                     detail=(
-                        f"断链于 ledger id={e.id}:balance_after={e.balance_after},"
-                        f"应为 {want}(上一笔快照 {prev} + 本笔 {e.amount})"
+                        f"chain break at ledger id={e.id}: balance_after={e.balance_after},"
+                        f" expected {want} (previous snapshot {prev} + this amount {e.amount})"
                     ),
                 ),
                 last_id,
@@ -83,8 +88,8 @@ async def _scan_user_chain(
                 wallet_balance=wallet_row.balance,
                 expected=prev,
                 detail=(
-                    f"钱包余额 {wallet_row.balance} ≠ 流水链末端快照 {prev}"
-                    f"(ledger 至 id={entries[-1].id if entries else last_id})"
+                    f"wallet balance {wallet_row.balance} != ledger chain end snapshot {prev}"
+                    f" (ledger up to id={entries[-1].id if entries else last_id})"
                 ),
             ),
             last_id,
@@ -96,7 +101,8 @@ async def _scan_user_chain(
 async def _verify_user_once(
     sm: async_sessionmaker[AsyncSession], user_id: int
 ) -> WalletMismatch | None:
-    """验一次;自洽则推进游标(同事务),有差异不动游标。"""
+    """Verify once; consistent → advance the cursor (same transaction), a discrepancy leaves the
+    cursor alone."""
     async with sm() as session:
         t0 = (await session.execute(select(func.now()))).scalar_one()
         wallet_row = (
@@ -116,7 +122,8 @@ async def _verify_user_once(
                     wallet_balance=wallet_row.balance,
                     expected=checkpoint.balance_after,
                     detail=(
-                        f"游标行 ledger id={checkpoint.last_ledger_id} 缺失或被改,链式校验无法续接"
+                        f"cursor row ledger id={checkpoint.last_ledger_id} missing or changed, the"
+                        " chain check cannot continue"
                     ),
                 )
         mismatch, new_last_id, new_prev = await _scan_user_chain(session, wallet_row, checkpoint)
@@ -144,9 +151,11 @@ async def _verify_user_once(
 
 
 async def _candidate_user_ids(session: AsyncSession) -> list[int]:
-    """本轮需要核实的用户:从未核过的钱包,或游标之后钱包/流水尾部有变动的用户。
-    流水尾部用 LATERAL 取各用户 id 最大一行:尾部 id 大于游标 / 小于或缺失 / balance_after
-    不符均选中。
+    """Users to verify this round: wallets never verified, or users whose wallet / ledger tail
+    changed after the cursor.
+    The ledger tail is the max-id row per user via LATERAL: tail id above the cursor / below or
+    missing / balance_after
+    mismatching all select the user.
     """
     tail = (
         select(
@@ -178,7 +187,8 @@ async def _candidate_user_ids(session: AsyncSession) -> list[int]:
 
 
 async def wallet_ledger_chain_check(sm: async_sessionmaker[AsyncSession]) -> list[WalletMismatch]:
-    """增量链式核对:只扫候选用户游标之后的新增流水。首轮报差的用户换会话复核一次,两轮都差才上报。"""
+    """Incremental chain verification: scans only the candidate users' rows after the cursor. Users
+    failing the first round are re-checked on a fresh session; only two failures are reported."""
     async with sm() as session:
         candidates = await _candidate_user_ids(session)
     mismatches: list[WalletMismatch] = []
@@ -194,7 +204,8 @@ async def wallet_ledger_chain_check(sm: async_sessionmaker[AsyncSession]) -> lis
 
 @dataclass(frozen=True)
 class _BillSource:
-    """一类出账及其在 balance_ledger 上的回连方式:ledger.ref_type / ref_id = 账单主键。"""
+    """One bill source and how it links back to balance_ledger: ledger.ref_type / ref_id = bill
+    primary key."""
 
     ref_type: str
     table: type[BillHourly] | type[BillDailyDisk] | type[Subscription]
@@ -212,9 +223,12 @@ _BILL_SOURCES: tuple[_BillSource, ...] = (
 async def bills_vs_consume(
     session: AsyncSession, since: datetime, until: datetime
 ) -> tuple[Decimal, Decimal]:
-    """返回 [since, until) 的出账合计与关联 consume 流水合计的相反数,两者应相等。
+    """Return the billed total of [since, until) and the negated linked consume ledger total; the
+    two
+    must be equal.
 
-    小时账按 hour_start、盘费按 day、订阅按 created_at 切窗;流水经 ref_id 关联。
+    Hourly bills window by hour_start, disk fees by day, subscriptions by created_at; the ledger is
+    joined by ref_id.
     """
     billed = consumed = Decimal("0.00")
     for src in _BILL_SOURCES:
@@ -234,7 +248,7 @@ async def bills_vs_consume(
 
 
 async def dangling_consume_refs(session: AsyncSession) -> int:
-    """统计 _BILL_SOURCES 各类中 ref_id 无法关联账单的 consume 流水数。"""
+    """Count consume ledger rows across _BILL_SOURCES whose ref_id links to no bill."""
     total = 0
     for src in _BILL_SOURCES:
         total += int(
@@ -258,7 +272,8 @@ async def dangling_consume_refs(session: AsyncSession) -> int:
 async def reconcile_funds(
     sm: async_sessionmaker[AsyncSession], *, at: datetime | None = None
 ) -> dict[str, int]:
-    """持咨询锁核对钱包链、上一北京日出账与消费引用,返回钱包差异数及账单差异标志。"""
+    """Under the advisory lock verify the wallet chains, the previous billing day's bills and the
+    consume references; returns the wallet discrepancy count and the bill mismatch flag."""
     counts = {"wallet_mismatch": 0, "bill_mismatch": 0}
     async with advisory_lock(sm, LockKey.FUND_RECONCILE) as got:
         if not got:
@@ -309,16 +324,16 @@ async def _raise_admin_alert(
 ) -> None:
     parts = []
     if counts["wallet_mismatch"]:
-        parts.append(f"{counts['wallet_mismatch']} 个账号的余额与流水累计不符")
+        parts.append(server_copy("billing.reconcile.wallet_part", count=counts["wallet_mismatch"]))
     if counts["bill_mismatch"]:
-        parts.append(f"当日出账 {billed} 与消费流水 {consumed} 不符")
+        parts.append(server_copy("billing.reconcile.bill_part", billed=billed, consumed=consumed))
     async with sm() as session:
         await notify_service.notify(
             session,
             None,
             type_="admin_alert",
-            title="资金账实核对发现差异",
-            content=";".join(parts) + "。请勿自行改账,先按 balance_ledger 追溯来源。",
+            title=server_copy("billing.reconcile.title"),
+            content=server_copy("billing.reconcile.content", parts="; ".join(parts)),
             severity="critical",
             dedup_key=f"fund_reconcile:{day.date()}",
         )

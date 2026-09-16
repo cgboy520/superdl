@@ -6,7 +6,7 @@
  */
 
 /**
- * 用户端发票申请视图。不透出 issued_by。
+ * User invoice request view. issued_by is not exposed.
  */
 export interface InvoiceOut {
   amount: string;

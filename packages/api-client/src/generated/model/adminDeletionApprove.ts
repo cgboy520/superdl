@@ -6,7 +6,8 @@
  */
 
 /**
- * 执行注销(操作原因必填,回写 note 并进审计 detail;不可逆操作一律留痕)。
+ * Execute the deletion (operator reason required, written to note and the audit detail;
+ * irreversible actions always leave a trace).
  */
 export interface AdminDeletionApprove {
   /**

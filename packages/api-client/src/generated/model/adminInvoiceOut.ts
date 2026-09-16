@@ -6,7 +6,7 @@
  */
 
 /**
- * 管理端发票申请视图:多租户 id 与开票操作人/时间。
+ * Admin invoice request view: with the tenant id and the issuing operator / time.
  */
 export interface AdminInvoiceOut {
   amount: string;

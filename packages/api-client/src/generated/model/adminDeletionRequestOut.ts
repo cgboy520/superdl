@@ -6,7 +6,7 @@
  */
 
 /**
- * 管理端注销申请视图:附租户标识与执行前校验计数。
+ * Admin view of a deletion request: with the tenant identity and pre-execution check counts.
  */
 export interface AdminDeletionRequestOut {
   balance: string;

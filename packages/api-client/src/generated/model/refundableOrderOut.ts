@@ -6,13 +6,15 @@
  */
 
 /**
- * 可申请退款口径的充值订单。
+ * Top-up order under the refund-eligibility definition.
  *
- * refundable=False 时 reason_code:not_paid / already_applied / fully_refunded / invoiced
- * / no_balance。
- * 同单可多次部分退款:max_amount = min(订单剩余可退, 非负可用余额, 流水可退余额)。
- * 剩余可退 = 订单额 − Σ已打款退款;可用余额 = balance − frozen。
- * 流水可退余额为排除正向 adjust 后的流水净额,下限为零。
+ * With refundable=False, reason_code: not_paid / already_applied / fully_refunded / invoiced
+ * / no_balance.
+ * An order may be partially refunded several times: max_amount = min(order remainder,
+ * non-negative available balance, refundable ledger balance).
+ * Remainder = order amount − Σ paid refunds; available balance = balance − frozen.
+ * The refundable ledger balance is the net ledger excluding positive adjustments, floored at
+ * zero.
  */
 export interface RefundableOrderOut {
   amount: string;

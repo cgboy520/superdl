@@ -6,7 +6,8 @@
  */
 
 /**
- * 管理端退款单视图:多操作人/时间与核销流水关联;`order_channel` 决定可选打款渠道。
+ * Admin refund request view: operators / times and the write-off ledger link;
+ * `order_channel` decides the payout channel options.
  */
 export interface AdminRefundOut {
   amount: string;

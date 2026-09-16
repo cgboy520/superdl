@@ -1,4 +1,4 @@
-"""计费模块的跨模块公开接口。"""
+"""Cross-module public interface of the billing module."""
 
 from app.modules.billing.export import (
     stream_admin_invoices_csv,
