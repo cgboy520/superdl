@@ -32,16 +32,16 @@ class TestOrigin:
 
     def test_non_default_port_is_carried(self):
         s = _settings(
-            jupyter_domain_suffix="xiaocg.xyz",
+            jupyter_domain_suffix="lab.example.com",
             jupyter_host_prefix="jupyter-",
             jupyter_url_port=8443,
         )
-        assert jupyter_origin("abc-123", s) == "https://jupyter-abc-123.xiaocg.xyz:8443"
-        assert jupyter_host("abc-123", s) == "jupyter-abc-123.xiaocg.xyz"
+        assert jupyter_origin("abc-123", s) == "https://jupyter-abc-123.lab.example.com:8443"
+        assert jupyter_host("abc-123", s) == "jupyter-abc-123.lab.example.com"
 
     def test_entry_ticket_carries_the_port(self, monkeypatch):
         """票据 URL 带端口。"""
-        monkeypatch.setenv("SUPERDL_JUPYTER_DOMAIN_SUFFIX", "xiaocg.xyz")
+        monkeypatch.setenv("SUPERDL_JUPYTER_DOMAIN_SUFFIX", "lab.example.com")
         monkeypatch.setenv("SUPERDL_JUPYTER_HOST_PREFIX", "jupyter-")
         monkeypatch.setenv("SUPERDL_JUPYTER_URL_PORT", "8443")
         get_settings.cache_clear()
@@ -49,7 +49,7 @@ class TestOrigin:
             url = _new_jupyter_ticket(Instance(uuid="abc123"), "tok")
         finally:
             get_settings.cache_clear()
-        assert url.startswith("https://jupyter-abc123.xiaocg.xyz:8443/superdl-bootstrap?")
+        assert url.startswith("https://jupyter-abc123.lab.example.com:8443/superdl-bootstrap?")
 
 
 class TestSlugParsingUnderSharedSuffix:
@@ -57,15 +57,15 @@ class TestSlugParsingUnderSharedSuffix:
 
     @pytest.fixture
     def shared_suffix(self, monkeypatch):
-        monkeypatch.setenv("SUPERDL_JUPYTER_DOMAIN_SUFFIX", "xiaocg.xyz")
-        monkeypatch.setenv("SUPERDL_SERVICE_DOMAIN_SUFFIX", "xiaocg.xyz")
+        monkeypatch.setenv("SUPERDL_JUPYTER_DOMAIN_SUFFIX", "lab.example.com")
+        monkeypatch.setenv("SUPERDL_SERVICE_DOMAIN_SUFFIX", "lab.example.com")
         monkeypatch.setenv("SUPERDL_JUPYTER_HOST_PREFIX", "jupyter-")
         get_settings.cache_clear()
         yield
         get_settings.cache_clear()
 
     def test_endpoint_host_still_parses(self, shared_suffix):
-        assert endpoint_slug_from_host("svc-abc1234567.xiaocg.xyz") == "svc-abc1234567"
+        assert endpoint_slug_from_host("svc-abc1234567.lab.example.com") == "svc-abc1234567"
 
     def test_jupyter_host_is_not_an_endpoint_alias(self, shared_suffix):
-        assert endpoint_slug_from_host("jupyter-0e05c3daf14a.xiaocg.xyz") is None
+        assert endpoint_slug_from_host("jupyter-0e05c3daf14a.lab.example.com") is None
