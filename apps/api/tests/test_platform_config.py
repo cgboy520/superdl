@@ -551,6 +551,7 @@ class TestConfigWarnings:
         no_registry = dict(
             compliant,
             registry_host="",
+            captcha_provider="aliyun",
             captcha_scene_id="s",
             captcha_access_key_id="LTAI5tTESTTESTTEST",
             captcha_access_key_secret="k",
@@ -574,6 +575,7 @@ class TestConfigWarnings:
         on["sms_provider"] = ""
         full = dict(
             on,
+            captcha_provider="aliyun",
             captcha_scene_id="scene",
             captcha_access_key_id="LTAI5tTESTTESTTEST",
             captcha_access_key_secret="sk",
@@ -604,6 +606,18 @@ class TestConfigWarnings:
             email_from="no-reply@example.com",
         )
         assert compute_config_warnings(rc(full), "test") == []
+        turnstile_on = dict(base, captcha_enabled="true", captcha_provider="turnstile")
+        assert ("captcha_enabled", "error") in {
+            (w.key, w.level) for w in compute_config_warnings(rc(turnstile_on), "test")
+        }
+        turnstile_ok = dict(
+            turnstile_on,
+            captcha_turnstile_site_key="0x4AAAAAAA_site",
+            captcha_turnstile_secret_key="sec",
+        )
+        assert "captcha_enabled" not in {
+            w.key for w in compute_config_warnings(rc(turnstile_ok), "test")
+        }
 
     def test_cn_profile_turns_gates_into_errors(self, monkeypatch):
         """Under compliance_profile=cn the three CN gates are prod errors (boot-blocking)."""

@@ -33,7 +33,7 @@ export const getCaptchaConfigApiV1AuthCaptchaConfigGetUrl = () => {
 }
 
 /**
- * 验证码 2.0 客户端初始化配置(免鉴权)。
+ * CAPTCHA client bootstrap (unauthenticated).
  * @summary Captcha Config
  */
 export const captchaConfigApiV1AuthCaptchaConfigGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<CaptchaConfigOut> => {

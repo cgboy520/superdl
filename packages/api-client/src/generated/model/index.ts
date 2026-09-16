@@ -111,6 +111,7 @@ export * from './capacityWarningOut';
 export * from './capacityWarningOutCode';
 export * from './capacityWarningOutParams';
 export * from './captchaConfigOut';
+export * from './captchaConfigOutProvider';
 export * from './clusterComponentOut';
 export * from './clusterComponentOutKey';
 export * from './clusterComponentOutState';

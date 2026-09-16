@@ -1,3 +1,5 @@
+from typing import Literal
+
 from fastapi import APIRouter, Request, Response, status
 from pydantic import BaseModel
 
@@ -87,19 +89,27 @@ async def send_verification_code(
 
 
 class CaptchaConfigOut(BaseModel):
-    """验证码 SDK 初始化公开信息。enabled=false 时前端不加载 SDK,发码不带 token。"""
+    """Public CAPTCHA bootstrap: which SDK the web app loads and its public keys. enabled=false →
+    no SDK is loaded and codes are requested without a token."""
 
     enabled: bool
+    provider: Literal["aliyun", "turnstile"]
+    site_key: str | None
     scene_id: str | None
     prefix: str | None
 
 
 @router.get("/auth/captcha-config")
 async def captcha_config(session: DbSession) -> CaptchaConfigOut:
-    """验证码 2.0 客户端初始化配置(免鉴权)。"""
+    """CAPTCHA client bootstrap (unauthenticated)."""
     cfg = await get_runtime_config(session)
+    provider: Literal["aliyun", "turnstile"] = (
+        "aliyun" if cfg.captcha_provider == "aliyun" else "turnstile"
+    )
     return CaptchaConfigOut(
         enabled=cfg.captcha_enabled,
+        provider=provider,
+        site_key=cfg.captcha_turnstile_site_key or None,
         scene_id=cfg.captcha_scene_id or None,
         prefix=cfg.captcha_prefix or None,
     )

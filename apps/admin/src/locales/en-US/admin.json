@@ -813,9 +813,12 @@
       "business_license_url": "Business license scan URL (public disclosure)",
       "captcha_access_key_id": "AccessKey ID",
       "captcha_access_key_secret": "AccessKey Secret",
-      "captcha_enabled": "Enable CAPTCHA (Aliyun Captcha 2.0)",
+      "captcha_enabled": "Enable CAPTCHA",
       "captcha_prefix": "Identity prefix",
+      "captcha_provider": "CAPTCHA provider",
       "captcha_scene_id": "Scene ID",
+      "captcha_turnstile_secret_key": "Turnstile secret key",
+      "captcha_turnstile_site_key": "Turnstile site key",
       "cluster_agent_version": "Agent version (pinned by the install script)",
       "cluster_join_token": "Join token",
       "cluster_server_url": "Server URL",
@@ -872,7 +875,7 @@
     "fieldExtra": {
       "admin_mfa_enabled": "On: all roles must bind TOTP on first login and sign in with a second factor; Off: password-only login, previously bound TOTP is no longer checked (re-enabling restores it). Turning this off in production = giving up the last line of defense against password leaks",
       "business_license_url": "Absolute http(s) URL only; when set, the footer \"Business License\" entry becomes a clickable link, otherwise it is plain text",
-      "captcha_enabled": "When enabled, the user-side \"Get code\" flow first shows the Aliyun slider; fill in credentials on the \"CAPTCHA\" page first. Turning this off in production = the SMS endpoint is guarded only by IP/phone rate limits",
+      "captcha_enabled": "When enabled, the user-side \"Get code\" flow first runs the CAPTCHA (Turnstile or the Aliyun slider, per provider); fill in credentials on the \"CAPTCHA\" page first. Turning this off in production = the code endpoint is guarded only by IP / account rate limits",
       "company_address": "Same as above, shown in the footer company line; leave empty to hide",
       "company_name": "Disclosure item per Article 15 of the E-Commerce Law; shown in the user-side footer, leave empty to hide",
       "company_phone": "Same as above, shown in the footer company line; leave empty to hide",
@@ -892,7 +895,7 @@
     "goTo": "Go to",
     "groupDirty": "This group has unsaved changes",
     "groupIntro": {
-      "captcha": "Aliyun CAPTCHA 2.0 (pre-verification for /auth/sms-code, blocking distributed code-scraping scripts): after activating CAPTCHA 2.0, create a Web/H5 scene in \"Scene Management\" of the console to get the scene ID, and get the app key from the \"Overview\" page; a dedicated RAM sub-account with only AliyunYundunAFSFullAccess is recommended. Toggle it on the \"Security Policy\" page; fill in the credentials here first.",
+      "captcha": "CAPTCHA (pre-verification for the verification-code endpoint, blocking distributed code-scraping scripts): Cloudflare Turnstile (default, free; create a widget in the Cloudflare dashboard for the site key and secret key) or Aliyun Captcha 2.0 (scene ID from \"Scene Management\", identity prefix from \"Overview\"; a dedicated RAM sub-account with only AliyunYundunAFSFullAccess is recommended). Toggle it on the \"Security Policy\" page; fill in the credentials of the selected provider first.",
       "cluster": "Cluster join parameters for one-command GPU node onboarding: the server address and join token come from the server node (use the dedicated agent token — the agent-token value in the server config; NEVER use node-token, which can pull the node into the etcd ring. Update here after rotation). The distro is auto-detected by the platform (see the \"Cluster\" page), no need to declare it; registries.yaml is auto-generated from the server address — this key is an advanced override, leave it empty. Once configured, ops generates a one-time enrollment command under \"Nodes & GPU → Add Node\".",
       "compliance": "Filing info is shown in the user-side footer. The ICP filing is submitted via your access provider (cloud vendor); fill in the full filing number (including suffixes like -1) once issued; the public-security filing is applied at beian.mps.gov.cn within 30 days of going live. Company identity (name/address/phone/license link) is a disclosure item per Article 15 of the E-Commerce Law, shown persistently in the footer; leave empty to hide the corresponding line.",
       "email": "Verification emails (sign-up, sign-in, password reset, contact binding) are delivered over SMTP. Fill in the server, transport security, account and sender, then verify with the test send below. The mock provider only logs (fixed code 123456) and is refused in production.",
@@ -922,6 +925,7 @@
       "smtp": "SMTP server",
       "starttls": "STARTTLS (587)",
       "tls": "Implicit TLS (465)",
+      "turnstile": "Cloudflare Turnstile",
       "twilio": "Twilio"
     },
     "reasonLabel": "Reason (required, audited; the audit stores key names only, never values)",
@@ -930,7 +934,7 @@
     "registryOk": "Connected{{version}}; {{repos}} repositories visible in the platform project",
     "riskOff": {
       "admin_mfa_enabled": "Once off, a password alone signs in to the admin console; already-bound TOTP is no longer verified",
-      "captcha_enabled": "Once off, /auth/sms-code runs no CAPTCHA check — only IP/phone rate limiting is left",
+      "captcha_enabled": "Once off, the verification-code endpoint runs no CAPTCHA check — only IP / account rate limiting is left",
       "real_name_enabled": "Once off, users cannot complete identity verification; saving is rejected while “Require identity verification before top-up” is on",
       "real_name_required_for_recharge": "Once off, unverified users can top up and create instances"
     },
@@ -944,7 +948,7 @@
     "sourceEnv": "env default",
     "sourceUnset": "Not set",
     "tabAlipay": "Alipay",
-    "tabCaptcha": "Captcha (Aliyun)",
+    "tabCaptcha": "CAPTCHA",
     "tabCluster": "Cluster access",
     "tabCompliance": "Compliance",
     "tabEmail": "Email",
