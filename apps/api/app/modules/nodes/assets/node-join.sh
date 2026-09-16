@@ -130,6 +130,7 @@ on_error() {
 trap on_error ERR
 
 is_cpu_pool() { [[ "$(cfg_get pool)" == "cpu" ]]; }
+is_kata_pool() { [[ "$(cfg_get pool)" == "kata" ]]; }
 
 marker() { [[ -f "$STATE_DIR/done.d/$1" ]]; }
 mark_done() { touch "$STATE_DIR/done.d/$1"; }
@@ -270,6 +271,17 @@ step_iommu() {
 
 step_driver() {
   if is_cpu_pool; then echo "-- cpu 池:跳过 NVIDIA 驱动安装"; return 0; fi
+  if is_kata_pool; then
+    if nvidia-smi > /dev/null 2>&1 || lsmod | grep -q '^nvidia' \
+      || dpkg -l 'nvidia-driver-*' 2> /dev/null | grep -q '^ii'; then
+      echo "!! kata 池要求宿主无 NVIDIA 驱动:vfio-manager 见到预装驱动即 fatal,GPU 绑不上 vfio-pci" >&2
+      echo "   先卸载驱动再重跑本命令(步骤见 runbook node-pool-switch.md):" >&2
+      echo "   systemctl disable --now nvidia-persistenced; apt-get purge -y 'nvidia-driver-*'; update-initramfs -u; reboot" >&2
+      return 1
+    fi
+    echo "-- kata 池:整卡直通由 vfio-pci 接管,跳过 NVIDIA 驱动安装"
+    return 0
+  fi
   local want
   want="$(cfg_get driver_version)"
   if nvidia-smi >/dev/null 2>&1; then
@@ -289,6 +301,7 @@ step_driver() {
 
 step_nvidia_toolkit() {
   if is_cpu_pool; then echo "-- cpu 池:跳过 nvidia-container-toolkit"; return 0; fi
+  if is_kata_pool; then echo "-- kata 池:宿主不跑 GPU 容器,跳过 nvidia-container-toolkit"; return 0; fi
   local installed
   installed="$(dpkg-query -W -f='${Version}' nvidia-container-toolkit 2>/dev/null || true)"
   if [[ -n "$installed" ]] && dpkg --compare-versions "$installed" ge "$NVCTK_MIN_VERSION"; then

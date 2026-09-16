@@ -21,3 +21,31 @@ export function supportsMig(canonical: string | undefined): boolean {
   if (!canonical) return false;
   return MIG_CAPABLE_FAMILIES.has(canonical.split("-")[0] ?? "");
 }
+
+/** 支持整卡直通的数据中心家族(与后端 core/gpu_models.PASSTHROUGH_CAPABLE_FAMILIES 同表);
+ *  RTX 独立卡按前缀放行,Grace 超级芯片的集成 GPU(GB10 / GB200)绑不了 vfio-pci,未识别一律 false。 */
+const PASSTHROUGH_CAPABLE_FAMILIES = new Set([
+  "A10",
+  "A16",
+  "A30",
+  "A40",
+  "A100",
+  "A800",
+  "B200",
+  "H20",
+  "H100",
+  "H200",
+  "H800",
+  "L4",
+  "L20",
+  "L40",
+  "L40S",
+  "T4",
+  "V100",
+]);
+
+export function supportsPassthrough(canonical: string | undefined): boolean {
+  if (!canonical) return false;
+  const family = canonical.split("-")[0] ?? "";
+  return family.startsWith("RTX") || PASSTHROUGH_CAPABLE_FAMILIES.has(family);
+}

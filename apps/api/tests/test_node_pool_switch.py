@@ -124,6 +124,33 @@ async def test_mig_needs_capable_model(sm):
     assert (await _spec(sm, "sw-h100")).desired_pool == "mig"
 
 
+async def test_kata_needs_passthrough_capable_model(sm):
+    """切入 kata 池要求机型能整卡直通:集成 GPU 绑不了 vfio-pci,进池即 0 卡可分配。"""
+    await _cluster_configured(sm)
+    await _probe(sm)
+    await seed_node_spec(sm, node_name="sw-gb10k", pool_label="hami", gpu_model="GB10", gpu_count=1)
+    await seed_node_spec(sm, node_name="sw-a100", pool_label="hami", gpu_model="A100-80G")
+
+    with pytest.raises(AppError) as e:
+        await _switch(sm, "sw-gb10k", "kata")
+    assert e.value.message_key == "nodes.poolPassthroughUnsupported"
+    assert (await _spec(sm, "sw-gb10k")).desired_pool is None
+    assert await _switch_tasks(sm) == []
+
+    await _switch(sm, "sw-a100", "kata")
+    assert (await _spec(sm, "sw-a100")).desired_pool == "kata"
+
+
+async def test_zero_gpu_in_gpu_pool_can_switch_back(sm):
+    """目标池组件没起来导致观测卡数归 0 时仍能切回:否则节点被锁死在坏池里。"""
+    await _cluster_configured(sm)
+    await _probe(sm)
+    await seed_node_spec(sm, node_name="sw-stuck", pool_label="kata", gpu_model="GB10", gpu_count=0)
+
+    await _switch(sm, "sw-stuck", "hami")
+    assert (await _spec(sm, "sw-stuck")).desired_pool == "hami"
+
+
 async def test_target_runtime_must_be_ready(sm, fake_auto_ready):
     """目标池运行时未就绪时拒绝切池。"""
     await _cluster_configured(sm)

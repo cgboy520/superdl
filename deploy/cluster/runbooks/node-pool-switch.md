@@ -17,11 +17,46 @@
 - 目标池运行时已就绪:kata 看 `kubectl get runtimeclass kata-qemu`,hami 看 `hami-scheduler`,
   mig 看 gpu-operator。管理端集群页组件体检同判据。
 - 切到 mig 池要求机型支持 MIG(A100 / A800 / A30 / H100 / H800 / H200 / H20 / B200 / GB200 系)。
+- 切到 kata 池要求机型能整卡直通(`core/gpu_models.PASSTHROUGH_CAPABLE_FAMILIES`:独立 PCIe / SXM 板卡)。
+  Grace 超级芯片的集成 GPU(GB10 / GB200)固件强制 1:1 IOMMU 映射,内核拒绝把它绑到 `vfio-pci`,平台直接 409。
+- 切到 kata 池还要求**该节点宿主没有 NVIDIA 驱动**,先做下一节。两个机型闸门在管理端表现为目标池灰置。
 - 准入策略已是允许 GPU operand 键的版本,否则 worker 改标签会被 Deny:
 
 ```bash
 kubectl apply -f deploy/cluster/admission/tenant-restrictions.yaml
 ```
+
+## 切到 kata 前:卸载宿主 NVIDIA 驱动
+
+gpu-operator 的 vfio-manager 见到宿主预装驱动会直接 `fatal: driver is pre-installed on host`,
+GPU 留在 `nvidia` 驱动上绑不到 `vfio-pci`,节点 `nvidia.com/gpu` 可分配数归 0。
+装机时就定 kata 池的节点由 `node-join.sh` 跳过驱动与 container-toolkit,不必做本节;
+把在役的 hami / mig 节点切进 kata 才需要,顺序是**先卸驱动、再切池**。
+
+**只写 modprobe 黑名单不够**:驱动包还在,`node-join.sh` 的 kata 闸(`dpkg -l 'nvidia-driver-*'`)与
+gpu-operator 的预装驱动判定都会命中,必须真的把包卸掉。
+
+```bash
+# 1. 节点已空(切池同一道闸)且已封锁
+kubectl cordon <node>
+
+# 2. 先演练,看清连带删除的包(尤其 CUDA 工具链与 container-toolkit 的依赖)
+ssh <node> 'apt-get -s purge "nvidia-driver-*"'
+
+# 3. 确认无误后执行,再重启
+ssh <node> 'systemctl disable --now nvidia-persistenced || true
+  DEBIAN_FRONTEND=noninteractive apt-get purge -y "nvidia-driver-*"
+  update-initramfs -u && reboot'
+
+# 4. 重启后判据:三条都要成立
+ssh <node> '! test -e /proc/driver/nvidia \
+  && ! lsmod | grep -q "^nvidia" \
+  && ! dpkg -l "nvidia-driver-*" 2>/dev/null | grep -q "^ii" \
+  && echo "宿主无驱动"'
+```
+
+切回 hami / mig 时反向做:装回驱动包(`apt-get install -y nvidia-driver-<版本>-server`,版本取平台配置
+`node_driver_version`)→ 重启 → `nvidia-smi` 出卡后再切池,否则节点回到 hami 池也认不到卡。
 
 ## 步骤
 

@@ -20,7 +20,7 @@ from app.core.config import get_settings
 from app.core.crypto import hash_node_token, hash_node_token_candidates
 from app.core.errors import AppError, ErrorCode, conflict, not_found
 from app.core.gpu_adapter import POOL_CPU, POOL_HAMI, POOL_KATA, POOL_MIG, SWITCHABLE_POOLS
-from app.core.gpu_models import model_matches, supports_mig
+from app.core.gpu_models import model_matches, supports_mig, supports_passthrough
 from app.core.idempotency import find_replay
 from app.core.k8s import get_orchestrator
 from app.core.k8s.base import (
@@ -282,10 +282,15 @@ async def switch_node_pool(
     current = row.desired_pool or row.pool_label
     if current == pool:
         raise conflict(key="nodes.poolUnchanged", params={"pool": pool})
-    if row.gpu_count <= 0 or current == POOL_CPU:
+    # 观测卡数会因目标池组件没起来掉到 0,已在 GPU 池的节点必须留着切回的路
+    if current == POOL_CPU or (row.gpu_count <= 0 and current not in SWITCHABLE_POOLS):
         raise conflict(key="nodes.poolIncompatible")
     if pool == POOL_MIG and not supports_mig(row.gpu_model):
         raise conflict(key="nodes.poolMigUnsupported", params={"model": row.gpu_model or "未识别"})
+    if pool == POOL_KATA and not supports_passthrough(row.gpu_model):
+        raise conflict(
+            key="nodes.poolPassthroughUnsupported", params={"model": row.gpu_model or "未识别"}
+        )
     await _assert_node_empty(session, node_name)
     await require_pool_runtime(session, pool)
 

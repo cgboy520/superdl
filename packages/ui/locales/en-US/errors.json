@@ -178,6 +178,7 @@
     "poolIncompatible": "A node without GPUs can only stay in the cpu pool, and a node with GPUs cannot move into it.",
     "poolMigUnsupported": "{{model}} does not support MIG partitioning, so it cannot move to the mig pool.",
     "poolNotSwitchable": "Node pools can only be switched among {{pools}}.",
+    "poolPassthroughUnsupported": "{{model}} does not support whole-GPU passthrough, so it cannot move to the kata pool.",
     "poolUnchanged": "This node is already in the {{pool}} pool.",
     "regenerateNotAllowed": "Status {{status}} does not allow regeneration (only pending/expired/failed)",
     "storageClassMissing": "Cluster storage is not ready (missing {{names}}), so this cannot be provisioned right now — please contact platform operations"
