@@ -1,4 +1,5 @@
-"""法务文档:公开读取(回落 zh-CN)+ 注册同意存证 + 管理端版本流(draft → published → archived)。"""
+"""Legal documents: public reads with a locale fallback chain, registration consent records and
+the admin version flow (draft → published → archived)."""
 
 from typing import get_args
 
@@ -6,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.compliance import current_profile
 from app.core.errors import conflict, not_found
 from app.core.logging import get_logger
 from app.core.timeutil import now_utc
@@ -21,8 +23,20 @@ logger = get_logger(__name__)
 
 VALID_DOC_KEYS: tuple[str, ...] = ("terms", "privacy", "deletion_notice")
 SUPPORTED_LOCALES: tuple[str, ...] = get_args(Locale)
-DEFAULT_LOCALE = "zh-CN"
+DEFAULT_LOCALE = "en-US"
 CONSENT_DOC_KEYS: tuple[str, ...] = ("terms", "privacy")
+
+
+def preferred_locale() -> str:
+    """The compliance profile's default locale; fallbacks and consents start here."""
+    locale = current_profile().default_locale
+    return locale if locale in SUPPORTED_LOCALES else DEFAULT_LOCALE
+
+
+def locale_chain(first: str | None = None) -> tuple[str, ...]:
+    """Lookup order: the requested locale, the profile default, then every other locale."""
+    head = [loc for loc in (first, preferred_locale()) if loc]
+    return tuple(dict.fromkeys([*head, *SUPPORTED_LOCALES]))
 
 
 def _validate_doc_key(doc_key: str) -> None:
@@ -42,32 +56,37 @@ async def _published(session: AsyncSession, doc_key: str, locale: str) -> LegalD
     ).scalar_one_or_none()
 
 
+async def _first_published(
+    session: AsyncSession, doc_key: str, chain: tuple[str, ...]
+) -> LegalDocVersion | None:
+    for locale in chain:
+        row = await _published(session, doc_key, locale)
+        if row is not None:
+            return row
+    return None
+
+
 async def get_public_doc(
     session: AsyncSession, doc_key: str, lang: str | None
 ) -> tuple[LegalDocVersion, bool]:
-    """返回 published 文档与回落标志;非法文档或无发布版本回 404。
-
-    不支持的语言直接使用 zh-CN,标志为 False;支持的非默认语言缺版本时回落并标 True。
-    """
+    """The published document for `lang` (unsupported or missing → the profile default), walking
+    the locale chain; `fallback` is True when the served locale differs from the requested one.
+    Unknown doc_key or nothing published → 404."""
     _validate_doc_key(doc_key)
-    locale = lang if lang in SUPPORTED_LOCALES else DEFAULT_LOCALE
-    row = await _published(session, doc_key, locale)
-    if row is not None:
-        return row, False
-    if locale != DEFAULT_LOCALE:
-        row = await _published(session, doc_key, DEFAULT_LOCALE)
-        if row is not None:
-            return row, True
-    raise not_found(key="legal.docNotFound")
+    requested = lang if lang in SUPPORTED_LOCALES else preferred_locale()
+    row = await _first_published(session, doc_key, locale_chain(requested))
+    if row is None:
+        raise not_found(key="legal.docNotFound")
+    return row, row.locale != requested
 
 
 async def record_registration_consents(
     session: AsyncSession, user_id: int, client_ip: str | None
 ) -> None:
-    """注册成功同事务落 terms/privacy 同意存证(版本 = 当前 zh-CN published);
-    无 published 跳过并告警。"""
+    """Record terms/privacy consents in the registration transaction against the first published
+    version along the locale chain; nothing published → skip with a warning."""
     for doc_key in CONSENT_DOC_KEYS:
-        row = await _published(session, doc_key, DEFAULT_LOCALE)
+        row = await _first_published(session, doc_key, locale_chain())
         if row is None:
             logger.warning("consent_published_missing", doc_key=doc_key, user_id=user_id)
             continue
@@ -132,10 +151,8 @@ async def admin_list_versions(
 async def admin_create_draft(
     session: AsyncSession, doc_key: str, locale: Locale, *, admin_id: int
 ) -> LegalDocVersion:
-    """无已有 draft 时提交新草稿,版本号为 max+1。
-
-    优先复制同语言 published,其次 zh-CN;无底稿时标题与正文为空。
-    """
+    """Create a draft (version = max+1) when none exists for (doc_key, locale). The body copies the
+    first published version along the locale chain; with none, title and body start empty."""
     _validate_doc_key(doc_key)
     existing_draft = (
         await session.execute(
@@ -148,9 +165,7 @@ async def admin_create_draft(
     ).scalar_one_or_none()
     if existing_draft is not None:
         raise conflict(key="legal.draftExists")
-    base = await _published(session, doc_key, locale)
-    if base is None and locale != DEFAULT_LOCALE:
-        base = await _published(session, doc_key, DEFAULT_LOCALE)
+    base = await _first_published(session, doc_key, locale_chain(locale))
     max_version = (
         await session.execute(
             select(func.max(LegalDocVersion.version)).where(

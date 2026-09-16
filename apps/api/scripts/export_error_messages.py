@@ -1,4 +1,4 @@
-"""将 MESSAGES 导出为 i18next 格式的 packages/ui/locales/zh-CN/errors.json。"""
+"""Export MESSAGES as i18next JSON to packages/ui/locales/en-US/errors.json."""
 
 import json
 import re
@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.core.messages import MESSAGES
 
-OUT = Path(__file__).resolve().parents[3] / "packages" / "ui" / "locales" / "zh-CN" / "errors.json"
+OUT = Path(__file__).resolve().parents[3] / "packages" / "ui" / "locales" / "en-US" / "errors.json"
 
 
 def to_i18next(template: str) -> str:

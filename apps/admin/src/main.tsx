@@ -9,13 +9,14 @@ import ReactDOM from "react-dom/client";
 
 import "@superdl/ui/base.css";
 import "./global.css";
-import "./i18n";
+import i18n from "./i18n";
 import { queryClient } from "./lib/queryClient";
 import { routeTree } from "./routeTree.gen";
 import { authStore, readAdminToken } from "./stores/auth";
 
 configureApiClient({
   baseUrl: "",
+  getLocale: () => i18n.language,
   getToken: () => readAdminToken(),
   refreshToken: async () => {
     const token = readAdminToken();

@@ -1,6 +1,6 @@
 /**
- * orval 自定义 fetch mutator:统一 baseUrl / Authorization / 错误体解析。
- * 应用启动时调用 configureApiClient() 注入 token 来源与 401 处理。
+ * orval custom fetch mutator: one place for baseUrl, Authorization, Accept-Language and error-body
+ * parsing. Apps call configureApiClient() at startup to inject the token source and 401 handling.
  */
 
 export interface ApiError {
@@ -8,7 +8,7 @@ export interface ApiError {
   message: string;
   detail?: unknown;
   status: number;
-  /** 多语言目录键(errors ns);缺失时前端回落 message(服务端渲染的中文) */
+  /** Catalog key (errors ns); when absent the client falls back to `message` (English from the server) */
   message_key?: string | null;
   params?: Record<string, unknown> | null;
 }
@@ -19,6 +19,8 @@ interface ClientConfig {
   onUnauthorized: (() => void) | null;
   /** 非 /auth/ 路径的 401 尝试静默续期(返回是否成功);未配置或重试后仍为 401 时调用 onUnauthorized。 */
   refreshToken: (() => Promise<boolean>) | null;
+  /** Current UI language sent as Accept-Language (server-rendered texts such as verification codes). */
+  getLocale: () => string | null;
 }
 
 const config: ClientConfig = {
@@ -26,6 +28,7 @@ const config: ClientConfig = {
   getToken: () => null,
   onUnauthorized: null,
   refreshToken: null,
+  getLocale: () => null,
 };
 
 /** 跨标签页续期互斥锁名。 */
@@ -94,7 +97,7 @@ export function requestAdminTokenRefresh(accessToken: string): Promise<{ access_
 function networkError(): ApiError {
   return {
     code: "NETWORK_ERROR",
-    message: "网络连接失败,请检查网络后重试",
+    message: "Network connection failed — check your connection and try again",
     message_key: "common.networkError",
     params: null,
     status: 0,
@@ -112,6 +115,10 @@ export const customFetch = async <T>(url: string, options: ApiRequestOptions): P
     }
     if (options.body && !headers.has("Content-Type")) {
       headers.set("Content-Type", "application/json");
+    }
+    const locale = config.getLocale();
+    if (locale && !headers.has("Accept-Language")) {
+      headers.set("Accept-Language", locale);
     }
     return fetch(`${config.baseUrl}${url}`, { ...options, headers });
   };
@@ -152,7 +159,7 @@ export const customFetch = async <T>(url: string, options: ApiRequestOptions): P
     const serverMessage = typeof err.message === "string" && err.message !== "" ? err.message : undefined;
     const apiError: ApiError = {
       code: err.code ?? "HTTP_ERROR",
-      message: serverMessage ?? `请求失败(${response.status})`,
+      message: serverMessage ?? `Request failed (${response.status})`,
       message_key: err.message_key ?? (serverMessage ? null : "common.httpError"),
       params: err.params ?? (serverMessage ? null : { status: response.status }),
       detail: err.detail,

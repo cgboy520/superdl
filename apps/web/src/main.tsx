@@ -7,7 +7,7 @@ import ReactDOM from "react-dom/client";
 import { routeTree } from "./routeTree.gen";
 import { setupAuthCacheGuard } from "./lib/authCacheGuard";
 import { authStore, readAccessToken } from "./stores/auth";
-import "./i18n";
+import i18n from "./i18n";
 import "@superdl/ui/base.css";
 import "./styles.css";
 
@@ -27,6 +27,7 @@ declare module "@tanstack/react-router" {
 
 configureApiClient({
   baseUrl: "",
+  getLocale: () => i18n.language,
   getToken: () => readAccessToken(),
   refreshToken: async () => {
     const pair = await requestTokenRefresh();

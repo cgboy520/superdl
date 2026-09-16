@@ -811,7 +811,7 @@ class TestUnifiedErrorBodyForHttpException:
         body = resp.json()
         assert body["code"] == "NOT_FOUND"
         assert body["message_key"] == "common.notFound"
-        assert body["message"] == "资源不存在"
+        assert body["message"] == "Resource not found"
 
     async def test_405_returns_unified_body_and_allow_header(self, client: AsyncClient):
         resp = await client.post("/healthz")

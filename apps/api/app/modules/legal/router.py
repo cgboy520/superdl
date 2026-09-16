@@ -13,8 +13,8 @@ async def get_legal_doc(
     session: DbSession,
     lang: str | None = Query(default=None),
 ) -> LegalDocOut:
-    """当前 published 版(免鉴权)。en-US 缺失回落 zh-CN 且 fallback=true;
-    doc_key 非法或无 published 均 404。"""
+    """Current published version (no auth). Missing locales fall back along the chain (requested →
+    profile default → others) with fallback=true; unknown doc_key or nothing published → 404."""
     row, fallback = await service.get_public_doc(session, doc_key, lang)
     return LegalDocOut(
         doc_key=row.doc_key,

@@ -1,5 +1,6 @@
-"""统一错误体 {code, message, message_key, params, detail, request_id};message 为渲染后的中文,
-message_key/params 供前端查多语言目录(core/messages.py)。"""
+"""Unified error body {code, message, message_key, params, detail, request_id}; `message` is the
+rendered English text, `message_key` / `params` let clients render their own locale
+(core/messages.py)."""
 
 from collections.abc import Mapping
 from enum import StrEnum

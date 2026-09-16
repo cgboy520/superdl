@@ -1,6 +1,7 @@
-"""错误文案目录:AppError(key=...) 的单一事实源。键 `<模块>.<camelCase>`;占位符 `{name}`(导出转
-`{{name}}`);apps/api/scripts/export_error_messages.py 生成
-packages/ui/locales/zh-CN/errors.json,en 手译。"""
+"""Error-message catalog: the single source for `AppError(key=...)` text. Keys are
+`<module>.<camelCase>`, placeholders `{name}` (exported as `{{name}}`). The English source is
+exported to packages/ui/locales/en-US/errors.json by apps/api/scripts/export_error_messages.py;
+zh-CN/errors.json is hand-maintained and kept key-for-key in parity by tests."""
 
 from collections.abc import Mapping
 from typing import Any
@@ -8,318 +9,520 @@ from typing import Any
 from app.core.logging import get_logger
 
 MESSAGES: dict[str, str] = {
-    "account.accountDeleted": "账号已注销",
-    "account.credentialRequired": "需提供验证码或密码",
+    "account.accountDeleted": "Account deleted",
+    "account.captchaChannelError": (
+        "Human verification service is temporarily unavailable — try again later"
+    ),
+    "account.captchaRequired": "Complete the human verification first",
+    "account.captchaVerifyFailed": "Human verification failed — complete it again and retry",
+    "account.codeInvalid": "Incorrect or expired verification code",
+    "account.codeSendFailed": "Could not send the verification code, please try again later",
+    "account.codeTooFrequent": "Too many requests, try again in {seconds} s",
+    "account.credentialRequired": "Provide an SMS code or password",
     "account.deletionBalanceRemaining": (
-        "余额 ¥{balance} 尚未提现:请先经退款流程提现,到账后再执行注销"
+        "Balance ¥{balance} not withdrawn — withdraw it via the refund process first, then "
+        "delete the account after it arrives"
     ),
-    "account.deletionCooldown": "注销冷静期未满(剩余约 {hours} 小时),暂不可执行",
+    "account.deletionCooldown": (
+        "Deletion cooling-off period not over (about {hours} hours left) — cannot execute yet"
+    ),
+    "account.deletionHandleMismatch": "The account you typed does not match the signed-in account",
     "account.deletionLeftovers": (
-        "名下仍有未释放实例 {instances} 台、未删除数据盘 {disks} 块:请先清空资源后再注销"
+        "You still have {instances} unreleased instance(s) and {disks} undeleted data disk(s) "
+        "— clear all resources before deleting your account"
     ),
-    "account.deletionNotCancellable": "注销申请状态为 {status},不可撤销",
-    "account.deletionNotPending": "注销申请状态为 {status},不可处理",
-    "account.deletionHandleMismatch": "输入的账号与当前登录账号不一致,请核对后重试",
-    "account.loginFailed": "账号或凭证错误",
-    "account.phoneTaken": "该手机号已注册,请直接登录",
-    "account.emailTaken": "该邮箱已注册,请直接登录",
-    "account.handleTaken": "该联系方式已绑定其他账号",
-    "account.phoneRequired": "当前站点要求绑定手机号,请填写手机号与短信验证码",
-    "account.phoneRegionNotAllowed": "当前站点仅支持以下区号的手机号:{codes}",
-    "account.phoneRequiredByProfile": "当前站点要求保留手机号,不能解绑",
-    "account.emailRequiredFirst": "请先绑定邮箱,再解绑手机号",
-    "account.kycRegionUnsupported": "当前实名渠道需要账号绑定 +86 手机号",
-    "account.kycNotAvailable": "当前站点未开放实名认证",
-    "account.kycIdentityInvalid": "证件号码格式或校验位不正确",
-    "account.realNameChannelError": "实名核验服务暂不可用,请稍后重试",
-    "account.realNameDisabled": "实名认证暂未开通",
-    "account.realNameDone": "已完成实名认证,无需重复提交",
-    "account.realNameMismatch": "实名信息与运营商记录不一致,请核对后重试",
-    "account.codeInvalid": "验证码错误或已过期",
-    "account.codeSendFailed": "验证码发送失败,请稍后重试",
-    "account.codeTooFrequent": "发送过于频繁,请 {seconds} 秒后再试",
-    "account.captchaRequired": "请先完成人机验证",
-    "account.captchaVerifyFailed": "人机校验未通过,请重新完成验证后再试",
-    "account.captchaChannelError": "人机校验服务暂不可用,请稍后重试",
-    "account.sshKeyDuplicate": "该公钥已添加过",
-    "account.sshKeyLimitReached": "SSH 公钥已达上限({max} 个),请删除不用的公钥后再添加",
-    "account.realNameIdentityLimit": "该证件已绑定 {max} 个账号,不能再绑定新账号",
-    "account.termsNotAccepted": "请先阅读并同意《用户协议》与《隐私政策》",
-    "account.userFrozen": "账号已被冻结,请联系客服",
-    "adminapi.adjustAlreadyProcessed": "调账单已处理",
-    "adminapi.adjustNotZero": "调账金额不能为 0",
-    "adminapi.alertAlreadyAcked": "该告警已确认",
-    "adminapi.announcementAlreadyRevoked": "公告已撤回,无需重复操作",
-    "adminapi.adjustSecondReviewer": "调账必须由第二位管理员复核",
-    "adminapi.adjustReviewerTooNew": "复核账号创建时间不早于调账发起前 24 小时,不构成双人复核",
-    "adminapi.reviewerNotIndependent": "复核账号在调账发起前没有任何管理操作记录,不构成独立复核",
-    "adminapi.badDayFormat": "day 格式应为 YYYY-MM-DD",
-    "adminapi.adminUsernameTaken": "该用户名已存在",
-    "adminapi.cannotChangeSelf": "不能停用或降低自己的权限,请让另一位超级管理员操作",
-    "adminapi.loginFailed": "用户名或密码错误",
-    "adminapi.roleRequired": "需要角色:{roles}",
-    "adminapi.roleRequiredAdmin": "需要超级管理员权限",
-    "adminapi.smsTestFailed": "发送失败:{message}",
-    "adminapi.emailTestFailed": "测试邮件发送失败:{message}",
-    "adminapi.taskNotFound": "任务不存在",
-    "adminapi.taskStateNotIgnorable": "任务状态 {status} 不可忽略",
-    "adminapi.taskStateNotReplayable": "任务状态 {status} 不可重放",
-    "adminapi.userDisabled": "账号已停用",
-    "adminapi.mfaTicketInvalid": "登录票据已过期,请重新输入账号密码",
-    "adminapi.mfaCodeInvalid": "动态码错误或已过期,请重试",
-    "adminapi.mfaNotBound": "该账号未绑定动态口令",
-    "adminapi.mfaResetSelfForbidden": "不能重置本人的动态口令:请用恢复码登录或找另一位超管",
-    "billing.alipayCallbackMerchantMismatch": "支付宝回调的商户信息与本平台不符",
-    "billing.alipayCallbackVerifyFailed": "支付宝回调验签失败",
-    "billing.alipayCreateFailed": "支付宝下单失败:{message}",
-    "billing.alipayCredentialsIncomplete": "支付宝商户凭据不完整(管理端·平台配置)",
-    "billing.alipayQueryFailed": "支付宝查单失败:{message}",
+    "account.deletionNotCancellable": "Deletion request is {status} and cannot be cancelled",
+    "account.deletionNotPending": "Deletion request is {status} and cannot be processed",
+    "account.emailRequiredFirst": "Add an email address before removing the phone number",
+    "account.emailTaken": "This email is already registered — sign in instead",
+    "account.handleTaken": "This contact is already bound to another account",
+    "account.kycIdentityInvalid": "The identity number is malformed or fails its checksum",
+    "account.kycNotAvailable": "Identity verification is not available on this site",
+    "account.kycRegionUnsupported": (
+        "The identity-verification provider needs a +86 phone number on the account"
+    ),
+    "account.loginFailed": "Incorrect account or credentials",
+    "account.phoneRegionNotAllowed": (
+        "This site only accepts phone numbers with dial codes: {codes}"
+    ),
+    "account.phoneRequired": (
+        "This site requires a phone number: enter it together with the SMS code"
+    ),
+    "account.phoneRequiredByProfile": (
+        "This site requires a phone number on file; it cannot be removed"
+    ),
+    "account.phoneTaken": "This phone number is already registered — log in instead",
+    "account.realNameChannelError": (
+        "Identity verification service is unavailable — try again later"
+    ),
+    "account.realNameDisabled": "Identity verification is not available yet",
+    "account.realNameDone": "Identity already verified — no need to resubmit",
+    "account.realNameIdentityLimit": (
+        "This ID is already linked to {max} accounts and cannot be linked to another"
+    ),
+    "account.realNameMismatch": "Identity details do not match carrier records — check and retry",
+    "account.sshKeyDuplicate": "This public key was already added",
+    "account.sshKeyLimitReached": (
+        "You have reached the limit of {max} SSH keys — delete unused keys before adding more"
+    ),
+    "account.termsNotAccepted": (
+        "Please read and accept the Terms of Service and Privacy Policy first"
+    ),
+    "account.userFrozen": "Account frozen — contact support",
+    "adminapi.adjustAlreadyProcessed": "Adjustment already processed",
+    "adminapi.adjustNotZero": "Adjustment amount cannot be 0",
+    "adminapi.adjustReviewerTooNew": (
+        "The reviewer account must be at least 24 hours older than the adjustment — not a "
+        "valid second review"
+    ),
+    "adminapi.adjustSecondReviewer": "Adjustments must be reviewed by a second administrator",
+    "adminapi.adminUsernameTaken": "That username already exists",
+    "adminapi.alertAlreadyAcked": "This alert has already been acknowledged",
+    "adminapi.announcementAlreadyRevoked": "Announcement already revoked — no need to repeat",
+    "adminapi.badDayFormat": "day must be YYYY-MM-DD",
+    "adminapi.cannotChangeSelf": (
+        "You cannot disable or downgrade your own account — ask another super admin to do it"
+    ),
+    "adminapi.emailTestFailed": "Test email failed: {message}",
+    "adminapi.loginFailed": "Wrong username or password",
+    "adminapi.mfaCodeInvalid": "Incorrect or expired verification code — try again",
+    "adminapi.mfaNotBound": "This account has no authenticator bound",
+    "adminapi.mfaResetSelfForbidden": (
+        "You cannot reset your own 2FA — use a recovery code or ask another super admin"
+    ),
+    "adminapi.mfaTicketInvalid": "Login ticket expired — sign in with username and password again",
+    "adminapi.reviewerNotIndependent": (
+        "The reviewer account has no administrative actions on record before this adjustment "
+        "— not an independent review"
+    ),
+    "adminapi.roleRequired": "Required role: {roles}",
+    "adminapi.roleRequiredAdmin": "Super admin privileges required",
+    "adminapi.smsTestFailed": "Send failed: {message}",
+    "adminapi.taskNotFound": "Task not found",
+    "adminapi.taskStateNotIgnorable": "Task status {status} cannot be ignored",
+    "adminapi.taskStateNotReplayable": "Task status {status} cannot be replayed",
+    "adminapi.userDisabled": "Account disabled",
+    "billing.alipayCallbackMerchantMismatch": (
+        "The Alipay notification's merchant details do not match this platform"
+    ),
+    "billing.alipayCallbackVerifyFailed": "Alipay callback signature verification failed",
+    "billing.alipayCreateFailed": "Alipay order creation failed: {message}",
+    "billing.alipayCredentialsIncomplete": (
+        "Alipay merchant credentials incomplete (Admin · Platform Config)"
+    ),
+    "billing.alipayQueryFailed": "Alipay order query failed: {message}",
     "billing.alipaySellerIdRequired": (
-        "支付宝渠道已启用但收款方 PID(seller_id)未配置(管理端·平台配置)"
+        "Alipay is enabled but the seller PID (seller_id) is not configured (Admin · Platform "
+        "Config)"
     ),
-    "billing.amountMismatchAdjust": "渠道金额 {channel} 与订单金额 {order} 不符,需人工调账处理",
-    "billing.backfillKeyInUse": "该幂等键已用于补单 {order_no}:同键请复用原订单重放,换单请换键",
-    "billing.badDateFormat": "日期格式应为 YYYY-MM-DD",
-    "billing.badMonthFormat": "月份格式应为 YYYY-MM",
-    "billing.callbackAmountMismatch": "回调金额与订单不符",
-    "billing.callbackChannelMismatch": "回调渠道与订单不符",
-    "billing.channelNotEnabled": "该支付渠道暂未开通,请选择其他支付方式",
-    "billing.channelStateNotBackfillable": "渠道侧状态为 {status},不能补单",
-    "billing.insufficientBalance": "余额不足,请先充值",
+    "billing.amountMismatchAdjust": (
+        "Channel amount {channel} does not match order amount {order} — requires a manual "
+        "adjustment"
+    ),
+    "billing.backfillKeyInUse": (
+        "This idempotency key was already used to backfill order {order_no} — replay with the "
+        "original order, or use a new key for a different order"
+    ),
+    "billing.badDateFormat": "Date must be YYYY-MM-DD",
+    "billing.badMonthFormat": "Month must be YYYY-MM",
+    "billing.callbackAmountMismatch": "Callback amount does not match the order",
+    "billing.callbackChannelMismatch": "Callback channel does not match the order",
+    "billing.channelNotEnabled": "This payment channel is not enabled — choose another",
+    "billing.channelStateNotBackfillable": "Channel-side status is {status} — cannot backfill",
     "billing.insufficientAvailableFrozen": (
-        "可用余额不足:¥{frozen} 因支付渠道冲正被冻结,待核销期间不可用于新消费;如有疑问请联系客服"
+        "Insufficient available balance: ¥{frozen} is frozen pending chargeback "
+        "reconciliation and cannot be spent on new purchases; contact support if in doubt"
     ),
-    "billing.settlementBehind": "结算正在追平,请稍后再转包周期",
-    "billing.subscriptionAlreadyActive": "该实例已在包周期内,如需延长请使用续费",
-    "billing.subscriptionCancelled": "该实例的包周期已作废,无法续费",
-    "billing.subscriptionExpired": "包周期已到期,请先续费再开机",
-    "billing.subscriptionMissing": "该实例没有可续费的包周期",
+    "billing.insufficientBalance": "Insufficient balance — top up first",
     "billing.insufficientForInFlight": (
-        "余额不足:在途资源预计还要消耗 ¥{inflight},本次操作要求余额不少于 ¥{required}"
-        "(当前 ¥{balance}),请先充值"
+        "Insufficient balance: in-flight resources are expected to burn CN¥{inflight} more; "
+        "this operation requires a balance of at least CN¥{required} (current CN¥{balance}) — "
+        "top up first"
     ),
-    "billing.invoiceNothingToBill": "账期 {period} 没有可开票金额(无已支付充值或已全部申请)",
     "billing.invoiceAmountStale": (
-        "可开票金额已变动(当前可开 ¥{expected},申请额 ¥{requested}):"
-        "账期内发生了退款,请驳回该申请并通知用户按新金额重新提交"
+        "The invoiceable amount has changed (now CN¥{expected}, requested CN¥{requested}): a "
+        "refund occurred in this period — reject the request and ask the user to resubmit "
+        "with the new amount"
     ),
-    "billing.invoiceNotFound": "发票申请不存在",
-    "billing.invoicePeriodAlreadyApplied": "账期 {period} 已有申请中或已开票的发票,请勿重复提交",
-    "billing.invoicePeriodNotOpen": "账期 {period} 尚未结束:当月账期请于次月 1 日后再申请",
-    "billing.invoiceStateNotIssuable": "发票申请状态为 {status},仅「申请中」的发票可开票",
-    "billing.invoiceStateNotRejectable": "发票申请状态为 {status},仅「申请中」的发票可驳回",
-    "billing.mockCallbackParseFailed": "mock 回调解析失败",
-    "billing.mockDevOnly": "mock 渠道仅限开发环境",
-    "billing.orderAlreadyPaid": "订单已入账,无需补单",
-    "billing.orderNotFound": "订单不存在",
-    "billing.orderStateNotBackfillable": "订单状态 {status} 不可补单",
-    "billing.realNameRequiredForRecharge": "按监管要求,充值前需完成实名认证",
-    "billing.refundAlreadyApplied": "该订单已有进行中的退款申请,请勿重复提交",
+    "billing.invoiceNotFound": "Invoice request not found",
+    "billing.invoiceNothingToBill": (
+        "Nothing to invoice for period {period} (no paid top-ups, or already fully requested)"
+    ),
+    "billing.invoicePeriodAlreadyApplied": (
+        "Period {period} already has a pending or issued invoice — do not resubmit"
+    ),
+    "billing.invoicePeriodNotOpen": (
+        "Period {period} has not ended yet: request the current month's invoice from the 1st "
+        "of next month"
+    ),
+    "billing.invoiceStateNotIssuable": (
+        "Invoice request is {status} — only pending requests can be issued"
+    ),
+    "billing.invoiceStateNotRejectable": (
+        "Invoice request is {status} — only pending requests can be rejected"
+    ),
+    "billing.mockCallbackParseFailed": "Failed to parse mock callback",
+    "billing.mockDevOnly": "The mock channel is dev-only",
+    "billing.orderAlreadyPaid": "Order already credited — no backfill needed",
+    "billing.orderNotFound": "Order not found",
+    "billing.orderStateNotBackfillable": "Order status {status} cannot be backfilled",
+    "billing.realNameRequiredForRecharge": (
+        "Regulations require identity verification before topping up"
+    ),
+    "billing.refundAlreadyApplied": (
+        "This order already has an active refund request — do not resubmit"
+    ),
     "billing.refundAmountExceeded": (
-        "退款金额不能超过可退上限 ¥{max}(订单金额 ¥{order},已退 ¥{refunded},可退余额 ¥{refundable})"
-    ),
-    "billing.refundNotRefundable": (
-        "可退余额不足(渠道实付扣除已消费/已退后剩 ¥{refundable},应退 ¥{amount});请取消该退款单"
-    ),
-    "billing.refundPayoutChannelMismatch": (
-        "打款渠道须与订单支付渠道原路一致(应为 {expected});确需线下打款请选 offline 并留存凭证"
-    ),
-    "billing.refundCumulativeExceeded": (
-        "累计退款将超过订单金额(订单 ¥{order},已退 ¥{refunded},本次 ¥{amount}):"
-        "数据异常,请核查后取消该退款单"
+        "Refund amount exceeds the refundable cap CN¥{max} (order CN¥{order}, already "
+        "refunded CN¥{refunded}, refundable balance CN¥{refundable})"
     ),
     "billing.refundBalanceConsumed": (
-        "余额已被消费,暂不能核销退款(当前余额 ¥{balance},应退 ¥{amount});请取消该退款单"
+        "Balance has since been spent and cannot cover this refund (current CN¥{balance}, "
+        "required CN¥{amount}) — cancel the request instead"
     ),
-    "billing.refundChannelReversed": "该订单支付已被支付渠道冲正(拒付),不可申请退款,请联系客服",
-    "billing.refundInvoiceIssued": "该订单已开具发票,须先红冲后才能退款,请联系客服",
-    "billing.refundNotFound": "退款单不存在",
-    "billing.refundOrderNotPaid": "仅支付成功的充值订单可申请退款",
+    "billing.refundChannelReversed": (
+        "This order's payment was reversed (charged back) by the payment channel and cannot "
+        "be refunded — contact support"
+    ),
+    "billing.refundCumulativeExceeded": (
+        "Cumulative refunds would exceed the order amount (order CN¥{order}, already refunded "
+        "CN¥{refunded}, this request CN¥{amount}) — data anomaly, investigate and cancel this "
+        "refund"
+    ),
+    "billing.refundInvoiceIssued": (
+        "An invoice has been issued for this order; it must be voided (red-letter) before a "
+        "refund — contact support"
+    ),
+    "billing.refundNotFound": "Refund request not found",
+    "billing.refundNotRefundable": (
+        "Refundable balance is insufficient (CN¥{refundable} remains of channel-paid funds "
+        "after consumption/refunds, CN¥{amount} required) — cancel the request instead"
+    ),
+    "billing.refundOrderNotPaid": "Only successfully paid top-up orders can be refunded",
+    "billing.refundPayoutChannelMismatch": (
+        "Payout channel must match the order's payment channel (expected {expected}); choose "
+        "offline only when necessary and keep the voucher"
+    ),
     "billing.refundPayoutSamePerson": (
-        "打款登记人与审批人不得为同一人(双人制衡),请由另一位财务操作"
+        "The payout registrar must not be the reviewer (two-person rule) — ask another "
+        "finance admin"
     ),
-    "billing.refundStateNotCancellable": "退款单状态 {status} 不可取消",
-    "billing.refundStateNotPayable": "退款单状态 {status} 不可登记打款",
-    "billing.refundStateNotReviewable": "退款单状态 {status} 不可审批",
-    "billing.settlementGapNotFound": "结算缺口不存在",
-    "billing.settlementGapNotReplayable": "该缺口类型({reason})不支持重放:请人工核查后核销",
-    "billing.settlementGapObjectGone": "缺口关联对象(id={objectId})已不存在,请人工核查后核销",
-    "billing.unknownChannel": "未知支付渠道:{name}",
-    "billing.wechatCallbackMerchantMismatch": "微信回调的商户信息与本平台不符",
-    "billing.wechatCallbackVerifyFailed": "微信回调验签失败",
-    "billing.wechatCreateFailed": "微信下单失败:{message}",
-    "billing.wechatCredentialsIncomplete": "微信支付商户凭据不完整(管理端·平台配置)",
-    "billing.wechatQueryFailed": "微信查单失败:{message}",
-    "catalog.imageRefExists": "镜像 image_ref 已存在",
-    "catalog.prewarmDisabled": "该镜像已关闭预热,请先开启",
-    "catalog.priceTooSmall": "单价过小:精确到 0.0001 元/时后不能为 0",
-    "catalog.priceHourlyTwoDecimals": (
-        "按小时计费的规格单价最多 2 位小数(逐小时按 2 位入账,更多位数会产生舍入漂移);"
-        "4 位精度仅用于数据盘 GB·月价"
+    "billing.refundStateNotCancellable": "Refund request in status {status} cannot be cancelled",
+    "billing.refundStateNotPayable": "Refund request in status {status} cannot be paid out",
+    "billing.refundStateNotReviewable": "Refund request in status {status} cannot be reviewed",
+    "billing.settlementBehind": (
+        "Settlement is catching up; try converting to a subscription again shortly"
     ),
-    "catalog.skuNotSellable": (
-        "集群中没有「{model} × {pool} 池」的 Ready 节点,上架后用户将无法开机;确认可强制上架"
+    "billing.settlementGapNotFound": "Settlement gap not found",
+    "billing.settlementGapNotReplayable": (
+        "This gap type ({reason}) cannot be replayed — investigate and resolve manually"
     ),
-    "catalog.skuNotSellableCpu": (
-        "集群中没有「{pool} 池」的 Ready 节点,上架后用户将无法开机;确认可强制上架"
+    "billing.settlementGapObjectGone": (
+        "The object (id={objectId}) no longer exists — replay impossible, resolve manually"
     ),
-    "catalog.isolationChangeNeedsOffSale": (
-        "在售规格不能改池或 MIG 切片:两者决定隔离方式与用户看到的规格,改了就是另一件商品。"
-        "请先下架,或新建规格"
+    "billing.subscriptionAlreadyActive": (
+        "This instance already has an active subscription; use renew to extend it"
     ),
-    "catalog.skuOffSale": "该规格已下架",
-    "catalog.tierPoolMismatch": "档位 {tier} 只能落 {pools} 池,当前为 {pool}",
+    "billing.subscriptionCancelled": (
+        "This instance's subscription has been cancelled and cannot be renewed"
+    ),
+    "billing.subscriptionExpired": (
+        "The subscription has expired. Renew it before starting the instance"
+    ),
+    "billing.subscriptionMissing": "This instance has no renewable subscription",
+    "billing.unknownChannel": "Unknown payment channel: {name}",
+    "billing.wechatCallbackMerchantMismatch": (
+        "The WeChat Pay notification's merchant details do not match this platform"
+    ),
+    "billing.wechatCallbackVerifyFailed": "WeChat Pay callback signature verification failed",
+    "billing.wechatCreateFailed": "WeChat Pay order creation failed: {message}",
+    "billing.wechatCredentialsIncomplete": (
+        "WeChat Pay merchant credentials incomplete (Admin · Platform Config)"
+    ),
+    "billing.wechatQueryFailed": "WeChat Pay order query failed: {message}",
     "catalog.cpuSkuGpuFieldsMustBeZero": (
-        "CPU 规格不带卡:GPU 型号须留空,算力份额/显存/单实例卡数须为 0,且不能填 MIG 切片"
+        "CPU specs carry no GPU: leave the GPU model empty, set compute share / VRAM / GPUs "
+        "per instance to 0, and leave the MIG profile blank"
     ),
     "catalog.gpuSkuNeedsGpuFields": (
-        "GPU 规格必须填 GPU 型号,且算力份额/显存/单实例卡数都不能为 0"
+        "GPU specs need a GPU model, and compute share / VRAM / GPUs per instance cannot be 0"
     ),
-    "catalog.migProfileMismatch": "mig 池必须填切片规格,其它池必须留空",
+    "catalog.imageRefExists": "This image_ref already exists",
+    "catalog.isolationChangeNeedsOffSale": (
+        "A listed SKU cannot change its pool or MIG profile: both decide the isolation "
+        "mechanism and the spec buyers see, so changing them makes it a different product. "
+        "Delist it first, or create a new SKU"
+    ),
+    "catalog.migProfileMismatch": (
+        "The mig pool requires a slice profile; other pools must leave it empty"
+    ),
+    "catalog.prewarmDisabled": "Prewarming is disabled for this image — enable it first",
+    "catalog.priceHourlyTwoDecimals": (
+        "Hourly-billed specs allow at most 2 decimal places (billed per hour at 2 decimals — "
+        "more digits cause rounding drift); 4-digit precision is only for data-disk GB-month "
+        "prices"
+    ),
+    "catalog.priceTooSmall": "Unit price too small: it rounds to 0 at 0.0001 CNY/hour",
     "catalog.skuBusinessKeyExists": (
-        "相同型号、档位、池、切片、算力份额与 vCPU/内存的规格已存在,请直接编辑该规格"
+        "A SKU with the same model, tier, pool, MIG profile, cores share and vCPU/memory "
+        "already exists — edit that one instead"
     ),
-    "common.forbidden": "无权访问",
-    "common.httpError": "请求失败({status})",
-    "common.internal": "服务器内部错误,请稍后重试",
-    "common.methodNotAllowed": "该接口不支持此请求方法",
-    "common.networkError": "网络连接失败,请检查网络后重试",
-    "common.notFound": "资源不存在",
-    "common.payloadTooLarge": "请求体过大,请精简内容后重试",
-    "common.auditUnavailable": "审计写入持续失败,写操作已暂时拒绝;请稍后重试或联系平台",
-    "common.unauthorized": "未登录或凭证已过期",
-    "common.badCursor": "无效的分页游标",
+    "catalog.skuNotSellable": (
+        "No Ready node of “{model} × {pool} pool” exists in the cluster; instances of this "
+        "spec would never start. Confirm to force-list it"
+    ),
+    "catalog.skuNotSellableCpu": (
+        "No Ready node in the {pool} pool; users will not be able to start instances after "
+        "listing. Confirm to force listing"
+    ),
+    "catalog.skuOffSale": "This spec has been delisted",
+    "catalog.tierPoolMismatch": "Tier {tier} may only run on the {pools} pool, but this is {pool}",
+    "common.auditUnavailable": (
+        "Audit writes are failing persistently; write operations are temporarily rejected — "
+        "retry later or contact the platform"
+    ),
+    "common.badCursor": "Invalid pagination cursor",
+    "common.forbidden": "You do not have access",
+    "common.httpError": "Request failed ({status})",
     "common.idempotencyKeyMismatch": (
-        "同一幂等键对应了不同的请求参数,已按冲突拒绝:如需新操作请更换幂等键后重试"
+        "The same idempotency key was used with different request parameters and was rejected "
+        "as a conflict — retry with a new key for a new operation"
     ),
-    "common.rateLimited": "尝试过于频繁,请稍后再试",
-    "common.retryableConflict": "请求与另一个进行中的操作冲突,请重试",
-    "common.validation": "参数校验失败",
-    "disks.capacityQuota": "数据盘总容量将超过上限({max} GB),请删除不用的盘或联系客服提额",
-    "disks.countQuota": "数据盘数量已达上限({max} 块),请删除不用的盘或联系客服提额",
-    "disks.realNameRequired": "按监管要求,开通存储前需完成实名认证",
-    "disks.expandNeedsActive": "仅正常状态的数据盘可以扩容",
-    "disks.inUseDelete": "数据盘挂载中,请先释放对应实例",
-    "disks.mountedElsewhere": "数据盘已挂载到其他实例",
-    "disks.notMountable": "数据盘当前状态不可挂载",
-    "disks.notProvisioned": "数据盘开通中,请稍后重试;长时间未恢复请联系客服",
-    "disks.shrinkForbidden": "数据盘只支持扩容,不支持缩容",
-    "disks.sizeMax": "容量上限 {max} GB",
-    "disks.sizeRange": "容量须在 {min}~{max} GB 之间",
-    "legal.docNotFound": "法务文档不存在或尚未发布",
-    "legal.draftExists": "该文档与语言已存在草稿,请先处理现有草稿",
-    "legal.versionNotDraft": "版本状态为 {status},仅草稿可执行该操作",
-    "legal.publishedNotArchivable": "已发布版本不可直接归档",
-    "metering.badNodeName": "节点名不合法",
-    "metering.badRange": "range 须为 1h/6h/24h",
-    "metering.unavailable": "监控数据暂不可用,不影响计费(计费依据为实例事件流水)",
-    "nodes.alreadyTerminal": "状态 {status} 已是终态,无需吊销",
-    "nodes.clusterNotReady": "集群调度组件未就绪,暂时无法开机;平台正在自动检测恢复,请稍后重试",
-    "nodes.clusterProbeFailed": "集群连接失败:{error}",
+    "common.internal": "Internal server error — try again later",
+    "common.methodNotAllowed": "This endpoint does not support the request method",
+    "common.networkError": "Network connection failed. Check your connection and try again.",
+    "common.notFound": "Resource not found",
+    "common.payloadTooLarge": "Request body too large — trim the content and try again",
+    "common.rateLimited": "Too many attempts — try again later",
+    "common.retryableConflict": "Conflicts with another operation in progress — please retry",
+    "common.unauthorized": "Not signed in or session expired",
+    "common.validation": "Request validation failed",
+    "disks.capacityQuota": (
+        "Total data disk capacity would exceed the limit ({max} GB) — delete unused disks or "
+        "contact support to raise it"
+    ),
+    "disks.countQuota": (
+        "Data disk limit reached ({max}) — delete unused disks or contact support to raise it"
+    ),
+    "disks.expandNeedsActive": "Only active data disks can be expanded",
+    "disks.inUseDelete": "The data disk is mounted — release the instance first",
+    "disks.mountedElsewhere": "The data disk is mounted on another instance",
+    "disks.notMountable": "The data disk cannot be mounted in its current state",
+    "disks.notProvisioned": (
+        "Data disk is still being provisioned — retry shortly; contact support if it persists"
+    ),
+    "disks.realNameRequired": (
+        "Regulations require identity verification before provisioning storage — complete it "
+        "under Settings · Identity Verification first"
+    ),
+    "disks.shrinkForbidden": "Data disks can only be expanded, not shrunk",
+    "disks.sizeMax": "Maximum size is {max} GB",
+    "disks.sizeRange": "Size must be between {min} and {max} GB",
+    "legal.docNotFound": "The legal document does not exist or has not been published",
+    "legal.draftExists": "A draft already exists for this document and locale — handle it first",
+    "legal.publishedNotArchivable": "A published version cannot be archived directly",
+    "legal.versionNotDraft": "Version is in status {status} — only drafts allow this operation",
+    "metering.badNodeName": "Invalid node name",
+    "metering.badRange": "range must be one of 1h/6h/24h",
+    "metering.unavailable": (
+        "Metrics are temporarily unavailable; billing is unaffected (it relies on the "
+        "instance event log)"
+    ),
+    "nodes.alreadyTerminal": "Status {status} is already terminal — no need to revoke",
     "nodes.clusterNotConfigured": (
-        "集群接入参数未配置:请超管在「平台配置 · 集群接入」录入 RKE2 Server 地址与 join token"
+        "Cluster access not configured: a super admin must enter the RKE2 server address and "
+        "join token under Platform Config · Cluster Access"
     ),
-    "nodes.componentProbeFailed": "集群实时探测未取到结果,下方仍是最近一次巡检的快照",
-    "nodes.enrollTransition": "注册状态不允许 {from} → {to}",
-    "nodes.hostnameMismatch": "主机名与登记不符,令牌已作废,请在管理端核对后重新生成",
+    "nodes.clusterNotReady": (
+        "The cluster scheduler is not ready, so instances cannot start right now. The "
+        "platform is checking automatically — please retry shortly"
+    ),
+    "nodes.clusterProbeFailed": "Cluster connection failed: {error}",
+    "nodes.componentProbeFailed": (
+        "Live cluster probe returned nothing — the values below are still the latest patrol "
+        "snapshot"
+    ),
+    "nodes.enrollTransition": "Enrollment status transition {from} → {to} is not allowed",
+    "nodes.hostnameMismatch": (
+        "Hostname does not match the registration; the token is revoked — verify in the admin "
+        "console and regenerate"
+    ),
     "nodes.nodeHasInstances": (
-        "节点上还有 {count} 台未释放实例:先释放后再操作"
-        "(已关机实例的实例盘也钉在本节点,换池后开不了机)"
+        "This node still has {count} instance(s) that are not released. Release them first (a "
+        "stopped instance's instance disk is pinned to this node and will not start after a "
+        "pool change)."
     ),
-    "nodes.nodeNotFound": "节点不在台账中:请确认节点名,或等待下一轮巡检(60 秒)收录后再试",
-    "nodes.poolIncompatible": "无卡节点只能留在 cpu 池,带卡节点不能切到 cpu 池",
-    "nodes.poolMigUnsupported": "{model} 不支持 MIG 切分,不能切到 mig 池",
-    "nodes.poolNotSwitchable": "只支持在 {pools} 之间切换节点池",
-    "nodes.poolPassthroughUnsupported": "{model} 不支持整卡直通,不能切到 kata 池",
-    "nodes.poolUnchanged": "节点已在 {pool} 池,无需切换",
-    "nodes.regenerateNotAllowed": "状态 {status} 不允许重新生成(仅 待执行/已过期/已失败)",
-    "nodes.storageClassMissing": "集群存储未就绪(缺少 {names}),暂时无法开通;请联系平台运维",
-    "orchestrator.accessNeedsRunning": "实例运行中才能获取接入信息",
+    "nodes.nodeNotFound": (
+        "Node is not in the ledger: check the node name, or wait for the next patrol round "
+        "(60s) to pick it up and retry"
+    ),
+    "nodes.poolIncompatible": (
+        "A node without GPUs can only stay in the cpu pool, and a node with GPUs cannot move "
+        "into it."
+    ),
+    "nodes.poolMigUnsupported": (
+        "{model} does not support MIG partitioning, so it cannot move to the mig pool."
+    ),
+    "nodes.poolNotSwitchable": "Node pools can only be switched among {pools}.",
+    "nodes.poolPassthroughUnsupported": (
+        "{model} does not support whole-GPU passthrough, so it cannot move to the kata pool."
+    ),
+    "nodes.poolUnchanged": "This node is already in the {pool} pool.",
+    "nodes.regenerateNotAllowed": (
+        "Status {status} does not allow regeneration (only pending/expired/failed)"
+    ),
+    "nodes.storageClassMissing": (
+        "Cluster storage is not ready (missing {names}), so this cannot be provisioned right "
+        "now — please contact platform operations"
+    ),
+    "orchestrator.accessNeedsRunning": "Connection info is available while the instance is running",
+    "orchestrator.convertNeedsRunningOrStopped": (
+        "Only running or stopped instances can be converted to a subscription"
+    ),
+    "orchestrator.convertNotOnDemand": (
+        "Only pay-as-you-go instances can be converted to a subscription"
+    ),
+    "orchestrator.cpuSkuNoGpu": "This spec is a CPU instance (no GPU); the GPU count cannot be set",
+    "orchestrator.envEntryTooLong": (
+        "Environment variable “{name}” is too long: names up to {key_max} characters, values "
+        "up to {value_max} characters"
+    ),
     "orchestrator.envKeyInvalid": (
-        "环境变量名「{name}」不合法:只能用字母、数字和下划线,且不能以数字开头"
+        "Environment variable name “{name}” is not valid: letters, digits and underscores "
+        "only, and it cannot start with a digit"
     ),
     "orchestrator.envKeyReserved": (
-        "环境变量名「{name}」由平台占用(JUPYTER_ / SUPERDL_ 前缀与 AUTHORIZED_KEYS),请换一个"
+        "Environment variable name “{name}” is reserved by the platform (the JUPYTER_ and "
+        "SUPERDL_ prefixes, and AUTHORIZED_KEYS) — pick another"
     ),
-    "orchestrator.envSecretKeyUnknown": "标为密文的环境变量「{name}」不在环境变量列表里",
-    "orchestrator.envTooMany": "环境变量最多 {max} 个",
-    "orchestrator.envEntryTooLong": (
-        "环境变量「{name}」过长:名称不超过 {key_max} 字符,值不超过 {value_max} 字符"
+    "orchestrator.envSecretKeyUnknown": (
+        "Environment variable “{name}” is marked secret but is not in the variable list"
     ),
-    "orchestrator.forceStopNeedsRunning": "仅运行中的实例可以强制停止",
-    "orchestrator.healthPathSlash": "健康检查路径须以 / 开头",
-    "orchestrator.frozenNeedsRecharge": "实例已因欠费冻结,充值解冻后可开机",
-    "orchestrator.cpuSkuNoGpu": "该规格为 CPU 实例(不带 GPU),不能选择 GPU 数量",
-    "orchestrator.gpuCountRange": "GPU 数量须在 1~{max} 之间",
-    "orchestrator.gpuQuota": "GPU 总数将超过上限({max} 卡),请释放后再创建或联系客服提额",
-    "orchestrator.imageRefInvalid": "镜像地址格式不正确,示例:registry.example.com/pytorch:2.9",
-    "orchestrator.imageRefNotAllowed": "该镜像仓库未被允许,请使用平台镜像或以下仓库:{registries}",
+    "orchestrator.envTooMany": "At most {max} environment variables are allowed",
+    "orchestrator.forceStopNeedsRunning": "Only running instances can be force-stopped",
+    "orchestrator.frozenNeedsRecharge": "Frozen due to arrears — top up to unfreeze, then start",
+    "orchestrator.gpuCountRange": "GPU count must be between 1 and {max}",
+    "orchestrator.gpuQuota": (
+        "Total GPUs would exceed the limit ({max}) — release some or contact support to raise it"
+    ),
+    "orchestrator.healthPathSlash": "The health check path has to start with /",
+    "orchestrator.imageRefInvalid": (
+        "Invalid image reference. Example: registry.example.com/pytorch:2.9"
+    ),
+    "orchestrator.imageRefNotAllowed": (
+        "This image registry is not allowed. Use a platform image or one of: {registries}"
+    ),
     "orchestrator.imageRefNotPinned": (
-        "服务镜像需要指定版本,不能用 latest。请填固定 tag 或 digest,"
-        "示例:registry.example.com/vllm:v0.6.3"
+        "Service images must pin a version; latest is not accepted. Use a fixed tag or "
+        "digest, e.g. registry.example.com/vllm:v0.6.3"
     ),
-    "orchestrator.instanceQuota": "实例数已达上限({max} 台),请释放后再创建或联系客服提额",
-    "orchestrator.invalidTransition": "实例当前状态({from})不允许该操作",
+    "orchestrator.instanceQuota": (
+        "Instance limit reached ({max}) — release some or contact support to raise it"
+    ),
+    "orchestrator.invalidTransition": (
+        "The instance's current state ({from}) does not allow this operation"
+    ),
     "orchestrator.logsNeedsRunning": (
-        "仅运行中或关机中的实例可读取容器日志:已关机实例无 Pod 日志,请开机后再试"
+        "Logs are available only while the instance is running or stopping — a stopped "
+        "instance has no pod logs; start it first"
     ),
-    "orchestrator.logsUnavailable": "日志读取失败,请稍后重试",
-    "orchestrator.noCapacity": "「{model} × {pool} 池」当前无可分配容量,请稍后重试或选择其他规格",
-    "orchestrator.noCapacityCpu": ("「{pool} 池」当前无可分配的 CPU 容量,请稍后重试或选择其他规格"),
+    "orchestrator.logsUnavailable": "Failed to read logs — please retry shortly",
+    "orchestrator.noCapacity": (
+        "No allocatable capacity in “{model} × {pool} pool” right now — retry later or pick "
+        "another spec"
+    ),
+    "orchestrator.noCapacityCpu": (
+        "The {pool} pool has no allocatable CPU capacity right now. Try again later or pick "
+        "another spec"
+    ),
     "orchestrator.nodeUnreachable": (
-        "实例盘所在节点已失联,暂无法开机;平台处理中,恢复后即可开机。"
-        "如长时间未恢复请联系客服(实例盘数据保留在该节点本地盘)"
+        "The node hosting this instance's disk is unreachable and the instance cannot start "
+        "for now — the platform is handling it. Data stays on that node's local disk; contact "
+        "support if it persists"
     ),
-    "orchestrator.releaseNeedsStopped": "关机后才能释放实例",
+    "orchestrator.periodNotEnabled": (
+        "This spec does not support subscriptions; choose pay-as-you-go"
+    ),
+    "orchestrator.periodOnOnDemand": "Pay-as-you-go instances cannot carry a billing period",
+    "orchestrator.periodRequired": "A subscription instance must have a billing period",
+    "orchestrator.preemptNotSpot": "Only spot instances can be reclaimed",
     "orchestrator.realNameRequired": (
-        "按监管要求,开通算力前需完成实名认证:请先到「设置 · 实名认证」完成核验"
+        "Regulations require identity verification before renting compute — complete it under "
+        "Settings · Identity Verification first"
     ),
-    "orchestrator.restartNeedsRunning": "仅运行中的实例可以重启",
+    "orchestrator.releaseNeedsStopped": "Stop the instance before releasing it",
+    "orchestrator.renewNotSubscription": "Only subscription instances can be renewed",
+    "orchestrator.renewReleased": (
+        "The instance is being released or already released and cannot be renewed"
+    ),
+    "orchestrator.restartNeedsRunning": "Only running instances can be restarted",
     "orchestrator.serviceInstanceLifecycle": (
-        "这台实例属于在线服务,请在「在线服务」里停止 / 启动 / 删除该服务"
+        "This instance belongs to an online service; stop, start or delete the service under "
+        '"Services" instead'
     ),
-    "orchestrator.convertNeedsRunningOrStopped": "只有运行中或已关机的实例可以转包周期",
-    "orchestrator.convertNotOnDemand": "只有按量计费的实例可以转包周期",
-    "orchestrator.periodNotEnabled": "该规格暂不支持包周期,请选择按量计费",
-    "orchestrator.preemptNotSpot": "只有竞价实例可以强制回收",
-    "orchestrator.spotNotEnabled": "该规格暂未上竞价档,请选择按量或包周期",
-    "orchestrator.toOnDemandNotSpot": "只有竞价实例可以转按量",
-    "orchestrator.periodOnOnDemand": "按量计费的实例不能带计费周期",
-    "orchestrator.periodRequired": "包周期实例必须选择计费周期",
-    "orchestrator.renewNotSubscription": "只有包周期实例可以续费",
-    "orchestrator.renewReleased": "实例正在释放或已释放,无法续费",
     "orchestrator.servicePortReserved": (
-        "端口 {port} 由平台占用(22 = SSH,8888 = JupyterLab),请把服务改到其他端口"
+        "Port {port} is reserved by the platform (22 for SSH, 8888 for JupyterLab) — move "
+        "your service to another port"
     ),
-    "orchestrator.sshKeyRequired": "请至少选择一个 SSH 公钥(实例仅支持密钥登录)",
-    "orchestrator.sshPortsExhausted": "当前无可分配的 SSH 端口,请稍后重试或联系客服",
-    "orchestrator.startNeedsStopped": "仅已关机的实例可以开机",
-    "orchestrator.stateChangedRetry": "实例状态已被其他操作变更,请刷新后重试",
-    "orchestrator.stopNeedsRunning": "仅运行中的实例可以关机",
+    "orchestrator.spotNotEnabled": (
+        "This spec is not offered on spot; choose pay-as-you-go or a subscription"
+    ),
+    "orchestrator.sshKeyRequired": (
+        "Select at least one SSH public key (instances accept key login only)"
+    ),
+    "orchestrator.sshPortsExhausted": (
+        "No SSH port available right now — try again later or contact support"
+    ),
+    "orchestrator.startNeedsStopped": "Only stopped instances can be started",
+    "orchestrator.stateChangedRetry": (
+        "The instance state was changed by another operation — refresh and retry"
+    ),
+    "orchestrator.stopNeedsRunning": "Only running instances can be stopped",
+    "orchestrator.toOnDemandNotSpot": "Only spot instances can be switched to pay-as-you-go",
     "orchestrator.vcpuQuota": (
-        "CPU 实例的 vCPU 总数将超过上限({max} 核),请释放后再创建或联系客服提额"
+        "CPU instances would exceed your vCPU limit ({max} vCPU). Release one first or "
+        "contact support to raise the limit"
     ),
-    "services.apiKeyInvalid": "访问密钥无效",
-    "services.apiKeyNotFound": "访问密钥不存在",
-    "services.apiKeyQuota": "单个服务的访问密钥已达上限({max} 把),请先吊销不用的密钥",
-    "services.deleteNeedsStopped": "请先停止服务,再删除",
-    "services.notFound": "服务不存在",
-    "services.released": "服务已删除,不能再操作",
-    "services.rolloutInFlight": "服务正在更新版本,完成后再试",
-    "services.rolloutNeedsSettled": "当前版本正在变更中(部署 / 停止 / 释放),稳定后再更新版本",
-    "services.rolloutSubscriptionUnsupported": "包周期服务暂不支持更新版本",
-    "services.envKeepUnknown": "要沿用的密文变量在当前版本里不存在:{keys}",
-    "tickets.notFound": "工单不存在",
-    "tickets.messageLimitReached": "本工单回复已达上限({max} 条),请新建工单继续",
-    "tickets.openLimitReached": "进行中的工单已达上限({max} 个),请等待客服处理或关闭后再提交",
-    "tickets.stateNotClosable": "工单状态 {status} 不可关闭",
-    "tickets.stateNotRepliable": "工单已解决或关闭,不可再回复;如问题未解决请新建工单",
-    "tickets.stateNotResolvable": "工单状态 {status} 不可标记解决",
+    "services.apiKeyInvalid": "Invalid API key",
+    "services.apiKeyNotFound": "API key not found",
+    "services.apiKeyQuota": (
+        "This service already has the maximum number of API keys ({max}); revoke unused keys first"
+    ),
+    "services.deleteNeedsStopped": "Stop the service before deleting it",
+    "services.envKeepUnknown": (
+        "Secret variables to keep do not exist on the current revision: {keys}"
+    ),
+    "services.notFound": "Service not found",
+    "services.released": "The service has been deleted and can no longer be operated",
+    "services.rolloutInFlight": (
+        "The service is updating to a new version; try again once it finishes"
+    ),
+    "services.rolloutNeedsSettled": (
+        "The current revision is still changing (deploying / stopping / releasing); update it "
+        "once it settles"
+    ),
+    "services.rolloutSubscriptionUnsupported": (
+        "Subscription services do not support revision updates yet"
+    ),
+    "tickets.messageLimitReached": (
+        "This ticket has reached the limit of {max} replies — please open a new ticket to continue"
+    ),
+    "tickets.notFound": "Ticket not found",
+    "tickets.openLimitReached": (
+        "You have reached the limit of {max} open tickets — wait for a reply or close some "
+        "before submitting a new one"
+    ),
+    "tickets.stateNotClosable": "A ticket in status {status} cannot be closed",
+    "tickets.stateNotRepliable": (
+        "This ticket is resolved or closed and no longer accepts replies — please open a new "
+        "ticket if the issue persists"
+    ),
+    "tickets.stateNotResolvable": "A ticket in status {status} cannot be marked resolved",
 }
 
 
 def render_message(key: str, params: Mapping[str, Any] | None) -> str:
-    """按目录渲染中文文案;缺键/缺参回落并留痕。"""
+    """Render the English text for a key; unknown keys and missing params fall back and log."""
     template = MESSAGES.get(key)
     if template is None:
         get_logger("app.messages").warning("message_key_missing", key=key)

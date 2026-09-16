@@ -1,4 +1,5 @@
-"""法务文档:公开端点(回落/404)、注册落证、版本流(草编发归)。"""
+"""Legal documents: public endpoint (profile default, fallback chain, 404), registration consents,
+version flow (draft → edit → publish → archive) including the seeded en-US drafts."""
 
 import hashlib
 
@@ -7,6 +8,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.audit import AuditLog
+from app.core.config import get_settings
 from app.modules.legal.models import LegalDocVersion, UserConsent
 from tests.helpers import admin_headers, register
 
@@ -25,7 +27,7 @@ async def _create_draft(
 
 class TestPublicEndpoint:
     async def test_published_returned(self, client: AsyncClient):
-        resp = await client.get("/api/v1/legal/terms")
+        resp = await client.get("/api/v1/legal/terms", params={"lang": "zh-CN"})
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["doc_key"] == "terms"
@@ -37,12 +39,21 @@ class TestPublicEndpoint:
         assert body["published_at"]
 
     async def test_en_fallback_to_zh(self, client: AsyncClient):
-        """en-US 未预置:回落 zh-CN 且 fallback=true。"""
+        """The en-US seed is a draft, so en-US (explicit or implied by the `none` profile) gets the
+        zh-CN publication with fallback=true."""
         resp = await client.get("/api/v1/legal/privacy", params={"lang": "en-US"})
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["locale"] == "zh-CN"
         assert body["fallback"] is True
+        implicit = (await client.get("/api/v1/legal/privacy")).json()
+        assert implicit["locale"] == "zh-CN" and implicit["fallback"] is True
+
+    async def test_profile_default_locale(self, client: AsyncClient, monkeypatch):
+        """compliance_profile=cn defaults to zh-CN: no lang → zh-CN with fallback=false."""
+        monkeypatch.setattr(get_settings(), "compliance_profile", "cn")
+        body = (await client.get("/api/v1/legal/terms")).json()
+        assert body["locale"] == "zh-CN" and body["fallback"] is False
 
     async def test_no_published_404(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
@@ -221,7 +232,9 @@ class TestVersionFlow:
         terms_zh = cells[("terms", "zh-CN")]
         assert terms_zh["published"]["version"] == 1
         assert terms_zh["draft"] is None
-        assert cells[("terms", "en-US")]["published"] is None
+        terms_en = cells[("terms", "en-US")]
+        assert terms_en["published"] is None
+        assert terms_en["draft"]["version"] == 1
 
         resp = await client.get(
             "/api/admin/v1/legal-docs/terms/versions",
@@ -231,7 +244,29 @@ class TestVersionFlow:
         assert resp.status_code == 200, resp.text
         assert [v["version"] for v in resp.json()] == [1]
 
-        draft_en = await _create_draft(client, headers, locale="en-US")
-        assert draft_en["locale"] == "en-US"
-        assert draft_en["version"] == 1
-        assert "服务说明" in draft_en["content_md"]
+        dup = await client.post(
+            "/api/admin/v1/legal-docs/terms/versions", json={"locale": "en-US"}, headers=headers
+        )
+        assert dup.status_code == 409
+
+    async def test_seeded_en_draft_publishes_and_serves_by_default(
+        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
+    ):
+        """Publishing the seeded en-US template makes it the document served to the `none` profile
+        without a fallback; a later en-US draft copies the en-US text, not the zh-CN one."""
+        headers = await admin_headers(sm, client)
+        resp = await client.get(
+            "/api/admin/v1/legal-docs/terms/versions", params={"locale": "en-US"}, headers=headers
+        )
+        (draft,) = resp.json()
+        assert draft["status"] == "draft" and draft["version"] == 1
+        resp = await client.post(
+            f"/api/admin/v1/legal-docs/versions/{draft['id']}/publish", headers=headers
+        )
+        assert resp.status_code == 200, resp.text
+        body = (await client.get("/api/v1/legal/terms")).json()
+        assert body["locale"] == "en-US" and body["fallback"] is False
+        assert body["title"] == "Terms of Service"
+        next_draft = await _create_draft(client, headers, locale="en-US")
+        assert next_draft["version"] == 2
+        assert "Draft template seeded by the platform" in next_draft["content_md"]

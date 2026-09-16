@@ -7,7 +7,8 @@ Locale = Literal["zh-CN", "en-US"]
 
 
 class LegalDocOut(BaseModel):
-    """公开端点:当前 published 版。fallback=true 表示请求语言缺失、回落 zh-CN。"""
+    """Public endpoint: the current published version. fallback=true means the requested locale
+    has no published version and another locale is served."""
 
     doc_key: str
     locale: str

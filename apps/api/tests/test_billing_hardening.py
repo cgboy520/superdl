@@ -216,7 +216,7 @@ class TestAffordGuard:
             "required": "3.36",
             "inflight": "1.68",
         }
-        assert "在途资源" in exc.value.message
+        assert exc.value.message_key == "billing.insufficientForInFlight"
 
     async def test_pending_starting_instance_counted(self, sm):
         """creating/starting 实例计入燃烧率。"""
