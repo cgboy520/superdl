@@ -100,7 +100,8 @@ def supports_mig(canonical: str | None) -> bool:
 
 # 整卡直通(kata 池)可落的数据中心家族:独立 PCIe / SXM 板卡,NVIDIA 对 Maxwell 之后的
 # 数据中心卡一律支持 pass-through。RTX 独立卡按前缀放行(R465 起官方开放 GeForce 直通)。
-# Grace 超级芯片的集成 GPU(GB10 / GB200)不在内:固件强制 1:1 IOMMU 映射,内核拒绝绑 vfio-pci。
+# Grace superchip integrated GPUs (GB10 / GB200) are excluded: firmware forces a 1:1 IOMMU
+# mapping and the kernel refuses to bind them to vfio-pci (runbooks/hardware-notes.md).
 PASSTHROUGH_CAPABLE_FAMILIES = frozenset(
     {
         "A10",

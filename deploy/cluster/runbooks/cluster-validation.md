@@ -9,6 +9,7 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 - [ ] `kubectl get node -L node-restriction.kubernetes.io/superdl-pool`:池标签齐全,**kata 与 hami 无交集**;`-L superdl.io/pool` 一列全空(旧键已由平台摘除,迁移见 [node-pool-switch.md](./node-pool-switch.md)「池标签键迁移」)
 - [ ] `kubectl explain pod.spec.hostUsers` 存在;跑一个 `hostUsers: false` 测试 Pod,容器内 `readlink /proc/self/ns/user` 与宿主不同
 - [ ] 内核 ≥6.3:`uname -r`
+- [ ] 安装源可达:`curl -fsSI https://get.rke2.io` / `https://get.k3s.io`(或所选 `node_install_mirror` 对应的镜像站)返回 200;硬件相关限制见 [hardware-notes.md](./hardware-notes.md)
 - [ ] 平台组件落点标签只在控制面节点上:`kubectl get nodes -l node-restriction.kubernetes.io/superdl-infra=true` 至少一台,且**没有一台带 `node-restriction.kubernetes.io/superdl-pool`**;`preflight.sh` 同款正反两查。api / worker / 前端 / Envoy 的 2 副本按 hostname `DoNotSchedule` 分布:**infra 节点 ≥2 台才有冗余**(一台时两副本同机),两台时 `kubectl -n superdl get pods -o wide` 每个 Deployment 的两副本落在不同节点;拔掉一台 infra 节点后替补副本保持 Pending 直到节点恢复,这是预期信号
 - [ ] **全局 Pod 兜底策略是 `Deny`**(`superdl-global-pod-guard`,`admission/tenant-restrictions.yaml`):`kubectl debug node/<node>` 默认落 `default` ns 会被拒,排障加 `--namespace kube-system`(豁免 ns)
 

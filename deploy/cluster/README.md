@@ -53,7 +53,8 @@ full 档另需 `cert-manager/acme-dns-account`(DNS01 账户,见 `runbooks/acme-d
 
 1. **server 节点**(装机基线见 `../ansible/`):
    ```bash
-   curl -sfL https://rancher-mirror.rancher.cn/rke2/install.sh | INSTALL_RKE2_MIRROR=cn INSTALL_RKE2_CHANNEL=latest sh -
+   curl -sfL https://get.rke2.io | INSTALL_RKE2_CHANNEL=latest sh -
+   # Mainland China: curl -sfL https://rancher-mirror.rancher.cn/rke2/install.sh | INSTALL_RKE2_MIRROR=cn INSTALL_RKE2_CHANNEL=latest sh -
    cp rke2/audit-policy.yaml /etc/rancher/rke2/audit-policy.yaml
    cp rke2/server-config.yaml /etc/rancher/rke2/config.yaml
    systemctl enable --now rke2-server
@@ -107,7 +108,8 @@ kubectl label nodes -l node-role.kubernetes.io/control-plane \
    ```bash
    mkdir -p /etc/rancher/k3s && cp k3s/server-config.yaml /etc/rancher/k3s/config.yaml
    cp rke2/audit-policy.yaml /etc/rancher/k3s/audit-policy.yaml
-   curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh | INSTALL_K3S_MIRROR=cn sh -s - server
+   curl -sfL https://get.k3s.io | sh -s - server
+   # Mainland China: curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh | INSTALL_K3S_MIRROR=cn sh -s - server
    ```
    (config 已含 `disable: traefik`、`embedded-registry: true`=Spegel,以及 `flannel-backend: none` / `disable-network-policy: true` / `disable-kube-proxy: true`——CNI、NetworkPolicy、kube-proxy 全归 Cilium。
    这几项都必须**装机即设**:事后改要全集群重启 k3s 并重建全部 Pod,见下「给已有集群换 CNI」)
@@ -160,7 +162,7 @@ kubectl label nodes -l node-role.kubernetes.io/control-plane \
 
 ```bash
 mkdir -p /tmp/k3s-state && gpg --batch --decrypt --passphrase-file /etc/superdl/pg/backup-passphrase k3s-state-<主机>-<ts>.tar.gz.gpg | tar -xzf - -C /tmp/k3s-state
-curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh | INSTALL_K3S_MIRROR=cn INSTALL_K3S_SKIP_START=true sh -s - server
+curl -sfL https://get.k3s.io | INSTALL_K3S_SKIP_START=true sh -s - server   # mainland China: rancher-mirror.rancher.cn/k3s/k3s-install.sh with INSTALL_K3S_MIRROR=cn
 mkdir -p /var/lib/rancher/k3s/server/db && cp -a /tmp/k3s-state/server/{token,agent-token,cred,tls} /var/lib/rancher/k3s/server/
 # etcd:用快照重置(token 必须是备份里那份,快照内引导数据靠它解密);命令结束后再 start
 k3s server --cluster-reset --cluster-reset-restore-path=/tmp/k3s-state/server/db/snapshots/<快照文件>

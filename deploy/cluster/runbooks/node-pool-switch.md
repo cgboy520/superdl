@@ -18,7 +18,7 @@
   mig 看 gpu-operator。管理端集群页组件体检同判据。
 - 切到 mig 池要求机型支持 MIG(A100 / A800 / A30 / H100 / H800 / H200 / H20 / B200 / GB200 系)。
 - 切到 kata 池要求机型能整卡直通(`core/gpu_models.PASSTHROUGH_CAPABLE_FAMILIES`:独立 PCIe / SXM 板卡)。
-  Grace 超级芯片的集成 GPU(GB10 / GB200)固件强制 1:1 IOMMU 映射,内核拒绝把它绑到 `vfio-pci`,平台直接 409。
+  Grace 超级芯片的集成 GPU(GB10 / GB200)固件强制 1:1 IOMMU 映射,内核拒绝把它绑到 `vfio-pci`,平台直接 409(硬件事实汇总见 [hardware-notes.md](./hardware-notes.md))。
 - 切到 kata 池还要求**该节点宿主没有 NVIDIA 驱动**,先做下一节。两个机型闸门在管理端表现为目标池灰置。
 - 准入策略已是允许 GPU operand 键的版本,否则 worker 改标签会被 Deny:
 
