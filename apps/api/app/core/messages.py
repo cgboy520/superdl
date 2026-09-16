@@ -162,6 +162,10 @@ MESSAGES: dict[str, str] = {
         "Period {period} has not ended yet: request the current month's invoice from the 1st "
         "of next month"
     ),
+    "billing.invoiceTaxIdInvalidCn": (
+        "Company tax ID must be the 18-character unified social credit code (digits and "
+        "uppercase letters)"
+    ),
     "billing.invoiceStateNotIssuable": (
         "Invoice request is {status} — only pending requests can be issued"
     ),
@@ -198,7 +202,7 @@ MESSAGES: dict[str, str] = {
         "refund"
     ),
     "billing.refundInvoiceIssued": (
-        "An invoice has been issued for this order; it must be voided (red-letter) before a "
+        "An invoice has been issued for this order; it must be voided or credited before a "
         "refund — contact support"
     ),
     "billing.refundNotFound": "Refund request not found",

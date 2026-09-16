@@ -8,6 +8,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import select, update
 
+from app.core.config import get_settings
 from app.core.timeutil import now_utc
 from app.modules.billing.models import InvoiceRequest, Order
 from tests.helpers import (
@@ -225,16 +226,31 @@ class TestCreate:
         resp = await apply_invoice(client, headers, p1, tax_id="   ")
         assert resp.status_code == 422
 
-    async def test_company_tax_id_format(self, client: AsyncClient, sm):
-        """企业抬头税号必须是 18 位统一社会信用代码(GB 32100 字符集)。"""
+    async def test_company_tax_id_format_follows_compliance_profile(
+        self, client: AsyncClient, sm, monkeypatch
+    ):
+        """cn profile: the 18-character unified social credit code (upper-cased on input, GB 32100
+        alphabet) is the only accepted form; the generic profile stores any 2–32 character ID."""
         headers = await user_headers(client, "13700000217")
+        other = await user_headers(client, "13700000218")
         p1, at1 = past_period(1)
         await paid_order_at(client, sm, headers, "50.00", at1)
-        for bad in ("TAX-123", "91310000MA1K0000XI", "91310000ma1k0000x0"):
+        await paid_order_at(client, sm, other, "50.00", at1)
+        monkeypatch.setattr(get_settings(), "compliance_profile", "cn")
+        for bad in ("TAX-123", "91310000MA1K0000XI"):
             resp = await apply_invoice(client, headers, p1, tax_id=bad)
-            assert resp.status_code == 422, bad
-        resp = await apply_invoice(client, headers, p1, tax_id="91310000MA1K0000X0")
+            assert resp.status_code == 400, bad
+            assert resp.json()["message_key"] == "billing.invoiceTaxIdInvalidCn"
+        resp = await apply_invoice(client, headers, p1, tax_id="91310000ma1k0000x0")
         assert resp.status_code == 201, resp.text
+        assert resp.json()["tax_id"] == "91310000MA1K0000X0"
+
+        monkeypatch.setattr(get_settings(), "compliance_profile", None)
+        resp = await apply_invoice(client, other, p1, tax_id="X")
+        assert resp.status_code == 422
+        resp = await apply_invoice(client, other, p1, tax_id="DE123456789")
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["tax_id"] == "DE123456789"
 
     async def test_personal_title_needs_no_tax_id(self, client: AsyncClient, sm):
         """个人抬头:税号不需要,即使夹带也不落库。"""

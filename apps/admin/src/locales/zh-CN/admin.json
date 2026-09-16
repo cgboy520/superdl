@@ -382,7 +382,7 @@
     "invoiceIssueNote": "账期 {{period}} · 金额 {{amount}} · 抬头 {{title}} · 接收邮箱 {{email}}",
     "invoiceIssueTitle": "发票开票",
     "invoiceNoLabel": "发票号",
-    "invoiceNoPlaceholder": "税务系统开具的发票号码",
+    "invoiceNoPlaceholder": "开票系统生成的发票号码",
     "invoiceNoRule": "请填写发票号(至少 2 位)",
     "invoiceReject": "驳回",
     "invoiceRejectConfirm": "驳回开票申请 #{{id}}({{amount}})?站内信将告知用户理由;用户可修改后重新提交。",

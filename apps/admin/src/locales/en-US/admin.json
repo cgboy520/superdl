@@ -395,7 +395,7 @@
     "invoiceIssueNote": "Period {{period}} · amount {{amount}} · title {{title}} · email {{email}}",
     "invoiceIssueTitle": "Issue invoice",
     "invoiceNoLabel": "Invoice no.",
-    "invoiceNoPlaceholder": "Invoice number from the tax system",
+    "invoiceNoPlaceholder": "Invoice number from your invoicing system",
     "invoiceNoRule": "Invoice number required (min 2 chars)",
     "invoiceReject": "Reject",
     "invoiceRejectConfirm": "Reject invoice request #{{id}} ({{amount}})? The user is notified with the reason and can resubmit after revising.",
