@@ -76,6 +76,8 @@ import type {
   ClusterStatusOut,
   ComponentProbeOut,
   DeadTaskOut,
+  EmailTestOut,
+  EmailTestRequest,
   EnrollmentCommandOut,
   EnrollmentCreate,
   EnrollmentRegenerateRequest,
@@ -2228,6 +2230,31 @@ export const adminUpdatePlatformConfigApiAdminV1PlatformConfigPut = async (platf
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     body: JSON.stringify(platformConfigUpdateRequest)
+  }
+);}
+
+
+export const getAdminTestEmailApiAdminV1PlatformConfigTestEmailPostUrl = () => {
+
+
+
+
+  return `/api/admin/v1/platform-config/test-email`
+}
+
+/**
+ * Send one test verification email through the effective email configuration
+ * (rate-limited, audited).
+ * @summary Admin Test Email
+ */
+export const adminTestEmailApiAdminV1PlatformConfigTestEmailPost = async (emailTestRequest: EmailTestRequest, options?: Parameters<typeof customFetch>[1]): Promise<EmailTestOut> => {
+
+  return customFetch<EmailTestOut>(getAdminTestEmailApiAdminV1PlatformConfigTestEmailPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(emailTestRequest)
   }
 );}
 

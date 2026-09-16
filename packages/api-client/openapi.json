@@ -2944,6 +2944,37 @@
         "title": "DiskOut",
         "type": "object"
       },
+      "EmailTestOut": {
+        "properties": {
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "provider"
+        ],
+        "title": "EmailTestOut",
+        "type": "object"
+      },
+      "EmailTestRequest": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "EmailTestRequest",
+        "type": "object"
+      },
       "EnrollmentCommandOut": {
         "description": "创建/重生成响应:token 明文仅此一次出现。",
         "properties": {
@@ -6450,6 +6481,7 @@
               "payment_wechat",
               "payment_alipay",
               "sms",
+              "email",
               "real_name",
               "captcha",
               "compliance",
@@ -9013,7 +9045,6 @@
       "SmsTestRequest": {
         "properties": {
           "phone": {
-            "pattern": "^1\\d{10}$",
             "title": "Phone",
             "type": "string"
           }
@@ -14518,6 +14549,53 @@
           }
         ],
         "summary": "Admin Update Platform Config",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/platform-config/test-email": {
+      "post": {
+        "description": "Send one test verification email through the effective email configuration\n(rate-limited, audited).",
+        "operationId": "admin_test_email_api_admin_v1_platform_config_test_email_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailTestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Test Email",
         "tags": [
           "admin"
         ]

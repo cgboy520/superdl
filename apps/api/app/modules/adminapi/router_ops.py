@@ -17,7 +17,9 @@ from app.core.compliance import current_profile
 from app.core.config import get_settings
 from app.core.csvexport import CSV_RESPONSES, csv_response
 from app.core.db import DbSession
+from app.core.email import EmailError, ensure_email_platform_quota, get_email_channel
 from app.core.errors import AppError, ErrorCode, conflict
+from app.core.handles import NormalizedEmail, NormalizedPhone, mask_handle
 from app.core.http import mark_idempotent_replay
 from app.core.outbox import OutboxTask
 from app.core.pagination import Page, decode_cursor_int
@@ -36,10 +38,10 @@ from app.core.platform_config import (
     set_platform_settings,
 )
 from app.core.ratelimit import check_rate_limit
-from app.core.regex import PHONE_RE_LOOSE
 from app.core.registry import probe_harbor
 from app.core.sms import SmsError, ensure_sms_platform_quota, get_sms_channel
 from app.core.timeutil import now_utc
+from app.core.verification import code_email
 from app.modules.adminapi import export as admin_export, overview
 from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.models import AdminUser
@@ -50,6 +52,7 @@ from app.modules.adminapi.schemas import (
     AuditLogOut,
     DeadTaskOut,
     DeploymentIdentityOut,
+    EmailTestOut,
     OutboxTaskStatusOut,
     OverviewOut,
     PlatformConfigItemOut,
@@ -399,7 +402,7 @@ async def admin_update_platform_config(
 
 
 class SmsTestRequest(BaseModel):
-    phone: str = Field(pattern=PHONE_RE_LOOSE)
+    phone: NormalizedPhone
 
 
 @router.post("/platform-config/test-sms", dependencies=[require_roles()])
@@ -411,7 +414,7 @@ async def admin_test_sms(body: SmsTestRequest, session: DbSession, request: Requ
     channel = await get_sms_channel(session)
     code = f"{secrets.randbelow(10**6):06d}"
     try:
-        await channel.send(body.phone, cfg.sms_template_verify, {"code": code})
+        await channel.send(body.phone, "verify", {"code": code})
     except SmsError as exc:
         raise AppError(
             ErrorCode.SMS_SEND_FAILED,
@@ -421,6 +424,34 @@ async def admin_test_sms(body: SmsTestRequest, session: DbSession, request: Requ
         ) from exc
     set_audit_target(request, f"test-sms:{body.phone}")
     return SmsTestOut(ok=True, provider=cfg.sms_provider)
+
+
+class EmailTestRequest(BaseModel):
+    email: NormalizedEmail
+
+
+@router.post("/platform-config/test-email", dependencies=[require_roles()])
+async def admin_test_email(
+    body: EmailTestRequest, session: DbSession, request: Request
+) -> EmailTestOut:
+    """Send one test verification email through the effective email configuration
+    (rate-limited, audited)."""
+    await check_rate_limit("admin:test-email", max_attempts=10, window_seconds=3600.0)
+    await ensure_email_platform_quota()
+    cfg = await get_runtime_config(session)
+    channel = await get_email_channel(session)
+    content = code_email("test", f"{secrets.randbelow(10**6):06d}")
+    try:
+        await channel.send(body.email, content.subject, content.text, content.html)
+    except EmailError as exc:
+        raise AppError(
+            ErrorCode.SMS_SEND_FAILED,
+            key="adminapi.emailTestFailed",
+            params={"message": str(exc)},
+            http_status=502,
+        ) from exc
+    set_audit_target(request, f"test-email:{mask_handle(body.email)}")
+    return EmailTestOut(ok=True, provider=cfg.email_provider)
 
 
 @router.post("/platform-config/test-registry", dependencies=[require_roles()])

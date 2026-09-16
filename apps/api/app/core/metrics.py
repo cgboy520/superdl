@@ -119,10 +119,10 @@ ENDPOINT_AUTH_DENIED_TOTAL = Counter(
     "服务端点网关鉴权回调拒绝次数(key 不存在/已吊销/服务未就绪);持续非零 = 有人在猜 key",
 )
 USER_SIGNUP_TOTAL = Counter("superdl_user_signup_total", "用户注册成功次数(注册速率告警据此)")
-SMS_SENT_TOTAL = Counter(
-    "superdl_sms_sent_total",
-    "短信发送次数(purpose 区分验证码/通知;费用与滥用告警据此)",
-    ["purpose"],
+VERIFICATION_SENT_TOTAL = Counter(
+    "superdl_verification_sent_total",
+    "Verification codes sent by channel (sms / email) and purpose; cost and abuse alerts",
+    ["channel", "purpose"],
 )
 SSH_PORT_POOL = Gauge(
     "superdl_ssh_port_pool_ports",

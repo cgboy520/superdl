@@ -83,7 +83,7 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:5174"]
 
-    sms_provider: Literal["mock", "aliyun"] = "mock"
+    sms_provider: Literal["mock", "aliyun", "twilio"] = "mock"
     sms_code_ttl_seconds: int = 300
     sms_send_interval_seconds: int = 60
     sms_access_key_id: str | None = None
@@ -91,6 +91,18 @@ class Settings(BaseSettings):
     sms_sign_name: str | None = None
     sms_template_verify: str | None = None
     sms_template_notice: str | None = None
+    sms_twilio_account_sid: str | None = None
+    sms_twilio_auth_token: str | None = None
+    sms_twilio_from: str | None = None
+
+    email_provider: Literal["mock", "smtp"] = "mock"
+    smtp_host: str | None = None
+    smtp_port: str = "587"
+    smtp_security: Literal["starttls", "tls", "none"] = "starttls"
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    email_from: str | None = None
+    email_reply_to: str | None = None
 
     disk_price_gb_month: str = "0.0350"
     disk_min_gb: int = 10
@@ -350,6 +362,11 @@ class Settings(BaseSettings):
         domains = self._secret_domains()
         if "cloud" in domains and self.sms_provider == "mock":
             out.append("sms_provider 不得为 mock(验证码将是固定值)")
+        if "cloud" in domains and self.email_provider == "mock":
+            out.append(
+                "email_provider must not be mock in prod "
+                "(verification codes would be a fixed value)"
+            )
         if self.k8s_backend == "fake":
             out.append("k8s_backend 不得为 fake")
         if "payment" in domains and self.payment_mock:

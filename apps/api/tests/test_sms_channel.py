@@ -6,7 +6,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.core.aliyun import rpc_signed_params
-from app.core.sms import AliyunSmsChannel, SmsError, set_sms_channel
+from app.core.sms import AliyunSmsChannel, SmsError, TwilioSmsChannel, set_sms_channel
 
 
 @pytest.fixture(autouse=True)
@@ -16,7 +16,9 @@ def _reset_channel():
 
 
 class _FailingChannel:
-    async def send(self, phone: str, template: str, params: dict[str, str]) -> None:
+    async def send(
+        self, phone: str, kind: str, params: dict[str, str], *, locale: str = "en-US"
+    ) -> None:
         raise SmsError("provider down")
 
 
@@ -47,11 +49,78 @@ class TestAliyunSignature:
                 200, json={"Code": "isv.BUSINESS_LIMIT_CONTROL", "Message": "限流"}
             )
 
-        ch = AliyunSmsChannel("ak", "sk", "SuperDL", transport=httpx.MockTransport(handler))
-        await ch.send("13800000000", "SMS_123", {"code": "1234"})
+        ch = AliyunSmsChannel(
+            "ak",
+            "sk",
+            "SuperDL",
+            templates={"verify": "SMS_123", "notice": ""},
+            transport=httpx.MockTransport(handler),
+        )
+        await ch.send("13800000000", "verify", {"code": "1234"})
         assert "Signature" in seen[0] and seen[0]["Action"] == "SendSms"
+        assert seen[0]["TemplateCode"] == "SMS_123"
         with pytest.raises(SmsError, match="BUSINESS_LIMIT_CONTROL"):
-            await ch.send("13800000000", "SMS_123", {"code": "1234"})
+            await ch.send("13800000000", "verify", {"code": "1234"})
+
+    async def test_missing_template_code_for_kind_is_a_channel_error(self):
+        """kind → template mapping lives in the channel; an unconfigured kind never hits the API."""
+        ch = AliyunSmsChannel("ak", "sk", "SuperDL", templates={"verify": "SMS_123"})
+        with pytest.raises(SmsError, match="notice"):
+            await ch.send("13800000000", "notice", {"title": "x"})
+
+
+class TestTwilio:
+    def test_request_form_uses_from_or_messaging_service(self):
+        number = TwilioSmsChannel("AC" + "0" * 32, "tok", "+14155550123")
+        form = number.request_form("+8613800001111", "verify", {"code": "654321"}, "en-US")
+        assert form["To"] == "+8613800001111" and form["From"] == "+14155550123"
+        assert "654321" in form["Body"] and "MessagingServiceSid" not in form
+        service = TwilioSmsChannel("AC" + "0" * 32, "tok", "MG" + "a" * 32)
+        form = service.request_form("+8613800001111", "notice", {"title": "Balance low"}, "zh-CN")
+        assert form["MessagingServiceSid"] == "MG" + "a" * 32 and "From" not in form
+        assert form["Body"] == "【SuperDL】Balance low"
+
+    async def test_send_ok_and_rejected(self):
+        seen: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request)
+            if len(seen) == 1:
+                return httpx.Response(201, json={"sid": "SM1", "status": "queued"})
+            return httpx.Response(400, json={"code": 21211, "message": "Invalid 'To' number"})
+
+        ch = TwilioSmsChannel(
+            "AC" + "1" * 32, "secret-token", "+14155550123", transport=httpx.MockTransport(handler)
+        )
+        await ch.send("+8613800001111", "verify", {"code": "1234"})
+        assert seen[0].url.path == "/2010-04-01/Accounts/AC" + "1" * 32 + "/Messages.json"
+        assert seen[0].headers["authorization"].startswith("Basic ")
+        assert b"To=%2B8613800001111" in seen[0].content
+        with pytest.raises(SmsError, match="21211"):
+            await ch.send("+8613800001111", "verify", {"code": "1234"})
+
+
+class TestFactory:
+    def test_provider_dispatch_and_credential_checks(self):
+        from app.core.platform_config import runtime_config_from_strings as rc
+        from app.core.sms import MockSmsChannel, build_sms_channel
+
+        assert isinstance(build_sms_channel(rc({"sms_provider": "mock"})), MockSmsChannel)
+        with pytest.raises(SmsError, match="Twilio"):
+            build_sms_channel(rc({"sms_provider": "twilio"}))
+        twilio = build_sms_channel(
+            rc(
+                {
+                    "sms_provider": "twilio",
+                    "sms_twilio_account_sid": "AC" + "2" * 32,
+                    "sms_twilio_auth_token": "t",
+                    "sms_twilio_from": "+14155550123",
+                }
+            )
+        )
+        assert isinstance(twilio, TwilioSmsChannel)
+        with pytest.raises(SmsError, match="Aliyun"):
+            build_sms_channel(rc({"sms_provider": "aliyun"}))
 
 
 class TestVerifyCodeSendFailure:
@@ -104,7 +173,9 @@ class TestPlatformQuota:
         sent: list[str] = []
 
         class _CountingChannel:
-            async def send(self, phone: str, template: str, params: dict[str, str]) -> None:
+            async def send(
+                self, phone: str, kind: str, params: dict[str, str], *, locale: str = "en-US"
+            ) -> None:
                 sent.append(phone)
 
         set_sms_channel(_CountingChannel())

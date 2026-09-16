@@ -773,7 +773,7 @@ class TestSmsOutbox:
         sent: list[dict] = []
 
         class SpySms:
-            async def send(self, phone, template, params):
+            async def send(self, phone, kind, params, *, locale="en-US"):
                 sent.append({"phone": phone, "params": params})
 
         data = await register(client, "13900000077")

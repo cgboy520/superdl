@@ -36,6 +36,7 @@
     "announcementAlreadyRevoked": "Announcement already revoked — no need to repeat",
     "badDayFormat": "day must be YYYY-MM-DD",
     "cannotChangeSelf": "You cannot disable or downgrade your own account — ask another super admin to do it",
+    "emailTestFailed": "Test email failed: {{message}}",
     "loginFailed": "Wrong username or password",
     "mfaCodeInvalid": "Incorrect or expired verification code — try again",
     "mfaNotBound": "This account has no authenticator bound",

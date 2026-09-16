@@ -51,6 +51,7 @@ MESSAGES: dict[str, str] = {
     "adminapi.roleRequired": "需要角色:{roles}",
     "adminapi.roleRequiredAdmin": "需要超级管理员权限",
     "adminapi.smsTestFailed": "发送失败:{message}",
+    "adminapi.emailTestFailed": "测试邮件发送失败:{message}",
     "adminapi.taskNotFound": "任务不存在",
     "adminapi.taskStateNotIgnorable": "任务状态 {status} 不可忽略",
     "adminapi.taskStateNotReplayable": "任务状态 {status} 不可重放",

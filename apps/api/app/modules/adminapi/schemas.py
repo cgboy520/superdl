@@ -341,6 +341,11 @@ class SmsTestOut(BaseModel):
     provider: str
 
 
+class EmailTestOut(BaseModel):
+    ok: bool
+    provider: str
+
+
 class RegistryTestOut(BaseModel):
     """Harbor 连通性探测结果:step 指出失败步骤(health=DNS/TLS/CA 或 Harbor 自检,
     project=机器人鉴权/权限/项目存在性)。"""

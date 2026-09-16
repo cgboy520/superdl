@@ -583,6 +583,28 @@ class TestConfigWarnings:
         assert [w.key for w in compute_config_warnings(rc(full), "prod")] == ["admin_mfa_enabled"]
         assert compute_config_warnings(rc(dict(full, admin_mfa_enabled="true")), "prod") == []
 
+    def test_provider_credential_rules(self):
+        """Twilio / SMTP selected without credentials → error red card on the provider key."""
+        from app.core.platform_config import SETTING_SPECS, compute_config_warnings
+
+        base = dict.fromkeys(SETTING_SPECS, "")
+        base.update(
+            registry_host="harbor.example.com", sms_provider="twilio", email_provider="smtp"
+        )
+        assert [(w.key, w.level) for w in compute_config_warnings(rc(base), "test")] == [
+            ("sms_provider", "error"),
+            ("email_provider", "error"),
+        ]
+        full = dict(
+            base,
+            sms_twilio_account_sid="AC" + "0" * 32,
+            sms_twilio_auth_token="t",
+            sms_twilio_from="+14155550123",
+            smtp_host="smtp.example.com",
+            email_from="no-reply@example.com",
+        )
+        assert compute_config_warnings(rc(full), "test") == []
+
     def test_cn_profile_turns_gates_into_errors(self, monkeypatch):
         """Under compliance_profile=cn the three CN gates are prod errors (boot-blocking)."""
         from app.core.config import get_settings
