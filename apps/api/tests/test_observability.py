@@ -1,4 +1,5 @@
-"""可观测性与运维健壮性:request-id 贯穿、业务指标、异常兜底、健康探针、数据保洁。"""
+"""Observability and operational robustness: request-id end to end, business metrics, exception
+fallback, health probes, data cleanup."""
 
 import re
 from datetime import timedelta
@@ -25,7 +26,8 @@ class TestRequestId:
 
     @pytest.mark.parametrize("bad", ["has space", "a" * 65, "x\ty", "<script>", ""])
     async def test_malformed_inbound_id_replaced(self, client: AsyncClient, bad: str):
-        """不合规则的 X-Request-ID 不沿用:响应头与错误体都是服务端生成的 16 位十六进制。"""
+        """A malformed X-Request-ID is not kept: response header and error body carry the
+        server-generated 16 hex digits."""
         resp = await client.get("/api/v1/no-such-route", headers={"X-Request-ID": bad})
         rid = resp.headers["x-request-id"]
         assert _HEX16.match(rid) and rid != bad
@@ -39,7 +41,7 @@ class TestRequestId:
         assert _HEX16.match(request_id_from_header("bad id"))
 
     async def test_error_body_carries_request_id(self, client: AsyncClient):
-        """错误响应体回带 request_id。"""
+        """Error response bodies carry request_id."""
         resp = await client.get("/api/v1/no-such-route", headers={"X-Request-ID": "gw-err-1"})
         assert resp.status_code == 404
         assert resp.json()["request_id"] == "gw-err-1"
@@ -52,7 +54,7 @@ class TestHealthEndpoints:
         assert resp.json()["status"] == "ready"
 
     async def test_schema_mismatch_not_ready(self, client: AsyncClient, sm):
-        """DB 版本与代码 head 不一致:503。"""
+        """DB version ≠ code head: 503."""
         from app.core.db import code_schema_head
 
         async with sm() as session:
@@ -80,7 +82,8 @@ class TestBusinessMetrics:
 
 class TestUnhandledException:
     async def test_500_keeps_security_headers_and_request_id(self, sm):
-        """未捕获异常 → 统一 500 错误体,安全响应头与 x-request-id 仍在(Uniform500)。"""
+        """Uncaught exception → unified 500 error body, security headers and x-request-id still
+        present (Uniform500)."""
         from app.main import create_app
 
         app = create_app()

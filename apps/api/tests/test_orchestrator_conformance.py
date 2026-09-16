@@ -1,4 +1,4 @@
-"""Fake/Real 数据盘契约;Real 用例由 SUPERDL_TEST_KUBECONFIG 门控。"""
+"""Fake/Real data-disk contract; Real cases are gated by SUPERDL_TEST_KUBECONFIG."""
 
 import os
 import uuid
@@ -37,7 +37,7 @@ async def backend(request: pytest.FixtureRequest) -> AsyncIterator[Backend]:
         yield Backend(impl=fake, kind="fake", namespace=ns, fake=fake)
         return
     if not os.environ.get("SUPERDL_TEST_KUBECONFIG"):
-        pytest.skip("SUPERDL_TEST_KUBECONFIG 未设置,跳过 Real 侧 conformance")
+        pytest.skip("SUPERDL_TEST_KUBECONFIG unset, skipping the Real conformance")
     use_kubeconfig(os.environ["SUPERDL_TEST_KUBECONFIG"])
     from app.core.k8s.real import RealOrchestrator
 
@@ -61,7 +61,7 @@ async def backend(request: pytest.FixtureRequest) -> AsyncIterator[Backend]:
 
 
 class TestDataDiskContract:
-    """数据盘 PVC 创建、扩容与删除为同步操作,幂等且只扩不缩。"""
+    """Data-disk PVC create, grow and delete are synchronous, idempotent and grow-only."""
 
     async def test_create_expand_delete(self, backend: Backend) -> None:
         ns = backend.namespace

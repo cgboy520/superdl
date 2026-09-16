@@ -17,7 +17,7 @@ from app.core.timeutil import now_utc
 
 
 async def test_enqueue_same_transaction_rollback(sm: async_sessionmaker[AsyncSession]):
-    """业务事务回滚时 outbox 任务一并消失。"""
+    """Outbox tasks vanish with a rolled-back business transaction."""
     async with sm() as session:
         enqueue(session, "noop", {"k": 1})
         await session.rollback()
@@ -49,7 +49,8 @@ async def test_process_success(sm: async_sessionmaker[AsyncSession], monkeypatch
 async def test_enqueue_carries_request_id_into_handler_context(
     sm: async_sessionmaker[AsyncSession], monkeypatch
 ):
-    """enqueue 把 request_id 写进 payload(_request_id);执行时回填日志上下文,执行完解绑。"""
+    """enqueue writes request_id into the payload (_request_id); execution restores it into the log
+    context and unbinds afterwards."""
     import structlog
 
     seen: list[object] = []
@@ -137,7 +138,7 @@ async def test_reaper_requeues_stuck_running(sm: async_sessionmaker[AsyncSession
 
 
 async def test_reaper_dead_letter_after_budget_exhausted(sm: async_sessionmaker[AsyncSession]):
-    """崩溃循环的任务重试预算耗尽后进 dead。"""
+    """A crash-looping task goes dead once its retry budget is exhausted."""
     async with sm() as session:
         task = OutboxTask(
             type="t_stuck",
@@ -160,7 +161,7 @@ async def test_reaper_dead_letter_after_budget_exhausted(sm: async_sessionmaker[
 
 class TestRetryPolicy:
     async def test_per_type_budget_overrides_default(self, sm):
-        """disk.deprovision 有更长的重试预算。"""
+        """disk.deprovision has a longer retry budget."""
         from app.core.outbox import DEFAULT_RETRY_POLICY, retry_policy_for
         from app.modules.orchestrator import handlers as _handlers  # noqa: F401
 
@@ -176,7 +177,7 @@ class TestRetryPolicy:
 
 class TestTaskTimeout:
     async def test_hung_handler_is_timed_out_and_retried(self, sm, monkeypatch):
-        """handler 超时按失败退避,不占住队头。"""
+        """A handler timeout backs off like a failure and does not block the queue head."""
         import asyncio
 
         from app.core import outbox as outbox_mod
@@ -205,7 +206,7 @@ class TestClaimOrder:
     async def test_prefers_earliest_next_retry_at(
         self, sm: async_sessionmaker[AsyncSession], monkeypatch
     ):
-        """领取按 (next_retry_at, id) 排序。"""
+        """Claims are ordered by (next_retry_at, id)."""
         calls: list[str] = []
 
         async def handler(_session: AsyncSession, task: OutboxTask) -> None:
@@ -232,7 +233,7 @@ class TestConcurrency:
     async def test_concurrent_workers_claim_distinct_tasks(
         self, sm: async_sessionmaker[AsyncSession], monkeypatch
     ):
-        """SKIP LOCKED 下多个领取协程并发执行不同任务。"""
+        """Under SKIP LOCKED several claiming coroutines run different tasks concurrently."""
         import asyncio
 
         gate = asyncio.Barrier(3)
@@ -265,7 +266,8 @@ class TestTerminalWriteOwnership:
     async def test_ownership_lost_write_is_dropped(
         self, sm: async_sessionmaker[AsyncSession], monkeypatch
     ):
-        """执行期间被 reaper 回收(锁易主)→ 终态写放弃。"""
+        """Reclaimed by the reaper mid-execution (lock changed hands) → the terminal write is
+        abandoned."""
         from sqlalchemy import update
 
         async def handler(_session: AsyncSession, task: OutboxTask) -> None:
@@ -292,7 +294,7 @@ class TestTerminalWriteOwnership:
 
 class TestPendingMetrics:
     async def test_tracks_oldest_pending_age(self, sm: async_sessionmaker[AsyncSession]):
-        """积压指标 = 最老 pending 任务年龄。"""
+        """Backlog metric = age of the oldest pending task."""
         async with sm() as session:
             task = enqueue(session, "t_metric", {})
             await session.flush()
@@ -306,7 +308,7 @@ class TestPendingMetrics:
         assert OUTBOX_PENDING_OLDEST_AGE._value.get() >= 7200
 
     async def test_zero_when_no_pending(self, sm: async_sessionmaker[AsyncSession]):
-        """队列排空后指标归零。"""
+        """The metric returns to zero once the queue drains."""
         async with sm() as session:
             await session.execute(delete(OutboxTask))
             await session.commit()

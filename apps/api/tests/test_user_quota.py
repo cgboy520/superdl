@@ -1,4 +1,4 @@
-"""每用户配额:实例数/GPU 总数上限;释放后额度归还。"""
+"""Per-user quotas: instance count / total GPU caps; released slots are returned."""
 
 import pytest
 from httpx import AsyncClient

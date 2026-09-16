@@ -1,4 +1,4 @@
-"""站内信、预警去重与 Alertmanager 接入契约。"""
+"""In-app notifications, warning dedup and the Alertmanager ingestion contract."""
 
 import pytest
 from sqlalchemy import select
@@ -38,7 +38,7 @@ AM_PAYLOAD = {
 
 
 def am_payload_for(user_id: int) -> dict:
-    """AM_PAYLOAD 的租户归属版:namespace 指向真实注册用户。"""
+    """Tenant variant of AM_PAYLOAD: the namespace points at a real registered user."""
     import copy
 
     payload = copy.deepcopy(AM_PAYLOAD)
@@ -48,7 +48,7 @@ def am_payload_for(user_id: int) -> dict:
 
 class TestBalanceWarnNotification:
     async def test_unread_count_endpoint(self, client, sm, fake):
-        """未读数端点:标记已读后减少。"""
+        """Unread count endpoint: decreases after marking read."""
         headers, user_id = await user_headers_with_id(client, "13700000061")
         async with sm() as session:
             for i in range(3):
@@ -56,7 +56,7 @@ class TestBalanceWarnNotification:
                     Notification(
                         user_id=user_id,
                         type="instance",
-                        title=f"通知{i}",
+                        title=f"notice {i}",
                         content="x",
                         dedup_key=f"t-unread:{user_id}:{i}",
                     )
@@ -71,7 +71,8 @@ class TestBalanceWarnNotification:
         assert resp.json()["unread_count"] == 2
 
     async def test_patrol_writes_notification_with_dedup(self, client, sm, fake):
-        """低余额预警:counts 记 warned、实例不停机;同日重复巡检按去重键只留一条站内信。"""
+        """Low balance warning: counts records warned, the instance keeps running; repeated patrols
+        the same day keep one notification by dedup key."""
         headers, uuid, user_id = await provision_running(client, sm, fake)
         from decimal import Decimal
 
@@ -93,7 +94,7 @@ class TestBalanceWarnNotification:
         assert (await get_instance(client, headers, uuid))["status"] == "running"
 
     async def test_read_all_marks_everything_and_is_idempotent(self, client, sm, fake):
-        """全部已读:多条未读一次清零;重复调用幂等 204。"""
+        """Mark all read: several unread cleared at once; repeating is an idempotent 204."""
         headers, user_id = await user_headers_with_id(client, "13700000064")
         async with sm() as session:
             for i in range(3):
@@ -120,7 +121,7 @@ class TestBalanceWarnNotification:
         assert len(all_items) == 3
 
     async def test_read_all_scoped_to_self(self, client, sm, fake):
-        """全部已读只动本人:其他用户的未读不受影响。"""
+        """Mark all read touches only the caller: other users' unread stay."""
         headers, user_id = await user_headers_with_id(client, "13700000065")
         async with sm() as session:
             session.add(
@@ -147,7 +148,7 @@ class TestBalanceWarnNotification:
         assert by_title["other"].read_at is None
 
     async def test_list_pagination_beyond_50(self, client, sm, fake):
-        """站内信 limit/cursor 游标翻页,降序不重不漏。"""
+        """Notification limit/cursor paging, descending, no duplicates, no gaps."""
         headers, user_id = await user_headers_with_id(client, "13700000066")
         async with sm() as session:
             for i in range(60):
@@ -155,7 +156,7 @@ class TestBalanceWarnNotification:
                     Notification(
                         user_id=user_id,
                         type="announcement",
-                        title=f"公告 {i}",
+                        title=f"announcement {i}",
                         content="c",
                         severity="info",
                     )
@@ -182,7 +183,8 @@ class TestBalanceWarnNotification:
 
 class TestAlertmanagerWebhook:
     async def test_critical_alert_sms_to_oncall(self, client, sm, fake):
-        """critical 平台告警:配置值班手机号后经 outbox 短信直发,重放幂等。"""
+        """critical platform alert: with an on-call phone configured it goes out as SMS via outbox,
+        replay is idempotent."""
         from app.core.outbox import OutboxTask
 
         await set_platform_setting(sm, "oncall_phone", "+8613900001111")
@@ -262,7 +264,8 @@ class TestAlertmanagerWebhook:
 
 
 class TestAlertAck:
-    """告警闭环:ack 落确认人/时间、重复 ack 409、unread-count 准确、severity 过滤、角色门。"""
+    """Alert loop: ack records who / when, repeated ack 409, unread-count exact, severity filter,
+    role gate."""
 
     async def test_ack_records_actor_and_time(self, client, sm, fake):
         await client.post("/api/v1/webhooks/alertmanager", json=AM_PAYLOAD, headers=AM_HEADERS)
@@ -304,7 +307,8 @@ class TestAlertAck:
         assert body["critical_count"] == 1
 
     async def test_forged_namespace_without_real_user_no_tenant_notify(self, client, sm, fake):
-        """namespace=tenant-<不存在的用户>:平台流照落,租户短信/站内信不出。"""
+        """namespace=tenant-<unknown user>: the platform feed still gets it, no tenant SMS /
+        notification."""
         await client.post("/api/v1/webhooks/alertmanager", json=AM_PAYLOAD, headers=AM_HEADERS)
         async with sm() as session:
             rows = (await session.execute(select(Notification))).scalars().all()
@@ -331,7 +335,8 @@ class TestAlertAck:
         ]
 
     async def test_acked_filter_and_paging_reach_older_rows(self, client, sm, fake):
-        """确认状态在库里过滤、游标能翻到更早的告警:否则超出单页的异常在管理端永远看不到。"""
+        """The ack filter runs in the database and the cursor reaches older alerts: otherwise
+        anomalies beyond one page are never seen in the admin console."""
         async with sm() as session:
             for i in range(25):
                 session.add(
@@ -339,7 +344,7 @@ class TestAlertAck:
                         user_id=None,
                         type="admin_alert",
                         severity="warning",
-                        title=f"告警{i:02d}",
+                        title=f"alert {i:02d}",
                         content="x",
                         dedup_key=f"t-page:{i}",
                     )
@@ -377,7 +382,8 @@ class TestAlertAck:
         assert all(a["acked_at"] is None for a in unacked["items"])
 
     async def test_type_filter(self, client, sm, fake):
-        """类型过滤在库里做:租户 GPU 故障与平台告警能分开看。"""
+        """The type filter runs in the database: tenant GPU faults and platform alerts can be viewed
+        separately."""
         user = await register(client, "13900000993")
         await client.post(
             "/api/v1/webhooks/alertmanager",
@@ -390,10 +396,10 @@ class TestAlertAck:
         ).json()["items"]
         assert faults and all(a["type"] == "gpu_fault" for a in faults)
         bad = await client.get("/api/admin/v1/alerts", params={"type": "typo"}, headers=ops)
-        assert bad.status_code == 422, "表外的 type 必须 422,不能当成空结果"
+        assert bad.status_code == 422, "a type outside the table must be 422, not an empty result"
 
     async def test_ack_non_alert_404(self, client, sm, fake):
-        """普通站内信不可确认:404。"""
+        """Ordinary notifications cannot be acknowledged: 404."""
         ops = await admin_headers(sm, client, role="ops")
         async with sm() as session:
             row = Notification(user_id=None, type="announcement", title="t", content="c")
@@ -409,7 +415,7 @@ class TestAlertAck:
 
 class TestAlertmanagerAuthHardening:
     async def test_unconfigured_token_rejects_all(self, client, sm, fake, monkeypatch):
-        """未配置 token 时任何环境一律返回 401。"""
+        """Without a configured token every environment returns 401."""
         from app.core.config import get_settings
 
         monkeypatch.setattr(get_settings(), "alertmanager_token", None)
@@ -434,7 +440,7 @@ class TestAlertmanagerWebhookHardening:
         assert resp.json()["code"] == "VALIDATION_ERROR"
 
     async def test_long_strings_truncated(self, client, sm, fake):
-        """summary 等字段入库前截断。"""
+        """summary and similar fields are truncated before storage."""
         payload = {
             "alerts": [
                 {
@@ -455,7 +461,7 @@ class TestAlertmanagerWebhookHardening:
         assert len(row.content) == 1024
 
     async def test_alerts_list_capped(self, client, sm, fake, monkeypatch):
-        """单次报文的 alerts 条数封顶。"""
+        """The number of alerts per payload is capped."""
         from app.modules.notify import router as notify_router
 
         monkeypatch.setattr(notify_router, "ALERT_MAX_ALERTS", 3)
@@ -467,7 +473,7 @@ class TestAlertmanagerWebhookHardening:
         assert resp.json()["ingested"] == 3
 
     async def test_ip_rate_limited(self, client, sm, fake, monkeypatch):
-        """Alertmanager 接入按 IP 限流。"""
+        """Alertmanager ingestion is rate-limited per IP."""
         from app.modules.notify import router as notify_router
 
         monkeypatch.setattr(notify_router, "ALERT_RATE_LIMIT", 2)

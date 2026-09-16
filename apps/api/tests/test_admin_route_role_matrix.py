@@ -1,5 +1,7 @@
-"""管理端 route×role 鉴权矩阵:端点表从 app.openapi() 收集,矩阵在本文件声明,双向比对。
-匿名:anon 端点不得 403、其余 401;已认证:admin 恒许、白名单角色不得 401/403、其余 403。"""
+"""Admin route × role auth matrix: the endpoint table is collected from app.openapi(), the matrix
+is declared here, compared both ways.
+Anonymous: anon endpoints must not 403, the rest 401; authenticated: admin always passes,
+allow-listed roles must not 401/403, the rest 403."""
 
 import re
 
@@ -137,7 +139,7 @@ _ROLES = ("readonly", "ops", "finance", "admin")
 
 
 def _collect_admin_endpoints() -> set[str]:
-    """从 OpenAPI 收集管理端端点表。"""
+    """Collect the admin endpoint table from OpenAPI."""
     from app.main import create_app
 
     spec = create_app().openapi()
@@ -155,12 +157,13 @@ def test_matrix_matches_openapi_table() -> None:
     missing = endpoints - MATRIX.keys()
     stale = MATRIX.keys() - endpoints
     assert not missing and not stale, (
-        f"角色矩阵未同步;未登记端点: {sorted(missing)};已删残留: {sorted(stale)}"
+        f"role matrix out of sync; unregistered endpoints: {sorted(missing)};"
+        f" stale entries: {sorted(stale)}"
     )
 
 
 def _sample_url(path: str) -> str:
-    """路径参数替换为样例值。"""
+    """Replace path parameters with sample values."""
 
     def repl(m: re.Match[str]) -> str:
         name = m.group(1)
@@ -178,7 +181,8 @@ def _sample_url(path: str) -> str:
 
 
 async def _mint_admin_headers(sm: async_sessionmaker[AsyncSession], role: str) -> dict[str, str]:
-    """直接落 AdminUser 行 + 铸造 admin audience token;同角色重铸取已有行的当前 ver。"""
+    """Insert the AdminUser row directly + mint an admin-audience token; re-minting for a role uses
+    the existing row's current version."""
     async with sm() as session:
         admin = (
             await session.execute(select(AdminUser).where(AdminUser.username == f"matrix-{role}"))
@@ -215,25 +219,26 @@ async def test_endpoint_role_gate(
         anon_status = await call(method, url, None)
         if allowed == "anon":
             if anon_status == 403:
-                failures.append(f"匿名端点不得 403:{endpoint}")
+                failures.append(f"anon endpoint must not 403: {endpoint}")
         elif anon_status != 401:
-            failures.append(f"匿名应 401:{endpoint} -> {anon_status}")
+            failures.append(f"anonymous should be 401: {endpoint} -> {anon_status}")
 
         for role in _ROLES:
             status = await call(method, url, headers_by_role[role])
             if allowed == "anon":
                 if status == 403:
-                    failures.append(f"匿名端点带 token 不得 403:{endpoint}({role})")
+                    failures.append(f"anon endpoint with a token must not 403: {endpoint} ({role})")
             elif allowed == "any" or role == "admin" or role in allowed:
                 if status in (401, 403):
                     failures.append(
-                        f"{role} 应通过角色门:{endpoint} -> {status}(业务 404/422 可,401/403 不可)"
+                        f"{role} should pass the role gate: {endpoint} -> {status}"
+                        " (business 404/422 ok, 401/403 not)"
                     )
             elif status != 403:
-                failures.append(f"{role} 应被 403 拦截:{endpoint} -> {status}")
+                failures.append(f"{role} should be blocked with 403: {endpoint} -> {status}")
 
         if endpoint == "POST /api/admin/v1/auth/logout":
             headers_by_role = {role: await _mint_admin_headers(sm, role) for role in _ROLES}
 
     joined = "\n".join(failures)
-    assert not failures, f"角色门矩阵不符(共 {len(failures)} 处):\n{joined}"
+    assert not failures, f"role gate matrix mismatch ({len(failures)} cases):\n{joined}"

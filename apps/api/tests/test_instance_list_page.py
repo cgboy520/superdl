@@ -1,4 +1,4 @@
-"""用户端实例列表:游标分页 + status/name 过滤。"""
+"""User instance list: cursor pagination + status/name filters."""
 
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -51,14 +51,16 @@ class TestInstanceListPage:
         assert [i["uuid"] for i in by_uuid] == [target]
 
         none = (
-            await client.get("/api/v1/instances", params={"name": "不存在"}, headers=headers)
+            await client.get(
+                "/api/v1/instances", params={"name": "does-not-exist"}, headers=headers
+            )
         ).json()["items"]
         assert none == []
 
     async def test_name_filter_like_metachars_are_literal(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """name/q 的 LIKE 元字符 "%" / "_" 按字面匹配。"""
+        """The LIKE metacharacters "%" / "_" in name/q match literally."""
         headers, user_id, _ = await create_user_with_key(client, "13900000208")
         await _insert_instance(sm, user_id, name="100%cotton")
         await _insert_instance(sm, user_id, name="1000jobs")

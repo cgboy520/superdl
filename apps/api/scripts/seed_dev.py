@@ -1,7 +1,8 @@
-"""仅 dev/test:补齐 SKU、平台镜像,管理员表为空时创建管理员并打印口令。
+"""dev/test only: seed SKUs and platform images, create the admin when the admin table is empty
+and print the password.
 
-用法:cd apps/api && uv run python scripts/seed_dev.py
-生产环境使用 scripts/bootstrap_admin.py。
+Usage: cd apps/api && uv run python scripts/seed_dev.py
+Production uses scripts/bootstrap_admin.py.
 """
 
 import asyncio
@@ -201,8 +202,8 @@ async def main() -> None:
     settings = get_settings()
     if settings.environment not in ("dev", "test"):
         print(  # noqa: T201
-            "refused: seed_dev 仅允许 dev/test 环境"
-            f"(当前 SUPERDL_ENVIRONMENT={settings.environment})",
+            "refused: seed_dev only runs in the dev/test environments"
+            f" (current SUPERDL_ENVIRONMENT={settings.environment})",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -235,14 +236,14 @@ async def main() -> None:
         ).scalar_one_or_none() is not None
         if has_admin:
             print(  # noqa: T201
-                f"seed done: {len(SKUS)} SKU / {len(IMAGES)} 镜像 / admin 已存在(未改动)"
+                f"seed done: {len(SKUS)} SKU / {len(IMAGES)} images / admin exists (unchanged)"
             )
             return
         password = os.environ.get("SUPERDL_SEED_ADMIN_PASSWORD") or secrets.token_urlsafe(18)
         await ensure_bootstrap_admin(session, password)
         print(  # noqa: T201
-            f"seed done: {len(SKUS)} SKU / {len(IMAGES)} 镜像 / "
-            f"admin({password})——口令仅本次显示,请立即保存"
+            f"seed done: {len(SKUS)} SKU / {len(IMAGES)} images / "
+            f"admin({password}) - the password is shown only this once, save it now"
         )
 
 

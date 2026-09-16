@@ -1,4 +1,4 @@
-"""上架硬校验(SKU_NOT_SELLABLE/force)、容量预览、SKU 列表容量组装列。"""
+"""Listing hard check (SKU_NOT_SELLABLE/force), capacity preview, SKU list capacity columns."""
 
 from decimal import Decimal
 
@@ -15,7 +15,7 @@ from tests.helpers import (
 async def seed_4090_node(
     sm, *, node_name: str = "gpu-node-1", gpu_count: int = 4, status: str = "Ready"
 ) -> None:
-    """写入标签已收敛的 hami 节点,型号为 RTX4090、显存为 24G。"""
+    """Insert a label-converged hami node, model RTX4090, 24G VRAM."""
     await seed_node_spec(
         sm,
         node_name=node_name,
@@ -33,7 +33,9 @@ class TestSellableGate:
         sku_id = await create_test_sku(sm, status="off", gpu_model="H100", pool_label="hami")
         headers = await admin_headers(sm, client)
         resp = await client.patch(
-            f"/api/admin/v1/skus/{sku_id}", json={"status": "on", "reason": "用例"}, headers=headers
+            f"/api/admin/v1/skus/{sku_id}",
+            json={"status": "on", "reason": "test case"},
+            headers=headers,
         )
         assert resp.status_code == 409, resp.text
         body = resp.json()
@@ -46,7 +48,9 @@ class TestSellableGate:
         sku_id = await create_test_sku(sm, status="off")
         headers = await admin_headers(sm, client)
         resp = await client.patch(
-            f"/api/admin/v1/skus/{sku_id}", json={"status": "on", "reason": "用例"}, headers=headers
+            f"/api/admin/v1/skus/{sku_id}",
+            json={"status": "on", "reason": "test case"},
+            headers=headers,
         )
         assert resp.status_code == 200
 
@@ -55,20 +59,24 @@ class TestSellableGate:
         sku_id = await create_test_sku(sm, status="off")
         headers = await admin_headers(sm, client)
         resp = await client.patch(
-            f"/api/admin/v1/skus/{sku_id}", json={"status": "on", "reason": "用例"}, headers=headers
+            f"/api/admin/v1/skus/{sku_id}",
+            json={"status": "on", "reason": "test case"},
+            headers=headers,
         )
         assert resp.status_code == 409
 
     async def test_off_and_edit_skip_gate(self, client: AsyncClient, sm):
-        """下架与已上架编辑不触发校验(仅 off→on 的边)。"""
+        """Delisting and editing a listed SKU skip the check (only the off→on edge)."""
         sku_id = await create_test_sku(sm, status="on", gpu_model="H100")
         headers = await admin_headers(sm, client)
         r1 = await client.patch(
-            f"/api/admin/v1/skus/{sku_id}", json={"vcpu": 16, "reason": "用例"}, headers=headers
+            f"/api/admin/v1/skus/{sku_id}",
+            json={"vcpu": 16, "reason": "test case"},
+            headers=headers,
         )
         r2 = await client.patch(
             f"/api/admin/v1/skus/{sku_id}",
-            json={"status": "off", "reason": "用例"},
+            json={"status": "off", "reason": "test case"},
             headers=headers,
         )
         assert r1.status_code == 200 and r2.status_code == 200

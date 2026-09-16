@@ -1,5 +1,6 @@
-"""节点 registries.yaml 生成:Spegel + Harbor 代理缓存 mirror + CA,不含凭据;高级覆盖原样下发;
-bootstrap 下发 registry_ca_pem。"""
+"""Node registries.yaml generation: Spegel + Harbor proxy-cache mirrors + CA, no credentials; the
+advanced override is handed out verbatim;
+bootstrap hands out registry_ca_pem."""
 
 import yaml
 
@@ -11,14 +12,15 @@ CA = "-----BEGIN CERTIFICATE-----\nMIIBfake\n-----END CERTIFICATE-----"
 
 
 def test_default_is_spegel_only_without_harbor():
-    """未配 Harbor:只剩 Spegel P2P。"""
+    """Without Harbor: Spegel P2P only."""
     out = render_registries_yaml(rc({}))
     assert yaml.safe_load(out) == {"mirrors": {"*": {}}}
     assert "30500" not in out
 
 
 def test_proxy_cache_mirrors_and_ca_without_auth():
-    """代理缓存:每个上游 mirror 到 Harbor 并 rewrite 到代理项目;CA 非空才有 configs.tls;无 auth。"""
+    """Proxy cache: each upstream mirrors to Harbor with a rewrite to the proxy project; configs.tls
+    only with a non-empty CA; no auth."""
     out = render_registries_yaml(
         rc(
             {
@@ -53,7 +55,7 @@ def test_no_ca_no_configs_and_override_verbatim():
 
 
 async def test_bootstrap_carries_registries_and_ca(client, sm):
-    """注册链路下发 registries.yaml 与 CA,不带机器人 Secret。"""
+    """The enrollment path hands out registries.yaml and the CA, without the robot secret."""
     from app.core.platform_config import set_platform_settings
 
     await set_platform_setting(sm, "cluster_server_url", "https://10.0.0.10:9345")

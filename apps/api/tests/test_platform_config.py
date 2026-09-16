@@ -1,4 +1,5 @@
-"""平台配置中心:白名单校验、脱敏读取、覆盖即时生效、渠道开关门禁、角色隔离。"""
+"""Platform configuration centre: allow-list validation, masked reads, overrides effective at once,
+channel switch gates, role isolation."""
 
 from types import SimpleNamespace
 
@@ -25,7 +26,8 @@ from tests.helpers import admin_headers, create_order, pay_mock, user_headers
 
 class TestSpecValidation:
     def test_unknown_key_and_javascript_url_rejected(self):
-        """未知键拒;亮照链接只收 http(s) 绝对 URL(留空走清除覆盖);值 strip 后落库。"""
+        """Unknown keys are refused; the licence link takes only absolute http(s) URLs (empty =
+        clear the override); values are stripped before storage."""
         with pytest.raises(ValueError, match="unknown setting key"):
             validate_setting_value("jwt_secret", "x")
         with pytest.raises(ValueError):
@@ -55,7 +57,8 @@ class TestClusterJoinTokenShape:
         "token", [SERVER_NODE_TOKEN, "K10" + "AB" * 32 + "::server:secretpassword"]
     )
     def test_server_node_token_rejected(self, token):
-        """server node-token(K10<64hex>::server:…,hex 不分大小写)会让节点以 server 入群:拒收。"""
+        """A server node-token (K10<64hex>::server:…, hex case-insensitive) would join the node as a
+        server: refused."""
         with pytest.raises(ValueError, match="agent token only"):
             validate_setting_value("cluster_join_token", token)
 
@@ -73,7 +76,7 @@ class TestClusterJoinTokenShape:
             validate_setting_value("cluster_join_token", token)
 
     def test_env_layer_is_validated(self, monkeypatch):
-        """部署层(env)取值绕不过格式白名单。"""
+        """Deployment-layer (env) values cannot bypass the format allow-list."""
         from app.core import platform_config
 
         monkeypatch.setattr(
@@ -86,7 +89,7 @@ class TestClusterJoinTokenShape:
 
 
 class TestProdDegradeForbidden:
-    """降防开关(人机验证/管理端 MFA/实名)在 prod 禁止在线关闭。"""
+    """Security switches (CAPTCHA / admin MFA / KYC) cannot be turned off online in prod."""
 
     @pytest.mark.parametrize("key", ["captcha_enabled", "admin_mfa_enabled", "real_name_enabled"])
     def test_security_switches_cannot_be_disabled_in_prod(self, key, monkeypatch):
@@ -120,12 +123,14 @@ class TestProdDegradeForbidden:
 
 
 class TestClearOverrideFallbackGuard:
-    """清除覆盖 = 回落到部署层(env)取值;回落值是 prod 禁止取值时同拦。"""
+    """Clearing an override = falling back to the deployment-layer (env) value; a fallback that is
+    forbidden in prod is blocked too."""
 
     async def test_clear_rejected_when_env_fallback_is_prod_forbidden(
         self, client: AsyncClient, sm, monkeypatch
     ):
-        """部署层 real_name_enabled=false(prod 禁止值)→ 清除覆盖被拒。"""
+        """Deployment-layer real_name_enabled=false (forbidden in prod) → clearing the override is
+        refused."""
         ah = await admin_headers(sm, client, role="admin")
         monkeypatch.setattr(
             "app.core.platform_config.get_settings",
@@ -135,7 +140,7 @@ class TestClearOverrideFallbackGuard:
         )
         resp = await client.put(
             "/api/admin/v1/platform-config",
-            json={"updates": {"real_name_enabled": ""}, "reason": "清除覆盖"},
+            json={"updates": {"real_name_enabled": ""}, "reason": "clear override"},
             headers=ah,
         )
         assert resp.status_code == 400
@@ -151,7 +156,7 @@ class TestClearOverrideFallbackGuard:
     async def test_clear_allowed_when_env_fallback_is_compliant(
         self, client: AsyncClient, sm, monkeypatch
     ):
-        """部署层已是合规值(captcha_enabled=true)→ 清除覆盖放行。"""
+        """The deployment layer is already compliant (captcha_enabled=true) → clearing passes."""
         ah = await admin_headers(sm, client, role="admin")
         monkeypatch.setattr(
             "app.core.platform_config.get_settings",
@@ -159,13 +164,13 @@ class TestClearOverrideFallbackGuard:
         )
         resp = await client.put(
             "/api/admin/v1/platform-config",
-            json={"updates": {"captcha_enabled": ""}, "reason": "清除覆盖"},
+            json={"updates": {"captcha_enabled": ""}, "reason": "clear override"},
             headers=ah,
         )
         assert resp.status_code == 200, resp.text
 
     async def test_clear_guard_inactive_outside_prod(self, client: AsyncClient, sm, monkeypatch):
-        """非 prod 环境不受清除守卫约束。"""
+        """Non-prod environments are not bound by the clearing guard."""
         ah = await admin_headers(sm, client, role="admin")
         monkeypatch.setattr(
             "app.core.platform_config.get_settings",
@@ -175,25 +180,28 @@ class TestClearOverrideFallbackGuard:
         )
         resp = await client.put(
             "/api/admin/v1/platform-config",
-            json={"updates": {"real_name_enabled": ""}, "reason": "清除覆盖"},
+            json={"updates": {"real_name_enabled": ""}, "reason": "clear override"},
             headers=ah,
         )
         assert resp.status_code == 200, resp.text
 
     async def test_audit_records_clear_vs_set(self, client: AsyncClient, sm):
-        """审计落键名 + 动作类型(clear/set),不落值。"""
+        """The audit records key names + action type (clear/set), never values."""
         from app.core.audit import AuditLog
 
         ah = await admin_headers(sm, client, role="admin")
         resp = await client.put(
             "/api/admin/v1/platform-config",
-            json={"updates": {"icp_number": "京ICP备2026099999号-1"}, "reason": "先写"},
+            json={
+                "updates": {"icp_number": "京ICP备2026099999号-1"},  # cjk-ok
+                "reason": "write first",
+            },  # cjk-ok
             headers=ah,
         )
         assert resp.status_code == 200, resp.text
         resp = await client.put(
             "/api/admin/v1/platform-config",
-            json={"updates": {"icp_number": ""}, "reason": "再清"},
+            json={"updates": {"icp_number": ""}, "reason": "then clear"},
             headers=ah,
         )
         assert resp.status_code == 200, resp.text
@@ -212,11 +220,11 @@ class TestClearOverrideFallbackGuard:
         assert len(rows) >= 2
         assert rows[-2].detail["keys"] == {"icp_number": "set"}
         assert rows[-1].detail["keys"] == {"icp_number": "clear"}
-        assert "京ICP备" not in str(rows[-2].detail)
+        assert "京ICP备" not in str(rows[-2].detail)  # cjk-ok
 
 
 class TestProdComplianceGates:
-    """启动合规闸 fail-fast(env/部署层)。"""
+    """Boot compliance gate fail-fast (env / deployment layer)."""
 
     def test_prod_refuses_boot_with_switches_off(self, monkeypatch):
         from app.core.config import get_settings
@@ -259,21 +267,22 @@ class TestProdComplianceGates:
 
 class TestAdminApi:
     async def test_get_masks_secret_and_put_overrides(self, client: AsyncClient, sm):
-        """管理端写入 → GET 脱敏回读 → 公开 site-config 透出 → 空串清除覆盖回退 env 默认。"""
+        """Admin write → masked GET read-back → public site-config exposure → empty string clears
+        the override back to the env default."""
         ah = await admin_headers(sm, client, role="admin")
         resp = await client.put(
             "/api/admin/v1/platform-config",
             json={
                 "updates": {
-                    "icp_number": "京ICP备2026012345号-1",
+                    "icp_number": "京ICP备2026012345号-1",  # cjk-ok
                     "sms_sign_name": "SuperDL",
                     "sms_access_key_secret": "PLAINTEXT-SECRET-9876",
-                    "company_name": "示例云算力(北京)有限公司",
-                    "company_address": "北京市海淀区示例路 1 号",
+                    "company_name": "示例云算力(北京)有限公司",  # cjk-ok
+                    "company_address": "北京市海淀区示例路 1 号",  # cjk-ok
                     "company_phone": "010-12345678",
                     "business_license_url": "https://example.com/license.png",
                 },
-                "reason": "上线前配置",
+                "reason": "pre-launch configuration",
             },
             headers=ah,
         )
@@ -281,7 +290,7 @@ class TestAdminApi:
 
         data = (await client.get("/api/admin/v1/platform-config", headers=ah)).json()
         items = {i["key"]: i for i in data["items"]}
-        assert items["icp_number"]["value"] == "京ICP备2026012345号-1"
+        assert items["icp_number"]["value"] == "京ICP备2026012345号-1"  # cjk-ok
         assert items["icp_number"]["source"] == "override"
         assert items["company_name"]["group"] == "compliance"
         secret_item = items["sms_access_key_secret"]
@@ -300,9 +309,9 @@ class TestAdminApi:
             assert "PLAINTEXT" not in row.value
 
         site = (await client.get("/api/v1/site-config")).json()
-        assert site["icp_number"] == "京ICP备2026012345号-1"
-        assert site["company_name"] == "示例云算力(北京)有限公司"
-        assert site["company_address"] == "北京市海淀区示例路 1 号"
+        assert site["icp_number"] == "京ICP备2026012345号-1"  # cjk-ok
+        assert site["company_name"] == "示例云算力(北京)有限公司"  # cjk-ok
+        assert site["company_address"] == "北京市海淀区示例路 1 号"  # cjk-ok
         assert site["company_phone"] == "010-12345678"
         assert site["business_license_url"] == "https://example.com/license.png"
         assert site["payment_channels"] == [{"name": "mock", "presentation": "qr"}]
@@ -311,7 +320,7 @@ class TestAdminApi:
             "/api/admin/v1/platform-config",
             json={
                 "updates": {"icp_number": "", "business_license_url": ""},
-                "reason": "清除测试",
+                "reason": "clear test",
             },
             headers=ah,
         )
@@ -320,7 +329,7 @@ class TestAdminApi:
         assert site["business_license_url"] is None
 
     async def test_unknown_key_rejected_via_api(self, client: AsyncClient, sm):
-        """白名单外的键(如 JWT 密钥)不可写。"""
+        """Keys outside the allow-list (such as the JWT secret) cannot be written."""
         ah = await admin_headers(sm, client, role="admin")
         resp = await client.put(
             "/api/admin/v1/platform-config",
@@ -331,13 +340,14 @@ class TestAdminApi:
         assert resp.json()["code"] == "VALIDATION_ERROR"
 
     async def test_required_real_name_needs_enabled_in_any_env(self, client: AsyncClient, sm):
-        """「充值强制实名」必须伴随「实名认证已开启」,任何环境两个方向都拦;同一批一起开放行。"""
+        """ "KYC required for top-ups" needs "KYC enabled"; both directions are blocked in every
+        environment; opening both in one batch passes."""
         ah = await admin_headers(sm, client, role="admin")
 
         async def put(updates: dict[str, str]):
             return await client.put(
                 "/api/admin/v1/platform-config",
-                json={"updates": updates, "reason": "合规开启"},
+                json={"updates": updates, "reason": "compliance enable"},
                 headers=ah,
             )
 
@@ -352,7 +362,8 @@ class TestAdminApi:
     async def test_real_name_flag_flows_to_policies_and_gate(
         self, client: AsyncClient, sm, monkeypatch
     ):
-        """开关走平台配置:公开 policies 与充值门禁即时生效(门禁只在有 KYC 表单的 profile 生效)。"""
+        """The switches live in the platform configuration: public policies and the top-up gate
+        follow at once (the gate applies only to profiles with a KYC form)."""
         ah = await admin_headers(sm, client, role="admin")
         base = (await client.get("/api/v1/policies")).json()
         assert base["real_name_enabled"] is False
@@ -362,7 +373,7 @@ class TestAdminApi:
             "/api/admin/v1/platform-config",
             json={
                 "updates": {"real_name_enabled": "true", "real_name_required_for_recharge": "true"},
-                "reason": "合规开启",
+                "reason": "compliance enable",
             },
             headers=ah,
         )
@@ -384,7 +395,9 @@ class TestAdminApi:
 
 class TestChannelGate:
     async def test_disabled_channel_rejected(self, client: AsyncClient, sm, monkeypatch):
-        """渠道开关默认关:未开通渠道下单被拒;开通但凭据不全同样拒(币种匹配时才走到凭据检查)。"""
+        """Channel switches default off: an order on a disabled channel is refused; enabled with
+        incomplete credentials is refused too (the credential check runs only when the currency
+        matches)."""
         monkeypatch.setattr(get_settings(), "platform_currency", "CNY")
         headers = await user_headers(client, "13700000202")
         resp = await client.post(
@@ -399,7 +412,7 @@ class TestChannelGate:
         ah = await admin_headers(sm, client, role="admin")
         await client.put(
             "/api/admin/v1/platform-config",
-            json={"updates": {"payment_wechat_enabled": "true"}, "reason": "联调"},
+            json={"updates": {"payment_wechat_enabled": "true"}, "reason": "integration test"},
             headers=ah,
         )
         resp = await client.post(
@@ -413,7 +426,7 @@ class TestChannelGate:
 
 _SUBJECT = KycSubject(
     user_id=1,
-    full_name="张三",
+    full_name="张三",  # cjk-ok
     identity_number="110101199001011237",
     phone="+8613800000000",
     email=None,
@@ -466,7 +479,8 @@ class TestAliyunMobile3Provider:
             await self._provider(handler).verify(replace(_SUBJECT, phone=None))
 
     async def test_factory_builds_aliyun_from_config(self, client: AsyncClient, sm):
-        """凭据经管理端录入后,工厂按生效配置构造阿里云渠道。"""
+        """Credentials entered through the admin API: the factory builds the Aliyun channel from the
+        effective configuration."""
         ah = await admin_headers(sm, client, role="admin")
         await client.put(
             "/api/admin/v1/platform-config",
@@ -475,7 +489,7 @@ class TestAliyunMobile3Provider:
                     "real_name_access_key_id": "LTAI5tTESTTESTTEST",
                     "real_name_access_key_secret": "sk-test-secret",
                 },
-                "reason": "接入阿里云实名",
+                "reason": "connecting Aliyun KYC",
             },
             headers=ah,
         )
@@ -486,7 +500,9 @@ class TestAliyunMobile3Provider:
 
 class TestRegistrySpecsAndProbeEndpoint:
     def test_registry_key_validation(self):
-        """host 不带 scheme、机器人名带 robot$ 前缀、代理映射逐行 <上游>=<项目>;格式错即拒。"""
+        """host without scheme, robot name with the robot$ prefix, proxy mapping
+        <upstream>=<project>
+        per line; malformed values are refused."""
         assert (
             validate_setting_value("registry_host", " harbor.example.com:8443 ")
             == "harbor.example.com:8443"
@@ -509,7 +525,8 @@ class TestRegistrySpecsAndProbeEndpoint:
             validate_setting_value("registry_ca_pem", "not a pem")
 
     def test_multiline_specs_reject_evil_line_and_linear_time(self):
-        """多行 text 配置逐行锚定校验:非法行被拒;超长对抗输入线性时间返回。"""
+        """Multi-line text settings are validated per anchored line: invalid lines are refused;
+        over-long adversarial input returns in linear time."""
         import time
 
         assert validate_setting_value(
@@ -543,7 +560,10 @@ class TestRegistrySpecsAndProbeEndpoint:
         monkeypatch.setattr(router_ops, "probe_harbor", fake_probe)
         await client.put(
             "/api/admin/v1/platform-config",
-            json={"updates": {"registry_host": "harbor.example.com"}, "reason": "接入 Harbor"},
+            json={
+                "updates": {"registry_host": "harbor.example.com"},
+                "reason": "connecting Harbor",
+            },
             headers=ah,
         )
         resp = await client.post("/api/admin/v1/platform-config/test-registry", headers=ah)
@@ -563,7 +583,8 @@ class TestRegistrySpecsAndProbeEndpoint:
 
 class TestConfigWarnings:
     def test_rules_by_switch_and_credentials(self):
-        """prod 禁止取值按 SettingSpec 派生警告;合规闸为 error,其余为 warning。"""
+        """Prod-forbidden values derive warnings from SettingSpec; compliance gates are error, the
+        rest warning."""
         from app.core.platform_config import SETTING_SPECS, compute_config_warnings
 
         base = dict.fromkeys(SETTING_SPECS, "")
@@ -677,14 +698,14 @@ class TestConfigWarnings:
         ]
 
     async def test_api_exposes_warnings(self, client: AsyncClient, sm):
-        """开启人机验证而未录凭据:warnings 带 error 级提示。"""
+        """CAPTCHA on without credentials: warnings carry an error-level hint."""
         ah = await admin_headers(sm, client, role="admin")
         assert (await client.get("/api/admin/v1/platform-config", headers=ah)).json()[
             "warnings"
         ] == []
         resp = await client.put(
             "/api/admin/v1/platform-config",
-            json={"updates": {"captcha_enabled": "true"}, "reason": "先开开关"},
+            json={"updates": {"captcha_enabled": "true"}, "reason": "switch on first"},
             headers=ah,
         )
         assert resp.status_code == 200, resp.text
@@ -696,7 +717,7 @@ class TestConfigWarnings:
 
 class TestEffectiveConfig:
     async def test_corrupt_secret_row_fails_closed(self, sm):
-        """单行密文损坏:抛错,不回落 env。"""
+        """A corrupt single-row ciphertext: raises, no fallback to env."""
         from app.core.platform_config import PlatformSetting, get_runtime_config
 
         async with sm() as session:
@@ -747,7 +768,8 @@ class TestSpecsMatchSettingsAndRuntimeConfig:
                 assert spec.group == "policy", key
 
     def test_env_defaults_round_trip(self):
-        """env 默认值全部能过自己的白名单校验并转成目标类型。"""
+        """Every env default passes its own allow-list validation and converts to the target
+        type."""
         from app.core.platform_config import (
             RuntimeConfig,
             env_layer_problems,
@@ -759,7 +781,8 @@ class TestSpecsMatchSettingsAndRuntimeConfig:
 
 
 class TestPolicyOverrides:
-    """策略参数(policy 组):/policies 端点、公开出参口径、越界拒绝、盘价快照跟随、组隔离。"""
+    """Policy parameters (policy group): /policies endpoints, public output, out-of-range refusal,
+    disk price snapshot, group isolation."""
 
     async def test_default_then_override_flows_to_public_endpoint(self, client: AsyncClient, sm):
         base = (await client.get("/api/v1/policies")).json()
@@ -768,7 +791,7 @@ class TestPolicyOverrides:
         ah = await admin_headers(sm, client, role="admin")
         resp = await client.put(
             "/api/admin/v1/policies",
-            json={"updates": {"disk_price_gb_month": "0.0500"}, "reason": "季度调价"},
+            json={"updates": {"disk_price_gb_month": "0.0500"}, "reason": "quarterly repricing"},
             headers=ah,
         )
         assert resp.status_code == 200, resp.text
@@ -782,11 +805,12 @@ class TestPolicyOverrides:
         assert "specs" in admin_view
 
     async def test_new_disk_snapshots_overridden_price(self, client: AsyncClient, sm):
-        """盘价是建盘时快照:覆盖后新盘用新价。"""
+        """The disk price is snapshotted at creation: new disks after the override use the new
+        price."""
         ah = await admin_headers(sm, client, role="admin")
         await client.put(
             "/api/admin/v1/policies",
-            json={"updates": {"disk_price_gb_month": "0.0700"}, "reason": "测试调价"},
+            json={"updates": {"disk_price_gb_month": "0.0700"}, "reason": "test repricing"},
             headers=ah,
         )
         headers = await user_headers(client, "13700000031")
@@ -799,17 +823,18 @@ class TestPolicyOverrides:
         assert resp.json()["price_gb_month"] == "0.0700"
 
     async def test_platform_config_endpoint_rejects_policy_keys(self, client: AsyncClient, sm):
-        """两组端点按配置组隔离:/platform-config 不收 policy 键,/policies 不收其它组的键。"""
+        """The two endpoint groups are isolated by setting group: /platform-config takes no policy
+        keys, /policies no keys of other groups."""
         ah = await admin_headers(sm, client, role="admin")
         resp = await client.put(
             "/api/admin/v1/platform-config",
-            json={"updates": {"disk_min_gb": "20"}, "reason": "走错门"},
+            json={"updates": {"disk_min_gb": "20"}, "reason": "wrong door"},
             headers=ah,
         )
         assert resp.status_code == 400
         resp = await client.put(
             "/api/admin/v1/policies",
-            json={"updates": {"icp_number": "x"}, "reason": "走错门"},
+            json={"updates": {"icp_number": "x"}, "reason": "wrong door"},
             headers=ah,
         )
         assert resp.status_code == 400
@@ -862,13 +887,13 @@ class TestPolicyOverrides:
         ah = await admin_headers(sm, client, role="admin")
         resp = await client.put(
             "/api/admin/v1/policies",
-            json={"updates": {"disk_price_gb_month": "9.99"}, "reason": "手滑"},
+            json={"updates": {"disk_price_gb_month": "9.99"}, "reason": "slip"},
             headers=ah,
         )
         assert resp.status_code == 400
         resp = await client.put(
             "/api/admin/v1/policies",
-            json={"updates": {"jwt_secret": "hack"}, "reason": "越权"},
+            json={"updates": {"jwt_secret": "hack"}, "reason": "privilege escalation"},
             headers=ah,
         )
         assert resp.status_code == 400

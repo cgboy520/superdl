@@ -94,12 +94,12 @@ class TestTemplates:
         assert en.subject == "Confirm your SuperDL sign-up" and "123456" in en.text
         assert "<strong>123456</strong>" in en.html
         zh = code_email("reset_password", "654321", "zh-CN")
-        assert zh.subject == "重置 SuperDL 密码" and "654321" in zh.text
+        assert zh.subject == "重置 SuperDL 密码" and "654321" in zh.text  # cjk-ok
         assert code_email("unknown", "1", "en-US").subject == code_email("login", "1").subject
 
     def test_sms_text_locale_fallback(self):
         assert sms_text("verify", {"code": "42"}) == sms_text("verify", {"code": "42"}, "fr-FR")  # type: ignore[arg-type]
-        assert sms_text("notice", {"title": "hi"}, "zh-CN") == "【SuperDL】hi"
+        assert sms_text("notice", {"title": "hi"}, "zh-CN") == "【SuperDL】hi"  # cjk-ok
 
 
 class TestQuotaAndEndpoint:

@@ -12,7 +12,7 @@ from app.core.config import get_settings
 from app.modules.legal.models import LegalDocVersion, UserConsent
 from tests.helpers import admin_headers, register
 
-NEW_CONTENT = "# 标题\n\n第一行\n第二行(改)\n第三行\n"
+NEW_CONTENT = "# Title\n\nline one\nline two (changed)\nline three\n"
 
 
 async def _create_draft(
@@ -35,7 +35,7 @@ class TestPublicEndpoint:
         assert body["version"] == 1
         assert body["fallback"] is False
         assert body["title"]
-        assert "服务说明" in body["content_md"]
+        assert "服务说明" in body["content_md"]  # zh-CN preset body  # cjk-ok
         assert body["published_at"]
 
     async def test_en_fallback_to_zh(self, client: AsyncClient):
@@ -107,7 +107,7 @@ class TestVersionFlow:
 
         resp = await client.put(
             f"/api/admin/v1/legal-docs/versions/{draft['id']}",
-            json={"title": "SuperDL 用户协议(修订)", "content_md": NEW_CONTENT},
+            json={"title": "SuperDL Terms of Service (revised)", "content_md": NEW_CONTENT},
             headers=headers,
         )
         assert resp.status_code == 200, resp.text
@@ -170,7 +170,7 @@ class TestVersionFlow:
         assert draft3["version"] == 3
         resp = await client.put(
             f"/api/admin/v1/legal-docs/versions/{draft3['id']}",
-            json={"content_md": "# 第三版\n"},
+            json={"content_md": "# Third edition\n"},
             headers=headers,
         )
         assert resp.status_code == 200
@@ -201,7 +201,7 @@ class TestVersionFlow:
         resp = await client.post(
             f"/api/admin/v1/legal-docs/versions/{published.id}/archive",
             headers=headers,
-            json={"reason": "清理废弃草稿"},
+            json={"reason": "cleaning up an abandoned draft"},
         )
         assert resp.status_code == 409
         resp = await client.post(
@@ -211,14 +211,14 @@ class TestVersionFlow:
         resp = await client.post(
             f"/api/admin/v1/legal-docs/versions/{draft['id']}/archive",
             headers=headers,
-            json={"reason": "内容已合并到 v3"},
+            json={"reason": "content merged into v3"},
         )
         assert resp.status_code == 200, resp.text
         assert resp.json()["status"] == "archived"
         resp = await client.post(
             f"/api/admin/v1/legal-docs/versions/{draft['id']}/archive",
             headers=headers,
-            json={"reason": "重复操作"},
+            json={"reason": "repeated operation"},
         )
         assert resp.status_code == 409
 

@@ -1,4 +1,5 @@
-"""对外地址配置的形态与协议闸门(Settings 层):public_base_url 逐字替换进 node-join.sh。"""
+"""Shape and scheme gates of public address settings (Settings layer): public_base_url is
+substituted verbatim into node-join.sh."""
 
 import base64
 
@@ -22,7 +23,7 @@ def _settings(**overrides) -> Settings:
 
 
 def _prod_kwargs() -> dict:
-    """能过 prod 校验的最小配置。"""
+    """The smallest configuration that passes the prod check."""
     return {
         "_env_file": None,
         "environment": "prod",
@@ -43,7 +44,7 @@ def _prod_kwargs() -> dict:
 
 
 class TestPublicBaseUrlShape:
-    """形态闸门与环境无关。"""
+    """Shape gates are environment-independent."""
 
     @pytest.mark.parametrize(
         "bad",
@@ -60,7 +61,7 @@ class TestPublicBaseUrlShape:
         ],
     )
     def test_rejects_injectable_values(self, bad: str):
-        """含 shell 元字符的 public_base_url 拒收。"""
+        """A public_base_url with shell metacharacters is refused."""
         with pytest.raises(ValidationError, match="public_base_url"):
             _settings(public_base_url=bad)
 
@@ -80,14 +81,14 @@ class TestPublicBaseUrlShape:
         "name", ["jupyter_domain_suffix", "service_domain_suffix", "admin_host"]
     )
     def test_bare_hostname_settings_reject_metacharacters(self, name: str):
-        """域名三项同口径拒元字符。"""
+        """The three domain settings refuse metacharacters alike."""
         with pytest.raises(ValidationError, match=name):
             _settings(**{name: 'evil.cn";id;#'})
 
 
 class TestPublicBaseUrlScheme:
     def test_prod_rejects_plain_http(self):
-        """prod 明文 http 拒收。"""
+        """Plain http is refused in prod."""
         kwargs = {**_prod_kwargs(), "public_base_url": "http://api.superdl.cn"}
         with pytest.raises(ValidationError, match="public_base_url"):
             Settings(**kwargs)
@@ -95,6 +96,6 @@ class TestPublicBaseUrlScheme:
 
 class TestTenantPodCidr:
     def test_rejects_non_cidr(self):
-        """非法 Pod 网段在 Settings 层拒收。"""
+        """An invalid Pod CIDR is refused at the Settings layer."""
         with pytest.raises(ValidationError, match="tenant_pod_cidr"):
             _settings(tenant_pod_cidr="10.42.0.0/33")

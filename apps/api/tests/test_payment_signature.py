@@ -1,4 +1,4 @@
-"""微信支付与支付宝回调的签名、时效和商户校验。"""
+"""Signature, freshness and merchant checks of WeChat Pay and Alipay callbacks."""
 
 # pyright: reportPrivateUsage=false
 
@@ -20,7 +20,7 @@ from app.modules.billing.payment_channels import AlipayChannel, WechatChannel
 
 @pytest.fixture(scope="module")
 def keypair() -> tuple[str, str]:
-    """(私钥 PEM, 公钥 PEM),module 级复用。"""
+    """(private key PEM, public key PEM), reused at module level."""
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     priv = key.private_bytes(
         serialization.Encoding.PEM,
@@ -60,7 +60,7 @@ def _alipay_channel(keypair: tuple[str, str]) -> AlipayChannel:
 
 
 def _alipay_notify(private_pem: str, **overrides: str) -> bytes:
-    """构造 URL 编码的支付宝签名通知体。"""
+    """Build a URL-encoded signed Alipay notice body."""
     notify_time = (datetime.now(UTC) + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")
     params = {
         "app_id": APP_ID,
@@ -89,7 +89,7 @@ class TestAlipayCallbackSignature:
         assert result.success is True
 
     async def test_tampered_amount_rejected(self, keypair):
-        """篡改金额签名对不上 → 拒。"""
+        """A tampered amount breaks the signature → refused."""
         priv, _pub = keypair
         body = _alipay_notify(priv).replace(b"total_amount=100.00", b"total_amount=99999.00")
         assert b"total_amount=99999.00" in body
@@ -98,7 +98,7 @@ class TestAlipayCallbackSignature:
         assert exc.value.code.name == "PAYMENT_CHANNEL_ERROR"
 
     async def test_foreign_app_id_rejected(self, keypair):
-        """app_id 核对。"""
+        """app_id check."""
         priv, _pub = keypair
         with pytest.raises(AppError) as exc:
             await _alipay_channel(keypair).parse_callback(
@@ -141,7 +141,7 @@ class TestAlipayCallbackSignature:
         assert exc.value.message_key == "billing.alipayCallbackVerifyFailed"
 
     async def test_blank_value_param_still_verifies(self, keypair):
-        """通知里带空字段(如 body=)不误判验签失败。"""
+        """Empty fields in the notice (e.g. body=) do not fail verification."""
         from urllib.parse import parse_qsl
 
         priv, _pub = keypair
@@ -174,7 +174,9 @@ def _wechat_channel(keypair: tuple[str, str]) -> WechatChannel:
 
 
 def _wechat_notify(private_pem: str, resource_plain: dict) -> tuple[dict, bytes]:
-    """构造一条 APIv3 通知:资源体 AES-256-GCM 加密,再对 timestamp\\nnonce\\nbody\\n 签名。"""
+    """Build an APIv3 notice: the resource encrypted with AES-256-GCM, then
+    timestamp\\nnonce\\nbody\\n
+    signed."""
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
     nonce = "0123456789ab"
@@ -222,7 +224,8 @@ def _wx_resource(**overrides) -> dict:
 
 class TestWechatCallbackSignature:
     async def test_missing_public_key_fails_closed(self, keypair):
-        """公钥模式是唯一验签模式:公钥/公钥 ID 缺失即渠道不可用。"""
+        """Public-key mode is the only verification mode: a missing key / key id makes the channel
+        unavailable."""
         priv, pub = keypair
         for overrides in (
             {"wechat_public_key": "", "wechat_public_key_id": ""},
@@ -267,7 +270,7 @@ class TestWechatCallbackSignature:
         assert exc.value.code.name == "PAYMENT_CHANNEL_ERROR"
 
     async def test_unsigned_probe_is_app_error_not_500(self, keypair):
-        """未签名请求归一化成 AppError,不是 500。"""
+        """An unsigned request normalises to AppError, not 500."""
         priv, _pub = keypair
         headers, body = _wechat_notify(priv, _wx_resource())
         headers.pop("Wechatpay-Signature-Type")
@@ -276,7 +279,7 @@ class TestWechatCallbackSignature:
             await _wechat_channel(keypair).parse_callback(headers, body)
 
     async def test_foreign_merchant_rejected(self, keypair):
-        """收款商户不符 → 拒。"""
+        """Payee merchant mismatch → refused."""
         priv, _pub = keypair
         headers, body = _wechat_notify(priv, _wx_resource(mchid="1900009999"))
         with pytest.raises(AppError) as exc:
@@ -284,7 +287,7 @@ class TestWechatCallbackSignature:
         assert exc.value.message_key == "billing.wechatCallbackMerchantMismatch"
 
     async def test_missing_mchid_rejected(self, keypair):
-        """通知不带 mchid/appid 即判失败。"""
+        """A notice without mchid/appid fails."""
         priv, _pub = keypair
         resource = _wx_resource()
         del resource["mchid"]
@@ -312,7 +315,7 @@ class TestWechatCallbackSignature:
             await _wechat_channel(keypair).parse_callback(headers, body)
 
     async def test_lowercase_header_names_accepted(self, keypair):
-        """头字段读取大小写不敏感。"""
+        """Header reads are case-insensitive."""
         priv, _pub = keypair
         headers, body = _wechat_notify(priv, _wx_resource())
         lowered = {k.lower(): v for k, v in headers.items()}

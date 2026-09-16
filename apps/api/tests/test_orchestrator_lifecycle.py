@@ -35,7 +35,8 @@ pytestmark = pytest.mark.usefixtures("fake")
 
 class TestCreateLifecycle:
     async def test_idem_key_param_mismatch_409(self, client, sm, fake):
-        """同键异参(改了 GPU 数):409,不返回上一台实例。"""
+        """Same key, different params (GPU count changed): 409, the previous instance is not
+        returned."""
         headers, _user_id, key_id = await funded_user(client, sm, "13900000031")
         sku_id = await create_test_sku(sm)
         h = {**headers, "Idempotency-Key": "inst-idem-mix"}
@@ -168,7 +169,7 @@ class TestStopStartRestart:
         assert fake.instance_disks[(f"tenant-{user_id}", uuid)] == disk_before
 
     async def test_restart_waits_for_pod_to_actually_disappear(self, client, sm, fake):
-        """重启等待原 Pod 消失后再同名重建。"""
+        """Restart waits for the old Pod to vanish before recreating it under the same name."""
         from app.core.outbox import OutboxTask
 
         headers, uuid, user_id = await provision_running(client, sm, fake)
@@ -213,7 +214,7 @@ class TestStopStartRestart:
 
 class TestFailureModes:
     async def test_pod_lost_marks_failed_and_stops_billing(self, client, sm, fake):
-        """kill pod 后一轮 reconcile 内 DB 转 failed 并停止计费。"""
+        """After kill pod, one reconcile round turns the DB failed and stops billing."""
         headers, uuid, user_id = await provision_running(client, sm, fake)
         fake.kill_pod(f"tenant-{user_id}", uuid)
         counts = await reconcile_once(sm)
@@ -262,7 +263,7 @@ class TestFailureModes:
         assert any("scheduling timed out" in n["title"] for n in notes)
 
     async def test_leaked_pod_reclaimed(self, client, sm, fake):
-        """DB 无主的泄漏 Pod 被回收。"""
+        """A leaked Pod without a DB owner is reclaimed."""
         headers, uuid, user_id = await provision_running(client, sm, fake)
         ns = f"tenant-{user_id}"
         leaked_spec = fake.pods[(ns, uuid)].spec
@@ -274,7 +275,7 @@ class TestFailureModes:
 
 
 class _Clock:
-    """可推进的假时钟(注入 reconciler 的 now_utc)。"""
+    """Advanceable fake clock (injected as the reconciler's now_utc)."""
 
     def __init__(self) -> None:
         self.offset = timedelta()
@@ -284,7 +285,7 @@ class _Clock:
 
 
 class TestUnreadyTimer:
-    """not-ready 计时跨巡检轮次累积,恢复就绪后重置。"""
+    """The not-ready timer accumulates across patrol rounds and resets once ready again."""
 
     @staticmethod
     async def _unready_since(sm, uuid: str):
@@ -295,7 +296,7 @@ class TestUnreadyTimer:
 
     @staticmethod
     def _pin(monkeypatch, clock: _Clock) -> None:
-        """设置 600 秒宽限窗并注入指定时钟。"""
+        """Set a 600-second grace window and inject the given clock."""
         from app.core.config import get_settings
         from app.modules.orchestrator import reconciler as reconciler_mod
 
@@ -303,7 +304,8 @@ class TestUnreadyTimer:
         monkeypatch.setattr(reconciler_mod, "now_utc", clock)
 
     async def test_timer_accumulates_across_rounds_then_fails(self, client, sm, fake, monkeypatch):
-        """两轮巡检跨过宽限窗即判失联:第一轮起表、第二轮到点。"""
+        """Two rounds crossing the grace window judge the node lost: round one starts the timer,
+        round two hits it."""
         headers, uuid, user_id = await provision_running(client, sm, fake, phone="13900000045")
         ns = f"tenant-{user_id}"
         clock = _Clock()
@@ -329,7 +331,8 @@ class TestUnreadyTimer:
         assert any("lost contact" in n["title"] for n in notes)
 
     async def test_recovery_restarts_the_timer(self, client, sm, fake, monkeypatch):
-        """抖动恢复重新计时:ready 那轮清表,再次不就绪从零起算。"""
+        """Flapping restarts the timer: the ready round clears it, the next not-ready starts from
+        zero."""
         headers, uuid, user_id = await provision_running(client, sm, fake, phone="13900000046")
         ns = f"tenant-{user_id}"
         clock = _Clock()
@@ -398,7 +401,7 @@ class TestRelease:
         assert resp.json()["code"] == "INSTANCE_NOT_STOPPED"
 
     async def test_release_is_idempotent(self, client, sm, fake):
-        """重复 DELETE:releasing/released 态回当前状态,不报 400。"""
+        """Repeated DELETE: releasing/released return the current state, no 400."""
         headers, uuid, _user_id = await provision_running(client, sm, fake)
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
@@ -416,7 +419,8 @@ class TestRelease:
         assert resp.json()["status"] == "released"
 
     async def test_events_pagination_desc(self, client, sm, fake):
-        """事件时间线:降序(最新在前)+ 游标翻页覆盖全量、不重不漏。"""
+        """Event timeline: descending (newest first) + cursor paging covers everything, no
+        duplicates, no gaps."""
         headers, uuid, _user_id = await provision_running(client, sm, fake)
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
@@ -442,7 +446,7 @@ class TestRelease:
         assert len(ids) == 4
 
     async def test_release_failed_instance_leaves_list(self, client, sm, fake):
-        """失败实例可被释放并出清列表。"""
+        """A failed instance can be released and leaves the list."""
         headers, uuid, user_id = await provision_running(client, sm, fake)
         fake.kill_pod(f"tenant-{user_id}", uuid)
         await reconcile_once(sm)
@@ -462,7 +466,7 @@ class TestRelease:
         assert [e["to_status"] for e in events][:3] == ["released", "releasing", "failed"]
 
     async def test_cancel_creating_instance(self, client, sm, fake):
-        """creating 可被用户主动取消,零扣费。"""
+        """creating can be cancelled by the user with zero charge."""
         headers, _user_id, key_id = await funded_user(client, sm, "13900000041")
         sku_id = await create_test_sku(sm)
         data = await create_instance_api(client, headers, sku_id, key_id)
@@ -504,7 +508,7 @@ class TestPortPool:
         assert data["ssh_port"] is None
 
     async def test_excluded_port_is_skipped(self, client, sm, fake, monkeypatch):
-        """NodePort 分配跳过已知占用端口。"""
+        """NodePort allocation skips known taken ports."""
         from app.core.config import get_settings
 
         settings = get_settings()
@@ -519,7 +523,7 @@ class TestPortPool:
         assert port not in (31500, 31501) and 31500 < port <= 32767
 
     async def test_taken_node_port_is_blocked_and_recovered(self, client, sm, fake, monkeypatch):
-        """端口冲突后标记 blocked,重试分配其他端口。"""
+        """After a port conflict the port is marked blocked and another one is allocated."""
         from app.core.config import get_settings
         from app.core.k8s import NodePortTaken
 
@@ -575,7 +579,7 @@ class TestAdminOps:
 
         resp = await client.post(
             f"/api/admin/v1/instances/{uuid}/force-stop",
-            json={"reason": "违规用途排查"},
+            json={"reason": "investigating misuse"},
             headers=ah,
         )
         assert resp.json()["status"] == "stopping"
@@ -583,7 +587,7 @@ class TestAdminOps:
             "items"
         ]
         assert events[0]["actor"] == "admin"
-        assert events[0]["event_metadata"]["admin_reason"] == "违规用途排查"
+        assert events[0]["event_metadata"]["admin_reason"] == "investigating misuse"
 
     async def test_frozen_cannot_start(self, client, sm, fake):
         headers, uuid, _user_id = await provision_running(client, sm, fake)
@@ -601,14 +605,14 @@ class TestAdminOps:
 
 class TestInventoryProvider:
     async def test_market_inventory_reflects_fake_capacity(self, client, sm, fake):
-        """市场库存按 (池, canonical 型号) 从节点台账估算。"""
+        """Market stock is estimated per (pool, canonical model) from the node inventory."""
         await create_test_sku(sm)
         await seed_node_spec(sm)
         skus = (await client.get("/api/v1/skus")).json()
         assert skus[0]["available_count"] == 96
 
     async def test_market_inventory_excludes_not_ready_nodes(self, client, sm, fake):
-        """NotReady / Cordoned 节点的卡不计入可售库存。"""
+        """Cards of NotReady / Cordoned nodes do not count as sellable stock."""
         await create_test_sku(sm)
         await seed_node_spec(sm, node_name="nr", status="NotReady")
         skus = (await client.get("/api/v1/skus")).json()
@@ -617,7 +621,7 @@ class TestInventoryProvider:
 
 class TestImageRefValidation:
     def test_digest_pinned_ref_accepted(self):
-        """镜像形态校验同时收 tag + digest。"""
+        """Image shape validation accepts tag + digest together."""
         from app.core.registry import is_valid_image_ref
 
         d = "a" * 64
@@ -632,7 +636,7 @@ class TestImageRefValidation:
         assert not is_valid_image_ref(f"harbor.example.com/superdl/pytorch:t@sha512:{d}")
 
     def test_admin_image_schema_rejects_malformed_ref(self):
-        """管理端写入路径同样校验 ref 形态。"""
+        """The admin write path validates the ref shape too."""
         import pytest as _pytest
         from pydantic import ValidationError
 
@@ -707,8 +711,9 @@ class TestImageRefValidation:
 
 
 class TestServiceWorkloadUnreadyExemption:
-    """服务型实例持续 not-ready 不判故障(reconciler._running_pod_lost_reason);
-    节点失联不豁免。"""
+    """A service instance that stays not-ready is not judged faulty
+    (reconciler._running_pod_lost_reason);
+    a real node loss is not exempted."""
 
     @staticmethod
     async def _reason(
@@ -746,7 +751,7 @@ class TestServiceWorkloadUnreadyExemption:
         assert reason is None
 
     async def test_service_still_fails_when_node_lost(self):
-        """节点真失联时不豁免。"""
+        """A real node loss is not exempted."""
         reason = await self._reason("service", self._UNREADY, node_not_ready=True)
         assert reason == "node_lost"
 
@@ -755,7 +760,7 @@ class TestServiceWorkloadUnreadyExemption:
         assert reason == "pod_lost"
 
     async def test_service_still_fails_when_pod_evicted(self):
-        """服务 Pod 被删除时实例仍转为 failed。"""
+        """A deleted service Pod still turns the instance failed."""
         reason = await self._reason(
             "service",
             PodStatus(exists=True, ready=False, phase="Running", deleting=True),

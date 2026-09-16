@@ -1,4 +1,4 @@
-"""资金账实核对(只报不改)+ money 表 DB 兜底约束。"""
+"""Fund reconciliation (report only, never fix) + DB safety-net constraints of the money tables."""
 
 from datetime import timedelta
 from decimal import Decimal
@@ -15,7 +15,7 @@ from tests.helpers import fund_wallet
 
 class TestWalletLedgerInvariant:
     async def test_balance_drift_detected_and_not_written_back(self, sm):
-        """余额与流水不符时告警,不修改余额或流水。"""
+        """Balance vs ledger mismatch alerts without changing balance or ledger."""
         await fund_wallet(sm, 1)
         async with sm() as session:
             await session.execute(update(Wallet).values(balance=Decimal("999.00")))
@@ -39,7 +39,7 @@ class TestWalletLedgerInvariant:
         assert len(entries) == 1
 
     async def test_missing_ledger_row_is_detected(self, sm):
-        """流水行被删掉(或压根没写)同样被发现。"""
+        """A deleted (or never written) ledger row is detected too."""
         await fund_wallet(sm, 1)
         async with sm() as session:
             await session.execute(text("DELETE FROM balance_ledger"))
@@ -49,7 +49,7 @@ class TestWalletLedgerInvariant:
 
 class TestBillsVsConsume:
     async def test_bill_without_debit_is_detected(self, sm):
-        """出账写了但扣款没写:出账合计 ≠ 消费流水合计。"""
+        """Bill written but debit missing: billed total ≠ consume ledger total."""
         await fund_wallet(sm, 1)
         async with sm() as session:
             session.add(
@@ -71,7 +71,7 @@ class TestBillsVsConsume:
 
 class TestMoneyTableConstraints:
     async def test_overdraft_is_still_allowed(self, sm):
-        """wallets 表无 balance >= 0 约束,透支必须放行。"""
+        """The wallets table has no balance >= 0 constraint; overdrafts must pass."""
         async with sm() as session:
             await wallet.debit(
                 session,

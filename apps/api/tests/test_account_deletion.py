@@ -1,5 +1,5 @@
-"""账号注销:申请 → 7 天冷静期 → 撤销/执行(前置校验 + 匿名化);
-注销后 access/refresh 401、手机号释放可重注册、账本保留。"""
+"""Account deletion: request → 7-day cooling-off → cancel / execute (pre-checks + anonymisation);
+afterwards access/refresh are 401, the handle is free to re-register, the ledger is kept."""
 
 from datetime import timedelta
 from decimal import Decimal
@@ -29,7 +29,7 @@ HANDLE = as_handle(PHONE)
 
 
 async def _create_request(
-    client: AsyncClient, headers: dict, handle: str = HANDLE, reason: str = "不再使用"
+    client: AsyncClient, headers: dict, handle: str = HANDLE, reason: str = "no longer needed"
 ):
     return await client.post(
         "/api/v1/me/deletion-request",
@@ -39,7 +39,7 @@ async def _create_request(
 
 
 async def _backdate_request(sm: async_sessionmaker[AsyncSession], user_id: int, days: int) -> None:
-    """将用户注销申请的 requested_at 回拨指定天数。"""
+    """Move the user's deletion request requested_at back by the given days."""
     async with sm() as session:
         await session.execute(
             update(AccountDeletionRequest)
@@ -58,13 +58,13 @@ class TestCreate:
 
     async def test_idempotent_returns_existing(self, client: AsyncClient, sm):
         headers, _, _ = await create_user_with_key(client, PHONE)
-        first = await _create_request(client, headers, reason="第一次")
+        first = await _create_request(client, headers, reason="first")
         assert first.status_code == 201, first.text
         assert first.json()["status"] == "pending"
-        second = await _create_request(client, headers, reason="第二次")
+        second = await _create_request(client, headers, reason="second")
         assert second.status_code == 201
         assert second.json()["id"] == first.json()["id"]
-        assert second.json()["reason"] == "第一次"
+        assert second.json()["reason"] == "first"
 
     async def test_get_none_returns_null(self, client: AsyncClient, sm):
         headers, _, _ = await create_user_with_key(client, PHONE)
@@ -100,7 +100,7 @@ class TestCancel:
         assert resp.status_code == 404
 
     async def test_reapply_after_cancel(self, client: AsyncClient, sm):
-        """cancelled 不占部分唯一索引:撤销后可重新申请。"""
+        """cancelled does not hold the partial unique index: a new request after cancelling."""
         headers, _, _ = await create_user_with_key(client, PHONE)
         assert (await _create_request(client, headers)).status_code == 201
         cancelled = await client.post("/api/v1/me/deletion-request/cancel", headers=headers)
@@ -117,7 +117,7 @@ class TestCooldown:
         admin = await admin_headers(sm, client)
         resp = await client.post(
             f"/api/admin/v1/deletion-requests/{req_id}/approve",
-            json={"note": "已核对身份与资源清单"},
+            json={"note": "identity and resource list verified"},
             headers=admin,
         )
         assert resp.status_code == 409
@@ -132,12 +132,12 @@ class TestCooldown:
         admin = await admin_headers(sm, client)
         resp = await client.post(
             f"/api/admin/v1/deletion-requests/{req_id}/reject",
-            json={"note": "资料待人工复核"},
+            json={"note": "documents pending manual review"},
             headers=admin,
         )
         assert resp.status_code == 200, resp.text
         assert resp.json()["status"] == "rejected"
-        assert resp.json()["note"] == "资料待人工复核"
+        assert resp.json()["note"] == "documents pending manual review"
 
 
 class TestApproveGuards:
@@ -149,7 +149,7 @@ class TestApproveGuards:
         admin = await admin_headers(sm, client)
         resp = await client.post(
             f"/api/admin/v1/deletion-requests/{req_id}/approve",
-            json={"note": "已核对身份与资源清单"},
+            json={"note": "identity and resource list verified"},
             headers=admin,
         )
         assert resp.status_code == 409
@@ -162,7 +162,7 @@ class TestApproveGuards:
             assert req.note is not None and uuid in req.note
 
     async def test_terminal_instances_and_deleted_disk_pass(self, client: AsyncClient, sm):
-        """released/failed 实例与 deleted 数据盘均为终态,不构成残留。"""
+        """released/failed instances and deleted data disks are terminal and not leftovers."""
         headers, user_id, _ = await create_user_with_key(client, PHONE)
         req_id = (await _create_request(client, headers)).json()["id"]
         await seed_instance(sm, user_id, status="released", wallet_credit=False)
@@ -172,7 +172,7 @@ class TestApproveGuards:
         admin = await admin_headers(sm, client)
         resp = await client.post(
             f"/api/admin/v1/deletion-requests/{req_id}/approve",
-            json={"note": "已核对身份与资源清单"},
+            json={"note": "identity and resource list verified"},
             headers=admin,
         )
         assert resp.status_code == 200, resp.text
@@ -185,7 +185,7 @@ class TestApproveGuards:
         admin = await admin_headers(sm, client)
         resp = await client.post(
             f"/api/admin/v1/deletion-requests/{req_id}/approve",
-            json={"note": "已核对身份与资源清单"},
+            json={"note": "identity and resource list verified"},
             headers=admin,
         )
         assert resp.status_code == 409
@@ -200,7 +200,7 @@ class TestApproveGuards:
         admin = await admin_headers(sm, client)
         resp = await client.post(
             f"/api/admin/v1/deletion-requests/{req_id}/approve",
-            json={"note": "已核对身份与资源清单"},
+            json={"note": "identity and resource list verified"},
             headers=admin,
         )
         assert resp.status_code == 409
@@ -222,7 +222,7 @@ class TestApproveSuccess:
                 .where(User.id == user_id)
                 .values(
                     phone="+8613800000060",
-                    kyc_name="张三",
+                    kyc_name="Alice Example",
                     kyc_identity_masked="1101************12",
                     kyc_status="verified",
                 )
@@ -245,12 +245,12 @@ class TestApproveSuccess:
         admin = await admin_headers(sm, client)
         resp = await client.post(
             f"/api/admin/v1/deletion-requests/{req_id}/approve",
-            json={"note": "已核对身份与资源清单"},
+            json={"note": "identity and resource list verified"},
             headers=admin,
         )
         assert resp.status_code == 200, resp.text
         assert resp.json()["status"] == "completed"
-        assert resp.json()["note"] == "已核对身份与资源清单"
+        assert resp.json()["note"] == "identity and resource list verified"
 
         async with sm() as session:
             user = await session.get(User, user_id)
@@ -303,7 +303,7 @@ class TestApproveSuccess:
             await _backdate_request(sm, user_id, days=8)
             resp = await client.post(
                 f"/api/admin/v1/deletion-requests/{req_id}/approve",
-                json={"note": "已核对身份与资源清单"},
+                json={"note": "identity and resource list verified"},
                 headers=admin,
             )
             assert resp.status_code == 200, resp.text
@@ -315,7 +315,7 @@ class TestApproveSuccess:
         assert ids[0] != ids[1]
 
     async def test_ledger_preserved(self, client: AsyncClient, sm):
-        """注销只脱敏身份,balance_ledger 行不动。"""
+        """Deletion only anonymises the identity, balance_ledger rows are untouched."""
         headers, user_id, _ = await funded_user(client, sm, PHONE, "100.00")
         async with sm() as session:
             before = (
@@ -335,7 +335,7 @@ class TestApproveSuccess:
         admin = await admin_headers(sm, client)
         resp = await client.post(
             f"/api/admin/v1/deletion-requests/{req_id}/approve",
-            json={"note": "已核对身份与资源清单"},
+            json={"note": "identity and resource list verified"},
             headers=admin,
         )
         assert resp.status_code == 200, resp.text

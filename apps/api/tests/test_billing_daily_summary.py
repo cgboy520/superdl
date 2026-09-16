@@ -1,4 +1,5 @@
-"""本地日期的消费摘要:日界、金额精度、租户隔离及日/月汇总一致性。"""
+"""Local-date consumption summary: day boundary, amount precision, tenant isolation and daily /
+monthly consistency."""
 
 from datetime import UTC, datetime
 from decimal import Decimal

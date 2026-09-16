@@ -29,7 +29,7 @@ class TestLoginRateLimit:
         assert resp.json()["code"] == "RATE_LIMITED"
 
     async def test_admin_login_pure_ip_bucket(self, client: AsyncClient, sm, monkeypatch):
-        """纯 IP 桶:遍历用户名也躲不开;只计失败。"""
+        """Pure IP bucket: rotating usernames does not escape it; failures only."""
         from app.modules.adminapi import auth_service
 
         monkeypatch.setattr(auth_service, "LOGIN_IP_MAX_ATTEMPTS", 3)
@@ -46,7 +46,7 @@ class TestLoginRateLimit:
         assert resp.json()["code"] == "RATE_LIMITED"
 
     async def test_counter_survives_business_rollback(self, client: AsyncClient, sm):
-        """限流计数走独立事务,业务事务回滚不抹掉。"""
+        """Rate-limit counts commit in their own transaction and survive a business rollback."""
         from sqlalchemy import select
 
         from app.core.ratelimit import RateLimitCounter
@@ -71,10 +71,10 @@ class TestLoginRateLimit:
 
 
 class TestAccountLevelLock:
-    """账号级锁定跨 IP 生效。"""
+    """Account-level lockout works across IPs."""
 
     async def test_user_login_account_lock_across_ips(self, client: AsyncClient, sm):
-        """10 个不同 IP 各失败 1 次,第 11 次账号桶锁死。"""
+        """10 different IPs fail once each, the 11th attempt is locked by the account bucket."""
         import pytest
 
         from app.core.errors import AppError, ErrorCode
@@ -105,7 +105,7 @@ class TestAccountLevelLock:
             assert exc_info.value.http_status == 429
 
     async def test_admin_login_account_lock_across_ips(self, client: AsyncClient, sm):
-        """管理端同款:换 IP 逃不掉账号阶梯锁定。"""
+        """Admin variant: changing IP does not escape the account ladder."""
         import pytest
 
         from app.core.errors import AppError, ErrorCode
@@ -127,7 +127,8 @@ class TestAccountLevelLock:
     async def test_success_after_foreign_failures_notifies_and_clears(
         self, client: AsyncClient, sm
     ):
-        """账号桶有失败记录而本人成功登录:发异常登录通知并清零账号桶。"""
+        """Account bucket has failures and the owner signs in: the anomaly notification is sent and
+        the bucket reset."""
         import pytest
         from sqlalchemy import select
 
@@ -176,7 +177,7 @@ class TestAccountLevelLock:
 
 class TestEnvironmentFailClosed:
     def test_environment_is_required(self, monkeypatch):
-        """SUPERDL_ENVIRONMENT 缺失即拒绝启动。"""
+        """A missing SUPERDL_ENVIRONMENT refuses to start."""
         import pytest
         from pydantic import ValidationError
 
@@ -190,7 +191,8 @@ class TestEnvironmentFailClosed:
 class TestProdConfigValidation:
     @staticmethod
     def _complete_prod_kwargs() -> dict:
-        """能通过 prod 校验的最小配置(只含 provider 选择与基础设施项)。"""
+        """The smallest configuration that passes the prod check (provider selection and
+        infrastructure items only)."""
         return {
             "_env_file": None,
             "environment": "prod",
@@ -215,7 +217,7 @@ class TestProdConfigValidation:
         }
 
     def test_prod_rejects_dev_defaults(self):
-        """environment=prod + 任一开发默认值 → 启动即拒。"""
+        """environment=prod + any development default → refused at boot."""
         import pytest
         from pydantic import ValidationError
 
@@ -232,7 +234,7 @@ class TestProdConfigValidation:
             assert keyword in msg
 
     def test_prod_rejects_placeholder_and_low_entropy_jwt_secret(self):
-        """占位符/低熵 JWT 密钥在 prod 拒启。"""
+        """Placeholder / low-entropy JWT secrets are refused in prod."""
         import pytest
         from pydantic import ValidationError
 
@@ -286,7 +288,7 @@ class TestProdConfigValidation:
         assert (s.platform_currency, s.billing_timezone) == ("CNY", "Asia/Shanghai")
 
     def test_prod_rejects_weak_bcrypt_cost(self):
-        """prod 下 bcrypt cost 小于 12 拒启;非 prod 允许 4。"""
+        """bcrypt cost below 12 is refused in prod; non-prod allows 4."""
         import pytest
         from pydantic import ValidationError
 
@@ -298,8 +300,8 @@ class TestProdConfigValidation:
         assert Settings(**fast).bcrypt_rounds == 4
 
     def test_prod_worker_role_skips_api_only_secrets(self):
-        """worker 按角色跳过 jwt_secret 与 admin_edge_token 校验;
-        api 角色缺 admin_edge_token 仍拒启。"""
+        """The worker role skips the jwt_secret and admin_edge_token checks;
+        the api role still refuses without admin_edge_token."""
         import pytest
         from pydantic import ValidationError
 
@@ -329,7 +331,8 @@ class TestProdConfigValidation:
             Settings(**{**self._complete_prod_kwargs(), "admin_edge_token": ""})
 
     def test_required_real_name_without_enabled_rejected_in_any_env(self):
-        """充值强制实名而实名未开启:任何环境都拒(在线打开由 platform_config 写入侧拦)。"""
+        """KYC required for top-ups while KYC is off: refused in every environment (the online
+        write is stopped by platform_config)."""
         import pytest
         from pydantic import ValidationError
 
@@ -349,7 +352,7 @@ class TestProdConfigValidation:
         assert Settings(**kwargs).real_name_required_for_recharge is True
 
     def test_prod_alipay_enabled_requires_seller_id(self):
-        """prod 启用支付宝缺收款方 PID 即拒启。"""
+        """Alipay enabled in prod without the payee PID refuses to start."""
         import pytest
         from pydantic import ValidationError
 
@@ -365,7 +368,7 @@ class TestProdConfigValidation:
         assert s.payment_alipay_enabled is True
 
     def test_cors_wildcard_rejected_in_any_env(self):
-        """CORS 通配 + allow_credentials=true 任何环境都拒。"""
+        """CORS wildcard + allow_credentials=true is refused in every environment."""
         import pytest
         from pydantic import ValidationError
 
@@ -379,7 +382,7 @@ class TestProdConfigValidation:
             )
 
     def test_prod_nonlocal_db_requires_tls(self):
-        """prod 非本机 PG 无 sslmode=require 即拒启。"""
+        """prod with a non-local PG without sslmode=require refuses to start."""
         import pytest
         from pydantic import ValidationError
 
@@ -398,7 +401,7 @@ class TestProdConfigValidation:
 
 
 class TestDbTlsTranslate:
-    """db._split_db_tls:URL 里 libpq 的 sslmode 翻译成 asyncpg 参数。"""
+    """db._split_db_tls: libpq sslmode in the URL translated into asyncpg parameters."""
 
     def test_sslmode_translated_to_ssl_connect_arg(self):
         from app.core.db import _split_db_tls
@@ -462,7 +465,7 @@ ci/CD07b8GiOmkvrCRzH8hYgmTyYF+XT9g==
 
 class TestSmsCodeBruteForce:
     async def test_code_burned_after_max_attempts(self, client: AsyncClient, sm):
-        """同一条验证码失败 5 次后作废(used_at 落库),正确码也不放行。"""
+        """A code fails 5 times and is void (used_at stored), the correct code no longer passes."""
         import pytest
 
         from app.core.errors import AppError
@@ -498,7 +501,7 @@ class TestSmsCodeBruteForce:
                 )
 
     async def test_code_is_single_use(self, client: AsyncClient, sm):
-        """消费成功的验证码立刻作废。"""
+        """A consumed code is void at once."""
         import pytest
 
         from app.core.errors import AppError
@@ -520,7 +523,7 @@ class TestSmsCodeBruteForce:
                 )
 
     async def test_sms_login_rate_limited(self, client: AsyncClient):
-        """验证码登录路径与密码路径同限流。"""
+        """Code login shares the rate limit with the password path."""
         phone = "13800000089"
         await register(client, phone)
         for _ in range(5):
@@ -535,7 +538,7 @@ class TestSmsCodeBruteForce:
         assert resp.json()["code"] == "RATE_LIMITED"
 
     async def test_sms_send_ip_rate_limited(self, client: AsyncClient):
-        """同一 IP 高频对不同号码发码 → 429。"""
+        """One IP sending codes to many numbers at high frequency → 429."""
         for i in range(20):
             resp = await client.post(
                 "/api/v1/auth/verification-code",
@@ -552,7 +555,8 @@ class TestSmsCodeBruteForce:
         assert resp.status_code == 429
 
     async def test_concurrent_same_phone_send_serialized(self, client: AsyncClient, sm):
-        """同号退避 TOCTOU:两请求并发,一个放行,另一个撞递增退避 429。"""
+        """Same-target backoff TOCTOU: two concurrent requests, one passes, the other hits the grown
+        backoff 429."""
         import asyncio
 
         from app.core.errors import AppError, ErrorCode
@@ -576,10 +580,11 @@ class TestSmsCodeBruteForce:
 
 
 class TestRequestBodyLimit:
-    """请求体硬上限 1MiB(内层;外层是 Envoy requestBuffer)。"""
+    """Request body hard cap 1MiB (inner layer; the outer one is the Envoy requestBuffer)."""
 
     async def test_over_limit_declared_content_length_fast_413(self, client: AsyncClient):
-        """Content-Length 超限:不读 body 直接 413,统一错误体 + 安全头仍在。"""
+        """Content-Length over the cap: 413 without reading the body, unified error body + security
+        headers still present."""
         resp = await client.post(
             "/api/v1/auth/login",
             content=b"x" * (1024 * 1024 + 1),
@@ -592,7 +597,7 @@ class TestRequestBodyLimit:
         assert resp.headers["x-content-type-options"] == "nosniff"
 
     async def test_over_limit_chunked_stream_413(self, client: AsyncClient):
-        """chunked 无 Content-Length:流式计数超限同样 413。"""
+        """chunked without Content-Length: the streaming count also yields 413."""
 
         async def stream():
             chunk = b"y" * (256 * 1024)
@@ -608,7 +613,7 @@ class TestRequestBodyLimit:
         assert resp.json()["code"] == "PAYLOAD_TOO_LARGE"
 
     async def test_exact_limit_passes_to_router(self, client: AsyncClient):
-        """恰好 1MiB 放行进路由(JSON 解析失败归 400 系)。"""
+        """Exactly 1MiB reaches the route (JSON parse failure lands in the 400 family)."""
         resp = await client.post(
             "/api/v1/auth/login",
             content=b"z" * (1024 * 1024),
@@ -634,7 +639,8 @@ class TestSecurityHeaders:
         assert "content-security-policy" not in resp.headers
 
     async def test_api_and_docs_responses_are_no_store(self, client: AsyncClient):
-        """API / 指标 / 文档响应带 no-store,CDN 不得缓存;健康探针不加。"""
+        """API / metrics / docs responses carry no-store, CDNs must not cache; health probes do
+        not."""
         for path in ("/api/v1/skus", "/api/v1/no-such-route", "/docs", "/openapi.json"):
             resp = await client.get(path)
             assert resp.headers["cache-control"] == "no-store", path
@@ -642,7 +648,8 @@ class TestSecurityHeaders:
 
 
 class TestEdgeGuard:
-    """prod 边缘收口(恒开):/api/admin 与 /metrics 不从公网 api 域暴露。"""
+    """prod edge cut-off (always on): /api/admin and /metrics are not exposed on the public api
+    domain."""
 
     async def test_admin_api_hidden_from_public_host(self, client: AsyncClient, monkeypatch):
         from app.core.config import get_settings
@@ -668,7 +675,7 @@ class TestEdgeGuard:
     async def test_admin_api_rejects_host_match_without_edge_token(
         self, client: AsyncClient, monkeypatch
     ):
-        """双闸:Host 正确但缺/错共享密钥头 → 404。"""
+        """Two gates: right Host but missing / wrong shared-secret header → 404."""
         from app.core.config import get_settings
 
         settings = get_settings()
@@ -705,7 +712,7 @@ class TestEdgeGuard:
 
 class TestMetricsGuard:
     async def test_non_ascii_authorization_rejected_not_500(self, client: AsyncClient):
-        """非 ASCII 的 Authorization 头返回 401。"""
+        """A non-ASCII Authorization header returns 401."""
         from app.core.config import get_settings
 
         settings = get_settings()
@@ -722,7 +729,7 @@ class TestMetricsGuard:
 
 class TestProdDocsClosed:
     def test_prod_disables_docs_and_openapi_routes(self, monkeypatch):
-        """生产不暴露 /docs 与 /openapi.json。"""
+        """Production exposes neither /docs nor /openapi.json."""
         from app.core.config import get_settings
         from app.main import create_app
 
@@ -737,7 +744,7 @@ class TestProdDocsClosed:
 
 class TestSmsCodeAtRest:
     async def test_code_is_not_stored_in_clear(self, client, sm):
-        """库里不存验证码明文。"""
+        """No verification-code plaintext in the database."""
         from sqlalchemy import select
 
         from app.modules.account.models import VerificationCode
@@ -771,7 +778,7 @@ class TestSmsCodeAtRest:
 
 class TestGhostEnvKeys:
     def test_unknown_superdl_vars_reported(self, monkeypatch):
-        """启动扫描揪出拼错/残留的 SUPERDL_* 变量。"""
+        """The boot scan catches misspelled / leftover SUPERDL_* variables."""
         from app.core.config import unknown_superdl_env_keys
 
         monkeypatch.setenv("SUPERDL_JWT_SECRET", "x")
@@ -785,7 +792,7 @@ class TestGhostEnvKeys:
 
 class TestBootstrapAdminGate:
     async def test_bootstrap_password_policy_at_service_layer(self, sm):
-        """引导入口口令自查:过短/超 72 字节都拒。"""
+        """Bootstrap password self-check: too short and over 72 bytes are both refused."""
         import pytest
         from sqlalchemy import select
 
@@ -797,7 +804,7 @@ class TestBootstrapAdminGate:
                 await ensure_bootstrap_admin(session, "short")
         async with sm() as session:
             with pytest.raises(RuntimeError, match="bootstrap password"):
-                await ensure_bootstrap_admin(session, "汉" * 25)
+                await ensure_bootstrap_admin(session, "汉" * 25)  # 3 bytes per character  # cjk-ok
         async with sm() as session:
             await ensure_bootstrap_admin(session, "l0ng-enough-pass")
             admins = (await session.execute(select(AdminUser))).scalars().all()
@@ -806,7 +813,7 @@ class TestBootstrapAdminGate:
 
 class TestUnifiedErrorBodyForHttpException:
     async def test_404_returns_unified_body(self, client: AsyncClient):
-        """路由层 404 也是统一错误体。"""
+        """Route-level 404 is the unified error body too."""
         resp = await client.get("/api/v1/no-such-route")
         assert resp.status_code == 404
         body = resp.json()
@@ -844,7 +851,8 @@ class TestAdminTokenRenewal:
         assert cross.status_code == 401
 
     async def test_renew_grace_and_absolute_cap(self, client: AsyncClient, sm):
-        """过期 15 分钟宽限内可续;首次登录超 12h(sess_iat)必须重新登录。"""
+        """Renewable within the 15-minute grace after expiry; a first login older than 12 h
+        (sess_iat) must sign in again."""
         from datetime import timedelta
 
         from app.core.security import create_token
@@ -884,7 +892,8 @@ class TestAdminTokenRenewal:
 
 class TestAuditGate:
     async def test_consecutive_audit_failures_fail_closed(self, client: AsyncClient, monkeypatch):
-        """审计写持续失败超阈值 → 写操作 fail-closed 503;读不受影响;探活恢复即复位。"""
+        """Sustained audit write failures past the threshold → writes fail closed with 503; reads
+        unaffected; a successful probe resets."""
         from app.core import audit as audit_mod
 
         class _Boom:
@@ -909,7 +918,8 @@ class TestAuditGate:
 
 class TestAdminLogout:
     async def test_logout_revokes_all_sessions(self, client: AsyncClient, sm):
-        """服务端登出:token_version+1,已签发 token 即刻失效(含本会话)。"""
+        """Server-side logout: token_version+1, issued tokens are invalid at once (this session
+        included)."""
         ah = await admin_headers(sm, client, role="ops")
         assert (await client.get("/api/admin/v1/me", headers=ah)).status_code == 200
         resp = await client.post("/api/admin/v1/auth/logout", headers=ah)
@@ -919,7 +929,7 @@ class TestAdminLogout:
 
 class TestAuthenticateHeader:
     async def test_401_carries_www_authenticate(self, client: AsyncClient):
-        """Bearer 鉴权失败回 WWW-Authenticate(RFC 6750)。"""
+        """Failed Bearer auth returns WWW-Authenticate (RFC 6750)."""
         resp = await client.get("/api/v1/notifications")
         assert resp.status_code == 401
         assert resp.headers["www-authenticate"] == "Bearer"
@@ -928,7 +938,7 @@ class TestAuthenticateHeader:
 
 class TestAuditOnUnhandledException:
     async def test_500_is_audited(self, sm):
-        """未捕获异常(result=500)也落审计行。"""
+        """Uncaught exceptions (result=500) land in the audit too."""
         from httpx import ASGITransport
         from sqlalchemy import select
 

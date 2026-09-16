@@ -1,4 +1,4 @@
-"""真实 K8s 对象与盘生命周期;未设置 SUPERDL_TEST_KUBECONFIG 时跳过。"""
+"""Real K8s objects and disk lifecycle; skipped unless SUPERDL_TEST_KUBECONFIG is set."""
 
 import asyncio
 import os
@@ -28,7 +28,7 @@ pytestmark = [
     pytest.mark.real_k8s,
     pytest.mark.skipif(
         not os.environ.get("SUPERDL_TEST_KUBECONFIG"),
-        reason="SUPERDL_TEST_KUBECONFIG 未设置,跳过真实 K8s 冒烟",
+        reason="SUPERDL_TEST_KUBECONFIG unset, skipping the real K8s smoke",
     ),
 ]
 
@@ -38,24 +38,29 @@ PVC_GONE_TIMEOUT = 30.0
 
 @pytest.fixture(scope="module")
 def orch() -> RealOrchestrator:
-    """直连集群的 RealOrchestrator;SUPERDL_TEST_KUBECONFIG 转标准 KUBECONFIG 供客户端读取。"""
+    """RealOrchestrator against the cluster; SUPERDL_TEST_KUBECONFIG becomes the standard KUBECONFIG
+    for the client."""
     use_kubeconfig(os.environ["SUPERDL_TEST_KUBECONFIG"])
     return RealOrchestrator()
 
 
 @pytest.fixture(scope="module")
 def orch_restricted() -> RealOrchestrator:
-    """受限身份(superdl-tenant-mgr SA)的编排器:SUPERDL_TEST_KUBECONFIG_RESTRICTED 缺失即 skip。"""
+    """Orchestrator under the restricted identity (superdl-tenant-mgr SA): skipped without
+    SUPERDL_TEST_KUBECONFIG_RESTRICTED."""
     path = os.environ.get("SUPERDL_TEST_KUBECONFIG_RESTRICTED")
     if not path:
-        pytest.skip("SUPERDL_TEST_KUBECONFIG_RESTRICTED 未设置(仅 CI kind job 注入受限身份)")
+        pytest.skip(
+            "SUPERDL_TEST_KUBECONFIG_RESTRICTED unset (only the CI kind job injects the restricted"
+            " identity)"
+        )
     use_kubeconfig(path)
     return RealOrchestrator()
 
 
 @pytest.fixture
 async def namespace(orch: RealOrchestrator) -> AsyncIterator[str]:
-    """每用例一只独立租户 ns,结束即删。"""
+    """One dedicated tenant ns per case, deleted at the end."""
     ns = f"tenant-smoke-{uuid.uuid4().hex[:8]}"
     await orch.ensure_namespace(ns)
     yield ns
@@ -73,12 +78,12 @@ async def _wait_pod_gone(orch: RealOrchestrator, namespace: str, name: str) -> N
         if not status.exists:
             return
         if asyncio.get_running_loop().time() > deadline:
-            raise TimeoutError(f"pod {name} 删除超时")
+            raise TimeoutError(f"pod {name} deletion timed out")
         await asyncio.sleep(0.5)
 
 
 async def _wait_pvc_gone(orch: RealOrchestrator, namespace: str, pvc_name: str) -> None:
-    """等 PVC 真消失(finalizer 清完才 404)。"""
+    """Wait for the PVC to really vanish (404 only once the finalizers are cleared)."""
     deadline = asyncio.get_running_loop().time() + PVC_GONE_TIMEOUT
     while True:
         try:
@@ -88,12 +93,12 @@ async def _wait_pvc_gone(orch: RealOrchestrator, namespace: str, pvc_name: str) 
                 return
             raise
         if asyncio.get_running_loop().time() > deadline:
-            raise TimeoutError(f"pvc {pvc_name} 删除超时")
+            raise TimeoutError(f"pvc {pvc_name} deletion timed out")
         await asyncio.sleep(0.5)
 
 
 async def test_namespace_security_baseline(orch: RealOrchestrator, namespace: str) -> None:
-    """租户命名空间的 PSA、NetworkPolicy、配额和独立数据盘 PVC 下发幂等。"""
+    """Tenant namespace PSA, NetworkPolicy, quota and per-disk PVC apply idempotently."""
     await orch.ensure_namespace(namespace)
 
     ns: Any = orch.core.read_namespace(namespace)
@@ -136,7 +141,7 @@ async def test_namespace_security_baseline(orch: RealOrchestrator, namespace: st
 
 
 async def test_ensure_namespace_under_tenant_mgr_sa(orch_restricted: RealOrchestrator) -> None:
-    """superdl-tenant-mgr 身份可幂等下发租户命名空间资源。"""
+    """The superdl-tenant-mgr identity applies tenant namespace resources idempotently."""
     from kubernetes import config as k8s_config
 
     ns = f"tenant-rbac-{uuid.uuid4().hex[:8]}"
@@ -154,7 +159,8 @@ async def test_ensure_namespace_under_tenant_mgr_sa(orch_restricted: RealOrchest
 
 
 async def test_instance_lifecycle_and_disk_reclaim(orch: RealOrchestrator, namespace: str) -> None:
-    """实例全生命周期:创建(幂等)→ 加固断言 → 删实例留盘 → 显式回收盘。"""
+    """Full instance lifecycle: create (idempotent) → hardening assertions → delete the instance,
+    keep the disk → reclaim the disk explicitly."""
     name = f"smoke-{uuid.uuid4().hex[:12]}"
     spec = InstancePodSpec(
         namespace=namespace,

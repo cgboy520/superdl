@@ -1,5 +1,6 @@
 # pyright: reportPrivateUsage=false
-"""节点台账巡检:铺行收敛/未登记隔离/装机登记兜底/Missing 保留删行/label 收敛与失败自愈。"""
+"""Node inventory patrol: row seeding / unenrolled isolation / enrollment fallback / Missing
+retention deletion / label convergence and self-healing."""
 
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -40,7 +41,8 @@ async def test_patrol_converges_and_labels(sm, fake_auto_ready):
 
 
 async def test_unenrolled_unlabeled_node_is_quarantined(sm, fake_auto_ready):
-    """无登记、未打标的非 infra 节点请求 cordon(一次)并常驻指标;挂了说明未知节点仍可调度。"""
+    """An unenrolled, unlabeled non-infra node requests cordon (once) with a standing metric; a
+    failure means unknown nodes stay schedulable."""
     fake_auto_ready.unlabeled_nodes.append(
         NodeInfo(
             name="rogue-node",
@@ -76,7 +78,8 @@ async def test_unenrolled_unlabeled_node_is_quarantined(sm, fake_auto_ready):
 
 
 async def test_infra_node_without_enrollment_is_left_alone(sm, fake_auto_ready):
-    """控制面 / infra 落点节点无登记也不隔离;池标签在但无登记的节点只告警不 cordon。"""
+    """Control-plane / infra nodes are not isolated without an enrollment; a labeled node without an
+    enrollment only warns, no cordon."""
     fake_auto_ready.unlabeled_nodes.append(
         NodeInfo(
             name="cp-1", pool_label="unknown", gpu_total=0, gpu_used=0, status="Ready", infra=True
@@ -92,7 +95,8 @@ async def test_infra_node_without_enrollment_is_left_alone(sm, fake_auto_ready):
 
 
 async def test_node_mid_join_is_left_alone(sm, fake_auto_ready):
-    """bootstrap 已落 node_name 的 installing 登记:节点未打标也不隔离。"""
+    """An installing enrollment whose bootstrap stored node_name: the unlabeled node is not
+    isolated."""
     from app.modules.nodes import service
     from app.modules.nodes.schemas import EnrollmentCreate
 
@@ -154,7 +158,7 @@ async def test_missing_then_removed(sm, fake_auto_ready):
 
 
 async def test_gfd_version_labels_fill_and_follow_upgrade(sm, fake_auto_ready):
-    """驱动/CUDA 两列以 GFD 标签为准,驱动升级后台账跟随。"""
+    """The driver / CUDA columns follow the GFD labels; the inventory follows a driver upgrade."""
     fake_auto_ready.unlabeled_nodes.append(
         NodeInfo(
             name="gfd-node",
@@ -187,8 +191,10 @@ async def test_gfd_version_labels_fill_and_follow_upgrade(sm, fake_auto_ready):
 
 
 async def test_enrollment_report_wins_over_gfd(sm, fake_auto_ready):
-    """装机登记(nvidia-smi 卡清单 + 上报的驱动/CUDA 版本)优先于 GFD 型号标签;
-    显存取卡清单最大值;无 GFD 版本标签时回落到登记快照。"""
+    """The enrollment (nvidia-smi card list + reported driver / CUDA versions) wins over the GFD
+    model label;
+    VRAM is the card list maximum; without GFD version labels the enrollment snapshot is the
+    fallback."""
     from app.modules.nodes import service
     from app.modules.nodes.reconciler import reconcile_enrollments_once
     from app.modules.nodes.schemas import EnrollmentCreate
@@ -234,7 +240,7 @@ async def test_enrollment_report_wins_over_gfd(sm, fake_auto_ready):
 
 
 async def _enroll_and_join_attempt(sm, *, hostname: str, pool: str) -> None:
-    """走完「签发令牌 → bootstrap → 对账」登记链。"""
+    """Run the "issue token → bootstrap → reconcile" enrollment chain."""
     from app.modules.nodes import service
     from app.modules.nodes.reconciler import reconcile_enrollments_once
     from app.modules.nodes.schemas import EnrollmentCreate
@@ -261,7 +267,8 @@ async def _enroll_and_join_attempt(sm, *, hostname: str, pool: str) -> None:
 
 
 async def test_tampered_pool_label_is_corrected_and_cordoned(sm, fake_auto_ready):
-    """池标签漂移时恢复期望池、cordon 并记录指标,登记仍为 joined。"""
+    """A drifted pool label is restored to the desired pool, cordoned and counted; the enrollment
+    stays joined."""
     from app.modules.nodes.models import NodeEnrollment
 
     fake_auto_ready.inject_node(
@@ -304,7 +311,8 @@ async def test_tampered_pool_label_is_corrected_and_cordoned(sm, fake_auto_ready
 
 
 async def test_switch_pool_converges_without_spoof_alarm(sm, fake_auto_ready):
-    """管理端切池后巡检收敛标签,不计冒名指标、不重复 cordon。"""
+    """After an admin pool switch the patrol converges the labels without counting tampering or
+    cordoning again."""
     from app.core.k8s.base import GPU_WORKLOAD_CONFIG_LABEL
     from app.core.metrics import NODE_POOL_LABEL_MISMATCH_TOTAL
     from app.modules.nodes import service
@@ -327,7 +335,7 @@ async def test_switch_pool_converges_without_spoof_alarm(sm, fake_auto_ready):
             session,
             "switcher-1",
             pool="kata",
-            reason="实机验证",
+            reason="hardware validation",
         )
 
     before = NODE_POOL_LABEL_MISMATCH_TOTAL._value.get()
@@ -342,7 +350,7 @@ async def test_switch_pool_converges_without_spoof_alarm(sm, fake_auto_ready):
 
 
 async def test_matching_pool_label_is_left_alone(sm, fake_auto_ready):
-    """登记与自声明一致的正常节点不被 cordon。"""
+    """A normal node whose enrollment matches its self-declaration is not cordoned."""
     fake_auto_ready.inject_node(
         NodeInfo(
             name="honest-1",

@@ -1,4 +1,4 @@
-"""probe_cluster(fake)、distro 派生、cluster_status 单行 upsert。"""
+"""probe_cluster (fake), distro derivation, cluster_status single-row upsert."""
 
 # pyright: reportPrivateUsage=false
 
@@ -14,7 +14,7 @@ pytestmark = pytest.mark.usefixtures("fake_auto_ready")
 
 
 def _fact(component: dict, key: str) -> tuple[str, str]:
-    """体检项里取一条事实的 (value, tone)。"""
+    """(value, tone) of one fact of a health-check item."""
     f = next(x for x in component["facts"] if x["key"] == key)
     return f["value"], f["tone"]
 
@@ -105,7 +105,7 @@ async def test_require_hami_ready_gate(sm, fake_auto_ready):
 
 
 class TestGateWiring:
-    """三入口门禁与 k3s runtimeClassName 下发。"""
+    """The three entry-point gates and the k3s runtimeClassName."""
 
     async def test_shared_create_blocked_when_hami_down(self, sm, fake_auto_ready, client):
         from app.modules.nodes.models import ClusterStatus
@@ -139,7 +139,8 @@ class TestGateWiring:
     async def test_dedicated_create_blocked_when_kata_runtimeclass_missing(
         self, sm, fake_auto_ready, client
     ):
-        """dedicated 档缺 RuntimeClass kata-qemu → 即时 409;shared 档不受影响。"""
+        """Dedicated tier without RuntimeClass kata-qemu → immediate 409; the shared tier is
+        unaffected."""
         from app.modules.nodes.models import ClusterStatus
 
         await seed_skus(sm)
@@ -169,7 +170,7 @@ class TestGateWiring:
         assert resp2.status_code == 202, resp2.text
 
     async def test_create_blocked_when_storage_class_missing(self, sm, fake_auto_ready, client):
-        """SC 按名核对,对不上 → 即时 409。"""
+        """SCs are checked by name, a mismatch → immediate 409."""
         from app.modules.nodes.models import ClusterStatus
 
         await seed_skus(sm)
@@ -268,7 +269,7 @@ class TestGateWiring:
 
 
 async def test_derive_node_distro_chain(sm, fake_auto_ready):
-    """派生链:探测缓存 > agent 版本后缀 > rke2 兜底。"""
+    """Derivation chain: probe cache > agent version suffix > rke2 fallback."""
     from app.core.k8s.base import ClusterProbe
     from app.core.platform_config import runtime_config_from_strings as rc
 
@@ -315,7 +316,7 @@ class TestClusterEndpoints:
         assert body["config"]["prometheus_url_set"] is False
 
     async def test_panel_carries_checkable_numbers_not_prose(self, sm, fake_auto_ready, client):
-        """面板事实返回数字与标识符。"""
+        """Panel facts return numbers and identifiers."""
         from app.modules.nodes.patrol import node_spec_patrol
 
         await node_spec_patrol(sm)
@@ -336,7 +337,8 @@ class TestClusterEndpoints:
                 assert not any("\u4e00" <= ch <= "\u9fff" for ch in f["value"]), f
 
     async def test_status_empty_cache_shows_checklist(self, sm, client):
-        """无探测缓存时组件状态为 unknown,仍返回安装命令。"""
+        """Without a probe cache the component state is unknown and the install commands are still
+        returned."""
         from app.modules.nodes.models import ClusterStatus
 
         async with sm() as session:
@@ -353,7 +355,7 @@ class TestClusterEndpoints:
         assert "apply.sh <full|light>" in comp["monitoring"]["fix_hint"]
 
     async def test_stale_probe_is_unknown_not_green(self, sm, fake_auto_ready, client):
-        """过期快照返回 unknown,不返回修复命令。"""
+        """A stale snapshot returns unknown without repair commands."""
         from datetime import timedelta
 
         from app.modules.nodes.models import ClusterStatus
@@ -375,7 +377,7 @@ class TestClusterEndpoints:
         assert comp["nodes"]["headline"]["value"] == "4/4"
 
     async def test_api_unreachable_is_unknown(self, sm, fake_auto_ready, client):
-        """API 不可达时组件状态为 unknown。"""
+        """With the API unreachable the component state is unknown."""
         from app.modules.nodes.patrol import node_spec_patrol
 
         await node_spec_patrol(sm)
@@ -386,7 +388,7 @@ class TestClusterEndpoints:
         assert all(c["state"] == "unknown" for c in body["components"])
 
     async def test_fix_hint_env_follows_probed_distro(self, sm, fake_auto_ready, client):
-        """修复命令的档位跟实测发行版走:k3s → -e light。"""
+        """The repair command tier follows the probed distribution: k3s → -e light."""
         from app.modules.nodes.patrol import node_spec_patrol
 
         fake_auto_ready.probe_hami_ready = False
@@ -401,7 +403,8 @@ class TestClusterEndpoints:
     async def test_storage_component_uses_the_same_names_as_the_gate(
         self, sm, fake_auto_ready, client
     ):
-        """存储组件按名称核对 SC;仅缺数据盘 SC 时返回警告。"""
+        """The storage component checks SCs by name; only the data-disk SC missing yields a
+        warning."""
         from app.modules.nodes.patrol import node_spec_patrol
 
         fake_auto_ready.probe_storage_classes = ("local-path",)
@@ -419,7 +422,7 @@ class TestClusterEndpoints:
         assert _fact(storage, "dataDisk") == ("-", "warn")
 
     async def test_kata_with_empty_pool_is_disabled_not_ok(self, sm, fake_auto_ready, client):
-        """kata 池无 Ready 节点时状态为 disabled。"""
+        """The kata pool without Ready nodes is disabled."""
         from app.modules.nodes.patrol import node_spec_patrol
 
         fake_auto_ready.pool_capacity.pop("kata", None)
@@ -433,7 +436,7 @@ class TestClusterEndpoints:
         assert body["pools_ready"].get("kata", 0) == 0
 
     async def test_kata_pool_counts_only_ready_nodes(self, sm, fake_auto_ready, client):
-        """kata 池节点数只统计 Ready 节点。"""
+        """The kata pool node count counts Ready nodes only."""
         from app.core.k8s.base import NodeInfo
         from app.modules.nodes.patrol import node_spec_patrol
 
@@ -457,7 +460,7 @@ class TestClusterEndpoints:
         assert {o["fields"]["status"] for o in kata["objects"]} == {"NotReady"}
 
     async def test_partial_operand_rollout_is_degraded(self, sm, fake_auto_ready, client):
-        """gpu-operator operand 未全部就绪时状态为 degraded。"""
+        """gpu-operator operands not all ready → degraded."""
         from app.modules.nodes.patrol import node_spec_patrol
 
         fake_auto_ready.probe_gpu_operand_ready = 1
@@ -471,7 +474,8 @@ class TestClusterEndpoints:
         assert comp["dcgm"]["state"] == "degraded" and comp["dcgm"]["headline"]["value"] == "1/3"
 
     async def test_one_bad_listener_degrades_gateway(self, sm, fake_auto_ready, client):
-        """任一 listener 未 Programmed 时网关降级,对象表返回其状态。"""
+        """Any listener not Programmed degrades the gateway and the object table shows its
+        state."""
         from app.modules.nodes.patrol import node_spec_patrol
 
         fake_auto_ready.probe_unprogrammed_listeners = ("svc-https",)
@@ -506,10 +510,10 @@ class TestClusterEndpoints:
 
 
 class TestComponentProbe:
-    """组件实时探测的诊断、降级和权限契约。"""
+    """Diagnostic, degradation and permission contracts of the live component probe."""
 
     async def test_probe_returns_pod_level_reasons(self, sm, fake_auto_ready, client):
-        """实时探测返回 Pod 级诊断与事件。"""
+        """The live probe returns Pod-level diagnostics and events."""
         from app.core.k8s.base import ComponentObject
 
         fake_auto_ready.detail_pods = {
@@ -549,7 +553,7 @@ class TestComponentProbe:
         assert _fact(body, "podsNotReady") == ("1", "bad")
 
     async def test_probe_failure_degrades_to_503_not_500(self, sm, fake_auto_ready, client):
-        """实时探测失败返回 503,快照仍可读取。"""
+        """A failed live probe returns 503, the snapshot stays readable."""
         fake_auto_ready.fail_probe = True
         headers = await admin_headers(sm, client, role="readonly")
         resp = await client.get("/api/admin/v1/cluster/components/gateway/probe", headers=headers)
@@ -565,7 +569,7 @@ class TestComponentProbe:
         assert resp.status_code == 404, resp.text
 
     async def test_probe_rate_limited(self, sm, fake_auto_ready, client):
-        """组件探测超过限流阈值时返回 429。"""
+        """A component probe beyond the rate limit returns 429."""
         from app.modules.nodes import service as nodes_service
 
         headers = await admin_headers(sm, client, role="readonly")

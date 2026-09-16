@@ -54,7 +54,8 @@ async def test_identity_migration_backfills_legacy_rows(scratch_url: str) -> Non
                 " verification_status, id_name, id_number, id_number_hmac) VALUES"
                 " ('13800000001', 'active', 24, 0, 'unverified', NULL, NULL, NULL),"
                 " ('del:42:0123456789abcdef', 'deleted', 24, 3, 'unverified', NULL, NULL, NULL),"
-                " ('13800000002', 'active', 24, 0, 'verified', '张三', '1101************34', 'abc')"
+                " ('13800000002', 'active', 24, 0, 'verified', '张三',"  # cjk-ok
+                " '1101************34', 'abc')"
             )
         )
         await conn.execute(
@@ -87,7 +88,7 @@ async def test_identity_migration_backfills_legacy_rows(scratch_url: str) -> Non
         assert all(r.email is None for r in rows)
         assert (rows[2].kyc_status, rows[2].kyc_name, rows[2].kyc_identity_hmac) == (
             "verified",
-            "张三",
+            "张三",  # cjk-ok
             "abc",
         )
         assert rows[2].kyc_provider == "aliyun_mobile3" and rows[2].has_verified_at

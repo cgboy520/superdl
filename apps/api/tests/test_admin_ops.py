@@ -1,4 +1,5 @@
-"""管理端运营 API:租户/调账双复核/节点与超卖报表/审计检索/死信重放/收入报表/公告。"""
+"""Admin operations API: tenants / two-person adjustments / nodes and oversell report / audit search
+/ dead-letter replay / revenue report / announcements."""
 
 import asyncio
 from datetime import timedelta
@@ -41,7 +42,8 @@ pytestmark = pytest.mark.usefixtures("fake")
 async def _season_reviewer(
     sm, username: str, *, days: int = 2, history: str | None = "admin.POST /api/admin/v1/tenants"
 ) -> None:
-    """把管理员建号时间回拨 days 天,并按 history 补一条成功管理操作审计行(None = 不补)。"""
+    """Move the admin creation time back by days and, per history, add one successful admin audit
+    row (None = none)."""
     async with sm() as session:
         admin = (
             await session.execute(select(AdminUser).where(AdminUser.username == username))
@@ -93,7 +95,7 @@ class TestAdjustments:
 
         resp = await client.post(
             "/api/admin/v1/adjustments",
-            json={"user_id": user_id, "amount": "25.50", "reason": "GPU 故障补偿"},
+            json={"user_id": user_id, "amount": "25.50", "reason": "GPU fault compensation"},
             headers=finance_a,
         )
         assert resp.status_code == 201, resp.text
@@ -109,7 +111,7 @@ class TestAdjustments:
 
         resp = await client.post(
             f"/api/admin/v1/adjustments/{adj_id}/review",
-            json={"approve": True, "comment": "属实"},
+            json={"approve": True, "comment": "verified"},
             headers=finance_b,
         )
         assert resp.json()["status"] == "approved"
@@ -131,13 +133,13 @@ class TestAdjustments:
 
         resp = await client.post(
             "/api/admin/v1/adjustments",
-            json={"user_id": user_id, "amount": "-10.00", "reason": "误退回收"},
+            json={"user_id": user_id, "amount": "-10.00", "reason": "mistaken refund clawback"},
             headers=fin_a,
         )
         adj_id = resp.json()["id"]
         resp = await client.post(
             f"/api/admin/v1/adjustments/{adj_id}/review",
-            json={"approve": False, "comment": "证据不足"},
+            json={"approve": False, "comment": "insufficient evidence"},
             headers=fin_b,
         )
         assert resp.json()["status"] == "rejected"
@@ -145,11 +147,12 @@ class TestAdjustments:
         assert w["balance"] == "100.00"
 
     async def test_idempotency_scope_and_fingerprint(self, client, sm, fake):
-        """同键同体重放 → replay;同键异体 → 409;同键同体跨租户 → 各开各的单。"""
+        """Same key and body → replay; same key, different body → 409; same key and body across
+        tenants → separate requests."""
         _h1, _u1, user1 = await provision_running(client, sm, fake)
         _h2, u2id, _k2 = await create_user_with_key(client, "13900000141")
         finance = await admin_headers(sm, client, role="finance", username="fin-idem")
-        body = {"user_id": user1, "amount": "10.00", "reason": "补偿一"}
+        body = {"user_id": user1, "amount": "10.00", "reason": "compensation one"}
 
         r1 = await client.post(
             "/api/admin/v1/adjustments", json=body, headers={**finance, "Idempotency-Key": "k-1"}
@@ -179,7 +182,7 @@ class TestAdjustments:
         assert r4.json()["id"] != r1.json()["id"]
 
     async def test_concurrent_review_single_credit(self, client, sm, fake):
-        """两名复核人并发 approve 同一单:行锁保证只入账一次。"""
+        """Two reviewers approve the same request concurrently: the row lock posts once."""
         headers, _uuid, user_id = await provision_running(client, sm, fake)
         async with sm() as session:
             creator = await create_admin(session, "fin-race-a", "pass1234", "finance")
@@ -193,7 +196,7 @@ class TestAdjustments:
                 session,
                 user_id=user_id,
                 amount="10.00",
-                reason="并发复核竞态",
+                reason="concurrent review race",
                 created_by=creator_id,
             )
             adj_id = adj.id
@@ -221,12 +224,13 @@ class TestAdjustments:
         assert len(entries) == 1
 
     async def test_reviewer_created_after_adjustment_rejected(self, client, sm, fake):
-        """复核人账号须早于调账发起 24 小时创建:发起后建号与 23 小时前建号都拒,25 小时前放行。"""
+        """The reviewer account must be created more than 24 hours before the adjustment: created
+        after or 23 hours before are refused, 25 hours before passes."""
         _headers, _uuid, user_id = await provision_running(client, sm, fake)
         fin_a = await admin_headers(sm, client, role="finance", username="fin-late-a")
         resp = await client.post(
             "/api/admin/v1/adjustments",
-            json={"user_id": user_id, "amount": "25.50", "reason": "故障补偿"},
+            json={"user_id": user_id, "amount": "25.50", "reason": "fault compensation"},
             headers=fin_a,
         )
         assert resp.status_code == 201, resp.text
@@ -262,7 +266,8 @@ class TestAdjustments:
         assert resp.json()["status"] == "approved"
 
     async def test_reviewer_without_prior_admin_action_rejected(self, client, sm, fake):
-        """先建小号、后发起:老账号但从未做过管理操作(或只做过复核)的复核人不构成独立复核。"""
+        """Old account, then the request: an old account that never did an admin action (or only
+        reviews) is no independent reviewer."""
         _headers, _uuid, user_id = await provision_running(client, sm, fake)
         fin_a = await admin_headers(sm, client, role="finance", username="fin-idle-a")
         fin_b = await admin_headers(sm, client, role="finance", username="fin-idle-b")
@@ -276,7 +281,7 @@ class TestAdjustments:
 
         resp = await client.post(
             "/api/admin/v1/adjustments",
-            json={"user_id": user_id, "amount": "25.50", "reason": "故障补偿"},
+            json={"user_id": user_id, "amount": "25.50", "reason": "fault compensation"},
             headers=fin_a,
         )
         adj_id = resp.json()["id"]
@@ -291,14 +296,15 @@ class TestAdjustments:
         assert resp.status_code == 200, resp.text
 
     async def test_reviewer_history_after_adjustment_does_not_count(self, client, sm, fake):
-        """只有调账发起之前的成功操作算数:发起后才有的操作与失败(4xx)操作都不算。"""
+        """Only successful actions before the adjustment count: later actions and failed (4xx) ones
+        do not."""
         _headers, _uuid, user_id = await provision_running(client, sm, fake)
         fin_a = await admin_headers(sm, client, role="finance", username="fin-after-a")
         fin_b = await admin_headers(sm, client, role="finance", username="fin-after-b")
         await _season_reviewer(sm, "fin-after-b", history=None)
         resp = await client.post(
             "/api/admin/v1/adjustments",
-            json={"user_id": user_id, "amount": "25.50", "reason": "故障补偿"},
+            json={"user_id": user_id, "amount": "25.50", "reason": "fault compensation"},
             headers=fin_a,
         )
         adj_id = resp.json()["id"]
@@ -330,20 +336,21 @@ class TestAdjustments:
         assert resp.json()["message_key"] == "adminapi.reviewerNotIndependent"
 
     async def test_adjustment_amount_strict_decimal(self, client, sm, fake):
-        """调账金额严格十进制:科学计数法/超 2 位小数/非数字一律 422。"""
+        """Adjustment amounts are strict decimals: scientific notation / more than 2 decimals /
+        non-numbers are 422."""
         _headers, _uuid, user_id = await provision_running(client, sm, fake)
         fin = await admin_headers(sm, client, role="finance", username="fin-strict")
         for bad in ("1e2", "1E-3", "10.005", "abc", "1,000.00", "10.", ".5", "--10.00", ""):
             resp = await client.post(
                 "/api/admin/v1/adjustments",
-                json={"user_id": user_id, "amount": bad, "reason": "严格校验"},
+                json={"user_id": user_id, "amount": bad, "reason": "strict validation"},
                 headers=fin,
             )
             assert resp.status_code == 422, (bad, resp.text)
         for good in ("-10.00", "25.50", "0.01", "-0.01", "100", "99999.99"):
             resp = await client.post(
                 "/api/admin/v1/adjustments",
-                json={"user_id": user_id, "amount": good, "reason": "严格校验"},
+                json={"user_id": user_id, "amount": good, "reason": "strict validation"},
                 headers=fin,
             )
             assert resp.status_code == 201, (good, resp.text)
@@ -361,11 +368,13 @@ class TestPolicyChangeAlert:
         assert large_policy_moves({}, after, after) == []
 
     async def test_policy_write_alerts_on_large_move_and_rate_limits(self, client, sm, fake):
-        """敏感策略键相对变化 ≥50% 落 critical 告警(列出键);<50% 不告警;写入口每管理员 20 次/时。"""
+        """Sensitive policy keys changing ≥50 % write a critical alert (keys listed); <50 % no
+        alert;
+        the write entry point allows 20 per admin per hour."""
         ah = await admin_headers(sm, client, role="admin")
         resp = await client.put(
             "/api/admin/v1/policies",
-            json={"updates": {"spot_discount_pct": "50"}, "reason": "微调"},
+            json={"updates": {"spot_discount_pct": "50"}, "reason": "small tweak"},
             headers=ah,
         )
         assert resp.status_code == 200, resp.text
@@ -384,7 +393,7 @@ class TestPolicyChangeAlert:
                     "disk_frozen_days": "10",
                     "disk_min_gb": "20",
                 },
-                "reason": "大调",
+                "reason": "big change",
             },
             headers=ah,
         )
@@ -394,18 +403,18 @@ class TestPolicyChangeAlert:
         assert alert.severity == "critical"
         assert "spot_discount_pct: 50 → 80" in alert.content
         assert "disk_frozen_days: 30 → 10" in alert.content
-        assert "disk_min_gb" not in alert.content and "大调" in alert.content
+        assert "disk_min_gb" not in alert.content and "big change" in alert.content
 
         for _ in range(18):
             resp = await client.put(
                 "/api/admin/v1/policies",
-                json={"updates": {"disk_min_gb": "20"}, "reason": "限流用例"},
+                json={"updates": {"disk_min_gb": "20"}, "reason": "rate-limit case"},
                 headers=ah,
             )
             assert resp.status_code == 200, resp.text
         resp = await client.put(
             "/api/admin/v1/policies",
-            json={"updates": {"disk_min_gb": "20"}, "reason": "限流用例"},
+            json={"updates": {"disk_min_gb": "20"}, "reason": "rate-limit case"},
             headers=ah,
         )
         assert resp.status_code == 429 and resp.json()["code"] == "RATE_LIMITED"
@@ -413,8 +422,10 @@ class TestPolicyChangeAlert:
 
 class TestTenantAggregations:
     async def test_tenant_rows_carry_own_aggregates(self, client, sm, fake):
-        """租户列表每行的余额/累计消费/实例数按租户聚合,手机号只回掩码,
-        缺省金额按 2 位小数字符串出参。"""
+        """Tenant list rows aggregate balance / lifetime spend / instance count per tenant, the
+        phone
+        is returned masked,
+        missing amounts are 2-dp strings."""
         from app.modules.billing import service as billing_service
 
         _headers, _uuid, id1 = await provision_running(client, sm, fake, "13600000061")
@@ -442,7 +453,9 @@ class TestTenantAggregations:
 
 class TestNodesAndReports:
     async def test_port_pool_stats(self, client, sm, fake):
-        """端口池水位:assigned=已分配实例数;blocked=撞占标记(周期复检会放回)。"""
+        """Port pool level: assigned = instances with a port; blocked = collision marks (the
+        periodic
+        re-check returns them)."""
         from app.modules.orchestrator.ports import block_port
 
         _headers, _uuid, _user_id = await provision_running(client, sm, fake)
@@ -465,7 +478,7 @@ class TestNodesAndReports:
         assert hami["oversell_ratio"] == round(0.5 / 32, 3)
 
     async def test_oversell_report_pool_scoped_utilization(self, client, sm, fake):
-        """利用率按池加权聚合;无数据的池为 null。"""
+        """Utilisation aggregates weighted by pool; pools without data are null."""
         from app.modules.metering.models import UsageHourly
         from app.modules.nodes.patrol import node_spec_patrol
         from app.modules.orchestrator.models import Instance
@@ -519,7 +532,7 @@ class TestOutboxDead:
 
         resp = await client.post(
             f"/api/admin/v1/outbox/{task_id}/retry",
-            json={"reason": "调度抖动已恢复"},
+            json={"reason": "scheduling flap recovered"},
             headers=ah,
         )
         assert resp.status_code == 200
@@ -529,14 +542,16 @@ class TestOutboxDead:
 
         resp = await client.post(
             f"/api/admin/v1/outbox/{task_id}/retry",
-            json={"reason": "再试一次"},
+            json={"reason": "one more try"},
             headers=ah,
         )
         assert resp.status_code == 409
 
         task2 = await _make_dead_task(sm)
         resp = await client.post(
-            f"/api/admin/v1/outbox/{task2}/discard", json={"reason": "实例已人工清理"}, headers=ah
+            f"/api/admin/v1/outbox/{task2}/discard",
+            json={"reason": "instance cleaned up manually"},
+            headers=ah,
         )
         assert resp.status_code == 200
         async with sm() as session:
@@ -546,7 +561,8 @@ class TestOutboxDead:
 
 class TestRevenueReport:
     async def test_today_revenue_and_signups(self, client: AsyncClient, sm):
-        """营收按账单归属期(bills_hourly.hour_start)计;tz_offset 缺省 480。"""
+        """Revenue is attributed by bill period (bills_hourly.hour_start); tz_offset defaults to
+        480."""
         from app.modules.billing.models import BillHourly
 
         data = await register(client, "13600000043")
@@ -586,8 +602,8 @@ class TestAnnouncement:
         resp = await client.post(
             "/api/admin/v1/announcements",
             json={
-                "title": "8 月 24 日存储维护",
-                "content": "维护期间数据盘可能抖动,实例不受影响。",
+                "title": "Storage maintenance on 24 August",
+                "content": "Data disks may flap during the maintenance, instances are unaffected.",
             },
             headers=ah,
         )
@@ -613,13 +629,14 @@ class TestAnnouncement:
     async def test_publish_bulk_insert_skips_frozen(
         self, client: AsyncClient, sm, monkeypatch: pytest.MonkeyPatch
     ):
-        """群发是批量 INSERT(单事务 ⌈N/1000⌉ 条语句),只触达 active 用户。"""
+        """Broadcast is a bulk INSERT (⌈N/1000⌉ statements in one transaction) reaching active users
+        only."""
         from app.modules.account import service as account_service
         from app.modules.notify import service as notify_service
 
         async def _no_per_user_notify(session, user_id, *args, **kwargs):
             if user_id is not None:
-                raise AssertionError("公告群发不得逐用户调用 notify()")
+                raise AssertionError("announcement broadcast must not call notify() per user")
 
         monkeypatch.setattr(notify_service, "notify", _no_per_user_notify)
 
@@ -631,7 +648,7 @@ class TestAnnouncement:
         ah = await admin_headers(sm, client, role="ops")
         resp = await client.post(
             "/api/admin/v1/announcements",
-            json={"title": "批量写入验证", "content": "维护通知"},
+            json={"title": "bulk insert check", "content": "maintenance notice"},
             headers=ah,
         )
         assert resp.status_code == 201, resp.text
@@ -650,7 +667,7 @@ class TestAnnouncement:
 
 
 class TestTenantBillingDrilldown:
-    """管理端可看任一租户的账单明细与资金流水。"""
+    """Admins can view any tenant's bill details and ledger."""
 
     async def test_ledger_pagination(self, client, sm):
         from decimal import Decimal
@@ -659,7 +676,7 @@ class TestTenantBillingDrilldown:
 
         headers = await admin_headers(sm, client)
         async with sm() as session:
-            await wallet.credit(session, 4242, Decimal("100.00"), type_="recharge", remark="充值")
+            await wallet.credit(session, 4242, Decimal("100.00"), type_="recharge", remark="top-up")
             for i in range(3):
                 await wallet.debit(
                     session,
@@ -681,13 +698,13 @@ class TestTenantBillingDrilldown:
 
 class TestFreezeStopsInstances:
     async def test_freeze_stops_running_instances(self, client, sm, fake):
-        """封禁同时停机、停计费。"""
+        """Freezing stops instances and billing at once."""
         h = await admin_headers(sm, client)
         user_headers, uuid, user_id = await provision_running(client, sm, fake, "13600000090")
 
         resp = await client.post(
             f"/api/admin/v1/tenants/{user_id}/freeze",
-            json={"reason": "疑似挖矿"},
+            json={"reason": "suspected mining"},
             headers=h,
         )
         assert resp.status_code == 200, resp.text
@@ -715,16 +732,18 @@ class TestFreezeStopsInstances:
         assert [i["status"] for i in listed if i["uuid"] == uuid] == ["stopped"]
 
     async def test_unfreeze_does_not_auto_start(self, client, sm, fake):
-        """解封不自动开机。"""
+        """Unfreezing does not start instances."""
         h = await admin_headers(sm, client)
         _uh, uuid, user_id = await provision_running(client, sm, fake, "13600000091")
         await client.post(
-            f"/api/admin/v1/tenants/{user_id}/freeze", json={"reason": "核查"}, headers=h
+            f"/api/admin/v1/tenants/{user_id}/freeze", json={"reason": "investigation"}, headers=h
         )
         await drain(sm)
         await reconcile_once(sm)
         resp = await client.post(
-            f"/api/admin/v1/tenants/{user_id}/unfreeze", json={"reason": "核查完毕"}, headers=h
+            f"/api/admin/v1/tenants/{user_id}/unfreeze",
+            json={"reason": "investigation finished"},
+            headers=h,
         )
         assert resp.status_code == 200
         assert resp.json()["status"] == "active"
@@ -733,7 +752,7 @@ class TestFreezeStopsInstances:
 
 
 class TestAdminSearch:
-    """按手机号找人、按订单号找单、按节点找实例。"""
+    """Find people by phone, orders by order number, instances by node."""
 
     async def test_tenant_lookup_by_email_and_phone(self, client, sm, fake):
         h = await admin_headers(sm, client)
@@ -764,7 +783,7 @@ class TestAdminSearch:
         assert [t["id"] for t in suffix] == [b]
 
     async def test_tenant_search_escapes_like_metachars(self, client, sm, fake):
-        """q 的 LIKE 元字符按字面匹配,支持邮箱前缀检索。"""
+        """The LIKE metacharacters in q match literally; email-prefix search works."""
         h = await admin_headers(sm, client)
         a = (await register(client, "13611110001"))["user"]["id"]
 
@@ -778,7 +797,8 @@ class TestAdminSearch:
         assert [t["id"] for t in resp.json()["items"]] == [a]
 
     async def test_tenant_order_asc_desc_with_cursor(self, client, sm, fake):
-        """注册先后(id)正/倒序:游标语义随方向翻转,翻页不重不漏。"""
+        """Registration order (id) ascending / descending: cursor semantics flip with the direction,
+        paging has no duplicates or gaps."""
         h = await admin_headers(sm, client)
         await register(client, "13655510001")
         await register(client, "13655510002")
@@ -804,7 +824,7 @@ class TestAdminSearch:
         assert len(asc_ids) == len(set(asc_ids))
 
     async def test_tenant_search_is_audited(self, client, sm, fake):
-        """按号码检索是敏感读,显式落审计。"""
+        """Searching by number is a sensitive read and is audited explicitly."""
         from app.core.audit import AuditLog
 
         h = await admin_headers(sm, client)
@@ -824,7 +844,7 @@ class TestAdminSearch:
         assert rows[0].target == "tenant-search:136****0003"
 
     async def test_plain_tenant_list_is_not_audited(self, client, sm, fake):
-        """不带查询的普通列表不落审计。"""
+        """A plain list without a query is not audited."""
         from app.core.audit import AuditLog
 
         h = await admin_headers(sm, client)
@@ -884,7 +904,7 @@ class TestAdminSearch:
 
 class TestTenantLookupById:
     async def test_numeric_q_hits_user_id(self, client, sm, fake):
-        """纯数字 q 按 user_id 精确命中(排在最前)。"""
+        """A digits-only q hits user_id exactly (listed first)."""
         h = await admin_headers(sm, client)
         data = await register(client, "13633330003")
         uid = data["user"]["id"]
@@ -905,7 +925,8 @@ class TestTenantLookupById:
 
 class TestAdjustContext:
     async def test_context_and_unknown_user(self, client, sm, fake):
-        """调账前置上下文:掩码手机号 + 当前余额 + 近 3 条流水 + 在跑台数;幽灵 id → 404。"""
+        """Adjustment context: masked phone + current balance + last 3 ledger rows + running count;
+        unknown id → 404."""
         _headers, _uuid, user_id = await provision_running(client, sm, fake)
         fin = await admin_headers(sm, client, role="finance", username="fin-ctx")
 
@@ -922,31 +943,31 @@ class TestAdjustContext:
         assert resp.status_code == 404
 
     async def test_create_unknown_user_rejected(self, client, sm, fake):
-        """对不存在的租户发起调账 → 404。"""
+        """An adjustment for an unknown tenant → 404."""
         fin = await admin_headers(sm, client, role="finance", username="fin-ghost")
         resp = await client.post(
             "/api/admin/v1/adjustments",
-            json={"user_id": 999999, "amount": "10.00", "reason": "测试"},
+            json={"user_id": 999999, "amount": "10.00", "reason": "test"},
             headers=fin,
         )
         assert resp.status_code == 404
 
     async def test_create_over_cap_rejected(self, client, sm, fake):
-        """单笔绝对值上限 ADJUST_MAX_ABS。"""
+        """Absolute cap per adjustment ADJUST_MAX_ABS."""
         _headers, user_id = await user_headers_with_id(client, "13900000772")
         fin = await admin_headers(sm, client, role="finance", username="fin-cap")
 
         for amount in ("100000.01", "-200000.00"):
             resp = await client.post(
                 "/api/admin/v1/adjustments",
-                json={"user_id": user_id, "amount": amount, "reason": "超额"},
+                json={"user_id": user_id, "amount": amount, "reason": "over the cap"},
                 headers=fin,
             )
             assert resp.status_code == 400
             assert resp.json()["code"] == "VALIDATION_ERROR"
         resp = await client.post(
             "/api/admin/v1/adjustments",
-            json={"user_id": user_id, "amount": "100000.00", "reason": "边界值"},
+            json={"user_id": user_id, "amount": "100000.00", "reason": "boundary value"},
             headers=fin,
         )
         assert resp.status_code == 201, resp.text
@@ -954,7 +975,7 @@ class TestAdjustContext:
 
 class TestOverview:
     async def test_exact_counts(self, client, sm, fake):
-        """总览聚合按精确 COUNT。"""
+        """The overview aggregates by exact COUNT."""
         _headers, _uuid, user_id = await provision_running(client, sm, fake)
         await seed_node_spec(sm, node_name="gpu-a1", pool_label="hami", gpu_count=8, gpu_used=3)
         await seed_node_spec(
@@ -992,7 +1013,7 @@ class TestOverview:
         assert body["paying_tenants"] == 1
 
     async def test_sku_impact(self, client, sm, fake):
-        """改价影响面:该 SKU 当前活跃实例数 / 涉及用户数 / 占用卡数。"""
+        """Price-change impact: the SKU's active instances / affected users / occupied cards."""
         from app.modules.orchestrator.models import Instance
 
         await provision_running(client, sm, fake)
@@ -1011,7 +1032,7 @@ class TestOverview:
 
 class TestAuditPagination:
     async def test_bad_cursor_400(self, client, sm):
-        """非法游标 400。"""
+        """An invalid cursor is 400."""
         ah = await admin_headers(sm, client, role="admin")
 
         resp = await client.get("/api/admin/v1/audit", params={"cursor": "!!!"}, headers=ah)
@@ -1020,10 +1041,14 @@ class TestAuditPagination:
 
 
 class TestTenantRealnameExposure:
-    """实名透出:默认脱敏;reveal + reason 看明文(readonly 不可),明文读落敏感读审计。"""
+    """KYC exposure: masked by default; reveal + reason shows plaintext (not for readonly),
+    plaintext
+    reads land in the sensitive-read audit."""
 
     async def _realname_user(self, client, sm) -> int:
-        """开启 real_name_enabled 并注入恒过的假渠道,经正式提交路径落实名字段。"""
+        """Enable real_name_enabled, inject an always-passing fake provider and populate the KYC
+        fields
+        through the real submit path."""
         from app.core.config import get_settings
         from app.modules.account import service as account_service
         from app.modules.account.kyc import KycResult, KycSubject, set_kyc_provider
@@ -1047,14 +1072,20 @@ class TestTenantRealnameExposure:
             await set_platform_setting(sm, "real_name_enabled", "true")
             async with sm() as session:
                 user = await account_service.get_user(session, uid)
-                await account_service.submit_kyc(session, user, "张三", "110101199001011237")
+                await account_service.submit_kyc(
+                    session,
+                    user,
+                    "张三",  # cjk-ok
+                    "110101199001011237",  # cjk-ok
+                )  # cjk-ok
         finally:
             set_kyc_provider(None)
             settings.compliance_profile = previous_profile
         return uid
 
     async def test_default_masked_for_all_roles_and_no_audit(self, client, sm, fake):
-        """默认(任意角色):姓名留姓掩名;脱敏响应不落实名读审计。"""
+        """Default (any role): the name keeps its first character; a masked response writes no KYC
+        read audit."""
         from app.core.audit import AuditLog
 
         uid = await self._realname_user(client, sm)
@@ -1063,7 +1094,7 @@ class TestTenantRealnameExposure:
             rows = (await client.get("/api/admin/v1/tenants", headers=headers)).json()["items"]
             me = next(t for t in rows if t["id"] == uid)
             assert me["kyc_status"] == "verified"
-            assert me["kyc_name"] == "张*", role
+            assert me["kyc_name"] == "张*", role  # cjk-ok
         async with sm() as session:
             hits = (
                 (
@@ -1077,35 +1108,37 @@ class TestTenantRealnameExposure:
         assert hits == []
 
     async def test_reveal_requires_reason(self, client, sm, fake):
-        """reveal=true 不带 reason(或过短)→ 400。"""
+        """reveal=true without a reason (or too short) → 400."""
         uid = await self._realname_user(client, sm)
         ah = await admin_headers(sm, client, role="ops")
         resp = await client.get("/api/admin/v1/tenants?reveal=true", headers=ah)
         assert resp.status_code == 400
         assert resp.json()["message_key"] == "common.validation"
         rows = (await client.get("/api/admin/v1/tenants", headers=ah)).json()["items"]
-        assert next(t for t in rows if t["id"] == uid)["kyc_name"] == "张*"
+        assert next(t for t in rows if t["id"] == uid)["kyc_name"] == "张*"  # cjk-ok
 
     async def test_readonly_cannot_reveal(self, client, sm, fake):
-        """readonly 带 reason 也不可 reveal(403)。"""
+        """readonly cannot reveal even with a reason (403)."""
         await self._realname_user(client, sm)
         ro = await admin_headers(sm, client, role="readonly")
-        resp = await client.get("/api/admin/v1/tenants?reveal=true&reason=客服工单核实", headers=ro)
+        resp = await client.get(
+            "/api/admin/v1/tenants?reveal=true&reason=support ticket check", headers=ro
+        )
         assert resp.status_code == 403
 
     async def test_reveal_sees_plaintext_and_audited_with_reason(self, client, sm, fake):
-        """reveal + reason:看明文;恰好落一条敏感读审计(条数+事由)。"""
+        """reveal + reason: plaintext; exactly one sensitive-read audit row (count + reason)."""
         from app.core.audit import AuditLog
 
         uid = await self._realname_user(client, sm)
         ah = await admin_headers(sm, client, role="ops")
         resp = await client.get(
-            "/api/admin/v1/tenants?reveal=true&reason=客服工单核实身份", headers=ah
+            "/api/admin/v1/tenants?reveal=true&reason=support ticket identity check", headers=ah
         )
         assert resp.status_code == 200, resp.text
         me = next(t for t in resp.json()["items"] if t["id"] == uid)
         assert me["kyc_status"] == "verified"
-        assert me["kyc_name"] == "张三"
+        assert me["kyc_name"] == "张三"  # cjk-ok
         async with sm() as session:
             hits = (
                 (
@@ -1118,11 +1151,12 @@ class TestTenantRealnameExposure:
             )
         assert len(hits) == 1
         assert hits[0].action == "admin.GET /api/admin/v1/tenants"
-        assert hits[0].detail == {"rows": 1, "reason": "客服工单核实身份"}
+        assert hits[0].detail == {"rows": 1, "reason": "support ticket identity check"}
 
 
 class TestTenantQuotaOverride:
-    """配额覆盖:override 优先于 policy/env;清空恢复默认链;updated_by 落库。"""
+    """Quota overrides: override wins over policy/env; clearing restores the default chain;
+    updated_by is stored."""
 
     async def test_override_caps_disks_then_clear_restores(self, client, sm, fake):
         headers, user_id, _key = await funded_user(client, sm, "13655550002")
@@ -1130,13 +1164,13 @@ class TestTenantQuotaOverride:
 
         resp = await client.put(
             f"/api/admin/v1/tenants/{user_id}/quota",
-            json={"max_disks": 1, "note": "防滥用限一块"},
+            json={"max_disks": 1, "note": "abuse prevention, one disk only"},
             headers=ah,
         )
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["max_disks"] == 1 and body["effective_max_disks"] == 1
-        assert body["note"] == "防滥用限一块"
+        assert body["note"] == "abuse prevention, one disk only"
 
         from app.modules.adminapi.models import AdminUser
 
@@ -1156,7 +1190,7 @@ class TestTenantQuotaOverride:
 
         resp = await client.put(
             f"/api/admin/v1/tenants/{user_id}/quota",
-            json={"note": "复核后恢复默认"},
+            json={"note": "defaults restored after review"},
             headers=ah,
         )
         assert resp.status_code == 200, resp.text
@@ -1192,7 +1226,8 @@ class TestTenantQuotaOverride:
 
 
 class TestAdminInstanceEvents:
-    """管理端实例事件时间线:读全角色,按时间倒序,游标分页;非管理端凭据拒绝。"""
+    """Admin instance event timeline: readable by every role, newest first, cursor pagination;
+    non-admin credentials refused."""
 
     async def test_events_desc_and_cursor(self, client, sm, fake):
         _uh, uuid, _uid = await provision_running(client, sm, fake)
@@ -1216,10 +1251,10 @@ class TestAdminInstanceEvents:
 
 
 class TestAdminListPagination:
-    """管理端列表端点的筛选参数与 limit。"""
+    """Filter parameters and limit of the admin list endpoints."""
 
     async def test_orders_cursor_and_day_filter(self, client, sm, fake):
-        """订单:游标走查;day=YYYY-MM-DD 只留当日单。"""
+        """Orders: cursor walk; day=YYYY-MM-DD keeps that day's orders only."""
         from app.modules.billing.models import Order
 
         h = await admin_headers(sm, client, role="finance")
@@ -1259,7 +1294,7 @@ class TestAdminListPagination:
         assert len(p1["items"]) == 2 and p1["next_cursor"]
 
     async def test_adjustments_cursor_and_filters(self, client, sm, fake):
-        """调账:status/user_id 过滤 + 游标走查。"""
+        """Adjustments: status/user_id filters + cursor walk."""
         from app.modules.adminapi.models import AdminUser
 
         _headers, _uuid, user_id = await provision_running(client, sm, fake, "13677780003")
@@ -1273,7 +1308,7 @@ class TestAdminListPagination:
                     session,
                     user_id=user_id,
                     amount="1.00",
-                    reason=f"分页走查 {i}",
+                    reason=f"paging walk {i}",
                     created_by=creator,
                 )
         p1 = (
@@ -1325,12 +1360,22 @@ class TestRealNameIdentityCap:
             await set_platform_setting(sm, "real_name_enabled", "true")
             async with sm() as session:
                 ua = await account_service.get_user(session, a)
-                await account_service.submit_kyc(session, ua, "张三", "110101199001011237")
+                await account_service.submit_kyc(
+                    session,
+                    ua,
+                    "张三",  # cjk-ok
+                    "110101199001011237",  # cjk-ok
+                )  # cjk-ok
                 assert ua.kyc_identity_hmac and ua.kyc_identity_masked == "1101************37"
             async with sm() as session:
                 ub = await account_service.get_user(session, b)
                 with pytest.raises(AppError) as exc:
-                    await account_service.submit_kyc(session, ub, "李四", "110101199001011237")
+                    await account_service.submit_kyc(
+                        session,
+                        ub,
+                        "李四",  # cjk-ok
+                        "110101199001011237",  # cjk-ok
+                    )  # cjk-ok
                 assert exc.value.message_key == "account.realNameIdentityLimit"
             async with sm() as session:
                 assert (await account_service.get_user(session, b)).kyc_status != "verified"

@@ -1,4 +1,5 @@
-"""纯 CPU 实例(tier=cpu / gpu_count=0):资源申请、计费份数、Pod 规格、容量与配额。"""
+"""Pure CPU instances (tier=cpu / gpu_count=0): resource requests, billing units, Pod spec, capacity
+and quotas."""
 
 # pyright: reportPrivateUsage=false
 
@@ -50,7 +51,7 @@ CPU_SKU = {
 
 
 def _cpu_spec(pool: str = "cpu", **extra) -> dict:
-    """CPU SKU 落库时的 spec 快照(与 orchestrator._snapshot_spec 同构)。"""
+    """spec snapshot of a stored CPU SKU (same shape as orchestrator._snapshot_spec)."""
     base = {
         "tier": "cpu",
         "pool_label": pool,
@@ -69,7 +70,7 @@ def _cpu_spec(pool: str = "cpu", **extra) -> dict:
 
 class TestGpuRequest:
     def test_cpu_instance_requests_no_gpu_resource(self):
-        """CPU 实例不申请任何 nvidia.com/*,走 runc + userns。"""
+        """A CPU instance requests no nvidia.com/*, runs on runc + userns."""
         req = build_gpu_request(
             pool_label="cpu", gpu_count=0, gpu_cores_pct=0, vram_gb=0, mig_profile=None
         )
@@ -80,7 +81,8 @@ class TestGpuRequest:
         assert req.node_selector == {POOL_NODE_LABEL: "cpu"}
 
     async def test_cpu_on_hami_pool_not_gated_on_hami(self, sm, fake):
-        """HAMi 未就绪时,挂 hami 池的 CPU 实例仍可下发(门禁与 build_gpu_request 同源)。"""
+        """With HAMi not ready, CPU instances on the hami pool can still be dispatched (the gate
+        shares its source with build_gpu_request)."""
         from app.core.errors import AppError, ErrorCode
         from app.modules.nodes import service as nodes_service
         from app.modules.orchestrator.service import _require_cluster_for_pool
@@ -96,7 +98,8 @@ class TestGpuRequest:
             await _require_cluster_for_pool(session, "hami", 0)
 
     def test_cpu_on_hami_pool_still_requests_no_gpu(self):
-        """gpu_count==0 的判定在池分支之前:CPU 档挂 hami 池不申请 gpu/gpucores/gpumem。"""
+        """gpu_count==0 is decided before the pool branch: a CPU tier on the hami pool requests no
+        gpu/gpucores/gpumem."""
         req = build_gpu_request(
             pool_label="hami",
             gpu_count=0,
@@ -115,7 +118,7 @@ class TestGpuRequest:
 
 class TestPodSpec:
     def test_cpu_instance_does_not_scale_vcpu_mem(self):
-        """CPU 档倍率恒 1。"""
+        """The CPU tier multiplier is always 1."""
         pod = build_pod_spec(make_instance(spec=_cpu_spec(), gpu_count=0))
         assert pod.vcpu == 8 and pod.mem_gb == 16
         assert pod.gpu_resources == {}
@@ -124,7 +127,7 @@ class TestPodSpec:
 
 class TestBillingUnits:
     def test_zero_gpu_bills_one_unit(self):
-        """CPU 实例按「整机一份」收。"""
+        """A CPU instance charges one whole-machine unit."""
         assert billing_units(0) == 1
         assert billing_units(1) == 1
         assert billing_units(8) == 8
@@ -139,7 +142,8 @@ class TestBillingUnits:
 
 
 class TestCpuSkuValidation:
-    """跨字段规则:CPU 规格三项恒 0 + 无型号,GPU 规格三项都不许为 0。"""
+    """Cross-field rule: CPU SKUs have the three fields at 0 and no model, GPU SKUs may have none of
+    them at 0."""
 
     async def _create(self, client: AsyncClient, headers: dict, **overrides):
         body = {
@@ -190,19 +194,20 @@ class TestCpuSkuValidation:
             assert resp.status_code == 422, (field, resp.text)
 
     async def test_cpu_tier_cannot_take_kata_pool(self, client: AsyncClient, sm):
-        """档位×池配对表对 CPU 档同样生效:cpu 档只许 cpu / hami 两池。"""
+        """The tier × pool pairing table applies to the CPU tier too: only the cpu / hami pools."""
         headers = await admin_headers(sm, client)
         resp = await self._create(client, headers, pool_label="kata")
         assert resp.status_code == 400, resp.text
         assert resp.json()["message_key"] == "catalog.tierPoolMismatch"
 
     async def test_update_checks_merged_final_state(self, client: AsyncClient, sm):
-        """部分更新只看终态:单改 vram_gb=0 的 GPU SKU 被拒。"""
+        """Partial updates judge the final state: setting vram_gb=0 alone on a GPU SKU is
+        rejected."""
         sku_id = await create_test_sku(sm)
         headers = await admin_headers(sm, client)
         resp = await client.patch(
             f"/api/admin/v1/skus/{sku_id}",
-            json={"vram_gb": 0, "reason": "用例"},
+            json={"vram_gb": 0, "reason": "test case"},
             headers=headers,
         )
         assert resp.status_code == 400, resp.text
@@ -218,7 +223,7 @@ class TestCapacity:
             return sku.id
 
     async def test_cpu_pool_node_yields_slots(self, client: AsyncClient, sm):
-        """无卡节点按 vCPU 与内存预算计算可售台数。"""
+        """GPU-less nodes compute sellable instances from the vCPU and memory budgets."""
         await seed_node_spec(sm, node_name="cpu-1", pool_label="cpu", gpu_model=None, gpu_count=0)
         await self._set_node_size(sm, "cpu-1", vcpu=32, mem_gb=64)
         sku_id = await self._cpu_sku(sm)
@@ -227,7 +232,8 @@ class TestCapacity:
         assert row["available_count"] == 4
 
     async def test_cpu_on_gpu_node_capped_by_policy(self, client: AsyncClient, sm):
-        """挂 hami 池时每节点只让出 gpu_node_cpu_instance_vcpu_cap 核;0 = 一台不卖。"""
+        """On the hami pool each node lends only gpu_node_cpu_instance_vcpu_cap cores; 0 = sells
+        none."""
         await seed_node_spec(sm, node_name="gpu-1", pool_label="hami")
         await self._set_node_size(sm, "gpu-1", vcpu=64, mem_gb=256)
         sku_id = await self._cpu_sku(sm, pool_label="hami")
@@ -245,7 +251,7 @@ class TestCapacity:
         assert await free() == 0
 
     async def test_no_capacity_rejects_create(self, client: AsyncClient, sm, fake):
-        """cap=0 时创建即 409。"""
+        """With cap=0 creation is 409."""
         await seed_node_spec(sm, node_name="gpu-1", pool_label="hami")
         sku_id = await self._cpu_sku(sm, pool_label="hami")
         async with sm() as session:
@@ -283,7 +289,7 @@ class TestCapacity:
 
 class TestSellableGate:
     async def test_cpu_sku_listing_checks_pool_only(self, client: AsyncClient, sm):
-        """CPU 规格上架只看「池里有 Ready 节点」。"""
+        """Listing a CPU SKU only checks "the pool has a Ready node"."""
         async with sm() as session:
             sku = Sku(**{**CPU_SKU, "status": "off"})
             session.add(sku)
@@ -291,21 +297,26 @@ class TestSellableGate:
             sku_id = sku.id
         headers = await admin_headers(sm, client)
         resp = await client.patch(
-            f"/api/admin/v1/skus/{sku_id}", json={"status": "on", "reason": "用例"}, headers=headers
+            f"/api/admin/v1/skus/{sku_id}",
+            json={"status": "on", "reason": "test case"},
+            headers=headers,
         )
         assert resp.status_code == 409, resp.text
         assert resp.json()["message_key"] == "catalog.skuNotSellableCpu"
 
         await seed_node_spec(sm, node_name="cpu-1", pool_label="cpu", gpu_model=None, gpu_count=0)
         resp = await client.patch(
-            f"/api/admin/v1/skus/{sku_id}", json={"status": "on", "reason": "用例"}, headers=headers
+            f"/api/admin/v1/skus/{sku_id}",
+            json={"status": "on", "reason": "test case"},
+            headers=headers,
         )
         assert resp.status_code == 200, resp.text
 
 
 class TestFullChain:
     async def test_cpu_instance_creates_bills_and_frees_quota(self, client: AsyncClient, sm, fake):
-        """gpu_count=0 全链路:创建 → Pod 无 GPU 资源 → running → 尾账非 0。"""
+        """gpu_count=0 end to end: create → Pod without GPU resources → running → non-zero tail
+        bill."""
         await seed_node_spec(sm, node_name="cpu-1", pool_label="cpu", gpu_model=None, gpu_count=0)
         async with sm() as session:
             sku = Sku(**{**CPU_SKU, "status": "on"})
@@ -354,7 +365,7 @@ class TestFullChain:
                     )
                 ).scalars()
             )
-        assert bills, "CPU 实例必须出账单行"
+        assert bills, "a CPU instance must produce bill rows"
         assert sum(b.amount for b in bills) > Decimal("0.00")
         assert all(b.gpu_count == 0 for b in bills)
 
@@ -380,7 +391,7 @@ class TestFullChain:
         assert resp.json()["message_key"] == "orchestrator.cpuSkuNoGpu"
 
     async def test_gpu_sku_rejects_zero_gpu_count(self, client: AsyncClient, sm, fake):
-        """GPU 规格的「0 卡实例」由服务层挡住。"""
+        """A "0-card instance" of a GPU SKU is stopped by the service layer."""
         await seed_node_spec(sm)
         sku_id = await create_test_sku(sm)
         headers, _user_id, key_id = await funded_user(client, sm, "13900000304")
@@ -400,7 +411,7 @@ class TestFullChain:
 
 class TestVcpuQuota:
     async def test_vcpu_capped_and_freed_on_release(self, client: AsyncClient, sm, fake):
-        """max_vcpus_per_user 封顶 CPU 实例的 vCPU 合计,释放后名额归还。"""
+        """max_vcpus_per_user caps the total vCPUs of CPU instances; release returns the slots."""
         await seed_node_spec(sm, node_name="cpu-1", pool_label="cpu", gpu_model=None, gpu_count=0)
         async with sm() as session:
             sku = Sku(**{**CPU_SKU, "status": "on"})
@@ -446,7 +457,7 @@ class TestVcpuQuota:
         assert third.status_code == 202, third.text
 
     async def test_gpu_instance_does_not_consume_vcpu_quota(self, client: AsyncClient, sm, fake):
-        """GPU 实例不吃 vCPU 额度。"""
+        """GPU instances do not consume the vCPU quota."""
         await seed_node_spec(sm)
         sku_id = await create_test_sku(sm)
         async with sm() as session:
@@ -467,7 +478,7 @@ class TestVcpuQuota:
 
 
 class TestSellableCpuSlots:
-    """预算按池分化,内存维与 vCPU 维取小。"""
+    """Budgets differ by pool, the memory and vCPU dimensions take the minimum."""
 
     @staticmethod
     def _node(pool: str, vcpu: int, mem_gb: int, status: str = "Ready") -> NodeSpec:
@@ -481,12 +492,12 @@ class TestSellableCpuSlots:
         )
 
     def test_memory_dimension_binds(self):
-        """内存不够时以内存为准:8 台的 vCPU、只有 2 台的内存 → 2。"""
+        """Short on memory, memory decides: vCPUs for 8, memory for 2 → 2."""
         nodes = [self._node("cpu", 64, 32)]
         assert catalog_service.sellable_cpu_slots(8, 16, nodes, gpu_node_vcpu_cap=16) == 2
 
     def test_gpu_node_capped_and_memory_prorated(self):
-        """GPU 节点按 cap 折算,内存按同比例折算。"""
+        """GPU nodes convert by cap, memory in the same proportion."""
         nodes = [self._node("hami", 64, 256)]
         assert catalog_service.sellable_cpu_slots(8, 64, nodes, gpu_node_vcpu_cap=16) == 1
 

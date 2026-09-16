@@ -69,11 +69,15 @@ class TestRegister:
         """Passwords are capped at 72 bytes: 24 CJK characters register, 25 → 422."""
         a, b = as_handle("13800000071"), as_handle("13800000072")
         await send_code(client, a, "register")
-        ok = await client.post("/api/v1/auth/register", json=_register_body(a, password="汉" * 24))
+        ok = await client.post(
+            "/api/v1/auth/register",
+            json=_register_body(a, password="汉" * 24),  # cjk-ok
+        )  # cjk-ok
         assert ok.status_code == 201, ok.text
         await send_code(client, b, "register")
         too_long = await client.post(
-            "/api/v1/auth/register", json=_register_body(b, password="汉" * 25)
+            "/api/v1/auth/register",
+            json=_register_body(b, password="汉" * 25),  # cjk-ok
         )
         assert too_long.status_code == 422
         assert too_long.json()["code"] == "VALIDATION_ERROR"

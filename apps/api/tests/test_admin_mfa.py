@@ -1,5 +1,6 @@
-"""管理端 TOTP MFA:admin_mfa_enabled 开时全角色强制绑定与二要素登录、恢复码、重置救援;
-关闭时密码即登录。"""
+"""Admin TOTP MFA: with admin_mfa_enabled every role must enrol and use the second factor,
+recovery codes, reset rescue;
+when off the password alone signs in."""
 
 import asyncio
 from typing import get_args
@@ -23,7 +24,7 @@ async def _create(client, sm, username: str, role: str) -> None:
 
 class TestMfaEnforcement:
     async def test_every_role_gets_setup_challenge(self, client: AsyncClient, sm):
-        """未绑定时登录只回绑定票、不直发 token,每个角色无一例外。"""
+        """Unenrolled login returns only the enrolment ticket, no direct token, for every role."""
         for role in get_args(AdminRole):
             await _create(client, sm, f"mfa-{role}", role)
             body = (await admin_login(client, f"mfa-{role}")).json()
@@ -32,8 +33,9 @@ class TestMfaEnforcement:
             assert body["ticket"]
 
     async def test_switch_off_skips_mfa_for_everyone_and_on_restores(self, client: AsyncClient, sm):
-        """admin_mfa_enabled=false:未绑定者与已绑定者都直发 token;
-        重新开启后已绑定者回到二要素、未绑定者回到绑定票。"""
+        """admin_mfa_enabled=false: enrolled and unenrolled both get a token directly;
+        once re-enabled, enrolled accounts return to the second factor and unenrolled ones to the
+        enrolment ticket."""
         from sqlalchemy import delete
 
         from app.core.platform_config import PlatformSetting
@@ -62,7 +64,7 @@ class TestMfaEnforcement:
 
 class TestSetupFlow:
     async def test_concurrent_begin_returns_the_stored_secret(self, client: AsyncClient, sm):
-        """并发 begin 只落一枚密钥,页面拿到的就是库里那枚。"""
+        """Concurrent begin stores one secret and the page gets the one in the database."""
         await _create(client, sm, "race-admin", "admin")
         ticket = (await admin_login(client, "race-admin")).json()["ticket"]
         a, b = await asyncio.gather(
@@ -87,7 +89,7 @@ class TestSetupFlow:
         assert resp.json()["code"] == "MFA_CODE_INVALID"
 
     async def test_bind_raises_platform_alert(self, client: AsyncClient, sm):
-        """TOTP 绑定成功即落平台告警。"""
+        """A successful TOTP enrolment writes a platform alert."""
         from sqlalchemy import select
 
         from app.modules.notify.models import Notification
@@ -110,7 +112,7 @@ class TestSetupFlow:
         assert rows[0].severity == "warning"
 
     async def test_setup_ticket_dies_at_bind(self, client: AsyncClient, sm):
-        """绑定成功即作废 setup 票(token_version+1)。"""
+        """A successful enrolment voids the setup ticket (token_version+1)."""
         await _create(client, sm, "onetime-admin", "admin")
         ticket = (await admin_login(client, "onetime-admin")).json()["ticket"]
         await complete_mfa_setup(client, ticket)
@@ -122,7 +124,8 @@ class TestSetupFlow:
         assert reconfirm.json()["code"] == "MFA_TICKET_INVALID"
 
     async def test_begin_refuses_already_bound_account(self, client: AsyncClient, sm):
-        """已绑定账号不再吐种子,哪怕持有当前版本的合法 setup 票。"""
+        """An enrolled account gets no seed again, even with a valid current-version setup
+        ticket."""
         from sqlalchemy import select
 
         from app.core.security import create_token
@@ -150,7 +153,7 @@ class TestSetupFlow:
         assert "secret" not in resp.json()
 
     async def test_ticket_cannot_cross_stage(self, client: AsyncClient, sm):
-        """setup 票与登录票 typ 互不通用。"""
+        """setup and login tickets are not interchangeable (typ)."""
         await _create(client, sm, "cross-admin", "admin")
         ticket = (await admin_login(client, "cross-admin")).json()["ticket"]
         resp = await client.post(
@@ -203,7 +206,7 @@ class TestVerifyLogin:
         assert reuse.json()["code"] == "MFA_CODE_INVALID"
 
     async def test_same_totp_code_replay_rejected(self, client: AsyncClient, sm):
-        """防重放(RFC 6238 §5.2):同一枚动态码第二次验证即拒。"""
+        """Replay protection (RFC 6238 §5.2): the same code is refused the second time."""
         import pyotp
 
         await _create(client, sm, "replay-admin", "admin")
@@ -265,7 +268,8 @@ class TestRecoveryRegenAndReset:
         assert stale.json()["code"] == "MFA_CODE_INVALID"
 
     async def test_reset_by_super_admin(self, client: AsyncClient, sm):
-        """锁死救援:另一位超管重置 → 绑定清空 + 会话踢掉 → 下次登录重新强制绑定。"""
+        """Lockout rescue: another admin resets → enrolment cleared + sessions kicked → the next
+        login enrols again."""
         from sqlalchemy import select
 
         from app.modules.adminapi.models import AdminUser
@@ -284,7 +288,7 @@ class TestRecoveryRegenAndReset:
         resp = await client.post(
             f"/api/admin/v1/admins/{victim_id}/mfa/reset",
             headers=h,
-            json={"reason": "验证器丢失救援"},
+            json={"reason": "authenticator lost, rescue"},
         )
         assert resp.status_code == 200, resp.text
         assert resp.json()["totp_enabled"] is False
@@ -309,7 +313,7 @@ class TestRecoveryRegenAndReset:
         resp = await client.post(
             f"/api/admin/v1/admins/{my_id}/mfa/reset",
             headers=h,
-            json={"reason": "尝试自重置"},
+            json={"reason": "attempted self-reset"},
         )
         assert resp.status_code == 409
         assert resp.json()["code"] == "MFA_RESET_SELF_FORBIDDEN"

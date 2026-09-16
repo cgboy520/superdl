@@ -1,4 +1,5 @@
-"""worker 组件划分:每个 outbox handler 与定时任务恰好归属一个组件;组件进程只领自己的任务。"""
+"""Worker component split: every outbox handler and scheduled job belongs to exactly one component;
+a component process claims only its own tasks."""
 
 # pyright: reportPrivateUsage=false
 
@@ -23,12 +24,12 @@ class TestPartition:
         for component in _SHARDED:
             for task_type in COMPONENT_OUTBOX_TYPES[component]:
                 assert task_type not in seen, (
-                    f"{task_type} 同时归属 {seen[task_type]} 与 {component}"
+                    f"{task_type} belongs to both {seen[task_type]} and {component}"
                 )
                 seen[task_type] = component
 
     def test_outbox_types_cover_all_registered_handlers(self):
-        """_registry 全量 == 各组件并集。"""
+        """The full _registry == the union of the components."""
         from app.core.outbox import _registry
         from app.wiring import wire_modules
 
@@ -36,12 +37,14 @@ class TestPartition:
         registered = set(_registry)
         sharded = set().union(*(COMPONENT_OUTBOX_TYPES[c] for c in _SHARDED))
         assert registered == sharded, (
-            f"未登记组件: {sorted(registered - sharded)};登记了但不存在的类型: "
+            f"unregistered components: {sorted(registered - sharded)};"
+            " registered but non-existent types: "
             f"{sorted(sharded - registered)}"
         )
 
     async def test_scheduled_jobs_table_matches_scheduler(self, pg_url):
-        """各组件任务互斥且完整覆盖 JOBS,调度器注册的 id 集与 JOBS 一致。"""
+        """Component jobs are disjoint and cover JOBS completely; the scheduler id set equals
+        JOBS."""
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
         from app.workers.main import register_scheduled_jobs
@@ -69,7 +72,7 @@ class TestComponentEnv:
 
 class TestClaimFilter:
     async def test_component_only_claims_own_types(self, sm: async_sessionmaker[AsyncSession]):
-        """node-mgr 一个也领不到;tenant-mgr 领走 instance.create,notify.sms 留给 core。"""
+        """node-mgr claims nothing; tenant-mgr takes instance.create, notify.sms is left to core."""
         from sqlalchemy import select
 
         from app.core.outbox import OutboxTask, enqueue, process_one

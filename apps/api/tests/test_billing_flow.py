@@ -1,4 +1,5 @@
-"""计费与编排的集成:尾账(计费边同事务)与欠费链路(预警→停机→冻结→回收→解冻)。"""
+"""Billing and orchestration integration: tail bill (same transaction as the billing edge) and the
+arrears chain (warn → stop → freeze → reclaim → unfreeze)."""
 
 import asyncio
 from datetime import timedelta
@@ -22,7 +23,7 @@ pytestmark = pytest.mark.usefixtures("fake")
 
 class TestWalletFirstCreate:
     async def test_concurrent_first_credit_creates_single_row(self, sm):
-        """无钱包行的用户被并发入账:只留一行且每笔入账都落账。"""
+        """Concurrent credits for a user without a wallet row: one row and every credit lands."""
         gate = asyncio.Barrier(5)
 
         async def credit_once() -> None:
@@ -59,7 +60,7 @@ class TestTailBilling:
         assert len(bills["items"]) == 1
 
     async def test_pod_lost_also_charges_tail(self, client, sm, fake):
-        """running→failed 同样是计费边,尾账照出。"""
+        """running→failed is a billing edge too, the tail bill is posted."""
         _headers, uuid, user_id = await provision_running(client, sm, fake)
         expected = await backdate_running_event(sm, uuid, 15)
         fake.kill_pod(f"tenant-{user_id}", uuid)
@@ -138,7 +139,8 @@ class TestArrearsChain:
         assert data["frozen_deadline"] is None
 
     async def test_arrears_stop_rereads_balance_in_lock(self, client, sm, fake, monkeypatch):
-        """停机判定前锁内二次读余额:窗口内刚充值 → 不停机。"""
+        """Second balance read under the lock before the stop decision: a top-up inside the window →
+        no stop."""
         from app.modules.billing import patrol as patrol_mod
 
         headers, uuid, user_id = await provision_running(client, sm, fake)
@@ -170,7 +172,8 @@ class TestArrearsChain:
 
 class TestBillingApiEdges:
     async def test_ledger_cursor_pagination(self, client, sm):
-        """游标续页全程走查:limit 截断 → 拿 next_cursor 续 → 两页无重叠。"""
+        """Cursor continuation end to end: limit truncates → continue with next_cursor → no overlap
+        between pages."""
         data = await register(client, "13900000701")
         headers, user_id = {"Authorization": f"Bearer {data['access_token']}"}, data["user"]["id"]
         async with sm() as session:

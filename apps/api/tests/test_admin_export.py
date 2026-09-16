@@ -1,4 +1,4 @@
-"""管理端 CSV 导出的筛选、脱敏和审计契约。"""
+"""Filter, masking and audit contracts of the admin CSV exports."""
 
 from datetime import timedelta
 from decimal import Decimal
@@ -64,7 +64,7 @@ async def _make_refunds(sm: async_sessionmaker[AsyncSession], count: int = 2) ->
                     user_id=1,
                     order_no=f"SDL-EXP-RF{i}",
                     amount=Decimal("10.00"),
-                    reason="重复扣款",
+                    reason="duplicate charge",
                     status="pending" if i == 0 else "paid",
                     payout_channel=None if i == 0 else "offline",
                     payout_ref=None if i == 0 else "PAY-REF-1",
@@ -117,7 +117,7 @@ async def _make_invoices(sm: async_sessionmaker[AsyncSession], count: int = 2) -
                     user_id=1,
                     period=f"2026-{7 + i:02d}",
                     title_type="company",
-                    title=f"示例科技(深圳)有限公司{i}号",
+                    title=f"示例科技(深圳)有限公司{i}号",  # CJK title: exercises masking  # cjk-ok
                     tax_id="91440300MA5F000000",
                     email=f"ap{i}@example.com",
                     amount=Decimal("100.00"),
@@ -155,21 +155,25 @@ class TestInvoicesExport:
 
 
 class TestInvoicePiiGate:
-    """发票导出:只给财务、默认脱敏、明文要事由、每次导出留痕。"""
+    """Invoice export: finance only, masked by default, plaintext needs a reason, every export
+    leaves
+    a trace."""
 
     async def test_masked_by_default_and_reason_required(self, client: AsyncClient, sm):
-        """默认脱敏抬头与邮箱;reveal 未提供事由时返回 400。"""
+        """Title and email masked by default; reveal without a reason returns 400."""
         await _make_invoices(sm)
         fin = await admin_headers(sm, client, role="finance", username="fin-mask-iv")
 
         csv_text = (await client.get("/api/admin/v1/invoices/export", headers=fin)).text
-        assert "示例科技(深圳)有限公司0号" not in csv_text
+        assert "示例科技(深圳)有限公司0号" not in csv_text  # cjk-ok
         assert "ap0@example.com" not in csv_text
-        assert "示***********" in csv_text
+        assert "示***********" in csv_text  # cjk-ok
         assert "91440300MA5F000000" in csv_text
 
         rows = (await client.get("/api/admin/v1/invoices", headers=fin)).json()
-        assert all(r["title"].startswith("示*") and "***@" in r["email"] for r in rows), rows
+        assert all(r["title"].startswith("示*") and "***@" in r["email"] for r in rows), (  # cjk-ok
+            rows
+        )  # cjk-ok
 
         no_reason = await client.get(
             "/api/admin/v1/invoices/export", params={"reveal": True}, headers=fin
@@ -181,18 +185,18 @@ class TestInvoicePiiGate:
         }
 
     async def test_reveal_with_reason_is_audited_with_row_count(self, client: AsyncClient, sm):
-        """明文导出落一条带筛选条件与实际行数的审计。"""
+        """A plaintext export writes one audit row with the filters and the actual row count."""
         from app.core.audit import AuditLog
 
         await _make_invoices(sm)
         fin = await admin_headers(sm, client, role="finance", username="fin-reveal-iv")
         resp = await client.get(
             "/api/admin/v1/invoices/export",
-            params={"reveal": True, "reason": "月末开票核对", "status": "submitted"},
+            params={"reveal": True, "reason": "month-end invoice check", "status": "submitted"},
             headers=fin,
         )
         assert resp.status_code == 200
-        assert "示例科技(深圳)有限公司0号" in resp.text and "ap0@example.com" in resp.text
+        assert "示例科技(深圳)有限公司0号" in resp.text and "ap0@example.com" in resp.text  # cjk-ok
 
         async with sm() as session:
             row = (
@@ -204,7 +208,7 @@ class TestInvoicePiiGate:
         assert row.detail == {
             "rows": 1,
             "reveal": True,
-            "reason": "月末开票核对",
+            "reason": "month-end invoice check",
             "status": "submitted",
             "period": None,
             "format": "csv",
@@ -212,18 +216,18 @@ class TestInvoicePiiGate:
         assert row.request_id == resp.headers["x-request-id"]
 
     async def test_json_reveal_is_audited(self, client: AsyncClient, sm):
-        """JSON 列表与 CSV 同一档:明文同样要事由 + 审计。"""
+        """The JSON list and the CSV share the level: plaintext needs a reason + audit alike."""
         from app.core.audit import AuditLog
 
         await _make_invoices(sm)
         fin = await admin_headers(sm, client, role="finance", username="fin-reveal-json")
         resp = await client.get(
             "/api/admin/v1/invoices",
-            params={"reveal": True, "reason": "客服核对抬头"},
+            params={"reveal": True, "reason": "support verifying the title"},
             headers=fin,
         )
         assert resp.status_code == 200
-        assert any(r["title"] == "示例科技(深圳)有限公司0号" for r in resp.json())
+        assert any(r["title"] == "示例科技(深圳)有限公司0号" for r in resp.json())  # cjk-ok
         async with sm() as session:
             row = (
                 await session.execute(
@@ -231,7 +235,7 @@ class TestInvoicePiiGate:
                 )
             ).scalar_one()
         assert row.detail is not None and row.detail["rows"] == 2
-        assert row.detail["reason"] == "客服核对抬头"
+        assert row.detail["reason"] == "support verifying the title"
 
 
 async def _make_adjustments(sm: async_sessionmaker[AsyncSession], count: int = 2) -> None:
@@ -243,7 +247,7 @@ async def _make_adjustments(sm: async_sessionmaker[AsyncSession], count: int = 2
                 AdminAdjustment(
                     user_id=i + 1,
                     amount=Decimal("5.00") if i == 0 else Decimal("-3.00"),
-                    reason=f"赔付工单 T2026{i}",
+                    reason=f"compensation ticket T2026{i}",
                     status="pending" if i == 0 else "approved",
                     created_by=1,
                     reviewed_by=None if i == 0 else 2,
@@ -262,18 +266,23 @@ class TestAdjustmentsExport:
         assert text.startswith("﻿")
         lines = text.splitlines()
         assert lines[0].lstrip("﻿").startswith("ID,User ID")
-        assert any("赔付工单 T20260" in line and "Pending review" in line for line in lines)
-        assert any("赔付工单 T20261" in line and "Effective" in line for line in lines)
+        assert any(
+            "compensation ticket T20260" in line and "Pending review" in line for line in lines
+        )
+        assert any("compensation ticket T20261" in line and "Effective" in line for line in lines)
         by_status = (
             await client.get(
                 "/api/admin/v1/adjustments/export", params={"status": "approved"}, headers=fin
             )
         ).text
-        assert "赔付工单 T20261" in by_status and "赔付工单 T20260" not in by_status
+        assert (
+            "compensation ticket T20261" in by_status
+            and "compensation ticket T20260" not in by_status
+        )
         by_uid = (
             await client.get("/api/admin/v1/adjustments/export", params={"user_id": 2}, headers=fin)
         ).text
-        assert "赔付工单 T20261" in by_uid and "赔付工单 T20260" not in by_uid
+        assert "compensation ticket T20261" in by_uid and "compensation ticket T20260" not in by_uid
 
 
 class TestTenantLedgerExport:

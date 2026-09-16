@@ -1,4 +1,5 @@
-"""worker 入口组件:worker_id 定长化、metrics Bearer 门禁、定时任务耗时观测。"""
+"""Worker entry point components: fixed-length worker_id, metrics Bearer gate, scheduled-job
+duration observation."""
 
 # pyright: reportPrivateUsage=false
 
@@ -40,7 +41,7 @@ def _call_wsgi(app: Any, authorization: str | None) -> tuple[str, bytes]:
 
 
 class TestMakeWorkerId:
-    """worker_id 定长化(locked_by 列宽 128)。"""
+    """Fixed-length worker_id (locked_by column width 128)."""
 
     def test_short_hostname_passes_through(self, monkeypatch):
         monkeypatch.setattr("app.workers.main.socket.gethostname", lambda: "pod-abc")
@@ -57,7 +58,7 @@ class TestMakeWorkerId:
         assert hashlib.sha256(long_name.encode()).hexdigest()[:8] in wid
 
     def test_truncated_ids_stay_unique_across_same_prefix_hosts(self, monkeypatch):
-        """同前缀长 Pod 名 + 同 pid 不撞 worker_id。"""
+        """Long Pod names with the same prefix + the same pid do not collide on worker_id."""
         monkeypatch.setattr("app.workers.main.os.getpid", lambda: 1)
         prefix = "superdl-worker-tenant-mgr-7f9c8d4b5"
         monkeypatch.setattr("app.workers.main.socket.gethostname", lambda: prefix + "a" * 100)
@@ -67,7 +68,7 @@ class TestMakeWorkerId:
 
 
 class TestWorkerMetricsAuth:
-    """worker /metrics 与 API 同一 SUPERDL_METRICS_TOKEN Bearer 门禁。"""
+    """The worker /metrics shares the SUPERDL_METRICS_TOKEN Bearer gate with the API."""
 
     def test_rejects_without_token_header(self):
         status, _ = _call_wsgi(_metrics_wsgi_app("s3cret"), None)
@@ -89,7 +90,7 @@ class TestWorkerMetricsAuth:
 
 class TestTimedJob:
     async def test_slow_tick_warns(self):
-        """单轮耗时超过周期 80% 时记录 warning。"""
+        """A round above 80 % of the period logs a warning."""
         from structlog.testing import capture_logs
 
         async def slow() -> None:

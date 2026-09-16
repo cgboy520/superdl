@@ -1,7 +1,8 @@
-"""将实例 Pod、预热 Job 及其 Pod 模板导出为准入探测清单。
+"""Export the instance Pod, the prewarm Job and its Pod template as admission probe manifests.
 
-用法: uv run python scripts/render_admission_probes.py <输出目录>
-输出:<name>.yaml(对象)与 <name>.as(dry-run 时 --as 的身份;空 = 当前身份)。
+Usage: uv run python scripts/render_admission_probes.py <output dir>
+Output: <name>.yaml (object) and <name>.as (the --as identity for dry-run; empty = current
+identity).
 """
 
 import pathlib
@@ -49,7 +50,7 @@ def _instance_spec(name: str, gpu_req: object) -> InstancePodSpec:
 
 
 def _pod_from_job(job: client.V1Job, name: str, namespace: str) -> client.V1Pod:
-    """将 Job 的 Pod 模板转换为独立 Pod。"""
+    """Turn the Job's Pod template into a standalone Pod."""
     tpl = job.spec.template
     return client.V1Pod(
         api_version="v1",

@@ -1,4 +1,5 @@
-"""节点注册(管理侧 + 状态机):令牌生命周期、角色矩阵、审计不落 token。"""
+"""Node enrollment (admin side + state machine): token lifecycle, role matrix, tokens never in the
+audit."""
 
 import asyncio
 from datetime import timedelta
@@ -19,7 +20,7 @@ from tests.helpers import CREATE_BODY, admin_headers, drain, drain_strict
 
 
 async def set_cluster_config(sm: async_sessionmaker[AsyncSession]) -> None:
-    """写入节点接入的集群配置(server_url + join_token)。"""
+    """Write the cluster configuration nodes join with (server_url + join_token)."""
     async with sm() as session:
         await set_platform_settings(
             session,
@@ -82,7 +83,7 @@ class TestAdminEnrollments:
         assert r1.json()["token"] != r2.json()["token"]
 
     async def test_idempotency_replay_guarded_when_inflight(self, client, sm) -> None:
-        """重放轮换令牌与 regenerate 同守卫:installing 重放 → 409。"""
+        """Replay token rotation shares the regenerate guard: installing replay → 409."""
         await set_cluster_config(sm)
         ah = await admin_headers(sm, client, role="ops")
         headers = {**ah, "Idempotency-Key": "idem-node-2"}
@@ -114,13 +115,15 @@ class TestAdminEnrollments:
         assert regen.json()["token"] != created["token"]
 
         resp = await client.post(
-            f"/api/admin/v1/node-enrollments/{eid}/revoke", json={"reason": "误发"}, headers=ah
+            f"/api/admin/v1/node-enrollments/{eid}/revoke",
+            json={"reason": "issued by mistake"},
+            headers=ah,
         )
         assert resp.status_code == 200 and resp.json()["status"] == "revoked"
         assert (
             await client.post(
                 f"/api/admin/v1/node-enrollments/{eid}/revoke",
-                json={"reason": "再吊"},
+                json={"reason": "revoke again"},
                 headers=ah,
             )
         ).status_code == 409
@@ -131,7 +134,7 @@ class TestAdminEnrollments:
         ).status_code == 409
 
     async def test_regenerate_reason_in_audit(self, client, sm) -> None:
-        """带 reason 的重新生成:审计行 detail 含 reason(不落 token)。"""
+        """Regenerate with a reason: the audit detail carries the reason (never the token)."""
         await set_cluster_config(sm)
         ah = await admin_headers(sm, client, role="ops")
         created = (
@@ -140,7 +143,7 @@ class TestAdminEnrollments:
         eid = created["enrollment"]["id"]
         resp = await client.post(
             f"/api/admin/v1/node-enrollments/{eid}/regenerate",
-            json={"reason": "装机命令外泄,轮换"},
+            json={"reason": "install command leaked, rotating"},
             headers=ah,
         )
         assert resp.status_code == 200, resp.text
@@ -155,7 +158,7 @@ class TestAdminEnrollments:
             )
         regen = [log for log in logs if log.detail and log.detail.get("action") == "regenerate"]
         assert len(regen) == 1
-        assert regen[0].detail["reason"] == "装机命令外泄,轮换"
+        assert regen[0].detail["reason"] == "install command leaked, rotating"
         assert token not in str(regen[0].detail)
 
 
@@ -226,7 +229,8 @@ class TestEnrollmentStateMachine:
             assert exc.value.http_status == 404
 
     async def test_concurrent_bootstrap_consumes_token_once(self, sm) -> None:
-        """同一注册令牌并发 bootstrap:行锁下只有一个成功,另一个 404;挂了说明令牌可被消费两次。"""
+        """Concurrent bootstraps with one enrollment token: under the row lock only one succeeds,
+        the other gets 404; a failure means a token can be consumed twice."""
         await set_cluster_config(sm)
         async with sm() as session:
             _e, token = await nodes_service.create_enrollment(
@@ -256,7 +260,7 @@ class TestEnrollmentStateMachine:
         assert [r.status for r in rows] == ["installing"]
 
     async def test_absolute_expiry_kills_inflight_token(self, sm) -> None:
-        """令牌绝对过期:installing 也受 expires_at 约束,过期即 404。"""
+        """Absolute token expiry: installing is bound by expires_at too, expired → 404."""
         await set_cluster_config(sm)
         async with sm() as session:
             _e, token = await nodes_service.create_enrollment(
@@ -322,7 +326,7 @@ class TestEnrollmentStateMachine:
             assert progress2 is not None
         async with sm() as session:
             row = await nodes_service.report_progress(
-                session, progress2, phase="driver", state="failed", message="apt 安装失败"
+                session, progress2, phase="driver", state="failed", message="apt install failed"
             )
             assert row.status == "failed" and row.error is not None
             assert "apt" in row.error
@@ -426,7 +430,8 @@ class TestEnrollRouterAnonymous:
 
 class TestEnrollReconciler:
     async def test_platform_labels_node_then_joins(self, client, sm) -> None:
-        """入网时池标签由平台打:节点以未打标状态注册,对账器打整套标签后才判 joined。"""
+        """Pool labels are written by the platform at join: the node registers unlabeled and is
+        judged joined only after the reconciler applies the full label set."""
         from app.core.k8s import set_orchestrator
         from app.core.k8s.base import POOL_NODE_LABEL, NodeInfo
         from app.core.k8s.fake import FakeOrchestrator
@@ -482,7 +487,8 @@ class TestEnrollReconciler:
             set_orchestrator(None)
 
     async def test_node_self_declared_pool_is_overwritten(self, client, sm) -> None:
-        """平台按登记覆盖节点池标签,节点正常入网。"""
+        """The platform overrides the node pool label from the enrollment; the node joins
+        normally."""
         from app.core.k8s import set_orchestrator
         from app.core.k8s.base import POOL_NODE_LABEL, NodeInfo
         from app.core.k8s.fake import FakeOrchestrator
@@ -578,7 +584,8 @@ class TestEnrollReconciler:
             set_orchestrator(None)
 
     async def test_skip_locked_row_never_clobbers_concurrent_revoke(self, client, sm) -> None:
-        """对账器 FOR UPDATE SKIP LOCKED:被锁行本轮跳过;吊销提交后不被覆盖回非终态。"""
+        """Reconciler FOR UPDATE SKIP LOCKED: a locked row is skipped this round; a committed
+        revocation is not overwritten back to a non-terminal state."""
         from app.core.k8s import set_orchestrator
         from app.core.k8s.fake import FakeOrchestrator
         from app.modules.nodes.reconciler import reconcile_enrollments_once
@@ -641,14 +648,14 @@ class TestNodeCordon:
             assert (
                 await client.post(
                     "/api/admin/v1/nodes/no-such-node/cordon",
-                    json={"reason": "维护"},
+                    json={"reason": "maintenance"},
                     headers=ah,
                 )
             ).status_code == 404
 
             resp = await client.post(
                 "/api/admin/v1/nodes/fake-hami-node-1/cordon",
-                json={"reason": "巡检维护"},
+                json={"reason": "patrol maintenance"},
                 headers=ah,
             )
             assert resp.status_code == 200 and resp.json()["queued"] is True
@@ -663,14 +670,14 @@ class TestNodeCordon:
 
             await client.post(
                 "/api/admin/v1/nodes/fake-hami-node-1/cordon",
-                json={"reason": "再次"},
+                json={"reason": "again"},
                 headers=ah,
             )
             await drain(sm)
             assert "fake-hami-node-1" in fake.cordoned_nodes
             await client.post(
                 "/api/admin/v1/nodes/fake-hami-node-1/uncordon",
-                json={"reason": "维护完成"},
+                json={"reason": "maintenance done"},
                 headers=ah,
             )
             await drain(sm)
@@ -679,7 +686,8 @@ class TestNodeCordon:
             set_orchestrator(None)
 
     async def test_out_of_order_replay_converges_to_latest_intent(self, client, sm) -> None:
-        """乱序安全:handler 按台账期望态而非 payload 执行,最终仍是 uncordon。"""
+        """Out-of-order safety: the handler follows the inventory desired state, not the payload;
+        the end result is still uncordon."""
         from app.core.k8s import set_orchestrator
         from app.core.k8s.fake import FakeOrchestrator
         from app.core.outbox import OutboxTask
@@ -693,7 +701,7 @@ class TestNodeCordon:
             await node_spec_patrol(sm)
             await client.post(
                 "/api/admin/v1/nodes/fake-hami-node-1/cordon",
-                json={"reason": "维护"},
+                json={"reason": "maintenance"},
                 headers=ah,
             )
             async with sm() as session:
@@ -707,7 +715,7 @@ class TestNodeCordon:
                 cordon_id = cordon_task.id
             await client.post(
                 "/api/admin/v1/nodes/fake-hami-node-1/uncordon",
-                json={"reason": "完成"},
+                json={"reason": "done"},
                 headers=ah,
             )
             assert await drain(sm) == 1
@@ -733,11 +741,11 @@ class TestNodeCordon:
 
 
 class TestNodeDecommission:
-    """节点退役:彻底摘掉节点,令牌不可复用。"""
+    """Node decommissioning: the node is removed for good, tokens cannot be reused."""
 
     @staticmethod
     async def _joined_node(client, sm, *, hostname: str, pool: str = "hami") -> dict:
-        """推进节点登记为 joined,返回管理员 headers 与进度令牌。"""
+        """Advance the enrollment to joined, returning the admin headers and the progress token."""
         from app.core.k8s import get_orchestrator
         from app.core.k8s.base import NodeInfo
         from app.modules.nodes.reconciler import reconcile_enrollments_once
@@ -770,7 +778,8 @@ class TestNodeDecommission:
         return {"headers": ah, "progress_token": boot.json()["progress_token"]}
 
     async def test_decommission_revokes_token_and_deletes_node(self, client, sm) -> None:
-        """退役:停调度期望态落台账、令牌作废、经 outbox 从集群删 Node。"""
+        """Decommission: cordon desired state in the inventory, tokens void, Node deleted from the
+        cluster via outbox."""
         from app.core.k8s import get_orchestrator, set_orchestrator
         from app.core.k8s.fake import FakeOrchestrator
         from app.core.outbox import OutboxTask
@@ -786,7 +795,7 @@ class TestNodeDecommission:
 
             resp = await client.post(
                 "/api/admin/v1/nodes/sold-node-1/decommission",
-                json={"reason": "机器已售出"},
+                json={"reason": "machine sold"},
                 headers=ah,
             )
             assert resp.status_code == 200
@@ -803,7 +812,7 @@ class TestNodeDecommission:
                     )
                 ).scalar_one()
                 assert enrollment.status == "revoked"
-                assert "机器已售出" in (enrollment.error or "")
+                assert "machine sold" in (enrollment.error or "")
                 row = (
                     await session.execute(
                         select(NodeSpec).where(NodeSpec.node_name == "sold-node-1")
@@ -828,7 +837,7 @@ class TestNodeDecommission:
             set_orchestrator(None)
 
     async def test_decommission_replay_on_absent_node_succeeds(self, client, sm) -> None:
-        """节点已不在集群时重放删除成功,不进死信。"""
+        """Replaying the delete on a node already gone succeeds, no dead letter."""
         from app.core.k8s import set_orchestrator
         from app.core.k8s.fake import FakeOrchestrator
         from app.core.outbox import enqueue
@@ -841,7 +850,7 @@ class TestNodeDecommission:
             await node_spec_patrol(sm)
             await client.post(
                 "/api/admin/v1/nodes/seized-node-1/decommission",
-                json={"reason": "设备被扣押"},
+                json={"reason": "hardware seized"},
                 headers=ctx["headers"],
             )
             assert await drain_strict(sm) == (1, 0)
@@ -853,7 +862,7 @@ class TestNodeDecommission:
             set_orchestrator(None)
 
     async def test_decommission_unknown_node_404(self, client, sm) -> None:
-        """台账里没有的节点名不产出删除任务。"""
+        """A node name missing from the inventory produces no delete task."""
         from app.core.k8s import set_orchestrator
         from app.core.k8s.fake import FakeOrchestrator
 
@@ -862,7 +871,7 @@ class TestNodeDecommission:
             ah = await admin_headers(sm, client, role="ops")
             resp = await client.post(
                 "/api/admin/v1/nodes/no-such-node/decommission",
-                json={"reason": "误操作"},
+                json={"reason": "operator mistake"},
                 headers=ah,
             )
             assert resp.status_code == 404
@@ -872,7 +881,8 @@ class TestNodeDecommission:
             set_orchestrator(None)
 
     async def test_manual_revoke_still_rejects_terminal(self, client, sm) -> None:
-        """「终态 → revoked」只给退役用:管理端手工吊销终态仍 409。"""
+        """ "terminal → revoked" is for decommissioning only: a manual admin revoke of a terminal
+        state is still 409."""
         from app.core.k8s import set_orchestrator
         from app.core.k8s.fake import FakeOrchestrator
 
@@ -883,7 +893,7 @@ class TestNodeDecommission:
             rows = await enrollment_rows(sm)
             resp = await client.post(
                 f"/api/admin/v1/node-enrollments/{rows[0].id}/revoke",
-                json={"reason": "手工吊销"},
+                json={"reason": "manual revoke"},
                 headers=ctx["headers"],
             )
             assert resp.status_code == 409

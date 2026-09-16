@@ -1,4 +1,4 @@
-"""管理员账号 CRUD + 撤销闸。"""
+"""Admin account CRUD + revocation gate."""
 
 import pytest
 from httpx import AsyncClient
@@ -22,7 +22,8 @@ _TOTP_SECRETS: dict[str, str] = {}
 
 
 async def login_headers(client: AsyncClient, username: str, password: str) -> dict[str, str]:
-    """返回管理端认证 headers:首次绑定走 setup 流并记下密钥,已绑定账号走二要素验证流。"""
+    """Admin auth headers: first enrolment goes through the setup flow and records the secret,
+    enrolled accounts go through second-factor verification."""
     import pyotp
 
     resp = await admin_login(client, username, password)
@@ -50,7 +51,8 @@ class TestAdminAccounts:
     async def test_create_list_and_login(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """建号接口不回密码/token_version,建出来的账号能登录。"""
+        """The create endpoint returns neither password nor token_version; the created account can
+        sign in."""
         h = await admin_headers(sm, client)
         resp = await client.post(
             "/api/admin/v1/admins",
@@ -58,7 +60,7 @@ class TestAdminAccounts:
                 "username": "finance01",
                 "password": STRONG,
                 "role": "finance",
-                "reason": "组建财务",
+                "reason": "building the finance team",
             },
             headers=h,
         )
@@ -87,7 +89,7 @@ class TestAdminAccounts:
         h = await admin_headers(sm, client)
         created = await client.post(
             "/api/admin/v1/admins",
-            json={"username": "ops01", "password": STRONG, "role": "ops", "reason": "入职"},
+            json={"username": "ops01", "password": STRONG, "role": "ops", "reason": "onboarding"},
             headers=h,
         )
         target_id = created.json()["id"]
@@ -96,7 +98,7 @@ class TestAdminAccounts:
 
         resp = await client.patch(
             f"/api/admin/v1/admins/{target_id}",
-            json={"status": "disabled", "reason": "离职"},
+            json={"status": "disabled", "reason": "left the company"},
             headers=h,
         )
         assert resp.status_code == 200, resp.text
@@ -109,14 +111,16 @@ class TestAdminAccounts:
         h = await admin_headers(sm, client)
         created = await client.post(
             "/api/admin/v1/admins",
-            json={"username": "ops02", "password": STRONG, "role": "ops", "reason": "入职"},
+            json={"username": "ops02", "password": STRONG, "role": "ops", "reason": "onboarding"},
             headers=h,
         )
         tid = created.json()["id"]
         h2 = await login_headers(client, "ops02", STRONG)
 
         await client.patch(
-            f"/api/admin/v1/admins/{tid}", json={"role": "readonly", "reason": "转岗"}, headers=h
+            f"/api/admin/v1/admins/{tid}",
+            json={"role": "readonly", "reason": "role change"},
+            headers=h,
         )
         assert (await client.get("/api/admin/v1/me", headers=h2)).status_code == 401
 
@@ -124,7 +128,7 @@ class TestAdminAccounts:
         assert (await client.get("/api/admin/v1/me", headers=h3)).status_code == 200
         resp = await client.post(
             f"/api/admin/v1/admins/{tid}/reset-password",
-            json={"password": "n3w-passw0rd!", "reason": "疑似泄露"},
+            json={"password": "n3w-passw0rd!", "reason": "suspected leak"},
             headers=h,
         )
         assert resp.status_code == 200, resp.text
@@ -159,12 +163,12 @@ class TestAdminAccounts:
     async def test_cannot_disable_or_demote_yourself(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """自停用/自降权一律 409;无「最后一个超管」保护。"""
+        """Self-deactivation / self-demotion are always 409; no "last admin" protection."""
         h = await admin_headers(sm, client)
         me = (await client.get("/api/admin/v1/me", headers=h)).json()
         for body in (
-            {"status": "disabled", "reason": "手滑"},
-            {"role": "readonly", "reason": "降权"},
+            {"status": "disabled", "reason": "slip"},
+            {"role": "readonly", "reason": "demotion"},
         ):
             resp = await client.patch(f"/api/admin/v1/admins/{me['id']}", json=body, headers=h)
             assert resp.status_code == 409, body
@@ -173,14 +177,14 @@ class TestAdminAccounts:
     async def test_require_roles_no_arg_has_own_message(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """require_roles() 无参(仅超管)的拒绝文案单独成键。"""
+        """The rejection copy of require_roles() without arguments (admin only) has its own key."""
         h_ops = await admin_headers(sm, client, role="ops")
         resp = await client.get("/api/admin/v1/admins", headers=h_ops)
         assert resp.status_code == 403
         assert resp.json()["message_key"] == "adminapi.roleRequiredAdmin"
         resp = await client.post(
             "/api/admin/v1/adjustments",
-            json={"user_id": 1, "amount": "1.00", "reason": "角色门验证"},
+            json={"user_id": 1, "amount": "1.00", "reason": "role gate check"},
             headers=h_ops,
         )
         assert resp.status_code == 403
@@ -192,7 +196,8 @@ class TestAdminLoginLockout:
     async def test_daily_account_bucket_never_locks_out_the_real_password(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession], monkeypatch
     ):
-        """日窗账号桶只计数,不封禁:打满之后正确口令仍能登录。"""
+        """The daily account bucket counts only, never locks: after filling it the right password
+        still signs in."""
         from app.modules.adminapi import auth_service
 
         monkeypatch.setattr(auth_service, "LOGIN_ACCT_DAILY_MAX_ATTEMPTS", 3)
@@ -218,31 +223,42 @@ class TestAdminLoginLockout:
 
 
 class TestAdminPasswordByteLimit:
-    """多字节口令在请求体层按字节拦 72 上限(422,与用户端 PasswordStr 同一校验)。"""
+    """Multi-byte passwords are capped at 72 bytes in the request body (422, the same check as the
+    user-side PasswordStr)."""
 
     async def test_create_admin_multibyte_password(self, client, sm):
         h = await admin_headers(sm, client)
         too_long = await client.post(
             "/api/admin/v1/admins",
-            json={"username": "ops-cn", "password": "汉" * 25, "role": "ops", "reason": "入职"},
+            json={
+                "username": "ops-cn",
+                "password": "汉" * 25,  # cjk-ok
+                "role": "ops",
+                "reason": "onboarding",
+            },  # cjk-ok
             headers=h,
         )
         assert too_long.status_code == 422
         assert too_long.json()["code"] == "VALIDATION_ERROR"
         ok = await client.post(
             "/api/admin/v1/admins",
-            json={"username": "ops-cn2", "password": "汉" * 24, "role": "ops", "reason": "入职"},
+            json={
+                "username": "ops-cn2",
+                "password": "汉" * 24,  # cjk-ok
+                "role": "ops",
+                "reason": "onboarding",
+            },  # cjk-ok
             headers=h,
         )
         assert ok.status_code == 201, ok.text
-        assert (await admin_login(client, "ops-cn2", "汉" * 24)).status_code == 200
+        assert (await admin_login(client, "ops-cn2", "汉" * 24)).status_code == 200  # cjk-ok
 
     async def test_reset_password_multibyte_limit(self, client, sm):
         h = await admin_headers(sm, client)
         me = (await client.get("/api/admin/v1/me", headers=h)).json()
         resp = await client.post(
             f"/api/admin/v1/admins/{me['id']}/reset-password",
-            json={"password": "汉" * 25, "reason": "轮换"},
+            json={"password": "汉" * 25, "reason": "rotation"},  # cjk-ok
             headers=h,
         )
         assert resp.status_code == 422
@@ -252,7 +268,7 @@ class TestAdminPasswordByteLimit:
         h = await admin_headers(sm, client)
         resp = await client.post(
             "/api/admin/v1/me/password",
-            json={"current_password": "pass1234", "new_password": "汉" * 25},
+            json={"current_password": "pass1234", "new_password": "汉" * 25},  # cjk-ok
             headers=h,
         )
         assert resp.status_code == 422

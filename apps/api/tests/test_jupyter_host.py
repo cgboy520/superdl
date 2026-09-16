@@ -1,5 +1,5 @@
-"""实例 Jupyter 的主机名/origin 与端点 slug 反解:入场 URL / HTTPRoute hostname /
-JUPYTER_ALLOW_ORIGIN 同一口径。"""
+"""Instance Jupyter hostname / origin and endpoint slug resolution: entry URL / HTTPRoute hostname /
+JUPYTER_ALLOW_ORIGIN share one definition."""
 
 # pyright: reportPrivateUsage=false
 
@@ -25,7 +25,7 @@ def _settings(**overrides):
 
 
 class TestOrigin:
-    """端口只出现在 origin,不出现在主机名。"""
+    """The port appears in the origin only, never in the hostname."""
 
     def test_default_port_stays_out_of_the_url(self):
         assert jupyter_origin("abc-123", _settings()) == "https://abc-123.app.superdl.cn"
@@ -40,7 +40,7 @@ class TestOrigin:
         assert jupyter_host("abc-123", s) == "jupyter-abc-123.lab.example.com"
 
     def test_entry_ticket_carries_the_port(self, monkeypatch):
-        """票据 URL 带端口。"""
+        """The ticket URL carries the port."""
         monkeypatch.setenv("SUPERDL_JUPYTER_DOMAIN_SUFFIX", "lab.example.com")
         monkeypatch.setenv("SUPERDL_JUPYTER_HOST_PREFIX", "jupyter-")
         monkeypatch.setenv("SUPERDL_JUPYTER_URL_PORT", "8443")
@@ -53,7 +53,8 @@ class TestOrigin:
 
 
 class TestSlugParsingUnderSharedSuffix:
-    """两类入口按端口分(config.jupyter_url_port)、后缀相同时,靠 svc- 前缀区分。"""
+    """When the two entry kinds are split by port (config.jupyter_url_port) with the same suffix,
+    the svc- prefix tells them apart."""
 
     @pytest.fixture
     def shared_suffix(self, monkeypatch):

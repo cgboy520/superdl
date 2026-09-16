@@ -1,5 +1,6 @@
-"""在线服务版本更新(recreate):翻转与释放、slug/URL/Key 不变、密文沿用、零重复扣款、
-在途/未落定/包周期 409、失败回退、配额、幂等。"""
+"""Online service revision update (recreate): flip and release, slug/URL/keys unchanged, secrets
+carried over, zero double charging,
+in flight / unsettled / subscription 409, failure rollback, quotas, idempotency."""
 
 import pytest
 from sqlalchemy import func, select
@@ -38,7 +39,8 @@ async def _instance(sm, uuid: str) -> Instance:
 
 
 async def _settle_rollout(client, sm, fake, headers, svc: dict, rollout: dict) -> dict:
-    """推进一次 recreate:旧版本关机 → 新版本就绪 → 翻转 → 释放旧版本。返回最终服务视图。"""
+    """Drive one recreate: old revision stops → new revision ready → flip → release the old one.
+    Returns the final service view."""
     ns = f"tenant-{svc['_user_id']}"
     old_uuid = svc["current_instance"]["uuid"]
     new_uuid = rollout["rollout_instance"]["uuid"]
@@ -152,7 +154,7 @@ class TestRecreate:
         assert (await client.get("/api/v1/instances", headers=headers)).json()["items"] == []
 
     async def test_retire_replay_is_noop(self, client, sm, fake):
-        """service.retire 重放:旧版本已释放后再来一条是 no-op。"""
+        """service.retire replay: another task after the old revision was released is a no-op."""
         headers, svc, _ = await _provision(client, sm, fake, "13900000402")
         rollout = (
             await client.post(

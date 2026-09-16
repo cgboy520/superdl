@@ -1,5 +1,6 @@
-"""日志桥接:stdlib 第三方日志与 structlog 同一渲染管道,contextvars 不丢;
-SUPERDL_LOG_LEVEL 同时约束两侧。"""
+"""Logging bridge: stdlib third-party logs and structlog share one rendering pipeline, contextvars
+survive;
+SUPERDL_LOG_LEVEL constrains both sides."""
 
 import io
 import logging
@@ -14,7 +15,7 @@ from app.core.logging import get_logger, setup_logging
 
 @pytest.fixture
 def restore_logging() -> Iterator[None]:
-    """快照并恢复 setup_logging 改的全局配置。"""
+    """Snapshot and restore the global configuration changed by setup_logging."""
     root = logging.getLogger()
     old_handlers, old_level = root.handlers[:], root.level
     old_cfg = structlog.get_config()
@@ -69,7 +70,7 @@ def test_log_level_config_filters_both_sides(restore_logging: None, monkeypatch)
 
 
 def test_sensitive_fields_masked(restore_logging: None, monkeypatch):
-    """phone/id_number/token/secret/password/code 键名命中即打码。"""
+    """The key names phone/id_number/token/secret/password/code are masked on match."""
     from app.core.config import get_settings
 
     get_settings.cache_clear()
@@ -102,7 +103,8 @@ def test_sensitive_fields_masked(restore_logging: None, monkeypatch):
 
 def test_extended_sensitive_keys_and_nested_structures_masked(restore_logging: None, monkeypatch):
     """api_key/jwt/authorization/credential/private_key/cookie/session/totp/recovery/passwd
-    键名命中即打码;嵌套 dict / list 递归到第 4 层,第 5 层不再处理;敏感键下的容器全体打码。"""
+    Key-name match masks; nested dicts / lists recurse to depth 4, depth 5 is left alone; containers
+    under a sensitive key are masked entirely."""
     from app.core.config import get_settings
 
     get_settings.cache_clear()
@@ -143,7 +145,7 @@ def test_extended_sensitive_keys_and_nested_structures_masked(restore_logging: N
 
 
 def test_exception_traceback_never_carries_frame_locals(restore_logging: None, monkeypatch):
-    """prod 的结构化栈帧不带局部变量。"""
+    """prod structured stack frames carry no local variables."""
     from app.core.config import get_settings
 
     get_settings.cache_clear()
