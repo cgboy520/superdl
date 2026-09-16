@@ -10,7 +10,7 @@ import structlog.tracebacks
 from structlog.typing import EventDict, WrappedLogger
 
 from app.core.config import get_settings
-from app.core.regex import PHONE_RE_LOOSE
+from app.core.handles import mask_handle
 
 _BRIDGED_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
 
@@ -23,26 +23,23 @@ _LEVELS = {
 }
 
 _SENSITIVE_KEY_RE = re.compile(
-    r"(phone|id_number|token|secret|password|passwd|code|api_key|apikey|jwt|authorization"
-    r"|credential|private_key|cookie|session|totp|recovery)",
+    r"(phone|email|handle|id_number|token|secret|password|passwd|code|api_key|apikey|jwt"
+    r"|authorization|credential|private_key|cookie|session|totp|recovery)",
     re.IGNORECASE,
 )
-_PHONE_VALUE_RE = re.compile(PHONE_RE_LOOSE)
 _MASK_MAX_DEPTH = 4
 
 
 def mask_phone_value(value: str) -> str:
-    """匹配手机号时保留前 3 后 4 位,否则返回六个星号。"""
-    if _PHONE_VALUE_RE.match(value):
-        return value[:3] + "****" + value[-4:]
-    return "******"
+    """Alias of `handles.mask_handle` for callers that predate email handles."""
+    return mask_handle(value)
 
 
 def _mask_value(key: str, value: object) -> object:
     if not isinstance(value, str):
         return value
-    if "phone" in key.lower():
-        return mask_phone_value(value)
+    if any(marker in key.lower() for marker in ("phone", "email", "handle")):
+        return mask_handle(value)
     return "******"
 
 
