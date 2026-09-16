@@ -8,7 +8,7 @@ Deployment guides and runbooks for operators live under [`deploy/`](../deploy/RE
 | You want to know                                                                              | Read                                                                             |
 | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | How the system fits together and the constraints that must not break                          | [architecture.md](./architecture.md)                                             |
-| A module's tables, endpoints, roles and rules                                                 | [reference/](./reference/) (one page per module: 数据模型 / 契约 / 规则与不变量) |
+| A module's tables, endpoints, roles and rules                                                 | [reference/](./reference/) (one page per module: 数据模型 / 契约 / 规则与不变量) | <!-- cjk-ok --> |
 | Quotas, rate limits, retention periods                                                        | [reference/limits.md](./reference/limits.md)                                     |
 | Page shapes and interactions                                                                  | [ui-ux-spec.md](./ui-ux-spec.md)                                                 |
 | How user-visible copy is written, banned words                                                | [copy-style-guide.md](./copy-style-guide.md)                                     |
@@ -51,5 +51,5 @@ Deployment guides and runbooks for operators live under [`deploy/`](../deploy/RE
 - **Facts only, no rationale:** a reference records "what is" and "what must not break"; no argument, history, review numbers, change log or dates. Cross-module decisions go to [decisions.md](./decisions.md), each entry stating only the decision and its constraints.
 - **Numbers must be traceable to code:** quotas, periods and defaults name the file or configuration key that holds them (e.g. `SETTING_SPECS` in `platform_config.py`, `SUPERDL_*`).
 - **References must exist:** relative links and back-ticked repository paths are checked by `python3 scripts/check-docs-links.py` (including alert-rule `runbook_url` files and anchors); the CI `docs` job runs the same check.
-- **Fixed structure for module references:** `数据模型` → `契约` (endpoint / role / description table) → `规则与不变量`; modules without their own tables omit `数据模型`; `limits.md` is the cross-module summary. New modules follow this template and are registered in the table above.
+- **Fixed structure for module references:** `数据模型` → `契约` (endpoint / role / description table) → `规则与不变量`; modules without their own tables omit `数据模型`; `limits.md` is the cross-module summary. New modules follow this template and are registered in the table above. <!-- cjk-ok -->
 - **Language:** new content is English. Section headings of the existing Chinese references keep their names until each page is translated (links and anchors depend on them); Chinese punctuation conventions in those pages stay as they are until then.
