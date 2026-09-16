@@ -19,7 +19,10 @@ class TestRecharge:
         headers = await user_headers(client)
         order = await create_order(client, headers, "50.00")
         assert order["status"] == "pending"
-        assert order["qr_url"].startswith("superdl-mock-pay://")
+        assert order["payment_url"].startswith("superdl-mock-pay://")
+        assert (
+            order["presentation"] == "qr" and order["currency"] == get_settings().platform_currency
+        )
 
         resp = await pay_mock(client, order["order_no"], "50.00")
         assert resp.status_code == 200

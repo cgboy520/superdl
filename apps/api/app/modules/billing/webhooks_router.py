@@ -1,16 +1,16 @@
-"""支付回调(无用户鉴权,验签即鉴权)。重放安全。"""
+"""Payment callbacks (no user auth: a valid signature is the authentication; replay-safe). One
+route per registered channel (`payment_channels.CHANNELS`), dev-only channels skipped in prod."""
 
-from fastapi import APIRouter, Request
-from fastapi.responses import PlainTextResponse
+from collections.abc import Awaitable, Callable
 
-from app.core.config import get_settings
+from fastapi import APIRouter, Request, Response
+
+from app.core.config import Settings, get_settings
 from app.core.db import DbSession
 from app.core.http import client_ip
 from app.core.ratelimit import check_rate_limit
 from app.modules.billing import payment_service
-from app.modules.billing.payment_channels import get_channel
-
-router = APIRouter(tags=["webhooks"])
+from app.modules.billing.payment_channels import CHANNELS, ChannelSpec, get_channel
 
 CALLBACK_RATE_LIMIT = 120
 CALLBACK_RATE_WINDOW = 60.0
@@ -25,30 +25,42 @@ async def _guard(request: Request) -> None:
     )
 
 
-if get_settings().environment != "prod":
-
-    @router.post("/webhooks/mock")
-    async def mock_webhook(request: Request, session: DbSession) -> dict[str, str]:
-        """dev/test 专用:模拟支付成功回调。"""
-        channel = await get_channel("mock", session)
+def _handler(spec: ChannelSpec) -> Callable[..., Awaitable[Response]]:
+    async def webhook(request: Request, session: DbSession) -> Response:
+        if not spec.dev_only:
+            await _guard(request)
+        channel = await get_channel(spec.name, session)
         result = await channel.parse_callback(dict(request.headers), await request.body())
-        status = await payment_service.handle_callback(session, "mock", result)
-        return {"status": status}
+        status = (
+            "ok"
+            if result is None
+            else await payment_service.handle_callback(session, spec.name, result)
+        )
+        return spec.ack(status)
+
+    webhook.__name__ = f"{spec.webhook_path}_webhook"
+    webhook.__doc__ = (
+        "dev/test only: simulate a payment callback."
+        if spec.dev_only
+        else f"{spec.name} callback: verify → parse → credit once (channel_txn_id idempotency)."
+    )
+    return webhook
 
 
-@router.post("/webhooks/wechatpay")
-async def wechatpay_webhook(request: Request, session: DbSession) -> dict[str, str]:
-    await _guard(request)
-    channel = await get_channel("wechat", session)
-    result = await channel.parse_callback(dict(request.headers), await request.body())
-    status = await payment_service.handle_callback(session, "wechat", result)
-    return {"code": "SUCCESS", "message": status}
+def build_router(settings: Settings) -> APIRouter:
+    """`POST /webhooks/{spec.webhook_path}` for every registered channel; dev-only channels are
+    not mounted in prod."""
+    router = APIRouter(tags=["webhooks"])
+    for spec in CHANNELS.values():
+        if spec.dev_only and settings.environment == "prod":
+            continue
+        router.add_api_route(
+            f"/webhooks/{spec.webhook_path}",
+            _handler(spec),
+            methods=["POST"],
+            name=f"{spec.webhook_path}_webhook",
+        )
+    return router
 
 
-@router.post("/webhooks/alipay")
-async def alipay_webhook(request: Request, session: DbSession) -> PlainTextResponse:
-    await _guard(request)
-    channel = await get_channel("alipay", session)
-    result = await channel.parse_callback(dict(request.headers), await request.body())
-    await payment_service.handle_callback(session, "alipay", result)
-    return PlainTextResponse("success")
+router = build_router(get_settings())

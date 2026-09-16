@@ -10,6 +10,7 @@ from app.core.platform_config import RuntimeConfig
 from app.modules.billing.payment_channels.base import (
     SDK_TIMEOUT_SECONDS,
     CallbackResult,
+    PaymentInit,
     QueryResult,
     assert_callback_fresh,
     channel_error,
@@ -59,7 +60,13 @@ class AlipayChannel:
             raise channel_error("billing.alipaySellerIdRequired")
         self._notify_url = f"{get_settings().public_base_url}/api/v1/webhooks/alipay"
 
-    async def create_payment(self, order: "Order") -> str:  # pragma: no cover
+    async def create_payment(  # pragma: no cover
+        self,
+        order: "Order",
+        *,
+        return_url: str,  # noqa: ARG002
+        cancel_url: str,  # noqa: ARG002
+    ) -> PaymentInit:
         import json
 
         from alipay.aop.api.domain.AlipayTradePrecreateModel import (
@@ -93,7 +100,7 @@ class AlipayChannel:
                 key="billing.alipayCreateFailed",
                 params={"message": resp.get("sub_msg") or resp.get("msg")},
             )
-        return resp["qr_code"]
+        return PaymentInit(resp["qr_code"])
 
     async def parse_callback(self, headers: dict[str, str], body: bytes) -> CallbackResult:  # noqa: ARG002
         """验签并核对 app_id、seller_id 与北京时间通知时效;正退款额视为反向通知。"""

@@ -225,6 +225,7 @@ class Settings(BaseSettings):
 
     payment_mock: bool = True
     public_base_url: str = "https://api.superdl.example.com"
+    web_base_url: str = "http://localhost:5173"
     recharge_order_ttl_seconds: int = 2 * 3600
     payment_wechat_enabled: bool = False
     payment_alipay_enabled: bool = False
@@ -260,6 +261,8 @@ class Settings(BaseSettings):
                 "public_base_url 形态非法:须为 http(s)://<主机>[:端口][/路径],"
                 "不得含空白或 shell 元字符(它会逐字进 node-join.sh 的 root 执行上下文)"
             )
+        if not _URL_RE.match(self.web_base_url):
+            raise ValueError("web_base_url must be http(s)://<host>[:port][/path]")
         for name in ("jupyter_domain_suffix", "service_domain_suffix", "admin_host"):
             value = getattr(self, name)
             if value and not _HOSTNAME_RE.match(value):
@@ -375,6 +378,8 @@ class Settings(BaseSettings):
             out.append("k8s_backend 不得为 fake")
         if "payment" in domains and self.payment_mock:
             out.append("payment_mock 必须为 false")
+        if "payment" in domains and not self.web_base_url.startswith("https://"):
+            out.append("web_base_url must be an https URL in prod (payment return URLs)")
         if self.payment_alipay_enabled and not self.alipay_seller_id:
             out.append(
                 "payment_alipay_enabled=true 时 alipay_seller_id 必填"

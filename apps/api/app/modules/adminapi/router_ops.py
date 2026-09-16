@@ -65,6 +65,7 @@ from app.modules.adminapi.schemas import (
     SmsTestOut,
     UpdatedKeysOut,
 )
+from app.modules.billing import service as billing_service
 from app.modules.notify import service as notify_service
 from app.modules.tickets import service as tickets_service
 from app.modules.tickets.schemas import (
@@ -346,10 +347,12 @@ async def admin_get_platform_config(session: DbSession) -> PlatformConfigOut:
                 updated_at=row.updated_at.isoformat() if row is not None else None,
             )
         )
+    effective_cfg = runtime_config_from_strings(eff)
     warnings = [
         PlatformConfigWarningOut(key=w.key, level=w.level, message=w.message)
-        for w in compute_config_warnings(
-            runtime_config_from_strings(eff), get_settings().environment
+        for w in (
+            *compute_config_warnings(effective_cfg, get_settings().environment),
+            *billing_service.payment_config_warnings(effective_cfg),
         )
     ]
     settings = get_settings()

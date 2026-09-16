@@ -25,6 +25,7 @@
 Three values are deployment identity, not online settings: they live only in env (`Settings`, not `SETTING_SPECS`), are published read-only on `GET /platform-config` (`deployment`) and `/site-config`, and in prod must be set explicitly.
 
 - `SUPERDL_COMPLIANCE_PROFILE` (`none` | `cn`; `app/core/compliance.py`): which regional rules apply. `none` = international default (phone optional, no identity-verification form, no invoice tax-ID rule, default locale en-US). `cn` = mainland China (phone required with dial code +86, `cn_id_card` KYC form, `cn_uscc` tax-ID rule, default locale zh-CN). Unset resolves to `none` outside prod; prod refuses to boot without it.
+- `SUPERDL_WEB_BASE_URL` (user console origin, default `http://localhost:5173`; prod requires https when the API mounts payment secrets): payment return URLs `{web_base_url}/billing?recharge=<order_no>` are built from it.
 - `SUPERDL_PLATFORM_CURRENCY` (ISO 4217, default `USD`; table `app/core/currencies.py`, 0- and 2-decimal currencies only) and `SUPERDL_BILLING_TIMEZONE` (IANA zone, default `UTC`) are validated at startup in every environment and locked in the single-row table `billing_identity` on first boot (`billing.identity.assert_billing_identity`, called by the API lifespan and the worker). A later env change is accepted only while no `balance_ledger` / `orders` / `bills_hourly` / `bills_daily_disk` row exists, or with `SUPERDL_BILLING_IDENTITY_REKEY=true`; otherwise the process refuses to start. New `orders` rows record `currency` = platform currency.
 
 ## 规则与不变量

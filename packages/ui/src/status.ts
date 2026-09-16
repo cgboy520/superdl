@@ -313,6 +313,17 @@ export const paymentChannelMap = {
   mock: { labelKey: "shared:status.channel.mock" },
 } as const satisfies Record<PaymentChannel, LabelMeta>;
 
+/** Label key for a channel name coming from the API; unknown names fall back to the raw name. */
+export function paymentChannelLabelKey(name: string): string | null {
+  return name in paymentChannelMap ? paymentChannelMap[name as PaymentChannel].labelKey : null;
+}
+
+/** Refund payout channel that mirrors each paying channel (server: `ChannelSpec.payout_channel`). */
+export const payoutChannelForPayment: Partial<Record<string, PayoutChannel>> = {
+  wechat: "wechat_transfer",
+  alipay: "alipay_transfer",
+};
+
 /** 调账单状态(与后端严格一致) */
 export type AdjustmentStatus = "pending" | "approved" | "rejected";
 

@@ -207,6 +207,7 @@ class TestProdConfigValidation:
             "jupyter_domain_suffix": "app.superdl.cn",
             "service_domain_suffix": "svc.superdl.cn",
             "public_base_url": "https://api.superdl.cn",
+            "web_base_url": "https://console.superdl.cn",
             "metrics_token": "mtoken",
             "config_encryption_key": base64.urlsafe_b64encode(b"k" * 32).decode(),
             "image_allowed_registries": "registry.superdl.internal/",

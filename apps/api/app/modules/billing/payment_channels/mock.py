@@ -3,7 +3,12 @@
 from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, ClassVar
 
-from app.modules.billing.payment_channels.base import CallbackResult, QueryResult, channel_error
+from app.modules.billing.payment_channels.base import (
+    CallbackResult,
+    PaymentInit,
+    QueryResult,
+    channel_error,
+)
 
 if TYPE_CHECKING:
     from app.modules.billing.models import Order
@@ -24,8 +29,14 @@ class MockChannel:
     def reset(cls) -> None:
         cls._channel_side.clear()
 
-    async def create_payment(self, order: "Order") -> str:
-        return f"superdl-mock-pay://{order.order_no}?amount={order.amount}"
+    async def create_payment(
+        self,
+        order: "Order",
+        *,
+        return_url: str,  # noqa: ARG002
+        cancel_url: str,  # noqa: ARG002
+    ) -> PaymentInit:
+        return PaymentInit(f"superdl-mock-pay://{order.order_no}?amount={order.amount}")
 
     async def parse_callback(self, headers: dict[str, str], body: bytes) -> CallbackResult:  # noqa: ARG002
         import json

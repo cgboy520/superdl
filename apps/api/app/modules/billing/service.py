@@ -19,11 +19,15 @@ from app.modules.billing.models import (
 )
 from app.modules.billing.payment_service import (
     backfill_order,
+    enabled_payment_channels,
     list_payment_anomalies,
+    payment_config_warnings,
+    to_recharge_out,
     verify_order,
 )
 from app.modules.billing.refunds import (
     admin_list_refunds,
+    admin_refund_out,
     cancel_refund,
     payout_refund,
     review_refund,
@@ -75,6 +79,7 @@ __all__ = [
     "admin_list_invoices",
     "admin_list_orders",
     "admin_list_refunds",
+    "admin_refund_out",
     "assert_billing_identity",
     "assert_can_afford",
     "assert_subscription_active",
@@ -87,6 +92,7 @@ __all__ = [
     "convert_to_subscription",
     "credit",
     "debit",
+    "enabled_payment_channels",
     "find_subscription_replay",
     "freeze",
     "get_available_balance",
@@ -97,6 +103,7 @@ __all__ = [
     "list_expiring_subscriptions",
     "list_payment_anomalies",
     "lock_wallet",
+    "payment_config_warnings",
     "payout_refund",
     "quote_of_subscription_row",
     "refund_unstarted_subscription",
@@ -119,5 +126,6 @@ __all__ = [
     "stream_admin_refunds_csv",
     "stream_ledger_csv",
     "subscriptions_by_instance",
+    "to_recharge_out",
     "verify_order",
 ]

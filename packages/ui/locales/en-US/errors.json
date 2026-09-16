@@ -73,6 +73,7 @@
     "badMonthFormat": "Month must be YYYY-MM",
     "callbackAmountMismatch": "Callback amount does not match the order",
     "callbackChannelMismatch": "Callback channel does not match the order",
+    "channelCurrencyUnsupported": "This payment channel does not settle in the platform currency — choose another",
     "channelNotEnabled": "This payment channel is not enabled — choose another",
     "channelStateNotBackfillable": "Channel-side status is {{status}} — cannot backfill",
     "currencyMismatch": "The channel currency does not match the order currency",

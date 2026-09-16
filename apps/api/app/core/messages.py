@@ -128,6 +128,9 @@ MESSAGES: dict[str, str] = {
     "billing.callbackAmountMismatch": "Callback amount does not match the order",
     "billing.currencyMismatch": "The channel currency does not match the order currency",
     "billing.callbackChannelMismatch": "Callback channel does not match the order",
+    "billing.channelCurrencyUnsupported": (
+        "This payment channel does not settle in the platform currency — choose another"
+    ),
     "billing.channelNotEnabled": "This payment channel is not enabled — choose another",
     "billing.channelStateNotBackfillable": "Channel-side status is {status} — cannot backfill",
     "billing.insufficientAvailableFrozen": (

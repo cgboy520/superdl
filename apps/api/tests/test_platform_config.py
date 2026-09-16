@@ -304,7 +304,7 @@ class TestAdminApi:
         assert site["company_address"] == "北京市海淀区示例路 1 号"
         assert site["company_phone"] == "010-12345678"
         assert site["business_license_url"] == "https://example.com/license.png"
-        assert site["payment_channels"] == {"wechat": False, "alipay": False, "mock": True}
+        assert site["payment_channels"] == [{"name": "mock", "presentation": "qr"}]
 
         await client.put(
             "/api/admin/v1/platform-config",
@@ -382,8 +382,9 @@ class TestAdminApi:
 
 
 class TestChannelGate:
-    async def test_disabled_channel_rejected(self, client: AsyncClient, sm):
-        """渠道开关默认关:未开通渠道下单被拒;开通但凭据不全同样拒。"""
+    async def test_disabled_channel_rejected(self, client: AsyncClient, sm, monkeypatch):
+        """渠道开关默认关:未开通渠道下单被拒;开通但凭据不全同样拒(币种匹配时才走到凭据检查)。"""
+        monkeypatch.setattr(get_settings(), "platform_currency", "CNY")
         headers = await user_headers(client, "13700000202")
         resp = await client.post(
             "/api/v1/wallet/recharges",

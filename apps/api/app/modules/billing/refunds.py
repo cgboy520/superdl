@@ -18,13 +18,12 @@ from app.core.sqlutil import get_for_update_or_404, next_daily_seq, sum_decimal,
 from app.core.timeutil import billing_period, now_utc
 from app.modules.billing import invoices, wallet
 from app.modules.billing.models import InvoiceRequest, Order, RefundRequest, reversal_blocks_refund
+from app.modules.billing.payment_channels import CHANNELS
 from app.modules.billing.schemas import AdminRefundOut, RefundOut
 
 logger = get_logger(__name__)
 
 ACTIVE_STATUSES = ("pending", "approved")
-
-_CHANNEL_TO_PAYOUT = {"wechat": "wechat_transfer", "alipay": "alipay_transfer"}
 
 REFUNDABLE_ORDERS_CAP = 50
 
@@ -328,9 +327,30 @@ async def admin_list_refunds(
     page_items, next_cursor = await paginate_by_id(
         session, stmt, id_col=RefundRequest.id, cursor=cursor, limit=limit
     )
+    channels = await _order_channels(session, [r.order_no for r in page_items])
     return Page[AdminRefundOut](
-        items=[AdminRefundOut.model_validate(r) for r in page_items], next_cursor=next_cursor
+        items=[_admin_out(r, channels.get(r.order_no)) for r in page_items],
+        next_cursor=next_cursor,
     )
+
+
+async def _order_channels(session: AsyncSession, order_nos: list[str]) -> dict[str, str]:
+    if not order_nos:
+        return {}
+    rows = await session.execute(
+        select(Order.order_no, Order.channel).where(Order.order_no.in_(order_nos))
+    )
+    return {row.order_no: row.channel for row in rows}
+
+
+def _admin_out(req: RefundRequest, order_channel: str | None) -> AdminRefundOut:
+    return AdminRefundOut.model_validate(req).model_copy(update={"order_channel": order_channel})
+
+
+async def admin_refund_out(session: AsyncSession, req: RefundRequest) -> AdminRefundOut:
+    """Admin view of one refund with the paying channel of its order (payout options)."""
+    channels = await _order_channels(session, [req.order_no])
+    return _admin_out(req, channels.get(req.order_no))
 
 
 async def review_refund(
@@ -422,7 +442,8 @@ async def _assert_payable(
     if order is not None:
         if reversal_blocks_refund(order):
             raise conflict(key="billing.refundChannelReversed")
-        expected_payout = _CHANNEL_TO_PAYOUT.get(order.channel)
+        order_spec = CHANNELS.get(order.channel)
+        expected_payout = order_spec.payout_channel if order_spec is not None else None
         if expected_payout is not None and channel not in (expected_payout, "offline"):
             raise conflict(
                 key="billing.refundPayoutChannelMismatch",

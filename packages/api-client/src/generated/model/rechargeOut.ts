@@ -4,7 +4,12 @@
  * SuperDL API
  * OpenAPI spec version: 0.1.0
  */
+import type { RechargeOutPresentation } from './rechargeOutPresentation';
 
+/**
+ * `presentation` tells the console how to show `payment_url`: `qr` renders it as a QR code,
+ * `redirect` sends the payer to it (checkout page) and resumes on `/billing?recharge=`.
+ */
 export interface RechargeOut {
   amount: string;
   channel: string;
@@ -12,6 +17,7 @@ export interface RechargeOut {
   currency: string;
   expires_at: string;
   order_no: string;
-  qr_url: string | null;
+  payment_url: string | null;
+  presentation: RechargeOutPresentation;
   status: string;
 }

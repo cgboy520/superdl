@@ -14,7 +14,6 @@
     "viewNotifications": "查看通知"
   },
   "billing": {
-    "alipay": "支付宝",
     "availableBalance": "可用余额",
     "balanceAfter": "充值后余额 ≈ {{amount}}",
     "byInstance": "按实例",
@@ -39,6 +38,7 @@
     "done": "完成",
     "exportCsv": "导出 CSV",
     "genQr": "生成支付二维码",
+    "goToCheckout": "前往支付页面",
     "goVerify": "去认证",
     "gpuTotal": "GPU 时费",
     "hourlyEmpty": "暂无小时账单",
@@ -66,12 +66,13 @@
     "invoiceTitleTypePersonal": "个人",
     "ledgerEmpty": "暂无收支记录",
     "ledgerFilterAll": "全部类型",
-    "mockChannel": "模拟支付(开发环境)",
     "mockPayNow": "模拟支付成功(开发环境)",
     "mockPaySent": "模拟支付已发送",
     "monthPicker": "选择月份",
     "monthSpend": "{{month}} 消费概览",
+    "noChannels": "本站尚未开通任何支付渠道。",
     "noSpendThisMonth": "该月暂无消费",
+    "openCheckoutAgain": "再次打开支付页面",
     "orderExpired": "订单已过期,请关闭后重新发起",
     "orderWaiting": "订单 {{no}},请在 {{time}} 前完成支付",
     "otherInstances": "其余 {{count}} 个",
@@ -84,6 +85,8 @@
     "realNameRequired": "按监管要求,完成实名认证后方可充值",
     "recharge": "充值",
     "rechargeAmount": "充值金额",
+    "rechargeCancelled": "已取消支付,订单在过期前仍可继续支付。",
+    "redirectNote": "将跳转到支付服务商页面;返回后本窗口自动确认到账。",
     "refundAmount": "退款金额",
     "refundApply": "申请退款",
     "refundCreated": "退款申请已提交,财务审核后将人工打款",
@@ -102,8 +105,7 @@
     "refundSubmit": "提交申请",
     "save": "保存",
     "saved": "已保存",
-    "scanWithAlipay": "请使用支付宝「扫一扫」完成支付",
-    "scanWithWechat": "请使用微信「扫一扫」完成支付",
+    "scanToPay": "请用{{channel}}扫码支付",
     "summaryFailed": "消费概览加载失败",
     "tabBills": "小时账单",
     "tabInvoices": "发票",
@@ -113,8 +115,7 @@
     "thresholdLine": "预警阈值 {{hours}} 小时",
     "thresholdSaved": "阈值已更新",
     "title": "费用中心",
-    "walletFailed": "余额加载失败",
-    "wechat": "微信支付"
+    "walletFailed": "余额加载失败"
   },
   "command": {
     "actionDeploy": "部署服务",
@@ -169,8 +170,6 @@
       "r4Fallback": "余额不足时实例将被停机,欠费冻结超期后回收实例盘(数据盘不受影响)",
       "r5": "包周期为预付:按下单时的原价快照计费,到期自动停机,中途释放不退款"
     },
-    "channelComingSoon": "商户资质接入后开放,当前请使用模拟支付(开发环境)",
-    "channelPending": "商户资质接入后开放",
     "dailyCostNote": "日常费用:关机也会产生的费用(数据盘按日计费)",
     "diskCreatedButInstanceFailed": "数据盘已创建并开始按日计费;实例创建未成功,可在「存储」页管理或删除该盘",
     "diskExpirePolicy": "数据盘到期后 {{graceDays}} 天宽限(只读),再冻结 {{frozenDays}} 天后清除",

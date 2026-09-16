@@ -5,6 +5,7 @@ import asyncio
 import functools
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Literal, Protocol
@@ -14,6 +15,15 @@ from app.core.timeutil import now_utc
 
 if TYPE_CHECKING:
     from app.modules.billing.models import Order
+
+
+@dataclass(frozen=True)
+class PaymentInit:
+    """What the channel hands back on order creation: the QR payload or checkout URL the console
+    presents, and the channel-side reference to persist for later lookups (None when absent)."""
+
+    url: str
+    channel_ref: str | None = None
 
 
 class CallbackResult:
@@ -89,12 +99,17 @@ class QueryResult:
 class PaymentChannel(Protocol):
     name: str
 
-    async def create_payment(self, order: "Order") -> str:
-        """发起支付,返回二维码内容 qr_url。"""
+    async def create_payment(
+        self, order: "Order", *, return_url: str, cancel_url: str
+    ) -> PaymentInit:
+        """Start a payment: QR payload or checkout URL plus the channel reference. `return_url`
+        and `cancel_url` are where a redirect channel sends the payer back; QR channels ignore
+        them."""
         ...
 
-    async def parse_callback(self, headers: dict[str, str], body: bytes) -> CallbackResult:
-        """验签并解析回调。验签失败抛 AppError(PAYMENT_CHANNEL_ERROR)。"""
+    async def parse_callback(self, headers: dict[str, str], body: bytes) -> CallbackResult | None:
+        """Verify and parse a callback; a bad signature raises AppError(PAYMENT_CHANNEL_ERROR).
+        None = verified but irrelevant event (acknowledge without touching any order)."""
         ...
 
     async def query_order(self, order: "Order") -> QueryResult:

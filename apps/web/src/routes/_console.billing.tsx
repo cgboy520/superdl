@@ -4,8 +4,8 @@ import { POLL, useAutoRefresh, useThemeColors } from "@superdl/ui";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import dayjs from "dayjs";
-import { Button, Card, Col, DatePicker, Row, Space, Tabs, Typography } from "antd";
-import { useMemo, useState } from "react";
+import { App, Button, Card, Col, DatePicker, Row, Space, Tabs, Typography } from "antd";
+import { useEffect, useMemo, useState } from "react";
 
 import { exportBillingApiV1BillingExportGet } from "@superdl/api-client";
 import {
@@ -38,8 +38,16 @@ const BY_INSTANCE_ROWS = 8;
 
 export const Route = createFileRoute("/_console/billing")({
   beforeLoad: requireAuth,
-  validateSearch: (search: Record<string, unknown>): { tab?: BillingTab; month?: string; ledger?: LedgerFilter } => {
-    const out: { tab?: BillingTab; month?: string; ledger?: LedgerFilter } = {};
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { tab?: BillingTab; month?: string; ledger?: LedgerFilter; recharge?: string; cancelled?: boolean } => {
+    const out: { tab?: BillingTab; month?: string; ledger?: LedgerFilter; recharge?: string; cancelled?: boolean } = {};
+    if (typeof search.recharge === "string" && /^[A-Za-z0-9-]{1,40}$/.test(search.recharge)) {
+      out.recharge = search.recharge;
+    }
+    if (search.cancelled === true || search.cancelled === "1" || search.cancelled === 1) {
+      out.cancelled = true;
+    }
     if (typeof search.tab === "string" && (BILLING_TABS as readonly string[]).includes(search.tab)) {
       out.tab = search.tab as BillingTab;
     }
@@ -82,8 +90,24 @@ function BillingPage() {
   const { formatMoney } = useFormat();
   const { t } = useTranslation(["web", "shared"]);
   const navigate = useNavigate();
-  const { tab, month: monthParam } = Route.useSearch();
-  const [rechargeOpen, setRechargeOpen] = useState(false);
+  const { tab, month: monthParam, recharge: returnedOrderNo, cancelled } = Route.useSearch();
+  const { message } = App.useApp();
+  const [rechargeOpen, setRechargeOpen] = useState(() => Boolean(returnedOrderNo));
+  // The provider's return is a full navigation, so the order to resume is captured at mount time.
+  const [resumeOrderNo] = useState<string | undefined>(returnedOrderNo);
+  useEffect(() => {
+    if (!returnedOrderNo) return;
+    if (cancelled) message.info(t("billing.rechargeCancelled"));
+    void navigate({
+      to: "/billing",
+      search: (prev: { tab?: string; month?: string; ledger?: LedgerFilter }) => ({
+        tab: prev.tab as BillingTab | undefined,
+        month: prev.month,
+        ledger: prev.ledger,
+      }),
+      replace: true,
+    });
+  }, [returnedOrderNo, cancelled, message, navigate, t]);
   const activeTab: BillingTab = tab ?? "bills";
   const auto = useAutoRefresh(POLL.logs);
   const walletQ = useWallet({ refetchInterval: auto.refetchInterval });
@@ -339,7 +363,7 @@ function BillingPage() {
             </Typography.Text>
           )}
         </Card>
-        <RechargeModal open={rechargeOpen} onClose={() => setRechargeOpen(false)} />
+        <RechargeModal open={rechargeOpen} onClose={() => setRechargeOpen(false)} resumeOrderNo={resumeOrderNo} />
       </Space>
     </PageContainer>
   );

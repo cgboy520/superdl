@@ -29,6 +29,8 @@ data:
   SUPERDL_PROMETHEUS_URL: "http://kube-prometheus-stack-prometheus.monitoring.svc:9090"
   SUPERDL_LOG_LEVEL: "INFO"
   SUPERDL_PUBLIC_BASE_URL: "https://api.superdl.example.com"
+  # User console origin; payment return URLs (`/billing?recharge=`) are built from it.
+  SUPERDL_WEB_BASE_URL: "https://console.superdl.example.com"
   SUPERDL_JUPYTER_DOMAIN_SUFFIX: "app.superdl.example.com"
   SUPERDL_SERVICE_DOMAIN_SUFFIX: "svc.superdl.example.com"
   SUPERDL_CORS_ORIGINS: '["https://console.superdl.example.com","https://admin.superdl.example.com"]'

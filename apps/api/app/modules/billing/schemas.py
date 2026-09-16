@@ -126,16 +126,18 @@ class RechargeCreate(BaseModel):
 
 
 class RechargeOut(BaseModel):
+    """`presentation` tells the console how to show `payment_url`: `qr` renders it as a QR code,
+    `redirect` sends the payer to it (checkout page) and resumes on `/billing?recharge=`."""
+
     order_no: str
     amount: MoneyOut
     currency: str
     channel: str
+    presentation: Literal["qr", "redirect"]
     status: str
-    qr_url: str | None
+    payment_url: str | None
     expires_at: datetime
     created_at: datetime
-
-    model_config = {"from_attributes": True}
 
 
 PayoutChannel = Literal["offline", "alipay_transfer", "wechat_transfer"]
@@ -186,9 +188,10 @@ class RefundableOrderOut(BaseModel):
 
 
 class AdminRefundOut(RefundOut):
-    """管理端退款单视图:多操作人/时间与核销流水关联。"""
+    """管理端退款单视图:多操作人/时间与核销流水关联;`order_channel` 决定可选打款渠道。"""
 
     user_id: int
+    order_channel: str | None = None
     review_by: int | None
     review_at: datetime | None
     payout_by: int | None

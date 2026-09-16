@@ -173,7 +173,8 @@ class Order(Base):
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
     request_fingerprint: Mapped[str | None] = mapped_column(String(64))
     backfill_idempotency_key: Mapped[str | None] = mapped_column(String(64))
-    qr_url: Mapped[str | None] = mapped_column(String(512))
+    payment_url: Mapped[str | None] = mapped_column(String(2048))
+    channel_ref: Mapped[str | None] = mapped_column(String(128))
     paid_at: Mapped[datetime | None]
     channel_reversed_at: Mapped[datetime | None]
     channel_reversal_resolved_at: Mapped[datetime | None]

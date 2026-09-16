@@ -4,11 +4,6 @@
  * SuperDL API
  * OpenAPI spec version: 0.1.0
  */
-import type {
-  MockWebhookApiV1WebhooksMockPost200,
-  WechatpayWebhookApiV1WebhooksWechatpayPost200
-} from '../../model';
-
 import { customFetch } from '../../../mutator';
 
 export const getAlipayWebhookApiV1WebhooksAlipayPostUrl = () => {
@@ -20,6 +15,7 @@ export const getAlipayWebhookApiV1WebhooksAlipayPostUrl = () => {
 }
 
 /**
+ * alipay callback: verify → parse → credit once (channel_txn_id idempotency).
  * @summary Alipay Webhook
  */
 export const alipayWebhookApiV1WebhooksAlipayPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<unknown> => {
@@ -43,12 +39,12 @@ export const getMockWebhookApiV1WebhooksMockPostUrl = () => {
 }
 
 /**
- * dev/test 专用:模拟支付成功回调。
+ * dev/test only: simulate a payment callback.
  * @summary Mock Webhook
  */
-export const mockWebhookApiV1WebhooksMockPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<MockWebhookApiV1WebhooksMockPost200> => {
+export const mockWebhookApiV1WebhooksMockPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<unknown> => {
 
-  return customFetch<MockWebhookApiV1WebhooksMockPost200>(getMockWebhookApiV1WebhooksMockPostUrl(),
+  return customFetch<unknown>(getMockWebhookApiV1WebhooksMockPostUrl(),
   {
     ...options,
     method: 'POST'
@@ -67,11 +63,12 @@ export const getWechatpayWebhookApiV1WebhooksWechatpayPostUrl = () => {
 }
 
 /**
+ * wechat callback: verify → parse → credit once (channel_txn_id idempotency).
  * @summary Wechatpay Webhook
  */
-export const wechatpayWebhookApiV1WebhooksWechatpayPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<WechatpayWebhookApiV1WebhooksWechatpayPost200> => {
+export const wechatpayWebhookApiV1WebhooksWechatpayPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<unknown> => {
 
-  return customFetch<WechatpayWebhookApiV1WebhooksWechatpayPost200>(getWechatpayWebhookApiV1WebhooksWechatpayPostUrl(),
+  return customFetch<unknown>(getWechatpayWebhookApiV1WebhooksWechatpayPostUrl(),
   {
     ...options,
     method: 'POST'

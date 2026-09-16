@@ -179,3 +179,23 @@ async def test_legal_en_us_drafts_seeded_once(scratch_url: str) -> None:
         ("terms", "en-US", 1, "draft"),
         ("terms", "zh-CN", 1, "published"),
     ]
+
+
+async def test_orders_payment_url_and_channel_ref_columns(scratch_url: str) -> None:
+    """Head renames orders.qr_url to payment_url (2048 chars) and adds channel_ref."""
+    up = _alembic(scratch_url, "upgrade", "head")
+    assert up.returncode == 0, up.stderr
+    engine = create_async_engine(scratch_url)
+    async with engine.connect() as conn:
+        rows = (
+            await conn.execute(
+                text(
+                    "SELECT column_name, character_maximum_length FROM information_schema.columns"
+                    " WHERE table_name = 'orders'"
+                    " AND column_name IN ('qr_url', 'payment_url', 'channel_ref')"
+                    " ORDER BY column_name"
+                )
+            )
+        ).all()
+    await engine.dispose()
+    assert [tuple(r) for r in rows] == [("channel_ref", 128), ("payment_url", 2048)]
