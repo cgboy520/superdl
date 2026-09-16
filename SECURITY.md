@@ -1,19 +1,19 @@
-# 安全策略
+# Security policy
 
-## 报告漏洞
+## Reporting a vulnerability
 
-- 私密渠道报告,不开公开 issue、不在提交信息或 PR 描述里写漏洞细节:优先用 GitHub 仓库 Security → Advisories 的私密报告;不可用时直接私信仓库维护者。
-- 报告内容:影响组件(api / web / admin / deploy / node-join.sh / 实例镜像)、复现步骤、影响面判断;凭据与租户数据脱敏。
-- 处置:收到后先确认并给出处置方向,修复随下一次 `main` 合并发布。不设漏洞赏金。
+- Report privately; do not open a public issue and do not put vulnerability details in commit messages or PR descriptions. Prefer GitHub's private vulnerability reporting (repository Security → Advisories); if that is unavailable, contact the repository maintainers directly.
+- Include: the affected component (api / web / admin / deploy / node-join.sh / instance images), reproduction steps and your assessment of the impact. Redact credentials and tenant data.
+- Handling: we acknowledge the report, state the intended fix, and ship it with the next `main` merge and release. There is no bug bounty.
 
-## 支持范围
+## Supported versions
 
-- 只有 `main` 受支持,没有发布分支;部署以 tag 构建的镜像为准(`.github/workflows/release.yml`)。
-- 只在自己部署的实例上做安全测试;禁止针对他人租户、生产数据或第三方(支付、短信、验证码渠道)。
+- Only `main` is supported; there are no release branches. Deployments run images built from tags (`.github/workflows/release.yml`).
+- Test only against instances you operate yourself. Never target other tenants, production data or third parties (payment, SMS, CAPTCHA or identity-verification providers).
 
-## 设计与加固
+## Design and hardening
 
-- 安全设计、租户隔离、限流分层与已接受取舍:`docs/reference/security.md`。
-- 生产启动校验(密钥、渠道、域名占位 fail-fast):同上「规则与不变量」首条。
-- 凭据不入 git:只经环境变量或平台配置中心注入,模板一律 `CHANGE_ME`(`deploy/app/secrets.example.yaml`)。
-- 供应链:CI 跑 gitleaks(当前工作树)、pip-audit、pnpm audit(HIGH+ 阻断);发布镜像经 Trivy 扫描并附 SBOM。
+- Security design, tenant isolation, rate-limit layers and accepted trade-offs: `docs/reference/security.md`.
+- Production boot validation (secrets, providers, domain placeholders fail fast): the first rule in that document's "规则与不变量".
+- Credentials never enter git: they are injected through environment variables or the platform configuration center, and every template uses `CHANGE_ME` (`deploy/app/secrets.example.yaml`).
+- Supply chain: CI runs gitleaks (working tree), pip-audit and pnpm audit (HIGH+ blocks); release images are scanned with Trivy and shipped with an SBOM.
