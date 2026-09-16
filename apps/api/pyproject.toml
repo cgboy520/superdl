@@ -1,7 +1,9 @@
 [project]
 name = "superdl-api"
 version = "0.1.0"
-description = "SuperDL GPU 算力租赁平台 — API 模块化单体"
+description = "SuperDL API: modular FastAPI monolith for the GPU rental platform"
+license = "Apache-2.0"
+authors = [{ name = "The SuperDL Authors" }]
 requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.141,<0.142",
