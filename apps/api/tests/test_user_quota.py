@@ -40,7 +40,7 @@ class TestUserQuota:
     async def test_count_capped_and_freed_on_release(
         self, client: AsyncClient, sm, fake, _tight_quota
     ):
-        headers, user_id, key_id = await funded_user(client, sm, "13900000071")
+        headers, user_id, key_id = await funded_user(client, sm, "u13900000071@test.local")
         sku_id = await create_test_sku(sm)
 
         first = await _create(client, headers, sku_id, key_id)

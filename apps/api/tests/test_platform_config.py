@@ -382,7 +382,7 @@ class TestAdminApi:
         assert policies["real_name_enabled"] is True
         assert policies["real_name_required_for_recharge"] is True
 
-        headers = await user_headers(client, "13700000201")
+        headers = await user_headers(client, "u13700000201@test.local")
         monkeypatch.setattr(get_settings(), "compliance_profile", "cn")
         resp = await client.post(
             "/api/v1/wallet/recharges",
@@ -399,7 +399,7 @@ class TestChannelGate:
         incomplete credentials is refused too (the credential check runs only when the currency
         matches)."""
         monkeypatch.setattr(get_settings(), "platform_currency", "CNY")
-        headers = await user_headers(client, "13700000202")
+        headers = await user_headers(client, "u13700000202@test.local")
         resp = await client.post(
             "/api/v1/wallet/recharges",
             json={"amount": "50.00", "channel": "wechat"},
@@ -813,7 +813,7 @@ class TestPolicyOverrides:
             json={"updates": {"disk_price_gb_month": "0.0700"}, "reason": "test repricing"},
             headers=ah,
         )
-        headers = await user_headers(client, "13700000031")
+        headers = await user_headers(client, "u13700000031@test.local")
         order = await create_order(client, headers, "100.00")
         await pay_mock(client, order["order_no"], "100.00")
         resp = await client.post(
@@ -860,7 +860,7 @@ class TestPolicyOverrides:
         policies = (await client.get("/api/v1/policies")).json()
         assert policies["recharge_min"] == "20.00"
         assert policies["recharge_presets"] == ["20.00", "200.00"]
-        headers = await user_headers(client, "13700000033")
+        headers = await user_headers(client, "u13700000033@test.local")
         low = await client.post(
             "/api/v1/wallet/recharges", json={"amount": "10.00", "channel": "mock"}, headers=headers
         )

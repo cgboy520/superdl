@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from app.core import audit
 from app.core.audit import ACTION_MAX_LENGTH, AuditLog
-from tests.helpers import age_sms_codes, as_handle, create_user_with_key
+from tests.helpers import age_sms_codes, create_user_with_key
 
 pytestmark = pytest.mark.usefixtures("fake")
 
@@ -40,10 +40,10 @@ class TestOverLongPath:
 class TestFailedCredentialAttempts:
     async def test_failed_login_names_the_targeted_account_masked(self, client: AsyncClient, sm):
         """The audit row of a failed login carries the masked handle target."""
-        await create_user_with_key(client, "13800000230")
+        await create_user_with_key(client, "u13800000230@test.local")
         resp = await client.post(
             "/api/v1/auth/login",
-            json={"handle": as_handle("13800000230"), "password": "not-my-password"},
+            json={"handle": "u13800000230@test.local", "password": "not-my-password"},
         )
         assert resp.status_code == 400 and resp.json()["message_key"] == "account.loginFailed"
 
@@ -56,19 +56,19 @@ class TestFailedCredentialAttempts:
                 )
             ).scalar_one()
         assert row.target == "handle:u***@test.local"
-        assert "13800000230" not in (row.target or "")
+        assert "u13800000230@test.local" not in (row.target or "")
         assert row.detail == {"action": "login"}
 
     async def test_successful_login_target_is_the_user_id(self, client: AsyncClient, sm):
         """After success the target is overwritten with user:{id}."""
-        _, user_id, _ = await create_user_with_key(client, "13800000231")
+        _, user_id, _ = await create_user_with_key(client, "u13800000231@test.local")
         await age_sms_codes(sm)
         await client.post(
             "/api/v1/auth/verification-code",
-            json={"handle": as_handle("13800000231"), "purpose": "login"},
+            json={"handle": "u13800000231@test.local", "purpose": "login"},
         )
         resp = await client.post(
-            "/api/v1/auth/login", json={"handle": as_handle("13800000231"), "code": "123456"}
+            "/api/v1/auth/login", json={"handle": "u13800000231@test.local", "code": "123456"}
         )
         assert resp.status_code == 200, resp.text
         async with sm() as session:
@@ -87,7 +87,7 @@ class TestRequestIdJoin:
         self, client: AsyncClient, sm
     ):
         """The audit row's request_id == the X-Request-ID of that response."""
-        headers, user_id, _ = await create_user_with_key(client, "13800000220")
+        headers, user_id, _ = await create_user_with_key(client, "u13800000220@test.local")
         resp = await client.post(
             "/api/v1/tickets",
             json={
@@ -112,7 +112,7 @@ class TestRequestIdJoin:
 
     async def test_inbound_request_id_is_carried_through(self, client: AsyncClient, sm):
         """A gateway-supplied X-Request-ID is carried into the audit row."""
-        headers, _, _ = await create_user_with_key(client, "13800000221")
+        headers, _, _ = await create_user_with_key(client, "u13800000221@test.local")
         resp = await client.post(
             "/api/v1/tickets",
             json={

@@ -13,7 +13,6 @@ from app.modules.account.models import UsedRefreshToken
 from tests.helpers import (
     REFRESH_COOKIE,
     admin_headers,
-    as_handle,
     current_refresh_token,
     issue_code,
     refresh_via_cookie,
@@ -46,7 +45,7 @@ def _cookie_value(resp) -> str:
 
 class TestRefreshRotation:
     async def test_rotate_then_replay_revokes_all(self, client: AsyncClient, sm):
-        await register(client, "13800000095")
+        await register(client, "u13800000095@test.local")
         original = current_refresh_token(client)
         first = await refresh_via_cookie(client, original)
         assert first.status_code == 200
@@ -70,7 +69,7 @@ class TestRefreshRotation:
 
         from app.main import create_app
 
-        await register(client, "13800000098")
+        await register(client, "u13800000098@test.local")
         original = current_refresh_token(client)
         other = AsyncClient(transport=ASGITransport(app=create_app()), base_url="http://test")
         other.cookies.set(REFRESH_COOKIE, original, path="/")
@@ -98,7 +97,7 @@ class TestRefreshRotation:
 
     async def test_grace_replay_does_not_fork_chain(self, client: AsyncClient):
         """Repeated replays of the same old token within the grace: each gets the same pair."""
-        await register(client, "13800000099")
+        await register(client, "u13800000099@test.local")
         original = current_refresh_token(client)
         first = await refresh_via_cookie(client, original)
         first_access = first.json()["access_token"]
@@ -116,10 +115,10 @@ class TestRefreshCookie:
     clear."""
 
     async def test_login_sets_cookie_and_cookie_refresh_rotates(self, client: AsyncClient, sm):
-        await register(client, "13800000105")
-        await issue_code(sm, "13800000105", "login")
+        await register(client, "u13800000105@test.local")
+        await issue_code(sm, "u13800000105@test.local", "login")
         resp = await client.post(
-            "/api/v1/auth/login", json={"handle": as_handle("13800000105"), "code": "123456"}
+            "/api/v1/auth/login", json={"handle": "u13800000105@test.local", "code": "123456"}
         )
         assert resp.status_code == 200, resp.text
         sc = resp.headers["set-cookie"]
@@ -139,7 +138,7 @@ class TestRefreshCookie:
 
     async def test_cookie_path_requires_csrf_header(self, client: AsyncClient, sm):
         """Cookie path without X-Requested-With → 403; the body is no refresh bypass."""
-        await register(client, "13800000106")
+        await register(client, "u13800000106@test.local")
         resp = await client.post("/api/v1/auth/refresh")
         assert resp.status_code == 403
         jar_before = current_refresh_token(client)
@@ -152,7 +151,7 @@ class TestRefreshCookie:
         assert _cookie_value(ignored_body) != jar_before != "not-a-jwt"
 
     async def test_logout_via_cookie_clears_cookie(self, client: AsyncClient):
-        await register(client, "13800000107")
+        await register(client, "u13800000107@test.local")
         consumed = current_refresh_token(client)
         resp = await client.post("/api/v1/auth/logout", headers={"X-Requested-With": "fetch"})
         assert resp.status_code == 204
@@ -165,7 +164,7 @@ class TestLogout:
         """Logging out the current session: the refresh token is marked consumed, every later
         refresh
         is 401."""
-        data = await register(client, "13800000101")
+        data = await register(client, "u13800000101@test.local")
         consumed = current_refresh_token(client)
         resp = await logout_via_cookie(client)
         assert resp.status_code == 204
@@ -183,7 +182,7 @@ class TestLogout:
     ):
         """Replaying a jti consumed by logout (consumed_via=logout) within the grace: 401 without
         bumping token_version."""
-        data = await register(client, "13800000104")
+        data = await register(client, "u13800000104@test.local")
         consumed = current_refresh_token(client)
         resp = await logout_via_cookie(client)
         assert resp.status_code == 204
@@ -196,7 +195,7 @@ class TestLogout:
 
     async def test_logout_invalid_token_still_204(self, client: AsyncClient):
         """Invalid / wrong-type tokens also get 204."""
-        data = await register(client, "13800000102")
+        data = await register(client, "u13800000102@test.local")
         garbage = await logout_via_cookie(client, "not-a-jwt")
         assert garbage.status_code == 204
         wrong_type = await logout_via_cookie(client, data["access_token"])
@@ -206,7 +205,7 @@ class TestLogout:
         """Logout everywhere: token_version+1, every session's access/refresh is invalid at once;
         the
         account itself can sign in again."""
-        data = await register(client, "13800000103")
+        data = await register(client, "u13800000103@test.local")
         rotated = (await refresh_via_cookie(client)).json()
         rotated_cookie = current_refresh_token(client)
 
@@ -222,16 +221,16 @@ class TestLogout:
             )
             assert me.status_code == 401
         assert (await refresh_via_cookie(client, rotated_cookie)).status_code == 401
-        await issue_code(sm, "13800000103", "login")
+        await issue_code(sm, "u13800000103@test.local", "login")
         relogin = await client.post(
-            "/api/v1/auth/login", json={"handle": as_handle("13800000103"), "code": "123456"}
+            "/api/v1/auth/login", json={"handle": "u13800000103@test.local", "code": "123456"}
         )
         assert relogin.status_code == 200, relogin.text
 
 
 class TestFreezeRevokesTokens:
     async def test_freeze_kills_refresh_and_access(self, client: AsyncClient, sm):
-        data = await register(client, "13800000097")
+        data = await register(client, "u13800000097@test.local")
         user_id = data["user"]["id"]
         ah = await admin_headers(sm, client, role="ops")
         resp = await client.post(

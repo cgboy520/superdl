@@ -42,7 +42,7 @@ async def admin_alerts(sm) -> list[Notification]:
 class TestCreate:
     async def test_create_ok_and_no_format(self, client: AsyncClient, sm):
         """Creation succeeds: status=open, first message stored, ticket_no like T20260823-01."""
-        headers = await user_headers(client, "13700000301")
+        headers = await user_headers(client, "u13700000301@test.local")
         resp = await create_ticket(client, headers)
         assert resp.status_code == 201, resp.text
         body = resp.json()
@@ -55,7 +55,7 @@ class TestCreate:
     async def test_idempotent_replay_returns_same(self, client: AsyncClient, sm):
         """A replay with the same Idempotency-Key returns the same ticket, no second row, no
         rate-limit quota consumed."""
-        headers = await user_headers(client, "13700000302")
+        headers = await user_headers(client, "u13700000302@test.local")
         r1 = await create_ticket(client, headers, idem="tk-1")
         r2 = await create_ticket(client, headers, idem="tk-1")
         assert r1.status_code == 201 and r2.status_code == 200
@@ -67,7 +67,7 @@ class TestCreate:
 
     async def test_open_limit_10_conflict(self, client: AsyncClient, sm):
         """More than 10 open (open/pending_staff/pending_user) tickets: the 11th is 409."""
-        headers, uid = await user_headers_with_id(client, "13700000303")
+        headers, uid = await user_headers_with_id(client, "u13700000303@test.local")
         async with sm() as session:
             for i in range(10):
                 session.add(
@@ -86,7 +86,7 @@ class TestCreate:
 
     async def test_rate_limit_5_per_hour(self, client: AsyncClient, sm):
         """Creation rate limit 5/h: the first 5 succeed, the 6th is 429."""
-        headers = await user_headers(client, "13700000304")
+        headers = await user_headers(client, "u13700000304@test.local")
         for i in range(5):
             resp = await create_ticket(client, headers, subject=f"issue {i}")
             assert resp.status_code == 201, resp.text
@@ -96,7 +96,7 @@ class TestCreate:
 
     async def test_new_ticket_triggers_admin_alert(self, client: AsyncClient, sm):
         """New ticket → admin_alerts info-level alert."""
-        headers = await user_headers(client, "13700000305")
+        headers = await user_headers(client, "u13700000305@test.local")
         resp = await create_ticket(client, headers)
         assert resp.status_code == 201
         ticket_no = resp.json()["ticket_no"]
@@ -118,7 +118,7 @@ class TestConversation:
     async def test_status_transitions(self, client: AsyncClient, sm):
         """open →(staff reply)→ pending_user →(user reply)→ pending_staff →(mark resolved)→
         resolved."""
-        headers, ticket = await self._open_ticket(client, "13700000311")
+        headers, ticket = await self._open_ticket(client, "u13700000311@test.local")
         tid = ticket["id"]
         ops = await admin_headers(sm, client, role="ops")
 
@@ -148,7 +148,7 @@ class TestConversation:
     async def test_terminal_not_repliable(self, client: AsyncClient, sm):
         """resolved/closed accept no replies (user and staff both 409); close only after
         resolved."""
-        headers, ticket = await self._open_ticket(client, "13700000312")
+        headers, ticket = await self._open_ticket(client, "u13700000312@test.local")
         tid = ticket["id"]
         ops = await admin_headers(sm, client, role="ops")
 
@@ -191,7 +191,7 @@ class TestConversation:
 
     async def test_staff_reply_notifies_user(self, client: AsyncClient, sm):
         """Staff reply → user in-app notification (type=ticket, with the ticket number)."""
-        headers, ticket = await self._open_ticket(client, "13700000313")
+        headers, ticket = await self._open_ticket(client, "u13700000313@test.local")
         ops = await admin_headers(sm, client, role="ops")
         resp = await client.post(
             f"/api/admin/v1/tickets/{ticket['id']}/reply",
@@ -206,7 +206,7 @@ class TestConversation:
 
     async def test_user_reply_triggers_admin_alert(self, client: AsyncClient, sm):
         """User reply → admin_alerts info."""
-        headers, ticket = await self._open_ticket(client, "13700000314")
+        headers, ticket = await self._open_ticket(client, "u13700000314@test.local")
         resp = await client.post(
             f"/api/v1/tickets/{ticket['id']}/messages",
             json={"body": "addendum: see the attached log"},
@@ -226,11 +226,11 @@ class TestIdor:
     @pytest.mark.parametrize("probe", ["get", "message", "close"])
     async def test_other_users_ticket_invisible(self, client: AsyncClient, sm, probe: str):
         """User B on user A's ticket: GET / POST messages / close are all 404."""
-        ha = await user_headers(client, "13700000321")
+        ha = await user_headers(client, "u13700000321@test.local")
         resp = await create_ticket(client, ha)
         assert resp.status_code == 201
         tid = resp.json()["id"]
-        hb = await user_headers(client, "13700000322")
+        hb = await user_headers(client, "u13700000322@test.local")
 
         if probe == "get":
             resp = await client.get(f"/api/v1/tickets/{tid}", headers=hb)
@@ -247,7 +247,7 @@ class TestIdor:
 class TestAdmin:
     async def test_filters(self, client: AsyncClient, sm):
         """status/category exact filters (Page response: items is the current page)."""
-        headers = await user_headers(client, "13700000331")
+        headers = await user_headers(client, "u13700000331@test.local")
         t1 = (await create_ticket(client, headers, category="instance")).json()
         t2 = (
             await create_ticket(
@@ -276,7 +276,7 @@ class TestAdmin:
 
     async def test_count_endpoint(self, client: AsyncClient, sm):
         """Pending count endpoint: default pending_staff, supports status/category filters."""
-        headers = await user_headers(client, "13700000337")
+        headers = await user_headers(client, "u13700000337@test.local")
         t1 = (await create_ticket(client, headers, category="instance")).json()
         await create_ticket(client, headers, category="billing", subject="invoice question")
         ops = await admin_headers(sm, client, role="ops")
@@ -306,12 +306,12 @@ class TestAdmin:
 
     async def test_search_by_user_id_and_ticket_no(self, client: AsyncClient, sm):
         """user_id/ticket_no search."""
-        headers = await user_headers(client, "13700000335")
+        headers = await user_headers(client, "u13700000335@test.local")
         t1 = (await create_ticket(client, headers, category="instance")).json()
         t2 = (
             await create_ticket(client, headers, category="billing", subject="bill question")
         ).json()
-        other = await user_headers(client, "13700000336")
+        other = await user_headers(client, "u13700000336@test.local")
         t3 = (
             await create_ticket(client, other, category="account", subject="deletion question")
         ).json()
@@ -359,7 +359,9 @@ class TestStaleTicketPatrol:
         return ticket["id"]
 
     async def test_stale_pending_staff_warns_and_dedups(self, client: AsyncClient, sm):
-        ticket_id = await self._make_stale_ticket(client, sm, "13700000341", age_hours=25)
+        ticket_id = await self._make_stale_ticket(
+            client, sm, "u13700000341@test.local", age_hours=25
+        )
         assert await stale_ticket_patrol(sm) == 1
         stale = [a for a in await admin_alerts(sm) if a.dedup_key == f"ticket-stale:{ticket_id}"]
         assert len(stale) == 1
@@ -368,7 +370,9 @@ class TestStaleTicketPatrol:
         assert await stale_ticket_patrol(sm) == 0
 
     async def test_fresh_pending_staff_not_alerted(self, client: AsyncClient, sm):
-        ticket_id = await self._make_stale_ticket(client, sm, "13700000342", age_hours=1)
+        ticket_id = await self._make_stale_ticket(
+            client, sm, "u13700000342@test.local", age_hours=1
+        )
         assert await stale_ticket_patrol(sm) == 0
         assert [
             a for a in await admin_alerts(sm) if a.dedup_key == f"ticket-stale:{ticket_id}"
@@ -380,7 +384,7 @@ class TestMessageCap:
         from app.modules.tickets import service as tickets_service
 
         monkeypatch.setattr(tickets_service, "MAX_MESSAGES_PER_TICKET", 1)
-        headers = await user_headers(client, "13700000399")
+        headers = await user_headers(client, "u13700000399@test.local")
         resp = await create_ticket(client, headers)
         assert resp.status_code == 201, resp.text
         tid = resp.json()["id"]

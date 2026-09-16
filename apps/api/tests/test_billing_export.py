@@ -39,7 +39,7 @@ class TestHourlyExport:
     async def test_headers_rows_and_month_window(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        headers, user_id, _ = await create_user_with_key(client, "13900000301")
+        headers, user_id, _ = await create_user_with_key(client, "u13900000301@test.local")
         await seed_bill_hourly(
             sm,
             user_id,
@@ -79,7 +79,7 @@ class TestHourlyExport:
     async def test_month_excludes_outside_rows(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        headers, user_id, _ = await create_user_with_key(client, "13900000302")
+        headers, user_id, _ = await create_user_with_key(client, "u13900000302@test.local")
         await seed_bill_hourly(
             sm,
             user_id,
@@ -100,7 +100,7 @@ class TestHourlyExport:
         sm: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ):
-        headers, user_id, _ = await create_user_with_key(client, "13900000304")
+        headers, user_id, _ = await create_user_with_key(client, "u13900000304@test.local")
         await seed_bill_hourly(
             sm,
             user_id,
@@ -120,7 +120,7 @@ class TestHourlyExport:
 
 class TestLedgerExport:
     async def test_ledger_rows(self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]):
-        headers, _user_id, _ = await funded_user(client, sm, "13900000306", "100.00")
+        headers, _user_id, _ = await funded_user(client, sm, "u13900000306@test.local", "100.00")
         resp = await client.get(
             "/api/v1/billing/export",
             params={"dataset": "ledger", "tz_offset_minutes": 480},
@@ -134,8 +134,8 @@ class TestLedgerExport:
         assert "(UTC+8)" in text
 
     async def test_isolation(self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]):
-        headers, _user_id, _ = await create_user_with_key(client, "13900000307")
-        _headers2, user_id2, _ = await funded_user(client, sm, "13900000308", "888.00")
+        headers, _user_id, _ = await create_user_with_key(client, "u13900000307@test.local")
+        _headers2, user_id2, _ = await funded_user(client, sm, "u13900000308@test.local", "888.00")
         await seed_bill_hourly(sm, user_id2, rows=[(1, _hour(2026, 8, 1, 0), "1.68")])
         resp = await client.get(
             "/api/v1/billing/export",

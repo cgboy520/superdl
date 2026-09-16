@@ -70,7 +70,7 @@ async def _provision(client, sm, fake, phone: str, **over):
 
 class TestRecreate:
     async def test_happy_path_keeps_slug_key_and_secret(self, client, sm, fake):
-        headers, svc, user_id = await _provision(client, sm, fake, "13900000401")
+        headers, svc, user_id = await _provision(client, sm, fake, "u13900000401@test.local")
         slug = svc["slug"]
         old_uuid = svc["current_instance"]["uuid"]
         key = (
@@ -155,7 +155,7 @@ class TestRecreate:
 
     async def test_retire_replay_is_noop(self, client, sm, fake):
         """service.retire replay: another task after the old revision was released is a no-op."""
-        headers, svc, _ = await _provision(client, sm, fake, "13900000402")
+        headers, svc, _ = await _provision(client, sm, fake, "u13900000402@test.local")
         rollout = (
             await client.post(
                 f"/api/v1/services/{svc['slug']}/revisions",
@@ -186,7 +186,7 @@ class TestRecreate:
 
 class TestGuards:
     async def test_subscription_and_unsettled_rejected(self, client, sm, fake):
-        headers, svc, user_id = await _provision(client, sm, fake, "13900000403")
+        headers, svc, user_id = await _provision(client, sm, fake, "u13900000403@test.local")
         slug = svc["slug"]
         sub = await client.post(
             f"/api/v1/services/{slug}/revisions",
@@ -218,7 +218,7 @@ class TestGuards:
         assert old.status == "stopped"
 
     async def test_failed_rollout_keeps_old_and_allows_start(self, client, sm, fake):
-        headers, svc, user_id = await _provision(client, sm, fake, "13900000404")
+        headers, svc, user_id = await _provision(client, sm, fake, "u13900000404@test.local")
         slug = svc["slug"]
         old_uuid = svc["current_instance"]["uuid"]
         rollout = (
@@ -264,7 +264,7 @@ class TestGuards:
         settings.max_instances_per_user = 1
         settings.max_gpus_per_user = 1
         try:
-            headers, svc, _ = await _provision(client, sm, fake, "13900000405")
+            headers, svc, _ = await _provision(client, sm, fake, "u13900000405@test.local")
             resp = await client.post(
                 f"/api/v1/services/{svc['slug']}/revisions",
                 json=revision_body(svc),
@@ -275,7 +275,7 @@ class TestGuards:
             settings.max_instances_per_user, settings.max_gpus_per_user = saved
 
     async def test_idempotent_replay(self, client, sm, fake):
-        headers, svc, _ = await _provision(client, sm, fake, "13900000406")
+        headers, svc, _ = await _provision(client, sm, fake, "u13900000406@test.local")
         slug = svc["slug"]
         h = {**headers, "Idempotency-Key": "rollout-1"}
         first = await client.post(

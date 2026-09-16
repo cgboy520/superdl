@@ -39,8 +39,12 @@ class TestMetricsSummary:
         assert resp.json()["items"] == []
 
     async def test_tenant_isolation(self, client, sm, fake):
-        _headers_a, uuid_a, _ = await provision_running(client, sm, fake, phone="13900020001")
-        headers_b, uuid_b, _ = await provision_running(client, sm, fake, phone="13900020002")
+        _headers_a, uuid_a, _ = await provision_running(
+            client, sm, fake, phone="u13900020001@test.local"
+        )
+        headers_b, uuid_b, _ = await provision_running(
+            client, sm, fake, phone="u13900020002@test.local"
+        )
         prom.set_client(prom_mock([(1e9, 10.0)]))
         resp = await client.get("/api/v1/metrics/instances", headers=headers_b)
         uuids = {i["uuid"] for i in resp.json()["items"]}

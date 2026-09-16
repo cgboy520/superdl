@@ -46,7 +46,9 @@ class TestSyncAudit:
         the retry succeeds once the fault clears."""
         from app.modules.adminapi import router_finance
 
-        payer, rid = await self._approved_refund(client, sm, "13700000160", "finance-payer-a")
+        payer, rid = await self._approved_refund(
+            client, sm, "u13700000160@test.local", "finance-payer-a"
+        )
 
         async def boom(request, session, *, result=200):
             raise RuntimeError("audit write failed (injected)")
@@ -79,7 +81,9 @@ class TestSyncAudit:
         """Successful payout: exactly one audit row, detail carries channel / reference."""
         from app.core.audit import AuditLog
 
-        payer, rid = await self._approved_refund(client, sm, "13700000161", "finance-payer-b")
+        payer, rid = await self._approved_refund(
+            client, sm, "u13700000161@test.local", "finance-payer-b"
+        )
         resp = await client.post(
             f"/api/admin/v1/refunds/{rid}/payout",
             json={"channel": "offline", "ref": "OFF-SYNC"},
@@ -105,7 +109,7 @@ class TestSyncAudit:
 
 class TestApply:
     async def test_create_success_and_no_format(self, client: AsyncClient, sm):
-        headers = await user_headers(client, "13700000101")
+        headers = await user_headers(client, "u13700000101@test.local")
         order = await paid_order(client, headers)
         resp = await apply_refund(client, headers, order["order_no"], "30.00")
         assert resp.status_code == 201, resp.text
@@ -117,7 +121,7 @@ class TestApply:
         assert w["balance"] == "50.00"
 
     async def test_idempotent_replay_returns_same(self, client: AsyncClient, sm):
-        headers = await user_headers(client, "13700000102")
+        headers = await user_headers(client, "u13700000102@test.local")
         order = await paid_order(client, headers)
         r1 = await apply_refund(client, headers, order["order_no"], "20.00", idem="rf-1")
         r2 = await apply_refund(client, headers, order["order_no"], "20.00", idem="rf-1")
@@ -129,7 +133,7 @@ class TestApply:
         assert len(rows) == 1
 
     async def test_non_paid_order_rejected(self, client: AsyncClient, sm):
-        headers = await user_headers(client, "13700000103")
+        headers = await user_headers(client, "u13700000103@test.local")
         order = await create_order(client, headers, "50.00")
         resp = await apply_refund(client, headers, order["order_no"])
         assert resp.status_code == 409
@@ -137,7 +141,7 @@ class TestApply:
 
     async def test_channel_reversed_order_rejected(self, client: AsyncClient, sm):
         """Orders reversed by the channel cannot be paid out."""
-        headers = await user_headers(client, "13700000105")
+        headers = await user_headers(client, "u13700000105@test.local")
         order = await paid_order(client, headers, "50.00")
         async with sm() as session:
             await session.execute(
@@ -155,7 +159,7 @@ class TestApply:
     async def test_amount_capped_by_min_of_order_and_balance(self, client: AsyncClient, sm):
         """Cap = min(order amount, current balance): above the order and above the balance each
         rejected once."""
-        headers = await user_headers(client, "13700000104")
+        headers = await user_headers(client, "u13700000104@test.local")
         order = await paid_order(client, headers, "50.00")
         resp = await apply_refund(client, headers, order["order_no"], "50.01")
         assert resp.status_code == 400
@@ -181,7 +185,7 @@ class TestApply:
     async def test_duplicate_application_rejected(self, client: AsyncClient, sm):
         """A second request while the order has an active one → 409 (a different idempotency key
         does not help)."""
-        headers = await user_headers(client, "13700000105")
+        headers = await user_headers(client, "u13700000105@test.local")
         order = await paid_order(client, headers)
         assert (await apply_refund(client, headers, order["order_no"], "10.00")).status_code == 201
         resp = await apply_refund(client, headers, order["order_no"], "10.00", idem="rf-dup")
@@ -190,7 +194,7 @@ class TestApply:
 
     async def test_idem_key_param_mismatch_409(self, client: AsyncClient, sm):
         """Same key, different params (amount changed): 409."""
-        headers = await user_headers(client, "13700000106")
+        headers = await user_headers(client, "u13700000106@test.local")
         order = await paid_order(client, headers)
         r1 = await apply_refund(client, headers, order["order_no"], "20.00", idem="rf-mix")
         assert r1.status_code == 201
@@ -203,7 +207,7 @@ class TestAdminFlow:
     async def test_review_then_payout_full_flow(self, client: AsyncClient, sm):
         """Review → payout registration: negative wallet adjustment + ledger type=refund +
         balance_after snapshot + back-link."""
-        headers = await user_headers(client, "13700000111")
+        headers = await user_headers(client, "u13700000111@test.local")
         order = await paid_order(client, headers, "50.00")
         rid = (await apply_refund(client, headers, order["order_no"], "20.00")).json()["id"]
         reviewer, payer = await finance_pair(sm, client)
@@ -245,7 +249,7 @@ class TestAdminFlow:
 
     async def test_payout_rejected_when_reversed_after_approval(self, client: AsyncClient, sm):
         """Reversed by the channel after approval: the payout re-checks and refuses."""
-        headers = await user_headers(client, "13700000114")
+        headers = await user_headers(client, "u13700000114@test.local")
         order = await paid_order(client, headers, "50.00")
         rid = (await apply_refund(client, headers, order["order_no"], "20.00")).json()["id"]
         reviewer, payer = await finance_pair(sm, client)
@@ -274,7 +278,7 @@ class TestAdminFlow:
 
     async def test_payout_same_person_rejected(self, client: AsyncClient, sm):
         """Two-person rule: payer == reviewer → 409."""
-        headers = await user_headers(client, "13700000112")
+        headers = await user_headers(client, "u13700000112@test.local")
         order = await paid_order(client, headers)
         rid = (await apply_refund(client, headers, order["order_no"], "20.00")).json()["id"]
         reviewer, _payer = await finance_pair(sm, client)
@@ -297,7 +301,7 @@ class TestAdminFlow:
     async def test_payout_idempotent_replay(self, client: AsyncClient, sm):
         """Payout Idempotency-Key: same key and params replays 200 + X-Idempotent-Replay without a
         second payout."""
-        headers = await user_headers(client, "13700000141")
+        headers = await user_headers(client, "u13700000141@test.local")
         order = await paid_order(client, headers, "50.00")
         rid = (await apply_refund(client, headers, order["order_no"], "20.00")).json()["id"]
         reviewer, payer = await finance_pair(sm, client)
@@ -332,7 +336,7 @@ class TestAdminFlow:
 
     async def test_payout_idem_key_param_mismatch_409(self, client: AsyncClient, sm):
         """Same key, different params (reference changed): 409."""
-        headers = await user_headers(client, "13700000142")
+        headers = await user_headers(client, "u13700000142@test.local")
         order = await paid_order(client, headers, "50.00")
         rid = (await apply_refund(client, headers, order["order_no"], "20.00")).json()["id"]
         reviewer, payer = await finance_pair(sm, client)
@@ -358,7 +362,7 @@ class TestAdminFlow:
 
     async def test_payout_repeat_without_key_still_409(self, client: AsyncClient, sm):
         """Repeated payout without a key: state machine 409."""
-        headers = await user_headers(client, "13700000143")
+        headers = await user_headers(client, "u13700000143@test.local")
         order = await paid_order(client, headers, "50.00")
         rid = (await apply_refund(client, headers, order["order_no"], "20.00")).json()["id"]
         reviewer, payer = await finance_pair(sm, client)
@@ -387,7 +391,7 @@ class TestAdminFlow:
     async def test_payout_balance_consumed_then_cancel(self, client: AsyncClient, sm):
         """Balance consumed after approval → payout 409 (balance consumed); cancel the request, the
         balance is untouched."""
-        headers = await user_headers(client, "13700000113")
+        headers = await user_headers(client, "u13700000113@test.local")
         order = await paid_order(client, headers, "50.00")
         rid = (await apply_refund(client, headers, order["order_no"], "40.00")).json()["id"]
         reviewer, payer = await finance_pair(sm, client)
@@ -430,7 +434,7 @@ class TestAdminFlow:
 
     async def test_cancel_terminal_state_rejected(self, client: AsyncClient, sm):
         """Cancel only pending/approved: paid cannot be cancelled."""
-        headers = await user_headers(client, "13700000114")
+        headers = await user_headers(client, "u13700000114@test.local")
         order = await paid_order(client, headers)
         rid = (await apply_refund(client, headers, order["order_no"], "20.00")).json()["id"]
         reviewer, payer = await finance_pair(sm, client)
@@ -454,7 +458,7 @@ class TestAdminFlow:
 
     async def test_rejected_order_can_reapply(self, client: AsyncClient, sm):
         """A rejection does not hold the partial unique index: the order can be requested again."""
-        headers = await user_headers(client, "13700000115")
+        headers = await user_headers(client, "u13700000115@test.local")
         order = await paid_order(client, headers)
         rid = (await apply_refund(client, headers, order["order_no"], "20.00")).json()["id"]
         reviewer, _payer = await finance_pair(sm, client)
@@ -473,7 +477,7 @@ class TestAdminFlow:
         assert rejected["review_comment"] == "insufficient grounds, rejected"
 
     async def test_review_non_pending_rejected(self, client: AsyncClient, sm):
-        headers = await user_headers(client, "13700000116")
+        headers = await user_headers(client, "u13700000116@test.local")
         order = await paid_order(client, headers)
         rid = (await apply_refund(client, headers, order["order_no"], "20.00")).json()["id"]
         reviewer, payer = await finance_pair(sm, client)
@@ -491,7 +495,7 @@ class TestAdminFlow:
         assert resp.json()["message_key"] == "billing.refundStateNotReviewable"
 
     async def test_admin_list_filters(self, client: AsyncClient, sm):
-        headers = await user_headers(client, "13700000117")
+        headers = await user_headers(client, "u13700000117@test.local")
         order = await paid_order(client, headers)
         await apply_refund(client, headers, order["order_no"], "20.00")
         reviewer, _payer = await finance_pair(sm, client)
@@ -524,7 +528,7 @@ class TestPartialRefunds:
     async def test_second_partial_after_payout_up_to_order_amount(self, client: AsyncClient, sm):
         """A second request after the first payout: the two add up to the order amount; any further
         amount is rejected (cap 0)."""
-        headers = await user_headers(client, "13700000130")
+        headers = await user_headers(client, "u13700000130@test.local")
         order = await paid_order(client, headers, "50.00")
         reviewer, payer = await finance_pair(sm, client)
 
@@ -545,7 +549,7 @@ class TestPartialRefunds:
 
     async def test_payout_cumulative_guard_on_data_anomaly(self, client: AsyncClient, sm):
         """Order amount lowered after approval so the total would exceed it → payout 409."""
-        headers = await user_headers(client, "13700000131")
+        headers = await user_headers(client, "u13700000131@test.local")
         order = await paid_order(client, headers, "50.00")
         reviewer, payer = await finance_pair(sm, client)
         rid = (await apply_refund(client, headers, order["order_no"], "20.00")).json()["id"]
@@ -575,7 +579,7 @@ class TestPartialRefunds:
     async def test_eligible_orders_fully_refunded(self, client: AsyncClient, sm):
         """Candidate view: fully refunded orders are greyed fully_refunded; after a partial refund
         max_amount = remainder."""
-        headers = await user_headers(client, "13700000132")
+        headers = await user_headers(client, "u13700000132@test.local")
         order = await paid_order(client, headers, "50.00")
         reviewer, payer = await finance_pair(sm, client)
         rid = (await apply_refund(client, headers, order["order_no"], "20.00")).json()["id"]
@@ -602,7 +606,7 @@ class TestRefundStrategy:
     async def test_compensation_credit_not_refundable(self, client: AsyncClient, sm):
         """Top up 50, spend it all + 50 compensation (balance 50): refundable 0, every request
         rejected."""
-        headers = await user_headers(client, "13700000201")
+        headers = await user_headers(client, "u13700000201@test.local")
         order = await paid_order(client, headers, "50.00")
         async with sm() as session:
             uid = (
@@ -631,7 +635,7 @@ class TestRefundStrategy:
     async def test_payout_channel_must_match_order_channel(self, client: AsyncClient, sm):
         """Original channel: a WeChat order only allows wechat_transfer (or the offline exception),
         alipay_transfer is refused."""
-        headers = await user_headers(client, "13700000202")
+        headers = await user_headers(client, "u13700000202@test.local")
         order = await paid_order(client, headers, "50.00")
         async with sm() as session:
             await session.execute(
@@ -664,7 +668,7 @@ class TestRefundStrategy:
         """The user keeps spending between review and payout: refundable short, the payout is
         blocked
         (wallet untouched)."""
-        headers = await user_headers(client, "13700000203")
+        headers = await user_headers(client, "u13700000203@test.local")
         order = await paid_order(client, headers, "50.00")
         async with sm() as session:
             uid = (
@@ -702,11 +706,11 @@ class TestIdor:
     @pytest.mark.parametrize("probe", ["list", "apply"])
     async def test_other_users_refund_invisible(self, client: AsyncClient, sm, probe: str):
         """User B can neither read nor touch user A's refund request or order."""
-        ha = await user_headers(client, "13700000121")
+        ha = await user_headers(client, "u13700000121@test.local")
         order = await paid_order(client, ha)
         created = await apply_refund(client, ha, order["order_no"], "20.00")
         assert created.status_code == 201
-        hb = await user_headers(client, "13700000122")
+        hb = await user_headers(client, "u13700000122@test.local")
         await paid_order(client, hb, "10.00")
 
         if probe == "list":
@@ -720,7 +724,7 @@ class TestIdor:
     async def test_eligible_orders_marks_ineligible(self, client: AsyncClient, sm):
         """Refund form candidates: requested orders greyed (already_applied), unpaid greyed
         (not_paid)."""
-        headers = await user_headers(client, "13700000123")
+        headers = await user_headers(client, "u13700000123@test.local")
         paid = await paid_order(client, headers, "50.00")
         pending = await create_order(client, headers, "30.00")
         await apply_refund(client, headers, paid["order_no"], "20.00")

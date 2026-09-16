@@ -51,7 +51,7 @@ class TestExpiringEndpoint:
         pagination;
         /instances/expiring is not swallowed by /instances/{uuid}."""
         headers, uuid, _user_id, _sku, _key = await provision_subscription(
-            client, sm, fake, "13910000101"
+            client, sm, fake, "u13910000101@test.local"
         )
         async with sm() as session:
             await session.execute(
@@ -107,7 +107,7 @@ class TestOrderAndIdempotency:
         """The order debits the whole period amount and the instance stores the discounted hourly
         price."""
         _headers, uuid, user_id, _, _ = await provision_subscription(
-            client, sm, fake, "13911100001"
+            client, sm, fake, "u13911100001@test.local"
         )
         policies = await _policies(sm)
         async with sm() as s:
@@ -139,7 +139,9 @@ class TestOrderAndIdempotency:
     async def test_replayed_key_charges_once(self, client, sm, fake):
         """Replaying the same Idempotency-Key: zero double charging, zero duplicate subscription
         rows."""
-        headers, user_id, key_id = await funded_user(client, sm, "13911100002", "5000.00")
+        headers, user_id, key_id = await funded_user(
+            client, sm, "u13911100002@test.local", "5000.00"
+        )
         sku_id = await create_test_sku(sm)
         await seed_node_spec(sm, node_name="node-idem")
 
@@ -161,7 +163,7 @@ class TestOrderAndIdempotency:
 
     async def test_insufficient_balance_never_reaches_creating(self, client, sm, fake):
         """Balance short of one month: 400, no creating instance left behind, no debit."""
-        headers, user_id, key_id = await funded_user(client, sm, "13911100003", "10.00")
+        headers, user_id, key_id = await funded_user(client, sm, "u13911100003@test.local", "10.00")
         sku_id = await create_test_sku(sm)
         await seed_node_spec(sm, node_name="node-poor")
 
@@ -179,7 +181,7 @@ class TestOrderAndIdempotency:
 
     async def test_period_field_rejected_on_on_demand(self, client, sm):
         """An on-demand order with period is always 422."""
-        headers, _user_id, key_id = await funded_user(client, sm, "13911100004")
+        headers, _user_id, key_id = await funded_user(client, sm, "u13911100004@test.local")
         sku_id = await create_test_sku(sm)
         resp = await client.post(
             "/api/v1/instances",
@@ -196,7 +198,9 @@ class TestOrderAndIdempotency:
 
     async def test_sku_with_period_disabled_refuses_subscription(self, client, sm, fake):
         """With subscriptions disabled on the SKU a direct API call cannot buy one either."""
-        headers, _user_id, key_id = await funded_user(client, sm, "13911100005", "5000.00")
+        headers, _user_id, key_id = await funded_user(
+            client, sm, "u13911100005@test.local", "5000.00"
+        )
         sku_id = await create_test_sku(sm, gpu_cores_pct=45, vcpu=7)
         await seed_node_spec(sm, node_name="node-nop")
         async with sm() as s:
@@ -215,7 +219,7 @@ class TestSettlementSkip:
         from app.modules.orchestrator.models import InstanceEvent
 
         headers, uuid, _user_id, _, _ = await provision_subscription(
-            client, sm, fake, "13911100010"
+            client, sm, fake, "u13911100010@test.local"
         )
         async with sm() as s:
             inst = (await s.execute(select(Instance).where(Instance.uuid == uuid))).scalar_one()
@@ -243,7 +247,7 @@ class TestCompanionFilters:
     async def test_zero_balance_subscriber_is_not_stopped(self, client, sm, fake):
         """A monthly user with a zero balance is not stopped by the arrears patrol."""
         _headers, uuid, user_id, _, _ = await provision_subscription(
-            client, sm, fake, "13911100020"
+            client, sm, fake, "u13911100020@test.local"
         )
         async with sm() as s:
             w = await wallet.lock_wallet(s, user_id)
@@ -257,7 +261,7 @@ class TestCompanionFilters:
     async def test_subscription_does_not_block_new_on_demand_instance(self, client, sm, fake):
         """Monthly instances do not enter the in-flight burn rate."""
         headers, _uuid, user_id, sku_id, key_id = await provision_subscription(
-            client, sm, fake, "13911100021"
+            client, sm, fake, "u13911100021@test.local"
         )
         async with sm() as s:
             w = await wallet.lock_wallet(s, user_id)
@@ -277,7 +281,9 @@ class TestCompanionFilters:
 
     async def test_stopped_subscription_is_not_frozen_by_arrears(self, client, sm, fake):
         """Stopped within the period + balance 0: no entry into the arrears freeze chain."""
-        headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100022")
+        headers, uuid, user_id, _, _ = await provision_subscription(
+            client, sm, fake, "u13911100022@test.local"
+        )
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
         await reconcile_once(sm)
@@ -296,7 +302,11 @@ class TestCapacityReservation:
     async def test_stopped_subscription_still_holds_capacity(self, client, sm, fake):
         """An unexpired subscription instance keeps occupying stock even when stopped."""
         headers, uuid, _user_id, sku_id, _key_id = await provision_subscription(
-            client, sm, fake, "13911100030", sku={"gpu_cores_pct": 100, "vcpu": 16, "mem_gb": 64}
+            client,
+            sm,
+            fake,
+            "u13911100030@test.local",
+            sku={"gpu_cores_pct": 100, "vcpu": 16, "mem_gb": 64},
         )
         async with sm() as s:
             from app.modules.nodes.models import NodeSpec
@@ -308,7 +318,7 @@ class TestCapacityReservation:
         await reconcile_once(sm)
 
         other_headers, _other_uid, other_key = await funded_user(
-            client, sm, "13911100031", "5000.00"
+            client, sm, "u13911100031@test.local", "5000.00"
         )
         resp = await client.post(
             "/api/v1/instances",
@@ -329,7 +339,9 @@ class TestCapacityReservation:
 class TestRenewal:
     async def test_renew_extends_from_old_expiry_and_chains(self, client, sm, fake):
         """An early renewal counts from the old expiry and links renewed_from_id."""
-        headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100040")
+        headers, uuid, user_id, _, _ = await provision_subscription(
+            client, sm, fake, "u13911100040@test.local"
+        )
         async with sm() as s:
             old = (
                 await s.execute(select(Subscription).where(Subscription.user_id == user_id))
@@ -367,7 +379,7 @@ class TestRenewal:
         """Renewal prices from subscriptions.unit_price (the list-price snapshot at order time), not
         the current SKU price."""
         headers, uuid, user_id, sku_id, _ = await provision_subscription(
-            client, sm, fake, "13911100041"
+            client, sm, fake, "u13911100041@test.local"
         )
         async with sm() as s:
             before = (
@@ -388,7 +400,9 @@ class TestRenewal:
 
     async def test_renew_is_idempotent(self, client, sm, fake):
         """Renewal replayed with the same Idempotency-Key: zero double charging."""
-        headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100042")
+        headers, uuid, user_id, _, _ = await provision_subscription(
+            client, sm, fake, "u13911100042@test.local"
+        )
         body = {"period": "week", "period_count": 1}
         h = {**headers, "Idempotency-Key": "renew-1"}
         first = await client.post(f"/api/v1/instances/{uuid}/renew", json=body, headers=h)
@@ -416,7 +430,9 @@ class TestRenewal:
         assert len(consume) == 2
 
     async def test_renew_rejects_on_demand_instance(self, client, sm, fake):
-        headers, uuid, _ = await provision_running(client, sm, fake, phone="13911100043")
+        headers, uuid, _ = await provision_running(
+            client, sm, fake, phone="u13911100043@test.local"
+        )
         resp = await client.post(
             f"/api/v1/instances/{uuid}/renew",
             json={"period": "month", "period_count": 1},
@@ -433,7 +449,7 @@ class TestIdempotencyFingerprint:
     async def test_same_key_on_another_instance_is_409(self, client, sm, fake):
         """The same key aimed at another instance → 409."""
         headers, uuid_a, user_id, sku_id, key_id = await provision_subscription(
-            client, sm, fake, "13911100050", fund="20000.00"
+            client, sm, fake, "u13911100050@test.local", fund="20000.00"
         )
         code, created = await buy_subscription(client, headers, sku_id, key_id)
         assert code == 202, created
@@ -470,7 +486,7 @@ class TestIdempotencyFingerprint:
         """Same instance, same key, different period → 409: the fingerprint covers every parameter
         that shapes the order."""
         headers, uuid, _, _, _ = await provision_subscription(
-            client, sm, fake, "13911100051", fund="20000.00"
+            client, sm, fake, "u13911100051@test.local", fund="20000.00"
         )
         h = {**headers, "Idempotency-Key": "period-swap-key"}
         first = await client.post(
@@ -493,7 +509,9 @@ class TestIdempotencyFingerprint:
         from app.core.errors import AppError
         from app.modules.billing import subscriptions
 
-        headers, uuid, user_id = await provision_running(client, sm, fake, phone="13911100052")
+        headers, uuid, user_id = await provision_running(
+            client, sm, fake, phone="u13911100052@test.local"
+        )
         await fund_wallet(sm, user_id, "20000.00")
         body = {"period": "week", "period_count": 1}
         h = {**headers, "Idempotency-Key": "conv-key"}
@@ -539,7 +557,7 @@ class TestExpiryChain:
         """An instance frozen on expiry does not unfreeze because the balance suffices; renewal is
         the unfreeze condition."""
         _headers, uuid, user_id, _, _ = await provision_subscription(
-            client, sm, fake, "13911100051"
+            client, sm, fake, "u13911100051@test.local"
         )
         async with sm() as s:
             await s.execute(
@@ -559,7 +577,9 @@ class TestExpiryChain:
 
     async def test_expired_subscription_cannot_start(self, client, sm, fake):
         """Starting after expiry is refused (renew first)."""
-        headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100052")
+        headers, uuid, user_id, _, _ = await provision_subscription(
+            client, sm, fake, "u13911100052@test.local"
+        )
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
         await reconcile_once(sm)
@@ -576,7 +596,9 @@ class TestExpiryChain:
 
     async def test_renew_unfreezes(self, client, sm, fake):
         """Renewing while frozen unfreezes (back to stopped, the user starts it)."""
-        headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100053")
+        headers, uuid, user_id, _, _ = await provision_subscription(
+            client, sm, fake, "u13911100053@test.local"
+        )
         async with sm() as s:
             await s.execute(
                 update(Subscription)
@@ -602,7 +624,9 @@ class TestExpiryChain:
 
     async def test_auto_renew_charges_and_extends(self, client, sm, fake):
         """Auto-renewal: charged and extended at the expiry instant, the instance keeps running."""
-        headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100054")
+        headers, uuid, user_id, _, _ = await provision_subscription(
+            client, sm, fake, "u13911100054@test.local"
+        )
         resp = await client.post(
             f"/api/v1/instances/{uuid}/auto-renew", json={"enabled": True}, headers=headers
         )
@@ -631,7 +655,9 @@ class TestExpiryChain:
     async def test_auto_renew_without_balance_falls_back_to_stop(self, client, sm, fake):
         """Auto-renewal with insufficient balance: no overdraft, the expiry stop chain runs, and the
         old subscription row is not corrupted."""
-        headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100055")
+        headers, uuid, user_id, _, _ = await provision_subscription(
+            client, sm, fake, "u13911100055@test.local"
+        )
         await client.post(
             f"/api/v1/instances/{uuid}/auto-renew", json={"enabled": True}, headers=headers
         )
@@ -661,7 +687,9 @@ class TestExpiryChain:
         """Manual renewal judges by available balance (balance − frozen); reversal-frozen amounts
         are
         unavailable."""
-        headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100057")
+        headers, uuid, user_id, _, _ = await provision_subscription(
+            client, sm, fake, "u13911100057@test.local"
+        )
         async with sm() as s:
             paid = (
                 (await s.execute(select(Subscription).where(Subscription.user_id == user_id)))
@@ -690,7 +718,9 @@ class TestExpiryChain:
         """Auto-renewal hitting a full freeze: the precheck by available balance records
         renew_failed
         and takes the expiry stop."""
-        headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100058")
+        headers, uuid, user_id, _, _ = await provision_subscription(
+            client, sm, fake, "u13911100058@test.local"
+        )
         await client.post(
             f"/api/v1/instances/{uuid}/auto-renew", json={"enabled": True}, headers=headers
         )
@@ -723,7 +753,7 @@ class TestExpiryChain:
         from app.modules.notify.models import Notification
 
         _headers, _uuid, user_id, _, _ = await provision_subscription(
-            client, sm, fake, "13911100056"
+            client, sm, fake, "u13911100056@test.local"
         )
         async with sm() as s:
             await s.execute(
@@ -755,7 +785,9 @@ class TestRenewConcurrency:
     async def test_concurrent_manual_and_auto_renew_never_double_charges(self, client, sm, fake):
         """Whoever wins: one active row per instance, the same period is not renewed twice, balance
         and chain charges are consistent."""
-        headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100096")
+        headers, uuid, user_id, _, _ = await provision_subscription(
+            client, sm, fake, "u13911100096@test.local"
+        )
         async with sm() as s:
             await s.execute(
                 update(Subscription)
@@ -790,7 +822,9 @@ class TestRenewConcurrency:
 
     async def test_auto_renew_after_manual_renew_is_noop(self, client, sm, fake):
         """The expiry patrol after a manual renewal: auto-renewal does not charge again."""
-        headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100097")
+        headers, uuid, user_id, _, _ = await provision_subscription(
+            client, sm, fake, "u13911100097@test.local"
+        )
         async with sm() as s:
             await s.execute(
                 update(Subscription)
@@ -825,7 +859,9 @@ class TestRestartGate:
 
     async def test_subscription_restart_ignores_balance(self, client, sm, fake):
         """A monthly instance with balance 0 restarts as usual."""
-        headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100090")
+        headers, uuid, user_id, _, _ = await provision_subscription(
+            client, sm, fake, "u13911100090@test.local"
+        )
         async with sm() as s:
             await s.execute(update(Wallet).where(Wallet.user_id == user_id).values(balance=0))
             await s.commit()
@@ -839,7 +875,9 @@ class TestRestartGate:
 
     async def test_expired_subscription_restart_aborts_at_stopped(self, client, sm, fake):
         """Restarting an expired monthly instance: stops at stopped with a notification."""
-        headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100091")
+        headers, uuid, user_id, _, _ = await provision_subscription(
+            client, sm, fake, "u13911100091@test.local"
+        )
         async with sm() as s:
             await s.execute(
                 update(Subscription)
@@ -865,7 +903,9 @@ class TestRestartGate:
     async def test_payg_restart_insufficient_balance_aborts_at_stopped(self, client, sm, fake):
         """An on-demand instance short of balance: the restart aborts at stopped with a
         notification."""
-        headers, uuid, user_id = await provision_running(client, sm, fake, "13900000150")
+        headers, uuid, user_id = await provision_running(
+            client, sm, fake, "u13900000150@test.local"
+        )
         async with sm() as s:
             await s.execute(update(Wallet).where(Wallet.user_id == user_id).values(balance=0))
             await s.commit()
@@ -890,7 +930,9 @@ class TestRelease:
         """Release mid-period: the subscription becomes cancelled, no refund, the stock reservation
         is
         released."""
-        headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100060")
+        headers, uuid, user_id, _, _ = await provision_subscription(
+            client, sm, fake, "u13911100060@test.local"
+        )
         async with sm() as s:
             balance_before = await wallet.get_balance(s, user_id)
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
@@ -913,7 +955,9 @@ class TestReconcileAndReporting:
         from app.modules.billing.reconcile import bills_vs_consume, dangling_consume_refs
         from app.modules.billing.wallet import revenue_summary
 
-        _, _, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100080")
+        _, _, user_id, _, _ = await provision_subscription(
+            client, sm, fake, "u13911100080@test.local"
+        )
         async with sm() as s:
             paid = (
                 (await s.execute(select(Subscription).where(Subscription.user_id == user_id)))
@@ -934,7 +978,9 @@ class TestReconcileAndReporting:
         is still covered."""
         from app.modules.adminapi.overview import overview
 
-        headers, uuid, _, _, _ = await provision_subscription(client, sm, fake, "13911100081")
+        headers, uuid, _, _, _ = await provision_subscription(
+            client, sm, fake, "u13911100081@test.local"
+        )
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
         await reconcile_once(sm)
@@ -956,7 +1002,9 @@ class TestConvertToSubscription:
         from app.core.timeutil import hour_floor
         from app.modules.orchestrator.models import InstanceEvent
 
-        headers, uuid, _user_id = await self._on_demand_running(client, sm, fake, "13911100090")
+        headers, uuid, _user_id = await self._on_demand_running(
+            client, sm, fake, "u13911100090@test.local"
+        )
         async with sm() as s:
             inst = (await s.execute(select(Instance).where(Instance.uuid == uuid))).scalar_one()
             instance_id, unit = inst.id, inst.price_hourly
@@ -995,7 +1043,9 @@ class TestConvertToSubscription:
         from app.modules.billing.settlement import settle_due_hours
         from app.modules.orchestrator.models import InstanceEvent
 
-        headers, uuid, _user_id = await self._on_demand_running(client, sm, fake, "13911100091")
+        headers, uuid, _user_id = await self._on_demand_running(
+            client, sm, fake, "u13911100091@test.local"
+        )
         async with sm() as s:
             inst = (await s.execute(select(Instance).where(Instance.uuid == uuid))).scalar_one()
             instance_id = inst.id
@@ -1028,7 +1078,9 @@ class TestConvertToSubscription:
     async def test_convert_charges_once_under_replay(self, client, sm, fake):
         """Replaying the same Idempotency-Key: zero double charging, zero duplicate subscription
         rows."""
-        headers, uuid, user_id = await self._on_demand_running(client, sm, fake, "13911100092")
+        headers, uuid, user_id = await self._on_demand_running(
+            client, sm, fake, "u13911100092@test.local"
+        )
         h = {**headers, "Idempotency-Key": "conv-1"}
         body = {"period": "week", "period_count": 1}
         first = await client.post(f"/api/v1/instances/{uuid}/subscribe", json=body, headers=h)
@@ -1058,7 +1110,9 @@ class TestConvertToSubscription:
     async def test_convert_twice_without_key_is_refused(self, client, sm, fake):
         """Converting again without an idempotency key: the second attempt is refused, no second
         order."""
-        headers, uuid, _user_id = await self._on_demand_running(client, sm, fake, "13911100093")
+        headers, uuid, _user_id = await self._on_demand_running(
+            client, sm, fake, "u13911100093@test.local"
+        )
         body = {"period": "week", "period_count": 1}
         assert (
             await client.post(f"/api/v1/instances/{uuid}/subscribe", json=body, headers=headers)
@@ -1071,7 +1125,9 @@ class TestConvertToSubscription:
 
     async def test_convert_keeps_locked_in_price_not_current_sku_price(self, client, sm, fake):
         """The conversion quotes from the price snapshot taken at instance creation."""
-        headers, uuid, _user_id = await self._on_demand_running(client, sm, fake, "13911100094")
+        headers, uuid, _user_id = await self._on_demand_running(
+            client, sm, fake, "u13911100094@test.local"
+        )
         async with sm() as s:
             inst = (await s.execute(select(Instance).where(Instance.uuid == uuid))).scalar_one()
             snapshot, sku_id = inst.price_hourly, inst.sku_id
@@ -1089,7 +1145,9 @@ class TestConvertToSubscription:
 
     async def test_stopped_instance_converts_without_extra_bill(self, client, sm, fake):
         """Converting a stopped instance adds no bill rows."""
-        headers, uuid, _user_id = await self._on_demand_running(client, sm, fake, "13911100095")
+        headers, uuid, _user_id = await self._on_demand_running(
+            client, sm, fake, "u13911100095@test.local"
+        )
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
         await reconcile_once(sm)
@@ -1121,7 +1179,9 @@ class TestConvertToSubscription:
         from app.core.timeutil import hour_floor
         from app.modules.billing.models import SettlementWatermark
 
-        headers, uuid, _user_id = await self._on_demand_running(client, sm, fake, "13911100096")
+        headers, uuid, _user_id = await self._on_demand_running(
+            client, sm, fake, "u13911100096@test.local"
+        )
         async with sm() as s:
             s.add(
                 SettlementWatermark(
@@ -1144,7 +1204,9 @@ class TestUnstartedPrepay:
         from app.modules.billing.models import BalanceLedger, Subscription
         from app.modules.notify.models import Notification
 
-        headers, user_id, key_id = await funded_user(client, sm, "13911100099", "5000.00")
+        headers, user_id, key_id = await funded_user(
+            client, sm, "u13911100099@test.local", "5000.00"
+        )
         sku_id = await create_test_sku(sm)
         await seed_node_spec(sm, node_name="node-timeout")
         code, data = await buy_subscription(client, headers, sku_id, key_id)
@@ -1209,7 +1271,7 @@ class TestExpiredSweep:
         from app.core.metrics import SUBSCRIPTION_UNPAID_RUNNING
 
         headers, uuid, user_id, _, _ = await provision_subscription(
-            client, sm, fake, "13911100201", period="day"
+            client, sm, fake, "u13911100201@test.local", period="day"
         )
         ns = f"tenant-{user_id}"
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
@@ -1259,7 +1321,7 @@ class TestExpiredSweep:
         """A running instance renewed after expiry is covered and not stopped by the expiry
         sweep."""
         headers, uuid, _user_id, _, _ = await provision_subscription(
-            client, sm, fake, "13911100202"
+            client, sm, fake, "u13911100202@test.local"
         )
         counts = await subscription_patrol(sm)
         assert counts["stopped"] == 0

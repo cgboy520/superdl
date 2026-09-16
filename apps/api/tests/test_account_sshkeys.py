@@ -8,7 +8,7 @@ ED25519_KEY = (
 
 
 async def auth_client(client: AsyncClient) -> dict[str, str]:
-    data = await register(client, "13800000009")
+    data = await register(client, "u13800000009@test.local")
     return {"Authorization": f"Bearer {data['access_token']}"}
 
 
@@ -69,7 +69,7 @@ class TestSshKeys:
     async def test_same_key_allowed_across_users(self, client: AsyncClient):
         """Fingerprint uniqueness is (user_id, fingerprint), not global."""
         h1 = await auth_client(client)
-        data = await register(client, "13800000010")
+        data = await register(client, "u13800000010@test.local")
         h2 = {"Authorization": f"Bearer {data['access_token']}"}
         for h in (h1, h2):
             resp = await client.post(
@@ -82,7 +82,7 @@ class TestSshKeys:
         released instances are untouched."""
         from app.modules.orchestrator.models import Instance
 
-        data = await register(client, "13800000011")
+        data = await register(client, "u13800000011@test.local")
         headers = {"Authorization": f"Bearer {data['access_token']}"}
         resp = await client.post(
             "/api/v1/ssh-keys", json={"name": "laptop", "public_key": ED25519_KEY}, headers=headers
@@ -113,7 +113,7 @@ class TestSshKeyCap:
         from app.modules.account import sshkeys as account_sshkeys
 
         monkeypatch.setattr(account_sshkeys, "MAX_SSH_KEYS_PER_USER", 1)
-        data = await register(client, "13800000019")
+        data = await register(client, "u13800000019@test.local")
         headers = {"Authorization": f"Bearer {data['access_token']}"}
         assert (
             await client.post(

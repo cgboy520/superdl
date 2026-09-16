@@ -259,7 +259,7 @@ class TestCapacity:
                 session, {"gpu_node_cpu_instance_vcpu_cap": "0"}, updated_by=None
             )
             await session.commit()
-        headers, _user_id, key_id = await funded_user(client, sm, "13900000301")
+        headers, _user_id, key_id = await funded_user(client, sm, "u13900000301@test.local")
         resp = await client.post(
             "/api/v1/instances",
             json={
@@ -324,7 +324,7 @@ class TestFullChain:
             await session.commit()
             sku_id = sku.id
 
-        headers, user_id, key_id = await funded_user(client, sm, "13900000302")
+        headers, user_id, key_id = await funded_user(client, sm, "u13900000302@test.local")
         resp = await client.post(
             "/api/v1/instances",
             json={
@@ -376,7 +376,7 @@ class TestFullChain:
             session.add(sku)
             await session.commit()
             sku_id = sku.id
-        headers, _user_id, key_id = await funded_user(client, sm, "13900000303")
+        headers, _user_id, key_id = await funded_user(client, sm, "u13900000303@test.local")
         resp = await client.post(
             "/api/v1/instances",
             json={
@@ -394,7 +394,7 @@ class TestFullChain:
         """A "0-card instance" of a GPU SKU is stopped by the service layer."""
         await seed_node_spec(sm)
         sku_id = await create_test_sku(sm)
-        headers, _user_id, key_id = await funded_user(client, sm, "13900000304")
+        headers, _user_id, key_id = await funded_user(client, sm, "u13900000304@test.local")
         resp = await client.post(
             "/api/v1/instances",
             json={
@@ -420,7 +420,7 @@ class TestVcpuQuota:
             await session.commit()
             sku_id = sku.id
 
-        headers, user_id, key_id = await funded_user(client, sm, "13900000305")
+        headers, user_id, key_id = await funded_user(client, sm, "u13900000305@test.local")
 
         async def create():
             return await client.post(
@@ -463,7 +463,7 @@ class TestVcpuQuota:
         async with sm() as session:
             await set_platform_settings(session, {"max_vcpus_per_user": "1"}, updated_by=None)
             await session.commit()
-        headers, _user_id, key_id = await funded_user(client, sm, "13900000306")
+        headers, _user_id, key_id = await funded_user(client, sm, "u13900000306@test.local")
         resp = await client.post(
             "/api/v1/instances",
             json={

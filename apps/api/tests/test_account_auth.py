@@ -19,14 +19,13 @@ from app.modules.account import verification
 from app.modules.account.models import User, VerificationCode
 from tests.helpers import (
     age_sms_codes,
-    as_handle,
     issue_code,
     refresh_via_cookie,
     register,
     send_code,
 )
 
-EMAIL = as_handle("13800000001")
+EMAIL = "u13800000001@test.local"
 PHONE = "+8613800000001"
 
 
@@ -67,7 +66,7 @@ class TestRegister:
 
     async def test_password_byte_boundary(self, client: AsyncClient):
         """Passwords are capped at 72 bytes: 24 CJK characters register, 25 → 422."""
-        a, b = as_handle("13800000071"), as_handle("13800000072")
+        a, b = "u13800000071@test.local", "u13800000072@test.local"
         await send_code(client, a, "register")
         ok = await client.post(
             "/api/v1/auth/register",
@@ -84,7 +83,7 @@ class TestRegister:
 
     async def test_login_accepts_every_registrable_password_length(self, client: AsyncClient):
         password = "p" * 72
-        email = as_handle("13800000073")
+        email = "u13800000073@test.local"
         await register(client, email, password=password)
         resp = await client.post("/api/v1/auth/login", json={"handle": email, "password": password})
         assert resp.status_code == 200, resp.text
@@ -131,7 +130,7 @@ class TestRegister:
 
     async def test_duplicate_phone_rejected(self, client: AsyncClient, sm):
         await _register_with_phone(client, sm, EMAIL, PHONE)
-        other = as_handle("13800000002")
+        other = "u13800000002@test.local"
         await issue_code(sm, other, "register")
         await issue_code(sm, PHONE, "register")
         resp = await client.post(
@@ -239,7 +238,7 @@ class TestLogin:
         self, client: AsyncClient
     ):
         """Only failures count and one success clears; a full bucket rejects the right password."""
-        email = as_handle("13800000082")
+        email = "u13800000082@test.local"
         await register(client, email, password="secret123456")
         for _ in range(4):
             resp = await client.post(
@@ -295,7 +294,7 @@ class TestHandles:
             assert (await session.execute(select(User).where(User.email == EMAIL))).first() is None
 
     async def test_handle_owned_by_another_account_is_refused(self, client: AsyncClient, sm):
-        other = as_handle("13800000002")
+        other = "u13800000002@test.local"
         await register(client, other)
         headers = await self._headers(client)
         await issue_code(sm, other, "bind_handle")
@@ -360,7 +359,7 @@ class TestAudit:
 class TestPasswordReset:
     async def test_set_then_login_with_new_password(self, client: AsyncClient, sm):
         """A password-less account sets one by code; old sessions die, the new pair works."""
-        email = as_handle("13800000090")
+        email = "u13800000090@test.local"
         pair = await register(client, email)
         old_access = pair["access_token"]
         await issue_code(sm, email, "reset_password")
@@ -396,7 +395,7 @@ class TestCodeQuotaAndBackoff:
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
         """Codes requested on someone's behalf do not eat their 10/day consume quota."""
-        email = as_handle("13800000096")
+        email = "u13800000096@test.local"
         async with sm() as session:
             for _ in range(10):
                 session.add(
@@ -421,7 +420,7 @@ class TestCodeQuotaAndBackoff:
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
         """Consecutive unconsumed codes double the interval: 60 s → 120 s."""
-        email = as_handle("13800000097")
+        email = "u13800000097@test.local"
         await send_code(client, email)
         resp = await client.post(
             "/api/v1/auth/verification-code", json={"handle": email, "purpose": "register"}
@@ -452,7 +451,7 @@ class TestCodeQuotaAndBackoff:
         """The daily quota is charged on successful consumption only."""
         from app.core.crypto import hash_verification_code
 
-        email = as_handle("13800000098")
+        email = "u13800000098@test.local"
         handle = Handle("email", email)
         codes = [f"{200000 + i}" for i in range(11)]
         async with sm() as session:
@@ -493,7 +492,7 @@ class TestLoginBurst:
         """Concurrency cannot amplify the IP+handle bucket: at most 5 reach bcrypt, the rest 429."""
         import asyncio
 
-        email = as_handle("13800000083")
+        email = "u13800000083@test.local"
         await register(client, email, password="secret123456")
         bodies = [{"handle": email, "password": "wrong-pass"} for _ in range(11)]
         bodies.append({"handle": email, "password": "secret123456"})
@@ -508,7 +507,7 @@ class TestLoginBurst:
     async def test_success_refunds_precount_but_keeps_failures(self, client: AsyncClient):
         from app.core.ratelimit import read_hits
 
-        email = as_handle("13800000084")
+        email = "u13800000084@test.local"
         await register(client, email, password="secret123456")
         for _ in range(2):
             await client.post(
@@ -527,7 +526,7 @@ class TestCodeBackoffHardening:
     ):
         """Five wrong attempts void the code; an immediate resend is still 429 (backoff counts
         unconsumed codes, not used_at)."""
-        email = as_handle("13800000085")
+        email = "u13800000085@test.local"
         await send_code(client, email)
         for _ in range(5):
             resp = await client.post("/api/v1/auth/register", json=_register_body(email, "000000"))
@@ -548,7 +547,7 @@ class TestCodeBackoffHardening:
     async def test_base_interval_applies_after_consumed_code(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        email = as_handle("13800000086")
+        email = "u13800000086@test.local"
         await register(client, email)
         resp = await client.post(
             "/api/v1/auth/verification-code", json={"handle": email, "purpose": "login"}
@@ -571,7 +570,7 @@ class TestCodeBackoffHardening:
         """The per-target daily send cap is independent of the consume quota."""
         from app.core.ratelimit import check_rate_limit
 
-        email = as_handle("13800000087")
+        email = "u13800000087@test.local"
         for _ in range(verification.SEND_TARGET_DAILY_MAX):
             await check_rate_limit(
                 f"code-send-target:{email}",

@@ -23,7 +23,6 @@ from app.modules.notify.models import Notification
 from app.modules.orchestrator.reconciler import reconcile_once
 from tests.helpers import (
     admin_headers,
-    as_handle,
     create_disk,
     create_user_with_key,
     drain,
@@ -150,7 +149,7 @@ class TestAdjustments:
         """Same key and body → replay; same key, different body → 409; same key and body across
         tenants → separate requests."""
         _h1, _u1, user1 = await provision_running(client, sm, fake)
-        _h2, u2id, _k2 = await create_user_with_key(client, "13900000141")
+        _h2, u2id, _k2 = await create_user_with_key(client, "u13900000141@test.local")
         finance = await admin_headers(sm, client, role="finance", username="fin-idem")
         body = {"user_id": user1, "amount": "10.00", "reason": "compensation one"}
 
@@ -428,9 +427,9 @@ class TestTenantAggregations:
         missing amounts are 2-dp strings."""
         from app.modules.billing import service as billing_service
 
-        _headers, _uuid, id1 = await provision_running(client, sm, fake, "13600000061")
-        id2 = (await register(client, "13600000062"))["user"]["id"]
-        id3 = (await register(client, "13600000063"))["user"]["id"]
+        _headers, _uuid, id1 = await provision_running(client, sm, fake, "u13600000061@test.local")
+        id2 = (await register(client, "u13600000062@test.local"))["user"]["id"]
+        id3 = (await register(client, "u13600000063@test.local"))["user"]["id"]
         await fund_wallet(sm, id2, "20.00")
         async with sm() as session:
             await billing_service.debit(
@@ -565,7 +564,7 @@ class TestRevenueReport:
         480."""
         from app.modules.billing.models import BillHourly
 
-        data = await register(client, "13600000043")
+        data = await register(client, "u13600000043@test.local")
         hour = now_utc().replace(minute=0, second=0, microsecond=0)
         async with sm() as session:
             session.add(
@@ -595,8 +594,8 @@ class TestRevenueReport:
 
 class TestAnnouncement:
     async def test_publish_reaches_all_active_users(self, client: AsyncClient, sm):
-        u1 = await register(client, "13600000041")
-        u2 = await register(client, "13600000042")
+        u1 = await register(client, "u13600000041@test.local")
+        u2 = await register(client, "u13600000042@test.local")
         ah = await admin_headers(sm, client, role="ops")
 
         resp = await client.post(
@@ -640,8 +639,8 @@ class TestAnnouncement:
 
         monkeypatch.setattr(notify_service, "notify", _no_per_user_notify)
 
-        u1 = await register(client, "13600000043")
-        u2 = await register(client, "13600000044")
+        u1 = await register(client, "u13600000043@test.local")
+        u2 = await register(client, "u13600000044@test.local")
         async with sm() as session:
             await account_service.admin_set_user_status(session, u2["user"]["id"], "frozen")
             await session.commit()
@@ -700,7 +699,9 @@ class TestFreezeStopsInstances:
     async def test_freeze_stops_running_instances(self, client, sm, fake):
         """Freezing stops instances and billing at once."""
         h = await admin_headers(sm, client)
-        user_headers, uuid, user_id = await provision_running(client, sm, fake, "13600000090")
+        user_headers, uuid, user_id = await provision_running(
+            client, sm, fake, "u13600000090@test.local"
+        )
 
         resp = await client.post(
             f"/api/admin/v1/tenants/{user_id}/freeze",
@@ -734,7 +735,7 @@ class TestFreezeStopsInstances:
     async def test_unfreeze_does_not_auto_start(self, client, sm, fake):
         """Unfreezing does not start instances."""
         h = await admin_headers(sm, client)
-        _uh, uuid, user_id = await provision_running(client, sm, fake, "13600000091")
+        _uh, uuid, user_id = await provision_running(client, sm, fake, "u13600000091@test.local")
         await client.post(
             f"/api/admin/v1/tenants/{user_id}/freeze", json={"reason": "investigation"}, headers=h
         )
@@ -756,15 +757,15 @@ class TestAdminSearch:
 
     async def test_tenant_lookup_by_email_and_phone(self, client, sm, fake):
         h = await admin_headers(sm, client)
-        a = (await register(client, "13611110001"))["user"]["id"]
-        b = (await register(client, "13622220002"))["user"]["id"]
+        a = (await register(client, "u13611110001@test.local"))["user"]["id"]
+        b = (await register(client, "u13622220002@test.local"))["user"]["id"]
         async with sm() as session:
             await session.execute(update(User).where(User.id == b).values(phone="+8613622220002"))
             await session.commit()
 
         exact = (
             await client.get(
-                "/api/admin/v1/tenants", params={"q": as_handle("13611110001")}, headers=h
+                "/api/admin/v1/tenants", params={"q": "u13611110001@test.local"}, headers=h
             )
         ).json()["items"]
         assert [t["id"] for t in exact] == [a]
@@ -785,7 +786,7 @@ class TestAdminSearch:
     async def test_tenant_search_escapes_like_metachars(self, client, sm, fake):
         """The LIKE metacharacters in q match literally; email-prefix search works."""
         h = await admin_headers(sm, client)
-        a = (await register(client, "13611110001"))["user"]["id"]
+        a = (await register(client, "u13611110001@test.local"))["user"]["id"]
 
         pct = (await client.get("/api/admin/v1/tenants", params={"q": "%"}, headers=h)).json()
         assert pct["items"] == []
@@ -800,9 +801,9 @@ class TestAdminSearch:
         """Registration order (id) ascending / descending: cursor semantics flip with the direction,
         paging has no duplicates or gaps."""
         h = await admin_headers(sm, client)
-        await register(client, "13655510001")
-        await register(client, "13655510002")
-        await register(client, "13655510003")
+        await register(client, "u13655510001@test.local")
+        await register(client, "u13655510002@test.local")
+        await register(client, "u13655510003@test.local")
 
         desc = (await client.get("/api/admin/v1/tenants", headers=h)).json()["items"]
         assert [t["id"] for t in desc] == sorted((t["id"] for t in desc), reverse=True)
@@ -828,8 +829,10 @@ class TestAdminSearch:
         from app.core.audit import AuditLog
 
         h = await admin_headers(sm, client)
-        await register(client, "13611110003")
-        await client.get("/api/admin/v1/tenants", params={"q": "13611110003"}, headers=h)
+        await register(client, "u13611110003@test.local")
+        await client.get(
+            "/api/admin/v1/tenants", params={"q": "u13611110003@test.local"}, headers=h
+        )
         async with sm() as session:
             rows = (
                 (
@@ -841,7 +844,7 @@ class TestAdminSearch:
                 .all()
             )
         assert len(rows) == 1
-        assert rows[0].target == "tenant-search:136****0003"
+        assert rows[0].target == "tenant-search:u***@test.local"
 
     async def test_plain_tenant_list_is_not_audited(self, client, sm, fake):
         """A plain list without a query is not audited."""
@@ -863,7 +866,7 @@ class TestAdminSearch:
 
     async def test_instance_lookup_by_node_and_name(self, client, sm, fake):
         h = await admin_headers(sm, client)
-        _uh, uuid, user_id = await provision_running(client, sm, fake, "13611110004")
+        _uh, uuid, user_id = await provision_running(client, sm, fake, "u13611110004@test.local")
         by_node = (
             await client.get(
                 "/api/admin/v1/instances", params={"node_name": "fake-node-1"}, headers=h
@@ -906,7 +909,7 @@ class TestTenantLookupById:
     async def test_numeric_q_hits_user_id(self, client, sm, fake):
         """A digits-only q hits user_id exactly (listed first)."""
         h = await admin_headers(sm, client)
-        data = await register(client, "13633330003")
+        data = await register(client, "u13633330003@test.local")
         uid = data["user"]["id"]
         async with sm() as session:
             await session.execute(update(User).where(User.id == uid).values(phone="+8613633330003"))
@@ -954,7 +957,7 @@ class TestAdjustContext:
 
     async def test_create_over_cap_rejected(self, client, sm, fake):
         """Absolute cap per adjustment ADJUST_MAX_ABS."""
-        _headers, user_id = await user_headers_with_id(client, "13900000772")
+        _headers, user_id = await user_headers_with_id(client, "u13900000772@test.local")
         fin = await admin_headers(sm, client, role="finance", username="fin-cap")
 
         for amount in ("100000.01", "-200000.00"):
@@ -1059,7 +1062,7 @@ class TestTenantRealnameExposure:
             async def verify(self, subject: KycSubject) -> KycResult:
                 return KycResult(True, "fake", identity_key=subject.identity_number)
 
-        data = await register(client, "13655550001")
+        data = await register(client, "u13655550001@test.local")
         uid = data["user"]["id"]
         async with sm() as session:
             await session.execute(update(User).where(User.id == uid).values(phone="+8613655550001"))
@@ -1159,7 +1162,7 @@ class TestTenantQuotaOverride:
     updated_by is stored."""
 
     async def test_override_caps_disks_then_clear_restores(self, client, sm, fake):
-        headers, user_id, _key = await funded_user(client, sm, "13655550002")
+        headers, user_id, _key = await funded_user(client, sm, "u13655550002@test.local")
         ah = await admin_headers(sm, client, role="ops")
 
         resp = await client.put(
@@ -1297,7 +1300,9 @@ class TestAdminListPagination:
         """Adjustments: status/user_id filters + cursor walk."""
         from app.modules.adminapi.models import AdminUser
 
-        _headers, _uuid, user_id = await provision_running(client, sm, fake, "13677780003")
+        _headers, _uuid, user_id = await provision_running(
+            client, sm, fake, "u13677780003@test.local"
+        )
         fin = await admin_headers(sm, client, role="finance", username="fin-page")
         async with sm() as session:
             creator = (
@@ -1348,8 +1353,8 @@ class TestRealNameIdentityCap:
                 return KycResult(True, "fake", identity_key=subject.identity_number)
 
         monkeypatch.setattr(get_settings(), "real_name_max_accounts_per_identity", 1)
-        a = (await register(client, "13655550101"))["user"]["id"]
-        b = (await register(client, "13655550102"))["user"]["id"]
+        a = (await register(client, "u13655550101@test.local"))["user"]["id"]
+        b = (await register(client, "u13655550102@test.local"))["user"]["id"]
         monkeypatch.setattr(get_settings(), "compliance_profile", "cn")
         async with sm() as session:
             await session.execute(update(User).where(User.id == a).values(phone="+8613655550101"))

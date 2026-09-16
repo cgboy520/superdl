@@ -5,7 +5,7 @@ from httpx import AsyncClient
 
 from app.core.handles import Handle
 from app.modules.account import verification
-from tests.helpers import admin_headers, as_handle, register
+from tests.helpers import admin_headers, register
 
 
 class TestLoginRateLimit:
@@ -53,14 +53,14 @@ class TestLoginRateLimit:
 
         for _ in range(3):
             await client.post(
-                "/api/v1/auth/login", json={"handle": as_handle("13800000078"), "password": "x"}
+                "/api/v1/auth/login", json={"handle": "u13800000078@test.local", "password": "x"}
             )
         async with sm() as session:
             rows = (
                 (
                     await session.execute(
                         select(RateLimitCounter).where(
-                            RateLimitCounter.key.like(f"user-login:%{as_handle('13800000078')}")
+                            RateLimitCounter.key.like("user-login:%u13800000078@test.local")
                         )
                     )
                 )
@@ -80,13 +80,13 @@ class TestAccountLevelLock:
         from app.core.errors import AppError, ErrorCode
         from app.modules.account import service as account_service
 
-        await register(client, "13800000081", password="secret123456")
+        await register(client, "u13800000081@test.local", password="secret123456")
         for i in range(10):
             async with sm() as session:
                 with pytest.raises(AppError) as exc_info:
                     await account_service.login(
                         session,
-                        Handle("email", as_handle("13800000081")),
+                        Handle("email", "u13800000081@test.local"),
                         None,
                         "wrong-pass",
                         client_ip=f"10.0.0.{i}",
@@ -96,7 +96,7 @@ class TestAccountLevelLock:
             with pytest.raises(AppError) as exc_info:
                 await account_service.login(
                     session,
-                    Handle("email", as_handle("13800000081")),
+                    Handle("email", "u13800000081@test.local"),
                     None,
                     "wrong-pass",
                     client_ip="10.0.0.99",
@@ -137,25 +137,22 @@ class TestAccountLevelLock:
         from app.modules.account import service as account_service
         from app.modules.notify.models import Notification
 
-        data = await register(client, "13800000082", password="secret123456")
+        data = await register(client, "u13800000082@test.local", password="secret123456")
         for ip in ("10.2.0.1", "10.2.0.2"):
             async with sm() as session:
                 with pytest.raises(AppError):
                     await account_service.login(
                         session,
-                        Handle("email", as_handle("13800000082")),
+                        Handle("email", "u13800000082@test.local"),
                         None,
                         "wrong-pass",
                         client_ip=ip,
                     )
-        assert (
-            await read_hits(f"user-login-acct:{as_handle('13800000082')}", window_seconds=900.0)
-            == 2
-        )
+        assert await read_hits("user-login-acct:u13800000082@test.local", window_seconds=900.0) == 2
         async with sm() as session:
             pair = await account_service.login(
                 session,
-                Handle("email", as_handle("13800000082")),
+                Handle("email", "u13800000082@test.local"),
                 None,
                 "secret123456",
                 client_ip="10.2.0.3",
@@ -169,10 +166,7 @@ class TestAccountLevelLock:
             ).scalar_one()
             assert "sign-in attempts" in row.title
             assert row.severity == "warning"
-        assert (
-            await read_hits(f"user-login-acct:{as_handle('13800000082')}", window_seconds=900.0)
-            == 0
-        )
+        assert await read_hits("user-login-acct:u13800000082@test.local", window_seconds=900.0) == 0
 
 
 class TestEnvironmentFailClosed:
@@ -471,17 +465,17 @@ class TestSmsCodeBruteForce:
         from app.core.errors import AppError
         from app.modules.account.models import VerificationCode
 
-        phone = "13800000088"
+        phone = "u13800000088@test.local"
         resp = await client.post(
             "/api/v1/auth/verification-code",
-            json={"handle": as_handle(phone), "purpose": "register"},
+            json={"handle": phone, "purpose": "register"},
         )
         assert resp.status_code == 204
         for _ in range(5):
             async with sm() as session:
                 with pytest.raises(AppError):
                     await verification.consume_code(
-                        session, Handle("email", as_handle(phone)), "000000", "register"
+                        session, Handle("email", phone), "000000", "register"
                     )
         from sqlalchemy import select
 
@@ -489,7 +483,7 @@ class TestSmsCodeBruteForce:
             row = (
                 await session.execute(
                     select(VerificationCode)
-                    .where(VerificationCode.target == as_handle(phone))
+                    .where(VerificationCode.target == phone)
                     .order_by(VerificationCode.id.desc())
                 )
             ).scalar_one()
@@ -497,7 +491,7 @@ class TestSmsCodeBruteForce:
         async with sm() as session:
             with pytest.raises(AppError):
                 await verification.consume_code(
-                    session, Handle("email", as_handle(phone)), "123456", "register"
+                    session, Handle("email", phone), "123456", "register"
                 )
 
     async def test_code_is_single_use(self, client: AsyncClient, sm):
@@ -506,34 +500,28 @@ class TestSmsCodeBruteForce:
 
         from app.core.errors import AppError
 
-        phone = "13800000090"
+        phone = "u13800000090@test.local"
         await client.post(
             "/api/v1/auth/verification-code",
-            json={"handle": as_handle(phone), "purpose": "register"},
+            json={"handle": phone, "purpose": "register"},
         )
         async with sm() as session:
-            await verification.consume_code(
-                session, Handle("email", as_handle(phone)), "123456", "register"
-            )
+            await verification.consume_code(session, Handle("email", phone), "123456", "register")
             await session.commit()
         async with sm() as session:
             with pytest.raises(AppError):
                 await verification.consume_code(
-                    session, Handle("email", as_handle(phone)), "123456", "register"
+                    session, Handle("email", phone), "123456", "register"
                 )
 
     async def test_sms_login_rate_limited(self, client: AsyncClient):
         """Code login shares the rate limit with the password path."""
-        phone = "13800000089"
+        phone = "u13800000089@test.local"
         await register(client, phone)
         for _ in range(5):
-            resp = await client.post(
-                "/api/v1/auth/login", json={"handle": as_handle(phone), "code": "000000"}
-            )
+            resp = await client.post("/api/v1/auth/login", json={"handle": phone, "code": "000000"})
             assert resp.json()["code"] == "LOGIN_FAILED"
-        resp = await client.post(
-            "/api/v1/auth/login", json={"handle": as_handle(phone), "code": "000000"}
-        )
+        resp = await client.post("/api/v1/auth/login", json={"handle": phone, "code": "000000"})
         assert resp.status_code == 429
         assert resp.json()["code"] == "RATE_LIMITED"
 
@@ -543,14 +531,14 @@ class TestSmsCodeBruteForce:
             resp = await client.post(
                 "/api/v1/auth/verification-code",
                 json={
-                    "handle": as_handle(f"138000001{i:02d}"),
+                    "handle": f"u138000001{i:02d}@test.local",
                     "purpose": "register",
                 },
             )
             assert resp.status_code == 204
         resp = await client.post(
             "/api/v1/auth/verification-code",
-            json={"handle": as_handle("13800000199"), "purpose": "register"},
+            json={"handle": "u13800000199@test.local", "purpose": "register"},
         )
         assert resp.status_code == 429
 
@@ -565,7 +553,7 @@ class TestSmsCodeBruteForce:
             async with sm() as session:
                 await verification.send_code(
                     session,
-                    Handle("email", as_handle("13800000093")),
+                    Handle("email", "u13800000093@test.local"),
                     "register",
                     client_ip="10.9.0.1",
                 )
@@ -751,14 +739,14 @@ class TestSmsCodeAtRest:
 
         resp = await client.post(
             "/api/v1/auth/verification-code",
-            json={"handle": as_handle("13800000777"), "purpose": "register"},
+            json={"handle": "u13800000777@test.local", "purpose": "register"},
         )
         assert resp.status_code == 204, resp.text
         async with sm() as session:
             row = (
                 await session.execute(
                     select(VerificationCode).where(
-                        VerificationCode.target == as_handle("13800000777")
+                        VerificationCode.target == "u13800000777@test.local"
                     )
                 )
             ).scalar_one()
@@ -766,10 +754,10 @@ class TestSmsCodeAtRest:
         assert len(row.code_hash) == 64
         from app.core.crypto import hash_verification_code
 
-        target = as_handle("13800000777")
+        target = "u13800000777@test.local"
         assert row.code_hash == hash_verification_code("email", target, "register", "123456")
         assert (
-            hash_verification_code("email", as_handle("13800000778"), "register", "123456")
+            hash_verification_code("email", "u13800000778@test.local", "register", "123456")
             != row.code_hash
         )
         assert hash_verification_code("email", target, "login", "123456") != row.code_hash
@@ -844,7 +832,7 @@ class TestAdminTokenRenewal:
     async def test_renew_rejects_garbage_and_user_token(self, client: AsyncClient):
         garbage = await client.post("/api/admin/v1/auth/refresh", json={"access_token": "xx"})
         assert garbage.status_code == 401
-        data = await register(client, "13900000071")
+        data = await register(client, "u13900000071@test.local")
         cross = await client.post(
             "/api/admin/v1/auth/refresh", json={"access_token": data["access_token"]}
         )
@@ -903,16 +891,16 @@ class TestAuditGate:
         monkeypatch.setattr(audit_mod, "get_sessionmaker", _Boom())
         for i in range(audit_mod.AUDIT_FAIL_CLOSED_THRESHOLD):
             resp = await client.post(
-                "/api/v1/auth/login", json={"handle": as_handle(f"138{i:08d}"), "password": "x"}
+                "/api/v1/auth/login", json={"handle": f"u138{i:08d}@test.local", "password": "x"}
             )
             assert resp.status_code == 400
-        resp = await client.post("/api/v1/auth/login", json={"handle": as_handle("13800000000")})
+        resp = await client.post("/api/v1/auth/login", json={"handle": "u13800000000@test.local"})
         assert resp.status_code == 503
         assert resp.json()["code"] == "AUDIT_UNAVAILABLE"
         assert (await client.get("/api/v1/auth/captcha-config")).status_code == 200
         assert (await client.get("/healthz")).status_code == 200
         monkeypatch.undo()
-        resp = await client.post("/api/v1/auth/login", json={"handle": as_handle("13800000000")})
+        resp = await client.post("/api/v1/auth/login", json={"handle": "u13800000000@test.local"})
         assert resp.status_code == 400
 
 

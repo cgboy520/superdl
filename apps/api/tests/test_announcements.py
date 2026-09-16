@@ -38,7 +38,7 @@ class TestAnnouncementAdmin:
 
     async def test_publish_idempotent_replay_no_duplicate_fanout(self, client: AsyncClient, sm):
         """A replay with the same Idempotency-Key creates no announcement."""
-        uh = await user_headers(client, "13700000402")
+        uh = await user_headers(client, "u13700000402@test.local")
         ops = await admin_headers(sm, client, role="ops")
         h = {**ops, "Idempotency-Key": "ann-idem-1"}
         r1 = await client.post(
@@ -67,7 +67,7 @@ class TestAnnouncementAdmin:
         assert len([n for n in notes if n["type"] == "announcement"]) == 1
 
     async def test_revoke_hides_from_user_side(self, client: AsyncClient, sm):
-        uh = await user_headers(client, "13700000401")
+        uh = await user_headers(client, "u13700000401@test.local")
         ops = await admin_headers(sm, client, role="ops")
         await _publish(client, ops)
         notes = (await client.get("/api/v1/notifications", headers=uh)).json()["items"]

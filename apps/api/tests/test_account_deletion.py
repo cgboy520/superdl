@@ -15,7 +15,6 @@ from app.modules.billing.models import BalanceLedger, Wallet
 from tests.helpers import (
     admin_headers,
     age_sms_codes,
-    as_handle,
     create_user_with_key,
     current_refresh_token,
     funded_user,
@@ -24,8 +23,8 @@ from tests.helpers import (
     seed_instance,
 )
 
-PHONE = "13800000060"
-HANDLE = as_handle(PHONE)
+PHONE = "u13800000060@test.local"
+HANDLE = PHONE
 
 
 async def _create_request(
@@ -231,11 +230,9 @@ class TestApproveSuccess:
         await age_sms_codes(sm)
         await client.post(
             "/api/v1/auth/verification-code",
-            json={"handle": as_handle(PHONE), "purpose": "login"},
+            json={"handle": PHONE, "purpose": "login"},
         )
-        login = await client.post(
-            "/api/v1/auth/login", json={"handle": as_handle(PHONE), "code": "123456"}
-        )
+        login = await client.post("/api/v1/auth/login", json={"handle": PHONE, "code": "123456"})
         assert login.status_code == 200, login.text
         old_refresh = current_refresh_token(client)
         old_access = login.json()["access_token"]
@@ -271,22 +268,20 @@ class TestApproveSuccess:
         assert refresh.json()["message_key"] == "account.accountDeleted"
         await client.post(
             "/api/v1/auth/verification-code",
-            json={"handle": as_handle(PHONE), "purpose": "login"},
+            json={"handle": PHONE, "purpose": "login"},
         )
-        relogin = await client.post(
-            "/api/v1/auth/login", json={"handle": as_handle(PHONE), "code": "123456"}
-        )
+        relogin = await client.post("/api/v1/auth/login", json={"handle": PHONE, "code": "123456"})
         assert relogin.status_code == 400
         assert relogin.json()["message_key"] == "account.loginFailed"
         await age_sms_codes(sm)
         send = await client.post(
             "/api/v1/auth/verification-code",
-            json={"handle": as_handle(PHONE), "purpose": "register"},
+            json={"handle": PHONE, "purpose": "register"},
         )
         assert send.status_code == 204, send.text
         reregister = await client.post(
             "/api/v1/auth/register",
-            json={"email": as_handle(PHONE), "email_code": "123456", "accept_terms": True},
+            json={"email": PHONE, "email_code": "123456", "accept_terms": True},
         )
         assert reregister.status_code == 201, reregister.text
         assert reregister.json()["user"]["id"] != user_id

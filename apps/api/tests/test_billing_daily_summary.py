@@ -44,7 +44,7 @@ class TestDailySummary:
     async def test_day_boundary_attribution_utc8(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        headers, uid = await user_headers_with_id(client, "13900010001")
+        headers, uid = await user_headers_with_id(client, "u13900010001@test.local")
         inside_first = datetime(2026, 8, 18, 16, 0, tzinfo=UTC)
         inside_last = datetime(2026, 8, 19, 15, 0, tzinfo=UTC)
         before = datetime(2026, 8, 18, 15, 0, tzinfo=UTC)
@@ -67,7 +67,7 @@ class TestDailySummary:
     async def test_decimal_sum_precision(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        headers, uid = await user_headers_with_id(client, "13900010002")
+        headers, uid = await user_headers_with_id(client, "u13900010002@test.local")
         await seed_bill_hourly(
             sm,
             uid,
@@ -79,7 +79,7 @@ class TestDailySummary:
         assert body["items"][0]["total_seconds"] == 36000
 
     async def test_empty_returns_zero(self, client: AsyncClient):
-        headers, _ = await user_headers_with_id(client, "13900010003")
+        headers, _ = await user_headers_with_id(client, "u13900010003@test.local")
         body = await get_summary(client, headers, "2026-08-19")
         assert body["gpu_total"] == "0.00"
         assert body["disk_total"] == "0.00"
@@ -88,7 +88,7 @@ class TestDailySummary:
     async def test_disk_daily_counted(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        headers, uid = await user_headers_with_id(client, "13900010005")
+        headers, uid = await user_headers_with_id(client, "u13900010005@test.local")
         await seed_disk_daily(sm, uid, datetime(2026, 8, 19, 0, 0, tzinfo=UTC), "3.50")
         await seed_disk_daily(sm, uid, datetime(2026, 8, 20, 0, 0, tzinfo=UTC), "3.50")
         body = await get_summary(client, headers, "2026-08-19")
@@ -97,7 +97,7 @@ class TestDailySummary:
     async def test_multi_instance_grouping(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        headers, uid = await user_headers_with_id(client, "13900010006")
+        headers, uid = await user_headers_with_id(client, "u13900010006@test.local")
         t = datetime(2026, 8, 19, 2, 0, tzinfo=UTC)
         await seed_bill_hourly(sm, uid, rows=[(201, t, "1.50"), (202, t, "2.50")])
         body = await get_summary(client, headers, "2026-08-19")
@@ -108,8 +108,8 @@ class TestDailySummary:
     async def test_tenant_isolation(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        headers_a, uid_a = await user_headers_with_id(client, "13900010007")
-        headers_b, uid_b = await user_headers_with_id(client, "13900010008")
+        headers_a, uid_a = await user_headers_with_id(client, "u13900010007@test.local")
+        headers_b, uid_b = await user_headers_with_id(client, "u13900010008@test.local")
         t = datetime(2026, 8, 19, 3, 0, tzinfo=UTC)
         await seed_bill_hourly(sm, uid_a, rows=[(301, t, "9.00")])
         await seed_bill_hourly(sm, uid_b, rows=[(302, t, "1.00")])
@@ -124,7 +124,7 @@ class TestMonthMatchesDays:
     async def test_daily_summaries_sum_to_month_summary(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        headers, uid = await user_headers_with_id(client, "13900010009")
+        headers, uid = await user_headers_with_id(client, "u13900010009@test.local")
         await seed_bill_hourly(
             sm,
             uid,

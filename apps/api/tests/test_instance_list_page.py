@@ -21,7 +21,7 @@ async def _insert_instance(
 
 class TestInstanceListPage:
     async def test_status_filter(self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]):
-        headers, user_id, _ = await create_user_with_key(client, "13900000202")
+        headers, user_id, _ = await create_user_with_key(client, "u13900000202@test.local")
         await _insert_instance(sm, user_id, name="run-1", status="running")
         await _insert_instance(sm, user_id, name="stop-1", status="stopped")
         await _insert_instance(sm, user_id, name="gone", status="released")
@@ -36,7 +36,7 @@ class TestInstanceListPage:
     async def test_name_filter_matches_name_or_uuid_prefix(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        headers, user_id, _ = await create_user_with_key(client, "13900000203")
+        headers, user_id, _ = await create_user_with_key(client, "u13900000203@test.local")
         target = await _insert_instance(sm, user_id, name="Train-Job")
         await _insert_instance(sm, user_id, name="other")
 
@@ -61,7 +61,7 @@ class TestInstanceListPage:
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
         """The LIKE metacharacters "%" / "_" in name/q match literally."""
-        headers, user_id, _ = await create_user_with_key(client, "13900000208")
+        headers, user_id, _ = await create_user_with_key(client, "u13900000208@test.local")
         await _insert_instance(sm, user_id, name="100%cotton")
         await _insert_instance(sm, user_id, name="1000jobs")
 
@@ -78,7 +78,7 @@ class TestInstanceListPage:
     async def test_filter_composes_with_cursor(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        headers, user_id, _ = await create_user_with_key(client, "13900000204")
+        headers, user_id, _ = await create_user_with_key(client, "u13900000204@test.local")
         for i in range(3):
             await _insert_instance(sm, user_id, name=f"job-{i}", status="stopped")
         await _insert_instance(sm, user_id, name="job-x", status="running")
@@ -109,8 +109,8 @@ class TestInstanceListPage:
     async def test_other_users_instances_invisible(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        headers, user_id, _ = await create_user_with_key(client, "13900000206")
-        _headers2, user_id2, _ = await create_user_with_key(client, "13900000207")
+        headers, user_id, _ = await create_user_with_key(client, "u13900000206@test.local")
+        _headers2, user_id2, _ = await create_user_with_key(client, "u13900000207@test.local")
         await _insert_instance(sm, user_id, name="mine")
         await _insert_instance(sm, user_id2, name="theirs")
         items = (await client.get("/api/v1/instances", headers=headers)).json()["items"]
