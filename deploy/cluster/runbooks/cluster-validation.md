@@ -47,6 +47,7 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 - [ ] kube-prometheus-stack:DCGM 指标可查;导入 grafana.com **24450** 大盘
 - [ ] `superdl.gpu` 规则组 7 条告警各触发一次(人工触发 GPUHighTemperature 或用 amtool 注入);停 dcgm-exporter 30 分钟 → `GpuTelemetryMissing` 进告警流
 - [ ] **监控栈拿不到平台 Secret**:`kubectl auth can-i --as=system:serviceaccount:monitoring:alloy get secrets -n superdl` 与 operator / prometheus / loki 同款均 `no`;`kubectl -n superdl get servicemonitor,podmonitor` 为空,两个 monitor 在 `monitoring` ns(`08-monitoring.yaml`),Prometheus `up{namespace="superdl"}` 两个抓取池都在(Bearer 来自 `monitoring/superdl-metrics-token`);`preflight.sh`「监控栈 SA 不得读 Secret」全绿
+- [ ] node-exporter 目标 `up` 全绿:`cpufreq` collector 在 GB10 上会把抓取线程挂死,`values/kps.yaml` 已 `--no-collector.cpufreq`。复发判据是 `promhttp_metric_handler_requests_in_flight` 只涨不落、`curl <节点>:9100/metrics` 回 503 `Limit of concurrent requests reached`,此时 textfile 指标(PG / k3s 备份、证书到期)全部 absent 误报
 - [ ] Alertmanager → 平台 webhook:`POST /api/v1/webhooks/alertmanager`(带 Bearer token)出现在管理端告警流
 - [ ] 停 HAMi scheduler → 5 分钟内 HamiSchedulerDown 进管理端告警流
 - [ ] `kubectl -n kube-system get svc hami-scheduler -o yaml`:存在名为 `monitor` 的端口(`values/kps.yaml` 的 additionalScrapeConfigs 按**端口名**保留目标);名字对不上改 values
