@@ -22,7 +22,7 @@ import {
 import { AttentionBar, KpiGrid, moneyOr, PageContainer, StatCard, type AttentionItem } from "@superdl/ui/components";
 import { useFormat } from "@superdl/ui";
 
-import { useBillSummary, useDailySummary, useMe, usePolicies, useWallet } from "../api/queries";
+import { useBillSummary, useDailySummary, useMe, usePolicies, useSiteConfig, useWallet } from "../api/queries";
 import { requireAuth } from "../lib/guard";
 import { RechargeModal } from "./-RechargeModal";
 import { MonthlyBillsTab } from "./-MonthlyBillsTab";
@@ -90,6 +90,7 @@ function BillingPage() {
   const { data: wallet } = walletQ;
   const { data: me } = useMe();
   const { data: policies } = usePolicies();
+  const { data: site } = useSiteConfig();
   const now = new Date();
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const month = monthParam ?? currentMonth;
@@ -165,7 +166,7 @@ function BillingPage() {
       ),
     });
   }
-  if (policies?.real_name_required_for_recharge && me != null && me.kyc_status !== "verified") {
+  if (site?.kyc_form && policies?.real_name_required_for_recharge && me != null && me.kyc_status !== "verified") {
     attention.push({
       key: "realName",
       severity: "warning",

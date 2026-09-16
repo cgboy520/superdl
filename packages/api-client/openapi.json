@@ -4342,6 +4342,35 @@
         "title": "InvoiceReject",
         "type": "object"
       },
+      "KycSubmitRequest": {
+        "description": "Identity verification; the compliance profile decides which identity number is expected.",
+        "properties": {
+          "full_name": {
+            "maxLength": 128,
+            "minLength": 2,
+            "title": "Full Name",
+            "type": "string"
+          },
+          "identity_number": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identity Number"
+          }
+        },
+        "required": [
+          "full_name"
+        ],
+        "title": "KycSubmitRequest",
+        "type": "object"
+      },
       "LedgerEntryOut": {
         "properties": {
           "amount": {
@@ -6997,28 +7026,6 @@
           "state"
         ],
         "title": "ProgressRequest",
-        "type": "object"
-      },
-      "RealNameRequest": {
-        "description": "实名认证(三要素核验:姓名 + 身份证号 + 账号手机号)。",
-        "properties": {
-          "id_number": {
-            "pattern": "^\\d{17}[\\dXx]$",
-            "title": "Id Number",
-            "type": "string"
-          },
-          "name": {
-            "maxLength": 32,
-            "minLength": 2,
-            "title": "Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "name",
-          "id_number"
-        ],
-        "title": "RealNameRequest",
         "type": "object"
       },
       "RechargeCreate": {
@@ -19294,15 +19301,15 @@
         ]
       }
     },
-    "/api/v1/me/real-name": {
+    "/api/v1/me/kyc": {
       "post": {
-        "description": "实名认证(三要素核验;身份证号仅存脱敏串)。",
-        "operationId": "submit_real_name_api_v1_me_real_name_post",
+        "description": "Identity verification through the configured provider; the identity number is stored\nmasked.",
+        "operationId": "submit_kyc_api_v1_me_kyc_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RealNameRequest"
+                "$ref": "#/components/schemas/KycSubmitRequest"
               }
             }
           },
@@ -19335,7 +19342,7 @@
             "HTTPBearer": []
           }
         ],
-        "summary": "Submit Real Name",
+        "summary": "Submit Kyc",
         "tags": [
           "account"
         ]

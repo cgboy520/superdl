@@ -115,6 +115,7 @@ class Settings(BaseSettings):
     real_name_max_accounts_per_identity: int = 3
     real_name_access_key_id: str | None = None
     real_name_access_key_secret: str | None = None
+    kyc_provider: Literal["aliyun_mobile3"] = "aliyun_mobile3"
 
     captcha_enabled: bool = False
     captcha_scene_id: str | None = None
