@@ -1,4 +1,4 @@
-"""管理端鉴权:独立 audience 的 JWT + 角色检查。"""
+"""Admin auth: JWT with its own audience + role checks."""
 
 from typing import Annotated, Any
 
@@ -20,7 +20,8 @@ async def get_current_admin(
     session: DbSession,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)] = None,
 ) -> AdminUser:
-    """校验管理员 access token 与 active 状态;版本缺失或不匹配时拒绝,成功后设置审计 actor。"""
+    """Validate the admin access token and active status; a missing or mismatching version is
+    rejected, success sets the audit actor."""
     if credentials is None:
         raise unauthorized()
     payload = decode_token(credentials.credentials, "admin")
@@ -37,7 +38,7 @@ CurrentAdmin = Annotated[AdminUser, Depends(get_current_admin)]
 
 
 def require_roles(*roles: str) -> Any:
-    """角色门:admin 恒许;其余按白名单。无参调用 = 仅 admin。"""
+    """Role gate: admin always passes; others by allow-list. No arguments = admin only."""
 
     async def checker(
         admin: Annotated[AdminUser, Depends(get_current_admin)],

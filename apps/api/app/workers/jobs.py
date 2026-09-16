@@ -1,4 +1,4 @@
-"""定时任务清单及组件过滤;workers/main.py 据此注册 APScheduler。"""
+"""Scheduled-job list and component filter; workers/main.py registers them with APScheduler."""
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -157,11 +157,11 @@ JOBS: tuple[ScheduledJob, ...] = (
 )
 
 if len({j.id for j in JOBS}) != len(JOBS):
-    raise RuntimeError("定时任务 id 重复")
+    raise RuntimeError("duplicate scheduled job id")
 
 
 def scheduled_jobs_for(component: WorkerComponent) -> tuple[ScheduledJob, ...]:
-    """组件应注册的定时任务;ALL 为全部。"""
+    """Scheduled jobs the component should register; ALL means all of them."""
     if component is WorkerComponent.ALL:
         return JOBS
     return tuple(j for j in JOBS if j.component is component)

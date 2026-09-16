@@ -7,7 +7,7 @@
 import type { AdminOut } from './adminOut';
 
 /**
- * 二要素验证通过。recovery_codes_left ≤2 提示重新生成。
+ * Second factor verified. recovery_codes_left ≤ 2 prompts regeneration.
  */
 export interface MfaLoginOut {
   access_token: string;

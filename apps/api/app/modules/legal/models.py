@@ -16,7 +16,8 @@ from app.core.db import Base
 
 
 class LegalDocVersion(Base):
-    """法务文档版本;每文档、语言与版本号唯一,每文档与语言至多一条 published。"""
+    """Legal document version; unique per document, locale and version number, at most one published
+    per document and locale."""
 
     __tablename__ = "legal_doc_versions"
     __table_args__ = (
@@ -46,7 +47,7 @@ class LegalDocVersion(Base):
 
 
 class UserConsent(Base):
-    """用户同意的法务文档版本、时间与客户端 IP。"""
+    """Legal document version the user consented to, with time and client IP."""
 
     __tablename__ = "user_consents"
 

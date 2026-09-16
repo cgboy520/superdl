@@ -1,6 +1,7 @@
-"""工单创建、回复与关闭;用户操作按归属查询,状态变更须持行锁。
+"""Ticket creation, replies and closing; user actions query by ownership, status changes hold the
+row lock.
 
-resolved/closed 不可回复,关闭须先为 resolved。
+resolved/closed accept no replies, closing requires resolved first.
 """
 
 from datetime import datetime
@@ -14,6 +15,7 @@ from app.core.idempotency import find_replay, insert_idempotent
 from app.core.logging import get_logger
 from app.core.pagination import Page, paginate_by_id
 from app.core.ratelimit import check_rate_limit
+from app.core.servercopy import copy as server_copy
 from app.core.sqlutil import next_daily_seq
 from app.core.timeutil import now_utc
 from app.modules.notify import service as notify_service
@@ -37,7 +39,7 @@ CREATE_RATE_WINDOW = 3600.0
 
 
 async def list_stale_pending_staff(session: AsyncSession, *, older_than: datetime) -> list[Ticket]:
-    """返回 updated_at 早于阈值的 pending_staff 工单,按 id 升序。"""
+    """pending_staff tickets whose updated_at is older than the threshold, by id ascending."""
     return list(
         (
             await session.execute(
@@ -52,7 +54,8 @@ async def list_stale_pending_staff(session: AsyncSession, *, older_than: datetim
 async def _admin_alert(
     session: AsyncSession, *, title: str, content: str, dedup_key: str, ticket_id: int
 ) -> None:
-    """管理端告警流落一条 info(notify 表 type='admin_alert',user_id=NULL),深链到该工单。"""
+    """Write one info row into the admin alert feed (notify table type='admin_alert',
+    user_id=NULL), deep-linked to the ticket."""
     await notify_service.notify(
         session,
         None,
@@ -76,7 +79,8 @@ async def create_ticket(
     instance_uuid: str | None,
     idempotency_key: str | None,
 ) -> tuple[Ticket, bool]:
-    """创建工单(首条消息同单落)。返回 (工单, created);created=False = 幂等重放。"""
+    """Create a ticket (the first message lands with it). Returns (ticket, created); created=False =
+    idempotent replay."""
     if idempotency_key:
         existing = await find_replay(
             session, Ticket, owner_col=Ticket.user_id, owner_id=user_id, key=idempotency_key
@@ -133,7 +137,7 @@ async def create_ticket(
     logger.info("ticket_created", ticket_no=ticket.ticket_no, user_id=user_id, category=category)
     await _admin_alert(
         session,
-        title="新工单",
+        title=server_copy("tickets.created.title"),
         content=f"{ticket.ticket_no} [{category}] {subject}",
         dedup_key=f"ticket:created:{ticket.id}",
         ticket_id=ticket.id,
@@ -145,7 +149,7 @@ async def create_ticket(
 async def list_my_tickets(
     session: AsyncSession, user_id: int, *, cursor: str | None = None, limit: int | None = None
 ) -> Page[TicketOut]:
-    """本人工单(游标分页)。"""
+    """The caller's tickets (cursor pagination)."""
     stmt = select(Ticket).where(Ticket.user_id == user_id).order_by(Ticket.id.desc())
     page_items, next_cursor = await paginate_by_id(
         session, stmt, id_col=Ticket.id, cursor=cursor, limit=limit
@@ -171,7 +175,7 @@ async def _messages_of(session: AsyncSession, ticket_id: int) -> list[TicketMess
 
 
 async def get_my_ticket(session: AsyncSession, user_id: int, ticket_id: int) -> TicketDetailOut:
-    """工单详情(本人);他人工单与不存在同回 404。"""
+    """Ticket detail (own); someone else's ticket and a missing one both return 404."""
     ticket = (
         await session.execute(
             select(Ticket).where(Ticket.id == ticket_id, Ticket.user_id == user_id)
@@ -206,7 +210,8 @@ def _ensure_repliable(ticket: Ticket) -> None:
 async def append_message(
     session: AsyncSession, user_id: int, ticket_id: int, *, body: str
 ) -> TicketMessage:
-    """用户追加回复(行锁内状态迁移 → pending_staff);admin_alerts info 告知值班。"""
+    """User reply (status transition under the row lock → pending_staff); an admin_alerts info row
+    tells the on-call."""
     await check_rate_limit(f"ticket-reply:{user_id}", max_attempts=30, window_seconds=600.0)
     ticket = await _get_my_for_update(session, user_id, ticket_id)
     _ensure_repliable(ticket)
@@ -222,7 +227,7 @@ async def append_message(
     logger.info("ticket_user_reply", ticket_no=ticket.ticket_no, message_id=msg.id)
     await _admin_alert(
         session,
-        title="工单有新回复",
+        title=server_copy("tickets.reply.title"),
         content=f"{ticket.ticket_no} {ticket.subject}",
         dedup_key=f"ticket:user-reply:{msg.id}",
         ticket_id=ticket.id,
@@ -232,7 +237,7 @@ async def append_message(
 
 
 async def close_ticket(session: AsyncSession, user_id: int, ticket_id: int) -> Ticket:
-    """用户关闭(仅 resolved;closed_at 仅 closed 落)。"""
+    """User close (resolved only; closed_at is set only on closed)."""
     ticket = await _get_my_for_update(session, user_id, ticket_id)
     if ticket.status != "resolved":
         raise conflict(key="tickets.stateNotClosable", params={"status": ticket.status})
@@ -254,7 +259,8 @@ async def admin_list_tickets(
     cursor: str | None = None,
     limit: int | None = None,
 ) -> Page[AdminTicketOut]:
-    """工单列表(游标分页,降序):status/category 精确过滤,user_id/ticket_no 检索。"""
+    """Ticket list (cursor pagination, descending): status/category exact filters, user_id/ticket_no
+    search."""
     stmt = select(Ticket).order_by(Ticket.id.desc())
     if status:
         stmt = stmt.where(Ticket.status == status)
@@ -275,7 +281,7 @@ async def admin_list_tickets(
 async def admin_count_tickets(
     session: AsyncSession, status: str | None = None, category: str | None = None
 ) -> int:
-    """按可选状态与分类精确过滤并统计工单数。"""
+    """Count tickets filtered by optional exact status and category."""
     stmt = select(func.count()).select_from(Ticket)
     if status:
         stmt = stmt.where(Ticket.status == status)
@@ -304,7 +310,8 @@ async def admin_get_ticket(session: AsyncSession, ticket_id: int) -> AdminTicket
 async def admin_reply(
     session: AsyncSession, ticket_id: int, *, body: str, operator_id: int
 ) -> TicketMessage:
-    """客服回复(行锁内状态迁移 → pending_user);站内信告知用户(dedup_key 防重)。"""
+    """Staff reply (status transition under the row lock → pending_user); in-app notification to the
+    user (dedup_key against duplicates)."""
     ticket = await _get_for_update(session, ticket_id)
     _ensure_repliable(ticket)
     msg = TicketMessage(ticket_id=ticket.id, sender_kind="staff", sender_id=operator_id, body=body)
@@ -315,8 +322,10 @@ async def admin_reply(
         session,
         ticket.user_id,
         type_="ticket",
-        title="工单有新回复",
-        content=f"您的工单 {ticket.ticket_no}({ticket.subject})客服已回复,请前往「支持」查看。",
+        title=server_copy("tickets.reply.title"),
+        content=server_copy(
+            "tickets.staff_reply.content", ticket_no=ticket.ticket_no, subject=ticket.subject
+        ),
         dedup_key=f"ticket:staff-reply:{msg.id}",
         target_id=str(ticket.id),
     )
@@ -326,7 +335,8 @@ async def admin_reply(
 
 
 async def admin_update_status(session: AsyncSession, ticket_id: int, *, action: str) -> Ticket:
-    """标记解决/关闭(行锁内状态迁移)。close 仅 resolved 后可(closed_at 仅 closed 落)。"""
+    """Mark resolved / close (status transition under the row lock). close only after resolved
+    (closed_at is set only on closed)."""
     ticket = await _get_for_update(session, ticket_id)
     if action == "resolve":
         if ticket.status in TERMINAL_STATUSES:

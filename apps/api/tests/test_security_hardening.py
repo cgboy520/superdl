@@ -793,10 +793,10 @@ class TestBootstrapAdminGate:
         from app.modules.adminapi.models import AdminUser
 
         async with sm() as session:
-            with pytest.raises(RuntimeError, match="引导口令"):
+            with pytest.raises(RuntimeError, match="bootstrap password"):
                 await ensure_bootstrap_admin(session, "short")
         async with sm() as session:
-            with pytest.raises(RuntimeError, match="引导口令"):
+            with pytest.raises(RuntimeError, match="bootstrap password"):
                 await ensure_bootstrap_admin(session, "汉" * 25)
         async with sm() as session:
             await ensure_bootstrap_admin(session, "l0ng-enough-pass")

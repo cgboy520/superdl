@@ -7,7 +7,8 @@
 import type { TicketCreateCategory } from './ticketCreateCategory';
 
 /**
- * 创建工单(首条消息同单提交)。instance_uuid 可选关联实例。
+ * Create a ticket (the first message is submitted with it). instance_uuid optionally links an
+ * instance.
  */
 export interface TicketCreate {
   /**

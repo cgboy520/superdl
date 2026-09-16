@@ -1,4 +1,5 @@
-"""管理端 API 模型;审计 detail 禁止凭据明文,平台配置只记键名不记值。"""
+"""Admin API models; the audit detail never carries credential plaintext, platform config records
+key names only."""
 
 from datetime import datetime
 from typing import Any, Literal
@@ -29,7 +30,8 @@ REASON_MAX_LENGTH = 256
 
 
 class AdminAccountOut(BaseModel):
-    """管理员账号(账号管理列表)。不透出 password_hash / token_version / totp_secret。"""
+    """Admin account (account management list). password_hash / token_version / totp_secret are
+    never exposed."""
 
     id: int
     username: str
@@ -65,15 +67,16 @@ class AdminSelfPasswordRequest(BaseModel):
 
 
 class MfaChallengeOut(BaseModel):
-    """登录响应·挑战分支(admin_mfa_enabled 开启时):mfa_setup=首次绑定(绑定票 10min);
-    mfa_required=已绑定验证(二要素票 5min)。"""
+    """Login response, challenge branch (admin_mfa_enabled on): mfa_setup = first enrolment
+    (enrolment ticket 10 min);
+    mfa_required = enrolled verification (second-factor ticket 5 min)."""
 
     status: Literal["mfa_setup", "mfa_required"]
     ticket: str
 
 
 class AdminLoginTokenOut(BaseModel):
-    """登录响应·直发分支(admin_mfa_enabled 关闭时)。"""
+    """Login response, direct branch (admin_mfa_enabled off)."""
 
     status: Literal["ok"]
     access_token: str
@@ -85,7 +88,7 @@ class MfaTicketRequest(BaseModel):
 
 
 class MfaSetupOut(BaseModel):
-    """TOTP 绑定材料:otpauth_uri 渲染二维码;secret 供手动录入。"""
+    """TOTP enrolment material: otpauth_uri renders the QR code; secret for manual entry."""
 
     secret: str
     otpauth_uri: str
@@ -97,7 +100,7 @@ class MfaCodeRequest(BaseModel):
 
 
 class MfaSetupConfirmOut(BaseModel):
-    """绑定成功:恢复码仅此一次返回,10 个。"""
+    """Enrolment succeeded: recovery codes returned this once, 10 of them."""
 
     access_token: str
     admin: AdminOut
@@ -105,7 +108,7 @@ class MfaSetupConfirmOut(BaseModel):
 
 
 class MfaLoginOut(BaseModel):
-    """二要素验证通过。recovery_codes_left ≤2 提示重新生成。"""
+    """Second factor verified. recovery_codes_left ≤ 2 prompts regeneration."""
 
     access_token: str
     admin: AdminOut
@@ -117,7 +120,8 @@ class RecoveryCodesOut(BaseModel):
 
 
 class ReasonBody(BaseModel):
-    """只带操作原因的请求体(落审计 detail);管理端所有「必填原因」的动作在此基础上派生。"""
+    """Request body carrying only the operator reason (into the audit detail); every admin "reason
+    required" action derives from it."""
 
     reason: str = Field(min_length=2, max_length=REASON_MAX_LENGTH)
 
@@ -149,7 +153,8 @@ class TenantOut(BaseModel):
 
 
 class TenantQuotaOut(BaseModel):
-    """租户配额覆盖与生效值(override → policy → env)。三项 override 为 None = 走默认链。"""
+    """Tenant quota overrides and effective values (override → policy → env). An override of None =
+    the default chain."""
 
     user_id: int
     max_gpus: int | None
@@ -164,7 +169,8 @@ class TenantQuotaOut(BaseModel):
 
 
 class TenantQuotaUpdate(BaseModel):
-    """写覆盖:数字可留空(=该维走默认);全空 = 清除覆盖。note 必填。"""
+    """Write overrides: numbers may be empty (= that dimension follows the default); all empty =
+    clear the override. note required."""
 
     max_gpus: int | None = Field(default=None, ge=1, le=100000)
     max_instances: int | None = Field(default=None, ge=1, le=100000)
@@ -179,7 +185,7 @@ class TenantStatusOut(BaseModel):
 
 
 class OverviewPoolOut(BaseModel):
-    """池级 GPU 台账:总量含非 Ready 节点。"""
+    """Per-pool GPU inventory: totals include non-Ready nodes."""
 
     pool: str
     gpu_total: int
@@ -189,7 +195,7 @@ class OverviewPoolOut(BaseModel):
 
 
 class OverviewOut(BaseModel):
-    """总览聚合:全部精确计数。"""
+    """Overview aggregate: all exact counts."""
 
     instances_by_status: dict[str, int]
     tenants_total: int
@@ -202,7 +208,7 @@ class OverviewOut(BaseModel):
 
 
 class AdjustContextOut(BaseModel):
-    """调账前置上下文:回显租户身份与资金现状。"""
+    """Adjustment context: echoes the tenant identity and money state."""
 
     user_id: int
     email_masked: str | None
@@ -228,7 +234,7 @@ class AdminAlertOut(BaseModel):
 
 
 class AlertUnreadCountOut(BaseModel):
-    """未确认告警数;critical_count 单独给出(精确口径)。"""
+    """Unacknowledged alert count; critical_count given separately (exact)."""
 
     count: int
     critical_count: int = 0
@@ -276,8 +282,9 @@ class AuditLogOut(BaseModel):
 
 
 class RevenueReportOut(BaseModel):
-    """收入口径:`*_revenue` = 计量出账(按量 + 盘费,按账单归属期)+ 包周期预付(按收款当日);
-    `*_prepaid` 是其中的预付部分。
+    """Revenue definition: `*_revenue` = metered bills (on-demand + disk fees, by bill attribution
+    period) + subscription prepayments (by payment day);
+    `*_prepaid` is the prepaid part of it.
     """
 
     today_revenue: str
@@ -349,8 +356,9 @@ class EmailTestOut(BaseModel):
 
 
 class RegistryTestOut(BaseModel):
-    """Harbor 连通性探测结果:step 指出失败步骤(health=DNS/TLS/CA 或 Harbor 自检,
-    project=机器人鉴权/权限/项目存在性)。"""
+    """Harbor connectivity probe result: step names the failing step (health = DNS/TLS/CA or the
+    Harbor health check,
+    project = robot auth / permission / project existence)."""
 
     ok: bool
     step: Literal["health", "project", "done"]

@@ -6,7 +6,8 @@
  */
 
 /**
- * 切池受理回执:停调度与期望池已落台账;标签收敛经 outbox,不需要任何节点侧动作。
+ * Pool-switch acceptance receipt: cordon and desired pool are in the inventory; label
+ * convergence goes through the outbox, no node-side action needed.
  */
 export interface NodeSwitchPoolOut {
   from_pool: string;

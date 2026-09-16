@@ -6,7 +6,8 @@
  */
 
 /**
- * 写覆盖:数字可留空(=该维走默认);全空 = 清除覆盖。note 必填。
+ * Write overrides: numbers may be empty (= that dimension follows the default); all empty =
+ * clear the override. note required.
  */
 export interface TenantQuotaUpdate {
   max_disks?: number | null;

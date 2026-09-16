@@ -1,4 +1,4 @@
-"""管理端路由(全局实例/节点注册/节点与集群/超卖报表)。"""
+"""Admin routes (global instances / node enrollment / nodes and cluster / oversell report)."""
 
 import asyncio
 
@@ -66,7 +66,7 @@ async def admin_list_instances(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[AdminInstanceOut]:
-    """q:实例名或 uuid 前缀。node_name:精确。游标分页(降序)。"""
+    """q: instance name or uuid prefix. node_name: exact. Cursor pagination (descending)."""
     page = await orchestrator_service.admin_list_instances(
         session,
         status_filter=status,
@@ -90,8 +90,9 @@ async def admin_list_services(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[AdminServiceOut]:
-    """全局在线服务(不限租户)。q:服务名或 slug 前缀;默认不列已删除。游标分页(降序)。
-    只读:处置走当前版本实例的 force-stop。"""
+    """Global online services (any tenant). q: service name or slug prefix; deleted services not
+    listed by default. Cursor pagination (descending).
+    Read-only: the action is force-stop on the current revision instance."""
     return await services_service.admin_list_services_page(
         session,
         user_id=user_id,
@@ -106,7 +107,7 @@ async def admin_list_services(
 async def admin_force_stop(
     uuid: str, body: AdminForceStopRequest, session: DbSession, request: Request
 ) -> InstanceOut:
-    """强制停止(原因必填)。"""
+    """Force stop (reason required)."""
     instance = await orchestrator_service.admin_force_stop(session, uuid, reason=body.reason)
     set_audit_target(request, f"instance:{uuid}", detail={"reason": body.reason})
     return await orchestrator_service.instance_view(session, instance)
@@ -116,7 +117,8 @@ async def admin_force_stop(
 async def admin_preempt(
     uuid: str, body: AdminForceStopRequest, session: DbSession, request: Request
 ) -> InstanceOut:
-    """强制回收一台竞价实例(原因必填)。与自动抢占同一条路径:宽限窗 + 通知 + 尾账按实际秒数结算。"""
+    """Force-reclaim one spot instance (reason required). Same path as automatic preemption: grace
+    window + notification + tail bill by actual seconds."""
     instance = await orchestrator_service.admin_preempt(session, uuid, reason=body.reason)
     set_audit_target(request, f"instance:{uuid}", detail={"reason": body.reason})
     return await orchestrator_service.instance_view(session, instance)
@@ -129,7 +131,8 @@ async def admin_list_instance_events(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[InstanceEventOut]:
-    """管理端实例事件时间线:与用户端同一实现,降序游标分页;不限租户。"""
+    """Admin instance event timeline: the same implementation as the user side, descending cursor
+    pagination; any tenant."""
     instance = await orchestrator_service.admin_get_instance(session, uuid)
     return await orchestrator_service.list_events(session, instance.id, cursor=cursor, limit=limit)
 
@@ -157,7 +160,7 @@ def _command_out(enrollment, token: str) -> EnrollmentCommandOut:
 async def admin_list_enrollments(
     session: DbSession, active: bool = False
 ) -> list[NodeEnrollmentOut]:
-    """注册记录列表(永不含 token)。active=true 过滤陈旧终态行。"""
+    """Enrollment list (never includes tokens). active=true filters out stale terminal rows."""
     rows = await nodes_service.list_enrollments(session, active_only=active)
     return [NodeEnrollmentOut.model_validate(r) for r in rows]
 
@@ -170,8 +173,9 @@ async def admin_create_enrollment(
     admin: CurrentAdmin,
     idempotency_key: IdempotencyKey = None,
 ) -> EnrollmentCommandOut:
-    """生成节点注册命令。token 明文仅本响应出现一次;审计不落 token。
-    Idempotency-Key 重放不建新行(轮换该行 token 后返回)。"""
+    """Generate a node enrollment command. The token plaintext appears in this response only; the
+    audit never records it.
+    An Idempotency-Key replay creates no new row (the row's token is rotated and returned)."""
     enrollment, token = await nodes_service.create_enrollment(
         session, body, created_by=admin.id, idempotency_key=idempotency_key
     )
@@ -190,7 +194,7 @@ async def admin_regenerate_enrollment(
     session: DbSession,
     request: Request,
 ) -> EnrollmentCommandOut:
-    """换新令牌(仅 待执行/已过期/已失败),状态回 pending。"""
+    """Issue a new token (pending / expired / failed only), status back to pending."""
     enrollment, token = await nodes_service.regenerate_enrollment(
         session, enrollment_id, ttl_hours=body.ttl_hours
     )
@@ -218,8 +222,8 @@ async def admin_revoke_enrollment(
 async def admin_node_metrics(
     node_name: str, session: DbSession, range: str = "1h"
 ) -> NodeMetricsOut:
-    """节点每卡曲线(DCGM per-GPU)+ 24h XID 计数;断源 available=false(200)。
-    不存在的节点返回空序列。响应附 grafana_url。
+    """Per-card node curves (DCGM per-GPU) + 24 h XID count; source down → available=false (200).
+    Unknown nodes return empty series. The response carries grafana_url.
     """
     out = await metering_service.node_gpu_metrics(node_name, range)
     cfg = await get_runtime_config(session)
@@ -228,7 +232,7 @@ async def admin_node_metrics(
 
 @router.get("/nodes", dependencies=[require_roles("ops", "readonly")])
 async def admin_list_nodes(session: DbSession) -> list[NodeOut]:
-    """节点视图(台账口径,60s 巡检刷新):含 Missing/未打池标签节点。"""
+    """Node view (inventory, refreshed by the 60 s patrol): Missing / unlabeled nodes included."""
     rows = await nodes_service.list_node_specs(session)
     active = await orchestrator_queries.count_active_instances_by_node(session)
     return [
@@ -260,7 +264,8 @@ async def admin_list_nodes(session: DbSession) -> list[NodeOut]:
 
 @router.get("/nodes/port-pool", dependencies=[require_roles("ops", "readonly")])
 async def admin_port_pool_stats(session: DbSession) -> PortPoolStatsOut:
-    """SSH 端口池水位:blocked=被集群对象撞占(周期复检自动放回)。"""
+    """SSH port pool level: blocked = held by other cluster objects (the periodic re-check returns
+    them)."""
     return await orchestrator_ports.port_pool_stats(session)
 
 
@@ -293,7 +298,8 @@ async def _cluster_status_out(session: DbSession) -> ClusterStatusOut:
 
 @router.get("/cluster/status", dependencies=[require_roles("ops", "readonly")])
 async def admin_cluster_status(session: DbSession) -> ClusterStatusOut:
-    """集群页数据:纯读能力缓存(worker 巡检 60s 刷新),不实时探测。"""
+    """Cluster page data: pure read of the capability cache (refreshed by the worker patrol every
+    60 s), no live probe."""
     return await _cluster_status_out(session)
 
 
@@ -301,21 +307,23 @@ async def admin_cluster_status(session: DbSession) -> ClusterStatusOut:
     "/cluster/components/{component_key}/probe", dependencies=[require_roles("ops", "readonly")]
 )
 async def admin_component_probe(component_key: str, admin: CurrentAdmin) -> ComponentProbeOut:
-    """体检项实时深探:请求路径直连 K8s 只读(规则的第二个例外,见 docs/decisions.md)。
+    """Live deep probe of a health-check item: direct read-only K8s call on the request path (the
+    rule's second exception, see docs/decisions.md).
 
-    硬超时 5s + 每管理员每小时 120 次;失败 503,前端退化为只显示巡检快照。
+    Hard timeout 5 s + 120 per admin per hour; failure → 503, the frontend degrades to the patrol
+    snapshot.
     """
     return await nodes_service.probe_component_detail(admin.id, component_key)
 
 
 @router.post("/cluster/test-connection", dependencies=[require_roles("ops")])
 async def admin_cluster_test_connection(session: DbSession, request: Request) -> ClusterStatusOut:
-    """同步只读探测并落缓存;不可达/超时 → 502。"""
+    """Synchronous read-only probe written to the cache; unreachable / timeout → 502."""
     set_audit_target(request, "cluster:test-connection")
     try:
         probe = await asyncio.wait_for(get_orchestrator().probe_cluster(), timeout=5.0)
     except TimeoutError:
-        probe = ClusterProbe(api_reachable=False, error="探测超时(5s)")
+        probe = ClusterProbe(api_reachable=False, error="probe timed out (5s)")
     await nodes_service.save_cluster_probe(session, probe)
     await session.commit()
     if not probe.api_reachable:
@@ -330,7 +338,7 @@ async def admin_cluster_test_connection(session: DbSession, request: Request) ->
 
 @router.get("/cluster/gpu-models", dependencies=[require_roles("ops", "readonly")])
 async def admin_gpu_model_aggregates(session: DbSession) -> list[GpuModelAggregateOut]:
-    """台账按 canonical×池聚合(None 型号 = 未识别桶)。"""
+    """Inventory aggregated by canonical × pool (None model = unrecognised bucket)."""
     aggs = await nodes_service.gpu_model_aggregates(session)
     return [GpuModelAggregateOut.model_validate(a, from_attributes=True) for a in aggs]
 
@@ -350,7 +358,7 @@ async def _cordon(
 ) -> NodeCordonOut:
     names = {n.node_name for n in await nodes_service.list_node_specs(session)}
     if node_name not in names:
-        raise not_found("节点不存在或未打池标签")
+        raise not_found(key="nodes.nodeNotFound")
     await nodes_service.request_cordon(session, node_name, unschedulable=on, reason=body.reason)
     set_audit_target(
         request, f"node:{node_name}", detail={"unschedulable": on, "reason": body.reason}
@@ -362,7 +370,7 @@ async def _cordon(
 async def admin_cordon_node(
     node_name: str, body: NodeCordonRequest, session: DbSession, request: Request
 ) -> NodeCordonOut:
-    """停止调度(reason 必填;经 outbox 执行,请求路径不动 K8s)。"""
+    """Stop scheduling (reason required; runs via outbox, the request path never touches K8s)."""
     return await _cordon(node_name, body, session, request, on=True)
 
 
@@ -370,7 +378,7 @@ async def admin_cordon_node(
 async def admin_uncordon_node(
     node_name: str, body: NodeCordonRequest, session: DbSession, request: Request
 ) -> NodeCordonOut:
-    """恢复调度(reason 必填)。"""
+    """Resume scheduling (reason required)."""
     return await _cordon(node_name, body, session, request, on=False)
 
 
@@ -379,7 +387,8 @@ class NodeSwitchPoolRequest(ReasonBody):
 
 
 class NodeSwitchPoolOut(BaseModel):
-    """切池受理回执:停调度与期望池已落台账;标签收敛经 outbox,不需要任何节点侧动作。"""
+    """Pool-switch acceptance receipt: cordon and desired pool are in the inventory; label
+    convergence goes through the outbox, no node-side action needed."""
 
     node_name: str
     from_pool: str
@@ -391,9 +400,12 @@ class NodeSwitchPoolOut(BaseModel):
 async def admin_switch_node_pool(
     node_name: str, body: NodeSwitchPoolRequest, session: DbSession, request: Request
 ) -> NodeSwitchPoolOut:
-    """切换节点池(kata / hami / mig 互切)。前置:节点上无未释放实例、机型与目标池匹配、
-    目标池运行时就绪。受理后节点即停止调度,池标签与 GPU operand 标签经 outbox 改;
-    池间差异的节点侧软件由 DaemonSet 按标签自行投送,无需登录节点、不重启。
+    """Switch the node pool (kata / hami / mig). Preconditions: no unreleased instance on the node,
+    GPU model matches the target pool,
+    target pool runtime ready. Once accepted the node stops scheduling and the pool and GPU operand
+    labels change through the outbox;
+    the node-side software differences between pools are delivered by DaemonSets keyed on labels -
+    no login to the node, no reboot.
     """
     _, from_pool = await nodes_service.switch_node_pool(
         session, node_name, pool=body.pool, reason=body.reason
@@ -419,9 +431,11 @@ async def admin_decommission_node(
     request: Request,
     force: bool = False,
 ) -> NodeDecommissionOut:
-    """节点退役(不可逆):停止调度 + 作废该机全部注册令牌 + 经 outbox 删除 Node 对象。
-    节点上有未释放实例即 409,`force=true` 跳过该闸(机器已救不回来时用)。
-    集群 join token 轮换与 kubelet 证书吊销不在本端点内。
+    """Node decommissioning (irreversible): stop scheduling + void every enrollment token of the
+    machine + delete the Node object via outbox.
+    Unreleased instances on the node → 409, `force=true` skips that gate (for machines that cannot
+    be recovered).
+    Cluster join-token rotation and kubelet certificate revocation are outside this endpoint.
     """
     revoked = await nodes_service.decommission_node(
         session, node_name, reason=body.reason, force=force
@@ -441,7 +455,8 @@ async def admin_decommission_node(
 
 @router.get("/reports/oversell", dependencies=[require_roles("ops", "finance", "readonly")])
 async def oversell_report(session: DbSession) -> list[OversellPoolOut]:
-    """超卖报表:各池 已售份额 / 实际超卖率(已售 ÷ Ready 物理卡数)/ 近 24h 真实利用率。"""
+    """Oversell report: sold share / actual oversell ratio (sold ÷ Ready physical cards) / real
+    utilisation over the last 24 h per pool."""
     nodes = await nodes_service.list_node_specs(session)
     physical: dict[str, int] = {}
     for n in nodes:

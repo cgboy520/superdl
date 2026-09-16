@@ -1,4 +1,5 @@
-"""审计、日对账与调账单 CSV 导出;时间按调用方时区偏移折算。"""
+"""Audit, daily reconciliation and adjustment CSV exports; timestamps shifted by the caller's time
+zone offset."""
 
 import json
 from collections.abc import AsyncIterator
@@ -23,14 +24,14 @@ from app.modules.metering.schemas import ReconciliationOut
 _HEADERS: dict[tuple[str, str], list[str]] = {
     ("audit", "zh-CN"): [
         "ID",
-        "操作者类型",
-        "操作者",
-        "动作",
-        "目标",
+        "操作者类型",  # cjk-ok
+        "操作者",  # cjk-ok
+        "动作",  # cjk-ok
+        "目标",  # cjk-ok
         "IP",
-        "结果",
-        "详情",
-        "时间",
+        "结果",  # cjk-ok
+        "详情",  # cjk-ok
+        "时间",  # cjk-ok
     ],
     ("audit", "en-US"): [
         "ID",
@@ -44,9 +45,9 @@ _HEADERS: dict[tuple[str, str], list[str]] = {
         "Time",
     ],
     ("reconciliation", "zh-CN"): [
-        "实例ID",
-        "事件计费({currency})",
-        "指标估算({currency})",
+        "实例ID",  # cjk-ok
+        "事件计费({currency})",  # cjk-ok
+        "指标估算({currency})",  # cjk-ok
         "diff%",
     ],
     ("reconciliation", "en-US"): [
@@ -57,13 +58,13 @@ _HEADERS: dict[tuple[str, str], list[str]] = {
     ],
     ("adjustments", "zh-CN"): [
         "ID",
-        "用户ID",
-        "金额({currency})",
-        "状态",
-        "事由",
-        "发起人",
-        "复核人",
-        "创建时间",
+        "用户ID",  # cjk-ok
+        "金额({currency})",  # cjk-ok
+        "状态",  # cjk-ok
+        "事由",  # cjk-ok
+        "发起人",  # cjk-ok
+        "复核人",  # cjk-ok
+        "创建时间",  # cjk-ok
     ],
     ("adjustments", "en-US"): [
         "ID",
@@ -78,15 +79,16 @@ _HEADERS: dict[tuple[str, str], list[str]] = {
 }
 
 _ADJUSTMENT_STATUS_LABEL: dict[str, dict[str, str]] = {
-    "zh-CN": {"pending": "待复核", "approved": "已生效", "rejected": "已驳回"},
+    "zh-CN": {"pending": "待复核", "approved": "已生效", "rejected": "已驳回"},  # cjk-ok
     "en-US": {"pending": "Pending review", "approved": "Effective", "rejected": "Rejected"},
 }
 
-_TOTAL_LABEL = {"zh-CN": "合计", "en-US": "TOTAL"}
+_TOTAL_LABEL = {"zh-CN": "合计", "en-US": "TOTAL"}  # cjk-ok
 
 
 def audit_filters(stmt, *, actor_type, actor_id, q, since, until):
-    """按操作者、动作或目标子串及 [since, until) 时间窗过滤;q 的 %/_ 按字面匹配。"""
+    """Filter by actor, action or target substring and the [since, until) window; %/_ in q match
+    literally."""
     if actor_type:
         stmt = stmt.where(AuditLog.actor_type == actor_type)
     if actor_id:
@@ -115,7 +117,8 @@ def stream_audit_csv(
     tz_offset_minutes: int,
     lang: str = "zh-CN",
 ) -> AsyncIterator[str]:
-    """审计日志 CSV(降序,最新在前;按 id 批拉直至上限或穷尽,触顶写截断标记行)。"""
+    """Audit log CSV (descending, newest first; pulled by id in batches until the cap or the end, a
+    truncation marker row when the cap is hit)."""
     stmt = audit_filters(
         select(AuditLog), actor_type=actor_type, actor_id=actor_id, q=q, since=since, until=until
     )
@@ -148,7 +151,7 @@ async def stream_reconciliation_csv(
     *,
     lang: str = "zh-CN",
 ) -> AsyncIterator[str]:
-    """日对账 CSV:首行合计,随后 diff 超阈实例明细。"""
+    """Daily reconciliation CSV: the total first, then the instances above the diff threshold."""
     yield "\ufeff" + csv_line(header_row(_HEADERS[("reconciliation", lang)]))
     yield csv_line(
         [
@@ -171,7 +174,8 @@ def stream_adjustments_csv(
     tz_offset_minutes: int,
     lang: str = "zh-CN",
 ) -> AsyncIterator[str]:
-    """按状态、用户与创建日窗口导出调账单 CSV,按 id 降序。"""
+    """Export adjustments as CSV filtered by status, user and creation-day window, by id
+    descending."""
     stmt = select(AdminAdjustment)
     if status:
         stmt = stmt.where(AdminAdjustment.status == status)

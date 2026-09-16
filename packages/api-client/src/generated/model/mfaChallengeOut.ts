@@ -7,8 +7,9 @@
 import type { MfaChallengeOutStatus } from './mfaChallengeOutStatus';
 
 /**
- * 登录响应·挑战分支(admin_mfa_enabled 开启时):mfa_setup=首次绑定(绑定票 10min);
- * mfa_required=已绑定验证(二要素票 5min)。
+ * Login response, challenge branch (admin_mfa_enabled on): mfa_setup = first enrolment
+ * (enrolment ticket 10 min);
+ * mfa_required = enrolled verification (second-factor ticket 5 min).
  */
 export interface MfaChallengeOut {
   status: MfaChallengeOutStatus;

@@ -89,7 +89,7 @@ class TestBalanceWarnNotification:
         rows = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
         warns = [r for r in rows if r["type"] == "balance_warn"]
         assert len(warns) == 1
-        assert "小时" in warns[0]["content"]
+        assert "hours" in warns[0]["content"]
         assert (await get_instance(client, headers, uuid))["status"] == "running"
 
     async def test_read_all_marks_everything_and_is_idempotent(self, client, sm, fake):
@@ -326,7 +326,9 @@ class TestAlertAck:
         warning = (
             await client.get("/api/admin/v1/alerts", params={"severity": "warning"}, headers=ops)
         ).json()["items"]
-        assert [a["title"] for a in warning] == ["管理员完成二要素(TOTP)绑定"]
+        assert [a["title"] for a in warning] == [
+            "Administrator completed two-factor (TOTP) enrolment"
+        ]
 
     async def test_acked_filter_and_paging_reach_older_rows(self, client, sm, fake):
         """确认状态在库里过滤、游标能翻到更早的告警:否则超出单页的异常在管理端永远看不到。"""

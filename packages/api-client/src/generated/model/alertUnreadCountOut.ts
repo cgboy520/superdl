@@ -6,7 +6,7 @@
  */
 
 /**
- * 未确认告警数;critical_count 单独给出(精确口径)。
+ * Unacknowledged alert count; critical_count given separately (exact).
  */
 export interface AlertUnreadCountOut {
   count: number;

@@ -175,6 +175,141 @@ _COPY: dict[str, dict[str, str]] = {
         "en-US": "{old}/h → {new}/h (change {pct}); reason: {reason}",
         "zh-CN": "{old} → {new}/时(幅度 {pct});原因:{reason}",  # cjk-ok
     },
+    "notify.low_balance.title": {
+        "en-US": "Low balance warning",
+        "zh-CN": "余额不足预警",  # cjk-ok
+    },
+    "notify.low_balance.content": {
+        "en-US": (
+            "Current balance {balance}; at the current usage your instances can run for about"
+            " {hours} more hours. Top up soon."
+        ),
+        "zh-CN": (
+            "当前余额 {balance},"  # cjk-ok
+            "按现有实例预计仅可再运行约 {hours} 小时,请及时充值。"  # cjk-ok
+        ),
+    },
+    "notify.arrears.auto_stop": {
+        "en-US": "Balance exhausted, instances stopped automatically",
+        "zh-CN": "余额耗尽,实例已自动关机",  # cjk-ok
+    },
+    "notify.arrears.freeze": {"en-US": "Instances frozen", "zh-CN": "实例已冻结"},  # cjk-ok
+    "notify.arrears.reclaim": {"en-US": "Instances reclaimed", "zh-CN": "实例已回收"},  # cjk-ok
+    "notify.arrears.default": {"en-US": "Arrears notice", "zh-CN": "欠费通知"},  # cjk-ok
+    "notify.subscription.expiring": {
+        "en-US": "Subscription expiring soon",
+        "zh-CN": "包周期即将到期",  # cjk-ok
+    },
+    "notify.subscription.expired": {
+        "en-US": "Subscription expired, instance stopped",
+        "zh-CN": "包周期已到期,实例已停机",  # cjk-ok
+    },
+    "notify.subscription.renewed": {
+        "en-US": "Subscription renewed automatically",
+        "zh-CN": "包周期已自动续费",  # cjk-ok
+    },
+    "notify.subscription.renew_failed": {
+        "en-US": "Automatic renewal failed",
+        "zh-CN": "自动续费失败",  # cjk-ok
+    },
+    "notify.subscription.default": {
+        "en-US": "Subscription notice",
+        "zh-CN": "包周期通知",  # cjk-ok
+    },
+    "notify.preempted.title": {
+        "en-US": "Spot instance about to be reclaimed",
+        "zh-CN": "竞价实例即将被回收",  # cjk-ok
+    },
+    "notify.preempted.content": {
+        "en-US": (
+            "{name} will be stopped in {seconds} seconds because the platform needs the capacity."
+            " The instance disk is kept and you can start it again when capacity is available;"
+            " the time run so far is settled by actual seconds."
+        ),
+        "zh-CN": (
+            "{name} 因平台需要容量将在 {seconds} 秒后关机。"  # cjk-ok
+            "实例盘保留,有容量时可自行开机;已运行时长按实际秒数结算。"  # cjk-ok
+        ),
+    },
+    "notify.gpu_fault.title": {"en-US": "GPU hardware alert", "zh-CN": "GPU 硬件告警"},  # cjk-ok
+    "notify.gpu_fault.content": {
+        "en-US": (
+            "The GPU hosting this instance raised a hardware fault alert and the platform is"
+            " handling it. If the instance stops because of it, billing ends at the moment it"
+            " stopped."
+        ),
+        "zh-CN": (
+            "该实例所在 GPU 触发硬件故障告警,平台正在处理。"  # cjk-ok
+            "若实例因此停机,将按停机瞬间结算,之后不再计费。"  # cjk-ok
+        ),
+    },
+    "notify.oncall_sms.title": {
+        "en-US": "[platform critical] {alertname}",
+        "zh-CN": "[平台critical]{alertname}",  # cjk-ok
+    },
+    "tickets.created.title": {"en-US": "New ticket", "zh-CN": "新工单"},  # cjk-ok
+    "tickets.reply.title": {"en-US": "New reply on a ticket", "zh-CN": "工单有新回复"},  # cjk-ok
+    "tickets.staff_reply.content": {
+        "en-US": "Support replied to your ticket {ticket_no} ({subject}); open Support to read it.",
+        "zh-CN": "您的工单 {ticket_no}({subject})客服已回复,请前往「支持」查看。",  # cjk-ok
+    },
+    "tickets.stale.title": {
+        "en-US": "Ticket waiting for more than 24 h",
+        "zh-CN": "工单滞留超 24h",  # cjk-ok
+    },
+    "tickets.stale.content": {
+        "en-US": (
+            "{ticket_no} [{category}] {subject} has been waiting for a support reply for more than"
+            " 24 hours; handle it soon."
+        ),
+        "zh-CN": (
+            "{ticket_no} [{category}] {subject} 等待客服回复已超过 24 小时,请尽快处理。"  # cjk-ok
+        ),
+    },
+    "adminapi.mfa_bound.title": {
+        "en-US": "Administrator completed two-factor (TOTP) enrolment",
+        "zh-CN": "管理员完成二要素(TOTP)绑定",  # cjk-ok
+    },
+    "adminapi.mfa_bound.content": {
+        "en-US": (
+            "Administrator {username} completed TOTP enrolment. If this was not them: have another"
+            " admin reset their MFA and password at once and investigate a credential leak."
+        ),
+        "zh-CN": (
+            "管理员 {username} 完成了 TOTP 绑定。"  # cjk-ok
+            "若非本人操作:立即由另一位超管重置其 MFA 并改密排查口令泄漏。"  # cjk-ok
+        ),
+    },
+    "adminapi.policy_moves.title": {
+        "en-US": "Policy parameters changed sharply",
+        "zh-CN": "策略参数大幅调整",  # cjk-ok
+    },
+    "adminapi.policy_moves.content": {
+        "en-US": "{moves}; reason: {reason}",
+        "zh-CN": "{moves};原因:{reason}",  # cjk-ok
+    },
+    "adminapi.unfrozen.title": {
+        "en-US": "Account restored",
+        "zh-CN": "账号已恢复正常",  # cjk-ok
+    },
+    "adminapi.unfrozen.content": {
+        "en-US": (
+            "Your account has been unfrozen. Instances stopped during the freeze must be started by"
+            " you (instance disk data is kept)."
+        ),
+        "zh-CN": (
+            "您的账号已解除冻结。"  # cjk-ok
+            "冻结期间被停止的实例需要您手动开机(实例盘数据保留)。"  # cjk-ok
+        ),
+    },
+    "adminapi.adjust.remark": {
+        "en-US": "Adjustment: {reason}",
+        "zh-CN": "调账:{reason}",  # cjk-ok
+    },
+    "adminapi.reversal.remark": {
+        "en-US": "Channel reversal write-off: {reason}",
+        "zh-CN": "渠道冲正核销:{reason}",  # cjk-ok
+    },
 }
 
 

@@ -7,7 +7,7 @@
 import type { AdminOut } from './adminOut';
 
 /**
- * 登录响应·直发分支(admin_mfa_enabled 关闭时)。
+ * Login response, direct branch (admin_mfa_enabled off).
  */
 export interface AdminLoginTokenOut {
   access_token: string;

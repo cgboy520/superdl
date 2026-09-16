@@ -1,4 +1,5 @@
-"""管理端路由(对账/告警/调账/退款/发票/订单/收入/补单)。"""
+"""Admin routes (reconciliation / alerts / adjustments / refunds / invoices / orders / revenue /
+backfill)."""
 
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any, Literal
@@ -60,7 +61,8 @@ router = APIRouter(tags=["admin"])
 
 @router.get("/reconciliation", dependencies=[require_roles("finance", "readonly")])
 async def reconciliation(session: DbSession, day: str) -> ReconciliationOut:
-    """日对账:事件计费 vs 指标估算 + diff%(>2% 列差异实例)。"""
+    """Daily reconciliation: event billing vs metric estimate + diff % (> 2 % lists the divergent
+    instances)."""
     day_start, _ = parse_day(day)
     report = await metering_service.reconciliation_report(session, day_start)
     return report
@@ -72,9 +74,10 @@ async def reconciliation(session: DbSession, day: str) -> ReconciliationOut:
     responses=CSV_RESPONSES,
 )
 async def reconciliation_export(
-    session: DbSession, day: str, lang: Literal["zh-CN", "en-US"] = ExportLang
+    session: DbSession, day: str, lang: str = ExportLang
 ) -> StreamingResponse:
-    """日对账 CSV:与 GET /reconciliation 同一报告(首行合计 + diff 超阈实例明细)。"""
+    """Daily reconciliation CSV: the same report as GET /reconciliation (total first + instances
+    above the diff threshold)."""
     day_start, _ = parse_day(day)
     report = await metering_service.reconciliation_report(session, day_start)
     return csv_response(
@@ -100,7 +103,7 @@ def _alert_out(r: "Notification", usernames: dict[int, str]) -> AdminAlertOut:
 
 
 async def _ack_usernames(session: AsyncSession, rows: "list[Notification]") -> dict[int, str]:
-    """确认人 id → 用户名。"""
+    """Acknowledger id → username."""
     ids = {r.acked_by for r in rows if r.acked_by is not None}
     if not ids:
         return {}
@@ -121,7 +124,7 @@ async def admin_alerts(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[AdminAlertOut]:
-    """管理端告警流(游标分页,降序):severity / type / 确认状态精确过滤。"""
+    """Admin alert feed (cursor pagination, descending): severity / type / ack exact filters."""
     page = await notify_service.admin_alert_stream(
         session,
         severity=severity,
@@ -138,7 +141,7 @@ async def admin_alerts(
 
 @router.get("/alerts/unread-count", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_alerts_unread_count(session: DbSession) -> AlertUnreadCountOut:
-    """未确认告警计数(独立计数端点);critical_count 供总览 KPI。"""
+    """Unacknowledged alert count (separate endpoint); critical_count feeds the overview KPI."""
     total, critical = await notify_service.unread_alert_count(session)
     return AlertUnreadCountOut(count=total, critical_count=critical)
 
@@ -147,7 +150,7 @@ async def admin_alerts_unread_count(session: DbSession) -> AlertUnreadCountOut:
 async def admin_ack_alert(
     alert_id: int, admin: CurrentAdmin, session: DbSession, request: Request
 ) -> AdminAlertOut:
-    """确认告警(角色:ops/admin):落确认人与时间;重复确认 409。"""
+    """Acknowledge an alert (roles: ops/admin): records who and when; repeating → 409."""
     row = await notify_service.ack_admin_alert(session, alert_id, acked_by=admin.id)
     set_audit_target(request, f"alert:{alert_id}")
     usernames = await _ack_usernames(session, [row])
@@ -166,7 +169,8 @@ class AdjustmentReview(BaseModel):
 
 
 class ReversalResolve(BaseModel):
-    """渠道冲正核销:release=噪音单解冻(订单恢复退款资格);chargeback=确认反转,解冻+等额扣回。"""
+    """Channel reversal write-off: release = noise, unfreeze (the order regains refund eligibility);
+    chargeback = confirmed reversal, unfreeze + debit the same amount."""
 
     action: Literal["release", "chargeback"]
     reason: str = Field(min_length=2, max_length=256)
@@ -181,7 +185,8 @@ async def admin_list_adjustments(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[AdjustmentOut]:
-    """调账单列表(游标分页,降序)。status/user_id 精确过滤;day=YYYY-MM-DD 按发起日过滤。"""
+    """Adjustment list (cursor pagination, descending). status/user_id exact filters; day=YYYY-MM-DD
+    filters by initiation day."""
     return await finance_service.list_adjustments(
         session,
         status=status,
@@ -203,10 +208,11 @@ async def admin_adjustments_export(
     user_id: int | None = None,
     day_range: DayRange = None,
     tz_offset_minutes: int = TzOffset,
-    lang: Literal["zh-CN", "en-US"] = ExportLang,
+    lang: str = ExportLang,
 ) -> StreamingResponse:
-    """调账单 CSV(流式):筛选口径与 GET /adjustments 一致;行数硬上限 + 截断标记行。
-    须注册在 /adjustments/{adjustment_id} 之前。"""
+    """Adjustment CSV (streamed): the same filters as GET /adjustments; hard row cap + truncation
+    marker row.
+    Must be registered before /adjustments/{adjustment_id}."""
     return csv_response(
         admin_export.stream_adjustments_csv(
             session,
@@ -229,7 +235,8 @@ async def admin_create_adjustment(
     idempotency_key: IdempotencyKey = None,
     admin: AdminUser = require_roles("finance"),
 ) -> AdjustmentStatusOut:
-    """发起调账(双人复核前置)。Idempotency-Key 重放返回已受理的单(200 + X-Idempotent-Replay)。"""
+    """Initiate an adjustment (two-person review follows). An Idempotency-Key replay returns the
+    accepted request (200 + X-Idempotent-Replay)."""
     await check_rate_limit(f"admin-adjust:{admin.id}", max_attempts=20, window_seconds=3600.0)
     adj, created = await finance_service.create_adjustment(
         session,
@@ -253,7 +260,8 @@ async def admin_review_adjustment(
     request: Request,
     admin: AdminUser = require_roles("finance"),
 ) -> AdjustmentStatusOut:
-    """复核调账(approve 即生效):审计行与生效同事务(write_audit_sync)。"""
+    """Review an adjustment (approve takes effect at once): the audit row and the effect share one
+    transaction (write_audit_sync)."""
     set_audit_target(request, f"adjustment:{adjustment_id}", detail={"approve": body.approve})
     adj = await finance_service.review_adjustment(
         session,
@@ -274,7 +282,9 @@ async def admin_resolve_reversal(
     request: Request,
     admin: AdminUser = require_roles("finance"),
 ) -> dict[str, str]:
-    """核销渠道冲正(channel_reversed 分桶):解冻或解冻+等额扣回,审计行与核销同事务。"""
+    """Write off a channel reversal (channel_reversed bucket): unfreeze, or unfreeze + debit the
+    same
+    amount; audit row and write-off in one transaction."""
     set_audit_target(
         request, f"reversal:{order_no}", detail={"action": body.action, "reason": body.reason}
     )
@@ -297,7 +307,7 @@ async def admin_list_refunds(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[AdminRefundOut]:
-    """退款单列表(游标分页,降序)。day=YYYY-MM-DD 按申请时间过滤。"""
+    """Refund list (cursor pagination, descending). day=YYYY-MM-DD filters by request time."""
     return await billing_service.admin_list_refunds(
         session, status, day_range=day_range, cursor=cursor, limit=limit
     )
@@ -313,10 +323,11 @@ async def admin_refunds_export(
     status: str | None = None,
     day_range: DayRange = None,
     tz_offset_minutes: int = TzOffset,
-    lang: Literal["zh-CN", "en-US"] = ExportLang,
+    lang: str = ExportLang,
 ) -> StreamingResponse:
-    """退款单 CSV(流式):筛选口径与 GET /refunds 一致;行数硬上限 + 截断标记行。
-    须注册在 /refunds/{refund_id} 之前。"""
+    """Refund CSV (streamed): the same filters as GET /refunds; hard row cap + truncation marker
+    row.
+    Must be registered before /refunds/{refund_id}."""
     return csv_response(
         billing_service.stream_admin_refunds_csv(
             session,
@@ -337,7 +348,9 @@ async def admin_review_refund(
     request: Request,
     admin: AdminUser = require_roles("finance"),
 ) -> AdminRefundOut:
-    """审批(同意/驳回都须填意见)。通过 ≠ 出金:仅置 approved,等另一位财务登记打款。"""
+    """Review (approve / reject both need a comment). Approval ≠ payout: only sets approved and
+    waits
+    for another finance admin to register the payout."""
     req = await billing_service.review_refund(
         session, refund_id, approve=body.approve, comment=body.comment, reviewer_id=admin.id
     )
@@ -359,9 +372,11 @@ async def admin_payout_refund(
     idempotency_key: IdempotencyKey = None,
     admin: AdminUser = require_roles("finance"),
 ) -> AdminRefundOut:
-    """登记打款(唯一出金点):强制双人(与审批人相同则 409);余额不足 409。
-    审计行与出金同事务(write_audit_sync)。Idempotency-Key:同键同参重放 200 + X-Idempotent-Replay,
-    同键异参 409。"""
+    """Register the payout (the only money-out point): two people enforced (same person as the
+    reviewer → 409); insufficient balance → 409.
+    Audit row and payout in one transaction (write_audit_sync). Idempotency-Key: same key and params
+    replay 200 + X-Idempotent-Replay,
+    same key with different params → 409."""
     set_audit_target(
         request,
         f"refund:{refund_id}",
@@ -388,7 +403,7 @@ async def admin_cancel_refund(
     session: DbSession,
     request: Request,
 ) -> AdminRefundOut:
-    """取消退款单(仅 pending/approved)。不动钱包。"""
+    """Cancel a refund request (pending/approved only). The wallet is untouched."""
     req = await billing_service.cancel_refund(session, refund_id)
     set_audit_target(
         request, f"refund:{req.id}", detail={"refund_no": req.refund_no, "reason": body.reason}
@@ -397,7 +412,8 @@ async def admin_cancel_refund(
 
 
 def _invoice_reveal(admin: AdminUser, reveal: bool, reason: str | None) -> str:
-    """reveal 时校验角色与事由并返回规范化事由,否则返回空串。"""
+    """With reveal, check role and reason and return the normalised reason, otherwise the empty
+    string."""
     return auth_service.ensure_reveal_allowed(role=admin.role, reason=reason) if reveal else ""
 
 
@@ -411,9 +427,10 @@ async def admin_list_invoices(
     reason: str | None = Query(default=None, max_length=REASON_MAX_LENGTH),
     admin: AdminUser = require_roles("finance"),
 ) -> list[AdminInvoiceOut]:
-    """发票申请列表(固定截断 200)。status/period(YYYY-MM)精确过滤。
+    """Invoice request list (fixed cap 200). status/period (YYYY-MM) exact filters.
 
-    抬头与邮箱默认脱敏;reveal=true + reason 回明文,按条数与事由落审计。
+    Title and email are masked by default; reveal=true + reason returns plaintext, audited with row
+    count and reason.
     """
     reveal_reason = _invoice_reveal(admin, reveal, reason)
     rows = await billing_service.admin_list_invoices(session, status=status, period=period)
@@ -452,13 +469,15 @@ async def admin_invoices_export(
     status: str | None = None,
     period: str | None = None,
     tz_offset_minutes: int = TzOffset,
-    lang: Literal["zh-CN", "en-US"] = ExportLang,
+    lang: str = ExportLang,
     reveal: bool = False,
     reason: str | None = Query(default=None, max_length=REASON_MAX_LENGTH),
     admin: AdminUser = require_roles("finance"),
 ) -> StreamingResponse:
-    """发票申请 CSV(流式):筛选口径与 GET /invoices 一致;行数硬上限 + 截断标记行。
-    须注册在 /invoices/{invoice_id} 之前。默认脱敏,明文要 reveal + 事由;每次导出都落审计。
+    """Invoice request CSV (streamed): the same filters as GET /invoices; hard row cap + truncation
+    marker row.
+    Must be registered before /invoices/{invoice_id}. Masked by default, plaintext needs reveal + a
+    reason; every export is audited.
     """
     reveal_reason = _invoice_reveal(admin, reveal, reason)
     detail: dict[str, Any] = {
@@ -488,7 +507,7 @@ async def admin_invoices_export(
 async def _count_revealed_rows(
     stream: AsyncIterator[str], detail: dict[str, Any]
 ) -> AsyncIterator[str]:
-    """明文导出的行数进指标(记实际送出的行数)。"""
+    """Plaintext export rows go into the metric (the number of rows actually sent)."""
     try:
         async for chunk in stream:
             yield chunk
@@ -504,7 +523,7 @@ async def admin_issue_invoice(
     request: Request,
     admin: AdminUser = require_roles("finance"),
 ) -> AdminInvoiceOut:
-    """开票:回填发票号,站内信告知用户。"""
+    """Issue: record the invoice number and notify the user in-app."""
     req = await billing_service.issue_invoice(
         session, invoice_id, invoice_no=body.invoice_no, operator_id=admin.id
     )
@@ -522,7 +541,7 @@ async def admin_reject_invoice(
     request: Request,
     admin: AdminUser = require_roles("finance"),
 ) -> AdminInvoiceOut:
-    """驳回(理由必填):站内信告知用户;同账期可重新申请。"""
+    """Reject (reason required): notify the user in-app; the same period can be requested again."""
     req = await billing_service.reject_invoice(
         session, invoice_id, reason=body.reason, operator_id=admin.id
     )
@@ -542,7 +561,8 @@ async def admin_list_orders(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[AdminOrderOut]:
-    """充值订单列表(游标分页,降序)。order_no 精确匹配;day=YYYY-MM-DD 按下单日(UTC)过滤。"""
+    """Top-up order list (cursor pagination, descending). order_no exact; day=YYYY-MM-DD filters by
+    order day (UTC)."""
     page = await billing_service.admin_list_orders(
         session,
         status,
@@ -573,9 +593,11 @@ async def admin_orders_export(
     user_id: int | None = None,
     day_range: DayRange = None,
     tz_offset_minutes: int = TzOffset,
-    lang: Literal["zh-CN", "en-US"] = ExportLang,
+    lang: str = ExportLang,
 ) -> StreamingResponse:
-    """充值订单 CSV(流式):筛选口径与 GET /orders 一致;行数硬上限 + 截断标记行。"""
+    """Top-up order CSV (streamed): the same filters as GET /orders; hard row cap + truncation
+    marker
+    row."""
     return csv_response(
         billing_service.stream_admin_orders_csv(
             session,
@@ -592,7 +614,8 @@ async def admin_orders_export(
 
 @router.get("/reports/revenue", dependencies=[require_roles("ops", "finance", "readonly")])
 async def revenue_report(session: DbSession, tz_offset_minutes: int = TzOffset) -> RevenueReportOut:
-    """今日/本月消费额(ledger consume 绝对值)与新注册数。本地日界经 tz_offset。"""
+    """Today's / this month's consumption (absolute ledger consume) and new sign-ups. Local day
+    boundary via tz_offset."""
     revenue = await billing_service.revenue_summary(session, tz_offset_minutes=tz_offset_minutes)
     signups = await account_service.signup_counts(session, tz_offset_minutes=tz_offset_minutes)
     return RevenueReportOut.model_validate({**revenue, **signups})
@@ -600,14 +623,15 @@ async def revenue_report(session: DbSession, tz_offset_minutes: int = TzOffset) 
 
 @router.get("/finance/anomalies", dependencies=[require_roles("finance", "readonly")])
 async def admin_payment_anomalies(session: DbSession) -> list[PaymentAnomalyOut]:
-    """异常清单:疑似丢回调 / 近 48h 关单 / 负余额钱包。"""
+    """Anomaly list: suspected lost callbacks / orders closed in the last 48 h / negative
+    wallets."""
     rows = await billing_service.list_payment_anomalies(session)
     return [PaymentAnomalyOut.model_validate(r) for r in rows]
 
 
 @router.post("/finance/orders/{order_no}/verify", dependencies=[require_roles("finance")])
 async def admin_verify_order(order_no: str, session: DbSession, request: Request) -> OrderVerifyOut:
-    """向渠道核验订单状态与金额(补单前置)。"""
+    """Verify the order status and amount with the channel (backfill precondition)."""
     result = await billing_service.verify_order(session, order_no)
     set_audit_target(
         request, f"order:{order_no}", detail={"channel_status": result["channel_status"]}
@@ -628,8 +652,10 @@ async def admin_backfill_order(
     response: Response,
     idempotency_key: IdempotencyKey = None,
 ) -> OrderBackfillOut:
-    """人工补单:实时向渠道核验已支付且金额一致才入账。同幂等键重放回当前状态(X-Idempotent-Replay)。
-    审计行与入账同事务(write_audit_sync)。"""
+    """Manual backfill: credits only after a live channel check confirms paid with a matching
+    amount.
+    A replay with the same idempotency key returns the current state (X-Idempotent-Replay).
+    Audit row and credit in one transaction (write_audit_sync)."""
     set_audit_target(request, f"order:{order_no}", detail={"reason": body.reason})
     order, replayed = await billing_service.backfill_order(
         session,
@@ -651,7 +677,7 @@ async def admin_list_settlement_gaps(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[AdminSettlementGapOut]:
-    """缺口列表(游标分页,降序):默认只看未核销。"""
+    """Gap list (cursor pagination, descending): unresolved only by default."""
     return await billing_service.admin_list_gaps(
         session, kind=kind, reason=reason, unresolved_only=unresolved, cursor=cursor, limit=limit
     )
@@ -663,8 +689,9 @@ async def admin_replay_settlement_gap(
     request: Request,
     admin: AdminUser = require_roles("finance"),
 ) -> AdminSettlementGapOut:
-    """重放缺口窗口的幂等入账原语(人工触发):成功回写 resolved_at。
-    grace_overlap 缺口与对象已不存在均 409,走人工核销。"""
+    """Replay the idempotent posting primitive of the gap window (manual trigger): success writes
+    resolved_at.
+    grace_overlap gaps and vanished objects are 409 and go to manual write-off."""
     out = await billing_service.replay_gap(get_sessionmaker(), gap_id, operator_id=admin.id)
     set_audit_target(
         request,
@@ -682,7 +709,7 @@ async def admin_resolve_settlement_gap(
     request: Request,
     admin: AdminUser = require_roles("finance"),
 ) -> AdminSettlementGapOut:
-    """人工核销(不重放)。说明必填。"""
+    """Manual write-off (no replay). A note is required."""
     gap = await billing_service.resolve_gap(session, gap_id, note=body.note, operator_id=admin.id)
     set_audit_target(
         request, f"settlement_gap:{gap_id}", detail={"action": "resolve", "note": body.note}

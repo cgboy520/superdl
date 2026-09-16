@@ -6,7 +6,7 @@
  */
 
 /**
- * 管理端工单视图:比用户端多租户 id。
+ * Admin ticket view: the user view plus the tenant id.
  */
 export interface AdminTicketOut {
   category: string;

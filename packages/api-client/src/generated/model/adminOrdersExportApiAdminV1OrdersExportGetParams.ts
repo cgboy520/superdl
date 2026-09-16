@@ -10,7 +10,7 @@ export type AdminOrdersExportApiAdminV1OrdersExportGetParams = {
 status?: string | null;
 order_no?: string | null;
 user_id?: number | null;
-lang?: AdminOrdersExportApiAdminV1OrdersExportGetLang;
 day?: string | null;
 tz_offset_minutes?: number | null;
+lang?: AdminOrdersExportApiAdminV1OrdersExportGetLang;
 };

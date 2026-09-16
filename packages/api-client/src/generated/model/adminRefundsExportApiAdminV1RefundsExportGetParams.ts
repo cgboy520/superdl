@@ -8,7 +8,7 @@ import type { AdminRefundsExportApiAdminV1RefundsExportGetLang } from './adminRe
 
 export type AdminRefundsExportApiAdminV1RefundsExportGetParams = {
 status?: string | null;
-lang?: AdminRefundsExportApiAdminV1RefundsExportGetLang;
 day?: string | null;
 tz_offset_minutes?: number | null;
+lang?: AdminRefundsExportApiAdminV1RefundsExportGetLang;
 };

@@ -7,8 +7,9 @@
 import type { RegistryTestOutStep } from './registryTestOutStep';
 
 /**
- * Harbor 连通性探测结果:step 指出失败步骤(health=DNS/TLS/CA 或 Harbor 自检,
- * project=机器人鉴权/权限/项目存在性)。
+ * Harbor connectivity probe result: step names the failing step (health = DNS/TLS/CA or the
+ * Harbor health check,
+ * project = robot auth / permission / project existence).
  */
 export interface RegistryTestOut {
   detail: string;

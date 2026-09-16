@@ -6,7 +6,7 @@
  */
 
 /**
- * 归档草稿的请求体:原因必填。
+ * Request body for archiving a draft: reason required.
  */
 export interface LegalDocVersionArchive {
   /**

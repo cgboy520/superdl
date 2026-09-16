@@ -1,4 +1,4 @@
-"""管理端子路由装配。"""
+"""Admin sub-router assembly."""
 
 from fastapi import APIRouter
 

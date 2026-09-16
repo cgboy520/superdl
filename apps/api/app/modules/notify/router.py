@@ -31,7 +31,7 @@ async def list_notifications(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[NotificationOut]:
-    """站内信:降序(最新在前)游标分页。"""
+    """In-app notifications: descending (newest first) cursor pagination."""
     return await service.list_notifications(
         session, user.id, unread_only=unread, cursor=cursor, limit=limit
     )
@@ -39,13 +39,13 @@ async def list_notifications(
 
 @router.get("/notifications/unread-count")
 async def unread_count(user: CurrentUser, session: DbSession) -> UnreadCountOut:
-    """未读数轻端点(顶栏角标轮询)。"""
+    """Lightweight unread count (top-bar badge polling)."""
     return UnreadCountOut(unread_count=await service.unread_count(session, user.id))
 
 
 @router.post("/notifications/read-all", status_code=status.HTTP_204_NO_CONTENT)
 async def mark_all_read(user: CurrentUser, session: DbSession) -> Response:
-    """全部已读(幂等);须注册在 {notification_id} 之前。"""
+    """Mark all read (idempotent); must be registered before {notification_id}."""
     await service.mark_all_read(session, user.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -57,7 +57,7 @@ async def mark_read(notification_id: int, user: CurrentUser, session: DbSession)
 
 
 def _truncate_strings(value: Any) -> Any:
-    """递归截断报文里的字符串值。"""
+    """Recursively truncate the string values of the payload."""
     if isinstance(value, str):
         return value[:ALERT_MAX_STRING_LEN]
     if isinstance(value, dict):
@@ -73,7 +73,8 @@ async def alertmanager_webhook(
     session: DbSession,
     authorization: str | None = Header(default=None),
 ) -> dict[str, int]:
-    """Alertmanager 告警接入:必须配置 SUPERDL_ALERTMANAGER_TOKEN 并携带 Bearer token。"""
+    """Alertmanager alert ingestion: SUPERDL_ALERTMANAGER_TOKEN must be configured and sent as a
+    Bearer token."""
     client_ip = http_client_ip(request)
     await check_rate_limit(
         f"am-webhook:{client_ip or '-'}",
@@ -82,22 +83,24 @@ async def alertmanager_webhook(
     )
     token = get_settings().alertmanager_token
     if not token:
-        raise unauthorized("必须配置 SUPERDL_ALERTMANAGER_TOKEN 后才能接入告警")
+        raise unauthorized(
+            "SUPERDL_ALERTMANAGER_TOKEN must be configured before alerts can be ingested"
+        )
     if not bearer_matches(authorization, token):
-        raise unauthorized("告警 token 无效")
+        raise unauthorized("invalid alert token")
     body = await request.body()
     if len(body) > ALERT_MAX_BODY_BYTES:
         raise AppError(
             ErrorCode.VALIDATION_ERROR,
-            f"告警报文过大(上限 {ALERT_MAX_BODY_BYTES // 1024} KiB)",
+            f"alert payload too large (cap {ALERT_MAX_BODY_BYTES // 1024} KiB)",
             http_status=status.HTTP_413_CONTENT_TOO_LARGE,
         )
     try:
         payload = json.loads(body)
     except json.JSONDecodeError as exc:
-        raise AppError(ErrorCode.VALIDATION_ERROR, "告警报文不是合法 JSON") from exc
+        raise AppError(ErrorCode.VALIDATION_ERROR, "alert payload is not valid JSON") from exc
     if not isinstance(payload, dict):
-        raise AppError(ErrorCode.VALIDATION_ERROR, "告警报文须为 JSON 对象")
+        raise AppError(ErrorCode.VALIDATION_ERROR, "alert payload must be a JSON object")
     payload = _truncate_strings(payload)
     alerts = payload.get("alerts")
     if isinstance(alerts, list):

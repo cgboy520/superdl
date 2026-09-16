@@ -5,7 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetLang = typeof AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetLang[keyof typeof AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetLang];
+export type AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetLang = typeof AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetLang[keyof typeof AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetLang] | null;
 
 
 export const AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetLang = {

@@ -33,7 +33,7 @@ export const getListMyTicketsApiV1TicketsGetUrl = (params?: ListMyTicketsApiV1Ti
 }
 
 /**
- * 本人工单(游标分页)。
+ * The caller's tickets (cursor pagination).
  * @summary List My Tickets
  */
 export const listMyTicketsApiV1TicketsGet = async (params?: ListMyTicketsApiV1TicketsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageTicketOut> => {
@@ -57,8 +57,9 @@ export const getCreateTicketApiV1TicketsPostUrl = () => {
 }
 
 /**
- * 创建工单(首条消息同单提交)。Idempotency-Key 重放返回既有单(200 +
- * X-Idempotent-Replay);进行中 ≤10,限流 5/h。
+ * Create a ticket (the first message is submitted with it). An Idempotency-Key replay returns
+ * the existing ticket (200 +
+ * X-Idempotent-Replay); at most 10 open, rate limit 5/h.
  * @summary Create Ticket
  */
 export const createTicketApiV1TicketsPost = async (ticketCreate: TicketCreate,
@@ -83,7 +84,7 @@ export const getGetMyTicketApiV1TicketsTicketIdGetUrl = (ticketId: number,) => {
 }
 
 /**
- * 工单详情 + 消息流;他人工单与不存在同回 404。
+ * Ticket detail + message stream; someone else's ticket and a missing one both return 404.
  * @summary Get My Ticket
  */
 export const getMyTicketApiV1TicketsTicketIdGet = async (ticketId: number, options?: Parameters<typeof customFetch>[1]): Promise<TicketDetailOut> => {
@@ -107,7 +108,7 @@ export const getCloseTicketApiV1TicketsTicketIdClosePostUrl = (ticketId: number,
 }
 
 /**
- * 关闭工单(仅 resolved;closed_at 仅 closed 落)。
+ * Close the ticket (resolved only; closed_at is set only on closed).
  * @summary Close Ticket
  */
 export const closeTicketApiV1TicketsTicketIdClosePost = async (ticketId: number, options?: Parameters<typeof customFetch>[1]): Promise<TicketOut> => {
@@ -131,7 +132,7 @@ export const getAppendMessageApiV1TicketsTicketIdMessagesPostUrl = (ticketId: nu
 }
 
 /**
- * 追加回复(→ pending_staff);resolved/closed 不可再回复。
+ * Append a reply (→ pending_staff); resolved/closed accept no more replies.
  * @summary Append Message
  */
 export const appendMessageApiV1TicketsTicketIdMessagesPost = async (ticketId: number,

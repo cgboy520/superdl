@@ -30,7 +30,7 @@ export const getListNotificationsApiV1NotificationsGetUrl = (params?: ListNotifi
 }
 
 /**
- * 站内信:降序(最新在前)游标分页。
+ * In-app notifications: descending (newest first) cursor pagination.
  * @summary List Notifications
  */
 export const listNotificationsApiV1NotificationsGet = async (params?: ListNotificationsApiV1NotificationsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageNotificationOut> => {
@@ -54,7 +54,7 @@ export const getMarkAllReadApiV1NotificationsReadAllPostUrl = () => {
 }
 
 /**
- * 全部已读(幂等);须注册在 {notification_id} 之前。
+ * Mark all read (idempotent); must be registered before {notification_id}.
  * @summary Mark All Read
  */
 export const markAllReadApiV1NotificationsReadAllPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<void> => {
@@ -78,7 +78,7 @@ export const getUnreadCountApiV1NotificationsUnreadCountGetUrl = () => {
 }
 
 /**
- * 未读数轻端点(顶栏角标轮询)。
+ * Lightweight unread count (top-bar badge polling).
  * @summary Unread Count
  */
 export const unreadCountApiV1NotificationsUnreadCountGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<UnreadCountOut> => {
@@ -125,7 +125,8 @@ export const getAlertmanagerWebhookApiV1WebhooksAlertmanagerPostUrl = () => {
 }
 
 /**
- * Alertmanager 告警接入:必须配置 SUPERDL_ALERTMANAGER_TOKEN 并携带 Bearer token。
+ * Alertmanager alert ingestion: SUPERDL_ALERTMANAGER_TOKEN must be configured and sent as a
+ * Bearer token.
  * @summary Alertmanager Webhook
  */
 export const alertmanagerWebhookApiV1WebhooksAlertmanagerPost = async (headers?: AlertmanagerWebhookApiV1WebhooksAlertmanagerPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<AlertmanagerWebhookApiV1WebhooksAlertmanagerPost200> => {

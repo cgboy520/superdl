@@ -35,19 +35,23 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         log.warning(
             "unknown_superdl_env_vars",
             keys=unknown_keys,
-            hint="这些 SUPERDL_* 变量不匹配任何配置项,将被忽略;请核对拼写",
+            hint="these SUPERDL_* variables match no setting and are ignored; check the spelling",
         )
     if settings.environment == "prod":
         if not settings.alertmanager_token:
             log.warning(
                 "alertmanager_token_missing",
-                hint="Alertmanager webhook 将一律 401;配 SUPERDL_ALERTMANAGER_TOKEN 后告警才进平台",
+                hint="the Alertmanager webhook will always return 401; set"
+                " SUPERDL_ALERTMANAGER_TOKEN"
+                " so alerts reach the platform",
             )
         if "localhost" in settings.prometheus_url or "127.0.0.1" in settings.prometheus_url:
             log.warning(
                 "prometheus_url_localhost",
                 prometheus_url=settings.prometheus_url,
-                hint="监控代理仍指向本地默认地址:计费不受影响,但用量面板与对账全空",
+                hint="the monitoring proxy still points at the local default: billing is"
+                " unaffected, but"
+                " usage panels and reconciliation stay empty",
             )
         from app.core.db import get_sessionmaker
         from app.core.platform_config import (
@@ -65,7 +69,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             log.error(
                 "cluster_config_missing",
                 keys=missing,
-                hint="管理端「平台配置 · 集群接入」录入;加节点将被 409 拦截",
+                hint="enter them under admin Platform configuration · Cluster access; adding nodes"
+                " is"
+                " blocked with 409 until then",
             )
         from app.modules.billing import service as billing_service
 
@@ -81,7 +87,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         env_problems = env_layer_problems()
         if env_problems:
             if settings.environment == "prod":
-                raise RuntimeError("部署层平台配置格式不合格,拒绝启动:" + ";".join(env_problems))
+                raise RuntimeError(
+                    "deployment-layer platform settings are malformed, refusing to boot: "
+                    + "; ".join(env_problems)
+                )
             log.error("config_env_invalid", problems=env_problems)
     from app.core.db import get_sessionmaker
     from app.modules.billing.service import assert_billing_identity
@@ -124,12 +133,13 @@ def create_app() -> FastAPI:
 
     @app.get("/healthz", tags=["infra"], include_in_schema=False)
     async def healthz() -> dict[str, str]:
-        """liveness:进程活着即可,不探依赖。"""
+        """liveness: the process is alive, no dependency probe."""
         return {"status": "ok"}
 
     @app.get("/readyz", tags=["infra"], include_in_schema=False)
     async def readyz() -> JSONResponse:
-        """readiness:探 DB + schema 版本必须等于代码 head,否则 503。"""
+        """readiness: probe the DB and require the schema version to equal the code head, else
+        503."""
         from sqlalchemy import text
 
         from app.core.db import get_sessionmaker, schema_state

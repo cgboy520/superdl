@@ -2,7 +2,7 @@
   "components": {
     "schemas": {
       "AdjustContextOut": {
-        "description": "调账前置上下文:回显租户身份与资金现状。",
+        "description": "Adjustment context: echoes the tenant identity and money state.",
         "properties": {
           "balance": {
             "title": "Balance",
@@ -199,7 +199,7 @@
         "type": "object"
       },
       "AdminAccountOut": {
-        "description": "管理员账号(账号管理列表)。不透出 password_hash / token_version / totp_secret。",
+        "description": "Admin account (account management list). password_hash / token_version / totp_secret are\nnever exposed.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -900,7 +900,7 @@
         "type": "object"
       },
       "AdminLoginTokenOut": {
-        "description": "登录响应·直发分支(admin_mfa_enabled 关闭时)。",
+        "description": "Login response, direct branch (admin_mfa_enabled off).",
         "properties": {
           "access_token": {
             "title": "Access Token",
@@ -1435,7 +1435,7 @@
         "type": "object"
       },
       "AdminTicketCountOut": {
-        "description": "工单计数轻端点(待办角标轮询)。",
+        "description": "Lightweight ticket count endpoint (pending badge polling).",
         "properties": {
           "count": {
             "title": "Count",
@@ -1532,7 +1532,7 @@
         "type": "object"
       },
       "AdminTicketOut": {
-        "description": "管理端工单视图:比用户端多租户 id。",
+        "description": "Admin ticket view: the user view plus the tenant id.",
         "properties": {
           "category": {
             "title": "Category",
@@ -1623,7 +1623,7 @@
         "type": "object"
       },
       "AdminTicketStatusUpdate": {
-        "description": "管理端状态操作:resolve=标记解决;close=关闭(仅 resolved 后可)。",
+        "description": "Admin status action: resolve = mark resolved; close = close (only after resolved).",
         "properties": {
           "action": {
             "enum": [
@@ -1688,7 +1688,7 @@
         "type": "object"
       },
       "AlertUnreadCountOut": {
-        "description": "未确认告警数;critical_count 单独给出(精确口径)。",
+        "description": "Unacknowledged alert count; critical_count given separately (exact).",
         "properties": {
           "count": {
             "title": "Count",
@@ -4467,7 +4467,7 @@
         "type": "object"
       },
       "LegalDocCellOut": {
-        "description": "管理端总览一格:某 (doc_key, locale) 的最新 draft 与当前 published(均可空=缺失)。",
+        "description": "One cell of the admin overview: latest draft and current published of a (doc_key, locale)\n(both optional = missing).",
         "properties": {
           "doc_key": {
             "title": "Doc Key",
@@ -4560,7 +4560,7 @@
         "type": "object"
       },
       "LegalDocVersionArchive": {
-        "description": "归档草稿的请求体:原因必填。",
+        "description": "Request body for archiving a draft: reason required.",
         "properties": {
           "reason": {
             "maxLength": 256,
@@ -4813,7 +4813,7 @@
         "type": "object"
       },
       "MfaChallengeOut": {
-        "description": "登录响应·挑战分支(admin_mfa_enabled 开启时):mfa_setup=首次绑定(绑定票 10min);\nmfa_required=已绑定验证(二要素票 5min)。",
+        "description": "Login response, challenge branch (admin_mfa_enabled on): mfa_setup = first enrolment\n(enrolment ticket 10 min);\nmfa_required = enrolled verification (second-factor ticket 5 min).",
         "properties": {
           "status": {
             "enum": [
@@ -4857,7 +4857,7 @@
         "type": "object"
       },
       "MfaLoginOut": {
-        "description": "二要素验证通过。recovery_codes_left ≤2 提示重新生成。",
+        "description": "Second factor verified. recovery_codes_left ≤ 2 prompts regeneration.",
         "properties": {
           "access_token": {
             "title": "Access Token",
@@ -4901,7 +4901,7 @@
         "type": "object"
       },
       "MfaSetupConfirmOut": {
-        "description": "绑定成功:恢复码仅此一次返回,10 个。",
+        "description": "Enrolment succeeded: recovery codes returned this once, 10 of them.",
         "properties": {
           "access_token": {
             "title": "Access Token",
@@ -4927,7 +4927,7 @@
         "type": "object"
       },
       "MfaSetupOut": {
-        "description": "TOTP 绑定材料:otpauth_uri 渲染二维码;secret 供手动录入。",
+        "description": "TOTP enrolment material: otpauth_uri renders the QR code; secret for manual entry.",
         "properties": {
           "otpauth_uri": {
             "title": "Otpauth Uri",
@@ -5408,7 +5408,7 @@
         "type": "object"
       },
       "NodeSwitchPoolOut": {
-        "description": "切池受理回执:停调度与期望池已落台账;标签收敛经 outbox,不需要任何节点侧动作。",
+        "description": "Pool-switch acceptance receipt: cordon and desired pool are in the inventory; label\nconvergence goes through the outbox, no node-side action needed.",
         "properties": {
           "from_pool": {
             "title": "From Pool",
@@ -5715,7 +5715,7 @@
         "type": "object"
       },
       "OverviewOut": {
-        "description": "总览聚合:全部精确计数。",
+        "description": "Overview aggregate: all exact counts.",
         "properties": {
           "instances_by_status": {
             "additionalProperties": {
@@ -5770,7 +5770,7 @@
         "type": "object"
       },
       "OverviewPoolOut": {
-        "description": "池级 GPU 台账:总量含非 Ready 节点。",
+        "description": "Per-pool GPU inventory: totals include non-Ready nodes.",
         "properties": {
           "gpu_spot_used": {
             "title": "Gpu Spot Used",
@@ -7616,7 +7616,7 @@
         "type": "object"
       },
       "RegistryTestOut": {
-        "description": "Harbor 连通性探测结果:step 指出失败步骤(health=DNS/TLS/CA 或 Harbor 自检,\nproject=机器人鉴权/权限/项目存在性)。",
+        "description": "Harbor connectivity probe result: step names the failing step (health = DNS/TLS/CA or the\nHarbor health check,\nproject = robot auth / permission / project existence).",
         "properties": {
           "detail": {
             "title": "Detail",
@@ -7686,7 +7686,7 @@
         "type": "object"
       },
       "RevenueReportOut": {
-        "description": "收入口径:`*_revenue` = 计量出账(按量 + 盘费,按账单归属期)+ 包周期预付(按收款当日);\n`*_prepaid` 是其中的预付部分。",
+        "description": "Revenue definition: `*_revenue` = metered bills (on-demand + disk fees, by bill attribution\nperiod) + subscription prepayments (by payment day);\n`*_prepaid` is the prepaid part of it.",
         "properties": {
           "month_prepaid": {
             "title": "Month Prepaid",
@@ -7730,7 +7730,7 @@
         "type": "object"
       },
       "ReversalResolve": {
-        "description": "渠道冲正核销:release=噪音单解冻(订单恢复退款资格);chargeback=确认反转,解冻+等额扣回。",
+        "description": "Channel reversal write-off: release = noise, unfreeze (the order regains refund eligibility);\nchargeback = confirmed reversal, unfreeze + debit the same amount.",
         "properties": {
           "action": {
             "enum": [
@@ -9457,7 +9457,7 @@
         "type": "object"
       },
       "TenantQuotaOut": {
-        "description": "租户配额覆盖与生效值(override → policy → env)。三项 override 为 None = 走默认链。",
+        "description": "Tenant quota overrides and effective values (override → policy → env). An override of None =\nthe default chain.",
         "properties": {
           "effective_max_disks": {
             "title": "Effective Max Disks",
@@ -9555,7 +9555,7 @@
         "type": "object"
       },
       "TenantQuotaUpdate": {
-        "description": "写覆盖:数字可留空(=该维走默认);全空 = 清除覆盖。note 必填。",
+        "description": "Write overrides: numbers may be empty (= that dimension follows the default); all empty =\nclear the override. note required.",
         "properties": {
           "max_disks": {
             "anyOf": [
@@ -9639,7 +9639,7 @@
         "type": "object"
       },
       "TicketCreate": {
-        "description": "创建工单(首条消息同单提交)。instance_uuid 可选关联实例。",
+        "description": "Create a ticket (the first message is submitted with it). instance_uuid optionally links an\ninstance.",
         "properties": {
           "body": {
             "maxLength": 4000,
@@ -9686,7 +9686,7 @@
         "type": "object"
       },
       "TicketDetailOut": {
-        "description": "工单详情 + 消息流(时间升序)。",
+        "description": "Ticket detail + message stream (ascending by time).",
         "properties": {
           "category": {
             "title": "Category",
@@ -9809,7 +9809,7 @@
         "type": "object"
       },
       "TicketOut": {
-        "description": "用户端工单视图(列表项)。",
+        "description": "User ticket view (list item).",
         "properties": {
           "category": {
             "title": "Category",
@@ -9898,7 +9898,7 @@
         "type": "object"
       },
       "UnreadCountOut": {
-        "description": "未读角标轻端点(顶栏 30s 轮询)。",
+        "description": "Lightweight unread badge endpoint (top bar polls every 30 s).",
         "properties": {
           "unread_count": {
             "title": "Unread Count",
@@ -10118,7 +10118,7 @@
   "paths": {
     "/api/admin/v1/adjustments": {
       "get": {
-        "description": "调账单列表(游标分页,降序)。status/user_id 精确过滤;day=YYYY-MM-DD 按发起日过滤。",
+        "description": "Adjustment list (cursor pagination, descending). status/user_id exact filters; day=YYYY-MM-DD\nfilters by initiation day.",
         "operationId": "admin_list_adjustments_api_admin_v1_adjustments_get",
         "parameters": [
           {
@@ -10236,7 +10236,7 @@
         ]
       },
       "post": {
-        "description": "发起调账(双人复核前置)。Idempotency-Key 重放返回已受理的单(200 + X-Idempotent-Replay)。",
+        "description": "Initiate an adjustment (two-person review follows). An Idempotency-Key replay returns the\naccepted request (200 + X-Idempotent-Replay).",
         "operationId": "admin_create_adjustment_api_admin_v1_adjustments_post",
         "parameters": [
           {
@@ -10302,7 +10302,7 @@
     },
     "/api/admin/v1/adjustments/export": {
       "get": {
-        "description": "调账单 CSV(流式):筛选口径与 GET /adjustments 一致;行数硬上限 + 截断标记行。\n须注册在 /adjustments/{adjustment_id} 之前。",
+        "description": "Adjustment CSV (streamed): the same filters as GET /adjustments; hard row cap + truncation\nmarker row.\nMust be registered before /adjustments/{adjustment_id}.",
         "operationId": "admin_adjustments_export_api_admin_v1_adjustments_export_get",
         "parameters": [
           {
@@ -10339,20 +10339,6 @@
           },
           {
             "in": "query",
-            "name": "lang",
-            "required": false,
-            "schema": {
-              "default": "zh-CN",
-              "enum": [
-                "zh-CN",
-                "en-US"
-              ],
-              "title": "Lang",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
             "name": "day",
             "required": false,
             "schema": {
@@ -10383,6 +10369,26 @@
                 }
               ],
               "title": "Tz Offset Minutes"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lang",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "zh-CN",
+                    "en-US"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lang"
             }
           }
         ],
@@ -10424,7 +10430,7 @@
     },
     "/api/admin/v1/adjustments/{adjustment_id}/review": {
       "post": {
-        "description": "复核调账(approve 即生效):审计行与生效同事务(write_audit_sync)。",
+        "description": "Review an adjustment (approve takes effect at once): the audit row and the effect share one\ntransaction (write_audit_sync).",
         "operationId": "admin_review_adjustment_api_admin_v1_adjustments__adjustment_id__review_post",
         "parameters": [
           {
@@ -10556,7 +10562,7 @@
     },
     "/api/admin/v1/admins/{admin_id}": {
       "patch": {
-        "description": "改角色 / 停用。停用即刻生效(deps 每请求比对 token_version)。",
+        "description": "Change role / deactivate. Deactivation takes effect at once (deps compares token_version per\nrequest).",
         "operationId": "admin_update_admin_api_admin_v1_admins__admin_id__patch",
         "parameters": [
           {
@@ -10614,7 +10620,7 @@
     },
     "/api/admin/v1/admins/{admin_id}/mfa/reset": {
       "post": {
-        "description": "超管为他人重置 TOTP:清空绑定并踢掉全部会话,下次登录重新绑定。",
+        "description": "Admin resets another admin's TOTP: enrolment cleared and every session revoked, re-enrol at\nthe next login.",
         "operationId": "mfa_reset_api_admin_v1_admins__admin_id__mfa_reset_post",
         "parameters": [
           {
@@ -10729,7 +10735,7 @@
     },
     "/api/admin/v1/alerts": {
       "get": {
-        "description": "管理端告警流(游标分页,降序):severity / type / 确认状态精确过滤。",
+        "description": "Admin alert feed (cursor pagination, descending): severity / type / ack exact filters.",
         "operationId": "admin_alerts_api_admin_v1_alerts_get",
         "parameters": [
           {
@@ -10853,7 +10859,7 @@
     },
     "/api/admin/v1/alerts/unread-count": {
       "get": {
-        "description": "未确认告警计数(独立计数端点);critical_count 供总览 KPI。",
+        "description": "Unacknowledged alert count (separate endpoint); critical_count feeds the overview KPI.",
         "operationId": "admin_alerts_unread_count_api_admin_v1_alerts_unread_count_get",
         "responses": {
           "200": {
@@ -10880,7 +10886,7 @@
     },
     "/api/admin/v1/alerts/{alert_id}/ack": {
       "post": {
-        "description": "确认告警(角色:ops/admin):落确认人与时间;重复确认 409。",
+        "description": "Acknowledge an alert (roles: ops/admin): records who and when; repeating → 409.",
         "operationId": "admin_ack_alert_api_admin_v1_alerts__alert_id__ack_post",
         "parameters": [
           {
@@ -10928,7 +10934,7 @@
     },
     "/api/admin/v1/announcements": {
       "get": {
-        "description": "公告历史(含已撤回;固定截断 200)。",
+        "description": "Announcement history (withdrawn included; fixed cap 200).",
         "operationId": "admin_list_announcements_api_admin_v1_announcements_get",
         "responses": {
           "200": {
@@ -10957,7 +10963,7 @@
         ]
       },
       "post": {
-        "description": "公告群发(站内信 announcement 类型,全部 active 用户);落公告级记录。\nIdempotency-Key 重放不新建公告,回 200 + X-Idempotent-Replay。",
+        "description": "Announcement broadcast (announcement-type notifications to every active user); writes the\nannouncement-level record.\nAn Idempotency-Key replay creates no announcement, returns 200 + X-Idempotent-Replay.",
         "operationId": "admin_publish_announcement_api_admin_v1_announcements_post",
         "parameters": [
           {
@@ -11023,7 +11029,7 @@
     },
     "/api/admin/v1/announcements/{announcement_id}/revoke": {
       "post": {
-        "description": "撤回公告(原因必填):撤回后租户侧公告不再可见。重复撤回 409。",
+        "description": "Withdraw an announcement (reason required): tenants no longer see it. Repeating → 409.",
         "operationId": "admin_revoke_announcement_api_admin_v1_announcements__announcement_id__revoke_post",
         "parameters": [
           {
@@ -11081,7 +11087,7 @@
     },
     "/api/admin/v1/audit": {
       "get": {
-        "description": "审计检索:actor_id / 动作前缀 / 时间区间;cursor 向前翻页(满页即还有更早)。",
+        "description": "Audit search: actor_id / action prefix / time range; cursor pages backwards (a full page\nmeans\nolder rows exist).",
         "operationId": "admin_audit_log_api_admin_v1_audit_get",
         "parameters": [
           {
@@ -11234,7 +11240,7 @@
     },
     "/api/admin/v1/audit/export": {
       "get": {
-        "description": "审计检索 CSV(流式):筛选口径与 GET /audit 一致;行数硬上限 + 截断标记行。\n落一条检索审计(只记筛选参数)。",
+        "description": "Audit search CSV (streamed): the same filters as GET /audit; hard row cap + truncation marker\nrow.\nWrites one search audit row (filter parameters only).",
         "operationId": "admin_audit_export_api_admin_v1_audit_export_get",
         "parameters": [
           {
@@ -11321,20 +11327,6 @@
           },
           {
             "in": "query",
-            "name": "lang",
-            "required": false,
-            "schema": {
-              "default": "zh-CN",
-              "enum": [
-                "zh-CN",
-                "en-US"
-              ],
-              "title": "Lang",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
             "name": "tz_offset_minutes",
             "required": false,
             "schema": {
@@ -11349,6 +11341,26 @@
                 }
               ],
               "title": "Tz Offset Minutes"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lang",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "zh-CN",
+                    "en-US"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lang"
             }
           }
         ],
@@ -11390,7 +11402,7 @@
     },
     "/api/admin/v1/auth/login": {
       "post": {
-        "description": "密码校验。admin_mfa_enabled 开启时只返回二要素挑战票(未绑定发绑定票、已绑定发验证票),\naccess token 由 /auth/mfa/setup/confirm 或 /auth/login/mfa 签发;关闭时直接返回 access_token。",
+        "description": "Password check. With admin_mfa_enabled only a second-factor challenge ticket is returned\n(enrolment ticket for unenrolled, verification ticket for enrolled accounts),\nthe access token is issued by /auth/mfa/setup/confirm or /auth/login/mfa; when off,\naccess_token is returned directly.",
         "operationId": "admin_login_api_admin_v1_auth_login_post",
         "requestBody": {
           "content": {
@@ -11440,7 +11452,7 @@
     },
     "/api/admin/v1/auth/login/mfa": {
       "post": {
-        "description": "二要素验证(6 位动态码或恢复码);恢复码用后作废,剩余 ≤2 提示重新生成。",
+        "description": "Second-factor verification (6-digit code or recovery code); a recovery code is void after\nuse, ≤ 2 left prompts regeneration.",
         "operationId": "mfa_login_verify_api_admin_v1_auth_login_mfa_post",
         "requestBody": {
           "content": {
@@ -11482,7 +11494,7 @@
     },
     "/api/admin/v1/auth/logout": {
       "post": {
-        "description": "服务端登出:token_version+1,该管理员全部在外会话失效。",
+        "description": "Server-side logout: token_version+1, every outstanding session of the admin becomes\ninvalid.",
         "operationId": "admin_logout_api_admin_v1_auth_logout_post",
         "responses": {
           "204": {
@@ -11502,7 +11514,7 @@
     },
     "/api/admin/v1/auth/mfa/setup/begin": {
       "post": {
-        "description": "首次绑定:凭绑定票换 TOTP 密钥与 otpauth URI(前端渲染二维码)。",
+        "description": "First enrolment: exchange the enrolment ticket for the TOTP secret and otpauth URI (the\nfrontend renders the QR code).",
         "operationId": "mfa_setup_begin_api_admin_v1_auth_mfa_setup_begin_post",
         "requestBody": {
           "content": {
@@ -11544,7 +11556,7 @@
     },
     "/api/admin/v1/auth/mfa/setup/confirm": {
       "post": {
-        "description": "校验首个动态码完成绑定;恢复码仅此一次返回。",
+        "description": "Verify the first code to complete enrolment; recovery codes are returned this once.",
         "operationId": "mfa_setup_confirm_api_admin_v1_auth_mfa_setup_confirm_post",
         "requestBody": {
           "content": {
@@ -11586,7 +11598,7 @@
     },
     "/api/admin/v1/auth/refresh": {
       "post": {
-        "description": "静默续期:有效或刚过期(15 分钟宽限)的 access token 换新;自 iat 起 12 小时绝对上限。\n不落审计。",
+        "description": "Silent renewal: a valid or just-expired (15-minute grace) access token is exchanged for a new\none; 12-hour absolute cap from iat.\nNot audited.",
         "operationId": "admin_refresh_api_admin_v1_auth_refresh_post",
         "requestBody": {
           "content": {
@@ -11628,7 +11640,7 @@
     },
     "/api/admin/v1/cluster/components/{component_key}/probe": {
       "get": {
-        "description": "体检项实时深探:请求路径直连 K8s 只读(规则的第二个例外,见 docs/decisions.md)。\n\n硬超时 5s + 每管理员每小时 120 次;失败 503,前端退化为只显示巡检快照。",
+        "description": "Live deep probe of a health-check item: direct read-only K8s call on the request path (the\nrule's second exception, see docs/decisions.md).\n\nHard timeout 5 s + 120 per admin per hour; failure → 503, the frontend degrades to the patrol\nsnapshot.",
         "operationId": "admin_component_probe_api_admin_v1_cluster_components__component_key__probe_get",
         "parameters": [
           {
@@ -11676,7 +11688,7 @@
     },
     "/api/admin/v1/cluster/gpu-models": {
       "get": {
-        "description": "台账按 canonical×池聚合(None 型号 = 未识别桶)。",
+        "description": "Inventory aggregated by canonical × pool (None model = unrecognised bucket).",
         "operationId": "admin_gpu_model_aggregates_api_admin_v1_cluster_gpu_models_get",
         "responses": {
           "200": {
@@ -11707,7 +11719,7 @@
     },
     "/api/admin/v1/cluster/status": {
       "get": {
-        "description": "集群页数据:纯读能力缓存(worker 巡检 60s 刷新),不实时探测。",
+        "description": "Cluster page data: pure read of the capability cache (refreshed by the worker patrol every\n60 s), no live probe.",
         "operationId": "admin_cluster_status_api_admin_v1_cluster_status_get",
         "responses": {
           "200": {
@@ -11734,7 +11746,7 @@
     },
     "/api/admin/v1/cluster/test-connection": {
       "post": {
-        "description": "同步只读探测并落缓存;不可达/超时 → 502。",
+        "description": "Synchronous read-only probe written to the cache; unreachable / timeout → 502.",
         "operationId": "admin_cluster_test_connection_api_admin_v1_cluster_test_connection_post",
         "responses": {
           "200": {
@@ -11761,7 +11773,7 @@
     },
     "/api/admin/v1/deletion-requests": {
       "get": {
-        "description": "注销申请列表(固定截断 200),行内附执行前校验计数。",
+        "description": "Deletion request list (fixed cap 200), each row with the pre-execution check counts.",
         "operationId": "admin_list_deletion_requests_api_admin_v1_deletion_requests_get",
         "parameters": [
           {
@@ -11820,7 +11832,7 @@
     },
     "/api/admin/v1/deletion-requests/{request_id}/approve": {
       "post": {
-        "description": "执行注销(操作原因必填):冷静期未满 409;残留实例/数据盘或余额非零 → 自动驳回 + 409\n(detail 清单);全通过则同事务匿名化并把原因回写 note。",
+        "description": "Execute the deletion (operator reason required): cooling-off not over → 409; leftover\ninstances / data disks or a non-zero balance → auto-reject + 409\n(detail lists them); everything passing anonymises in one transaction and writes the reason to\nnote.",
         "operationId": "admin_approve_deletion_api_admin_v1_deletion_requests__request_id__approve_post",
         "parameters": [
           {
@@ -11878,7 +11890,7 @@
     },
     "/api/admin/v1/deletion-requests/{request_id}/reject": {
       "post": {
-        "description": "驳回注销申请(理由必填,不受冷静期限制)。",
+        "description": "Reject a deletion request (reason required, not bound by the cooling-off period).",
         "operationId": "admin_reject_deletion_api_admin_v1_deletion_requests__request_id__reject_post",
         "parameters": [
           {
@@ -11936,7 +11948,7 @@
     },
     "/api/admin/v1/finance/anomalies": {
       "get": {
-        "description": "异常清单:疑似丢回调 / 近 48h 关单 / 负余额钱包。",
+        "description": "Anomaly list: suspected lost callbacks / orders closed in the last 48 h / negative\nwallets.",
         "operationId": "admin_payment_anomalies_api_admin_v1_finance_anomalies_get",
         "responses": {
           "200": {
@@ -11967,7 +11979,7 @@
     },
     "/api/admin/v1/finance/orders/{order_no}/backfill": {
       "post": {
-        "description": "人工补单:实时向渠道核验已支付且金额一致才入账。同幂等键重放回当前状态(X-Idempotent-Replay)。\n审计行与入账同事务(write_audit_sync)。",
+        "description": "Manual backfill: credits only after a live channel check confirms paid with a matching\namount.\nA replay with the same idempotency key returns the current state (X-Idempotent-Replay).\nAudit row and credit in one transaction (write_audit_sync).",
         "operationId": "admin_backfill_order_api_admin_v1_finance_orders__order_no__backfill_post",
         "parameters": [
           {
@@ -12042,7 +12054,7 @@
     },
     "/api/admin/v1/finance/orders/{order_no}/verify": {
       "post": {
-        "description": "向渠道核验订单状态与金额(补单前置)。",
+        "description": "Verify the order status and amount with the channel (backfill precondition).",
         "operationId": "admin_verify_order_api_admin_v1_finance_orders__order_no__verify_post",
         "parameters": [
           {
@@ -12090,7 +12102,7 @@
     },
     "/api/admin/v1/finance/reversals/{order_no}/resolve": {
       "post": {
-        "description": "核销渠道冲正(channel_reversed 分桶):解冻或解冻+等额扣回,审计行与核销同事务。",
+        "description": "Write off a channel reversal (channel_reversed bucket): unfreeze, or unfreeze + debit the\nsame\namount; audit row and write-off in one transaction.",
         "operationId": "admin_resolve_reversal_api_admin_v1_finance_reversals__order_no__resolve_post",
         "parameters": [
           {
@@ -12152,7 +12164,7 @@
     },
     "/api/admin/v1/finance/settlement-gaps": {
       "get": {
-        "description": "缺口列表(游标分页,降序):默认只看未核销。",
+        "description": "Gap list (cursor pagination, descending): unresolved only by default.",
         "operationId": "admin_list_settlement_gaps_api_admin_v1_finance_settlement_gaps_get",
         "parameters": [
           {
@@ -12270,7 +12282,7 @@
     },
     "/api/admin/v1/finance/settlement-gaps/{gap_id}/replay": {
       "post": {
-        "description": "重放缺口窗口的幂等入账原语(人工触发):成功回写 resolved_at。\ngrace_overlap 缺口与对象已不存在均 409,走人工核销。",
+        "description": "Replay the idempotent posting primitive of the gap window (manual trigger): success writes\nresolved_at.\ngrace_overlap gaps and vanished objects are 409 and go to manual write-off.",
         "operationId": "admin_replay_settlement_gap_api_admin_v1_finance_settlement_gaps__gap_id__replay_post",
         "parameters": [
           {
@@ -12318,7 +12330,7 @@
     },
     "/api/admin/v1/finance/settlement-gaps/{gap_id}/resolve": {
       "post": {
-        "description": "人工核销(不重放)。说明必填。",
+        "description": "Manual write-off (no replay). A note is required.",
         "operationId": "admin_resolve_settlement_gap_api_admin_v1_finance_settlement_gaps__gap_id__resolve_post",
         "parameters": [
           {
@@ -12376,7 +12388,7 @@
     },
     "/api/admin/v1/images": {
       "get": {
-        "description": "镜像目录 + 每镜像预热覆盖率(纯 DB 聚合,不调 K8s)。",
+        "description": "Image catalog + prewarm coverage per image (pure DB aggregate, no K8s call).",
         "operationId": "admin_list_images_api_admin_v1_images_get",
         "responses": {
           "200": {
@@ -12451,7 +12463,7 @@
     },
     "/api/admin/v1/images/{image_id}": {
       "delete": {
-        "description": "删除目录条目(cache 行 CASCADE;运行中实例的 image_ref 快照不受影响)。reason 必填。",
+        "description": "Delete the catalog entry (cache rows CASCADE; the image_ref snapshot of running instances is\nunaffected). reason required.",
         "operationId": "admin_delete_image_api_admin_v1_images__image_id__delete",
         "parameters": [
           {
@@ -12557,7 +12569,7 @@
     },
     "/api/admin/v1/images/{image_id}/nodes": {
       "get": {
-        "description": "每节点缓存明细(failed 行含 last_error)。",
+        "description": "Per-node cache details (failed rows carry last_error).",
         "operationId": "admin_image_nodes_api_admin_v1_images__image_id__nodes_get",
         "parameters": [
           {
@@ -12609,7 +12621,7 @@
     },
     "/api/admin/v1/images/{image_id}/prewarm": {
       "post": {
-        "description": "立即预热:非 cached 行置 pending 并同事务入队。",
+        "description": "Prewarm now: non-cached rows set to pending and enqueued in the same transaction.",
         "operationId": "admin_prewarm_image_api_admin_v1_images__image_id__prewarm_post",
         "parameters": [
           {
@@ -12657,7 +12669,7 @@
     },
     "/api/admin/v1/instances": {
       "get": {
-        "description": "q:实例名或 uuid 前缀。node_name:精确。游标分页(降序)。",
+        "description": "q: instance name or uuid prefix. node_name: exact. Cursor pagination (descending).",
         "operationId": "admin_list_instances_api_admin_v1_instances_get",
         "parameters": [
           {
@@ -12793,7 +12805,7 @@
     },
     "/api/admin/v1/instances/{uuid}/events": {
       "get": {
-        "description": "管理端实例事件时间线:与用户端同一实现,降序游标分页;不限租户。",
+        "description": "Admin instance event timeline: the same implementation as the user side, descending cursor\npagination; any tenant.",
         "operationId": "admin_list_instance_events_api_admin_v1_instances__uuid__events_get",
         "parameters": [
           {
@@ -12874,7 +12886,7 @@
     },
     "/api/admin/v1/instances/{uuid}/force-stop": {
       "post": {
-        "description": "强制停止(原因必填)。",
+        "description": "Force stop (reason required).",
         "operationId": "admin_force_stop_api_admin_v1_instances__uuid__force_stop_post",
         "parameters": [
           {
@@ -12932,7 +12944,7 @@
     },
     "/api/admin/v1/instances/{uuid}/preempt": {
       "post": {
-        "description": "强制回收一台竞价实例(原因必填)。与自动抢占同一条路径:宽限窗 + 通知 + 尾账按实际秒数结算。",
+        "description": "Force-reclaim one spot instance (reason required). Same path as automatic preemption: grace\nwindow + notification + tail bill by actual seconds.",
         "operationId": "admin_preempt_api_admin_v1_instances__uuid__preempt_post",
         "parameters": [
           {
@@ -12990,7 +13002,7 @@
     },
     "/api/admin/v1/invoices": {
       "get": {
-        "description": "发票申请列表(固定截断 200)。status/period(YYYY-MM)精确过滤。\n\n抬头与邮箱默认脱敏;reveal=true + reason 回明文,按条数与事由落审计。",
+        "description": "Invoice request list (fixed cap 200). status/period (YYYY-MM) exact filters.\n\nTitle and email are masked by default; reveal=true + reason returns plaintext, audited with row\ncount and reason.",
         "operationId": "admin_list_invoices_api_admin_v1_invoices_get",
         "parameters": [
           {
@@ -13092,7 +13104,7 @@
     },
     "/api/admin/v1/invoices/export": {
       "get": {
-        "description": "发票申请 CSV(流式):筛选口径与 GET /invoices 一致;行数硬上限 + 截断标记行。\n须注册在 /invoices/{invoice_id} 之前。默认脱敏,明文要 reveal + 事由;每次导出都落审计。",
+        "description": "Invoice request CSV (streamed): the same filters as GET /invoices; hard row cap + truncation\nmarker row.\nMust be registered before /invoices/{invoice_id}. Masked by default, plaintext needs reveal + a\nreason; every export is audited.",
         "operationId": "admin_invoices_export_api_admin_v1_invoices_export_get",
         "parameters": [
           {
@@ -13125,20 +13137,6 @@
                 }
               ],
               "title": "Period"
-            }
-          },
-          {
-            "in": "query",
-            "name": "lang",
-            "required": false,
-            "schema": {
-              "default": "zh-CN",
-              "enum": [
-                "zh-CN",
-                "en-US"
-              ],
-              "title": "Lang",
-              "type": "string"
             }
           },
           {
@@ -13185,6 +13183,26 @@
               ],
               "title": "Tz Offset Minutes"
             }
+          },
+          {
+            "in": "query",
+            "name": "lang",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "zh-CN",
+                    "en-US"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lang"
+            }
           }
         ],
         "responses": {
@@ -13225,7 +13243,7 @@
     },
     "/api/admin/v1/invoices/{invoice_id}/issue": {
       "post": {
-        "description": "开票:回填发票号,站内信告知用户。",
+        "description": "Issue: record the invoice number and notify the user in-app.",
         "operationId": "admin_issue_invoice_api_admin_v1_invoices__invoice_id__issue_post",
         "parameters": [
           {
@@ -13283,7 +13301,7 @@
     },
     "/api/admin/v1/invoices/{invoice_id}/reject": {
       "post": {
-        "description": "驳回(理由必填):站内信告知用户;同账期可重新申请。",
+        "description": "Reject (reason required): notify the user in-app; the same period can be requested again.",
         "operationId": "admin_reject_invoice_api_admin_v1_invoices__invoice_id__reject_post",
         "parameters": [
           {
@@ -13341,7 +13359,7 @@
     },
     "/api/admin/v1/legal-docs": {
       "get": {
-        "description": "法务文档总览:doc_key × locale 状态格(当前 published + 最新 draft)。",
+        "description": "Legal document overview: doc_key × locale status grid (current published + latest draft).",
         "operationId": "admin_list_legal_docs_api_admin_v1_legal_docs_get",
         "responses": {
           "200": {
@@ -13372,7 +13390,7 @@
     },
     "/api/admin/v1/legal-docs/versions/{version_id}": {
       "put": {
-        "description": "编辑草稿(仅 draft 可改 title/content_md/effective_note;非 draft 409)。",
+        "description": "Edit a draft (only drafts may change title/content_md/effective_note; non-draft 409).",
         "operationId": "admin_update_legal_doc_version_api_admin_v1_legal_docs_versions__version_id__put",
         "parameters": [
           {
@@ -13430,7 +13448,7 @@
     },
     "/api/admin/v1/legal-docs/versions/{version_id}/archive": {
       "post": {
-        "description": "归档草稿(draft → archived,原因必填);published 不可直接归档(409)。",
+        "description": "Archive a draft (draft → archived, reason required); published cannot be archived directly\n(409).",
         "operationId": "admin_archive_legal_doc_version_api_admin_v1_legal_docs_versions__version_id__archive_post",
         "parameters": [
           {
@@ -13488,7 +13506,7 @@
     },
     "/api/admin/v1/legal-docs/versions/{version_id}/publish": {
       "post": {
-        "description": "发布:同事务把同 (doc_key, locale) 旧 published 转 archived;审计 detail 记版本 + sha256。",
+        "description": "Publish: archives the old published row of the same (doc_key, locale) in one transaction; the\naudit detail records version + sha256.",
         "operationId": "admin_publish_legal_doc_version_api_admin_v1_legal_docs_versions__version_id__publish_post",
         "parameters": [
           {
@@ -13536,7 +13554,7 @@
     },
     "/api/admin/v1/legal-docs/{doc_key}/versions": {
       "get": {
-        "description": "某 (doc_key, locale) 的版本历史(version 倒序)。",
+        "description": "Version history of a (doc_key, locale) (version descending).",
         "operationId": "admin_list_legal_doc_versions_api_admin_v1_legal_docs__doc_key__versions_get",
         "parameters": [
           {
@@ -13599,7 +13617,7 @@
         ]
       },
       "post": {
-        "description": "基于当前 published 复制出新 draft(version=max+1);同语言无 published 以 zh-CN 为底稿。",
+        "description": "Copy the current published version into a new draft (version=max+1); without a published row\nin that locale the fallback chain provides the base.",
         "operationId": "admin_create_legal_doc_version_api_admin_v1_legal_docs__doc_key__versions_post",
         "parameters": [
           {
@@ -13683,7 +13701,7 @@
     },
     "/api/admin/v1/me/mfa/recovery-codes": {
       "post": {
-        "description": "重新生成恢复码(旧的全作废)。明文仅此一次返回。",
+        "description": "Regenerate the recovery codes (all old ones void). Plaintext returned this once.",
         "operationId": "mfa_regenerate_recovery_codes_api_admin_v1_me_mfa_recovery_codes_post",
         "responses": {
           "200": {
@@ -13710,7 +13728,7 @@
     },
     "/api/admin/v1/me/password": {
       "post": {
-        "description": "自助改密。成功即 token_version+1,踢掉全部在外会话。",
+        "description": "Self-service password change. Success bumps token_version+1 and revokes every outstanding\nsession.",
         "operationId": "admin_change_own_password_api_admin_v1_me_password_post",
         "requestBody": {
           "content": {
@@ -13750,7 +13768,7 @@
     },
     "/api/admin/v1/node-enrollments": {
       "get": {
-        "description": "注册记录列表(永不含 token)。active=true 过滤陈旧终态行。",
+        "description": "Enrollment list (never includes tokens). active=true filters out stale terminal rows.",
         "operationId": "admin_list_enrollments_api_admin_v1_node_enrollments_get",
         "parameters": [
           {
@@ -13801,7 +13819,7 @@
         ]
       },
       "post": {
-        "description": "生成节点注册命令。token 明文仅本响应出现一次;审计不落 token。\nIdempotency-Key 重放不建新行(轮换该行 token 后返回)。",
+        "description": "Generate a node enrollment command. The token plaintext appears in this response only; the\naudit never records it.\nAn Idempotency-Key replay creates no new row (the row's token is rotated and returned).",
         "operationId": "admin_create_enrollment_api_admin_v1_node_enrollments_post",
         "parameters": [
           {
@@ -13867,7 +13885,7 @@
     },
     "/api/admin/v1/node-enrollments/{enrollment_id}/regenerate": {
       "post": {
-        "description": "换新令牌(仅 待执行/已过期/已失败),状态回 pending。",
+        "description": "Issue a new token (pending / expired / failed only), status back to pending.",
         "operationId": "admin_regenerate_enrollment_api_admin_v1_node_enrollments__enrollment_id__regenerate_post",
         "parameters": [
           {
@@ -13982,7 +14000,7 @@
     },
     "/api/admin/v1/nodes": {
       "get": {
-        "description": "节点视图(台账口径,60s 巡检刷新):含 Missing/未打池标签节点。",
+        "description": "Node view (inventory, refreshed by the 60 s patrol): Missing / unlabeled nodes included.",
         "operationId": "admin_list_nodes_api_admin_v1_nodes_get",
         "responses": {
           "200": {
@@ -14013,7 +14031,7 @@
     },
     "/api/admin/v1/nodes/port-pool": {
       "get": {
-        "description": "SSH 端口池水位:blocked=被集群对象撞占(周期复检自动放回)。",
+        "description": "SSH port pool level: blocked = held by other cluster objects (the periodic re-check returns\nthem).",
         "operationId": "admin_port_pool_stats_api_admin_v1_nodes_port_pool_get",
         "responses": {
           "200": {
@@ -14040,7 +14058,7 @@
     },
     "/api/admin/v1/nodes/{node_name}/cordon": {
       "post": {
-        "description": "停止调度(reason 必填;经 outbox 执行,请求路径不动 K8s)。",
+        "description": "Stop scheduling (reason required; runs via outbox, the request path never touches K8s).",
         "operationId": "admin_cordon_node_api_admin_v1_nodes__node_name__cordon_post",
         "parameters": [
           {
@@ -14098,7 +14116,7 @@
     },
     "/api/admin/v1/nodes/{node_name}/decommission": {
       "post": {
-        "description": "节点退役(不可逆):停止调度 + 作废该机全部注册令牌 + 经 outbox 删除 Node 对象。\n节点上有未释放实例即 409,`force=true` 跳过该闸(机器已救不回来时用)。\n集群 join token 轮换与 kubelet 证书吊销不在本端点内。",
+        "description": "Node decommissioning (irreversible): stop scheduling + void every enrollment token of the\nmachine + delete the Node object via outbox.\nUnreleased instances on the node → 409, `force=true` skips that gate (for machines that cannot\nbe recovered).\nCluster join-token rotation and kubelet certificate revocation are outside this endpoint.",
         "operationId": "admin_decommission_node_api_admin_v1_nodes__node_name__decommission_post",
         "parameters": [
           {
@@ -14166,7 +14184,7 @@
     },
     "/api/admin/v1/nodes/{node_name}/metrics": {
       "get": {
-        "description": "节点每卡曲线(DCGM per-GPU)+ 24h XID 计数;断源 available=false(200)。\n不存在的节点返回空序列。响应附 grafana_url。",
+        "description": "Per-card node curves (DCGM per-GPU) + 24 h XID count; source down → available=false (200).\nUnknown nodes return empty series. The response carries grafana_url.",
         "operationId": "admin_node_metrics_api_admin_v1_nodes__node_name__metrics_get",
         "parameters": [
           {
@@ -14224,7 +14242,7 @@
     },
     "/api/admin/v1/nodes/{node_name}/switch-pool": {
       "post": {
-        "description": "切换节点池(kata / hami / mig 互切)。前置:节点上无未释放实例、机型与目标池匹配、\n目标池运行时就绪。受理后节点即停止调度,池标签与 GPU operand 标签经 outbox 改;\n池间差异的节点侧软件由 DaemonSet 按标签自行投送,无需登录节点、不重启。",
+        "description": "Switch the node pool (kata / hami / mig). Preconditions: no unreleased instance on the node,\nGPU model matches the target pool,\ntarget pool runtime ready. Once accepted the node stops scheduling and the pool and GPU operand\nlabels change through the outbox;\nthe node-side software differences between pools are delivered by DaemonSets keyed on labels -\nno login to the node, no reboot.",
         "operationId": "admin_switch_node_pool_api_admin_v1_nodes__node_name__switch_pool_post",
         "parameters": [
           {
@@ -14282,7 +14300,7 @@
     },
     "/api/admin/v1/nodes/{node_name}/uncordon": {
       "post": {
-        "description": "恢复调度(reason 必填)。",
+        "description": "Resume scheduling (reason required).",
         "operationId": "admin_uncordon_node_api_admin_v1_nodes__node_name__uncordon_post",
         "parameters": [
           {
@@ -14340,7 +14358,7 @@
     },
     "/api/admin/v1/orders": {
       "get": {
-        "description": "充值订单列表(游标分页,降序)。order_no 精确匹配;day=YYYY-MM-DD 按下单日(UTC)过滤。",
+        "description": "Top-up order list (cursor pagination, descending). order_no exact; day=YYYY-MM-DD filters by\norder day (UTC).",
         "operationId": "admin_list_orders_api_admin_v1_orders_get",
         "parameters": [
           {
@@ -14476,7 +14494,7 @@
     },
     "/api/admin/v1/orders/export": {
       "get": {
-        "description": "充值订单 CSV(流式):筛选口径与 GET /orders 一致;行数硬上限 + 截断标记行。",
+        "description": "Top-up order CSV (streamed): the same filters as GET /orders; hard row cap + truncation\nmarker\nrow.",
         "operationId": "admin_orders_export_api_admin_v1_orders_export_get",
         "parameters": [
           {
@@ -14529,20 +14547,6 @@
           },
           {
             "in": "query",
-            "name": "lang",
-            "required": false,
-            "schema": {
-              "default": "zh-CN",
-              "enum": [
-                "zh-CN",
-                "en-US"
-              ],
-              "title": "Lang",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
             "name": "day",
             "required": false,
             "schema": {
@@ -14573,6 +14577,26 @@
                 }
               ],
               "title": "Tz Offset Minutes"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lang",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "zh-CN",
+                    "en-US"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lang"
             }
           }
         ],
@@ -14614,7 +14638,7 @@
     },
     "/api/admin/v1/outbox/dead": {
       "get": {
-        "description": "死信任务列表(另有 outbox_dead_total 指标接告警)。",
+        "description": "Dead-letter task list (the outbox_dead_total metric feeds the alert).",
         "operationId": "admin_list_dead_tasks_api_admin_v1_outbox_dead_get",
         "responses": {
           "200": {
@@ -14645,7 +14669,7 @@
     },
     "/api/admin/v1/outbox/{task_id}/discard": {
       "post": {
-        "description": "忽略死信(需原因)。",
+        "description": "Discard a dead letter (reason required).",
         "operationId": "admin_discard_dead_task_api_admin_v1_outbox__task_id__discard_post",
         "parameters": [
           {
@@ -14703,7 +14727,7 @@
     },
     "/api/admin/v1/outbox/{task_id}/retry": {
       "post": {
-        "description": "重放死信(需原因):置回 pending 交还 worker(handler 幂等)。",
+        "description": "Replay a dead letter (reason required): back to pending for the worker (handlers are\nidempotent).",
         "operationId": "admin_retry_dead_task_api_admin_v1_outbox__task_id__retry_post",
         "parameters": [
           {
@@ -14761,7 +14785,7 @@
     },
     "/api/admin/v1/overview": {
       "get": {
-        "description": "值班首屏聚合:实例分状态 COUNT、付费租户 COUNT、池级 GPU 台账。全是精确计数。",
+        "description": "On-call first-screen aggregate: instance COUNT per status, paying tenant COUNT, per-pool GPU\ninventory. All exact counts.",
         "operationId": "admin_overview_api_admin_v1_overview_get",
         "responses": {
           "200": {
@@ -14788,7 +14812,7 @@
     },
     "/api/admin/v1/platform-config": {
       "get": {
-        "description": "分组配置项:生效值 + 来源(env 默认/DB 覆盖)+ 配置风险 warnings。secret 只回尾 4 位预览。",
+        "description": "Grouped settings: effective value + source (env default / DB override) + configuration risk\nwarnings. Secrets return the last-4 preview only.",
         "operationId": "admin_get_platform_config_api_admin_v1_platform_config_get",
         "responses": {
           "200": {
@@ -14813,7 +14837,7 @@
         ]
       },
       "put": {
-        "description": "在线配置渠道凭据与合规信息(空串=清除覆盖,回退 env 默认)。\n\n审计落键名与动作类型(set/clear),不落值。",
+        "description": "Configure channel credentials and compliance information online (empty string = clear the\noverride, back to the env default).\n\nThe audit records key names and action type (set/clear), never values.",
         "operationId": "admin_update_platform_config_api_admin_v1_platform_config_put",
         "requestBody": {
           "content": {
@@ -14907,7 +14931,7 @@
     },
     "/api/admin/v1/platform-config/test-registry": {
       "post": {
-        "description": "按当前生效镜像仓库配置探测 Harbor:health → 机器人鉴权读项目仓库列表。\n只读、有限流、过审计。",
+        "description": "Probe Harbor with the effective registry configuration: health → robot-authenticated project\nrepository listing.\nRead-only, rate-limited, audited.",
         "operationId": "admin_test_registry_api_admin_v1_platform_config_test_registry_post",
         "responses": {
           "200": {
@@ -14934,7 +14958,7 @@
     },
     "/api/admin/v1/platform-config/test-sms": {
       "post": {
-        "description": "按当前生效短信配置实发一条验证码短信(有限流,过审计)。",
+        "description": "Send one real verification SMS through the effective SMS configuration (rate-limited,\naudited).",
         "operationId": "admin_test_sms_api_admin_v1_platform_config_test_sms_post",
         "requestBody": {
           "content": {
@@ -14981,7 +15005,7 @@
     },
     "/api/admin/v1/policies": {
       "get": {
-        "description": "当前生效策略 + 取值范围 + DB 覆盖项(平台配置里 policy 组的切片)。",
+        "description": "Current effective policies + ranges + DB overrides (the policy-group slice of the platform\nconfiguration).",
         "operationId": "admin_get_policies_api_admin_v1_policies_get",
         "responses": {
           "200": {
@@ -15006,7 +15030,7 @@
         ]
       },
       "put": {
-        "description": "在线调整策略参数(仅 admin,每管理员 20 次/时;即时生效;只收 policy 组的键)。\n审计 detail 记变更前后值与原因;敏感键相对变化 ≥50% 同事务落 critical 管理端告警。",
+        "description": "Adjust policy parameters online (admin only, 20 per admin per hour; effective at once; policy\ngroup keys only).\nThe audit detail records the old and new values and the reason; a sensitive key changing ≥ 50 %\nwrites a critical admin alert in the same transaction.",
         "operationId": "admin_update_policies_api_admin_v1_policies_put",
         "requestBody": {
           "content": {
@@ -15053,7 +15077,7 @@
     },
     "/api/admin/v1/reconciliation": {
       "get": {
-        "description": "日对账:事件计费 vs 指标估算 + diff%(>2% 列差异实例)。",
+        "description": "Daily reconciliation: event billing vs metric estimate + diff % (> 2 % lists the divergent\ninstances).",
         "operationId": "reconciliation_api_admin_v1_reconciliation_get",
         "parameters": [
           {
@@ -15101,7 +15125,7 @@
     },
     "/api/admin/v1/reconciliation/export": {
       "get": {
-        "description": "日对账 CSV:与 GET /reconciliation 同一报告(首行合计 + diff 超阈实例明细)。",
+        "description": "Daily reconciliation CSV: the same report as GET /reconciliation (total first + instances\nabove the diff threshold).",
         "operationId": "reconciliation_export_api_admin_v1_reconciliation_export_get",
         "parameters": [
           {
@@ -15118,13 +15142,19 @@
             "name": "lang",
             "required": false,
             "schema": {
-              "default": "zh-CN",
-              "enum": [
-                "zh-CN",
-                "en-US"
+              "anyOf": [
+                {
+                  "enum": [
+                    "zh-CN",
+                    "en-US"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
               ],
-              "title": "Lang",
-              "type": "string"
+              "title": "Lang"
             }
           }
         ],
@@ -15166,7 +15196,7 @@
     },
     "/api/admin/v1/refunds": {
       "get": {
-        "description": "退款单列表(游标分页,降序)。day=YYYY-MM-DD 按申请时间过滤。",
+        "description": "Refund list (cursor pagination, descending). day=YYYY-MM-DD filters by request time.",
         "operationId": "admin_list_refunds_api_admin_v1_refunds_get",
         "parameters": [
           {
@@ -15270,7 +15300,7 @@
     },
     "/api/admin/v1/refunds/export": {
       "get": {
-        "description": "退款单 CSV(流式):筛选口径与 GET /refunds 一致;行数硬上限 + 截断标记行。\n须注册在 /refunds/{refund_id} 之前。",
+        "description": "Refund CSV (streamed): the same filters as GET /refunds; hard row cap + truncation marker\nrow.\nMust be registered before /refunds/{refund_id}.",
         "operationId": "admin_refunds_export_api_admin_v1_refunds_export_get",
         "parameters": [
           {
@@ -15287,20 +15317,6 @@
                 }
               ],
               "title": "Status"
-            }
-          },
-          {
-            "in": "query",
-            "name": "lang",
-            "required": false,
-            "schema": {
-              "default": "zh-CN",
-              "enum": [
-                "zh-CN",
-                "en-US"
-              ],
-              "title": "Lang",
-              "type": "string"
             }
           },
           {
@@ -15335,6 +15351,26 @@
                 }
               ],
               "title": "Tz Offset Minutes"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lang",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "zh-CN",
+                    "en-US"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lang"
             }
           }
         ],
@@ -15376,7 +15412,7 @@
     },
     "/api/admin/v1/refunds/{refund_id}/cancel": {
       "post": {
-        "description": "取消退款单(仅 pending/approved)。不动钱包。",
+        "description": "Cancel a refund request (pending/approved only). The wallet is untouched.",
         "operationId": "admin_cancel_refund_api_admin_v1_refunds__refund_id__cancel_post",
         "parameters": [
           {
@@ -15434,7 +15470,7 @@
     },
     "/api/admin/v1/refunds/{refund_id}/payout": {
       "post": {
-        "description": "登记打款(唯一出金点):强制双人(与审批人相同则 409);余额不足 409。\n审计行与出金同事务(write_audit_sync)。Idempotency-Key:同键同参重放 200 + X-Idempotent-Replay,\n同键异参 409。",
+        "description": "Register the payout (the only money-out point): two people enforced (same person as the\nreviewer → 409); insufficient balance → 409.\nAudit row and payout in one transaction (write_audit_sync). Idempotency-Key: same key and params\nreplay 200 + X-Idempotent-Replay,\nsame key with different params → 409.",
         "operationId": "admin_payout_refund_api_admin_v1_refunds__refund_id__payout_post",
         "parameters": [
           {
@@ -15509,7 +15545,7 @@
     },
     "/api/admin/v1/refunds/{refund_id}/review": {
       "post": {
-        "description": "审批(同意/驳回都须填意见)。通过 ≠ 出金:仅置 approved,等另一位财务登记打款。",
+        "description": "Review (approve / reject both need a comment). Approval ≠ payout: only sets approved and\nwaits\nfor another finance admin to register the payout.",
         "operationId": "admin_review_refund_api_admin_v1_refunds__refund_id__review_post",
         "parameters": [
           {
@@ -15567,7 +15603,7 @@
     },
     "/api/admin/v1/reports/oversell": {
       "get": {
-        "description": "超卖报表:各池 已售份额 / 实际超卖率(已售 ÷ Ready 物理卡数)/ 近 24h 真实利用率。",
+        "description": "Oversell report: sold share / actual oversell ratio (sold ÷ Ready physical cards) / real\nutilisation over the last 24 h per pool.",
         "operationId": "oversell_report_api_admin_v1_reports_oversell_get",
         "responses": {
           "200": {
@@ -15598,7 +15634,7 @@
     },
     "/api/admin/v1/reports/revenue": {
       "get": {
-        "description": "今日/本月消费额(ledger consume 绝对值)与新注册数。本地日界经 tz_offset。",
+        "description": "Today's / this month's consumption (absolute ledger consume) and new sign-ups. Local day\nboundary via tz_offset.",
         "operationId": "revenue_report_api_admin_v1_reports_revenue_get",
         "parameters": [
           {
@@ -15655,7 +15691,7 @@
     },
     "/api/admin/v1/services": {
       "get": {
-        "description": "全局在线服务(不限租户)。q:服务名或 slug 前缀;默认不列已删除。游标分页(降序)。\n只读:处置走当前版本实例的 force-stop。",
+        "description": "Global online services (any tenant). q: service name or slug prefix; deleted services not\nlisted by default. Cursor pagination (descending).\nRead-only: the action is force-stop on the current revision instance.",
         "operationId": "admin_list_services_api_admin_v1_services_get",
         "parameters": [
           {
@@ -15769,7 +15805,7 @@
     },
     "/api/admin/v1/skus": {
       "get": {
-        "description": "SKU 列表,组装台账容量与占用列。",
+        "description": "SKU list with inventory capacity and occupancy columns.",
         "operationId": "admin_list_skus_api_admin_v1_skus_get",
         "responses": {
           "200": {
@@ -15798,7 +15834,7 @@
         ]
       },
       "post": {
-        "description": "建 SKU:仅 admin,每管理员 20 次/时。",
+        "description": "Create an SKU: admin only, 20 per admin per hour.",
         "operationId": "admin_create_sku_api_admin_v1_skus_post",
         "requestBody": {
           "content": {
@@ -15845,7 +15881,7 @@
     },
     "/api/admin/v1/skus/capacity-preview": {
       "get": {
-        "description": "SKU 表单实时容量预览(纯台账)。gpu_model 留空 = CPU 规格预览。",
+        "description": "Live capacity preview of the SKU form (pure inventory). Empty gpu_model = CPU SKU preview.",
         "operationId": "sku_capacity_preview_api_admin_v1_skus_capacity_preview_get",
         "parameters": [
           {
@@ -15979,7 +16015,7 @@
     },
     "/api/admin/v1/skus/{sku_id}": {
       "patch": {
-        "description": "改 SKU:仅 admin,每管理员 20 次/时;改价告警规则见 catalog.service。",
+        "description": "Update an SKU: admin only, 20 per admin per hour; price-change alert rules in\ncatalog.service.",
         "operationId": "admin_update_sku_api_admin_v1_skus__sku_id__patch",
         "parameters": [
           {
@@ -16047,7 +16083,7 @@
     },
     "/api/admin/v1/skus/{sku_id}/impact": {
       "get": {
-        "description": "改价/下架影响面(只读):当前活跃实例数/涉及用户数/占用卡数。",
+        "description": "Price-change / unlisting impact (read-only): active instances / affected users / occupied\ncards.",
         "operationId": "admin_sku_impact_api_admin_v1_skus__sku_id__impact_get",
         "parameters": [
           {
@@ -16095,7 +16131,7 @@
     },
     "/api/admin/v1/tenants": {
       "get": {
-        "description": "Tenants (cursor paged). q = email (exact when it contains `@`, prefix otherwise), E.164\nphone (exact with `+`, suffix for bare digits); bare digits also hit the tenant id exactly and\nare pinned first on the first page. Handles are masked; every search writes an audit row.\norder = id 正/倒序;聚合列按页拼装,不支持排序。\n实名信息默认脱敏;reveal=true 且 reason 必填回明文(readonly 不可),每次按条数+事由落审计。",
+        "description": "Tenants (cursor paged). q = email (exact when it contains `@`, prefix otherwise), E.164\nphone (exact with `+`, suffix for bare digits); bare digits also hit the tenant id exactly and\nare pinned first on the first page. Handles are masked; every search writes an audit row.\norder = id ascending / descending; aggregate columns are assembled per page, no sorting.\nKYC information is masked by default; reveal=true with a required reason returns plaintext (not\nfor readonly), audited each time with row count + reason.",
         "operationId": "admin_list_tenants_api_admin_v1_tenants_get",
         "parameters": [
           {
@@ -16240,7 +16276,7 @@
     },
     "/api/admin/v1/tenants/{user_id}/adjust-context": {
       "get": {
-        "description": "调账前置上下文(只读):掩码手机号/当前余额/近 3 条流水。不存在 → 404。",
+        "description": "Adjustment context (read-only): masked handles / current balance / last 3 ledger rows.\nMissing\n→ 404.",
         "operationId": "admin_adjust_context_api_admin_v1_tenants__user_id__adjust_context_get",
         "parameters": [
           {
@@ -16288,7 +16324,7 @@
     },
     "/api/admin/v1/tenants/{user_id}/bills": {
       "get": {
-        "description": "租户小时账单下钻(可按实例过滤)。",
+        "description": "Tenant hourly bill drill-down (optionally filtered by instance).",
         "operationId": "admin_tenant_bills_api_admin_v1_tenants__user_id__bills_get",
         "parameters": [
           {
@@ -16442,7 +16478,7 @@
     },
     "/api/admin/v1/tenants/{user_id}/ledger": {
       "get": {
-        "description": "租户资金流水下钻。与用户端同一实现,同一游标语义。",
+        "description": "Tenant ledger drill-down. Same implementation and cursor semantics as the user side.",
         "operationId": "admin_tenant_ledger_api_admin_v1_tenants__user_id__ledger_get",
         "parameters": [
           {
@@ -16523,7 +16559,7 @@
     },
     "/api/admin/v1/tenants/{user_id}/ledger/export": {
       "get": {
-        "description": "租户资金流水 CSV(流式):与「流水」Tab 同一数据源,行数硬上限 + 截断标记行。",
+        "description": "Tenant ledger CSV (streamed): the same data source as the Ledger tab, hard row cap +\ntruncation marker row.",
         "operationId": "admin_tenant_ledger_export_api_admin_v1_tenants__user_id__ledger_export_get",
         "parameters": [
           {
@@ -16533,20 +16569,6 @@
             "schema": {
               "title": "User Id",
               "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "lang",
-            "required": false,
-            "schema": {
-              "default": "zh-CN",
-              "enum": [
-                "zh-CN",
-                "en-US"
-              ],
-              "title": "Lang",
-              "type": "string"
             }
           },
           {
@@ -16565,6 +16587,26 @@
                 }
               ],
               "title": "Tz Offset Minutes"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lang",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "zh-CN",
+                    "en-US"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lang"
             }
           }
         ],
@@ -16606,7 +16648,7 @@
     },
     "/api/admin/v1/tenants/{user_id}/quota": {
       "get": {
-        "description": "配额覆盖现状 + 生效值。",
+        "description": "Quota overrides and effective values.",
         "operationId": "admin_get_tenant_quota_api_admin_v1_tenants__user_id__quota_get",
         "parameters": [
           {
@@ -16652,7 +16694,7 @@
         ]
       },
       "put": {
-        "description": "写配额覆盖(数字留空 = 该维走默认链;全空 = 清除覆盖)。note 必填,审计落前后值。",
+        "description": "Write quota overrides (an empty number = that dimension follows the default chain; all empty\n=\nclear the override). note required, the audit records old and new values.",
         "operationId": "admin_set_tenant_quota_api_admin_v1_tenants__user_id__quota_put",
         "parameters": [
           {
@@ -16767,7 +16809,7 @@
     },
     "/api/admin/v1/tickets": {
       "get": {
-        "description": "工单列表(游标分页,降序):status/category 精确过滤,user_id/ticket_no 检索。",
+        "description": "Ticket list (cursor pagination, descending): status/category exact filters, user_id/ticket_no\nsearch.",
         "operationId": "admin_list_tickets_api_admin_v1_tickets_get",
         "parameters": [
           {
@@ -16903,7 +16945,7 @@
     },
     "/api/admin/v1/tickets/count": {
       "get": {
-        "description": "待办工单计数(默认 pending_staff 口径)。须注册在 /tickets/{ticket_id} 之前。",
+        "description": "Pending ticket count (default pending_staff). Must be registered before\n/tickets/{ticket_id}.",
         "operationId": "admin_tickets_count_api_admin_v1_tickets_count_get",
         "parameters": [
           {
@@ -16968,7 +17010,7 @@
     },
     "/api/admin/v1/tickets/{ticket_id}": {
       "get": {
-        "description": "工单详情 + 消息流(时间升序)。",
+        "description": "Ticket detail + message stream (ascending by time).",
         "operationId": "admin_get_ticket_api_admin_v1_tickets__ticket_id__get",
         "parameters": [
           {
@@ -17016,7 +17058,7 @@
     },
     "/api/admin/v1/tickets/{ticket_id}/reply": {
       "post": {
-        "description": "客服回复(→ pending_user),站内信告知用户;resolved/closed 不可再回复。",
+        "description": "Staff reply (→ pending_user), in-app notification to the user; resolved/closed accept no more\nreplies.",
         "operationId": "admin_reply_ticket_api_admin_v1_tickets__ticket_id__reply_post",
         "parameters": [
           {
@@ -17074,7 +17116,7 @@
     },
     "/api/admin/v1/tickets/{ticket_id}/status": {
       "post": {
-        "description": "标记解决/关闭(close 仅 resolved 后可;closed_at 仅 closed 落)。",
+        "description": "Mark resolved / close (close only after resolved; closed_at is set only on closed).",
         "operationId": "admin_update_ticket_status_api_admin_v1_tickets__ticket_id__status_post",
         "parameters": [
           {
@@ -19737,7 +19779,7 @@
     },
     "/api/v1/notifications": {
       "get": {
-        "description": "站内信:降序(最新在前)游标分页。",
+        "description": "In-app notifications: descending (newest first) cursor pagination.",
         "operationId": "list_notifications_api_v1_notifications_get",
         "parameters": [
           {
@@ -19819,7 +19861,7 @@
     },
     "/api/v1/notifications/read-all": {
       "post": {
-        "description": "全部已读(幂等);须注册在 {notification_id} 之前。",
+        "description": "Mark all read (idempotent); must be registered before {notification_id}.",
         "operationId": "mark_all_read_api_v1_notifications_read_all_post",
         "responses": {
           "204": {
@@ -19839,7 +19881,7 @@
     },
     "/api/v1/notifications/unread-count": {
       "get": {
-        "description": "未读数轻端点(顶栏角标轮询)。",
+        "description": "Lightweight unread count (top-bar badge polling).",
         "operationId": "unread_count_api_v1_notifications_unread_count_get",
         "responses": {
           "200": {
@@ -21087,7 +21129,7 @@
     },
     "/api/v1/tickets": {
       "get": {
-        "description": "本人工单(游标分页)。",
+        "description": "The caller's tickets (cursor pagination).",
         "operationId": "list_my_tickets_api_v1_tickets_get",
         "parameters": [
           {
@@ -21157,7 +21199,7 @@
         ]
       },
       "post": {
-        "description": "创建工单(首条消息同单提交)。Idempotency-Key 重放返回既有单(200 +\nX-Idempotent-Replay);进行中 ≤10,限流 5/h。",
+        "description": "Create a ticket (the first message is submitted with it). An Idempotency-Key replay returns\nthe existing ticket (200 +\nX-Idempotent-Replay); at most 10 open, rate limit 5/h.",
         "operationId": "create_ticket_api_v1_tickets_post",
         "parameters": [
           {
@@ -21223,7 +21265,7 @@
     },
     "/api/v1/tickets/{ticket_id}": {
       "get": {
-        "description": "工单详情 + 消息流;他人工单与不存在同回 404。",
+        "description": "Ticket detail + message stream; someone else's ticket and a missing one both return 404.",
         "operationId": "get_my_ticket_api_v1_tickets__ticket_id__get",
         "parameters": [
           {
@@ -21271,7 +21313,7 @@
     },
     "/api/v1/tickets/{ticket_id}/close": {
       "post": {
-        "description": "关闭工单(仅 resolved;closed_at 仅 closed 落)。",
+        "description": "Close the ticket (resolved only; closed_at is set only on closed).",
         "operationId": "close_ticket_api_v1_tickets__ticket_id__close_post",
         "parameters": [
           {
@@ -21319,7 +21361,7 @@
     },
     "/api/v1/tickets/{ticket_id}/messages": {
       "post": {
-        "description": "追加回复(→ pending_staff);resolved/closed 不可再回复。",
+        "description": "Append a reply (→ pending_staff); resolved/closed accept no more replies.",
         "operationId": "append_message_api_v1_tickets__ticket_id__messages_post",
         "parameters": [
           {
@@ -21753,7 +21795,7 @@
     },
     "/api/v1/webhooks/alertmanager": {
       "post": {
-        "description": "Alertmanager 告警接入:必须配置 SUPERDL_ALERTMANAGER_TOKEN 并携带 Bearer token。",
+        "description": "Alertmanager alert ingestion: SUPERDL_ALERTMANAGER_TOKEN must be configured and sent as a\nBearer token.",
         "operationId": "alertmanager_webhook_api_v1_webhooks_alertmanager_post",
         "parameters": [
           {

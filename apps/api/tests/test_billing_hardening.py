@@ -791,7 +791,7 @@ class TestSmsOutbox:
                     session,
                     data["user"]["id"],
                     type_="balance_warn",
-                    title="余额不足预警",
+                    title="Low balance warning",
                     content="t",
                     dedup_key="test:sms:outbox",
                     sms=True,
@@ -803,10 +803,10 @@ class TestSmsOutbox:
                 tasks = (await session.execute(select(OutboxTask))).scalars().all()
             sms_tasks = [t for t in tasks if t.type == "notify.sms"]
             assert len(sms_tasks) == 1
-            assert sms_tasks[0].payload["title"] == "余额不足预警"
+            assert sms_tasks[0].payload["title"] == "Low balance warning"
             await drain(sm)
             assert len(sent) == 1
-            assert sent[0]["params"] == {"title": "余额不足预警"}
+            assert sent[0]["params"] == {"title": "Low balance warning"}
         finally:
             set_sms_channel(None)
 

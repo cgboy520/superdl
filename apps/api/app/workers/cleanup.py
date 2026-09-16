@@ -1,4 +1,5 @@
-"""按保留期清理验证码、refresh 记录、done/discarded outbox、审计和限流计数。"""
+"""Retention cleanup of verification codes, refresh records, done/discarded outbox tasks, audit
+rows and rate-limit counters."""
 
 from typing import Any, cast
 
@@ -12,8 +13,10 @@ logger = get_logger(__name__)
 
 
 async def cleanup_expired_rows(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]:
-    """同事务清理并提交,返回各类删除行数;审计按 audit_retention_days 保留,
-    经 SECURITY DEFINER 函数 audit_log_prune 删(应用角色对 audit_log 无 DELETE 权限)。"""
+    """Clean up and commit in one transaction, returning the deleted row counts; audit rows are kept
+    for audit_retention_days
+    and deleted through the SECURITY DEFINER function audit_log_prune (the application role has no
+    DELETE on audit_log)."""
     retention = get_settings().audit_retention_days
     stmts = {
         "verification_codes": (

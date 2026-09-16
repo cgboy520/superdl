@@ -7,7 +7,7 @@ from app.core.db import Base
 
 
 class Notification(Base):
-    """站内信。user_id 为空 = 平台级告警(管理端告警流)。"""
+    """In-app notification. user_id empty = platform-level alert (admin alert feed)."""
 
     __tablename__ = "notifications"
 
@@ -28,7 +28,8 @@ class Notification(Base):
 
 
 class Announcement(Base):
-    """公告发布、触达人数与撤回记录;发布幂等键全局唯一。"""
+    """Announcement publication, reach count and withdrawal record; the publish idempotency key is
+    globally unique."""
 
     __tablename__ = "announcements"
     __table_args__ = (CheckConstraint("status IN ('published', 'revoked')", name="status"),)

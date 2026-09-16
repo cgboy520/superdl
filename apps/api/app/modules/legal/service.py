@@ -106,7 +106,9 @@ def _brief(row: LegalDocVersion) -> LegalDocVersionBrief:
 
 
 async def admin_overview(session: AsyncSession) -> list[LegalDocCellOut]:
-    """doc_key × locale 状态格:每格取当前 published 与最新 draft(均可空=缺失)。"""
+    """doc_key × locale status grid: each cell takes the current published and the latest draft
+    (both
+    optional = missing)."""
     rows = list((await session.execute(select(LegalDocVersion))).scalars())
     published: dict[tuple[str, str], LegalDocVersion] = {}
     drafts: dict[tuple[str, str], LegalDocVersion] = {}
@@ -205,7 +207,7 @@ def _require_draft(row: LegalDocVersion) -> None:
 async def admin_update_draft(
     session: AsyncSession, version_id: int, body: LegalDocVersionUpdate
 ) -> LegalDocVersion:
-    """仅 draft 可改 title/content_md/effective_note;非 draft 409。"""
+    """Only drafts may change title/content_md/effective_note; non-draft → 409."""
     row = await _get_version(session, version_id)
     _require_draft(row)
     if body.title is not None:
@@ -222,7 +224,8 @@ async def admin_update_draft(
 async def admin_publish(
     session: AsyncSession, version_id: int, *, admin_id: int
 ) -> LegalDocVersion:
-    """锁定草稿与旧 published,同事务发布新版本并归档旧版本;唯一冲突回滚后回 409。"""
+    """Lock the draft and the old published row, publish the new version and archive the old one in
+    one transaction; a unique conflict rolls back and returns 409."""
     row = await session.get(LegalDocVersion, version_id, with_for_update=True)
     if row is None:
         raise not_found(key="legal.docNotFound")
@@ -254,7 +257,8 @@ async def admin_publish(
 
 
 async def admin_archive(session: AsyncSession, version_id: int) -> LegalDocVersion:
-    """draft → archived;published 不可直接归档(409),archived 重复操作亦 409。"""
+    """draft → archived; published cannot be archived directly (409), repeating on archived is 409
+    as well."""
     row = await _get_version(session, version_id)
     if row.status == "published":
         raise conflict(key="legal.publishedNotArchivable")

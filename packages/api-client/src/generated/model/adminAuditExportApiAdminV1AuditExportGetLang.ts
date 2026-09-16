@@ -5,7 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type AdminAuditExportApiAdminV1AuditExportGetLang = typeof AdminAuditExportApiAdminV1AuditExportGetLang[keyof typeof AdminAuditExportApiAdminV1AuditExportGetLang];
+export type AdminAuditExportApiAdminV1AuditExportGetLang = typeof AdminAuditExportApiAdminV1AuditExportGetLang[keyof typeof AdminAuditExportApiAdminV1AuditExportGetLang] | null;
 
 
 export const AdminAuditExportApiAdminV1AuditExportGetLang = {

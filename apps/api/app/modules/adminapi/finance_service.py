@@ -1,4 +1,5 @@
-"""管理端资金动作:调账(双人复核)、渠道冲正处置、调账列表。"""
+"""Admin money actions: adjustments (two-person review), channel reversal handling, adjustment
+list."""
 
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
@@ -17,6 +18,7 @@ from app.core.metrics import (
 )
 from app.core.money import as_amount, money_str
 from app.core.pagination import Page, paginate_by_id
+from app.core.servercopy import copy as server_copy
 from app.core.timeutil import ensure_utc, now_utc
 from app.modules.account import service as account_service
 from app.modules.adminapi.models import AdminAdjustment, AdminUser
@@ -35,7 +37,8 @@ _FINANCE_REVIEW_ACTION_PATTERN = "admin.POST /api/admin/v1/adjustments/%/review"
 async def _assert_reviewer_independent(
     session: AsyncSession, adj: AdminAdjustment, reviewer_id: int
 ) -> None:
-    """复核人:非发起人;账号早于调账发起 24 小时创建;调账发起前已有非复核类的成功管理操作。"""
+    """Reviewer: not the initiator; account created more than 24 hours before the adjustment; a
+    successful non-review admin action before the adjustment was initiated."""
     if adj.created_by == reviewer_id:
         raise AppError(
             ErrorCode.ADMIN_SECOND_REVIEW_REQUIRED,
@@ -78,9 +81,11 @@ async def create_adjustment(
     created_by: int,
     idempotency_key: str | None = None,
 ) -> tuple["AdminAdjustment", bool]:
-    """提交调账申请,返回 (调账单, created);created=False 表示幂等重放。
+    """Submit an adjustment request, returning (adjustment, created); created=False = idempotent
+    replay.
 
-    幂等键作用域为 (发起人,租户,键);同键异参回 409,并发唯一冲突不回查。
+    The idempotency key is scoped to (initiator, tenant, key); same key with different params → 409,
+    a concurrent unique conflict is not re-read.
     """
     amount = as_amount(Decimal(str(amount)))
     fingerprint = request_fingerprint(user_id, amount, reason)
@@ -132,9 +137,11 @@ async def review_adjustment(
     comment: str | None,
     audit_writer: Callable[[AsyncSession], Awaitable[None]] | None = None,
 ):
-    """持调账行锁复核;复核人须非发起人、账号早于调账 24 小时创建、此前有过非复核类管理操作。
+    """Review under the adjustment row lock; the reviewer must not be the initiator, must be older
+    than 24 hours and must have a prior non-review admin action.
 
-    通过时同事务更新钱包与流水,并在提交前调用可选 audit_writer;失败不提交。
+    Approval updates the wallet and ledger in the same transaction and calls the optional
+    audit_writer before commit; failure does not commit.
     """
     adj = await session.get(AdminAdjustment, adjustment_id, with_for_update=True)
     if adj is None:
@@ -158,7 +165,7 @@ async def review_adjustment(
             type_="adjust",
             ref_type="adjustment",
             ref_id=str(adj.id),
-            remark=f"调账:{adj.reason}",
+            remark=server_copy("adminapi.adjust.remark", reason=adj.reason),
         )
     else:
         await billing_service.debit(
@@ -168,7 +175,7 @@ async def review_adjustment(
             type_="adjust",
             ref_type="adjustment",
             ref_id=str(adj.id),
-            remark=f"调账:{adj.reason}",
+            remark=server_copy("adminapi.adjust.remark", reason=adj.reason),
             allow_negative=True,
         )
     if audit_writer is not None:
@@ -186,9 +193,12 @@ async def resolve_reversal(
     operator_id: int,
     audit_writer: Callable[[AsyncSession], Awaitable[None]] | None = None,
 ) -> None:
-    """持订单行锁核销待处理冲正;release 解冻,chargeback 解冻并等额扣减(允许透支)。
+    """Write off a pending reversal under the order row lock; release unfreezes, chargeback
+    unfreezes
+    and debits the same amount (overdraft allowed).
 
-    保留 channel_reversed_at,同事务登记核销时间与动作并调用可选 audit_writer 后提交。
+    channel_reversed_at is kept; the write-off time and action are recorded and the optional
+    audit_writer called in the same transaction before commit.
     """
     order = (
         await session.execute(
@@ -198,7 +208,7 @@ async def resolve_reversal(
         )
     ).scalar_one_or_none()
     if order is None:
-        raise not_found("订单不存在")
+        raise not_found(key="billing.orderNotFound")
     if not billing_service.reversal_pending(order):
         raise conflict(key="adminapi.reversalNotPending")
     await billing_service.release_freeze(session, order.user_id, order.amount)
@@ -212,7 +222,7 @@ async def resolve_reversal(
             type_="adjust",
             ref_type="reversal",
             ref_id=order.order_no,
-            remark=f"渠道冲正核销:{reason}",
+            remark=server_copy("adminapi.reversal.remark", reason=reason),
             allow_negative=True,
         )
     if audit_writer is not None:
@@ -237,7 +247,8 @@ async def list_adjustments(
     cursor: str | None = None,
     limit: int | None = None,
 ) -> Page[AdjustmentOut]:
-    """调账单列表(游标分页,降序)。status/user_id 精确;day_range 按 created_at 过滤。"""
+    """Adjustment list (cursor pagination, descending). status/user_id exact; day_range filters by
+    created_at."""
     stmt = select(AdminAdjustment).order_by(AdminAdjustment.id.desc())
     if status:
         stmt = stmt.where(AdminAdjustment.status == status)

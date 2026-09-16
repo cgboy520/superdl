@@ -370,7 +370,8 @@ class TestPolicyChangeAlert:
         )
         assert resp.status_code == 200, resp.text
         policy_alerts = select(Notification).where(
-            Notification.type == "admin_alert", Notification.title == "策略参数大幅调整"
+            Notification.type == "admin_alert",
+            Notification.title == "Policy parameters changed sharply",
         )
         async with sm() as session:
             assert (await session.execute(policy_alerts)).scalar_one_or_none() is None

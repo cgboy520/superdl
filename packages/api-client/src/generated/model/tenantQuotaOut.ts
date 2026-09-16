@@ -6,7 +6,8 @@
  */
 
 /**
- * 租户配额覆盖与生效值(override → policy → env)。三项 override 为 None = 走默认链。
+ * Tenant quota overrides and effective values (override → policy → env). An override of None =
+ * the default chain.
  */
 export interface TenantQuotaOut {
   effective_max_disks: number;

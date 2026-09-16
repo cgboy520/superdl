@@ -6,8 +6,9 @@
  */
 
 /**
- * 收入口径:`*_revenue` = 计量出账(按量 + 盘费,按账单归属期)+ 包周期预付(按收款当日);
- * `*_prepaid` 是其中的预付部分。
+ * Revenue definition: `*_revenue` = metered bills (on-demand + disk fees, by bill attribution
+ * period) + subscription prepayments (by payment day);
+ * `*_prepaid` is the prepaid part of it.
  */
 export interface RevenueReportOut {
   month_prepaid: string;

@@ -1,13 +1,20 @@
-"""管理端子路由共享的响应/参数辅助。"""
+"""Response / parameter helpers shared by the admin sub-routers."""
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import Depends, Query
 
+from app.core.compliance import current_profile
 from app.core.timeutil import billing_day_range
 
-ExportLang = Query(default="zh-CN")
+
+def _export_lang(lang: Literal["zh-CN", "en-US"] | None = Query(default=None)) -> str:
+    """CSV language; defaults to the compliance profile's default locale."""
+    return lang or current_profile().default_locale
+
+
+ExportLang = Depends(_export_lang)
 
 
 def parse_day(day: str) -> tuple[datetime, datetime]:
@@ -24,5 +31,5 @@ DayRange = Annotated[tuple[datetime, datetime] | None, Depends(_day_range)]
 
 
 def day_suffix(day_range: tuple[datetime, datetime] | None) -> str:
-    """CSV 文件名尾缀:YYYY-MM-DD 或 all。"""
+    """CSV file name suffix: YYYY-MM-DD or all."""
     return f"{day_range[0]:%Y-%m-%d}" if day_range else "all"
