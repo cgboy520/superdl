@@ -52,7 +52,7 @@ class MockChannel:
             )
         except (ValueError, KeyError, TypeError, InvalidOperation) as exc:
             raise channel_error("billing.mockCallbackParseFailed") from exc
-        if result.success:
+        if result.success and result.order_no:
             self.mark_paid(result.order_no, result.channel_txn_id, result.amount)
         return result
 

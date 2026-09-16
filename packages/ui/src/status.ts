@@ -305,11 +305,12 @@ export const orderStatusMap = {
   failed: { labelKey: "shared:status.order.failed", color: statusColors.red, badge: "error" },
 } as const satisfies Record<OrderStatus, StatusMeta>;
 
-export type PaymentChannel = "wechat" | "alipay" | "mock";
+export type PaymentChannel = "wechat" | "alipay" | "stripe" | "mock";
 
 export const paymentChannelMap = {
   wechat: { labelKey: "shared:status.channel.wechat" },
   alipay: { labelKey: "shared:status.channel.alipay" },
+  stripe: { labelKey: "shared:status.channel.stripe" },
   mock: { labelKey: "shared:status.channel.mock" },
 } as const satisfies Record<PaymentChannel, LabelMeta>;
 

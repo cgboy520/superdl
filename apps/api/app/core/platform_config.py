@@ -38,6 +38,7 @@ PlatformConfigGroup = Literal[
     "security",
     "payment_wechat",
     "payment_alipay",
+    "payment_stripe",
     "sms",
     "email",
     "real_name",
@@ -171,6 +172,21 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "str",
         pattern=r"|2088\d{12}",
         hint="收款账号 PID(2088 开头 16 位),开放平台·账户中心可查;prod 启用支付宝时必填",
+    ),
+    "payment_stripe_enabled": SettingSpec("payment_stripe", "bool"),
+    "stripe_secret_key": SettingSpec(
+        "payment_stripe",
+        "secret",
+        pattern=r"(sk|rk)_(test|live)_[0-9A-Za-z]{10,}",
+        hint="Secret or restricted API key from the Stripe dashboard (sk_live_… in prod; "
+        "sk_test_… only for sandbox deployments)",
+    ),
+    "stripe_webhook_secret": SettingSpec(
+        "payment_stripe",
+        "secret",
+        pattern=r"whsec_[0-9A-Za-z]{10,}",
+        hint="Signing secret of the webhook endpoint {public_base_url}/api/v1/webhooks/stripe "
+        "(events: checkout.session.*, charge.refunded, charge.dispute.created)",
     ),
     "sms_provider": SettingSpec(
         "sms",
@@ -472,6 +488,9 @@ class RuntimeConfig:
     alipay_private_key: str
     alipay_public_key: str
     alipay_seller_id: str
+    payment_stripe_enabled: bool
+    stripe_secret_key: str
+    stripe_webhook_secret: str
     sms_provider: str
     sms_access_key_id: str
     sms_access_key_secret: str

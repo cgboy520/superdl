@@ -17,7 +17,7 @@ from tests.helpers import create_order, set_platform_setting, user_headers
 def test_registry_invariants():
     """Names fit orders.channel, webhook paths are unique, only mock is dev-only, CN wallets settle
     in CNY and mirror a payout channel."""
-    assert set(CHANNELS) == {"wechat", "alipay", "mock"}
+    assert set(CHANNELS) == {"wechat", "alipay", "stripe", "mock"}
     assert all(len(name) <= 16 for name in CHANNELS)
     assert len({s.webhook_path for s in CHANNELS.values()}) == len(CHANNELS)
     assert [s.name for s in CHANNELS.values() if s.dev_only] == ["mock"]
@@ -26,6 +26,9 @@ def test_registry_invariants():
         assert CHANNELS[name].payout_channel == f"{name}_transfer"
         assert CHANNELS[name].presentation == "qr"
     assert CHANNELS["mock"].currencies is None and CHANNELS["mock"].payout_channel is None
+    stripe = CHANNELS["stripe"]
+    assert stripe.presentation == "redirect" and stripe.currencies is None
+    assert stripe.payout_channel is None and stripe.webhook_path == "stripe"
 
 
 def _api_routes(environment: str) -> list[APIRoute]:
@@ -36,11 +39,17 @@ def _api_routes(environment: str) -> list[APIRoute]:
 def test_webhook_routes_follow_registry_and_environment():
     dev_paths = {r.path for r in _api_routes("dev")}
     prod_paths = {r.path for r in _api_routes("prod")}
-    assert dev_paths == {"/webhooks/wechatpay", "/webhooks/alipay", "/webhooks/mock"}
-    assert prod_paths == {"/webhooks/wechatpay", "/webhooks/alipay"}
+    assert dev_paths == {
+        "/webhooks/wechatpay",
+        "/webhooks/alipay",
+        "/webhooks/stripe",
+        "/webhooks/mock",
+    }
+    assert prod_paths == {"/webhooks/wechatpay", "/webhooks/alipay", "/webhooks/stripe"}
     assert {r.name for r in _api_routes("dev")} == {
         "wechatpay_webhook",
         "alipay_webhook",
+        "stripe_webhook",
         "mock_webhook",
     }
 
@@ -59,11 +68,29 @@ def test_payment_config_warnings_flag_currency_mismatch(monkeypatch):
         {"payment_wechat_enabled": "true", "payment_alipay_enabled": "true"}
     )
     monkeypatch.setattr(get_settings(), "platform_currency", "USD")
-    keys = sorted(w.key for w in payment_service.payment_config_warnings(cfg))
+    keys = sorted(w.key for w in payment_service.payment_config_warnings(cfg, "prod"))
     assert keys == ["payment_alipay_enabled", "payment_wechat_enabled"]
-    assert all(w.level == "error" for w in payment_service.payment_config_warnings(cfg))
+    assert all(w.level == "error" for w in payment_service.payment_config_warnings(cfg, "prod"))
     monkeypatch.setattr(get_settings(), "platform_currency", "CNY")
-    assert payment_service.payment_config_warnings(cfg) == []
+    assert payment_service.payment_config_warnings(cfg, "prod") == []
+
+
+def test_stripe_config_warnings():
+    """Stripe on without secrets → error; a test key in prod → warning; complete key → clean."""
+    incomplete = runtime_config_from_strings({"payment_stripe_enabled": "true"})
+    (w,) = payment_service.payment_config_warnings(incomplete, "prod")
+    assert (w.key, w.level) == ("payment_stripe_enabled", "error")
+    test_key = runtime_config_from_strings(
+        {
+            "payment_stripe_enabled": "true",
+            "stripe_secret_key": "sk_test_0123456789abcdef",
+            "stripe_webhook_secret": "whsec_0123456789abcdef",
+        }
+    )
+    assert [
+        (w.key, w.level) for w in payment_service.payment_config_warnings(test_key, "prod")
+    ] == [("stripe_secret_key", "warning")]
+    assert payment_service.payment_config_warnings(test_key, "dev") == []
 
 
 class TestRechargeGating:
@@ -108,4 +135,5 @@ class TestRechargeGating:
 @pytest.mark.parametrize("channel", ["wechat", "alipay", "mock"])
 def test_presentation_of_known_and_legacy_channels(channel):
     assert payment_service.presentation_of(Order(channel=channel)) == "qr"
+    assert payment_service.presentation_of(Order(channel="stripe")) == "redirect"
     assert payment_service.presentation_of(Order(channel="legacy")) == "qr"

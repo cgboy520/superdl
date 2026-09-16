@@ -352,7 +352,7 @@ async def admin_get_platform_config(session: DbSession) -> PlatformConfigOut:
         PlatformConfigWarningOut(key=w.key, level=w.level, message=w.message)
         for w in (
             *compute_config_warnings(effective_cfg, get_settings().environment),
-            *billing_service.payment_config_warnings(effective_cfg),
+            *billing_service.payment_config_warnings(effective_cfg, get_settings().environment),
         )
     ]
     settings = get_settings()

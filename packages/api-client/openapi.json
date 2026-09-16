@@ -6637,6 +6637,7 @@
               "security",
               "payment_wechat",
               "payment_alipay",
+              "payment_stripe",
               "sms",
               "email",
               "real_name",
@@ -21797,6 +21798,26 @@
           }
         },
         "summary": "Mock Webhook",
+        "tags": [
+          "webhooks"
+        ]
+      }
+    },
+    "/api/v1/webhooks/stripe": {
+      "post": {
+        "description": "stripe callback: verify → parse → credit once (channel_txn_id idempotency).",
+        "operationId": "stripe_webhook_api_v1_webhooks_stripe_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Stripe Webhook",
         "tags": [
           "webhooks"
         ]

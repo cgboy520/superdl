@@ -103,7 +103,8 @@
     "channel": {
       "wechat": "微信支付",
       "alipay": "支付宝",
-      "mock": "模拟支付(开发)"
+      "mock": "模拟支付(开发)",
+      "stripe": "银行卡(Stripe)"
     },
     "disk": {
       "active": "正常",

@@ -1,4 +1,5 @@
-"""Payment channels behind one protocol (`base.PaymentChannel`) and one registry (`spec.CHANNELS`).
+"""Payment channels (`wechat`, `alipay`, `stripe`, dev-only `mock`) behind one protocol
+(`base.PaymentChannel`) and one registry (`spec.CHANNELS`).
 `get_channel` builds real channels through the SDK thread pool and caches them by credential
 fingerprint; the dev-only `mock` channel needs `payment_mock=true`.
 """
@@ -29,6 +30,7 @@ from app.modules.billing.payment_channels.spec import (
     Presentation,
     enabled_channels,
 )
+from app.modules.billing.payment_channels.stripe import STRIPE_CFG_KEYS, StripeChannel
 from app.modules.billing.payment_channels.wechat import WECHAT_CFG_KEYS, WechatChannel
 
 __all__ = [
@@ -37,6 +39,7 @@ __all__ = [
     "CHANNELS",
     "SDK_TIMEOUT",
     "SDK_TIMEOUT_SECONDS",
+    "STRIPE_CFG_KEYS",
     "WECHAT_CFG_KEYS",
     "AlipayChannel",
     "CallbackResult",
@@ -46,6 +49,7 @@ __all__ = [
     "PaymentInit",
     "Presentation",
     "QueryResult",
+    "StripeChannel",
     "WechatChannel",
     "assert_callback_fresh",
     "channel_error",
