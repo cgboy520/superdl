@@ -9,12 +9,8 @@ import type { AdminInvoicesExportApiAdminV1InvoicesExportGetLang } from './admin
 export type AdminInvoicesExportApiAdminV1InvoicesExportGetParams = {
 status?: string | null;
 period?: string | null;
-/**
- * @minimum -720
- * @maximum 720
- */
-tz_offset_minutes?: number;
 lang?: AdminInvoicesExportApiAdminV1InvoicesExportGetLang;
 reveal?: boolean;
 reason?: string | null;
+tz_offset_minutes?: number | null;
 };

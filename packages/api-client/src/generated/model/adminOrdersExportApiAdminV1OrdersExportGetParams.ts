@@ -10,11 +10,7 @@ export type AdminOrdersExportApiAdminV1OrdersExportGetParams = {
 status?: string | null;
 order_no?: string | null;
 user_id?: number | null;
-/**
- * @minimum -720
- * @maximum 720
- */
-tz_offset_minutes?: number;
 lang?: AdminOrdersExportApiAdminV1OrdersExportGetLang;
 day?: string | null;
+tz_offset_minutes?: number | null;
 };

@@ -8,7 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.csvexport import TRUNCATED_NOTES, fmt_money, fmt_ts, header_row, stream_rows
-from app.core.timeutil import BILLING_TZ_OFFSET_MINUTES
 from app.modules.account import service as account_service
 from app.modules.billing import invoices, refunds, wallet
 from app.modules.billing.models import (
@@ -177,7 +176,7 @@ def stream_hourly_csv(
     user_id: int,
     *,
     month_range: tuple[datetime, datetime] | None = None,
-    tz_offset_minutes: int = BILLING_TZ_OFFSET_MINUTES,
+    tz_offset_minutes: int,
     lang: str = "zh-CN",
 ) -> AsyncIterator[str]:
     """小时账单 CSV(降序,最新在前);month_range 为 [起, 讫) UTC 窗口。"""
@@ -211,7 +210,7 @@ def stream_ledger_csv(
     session: AsyncSession,
     user_id: int,
     *,
-    tz_offset_minutes: int = BILLING_TZ_OFFSET_MINUTES,
+    tz_offset_minutes: int,
     lang: str = "zh-CN",
 ) -> AsyncIterator[str]:
     """资金流水 CSV(降序,最新在前)。用户端与管理端租户下钻导出共用。"""
@@ -244,7 +243,7 @@ def stream_admin_orders_csv(
     order_no: str | None = None,
     user_id: int | None = None,
     day_range: tuple[datetime, datetime] | None = None,
-    tz_offset_minutes: int = BILLING_TZ_OFFSET_MINUTES,
+    tz_offset_minutes: int,
     lang: str = "zh-CN",
 ) -> AsyncIterator[str]:
     """按状态、订单号、用户与创建日窗口导出充值订单 CSV,按 id 降序。"""
@@ -280,7 +279,7 @@ def stream_admin_refunds_csv(
     *,
     status: str | None = None,
     day_range: tuple[datetime, datetime] | None = None,
-    tz_offset_minutes: int = BILLING_TZ_OFFSET_MINUTES,
+    tz_offset_minutes: int,
     lang: str = "zh-CN",
 ) -> AsyncIterator[str]:
     """按状态与申请日窗口导出退款单 CSV,按 id 降序。"""
@@ -321,7 +320,7 @@ def stream_admin_invoices_csv(
     *,
     status: str | None = None,
     period: str | None = None,
-    tz_offset_minutes: int = BILLING_TZ_OFFSET_MINUTES,
+    tz_offset_minutes: int,
     lang: str = "zh-CN",
     reveal: bool = False,
     row_counter: dict[str, Any] | None = None,

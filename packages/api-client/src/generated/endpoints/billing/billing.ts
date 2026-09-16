@@ -164,7 +164,7 @@ export const getBillDailySummaryApiV1BillsDailySummaryGetUrl = (params: BillDail
 }
 
 /**
- * 当日消费,本地日界经 tz_offset 折算。
+ * 当日消费,本地日界经 tz_offset 折算(缺省取计费时区当前偏移)。
  * @summary Bill Daily Summary
  */
 export const billDailySummaryApiV1BillsDailySummaryGet = async (params: BillDailySummaryApiV1BillsDailySummaryGetParams, options?: Parameters<typeof customFetch>[1]): Promise<DailySummaryOut> => {

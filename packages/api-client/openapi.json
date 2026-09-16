@@ -2696,7 +2696,7 @@
         "type": "object"
       },
       "DailySummaryOut": {
-        "description": "当日消费汇总(本地日界由 tz_offset_minutes 折算)。",
+        "description": "当日消费汇总(本地日界由 tz_offset_minutes 折算,缺省为计费时区当前偏移)。",
         "properties": {
           "date": {
             "title": "Date",
@@ -10263,18 +10263,6 @@
           },
           {
             "in": "query",
-            "name": "tz_offset_minutes",
-            "required": false,
-            "schema": {
-              "default": 480,
-              "maximum": 720,
-              "minimum": -720,
-              "title": "Tz Offset Minutes",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
             "name": "lang",
             "required": false,
             "schema": {
@@ -10301,6 +10289,24 @@
                 }
               ],
               "title": "Day"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tz_offset_minutes",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 720,
+                  "minimum": -720,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tz Offset Minutes"
             }
           }
         ],
@@ -11239,18 +11245,6 @@
           },
           {
             "in": "query",
-            "name": "tz_offset_minutes",
-            "required": false,
-            "schema": {
-              "default": 480,
-              "maximum": 720,
-              "minimum": -720,
-              "title": "Tz Offset Minutes",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
             "name": "lang",
             "required": false,
             "schema": {
@@ -11261,6 +11255,24 @@
               ],
               "title": "Lang",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tz_offset_minutes",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 720,
+                  "minimum": -720,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tz Offset Minutes"
             }
           }
         ],
@@ -13041,18 +13053,6 @@
           },
           {
             "in": "query",
-            "name": "tz_offset_minutes",
-            "required": false,
-            "schema": {
-              "default": 480,
-              "maximum": 720,
-              "minimum": -720,
-              "title": "Tz Offset Minutes",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
             "name": "lang",
             "required": false,
             "schema": {
@@ -13090,6 +13090,24 @@
                 }
               ],
               "title": "Reason"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tz_offset_minutes",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 720,
+                  "minimum": -720,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tz Offset Minutes"
             }
           }
         ],
@@ -14435,18 +14453,6 @@
           },
           {
             "in": "query",
-            "name": "tz_offset_minutes",
-            "required": false,
-            "schema": {
-              "default": 480,
-              "maximum": 720,
-              "minimum": -720,
-              "title": "Tz Offset Minutes",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
             "name": "lang",
             "required": false,
             "schema": {
@@ -14473,6 +14479,24 @@
                 }
               ],
               "title": "Day"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tz_offset_minutes",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 720,
+                  "minimum": -720,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tz Offset Minutes"
             }
           }
         ],
@@ -15191,18 +15215,6 @@
           },
           {
             "in": "query",
-            "name": "tz_offset_minutes",
-            "required": false,
-            "schema": {
-              "default": 480,
-              "maximum": 720,
-              "minimum": -720,
-              "title": "Tz Offset Minutes",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
             "name": "lang",
             "required": false,
             "schema": {
@@ -15229,6 +15241,24 @@
                 }
               ],
               "title": "Day"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tz_offset_minutes",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 720,
+                  "minimum": -720,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tz Offset Minutes"
             }
           }
         ],
@@ -15500,11 +15530,17 @@
             "name": "tz_offset_minutes",
             "required": false,
             "schema": {
-              "default": 480,
-              "maximum": 720,
-              "minimum": -720,
-              "title": "Tz Offset Minutes",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "maximum": 720,
+                  "minimum": -720,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tz Offset Minutes"
             }
           }
         ],
@@ -16425,18 +16461,6 @@
           },
           {
             "in": "query",
-            "name": "tz_offset_minutes",
-            "required": false,
-            "schema": {
-              "default": 480,
-              "maximum": 720,
-              "minimum": -720,
-              "title": "Tz Offset Minutes",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
             "name": "lang",
             "required": false,
             "schema": {
@@ -16447,6 +16471,24 @@
               ],
               "title": "Lang",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tz_offset_minutes",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 720,
+                  "minimum": -720,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tz Offset Minutes"
             }
           }
         ],
@@ -17287,18 +17329,6 @@
           },
           {
             "in": "query",
-            "name": "tz_offset_minutes",
-            "required": false,
-            "schema": {
-              "default": 480,
-              "maximum": 720,
-              "minimum": -720,
-              "title": "Tz Offset Minutes",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
             "name": "lang",
             "required": false,
             "schema": {
@@ -17309,6 +17339,24 @@
               ],
               "title": "Lang",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tz_offset_minutes",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 720,
+                  "minimum": -720,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tz Offset Minutes"
             }
           }
         ],
@@ -17517,7 +17565,7 @@
     },
     "/api/v1/bills/daily-summary": {
       "get": {
-        "description": "当日消费,本地日界经 tz_offset 折算。",
+        "description": "当日消费,本地日界经 tz_offset 折算(缺省取计费时区当前偏移)。",
         "operationId": "bill_daily_summary_api_v1_bills_daily_summary_get",
         "parameters": [
           {
@@ -17534,11 +17582,17 @@
             "name": "tz_offset_minutes",
             "required": false,
             "schema": {
-              "default": 480,
-              "maximum": 720,
-              "minimum": -720,
-              "title": "Tz Offset Minutes",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "maximum": 720,
+                  "minimum": -720,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tz Offset Minutes"
             }
           }
         ],
@@ -17613,18 +17667,6 @@
           },
           {
             "in": "query",
-            "name": "tz_offset_minutes",
-            "required": false,
-            "schema": {
-              "default": 480,
-              "maximum": 720,
-              "minimum": -720,
-              "title": "Tz Offset Minutes",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
             "name": "cursor",
             "required": false,
             "schema": {
@@ -17654,6 +17696,24 @@
                 }
               ],
               "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tz_offset_minutes",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 720,
+                  "minimum": -720,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tz Offset Minutes"
             }
           }
         ],
@@ -17709,11 +17769,17 @@
             "name": "tz_offset_minutes",
             "required": false,
             "schema": {
-              "default": 480,
-              "maximum": 720,
-              "minimum": -720,
-              "title": "Tz Offset Minutes",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "maximum": 720,
+                  "minimum": -720,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tz Offset Minutes"
             }
           }
         ],

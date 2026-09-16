@@ -17,7 +17,6 @@ from app.core.csvexport import (
     stream_rows,
 )
 from app.core.sqlutil import like_escape
-from app.core.timeutil import BILLING_TZ_OFFSET_MINUTES
 from app.modules.adminapi.models import AdminAdjustment
 from app.modules.metering.schemas import ReconciliationOut
 
@@ -113,7 +112,7 @@ def stream_audit_csv(
     q: str | None = None,
     since: datetime | None = None,
     until: datetime | None = None,
-    tz_offset_minutes: int = BILLING_TZ_OFFSET_MINUTES,
+    tz_offset_minutes: int,
     lang: str = "zh-CN",
 ) -> AsyncIterator[str]:
     """审计日志 CSV(降序,最新在前;按 id 批拉直至上限或穷尽,触顶写截断标记行)。"""
@@ -169,7 +168,7 @@ def stream_adjustments_csv(
     status: str | None = None,
     user_id: int | None = None,
     day_range: tuple[datetime, datetime] | None = None,
-    tz_offset_minutes: int = BILLING_TZ_OFFSET_MINUTES,
+    tz_offset_minutes: int,
     lang: str = "zh-CN",
 ) -> AsyncIterator[str]:
     """按状态、用户与创建日窗口导出调账单 CSV,按 id 降序。"""

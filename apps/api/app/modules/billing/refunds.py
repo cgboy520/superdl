@@ -15,7 +15,7 @@ from app.core.logging import get_logger
 from app.core.money import as_amount, money_label
 from app.core.pagination import Page, paginate_by_id
 from app.core.sqlutil import get_for_update_or_404, next_daily_seq, sum_decimal, total
-from app.core.timeutil import now_utc
+from app.core.timeutil import billing_period, now_utc
 from app.modules.billing import invoices, wallet
 from app.modules.billing.models import InvoiceRequest, Order, RefundRequest, reversal_blocks_refund
 from app.modules.billing.schemas import AdminRefundOut, RefundOut
@@ -37,7 +37,7 @@ async def _order_has_issued_invoice(
     """
     if order.paid_at is None:
         return False
-    period = invoices.beijing_period(order.paid_at)
+    period = billing_period(order.paid_at)
     stmt = (
         select(InvoiceRequest.status)
         .where(

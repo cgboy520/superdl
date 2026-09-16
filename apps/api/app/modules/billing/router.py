@@ -121,7 +121,7 @@ async def bill_daily_summary(
     date: str,
     tz_offset_minutes: int = TzOffset,
 ) -> DailySummaryOut:
-    """当日消费,本地日界经 tz_offset 折算。"""
+    """当日消费,本地日界经 tz_offset 折算(缺省取计费时区当前偏移)。"""
     start, end = parse_local_date(date, tz_offset_minutes)
     s = await wallet.consumption_summary(session, user.id, start, end)
     return DailySummaryOut(date=date, gpu_total=s.gpu_total, disk_total=s.disk_total, items=s.items)
