@@ -397,9 +397,9 @@ function AlertStreamCard({ refetchInterval }: { refetchInterval: number | false 
   const writable = canWriteOps(role);
   const navigate = useNavigate({ from: "/" });
   const { severity } = Route.useSearch();
-  const { data, isError, refetch } = useAlerts(severity ? { severity } : undefined, { refetchInterval });
+  const { data, isError, refetch } = useAlerts({ limit: 50, ...(severity ? { severity } : {}) }, { refetchInterval });
   const ack = useAckAlertWithFeedback();
-  const alerts: AlertRow[] = data ?? [];
+  const alerts: AlertRow[] = data?.items ?? [];
 
   return (
     <Card

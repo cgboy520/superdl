@@ -13,7 +13,7 @@ from app.core.errors import AppError, conflict, not_found
 from app.core.idempotency import find_replay, insert_idempotent
 from app.core.logging import get_logger
 from app.core.outbox import OutboxTask, RetryPolicy, enqueue, outbox_handler
-from app.core.pagination import Page, paginate_by_id
+from app.core.pagination import Page, RawPage, paginate_by_id
 from app.core.platform_config import get_runtime_config
 from app.core.ratelimit import check_rate_limit
 from app.core.sms import ensure_sms_platform_quota, get_sms_channel
@@ -360,18 +360,35 @@ ALERT_STREAM_TYPES = ("admin_alert", "gpu_fault")
 
 
 async def admin_alert_stream(
-    session: AsyncSession, *, severity: str | None = None
-) -> list[Notification]:
-    """管理端告警流(平台级 + 各租户 gpu_fault),最近 50 条;severity 可选精确过滤。"""
+    session: AsyncSession,
+    *,
+    severity: str | None = None,
+    alert_type: str | None = None,
+    acked: bool | None = None,
+    cursor: str | None = None,
+    limit: int | None = None,
+) -> RawPage[Notification]:
+    """管理端告警流(平台级 + 各租户 gpu_fault):按 id 降序游标分页。
+
+    severity / type / 确认状态三个过滤都在库里做,不靠前端在已取回的页里筛。
+    """
     stmt = (
         select(Notification)
         .where(Notification.type.in_(ALERT_STREAM_TYPES))
         .order_by(Notification.id.desc())
-        .limit(50)
     )
     if severity:
         stmt = stmt.where(Notification.severity == severity)
-    return list((await session.execute(stmt)).scalars())
+    if alert_type:
+        stmt = stmt.where(Notification.type == alert_type)
+    if acked is not None:
+        stmt = stmt.where(
+            Notification.acked_at.is_not(None) if acked else Notification.acked_at.is_(None)
+        )
+    page_items, next_cursor = await paginate_by_id(
+        session, stmt, id_col=Notification.id, cursor=cursor, limit=limit
+    )
+    return RawPage(items=page_items, next_cursor=next_cursor)
 
 
 async def ack_admin_alert(session: AsyncSession, alert_id: int, *, acked_by: int) -> Notification:

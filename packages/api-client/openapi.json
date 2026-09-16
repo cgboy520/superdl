@@ -5616,6 +5616,44 @@
         "title": "Page[AdjustmentOut]",
         "type": "object"
       },
+      "Page_AdminAlertOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminAlertOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "Page[AdminAlertOut]",
+        "type": "object"
+      },
       "Page_AdminInstanceOut_": {
         "properties": {
           "items": {
@@ -10301,7 +10339,7 @@
     },
     "/api/admin/v1/alerts": {
       "get": {
-        "description": "管理端告警流。severity 精确过滤(可选)。",
+        "description": "管理端告警流(游标分页,降序):severity / type / 确认状态精确过滤。",
         "operationId": "admin_alerts_api_admin_v1_alerts_get",
         "parameters": [
           {
@@ -10319,6 +10357,75 @@
               ],
               "title": "Severity"
             }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "admin_alert",
+                    "gpu_fault"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "acked",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Acked"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
           }
         ],
         "responses": {
@@ -10326,11 +10433,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AdminAlertOut"
-                  },
-                  "title": "Response Admin Alerts Api Admin V1 Alerts Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/Page_AdminAlertOut_"
                 }
               }
             },

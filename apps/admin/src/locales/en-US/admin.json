@@ -66,7 +66,10 @@
     "colTime": "Time",
     "colTitle": "Title",
     "empty": "No alerts under the current filters",
-    "title": "Alert center"
+    "title": "Alert center",
+    "typeAdminAlert": "Platform alert",
+    "typeFilter": "Alert type",
+    "typeGpuFault": "GPU fault"
   },
   "app": {
     "title": "SuperDL Admin Console"

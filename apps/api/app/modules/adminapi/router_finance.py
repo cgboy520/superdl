@@ -112,11 +112,27 @@ async def _ack_usernames(session: AsyncSession, rows: "list[Notification]") -> d
 
 
 @router.get("/alerts", dependencies=[require_roles("ops", "finance", "readonly")])
-async def admin_alerts(session: DbSession, severity: str | None = None) -> list[AdminAlertOut]:
-    """管理端告警流。severity 精确过滤(可选)。"""
-    rows = await notify_service.admin_alert_stream(session, severity=severity)
-    usernames = await _ack_usernames(session, rows)
-    return [_alert_out(r, usernames) for r in rows]
+async def admin_alerts(
+    session: DbSession,
+    severity: str | None = None,
+    alert_type: Literal["admin_alert", "gpu_fault"] | None = Query(default=None, alias="type"),
+    acked: bool | None = None,
+    cursor: str | None = Cursor,
+    limit: int | None = Limit,
+) -> Page[AdminAlertOut]:
+    """管理端告警流(游标分页,降序):severity / type / 确认状态精确过滤。"""
+    page = await notify_service.admin_alert_stream(
+        session,
+        severity=severity,
+        alert_type=alert_type,
+        acked=acked,
+        cursor=cursor,
+        limit=limit,
+    )
+    usernames = await _ack_usernames(session, page.items)
+    return Page[AdminAlertOut](
+        items=[_alert_out(r, usernames) for r in page.items], next_cursor=page.next_cursor
+    )
 
 
 @router.get("/alerts/unread-count", dependencies=[require_roles("ops", "finance", "readonly")])

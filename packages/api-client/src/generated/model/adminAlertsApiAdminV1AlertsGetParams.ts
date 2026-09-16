@@ -4,7 +4,12 @@
  * SuperDL API
  * OpenAPI spec version: 0.1.0
  */
+import type { AdminAlertsApiAdminV1AlertsGetType } from './adminAlertsApiAdminV1AlertsGetType';
 
 export type AdminAlertsApiAdminV1AlertsGetParams = {
 severity?: string | null;
+type?: AdminAlertsApiAdminV1AlertsGetType;
+acked?: boolean | null;
+cursor?: string | null;
+limit?: number | null;
 };

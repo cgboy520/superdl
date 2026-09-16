@@ -118,6 +118,7 @@ import type {
   OversellPoolOut,
   OverviewOut,
   PageAdjustmentOut,
+  PageAdminAlertOut,
   PageAdminInstanceOut,
   PageAdminOrderOut,
   PageAdminRefundOut,
@@ -412,12 +413,12 @@ export const getAdminAlertsApiAdminV1AlertsGetUrl = (params?: AdminAlertsApiAdmi
 }
 
 /**
- * 管理端告警流。severity 精确过滤(可选)。
+ * 管理端告警流(游标分页,降序):severity / type / 确认状态精确过滤。
  * @summary Admin Alerts
  */
-export const adminAlertsApiAdminV1AlertsGet = async (params?: AdminAlertsApiAdminV1AlertsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminAlertOut[]> => {
+export const adminAlertsApiAdminV1AlertsGet = async (params?: AdminAlertsApiAdminV1AlertsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageAdminAlertOut> => {
 
-  return customFetch<AdminAlertOut[]>(getAdminAlertsApiAdminV1AlertsGetUrl(params),
+  return customFetch<PageAdminAlertOut>(getAdminAlertsApiAdminV1AlertsGetUrl(params),
   {
     ...options,
     method: 'GET'
