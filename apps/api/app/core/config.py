@@ -105,6 +105,9 @@ class Settings(BaseSettings):
     email_reply_to: str | None = None
 
     disk_price_gb_month: str = "0.0350"
+    recharge_min: str = "1.00"
+    recharge_max: str = "50000.00"
+    recharge_presets: str = "50,100,500"
     disk_min_gb: int = 10
     disk_max_gb: int = 4096
     disk_grace_days: int = 7

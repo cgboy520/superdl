@@ -1127,6 +1127,21 @@ export default interface Resources {
           "label": "预热复检窗口",
           "unit": "小时"
         },
+        "recharge_max": {
+          "hint": "单笔充值订单的最大金额",
+          "label": "单笔充值上限",
+          "unit": "{{currency}}"
+        },
+        "recharge_min": {
+          "hint": "低于下限的充值在下单时拒绝;档位须落在上下限之内",
+          "label": "单笔充值下限",
+          "unit": "{{currency}}"
+        },
+        "recharge_presets": {
+          "hint": "充值弹窗按此顺序展示档位(1–8 个,须在上下限之内)",
+          "label": "充值档位",
+          "unit": "{{currency}},逗号分隔"
+        },
         "spot_discount_pct": {
           "hint": "百分数:40 = 按量价的 4 折;调价只影响新建的竞价实例",
           "label": "竞价折扣",
@@ -1512,6 +1527,7 @@ export default interface Resources {
       "orderNotFound": "订单不存在",
       "orderStateNotBackfillable": "订单状态 {{status}} 不可补单",
       "realNameRequiredForRecharge": "按监管要求,充值前需完成实名认证",
+      "rechargeAmountOutOfRange": "充值金额须在 {{min}} 与 {{max}} 之间",
       "refundAlreadyApplied": "该订单已有进行中的退款申请,请勿重复提交",
       "refundAmountExceeded": "退款金额不能超过可退上限 {{max}}(订单金额 {{order}},已退 {{refunded}},可退余额 {{refundable}})",
       "refundBalanceConsumed": "余额已被消费,暂不能核销退款(当前余额 {{balance}},应退 {{amount}});请取消该退款单",

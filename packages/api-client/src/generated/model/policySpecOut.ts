@@ -7,6 +7,6 @@
 
 export interface PolicySpecOut {
   kind: string;
-  max: string;
-  min: string;
+  max: string | null;
+  min: string | null;
 }

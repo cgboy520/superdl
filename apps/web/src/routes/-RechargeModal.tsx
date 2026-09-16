@@ -24,12 +24,7 @@ import { useFormat } from "@superdl/ui";
 
 import { keys } from "../api/keys";
 import { useCreateRecharge, useMockPay } from "../api/mutations";
-import { useRecharge, useSiteConfig, useWallet } from "../api/queries";
-
-/** 充值档位与单笔限额。 */
-export const PRESET_AMOUNTS = ["50.00", "100.00", "500.00"] as const;
-export const RECHARGE_MIN_AMOUNT = "1";
-export const RECHARGE_MAX_AMOUNT = "50000";
+import { usePolicies, useRecharge, useSiteConfig, useWallet } from "../api/queries";
 
 /** 进行中的充值订单号(sessionStorage):关窗重开可恢复轮询。 */
 export const PENDING_ORDER_KEY = "superdl.web.pendingRecharge";
@@ -76,7 +71,12 @@ export function RechargeModal({
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const channelLabel = useChannelLabel();
-  const [amount, setAmount] = useState("100.00");
+  const { data: policies } = usePolicies();
+  const presets = policies?.recharge_presets ?? [];
+  const minAmount = policies?.recharge_min ?? "0.01";
+  const maxAmount = policies?.recharge_max ?? "1000000";
+  const [amount, setAmount] = useState<string | null>(null);
+  const effectiveAmount = amount ?? presets[1] ?? presets[0] ?? minAmount;
   const [order, setOrder] = useState<RechargeOut | null>(null);
   const [orderSeq, setOrderSeq] = useState(0);
   const [pickedChannel, setPickedChannel] = useState<string | null>(null);
@@ -141,8 +141,8 @@ export function RechargeModal({
     setResumedNo("");
   };
 
-  const presetValue = PRESET_AMOUNTS.find((v) => compareAmounts(v, amount) === 0) ?? "";
-  const balanceAfter = wallet ? formatMoney(addAmounts(wallet.balance, amount)) : EMPTY_VALUE;
+  const presetValue = presets.find((v) => compareAmounts(v, effectiveAmount) === 0) ?? "";
+  const balanceAfter = wallet ? formatMoney(addAmounts(wallet.balance, effectiveAmount)) : EMPTY_VALUE;
 
   return (
     <Modal
@@ -168,22 +168,24 @@ export function RechargeModal({
               options={channels.map((c) => ({ value: c.name, title: channelLabel(c.name) }))}
             />
           )}
-          <ChipRow
-            label={t("billing.presetAmounts")}
-            value={presetValue}
-            onChange={(v) => {
-              if (v !== "") setAmount(v);
-            }}
-            options={PRESET_AMOUNTS.map((v) => ({ value: v, label: formatMoney(v) }))}
-          />
+          {presets.length > 0 && (
+            <ChipRow
+              label={t("billing.presetAmounts")}
+              value={presetValue}
+              onChange={(v) => {
+                if (v !== "") setAmount(v);
+              }}
+              options={presets.map((v) => ({ value: v, label: formatMoney(v) }))}
+            />
+          )}
           <InputNumber
             style={{ width: controlWidth.md }}
-            min={RECHARGE_MIN_AMOUNT}
-            max={RECHARGE_MAX_AMOUNT}
+            min={minAmount}
+            max={maxAmount}
             precision={minorUnits}
             stringMode
-            value={amount}
-            onChange={(v) => setAmount(v ?? "0")}
+            value={effectiveAmount}
+            onChange={(v) => setAmount(v ?? minAmount)}
             prefix={currencySymbol}
             aria-label={t("billing.rechargeAmount")}
           />
@@ -197,8 +199,8 @@ export function RechargeModal({
             onClick={() => {
               if (!channel) return;
               create.mutate({
-                body: { amount, channel: channel.name },
-                idempotencyKey: idemKeyOf("recharge", [orderSeq, amount, channel.name]),
+                body: { amount: effectiveAmount, channel: channel.name },
+                idempotencyKey: idemKeyOf("recharge", [orderSeq, effectiveAmount, channel.name]),
               });
             }}
           >
