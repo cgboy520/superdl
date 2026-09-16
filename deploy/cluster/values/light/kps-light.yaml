@@ -1,6 +1,6 @@
 prometheus:
   prometheusSpec:
-    # retentionSize 先于 retention 生效:盘到 4GB 即按最老块淘汰,15d 只是上限
+    # retentionSize takes effect before retention: at 4GB the oldest blocks are evicted, 15d is only the upper bound
     retention: 15d
     retentionSize: "4GB"
     storageSpec:

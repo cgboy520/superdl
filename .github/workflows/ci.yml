@@ -107,7 +107,7 @@ jobs:
       - run: pnpm test
       - run: pnpm csp-check
       - run: pnpm api-client
-      - name: orval 生成物无 diff
+      - name: orval output has no diff
         run: git diff --exit-code packages/api-client
       - run: pnpm build
 
@@ -146,14 +146,14 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 24
-      - name: pip-audit(API 生产依赖漏洞)
+      - name: pip-audit (API production dependency vulnerabilities)
         working-directory: apps/api
         run: |
           uv export --frozen --no-dev --format requirements-txt -o /tmp/reqs.txt
           uvx pip-audit -r /tmp/reqs.txt --progress-spinner off
-      - name: pnpm audit(前端生产依赖,HIGH+ 阻断)
+      - name: pnpm audit (frontend production dependencies, HIGH+ blocks)
         run: pnpm audit --prod --audit-level=high
-      - name: gitleaks(secret 泄漏扫描,全部提交历史)
+      - name: gitleaks (secret leak scan over the full commit history)
         run: |
           docker run --rm -v "$PWD:/repo" \
             zricethezav/gitleaks:v8.29.1@sha256:aa036a2f4bdfe3cc3c55fa4326308efabb4a6be498c883c864fd1d0d5585438a \
@@ -173,9 +173,9 @@ jobs:
       - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081
         with:
           python-version: "3.13"
-      - name: 装 Gateway API CRD
+      - name: Install the Gateway API CRDs
         run: bash deploy/cluster/gateway-api-crds.sh
-      - name: 应用生产 RBAC 并静态断言各 SA 动词面
+      - name: Apply the production RBAC and statically assert each SA's verb surface
         run: |
           kubectl create namespace superdl
           kubectl apply -f deploy/app/k8s/01-rbac.yaml
@@ -183,14 +183,14 @@ jobs:
           need() {
             local sa="system:serviceaccount:superdl:$1"; shift
             if ! kubectl auth can-i --as="$sa" "$@" > /dev/null; then
-              echo "::error::$1 缺动词:$* (01-rbac.yaml 与代码漂移)"
+              echo "::error::$1 lacks verbs: $* (01-rbac.yaml drifted from the code)"
               exit 1
             fi
           }
           deny() {
             local sa="system:serviceaccount:superdl:$1"; shift
             if kubectl auth can-i --as="$sa" "$@" > /dev/null; then
-              echo "::error::$1 越权动词被放行了:$*"
+              echo "::error::$1 is allowed verbs beyond its scope: $*"
               exit 1
             fi
           }
@@ -222,7 +222,7 @@ jobs:
           deny_subject() {
             local subject="$1"; shift
             if kubectl auth can-i --as="$subject" "$@" > /dev/null; then
-              echo "::error::$subject 竟持有:$*(01-rbac.yaml 不得给 monitoring 的 SA 任何 secrets 读权)"
+              echo "::error::$subject unexpectedly holds: $* (01-rbac.yaml must not give monitoring SAs any secrets read access)"
               exit 1
             fi
           }
@@ -257,14 +257,14 @@ jobs:
             deny "$sa" delete nodes
             deny "$sa" patch nodes
           done
-      - name: 准入策略:平台 SA 读不到 superdl-auth/superdl-crypto
+      - name: "Admission policies: platform SAs cannot read superdl-auth/superdl-crypto"
         run: |
           kubectl apply -f deploy/cluster/admission/tenant-restrictions.yaml
           for b in superdl-platform-sa-scope superdl-tenant-pod-baseline superdl-node-field-scope \
                    superdl-global-pod-guard superdl-platform-pod-secret-scope \
                    superdl-platform-job-secret-scope superdl-node-delete-scope; do
             if ! kubectl get validatingadmissionpolicy "$b" > /dev/null 2>&1; then
-              echo "::error::ValidatingAdmissionPolicy $b 未被 apiserver 接受(CEL 写错?)= 该策略静默失效"
+              echo "::error::ValidatingAdmissionPolicy $b not accepted by the apiserver (CEL error?) = the policy is silently ineffective"
               exit 1
             fi
             kubectl get validatingadmissionpolicybinding "$b" > /dev/null
@@ -293,35 +293,35 @@ jobs:
             sleep 1
           done
           if [ -z "$enforced" ]; then
-            echo "::error::30s 后准入链仍未拒绝探针 Pod:${out}"
+            echo "::error::the admission chain still does not refuse the probe Pod after 30s: ${out}"
             exit 1
           fi
-          echo "  ✓ 准入链已生效(第 $i 次探测)"
+          echo "  ✓ admission chain effective (probe $i)"
 
           deny_check() {
             local what="$1" as="$2" out
             if out=$(kubectl --as="$as" create --dry-run=server -f - 2>&1); then
-              echo "::error::${what} 竟被放行(as=${as}):平台主密钥可被读出"
+              echo "::error::${what} was allowed (as=${as}): the platform master key can be read"
               echo "$out"
               exit 1
             fi
             case "$out" in
-              *ValidatingAdmissionPolicy*) echo "  ✓ 拒绝:${what}" ;;
-              *) echo "::error::${what} 被拒但原因不是准入策略(as=${as}):${out}"; exit 1 ;;
+              *ValidatingAdmissionPolicy*) echo "  ✓ denied: ${what}" ;;
+              *) echo "::error::${what} was refused but not by the admission policy (as=${as}): ${out}"; exit 1 ;;
             esac
           }
           allow_check() {
             local what="$1" as="$2" out
             if ! out=$(kubectl --as="$as" create --dry-run=server -f - 2>&1); then
-              echo "::error::${what} 被误伤(as=${as}):${out}"
+              echo "::error::${what} was wrongly refused (as=${as}): ${out}"
               exit 1
             fi
-            echo "  ✓ 放行:${what}"
+            echo "  ✓ allowed: ${what}"
           }
 
-          deny_check "tenant-mgr 建 Pod 取 superdl-auth 的 JWT 签发密钥" \
+          deny_check "tenant-mgr creates a Pod reading the JWT signing key from superdl-auth" \
             system:serviceaccount:superdl:superdl-tenant-mgr < /tmp/probe-leak-auth.yaml
-          deny_check "prewarm 建 Job 整份注入 superdl-auth" \
+          deny_check "prewarm creates a Job injecting superdl-auth whole" \
             system:serviceaccount:superdl:superdl-prewarm <<'EOF'
           apiVersion: batch/v1
           kind: Job
@@ -337,7 +337,7 @@ jobs:
                     envFrom:
                       - secretRef: {name: superdl-auth}
           EOF
-          deny_check "prewarm 建 Job 把 superdl-crypto 挂成卷" \
+          deny_check "prewarm creates a Job mounting superdl-crypto as a volume" \
             system:serviceaccount:superdl:superdl-prewarm <<'EOF'
           apiVersion: batch/v1
           kind: Job
@@ -354,7 +354,7 @@ jobs:
                     command: ["sleep", "1"]
                     volumeMounts: [{name: s, mountPath: /s}]
           EOF
-          deny_check "job-controller 建 Pod 整份注入 superdl-auth" \
+          deny_check "job-controller creates a Pod injecting superdl-auth whole" \
             system:serviceaccount:kube-system:job-controller <<'EOF'
           apiVersion: v1
           kind: Pod
@@ -368,7 +368,7 @@ jobs:
                   - secretRef: {name: superdl-auth}
           EOF
 
-          allow_check "预热 Job 引用 superdl-registry-pull 拉取凭据" \
+          allow_check "prewarm Job references the superdl-registry-pull pull credential" \
             system:serviceaccount:superdl:superdl-prewarm <<'EOF'
           apiVersion: batch/v1
           kind: Job
@@ -384,7 +384,7 @@ jobs:
                     image: busybox:1.36
                     command: ["sleep", "1"]
           EOF
-          deny_check "prewarm 建 Job 模板指定 serviceAccountName(平台 SA 建的 Pod 不得带 SA 身份)" \
+          deny_check "prewarm creates a Job template setting serviceAccountName (Pods created by platform SAs carry no SA identity)" \
             system:serviceaccount:superdl:superdl-prewarm <<'EOF'
           apiVersion: batch/v1
           kind: Job
@@ -401,7 +401,7 @@ jobs:
                     image: busybox:1.36
                     command: ["sleep", "1"]
           EOF
-          allow_check "迁移 Job 的 Pod 整份注入 superdl-db-migrate" \
+          allow_check "migration Job Pod injects superdl-db-migrate whole" \
             system:serviceaccount:kube-system:job-controller <<'EOF'
           apiVersion: v1
           kind: Pod
@@ -418,17 +418,17 @@ jobs:
           deny_delete() {
             local what="$1" as="$2" node="$3" out
             if out=$(kubectl --as="$as" delete node "$node" --dry-run=server 2>&1); then
-              echo "::error::${what} 竟被放行(as=${as}):${out}"
+              echo "::error::${what} was allowed (as=${as}): ${out}"
               exit 1
             fi
             case "$out" in
-              *ValidatingAdmissionPolicy*) echo "  ✓ 拒绝:${what}" ;;
-              *) echo "::error::${what} 被拒但原因不是准入策略(as=${as}):${out}"; exit 1 ;;
+              *ValidatingAdmissionPolicy*) echo "  ✓ denied: ${what}" ;;
+              *) echo "::error::${what} was refused but not by the admission policy (as=${as}): ${out}"; exit 1 ;;
             esac
           }
           NODE_MGR=system:serviceaccount:superdl:superdl-node-mgr
           CP_NODE=$(kubectl get nodes -l node-role.kubernetes.io/control-plane -o name | head -1)
-          deny_delete "node-mgr 删控制面节点" "$NODE_MGR" "${CP_NODE#node/}"
+          deny_delete "node-mgr deletes a control-plane node" "$NODE_MGR" "${CP_NODE#node/}"
           kubectl create -f - <<'EOF'
           apiVersion: v1
           kind: Node
@@ -443,14 +443,14 @@ jobs:
             name: vap-probe-gpu
             labels: {node-restriction.kubernetes.io/superdl-pool: hami}
           EOF
-          deny_delete "node-mgr 删带 infra 落点标签的节点" "$NODE_MGR" vap-probe-infra
+          deny_delete "node-mgr deletes a node with the infra placement label" "$NODE_MGR" vap-probe-infra
           if ! out=$(kubectl --as="$NODE_MGR" delete node vap-probe-gpu --dry-run=server 2>&1); then
-            echo "::error::node-mgr 退役 GPU 工作节点被误伤:${out}"
+            echo "::error::node-mgr decommissioning a GPU worker node was wrongly refused: ${out}"
             exit 1
           fi
-          echo "  ✓ 放行:node-mgr 退役 GPU 工作节点"
+          echo "  ✓ allowed: node-mgr decommissions a GPU worker node"
           kubectl delete node vap-probe-infra vap-probe-gpu
-      - name: 准入策略:平台生成对象全部可准入(dry-run)
+      - name: "Admission policies: every platform-generated object is admitted (dry-run)"
         working-directory: apps/api
         run: |
           uv sync --frozen
@@ -475,17 +475,17 @@ jobs:
           for f in /tmp/admission-probes/*.yaml; do
             as_user="$(cat "${f%.yaml}.as")"
             if out=$(kubectl create --dry-run=server -f "$f" ${as_user:+--as="$as_user"} 2>&1); then
-              echo "  ✓ 准入:$(basename "$f" .yaml)"
+              echo "  ✓ admitted: $(basename "$f" .yaml)"
             else
-              echo "::error::平台生成对象被准入拒绝:$(basename "$f" .yaml)(--as=${as_user:-<admin>}):${out}"
+              echo "::error::platform-generated object refused by admission: $(basename "$f" .yaml) (--as=${as_user:-<admin>}): ${out}"
               fail=1
             fi
           done
           kubectl delete namespace tenant-probe --wait=false
           exit "$fail"
-      - name: 删准入策略
+      - name: Delete the admission policies
         run: kubectl delete -f deploy/cluster/admission/tenant-restrictions.yaml
-      - name: 预置数据盘 StorageClass 与静态 PV(kind 无 Rook/CephFS,扩容要求 PVC 已绑定且 SC 允许扩容)
+      - name: Preset the data disk StorageClass and static PVs (kind has no Rook/CephFS; expansion needs a bound PVC and an SC that allows it)
         run: |
           kubectl apply -f - <<'EOF'
           apiVersion: storage.k8s.io/v1
@@ -508,7 +508,7 @@ jobs:
             hostPath: {path: /tmp/smoke-data-$i}
           EOF
           done
-      - name: 生成 superdl-tenant-mgr 受限 kubeconfig
+      - name: Generate the restricted superdl-tenant-mgr kubeconfig
         run: |
           TOKEN=$(kubectl create token superdl-tenant-mgr -n superdl --duration=1h)
           admin_kubeconfig="${KUBECONFIG:-$HOME/.kube/config}"
@@ -516,7 +516,7 @@ jobs:
           kubectl config set-credentials tenant-mgr --token="$TOKEN" --kubeconfig=/tmp/restricted.kubeconfig
           kubectl config set-context --current --user=tenant-mgr --kubeconfig=/tmp/restricted.kubeconfig
           echo "SUPERDL_TEST_KUBECONFIG=$admin_kubeconfig" >> "$GITHUB_ENV"
-      - name: RealOrchestrator 冒烟(kind)
+      - name: RealOrchestrator smoke (kind)
         working-directory: apps/api
         env:
           SUPERDL_TEST_KUBECONFIG_RESTRICTED: /tmp/restricted.kubeconfig
@@ -582,7 +582,7 @@ jobs:
       - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081
         with:
           python-version: "3.13"
-      - name: helm 渲染监控栈(alloy / loki / kube-prometheus-stack,full 与 light 各一份)
+      - name: helm-render the monitoring stack (alloy / loki / kube-prometheus-stack, once for full and once for light)
         run: |
           set -euo pipefail
           helm repo add grafana https://grafana.github.io/helm-charts
@@ -603,9 +603,9 @@ jobs:
           helm template kube-prometheus-stack prometheus-community/kube-prometheus-stack \
             --version "$(ver kube-prometheus-stack)" -n monitoring \
             -f values/kps.yaml -f values/light/kps-light.yaml > /tmp/render/kps-light.yaml
-      - name: 断言:监控栈无任何 secrets 读权(ClusterRole 一律不许;Role 只许在 monitoring;任何地方不许 verbs *)
+      - name: "Assert: the monitoring stack has no secrets read access (never in a ClusterRole; Roles only in monitoring; verbs * nowhere)"
         env:
-          # Grafana 仅 full 档,dashboard/datasource sidecar 需 configmaps/secrets 读:唯一豁免
+          # Grafana is full tier only; its dashboard/datasource sidecars need configmaps/secrets read: the only exemption
           ALLOW_CLUSTERROLES: kube-prometheus-stack-grafana-clusterrole
         run: |
           uv run --with pyyaml python3 - /tmp/render/*.yaml monitoring-rbac.yaml <<'EOF'
@@ -643,25 +643,25 @@ jobs:
                           continue
                       verbs = set(rule.get("verbs") or [])
                       if "*" in verbs:
-                          errors.append(f"{where} 对 secrets 授 verbs *:{rule}")
+                          errors.append(f"{where} grants verbs * on secrets: {rule}")
                       elif not verbs & READ:
                           continue
                       elif kind == "ClusterRole" and name not in allow:
-                          errors.append(f"{where} 集群级 secrets 读权:{rule}")
+                          errors.append(f"{where} cluster-wide secrets read access: {rule}")
                       elif kind == "Role" and ns != "monitoring":
-                          errors.append(f"{where} 在 monitoring 之外授 secrets 读权:{rule}")
+                          errors.append(f"{where} grants secrets read access outside monitoring: {rule}")
           if chart_operator_role:
-              errors.append("chart 仍渲染 ClusterRole kube-prometheus-stack-operator:values/kps.yaml 的 global.rbac.create=false 失效")
+              errors.append("the chart still renders the ClusterRole kube-prometheus-stack-operator: global.rbac.create=false in values/kps.yaml is ineffective")
           for required in (("ClusterRoleBinding", "superdl-prometheus-operator"),
                            ("ClusterRoleBinding", "superdl-prometheus"),
                            ("RoleBinding", "superdl-prometheus-operator")):
               if required not in seen_bindings:
-                  errors.append(f"monitoring-rbac.yaml 缺 {required[0]} {required[1]}")
+                  errors.append(f"monitoring-rbac.yaml lacks {required[0]} {required[1]}")
           for e in errors:
               print(f"::error::{e}")
           if errors:
               sys.exit(1)
-          print("监控栈 RBAC 断言通过")
+          print("monitoring stack RBAC assertion passed")
           EOF
 
   k8s-manifest-validate:
@@ -681,5 +681,5 @@ jobs:
       - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081
         with:
           python-version: "3.13"
-      - name: 网关清单 CRD schema 校验
+      - name: Gateway manifest CRD schema validation
         run: uv run --with pyyaml --with jsonschema python3 scripts/check-gateway-manifests.py

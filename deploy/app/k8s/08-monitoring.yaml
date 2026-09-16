@@ -1,6 +1,6 @@
-# 两个 monitor 放 monitoring 命名空间:prometheus-operator 按名 GET 凭据 Secret,只在 monitoring 持有 secrets 读权
-# (deploy/cluster/monitoring-rbac.yaml)。Bearer 取 monitoring/superdl-metrics-token 的 token 键,
-# 值 = superdl/superdl-metrics 的 SUPERDL_METRICS_TOKEN(建法见 deploy/cluster/README.md「前置检查」,preflight 校验存在性)。
+# Both monitors live in the monitoring namespace: prometheus-operator fetches the credential Secret by name and holds secrets read access only in monitoring
+# (deploy/cluster/monitoring-rbac.yaml). The Bearer comes from the token key of monitoring/superdl-metrics-token,
+# value = SUPERDL_METRICS_TOKEN of superdl/superdl-metrics (created per deploy/cluster/README.md "Preflight", existence checked by preflight).
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:

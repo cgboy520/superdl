@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""检查控制台非豁免路由文件是否包含 PageContainer 文本。
+"""Check that non-exempt console route files contain the PageContainer text.
 
-扫描 apps/web/src/routes/_console*.tsx 与 apps/admin/src/routes/_app/*.tsx,
-跳过 TARGETS 中的豁免文件和文件名以 '-' 开头的非路由片段。
+Scans apps/web/src/routes/_console*.tsx and apps/admin/src/routes/_app/*.tsx,
+skipping the exempt files in TARGETS and non-route fragments whose file name starts with '-'.
 """
 
 import pathlib
@@ -24,10 +24,10 @@ def main() -> int:
             if "PageContainer" not in path.read_text(encoding="utf-8"):
                 missing.append(path.as_posix())
     for m in missing:
-        print(f"缺少 PageContainer:{m}")
+        print(f"missing PageContainer: {m}")
     if missing:
         return 1
-    print(f"页面骨架检查通过({checked} 个路由页)")
+    print(f"page skeleton check passed ({checked} route pages)")
     return 0
 
 

@@ -3,7 +3,7 @@ set -euo pipefail
 
 warn() { echo "warn: $*" >&2; }
 
-: "${JUPYTER_TOKEN:?required(平台经 Pod env 注入,缺失说明编排层装配错误)}"
+: "${JUPYTER_TOKEN:?required (injected by the platform through the Pod env; missing means the orchestration layer assembled the Pod wrongly)}"
 
 export HOME=/root
 export SHELL=/bin/bash
@@ -21,7 +21,7 @@ if [[ -n "${JULIA_DEPOT_PATH:-}" ]]; then
   export JULIA_DEPOT_PATH="/root/.julia:${JULIA_DEPOT_PATH}"
   if [[ -d "$julia_base/environments" && ! -d /root/.julia/environments ]]; then
     { mkdir -p /root/.julia && cp -r "$julia_base/environments" /root/.julia/; } 2>/dev/null \
-      || warn "Julia 环境未能复制到实例盘,Pkg.add 会失败"
+      || warn "Julia environment could not be copied to the instance disk, Pkg.add will fail"
   fi
 elif command -v julia >/dev/null 2>&1; then
   export JULIA_DEPOT_PATH="/root/.julia"
@@ -49,7 +49,7 @@ fix_group_names() {
   cat "$tmp" > /etc/group 2>/dev/null || { rm -f "$tmp"; return 1; }
   rm -f "$tmp"
 }
-fix_group_names || warn "/etc/group 未能更新(GID 无名告警、SSH 侧 /dev/dri 访问受影响)"
+fix_group_names || warn "/etc/group could not be updated (unnamed GID warnings, SSH-side /dev/dri access affected)"
 
 cuda_probe() {
   command -v python >/dev/null 2>&1 || return 2
@@ -81,14 +81,14 @@ if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then
     if (( removed )); then
       export LD_LIBRARY_PATH="$ld_kept"
       if cuda_probe; then
-        echo "info: 已从 LD_LIBRARY_PATH 摘除 CUDA compat 目录(宿主驱动比镜像新)" >&2
+        echo "info: removed the CUDA compat directory from LD_LIBRARY_PATH (host driver newer than the image)" >&2
       else
         export LD_LIBRARY_PATH="$ld_orig"
-        warn "摘除 CUDA compat 后 cuInit 仍失败,已还原"
+        warn "cuInit still fails after removing CUDA compat, restored"
       fi
     fi
   elif (( cuda_rc == 2 )); then
-    warn "CUDA 可用性无法判定(无 python/libcuda 或探测超时),跳过 compat 处理"
+    warn "CUDA availability undetermined (no python/libcuda or probe timeout), skipping compat handling"
   fi
 fi
 
@@ -122,14 +122,14 @@ PIPFN
   } > /etc/profile.d/superdl-env.sh || return 1
   chmod 644 /etc/environment /etc/profile.d/superdl-env.sh || return 1
 }
-write_session_env || warn "会话环境未能落盘(SSH 进来可能缺 PATH)"
+write_session_env || warn "session environment could not be written (SSH sessions may lack PATH)"
 
 mkdir -p /root/.ssh
 chmod 700 /root/.ssh
 printf '%s\n' "${AUTHORIZED_KEYS:-}" > /root/.ssh/authorized_keys
 chmod 600 /root/.ssh/authorized_keys
 
-chmod g-w,o-w /root 2>/dev/null || warn "/root 权限未能收紧,sshd 可能拒绝公钥认证"
+chmod g-w,o-w /root 2>/dev/null || warn "/root permissions could not be tightened, sshd may refuse public key auth"
 
 hostkey_dir=/root/.ssh/host_keys
 mkdir -p "$hostkey_dir"
@@ -146,7 +146,7 @@ lab_args=()
 if [[ -f /opt/superdl/labsettings/overrides.json ]]; then
   lab_args+=(--LabApp.app_settings_dir=/opt/superdl/labsettings)
 else
-  warn "Lab 默认设置缺失,界面语言回落 en"
+  warn "Lab default settings missing, UI language falls back to en"
 fi
 
 ai_args=(
@@ -169,7 +169,7 @@ if ext_import_err="$(python -c "import superdl_jupyter_auth" 2>&1)"; then
     "--ServerApp.identity_provider_class=superdl_jupyter_auth.SuperDLIdentityProvider"
   )
 else
-  warn "superdl_jupyter_auth 不可导入,回退 stock token 鉴权(入场 URL 将 404):"
+  warn "superdl_jupyter_auth not importable, falling back to stock token auth (the entry URL will 404):"
   echo "$ext_import_err" | tail -3 >&2
 fi
 
@@ -209,9 +209,9 @@ while true; do
     fast_failures=0
   fi
   if (( fast_failures >= 5 )); then
-    echo "jupyter 连续快速退出 ${fast_failures} 次,放弃守护让 Pod 失败收敛" >&2
+    echo "jupyter exited quickly ${fast_failures} times in a row, giving up supervision so the Pod fails" >&2
     exit 1
   fi
-  echo "jupyter 已退出,2s 后重启" >&2
+  echo "jupyter exited, restarting in 2s" >&2
   sleep 2
 done

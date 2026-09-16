@@ -3,14 +3,14 @@ set -euo pipefail
 
 env_name="${1:-}"
 [[ "$env_name" == "full" || "$env_name" == "light" ]] || {
-  echo "用法:$0 <full|light> [helmfile 参数...]" >&2
+  echo "usage: $0 <full|light> [helmfile args...]" >&2
   exit 2
 }
 shift
 
 cd "$(dirname "$0")"
 
-echo "==> 准入策略 admission/tenant-restrictions.yaml(七条 VAP,全部 Deny)"
+echo "==> admission policies admission/tenant-restrictions.yaml (seven VAPs, all Deny)"
 kubectl apply -f admission/tenant-restrictions.yaml
 for _b in superdl-platform-sa-scope superdl-tenant-pod-baseline superdl-node-field-scope \
   superdl-global-pod-guard superdl-platform-pod-secret-scope superdl-platform-job-secret-scope \

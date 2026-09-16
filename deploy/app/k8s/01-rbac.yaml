@@ -97,8 +97,8 @@ rules:
   - apiGroups: [""]
     resources: ["services", "resourcequotas", "limitranges"]
     verbs: ["get", "list", "create", "delete", "patch"]
-  # 租户 ns 的 secrets 权限不再由 tenant-mgr 现写 Role,而是把预置 ClusterRole superdl-tenant-secrets 用 RoleBinding 绑进 ns;
-  # bind 限定到该 ClusterRole 名。roles 只留 delete(清理旧版遗留的 superdl-tenant-mgr-secrets Role),无 create/patch/escalate/bind。
+  # Secrets access in tenant namespaces is no longer a Role written by tenant-mgr on the fly; the preset ClusterRole superdl-tenant-secrets is bound into the ns with a RoleBinding,
+  # bind restricted to that ClusterRole name. roles keeps only delete (cleanup of the legacy superdl-tenant-mgr-secrets Role), no create/patch/escalate/bind.
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["rolebindings"]
     verbs: ["get", "create", "patch", "delete"]
@@ -129,7 +129,7 @@ subjects:
     name: superdl-tenant-mgr
     namespace: superdl
 ---
-# 无 ClusterRoleBinding:只经 tenant-mgr 在每个 tenant-* ns 建的 RoleBinding(core/k8s/real.py::_ensure_tenant_rbac_sync)生效
+# No ClusterRoleBinding: effective only through the RoleBinding tenant-mgr creates in every tenant-* ns (core/k8s/real.py::_ensure_tenant_rbac_sync)
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -139,7 +139,7 @@ rules:
     resources: ["secrets"]
     verbs: ["get", "create", "patch", "delete"]
 ---
-# 实例日志只读直读(docs/reference/orchestrator.md),只绑 superdl-api
+# Read-only direct instance log read (docs/reference/orchestrator.md), bound to superdl-api only
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:

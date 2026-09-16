@@ -44,7 +44,7 @@ spec:
                 - -ec
                 - |
                   set -e
-                  [ -n "$BACKUP_ENCRYPT_KEY" ] || { echo "BACKUP_ENCRYPT_KEY 未配置" >&2; exit 1; }
+                  [ -n "$BACKUP_ENCRYPT_KEY" ] || { echo "BACKUP_ENCRYPT_KEY is not configured" >&2; exit 1; }
                   ts=$(date -u +%Y%m%dT%H%M%SZ)
                   pg_dump "$PGURL" -Fc -f /backup/superdl-$ts.dump
                   gpg --batch --yes --symmetric --cipher-algo AES256 \

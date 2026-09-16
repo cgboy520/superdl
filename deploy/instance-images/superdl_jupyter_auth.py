@@ -1,11 +1,11 @@
-"""SuperDL 平台 Jupyter 鉴权扩展(镜像构建期 COPY,entrypoint 按可导入性启用)。
+"""SuperDL platform Jupyter auth extension (COPYed at image build time, enabled by the entrypoint when importable).
 
-两件事:
-1. `/superdl-bootstrap` handler:一次性票据(code + exp + sig,验签密钥 = Jupyter token
-   本体)核销 → Set-Cookie 第一方会话 cookie → 302 进 Jupyter。token 不进 URL;
-   票据单次、短 TTL。
-2. `SuperDLIdentityProvider`:stock 的 ?token=/Authorization 之外,接受上述 cookie。
-   任一环节异常一律回落 stock token 鉴权(?token= 链接依旧可用)。
+Two things:
+1. The `/superdl-bootstrap` handler: a one-time ticket (code + exp + sig, signing key = the Jupyter token
+   itself) is redeemed → Set-Cookie of a first-party session cookie → 302 into Jupyter. The token never enters the URL;
+   the ticket is single-use with a short TTL.
+2. `SuperDLIdentityProvider`: accepts the cookie above in addition to the stock ?token= / Authorization.
+   Any failure falls back to stock token auth (?token= links keep working).
 """
 
 import hashlib
@@ -49,7 +49,7 @@ def _ticket_valid(token: str, code: str, exp: str, sig: str) -> bool:
 
 
 class SuperDLBootstrapHandler(JupyterHandler):
-    """核销一次性票据并设置登录 cookie。"""
+    """Redeem the one-time ticket and set the login cookie."""
 
     async def get(self) -> None:
         token = os.environ.get("JUPYTER_TOKEN", "")
@@ -67,7 +67,7 @@ class SuperDLBootstrapHandler(JupyterHandler):
 
 
 def _user_from_cookie(provider: _BaseIdentityProvider, handler: JupyterHandler):
-    """校验 cookie,返回用户身份或 None。"""
+    """Validate the cookie and return the user identity or None."""
     try:
         token = str(provider.token or "")
         cookie = handler.get_cookie(COOKIE_NAME)

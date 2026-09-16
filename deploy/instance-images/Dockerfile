@@ -12,7 +12,7 @@ ARG CONDA_PATH_PREFIX=""
 ENV PATH=${CONDA_PATH_PREFIX}$PATH
 RUN if [[ -n "$MINICONDA_INSTALLER" ]]; then \
       if [[ -z "$MINICONDA_SHA256" ]]; then \
-        echo "MINICONDA_SHA256 必填(MINICONDA_INSTALLER 的供应链钉版)" >&2; exit 1; \
+        echo "MINICONDA_SHA256 is required (supply-chain pin of MINICONDA_INSTALLER)" >&2; exit 1; \
       fi \
       && apt-get update \
       && apt-get install -y --no-install-recommends curl ca-certificates bzip2 \

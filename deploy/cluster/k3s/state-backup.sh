@@ -1,8 +1,8 @@
 #!/bin/bash
-# k3s 集群状态异机加密备份:server/{token,agent-token,cred,tls} + 最新 etcd 快照 + SQLite 在线一致副本 → tar → gpg → rsync 镜像机 k3s/。
-# 装为 /usr/local/sbin/superdl-k3s-state-backup(ansible site.yml),cron /etc/cron.d/superdl-k3s-state-backup 每 6 小时;
-# 口令、镜像机与 ssh 密钥沿用 /etc/superdl/pg/{backup-passphrase,backup.env,backup-ssh-key}。
-# 指标:/var/lib/node_exporter/textfile/superdl_k3s_state_backup.prom 的 superdl_k3s_state_backup_last_success_timestamp_seconds。
+# Off-host encrypted backup of the k3s cluster state: server/{token,agent-token,cred,tls} + the latest etcd snapshot + an online consistent SQLite copy → tar → gpg → rsync to the mirror host k3s/.
+# Installed as /usr/local/sbin/superdl-k3s-state-backup (ansible site.yml), cron /etc/cron.d/superdl-k3s-state-backup every 6 hours;
+# passphrase, mirror host and ssh key reuse /etc/superdl/pg/{backup-passphrase,backup.env,backup-ssh-key}.
+# Metric: superdl_k3s_state_backup_last_success_timestamp_seconds in /var/lib/node_exporter/textfile/superdl_k3s_state_backup.prom.
 set -euo pipefail
 umask 077
 SERVER=/var/lib/rancher/k3s/server
@@ -63,7 +63,7 @@ echo "$now" > "$OUT/.last-success"
 if [[ -d "$TEXTFILE_DIR" ]]; then
   chmod 0755 "$TEXTFILE_DIR"
   {
-    printf '# HELP superdl_k3s_state_backup_last_success_timestamp_seconds k3s 集群状态(token/cred/tls/datastore)加密异机备份最近一次成功的 Unix 时间\n'
+    printf '# HELP superdl_k3s_state_backup_last_success_timestamp_seconds Unix time of the last successful encrypted off-host backup of the k3s cluster state (token/cred/tls/datastore)\n'
     printf '# TYPE superdl_k3s_state_backup_last_success_timestamp_seconds gauge\n'
     printf 'superdl_k3s_state_backup_last_success_timestamp_seconds %s\n' "$now"
   } > "$PROM.tmp"

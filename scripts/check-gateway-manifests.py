@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""用 CHART_VERSION 指定的 Envoy Gateway chart 中的 CRD schema 校验网关清单。
+"""Validate the gateway manifests against the CRD schemas of the Envoy Gateway chart pinned by CHART_VERSION.
 
-目标:deploy/app/k8s/04-gateway.yaml;无匹配 schema 的对象跳过。
-运行依赖:helm、PyYAML、jsonschema。
+Target: deploy/app/k8s/04-gateway.yaml; objects without a matching schema are skipped.
+Runtime dependencies: helm, PyYAML, jsonschema.
 """
 
 import pathlib
@@ -20,7 +20,7 @@ TARGETS = [REPO / "deploy/app/k8s/04-gateway.yaml"]
 
 
 def _load_schemas(crd_dir: pathlib.Path) -> dict[tuple[str, str], dict]:
-    """读取目录内 CRD,按 (apiVersion, kind) 返回 openAPIV3Schema。"""
+    """Read the CRDs in the directory and return openAPIV3Schema keyed by (apiVersion, kind)."""
     out: dict[tuple[str, str], dict] = {}
     for f in sorted(crd_dir.rglob("*.yaml")):
         for doc in yaml.safe_load_all(f.read_text()):
@@ -35,7 +35,7 @@ def _load_schemas(crd_dir: pathlib.Path) -> dict[tuple[str, str], dict]:
 
 
 def _strip_kube(node):
-    """递归移除以 x-kubernetes 开头的字典键。"""
+    """Recursively remove dictionary keys starting with x-kubernetes."""
     if isinstance(node, dict):
         return {k: _strip_kube(v) for k, v in node.items() if not k.startswith("x-kubernetes")}
     if isinstance(node, list):
@@ -52,7 +52,7 @@ def main() -> int:
                 capture_output=True,
             )
         except (OSError, subprocess.CalledProcessError) as exc:
-            print(f"拉取 {CHART}:{CHART_VERSION} 失败:{exc}", file=sys.stderr)
+            print(f"pulling {CHART}:{CHART_VERSION} failed: {exc}", file=sys.stderr)
             return 1
         schemas = _load_schemas(pathlib.Path(tmp) / "gateway-helm" / "charts" / "crds" / "crds")
 
@@ -72,14 +72,14 @@ def main() -> int:
                 jsonschema.validate(doc, _strip_kube(schema))
             except jsonschema.ValidationError as exc:
                 where = "/".join(str(p) for p in exc.absolute_path)
-                problems.append(f"{target.name} {key[1]}/{name} 的 {where}: {exc.message}")
+                problems.append(f"{target.name} {key[1]}/{name} at {where}: {exc.message}")
 
     if problems:
-        print(f"网关清单 schema 校验失败({len(problems)} 处):", file=sys.stderr)
+        print(f"gateway manifest schema validation failed ({len(problems)} problem(s)):", file=sys.stderr)
         for p in problems:
             print(f"  - {p}", file=sys.stderr)
         return 1
-    print(f"网关清单 schema 校验通过(Gateway API/Envoy Gateway {CHART_VERSION},{checked} 个对象)")
+    print(f"gateway manifest schema validation passed (Gateway API/Envoy Gateway {CHART_VERSION}, {checked} objects)")
     return 0
 
 

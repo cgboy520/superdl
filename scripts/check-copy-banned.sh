@@ -4,8 +4,8 @@ cd "$(dirname "$0")/.."
 python3 - <<'PY'
 import json, pathlib, re, sys
 
-BANNED = ["智能", "强大", "轻松", "一键", "全方位", "高效", "极速", "助力", "赋能", "颠覆", "极致"]
-ALLOW = re.compile(r"一键(加入|添加)")
+BANNED = ["智能", "强大", "轻松", "一键", "全方位", "高效", "极速", "助力", "赋能", "颠覆", "极致"]  # cjk-ok
+ALLOW = re.compile(r"一键(加入|添加)")  # cjk-ok
 
 
 def hits(text: str) -> list[str]:
@@ -39,7 +39,7 @@ for m in re.finditer(r'"[^"\n]*"', msgs):
 
 if fail:
     for file, where, w in fail:
-        print(f"禁词「{w}」: {file} :: {where}")
+        print(f"banned word '{w}': {file} :: {where}")
     sys.exit(1)
 print("banned-words check: clean")
 PY

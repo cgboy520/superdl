@@ -1,11 +1,11 @@
-# chart 自带的 ClusterRole 给 operator 集群级 secrets/configmaps *,关掉;等价且收窄的一套在 ../monitoring-rbac.yaml
-# (helmfile presync 下发,名字带 superdl- 前缀,不与 chart 旧对象同名)。kube-state-metrics / node-exporter 子 chart 各自的 rbac 不受此键影响。
+# The chart ClusterRole gives the operator cluster-wide secrets/configmaps *: turned off; the equivalent narrowed set lives in ../monitoring-rbac.yaml
+# (shipped by the helmfile presync, names carry the superdl- prefix and never collide with old chart objects). The rbac of the kube-state-metrics / node-exporter sub-charts is not affected by this key.
 global:
   rbac:
     create: false
 prometheusOperator:
-  # operator 只在这些 ns 找 ServiceMonitor/PodMonitor/PrometheusRule;Prometheus/Alertmanager 实例与其 Secret informer 只在 monitoring。
-  # 监控对象引用的 Secret 由 operator 按名 GET:引用凭据的 monitor 一律放 monitoring ns(../../app/k8s/08-monitoring.yaml)。
+  # The operator looks for ServiceMonitor/PodMonitor/PrometheusRule only in these namespaces; the Prometheus/Alertmanager instances and their Secret informers only in monitoring.
+  # Secrets referenced by monitors are fetched by name by the operator: monitors referencing credentials always live in the monitoring ns (../../app/k8s/08-monitoring.yaml).
   namespaces:
     releaseNamespace: true
     additional:
@@ -22,7 +22,7 @@ prometheusOperator:
   alertmanagerConfigNamespaces: [monitoring]
   thanosRulerInstanceNamespaces: [monitoring]
 kube-state-metrics:
-  # 默认采集器去掉 secrets(其 ClusterRole 会随之少掉 secrets list/watch)
+  # Remove secrets from the default collectors (its ClusterRole then loses secrets list/watch)
   collectors:
     - certificatesigningrequests
     - configmaps
@@ -117,7 +117,7 @@ grafana:
     auth.anonymous:
       enabled: false
   additionalDataSources:
-    - name: Loki(平台)
+    - name: Loki (platform)
       uid: loki-platform
       type: loki
       access: proxy
@@ -126,7 +126,7 @@ grafana:
         httpHeaderName1: X-Scope-OrgID
       secureJsonData:
         httpHeaderValue1: platform
-    - name: Loki(租户)
+    - name: Loki (tenant)
       uid: loki-tenant
       type: loki
       access: proxy
@@ -141,7 +141,7 @@ grafana:
         json: |
           {
             "uid": "superdl-overview",
-            "title": "SuperDL 总览",
+            "title": "SuperDL overview",
             "schemaVersion": 39,
             "version": 1,
             "editable": false,
@@ -150,7 +150,7 @@ grafana:
             "panels": [
               {
                 "id": 1,
-                "title": "实例编排健康",
+                "title": "Instance orchestration health",
                 "type": "timeseries",
                 "datasource": {"type": "prometheus"},
                 "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0},
@@ -159,23 +159,23 @@ grafana:
                   {
                     "refId": "A",
                     "expr": "max(superdl_reconcile_stuck_instances)",
-                    "legendFormat": "悬挂实例({{status}})"
+                    "legendFormat": "stuck instances ({{status}})"
                   },
                   {
                     "refId": "B",
                     "expr": "increase(superdl_instance_node_lost_total[1h])",
-                    "legendFormat": "节点失联判停/h"
+                    "legendFormat": "node-lost stops/h"
                   },
                   {
                     "refId": "C",
                     "expr": "increase(superdl_outbox_dead_total[1h])",
-                    "legendFormat": "outbox 死信/h({{task_type}})"
+                    "legendFormat": "outbox dead letters/h ({{task_type}})"
                   }
                 ]
               },
               {
                 "id": 2,
-                "title": "账单结算",
+                "title": "Bill settlement",
                 "type": "timeseries",
                 "datasource": {"type": "prometheus"},
                 "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0},
@@ -184,23 +184,23 @@ grafana:
                   {
                     "refId": "A",
                     "expr": "superdl_settlement_lag_windows",
-                    "legendFormat": "结算水位滞后窗口({{kind}})"
+                    "legendFormat": "settlement lag windows ({{kind}})"
                   },
                   {
                     "refId": "B",
                     "expr": "increase(superdl_settlement_failed_total[1h])",
-                    "legendFormat": "结算失败/h({{kind}})"
+                    "legendFormat": "settlement failures/h ({{kind}})"
                   },
                   {
                     "refId": "C",
                     "expr": "increase(superdl_fund_reconcile_mismatch_total[1h])",
-                    "legendFormat": "账实不平/h({{kind}})"
+                    "legendFormat": "reconcile mismatches/h ({{kind}})"
                   }
                 ]
               },
               {
                 "id": 3,
-                "title": "节点与 GPU",
+                "title": "Nodes and GPUs",
                 "type": "timeseries",
                 "datasource": {"type": "prometheus"},
                 "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0},
@@ -209,17 +209,17 @@ grafana:
                   {
                     "refId": "A",
                     "expr": "count(kube_node_status_condition{condition=\"Ready\", status=\"true\"})",
-                    "legendFormat": "Ready 节点数"
+                    "legendFormat": "Ready nodes"
                   },
                   {
                     "refId": "B",
                     "expr": "avg by (node) (DCGM_FI_DEV_GPU_UTIL)",
-                    "legendFormat": "GPU 利用率%({{node}})"
+                    "legendFormat": "GPU util % ({{node}})"
                   },
                   {
                     "refId": "C",
                     "expr": "max by (node) (DCGM_FI_DEV_GPU_TEMP)",
-                    "legendFormat": "GPU 温度°C({{node}})"
+                    "legendFormat": "GPU temp °C ({{node}})"
                   }
                 ]
               }
@@ -317,37 +317,37 @@ additionalPrometheusRulesMap:
           - alert: GPUXidCriticalError
             expr: (changes(DCGM_FI_DEV_XID_ERRORS[5m]) > 0) and (DCGM_FI_DEV_XID_ERRORS == 48 or DCGM_FI_DEV_XID_ERRORS == 63 or DCGM_FI_DEV_XID_ERRORS == 64 or DCGM_FI_DEV_XID_ERRORS == 79 or DCGM_FI_DEV_XID_ERRORS == 94 or DCGM_FI_DEV_XID_ERRORS == 95)
             labels: {severity: critical}
-            annotations: {summary: "GPU Xid 致命错误(节点 {{ $labels.hostname }} 卡 {{ $labels.gpu }}):自动 cordon + 补偿 SOP", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/gpu-fault-sop.md"}
+            annotations: {summary: "GPU Xid fatal error (node {{ $labels.hostname }} GPU {{ $labels.gpu }}): automatic cordon + compensation SOP", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/gpu-fault-sop.md"}
           - alert: GPUHighTemperature
             expr: DCGM_FI_DEV_GPU_TEMP > 85
             for: 5m
             labels: {severity: warning}
-            annotations: {summary: "GPU 温度 >85°C 持续 5 分钟({{ $labels.hostname }} 卡 {{ $labels.gpu }})", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/gpu-fault-sop.md"}
+            annotations: {summary: "GPU temperature >85°C for 5 minutes ({{ $labels.hostname }} GPU {{ $labels.gpu }})", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/gpu-fault-sop.md"}
           - alert: NodeGPUUnavailable
             expr: (kube_node_status_capacity{resource="nvidia_com_gpu"} > 0) and on(node) (kube_node_status_condition{condition="Ready",status="true"} == 0)
             for: 2m
             labels: {severity: critical}
-            annotations: {summary: "GPU 节点 NotReady:{{ $labels.node }}"}
+            annotations: {summary: "GPU node NotReady: {{ $labels.node }}"}
           - alert: SharedPoolUtilSaturated
             expr: avg by (node) (hami_host_gpu_utilization_ratio) > 95
             for: 30m
             labels: {severity: warning}
-            annotations: {summary: "共享池节点持续打满(超卖回调阈值 85% 参考)"}
+            annotations: {summary: "Shared pool node saturated continuously (oversell lower-threshold reference 85%)"}
           - alert: CephUnhealthy
             expr: ceph_health_status > 0
             for: 15m
             labels: {severity: critical}
-            annotations: {summary: "Ceph 集群非 HEALTH_OK 超 15 分钟,数据盘可用性受影响", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/cluster-validation.md#d-storage"}
+            annotations: {summary: "Ceph cluster not HEALTH_OK for over 15 minutes, data disk availability affected", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/cluster-validation.md#d-storage"}
           - alert: HamiSchedulerDown
             expr: absent(up{job="hami-scheduler"} == 1)
             for: 5m
             labels: {severity: warning}
-            annotations: {summary: "HAMi scheduler 指标缺失:共享池调度器可能不可用,新建共享档实例将被拒绝", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/cluster-validation.md#c-hami-shared-pool"}
+            annotations: {summary: "HAMi scheduler metrics missing: the shared pool scheduler may be down, new shared-tier instances will be refused", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/cluster-validation.md#c-hami-shared-pool"}
           - alert: GpuTelemetryMissing
             expr: absent(DCGM_FI_DEV_GPU_UTIL) or absent(hami_host_gpu_utilization_ratio)
             for: 30m
             labels: {severity: warning}
-            annotations: {summary: "GPU 遥测缺失:无法发现配额逃逸与滥用(dcgm-exporter 或 HAMi vGPUmonitor 抓取断了)", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/cluster-validation.md#e-monitoring-and-alerts"}
+            annotations: {summary: "GPU telemetry missing: quota escapes and abuse cannot be detected (dcgm-exporter or HAMi vGPUmonitor scrape broken)", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/cluster-validation.md#e-monitoring-and-alerts"}
   superdl-certmanager:
     groups:
       - name: superdl.certmanager
@@ -355,26 +355,26 @@ additionalPrometheusRulesMap:
           - alert: CertExpiringSoon
             expr: (certmanager_certificate_expiration_timestamp_seconds - time()) < 7 * 24 * 3600
             labels: {severity: warning}
-            annotations: {summary: "证书 {{ $labels.name }}({{ $labels.namespace }})7 天内到期:查 cert-manager 续签", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/acme-dns.md"}
+            annotations: {summary: "Certificate {{ $labels.name }} ({{ $labels.namespace }}) expires within 7 days: check cert-manager renewal", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/acme-dns.md"}
           - alert: CertExpiringCritical
             expr: (certmanager_certificate_expiration_timestamp_seconds - time()) < 2 * 24 * 3600
             labels: {severity: critical}
-            annotations: {summary: "证书 {{ $labels.name }}({{ $labels.namespace }})48 小时内到期:立即人工介入", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/acme-dns.md"}
+            annotations: {summary: "Certificate {{ $labels.name }} ({{ $labels.namespace }}) expires within 48 hours: intervene now", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/acme-dns.md"}
           - alert: CertManagerMetricsMissing
             expr: absent(certmanager_certificate_expiration_timestamp_seconds)
             for: 1h
             labels: {severity: warning}
-            annotations: {summary: "cert-manager 指标缺失 1 小时:ServiceMonitor/组件异常,证书过期将无预警", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/acme-dns.md"}
+            annotations: {summary: "cert-manager metrics missing for 1 hour: ServiceMonitor / component broken, certificate expiry would go unwarned", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/acme-dns.md"}
           - alert: PlatformCertExpiringSoon
             expr: (superdl_cert_not_after_seconds - time()) < 14 * 24 * 3600
             for: 1h
             labels: {severity: warning}
-            annotations: {summary: "平台域证书 {{ $labels.domain }} 14 天内到期:三个平台域由宿主机 acme 续期脚本管理,查其 cron 日志"}
+            annotations: {summary: "Platform domain certificate {{ $labels.domain }} expires within 14 days: the three platform domains are renewed by the host acme script, check its cron log"}
           - alert: PlatformCertExpiringCritical
             expr: (superdl_cert_not_after_seconds - time()) < 3 * 24 * 3600
             for: 1h
             labels: {severity: critical}
-            annotations: {summary: "平台域证书 {{ $labels.domain }} 3 天内到期:三个平台域由宿主机 acme 续期脚本管理,立即人工续签并灌入 TLS Secret"}
+            annotations: {summary: "Platform domain certificate {{ $labels.domain }} expires within 3 days: the three platform domains are renewed by the host acme script, renew by hand now and load the TLS Secret"}
   superdl-platform:
     groups:
       - name: superdl.platform
@@ -382,157 +382,157 @@ additionalPrometheusRulesMap:
           - alert: OutboxTaskDead
             expr: increase(superdl_outbox_dead_total[10m]) > 0
             labels: {severity: critical}
-            annotations: {summary: "outbox 任务进入死信({{ $labels.task_type }}):编排执行链路断裂,管理端总览可重放"}
+            annotations: {summary: "outbox task dead-lettered ({{ $labels.task_type }}): the orchestration execution chain is broken, replay from the admin overview"}
           - alert: SettlementFailed
             expr: increase(superdl_settlement_failed_total[1h]) > 0
             labels: {severity: critical}
-            annotations: {summary: "结算失败({{ $labels.kind }}):检查 worker 日志,结算函数幂等可重跑"}
+            annotations: {summary: "Settlement failed ({{ $labels.kind }}): check the worker logs, the settlement function is idempotent and can be re-run"}
           - alert: SettlementLagging
             expr: superdl_settlement_lag_windows > 1
             for: 15m
             labels: {severity: critical}
-            annotations: {summary: "结算水位线落后 {{ $value }} 个窗口({{ $labels.kind }}):有账期未追平,worker 日志查失败实例"}
+            annotations: {summary: "Settlement watermark {{ $value }} windows behind ({{ $labels.kind }}): periods not caught up, find the failing instances in the worker logs"}
           - alert: PaymentCallbackMismatch
             expr: increase(superdl_payment_callback_mismatch_total[10m]) > 0
             labels: {severity: critical}
-            annotations: {summary: "支付回调金额与订单不符:疑似攻击或渠道异常,见财务异常清单"}
+            annotations: {summary: "Payment callback amount differs from the order: suspected attack or channel fault, see the finance anomaly list"}
           - alert: InstanceNodeLost
             expr: increase(superdl_instance_node_lost_total[15m]) > 0
             labels: {severity: critical}
-            annotations: {summary: "有租户实例因所在节点失联被判停:需人工核对是否退费"}
+            annotations: {summary: "Tenant instances stopped because their node was lost: check by hand whether to refund"}
           - alert: LeakedPodsReclaimed
             expr: increase(superdl_reconcile_leaked_total[30m]) > 3
             labels: {severity: warning}
-            annotations: {summary: "30 分钟内回收泄漏 Pod 超 3 个:编排链路可能存在系统性问题"}
+            annotations: {summary: "More than 3 leaked Pods reclaimed within 30 minutes: the orchestration chain may have a systemic problem"}
           - alert: ApiHighErrorRate
             expr: sum(rate(superdl_http_request_duration_seconds_count{status=~"5.."}[5m])) / clamp_min(sum(rate(superdl_http_request_duration_seconds_count[5m])), 0.001) > 0.05
             for: 5m
             labels: {severity: critical}
-            annotations: {summary: "API 5xx 率 >5% 持续 5 分钟", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md"}
+            annotations: {summary: "API 5xx rate >5% for 5 minutes", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md"}
           - alert: PaymentClosedOrderRescued
             expr: increase(superdl_payment_closed_order_rescued_total[1h]) > 0
             labels: {severity: warning}
-            annotations: {summary: "关单后回调自动入账发生:本地关单早于渠道过期,核对订单 TTL 与渠道 time_expire 是否同步"}
+            annotations: {summary: "A callback was credited after the order was closed: the local close happened before the channel expiry, check that the order TTL and the channel time_expire are aligned"}
           - alert: OutboxTaskTimeout
             expr: increase(superdl_outbox_task_timeout_total[30m]) > 0
             labels: {severity: warning}
-            annotations: {summary: "outbox 有任务被执行超时中断:队列全局串行,队头卡死会让全部编排请求排队", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md"}
+            annotations: {summary: "An outbox task was interrupted by the execution timeout: the queue is globally serial, a stuck head queues every orchestration request", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md"}
           - alert: WorkerDown
             expr: (time() - max(superdl_worker_heartbeat_timestamp_seconds)) > 120 or absent(superdl_worker_heartbeat_timestamp_seconds)
             for: 5m
             labels: {severity: critical}
-            annotations: {summary: "worker 心跳缺失超 2 分钟:outbox/结算/巡检/查单全部停摆"}
+            annotations: {summary: "Worker heartbeat missing for over 2 minutes: outbox / settlement / patrol / order queries all stopped"}
           - alert: OutboxBacklogStale
             expr: superdl_outbox_pending_oldest_age_seconds > 600
             for: 10m
             labels: {severity: critical}
-            annotations: {summary: "最老 pending outbox 任务已滞留 {{ $value }}s:worker 活着但领不动任务,查 outbox_loop_error 日志"}
+            annotations: {summary: "The oldest pending outbox task has waited {{ $value }}s: the worker is alive but cannot claim tasks, check the outbox_loop_error log"}
           - alert: PgBackupFailed
             expr: kube_job_status_failed{namespace="superdl", job_name=~"pg-backup-daily-.*"} > 0
             for: 5m
             labels: {severity: critical}
-            annotations: {summary: "PG 每日备份 Job 失败:资金库 RPO 正在拉长,立即处理", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
+            annotations: {summary: "PG daily backup Job failed: the billing database RPO is growing, act now", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
           - alert: PgBackupStale
             expr: (time() - max(kube_job_status_completion_time{namespace="superdl", job_name=~"pg-backup-daily-.*"})) > 100800 or (absent(kube_job_status_completion_time{namespace="superdl", job_name=~"pg-backup-daily-.*"}) and absent(superdl_pg_backup_last_success_timestamp_seconds))
             for: 5m
             labels: {severity: warning}
-            annotations: {summary: "PG 备份超 28h 无成功记录(CronJob 未跑或历史被清)", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
+            annotations: {summary: "PG backup without a success for over 28 h (CronJob not running or history cleared)", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
           - alert: PgBackupStandaloneStale
             expr: (time() - max(superdl_pg_backup_last_success_timestamp_seconds)) > 100800
             for: 5m
             labels: {severity: critical}
-            annotations: {summary: "自建 PG 每日备份(dump + 异地同步 + 恢复冒烟)超 28h 无成功:查控制面宿主机 cron 邮件与 /var/lib/superdl/pg/backup", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
+            annotations: {summary: "Self-hosted PG daily backup (dump + off-site sync + restore smoke) without a success for over 28 h: check the control-plane host cron mail and /var/lib/superdl/pg/backup", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
           - alert: PgBaseBackupStale
             expr: (time() - max(superdl_pg_basebackup_last_success_timestamp_seconds)) > 8 * 86400 or absent(superdl_pg_basebackup_last_success_timestamp_seconds)
             for: 1h
             labels: {severity: critical}
-            annotations: {summary: "每周 pg_basebackup 超 8 天无成功:PITR 基准缺失", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
+            annotations: {summary: "Weekly pg_basebackup without a success for over 8 days: PITR base missing", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
           - alert: PgWalSyncStale
             expr: (time() - max(superdl_pg_wal_sync_last_success_timestamp_seconds)) > 1800 or absent(superdl_pg_wal_sync_last_success_timestamp_seconds)
             for: 10m
             labels: {severity: critical}
-            annotations: {summary: "WAL 归档异地同步超 30 分钟无成功:PITR 可恢复点正在拉长", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
+            annotations: {summary: "WAL archive off-site sync without a success for over 30 minutes: the PITR recovery point is growing stale", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
           - alert: K3sStateBackupStale
             expr: (time() - max(superdl_k3s_state_backup_last_success_timestamp_seconds)) > 13 * 3600 or absent(superdl_k3s_state_backup_last_success_timestamp_seconds)
             for: 30m
             labels: {severity: critical}
-            annotations: {summary: "k3s 集群状态备份超 13 小时无成功:查控制面宿主机 cron 与备份目标可写性"}
+            annotations: {summary: "k3s cluster state backup without a success for over 13 hours: check the control-plane host cron and the backup target writability"}
           - alert: NodeUnenrolledJoined
             expr: max(superdl_node_unenrolled) > 0
             for: 5m
             labels: {severity: critical}
-            annotations: {summary: "有未登记节点加入集群并已被 cordon:核对 agent token 是否泄漏", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/README.md#server-token-and-agent-token-rotation-and-snapshot-custody"}
+            annotations: {summary: "An unenrolled node joined the cluster and has been cordoned: check whether the agent token leaked", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/README.md#server-token-and-agent-token-rotation-and-snapshot-custody"}
           - alert: SubscriptionUnpaidRunning
             expr: max(superdl_subscription_unpaid_running_instances) > 0
             for: 45m
             labels: {severity: critical}
-            annotations: {summary: "包周期已到期的实例仍在运行超一轮巡检:到期停机巡检未生效,管理端逐台核对"}
+            annotations: {summary: "An expired subscription instance kept running for more than one patrol round: the expiry stop patrol is not effective, check instance by instance in the admin console"}
           - alert: ScheduleTimeoutOccupiedBurst
             expr: sum(increase(superdl_schedule_timeout_occupied_total[1h])) > 10
             labels: {severity: warning}
-            annotations: {summary: "服务型实例反复永不就绪(租户控制 health_path):已按占用时长计费,核对是否刷免费算力"}
+            annotations: {summary: "A service instance never becomes ready repeatedly (health_path is tenant-controlled): billed by occupation time, check for free-compute abuse"}
           - alert: FundReconcileMismatch
             expr: increase(superdl_fund_reconcile_mismatch_total[5m]) > 0
             labels: {severity: critical}
-            annotations: {summary: "资金账实不平({{ $labels.kind }}):余额与流水不一致,先冻结出账再人工核对"}
+            annotations: {summary: "Funds do not reconcile ({{ $labels.kind }}): balance and ledger disagree, freeze outgoing payments first, then check by hand"}
           - alert: SettlementGapUnresolved
             expr: max(superdl_settlement_gap_unresolved) > 0
             for: 15m
             labels: {severity: critical}
-            annotations: {summary: "未核销结算缺口 {{ $value }} 条({{ $labels.kind }})持续超 15 分钟:管理端财务 › 结算缺口处理"}
+            annotations: {summary: "{{ $value }} unresolved settlement gaps ({{ $labels.kind }}) for over 15 minutes: handle under admin Finance › Settlement gaps"}
           - alert: AuditWriteFailed
             expr: increase(superdl_audit_write_failed_total[5m]) > 0
             labels: {severity: critical}
-            annotations: {summary: "审计行写入失败:fail-open 路径的操作可能无留痕,立即查 DB 与审计写路径"}
+            annotations: {summary: "Audit row write failed: fail-open operations may leave no trace, check the DB and the audit write path now"}
           - alert: PatrolFailed
             expr: increase(superdl_patrol_failed_total[15m]) > 0
             labels: {severity: critical}
-            annotations: {summary: "余额巡检环节异常({{ $labels.stage }}):巡检停摆会掩盖账实漂移,查 worker 日志"}
+            annotations: {summary: "Balance patrol stage failed ({{ $labels.stage }}): a stalled patrol hides ledger drift, check the worker logs"}
           - alert: PaymentRecoverFailed
             expr: increase(superdl_payment_recover_failed_total[15m]) > 0
             labels: {severity: warning}
-            annotations: {summary: "查单收敛单笔入账失败({{ $labels.error }}):整轮不中断,该笔需人工核对入账"}
+            annotations: {summary: "Query-based recovery failed to credit one order ({{ $labels.error }}): the round continues, that order needs manual crediting"}
           - alert: PaymentChannelReversed
             expr: increase(superdl_payment_channel_reversed_total[15m]) > 0
             labels: {severity: warning}
-            annotations: {summary: "已入账订单收到渠道关单/退款类通知:平台不自动冲账,财务异常清单人工核销"}
+            annotations: {summary: "A credited order received a channel close / refund notice: the platform does not reverse automatically, write off manually in the finance anomaly list"}
           - alert: DiskProvisionFailed
             expr: increase(superdl_disk_provision_failed_total[15m]) > 0
             labels: {severity: warning}
-            annotations: {summary: "数据盘 PVC 建/扩进入死信(reconciler 周期重派):未就绪的盘挂不上实例,查 disk-ops worker 日志与 CephFS CSI"}
+            annotations: {summary: "Data disk PVC create/expand dead-lettered (re-dispatched by the reconciler periodically): unready disks cannot be mounted, check the disk-ops worker logs and the CephFS CSI"}
           - alert: ReconcileStuckInstances
             expr: max(superdl_reconcile_stuck_instances) > 0
             for: 15m
             labels: {severity: warning}
-            annotations: {summary: "实例悬挂在 {{ $labels.status }} 超 15 分钟未收敛:编排收尾卡死,管理端实例详情人工介入"}
+            annotations: {summary: "Instance stuck in {{ $labels.status }} for over 15 minutes: orchestration wrap-up stuck, intervene from the admin instance detail"}
           - alert: ReconcileLeakAborted
             expr: increase(superdl_reconcile_leak_aborted_total[15m]) > 0
             labels: {severity: warning}
-            annotations: {summary: "泄漏回收被熔断中止(未知 Pod 占比超阈):本轮泄漏未回收,人工核对节点残留"}
+            annotations: {summary: "Leak reclamation aborted by the circuit breaker (unknown Pod share above threshold): this round reclaimed nothing, check node leftovers by hand"}
           - alert: SshPortPoolLow
             expr: superdl_ssh_port_pool_ports{state="free"} < 0.1 * sum(superdl_ssh_port_pool_ports)
             for: 10m
             labels: {severity: warning}
-            annotations: {summary: "SSH NodePort 端口池空闲 {{ $value }} 个(<10%):清理长期停机实例或扩端口段,见 docs/reference/limits.md"}
+            annotations: {summary: "SSH NodePort pool has {{ $value }} free ports (<10%): clean up long-stopped instances or extend the port range, see docs/reference/limits.md"}
           - alert: SshPortPoolExhausted
             expr: superdl_ssh_port_pool_ports{state="free"} < 20
             for: 5m
             labels: {severity: critical}
-            annotations: {summary: "SSH NodePort 端口池即将耗尽(空闲 {{ $value }}):新建带 SSH 的实例将失败,立即处理"}
+            annotations: {summary: "SSH NodePort pool about to run out ({{ $value }} free): new instances with SSH will fail, act now"}
           - alert: WalletNegativeExposure
             expr: superdl_wallet_negative_sum > 1000
             for: 30m
             labels: {severity: warning}
-            annotations: {summary: "负余额敞口合计 {{ $value }}(平台币种)持续 30 分钟(钱包数见 superdl_wallet_negative_count):核对欠费停机巡检是否在跑,管理端财务 › 异常清单"}
+            annotations: {summary: "Negative balance exposure totals {{ $value }} (platform currency) for 30 minutes (wallet count in superdl_wallet_negative_count): check that the arrears stop patrol is running, admin Finance › Anomalies"}
           - alert: PaymentReversalReleased
             expr: increase(superdl_payment_reversal_resolved_total{action="release"}[10m]) > 0
             labels: {severity: critical}
-            annotations: {summary: "渠道反向通知被人工解冻({{ $value }} 次):单操作人动作,逐条与渠道退款记录核对"}
+            annotations: {summary: "Channel reversal freezes lifted by hand ({{ $value }} times): single-operator actions, check each against the channel refund records"}
           - alert: CertNotReady
             expr: certmanager_certificate_ready_status{condition="False"} == 1
             for: 10m
             labels: {severity: warning}
-            annotations: {summary: "证书 {{ $labels.name }}({{ $labels.namespace }})持续 10 分钟未就绪:查 cert-manager 签发事件与 DNS01 solver", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/acme-dns.md"}
+            annotations: {summary: "Certificate {{ $labels.name }} ({{ $labels.namespace }}) not ready for 10 minutes: check the cert-manager issuance events and the DNS01 solver", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/acme-dns.md"}
   superdl-security:
     groups:
       - name: superdl.security
@@ -540,46 +540,46 @@ additionalPrometheusRulesMap:
           - alert: LoginFailureSpike
             expr: sum by (actor_type) (increase(superdl_login_failed_total[5m])) > 50
             labels: {severity: warning}
-            annotations: {summary: "5 分钟内登录失败 {{ $value }} 次({{ $labels.actor_type }} 端):疑似撞库/爆破,按源 IP 查 Loki 决定是否临时封禁", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#querying"}
+            annotations: {summary: "{{ $value }} failed logins within 5 minutes ({{ $labels.actor_type }} side): suspected credential stuffing / brute force, check Loki by source IP and decide on a temporary block", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#querying"}
           - alert: AdminLoginFailureSpike
             expr: sum(increase(superdl_login_failed_total{actor_type="admin"}[10m])) > 10
             labels: {severity: critical}
-            annotations: {summary: "管理端 10 分钟内登录失败 {{ $value }} 次:管理员账号正被爆破(先核对 04-gateway.yaml 的源 IP 白名单是否生效)", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#querying"}
+            annotations: {summary: "{{ $value }} failed admin logins within 10 minutes: an admin account is being brute-forced (first check that the source IP allow-list in 04-gateway.yaml is effective)", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#querying"}
           - alert: AuthzDenialSustained
             expr: sum by (actor_type) (rate(superdl_authz_denied_total[10m])) > 0.5
             for: 15m
             labels: {severity: warning}
-            annotations: {summary: "鉴权拒绝持续 {{ $value }}/s({{ $labels.actor_type }} 端)超 15 分钟:有人在遍历越权面,或某个客户端在拿错凭据重试", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#querying"}
+            annotations: {summary: "Authorization denials at {{ $value }}/s ({{ $labels.actor_type }} side) for over 15 minutes: someone is probing the permission surface, or a client retries with wrong credentials", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#querying"}
           - alert: AdminPrivilegeChanged
             expr: increase(superdl_admin_privilege_change_total[5m]) > 0
             labels: {severity: critical}
-            annotations: {summary: "管理端权限发生变更({{ $value }} 次):逐条与变更单核对,非计划内变更按失陷处置", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#querying"}
+            annotations: {summary: "Admin permissions changed ({{ $value }} times): check each against the change ticket, treat unplanned changes as a compromise", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#querying"}
           - alert: NodePoolLabelMismatch
             expr: increase(superdl_node_pool_label_mismatch_total[10m]) > 0
             labels: {severity: critical}
-            annotations: {summary: "节点池标签与注册登记不符({{ $value }} 次):平台已纠偏并停调度,核对该机是谁装的、config.yaml 被谁改过", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/gpu-fault-sop.md"}
+            annotations: {summary: "Node pool label disagrees with the registration ({{ $value }} times): the platform corrected it and stopped scheduling, check who installed the machine and who changed config.yaml", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/gpu-fault-sop.md"}
           - alert: PiiRevealVolumeHigh
             expr: sum by (kind) (increase(superdl_pii_reveal_rows_total[1h])) > 200
             labels: {severity: warning}
-            annotations: {summary: "1 小时内明文查看 PII {{ $value }} 行({{ $labels.kind }}):核对是谁、为什么,批量导出应走审批而非逐条查看", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#querying"}
+            annotations: {summary: "{{ $value }} PII rows viewed in plaintext within 1 hour ({{ $labels.kind }}): check who and why, bulk exports go through approval rather than row-by-row viewing", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#querying"}
           - alert: PiiRevealBurst
             expr: sum(increase(superdl_pii_reveal_rows_total[5m])) > 500
             labels: {severity: critical}
-            annotations: {summary: "5 分钟内明文查看 PII {{ $value }} 行:批量脱库特征,立即冻结相关管理账号并保留审计", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#querying"}
+            annotations: {summary: "{{ $value }} PII rows viewed in plaintext within 5 minutes: bulk exfiltration pattern, freeze the admin accounts involved now and keep the audit trail", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#querying"}
           - alert: ApiUnauthorizedRateHigh
             expr: sum(rate(superdl_http_request_duration_seconds_count{status=~"40[13]"}[5m])) / clamp_min(sum(rate(superdl_http_request_duration_seconds_count[5m])), 0.001) > 0.3
             for: 10m
             labels: {severity: warning}
-            annotations: {summary: "API 401/403 占比 >30% 持续 10 分钟:大概率是自动化探测,而不是用户在误操作", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#querying"}
+            annotations: {summary: "API 401/403 share >30% for 10 minutes: most likely automated probing, not user mistakes", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#querying"}
           - alert: PaymentConfigWritten
             expr: increase(superdl_platform_config_write_total{domain=~"payment_.*|crypto"}[5m]) > 0
             labels: {severity: critical}
-            annotations: {summary: "平台配置 {{ $labels.domain }} 组被写入({{ $value }} 次):换掉验签公钥/商户号即可自签回调充值,逐条与变更单核对,非计划内按失陷处置", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#querying"}
+            annotations: {summary: "Platform configuration group {{ $labels.domain }} written ({{ $value }} times): swapping the signature key / merchant id lets an attacker self-sign callback recharges, check each against the change ticket, treat unplanned changes as a compromise", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#querying"}
           - alert: EndpointAuthDenialSustained
             expr: rate(superdl_endpoint_auth_denied_total[10m]) > 1
             for: 15m
             labels: {severity: warning}
-            annotations: {summary: "服务端点网关鉴权拒绝持续 {{ $value }}/s 超 15 分钟:有人在猜 x-api-key,按 slug 查 Loki 后临时冻结该服务", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#querying"}
+            annotations: {summary: "Service endpoint gateway auth denials at {{ $value }}/s for over 15 minutes: someone is guessing x-api-key, look up the slug in Loki and freeze that service temporarily", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#querying"}
   superdl-abuse:
     groups:
       - name: superdl.abuse
@@ -587,7 +587,7 @@ additionalPrometheusRulesMap:
           - alert: SignupVelocityHigh
             expr: increase(superdl_user_signup_total[1h]) > 100
             labels: {severity: warning}
-            annotations: {summary: "1 小时内注册 {{ $value }} 个账号:批量注册特征,核对实名通过率与同 IP/同证件分布,必要时临时提高注册限流"}
+            annotations: {summary: "{{ $value }} accounts registered within 1 hour: bulk registration pattern, check the KYC pass rate and the same-IP / same-identity distribution, raise the registration rate limit temporarily if needed"}
           - alert: VerificationBurst
             expr: sum by (channel, purpose) (increase(superdl_verification_sent_total[10m])) > 300
             labels: {severity: warning}
@@ -596,12 +596,12 @@ additionalPrometheusRulesMap:
             expr: sum(rate(superdl_http_request_duration_seconds_count{status="429"}[5m])) > 5
             for: 10m
             labels: {severity: warning}
-            annotations: {summary: "应用层限流 429 持续 {{ $value }}/s 超 10 分钟:单点被打,按 route/源 IP 查 Loki", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#querying"}
+            annotations: {summary: "Application-layer 429s at {{ $value }}/s for over 10 minutes: a single point is under load, check Loki by route / source IP", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#querying"}
           - alert: TenantEgressHigh
             expr: sum by (namespace) (rate(container_network_transmit_bytes_total{namespace=~"tenant-.*"}[10m])) > 40e6
             for: 15m
             labels: {severity: warning}
-            annotations: {summary: "租户 {{ $labels.namespace }} 出向 {{ $value | humanize }}B/s 持续 15 分钟:扫描/外发/中继特征,管理端查该租户实例,必要时冻结"}
+            annotations: {summary: "Tenant {{ $labels.namespace }} egress {{ $value | humanize }}B/s for 15 minutes: scanning / exfiltration / relay pattern, check the tenant's instances in the admin console and freeze if needed"}
 prometheus-node-exporter:
   tolerations:
     - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}

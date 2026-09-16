@@ -213,8 +213,8 @@ spec:
     - backendRefs:
         - {name: superdl-web, port: 80}
 ---
-# 公网真实入口是 console 域(CDN → 前置反代 → 本 listener),/api/v1 在此直达 API,不再经 nginx 同源反代;
-# 前缀比 superdl-console 的兜底更长,Envoy 优先命中。限流与请求体上限同 api-https(下方 BackendTrafficPolicy)。
+# The real public entry is the console domain (CDN → front proxy → this listener); /api/v1 reaches the API directly here instead of the nginx same-origin proxy;
+# the prefix is longer than the superdl-console fallback, so Envoy matches it first. Rate limit and request body cap as api-https (BackendTrafficPolicy below).
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -277,7 +277,7 @@ spec:
     rules:
       - action: Allow
         principal:
-          # 只许具体出口 /32 或办公网段;禁止 100.64.0.0/10、10/8、172.16/12、192.168/16 整段(preflight 拦)
+          # Only specific egress /32s or office ranges; whole 100.64.0.0/10, 10/8, 172.16/12, 192.168/16 ranges are forbidden (preflight blocks them)
           clientCIDRs: ["192.0.2.0/24"]
 ---
 apiVersion: gateway.envoyproxy.io/v1alpha1
@@ -425,9 +425,9 @@ metadata:
 spec:
   targetRefs:
     - {group: gateway.networking.k8s.io, kind: Gateway, name: superdl}
-  # 0 = 以 TCP 对端地址为客户端 IP(externalTrafficPolicy: Local 下即真实来源)。
-  # 公网前置 CDN/反代时把跳数改成实际前置层数(从 XFF 右侧数),并把这些前置地址加进 ConfigMap FORWARDED_ALLOW_IPS;
-  # 跳数写少,每 IP 限流桶与管理端白名单看到的都是前置层地址。
+  # 0 = the TCP peer address is the client IP (the real source under externalTrafficPolicy: Local).
+  # With a public CDN / reverse proxy in front, set the hop count to the real number of upstream layers (counted from the right of XFF) and add those upstream addresses to the ConfigMap FORWARDED_ALLOW_IPS;
+  # with too few hops, the per-IP rate limit buckets and the admin allow-list both see the upstream layer address.
   clientIPDetection:
     xForwardedFor:
       numTrustedHops: 0

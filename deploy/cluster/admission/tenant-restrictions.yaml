@@ -10,7 +10,7 @@ spec:
     resourceRules:
       - apiGroups: ["*"]
         apiVersions: ["*"]
-        # "*/*" = 全部资源及其子资源(apiserver 拒绝与 "*" 并列)
+        # "*/*" = every resource and its subresources (the apiserver rejects it alongside "*")
         resources: ["*/*"]
         operations: ["CREATE", "UPDATE", "DELETE"]
         scope: "*"
@@ -21,43 +21,43 @@ spec:
     - expression: >-
         !(request.resource.group == '' && request.resource.resource == 'pods' && has(request.subResource) &&
           request.subResource in ['exec', 'attach', 'portforward', 'ephemeralcontainers'])
-      message: "平台 SA 禁止 pods/exec、pods/attach、pods/portforward、pods/ephemeralcontainers"
+      message: "platform SAs may not use pods/exec, pods/attach, pods/portforward or pods/ephemeralcontainers"
     - expression: >-
         !(request.resource.group == '' && request.resource.resource == 'namespaces') ||
         (request.operation == 'DELETE'
           ? oldObject.metadata.name.startsWith('tenant-')
           : object.metadata.name.startsWith('tenant-'))
-      message: "平台 SA 只能创建/删除 tenant-* 命名空间"
+      message: "platform SAs may only create/delete tenant-* namespaces"
     - expression: >-
         !(request.resource.group == '' && request.resource.resource == 'namespaces') ||
         request.operation != 'CREATE' ||
         (has(object.metadata.labels) && 'superdl.io/managed' in object.metadata.labels &&
          object.metadata.labels['superdl.io/managed'] == 'true')
-      message: "创建 tenant-* 命名空间必须携带 superdl.io/managed=true 标签(Pod 基线锚点)"
+      message: "creating a tenant-* namespace requires the superdl.io/managed=true label (the Pod baseline anchor)"
     - expression: >-
         !(request.resource.group == '' && request.resource.resource == 'namespaces') ||
         request.operation != 'UPDATE' ||
         !oldObject.metadata.name.startsWith('tenant-') ||
         (has(object.metadata.labels) && 'superdl.io/managed' in object.metadata.labels &&
          object.metadata.labels['superdl.io/managed'] == 'true')
-      message: "tenant-* 命名空间的 superdl.io/managed=true 标签不可摘除"
+      message: "the superdl.io/managed=true label of a tenant-* namespace cannot be removed"
     - expression: >-
         (request.resource.group == '' && request.resource.resource == 'namespaces') ||
         (has(request.namespace) &&
          (request.namespace == 'superdl' || request.namespace.startsWith('tenant-'))) ||
         (!has(request.namespace) && request.resource.group == '' && request.resource.resource == 'nodes')
-      message: "平台 SA 的写操作仅限 superdl/tenant-* 命名空间与 nodes"
+      message: "platform SA writes are limited to the superdl/tenant-* namespaces and nodes"
     - expression: >-
         !(request.resource.group == 'rbac.authorization.k8s.io' &&
           (request.resource.resource == 'roles' || request.resource.resource == 'rolebindings')) ||
         (has(request.namespace) && request.namespace.startsWith('tenant-'))
-      message: "平台 SA 只能在 tenant-* 命名空间写 roles/rolebindings"
+      message: "platform SAs may write roles/rolebindings only in tenant-* namespaces"
     - expression: >-
         !(request.resource.group == '' && request.resource.resource == 'secrets') ||
         request.operation == 'DELETE' ||
         !has(object.type) ||
         object.type != 'kubernetes.io/service-account-token'
-      message: "平台 SA 禁止创建/更新 kubernetes.io/service-account-token 类型的 Secret"
+      message: "platform SAs may not create/update Secrets of type kubernetes.io/service-account-token"
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
@@ -93,45 +93,45 @@ spec:
   validations:
     - expression: >-
         !variables.allContainers.exists(c, has(c.securityContext) && has(c.securityContext.privileged) && c.securityContext.privileged)
-      message: "租户 Pod 禁止 privileged 容器"
+      message: "tenant Pods may not run privileged containers"
     - expression: "!has(object.spec.volumes) || !object.spec.volumes.exists(v, has(v.hostPath))"
-      message: "租户 Pod 禁止 hostPath 卷"
+      message: "tenant Pods may not use hostPath volumes"
     - expression: "!has(object.spec.serviceAccountName) || object.spec.serviceAccountName == 'default'"
-      message: "租户 Pod 不得指定非 default 的 serviceAccountName"
+      message: "tenant Pods may not set a serviceAccountName other than default"
     - expression: >-
         (!has(object.spec.hostNetwork) || object.spec.hostNetwork == false) &&
         (!has(object.spec.hostPID) || object.spec.hostPID == false) &&
         (!has(object.spec.hostIPC) || object.spec.hostIPC == false)
-      message: "租户 Pod 禁止 hostNetwork/hostPID/hostIPC"
+      message: "tenant Pods may not use hostNetwork/hostPID/hostIPC"
     - expression: >-
         (has(object.spec.runtimeClassName) && object.spec.runtimeClassName == 'kata-qemu') ||
         (has(object.spec.hostUsers) && object.spec.hostUsers == false)
-      message: "非 Kata 租户 Pod 必须显式 hostUsers: false(userns 隔离);Kata 档由 VM 隔离,不传该字段"
+      message: "non-Kata tenant Pods must set hostUsers: false explicitly (userns isolation); the Kata tier is VM-isolated and omits the field"
     - expression: "has(object.spec.automountServiceAccountToken) && object.spec.automountServiceAccountToken == false"
-      message: "租户 Pod 必须 automountServiceAccountToken: false"
+      message: "tenant Pods must set automountServiceAccountToken: false"
     - expression: >-
         variables.allContainers.all(c, has(c.securityContext) && has(c.securityContext.allowPrivilegeEscalation) && c.securityContext.allowPrivilegeEscalation == false)
-      message: "租户容器(含 init/ephemeral)必须显式 allowPrivilegeEscalation: false"
+      message: "tenant containers (init/ephemeral included) must set allowPrivilegeEscalation: false explicitly"
     - expression: >-
         variables.allContainers.all(c, has(c.securityContext) && has(c.securityContext.capabilities) &&
           has(c.securityContext.capabilities.drop) && c.securityContext.capabilities.drop.exists(d, d == 'ALL') &&
           (!has(c.securityContext.capabilities.add) || c.securityContext.capabilities.add.all(a, a in ['SYS_CHROOT', 'SETUID', 'SETGID'])))
-      message: "租户容器(含 init/ephemeral)必须 drop ALL capabilities,仅允许 add SYS_CHROOT/SETUID/SETGID(sshd 特权分离所需)"
+      message: "tenant containers (init/ephemeral included) must drop ALL capabilities and may only add SYS_CHROOT/SETUID/SETGID (needed by sshd privilege separation)"
     - expression: >-
         variables.allContainers.all(c, has(c.securityContext) && has(c.securityContext.seccompProfile) &&
           has(c.securityContext.seccompProfile.type) && c.securityContext.seccompProfile.type == 'RuntimeDefault')
-      message: "租户容器(含 init/ephemeral)必须 seccompProfile: RuntimeDefault"
+      message: "tenant containers (init/ephemeral included) must set seccompProfile: RuntimeDefault"
     - expression: >-
         !has(object.spec.nodeName) ||
         (request.operation == 'UPDATE' && has(oldObject.spec.nodeName) && object.spec.nodeName == oldObject.spec.nodeName)
-      message: "租户 Pod 禁止指定/改动 spec.nodeName 绕过调度器"
+      message: "tenant Pods may not set or change spec.nodeName to bypass the scheduler"
     - expression: >-
         !has(object.spec.runtimeClassName) ||
         object.spec.runtimeClassName in ['kata-qemu', 'nvidia']
-      message: "租户 Pod 的 runtimeClassName 仅允许 kata-qemu / nvidia"
+      message: "tenant Pod runtimeClassName may only be kata-qemu / nvidia"
     - expression: >-
         variables.allContainers.all(c, !has(c.env) || !c.env.exists(e, e.name.startsWith('NVIDIA_')))
-      message: "租户 Pod 禁止 NVIDIA_* 环境变量(GPU 可见性由平台分配链控制;伪造可见性 = 看到同机全部显卡)"
+      message: "tenant Pods may not set NVIDIA_* environment variables (GPU visibility is controlled by the platform allocation chain; forged visibility = seeing every GPU on the machine)"
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
@@ -191,16 +191,16 @@ spec:
          object.metadata.finalizers == oldObject.metadata.finalizers)
   validations:
     - expression: "variables.taintsSame && variables.podCIDRSame && variables.podCIDRsSame && variables.providerIDSame"
-      message: "平台 SA 对 Node spec 仅允许变更 unschedulable(cordon);taints/podCIDR/providerID 锁死"
+      message: "platform SAs may only change unschedulable (cordon) in the Node spec; taints/podCIDR/providerID are locked"
     - expression: >-
         has(object.metadata.labels) && has(oldObject.metadata.labels) &&
         object.metadata.labels.all(k, k.startsWith('superdl.io/') || k == variables.poolKey || k in variables.gpuOperandKeys ||
           (k in oldObject.metadata.labels && object.metadata.labels[k] == oldObject.metadata.labels[k])) &&
         oldObject.metadata.labels.all(k, k.startsWith('superdl.io/') || k == variables.poolKey || k in variables.gpuOperandKeys ||
           (k in object.metadata.labels && oldObject.metadata.labels[k] == object.metadata.labels[k]))
-      message: "平台 SA 对 Node labels 仅允许变更 superdl.io/*、池标签 node-restriction.kubernetes.io/superdl-pool 与 GPU operand 落点键(superdl-infra 落点键不在其列)"
+      message: "platform SAs may only change superdl.io/*, the pool label node-restriction.kubernetes.io/superdl-pool and the GPU operand placement keys on Node labels (the superdl-infra placement key is not among them)"
     - expression: "variables.annotationsSame && variables.finalizersSame"
-      message: "平台 SA 禁止变更 Node annotations/finalizers"
+      message: "platform SAs may not change Node annotations/finalizers"
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
@@ -234,27 +234,27 @@ spec:
         !object.spec.containers.exists(c, has(c.securityContext) && has(c.securityContext.privileged) && c.securityContext.privileged) &&
         (!has(object.spec.initContainers) || !object.spec.initContainers.exists(c, has(c.securityContext) && has(c.securityContext.privileged) && c.securityContext.privileged)) &&
         (!has(object.spec.ephemeralContainers) || !object.spec.ephemeralContainers.exists(c, has(c.securityContext) && has(c.securityContext.privileged) && c.securityContext.privileged))
-      message: "非豁免命名空间禁止 privileged 容器"
+      message: "non-exempt namespaces may not run privileged containers"
     - expression: "!has(object.spec.volumes) || !object.spec.volumes.exists(v, has(v.hostPath))"
-      message: "非豁免命名空间禁止 hostPath 卷"
+      message: "non-exempt namespaces may not use hostPath volumes"
     - expression: >-
         (!has(object.spec.hostNetwork) || object.spec.hostNetwork == false) &&
         (!has(object.spec.hostPID) || object.spec.hostPID == false) &&
         (!has(object.spec.hostIPC) || object.spec.hostIPC == false)
-      message: "非豁免命名空间禁止 hostNetwork/hostPID/hostIPC"
+      message: "non-exempt namespaces may not use hostNetwork/hostPID/hostIPC"
     - expression: "!has(object.spec.hostUsers) || object.spec.hostUsers == false"
-      message: "非豁免命名空间禁止显式 hostUsers: true(未写该字段不拦;租户 ns 另由 superdl-tenant-pod-baseline 强制 hostUsers: false)"
+      message: "non-exempt namespaces may not set hostUsers: true explicitly (an absent field passes; tenant namespaces are additionally forced to hostUsers: false by superdl-tenant-pod-baseline)"
     - expression: >-
         !has(object.spec.nodeName) ||
         (request.operation == 'UPDATE' && has(oldObject.spec.nodeName) && object.spec.nodeName == oldObject.spec.nodeName) ||
         (request.namespace == 'superdl' && has(object.metadata.labels) &&
          'superdl.io/prewarm' in object.metadata.labels &&
          object.metadata.labels['superdl.io/prewarm'] == 'true')
-      message: "禁止指定 spec.nodeName 绕过调度器(仅平台预热 Job 放行)"
+      message: "setting spec.nodeName to bypass the scheduler is forbidden (only the platform prewarm Job is allowed)"
     - expression: >-
         !has(object.spec.runtimeClassName) ||
         object.spec.runtimeClassName in ['kata-qemu', 'nvidia']
-      message: "runtimeClassName 仅允许 kata-qemu / nvidia"
+      message: "runtimeClassName may only be kata-qemu / nvidia"
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
@@ -293,14 +293,14 @@ spec:
         !variables.strict ||
         ((!has(object.spec.serviceAccountName) || object.spec.serviceAccountName == 'default') &&
          has(object.spec.automountServiceAccountToken) && object.spec.automountServiceAccountToken == false)
-      message: "平台 SA 在 superdl 命名空间建的 Pod 不得指定非 default 的 serviceAccountName,且必须 automountServiceAccountToken: false"
+      message: "Pods created by platform SAs in the superdl namespace may not set a serviceAccountName other than default and must set automountServiceAccountToken: false"
     - expression: >-
         !has(object.spec.imagePullSecrets) ||
         object.spec.imagePullSecrets.all(s,
           has(s.name) &&
           (s.name == 'superdl-registry-pull' ||
            (!variables.strict && !s.name.startsWith('superdl-'))))
-      message: "superdl 命名空间内平台/Job 建的 Pod 只允许 imagePullSecrets: superdl-registry-pull"
+      message: "Pods created by the platform / Jobs in the superdl namespace may only use imagePullSecrets: superdl-registry-pull"
     - expression: >-
         object.spec.containers.all(c, !has(c.env) || c.env.all(e,
           !has(e.valueFrom) || !has(e.valueFrom.secretKeyRef) ||
@@ -314,7 +314,7 @@ spec:
           !has(e.valueFrom) || !has(e.valueFrom.secretKeyRef) ||
           (has(e.valueFrom.secretKeyRef.name) &&
            !variables.strict && !e.valueFrom.secretKeyRef.name.startsWith('superdl-')))))
-      message: "superdl 命名空间内的平台 Pod 不得用 secretKeyRef 引 superdl-* 密钥"
+      message: "platform Pods in the superdl namespace may not reference superdl-* secrets through secretKeyRef"
     - expression: >-
         object.spec.containers.all(c, !has(c.envFrom) || c.envFrom.all(f,
           !has(f.secretRef) ||
@@ -331,7 +331,7 @@ spec:
           (!variables.strict && has(f.secretRef.name) &&
            (f.secretRef.name in ['superdl-db-migrate', 'superdl-pg-backup'] ||
             !f.secretRef.name.startsWith('superdl-'))))))
-      message: "superdl 命名空间内 envFrom.secretRef 仅限迁移/备份 Job 的 superdl-db-migrate、superdl-pg-backup"
+      message: "envFrom.secretRef in the superdl namespace is limited to superdl-db-migrate and superdl-pg-backup of the migration / backup Jobs"
     - expression: >-
         !has(object.spec.volumes) || object.spec.volumes.all(v,
           (!has(v.secret) ||
@@ -342,7 +342,7 @@ spec:
           (!has(v.csi) || !has(v.csi.nodePublishSecretRef) ||
            (!variables.strict && has(v.csi.nodePublishSecretRef.name) &&
             !v.csi.nodePublishSecretRef.name.startsWith('superdl-'))))
-      message: "superdl 命名空间内禁止把平台 Secret(superdl-*)挂进 Pod(secret / projected / csi 卷)"
+      message: "mounting platform Secrets (superdl-*) into Pods in the superdl namespace is forbidden (secret / projected / csi volumes)"
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
@@ -378,11 +378,11 @@ spec:
     - expression: >-
         (!has(variables.podSpec.serviceAccountName) || variables.podSpec.serviceAccountName == 'default') &&
         has(variables.podSpec.automountServiceAccountToken) && variables.podSpec.automountServiceAccountToken == false
-      message: "平台 SA 建的 Job 模板不得指定非 default 的 serviceAccountName,且必须 automountServiceAccountToken: false"
+      message: "Job templates created by platform SAs may not set a serviceAccountName other than default and must set automountServiceAccountToken: false"
     - expression: >-
         !has(variables.podSpec.imagePullSecrets) ||
         variables.podSpec.imagePullSecrets.all(s, has(s.name) && s.name == 'superdl-registry-pull')
-      message: "平台 SA 建的 Job 只允许 imagePullSecrets: superdl-registry-pull(预热 Job)"
+      message: "Jobs created by platform SAs may only use imagePullSecrets: superdl-registry-pull (prewarm Job)"
     - expression: >-
         variables.podSpec.containers.all(c, !has(c.env) || c.env.all(e,
           !has(e.valueFrom) || !has(e.valueFrom.secretKeyRef) ||
@@ -392,18 +392,18 @@ spec:
           !has(e.valueFrom) || !has(e.valueFrom.secretKeyRef) ||
           (has(e.valueFrom.secretKeyRef.name) &&
            !e.valueFrom.secretKeyRef.name.startsWith('superdl-')))))
-      message: "平台 SA 建的 Job 不得用 secretKeyRef 引 superdl-* 密钥"
+      message: "Jobs created by platform SAs may not reference superdl-* secrets through secretKeyRef"
     - expression: >-
         variables.podSpec.containers.all(c, !has(c.envFrom) || c.envFrom.all(f, !has(f.secretRef))) &&
         (!has(variables.podSpec.initContainers) ||
           variables.podSpec.initContainers.all(c, !has(c.envFrom) || c.envFrom.all(f, !has(f.secretRef))))
-      message: "平台 SA 建的 Job 禁止 envFrom.secretRef(整份 Secret 注入)"
+      message: "Jobs created by platform SAs may not use envFrom.secretRef (whole-Secret injection)"
     - expression: >-
         !has(variables.podSpec.volumes) || variables.podSpec.volumes.all(v,
           !has(v.secret) &&
           (!has(v.projected) || !has(v.projected.sources) || v.projected.sources.all(s, !has(s.secret))) &&
           (!has(v.csi) || !has(v.csi.nodePublishSecretRef)))
-      message: "平台 SA 建的 Job 禁止挂载 Secret 卷(secret / projected / csi)"
+      message: "Jobs created by platform SAs may not mount Secret volumes (secret / projected / csi)"
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
@@ -438,11 +438,11 @@ spec:
         !('node-role.kubernetes.io/control-plane' in variables.labels) &&
         !('node-role.kubernetes.io/master' in variables.labels) &&
         !('node-role.kubernetes.io/etcd' in variables.labels)
-      message: "平台 SA 禁止删除控制面/etcd 节点(node.decommission 只退役 GPU 工作节点)"
+      message: "platform SAs may not delete control-plane/etcd nodes (node.decommission only retires GPU worker nodes)"
     - expression: >-
         !('node-restriction.kubernetes.io/superdl-infra' in variables.labels) &&
         !('node-role.superdl.io/infra' in variables.labels)
-      message: "平台 SA 禁止删除带 infra 落点标签的节点(删了标签不会随 kubelet 重新注册回来,平台组件会全部 Pending)"
+      message: "platform SAs may not delete nodes carrying the infra placement label (the label does not come back when the kubelet re-registers, every platform component would stay Pending)"
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding

@@ -62,7 +62,7 @@ alloy:
           expression = "(?i)(token=)[A-Za-z0-9_\\-]+"
           replace    = "${1}<redacted>"
         }
-        // apiserver 审计行里 Pod 模板的 JUPYTER_TOKEN / AUTHORIZED_KEYS 明文
+        // plaintext JUPYTER_TOKEN / AUTHORIZED_KEYS of Pod templates in apiserver audit lines
         stage.replace {
           expression = "(\"name\":\"(?:JUPYTER_TOKEN|AUTHORIZED_KEYS)\",\"value\":\")[^\"]*"
           replace    = "${1}<redacted>"
@@ -88,8 +88,8 @@ alloy:
       - name: k3s-audit-logs
         mountPath: /host-logs/k3s/server/logs
         readOnly: true
-# 只保留 discovery.kubernetes(pod)+ loki.source.kubernetes 所需;无 secrets / configmaps。
-# Alloy 是 DaemonSet,跑在全部租户 GPU 节点上,其 SA token 不得能读任何 Secret(CI helm 渲染断言)。
+# Keep only what discovery.kubernetes (pod) + loki.source.kubernetes need; no secrets / configmaps.
+# Alloy is a DaemonSet running on every tenant GPU node; its SA token must not be able to read any Secret (CI helm render assertion).
 rbac:
   create: true
   rules:
