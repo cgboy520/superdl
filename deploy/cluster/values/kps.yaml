@@ -578,6 +578,9 @@ prometheus-node-exporter:
     - {key: node-role.kubernetes.io/control-plane, operator: Exists, effect: NoSchedule}
   extraArgs:
     - --collector.textfile.directory=/host/textfile
+    # GB10(cppc_cpufreq)上 cpufreq collector 的抓取会偶发永不返回,卡住的 handler 攒到 --web.max-requests(40)
+    # 之后整个 node-exporter 只回 503,textfile 指标(备份 / 证书链)随之 absent 误报;无规则用 cpufreq 指标
+    - --no-collector.cpufreq
   extraHostVolumeMounts:
     - name: textfile
       hostPath: /var/lib/node_exporter/textfile
