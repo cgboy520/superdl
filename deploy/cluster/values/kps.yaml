@@ -287,12 +287,12 @@ additionalPrometheusRulesMap:
           - alert: GPUXidCriticalError
             expr: (changes(DCGM_FI_DEV_XID_ERRORS[5m]) > 0) and (DCGM_FI_DEV_XID_ERRORS == 48 or DCGM_FI_DEV_XID_ERRORS == 63 or DCGM_FI_DEV_XID_ERRORS == 64 or DCGM_FI_DEV_XID_ERRORS == 79 or DCGM_FI_DEV_XID_ERRORS == 94 or DCGM_FI_DEV_XID_ERRORS == 95)
             labels: {severity: critical}
-            annotations: {summary: "GPU Xid 致命错误(节点 {{ $labels.hostname }} 卡 {{ $labels.gpu }}):自动 cordon + 补偿 SOP", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/gpu-fault-sop.md"}
+            annotations: {summary: "GPU Xid 致命错误(节点 {{ $labels.hostname }} 卡 {{ $labels.gpu }}):自动 cordon + 补偿 SOP", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/gpu-fault-sop.md"}
           - alert: GPUHighTemperature
             expr: DCGM_FI_DEV_GPU_TEMP > 85
             for: 5m
             labels: {severity: warning}
-            annotations: {summary: "GPU 温度 >85°C 持续 5 分钟({{ $labels.hostname }} 卡 {{ $labels.gpu }})", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/gpu-fault-sop.md"}
+            annotations: {summary: "GPU 温度 >85°C 持续 5 分钟({{ $labels.hostname }} 卡 {{ $labels.gpu }})", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/gpu-fault-sop.md"}
           - alert: NodeGPUUnavailable
             expr: (kube_node_status_capacity{resource="nvidia_com_gpu"} > 0) and on(node) (kube_node_status_condition{condition="Ready",status="true"} == 0)
             for: 2m
@@ -307,17 +307,17 @@ additionalPrometheusRulesMap:
             expr: ceph_health_status > 0
             for: 15m
             labels: {severity: critical}
-            annotations: {summary: "Ceph 集群非 HEALTH_OK 超 15 分钟,数据盘可用性受影响", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/cluster-validation.md#d-存储"}
+            annotations: {summary: "Ceph 集群非 HEALTH_OK 超 15 分钟,数据盘可用性受影响", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/cluster-validation.md#d-存储"}
           - alert: HamiSchedulerDown
             expr: absent(up{job="hami-scheduler"} == 1)
             for: 5m
             labels: {severity: warning}
-            annotations: {summary: "HAMi scheduler 指标缺失:共享池调度器可能不可用,新建共享档实例将被拒绝", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/cluster-validation.md#c-hami-共享池"}
+            annotations: {summary: "HAMi scheduler 指标缺失:共享池调度器可能不可用,新建共享档实例将被拒绝", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/cluster-validation.md#c-hami-共享池"}
           - alert: GpuTelemetryMissing
             expr: absent(DCGM_FI_DEV_GPU_UTIL) or absent(hami_host_gpu_utilization_ratio)
             for: 30m
             labels: {severity: warning}
-            annotations: {summary: "GPU 遥测缺失:无法发现配额逃逸与滥用(dcgm-exporter 或 HAMi vGPUmonitor 抓取断了)", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/cluster-validation.md#e-监控与告警"}
+            annotations: {summary: "GPU 遥测缺失:无法发现配额逃逸与滥用(dcgm-exporter 或 HAMi vGPUmonitor 抓取断了)", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/cluster-validation.md#e-监控与告警"}
   superdl-certmanager:
     groups:
       - name: superdl.certmanager
@@ -325,16 +325,16 @@ additionalPrometheusRulesMap:
           - alert: CertExpiringSoon
             expr: (certmanager_certificate_expiration_timestamp_seconds - time()) < 7 * 24 * 3600
             labels: {severity: warning}
-            annotations: {summary: "证书 {{ $labels.name }}({{ $labels.namespace }})7 天内到期:查 cert-manager 续签", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/acme-dns.md"}
+            annotations: {summary: "证书 {{ $labels.name }}({{ $labels.namespace }})7 天内到期:查 cert-manager 续签", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/acme-dns.md"}
           - alert: CertExpiringCritical
             expr: (certmanager_certificate_expiration_timestamp_seconds - time()) < 2 * 24 * 3600
             labels: {severity: critical}
-            annotations: {summary: "证书 {{ $labels.name }}({{ $labels.namespace }})48 小时内到期:立即人工介入", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/acme-dns.md"}
+            annotations: {summary: "证书 {{ $labels.name }}({{ $labels.namespace }})48 小时内到期:立即人工介入", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/acme-dns.md"}
           - alert: CertManagerMetricsMissing
             expr: absent(certmanager_certificate_expiration_timestamp_seconds)
             for: 1h
             labels: {severity: warning}
-            annotations: {summary: "cert-manager 指标缺失 1 小时:ServiceMonitor/组件异常,证书过期将无预警", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/acme-dns.md"}
+            annotations: {summary: "cert-manager 指标缺失 1 小时:ServiceMonitor/组件异常,证书过期将无预警", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/acme-dns.md"}
           - alert: PlatformCertExpiringSoon
             expr: (superdl_cert_not_after_seconds - time()) < 14 * 24 * 3600
             for: 1h
@@ -378,7 +378,7 @@ additionalPrometheusRulesMap:
             expr: sum(rate(superdl_http_request_duration_seconds_count{status=~"5.."}[5m])) / clamp_min(sum(rate(superdl_http_request_duration_seconds_count[5m])), 0.001) > 0.05
             for: 5m
             labels: {severity: critical}
-            annotations: {summary: "API 5xx 率 >5% 持续 5 分钟", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md"}
+            annotations: {summary: "API 5xx 率 >5% 持续 5 分钟", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md"}
           - alert: PaymentClosedOrderRescued
             expr: increase(superdl_payment_closed_order_rescued_total[1h]) > 0
             labels: {severity: warning}
@@ -386,7 +386,7 @@ additionalPrometheusRulesMap:
           - alert: OutboxTaskTimeout
             expr: increase(superdl_outbox_task_timeout_total[30m]) > 0
             labels: {severity: warning}
-            annotations: {summary: "outbox 有任务被执行超时中断:队列全局串行,队头卡死会让全部编排请求排队", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md"}
+            annotations: {summary: "outbox 有任务被执行超时中断:队列全局串行,队头卡死会让全部编排请求排队", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md"}
           - alert: WorkerDown
             expr: (time() - max(superdl_worker_heartbeat_timestamp_seconds)) > 120 or absent(superdl_worker_heartbeat_timestamp_seconds)
             for: 5m
@@ -401,27 +401,27 @@ additionalPrometheusRulesMap:
             expr: kube_job_status_failed{namespace="superdl", job_name=~"pg-backup-daily-.*"} > 0
             for: 5m
             labels: {severity: critical}
-            annotations: {summary: "PG 每日备份 Job 失败:资金库 RPO 正在拉长,立即处理", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
+            annotations: {summary: "PG 每日备份 Job 失败:资金库 RPO 正在拉长,立即处理", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
           - alert: PgBackupStale
             expr: (time() - max(kube_job_status_completion_time{namespace="superdl", job_name=~"pg-backup-daily-.*"})) > 100800 or (absent(kube_job_status_completion_time{namespace="superdl", job_name=~"pg-backup-daily-.*"}) and absent(superdl_pg_backup_last_success_timestamp_seconds))
             for: 5m
             labels: {severity: warning}
-            annotations: {summary: "PG 备份超 28h 无成功记录(CronJob 未跑或历史被清)", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
+            annotations: {summary: "PG 备份超 28h 无成功记录(CronJob 未跑或历史被清)", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
           - alert: PgBackupStandaloneStale
             expr: (time() - max(superdl_pg_backup_last_success_timestamp_seconds)) > 100800
             for: 5m
             labels: {severity: critical}
-            annotations: {summary: "自建 PG 每日备份(dump + 异地同步 + 恢复冒烟)超 28h 无成功:查控制面宿主机 cron 邮件与 /var/lib/superdl/pg/backup", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
+            annotations: {summary: "自建 PG 每日备份(dump + 异地同步 + 恢复冒烟)超 28h 无成功:查控制面宿主机 cron 邮件与 /var/lib/superdl/pg/backup", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
           - alert: PgBaseBackupStale
             expr: (time() - max(superdl_pg_basebackup_last_success_timestamp_seconds)) > 8 * 86400 or absent(superdl_pg_basebackup_last_success_timestamp_seconds)
             for: 1h
             labels: {severity: critical}
-            annotations: {summary: "每周 pg_basebackup 超 8 天无成功:PITR 基准缺失", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
+            annotations: {summary: "每周 pg_basebackup 超 8 天无成功:PITR 基准缺失", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
           - alert: PgWalSyncStale
             expr: (time() - max(superdl_pg_wal_sync_last_success_timestamp_seconds)) > 1800 or absent(superdl_pg_wal_sync_last_success_timestamp_seconds)
             for: 10m
             labels: {severity: critical}
-            annotations: {summary: "WAL 归档异地同步超 30 分钟无成功:PITR 可恢复点正在拉长", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
+            annotations: {summary: "WAL 归档异地同步超 30 分钟无成功:PITR 可恢复点正在拉长", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
           - alert: K3sStateBackupStale
             expr: (time() - max(superdl_k3s_state_backup_last_success_timestamp_seconds)) > 13 * 3600 or absent(superdl_k3s_state_backup_last_success_timestamp_seconds)
             for: 30m
@@ -431,7 +431,7 @@ additionalPrometheusRulesMap:
             expr: max(superdl_node_unenrolled) > 0
             for: 5m
             labels: {severity: critical}
-            annotations: {summary: "有未登记节点加入集群并已被 cordon:核对 agent token 是否泄漏", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/README.md#server-token-与-agent-token轮换-快照托管"}
+            annotations: {summary: "有未登记节点加入集群并已被 cordon:核对 agent token 是否泄漏", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/README.md#server-token-与-agent-token轮换-快照托管"}
           - alert: SubscriptionUnpaidRunning
             expr: max(superdl_subscription_unpaid_running_instances) > 0
             for: 45m
@@ -502,7 +502,7 @@ additionalPrometheusRulesMap:
             expr: certmanager_certificate_ready_status{condition="False"} == 1
             for: 10m
             labels: {severity: warning}
-            annotations: {summary: "证书 {{ $labels.name }}({{ $labels.namespace }})持续 10 分钟未就绪:查 cert-manager 签发事件与 DNS01 solver", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/acme-dns.md"}
+            annotations: {summary: "证书 {{ $labels.name }}({{ $labels.namespace }})持续 10 分钟未就绪:查 cert-manager 签发事件与 DNS01 solver", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/acme-dns.md"}
   superdl-security:
     groups:
       - name: superdl.security
@@ -510,46 +510,46 @@ additionalPrometheusRulesMap:
           - alert: LoginFailureSpike
             expr: sum by (actor_type) (increase(superdl_login_failed_total[5m])) > 50
             labels: {severity: warning}
-            annotations: {summary: "5 分钟内登录失败 {{ $value }} 次({{ $labels.actor_type }} 端):疑似撞库/爆破,按源 IP 查 Loki 决定是否临时封禁", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
+            annotations: {summary: "5 分钟内登录失败 {{ $value }} 次({{ $labels.actor_type }} 端):疑似撞库/爆破,按源 IP 查 Loki 决定是否临时封禁", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
           - alert: AdminLoginFailureSpike
             expr: sum(increase(superdl_login_failed_total{actor_type="admin"}[10m])) > 10
             labels: {severity: critical}
-            annotations: {summary: "管理端 10 分钟内登录失败 {{ $value }} 次:管理员账号正被爆破(先核对 04-gateway.yaml 的源 IP 白名单是否生效)", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
+            annotations: {summary: "管理端 10 分钟内登录失败 {{ $value }} 次:管理员账号正被爆破(先核对 04-gateway.yaml 的源 IP 白名单是否生效)", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
           - alert: AuthzDenialSustained
             expr: sum by (actor_type) (rate(superdl_authz_denied_total[10m])) > 0.5
             for: 15m
             labels: {severity: warning}
-            annotations: {summary: "鉴权拒绝持续 {{ $value }}/s({{ $labels.actor_type }} 端)超 15 分钟:有人在遍历越权面,或某个客户端在拿错凭据重试", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
+            annotations: {summary: "鉴权拒绝持续 {{ $value }}/s({{ $labels.actor_type }} 端)超 15 分钟:有人在遍历越权面,或某个客户端在拿错凭据重试", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
           - alert: AdminPrivilegeChanged
             expr: increase(superdl_admin_privilege_change_total[5m]) > 0
             labels: {severity: critical}
-            annotations: {summary: "管理端权限发生变更({{ $value }} 次):逐条与变更单核对,非计划内变更按失陷处置", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
+            annotations: {summary: "管理端权限发生变更({{ $value }} 次):逐条与变更单核对,非计划内变更按失陷处置", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
           - alert: NodePoolLabelMismatch
             expr: increase(superdl_node_pool_label_mismatch_total[10m]) > 0
             labels: {severity: critical}
-            annotations: {summary: "节点池标签与注册登记不符({{ $value }} 次):平台已纠偏并停调度,核对该机是谁装的、config.yaml 被谁改过", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/gpu-fault-sop.md"}
+            annotations: {summary: "节点池标签与注册登记不符({{ $value }} 次):平台已纠偏并停调度,核对该机是谁装的、config.yaml 被谁改过", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/gpu-fault-sop.md"}
           - alert: PiiRevealVolumeHigh
             expr: sum by (kind) (increase(superdl_pii_reveal_rows_total[1h])) > 200
             labels: {severity: warning}
-            annotations: {summary: "1 小时内明文查看 PII {{ $value }} 行({{ $labels.kind }}):核对是谁、为什么,批量导出应走审批而非逐条查看", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
+            annotations: {summary: "1 小时内明文查看 PII {{ $value }} 行({{ $labels.kind }}):核对是谁、为什么,批量导出应走审批而非逐条查看", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
           - alert: PiiRevealBurst
             expr: sum(increase(superdl_pii_reveal_rows_total[5m])) > 500
             labels: {severity: critical}
-            annotations: {summary: "5 分钟内明文查看 PII {{ $value }} 行:批量脱库特征,立即冻结相关管理账号并保留审计", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
+            annotations: {summary: "5 分钟内明文查看 PII {{ $value }} 行:批量脱库特征,立即冻结相关管理账号并保留审计", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
           - alert: ApiUnauthorizedRateHigh
             expr: sum(rate(superdl_http_request_duration_seconds_count{status=~"40[13]"}[5m])) / clamp_min(sum(rate(superdl_http_request_duration_seconds_count[5m])), 0.001) > 0.3
             for: 10m
             labels: {severity: warning}
-            annotations: {summary: "API 401/403 占比 >30% 持续 10 分钟:大概率是自动化探测,而不是用户在误操作", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
+            annotations: {summary: "API 401/403 占比 >30% 持续 10 分钟:大概率是自动化探测,而不是用户在误操作", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
           - alert: PaymentConfigWritten
             expr: increase(superdl_platform_config_write_total{domain=~"payment|crypto"}[5m]) > 0
             labels: {severity: critical}
-            annotations: {summary: "平台配置 {{ $labels.domain }} 组被写入({{ $value }} 次):换掉验签公钥/商户号即可自签回调充值,逐条与变更单核对,非计划内按失陷处置", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
+            annotations: {summary: "平台配置 {{ $labels.domain }} 组被写入({{ $value }} 次):换掉验签公钥/商户号即可自签回调充值,逐条与变更单核对,非计划内按失陷处置", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
           - alert: EndpointAuthDenialSustained
             expr: rate(superdl_endpoint_auth_denied_total[10m]) > 1
             for: 15m
             labels: {severity: warning}
-            annotations: {summary: "服务端点网关鉴权拒绝持续 {{ $value }}/s 超 15 分钟:有人在猜 x-api-key,按 slug 查 Loki 后临时冻结该服务", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
+            annotations: {summary: "服务端点网关鉴权拒绝持续 {{ $value }}/s 超 15 分钟:有人在猜 x-api-key,按 slug 查 Loki 后临时冻结该服务", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
   superdl-abuse:
     groups:
       - name: superdl.abuse
@@ -566,7 +566,7 @@ additionalPrometheusRulesMap:
             expr: sum(rate(superdl_http_request_duration_seconds_count{status="429"}[5m])) > 5
             for: 10m
             labels: {severity: warning}
-            annotations: {summary: "应用层限流 429 持续 {{ $value }}/s 超 10 分钟:单点被打,按 route/源 IP 查 Loki", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
+            annotations: {summary: "应用层限流 429 持续 {{ $value }}/s 超 10 分钟:单点被打,按 route/源 IP 查 Loki", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
           - alert: TenantEgressHigh
             expr: sum by (namespace) (rate(container_network_transmit_bytes_total{namespace=~"tenant-.*"}[10m])) > 40e6
             for: 15m
