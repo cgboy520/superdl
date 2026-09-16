@@ -1731,6 +1731,7 @@ dependencies = [
     { name = "pyotp" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "structlog" },
+    { name = "tzdata" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "wechatpayv3" },
 ]
@@ -1766,6 +1767,7 @@ requires-dist = [
     { name = "pyotp", specifier = ">=2.10.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.52,<2.1" },
     { name = "structlog", specifier = ">=26.1" },
+    { name = "tzdata", specifier = ">=2025.2" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.52" },
     { name = "wechatpayv3", specifier = ">=2.0.3" },
 ]

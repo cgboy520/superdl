@@ -2798,6 +2798,30 @@
         "title": "DeletionRequestOut",
         "type": "object"
       },
+      "DeploymentIdentityOut": {
+        "description": "Deployment-level identity set by env, shown read-only on the platform-config page.",
+        "properties": {
+          "billing_timezone": {
+            "title": "Billing Timezone",
+            "type": "string"
+          },
+          "compliance_profile": {
+            "title": "Compliance Profile",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          }
+        },
+        "required": [
+          "compliance_profile",
+          "currency",
+          "billing_timezone"
+        ],
+        "title": "DeploymentIdentityOut",
+        "type": "object"
+      },
       "DiskCreate": {
         "properties": {
           "name": {
@@ -6516,6 +6540,9 @@
       },
       "PlatformConfigOut": {
         "properties": {
+          "deployment": {
+            "$ref": "#/components/schemas/DeploymentIdentityOut"
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/PlatformConfigItemOut"
@@ -6533,7 +6560,8 @@
         },
         "required": [
           "items",
-          "warnings"
+          "warnings",
+          "deployment"
         ],
         "title": "PlatformConfigOut",
         "type": "object"
@@ -8162,6 +8190,10 @@
       "SiteConfigOut": {
         "description": "站点公开配置(页脚备案号与经营主体信息等,未登录可访问)。",
         "properties": {
+          "billing_timezone": {
+            "title": "Billing Timezone",
+            "type": "string"
+          },
           "business_license_url": {
             "anyOf": [
               {
@@ -8206,6 +8238,18 @@
             ],
             "title": "Company Phone"
           },
+          "compliance_profile": {
+            "title": "Compliance Profile",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "default_locale": {
+            "title": "Default Locale",
+            "type": "string"
+          },
           "icp_number": {
             "anyOf": [
               {
@@ -8217,8 +8261,30 @@
             ],
             "title": "Icp Number"
           },
+          "kyc_form": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kyc Form"
+          },
           "payment_channels": {
             "$ref": "#/components/schemas/PaymentChannelsOut"
+          },
+          "phone_dial_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Phone Dial Codes",
+            "type": "array"
+          },
+          "phone_required": {
+            "title": "Phone Required",
+            "type": "boolean"
           },
           "police_record_number": {
             "anyOf": [
@@ -8259,7 +8325,14 @@
           "police_record_number",
           "support_email",
           "support_wechat",
-          "payment_channels"
+          "payment_channels",
+          "compliance_profile",
+          "phone_required",
+          "phone_dial_codes",
+          "kyc_form",
+          "default_locale",
+          "currency",
+          "billing_timezone"
         ],
         "title": "SiteConfigOut",
         "type": "object"
@@ -20269,7 +20342,7 @@
     },
     "/api/v1/site-config": {
       "get": {
-        "description": "站点公开配置:备案号 + 可用支付渠道(免登录)。",
+        "description": "站点公开配置:备案号 + 可用支付渠道 + 部署身份(合规档位 / 币种 / 计费时区)(免登录)。",
         "operationId": "get_site_config_api_v1_site_config_get",
         "responses": {
           "200": {

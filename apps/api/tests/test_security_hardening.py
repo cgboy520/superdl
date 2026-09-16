@@ -168,6 +168,7 @@ class TestProdConfigValidation:
         return {
             "_env_file": None,
             "environment": "prod",
+            "compliance_profile": "none",
             "jwt_secret": "9f4a1c7e2b8d0f63a5e9c417b3d68f02a1c4e7958b0d326f7a9c1e4b58d2f603",
             "sms_provider": "aliyun",
             "k8s_backend": "real",
@@ -217,6 +218,34 @@ class TestProdConfigValidation:
             kwargs = {**self._complete_prod_kwargs(), "jwt_secret": bad}
             with pytest.raises(ValidationError, match="jwt_secret"):
                 Settings(**kwargs)
+
+    def test_prod_requires_explicit_compliance_profile(self):
+        """prod without SUPERDL_COMPLIANCE_PROFILE refuses to boot; any explicit value passes."""
+        import pytest
+        from pydantic import ValidationError
+
+        from app.core.config import Settings
+
+        kwargs = self._complete_prod_kwargs()
+        kwargs.pop("compliance_profile")
+        with pytest.raises(ValidationError, match="compliance_profile"):
+            Settings(**kwargs)
+        assert Settings(**{**kwargs, "compliance_profile": "cn"}).compliance_profile == "cn"
+
+    def test_deployment_identity_shape_checked_in_any_env(self):
+        """Unsupported currency or a non-IANA timezone is rejected even outside prod."""
+        import pytest
+        from pydantic import ValidationError
+
+        from app.core.config import Settings
+
+        base = {"_env_file": None, "environment": "test"}
+        with pytest.raises(ValidationError, match="platform_currency"):
+            Settings(**base, platform_currency="XXX")
+        with pytest.raises(ValidationError, match="billing_timezone"):
+            Settings(**base, billing_timezone="Mars/Olympus")
+        s = Settings(**base, platform_currency="CNY", billing_timezone="Asia/Shanghai")
+        assert (s.platform_currency, s.billing_timezone) == ("CNY", "Asia/Shanghai")
 
     def test_prod_rejects_weak_bcrypt_cost(self):
         """prod 下 bcrypt cost 小于 12 拒启;非 prod 允许 4。"""

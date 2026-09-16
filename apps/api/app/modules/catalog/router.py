@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.core.compliance import current_profile
 from app.core.config import get_settings
 from app.core.db import DbSession
 from app.core.platform_config import get_runtime_config
@@ -16,9 +17,10 @@ router = APIRouter(tags=["catalog"])
 
 @router.get("/site-config")
 async def get_site_config(session: DbSession) -> SiteConfigOut:
-    """站点公开配置:备案号 + 可用支付渠道(免登录)。"""
+    """站点公开配置:备案号 + 可用支付渠道 + 部署身份(合规档位 / 币种 / 计费时区)(免登录)。"""
     cfg = await get_runtime_config(session)
     s = get_settings()
+    profile = current_profile()
     return SiteConfigOut(
         icp_number=cfg.icp_number or None,
         police_record_number=cfg.police_record_number or None,
@@ -33,6 +35,13 @@ async def get_site_config(session: DbSession) -> SiteConfigOut:
             alipay=cfg.payment_alipay_enabled,
             mock=s.payment_mock,
         ),
+        compliance_profile=profile.name,
+        phone_required=profile.phone_required,
+        phone_dial_codes=list(profile.phone_dial_codes),
+        kyc_form=profile.kyc_form,
+        default_locale=profile.default_locale,
+        currency=s.platform_currency,
+        billing_timezone=s.billing_timezone,
     )
 
 

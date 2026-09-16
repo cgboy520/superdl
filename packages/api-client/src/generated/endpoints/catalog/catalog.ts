@@ -46,7 +46,7 @@ export const getGetSiteConfigApiV1SiteConfigGetUrl = () => {
 }
 
 /**
- * 站点公开配置:备案号 + 可用支付渠道(免登录)。
+ * 站点公开配置:备案号 + 可用支付渠道 + 部署身份(合规档位 / 币种 / 计费时区)(免登录)。
  * @summary Get Site Config
  */
 export const getSiteConfigApiV1SiteConfigGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<SiteConfigOut> => {

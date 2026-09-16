@@ -5,9 +5,12 @@ import re
 from functools import lru_cache
 from typing import Literal
 from urllib.parse import parse_qs, urlparse
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.core.currencies import SUPPORTED_CURRENCIES
 
 _DEV_JWT_SECRET = "dev-secret-change-me"
 
@@ -59,6 +62,10 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="SUPERDL_", env_file=".env", extra="ignore")
 
     environment: Literal["dev", "test", "prod"]
+    compliance_profile: Literal["none", "cn"] | None = None
+    platform_currency: str = "USD"
+    billing_timezone: str = "UTC"
+    billing_identity_rekey: bool = False
 
     database_url: str = "postgresql+asyncpg://superdl:superdl@localhost:5432/superdl"
     db_pool_size: int = 10
@@ -224,6 +231,7 @@ class Settings(BaseSettings):
             enabled=self.real_name_enabled,
             required_for_recharge=self.real_name_required_for_recharge,
         )
+        self._validate_deployment_identity()
         if "*" in self.cors_origins:
             raise ValueError("cors_origins 不允许通配符 *(allow_credentials=true 下等于全网放行)")
         bad_pools = set(self.parsed_shared_tier_pools()) - {"mig", "hami"}
@@ -260,6 +268,21 @@ class Settings(BaseSettings):
             )
         return self
 
+    def _validate_deployment_identity(self) -> None:
+        """Currency must be in the supported table; the billing timezone must be an IANA zone."""
+        if self.platform_currency not in SUPPORTED_CURRENCIES:
+            raise ValueError(
+                f"platform_currency {self.platform_currency!r} is not supported "
+                f"(one of {', '.join(sorted(SUPPORTED_CURRENCIES))})"
+            )
+        try:
+            ZoneInfo(self.billing_timezone)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(
+                f"billing_timezone {self.billing_timezone!r} is not an IANA zone name "
+                "(e.g. UTC, Asia/Shanghai, America/New_York)"
+            ) from exc
+
     def parsed_shared_tier_pools(self) -> tuple[str, ...]:
         """共享档允许池(逗号分隔,去空白去空项)。"""
         return tuple(p.strip() for p in self.shared_tier_allowed_pools.split(",") if p.strip())
@@ -277,6 +300,7 @@ class Settings(BaseSettings):
         if self.environment != "prod":
             return self
         problems = [
+            *self._prod_deployment_problems(),
             *self._prod_secret_problems(),
             *self._prod_provider_problems(),
             *self._prod_database_problems(),
@@ -285,6 +309,14 @@ class Settings(BaseSettings):
         if problems:
             raise ValueError("生产配置校验失败:" + ";".join(problems))
         return self
+
+    def _prod_deployment_problems(self) -> list[str]:
+        if self.compliance_profile is None:
+            return [
+                "compliance_profile must be set explicitly in prod "
+                "(SUPERDL_COMPLIANCE_PROFILE=none|cn; it selects which regional gates apply)"
+            ]
+        return []
 
     def _prod_secret_problems(self) -> list[str]:
         out: list[str] = []

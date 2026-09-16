@@ -6,6 +6,7 @@ from sqlalchemy import (
     CheckConstraint,
     Index,
     Numeric,
+    SmallInteger,
     String,
     UniqueConstraint,
     func,
@@ -15,6 +16,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
+from app.core.money import platform_currency
 
 
 class Wallet(Base):
@@ -164,6 +166,7 @@ class Order(Base):
     order_no: Mapped[str] = mapped_column(String(40), unique=True)
     user_id: Mapped[int] = mapped_column(index=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    currency: Mapped[str] = mapped_column(String(3), default=platform_currency)
     channel: Mapped[str] = mapped_column(String(16))
     channel_txn_id: Mapped[str | None] = mapped_column(String(64), unique=True)
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
@@ -177,6 +180,19 @@ class Order(Base):
     channel_reversal_action: Mapped[str | None] = mapped_column(String(16))
     expires_at: Mapped[datetime]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class BillingIdentity(Base):
+    """Single row (id = 1) locking the deployment's currency and billing timezone; written on
+    first boot by `billing.identity.assert_billing_identity`."""
+
+    __tablename__ = "billing_identity"
+    __table_args__ = (CheckConstraint("id = 1", name="singleton"),)
+
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, autoincrement=False)
+    currency: Mapped[str] = mapped_column(String(3))
+    timezone: Mapped[str] = mapped_column(String(64))
+    locked_at: Mapped[datetime]
 
 
 def reversal_pending(order: "Order") -> bool:

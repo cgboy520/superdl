@@ -10,12 +10,19 @@ import type { PaymentChannelsOut } from './paymentChannelsOut';
  * 站点公开配置(页脚备案号与经营主体信息等,未登录可访问)。
  */
 export interface SiteConfigOut {
+  billing_timezone: string;
   business_license_url?: string | null;
   company_address?: string | null;
   company_name?: string | null;
   company_phone?: string | null;
+  compliance_profile: string;
+  currency: string;
+  default_locale: string;
   icp_number: string | null;
+  kyc_form: string | null;
   payment_channels: PaymentChannelsOut;
+  phone_dial_codes: string[];
+  phone_required: boolean;
   police_record_number: string | null;
   support_email: string | null;
   support_wechat: string | null;

@@ -22,6 +22,7 @@ dependencies = [
     "wechatpayv3>=2.0.3",
     "alipay-sdk-python>=3.7.1160",
     "pyotp>=2.10.0",
+    "tzdata>=2025.2",
 ]
 
 [dependency-groups]

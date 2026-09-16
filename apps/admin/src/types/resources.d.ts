@@ -765,6 +765,16 @@ export default interface Resources {
       "clearOverrideTag": "保存后清除覆盖,回退 env 默认",
       "configGuide": "配置指引",
       "confirmTitle": "确认变更平台配置",
+      "deployment": {
+        "billingTimezone": "计费时区",
+        "complianceProfile": "合规档位",
+        "currency": "结算币种",
+        "envTag": "部署层",
+        "hint": "由部署层环境变量决定(SUPERDL_COMPLIANCE_PROFILE / SUPERDL_PLATFORM_CURRENCY / SUPERDL_BILLING_TIMEZONE),不可在线修改;币种与时区在首次启动时锁定。",
+        "profileCn": "中国大陆(实名 / 手机号 / 备案)",
+        "profileNone": "通用(无地区合规要求)",
+        "title": "部署身份"
+      },
       "depsMissing": "缺 {{keys}}",
       "depsOk": "凭据已配置",
       "dotConfigured": "已配置",
