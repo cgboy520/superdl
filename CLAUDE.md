@@ -68,7 +68,7 @@ python3 scripts/check-page-skeleton.py
 11. **前端**:antd 6 原生组件自封装,不引 pro-components;服务端状态全走 TanStack Query;文案与状态映射集中在 `packages/ui`。
 12. **文案**:单一事实源是后端 `core/messages.py` 与两端 locales JSON;zh-CN 与 en-US 同时提交,风格见 `docs/copy-style-guide.md`。
 13. **测试**:每条用例能答出「它挂了说明什么坏了」。必须有用例:金额与舍入、透支、结算幂等、跨小时/跨日/跨月与时区边界、状态机迁移、幂等键与 outbox 重放、鉴权与角色边界。不设覆盖率阈值。端到端事实源 `apps/api/tests/test_e2e_lifecycle.py`,浏览器冒烟 `e2e/tests/`。
-14. **密钥/凭据不入 git**:只经环境变量或平台配置中心注入;deploy 模板一律 `CHANGE_ME`(`deploy/app/secrets.example.yaml`)。prod 必配项以 `docs/reference/security.md` 的 `_validate_prod` 清单为准。
+14. **密钥/凭据不入 git**:只经环境变量或平台配置中心注入;deploy 模板一律 `CHANGE_ME`(`deploy/app/secrets.example.yaml`)。prod 必配项以 `docs/reference/security.md` 的 `_validate_prod` 清单为准。Licensing: `LICENSE` (Apache-2.0) and `NOTICE` at the repository root are authoritative; no per-file license headers.
 15. **迁移与发布**:停机发布(stop → `alembic upgrade head` → start),无兼容窗口、不支持回滚(downgrade 一律 raise);破坏性 DDL 允许,提交说明写明数据影响;`uv run alembic check` 必过;`/readyz` 只认 DB == 代码 head。
 16. **文档随代码同一提交**:改了端点、表、角色、默认值、巡检周期、命令或流程,同一提交更新对应 `docs/reference`、runbook 或 README;新决策写 `docs/decisions.md`;文档与注释只写当前事实,不写评审编号、变更史与日期。引用由 `python3 scripts/check-docs-links.py` 检查。
 

@@ -60,3 +60,7 @@ K8s 默认 `FakeOrchestrator`(进程内存态);接真实集群把 `SUPERDL_K8S_B
 | `e2e/`                | Playwright 浏览器冒烟                                                                                                                                          |
 | `docs/`               | 架构、模块参考、UI/UX 规格、文案规范、决策记录                                                                                                                 |
 | `scripts/`            | 发布脚本与仓库级闸门脚本(禁词、CJK、CSP hash、文档引用、网关清单)                                                                                              |
+
+## License
+
+Apache-2.0 — see [LICENSE](./LICENSE) and [NOTICE](./NOTICE).
