@@ -1,6 +1,6 @@
 # 支付
 
-充值单、微信/支付宝双渠道、回调与查单闭环。代码在 billing 模块(`payment_channels.py` / `webhooks_router.py`)。
+充值单、微信/支付宝双渠道、回调与查单闭环。代码在 billing 模块(`payment_channels/` — `base.py` protocol and shared helpers, `mock.py` / `wechat.py` / `alipay.py` channels, `__init__.py` factory — and `webhooks_router.py`)。
 
 ## 数据模型
 

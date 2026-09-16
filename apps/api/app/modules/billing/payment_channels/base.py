@@ -1,0 +1,95 @@
+"""Payment-channel protocol and the helpers every channel shares: result types, the SDK thread
+pool, callback header and freshness checks."""
+
+import asyncio
+import functools
+from collections.abc import Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+from decimal import Decimal
+from typing import TYPE_CHECKING, Any, Literal, Protocol
+
+from app.core.errors import AppError, ErrorCode
+from app.core.timeutil import now_utc
+
+if TYPE_CHECKING:
+    from app.modules.billing.models import Order
+
+
+class CallbackResult:
+    """解析后的支付回调;success 表示支付成功,refund_amount 为渠道退款额。"""
+
+    def __init__(
+        self,
+        order_no: str,
+        channel_txn_id: str,
+        amount: Decimal,
+        success: bool,
+        refund_amount: Decimal | None = None,
+    ) -> None:
+        self.order_no = order_no
+        self.channel_txn_id = channel_txn_id
+        self.amount = amount
+        self.success = success
+        self.refund_amount = refund_amount
+
+
+SDK_TIMEOUT = (5, 10)
+SDK_TIMEOUT_SECONDS = 10
+CALLBACK_FRESHNESS_SECONDS = 15 * 60
+_SDK_EXECUTOR = ThreadPoolExecutor(max_workers=8, thread_name_prefix="payment-sdk")
+
+
+async def run_in_sdk_pool(fn: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Any:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_SDK_EXECUTOR, functools.partial(fn, *args, **kwargs))
+
+
+def header_value(headers: Mapping[str, str], name: str) -> str:
+    """忽略大小写读取首个同名头,缺失时返回空串。"""
+    lowered = name.lower()
+    for k, v in headers.items():
+        if k.lower() == lowered:
+            return v
+    return ""
+
+
+def channel_error(key: str) -> AppError:
+    """渠道侧错误(凭据不全 / 验签失败 / 商户不符 / 回调过期等)的统一形态。"""
+    return AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key=key)
+
+
+def assert_callback_fresh(ts: datetime | None, *, key: str) -> None:
+    """拒绝缺失或超出 ±CALLBACK_FRESHNESS_SECONDS 的回调时间戳。"""
+    if ts is None or abs((now_utc() - ts).total_seconds()) > CALLBACK_FRESHNESS_SECONDS:
+        raise channel_error(key)
+
+
+class QueryResult:
+    """渠道查单状态、交易号与金额。"""
+
+    def __init__(
+        self,
+        status: Literal["paid", "pending", "closed", "unknown"],
+        channel_txn_id: str | None = None,
+        amount: Decimal | None = None,
+    ) -> None:
+        self.status = status
+        self.channel_txn_id = channel_txn_id
+        self.amount = amount
+
+
+class PaymentChannel(Protocol):
+    name: str
+
+    async def create_payment(self, order: "Order") -> str:
+        """发起支付,返回二维码内容 qr_url。"""
+        ...
+
+    async def parse_callback(self, headers: dict[str, str], body: bytes) -> CallbackResult:
+        """验签并解析回调。验签失败抛 AppError(PAYMENT_CHANNEL_ERROR)。"""
+        ...
+
+    async def query_order(self, order: "Order") -> QueryResult:
+        """查询渠道订单状态、交易号与金额;失败抛异常。"""
+        ...
