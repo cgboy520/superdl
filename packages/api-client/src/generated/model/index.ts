@@ -137,6 +137,7 @@ export * from './deadTaskOut';
 export * from './deadTaskOutPayload';
 export * from './deletionRequestCreate';
 export * from './deletionRequestOut';
+export * from './deploymentIdentityOut';
 export * from './diskCreate';
 export * from './diskExpand';
 export * from './diskOut';

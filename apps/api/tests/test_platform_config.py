@@ -89,11 +89,23 @@ class TestProdDegradeForbidden:
     def test_security_switches_cannot_be_disabled_in_prod(self, key, monkeypatch):
         monkeypatch.setattr(
             "app.core.platform_config.get_settings",
-            lambda: SimpleNamespace(environment="prod"),
+            lambda: SimpleNamespace(environment="prod", compliance_profile="cn"),
         )
         with pytest.raises(ValueError, match="生产环境禁止"):
             validate_setting_value(key, "false")
         assert validate_setting_value(key, "true") == "true"
+
+    def test_cn_only_gates_relax_under_generic_profile(self, monkeypatch):
+        """Under compliance_profile=none, CAPTCHA / real-name may be switched off in prod;
+        admin MFA stays prod-forbidden for every profile."""
+        monkeypatch.setattr(
+            "app.core.platform_config.get_settings",
+            lambda: SimpleNamespace(environment="prod", compliance_profile="none"),
+        )
+        assert validate_setting_value("captcha_enabled", "false") == "false"
+        assert validate_setting_value("real_name_enabled", "false") == "false"
+        with pytest.raises(ValueError, match="生产环境禁止"):
+            validate_setting_value("admin_mfa_enabled", "false")
 
     @pytest.mark.parametrize("key", ["captcha_enabled", "admin_mfa_enabled", "real_name_enabled"])
     def test_security_switches_toggle_freely_outside_prod(self, key, monkeypatch):
@@ -114,7 +126,9 @@ class TestClearOverrideFallbackGuard:
         ah = await admin_headers(sm, client, role="admin")
         monkeypatch.setattr(
             "app.core.platform_config.get_settings",
-            lambda: SimpleNamespace(environment="prod", real_name_enabled=False),
+            lambda: SimpleNamespace(
+                environment="prod", compliance_profile="cn", real_name_enabled=False
+            ),
         )
         resp = await client.put(
             "/api/admin/v1/platform-config",
@@ -201,9 +215,11 @@ class TestClearOverrideFallbackGuard:
 class TestProdComplianceGates:
     """启动合规闸 fail-fast(env/部署层)。"""
 
-    def test_prod_refuses_boot_with_switches_off(self):
+    def test_prod_refuses_boot_with_switches_off(self, monkeypatch):
+        from app.core.config import get_settings
         from app.core.platform_config import assert_prod_compliance_gates
 
+        monkeypatch.setattr(get_settings(), "compliance_profile", "cn")
         off = {
             "captcha_enabled": "false",
             "real_name_enabled": "false",
@@ -225,6 +241,17 @@ class TestProdComplianceGates:
         assert_prod_compliance_gates(rc(on), "prod")
         assert_prod_compliance_gates(rc({"captcha_enabled": "false"}), "dev")
         assert_prod_compliance_gates(rc({"captcha_enabled": "false"}), "test")
+
+    def test_generic_profile_has_no_boot_gate(self):
+        """compliance_profile=none: the CN gates do not apply, prod boots with all three off."""
+        from app.core.platform_config import assert_prod_compliance_gates
+
+        off = {
+            "captcha_enabled": "false",
+            "real_name_enabled": "false",
+            "real_name_required_for_recharge": "false",
+        }
+        assert_prod_compliance_gates(rc(off), "prod")
 
 
 class TestAdminApi:
@@ -534,9 +561,7 @@ class TestConfigWarnings:
             ("image_allowed_registries", "error")
         ]
         assert [(w.key, w.level) for w in compute_config_warnings(rc(base), "prod")] == [
-            ("captcha_enabled", "error"),
-            ("real_name_enabled", "error"),
-            ("real_name_required_for_recharge", "error"),
+            ("captcha_enabled", "warning"),
         ]
         on = dict(compliant, admin_mfa_enabled="false", sms_provider="mock")
         keys = {(w.key, w.level) for w in compute_config_warnings(rc(on), "prod")}
@@ -557,6 +582,26 @@ class TestConfigWarnings:
         )
         assert [w.key for w in compute_config_warnings(rc(full), "prod")] == ["admin_mfa_enabled"]
         assert compute_config_warnings(rc(dict(full, admin_mfa_enabled="true")), "prod") == []
+
+    def test_cn_profile_turns_gates_into_errors(self, monkeypatch):
+        """Under compliance_profile=cn the three CN gates are prod errors (boot-blocking)."""
+        from app.core.config import get_settings
+        from app.core.platform_config import SETTING_SPECS, compute_config_warnings
+
+        monkeypatch.setattr(get_settings(), "compliance_profile", "cn")
+        base = dict.fromkeys(SETTING_SPECS, "")
+        base.update(
+            captcha_enabled="false",
+            admin_mfa_enabled="true",
+            real_name_enabled="false",
+            real_name_required_for_recharge="false",
+            registry_host="harbor.example.com",
+        )
+        assert [(w.key, w.level) for w in compute_config_warnings(rc(base), "prod")] == [
+            ("captcha_enabled", "error"),
+            ("real_name_enabled", "error"),
+            ("real_name_required_for_recharge", "error"),
+        ]
 
     async def test_api_exposes_warnings(self, client: AsyncClient, sm):
         """开启人机验证而未录凭据:warnings 带 error 级提示。"""

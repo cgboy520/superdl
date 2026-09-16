@@ -13,6 +13,7 @@
 - `settlement_gaps`:kind、window_start、object_id、reason(catchup_truncated / dead_letter / watermark_missing / grace_overlap)、resolved_at,UNIQUE(kind, window_start, object_id)。缺口不自愈,闭环是管理端「财务 › 结算缺口」人工重放(成功回写 resolved_at;grace_overlap 拒重放走人工核销)+ 告警 `superdl_settlement_gap_unresolved`
 - `reconcile_checkpoints`:user_id(PK)、last_ledger_id、balance_after、updated_at —— 资金核对增量游标
 - 策略参数:平台配置中心 `policy` 组(`platform_settings`),`GET /api/v1/policies` 读生效值
+- `billing_identity`: single row (`id = 1`), `currency` (ISO 4217), `timezone` (IANA), `locked_at` — the deployment's settlement currency and billing timezone, locked on first boot (see [platform-config.md](./platform-config.md) « Deployment identity »)
 
 ## 契约
 
@@ -29,6 +30,7 @@
 ## 规则与不变量
 
 - 计费主依据是 `instance_events` 的 running↔非 running 边;Prometheus 指标只做展示与对账。
+- One currency per deployment (`SUPERDL_PLATFORM_CURRENCY`): every money column is denominated in it; `orders.currency` records it per order. Changing it after money rows exist requires `SUPERDL_BILLING_IDENTITY_REKEY=true` and does not convert amounts.
 - 小时结算(每小时 :02,advisory lock):由 `settlement_watermarks` 驱动,从上次已结窗口追平到上一整点;每实例按事件重建窗口 running 秒数,`UNIQUE(instance_id, hour_start)` 幂等 upsert,秒数单调递增时只补差价。重复执行与并发执行零重复扣款。
 - 追平截断与单对象连续失败死信,跳窗前登记 `settlement_gaps`;阈值见 [limits.md](./limits.md)。
 - 尾账:stop/release 时对当前小时已用秒数立即入账,同一 UNIQUE 键幂等。

@@ -153,6 +153,7 @@ function PlatformConfigPage() {
     active === "security" ? (
       <SecurityPanel
         items={items.filter((i) => i.group === "security")}
+        deployment={data?.deployment}
         draft={draft}
         setDraft={setDraft}
         disabled={disabled}

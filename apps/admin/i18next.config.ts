@@ -34,6 +34,7 @@ export default defineConfig({
       "platform.fieldExtra*",
       "platform.field.*",
       "platform.provider.*",
+      "platform.deployment.*",
       "platform.riskOff.*",
       "settings.policy.*",
       "overview.severity*",

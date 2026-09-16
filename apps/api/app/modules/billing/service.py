@@ -6,6 +6,7 @@ from app.modules.billing.export import (
     stream_admin_refunds_csv,
     stream_ledger_csv,
 )
+from app.modules.billing.identity import assert_billing_identity
 from app.modules.billing.invoices import (
     admin_list_invoices,
     issue_invoice,
@@ -74,6 +75,7 @@ __all__ = [
     "admin_list_invoices",
     "admin_list_orders",
     "admin_list_refunds",
+    "assert_billing_identity",
     "assert_can_afford",
     "assert_subscription_active",
     "backfill_order",

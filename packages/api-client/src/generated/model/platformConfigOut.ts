@@ -4,10 +4,12 @@
  * SuperDL API
  * OpenAPI spec version: 0.1.0
  */
+import type { DeploymentIdentityOut } from './deploymentIdentityOut';
 import type { PlatformConfigItemOut } from './platformConfigItemOut';
 import type { PlatformConfigWarningOut } from './platformConfigWarningOut';
 
 export interface PlatformConfigOut {
+  deployment: DeploymentIdentityOut;
   items: PlatformConfigItemOut[];
   warnings: PlatformConfigWarningOut[];
 }

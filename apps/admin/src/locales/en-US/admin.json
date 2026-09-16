@@ -787,6 +787,16 @@
     "clearOverrideTag": "Saving clears the override, falling back to the env default",
     "configGuide": "Setup guide",
     "confirmTitle": "Confirm platform config changes",
+    "deployment": {
+      "billingTimezone": "Billing timezone",
+      "complianceProfile": "Compliance profile",
+      "currency": "Currency",
+      "envTag": "Deployment",
+      "hint": "Set by deployment environment variables (SUPERDL_COMPLIANCE_PROFILE / SUPERDL_PLATFORM_CURRENCY / SUPERDL_BILLING_TIMEZONE); not editable here. Currency and timezone are locked at first boot.",
+      "profileCn": "Mainland China (identity verification, phone, ICP filing)",
+      "profileNone": "Generic (no regional compliance rules)",
+      "title": "Deployment identity"
+    },
     "depsMissing": "Missing {{keys}}",
     "depsOk": "Credentials configured",
     "dotConfigured": "Configured",
