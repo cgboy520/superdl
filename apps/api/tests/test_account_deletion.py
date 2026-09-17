@@ -8,6 +8,7 @@ from httpx import AsyncClient
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.money import money_label
 from app.core.timeutil import now_utc
 from app.modules.account.models import AccountDeletionRequest, User
 from app.modules.billing.models import BalanceLedger, Wallet
@@ -205,7 +206,7 @@ class TestApproveGuards:
         assert resp.status_code == 409
         body = resp.json()
         assert body["message_key"] == "account.deletionBalanceRemaining"
-        assert body["params"]["balance"] == "88.00"
+        assert body["params"]["balance"] == money_label("88.00")
         async with sm() as session:
             req = await session.get(AccountDeletionRequest, req_id)
             assert req is not None and req.status == "rejected"

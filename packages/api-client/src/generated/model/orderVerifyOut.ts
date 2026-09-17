@@ -7,10 +7,12 @@
 
 export interface OrderVerifyOut {
   channel_amount: string | null;
+  channel_currency: string | null;
   channel_status: string;
   channel_txn_id: string | null;
   matches: boolean;
   order_amount: string;
+  order_currency: string;
   order_no: string;
   order_status: string;
 }

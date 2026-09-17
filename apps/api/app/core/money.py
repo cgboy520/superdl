@@ -1,4 +1,6 @@
-"""金额统一入口:单价 4 位小数(numeric(12,4)),入账 2 位小数(numeric(14,2)),ROUND_HALF_EVEN。"""
+"""Money helpers: unit prices carry 4 decimals (numeric(12,4)); amounts are quantized to the
+currency's minor unit (numeric(14,2) storage; 0- or 2-decimal currencies), ROUND_HALF_EVEN.
+Server-rendered text uses `money_label` / `price_label` ("100.00 CNY"), never a symbol."""
 
 from datetime import date
 from decimal import ROUND_HALF_EVEN, Decimal
@@ -18,7 +20,6 @@ def money_str(v: Decimal) -> str:
 MoneyOut = Annotated[Decimal, PlainSerializer(money_str, return_type=str, when_used="json")]
 
 PRICE_QUANT = Decimal("0.0001")
-AMOUNT_QUANT = Decimal("0.01")
 
 
 def platform_currency() -> str:
@@ -38,11 +39,28 @@ def as_price(value: Decimal | str | int) -> Decimal:
     return Decimal(value).quantize(PRICE_QUANT, rounding=ROUND_HALF_EVEN)
 
 
-def as_amount(value: Decimal | str | int) -> Decimal:
-    """规整为 2 位小数入账金额,ROUND_HALF_EVEN。"""
+def amount_quant(currency: str | None = None) -> Decimal:
+    """Quantum of the currency's minor unit: 0.01 for two-decimal currencies, 1 for zero-decimal."""
+    return Decimal(1).scaleb(-minor_units(currency))
+
+
+def as_amount(value: Decimal | str | int, *, currency: str | None = None) -> Decimal:
+    """Amount quantized to the currency's minor unit (default: platform currency), HALF_EVEN."""
     if isinstance(value, float):
         raise TypeError("float is forbidden for money")
-    return Decimal(value).quantize(AMOUNT_QUANT, rounding=ROUND_HALF_EVEN)
+    return Decimal(value).quantize(amount_quant(currency), rounding=ROUND_HALF_EVEN)
+
+
+def money_label(value: Decimal | str | int, currency: str | None = None) -> str:
+    """Amount with its ISO code for server-rendered text, e.g. "100.00 CNY"."""
+    code = currency or platform_currency()
+    return f"{money_str(as_amount(value, currency=code))} {code}"
+
+
+def price_label(value: Decimal | str | int, currency: str | None = None) -> str:
+    """Four-decimal unit price with its ISO code, e.g. "1.2345 USD"."""
+    code = currency or platform_currency()
+    return f"{money_str(as_price(value))} {code}"
 
 
 def billing_units(gpu_count: int) -> int:

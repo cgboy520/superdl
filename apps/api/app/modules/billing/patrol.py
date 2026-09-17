@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.metrics import WALLET_NEGATIVE_COUNT, WALLET_NEGATIVE_SUM
-from app.core.money import as_amount, hourly_cost, money_str
+from app.core.money import as_amount, hourly_cost, money_label
 from app.core.patrol import for_each
 from app.core.platform_config import get_runtime_config
 from app.core.pricing import MARKET_SUBSCRIPTION
@@ -195,7 +195,7 @@ async def _check_user_burn(
     est_hours = float(effective / burn_per_hour)
     if est_hours < warn_hours:
         await notify_service.send_low_balance_warning(
-            session, user_id, est_hours=est_hours, balance=money_str(available)
+            session, user_id, est_hours=est_hours, balance=money_label(available)
         )
         counts["warned"] += 1
 

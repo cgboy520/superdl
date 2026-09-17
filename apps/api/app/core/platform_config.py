@@ -416,7 +416,12 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         pattern=r"|\+[1-9]\d{6,14}",
         hint="值班手机号:critical 告警短信直发;留空则不启用",
     ),
-    "disk_price_gb_month": _num("decimal", "0.0010", "1.0000", "元/GB·月,新盘快照价"),
+    "disk_price_gb_month": _num(
+        "decimal",
+        "0.0010",
+        "1.0000",
+        "Per GB·month in the platform currency; snapshot price for new disks",
+    ),
     "disk_min_gb": _num("int", "1", "1024"),
     "disk_max_gb": _num("int", "10", "65536"),
     "disk_grace_days": _num("int", "1", "365"),

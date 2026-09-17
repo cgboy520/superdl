@@ -110,13 +110,12 @@ class WechatChannel:
         currency = amount_obj.get("currency") if isinstance(amount_obj, dict) else None
         if not out_trade_no or not transaction_id or not trade_state or total is None:
             raise channel_error("billing.wechatCallbackVerifyFailed")
-        if currency != "CNY":
-            raise channel_error("billing.wechatCallbackMerchantMismatch")
         return CallbackResult(
             order_no=out_trade_no,
             channel_txn_id=transaction_id,
             amount=Decimal(total) / 100,
             success=trade_state == "SUCCESS",
+            currency=currency,
         )
 
     async def query_order(self, order: "Order") -> QueryResult:  # pragma: no cover
@@ -136,6 +135,7 @@ class WechatChannel:
                 "paid",
                 channel_txn_id=data["transaction_id"],
                 amount=Decimal(data["amount"]["total"]) / 100,
+                currency=data["amount"].get("currency"),
             )
         if state in ("CLOSED", "REVOKED", "PAYERROR"):
             return QueryResult("closed")

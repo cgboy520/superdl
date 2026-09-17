@@ -8,6 +8,7 @@ from sqlalchemy import select, update
 
 from app.core.audit import AuditLog
 from app.core.errors import AppError
+from app.core.money import price_label
 from app.core.timeutil import now_utc
 from app.modules.notify.models import Notification
 from tests.helpers import admin_headers, seed_node_spec, seed_skus
@@ -65,7 +66,8 @@ class TestPriceChangeAlerts:
         alerts = await _admin_alerts(sm)
         assert [a.severity for a in alerts] == ["critical"]
         assert alerts[0].title.startswith("SKU 单价 24 小时累计大幅调整")
-        assert "10.0000 → 现 16.0000" in alerts[0].content and "60%" in alerts[0].content
+        expected = f"{price_label('10')} → 现 {price_label('16')}"
+        assert expected in alerts[0].content and "60%" in alerts[0].content
 
         async with sm() as session:
             await session.execute(

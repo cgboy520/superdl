@@ -14,7 +14,7 @@ from app.core.constants import ADMIN_LIST_CAP
 from app.core.errors import AppError, ErrorCode, conflict
 from app.core.idempotency import find_replay, insert_idempotent, request_fingerprint
 from app.core.logging import get_logger
-from app.core.money import as_amount, money_str
+from app.core.money import as_amount, money_label
 from app.core.pagination import Page, paginate_by_id
 from app.core.sqlutil import get_for_update_or_404, sum_decimal, total
 from app.core.timeutil import BILLING_DAY_OFFSET, billing_month_range, now_utc
@@ -261,7 +261,7 @@ async def issue_invoice(
     if current != req.amount:
         raise conflict(
             key="billing.invoiceAmountStale",
-            params={"expected": money_str(current), "requested": money_str(req.amount)},
+            params={"expected": money_label(current), "requested": money_label(req.amount)},
         )
     req.status = "issued"
     req.invoice_no = invoice_no
@@ -273,7 +273,7 @@ async def issue_invoice(
         type_="invoice",
         title="发票已开具",
         content=(
-            f"您 {req.period} 账期的发票(金额 ¥{money_str(req.amount)})已开具,"
+            f"您 {req.period} 账期的发票(金额 {money_label(req.amount)})已开具,"
             f"发票号 {invoice_no},将于 1-3 个工作日内发送至您的邮箱 {req.email}。"
         ),
         dedup_key=f"invoice:issued:{req.id}",

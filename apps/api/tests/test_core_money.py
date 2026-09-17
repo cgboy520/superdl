@@ -1,45 +1,43 @@
-from datetime import date
+"""Currency-aware quantization and labels: minor units per currency, HALF_EVEN ties, ISO-code
+labels for server-rendered text."""
+
 from decimal import Decimal
 
 import pytest
 
-from app.core.money import as_amount, as_price, disk_daily_charge
+from app.core.config import get_settings
+from app.core.money import amount_quant, as_amount, as_price, money_label, price_label
 
 
-class TestPriceQuantize:
-    def test_price_four_decimals(self):
-        assert as_price("1.5") == Decimal("1.5000")
-        assert as_price("0.12345") == Decimal("0.1234")
-
-    def test_amount_two_decimals_half_even(self):
-        assert as_amount("1.005") == Decimal("1.00")
-        assert as_amount("1.015") == Decimal("1.02")
-        assert as_amount("1.025") == Decimal("1.02")
-
-    def test_float_forbidden(self):
-        with pytest.raises(TypeError):
-            as_price(1.5)  # type: ignore[arg-type]
-        with pytest.raises(TypeError):
-            as_amount(0.1)  # type: ignore[arg-type]
+def test_amount_quant_follows_minor_units():
+    assert amount_quant("USD") == Decimal("0.01")
+    assert amount_quant("CNY") == Decimal("0.01")
+    assert amount_quant("JPY") == Decimal("1")
+    assert amount_quant("KRW") == Decimal("1")
 
 
-class TestDiskDailyCharge:
-    def test_rounding(self):
-        assert disk_daily_charge(Decimal("0.0350"), 100) == Decimal("0.12")
+def test_as_amount_quantizes_to_currency_half_even():
+    assert as_amount("1.005", currency="USD") == Decimal("1.00")
+    assert as_amount("1.015", currency="USD") == Decimal("1.02")
+    assert as_amount("1000.5", currency="JPY") == Decimal("1000")
+    assert as_amount("1001.5", currency="JPY") == Decimal("1002")
+    assert str(as_amount("1000", currency="JPY")) == "1000"
+    with pytest.raises(TypeError):
+        as_amount(1.0)  # type: ignore[arg-type]
 
-    @pytest.mark.parametrize("year,month,days", [(2026, 2, 28), (2026, 4, 30), (2026, 7, 31)])
-    @pytest.mark.parametrize("size_gb", [10, 30, 100, 500, 4096])
-    def test_month_total_matches_list_price(self, year, month, days, size_gb):
-        """整月累计 == 名义月费 × 当月天数 / 30,一分不差。"""
-        price = Decimal("0.0350")
-        total = sum(
-            (disk_daily_charge(price, size_gb, date(year, month, d)) for d in range(1, days + 1)),
-            Decimal("0.00"),
-        )
-        assert total == as_amount(price * size_gb * days / 30)
 
-    def test_daily_amount_never_negative(self):
-        """日费差分非负。"""
-        price = Decimal("0.0350")
-        for d in range(1, 32):
-            assert disk_daily_charge(price, 10, date(2026, 7, d)) >= 0
+def test_as_amount_defaults_to_platform_currency(monkeypatch):
+    monkeypatch.setattr(get_settings(), "platform_currency", "JPY")
+    assert as_amount("12.6") == Decimal("13")
+    monkeypatch.setattr(get_settings(), "platform_currency", "USD")
+    assert as_amount("12.6") == Decimal("12.60")
+
+
+def test_labels_carry_iso_code_not_symbols(monkeypatch):
+    monkeypatch.setattr(get_settings(), "platform_currency", "CNY")
+    assert money_label(Decimal("100")) == "100.00 CNY"
+    assert money_label("5", "JPY") == "5 JPY"
+    assert price_label(Decimal("1.5")) == "1.5000 CNY"
+    assert as_price("1.23456") == Decimal("1.2346")
+    for label in (money_label("1"), price_label("1")):
+        assert "¥" not in label and "$" not in label

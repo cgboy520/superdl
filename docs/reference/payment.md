@@ -45,7 +45,7 @@
 - 下单向渠道传过期时间(微信 `time_expire` RFC3339 / 支付宝 `timeout_express` 分钟),与本地关单时间同步。
 - 关单后到达、验签有效且金额一致的成功回调自动入账;failed 单与金额不符仍拒。指标 `superdl_payment_closed_order_rescued_total` 非零即本地关单 TTL 与渠道过期不同步。
 - 查单 poller 每 2 分钟收敛丢回调(advisory lock 1007):扫 pending 超 60s、近 48h 的 failed 与 closed 单(closed 按 `expires_at` 界定),渠道侧已支付即按回调同路径入账;单笔入账失败记 `superdl_payment_recover_failed_total` 后跳过;残余由异常清单 + 人工补单兜底。
-- 人工补单为渠道核验制:服务端实时查渠道(锁外查询、超时 15s,落账前行锁内复核),已支付且金额一致才入账;pending / closed / failed 均可补。支持 Idempotency-Key:同键重放且已入账回当前状态(落 `orders.backfill_idempotency_key`)。见 [admin.md](./admin.md)。
+- 人工补单为渠道核验制:服务端实时查渠道(锁外查询、超时 15s,落账前行锁内复核),已支付且金额一致才入账;pending / closed / failed 均可补。支持 Idempotency-Key:同键重放且已入账回当前状态(落 `orders.backfill_idempotency_key`)。见 [admin.md](./admin.md)。 Channel results (`CallbackResult` / `QueryResult`) carry the channel-reported `currency` (WeChat from the wire, Alipay fixed CNY, mock optional); callbacks, poller recovery, `verify_order` and backfill all require it to equal `orders.currency` when reported (`billing.currencyMismatch`, counted in `superdl_payment_callback_mismatch_total`).
 
 ### 退款与发票
 

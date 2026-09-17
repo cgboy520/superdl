@@ -140,6 +140,7 @@ class AlipayChannel:
             success=refund_amount is None
             and params.get("trade_status") in ("TRADE_SUCCESS", "TRADE_FINISHED"),
             refund_amount=refund_amount,
+            currency="CNY",
         )
 
     async def query_order(self, order: "Order") -> QueryResult:  # pragma: no cover
@@ -170,6 +171,7 @@ class AlipayChannel:
                     "paid",
                     channel_txn_id=resp.get("trade_no"),
                     amount=Decimal(resp["total_amount"]),
+                    currency="CNY",
                 )
             if status == "TRADE_CLOSED":
                 return QueryResult("closed")

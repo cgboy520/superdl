@@ -72,6 +72,8 @@ class PoliciesOut(BaseModel):
     spot_grace_seconds: int
     real_name_enabled: bool = False
     real_name_required_for_recharge: bool = False
+    currency: str
+    billing_timezone: str
 
 
 class SubscriptionQuoteOut(BaseModel):
@@ -126,6 +128,7 @@ class RechargeCreate(BaseModel):
 class RechargeOut(BaseModel):
     order_no: str
     amount: MoneyOut
+    currency: str
     channel: str
     status: str
     qr_url: str | None

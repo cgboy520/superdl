@@ -10,6 +10,7 @@ import pytest
 from sqlalchemy import func, select, update
 
 from app.core.errors import AppError, ErrorCode
+from app.core.money import money_label
 from app.core.timeutil import billing_day_floor, hour_floor, now_utc
 from app.modules.account.models import User
 from app.modules.billing import patrol, settlement, wallet
@@ -212,9 +213,9 @@ class TestAffordGuard:
         assert exc.value.code is ErrorCode.INSUFFICIENT_BALANCE
         assert exc.value.message_key == "billing.insufficientForInFlight"
         assert exc.value.params == {
-            "balance": "1.68",
-            "required": "3.36",
-            "inflight": "1.68",
+            "balance": money_label("1.68"),
+            "required": money_label("3.36"),
+            "inflight": money_label("1.68"),
         }
         assert exc.value.message_key == "billing.insufficientForInFlight"
 
@@ -231,9 +232,9 @@ class TestAffordGuard:
                 await wallet.assert_can_afford(session, 1, additional_hourly=Decimal("1.68"))
         assert exc.value.code is ErrorCode.INSUFFICIENT_BALANCE
         assert exc.value.params == {
-            "balance": "1.68",
-            "required": "3.36",
-            "inflight": "1.68",
+            "balance": money_label("1.68"),
+            "required": money_label("3.36"),
+            "inflight": money_label("1.68"),
         }
 
     async def test_pending_subscription_instance_not_counted(self, sm):
@@ -251,7 +252,7 @@ class TestAffordGuard:
             with pytest.raises(AppError) as exc:
                 await wallet.assert_can_afford(session, 1)
         assert exc.value.params is not None
-        assert exc.value.params["inflight"] == "8.19"
+        assert exc.value.params["inflight"] == money_label("8.19")
         async with sm() as session:
             await session.execute(
                 update(Wallet).where(Wallet.user_id == 1).values(balance=Decimal("8.19"))

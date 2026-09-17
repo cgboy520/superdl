@@ -14,7 +14,7 @@ from sqlalchemy import Select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 
-from app.core.money import money_str
+from app.core.money import money_str, platform_currency
 
 EXPORT_MAX_ROWS = 50_000
 TRUNCATED_MARKER = "#SUPERDL_EXPORT_TRUNCATED#"
@@ -54,6 +54,12 @@ def _esc(value: object) -> str:
     if any(c in s for c in '",\n\r'):
         s = '"' + s.replace('"', '""') + '"'
     return s
+
+
+def header_row(template: Sequence[str]) -> list[str]:
+    """Header cells with `{currency}` filled from the platform currency."""
+    code = platform_currency()
+    return [cell.replace("{currency}", code) for cell in template]
 
 
 def csv_line(values: Sequence[object]) -> str:

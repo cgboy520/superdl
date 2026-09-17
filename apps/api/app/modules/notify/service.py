@@ -111,7 +111,7 @@ async def send_low_balance_warning(
         user_id,
         type_="balance_warn",
         title="余额不足预警",
-        content=f"当前余额 ¥{balance},按现有实例预计仅可再运行约 {est_hours:.1f} 小时,请及时充值。",
+        content=f"当前余额 {balance},按现有实例预计仅可再运行约 {est_hours:.1f} 小时,请及时充值。",
         severity="warning",
         dedup_key=f"balance_warn:{user_id}:{_day_bucket(now_utc())}",
         sms=True,

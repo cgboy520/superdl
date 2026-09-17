@@ -20,7 +20,7 @@ MESSAGES: dict[str, str] = {
     "account.codeTooFrequent": "Too many requests, try again in {seconds} s",
     "account.credentialRequired": "Provide an SMS code or password",
     "account.deletionBalanceRemaining": (
-        "Balance ¥{balance} not withdrawn — withdraw it via the refund process first, then "
+        "Balance {balance} not withdrawn — withdraw it via the refund process first, then "
         "delete the account after it arrives"
     ),
     "account.deletionCooldown": (
@@ -126,21 +126,22 @@ MESSAGES: dict[str, str] = {
     "billing.badDateFormat": "Date must be YYYY-MM-DD",
     "billing.badMonthFormat": "Month must be YYYY-MM",
     "billing.callbackAmountMismatch": "Callback amount does not match the order",
+    "billing.currencyMismatch": "The channel currency does not match the order currency",
     "billing.callbackChannelMismatch": "Callback channel does not match the order",
     "billing.channelNotEnabled": "This payment channel is not enabled — choose another",
     "billing.channelStateNotBackfillable": "Channel-side status is {status} — cannot backfill",
     "billing.insufficientAvailableFrozen": (
-        "Insufficient available balance: ¥{frozen} is frozen pending chargeback "
+        "Insufficient available balance: {frozen} is frozen pending chargeback "
         "reconciliation and cannot be spent on new purchases; contact support if in doubt"
     ),
     "billing.insufficientBalance": "Insufficient balance — top up first",
     "billing.insufficientForInFlight": (
-        "Insufficient balance: in-flight resources are expected to burn CN¥{inflight} more; "
-        "this operation requires a balance of at least CN¥{required} (current CN¥{balance}) — "
+        "Insufficient balance: in-flight resources are expected to burn {inflight} more; "
+        "this operation requires a balance of at least {required} (current {balance}) — "
         "top up first"
     ),
     "billing.invoiceAmountStale": (
-        "The invoiceable amount has changed (now CN¥{expected}, requested CN¥{requested}): a "
+        "The invoiceable amount has changed (now {expected}, requested {requested}): a "
         "refund occurred in this period — reject the request and ask the user to resubmit "
         "with the new amount"
     ),
@@ -173,20 +174,20 @@ MESSAGES: dict[str, str] = {
         "This order already has an active refund request — do not resubmit"
     ),
     "billing.refundAmountExceeded": (
-        "Refund amount exceeds the refundable cap CN¥{max} (order CN¥{order}, already "
-        "refunded CN¥{refunded}, refundable balance CN¥{refundable})"
+        "Refund amount exceeds the refundable cap {max} (order {order}, already "
+        "refunded {refunded}, refundable balance {refundable})"
     ),
     "billing.refundBalanceConsumed": (
-        "Balance has since been spent and cannot cover this refund (current CN¥{balance}, "
-        "required CN¥{amount}) — cancel the request instead"
+        "Balance has since been spent and cannot cover this refund (current {balance}, "
+        "required {amount}) — cancel the request instead"
     ),
     "billing.refundChannelReversed": (
         "This order's payment was reversed (charged back) by the payment channel and cannot "
         "be refunded — contact support"
     ),
     "billing.refundCumulativeExceeded": (
-        "Cumulative refunds would exceed the order amount (order CN¥{order}, already refunded "
-        "CN¥{refunded}, this request CN¥{amount}) — data anomaly, investigate and cancel this "
+        "Cumulative refunds would exceed the order amount (order {order}, already refunded "
+        "{refunded}, this request {amount}) — data anomaly, investigate and cancel this "
         "refund"
     ),
     "billing.refundInvoiceIssued": (
@@ -195,8 +196,8 @@ MESSAGES: dict[str, str] = {
     ),
     "billing.refundNotFound": "Refund request not found",
     "billing.refundNotRefundable": (
-        "Refundable balance is insufficient (CN¥{refundable} remains of channel-paid funds "
-        "after consumption/refunds, CN¥{amount} required) — cancel the request instead"
+        "Refundable balance is insufficient ({refundable} remains of channel-paid funds "
+        "after consumption/refunds, {amount} required) — cancel the request instead"
     ),
     "billing.refundOrderNotPaid": "Only successfully paid top-up orders can be refunded",
     "billing.refundPayoutChannelMismatch": (
@@ -262,7 +263,7 @@ MESSAGES: dict[str, str] = {
         "more digits cause rounding drift); 4-digit precision is only for data-disk GB-month "
         "prices"
     ),
-    "catalog.priceTooSmall": "Unit price too small: it rounds to 0 at 0.0001 CNY/hour",
+    "catalog.priceTooSmall": "Unit price too small: it must not round to 0 at four decimal places",
     "catalog.skuBusinessKeyExists": (
         "A SKU with the same model, tier, pool, MIG profile, cores share and vCPU/memory "
         "already exists — edit that one instead"

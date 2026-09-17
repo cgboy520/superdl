@@ -7,6 +7,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select, update
 
+from app.core.money import money_label
 from app.core.timeutil import now_utc
 from app.modules.billing import wallet
 from app.modules.billing.models import Wallet
@@ -91,7 +92,7 @@ class TestFrozenWalletArrears:
         assert (await get_instance(client, headers, uuid))["status"] == "running"
         notes = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
         warn = next(n for n in notes if n["title"] == "余额不足预警")
-        assert "¥30.00" in warn["content"]
+        assert money_label("30.00") in warn["content"]
 
 
 async def _drain_wallet(sm, user_id: int) -> None:

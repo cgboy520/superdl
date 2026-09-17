@@ -17,7 +17,8 @@ if TYPE_CHECKING:
 
 
 class CallbackResult:
-    """解析后的支付回调;success 表示支付成功,refund_amount 为渠道退款额。"""
+    """Parsed payment callback; `success` = paid, `refund_amount` = channel-side refund,
+    `currency` = ISO code reported by the channel (None when the wire format has none)."""
 
     def __init__(
         self,
@@ -26,12 +27,15 @@ class CallbackResult:
         amount: Decimal,
         success: bool,
         refund_amount: Decimal | None = None,
+        *,
+        currency: str | None = None,
     ) -> None:
         self.order_no = order_no
         self.channel_txn_id = channel_txn_id
         self.amount = amount
         self.success = success
         self.refund_amount = refund_amount
+        self.currency = currency
 
 
 SDK_TIMEOUT = (5, 10)
@@ -66,17 +70,20 @@ def assert_callback_fresh(ts: datetime | None, *, key: str) -> None:
 
 
 class QueryResult:
-    """渠道查单状态、交易号与金额。"""
+    """Channel-side order status, transaction id, amount and currency (None = not reported)."""
 
     def __init__(
         self,
         status: Literal["paid", "pending", "closed", "unknown"],
         channel_txn_id: str | None = None,
         amount: Decimal | None = None,
+        *,
+        currency: str | None = None,
     ) -> None:
         self.status = status
         self.channel_txn_id = channel_txn_id
         self.amount = amount
+        self.currency = currency
 
 
 class PaymentChannel(Protocol):

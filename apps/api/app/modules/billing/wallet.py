@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ErrorCode
 from app.core.logging import get_logger
-from app.core.money import as_amount, disk_daily_charge, hourly_cost, money_str
+from app.core.money import as_amount, disk_daily_charge, hourly_cost, money_label, money_str
 from app.core.pagination import Page, RawPage, paginate_by_id
 from app.core.platform_config import get_runtime_config
 from app.core.pricing import MARKET_SUBSCRIPTION
@@ -126,7 +126,7 @@ async def debit(
         raise AppError(
             ErrorCode.INSUFFICIENT_BALANCE,
             key="billing.insufficientAvailableFrozen",
-            params={"frozen": money_str(wallet.frozen)},
+            params={"frozen": money_label(wallet.frozen)},
         )
     wallet.balance = new_balance
     entry = _ledger(wallet, type_, -amount, ref_type, ref_id, remark)
@@ -248,9 +248,9 @@ async def assert_can_afford(
             ErrorCode.INSUFFICIENT_BALANCE,
             key="billing.insufficientForInFlight",
             params={
-                "balance": money_str(available_of(locked)),
-                "required": money_str(required),
-                "inflight": money_str(inflight),
+                "balance": money_label(available_of(locked)),
+                "required": money_label(required),
+                "inflight": money_label(inflight),
             },
         )
 
