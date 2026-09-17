@@ -66,7 +66,7 @@ jobs:
           name: sbom-${{ matrix.name }}
           path: sbom.cdx.json
       - id: meta
-        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302
         with:
           images: ${{ secrets.HARBOR_HOST }}/${{ vars.HARBOR_PROJECT || 'superdl' }}/superdl-${{ matrix.name }}
           tags: |
