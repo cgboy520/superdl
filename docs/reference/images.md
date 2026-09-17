@@ -1,38 +1,38 @@
-# 镜像与预热
+# Images and prewarming
 
-平台镜像目录的管理端 CRUD、集群内 P2P 缓存与逐节点预热。
+Admin CRUD of the platform image catalog, in-cluster P2P cache and per-node prewarming.
 
-## 数据模型
+## Data model
 
-- `images`:framework/version/python/cuda/image_ref、`prewarm_enabled`
-- `image_node_cache`:image_id(FK CASCADE)、node_name、status(pending/pulling/cached/failed)、cached_ref、last_error、checked_at,Unique(image_id, node_name)
+- `images`: framework / version / python / cuda / image_ref, `prewarm_enabled`
+- `image_node_cache`: image_id (FK CASCADE), node_name, status (pending / pulling / cached / failed), cached_ref, last_error, checked_at; Unique(image_id, node_name)
 
-## 契约
+## Contract
 
-| 端点                                           | 角色/鉴权    | 说明                                                                     |
-| ---------------------------------------------- | ------------ | ------------------------------------------------------------------------ |
-| `GET /api/admin/v1/images`                     | ops/readonly | 列表 + `coverage{cached,total,pct}` + `failed_nodes`,纯 DB 聚合          |
-| `POST /api/admin/v1/images`                    | ops          | 创建;image_ref 冲突 409;审计                                             |
-| `PATCH /api/admin/v1/images/{image_id}`        | ops          | 含 prewarm_enabled;image_ref 变更同事务清该镜像 cache 行;审计            |
-| `DELETE /api/admin/v1/images/{image_id}`       | ops          | reason 必填;cache 行 CASCADE;审计                                        |
-| `POST /api/admin/v1/images/{image_id}/prewarm` | ops          | 非 cached 行置 pending + 同事务 enqueue,返回 `{enqueued}`;请求路径零 K8s |
-| `GET /api/admin/v1/images/{image_id}/nodes`    | ops/readonly | 每节点 status/last_error/checked_at                                      |
+| Endpoint                                       | Role / auth  | Notes                                                                                                                  |
+| ---------------------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/admin/v1/images`                     | ops/readonly | List + `coverage{cached,total,pct}` + `failed_nodes`, pure DB aggregation                                              |
+| `POST /api/admin/v1/images`                    | ops          | Create; image_ref conflict 409; audited                                                                                |
+| `PATCH /api/admin/v1/images/{image_id}`        | ops          | Incl. prewarm_enabled; an image_ref change clears that image's cache rows in the same transaction; audited             |
+| `DELETE /api/admin/v1/images/{image_id}`       | ops          | reason required; cache rows CASCADE; audited                                                                           |
+| `POST /api/admin/v1/images/{image_id}/prewarm` | ops          | Sets non-cached rows to pending + enqueues in the same transaction, returns `{enqueued}`; zero K8s on the request path |
+| `GET /api/admin/v1/images/{image_id}/nodes`    | ops/readonly | Per-node status / last_error / checked_at                                                                              |
 
-## 默认镜像目录(平台自带)
+## Default image catalog (shipped with the platform)
 
-平台自带 12 个镜像:PyTorch / TensorFlow / Miniconda / PaddlePaddle 各自的 CUDA 线,外加 CPU 向 DataScience(R + Julia + scipy)。
-镜像矩阵、选版规则、逐镜像 tag、必装 Jupyter 套件、构建命令、推送前自检与取 digest 只写在 `deploy/instance-images/README.md` 一处;`apps/api/scripts/seed_dev.py` 的 `IMAGES` 是同一张表的 dev 种子副本(两处同一提交改)。
+The platform ships 12 images: the CUDA lines of PyTorch / TensorFlow / Miniconda / PaddlePaddle plus a CPU-oriented DataScience image (R + Julia + scipy).
+The image matrix, version selection rules, per-image tags, mandatory Jupyter packages, build commands, pre-push self-check and digest lookup are written in one place, `deploy/instance-images/README.md`; `IMAGES` in `apps/api/scripts/seed_dev.py` is the dev seed copy of the same table (both change in one commit).
 
-## 规则与不变量
+## Rules and invariants
 
-- 公开 `GET /api/v1/images` 的 `is_prewarmed` 是计算值:`prewarm_enabled AND`(无 cache 行 → 等于 prewarm_enabled;有行 → coverage ≥ `prewarm_min_coverage_pct`)。
-- 策略参数(ops 可调):`prewarm_min_coverage_pct` 与 `prewarm_recheck_hours`,默认值见 [limits.md](./limits.md)。
-- 预热由 `image.prewarm` outbox handler(幂等)+ `prewarm_patrol` 巡检(60s,advisory lock 1008)铺行、收敛与复检;节点增删由巡检自行发现。执行体是每节点定点 Job。
-- cpu 池不预热(巡检 `target_nodes` 排除 `pool_label == cpu`):CPU 规格首次启动现拉镜像,创建页对它不承诺秒级启动。
-- 删除镜像不影响运行中实例:实例存 image_ref 快照。
-- 实例的 image_ref 快照终身不变:停机/开机/重启都用它,无「实例换镜像」端点;镜像修复只对新建实例生效。
-- 集群内 P2P 缓存用发行版内置 embedded registry mirror(Spegel);`latest` tag 不参与 P2P,平台镜像一律钉版本 tag。
-- 平台镜像 tag 允许同名重推,目录 `image_ref` 必须钉 digest。重推后把管理端该镜像 ref 换成新 digest:`admin_update_image` 同事务清 cache 行,巡检按新 ref 重新预热;绕过服务层直接改库由巡检比对 `cached_ref` 兜底作废,≤60s 自愈。
-- 平台镜像仓是 Harbor(接入参数在平台配置·镜像仓库组,见 [platform-config.md](./platform-config.md)):`image_ref` 一律全限定名 `<host>/<项目>/<名>:<tag>@sha256:<digest>`。形态校验事实源 `core/registry.is_valid_image_ref`,创建实例与管理端目录 CRUD 共用。
-- 拉取凭据由平台托管:worker 在建实例 Pod / 预热 Job 前按生效配置把 `superdl-registry-pull`(`kubernetes.io/dockerconfigjson`)按指纹写入 superdl 与租户 ns(`core/k8s.ensure_registry_pull_secret` → `ensure_pull_secret`),Pod / Job 以 `imagePullSecrets` 引用;未配机器人账户则不生成。轮换 = 配置中心保存新 Secret。节点 registries.yaml 只承担 Spegel P2P / Harbor CA / 代理缓存 mirror,见 [nodes.md](./nodes.md);发布 SOP 见 `deploy/cluster/runbooks/image-prewarm.md`。
-- 创建实例的镜像形态校验与来源白名单见 [security.md](./security.md)。
+- `is_prewarmed` on the public `GET /api/v1/images` is computed: `prewarm_enabled AND` (no cache rows → equals prewarm_enabled; rows present → coverage ≥ `prewarm_min_coverage_pct`).
+- Policy parameters (ops-adjustable): `prewarm_min_coverage_pct` and `prewarm_recheck_hours`; defaults in [limits.md](./limits.md).
+- Prewarming is driven by the `image.prewarm` outbox handler (idempotent) plus the `prewarm_patrol` (60 s, advisory lock 1008) that seeds rows, converges and re-checks; node additions and removals are discovered by the patrol. The executor is a per-node pinned Job.
+- The cpu pool is not prewarmed (the patrol's `target_nodes` excludes `pool_label == cpu`): a CPU SKU pulls its image on first start and the create page does not promise second-level start-up for it.
+- Deleting an image does not affect running instances: instances store an image_ref snapshot.
+- An instance's image_ref snapshot never changes: stop / start / restart all use it; there is no "change image" endpoint; image fixes apply to new instances only.
+- The in-cluster P2P cache is the distribution's embedded registry mirror (Spegel); `latest` tags do not take part in P2P, platform images always pin a version tag.
+- Platform image tags may be re-pushed under the same name, so the catalog `image_ref` must pin a digest. After a re-push the admin console swaps that image's ref to the new digest: `admin_update_image` clears cache rows in the same transaction and the patrol prewarms the new ref; a direct DB edit that bypasses the service layer is caught by the patrol comparing `cached_ref` and self-heals within ≤ 60 s.
+- The platform registry is Harbor (parameters in the platform config registry group, see [platform-config.md](./platform-config.md)): `image_ref` is always the fully qualified `<host>/<project>/<name>:<tag>@sha256:<digest>`. The format check has one source, `core/registry.is_valid_image_ref`, shared by instance creation and the admin catalog CRUD.
+- Pull credentials are managed by the platform: before creating instance Pods / prewarm Jobs the worker writes `superdl-registry-pull` (`kubernetes.io/dockerconfigjson`) into `superdl` and the tenant namespaces by fingerprint (`core/k8s.ensure_registry_pull_secret` → `ensure_pull_secret`), and Pods / Jobs reference it through `imagePullSecrets`; without a robot account nothing is generated. Rotation = saving the new secret in the configuration center. Node registries.yaml only carries Spegel P2P / Harbor CA / proxy-cache mirrors, see [nodes.md](./nodes.md); the release SOP is `deploy/cluster/runbooks/image-prewarm.md`.
+- Image-format validation and the source allow-list for instance creation are in [security.md](./security.md).

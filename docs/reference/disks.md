@@ -1,30 +1,30 @@
-# 数据盘
+# Data disks
 
-CephFS 数据盘:一盘一只 PVC,独立生命周期、配额、扩容与日结。表与代码在 orchestrator 模块。
+CephFS data disks: one PVC per disk, with their own lifecycle, quota, expansion and daily settlement. Tables and code live in the orchestrator module.
 
-## 数据模型
+## Data model
 
-- `data_disks`:uuid、user_id、name、size_gb、status(active/grace/frozen/deleting/deleted)、mounted_instance_id?、provisioned
-- PVC 名不入库,按盘 uuid 算出(`core/k8s/base.data_disk_pvc_name` → `disk-<uuid>`),建在租户 ns 内
+- `data_disks`: uuid, user_id, name, size_gb, status (active / grace / frozen / deleting / deleted), mounted_instance_id?, provisioned
+- The PVC name is not stored; it is derived from the disk uuid (`core/k8s/base.data_disk_pvc_name` → `disk-<uuid>`) and created in the tenant namespace
 
-## 契约
+## Contract
 
-| 端点                          | 角色/鉴权 | 说明                                                                                                                        |
-| ----------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `POST /api/v1/disks`          | user      | `{name, size_gb}`;钱包行锁内校验余额(在途+新增日费)与数量配额                                                               |
-| `GET /api/v1/disks`           | user      | 列表                                                                                                                        |
-| `PATCH /api/v1/disks/{uuid}`  | user      | 扩容,只增不减;缩容报 `DISK_SHRINK_FORBIDDEN`                                                                                |
-| `DELETE /api/v1/disks/{uuid}` | user      | 挂载中(running/starting/creating/stopping/releasing 实例)报 `DISK_IN_USE`;挂载实例已 stopped/frozen/failed 时放行并自动解挂 |
+| Endpoint                      | Role / auth | Notes                                                                                                                                                                             |
+| ----------------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/v1/disks`          | user        | `{name, size_gb}`; balance (in-flight + the new daily fee) and count quota checked under the wallet row lock                                                                      |
+| `GET /api/v1/disks`           | user        | List                                                                                                                                                                              |
+| `PATCH /api/v1/disks/{uuid}`  | user        | Expand only, never shrink; shrinking returns `DISK_SHRINK_FORBIDDEN`                                                                                                              |
+| `DELETE /api/v1/disks/{uuid}` | user        | `DISK_IN_USE` while mounted on a running / starting / creating / stopping / releasing instance; allowed and auto-detached when the mounting instance is stopped / frozen / failed |
 
-## 规则与不变量
+## Rules and invariants
 
-- 数据盘后端必须支持 idmapped mount(租户 Pod 一律 `hostUsers: false`);当前后端为 CephFS(Rook),一盘一 PVC。
-- 数据盘与实例解耦:实例释放不影响数据盘,同一盘可先后被不同实例挂载(挂载点 `/root/data`,RWX,不限节点)。
-- 欠费(判据可用余额 ≤ 0,与实例欠费巡检同口径,见 [billing.md](./billing.md))→ grace → frozen → 清除,天数为策略参数,见 [limits.md](./limits.md)。grace 停计费(进入 grace 时先结清在账天数);宽限钟 `grace_started_at` 首次欠费起算,回款不归零;冻结删除钟 `frozen_started_at` 回款也不归零(记 `grace_ended_at`),再次冻结接着上次的钟走,只有回款后保持正常超过 `disk_frozen_days` 才归零重新起算——先建小号式的「冻结 → 第 29 天充值 → 再欠费」仍按原截止日清除。
-- 按计费时区(`SUPERDL_BILLING_TIMEZONE`)自然日计费(日界取 `app/core/timeutil.py` 的 `billing_day_floor`,跨日用 `billing_day_shift`,夏令时切换日为 23/25 小时),不足一日按一日;关机也扣。日结每日计费时区 00:10(advisory lock),结算上一自然日,按 `bills_daily_disk` UNIQUE(disk_id, day) 幂等,漏掉的日期由 `settlement_watermarks` 追平。
-- 删盘与扩容前先按变更前容量结清尚未出账的自然日,下界取水位线。
-- `grace` / `frozen` 态不计费,删除冻结盘不补账。
-- `size_gb` 既是计费口径也是**真实硬限制**:它就是 PVC 的申领容量,CephFS CSI 建带配额的 subvolume,创建即生效,没有「配额下发中」这段窗口。建盘与扩容同事务 enqueue `disk.provision`,worker(disk-ops)建或 patch 租户 ns 内的 PVC(只扩不缩),成功置 `provisioned=true`;`provisioned=false` 的盘不可挂载(`disks.notProvisioned`)。重试耗尽转死信后由 reconciler 周期重派(失败计 `superdl_disk_provision_failed_total`)。删盘 enqueue `disk.deprovision` 删 PVC,SC 的 `reclaimPolicy=Delete` 让 CSI 随之销毁 subvolume——没有单独的擦除作业。
-- 每用户数量上限走「用户级覆盖 → 策略 `max_disks_per_user` → env」三层链;总容量上限走策略 `max_disk_gb_per_user`(未删除盘 `size_gb` 之和,建盘与扩容都校验,超限报 `disks.capacityQuota`),数值见 [limits.md](./limits.md);建盘只校验余额,当天不扣款。
-- 删除的多级防护在前端,后端校验挂载状态。
-- 幂等键 24h 窗口:窗内重放返回既有盘,窗外同键按新单;并发同键靠唯一约束收敛。
+- The data-disk backend must support idmapped mounts (tenant Pods always run `hostUsers: false`); the current backend is CephFS (Rook), one PVC per disk.
+- Disks are decoupled from instances: releasing an instance leaves the disk alone, and the same disk can be mounted by different instances over time (mount point `/root/data`, RWX, any node).
+- Arrears (available balance ≤ 0, the same criterion as the instance arrears patrol, see [billing.md](./billing.md)) → grace → frozen → purge; the day counts are policy parameters, see [limits.md](./limits.md). Grace stops billing (the days already accrued are settled on entering grace); the grace clock `grace_started_at` starts at the first arrears and is not reset by a payment; the frozen-deletion clock `frozen_started_at` is not reset by a payment either (`grace_ended_at` is recorded) — a later freeze continues the old clock, and only staying in good standing for more than `disk_frozen_days` after paying resets it. "Freeze → top up on day 29 → fall into arrears again" therefore still purges on the original deadline.
+- Billed per civil day of the billing time zone (`SUPERDL_BILLING_TIMEZONE`; the day boundary is `billing_day_floor` in `app/core/timeutil.py`, days are stepped with `billing_day_shift`, DST transition days are 23 / 25 hours); a partial day counts as a whole day; stopped instances still pay. Daily settlement runs at 00:10 in the billing zone (advisory lock), settles the previous day, is idempotent through `bills_daily_disk` UNIQUE(disk_id, day), and missed days are caught up through `settlement_watermarks`.
+- Before deletion or expansion the days not yet billed are settled at the pre-change size, with the watermark as the lower bound.
+- `grace` / `frozen` disks are not billed; deleting a frozen disk does not back-bill.
+- `size_gb` is both the billing basis and the **real hard limit**: it is the PVC's requested capacity, the CephFS CSI creates a quota-bearing subvolume, and the quota is effective at creation — there is no "quota pending" window. Creation and expansion enqueue `disk.provision` in the same transaction; the worker (disk-ops) creates or patches the PVC in the tenant namespace (grow only) and sets `provisioned=true` on success; a disk with `provisioned=false` cannot be mounted (`disks.notProvisioned`). After retries are exhausted the dead letter is re-dispatched periodically by the reconciler (failures count in `superdl_disk_provision_failed_total`). Deletion enqueues `disk.deprovision`, which deletes the PVC; the StorageClass's `reclaimPolicy=Delete` makes the CSI destroy the subvolume — there is no separate wipe job.
+- The per-user count limit follows the chain "user override → policy `max_disks_per_user` → env"; the total capacity limit is the policy `max_disk_gb_per_user` (sum of `size_gb` over non-deleted disks, checked on creation and expansion, `disks.capacityQuota` when exceeded); values in [limits.md](./limits.md). Creation only checks the balance; nothing is charged that day.
+- The multi-step deletion safeguards live in the frontend; the backend validates the mount state.
+- Idempotency-key window 24 h: a replay inside the window returns the existing disk, the same key outside it is a new order; concurrent replays converge on the unique constraint.
