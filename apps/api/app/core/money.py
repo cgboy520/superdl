@@ -6,6 +6,9 @@ from typing import Annotated
 
 from pydantic import PlainSerializer
 
+from app.core.config import get_settings
+from app.core.currencies import CURRENCY_MINOR_UNITS
+
 
 def money_str(v: Decimal) -> str:
     """Decimal → 字符串(保 scale,不科学计数)。"""
@@ -16,6 +19,16 @@ MoneyOut = Annotated[Decimal, PlainSerializer(money_str, return_type=str, when_u
 
 PRICE_QUANT = Decimal("0.0001")
 AMOUNT_QUANT = Decimal("0.01")
+
+
+def platform_currency() -> str:
+    """ISO 4217 code the deployment settles in (`SUPERDL_PLATFORM_CURRENCY`)."""
+    return get_settings().platform_currency
+
+
+def minor_units(currency: str | None = None) -> int:
+    """Decimal places of the currency (default: the platform currency)."""
+    return CURRENCY_MINOR_UNITS[currency or platform_currency()]
 
 
 def as_price(value: Decimal | str | int) -> Decimal:

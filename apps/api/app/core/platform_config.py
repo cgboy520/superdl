@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core import crypto
+from app.core.compliance import ComplianceProfile, profile_for
 from app.core.config import check_real_name_invariant, get_settings
 from app.core.db import Base
 from app.core.logging import get_logger
@@ -68,6 +69,7 @@ class SettingSpec:
     lo: Decimal | None = None
     hi: Decimal | None = None
     prod_forbidden: tuple[str, ...] = field(default=())
+    prod_forbidden_profiles: tuple[str, ...] = ()
     prod_gate: bool = False
     hint: str = ""
     prod_hint: str = ""
@@ -82,6 +84,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "security",
         "bool",
         prod_forbidden=("false",),
+        prod_forbidden_profiles=("cn",),
         prod_gate=True,
         hint="开启后 /auth/sms-code 必须带阿里云验证码 2.0 的一次性 token(凭据在「人机验证」组);"
         "关闭 = 发码口子只剩 IP/手机号限流;prod 在线关闭已禁,env 层关闭启动 fail-fast",
@@ -99,6 +102,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "security",
         "bool",
         prod_forbidden=("false",),
+        prod_forbidden_profiles=("cn",),
         prod_gate=True,
         hint="开启后用户端「账户设置」可提交三要素核验(凭据在「实名认证」组,缺失即 502);"
         "关闭 = 提交返 409,不影响已实名用户;prod 在线关闭已禁,env 层关闭启动 fail-fast",
@@ -108,6 +112,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "security",
         "bool",
         prod_forbidden=("false",),
+        prod_forbidden_profiles=("cn",),
         prod_gate=True,
         hint="开启后未实名用户不能充值、不能开通实例;须先开启实名认证(任意环境都拦这个组合);"
         "prod 在线关闭已禁且启动 fail-fast(境内合规要求)",
@@ -489,11 +494,37 @@ class ConfigWarning:
     message: str
 
 
+def _active_profile() -> ComplianceProfile:
+    return profile_for(getattr(get_settings(), "compliance_profile", None))
+
+
+def _spec_enforced(spec: SettingSpec) -> bool:
+    """A prod_forbidden rule applies to every profile unless the spec narrows it."""
+    return (
+        not spec.prod_forbidden_profiles or _active_profile().name in spec.prod_forbidden_profiles
+    )
+
+
+def _prod_forbids(spec: SettingSpec, value: str) -> bool:
+    """True when writing/effective `value` is refused in prod under the active profile."""
+    return (
+        bool(spec.prod_forbidden)
+        and get_settings().environment == "prod"
+        and value in spec.prod_forbidden
+        and _spec_enforced(spec)
+    )
+
+
 def _prod_violations(cfg: RuntimeConfig) -> list[tuple[str, SettingSpec]]:
-    """生效值命中 prod_forbidden 的键(与 spec 声明同源;不区分环境,由调用方决定处置)。"""
+    """生效值命中 prod_forbidden 的键(与 spec 声明同源;不区分环境,由调用方决定处置);
+    只含对当前合规档位生效的规则。"""
     out: list[tuple[str, SettingSpec]] = []
     for key, spec in SETTING_SPECS.items():
-        if spec.prod_forbidden and _to_string(getattr(cfg, key)) in spec.prod_forbidden:
+        if (
+            spec.prod_forbidden
+            and _to_string(getattr(cfg, key)) in spec.prod_forbidden
+            and _spec_enforced(spec)
+        ):
             out.append((key, spec))
     return out
 
@@ -507,6 +538,15 @@ def compute_config_warnings(cfg: RuntimeConfig, environment: str) -> list[Config
             ConfigWarning(key, "error" if spec.prod_gate else "warning", spec.prod_hint)
             for key, spec in _prod_violations(cfg)
         )
+        if not cfg.captcha_enabled and not _spec_enforced(SETTING_SPECS["captcha_enabled"]):
+            out.append(
+                ConfigWarning(
+                    "captcha_enabled",
+                    "warning",
+                    "CAPTCHA is off: the verification-code endpoint is protected only by "
+                    "IP and account rate limits",
+                )
+            )
     if cfg.captcha_enabled and not (
         cfg.captcha_scene_id and cfg.captcha_access_key_id and cfg.captcha_access_key_secret
     ):
@@ -583,11 +623,7 @@ def validate_setting_value(key: str, value: str) -> str:
         raise ValueError(f"{key} 只接受:{'/'.join(spec.choices)}")
     if spec.kind in ("int", "decimal"):
         value = _validate_number(key, value, spec)
-    if (
-        spec.prod_forbidden
-        and get_settings().environment == "prod"
-        and value in spec.prod_forbidden
-    ):
+    if _prod_forbids(spec, value):
         raise ValueError(f"{key} 生产环境禁止取值 {value}{_hint_suffix(spec)}")
     _validate_shape(key, value, spec)
     return value
@@ -708,11 +744,7 @@ async def set_platform_settings(
         PLATFORM_CONFIG_WRITE_TOTAL.labels(domain=spec.group).inc()
         if raw.strip() == "":
             fallback = _env_default(key)
-            if (
-                spec.prod_forbidden
-                and get_settings().environment == "prod"
-                and fallback in spec.prod_forbidden
-            ):
+            if _prod_forbids(spec, fallback):
                 raise ValueError(
                     f"{key} 不允许清除覆盖:清除后回落到部署层取值 {fallback!r},"
                     "生产环境禁止该取值(请显式写入合规值,或修改部署层 env 后清除)"

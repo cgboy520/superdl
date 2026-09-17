@@ -24,6 +24,7 @@ from app.core.logging import get_logger, setup_logging
 from app.core.metrics import WORKER_HEARTBEAT_TS
 from app.core.outbox import process_one
 from app.core.timeutil import now_utc
+from app.modules.billing.service import assert_billing_identity
 from app.wiring import wire_modules
 from app.workers.components import current_component, outbox_types_for
 from app.workers.jobs import scheduled_jobs_for
@@ -169,6 +170,8 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
 async def main() -> None:
     setup_logging()
     wire_modules()
+    async with get_sessionmaker()() as session:
+        await assert_billing_identity(session)
     worker_id = make_worker_id()
     component = current_component()
     logger.info("worker_component_resolved", component=component.value)

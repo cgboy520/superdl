@@ -219,6 +219,7 @@ export type {
   AdminSettlementGapOut,
   AuditLogOut as AuditRow,
   DeadTaskOut as DeadTaskRow,
+  DeploymentIdentityOut as DeploymentIdentity,
   NodeOut as NodeRow,
   OversellPoolOut as OversellRow,
   PaymentAnomalyOut as AnomalyRow,

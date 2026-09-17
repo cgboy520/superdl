@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import { adminColors, fontSize, formatDateTime, space } from "@superdl/ui";
 
-import { type PlatformConfigItem } from "../../api";
+import { type DeploymentIdentity, type PlatformConfigItem } from "../../api";
 import { FieldExtraText, GROUP_INTRO_KEYS, SOURCE_TAG, useFieldLabel } from "./-platformFields";
 import { ConfigWarning, GROUP_LABEL_KEY, Group } from "./-platformNav";
 
@@ -31,6 +31,42 @@ export const RISK_OFF = {
   real_name_required_for_recharge: "platform.riskOff.real_name_required_for_recharge",
 } as const satisfies Record<string, string>;
 export type RiskOffKey = (typeof RISK_OFF)[keyof typeof RISK_OFF];
+
+const PROFILE_LABEL_KEY = {
+  none: "platform.deployment.profileNone",
+  cn: "platform.deployment.profileCn",
+} as const satisfies Record<string, string>;
+type ProfileLabelKey = (typeof PROFILE_LABEL_KEY)[keyof typeof PROFILE_LABEL_KEY];
+
+/** Deployment identity (env-only, locked at first boot): shown read-only above the switches. */
+export function DeploymentCard({ deployment }: { deployment: DeploymentIdentity }) {
+  const { t } = useTranslation();
+  const profileKey = (PROFILE_LABEL_KEY as Record<string, ProfileLabelKey | undefined>)[deployment.compliance_profile];
+  const rows: [string, string][] = [
+    [t("platform.deployment.complianceProfile"), profileKey ? t(profileKey) : deployment.compliance_profile],
+    [t("platform.deployment.currency"), deployment.currency],
+    [t("platform.deployment.billingTimezone"), deployment.billing_timezone],
+  ];
+  return (
+    <div style={{ border: `1px solid ${adminColors.divider}`, borderRadius: 6, padding: "12px 16px" }}>
+      <Space orientation="vertical" size={space.xs}>
+        <Space size={space.sm} wrap>
+          <Typography.Text strong>{t("platform.deployment.title")}</Typography.Text>
+          <Tag>{t("platform.deployment.envTag")}</Tag>
+        </Space>
+        <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+          {t("platform.deployment.hint")}
+        </Typography.Text>
+        {rows.map(([label, value]) => (
+          <div key={label}>
+            <Typography.Text type="secondary">{label}: </Typography.Text>
+            <Typography.Text strong>{value}</Typography.Text>
+          </div>
+        ))}
+      </Space>
+    </div>
+  );
+}
 
 export function SwitchRow({
   item,
@@ -136,6 +172,7 @@ export function SwitchRow({
 
 export function SecurityPanel({
   items,
+  deployment,
   draft,
   setDraft,
   disabled,
@@ -144,6 +181,7 @@ export function SecurityPanel({
   onGoTo,
 }: {
   items: PlatformConfigItem[];
+  deployment?: DeploymentIdentity;
   draft: Record<string, string>;
   setDraft: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   disabled: boolean;
@@ -166,6 +204,7 @@ export function SecurityPanel({
           },
         ]}
       />
+      {deployment && <DeploymentCard deployment={deployment} />}
       {items.map((item) => (
         <SwitchRow
           key={item.key}

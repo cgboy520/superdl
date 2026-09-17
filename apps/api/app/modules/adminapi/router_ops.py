@@ -13,6 +13,7 @@ from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import AuditLog, mark_audited_read, set_audit_target
+from app.core.compliance import current_profile
 from app.core.config import get_settings
 from app.core.csvexport import CSV_RESPONSES, csv_response
 from app.core.db import DbSession
@@ -48,6 +49,7 @@ from app.modules.adminapi.schemas import (
     AnnouncementResultOut,
     AuditLogOut,
     DeadTaskOut,
+    DeploymentIdentityOut,
     OutboxTaskStatusOut,
     OverviewOut,
     PlatformConfigItemOut,
@@ -347,7 +349,16 @@ async def admin_get_platform_config(session: DbSession) -> PlatformConfigOut:
             runtime_config_from_strings(eff), get_settings().environment
         )
     ]
-    return PlatformConfigOut(items=items, warnings=warnings)
+    settings = get_settings()
+    return PlatformConfigOut(
+        items=items,
+        warnings=warnings,
+        deployment=DeploymentIdentityOut(
+            compliance_profile=current_profile().name,
+            currency=settings.platform_currency,
+            billing_timezone=settings.billing_timezone,
+        ),
+    )
 
 
 class PlatformConfigUpdateRequest(BaseModel):

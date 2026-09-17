@@ -78,6 +78,11 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             if settings.environment == "prod":
                 raise RuntimeError("部署层平台配置格式不合格,拒绝启动:" + ";".join(env_problems))
             log.error("config_env_invalid", problems=env_problems)
+    from app.core.db import get_sessionmaker
+    from app.modules.billing.service import assert_billing_identity
+
+    async with get_sessionmaker()() as session:
+        await assert_billing_identity(session)
     yield
     from app.modules.metering import prom as metering_prom
 

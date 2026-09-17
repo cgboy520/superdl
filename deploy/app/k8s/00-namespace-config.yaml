@@ -18,6 +18,12 @@ metadata:
   namespace: superdl
 data:
   SUPERDL_ENVIRONMENT: "prod"
+  # Deployment identity (required in prod; see docs/reference/platform-config.md « Deployment identity »).
+  # Mainland-China deployments: SUPERDL_COMPLIANCE_PROFILE=cn, SUPERDL_PLATFORM_CURRENCY=CNY, SUPERDL_BILLING_TIMEZONE=Asia/Shanghai.
+  # Currency and timezone are locked in the database on first boot.
+  SUPERDL_COMPLIANCE_PROFILE: "none"
+  SUPERDL_PLATFORM_CURRENCY: "USD"
+  SUPERDL_BILLING_TIMEZONE: "UTC"
   SUPERDL_K8S_BACKEND: "real"
   SUPERDL_K8S_NAMESPACE_PREFIX: "tenant-"
   SUPERDL_PROMETHEUS_URL: "http://kube-prometheus-stack-prometheus.monitoring.svc:9090"

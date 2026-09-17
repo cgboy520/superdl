@@ -38,6 +38,7 @@ GitHub 仓库的 `production` environment 必须设置 required reviewers,`HARBO
 
 上线硬性核查项(每次首发/变更发布通道后必过):
 
+- [ ] Deployment identity set in `00-namespace-config.yaml`: `SUPERDL_COMPLIANCE_PROFILE` (`none`|`cn`), `SUPERDL_PLATFORM_CURRENCY`, `SUPERDL_BILLING_TIMEZONE`. Existing mainland-China deployments upgrading to this revision must set `cn` / `CNY` / `Asia/Shanghai`: the migration locks `billing_identity` to CNY / Asia/Shanghai when money rows exist, and API / worker refuse to start until env matches (`docs/reference/platform-config.md`).
 - [ ] `curl -s https://<api-domain>/api/v1/webhooks/mock -X POST` 返回 404
 - [ ] `curl -s https://<api-domain>/api/admin/v1/auth/login -X POST` 返回 404
 - [ ] `curl -s https://<api-domain>/metrics` 返回 404 或 401

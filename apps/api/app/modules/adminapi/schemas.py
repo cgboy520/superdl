@@ -322,9 +322,18 @@ class PlatformConfigWarningOut(BaseModel):
     message: str
 
 
+class DeploymentIdentityOut(BaseModel):
+    """Deployment-level identity set by env, shown read-only on the platform-config page."""
+
+    compliance_profile: str
+    currency: str
+    billing_timezone: str
+
+
 class PlatformConfigOut(BaseModel):
     items: list[PlatformConfigItemOut]
     warnings: list[PlatformConfigWarningOut]
+    deployment: DeploymentIdentityOut
 
 
 class SmsTestOut(BaseModel):
