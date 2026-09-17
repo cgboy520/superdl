@@ -177,13 +177,13 @@ async def create_recharge(
     if not created:
         mark_idempotent_replay(response)
     set_audit_target(request, f"order:{order.order_no}")
-    return RechargeOut.model_validate(order)
+    return payment_service.to_recharge_out(order)
 
 
 @router.get("/wallet/recharges/{order_no}")
 async def get_recharge(order_no: str, user: CurrentUser, session: DbSession) -> RechargeOut:
     order = await payment_service.get_order(session, user.id, order_no)
-    return RechargeOut.model_validate(order)
+    return payment_service.to_recharge_out(order)
 
 
 @router.get("/wallet/refunds/eligible-orders")

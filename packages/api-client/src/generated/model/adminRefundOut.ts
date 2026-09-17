@@ -6,12 +6,13 @@
  */
 
 /**
- * 管理端退款单视图:多操作人/时间与核销流水关联。
+ * 管理端退款单视图:多操作人/时间与核销流水关联;`order_channel` 决定可选打款渠道。
  */
 export interface AdminRefundOut {
   amount: string;
   created_at: string;
   id: number;
+  order_channel?: string | null;
   order_no: string;
   payout_at: string | null;
   payout_by: number | null;

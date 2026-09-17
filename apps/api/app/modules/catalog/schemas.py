@@ -12,12 +12,11 @@ from app.core.registry import is_valid_image_ref
 _TIER_PATTERN = f"^({'|'.join(TIERS)})$"
 
 
-class PaymentChannelsOut(BaseModel):
-    """可用支付渠道(充值弹窗按此启用 Tab)。"""
+class PaymentChannelOut(BaseModel):
+    """An enabled payment channel and how the console presents it (`qr` code or `redirect`)."""
 
-    wechat: bool
-    alipay: bool
-    mock: bool
+    name: str
+    presentation: Literal["qr", "redirect"]
 
 
 class SiteConfigOut(BaseModel):
@@ -31,7 +30,7 @@ class SiteConfigOut(BaseModel):
     company_address: str | None = None
     company_phone: str | None = None
     business_license_url: str | None = None
-    payment_channels: PaymentChannelsOut
+    payment_channels: list[PaymentChannelOut]
     compliance_profile: str
     phone_required: bool
     phone_dial_codes: list[str]

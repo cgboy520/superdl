@@ -22,18 +22,23 @@ from app.core.metrics import (
     PAYMENT_CLOSED_ORDER_RESCUED_TOTAL,
     PAYMENT_RECOVER_FAILED_TOTAL,
 )
-from app.core.money import as_amount
-from app.core.platform_config import get_runtime_config
+from app.core.money import as_amount, platform_currency
+from app.core.platform_config import ConfigWarning, RuntimeConfig, get_runtime_config
 from app.core.timeutil import now_utc
 from app.modules.billing import wallet
 from app.modules.billing.models import Order, Wallet
 from app.modules.billing.payment_channels import (
+    CHANNELS,
     CallbackResult,
+    ChannelSpec,
     PaymentChannel,
+    Presentation,
     QueryResult,
     channel_error,
+    enabled_channels,
     get_channel,
 )
+from app.modules.billing.schemas import RechargeOut
 
 logger = get_logger(__name__)
 
@@ -62,12 +67,11 @@ async def create_recharge(
     """
     amount = as_amount(amount)
     cfg = await get_runtime_config(session)
-    channel_enabled = {
-        "wechat": cfg.payment_wechat_enabled,
-        "alipay": cfg.payment_alipay_enabled,
-    }
-    if channel_name in channel_enabled and not channel_enabled[channel_name]:
-        raise channel_error("billing.channelNotEnabled")
+    spec = _spec(channel_name)
+    if not spec.enabled(cfg, payment_mock=get_settings().payment_mock):
+        raise channel_error("billing.mockDevOnly" if spec.dev_only else "billing.channelNotEnabled")
+    if spec.currencies is not None and platform_currency() not in spec.currencies:
+        raise channel_error("billing.channelCurrencyUnsupported")
     channel = await get_channel(channel_name, session)
 
     fingerprint = request_fingerprint(user_id, amount, channel_name)
@@ -81,7 +85,7 @@ async def create_recharge(
             fingerprint=fingerprint,
         )
         if existing is not None:
-            if existing.status == "pending" and not existing.qr_url:
+            if existing.status == "pending" and not existing.payment_url:
                 return await _attach_payment(session, existing, channel), False
             return existing, False
 
@@ -105,23 +109,82 @@ async def create_recharge(
         commit=True,
     )
     if result is not order:
-        if result.status == "pending" and not result.qr_url:
+        if result.status == "pending" and not result.payment_url:
             return await _attach_payment(session, result, channel), False
         return result, False
     logger.info("recharge_order_created", order_no=order.order_no, user_id=user_id)
     return await _attach_payment(session, order, channel), True
 
 
+def _spec(channel_name: str) -> ChannelSpec:
+    spec = CHANNELS.get(channel_name)
+    if spec is None:
+        raise AppError(
+            ErrorCode.VALIDATION_ERROR, key="billing.unknownChannel", params={"name": channel_name}
+        )
+    return spec
+
+
+def _return_urls(order_no: str) -> tuple[str, str]:
+    """Where a redirect channel sends the payer back: the billing page resumes polling this order;
+    `cancelled=1` shows a notice instead."""
+    base = f"{get_settings().web_base_url.rstrip('/')}/billing?recharge={order_no}"
+    return base, f"{base}&cancelled=1"
+
+
+def presentation_of(order: Order) -> Presentation:
+    """How the console presents the order's payment (`qr` for unknown/legacy channels)."""
+    spec = CHANNELS.get(order.channel)
+    return spec.presentation if spec is not None else "qr"
+
+
+def to_recharge_out(order: Order) -> RechargeOut:
+    return RechargeOut(
+        order_no=order.order_no,
+        amount=order.amount,
+        currency=order.currency,
+        channel=order.channel,
+        presentation=presentation_of(order),
+        status=order.status,
+        payment_url=order.payment_url,
+        expires_at=order.expires_at,
+        created_at=order.created_at,
+    )
+
+
+def enabled_payment_channels(cfg: RuntimeConfig) -> list[ChannelSpec]:
+    """Channels users may pick now (`/site-config`); the mock channel follows `payment_mock`."""
+    return enabled_channels(cfg, payment_mock=get_settings().payment_mock)
+
+
+def payment_config_warnings(cfg: RuntimeConfig) -> list[ConfigWarning]:
+    """An enabled channel that cannot settle the platform currency is a configuration error."""
+    currency = platform_currency()
+    return [
+        ConfigWarning(
+            spec.enabled_key,
+            "error",
+            f"{spec.name} settles only in {', '.join(sorted(spec.currencies))}; "
+            f"the platform currency is {currency}, so every order on it will be refused",
+        )
+        for spec in enabled_payment_channels(cfg)
+        if spec.enabled_key and spec.currencies is not None and currency not in spec.currencies
+    ]
+
+
 async def _attach_payment(session: AsyncSession, order: Order, channel: PaymentChannel) -> Order:
-    """调用渠道创建支付并提交二维码;失败时标记 failed、清空幂等键并提交后重抛。"""
+    """Ask the channel to start the payment and store its URL / reference; on failure mark the
+    order failed, drop the idempotency key, commit and re-raise."""
+    return_url, cancel_url = _return_urls(order.order_no)
     try:
-        qr_url = await channel.create_payment(order)
+        init = await channel.create_payment(order, return_url=return_url, cancel_url=cancel_url)
     except Exception:
         order.status = "failed"
         order.idempotency_key = None
         await session.commit()
         raise
-    order.qr_url = qr_url
+    order.payment_url = init.url
+    order.channel_ref = init.channel_ref
     await session.commit()
     return order
 

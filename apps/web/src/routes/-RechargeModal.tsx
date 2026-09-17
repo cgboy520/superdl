@@ -1,12 +1,24 @@
-/** 充值弹窗:渠道 tile / 金额(档位 chip 写入数字框 + 充值后余额预览)/ 二维码 + 到期倒计时 + 轮询自动确认;未完成订单本地续接,二维码态可回表单改金额。 */
+/** Recharge modal: channel tiles from `/site-config.payment_channels` (only enabled channels, with the
+ *  server-declared presentation), amount presets + input with balance preview, then either a QR code
+ *  (`qr` channels) or a hand-off to the provider's checkout page (`redirect` channels). Polls the order
+ *  until a terminal status; an unfinished order is resumed from sessionStorage or `/billing?recharge=`. */
 
 import { useTranslation } from "react-i18next";
 import { Alert, App, Button, InputNumber, Modal, QRCode, Space, Typography } from "antd";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
-import { type RechargeOut } from "@superdl/api-client";
-import { addAmounts, compareAmounts, controlWidth, fontSize, formatDateTime, idemKeyOf, space } from "@superdl/ui";
+import { type PaymentChannelOut, type RechargeOut } from "@superdl/api-client";
+import {
+  addAmounts,
+  compareAmounts,
+  controlWidth,
+  fontSize,
+  formatDateTime,
+  idemKeyOf,
+  paymentChannelLabelKey,
+  space,
+} from "@superdl/ui";
 import { ChipRow, DataErrorAlert, EMPTY_VALUE, OptionTileGroup } from "@superdl/ui/components";
 import { useFormat } from "@superdl/ui";
 
@@ -21,8 +33,6 @@ export const RECHARGE_MAX_AMOUNT = "50000";
 
 /** 进行中的充值订单号(sessionStorage):关窗重开可恢复轮询。 */
 export const PENDING_ORDER_KEY = "superdl.web.pendingRecharge";
-
-type Channel = "wechat" | "alipay" | "mock";
 
 export function PayCountdown({ expiresAt }: { expiresAt: string }) {
   const { t } = useTranslation();
@@ -41,29 +51,43 @@ export function PayCountdown({ expiresAt }: { expiresAt: string }) {
   return <span>{t("billing.payCountdown", { time })}</span>;
 }
 
-export function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+/** Channel display name: shared status label when known, otherwise the API name. */
+function useChannelLabel(): (name: string) => string {
+  const { t } = useTranslation();
+  const loose = t as unknown as (key: string) => string;
+  return (name) => {
+    const key = paymentChannelLabelKey(name);
+    return key ? loose(key) : name;
+  };
+}
+
+export function RechargeModal({
+  open,
+  onClose,
+  resumeOrderNo,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** Order to resume (from `/billing?recharge=`); takes precedence over sessionStorage. */
+  resumeOrderNo?: string;
+}) {
   const { currencySymbol, formatMoney, minorUnits } = useFormat();
   const { t } = useTranslation();
   const { message } = App.useApp();
   const queryClient = useQueryClient();
+  const channelLabel = useChannelLabel();
   const [amount, setAmount] = useState("100.00");
   const [order, setOrder] = useState<RechargeOut | null>(null);
   const [orderSeq, setOrderSeq] = useState(0);
-  const [pickedChannel, setPickedChannel] = useState<Channel | null>(null);
-  const [resumedNo, setResumedNo] = useState(() => sessionStorage.getItem(PENDING_ORDER_KEY) ?? "");
+  const [pickedChannel, setPickedChannel] = useState<string | null>(null);
+  const [resumedNo, setResumedNo] = useState(() => resumeOrderNo ?? sessionStorage.getItem(PENDING_ORDER_KEY) ?? "");
   const { data: wallet } = useWallet();
 
   const siteQ = useSiteConfig();
-  const { data: site } = siteQ;
-  const enabled = {
-    wechat: site?.payment_channels.wechat ?? false,
-    alipay: site?.payment_channels.alipay ?? false,
-    mock: site?.payment_channels.mock ?? false,
-  };
-  const firstEnabled: Channel = enabled.wechat ? "wechat" : enabled.alipay ? "alipay" : "mock";
-  const channel = pickedChannel ?? firstEnabled;
-  const anyEnabled = enabled.wechat || enabled.alipay || enabled.mock;
-  const channelTip = enabled.mock ? t("copy.channelComingSoon") : t("copy.channelPending");
+  const channels: PaymentChannelOut[] = siteQ.data?.payment_channels ?? [];
+  const channel = channels.find((c) => c.name === pickedChannel) ?? channels[0];
+  const anyEnabled = channels.length > 0;
+  const redirect = channel?.presentation === "redirect";
 
   const create = useCreateRecharge({
     onSuccess: (d) => {
@@ -72,6 +96,7 @@ export function RechargeModal({ open, onClose }: { open: boolean; onClose: () =>
       setResumedNo(o.order_no);
       sessionStorage.setItem(PENDING_ORDER_KEY, o.order_no);
       setOrderSeq((s) => s + 1);
+      if (o.presentation === "redirect" && o.payment_url) window.location.assign(o.payment_url);
     },
   });
   const mockPay = useMockPay({
@@ -126,24 +151,23 @@ export function RechargeModal({ open, onClose }: { open: boolean; onClose: () =>
       onCancel={reset}
       footer={null}
       afterOpenChange={(o) => {
-        if (o && !order) setResumedNo(sessionStorage.getItem(PENDING_ORDER_KEY) ?? "");
+        if (o && !order) setResumedNo(resumeOrderNo ?? sessionStorage.getItem(PENDING_ORDER_KEY) ?? "");
       }}
     >
       {!shown ? (
         <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
           {siteQ.isError && <DataErrorAlert onRetry={() => void siteQ.refetch()} />}
-          <OptionTileGroup
-            label={t("billing.channelLabel")}
-            columns={3}
-            size="sm"
-            value={channel}
-            onChange={setPickedChannel}
-            options={[
-              { value: "wechat", title: t("billing.wechat"), reason: enabled.wechat ? undefined : channelTip },
-              { value: "alipay", title: t("billing.alipay"), reason: enabled.alipay ? undefined : channelTip },
-              ...(enabled.mock ? [{ value: "mock" as const, title: t("billing.mockChannel") }] : []),
-            ]}
-          />
+          {siteQ.isSuccess && !anyEnabled && <Alert type="warning" showIcon title={t("billing.noChannels")} />}
+          {anyEnabled && (
+            <OptionTileGroup
+              label={t("billing.channelLabel")}
+              columns={channels.length >= 3 ? 3 : channels.length === 2 ? 2 : 1}
+              size="sm"
+              value={channel?.name ?? ""}
+              onChange={setPickedChannel}
+              options={channels.map((c) => ({ value: c.name, title: channelLabel(c.name) }))}
+            />
+          )}
           <ChipRow
             label={t("billing.presetAmounts")}
             value={presetValue}
@@ -164,19 +188,21 @@ export function RechargeModal({ open, onClose }: { open: boolean; onClose: () =>
             aria-label={t("billing.rechargeAmount")}
           />
           <Typography.Text type="secondary">{t("billing.balanceAfter", { amount: balanceAfter })}</Typography.Text>
+          {redirect && <Typography.Text type="secondary">{t("billing.redirectNote")}</Typography.Text>}
           <Button
             type="primary"
             block
-            disabled={!anyEnabled}
+            disabled={!anyEnabled || !channel}
             loading={create.isPending}
-            onClick={() =>
+            onClick={() => {
+              if (!channel) return;
               create.mutate({
-                body: { amount, channel },
-                idempotencyKey: idemKeyOf("recharge", [orderSeq, amount, channel]),
-              })
-            }
+                body: { amount, channel: channel.name },
+                idempotencyKey: idemKeyOf("recharge", [orderSeq, amount, channel.name]),
+              });
+            }}
           >
-            {t("billing.genQr")}
+            {redirect ? t("billing.goToCheckout") : t("billing.genQr")}
           </Button>
         </Space>
       ) : paid ? (
@@ -200,33 +226,43 @@ export function RechargeModal({ open, onClose }: { open: boolean; onClose: () =>
             })}
             description={<PayCountdown expiresAt={shown.expires_at} />}
           />
-          <div style={{ display: "flex", justifyContent: "center" }}>
-            {shown.qr_url ? (
-              <QRCode value={shown.qr_url} size={168} />
-            ) : (
-              <Space orientation="vertical" size={space.md} align="center">
-                <Typography.Text type="danger">{t("billing.qrFailed")}</Typography.Text>
-                <Button
-                  onClick={() => {
-                    sessionStorage.removeItem(PENDING_ORDER_KEY);
-                    setOrder(null);
-                    setResumedNo("");
-                  }}
-                >
-                  {t("billing.qrRetry")}
+          {shown.presentation === "redirect" ? (
+            <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
+              <Typography.Text type="secondary">{t("billing.redirectNote")}</Typography.Text>
+              {shown.payment_url ? (
+                <Button type="primary" block onClick={() => window.location.assign(shown.payment_url ?? "")}>
+                  {t("billing.openCheckoutAgain")}
                 </Button>
-              </Space>
-            )}
-          </div>
-          {shown.channel === "wechat" && (
-            <Typography.Text type="secondary" style={{ display: "block", textAlign: "center" }}>
-              {t("billing.scanWithWechat")}
-            </Typography.Text>
-          )}
-          {shown.channel === "alipay" && (
-            <Typography.Text type="secondary" style={{ display: "block", textAlign: "center" }}>
-              {t("billing.scanWithAlipay")}
-            </Typography.Text>
+              ) : (
+                <Typography.Text type="danger">{t("billing.qrFailed")}</Typography.Text>
+              )}
+            </Space>
+          ) : (
+            <>
+              <div style={{ display: "flex", justifyContent: "center" }}>
+                {shown.payment_url ? (
+                  <QRCode value={shown.payment_url} size={168} />
+                ) : (
+                  <Space orientation="vertical" size={space.md} align="center">
+                    <Typography.Text type="danger">{t("billing.qrFailed")}</Typography.Text>
+                    <Button
+                      onClick={() => {
+                        sessionStorage.removeItem(PENDING_ORDER_KEY);
+                        setOrder(null);
+                        setResumedNo("");
+                      }}
+                    >
+                      {t("billing.qrRetry")}
+                    </Button>
+                  </Space>
+                )}
+              </div>
+              {shown.channel !== "mock" && (
+                <Typography.Text type="secondary" style={{ display: "block", textAlign: "center" }}>
+                  {t("billing.scanToPay", { channel: channelLabel(shown.channel) })}
+                </Typography.Text>
+              )}
+            </>
           )}
           {shown.channel === "mock" && (
             <Button

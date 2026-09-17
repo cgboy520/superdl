@@ -346,7 +346,7 @@ async def admin_review_refund(
         f"refund:{req.id}",
         detail={"refund_no": req.refund_no, "approve": body.approve, "comment": body.comment},
     )
-    return AdminRefundOut.model_validate(req)
+    return await billing_service.admin_refund_out(session, req)
 
 
 @router.post("/refunds/{refund_id}/payout")
@@ -378,7 +378,7 @@ async def admin_payout_refund(
     )
     if replayed:
         mark_idempotent_replay(response)
-    return AdminRefundOut.model_validate(req)
+    return await billing_service.admin_refund_out(session, req)
 
 
 @router.post("/refunds/{refund_id}/cancel", dependencies=[require_roles("finance")])
@@ -393,7 +393,7 @@ async def admin_cancel_refund(
     set_audit_target(
         request, f"refund:{req.id}", detail={"refund_no": req.refund_no, "reason": body.reason}
     )
-    return AdminRefundOut.model_validate(req)
+    return await billing_service.admin_refund_out(session, req)
 
 
 def _invoice_reveal(admin: AdminUser, reveal: bool, reason: str | None) -> str:
@@ -553,7 +553,10 @@ async def admin_list_orders(
         limit=limit,
     )
     return Page[AdminOrderOut](
-        items=[AdminOrderOut.model_validate(r) for r in page.items],
+        items=[
+            AdminOrderOut(**billing_service.to_recharge_out(r).model_dump(), user_id=r.user_id)
+            for r in page.items
+        ],
         next_cursor=page.next_cursor,
     )
 

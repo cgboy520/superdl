@@ -14,7 +14,6 @@
     "viewNotifications": "View notifications"
   },
   "billing": {
-    "alipay": "Alipay",
     "availableBalance": "Available balance",
     "balanceAfter": "Balance after top-up ≈ {{amount}}",
     "byInstance": "By instance",
@@ -39,6 +38,7 @@
     "done": "Done",
     "exportCsv": "Export CSV",
     "genQr": "Generate payment QR",
+    "goToCheckout": "Continue to checkout",
     "goVerify": "Verify now",
     "gpuTotal": "GPU hours",
     "hourlyEmpty": "No hourly bills yet",
@@ -66,12 +66,13 @@
     "invoiceTitleTypePersonal": "Personal",
     "ledgerEmpty": "No transactions yet",
     "ledgerFilterAll": "All types",
-    "mockChannel": "Mock payment (dev)",
     "mockPayNow": "Simulate payment success (dev)",
     "mockPaySent": "Mock payment sent",
     "monthPicker": "Select month",
     "monthSpend": "Spend overview ({{month}})",
+    "noChannels": "No payment channel is enabled on this site yet.",
     "noSpendThisMonth": "No spending in the selected month",
+    "openCheckoutAgain": "Open the checkout page again",
     "orderExpired": "Order expired — close and start again",
     "orderWaiting": "Order {{no}} — pay before {{time}}",
     "otherInstances_one": "{{count}} more instance",
@@ -85,6 +86,8 @@
     "realNameRequired": "Regulations require identity verification before topping up",
     "recharge": "Top up",
     "rechargeAmount": "Top-up amount",
+    "rechargeCancelled": "Checkout was cancelled — the order stays open until it expires.",
+    "redirectNote": "You will be taken to the payment provider's page; this window confirms the payment when you come back.",
     "refundAmount": "Refund amount",
     "refundApply": "Request a refund",
     "refundCreated": "Refund request submitted — finance will pay out manually after review",
@@ -103,8 +106,7 @@
     "refundSubmit": "Submit request",
     "save": "Save",
     "saved": "Saved",
-    "scanWithAlipay": "Scan with Alipay to pay",
-    "scanWithWechat": "Scan with WeChat to pay",
+    "scanToPay": "Scan the code with the {{channel}} app to pay",
     "summaryFailed": "Spend overview failed to load",
     "tabBills": "Hourly bills",
     "tabInvoices": "Invoices",
@@ -114,8 +116,7 @@
     "thresholdLine": "Low-balance alert at {{hours}} hours",
     "thresholdSaved": "Threshold updated",
     "title": "Billing",
-    "walletFailed": "Balance failed to load",
-    "wechat": "WeChat Pay"
+    "walletFailed": "Balance failed to load"
   },
   "command": {
     "actionDeploy": "Deploy service",
@@ -170,8 +171,6 @@
       "r4Fallback": "On insufficient balance the instance stops; the instance disk is reclaimed after the frozen grace period (data disks unaffected)",
       "r5": "Subscriptions are prepaid, priced from the rate snapshot taken at checkout; the instance stops at expiry and early release is not refunded"
     },
-    "channelComingSoon": "Opens after merchant onboarding; use mock payment (dev) for now",
-    "channelPending": "Opens after merchant onboarding",
     "dailyCostNote": "Daily costs: charges that accrue even while stopped (data disks bill per day)",
     "diskCreatedButInstanceFailed": "The data disk was created and bills per day; the instance was not created — manage or delete the disk under Storage",
     "diskExpirePolicy": "Expired data disks get a {{graceDays}}-day read-only grace period, then {{frozenDays}} days frozen before deletion",

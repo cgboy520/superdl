@@ -67,7 +67,12 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                 keys=missing,
                 hint="管理端「平台配置 · 集群接入」录入;加节点将被 409 拦截",
             )
-        for w in compute_config_warnings(cfg, settings.environment):
+        from app.modules.billing import service as billing_service
+
+        for w in (
+            *compute_config_warnings(cfg, settings.environment),
+            *billing_service.payment_config_warnings(cfg),
+        ):
             (log.error if w.level == "error" else log.warning)(
                 "config_warning", key=w.key, hint=w.message
             )

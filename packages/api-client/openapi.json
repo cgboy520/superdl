@@ -951,7 +951,7 @@
             "title": "Order No",
             "type": "string"
           },
-          "qr_url": {
+          "payment_url": {
             "anyOf": [
               {
                 "type": "string"
@@ -960,7 +960,15 @@
                 "type": "null"
               }
             ],
-            "title": "Qr Url"
+            "title": "Payment Url"
+          },
+          "presentation": {
+            "enum": [
+              "qr",
+              "redirect"
+            ],
+            "title": "Presentation",
+            "type": "string"
           },
           "status": {
             "title": "Status",
@@ -976,8 +984,9 @@
           "amount",
           "currency",
           "channel",
+          "presentation",
           "status",
-          "qr_url",
+          "payment_url",
           "expires_at",
           "created_at",
           "user_id"
@@ -1036,7 +1045,7 @@
         "type": "object"
       },
       "AdminRefundOut": {
-        "description": "管理端退款单视图:多操作人/时间与核销流水关联。",
+        "description": "管理端退款单视图:多操作人/时间与核销流水关联;`order_channel` 决定可选打款渠道。",
         "properties": {
           "amount": {
             "title": "Amount",
@@ -1050,6 +1059,17 @@
           "id": {
             "title": "Id",
             "type": "integer"
+          },
+          "order_channel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Channel"
           },
           "order_no": {
             "title": "Order No",
@@ -6576,28 +6596,27 @@
         "title": "PaymentAnomalyOut",
         "type": "object"
       },
-      "PaymentChannelsOut": {
-        "description": "可用支付渠道(充值弹窗按此启用 Tab)。",
+      "PaymentChannelOut": {
+        "description": "An enabled payment channel and how the console presents it (`qr` code or `redirect`).",
         "properties": {
-          "alipay": {
-            "title": "Alipay",
-            "type": "boolean"
+          "name": {
+            "title": "Name",
+            "type": "string"
           },
-          "mock": {
-            "title": "Mock",
-            "type": "boolean"
-          },
-          "wechat": {
-            "title": "Wechat",
-            "type": "boolean"
+          "presentation": {
+            "enum": [
+              "qr",
+              "redirect"
+            ],
+            "title": "Presentation",
+            "type": "string"
           }
         },
         "required": [
-          "wechat",
-          "alipay",
-          "mock"
+          "name",
+          "presentation"
         ],
-        "title": "PaymentChannelsOut",
+        "title": "PaymentChannelOut",
         "type": "object"
       },
       "PlatformConfigItemOut": {
@@ -7089,6 +7108,7 @@
         "type": "object"
       },
       "RechargeOut": {
+        "description": "`presentation` tells the console how to show `payment_url`: `qr` renders it as a QR code,\n`redirect` sends the payer to it (checkout page) and resumes on `/billing?recharge=`.",
         "properties": {
           "amount": {
             "title": "Amount",
@@ -7116,7 +7136,7 @@
             "title": "Order No",
             "type": "string"
           },
-          "qr_url": {
+          "payment_url": {
             "anyOf": [
               {
                 "type": "string"
@@ -7125,7 +7145,15 @@
                 "type": "null"
               }
             ],
-            "title": "Qr Url"
+            "title": "Payment Url"
+          },
+          "presentation": {
+            "enum": [
+              "qr",
+              "redirect"
+            ],
+            "title": "Presentation",
+            "type": "string"
           },
           "status": {
             "title": "Status",
@@ -7137,8 +7165,9 @@
           "amount",
           "currency",
           "channel",
+          "presentation",
           "status",
-          "qr_url",
+          "payment_url",
           "expires_at",
           "created_at"
         ],
@@ -8459,7 +8488,11 @@
             "title": "Kyc Form"
           },
           "payment_channels": {
-            "$ref": "#/components/schemas/PaymentChannelsOut"
+            "items": {
+              "$ref": "#/components/schemas/PaymentChannelOut"
+            },
+            "title": "Payment Channels",
+            "type": "array"
           },
           "phone_dial_codes": {
             "items": {
@@ -21731,6 +21764,7 @@
     },
     "/api/v1/webhooks/alipay": {
       "post": {
+        "description": "alipay callback: verify → parse → credit once (channel_txn_id idempotency).",
         "operationId": "alipay_webhook_api_v1_webhooks_alipay_post",
         "responses": {
           "200": {
@@ -21750,19 +21784,13 @@
     },
     "/api/v1/webhooks/mock": {
       "post": {
-        "description": "dev/test 专用:模拟支付成功回调。",
+        "description": "dev/test only: simulate a payment callback.",
         "operationId": "mock_webhook_api_v1_webhooks_mock_post",
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Response Mock Webhook Api V1 Webhooks Mock Post",
-                  "type": "object"
-                }
+                "schema": {}
               }
             },
             "description": "Successful Response"
@@ -21776,18 +21804,13 @@
     },
     "/api/v1/webhooks/wechatpay": {
       "post": {
+        "description": "wechat callback: verify → parse → credit once (channel_txn_id idempotency).",
         "operationId": "wechatpay_webhook_api_v1_webhooks_wechatpay_post",
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Response Wechatpay Webhook Api V1 Webhooks Wechatpay Post",
-                  "type": "object"
-                }
+                "schema": {}
               }
             },
             "description": "Successful Response"

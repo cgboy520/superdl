@@ -10,6 +10,7 @@ from app.core.platform_config import RuntimeConfig
 from app.modules.billing.payment_channels.base import (
     SDK_TIMEOUT,
     CallbackResult,
+    PaymentInit,
     QueryResult,
     assert_callback_fresh,
     channel_error,
@@ -59,7 +60,13 @@ class WechatChannel:
         self._appid = cfg.wechat_appid
         self._public_key_id = cfg.wechat_public_key_id
 
-    async def create_payment(self, order: "Order") -> str:  # pragma: no cover
+    async def create_payment(  # pragma: no cover
+        self,
+        order: "Order",
+        *,
+        return_url: str,  # noqa: ARG002
+        cancel_url: str,  # noqa: ARG002
+    ) -> PaymentInit:
         code, message = await run_in_sdk_pool(
             self._wxpay.pay,
             description=f"SuperDL 充值 {order.order_no}",
@@ -75,7 +82,7 @@ class WechatChannel:
                 key="billing.wechatCreateFailed",
                 params={"message": message},
             )
-        return json.loads(message)["code_url"]
+        return PaymentInit(json.loads(message)["code_url"])
 
     async def parse_callback(self, headers: dict[str, str], body: bytes) -> CallbackResult:
         """先核对公钥 ID 与时间戳,再由 SDK 验签解密;未验签请求不得触发证书下载。

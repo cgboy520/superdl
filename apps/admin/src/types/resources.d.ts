@@ -1485,6 +1485,7 @@ export default interface Resources {
       "badMonthFormat": "月份格式应为 YYYY-MM",
       "callbackAmountMismatch": "回调金额与订单不符",
       "callbackChannelMismatch": "回调渠道与订单不符",
+      "channelCurrencyUnsupported": "该支付渠道不支持平台结算币种,请选择其他渠道",
       "channelNotEnabled": "该支付渠道暂未开通,请选择其他支付方式",
       "channelStateNotBackfillable": "渠道侧状态为 {{status}},不能补单",
       "currencyMismatch": "渠道币种与订单币种不一致",

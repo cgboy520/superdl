@@ -4,7 +4,7 @@
  * SuperDL API
  * OpenAPI spec version: 0.1.0
  */
-import type { PaymentChannelsOut } from './paymentChannelsOut';
+import type { PaymentChannelOut } from './paymentChannelOut';
 
 /**
  * 站点公开配置(页脚备案号与经营主体信息等,未登录可访问)。
@@ -20,7 +20,7 @@ export interface SiteConfigOut {
   default_locale: string;
   icp_number: string | null;
   kyc_form: string | null;
-  payment_channels: PaymentChannelsOut;
+  payment_channels: PaymentChannelOut[];
   phone_dial_codes: string[];
   phone_required: boolean;
   police_record_number: string | null;

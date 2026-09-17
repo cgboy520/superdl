@@ -4,10 +4,11 @@ from app.core.compliance import current_profile
 from app.core.config import get_settings
 from app.core.db import DbSession
 from app.core.platform_config import get_runtime_config
+from app.modules.billing import service as billing_service
 from app.modules.catalog import service
 from app.modules.catalog.schemas import (
     ImageOut,
-    PaymentChannelsOut,
+    PaymentChannelOut,
     SiteConfigOut,
     SkuMarketOut,
 )
@@ -30,11 +31,10 @@ async def get_site_config(session: DbSession) -> SiteConfigOut:
         company_address=cfg.company_address or None,
         company_phone=cfg.company_phone or None,
         business_license_url=cfg.business_license_url or None,
-        payment_channels=PaymentChannelsOut(
-            wechat=cfg.payment_wechat_enabled,
-            alipay=cfg.payment_alipay_enabled,
-            mock=s.payment_mock,
-        ),
+        payment_channels=[
+            PaymentChannelOut(name=spec.name, presentation=spec.presentation)
+            for spec in billing_service.enabled_payment_channels(cfg)
+        ],
         compliance_profile=profile.name,
         phone_required=profile.phone_required,
         phone_dial_codes=list(profile.phone_dial_codes),

@@ -4,6 +4,7 @@
  * SuperDL API
  * OpenAPI spec version: 0.1.0
  */
+import type { AdminOrderOutPresentation } from './adminOrderOutPresentation';
 
 export interface AdminOrderOut {
   amount: string;
@@ -12,7 +13,8 @@ export interface AdminOrderOut {
   currency: string;
   expires_at: string;
   order_no: string;
-  qr_url: string | null;
+  payment_url: string | null;
+  presentation: AdminOrderOutPresentation;
   status: string;
   user_id: number;
 }
