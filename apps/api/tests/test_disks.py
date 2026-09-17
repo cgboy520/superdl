@@ -1,5 +1,5 @@
 # pyright: reportPrivateUsage=false
-"""数据盘 CRUD、跨实例挂载、日结幂等与欠费链路。"""
+"""Data-disk CRUD, cross-instance mounting, idempotent daily settlement and the arrears chain."""
 
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -70,7 +70,7 @@ class TestDiskCrud:
         assert resp.json()["code"] == "INSUFFICIENT_BALANCE"
 
     async def test_expand_requires_balance(self, client, sm, fake):
-        """扩容走与创建同一条燃烧率护栏。"""
+        """Expansion goes through the same burn-rate guard as creation."""
         headers, user_id, _key = await create_user_with_key(client, "13500000003")
         await fund_wallet(sm, user_id)
         disk = await create_disk(client, headers, size_gb=100)
@@ -93,7 +93,7 @@ class TestDiskCrud:
 
 class TestMountLifecycle:
     async def test_attach_rejected_until_provisioned(self, client, sm, fake):
-        """配额未下发成功的盘不得挂载;同步完成后即可挂。"""
+        """A disk whose quota was not provisioned cannot be mounted; once synced it can."""
         headers, _user_id, key_id = await funded_user(client, sm, "13500000013", "500.00")
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
@@ -123,7 +123,8 @@ class TestMountLifecycle:
         assert resp.status_code == 202, resp.text
 
     async def test_start_after_delete_disk_detaches(self, client, sm, fake):
-        """停机后删盘摘除挂载引用,再次开机不引用该盘 PVC。"""
+        """Deleting the disk after a stop removes the mount reference; the next start does not
+        reference its PVC."""
         headers, user_id, key_id = await funded_user(client, sm, "13500000011", "500.00")
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
@@ -164,7 +165,7 @@ class TestMountLifecycle:
         assert pod.spec.data_disk_pvc is None
 
     async def test_start_rejected_when_disk_deleting(self, client, sm, fake):
-        """挂载盘处于 deleting 时拒绝开机。"""
+        """A mounted disk in deleting refuses the start."""
         headers, user_id, key_id = await funded_user(client, sm, "13500000012", "500.00")
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
@@ -202,7 +203,7 @@ class TestMountLifecycle:
         assert resp.json()["code"] == "VALIDATION_ERROR"
 
     async def test_cross_instance_mount(self, client, sm, fake):
-        """实例释放后数据盘保留,可挂载到另一实例。"""
+        """The data disk survives the instance release and can be mounted on another instance."""
         headers, user_id, key_id = await funded_user(client, sm, "13500000010", "500.00")
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
@@ -331,7 +332,7 @@ class TestDailyDiskBilling:
         assert await settle_daily_disks(sm) == 0
 
     async def test_delete_same_day_pays_final_day(self, client, sm, fake):
-        """当日建、当日删:出末日账。"""
+        """Created and deleted the same day: the last day is billed."""
         headers, _user_id, _key = await funded_user(client, sm, "13500000022")
         disk = await create_disk(client, headers, size_gb=100)
         await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
@@ -344,7 +345,7 @@ class TestDailyDiskBilling:
         assert w["balance"] == str(Decimal("100.00") - expected)
 
     async def test_delete_without_watermark_backfills_from_creation(self, client, sm, fake):
-        """水位线缺失:删盘以建盘日为下界补结欠账天数。"""
+        """Missing watermark: deletion back-bills the owed days from the creation day."""
         headers, _user_id, _key = await funded_user(client, sm, "13500000025")
         disk = await create_disk(client, headers, size_gb=100)
         async with sm() as session:
@@ -370,7 +371,7 @@ class TestDailyDiskBilling:
         assert sum(b.amount for b in bills) == expected
 
     async def test_expand_settles_old_size_first(self, client, sm, fake):
-        """扩容前按旧容量结清未出账日期。"""
+        """Unbilled days are settled at the old size before expansion."""
         headers, _user_id, _key = await funded_user(client, sm, "13500000023")
         disk = await create_disk(client, headers, size_gb=100)
         resp = await client.patch(
@@ -384,7 +385,7 @@ class TestDailyDiskBilling:
         assert bill.amount == disk_daily_charge(Decimal("0.0350"), 100, today)
 
     async def test_frozen_disk_delete_not_billed(self, client, sm, fake):
-        """冻结态不计费:欠费回收删盘不补账。"""
+        """Frozen is not billed: an arrears reclamation delete does not back-bill."""
         headers, _user_id, _key = await funded_user(client, sm, "13500000024")
         disk = await create_disk(client, headers)
         async with sm() as session:
@@ -433,7 +434,7 @@ class TestDiskArrearsChain:
         assert disks == []
 
     async def test_recharge_restores_frozen_disk(self, client, sm, fake):
-        """充值后巡检将 frozen 数据盘恢复为 active。"""
+        """After a top-up the patrol restores frozen data disks to active."""
         headers, user_id, _key = await funded_user(client, sm, "13500000032")
         await create_disk(client, headers)
         async with sm() as session:
@@ -475,7 +476,8 @@ class TestDiskQuota:
         assert resp.json()["message_key"] == "disks.countQuota"
 
     async def test_capacity_quota_caps_total_size_on_create_and_expand(self, client, sm, fake):
-        """策略 max_disk_gb_per_user 限未删除盘 size_gb 之和:建盘与扩容都校验,删盘释放额度。"""
+        """The policy max_disk_gb_per_user caps the size_gb sum of non-deleted disks: checked on
+        creation and expansion, deletion frees the quota."""
         headers, _user_id, _key = await funded_user(client, sm, "13500000041")
         await set_platform_setting(sm, "max_disk_gb_per_user", "250")
         d1 = await create_disk(client, headers, name="d1", size_gb=100)
@@ -507,7 +509,7 @@ class TestDiskQuota:
 
 class TestDiskIdempotency:
     async def test_repeated_create_with_same_key_returns_same_disk(self, client, sm, fake):
-        """同幂等键重放不多出一块盘。"""
+        """A same-key replay adds no second disk."""
         headers, _user_id, _key = await funded_user(client, sm, "13500000050")
         h = {**headers, "Idempotency-Key": "disk-idem-1"}
         a = await client.post("/api/v1/disks", json={"name": "d", "size_gb": 100}, headers=h)
@@ -518,7 +520,7 @@ class TestDiskIdempotency:
         assert len((await client.get("/api/v1/disks", headers=headers)).json()) == 1
 
     async def test_same_key_different_params_409(self, client, sm, fake):
-        """同键异参(改了容量):409。"""
+        """Same key, different params (size changed): 409."""
         headers, _user_id, _key = await funded_user(client, sm, "13500000051")
         h = {**headers, "Idempotency-Key": "disk-idem-mix"}
         a = await client.post("/api/v1/disks", json={"name": "d", "size_gb": 100}, headers=h)

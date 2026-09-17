@@ -1,4 +1,4 @@
-"""充值订单、支付渠道与回调幂等。"""
+"""Top-up orders, payment channels and callback idempotency."""
 
 from datetime import timedelta
 from decimal import Decimal
@@ -35,7 +35,7 @@ class TestRecharge:
         assert w["balance"] == "50.00"
 
     async def test_replay_callback_no_double_credit(self, client: AsyncClient, sm):
-        """重放回调不重复入账。"""
+        """A replayed callback does not credit twice."""
         headers = await user_headers(client)
         order = await create_order(client, headers, "30.00")
         for _ in range(3):
@@ -82,7 +82,9 @@ class TestRecharge:
         assert w["balance"] == "0.00"
 
     async def test_recharge_rate_limited_per_user(self, client: AsyncClient, sm):
-        """资金端点限流:同一用户 1 小时最多 10 张充值单,第 11 张 429 带 Retry-After。"""
+        """Money endpoint rate limit: at most 10 top-up orders per user per hour, the 11th is 429
+        with
+        Retry-After."""
         headers = await user_headers(client)
         for _ in range(10):
             await create_order(client, headers, "1.00")
@@ -112,7 +114,7 @@ class TestRecharge:
         assert len(orders) == 1
 
     async def test_idempotency_key_param_mismatch_409(self, client: AsyncClient, sm):
-        """同键异参(改了金额):409。"""
+        """Same key, different params (amount changed): 409."""
         headers = {**(await user_headers(client, "13700000045")), "Idempotency-Key": "recharge-mix"}
         a = await create_order(client, headers, "20.00")
         resp = await client.post(
@@ -127,7 +129,8 @@ class TestRecharge:
         assert [o.order_no for o in orders] == [a["order_no"]]
 
     async def test_concurrent_same_key_first_request(self, client: AsyncClient, sm):
-        """同键并发首请求:一单、一 201 一 200 重放,不 500。"""
+        """Concurrent first requests with the same key: one order, one 201 and one 200 replay, no
+        500."""
         import asyncio
 
         headers = {**(await user_headers(client, "13700000039")), "Idempotency-Key": "race-1"}
@@ -149,7 +152,7 @@ class TestRecharge:
         assert len(orders) == 1
 
     async def test_failure_callback_marks_order_failed(self, client: AsyncClient, sm):
-        """渠道回调明示支付失败 → 订单转 failed,不入账。"""
+        """A callback stating payment failure → the order becomes failed without credit."""
         headers = await user_headers(client, "13700000038")
         order = await create_order(client, headers, "20.00")
         resp = await client.post(
@@ -165,7 +168,8 @@ class TestRecharge:
         assert w["balance"] == "0.00"
 
     async def test_reversal_on_paid_order_flagged_not_debited(self, client: AsyncClient, sm):
-        """已入账订单收到渠道关单/退款通知:不自动冲账,落 channel_reversed_at,进异常清单。"""
+        """A credited order receives a channel close / refund notice: no automatic reversal,
+        channel_reversed_at set, listed as an anomaly."""
         headers = await user_headers(client, "13700000044")
         order = await create_order(client, headers, "20.00")
         resp = await pay_mock(client, order["order_no"], "20.00")
@@ -214,7 +218,7 @@ class TestRecharge:
         ah = await admin_headers(sm, client, role="finance")
         resp = await client.post(
             f"/api/admin/v1/finance/reversals/{order['order_no']}/resolve",
-            json={"action": "release", "reason": "渠道误报"},
+            json={"action": "release", "reason": "channel false alarm"},
             headers=ah,
         )
         assert resp.status_code == 200, resp.text
@@ -235,7 +239,7 @@ class TestRecharge:
         )
         resp = await client.post(
             f"/api/admin/v1/finance/reversals/{order['order_no']}/resolve",
-            json={"action": "chargeback", "reason": "重复核销:应被拒"},
+            json={"action": "chargeback", "reason": "repeated write-off: must be refused"},
             headers=ah,
         )
         assert resp.status_code == 409
@@ -260,7 +264,7 @@ class TestRecharge:
 
 
 class TestCallbackOnNonPendingOrders:
-    """关单后的回调与渠道不符。"""
+    """Callbacks after close that disagree with the channel."""
 
     async def test_expired_orders_closed(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
@@ -287,7 +291,8 @@ class TestCallbackOnNonPendingOrders:
     async def test_closed_order_callback_amount_mismatch_no_credit(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """关单救回仅限金额一致:金额不符仍拒绝,走人工调账。"""
+        """Rescue after close only with a matching amount: a mismatch is still refused and goes to a
+        manual adjustment."""
         headers = await user_headers(client, "13700000031")
         order = await create_order(client, headers, "20.00")
         async with sm() as session:
@@ -308,7 +313,9 @@ class TestCallbackOnNonPendingOrders:
     async def test_callback_channel_mismatch_rejected(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """回调渠道与订单渠道不符 → 拒绝(服务层直连构造跨渠道回调)。"""
+        """Callback channel ≠ order channel → refused (a cross-channel callback built straight at
+        the
+        service layer)."""
         import pytest as _pytest
 
         from app.core.errors import AppError
@@ -331,7 +338,7 @@ class TestRealChannelWebhookRoutes:
     async def test_alipay_webhook_plain_text_success(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession], monkeypatch
     ):
-        """支付宝应答是纯文本 success。"""
+        """The Alipay ack is the plain text success."""
         from app.modules.billing.payment_channels import MockChannel
 
         async def fake_get_channel(name, session):
@@ -358,7 +365,8 @@ class TestRealChannelWebhookRoutes:
     async def test_wechat_webhook_success_envelope(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession], monkeypatch
     ):
-        """微信 APIv3 应答 {"code": "SUCCESS"};入账走同一 handle_callback。"""
+        """The WeChat APIv3 ack is {"code": "SUCCESS"}; crediting goes through the same
+        handle_callback."""
         from app.modules.billing.payment_channels import MockChannel
 
         async def fake_get_channel(name, session):
@@ -384,7 +392,8 @@ class TestRealChannelWebhookRoutes:
 
 class TestChannelFactory:
     async def test_real_channel_fingerprint_cache(self, sm, monkeypatch):
-        """渠道实例指纹缓存:配置不变命中缓存,凭据轮换立即重建。"""
+        """Channel instance fingerprint cache: unchanged config hits the cache, rotated credentials
+        rebuild at once."""
         from dataclasses import replace
 
         import app.modules.billing.payment_channels as pc
@@ -415,7 +424,7 @@ class TestChannelFactory:
 
 class TestMockChannelGuard:
     async def test_mock_channel_refused_when_disabled(self, sm, monkeypatch):
-        """payment_mock=false 时 mock 渠道不可用。"""
+        """With payment_mock=false the mock channel is unavailable."""
         from app.core.config import get_settings
         from app.core.errors import AppError
         from app.modules.billing.payment_channels import get_channel

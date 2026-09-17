@@ -1,4 +1,4 @@
-"""共享测试数据构造、API 请求与 outbox/reconciler 驱动助手。"""
+"""Shared test data builders, API request helpers and outbox / reconciler drivers."""
 
 # pyright: reportPrivateUsage=false
 
@@ -38,7 +38,7 @@ IMAGE_PYTORCH = "registry.superdl.local/pytorch:2.9.0-cu128"
 
 
 def use_kubeconfig(path: str) -> None:
-    """设置 KUBECONFIG 环境变量与 Kubernetes 客户端默认路径。"""
+    """Set the KUBECONFIG environment variable and the Kubernetes client default path."""
     os.environ["KUBECONFIG"] = path
     kube_config.KUBE_CONFIG_DEFAULT_LOCATION = path
 
@@ -47,7 +47,7 @@ PVC_BOUND_TIMEOUT = 30.0
 
 
 async def wait_pvc_bound(core: Any, namespace: str, name: str) -> None:
-    """等 PVC 进入 Bound(apiserver 只允许已绑定的 PVC 扩容)。"""
+    """Wait for the PVC to become Bound (the apiserver only grows bound PVCs)."""
     deadline = asyncio.get_running_loop().time() + PVC_BOUND_TIMEOUT
     while True:
         pvc: Any = await asyncio.to_thread(
@@ -56,7 +56,7 @@ async def wait_pvc_bound(core: Any, namespace: str, name: str) -> None:
         if pvc.status is not None and pvc.status.phase == "Bound":
             return
         if asyncio.get_running_loop().time() > deadline:
-            raise TimeoutError(f"pvc {name} 未在 {PVC_BOUND_TIMEOUT}s 内绑定")
+            raise TimeoutError(f"pvc {name} not bound within {PVC_BOUND_TIMEOUT}s")
         await asyncio.sleep(0.5)
 
 
@@ -66,7 +66,7 @@ async def drain(
     limit: int = 100,
     task_types: frozenset[str] | None = None,
 ) -> int:
-    """处理最多 limit 个可执行 outbox 任务,返回处理次数。"""
+    """Process up to limit runnable outbox tasks, returning the number processed."""
     n = 0
     while n < limit and await outbox.process_one(sm, task_types=task_types):
         n += 1
@@ -76,7 +76,7 @@ async def drain(
 async def drain_strict(
     sm: async_sessionmaker[AsyncSession], *, limit: int = 100
 ) -> tuple[int, int]:
-    """处理最多 limit 个任务;有失败则抛 RuntimeError,否则返回 (完成数, 0)。"""
+    """Process up to limit tasks; any failure raises RuntimeError, otherwise returns (done, 0)."""
     done = failed = 0
     while done + failed < limit:
         result = await outbox._process_one(sm)
@@ -87,12 +87,12 @@ async def drain_strict(
         else:
             failed += 1
     if failed:
-        raise RuntimeError(f"outbox drain 未全成功: done={done}, failed={failed}")
+        raise RuntimeError(f"outbox drain not fully successful: done={done}, failed={failed}")
     return done, failed
 
 
 def gen_ed25519_key(comment: str = "t@test") -> str:
-    """生成随机字节填充的 SSH ed25519 公钥文本。"""
+    """SSH ed25519 public key text filled with random bytes."""
     blob = struct.pack(">I", 11) + b"ssh-ed25519" + struct.pack(">I", 32) + secrets.token_bytes(32)
     return f"ssh-ed25519 {base64.b64encode(blob).decode()} {comment}"
 
@@ -110,7 +110,7 @@ async def fund_wallet(
 async def create_user_with_key(
     client: AsyncClient, phone: str = "13900000001"
 ) -> tuple[dict[str, str], int, int]:
-    """注册用户 + 添加 SSH 公钥。返回 (headers, user_id, ssh_key_id)。"""
+    """Register a user + add an SSH key. Returns (headers, user_id, ssh_key_id)."""
     data = await register(client, phone)
     headers = {"Authorization": f"Bearer {data['access_token']}"}
     resp = await client.post(
@@ -123,7 +123,8 @@ async def create_user_with_key(
 
 
 async def create_test_sku(sm: async_sessionmaker[AsyncSession], **overrides) -> int:
-    """按业务键复用或创建 SKU;已有 SKU 的价格或最大卡数不匹配时抛 AssertionError。"""
+    """Reuse or create the SKU by business key; an existing SKU with a different price or max card
+    count raises AssertionError."""
     async with sm() as session:
         wanted = make_sku(**overrides)
         existing = (
@@ -148,7 +149,9 @@ async def create_test_sku(sm: async_sessionmaker[AsyncSession], **overrides) -> 
             )
             if not same:
                 raise AssertionError(
-                    "同业务键 SKU 已存在但字段不同:测试应换型号/份额或复用已有 SKU"
+                    "an SKU with the same business key exists with different fields: the test"
+                    " should"
+                    " use another model / share or reuse the existing SKU"
                 )
             return existing.id
         session.add(wanted)
@@ -173,7 +176,7 @@ async def seed_node_spec(
     vram_gb: int = 0,
     disk_gb: int = 0,
 ) -> None:
-    """写入一条节点台账,最后发现时间为当前时间。"""
+    """Insert one node inventory row seen just now."""
     from app.core.timeutil import now_utc
     from app.modules.nodes.models import NodeSpec
 
@@ -249,12 +252,13 @@ def current_refresh_token(client: AsyncClient) -> str:
         (c.value for c in client.cookies.jar if c.name == REFRESH_COOKIE),
         None,
     )
-    assert token is not None, "jar 里没有 refresh cookie(注册/登录后会自动种下)"
+    assert token is not None, "no refresh cookie in the jar (register / login sets it)"
     return token
 
 
 async def refresh_via_cookie(client: AsyncClient, token: str | None = None) -> Response:
-    """经 cookie 刷新,附带 X-Requested-With;给定 token 时先写入 cookie jar。"""
+    """Refresh via cookie with X-Requested-With; a given token is written into the cookie jar
+    first."""
     if token is not None:
         client.cookies.set(REFRESH_COOKIE, token, path="/")
     return await client.post("/api/v1/auth/refresh", headers={"X-Requested-With": "fetch"})
@@ -279,7 +283,7 @@ async def issue_code(sm, handle: str, purpose: str, code: str = "123456") -> Non
 
 def make_sku(**overrides) -> Sku:
     defaults = {
-        "name": "RTX 4090 · 共享标准",
+        "name": "RTX 4090 · shared standard",
         "gpu_model": "RTX4090",
         "tier": "shared",
         "gpu_cores_pct": 50,
@@ -306,7 +310,7 @@ async def seed_bill_hourly(
     unit_price: str = "1.0000",
     seconds: int = 3600,
 ) -> None:
-    """批量写入小时账单;rows 元素为 (instance_id, hour_start, amount)。"""
+    """Insert hourly bills in bulk; rows are (instance_id, hour_start, amount)."""
     from app.modules.billing.models import BillHourly
 
     async with sm() as session:
@@ -331,7 +335,7 @@ async def seed_skus(sm: async_sessionmaker[AsyncSession]) -> None:
             [
                 make_sku(),
                 make_sku(
-                    name="RTX 4090 · 独享",
+                    name="RTX 4090 · dedicated",
                     tier="dedicated",
                     gpu_cores_pct=100,
                     vram_gb=24,
@@ -340,7 +344,7 @@ async def seed_skus(sm: async_sessionmaker[AsyncSession]) -> None:
                     max_gpus_per_instance=8,
                 ),
                 make_sku(
-                    name="A100 · 独享(下架)",
+                    name="A100 · dedicated (delisted)",
                     gpu_model="A100",
                     tier="dedicated",
                     vram_gb=80,
@@ -363,14 +367,14 @@ async def seed_skus(sm: async_sessionmaker[AsyncSession]) -> None:
 
 
 async def admin_login(client: AsyncClient, username: str, password: str = "pass1234") -> Response:
-    """发起管理端密码登录,返回未经解析的响应。"""
+    """Admin password login, returning the raw response."""
     return await client.post(
         "/api/admin/v1/auth/login", json={"username": username, "password": password}
     )
 
 
 async def complete_mfa_setup_with_secret(client: AsyncClient, ticket: str) -> tuple[str, str]:
-    """mfa_setup 票 → begin → confirm(当前 TOTP)→ (access token, TOTP secret)。"""
+    """mfa_setup ticket → begin → confirm (current TOTP) → (access token, TOTP secret)."""
     begin = await client.post("/api/admin/v1/auth/mfa/setup/begin", json={"ticket": ticket})
     assert begin.status_code == 200, begin.text
     secret = begin.json()["secret"]
@@ -383,7 +387,7 @@ async def complete_mfa_setup_with_secret(client: AsyncClient, ticket: str) -> tu
 
 
 async def complete_mfa_setup(client: AsyncClient, ticket: str) -> str:
-    """mfa_setup 票 → begin → confirm(当前 TOTP)→ access token。"""
+    """mfa_setup ticket → begin → confirm (current TOTP) → access token."""
     token, _secret = await complete_mfa_setup_with_secret(client, ticket)
     return token
 
@@ -395,7 +399,8 @@ async def admin_headers(
     *,
     username: str | None = None,
 ) -> dict[str, str]:
-    """建管理员(默认用户名 {role}-user)并走完 TOTP 绑定流拿正式 token。"""
+    """Create an admin (default username {role}-user) and complete TOTP enrolment for a real
+    token."""
     name = username or f"{role}-user"
     async with sm() as session:
         await create_admin(session, name, "pass1234", role)
@@ -442,7 +447,7 @@ async def get_instance(client: AsyncClient, headers: dict, uuid: str) -> dict:
 
 
 async def provision_running(client, sm, fake, phone="13900000010") -> tuple[dict, str, int]:
-    """建好一台 running 实例。返回 (headers, uuid, user_id)。"""
+    """Bring up a running instance. Returns (headers, uuid, user_id)."""
     headers, user_id, key_id, sku_id = await new_user(client, sm, phone)
     data = await create_instance_api(client, headers, sku_id, key_id)
     await drain(sm)
@@ -477,7 +482,7 @@ async def pay_mock(client: AsyncClient, order_no: str, amount: str, txn_id: str 
 
 
 async def paid_order(client: AsyncClient, headers: dict, amount: str = "50.00") -> dict:
-    """创建充值订单并完成 mock 支付;返回创建订单时的响应数据。"""
+    """Create a top-up order and complete the mock payment; returns the order creation response."""
     order = await create_order(client, headers, amount)
     resp = await pay_mock(client, order["order_no"], amount)
     assert resp.status_code == 200, resp.text
@@ -493,13 +498,13 @@ async def apply_refund(
 ):
     return await client.post(
         "/api/v1/wallet/refunds",
-        json={"order_no": order_no, "amount": amount, "reason": "用不完,申请退款"},
+        json={"order_no": order_no, "amount": amount, "reason": "unused, requesting a refund"},
         headers=_with_idem(headers, idem),
     )
 
 
 async def finance_pair(sm, client: AsyncClient) -> tuple[dict, dict]:
-    """返回两名不同 finance 管理员的认证 headers。"""
+    """Auth headers of two different finance admins."""
     reviewer = await admin_headers(sm, client, role="finance")
     payer = await admin_headers(sm, client, role="finance", username="finance-payer")
     return reviewer, payer
@@ -516,7 +521,8 @@ async def create_disk(client, headers, name="data-1", size_gb=100) -> dict:
 async def backdate_running_event(
     sm: async_sessionmaker[AsyncSession], uuid: str, minutes: int
 ) -> int:
-    """把进入 running 的事件回拨(钳制在当前自然小时内),返回预期已运行秒数(近似)。"""
+    """Move the enter-running event back (clamped to the current calendar hour), returning the
+    expected seconds run (approximate)."""
     from app.core.timeutil import hour_floor
 
     now = now_utc()
@@ -551,8 +557,9 @@ async def seed_instance(
     sku_id: int = 1,
     node_name: str | None = None,
 ) -> tuple[int, str]:
-    """直接落库实例 + 事件,返回 (instance_id, uuid)。
-    events 元素:(ts, from, to) 或 (ts, from, to, metadata);wallet_credit=True 预存 100.00。
+    """Insert an instance + events directly, returning (instance_id, uuid).
+    events items: (ts, from, to) or (ts, from, to, metadata); wallet_credit=True pre-credits
+    100.00.
     """
     async with sm() as session:
         inst = Instance(
@@ -613,7 +620,7 @@ async def seed_disk(
     price: str = "0.3500",
     created_at: datetime | None = None,
 ) -> tuple[int, str]:
-    """直接落库一块数据盘,返回 (disk_id, uuid)。"""
+    """Insert a data disk directly, returning (disk_id, uuid)."""
     async with sm() as session:
         disk = DataDisk(
             uuid=f"d{user_id}{now_utc().timestamp()}".replace(".", ""),
@@ -630,7 +637,7 @@ async def seed_disk(
 
 
 def prom_mock(values: list[tuple[float, float]] | None = None, *, fail: bool = False):
-    """返回固定 Prometheus 矩阵响应的客户端;fail=True 时返回 HTTP 500。"""
+    """Client returning a fixed Prometheus matrix response; fail=True returns HTTP 500."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         if fail:
@@ -648,7 +655,7 @@ def prom_mock(values: list[tuple[float, float]] | None = None, *, fail: bool = F
     return httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://prom")
 
 
-CREATE_BODY = {"pool": "hami", "hostname": "gpu-node-7", "note": "机柜 A3", "ttl_hours": 24}
+CREATE_BODY = {"pool": "hami", "hostname": "gpu-node-7", "note": "rack A3", "ttl_hours": 24}
 
 
 async def set_platform_setting(sm: async_sessionmaker[AsyncSession], key: str, value: str) -> None:
@@ -658,7 +665,8 @@ async def set_platform_setting(sm: async_sessionmaker[AsyncSession], key: str, v
 
 
 def service_body(sku_id: int, **over) -> dict:
-    """构造在线服务请求体,默认不附 SSH 公钥、服务端口为 8000;over 可覆盖字段。"""
+    """Online-service request body, no SSH key and service port 8000 by default; over overrides
+    fields."""
     body = {
         "sku_id": sku_id,
         "gpu_count": 1,
@@ -673,14 +681,14 @@ def service_body(sku_id: int, **over) -> dict:
 async def funded_user(
     client: AsyncClient, sm, phone: str, amount: str = "100.00"
 ) -> tuple[dict[str, str], int, int]:
-    """注册 + 加 SSH 公钥 + 充值。返回 (headers, user_id, ssh_key_id)。"""
+    """Register + add an SSH key + top up. Returns (headers, user_id, ssh_key_id)."""
     headers, user_id, key_id = await create_user_with_key(client, phone)
     await fund_wallet(sm, user_id, amount)
     return headers, user_id, key_id
 
 
 async def new_user(client: AsyncClient, sm, phone: str) -> tuple[dict[str, str], int, int, int]:
-    """funded_user + 建默认 SKU。返回 (headers, user_id, ssh_key_id, sku_id)。"""
+    """funded_user + the default SKU. Returns (headers, user_id, ssh_key_id, sku_id)."""
     headers, user_id, key_id = await funded_user(client, sm, phone)
     return headers, user_id, key_id, await create_test_sku(sm)
 
@@ -693,8 +701,8 @@ async def provision_service(
     phone: str = "13900000301",
     **over,
 ) -> tuple[dict[str, str], dict, int]:
-    """部署一个 running 的在线服务。返回 (headers, 服务出参, user_id);
-    版本实例的 uuid 在 svc["current_instance"]["uuid"]。"""
+    """Deploy a running online service. Returns (headers, service output, user_id);
+    the revision instance uuid is svc["current_instance"]["uuid"]."""
     headers, user_id, key_id, sku_id = await new_user(client, sm, phone)
     over.setdefault("ssh_key_ids", [key_id] if over.get("with_ssh") else [])
     resp = await client.post("/api/v1/services", json=service_body(sku_id, **over), headers=headers)
@@ -725,7 +733,8 @@ def gpu_spec(tier: str, pool: str, **extra):
 
 
 def make_instance(**overrides) -> Instance:
-    """构造不落库的 Instance;默认签发绑定 uuid 的 jupyter_token,字段可由 overrides 覆盖。"""
+    """Build an Instance without storing it; a jupyter_token bound to the uuid is issued by default,
+    fields may be overridden."""
     uuid = overrides.get("uuid") or f"inst-{uuid4().hex[:8]}"
     defaults: dict = {
         "user_id": 1,
@@ -774,7 +783,8 @@ async def buy_subscription(
 
 
 async def provision_subscription(client, sm, fake, phone: str, *, period: str = "month", **kw):
-    """建好一台 running 的包周期实例。返回 (headers, uuid, user_id, sku_id, key_id)。"""
+    """Bring up a running subscription instance. Returns (headers, uuid, user_id, sku_id,
+    key_id)."""
     headers, user_id, key_id = await create_user_with_key(client, phone)
     await fund_wallet(sm, user_id, kw.pop("fund", "5000.00"))
     sku_id = await create_test_sku(sm, **kw.pop("sku", {}))

@@ -1,4 +1,4 @@
-"""GET /api/v1/metrics/instances:实例列表 sparkline 批量摘要。"""
+"""GET /api/v1/metrics/instances: batch sparkline summary of the instance list."""
 
 import pytest
 

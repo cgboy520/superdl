@@ -1,4 +1,4 @@
-"""共享 PostgreSQL 18 和 ASGI app,提供数据库隔离。"""
+"""Shared PostgreSQL 18 and ASGI app with database isolation."""
 
 import os
 from collections.abc import AsyncIterator, Iterator
@@ -68,7 +68,8 @@ async def engine(pg_url: str) -> AsyncIterator[AsyncEngine]:
 
 
 def _audit_log_prune_ddl() -> str:
-    """create_all 不跑迁移;审计保洁函数 DDL 直接取自其迁移文件,与生产同一份。"""
+    """create_all runs no migrations; the audit cleanup function DDL is taken straight from its
+    migration file, the same as production."""
     import importlib.util
     from pathlib import Path
 
@@ -81,7 +82,7 @@ def _audit_log_prune_ddl() -> str:
 
 
 async def _seed_baseline(smaker: async_sessionmaker[AsyncSession]) -> None:
-    """写入集群能力缓存与预置法务文档。"""
+    """Write the cluster capability cache and the preset legal documents."""
     from app.core.k8s.base import (
         DATA_DISK_STORAGE_CLASS,
         INSTANCE_DISK_STORAGE_CLASS,
@@ -116,7 +117,8 @@ def _reset_process_state() -> None:
 
 @pytest.fixture
 async def sm(engine: AsyncEngine) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
-    """初始化数据库与进程状态;清理时清空表数据、重置序列。"""
+    """Initialise the database and process state; cleanup empties the tables and resets
+    sequences."""
     from app.core.db import get_sessionmaker
     from app.models_registry import Base
 
@@ -144,7 +146,7 @@ async def sm(engine: AsyncEngine) -> AsyncIterator[async_sessionmaker[AsyncSessi
 
 @pytest.fixture(scope="session")
 def asgi_app(pg_url: str) -> FastAPI:
-    """会话级 app,不运行 lifespan。"""
+    """Session-level app without lifespan."""
     from app.main import create_app
 
     return create_app()
@@ -171,19 +173,19 @@ def _inject_fake(auto_ready: bool) -> Iterator["FakeOrchestrator"]:
 
 @pytest.fixture
 def fake() -> Iterator["FakeOrchestrator"]:
-    """提供需显式调用 mark_ready 的 FakeOrchestrator。"""
+    """FakeOrchestrator that needs an explicit mark_ready."""
     yield from _inject_fake(auto_ready=False)
 
 
 @pytest.fixture
 def fake_auto_ready() -> Iterator["FakeOrchestrator"]:
-    """提供 Pod 自动就绪的 FakeOrchestrator。"""
+    """FakeOrchestrator whose Pods become ready automatically."""
     yield from _inject_fake(auto_ready=True)
 
 
 @pytest.fixture(autouse=True)
 def _reset_prom_client() -> Iterator[None]:
-    """清理时重置 Prometheus 客户端。"""
+    """Reset the Prometheus client on cleanup."""
     yield
     from app.modules.metering import prom
 

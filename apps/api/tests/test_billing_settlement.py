@@ -27,7 +27,7 @@ def ev(minute: float, from_s: str | None, to_s: str) -> tuple[datetime, str | No
 def evm(
     minute: float, from_s: str | None, to_s: str, meta: dict
 ) -> tuple[datetime, str | None, str, dict]:
-    """带 metadata 的事件。"""
+    """Event with metadata."""
     return (H + timedelta(minutes=minute), from_s, to_s, meta)
 
 
@@ -65,7 +65,7 @@ class TestRunningSeconds:
         assert running_seconds_in_window(events, H, H_END) == 3000
 
     def test_subsecond_rounds_half_even_not_truncates(self):
-        """微秒级事件:整数微秒累加 + HALF_EVEN 舍入。"""
+        """Microsecond events: whole microseconds summed + HALF_EVEN rounding."""
         us = timedelta(microseconds=1)
         events = [
             (H, None, "creating"),
@@ -87,7 +87,7 @@ class TestBillAmount:
         assert bill_amount(Decimal("1.6800"), 2, 1800) == Decimal("1.68")
 
     def test_half_even(self):
-        """金额恰好位于半分时按 HALF_EVEN 舍入。"""
+        """An amount exactly on a half cent rounds HALF_EVEN."""
         assert bill_amount(Decimal("0.5000"), 1, 900) == Decimal("0.12")
         assert bill_amount(Decimal("0.5400"), 1, 900) == Decimal("0.14")
         assert bill_amount(Decimal("3.0000"), 1, 3) == Decimal("0.00")
@@ -132,7 +132,8 @@ class TestUpsertIdempotency:
         assert len([e for e in ledger if e.type == "consume"]) == 1
 
     async def test_growth_tops_up_delta(self, sm):
-        """同小时先尾账(30min)后整点结算(50min)→ 只补差价。"""
+        """Tail bill first (30 min) then clock-hour settlement (50 min) in the same hour → only the
+        difference is topped up."""
         inst_id, _ = await seed_instance(
             sm, events=[ev(0, "creating", "running"), ev(30, "running", "stopping")]
         )
@@ -228,7 +229,7 @@ class TestUpsertIdempotency:
         assert w.balance == Decimal("98.00")
 
     async def test_concurrent_growth_tops_up_delta_once(self, sm):
-        """已 charged 的账单行并发增量补足:差价只加一次。"""
+        """Concurrent increments of an already charged bill row: the difference is added once."""
         inst_id, _ = await seed_instance(sm, events=[ev(0, "creating", "running")])
         async with sm() as session:
             await upsert_hour_bill(
@@ -271,7 +272,8 @@ class TestUpsertIdempotency:
         assert w.balance == Decimal("98.00")
 
     async def test_settlement_waits_for_inflight_transition(self, sm):
-        """结算读事件前先拿实例行锁,在飞的关机事务提交后才算秒数。"""
+        """Settlement takes the instance row lock before reading events; seconds are computed only
+        after the in-flight stop transaction commits."""
         inst_id, _ = await seed_instance(sm, events=[ev(-30, "creating", "running")])
         started = asyncio.Event()
         release = asyncio.Event()
@@ -359,7 +361,7 @@ class TestHourlySettlementJob:
         assert w.balance == Decimal("99.16")
 
     async def test_long_running_instance_without_window_events(self, sm):
-        """跨小时持续 running(窗口内无事件)也被结算。"""
+        """Continuous running across hours (no event inside the window) is settled too."""
         await seed_instance(
             sm, events=[(H - timedelta(hours=5), "creating", "running")], status="running"
         )
@@ -385,7 +387,8 @@ class TestHourlySettlementJob:
 
 class TestTinyDurationTail:
     async def test_seconds_rounding_to_zero_amount_no_crash(self, sm):
-        """金额舍入 0.00 → 留账单行不扣款,后续补差从 0 起算。"""
+        """Amount rounding to 0.00 → the bill row stays without a debit, later top-ups count from
+        0."""
         inst_id, _ = await seed_instance(
             sm, events=[ev(0, "creating", "running"), ev(5 / 60, "running", "stopping")]
         )
@@ -446,7 +449,8 @@ class TestTinyDurationTail:
 
 
 class TestCatchUpSettlement:
-    """停机跨整点后的追平:漏掉的小时补上,金额与连续运行一致。"""
+    """Catch-up after an outage across the clock hour: missed hours are filled, the amount equals
+    continuous running."""
 
     async def test_missed_hours_are_caught_up(self, sm):
         await seed_instance(
@@ -477,7 +481,7 @@ class TestCatchUpSettlement:
             assert await get_watermark(session, "hourly") == H
 
     async def test_watermark_missing_records_gap(self, sm):
-        """无水位线时登记 settlement_gaps(watermark_missing)。"""
+        """Without a watermark a settlement_gaps row (watermark_missing) is recorded."""
         from app.modules.billing.models import SettlementGap
 
         await seed_instance(
@@ -506,7 +510,7 @@ class TestCatchUpSettlement:
         assert count == 1
 
     async def test_clock_skew_refuses_round(self, sm, monkeypatch):
-        """worker 时钟前跳超阈值:本轮结算拒绝执行。"""
+        """The worker clock jumps forward beyond the threshold: this settlement round is refused."""
         from app.modules.billing import settlement as st
 
         await seed_instance(
@@ -527,10 +531,10 @@ class TestCatchUpSettlement:
     ],
 )
 class TestWindowBoundaries:
-    """结算追平跨月末/闰日(aware-UTC timedelta 递推)。"""
+    """Settlement catch-up across month end / leap day (aware-UTC timedelta stepping)."""
 
     async def test_catchup_walks_over_boundary(self, sm, anchor):
-        """水位线追平连续跨过午夜/月末。"""
+        """The watermark catch-up crosses midnight / month end continuously."""
         inst_id, _ = await seed_instance(
             sm, events=[(anchor - timedelta(hours=2), "creating", "running")], status="running"
         )
@@ -550,7 +554,7 @@ class TestWindowBoundaries:
 
 
 class TestOverdraftRefusal:
-    """allow_negative=False 的拒绝路径。"""
+    """The allow_negative=False rejection path."""
 
     async def test_refusal_leaves_wallet_and_ledger_untouched(self, sm):
         from app.core.errors import AppError, ErrorCode
@@ -577,7 +581,8 @@ class TestOverdraftRefusal:
 
 
 class TestNodeLostBillingTruncation:
-    """node_lost/pod_lost:计费截断到 metadata.unready_since,宽限观察期不计费。"""
+    """node_lost/pod_lost: billing truncated at metadata.unready_since, the grace observation period
+    is not billed."""
 
     async def test_reconstruction_truncates_at_unready_since(self, sm):
         unready = H + timedelta(minutes=5)
@@ -608,7 +613,8 @@ class TestNodeLostBillingTruncation:
         assert bill.amount == Decimal("0.14")
 
     async def test_tail_listener_truncates_and_marks_detail(self, sm):
-        """尾账(与迁移同事务):截断窗口 + bills_hourly.detail 留截断依据。"""
+        """Tail bill (same transaction as the transition): truncated window + the truncation basis
+        kept in bills_hourly.detail."""
         from app.modules.billing.edge_listener import on_instance_transition
 
         unready = H + timedelta(minutes=5)
@@ -655,7 +661,7 @@ class TestNodeLostBillingTruncation:
         assert topup == Decimal("0.00")
 
     async def test_pod_lost_without_unready_bills_to_event(self, sm):
-        """pod_lost 但 unready_since 为空:按事件时刻结算,不截断。"""
+        """pod_lost with an empty unready_since: settled to the event time, no truncation."""
         from app.modules.billing.edge_listener import on_instance_transition
 
         inst_id, _ = await seed_instance(
@@ -683,7 +689,8 @@ class TestNodeLostBillingTruncation:
 
 
 class TestGapClosure:
-    """结算缺口闭环:登记 → 管理端可见 → 重放补结/人工核销 → resolved_at 回写。"""
+    """Settlement gap loop: recorded → visible to admins → replay settles / manual write-off →
+    resolved_at written."""
 
     async def _make_gap(
         self, sm, *, kind="hourly", window_start=H, object_id=0, reason="dead_letter"
@@ -729,7 +736,8 @@ class TestGapClosure:
         assert w.balance == Decimal("100.00") - Decimal("0.84")
 
     async def test_replay_whole_window_gap_covers_all_candidates(self, sm):
-        """object_id=0 的整窗缺口(catchup_truncated):对该窗全量候选重放。"""
+        """A whole-window gap (catchup_truncated, object_id=0): every candidate of the window is
+        replayed."""
         from app.modules.billing.settlement import replay_gap
 
         await seed_instance(
@@ -755,7 +763,7 @@ class TestGapClosure:
         assert exc_info.value.message_key == "billing.settlementGapObjectGone"
 
     async def test_unresolved_gauge_reflects_db(self, sm):
-        """缺口未核销 gauge>0,核销后归零。"""
+        """Unresolved gap gauge > 0, back to zero after the write-off."""
         from app.core.metrics import SETTLEMENT_GAP_UNRESOLVED
         from app.modules.billing.settlement import resolve_gap
 
@@ -766,13 +774,13 @@ class TestGapClosure:
             await _refresh_gap_gauge(session)
         assert SETTLEMENT_GAP_UNRESOLVED.labels(kind="hourly")._value.get() == 1
         async with sm() as session:
-            gap = await resolve_gap(session, gap_id, note="核销", operator_id=1)
+            gap = await resolve_gap(session, gap_id, note="written off", operator_id=1)
             assert gap.resolved_at is not None
         assert SETTLEMENT_GAP_UNRESOLVED.labels(kind="hourly")._value.get() == 0
 
 
 class TestGapEndpoints:
-    """管理端缺口端点:列表过滤 + 角色门槛 + 重放/核销写审计。"""
+    """Admin gap endpoints: list filters + role gate + replay / write-off write the audit."""
 
     async def test_list_replay_resolve_flow(self, client, sm):
         from app.modules.billing.models import SettlementGap
@@ -826,7 +834,7 @@ class TestGapEndpoints:
         assert resp.json()["message_key"] == "billing.settlementGapNotReplayable"
         resp = await client.post(
             f"/api/admin/v1/finance/settlement-gaps/{gid2}/resolve",
-            json={"note": "grace 期间有意不计费,确认无账"},
+            json={"note": "deliberately unbilled during grace, confirmed no charge"},
             headers=finance,
         )
         assert resp.status_code == 200, resp.text

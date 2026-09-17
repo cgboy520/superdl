@@ -14,7 +14,7 @@ from app.modules.notify.models import Notification
 from tests.helpers import admin_headers, seed_node_spec, seed_skus
 
 _SKU_BODY = {
-    "name": "A100 · 告警用例",
+    "name": "A100 · alert case",
     "gpu_model": "A100",
     "tier": "dedicated",
     "vram_gb": 80,
@@ -26,7 +26,7 @@ _SKU_BODY = {
 
 
 async def _admin_alerts(sm) -> list[Notification]:
-    """只取改价告警(管理员绑定 MFA 等其它 admin_alert 不算)。"""
+    """Only the price-change alerts (other admin_alerts such as MFA enrolment are excluded)."""
     async with sm() as session:
         return list(
             (
@@ -45,15 +45,17 @@ async def _admin_alerts(sm) -> list[Notification]:
 async def _set_price(client, headers, sku_id: int, price: str):
     return await client.patch(
         f"/api/admin/v1/skus/{sku_id}",
-        json={"price_hourly": price, "reason": "告警用例"},
+        json={"price_hourly": price, "reason": "alert case"},
         headers=headers,
     )
 
 
 class TestPriceChangeAlerts:
     async def test_cumulative_24h_change_is_critical(self, client: AsyncClient, sm):
-        """两步各不到 50%,但相对 24 小时前基准累计 ≥50%:critical 告警;
-        单步不足 50% 且无累计:不告警;审计行超过 24 小时后不再计入基准。"""
+        """Two steps each below 50 % but ≥50 % cumulative against the 24-hour baseline: critical
+        alert;
+        a single step below 50 % without cumulation: no alert; audit rows older than 24 hours leave
+        the baseline."""
         headers = await admin_headers(sm, client)
         resp = await client.post("/api/admin/v1/skus", json=_SKU_BODY, headers=headers)
         assert resp.status_code == 201, resp.text
@@ -78,8 +80,8 @@ class TestPriceChangeAlerts:
         assert len(await _admin_alerts(sm)) == 1
 
     async def test_single_step_change_is_warning(self, client: AsyncClient, sm):
-        """单步 ≥50% 且相对 24 小时基准也 ≥50%:只落一条 critical;
-        单步 ≥50% 但回到基准附近(累计 <50%):落 warning。"""
+        """A single step ≥50 % that is also ≥50 % against the 24-hour baseline: one critical only;
+        a single step ≥50 % back near the baseline (cumulative <50 %): warning."""
         headers = await admin_headers(sm, client)
         resp = await client.post("/api/admin/v1/skus", json=_SKU_BODY, headers=headers)
         sku_id = resp.json()["id"]
@@ -94,25 +96,29 @@ class TestPriceChangeAlerts:
         assert "100%" in alerts[1].content
 
     async def test_pricing_writes_rate_limited_per_admin(self, client: AsyncClient, sm):
-        """SKU 建/改共用每管理员 20 次/时:第 21 次 429。"""
+        """SKU create / update share the per-admin 20-per-hour bucket: the 21st is 429."""
         headers = await admin_headers(sm, client)
         resp = await client.post("/api/admin/v1/skus", json=_SKU_BODY, headers=headers)
         sku_id = resp.json()["id"]
         for _ in range(19):
             resp = await client.patch(
                 f"/api/admin/v1/skus/{sku_id}",
-                json={"vcpu": 8, "reason": "限流用例"},
+                json={"vcpu": 8, "reason": "rate-limit case"},
                 headers=headers,
             )
             assert resp.status_code == 200, resp.text
         resp = await client.patch(
-            f"/api/admin/v1/skus/{sku_id}", json={"vcpu": 8, "reason": "限流用例"}, headers=headers
+            f"/api/admin/v1/skus/{sku_id}",
+            json={"vcpu": 8, "reason": "rate-limit case"},
+            headers=headers,
         )
         assert resp.status_code == 429
         assert resp.json()["code"] == "RATE_LIMITED"
         other = await admin_headers(sm, client, username="admin-two")
         resp = await client.patch(
-            f"/api/admin/v1/skus/{sku_id}", json={"vcpu": 8, "reason": "另一人"}, headers=other
+            f"/api/admin/v1/skus/{sku_id}",
+            json={"vcpu": 8, "reason": "another admin"},
+            headers=other,
         )
         assert resp.status_code == 200, resp.text
 
@@ -123,7 +129,7 @@ class TestMarket:
         resp = await client.get("/api/v1/skus")
         assert resp.status_code == 200
         names = [s["name"] for s in resp.json()]
-        assert "A100 · 独享(下架)" not in names
+        assert "A100 · dedicated (delisted)" not in names
         assert len(names) == 2
 
     async def test_filters(self, client: AsyncClient, sm):
@@ -136,7 +142,8 @@ class TestMarket:
 
 class TestSellablePerGpu:
     def test_decimal_floor_division(self):
-        """每卡可售数走 Decimal 整除,市场库存与管理端容量预览同口径。"""
+        """Sellable per card uses Decimal integer division; market stock and the admin capacity
+        preview share the definition."""
         from app.modules.catalog.service import sellable_per_gpu
 
         assert sellable_per_gpu("hami", 5, Decimal("1.15")) == 23
@@ -166,7 +173,7 @@ class TestAdminSku:
 
         resp = await client.patch(
             f"/api/admin/v1/skus/{sku_id}?force=true",
-            json={"status": "on", "price_hourly": "2.8000", "reason": "上架调价"},
+            json={"status": "on", "price_hourly": "2.8000", "reason": "list and reprice"},
             headers=headers,
         )
         assert resp.json()["price_hourly"] == "2.8000"
@@ -175,11 +182,12 @@ class TestAdminSku:
         assert any(s["id"] == sku_id for s in market)
 
     async def test_isolation_change_only_when_off_sale(self, client: AsyncClient, sm):
-        """在售规格不许改池与 MIG 切片;下架后两者可一起改。"""
+        """An SKU on sale may change neither pool nor MIG slice; both may change together once
+        delisted."""
         await seed_node_spec(sm, pool_label="mig", gpu_model="H100")
         headers = await admin_headers(sm, client)
         body = {
-            "name": "H100 · MIG 在售",
+            "name": "H100 · MIG on sale",
             "gpu_model": "H100",
             "tier": "shared",
             "mig_profile": "1g.10gb",
@@ -193,54 +201,59 @@ class TestAdminSku:
         sku_id = resp.json()["id"]
         resp = await client.patch(
             f"/api/admin/v1/skus/{sku_id}",
-            json={"status": "on", "reason": "上架"},
+            json={"status": "on", "reason": "list"},
             headers=headers,
         )
         assert resp.status_code == 200, resp.text
         for qs in ("", "?force=true"):
             resp = await client.patch(
                 f"/api/admin/v1/skus/{sku_id}{qs}",
-                json={"pool_label": "hami", "mig_profile": None, "reason": "迁池"},
+                json={"pool_label": "hami", "mig_profile": None, "reason": "move pool"},
                 headers=headers,
             )
             assert resp.status_code == 409, resp.text
             assert resp.json()["message_key"] == "catalog.isolationChangeNeedsOffSale"
         resp = await client.patch(
             f"/api/admin/v1/skus/{sku_id}",
-            json={"mig_profile": "2g.20gb", "reason": "换切片"},
+            json={"mig_profile": "2g.20gb", "reason": "change slice"},
             headers=headers,
         )
         assert resp.status_code == 409, resp.text
         assert resp.json()["message_key"] == "catalog.isolationChangeNeedsOffSale"
         resp = await client.patch(
             f"/api/admin/v1/skus/{sku_id}",
-            json={"price_hourly": "2.6000", "reason": "调价"},
+            json={"price_hourly": "2.6000", "reason": "reprice"},
             headers=headers,
         )
         assert resp.status_code == 200, resp.text
         resp = await client.patch(
             f"/api/admin/v1/skus/{sku_id}",
-            json={"status": "off", "reason": "下架"},
+            json={"status": "off", "reason": "delist"},
             headers=headers,
         )
         assert resp.status_code == 200, resp.text
         resp = await client.patch(
             f"/api/admin/v1/skus/{sku_id}",
-            json={"pool_label": "hami", "reason": "迁池"},
+            json={"pool_label": "hami", "reason": "move pool"},
             headers=headers,
         )
         assert resp.status_code == 400, resp.text
         assert resp.json()["message_key"] == "catalog.migProfileMismatch"
         resp = await client.patch(
             f"/api/admin/v1/skus/{sku_id}",
-            json={"pool_label": "hami", "mig_profile": None, "gpu_cores_pct": 50, "reason": "迁池"},
+            json={
+                "pool_label": "hami",
+                "mig_profile": None,
+                "gpu_cores_pct": 50,
+                "reason": "move pool",
+            },
             headers=headers,
         )
         assert resp.status_code == 200, resp.text
         assert resp.json()["pool_label"] == "hami" and resp.json()["mig_profile"] is None
 
     async def test_update_colliding_business_key_is_409(self, client: AsyncClient, sm):
-        """改 SKU 撞到另一条的业务唯一键 → 409。"""
+        """Updating an SKU into another SKU's business key → 409."""
         headers = await admin_headers(sm, client)
         base = {
             "gpu_model": "L40S",
@@ -264,14 +277,14 @@ class TestAdminSku:
         assert a.status_code == 201 and b.status_code == 201, (a.text, b.text)
         resp = await client.patch(
             f"/api/admin/v1/skus/{b.json()['id']}",
-            json={"gpu_cores_pct": 30, "reason": "撞键"},
+            json={"gpu_cores_pct": 30, "reason": "key collision"},
             headers=headers,
         )
         assert resp.status_code == 409, resp.text
         assert resp.json()["message_key"] == "catalog.skuBusinessKeyExists"
 
     async def test_tier_pool_must_pair(self, client: AsyncClient, sm):
-        """档位与池必须配对。"""
+        """Tier and pool must pair."""
         headers = await admin_headers(sm, client)
         base = {
             "gpu_model": "RTX4090",
@@ -282,21 +295,21 @@ class TestAdminSku:
         }
         resp = await client.post(
             "/api/admin/v1/skus",
-            json={**base, "name": "假整卡", "tier": "dedicated", "pool_label": "hami"},
+            json={**base, "name": "fake whole card", "tier": "dedicated", "pool_label": "hami"},
             headers=headers,
         )
         assert resp.status_code == 400, resp.text
         assert resp.json()["message_key"] == "catalog.tierPoolMismatch"
         resp = await client.post(
             "/api/admin/v1/skus",
-            json={**base, "name": "假共享", "tier": "shared", "pool_label": "kata"},
+            json={**base, "name": "fake shared", "tier": "shared", "pool_label": "kata"},
             headers=headers,
         )
         assert resp.status_code == 400, resp.text
         assert resp.json()["message_key"] == "catalog.tierPoolMismatch"
         resp = await client.post(
             "/api/admin/v1/skus",
-            json={**base, "name": "无切片 MIG", "tier": "shared", "pool_label": "mig"},
+            json={**base, "name": "MIG without slice", "tier": "shared", "pool_label": "mig"},
             headers=headers,
         )
         assert resp.status_code == 400, resp.text
@@ -305,7 +318,7 @@ class TestAdminSku:
             "/api/admin/v1/skus",
             json={
                 **base,
-                "name": "HAMi 带切片",
+                "name": "HAMi with slice",
                 "tier": "shared",
                 "pool_label": "hami",
                 "mig_profile": "1g.10gb",
@@ -316,7 +329,8 @@ class TestAdminSku:
         assert resp.json()["message_key"] == "catalog.migProfileMismatch"
 
     async def test_shared_tier_allowed_pools_switch(self, client: AsyncClient, sm, monkeypatch):
-        """shared_tier_allowed_pools 摘掉 hami 后共享档只能建 MIG 池 SKU;置空则整体停售。"""
+        """With hami removed from shared_tier_allowed_pools the shared tier only accepts MIG-pool
+        SKUs; empty stops the tier entirely."""
         from app.core.config import get_settings
 
         monkeypatch.setattr(get_settings(), "shared_tier_allowed_pools", "mig")
@@ -330,7 +344,7 @@ class TestAdminSku:
         }
         resp = await client.post(
             "/api/admin/v1/skus",
-            json={**base, "name": "HAMi 禁售", "tier": "shared", "pool_label": "hami"},
+            json={**base, "name": "HAMi blocked", "tier": "shared", "pool_label": "hami"},
             headers=headers,
         )
         assert resp.status_code == 400, resp.text
@@ -339,7 +353,7 @@ class TestAdminSku:
             "/api/admin/v1/skus",
             json={
                 **base,
-                "name": "MIG 在售",
+                "name": "MIG on sale",
                 "tier": "shared",
                 "pool_label": "mig",
                 "mig_profile": "1g.10gb",
@@ -353,7 +367,7 @@ class TestAdminSku:
             "/api/admin/v1/skus",
             json={
                 **base,
-                "name": "共享停售",
+                "name": "shared blocked",
                 "tier": "shared",
                 "pool_label": "mig",
                 "mig_profile": "1g.10gb",
@@ -365,7 +379,7 @@ class TestAdminSku:
 
 
 class TestPriceFloor:
-    """时价上架/改价拦免费价与超 2 位小数价。"""
+    """Listing / repricing rejects free prices and prices with more than 2 decimals."""
 
     def test_min_billable_price_accepted(self):
         from app.modules.catalog.service import _checked_price
@@ -374,7 +388,7 @@ class TestPriceFloor:
         assert _checked_price(Decimal("1.6800")) == Decimal("1.6800")
 
     def test_sub_cent_precision_rejected(self):
-        """按小时计费的 SKU 超过 2 位小数即拒。"""
+        """Hourly-billed SKUs with more than 2 decimals are rejected."""
         from app.modules.catalog.service import _checked_price
 
         with pytest.raises(AppError) as exc:

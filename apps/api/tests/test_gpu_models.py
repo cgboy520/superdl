@@ -1,4 +1,4 @@
-"""型号归一化穷举:五种来源格式 → canonical;匹配语义。"""
+"""Exhaustive model normalisation: five source formats → canonical; matching semantics."""
 
 from app.core.gpu_models import canonical_gpu_model, model_matches
 
@@ -29,7 +29,8 @@ class TestCanonical:
         )
 
     def test_cmp_mining_series(self):
-        """CMP 系列:nvidia-smi 通用名不可归一,型号来自 lspci 方括号名或人工 SKU。"""
+        """CMP series: the nvidia-smi generic name cannot be normalised, the model comes from the
+        lspci bracket name or a manual SKU."""
         assert canonical_gpu_model("NVIDIA Graphics Device") is None
         assert canonical_gpu_model("NVIDIA Corporation GA100 [CMP 170HX] (rev a1)") == "CMP170HX"
         assert canonical_gpu_model("CMP 170HX") == "CMP170HX"

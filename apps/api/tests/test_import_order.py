@@ -1,4 +1,5 @@
-"""在独立解释器中检查业务模块与 API/worker 入口可导入。"""
+"""Check in a separate interpreter that the business modules and the API / worker entry points
+import."""
 
 import os
 import subprocess

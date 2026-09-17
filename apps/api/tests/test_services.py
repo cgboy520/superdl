@@ -1,4 +1,5 @@
-"""在线服务聚合根:部署 / 视图 / 生命周期 / 密钥 / 幂等 / 契约 / 与实例层的边界。"""
+"""Online service aggregate: deploy / views / lifecycle / keys / idempotency / contract / boundary
+with the instance layer."""
 
 import asyncio
 from typing import Any
@@ -45,7 +46,8 @@ async def load_service(sm, slug: str) -> Service:
 
 class TestDeploy:
     async def test_service_row_and_instance_snapshot(self, client, sm, fake):
-        """部署落一行 services + 一台版本实例;slug 是随机 base32;暴露规格快照在实例行上。"""
+        """Deploying writes one services row + one revision instance; the slug is random base32; the
+        exposure spec is snapshotted on the instance row."""
         _headers, svc, _ = await provision_service(client, sm, fake, health_path="/health")
         assert svc["slug"].startswith("svc-") and len(svc["slug"]) == 14
         inst = svc["current_instance"]
@@ -65,7 +67,7 @@ class TestDeploy:
         assert instance.name == svc["name"] == inst["name"]
 
     async def test_no_ssh_means_no_port_pool_slot(self, client, sm, fake):
-        """with_ssh=False 不进端口池。"""
+        """with_ssh=False stays out of the port pool."""
         _headers, svc, user_id = await provision_service(client, sm, fake)
         uuid = svc["current_instance"]["uuid"]
         instance = await load_instance(sm, uuid)
@@ -77,7 +79,7 @@ class TestDeploy:
         assert spec.authorized_keys == ()
 
     async def test_with_ssh_still_allocates_port(self, client, sm, fake):
-        """启用 SSH 的服务占用端口池。"""
+        """A service with SSH enabled takes a port from the pool."""
         _headers, svc, user_id = await provision_service(
             client, sm, fake, phone="13900000302", with_ssh=True
         )
@@ -90,7 +92,8 @@ class TestDeploy:
         assert svc["container"]["with_ssh"] is True
 
     async def test_pod_spec_service_fork(self, client, sm, fake):
-        """服务版本实例的 Pod spec:Always 重启 + 用户启动命令 + 对外 Service + 探针。"""
+        """Pod spec of a service revision instance: Always restart + user command + public Service +
+        probes."""
         _headers, svc, user_id = await provision_service(
             client,
             sm,
@@ -110,7 +113,8 @@ class TestDeploy:
         assert "JUPYTER_ALLOW_ORIGIN" not in spec.env
 
     async def test_dev_fork_unchanged(self, client, sm, fake):
-        """dev Pod 使用 Never 重启策略,无服务端点,Jupyter token 走 Secret。"""
+        """A dev Pod uses the Never restart policy, no service endpoint, the Jupyter token via
+        Secret."""
         headers, user_id, key_id, sku_id = await new_user(client, sm, "13900000304")
         resp = await client.post(
             "/api/v1/instances",
@@ -129,7 +133,7 @@ class TestDeploy:
         assert "JUPYTER_TOKEN" in spec.secret_env and "JUPYTER_ALLOW_ORIGIN" in spec.env
 
     async def test_other_users_service_is_404(self, client, sm, fake):
-        """非属主一律 404。"""
+        """Non-owners always get 404."""
         _, svc, _ = await provision_service(client, sm, fake, phone="13900000342")
         other, *_ = await new_user(client, sm, "13900000343")
         slug = svc["slug"]
@@ -144,10 +148,10 @@ class TestDeploy:
 
 
 class TestInstanceBoundary:
-    """服务的版本实例:实例层改不了生命周期。"""
+    """Revision instances of a service: the instance layer cannot change their lifecycle."""
 
     async def test_instance_lifecycle_endpoints_reject_service_instance(self, client, sm, fake):
-        """DELETE / stop / start / restart 打到服务实例一律 409。"""
+        """DELETE / stop / start / restart on a service instance are always 409."""
         headers, svc, _ = await provision_service(client, sm, fake, phone="13900000471")
         uuid = svc["current_instance"]["uuid"]
         for call in (
@@ -161,7 +165,7 @@ class TestInstanceBoundary:
             assert resp.json()["message_key"] == "orchestrator.serviceInstanceLifecycle"
 
     async def test_dev_create_rejects_service_fields(self, client, sm, fake):
-        """POST /instances 不收服务字段(422)。"""
+        """POST /instances does not accept service fields (422)."""
         headers, _user_id, key_id, sku_id = await new_user(client, sm, "13900000472")
         for extra in ({"service_port": 8000}, {"workload_type": "service"}, {"env": {"A": "1"}}):
             resp = await client.post(
@@ -172,7 +176,8 @@ class TestInstanceBoundary:
             assert resp.status_code == 422, resp.text
 
     async def test_access_shape(self, client, sm, fake):
-        """实例接入信息按形态给字段:服务实例给端点 URL,不给 Jupyter;不开 SSH 时也不给 SSH。"""
+        """Access information by form: service instances get the endpoint URL, no Jupyter; no SSH
+        either when SSH is off."""
         headers, svc, _ = await provision_service(client, sm, fake, phone="13900000332")
         data = (
             await client.get(
@@ -186,7 +191,7 @@ class TestInstanceBoundary:
 
 class TestEnvHandling:
     async def test_env_is_ciphertext_in_db(self, client, sm, fake):
-        """env 整包落密文;AAD 绑实例 uuid。"""
+        """env is stored encrypted as a whole; AAD bound to the instance uuid."""
         _headers, svc, _ = await provision_service(
             client,
             sm,
@@ -206,7 +211,7 @@ class TestEnvHandling:
 
 
 class TestPinnedImage:
-    """服务镜像必须钉死版本。"""
+    """Service images must pin a version."""
 
     @pytest.mark.parametrize(
         "image", ["registry.example.com/vllm:latest", "registry.example.com/vllm"]
@@ -240,7 +245,7 @@ class TestPinnedImage:
 
 
 class TestCreateContract:
-    """契约矩阵(纯 schema)。"""
+    """Contract matrix (pure schema)."""
 
     @pytest.mark.parametrize("port", [22, 8888])
     def test_reserved_ports_rejected(self, port):
@@ -283,7 +288,8 @@ class TestCreateContract:
 
 class TestIdempotency:
     async def test_same_key_replays_same_service(self, client, sm, fake):
-        """同键同参重提回 200 + X-Idempotent-Replay 与同一个服务;库里只有一行。"""
+        """Same key and params resubmitted → 200 + X-Idempotent-Replay with the same service; one
+        row in the DB."""
         headers, *_, sku_id = await new_user(client, sm, "13900000480")
         h = {**headers, "Idempotency-Key": "deploy-1"}
         first = await client.post("/api/v1/services", json=service_body(sku_id), headers=h)
@@ -309,7 +315,7 @@ class TestIdempotency:
         assert again.status_code == 409, again.text
 
     async def test_concurrent_same_key_deploys_once(self, client, sm, fake):
-        """并发同键只落一个服务、无孤儿 services 行。"""
+        """Concurrent same-key requests create one service and no orphan services rows."""
         _headers, user_id, _key_id, sku_id = await new_user(client, sm, "13900000482")
         spec = ServiceCreate(**service_body(sku_id))
 
@@ -334,7 +340,8 @@ class TestIdempotency:
 
 class TestServiceApi:
     async def test_patch_name_and_auth_switch(self, client, sm, fake):
-        """改名与鉴权开关只改 services 行:不重新部署,实例 uuid 与 slug 都不变。"""
+        """Rename and the auth switch only change the services row: no redeployment, instance uuid
+        and slug unchanged."""
         headers, svc, _ = await provision_service(client, sm, fake, phone="13900000330")
         resp = await client.patch(
             f"/api/v1/services/{svc['slug']}",
@@ -363,7 +370,7 @@ class TestServiceApi:
 
 class TestLifecycle:
     async def test_stop_start_keeps_slug_and_instance(self, client, sm, fake):
-        """停止 / 启动只动当前实例,slug 与 API Key 不变。"""
+        """Stop / start only touch the current instance, slug and API keys unchanged."""
         headers, svc, user_id = await provision_service(client, sm, fake, phone="13900000350")
         slug = svc["slug"]
         stopped = await client.post(f"/api/v1/services/{slug}/stop", headers=headers)
@@ -392,7 +399,8 @@ class TestLifecycle:
             assert list((await session.execute(select(PortAllocation))).scalars()) == []
 
     async def test_delete_requires_stopped_then_lands_released(self, client, sm, fake):
-        """运行中不能直接删(409);停机后删除 = 释放实例 + 吊销全部密钥,实例 released 即服务终态。"""
+        """Cannot delete while running (409); deleting once stopped = release the instance + revoke
+        every key, the released instance is the service's terminal state."""
         headers, svc, user_id = await provision_service(client, sm, fake, phone="13900000351")
         slug = svc["slug"]
         key = (
@@ -433,8 +441,9 @@ class TestLifecycle:
 
 class TestAdminList:
     async def test_admin_sees_all_tenants_with_owner_and_filters(self, client, sm, fake):
-        """管理端全局服务表跨租户、带归属;q 按 slug 前缀;user_id 过滤附 total;
-        已删除默认不列、include_released 才列。"""
+        """The admin global service table spans tenants with ownership; q matches the slug prefix;
+        a user_id filter carries total;
+        deleted services are hidden by default and listed only with include_released."""
         headers, svc, user_id = await provision_service(client, sm, fake, phone="13900000360")
         _, other, other_user = await provision_service(client, sm, fake, phone="13900000361")
         ah = await admin_headers(sm, client, role="readonly")
@@ -476,7 +485,7 @@ class TestAdminList:
 
 
 class TestDeriveStatus:
-    """派生状态表。"""
+    """Derived status table."""
 
     class _Svc:
         def __init__(self, released_at=None):
@@ -555,7 +564,7 @@ class TestApiKeyCrud:
 
 
 class TestSlugHostParsing:
-    """Host → slug 反解。"""
+    """Host → slug resolution."""
 
     def test_matches_service_suffix_only(self):
         suffix = get_settings().service_domain_suffix

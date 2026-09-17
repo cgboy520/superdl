@@ -82,7 +82,7 @@ async def _funded_phone_user(
     return headers, user_id, key.json()["id"]
 
 
-def _body(identity: str = VALID_ID, name: str = "张三") -> dict:
+def _body(identity: str = VALID_ID, name: str = "张三") -> dict:  # cjk-ok
     return {"full_name": name, "identity_number": identity}
 
 
@@ -100,7 +100,7 @@ class TestSubmitKyc:
         )
         async with sm() as session:
             user = (await session.execute(select(User).where(User.id == user_id))).scalar_one()
-            assert user.kyc_name == "张三"
+            assert user.kyc_name == "张三"  # cjk-ok
             assert user.kyc_identity_masked == "1101************37"
             assert "199001011237" not in (user.kyc_identity_masked or "")
             assert user.kyc_provider == "fake" and user.kyc_ref == "ref-1"
@@ -112,7 +112,11 @@ class TestSubmitKyc:
         await set_platform_setting(sm, "real_name_enabled", "true")
         set_kyc_provider(_Provider(False))
         headers, _ = await _phone_user(client, sm, "13800000161")
-        resp = await client.post("/api/v1/me/kyc", json=_body(OTHER_ID, "李四"), headers=headers)
+        resp = await client.post(
+            "/api/v1/me/kyc",
+            json=_body(OTHER_ID, "李四"),  # cjk-ok
+            headers=headers,  # cjk-ok
+        )  # cjk-ok
         assert resp.status_code == 400
         assert resp.json()["code"] == "REAL_NAME_MISMATCH"
 
@@ -185,7 +189,11 @@ class TestGates:
             )
             assert resp.status_code == 403
             assert resp.json()["code"] == "REAL_NAME_REQUIRED"
-            await client.post("/api/v1/me/kyc", json=_body(OTHER_ID, "王五"), headers=headers)
+            await client.post(
+                "/api/v1/me/kyc",
+                json=_body(OTHER_ID, "王五"),  # cjk-ok
+                headers=headers,  # cjk-ok
+            )  # cjk-ok
             resp = await client.post(
                 "/api/v1/wallet/recharges",
                 json={"amount": "50.00", "channel": "mock"},
@@ -213,7 +221,9 @@ class TestGates:
             assert resp.status_code == 403
             assert resp.json()["message_key"] == "orchestrator.realNameRequired"
             await client.post(
-                "/api/v1/me/kyc", json=_body("110101199001012221", "赵六"), headers=headers
+                "/api/v1/me/kyc",
+                json=_body("110101199001012221", "赵六"),  # cjk-ok
+                headers=headers,  # cjk-ok
             )
             resp = await client.post(
                 "/api/v1/instances",
@@ -243,7 +253,9 @@ class TestGates:
             resp = await client.post(f"/api/v1/instances/{uuid}/start", headers=headers)
             assert resp.status_code == 403
             await client.post(
-                "/api/v1/me/kyc", json=_body("110101199001013339", "钱七"), headers=headers
+                "/api/v1/me/kyc",
+                json=_body("110101199001013339", "钱七"),  # cjk-ok
+                headers=headers,  # cjk-ok
             )
             resp = await client.post(
                 "/api/v1/disks", json={"name": "d1", "size_gb": 10}, headers=headers

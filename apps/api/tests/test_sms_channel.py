@@ -1,4 +1,5 @@
-"""短信渠道 seam:阿里云签名、MockTransport 收发、验证码发送失败降级、平台配额。"""
+"""SMS channel seam: Aliyun signing, MockTransport round trip, code-send failure degradation,
+platform quota."""
 
 import httpx
 import pytest
@@ -25,7 +26,7 @@ class _FailingChannel:
 
 class TestAliyunSignature:
     def test_signature_snapshot(self):
-        """RPC V1 签名锚点(排序 / RFC3986 编码 / HMAC-SHA1)。"""
+        """RPC V1 signature anchors (sorting / RFC3986 encoding / HMAC-SHA1)."""
         ch = AliyunSmsChannel("testid", "testsecret", "SuperDL")
         p = rpc_signed_params(
             ch.request_params("13800000000", "SMS_123", {"code": "654321"}),
@@ -47,7 +48,7 @@ class TestAliyunSignature:
             if len(seen) == 1:
                 return httpx.Response(200, json={"Code": "OK"})
             return httpx.Response(
-                200, json={"Code": "isv.BUSINESS_LIMIT_CONTROL", "Message": "限流"}
+                200, json={"Code": "isv.BUSINESS_LIMIT_CONTROL", "Message": "throttled"}
             )
 
         ch = AliyunSmsChannel(
@@ -79,7 +80,7 @@ class TestTwilio:
         service = TwilioSmsChannel("AC" + "0" * 32, "tok", "MG" + "a" * 32)
         form = service.request_form("+8613800001111", "notice", {"title": "Balance low"}, "zh-CN")
         assert form["MessagingServiceSid"] == "MG" + "a" * 32 and "From" not in form
-        assert form["Body"] == "【SuperDL】Balance low"
+        assert form["Body"] == "【SuperDL】Balance low"  # zh-CN template brackets  # cjk-ok
 
     async def test_send_ok_and_rejected(self):
         seen: list[httpx.Request] = []
@@ -126,7 +127,7 @@ class TestFactory:
 
 class TestVerifyCodeSendFailure:
     async def test_channel_failure_invalidates_code(self, client: AsyncClient, sm):
-        """渠道失败 → 502 CODE_SEND_FAILED,且刚落库的验证码被作废。"""
+        """Channel failure → 502 CODE_SEND_FAILED, and the just-stored code is voided."""
         from app.modules.account.models import VerificationCode
 
         set_sms_channel(_FailingChannel())
@@ -148,10 +149,11 @@ class TestVerifyCodeSendFailure:
 
 
 class TestPlatformQuota:
-    """平台级短信配额(全局预算池)。"""
+    """Platform-level SMS quota (global budget pool)."""
 
     async def test_sms_code_blocked_by_platform_quota(self, client: AsyncClient, sm, monkeypatch):
-        """配额耗尽时验证码接口 429 RATE_LIMITED,且不落库无效验证码。"""
+        """With the quota exhausted the code endpoint is 429 RATE_LIMITED and stores no dead
+        code."""
         from app.core import sms as sms_module
         from app.modules.account.models import VerificationCode
 
@@ -174,7 +176,9 @@ class TestPlatformQuota:
             assert row is None
 
     async def test_notify_sms_digested_when_quota_exhausted(self, sm, monkeypatch):
-        """通知短信遇配额耗尽:消化不重试、不触达渠道。"""
+        """A notification SMS hitting the exhausted quota: consumed without retry, the channel is
+        not
+        reached."""
         from app.core import sms as sms_module
         from app.core.outbox import OutboxTask
         from app.modules.notify.service import handle_notify_sms
@@ -190,7 +194,9 @@ class TestPlatformQuota:
         set_sms_channel(_CountingChannel())
         monkeypatch.setitem(sms_module.SMS_PLATFORM_LIMITS, "notify", (1, 2000))
         await sms_module.ensure_sms_platform_quota("notify")
-        task = OutboxTask(type="notify.sms", payload={"phone": "13800000094", "title": "余额预警"})
+        task = OutboxTask(
+            type="notify.sms", payload={"phone": "13800000094", "title": "balance warning"}
+        )
         async with sm() as session:
             await handle_notify_sms(session, task)
         assert sent == []

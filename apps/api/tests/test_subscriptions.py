@@ -1,4 +1,5 @@
-"""包周期(预付)全链路:折扣算术、幂等零重复扣款、结算跳过、配套过滤、库存预留、到期链路。"""
+"""Subscriptions (prepaid) end to end: discount arithmetic, idempotent zero double charging,
+settlement skip, matching filters, stock reservation, expiry chain."""
 
 import asyncio
 from datetime import timedelta
@@ -46,8 +47,9 @@ IMAGE = IMAGE_PYTORCH
 
 class TestExpiringEndpoint:
     async def test_expiring_lists_only_horizon_hits_sorted(self, client, sm, fake):
-        """到期横幅端点:只回临期(active 且 ≤ within_days)实例,升序,不分页;
-        /instances/expiring 不被 /instances/{uuid} 吃掉。"""
+        """Expiry banner endpoint: only expiring (active and ≤ within_days) instances, ascending, no
+        pagination;
+        /instances/expiring is not swallowed by /instances/{uuid}."""
         headers, uuid, _user_id, _sku, _key = await provision_subscription(
             client, sm, fake, "13910000101"
         )
@@ -77,10 +79,10 @@ async def _policies(sm) -> RuntimeConfig:
 
 
 class TestQuoteArithmetic:
-    """报价三件套与实扣金额自洽。"""
+    """The quote triple and the actual charge are consistent."""
 
     def test_month_matches_hand_math(self):
-        """月价为时价乘 720 小时再乘月付折扣。"""
+        """The monthly price is the hourly price × 720 hours × the monthly discount."""
         policies = runtime_config_from_strings({"period_discount_month": "80"})
         q = quote_subscription(
             Decimal("3.9900"), gpu_count=1, period="month", period_count=1, policies=policies
@@ -92,7 +94,7 @@ class TestQuoteArithmetic:
         assert q.discount_amount == Decimal("574.56")
 
     def test_cpu_instance_bills_one_unit(self):
-        """CPU 实例 gpu_count=0 按 1 份(billing_units)收。"""
+        """A CPU instance with gpu_count=0 charges 1 unit (billing_units)."""
         policies = runtime_config_from_strings({"period_discount_day": "100"})
         q = quote_subscription(
             Decimal("0.5000"), gpu_count=0, period="day", period_count=1, policies=policies
@@ -102,7 +104,8 @@ class TestQuoteArithmetic:
 
 class TestOrderAndIdempotency:
     async def test_order_debits_once_and_snapshots_discounted_price(self, client, sm, fake):
-        """下单扣除整段周期金额,实例保存折后时价。"""
+        """The order debits the whole period amount and the instance stores the discounted hourly
+        price."""
         _headers, uuid, user_id, _, _ = await provision_subscription(
             client, sm, fake, "13911100001"
         )
@@ -134,7 +137,8 @@ class TestOrderAndIdempotency:
         assert sub.expires_at - sub.started_at == timedelta(hours=720)
 
     async def test_replayed_key_charges_once(self, client, sm, fake):
-        """同一 Idempotency-Key 重放:零重复扣款、零重复订阅行。"""
+        """Replaying the same Idempotency-Key: zero double charging, zero duplicate subscription
+        rows."""
         headers, user_id, key_id = await funded_user(client, sm, "13911100002", "5000.00")
         sku_id = await create_test_sku(sm)
         await seed_node_spec(sm, node_name="node-idem")
@@ -156,7 +160,7 @@ class TestOrderAndIdempotency:
         assert balance == Decimal("5000.00") - subs[0].amount_paid
 
     async def test_insufficient_balance_never_reaches_creating(self, client, sm, fake):
-        """余额不够买一个月:400,不留 creating 实例、不扣钱。"""
+        """Balance short of one month: 400, no creating instance left behind, no debit."""
         headers, user_id, key_id = await funded_user(client, sm, "13911100003", "10.00")
         sku_id = await create_test_sku(sm)
         await seed_node_spec(sm, node_name="node-poor")
@@ -174,7 +178,7 @@ class TestOrderAndIdempotency:
         assert count == 0
 
     async def test_period_field_rejected_on_on_demand(self, client, sm):
-        """按量单带 period 一律 422。"""
+        """An on-demand order with period is always 422."""
         headers, _user_id, key_id = await funded_user(client, sm, "13911100004")
         sku_id = await create_test_sku(sm)
         resp = await client.post(
@@ -191,7 +195,7 @@ class TestOrderAndIdempotency:
         assert resp.status_code == 422
 
     async def test_sku_with_period_disabled_refuses_subscription(self, client, sm, fake):
-        """SKU 关闭包周期后直调接口也买不到。"""
+        """With subscriptions disabled on the SKU a direct API call cannot buy one either."""
         headers, _user_id, key_id = await funded_user(client, sm, "13911100005", "5000.00")
         sku_id = await create_test_sku(sm, gpu_cores_pct=45, vcpu=7)
         await seed_node_spec(sm, node_name="node-nop")
@@ -205,7 +209,7 @@ class TestOrderAndIdempotency:
 
 class TestSettlementSkip:
     async def test_no_hourly_bill_for_subscription(self, client, sm, fake):
-        """包周期实例运行与关机均不产生 bills_hourly 行。"""
+        """A subscription instance produces no bills_hourly rows, running or stopped."""
         from app.core.timeutil import hour_floor
         from app.modules.billing.settlement import settle_due_hours
         from app.modules.orchestrator.models import InstanceEvent
@@ -237,7 +241,7 @@ class TestSettlementSkip:
 
 class TestCompanionFilters:
     async def test_zero_balance_subscriber_is_not_stopped(self, client, sm, fake):
-        """余额清零的包月用户不被欠费巡检停机。"""
+        """A monthly user with a zero balance is not stopped by the arrears patrol."""
         _headers, uuid, user_id, _, _ = await provision_subscription(
             client, sm, fake, "13911100020"
         )
@@ -251,7 +255,7 @@ class TestCompanionFilters:
         assert inst.status == "running"
 
     async def test_subscription_does_not_block_new_on_demand_instance(self, client, sm, fake):
-        """包月实例不进在途燃烧率。"""
+        """Monthly instances do not enter the in-flight burn rate."""
         headers, _uuid, user_id, sku_id, key_id = await provision_subscription(
             client, sm, fake, "13911100021"
         )
@@ -272,7 +276,7 @@ class TestCompanionFilters:
         assert resp.status_code == 202, resp.text
 
     async def test_stopped_subscription_is_not_frozen_by_arrears(self, client, sm, fake):
-        """周期内关机 + 余额 0:不进欠费冻结链。"""
+        """Stopped within the period + balance 0: no entry into the arrears freeze chain."""
         headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100022")
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
@@ -290,7 +294,7 @@ class TestCompanionFilters:
 
 class TestCapacityReservation:
     async def test_stopped_subscription_still_holds_capacity(self, client, sm, fake):
-        """未到期的包周期实例即使已停机仍占库存。"""
+        """An unexpired subscription instance keeps occupying stock even when stopped."""
         headers, uuid, _user_id, sku_id, _key_id = await provision_subscription(
             client, sm, fake, "13911100030", sku={"gpu_cores_pct": 100, "vcpu": 16, "mem_gb": 64}
         )
@@ -324,7 +328,7 @@ class TestCapacityReservation:
 
 class TestRenewal:
     async def test_renew_extends_from_old_expiry_and_chains(self, client, sm, fake):
-        """提前续费从老到期时刻起算,串上 renewed_from_id。"""
+        """An early renewal counts from the old expiry and links renewed_from_id."""
         headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100040")
         async with sm() as s:
             old = (
@@ -360,7 +364,8 @@ class TestRenewal:
         assert rows[1].expires_at == old_expiry + timedelta(hours=1440)
 
     async def test_renew_prices_from_original_snapshot_not_current_sku(self, client, sm, fake):
-        """续费按 subscriptions.unit_price(下单时原价快照)算,不追 SKU 现价。"""
+        """Renewal prices from subscriptions.unit_price (the list-price snapshot at order time), not
+        the current SKU price."""
         headers, uuid, user_id, sku_id, _ = await provision_subscription(
             client, sm, fake, "13911100041"
         )
@@ -382,7 +387,7 @@ class TestRenewal:
         assert Decimal(resp.json()["quote"]["amount"]) == paid_before
 
     async def test_renew_is_idempotent(self, client, sm, fake):
-        """续费带同一个 Idempotency-Key 重放:零重复扣款。"""
+        """Renewal replayed with the same Idempotency-Key: zero double charging."""
         headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100042")
         body = {"period": "week", "period_count": 1}
         h = {**headers, "Idempotency-Key": "renew-1"}
@@ -422,10 +427,11 @@ class TestRenewal:
 
 
 class TestIdempotencyFingerprint:
-    """订阅幂等键带请求指纹:同键异参 409,不静默重放另一条单。"""
+    """Subscription idempotency keys carry a request fingerprint: same key with different params →
+    409, never a silent replay of another order."""
 
     async def test_same_key_on_another_instance_is_409(self, client, sm, fake):
-        """同一把键打向另一台实例 → 409。"""
+        """The same key aimed at another instance → 409."""
         headers, uuid_a, user_id, sku_id, key_id = await provision_subscription(
             client, sm, fake, "13911100050", fund="20000.00"
         )
@@ -461,7 +467,8 @@ class TestIdempotencyFingerprint:
             assert await wallet.get_balance(s, user_id) == balance_before
 
     async def test_same_key_with_another_period_is_409(self, client, sm, fake):
-        """同一台实例、同一把键、换周期 → 409:指纹覆盖决定单形态的全部参数。"""
+        """Same instance, same key, different period → 409: the fingerprint covers every parameter
+        that shapes the order."""
         headers, uuid, _, _, _ = await provision_subscription(
             client, sm, fake, "13911100051", fund="20000.00"
         )
@@ -481,7 +488,8 @@ class TestIdempotencyFingerprint:
         assert swapped.json()["message_key"] == "common.idempotencyKeyMismatch"
 
     async def test_convert_replay_lookup_rejects_another_instance(self, client, sm, fake):
-        """转换路径的重放查询(find_replay_row):同键异参 409,参数全对才回重放行。"""
+        """The conversion path's replay lookup (find_replay_row): same key, different params → 409,
+        the replay row is returned only when every parameter matches."""
         from app.core.errors import AppError
         from app.modules.billing import subscriptions
 
@@ -528,7 +536,8 @@ class TestIdempotencyFingerprint:
 
 class TestExpiryChain:
     async def test_frozen_subscription_is_not_unfrozen_by_balance(self, client, sm, fake):
-        """到期冻结的实例不因余额充足解冻;解冻条件是续费。"""
+        """An instance frozen on expiry does not unfreeze because the balance suffices; renewal is
+        the unfreeze condition."""
         _headers, uuid, user_id, _, _ = await provision_subscription(
             client, sm, fake, "13911100051"
         )
@@ -549,7 +558,7 @@ class TestExpiryChain:
         assert inst.status == "frozen"
 
     async def test_expired_subscription_cannot_start(self, client, sm, fake):
-        """到期后开机被拒(先续费)。"""
+        """Starting after expiry is refused (renew first)."""
         headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100052")
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
@@ -566,7 +575,7 @@ class TestExpiryChain:
         assert resp.json()["code"] == "SUBSCRIPTION_EXPIRED"
 
     async def test_renew_unfreezes(self, client, sm, fake):
-        """冻结中续费即解冻(回到 stopped 由用户自己开机)。"""
+        """Renewing while frozen unfreezes (back to stopped, the user starts it)."""
         headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100053")
         async with sm() as s:
             await s.execute(
@@ -592,7 +601,7 @@ class TestExpiryChain:
         assert inst.frozen_deadline is None
 
     async def test_auto_renew_charges_and_extends(self, client, sm, fake):
-        """自动续费:到期那一刻扣款续期,实例不停机。"""
+        """Auto-renewal: charged and extended at the expiry instant, the instance keeps running."""
         headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100054")
         resp = await client.post(
             f"/api/v1/instances/{uuid}/auto-renew", json={"enabled": True}, headers=headers
@@ -620,7 +629,8 @@ class TestExpiryChain:
         assert rows[-1].auto_renew is True
 
     async def test_auto_renew_without_balance_falls_back_to_stop(self, client, sm, fake):
-        """自动续费余额不足:不透支,走到期停机链路,且老订阅行不被改坏。"""
+        """Auto-renewal with insufficient balance: no overdraft, the expiry stop chain runs, and the
+        old subscription row is not corrupted."""
         headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100055")
         await client.post(
             f"/api/v1/instances/{uuid}/auto-renew", json={"enabled": True}, headers=headers
@@ -648,7 +658,9 @@ class TestExpiryChain:
         assert rows[0].status == "expired"
 
     async def test_renew_rejected_when_balance_is_frozen(self, client, sm, fake):
-        """手动续费按可用余额(余额-冻结)判,冲正冻结额不可用。"""
+        """Manual renewal judges by available balance (balance − frozen); reversal-frozen amounts
+        are
+        unavailable."""
         headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100057")
         async with sm() as s:
             paid = (
@@ -675,7 +687,9 @@ class TestExpiryChain:
             assert [r.status for r in rows] == ["active"]
 
     async def test_auto_renew_with_frozen_balance_falls_back_to_stop(self, client, sm, fake):
-        """自动续费撞上全额冻结:预检按可用余额落 renew_failed 走到期停机。"""
+        """Auto-renewal hitting a full freeze: the precheck by available balance records
+        renew_failed
+        and takes the expiry stop."""
         headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100058")
         await client.post(
             f"/api/v1/instances/{uuid}/auto-renew", json={"enabled": True}, headers=headers
@@ -705,7 +719,7 @@ class TestExpiryChain:
         assert rows[0].status == "expired"
 
     async def test_expiring_warning_is_sent_once(self, client, sm, fake):
-        """临期预警每个到期时刻只发一条。"""
+        """The expiry warning is sent once per expiry instant."""
         from app.modules.notify.models import Notification
 
         _headers, _uuid, user_id, _, _ = await provision_subscription(
@@ -736,10 +750,11 @@ class TestExpiryChain:
 
 
 class TestRenewConcurrency:
-    """续费并发(手动 × 自动)零重复扣款。"""
+    """Concurrent renewal (manual × automatic) never double-charges."""
 
     async def test_concurrent_manual_and_auto_renew_never_double_charges(self, client, sm, fake):
-        """无论谁先赢:一实例仅一行 active,同一周期不被续两次,余额与链上实扣自洽。"""
+        """Whoever wins: one active row per instance, the same period is not renewed twice, balance
+        and chain charges are consistent."""
         headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100096")
         async with sm() as s:
             await s.execute(
@@ -774,7 +789,7 @@ class TestRenewConcurrency:
             assert await wallet.get_balance(s, user_id) == balance_before - charged
 
     async def test_auto_renew_after_manual_renew_is_noop(self, client, sm, fake):
-        """手动续费完成后再跑到期巡检:自动续费不重复扣款。"""
+        """The expiry patrol after a manual renewal: auto-renewal does not charge again."""
         headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100097")
         async with sm() as s:
             await s.execute(
@@ -805,10 +820,11 @@ class TestRenewConcurrency:
 
 
 class TestRestartGate:
-    """重启资金门禁与开机同口径:包周期看订阅有效期,按量看余额。"""
+    """The restart money gate matches the start gate: subscriptions look at the period, on-demand at
+    the balance."""
 
     async def test_subscription_restart_ignores_balance(self, client, sm, fake):
-        """包月实例余额为 0 重启照常。"""
+        """A monthly instance with balance 0 restarts as usual."""
         headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100090")
         async with sm() as s:
             await s.execute(update(Wallet).where(Wallet.user_id == user_id).values(balance=0))
@@ -822,7 +838,7 @@ class TestRestartGate:
         assert (await get_instance(client, headers, uuid))["status"] == "running"
 
     async def test_expired_subscription_restart_aborts_at_stopped(self, client, sm, fake):
-        """到期包月实例重启:停在 stopped 并发通知。"""
+        """Restarting an expired monthly instance: stops at stopped with a notification."""
         headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100091")
         async with sm() as s:
             await s.execute(
@@ -847,7 +863,8 @@ class TestRestartGate:
             assert "subscription expired" in notice.title
 
     async def test_payg_restart_insufficient_balance_aborts_at_stopped(self, client, sm, fake):
-        """按量实例余额不足:重启中止在 stopped 并发通知。"""
+        """An on-demand instance short of balance: the restart aborts at stopped with a
+        notification."""
         headers, uuid, user_id = await provision_running(client, sm, fake, "13900000150")
         async with sm() as s:
             await s.execute(update(Wallet).where(Wallet.user_id == user_id).values(balance=0))
@@ -870,7 +887,9 @@ class TestRestartGate:
 
 class TestRelease:
     async def test_release_cancels_subscription_without_refund(self, client, sm, fake):
-        """中途释放:订阅转 cancelled、不退款,库存预留解除。"""
+        """Release mid-period: the subscription becomes cancelled, no refund, the stock reservation
+        is
+        released."""
         headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100060")
         async with sm() as s:
             balance_before = await wallet.get_balance(s, user_id)
@@ -889,7 +908,8 @@ class TestRelease:
 
 class TestReconcileAndReporting:
     async def test_prepaid_is_reconciled_and_counted_as_revenue(self, client, sm, fake):
-        """预付扣款(ref_type='subscription')进对账与收入统计。"""
+        """Prepaid debits (ref_type='subscription') enter reconciliation and the revenue
+        statistics."""
         from app.modules.billing.reconcile import bills_vs_consume, dangling_consume_refs
         from app.modules.billing.wallet import revenue_summary
 
@@ -910,7 +930,8 @@ class TestReconcileAndReporting:
         assert Decimal(revenue["month_revenue"]) >= paid
 
     async def test_overview_counts_active_subscriptions(self, client, sm, fake):
-        """总览「包周期在保数」按订阅行数,停机的包月实例仍在保。"""
+        """The overview "covered subscriptions" counts subscription rows; a stopped monthly instance
+        is still covered."""
         from app.modules.adminapi.overview import overview
 
         headers, uuid, _, _, _ = await provision_subscription(client, sm, fake, "13911100081")
@@ -922,7 +943,8 @@ class TestReconcileAndReporting:
 
 
 class TestConvertToSubscription:
-    """按量转包周期:转换点两侧的账不重复、不留缝。"""
+    """On-demand → subscription: no double or missing bills on either side of the conversion
+    point."""
 
     async def _on_demand_running(self, client, sm, fake, phone: str):
         headers, uuid, user_id = await provision_running(client, sm, fake, phone=phone)
@@ -930,7 +952,7 @@ class TestConvertToSubscription:
         return headers, uuid, user_id
 
     async def test_pre_conversion_hours_are_settled_not_forgiven(self, client, sm, fake):
-        """转换前的按量时段先出账。"""
+        """The on-demand stretch before the conversion is billed first."""
         from app.core.timeutil import hour_floor
         from app.modules.orchestrator.models import InstanceEvent
 
@@ -968,7 +990,7 @@ class TestConvertToSubscription:
         assert inst.price_hourly < unit
 
     async def test_after_conversion_settlement_skips_the_instance(self, client, sm, fake):
-        """转换后小时结算不碰它。"""
+        """Hourly settlement leaves it alone after the conversion."""
         from app.core.timeutil import hour_floor
         from app.modules.billing.settlement import settle_due_hours
         from app.modules.orchestrator.models import InstanceEvent
@@ -1004,7 +1026,8 @@ class TestConvertToSubscription:
         assert after == before
 
     async def test_convert_charges_once_under_replay(self, client, sm, fake):
-        """同一个 Idempotency-Key 重放:零重复扣款、零重复订阅行。"""
+        """Replaying the same Idempotency-Key: zero double charging, zero duplicate subscription
+        rows."""
         headers, uuid, user_id = await self._on_demand_running(client, sm, fake, "13911100092")
         h = {**headers, "Idempotency-Key": "conv-1"}
         body = {"period": "week", "period_count": 1}
@@ -1033,7 +1056,8 @@ class TestConvertToSubscription:
         assert len(entries) == 1
 
     async def test_convert_twice_without_key_is_refused(self, client, sm, fake):
-        """不带幂等键重复转:第二次拒掉,不开第二张单。"""
+        """Converting again without an idempotency key: the second attempt is refused, no second
+        order."""
         headers, uuid, _user_id = await self._on_demand_running(client, sm, fake, "13911100093")
         body = {"period": "week", "period_count": 1}
         assert (
@@ -1046,7 +1070,7 @@ class TestConvertToSubscription:
         assert second.json()["message_key"] == "orchestrator.convertNotOnDemand"
 
     async def test_convert_keeps_locked_in_price_not_current_sku_price(self, client, sm, fake):
-        """转换按建实例时的价格快照报价。"""
+        """The conversion quotes from the price snapshot taken at instance creation."""
         headers, uuid, _user_id = await self._on_demand_running(client, sm, fake, "13911100094")
         async with sm() as s:
             inst = (await s.execute(select(Instance).where(Instance.uuid == uuid))).scalar_one()
@@ -1064,7 +1088,7 @@ class TestConvertToSubscription:
         assert Decimal(resp.json()["quote"]["base_hourly"]) == snapshot
 
     async def test_stopped_instance_converts_without_extra_bill(self, client, sm, fake):
-        """已关机实例转包周期不多出账单行。"""
+        """Converting a stopped instance adds no bill rows."""
         headers, uuid, _user_id = await self._on_demand_running(client, sm, fake, "13911100095")
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
@@ -1093,7 +1117,7 @@ class TestConvertToSubscription:
         assert after == before
 
     async def test_convert_refused_when_settlement_is_far_behind(self, client, sm, fake):
-        """结算严重滞后时拒绝转换。"""
+        """A conversion is refused while settlement lags badly."""
         from app.core.timeutil import hour_floor
         from app.modules.billing.models import SettlementWatermark
 
@@ -1177,8 +1201,11 @@ def _gauge_value(gauge) -> float:
 
 class TestExpiredSweep:
     async def test_expiry_during_starting_is_stopped_next_round(self, client, sm, fake):
-        """到期落在 starting 窗口:本轮不动、订阅转 expired、指标计 1;实例跑起来后下一轮停机再冻结。
-        挂了说明「creating/starting 漏过到期巡检即永久免费运行」回来了。"""
+        """Expiry inside the starting window: untouched this round, subscription → expired, metric
+        1;
+        once running the next round stops and then freezes it.
+        A failure means "creating/starting slipping past the expiry patrol runs free forever" is
+        back."""
         from app.core.metrics import SUBSCRIPTION_UNPAID_RUNNING
 
         headers, uuid, user_id, _, _ = await provision_subscription(
@@ -1229,7 +1256,8 @@ class TestExpiredSweep:
         assert _gauge_value(SUBSCRIPTION_UNPAID_RUNNING) == 0
 
     async def test_renewed_instance_is_not_swept(self, client, sm, fake):
-        """续费后的 running 实例在保,不被到期扫描停机。"""
+        """A running instance renewed after expiry is covered and not stopped by the expiry
+        sweep."""
         headers, uuid, _user_id, _, _ = await provision_subscription(
             client, sm, fake, "13911100202"
         )

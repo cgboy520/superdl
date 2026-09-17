@@ -67,7 +67,7 @@ class TestSshKeys:
         assert resp.json()["code"] == "SSH_KEY_INVALID"
 
     async def test_same_key_allowed_across_users(self, client: AsyncClient):
-        """指纹唯一性是 (user_id, fingerprint),不是全局唯一。"""
+        """Fingerprint uniqueness is (user_id, fingerprint), not global."""
         h1 = await auth_client(client)
         data = await register(client, "13800000010")
         h2 = {"Authorization": f"Bearer {data['access_token']}"}
@@ -78,7 +78,8 @@ class TestSshKeys:
             assert resp.status_code == 201, resp.text
 
     async def test_delete_strips_key_from_live_instances(self, client: AsyncClient, sm):
-        """删除公钥同步摘除未释放实例的 authorized_keys 快照;已释放实例不动。"""
+        """Deleting a key removes it from the authorized_keys snapshot of unreleased instances;
+        released instances are untouched."""
         from app.modules.orchestrator.models import Instance
 
         data = await register(client, "13800000011")

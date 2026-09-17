@@ -1,4 +1,5 @@
-"""Idempotency-Key 头的契约层长度闸(承载列全是 varchar(64))。"""
+"""Contract-layer length gate of the Idempotency-Key header (every carrier column is
+varchar(64))."""
 
 import pytest
 from httpx import AsyncClient
@@ -10,12 +11,16 @@ from tests.helpers import create_user_with_key
 
 pytestmark = pytest.mark.usefixtures("fake")
 
-_BODY = {"category": "billing", "subject": "账单对不上", "body": "本月账单与实际用量不符,请核查。"}
+_BODY = {
+    "category": "billing",
+    "subject": "bill mismatch",
+    "body": "this month's bill does not match the usage, please check.",
+}
 
 
 class TestIdempotencyKeyLength:
     async def test_header_bound_matches_every_backing_column(self):
-        """头部上限等于全部承载表的列宽。"""
+        """The header cap equals the column width of every carrier table."""
         from sqlalchemy import String
 
         from app.models_registry import Base
@@ -26,11 +31,11 @@ class TestIdempotencyKeyLength:
             for col in table.columns
             if "idempotency_key" in col.name and isinstance(col.type, String)
         }
-        assert widths, "一张带幂等键的表都没找到:扫描口径坏了"
+        assert widths, "no table with an idempotency key found: the scan is broken"
         assert set(widths.values()) == {IDEMPOTENCY_KEY_MAX_LENGTH}, widths
 
     async def test_over_long_key_is_422_not_500(self, client: AsyncClient, sm):
-        """65 字符的键 → 422。"""
+        """A 65-character key → 422."""
         headers, user_id, _ = await create_user_with_key(client, "13800000210")
         resp = await client.post(
             "/api/v1/tickets",
@@ -51,7 +56,7 @@ class TestIdempotencyKeyLength:
         assert rows == []
 
     async def test_exactly_max_length_key_still_works(self, client: AsyncClient, sm):
-        """边界值 64 字符照常受理。"""
+        """The boundary value of 64 characters is accepted."""
         headers, _, _ = await create_user_with_key(client, "13800000211")
         key = "k" * IDEMPOTENCY_KEY_MAX_LENGTH
         first = await client.post(

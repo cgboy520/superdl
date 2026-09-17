@@ -1,4 +1,4 @@
-"""镜像预热巡检、复检、清理与 handler 幂等。"""
+"""Image prewarm patrol, re-check, cleanup and handler idempotency."""
 
 from datetime import timedelta
 
@@ -58,15 +58,19 @@ async def pending_tasks(sm: async_sessionmaker[AsyncSession]) -> int:
 
 class TestPrewarmFullChain:
     async def test_cpu_pool_nodes_are_never_prewarmed(self, sm, fake: FakeOrchestrator) -> None:
-        """无卡机不铺预热行。"""
+        """GPU-less machines get no prewarm rows."""
         await make_image(sm)
         await prewarm_patrol(sm)
         nodes = {r.node_name for r in await cache_rows(sm)}
-        assert any(n.pool_label == "cpu" for n in await fake.list_nodes()), "fake 应有 cpu 节点"
+        assert any(n.pool_label == "cpu" for n in await fake.list_nodes()), (
+            "fake should have a cpu node"
+        )
         assert not any(n.startswith("fake-cpu-") for n in nodes), nodes
 
     async def test_plan_pull_converge_to_cached(self, sm, fake: FakeOrchestrator) -> None:
-        """建镜像 → 巡检铺行(=节点数) → drain 置 pulling → 巡检收敛 cached。"""
+        """Create image → patrol seeds rows (= node count) → drain sets pulling → patrol converges
+        to
+        cached."""
         await make_image(sm)
         counts = await prewarm_patrol(sm)
         assert counts["planned"] == 3
@@ -87,7 +91,7 @@ class TestPrewarmFullChain:
         assert fake.prewarm_jobs == {}
 
     async def test_handler_idempotent_no_duplicate_job(self, sm, fake: FakeOrchestrator) -> None:
-        """同一(镜像,节点)任务重复执行:Job 唯一、行不重复。"""
+        """The same (image, node) task executed twice: one Job, no duplicate rows."""
         image_id = await make_image(sm)
         await prewarm_patrol(sm)
         await drain(sm)
@@ -135,7 +139,8 @@ class TestPrewarmFailure:
         assert await pending_tasks(sm) == 1
 
     async def test_absent_job_requeued(self, sm, fake: FakeOrchestrator) -> None:
-        """Job 被 TTL 清理(pulling 行悬置)→ 巡检回 pending 重派。"""
+        """Job cleaned by TTL (pulling row dangling) → the patrol resets to pending and
+        re-dispatches."""
         fake.auto_prewarm = False
         await make_image(sm)
         await prewarm_patrol(sm)
@@ -192,7 +197,9 @@ class TestPrewarmLifecycle:
     async def test_ref_change_via_sql_invalidates_cached_rows(
         self, sm, fake: FakeOrchestrator
     ) -> None:
-        """绕过服务层直接改 image_ref 时,缓存行作废重拉。"""
+        """Changing image_ref straight in the DB bypassing the service layer voids the cache rows
+        and
+        re-pulls."""
         image_id = await make_image(sm)
         await prewarm_patrol(sm)
         await drain(sm)
@@ -216,7 +223,7 @@ class TestPrewarmLifecycle:
         assert {r.cached_ref for r in rows} == {None}
 
     async def test_pending_row_requeued_after_timeout(self, sm, fake: FakeOrchestrator) -> None:
-        """pending 行超时(默认 10min)重派。"""
+        """A pending row past the timeout (default 10 min) is re-dispatched."""
         await make_image(sm)
         await prewarm_patrol(sm)
         assert await pending_tasks(sm) == 3
@@ -232,7 +239,8 @@ class TestPrewarmLifecycle:
         assert await pending_tasks(sm) == 3
 
     async def test_not_ready_node_gets_no_new_task(self, sm, fake: FakeOrchestrator) -> None:
-        """NotReady 节点保留行但不派新任务;failed 重试与 pending 重派同样跳过。"""
+        """NotReady nodes keep their rows without new tasks; failed retries and pending re-dispatch
+        skip them alike."""
         from app.core.k8s.base import NodeInfo
 
         fake.inject_node(
@@ -277,7 +285,8 @@ class TestPrewarmPullSecret:
     async def test_job_references_managed_secret_only_when_robot_configured(
         self, sm, fake: FakeOrchestrator
     ) -> None:
-        """预热 Job 与实例 Pod 同一条凭据链:配了机器人才托管 Secret 并引用。"""
+        """Prewarm Jobs share the credential chain of instance Pods: the Secret is managed and
+        referenced only with a robot configured."""
         from app.core.config import get_settings
         from app.core.platform_config import set_platform_settings
         from app.core.registry import PULL_SECRET_NAME

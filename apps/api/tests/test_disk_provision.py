@@ -1,4 +1,4 @@
-"""数据盘 PVC 的创建、扩容与失败重派。"""
+"""Data-disk PVC creation, growth and failure re-dispatch."""
 
 from datetime import timedelta
 
@@ -68,7 +68,8 @@ class TestProvisionFailureAndReconcile:
         assert fake.data_disks[(f"tenant-{user_id}", data_disk_pvc_name(disk["uuid"]))] == 100
 
     async def test_discarded_dead_letter_not_revived(self, client: AsyncClient, sm, fake):
-        """人工 discarded 的 disk.provision 不被对账环复活:reconciler 只重派 dead。"""
+        """A manually discarded disk.provision is not revived by the reconcile loop: the reconciler
+        re-dispatches dead only."""
         from app.modules.orchestrator.reconciler import reconcile_once
 
         headers, user_id, _key = await create_user_with_key(client)
@@ -97,7 +98,8 @@ class TestProvisionFailureAndReconcile:
         assert fake.data_disks == {}
 
     async def test_reconciler_redrives_dead_provision(self, client: AsyncClient, sm, fake):
-        """死信超 1 小时的下发任务被重派(无在途同盘任务时补发一条)。"""
+        """Provisioning dead letters older than 1 hour are re-dispatched (one task when none is in
+        flight for the disk)."""
         from app.modules.orchestrator.models import DataDisk
         from app.modules.orchestrator.reconciler import reconcile_once
 

@@ -49,8 +49,6 @@ REPO_CJK_ALLOW=(
   ".github/"
   "CLAUDE.md"
   "apps/admin/src/"
-  "apps/api/scripts/"
-  "apps/api/tests/"
   "apps/web/"
   "deploy/"
   "e2e/playwright.config.ts"

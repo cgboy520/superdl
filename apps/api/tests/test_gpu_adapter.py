@@ -1,4 +1,4 @@
-"""gpu_adapter:型号约束(nodeSelector)与 HAMi use-gputype annotation 的构造规则。"""
+"""gpu_adapter: model constraint (nodeSelector) and HAMi use-gputype annotation rules."""
 
 import pytest
 
@@ -21,7 +21,8 @@ from tests.helpers import gpu_spec, make_instance
 
 
 def test_pool_label_lives_under_node_restriction_prefix():
-    """池标签键在 NodeRestriction 保护前缀下,kubelet --node-label 打不上;老键随收敛删除。"""
+    """The pool label key sits under the NodeRestriction protected prefix, kubelet --node-label
+    cannot set it; the legacy key is deleted on convergence."""
     assert POOL_NODE_LABEL.startswith("node-restriction.kubernetes.io/")
     assert LEGACY_POOL_NODE_LABEL == "superdl.io/pool"
     labels = pool_node_labels("hami")
@@ -33,7 +34,7 @@ def test_pool_label_lives_under_node_restriction_prefix():
 
 
 def test_gpu_model_pins_node_selector():
-    """有 canonical 型号即钉 superdl.io/gpu-model,与池无关。"""
+    """A canonical model pins superdl.io/gpu-model regardless of pool."""
     req = build_gpu_request(
         gpu_count=1,
         gpu_cores_pct=100,
@@ -64,7 +65,8 @@ def test_snapshot_selector_pins_model():
 
 
 def test_hami_gputype_annotation_hami_pool_only_and_raw_value():
-    """开关开启时仅 hami 池注 annotation,且值为 SKU 原文串(非 canonical)。"""
+    """With the switch on only the hami pool gets the annotation, valued with the raw SKU string
+    (not canonical)."""
     spec = gpu_spec("shared", "hami", gpu_model_selector="RTX4090")
     on = spec_to_gpu_request(spec, 1, hami_use_gputype=True)
     assert on.annotations == {HAMI_USE_GPUTYPE_ANNOTATION: "NVIDIA GeForce RTX 4090"}
@@ -88,7 +90,7 @@ def test_build_pod_spec_carries_selector_and_annotations(monkeypatch):
 
 
 def test_build_pod_spec_multi_gpu_scales_cpu_mem():
-    """N 卡实例 Pod limits = N × SKU;系统盘不放大。"""
+    """An N-card instance Pod has limits = N × SKU; the system disk is not scaled."""
     inst = make_instance(spec=gpu_spec("dedicated", "kata"))
     inst.gpu_count = 8
     pod = build_pod_spec(inst)
@@ -101,7 +103,8 @@ def test_build_pod_spec_multi_gpu_scales_cpu_mem():
 
 @pytest.mark.parametrize(("pool", "host_users"), [("kata", True), ("mig", False), ("hami", False)])
 def test_userns_hardening_by_pool(pool: str, host_users: bool):
-    """runc 池(mig / hami)一律 hostUsers=false;kata 池走 Kata 的 VM 级隔离。"""
+    """runc pools (mig / hami) always hostUsers=false; the kata pool relies on Kata's VM-level
+    isolation."""
     req = build_gpu_request(
         gpu_count=1,
         gpu_cores_pct=50,
@@ -113,7 +116,7 @@ def test_userns_hardening_by_pool(pool: str, host_users: bool):
 
 
 def test_unknown_pool_is_fail_closed():
-    """未知池/档位即抛错,不下发。"""
+    """Unknown pool / tier raises, nothing is dispatched."""
     with pytest.raises(ValueError, match="unknown pool"):
         build_gpu_request(
             gpu_count=1,

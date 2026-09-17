@@ -1,4 +1,5 @@
-"""审计行字段级不变量:action/target 按列宽截断,每行带 request_id。"""
+"""Field-level invariants of audit rows: action/target truncated to column width, every row carries
+request_id."""
 
 import pytest
 from httpx import AsyncClient
@@ -13,13 +14,14 @@ pytestmark = pytest.mark.usefixtures("fake")
 
 class TestOverLongPath:
     async def test_long_path_does_not_poison_the_audit_gate(self, client: AsyncClient, sm):
-        """400 字符路径的写请求:审计行照落(截断到列宽),闸门计数不动。"""
+        """A write request with a 400-character path: the audit row still lands (truncated to column
+        width), the gate counter is untouched."""
         audit.reset_audit_gate()
         long_path = "/api/v1/" + "z" * 400
         for _ in range(audit.AUDIT_FAIL_CLOSED_THRESHOLD + 2):
             resp = await client.post(long_path, json={})
             assert resp.status_code == 404
-        assert audit.audit_gate_open(), "审计闸被超长路径顶死"
+        assert audit.audit_gate_open(), "the audit gate was jammed by an over-long path"
 
         async with sm() as session:
             rows = (
@@ -37,7 +39,7 @@ class TestOverLongPath:
 
 class TestFailedCredentialAttempts:
     async def test_failed_login_names_the_targeted_account_masked(self, client: AsyncClient, sm):
-        """失败登录的审计行带掩码号码目标。"""
+        """The audit row of a failed login carries the masked handle target."""
         await create_user_with_key(client, "13800000230")
         resp = await client.post(
             "/api/v1/auth/login",
@@ -58,7 +60,7 @@ class TestFailedCredentialAttempts:
         assert row.detail == {"action": "login"}
 
     async def test_successful_login_target_is_the_user_id(self, client: AsyncClient, sm):
-        """成功后目标被覆盖成 user:{id}。"""
+        """After success the target is overwritten with user:{id}."""
         _, user_id, _ = await create_user_with_key(client, "13800000231")
         await age_sms_codes(sm)
         await client.post(
@@ -84,11 +86,15 @@ class TestRequestIdJoin:
     async def test_row_carries_the_request_id_from_the_response_header(
         self, client: AsyncClient, sm
     ):
-        """审计行的 request_id == 该次响应的 X-Request-ID。"""
+        """The audit row's request_id == the X-Request-ID of that response."""
         headers, user_id, _ = await create_user_with_key(client, "13800000220")
         resp = await client.post(
             "/api/v1/tickets",
-            json={"category": "other", "subject": "求助", "body": "请协助排查实例网络。"},
+            json={
+                "category": "other",
+                "subject": "help",
+                "body": "please look into the instance network.",
+            },
             headers={**headers, "User-Agent": "superdl-tests/1.0"},
         )
         assert resp.status_code == 201, resp.text
@@ -105,11 +111,15 @@ class TestRequestIdJoin:
         assert row.actor_type == "user" and row.actor_id == str(user_id)
 
     async def test_inbound_request_id_is_carried_through(self, client: AsyncClient, sm):
-        """网关给的 X-Request-ID 沿用到审计行。"""
+        """A gateway-supplied X-Request-ID is carried into the audit row."""
         headers, _, _ = await create_user_with_key(client, "13800000221")
         resp = await client.post(
             "/api/v1/tickets",
-            json={"category": "other", "subject": "求助二", "body": "请协助排查实例磁盘。"},
+            json={
+                "category": "other",
+                "subject": "help 2",
+                "body": "please look into the instance disk.",
+            },
             headers={**headers, "X-Request-ID": "gw-trace-abc123"},
         )
         assert resp.status_code == 201, resp.text

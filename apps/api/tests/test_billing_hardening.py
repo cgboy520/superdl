@@ -1,4 +1,5 @@
-"""计费与钱包:燃烧率开户校验、巡检实时估算停机、结算缺口、增量核对、营收归属。"""
+"""Billing and wallet: burn-rate creation check, live-estimate stops in the patrol, settlement gaps,
+incremental reconciliation, revenue attribution."""
 
 # pyright: reportPrivateUsage=false
 
@@ -46,25 +47,26 @@ from tests.helpers import (
 
 @pytest.fixture(autouse=True)
 def _clear_failure_streaks():
-    """重置进程内的死信连败计数。"""
+    """Reset the in-process dead-letter failure streak."""
     settlement._failure_streaks.clear()
     yield
     settlement._failure_streaks.clear()
 
 
 def _utc_day_start() -> datetime:
-    """UTC 自然日起点。"""
+    """Start of the UTC calendar day."""
     return now_utc().replace(hour=0, minute=0, second=0, microsecond=0)
 
 
 class TestDebitFrozenGuard:
-    """冻结闸(debit 的 allow_frozen):冻结额不得被新消费击穿。"""
+    """Frozen gate (debit's allow_frozen): new consumption must not break through the frozen
+    amount."""
 
     async def test_debit_into_frozen_rejected_by_default(self, sm):
-        """默认:扣款后余额 < frozen 即拒。"""
+        """Default: a debit leaving the balance < frozen is refused."""
         await fund_wallet(sm, 1, "100.00")
         async with sm() as s:
-            await wallet.freeze(s, 1, Decimal("60.00"), ref_id="ord-1", remark="渠道冲正")
+            await wallet.freeze(s, 1, Decimal("60.00"), ref_id="ord-1", remark="channel reversal")
             with pytest.raises(AppError) as ei:
                 await wallet.debit(s, 1, Decimal("50.00"), allow_negative=False)
             assert ei.value.code == ErrorCode.INSUFFICIENT_BALANCE
@@ -74,20 +76,20 @@ class TestDebitFrozenGuard:
             assert (await wallet.lock_wallet(s, 1)).balance == Decimal("100.00")
 
     async def test_debit_within_available_passes(self, sm):
-        """不击穿冻结额的扣款照常放行(可用 = balance - frozen)。"""
+        """A debit that stays above the frozen amount passes (available = balance - frozen)."""
         await fund_wallet(sm, 1, "100.00")
         async with sm() as s:
-            await wallet.freeze(s, 1, Decimal("60.00"), ref_id="ord-1", remark="渠道冲正")
+            await wallet.freeze(s, 1, Decimal("60.00"), ref_id="ord-1", remark="channel reversal")
             await wallet.debit(s, 1, Decimal("40.00"), allow_negative=False)
             await s.commit()
         async with sm() as s:
             assert (await wallet.lock_wallet(s, 1)).balance == Decimal("60.00")
 
     async def test_settlement_debit_may_dip_into_frozen(self, sm):
-        """结算扣款 allow_frozen=True 可击穿冻结。"""
+        """Settlement debits with allow_frozen=True may break through the freeze."""
         await fund_wallet(sm, 1, "100.00")
         async with sm() as s:
-            await wallet.freeze(s, 1, Decimal("90.00"), ref_id="ord-1", remark="渠道冲正")
+            await wallet.freeze(s, 1, Decimal("90.00"), ref_id="ord-1", remark="channel reversal")
             await wallet.debit(s, 1, Decimal("50.00"), allow_negative=True, allow_frozen=True)
             await s.commit()
         async with sm() as s:
@@ -96,10 +98,11 @@ class TestDebitFrozenGuard:
             assert w.frozen == Decimal("90.00")
 
     async def test_unfreeze_then_debit_is_unblocked(self, sm):
-        """核销路径(resolve_reversal 先解冻后扣减)不受冻结闸约束。"""
+        """The write-off path (resolve_reversal unfreezes, then debits) is not bound by the frozen
+        gate."""
         await fund_wallet(sm, 1, "100.00")
         async with sm() as s:
-            await wallet.freeze(s, 1, Decimal("100.00"), ref_id="ord-1", remark="渠道冲正")
+            await wallet.freeze(s, 1, Decimal("100.00"), ref_id="ord-1", remark="channel reversal")
             await wallet.release_freeze(s, 1, Decimal("100.00"))
             await wallet.debit(s, 1, Decimal("100.00"), allow_negative=True)
             await s.commit()
@@ -108,10 +111,11 @@ class TestDebitFrozenGuard:
 
 
 class TestWalletLockGuards:
-    """钱包行锁与锁内余额读取。"""
+    """Wallet row lock and balance reads under the lock."""
 
     async def test_concurrent_credit_debit_no_lost_update(self, sm):
-        """同一钱包并发 credit/debit:无丢失更新,且 balance_after 链单调接续。"""
+        """Concurrent credit/debit on one wallet: no lost update, the balance_after chain stays
+        contiguous."""
         await fund_wallet(sm, 1, "100.00")
         gate = asyncio.Barrier(9)
 
@@ -151,7 +155,7 @@ class TestWalletLockGuards:
         assert expected == w.balance
 
     async def test_payout_balance_recheck_reads_fresh_row(self, sm, client):
-        """锁内余额复检读取数据库当前值。"""
+        """The balance re-check under the lock reads the current database value."""
         from app.modules.adminapi.models import AdminUser
         from app.modules.billing import refunds
         from app.modules.billing.models import Order
@@ -162,7 +166,7 @@ class TestWalletLockGuards:
         reviewer, _payer_headers = await finance_pair(sm, client)
         resp = await client.post(
             f"/api/admin/v1/refunds/{rid}/review",
-            json={"approve": True, "comment": "同意"},
+            json={"approve": True, "comment": "approved"},
             headers=reviewer,
         )
         assert resp.status_code == 200, resp.text
@@ -191,16 +195,17 @@ class TestWalletLockGuards:
 
 
 class TestAffordGuard:
-    """assert_can_afford 燃烧率校验。"""
+    """assert_can_afford burn-rate check."""
 
     async def test_first_instance_passes_with_one_hour_cover(self, sm):
-        """无在途资源:余额 ≥ 新增 1 小时费即放行。"""
+        """No in-flight resources: balance ≥ one hour of the new fee passes."""
         await fund_wallet(sm, 1, "1.68")
         async with sm() as session:
             await wallet.assert_can_afford(session, 1, additional_hourly=Decimal("1.68"))
 
     async def test_serial_create_blocked_by_inflight_burn(self, sm):
-        """已在跑一台 ¥1.68/时:同样余额再开第二台被拒,文案带在途消耗。"""
+        """One instance already running at 1.68/h: the same balance refuses a second one, the copy
+        carries the in-flight burn."""
         await seed_instance(sm, user_id=1, price="1.6800", status="running")
         async with sm() as session:
             await session.execute(
@@ -220,7 +225,7 @@ class TestAffordGuard:
         assert exc.value.message_key == "billing.insufficientForInFlight"
 
     async def test_pending_starting_instance_counted(self, sm):
-        """creating/starting 实例计入燃烧率。"""
+        """creating/starting instances count towards the burn rate."""
         await seed_instance(sm, user_id=1, price="1.6800", status="starting")
         async with sm() as session:
             await session.execute(
@@ -238,14 +243,14 @@ class TestAffordGuard:
         }
 
     async def test_pending_subscription_instance_not_counted(self, sm):
-        """包周期 creating/starting 实例不计入待燃。"""
+        """Subscription creating/starting instances do not count as pending burn."""
         await seed_instance(sm, user_id=1, price="1.6800", status="starting", market="subscription")
         await fund_wallet(sm, 1, "1.68")
         async with sm() as session:
             await wallet.assert_can_afford(session, 1, additional_hourly=Decimal("1.68"))
 
     async def test_inflight_disk_daily_fee_counted(self, sm):
-        """在途数据盘按「日费 × 宽限天数」计入门槛。"""
+        """In-flight data disks count as daily fee × grace days."""
         await seed_disk(sm, 1, size_gb=100, price="0.3500")
         await fund_wallet(sm, 1, "5.00")
         async with sm() as session:
@@ -262,7 +267,7 @@ class TestAffordGuard:
             await wallet.assert_can_afford(session, 1)
 
     async def test_additional_disk_needs_grace_days_cover(self, sm):
-        """新建数据盘:余额 ≥ 新增日费 × 宽限天数。"""
+        """New data disk: balance ≥ new daily fee × grace days."""
         await fund_wallet(sm, 1, "0.70")
         async with sm() as session:
             await wallet.assert_can_afford(session, 1, additional_daily_disk=Decimal("0.10"))
@@ -276,14 +281,14 @@ class TestAffordGuard:
                 await wallet.assert_can_afford(session, 1, additional_daily_disk=Decimal("0.10"))
 
     async def test_frozen_disk_not_counted(self, sm):
-        """frozen 盘不计费(disks.BILLABLE_STATUSES),不占燃烧率额度。"""
+        """frozen disks are not billed (disks.BILLABLE_STATUSES) and take no burn-rate room."""
         await seed_disk(sm, 1, status="frozen")
         await fund_wallet(sm, 1, "0.01")
         async with sm() as session:
             await wallet.assert_can_afford(session, 1)
 
     async def test_cover_hours_policy_tunable(self, sm):
-        """afford_cover_hours 经 policies 在线可调。"""
+        """afford_cover_hours is adjustable online through policies."""
         from app.core.platform_config import PlatformSetting
 
         await seed_instance(sm, user_id=1, price="1.6800", status="running")
@@ -301,7 +306,7 @@ class TestAffordGuard:
 
 
 class TestPatrolUnsettledBurn:
-    """停机判据 = 余额 − 未结算消耗 ≤ 0。"""
+    """Stop criterion = balance − unsettled consumption ≤ 0."""
 
     FIXED_NOW = datetime(2026, 8, 22, 10, 35, tzinfo=UTC)
 
@@ -310,7 +315,7 @@ class TestPatrolUnsettledBurn:
         monkeypatch.setattr(patrol, "now_utc", lambda: self.FIXED_NOW)
 
     async def test_unsettled_burn_triggers_stop_before_settlement(self, sm, _freeze_now):
-        """余额 > 0 但盖不住当前小时已跑消耗 → 当轮停机。"""
+        """Balance > 0 but below the consumption already run this hour → stopped this round."""
         h0 = hour_floor(self.FIXED_NOW)
         inst_id, _ = await seed_instance(
             sm,
@@ -338,7 +343,7 @@ class TestPatrolUnsettledBurn:
         assert any(t.type == "instance.stop" for t in tasks)
 
     async def test_tail_billed_segment_not_double_counted(self, sm, _freeze_now):
-        """当前小时已尾账出费的时段不重复估进未结算消耗。"""
+        """A stretch already tail-billed this hour is not estimated again as unsettled."""
         h0 = hour_floor(self.FIXED_NOW)
         inst_id, _ = await seed_instance(
             sm,
@@ -372,7 +377,7 @@ class TestPatrolUnsettledBurn:
         assert counts["stopped"] == 0
 
     async def test_lagged_watermark_extends_unsettled_window(self, sm, _freeze_now):
-        """结算水位线滞后 5 小时:未落账小时全量计入停机判据。"""
+        """Settlement watermark 5 hours behind: every unbilled hour counts in the stop criterion."""
         from app.modules.billing.settlement import _advance_watermark
 
         h0 = hour_floor(self.FIXED_NOW)
@@ -393,7 +398,7 @@ class TestPatrolUnsettledBurn:
         assert counts["stopped"] == 1
 
     async def test_lagged_watermark_billed_hours_not_double_counted(self, sm, _freeze_now):
-        """水位线滞后但窗口内小时已出账:不重复估进未结算消耗。"""
+        """Watermark behind but an hour inside the window already billed: not estimated again."""
         from app.modules.billing.settlement import _advance_watermark
 
         h0 = hour_floor(self.FIXED_NOW)
@@ -427,10 +432,11 @@ class TestPatrolUnsettledBurn:
 
 
 class TestSettlementGaps:
-    """截断/死信跳窗登记缺口。"""
+    """Truncation / dead-letter skips record gaps."""
 
     async def test_catchup_truncation_records_gaps(self, sm):
-        """停机超追平上限:被跳过的窗口逐一登记 settlement_gaps(整窗,object_id=0)。"""
+        """Outage beyond the catch-up cap: the skipped windows are recorded one by one in
+        settlement_gaps (whole window, object_id=0)."""
         from app.modules.billing.settlement import MAX_CATCHUP_HOURS
 
         await seed_instance(
@@ -452,7 +458,7 @@ class TestSettlementGaps:
         assert wm == target
 
     async def test_dead_letter_after_consecutive_failures(self, sm, monkeypatch):
-        """单实例连续失败 N 轮 → 死信记缺口,水位线越过。"""
+        """One instance failing N rounds in a row → dead-letter gap, the watermark passes."""
         from app.modules.orchestrator import queries as orchestrator_queries
 
         good, _ = await seed_instance(
@@ -500,7 +506,7 @@ class TestSettlementGaps:
         assert await settle_due_hours(sm, at=at) == 0
 
     async def test_persistent_failure_keeps_other_instances_billed(self, sm, monkeypatch):
-        """坏实例逐窗死信记缺口,好实例每个窗口的账不丢。"""
+        """The bad instance dead-letters window by window, the good instance loses no bill."""
         from app.modules.billing.settlement import _advance_watermark
         from app.modules.orchestrator import queries as orchestrator_queries
 
@@ -558,7 +564,7 @@ class TestSettlementGaps:
         assert wm == H + timedelta(hours=3)
 
     async def test_daily_disk_truncation_records_gaps(self, sm):
-        """日结超追平上限的日期登记 settlement_gaps(kind=daily_disk)。"""
+        """Daily settlement beyond the catch-up cap records settlement_gaps (kind=daily_disk)."""
         from app.modules.billing.settlement import MAX_CATCHUP_DAYS, _advance_watermark
 
         old_day = billing_day_floor(now_utc()) - timedelta(days=MAX_CATCHUP_DAYS + 10)
@@ -586,10 +592,11 @@ class TestSettlementGaps:
 
 
 class TestReconcileAttribution:
-    """日终核对按账单归属期切窗。"""
+    """End-of-day reconciliation windows by bill attribution period."""
 
     async def test_cross_day_topup_no_false_positive(self, sm):
-        """23 点的账单在次日 00:02 补差价:两侧都归到账单所属日。"""
+        """The 23:00 bill topped up at 00:02 the next day: both sides attribute to the bill's
+        day."""
         await fund_wallet(sm, 1, "100.00")
         yesterday_23h = _utc_day_start() - timedelta(hours=1)
         async with sm() as session:
@@ -629,7 +636,7 @@ class TestReconcileAttribution:
         assert counts == {"wallet_mismatch": 0, "bill_mismatch": 0}
 
     async def test_dangling_consume_ref_detected(self, sm):
-        """consume 流水回连不到账单即报差。"""
+        """A consume ledger row that links to no bill is reported."""
         await fund_wallet(sm, 1, "100.00")
         async with sm() as session:
             await wallet.debit(
@@ -647,10 +654,10 @@ class TestReconcileAttribution:
 
 
 class TestWalletChainCheck:
-    """钱包核对增量链式校验。"""
+    """Incremental chain verification of wallets."""
 
     async def test_checkpoint_written_and_second_run_skips(self, sm):
-        """首轮全量验过落游标;无新流水时第二轮游标不动。"""
+        """The first full round stores the cursor; without new rows the second round leaves it."""
         await fund_wallet(sm, 1, "100.00")
         assert (await reconcile_funds(sm))["wallet_mismatch"] == 0
         async with sm() as session:
@@ -663,7 +670,7 @@ class TestWalletChainCheck:
         assert cp2.last_ledger_id == first_last_id
 
     async def test_new_entries_verified_incrementally(self, sm):
-        """新流水触发重验,游标跟进到最新一笔。"""
+        """New ledger rows trigger re-verification and the cursor follows to the latest row."""
         await fund_wallet(sm, 1, "100.00")
         await reconcile_funds(sm)
         async with sm() as session:
@@ -680,7 +687,7 @@ class TestWalletChainCheck:
         assert cp.last_ledger_id == last
 
     async def test_chain_break_localized_to_entry(self, sm):
-        """balance_after 链不一致时报差,游标停在断链之前。"""
+        """A broken balance_after chain is reported and the cursor stays before the break."""
         await fund_wallet(sm, 1, "100.00")
         await reconcile_funds(sm)
         async with sm() as session:
@@ -705,7 +712,8 @@ class TestWalletChainCheck:
         assert cp.last_ledger_id == entries[0].id
 
     async def test_checkpoint_boundary_row_deleted_detected(self, sm):
-        """游标所指的流水行被删/被改:边界复核报差。"""
+        """The ledger row the cursor points at was deleted / changed: the boundary re-check
+        reports."""
         from sqlalchemy import delete
 
         await fund_wallet(sm, 1, "100.00")
@@ -726,10 +734,10 @@ class TestWalletChainCheck:
 
 
 class TestRevenueAttribution:
-    """营收按账单归属期(hour_start/day)计。"""
+    """Revenue is attributed by bill period (hour_start/day)."""
 
     async def test_last_hour_of_day_attributed_to_that_day(self, sm):
-        """昨日 23 点的消费在今日 00:02 扣款:归到昨日。"""
+        """Yesterday's 23:00 consumption debited at 00:02 today: attributed to yesterday."""
         await fund_wallet(sm, 1, "100.00")
         yesterday_23h = _utc_day_start() - timedelta(hours=1)
         today_00_30 = _utc_day_start() + timedelta(minutes=30)
@@ -765,7 +773,7 @@ class TestRevenueAttribution:
 
 
 class TestSmsOutbox:
-    """短信经 outbox 异步投递。"""
+    """SMS goes out asynchronously through the outbox."""
 
     async def test_notify_enqueues_sms_and_handler_sends(self, client, sm):
         from app.core.outbox import OutboxTask

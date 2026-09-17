@@ -1,4 +1,5 @@
-"""HttpOnly Cookie 中 refresh token 的轮换、重试宽限、撤销与登出契约。"""
+"""Rotation, retry grace, revocation and logout contracts of the refresh token in the HttpOnly
+cookie."""
 
 import asyncio
 from datetime import timedelta
@@ -21,14 +22,14 @@ from tests.helpers import (
 
 
 async def logout_via_cookie(client: AsyncClient, token: str | None = None) -> Response:
-    """cookie 通道登出;token 给定时先覆写 jar。"""
+    """Logout through the cookie channel; a given token overwrites the jar first."""
     if token is not None:
         client.cookies.set(REFRESH_COOKIE, token, path="/")
     return await client.post("/api/v1/auth/logout", headers={"X-Requested-With": "fetch"})
 
 
 async def _age_used_refresh_tokens(sm: async_sessionmaker[AsyncSession]) -> None:
-    """将已消费 refresh 记录的 used_at 设为一分钟前。"""
+    """Set used_at of the consumed refresh record to one minute ago."""
     async with sm() as session:
         await session.execute(
             update(UsedRefreshToken).values(used_at=now_utc() - timedelta(minutes=1))
@@ -37,7 +38,7 @@ async def _age_used_refresh_tokens(sm: async_sessionmaker[AsyncSession]) -> None
 
 
 def _cookie_value(resp) -> str:
-    """从 Set-Cookie 头里取 refresh cookie 值。"""
+    """Read the refresh cookie value from the Set-Cookie header."""
     sc = resp.headers["set-cookie"]
     assert f"{REFRESH_COOKIE}=" in sc
     return sc.split(f"{REFRESH_COOKIE}=", 1)[1].split(";", 1)[0]
@@ -64,7 +65,7 @@ class TestRefreshRotation:
         assert second_refresh.status_code == 401
 
     async def test_concurrent_refresh_treated_as_retry(self, client: AsyncClient):
-        """宽限窗内并发刷新同一 jti 返回同一对新令牌。"""
+        """Concurrent refreshes of the same jti within the grace return the same new pair."""
         from httpx import ASGITransport
 
         from app.main import create_app
@@ -96,7 +97,7 @@ class TestRefreshRotation:
         assert nxt.status_code == 200
 
     async def test_grace_replay_does_not_fork_chain(self, client: AsyncClient):
-        """宽限窗内多次重放同一旧 token:每路都回同一对。"""
+        """Repeated replays of the same old token within the grace: each gets the same pair."""
         await register(client, "13800000099")
         original = current_refresh_token(client)
         first = await refresh_via_cookie(client, original)
@@ -111,7 +112,8 @@ class TestRefreshRotation:
 
 
 class TestRefreshCookie:
-    """refresh token 的 HttpOnly Cookie 通道:签发/轮换/CSRF 头/登出清除。"""
+    """The HttpOnly cookie channel of the refresh token: issue / rotate / CSRF header / logout
+    clear."""
 
     async def test_login_sets_cookie_and_cookie_refresh_rotates(self, client: AsyncClient, sm):
         await register(client, "13800000105")
@@ -136,7 +138,7 @@ class TestRefreshCookie:
         assert r3.status_code == 200, r3.text
 
     async def test_cookie_path_requires_csrf_header(self, client: AsyncClient, sm):
-        """cookie 路径缺 X-Requested-With → 403;body 不构成刷新旁路。"""
+        """Cookie path without X-Requested-With → 403; the body is no refresh bypass."""
         await register(client, "13800000106")
         resp = await client.post("/api/v1/auth/refresh")
         assert resp.status_code == 403
@@ -160,7 +162,9 @@ class TestRefreshCookie:
 
 class TestLogout:
     async def test_logout_revokes_refresh_token(self, client: AsyncClient, sm):
-        """登出当前会话:refresh 落一次性消费位,之后再刷新一律 401。"""
+        """Logging out the current session: the refresh token is marked consumed, every later
+        refresh
+        is 401."""
         data = await register(client, "13800000101")
         consumed = current_refresh_token(client)
         resp = await logout_via_cookie(client)
@@ -177,7 +181,8 @@ class TestLogout:
     async def test_logout_replay_within_grace_401_without_global_revoke(
         self, client: AsyncClient, sm
     ):
-        """登出消费(consumed_via=logout)的 jti 在宽限窗内重放:401,不 bump token_version。"""
+        """Replaying a jti consumed by logout (consumed_via=logout) within the grace: 401 without
+        bumping token_version."""
         data = await register(client, "13800000104")
         consumed = current_refresh_token(client)
         resp = await logout_via_cookie(client)
@@ -190,7 +195,7 @@ class TestLogout:
         assert me.status_code == 200
 
     async def test_logout_invalid_token_still_204(self, client: AsyncClient):
-        """无效/错类型 token 也回 204。"""
+        """Invalid / wrong-type tokens also get 204."""
         data = await register(client, "13800000102")
         garbage = await logout_via_cookie(client, "not-a-jwt")
         assert garbage.status_code == 204
@@ -198,7 +203,9 @@ class TestLogout:
         assert wrong_type.status_code == 204
 
     async def test_logout_all_revokes_everything(self, client: AsyncClient, sm):
-        """登出全部:token_version+1,所有会话的 access/refresh 即刻失效;账号本身可重新登录。"""
+        """Logout everywhere: token_version+1, every session's access/refresh is invalid at once;
+        the
+        account itself can sign in again."""
         data = await register(client, "13800000103")
         rotated = (await refresh_via_cookie(client)).json()
         rotated_cookie = current_refresh_token(client)
@@ -228,7 +235,7 @@ class TestFreezeRevokesTokens:
         user_id = data["user"]["id"]
         ah = await admin_headers(sm, client, role="ops")
         resp = await client.post(
-            f"/api/admin/v1/tenants/{user_id}/freeze", json={"reason": "违规测试"}, headers=ah
+            f"/api/admin/v1/tenants/{user_id}/freeze", json={"reason": "abuse test"}, headers=ah
         )
         assert resp.status_code == 200, resp.text
 
@@ -240,7 +247,9 @@ class TestFreezeRevokesTokens:
         assert me.json()["message_key"] == "account.userFrozen"
 
         resp = await client.post(
-            f"/api/admin/v1/tenants/{user_id}/unfreeze", json={"reason": "误封"}, headers=ah
+            f"/api/admin/v1/tenants/{user_id}/unfreeze",
+            json={"reason": "frozen by mistake"},
+            headers=ah,
         )
         assert resp.status_code == 200, resp.text
         me = await client.get(

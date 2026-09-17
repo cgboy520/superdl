@@ -1,4 +1,5 @@
-"""管理端镜像 CRUD/预热契约:审计、覆盖率计算、公开 is_prewarmed 语义。"""
+"""Admin image CRUD / prewarm contract: audit, coverage computation, public is_prewarmed
+semantics."""
 
 import pytest
 from sqlalchemy import select
@@ -51,7 +52,7 @@ class TestImageCrud:
         resp = await client.request(
             "DELETE",
             f"/api/admin/v1/images/{image_id}",
-            json={"reason": "下线旧版本"},
+            json={"reason": "retiring the old version"},
             headers=ah,
         )
         assert resp.status_code == 204
@@ -63,7 +64,9 @@ class TestImageCrud:
                     select(AuditLog).where(AuditLog.target == f"image:{image_id}")
                 )
             ).scalars()
-            assert any((log.detail or {}).get("reason") == "下线旧版本" for log in logs)
+            assert any(
+                (log.detail or {}).get("reason") == "retiring the old version" for log in logs
+            )
 
     async def test_update_ref_change_clears_cache_rows(self, client, sm) -> None:
         ah = await admin_headers(sm, client, role="ops")

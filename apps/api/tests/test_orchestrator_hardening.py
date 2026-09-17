@@ -1,5 +1,6 @@
-"""编排器加固:恢复边与超时边、悬挂逃逸、泄漏回收熔断、并发开户、幂等键、软准入、
-结算候选、保留期 GC、欠费盘 grace、重启撞端口。"""
+"""Orchestrator hardening: recovery and timeout edges, stuck escape, leak-reclamation breaker,
+concurrent creation, idempotency keys, soft admission,
+settlement candidates, retention GC, disk arrears grace, restart hitting a taken port."""
 
 # pyright: reportPrivateUsage=false
 
@@ -66,7 +67,7 @@ async def _raw_create(client, headers, sku_id, key_id, *, idem=None):
 
 
 async def _backdate_status(sm, uuid: str, to_status: str, age: timedelta) -> None:
-    """把「进入某状态」的事件时刻回拨 age。"""
+    """Move the "entered status" event back by age."""
     async with sm() as session:
         inst_id = (
             await session.execute(select(Instance.id).where(Instance.uuid == uuid))
@@ -80,7 +81,7 @@ async def _backdate_status(sm, uuid: str, to_status: str, age: timedelta) -> Non
 
 
 async def _backdate_created(sm, uuid: str, age: timedelta) -> None:
-    """把实例 created_at 回拨 age。"""
+    """Move the instance created_at back by age."""
     async with sm() as session:
         await session.execute(
             update(Instance).where(Instance.uuid == uuid).values(created_at=now_utc() - age)
@@ -90,7 +91,8 @@ async def _backdate_created(sm, uuid: str, age: timedelta) -> None:
 
 class TestEnsurePortRace:
     async def test_concurrent_segment_extension_self_heals(self, sm):
-        """空池并发扩段:on_conflict_do_nothing + 函数内重试,不抛 IntegrityError。"""
+        """Concurrent range growth on an empty pool: on_conflict_do_nothing + in-function retry, no
+        IntegrityError."""
         import asyncio
 
         from app.modules.orchestrator.ports import ensure_port
@@ -110,7 +112,8 @@ class TestEnsurePortRace:
 
 class TestBlockedPortRecheck:
     async def test_external_occupant_stays_blocked(self, sm, fake):
-        """外部对象(无平台标签的 Service)占用的端口:复检看得见占用者,不放回池。"""
+        """A port held by an external object (Service without platform labels): the re-check sees
+        the holder and keeps it out of the pool."""
         from app.modules.orchestrator.models import PortAllocation
 
         fake.inject_external_port(31234)
@@ -126,7 +129,7 @@ class TestBlockedPortRecheck:
             assert row.blocked is True
 
     async def test_vacated_port_is_recovered(self, sm, fake):
-        """占用消失的 blocked 端口放回池。"""
+        """A blocked port whose holder vanished returns to the pool."""
         from app.modules.orchestrator.models import PortAllocation
 
         async with sm() as session:
@@ -143,7 +146,8 @@ class TestBlockedPortRecheck:
 
 class TestStartingTimeout:
     async def test_starting_timeout_fails_and_keeps_disk(self, client, sm, fake):
-        """starting 超时走 starting→failed 边:清 Pod、回收端口,实例盘保留。"""
+        """starting timeout takes the starting→failed edge: Pod cleared, port returned, instance
+        disk kept."""
         headers, uuid, user_id = await provision_running(client, sm, fake, "13900000115")
         ns = f"tenant-{user_id}"
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
@@ -168,7 +172,7 @@ class TestStartingTimeout:
 
 class TestFailedRecovery:
     async def test_start_from_failed_reuses_instance_disk(self, client, sm, fake):
-        """failed → start 恢复边:复用同一块实例盘重开机。"""
+        """failed → start recovery edge: restarts on the same instance disk."""
         headers, uuid, user_id = await provision_running(client, sm, fake, "13900000101")
         ns = f"tenant-{user_id}"
         disk_marker = fake.instance_disks[(ns, uuid)]
@@ -192,7 +196,8 @@ class TestFailedRecovery:
         assert ("stopped", "starting") in chain
 
     async def test_start_from_failed_rejects_unprovisioned_disk(self, client, sm, fake):
-        """failed 恢复开机走挂载门禁:数据盘 provisioned=false → 409,实例留在 failed。"""
+        """failed recovery start goes through the mount gate: data disk provisioned=false → 409,
+        the instance stays failed."""
         headers, user_id, key_id = await funded_user(client, sm, "13900000109", "500.00")
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
@@ -228,7 +233,7 @@ class TestFailedRecovery:
         assert (await get_instance(client, headers, uuid))["status"] == "failed"
 
     async def test_release_from_stuck_stopping(self, client, sm, fake):
-        """关机悬挂时用户可直接释放(stopping → releasing 边)。"""
+        """A user may release a stuck stop directly (stopping → releasing edge)."""
         headers, uuid, _user_id = await provision_running(client, sm, fake, "13900000102")
         resp = await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         assert resp.json()["status"] == "stopping"
@@ -242,7 +247,8 @@ class TestFailedRecovery:
 
 class TestReadyWithoutPort:
     async def test_ready_pod_without_port_not_promoted(self, client, sm, fake):
-        """Pod 已 Ready 但 ssh_port 未落库:不推进 running,留在 creating 等超时转 failed。"""
+        """Pod Ready but ssh_port not stored: no advance to running, stays creating until the
+        timeout turns it failed."""
         headers, user_id, key_id = await funded_user(client, sm, "13900000110")
         sku_id = await create_test_sku(sm)
         resp = await _raw_create(client, headers, sku_id, key_id)
@@ -265,7 +271,8 @@ class TestReadyWithoutPort:
 
 class TestStuckEscape:
     async def test_stopping_two_tier_escape(self, client, sm, fake):
-        """stopping 悬挂:一档超时重发删除任务,二档超时 force 强删后收敛 stopped。"""
+        """stopping stuck: first timeout re-sends the delete, second timeout force-deletes and
+        converges to stopped."""
         headers, uuid, user_id = await provision_running(client, sm, fake, "13900000103")
         ns = f"tenant-{user_id}"
         fake.graceful_delete = True
@@ -302,7 +309,8 @@ class TestStuckEscape:
         assert (await get_instance(client, headers, uuid))["ssh_port"] is not None
 
     async def test_releasing_two_tier_escape(self, client, sm, fake):
-        """releasing 悬挂:二档 force 强删后收敛 released(端口回池、实例盘销毁)。"""
+        """releasing stuck: the second-level force delete converges to released (port returned,
+        instance disk destroyed)."""
         headers, uuid, user_id = await provision_running(client, sm, fake, "13900000104")
         ns = f"tenant-{user_id}"
         fake.graceful_delete = True
@@ -321,7 +329,8 @@ class TestStuckEscape:
         assert (ns, uuid) not in fake.instance_disks
 
     async def test_stopping_reenqueue_ignores_expired_lease(self, client, sm, fake):
-        """running 删除任务 locked_at 租约过期不算在途,悬挂判定照常重发。"""
+        """An expired locked_at lease on the running delete task is not in flight; the stuck check
+        re-sends as usual."""
         headers, uuid, _user_id = await provision_running(client, sm, fake, "13900000107")
         fake.graceful_delete = True
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
@@ -346,7 +355,7 @@ class TestStuckEscape:
         assert counts["delete_requeued"] == 1
 
     async def test_stopping_reenqueue_skips_fresh_lease(self, client, sm, fake):
-        """running 行 locked_at 在租约内 = 在途,不堆重复任务。"""
+        """A running row with locked_at within the lease = in flight, no duplicate task."""
         headers, uuid, _user_id = await provision_running(client, sm, fake, "13900000108")
         fake.graceful_delete = True
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
@@ -373,7 +382,7 @@ class TestStuckEscape:
 
 class TestLeakReclaim:
     async def test_unknown_pod_ratio_trips_breaker(self, client, sm, fake):
-        """未知 Pod 占比超阈 → 本轮回收熔断。"""
+        """Unknown-Pod share above the threshold → this round's reclamation trips."""
         _headers, uuid, user_id = await provision_running(client, sm, fake, "13900000105")
         ns = f"tenant-{user_id}"
         spec = fake.pods[(ns, uuid)].spec
@@ -384,7 +393,8 @@ class TestLeakReclaim:
         assert len(fake.pods) == 5
 
     async def test_stopped_instance_leftover_pod_force_reclaimed(self, client, sm, fake):
-        """已 stopped 实例的残留 Pod 过宽限期被强删;宽限内不动。"""
+        """Leftover Pods of stopped instances are force-deleted past the grace; untouched within
+        it."""
         headers, uuid, user_id = await provision_running(client, sm, fake, "13900000106")
         ns = f"tenant-{user_id}"
         spec = fake.pods[(ns, uuid)].spec
@@ -402,7 +412,8 @@ class TestLeakReclaim:
         assert (await get_instance(client, headers, uuid))["status"] == "stopped"
 
     async def test_job_pod_not_counted_in_breaker_ratio(self, client, sm, fake):
-        """带 job-name 标签的 Pod 不计入未知占比,无主 Pod 仍被回收。"""
+        """Pods with the job-name label do not count as unknown; ownerless Pods are still
+        reclaimed."""
         from app.core.k8s.base import JOB_NAME_LABEL
         from app.core.k8s.fake import MANAGED_LABEL
 
@@ -424,7 +435,7 @@ class TestLeakReclaim:
 
 class TestCreateCriticalSection:
     async def test_concurrent_create_second_rejected(self, client, sm, fake):
-        """余额只够一台时,两台并发创建一台成功一台余额不足。"""
+        """Balance for one instance, two concurrent creations: one succeeds, one is short."""
         headers, user_id, key_id = await create_user_with_key(client, "13900000111")
         await fund_wallet(sm, user_id, "1.68")
         sku_id = await create_test_sku(sm)
@@ -440,7 +451,8 @@ class TestCreateCriticalSection:
         assert len(instances) == 1
 
     async def test_concurrent_same_idempotency_key_single_instance(self, client, sm, fake):
-        """同幂等键并发重放:只开一台;新建方 202,重放方 200 + X-Idempotent-Replay。"""
+        """Concurrent replay of the same idempotency key: one instance; creator 202, replayer 200 +
+        X-Idempotent-Replay."""
         headers, _user_id, key_id = await funded_user(client, sm, "13900000112", "500.00")
         sku_id = await create_test_sku(sm)
         r1, r2 = await asyncio.gather(
@@ -455,7 +467,7 @@ class TestCreateCriticalSection:
         assert len(instances) == 1
 
     async def test_idempotency_key_expires_after_24h(self, client, sm, fake):
-        """幂等键 24h 窗口:窗外同一键按新单处理。"""
+        """Idempotency-key 24 h window: the same key outside the window is a new order."""
         headers, _user_id, key_id = await funded_user(client, sm, "13900000113", "500.00")
         sku_id = await create_test_sku(sm)
         r1 = await _raw_create(client, headers, sku_id, key_id, idem="day-key")
@@ -475,7 +487,7 @@ class TestCreateCriticalSection:
         assert old.idempotency_key is None
 
     async def test_soft_admission_no_capacity(self, client, sm, fake):
-        """软准入:(池,型号) 可分配量为 0 → 409 NO_CAPACITY。"""
+        """Soft admission: (pool, model) allocatable 0 → 409 NO_CAPACITY."""
         headers, _user_id, key_id = await funded_user(client, sm, "13900000114")
         sku_id = await create_test_sku(sm)
         await seed_node_spec(sm, gpu_count=1, gpu_used=1)
@@ -486,7 +498,9 @@ class TestCreateCriticalSection:
 
 class TestBillingCandidatesCompleteness:
     async def test_candidates_cover_all_running_segments(self, sm):
-        """结算候选 = 当前 running ∪ 窗口内/后离开 running 的实例。"""
+        """Settlement candidates = currently running ∪ instances that left running within / after
+        the
+        window."""
         a, _ = await seed_instance(
             sm,
             user_id=1,
@@ -533,7 +547,8 @@ class TestBillingCandidatesCompleteness:
 
 class TestRetentionGC:
     async def test_failed_instance_gc_after_retention(self, client, sm, fake):
-        """failed 超保留期(默认 7 天)自动释放并通知。"""
+        """failed beyond retention (default 7 days) is released automatically with a
+        notification."""
         headers, uuid, user_id = await provision_running(client, sm, fake, "13900000121")
         ns = f"tenant-{user_id}"
         fake.kill_pod(ns, uuid)
@@ -554,7 +569,8 @@ class TestRetentionGC:
         assert (ns, uuid) not in fake.instance_disks
 
     async def test_stopped_instance_gc_warn_then_reclaim(self, client, sm, fake):
-        """stopped 保留期(默认 30 天):先预警(默认提前 7 天)再自动释放。"""
+        """stopped retention (default 30 days): warned first (default 7 days ahead), then released
+        automatically."""
         headers, uuid, _user_id = await provision_running(client, sm, fake, "13900000122")
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
@@ -585,7 +601,7 @@ class TestDiskArrearsHardening:
             await session.commit()
 
     async def test_grace_days_not_billed(self, client, sm, fake):
-        """grace 停计费:宽限日不出账,回款恢复后也不补回。"""
+        """grace stops billing: grace days produce no bill and are not back-billed after payment."""
         headers, user_id, _key = await funded_user(client, sm, "13900000131")
         disk = await create_disk(client, headers)
         t0 = now_utc()
@@ -623,8 +639,9 @@ class TestDiskArrearsHardening:
         assert _billing_date(t0 + timedelta(days=3)) in days
 
     async def test_catchup_across_grace_records_gaps(self, client, sm, fake):
-        """日结停摆跨越 grace 转换:宽限区间内部日不出账且登记 grace_overlap 缺口;
-        边界日(进入/恢复当日)照常出账。"""
+        """Daily settlement outage spanning a grace transition: days inside the grace produce no
+        bill and record grace_overlap gaps;
+        boundary days (entering / recovery) are billed as usual."""
         from app.modules.billing.models import SettlementGap
         from app.modules.billing.settlement import _advance_watermark
 
@@ -678,7 +695,7 @@ class TestDiskArrearsHardening:
         assert len(gaps2) == 1
 
     async def test_grace_clock_not_reset_by_recharge(self, client, sm, fake):
-        """充值恢复不清零 grace_started_at。"""
+        """A top-up recovery does not reset grace_started_at."""
         headers, user_id, _key = await funded_user(client, sm, "13900000133")
         disk = await create_disk(client, headers)
         await self._drain_wallet(sm, user_id)
@@ -705,7 +722,8 @@ class TestDiskArrearsHardening:
 
 
 class TestSchemaCaps:
-    """契约层上限:挂了说明大请求体能绕过入参上限打到服务层。"""
+    """Contract-layer caps: a failure means a large body can bypass the input caps and reach the
+    service layer."""
 
     def test_instance_create_caps_and_strips(self):
         base: dict[str, Any] = {
@@ -765,7 +783,8 @@ class TestSchemaCaps:
 
 class TestRestartPortConflict:
     async def test_port_conflict_keeps_tail_bill(self, client, sm, fake, monkeypatch):
-        """重启撞 NodePortTaken:stopping→stopped 与尾账已独立提交,不被回滚吞掉。"""
+        """Restart hits NodePortTaken: stopping→stopped and the tail bill were committed
+        independently and are not swallowed by the rollback."""
         headers, uuid, user_id = await provision_running(client, sm, fake, "13900000141")
         await backdate_running_event(sm, uuid, 30)
         original = fake.create_instance
@@ -813,8 +832,9 @@ class TestRestartPortConflict:
 
 
 class TestNeverReadyOccupancy:
-    """服务型实例 health_path 永不就绪:容器已实际运行的时段按量出账,包周期不退款、实例盘保留。
-    挂了说明「永不就绪 = 免费 GPU」回来了。"""
+    """A service instance whose health_path never passes: the stretch the container actually ran is
+    billed on demand, no subscription refund, instance disk kept.
+    A failure means "never ready = free GPU" is back."""
 
     async def _deploy_never_ready(self, client, sm, fake, phone: str, **over):
         from tests.helpers import new_user, service_body
@@ -873,7 +893,8 @@ class TestNeverReadyOccupancy:
         assert any("health check timed out" in n["title"] for n in notes)
 
     async def test_occupancy_spanning_hours_bills_each_hour(self, sm):
-        """占用跨整点:两个自然小时各出一行尾账,秒数合计等于占用时长。"""
+        """Occupancy across the clock hour: one tail row per calendar hour, seconds add up to the
+        occupied duration."""
         from app.modules.billing.edge_listener import on_instance_transition
 
         since = H_END - timedelta(minutes=2)
@@ -905,7 +926,8 @@ class TestNeverReadyOccupancy:
         assert all(b.detail["occupied_since"] == since.isoformat() for b in bills)
 
     async def test_subscription_never_ready_keeps_prepay(self, client, sm, fake):
-        """包周期服务永不就绪:不退预付、订阅仍 active、不出小时账。"""
+        """A subscription service that never becomes ready: no prepayment refund, subscription still
+        active, no hourly bill."""
         from app.modules.billing.models import Subscription
 
         _headers, user_id, _uuid, _ns, _svc = await self._deploy_never_ready(
@@ -923,7 +945,8 @@ class TestNeverReadyOccupancy:
             assert (await session.execute(select(BillHourly))).scalars().all() == []
 
     async def test_dev_instance_timeout_stays_free(self, client, sm, fake):
-        """开发机(无 health_path)超时属平台责任:不出账、实例盘照旧清理。"""
+        """A dev box (no health_path) timing out is the platform's fault: no bill, instance disk
+        cleaned as usual."""
         headers, user_id, key_id = await funded_user(client, sm, "13900000603")
         sku_id = await create_test_sku(sm)
         fake.auto_ready = False
@@ -968,7 +991,8 @@ class TestNeverReadyOccupancy:
 
 class TestLifecycleRateLimit:
     async def test_start_stop_share_hourly_bucket(self, client, sm, fake):
-        """开关机共用每用户小时桶:桶满后 stop / start / restart 与服务 start 一律 429。"""
+        """Start / stop share the per-user hourly bucket: once full, stop / start / restart and
+        service start are all 429."""
         from app.core.ratelimit import check_rate_limit
         from app.modules.orchestrator.service import LIFECYCLE_MAX_PER_HOUR
 

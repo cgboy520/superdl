@@ -1,4 +1,5 @@
-"""网关鉴权回调 /api/internal/v1/endpoint-auth:鉴权矩阵、响应纪律、审计豁免、精确路由。"""
+"""Gateway auth callback /api/internal/v1/endpoint-auth: auth matrix, response discipline, audit
+exemption, exact route."""
 
 import pytest
 from sqlalchemy import func, select
@@ -36,7 +37,7 @@ async def call_auth(client, *, slug: str, key: str | None = None, path: str = ""
 
 class TestAuthMatrix:
     async def test_valid_key_passes_with_identity_headers(self, client, sm, fake):
-        """合法 Key 放行,两个归属头恒回。"""
+        """A valid key passes and the two ownership headers are always returned."""
         headers, svc, _ = await provision_service(client, sm, fake, phone="13900000401")
         key = await issue_key(client, headers, svc["slug"])
         resp = await call_auth(client, slug=svc["slug"], key=key)
@@ -63,7 +64,7 @@ class TestAuthMatrix:
         assert (await call_auth(client, slug=svc["slug"])).status_code == 401
 
     async def test_revoked_key_denied(self, client, sm, fake):
-        """吊销即刻生效(缓存条目主动失效)。"""
+        """Revocation takes effect at once (the cache entry is invalidated actively)."""
         headers, svc, _ = await provision_service(client, sm, fake, phone="13900000405")
         slug = svc["slug"]
         resp = await client.post(
@@ -75,14 +76,14 @@ class TestAuthMatrix:
         assert (await call_auth(client, slug=slug, key=key)).status_code == 401
 
     async def test_cross_tenant_key_denied(self, client, sm, fake):
-        """A 用户的 Key 打 B 用户的服务 → 401。"""
+        """User A's key against user B's service → 401."""
         a_headers, a_svc, _ = await provision_service(client, sm, fake, phone="13900000406")
         _b_headers, b_svc, _ = await provision_service(client, sm, fake, phone="13900000407")
         a_key = await issue_key(client, a_headers, a_svc["slug"])
         assert (await call_auth(client, slug=b_svc["slug"], key=a_key)).status_code == 401
 
     async def test_same_user_other_service_denied(self, client, sm, fake):
-        """同一用户的 Key 不能跨服务。"""
+        """The same user's key does not work across services."""
         headers, first, _ = await provision_service(client, sm, fake, phone="13900000412")
         second = await client.post(
             "/api/v1/services",
@@ -100,7 +101,8 @@ class TestAuthMatrix:
         assert (await call_auth(client, slug=first["slug"], key=key)).status_code == 200
 
     async def test_public_endpoint_needs_no_key(self, client, sm, fake):
-        """require_api_key=false 无 Key 也放行,归属头照回;PATCH 翻回去即刻要 Key。"""
+        """require_api_key=false passes without a key with the ownership headers; a PATCH back
+        requires the key at once."""
         headers, svc, _ = await provision_service(
             client, sm, fake, phone="13900000408", require_api_key=False
         )
@@ -116,7 +118,7 @@ class TestAuthMatrix:
         assert (await call_auth(client, slug=slug)).status_code == 401
 
     async def test_unknown_slug_denied(self, client, sm, fake):
-        """服务不存在与密钥不对同码同文案。"""
+        """Unknown service and wrong key share code and copy."""
         headers, svc, _ = await provision_service(client, sm, fake, phone="13900000409")
         key = await issue_key(client, headers, svc["slug"])
         resp = await call_auth(client, slug="svc-doesnotex", key=key)
@@ -132,7 +134,7 @@ class TestAuthMatrix:
         assert resp.status_code == 401
 
     async def test_stopped_service_denied(self, client, sm, fake):
-        """当前实例非 running 一律拒。"""
+        """A non-running current instance is always refused."""
         headers, svc, user_id = await provision_service(client, sm, fake, phone="13900000411")
         slug = svc["slug"]
         key = await issue_key(client, headers, slug)
@@ -147,7 +149,8 @@ class TestAuthMatrix:
         assert (await call_auth(client, slug=slug, key=key)).status_code == 401
 
     async def test_deleted_service_denied(self, client, sm, fake):
-        """删除服务即全部密钥吊销、服务不再放行,即使 slug 仍在库里。"""
+        """Deleting the service revokes every key and stops passing, even while the slug is still in
+        the DB."""
         headers, svc, user_id = await provision_service(client, sm, fake, phone="13900000413")
         slug = svc["slug"]
         key = await issue_key(client, headers, slug)
@@ -174,7 +177,8 @@ class TestLastUsed:
 
 class TestAuthCache:
     async def test_cache_hit_skips_db(self, client, sm, fake):
-        """缓存命中不回源:直改库吊销后窗口内仍放行,TTL 到期后拒。"""
+        """A cache hit does not hit the origin: a revocation written straight to the DB still passes
+        within the window and is refused after the TTL."""
         headers, svc, _ = await provision_service(client, sm, fake, phone="13900000422")
         key = await issue_key(client, headers, svc["slug"])
         assert (await call_auth(client, slug=svc["slug"], key=key)).status_code == 200
@@ -242,12 +246,12 @@ class TestResponseDiscipline:
 
 
 class TestPathShapes:
-    """鉴权回调是一条精确路由,不是 catch-all。"""
+    """The auth callback is an exact route, not a catch-all."""
 
     async def test_suffixes_do_not_authorize(self, client, sm, fake):
         headers, svc, _ = await provision_service(client, sm, fake, phone="13900000442")
         key = await issue_key(client, headers, svc["slug"])
-        for path in ("/", "/v1/chat/completions", "/健康?a=1"):
+        for path in ("/", "/v1/chat/completions", "/健康?a=1"):  # non-ASCII path  # cjk-ok
             resp = await call_auth(client, slug=svc["slug"], key=key, path=path)
             assert not 200 <= resp.status_code < 300, f"{path}: {resp.status_code} {resp.text}"
 
@@ -263,7 +267,8 @@ class TestPathShapes:
 
 class TestApiKeyQuotaRace:
     async def test_concurrent_create_cannot_exceed_quota(self, client, sm, fake, monkeypatch):
-        """count-then-insert 在服务行锁内:并发建钥不越过上限。"""
+        """count-then-insert under the service row lock: concurrent key creation does not exceed the
+        cap."""
         import asyncio
 
         from app.core.errors import AppError, ErrorCode

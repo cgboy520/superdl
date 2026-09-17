@@ -1,4 +1,4 @@
-"""Prometheus 用量代理、聚合、对账与故障降级。"""
+"""Prometheus usage proxy, aggregation, reconciliation and failure degradation."""
 
 import json
 from datetime import UTC, datetime, timedelta
@@ -63,7 +63,7 @@ class TestAggregation:
 
 
 def prom_mock_routed(routes: dict[str, list[dict]], *, default: list[dict] | None = None):
-    """按 PromQL 子串路由的假 Prometheus:routes {子串: result 列表}。"""
+    """Fake Prometheus routing by PromQL substring: routes {substring: result list}."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         query = request.url.params.get("query", "")
@@ -115,7 +115,9 @@ class TestNodeMetrics:
 
 class TestTierSource:
     async def test_hami_pool_prefers_hami_and_falls_back(self):
-        """hami 池 gpu_util 优先 HAMi 指标;HAMi 查空回落 DCGM;kata / mig 池恒 DCGM。"""
+        """hami pool gpu_util prefers the HAMi metric; empty HAMi falls back to DCGM; kata / mig
+        always
+        DCGM."""
         hami_point = [{"metric": {}, "values": [[1.0, "55"]]}]
         dcgm_point = [{"metric": {}, "values": [[1.0, "70"]]}]
         prom.set_client(
@@ -142,7 +144,7 @@ class TestTierSource:
 
 
 def prom_mock_malformed():
-    """返回 200 但缺 data 键的畸形响应。"""
+    """A 200 response missing the data key."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text=json.dumps({"status": "success"}))
@@ -152,7 +154,7 @@ def prom_mock_malformed():
 
 class TestMalformedResponse:
     async def test_instance_metrics_503_not_500(self, client, sm, fake):
-        """Prometheus 响应缺 data 键:503 降级。"""
+        """Prometheus response without the data key: 503 degradation."""
         headers, uuid, _user_id = await provision_running(client, sm, fake)
         prom.set_client(prom_mock_malformed())
         resp = await client.get(f"/api/v1/instances/{uuid}/metrics", headers=headers)
@@ -162,7 +164,8 @@ class TestMalformedResponse:
 
 class TestAggregationPartialFailure:
     async def test_single_failure_does_not_drop_whole_hour(self, client, sm, fake):
-        """单实例查询失败只丢该实例该小时,整轮其它实例照常聚合。"""
+        """A failing single-instance query loses only that instance-hour, the rest of the round
+        aggregates as usual."""
         _h1, uuid1, _u1 = await provision_running(client, sm, fake, phone="13900000021")
         _h2, _uuid2, _u2 = await provision_running(client, sm, fake, phone="13900000022")
 
@@ -188,7 +191,7 @@ class TestAggregationPartialFailure:
 
 class TestNodeNameValidation:
     async def test_injection_rejected_with_400(self):
-        """非法 node_name → 400,不进 PromQL 模板。"""
+        """An invalid node_name → 400, never reaching the PromQL template."""
         from app.core.errors import AppError
         from app.modules.metering.service import node_gpu_metrics
 

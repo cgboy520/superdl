@@ -1,4 +1,5 @@
-"""账单 CSV 导出端点:内容头、行数、月份窗口、时区后缀、截断标记、转义规则。"""
+"""Billing CSV export endpoint: header, row count, month window, time-zone suffix, truncation
+marker, escaping."""
 
 from datetime import UTC, datetime
 
@@ -16,7 +17,7 @@ def _hour(y: int, m: int, d: int, h: int) -> datetime:
 
 
 class TestEscaping:
-    """CSV 转义/时区后缀原语(app.core.csvexport)纯单测。"""
+    """Pure unit tests of the CSV escaping / time-zone suffix primitives (app.core.csvexport)."""
 
     def test_formula_lead_prefixed(self):
         assert csvexport.csv_line(["=1+1"]) == "'=1+1\r\n"

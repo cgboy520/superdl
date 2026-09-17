@@ -1,5 +1,7 @@
-"""节点池在线切换:前置闸(实例 / 机型 / 目标池 / 运行时)、期望态落库、标签整套收敛,
-以及入网时池标签由平台(而非节点)写入。退役的实例闸与 force 旁路同在此。"""
+"""Online node pool switch: gates (instances / model / target pool / runtime), desired state
+stored, the full label set converged,
+and pool labels written by the platform (not the node) at join. The decommission instance gate and
+force bypass live here too."""
 
 import pytest
 from sqlalchemy import select
@@ -27,13 +29,13 @@ async def _cluster_configured(sm) -> None:
 
 
 async def _probe(sm) -> None:
-    """落一份新鲜的集群能力快照(require_pool_runtime 读它)。"""
+    """Store a fresh cluster capability snapshot (require_pool_runtime reads it)."""
     from app.modules.nodes.patrol import node_spec_patrol
 
     await node_spec_patrol(sm)
 
 
-async def _switch(sm, node_name: str, pool: str, *, reason: str = "实机验证"):
+async def _switch(sm, node_name: str, pool: str, *, reason: str = "hardware validation"):
     async with sm() as session:
         return await service.switch_node_pool(
             session,
@@ -62,7 +64,7 @@ async def _switch_tasks(sm) -> list[OutboxTask]:
 
 
 async def test_stopped_instance_blocks_switch(sm):
-    """已关机实例阻止切池。"""
+    """A stopped instance blocks the pool switch."""
     await _cluster_configured(sm)
     await _probe(sm)
     await seed_node_spec(sm, node_name="sw-1", pool_label="hami", gpu_count=8)
@@ -79,7 +81,7 @@ async def test_stopped_instance_blocks_switch(sm):
 
 
 async def test_released_instance_does_not_block(sm):
-    """已释放实例不阻止切池。"""
+    """A released instance does not block the pool switch."""
     await _cluster_configured(sm)
     await _probe(sm)
     await seed_node_spec(sm, node_name="sw-2", pool_label="hami", gpu_count=8)
@@ -90,7 +92,7 @@ async def test_released_instance_does_not_block(sm):
 
 
 async def test_pool_target_gates(sm):
-    """拒绝非法目标池、当前池及无卡节点切池。"""
+    """Reject an invalid target pool, the current pool and switching a GPU-less node."""
     await _cluster_configured(sm)
     await _probe(sm)
     await seed_node_spec(sm, node_name="sw-3", pool_label="hami", gpu_count=8)
@@ -110,7 +112,7 @@ async def test_pool_target_gates(sm):
 
 
 async def test_mig_needs_capable_model(sm):
-    """切入 mig 池要求机型支持 MIG。"""
+    """Switching into the mig pool requires a model with MIG support."""
     await _cluster_configured(sm)
     await _probe(sm)
     await seed_node_spec(sm, node_name="sw-gb10", pool_label="hami", gpu_model="GB10", gpu_count=1)
@@ -125,7 +127,8 @@ async def test_mig_needs_capable_model(sm):
 
 
 async def test_kata_needs_passthrough_capable_model(sm):
-    """切入 kata 池要求机型能整卡直通:集成 GPU 绑不了 vfio-pci,进池即 0 卡可分配。"""
+    """Switching into the kata pool requires whole-card passthrough: an integrated GPU cannot bind
+    vfio-pci and the pool would show 0 allocatable cards."""
     await _cluster_configured(sm)
     await _probe(sm)
     await seed_node_spec(sm, node_name="sw-gb10k", pool_label="hami", gpu_model="GB10", gpu_count=1)
@@ -142,7 +145,8 @@ async def test_kata_needs_passthrough_capable_model(sm):
 
 
 async def test_zero_gpu_in_gpu_pool_can_switch_back(sm):
-    """目标池组件没起来导致观测卡数归 0 时仍能切回:否则节点被锁死在坏池里。"""
+    """When the target pool's components fail and the observed card count drops to 0 the node can
+    still switch back: otherwise it is locked in a bad pool."""
     await _cluster_configured(sm)
     await _probe(sm)
     await seed_node_spec(sm, node_name="sw-stuck", pool_label="kata", gpu_model="GB10", gpu_count=0)
@@ -152,7 +156,7 @@ async def test_zero_gpu_in_gpu_pool_can_switch_back(sm):
 
 
 async def test_target_runtime_must_be_ready(sm, fake_auto_ready):
-    """目标池运行时未就绪时拒绝切池。"""
+    """A pool switch is refused while the target pool runtime is not ready."""
     await _cluster_configured(sm)
     fake_auto_ready.probe_hami_ready = False
     await _probe(sm)
@@ -165,7 +169,8 @@ async def test_target_runtime_must_be_ready(sm, fake_auto_ready):
 
 
 async def test_switch_writes_desired_state_only(sm):
-    """切池同事务写入停调度、期望池和 outbox,不签发注册令牌。"""
+    """The switch writes cordon, desired pool and outbox in one transaction and issues no
+    enrollment token."""
     await _cluster_configured(sm)
     await _probe(sm)
     await seed_node_spec(sm, node_name="sw-5", pool_label="hami", gpu_count=8)
@@ -181,7 +186,7 @@ async def test_switch_writes_desired_state_only(sm):
 
 
 async def test_handler_converges_full_label_set(sm, fake_auto_ready):
-    """handler 下发目标池及 operand 标签,删除旧池标签。"""
+    """The handler applies the target pool and operand labels and deletes the old pool labels."""
     await _cluster_configured(sm)
     await _probe(sm)
     await seed_node_spec(sm, node_name="sw-6", pool_label="hami", gpu_count=8)
@@ -205,7 +210,7 @@ async def test_handler_converges_full_label_set(sm, fake_auto_ready):
 
 
 async def test_switch_back_restores_hami_operand_label(sm, fake_auto_ready):
-    """切回 hami 恢复 deploy.device-plugin=false,移除 vm-passthrough。"""
+    """Switching back to hami restores deploy.device-plugin=false and removes vm-passthrough."""
     await _cluster_configured(sm)
     await _probe(sm)
     await seed_node_spec(sm, node_name="sw-7", pool_label="kata", gpu_count=8)
@@ -221,7 +226,8 @@ async def test_switch_back_restores_hami_operand_label(sm, fake_auto_ready):
 
 
 async def _enroll(sm, hostname: str, pool: str) -> int:
-    """签发令牌并 bootstrap 到 installing,返回登记 id(节点侧不打任何池标签)。"""
+    """Issue a token and bootstrap to installing, returning the enrollment id (the node writes no
+    pool label)."""
     from app.modules.nodes.schemas import EnrollmentCreate
 
     async with sm() as session:
@@ -245,7 +251,7 @@ async def _enroll(sm, hostname: str, pool: str) -> int:
 
 
 async def test_reconciler_label_failure_keeps_installing(sm, fake_auto_ready):
-    """写标签失败时登记保持 installing。"""
+    """A failed label write keeps the enrollment in installing."""
     from app.core.k8s.base import NodeInfo
     from app.modules.nodes.reconciler import reconcile_enrollments_once
 
@@ -256,7 +262,7 @@ async def test_reconciler_label_failure_keeps_installing(sm, fake_auto_ready):
     enrollment_id = await _enroll(sm, "join-2", "hami")
 
     async def boom(*_a, **_kw):
-        raise RuntimeError("apiserver 抖动")
+        raise RuntimeError("apiserver hiccup")
 
     orig = fake_auto_ready.set_node_labels
     fake_auto_ready.set_node_labels = boom
@@ -272,7 +278,8 @@ async def test_reconciler_label_failure_keeps_installing(sm, fake_auto_ready):
 
 
 async def test_reconciler_honours_desired_pool_over_enrollment(sm, fake_auto_ready):
-    """装机途中切池后,对账器按期望池而非登记池写标签。"""
+    """After a pool switch during installation the reconciler writes labels from the desired pool,
+    not the enrolled pool."""
     from app.core.k8s.base import NodeInfo
     from app.modules.nodes.reconciler import reconcile_enrollments_once
 
@@ -297,15 +304,15 @@ async def test_reconciler_honours_desired_pool_over_enrollment(sm, fake_auto_rea
 
 
 async def test_decommission_instance_gate_and_force(sm):
-    """存在未释放实例时退役须指定 force。"""
+    """Decommissioning with unreleased instances needs force."""
     await seed_node_spec(sm, node_name="dec-1", pool_label="hami", gpu_count=8)
     await seed_instance(sm, status="stopped", node_name="dec-1")
 
     async with sm() as session:
         with pytest.raises(AppError) as e:
-            await service.decommission_node(session, "dec-1", reason="下架")
+            await service.decommission_node(session, "dec-1", reason="retire")
     assert e.value.message_key == "nodes.nodeHasInstances"
 
     async with sm() as session:
-        await service.decommission_node(session, "dec-1", reason="主板损坏", force=True)
+        await service.decommission_node(session, "dec-1", reason="motherboard failure", force=True)
     assert (await _spec(sm, "dec-1")).desired_unschedulable is True

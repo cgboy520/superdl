@@ -1,4 +1,4 @@
-"""RealOrchestrator 的对象规约、资源换算与冲突处理。"""
+"""RealOrchestrator object specs, resource conversion and conflict handling."""
 
 # pyright: reportPrivateUsage=false
 
@@ -24,12 +24,13 @@ from app.core.k8s.real import (
 
 
 def _bare() -> RealOrchestrator:
-    """创建未执行 __init__ 的 RealOrchestrator。"""
+    """A RealOrchestrator without running __init__."""
     return RealOrchestrator.__new__(RealOrchestrator)
 
 
 class TestQtyToBytes:
-    """长后缀优先("Ki" 先于 "K")、十进制单位、小数量、无法解析归 0。"""
+    """Longer suffixes first ("Ki" before "K"), decimal units, fractional quantities, unparseable →
+    0."""
 
     @pytest.mark.parametrize(
         ("q", "expected"),
@@ -45,7 +46,7 @@ class TestQtyToBytes:
 
 
 class TestEgressPortRanges:
-    """TCP 允许区间恰好覆盖 1-65535 扣除黑名单。"""
+    """The TCP allowed range covers exactly 1-65535 minus the blocklist."""
 
     def test_ranges(self):
         from app.core.k8s.real import _allowed_tcp_port_ranges
@@ -60,7 +61,7 @@ class TestEgressPortRanges:
 
 
 class TestTenantNetpol:
-    """租户 NetworkPolicy 的入站与出站规则。"""
+    """Ingress and egress rules of the tenant NetworkPolicy."""
 
     @staticmethod
     def _orch(pod_cidr: str = "10.42.0.0/16") -> RealOrchestrator:
@@ -97,7 +98,7 @@ class TestTenantNetpol:
         assert {(p.protocol, p.port) for p in udp_ports} == {("UDP", 53), ("UDP", 443)}
 
     def test_ssh_ingress_except_is_pod_cidr_only(self):
-        """只排 Pod 网段,不排整个私网。"""
+        """Only the Pod range is excluded, not the whole private space."""
         spec: Any = self._orch("10.244.0.0/16")._tenant_netpol("tenant-x").spec
         ssh = spec.ingress[1]
         ip_block: Any = ssh._from[0].ip_block
@@ -105,14 +106,15 @@ class TestTenantNetpol:
         assert not set(PRIVATE_CIDRS) <= set(ip_block._except)
 
     def test_empty_pod_cidr_emits_no_except(self):
-        """留空时 except 字段整个缺席,不是 []。"""
+        """Empty config: the except field is absent entirely, not []."""
         spec: Any = self._orch("")._tenant_netpol("tenant-x").spec
         ssh = spec.ingress[1]
         assert ssh._from[0].ip_block._except is None
 
 
 class TestInstanceSecretHandling:
-    """JUPYTER_TOKEN 走 per-instance Secret + secretKeyRef,明文不落 Pod spec。"""
+    """JUPYTER_TOKEN goes through the per-instance Secret + secretKeyRef, no plaintext in the Pod
+    spec."""
 
     def _spec(self) -> InstancePodSpec:
         return InstancePodSpec(
@@ -156,7 +158,7 @@ class TestInstanceSecretHandling:
         assert token_env.value_from.secret_key_ref.key == "JUPYTER_TOKEN"
 
     def test_existing_secret_is_patched_not_duplicated(self):
-        """幂等重放:已存在则 patch 收敛。"""
+        """Idempotent replay: an existing object is patched into shape."""
         orch = _bare()
         calls: list[str] = []
         body_holder: dict[str, Any] = {}
@@ -177,7 +179,7 @@ class TestInstanceSecretHandling:
 
 
 class TestDataDiskPvc:
-    """每块数据盘独立 PVC,下发幂等且只扩不缩。"""
+    """One PVC per data disk, idempotent apply, grow only."""
 
     def _orch_with_pvc(self, existing_gi: int | None) -> tuple[Any, list[tuple[str, Any]]]:
         orch = _bare()
@@ -222,7 +224,7 @@ class TestDataDiskPvc:
         assert calls == [("patch", "50Gi")]
 
     def test_never_shrinks(self):
-        """缩容请求不修改 PVC。"""
+        """A shrink request does not modify the PVC."""
         orch, calls = self._orch_with_pvc(50)
         orch._ensure_data_disk_sync("tenant-u1", "disk-abc", 10)
         assert calls == []
@@ -268,7 +270,7 @@ def _pod(
 
 
 def _orch_with(pods: list[Any]) -> RealOrchestrator:
-    """挂 CoreStub 的裸 RealOrchestrator。"""
+    """A bare RealOrchestrator with a CoreStub attached."""
     orch = _bare()
 
     class CoreStub:
@@ -292,7 +294,7 @@ def _k8s_node(name: str, labels: dict[str, str]) -> Any:
 
 
 class TestListNodesInfra:
-    """节点视图的 infra 位与池标签选择器。"""
+    """infra flag and pool-label selector of the node view."""
 
     @pytest.mark.parametrize(
         ("labels", "expected"),
@@ -309,7 +311,8 @@ class TestListNodesInfra:
         assert _node_is_infra(labels) is expected
 
     def test_list_nodes_marks_infra_and_selects_by_pool_label(self):
-        """默认只按新池标签键选节点;infra 位随控制面角色 / 落点标签而来。"""
+        """Only the new pool label key selects nodes by default; the infra flag follows the
+        control-plane role / placement labels."""
         calls: list[dict[str, Any]] = []
         nodes = [
             _k8s_node("cp-1", {"node-role.kubernetes.io/control-plane": "true"}),
@@ -337,7 +340,7 @@ class TestListNodesInfra:
 
 
 class TestHamiCapacityAccounting:
-    """HAMi 池容量:物理卡数取 GFD 标签,已用份额按 gpucores 折算。"""
+    """HAMi pool capacity: physical cards from the GFD label, used share converted by gpucores."""
 
     def _node(self, *, allocatable_gpu: int, gfd_count: str | None) -> Any:
         labels = {POOL_NODE_LABEL: "hami"}
@@ -353,7 +356,8 @@ class TestHamiCapacityAccounting:
         assert RealOrchestrator._physical_gpu_amount(node) == 2
 
     def test_no_gfd_label_falls_back_to_allocatable(self):
-        """非切分池(kata)缺 GFD 标签:allocatable 即物理数。"""
+        """A non-partitioned pool (kata) without the GFD label: allocatable is the physical
+        count."""
         node = SimpleNamespace(
             metadata=SimpleNamespace(name="kata-n1", labels={POOL_NODE_LABEL: "kata"}),
             status=SimpleNamespace(allocatable={"nvidia.com/gpu": "8"}),
@@ -361,7 +365,7 @@ class TestHamiCapacityAccounting:
         assert RealOrchestrator._physical_gpu_amount(node) == 8
 
     def test_hami_pool_missing_gfd_label_refused(self):
-        """hami 池缺 GFD 标签:拒纳管计 0。"""
+        """A hami node without the GFD label: refused, counted as 0."""
         node = self._node(allocatable_gpu=80, gfd_count=None)
         assert RealOrchestrator._physical_gpu_amount(node) == 0
 
@@ -374,7 +378,8 @@ class TestHamiCapacityAccounting:
         assert RealOrchestrator._gfd_version(labels, "runtime") == "13.3"
 
     def test_gfd_version_composed_from_parts(self):
-        """GFD 只发 major/minor(/revision)时拼回完整版本号,缺项不留空段。"""
+        """When GFD only publishes major/minor(/revision) the full version is reassembled without
+        empty segments."""
         labels = {
             "nvidia.com/cuda.driver-version.major": "610",
             "nvidia.com/cuda.driver-version.minor": "57",
@@ -402,7 +407,8 @@ class TestHamiCapacityAccounting:
         assert RealOrchestrator._pod_gpu_occupancy({"nvidia.com/mig-1g.10gb": "2"}) == 2.0
 
     def test_used_by_node_ceils_after_share_sum(self):
-        """份额先求和再向上取整(0.5 + 0.3 → 1);未调度 Pod 不归节点。"""
+        """Shares are summed before rounding up (0.5 + 0.3 → 1); unscheduled Pods belong to no
+        node."""
         pods = [
             _pod(pool="hami", node_name="n1", gpu=1, cores=50),
             _pod(pool="hami", node_name="n1", gpu=1, cores=30),
@@ -434,10 +440,11 @@ def _spec(node_port: int = 31001) -> InstancePodSpec:
 
 
 class TestServiceConflict:
-    """SSH Service 的 409/422 后读回 nodePort 核对,漂移则 patch。"""
+    """After a 409/422 on the SSH Service the nodePort is read back and checked, drift is
+    patched."""
 
     def _orch(self, existing: Any, create_exc: k8s_client.ApiException | None = None) -> Any:
-        """existing 传 ApiException 表示读回时抛该异常。"""
+        """existing as an ApiException means the read-back raises it."""
         orch = _bare()
         calls: dict[str, list] = {"patch": []}
 
@@ -482,7 +489,9 @@ class TestServiceConflict:
             orch._create_service_sync(_spec(31001))
 
     def test_replayed_create_keeps_own_port(self):
-        """同名 Service 已持有期望端口时 422 = 幂等成功,不换端口。"""
+        """A same-named Service already holding the expected port makes 422 an idempotent success,
+        no
+        new port."""
         orch, calls = self._orch(
             self._existing_svc(31001), _api_exc(422, "provided port is already allocated")
         )
@@ -490,7 +499,7 @@ class TestServiceConflict:
         assert calls["patch"] == []
 
     def test_port_taken_by_other_object_raises_nodeporttaken(self):
-        """422 且同名 Service 读回 404 = 端口被占,换端口。"""
+        """422 with the same-named Service reading back 404 = port taken, pick another."""
         orch, _calls = self._orch(
             _api_exc(404), _api_exc(422, "provided port is already allocated")
         )
@@ -509,7 +518,7 @@ class TestServiceConflict:
 
 
 class TestTenantQuota:
-    """ResourceQuota 含 cpu/memory/ephemeral;patch 收敛存量 ns。"""
+    """ResourceQuota carries cpu/memory/ephemeral; existing namespaces are patched into shape."""
 
     def test_conflict_patches_existing(self):
         orch = _bare()
@@ -530,7 +539,7 @@ class TestTenantQuota:
 
 
 class TestServiceWorkloadObjects:
-    """服务型实例(workload_type='service')的对象规约。"""
+    """Object specs of service instances (workload_type='service')."""
 
     def _dev(self, **over: Any) -> InstancePodSpec:
         base: dict[str, Any] = {
@@ -568,7 +577,7 @@ class TestServiceWorkloadObjects:
         assert body["spec"]["rules"][0]["backendRefs"] == [{"name": "inst-1-jupyter", "port": 8888}]
 
     def test_service_route_targets_svc_listener(self):
-        """HTTPRoute 挂在带 extAuth 的 listener。"""
+        """The HTTPRoute attaches to the listener with extAuth."""
         body = _bare()._httproute_body(self._svc())
         parent = body["spec"]["parentRefs"][0]
         assert parent["sectionName"] == "svc-https"
@@ -576,7 +585,8 @@ class TestServiceWorkloadObjects:
         assert body["spec"]["rules"][0]["backendRefs"] == [{"name": "inst-1-svc", "port": 8000}]
 
     def test_service_route_without_host_refuses(self):
-        """service_port 有而 service_host 空:创建失败,不建无 hostname 的 HTTPRoute。"""
+        """service_port set but service_host empty: creation fails, no HTTPRoute without a
+        hostname."""
         with pytest.raises(RuntimeError, match="service_host"):
             _bare()._httproute_body(self._svc(service_host=None))
 
@@ -598,7 +608,7 @@ class TestServiceWorkloadObjects:
         assert created["inst-1"].spec.ports[0].node_port == 31234
 
     def test_service_without_ssh_builds_only_endpoint_service(self):
-        """不开 SSH 不建 NodePort Service。"""
+        """No NodePort Service without SSH."""
         created = self._services(self._svc())
         assert set(created) == {"inst-1-svc"}
         assert created["inst-1-svc"].spec.type == "ClusterIP"
@@ -633,7 +643,7 @@ class TestServiceWorkloadObjects:
         assert {p.name for p in c.ports} == {"ssh", "jupyter"}
 
     def test_service_pod_restart_always_and_command(self):
-        """服务 Pod 使用 Always 重启策略及配置的启动命令。"""
+        """The service Pod uses the Always restart policy and the configured command."""
         pod = self._pod(
             self._svc(command=("python",), args=("-m", "vllm.entrypoints.openai.api_server"))
         )
@@ -644,7 +654,7 @@ class TestServiceWorkloadObjects:
         assert {p.name for p in c.ports} == {"svc"}
 
     def test_health_path_yields_startup_and_readiness(self):
-        """startupProbe 的 failureThreshold 远大于 readiness 的。"""
+        """The startupProbe failureThreshold is far above the readiness one."""
         c = self._pod(self._svc(health_path="/health")).spec.containers[0]
         assert c.startup_probe.http_get.path == "/health"
         assert c.startup_probe.http_get.port == 8000
@@ -658,7 +668,8 @@ class TestServiceWorkloadObjects:
 
 
 class TestDataDiskMount:
-    """实例 Pod 直接挂载数据盘 PVC,不带 subPath,并设置 hostUsers=false。"""
+    """The instance Pod mounts the data-disk PVC directly without subPath and sets
+    hostUsers=false."""
 
     def _pod_with_disk(self) -> Any:
         from app.core.k8s.real import build_instance_pod
@@ -690,7 +701,7 @@ class TestDataDiskMount:
 
 
 class TestInstancePodBandwidth:
-    """带宽注解随 spec.annotations 写入 Pod。"""
+    """Bandwidth annotations follow spec.annotations into the Pod."""
 
     def test_annotations_reach_pod_metadata(self):
         from app.core.k8s.real import build_instance_pod
@@ -705,8 +716,9 @@ class TestInstancePodBandwidth:
 
 
 class TestTenantRbacSync:
-    """租户 ns 的 secrets 授权只经 RoleBinding → ClusterRole superdl-tenant-secrets;不现写 Role,
-    旧版指向 namespaced Role 的 binding 被删掉重建并清掉旧 Role。"""
+    """Secret permissions in tenant namespaces go only through RoleBinding → ClusterRole
+    superdl-tenant-secrets; no Role is written live,
+    an old binding pointing at a namespaced Role is deleted, recreated and the old Role removed."""
 
     class _Rbac:
         def __init__(self, existing_ref: tuple[str, str] | None = None):
@@ -715,7 +727,7 @@ class TestTenantRbacSync:
             self.role_deleted_status = 404
 
         def create_namespaced_role(self, ns: str, body: Any) -> None:
-            raise AssertionError("不得现写 Role")
+            raise AssertionError("must not write a Role live")
 
         def create_namespaced_role_binding(self, ns: str, body: Any) -> None:
             self.calls.append(("create_binding", body))

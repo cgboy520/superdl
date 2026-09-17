@@ -1,4 +1,5 @@
-"""主密钥版本化:v2 密文带 kid、HKDF 子密钥分离、双密钥读迁移、解密 fail-closed。"""
+"""Master key versioning: v2 ciphertext carries a kid, HKDF sub-key separation, dual-key read
+migration, fail-closed decryption."""
 
 # pyright: reportPrivateUsage=false
 
@@ -27,7 +28,7 @@ def _settings(key: str | None = _KEY_A, prev: str | None = None) -> SimpleNamesp
 
 @pytest.fixture
 def set_keys(monkeypatch: pytest.MonkeyPatch):
-    """提供 crypto 当前及旧主密钥的配置替换函数。"""
+    """Config override helper for crypto's current and previous master keys."""
 
     def _set(key: str | None = _KEY_A, prev: str | None = None) -> None:
         monkeypatch.setattr(crypto, "get_settings", lambda: _settings(key, prev))
@@ -48,7 +49,7 @@ class TestV2Format:
         assert parts[2] == hashlib.sha256(_raw_key(_KEY_A)).hexdigest()[:12]
 
     def test_ciphertext_key_differs_from_master(self, set_keys):
-        """v2 密文不能用裸主密钥直接解开(HKDF 派生)。"""
+        """v2 ciphertext cannot be opened with the bare master key (HKDF derivation)."""
         set_keys()
         token = crypto.encrypt_str("plain", aad="k")
         blob = base64.b64decode(token.split(":", 3)[3])
@@ -56,7 +57,7 @@ class TestV2Format:
             AESGCM(_raw_key(_KEY_A)).decrypt(blob[:12], blob[12:], b"k")
 
     def test_wrong_aad_rejected(self, set_keys):
-        """AAD 绑定键名:密文不可跨字段搬运。"""
+        """AAD binds the key name: ciphertext cannot move between fields."""
         set_keys()
         token = crypto.encrypt_str("secret", aad="sms_access_key_secret")
         with pytest.raises(InvalidTag):
@@ -65,7 +66,8 @@ class TestV2Format:
 
 class TestIsEncrypted:
     def test_shape_only(self, set_keys):
-        """轮换脚本靠它挑出待重加密的行:密文 True,明文与残缺前缀 False。"""
+        """The rotation script uses it to pick rows to re-encrypt: ciphertext True, plaintext and a
+        broken prefix False."""
         set_keys()
         assert crypto.is_encrypted(crypto.encrypt_str("plain", aad="k")) is True
         assert crypto.is_encrypted("plain") is False
@@ -74,7 +76,8 @@ class TestIsEncrypted:
 
 class TestDecryptDualRead:
     def test_v2_readable_via_previous_during_rotation(self, set_keys):
-        """轮换窗口:旧钥匙写的 v2 密文经 PREVIOUS 可读,新写入只认新钥匙。"""
+        """Rotation window: v2 ciphertext written with the old key is readable via PREVIOUS, new
+        writes use the new key only."""
         set_keys(_KEY_B)
         rotated_v2 = crypto.encrypt_str("v2-secret", aad="k")
         set_keys(_KEY_A, prev=_KEY_B)
@@ -101,7 +104,7 @@ class TestDecryptDualRead:
 
 class TestDigestGenerations:
     def test_write_uses_hkdf_current_generation(self, set_keys):
-        """写入世代 = HKDF(当前主密钥),与裸主密钥 HMAC 输出不同。"""
+        """Write generation = HKDF(current master key), different from a bare master-key HMAC."""
         set_keys()
         digest = crypto.hash_api_key("sk-test")
         hkdf_gen = hmac.new(
@@ -116,7 +119,8 @@ class TestDigestGenerations:
         assert digest != bare_gen
 
     def test_candidates_cover_previous(self, set_keys):
-        """读路径 candidates:[当前HKDF];挂 previous 追加旧钥匙的派生世代。"""
+        """Read-path candidates: [current HKDF]; with previous mounted the old key's derived
+        generation is appended."""
         set_keys()
         single = crypto.hash_api_key_candidates("sk-test")
         assert len(single) == 1
@@ -133,7 +137,7 @@ class TestDigestGenerations:
         assert prev_gen in rotated
 
     def test_dev_fallback_key_derivation_still_works(self, set_keys):
-        """dev/test 未配主密钥时从 jwt_secret 派生。"""
+        """Without a master key in dev/test it derives from jwt_secret."""
         set_keys(None)
         token = crypto.encrypt_str("plain", aad="k")
         assert crypto.decrypt_str(token, aad="k") == "plain"

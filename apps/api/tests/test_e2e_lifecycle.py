@@ -1,4 +1,4 @@
-"""实例、服务与包周期生命周期的资源和资金契约。"""
+"""Resource and money contracts of the instance, service and subscription lifecycles."""
 
 from decimal import Decimal
 
@@ -149,8 +149,9 @@ async def test_full_lifecycle_drill(client, sm, fake):
 
 
 async def test_pull_secret_managed_per_tenant_when_registry_configured(client, sm, fake):
-    """配了 Harbor 机器人:拉取凭据 Secret 按指纹托管到租户 ns,Pod 以 imagePullSecrets 引用;
-    改 Secret 后指纹变化。"""
+    """With a Harbor robot configured: the pull-credential Secret is managed in the tenant ns by
+    fingerprint and referenced through imagePullSecrets;
+    changing the secret changes the fingerprint."""
     from app.core.platform_config import set_platform_settings
     from app.core.registry import PULL_SECRET_NAME, pull_secret_fingerprint
 
@@ -191,7 +192,8 @@ async def test_pull_secret_managed_per_tenant_when_registry_configured(client, s
 
 
 async def test_service_container_drill(client, sm, fake):
-    """服务生命周期中端点鉴权、资源隔离与资金账保持一致。"""
+    """Endpoint auth, resource isolation and the money ledger stay consistent through the service
+    lifecycle."""
     phone = "13411113333"
     await client.post(
         "/api/v1/auth/verification-code", json={"handle": as_handle(phone), "purpose": "register"}
@@ -361,7 +363,7 @@ async def test_service_container_drill(client, sm, fake):
 
 
 async def test_subscription_drill(client, sm, fake):
-    """包周期实例到期停机并回收,不产生重复小时账单。"""
+    """A subscription instance stops and is reclaimed on expiry without duplicate hourly bills."""
     from datetime import timedelta
 
     from sqlalchemy import update
@@ -407,7 +409,7 @@ async def test_subscription_drill(client, sm, fake):
         gpu_model="RTX4090",
         vram_gb=24,
         price_hourly=Decimal("3.9900"),
-        name="RTX4090 · 专用整卡",
+        name="RTX4090 · dedicated whole card",
     )
     await seed_node_spec(sm, node_name="node-sub", pool_label="kata")
     resp = await client.post(

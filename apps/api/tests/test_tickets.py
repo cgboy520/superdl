@@ -1,4 +1,5 @@
-"""工单系统:创建(幂等/单号格式/上限/限流)/对话流状态机/联动通知/IDOR。"""
+"""Tickets: creation (idempotency / number format / cap / rate limit) / conversation state machine /
+linked notifications / IDOR."""
 
 import re
 from datetime import timedelta
@@ -19,8 +20,8 @@ async def create_ticket(
 ):
     body: dict[str, object] = {
         "category": "instance",
-        "subject": "实例无法开机",
-        "body": "开机一直卡在 creating,请帮忙看看",
+        "subject": "instance will not start",
+        "body": "the start hangs in creating, please take a look",
     }
     body.update(overrides)
     h = {**headers, **({"Idempotency-Key": idem} if idem else {})}
@@ -40,7 +41,7 @@ async def admin_alerts(sm) -> list[Notification]:
 
 class TestCreate:
     async def test_create_ok_and_no_format(self, client: AsyncClient, sm):
-        """创建成功:status=open、首条消息落库、ticket_no 形如 T20260823-01。"""
+        """Creation succeeds: status=open, first message stored, ticket_no like T20260823-01."""
         headers = await user_headers(client, "13700000301")
         resp = await create_ticket(client, headers)
         assert resp.status_code == 201, resp.text
@@ -49,10 +50,11 @@ class TestCreate:
         assert re.fullmatch(r"T\d{8}-\d{2}", body["ticket_no"])
         detail = (await client.get(f"/api/v1/tickets/{body['id']}", headers=headers)).json()
         assert [m["sender_kind"] for m in detail["messages"]] == ["user"]
-        assert detail["messages"][0]["body"] == "开机一直卡在 creating,请帮忙看看"
+        assert detail["messages"][0]["body"] == "the start hangs in creating, please take a look"
 
     async def test_idempotent_replay_returns_same(self, client: AsyncClient, sm):
-        """同 Idempotency-Key 重放返回同一单,不产生第二行、不耗限流配额。"""
+        """A replay with the same Idempotency-Key returns the same ticket, no second row, no
+        rate-limit quota consumed."""
         headers = await user_headers(client, "13700000302")
         r1 = await create_ticket(client, headers, idem="tk-1")
         r2 = await create_ticket(client, headers, idem="tk-1")
@@ -64,7 +66,7 @@ class TestCreate:
         assert count == 1
 
     async def test_open_limit_10_conflict(self, client: AsyncClient, sm):
-        """进行中(open/pending_staff/pending_user)工单 >10 时第 11 单 409。"""
+        """More than 10 open (open/pending_staff/pending_user) tickets: the 11th is 409."""
         headers, uid = await user_headers_with_id(client, "13700000303")
         async with sm() as session:
             for i in range(10):
@@ -73,7 +75,7 @@ class TestCreate:
                         ticket_no=f"T20260101-{i + 1:02d}",
                         user_id=uid,
                         category="other",
-                        subject=f"历史工单 {i}",
+                        subject=f"old ticket {i}",
                         status=["open", "pending_staff", "pending_user"][i % 3],
                     )
                 )
@@ -83,17 +85,17 @@ class TestCreate:
         assert resp.json()["message_key"] == "tickets.openLimitReached"
 
     async def test_rate_limit_5_per_hour(self, client: AsyncClient, sm):
-        """创建限流 5/h:前 5 单成功,第 6 单 429。"""
+        """Creation rate limit 5/h: the first 5 succeed, the 6th is 429."""
         headers = await user_headers(client, "13700000304")
         for i in range(5):
-            resp = await create_ticket(client, headers, subject=f"问题 {i}")
+            resp = await create_ticket(client, headers, subject=f"issue {i}")
             assert resp.status_code == 201, resp.text
-        resp = await create_ticket(client, headers, subject="第 6 单")
+        resp = await create_ticket(client, headers, subject="ticket 6")
         assert resp.status_code == 429
         assert resp.json()["code"] == "RATE_LIMITED"
 
     async def test_new_ticket_triggers_admin_alert(self, client: AsyncClient, sm):
-        """新工单 → admin_alerts info 级告警。"""
+        """New ticket → admin_alerts info-level alert."""
         headers = await user_headers(client, "13700000305")
         resp = await create_ticket(client, headers)
         assert resp.status_code == 201
@@ -114,20 +116,23 @@ class TestConversation:
         return headers, resp.json()
 
     async def test_status_transitions(self, client: AsyncClient, sm):
-        """open →(客服回复)→ pending_user →(用户回复)→ pending_staff →(标记解决)→ resolved。"""
+        """open →(staff reply)→ pending_user →(user reply)→ pending_staff →(mark resolved)→
+        resolved."""
         headers, ticket = await self._open_ticket(client, "13700000311")
         tid = ticket["id"]
         ops = await admin_headers(sm, client, role="ops")
 
         resp = await client.post(
-            f"/api/admin/v1/tickets/{tid}/reply", json={"body": "已为您重启,请再试"}, headers=ops
+            f"/api/admin/v1/tickets/{tid}/reply",
+            json={"body": "restarted it for you, try again"},
+            headers=ops,
         )
         assert resp.status_code == 200, resp.text
         assert resp.json()["status"] == "pending_user"
         assert [m["sender_kind"] for m in resp.json()["messages"]] == ["user", "staff"]
 
         resp = await client.post(
-            f"/api/v1/tickets/{tid}/messages", json={"body": "还是不行"}, headers=headers
+            f"/api/v1/tickets/{tid}/messages", json={"body": "still not working"}, headers=headers
         )
         assert resp.status_code == 201, resp.text
         detail = (await client.get(f"/api/v1/tickets/{tid}", headers=headers)).json()
@@ -141,7 +146,8 @@ class TestConversation:
         assert resp.json()["status"] == "resolved"
 
     async def test_terminal_not_repliable(self, client: AsyncClient, sm):
-        """resolved/closed 不可再回复(用户与客服均 409);close 仅 resolved 后可。"""
+        """resolved/closed accept no replies (user and staff both 409); close only after
+        resolved."""
         headers, ticket = await self._open_ticket(client, "13700000312")
         tid = ticket["id"]
         ops = await admin_headers(sm, client, role="ops")
@@ -155,12 +161,12 @@ class TestConversation:
         )
         assert resp.status_code == 200
         resp = await client.post(
-            f"/api/v1/tickets/{tid}/messages", json={"body": "补充说明"}, headers=headers
+            f"/api/v1/tickets/{tid}/messages", json={"body": "additional details"}, headers=headers
         )
         assert resp.status_code == 409
         assert resp.json()["message_key"] == "tickets.stateNotRepliable"
         resp = await client.post(
-            f"/api/admin/v1/tickets/{tid}/reply", json={"body": "追加回复"}, headers=ops
+            f"/api/admin/v1/tickets/{tid}/reply", json={"body": "follow-up reply"}, headers=ops
         )
         assert resp.status_code == 409
         assert resp.json()["message_key"] == "tickets.stateNotRepliable"
@@ -175,7 +181,7 @@ class TestConversation:
         assert resp.json()["status"] == "closed"
         assert resp.json()["closed_at"] is not None
         resp = await client.post(
-            f"/api/v1/tickets/{tid}/messages", json={"body": "再补充"}, headers=headers
+            f"/api/v1/tickets/{tid}/messages", json={"body": "one more note"}, headers=headers
         )
         assert resp.status_code == 409
         resp = await client.post(
@@ -184,12 +190,12 @@ class TestConversation:
         assert resp.status_code == 409
 
     async def test_staff_reply_notifies_user(self, client: AsyncClient, sm):
-        """客服回复 → 用户站内信(type=ticket,含工单号)。"""
+        """Staff reply → user in-app notification (type=ticket, with the ticket number)."""
         headers, ticket = await self._open_ticket(client, "13700000313")
         ops = await admin_headers(sm, client, role="ops")
         resp = await client.post(
             f"/api/admin/v1/tickets/{ticket['id']}/reply",
-            json={"body": "已处理,请验证"},
+            json={"body": "handled, please verify"},
             headers=ops,
         )
         assert resp.status_code == 200
@@ -199,11 +205,11 @@ class TestConversation:
         assert ticket["ticket_no"] in ticket_notes[0]["content"]
 
     async def test_user_reply_triggers_admin_alert(self, client: AsyncClient, sm):
-        """用户回复 → admin_alerts info。"""
+        """User reply → admin_alerts info."""
         headers, ticket = await self._open_ticket(client, "13700000314")
         resp = await client.post(
             f"/api/v1/tickets/{ticket['id']}/messages",
-            json={"body": "补充:日志见附件"},
+            json={"body": "addendum: see the attached log"},
             headers=headers,
         )
         assert resp.status_code == 201
@@ -219,7 +225,7 @@ class TestConversation:
 class TestIdor:
     @pytest.mark.parametrize("probe", ["get", "message", "close"])
     async def test_other_users_ticket_invisible(self, client: AsyncClient, sm, probe: str):
-        """用户 B 对用户 A 的工单:GET / POST messages / close 全部 404。"""
+        """User B on user A's ticket: GET / POST messages / close are all 404."""
         ha = await user_headers(client, "13700000321")
         resp = await create_ticket(client, ha)
         assert resp.status_code == 201
@@ -230,7 +236,7 @@ class TestIdor:
             resp = await client.get(f"/api/v1/tickets/{tid}", headers=hb)
         elif probe == "message":
             resp = await client.post(
-                f"/api/v1/tickets/{tid}/messages", json={"body": "越权追加"}, headers=hb
+                f"/api/v1/tickets/{tid}/messages", json={"body": "unauthorised append"}, headers=hb
             )
         else:
             resp = await client.post(f"/api/v1/tickets/{tid}/close", headers=hb)
@@ -240,10 +246,14 @@ class TestIdor:
 
 class TestAdmin:
     async def test_filters(self, client: AsyncClient, sm):
-        """status/category 精确过滤(Page 响应:items 为当前页)。"""
+        """status/category exact filters (Page response: items is the current page)."""
         headers = await user_headers(client, "13700000331")
         t1 = (await create_ticket(client, headers, category="instance")).json()
-        t2 = (await create_ticket(client, headers, category="billing", subject="扣费有疑问")).json()
+        t2 = (
+            await create_ticket(
+                client, headers, category="billing", subject="question about a charge"
+            )
+        ).json()
         ops = await admin_headers(sm, client, role="ops")
         rows = (await client.get("/api/admin/v1/tickets", headers=ops)).json()["items"]
         assert {r["id"] for r in rows} == {t1["id"], t2["id"]}
@@ -265,10 +275,10 @@ class TestAdmin:
         assert [r["id"] for r in rows] == [t2["id"]]
 
     async def test_count_endpoint(self, client: AsyncClient, sm):
-        """待办计数端点:默认 pending_staff 口径,支持 status/category 过滤。"""
+        """Pending count endpoint: default pending_staff, supports status/category filters."""
         headers = await user_headers(client, "13700000337")
         t1 = (await create_ticket(client, headers, category="instance")).json()
-        await create_ticket(client, headers, category="billing", subject="发票咨询")
+        await create_ticket(client, headers, category="billing", subject="invoice question")
         ops = await admin_headers(sm, client, role="ops")
         open_count = (
             await client.get("/api/admin/v1/tickets/count", params={"status": "open"}, headers=ops)
@@ -283,7 +293,9 @@ class TestAdmin:
         ).json()["count"]
         assert billing_count == 1
         await client.post(
-            f"/api/admin/v1/tickets/{t1['id']}/reply", json={"body": "收到,处理中"}, headers=ops
+            f"/api/admin/v1/tickets/{t1['id']}/reply",
+            json={"body": "received, working on it"},
+            headers=ops,
         )
         default_count = (await client.get("/api/admin/v1/tickets/count", headers=ops)).json()[
             "count"
@@ -293,12 +305,16 @@ class TestAdmin:
         assert resp.status_code == 200
 
     async def test_search_by_user_id_and_ticket_no(self, client: AsyncClient, sm):
-        """user_id/ticket_no 检索。"""
+        """user_id/ticket_no search."""
         headers = await user_headers(client, "13700000335")
         t1 = (await create_ticket(client, headers, category="instance")).json()
-        t2 = (await create_ticket(client, headers, category="billing", subject="账单咨询")).json()
+        t2 = (
+            await create_ticket(client, headers, category="billing", subject="bill question")
+        ).json()
         other = await user_headers(client, "13700000336")
-        t3 = (await create_ticket(client, other, category="account", subject="注销咨询")).json()
+        t3 = (
+            await create_ticket(client, other, category="account", subject="deletion question")
+        ).json()
         ops = await admin_headers(sm, client, role="ops")
         uid = (await client.get("/api/v1/me", headers=headers)).json()["id"]
         rows = (
@@ -322,7 +338,8 @@ class TestAdmin:
 
 
 class TestStaleTicketPatrol:
-    """工单滞留巡检:pending_staff 超 24h → admin_alerts warning,dedup 不重复。"""
+    """Stale ticket patrol: pending_staff for more than 24 h → admin_alerts warning, dedup prevents
+    repeats."""
 
     async def _make_stale_ticket(
         self, client: AsyncClient, sm, phone: str, *, age_hours: float
@@ -370,11 +387,11 @@ class TestMessageCap:
         ops = await admin_headers(sm, client, role="ops")
         assert (
             await client.post(
-                f"/api/admin/v1/tickets/{tid}/reply", json={"body": "已处理"}, headers=ops
+                f"/api/admin/v1/tickets/{tid}/reply", json={"body": "handled"}, headers=ops
             )
         ).status_code == 200
         resp = await client.post(
-            f"/api/v1/tickets/{tid}/messages", json={"body": "追加"}, headers=headers
+            f"/api/v1/tickets/{tid}/messages", json={"body": "follow-up"}, headers=headers
         )
         assert resp.status_code == 409, resp.text
         assert resp.json()["message_key"] == "tickets.messageLimitReached"

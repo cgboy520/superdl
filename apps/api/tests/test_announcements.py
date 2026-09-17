@@ -1,4 +1,4 @@
-"""公告列表、发布幂等与撤回契约。"""
+"""Announcement list, publish idempotency and withdrawal contracts."""
 
 from httpx import AsyncClient
 
@@ -8,8 +8,8 @@ from tests.helpers import admin_headers, user_headers
 async def _publish(
     client: AsyncClient,
     headers: dict,
-    title: str = "存储维护通知",
-    content: str = "本周六 02:00-04:00 存储集群维护",
+    title: str = "Storage maintenance notice",
+    content: str = "Storage cluster maintenance this Saturday 02:00-04:00",
 ) -> None:
     resp = await client.post(
         "/api/admin/v1/announcements",
@@ -28,27 +28,33 @@ async def _announcement_ids(client: AsyncClient, headers: dict) -> list[int]:
 class TestAnnouncementAdmin:
     async def test_list_contains_history(self, client: AsyncClient, sm):
         ops = await admin_headers(sm, client, role="ops")
-        await _publish(client, ops, "公告甲")
-        await _publish(client, ops, "公告乙")
+        await _publish(client, ops, "announcement A")
+        await _publish(client, ops, "announcement B")
         resp = await client.get("/api/admin/v1/announcements", headers=ops)
         rows = resp.json()
-        assert [r["title"] for r in rows] == ["公告乙", "公告甲"]
+        assert [r["title"] for r in rows] == ["announcement B", "announcement A"]
         assert all(r["status"] == "published" for r in rows)
         assert all(r["reached"] == 0 for r in rows)
 
     async def test_publish_idempotent_replay_no_duplicate_fanout(self, client: AsyncClient, sm):
-        """同 Idempotency-Key 重放不新建公告。"""
+        """A replay with the same Idempotency-Key creates no announcement."""
         uh = await user_headers(client, "13700000402")
         ops = await admin_headers(sm, client, role="ops")
         h = {**ops, "Idempotency-Key": "ann-idem-1"}
         r1 = await client.post(
             "/api/admin/v1/announcements",
-            json={"title": "存储维护通知", "content": "本周六 02:00-04:00 维护"},
+            json={
+                "title": "Storage maintenance notice",
+                "content": "maintenance this Saturday 02:00-04:00",
+            },
             headers=h,
         )
         r2 = await client.post(
             "/api/admin/v1/announcements",
-            json={"title": "存储维护通知", "content": "本周六 02:00-04:00 维护"},
+            json={
+                "title": "Storage maintenance notice",
+                "content": "maintenance this Saturday 02:00-04:00",
+            },
             headers=h,
         )
         assert r1.status_code == 201
@@ -70,7 +76,7 @@ class TestAnnouncementAdmin:
         (ann_id,) = await _announcement_ids(client, ops)
         resp = await client.post(
             f"/api/admin/v1/announcements/{ann_id}/revoke",
-            json={"reason": "发布时间写错"},
+            json={"reason": "wrong publication time"},
             headers=ops,
         )
         assert resp.status_code == 200, resp.text
@@ -86,7 +92,7 @@ class TestAnnouncementAdmin:
         row = (await client.get("/api/admin/v1/announcements", headers=ops)).json()[0]
         assert row["status"] == "revoked"
         assert row["revoked_at"] is not None
-        assert row["revoke_reason"] == "发布时间写错"
+        assert row["revoke_reason"] == "wrong publication time"
 
     async def test_revoke_repeat_409(self, client: AsyncClient, sm):
         ops = await admin_headers(sm, client, role="ops")
@@ -94,13 +100,13 @@ class TestAnnouncementAdmin:
         (ann_id,) = await _announcement_ids(client, ops)
         first = await client.post(
             f"/api/admin/v1/announcements/{ann_id}/revoke",
-            json={"reason": "重复撤回测试"},
+            json={"reason": "repeated withdrawal test"},
             headers=ops,
         )
         assert first.status_code == 200
         second = await client.post(
             f"/api/admin/v1/announcements/{ann_id}/revoke",
-            json={"reason": "重复撤回测试"},
+            json={"reason": "repeated withdrawal test"},
             headers=ops,
         )
         assert second.status_code == 409
