@@ -83,11 +83,15 @@ def test_sensitive_fields_masked(restore_logging: None, monkeypatch):
         id_number="110101199001011234",
         token="sdln_secret-token",
         params={"code": "123456", "note": "keep"},
+        email="alice@example.com",
+        login_handle="+8613800001111",
         unrelated="13800002222",
     )
 
     out = buf.getvalue()
     assert "138****1111" in out
+    assert "a***@example.com" in out and "alice@example.com" not in out
+    assert "+86****1111" in out and "+8613800001111" not in out
     assert "13800001111" not in out
     assert "110101199001011234" not in out
     assert "sdln_secret-token" not in out
