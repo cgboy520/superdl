@@ -3,12 +3,14 @@
 每用户每账期至多一条 submitted/issued 申请;开票须在申请行锁内重算金额,不符时拒绝。
 """
 
+import re
 from decimal import Decimal
 
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.compliance import current_profile
 from app.core.config import get_settings
 from app.core.constants import ADMIN_LIST_CAP
 from app.core.errors import AppError, ErrorCode, conflict
@@ -16,6 +18,7 @@ from app.core.idempotency import find_replay, insert_idempotent, request_fingerp
 from app.core.logging import get_logger
 from app.core.money import as_amount, money_label
 from app.core.pagination import Page, paginate_by_id
+from app.core.regions import cn
 from app.core.sqlutil import get_for_update_or_404, sum_decimal, total
 from app.core.timeutil import billing_period_range, current_billing_period, now_utc
 from app.modules.billing.models import InvoiceRequest, Order, RefundRequest
@@ -25,6 +28,29 @@ from app.modules.notify import service as notify_service
 logger = get_logger(__name__)
 
 ACTIVE_STATUSES = ("submitted", "issued")
+
+#: Tax-ID format per `ComplianceProfile.invoice_tax_id_rule`: (regex, error key). Profiles without
+#: a rule accept any 2–32 character identifier as typed.
+TAX_ID_RULES: dict[str, tuple[str, str]] = {
+    "cn_uscc": (cn.USCC_RE, "billing.invoiceTaxIdInvalidCn"),
+}
+
+
+def normalize_tax_id(title_type: str, tax_id: str | None) -> str | None:
+    """Apply the profile's tax-ID rule to a company title (the PRC code is upper-cased before the
+    check); personal titles carry none."""
+    if title_type != "company" or tax_id is None:
+        return None
+    rule = current_profile().invoice_tax_id_rule
+    if rule is None:
+        return tax_id
+    pattern, key = TAX_ID_RULES[rule]
+    candidate = tax_id.upper()
+    if not re.fullmatch(pattern, candidate):
+        raise AppError(ErrorCode.VALIDATION_ERROR, key=key)
+    return candidate
+
+
 REFUND_WITHHELD_STATUSES = ("pending", "approved", "paid")
 
 
@@ -141,7 +167,9 @@ async def create_invoice(
     email: str,
     idempotency_key: str | None,
 ) -> tuple[InvoiceRequest, bool]:
-    """计算金额并提交开票申请,返回 (申请单, created);幂等重放 created=False。"""
+    """计算金额并提交开票申请,返回 (申请单, created);幂等重放 created=False。
+    Company tax IDs are validated by the compliance profile's rule (`TAX_ID_RULES`)."""
+    tax_id = normalize_tax_id(title_type, tax_id)
     fingerprint = request_fingerprint(user_id, period, title_type, title, tax_id, email)
     if idempotency_key:
         existing = await find_replay(

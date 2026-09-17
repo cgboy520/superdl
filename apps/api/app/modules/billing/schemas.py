@@ -1,4 +1,3 @@
-import re
 from datetime import datetime
 from decimal import Decimal
 from typing import Literal
@@ -219,7 +218,6 @@ InvoiceTitleType = Literal["personal", "company"]
 
 INVOICE_PERIOD_PATTERN = r"^\d{4}-(0[1-9]|1[0-2])$"
 EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
-TAX_ID_PATTERN = r"^[0-9A-HJ-NPQRTUWXY]{2}\d{6}[0-9A-HJ-NPQRTUWXY]{10}$"
 
 
 class InvoiceCreate(BaseModel):
@@ -238,11 +236,13 @@ class InvoiceCreate(BaseModel):
 
     @model_validator(mode="after")
     def _company_needs_tax_id(self) -> "InvoiceCreate":
+        """Company titles need a tax ID (2–32 chars); its format is the compliance profile's rule,
+        checked by the service. Personal titles never carry one."""
         if self.title_type == "company":
             if not self.tax_id:
                 raise ValueError("tax_id is required for company title")
-            if not re.fullmatch(TAX_ID_PATTERN, self.tax_id):
-                raise ValueError("tax_id must be an 18-character unified social credit code")
+            if len(self.tax_id) < 2:
+                raise ValueError("tax_id must be at least 2 characters")
         if self.title_type == "personal":
             self.tax_id = None
         return self

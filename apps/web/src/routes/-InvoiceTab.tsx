@@ -19,11 +19,12 @@ import { CursorTable, DataErrorAlert, moneyOr } from "@superdl/ui/components";
 import { useFormat } from "@superdl/ui";
 
 import { useCreateInvoice } from "../api/mutations";
-import { useInvoiceEligible, useInvoicePages } from "../api/queries";
+import { useInvoiceEligible, useInvoicePages, useSiteConfig } from "../api/queries";
 
 /** 发票申请弹窗:账期(仅 eligible 列表)+ 抬头信息;金额由服务端按账期计算。 */
 export const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-export const TAX_ID_RE = /^[0-9A-HJ-NPQRTUWXY]{2}\d{6}[0-9A-HJ-NPQRTUWXY]{10}$/;
+/** PRC unified social credit code — only enforced client-side when the site runs the `cn` profile. */
+export const CN_USCC_RE = /^[0-9A-HJ-NPQRTUWXY]{2}\d{6}[0-9A-HJ-NPQRTUWXY]{10}$/;
 
 export function InvoiceApplyModal({
   periods,
@@ -55,8 +56,11 @@ export function InvoiceApplyModal({
     },
   });
 
+  const { data: site } = useSiteConfig();
+  const cnTaxId = site?.compliance_profile === "cn";
+  const taxIdValid = (v: string) => (cnTaxId ? CN_USCC_RE.test(v.trim()) : v.trim().length >= 2);
   const emailOk = EMAIL_RE.test(email.trim());
-  const taxIdOk = titleType === "personal" || TAX_ID_RE.test(taxId.trim());
+  const taxIdOk = titleType === "personal" || taxIdValid(taxId);
   const canSubmit = period != null && title.trim().length >= 2 && emailOk && taxIdOk;
 
   return (
@@ -125,15 +129,15 @@ export function InvoiceApplyModal({
           <>
             <Input
               value={taxId}
-              onChange={(e) => setTaxId(e.target.value.toUpperCase())}
-              placeholder={t("billing.invoiceTaxIdPlaceholder")}
-              maxLength={18}
-              status={taxId !== "" && !TAX_ID_RE.test(taxId.trim()) ? "error" : undefined}
+              onChange={(e) => setTaxId(cnTaxId ? e.target.value.toUpperCase() : e.target.value)}
+              placeholder={cnTaxId ? t("billing.invoiceTaxIdPlaceholderCn") : t("billing.invoiceTaxIdPlaceholder")}
+              maxLength={cnTaxId ? 18 : 32}
+              status={taxId !== "" && !taxIdValid(taxId) ? "error" : undefined}
               aria-label={t("billing.invoiceTaxId")}
             />
-            {taxId !== "" && !TAX_ID_RE.test(taxId.trim()) ? (
+            {taxId !== "" && !taxIdValid(taxId) ? (
               <Typography.Text type="danger" style={{ fontSize: fontSize.caption }}>
-                {t("billing.invoiceTaxIdInvalid")}
+                {cnTaxId ? t("billing.invoiceTaxIdInvalidCn") : t("billing.invoiceTaxIdInvalid")}
               </Typography.Text>
             ) : null}
           </>
