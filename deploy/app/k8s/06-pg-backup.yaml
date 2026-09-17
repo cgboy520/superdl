@@ -4,8 +4,10 @@ metadata:
   name: pg-backup-daily
   namespace: superdl
 spec:
-  # CronJob schedules are UTC by default. To run at a fixed local hour of the billing day, set
-  # spec.timeZone to the value of SUPERDL_BILLING_TIMEZONE (IANA) and express the schedule in that zone.
+  # spec.timeZone pins the schedule to UTC (unset, a CronJob follows the kube-controller-manager's
+  # local zone). To run at a fixed local hour of the billing day, set it to the value of
+  # SUPERDL_BILLING_TIMEZONE (IANA) and express the schedule in that zone.
+  timeZone: Etc/UTC
   schedule: "30 18 * * *"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3

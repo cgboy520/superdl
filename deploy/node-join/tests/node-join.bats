@@ -44,8 +44,9 @@ _write_cpuinfo() {
   printf 'processor\t: 0\nvendor_id\t: %s\nmodel name\t: fixture\n' "$1" > "$TMP/cpuinfo"
 }
 
+# $3: install_mirror; omitted = the bootstrap default "official", an explicit "" is kept empty.
 _write_fixture() {
-  python3 - "$1" "${2:-rke2}" "${3:-}" "${4-$FAKE_SCRIPT_SHA256}" > "$BOOTSTRAP_FIXTURE" <<'PYEOF'
+  python3 - "$1" "${2:-rke2}" "${3-__default__}" "${4-$FAKE_SCRIPT_SHA256}" > "$BOOTSTRAP_FIXTURE" <<'PYEOF'
 import json, os, sys
 distro = sys.argv[2]
 data = {
@@ -61,7 +62,7 @@ data = {
     "script_sha256": sys.argv[4],
 }
 data["k8s_distro"] = distro
-data["install_mirror"] = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else "official"
+data["install_mirror"] = "official" if sys.argv[3] == "__default__" else sys.argv[3]
 print(json.dumps(data))
 PYEOF
 }
@@ -411,6 +412,23 @@ RKESHIM
   ! grep -q "intel_iommu" "$TMP/etc/default/grub.d/99-superdl.cfg"
 }
 
+@test "a managed GRUB file with stale arguments is rewritten; an up-to-date one is left alone" {
+  mkdir -p "$TMP/etc/default/grub.d"
+  printf 'GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT intel_iommu=on iommu=pt"\n' \
+    > "$TMP/etc/default/grub.d/99-superdl.cfg"
+  _write_cpuinfo AuthenticAMD
+  run_script
+  [ "$status" -eq 0 ]
+  grep -q "amd_iommu=on iommu=pt" "$TMP/etc/default/grub.d/99-superdl.cfg"
+  ! grep -q "intel_iommu" "$TMP/etc/default/grub.d/99-superdl.cfg"
+  grep -q "update-grub" "$SHIM_CALLS"
+  : > "$SHIM_CALLS"
+  run_script --force
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"already configured"* ]]
+  ! grep -q "update-grub" "$SHIM_CALLS"
+}
+
 @test "unknown CPU vendor fails the iommu step closed unless SUPERDL_JOIN_IOMMU_ARGS is set" {
   _write_cpuinfo "SomethingElse"
   run_script
@@ -585,6 +603,12 @@ EOF
   [ "$status" -eq 1 ]
   [[ "$output" == *"unknown install_mirror 'mirror-x'"* ]]
   grep -q '"phase":"agent_install","state":"failed"' "$CURL_LOG"
+  ! grep -q "get.rke2.io" "$CURL_LOG"
+  ! grep -q "rancher-mirror" "$CURL_LOG"
+  _write_fixture hami rke2 ""
+  run_script --force
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"unknown install_mirror '<empty>'"* ]]
   ! grep -q "get.rke2.io" "$CURL_LOG"
   ! grep -q "rancher-mirror" "$CURL_LOG"
 }
