@@ -39,7 +39,7 @@ export function genEd25519Key(): string {
 export async function registerViaUi(page: Page, email: string): Promise<void> {
   await page.goto("/login");
   await page.getByRole("button", { name: "免费注册" }).click();
-  await page.getByPlaceholder("邮箱").fill(email);
+  await page.getByPlaceholder("邮箱", { exact: true }).fill(email);
   await page.getByRole("button", { name: "获取验证码" }).click();
   await page.getByPlaceholder("邮箱验证码").fill("123456");
   await page.getByRole("checkbox").check();
