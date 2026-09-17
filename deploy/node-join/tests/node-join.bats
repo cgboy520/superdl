@@ -11,6 +11,10 @@ setup() {
   export SUPERDL_JOIN_RANCHER_STATE_DIR="$TMP/rancher"
   export SUPERDL_JOIN_IOMMU_DIR="$TMP/iommu_groups"
   mkdir -p "$TMP/iommu_groups/0"
+  export SUPERDL_JOIN_OS_RELEASE="$TMP/os-release"
+  export SUPERDL_JOIN_CPUINFO="$TMP/cpuinfo"
+  _write_os_release ubuntu debian "Ubuntu 24.04 LTS"
+  _write_cpuinfo GenuineIntel
   export CURL_LOG="$TMP/curl.log"
   export SHIM_CALLS="$TMP/calls.log"
   export BOOTSTRAP_FIXTURE="$TMP/bootstrap-fixture.json"
@@ -31,6 +35,14 @@ setup() {
 }
 
 teardown() { rm -rf "$TMP"; }
+
+_write_os_release() {
+  printf 'ID=%s\nID_LIKE="%s"\nPRETTY_NAME="%s"\n' "$1" "$2" "$3" > "$TMP/os-release"
+}
+
+_write_cpuinfo() {
+  printf 'processor\t: 0\nvendor_id\t: %s\nmodel name\t: fixture\n' "$1" > "$TMP/cpuinfo"
+}
 
 _write_fixture() {
   python3 - "$1" "${2:-rke2}" "${3:-}" "${4-$FAKE_SCRIPT_SHA256}" > "$BOOTSTRAP_FIXTURE" <<'PYEOF'
@@ -389,6 +401,44 @@ RKESHIM
   [ "$status" -eq 0 ]
   grep -q "intel_iommu=on iommu=pt" "$TMP/etc/default/grub.d/99-superdl.cfg"
   grep -q "update-grub" "$SHIM_CALLS"
+}
+
+@test "IOMMU argument follows the CPU vendor: AMD writes amd_iommu=on" {
+  _write_cpuinfo AuthenticAMD
+  run_script
+  [ "$status" -eq 0 ]
+  grep -q "amd_iommu=on iommu=pt" "$TMP/etc/default/grub.d/99-superdl.cfg"
+  ! grep -q "intel_iommu" "$TMP/etc/default/grub.d/99-superdl.cfg"
+}
+
+@test "unknown CPU vendor fails the iommu step closed unless SUPERDL_JOIN_IOMMU_ARGS is set" {
+  _write_cpuinfo "SomethingElse"
+  run_script
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"unknown CPU vendor"* ]]
+  grep -q '"phase":"iommu","state":"failed"' "$CURL_LOG"
+  [ ! -f "$TMP/etc/default/grub.d/99-superdl.cfg" ]
+  export SUPERDL_JOIN_IOMMU_ARGS="iommu=pt custom_iommu=on"
+  run_script --force
+  [ "$status" -eq 0 ]
+  grep -q "custom_iommu=on" "$TMP/etc/default/grub.d/99-superdl.cfg"
+}
+
+@test "non-Debian distribution fails precheck closed" {
+  _write_os_release fedora "rhel fedora" "Fedora Linux 41"
+  run_script
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"unsupported distribution: Fedora Linux 41"* ]]
+  grep -q '"phase":"precheck","state":"failed"' "$CURL_LOG"
+  ! grep -q "apt-get" "$SHIM_CALLS"
+}
+
+@test "ID_LIKE=debian derivatives pass the distro gate and bootstrap reports PRETTY_NAME" {
+  _write_os_release pop "ubuntu debian" "Pop!_OS 22.04 LTS"
+  run_script
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"distribution: Pop!_OS 22.04 LTS (Debian family)"* ]]
+  grep -q '"os_release": "Pop!_OS 22.04 LTS"' "$CURL_LOG"
 }
 
 @test "inactive IOMMU requires a reboot" {
