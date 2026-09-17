@@ -43,9 +43,9 @@ class TestOrdersExport:
         text = resp.text
         assert text.startswith("﻿")
         lines = text.splitlines()
-        assert lines[0].lstrip("﻿").startswith("订单号")
+        assert lines[0].lstrip("﻿").startswith("Order no")
         assert csvexport.utc_suffix(billing_offset_minutes()) in text
-        assert any("SDL-EXP-0" in line and "已支付" in line for line in lines)
+        assert any("SDL-EXP-0" in line and "Paid" in line for line in lines)
         resp = await client.get(
             "/api/admin/v1/orders/export", params={"status": "pending"}, headers=fin
         )
@@ -83,11 +83,12 @@ class TestRefundsExport:
         text = resp.text
         assert text.startswith("﻿")
         lines = text.splitlines()
-        assert lines[0].lstrip("﻿").startswith("退款单号")
+        assert lines[0].lstrip("﻿").startswith("Refund no")
         assert csvexport.utc_suffix(billing_offset_minutes()) in text
-        assert any("R20260101-E0" in line and "待审批" in line for line in lines)
+        assert any("R20260101-E0" in line and "Pending review" in line for line in lines)
         assert any(
-            "R20260101-E1" in line and "线下转账" in line and "PAY-REF-1" in line for line in lines
+            "R20260101-E1" in line and "Offline transfer" in line and "PAY-REF-1" in line
+            for line in lines
         )
         resp = await client.get(
             "/api/admin/v1/refunds/export", params={"status": "paid"}, headers=fin
@@ -136,9 +137,9 @@ class TestInvoicesExport:
         text = resp.text
         assert text.startswith("﻿")
         lines = text.splitlines()
-        assert lines[0].lstrip("﻿").startswith("发票号")
-        assert any("2026-07" in line and "审核中" in line for line in lines)
-        assert any("INV-2026-0001" in line and "已开票" in line for line in lines)
+        assert lines[0].lstrip("﻿").startswith("Invoice no")
+        assert any("2026-07" in line and "In review" in line for line in lines)
+        assert any("INV-2026-0001" in line and "Issued" in line for line in lines)
         by_status = (
             await client.get(
                 "/api/admin/v1/invoices/export", params={"status": "issued"}, headers=fin
@@ -260,9 +261,9 @@ class TestAdjustmentsExport:
         text = resp.text
         assert text.startswith("﻿")
         lines = text.splitlines()
-        assert lines[0].lstrip("﻿").startswith("ID,用户ID")
-        assert any("赔付工单 T20260" in line and "待复核" in line for line in lines)
-        assert any("赔付工单 T20261" in line and "已生效" in line for line in lines)
+        assert lines[0].lstrip("﻿").startswith("ID,User ID")
+        assert any("赔付工单 T20260" in line and "Pending review" in line for line in lines)
+        assert any("赔付工单 T20261" in line and "Effective" in line for line in lines)
         by_status = (
             await client.get(
                 "/api/admin/v1/adjustments/export", params={"status": "approved"}, headers=fin
@@ -284,7 +285,7 @@ class TestTenantLedgerExport:
         resp = await client.get(f"/api/admin/v1/tenants/{uid}/ledger/export", headers=ops)
         assert resp.status_code == 200
         text = resp.text
-        assert "充值" in text and "66.00" in text and "test-fund" in text
+        assert "Recharge" in text and "66.00" in text and "test-fund" in text
         assert csvexport.TRUNCATED_MARKER not in text
         user_headers = {"Authorization": f"Bearer {data['access_token']}"}
         mine_resp = await client.get("/api/v1/billing/export?dataset=ledger", headers=user_headers)
@@ -327,7 +328,7 @@ class TestReconciliationExport:
             "/api/admin/v1/reconciliation/export", params={"day": day}, headers=fin
         )
         assert resp.status_code == 200
-        assert resp.text.splitlines()[1].startswith("合计,")
+        assert resp.text.splitlines()[1].startswith("TOTAL,")
         bad = await client.get(
             "/api/admin/v1/reconciliation/export", params={"day": "bad"}, headers=fin
         )

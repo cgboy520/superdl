@@ -1,4 +1,4 @@
-"""管理端路由(管理员账号 CRUD)。"""
+"""Admin routes (admin account CRUD)."""
 
 from fastapi import APIRouter, Request
 
@@ -42,7 +42,8 @@ async def admin_update_admin(
     session: DbSession,
     request: Request,
 ) -> AdminAccountOut:
-    """改角色 / 停用。停用即刻生效(deps 每请求比对 token_version)。"""
+    """Change role / deactivate. Deactivation takes effect at once (deps compares token_version per
+    request)."""
     updated, before = await auth_service.update_admin(
         session, admin_id, role=body.role, new_status=body.status, actor_id=admin.id
     )

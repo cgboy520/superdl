@@ -91,7 +91,7 @@ class TestFrozenWalletArrears:
         assert counts["warned"] == 1
         assert (await get_instance(client, headers, uuid))["status"] == "running"
         notes = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
-        warn = next(n for n in notes if n["title"] == "余额不足预警")
+        warn = next(n for n in notes if n["title"] == "Low balance warning")
         assert money_label("30.00") in warn["content"]
 
 

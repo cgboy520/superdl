@@ -1,4 +1,4 @@
-"""管理端路由(法务文档版本管理)。"""
+"""Admin routes (legal document version management)."""
 
 import hashlib
 
@@ -22,12 +22,12 @@ router = APIRouter(tags=["admin"])
 
 
 class LegalDocVersionArchive(ReasonBody):
-    """归档草稿的请求体:原因必填。"""
+    """Request body for archiving a draft: reason required."""
 
 
 @router.get("/legal-docs", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_list_legal_docs(session: DbSession) -> list[LegalDocCellOut]:
-    """法务文档总览:doc_key × locale 状态格(当前 published + 最新 draft)。"""
+    """Legal document overview: doc_key × locale status grid (current published + latest draft)."""
     return await legal_service.admin_overview(session)
 
 
@@ -37,7 +37,7 @@ async def admin_list_legal_docs(session: DbSession) -> list[LegalDocCellOut]:
 async def admin_list_legal_doc_versions(
     doc_key: str, session: DbSession, locale: Locale = Query(...)
 ) -> list[LegalDocVersionOut]:
-    """某 (doc_key, locale) 的版本历史(version 倒序)。"""
+    """Version history of a (doc_key, locale) (version descending)."""
     rows = await legal_service.admin_list_versions(session, doc_key, locale)
     return [LegalDocVersionOut.model_validate(r) for r in rows]
 
@@ -50,7 +50,8 @@ async def admin_create_legal_doc_version(
     request: Request,
     admin: AdminUser = require_roles(),
 ) -> LegalDocVersionOut:
-    """基于当前 published 复制出新 draft(version=max+1);同语言无 published 以 zh-CN 为底稿。"""
+    """Copy the current published version into a new draft (version=max+1); without a published row
+    in that locale the fallback chain provides the base."""
     row = await legal_service.admin_create_draft(session, doc_key, body.locale, admin_id=admin.id)
     set_audit_target(
         request,
@@ -67,7 +68,7 @@ async def admin_update_legal_doc_version(
     session: DbSession,
     request: Request,
 ) -> LegalDocVersionOut:
-    """编辑草稿(仅 draft 可改 title/content_md/effective_note;非 draft 409)。"""
+    """Edit a draft (only drafts may change title/content_md/effective_note; non-draft 409)."""
     row = await legal_service.admin_update_draft(session, version_id, body)
     set_audit_target(
         request,
@@ -88,7 +89,8 @@ async def admin_publish_legal_doc_version(
     request: Request,
     admin: AdminUser = require_roles(),
 ) -> LegalDocVersionOut:
-    """发布:同事务把同 (doc_key, locale) 旧 published 转 archived;审计 detail 记版本 + sha256。"""
+    """Publish: archives the old published row of the same (doc_key, locale) in one transaction; the
+    audit detail records version + sha256."""
     row = await legal_service.admin_publish(session, version_id, admin_id=admin.id)
     set_audit_target(
         request,
@@ -108,7 +110,8 @@ async def admin_archive_legal_doc_version(
     session: DbSession,
     request: Request,
 ) -> LegalDocVersionOut:
-    """归档草稿(draft → archived,原因必填);published 不可直接归档(409)。"""
+    """Archive a draft (draft → archived, reason required); published cannot be archived directly
+    (409)."""
     row = await legal_service.admin_archive(session, version_id)
     set_audit_target(
         request,

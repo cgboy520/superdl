@@ -6,7 +6,7 @@
  */
 
 /**
- * 工单计数轻端点(待办角标轮询)。
+ * Lightweight ticket count endpoint (pending badge polling).
  */
 export interface AdminTicketCountOut {
   count: number;

@@ -1,10 +1,11 @@
-"""管理端路由(总览/工单/审计/策略/平台配置/公告/outbox 死信)。"""
+"""Admin routes (overview / tickets / audit / policies / platform config / announcements / outbox
+dead letters)."""
 
 import secrets
 from collections.abc import Iterable
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Any
 
 from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import StreamingResponse
@@ -39,6 +40,7 @@ from app.core.platform_config import (
 )
 from app.core.ratelimit import check_rate_limit
 from app.core.registry import probe_harbor
+from app.core.servercopy import copy as server_copy
 from app.core.sms import SmsError, ensure_sms_platform_quota, get_sms_channel
 from app.core.timeutil import now_utc
 from app.core.verification import code_email
@@ -81,7 +83,8 @@ router = APIRouter(tags=["admin"])
 
 @router.get("/overview", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_overview(session: DbSession) -> OverviewOut:
-    """值班首屏聚合:实例分状态 COUNT、付费租户 COUNT、池级 GPU 台账。全是精确计数。"""
+    """On-call first-screen aggregate: instance COUNT per status, paying tenant COUNT, per-pool GPU
+    inventory. All exact counts."""
     return OverviewOut.model_validate(await overview.overview(session))
 
 
@@ -95,7 +98,8 @@ async def admin_list_tickets(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[AdminTicketOut]:
-    """工单列表(游标分页,降序):status/category 精确过滤,user_id/ticket_no 检索。"""
+    """Ticket list (cursor pagination, descending): status/category exact filters, user_id/ticket_no
+    search."""
     return await tickets_service.admin_list_tickets(
         session,
         status=status,
@@ -113,7 +117,8 @@ async def admin_tickets_count(
     status: str = "pending_staff",
     category: str | None = None,
 ) -> AdminTicketCountOut:
-    """待办工单计数(默认 pending_staff 口径)。须注册在 /tickets/{ticket_id} 之前。"""
+    """Pending ticket count (default pending_staff). Must be registered before
+    /tickets/{ticket_id}."""
     return AdminTicketCountOut(
         count=await tickets_service.admin_count_tickets(session, status=status, category=category)
     )
@@ -121,7 +126,7 @@ async def admin_tickets_count(
 
 @router.get("/tickets/{ticket_id}", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_get_ticket(ticket_id: int, session: DbSession) -> AdminTicketDetailOut:
-    """工单详情 + 消息流(时间升序)。"""
+    """Ticket detail + message stream (ascending by time)."""
     return await tickets_service.admin_get_ticket(session, ticket_id)
 
 
@@ -133,7 +138,8 @@ async def admin_reply_ticket(
     request: Request,
     admin: AdminUser = require_roles("ops"),
 ) -> AdminTicketDetailOut:
-    """客服回复(→ pending_user),站内信告知用户;resolved/closed 不可再回复。"""
+    """Staff reply (→ pending_user), in-app notification to the user; resolved/closed accept no more
+    replies."""
     await tickets_service.admin_reply(session, ticket_id, body=body.body, operator_id=admin.id)
     set_audit_target(request, f"ticket:{ticket_id}", detail={"action": "reply"})
     return await tickets_service.admin_get_ticket(session, ticket_id)
@@ -147,7 +153,7 @@ async def admin_update_ticket_status(
     request: Request,
     admin: AdminUser = require_roles("ops"),
 ) -> AdminTicketOut:
-    """标记解决/关闭(close 仅 resolved 后可;closed_at 仅 closed 落)。"""
+    """Mark resolved / close (close only after resolved; closed_at is set only on closed)."""
     ticket = await tickets_service.admin_update_status(session, ticket_id, action=body.action)
     set_audit_target(request, f"ticket:{ticket_id}", detail={"action": body.action, "by": admin.id})
     return AdminTicketOut.model_validate(ticket)
@@ -164,7 +170,9 @@ async def admin_audit_log(
     limit: int = Query(default=100, ge=1, le=500),
     cursor: str | None = None,
 ) -> list[AuditLogOut]:
-    """审计检索:actor_id / 动作前缀 / 时间区间;cursor 向前翻页(满页即还有更早)。"""
+    """Audit search: actor_id / action prefix / time range; cursor pages backwards (a full page
+    means
+    older rows exist)."""
     stmt = admin_export.audit_filters(
         sa_select(AuditLog).order_by(AuditLog.id.desc()).limit(limit),
         actor_type=actor_type,
@@ -207,10 +215,11 @@ async def admin_audit_export(
     since: datetime | None = None,
     until: datetime | None = None,
     tz_offset_minutes: int = TzOffset,
-    lang: Literal["zh-CN", "en-US"] = ExportLang,
+    lang: str = ExportLang,
 ) -> StreamingResponse:
-    """审计检索 CSV(流式):筛选口径与 GET /audit 一致;行数硬上限 + 截断标记行。
-    落一条检索审计(只记筛选参数)。"""
+    """Audit search CSV (streamed): the same filters as GET /audit; hard row cap + truncation marker
+    row.
+    Writes one search audit row (filter parameters only)."""
     mark_audited_read(
         request,
         "audit:export",
@@ -233,7 +242,8 @@ async def admin_audit_export(
 
 @router.get("/policies", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_get_policies(session: DbSession) -> PoliciesAdminOut:
-    """当前生效策略 + 取值范围 + DB 覆盖项(平台配置里 policy 组的切片)。"""
+    """Current effective policies + ranges + DB overrides (the policy-group slice of the platform
+    configuration)."""
     effective = await effective_strings(session)
     overrides = await list_platform_overrides(session)
     return PoliciesAdminOut(
@@ -274,7 +284,8 @@ POLICY_ALERT_RATIO = Decimal("0.5")
 def large_policy_moves(
     before: dict[str, str], after: dict[str, str], keys: Iterable[str]
 ) -> list[str]:
-    """敏感策略键里相对上一生效值变化 ≥50% 的,格式 `key: old → new`。"""
+    """Sensitive policy keys that changed ≥ 50 % against the previous effective value, formatted
+    `key: old → new`."""
     moves: list[str] = []
     for key in sorted(keys):
         if key not in POLICY_ALERT_KEYS or not before.get(key) or not after.get(key):
@@ -289,8 +300,10 @@ def large_policy_moves(
 async def admin_update_policies(
     body: PolicyUpdateRequest, session: DbSession, request: Request, admin: CurrentAdmin
 ) -> UpdatedKeysOut:
-    """在线调整策略参数(仅 admin,每管理员 20 次/时;即时生效;只收 policy 组的键)。
-    审计 detail 记变更前后值与原因;敏感键相对变化 ≥50% 同事务落 critical 管理端告警。"""
+    """Adjust policy parameters online (admin only, 20 per admin per hour; effective at once; policy
+    group keys only).
+    The audit detail records the old and new values and the reason; a sensitive key changing ≥ 50 %
+    writes a critical admin alert in the same transaction."""
     await check_rate_limit(f"admin-pricing:{admin.id}", max_attempts=20, window_seconds=3600.0)
     before_all = await effective_strings(session)
     try:
@@ -305,8 +318,10 @@ async def admin_update_policies(
             session,
             None,
             type_="admin_alert",
-            title="策略参数大幅调整",
-            content=";".join(moves) + f";原因:{body.reason}",
+            title=server_copy("adminapi.policy_moves.title"),
+            content=server_copy(
+                "adminapi.policy_moves.content", moves="; ".join(moves), reason=body.reason
+            ),
             severity="critical",
         )
     await session.commit()
@@ -324,7 +339,8 @@ async def admin_update_policies(
 
 @router.get("/platform-config", dependencies=[require_roles()])
 async def admin_get_platform_config(session: DbSession) -> PlatformConfigOut:
-    """分组配置项:生效值 + 来源(env 默认/DB 覆盖)+ 配置风险 warnings。secret 只回尾 4 位预览。"""
+    """Grouped settings: effective value + source (env default / DB override) + configuration risk
+    warnings. Secrets return the last-4 preview only."""
     eff = await effective_strings(session)
     overrides = await list_platform_overrides(session)
     items = []
@@ -379,9 +395,10 @@ async def admin_update_platform_config(
     request: Request,
     admin: AdminUser = require_roles(),
 ) -> UpdatedKeysOut:
-    """在线配置渠道凭据与合规信息(空串=清除覆盖,回退 env 默认)。
+    """Configure channel credentials and compliance information online (empty string = clear the
+    override, back to the env default).
 
-    审计落键名与动作类型(set/clear),不落值。
+    The audit records key names and action type (set/clear), never values.
     """
     try:
         await set_platform_settings(
@@ -410,7 +427,8 @@ class SmsTestRequest(BaseModel):
 
 @router.post("/platform-config/test-sms", dependencies=[require_roles()])
 async def admin_test_sms(body: SmsTestRequest, session: DbSession, request: Request) -> SmsTestOut:
-    """按当前生效短信配置实发一条验证码短信(有限流,过审计)。"""
+    """Send one real verification SMS through the effective SMS configuration (rate-limited,
+    audited)."""
     await check_rate_limit("admin:test-sms", max_attempts=10, window_seconds=3600.0)
     await ensure_sms_platform_quota()
     cfg = await get_runtime_config(session)
@@ -459,12 +477,15 @@ async def admin_test_email(
 
 @router.post("/platform-config/test-registry", dependencies=[require_roles()])
 async def admin_test_registry(session: DbSession, request: Request) -> RegistryTestOut:
-    """按当前生效镜像仓库配置探测 Harbor:health → 机器人鉴权读项目仓库列表。
-    只读、有限流、过审计。"""
+    """Probe Harbor with the effective registry configuration: health → robot-authenticated project
+    repository listing.
+    Read-only, rate-limited, audited."""
     await check_rate_limit("admin:test-registry", max_attempts=10, window_seconds=3600.0)
     cfg = await get_runtime_config(session)
     if not cfg.registry_host:
-        raise AppError(ErrorCode.VALIDATION_ERROR, "请先填写并保存 Harbor 地址(registry_host)")
+        raise AppError(
+            ErrorCode.VALIDATION_ERROR, "fill in and save the Harbor address (registry_host) first"
+        )
     probe = await probe_harbor(
         host=cfg.registry_host,
         project=cfg.registry_project or "superdl",
@@ -514,8 +535,9 @@ async def admin_publish_announcement(
     response: Response,
     idempotency_key: IdempotencyKey = None,
 ) -> AnnouncementResultOut:
-    """公告群发(站内信 announcement 类型,全部 active 用户);落公告级记录。
-    Idempotency-Key 重放不新建公告,回 200 + X-Idempotent-Replay。"""
+    """Announcement broadcast (announcement-type notifications to every active user); writes the
+    announcement-level record.
+    An Idempotency-Key replay creates no announcement, returns 200 + X-Idempotent-Replay."""
     reached, created = await notify_service.publish_announcement(
         session,
         title=body.title,
@@ -531,7 +553,7 @@ async def admin_publish_announcement(
 
 @router.get("/announcements", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_list_announcements(session: DbSession) -> list[AnnouncementOut]:
-    """公告历史(含已撤回;固定截断 200)。"""
+    """Announcement history (withdrawn included; fixed cap 200)."""
     return [_announcement_out(a) for a in await notify_service.admin_list_announcements(session)]
 
 
@@ -543,7 +565,7 @@ async def admin_revoke_announcement(
     session: DbSession,
     request: Request,
 ) -> AnnouncementOut:
-    """撤回公告(原因必填):撤回后租户侧公告不再可见。重复撤回 409。"""
+    """Withdraw an announcement (reason required): tenants no longer see it. Repeating → 409."""
     announcement = await notify_service.revoke_announcement(
         session, announcement_id, revoked_by=admin.id, reason=body.reason
     )
@@ -553,7 +575,7 @@ async def admin_revoke_announcement(
 
 @router.get("/outbox/dead", dependencies=[require_roles("ops", "readonly")])
 async def admin_list_dead_tasks(session: DbSession) -> list[DeadTaskOut]:
-    """死信任务列表(另有 outbox_dead_total 指标接告警)。"""
+    """Dead-letter task list (the outbox_dead_total metric feeds the alert)."""
     rows = (
         (
             await session.execute(
@@ -589,7 +611,7 @@ class OutboxRetryRequest(ReasonBody):
 
 
 async def _load_dead_task(session: AsyncSession, task_id: int, *, conflict_key: str) -> OutboxTask:
-    """读取 dead 任务;不存在回 404,非 dead 状态按 conflict_key 抛 CONFLICT。"""
+    """Load the dead task; missing → 404, a non-dead status raises CONFLICT with conflict_key."""
     task = await session.get(OutboxTask, task_id)
     if task is None:
         raise AppError(ErrorCode.NOT_FOUND, key="adminapi.taskNotFound", http_status=404)
@@ -602,7 +624,8 @@ async def _load_dead_task(session: AsyncSession, task_id: int, *, conflict_key: 
 async def admin_retry_dead_task(
     task_id: int, body: OutboxRetryRequest, session: DbSession, request: Request
 ) -> OutboxTaskStatusOut:
-    """重放死信(需原因):置回 pending 交还 worker(handler 幂等)。"""
+    """Replay a dead letter (reason required): back to pending for the worker (handlers are
+    idempotent)."""
     task = await _load_dead_task(session, task_id, conflict_key="adminapi.taskStateNotReplayable")
     task.status = "pending"
     task.retries = 0
@@ -620,7 +643,7 @@ async def admin_retry_dead_task(
 async def admin_discard_dead_task(
     task_id: int, body: OutboxDiscardRequest, session: DbSession, request: Request
 ) -> OutboxTaskStatusOut:
-    """忽略死信(需原因)。"""
+    """Discard a dead letter (reason required)."""
     task = await _load_dead_task(session, task_id, conflict_key="adminapi.taskStateNotIgnorable")
     task.status = "discarded"
     await session.commit()

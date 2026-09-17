@@ -6,7 +6,7 @@
  */
 
 /**
- * 用户端工单视图(列表项)。
+ * User ticket view (list item).
  */
 export interface TicketOut {
   category: string;

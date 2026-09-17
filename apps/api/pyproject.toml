@@ -85,7 +85,7 @@ filterwarnings = [
     "ignore::DeprecationWarning:testcontainers",
     "ignore::pytest.PytestUnraisableExceptionWarning",
 ]
-markers = ["real_k8s: 需真实集群（SUPERDL_TEST_KUBECONFIG 门控，CI kind job 使用）"]
+markers = ["real_k8s: needs a real cluster (gated by SUPERDL_TEST_KUBECONFIG, used by the CI kind job)"]
 
 [tool.coverage.run]
 source = ["app"]
@@ -101,13 +101,13 @@ root_package = "app"
 exclude_type_checking_imports = true
 
 [[tool.importlinter.contracts]]
-name = "core 不依赖业务模块与 workers"
+name = "core does not depend on business modules or workers"
 type = "forbidden"
 source_modules = ["app.core"]
 forbidden_modules = ["app.modules", "app.workers"]
 
 [[tool.importlinter.contracts]]
-name = "业务模块跨模块访问只经各模块的公开面(service/schemas;orchestrator 另开放 queries/transitions/statemachine/ports;认证依赖经 account.deps)"
+name = "modules reach each other only through their public surface (service/schemas; orchestrator also exposes queries/transitions/statemachine/ports; auth dependencies via account.deps)"
 type = "independence"
 modules = [
     "app.modules.account",
@@ -135,7 +135,7 @@ ignore_imports = [
 unmatched_ignore_imports_alerting = "warn"
 
 [[tool.importlinter.contracts]]
-name = "billing 不依赖 orchestrator.service(orchestrator.service 依赖 billing.service,反向即环)"
+name = "billing does not depend on orchestrator.service (orchestrator.service depends on billing.service, the reverse would be a cycle)"
 type = "forbidden"
 source_modules = ["app.modules.billing"]
 forbidden_modules = [

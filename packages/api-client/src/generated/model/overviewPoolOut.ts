@@ -6,7 +6,7 @@
  */
 
 /**
- * 池级 GPU 台账:总量含非 Ready 节点。
+ * Per-pool GPU inventory: totals include non-Ready nodes.
  */
 export interface OverviewPoolOut {
   gpu_spot_used: number;

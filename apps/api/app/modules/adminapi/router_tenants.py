@@ -1,4 +1,4 @@
-"""管理端路由(租户管理/配额覆盖/账号注销)。"""
+"""Admin routes (tenant management / quota overrides / account deletion)."""
 
 from typing import Literal
 
@@ -15,6 +15,7 @@ from app.core.metrics import PII_REVEAL_ROWS_TOTAL
 from app.core.money import as_amount, money_str
 from app.core.pagination import Page
 from app.core.params import Cursor, Limit, TzOffset
+from app.core.servercopy import copy as server_copy
 from app.modules.account import deletion as account_deletion, service as account_service
 from app.modules.account.schemas import (
     AdminDeletionApprove,
@@ -68,8 +69,9 @@ async def admin_list_tenants(
     """Tenants (cursor paged). q = email (exact when it contains `@`, prefix otherwise), E.164
     phone (exact with `+`, suffix for bare digits); bare digits also hit the tenant id exactly and
     are pinned first on the first page. Handles are masked; every search writes an audit row.
-    order = id 正/倒序;聚合列按页拼装,不支持排序。
-    实名信息默认脱敏;reveal=true 且 reason 必填回明文(readonly 不可),每次按条数+事由落审计。
+    order = id ascending / descending; aggregate columns are assembled per page, no sorting.
+    KYC information is masked by default; reveal=true with a required reason returns plaintext (not
+    for readonly), audited each time with row count + reason.
     """
     reveal_reason = (
         auth_service.ensure_reveal_allowed(role=admin.role, reason=reason) if reveal else ""
@@ -138,7 +140,7 @@ async def admin_tenant_ledger(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[LedgerEntryOut]:
-    """租户资金流水下钻。与用户端同一实现,同一游标语义。"""
+    """Tenant ledger drill-down. Same implementation and cursor semantics as the user side."""
     return await billing_service.ledger_page(session, user_id, cursor=cursor, limit=limit)
 
 
@@ -151,9 +153,10 @@ async def admin_tenant_ledger_export(
     user_id: int,
     session: DbSession,
     tz_offset_minutes: int = TzOffset,
-    lang: Literal["zh-CN", "en-US"] = ExportLang,
+    lang: str = ExportLang,
 ) -> StreamingResponse:
-    """租户资金流水 CSV(流式):与「流水」Tab 同一数据源,行数硬上限 + 截断标记行。"""
+    """Tenant ledger CSV (streamed): the same data source as the Ledger tab, hard row cap +
+    truncation marker row."""
     return csv_response(
         billing_service.stream_ledger_csv(
             session, user_id, tz_offset_minutes=tz_offset_minutes, lang=lang
@@ -170,7 +173,7 @@ async def admin_tenant_bills(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[BillHourlyOut]:
-    """租户小时账单下钻(可按实例过滤)。"""
+    """Tenant hourly bill drill-down (optionally filtered by instance)."""
     return await billing_service.hourly_bills_page(
         session, user_id, instance_id=instance_id, cursor=cursor, limit=limit
     )
@@ -195,7 +198,7 @@ async def _tenant_quota_out(session: AsyncSession, user_id: int) -> TenantQuotaO
 
 @router.get("/tenants/{user_id}/quota", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_get_tenant_quota(user_id: int, session: DbSession) -> TenantQuotaOut:
-    """配额覆盖现状 + 生效值。"""
+    """Quota overrides and effective values."""
     return await _tenant_quota_out(session, user_id)
 
 
@@ -203,7 +206,9 @@ async def admin_get_tenant_quota(user_id: int, session: DbSession) -> TenantQuot
 async def admin_set_tenant_quota(
     user_id: int, body: TenantQuotaUpdate, session: DbSession, request: Request, admin: CurrentAdmin
 ) -> TenantQuotaOut:
-    """写配额覆盖(数字留空 = 该维走默认链;全空 = 清除覆盖)。note 必填,审计落前后值。"""
+    """Write quota overrides (an empty number = that dimension follows the default chain; all empty
+    =
+    clear the override). note required, the audit records old and new values."""
     before = await account_service.get_quota_override(session, user_id)
     await account_service.set_quota_override(
         session,
@@ -245,7 +250,9 @@ async def admin_set_tenant_quota(
 async def admin_adjust_context(
     user_id: int, session: DbSession, request: Request
 ) -> AdjustContextOut:
-    """调账前置上下文(只读):掩码手机号/当前余额/近 3 条流水。不存在 → 404。"""
+    """Adjustment context (read-only): masked handles / current balance / last 3 ledger rows.
+    Missing
+    → 404."""
     mark_audited_read(request, f"tenant-adjust-context:{user_id}")
     return AdjustContextOut.model_validate(await overview.adjust_context(session, user_id))
 
@@ -274,8 +281,8 @@ async def admin_unfreeze_tenant(
         session,
         user_id,
         type_="account",
-        title="账号已恢复正常",
-        content="您的账号已解除冻结。冻结期间被停止的实例需要您手动开机(实例盘数据保留)。",
+        title=server_copy("adminapi.unfrozen.title"),
+        content=server_copy("adminapi.unfrozen.content"),
         severity="info",
         dedup_key=f"unfrozen:{user_id}",
     )
@@ -288,7 +295,7 @@ async def admin_unfreeze_tenant(
 async def admin_list_deletion_requests(
     session: DbSession, status: str | None = None
 ) -> list[AdminDeletionRequestOut]:
-    """注销申请列表(固定截断 200),行内附执行前校验计数。"""
+    """Deletion request list (fixed cap 200), each row with the pre-execution check counts."""
     return await account_deletion.admin_list_deletion_requests(session, status)
 
 
@@ -300,8 +307,10 @@ async def admin_approve_deletion(
     request: Request,
     admin: AdminUser = require_roles(),
 ) -> AdminDeletionRequestOut:
-    """执行注销(操作原因必填):冷静期未满 409;残留实例/数据盘或余额非零 → 自动驳回 + 409
-    (detail 清单);全通过则同事务匿名化并把原因回写 note。"""
+    """Execute the deletion (operator reason required): cooling-off not over → 409; leftover
+    instances / data disks or a non-zero balance → auto-reject + 409
+    (detail lists them); everything passing anonymises in one transaction and writes the reason to
+    note."""
     req = await account_deletion.approve_deletion(
         session, request_id, admin_id=admin.id, note=body.note
     )
@@ -321,7 +330,7 @@ async def admin_reject_deletion(
     request: Request,
     admin: AdminUser = require_roles(),
 ) -> AdminDeletionRequestOut:
-    """驳回注销申请(理由必填,不受冷静期限制)。"""
+    """Reject a deletion request (reason required, not bound by the cooling-off period)."""
     req = await account_deletion.reject_deletion(
         session, request_id, admin_id=admin.id, note=body.note
     )

@@ -7,7 +7,8 @@
 import type { ReversalResolveAction } from './reversalResolveAction';
 
 /**
- * 渠道冲正核销:release=噪音单解冻(订单恢复退款资格);chargeback=确认反转,解冻+等额扣回。
+ * Channel reversal write-off: release = noise, unfreeze (the order regains refund eligibility);
+ * chargeback = confirmed reversal, unfreeze + debit the same amount.
  */
 export interface ReversalResolve {
   action: ReversalResolveAction;

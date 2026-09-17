@@ -6,7 +6,8 @@
  */
 
 /**
- * 管理员账号(账号管理列表)。不透出 password_hash / token_version / totp_secret。
+ * Admin account (account management list). password_hash / token_version / totp_secret are
+ * never exposed.
  */
 export interface AdminAccountOut {
   created_at: string;

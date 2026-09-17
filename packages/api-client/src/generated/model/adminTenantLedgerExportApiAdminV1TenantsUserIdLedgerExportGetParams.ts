@@ -7,6 +7,6 @@
 import type { AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetLang } from './adminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetLang';
 
 export type AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetParams = {
-lang?: AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetLang;
 tz_offset_minutes?: number | null;
+lang?: AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetLang;
 };

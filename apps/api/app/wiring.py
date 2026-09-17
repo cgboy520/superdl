@@ -1,8 +1,9 @@
-"""跨模块运行时接线:outbox handlers + 库存 provider + 计费边监听;serve / worker 双入口共用。"""
+"""Cross-module runtime wiring: outbox handlers + inventory provider + billing edge listeners;
+shared by the serve / worker entry points."""
 
 
 def wire_modules() -> None:
-    """执行接线(幂等)。"""
+    """Run the wiring (idempotent)."""
     from app.modules.billing.edge_listener import register_billing_edge_listener
     from app.modules.catalog import prewarm as _prewarm  # noqa: F401
     from app.modules.catalog.inventory import register_inventory_provider

@@ -1,4 +1,4 @@
-"""导出 openapi.json 到 packages/api-client/(orval 输入)。"""
+"""Export openapi.json to packages/api-client/ (orval input)."""
 
 import json
 from pathlib import Path

@@ -5,7 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetLang = typeof AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetLang[keyof typeof AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetLang];
+export type AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetLang = typeof AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetLang[keyof typeof AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetLang] | null;
 
 
 export const AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetLang = {

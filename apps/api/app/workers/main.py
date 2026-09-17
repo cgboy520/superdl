@@ -1,4 +1,4 @@
-"""worker 入口:outbox 循环 + APScheduler 定时任务(清单在 workers/jobs.py)。"""
+"""worker entry point: outbox loop + APScheduler scheduled jobs (list in workers/jobs.py)."""
 
 import asyncio
 import contextlib
@@ -39,7 +39,8 @@ MAX_WORKER_ID_LEN = 120
 
 
 def make_worker_id() -> str:
-    """生成最长 MAX_WORKER_ID_LEN 的 hostname-pid 标识;超长主机名截断并附哈希。"""
+    """hostname-pid identifier of at most MAX_WORKER_ID_LEN; an over-long hostname is truncated and
+    suffixed with a hash."""
     hostname = socket.gethostname()
     pid = str(os.getpid())
     budget = MAX_WORKER_ID_LEN - len(pid) - 1
@@ -63,7 +64,7 @@ def _touch_heartbeat() -> None:
 
 
 async def heartbeat_loop() -> None:
-    """独立心跳:只证明事件循环还活着,与当前任务耗时无关。"""
+    """Independent heartbeat: only proves the event loop is alive, unrelated to task duration."""
     while not _stop.is_set():
         _touch_heartbeat()
         with contextlib.suppress(TimeoutError):
@@ -71,7 +72,7 @@ async def heartbeat_loop() -> None:
 
 
 async def outbox_loop(worker_id: str, task_types: frozenset[str] | None = None) -> None:
-    """并发处理 outbox;task_types 为 None 时不过滤,空集合不领取任务。"""
+    """Process the outbox concurrently; task_types None = no filter, an empty set claims nothing."""
     sm = get_sessionmaker()
     logger.info(
         "outbox_worker_started",
@@ -96,7 +97,7 @@ async def outbox_loop(worker_id: str, task_types: frozenset[str] | None = None) 
 
 
 def _metrics_wsgi_app(token: str | None) -> Callable[..., Any]:
-    """Prometheus WSGI 应用;配置 token 时要求匹配的 Bearer 凭据。"""
+    """Prometheus WSGI app; with a configured token the matching Bearer credential is required."""
     inner = make_wsgi_app()
 
     def app(environ: dict[str, Any], start_response: Callable[..., Any]) -> Any:
@@ -112,7 +113,8 @@ def _metrics_wsgi_app(token: str | None) -> Callable[..., Any]:
 
 
 def _start_metrics_server(port: int, token: str | None) -> None:
-    """在守护线程监听所有 IPv4 接口;配置 token 时启用 Bearer 校验。"""
+    """Listen on every IPv4 interface in a daemon thread; Bearer check enabled when a token is
+    configured."""
 
     class _QuietHandler(WSGIRequestHandler):
         def log_message(self, format: str, *args: Any) -> None:  # noqa: ARG002
@@ -129,7 +131,7 @@ def _start_metrics_server(port: int, token: str | None) -> None:
 def _timed_job(
     job_id: str, fn: Callable[..., Awaitable[Any]], period_seconds: float
 ) -> Callable[..., Awaitable[Any]]:
-    """包一层耗时观测:单轮超过周期 80% 打 warning。"""
+    """Wrap with duration observation: one round above 80 % of the period logs a warning."""
 
     async def wrapped(*args: Any) -> Any:
         started = time.monotonic()
@@ -149,7 +151,7 @@ def _timed_job(
 
 
 def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
-    """注册当前组件的定时任务,并记录超过周期 80% 的执行。"""
+    """Register the current component's scheduled jobs and record runs above 80 % of the period."""
     sm = get_sessionmaker()
     for job in scheduled_jobs_for(current_component()):
         kwargs: dict[str, Any] = {

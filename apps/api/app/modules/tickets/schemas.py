@@ -7,7 +7,8 @@ TicketCategory = Literal["instance", "billing", "data", "account", "other"]
 
 
 class TicketCreate(BaseModel):
-    """创建工单(首条消息同单提交)。instance_uuid 可选关联实例。"""
+    """Create a ticket (the first message is submitted with it). instance_uuid optionally links an
+    instance."""
 
     category: TicketCategory
     subject: str = Field(min_length=2, max_length=128)
@@ -39,7 +40,7 @@ class TicketMessageOut(BaseModel):
 
 
 class TicketOut(BaseModel):
-    """用户端工单视图(列表项)。"""
+    """User ticket view (list item)."""
 
     id: int
     ticket_no: str
@@ -55,13 +56,13 @@ class TicketOut(BaseModel):
 
 
 class TicketDetailOut(TicketOut):
-    """工单详情 + 消息流(时间升序)。"""
+    """Ticket detail + message stream (ascending by time)."""
 
     messages: list[TicketMessageOut] = []
 
 
 class AdminTicketOut(TicketOut):
-    """管理端工单视图:比用户端多租户 id。"""
+    """Admin ticket view: the user view plus the tenant id."""
 
     user_id: int
 
@@ -80,12 +81,12 @@ class AdminTicketReply(BaseModel):
 
 
 class AdminTicketStatusUpdate(BaseModel):
-    """管理端状态操作:resolve=标记解决;close=关闭(仅 resolved 后可)。"""
+    """Admin status action: resolve = mark resolved; close = close (only after resolved)."""
 
     action: Literal["resolve", "close"]
 
 
 class AdminTicketCountOut(BaseModel):
-    """工单计数轻端点(待办角标轮询)。"""
+    """Lightweight ticket count endpoint (pending badge polling)."""
 
     count: int

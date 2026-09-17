@@ -1,4 +1,4 @@
-"""管理端路由(SKU 与镜像/预热)。"""
+"""Admin routes (SKUs and images / prewarming)."""
 
 from decimal import Decimal
 
@@ -29,7 +29,7 @@ router = APIRouter(tags=["admin"])
 
 @router.get("/skus", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_list_skus(session: DbSession) -> list[SkuAdminOut]:
-    """SKU 列表,组装台账容量与占用列。"""
+    """SKU list with inventory capacity and occupancy columns."""
     return await catalog_service.admin_skus_out(session)
 
 
@@ -44,7 +44,7 @@ async def sku_capacity_preview(
     vcpu: int | None = None,
     mem_gb: int | None = None,
 ) -> CapacityPreviewOut:
-    """SKU 表单实时容量预览(纯台账)。gpu_model 留空 = CPU 规格预览。"""
+    """Live capacity preview of the SKU form (pure inventory). Empty gpu_model = CPU SKU preview."""
     return await catalog_service.capacity_preview(
         session,
         pool_label=pool_label,
@@ -59,7 +59,8 @@ async def sku_capacity_preview(
 
 @router.get("/skus/{sku_id}/impact", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_sku_impact(sku_id: int, session: DbSession) -> SkuImpactOut:
-    """改价/下架影响面(只读):当前活跃实例数/涉及用户数/占用卡数。"""
+    """Price-change / unlisting impact (read-only): active instances / affected users / occupied
+    cards."""
     return SkuImpactOut.model_validate(await overview.sku_impact(session, sku_id))
 
 
@@ -67,7 +68,7 @@ PRICING_WRITE_MAX_PER_HOUR = 20
 
 
 async def _throttle_pricing_writes(admin_id: int) -> None:
-    """SKU 建/改与策略写共用每管理员 20 次/时的桶。"""
+    """SKU create / update and policy writes share the per-admin 20-per-hour bucket."""
     await check_rate_limit(
         f"admin-pricing:{admin_id}", max_attempts=PRICING_WRITE_MAX_PER_HOUR, window_seconds=3600.0
     )
@@ -77,7 +78,7 @@ async def _throttle_pricing_writes(admin_id: int) -> None:
 async def admin_create_sku(
     body: SkuCreate, session: DbSession, request: Request, admin: CurrentAdmin
 ) -> SkuAdminOut:
-    """建 SKU:仅 admin,每管理员 20 次/时。"""
+    """Create an SKU: admin only, 20 per admin per hour."""
     await _throttle_pricing_writes(admin.id)
     sku = await catalog_service.admin_create_sku(session, body)
     set_audit_target(
@@ -97,7 +98,8 @@ async def admin_update_sku(
     admin: CurrentAdmin,
     force: bool = False,
 ) -> SkuAdminOut:
-    """改 SKU:仅 admin,每管理员 20 次/时;改价告警规则见 catalog.service。"""
+    """Update an SKU: admin only, 20 per admin per hour; price-change alert rules in
+    catalog.service."""
     await _throttle_pricing_writes(admin.id)
     sku, before = await catalog_service.admin_update_sku(session, sku_id, body, force=force)
     set_audit_target(
@@ -118,7 +120,7 @@ class ImageDeleteRequest(ReasonBody):
 
 @router.get("/images", dependencies=[require_roles("ops", "readonly")])
 async def admin_list_images(session: DbSession) -> list[AdminImageOut]:
-    """镜像目录 + 每镜像预热覆盖率(纯 DB 聚合,不调 K8s)。"""
+    """Image catalog + prewarm coverage per image (pure DB aggregate, no K8s call)."""
     return await catalog_service.admin_list_images_out(session)
 
 
@@ -146,7 +148,8 @@ async def admin_update_image(
 async def admin_delete_image(
     image_id: int, body: ImageDeleteRequest, session: DbSession, request: Request
 ) -> None:
-    """删除目录条目(cache 行 CASCADE;运行中实例的 image_ref 快照不受影响)。reason 必填。"""
+    """Delete the catalog entry (cache rows CASCADE; the image_ref snapshot of running instances is
+    unaffected). reason required."""
     img = await catalog_service.get_image(session, image_id)
     set_audit_target(
         request, f"image:{image_id}", detail={"image_ref": img.image_ref, "reason": body.reason}
@@ -158,7 +161,7 @@ async def admin_delete_image(
 async def admin_prewarm_image(
     image_id: int, session: DbSession, request: Request
 ) -> PrewarmEnqueuedOut:
-    """立即预热:非 cached 行置 pending 并同事务入队。"""
+    """Prewarm now: non-cached rows set to pending and enqueued in the same transaction."""
     enqueued = await catalog_service.admin_prewarm_image(session, image_id)
     set_audit_target(request, f"image:{image_id}", detail={"enqueued": enqueued})
     return PrewarmEnqueuedOut(enqueued=enqueued)
@@ -166,6 +169,6 @@ async def admin_prewarm_image(
 
 @router.get("/images/{image_id}/nodes", dependencies=[require_roles("ops", "readonly")])
 async def admin_image_nodes(image_id: int, session: DbSession) -> list[ImageNodeCacheOut]:
-    """每节点缓存明细(failed 行含 last_error)。"""
+    """Per-node cache details (failed rows carry last_error)."""
     rows = await catalog_service.image_node_rows(session, image_id)
     return [ImageNodeCacheOut.model_validate(r) for r in rows]

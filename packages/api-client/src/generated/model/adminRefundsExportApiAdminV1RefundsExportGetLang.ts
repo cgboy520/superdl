@@ -5,7 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type AdminRefundsExportApiAdminV1RefundsExportGetLang = typeof AdminRefundsExportApiAdminV1RefundsExportGetLang[keyof typeof AdminRefundsExportApiAdminV1RefundsExportGetLang];
+export type AdminRefundsExportApiAdminV1RefundsExportGetLang = typeof AdminRefundsExportApiAdminV1RefundsExportGetLang[keyof typeof AdminRefundsExportApiAdminV1RefundsExportGetLang] | null;
 
 
 export const AdminRefundsExportApiAdminV1RefundsExportGetLang = {

@@ -7,7 +7,8 @@
 import type { LegalDocVersionBrief } from './legalDocVersionBrief';
 
 /**
- * 管理端总览一格:某 (doc_key, locale) 的最新 draft 与当前 published(均可空=缺失)。
+ * One cell of the admin overview: latest draft and current published of a (doc_key, locale)
+ * (both optional = missing).
  */
 export interface LegalDocCellOut {
   doc_key: string;

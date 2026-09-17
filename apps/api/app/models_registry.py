@@ -1,5 +1,5 @@
-"""聚合全部 SQLAlchemy 模型(alembic autogenerate 与测试 create_all)。
-新增模块的 models.py 须在此 import。"""
+"""Aggregate every SQLAlchemy model (alembic autogenerate and test create_all).
+The models.py of a new module must be imported here."""
 
 from app.core import audit, outbox, platform_config, ratelimit
 from app.core.db import Base

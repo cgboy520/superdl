@@ -7,7 +7,7 @@
 import type { TicketMessageOut } from './ticketMessageOut';
 
 /**
- * 工单详情 + 消息流(时间升序)。
+ * Ticket detail + message stream (ascending by time).
  */
 export interface TicketDetailOut {
   category: string;

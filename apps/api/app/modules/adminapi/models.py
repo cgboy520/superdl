@@ -9,9 +9,10 @@ from app.core.db import Base
 
 
 class AdminUser(Base):
-    """独立登录与 JWT audience 的管理员账号。
+    """Admin account with its own login and JWT audience.
 
-    TOTP 密钥加密存储,恢复码存 bcrypt 哈希;已验证 timestep 须在行锁内单调推进。
+    The TOTP secret is stored encrypted, recovery codes as bcrypt hashes; the accepted timestep
+    must advance monotonically under the row lock.
     """
 
     __tablename__ = "admin_users"
@@ -30,7 +31,7 @@ class AdminUser(Base):
 
 
 class AdminAdjustment(Base):
-    """调账单:发起 → 第二管理员复核 → 生效。"""
+    """Adjustment: initiated → reviewed by a second admin → effective."""
 
     __tablename__ = "admin_adjustments"
     __table_args__ = (

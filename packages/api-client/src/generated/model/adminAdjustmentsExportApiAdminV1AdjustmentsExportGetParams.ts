@@ -9,7 +9,7 @@ import type { AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetLang } from '.
 export type AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetParams = {
 status?: string | null;
 user_id?: number | null;
-lang?: AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetLang;
 day?: string | null;
 tz_offset_minutes?: number | null;
+lang?: AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetLang;
 };

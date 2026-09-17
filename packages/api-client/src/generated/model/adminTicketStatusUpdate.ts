@@ -7,7 +7,7 @@
 import type { AdminTicketStatusUpdateAction } from './adminTicketStatusUpdateAction';
 
 /**
- * 管理端状态操作:resolve=标记解决;close=关闭(仅 resolved 后可)。
+ * Admin status action: resolve = mark resolved; close = close (only after resolved).
  */
 export interface AdminTicketStatusUpdate {
   action: AdminTicketStatusUpdateAction;

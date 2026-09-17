@@ -1,4 +1,5 @@
-"""管理端只读聚合:运营总览、调账上下文、SKU 改价影响面。"""
+"""Admin read-only aggregates: operations overview, adjustment context, SKU price-change
+impact."""
 
 from typing import Any
 
@@ -17,9 +18,10 @@ logger = get_logger(__name__)
 
 
 async def overview(session: AsyncSession) -> dict[str, Any]:
-    """聚合非终态实例、active 租户、净消费为正的租户及在保订阅实例数。
+    """Aggregate non-terminal instances, active tenants, tenants with positive net consumption and
+    covered subscription instances.
 
-    节点/GPU 含非 Ready 台账,竞价占用以台账 gpu_used 为上限。
+    Nodes / GPUs include non-Ready inventory; spot occupancy is capped by the inventory gpu_used.
     """
     counted = await orchestrator_queries.count_instances_by_status(session)
     status_counts: dict[str, int] = {st: counted.get(st, 0) for st in NON_TERMINAL_STATUSES}
@@ -66,7 +68,8 @@ async def overview(session: AsyncSession) -> dict[str, Any]:
 
 
 async def adjust_context(session: AsyncSession, user_id: int) -> dict[str, Any]:
-    """调账前置上下文(只读):租户身份 + 当前余额 + 近 3 条流水。用户不存在 → 404。"""
+    """Adjustment context (read-only): tenant identity + current balance + last 3 ledger rows.
+    Unknown user → 404."""
     user = await account_service.get_user(session, user_id)
     balance = await billing_service.get_balance(session, user_id)
     recent = await billing_service.ledger_page(session, user_id, limit=3)
@@ -83,7 +86,8 @@ async def adjust_context(session: AsyncSession, user_id: int) -> dict[str, Any]:
 
 
 async def sku_impact(session: AsyncSession, sku_id: int) -> dict[str, Any]:
-    """改价影响面(只读):该 SKU 当前活跃(creating/starting/running)实例数/用户数/卡数。"""
+    """Price-change impact (read-only): active (creating/starting/running) instances / users / cards
+    of the SKU."""
     active = []
     for st in ("creating", "starting", "running"):
         active.extend(await orchestrator_queries.list_instances_by_status(session, st))

@@ -1,4 +1,4 @@
-"""管理端路由(认证/MFA/自助改密)。"""
+"""Admin routes (auth / MFA / self-service password change)."""
 
 from fastapi import APIRouter, Request, Response, status
 
@@ -32,8 +32,10 @@ router = APIRouter(tags=["admin"])
 async def admin_login(
     body: AdminLoginRequest, session: DbSession, request: Request
 ) -> MfaChallengeOut | AdminLoginTokenOut:
-    """密码校验。admin_mfa_enabled 开启时只返回二要素挑战票(未绑定发绑定票、已绑定发验证票),
-    access token 由 /auth/mfa/setup/confirm 或 /auth/login/mfa 签发;关闭时直接返回 access_token。"""
+    """Password check. With admin_mfa_enabled only a second-factor challenge ticket is returned
+    (enrolment ticket for unenrolled, verification ticket for enrolled accounts),
+    the access token is issued by /auth/mfa/setup/confirm or /auth/login/mfa; when off,
+    access_token is returned directly."""
     result, admin = await auth_service.login(
         session, body.username, body.password, client_ip=client_ip(request)
     )
@@ -46,7 +48,8 @@ async def admin_login(
 
 @router.post("/auth/mfa/setup/begin")
 async def mfa_setup_begin(body: MfaTicketRequest, session: DbSession) -> MfaSetupOut:
-    """首次绑定:凭绑定票换 TOTP 密钥与 otpauth URI(前端渲染二维码)。"""
+    """First enrolment: exchange the enrolment ticket for the TOTP secret and otpauth URI (the
+    frontend renders the QR code)."""
     secret, uri = await auth_service.begin_totp_setup(session, body.ticket)
     return MfaSetupOut(secret=secret, otpauth_uri=uri)
 
@@ -55,7 +58,7 @@ async def mfa_setup_begin(body: MfaTicketRequest, session: DbSession) -> MfaSetu
 async def mfa_setup_confirm(
     body: MfaCodeRequest, session: DbSession, request: Request
 ) -> MfaSetupConfirmOut:
-    """校验首个动态码完成绑定;恢复码仅此一次返回。"""
+    """Verify the first code to complete enrolment; recovery codes are returned this once."""
     token, admin, codes = await auth_service.confirm_totp_setup(session, body.ticket, body.code)
     set_audit_target(request, f"admin:{admin.id}", detail={"action": "mfa_bind"})
     return MfaSetupConfirmOut(
@@ -67,7 +70,8 @@ async def mfa_setup_confirm(
 async def mfa_login_verify(
     body: MfaCodeRequest, session: DbSession, request: Request
 ) -> MfaLoginOut:
-    """二要素验证(6 位动态码或恢复码);恢复码用后作废,剩余 ≤2 提示重新生成。"""
+    """Second-factor verification (6-digit code or recovery code); a recovery code is void after
+    use, ≤ 2 left prompts regeneration."""
     token, admin, left = await auth_service.verify_mfa_login(session, body.ticket, body.code)
     set_audit_target(
         request,
@@ -83,7 +87,7 @@ async def mfa_login_verify(
 async def mfa_regenerate_recovery_codes(
     admin: CurrentAdmin, session: DbSession, request: Request
 ) -> RecoveryCodesOut:
-    """重新生成恢复码(旧的全作废)。明文仅此一次返回。"""
+    """Regenerate the recovery codes (all old ones void). Plaintext returned this once."""
     codes = await auth_service.regenerate_recovery_codes(session, admin)
     set_audit_target(request, f"admin:{admin.id}", detail={"action": "mfa_recovery_regenerated"})
     return RecoveryCodesOut(recovery_codes=codes)
@@ -93,7 +97,8 @@ async def mfa_regenerate_recovery_codes(
 async def mfa_reset(
     admin_id: int, body: MfaResetRequest, admin: CurrentAdmin, session: DbSession, request: Request
 ) -> AdminAccountOut:
-    """超管为他人重置 TOTP:清空绑定并踢掉全部会话,下次登录重新绑定。"""
+    """Admin resets another admin's TOTP: enrolment cleared and every session revoked, re-enrol at
+    the next login."""
     target = await auth_service.reset_totp(session, admin, admin_id)
     set_audit_target(
         request, f"admin:{target.id}", detail={"action": "mfa_reset", "reason": body.reason}
@@ -103,8 +108,9 @@ async def mfa_reset(
 
 @router.post("/auth/refresh")
 async def admin_refresh(body: AdminRefreshRequest, session: DbSession) -> AdminRefreshOut:
-    """静默续期:有效或刚过期(15 分钟宽限)的 access token 换新;自 iat 起 12 小时绝对上限。
-    不落审计。"""
+    """Silent renewal: a valid or just-expired (15-minute grace) access token is exchanged for a new
+    one; 12-hour absolute cap from iat.
+    Not audited."""
     token = await auth_service.renew_access_token(session, body.access_token)
     return AdminRefreshOut(access_token=token)
 
@@ -116,7 +122,8 @@ async def admin_me(admin: CurrentAdmin) -> AdminOut:
 
 @router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def admin_logout(admin: CurrentAdmin, session: DbSession, request: Request) -> Response:
-    """服务端登出:token_version+1,该管理员全部在外会话失效。"""
+    """Server-side logout: token_version+1, every outstanding session of the admin becomes
+    invalid."""
     await auth_service.logout(session, admin.id)
     set_audit_target(request, f"admin:{admin.id}", detail={"action": "logout"})
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -126,7 +133,8 @@ async def admin_logout(admin: CurrentAdmin, session: DbSession, request: Request
 async def admin_change_own_password(
     body: AdminSelfPasswordRequest, admin: CurrentAdmin, session: DbSession, request: Request
 ) -> Response:
-    """自助改密。成功即 token_version+1,踢掉全部在外会话。"""
+    """Self-service password change. Success bumps token_version+1 and revokes every outstanding
+    session."""
     await auth_service.change_own_password(
         session, admin.id, body.current_password, body.new_password
     )

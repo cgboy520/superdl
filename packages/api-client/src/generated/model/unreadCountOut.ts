@@ -6,7 +6,7 @@
  */
 
 /**
- * 未读角标轻端点(顶栏 30s 轮询)。
+ * Lightweight unread badge endpoint (top bar polls every 30 s).
  */
 export interface UnreadCountOut {
   unread_count: number;

@@ -5,7 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type AdminInvoicesExportApiAdminV1InvoicesExportGetLang = typeof AdminInvoicesExportApiAdminV1InvoicesExportGetLang[keyof typeof AdminInvoicesExportApiAdminV1InvoicesExportGetLang];
+export type AdminInvoicesExportApiAdminV1InvoicesExportGetLang = typeof AdminInvoicesExportApiAdminV1InvoicesExportGetLang[keyof typeof AdminInvoicesExportApiAdminV1InvoicesExportGetLang] | null;
 
 
 export const AdminInvoicesExportApiAdminV1InvoicesExportGetLang = {

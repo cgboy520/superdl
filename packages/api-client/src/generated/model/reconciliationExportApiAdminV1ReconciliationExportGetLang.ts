@@ -5,7 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type ReconciliationExportApiAdminV1ReconciliationExportGetLang = typeof ReconciliationExportApiAdminV1ReconciliationExportGetLang[keyof typeof ReconciliationExportApiAdminV1ReconciliationExportGetLang];
+export type ReconciliationExportApiAdminV1ReconciliationExportGetLang = typeof ReconciliationExportApiAdminV1ReconciliationExportGetLang[keyof typeof ReconciliationExportApiAdminV1ReconciliationExportGetLang] | null;
 
 
 export const ReconciliationExportApiAdminV1ReconciliationExportGetLang = {

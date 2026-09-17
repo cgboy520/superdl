@@ -7,7 +7,7 @@
 import type { AdminOut } from './adminOut';
 
 /**
- * 绑定成功:恢复码仅此一次返回,10 个。
+ * Enrolment succeeded: recovery codes returned this once, 10 of them.
  */
 export interface MfaSetupConfirmOut {
   access_token: string;

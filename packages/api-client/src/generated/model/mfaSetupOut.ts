@@ -6,7 +6,7 @@
  */
 
 /**
- * TOTP 绑定材料:otpauth_uri 渲染二维码;secret 供手动录入。
+ * TOTP enrolment material: otpauth_uri renders the QR code; secret for manual entry.
  */
 export interface MfaSetupOut {
   otpauth_uri: string;

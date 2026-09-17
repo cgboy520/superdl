@@ -27,8 +27,9 @@ async def create_ticket(
     response: Response,
     idempotency_key: IdempotencyKey = None,
 ) -> TicketOut:
-    """创建工单(首条消息同单提交)。Idempotency-Key 重放返回既有单(200 +
-    X-Idempotent-Replay);进行中 ≤10,限流 5/h。"""
+    """Create a ticket (the first message is submitted with it). An Idempotency-Key replay returns
+    the existing ticket (200 +
+    X-Idempotent-Replay); at most 10 open, rate limit 5/h."""
     ticket, created = await service.create_ticket(
         session,
         user.id,
@@ -55,13 +56,13 @@ async def list_my_tickets(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[TicketOut]:
-    """本人工单(游标分页)。"""
+    """The caller's tickets (cursor pagination)."""
     return await service.list_my_tickets(session, user.id, cursor=cursor, limit=limit)
 
 
 @router.get("/tickets/{ticket_id}")
 async def get_my_ticket(ticket_id: int, user: CurrentUser, session: DbSession) -> TicketDetailOut:
-    """工单详情 + 消息流;他人工单与不存在同回 404。"""
+    """Ticket detail + message stream; someone else's ticket and a missing one both return 404."""
     return await service.get_my_ticket(session, user.id, ticket_id)
 
 
@@ -69,13 +70,13 @@ async def get_my_ticket(ticket_id: int, user: CurrentUser, session: DbSession) -
 async def append_message(
     ticket_id: int, body: TicketMessageCreate, user: CurrentUser, session: DbSession
 ) -> TicketMessageOut:
-    """追加回复(→ pending_staff);resolved/closed 不可再回复。"""
+    """Append a reply (→ pending_staff); resolved/closed accept no more replies."""
     msg = await service.append_message(session, user.id, ticket_id, body=body.body)
     return TicketMessageOut.model_validate(msg)
 
 
 @router.post("/tickets/{ticket_id}/close")
 async def close_ticket(ticket_id: int, user: CurrentUser, session: DbSession) -> TicketOut:
-    """关闭工单(仅 resolved;closed_at 仅 closed 落)。"""
+    """Close the ticket (resolved only; closed_at is set only on closed)."""
     ticket = await service.close_ticket(session, user.id, ticket_id)
     return TicketOut.model_validate(ticket)

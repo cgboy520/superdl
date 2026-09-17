@@ -7,7 +7,8 @@ from app.core.db import Base
 
 
 class Ticket(Base):
-    """工单;每用户幂等键唯一,resolved/closed 不可回复,关闭须先为 resolved。"""
+    """Ticket; the idempotency key is unique per user, resolved/closed accept no replies, closing
+    requires resolved first."""
 
     __tablename__ = "tickets"
     __table_args__ = (
@@ -35,7 +36,8 @@ class Ticket(Base):
 
 
 class TicketMessage(Base):
-    """工单消息(对话流)。sender_kind=user/staff;resolved/closed 工单由服务层拒绝追加。"""
+    """Ticket message (conversation). sender_kind=user/staff; the service layer refuses appends on
+    resolved/closed tickets."""
 
     __tablename__ = "ticket_messages"
     __table_args__ = (CheckConstraint("sender_kind IN ('user', 'staff')", name="sender_kind"),)

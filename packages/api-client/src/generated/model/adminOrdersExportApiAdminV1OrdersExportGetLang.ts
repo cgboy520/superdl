@@ -5,7 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type AdminOrdersExportApiAdminV1OrdersExportGetLang = typeof AdminOrdersExportApiAdminV1OrdersExportGetLang[keyof typeof AdminOrdersExportApiAdminV1OrdersExportGetLang];
+export type AdminOrdersExportApiAdminV1OrdersExportGetLang = typeof AdminOrdersExportApiAdminV1OrdersExportGetLang[keyof typeof AdminOrdersExportApiAdminV1OrdersExportGetLang] | null;
 
 
 export const AdminOrdersExportApiAdminV1OrdersExportGetLang = {

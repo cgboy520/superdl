@@ -1,4 +1,4 @@
-"""站内信、outbox 异步短信与告警接入;dedup_key 唯一去重。"""
+"""In-app notifications, asynchronous outbox SMS and alert ingestion; dedup_key deduplicates."""
 
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -16,6 +16,7 @@ from app.core.outbox import OutboxTask, RetryPolicy, enqueue, outbox_handler
 from app.core.pagination import Page, RawPage, paginate_by_id
 from app.core.platform_config import get_runtime_config
 from app.core.ratelimit import check_rate_limit
+from app.core.servercopy import copy as server_copy
 from app.core.sms import ensure_sms_platform_quota, get_sms_channel
 from app.core.timeutil import now_utc
 from app.modules.account import service as account_service
@@ -47,9 +48,11 @@ async def notify(
     target_kind: str | None = None,
     sms: bool = False,
 ) -> bool:
-    """写站内信(可选短信,同事务 enqueue notify.sms)。dedup_key 冲突返回 False。不 commit。
-    target_id:跳转目标(instance 类 = 实例 uuid,ticket 类 = 工单 id),无目标留空;
-    target_kind 只给管理端告警流(tenant / node / ticket),决定深链去向。
+    """Write an in-app notification (optionally SMS, enqueuing notify.sms in the same transaction).
+    Returns False on a dedup_key conflict. No commit.
+    target_id: navigation target (instance types = instance uuid, ticket types = ticket id), empty
+    without a target;
+    target_kind only for the admin alert feed (tenant / node / ticket), decides the deep link.
     """
     result = (
         await session.execute(
@@ -80,7 +83,9 @@ SMS_TASK_TYPE = "notify.sms"
 
 @outbox_handler(SMS_TASK_TYPE, retry=RetryPolicy(timeout_seconds=60))
 async def handle_notify_sms(session: AsyncSession, task: OutboxTask) -> None:
-    """按 payload.phone 或 user_id 发送通知短信;收件人缺失或预算校验失败时返回而不重试。"""
+    """Send the notification SMS to payload.phone or the user; a missing recipient or a failed
+    budget
+    check returns without retry."""
     phone: str | None = task.payload.get("phone")
     user_id = task.payload.get("user_id")
     if phone is None and user_id is not None:
@@ -105,13 +110,16 @@ async def handle_notify_sms(session: AsyncSession, task: OutboxTask) -> None:
 async def send_low_balance_warning(
     session: AsyncSession, user_id: int, *, est_hours: float, balance: str
 ) -> None:
-    """按用户与 UTC 自然日去重写余额站内信及短信任务,并提交。"""
+    """Write the balance notification and SMS task deduplicated per user and UTC calendar day, then
+    commit."""
     await notify(
         session,
         user_id,
         type_="balance_warn",
-        title="余额不足预警",
-        content=f"当前余额 {balance},按现有实例预计仅可再运行约 {est_hours:.1f} 小时,请及时充值。",
+        title=server_copy("notify.low_balance.title"),
+        content=server_copy(
+            "notify.low_balance.content", balance=balance, hours=f"{est_hours:.1f}"
+        ),
         severity="warning",
         dedup_key=f"balance_warn:{user_id}:{_day_bucket(now_utc())}",
         sms=True,
@@ -122,17 +130,14 @@ async def send_low_balance_warning(
 async def send_arrears_notice(
     session: AsyncSession, user_id: int, *, action: str, detail: str
 ) -> None:
-    """按动作、用户与 UTC 日桶写欠费通知及短信任务;调用方负责提交。"""
-    titles = {
-        "auto_stop": "余额耗尽,实例已自动关机",
-        "freeze": "实例已冻结",
-        "reclaim": "实例已回收",
-    }
+    """Write the arrears notification and SMS task per action, user and UTC day bucket; the caller
+    commits."""
+    key = action if action in ("auto_stop", "freeze", "reclaim") else "default"
     await notify(
         session,
         user_id,
         type_="arrears",
-        title=titles.get(action, "欠费通知"),
+        title=server_copy(f"notify.arrears.{key}"),
         content=detail,
         severity="warning",
         dedup_key=f"arrears:{action}:{user_id}:{_day_bucket(now_utc())}",
@@ -149,18 +154,14 @@ async def send_subscription_notice(
     dedup_suffix: str,
     target_id: str | None = None,
 ) -> None:
-    """按动作、dedup_suffix 与 UTC 日桶写订阅通知及短信任务;调用方负责提交。"""
-    titles = {
-        "expiring": "包周期即将到期",
-        "expired": "包周期已到期,实例已停机",
-        "renewed": "包周期已自动续费",
-        "renew_failed": "自动续费失败",
-    }
+    """Write the subscription notification and SMS task per action, dedup_suffix and UTC day
+    bucket; the caller commits."""
+    key = action if action in ("expiring", "expired", "renewed", "renew_failed") else "default"
     await notify(
         session,
         user_id,
         type_="subscription",
-        title=titles.get(action, "包周期通知"),
+        title=server_copy(f"notify.subscription.{key}"),
         content=detail,
         severity="info" if action == "renewed" else "warning",
         dedup_key=f"subscription:{action}:{dedup_suffix}:{_day_bucket(now_utc())}",
@@ -178,16 +179,14 @@ async def send_preemption_notice(
     instance_id: int,
     instance_uuid: str,
 ) -> None:
-    """竞价实例被抢占的通知(站内信 + 短信);dedup_key = 实例 id + 分钟位,不按天分桶。"""
+    """Notification of a preempted spot instance (in-app + SMS); dedup_key = instance id + minute,
+    not bucketed by day."""
     await notify(
         session,
         user_id,
         type_="preempted",
-        title="竞价实例即将被回收",
-        content=(
-            f"{instance_name} 因平台需要容量将在 {grace_seconds} 秒后关机。"
-            f"实例盘保留,有容量时可自行开机;已运行时长按实际秒数结算。"
-        ),
+        title=server_copy("notify.preempted.title"),
+        content=server_copy("notify.preempted.content", name=instance_name, seconds=grace_seconds),
         severity="warning",
         dedup_key=f"preempt:{instance_id}:{now_utc():%Y%m%d%H%M}",
         target_id=instance_uuid,
@@ -201,9 +200,11 @@ _ANNOUNCEMENT_CHUNK = 1000
 async def publish_announcement(
     session: AsyncSession, *, title: str, content: str, created_by: int, idempotency_key: str | None
 ) -> tuple[int, bool]:
-    """公告群发:落 announcements 行,再对全部 active 用户分块批量写 announcement 站内信
-    (dedup_key = ann:{公告id}:{user_id},on_conflict_do_nothing)。
-    返回 (触达人数, created);created=False = 幂等重放。
+    """Announcement broadcast: write the announcements row, then announcement notifications for
+    every
+    active user in chunked batches
+    (dedup_key = ann:{announcement id}:{user_id}, on_conflict_do_nothing).
+    Returns (reach count, created); created=False = idempotent replay.
     """
     if idempotency_key:
         existing = await find_replay(
@@ -255,7 +256,7 @@ async def publish_announcement(
 
 
 async def admin_list_announcements(session: AsyncSession) -> list[Announcement]:
-    """公告历史(固定截断,最新在前)。"""
+    """Announcement history (fixed cap, newest first)."""
     return list(
         (
             await session.execute(
@@ -268,7 +269,8 @@ async def admin_list_announcements(session: AsyncSession) -> list[Announcement]:
 async def revoke_announcement(
     session: AsyncSession, announcement_id: int, *, revoked_by: int, reason: str
 ) -> Announcement:
-    """撤回公告(行锁内):公告置 revoked,同事务把 fanout 站内信置 revoked;重复撤回 409。"""
+    """Withdraw an announcement (under the row lock): the announcement becomes revoked and the
+    fan-out notifications are revoked in the same transaction; repeating is 409."""
     announcement = await session.get(Announcement, announcement_id, with_for_update=True)
     if announcement is None:
         raise not_found()
@@ -301,7 +303,7 @@ async def list_notifications(
     cursor: str | None = None,
     limit: int | None = None,
 ) -> "Page[NotificationOut]":
-    """站内信列表:降序游标分页,只读 published。"""
+    """Notification list: descending cursor pagination, published only."""
     stmt = (
         select(Notification)
         .where(Notification.user_id == user_id, Notification.status == "published")
@@ -318,7 +320,7 @@ async def list_notifications(
 
 
 async def unread_count(session: AsyncSession, user_id: int) -> int:
-    """未读站内信条数(顶栏角标)。"""
+    """Unread notification count (top-bar badge)."""
     return int(
         (
             await session.execute(
@@ -342,7 +344,7 @@ async def mark_read(session: AsyncSession, user_id: int, notification_id: int) -
 
 
 async def mark_all_read(session: AsyncSession, user_id: int) -> None:
-    """全部已读(幂等)。"""
+    """Mark all read (idempotent)."""
     await session.execute(
         update(Notification)
         .where(
@@ -367,9 +369,11 @@ async def admin_alert_stream(
     cursor: str | None = None,
     limit: int | None = None,
 ) -> RawPage[Notification]:
-    """管理端告警流(平台级 + 各租户 gpu_fault):按 id 降序游标分页。
+    """Admin alert feed (platform-level + per-tenant gpu_fault): cursor pagination by id descending.
 
-    severity / type / 确认状态三个过滤都在库里做,不靠前端在已取回的页里筛。
+    The severity / type / ack filters all run in the database, never on the page the frontend
+    already
+    fetched.
     """
     stmt = (
         select(Notification)
@@ -391,7 +395,8 @@ async def admin_alert_stream(
 
 
 async def ack_admin_alert(session: AsyncSession, alert_id: int, *, acked_by: int) -> Notification:
-    """确认告警(行锁内):落确认人/时间。非告警流行 404;重复确认 409。"""
+    """Acknowledge an alert (under the row lock): record who and when. Rows outside the alert feed →
+    404; repeating → 409."""
     row = await session.get(Notification, alert_id, with_for_update=True)
     if row is None or row.type not in ALERT_STREAM_TYPES:
         raise not_found()
@@ -406,7 +411,7 @@ async def ack_admin_alert(session: AsyncSession, alert_id: int, *, acked_by: int
 
 
 async def unread_alert_count(session: AsyncSession) -> tuple[int, int]:
-    """未确认告警计数(顶栏铃铛角标):(总数, 其中 critical)。"""
+    """Unacknowledged alert count (top-bar bell badge): (total, of which critical)."""
     row = (
         await session.execute(
             select(
@@ -419,9 +424,12 @@ async def unread_alert_count(session: AsyncSession) -> tuple[int, int]:
 
 
 async def ingest_alertmanager(session: AsyncSession, payload: dict) -> int:
-    """按 fingerprint+startsAt 去重接入告警,同事务写通知及短信 outbox 后提交。
+    """Ingest alerts deduplicated by fingerprint+startsAt, write notifications and the SMS outbox in
+    one transaction, then commit.
 
-    critical 平台告警通知值班手机;GPU 告警仅映射到已核实的 active 租户并受用户限流。
+    critical platform alerts notify the on-call phone; GPU alerts map only to verified active
+    tenants
+    and are rate-limited per user.
     """
     cfg = await get_runtime_config(session)
     oncall_phone = cfg.oncall_phone
@@ -454,7 +462,10 @@ async def ingest_alertmanager(session: AsyncSession, payload: dict) -> int:
                 enqueue(
                     session,
                     SMS_TASK_TYPE,
-                    {"phone": oncall_phone, "title": f"[平台critical]{alertname}"},
+                    {
+                        "phone": oncall_phone,
+                        "title": server_copy("notify.oncall_sms.title", alertname=alertname),
+                    },
                 )
 
         ns = labels.get("namespace", "")
@@ -476,11 +487,8 @@ async def ingest_alertmanager(session: AsyncSession, payload: dict) -> int:
                 session,
                 user_id,
                 type_="gpu_fault",
-                title="GPU 硬件告警",
-                content=(
-                    "该实例所在 GPU 触发硬件故障告警,平台正在处理。"
-                    "若实例因此停机,将按停机瞬间结算,之后不再计费。"
-                ),
+                title=server_copy("notify.gpu_fault.title"),
+                content=server_copy("notify.gpu_fault.content"),
                 severity="critical",
                 dedup_key=f"{dedup}:tenant:{user_id}",
                 target_id=str(user_id),
