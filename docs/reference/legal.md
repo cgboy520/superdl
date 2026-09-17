@@ -1,30 +1,30 @@
-# 法务文档与同意存证
+# Legal documents and consent records
 
-用户协议 / 隐私政策 / 注销须知的版本流(草稿 → 发布 → 归档)、公开读取与注册同意存证。模块 `app/modules/legal/`。
+Version flow (draft → published → archived) of the terms of service / privacy policy / deletion notice, public reads and registration consent records. Module `app/modules/legal/`.
 
-## 数据模型
+## Data model
 
-- `legal_doc_versions`:doc_key(terms/privacy/deletion_notice)、locale(zh-CN/en-US)、version、title、content_md、status(draft/published/archived)、effective_note?、created_by?/created_at、published_by?/published_at;UNIQUE(doc_key, locale, version);部分唯一索引保证每 (doc_key, locale) 至多一条 published
-- `user_consents`:user_id、doc_key、version、accepted_at、client_ip —— 追加式
+- `legal_doc_versions`: doc_key (terms/privacy/deletion_notice), locale (zh-CN/en-US), version, title, content_md, status (draft/published/archived), effective_note?, created_by?/created_at, published_by?/published_at; UNIQUE(doc_key, locale, version); a partial unique index guarantees at most one published row per (doc_key, locale)
+- `user_consents`: user_id, doc_key, version, accepted_at, client_ip — append-only
 
-## 契约
+## Contract
 
-| 端点                                                          | 角色/鉴权                        | 说明                                                                                                                                                                                                              |
-| ------------------------------------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/v1/legal/{doc_key}?lang=`                           | 匿名                             | 当前 published 版;`lang` 缺省或不支持取 profile 默认语言(`none`→en-US,`cn`→zh-CN);沿回落链(请求语言 → profile 默认 → 其余)取首个 published,所服务语言 ≠ 请求语言时 `fallback=true`;doc_key 非法或无 published 404 |
-| `GET /api/admin/v1/legal-docs`                                | ops/finance/readonly(admin 恒可) | 总览:doc_key × locale 状态格                                                                                                                                                                                      |
-| `GET /api/admin/v1/legal-docs/{doc_key}/versions?locale=`     | 同上                             | 版本历史(version 倒序)                                                                                                                                                                                            |
-| `POST /api/admin/v1/legal-docs/{doc_key}/versions`            | 仅 admin                         | `{locale}`:基于当前 published 复制出新 draft(version = max+1);该语言无 published 时以回落链上首个 published 为底稿;每 (doc_key, locale) 同时只一个 draft(409)                                                     |
-| `PUT /api/admin/v1/legal-docs/versions/{version_id}`          | 仅 admin                         | 改 title / content_md / effective_note;非 draft 409;审计 detail 记版本与正文 sha256                                                                                                                               |
-| `POST /api/admin/v1/legal-docs/versions/{version_id}/publish` | 仅 admin                         | 同事务把同 (doc_key, locale) 旧 published 转 archived;审计                                                                                                                                                        |
-| `POST /api/admin/v1/legal-docs/versions/{version_id}/archive` | 仅 admin                         | draft → archived;published 不可直接归档(409)                                                                                                                                                                      |
+| Endpoint                                                      | Role / auth                         | Notes                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/v1/legal/{doc_key}?lang=`                           | anonymous                           | The current published version; a missing or unsupported `lang` uses the profile's default locale (`none` → en-US, `cn` → zh-CN); the first published row along the fallback chain (requested locale → profile default → the rest) is served, with `fallback=true` when the served locale ≠ the requested one; invalid doc_key or nothing published → 404 |
+| `GET /api/admin/v1/legal-docs`                                | ops/finance/readonly (admin always) | Overview: status grid doc_key × locale                                                                                                                                                                                                                                                                                                                   |
+| `GET /api/admin/v1/legal-docs/{doc_key}/versions?locale=`     | same                                | Version history (version descending)                                                                                                                                                                                                                                                                                                                     |
+| `POST /api/admin/v1/legal-docs/{doc_key}/versions`            | admin only                          | `{locale}`: copies the current published version into a new draft (version = max+1); without a published row in that locale the first published row along the fallback chain is the base; only one draft at a time per (doc_key, locale) (409)                                                                                                           |
+| `PUT /api/admin/v1/legal-docs/versions/{version_id}`          | admin only                          | Edits title / content_md / effective_note; non-draft → 409; the audit detail records the version and the body's sha256                                                                                                                                                                                                                                   |
+| `POST /api/admin/v1/legal-docs/versions/{version_id}/publish` | admin only                          | Archives the old published row of the same (doc_key, locale) in the same transaction; audited                                                                                                                                                                                                                                                            |
+| `POST /api/admin/v1/legal-docs/versions/{version_id}/archive` | admin only                          | draft → archived; a published row cannot be archived directly (409)                                                                                                                                                                                                                                                                                      |
 
-前端:用户端 `/legal/terms`、`/legal/privacy`、`/legal/deletion-notice` 渲染 published 正文;管理端在系统设置「法务文档」维护。
+Frontend: the user console renders the published bodies at `/legal/terms`, `/legal/privacy`, `/legal/deletion-notice`; the admin console maintains them under System settings "Legal documents".
 
-## 规则与不变量
+## Rules and invariants
 
-- 预置内容:首个迁移把 terms / privacy / deletion_notice 的 zh-CN 正文作为 published v1 写入;迁移 `a1b2c3d4e5f6` 把 en-US 通用英文模板(带 `[placeholder]`,需法务审阅)作为 **draft** v1 写入,已有任意 en-US 行的文档跳过,不自动发布。迁移是唯一事实源;`service.VALID_DOC_KEYS` 只登记键面。单测走 create_all,`apps/api/tests/legal_preset.py` 保存同文快照供 conftest 播种。
-- 注册必勾条款:注册成功同事务按回落链(profile 默认语言 → 其余)上首个 published 版本落 terms 与 privacy 各一条 `user_consents`(含 client_ip);无 published 跳过并告警。
-- 「每 (doc_key, locale) 至多一条 published」由部分唯一索引兜底并发发布;发布与归档都是行内状态迁移,不删行。
-- 管理端写操作过审计中间件;正文变更以 sha256 留痕。
-- 默认语言与回落链由 `current_profile().default_locale` 决定(`service.preferred_locale` / `locale_chain`),前端按 UI 语言传 `lang`(见 [i18n.md](./i18n.md))。
+- Preset content: the first migration writes the zh-CN bodies of terms / privacy / deletion_notice as published v1; migration `a1b2c3d4e5f6` writes the generic en-US templates (with `[placeholder]` markers, to be reviewed by legal) as **draft** v1, skipping documents that already have any en-US row, without publishing. The migrations are the only source of truth; `service.VALID_DOC_KEYS` registers only the key set. Unit tests use create_all, and `apps/api/tests/legal_preset.py` keeps an identical snapshot for the conftest seed.
+- Registration requires the terms checkbox: in the same transaction a successful registration records one `user_consents` row each for terms and privacy (with client_ip) against the first published version along the fallback chain (profile default locale → the rest); nothing published → skipped with a warning.
+- "At most one published row per (doc_key, locale)" is backed by the partial unique index against concurrent publishes; publish and archive are in-row status transitions, no rows are deleted.
+- Admin writes go through the audit middleware; body changes leave a sha256 trace.
+- The default locale and the fallback chain are decided by `current_profile().default_locale` (`service.preferred_locale` / `locale_chain`); the frontend passes `lang` from the UI language (see [i18n.md](./i18n.md)).
