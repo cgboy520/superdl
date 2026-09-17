@@ -1,55 +1,55 @@
-# SuperDL 文档地图
+# SuperDL documentation map
 
-本目录是平台的工程事实源:架构与硬约束、各模块契约与不变量、UI/UX 规格、文案规范、决策记录。
-运维侧的部署说明与 runbook 在 [`deploy/`](../deploy/README.md)。
+This directory is the engineering source of truth: architecture and hard constraints, per-module contracts and invariants, the UI/UX spec, the copy style guide and the decision log.
+Deployment guides and runbooks for operators live under [`deploy/`](../deploy/README.md).
 
-## 读什么
+## What to read
 
-| 想知道                                                 | 看                                                                    |
-| ------------------------------------------------------ | --------------------------------------------------------------------- |
-| 系统怎么拼起来的、不可破坏的约束                       | [architecture.md](./architecture.md)                                  |
-| 某个模块的表、端点、角色、规则                         | [reference/](./reference/)(按模块一份:数据模型 / 契约 / 规则与不变量) |
-| 配额、限流、保留期                                     | [reference/limits.md](./reference/limits.md)                          |
-| 页面形态与交互                                         | [ui-ux-spec.md](./ui-ux-spec.md)                                      |
-| 用户可见文案怎么写、禁词                               | [copy-style-guide.md](./copy-style-guide.md)                          |
-| 跨模块决定与其约束                                     | [decisions.md](./decisions.md)                                        |
-| 硬性规范、闸门、提交约定                               | [../CLAUDE.md](../CLAUDE.md)                                          |
-| 上手与 PR 工作流                                       | [../CONTRIBUTING.md](../CONTRIBUTING.md)                              |
-| 生产部署、发布、数据库要求                             | [../deploy/README.md](../deploy/README.md)                            |
-| 集群装机、双档、北向入口与 Gateway API CRD、token 轮换 | [../deploy/cluster/README.md](../deploy/cluster/README.md)            |
-| 告警响了先做什么                                       | [../deploy/cluster/runbooks/](../deploy/cluster/runbooks/README.md)   |
-| 安全漏洞怎么报                                         | [../SECURITY.md](../SECURITY.md)                                      |
+| You want to know                                                                              | Read                                                                             |
+| --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| How the system fits together and the constraints that must not break                          | [architecture.md](./architecture.md)                                             |
+| A module's tables, endpoints, roles and rules                                                 | [reference/](./reference/) (one page per module: 数据模型 / 契约 / 规则与不变量) |
+| Quotas, rate limits, retention periods                                                        | [reference/limits.md](./reference/limits.md)                                     |
+| Page shapes and interactions                                                                  | [ui-ux-spec.md](./ui-ux-spec.md)                                                 |
+| How user-visible copy is written, banned words                                                | [copy-style-guide.md](./copy-style-guide.md)                                     |
+| Cross-module decisions and their constraints                                                  | [decisions.md](./decisions.md)                                                   |
+| Hard rules, gates, commit conventions                                                         | [../CLAUDE.md](../CLAUDE.md)                                                     |
+| Onboarding and the PR workflow                                                                | [../CONTRIBUTING.md](../CONTRIBUTING.md)                                         |
+| Production deployment, releases, database requirements                                        | [../deploy/README.md](../deploy/README.md)                                       |
+| Cluster installation, the two tiers, north-south ingress and Gateway API CRDs, token rotation | [../deploy/cluster/README.md](../deploy/cluster/README.md)                       |
+| What to do first when an alert fires                                                          | [../deploy/cluster/runbooks/](../deploy/cluster/runbooks/README.md)              |
+| How to report a security vulnerability                                                        | [../SECURITY.md](../SECURITY.md)                                                 |
 
-### 模块参考(`reference/`)
+### Module references (`reference/`)
 
-| 文件                                                 | 范围                                                                                         |
-| ---------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| [account.md](./reference/account.md)                 | 注册登录、JWT 会话、SSH 公钥、实名、账号注销                                                 |
-| [catalog.md](./reference/catalog.md)                 | SKU、平台镜像目录、近似库存                                                                  |
-| [orchestrator.md](./reference/orchestrator.md)       | 实例状态机、outbox 编排、reconciler、SSH / JupyterLab 接入、K8s 抽象                         |
-| [services.md](./reference/services.md)               | 在线服务聚合根:数据模型与状态派生、部署 / 停止 / 删除契约、域名规则、网关 API Key 鉴权、限流 |
-| [disks.md](./reference/disks.md)                     | 数据盘生命周期、配额、扩容与日结                                                             |
-| [images.md](./reference/images.md)                   | 镜像目录管理、集群内 P2P 缓存与逐节点预热                                                    |
-| [billing.md](./reference/billing.md)                 | 钱包、账本、小时结算、包周期与竞价口径、欠费回收、策略参数                                   |
-| [payment.md](./reference/payment.md)                 | 充值单、微信 / 支付宝、回调与查单、退款与发票                                                |
-| [metering.md](./reference/metering.md)               | Prometheus 代理查询、usage_hourly 聚合、对账                                                 |
-| [nodes.md](./reference/nodes.md)                     | 节点一键加入、节点台账、集群能力探测                                                         |
-| [notify.md](./reference/notify.md)                   | 站内信、短信、Alertmanager webhook、余额预警                                                 |
-| [tickets.md](./reference/tickets.md)                 | 工单对话流与滞留巡检                                                                         |
-| [legal.md](./reference/legal.md)                     | 法务文档版本流与注册同意存证                                                                 |
-| [platform-config.md](./reference/platform-config.md) | 管理端在线配置中心与加密存储                                                                 |
-| [security.md](./reference/security.md)               | 生产启动校验、限流分层、租户隔离、已接受取舍                                                 |
-| [observability.md](./reference/observability.md)     | 指标、日志、探针、告警规则、管理端自绘监控                                                   |
-| [i18n.md](./reference/i18n.md)                       | 文案与国际化机制及闸门                                                                       |
-| [limits.md](./reference/limits.md)                   | 配额、限流、时钟与保留期汇总                                                                 |
-| [admin.md](./reference/admin.md)                     | 管理控制台契约与角色边界                                                                     |
-| [web.md](./reference/web.md)                         | 用户控制台路由与前端不变量                                                                   |
+| File                                                 | Scope                                                                                                                                     |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| [account.md](./reference/account.md)                 | Registration and login, JWT sessions, SSH keys, identity verification, account deletion                                                   |
+| [catalog.md](./reference/catalog.md)                 | SKUs, platform image catalog, approximate inventory                                                                                       |
+| [orchestrator.md](./reference/orchestrator.md)       | Instance state machine, outbox orchestration, reconciler, SSH / JupyterLab access, K8s abstraction                                        |
+| [services.md](./reference/services.md)               | Online-service aggregate: data model and derived state, deploy / stop / delete contracts, domain rules, gateway API-key auth, rate limits |
+| [disks.md](./reference/disks.md)                     | Data-disk lifecycle, quotas, expansion and daily settlement                                                                               |
+| [images.md](./reference/images.md)                   | Image catalog management, in-cluster P2P cache and per-node prewarming                                                                    |
+| [billing.md](./reference/billing.md)                 | Wallet, ledger, hourly settlement, subscription and spot pricing, arrears reclamation, policy parameters                                  |
+| [payment.md](./reference/payment.md)                 | Top-up orders, payment channels (registry, Stripe, WeChat Pay, Alipay), callbacks and lookups, refunds and invoices                       |
+| [metering.md](./reference/metering.md)               | Prometheus proxy queries, usage_hourly aggregation, reconciliation                                                                        |
+| [nodes.md](./reference/nodes.md)                     | One-command node enrollment, node ledger, cluster capability probing                                                                      |
+| [notify.md](./reference/notify.md)                   | In-app messages, SMS, Alertmanager webhook, low-balance warnings                                                                          |
+| [tickets.md](./reference/tickets.md)                 | Ticket conversation flow and stale-ticket patrol                                                                                          |
+| [legal.md](./reference/legal.md)                     | Legal document version flow and registration consent records                                                                              |
+| [platform-config.md](./reference/platform-config.md) | Admin online configuration center, encrypted storage, deployment identity                                                                 |
+| [security.md](./reference/security.md)               | Production boot validation, rate-limit layers, tenant isolation, accepted trade-offs                                                      |
+| [observability.md](./reference/observability.md)     | Metrics, logs, probes, alert rules, admin-drawn monitoring                                                                                |
+| [i18n.md](./reference/i18n.md)                       | Copy and internationalization mechanics and gates                                                                                         |
+| [limits.md](./reference/limits.md)                   | Quotas, rate limits, clocks and retention periods in one place                                                                            |
+| [admin.md](./reference/admin.md)                     | Admin console contracts and role boundaries                                                                                               |
+| [web.md](./reference/web.md)                         | User console routes and frontend invariants                                                                                               |
 
-## 维护约定
+## Maintenance conventions
 
-- **文档随代码同一提交**:改了端点、表、角色、默认值、巡检周期、命令或流程,同一提交更新对应 reference / runbook / README。
-- **只写事实,不写理由**:reference 记「现在是什么」与「不可破坏的约束」;不写论证、历史、评审编号、变更史与日期;跨模块决策写 [decisions.md](./decisions.md),每条只写「决定」与「约束」。
-- **数字要能在代码里找到**:限额、周期、默认值给出承载它的文件或配置键(如 `platform_config.py` 的 `SETTING_SPECS`、`SUPERDL_*`)。
-- **引用必须存在**:相对链接与反引号仓库路径由 `python3 scripts/check-docs-links.py` 检查(含告警规则 `runbook_url` 的文件与锚点),CI 的 `docs` job 同款。
-- **模块参考固定结构**:`数据模型` → `契约`(端点 / 角色 / 说明表)→ `规则与不变量`;无自有表的省去 `数据模型`,`limits.md` 是跨模块汇总。新模块照此新建并在上表登记。
-- **标点**:正文半角标点(`,` `;` `()`),引用名词用「」。
+- **Docs travel with code in the same commit:** when an endpoint, table, role, default, patrol period, command or procedure changes, update the matching reference / runbook / README in that commit.
+- **Facts only, no rationale:** a reference records "what is" and "what must not break"; no argument, history, review numbers, change log or dates. Cross-module decisions go to [decisions.md](./decisions.md), each entry stating only the decision and its constraints.
+- **Numbers must be traceable to code:** quotas, periods and defaults name the file or configuration key that holds them (e.g. `SETTING_SPECS` in `platform_config.py`, `SUPERDL_*`).
+- **References must exist:** relative links and back-ticked repository paths are checked by `python3 scripts/check-docs-links.py` (including alert-rule `runbook_url` files and anchors); the CI `docs` job runs the same check.
+- **Fixed structure for module references:** `数据模型` → `契约` (endpoint / role / description table) → `规则与不变量`; modules without their own tables omit `数据模型`; `limits.md` is the cross-module summary. New modules follow this template and are registered in the table above.
+- **Language:** new content is English. Section headings of the existing Chinese references keep their names until each page is translated (links and anchors depend on them); Chinese punctuation conventions in those pages stay as they are until then.
