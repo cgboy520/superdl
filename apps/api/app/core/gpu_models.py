@@ -101,11 +101,9 @@ def supports_mig(canonical: str | None) -> bool:
     return canonical.split("-")[0] in MIG_CAPABLE_FAMILIES
 
 
-# Data-centre families that can be passed through whole (kata pool): discrete PCIe / SXM boards;
-# NVIDIA supports pass-through for every data-centre card after Maxwell. RTX discrete cards pass by
-# prefix (GeForce passthrough is official since R465).
-# Grace superchip integrated GPUs (GB10 / GB200) are excluded: firmware forces a 1:1 IOMMU
-# mapping and the kernel refuses to bind them to vfio-pci (runbooks/hardware-notes.md).
+# Families that can be passed through whole (kata pool): discrete data-centre boards and RTX cards
+# by prefix. Grace superchip integrated GPUs (GB10 / GB200) are excluded, see
+# deploy/cluster/runbooks/hardware-notes.md.
 PASSTHROUGH_CAPABLE_FAMILIES = frozenset(
     {
         "A10",

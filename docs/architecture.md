@@ -68,7 +68,7 @@ apps/api/app/
 └─ workers/         # second entry point of the same image: outbox worker + APScheduler jobs
 ```
 
-Modules import only each other's public surface (`service.py` / `schemas.py`; `account/deps.py`, `account/deletion.py`; `orchestrator`'s `queries.py` / `transitions.py` / `statemachine.py` / `ports.py`). Dependency direction: `orchestrator/service.py → billing/service.py`; billing's settlement and patrols reach orchestration only through `orchestrator/queries.py` (read-only) and `orchestrator/transitions.py` (system-side stop / freeze / reclaim, data-disk arrears chain), neither of which depends on billing. Three import-linter contracts (`apps/api/pyproject.toml`) lock this; in-function imports appear only in `wiring.py` and process entry points.
+Modules import only each other's public surface (`service.py` / `schemas.py`; `account/deps.py`, `account/deletion.py`; `orchestrator`'s `queries.py` / `transitions.py` / `statemachine.py` / `ports.py`). Dependency direction: `orchestrator/service.py → billing/service.py`; billing's settlement and patrols reach orchestration only through `orchestrator/queries.py` (read-only) and `orchestrator/transitions.py` (system-side stop / freeze / reclaim, data-disk arrears chain), neither of which depends on billing. Three import-linter contracts (`apps/api/pyproject.toml`) lock this; in-function imports appear only in `wiring.py`, process entry points and the payment adapters' on-demand third-party SDK loading (`payment_channels/alipay.py` / `wechat.py` / `stripe.py`, the only PLC0415 exemptions).
 
 OpenAPI-first: the FastAPI schema is exported to `openapi.json` and orval generates `packages/api-client`. The user API `/api/v1/*` and the admin API `/api/admin/v1/*` are physically separate, with their own JWT audience, rate limits and audit action prefix.
 
@@ -94,7 +94,7 @@ Control-plane ServiceAccounts are split per worker component; write access to te
 
 ### The real public path
 
-The `api-https` listener (API domain) is not reachable from the public internet; the user console and the payment / SMS callbacks use the console domain, where `/api/v1` is routed by the HTTPRoute `superdl-console-api` straight to the API — the web nginx same-origin proxy only exists in compose / dev.
+The `api-https` listener (API domain) is not reachable from the public internet; the user console, the payment-channel callbacks and the Alertmanager webhook use the console domain, where `/api/v1` is routed by the HTTPRoute `superdl-console-api` straight to the API — the web nginx same-origin proxy only exists in compose / dev.
 
 ```mermaid
 flowchart LR
@@ -150,7 +150,7 @@ Invariant: every hop on this path (Envoy data-plane Pod CIDR, front-proxy egress
 | failed    | stopped (recovery restart, reusing the instance disk) / releasing                                                         |
 | releasing | released (instance-disk LV deleted)                                                                                       |
 
-`released` is the only terminal state. Transitions go only through the transition functions in `orchestrator/service.py`, which write `instance_events` in the same transaction. `stopped` keeps the instance disk (a node-local LV; restarts are pinned to the original node) and data disks keep billing.
+`released` is the only terminal state. Transitions go only through the transition functions in `orchestrator/service.py` (request path) and `orchestrator/transitions.py` (system side: handlers, reconciler, preemption, patrols), both of which write `instance_events` in the same transaction. `stopped` keeps the instance disk (a node-local LV; restarts are pinned to the original node) and data disks keep billing.
 
 ### 7.2 Creating an instance
 
@@ -170,7 +170,7 @@ The balance patrol runs every 5 minutes: estimated remaining runtime below the w
 
 An order with `market='subscription'` pre-debits the whole period up front and is not settled hourly. Periods are **fixed hour counts** (day 24 / week 168 / month 720 / year 8760); discounts are four online policy parameters. Ordering, renewal and expiry live in `app/modules/billing/subscriptions.py`; discount and quote maths have one home, `app/core/pricing.py`.
 
-Two ways into a subscription: buy one at creation, or convert a running on-demand instance in place (`POST /api/v1/instances/{uuid}/subscribe`). Conversion **first settles the on-demand usage up to now, then flips `market`**, in one transaction.
+Two ways into a subscription: buy one at creation, or convert a running or stopped on-demand instance in place (`POST /api/v1/instances/{uuid}/subscribe`). Conversion **first settles the on-demand usage up to now, then flips `market`**, in one transaction.
 
 Expiry is driven by `subscription_patrol` (every 30 minutes): warn before expiry → on expiry, renew and debit if auto-renew is on → otherwise stop → freeze with a `frozen_deadline`; reclamation is done by the balance patrol's frozen branch. The three prepaid semantics (no refund on early release, no automatic fallback to on-demand, zero balance does not stop the instance) and the four matching filters are listed in [`reference/billing.md`](./reference/billing.md).
 
@@ -180,7 +180,7 @@ Expiry is driven by `subscription_patrol` (every 30 minutes): warn before expiry
 
 When an on-demand or subscription creation fails soft admission for lack of capacity, `orchestrator/preempt.py` selects spot instances to reclaim (candidate rules in §8.7); if it cannot free enough, the request still gets 409. The state machine moves to `stopping` immediately (the user is notified by SMS and in-app) and the Pod-deletion outbox task is delayed by `spot_grace_seconds`. The terminal state is `stopped` with the instance disk kept; the user may start it again.
 
-Users may call `POST /api/v1/instances/{uuid}/to-on-demand` at any time to convert to on-demand without touching the Pod, zero downtime; **the current clock hour is re-billed entirely at the on-demand price**. Details in [`reference/orchestrator.md`](./reference/orchestrator.md) and [`reference/billing.md`](./reference/billing.md).
+Users may call `POST /api/v1/instances/{uuid}/to-on-demand` while the instance is `running` or `stopped` (409 otherwise) to convert to on-demand without touching the Pod, zero downtime; **the current clock hour is re-billed entirely at the on-demand price**. Details in [`reference/orchestrator.md`](./reference/orchestrator.md) and [`reference/billing.md`](./reference/billing.md).
 
 ## 8. Hard constraints
 

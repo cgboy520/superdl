@@ -45,7 +45,7 @@ The only north-south entry is Gateway API + Envoy Gateway. The EG control plane 
 
 **Upgrading Envoy Gateway**: change the version in `helmfile.yaml.gotmpl`, `gateway-api-crds.sh` and `scripts/check-gateway-manifests.py` together, then **upgrade the CRDs first with `./gateway-api-crds.sh`, the control plane second with `./apply.sh <full|light> -l name=envoy-gateway`**.
 
-The entry's **configuration** is `../app/k8s/04-gateway.yaml` (GatewayClass / 6 listeners / 8 routes / 9 policies; the data-plane Envoy replicas and resources are in its `EnvoyProxy`); `values/envoy-gateway.yaml` here manages the **control plane** only. The real public entry is the console domain (CDN → front proxy → `console-https`), `/api/v1` reaches the API directly through the HTTPRoute `superdl-console-api`; every upstream hop is registered both in the `ClientTrafficPolicy` `numTrustedHops` and in the ConfigMap `FORWARDED_ALLOW_IPS`, see `docs/architecture.md` "Real public chain".
+The entry's **configuration** is `../app/k8s/04-gateway.yaml` (GatewayClass / 6 listeners / 8 routes / 9 policies; the data-plane Envoy replicas and resources are in its `EnvoyProxy`); `values/envoy-gateway.yaml` here manages the **control plane** only. The real public entry is the console domain (CDN → front proxy → `console-https`), `/api/v1` reaches the API directly through the HTTPRoute `superdl-console-api`; every upstream hop is registered both in the `ClientTrafficPolicy` `numTrustedHops` and in the ConfigMap `FORWARDED_ALLOW_IPS`, see `docs/architecture.md` "The real public path".
 
 **Light tier single machine**: tenant Jupyter is one HTTPRoute per instance; give the `EnvoyProxy` enough memory limit or set a hard cap on instances per machine, sized after a real load test.
 
@@ -162,7 +162,7 @@ Restore to a new server (same k3s version, the same `/etc/rancher/k3s/config.yam
 
 ```bash
 mkdir -p /tmp/k3s-state && gpg --batch --decrypt --passphrase-file /etc/superdl/pg/backup-passphrase k3s-state-<host>-<ts>.tar.gz.gpg | tar -xzf - -C /tmp/k3s-state
-curl -sfL https://get.k3s.io | INSTALL_K3S_SKIP_START=true sh -s - server   # mainland China: rancher-mirror.rancher.cn/k3s/k3s-install.sh with INSTALL_K3S_MIRROR=cn
+curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=<version from the backup, e.g. v1.36.3+k3s1> INSTALL_K3S_SKIP_START=true sh -s - server   # the exact k3s version the snapshot was taken with; mainland China: rancher-mirror.rancher.cn/k3s/k3s-install.sh with INSTALL_K3S_MIRROR=cn
 mkdir -p /var/lib/rancher/k3s/server/db && cp -a /tmp/k3s-state/server/{token,agent-token,cred,tls} /var/lib/rancher/k3s/server/
 # etcd: reset from the snapshot (the token must be the one from the backup; the bootstrap data inside the snapshot is decrypted with it); start only after the command finishes
 k3s server --cluster-reset --cluster-reset-restore-path=/tmp/k3s-state/server/db/snapshots/<snapshot file>

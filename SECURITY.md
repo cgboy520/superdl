@@ -16,4 +16,4 @@
 - Security design, tenant isolation, rate-limit layers and accepted trade-offs: `docs/reference/security.md`.
 - Production boot validation (secrets, providers, domain placeholders fail fast): the first rule in that document's "规则与不变量". <!-- cjk-ok -->
 - Credentials never enter git: they are injected through environment variables or the platform configuration center, and every template uses `CHANGE_ME` (`deploy/app/secrets.example.yaml`).
-- Supply chain: CI runs gitleaks (working tree), pip-audit and pnpm audit (HIGH+ blocks); release images are scanned with Trivy and shipped with an SBOM.
+- Supply chain: CI runs gitleaks over the full commit history, pip-audit and pnpm audit (HIGH+ blocks); release images are scanned with Trivy and shipped with an SBOM.

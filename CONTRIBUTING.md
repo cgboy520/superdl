@@ -30,7 +30,7 @@ There is one rulebook: [CLAUDE.md](./CLAUDE.md) (hard rules, gates, commit conve
 
 ## Language
 
-New code, comments, docs and operator-facing output are written in English. Simplified Chinese lives only in the UI locale files (`locales/zh-CN/**`, the hand-maintained `zh-CN/errors.json`) and in legal presets; the remaining Chinese in older documents is being translated in dedicated `docs:` / `chore:` PRs.
+New code, comments, docs and operator-facing output are written in English. Simplified Chinese lives only in the UI locale files (`locales/zh-CN/**`, the hand-maintained `zh-CN/errors.json`), the legal presets, the zh-CN Playwright selectors under `e2e/tests/`, and single source lines marked `cjk-ok` where the Chinese literal is the point — the zh-CN tables of `app/core/servercopy.py` and `app/core/verification/templates.py`, zh fixtures, regulatory names. The gate is `bash scripts/check-cjk.sh --scope repo` (CLAUDE.md rule 17).
 
 ## Security issues
 
