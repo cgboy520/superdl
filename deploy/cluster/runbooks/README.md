@@ -13,6 +13,7 @@
 | [loki-logging.md](./loki-logging.md) | 参考 | 日志留存口径、LogQL 排障查询、采集自检 |
 | [key-rotation.md](./key-rotation.md) | SOP | 平台主密钥(crypto)双密钥读轮换与 PREVIOUS 摘除条件 |
 | [cluster-validation.md](./cluster-validation.md) | 清单 | CI 覆盖不到的实机验证清单与每次上线的发布检查单 |
+| [hardware-notes.md](./hardware-notes.md) | 参考 | 平台相关硬件事实:Grace 超级芯片(GB10 / GB200)不可直通与统一内存、x86 IOMMU 参数按厂商、发行版与安装源基线 |
 
 发布在 [`../../README.md`](../../README.md);集群装机与 token 轮换在 [`../README.md`](../README.md)。
 
