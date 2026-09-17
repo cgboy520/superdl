@@ -242,8 +242,8 @@ async def admin_get_policies(session: DbSession) -> PoliciesAdminOut:
         specs={
             k: PolicySpecOut(
                 kind=SETTING_SPECS[k].kind,
-                min=str(SETTING_SPECS[k].lo),
-                max=str(SETTING_SPECS[k].hi),
+                min=None if SETTING_SPECS[k].lo is None else str(SETTING_SPECS[k].lo),
+                max=None if SETTING_SPECS[k].hi is None else str(SETTING_SPECS[k].hi),
             )
             for k in POLICY_KEYS
         },

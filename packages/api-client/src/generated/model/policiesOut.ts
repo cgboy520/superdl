@@ -24,6 +24,9 @@ export interface PoliciesOut {
   period_expire_warn_days: number;
   real_name_enabled?: boolean;
   real_name_required_for_recharge?: boolean;
+  recharge_max: string;
+  recharge_min: string;
+  recharge_presets: string[];
   spot_discount_pct: number;
   spot_grace_seconds: number;
 }

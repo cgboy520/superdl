@@ -74,6 +74,9 @@ class PoliciesOut(BaseModel):
     real_name_required_for_recharge: bool = False
     currency: str
     billing_timezone: str
+    recharge_min: MoneyOut
+    recharge_max: MoneyOut
+    recharge_presets: list[MoneyOut]
 
 
 class SubscriptionQuoteOut(BaseModel):
@@ -116,12 +119,12 @@ class DailySummaryOut(BaseModel):
     items: list[BillSummaryItem]
 
 
-MIN_RECHARGE = Decimal("1.00")
-MAX_RECHARGE = Decimal("50000.00")
+#: Contract-level sanity cap; the business bounds are the `recharge_min` / `recharge_max` policies.
+AMOUNT_HARD_CAP = Decimal("100000000")
 
 
 class RechargeCreate(BaseModel):
-    amount: Decimal = Field(ge=MIN_RECHARGE, le=MAX_RECHARGE)
+    amount: Decimal = Field(gt=0, le=AMOUNT_HARD_CAP)
     channel: str
 
 
@@ -145,7 +148,7 @@ PayoutChannel = Literal["offline", "alipay_transfer", "wechat_transfer"]
 
 class RefundCreate(BaseModel):
     order_no: str = Field(min_length=4, max_length=40)
-    amount: Decimal = Field(gt=0, le=MAX_RECHARGE)
+    amount: Decimal = Field(gt=0, le=AMOUNT_HARD_CAP)
     reason: str = Field(min_length=2, max_length=256)
 
 

@@ -438,6 +438,15 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "1.0000",
         "Per GB·month in the platform currency; snapshot price for new disks",
     ),
+    "recharge_min": _num("decimal", "0.01", "1000000", "Smallest top-up a user may submit"),
+    "recharge_max": _num("decimal", "1", "10000000", "Largest single top-up"),
+    "recharge_presets": SettingSpec(
+        POLICY_GROUP,
+        "str",
+        pattern=r"\d{1,9}(\.\d{1,2})?(,\d{1,9}(\.\d{1,2})?){0,7}",
+        max_len=128,
+        hint="Comma-separated preset amounts offered in the top-up dialog (1–8 values)",
+    ),
     "disk_min_gb": _num("int", "1", "1024"),
     "disk_max_gb": _num("int", "10", "65536"),
     "disk_grace_days": _num("int", "1", "365"),
@@ -542,6 +551,9 @@ class RuntimeConfig:
     grafana_url: str
     oncall_phone: str
     disk_price_gb_month: Decimal
+    recharge_min: Decimal
+    recharge_max: Decimal
+    recharge_presets: str
     disk_min_gb: int
     disk_max_gb: int
     disk_grace_days: int
@@ -905,16 +917,49 @@ async def set_platform_settings(
                 set_={"value": value, "updated_by": updated_by, "updated_at": func.now()},
             )
         )
-    if updates.keys() & {"real_name_enabled", "real_name_required_for_recharge"}:
+    if updates.keys() & _CROSS_KEY_INVARIANT_KEYS:
         rows = await list_platform_overrides(session)
 
         def effective(key: str) -> str:
             return rows[key].value if key in rows else _env_default(key)
 
-        check_real_name_invariant(
-            enabled=effective("real_name_enabled") == "true",
-            required_for_recharge=effective("real_name_required_for_recharge") == "true",
-        )
+        if updates.keys() & {"real_name_enabled", "real_name_required_for_recharge"}:
+            check_real_name_invariant(
+                enabled=effective("real_name_enabled") == "true",
+                required_for_recharge=effective("real_name_required_for_recharge") == "true",
+            )
+        if updates.keys() & {"recharge_min", "recharge_max", "recharge_presets"}:
+            check_recharge_policy_invariant(
+                minimum=Decimal(effective("recharge_min")),
+                maximum=Decimal(effective("recharge_max")),
+                presets=effective("recharge_presets"),
+            )
+
+
+_CROSS_KEY_INVARIANT_KEYS = frozenset(
+    {
+        "real_name_enabled",
+        "real_name_required_for_recharge",
+        "recharge_min",
+        "recharge_max",
+        "recharge_presets",
+    }
+)
+
+
+def recharge_presets_of(cfg: "RuntimeConfig") -> list[Decimal]:
+    """Preset top-up amounts in configured order (`recharge_presets` is a comma list)."""
+    return [Decimal(part) for part in cfg.recharge_presets.split(",") if part]
+
+
+def check_recharge_policy_invariant(*, minimum: Decimal, maximum: Decimal, presets: str) -> None:
+    """recharge_min ≤ recharge_max and every preset inside [min, max]; a preset outside the
+    bounds would render a chip the API always rejects."""
+    if minimum > maximum:
+        raise ValueError(f"recharge_min ({minimum}) must not exceed recharge_max ({maximum})")
+    for part in presets.split(","):
+        if part and not minimum <= Decimal(part) <= maximum:
+            raise ValueError(f"recharge preset {part} is outside {minimum}~{maximum}")
 
 
 async def list_platform_overrides(session: AsyncSession) -> dict[str, PlatformSetting]:

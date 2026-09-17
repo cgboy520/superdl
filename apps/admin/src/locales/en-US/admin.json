@@ -1152,6 +1152,21 @@
         "label": "Prewarm recheck window",
         "unit": "hours"
       },
+      "recharge_max": {
+        "hint": "Largest single top-up order",
+        "label": "Maximum top-up",
+        "unit": "{{currency}}"
+      },
+      "recharge_min": {
+        "hint": "Smaller amounts are refused at order time; presets must stay inside the bounds",
+        "label": "Minimum top-up",
+        "unit": "{{currency}}"
+      },
+      "recharge_presets": {
+        "hint": "Chips offered in the top-up dialog, in this order (1–8 values within the bounds)",
+        "label": "Top-up presets",
+        "unit": "{{currency}}, comma-separated"
+      },
       "spot_discount_pct": {
         "hint": "Percentage: 40 = 60% off the pay-as-you-go price; repricing affects only newly created spot instances",
         "label": "Spot discount",

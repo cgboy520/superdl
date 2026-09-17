@@ -241,9 +241,10 @@ class TestRecharge:
         assert resp.status_code == 409
 
     async def test_amount_bounds_rejected_at_contract_layer(self, client: AsyncClient):
-        """充值金额低于下限、超大(1e30)、负数一律 422。"""
+        """Absurd amounts (1e30, negative) fail the contract (422); a value below the policy
+        minimum passes the contract and is refused by the recharge_min policy (400)."""
         headers = await user_headers(client, "13700000045")
-        for amount in ("0.50", "1e30", "-5"):
+        for amount in ("1e30", "-5"):
             resp = await client.post(
                 "/api/v1/wallet/recharges",
                 json={"amount": amount, "channel": "mock"},
@@ -251,6 +252,11 @@ class TestRecharge:
             )
             assert resp.status_code == 422, (amount, resp.text)
             assert resp.json()["code"] == "VALIDATION_ERROR"
+        resp = await client.post(
+            "/api/v1/wallet/recharges", json={"amount": "0.50", "channel": "mock"}, headers=headers
+        )
+        assert resp.status_code == 400
+        assert resp.json()["message_key"] == "billing.rechargeAmountOutOfRange"
 
 
 class TestCallbackOnNonPendingOrders:

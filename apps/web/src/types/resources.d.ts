@@ -96,6 +96,7 @@ export default interface Resources {
       "orderNotFound": "订单不存在",
       "orderStateNotBackfillable": "订单状态 {{status}} 不可补单",
       "realNameRequiredForRecharge": "按监管要求,充值前需完成实名认证",
+      "rechargeAmountOutOfRange": "充值金额须在 {{min}} 与 {{max}} 之间",
       "refundAlreadyApplied": "该订单已有进行中的退款申请,请勿重复提交",
       "refundAmountExceeded": "退款金额不能超过可退上限 {{max}}(订单金额 {{order}},已退 {{refunded}},可退余额 {{refundable}})",
       "refundBalanceConsumed": "余额已被消费,暂不能核销退款(当前余额 {{balance}},应退 {{amount}});请取消该退款单",

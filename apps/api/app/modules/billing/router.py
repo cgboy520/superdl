@@ -8,9 +8,10 @@ from app.core.config import get_settings
 from app.core.csvexport import CSV_RESPONSES, csv_response
 from app.core.db import DbSession
 from app.core.http import mark_idempotent_replay
+from app.core.money import as_amount
 from app.core.pagination import Page
 from app.core.params import Cursor, IdempotencyKey, Limit, TzOffset
-from app.core.platform_config import get_runtime_config
+from app.core.platform_config import get_runtime_config, recharge_presets_of
 from app.core.ratelimit import check_rate_limit
 from app.core.timeutil import billing_month_range, parse_local_date
 from app.modules.account import service as account_service
@@ -60,6 +61,9 @@ async def get_policies(session: DbSession) -> PoliciesOut:
         real_name_required_for_recharge=cfg.real_name_required_for_recharge,
         currency=settings.platform_currency,
         billing_timezone=settings.billing_timezone,
+        recharge_min=as_amount(p.recharge_min),
+        recharge_max=as_amount(p.recharge_max),
+        recharge_presets=[as_amount(v) for v in recharge_presets_of(p)],
     )
 
 

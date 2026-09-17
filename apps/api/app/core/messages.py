@@ -179,6 +179,7 @@ MESSAGES: dict[str, str] = {
     "billing.refundAlreadyApplied": (
         "This order already has an active refund request — do not resubmit"
     ),
+    "billing.rechargeAmountOutOfRange": "Top-up amount must be between {min} and {max}",
     "billing.refundAmountExceeded": (
         "Refund amount exceeds the refundable cap {max} (order {order}, already "
         "refunded {refunded}, refundable balance {refundable})"

@@ -8,6 +8,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.core.config import get_settings
+from app.core.money import money_label
 from app.core.platform_config import (
     PlatformSetting,
     runtime_config_from_strings as rc,
@@ -814,6 +815,48 @@ class TestPolicyOverrides:
         assert resp.status_code == 400
         items = (await client.get("/api/admin/v1/platform-config", headers=ah)).json()["items"]
         assert all(i["group"] != "policy" for i in items)
+
+    async def test_recharge_bounds_and_presets_are_policies(self, client: AsyncClient, sm):
+        """/policies publishes recharge_min / recharge_max / recharge_presets; raising the minimum
+        refuses smaller top-ups; min > max and presets outside the bounds are rejected."""
+        base = (await client.get("/api/v1/policies")).json()
+        assert base["recharge_min"] == "1.00" and base["recharge_max"] == "50000.00"
+        assert base["recharge_presets"] == ["50.00", "100.00", "500.00"]
+        ah = await admin_headers(sm, client, role="admin")
+        resp = await client.put(
+            "/api/admin/v1/policies",
+            json={
+                "updates": {"recharge_min": "20", "recharge_presets": "20,200"},
+                "reason": "raise the floor",
+            },
+            headers=ah,
+        )
+        assert resp.status_code == 200, resp.text
+        policies = (await client.get("/api/v1/policies")).json()
+        assert policies["recharge_min"] == "20.00"
+        assert policies["recharge_presets"] == ["20.00", "200.00"]
+        headers = await user_headers(client, "13700000033")
+        low = await client.post(
+            "/api/v1/wallet/recharges", json={"amount": "10.00", "channel": "mock"}, headers=headers
+        )
+        assert low.status_code == 400
+        assert low.json()["message_key"] == "billing.rechargeAmountOutOfRange"
+        assert low.json()["params"]["min"] == money_label("20")
+        ok = await client.post(
+            "/api/v1/wallet/recharges", json={"amount": "20.00", "channel": "mock"}, headers=headers
+        )
+        assert ok.status_code == 201, ok.text
+        for bad in (
+            {"recharge_min": "60000"},
+            {"recharge_presets": "5"},
+            {"recharge_presets": "20;200"},
+        ):
+            resp = await client.put(
+                "/api/admin/v1/policies", json={"updates": bad, "reason": "bad"}, headers=ah
+            )
+            assert resp.status_code == 400, (bad, resp.text)
+        admin_view = (await client.get("/api/admin/v1/policies", headers=ah)).json()
+        assert admin_view["specs"]["recharge_presets"] == {"kind": "str", "min": None, "max": None}
 
     async def test_invalid_updates_rejected(self, client: AsyncClient, sm):
         ah = await admin_headers(sm, client, role="admin")

@@ -46,6 +46,21 @@ export const Route = createFileRoute("/_app/settings")({
 
 /** 策略参数:值是 locale 键(settings.policy.*),渲染时 t() 查表。 */
 const POLICY_LABELS = {
+  recharge_min: {
+    label: "settings.policy.recharge_min.label",
+    unit: "settings.policy.recharge_min.unit",
+    hint: "settings.policy.recharge_min.hint",
+  },
+  recharge_max: {
+    label: "settings.policy.recharge_max.label",
+    unit: "settings.policy.recharge_max.unit",
+    hint: "settings.policy.recharge_max.hint",
+  },
+  recharge_presets: {
+    label: "settings.policy.recharge_presets.label",
+    unit: "settings.policy.recharge_presets.unit",
+    hint: "settings.policy.recharge_presets.hint",
+  },
   disk_price_gb_month: {
     label: "settings.policy.disk_price_gb_month.label",
     unit: "settings.policy.disk_price_gb_month.unit",
@@ -221,7 +236,7 @@ function PoliciesTab() {
                 <div style={{ color: adminColors.textSecondary, fontSize: fontSize.caption }}>
                   {t("settings.paramMeta", {
                     unit: r.unit,
-                    range: r.spec ? `${r.spec.min} ~ ${r.spec.max}` : "-",
+                    range: r.spec?.min != null && r.spec.max != null ? `${r.spec.min} ~ ${r.spec.max}` : "-",
                   })}
                   {r.hint ? ` · ${r.hint}` : ""}
                 </div>
@@ -233,19 +248,28 @@ function PoliciesTab() {
             title: t("settings.colNewValue"),
             width: 160,
             align: "right",
-            render: (_, r) => (
-              <InputNumber
-                size="small"
-                style={{ width: "100%" }}
-                disabled={!writable}
-                stringMode
-                min={r.spec?.min}
-                max={r.spec?.max}
-                placeholder={r.effective}
-                value={draft[r.key] ?? null}
-                onChange={(v) => setDraft((d) => ({ ...d, [r.key]: v ?? "" }))}
-              />
-            ),
+            render: (_, r) =>
+              r.spec?.kind === "str" ? (
+                <Input
+                  size="small"
+                  disabled={!writable}
+                  placeholder={r.effective}
+                  value={draft[r.key] ?? ""}
+                  onChange={(e) => setDraft((d) => ({ ...d, [r.key]: e.target.value }))}
+                />
+              ) : (
+                <InputNumber
+                  size="small"
+                  style={{ width: "100%" }}
+                  disabled={!writable}
+                  stringMode
+                  min={r.spec?.min ?? undefined}
+                  max={r.spec?.max ?? undefined}
+                  placeholder={r.effective}
+                  value={draft[r.key] ?? null}
+                  onChange={(v) => setDraft((d) => ({ ...d, [r.key]: v ?? "" }))}
+                />
+              ),
           },
         ]}
       />

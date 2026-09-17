@@ -22,7 +22,7 @@ from app.core.metrics import (
     PAYMENT_CLOSED_ORDER_RESCUED_TOTAL,
     PAYMENT_RECOVER_FAILED_TOTAL,
 )
-from app.core.money import as_amount, platform_currency
+from app.core.money import as_amount, money_label, platform_currency
 from app.core.platform_config import ConfigWarning, RuntimeConfig, get_runtime_config
 from app.core.timeutil import now_utc
 from app.modules.billing import wallet
@@ -67,6 +67,7 @@ async def create_recharge(
     """
     amount = as_amount(amount)
     cfg = await get_runtime_config(session)
+    _assert_recharge_amount(cfg, amount)
     spec = _spec(channel_name)
     if not spec.enabled(cfg, payment_mock=get_settings().payment_mock):
         raise channel_error("billing.mockDevOnly" if spec.dev_only else "billing.channelNotEnabled")
@@ -114,6 +115,16 @@ async def create_recharge(
         return result, False
     logger.info("recharge_order_created", order_no=order.order_no, user_id=user_id)
     return await _attach_payment(session, order, channel), True
+
+
+def _assert_recharge_amount(cfg: RuntimeConfig, amount: Decimal) -> None:
+    """Business bounds (`recharge_min` / `recharge_max` policies); the schema only caps sanity."""
+    if not cfg.recharge_min <= amount <= cfg.recharge_max:
+        raise AppError(
+            ErrorCode.VALIDATION_ERROR,
+            key="billing.rechargeAmountOutOfRange",
+            params={"min": money_label(cfg.recharge_min), "max": money_label(cfg.recharge_max)},
+        )
 
 
 def _spec(channel_name: str) -> ChannelSpec:

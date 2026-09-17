@@ -6904,6 +6904,21 @@
             "title": "Real Name Required For Recharge",
             "type": "boolean"
           },
+          "recharge_max": {
+            "title": "Recharge Max",
+            "type": "string"
+          },
+          "recharge_min": {
+            "title": "Recharge Min",
+            "type": "string"
+          },
+          "recharge_presets": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Recharge Presets",
+            "type": "array"
+          },
           "spot_discount_pct": {
             "title": "Spot Discount Pct",
             "type": "integer"
@@ -6928,7 +6943,10 @@
           "spot_discount_pct",
           "spot_grace_seconds",
           "currency",
-          "billing_timezone"
+          "billing_timezone",
+          "recharge_min",
+          "recharge_max",
+          "recharge_presets"
         ],
         "title": "PoliciesOut",
         "type": "object"
@@ -6940,12 +6958,26 @@
             "type": "string"
           },
           "max": {
-            "title": "Max",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
           },
           "min": {
-            "title": "Min",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
           }
         },
         "required": [
@@ -7085,8 +7117,8 @@
           "amount": {
             "anyOf": [
               {
-                "maximum": 50000.0,
-                "minimum": 1.0,
+                "exclusiveMinimum": 0.0,
+                "maximum": 100000000.0,
                 "type": "number"
               },
               {
@@ -7276,7 +7308,7 @@
             "anyOf": [
               {
                 "exclusiveMinimum": 0.0,
-                "maximum": 50000.0,
+                "maximum": 100000000.0,
                 "type": "number"
               },
               {

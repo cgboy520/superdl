@@ -291,8 +291,8 @@ class RevenueReportOut(BaseModel):
 
 class PolicySpecOut(BaseModel):
     kind: str
-    min: str
-    max: str
+    min: str | None
+    max: str | None
 
 
 class PoliciesAdminOut(BaseModel):
