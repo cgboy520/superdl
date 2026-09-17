@@ -6,7 +6,7 @@
  */
 
 /**
- * 管理端全量视图(含超卖参数与池标签)。
+ * Admin full view (with oversell parameters and pool label).
  */
 export interface SkuAdminOut {
   actual_oversell?: string | null;

@@ -8,7 +8,7 @@ import type { CapacityWarningOutCode } from './capacityWarningOutCode';
 import type { CapacityWarningOutParams } from './capacityWarningOutParams';
 
 /**
- * 结构化警示(前端按 code 映射文案,params 供插值)。
+ * Structured warning (the frontend maps copy by code, params are for interpolation).
  */
 export interface CapacityWarningOut {
   code: CapacityWarningOutCode;

@@ -259,7 +259,7 @@ class TestFailureModes:
         await reconcile_once(sm)
         assert (f"tenant-{user_id}", uuid) not in fake.instance_disks
         notes = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
-        assert any("调度超时" in n["title"] for n in notes)
+        assert any("scheduling timed out" in n["title"] for n in notes)
 
     async def test_leaked_pod_reclaimed(self, client, sm, fake):
         """DB 无主的泄漏 Pod 被回收。"""
@@ -326,7 +326,7 @@ class TestUnreadyTimer:
         assert events[0]["event_metadata"]["unready_since"] == ensure_utc(first_seen).isoformat()
         assert (ns, uuid) not in fake.pods
         notes = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
-        assert any("节点失联" in n["title"] for n in notes)
+        assert any("lost contact" in n["title"] for n in notes)
 
     async def test_recovery_restarts_the_timer(self, client, sm, fake, monkeypatch):
         """抖动恢复重新计时:ready 那轮清表,再次不就绪从零起算。"""

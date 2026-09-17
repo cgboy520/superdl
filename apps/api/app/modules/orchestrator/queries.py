@@ -1,4 +1,4 @@
-"""实例、事件与数据盘查询及聚合。"""
+"""Instance, event and data-disk queries and aggregates."""
 
 from collections.abc import Iterable
 from decimal import Decimal
@@ -18,35 +18,37 @@ DISK_ARREARS_CHAIN_STATUSES: tuple[str, ...] = ("active", "grace", "frozen")
 
 
 async def lock_instance(session: AsyncSession, instance_id: int) -> Instance | None:
-    """FOR UPDATE 锁实例行并重读;不存在返回 None。"""
+    """FOR UPDATE lock the instance row and re-read; None when missing."""
     return await session.get(Instance, instance_id, with_for_update=True, populate_existing=True)
 
 
 async def instance_by_id(session: AsyncSession, instance_id: int) -> Instance:
-    """按主键取实例(不限归属与状态);系统侧用,用户请求走 get_instance。"""
+    """Fetch the instance by primary key (any owner or status); system-side use, user requests go
+    through get_instance."""
     return (await session.execute(select(Instance).where(Instance.id == instance_id))).scalar_one()
 
 
 async def instance_status(session: AsyncSession, instance_id: int) -> str | None:
-    """按主键取实例状态;不存在返回 None(不抛)。"""
+    """Fetch the instance status by primary key; None when missing (no raise)."""
     instance = await session.get(Instance, instance_id)
     return None if instance is None else instance.status
 
 
 async def get_instance(session: AsyncSession, user_id: int, uuid: str) -> Instance:
-    """按 (owner, uuid) 取实例;不存在或非属主 → 404。"""
+    """Fetch the instance by (owner, uuid); missing or not the owner → 404."""
     instance = (
         await session.execute(
             select(Instance).where(Instance.uuid == uuid, Instance.user_id == user_id)
         )
     ).scalar_one_or_none()
     if instance is None:
-        raise not_found("实例不存在")
+        raise not_found(key="orchestrator.instanceNotFound")
     return instance
 
 
 async def pending_hourly(session: AsyncSession, user_id: int) -> Decimal:
-    """该用户 creating/starting 实例的时费合计,由 wallet.assert_can_afford 内部并入。"""
+    """Hourly cost of the user's creating/starting instances, merged in by
+    wallet.assert_can_afford."""
     rows = (
         (
             await session.execute(
@@ -64,15 +66,18 @@ async def pending_hourly(session: AsyncSession, user_id: int) -> Decimal:
 
 
 async def lock_instance_for_billing(session: AsyncSession, instance_id: int) -> None:
-    """结算前 FOR UPDATE 锁实例行再读事件;锁序 instance → bill_hourly → wallet。"""
+    """FOR UPDATE lock the instance row before settlement, then read the events; lock order instance
+    → bill_hourly → wallet."""
     await session.execute(select(Instance.id).where(Instance.id == instance_id).with_for_update())
 
 
 async def billing_events(
     session: AsyncSession, instance_id: int
 ) -> list[tuple[Any, str | None, str, Any]]:
-    """实例全部事件 (created_at, from_status, to_status, event_metadata),按发生序;窗口裁剪由
-    结算侧做(晚于窗口的失败边可能带 occupied_since / unready_since,决定窗口内的计费起止)。"""
+    """Every event of the instance (created_at, from_status, to_status, event_metadata) in
+    occurrence order; window clipping is done by
+    settlement (a failure edge after the window may carry occupied_since / unready_since, deciding
+    the billing bounds inside the window)."""
     return list(
         (
             await session.execute(
@@ -92,7 +97,8 @@ async def billing_events(
 
 
 async def billing_history_exists_before(session: AsyncSession, kind: str, before: Any) -> bool:
-    """结算引导判据:窗口起点之前是否存在过可计费对象(hourly 看实例事件,daily_disk 看数据盘)。"""
+    """Settlement bootstrap criterion: whether a billable object existed before the window start
+    (hourly looks at instance events, daily_disk at data disks)."""
     if kind == "daily_disk":
         stmt = select(DataDisk.id).where(DataDisk.created_at < before).limit(1)
     else:
@@ -103,9 +109,10 @@ async def billing_history_exists_before(session: AsyncSession, kind: str, before
 async def billing_candidates(
     session: AsyncSession, window_start: Any
 ) -> list[tuple[int, int, Any, int]]:
-    """小时结算候选:(instance_id, user_id, price_hourly, gpu_count) =
-    当前 running ∪ 窗口起点以来离开过 running 或 creating/starting→failed 的实例;
-    包周期实例只在此处跳过。"""
+    """Hourly settlement candidates: (instance_id, user_id, price_hourly, gpu_count) =
+    currently running ∪ instances that left running or went creating/starting→failed since the
+    window start;
+    subscription instances are skipped here only."""
     running_now = select(Instance.id.label("iid")).where(Instance.status == sm_def.RUNNING)
     exited = (
         select(InstanceEvent.instance_id.label("iid"))
@@ -134,7 +141,7 @@ def _billing_row(i: Instance) -> tuple[int, int, Any, int]:
 
 
 async def instances_by_ids(session: AsyncSession, instance_ids: Iterable[int]) -> list[Instance]:
-    """按 id 批量取实例,不限状态。"""
+    """Fetch instances by id in batch, any status."""
     ids = list(instance_ids)
     if not ids:
         return []
@@ -144,7 +151,7 @@ async def instances_by_ids(session: AsyncSession, instance_ids: Iterable[int]) -
 async def instance_locations(
     session: AsyncSession, instance_ids: Iterable[int]
 ) -> dict[int, tuple[str, str, str | None]]:
-    """metering 聚合用:instance_id → (k8s_namespace, uuid, pool_label)。"""
+    """For metering aggregation: instance_id → (k8s_namespace, uuid, pool_label)."""
     return {
         i.id: (i.k8s_namespace, i.uuid, (i.spec or {}).get("pool_label"))
         for i in await instances_by_ids(session, instance_ids)
@@ -154,7 +161,8 @@ async def instance_locations(
 async def instance_hourly_prices(
     session: AsyncSession, instance_ids: Iterable[int]
 ) -> dict[int, Any]:
-    """对账用:instance_id → 时费(单价 × 计费份数;CPU 实例份数恒 1)。"""
+    """For reconciliation: instance_id → hourly cost (unit price × billing units; CPU instances
+    always 1 unit)."""
     return {
         i.id: hourly_cost(i.price_hourly, i.gpu_count)
         for i in await instances_by_ids(session, instance_ids)
@@ -162,12 +170,13 @@ async def instance_hourly_prices(
 
 
 async def instance_names(session: AsyncSession, instance_ids: Iterable[int]) -> dict[int, str]:
-    """账单展示用:instance_id → 实例名(释放后行保留,改名跟当前名)。"""
+    """For bill display: instance_id → instance name (rows survive release, renames follow the
+    current name)."""
     return {i.id: i.name for i in await instances_by_ids(session, instance_ids)}
 
 
 async def list_running_instances_by_user(session: AsyncSession) -> dict[int, list[Instance]]:
-    """欠费巡检用:user_id → running 实例列表。"""
+    """For the arrears patrol: user_id → running instances."""
     rows = (
         (await session.execute(select(Instance).where(Instance.status == sm_def.RUNNING)))
         .scalars()
@@ -180,7 +189,7 @@ async def list_running_instances_by_user(session: AsyncSession) -> dict[int, lis
 
 
 async def running_instances_of_user(session: AsyncSession, user_id: int) -> list[Instance]:
-    """单用户 running 实例(钱包锁内路径,不扫全平台)。"""
+    """Running instances of one user (wallet-lock path, no platform-wide scan)."""
     return list(
         (
             await session.execute(
@@ -195,7 +204,7 @@ async def running_instances_of_user(session: AsyncSession, user_id: int) -> list
 
 
 async def billable_disks_of_user(session: AsyncSession, user_id: int) -> list[DataDisk]:
-    """单用户计费态盘(DISK_BILLABLE_STATUSES)。"""
+    """Billable disks of one user (DISK_BILLABLE_STATUSES)."""
     return list(
         (
             await session.execute(
@@ -210,7 +219,7 @@ async def billable_disks_of_user(session: AsyncSession, user_id: int) -> list[Da
 
 
 async def count_instances_by_status(session: AsyncSession) -> dict[str, int]:
-    """按状态聚合实例数。"""
+    """Instance counts aggregated by status."""
     rows = (
         await session.execute(select(Instance.status, func.count()).group_by(Instance.status))
     ).all()
@@ -218,7 +227,7 @@ async def count_instances_by_status(session: AsyncSession) -> dict[str, int]:
 
 
 async def count_active_instances_on_node(session: AsyncSession, node_name: str) -> int:
-    """节点上 status != released 的实例数,包含 stopped/frozen/failed/releasing。"""
+    """Instances on the node with status != released, stopped/frozen/failed/releasing included."""
     return int(
         (
             await session.execute(
@@ -231,7 +240,7 @@ async def count_active_instances_on_node(session: AsyncSession, node_name: str) 
 
 
 async def count_active_instances_by_node(session: AsyncSession) -> dict[str, int]:
-    """节点名 → 未释放实例数;口径同 count_active_instances_on_node。"""
+    """Node name → unreleased instance count; same definition as count_active_instances_on_node."""
     rows = (
         await session.execute(
             select(Instance.node_name, func.count())
@@ -251,7 +260,7 @@ async def list_instances_by_status(session: AsyncSession, status: str) -> list[I
 async def instance_disk_stats_by_user(
     session: AsyncSession, user_ids: list[int]
 ) -> dict[int, dict[str, int]]:
-    """管理端租户表:user_id → {instances, disk_gb},只聚合给定用户。"""
+    """Admin tenant table: user_id → {instances, disk_gb}, aggregated for the given users only."""
     if not user_ids:
         return {}
     inst_stmt = (
@@ -275,7 +284,8 @@ async def instance_disk_stats_by_user(
 
 
 async def deletion_leftovers(session: AsyncSession, user_id: int) -> dict[str, list[str]]:
-    """注销前置校验:未释放实例(非 released/failed)与未删除数据盘的 uuid 清单。"""
+    """Deletion pre-check: uuids of unreleased instances (not released/failed) and non-deleted data
+    disks."""
     instances = (
         (
             await session.execute(
@@ -305,7 +315,8 @@ async def deletion_leftovers(session: AsyncSession, user_id: int) -> dict[str, l
 async def deletion_leftover_counts(
     session: AsyncSession, user_ids: list[int]
 ) -> dict[int, dict[str, int]]:
-    """deletion_leftovers 的批量版(管理端注销申请列表):user_id → {instances, disks} 计数。"""
+    """Batch variant of deletion_leftovers (admin deletion request list): user_id → {instances,
+    disks} counts."""
     if not user_ids:
         return {}
     inst_rows = (
@@ -342,7 +353,8 @@ async def deletion_leftover_counts(
 
 
 async def running_gpu_share_by_pool(session: AsyncSession) -> dict[str, float]:
-    """超卖报表:各池已售算力份额(等效整卡数)。共享档按 gpu_cores_pct 折算。"""
+    """Oversell report: sold compute share per pool (whole-card equivalents). The shared tier
+    converts by gpu_cores_pct."""
     rows = (
         (
             await session.execute(
@@ -363,8 +375,8 @@ async def running_gpu_share_by_pool(session: AsyncSession) -> dict[str, float]:
 
 
 async def running_spot_gpus_by_pool(session: AsyncSession) -> dict[str, int]:
-    """池 → running 竞价实例占用卡数合计(device 计数);
-    超卖档可能大于台账 gpu_used,调用方按已租截断。"""
+    """Pool → cards held by running spot instances (device count);
+    may exceed the inventory gpu_used in oversold tiers, the caller caps by rented."""
     rows = (
         (
             await session.execute(
@@ -385,14 +397,15 @@ async def running_spot_gpus_by_pool(session: AsyncSession) -> dict[str, int]:
 
 
 async def pool_by_instance(session: AsyncSession, instance_ids: Iterable[int]) -> dict[int, str]:
-    """实例 → 池标签(不限状态,含已释放)。"""
+    """Instance → pool label (any status, released included)."""
     return {i.id: i.spec["pool_label"] for i in await instances_by_ids(session, instance_ids)}
 
 
 async def instance_billing_snapshot(
     session: AsyncSession, instance_id: int
 ) -> tuple[int, int, Any, int] | None:
-    """单实例计费快照:(id, user_id, price_hourly, gpu_count);不存在返回 None(缺口重放用)。"""
+    """Billing snapshot of one instance: (id, user_id, price_hourly, gpu_count); None when missing
+    (for gap replay)."""
     rows = await instances_by_ids(session, [instance_id])
     return _billing_row(rows[0]) if rows else None
 
@@ -400,7 +413,8 @@ async def instance_billing_snapshot(
 async def disk_billing_snapshot(
     session: AsyncSession, disk_id: int
 ) -> tuple[int, int, Any, int] | None:
-    """单盘计费快照:(id, user_id, price_gb_month, size_gb);不存在返回 None(缺口重放用)。"""
+    """Billing snapshot of one disk: (id, user_id, price_gb_month, size_gb); None when missing (for
+    gap replay)."""
     return (
         (
             await session.execute(
@@ -415,7 +429,7 @@ async def disk_billing_snapshot(
 
 
 async def billable_disks(session: AsyncSession) -> list[DataDisk]:
-    """全平台计费态盘(日结与整窗重放共用)。"""
+    """Platform-wide billable disks (shared by daily settlement and whole-window replay)."""
     return list(
         (
             await session.execute(
@@ -426,7 +440,7 @@ async def billable_disks(session: AsyncSession) -> list[DataDisk]:
 
 
 async def arrears_chain_disk_user_ids(session: AsyncSession) -> list[int]:
-    """欠费巡检的用户集合:名下有任何一块 active/grace/frozen 盘。"""
+    """User set of the arrears patrol: anyone owning an active/grace/frozen disk."""
     return list(
         (
             await session.execute(

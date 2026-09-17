@@ -22,7 +22,9 @@ ArgvItem = Annotated[str, Field(max_length=MAX_CONTAINER_ARG_LEN)]
 
 
 class ServiceSpecIn(BaseModel):
-    """一个版本的完整规格(部署与版本更新共用),快照到那一版的实例上,之后不可改。"""
+    """The full spec of one revision (shared by deployment and revision update), snapshotted onto
+    that
+    revision's instance and immutable afterwards."""
 
     sku_id: int
     gpu_count: int = Field(default=1, ge=0, le=8)
@@ -63,21 +65,24 @@ class ServiceCreate(ServiceSpecIn):
 
 
 class ServiceRevisionCreate(ServiceSpecIn):
-    """版本更新的完整规格(与部署同一形态)。env_secret_keep = 沿用当前版本密文值的键名;
-    同名键同时出现在 env 里以 env 为准。"""
+    """The full spec of a revision update (same shape as deployment). env_secret_keep = key names
+    whose secret values are carried over from the current revision;
+    a key also present in env takes the env value."""
 
     env_secret_keep: list[str] = Field(default_factory=list, max_length=64)
 
 
 class ServicePatch(BaseModel):
-    """改名与鉴权开关:只改 services 行。"""
+    """Rename and auth switch: only the services row changes."""
 
     name: str | None = Field(default=None, min_length=1, max_length=64)
     require_api_key: bool | None = None
 
 
 class ServiceContainerOut(BaseModel):
-    """当前版本的容器配置回显(不可改,要改请更新版本);env 只回明文项,密文项只回键名。"""
+    """Echo of the current revision's container config (immutable; update the revision to change
+    it);
+    env returns plaintext entries only, secret entries return the key name."""
 
     image_ref: str
     container_command: list[str] | None
@@ -109,14 +114,15 @@ class ServiceOut(BaseModel):
 
 
 class AdminServiceOut(ServiceOut):
-    """管理端全局服务视图:含租户与当前版本实例的调度节点。"""
+    """Admin global service view: with the tenant and the current revision instance's node."""
 
     user_id: int
     node_name: str | None = None
 
 
 class ServiceEventOut(InstanceEventOut):
-    """服务级时间线:全部版本实例的事件并集,标出所属版本。"""
+    """Service-level timeline: union of every revision instance's events, marked with the
+    revision."""
 
     instance_uuid: str
     revision: int | None
@@ -138,6 +144,6 @@ class ApiKeyOut(BaseModel):
 
 
 class ApiKeyCreateOut(ApiKeyOut):
-    """创建响应:明文 key 只在这一次出现。"""
+    """Create response: the plaintext key appears only this once."""
 
     key: str

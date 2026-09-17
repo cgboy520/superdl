@@ -1,6 +1,8 @@
-"""节点注册匿名侧:脚本下发 + 令牌换参数 + 进度回报。
-/script 无鉴权(零密钥,轻限流);/bootstrap 走 Bearer 注册令牌,一次性,换发窄权限 progress 令牌;
-无效/过期/吊销/终态统一 404,按 IP 限流。join token 明文只在 bootstrap 响应体,不入日志。
+"""Anonymous side of node enrollment: script download + token exchange + progress reports.
+/script has no auth (zero secrets, light rate limit); /bootstrap takes the Bearer enrollment token,
+one-off, and issues the narrow progress token;
+invalid / expired / revoked / terminal tokens all get 404, rate-limited per IP. The join token
+plaintext appears only in the bootstrap response body, never in logs.
 """
 
 import hashlib
@@ -30,7 +32,7 @@ def _script_body() -> str:
 
 
 def _served_script() -> str:
-    """脚本正文仅替换首个 __API_BASE__。"""
+    """The script body only replaces the first __API_BASE__."""
     return _script_body().replace("__API_BASE__", get_settings().public_base_url.rstrip("/"), 1)
 
 
@@ -40,13 +42,14 @@ def _client_ip(request: Request) -> str:
 
 def _bearer_token(authorization: str | None) -> str:
     if not authorization or not authorization.startswith("Bearer "):
-        raise unauthorized("缺少注册令牌")
+        raise unauthorized("missing enrollment token")
     return authorization.removeprefix("Bearer ").strip()
 
 
 @router.get("/node-enroll/script", response_class=PlainTextResponse)
 async def get_join_script(request: Request) -> PlainTextResponse:
-    """装机脚本下发(text/x-shellscript)。零密钥;占位符替换为本环境 API 地址。"""
+    """Install script download (text/x-shellscript). Zero secrets; the placeholder is replaced with
+    this environment's API address."""
     await check_rate_limit(
         f"node-enroll-script:{_client_ip(request)}", max_attempts=30, window_seconds=60
     )
@@ -60,7 +63,8 @@ async def enroll_bootstrap(
     request: Request,
     authorization: Annotated[str | None, Header()] = None,
 ) -> BootstrapOut:
-    """令牌换装机参数(含 join token)。注册令牌一次性,首跑即消费并换发 progress 令牌。"""
+    """Exchange the token for install parameters (join token included). The enrollment token is
+    one-off: the first run consumes it and issues the progress token."""
     await check_rate_limit(f"node-enroll:{_client_ip(request)}", max_attempts=30, window_seconds=60)
     token = _bearer_token(authorization)
     enrollment, cfg, progress_token = await service.bootstrap(
@@ -94,7 +98,7 @@ async def enroll_progress(
     request: Request,
     authorization: Annotated[str | None, Header()] = None,
 ) -> None:
-    """进度上报,无响应体。"""
+    """Progress report, no response body."""
     await check_rate_limit(f"node-enroll:{_client_ip(request)}", max_attempts=60, window_seconds=60)
     token = _bearer_token(authorization)
     await service.report_progress(

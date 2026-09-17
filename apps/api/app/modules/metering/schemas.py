@@ -8,14 +8,15 @@ class InstanceGpuSeries(BaseModel):
 
 
 class InstanceMetricsSummaryOut(BaseModel):
-    """实例列表 sparkline 数据源。断源时 available=false(200,不 503)。"""
+    """Data source of the instance list sparklines. Source down → available=false (200, not 503)."""
 
     available: bool
     items: list[InstanceGpuSeries]
 
 
 class NodeGpuSeriesOut(BaseModel):
-    """单卡多序列(DCGM):index 为卡序号,序列为 (unix_ts, 值) 对;断源的序列缺省。"""
+    """Per-card multi-series (DCGM): index is the card index, series are (unix_ts, value) pairs;
+    series from a down source are absent."""
 
     index: str
     util: list[tuple[float, float]] | None = None
@@ -24,7 +25,8 @@ class NodeGpuSeriesOut(BaseModel):
 
 
 class NodeMetricsOut(BaseModel):
-    """管理端节点每卡曲线 + 24h XID 计数。断源 available=false(200);grafana_url 可选。"""
+    """Admin per-card node curves + 24 h XID count. Source down → available=false (200); grafana_url
+    optional."""
 
     available: bool
     range: str
@@ -34,7 +36,8 @@ class NodeMetricsOut(BaseModel):
 
 
 class InstanceMetricsOut(BaseModel):
-    """实例监控曲线:指标名 → (unix_ts, 值) 序列;指标集见 prom.QUERIES。"""
+    """Instance monitoring curves: metric name → (unix_ts, value) series; metric set in
+    prom.QUERIES."""
 
     range: str
     series: dict[str, list[tuple[float, float]]]

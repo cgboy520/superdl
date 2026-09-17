@@ -1,4 +1,4 @@
-"""近似库存 provider 注册与批量调用;调用前须完成注册。"""
+"""Approximate stock provider registration and batch call; register before calling."""
 
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
@@ -19,7 +19,9 @@ def register_inventory_provider(provider: InventoryProvider) -> None:
 
 
 async def get_available_counts(session: AsyncSession, skus: list["Sku"]) -> dict[int, int]:
-    """全部 SKU 的近似库存,一次批量算完。"""
+    """Approximate stock of every SKU, computed in one batch."""
     if _provider is None:
-        raise RuntimeError("inventory provider 未注册:入口必须先执行 wire_modules()")
+        raise RuntimeError(
+            "inventory provider not registered: the entry point must run wire_modules() first"
+        )
     return await _provider(session, skus)

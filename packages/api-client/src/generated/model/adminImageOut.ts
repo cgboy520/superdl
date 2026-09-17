@@ -7,7 +7,7 @@
 import type { ImageCoverageOut } from './imageCoverageOut';
 
 /**
- * 公开目录字段 + 管理端预热视图。
+ * Public catalog fields + admin prewarm view.
  */
 export interface AdminImageOut {
   coverage: ImageCoverageOut;

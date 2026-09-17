@@ -1,8 +1,11 @@
-"""节点规格巡检:读 K8s、事务内收敛台账、隔离未登记节点、再收敛标签与 cordon。
+"""Node spec patrol: read K8s, converge the inventory in one transaction, isolate unenrolled nodes,
+then converge labels and cordon.
 
-型号优先级:装机登记 nvidia-smi > GFD label > 存量;驱动/CUDA 版本 GFD label 优先。
-期望池优先级:desired_pool > 注册登记。
-未登记隔离:非 infra、无登记行、无期望池且未打池标签的节点请求 cordon。
+Model priority: enrollment nvidia-smi > GFD label > existing; driver / CUDA versions prefer the GFD
+label.
+Desired pool priority: desired_pool > enrollment.
+Unenrolled isolation: non-infra nodes without an enrollment row, desired pool or pool label get a
+cordon request.
 """
 
 from dataclasses import dataclass, field, replace
@@ -36,7 +39,7 @@ MISSING_RETENTION = timedelta(days=7)
 
 
 def _gpu_entry_vram_gb(entry: dict[str, Any]) -> int:
-    """gpu_info 条目 {name, memory_mib?} 的显存 GB;无 memory_mib → 0。"""
+    """VRAM GB of a gpu_info entry {name, memory_mib?}; no memory_mib → 0."""
     mib = entry.get("memory_mib")
     if isinstance(mib, (int, float)) and mib > 0:
         return round(float(mib) / 1024)
@@ -44,7 +47,8 @@ def _gpu_entry_vram_gb(entry: dict[str, Any]) -> int:
 
 
 async def _enrollment_specs(session: AsyncSession) -> dict[str, dict[str, Any]]:
-    """装机登记的规格快照(型号/显存/驱动/CUDA),只认 joined;池归属另走 _enrolled_pools。"""
+    """Spec snapshot from the enrollment (model / VRAM / driver / CUDA), joined rows only; pool
+    membership goes through _enrolled_pools."""
     rows = (
         await session.execute(select(NodeEnrollment).where(NodeEnrollment.status == "joined"))
     ).scalars()
@@ -67,7 +71,9 @@ POOL_AUTHORITY_STATUSES = ("joined", "failed")
 
 
 async def _enrolled_pools(session: AsyncSession) -> dict[str, str]:
-    """节点名 → 登记池(池标签对账的事实源),覆盖 joined 与 failed;同一主机名取 id 最大的行。"""
+    """Node name → enrolled pool (source of truth for pool label reconciliation), covering joined
+    and
+    failed; with several rows per hostname the largest id wins."""
     rows = (
         await session.execute(
             select(NodeEnrollment)
@@ -79,7 +85,8 @@ async def _enrolled_pools(session: AsyncSession) -> dict[str, str]:
 
 
 async def _enrolled_node_names(session: AsyncSession) -> set[str]:
-    """有登记行(任一状态)的节点名;bootstrap 即落 node_name,装机中的节点也在内。"""
+    """Node names with an enrollment row in any status; bootstrap already stores node_name, so nodes
+    still installing are included."""
     rows = (
         await session.execute(
             select(NodeEnrollment.node_name).where(NodeEnrollment.node_name.is_not(None))
@@ -92,19 +99,22 @@ def _unlabeled(pool_label: str | None) -> bool:
     return pool_label in (None, "", "unknown")
 
 
-UNENROLLED_CORDON_REASON = "未登记节点加入集群,已自动停止调度待人工核查"
+UNENROLLED_CORDON_REASON = (
+    "unenrolled node joined the cluster; scheduling stopped automatically pending review"
+)
 
 
 @dataclass
 class _Plan:
-    """标签待办为 (节点, 型号),池待办为 (节点, 期望池, 观测池, 是否篡改)。"""
+    """Label work items are (node, model); pool work items are (node, desired pool, observed pool,
+    tampered)."""
 
     labels: list[tuple[str, str]] = field(default_factory=list)
     pool_fixes: list[tuple[str, str, str, bool]] = field(default_factory=list)
 
 
 async def node_spec_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]:
-    """单轮巡检,返回动作计数。"""
+    """One patrol round, returns action counts."""
     counts = {
         "upserted": 0,
         "missing": 0,
@@ -141,7 +151,8 @@ async def node_spec_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, in
 
 
 async def _merge_prometheus_facts(probe: ClusterProbe) -> ClusterProbe:
-    """合并 Prometheus 抓取健康、DCGM 新鲜度与 firing 数;不改变组件状态位。"""
+    """Merge Prometheus scrape health, DCGM freshness and firing count; component states are
+    unchanged."""
     extra = await metering_service.cluster_component_metrics()
     if not extra:
         return probe
@@ -156,13 +167,14 @@ async def _merge_prometheus_facts(probe: ClusterProbe) -> ClusterProbe:
 
 
 def _report_light_distro(probe: ClusterProbe) -> None:
-    """prod 不得运行在 light(k3s)档;常驻指标 + 日志。"""
+    """prod must not run on the light (k3s) tier; standing metric + log."""
     light_violation = get_settings().environment == "prod" and probe.distro == "k3s"
     LIGHT_DISTRO_IN_PROD.set(1 if light_violation else 0)
     if light_violation:
         logger.error(
             "light_distro_in_prod",
-            hint="prod 环境不得运行在 k3s(light)档:租户与控制面同宿主,应迁移 full(rke2)",
+            hint="prod must not run on the k3s (light) tier: tenants share the host with the"
+            " control plane, migrate to full (rke2)",
         )
 
 
@@ -172,7 +184,8 @@ async def _converge_ledger(
     nodes: list[NodeInfo],
     counts: dict[str, int],
 ) -> _Plan:
-    """单事务收敛探测缓存与台账,返回 K8s 写待办;消失节点置 Missing 或按保留期删除。"""
+    """Converge the probe cache and inventory in one transaction, return the K8s write work items;
+    vanished nodes become Missing or are deleted past retention."""
     plan = _Plan()
     now = now_utc()
     async with sm() as session:
@@ -220,8 +233,11 @@ async def _quarantine_unenrolled(
     nodes: list[NodeInfo],
     counts: dict[str, int],
 ) -> None:
-    """未登记隔离:非 infra、无登记行、无期望池且未打池标签 → 请求 cordon(已请求不重复);
-    带池标签而无登记只告警(受保护前缀只有平台/管理员能写)。指标每轮重置。"""
+    """Unenrolled isolation: non-infra, no enrollment row, no desired pool and no pool label →
+    request cordon (not repeated once requested);
+    a pool label without an enrollment only warns (the protected prefix is writable by the platform
+    /
+    admins only). The metric is reset every round."""
     async with sm() as session:
         enrolled = await _enrolled_node_names(session)
         rows = {r.node_name: r for r in (await session.execute(select(NodeSpec))).scalars()}
@@ -247,14 +263,16 @@ async def _quarantine_unenrolled(
         logger.error(
             "node_unenrolled",
             node=name,
-            hint="集群里出现无注册登记的节点,已停止调度;核实来源后退役或补登记",
+            hint="a node without an enrollment joined the cluster and was cordoned; verify its"
+            " origin, then decommission or enroll it",
         )
 
 
 def _upsert_node_spec(
     row: NodeSpec, n: NodeInfo, enrolled: dict[str, Any], now: datetime
 ) -> str | None:
-    """把 K8s 节点视图与装机登记合并进台账行;返回 canonical 型号(未知为 None)。"""
+    """Merge the K8s node view and the enrollment into the inventory row; returns the canonical
+    model (None when unknown)."""
     raw = enrolled.get("raw") or n.gpu_model_label or row.gpu_model_raw
     canonical = canonical_gpu_model(raw)
     unlabeled = not n.pool_label or n.pool_label == "unknown"
@@ -283,7 +301,8 @@ async def _sync_model_labels(
     labels: list[tuple[str, str]],
     counts: dict[str, int],
 ) -> None:
-    """逐节点写 canonical 型号标签,成功即回写 label_synced;失败不阻断后续节点。"""
+    """Write the canonical model label per node, marking label_synced on success; a failure does not
+    block the next node."""
     for name, canonical in labels:
         try:
             await orch.set_node_labels(name, {GPU_MODEL_NODE_LABEL: canonical})
@@ -307,7 +326,8 @@ async def _fix_pool_labels(
     fixes: list[tuple[str, str, str, bool]],
     counts: dict[str, int],
 ) -> None:
-    """逐节点下发期望池与 GPU operand 标签;篡改节点先请求 cordon,未打标节点只补标签。"""
+    """Apply the desired pool and GPU operand labels per node; tampered nodes request cordon first,
+    unlabeled nodes only get their labels."""
     for name, pool, observed, tampered in fixes:
         if tampered:
             async with sm() as session:
@@ -320,8 +340,8 @@ async def _fix_pool_labels(
                         name,
                         unschedulable=True,
                         reason=(
-                            f"池标签被手工改动(节点上是 {observed},平台期望 {pool}),"
-                            "已自动停止调度待人工核查"
+                            f"pool label changed manually (node has {observed}, platform"
+                            f" expects {pool}), scheduling stopped automatically pending review"
                         ),
                     )
                     counts["pool_mismatch_cordoned"] += 1
@@ -339,7 +359,8 @@ async def _fix_pool_labels(
             node=name,
             pool=pool,
             observed=observed,
-            hint="池标签被平台以外的写入方改过,已按期望池改回并停止调度;需排查谁有 Node 写权限",
+            hint="the pool label was changed by a writer other than the platform; reset to the"
+            " desired pool and cordoned; find out who has Node write access",
         )
 
 
@@ -349,7 +370,7 @@ async def _converge_cordon(
     nodes: list[NodeInfo],
     counts: dict[str, int],
 ) -> None:
-    """逐节点收敛 cordon 期望态;失败不阻断后续节点。"""
+    """Converge the cordon desired state per node; a failure does not block the next node."""
     async with sm() as session:
         desired_rows = list(
             (

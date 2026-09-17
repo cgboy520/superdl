@@ -1,4 +1,5 @@
-"""outbox 任务处理器:实际的 K8s 副作用在这里发生。全部幂等(at-least-once)。"""
+"""outbox task handlers: the actual K8s side effects happen here. All idempotent
+(at-least-once)."""
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +16,7 @@ from app.core.logging import get_logger
 from app.core.money import hourly_cost
 from app.core.outbox import OutboxTask, RetryPolicy, outbox_handler
 from app.core.pricing import MARKET_SUBSCRIPTION
+from app.core.servercopy import copy as server_copy
 from app.modules.billing import service as billing_service
 from app.modules.notify import service as notify_service
 from app.modules.orchestrator import statemachine as sm_def
@@ -35,7 +37,8 @@ async def _load(session: AsyncSession, task: OutboxTask) -> Instance | None:
 
 
 async def _create_with_port_recovery(session: AsyncSession, instance: Instance) -> None:
-    """建 Pod/Service/路由;NodePort 被集群其它对象占用时把端口标 blocked 后重试。"""
+    """Create Pod / Services / route; when the NodePort is held by another cluster object, mark the
+    port blocked and retry."""
     orch = get_orchestrator()
     if instance.with_ssh:
         instance.ssh_port = await ensure_port(session, instance)
@@ -58,7 +61,8 @@ async def _create_with_port_recovery(session: AsyncSession, instance: Instance) 
 
 
 async def _provision(session: AsyncSession, task: OutboxTask, expected: str) -> None:
-    """create/start 同体:建 Pod/Service/路由;状态推进交给 reconciler。"""
+    """create/start share this: create Pod / Services / route; status advancement is left to the
+    reconciler."""
     instance = await _load(session, task)
     if instance is None or instance.status != expected:
         return
@@ -79,7 +83,8 @@ async def handle_start(session: AsyncSession, task: OutboxTask) -> None:
 
 
 async def _delete_pod(session: AsyncSession, task: OutboxTask, expected: str) -> None:
-    """stop/release 同体:删 Pod/Service/Ingress;后续边由 reconciler 观察到 Pod 消失后完成。"""
+    """stop/release share this: delete Pod / Services / route; the following edge completes once the
+    reconciler sees the Pod gone."""
     instance = await _load(session, task)
     if instance is None or instance.status != expected:
         return
@@ -93,8 +98,10 @@ async def handle_stop(session: AsyncSession, task: OutboxTask) -> None:
 
 @outbox_handler("instance.restart", retry=RetryPolicy(max_retries=8))
 async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
-    """重启:stopping → 删 Pod → 等对象消失 → stopped(尾账)→ 余额校验 → starting → 建 Pod;
-    崩溃重试按当前状态续跑。"""
+    """Restart: stopping → delete Pod → wait for the object to vanish → stopped (tail bill) →
+    balance
+    check → starting → create Pod;
+    a crash retry resumes from the current status."""
     instance = await _load(session, task)
     if instance is None:
         return
@@ -126,10 +133,9 @@ async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
                     session,
                     instance.user_id,
                     type_="instance",
-                    title="重启未完成:余额不足",
-                    content=(
-                        f"实例「{instance.name}」已关机;余额不足以支付 1 小时预估费用,"
-                        "充值后可自行开机。"
+                    title=server_copy("orchestrator.restart_no_balance.title"),
+                    content=server_copy(
+                        "orchestrator.restart_no_balance.content", name=instance.name
                     ),
                     severity="warning",
                     dedup_key=f"restart_no_balance:{instance.id}",
@@ -142,8 +148,10 @@ async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
                     session,
                     instance.user_id,
                     type_="instance",
-                    title="重启未完成:包周期已到期",
-                    content=(f"实例「{instance.name}」已关机;包周期已到期,续费后可自行开机。"),
+                    title=server_copy("orchestrator.restart_subscription_expired.title"),
+                    content=server_copy(
+                        "orchestrator.restart_subscription_expired.content", name=instance.name
+                    ),
                     severity="warning",
                     dedup_key=f"restart_subscription_expired:{instance.id}",
                     target_id=instance.uuid,
@@ -165,8 +173,9 @@ async def handle_release(session: AsyncSession, task: OutboxTask) -> None:
 
 @outbox_handler("instance.disk_cleanup", retry=RetryPolicy(max_retries=12, backoff_base_seconds=30))
 async def handle_instance_disk_cleanup(session: AsyncSession, task: OutboxTask) -> None:
-    """实例盘延迟回收(first_boot 失败的 FAILED / 释放收尾的 RELEASED):Pod 还在就抛错重试;
-    死信由 reconciler 重派。"""
+    """Deferred instance-disk reclamation (FAILED after a first_boot failure / RELEASED wrap-up):
+    raise for retry while the Pod still exists;
+    dead letters are re-dispatched by the reconciler."""
     instance = await _load(session, task)
     if instance is None or instance.status not in (sm_def.FAILED, sm_def.RELEASED):
         return
@@ -179,7 +188,8 @@ async def handle_instance_disk_cleanup(session: AsyncSession, task: OutboxTask) 
 
 @outbox_handler("disk.provision", retry=RetryPolicy(max_retries=8, backoff_base_seconds=30))
 async def handle_disk_provision(session: AsyncSession, task: OutboxTask) -> None:
-    """建或扩数据盘 PVC(容量即硬配额),成功置 provisioned;死信由 reconciler 重派。"""
+    """Create or grow the data-disk PVC (capacity is the hard quota), mark provisioned on success;
+    dead letters are re-dispatched by the reconciler."""
     disk = await session.get(DataDisk, task.payload["disk_id"])
     if disk is None or disk.status in ("deleting", "deleted"):
         return
@@ -196,7 +206,8 @@ async def handle_disk_provision(session: AsyncSession, task: OutboxTask) -> None
     retry=RetryPolicy(max_retries=12, backoff_base_seconds=30, timeout_seconds=120),
 )
 async def handle_disk_deprovision(session: AsyncSession, task: OutboxTask) -> None:
-    """删数据盘 PVC(reclaimPolicy=Delete,CSI 随之销毁 subvolume)后置 deleted。"""
+    """Delete the data-disk PVC (reclaimPolicy=Delete, the CSI destroys the subvolume), then mark
+    deleted."""
     disk = await session.get(DataDisk, task.payload["disk_id"])
     if disk is None or disk.status != "deleting":
         return

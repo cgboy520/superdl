@@ -6,7 +6,8 @@
  */
 
 /**
- * 单卡多序列(DCGM):index 为卡序号,序列为 (unix_ts, 值) 对;断源的序列缺省。
+ * Per-card multi-series (DCGM): index is the card index, series are (unix_ts, value) pairs;
+ * series from a down source are absent.
  */
 export interface NodeGpuSeriesOut {
   index: string;

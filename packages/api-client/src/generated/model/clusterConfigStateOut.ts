@@ -6,7 +6,7 @@
  */
 
 /**
- * 配置就绪位(不回明文)。
+ * Configuration readiness flags (no plaintext).
  */
 export interface ClusterConfigStateOut {
   grafana_url: string | null;

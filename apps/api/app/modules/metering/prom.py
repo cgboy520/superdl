@@ -1,4 +1,5 @@
-"""Prometheus 查询客户端:查询模板集中于此,按租户 namespace 注入,禁止任意 PromQL。"""
+"""Prometheus query client: query templates live here, injected per tenant namespace, arbitrary
+PromQL is never accepted."""
 
 from typing import Any
 
@@ -67,13 +68,13 @@ def get_client() -> httpx.AsyncClient:
 
 
 def set_client(client: httpx.AsyncClient | None) -> None:
-    """替换全局 HTTP 客户端;传 None 后下次访问重新构造。"""
+    """Replace the global HTTP client; after None the next access rebuilds it."""
     global _client
     _client = client
 
 
 async def close_client() -> None:
-    """lifespan 收尾:关闭全局客户端连接池。"""
+    """lifespan teardown: close the global client's connection pool."""
     global _client
     if _client is not None:
         await _client.aclose()
@@ -85,7 +86,7 @@ class PrometheusUnavailable(Exception):
 
 
 def _extract_result(data: dict[str, Any]) -> list[dict[str, Any]]:
-    """校验并取出 data.result;形态异常统一归 PrometheusUnavailable。"""
+    """Validate and extract data.result; malformed shapes become PrometheusUnavailable."""
     if data.get("status") != "success":
         raise PrometheusUnavailable(str(data))
     try:
@@ -95,7 +96,7 @@ def _extract_result(data: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _extract_points(series: dict[str, Any]) -> list[tuple[float, float]]:
-    """取单序列 [(unix_ts, value)];形态异常归 PrometheusUnavailable。"""
+    """Extract a single series [(unix_ts, value)]; malformed shapes become PrometheusUnavailable."""
     try:
         return [(float(ts), float(v)) for ts, v in series["values"]]
     except (KeyError, TypeError, ValueError) as exc:
@@ -103,8 +104,8 @@ def _extract_points(series: dict[str, Any]) -> list[tuple[float, float]]:
 
 
 async def _get(path: str, params: dict[str, Any]) -> list[dict[str, Any]]:
-    """GET Prometheus HTTP API 并取出 data.result;
-    网络 / 状态码 / 报文形态错误统一归 PrometheusUnavailable。"""
+    """GET the Prometheus HTTP API and extract data.result;
+    network / status / payload-shape errors all become PrometheusUnavailable."""
     try:
         resp = await get_client().get(path, params=params)
         resp.raise_for_status()
@@ -117,7 +118,7 @@ async def _get(path: str, params: dict[str, Any]) -> list[dict[str, Any]]:
 async def query_range(
     metric: str, ns: str, pod: str, *, start: float, end: float, step: str
 ) -> list[tuple[float, float]]:
-    """返回 [(unix_ts, value)];Prometheus 不可用抛 PrometheusUnavailable。"""
+    """Return [(unix_ts, value)]; Prometheus unavailable raises PrometheusUnavailable."""
     results = await query_range_raw(
         QUERIES[metric].format(ns=ns, pod=pod), start=start, end=end, step=step
     )
@@ -127,7 +128,7 @@ async def query_range(
 async def query_range_raw(
     promql: str, *, start: float, end: float, step: str
 ) -> list[dict[str, Any]]:
-    """query_range 原始 result 列表(白名单模板已格式化后传入)。"""
+    """Raw query_range result list (allow-listed templates, already formatted)."""
     return await _get(
         "/api/v1/query_range", {"query": promql, "start": start, "end": end, "step": step}
     )
@@ -136,7 +137,8 @@ async def query_range_raw(
 async def query_range_multi(
     promql: str, *, start: float, end: float, step: str, group_label: str = DCGM_GPU_LABEL
 ) -> list[tuple[str, list[tuple[float, float]]]]:
-    """返回各序列的 group_label 与数据点,按标签字符串长度、字典序排序。"""
+    """group_label and data points per series, sorted by label string length then
+    lexicographically."""
     results = await query_range_raw(promql, start=start, end=end, step=step)
     out: list[tuple[str, list[tuple[float, float]]]] = []
     for r in results:
@@ -147,7 +149,7 @@ async def query_range_multi(
 
 
 async def query_instant(promql: str) -> float | None:
-    """瞬时查询取首序列标量值;无数据返回 None。"""
+    """Scalar value of the first series of an instant query; None without data."""
     results = await _get("/api/v1/query", {"query": promql})
     if not results:
         return None
@@ -160,7 +162,8 @@ async def query_instant(promql: str) -> float | None:
 async def query_instance_metric(
     metric: str, ns: str, pod: str, *, pool_label: str | None, start: float, end: float, step: str
 ) -> list[tuple[float, float]]:
-    """查询实例指标;hami 池 GPU 指标优先 HAMi 模板,无结果时回落默认模板。"""
+    """Query instance metrics; in the hami pool GPU metrics prefer the HAMi templates and fall back
+    to the defaults when empty."""
     if pool_label == POOL_HAMI and metric in HAMI_QUERIES:
         promql = HAMI_QUERIES[metric].format(ns=ns, pod=pod)
         results = await query_range_raw(promql, start=start, end=end, step=step)

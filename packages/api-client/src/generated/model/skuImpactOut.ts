@@ -6,7 +6,8 @@
  */
 
 /**
- * 改价影响面:该 SKU 活跃(creating/starting/running)实例数/用户数/卡数。
+ * Price-change impact: active (creating/starting/running) instances / users / cards of the
+ * SKU.
  */
 export interface SkuImpactOut {
   active_gpus: number;

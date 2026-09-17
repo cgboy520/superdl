@@ -1,6 +1,8 @@
-"""节点加入对账:Ready 节点成功写池与 GPU operand 标签后置 joined。
+"""Node join reconciliation: a Ready node becomes joined once the pool and GPU operand labels are
+written successfully.
 
-包含未打标节点;desired_pool 优先于登记池;K8s 写在状态迁移事务外。
+Includes unlabeled nodes; desired_pool wins over the enrolled pool; K8s writes happen outside the
+state-transition transaction.
 """
 
 from datetime import timedelta
@@ -23,7 +25,7 @@ ACTIVE_STATUSES = ("pending", "installing", "rebooting", "joining")
 
 
 async def reconcile_enrollments_once(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]:
-    """单轮对账(advisory lock 单实例执行),返回动作计数。"""
+    """One reconciliation round (single instance via advisory lock), returns action counts."""
     counts = {"joined": 0, "failed": 0, "expired": 0, "labeled": 0}
     async with advisory_lock(sm, LockKey.NODE_ENROLL_RECONCILER) as got:
         if not got:
@@ -65,7 +67,10 @@ async def reconcile_enrollments_once(sm: async_sessionmaker[AsyncSession]) -> di
                     continue
                 if row.last_report_at is not None and row.last_report_at < now - STALE_HEARTBEAT:
                     transition_enrollment(
-                        row, "failed", error="安装超时/失联(2h 无心跳),可修复后重新生成令牌"
+                        row,
+                        "failed",
+                        error="install timed out / lost (no heartbeat for 2 h); fix and regenerate"
+                        " the token",
                     )
                     counts["failed"] += 1
             await session.commit()

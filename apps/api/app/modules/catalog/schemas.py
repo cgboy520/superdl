@@ -20,7 +20,7 @@ class PaymentChannelOut(BaseModel):
 
 
 class SiteConfigOut(BaseModel):
-    """站点公开配置(页脚备案号与经营主体信息等,未登录可访问)。"""
+    """Public site configuration (footer filing numbers, operator information etc., no login)."""
 
     icp_number: str | None
     police_record_number: str | None
@@ -41,7 +41,7 @@ class SiteConfigOut(BaseModel):
 
 
 class SkuMarketOut(BaseModel):
-    """市场卡片视图(用户端)。"""
+    """Market card view (user console)."""
 
     id: int
     name: str
@@ -65,7 +65,7 @@ class SkuMarketOut(BaseModel):
 
 
 class SkuAdminOut(BaseModel):
-    """管理端全量视图(含超卖参数与池标签)。"""
+    """Admin full view (with oversell parameters and pool label)."""
 
     id: int
     name: str
@@ -102,9 +102,10 @@ def cpu_spec_error(
     max_gpus_per_instance: int,
     mig_profile: str | None,
 ) -> str | None:
-    """校验 CPU/GPU 字段组合,返回错误文案键或 None。
+    """Validate the CPU/GPU field combination, returning the error copy key or None.
 
-    CPU 要求型号、算力、显存、最大卡数与切片为空或零;GPU 要求前四项非空非零。
+    CPU requires model, compute, VRAM, max cards and slice empty or zero; GPU requires the first
+    four non-empty and non-zero.
     """
     if tier == TIER_CPU:
         if gpu_model or gpu_cores_pct or vram_gb or max_gpus_per_instance or mig_profile:
@@ -180,11 +181,12 @@ class ImageOut(BaseModel):
 
 
 def _check_image_ref(v: str) -> str:
-    """镜像引用形态校验,管理端写入时即拒。"""
+    """Image reference shape check, rejected at admin write time."""
     v = v.strip()
     if not is_valid_image_ref(v):
         raise ValueError(
-            "image_ref 形态不合法(期望 <host>[:port]/<path>[:tag][@sha256:<64位小写十六进制>])"
+            "image_ref is malformed (expected <host>[:port]/<path>[:tag][@sha256:<64 lowercase"
+            " hex>])"
         )
     return v
 
@@ -220,7 +222,8 @@ class ImageUpdate(BaseModel):
 
 
 class SkuImpactOut(BaseModel):
-    """改价影响面:该 SKU 活跃(creating/starting/running)实例数/用户数/卡数。"""
+    """Price-change impact: active (creating/starting/running) instances / users / cards of the
+    SKU."""
 
     sku_id: int
     active_instances: int
@@ -229,7 +232,8 @@ class SkuImpactOut(BaseModel):
 
 
 class ImageCoverageOut(BaseModel):
-    """预热覆盖:cached/total 节点数与百分比(total=巡检登记的目标节点数)。"""
+    """Prewarm coverage: cached/total node counts and percentage (total = target nodes registered by
+    the patrol)."""
 
     cached: int
     total: int
@@ -237,7 +241,7 @@ class ImageCoverageOut(BaseModel):
 
 
 class AdminImageOut(ImageOut):
-    """公开目录字段 + 管理端预热视图。"""
+    """Public catalog fields + admin prewarm view."""
 
     prewarm_enabled: bool
     sort: int
@@ -260,14 +264,14 @@ class PrewarmEnqueuedOut(BaseModel):
 
 
 class CapacityWarningOut(BaseModel):
-    """结构化警示(前端按 code 映射文案,params 供插值)。"""
+    """Structured warning (the frontend maps copy by code, params are for interpolation)."""
 
     code: Literal["unrecognized_model", "no_ready_node", "vram_exceeds_node"]
     params: dict[str, Any] = {}
 
 
 class CapacityPreviewOut(BaseModel):
-    """SKU 表单容量预览(纯台账推算)。"""
+    """SKU form capacity preview (pure inventory estimate)."""
 
     matching_nodes: int
     ready_gpus: int

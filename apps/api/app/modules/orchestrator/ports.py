@@ -1,4 +1,5 @@
-"""SSH 端口池:段内随机分配,排除 ssh_port_excluded 与 blocked 端口。"""
+"""SSH port pool: random allocation within the range, excluding ssh_port_excluded and blocked
+ports."""
 
 from typing import TYPE_CHECKING, Any
 
@@ -20,8 +21,9 @@ logger = get_logger(__name__)
 
 
 async def ensure_port(session: AsyncSession, instance: Instance) -> int:
-    """分配一个 SSH NodePort;已分配则原样返回。
-    扩段用 on_conflict_do_nothing,落空重试 8 次,超出回 NO_CAPACITY 由 outbox 退避兜底。
+    """Allocate an SSH NodePort; an already allocated instance gets its port back.
+    Range growth uses on_conflict_do_nothing, misses retry 8 times, beyond that NO_CAPACITY and the
+    outbox backs off.
     """
     settings = get_settings()
     mine = (
@@ -76,8 +78,9 @@ async def ensure_port(session: AsyncSession, instance: Instance) -> int:
 
 
 async def block_port(sm: Any, port: int, *, reason: str, expected_instance_id: int | None) -> None:
-    """把被集群其它对象占用的端口标 blocked,独立事务提交;调用方须先 rollback。
-    仅当端口空闲或正分配给 expected_instance_id 时才落 blocked。
+    """Mark a port held by another cluster object as blocked in an independent transaction; the
+    caller must roll back first.
+    Only a free port or one being allocated to expected_instance_id becomes blocked.
     """
     condition = PortAllocation.instance_id.is_(None)
     if expected_instance_id is not None:
@@ -105,7 +108,7 @@ async def free_port(session: AsyncSession, instance_id: int) -> None:
 
 
 async def port_pool_stats(session: AsyncSession) -> "PortPoolStatsOut":
-    """端口池水位(管理端 /nodes 页)。"""
+    """Port pool level (admin /nodes page)."""
     total, assigned, blocked = (
         await session.execute(
             select(
@@ -119,7 +122,7 @@ async def port_pool_stats(session: AsyncSession) -> "PortPoolStatsOut":
 
 
 async def active_gpu_counts_by_sku(session: AsyncSession) -> dict[int, int]:
-    """活跃实例(creating/starting/running)按 SKU 的 GPU 张数合计。"""
+    """GPU count of active instances (creating/starting/running) summed per SKU."""
     rows = await session.execute(
         select(Instance.sku_id, func.coalesce(func.sum(Instance.gpu_count), 0))
         .where(Instance.status.in_((sm_def.CREATING, sm_def.STARTING, sm_def.RUNNING)))

@@ -1,4 +1,5 @@
-"""用量服务:实例监控代理 + usage_hourly 聚合 + 事件计费 vs 指标估算对账。"""
+"""Usage service: instance monitoring proxy + usage_hourly aggregation + event billing vs metric
+estimate reconciliation."""
 
 import asyncio
 import re
@@ -39,7 +40,9 @@ RANGES = {"1h": 3600, "6h": 6 * 3600, "24h": 24 * 3600}
 async def instance_metrics(
     ns: str, pod: str, range_key: str, *, pool_label: str | None = None
 ) -> InstanceMetricsOut:
-    """代理查询实例监控曲线,断源 503。hami 池 gpu_util/vram 走 HAMi 容器维指标,查空回落 DCGM。"""
+    """Proxy the instance monitoring curves, 503 when the source is down. In the hami pool gpu_util
+    /
+    vram use HAMi container metrics and fall back to DCGM when empty."""
     if range_key not in RANGES:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="metering.badRange")
     end = now_utc().timestamp()
@@ -64,7 +67,8 @@ SUMMARY_CAP = 20
 
 
 async def instances_gpu_summary(targets: list[tuple[str, str]]) -> InstanceMetricsSummaryOut:
-    """查询前 SUMMARY_CAP 个 (uuid, ns) 的近一小时 GPU 序列;任一断源即返回 unavailable 与空列表。"""
+    """Query the last hour's GPU series of the first SUMMARY_CAP (uuid, ns); any source failure
+    returns unavailable with an empty list."""
     end = now_utc().timestamp()
     start = end - RANGES["1h"]
     items: list[InstanceGpuSeries] = []
@@ -82,7 +86,8 @@ async def instances_gpu_summary(targets: list[tuple[str, str]]) -> InstanceMetri
 async def aggregate_previous_hour(
     sm: async_sessionmaker[AsyncSession], *, at: datetime | None = None
 ) -> int:
-    """持咨询锁聚合上一小时用量,逐实例提交且不覆盖已有行;断源跳过该实例。"""
+    """Aggregate the previous hour's usage under the advisory lock, committing per instance without
+    overwriting existing rows; a down source skips the instance."""
     window_start, window_end = prev_hour_range(at or now_utc())
     written = 0
     async with advisory_lock(sm, LockKey.USAGE_AGGREGATION) as got:
@@ -132,8 +137,9 @@ async def aggregate_previous_hour(
 
 
 async def reconciliation_report(session: AsyncSession, day: datetime) -> ReconciliationOut:
-    """日对账:事件计费合计 vs 指标估算(usage_hourly 有数据小时数 × 单价)+ diff%;
-    diff>2% 列差异实例。"""
+    """Daily reconciliation: event billing total vs metric estimate (usage_hourly hours with data ×
+    unit price) + diff %;
+    diff > 2 % lists the divergent instances."""
     day_start = day.replace(hour=0, minute=0, second=0, microsecond=0)
     day_end = day_start + timedelta(days=1)
 
@@ -184,7 +190,9 @@ async def reconciliation_report(session: AsyncSession, day: datetime) -> Reconci
 
 
 async def gpu_util_last_24h_by_instance(session: AsyncSession) -> dict[int, tuple[float, int]]:
-    """近 24h 各实例 GPU 利用率聚合:instance_id → (sum(小时均值), 小时数);无数据返回空 dict。"""
+    """GPU utilisation aggregate per instance over the last 24 h: instance_id → (sum of hourly
+    means,
+    hours); empty dict without data."""
     since = now_utc() - timedelta(hours=24)
     rows = (
         await session.execute(
@@ -206,7 +214,8 @@ _NODE_NAME_RE = re.compile(r"^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$")
 
 
 async def node_gpu_metrics(node_name: str, range_key: str) -> NodeMetricsOut:
-    """先校验范围与节点名,再插入 PromQL 查询每卡曲线及 24h XID 计数;断源返回 unavailable。"""
+    """Validate range and node name, then run the PromQL per-card curves and 24 h XID count; a down
+    source returns unavailable."""
     if range_key not in RANGES:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="metering.badRange")
     if not _NODE_NAME_RE.fullmatch(node_name):
@@ -231,7 +240,7 @@ async def node_gpu_metrics(node_name: str, range_key: str) -> NodeMetricsOut:
 
 
 async def cluster_component_metrics() -> dict[str, ComponentFact]:
-    """返回有数据的组件指标事实;Prometheus 不可用时返回空字典。"""
+    """Component metric facts that have data; an empty dict when Prometheus is unavailable."""
     try:
         age, up, total, firing = await asyncio.gather(
             prom.query_instant(prom.COMPONENT_QUERIES["dcgm_sample_age"]),

@@ -7,7 +7,7 @@
 import type { InstanceGpuSeries } from './instanceGpuSeries';
 
 /**
- * 实例列表 sparkline 数据源。断源时 available=false(200,不 503)。
+ * Data source of the instance list sparklines. Source down → available=false (200, not 503).
  */
 export interface InstanceMetricsSummaryOut {
   available: boolean;

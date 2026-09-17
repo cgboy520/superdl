@@ -1,4 +1,5 @@
-"""实例状态机:running↔非 running 的边即计费边;状态变更只经 service.transition()。"""
+"""Instance state machine: the running↔non-running edges are the billing edges; status changes go
+only through service.transition()."""
 
 from app.core.errors import AppError, ErrorCode
 

@@ -7,7 +7,7 @@ from app.core.db import Base
 
 
 class UsageHourly(Base):
-    """Prometheus 聚合的小时用量。仅展示与对账,不参与计费。"""
+    """Hourly usage aggregated from Prometheus. Display and reconciliation only, never billing."""
 
     __tablename__ = "usage_hourly"
     __table_args__ = (UniqueConstraint("instance_id", "hour_start"),)

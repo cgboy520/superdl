@@ -69,8 +69,9 @@ async def list_instances(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[InstanceOut]:
-    """实例列表(只列开发机;服务版本实例走 /services):降序游标分页,status 精确,
-    name 模糊(含 uuid 前缀)。"""
+    """Instance list (dev boxes only; service revision instances go through /services): descending
+    cursor pagination, status exact,
+    name fuzzy (uuid prefix included)."""
     return await service.list_instances_page(
         session, user.id, status=status, name=name, cursor=cursor, limit=limit
     )
@@ -82,7 +83,9 @@ async def list_expiring_instances(
     session: DbSession,
     within_days: int = Query(default=7, ge=1, le=90),
 ) -> list[InstanceOut]:
-    """临期包周期实例:active 订阅且到期时刻 ≤ now+within_days,升序,不分页。"""
+    """Expiring subscription instances: active subscription with expiry ≤ now+within_days,
+    ascending,
+    no pagination."""
     return await service.list_expiring_instances(session, user.id, within_days=within_days)
 
 
@@ -143,7 +146,9 @@ async def renew_instance(
     response: Response,
     idempotency_key: IdempotencyKey = None,
 ) -> RenewOut:
-    """包周期续费:按新周期折扣重新报价并即时扣款(不足即 402/400);冻结中续费即解冻回 stopped。"""
+    """Subscription renewal: re-quoted at the new period's discount and charged at once (402/400
+    when
+    short); renewing while frozen unfreezes back to stopped."""
     await account_service.require_real_name_if_required(
         session, user, key="orchestrator.realNameRequired"
     )
@@ -175,7 +180,8 @@ async def subscribe_instance(
     response: Response,
     idempotency_key: IdempotencyKey = None,
 ) -> RenewOut:
-    """按量转包周期:结清转换前的按量账,再按周期折扣一次性预扣;入参与响应同 `/renew`,从现在起算。"""
+    """On-demand → subscription: settle the on-demand bill up to now, then prepay once at the period
+    discount; request and response as `/renew`, counting from now."""
     await account_service.require_real_name_if_required(
         session, user, key="orchestrator.realNameRequired"
     )
@@ -201,7 +207,8 @@ async def subscribe_instance(
 async def convert_to_on_demand(
     uuid: str, user: CurrentUser, session: DbSession, request: Request
 ) -> InstanceOut:
-    """竞价实例转按量;已是按量则原样返回。当前整点小时整体改按按量价结算。"""
+    """Spot → on-demand; already on-demand returns unchanged. The current clock hour is settled
+    entirely at the on-demand price."""
     instance = await service.convert_to_on_demand(session, user.id, uuid)
     set_audit_target(request, f"instance:{uuid}")
     return await service.instance_view(session, instance)
@@ -220,7 +227,7 @@ async def set_auto_renew(
 async def release_instance(
     uuid: str, user: CurrentUser, session: DbSession, request: Request
 ) -> InstanceOut:
-    """释放实例(清除实例盘,数据盘不受影响)。"""
+    """Release the instance (instance disk erased, data disks unaffected)."""
     instance = await service.release_instance(session, user.id, uuid)
     set_audit_target(request, f"instance:{uuid}")
     return await service.instance_view(session, instance)
@@ -234,7 +241,7 @@ async def list_instance_events(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[InstanceEventOut]:
-    """状态时间线(计费依据),降序游标分页。"""
+    """Status timeline (billing basis), descending cursor pagination."""
     instance = await service.get_instance(session, user.id, uuid)
     return await service.list_events(session, instance.id, cursor=cursor, limit=limit)
 
@@ -243,7 +250,8 @@ async def list_instance_events(
 async def get_instance_access(
     uuid: str, user: CurrentUser, session: DbSession
 ) -> InstanceAccessOut:
-    """接入信息,字段按形态出现:dev 给 SSH + Jupyter,服务版本实例给端点 URL(开了 SSH 都有)。"""
+    """Access information, fields by form: dev gets SSH + Jupyter, service revision instances the
+    endpoint URL (SSH whenever enabled)."""
     return await service.get_access(session, user.id, uuid)
 
 
@@ -254,8 +262,9 @@ async def get_instance_logs(
     session: DbSession,
     tail_lines: int = Query(default=200, ge=1),
 ) -> InstanceLogsOut:
-    """容器日志(只读,不记审计):非属主 404;限流 20/h/user;仅 running/stopping,否则 409;
-    tail_lines 默认 200,超 2000 截断。"""
+    """Container log (read-only, not audited): non-owner 404; rate limit 20/h/user; running/stopping
+    only, otherwise 409;
+    tail_lines default 200, truncated above 2000."""
     return await service.read_instance_logs(session, user.id, uuid, tail_lines=tail_lines)
 
 

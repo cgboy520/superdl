@@ -44,7 +44,8 @@ export const getListServicesApiV1ServicesGetUrl = (params?: ListServicesApiV1Ser
 }
 
 /**
- * 服务列表:降序游标分页;name 模糊(含 slug 前缀),status 按派生状态过滤;已删除不列。
+ * Service list: descending cursor pagination; name fuzzy (slug prefix included), status filters
+ * by derived status; deleted services are not listed.
  * @summary List Services
  */
 export const listServicesApiV1ServicesGet = async (params?: ListServicesApiV1ServicesGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageServiceOut> => {
@@ -68,8 +69,9 @@ export const getCreateServiceApiV1ServicesPostUrl = () => {
 }
 
 /**
- * 部署服务:同事务落 services 行 + 第 1 版实例(creating)+ 事件 + outbox,202 异步。
- * 幂等键重放回 200 + X-Idempotent-Replay。
+ * Deploy a service: services row + revision-1 instance (creating) + event + outbox in one
+ * transaction, 202 asynchronous.
+ * An idempotency-key replay returns 200 + X-Idempotent-Replay.
  * @summary Create Service
  */
 export const createServiceApiV1ServicesPost = async (serviceCreate: ServiceCreate,
@@ -94,7 +96,8 @@ export const getDeleteServiceApiV1ServicesSlugDeleteUrl = (slug: string,) => {
 }
 
 /**
- * 删除服务:释放当前实例并吊销全部密钥;运行中须先停止。数据盘不受影响。
+ * Delete the service: release the current instance and revoke every key; must be stopped first.
+ * Data disks are unaffected.
  * @summary Delete Service
  */
 export const deleteServiceApiV1ServicesSlugDelete = async (slug: string, options?: Parameters<typeof customFetch>[1]): Promise<ServiceOut> => {
@@ -141,7 +144,7 @@ export const getPatchServiceApiV1ServicesSlugPatchUrl = (slug: string,) => {
 }
 
 /**
- * 改名 / 访问鉴权开关;不重新部署。
+ * Rename / access-auth switch; no redeployment.
  * @summary Patch Service
  */
 export const patchServiceApiV1ServicesSlugPatch = async (slug: string,
@@ -166,7 +169,7 @@ export const getListApiKeysApiV1ServicesSlugApiKeysGetUrl = (slug: string,) => {
 }
 
 /**
- * 访问密钥列表(含已吊销),不含明文。
+ * Access key list (revoked included), no plaintext.
  * @summary List Api Keys
  */
 export const listApiKeysApiV1ServicesSlugApiKeysGet = async (slug: string, options?: Parameters<typeof customFetch>[1]): Promise<ApiKeyOut[]> => {
@@ -190,7 +193,8 @@ export const getCreateApiKeyApiV1ServicesSlugApiKeysPostUrl = (slug: string,) =>
 }
 
 /**
- * 新建访问密钥;响应里的 key 是明文,只在这一次出现。不收 Idempotency-Key。
+ * Create an access key; the key in the response is the plaintext and appears only this once. No
+ * Idempotency-Key.
  * @summary Create Api Key
  */
 export const createApiKeyApiV1ServicesSlugApiKeysPost = async (slug: string,
@@ -216,7 +220,8 @@ export const getRevokeApiKeyApiV1ServicesSlugApiKeysKeyIdDeleteUrl = (slug: stri
 }
 
 /**
- * 吊销访问密钥(写 revoked_at,不删行)。重复吊销幂等。
+ * Revoke an access key (writes revoked_at, keeps the row). Repeated revocation is
+ * idempotent.
  * @summary Revoke Api Key
  */
 export const revokeApiKeyApiV1ServicesSlugApiKeysKeyIdDelete = async (slug: string,
@@ -249,7 +254,8 @@ export const getListServiceBillsApiV1ServicesSlugBillsGetUrl = (slug: string,
 }
 
 /**
- * 小时账单:该服务下全部版本实例的并集(账单主体仍是实例)。
+ * Hourly bills: union over every revision instance of the service (bills still belong to
+ * instances).
  * @summary List Service Bills
  */
 export const listServiceBillsApiV1ServicesSlugBillsGet = async (slug: string,
@@ -282,7 +288,8 @@ export const getListServiceEventsApiV1ServicesSlugEventsGetUrl = (slug: string,
 }
 
 /**
- * 状态时间线(计费依据):全部版本实例的事件并集,降序游标分页。
+ * Status timeline (billing basis): union of every revision instance's events, descending cursor
+ * pagination.
  * @summary List Service Events
  */
 export const listServiceEventsApiV1ServicesSlugEventsGet = async (slug: string,
@@ -315,9 +322,9 @@ export const getGetServiceLogsApiV1ServicesSlugLogsGetUrl = (slug: string,
 }
 
 /**
- * 优先读取 rollout 版本的容器日志,无 rollout 时读取当前版本。
+ * Read the rollout revision's container log first, the current revision without a rollout.
  *
- * 仅支持 running/stopping,否则 409;与实例日志共用限流,不记审计。
+ * running/stopping only, otherwise 409; shares the rate limit with instance logs, not audited.
  * @summary Get Service Logs
  */
 export const getServiceLogsApiV1ServicesSlugLogsGet = async (slug: string,
@@ -350,7 +357,8 @@ export const getListRevisionsApiV1ServicesSlugRevisionsGetUrl = (slug: string,
 }
 
 /**
- * 分页查询该服务的版本实例(含已释放),按实例 ID 降序。
+ * Paginated revision instances of the service (released included), by instance ID
+ * descending.
  * @summary List Revisions
  */
 export const listRevisionsApiV1ServicesSlugRevisionsGet = async (slug: string,
@@ -375,8 +383,10 @@ export const getCreateRevisionApiV1ServicesSlugRevisionsPostUrl = (slug: string,
 }
 
 /**
- * 版本更新(重建):新版本实例 creating,旧版本先关机;新版本就绪前端点返回 503;
- * 服务端点与 API Key 不变。包周期服务、更新在途、旧版本变更中一律 409。幂等键重放回 200。
+ * Revision update (recreate): the new revision instance is creating, the old revision stops
+ * first; the endpoint returns 503 until the new revision is ready;
+ * endpoint and API keys do not change. Subscription services, an update in flight or an old
+ * revision mid-transition are 409. An idempotency-key replay returns 200.
  * @summary Create Revision
  */
 export const createRevisionApiV1ServicesSlugRevisionsPost = async (slug: string,
@@ -402,7 +412,8 @@ export const getStartServiceApiV1ServicesSlugStartPostUrl = (slug: string,) => {
 }
 
 /**
- * 启动:当前实例开机。限流与实例开关机同桶。
+ * Start: start the current instance. Shares the rate-limit bucket with instance start /
+ * stop.
  * @summary Start Service
  */
 export const startServiceApiV1ServicesSlugStartPost = async (slug: string, options?: Parameters<typeof customFetch>[1]): Promise<ServiceOut> => {
@@ -426,7 +437,8 @@ export const getStopServiceApiV1ServicesSlugStopPostUrl = (slug: string,) => {
 }
 
 /**
- * 停止:当前实例关机,端点随之 503;服务端点与密钥保留。限流与实例开关机同桶。
+ * Stop: the current instance shuts down and the endpoint returns 503; endpoint and keys are
+ * kept. Shares the rate-limit bucket with instance start / stop.
  * @summary Stop Service
  */
 export const stopServiceApiV1ServicesSlugStopPost = async (slug: string, options?: Parameters<typeof customFetch>[1]): Promise<ServiceOut> => {

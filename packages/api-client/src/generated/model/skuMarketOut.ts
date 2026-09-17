@@ -6,7 +6,7 @@
  */
 
 /**
- * 市场卡片视图(用户端)。
+ * Market card view (user console).
  */
 export interface SkuMarketOut {
   available_count?: number;

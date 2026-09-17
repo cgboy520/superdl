@@ -18,7 +18,8 @@ router = APIRouter(tags=["catalog"])
 
 @router.get("/site-config")
 async def get_site_config(session: DbSession) -> SiteConfigOut:
-    """站点公开配置:备案号 + 可用支付渠道 + 部署身份(合规档位 / 币种 / 计费时区)(免登录)。"""
+    """Public site configuration: filing numbers + enabled payment channels + deployment identity
+    (compliance profile / currency / billing time zone) (no login)."""
     cfg = await get_runtime_config(session)
     s = get_settings()
     profile = current_profile()
@@ -49,11 +50,11 @@ async def get_site_config(session: DbSession) -> SiteConfigOut:
 async def list_skus(
     session: DbSession, tier: str | None = None, gpu_model: str | None = None
 ) -> list[SkuMarketOut]:
-    """算力市场:仅在架 SKU,含近似库存。未登录可访问。"""
+    """Market: listed SKUs only, with approximate stock. Available without login."""
     return await service.list_market_skus(session, tier, gpu_model)
 
 
 @router.get("/images")
 async def list_images(session: DbSession) -> list[ImageOut]:
-    """平台镜像目录;is_prewarmed 为计算值(节点覆盖率达标)。"""
+    """Platform image catalog; is_prewarmed is computed (node coverage meets the threshold)."""
     return await service.list_images_out(session)

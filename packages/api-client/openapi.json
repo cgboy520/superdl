@@ -537,7 +537,7 @@
         "type": "object"
       },
       "AdminImageOut": {
-        "description": "公开目录字段 + 管理端预热视图。",
+        "description": "Public catalog fields + admin prewarm view.",
         "properties": {
           "coverage": {
             "$ref": "#/components/schemas/ImageCoverageOut"
@@ -600,7 +600,7 @@
         "type": "object"
       },
       "AdminInstanceOut": {
-        "description": "管理端全局实例视图:含租户与调度节点(不暴露给用户端)。",
+        "description": "Admin global instance view: with tenant and node (not exposed to the user console).",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -1248,7 +1248,7 @@
         "type": "object"
       },
       "AdminServiceOut": {
-        "description": "管理端全局服务视图:含租户与当前版本实例的调度节点。",
+        "description": "Admin global service view: with the tenant and the current revision instance's node.",
         "properties": {
           "container": {
             "anyOf": [
@@ -1837,7 +1837,7 @@
         "type": "object"
       },
       "ApiKeyCreateOut": {
-        "description": "创建响应:明文 key 只在这一次出现。",
+        "description": "Create response: the plaintext key appears only this once.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -2154,7 +2154,7 @@
         "type": "object"
       },
       "BootstrapOut": {
-        "description": "装机参数下发,含 join token 明文,不入日志。",
+        "description": "Install parameters handed to the node, join token plaintext included, never logged.",
         "properties": {
           "cluster_agent_version": {
             "title": "Cluster Agent Version",
@@ -2256,7 +2256,7 @@
         "type": "object"
       },
       "CapacityPreviewOut": {
-        "description": "SKU 表单容量预览(纯台账推算)。",
+        "description": "SKU form capacity preview (pure inventory estimate).",
         "properties": {
           "est_instances": {
             "title": "Est Instances",
@@ -2293,7 +2293,7 @@
         "type": "object"
       },
       "CapacityWarningOut": {
-        "description": "结构化警示(前端按 code 映射文案,params 供插值)。",
+        "description": "Structured warning (the frontend maps copy by code, params are for interpolation).",
         "properties": {
           "code": {
             "enum": [
@@ -2377,7 +2377,7 @@
         "type": "object"
       },
       "ClusterComponentOut": {
-        "description": "组件事实与状态;文案由 key 映射,两个 hint 为不随语言变化的命令。",
+        "description": "Component facts and state; copy is mapped by key, the two hints are commands that do not vary\nby language.",
         "properties": {
           "diag_hint": {
             "anyOf": [
@@ -2461,7 +2461,7 @@
         "type": "object"
       },
       "ClusterConfigStateOut": {
-        "description": "配置就绪位(不回明文)。",
+        "description": "Configuration readiness flags (no plaintext).",
         "properties": {
           "grafana_url": {
             "anyOf": [
@@ -2521,7 +2521,7 @@
         "type": "object"
       },
       "ClusterStatusOut": {
-        "description": "集群页数据(纯 DB 读能力缓存;「测试连接」同步探测后返回同形)。",
+        "description": "Cluster page data (pure DB read of the capability cache; \"test connection\" probes\nsynchronously and returns the same shape).",
         "properties": {
           "api_reachable": {
             "title": "Api Reachable",
@@ -2612,7 +2612,7 @@
         "type": "object"
       },
       "ComponentFactOut": {
-        "description": "key 由前端映射文案,value 为不随语言变化的数据,tone 为显示色调。",
+        "description": "key is mapped to copy by the frontend, value is data that does not vary by language, tone is\nthe display tone.",
         "properties": {
           "key": {
             "title": "Key",
@@ -2641,7 +2641,7 @@
         "type": "object"
       },
       "ComponentObjectOut": {
-        "description": "抽屉对象表的一行(DaemonSet / listener / StorageClass / 节点);fields 的键由前端映射列名。",
+        "description": "One row of the drawer object table (DaemonSet / listener / StorageClass / node); the keys of\nfields are mapped to column names by the frontend.",
         "properties": {
           "fields": {
             "additionalProperties": {
@@ -2663,7 +2663,7 @@
         "type": "object"
       },
       "ComponentProbeOut": {
-        "description": "组件实时探测事实、Pod 与事件。",
+        "description": "Live component probe facts, Pods and events.",
         "properties": {
           "events": {
             "items": {
@@ -3058,7 +3058,7 @@
         "type": "object"
       },
       "EnrollmentCommandOut": {
-        "description": "创建/重生成响应:token 明文仅此一次出现。",
+        "description": "Create / regenerate response: the token plaintext appears here once only.",
         "properties": {
           "curl_command": {
             "title": "Curl Command",
@@ -3187,7 +3187,7 @@
         "type": "object"
       },
       "GpuModelAggregateOut": {
-        "description": "台账按 canonical×池聚合。gpu_model=None 为未识别桶。",
+        "description": "Inventory aggregated by canonical × pool. gpu_model=None is the unrecognised bucket.",
         "properties": {
           "gpu_model": {
             "anyOf": [
@@ -3314,7 +3314,7 @@
         "type": "object"
       },
       "ImageCoverageOut": {
-        "description": "预热覆盖:cached/total 节点数与百分比(total=巡检登记的目标节点数)。",
+        "description": "Prewarm coverage: cached/total node counts and percentage (total = target nodes registered by\nthe patrol).",
         "properties": {
           "cached": {
             "title": "Cached",
@@ -3595,7 +3595,7 @@
         "type": "object"
       },
       "InstanceAccessOut": {
-        "description": "接入信息:字段随形态出现或缺席。dev = SSH + Jupyter;服务版本实例 = 端点 URL。",
+        "description": "Access information: fields appear or are absent by form. dev = SSH + Jupyter; service\nrevision\ninstance = endpoint URL.",
         "properties": {
           "endpoint_url": {
             "anyOf": [
@@ -3867,7 +3867,7 @@
         "type": "object"
       },
       "InstanceLogsOut": {
-        "description": "容器日志:按行切分;truncated=True 表示超过 tail_lines,只回末尾段。",
+        "description": "Container log split into lines; truncated=True means more than tail_lines, only the tail is\nreturned.",
         "properties": {
           "lines": {
             "items": {
@@ -3889,7 +3889,7 @@
         "type": "object"
       },
       "InstanceMetricsOut": {
-        "description": "实例监控曲线:指标名 → (unix_ts, 值) 序列;指标集见 prom.QUERIES。",
+        "description": "Instance monitoring curves: metric name → (unix_ts, value) series; metric set in\nprom.QUERIES.",
         "properties": {
           "range": {
             "title": "Range",
@@ -3924,7 +3924,7 @@
         "type": "object"
       },
       "InstanceMetricsSummaryOut": {
-        "description": "实例列表 sparkline 数据源。断源时 available=false(200,不 503)。",
+        "description": "Data source of the instance list sparklines. Source down → available=false (200, not 503).",
         "properties": {
           "available": {
             "title": "Available",
@@ -4105,7 +4105,7 @@
         "type": "object"
       },
       "InstanceRenew": {
-        "description": "续费入参;period 可与当前周期不同,按新周期折扣重新报价。",
+        "description": "Renewal input; period may differ from the current one, re-quoted at the new period's\ndiscount.",
         "properties": {
           "period": {
             "enum": [
@@ -4132,7 +4132,7 @@
         "type": "object"
       },
       "InstanceSubscriptionOut": {
-        "description": "列表/详情内联的包周期概要(完整明细在 billing.SubscriptionOut)。",
+        "description": "Subscription summary inlined in list / detail (full detail in billing.SubscriptionOut).",
         "properties": {
           "amount_paid": {
             "title": "Amount Paid",
@@ -4998,7 +4998,7 @@
         "type": "object"
       },
       "NodeDecommissionOut": {
-        "description": "退役受理回执:停调度期望态 + 令牌作废已生效;删 Node 对象经 outbox 异步。",
+        "description": "Decommission acceptance receipt: cordon desired state + token revocation are effective;\ndeleting the Node object is asynchronous via outbox.",
         "properties": {
           "node_name": {
             "title": "Node Name",
@@ -5037,7 +5037,7 @@
         "type": "object"
       },
       "NodeEnrollmentOut": {
-        "description": "列表/进度视图,不含 token。",
+        "description": "List / progress view, without the token.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -5171,7 +5171,7 @@
         "type": "object"
       },
       "NodeGpuSeriesOut": {
-        "description": "单卡多序列(DCGM):index 为卡序号,序列为 (unix_ts, 值) 对;断源的序列缺省。",
+        "description": "Per-card multi-series (DCGM): index is the card index, series are (unix_ts, value) pairs;\nseries from a down source are absent.",
         "properties": {
           "index": {
             "title": "Index",
@@ -5257,7 +5257,7 @@
         "type": "object"
       },
       "NodeMetricsOut": {
-        "description": "管理端节点每卡曲线 + 24h XID 计数。断源 available=false(200);grafana_url 可选。",
+        "description": "Admin per-card node curves + 24 h XID count. Source down → available=false (200); grafana_url\noptional.",
         "properties": {
           "available": {
             "title": "Available",
@@ -7024,7 +7024,7 @@
         "type": "object"
       },
       "PortPoolStatsOut": {
-        "description": "SSH 端口池水位(管理端);blocked = 被集群其它对象占用的端口。",
+        "description": "SSH port pool level (admin); blocked = ports held by other cluster objects.",
         "properties": {
           "assigned": {
             "title": "Assigned",
@@ -7669,7 +7669,7 @@
         "type": "object"
       },
       "RenewOut": {
-        "description": "续费响应:实例最新态 + 这一单的报价明细。",
+        "description": "Renewal response: the latest instance state + this order's quote.",
         "properties": {
           "instance": {
             "$ref": "#/components/schemas/InstanceOut"
@@ -7755,7 +7755,7 @@
         "type": "object"
       },
       "ServiceContainerOut": {
-        "description": "当前版本的容器配置回显(不可改,要改请更新版本);env 只回明文项,密文项只回键名。",
+        "description": "Echo of the current revision's container config (immutable; update the revision to change\nit);\nenv returns plaintext entries only, secret entries return the key name.",
         "properties": {
           "container_args": {
             "anyOf": [
@@ -8032,7 +8032,7 @@
         "type": "object"
       },
       "ServiceEventOut": {
-        "description": "服务级时间线:全部版本实例的事件并集,标出所属版本。",
+        "description": "Service-level timeline: union of every revision instance's events, marked with the\nrevision.",
         "properties": {
           "actor": {
             "title": "Actor",
@@ -8225,7 +8225,7 @@
         "type": "object"
       },
       "ServicePatch": {
-        "description": "改名与鉴权开关:只改 services 行。",
+        "description": "Rename and auth switch: only the services row changes.",
         "properties": {
           "name": {
             "anyOf": [
@@ -8256,7 +8256,7 @@
         "type": "object"
       },
       "ServiceRevisionCreate": {
-        "description": "版本更新的完整规格(与部署同一形态)。env_secret_keep = 沿用当前版本密文值的键名;\n同名键同时出现在 env 里以 env 为准。",
+        "description": "The full spec of a revision update (same shape as deployment). env_secret_keep = key names\nwhose secret values are carried over from the current revision;\na key also present in env takes the env value.",
         "properties": {
           "container_args": {
             "anyOf": [
@@ -8446,7 +8446,7 @@
         "type": "object"
       },
       "SiteConfigOut": {
-        "description": "站点公开配置(页脚备案号与经营主体信息等,未登录可访问)。",
+        "description": "Public site configuration (footer filing numbers, operator information etc., no login).",
         "properties": {
           "billing_timezone": {
             "title": "Billing Timezone",
@@ -8600,7 +8600,7 @@
         "type": "object"
       },
       "SkuAdminOut": {
-        "description": "管理端全量视图(含超卖参数与池标签)。",
+        "description": "Admin full view (with oversell parameters and pool label).",
         "properties": {
           "actual_oversell": {
             "anyOf": [
@@ -8879,7 +8879,7 @@
         "type": "object"
       },
       "SkuImpactOut": {
-        "description": "改价影响面:该 SKU 活跃(creating/starting/running)实例数/用户数/卡数。",
+        "description": "Price-change impact: active (creating/starting/running) instances / users / cards of the\nSKU.",
         "properties": {
           "active_gpus": {
             "title": "Active Gpus",
@@ -8908,7 +8908,7 @@
         "type": "object"
       },
       "SkuMarketOut": {
-        "description": "市场卡片视图(用户端)。",
+        "description": "Market card view (user console).",
         "properties": {
           "available_count": {
             "default": 0,
@@ -17987,7 +17987,7 @@
     },
     "/api/v1/disks/{uuid}": {
       "delete": {
-        "description": "删除数据盘(不可恢复);挂载中禁止。",
+        "description": "Delete the data disk (irreversible); forbidden while mounted.",
         "operationId": "delete_disk_api_v1_disks__uuid__delete",
         "parameters": [
           {
@@ -18033,7 +18033,7 @@
         ]
       },
       "patch": {
-        "description": "扩容(只增不减)。",
+        "description": "Expand (grow only).",
         "operationId": "expand_disk_api_v1_disks__uuid__patch",
         "parameters": [
           {
@@ -18091,7 +18091,7 @@
     },
     "/api/v1/images": {
       "get": {
-        "description": "平台镜像目录;is_prewarmed 为计算值(节点覆盖率达标)。",
+        "description": "Platform image catalog; is_prewarmed is computed (node coverage meets the threshold).",
         "operationId": "list_images_api_v1_images_get",
         "responses": {
           "200": {
@@ -18117,7 +18117,7 @@
     },
     "/api/v1/instances": {
       "get": {
-        "description": "实例列表(只列开发机;服务版本实例走 /services):降序游标分页,status 精确,\nname 模糊(含 uuid 前缀)。",
+        "description": "Instance list (dev boxes only; service revision instances go through /services): descending\ncursor pagination, status exact,\nname fuzzy (uuid prefix included).",
         "operationId": "list_instances_api_v1_instances_get",
         "parameters": [
           {
@@ -18284,7 +18284,7 @@
     },
     "/api/v1/instances/expiring": {
       "get": {
-        "description": "临期包周期实例:active 订阅且到期时刻 ≤ now+within_days,升序,不分页。",
+        "description": "Expiring subscription instances: active subscription with expiry ≤ now+within_days,\nascending,\nno pagination.",
         "operationId": "list_expiring_instances_api_v1_instances_expiring_get",
         "parameters": [
           {
@@ -18339,7 +18339,7 @@
     },
     "/api/v1/instances/{uuid}": {
       "delete": {
-        "description": "释放实例(清除实例盘,数据盘不受影响)。",
+        "description": "Release the instance (instance disk erased, data disks unaffected).",
         "operationId": "release_instance_api_v1_instances__uuid__delete",
         "parameters": [
           {
@@ -18487,7 +18487,7 @@
     },
     "/api/v1/instances/{uuid}/access": {
       "get": {
-        "description": "接入信息,字段按形态出现:dev 给 SSH + Jupyter,服务版本实例给端点 URL(开了 SSH 都有)。",
+        "description": "Access information, fields by form: dev gets SSH + Jupyter, service revision instances the\nendpoint URL (SSH whenever enabled).",
         "operationId": "get_instance_access_api_v1_instances__uuid__access_get",
         "parameters": [
           {
@@ -18592,7 +18592,7 @@
     },
     "/api/v1/instances/{uuid}/events": {
       "get": {
-        "description": "状态时间线(计费依据),降序游标分页。",
+        "description": "Status timeline (billing basis), descending cursor pagination.",
         "operationId": "list_instance_events_api_v1_instances__uuid__events_get",
         "parameters": [
           {
@@ -18673,7 +18673,7 @@
     },
     "/api/v1/instances/{uuid}/logs": {
       "get": {
-        "description": "容器日志(只读,不记审计):非属主 404;限流 20/h/user;仅 running/stopping,否则 409;\ntail_lines 默认 200,超 2000 截断。",
+        "description": "Container log (read-only, not audited): non-owner 404; rate limit 20/h/user; running/stopping\nonly, otherwise 409;\ntail_lines default 200, truncated above 2000.",
         "operationId": "get_instance_logs_api_v1_instances__uuid__logs_get",
         "parameters": [
           {
@@ -18732,7 +18732,7 @@
     },
     "/api/v1/instances/{uuid}/metrics": {
       "get": {
-        "description": "实例监控曲线(代理 Prometheus,按租户隔离)。断源 503,不影响计费。",
+        "description": "Instance monitoring curves (Prometheus proxy, tenant-isolated). Source down → 503, billing\nunaffected.",
         "operationId": "get_instance_metrics_api_v1_instances__uuid__metrics_get",
         "parameters": [
           {
@@ -18790,7 +18790,7 @@
     },
     "/api/v1/instances/{uuid}/renew": {
       "post": {
-        "description": "包周期续费:按新周期折扣重新报价并即时扣款(不足即 402/400);冻结中续费即解冻回 stopped。",
+        "description": "Subscription renewal: re-quoted at the new period's discount and charged at once (402/400\nwhen\nshort); renewing while frozen unfreezes back to stopped.",
         "operationId": "renew_instance_api_v1_instances__uuid__renew_post",
         "parameters": [
           {
@@ -19053,7 +19053,7 @@
     },
     "/api/v1/instances/{uuid}/subscribe": {
       "post": {
-        "description": "按量转包周期:结清转换前的按量账,再按周期折扣一次性预扣;入参与响应同 `/renew`,从现在起算。",
+        "description": "On-demand → subscription: settle the on-demand bill up to now, then prepay once at the period\ndiscount; request and response as `/renew`, counting from now.",
         "operationId": "subscribe_instance_api_v1_instances__uuid__subscribe_post",
         "parameters": [
           {
@@ -19128,7 +19128,7 @@
     },
     "/api/v1/instances/{uuid}/to-on-demand": {
       "post": {
-        "description": "竞价实例转按量;已是按量则原样返回。当前整点小时整体改按按量价结算。",
+        "description": "Spot → on-demand; already on-demand returns unchanged. The current clock hour is settled\nentirely at the on-demand price.",
         "operationId": "convert_to_on_demand_api_v1_instances__uuid__to_on_demand_post",
         "parameters": [
           {
@@ -19575,7 +19575,7 @@
     },
     "/api/v1/metrics/instances": {
       "get": {
-        "description": "本人 running 实例近 1h gpu_util 批量摘要(列表 sparkline);断源 available=false(200)。",
+        "description": "Batch summary of the caller's running instances' gpu_util over the last hour (list\nsparklines); source down → available=false (200).",
         "operationId": "instances_metrics_summary_api_v1_metrics_instances_get",
         "responses": {
           "200": {
@@ -19602,7 +19602,7 @@
     },
     "/api/v1/node-enroll/bootstrap": {
       "post": {
-        "description": "令牌换装机参数(含 join token)。注册令牌一次性,首跑即消费并换发 progress 令牌。",
+        "description": "Exchange the token for install parameters (join token included). The enrollment token is\none-off: the first run consumes it and issues the progress token.",
         "operationId": "enroll_bootstrap_api_v1_node_enroll_bootstrap_post",
         "parameters": [
           {
@@ -19662,7 +19662,7 @@
     },
     "/api/v1/node-enroll/progress": {
       "post": {
-        "description": "进度上报,无响应体。",
+        "description": "Progress report, no response body.",
         "operationId": "enroll_progress_api_v1_node_enroll_progress_post",
         "parameters": [
           {
@@ -19715,7 +19715,7 @@
     },
     "/api/v1/node-enroll/script": {
       "get": {
-        "description": "装机脚本下发(text/x-shellscript)。零密钥;占位符替换为本环境 API 地址。",
+        "description": "Install script download (text/x-shellscript). Zero secrets; the placeholder is replaced with\nthis environment's API address.",
         "operationId": "get_join_script_api_v1_node_enroll_script_get",
         "responses": {
           "200": {
@@ -19928,7 +19928,7 @@
     },
     "/api/v1/services": {
       "get": {
-        "description": "服务列表:降序游标分页;name 模糊(含 slug 前缀),status 按派生状态过滤;已删除不列。",
+        "description": "Service list: descending cursor pagination; name fuzzy (slug prefix included), status filters\nby derived status; deleted services are not listed.",
         "operationId": "list_services_api_v1_services_get",
         "parameters": [
           {
@@ -20030,7 +20030,7 @@
         ]
       },
       "post": {
-        "description": "部署服务:同事务落 services 行 + 第 1 版实例(creating)+ 事件 + outbox,202 异步。\n幂等键重放回 200 + X-Idempotent-Replay。",
+        "description": "Deploy a service: services row + revision-1 instance (creating) + event + outbox in one\ntransaction, 202 asynchronous.\nAn idempotency-key replay returns 200 + X-Idempotent-Replay.",
         "operationId": "create_service_api_v1_services_post",
         "parameters": [
           {
@@ -20096,7 +20096,7 @@
     },
     "/api/v1/services/{slug}": {
       "delete": {
-        "description": "删除服务:释放当前实例并吊销全部密钥;运行中须先停止。数据盘不受影响。",
+        "description": "Delete the service: release the current instance and revoke every key; must be stopped first.\nData disks are unaffected.",
         "operationId": "delete_service_api_v1_services__slug__delete",
         "parameters": [
           {
@@ -20187,7 +20187,7 @@
         ]
       },
       "patch": {
-        "description": "改名 / 访问鉴权开关;不重新部署。",
+        "description": "Rename / access-auth switch; no redeployment.",
         "operationId": "patch_service_api_v1_services__slug__patch",
         "parameters": [
           {
@@ -20245,7 +20245,7 @@
     },
     "/api/v1/services/{slug}/api-keys": {
       "get": {
-        "description": "访问密钥列表(含已吊销),不含明文。",
+        "description": "Access key list (revoked included), no plaintext.",
         "operationId": "list_api_keys_api_v1_services__slug__api_keys_get",
         "parameters": [
           {
@@ -20295,7 +20295,7 @@
         ]
       },
       "post": {
-        "description": "新建访问密钥;响应里的 key 是明文,只在这一次出现。不收 Idempotency-Key。",
+        "description": "Create an access key; the key in the response is the plaintext and appears only this once. No\nIdempotency-Key.",
         "operationId": "create_api_key_api_v1_services__slug__api_keys_post",
         "parameters": [
           {
@@ -20353,7 +20353,7 @@
     },
     "/api/v1/services/{slug}/api-keys/{key_id}": {
       "delete": {
-        "description": "吊销访问密钥(写 revoked_at,不删行)。重复吊销幂等。",
+        "description": "Revoke an access key (writes revoked_at, keeps the row). Repeated revocation is\nidempotent.",
         "operationId": "revoke_api_key_api_v1_services__slug__api_keys__key_id__delete",
         "parameters": [
           {
@@ -20410,7 +20410,7 @@
     },
     "/api/v1/services/{slug}/bills": {
       "get": {
-        "description": "小时账单:该服务下全部版本实例的并集(账单主体仍是实例)。",
+        "description": "Hourly bills: union over every revision instance of the service (bills still belong to\ninstances).",
         "operationId": "list_service_bills_api_v1_services__slug__bills_get",
         "parameters": [
           {
@@ -20491,7 +20491,7 @@
     },
     "/api/v1/services/{slug}/events": {
       "get": {
-        "description": "状态时间线(计费依据):全部版本实例的事件并集,降序游标分页。",
+        "description": "Status timeline (billing basis): union of every revision instance's events, descending cursor\npagination.",
         "operationId": "list_service_events_api_v1_services__slug__events_get",
         "parameters": [
           {
@@ -20572,7 +20572,7 @@
     },
     "/api/v1/services/{slug}/logs": {
       "get": {
-        "description": "优先读取 rollout 版本的容器日志,无 rollout 时读取当前版本。\n\n仅支持 running/stopping,否则 409;与实例日志共用限流,不记审计。",
+        "description": "Read the rollout revision's container log first, the current revision without a rollout.\n\nrunning/stopping only, otherwise 409; shares the rate limit with instance logs, not audited.",
         "operationId": "get_service_logs_api_v1_services__slug__logs_get",
         "parameters": [
           {
@@ -20631,7 +20631,7 @@
     },
     "/api/v1/services/{slug}/revisions": {
       "get": {
-        "description": "分页查询该服务的版本实例(含已释放),按实例 ID 降序。",
+        "description": "Paginated revision instances of the service (released included), by instance ID\ndescending.",
         "operationId": "list_revisions_api_v1_services__slug__revisions_get",
         "parameters": [
           {
@@ -20710,7 +20710,7 @@
         ]
       },
       "post": {
-        "description": "版本更新(重建):新版本实例 creating,旧版本先关机;新版本就绪前端点返回 503;\n服务端点与 API Key 不变。包周期服务、更新在途、旧版本变更中一律 409。幂等键重放回 200。",
+        "description": "Revision update (recreate): the new revision instance is creating, the old revision stops\nfirst; the endpoint returns 503 until the new revision is ready;\nendpoint and API keys do not change. Subscription services, an update in flight or an old\nrevision mid-transition are 409. An idempotency-key replay returns 200.",
         "operationId": "create_revision_api_v1_services__slug__revisions_post",
         "parameters": [
           {
@@ -20785,7 +20785,7 @@
     },
     "/api/v1/services/{slug}/start": {
       "post": {
-        "description": "启动:当前实例开机。限流与实例开关机同桶。",
+        "description": "Start: start the current instance. Shares the rate-limit bucket with instance start /\nstop.",
         "operationId": "start_service_api_v1_services__slug__start_post",
         "parameters": [
           {
@@ -20833,7 +20833,7 @@
     },
     "/api/v1/services/{slug}/stop": {
       "post": {
-        "description": "停止:当前实例关机,端点随之 503;服务端点与密钥保留。限流与实例开关机同桶。",
+        "description": "Stop: the current instance shuts down and the endpoint returns 503; endpoint and keys are\nkept. Shares the rate-limit bucket with instance start / stop.",
         "operationId": "stop_service_api_v1_services__slug__stop_post",
         "parameters": [
           {
@@ -20881,7 +20881,7 @@
     },
     "/api/v1/site-config": {
       "get": {
-        "description": "站点公开配置:备案号 + 可用支付渠道 + 部署身份(合规档位 / 币种 / 计费时区)(免登录)。",
+        "description": "Public site configuration: filing numbers + enabled payment channels + deployment identity\n(compliance profile / currency / billing time zone) (no login).",
         "operationId": "get_site_config_api_v1_site_config_get",
         "responses": {
           "200": {
@@ -20903,7 +20903,7 @@
     },
     "/api/v1/skus": {
       "get": {
-        "description": "算力市场:仅在架 SKU,含近似库存。未登录可访问。",
+        "description": "Market: listed SKUs only, with approximate stock. Available without login.",
         "operationId": "list_skus_api_v1_skus_get",
         "parameters": [
           {

@@ -1,7 +1,8 @@
-"""节点注册、池管理与集群能力视图。
+"""Node enrollment, pool management and the cluster capability view.
 
-注册与进度令牌仅存 HMAC 摘要;bootstrap 要求 pending,进度上报使用独立令牌。
-匿名解析对无效、过期或终态令牌统一回 404。
+Enrollment and progress tokens are stored as HMAC digests only; bootstrap requires pending, progress
+reports use their own token.
+Anonymous resolution returns 404 for invalid, expired or terminal tokens alike.
 """
 
 import asyncio
@@ -77,7 +78,8 @@ def transition_enrollment(
     phase: str | None = None,
     error: str | None = None,
 ) -> None:
-    """按允许边迁移登记状态,非法迁移回 409;同状态不更新,不提交。"""
+    """Move the enrollment status along an allowed edge, 409 on an illegal edge; same status = no
+    update; no commit."""
     if enrollment.status == new_status:
         return
     allowed = _ALLOWED_TRANSITIONS.get(enrollment.status, frozenset())
@@ -107,7 +109,8 @@ def _new_token(prefix: str = TOKEN_PREFIX) -> tuple[str, str]:
 
 
 def enrollment_commands(token: str) -> tuple[str, str]:
-    """注册命令两种形态:管道式 / 先下载可审阅式。token 经 stdin 落 0600 文件,不进 argv。"""
+    """The two enrollment command forms: piped / download-then-review. The token goes through stdin
+    into a 0600 file, never into argv."""
     base = get_settings().public_base_url.rstrip("/")
     script_url = f"{base}/api/v1/node-enroll/script"
     token_file = "/run/superdl-join.token"
@@ -122,12 +125,13 @@ def enrollment_commands(token: str) -> tuple[str, str]:
 
 
 def pool_matches(enrolled_pool: str, observed_pool: str | None) -> bool:
-    """池标签是否一致;未打标或 unknown 返回 False。"""
+    """Whether the pool label matches; unlabeled or unknown returns False."""
     return bool(observed_pool) and observed_pool != "unknown" and observed_pool == enrolled_pool
 
 
 async def require_cluster_config(session: AsyncSession) -> RuntimeConfig:
-    """创建注册令牌的前置:cluster 组必须已配置,否则 409。"""
+    """Precondition for creating an enrollment token: the cluster group must be configured,
+    otherwise 409."""
     cfg = await get_runtime_config(session)
     if not cfg.cluster_server_url or not cfg.cluster_join_token:
         raise conflict(key="nodes.clusterNotConfigured")
@@ -141,7 +145,9 @@ async def create_enrollment(
     created_by: int,
     idempotency_key: str | None,
 ) -> tuple[NodeEnrollment, str]:
-    """创建注册令牌。Idempotency-Key 重放:不建新行,轮换该行 token 后返回。"""
+    """Create an enrollment token. Idempotency-Key replay: no new row, the row's token is rotated
+    and
+    returned."""
     await require_cluster_config(session)
     if idempotency_key:
         existing = await find_replay(
@@ -175,7 +181,8 @@ def _add_enrollment(
     created_by: int,
     idempotency_key: str | None,
 ) -> tuple[NodeEnrollment, str]:
-    """添加注册登记行,返回登记行与仅本次可见的令牌明文;不提交。"""
+    """Add an enrollment row, returning the row and the token plaintext visible this once; no
+    commit."""
     token, token_hash = _new_token()
     enrollment = NodeEnrollment(
         token_hash=token_hash,
@@ -215,14 +222,14 @@ async def list_enrollments(
 async def get_enrollment(session: AsyncSession, enrollment_id: int) -> NodeEnrollment:
     row = await session.get(NodeEnrollment, enrollment_id)
     if row is None:
-        raise not_found("注册记录不存在")
+        raise not_found(key="nodes.enrollmentNotFound")
     return row
 
 
 async def regenerate_enrollment(
     session: AsyncSession, enrollment_id: int, *, ttl_hours: int = 24
 ) -> tuple[NodeEnrollment, str]:
-    """换新令牌:仅 pending/expired/failed。"""
+    """Issue a new token: pending/expired/failed only."""
     await require_cluster_config(session)
     enrollment = await get_enrollment(session, enrollment_id)
     if enrollment.status not in REGENERATABLE_STATUSES:
@@ -249,7 +256,7 @@ async def revoke_enrollment(session: AsyncSession, enrollment_id: int) -> NodeEn
 
 
 async def _assert_node_empty(session: AsyncSession, node_name: str) -> None:
-    """节点存在未释放实例时回 409,包含 stopped/frozen/failed 实例。"""
+    """409 when the node has unreleased instances, stopped/frozen/failed included."""
     active = await orchestrator_queries.count_active_instances_on_node(session, node_name)
     if active:
         raise conflict(key="nodes.nodeHasInstances", params={"count": active})
@@ -262,9 +269,11 @@ async def switch_node_pool(
     pool: str,
     reason: str,
 ) -> tuple[NodeSpec, str]:
-    """持台账行锁校验空节点、目标池与运行时,同事务写停调度及期望池并入队切池后提交。
+    """Under the inventory row lock, check the node is empty and the target pool and runtime are
+    valid, write cordon and desired pool in one transaction, enqueue the switch and commit.
 
-    返回 (台账行, 原期望池或观测池);仅允许 SWITCHABLE_POOLS 内的 GPU 池。
+    Returns (inventory row, previous desired or observed pool); only GPU pools within
+    SWITCHABLE_POOLS.
     """
     row = (
         await session.execute(
@@ -282,14 +291,15 @@ async def switch_node_pool(
     current = row.desired_pool or row.pool_label
     if current == pool:
         raise conflict(key="nodes.poolUnchanged", params={"pool": pool})
-    # 观测卡数会因目标池组件没起来掉到 0,已在 GPU 池的节点必须留着切回的路
+    # the observed card count drops to 0 when the target pool's components fail to start, so a node
+    # already in a GPU pool must keep a way back
     if current == POOL_CPU or (row.gpu_count <= 0 and current not in SWITCHABLE_POOLS):
         raise conflict(key="nodes.poolIncompatible")
     if pool == POOL_MIG and not supports_mig(row.gpu_model):
-        raise conflict(key="nodes.poolMigUnsupported", params={"model": row.gpu_model or "未识别"})
+        raise conflict(key="nodes.poolMigUnsupported", params={"model": row.gpu_model or "unknown"})
     if pool == POOL_KATA and not supports_passthrough(row.gpu_model):
         raise conflict(
-            key="nodes.poolPassthroughUnsupported", params={"model": row.gpu_model or "未识别"}
+            key="nodes.poolPassthroughUnsupported", params={"model": row.gpu_model or "unknown"}
         )
     await _assert_node_empty(session, node_name)
     await require_pool_runtime(session, pool)
@@ -316,9 +326,11 @@ async def switch_node_pool(
 async def decommission_node(
     session: AsyncSession, node_name: str, *, reason: str, force: bool = False
 ) -> int:
-    """持台账行锁,同事务停调度、吊销该节点登记并入队退役后提交,返回吊销数。
+    """Under the inventory row lock: cordon, revoke the node's enrollments and enqueue the
+    decommission in one transaction, commit, return the revoked count.
 
-    未释放实例阻断退役,force=True 跳过此校验;集群加入令牌与 kubelet 证书须另行撤销。
+    Unreleased instances block decommissioning, force=True skips that check; the cluster join token
+    and kubelet certificate must be revoked separately.
     """
     row = (
         await session.execute(
@@ -341,7 +353,7 @@ async def decommission_node(
         ).scalars()
     )
     for enrollment in enrollments:
-        transition_enrollment(enrollment, "revoked", error=f"节点已退役:{reason}")
+        transition_enrollment(enrollment, "revoked", error=f"node decommissioned: {reason}")
     enqueue(session, "node.decommission", {"node_name": node_name, "reason": reason})
     await session.commit()
     logger.warning(
@@ -357,7 +369,7 @@ async def decommission_node(
 async def request_cordon(
     session: AsyncSession, node_name: str, *, unschedulable: bool, reason: str
 ) -> None:
-    """更新已有节点的可调度期望态并提交 node.cordon 任务。"""
+    """Update the schedulable desired state of an existing node and commit a node.cordon task."""
     row = (
         await session.execute(select(NodeSpec).where(NodeSpec.node_name == node_name))
     ).scalar_one_or_none()
@@ -372,7 +384,8 @@ async def request_cordon(
 
 
 def _check_usable(row: NodeEnrollment | None) -> NodeEnrollment:
-    """公共闸门:无效/终态/过期一律 404;请求路径只拒不迁移,落 expired 由对账器做。"""
+    """Shared gate: invalid / terminal / expired → 404; the request path only rejects, never
+    transitions; the reconciler marks expired."""
     if row is None or row.status in TERMINAL_STATUSES or row.expires_at < now_utc():
         raise not_found()
     return row
@@ -385,7 +398,7 @@ async def _resolve_by_hash(
     *,
     for_update: bool = False,
 ) -> NodeEnrollment | None:
-    """按 HMAC candidates(crypto.py)取行;for_update 加行锁。"""
+    """Fetch the row by HMAC candidates (crypto.py); for_update takes the row lock."""
     stmt = select(NodeEnrollment).where(column.in_(hash_node_token_candidates(token))).limit(1)
     if for_update:
         stmt = stmt.with_for_update()
@@ -393,13 +406,15 @@ async def _resolve_by_hash(
 
 
 async def _resolve_token(session: AsyncSession, token: str) -> NodeEnrollment:
-    """注册令牌(bootstrap 用):按哈希取行并 FOR UPDATE,并发 bootstrap 只有一个能消费。"""
+    """Enrollment token (for bootstrap): fetch by hash with FOR UPDATE, so of concurrent bootstraps
+    only one consumes it."""
     row = await _resolve_by_hash(session, NodeEnrollment.token_hash, token, for_update=True)
     return _check_usable(row)
 
 
 async def _resolve_progress_token(session: AsyncSession, token: str) -> NodeEnrollment:
-    """progress 令牌(进度上报用):只按 progress_token_hash 取行,注册令牌不能上报。"""
+    """Progress token (for progress reports): fetched by progress_token_hash only, the enrollment
+    token cannot report."""
     row = await _resolve_by_hash(session, NodeEnrollment.progress_token_hash, token)
     return _check_usable(row)
 
@@ -413,16 +428,21 @@ async def bootstrap(
     gpu_details: list[dict[str, Any]],
     client_ip: str | None,
 ) -> tuple[NodeEnrollment, RuntimeConfig, str]:
-    """校验 pending 登记与主机名,迁 installing 并提交,返回登记、运行时配置与进度令牌。
+    """Check the pending enrollment and hostname, move to installing and commit; return the
+    enrollment, runtime configuration and progress token.
 
-    主机名不符时提交 failed 后回 409;调用方须限制配置对外字段。
+    A hostname mismatch commits failed and returns 409; the caller must restrict the configuration
+    fields handed out.
     """
     row = await _resolve_token(session, token)
     if row.status != "pending":
         raise not_found()
     if row.hostname != hostname:
         transition_enrollment(
-            row, "failed", error=f"主机名不符:期望 {row.hostname},实际上报 {hostname}(防令牌串用)"
+            row,
+            "failed",
+            error=f"hostname mismatch: expected {row.hostname}, reported {hostname}"
+            " (token misuse guard)",
         )
         await session.commit()
         raise conflict(key="nodes.hostnameMismatch")
@@ -460,7 +480,7 @@ async def report_progress(
     if versions:
         row.os_info = {**(row.os_info or {}), **versions}
     if state == "failed":
-        transition_enrollment(row, "failed", phase=phase, error=message or f"{phase} 失败")
+        transition_enrollment(row, "failed", phase=phase, error=message or f"{phase} failed")
     elif state == "rebooting":
         transition_enrollment(row, "rebooting", phase=phase)
     elif row.status == "rebooting" and state in ("running", "ok"):
@@ -473,7 +493,7 @@ async def report_progress(
 
 
 async def list_node_specs(session: AsyncSession) -> list[NodeSpec]:
-    """全量台账(含 Missing/未打标),管理端节点页数据源。"""
+    """The full inventory (Missing / unlabeled included), data source of the admin nodes page."""
     rows = (await session.execute(select(NodeSpec).order_by(NodeSpec.node_name))).scalars()
     return list(rows)
 
@@ -486,7 +506,7 @@ async def get_node_spec(session: AsyncSession, node_name: str) -> NodeSpec | Non
 
 
 async def ready_specs(session: AsyncSession) -> list[NodeSpec]:
-    """Ready 节点(上架校验/容量列口径)。"""
+    """Ready nodes (listing check / capacity column basis)."""
     rows = (await session.execute(select(NodeSpec).where(NodeSpec.status == "Ready"))).scalars()
     return list(rows)
 
@@ -494,20 +514,23 @@ async def ready_specs(session: AsyncSession) -> list[NodeSpec]:
 def matching_specs(
     specs: Iterable[NodeSpec], pool_label: str, wanted_model: str | None
 ) -> list[NodeSpec]:
-    """台账里「池 × canonical 型号」匹配的行,不看状态(唯一判「同一物理池」处);
-    wanted_model None 恒不匹配。"""
+    """Inventory rows matching "pool × canonical model" regardless of status (the single place
+    deciding "same physical pool");
+    wanted_model None never matches."""
     return [
         s for s in specs if s.pool_label == pool_label and model_matches(wanted_model, s.gpu_model)
     ]
 
 
 def pool_specs(specs: Iterable[NodeSpec], pool_label: str) -> list[NodeSpec]:
-    """返回池标签匹配的台账行,不按型号或状态过滤。"""
+    """Inventory rows matching the pool label, not filtered by model or status."""
     return [s for s in specs if s.pool_label == pool_label]
 
 
 async def gpu_model_aggregates(session: AsyncSession) -> list["GpuModelAggregate"]:
-    """台账按 canonical×池聚合(SKU「从集群资源创建」数据源);未识别型号归 gpu_model=None 桶。"""
+    """Inventory aggregated by canonical × pool (data source of "create SKU from cluster
+    resources");
+    unrecognised models go into the gpu_model=None bucket."""
     rows = await list_node_specs(session)
     agg: dict[tuple[str | None, str | None], GpuModelAggregate] = {}
     for r in rows:
@@ -549,7 +572,7 @@ class GpuModelAggregate:
 
 
 async def save_cluster_probe(session: AsyncSession, probe: ClusterProbe) -> ClusterStatus:
-    """探测结果 upsert 单行(id=1);调用方 commit。"""
+    """Upsert the probe result into the single row (id=1); the caller commits."""
     row = await session.get(ClusterStatus, 1)
     if row is None:
         row = ClusterStatus(id=1)
@@ -584,9 +607,10 @@ REGISTRY_CA_PATH_TEMPLATE = "__RANCHER_DIR__/harbor-ca.crt"
 
 
 def render_registries_yaml(cfg: RuntimeConfig) -> str:
-    """生成节点 registries.yaml(RKE2 / k3s 同格式):`mirrors "*"` Spegel P2P;
-    `registry_proxy_projects` 每行 <上游>=<Harbor 代理项目>;`registry_ca_pem` 非空则配 ca_file。
-    不含 auth;`node_registries_yaml` 有值即原样下发。
+    """Generate the node registries.yaml (same format for RKE2 / k3s): `mirrors "*"` Spegel P2P;
+    one <upstream>=<Harbor proxy project> per line of `registry_proxy_projects`; ca_file when
+    `registry_ca_pem` is set.
+    No auth; a non-empty `node_registries_yaml` is handed out verbatim.
     """
     override = cfg.node_registries_yaml.strip()
     if override:
@@ -614,7 +638,7 @@ def render_registries_yaml(cfg: RuntimeConfig) -> str:
 
 
 async def derive_node_distro(session: AsyncSession, cfg: RuntimeConfig) -> str:
-    """装机发行版派生:探测缓存 > agent 版本后缀 > rke2。"""
+    """Install distribution: probe cache > agent version suffix > rke2."""
     row = await get_cluster_status(session)
     if row and row.distro:
         return row.distro
@@ -625,7 +649,7 @@ HAMI_GATE_MAX_AGE = timedelta(minutes=10)
 
 
 async def _fresh_cluster_status(session: AsyncSession) -> ClusterStatus:
-    """下发门禁共用的能力缓存读取:缺失/陈旧一律 409。"""
+    """Capability cache read shared by the dispatch gates: missing / stale → 409."""
     row = await get_cluster_status(session)
     if row is None or now_utc() - row.probed_at > HAMI_GATE_MAX_AGE:
         raise AppError(
@@ -638,7 +662,7 @@ async def _fresh_cluster_status(session: AsyncSession) -> ClusterStatus:
 
 
 async def require_hami_ready(session: AsyncSession) -> None:
-    """shared 档下发门禁:调度器缺位即 409。"""
+    """Shared-tier dispatch gate: 409 when the scheduler is missing."""
     row = await _fresh_cluster_status(session)
     if not row.hami_ready:
         raise AppError(
@@ -650,7 +674,7 @@ async def require_hami_ready(session: AsyncSession) -> None:
 
 
 async def require_kata_runtimeclass(session: AsyncSession) -> None:
-    """dedicated 档下发门禁:RuntimeClass kata-qemu 缺位即 409。"""
+    """Dedicated-tier dispatch gate: 409 when RuntimeClass kata-qemu is missing."""
     row = await _fresh_cluster_status(session)
     if not row.kata_runtimeclass:
         raise AppError(
@@ -662,7 +686,8 @@ async def require_kata_runtimeclass(session: AsyncSession) -> None:
 
 
 async def require_pool_runtime(session: AsyncSession, pool_label: str) -> None:
-    """校验目标 GPU 池运行时;hami 查 HAMi,kata 查 RuntimeClass,mig 查 GPU Operator。"""
+    """Check the target GPU pool runtime; hami checks HAMi, kata the RuntimeClass, mig the GPU
+    Operator."""
     if pool_label == POOL_HAMI:
         await require_hami_ready(session)
         return
@@ -681,7 +706,7 @@ async def require_pool_runtime(session: AsyncSession, pool_label: str) -> None:
 
 
 async def require_storage_classes(session: AsyncSession, *, with_data_disk: bool) -> None:
-    """存储下发门禁:实例盘/数据盘 StorageClass 缺位即 409。"""
+    """Storage dispatch gate: 409 when the instance-disk / data-disk StorageClass is missing."""
     row = await _fresh_cluster_status(session)
     present = set(row.storage_classes or ())
     required = [INSTANCE_DISK_STORAGE_CLASS]
@@ -692,19 +717,19 @@ async def require_storage_classes(session: AsyncSession, *, with_data_disk: bool
         raise AppError(
             ErrorCode.CLUSTER_NOT_READY,
             key="nodes.storageClassMissing",
-            params={"names": "、".join(missing)},
+            params={"names": ", ".join(missing)},
             http_status=http_status.HTTP_409_CONFLICT,
             detail={"reason": "storage_class_missing", "missing": missing},
         )
 
 
 def _helmfile(distro: str | None, release: str) -> str:
-    """按发行版返回 apply.sh 修复命令。"""
+    """apply.sh repair command by distribution."""
     env = {"k3s": "light", "rke2": "full"}.get(distro or "", "<full|light>")
     return f"deploy/cluster/apply.sh {env} -l name={release}"
 
 
-_NVIDIA_RC_FIX = "节点装 nvidia-container-toolkit 后重启 k3s/rke2"
+_NVIDIA_RC_FIX = "install nvidia-container-toolkit on the node, then restart k3s/rke2"
 
 _COMPONENT_META: tuple[tuple[ComponentKey, str | None, str], ...] = (
     ("nodes", None, f"kubectl get node -o wide -L {POOL_NODE_LABEL}"),
@@ -725,7 +750,8 @@ _COMPONENT_META: tuple[tuple[ComponentKey, str | None, str], ...] = (
 
 
 def cluster_components(row: ClusterStatus | None) -> list[ClusterComponentOut]:
-    """从巡检快照组装组件事实;快照缺失、陈旧或 API 不可达时状态为 unknown。"""
+    """Assemble component facts from the patrol snapshot; missing, stale or API-unreachable
+    snapshots yield unknown."""
     facts = component_facts_from_json(row.component_facts if row else None)
     unknown = _probe_unknown(row)
     distro = row.distro if row else None
@@ -744,7 +770,8 @@ def cluster_components(row: ClusterStatus | None) -> list[ClusterComponentOut]:
 
 
 def _probe_unknown(row: ClusterStatus | None) -> bool:
-    """没探过 / 探测超过保鲜窗 / API 不可达:事实都不可信,判据与下发门禁同一个窗口。"""
+    """Never probed / probe older than the freshness window / API unreachable: no fact is
+    trustworthy; the same window as the dispatch gate."""
     if row is None or not row.api_reachable:
         return True
     return now_utc() - row.probed_at > HAMI_GATE_MAX_AGE
@@ -792,9 +819,10 @@ _COMPONENT_KEYS = frozenset(key for key, _r, _d in _COMPONENT_META)
 
 
 async def probe_component_detail(admin_id: int, key: str) -> ComponentProbeOut:
-    """请求路径限流、限时直连 K8s 只读深探;结果不落库,限流计数独立提交,不记审计。
+    """Rate-limited, time-boxed read-only deep probe straight against K8s on the request path; the
+    result is not stored, the rate-limit count commits independently, no audit.
 
-    未知 key 回 404,探测失败或超时回 503。
+    Unknown key → 404, probe failure or timeout → 503.
     """
     if key not in _COMPONENT_KEYS:
         raise not_found(key="nodes.nodeNotFound")

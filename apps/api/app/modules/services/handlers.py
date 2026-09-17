@@ -1,4 +1,4 @@
-"""在线服务的 outbox 任务:版本更新收尾。"""
+"""outbox tasks of online services: revision update wrap-up."""
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,9 +20,11 @@ _RETIRE_RETRY = RetryPolicy(max_retries=30, backoff_base_seconds=20)
 
 @outbox_handler(RETIRE_TASK_TYPE, retry=_RETIRE_RETRY)
 async def handle_retire(session: AsyncSession, task: OutboxTask) -> None:
-    """先锁旧实例再读服务;非当前且处于 stopping/stopped/frozen/failed 时调用释放原语。
+    """Lock the old instance first, then read the service; when it is not current and in
+    stopping/stopped/frozen/failed, call the release primitive.
 
-    实例或服务缺失、仍为当前版本、已在释放时返回;其他状态抛错重试。
+    Return when the instance or service is missing, still current or already releasing; other
+    statuses raise for retry.
     """
     old = await orchestrator_queries.lock_instance(session, task.payload["instance_id"])
     if old is None:

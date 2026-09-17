@@ -85,7 +85,7 @@ class Instance(Base):
 
 
 class InstanceEvent(Base):
-    """状态迁移流水:计费主依据 + 用户时间线,追加式。"""
+    """State-transition ledger: primary billing basis + user timeline, append-only."""
 
     __tablename__ = "instance_events"
     __table_args__ = (Index("ix_instance_events_instance_id_id", "instance_id", "id"),)
@@ -101,7 +101,8 @@ class InstanceEvent(Base):
 
 
 class PortAllocation(Base):
-    """SSH 端口池(30000–32767):instance_id 空即空闲;blocked = 被集群其它对象占用,分配器跳过。"""
+    """SSH port pool (30000–32767): instance_id empty = free; blocked = held by another cluster
+    object, skipped by the allocator."""
 
     __tablename__ = "port_allocations"
     __table_args__ = (
@@ -121,7 +122,8 @@ class PortAllocation(Base):
 
 
 class DataDisk(Base):
-    """数据盘:独立于实例生命周期;一盘一只 CephFS PVC(名 disk-<uuid>),挂载点 /root/data。"""
+    """Data disk: independent of the instance lifecycle; one CephFS PVC per disk (named
+    disk-<uuid>), mount point /root/data."""
 
     __tablename__ = "data_disks"
     __table_args__ = (

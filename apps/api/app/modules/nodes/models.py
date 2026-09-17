@@ -9,10 +9,10 @@ from app.core.db import Base
 
 
 class NodeEnrollment(Base):
-    """节点注册与进度令牌仅存 HMAC-SHA256 摘要。
+    """Node enrollment; enrollment and progress tokens are stored as HMAC-SHA256 digests only.
 
-    状态:pending → installing → rebooting ⇆ installing → joining → joined;
-    旁路终态 failed / expired / revoked。
+    Status: pending → installing → rebooting ⇆ installing → joining → joined;
+    side terminal states failed / expired / revoked.
     """
 
     __tablename__ = "node_enrollments"
@@ -42,9 +42,11 @@ class NodeEnrollment(Base):
 
 
 class NodeSpec(Base):
-    """巡检收敛的节点台账;消失置 Missing,last_seen 超 7 天删行。
+    """Node inventory converged by the patrol; vanished nodes become Missing, rows are deleted once
+    last_seen is older than 7 days.
 
-    管理端写 desired_unschedulable 与 desired_pool;非空 desired_pool 优先于注册登记。
+    The admin API writes desired_unschedulable and desired_pool; a non-null desired_pool wins over
+    the enrollment.
     """
 
     __tablename__ = "node_specs"
@@ -73,7 +75,8 @@ class NodeSpec(Base):
 
 
 class ClusterStatus(Base):
-    """集群能力缓存(单行 id=1):巡检探测落库,门禁与集群页只读;probed_at 超 10min 视为未知。"""
+    """Cluster capability cache (single row id=1): the patrol writes probe results, the gate and the
+    cluster page only read; probed_at older than 10 min counts as unknown."""
 
     __tablename__ = "cluster_status"
     __table_args__ = (CheckConstraint("id = 1", name="singleton"),)

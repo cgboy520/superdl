@@ -23,7 +23,8 @@ export const getEnrollBootstrapApiV1NodeEnrollBootstrapPostUrl = () => {
 }
 
 /**
- * 令牌换装机参数(含 join token)。注册令牌一次性,首跑即消费并换发 progress 令牌。
+ * Exchange the token for install parameters (join token included). The enrollment token is
+ * one-off: the first run consumes it and issues the progress token.
  * @summary Enroll Bootstrap
  */
 export const enrollBootstrapApiV1NodeEnrollBootstrapPost = async (bootstrapRequest: BootstrapRequest,
@@ -48,7 +49,7 @@ export const getEnrollProgressApiV1NodeEnrollProgressPostUrl = () => {
 }
 
 /**
- * 进度上报,无响应体。
+ * Progress report, no response body.
  * @summary Enroll Progress
  */
 export const enrollProgressApiV1NodeEnrollProgressPost = async (progressRequest: ProgressRequest,
@@ -73,7 +74,8 @@ export const getGetJoinScriptApiV1NodeEnrollScriptGetUrl = () => {
 }
 
 /**
- * 装机脚本下发(text/x-shellscript)。零密钥;占位符替换为本环境 API 地址。
+ * Install script download (text/x-shellscript). Zero secrets; the placeholder is replaced with
+ * this environment's API address.
  * @summary Get Join Script
  */
 export const getJoinScriptApiV1NodeEnrollScriptGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<string> => {

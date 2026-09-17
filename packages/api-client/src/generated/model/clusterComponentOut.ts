@@ -10,7 +10,8 @@ import type { ComponentFactOut } from './componentFactOut';
 import type { ComponentObjectOut } from './componentObjectOut';
 
 /**
- * 组件事实与状态;文案由 key 映射,两个 hint 为不随语言变化的命令。
+ * Component facts and state; copy is mapped by key, the two hints are commands that do not vary
+ * by language.
  */
 export interface ClusterComponentOut {
   diag_hint?: string | null;

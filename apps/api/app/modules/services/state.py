@@ -1,4 +1,5 @@
-"""从 released_at、当前与候选实例派生服务状态;不读取 desired_state,不落库。"""
+"""Derive the service status from released_at and the current / candidate instances; desired_state
+is not read, nothing is stored."""
 
 from typing import TYPE_CHECKING
 
@@ -34,7 +35,7 @@ _BY_INSTANCE_STATUS: dict[str, str] = {
 def derive_status(
     service: "Service", current: "Instance | None", rollout: "Instance | None"
 ) -> tuple[str, bool]:
-    """返回 (status, ready);ready 只在 running 且未观察到 not-ready 时为真。"""
+    """Returns (status, ready); ready is true only when running without an observed not-ready."""
     if service.released_at is not None:
         return RELEASED, False
     if rollout is not None:

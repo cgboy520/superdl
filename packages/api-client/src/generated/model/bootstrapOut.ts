@@ -6,7 +6,7 @@
  */
 
 /**
- * 装机参数下发,含 join token 明文,不入日志。
+ * Install parameters handed to the node, join token plaintext included, never logged.
  */
 export interface BootstrapOut {
   cluster_agent_version: string;

@@ -6,7 +6,7 @@
  */
 
 /**
- * 改名与鉴权开关:只改 services 行。
+ * Rename and auth switch: only the services row changes.
  */
 export interface ServicePatch {
   name?: string | null;

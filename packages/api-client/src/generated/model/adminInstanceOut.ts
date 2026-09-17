@@ -8,7 +8,7 @@ import type { AdminInstanceOutSpec } from './adminInstanceOutSpec';
 import type { InstanceSubscriptionOut } from './instanceSubscriptionOut';
 
 /**
- * 管理端全局实例视图:含租户与调度节点(不暴露给用户端)。
+ * Admin global instance view: with tenant and node (not exposed to the user console).
  */
 export interface AdminInstanceOut {
   created_at: string;

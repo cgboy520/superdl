@@ -6,7 +6,7 @@
  */
 
 /**
- * 列表/进度视图,不含 token。
+ * List / progress view, without the token.
  */
 export interface NodeEnrollmentOut {
   created_at: string;

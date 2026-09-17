@@ -42,8 +42,9 @@ export const getListInstancesApiV1InstancesGetUrl = (params?: ListInstancesApiV1
 }
 
 /**
- * 实例列表(只列开发机;服务版本实例走 /services):降序游标分页,status 精确,
- * name 模糊(含 uuid 前缀)。
+ * Instance list (dev boxes only; service revision instances go through /services): descending
+ * cursor pagination, status exact,
+ * name fuzzy (uuid prefix included).
  * @summary List Instances
  */
 export const listInstancesApiV1InstancesGet = async (params?: ListInstancesApiV1InstancesGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageInstanceOut> => {
@@ -98,7 +99,9 @@ export const getListExpiringInstancesApiV1InstancesExpiringGetUrl = (params?: Li
 }
 
 /**
- * 临期包周期实例:active 订阅且到期时刻 ≤ now+within_days,升序,不分页。
+ * Expiring subscription instances: active subscription with expiry ≤ now+within_days,
+ * ascending,
+ * no pagination.
  * @summary List Expiring Instances
  */
 export const listExpiringInstancesApiV1InstancesExpiringGet = async (params?: ListExpiringInstancesApiV1InstancesExpiringGetParams, options?: Parameters<typeof customFetch>[1]): Promise<InstanceOut[]> => {
@@ -122,7 +125,7 @@ export const getReleaseInstanceApiV1InstancesUuidDeleteUrl = (uuid: string,) => 
 }
 
 /**
- * 释放实例(清除实例盘,数据盘不受影响)。
+ * Release the instance (instance disk erased, data disks unaffected).
  * @summary Release Instance
  */
 export const releaseInstanceApiV1InstancesUuidDelete = async (uuid: string, options?: Parameters<typeof customFetch>[1]): Promise<InstanceOut> => {
@@ -193,7 +196,8 @@ export const getGetInstanceAccessApiV1InstancesUuidAccessGetUrl = (uuid: string,
 }
 
 /**
- * 接入信息,字段按形态出现:dev 给 SSH + Jupyter,服务版本实例给端点 URL(开了 SSH 都有)。
+ * Access information, fields by form: dev gets SSH + Jupyter, service revision instances the
+ * endpoint URL (SSH whenever enabled).
  * @summary Get Instance Access
  */
 export const getInstanceAccessApiV1InstancesUuidAccessGet = async (uuid: string, options?: Parameters<typeof customFetch>[1]): Promise<InstanceAccessOut> => {
@@ -249,7 +253,7 @@ export const getListInstanceEventsApiV1InstancesUuidEventsGetUrl = (uuid: string
 }
 
 /**
- * 状态时间线(计费依据),降序游标分页。
+ * Status timeline (billing basis), descending cursor pagination.
  * @summary List Instance Events
  */
 export const listInstanceEventsApiV1InstancesUuidEventsGet = async (uuid: string,
@@ -282,8 +286,9 @@ export const getGetInstanceLogsApiV1InstancesUuidLogsGetUrl = (uuid: string,
 }
 
 /**
- * 容器日志(只读,不记审计):非属主 404;限流 20/h/user;仅 running/stopping,否则 409;
- * tail_lines 默认 200,超 2000 截断。
+ * Container log (read-only, not audited): non-owner 404; rate limit 20/h/user; running/stopping
+ * only, otherwise 409;
+ * tail_lines default 200, truncated above 2000.
  * @summary Get Instance Logs
  */
 export const getInstanceLogsApiV1InstancesUuidLogsGet = async (uuid: string,
@@ -308,7 +313,9 @@ export const getRenewInstanceApiV1InstancesUuidRenewPostUrl = (uuid: string,) =>
 }
 
 /**
- * 包周期续费:按新周期折扣重新报价并即时扣款(不足即 402/400);冻结中续费即解冻回 stopped。
+ * Subscription renewal: re-quoted at the new period's discount and charged at once (402/400
+ * when
+ * short); renewing while frozen unfreezes back to stopped.
  * @summary Renew Instance
  */
 export const renewInstanceApiV1InstancesUuidRenewPost = async (uuid: string,
@@ -426,7 +433,8 @@ export const getSubscribeInstanceApiV1InstancesUuidSubscribePostUrl = (uuid: str
 }
 
 /**
- * 按量转包周期:结清转换前的按量账,再按周期折扣一次性预扣;入参与响应同 `/renew`,从现在起算。
+ * On-demand → subscription: settle the on-demand bill up to now, then prepay once at the period
+ * discount; request and response as `/renew`, counting from now.
  * @summary Subscribe Instance
  */
 export const subscribeInstanceApiV1InstancesUuidSubscribePost = async (uuid: string,
@@ -452,7 +460,8 @@ export const getConvertToOnDemandApiV1InstancesUuidToOnDemandPostUrl = (uuid: st
 }
 
 /**
- * 竞价实例转按量;已是按量则原样返回。当前整点小时整体改按按量价结算。
+ * Spot → on-demand; already on-demand returns unchanged. The current clock hour is settled
+ * entirely at the on-demand price.
  * @summary Convert To On Demand
  */
 export const convertToOnDemandApiV1InstancesUuidToOnDemandPost = async (uuid: string, options?: Parameters<typeof customFetch>[1]): Promise<InstanceOut> => {

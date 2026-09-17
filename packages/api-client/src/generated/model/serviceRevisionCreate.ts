@@ -9,8 +9,9 @@ import type { ServiceRevisionCreateMarket } from './serviceRevisionCreateMarket'
 import type { ServiceRevisionCreatePeriod } from './serviceRevisionCreatePeriod';
 
 /**
- * 版本更新的完整规格(与部署同一形态)。env_secret_keep = 沿用当前版本密文值的键名;
- * 同名键同时出现在 env 里以 env 为准。
+ * The full spec of a revision update (same shape as deployment). env_secret_keep = key names
+ * whose secret values are carried over from the current revision;
+ * a key also present in env takes the env value.
  */
 export interface ServiceRevisionCreate {
   container_args?: string[] | null;
