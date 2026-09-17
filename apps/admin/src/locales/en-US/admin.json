@@ -1087,7 +1087,7 @@
       "disk_price_gb_month": {
         "hint": "Snapshotted when a disk is created; repricing affects new disks only",
         "label": "Data disk unit price",
-        "unit": "CNY/GB·month"
+        "unit": "{{currency}}/GB·month"
       },
       "freeze_grace_hours": {
         "hint": "The instance disk is reclaimed once the freeze ends",
@@ -1248,7 +1248,7 @@
     "priceChangeImpactPending": "Loading impact…",
     "priceChangeLine": "Price: {{from}} → {{to}}",
     "priceChangeScope": "The new price applies to new instances only; running ones keep their creation-time snapshot price.",
-    "priceLabel": "Price (CNY/hr)",
+    "priceLabel": "Price ({{currency}}/hr)",
     "ratioHint": "Suggested from the whole-node ratio of {{model}}",
     "reasonLabel": "Reason for change",
     "reasonPlaceholder": "e.g. quarterly repricing / cost change / promotion",

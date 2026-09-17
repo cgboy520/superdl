@@ -1,4 +1,7 @@
-/** jsdom 缺口补齐:antd 组件依赖的浏览器 API(jsdom 未实现)。 */
+/** jsdom 缺口补齐:antd 组件依赖的浏览器 API(jsdom 未实现);金额格式化钉 CNY(生产取 platform-config deployment)。 */
+import { setFallbackCurrency } from "@superdl/ui";
+
+setFallbackCurrency("CNY");
 
 class ResizeObserverStub {
   observe() {}

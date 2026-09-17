@@ -11,6 +11,28 @@ export async function confirmOk(page: Page): Promise<void> {
     .click();
 }
 
+/** Deployment currency from the public site config (the consoles format money with it). */
+export async function siteCurrency(page: Page): Promise<string> {
+  const resp = await page.request.get("/api/v1/site-config");
+  expect(resp.ok()).toBeTruthy();
+  return ((await resp.json()) as { currency: string }).currency;
+}
+
+/** Money text exactly as the zh-CN console renders it for the deployment currency. */
+export async function moneyText(page: Page, amount: string): Promise<string> {
+  const currency = await siteCurrency(page);
+  return new Intl.NumberFormat("zh-CN", { style: "currency", currency }).format(amount as unknown as number);
+}
+
+/** Regex matching any amount rendered with the deployment currency's zh-CN symbol. */
+export async function moneyPattern(page: Page): Promise<RegExp> {
+  const currency = await siteCurrency(page);
+  const symbol =
+    new Intl.NumberFormat("zh-CN", { style: "currency", currency }).formatToParts(0).find((p) => p.type === "currency")
+      ?.value ?? "";
+  return new RegExp(`${symbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*[\\d,]+(\\.\\d+)?`);
+}
+
 /** Unique test email built from a timestamp and a random suffix. */
 export function uniqueEmail(): string {
   const ms = String(Date.now()).slice(-6);

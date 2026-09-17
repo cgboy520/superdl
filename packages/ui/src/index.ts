@@ -4,7 +4,10 @@ export * from "./polling";
 export * from "./status";
 export * from "./testIds";
 export {
+  currencySymbol,
+  minorUnitsOf,
   formatMoney,
+  formatPrice,
   formatHourlyPrice,
   mulPrice,
   diskDailyEstimate,
@@ -44,6 +47,7 @@ export type { AppLang } from "./i18n";
 export * from "./hooks/useNow";
 export * from "./hooks/useCsvExport";
 export * from "./hooks/useFormat";
+export * from "./hooks/useCurrency";
 export * from "./hooks/useApiErrorText";
 export * from "./hooks/useAppLocale";
 export * from "./hooks/useDebouncedValue";

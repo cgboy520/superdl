@@ -3,7 +3,12 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
 
+import { setFallbackCurrency } from "@superdl/ui";
+
 import i18n from "../i18n";
+
+// Fixtures assert zh-CN yen formatting; production gets the currency from /site-config.
+setFallbackCurrency("CNY");
 
 afterEach(() => cleanup());
 

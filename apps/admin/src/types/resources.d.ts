@@ -1062,7 +1062,7 @@ export default interface Resources {
         "disk_price_gb_month": {
           "hint": "建盘时快照,调价只影响新盘",
           "label": "数据盘单价",
-          "unit": "元/GB·月"
+          "unit": "{{currency}}/GB·月"
         },
         "freeze_grace_hours": {
           "hint": "冻结到期回收实例盘",
@@ -1222,7 +1222,7 @@ export default interface Resources {
       "priceChangeImpactPending": "影响面加载中…",
       "priceChangeLine": "单价:{{from}} → {{to}}",
       "priceChangeScope": "改价只影响新实例;在跑实例仍按创建时快照价计费。",
-      "priceLabel": "单价(元/时)",
+      "priceLabel": "单价({{currency}}/时)",
       "ratioHint": "已按 {{model}} 节点整机配比推荐",
       "reasonLabel": "变更原因",
       "reasonPlaceholder": "如:季度调价 / 成本变动 / 大促活动",
@@ -1708,8 +1708,8 @@ export default interface Resources {
       "exporting": "导出中…"
     },
     "disk": {
-      "expandEstimate": "扩容到 {{size}}(新增 {{extra}}),新增部分约 ¥{{daily}}/日",
-      "sizeEstimate": "{{size}} · 约 ¥{{daily}}/日"
+      "expandEstimate": "扩容到 {{size}}(新增 {{extra}}),新增部分约 {{daily}}/日",
+      "sizeEstimate": "{{size}} · 约 {{daily}}/日"
     },
     "empty": {
       "disk": "暂无数据盘",

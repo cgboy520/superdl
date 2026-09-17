@@ -62,7 +62,7 @@ export function SkuDrawerForm({
 }) {
   const { t } = useTranslation(["admin", "shared"]);
   const errText = useApiErrorText();
-  const { formatHourlyPrice } = useFormat();
+  const { formatHourlyPrice, currency } = useFormat();
   const { message } = App.useApp();
   const confirm = useConfirm();
   const role = useAdminRole();
@@ -404,7 +404,11 @@ export function SkuDrawerForm({
             <Form.Item name="disk_gb" label={t("skus.diskLabel")} rules={[{ required: true }]}>
               <InputNumber min={10} style={{ width: "100%" }} />
             </Form.Item>
-            <Form.Item name="price_hourly" label={t("skus.priceLabel")} rules={[{ required: true }]}>
+            <Form.Item
+              name="price_hourly"
+              label={t("skus.priceLabel", { currency: currency ?? "" })}
+              rules={[{ required: true }]}
+            >
               <InputNumber min="0.0001" step="0.01" precision={4} stringMode style={{ width: "100%" }} />
             </Form.Item>
             <Form.Item

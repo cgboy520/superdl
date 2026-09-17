@@ -157,7 +157,7 @@ export function ReviewConfirmModal({
 export function AdjustmentsTab() {
   const { t } = useTranslation(["admin", "shared"]);
   const errText = useApiErrorText();
-  const { formatMoney } = useFormat();
+  const { formatMoney, minorUnits } = useFormat();
   const { message } = App.useApp();
   const role = useAdminRole();
   const { admin } = useAuth();
@@ -422,8 +422,8 @@ export function AdjustmentsTab() {
           )}
           <Form.Item name="amount" label={t("finance.amountLabel")} rules={[{ required: true }]}>
             <InputNumber
-              step="0.01"
-              precision={2}
+              step={minorUnits === 0 ? "1" : "0.01"}
+              precision={minorUnits}
               stringMode
               min={String(-ADJUST_MAX_ABS)}
               max={String(ADJUST_MAX_ABS)}

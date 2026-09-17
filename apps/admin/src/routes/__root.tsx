@@ -1,4 +1,4 @@
-import { adminThemeComponents, adminThemeToken, ThemeProvider } from "@superdl/ui";
+import { adminThemeComponents, adminThemeToken, CurrencyProvider, ThemeProvider } from "@superdl/ui";
 import { NotFoundView, RouteErrorFallbackView } from "@superdl/ui/components";
 import { createRootRoute, Outlet, type ErrorComponentProps } from "@tanstack/react-router";
 import { App as AntApp, ConfigProvider, theme } from "antd";
@@ -6,6 +6,8 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useAppLocale } from "@superdl/ui";
+import { usePlatformConfig } from "../api";
+import { useAuth } from "../stores/auth";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -13,8 +15,11 @@ export const Route = createRootRoute({
   notFoundComponent: NotFoundPage,
 });
 
+/** Theme + locale + deployment currency (platform-config `deployment` block, only once signed in). */
 function DarkShell({ children }: { children: ReactNode }) {
   const antdLocale = useAppLocale();
+  const { accessToken } = useAuth();
+  const { data: platform } = usePlatformConfig({ enabled: accessToken != null });
   return (
     <ConfigProvider
       locale={antdLocale}
@@ -24,7 +29,9 @@ function DarkShell({ children }: { children: ReactNode }) {
         components: adminThemeComponents,
       }}
     >
-      <ThemeProvider value="admin">{children}</ThemeProvider>
+      <ThemeProvider value="admin">
+        <CurrencyProvider currency={platform?.deployment.currency ?? null}>{children}</CurrencyProvider>
+      </ThemeProvider>
     </ConfigProvider>
   );
 }

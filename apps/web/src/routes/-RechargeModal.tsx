@@ -42,7 +42,7 @@ export function PayCountdown({ expiresAt }: { expiresAt: string }) {
 }
 
 export function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { currencySymbol, formatMoney } = useFormat();
+  const { currencySymbol, formatMoney, minorUnits } = useFormat();
   const { t } = useTranslation();
   const { message } = App.useApp();
   const queryClient = useQueryClient();
@@ -156,7 +156,7 @@ export function RechargeModal({ open, onClose }: { open: boolean; onClose: () =>
             style={{ width: controlWidth.md }}
             min={RECHARGE_MIN_AMOUNT}
             max={RECHARGE_MAX_AMOUNT}
-            precision={2}
+            precision={minorUnits}
             stringMode
             value={amount}
             onChange={(v) => setAmount(v ?? "0")}

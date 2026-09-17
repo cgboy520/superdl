@@ -1,4 +1,4 @@
-import { brand, cssVars, ThemeProvider, webDarkColors, webDarkTheme, webTheme } from "@superdl/ui";
+import { brand, cssVars, CurrencyProvider, ThemeProvider, webDarkColors, webDarkTheme, webTheme } from "@superdl/ui";
 import { NotFoundView, RouteErrorFallbackView } from "@superdl/ui/components";
 import { createRootRoute, Outlet, type ErrorComponentProps } from "@tanstack/react-router";
 import { App as AntApp, ConfigProvider, theme as antdTheme } from "antd";
@@ -7,6 +7,7 @@ import { useEffect, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useAppLocale } from "@superdl/ui";
+import { useSiteConfig } from "../api/queries";
 import { useThemeMode } from "../stores/theme";
 
 export const Route = createRootRoute({
@@ -15,10 +16,12 @@ export const Route = createRootRoute({
   notFoundComponent: NotFoundPage,
 });
 
-/** locale + 主题联动的唯一 Provider:主树/错误边界/404 共用。暗色 = darkAlgorithm + webDarkTheme 覆写。 */
+/** locale + 主题 + 部署货币联动的唯一 Provider:主树/错误边界/404 共用。暗色 = darkAlgorithm + webDarkTheme 覆写;
+ *  货币来自 /site-config,未知前金额只显示数字。 */
 function AppProviders({ children }: { children: ReactNode }) {
   const antdLocale = useAppLocale();
   const mode = useThemeMode();
+  const { data: site } = useSiteConfig();
   useEffect(() => {
     document.documentElement.dataset.theme = mode;
     document.documentElement.style.colorScheme = mode;
@@ -34,9 +37,11 @@ function AppProviders({ children }: { children: ReactNode }) {
       theme={mode === "dark" ? { algorithm: antdTheme.darkAlgorithm, ...webDarkTheme } : webTheme}
     >
       <ThemeProvider value={mode === "dark" ? "web-dark" : "web-light"}>
-        <MotionConfig reducedMotion="user">
-          <AntApp>{children}</AntApp>
-        </MotionConfig>
+        <CurrencyProvider currency={site?.currency ?? null}>
+          <MotionConfig reducedMotion="user">
+            <AntApp>{children}</AntApp>
+          </MotionConfig>
+        </CurrencyProvider>
       </ThemeProvider>
     </ConfigProvider>
   );

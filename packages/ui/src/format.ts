@@ -1,4 +1,5 @@
-/** 金额、时长与倒计时格式化;金额使用十进制字符串,文案函数由调用方传入。 */
+/** Money, duration and countdown formatting. Amounts are decimal strings; currency text comes from
+ *  `Intl.NumberFormat` for the deployment currency (see hooks/useCurrency); `t` is passed in by the caller. */
 
 import { isBillingPeriod, type BillingPeriod } from "./status";
 
@@ -26,28 +27,96 @@ type SharedFormatKey =
 
 export type SharedT = (key: SharedFormatKey, opts?: Record<string, unknown>) => string;
 
-/** 货币恒为人民币;en 用 CN¥。 */
-function currencySymbol(locale: string): string {
-  return locale.startsWith("zh") ? "¥" : "CN¥";
+/** Intl formatter cache keyed by locale, currency and fraction bounds; `null` currency = plain number. */
+const formatterCache = new Map<string, Intl.NumberFormat | null>();
+
+/** `null` when Intl rejects the currency code (unknown ISO code). */
+function buildNumberFormat(
+  locale: string,
+  currency: string | null,
+  minFraction: number,
+  maxFraction: number,
+): Intl.NumberFormat | null {
+  try {
+    return new Intl.NumberFormat(locale, {
+      ...(currency ? { style: "currency", currency } : {}),
+      minimumFractionDigits: minFraction,
+      maximumFractionDigits: maxFraction,
+    });
+  } catch {
+    return null;
+  }
 }
 
-/** 金额字符串加货币符号与千分位;小数补齐或截取到两位,负号在最前。 */
-export function formatMoney(amount: string, locale: string): string {
-  const currency = currencySymbol(locale);
+function numberFormat(
+  locale: string,
+  currency: string | null,
+  minFraction: number,
+  maxFraction: number,
+): Intl.NumberFormat | null {
+  const key = `${locale}|${currency ?? ""}|${minFraction}|${maxFraction}`;
+  const hit = formatterCache.get(key);
+  if (hit !== undefined) return hit;
+  const fmt = buildNumberFormat(locale, currency, minFraction, maxFraction);
+  formatterCache.set(key, fmt);
+  return fmt;
+}
+
+/** Minor-unit digits of an ISO 4217 code per Intl (JPY → 0, USD → 2); unknown or null → 2. */
+export function minorUnitsOf(currency: string | null): number {
+  if (!currency) return 2;
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency }).resolvedOptions().maximumFractionDigits ?? 2;
+  } catch {
+    return 2;
+  }
+}
+
+/** Currency symbol Intl uses for the locale ("¥" for CNY in zh-CN, "CN¥" in en-US, "$" for USD in en-US);
+ *  unknown or null currency → "". */
+export function currencySymbol(locale: string, currency: string | null): string {
+  const fmt = currency ? numberFormat(locale, currency, 0, 0) : null;
+  if (!fmt) return "";
+  return fmt.formatToParts(0).find((p) => p.type === "currency")?.value ?? "";
+}
+
+/** Decimal string cut (never rounded) to `digits` fraction digits; the display layer does no arithmetic. */
+function truncateFraction(amount: string, digits: number): string {
   const neg = amount.startsWith("-");
-  const abs = neg ? amount.slice(1) : amount;
-  const [intRaw = "0", fracRaw = ""] = abs.split(".");
-  const frac = (fracRaw + "00").slice(0, 2);
-  const int = intRaw.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  return `${neg ? "-" : ""}${currency}${int}.${frac}`;
+  const [intRaw = "0", fracRaw = ""] = (neg ? amount.slice(1) : amount).split(".");
+  const int = intRaw === "" ? "0" : intRaw;
+  const frac = fracRaw.slice(0, digits);
+  return `${neg ? "-" : ""}${int}${frac ? `.${frac}` : ""}`;
 }
 
-/** 时价:"1.68" → "¥1.68/时" / "CN¥1.68/hr"(2–4 位小数,去尾零)。 */
-export function formatHourlyPrice(price: string, t: SharedT, locale: string): string {
-  const [int = "0", fracRaw = ""] = price.split(".");
-  let frac = (fracRaw + "00").slice(0, 4).replace(/0+$/, "");
-  if (frac.length < 2) frac = (frac + "00").slice(0, 2);
-  return t("shared:format.perHour", { price: `${currencySymbol(locale)}${int}.${frac}` });
+/** Plain-number fallback with a fixed fraction range (unknown currency or Intl unavailable). */
+function plainNumber(amount: string, locale: string, minFraction: number, maxFraction: number): string {
+  const fmt = numberFormat(locale, null, minFraction, maxFraction);
+  return fmt ? fmt.format(amount as unknown as number) : amount;
+}
+
+/** Amount string → localized currency text, truncated to the currency's minor units
+ *  ("1234.5" → "¥1,234.50" zh-CN/CNY, "$1,234.50" en-US/USD, "¥1,235" en-US/JPY from "1235.9" → "1235").
+ *  Null or unknown currency → number without a symbol. */
+export function formatMoney(amount: string, locale: string, currency: string | null): string {
+  const digits = minorUnitsOf(currency);
+  const value = truncateFraction(amount, digits);
+  const fmt = currency ? numberFormat(locale, currency, digits, digits) : null;
+  return fmt ? fmt.format(value as unknown as number) : plainNumber(value, locale, digits, digits);
+}
+
+/** Unit price (4 fraction digits max, at least the currency's minor units, trailing zeros dropped):
+ *  "0.1250" → "¥0.125", "1.6800" → "¥1.68". */
+export function formatPrice(price: string, locale: string, currency: string | null): string {
+  const digits = minorUnitsOf(currency);
+  const value = truncateFraction(price, 4);
+  const fmt = currency ? numberFormat(locale, currency, digits, 4) : null;
+  return fmt ? fmt.format(value as unknown as number) : plainNumber(value, locale, digits, 4);
+}
+
+/** Hourly price: "1.68" → "¥1.68/时" / "$1.68/hr". */
+export function formatHourlyPrice(price: string, t: SharedT, locale: string, currency: string | null): string {
+  return t("shared:format.perHour", { price: formatPrice(price, locale, currency) });
 }
 
 /** 十进制字符串 → BigInt 定点(带符号;空串按 0)。digits = 小数位数(金额 2 / 单价 4)。 */
@@ -59,10 +128,11 @@ function scaleAmount(s: string, digits: 2 | 4): bigint {
   return neg ? -v : v;
 }
 
-/** BigInt 定点 → 十进制字符串(带符号)。 */
-function unscale(scaled: bigint, digits: 2 | 4): string {
+/** BigInt 定点 → 十进制字符串(带符号);digits 0 时无小数点。 */
+function unscale(scaled: bigint, digits: 0 | 2 | 4): string {
   const neg = scaled < 0n;
   const s = (neg ? -scaled : scaled).toString().padStart(digits + 1, "0");
+  if (digits === 0) return `${neg ? "-" : ""}${s}`;
   return `${neg ? "-" : ""}${s.slice(0, -digits)}.${s.slice(-digits)}`;
 }
 
@@ -71,11 +141,11 @@ export function mulPrice(price: string, count: number): string {
   return unscale(scaleAmount(price, 4) * BigInt(count), 4);
 }
 
-/** 数据盘日价估算:GB·月单价 × GB ÷ 30,HALF_EVEN 到分。 */
-export function diskDailyEstimate(priceGbMonth: string, gb: number): string {
-  if (gb <= 0 || !Number.isInteger(gb)) return "0.00";
+/** 数据盘日价估算:GB·月单价 × GB ÷ 30,HALF_EVEN 到货币最小单位(默认 2 位)。 */
+export function diskDailyEstimate(priceGbMonth: string, gb: number, minorUnits: 0 | 2 = 2): string {
+  if (gb <= 0 || !Number.isInteger(gb)) return unscale(0n, minorUnits);
   const monthlyScaled = scaleAmount(priceGbMonth, 4) * BigInt(gb);
-  return unscale(halfEvenDiv(monthlyScaled, 3000n), 2);
+  return unscale(halfEvenDiv(monthlyScaled, 30n * 10n ** BigInt(4 - minorUnits)), minorUnits);
 }
 
 /** 非负整数除法,ROUND_HALF_EVEN 舍入。 */
@@ -207,8 +277,15 @@ export function formatDaysLeft(
 }
 
 /** 包周期价:"2298.24" + month + 1 → "¥2,298.24/月";份数 > 1 → "¥6,894.72/3 月";未知周期只回金额。 */
-export function formatPeriodPrice(amount: string, period: string, count: number, t: SharedT, locale: string): string {
-  const price = formatMoney(amount, locale);
+export function formatPeriodPrice(
+  amount: string,
+  period: string,
+  count: number,
+  t: SharedT,
+  locale: string,
+  currency: string | null,
+): string {
+  const price = formatMoney(amount, locale, currency);
   if (!isBillingPeriod(period)) return price;
   const unit = t(`shared:format.periodUnit.${period}`, { count });
   return count > 1
@@ -221,10 +298,15 @@ export function formatExpiry(expiresAt: string | null | undefined, t: SharedT, n
   return expiresAt ? formatDaysUntil(expiresAt, t, now) : null;
 }
 
-/** useFormat() 绑定 t 与 locale 后的格式化函数集合。 */
+/** useFormat() 绑定 t、locale 与部署货币后的格式化函数集合。 */
 export interface Formatters {
+  /** ISO 4217 code of the deployment currency; null until site config is known. */
+  currency: string | null;
+  /** Fraction digits of the currency (InputNumber precision / step). */
+  minorUnits: number;
   currencySymbol: string;
   formatMoney: (amount: string) => string;
+  formatPrice: (price: string) => string;
   formatHourlyPrice: (price: string) => string;
   formatDuration: (seconds: number) => string;
   formatCountdown: (deadline: string | Date, now?: Date) => string;
@@ -236,17 +318,20 @@ export interface Formatters {
   formatSpotDiscount: (discountPct: number) => string;
 }
 
-export function makeFormatters(t: SharedT, locale: string): Formatters {
+export function makeFormatters(t: SharedT, locale: string, currency: string | null): Formatters {
   return {
-    currencySymbol: currencySymbol(locale),
-    formatMoney: (amount) => formatMoney(amount, locale),
-    formatHourlyPrice: (price) => formatHourlyPrice(price, t, locale),
+    currency,
+    minorUnits: minorUnitsOf(currency),
+    currencySymbol: currencySymbol(locale, currency),
+    formatMoney: (amount) => formatMoney(amount, locale, currency),
+    formatPrice: (price) => formatPrice(price, locale, currency),
+    formatHourlyPrice: (price) => formatHourlyPrice(price, t, locale, currency),
     formatDuration: (seconds) => formatDuration(seconds, t),
     formatCountdown: (deadline, now) => formatCountdown(deadline, t, now),
     formatReclaimCountdown: (deadline, now) => formatReclaimCountdown(deadline, t, now),
     formatDaysUntil: (deadline, now) => formatDaysUntil(deadline, t, now),
     formatDaysLeft: (startedAt, totalDays, now) => formatDaysLeft(startedAt, totalDays, t, now),
-    formatPeriodPrice: (amount, period, count) => formatPeriodPrice(amount, period, count, t, locale),
+    formatPeriodPrice: (amount, period, count) => formatPeriodPrice(amount, period, count, t, locale, currency),
     formatExpiry: (expiresAt, now) => formatExpiry(expiresAt, t, now),
     formatSpotDiscount: (discountPct) => formatSpotDiscount(discountPct, t, locale),
   };
