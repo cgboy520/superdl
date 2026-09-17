@@ -32,7 +32,7 @@
 - WorkerDown 告警按心跳 Gauge 判定,不用 `absent()`。
 - worker 支持 SIGTERM 优雅停机并写心跳文件(K8s exec 探针据此判活);心跳由独立协程触碰。
 - Alertmanager critical 必走双通道(平台 webhook + 外部 SMTP);可选第三通道钉钉群机器人(经 sidecar 转换器,默认未启用,见 `deploy/cluster/values/kps.yaml`);另可配 `oncall_phone` 直发值班短信。
-- 每日数据保洁:验证码、refresh 记录、已完成 outbox、超保留期审计。保留期见 [limits.md](./limits.md)。
+- 每日数据保洁(计费时区 03:00):验证码、refresh 记录、已完成 outbox、超保留期审计。保留期见 [limits.md](./limits.md)。
 - 管理端监控自绘、不做 Grafana iframe:节点页每卡热力格(util%/显存/温度,XID>0 红点)+ 节点详情 ECharts 曲线;`grafana_url` 仅作外链。指标断源时管理端降级为「已租/空闲」形态。
 - 抓取 HAMi 需在 kps values 加 additionalScrapeConfigs(scheduler + vGPUmonitor)并配 `absent(up{job="hami-scheduler"})` 告警。
 - 集群维查询模板在 `apps/api/app/modules/metering/prom.py` 的 `COMPONENT_QUERIES`(DCGM 样本新鲜度 / 抓取目标 up 比 / 触发中告警数),经 `metering/service.py` 的 `cluster_component_metrics()` 供节点巡检取用,并入组件体检快照。Prometheus 未配或查询失败返回空:对应事实留空,不改任何组件的状态位。

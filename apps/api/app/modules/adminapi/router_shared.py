@@ -1,26 +1,22 @@
 """管理端子路由共享的响应/参数辅助。"""
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import Depends, Query
 
-from app.core.errors import AppError, ErrorCode
+from app.core.timeutil import billing_day_range
 
 ExportLang = Query(default="zh-CN")
 
 
 def parse_day(day: str) -> tuple[datetime, datetime]:
-    """将 YYYY-MM-DD 解析为 UTC 日窗口 [start, end);格式错误抛 VALIDATION_ERROR。"""
-    try:
-        start = datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=UTC)
-    except ValueError as exc:
-        raise AppError(ErrorCode.VALIDATION_ERROR, key="adminapi.badDayFormat") from exc
-    return start, start + timedelta(days=1)
+    """YYYY-MM-DD in the billing zone → UTC [start, end); bad format → VALIDATION_ERROR."""
+    return billing_day_range(day, key="adminapi.badDayFormat")
 
 
 def _day_range(day: str | None = Query(default=None)) -> tuple[datetime, datetime] | None:
-    """可选 day=YYYY-MM-DD → UTC 日窗口 [start, end);缺省不过滤。"""
+    """Optional day=YYYY-MM-DD (billing zone) → UTC [start, end); absent = no filter."""
     return parse_day(day) if day else None
 
 

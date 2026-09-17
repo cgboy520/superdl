@@ -7,7 +7,7 @@
 import type { BillSummaryItem } from './billSummaryItem';
 
 /**
- * 当日消费汇总(本地日界由 tz_offset_minutes 折算)。
+ * 当日消费汇总(本地日界由 tz_offset_minutes 折算,缺省为计费时区当前偏移)。
  */
 export interface DailySummaryOut {
   date: string;

@@ -21,7 +21,7 @@ CephFS 数据盘:一盘一只 PVC,独立生命周期、配额、扩容与日结�
 - 数据盘后端必须支持 idmapped mount(租户 Pod 一律 `hostUsers: false`);当前后端为 CephFS(Rook),一盘一 PVC。
 - 数据盘与实例解耦:实例释放不影响数据盘,同一盘可先后被不同实例挂载(挂载点 `/root/data`,RWX,不限节点)。
 - 欠费(判据可用余额 ≤ 0,与实例欠费巡检同口径,见 [billing.md](./billing.md))→ grace → frozen → 清除,天数为策略参数,见 [limits.md](./limits.md)。grace 停计费(进入 grace 时先结清在账天数);宽限钟 `grace_started_at` 首次欠费起算,回款不归零;冻结删除钟 `frozen_started_at` 回款也不归零(记 `grace_ended_at`),再次冻结接着上次的钟走,只有回款后保持正常超过 `disk_frozen_days` 才归零重新起算——先建小号式的「冻结 → 第 29 天充值 → 再欠费」仍按原截止日清除。
-- 按北京自然日计费(日界取 `app/core/timeutil.py` 的 `billing_day_floor`),不足一日按一日;关机也扣。日结每日 UTC 16:10(advisory lock),结算上一自然日,按 `bills_daily_disk` UNIQUE(disk_id, day) 幂等,漏掉的日期由 `settlement_watermarks` 追平。
+- 按计费时区(`SUPERDL_BILLING_TIMEZONE`)自然日计费(日界取 `app/core/timeutil.py` 的 `billing_day_floor`,跨日用 `billing_day_shift`,夏令时切换日为 23/25 小时),不足一日按一日;关机也扣。日结每日计费时区 00:10(advisory lock),结算上一自然日,按 `bills_daily_disk` UNIQUE(disk_id, day) 幂等,漏掉的日期由 `settlement_watermarks` 追平。
 - 删盘与扩容前先按变更前容量结清尚未出账的自然日,下界取水位线。
 - `grace` / `frozen` 态不计费,删除冻结盘不补账。
 - `size_gb` 既是计费口径也是**真实硬限制**:它就是 PVC 的申领容量,CephFS CSI 建带配额的 subvolume,创建即生效,没有「配额下发中」这段窗口。建盘与扩容同事务 enqueue `disk.provision`,worker(disk-ops)建或 patch 租户 ns 内的 PVC(只扩不缩),成功置 `provisioned=true`;`provisioned=false` 的盘不可挂载(`disks.notProvisioned`)。重试耗尽转死信后由 reconciler 周期重派(失败计 `superdl_disk_provision_failed_total`)。删盘 enqueue `disk.deprovision` 删 PVC,SC 的 `reclaimPolicy=Delete` 让 CSI 随之销毁 subvolume——没有单独的擦除作业。

@@ -1,13 +1,19 @@
+# pyright: reportPrivateUsage=false
 """数据盘 CRUD、跨实例挂载、日结幂等与欠费链路。"""
 
-from datetime import timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
 from sqlalchemy import select, update
 
 from app.core.money import disk_daily_charge
-from app.core.timeutil import BILLING_DAY_OFFSET, billing_day_floor, now_utc
+from app.core.timeutil import (
+    billing_day_floor,
+    billing_day_shift,
+    billing_local_date,
+    now_utc,
+)
 from app.modules.billing import wallet
 from app.modules.billing.models import BalanceLedger, BillDailyDisk
 from app.modules.billing.patrol import balance_patrol
@@ -276,13 +282,48 @@ class TestDailyDiskBilling:
         async with sm() as session:
             bill = (await session.execute(select(BillDailyDisk))).scalar_one()
             entries = (await session.execute(select(BalanceLedger))).scalars().all()
-        yesterday = (billing_day_floor(now_utc()) - timedelta(days=1) + BILLING_DAY_OFFSET).date()
+        yesterday = billing_local_date(billing_day_shift(billing_day_floor(now_utc()), -1))
         expected = disk_daily_charge(Decimal("0.0350"), 100, yesterday)
         assert bill.amount == expected
         assert len([e for e in entries if e.type == "consume"]) == 1
 
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == str(Decimal("100.00") - expected)
+
+    async def test_daily_catchup_across_dst_bills_each_local_date_once(
+        self, client, sm, fake, monkeypatch
+    ):
+        """America/New_York around 2026-03-08 (23-hour day): catching up several days yields
+        exactly one bill per local date, with a 23-hour window on the transition day."""
+        from app.core.config import get_settings
+
+        monkeypatch.setattr(get_settings(), "billing_timezone", "America/New_York")
+        headers, _user_id, _key = await funded_user(client, sm, "13500000029")
+        await create_disk(client, headers, size_gb=100)
+        from app.modules.billing.settlement import _advance_watermark
+
+        created = datetime(2026, 3, 6, 15, 0, tzinfo=UTC)
+        async with sm() as session:
+            await session.execute(update(DataDisk).values(created_at=created))
+            await session.commit()
+        await _advance_watermark(
+            sm, "daily_disk", billing_day_shift(billing_day_floor(created), -1)
+        )
+        assert await settle_daily_disks(sm, at=datetime(2026, 3, 10, 12, 0, tzinfo=UTC)) == 4
+        async with sm() as session:
+            bills = (
+                (await session.execute(select(BillDailyDisk).order_by(BillDailyDisk.day)))
+                .scalars()
+                .all()
+            )
+        assert [billing_local_date(b.day) for b in bills] == [
+            date(2026, 3, 6),
+            date(2026, 3, 7),
+            date(2026, 3, 8),
+            date(2026, 3, 9),
+        ]
+        assert (bills[3].day - bills[2].day).total_seconds() == 23 * 3600
+        assert (bills[2].day - bills[1].day).total_seconds() == 24 * 3600
 
     async def test_new_disk_not_billed_for_yesterday(self, client, sm, fake):
         headers, _user_id, _key = await funded_user(client, sm, "13500000021")
@@ -296,7 +337,7 @@ class TestDailyDiskBilling:
         await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
         async with sm() as session:
             bill = (await session.execute(select(BillDailyDisk))).scalar_one()
-        today = (billing_day_floor(now_utc()) + BILLING_DAY_OFFSET).date()
+        today = billing_local_date(billing_day_floor(now_utc()))
         expected = disk_daily_charge(Decimal("0.0350"), 100, today)
         assert bill.amount == expected
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
@@ -322,7 +363,7 @@ class TestDailyDiskBilling:
             disk_daily_charge(
                 Decimal("0.0350"),
                 100,
-                (billing_day_floor(now_utc()) - timedelta(days=k) + BILLING_DAY_OFFSET).date(),
+                billing_local_date(billing_day_shift(billing_day_floor(now_utc()), -k)),
             )
             for k in range(3, -1, -1)
         )
@@ -339,7 +380,7 @@ class TestDailyDiskBilling:
         async with sm() as session:
             bill = (await session.execute(select(BillDailyDisk))).scalar_one()
         assert bill.size_gb == 100
-        today = (billing_day_floor(now_utc()) + BILLING_DAY_OFFSET).date()
+        today = billing_local_date(billing_day_floor(now_utc()))
         assert bill.amount == disk_daily_charge(Decimal("0.0350"), 100, today)
 
     async def test_frozen_disk_delete_not_billed(self, client, sm, fake):

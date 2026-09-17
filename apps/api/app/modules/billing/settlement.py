@@ -25,8 +25,9 @@ from app.core.money import as_amount, as_price, billing_units, disk_daily_charge
 from app.core.pagination import Page, paginate_by_id
 from app.core.sqlutil import get_for_update_or_404
 from app.core.timeutil import (
-    BILLING_DAY_OFFSET,
     billing_day_floor,
+    billing_day_shift,
+    billing_local_date,
     ensure_utc,
     hour_floor,
     now_utc,
@@ -496,11 +497,15 @@ async def _catchup_settle(
     max_catchup: int,
     floor_fn: Callable[[datetime], datetime],
     settle_window: Callable[[datetime, datetime], Awaitable[tuple[int, list[int]]]],
+    shift: Callable[[datetime, int], datetime] | None = None,
 ) -> int:
     """持咨询锁逐窗追平,仅连续成功或已记缺口的窗口推进水位线。
 
     无水位线时仅结目标窗口,有更早历史则记 watermark_missing;超上限窗口记截断缺口。
+    `shift(window_start, n)` steps windows (default `n × step`; daily windows pass a calendar
+    shift so DST days keep one window per local date); `step` only sizes the lag gauge.
     """
+    move = shift or (lambda start, n: start + n * step)
     settled = 0
     async with advisory_lock(sm, lock_key) as got:
         if not got:
@@ -522,14 +527,14 @@ async def _catchup_settle(
                 )
             else:
                 logger.info(f"{kind}_watermark_bootstrap", window_start=target_start.isoformat())
-        first_start = target_start if watermark is None else floor_fn(watermark) + step
-        floor_start = target_start - (max_catchup - 1) * step
+        first_start = target_start if watermark is None else move(floor_fn(watermark), 1)
+        floor_start = move(target_start, -(max_catchup - 1))
         if first_start < floor_start:
             skipped: list[datetime] = []
             w = first_start
             while w < floor_start:
                 skipped.append(w)
-                w += step
+                w = move(w, 1)
             logger.error(
                 f"{kind}_catchup_truncated",
                 watermark=watermark.isoformat() if watermark else None,
@@ -543,7 +548,7 @@ async def _catchup_settle(
         window_start = first_start
         contiguous_ok = True
         while window_start <= target_start:
-            window_end = window_start + step
+            window_end = move(window_start, 1)
             charged, failed = await settle_window(window_start, window_end)
             settled += charged
             if not failed and contiguous_ok:
@@ -641,8 +646,7 @@ async def charge_disk_day(
     插入与扣款同一事务(RETURNING 判定新行);调用方负责 commit。
     """
     day = billing_day_floor(day)
-    beijing_date = (day + BILLING_DAY_OFFSET).date()
-    amount = disk_daily_charge(price_gb_month, size_gb, beijing_date)
+    amount = disk_daily_charge(price_gb_month, size_gb, billing_local_date(day))
     inserted = (
         await session.execute(
             pg_insert(BillDailyDisk)
@@ -686,7 +690,7 @@ class DiskBillingInput:
 async def settle_disk_pending_days(
     session: AsyncSession, disk: DiskBillingInput, *, at: datetime | None = None
 ) -> Decimal:
-    """结清截至 at 所属北京日的盘费,最多追平 MAX_CATCHUP_DAYS 天;返回扣款合计,不提交。
+    """结清截至 at 所属计费日的盘费,最多追平 MAX_CATCHUP_DAYS 天;返回扣款合计,不提交。
 
     从水位线次日与建盘日的较晚者开始,无水位线则从建盘日开始。
     删盘、扩容或进入欠费宽限前须在同一事务内调用。
@@ -697,10 +701,10 @@ async def settle_disk_pending_days(
         first_day = billing_day_floor(ensure_utc(disk.created_at))
     else:
         first_day = max(
-            billing_day_floor(watermark) + timedelta(days=1),
+            billing_day_shift(billing_day_floor(watermark), 1),
             billing_day_floor(ensure_utc(disk.created_at)),
         )
-    first_day = max(first_day, target_day - timedelta(days=MAX_CATCHUP_DAYS - 1))
+    first_day = max(first_day, billing_day_shift(target_day, -(MAX_CATCHUP_DAYS - 1)))
     total = Decimal("0.00")
     day = first_day
     while day <= target_day:
@@ -712,7 +716,7 @@ async def settle_disk_pending_days(
             size_gb=disk.size_gb,
             day=day,
         )
-        day += timedelta(days=1)
+        day = billing_day_shift(day, 1)
     return total
 
 
@@ -788,7 +792,7 @@ async def settle_daily_disks(
     """
     if await _clock_skew_exceeded(sm):
         return 0
-    target_day = billing_day_floor(at or now_utc()) - timedelta(days=1)
+    target_day = billing_day_shift(billing_day_floor(at or now_utc()), -1)
     disk_rows: (
         list[tuple[int, int, Decimal, int, datetime, datetime | None, datetime | None]] | None
     ) = None
@@ -812,6 +816,7 @@ async def settle_daily_disks(
         max_catchup=MAX_CATCHUP_DAYS,
         floor_fn=billing_day_floor,
         settle_window=settle_window,
+        shift=billing_day_shift,
     )
 
 
@@ -925,7 +930,7 @@ async def _replay_daily_disk_gap(
     if not object_id:
         async with sm() as session:
             disk_rows = await _billable_disk_rows(session)
-        attempts = await _daily_disk_window_attempts(sm, disk_rows, day, day + timedelta(days=1))
+        attempts = await _daily_disk_window_attempts(sm, disk_rows, day, billing_day_shift(day, 1))
         await _settle_window_objects(sm, kind="daily_disk", window_start=day, attempts=attempts)
         return
     async with sm() as session:

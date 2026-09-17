@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.outbox import reap_stuck_running, report_pending_metrics
+from app.core.timeutil import billing_zone
 from app.modules.billing.patrol import balance_patrol
 from app.modules.billing.payment_service import close_expired_orders, reconcile_pending_orders
 from app.modules.billing.reconcile import reconcile_funds
@@ -45,6 +46,11 @@ def _cron(**kwargs: int) -> dict[str, Any]:
     return {"trigger": "cron", **kwargs}
 
 
+def _daily_local(hour: int, minute: int) -> dict[str, Any]:
+    """Once a day at a wall-clock time in the billing zone (the scheduler itself runs in UTC)."""
+    return {"trigger": "cron", "hour": hour, "minute": minute, "timezone": billing_zone()}
+
+
 CORE, TENANT_MGR, NODE_MGR, PREWARM = (
     WorkerComponent.CORE,
     WorkerComponent.TENANT_MGR,
@@ -73,7 +79,7 @@ JOBS: tuple[ScheduledJob, ...] = (
         settle_daily_disks,
         CORE,
         86400,
-        _cron(hour=16, minute=10),
+        _daily_local(0, 10),
         misfire_grace_time=3600,
     ),
     ScheduledJob(
@@ -81,7 +87,7 @@ JOBS: tuple[ScheduledJob, ...] = (
         reconcile_funds,
         CORE,
         86400,
-        _cron(hour=16, minute=30),
+        _daily_local(0, 30),
         misfire_grace_time=3600,
     ),
     ScheduledJob(
@@ -106,7 +112,7 @@ JOBS: tuple[ScheduledJob, ...] = (
         cleanup_expired_rows,
         CORE,
         86400,
-        _cron(hour=19, minute=0),
+        _daily_local(3, 0),
         misfire_grace_time=3600,
     ),
     ScheduledJob(

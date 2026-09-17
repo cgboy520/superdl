@@ -14,7 +14,12 @@ from sqlalchemy import select, update
 
 from app.core.k8s import NodePortTaken
 from app.core.outbox import RUNNING_TIMEOUT, OutboxTask
-from app.core.timeutil import BILLING_DAY_OFFSET, billing_day_floor, now_utc
+from app.core.timeutil import (
+    billing_day_floor,
+    billing_day_shift,
+    billing_local_date,
+    now_utc,
+)
 from app.modules.account.schemas import LoginRequest
 from app.modules.billing import wallet
 from app.modules.billing.models import BillDailyDisk, BillHourly
@@ -592,10 +597,10 @@ class TestDiskArrearsHardening:
             ).scalar_one()
             assert d.status == "grace"
             billed_days = {
-                (b.day + BILLING_DAY_OFFSET).date()
+                billing_local_date(b.day)
                 for b in (await session.execute(select(BillDailyDisk))).scalars().all()
             }
-        billing_t0 = (billing_day_floor(t0) + BILLING_DAY_OFFSET).date()
+        billing_t0 = billing_local_date(billing_day_floor(t0))
         assert billing_t0 in billed_days
 
         await settle_daily_disks(sm, at=t0 + timedelta(days=3))
@@ -606,12 +611,12 @@ class TestDiskArrearsHardening:
         await settle_daily_disks(sm, at=t0 + timedelta(days=5))
         async with sm() as session:
             days = {
-                (b.day + BILLING_DAY_OFFSET).date()
+                billing_local_date(b.day)
                 for b in (await session.execute(select(BillDailyDisk))).scalars().all()
             }
 
         def _billing_date(dt) -> object:
-            return (billing_day_floor(dt) + BILLING_DAY_OFFSET).date()
+            return billing_local_date(billing_day_floor(dt))
 
         assert _billing_date(t0 + timedelta(days=1)) not in days
         assert _billing_date(t0 + timedelta(days=2)) not in days
@@ -631,17 +636,17 @@ class TestDiskArrearsHardening:
             await session.execute(
                 update(DataDisk).values(
                     created_at=t0 - timedelta(days=4),
-                    grace_started_at=t_day - timedelta(days=3),
-                    grace_ended_at=t_day - timedelta(days=1),
+                    grace_started_at=billing_day_shift(t_day, -3),
+                    grace_ended_at=billing_day_shift(t_day, -1),
                 )
             )
             await session.commit()
-        await _advance_watermark(sm, "daily_disk", t_day - timedelta(days=4))
+        await _advance_watermark(sm, "daily_disk", billing_day_shift(t_day, -4))
         await settle_daily_disks(sm)
 
         async with sm() as session:
             billed = {
-                (b.day + BILLING_DAY_OFFSET).date()
+                billing_local_date(b.day)
                 for b in (await session.execute(select(BillDailyDisk))).scalars().all()
             }
             gaps = list(
@@ -654,9 +659,9 @@ class TestDiskArrearsHardening:
                     )
                 ).scalars()
             )
-        day = lambda back: (t_day - timedelta(days=back) + BILLING_DAY_OFFSET).date()  # noqa: E731
+        day = lambda back: billing_local_date(billing_day_shift(t_day, -back))  # noqa: E731
         assert billed == {day(3), day(1)}
-        assert {(g.window_start + BILLING_DAY_OFFSET).date() for g in gaps} == {day(2)}
+        assert {billing_local_date(g.window_start) for g in gaps} == {day(2)}
         await settle_daily_disks(sm)
         async with sm() as session:
             billed2 = (await session.execute(select(BillDailyDisk))).scalars().all()

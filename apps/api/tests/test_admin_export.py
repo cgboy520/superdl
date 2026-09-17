@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core import csvexport
-from app.core.timeutil import now_utc
+from app.core.timeutil import billing_offset_minutes, now_utc
 from tests.helpers import admin_headers, fund_wallet, register
 
 pytestmark = pytest.mark.usefixtures("fake")
@@ -44,7 +44,7 @@ class TestOrdersExport:
         assert text.startswith("﻿")
         lines = text.splitlines()
         assert lines[0].lstrip("﻿").startswith("订单号")
-        assert "(UTC+8)" in text
+        assert csvexport.utc_suffix(billing_offset_minutes()) in text
         assert any("SDL-EXP-0" in line and "已支付" in line for line in lines)
         resp = await client.get(
             "/api/admin/v1/orders/export", params={"status": "pending"}, headers=fin
@@ -84,7 +84,7 @@ class TestRefundsExport:
         assert text.startswith("﻿")
         lines = text.splitlines()
         assert lines[0].lstrip("﻿").startswith("退款单号")
-        assert "(UTC+8)" in text
+        assert csvexport.utc_suffix(billing_offset_minutes()) in text
         assert any("R20260101-E0" in line and "待审批" in line for line in lines)
         assert any(
             "R20260101-E1" in line and "线下转账" in line and "PAY-REF-1" in line for line in lines

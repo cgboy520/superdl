@@ -1,7 +1,12 @@
-"""aware-UTC 时间统一入口;拒绝 naive datetime。"""
+"""Aware-UTC time helpers (naive datetimes are rejected) and the deployment's billing calendar:
+billing days and months are civil days/months in `SUPERDL_BILLING_TIMEZONE` (IANA, DST-aware),
+expressed as UTC instants. Client-side aggregation helpers take an explicit offset."""
 
-from datetime import UTC, datetime, timedelta
+import re
+from datetime import UTC, date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
+from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode
 
 
@@ -22,21 +27,80 @@ def hour_floor(dt: datetime) -> datetime:
     return dt.replace(minute=0, second=0, microsecond=0)
 
 
-BILLING_TZ_OFFSET_MINUTES = 480
-BILLING_DAY_OFFSET = timedelta(minutes=BILLING_TZ_OFFSET_MINUTES)
+def billing_zone() -> ZoneInfo:
+    """The deployment's billing time zone (`SUPERDL_BILLING_TIMEZONE`)."""
+    return ZoneInfo(get_settings().billing_timezone)
+
+
+def billing_offset_minutes(at: datetime | None = None) -> int:
+    """UTC offset of the billing zone at `at` (default now), in minutes; DST-aware."""
+    ref = ensure_utc(at) if at is not None else now_utc()
+    offset = ref.astimezone(billing_zone()).utcoffset() or timedelta(0)
+    return int(offset.total_seconds() // 60)
+
+
+def billing_local_date(dt: datetime) -> date:
+    """Civil date of a UTC instant in the billing zone."""
+    return ensure_utc(dt).astimezone(billing_zone()).date()
+
+
+def _local_midnight(day: date) -> datetime:
+    return datetime.combine(day, time.min, tzinfo=billing_zone()).astimezone(UTC)
 
 
 def billing_day_floor(dt: datetime) -> datetime:
-    """所在北京自然日的起点(以 UTC 时刻表示)。数据盘日结与资金日对账的键。"""
-    dt = ensure_utc(dt)
-    shifted = (dt + BILLING_DAY_OFFSET).replace(hour=0, minute=0, second=0, microsecond=0)
-    return shifted - BILLING_DAY_OFFSET
+    """Start of the billing day containing `dt`, as a UTC instant. Key of daily disk bills and
+    the fund reconciliation."""
+    return _local_midnight(billing_local_date(dt))
 
 
-def billing_month_range(
-    month: str, *, tz_offset_minutes: int = BILLING_TZ_OFFSET_MINUTES
-) -> tuple[datetime, datetime]:
-    """YYYY-MM 本地自然月的 UTC [start, end) 窗口(默认北京时间);格式非法报 VALIDATION_ERROR。"""
+def billing_day_shift(day_start: datetime, days: int) -> datetime:
+    """`days` billing days after (negative: before) a day start; DST days are 23 or 25 hours, so
+    never add `timedelta(days=1)` to a day start."""
+    return _local_midnight(billing_local_date(day_start) + timedelta(days=days))
+
+
+def billing_day_range(day: str, *, key: str = "billing.badDateFormat") -> tuple[datetime, datetime]:
+    """YYYY-MM-DD in the billing zone → UTC [start, end); bad format → VALIDATION_ERROR(key)."""
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+        raise AppError(ErrorCode.VALIDATION_ERROR, key=key)
+    try:
+        local_day = date.fromisoformat(day)
+    except ValueError as exc:
+        raise AppError(ErrorCode.VALIDATION_ERROR, key=key) from exc
+    start = _local_midnight(local_day)
+    return start, billing_day_shift(start, 1)
+
+
+def billing_period(dt: datetime) -> str:
+    """Billing month (YYYY-MM) of a UTC instant in the billing zone; invoice period key."""
+    return f"{ensure_utc(dt).astimezone(billing_zone()):%Y-%m}"
+
+
+def current_billing_period() -> str:
+    return billing_period(now_utc())
+
+
+def billing_period_range(period: str) -> tuple[datetime, datetime]:
+    """YYYY-MM in the billing zone → UTC [start, end); bad format → VALIDATION_ERROR."""
+    match = re.fullmatch(r"(\d{4})-(\d{2})", period)
+    try:
+        if match is None:
+            raise ValueError(period)
+        first = date(int(match.group(1)), int(match.group(2)), 1)
+    except ValueError as exc:
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="billing.badMonthFormat") from exc
+    next_first = (
+        first.replace(year=first.year + 1, month=1)
+        if first.month == 12
+        else first.replace(month=first.month + 1)
+    )
+    return _local_midnight(first), _local_midnight(next_first)
+
+
+def billing_month_range(month: str, *, tz_offset_minutes: int) -> tuple[datetime, datetime]:
+    """YYYY-MM at a fixed client offset → UTC [start, end) (display aggregation by the caller's
+    clock; the billing calendar itself uses `billing_period_range`)."""
     try:
         local_start = datetime.strptime(month, "%Y-%m").replace(tzinfo=UTC)
     except ValueError as exc:
@@ -59,7 +123,8 @@ def prev_hour_range(dt: datetime) -> tuple[datetime, datetime]:
 def local_day_range(
     tz_offset_minutes: int, *, at: datetime | None = None
 ) -> tuple[datetime, datetime]:
-    """本地自然日 [start, end)(UTC 时刻);tz_offset_minutes 东八区为 480,at 缺省 now_utc()。"""
+    """Local day [start, end) as UTC instants for a fixed client offset (480 = UTC+8); `at`
+    defaults to now."""
     offset = timedelta(minutes=tz_offset_minutes)
     ref = ensure_utc(at) if at is not None else now_utc()
     day_start = (ref + offset).replace(hour=0, minute=0, second=0, microsecond=0) - offset
@@ -67,7 +132,7 @@ def local_day_range(
 
 
 def parse_local_date(date: str, tz_offset_minutes: int) -> tuple[datetime, datetime]:
-    """YYYY-MM-DD 本地自然日的 UTC [start, end) 窗口;格式非法报 VALIDATION_ERROR。"""
+    """YYYY-MM-DD at a fixed client offset → UTC [start, end); bad format → VALIDATION_ERROR."""
     try:
         local_midnight = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=UTC)
     except ValueError as exc:

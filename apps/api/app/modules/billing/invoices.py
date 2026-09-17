@@ -3,13 +3,13 @@
 每用户每账期至多一条 submitted/issued 申请;开票须在申请行锁内重算金额,不符时拒绝。
 """
 
-from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.constants import ADMIN_LIST_CAP
 from app.core.errors import AppError, ErrorCode, conflict
 from app.core.idempotency import find_replay, insert_idempotent, request_fingerprint
@@ -17,7 +17,7 @@ from app.core.logging import get_logger
 from app.core.money import as_amount, money_label
 from app.core.pagination import Page, paginate_by_id
 from app.core.sqlutil import get_for_update_or_404, sum_decimal, total
-from app.core.timeutil import BILLING_DAY_OFFSET, billing_month_range, now_utc
+from app.core.timeutil import billing_period_range, current_billing_period, now_utc
 from app.modules.billing.models import InvoiceRequest, Order, RefundRequest
 from app.modules.billing.schemas import AdminInvoiceOut, InvoiceEligibleOut, InvoiceOut
 from app.modules.notify import service as notify_service
@@ -28,18 +28,9 @@ ACTIVE_STATUSES = ("submitted", "issued")
 REFUND_WITHHELD_STATUSES = ("pending", "approved", "paid")
 
 
-def beijing_period(dt: datetime) -> str:
-    """UTC 时刻所属的北京账期(YYYY-MM,固定 +8)。"""
-    return f"{dt + BILLING_DAY_OFFSET:%Y-%m}"
-
-
-def current_beijing_period() -> str:
-    return beijing_period(now_utc())
-
-
 async def _period_paid_sum(session: AsyncSession, user_id: int, period: str) -> Decimal:
-    """汇总北京账期内已支付充值额;冲正订单仅 action='release' 时计入。"""
-    start, end = billing_month_range(period)
+    """汇总账期(计费时区自然月)内已支付充值额;冲正订单仅 action='release' 时计入。"""
+    start, end = billing_period_range(period)
     return await sum_decimal(
         session,
         select(total(Order.amount)).where(
@@ -54,7 +45,7 @@ async def _period_paid_sum(session: AsyncSession, user_id: int, period: str) -> 
 
 async def _period_refund_sum(session: AsyncSession, user_id: int, period: str) -> Decimal:
     """该账期订单的退款总额(已打款 + 在途 pending/approved),按关联订单 paid_at 归属。"""
-    start, end = billing_month_range(period)
+    start, end = billing_period_range(period)
     return await sum_decimal(
         session,
         select(total(RefundRequest.amount))
@@ -109,7 +100,9 @@ async def _active_of_period(
 
 async def eligible_periods(session: AsyncSession, user_id: int) -> list[InvoiceEligibleOut]:
     """各账期可开票额度预览:有 paid 订单的已结束账期逐期计算,仅返回 > 0 的账期,倒序。"""
-    period_col = func.to_char(func.timezone("Asia/Shanghai", Order.paid_at), "YYYY-MM")
+    period_col = func.to_char(
+        func.timezone(get_settings().billing_timezone, Order.paid_at), "YYYY-MM"
+    )
     periods = (
         (
             await session.execute(
@@ -126,7 +119,7 @@ async def eligible_periods(session: AsyncSession, user_id: int) -> list[InvoiceE
         .scalars()
         .all()
     )
-    current = current_beijing_period()
+    current = current_billing_period()
     out: list[InvoiceEligibleOut] = []
     for period in periods:
         if period >= current:
@@ -162,7 +155,7 @@ async def create_invoice(
         if existing is not None:
             return existing, False
 
-    if period >= current_beijing_period():
+    if period >= current_billing_period():
         raise AppError(
             ErrorCode.VALIDATION_ERROR,
             key="billing.invoicePeriodNotOpen",

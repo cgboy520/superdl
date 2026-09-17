@@ -2,12 +2,18 @@
 
 from typing import Annotated
 
-from fastapi import Header, Query
+from fastapi import Depends, Header, Query
 
 from app.core.pagination import MAX_LIMIT
-from app.core.timeutil import BILLING_TZ_OFFSET_MINUTES
+from app.core.timeutil import billing_offset_minutes
 
-TzOffset = Query(default=BILLING_TZ_OFFSET_MINUTES, ge=-720, le=720)
+
+def _tz_offset(tz_offset_minutes: int | None = Query(default=None, ge=-720, le=720)) -> int:
+    """Client UTC offset for display aggregation; omitted → the billing zone's current offset."""
+    return tz_offset_minutes if tz_offset_minutes is not None else billing_offset_minutes()
+
+
+TzOffset = Depends(_tz_offset)
 
 Cursor = Query(default=None)
 Limit = Query(default=None, le=MAX_LIMIT)

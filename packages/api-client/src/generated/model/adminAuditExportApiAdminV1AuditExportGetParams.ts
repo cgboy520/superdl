@@ -12,10 +12,6 @@ actor_id?: string | null;
 q?: string | null;
 since?: string | null;
 until?: string | null;
-/**
- * @minimum -720
- * @maximum 720
- */
-tz_offset_minutes?: number;
 lang?: AdminAuditExportApiAdminV1AuditExportGetLang;
+tz_offset_minutes?: number | null;
 };

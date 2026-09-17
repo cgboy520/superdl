@@ -4,7 +4,7 @@
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import ColumnElement, SQLColumnExpression, String, cast, func, select, true
@@ -15,7 +15,7 @@ from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.metrics import FUND_RECONCILE_MISMATCH_TOTAL
 from app.core.sqlutil import sum_decimal, total
-from app.core.timeutil import billing_day_floor, now_utc
+from app.core.timeutil import billing_day_floor, billing_day_shift, now_utc
 from app.modules.billing.models import (
     BalanceLedger,
     BillDailyDisk,
@@ -264,7 +264,7 @@ async def reconcile_funds(
         if not got:
             return counts
         until = billing_day_floor(at or now_utc())
-        since = until - timedelta(days=1)
+        since = billing_day_shift(until, -1)
         mismatches = await wallet_ledger_chain_check(sm)
         async with sm() as session:
             billed, consumed = await bills_vs_consume(session, since, until)

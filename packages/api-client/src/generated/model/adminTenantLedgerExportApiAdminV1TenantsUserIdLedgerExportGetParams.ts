@@ -7,10 +7,6 @@
 import type { AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetLang } from './adminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetLang';
 
 export type AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetParams = {
-/**
- * @minimum -720
- * @maximum 720
- */
-tz_offset_minutes?: number;
 lang?: AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetLang;
+tz_offset_minutes?: number | null;
 };

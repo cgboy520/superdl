@@ -8,11 +8,7 @@ import type { AdminRefundsExportApiAdminV1RefundsExportGetLang } from './adminRe
 
 export type AdminRefundsExportApiAdminV1RefundsExportGetParams = {
 status?: string | null;
-/**
- * @minimum -720
- * @maximum 720
- */
-tz_offset_minutes?: number;
 lang?: AdminRefundsExportApiAdminV1RefundsExportGetLang;
 day?: string | null;
+tz_offset_minutes?: number | null;
 };

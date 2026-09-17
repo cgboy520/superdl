@@ -7,9 +7,5 @@
 
 export type BillDailySummaryApiV1BillsDailySummaryGetParams = {
 date: string;
-/**
- * @minimum -720
- * @maximum 720
- */
-tz_offset_minutes?: number;
+tz_offset_minutes?: number | null;
 };
