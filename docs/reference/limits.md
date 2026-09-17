@@ -95,10 +95,12 @@
 | 发码(消费)                          | 手机号           | 10 次/日                                        | 按验证码被消费计                                                                   |
 | 发码(平台 verify)                   | 全局             | 1000 次/时,5000 次/日                           | 注册 / 登录 / 找回,`core/sms.py`                                                   |
 | 短信(平台 notify)                   | 全局             | 500 次/时,2000 次/日                            | 平台通知,与 verify 分桶                                                            |
+| Email (platform verify / notify)    | 全局             | 2000/h, 10000/d · 1000/h, 5000/d                | `core/email.py`, buckets `email-platform:*`, independent of the SMS budget         |
 | 管理端登录                          | IP+账号 / 账号   | 5 次/5min / 10 次/15min                         | bcrypt 前先计数再判定,成功清零                                                     |
 | 管理端登录                          | IP / 账号日窗    | 30 次/时 / 30 次/日                             | IP 桶先计数、成功退还;**账号日窗只计失败、不做准入**,见 [admin.md](./admin.md)     |
 | 管理端 TOTP 绑定与校验              | 账号             | 5 次/10min                                      | `setup/begin`、`setup/confirm`、`login/mfa` 共用一个桶                             |
-| 管理端试发短信                      | 全局             | 10 次/时                                        |                                                                                    |
+| 管理端试发短信                      | 全局             | 10 次/时                                        | `admin:test-sms`                                                                   |
+| 管理端试发邮件                      | 全局             | 10 次/时                                        | `admin:test-email`                                                                 |
 | 支付回调                            | IP               | 120 次/分                                       | `webhooks_router.py`                                                               |
 | 充值创建                            | 用户             | 10 次/时                                        | `billing/router.py`                                                                |
 | 退款申请                            | 用户             | 10 次/时                                        | 同上                                                                               |

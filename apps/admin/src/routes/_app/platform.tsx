@@ -17,7 +17,7 @@ import { isApiError, usePlatformConfig, useUpdatePlatformConfig } from "../../ap
 import { useAdminRole } from "../../stores/auth";
 import { ConfigWarning, GROUP_LABEL_KEY, Group, NAV, NavDotLegend, NavLabel, groupDotStatus } from "./-platformNav";
 import { GroupPanel, useFieldLabel } from "./-platformFields";
-import { RegistryTestCard, SmsTestCard } from "./-platformTestCards";
+import { EmailTestCard, RegistryTestCard, SmsTestCard } from "./-platformTestCards";
 import { RISK_OFF, type RiskOffKey, SecurityPanel } from "./-platformSecurity";
 
 export const Route = createFileRoute("/_app/platform")({
@@ -185,6 +185,8 @@ function PlatformConfigPage() {
         extraContent={
           active === "sms" ? (
             <SmsTestCard disabled={disabled} />
+          ) : active === "email" ? (
+            <EmailTestCard disabled={disabled} />
           ) : active === "registry" ? (
             <RegistryTestCard disabled={disabled} />
           ) : undefined

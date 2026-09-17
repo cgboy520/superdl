@@ -19,7 +19,7 @@ export const NAV = [
   { labelKey: "platform.navSecurity", groups: ["security"] },
   {
     labelKey: "platform.navChannels",
-    groups: ["captcha", "sms", "real_name", "payment_wechat", "payment_alipay"],
+    groups: ["captcha", "email", "sms", "real_name", "payment_wechat", "payment_alipay"],
   },
   { labelKey: "platform.navInfra", groups: ["registry", "cluster", "observability"] },
   { labelKey: "platform.navSite", groups: ["compliance", "support"] },
@@ -28,6 +28,7 @@ export const GROUP_LABEL_KEY = {
   security: "platform.tabSecurity",
   captcha: "platform.tabCaptcha",
   sms: "platform.tabSms",
+  email: "platform.tabEmail",
   real_name: "platform.tabRealName",
   payment_wechat: "platform.tabWechat",
   payment_alipay: "platform.tabAlipay",

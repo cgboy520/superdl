@@ -21,5 +21,6 @@
 
 - 余额预警由计费 5min 巡检触发:预估可用时长低于 `users.low_balance_warn_hours` → 站内信 + 短信;同类型预警按 UTC 自然日去重。
 - Alertmanager webhook 按 fingerprint 去重;端点加固数值见 [limits.md](./limits.md)。
+- SMS providers: `sms_provider` mock / aliyun / twilio (`app/core/sms.py`); email providers: `email_provider` mock / smtp (`app/core/email.py`, aiosmtplib) carrying verification codes, bodies from `app/core/verification/templates.py`. Both have independent platform budgets (`sms-platform:*`, `email-platform:*`, see [limits.md](./limits.md)); counter `superdl_verification_sent_total{channel, purpose}`.
 - 通知短信经 outbox(`notify.sms`)与业务事务同库入队、worker 异步投递:请求与巡检事务里不做渠道网络调用;失败退避重试,超预算进死信告警。at-least-once,同一通知可能收到多条;渠道 seam 见 [security.md](./security.md)。
 - 站内信存已渲染文案,不随语言切换,见 [i18n.md](./i18n.md)。

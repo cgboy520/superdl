@@ -171,6 +171,7 @@ class TestProdConfigValidation:
             "compliance_profile": "none",
             "jwt_secret": "9f4a1c7e2b8d0f63a5e9c417b3d68f02a1c4e7958b0d326f7a9c1e4b58d2f603",
             "sms_provider": "aliyun",
+            "email_provider": "smtp",
             "k8s_backend": "real",
             "payment_mock": False,
             "database_url": "postgresql+asyncpg://svc:strongpass@pg.internal:5432/superdl?sslmode=require",
@@ -218,6 +219,16 @@ class TestProdConfigValidation:
             kwargs = {**self._complete_prod_kwargs(), "jwt_secret": bad}
             with pytest.raises(ValidationError, match="jwt_secret"):
                 Settings(**kwargs)
+
+    def test_prod_rejects_mock_email_provider(self):
+        """email_provider=mock in prod refuses to boot (fixed verification code)."""
+        import pytest
+        from pydantic import ValidationError
+
+        from app.core.config import Settings
+
+        with pytest.raises(ValidationError, match="email_provider"):
+            Settings(**{**self._complete_prod_kwargs(), "email_provider": "mock"})
 
     def test_prod_requires_explicit_compliance_profile(self):
         """prod without SUPERDL_COMPLIANCE_PROFILE refuses to boot; any explicit value passes."""

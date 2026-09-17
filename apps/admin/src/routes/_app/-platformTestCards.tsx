@@ -1,4 +1,4 @@
-/** 平台配置连通性测试卡:短信 / 镜像仓库。 */
+/** Platform-config connectivity test cards: SMS / email / image registry. */
 
 import { App, Button, Card, Input, Space, Typography } from "antd";
 import { useState } from "react";
@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 import { adminColors, fontSize, space } from "@superdl/ui";
 import { useApiErrorText } from "@superdl/ui";
 
-import { useTestRegistry, useTestSms } from "../../api";
+import { useTestEmail, useTestRegistry, useTestSms } from "../../api";
 import { PROVIDER_LABELS, type ProviderLabelKey } from "./-platformFields";
 
 export function SmsTestCard({ disabled }: { disabled: boolean }) {
@@ -30,13 +30,13 @@ export function SmsTestCard({ disabled }: { disabled: boolean }) {
         <Input
           placeholder={t("platform.testSmsPhone")}
           value={phone}
-          maxLength={11}
+          maxLength={16}
           disabled={disabled}
           onChange={(e) => setPhone(e.target.value)}
         />
         <Button
           type="primary"
-          disabled={disabled || !/^1\d{10}$/.test(phone)}
+          disabled={disabled || !/^\+[1-9]\d{6,14}$/.test(phone)}
           loading={testSms.isPending}
           onClick={() => testSms.mutate({ data: { phone } })}
         >
@@ -45,6 +45,46 @@ export function SmsTestCard({ disabled }: { disabled: boolean }) {
       </Space.Compact>
       <div style={{ color: adminColors.textSecondary, fontSize: fontSize.caption, marginTop: 8 }}>
         {t("platform.testSmsNote")}
+      </div>
+    </Card>
+  );
+}
+
+export function EmailTestCard({ disabled }: { disabled: boolean }) {
+  const { t } = useTranslation();
+  const errText = useApiErrorText();
+  const { message } = App.useApp();
+  const [email, setEmail] = useState("");
+  const testEmail = useTestEmail({
+    mutation: {
+      onSuccess: (d) => {
+        const labelKey = (PROVIDER_LABELS as Record<string, ProviderLabelKey>)[d.provider];
+        message.success(t("platform.testEmailSent", { provider: labelKey ? t(labelKey) : d.provider }));
+      },
+      onError: (e) => message.error(errText(e, t("platform.sendFailed"))),
+    },
+  });
+  return (
+    <Card size="small" title={t("platform.testEmailTitle")}>
+      <Space.Compact style={{ width: 420 }}>
+        <Input
+          placeholder={t("platform.testEmailAddress")}
+          value={email}
+          maxLength={254}
+          disabled={disabled}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+        <Button
+          type="primary"
+          disabled={disabled || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)}
+          loading={testEmail.isPending}
+          onClick={() => testEmail.mutate({ data: { email } })}
+        >
+          {t("platform.testEmailSend")}
+        </Button>
+      </Space.Compact>
+      <div style={{ color: adminColors.textSecondary, fontSize: fontSize.caption, marginTop: 8 }}>
+        {t("platform.testEmailNote")}
       </div>
     </Card>
   );

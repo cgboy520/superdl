@@ -13,6 +13,7 @@ export const PlatformConfigItemOutGroup = {
   payment_wechat: 'payment_wechat',
   payment_alipay: 'payment_alipay',
   sms: 'sms',
+  email: 'email',
   real_name: 'real_name',
   captcha: 'captcha',
   compliance: 'compliance',

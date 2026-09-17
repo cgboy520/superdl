@@ -93,14 +93,13 @@ async def handle_notify_sms(session: AsyncSession, task: OutboxTask) -> None:
     if not phone:
         logger.warning("sms_no_recipient", task_id=task.id)
         return
-    cfg = await get_runtime_config(session)
     channel = await get_sms_channel(session)
     try:
         await ensure_sms_platform_quota("notify")
     except AppError:
         logger.warning("sms_platform_quota_exhausted", task_id=task.id)
         return
-    await channel.send(phone, cfg.sms_template_notice or "", {"title": task.payload["title"]})
+    await channel.send(phone, "notice", {"title": task.payload["title"]})
 
 
 async def send_low_balance_warning(

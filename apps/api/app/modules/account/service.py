@@ -14,7 +14,7 @@ from app.core.crypto import hash_id_number_candidates, hash_sms_code, hash_sms_c
 from app.core.errors import AppError, ErrorCode, conflict, not_found, unauthorized
 from app.core.logging import get_logger, mask_phone_value
 from app.core.loginguard import LoginBucket, login_attempt, login_failed, login_succeeded
-from app.core.metrics import LOGIN_FAILED_TOTAL, SMS_SENT_TOTAL, USER_SIGNUP_TOTAL
+from app.core.metrics import LOGIN_FAILED_TOTAL, USER_SIGNUP_TOTAL, VERIFICATION_SENT_TOTAL
 from app.core.pagination import RawPage, clamp_limit, decode_cursor_int, slice_page
 from app.core.platform_config import get_runtime_config
 from app.core.ratelimit import check_rate_limit, clear_rate_limit, read_hits
@@ -154,8 +154,8 @@ async def send_sms_code(
     await session.commit()
     try:
         channel = await get_sms_channel(session)
-        await channel.send(phone, cfg.sms_template_verify or "", {"code": code})
-        SMS_SENT_TOTAL.labels(purpose=purpose).inc()
+        await channel.send(phone, "verify", {"code": code})
+        VERIFICATION_SENT_TOTAL.labels(channel="sms", purpose=purpose).inc()
     except SmsError as exc:
         row.used_at = now_utc()
         await session.commit()

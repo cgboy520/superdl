@@ -39,6 +39,7 @@ PlatformConfigGroup = Literal[
     "payment_wechat",
     "payment_alipay",
     "sms",
+    "email",
     "real_name",
     "captcha",
     "compliance",
@@ -174,9 +175,10 @@ SETTING_SPECS: dict[str, SettingSpec] = {
     "sms_provider": SettingSpec(
         "sms",
         "choice",
-        choices=("mock", "aliyun"),
+        choices=("mock", "aliyun", "twilio"),
         prod_forbidden=("mock",),
-        hint="生产环境不得切回 mock",
+        hint="mock only logs (development); aliyun needs the sms_* credentials, "
+        "twilio the sms_twilio_* credentials",
         prod_hint="生产环境短信渠道为 mock:验证码是固定值",
     ),
     "sms_access_key_id": SettingSpec(
@@ -189,6 +191,57 @@ SETTING_SPECS: dict[str, SettingSpec] = {
     ),
     "sms_template_notice": SettingSpec(
         "sms", "str", pattern=r"SMS_[0-9A-Za-z]+", hint="通知模板码,形如 SMS_123456789(变量 title)"
+    ),
+    "sms_twilio_account_sid": SettingSpec(
+        "sms", "str", pattern=r"AC[0-9a-fA-F]{32}", hint="Twilio Account SID (starts with AC)"
+    ),
+    "sms_twilio_auth_token": SettingSpec("sms", "secret", max_len=64),
+    "sms_twilio_from": SettingSpec(
+        "sms",
+        "str",
+        pattern=r"\+[1-9]\d{6,14}|MG[0-9a-fA-F]{32}",
+        hint="Sender: an E.164 Twilio number (+14155550123) or a Messaging Service SID (MG…)",
+    ),
+    "email_provider": SettingSpec(
+        "email",
+        "choice",
+        choices=("mock", "smtp"),
+        prod_forbidden=("mock",),
+        hint="mock only logs the message (development); smtp delivers through the server below",
+        prod_hint="Email provider is mock in production: verification codes are a fixed value",
+    ),
+    "smtp_host": SettingSpec(
+        "email",
+        "str",
+        pattern=r"[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*",
+        max_len=253,
+        hint="Mail server hostname, e.g. smtp.example.com",
+    ),
+    "smtp_port": SettingSpec(
+        "email", "str", pattern=r"\d{2,5}", hint="587 for STARTTLS, 465 for implicit TLS"
+    ),
+    "smtp_security": SettingSpec(
+        "email",
+        "choice",
+        choices=("starttls", "tls", "none"),
+        hint="starttls upgrades after connecting (587); tls connects over TLS (465); "
+        "none sends in clear (private networks only)",
+    ),
+    "smtp_username": SettingSpec("email", "str", max_len=128, hint="Leave empty for no auth"),
+    "smtp_password": SettingSpec("email", "secret", max_len=256),
+    "email_from": SettingSpec(
+        "email",
+        "str",
+        pattern=r"[^<>@\s]+@[^<>@\s]+\.[^<>@\s]+|[^<>]+ <[^<>@\s]+@[^<>@\s]+\.[^<>@\s]+>",
+        max_len=254,
+        hint='Sender, e.g. "SuperDL <no-reply@example.com>"',
+    ),
+    "email_reply_to": SettingSpec(
+        "email",
+        "str",
+        pattern=r"|[^<>@\s]+@[^<>@\s]+\.[^<>@\s]+",
+        max_len=254,
+        hint="Optional Reply-To address",
     ),
     "real_name_access_key_id": SettingSpec(
         "real_name", "str", pattern=r"[0-9A-Za-z]{16,30}", hint="AccessKey ID(建议独立 RAM 子账号)"
@@ -399,6 +452,17 @@ class RuntimeConfig:
     sms_sign_name: str
     sms_template_verify: str
     sms_template_notice: str
+    sms_twilio_account_sid: str
+    sms_twilio_auth_token: str
+    sms_twilio_from: str
+    email_provider: str
+    smtp_host: str
+    smtp_port: str
+    smtp_security: str
+    smtp_username: str
+    smtp_password: str
+    email_from: str
+    email_reply_to: str
     real_name_access_key_id: str
     real_name_access_key_secret: str
     captcha_scene_id: str
@@ -565,6 +629,25 @@ def compute_config_warnings(cfg: RuntimeConfig, environment: str) -> list[Config
                 "real_name_enabled",
                 "error",
                 "实名认证已开启但阿里云实人认证凭据不全,用户提交将一律 502",
+            )
+        )
+    if cfg.sms_provider == "twilio" and not (
+        cfg.sms_twilio_account_sid and cfg.sms_twilio_auth_token and cfg.sms_twilio_from
+    ):
+        out.append(
+            ConfigWarning(
+                "sms_provider",
+                "error",
+                "SMS provider is Twilio but its credentials are incomplete: every SMS will fail",
+            )
+        )
+    if cfg.email_provider == "smtp" and not (cfg.smtp_host and cfg.email_from):
+        out.append(
+            ConfigWarning(
+                "email_provider",
+                "error",
+                "Email provider is SMTP but smtp_host / email_from are missing: "
+                "every email will fail",
             )
         )
     if cfg.registry_host and cfg.registry_robot_name and not cfg.registry_robot_secret:

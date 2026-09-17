@@ -20,6 +20,7 @@ import {
   adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet,
   adminGetPoliciesApiAdminV1PoliciesGet,
   adminTestRegistryApiAdminV1PlatformConfigTestRegistryPost,
+  adminTestEmailApiAdminV1PlatformConfigTestEmailPost,
   adminTestSmsApiAdminV1PlatformConfigTestSmsPost,
   adminUpdatePlatformConfigApiAdminV1PlatformConfigPut,
   adminListDeadTasksApiAdminV1OutboxDeadGet,
@@ -160,6 +161,7 @@ import type {
   OutboxDiscardRequest,
   PlatformConfigUpdateRequest,
   PolicyUpdateRequest,
+  EmailTestRequest,
   SmsTestRequest,
   AdjustmentReview,
   InvoiceIssue,
@@ -915,6 +917,9 @@ export const useTestRegistry = adminMutation(() => adminTestRegistryApiAdminV1Pl
 
 export const useTestSms = adminMutation((v: { data: SmsTestRequest }) =>
   adminTestSmsApiAdminV1PlatformConfigTestSmsPost(v.data),
+);
+export const useTestEmail = adminMutation((v: { data: EmailTestRequest }) =>
+  adminTestEmailApiAdminV1PlatformConfigTestEmailPost(v.data),
 );
 
 export function useAdminAccounts() {

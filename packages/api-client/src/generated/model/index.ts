@@ -141,6 +141,8 @@ export * from './deploymentIdentityOut';
 export * from './diskCreate';
 export * from './diskExpand';
 export * from './diskOut';
+export * from './emailTestOut';
+export * from './emailTestRequest';
 export * from './enrollBootstrapApiV1NodeEnrollBootstrapPostHeaders';
 export * from './enrollmentCommandOut';
 export * from './enrollmentCreate';

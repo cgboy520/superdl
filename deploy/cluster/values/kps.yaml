@@ -558,10 +558,10 @@ additionalPrometheusRulesMap:
             expr: increase(superdl_user_signup_total[1h]) > 100
             labels: {severity: warning}
             annotations: {summary: "1 小时内注册 {{ $value }} 个账号:批量注册特征,核对实名通过率与同 IP/同证件分布,必要时临时提高注册限流"}
-          - alert: SmsBurst
-            expr: sum by (purpose) (increase(superdl_sms_sent_total[10m])) > 300
+          - alert: VerificationBurst
+            expr: sum by (channel, purpose) (increase(superdl_verification_sent_total[10m])) > 300
             labels: {severity: warning}
-            annotations: {summary: "10 分钟内发出短信 {{ $value }} 条({{ $labels.purpose }}):短信轰炸或撞库,先核对人机校验开关再看源 IP"}
+            annotations: {summary: "{{ $value }} verification codes sent over {{ $labels.channel }} in 10 minutes ({{ $labels.purpose }}): code bombing or credential stuffing — check the CAPTCHA switch first, then source IPs"}
           - alert: ApiRateLimitedHigh
             expr: sum(rate(superdl_http_request_duration_seconds_count{status="429"}[5m])) > 5
             for: 10m
