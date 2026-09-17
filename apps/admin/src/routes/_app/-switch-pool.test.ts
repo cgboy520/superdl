@@ -1,21 +1,30 @@
-/** 切池目标候选与可切判据(机型能力 → 目标池灰置;观测卡数掉 0 仍可切回)。 */
+/** 切池目标候选与可切判据(后端能力标志 → 目标池灰置;观测卡数掉 0 仍可切回)。 */
 
 import { describe, expect, it } from "vitest";
 
 import { type NodeRow } from "../../api";
 import { canSwitchPool, currentPool, inSwitchablePool, switchTargets } from "./-SwitchPoolModal";
 
+/** Capability flags as the API computes them for the fixture models (core/gpu_models). */
+const CAPS: Record<string, { supports_mig: boolean; supports_passthrough: boolean }> = {
+  RTX4090: { supports_mig: false, supports_passthrough: true },
+  GB10: { supports_mig: false, supports_passthrough: false },
+  "H100-80G": { supports_mig: true, supports_passthrough: true },
+};
+
 function node(over: Partial<NodeRow> = {}): NodeRow {
+  const gpu_model = over.gpu_model ?? "RTX4090";
   return {
     name: "n1",
     pool_label: "hami",
-    gpu_model: "RTX4090",
+    gpu_model,
     gpu_total: 8,
     gpu_used: 0,
     status: "Ready",
     vcpu: 64,
     mem_gb: 256,
     disk_gb: 2048,
+    ...CAPS[gpu_model],
     ...over,
   };
 }

@@ -9,6 +9,7 @@ from app.core.audit import set_audit_target
 from app.core.config import get_settings
 from app.core.db import DbSession
 from app.core.errors import AppError, ErrorCode, not_found
+from app.core.gpu_models import supports_mig, supports_passthrough
 from app.core.k8s import get_orchestrator
 from app.core.k8s.base import (
     ClusterProbe,
@@ -250,6 +251,8 @@ async def admin_list_nodes(session: DbSession) -> list[NodeOut]:
             last_seen=r.last_seen.isoformat() if r.last_seen else "",
             desired_pool=r.desired_pool or "",
             active_instances=active.get(r.node_name, 0),
+            supports_mig=supports_mig(r.gpu_model),
+            supports_passthrough=supports_passthrough(r.gpu_model),
         )
         for r in rows
     ]

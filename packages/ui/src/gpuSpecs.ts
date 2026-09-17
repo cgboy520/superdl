@@ -1,4 +1,6 @@
-/** 加速卡理论峰值规格表:FP32 shader 单精与 FP16 Tensor 稠密算力。 */
+/** Display-only GPU spec sheet (FP32 shader and dense FP16 Tensor peak TFLOPS, VRAM) for pricing
+ *  pages and rankings. Pool-switch capabilities are NOT derived from it: the API reports
+ *  `NodeOut.supports_mig` / `supports_passthrough` from `core/gpu_models`. */
 
 export interface GpuSpec {
   /** 展示名(带空格排版) */
