@@ -69,8 +69,8 @@ function SettingsPage() {
   const meQ = useMe();
   const { data: me } = meQ;
   const { data: policies } = usePolicies();
-  const { data: site } = useSiteConfig();
-  const kycAvailable = Boolean(site?.kyc_form);
+  const siteQ = useSiteConfig();
+  const kycAvailable = kycTabAvailable(siteQ.isSuccess, siteQ.data?.kyc_form);
   useHashScroll({ highlight: true });
   const requested: SettingsTab = tab ?? tabOfHash(hash) ?? "ssh";
   const activeTab: SettingsTab = requested === "realname" && !kycAvailable ? "ssh" : requested;
@@ -100,9 +100,12 @@ function SettingsPage() {
                     <KycTab
                       me={me}
                       enabled={policies?.real_name_enabled ?? false}
-                      loading={meQ.isPending}
-                      error={meQ.isError}
-                      onRetry={() => void meQ.refetch()}
+                      loading={meQ.isPending || siteQ.isPending}
+                      error={meQ.isError || siteQ.isError}
+                      onRetry={() => {
+                        void meQ.refetch();
+                        void siteQ.refetch();
+                      }}
                     />
                   ),
                 },
@@ -113,6 +116,13 @@ function SettingsPage() {
       />
     </PageContainer>
   );
+}
+
+/** The KYC tab disappears only when /site-config succeeded and reports no KYC form; while pending or
+ *  failed it stays and shows the loading / retry state. */
+function kycTabAvailable(siteLoaded: boolean, kycForm: string | null | undefined): boolean {
+  if (!siteLoaded) return true;
+  return Boolean(kycForm);
 }
 
 /** SSH keys tab: existing keys table (delete L1) + add form. */
@@ -353,7 +363,11 @@ function HandleModal({
           {isEmail ? (
             <Input placeholder={t("login.emailPlaceholder")} maxLength={254} autoComplete="email" inputMode="email" />
           ) : (
-            <PhoneField dialCodes={dialCodes} placeholder={t("login.phonePlaceholder")} />
+            <PhoneField
+              dialCodes={dialCodes}
+              placeholder={t("login.phonePlaceholder")}
+              dialCodeLabel={t("login.dialCodeLabel")}
+            />
           )}
         </Form.Item>
         <CodeField

@@ -1189,6 +1189,7 @@ export default interface Resources {
       "codePlaceholder": "验证码",
       "codeRequired": "请输入验证码",
       "codeSent": "验证码已发送",
+      "dialCodeLabel": "国家或地区区号",
       "emailCodeLabel": "邮箱验证码",
       "emailCodePlaceholder": "邮箱验证码",
       "emailInvalid": "请输入正确的邮箱",

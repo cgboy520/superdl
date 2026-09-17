@@ -21,7 +21,7 @@ export const SWITCH_DEPS: Record<string, { keys: string[]; group: Group }> = {
   },
 };
 const CAPTCHA_DEPS_BY_PROVIDER: Record<string, string[]> = {
-  aliyun: ["captcha_scene_id", "captcha_access_key_id", "captcha_access_key_secret"],
+  aliyun: ["captcha_scene_id", "captcha_prefix", "captcha_access_key_id", "captcha_access_key_secret"],
   turnstile: ["captcha_turnstile_site_key", "captcha_turnstile_secret_key"],
 };
 /** Dependencies follow the effective captcha_provider (draft first, then the saved value). */

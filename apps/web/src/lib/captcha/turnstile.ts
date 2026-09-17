@@ -1,6 +1,7 @@
 /** Cloudflare Turnstile: explicit render of one execute-on-demand widget; the challenge UI shows
  *  only when Cloudflare needs an interaction. Tokens are single-use, so the widget is reset after
- *  every resolution. */
+ *  every resolution. Requests are serialized (one challenge at a time, each owning its own
+ *  callbacks and timer) and the widget is re-rendered when the site key changes. */
 import type { CaptchaConfigOut } from "@superdl/api-client";
 
 import { CAPTCHA_TIMEOUT_MS } from "./index";
@@ -12,6 +13,7 @@ interface TurnstileApi {
   render: (container: HTMLElement | string, options: Record<string, unknown>) => string;
   execute: (widgetId: string) => void;
   reset: (widgetId: string) => void;
+  remove: (widgetId: string) => void;
 }
 
 declare global {
@@ -20,11 +22,16 @@ declare global {
   }
 }
 
+interface Pending {
+  resolve: (token: string) => void;
+  reject: (err: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
 let sdkReady: Promise<void> | null = null;
-let widgetId: string | null = null;
-let pendingResolve: ((token: string) => void) | null = null;
-let pendingReject: ((err: Error) => void) | null = null;
-let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+let widget: { id: string; siteKey: string } | null = null;
+let pending: Pending | null = null;
+let queue: Promise<unknown> = Promise.resolve();
 
 function loadSdk(): Promise<void> {
   sdkReady ??= new Promise<void>((resolve, reject) => {
@@ -41,64 +48,66 @@ function loadSdk(): Promise<void> {
   return sdkReady;
 }
 
-function settle(): void {
-  if (pendingTimer) {
-    clearTimeout(pendingTimer);
-    pendingTimer = null;
+/** Finish the current request (if any) and return it so the caller can settle it. */
+function takePending(): Pending | null {
+  const current = pending;
+  pending = null;
+  if (current) clearTimeout(current.timer);
+  if (widget) window.turnstile?.reset(widget.id);
+  return current;
+}
+
+function box(): HTMLElement {
+  let el = document.getElementById(BOX_ID);
+  if (!el) {
+    el = document.createElement("div");
+    el.id = BOX_ID;
+    el.style.position = "fixed";
+    el.style.right = "16px";
+    el.style.bottom = "16px";
+    el.style.zIndex = "2000";
+    document.body.appendChild(el);
   }
-  pendingResolve = null;
-  pendingReject = null;
-  if (widgetId && window.turnstile) window.turnstile.reset(widgetId);
+  return el;
 }
 
 async function ensureWidget(cfg: CaptchaConfigOut): Promise<string> {
-  if (widgetId) return widgetId;
+  const siteKey = cfg.site_key ?? "";
+  if (widget?.siteKey === siteKey) return widget.id;
   await loadSdk();
   if (!window.turnstile) throw new Error("captcha sdk unavailable");
-  let box = document.getElementById(BOX_ID);
-  if (!box) {
-    box = document.createElement("div");
-    box.id = BOX_ID;
-    box.style.position = "fixed";
-    box.style.right = "16px";
-    box.style.bottom = "16px";
-    box.style.zIndex = "2000";
-    document.body.appendChild(box);
-  }
-  widgetId = window.turnstile.render(box, {
-    sitekey: cfg.site_key,
+  if (widget) window.turnstile.remove(widget.id);
+  const id = window.turnstile.render(box(), {
+    sitekey: siteKey,
     execution: "execute",
     appearance: "interaction-only",
     theme: "auto",
     language: document.documentElement.lang.startsWith("zh") ? "zh-cn" : "en",
-    callback: (token: string) => {
-      const resolve = pendingResolve;
-      settle();
-      resolve?.(token);
-    },
-    "error-callback": () => {
-      const reject = pendingReject;
-      settle();
-      reject?.(new Error("captcha verify failed"));
-    },
-    "expired-callback": () => {
-      const reject = pendingReject;
-      settle();
-      reject?.(new Error("captcha verify expired"));
-    },
+    callback: (token: string) => takePending()?.resolve(token),
+    "error-callback": () => takePending()?.reject(new Error("captcha verify failed")),
+    "expired-callback": () => takePending()?.reject(new Error("captcha verify expired")),
   });
-  return widgetId;
+  widget = { id, siteKey };
+  return id;
 }
 
-export async function requestTurnstileToken(cfg: CaptchaConfigOut): Promise<string> {
+async function acquire(cfg: CaptchaConfigOut): Promise<string> {
   const id = await ensureWidget(cfg);
   return new Promise<string>((resolve, reject) => {
-    pendingResolve = resolve;
-    pendingReject = reject;
-    pendingTimer = setTimeout(() => {
-      settle();
-      reject(new Error("captcha verify timeout"));
-    }, CAPTCHA_TIMEOUT_MS);
+    pending = {
+      resolve,
+      reject,
+      timer: setTimeout(() => takePending()?.reject(new Error("captcha verify timeout")), CAPTCHA_TIMEOUT_MS),
+    };
     window.turnstile?.execute(id);
   });
+}
+
+export function requestTurnstileToken(cfg: CaptchaConfigOut): Promise<string> {
+  const run = queue.then(
+    () => acquire(cfg),
+    () => acquire(cfg),
+  );
+  queue = run.catch(() => undefined);
+  return run;
 }

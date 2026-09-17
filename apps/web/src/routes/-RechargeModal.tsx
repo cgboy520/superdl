@@ -4,7 +4,7 @@
  *  until a terminal status; an unfinished order is resumed from sessionStorage or `/billing?recharge=`. */
 
 import { useTranslation } from "react-i18next";
-import { Alert, App, Button, InputNumber, Modal, QRCode, Space, Typography } from "antd";
+import { Alert, App, Button, InputNumber, Modal, QRCode, Space, Typography, Spin } from "antd";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
@@ -71,10 +71,12 @@ export function RechargeModal({
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const channelLabel = useChannelLabel();
-  const { data: policies } = usePolicies();
+  const policiesQ = usePolicies();
+  const { data: policies } = policiesQ;
+  // No invented bounds: the form renders only from a successful /policies answer.
   const presets = policies?.recharge_presets ?? [];
-  const minAmount = policies?.recharge_min ?? "0.01";
-  const maxAmount = policies?.recharge_max ?? "1000000";
+  const minAmount = policies?.recharge_min ?? "";
+  const maxAmount = policies?.recharge_max ?? "";
   const [amount, setAmount] = useState<string | null>(null);
   const effectiveAmount = amount ?? presets[1] ?? presets[0] ?? minAmount;
   const [order, setOrder] = useState<RechargeOut | null>(null);
@@ -154,7 +156,11 @@ export function RechargeModal({
         if (o && !order) setResumedNo(resumeOrderNo ?? sessionStorage.getItem(PENDING_ORDER_KEY) ?? "");
       }}
     >
-      {!shown ? (
+      {!shown && policiesQ.isPending ? (
+        <Spin />
+      ) : !shown && policiesQ.isError ? (
+        <DataErrorAlert onRetry={() => void policiesQ.refetch()} />
+      ) : !shown ? (
         <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
           {siteQ.isError && <DataErrorAlert onRetry={() => void siteQ.refetch()} />}
           {siteQ.isSuccess && !anyEnabled && <Alert type="warning" showIcon title={t("billing.noChannels")} />}

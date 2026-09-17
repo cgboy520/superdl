@@ -141,8 +141,9 @@ export function mulPrice(price: string, count: number): string {
   return unscale(scaleAmount(price, 4) * BigInt(count), 4);
 }
 
-/** Data-disk daily estimate: GB·month price × GB ÷ 30, HALF_EVEN to the currency's minor unit (default 2 dp). */
-export function diskDailyEstimate(priceGbMonth: string, gb: number, minorUnits: 0 | 2 = 2): string {
+/** Data-disk daily estimate: GB·month price × GB ÷ 30, HALF_EVEN to the currency's minor unit (the caller passes
+ *  the active currency's value so the estimate rounds like the settlement). */
+export function diskDailyEstimate(priceGbMonth: string, gb: number, minorUnits: 0 | 2): string {
   if (gb <= 0 || !Number.isInteger(gb)) return unscale(0n, minorUnits);
   const monthlyScaled = scaleAmount(priceGbMonth, 4) * BigInt(gb);
   return unscale(halfEvenDiv(monthlyScaled, 30n * 10n ** BigInt(4 - minorUnits)), minorUnits);

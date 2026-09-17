@@ -13,6 +13,7 @@ import {
   adminUpdateAdminApiAdminV1AdminsAdminIdPatch,
   adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost,
   adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost,
+  adminGetDeploymentApiAdminV1DeploymentGet,
   adminGetPlatformConfigApiAdminV1PlatformConfigGet,
   adminClusterStatusApiAdminV1ClusterStatusGet,
   adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost,
@@ -249,7 +250,7 @@ function adminMutation<TData, TVars = void>(mutationFn: (v: TVars) => Promise<TD
   };
 }
 
-/** Common cursor pagination shape: params carry limit/cursor, the response next_cursor (audit does not use it). */
+/** Common cursor pagination shape: params carry limit/cursor, the response carries next_cursor (audit does not use it). */
 interface CursorParams {
   limit?: number;
   cursor?: string;
@@ -900,6 +901,15 @@ export const useRevokeAnnouncement = adminMutation((v: { announcementId: number;
 export const useUpdatePolicies = adminMutation((v: { data: PolicyUpdateRequest }) =>
   adminUpdatePoliciesApiAdminV1PoliciesPut(v.data),
 );
+
+/** Deployment identity readable by every console role (currency for the CurrencyProvider). */
+export function useDeployment(options?: { enabled?: boolean }) {
+  return useKeyedQuery(["admin", "deployment"], () => adminGetDeploymentApiAdminV1DeploymentGet(), {
+    enabled: options?.enabled,
+    refetchOnWindowFocus: false,
+    staleTime: 60 * 60_000,
+  });
+}
 
 export function usePlatformConfig(options?: { enabled?: boolean }) {
   return useKeyedQuery(["admin", "platform-config"], () => adminGetPlatformConfigApiAdminV1PlatformConfigGet(), {

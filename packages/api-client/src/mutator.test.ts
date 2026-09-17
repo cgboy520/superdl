@@ -93,6 +93,50 @@ describe("customFetch 401 silent renewal", () => {
   });
 });
 
+describe("Accept-Language", () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+    vi.stubGlobal("navigator", { locks: fakeLocks() });
+  });
+
+  function mockFetchHeaders(responses: Response[]): { langs: (string | null)[] } {
+    const langs: (string | null)[] = [];
+    let i = 0;
+    vi.stubGlobal("fetch", (_url: string, init: RequestInit) => {
+      langs.push(new Headers(init.headers).get("Accept-Language"));
+      const r = responses[Math.min(i++, responses.length - 1)];
+      return Promise.resolve(r ? r.clone() : new Response("", { status: 500 }));
+    });
+    return { langs };
+  }
+
+  it("sends the configured locale on the initial request and on the 401 replay", async () => {
+    let token = "old";
+    const { langs } = mockFetchHeaders([unauthorized(), ok()]);
+    configureApiClient({
+      baseUrl: "",
+      getToken: () => token,
+      getLocale: () => "zh-CN",
+      refreshToken: () => {
+        token = "new";
+        return Promise.resolve(true);
+      },
+      onUnauthorized: null,
+    });
+    await expect(customFetch("/api/v1/wallet", { method: "GET" })).resolves.toEqual({ ok: true });
+    expect(langs).toEqual(["zh-CN", "zh-CN"]);
+  });
+
+  it("keeps an explicit per-request Accept-Language and sends none without a locale", async () => {
+    const { langs } = mockFetchHeaders([ok(), ok()]);
+    configureApiClient({ baseUrl: "", getToken: () => null, getLocale: () => "zh-CN", onUnauthorized: null });
+    await customFetch("/api/v1/site-config", { method: "GET", headers: { "Accept-Language": "en-US" } });
+    configureApiClient({ baseUrl: "", getToken: () => null, getLocale: () => null, onUnauthorized: null });
+    await customFetch("/api/v1/site-config", { method: "GET" });
+    expect(langs).toEqual(["en-US", null]);
+  });
+});
+
 describe("error body parsing", () => {
   beforeEach(() => {
     vi.unstubAllGlobals();

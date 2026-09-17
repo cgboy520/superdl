@@ -598,6 +598,7 @@
     "codePlaceholder": "Verification code",
     "codeRequired": "Enter the verification code",
     "codeSent": "Code sent",
+    "dialCodeLabel": "Country calling code",
     "emailCodeLabel": "Email code",
     "emailCodePlaceholder": "Email code",
     "emailInvalid": "Enter a valid email address",

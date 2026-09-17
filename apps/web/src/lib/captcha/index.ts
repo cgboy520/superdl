@@ -1,19 +1,37 @@
-/** CAPTCHA token acquisition: reads /auth/captcha-config once and delegates to the configured
- *  provider's loader (Aliyun Captcha 2.0 or Cloudflare Turnstile). */
+/** CAPTCHA token acquisition: reads /auth/captcha-config (cached for CONFIG_TTL_MS so an online
+ *  provider switch reaches open tabs without a reload) and delegates to the configured provider's
+ *  loader (Aliyun Captcha 2.0 or Cloudflare Turnstile). */
 import { captchaConfigApiV1AuthCaptchaConfigGet } from "@superdl/api-client";
 import type { CaptchaConfigOut } from "@superdl/api-client";
 
 import { requestAliyunToken } from "./aliyun";
 import { requestTurnstileToken } from "./turnstile";
 
-let configPromise: Promise<CaptchaConfigOut> | null = null;
-
 /** Popup verification waits at most this long before rejecting. */
 export const CAPTCHA_TIMEOUT_MS = 120_000;
+/** How long one /auth/captcha-config answer is reused. */
+export const CONFIG_TTL_MS = 60_000;
+
+let cached: { config: CaptchaConfigOut; fetchedAt: number } | null = null;
+let inflight: Promise<CaptchaConfigOut> | null = null;
 
 function getConfig(): Promise<CaptchaConfigOut> {
-  configPromise ??= captchaConfigApiV1AuthCaptchaConfigGet();
-  return configPromise;
+  if (cached && Date.now() - cached.fetchedAt < CONFIG_TTL_MS) return Promise.resolve(cached.config);
+  inflight ??= captchaConfigApiV1AuthCaptchaConfigGet()
+    .then((config) => {
+      cached = { config, fetchedAt: Date.now() };
+      return config;
+    })
+    .finally(() => {
+      inflight = null;
+    });
+  return inflight;
+}
+
+/** Test seam: forget the cached configuration. */
+export function resetCaptchaConfigCache(): void {
+  cached = null;
+  inflight = null;
 }
 
 /** One-time CAPTCHA token; undefined when the switch is off. Rejects when the SDK fails to load,

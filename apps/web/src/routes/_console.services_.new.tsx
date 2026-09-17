@@ -177,7 +177,10 @@ function DeployPage() {
       : diskMode === "existing"
         ? ((disks ?? []).find((d) => d.id === existingDiskId)?.size_gb ?? 0)
         : 0;
-  const diskDaily = diskPriceGbMonth === undefined ? undefined : diskDailyEstimate(diskPriceGbMonth, diskGb);
+  const diskDaily =
+    diskPriceGbMonth === undefined
+      ? undefined
+      : diskDailyEstimate(diskPriceGbMonth, diskGb, fmt.minorUnits === 0 ? 0 : 2);
   const needAmount = period ? quote?.amount : hourlyTotal;
   const balanceReady = wallet != null && (!period || quote != null);
   const enough = balanceReady && needAmount != null && compareAmounts(wallet.balance, needAmount) >= 0;
