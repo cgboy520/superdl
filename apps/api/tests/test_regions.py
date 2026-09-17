@@ -4,7 +4,6 @@ import re
 
 import pytest
 
-from app.core import regex
 from app.core.regions import REGIONS, cn, rules_for_dial_code
 
 
@@ -13,10 +12,6 @@ class TestRegistry:
         assert rules_for_dial_code("+86") is REGIONS["CN"]
         assert rules_for_dial_code("86") is REGIONS["CN"]
         assert rules_for_dial_code("+1") is None
-
-    def test_legacy_regex_module_aliases_cn_rules(self):
-        assert regex.PHONE_RE is cn.NATIONAL_PHONE_RE
-        assert regex.PHONE_RE_LOOSE is cn.NATIONAL_PHONE_RE_LOOSE
 
 
 class TestCnPhone:

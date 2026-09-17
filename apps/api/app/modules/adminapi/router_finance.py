@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import mark_audited_read, set_audit_target, write_audit_sync
 from app.core.csvexport import CSV_RESPONSES, csv_response
 from app.core.db import DbSession, get_sessionmaker
+from app.core.handles import mask_handle
 from app.core.http import mark_idempotent_replay
 from app.core.metrics import PII_REVEAL_ROWS_TOTAL
 from app.core.pagination import Page
@@ -421,7 +422,7 @@ async def admin_list_invoices(
             r.model_copy(
                 update={
                     "title": account_service.mask_id_name(r.title),
-                    "email": account_service.mask_id_name(r.email),
+                    "email": mask_handle(r.email),
                 }
             )
             for r in rows

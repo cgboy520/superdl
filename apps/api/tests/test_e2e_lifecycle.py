@@ -10,6 +10,7 @@ from app.modules.orchestrator.models import PortAllocation
 from app.modules.orchestrator.reconciler import reconcile_once
 from tests.helpers import (
     IMAGE_PYTORCH,
+    as_handle,
     backdate_running_event,
     create_test_sku,
     drain,
@@ -22,11 +23,12 @@ from tests.helpers import (
 async def test_full_lifecycle_drill(client, sm, fake):
     phone = "13411112222"
     await client.post(
-        "/api/v1/auth/sms-code",
-        json={"phone": phone, "purpose": "register"},
+        "/api/v1/auth/verification-code",
+        json={"handle": as_handle(phone), "purpose": "register"},
     )
     reg = await client.post(
-        "/api/v1/auth/register", json={"phone": phone, "sms_code": "123456", "accept_terms": True}
+        "/api/v1/auth/register",
+        json={"email": as_handle(phone), "email_code": "123456", "accept_terms": True},
     )
     assert reg.status_code == 201
     h = {"Authorization": f"Bearer {reg.json()['access_token']}"}
@@ -191,9 +193,12 @@ async def test_pull_secret_managed_per_tenant_when_registry_configured(client, s
 async def test_service_container_drill(client, sm, fake):
     """服务生命周期中端点鉴权、资源隔离与资金账保持一致。"""
     phone = "13411113333"
-    await client.post("/api/v1/auth/sms-code", json={"phone": phone, "purpose": "register"})
+    await client.post(
+        "/api/v1/auth/verification-code", json={"handle": as_handle(phone), "purpose": "register"}
+    )
     reg = await client.post(
-        "/api/v1/auth/register", json={"phone": phone, "sms_code": "123456", "accept_terms": True}
+        "/api/v1/auth/register",
+        json={"email": as_handle(phone), "email_code": "123456", "accept_terms": True},
     )
     h = {"Authorization": f"Bearer {reg.json()['access_token']}"}
     user_id = reg.json()["user"]["id"]
@@ -368,9 +373,12 @@ async def test_subscription_drill(client, sm, fake):
     from app.modules.orchestrator.models import Instance
 
     phone = "13411113333"
-    await client.post("/api/v1/auth/sms-code", json={"phone": phone, "purpose": "register"})
+    await client.post(
+        "/api/v1/auth/verification-code", json={"handle": as_handle(phone), "purpose": "register"}
+    )
     reg = await client.post(
-        "/api/v1/auth/register", json={"phone": phone, "sms_code": "123456", "accept_terms": True}
+        "/api/v1/auth/register",
+        json={"email": as_handle(phone), "email_code": "123456", "accept_terms": True},
     )
     h = {"Authorization": f"Bearer {reg.json()['access_token']}"}
     user_id = reg.json()["user"]["id"]

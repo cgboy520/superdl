@@ -16,7 +16,9 @@ async def cleanup_expired_rows(sm: async_sessionmaker[AsyncSession]) -> dict[str
     经 SECURITY DEFINER 函数 audit_log_prune 删(应用角色对 audit_log 无 DELETE 权限)。"""
     retention = get_settings().audit_retention_days
     stmts = {
-        "sms_codes": "DELETE FROM sms_codes WHERE expires_at < now() - interval '7 days'",
+        "verification_codes": (
+            "DELETE FROM verification_codes WHERE expires_at < now() - interval '7 days'"
+        ),
         "used_refresh_tokens": "DELETE FROM used_refresh_tokens WHERE expires_at < now()",
         "outbox_done": (
             "DELETE FROM outbox_tasks WHERE status IN ('done', 'discarded') "

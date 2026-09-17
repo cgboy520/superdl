@@ -138,7 +138,7 @@ export function DeletionsTab() {
             render: (_, r) => (
               <Space size={space.sm}>
                 <TenantLink id={r.user_id} />
-                <span>{r.phone_masked}</span>
+                <span>{r.email_masked ?? r.phone_masked ?? "-"}</span>
               </Space>
             ),
           },
@@ -216,7 +216,7 @@ export function DeletionsTab() {
                       <ReasonAction
                         label={t("tenants.deletion.reject")}
                         type="text"
-                        target={`#${r.user_id} · ${r.phone_masked}`}
+                        target={`#${r.user_id} · ${r.email_masked ?? r.phone_masked ?? "-"}`}
                         title={t("tenants.deletion.rejectTitle")}
                         confirmText={t("tenants.deletion.rejectConfirm")}
                         disabled={!isAdmin}
@@ -245,7 +245,7 @@ export function DeletionsTab() {
               <Typography.Text strong>
                 {t("tenants.deletion.approveTarget", {
                   id: approving.user_id,
-                  phone: approving.phone_masked,
+                  phone: approving.email_masked ?? approving.phone_masked ?? "-",
                 })}
               </Typography.Text>
               <Typography.Text>

@@ -8,9 +8,27 @@
             "title": "Balance",
             "type": "string"
           },
+          "email_masked": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Masked"
+          },
           "phone_masked": {
-            "title": "Phone Masked",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone Masked"
           },
           "recent_ledger": {
             "items": {
@@ -34,6 +52,7 @@
         },
         "required": [
           "user_id",
+          "email_masked",
           "phone_masked",
           "status",
           "balance",
@@ -401,6 +420,17 @@
             "title": "Disks Active",
             "type": "integer"
           },
+          "email_masked": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Masked"
+          },
           "id": {
             "title": "Id",
             "type": "integer"
@@ -421,8 +451,15 @@
             "title": "Note"
           },
           "phone_masked": {
-            "title": "Phone Masked",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone Masked"
           },
           "processed_at": {
             "anyOf": [
@@ -474,6 +511,7 @@
           "processed_at",
           "note",
           "user_id",
+          "email_masked",
           "phone_masked",
           "processed_by",
           "instances_active",
@@ -2715,12 +2753,10 @@
         "type": "object"
       },
       "DeletionRequestCreate": {
-        "description": "申请注销:须键入与账号一致的完整手机号(二次确认)+ 原因。",
+        "description": "Request deletion: retype one of the account's handles (email or phone) plus a reason.",
         "properties": {
-          "phone": {
-            "description": "中国大陆手机号",
-            "pattern": "^1[3-9]\\d{9}$",
-            "title": "Phone",
+          "handle": {
+            "title": "Handle",
             "type": "string"
           },
           "reason": {
@@ -2731,7 +2767,7 @@
           }
         },
         "required": [
-          "phone",
+          "handle",
           "reason"
         ],
         "title": "DeletionRequestCreate",
@@ -3195,6 +3231,40 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HandleCodeRequest": {
+        "description": "Start binding or replacing a contact handle on the signed-in account.",
+        "properties": {
+          "handle": {
+            "title": "Handle",
+            "type": "string"
+          }
+        },
+        "required": [
+          "handle"
+        ],
+        "title": "HandleCodeRequest",
+        "type": "object"
+      },
+      "HandleConfirmRequest": {
+        "properties": {
+          "code": {
+            "maxLength": 8,
+            "minLength": 4,
+            "title": "Code",
+            "type": "string"
+          },
+          "handle": {
+            "title": "Handle",
+            "type": "string"
+          }
+        },
+        "required": [
+          "handle",
+          "code"
+        ],
+        "title": "HandleConfirmRequest",
         "type": "object"
       },
       "ImageCoverageOut": {
@@ -4630,6 +4700,23 @@
       },
       "LoginRequest": {
         "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "maxLength": 8,
+                "minLength": 4,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "handle": {
+            "title": "Handle",
+            "type": "string"
+          },
           "password": {
             "anyOf": [
               {
@@ -4642,29 +4729,10 @@
               }
             ],
             "title": "Password"
-          },
-          "phone": {
-            "description": "中国大陆手机号",
-            "pattern": "^1[3-9]\\d{9}$",
-            "title": "Phone",
-            "type": "string"
-          },
-          "sms_code": {
-            "anyOf": [
-              {
-                "maxLength": 8,
-                "minLength": 4,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Sms Code"
           }
         },
         "required": [
-          "phone"
+          "handle"
         ],
         "title": "LoginRequest",
         "type": "object"
@@ -6356,30 +6424,28 @@
         "type": "object"
       },
       "PasswordResetRequest": {
-        "description": "设置/修改/找回密码:凭手机号 + 验证码,不需要旧密码。",
+        "description": "Set / change / recover the password with a verification code; no old password needed.",
         "properties": {
+          "code": {
+            "maxLength": 8,
+            "minLength": 4,
+            "title": "Code",
+            "type": "string"
+          },
+          "handle": {
+            "title": "Handle",
+            "type": "string"
+          },
           "new_password": {
             "maxLength": 128,
             "minLength": 12,
             "title": "New Password",
             "type": "string"
-          },
-          "phone": {
-            "description": "中国大陆手机号",
-            "pattern": "^1[3-9]\\d{9}$",
-            "title": "Phone",
-            "type": "string"
-          },
-          "sms_code": {
-            "maxLength": 8,
-            "minLength": 4,
-            "title": "Sms Code",
-            "type": "string"
           }
         },
         "required": [
-          "phone",
-          "sms_code",
+          "handle",
+          "code",
           "new_password"
         ],
         "title": "PasswordResetRequest",
@@ -7350,11 +7416,22 @@
         "type": "object"
       },
       "RegisterRequest": {
+        "description": "Email + email code are always required; phone + SMS code only when the compliance profile\nrequires a phone number.",
         "properties": {
           "accept_terms": {
             "default": false,
             "title": "Accept Terms",
             "type": "boolean"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "email_code": {
+            "maxLength": 8,
+            "minLength": 4,
+            "title": "Email Code",
+            "type": "string"
           },
           "password": {
             "anyOf": [
@@ -7370,21 +7447,33 @@
             "title": "Password"
           },
           "phone": {
-            "description": "中国大陆手机号",
-            "pattern": "^1[3-9]\\d{9}$",
-            "title": "Phone",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
           },
-          "sms_code": {
-            "maxLength": 8,
-            "minLength": 4,
-            "title": "Sms Code",
-            "type": "string"
+          "phone_code": {
+            "anyOf": [
+              {
+                "maxLength": 8,
+                "minLength": 4,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone Code"
           }
         },
         "required": [
-          "phone",
-          "sms_code"
+          "email",
+          "email_code"
         ],
         "title": "RegisterRequest",
         "type": "object"
@@ -8987,43 +9076,6 @@
         "title": "SkuUpdate",
         "type": "object"
       },
-      "SmsCodeRequest": {
-        "properties": {
-          "captcha_token": {
-            "anyOf": [
-              {
-                "maxLength": 4096,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Captcha Token"
-          },
-          "phone": {
-            "description": "中国大陆手机号",
-            "pattern": "^1[3-9]\\d{9}$",
-            "title": "Phone",
-            "type": "string"
-          },
-          "purpose": {
-            "enum": [
-              "register",
-              "login",
-              "reset_password"
-            ],
-            "title": "Purpose",
-            "type": "string"
-          }
-        },
-        "required": [
-          "phone",
-          "purpose"
-        ],
-        "title": "SmsCodeRequest",
-        "type": "object"
-      },
       "SmsTestOut": {
         "properties": {
           "ok": {
@@ -9194,11 +9246,7 @@
             "title": "Disk Gb",
             "type": "integer"
           },
-          "id": {
-            "title": "Id",
-            "type": "integer"
-          },
-          "id_name": {
+          "email_masked": {
             "anyOf": [
               {
                 "type": "string"
@@ -9207,15 +9255,42 @@
                 "type": "null"
               }
             ],
-            "title": "Id Name"
+            "title": "Email Masked"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
           },
           "instances": {
             "title": "Instances",
             "type": "integer"
           },
-          "phone_masked": {
-            "title": "Phone Masked",
+          "kyc_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kyc Name"
+          },
+          "kyc_status": {
+            "default": "unverified",
+            "title": "Kyc Status",
             "type": "string"
+          },
+          "phone_masked": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone Masked"
           },
           "status": {
             "title": "Status",
@@ -9224,15 +9299,11 @@
           "total_consumed": {
             "title": "Total Consumed",
             "type": "string"
-          },
-          "verification_status": {
-            "default": "unverified",
-            "title": "Verification Status",
-            "type": "string"
           }
         },
         "required": [
           "id",
+          "email_masked",
           "phone_masked",
           "status",
           "balance",
@@ -9722,33 +9793,65 @@
             "title": "Created At",
             "type": "string"
           },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "email_verified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Verified At"
+          },
           "id": {
             "title": "Id",
             "type": "integer"
+          },
+          "kyc_status": {
+            "title": "Kyc Status",
+            "type": "string"
           },
           "low_balance_warn_hours": {
             "title": "Low Balance Warn Hours",
             "type": "integer"
           },
           "phone": {
-            "title": "Phone",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
           },
           "status": {
             "title": "Status",
-            "type": "string"
-          },
-          "verification_status": {
-            "title": "Verification Status",
             "type": "string"
           }
         },
         "required": [
           "id",
+          "email",
+          "email_verified_at",
           "phone",
           "status",
           "low_balance_warn_hours",
-          "verification_status",
+          "kyc_status",
           "created_at"
         ],
         "title": "UserOut",
@@ -9792,6 +9895,42 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "VerificationCodeRequest": {
+        "description": "Send a code to an email address or an E.164 phone number; the channel follows the handle.",
+        "properties": {
+          "captcha_token": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captcha Token"
+          },
+          "handle": {
+            "title": "Handle",
+            "type": "string"
+          },
+          "purpose": {
+            "enum": [
+              "register",
+              "login",
+              "reset_password"
+            ],
+            "title": "Purpose",
+            "type": "string"
+          }
+        },
+        "required": [
+          "handle",
+          "purpose"
+        ],
+        "title": "VerificationCodeRequest",
         "type": "object"
       },
       "WalletOut": {
@@ -15779,7 +15918,7 @@
     },
     "/api/admin/v1/tenants": {
       "get": {
-        "description": "租户列表(游标分页)。q = 手机号(完整号码精确,短串按后缀);纯数字额外按租户 id 精确命中,\n插在首页最前。手机号只回掩码;按号码/id 检索显式落一条审计。\norder = id 正/倒序;聚合列按页拼装,不支持排序。\n实名信息默认脱敏;reveal=true 且 reason 必填回明文(readonly 不可),每次按条数+事由落审计。",
+        "description": "Tenants (cursor paged). q = email (exact when it contains `@`, prefix otherwise), E.164\nphone (exact with `+`, suffix for bare digits); bare digits also hit the tenant id exactly and\nare pinned first on the first page. Handles are masked; every search writes an audit row.\norder = id 正/倒序;聚合列按页拼装,不支持排序。\n实名信息默认脱敏;reveal=true 且 reason 必填回明文(readonly 不可),每次按条数+事由落审计。",
         "operationId": "admin_list_tenants_api_admin_v1_tenants_get",
         "parameters": [
           {
@@ -16908,7 +17047,7 @@
     },
     "/api/v1/auth/password/reset": {
       "post": {
-        "description": "设置/修改/找回密码(手机号 + 验证码)。成功即撤销全部在外会话并换发新 token。",
+        "description": "Set / change / recover the password with a verification code; every other session is\nrevoked and a fresh token pair is issued.",
         "operationId": "reset_password_api_v1_auth_password_reset_post",
         "requestBody": {
           "content": {
@@ -17011,14 +17150,15 @@
         ]
       }
     },
-    "/api/v1/auth/sms-code": {
+    "/api/v1/auth/verification-code": {
       "post": {
-        "operationId": "send_sms_code_api_v1_auth_sms_code_post",
+        "description": "Send a sign-up / sign-in / reset code to an email address or E.164 phone number.",
+        "operationId": "send_verification_code_api_v1_auth_verification_code_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SmsCodeRequest"
+                "$ref": "#/components/schemas/VerificationCodeRequest"
               }
             }
           },
@@ -17039,7 +17179,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Send Sms Code",
+        "summary": "Send Verification Code",
         "tags": [
           "account"
         ]
@@ -18947,7 +19087,7 @@
         ]
       },
       "post": {
-        "description": "申请注销(7 天冷静期)。须键入与账号一致的完整手机号;已有 pending 返回既有(幂等)。",
+        "description": "Request deletion (7-day cooling-off); one of the account's handles must be retyped.\nAn existing pending request is returned unchanged (idempotent).",
         "operationId": "create_deletion_request_api_v1_me_deletion_request_post",
         "requestBody": {
           "content": {
@@ -19014,6 +19154,120 @@
           }
         ],
         "summary": "Cancel Deletion Request",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/me/handles/code": {
+      "post": {
+        "description": "Send a code to a new email / phone before binding it (no CAPTCHA: caller is signed in).",
+        "operationId": "request_handle_code_api_v1_me_handles_code_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HandleCodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Request Handle Code",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/me/handles/confirm": {
+      "post": {
+        "description": "Bind or replace the email / phone after the code check; a handle bound to another account\nis refused (409).",
+        "operationId": "confirm_handle_api_v1_me_handles_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HandleConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Confirm Handle",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/me/handles/phone": {
+      "delete": {
+        "description": "Unbind the phone; 409 when the compliance profile requires one or no email is bound.",
+        "operationId": "remove_phone_api_v1_me_handles_phone_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Remove Phone",
         "tags": [
           "account"
         ]

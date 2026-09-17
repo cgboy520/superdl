@@ -417,7 +417,7 @@ async def admin_test_sms(body: SmsTestRequest, session: DbSession, request: Requ
         await channel.send(body.phone, "verify", {"code": code})
     except SmsError as exc:
         raise AppError(
-            ErrorCode.SMS_SEND_FAILED,
+            ErrorCode.CODE_SEND_FAILED,
             key="adminapi.smsTestFailed",
             params={"message": str(exc)},
             http_status=502,
@@ -445,7 +445,7 @@ async def admin_test_email(
         await channel.send(body.email, content.subject, content.text, content.html)
     except EmailError as exc:
         raise AppError(
-            ErrorCode.SMS_SEND_FAILED,
+            ErrorCode.CODE_SEND_FAILED,
             key="adminapi.emailTestFailed",
             params={"message": str(exc)},
             http_status=502,

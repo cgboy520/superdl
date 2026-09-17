@@ -1,9 +1,10 @@
-/** 登录/注册页:验证码与密码登录、找回密码、字段标签及宽屏行情摘要。 */
+/** Sign-in / sign-up page: code or password sign-in by email or phone handle, email-first sign-up
+ *  (phone only when the compliance profile requires it), password reset, live market summary. */
 
 import { CheckCircleOutlined } from "@ant-design/icons";
 import type { SkuMarketOut, TokenPairOut } from "@superdl/api-client";
 import { brand, compareAmounts, fontSize, space, useFormat } from "@superdl/ui";
-import { LangSwitcher } from "@superdl/ui/components";
+import { LangSwitcher, PhoneField } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import {
   App,
@@ -23,13 +24,13 @@ import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 
 import { useLogin, useRegister, useResetPassword } from "../api/mutations";
-import { useSkus } from "../api/queries";
+import { useSiteConfig, useSkus } from "../api/queries";
 import { GRID_TEXTURE } from "../components/gridTexture";
 import { BrandLogo } from "../components/layout/BrandLogo";
 import { ThemeToggle } from "../components/layout/AppTopBar";
-import { SmsCodeField } from "../components/SmsCodeField";
+import { CodeField } from "../components/CodeField";
 import { dedupAvailableTotal } from "../lib/inventory";
-import { useSmsCode } from "../lib/useSmsCode";
+import { useVerificationCode } from "../lib/useVerificationCode";
 import { authStore } from "../stores/auth";
 
 export const Route = createFileRoute("/login")({
@@ -52,7 +53,7 @@ export const Route = createFileRoute("/login")({
   component: LoginPage,
 });
 
-type Mode = "sms" | "password" | "register" | "reset";
+type Mode = "code" | "password" | "register" | "reset";
 
 /** 密码强度三档:弱=仅满足长度;中=≥12 位且含两类字符;强=≥14 位且含三类字符 */
 type PasswordStrength = "weak" | "medium" | "strong";
@@ -166,13 +167,22 @@ function LoginPage() {
   const { message } = App.useApp();
   const screens = Grid.useBreakpoint();
   const { token } = theme.useToken();
-  const [mode, setMode] = useState<Mode>(searchMode === "register" ? "register" : "sms");
+  const { data: site } = useSiteConfig();
+  const phoneRequired = site?.phone_required ?? false;
+  const dialCodes = site?.phone_dial_codes ?? [];
+  const [mode, setMode] = useState<Mode>(searchMode === "register" ? "register" : "code");
   const [form] = Form.useForm();
   const watchedPassword = (Form.useWatch("password", form) as string | undefined) ?? "";
 
   const switchMode = (next: Mode) => {
     setMode(next);
-    form.setFieldsValue({ sms_code: undefined, password: undefined, accept_terms: undefined });
+    form.setFieldsValue({
+      code: undefined,
+      email_code: undefined,
+      phone_code: undefined,
+      password: undefined,
+      accept_terms: undefined,
+    });
   };
 
   const onLoggedIn = (data: unknown) => {
@@ -185,10 +195,11 @@ function LoginPage() {
     }
   };
 
-  const sms = useSmsCode(
+  const codes = useVerificationCode(
     mode === "register" ? "register" : mode === "reset" ? "reset_password" : "login",
     t("login.codeSent"),
   );
+  const phoneCodes = useVerificationCode("register", t("login.codeSent"));
   const login = useLogin({ onSuccess: onLoggedIn });
   const register = useRegister({ onSuccess: onLoggedIn });
   const resetPassword = useResetPassword({
@@ -198,28 +209,42 @@ function LoginPage() {
     },
   });
 
-  const submit = (values: { phone: string; sms_code?: string; password?: string; accept_terms?: boolean }) => {
+  const submit = (values: {
+    handle?: string;
+    email?: string;
+    email_code?: string;
+    phone?: string;
+    phone_code?: string;
+    code?: string;
+    password?: string;
+    accept_terms?: boolean;
+  }) => {
     if (mode === "reset") {
       resetPassword.mutate({
-        phone: values.phone,
-        sms_code: values.sms_code ?? "",
+        handle: values.handle ?? "",
+        code: values.code ?? "",
         new_password: values.password ?? "",
       });
     } else if (mode === "register") {
       register.mutate({
-        phone: values.phone,
-        sms_code: values.sms_code ?? "",
+        email: values.email ?? "",
+        email_code: values.email_code ?? "",
         password: values.password || null,
         accept_terms: values.accept_terms === true,
+        ...(phoneRequired ? { phone: values.phone ?? null, phone_code: values.phone_code ?? null } : {}),
       });
-    } else if (mode === "sms") {
-      login.mutate({ phone: values.phone, sms_code: values.sms_code });
+    } else if (mode === "code") {
+      login.mutate({ handle: values.handle ?? "", code: values.code });
     } else {
-      login.mutate({ phone: values.phone, password: values.password });
+      login.mutate({ handle: values.handle ?? "", password: values.password });
     }
   };
 
-  const needsSms = mode !== "password";
+  const handleRule = {
+    required: true,
+    pattern: /^([^@\s]+@[^@\s]+\.[^@\s]+|\+[1-9]\d{6,14})$/,
+    message: t("login.handleInvalid"),
+  };
 
   return (
     <div style={{ minHeight: "100vh", display: "flex" }}>
@@ -256,44 +281,88 @@ function LoginPage() {
                 ? t("login.registerTitle")
                 : t("login.title")}
           </Typography.Title>
-          {(mode === "sms" || mode === "password") && (
+          {(mode === "code" || mode === "password") && (
             <Segmented
               block
               value={mode}
               onChange={(v) => switchMode(v as Mode)}
               options={[
-                { label: t("login.modeSms"), value: "sms" },
+                { label: t("login.modeCode"), value: "code" },
                 { label: t("login.modePassword"), value: "password" },
               ]}
               style={{ marginBottom: 16 }}
             />
           )}
           <Form form={form} layout="vertical" onFinish={submit}>
-            <Form.Item
-              name="phone"
-              label={t("login.phoneLabel")}
-              rules={[{ required: true, pattern: /^1[3-9]\d{9}$/, message: t("login.phoneInvalid") }]}
-            >
-              <Input
-                prefix={<span style={{ color: token.colorTextSecondary }}>+86</span>}
-                placeholder={t("login.phonePlaceholder")}
-                maxLength={11}
-                autoComplete="tel-national"
-              />
-            </Form.Item>
-            {needsSms && (
-              <SmsCodeField
-                sms={sms}
-                label={t("login.smsLabel")}
-                placeholder={t("login.smsPlaceholder")}
-                requiredMessage={t("login.smsRequired")}
+            {mode === "register" ? (
+              <>
+                <Form.Item
+                  name="email"
+                  label={t("login.emailLabel")}
+                  rules={[{ required: true, pattern: /^[^@\s]+@[^@\s]+\.[^@\s]+$/, message: t("login.emailInvalid") }]}
+                >
+                  <Input
+                    placeholder={t("login.emailPlaceholder")}
+                    maxLength={254}
+                    autoComplete="email"
+                    inputMode="email"
+                  />
+                </Form.Item>
+                <CodeField
+                  code={codes}
+                  name="email_code"
+                  label={t("login.emailCodeLabel")}
+                  placeholder={t("login.emailCodePlaceholder")}
+                  requiredMessage={t("login.codeRequired")}
+                  getCodeLabel={t("login.getCode")}
+                  onSend={() => {
+                    void form.validateFields(["email"]).then(({ email }: { email: string }) => codes.send(email));
+                  }}
+                />
+                {phoneRequired && (
+                  <>
+                    <Form.Item
+                      name="phone"
+                      label={t("login.phoneLabel")}
+                      extra={t("login.phoneRequiredHint")}
+                      rules={[{ required: true, message: t("login.phoneInvalid") }]}
+                    >
+                      <PhoneField dialCodes={dialCodes} placeholder={t("login.phonePlaceholder")} />
+                    </Form.Item>
+                    <CodeField
+                      code={phoneCodes}
+                      name="phone_code"
+                      label={t("login.smsLabel")}
+                      placeholder={t("login.smsPlaceholder")}
+                      requiredMessage={t("login.codeRequired")}
+                      getCodeLabel={t("login.getCode")}
+                      onSend={() => {
+                        void form
+                          .validateFields(["phone"])
+                          .then(({ phone }: { phone: string }) => phoneCodes.send(phone));
+                      }}
+                    />
+                  </>
+                )}
+              </>
+            ) : (
+              <Form.Item name="handle" label={t("login.handleLabel")} rules={[handleRule]}>
+                <Input placeholder={t("login.handlePlaceholder")} maxLength={254} autoComplete="username" />
+              </Form.Item>
+            )}
+            {(mode === "code" || mode === "reset") && (
+              <CodeField
+                code={codes}
+                label={t("login.codeLabel")}
+                placeholder={t("login.codePlaceholder")}
+                requiredMessage={t("login.codeRequired")}
                 getCodeLabel={t("login.getCode")}
                 onSend={() => {
-                  void form.validateFields(["phone"]).then(({ phone }: { phone: string }) => sms.send(phone));
+                  void form.validateFields(["handle"]).then(({ handle }: { handle: string }) => codes.send(handle));
                 }}
               />
             )}
-            {mode !== "sms" && (
+            {mode !== "code" && (
               <Form.Item
                 name="password"
                 label={
@@ -375,7 +444,7 @@ function LoginPage() {
             }}
           >
             <span>
-              {(mode === "sms" || mode === "password") && (
+              {(mode === "code" || mode === "password") && (
                 <Typography.Text type="secondary">
                   {t("login.noAccount")}{" "}
                   <Button type="link" size="small" style={{ paddingInline: 0 }} onClick={() => switchMode("register")}>
@@ -386,14 +455,14 @@ function LoginPage() {
               {mode === "register" && (
                 <Typography.Text type="secondary">
                   {t("login.hasAccount")}{" "}
-                  <Button type="link" size="small" style={{ paddingInline: 0 }} onClick={() => switchMode("sms")}>
+                  <Button type="link" size="small" style={{ paddingInline: 0 }} onClick={() => switchMode("code")}>
                     {t("login.goLogin")}
                   </Button>
                 </Typography.Text>
               )}
             </span>
             <span>
-              {(mode === "sms" || mode === "password") && (
+              {(mode === "code" || mode === "password") && (
                 <Button type="link" size="small" onClick={() => switchMode("reset")}>
                   {t("login.forgotPassword")}
                 </Button>

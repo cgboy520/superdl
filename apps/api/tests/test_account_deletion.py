@@ -1,8 +1,6 @@
 """账号注销:申请 → 7 天冷静期 → 撤销/执行(前置校验 + 匿名化);
 注销后 access/refresh 401、手机号释放可重注册、账本保留。"""
 
-import hashlib
-import re
 from datetime import timedelta
 from decimal import Decimal
 
@@ -16,6 +14,7 @@ from app.modules.billing.models import BalanceLedger, Wallet
 from tests.helpers import (
     admin_headers,
     age_sms_codes,
+    as_handle,
     create_user_with_key,
     current_refresh_token,
     funded_user,
@@ -25,14 +24,15 @@ from tests.helpers import (
 )
 
 PHONE = "13800000060"
+HANDLE = as_handle(PHONE)
 
 
 async def _create_request(
-    client: AsyncClient, headers: dict, phone: str = PHONE, reason: str = "不再使用"
+    client: AsyncClient, headers: dict, handle: str = HANDLE, reason: str = "不再使用"
 ):
     return await client.post(
         "/api/v1/me/deletion-request",
-        json={"phone": phone, "reason": reason},
+        json={"handle": handle, "reason": reason},
         headers=headers,
     )
 
@@ -49,11 +49,11 @@ async def _backdate_request(sm: async_sessionmaker[AsyncSession], user_id: int, 
 
 
 class TestCreate:
-    async def test_phone_mismatch_400(self, client: AsyncClient, sm):
+    async def test_handle_mismatch_400(self, client: AsyncClient, sm):
         headers, _, _ = await create_user_with_key(client, PHONE)
-        resp = await _create_request(client, headers, phone="13900000999")
+        resp = await _create_request(client, headers, handle="somebody-else@test.local")
         assert resp.status_code == 400
-        assert resp.json()["message_key"] == "account.deletionPhoneMismatch"
+        assert resp.json()["message_key"] == "account.deletionHandleMismatch"
 
     async def test_idempotent_returns_existing(self, client: AsyncClient, sm):
         headers, _, _ = await create_user_with_key(client, PHONE)
@@ -220,18 +220,21 @@ class TestApproveSuccess:
                 update(User)
                 .where(User.id == user_id)
                 .values(
-                    id_name="张三",
-                    id_number="1101************12",
-                    verification_status="verified",
+                    phone="+8613800000060",
+                    kyc_name="张三",
+                    kyc_identity_masked="1101************12",
+                    kyc_status="verified",
                 )
             )
             await session.commit()
         await age_sms_codes(sm)
         await client.post(
-            "/api/v1/auth/sms-code",
-            json={"phone": PHONE, "purpose": "login"},
+            "/api/v1/auth/verification-code",
+            json={"handle": as_handle(PHONE), "purpose": "login"},
         )
-        login = await client.post("/api/v1/auth/login", json={"phone": PHONE, "sms_code": "123456"})
+        login = await client.post(
+            "/api/v1/auth/login", json={"handle": as_handle(PHONE), "code": "123456"}
+        )
         assert login.status_code == 200, login.text
         old_refresh = current_refresh_token(client)
         old_access = login.json()["access_token"]
@@ -251,12 +254,11 @@ class TestApproveSuccess:
         async with sm() as session:
             user = await session.get(User, user_id)
             assert user is not None
-            assert re.fullmatch(rf"del:{user_id}:[0-9a-f]{{16}}", user.phone), user.phone
-            assert len(user.phone) <= 40
-            assert PHONE not in user.phone
-            assert user.id_name is None
-            assert user.id_number is None
-            assert user.verification_status == "unverified"
+            assert user.email is None and user.email_verified_at is None
+            assert user.phone is None
+            assert user.kyc_name is None and user.kyc_identity_masked is None
+            assert user.kyc_provider is None and user.kyc_verified_at is None
+            assert user.kyc_status == "unverified"
             assert user.status == "deleted"
 
         me = await client.get("/api/v1/me", headers={"Authorization": f"Bearer {old_access}"})
@@ -267,33 +269,35 @@ class TestApproveSuccess:
         assert refresh.status_code == 401
         assert refresh.json()["message_key"] == "account.accountDeleted"
         await client.post(
-            "/api/v1/auth/sms-code",
-            json={"phone": PHONE, "purpose": "login"},
+            "/api/v1/auth/verification-code",
+            json={"handle": as_handle(PHONE), "purpose": "login"},
         )
         relogin = await client.post(
-            "/api/v1/auth/login", json={"phone": PHONE, "sms_code": "123456"}
+            "/api/v1/auth/login", json={"handle": as_handle(PHONE), "code": "123456"}
         )
         assert relogin.status_code == 400
         assert relogin.json()["message_key"] == "account.loginFailed"
         await age_sms_codes(sm)
         send = await client.post(
-            "/api/v1/auth/sms-code",
-            json={"phone": PHONE, "purpose": "register"},
+            "/api/v1/auth/verification-code",
+            json={"handle": as_handle(PHONE), "purpose": "register"},
         )
         assert send.status_code == 204, send.text
         reregister = await client.post(
             "/api/v1/auth/register",
-            json={"phone": PHONE, "sms_code": "123456", "accept_terms": True},
+            json={"email": as_handle(PHONE), "email_code": "123456", "accept_terms": True},
         )
         assert reregister.status_code == 201, reregister.text
         assert reregister.json()["user"]["id"] != user_id
 
-    async def test_anonymized_phone_is_not_derivable_from_the_number(self, client: AsyncClient, sm):
-        """同号注销两次生成不同占位串,不等于被检验的 SHA-256 和 MD5 摘要。"""
+    async def test_deleted_handles_are_null_and_reusable(self, client: AsyncClient, sm):
+        """Two deletions of the same handle both leave NULL handles (no derivable placeholder),
+        and the handle can be registered again each time."""
         admin = await admin_headers(sm, client)
-        tokens: list[str] = []
+        ids: list[int] = []
         for _ in range(2):
             headers, user_id, _ = await create_user_with_key(client, PHONE)
+            ids.append(user_id)
             req_id = (await _create_request(client, headers)).json()["id"]
             await _backdate_request(sm, user_id, days=8)
             resp = await client.post(
@@ -305,14 +309,9 @@ class TestApproveSuccess:
             async with sm() as session:
                 user = await session.get(User, user_id)
                 assert user is not None
-                tokens.append(user.phone.split(":")[-1])
+                assert user.email is None and user.phone is None
             await age_sms_codes(sm)
-
-        assert tokens[0] != tokens[1], "同号两次注销得到同一串 = 占位串是号码的函数"
-        digest = hashlib.sha256(PHONE.encode()).hexdigest()
-        for token in tokens:
-            assert token not in (digest, digest[:12], digest[:16], digest[: len(token)])
-            assert token != hashlib.md5(PHONE.encode()).hexdigest()[: len(token)]
+        assert ids[0] != ids[1]
 
     async def test_ledger_preserved(self, client: AsyncClient, sm):
         """注销只脱敏身份,balance_ledger 行不动。"""

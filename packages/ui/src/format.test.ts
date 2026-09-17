@@ -19,7 +19,7 @@ import {
   formatReclaimCountdown,
   formatSizeGb,
   formatSpotDiscount,
-  maskPhone,
+  maskHandle,
   mulPrice,
   quoteSubscription,
   spotHourlyPrice,
@@ -53,11 +53,14 @@ describe("addAmounts", () => {
   });
 });
 
-describe("maskPhone", () => {
-  it("前 3 后 4,短串全掩(与后端同口径)", () => {
-    expect(maskPhone("13812345678")).toBe("138****5678");
-    expect(maskPhone("12345")).toBe("***");
-    expect(maskPhone("")).toBe("***");
+describe("maskHandle", () => {
+  it("phones keep 3 + 4, emails keep the first character and the domain, junk is fully masked", () => {
+    expect(maskHandle("+8613812345678")).toBe("+86****5678");
+    expect(maskHandle("13812345678")).toBe("138****5678");
+    expect(maskHandle("alice@example.com")).toBe("a***@example.com");
+    expect(maskHandle("12345")).toBe("***");
+    expect(maskHandle("")).toBe("***");
+    expect(maskHandle(null)).toBe("***");
   });
 });
 

@@ -29,11 +29,12 @@ export {
   formatDateTime,
   formatDate,
   formatSizeGb,
-  maskPhone,
+  maskHandle,
 } from "./format";
 export type { PeriodQuote, Formatters } from "./format";
 export { apiErrorText } from "./apiError";
 export * from "./gpuSpecs";
+export * from "./dialCodes";
 export * from "./idemKey";
 export * from "./pages";
 export * from "./csv";

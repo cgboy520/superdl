@@ -109,7 +109,7 @@ export function ReviewConfirmModal({
         items={[
           {
             label: t("finance.colTenant"),
-            value: `#${adj.user_id}${ctx.data ? ` · ${ctx.data.phone_masked}` : ""}${
+            value: `#${adj.user_id}${ctx.data ? ` · ${ctx.data.email_masked ?? ctx.data.phone_masked ?? "-"}` : ""}${
               ctx.data?.status === "frozen" ? ` · ${t("tenants.frozen")}` : ""
             }`,
           },
@@ -391,7 +391,7 @@ export function AdjustmentsTab() {
                   showIcon
                   title={
                     <Space size={space.md} wrap>
-                      <span>{ctx.data.phone_masked}</span>
+                      <span>{ctx.data.email_masked ?? ctx.data.phone_masked ?? "-"}</span>
                       <span>{ctx.data.status === "frozen" ? t("tenants.frozen") : t("tenants.active")}</span>
                       <span>
                         {t("finance.ctxBalance")}:<b>{formatMoney(ctx.data.balance)}</b>

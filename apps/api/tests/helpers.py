@@ -21,11 +21,12 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core import outbox
-from app.core.crypto import hash_sms_code
+from app.core.crypto import hash_verification_code
+from app.core.handles import parse_handle
 from app.core.k8s.fake import FakeOrchestrator
 from app.core.platform_config import set_platform_settings
 from app.core.timeutil import now_utc
-from app.modules.account.models import SmsCode
+from app.modules.account.models import VerificationCode
 from app.modules.adminapi.auth_service import create_admin
 from app.modules.billing import service as billing_service, wallet
 from app.modules.catalog.models import PlatformImage, Sku
@@ -198,28 +199,41 @@ async def seed_node_spec(
         await session.commit()
 
 
+def as_handle(value: str) -> str:
+    """Tests historically identify users by bare PRC mobile numbers; map those to a deterministic
+    email so the same literals keep working with email-primary accounts."""
+    if "@" in value or value.startswith("+"):
+        return value
+    digits = "".join(ch for ch in value if ch.isdigit())
+    return f"u{digits}@test.local"
+
+
 async def send_code(
-    client: AsyncClient, phone: str = "13800000001", purpose: str = "register"
+    client: AsyncClient, handle: str = "13800000001", purpose: str = "register"
 ) -> None:
     resp = await client.post(
-        "/api/v1/auth/sms-code",
-        json={"phone": phone, "purpose": purpose},
+        "/api/v1/auth/verification-code",
+        json={"handle": as_handle(handle), "purpose": purpose},
     )
     assert resp.status_code == 204, resp.text
 
 
 async def age_sms_codes(sm: async_sessionmaker[AsyncSession]) -> None:
-    """将所有验证码的 created_at 设为两分钟前。"""
+    """Backdate every verification code by two minutes."""
     async with sm() as session:
-        await session.execute(update(SmsCode).values(created_at=now_utc() - timedelta(minutes=2)))
+        await session.execute(
+            update(VerificationCode).values(created_at=now_utc() - timedelta(minutes=2))
+        )
         await session.commit()
 
 
 async def register(
-    client: AsyncClient, phone: str = "13800000001", password: str | None = None
+    client: AsyncClient, handle: str = "13800000001", password: str | None = None
 ) -> dict:
-    await send_code(client, phone, "register")
-    body: dict = {"phone": phone, "sms_code": "123456", "accept_terms": True}
+    """Register by email (bare digits are mapped through as_handle) with the mock code."""
+    email = as_handle(handle)
+    await send_code(client, email, "register")
+    body: dict = {"email": email, "email_code": "123456", "accept_terms": True}
     if password:
         body["password"] = password
     resp = await client.post("/api/v1/auth/register", json=body)
@@ -246,13 +260,16 @@ async def refresh_via_cookie(client: AsyncClient, token: str | None = None) -> R
     return await client.post("/api/v1/auth/refresh", headers={"X-Requested-With": "fetch"})
 
 
-async def issue_code(sm, phone: str, purpose: str, code: str = "123456") -> None:
-    """直接写入一条五分钟后过期的验证码记录。"""
+async def issue_code(sm, handle: str, purpose: str, code: str = "123456") -> None:
+    """Insert a verification code row (expires in five minutes) for an email or E.164 handle."""
+    parsed = parse_handle(as_handle(handle))
+    channel = "email" if parsed.kind == "email" else "sms"
     async with sm() as session:
         session.add(
-            SmsCode(
-                phone=phone,
-                code_hash=hash_sms_code(phone, purpose, code),
+            VerificationCode(
+                channel=channel,
+                target=parsed.value,
+                code_hash=hash_verification_code(channel, parsed.value, purpose, code),
                 purpose=purpose,
                 expires_at=now_utc() + timedelta(minutes=5),
             )

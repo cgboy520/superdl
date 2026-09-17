@@ -101,14 +101,17 @@ def _hmac_candidates(domain_msg: str) -> list[str]:
     return [_hmac_hex(k, domain_msg) for k in _mac_candidates()]
 
 
-def hash_sms_code(phone: str, purpose: str, code: str) -> str:
-    """短信验证码的带密钥摘要(写路径);phone 与 purpose 混进消息做域分离。"""
-    return hash_sms_code_candidates(phone, purpose, code)[0]
+def hash_verification_code(channel: str, target: str, purpose: str, code: str) -> str:
+    """Keyed digest of a verification code (write path); channel, target and purpose separate
+    the domains."""
+    return hash_verification_code_candidates(channel, target, purpose, code)[0]
 
 
-def hash_sms_code_candidates(phone: str, purpose: str, code: str) -> list[str]:
-    """读路径候选(轮换窗口内兼读旧钥匙世代)。"""
-    return _hmac_candidates(f"smscode|{phone}|{purpose}|{code}")
+def hash_verification_code_candidates(
+    channel: str, target: str, purpose: str, code: str
+) -> list[str]:
+    """Read-path candidates (the previous key generation is accepted inside the rotation window)."""
+    return _hmac_candidates(f"vcode|{channel}|{target}|{purpose}|{code}")
 
 
 def hash_api_key(key: str) -> str:
@@ -120,13 +123,15 @@ def hash_api_key_candidates(key: str) -> list[str]:
     return _hmac_candidates(f"service-api-key|{key}")
 
 
-def hash_id_number(id_number: str) -> str:
-    """实名证件号的带密钥摘要(写路径;域分离前缀 id-number|):只用于同证件跨账号去重,原文不落库。"""
-    return hash_id_number_candidates(id_number)[0]
+def hash_kyc_identity(identity: str) -> str:
+    """Keyed digest of a KYC identity number (write path). The `id-number|` domain prefix is kept
+    so digests stored before the KYC rename still match; used only for cross-account dedup, the
+    plaintext is never stored."""
+    return hash_kyc_identity_candidates(identity)[0]
 
 
-def hash_id_number_candidates(id_number: str) -> list[str]:
-    return _hmac_candidates(f"id-number|{id_number.strip().upper()}")
+def hash_kyc_identity_candidates(identity: str) -> list[str]:
+    return _hmac_candidates(f"id-number|{identity.strip().upper()}")
 
 
 def hash_node_token(token: str) -> str:

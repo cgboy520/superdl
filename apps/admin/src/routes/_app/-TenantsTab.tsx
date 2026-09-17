@@ -95,7 +95,7 @@ export function TenantsTab() {
       >
         <Input.Search
           allowClear
-          placeholder={tt("tenants.searchPhonePlaceholder")}
+          placeholder={tt("tenants.searchAccountPlaceholder")}
           style={{ width: controlWidth.md }}
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -181,7 +181,12 @@ export function TenantsTab() {
               </span>
             ),
           },
-          { title: tt("tenants.colPhone"), dataIndex: "phone_masked", fixed: "left", width: 130 },
+          {
+            title: tt("tenants.colAccount"),
+            fixed: "left",
+            width: 170,
+            render: (_, r) => r.email_masked ?? r.phone_masked ?? "-",
+          },
           {
             title: tt("tenants.colBalance"),
             dataIndex: "balance",

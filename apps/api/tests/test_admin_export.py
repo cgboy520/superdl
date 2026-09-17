@@ -168,7 +168,7 @@ class TestInvoicePiiGate:
         assert "91440300MA5F000000" in csv_text
 
         rows = (await client.get("/api/admin/v1/invoices", headers=fin)).json()
-        assert all(r["title"].startswith("示*") and "@" not in r["email"] for r in rows), rows
+        assert all(r["title"].startswith("示*") and "***@" in r["email"] for r in rows), rows
 
         no_reason = await client.get(
             "/api/admin/v1/invoices/export", params={"reveal": True}, headers=fin

@@ -11,7 +11,8 @@ import type { LedgerEntryOut } from './ledgerEntryOut';
  */
 export interface AdjustContextOut {
   balance: string;
-  phone_masked: string;
+  email_masked: string | null;
+  phone_masked: string | null;
   recent_ledger: LedgerEntryOut[];
   running_instances: number;
   status: string;

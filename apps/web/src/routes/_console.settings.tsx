@@ -1,12 +1,14 @@
-/** 账户设置:四 Tab(SSH 公钥 / 通知 / 实名认证 / 账号),?tab= 入 URL(白名单 + replace);#ssh / #notify 深链落到对应 Tab 并滚动高亮。 */
+/** Account settings: four tabs (SSH keys / notifications / identity verification / account), `?tab=`
+ *  in the URL (whitelisted + replace); #ssh / #notify deep links land on their tab and scroll-highlight. */
 
-import type { TokenPairOut } from "@superdl/api-client";
-import { deletionStatusMap, fontSize, formatDateTime, maskPhone, metaOf, space, useFormat } from "@superdl/ui";
+import type { TokenPairOut, UserOut } from "@superdl/api-client";
+import { deletionStatusMap, fontSize, formatDateTime, maskHandle, metaOf, space, useFormat } from "@superdl/ui";
 import {
   DangerZone,
   DataErrorAlert,
   GatedButton,
   PageContainer,
+  PhoneField,
   TableErrorEmpty,
   TypeConfirmModal,
   useConfirm,
@@ -19,31 +21,33 @@ import { useState } from "react";
 import {
   useAddSshKey,
   useCancelDeletionRequest,
+  useConfirmHandle,
   useCreateDeletionRequest,
   useDeleteSshKey,
   useLogout,
+  useRemovePhone,
   useResetPassword,
   useSubmitRealName,
 } from "../api/mutations";
-import { useMe, useMyDeletionRequest, usePolicies, useSshKeys } from "../api/queries";
+import { useMe, useMyDeletionRequest, usePolicies, useSiteConfig, useSshKeys } from "../api/queries";
 import { WarnThresholdField } from "../components/WarnThresholdField";
 import { requireAuth } from "../lib/guard";
 import { useHashScroll } from "../lib/useHashScroll";
-import { SmsCodeField } from "../components/SmsCodeField";
-import { useSmsCode } from "../lib/useSmsCode";
+import { CodeField } from "../components/CodeField";
+import { useVerificationCode } from "../lib/useVerificationCode";
 import { authStore } from "../stores/auth";
 
 export const SETTINGS_TABS = ["ssh", "notify", "realname", "account"] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
-/** tab 白名单:非法值剥离回默认(默认 ssh,e2e 直奔 /settings 填公钥)。 */
+/** Tab whitelist: unknown values are stripped (the page falls back to ssh; e2e goes straight to /settings). */
 export function settingsValidateSearch(search: Record<string, unknown>): { tab?: SettingsTab } {
   const tab = search.tab;
   if (typeof tab !== "string") return {};
   return (SETTINGS_TABS as readonly string[]).includes(tab) ? { tab: tab as SettingsTab } : {};
 }
 
-/** 旧的 #ssh / #notify 深链(费用中心余额卡「修改」)映射到对应 Tab。 */
+/** Legacy #ssh / #notify deep links (billing balance card "change") map to their tab. */
 export function tabOfHash(hash: string): SettingsTab | undefined {
   const id = hash.replace(/^#/, "");
   if (id === "ssh") return "ssh";
@@ -104,7 +108,7 @@ function SettingsPage() {
   );
 }
 
-/** SSH 公钥 Tab:已有公钥表(删除 L1)+ 添加表单。 */
+/** SSH keys tab: existing keys table (delete L1) + add form. */
 function SshTab() {
   const { t } = useTranslation();
   const { message } = App.useApp();
@@ -197,19 +201,68 @@ function SshTab() {
   );
 }
 
-/** 账号 Tab:手机号 / 设置修改密码 / 退出登录(L0)/ 登出全部设备(L2,非红)/ 页尾危险区注销。 */
-function AccountTab({ me }: { me: { phone: string } | undefined }) {
+/** Account tab: email / phone handles (add, change, remove phone) / set or change password /
+ *  log out (L0) / log out everywhere (L2) / danger zone deletion. */
+function AccountTab({ me }: { me: UserOut | undefined }) {
   const { t } = useTranslation();
+  const { message } = App.useApp();
   const [pwdOpen, setPwdOpen] = useState(false);
+  const [handleKind, setHandleKind] = useState<"email" | "phone" | null>(null);
   const logout = useLogout();
   const confirm = useConfirm();
+  const { data: site } = useSiteConfig();
+  const phoneRequired = site?.phone_required ?? false;
+  const removePhone = useRemovePhone({
+    onSuccess: () => {
+      message.success(t("settings.handleBound"));
+    },
+  });
+  const primary = me?.email ?? me?.phone ?? "";
 
   return (
     <Space orientation="vertical" size={space.lg} style={{ width: "100%" }}>
       <Card>
         <Space orientation="vertical" size={space.md}>
           {me ? (
-            <Typography.Text>{t("settings.phoneLine", { phone: maskPhone(me.phone) })}</Typography.Text>
+            <>
+              <Space size={space.sm} wrap>
+                <Typography.Text>
+                  {me.email ? t("settings.emailLine", { email: maskHandle(me.email) }) : t("settings.noEmail")}
+                </Typography.Text>
+                <Button size="small" type="link" onClick={() => setHandleKind("email")}>
+                  {me.email ? t("settings.changeEmail") : t("settings.addEmail")}
+                </Button>
+              </Space>
+              <Space size={space.sm} wrap>
+                <Typography.Text>
+                  {me.phone ? t("settings.phoneLine", { phone: maskHandle(me.phone) }) : t("settings.noPhone")}
+                </Typography.Text>
+                <Button size="small" type="link" onClick={() => setHandleKind("phone")}>
+                  {me.phone ? t("settings.changePhone") : t("settings.addPhone")}
+                </Button>
+                {me.phone && !phoneRequired && (
+                  <Button
+                    size="small"
+                    type="link"
+                    danger
+                    loading={removePhone.isPending}
+                    onClick={() =>
+                      confirm({
+                        title: t("settings.removePhoneConfirm"),
+                        consequences: [t("settings.removePhoneBody")],
+                        okText: t("settings.removePhone"),
+                        danger: true,
+                        onOk: async () => {
+                          await removePhone.mutateAsync();
+                        },
+                      })
+                    }
+                  >
+                    {t("settings.removePhone")}
+                  </Button>
+                )}
+              </Space>
+            </>
           ) : (
             <Skeleton.Input active size="small" style={{ width: 200 }} />
           )}
@@ -239,18 +292,83 @@ function AccountTab({ me }: { me: { phone: string } | undefined }) {
           <Button onClick={() => void logout()}>{t("settings.logout")}</Button>
         </Space>
       </Card>
-      <DeletionZone phone={me?.phone ?? ""} />
-      <PasswordModal open={pwdOpen} phone={me?.phone ?? ""} onClose={() => setPwdOpen(false)} />
+      <DeletionZone handle={primary} />
+      <PasswordModal open={pwdOpen} handle={primary} onClose={() => setPwdOpen(false)} />
+      <HandleModal kind={handleKind} dialCodes={site?.phone_dial_codes ?? []} onClose={() => setHandleKind(null)} />
     </Space>
   );
 }
 
-/** 设置/修改密码:凭手机号 + 验证码,不要求旧密码。 */
-function PasswordModal({ open, phone, onClose }: { open: boolean; phone: string; onClose: () => void }) {
+/** Add or replace an email / phone: code to the new handle, then confirm. */
+function HandleModal({
+  kind,
+  dialCodes,
+  onClose,
+}: {
+  kind: "email" | "phone" | null;
+  dialCodes: readonly string[];
+  onClose: () => void;
+}) {
   const { t } = useTranslation();
   const { message } = App.useApp();
-  const [form] = Form.useForm<{ sms_code: string; new_password: string }>();
-  const sms = useSmsCode("reset_password", t("settings.codeSent"));
+  const [form] = Form.useForm<{ handle: string; code: string }>();
+  const codes = useVerificationCode("bind_handle", t("settings.codeSent"));
+  const confirmHandle = useConfirmHandle({
+    onSuccess: () => {
+      message.success(t("settings.handleBound"));
+      form.resetFields();
+      onClose();
+    },
+  });
+  const isEmail = kind === "email";
+  return (
+    <Modal
+      title={isEmail ? t("settings.handleModalTitleEmail") : t("settings.handleModalTitlePhone")}
+      open={kind !== null}
+      onCancel={onClose}
+      okText={t("settings.saveHandle")}
+      confirmLoading={confirmHandle.isPending}
+      onOk={() => {
+        void form.validateFields().then((v) => confirmHandle.mutate({ handle: v.handle, code: v.code }));
+      }}
+      destroyOnHidden
+    >
+      <Form form={form} layout="vertical">
+        <Form.Item
+          name="handle"
+          label={isEmail ? t("login.emailLabel") : t("login.phoneLabel")}
+          rules={[
+            isEmail
+              ? { required: true, pattern: /^[^@\s]+@[^@\s]+\.[^@\s]+$/, message: t("login.emailInvalid") }
+              : { required: true, message: t("login.phoneInvalid") },
+          ]}
+        >
+          {isEmail ? (
+            <Input placeholder={t("login.emailPlaceholder")} maxLength={254} autoComplete="email" inputMode="email" />
+          ) : (
+            <PhoneField dialCodes={dialCodes} placeholder={t("login.phonePlaceholder")} />
+          )}
+        </Form.Item>
+        <CodeField
+          code={codes}
+          placeholder={t("settings.codePlaceholder")}
+          requiredMessage={t("settings.codeRequired")}
+          getCodeLabel={t("settings.getCode")}
+          onSend={() => {
+            void form.validateFields(["handle"]).then(({ handle }) => codes.send(handle));
+          }}
+        />
+      </Form>
+    </Modal>
+  );
+}
+
+/** Set / change the password with a code sent to the primary handle; no old password needed. */
+function PasswordModal({ open, handle, onClose }: { open: boolean; handle: string; onClose: () => void }) {
+  const { t } = useTranslation();
+  const { message } = App.useApp();
+  const [form] = Form.useForm<{ code: string; new_password: string }>();
+  const codes = useVerificationCode("reset_password", t("settings.codeSent"));
   const reset = useResetPassword({
     onSuccess: (data) => {
       const pair = data as TokenPairOut;
@@ -269,20 +387,20 @@ function PasswordModal({ open, phone, onClose }: { open: boolean; phone: string;
       okText={t("settings.savePassword")}
       confirmLoading={reset.isPending}
       onOk={() => {
-        void form
-          .validateFields()
-          .then((v) => reset.mutate({ phone, sms_code: v.sms_code, new_password: v.new_password }));
+        void form.validateFields().then((v) => reset.mutate({ handle, code: v.code, new_password: v.new_password }));
       }}
       destroyOnHidden
     >
       <Form form={form} layout="vertical">
-        <Typography.Paragraph type="secondary">{t("settings.changePasswordDesc", { phone })}</Typography.Paragraph>
-        <SmsCodeField
-          sms={sms}
+        <Typography.Paragraph type="secondary">
+          {t("settings.changePasswordDesc", { handle: maskHandle(handle) })}
+        </Typography.Paragraph>
+        <CodeField
+          code={codes}
           placeholder={t("settings.codePlaceholder")}
           requiredMessage={t("settings.codeRequired")}
           getCodeLabel={t("settings.getCode")}
-          onSend={() => sms.send(phone)}
+          onSend={() => codes.send(handle)}
         />
         <Form.Item name="new_password" rules={[{ required: true, min: 12, message: t("settings.passwordMin") }]}>
           <Input.Password placeholder={t("settings.newPasswordPlaceholder")} />
@@ -292,8 +410,9 @@ function PasswordModal({ open, phone, onClose }: { open: boolean; phone: string;
   );
 }
 
-/** 危险区·账号注销:申请(原因必填 + 键入手机号,走共享 TypeConfirmModal)/ 冷静期倒计时 + 撤销。 */
-function DeletionZone({ phone }: { phone: string }) {
+/** Danger zone · account deletion: request (reason + retype the primary handle via the shared
+ *  TypeConfirmModal) / cooling-off countdown + withdraw. */
+function DeletionZone({ handle }: { handle: string }) {
   const { t } = useTranslation(["web", "shared"]);
   const { message } = App.useApp();
   const { formatDaysUntil } = useFormat();
@@ -376,8 +495,8 @@ function DeletionZone({ phone }: { phone: string }) {
       <TypeConfirmModal
         open={open}
         title={t("settings.deletion.modalTitle")}
-        targetName={phone}
-        maxLength={11}
+        targetName={handle}
+        maxLength={254}
         body={
           <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
             <Alert
@@ -420,14 +539,15 @@ function DeletionZone({ phone }: { phone: string }) {
         confirmLabel={t("settings.deletion.confirmText")}
         cancelLabel={t("create.cancel")}
         loading={create.isPending}
-        onConfirm={() => create.mutate({ phone, reason: reason.trim() })}
+        onConfirm={() => create.mutate({ handle, reason: reason.trim() })}
         onCancel={close}
       />
     </>
   );
 }
 
-/** 实名四态:未就绪骨架 / 错误可重试 / 已认证 / 未认证;平台未开通实名(real_name_enabled=false)时表单可见但禁用 + 说明。 */
+/** Identity verification: skeleton / error with retry / verified / unverified; when the platform
+ *  has it disabled (real_name_enabled=false) the form stays visible but disabled with a note. */
 function RealNameTab({
   me,
   enabled,
@@ -435,7 +555,7 @@ function RealNameTab({
   error,
   onRetry,
 }: {
-  me: { verification_status?: string } | undefined;
+  me: UserOut | undefined;
   enabled: boolean;
   loading: boolean;
   error: boolean;
@@ -449,7 +569,7 @@ function RealNameTab({
       message.success(t("settings.realNameDone"));
     },
   });
-  const verified = me?.verification_status === "verified";
+  const verified = me?.kyc_status === "verified";
   return (
     <Card
       extra={

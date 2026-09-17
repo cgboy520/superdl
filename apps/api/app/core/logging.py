@@ -30,11 +30,6 @@ _SENSITIVE_KEY_RE = re.compile(
 _MASK_MAX_DEPTH = 4
 
 
-def mask_phone_value(value: str) -> str:
-    """Alias of `handles.mask_handle` for callers that predate email handles."""
-    return mask_handle(value)
-
-
 def _mask_value(key: str, value: object) -> object:
     if not isinstance(value, str):
         return value

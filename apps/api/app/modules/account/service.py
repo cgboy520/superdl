@@ -1,20 +1,21 @@
-import math
 import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from fastapi import status
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.captcha import CaptchaError, get_captcha_channel
+from app.core.compliance import current_profile
 from app.core.config import get_settings
-from app.core.crypto import hash_id_number_candidates, hash_sms_code, hash_sms_code_candidates
+from app.core.crypto import hash_kyc_identity_candidates
 from app.core.errors import AppError, ErrorCode, conflict, not_found, unauthorized
-from app.core.logging import get_logger, mask_phone_value
+from app.core.handles import Handle, mask_handle, ratelimit_key
+from app.core.locale import DEFAULT_LOCALE, Locale
+from app.core.logging import get_logger
 from app.core.loginguard import LoginBucket, login_attempt, login_failed, login_succeeded
-from app.core.metrics import LOGIN_FAILED_TOTAL, USER_SIGNUP_TOTAL, VERIFICATION_SENT_TOTAL
+from app.core.metrics import LOGIN_FAILED_TOTAL, USER_SIGNUP_TOTAL
 from app.core.pagination import RawPage, clamp_limit, decode_cursor_int, slice_page
 from app.core.platform_config import get_runtime_config
 from app.core.ratelimit import check_rate_limit, clear_rate_limit, read_hits
@@ -25,11 +26,10 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.core.sms import SmsError, ensure_sms_platform_quota, get_sms_channel
 from app.core.sqlutil import like_escape
 from app.core.timeutil import ensure_utc, local_day_range, now_utc
+from app.modules.account import verification
 from app.modules.account.models import (
-    SmsCode,
     SshKey,
     UsedRefreshToken,
     User,
@@ -46,162 +46,7 @@ from app.modules.legal import service as legal_service
 
 logger = get_logger(__name__)
 
-MOCK_SMS_CODE = "123456"
-
-MAX_SMS_CODE_ATTEMPTS = 5
-
-SMS_SEND_BACKOFF_MAX_EXPONENT = 3
-
-SMS_CONSUME_DAILY_MAX = 10
-
-SMS_SEND_IP_HOURLY_MAX = 20
-
-SMS_SEND_PHONE_DAILY_MAX = 15
-
-SMS_PRECHECK_PHONE_HOURLY_MAX = 30
-
 REFRESH_REPLAY_GRACE_SECONDS = 10.0
-
-
-async def _verify_captcha(session: AsyncSession, captcha_token: str | None) -> None:
-    """captcha_enabled 时校验人机 token:缺失 400、渠道故障 502、不通过 400。"""
-    if not captcha_token:
-        raise AppError(ErrorCode.CAPTCHA_REQUIRED, key="account.captchaRequired")
-    try:
-        channel = await get_captcha_channel(session)
-        captcha_ok = await channel.verify(captcha_token)
-    except CaptchaError as exc:
-        logger.error("captcha_channel_error", error=str(exc))
-        raise AppError(
-            ErrorCode.CAPTCHA_CHANNEL_ERROR,
-            key="account.captchaChannelError",
-            http_status=status.HTTP_502_BAD_GATEWAY,
-        ) from exc
-    if not captcha_ok:
-        raise AppError(ErrorCode.CAPTCHA_VERIFY_FAILED, key="account.captchaVerifyFailed")
-
-
-async def _enforce_send_backoff(session: AsyncSession, phone: str) -> None:
-    """同号最新一条距今不足基础间隔即拒;连续 N 条未成功消费(含失败作废 / 过期)时
-    间隔 = 基础 × 2^(N-1),指数封顶 SMS_SEND_BACKOFF_MAX_EXPONENT。调用方须持手机号咨询锁。"""
-    recent = list(
-        (
-            await session.execute(
-                select(SmsCode)
-                .where(SmsCode.phone == phone, SmsCode.created_at > now_utc() - timedelta(hours=24))
-                .order_by(SmsCode.id.desc())
-                .limit(16)
-            )
-        ).scalars()
-    )
-    if not recent:
-        return
-    streak = 0
-    for row in recent:
-        if row.consumed_at is not None:
-            break
-        streak += 1
-    base = get_settings().sms_send_interval_seconds
-    required = base * (2 ** min(max(streak, 1) - 1, SMS_SEND_BACKOFF_MAX_EXPONENT))
-    elapsed = (now_utc() - ensure_utc(recent[0].created_at)).total_seconds()
-    if elapsed < required:
-        raise AppError(
-            ErrorCode.SMS_TOO_FREQUENT,
-            key="account.smsTooFrequent",
-            params={"seconds": math.ceil(required - elapsed)},
-            http_status=status.HTTP_429_TOO_MANY_REQUESTS,
-        )
-
-
-async def send_sms_code(
-    session: AsyncSession,
-    phone: str,
-    purpose: str,
-    *,
-    client_ip: str | None = None,
-    captcha_token: str | None = None,
-) -> None:
-    """按手机号加事务咨询锁创建验证码;提交后发送,渠道失败时作废验证码。
-    闸门顺序:按号预检桶 → 人机验证 → 按 IP 桶 → 退避 → 按号日发送上限 → 平台 verify 预算。"""
-    settings = get_settings()
-    await check_rate_limit(
-        f"sms-precheck-phone:{phone}",
-        max_attempts=SMS_PRECHECK_PHONE_HOURLY_MAX,
-        window_seconds=3600.0,
-    )
-    cfg = await get_runtime_config(session)
-    if cfg.captcha_enabled:
-        await _verify_captcha(session, captcha_token)
-    await check_rate_limit(
-        f"sms-send-ip:{client_ip or '-'}",
-        max_attempts=SMS_SEND_IP_HOURLY_MAX,
-        window_seconds=3600.0,
-    )
-    await session.execute(text("SELECT pg_advisory_xact_lock(hashtext(:phone))"), {"phone": phone})
-    await _enforce_send_backoff(session, phone)
-    await check_rate_limit(
-        f"sms-send-phone:{phone}", max_attempts=SMS_SEND_PHONE_DAILY_MAX, window_seconds=86400.0
-    )
-    await ensure_sms_platform_quota("verify")
-    code = MOCK_SMS_CODE if cfg.sms_provider == "mock" else f"{secrets.randbelow(10**6):06d}"
-    row = SmsCode(
-        phone=phone,
-        code_hash=hash_sms_code(phone, purpose, code),
-        purpose=purpose,
-        expires_at=now_utc() + timedelta(seconds=settings.sms_code_ttl_seconds),
-    )
-    session.add(row)
-    await session.commit()
-    try:
-        channel = await get_sms_channel(session)
-        await channel.send(phone, "verify", {"code": code})
-        VERIFICATION_SENT_TOTAL.labels(channel="sms", purpose=purpose).inc()
-    except SmsError as exc:
-        row.used_at = now_utc()
-        await session.commit()
-        logger.error("sms_send_failed", phone=phone, error=str(exc))
-        raise AppError(
-            ErrorCode.SMS_SEND_FAILED,
-            key="account.smsSendFailed",
-            http_status=status.HTTP_502_BAD_GATEWAY,
-        ) from exc
-
-
-async def _consume_sms_code(session: AsyncSession, phone: str, code: str, purpose: str) -> None:
-    """行锁下校验并消费验证码;成功受日配额限制,不提交。
-
-    验码失败提交失败计次后抛 SMS_CODE_INVALID,达到 MAX_SMS_CODE_ATTEMPTS 时作废。
-    """
-    row = (
-        await session.execute(
-            select(SmsCode)
-            .where(
-                SmsCode.phone == phone,
-                SmsCode.purpose == purpose,
-                SmsCode.used_at.is_(None),
-                SmsCode.expires_at > now_utc(),
-            )
-            .order_by(SmsCode.id.desc())
-            .limit(1)
-            .with_for_update()
-        )
-    ).scalar_one_or_none()
-    if row is None:
-        raise AppError(ErrorCode.SMS_CODE_INVALID, key="account.smsCodeInvalid")
-    matched = [
-        secrets.compare_digest(row.code_hash, c)
-        for c in hash_sms_code_candidates(phone, purpose, code)
-    ]
-    if not any(matched):
-        row.attempts += 1
-        if row.attempts >= MAX_SMS_CODE_ATTEMPTS:
-            row.used_at = now_utc()
-        await session.commit()
-        raise AppError(ErrorCode.SMS_CODE_INVALID, key="account.smsCodeInvalid")
-    await check_rate_limit(
-        f"sms-consume-phone:{phone}", max_attempts=SMS_CONSUME_DAILY_MAX, window_seconds=86400.0
-    )
-    row.used_at = row.consumed_at = now_utc()
 
 
 def _issue_tokens(
@@ -224,31 +69,89 @@ def _issue_tokens(
     )
 
 
+async def send_verification_code(
+    session: AsyncSession,
+    handle: Handle,
+    purpose: verification.CodePurpose,
+    *,
+    client_ip: str | None = None,
+    captcha_token: str | None = None,
+    locale: Locale = DEFAULT_LOCALE,
+) -> None:
+    await verification.send_code(
+        session, handle, purpose, client_ip=client_ip, captcha_token=captcha_token, locale=locale
+    )
+
+
+async def _user_by_handle(
+    session: AsyncSession, handle: Handle, *, for_update: bool = False
+) -> User | None:
+    column = User.email if handle.kind == "email" else User.phone
+    stmt = select(User).where(column == handle.value)
+    if for_update:
+        stmt = stmt.with_for_update()
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+def _check_phone_policy(phone: str | None) -> None:
+    """Compliance profile: phone required / restricted to the profile's dial codes."""
+    profile = current_profile()
+    if phone is None:
+        if profile.phone_required:
+            raise AppError(ErrorCode.VALIDATION_ERROR, key="account.phoneRequired")
+        return
+    codes = profile.phone_dial_codes
+    if codes and not any(phone.startswith(f"+{c}") for c in codes):
+        raise AppError(
+            ErrorCode.VALIDATION_ERROR,
+            key="account.phoneRegionNotAllowed",
+            params={"codes": ", ".join(f"+{c}" for c in codes)},
+        )
+
+
 async def register(
     session: AsyncSession,
-    phone: str,
-    sms_code: str,
-    password: str | None,
     *,
+    email: str,
+    email_code: str,
+    password: str | None,
+    phone: str | None = None,
+    phone_code: str | None = None,
     accept_terms: bool = False,
     client_ip: str | None = None,
 ) -> TokenPair:
+    """Email is the primary handle; a phone is bound at sign-up only with its own SMS code, and
+    only when the compliance profile allows / requires it."""
     if not accept_terms:
         raise AppError(ErrorCode.TERMS_NOT_ACCEPTED, key="account.termsNotAccepted")
     await check_rate_limit(
-        f"user-register:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0
+        f"user-register:{client_ip or '-'}:{ratelimit_key(email)}",
+        max_attempts=5,
+        window_seconds=300.0,
     )
-    await _consume_sms_code(session, phone, sms_code, "register")
-    existing = (await session.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
-    if existing is not None:
-        logger.warning(
-            "user_register_failed",
-            account=mask_phone_value(phone),
-            ip=client_ip,
-            reason="phone_taken",
-        )
-        raise AppError(ErrorCode.PHONE_TAKEN, key="account.phoneTaken")
-    user = User(phone=phone, password_hash=await hash_password(password) if password else None)
+    _check_phone_policy(phone)
+    phone_handle = Handle("phone", phone) if phone else None
+    if phone_handle is not None and not phone_code:
+        raise AppError(ErrorCode.CODE_INVALID, key="account.codeInvalid")
+    email_handle = Handle("email", email)
+    await verification.consume_code(session, email_handle, email_code, "register")
+    if phone_handle is not None:
+        await verification.consume_code(session, phone_handle, phone_code or "", "register")
+    for handle, key in ((email_handle, "account.emailTaken"), (phone_handle, "account.phoneTaken")):
+        if handle is not None and await _user_by_handle(session, handle) is not None:
+            logger.warning(
+                "user_register_failed",
+                account=mask_handle(handle.value),
+                ip=client_ip,
+                reason="handle_taken",
+            )
+            raise AppError(ErrorCode.HANDLE_TAKEN, key=key)
+    user = User(
+        email=email,
+        email_verified_at=now_utc(),
+        phone=phone,
+        password_hash=await hash_password(password) if password else None,
+    )
     session.add(user)
     await session.flush()
     await legal_service.record_registration_consents(session, user.id, client_ip)
@@ -265,20 +168,23 @@ LOGIN_ACCT_MAX, LOGIN_ACCT_WINDOW = 10, 900.0
 LOGIN_ACCT_DAILY_MAX, LOGIN_ACCT_DAILY_WINDOW = 30, 86400.0
 
 
-def _acct_bucket_key(phone: str) -> str:
-    return f"user-login-acct:{phone}"
+def _acct_bucket_key(handle_key: str) -> str:
+    return f"user-login-acct:{handle_key}"
 
 
-def _login_buckets(phone: str, client_ip: str | None) -> list[LoginBucket]:
+def _login_buckets(handle_key: str, client_ip: str | None) -> list[LoginBucket]:
     ip = client_ip or "-"
     return [
         LoginBucket(f"user-login-ip:{ip}", LOGIN_IP_MAX, LOGIN_IP_WINDOW),
         LoginBucket(
-            f"user-login:{ip}:{phone}", LOGIN_PAIR_MAX, LOGIN_PAIR_WINDOW, clear_on_success=True
+            f"user-login:{ip}:{handle_key}",
+            LOGIN_PAIR_MAX,
+            LOGIN_PAIR_WINDOW,
+            clear_on_success=True,
         ),
-        LoginBucket(_acct_bucket_key(phone), LOGIN_ACCT_MAX, LOGIN_ACCT_WINDOW),
+        LoginBucket(_acct_bucket_key(handle_key), LOGIN_ACCT_MAX, LOGIN_ACCT_WINDOW),
         LoginBucket(
-            f"user-login-acct-daily:{phone}", LOGIN_ACCT_DAILY_MAX, LOGIN_ACCT_DAILY_WINDOW
+            f"user-login-acct-daily:{handle_key}", LOGIN_ACCT_DAILY_MAX, LOGIN_ACCT_DAILY_WINDOW
         ),
     ]
 
@@ -292,13 +198,14 @@ class _LoginFailed(AppError):
 
 
 async def _verify_credentials(
-    session: AsyncSession, phone: str, *, sms_code: str | None, password: str | None
+    session: AsyncSession, handle: Handle, *, code: str | None, password: str | None
 ) -> User:
-    """验证码优先于密码;凭据无效或账号不存在时抛 _LoginFailed。"""
-    user = (await session.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
-    if sms_code is not None:
+    """A code wins over a password; invalid credentials and unknown accounts both raise
+    _LoginFailed (indistinguishable to the caller)."""
+    user = await _user_by_handle(session, handle)
+    if code is not None:
         try:
-            await _consume_sms_code(session, phone, sms_code, "login")
+            await verification.consume_code(session, handle, code, "login")
         except AppError as exc:
             raise _LoginFailed(registered=user is not None) from exc
         if user is None:
@@ -319,7 +226,7 @@ async def _verify_credentials(
 
 async def _notify_login_anomaly(session: AsyncSession, user: User) -> None:
     """成功登录后通知账号 15 分钟窗内的失败记录,再清零该桶。"""
-    key = _acct_bucket_key(user.phone)
+    key = _acct_bucket_key(ratelimit_key(user.primary_handle))
     acct_hits = await read_hits(key, window_seconds=LOGIN_ACCT_WINDOW)
     if acct_hits > 0:
         from app.modules.notify import service as notify_service  # noqa: PLC0415
@@ -342,28 +249,28 @@ async def _notify_login_anomaly(session: AsyncSession, user: User) -> None:
 
 async def login(
     session: AsyncSession,
-    phone: str,
-    sms_code: str | None,
+    handle: Handle,
+    code: str | None,
     password: str | None,
     *,
     client_ip: str | None = None,
 ) -> TokenPair:
     """密码或验证码登录。密码路径 bcrypt 前四层桶先计数再判定;失败留痕;
     成功退还预计数、清零配对桶并判异常登录。验证码路径只在失败后计数。"""
-    buckets = _login_buckets(phone, client_ip)
+    buckets = _login_buckets(ratelimit_key(handle.value), client_ip)
     precounted = password is not None
     if precounted:
         await login_attempt(buckets)
     try:
-        user = await _verify_credentials(session, phone, sms_code=sms_code, password=password)
+        user = await _verify_credentials(session, handle, code=code, password=password)
     except _LoginFailed as exc:
         await login_failed(buckets, precounted=precounted)
         LOGIN_FAILED_TOTAL.labels(actor_type="user").inc()
         logger.warning(
             "user_login_failed",
-            account=mask_phone_value(phone),
+            account=mask_handle(handle.value),
             ip=client_ip,
-            via="sms" if sms_code is not None else "password",
+            via="code" if code is not None else "password",
             registered=exc.registered,
         )
         raise
@@ -379,27 +286,26 @@ async def login(
 
 async def reset_password(
     session: AsyncSession,
-    phone: str,
-    sms_code: str,
+    handle: Handle,
+    code: str,
     new_password: str,
     *,
     client_ip: str | None = None,
 ) -> TokenPair:
-    """凭手机号 + 验证码设置新密码(首次设置、修改、找回同一条路径)。
-
-    先验码再锁定账号;成功后 token_version+1 撤销全部在外会话并发新 token 对。
-    """
+    """Set a new password with a verification code (first set, change and recovery share this
+    path). The code is checked before the account row is locked; success bumps token_version,
+    revoking every other session, and issues a fresh token pair."""
     await check_rate_limit(
-        f"password-reset:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0
+        f"password-reset:{client_ip or '-'}:{ratelimit_key(handle.value)}",
+        max_attempts=5,
+        window_seconds=300.0,
     )
-    await _consume_sms_code(session, phone, sms_code, "reset_password")
-    user = (
-        await session.execute(select(User).where(User.phone == phone).with_for_update())
-    ).scalar_one_or_none()
+    await verification.consume_code(session, handle, code, "reset_password")
+    user = await _user_by_handle(session, handle, for_update=True)
     if user is None:
         logger.warning(
             "password_reset_failed",
-            account=mask_phone_value(phone),
+            account=mask_handle(handle.value),
             ip=client_ip,
             reason="no_such_user",
         )
@@ -414,6 +320,64 @@ async def reset_password(
     await session.refresh(user)
     logger.info("password_reset", user_id=user.id)
     return _issue_tokens(user)
+
+
+async def request_handle_code(
+    session: AsyncSession,
+    user: User,
+    handle: Handle,
+    *,
+    client_ip: str | None = None,
+    locale: Locale = DEFAULT_LOCALE,
+) -> None:
+    """Code for binding / replacing a handle on a signed-in account (no CAPTCHA); a phone must
+    satisfy the compliance profile's dial-code rule."""
+    if handle.kind == "phone":
+        _check_phone_policy(handle.value)
+    logger.info("handle_code_requested", user_id=user.id, kind=handle.kind)
+    await verification.send_code(
+        session,
+        handle,
+        "bind_handle",
+        client_ip=client_ip,
+        locale=locale,
+        require_captcha=False,
+    )
+
+
+async def confirm_handle(session: AsyncSession, user: User, handle: Handle, code: str) -> User:
+    """Consume the bind code, then set the handle if no other account owns it (409 otherwise)."""
+    await verification.consume_code(session, handle, code, "bind_handle")
+    owner = await _user_by_handle(session, handle)
+    if owner is not None and owner.id != user.id:
+        await session.commit()
+        raise conflict(key="account.handleTaken")
+    locked = await session.get(User, user.id, with_for_update=True)
+    assert locked is not None
+    if handle.kind == "email":
+        locked.email = handle.value
+        locked.email_verified_at = now_utc()
+    else:
+        locked.phone = handle.value
+    await session.commit()
+    await session.refresh(locked)
+    logger.info("handle_bound", user_id=user.id, kind=handle.kind)
+    return locked
+
+
+async def remove_phone(session: AsyncSession, user: User) -> User:
+    """Unbind the phone; refused when the profile requires one or when no email is bound."""
+    if current_profile().phone_required:
+        raise conflict(key="account.phoneRequiredByProfile")
+    locked = await session.get(User, user.id, with_for_update=True)
+    assert locked is not None
+    if not locked.email:
+        raise conflict(key="account.emailRequiredFirst")
+    locked.phone = None
+    await session.commit()
+    await session.refresh(locked)
+    logger.info("phone_removed", user_id=user.id)
+    return locked
 
 
 async def refresh_tokens(session: AsyncSession, refresh_token: str) -> TokenPair:
@@ -520,7 +484,7 @@ async def get_user(session: AsyncSession, user_id: int) -> User:
 
 async def submit_real_name(session: AsyncSession, user: User, name: str, id_number: str) -> User:
     """实名认证:三要素核验,通过即 verified。身份证号只存脱敏串,原文不落库不打日志。"""
-    if user.verification_status == "verified":
+    if user.kyc_status == "verified":
         raise conflict(key="account.realNameDone")
     cfg = await get_runtime_config(session)
     if not cfg.real_name_enabled:
@@ -529,10 +493,13 @@ async def submit_real_name(session: AsyncSession, user: User, name: str, id_numb
             key="account.realNameDisabled",
             http_status=status.HTTP_409_CONFLICT,
         )
+    if not user.phone or not user.phone.startswith("+86"):
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="account.realNamePhoneRequired")
+    national_phone = user.phone[3:]
     await check_rate_limit(f"real-name:{user.id}", max_attempts=5, window_seconds=3600.0)
     try:
         provider = await get_realname_provider(session)
-        ok = await provider.verify(name, id_number, user.phone)
+        ok = await provider.verify(name, id_number, national_phone)
     except RealNameError as exc:
         logger.error("real_name_channel_error", user_id=user.id, error=str(exc))
         raise AppError(
@@ -542,11 +509,11 @@ async def submit_real_name(session: AsyncSession, user: User, name: str, id_numb
         ) from exc
     if not ok:
         raise AppError(ErrorCode.REAL_NAME_MISMATCH, key="account.realNameMismatch")
-    digest_candidates = hash_id_number_candidates(id_number)
+    digest_candidates = hash_kyc_identity_candidates(id_number)
     bound = (
         await session.execute(
             select(func.count()).where(
-                User.id_number_hmac.in_(digest_candidates),
+                User.kyc_identity_hmac.in_(digest_candidates),
                 User.id != user.id,
                 User.status != "deleted",
             )
@@ -556,10 +523,12 @@ async def submit_real_name(session: AsyncSession, user: User, name: str, id_numb
     if bound >= max_accounts:
         logger.warning("real_name_identity_limit", user_id=user.id, bound=bound)
         raise conflict(key="account.realNameIdentityLimit", params={"max": max_accounts})
-    user.id_name = name
-    user.id_number = mask_id_number(id_number)
-    user.id_number_hmac = digest_candidates[0]
-    user.verification_status = "verified"
+    user.kyc_name = name
+    user.kyc_identity_masked = mask_id_number(id_number)
+    user.kyc_identity_hmac = digest_candidates[0]
+    user.kyc_provider = "aliyun_mobile3"
+    user.kyc_verified_at = now_utc()
+    user.kyc_status = "verified"
     await session.commit()
     logger.info("real_name_verified", user_id=user.id)
     return user
@@ -595,7 +564,7 @@ async def is_active_user(session: AsyncSession, user_id: int) -> bool:
 async def require_real_name_if_required(session: AsyncSession, user: User, *, key: str) -> None:
     """real_name_required_for_recharge=true 时拒绝未实名用户(403)。"""
     cfg = await get_runtime_config(session)
-    if cfg.real_name_required_for_recharge and user.verification_status != "verified":
+    if cfg.real_name_required_for_recharge and user.kyc_status != "verified":
         raise AppError(ErrorCode.REAL_NAME_REQUIRED, key=key, http_status=403)
 
 
@@ -646,9 +615,10 @@ async def admin_list_users(
     limit: int | None = None,
     order: str = "desc",
 ) -> RawPage[User]:
-    """按 id 游标分页查询租户;order='asc' 升序,其余降序。
+    """Tenants by id cursor; order='asc' ascending, otherwise descending.
 
-    q 去除首尾空白后,长度至少 11 时精确匹配手机号,否则匹配后缀。
+    q (trimmed): containing `@` → exact email; starting with `+` → exact E.164 phone; digits →
+    phone suffix; anything else → email prefix.
     """
     lim = clamp_limit(limit)
     ascending = order == "asc"
@@ -657,10 +627,14 @@ async def admin_list_users(
         stmt = stmt.where(User.status == status)
     q = (q or "").strip()
     if q:
-        if len(q) >= 11:
+        if "@" in q:
+            stmt = stmt.where(User.email == q.lower())
+        elif q.startswith("+"):
             stmt = stmt.where(User.phone == q)
-        else:
+        elif q.isdigit():
             stmt = stmt.where(User.phone.like(f"%{like_escape(q)}", escape="\\"))
+        else:
+            stmt = stmt.where(User.email.like(f"{like_escape(q.lower())}%", escape="\\"))
     last_id = decode_cursor_int(cursor)
     if last_id is not None:
         stmt = stmt.where(User.id > last_id if ascending else User.id < last_id)
@@ -753,7 +727,7 @@ async def set_quota_override(
 
 
 def realname_view(user: User, *, masked: bool) -> tuple[str, str | None]:
-    """返回实名状态与姓名;masked=True 脱敏,False 回明文且调用方须落审计。"""
+    """KYC status and name; masked=True masks the name, False returns it and the caller audits."""
     if not masked:
-        return user.verification_status, user.id_name
-    return user.verification_status, mask_id_name(user.id_name) if user.id_name else None
+        return user.kyc_status, user.kyc_name
+    return user.kyc_status, mask_id_name(user.kyc_name) if user.kyc_name else None

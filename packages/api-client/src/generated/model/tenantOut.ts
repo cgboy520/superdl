@@ -9,11 +9,12 @@ export interface TenantOut {
   balance: string;
   created_at: string;
   disk_gb: number;
+  email_masked: string | null;
   id: number;
-  id_name?: string | null;
   instances: number;
-  phone_masked: string;
+  kyc_name?: string | null;
+  kyc_status?: string;
+  phone_masked: string | null;
   status: string;
   total_consumed: string;
-  verification_status?: string;
 }

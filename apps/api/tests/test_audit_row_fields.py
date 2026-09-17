@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from app.core import audit
 from app.core.audit import ACTION_MAX_LENGTH, AuditLog
-from tests.helpers import age_sms_codes, create_user_with_key
+from tests.helpers import age_sms_codes, as_handle, create_user_with_key
 
 pytestmark = pytest.mark.usefixtures("fake")
 
@@ -40,7 +40,8 @@ class TestFailedCredentialAttempts:
         """失败登录的审计行带掩码号码目标。"""
         await create_user_with_key(client, "13800000230")
         resp = await client.post(
-            "/api/v1/auth/login", json={"phone": "13800000230", "password": "not-my-password"}
+            "/api/v1/auth/login",
+            json={"handle": as_handle("13800000230"), "password": "not-my-password"},
         )
         assert resp.status_code == 400 and resp.json()["message_key"] == "account.loginFailed"
 
@@ -52,7 +53,7 @@ class TestFailedCredentialAttempts:
                     )
                 )
             ).scalar_one()
-        assert row.target == "phone:138****0230"
+        assert row.target == "handle:u***@test.local"
         assert "13800000230" not in (row.target or "")
         assert row.detail == {"action": "login"}
 
@@ -61,10 +62,11 @@ class TestFailedCredentialAttempts:
         _, user_id, _ = await create_user_with_key(client, "13800000231")
         await age_sms_codes(sm)
         await client.post(
-            "/api/v1/auth/sms-code", json={"phone": "13800000231", "purpose": "login"}
+            "/api/v1/auth/verification-code",
+            json={"handle": as_handle("13800000231"), "purpose": "login"},
         )
         resp = await client.post(
-            "/api/v1/auth/login", json={"phone": "13800000231", "sms_code": "123456"}
+            "/api/v1/auth/login", json={"handle": as_handle("13800000231"), "code": "123456"}
         )
         assert resp.status_code == 200, resp.text
         async with sm() as session:

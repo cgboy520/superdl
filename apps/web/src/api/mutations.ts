@@ -1,11 +1,12 @@
 /** 写操作封装:生成 fetcher + useMutation;成功后按各 hook 声明的 invalidates 失效查询。 */
 
-import type { ApiError, SshKeyOut } from "@superdl/api-client";
+import type { ApiError, SshKeyOut, UserOut } from "@superdl/api-client";
 import {
   addSshKeyApiV1SshKeysPost,
   appendMessageApiV1TicketsTicketIdMessagesPost,
   cancelDeletionRequestApiV1MeDeletionRequestCancelPost,
   closeTicketApiV1TicketsTicketIdClosePost,
+  confirmHandleApiV1MeHandlesConfirmPost,
   convertToOnDemandApiV1InstancesUuidToOnDemandPost,
   createApiKeyApiV1ServicesSlugApiKeysPost,
   createDeletionRequestApiV1MeDeletionRequestPost,
@@ -31,12 +32,14 @@ import {
   registerApiV1AuthRegisterPost,
   resetPasswordApiV1AuthPasswordResetPost,
   releaseInstanceApiV1InstancesUuidDelete,
+  removePhoneApiV1MeHandlesPhoneDelete,
   renameInstanceApiV1InstancesUuidPatch,
+  requestHandleCodeApiV1MeHandlesCodePost,
   renewInstanceApiV1InstancesUuidRenewPost,
   resetJupyterTokenApiV1InstancesUuidResetJupyterTokenPost,
   restartInstanceApiV1InstancesUuidRestartPost,
   revokeApiKeyApiV1ServicesSlugApiKeysKeyIdDelete,
-  sendSmsCodeApiV1AuthSmsCodePost,
+  sendVerificationCodeApiV1AuthVerificationCodePost,
   setAutoRenewApiV1InstancesUuidAutoRenewPost,
   setWarnThresholdApiV1MeWarnThresholdPatch,
   submitRealNameApiV1MeRealNamePost,
@@ -51,6 +54,8 @@ import type {
   DeletionRequestCreate,
   DiskCreate,
   DiskExpand,
+  HandleCodeRequest,
+  HandleConfirmRequest,
   InstanceCreate,
   InstanceOut,
   InstanceRenew,
@@ -66,10 +71,10 @@ import type {
   ServiceOut,
   ServicePatch,
   ServiceRevisionCreate,
-  SmsCodeRequest,
   TicketCreate,
   TicketMessageCreate,
   TicketOut,
+  VerificationCodeRequest,
 } from "@superdl/api-client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { App } from "antd";
@@ -107,8 +112,23 @@ export function useApiMutation<TVars = void, TData = unknown>(
   });
 }
 
-export const useSendSmsCode = (o?: { onSuccess?: () => void; silentError?: boolean }) =>
-  useApiMutation((body: SmsCodeRequest) => sendSmsCodeApiV1AuthSmsCodePost(body), { ...o, invalidates: [] });
+export const useSendVerificationCode = (o?: { onSuccess?: () => void; silentError?: boolean }) =>
+  useApiMutation((body: VerificationCodeRequest) => sendVerificationCodeApiV1AuthVerificationCodePost(body), {
+    ...o,
+    invalidates: [],
+  });
+export const useRequestHandleCode = (o?: { onSuccess?: () => void; silentError?: boolean }) =>
+  useApiMutation((body: HandleCodeRequest) => requestHandleCodeApiV1MeHandlesCodePost(body), {
+    ...o,
+    invalidates: [],
+  });
+export const useConfirmHandle = (o?: CallerOpts<UserOut>) =>
+  useApiMutation((body: HandleConfirmRequest) => confirmHandleApiV1MeHandlesConfirmPost(body), {
+    ...o,
+    invalidates: [keys.me],
+  });
+export const useRemovePhone = (o?: CallerOpts<UserOut>) =>
+  useApiMutation(() => removePhoneApiV1MeHandlesPhoneDelete(), { ...o, invalidates: [keys.me] });
 export const useRegister = (o?: CallerOpts) =>
   useApiMutation((body: RegisterRequest) => registerApiV1AuthRegisterPost(body), { ...o, invalidates: [] });
 export const useLogin = (o?: CallerOpts) =>

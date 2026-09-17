@@ -20,11 +20,17 @@ const { skusState, breakpoints } = vi.hoisted(() => {
   return { skusState, breakpoints };
 });
 
-vi.mock("../api/queries", () => ({ useSkus: () => skusState.current }));
+vi.mock("../api/queries", () => ({ useSkus: () => skusState.current, useSiteConfig: () => ({ data: undefined }) }));
 
 vi.mock("../api/mutations", () => {
   const stub = () => ({ mutate: vi.fn(), isPending: false });
-  return { useLogin: stub, useRegister: stub, useResetPassword: stub, useSendSmsCode: stub };
+  return {
+    useLogin: stub,
+    useRegister: stub,
+    useResetPassword: stub,
+    useSendVerificationCode: stub,
+    useRequestHandleCode: stub,
+  };
 });
 
 vi.mock("../components/layout/AppTopBar", () => ({ ThemeToggle: () => null }));
@@ -82,14 +88,23 @@ describe("登录页表单", () => {
     skusState.current = { data: undefined, isLoading: false, isError: false };
   });
 
-  it("手机号与验证码都有可见标签,且保留 e2e 定位用的 placeholder", async () => {
+  it("handle and code fields carry visible labels and keep the placeholders e2e locates", async () => {
     renderLogin();
-    expect(await screen.findByLabelText("手机号", undefined, LAZY)).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("手机号")).toBeInTheDocument();
-    expect(screen.getByLabelText("短信验证码")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("短信验证码")).toBeInTheDocument();
+    expect(await screen.findByLabelText("邮箱或手机号", undefined, LAZY)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("邮箱或 +86 开头的手机号")).toBeInTheDocument();
+    expect(screen.getByLabelText("验证码")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("验证码")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "获取验证码" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^登\s*录$/ })).toBeInTheDocument();
+  });
+
+  it("register mode asks for email + email code (phone only when the profile requires it)", async () => {
+    const user = userEvent.setup();
+    renderLogin();
+    await user.click(await screen.findByRole("button", { name: "免费注册" }, LAZY));
+    expect(screen.getByLabelText("邮箱")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("邮箱验证码")).toBeInTheDocument();
+    expect(screen.queryByLabelText("手机号")).not.toBeInTheDocument();
   });
 
   it("「忘记密码」在验证码登录与密码登录两种模式都可见,密码字段带标签", async () => {

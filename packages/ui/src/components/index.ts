@@ -29,6 +29,8 @@ export type { OptionTileOption } from "./OptionTile";
 export { CopyField, CopyButton } from "./CopyField";
 export { InlineEdit } from "./InlineEdit";
 export { DiskSizeField } from "./DiskSizeField";
+export { PhoneField } from "./PhoneField";
+export type { PhoneFieldProps } from "./PhoneField";
 export { KeyValue } from "./KeyValue";
 export { ChipRow, CHIP_LABEL_WIDTH } from "./ChipRow";
 export type { ChipOption } from "./ChipRow";

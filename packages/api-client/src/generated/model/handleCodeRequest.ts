@@ -5,8 +5,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface LoginRequest {
-  code?: string | null;
+/**
+ * Start binding or replacing a contact handle on the signed-in account.
+ */
+export interface HandleCodeRequest {
   handle: string;
-  password?: string | null;
 }

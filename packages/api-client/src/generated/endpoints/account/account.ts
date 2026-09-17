@@ -8,15 +8,17 @@ import type {
   CaptchaConfigOut,
   DeletionRequestCreate,
   DeletionRequestOut,
+  HandleCodeRequest,
+  HandleConfirmRequest,
   LoginRequest,
   PasswordResetRequest,
   RealNameRequest,
   RegisterRequest,
-  SmsCodeRequest,
   SshKeyCreate,
   SshKeyOut,
   TokenPairOut,
   UserOut,
+  VerificationCodeRequest,
   WarnThresholdUpdate
 } from '../../model';
 
@@ -126,7 +128,8 @@ export const getResetPasswordApiV1AuthPasswordResetPostUrl = () => {
 }
 
 /**
- * 设置/修改/找回密码(手机号 + 验证码)。成功即撤销全部在外会话并换发新 token。
+ * Set / change / recover the password with a verification code; every other session is
+ * revoked and a fresh token pair is issued.
  * @summary Reset Password
  */
 export const resetPasswordApiV1AuthPasswordResetPost = async (passwordResetRequest: PasswordResetRequest, options?: Parameters<typeof customFetch>[1]): Promise<TokenPairOut> => {
@@ -188,25 +191,26 @@ export const registerApiV1AuthRegisterPost = async (registerRequest: RegisterReq
 );}
 
 
-export const getSendSmsCodeApiV1AuthSmsCodePostUrl = () => {
+export const getSendVerificationCodeApiV1AuthVerificationCodePostUrl = () => {
 
 
 
 
-  return `/api/v1/auth/sms-code`
+  return `/api/v1/auth/verification-code`
 }
 
 /**
- * @summary Send Sms Code
+ * Send a sign-up / sign-in / reset code to an email address or E.164 phone number.
+ * @summary Send Verification Code
  */
-export const sendSmsCodeApiV1AuthSmsCodePost = async (smsCodeRequest: SmsCodeRequest, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+export const sendVerificationCodeApiV1AuthVerificationCodePost = async (verificationCodeRequest: VerificationCodeRequest, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
 
-  return customFetch<void>(getSendSmsCodeApiV1AuthSmsCodePostUrl(),
+  return customFetch<void>(getSendVerificationCodeApiV1AuthVerificationCodePostUrl(),
   {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(smsCodeRequest)
+    body: JSON.stringify(verificationCodeRequest)
   }
 );}
 
@@ -267,7 +271,8 @@ export const getCreateDeletionRequestApiV1MeDeletionRequestPostUrl = () => {
 }
 
 /**
- * 申请注销(7 天冷静期)。须键入与账号一致的完整手机号;已有 pending 返回既有(幂等)。
+ * Request deletion (7-day cooling-off); one of the account's handles must be retyped.
+ * An existing pending request is returned unchanged (idempotent).
  * @summary Create Deletion Request
  */
 export const createDeletionRequestApiV1MeDeletionRequestPost = async (deletionRequestCreate: DeletionRequestCreate, options?: Parameters<typeof customFetch>[1]): Promise<DeletionRequestOut> => {
@@ -300,6 +305,79 @@ export const cancelDeletionRequestApiV1MeDeletionRequestCancelPost = async ( opt
   {
     ...options,
     method: 'POST'
+
+
+  }
+);}
+
+
+export const getRequestHandleCodeApiV1MeHandlesCodePostUrl = () => {
+
+
+
+
+  return `/api/v1/me/handles/code`
+}
+
+/**
+ * Send a code to a new email / phone before binding it (no CAPTCHA: caller is signed in).
+ * @summary Request Handle Code
+ */
+export const requestHandleCodeApiV1MeHandlesCodePost = async (handleCodeRequest: HandleCodeRequest, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getRequestHandleCodeApiV1MeHandlesCodePostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(handleCodeRequest)
+  }
+);}
+
+
+export const getConfirmHandleApiV1MeHandlesConfirmPostUrl = () => {
+
+
+
+
+  return `/api/v1/me/handles/confirm`
+}
+
+/**
+ * Bind or replace the email / phone after the code check; a handle bound to another account
+ * is refused (409).
+ * @summary Confirm Handle
+ */
+export const confirmHandleApiV1MeHandlesConfirmPost = async (handleConfirmRequest: HandleConfirmRequest, options?: Parameters<typeof customFetch>[1]): Promise<UserOut> => {
+
+  return customFetch<UserOut>(getConfirmHandleApiV1MeHandlesConfirmPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(handleConfirmRequest)
+  }
+);}
+
+
+export const getRemovePhoneApiV1MeHandlesPhoneDeleteUrl = () => {
+
+
+
+
+  return `/api/v1/me/handles/phone`
+}
+
+/**
+ * Unbind the phone; 409 when the compliance profile requires one or no email is bound.
+ * @summary Remove Phone
+ */
+export const removePhoneApiV1MeHandlesPhoneDelete = async ( options?: Parameters<typeof customFetch>[1]): Promise<UserOut> => {
+
+  return customFetch<UserOut>(getRemovePhoneApiV1MeHandlesPhoneDeleteUrl(),
+  {
+    ...options,
+    method: 'DELETE'
 
 
   }

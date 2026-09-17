@@ -14,7 +14,7 @@ import {
   UserOutlined,
   WalletOutlined,
 } from "@ant-design/icons";
-import { flattenPages, fontSize, maskPhone, SUPPORTED_LANGS, useThemeColors } from "@superdl/ui";
+import { flattenPages, fontSize, maskHandle, SUPPORTED_LANGS, useThemeColors } from "@superdl/ui";
 import { LoadMore, moneyOr, TableErrorEmpty } from "@superdl/ui/components";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Badge, Button, Dropdown, Grid, List, Popover, Space, theme, type MenuProps } from "antd";
@@ -204,7 +204,7 @@ export function TopBarUser() {
         }}
       >
         <Button type="text" icon={<UserOutlined />} aria-label={t("topbar.userMenu")}>
-          {screens.md && me ? maskPhone(me.phone) : ""}
+          {screens.md && me ? maskHandle(me.email ?? me.phone) : ""}
         </Button>
       </Dropdown>
     </Space>

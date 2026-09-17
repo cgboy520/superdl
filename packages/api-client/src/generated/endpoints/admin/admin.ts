@@ -2800,8 +2800,9 @@ export const getAdminListTenantsApiAdminV1TenantsGetUrl = (params?: AdminListTen
 }
 
 /**
- * 租户列表(游标分页)。q = 手机号(完整号码精确,短串按后缀);纯数字额外按租户 id 精确命中,
- * 插在首页最前。手机号只回掩码;按号码/id 检索显式落一条审计。
+ * Tenants (cursor paged). q = email (exact when it contains `@`, prefix otherwise), E.164
+ * phone (exact with `+`, suffix for bare digits); bare digits also hit the tenant id exactly and
+ * are pinned first on the first page. Handles are masked; every search writes an audit row.
  * order = id 正/倒序;聚合列按页拼装,不支持排序。
  * 实名信息默认脱敏;reveal=true 且 reason 必填回明文(readonly 不可),每次按条数+事由落审计。
  * @summary Admin List Tenants

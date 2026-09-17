@@ -5,24 +5,27 @@ from app.core.audit import set_audit_target
 from app.core.config import get_settings
 from app.core.db import DbSession
 from app.core.errors import AppError, ErrorCode
+from app.core.handles import mask_handle, parse_handle
 from app.core.http import client_ip
-from app.core.logging import mask_phone_value
+from app.core.locale import negotiate_locale
 from app.core.platform_config import get_runtime_config
 from app.modules.account import deletion, service, sshkeys
 from app.modules.account.deps import CurrentUser
 from app.modules.account.schemas import (
     DeletionRequestCreate,
     DeletionRequestOut,
+    HandleCodeRequest,
+    HandleConfirmRequest,
     LoginRequest,
     PasswordResetRequest,
     RealNameRequest,
     RegisterRequest,
-    SmsCodeRequest,
     SshKeyCreate,
     SshKeyOut,
     TokenPair,
     TokenPairOut,
     UserOut,
+    VerificationCodeRequest,
     WarnThresholdUpdate,
 )
 
@@ -63,14 +66,22 @@ def _token_pair_out(pair: TokenPair) -> TokenPairOut:
     return TokenPairOut(access_token=pair.access_token, user=pair.user)
 
 
-@router.post("/auth/sms-code", status_code=status.HTTP_204_NO_CONTENT)
-async def send_sms_code(body: SmsCodeRequest, session: DbSession, request: Request) -> Response:
-    await service.send_sms_code(
+def _locale_of(request: Request):
+    return negotiate_locale(request.headers.get("accept-language"))
+
+
+@router.post("/auth/verification-code", status_code=status.HTTP_204_NO_CONTENT)
+async def send_verification_code(
+    body: VerificationCodeRequest, session: DbSession, request: Request
+) -> Response:
+    """Send a sign-up / sign-in / reset code to an email address or E.164 phone number."""
+    await service.send_verification_code(
         session,
-        body.phone,
+        parse_handle(body.handle),
         body.purpose,
         client_ip=client_ip(request),
         captcha_token=body.captcha_token,
+        locale=_locale_of(request),
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -94,20 +105,22 @@ async def captcha_config(session: DbSession) -> CaptchaConfigOut:
     )
 
 
-def _mark_credential_attempt(request: Request, phone: str, action: str) -> None:
-    set_audit_target(request, f"phone:{mask_phone_value(phone)}", detail={"action": action})
+def _mark_credential_attempt(request: Request, handle: str, action: str) -> None:
+    set_audit_target(request, f"handle:{mask_handle(handle)}", detail={"action": action})
 
 
 @router.post("/auth/register", status_code=status.HTTP_201_CREATED)
 async def register(
     body: RegisterRequest, session: DbSession, request: Request, response: Response
 ) -> TokenPairOut:
-    _mark_credential_attempt(request, body.phone, "register")
+    _mark_credential_attempt(request, body.email, "register")
     pair = await service.register(
         session,
-        body.phone,
-        body.sms_code,
-        body.password,
+        email=body.email,
+        email_code=body.email_code,
+        password=body.password,
+        phone=body.phone,
+        phone_code=body.phone_code,
         accept_terms=body.accept_terms,
         client_ip=client_ip(request),
     )
@@ -120,9 +133,9 @@ async def register(
 async def login(
     body: LoginRequest, session: DbSession, request: Request, response: Response
 ) -> TokenPairOut:
-    _mark_credential_attempt(request, body.phone, "login")
+    _mark_credential_attempt(request, body.handle, "login")
     pair = await service.login(
-        session, body.phone, body.sms_code, body.password, client_ip=client_ip(request)
+        session, parse_handle(body.handle), body.code, body.password, client_ip=client_ip(request)
     )
     set_audit_target(request, f"user:{pair.user.id}", detail={"action": "login"})
     _set_refresh_cookie(response, pair.refresh_token)
@@ -133,10 +146,15 @@ async def login(
 async def reset_password(
     body: PasswordResetRequest, session: DbSession, request: Request, response: Response
 ) -> TokenPairOut:
-    """设置/修改/找回密码(手机号 + 验证码)。成功即撤销全部在外会话并换发新 token。"""
-    _mark_credential_attempt(request, body.phone, "password_reset")
+    """Set / change / recover the password with a verification code; every other session is
+    revoked and a fresh token pair is issued."""
+    _mark_credential_attempt(request, body.handle, "password_reset")
     pair = await service.reset_password(
-        session, body.phone, body.sms_code, body.new_password, client_ip=client_ip(request)
+        session,
+        parse_handle(body.handle),
+        body.code,
+        body.new_password,
+        client_ip=client_ip(request),
     )
     set_audit_target(request, f"user:{pair.user.id}", detail={"action": "password_reset"})
     _set_refresh_cookie(response, pair.refresh_token)
@@ -181,6 +199,43 @@ async def set_warn_threshold(
     return UserOut.model_validate(updated)
 
 
+@router.post("/me/handles/code", status_code=status.HTTP_204_NO_CONTENT)
+async def request_handle_code(
+    body: HandleCodeRequest, user: CurrentUser, session: DbSession, request: Request
+) -> Response:
+    """Send a code to a new email / phone before binding it (no CAPTCHA: caller is signed in)."""
+    await service.request_handle_code(
+        session,
+        user,
+        parse_handle(body.handle),
+        client_ip=client_ip(request),
+        locale=_locale_of(request),
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/me/handles/confirm")
+async def confirm_handle(
+    body: HandleConfirmRequest, user: CurrentUser, session: DbSession, request: Request
+) -> UserOut:
+    """Bind or replace the email / phone after the code check; a handle bound to another account
+    is refused (409)."""
+    handle = parse_handle(body.handle)
+    updated = await service.confirm_handle(session, user, handle, body.code)
+    set_audit_target(
+        request, f"user:{user.id}", detail={"action": "handle_bound", "kind": handle.kind}
+    )
+    return UserOut.model_validate(updated)
+
+
+@router.delete("/me/handles/phone")
+async def remove_phone(user: CurrentUser, session: DbSession, request: Request) -> UserOut:
+    """Unbind the phone; 409 when the compliance profile requires one or no email is bound."""
+    updated = await service.remove_phone(session, user)
+    set_audit_target(request, f"user:{user.id}", detail={"action": "phone_removed"})
+    return UserOut.model_validate(updated)
+
+
 @router.post("/me/real-name")
 async def submit_real_name(
     body: RealNameRequest, user: CurrentUser, session: DbSession, request: Request
@@ -195,8 +250,9 @@ async def submit_real_name(
 async def create_deletion_request(
     body: DeletionRequestCreate, user: CurrentUser, session: DbSession, request: Request
 ) -> DeletionRequestOut:
-    """申请注销(7 天冷静期)。须键入与账号一致的完整手机号;已有 pending 返回既有(幂等)。"""
-    req = await deletion.request_deletion(session, user, phone=body.phone, reason=body.reason)
+    """Request deletion (7-day cooling-off); one of the account's handles must be retyped.
+    An existing pending request is returned unchanged (idempotent)."""
+    req = await deletion.request_deletion(session, user, handle=body.handle, reason=body.reason)
     set_audit_target(request, f"user:{user.id}", detail={"action": "account_deletion_request"})
     return DeletionRequestOut.model_validate(req)
 

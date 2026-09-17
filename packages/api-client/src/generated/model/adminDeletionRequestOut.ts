@@ -12,10 +12,11 @@ export interface AdminDeletionRequestOut {
   balance: string;
   cooldown_ends_at: string;
   disks_active: number;
+  email_masked: string | null;
   id: number;
   instances_active: number;
   note: string | null;
-  phone_masked: string;
+  phone_masked: string | null;
   processed_at: string | null;
   processed_by: number | null;
   reason: string;

@@ -312,7 +312,13 @@ export function formatSizeGb(gb: number): string {
   return `${gb} GB`;
 }
 
-/** 手机号保留前 3 与后 4 位,中间显示四个星号;不足 7 位返回三个星号。 */
-export function maskPhone(phone: string): string {
-  return phone.length >= 7 ? `${phone.slice(0, 3)}****${phone.slice(-4)}` : "***";
+/** Mask a login handle the way the API does: email → first local-part character + `***@domain`;
+ *  phone (E.164 or bare digits) → first 3 + `****` + last 4; anything else → `***`. */
+export function maskHandle(handle: string | null | undefined): string {
+  if (!handle) return "***";
+  const at = handle.indexOf("@");
+  if (at >= 0) {
+    return `${handle.slice(0, 1)}***@${handle.slice(at + 1)}`;
+  }
+  return handle.length >= 7 ? `${handle.slice(0, 3)}****${handle.slice(-4)}` : "***";
 }

@@ -185,7 +185,7 @@ class TestAlertmanagerWebhook:
         """critical 平台告警:配置值班手机号后经 outbox 短信直发,重放幂等。"""
         from app.core.outbox import OutboxTask
 
-        await set_platform_setting(sm, "oncall_phone", "13900001111")
+        await set_platform_setting(sm, "oncall_phone", "+8613900001111")
         resp = await client.post(
             "/api/v1/webhooks/alertmanager", json=AM_PAYLOAD, headers=AM_HEADERS
         )
@@ -198,7 +198,7 @@ class TestAlertmanagerWebhook:
                     await session.execute(select(OutboxTask).where(OutboxTask.type == "notify.sms"))
                 ).scalars()
             )
-        assert any(t.payload.get("phone") == "13900001111" for t in tasks)
+        assert any(t.payload.get("phone") == "+8613900001111" for t in tasks)
 
     async def test_ingest_and_dedup(self, client, sm, fake):
         from app.core.outbox import OutboxTask
