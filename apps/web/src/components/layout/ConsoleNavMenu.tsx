@@ -1,5 +1,5 @@
-/** 控制台导航菜单(侧栏与窄屏抽屉共用同一份渲染):分组标题只给多项分组,单项分组前出分隔;通知未读角标不在主导航(铃铛承载)。
- *  条目 label 用 Link(可中键 / 新标签打开,带 aria-current),点击后由调用方决定是否收起抽屉。 */
+/** Console navigation menu (one rendering for the sidebar and the narrow-screen drawer): group titles only for multi-item groups, a divider before single-item groups; the unread badge is not in the main navigation (the bell carries it).
+ *  Item labels are Links (middle-click / new tab, with aria-current); the caller decides whether to close the drawer after a click. */
 
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Menu, type MenuProps } from "antd";

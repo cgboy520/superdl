@@ -1,4 +1,4 @@
-/** 未读通知派生的全站 AttentionBar 条目:公告 / 余额预警 / 欠费;到期 / 冻结 / 失败条目在 InstanceAttention。 */
+/** Site-wide AttentionBar items derived from unread notifications: announcements / balance warnings / arrears; expiring / frozen / failed items live in InstanceAttention. */
 
 import type { AttentionItem } from "@superdl/ui/components";
 import { Link } from "@tanstack/react-router";

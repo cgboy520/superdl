@@ -1,5 +1,5 @@
-/** 底部通栏结算条(sticky,市场页 / 创建页 / 部署页共用):费用项逐项摊开,日常费用与配置费用分栏。
- *  <sm 折叠为一行:价格大字 + 主按钮常驻,明细 / 余额 / 未完成项进「明细 ▴」底部 sheet(ui-ux-spec §3.5)。 */
+/** Bottom full-width checkout bar (sticky, shared by the market / create / deploy pages): cost items laid out one by one, daily fees and configuration fees in separate columns.
+ *  Below sm it folds into one line: the price figure + primary button stay, details / balance / incomplete items go into the "Details ▴" bottom sheet (ui-ux-spec §3.5). */
 
 import { fontSize, fontWeight, motion as motionToken, shadow, space, useThemeColors, zIndex } from "@superdl/ui";
 import { moneyOr } from "@superdl/ui/components";
@@ -10,7 +10,7 @@ import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useFormat } from "@superdl/ui";
-/** 选中变更淡入过渡(motion token fast 档;reducedMotion 下归零,见根 MotionConfig) */
+/** Selection-change fade-in (motion token fast tier; zero under reducedMotion, see the root MotionConfig) */
 const FADE_TRANSITION = {
   duration: motionToken.fast,
   ease: [...motionToken.easeOut] as [number, number, number, number],
@@ -20,9 +20,9 @@ export interface CheckoutItem {
   label: string;
   value: ReactNode;
   hint?: string;
-  /** 大字后的口径后缀(「× 2 卡」/「整机」),正文字号 */
+  /** Basis suffix after the big figure ("× 2 cards" / "whole machine"), body size */
   suffix?: string;
-  /** 非金额项(到期时间等)降级为正文字号与默认文字色 */
+  /** Non-money items (expiry etc.) drop to body size and default text colour */
   muted?: boolean;
 }
 
@@ -38,24 +38,24 @@ export function CheckoutBar({
   notice,
   noticeSummary,
 }: {
-  /** 左侧规格汇总(靛蓝底块) */
+  /** Spec summary on the left (indigo block) */
   summary?: ReactNode;
-  /** 费用项(label 小字在上,value 大号在下) */
+  /** Cost items (small label above, large value below) */
   items: CheckoutItem[];
-  /** 「费用明细」Popover 内容 */
+  /** "Cost breakdown" Popover content */
   detail?: ReactNode;
-  /** 余额(未登录不传) */
+  /** Balance (omit when signed out) */
   balance?: string | null;
-  /** 余额是否已就绪;false 时渲染 "—"。 */
+  /** Whether the balance is ready; false renders "—". */
   balanceReady?: boolean;
   actions: ReactNode;
-  /** 选中变更标识(如 规格id+计费方式):变化时数字淡入;不传则无动效 */
+  /** Selection-change marker (e.g. spec id + billing mode): the figures fade in when it changes; no animation when omitted */
   changeKey?: string;
-  /** 摊开在条内第二行的明细(包周期「原价 / 优惠 / 应付」直接可见,不进 Popover) */
+  /** Details laid out on the bar's second line (subscription "list / discount / payable" directly visible, not in the Popover) */
   breakdown?: ReactNode;
-  /** 条上方的提示(未完成项清单 / 建盘失败告知),不随内容滚走 */
+  /** Notice above the bar (incomplete items / disk creation failure), does not scroll away with the content */
   notice?: ReactNode;
-  /** <sm 时替代 notice 的一行摘要文案(如「还差 2 项」);点开底部 sheet 看全文 */
+  /** One-line summary replacing notice below sm (e.g. "2 items left"); the bottom sheet shows the full text */
   noticeSummary?: ReactNode;
 }) {
   const { token } = theme.useToken();

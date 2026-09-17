@@ -1,4 +1,4 @@
-/** 写操作封装:生成 fetcher + useMutation;成功后按各 hook 声明的 invalidates 失效查询。 */
+/** Write wrappers: generated fetcher + useMutation; on success the queries declared in each hook's invalidates are invalidated. */
 
 import type { ApiError, SshKeyOut, UserOut } from "@superdl/api-client";
 import {
@@ -87,10 +87,10 @@ import { keys } from "./keys";
 interface MutationOpts<TData> {
   onSuccess?: (data: TData) => void;
   silentError?: boolean;
-  /** 成功后按前缀失效的查询键;空数组表示不失效。 */
+  /** Query keys invalidated by prefix on success; an empty array invalidates nothing. */
   invalidates: readonly (readonly unknown[])[];
 }
-/** 页面侧可传的项;失效域由各 hook 声明 */
+/** Options the page may pass; the invalidation domain is declared by each hook */
 type CallerOpts<TData = unknown> = Omit<MutationOpts<TData>, "invalidates">;
 
 export function useApiMutation<TVars = void, TData = unknown>(
@@ -133,14 +133,14 @@ export const useRegister = (o?: CallerOpts) =>
   useApiMutation((body: RegisterRequest) => registerApiV1AuthRegisterPost(body), { ...o, invalidates: [] });
 export const useLogin = (o?: CallerOpts) =>
   useApiMutation((body: LoginRequest) => loginApiV1AuthLoginPost(body), { ...o, invalidates: [] });
-/** 用手机号与验证码设置、修改或找回密码。 */
+/** Set, change or recover the password with a handle and a verification code. */
 export const useResetPassword = (o?: CallerOpts) =>
   useApiMutation((body: PasswordResetRequest) => resetPasswordApiV1AuthPasswordResetPost(body), {
     ...o,
     invalidates: [],
   });
 
-/** 登出:current = 撤销本设备 refresh token;all = 撤销该账号全部会话。之后清本地并整页刷新,请求失败不阻断。 */
+/** Logout: current = revoke this device's refresh token; all = revoke every session of the account. Local state is cleared and the page reloaded afterwards; a failed request does not block. */
 export function useLogout() {
   return useCallback(async (scope: "current" | "all" = "current") => {
     try {
@@ -186,14 +186,14 @@ export const useRenameInstance = () =>
     ({ uuid, name }: { uuid: string; name: string }) => renameInstanceApiV1InstancesUuidPatch(uuid, { name }),
     { invalidates: [keys.instances.all] },
   );
-/** 包周期续费,幂等键由调用方传入。 */
+/** Subscription renewal, the idempotency key comes from the caller. */
 export const useRenewInstance = (uuid: string, o?: CallerOpts<RenewOut>) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: InstanceRenew; idempotencyKey: string }) =>
       renewInstanceApiV1InstancesUuidRenewPost(uuid, body, { "Idempotency-Key": idempotencyKey }),
     { ...o, invalidates: [...INSTANCE_INVALIDATES] },
   );
-/** 按量转包周期:入参/响应与续费同形,起点从现在起算;失效面含账单。 */
+/** On-demand → subscription: same request / response shape as renewal, counting from now; the invalidation domain includes bills. */
 export const useSubscribeInstance = (uuid: string, o?: CallerOpts<RenewOut>) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: InstanceRenew; idempotencyKey: string }) =>
@@ -202,13 +202,13 @@ export const useSubscribeInstance = (uuid: string, o?: CallerOpts<RenewOut>) =>
       }),
     { ...o, invalidates: [...INSTANCE_INVALIDATES] },
   );
-/** 竞价转按量:只翻 market 与单价,不带幂等键;失效面含账单。 */
+/** Spot → on-demand: only flips market and the unit price, no idempotency key; the invalidation domain includes bills. */
 export const useConvertToOnDemand = (uuid: string, o?: CallerOpts<InstanceOut>) =>
   useApiMutation(() => convertToOnDemandApiV1InstancesUuidToOnDemandPost(uuid), {
     ...o,
     invalidates: [...INSTANCE_INVALIDATES],
   });
-/** 自动续费开关:只改订阅行,失效面只有实例域。 */
+/** Auto-renew switch: only changes the subscription row, the invalidation domain is instances only. */
 export const useSetAutoRenew = (uuid: string, o?: CallerOpts<InstanceOut>) =>
   useApiMutation((enabled: boolean) => setAutoRenewApiV1InstancesUuidAutoRenewPost(uuid, { enabled }), {
     ...o,
@@ -220,14 +220,14 @@ export const useResetJupyterToken = () =>
   });
 
 const SERVICE_INVALIDATES = [keys.services.all, keys.wallet, keys.bills.all, keys.billDailySummary.all] as const;
-/** 部署服务:幂等键按表单快照派生。 */
+/** Deploy a service: the idempotency key derives from the form snapshot. */
 export const useCreateService = (o?: { onSuccess?: (d: ServiceOut) => void; silentError?: boolean }) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: ServiceCreate; idempotencyKey: string }) =>
       createServiceApiV1ServicesPost(body, { "Idempotency-Key": idempotencyKey }),
     { ...o, invalidates: [...SERVICE_INVALIDATES, keys.skus, keys.disks] },
   );
-/** 版本更新(重建):幂等键按表单快照派生。 */
+/** Revision update (recreate): the idempotency key derives from the form snapshot. */
 export const useCreateRevision = (slug: string, o?: { onSuccess?: (d: ServiceOut) => void; silentError?: boolean }) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: ServiceRevisionCreate; idempotencyKey: string }) =>
@@ -249,19 +249,19 @@ export const useDeleteService = (o?: CallerOpts<ServiceOut>) =>
     ...o,
     invalidates: [...SERVICE_INVALIDATES, keys.skus, keys.disks],
   });
-/** 改名 / 鉴权开关:失效面只有服务域。 */
+/** Rename / auth switch: the invalidation domain is services only. */
 export const useUpdateService = (slug: string, o?: CallerOpts<ServiceOut>) =>
   useApiMutation((body: ServicePatch) => patchServiceApiV1ServicesSlugPatch(slug, body), {
     ...o,
     invalidates: [keys.services.all],
   });
-/** 新建服务访问 Key:明文 key 只在响应露面一次,只交给一次性展示的成功态,禁止入缓存或日志。 */
+/** Create a service access key: the plaintext key appears once in the response and goes only to the one-off success state, never into caches or logs. */
 export const useCreateServiceApiKey = (slug: string, o?: CallerOpts<ApiKeyCreateOut>) =>
   useApiMutation((name: string) => createApiKeyApiV1ServicesSlugApiKeysPost(slug, { name }), {
     ...o,
     invalidates: [keys.services.all],
   });
-/** 吊销 Key:写 revoked_at 不删行。 */
+/** Revoke a key: writes revoked_at without deleting the row. */
 export const useRevokeServiceApiKey = (slug: string, o?: CallerOpts) =>
   useApiMutation((keyId: number) => revokeApiKeyApiV1ServicesSlugApiKeysKeyIdDelete(slug, keyId), {
     ...o,
@@ -279,14 +279,14 @@ export const useMockPay = (o?: { onSuccess?: () => void }) =>
     (vars: { order_no: string; amount: string }) => mockWebhookApiV1WebhooksMockPost({ body: JSON.stringify(vars) }),
     { ...o, invalidates: [keys.wallet, keys.recharge.all, keys.ledger.all] },
   );
-/** 申请退款:幂等键按表单快照派生。 */
+/** Request a refund: the idempotency key derives from the form snapshot. */
 export const useCreateRefund = (o?: { onSuccess?: () => void }) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: RefundCreate; idempotencyKey: string }) =>
       createRefundApiV1WalletRefundsPost(body, { "Idempotency-Key": idempotencyKey }),
     { ...o, invalidates: [keys.refunds.all, keys.refundableOrders, keys.wallet, keys.ledger.all] },
   );
-/** 申请开票:金额由服务端按账期计算;幂等键重放返回既有单。 */
+/** Request an invoice: the amount is computed server-side per period; an idempotency replay returns the existing request. */
 export const useCreateInvoice = (o?: { onSuccess?: () => void }) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: InvoiceCreate; idempotencyKey: string }) =>
@@ -301,7 +301,7 @@ export const useSetWarnThreshold = (o?: { onSuccess?: () => void }) =>
     invalidates: [keys.me],
   });
 
-/** 申请注销:服务端按 (user_id, pending) 幂等。 */
+/** Request deletion: the server is idempotent per (user_id, pending). */
 export const useCreateDeletionRequest = (o?: { onSuccess?: () => void }) =>
   useApiMutation((body: DeletionRequestCreate) => createDeletionRequestApiV1MeDeletionRequestPost(body), {
     ...o,
@@ -313,7 +313,7 @@ export const useCancelDeletionRequest = (o?: { onSuccess?: () => void }) =>
     invalidates: [keys.deletionRequest],
   });
 
-/** 建盘带幂等键。 */
+/** Disk creation carries an idempotency key. */
 export const useCreateDisk = (o?: { onSuccess?: () => void }) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: DiskCreate; idempotencyKey: string }) =>
@@ -349,7 +349,7 @@ export const useMarkAllNotificationsRead = () =>
     invalidates: [keys.notifications.all],
   });
 
-/** 新建工单:幂等键按表单快照派生。 */
+/** New ticket: the idempotency key derives from the form snapshot. */
 export const useCreateTicket = (o?: { onSuccess?: (d: TicketOut) => void }) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: TicketCreate; idempotencyKey: string }) =>

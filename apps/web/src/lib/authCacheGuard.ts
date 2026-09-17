@@ -2,7 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 
 import { authStore } from "../stores/auth";
 
-/** access token 的账号位(JWT payload.sub,只解不验)。 */
+/** Account identity of the access token (JWT payload.sub, decoded without verification). */
 function accountOf(token: string): string | null {
   try {
     const part = token.split(".")[1];
@@ -15,7 +15,7 @@ function accountOf(token: string): string | null {
   }
 }
 
-/** 登出(含换号、他标签页同步登出)即清查询缓存:先取消在途查询再 clear;静默续期(同 sub)不清;token 不可解码且值不同按换号处理。 */
+/** Logout (including account switch and synced logout from another tab) clears the query cache: cancel in-flight queries, then clear; silent renewal (same sub) keeps it; an undecodable token with a different value counts as a switch. */
 export function setupAuthCacheGuard(queryClient: QueryClient): () => void {
   return authStore.subscribe((state, prev) => {
     const loggedOut = prev.accessToken !== null && state.accessToken === null;

@@ -1,4 +1,4 @@
-/** 服务配置段(对外访问):服务端口 / 协议 tile(TCP、gRPC 即将上线,灰置不隐藏)/ 健康检查 / 访问鉴权 tile / 端点占位。字段级错误在 blur 后就地显示(不只喂给提交钮 tooltip)。 */
+/** Service configuration section (public access): service port / protocol tiles (TCP, gRPC coming soon, greyed not hidden) / health check / access-auth tiles / endpoint placeholder. Field-level errors show in place after blur (not only in the submit button tooltip). */
 
 import { controlWidth, space } from "@superdl/ui";
 import { OptionTileGroup } from "@superdl/ui/components";
@@ -26,7 +26,7 @@ export function PublicAccessFields({
   onHealthPath: (v: string) => void;
   requireApiKey: boolean;
   onRequireApiKey: (v: boolean) => void;
-  /** 更新版本抽屉:鉴权不随版本,在「设置」改 */
+  /** Revision drawer: auth does not follow the revision, change it under Settings */
   hideAuth?: boolean;
 }) {
   const { t } = useTranslation();

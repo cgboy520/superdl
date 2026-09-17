@@ -1,4 +1,4 @@
-/** 收支明细 Tab:类型筛选 + 游标加载更多。 */
+/** Ledger tab: type filter + cursor load more. */
 
 import { useNavigate, getRouteApi } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
@@ -15,11 +15,11 @@ import { BillingTab } from "./_console.billing";
 
 const routeApi = getRouteApi("/_console/billing");
 
-/** 收支明细类型筛选(URL ?ledger=);值域与后端 LedgerType 一致 */
+/** Ledger type filter (URL ?ledger=); values match the backend LedgerType */
 export const LEDGER_FILTERS = ["recharge", "consume", "refund", "adjust"] as const;
 export type LedgerFilter = (typeof LEDGER_FILTERS)[number];
 
-/** 资金流水:游标分页 + 「加载更多」;金额一律按字符串渲染。 */
+/** Ledger: cursor pagination + "load more"; amounts are always rendered as strings. */
 export function LedgerTable() {
   const { t } = useTranslation(["web", "shared"]);
   const { formatMoney } = useFormat();

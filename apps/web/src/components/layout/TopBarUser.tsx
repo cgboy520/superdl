@@ -1,4 +1,4 @@
-/** 顶栏用户区:余额、命令面板、通知、主题与用户菜单;未登录时显示登录入口。 */
+/** Top-bar user area: balance, command palette, notifications, theme and user menu; a sign-in entry when signed out. */
 
 import { POLL, space } from "@superdl/ui";
 import {

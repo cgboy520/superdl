@@ -1,4 +1,4 @@
-/** 规格选择器:full 提供 GPU/CPU 分栏与工具插槽;compact 可折叠已选规格并选择卡数。 */
+/** Spec picker: full offers GPU/CPU columns and toolbar slots; compact folds the selected spec and picks the card count. */
 
 import type { SkuMarketOut } from "@superdl/api-client";
 import { fontSize, GPU_COUNT_STEPS, skuTierMap, skuVariant, space, useFormat } from "@superdl/ui";
@@ -14,7 +14,7 @@ import type { SpotPolicy } from "../spotBilling";
 const ALL = "";
 export type SkuKind = "gpu" | "cpu";
 
-/** 规格筛选态;0 或空串表示该项不限,不含购买数量。 */
+/** Spec filter state; 0 or empty = unrestricted, without the purchase quantity. */
 export interface SkuFilters {
   kind: SkuKind;
   model: string;
@@ -33,7 +33,7 @@ export const DEFAULT_SKU_FILTERS: SkuFilters = {
   mem: 0,
 };
 
-/** 按分栏与筛选值匹配规格;GPU 规格同时校验单实例卡数上限。 */
+/** Match specs by column and filter values; GPU specs also check the per-instance card cap. */
 function matches(s: SkuMarketOut, f: SkuFilters, qty: number): boolean {
   const isCpu = f.kind === "cpu";
   if ((s.tier === "cpu") !== isCpu) return false;
@@ -71,19 +71,19 @@ export function SkuPicker({
   onRetry: () => void;
   value: SkuMarketOut | undefined;
   onChange: (sku: SkuMarketOut | undefined) => void;
-  /** 购买数量(不是筛选):决定库存口径、价格列总价与不可选行 */
+  /** Purchase quantity (not a filter): decides the stock basis, the total in the price column and unselectable rows */
   gpuCount: number;
   onGpuCount: (n: number) => void;
-  /** 竞价档选中时传入:价格列改显折后价,未上竞价的行灰置 */
+  /** Passed while the spot tier is selected: the price column shows the discounted price, rows without spot are greyed */
   spot?: SpotPolicy;
   variant?: "full" | "compact";
-  /** 受控筛选态(不传则组件内部持有) */
+  /** Controlled filter state (held internally when omitted) */
   filters?: SkuFilters;
   onFiltersChange?: (next: SkuFilters) => void;
   priceFontSize?: number;
-  /** full:筛选行与工具行之间的独立行(市场页的「GPU 数量」购买数量 chips) */
+  /** full: a separate row between the filter row and the toolbar (the market page's "GPU count" purchase chips) */
   qtyRow?: ReactNode;
-  /** full:工具行右侧(市场页的「计费方式」chips) */
+  /** full: right side of the toolbar (the market page's "Billing mode" chips) */
   toolbarExtra?: ReactNode;
 }) {
   const { t } = useTranslation(["web", "shared"]);
@@ -107,7 +107,7 @@ export function SkuPicker({
   const needed = isCpu ? 1 : gpuCount;
   const selectable = (s: SkuMarketOut) => skuSelectable(s, needed, spot != null);
 
-  /** 仅替换一个筛选值后的匹配规格数。 */
+  /** Matching spec count after replacing exactly one filter value. */
   const facet = <K extends keyof SkuFilters>(key: K, v: SkuFilters[K]) =>
     all.filter((s) => matches(s, { ...f, [key]: v }, needed)).length;
   const gate = <T extends string | number>(key: keyof SkuFilters, v: T): Omit<ChipOption<T>, "label"> => {

@@ -1,4 +1,4 @@
-/** i18n 运行时初始化(main.tsx 顶部引入)。壳在 @superdl/ui 的 initAppI18n,这里只挂 web ns 语言包。 */
+/** i18n runtime initialisation (imported at the top of main.tsx). The shell is initAppI18n from @superdl/ui; this only registers the web namespace bundles. */
 import { initAppI18n, SUPPORTED_LANGS } from "@superdl/ui";
 
 import enUS from "./locales/en-US/web.json";

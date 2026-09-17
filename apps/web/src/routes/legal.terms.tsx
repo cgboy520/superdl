@@ -1,4 +1,4 @@
-/** 用户协议(公开):正文来自后端当前 published 版。 */
+/** Terms of service (public): body from the backend's current published version. */
 
 import { createFileRoute } from "@tanstack/react-router";
 

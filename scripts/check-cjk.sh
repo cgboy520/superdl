@@ -49,7 +49,6 @@ REPO_CJK_ALLOW=(
   ".github/"
   "CLAUDE.md"
   "apps/admin/src/"
-  "apps/web/"
   "deploy/"
   "scripts/"
 )

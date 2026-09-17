@@ -1,4 +1,4 @@
-/** 续费弹窗的报价、余额门槛与幂等键测试。 */
+/** Renewal modal: quote, balance gate and idempotency key. */
 import type { InstanceOut } from "@superdl/api-client";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -44,7 +44,7 @@ vi.mock("@tanstack/react-router", () => ({
 const STARTED_AT = "2026-08-04T04:00:00Z";
 const EXPIRES_AT = "2026-09-03T04:00:00Z";
 
-/** 包月实例:折后时价、原价快照与 SKU 现价各不相同。 */
+/** Monthly instance: discounted hourly price, list-price snapshot and current SKU price all differ. */
 function makeInstance(): InstanceOut {
   return {
     uuid: "u-2",
@@ -74,7 +74,7 @@ function renderModal() {
   );
 }
 
-/** 按量实例:无 subscription,报价基准是 price_hourly(¥3.99/时) */
+/** On-demand instance: no subscription, the quote basis is price_hourly (¥3.99/h) */
 function makeOnDemand(): InstanceOut {
   return {
     uuid: "u-3",
@@ -105,7 +105,7 @@ afterEach(() => {
 });
 
 describe("RenewModal", () => {
-  it("默认按当前周期报价:原价 / 优惠 / 应付三行与后端同口径", async () => {
+  it("quotes the current period by default: list / discount / payable match the backend", async () => {
     renderModal();
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("¥2,872.80")).toBeInTheDocument();
@@ -114,7 +114,7 @@ describe("RenewModal", () => {
     expect(within(dialog).getByText("¥3,000.00 → ¥701.76")).toBeInTheDocument();
   });
 
-  it("当前周期按 started_at → expires_at 两端显示", async () => {
+  it("the current period shows started_at → expires_at at both ends", async () => {
     renderModal();
     const dialog = await screen.findByRole("dialog");
     const ymd = (iso: string) => {
@@ -125,7 +125,7 @@ describe("RenewModal", () => {
     expect(within(dialog).getByText(new RegExp(`${ymd(STARTED_AT)}.*→.*${ymd(EXPIRES_AT)}`))).toBeInTheDocument();
   });
 
-  it("新到期时间从老到期时刻起算(提前续费不丢手上剩的天数)", async () => {
+  it("the new expiry counts from the old expiry (early renewal keeps the remaining days)", async () => {
     renderModal();
     const dialog = await screen.findByRole("dialog");
     const expected = new Date(new Date(EXPIRES_AT).getTime() + 30 * 86_400_000);
@@ -134,44 +134,44 @@ describe("RenewModal", () => {
     expect(within(dialog).getByText(new RegExp(ymd))).toBeInTheDocument();
   });
 
-  it("换周期重新报价:包年按 7 折算,数量是乘数", async () => {
+  it("re-quotes on a period change: yearly at 30 % off, quantity is a multiplier", async () => {
     const user = userEvent.setup();
     renderModal();
     const dialog = await screen.findByRole("dialog");
-    await user.click(within(dialog).getByRole("button", { name: /包\s*年/ }));
+    await user.click(within(dialog).getByRole("button", { name: /包\s*年/ })); // cjk-ok
     expect(within(dialog).getByText("¥34,952.40")).toBeInTheDocument();
     expect(within(dialog).getByText("¥24,466.68")).toBeInTheDocument();
   });
 
-  it("同一次打开内改周期与数量不换幂等键(同一张单在改价,不是两张单)", async () => {
+  it("changing period and quantity within one opening keeps the idempotency key (one order being repriced, not two)", async () => {
     const user = userEvent.setup();
     renderModal();
     const dialog = await screen.findByRole("dialog");
-    await user.click(within(dialog).getByRole("button", { name: "确认续费" }));
+    await user.click(within(dialog).getByRole("button", { name: "确认续费" })); // cjk-ok
     const firstKey = renewMutate.mock.calls[0]?.[0]?.idempotencyKey;
     expect(firstKey).toBeTruthy();
 
-    await user.click(within(dialog).getByRole("button", { name: /包\s*周/ }));
-    await user.click(within(dialog).getByRole("button", { name: "确认续费" }));
+    await user.click(within(dialog).getByRole("button", { name: /包\s*周/ })); // cjk-ok
+    await user.click(within(dialog).getByRole("button", { name: "确认续费" })); // cjk-ok
     const second = renewMutate.mock.calls[1]?.[0];
     if (!second) throw new Error("expected a second renew call");
     expect(second.idempotencyKey).toBe(firstKey);
     expect(second.body).toEqual({ period: "week", period_count: 1 });
   });
 
-  it("转包周期:基准取按量实例锁定的 price_hourly,金额与建包周期实例逐分相同", async () => {
+  it("convert to subscription: the basis is the on-demand instance's locked price_hourly, amounts equal a fresh subscription instance to the cent", async () => {
     renderConvert();
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("¥2,872.80")).toBeInTheDocument();
     expect(within(dialog).getByText("¥2,298.24")).toBeInTheDocument();
   });
 
-  it("转包周期从现在起算,走 subscribe 端点且带幂等键;不碰续费端点", async () => {
+  it("convert to subscription counts from now, hits the subscribe endpoint with an idempotency key; never the renew endpoint", async () => {
     const user = userEvent.setup();
     renderConvert();
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText("从现在起算")).toBeInTheDocument();
-    await user.click(within(dialog).getByRole("button", { name: "支付并转为包周期" }));
+    expect(within(dialog).getByText("从现在起算")).toBeInTheDocument(); // cjk-ok
+    await user.click(within(dialog).getByRole("button", { name: "支付并转为包周期" })); // cjk-ok
     expect(renewMutate).not.toHaveBeenCalled();
     const call = subscribeMutate.mock.calls[0]?.[0];
     if (!call) throw new Error("expected a subscribe call");
@@ -179,31 +179,31 @@ describe("RenewModal", () => {
     expect(call.idempotencyKey).toBeTruthy();
   });
 
-  it("续费从当前周期之后接上,走 renew 端点;不碰转换端点", async () => {
+  it("renewal continues after the current period, hits the renew endpoint; never the convert endpoint", async () => {
     const user = userEvent.setup();
     renderModal();
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText("接在当前周期之后")).toBeInTheDocument();
-    await user.click(within(dialog).getByRole("button", { name: "确认续费" }));
+    expect(within(dialog).getByText("接在当前周期之后")).toBeInTheDocument(); // cjk-ok
+    await user.click(within(dialog).getByRole("button", { name: "确认续费" })); // cjk-ok
     expect(subscribeMutate).not.toHaveBeenCalled();
     expect(renewMutate).toHaveBeenCalled();
   });
 
-  it("余额不足:主按钮改指 /billing 的可点链接(不是死按钮),不把必然失败的请求送出去", async () => {
+  it("insufficient balance: the primary button becomes a clickable link to /billing (not a dead button), the doomed request is not sent", async () => {
     walletBalance.current = "10.00";
     renderModal();
     const dialog = await screen.findByRole("dialog");
-    const link = within(dialog).getByRole("link", { name: "余额不足,去充值" });
+    const link = within(dialog).getByRole("link", { name: "余额不足,去充值" }); // cjk-ok
     expect(link).toHaveAttribute("href", "/billing");
     const btn = within(link).getByRole("button");
     expect(btn).toBeEnabled();
     expect(renewMutate).not.toHaveBeenCalled();
   });
 
-  it("余额足够:仍是普通确认按钮,不渲染充值链接", async () => {
+  it("sufficient balance: still a plain confirm button, no top-up link rendered", async () => {
     renderModal();
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).queryByRole("link", { name: "余额不足,去充值" })).not.toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "确认续费" })).toBeEnabled();
+    expect(within(dialog).queryByRole("link", { name: "余额不足,去充值" })).not.toBeInTheDocument(); // cjk-ok
+    expect(within(dialog).getByRole("button", { name: "确认续费" })).toBeEnabled(); // cjk-ok
   });
 });

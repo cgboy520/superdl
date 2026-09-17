@@ -1,4 +1,4 @@
-/** 品牌标:SVG 图形(与 favicon 同形)+ 词标。light=深底白字,dark=浅底靛字。 */
+/** Brand mark: SVG glyph (same shape as the favicon) + wordmark. light = white on dark, dark = indigo on light. */
 
 import { brandGradientStops, colorPrimary, fontSize, textOnAccent } from "@superdl/ui";
 

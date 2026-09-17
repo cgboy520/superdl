@@ -1,4 +1,4 @@
-/** 非 antd Form 的受控表单字段骨架:标签(可带必填星)+ 控件 + 错误 / 说明;统一 4px 标签间距与 caption 说明字号。 */
+/** Controlled form field skeleton outside antd Form: label (optional required star) + control + error / hint; unified 4px label spacing and caption hint size. */
 
 import { fontSize, space } from "@superdl/ui";
 import { Typography } from "antd";
@@ -14,11 +14,11 @@ export function Field({
 }: {
   label: ReactNode;
   required?: boolean;
-  /** 字段级错误(红字,优先于 hint) */
+  /** Field-level error (red text, takes precedence over hint) */
   error?: ReactNode;
   hint?: ReactNode;
   children: ReactNode;
-  /** 标签与控件同行(短字段) */
+  /** Label and control on one line (short fields) */
   inline?: boolean;
 }) {
   return (

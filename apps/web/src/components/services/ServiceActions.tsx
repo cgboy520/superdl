@@ -1,4 +1,4 @@
-/** 服务操作组:状态门控的启停与端点菜单、版本更新、设置入口和删除确认。 */
+/** Service action group: status-gated start / stop and endpoint menu, revision update, settings entry and delete confirmation. */
 
 import { LinkOutlined } from "@ant-design/icons";
 import type { ServiceOut } from "@superdl/api-client";
@@ -76,7 +76,7 @@ export function canRolloutService(service: ServiceOut): { ok: boolean; reason?: 
   return { ok: false, reason: "unsettled" };
 }
 
-/** 调用示例 curl:与服务详情概览同一构造;行内拿不到 Key 列表,只给前缀占位。 */
+/** Call example curl: the same construction as the service detail overview; the row has no key list, so only a prefix placeholder. */
 function curlExampleOf(service: ServiceOut): string {
   return [
     `curl ${service.url}`,
@@ -84,7 +84,7 @@ function curlExampleOf(service: ServiceOut): string {
   ].join(" \\\n");
 }
 
-/** 端点 ▾(对应实例的「连接 ▾」):复制访问地址 / 打开端点 / 调用示例;服务未运行时条目灰置带原因。 */
+/** Endpoint ▾ (the instance "Connect ▾" counterpart): copy access URL / open endpoint / call example; items greyed with a reason while the service is not running. */
 function EndpointMenu({ service, size }: { service: ServiceOut; size: "small" | "middle" }) {
   const { t } = useTranslation();
   const { message } = App.useApp();
@@ -157,9 +157,9 @@ export function ServiceActions({
 }: {
   service: ServiceOut;
   onDeleted?: () => void;
-  /** 详情页头部给:出「更新版本」按钮 */
+  /** Given by the detail header: shows the "Update revision" button */
   onRollout?: () => void;
-  /** 行内 small / 详情页头 middle */
+  /** Inline small / detail header middle */
   size?: "small" | "middle";
 }) {
   const { t } = useTranslation();

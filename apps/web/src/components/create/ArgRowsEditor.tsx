@@ -1,4 +1,4 @@
-/** 启动参数行编辑器(RowsEditor 特化):一行一个参数(带空格的参数不会被拆开)+ 批量粘贴带预览。 */
+/** Command-argument row editor (RowsEditor specialisation): one argument per row (arguments with spaces are not split) + bulk paste with preview. */
 
 import { Input } from "antd";
 import { useTranslation } from "react-i18next";

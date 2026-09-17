@@ -1,4 +1,4 @@
-/** 到期 / 冻结 / 失败三类实例条目(与通知类条目一起进 AttentionBar)。到期条目带「立即续费」「开启自动续费」。 */
+/** The three instance item kinds — expiring / frozen / failed — (joined by notification items in the AttentionBar). Expiring items carry "Renew now" and "Enable auto-renew". */
 
 import { isBillingPeriod, periodMap, space } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";

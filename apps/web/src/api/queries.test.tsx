@@ -1,4 +1,4 @@
-/** 过渡态轮询的首次基线、状态变更失效与退出后清理测试。 */
+/** Transitional polling: first baseline, status-change invalidation and cleanup after leaving. */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
@@ -39,14 +39,14 @@ function setup(fetchOne: Mock<FetchOne>, rows: Row[]) {
 }
 
 describe("useTransientRefresh", () => {
-  it("首轮轮询只落基线,不失效列表", async () => {
+  it("the first poll only records the baseline, no list invalidation", async () => {
     const fetchOne = vi.fn<FetchOne>().mockResolvedValue({ status: "creating" });
     const { qc, invalidateSpy } = setup(fetchOne, [row("a", "creating")]);
     await waitFor(() => expect(qc.getQueryData(["t", "a"])).toEqual({ status: "creating" }));
     expect(invalidateSpy).not.toHaveBeenCalled();
   });
 
-  it("轮询发现 status 迁移后失效列表前缀", async () => {
+  it("a status transition seen by the poll invalidates the list prefix", async () => {
     const fetchOne = vi.fn<FetchOne>().mockResolvedValue({ status: "creating" });
     const { qc, invalidateSpy } = setup(fetchOne, [row("a", "creating")]);
     await waitFor(() => expect(qc.getQueryData(["t", "a"])).toEqual({ status: "creating" }));
@@ -59,7 +59,7 @@ describe("useTransientRefresh", () => {
     );
   });
 
-  it("条目退出过渡态集合后清基线;带着新状态再进入时不误报变化", async () => {
+  it("an item leaving the transitional set clears its baseline; re-entering with a new status reports no false change", async () => {
     const fetchOne = vi.fn<FetchOne>().mockResolvedValue({ status: "creating" });
     const { qc, view, invalidateSpy } = setup(fetchOne, [row("a", "creating")]);
     await waitFor(() => expect(qc.getQueryData(["t", "a"])).toEqual({ status: "creating" }));

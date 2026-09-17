@@ -1,4 +1,4 @@
-/** 实例监控面板:GPU、显存、CPU、内存四图联动,支持时间范围与刷新控制。 */
+/** Instance monitoring panel: GPU, VRAM, CPU and memory charts linked together, with range and refresh controls. */
 
 import { isApiError } from "@superdl/api-client";
 import { fontSize, layout, POLL, space, useAutoRefresh, useChartTheme } from "@superdl/ui";
@@ -18,7 +18,7 @@ const SERIES_META = {
   mem_used_mb: { nameKey: "instances.seriesMem", unit: "MB" as Unit },
 } as const;
 
-/** MB 序列超过 1 GB 时整图换 GB 显示(1 位小数) */
+/** MB series above 1 GB switch the whole chart to GB (1 decimal) */
 function scaleOf(points: [number, number][], unit: Unit): { factor: number; label: string; digits: number } {
   if (unit === "%") return { factor: 1, label: "%", digits: 0 };
   const max = points.reduce((m, [, v]) => Math.max(m, v), 0);

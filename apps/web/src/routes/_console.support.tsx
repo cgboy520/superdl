@@ -1,4 +1,4 @@
-/** 支持:自助排查(FAQ 锚点)+ 联系客服(平台配置 support 组)+ 我的工单。新建工单走 Modal,详情为独立对话页。 */
+/** Support: self-service (FAQ anchors) + contact support (platform config support group) + my tickets. New tickets go through a Modal, the detail is its own conversation page. */
 
 import {
   flattenPages,
@@ -34,7 +34,7 @@ export const Route = createFileRoute("/_console/support")({
   component: SupportPage,
 });
 
-/** 自助排查:静态锚点直达 /help FAQ(条目键与 help.tsx 的 FAQ_KEYS 对齐)。 */
+/** Self-service: static anchors straight into the /help FAQ (entry keys aligned with FAQ_KEYS in help.tsx). */
 const SELF_HELP_KEYS = ["createFailed", "billingStart", "dataPersist", "arrears"] as const;
 
 function SelfHelpCard() {

@@ -1,5 +1,5 @@
-/** 事件时间线面板(纯展示):「此记录即计费依据」放标题旁 tooltip 不做常驻条;running 两侧的边标「计费边界」;可只看计费边界 / 只看失败;游标分页。
- *  失效由调用方负责;实例详情页与服务详情页共用。 */
+/** Event timeline panel (display only): "this record is the billing basis" sits in a title tooltip, not a permanent bar; edges around running are tagged "billing boundary"; billing boundaries only / failures only filters; cursor pagination.
+ *  Invalidation is the caller's job; shared by the instance and service detail pages. */
 
 import { QuestionCircleOutlined } from "@ant-design/icons";
 import type { InstanceEventOut } from "@superdl/api-client";

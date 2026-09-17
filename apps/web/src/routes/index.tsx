@@ -1,4 +1,4 @@
-/** 公开主页:行情、计费说明、GPU 价格与排名、开机指引和 CTA。 */
+/** Public home: prices, billing explainer, GPU prices and ranking, start guide and CTA. */
 
 import { createFileRoute } from "@tanstack/react-router";
 import { theme } from "antd";

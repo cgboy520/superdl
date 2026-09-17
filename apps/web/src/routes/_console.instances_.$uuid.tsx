@@ -1,4 +1,4 @@
-/** 实例详情:连接、监控、日志、事件、账单与设置;默认 Tab 由实例状态决定。 */
+/** Instance detail: connect, monitoring, logs, events, bills and settings; the default tab follows the instance status. */
 
 import { type InstanceOut } from "@superdl/api-client";
 import { formatDateTime, isTransientInstanceStatus, localToday, POLL, space } from "@superdl/ui";
@@ -39,7 +39,7 @@ export const Route = createFileRoute("/_console/instances_/$uuid")({
   component: InstanceDetail,
 });
 
-/** 连接:SSH 卡按 with_ssh 出,Jupyter 卡只对开发机出;接入信息字段可空,拿到什么渲染什么。 */
+/** Connect: the SSH card follows with_ssh, the Jupyter card only for dev boxes; access fields may be empty, render whatever is present. */
 function AccessTab({ instance, running }: { instance: InstanceOut; running: boolean }) {
   const { t } = useTranslation();
   const { message } = App.useApp();
@@ -106,7 +106,7 @@ function BillsTab({ instanceId }: { instanceId: number }) {
   return <HourlyBillsTable query={useHourlyBillPages({ instance_id: instanceId })} />;
 }
 
-/** 设置 Tab:只有危险区(改名在头部完成,ui-ux-spec §3.3)。 */
+/** Settings tab: the danger zone only (renaming happens in the header, ui-ux-spec §3.3). */
 function SettingsTab({ canRelease, onRelease }: { canRelease: boolean; onRelease: () => void }) {
   const { t } = useTranslation();
   return (

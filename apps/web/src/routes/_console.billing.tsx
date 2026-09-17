@@ -1,4 +1,4 @@
-/** 费用中心:余额与充值、月度概览、账单、收支明细及 CSV 导出;Tab 与月份写入 URL。 */
+/** Billing: balance and top-up, monthly overview, bills, ledger and CSV export; tab and month in the URL. */
 
 import { POLL, useAutoRefresh, useThemeColors } from "@superdl/ui";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -33,7 +33,7 @@ import { InvoiceTab } from "./-InvoiceTab";
 const BILLING_TABS = ["bills", "ledger", "refunds", "invoices"] as const;
 export type BillingTab = (typeof BILLING_TABS)[number];
 
-/** 「按实例」最多列几行,其余折成一行说明 */
+/** Max rows of "by instance", the rest fold into one summary line */
 const BY_INSTANCE_ROWS = 8;
 
 export const Route = createFileRoute("/_console/billing")({
@@ -62,7 +62,7 @@ export const Route = createFileRoute("/_console/billing")({
   component: BillingPage,
 });
 
-/** 按实例消费横条:条长按最大值归一,金额右对齐。 */
+/** Horizontal spend bars per instance: length normalised by the maximum, amounts right-aligned. */
 function ByInstanceBar({ name, amount, ratio }: { name: string; amount: string; ratio: number }) {
   const colors = useThemeColors();
   const { formatMoney } = useFormat();

@@ -1,4 +1,4 @@
-/** 版本更新抽屉:预填当前配置,支持沿用/覆盖/删除密文变量与脏表单离开确认。 */
+/** Revision update drawer: prefilled with the current configuration, keep / override / delete secret variables, dirty-form leave confirmation. */
 
 import { isApiError, type ServiceOut, type ServiceRevisionCreate } from "@superdl/api-client";
 import { drawerWidth, idemKeyOf, marketLabelKey, space, useApiErrorText } from "@superdl/ui";

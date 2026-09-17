@@ -1,4 +1,4 @@
-/** 退款 Tab:可退订单 → 申请退款 + 我的退款单。 */
+/** Refund tab: refundable orders → request a refund + my refund requests. */
 
 import { useTranslation } from "react-i18next";
 import { App, Card, Input, InputNumber, Select, Space, Tag, Typography } from "antd";
@@ -21,7 +21,7 @@ import { useFormat } from "@superdl/ui";
 import { useCreateRefund } from "../api/mutations";
 import { useRefundPages, useRefundableOrders } from "../api/queries";
 
-/** 退款:申请表单(仅可申请口径的订单) + 我的退款列表。 */
+/** Refunds: request form (orders under the refundable definition only) + my refund list. */
 export const REFUND_REASON_CODE = {
   not_paid: "billing.refundOrderNotPaid",
   already_applied: "billing.refundOrderAlreadyApplied",

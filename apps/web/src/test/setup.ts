@@ -1,4 +1,4 @@
-/** vitest 全局 setup(jsdom):jest-dom 断言扩展;i18n 钉 zh-CN;antd 依赖的 matchMedia / ResizeObserver 打桩。 */
+/** vitest global setup (jsdom): jest-dom matchers; i18n pinned to zh-CN; matchMedia / ResizeObserver stubs for antd. */
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";

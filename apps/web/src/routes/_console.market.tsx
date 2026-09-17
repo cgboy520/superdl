@@ -1,4 +1,4 @@
-/** 算力市场:规格筛选、购买数量、计费方式与结算预览;选择状态写入 URL。 */
+/** Market: spec filters, purchase quantity, billing mode and checkout preview; the selection state lives in the URL. */
 
 import { QuestionCircleOutlined } from "@ant-design/icons";
 import type { SkuMarketOut } from "@superdl/api-client";
@@ -34,19 +34,19 @@ import { listSearchStore } from "../stores/listSearch";
 
 type Kind = "gpu" | "cpu";
 
-/** 市场页 URL 状态:筛选 / 选中 / 购买数量 / 计费 10 个参数,默认值一律剥离(kind=gpu / mode=on_demand / chips 空档 / qty=1 / count=1);非法值回默认。 */
+/** Market page URL state: 10 parameters for filters / selection / quantity / billing, defaults always stripped (kind=gpu / mode=on_demand / empty chips / qty=1 / count=1); invalid values fall back to defaults. */
 export interface MarketSearch {
   kind?: Kind;
   mode?: BillingMode;
   model?: string;
   tier?: string;
   vram?: number;
-  /** 购买数量(卡数,1~8):不是筛选,只决定库存口径与价格 */
+  /** Purchase quantity (cards, 1–8): not a filter, only decides the stock basis and price */
   qty?: number;
   vcpu?: number;
   mem?: number;
   sku?: number;
-  /** 购买时长(周期份数,1~36;仅包周期模式有意义) */
+  /** Purchase length (period count, 1–36; meaningful in subscription modes only) */
   count?: number;
 }
 
@@ -55,7 +55,7 @@ function posInt(v: unknown): number | undefined {
   return Number.isInteger(n) && n > 0 ? n : undefined;
 }
 
-/** 解析市场页 URL 状态,剔除非法值与默认值。 */
+/** Parse the market page URL state, dropping invalid values and defaults. */
 export function marketValidateSearch(search: Record<string, unknown>): MarketSearch {
   const out: MarketSearch = {};
   if (search.kind === "cpu") out.kind = "cpu";
@@ -86,7 +86,7 @@ export const Route = createFileRoute("/_console/market")({
   component: MarketPage,
 });
 
-/** URL 参数 → SkuPicker 筛选态(默认值补齐) */
+/** URL parameters → SkuPicker filter state (defaults filled in) */
 function filtersOf(s: MarketSearch): SkuFilters {
   return {
     kind: s.kind ?? "gpu",
@@ -98,7 +98,7 @@ function filtersOf(s: MarketSearch): SkuFilters {
   };
 }
 
-/** SkuPicker 筛选态 → URL 参数(默认值剥离) */
+/** SkuPicker filter state → URL parameters (defaults stripped) */
 function searchOfFilters(f: SkuFilters, prev: MarketSearch): MarketSearch {
   return {
     ...prev,
@@ -162,7 +162,7 @@ function MarketPage() {
   const isSpot = mode === "spot";
   const period = isBillingPeriod(mode) ? mode : null;
 
-  /** 选中规格;不支持当前计费方式时提示并切回按量。 */
+  /** Select a spec; when it does not support the current billing mode, notify and switch back to on-demand. */
   const onSelectSku = (s: SkuMarketOut | undefined) => {
     let nextMode: BillingMode | undefined = search.mode;
     if (s) {
@@ -194,7 +194,7 @@ function MarketPage() {
     ...(period && periodCount > 1 ? { count: periodCount } : {}),
     ...(isSpot ? { market: "spot" as const } : {}),
   };
-  /** 未登录去登录:带回完整市场筛选态 */
+  /** Signed out → login, carrying the full market filter state back */
   const marketHref = () => {
     const qs = new URLSearchParams();
     for (const [k, v] of Object.entries(search)) qs.set(k, String(v));

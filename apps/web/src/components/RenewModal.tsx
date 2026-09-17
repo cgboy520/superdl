@@ -1,4 +1,4 @@
-/** 续费/转包周期弹窗:本地报价、余额校验与扣款回执;幂等键在组件挂载时生成。 */
+/** Renewal / convert-to-subscription modal: local quote, balance check and charge receipt; the idempotency key is generated on mount. */
 
 import type { InstanceOut, RenewOut } from "@superdl/api-client";
 import {
@@ -33,7 +33,7 @@ export function RenewModal({
   onClose,
 }: {
   instance: InstanceOut;
-  /** renew 从到期时刻与挂载时刻的较晚者续期;subscribe 从挂载时刻起算。 */
+  /** renew continues from the later of the expiry and the mount time; subscribe counts from the mount time. */
   mode?: PeriodPurchaseMode;
   open: boolean;
   onClose: () => void;

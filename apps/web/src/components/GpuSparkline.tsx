@@ -1,4 +1,4 @@
-/** GPU 利用率迷你 sparkline(实例列表列,近 1h),自绘 SVG。纵轴 0~100%;points 为 (unix_ts, util%) 稀疏序列,空序列由调用方过滤。 */
+/** GPU utilisation mini sparkline (instance list column, last 1 h), hand-drawn SVG. Y axis 0–100 %; points is a sparse (unix_ts, util%) series, empty series are filtered by the caller. */
 
 import { useThemeColors } from "@superdl/ui";
 

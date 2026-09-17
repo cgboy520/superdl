@@ -1,4 +1,4 @@
-/** 计费说明:三条事实与时间轴;窄屏使用文字时间轴。 */
+/** Billing explainer: three facts and a timeline; narrow screens use a text timeline. */
 
 import { ClockCircleOutlined, DatabaseOutlined, PauseCircleOutlined } from "@ant-design/icons";
 import { fontSize, fontWeight, iconSize, layout, space, useThemeColors } from "@superdl/ui";
@@ -32,7 +32,7 @@ function FactCard({ icon, title, desc }: { icon: ReactNode; title: string; desc:
   );
 }
 
-/** 计费时间轴(viewBox 900×132,随容器缩放);颜色随主题取语义色。 */
+/** Billing timeline (viewBox 900×132, scales with the container); colours follow the theme's semantic colours. */
 function BillingTimeline() {
   const { t } = useTranslation();
   const { token } = theme.useToken();
@@ -75,7 +75,7 @@ function BillingTimeline() {
   );
 }
 
-/** 窄屏的等价内容:同样四个节拍,逐行读。 */
+/** Narrow-screen equivalent: the same four beats, read line by line. */
 function BillingBeats() {
   const { t } = useTranslation();
   const { token } = theme.useToken();

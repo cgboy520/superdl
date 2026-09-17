@@ -1,4 +1,4 @@
-/** 服务设置 Tab:访问鉴权开关 / 调试 SSH / 危险区(改名在头部 EntityHeader 完成)。鉴权只 PATCH services 行,不重新部署;关鉴权走 L2 确认;开着鉴权却没有可用 Key 时常驻提醒;SSH 随版本固定,只回显。 */
+/** Service settings tab: access-auth switch / debug SSH / danger zone (renaming happens in the EntityHeader). Auth only PATCHes the services row, no redeployment; turning auth off uses an L2 confirmation; auth on without a usable key shows a standing reminder; SSH is fixed per revision and only echoed. */
 
 import type { ServiceOut } from "@superdl/api-client";
 import { CopyField, GatedButton, useConfirm } from "@superdl/ui/components";

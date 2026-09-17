@@ -1,4 +1,4 @@
-/** 包周期(预付)共用件:折扣读取、本地报价、量词与费用明细三行;市场页 / 创建页 / 续费 modal 共用,与后端 core/pricing.py 同源。本地报价只作预览,成交金额以接口 quote 为准,明细区须挂 hint。 */
+/** Subscription (prepaid) shared pieces: discount reading, local quote, units and the three-line cost breakdown; shared by the market / create pages and the renewal modal, same source as the backend core/pricing.py. The local quote is a preview only, the charged amount follows the API quote, the breakdown must carry a hint. */
 
 import { fontSize, periodMap, quoteSubscription, space, type BillingPeriod, type PeriodQuote } from "@superdl/ui";
 import { Space, Typography } from "antd";
@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 import { usePolicies } from "../api/queries";
 import { useFormat } from "@superdl/ui";
 
-/** 四个周期的折扣百分数(80 = 8 折);policies 未就绪返回 undefined。 */
+/** Discount percentages of the four periods (80 = 20 % off); undefined while policies are pending. */
 export function usePeriodDiscounts(): Record<BillingPeriod, number> | undefined {
   const { data: policies } = usePolicies();
   return useMemo(
@@ -25,12 +25,12 @@ export function usePeriodDiscounts(): Record<BillingPeriod, number> | undefined 
   );
 }
 
-/** 折扣力度(百分数,-20% 里的 20)。 */
+/** Discount strength (percent, the 20 in -20%). */
 export function discountOff(pct: number): number {
   return 100 - pct;
 }
 
-/** 本地报价:折扣未就绪不报价。 */
+/** Local quote: no quote while the discounts are pending. */
 export function periodQuoteOf(
   baseHourly: string,
   opts: { units: number; period: BillingPeriod; periodCount: number },
@@ -65,7 +65,7 @@ function QuoteRow({ label, value, strong }: { label: ReactNode; value: string; s
   );
 }
 
-/** 费用明细三行:实例费用(原价)→ 周期优惠 → 应付。 */
+/** Three-line cost breakdown: instance fee (list price) → period discount → payable. */
 export function PeriodQuoteRows({
   quote,
   gpuCount,
@@ -73,10 +73,10 @@ export function PeriodQuoteRows({
   hint,
 }: {
   quote: PeriodQuote;
-  /** GPU 卡数;CPU 规格传 0 并置 cpu */
+  /** GPU card count; CPU specs pass 0 and set cpu */
   gpuCount: number;
   cpu?: boolean;
-  /** 口径提示(「以创建页最终报价为准」),由调用方按场景给 */
+  /** Basis hint ("the final quote on the create page prevails"), given by the caller per scene */
   hint?: string;
 }) {
   const { t } = useTranslation(["web", "shared"]);

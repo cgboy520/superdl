@@ -1,4 +1,4 @@
-/** 数据盘选择卡:不挂载、新建或挂载已有盘;建盘由调用方提交。 */
+/** Data-disk selection card: none, create new or mount an existing disk; the disk is created by the caller on submit. */
 
 import { controlWidth, fontSize, formatSizeGb, space } from "@superdl/ui";
 import { DataErrorAlert, DiskSizeField, OptionTileGroup } from "@superdl/ui/components";
@@ -35,9 +35,9 @@ export function DataDiskCard({
   onNewGbChange: (gb: number) => void;
   existingId: number | undefined;
   onExistingIdChange: (id: number | undefined) => void;
-  /** 锚点 id(未完成项清单跳转用) */
+  /** Anchor id (for the incomplete-items list) */
   id?: string;
-  /** card = 独立卡(创建页);section = 嵌在别的卡里,只出标题行(部署页容器配置段) */
+  /** card = standalone card (create page); section = embedded in another card, title row only (deploy page container section) */
   variant?: "card" | "section";
 }) {
   const { t } = useTranslation();

@@ -1,4 +1,4 @@
-/** 访问密钥卡:名称 / Key 前缀 / 最近使用 / 创建时间 / 吊销 + 新建(一次性展示)。公开访问的服务仍渲染,附「网关不校验 Key」说明。 */
+/** Access keys card: name / key prefix / last used / created / revoke + create (one-off display). Rendered for public services too, with a "the gateway does not check keys" note. */
 
 import type { ApiKeyOut } from "@superdl/api-client";
 import { formatDateTime, space } from "@superdl/ui";
@@ -18,7 +18,7 @@ export function ApiKeysCard({
 }: {
   slug: string;
   requireApiKey: boolean;
-  /** 已删除的服务不能再建钥(后端 409),按钮灰置 */
+  /** Deleted services cannot create keys (backend 409), the button is greyed */
   released: boolean;
 }) {
   const { t } = useTranslation();

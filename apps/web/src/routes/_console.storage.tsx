@@ -1,4 +1,4 @@
-/** 存储:挂载全景图 + 数据盘列表(计费快照价 / 到期回收倒计时 / 扩容抽屉 / 多级删除防护)。盘价与宽限/冻结天数来自 /policies;「计费」列显示每盘创建时快照价。 */
+/** Storage: mount overview + data-disk list (snapshot price / expiry-reclamation countdown / expansion drawer / multi-level delete protection). Disk price and grace / frozen days come from /policies; the "billing" column shows each disk's creation-time snapshot price. */
 
 import { POLL, useAutoRefresh } from "@superdl/ui";
 import { type DiskOut } from "@superdl/api-client";
@@ -54,7 +54,7 @@ export const Route = createFileRoute("/_console/storage")({
   component: StoragePage,
 });
 
-/** 扩容抽屉默认步进(GB):默认目标 = 当前 +50;滑块可自由调。 */
+/** Default step of the expansion drawer (GB): default target = current + 50; the slider moves freely. */
 const EXPAND_DEFAULT_STEP_GB = 50;
 
 function MountOverview({ priceText }: { priceText: string }) {
@@ -119,7 +119,7 @@ export function DeleteDiskModal({ disk, onClose }: { disk: DiskOut | null; onClo
   );
 }
 
-/** 到期/回收列:active 按日扣费;grace/frozen 用起点 + /policies 天数算倒计时 */
+/** Expiry / reclamation column: active bills daily; grace / frozen count down from the start + /policies days */
 function ExpiryCell({
   disk,
   graceDays,

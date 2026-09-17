@@ -1,4 +1,4 @@
-/** 通知列表项(通知中心与顶栏 Popover 同一份渲染):未读 = 左色点 + 浅底 + 左边框;整行点击带键盘语义。 */
+/** Notification list item (one rendering for the notification centre and the top-bar Popover): unread = left dot + light background + left border; the whole row is clickable with keyboard semantics. */
 
 import type { NotificationOut } from "@superdl/api-client";
 import { fontSize, formatDateTime, space } from "@superdl/ui";

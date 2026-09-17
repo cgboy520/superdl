@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 
-/** 序列键间隔上限 */
+/** Max gap between sequence keys */
 const SEQ_TIMEOUT_MS = 500;
 
 function isTypingTarget(el: Element | null): boolean {
@@ -9,7 +9,7 @@ function isTypingTarget(el: Element | null): boolean {
   return el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable;
 }
 
-/** 控制台快捷键:/ 聚焦搜索框,g+i/s/b/m 导航;输入框、文本域或可编辑内容内不触发。 */
+/** Console shortcuts: / focuses the search box, g+i/s/b/m navigate; not inside inputs, textareas or editable content. */
 export function useGlobalHotkeys() {
   const navigate = useNavigate();
   useEffect(() => {

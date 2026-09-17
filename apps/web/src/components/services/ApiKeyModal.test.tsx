@@ -1,4 +1,4 @@
-/** API Key 成功态的保存确认与关闭限制测试。 */
+/** API key success state: save confirmation and close restriction. */
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "antd";
@@ -25,7 +25,7 @@ beforeEach(() => {
   onSuccessRef.current = undefined;
 });
 
-/** 「填名称 → 创建 → 服务端回明文」,停在成功态 */
+/** "Enter a name → create → the server returns the plaintext", stopping in the success state */
 async function openSuccessState(onClose = vi.fn()) {
   const user = userEvent.setup();
   render(
@@ -33,12 +33,12 @@ async function openSuccessState(onClose = vi.fn()) {
       <ApiKeyModal slug="svc-1" open onClose={onClose} />
     </App>,
   );
-  await user.type(screen.getByLabelText("名称"), "线上推理");
-  await user.click(screen.getByRole("button", { name: /^创\s*建$/ }));
-  expect(createMutate).toHaveBeenCalledWith("线上推理");
+  await user.type(screen.getByLabelText("名称"), "线上推理"); // cjk-ok
+  await user.click(screen.getByRole("button", { name: /^创\s*建$/ })); // cjk-ok
+  expect(createMutate).toHaveBeenCalledWith("线上推理"); // cjk-ok
   onSuccessRef.current?.({
     id: 1,
-    name: "线上推理",
+    name: "线上推理", // cjk-ok
     key: PLAINTEXT,
     key_prefix: "sk-a1b2c3d4",
     last_used_at: null,
@@ -49,25 +49,25 @@ async function openSuccessState(onClose = vi.fn()) {
 }
 
 describe("ApiKeyModal", () => {
-  it("未填名称时创建按钮禁用(空名字的 Key 无法辨认用途)", () => {
+  it("the create button is disabled without a name (a nameless key cannot be told apart)", () => {
     render(
       <App>
         <ApiKeyModal slug="svc-1" open onClose={vi.fn()} />
       </App>,
     );
-    expect(screen.getByRole("button", { name: /^创\s*建$/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^创\s*建$/ })).toBeDisabled(); // cjk-ok
     expect(createMutate).not.toHaveBeenCalled();
   });
 
-  it("成功态展示明文全值并给出「关闭后无法再查看」的警告", async () => {
+  it("the success state shows the full plaintext with the cannot-be-viewed-again warning", async () => {
     const { dialog } = await openSuccessState();
     expect(within(dialog).getByText(PLAINTEXT)).toBeInTheDocument();
-    expect(within(dialog).getByText("关闭后无法再查看")).toBeInTheDocument();
+    expect(within(dialog).getByText("关闭后无法再查看")).toBeInTheDocument(); // cjk-ok
   });
 
-  it("勾选「我已保存」之前关不掉:关闭按钮禁用,且没有 X 可点", async () => {
+  it("cannot be closed before ticking saved: the close button is disabled and there is no X", async () => {
     const { user, onClose, dialog } = await openSuccessState();
-    const closeBtn = within(dialog).getByRole("button", { name: /已保存,关\s*闭/ });
+    const closeBtn = within(dialog).getByRole("button", { name: /已保存,关\s*闭/ }); // cjk-ok
     expect(closeBtn).toBeDisabled();
     expect(within(dialog).queryByRole("button", { name: /close/i })).toBeNull();
 

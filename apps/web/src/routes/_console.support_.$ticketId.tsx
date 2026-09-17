@@ -1,4 +1,4 @@
-/** 工单详情(PageContainer narrow,标题 = 工单主题,返回列表):对话流(用户/客服气泡)+ 关联实例链接 + [关闭工单]。resolved/closed 不可再回复;关闭入口常驻,非 resolved 灰置带原因。 */
+/** Ticket detail (PageContainer narrow, title = ticket subject, back to the list): conversation (user / staff bubbles) + linked instance + [Close ticket]. resolved/closed accept no replies; the close entry is permanent, greyed with a reason unless resolved. */
 
 import { POLL, space } from "@superdl/ui";
 import { fontSize, formatDateTime, isTicketRepliable, metaOf, ticketCategoryMap, ticketStatusMap } from "@superdl/ui";
@@ -24,7 +24,7 @@ export const Route = createFileRoute("/_console/support_/$ticketId")({
   component: TicketDetailPage,
 });
 
-/** 发送快捷键的平台提示(与 CommandPalette 的 COMMAND_KBD_HINT 同一判定) */
+/** Platform hint of the send shortcut (the same decision as the CommandPalette COMMAND_KBD_HINT) */
 const SEND_KBD_HINT = isMacPlatform() ? "⌘⏎" : "Ctrl+Enter";
 
 function TicketDetailPage() {

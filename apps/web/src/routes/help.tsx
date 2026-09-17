@@ -1,4 +1,4 @@
-/** 帮助中心:快速开始、问答搜索、分类锚点、提单入口与联系方式。 */
+/** Help centre: quick start, FAQ search, category anchors, ticket entry and contact details. */
 
 import { SearchOutlined } from "@ant-design/icons";
 import { controlWidth, fontSize, layout, space } from "@superdl/ui";
@@ -17,7 +17,7 @@ export const Route = createFileRoute("/help")({
   component: HelpPage,
 });
 
-/** 四个分类与其下的问答键(问/答 locale 键成对)。顺序即页面顺序;问答锚点 id = faq-<key>,分类锚点 id = help-cat-<key>。 */
+/** The four categories and their FAQ keys (question / answer locale keys in pairs). The order is the page order; FAQ anchor id = faq-<key>, category anchor id = help-cat-<key>. */
 const CATEGORIES = [
   { key: "connect", faqs: ["connectSsh", "connectJupyter"] },
   { key: "billing", faqs: ["billingStart", "billingStop", "billingDisk"] },
@@ -34,7 +34,7 @@ function isFaqKey(key: string): key is FaqKey {
   return (FAQ_KEYS as readonly string[]).includes(key);
 }
 
-/** 分类标题锚点 id(rail / chips 都指向它)。 */
+/** Category title anchor id (rail and chips both point at it). */
 function categoryAnchor(key: CategoryKey): string {
   return `help-cat-${key}`;
 }

@@ -1,4 +1,4 @@
-/** 日志 Tab(实例详情 / 服务详情共用):subject 决定打哪个端点;viewable 由调用方按状态算。 */
+/** Logs tab (shared by instance / service details): subject picks the endpoint; viewable is computed by the caller from the status. */
 
 import { POLL } from "@superdl/ui";
 import { useMemo, useState } from "react";

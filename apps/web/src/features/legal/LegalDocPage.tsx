@@ -1,4 +1,4 @@
-/** 法务文档页:文档切换、版本信息、二级标题目录与正文打印样式。 */
+/** Legal document page: document switcher, version info, h2 table of contents and print styles. */
 
 import { fontSize, formatDateTime, layout, space } from "@superdl/ui";
 import { DataErrorAlert, LegalMarkdown, PageContainer } from "@superdl/ui/components";
@@ -13,7 +13,7 @@ import { SiteFooter } from "../../components/layout/SiteFooter";
 
 export type LegalDocKey = "terms" | "privacy" | "deletion_notice";
 
-/** 打印时隐藏导航与目录,正文使用黑字白底。 */
+/** Hide navigation and the table of contents when printing, black text on white. */
 const PRINT_CSS = `
 .legal-chrome { display: contents; }
 @media print {
@@ -28,7 +28,7 @@ interface TocItem {
   text: string;
 }
 
-/** 从原始 markdown 取二级标题(跳过围栏代码块);id 按出现序生成,与渲染后的 h2 一一对应。 */
+/** Second-level headings from the raw markdown (skipping fenced code blocks); ids by order of appearance, one to one with the rendered h2 elements. */
 export function parseTocHeadings(md: string): TocItem[] {
   const out: TocItem[] = [];
   let inFence = false;

@@ -1,18 +1,18 @@
-/** 可用量去重聚合:按 (pool_label, gpu_model) 分组取 max,再跨组求和。 */
+/** Deduplicated availability aggregation: group by (pool_label, gpu_model), take the max per group, then sum across groups. */
 
 import type { SkuMarketOut } from "@superdl/api-client";
 
-/** 入参即 SkuMarketOut,只取去重所需三字段。 */
+/** Input is SkuMarketOut, only the three fields needed for deduplication. */
 export type SkuAvailabilityLike = Pick<SkuMarketOut, "pool_label" | "gpu_model" | "available_count">;
 
-/** 全局可售上限(去重后):首页/CTA 横幅数字。 */
+/** Global sellable cap (deduplicated): the home / CTA banner figure. */
 export function dedupAvailableTotal(skus: readonly SkuAvailabilityLike[]): number {
   let total = 0;
   for (const v of dedupAvailableByModel(skus).values()) total += v;
   return total;
 }
 
-/** 按型号聚合的可售数(市场页型号 chip):组内 (池, 型号) 取 max,同型号跨池求和;CPU 规格(gpu_model 空串)整条跳过。 */
+/** Sellable count per model (market model chips): max per (pool, model) inside the group, summed across pools per model; CPU specs (empty gpu_model) are skipped. */
 export function dedupAvailableByModel(skus: readonly SkuAvailabilityLike[]): Map<string, number> {
   const byGroup = new Map<string, { model: string; free: number }>();
   for (const s of skus) {

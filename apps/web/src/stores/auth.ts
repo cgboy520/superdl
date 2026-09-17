@@ -1,4 +1,4 @@
-/** 认证状态:access token 持久化到 localStorage,并通过 storage 事件同步标签页。 */
+/** Auth state: the access token persists in localStorage and syncs across tabs through the storage event. */
 
 import { createStore } from "zustand/vanilla";
 import { useStore } from "zustand";

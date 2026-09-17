@@ -1,4 +1,4 @@
-/** 隐私政策(公开):正文来自后端当前 published 版。 */
+/** Privacy policy (public): body from the backend's current published version. */
 
 import { createFileRoute } from "@tanstack/react-router";
 

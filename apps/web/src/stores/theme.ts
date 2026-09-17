@@ -1,4 +1,4 @@
-/** 主题模式(light/dark):localStorage("superdl.theme") 持久化,初值 = 存储值 ?? prefers-color-scheme;index.html 内联脚本用同一判定预置底色/color-scheme。 */
+/** Theme mode (light/dark): persisted in localStorage("superdl.theme"), initial = stored value ?? prefers-color-scheme; the index.html inline script uses the same decision to pre-set background / color-scheme. */
 
 import { createStore } from "zustand/vanilla";
 import { useStore } from "zustand";

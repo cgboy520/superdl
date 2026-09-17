@@ -1,4 +1,4 @@
-/** InstanceActions / ReleaseModal:三槽位随状态变(主 / 次 / 更多 ▾ 点击展开,条目 role=menuitem)、关机确认弹窗、释放多级防护。写操作 hooks 全 mock。 */
+/** InstanceActions / ReleaseModal: the three slots follow the status (primary / secondary / "More ▾" expands, entries role=menuitem), stop confirmation dialog, multi-level release protection. Write hooks are all mocked. */
 import type { InstanceOut } from "@superdl/api-client";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -66,7 +66,7 @@ function makeInstance(status: string): InstanceOut {
   } as InstanceOut;
 }
 
-/** 竞价实例:price_hourly 已是折后价 */
+/** Spot instance: price_hourly is already the discounted price */
 function makeSpot(status: string): InstanceOut {
   return {
     uuid: "u-3",
@@ -78,7 +78,7 @@ function makeSpot(status: string): InstanceOut {
   } as InstanceOut;
 }
 
-/** 包周期实例:market 与 subscription 一起给,缺一不判包周期 */
+/** Subscription instance: market and subscription given together, either missing means not a subscription */
 function makeSubscription(
   status: string,
   sub: { expiresAt: string; subStatus?: string; autoRenew?: boolean },
@@ -114,46 +114,46 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-const BTN_START = /开\s*机/;
-const BTN_STOP = /关\s*机/;
-const BTN_MORE = /更\s*多/;
-const BTN_EVENTS = "事件记录";
-const MENU_RENEW = /^续\s*费$/;
+const BTN_START = /开\s*机/; // cjk-ok
+const BTN_STOP = /关\s*机/; // cjk-ok
+const BTN_MORE = /更\s*多/; // cjk-ok
+const BTN_EVENTS = "事件记录"; // cjk-ok
+const MENU_RENEW = /^续\s*费$/; // cjk-ok
 
 describe("InstanceActions", () => {
-  it("stopped 实例:开机可用,次动作是「事件记录」(关机只在运行中出)", () => {
+  it("stopped instance: start available, the secondary action is Events (stop appears only while running)", () => {
     renderWithApp(<InstanceActions instance={makeInstance("stopped")} />);
     expect(screen.getByRole("button", { name: BTN_START })).toBeEnabled();
     expect(screen.queryByRole("button", { name: BTN_STOP })).toBeNull();
     expect(screen.getByRole("button", { name: BTN_EVENTS })).toBeEnabled();
   });
 
-  it("running 实例:主动作是「连接 ▾」而不是开机;菜单里有复制 SSH / 打开 JupyterLab", async () => {
+  it("running instance: the primary action is Connect ▾, not start; the menu has copy SSH / open JupyterLab", async () => {
     const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeInstance("running")} />);
     expect(screen.queryByRole("button", { name: BTN_START })).toBeNull();
-    await user.click(screen.getByRole("button", { name: /连\s*接/ }));
-    expect(await screen.findByText("复制 SSH 命令")).toBeInTheDocument();
-    expect(screen.getByText("打开 JupyterLab")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /连\s*接/ })); // cjk-ok
+    expect(await screen.findByText("复制 SSH 命令")).toBeInTheDocument(); // cjk-ok
+    expect(screen.getByText("打开 JupyterLab")).toBeInTheDocument(); // cjk-ok
   });
 
-  it("failed 实例:主动作是「重新创建」并链到该规格的创建页", () => {
+  it("failed instance: the primary action is Recreate and links to the create page of that spec", () => {
     renderWithApp(<InstanceActions instance={{ ...makeInstance("failed"), sku_id: 7 }} />);
-    const link = screen.getByRole("link", { name: /重新创建/ });
+    const link = screen.getByRole("link", { name: /重新创建/ }); // cjk-ok
     expect(link).toHaveAttribute("href", "/market/create/$skuId");
   });
 
-  it("running 实例点关机:弹确认框,确认后触发 stop", async () => {
+  it("running instance stop: a confirmation dialog, confirm fires stop", async () => {
     const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeInstance("running")} />);
     await user.click(screen.getByRole("button", { name: BTN_STOP }));
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getAllByText("确认关机?").length).toBeGreaterThan(0);
+    expect(within(dialog).getAllByText("确认关机?").length).toBeGreaterThan(0); // cjk-ok
     await user.click(within(dialog).getByRole("button", { name: BTN_STOP }));
     expect(stopMutateAsync).toHaveBeenCalledWith("u-1");
   });
 
-  it("frozen 实例:开机门控(欠费冻结前置条件),点击不触发 start", async () => {
+  it("frozen instance: start is gated (arrears freeze precondition), click does not fire start", async () => {
     const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeInstance("frozen")} />);
     const start = screen.getByRole("button", { name: BTN_START });
@@ -164,15 +164,15 @@ describe("InstanceActions", () => {
     expect(startMutate).not.toHaveBeenCalled();
   });
 
-  it("释放全链路:更多 → 释放实例(危险项末尾) → 键入名称 + 勾选清盘才解锁 → 触发 release", async () => {
+  it("release end to end: more → release instance (dangerous item last) → type the name + tick the wipe box to unlock → release fires", async () => {
     const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeInstance("stopped")} />);
     await user.click(screen.getByRole("button", { name: BTN_MORE }));
     const items = await screen.findAllByRole("menuitem");
-    expect(items.at(-1)).toHaveTextContent("释放实例");
-    await user.click(await screen.findByText("释放实例"));
+    expect(items.at(-1)).toHaveTextContent("释放实例"); // cjk-ok
+    await user.click(await screen.findByText("释放实例")); // cjk-ok
     const dialog = await screen.findByRole("dialog");
-    const confirm = within(dialog).getByRole("button", { name: "确认释放" });
+    const confirm = within(dialog).getByRole("button", { name: "确认释放" }); // cjk-ok
     expect(confirm).toBeDisabled();
     await user.type(within(dialog).getByPlaceholderText("demo-vm"), "demo-vm");
     expect(confirm).toBeDisabled();
@@ -183,127 +183,127 @@ describe("InstanceActions", () => {
   });
 });
 
-describe("InstanceActions · 包周期", () => {
-  it("按量 running 实例:出「转包周期」,不出续费/自动续费/转按量(那三项对它不存在)", async () => {
+describe("InstanceActions · subscription", () => {
+  it("on-demand running instance: shows convert to subscription, not renew / auto-renew / convert to on-demand (those three do not exist for it)", async () => {
     const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeInstance("running")} />);
     await user.click(screen.getByRole("button", { name: BTN_MORE }));
-    expect(await screen.findByRole("menuitem", { name: "转包周期" })).toBeInTheDocument();
+    expect(await screen.findByRole("menuitem", { name: "转包周期" })).toBeInTheDocument(); // cjk-ok
     expect(screen.queryByRole("menuitem", { name: MENU_RENEW })).toBeNull();
-    expect(screen.queryByRole("menuitem", { name: "开启自动续费" })).toBeNull();
-    expect(screen.queryByRole("menuitem", { name: "转按量" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "开启自动续费" })).toBeNull(); // cjk-ok
+    expect(screen.queryByRole("menuitem", { name: "转按量" })).toBeNull(); // cjk-ok
   });
 
-  it("按量 stopped 实例:「转包周期」照常可用(后端两种状态都收)", async () => {
+  it("on-demand stopped instance: convert to subscription stays available (the backend accepts both states)", async () => {
     const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeInstance("stopped")} />);
     await user.click(screen.getByRole("button", { name: BTN_MORE }));
-    expect(await screen.findByRole("menuitem", { name: "转包周期" })).not.toHaveAttribute("aria-disabled", "true");
+    expect(await screen.findByRole("menuitem", { name: "转包周期" })).not.toHaveAttribute("aria-disabled", "true"); // cjk-ok
   });
 
-  it("按量在途/冻结实例:「转包周期」可见但灰置(后端会 409,先拦一道)", async () => {
+  it("on-demand transitional / frozen instance: convert to subscription visible but greyed (the backend would 409, catch it first)", async () => {
     const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeInstance("frozen")} />);
     await user.click(screen.getByRole("button", { name: BTN_MORE }));
-    expect(await screen.findByRole("menuitem", { name: "转包周期" })).toHaveAttribute("aria-disabled", "true");
+    expect(await screen.findByRole("menuitem", { name: "转包周期" })).toHaveAttribute("aria-disabled", "true"); // cjk-ok
   });
 
-  it("包周期实例:不出「转包周期」(它已经在包周期里,该走续费)", async () => {
+  it("subscription instance: no convert to subscription (already on one, renewal is the path)", async () => {
     const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeSubscription("running", { expiresAt: FUTURE })} />);
     await user.click(screen.getByRole("button", { name: BTN_MORE }));
     await screen.findByRole("menuitem", { name: MENU_RENEW });
-    expect(screen.queryByRole("menuitem", { name: "转包周期" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "转包周期" })).toBeNull(); // cjk-ok
   });
 
-  it("点「转包周期」弹的是支付确认(标题带实例名,按钮写明是支付)", async () => {
+  it("clicking convert to subscription opens the payment confirmation (title with the instance name, button says pay)", async () => {
     const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeInstance("running")} />);
     await user.click(screen.getByRole("button", { name: BTN_MORE }));
-    await user.click(await screen.findByRole("menuitem", { name: "转包周期" }));
+    await user.click(await screen.findByRole("menuitem", { name: "转包周期" })); // cjk-ok
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getAllByText(/转包周期 · demo-vm/).length).toBeGreaterThan(0);
-    expect(within(dialog).getByRole("button", { name: "支付并转为包周期" })).toBeEnabled();
-    expect(within(dialog).getByText("从现在起算")).toBeInTheDocument();
+    expect(within(dialog).getAllByText(/转包周期 · demo-vm/).length).toBeGreaterThan(0); // cjk-ok
+    expect(within(dialog).getByRole("button", { name: "支付并转为包周期" })).toBeEnabled(); // cjk-ok
+    expect(within(dialog).getByText("从现在起算")).toBeInTheDocument(); // cjk-ok
   });
 
-  it("包周期实例:菜单出续费与自动续费,开关项按当前状态取反", async () => {
+  it("subscription instance: the menu shows renew and auto-renew, the switch item inverts the current state", async () => {
     const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeSubscription("running", { expiresAt: FUTURE })} />);
     await user.click(screen.getByRole("button", { name: BTN_MORE }));
     expect(await screen.findByRole("menuitem", { name: MENU_RENEW })).toBeInTheDocument();
-    await user.click(screen.getByRole("menuitem", { name: "开启自动续费" }));
+    await user.click(screen.getByRole("menuitem", { name: "开启自动续费" })); // cjk-ok
     expect(autoRenewMutate).toHaveBeenCalledWith(true);
   });
 
-  it("已开自动续费的实例菜单项变成「关闭自动续费」,点它传 false", async () => {
+  it("with auto-renew on the menu item becomes disable auto-renew and passes false", async () => {
     const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeSubscription("running", { expiresAt: FUTURE, autoRenew: true })} />);
     await user.click(screen.getByRole("button", { name: BTN_MORE }));
-    await user.click(await screen.findByRole("menuitem", { name: "关闭自动续费" }));
+    await user.click(await screen.findByRole("menuitem", { name: "关闭自动续费" })); // cjk-ok
     expect(autoRenewMutate).toHaveBeenCalledWith(false);
   });
 
-  it("包周期已到期:开机灰置(后端 assert_active 会 409,按钮先拦一道)", () => {
+  it("subscription expired: start greyed (the backend assert_active would 409, the button catches it first)", () => {
     renderWithApp(
       <InstanceActions instance={makeSubscription("stopped", { expiresAt: PAST, subStatus: "expired" })} />,
     );
     expect(screen.getByRole("button", { name: BTN_START })).toHaveAttribute("aria-disabled", "true");
   });
 
-  it("包周期在保且已关机:开机照常可用", () => {
+  it("subscription covered and stopped: start available as usual", () => {
     renderWithApp(<InstanceActions instance={makeSubscription("stopped", { expiresAt: FUTURE })} />);
     expect(screen.getByRole("button", { name: BTN_START })).toBeEnabled();
   });
 
-  it("包周期实例点关机:确认文案是「不退费但保留库存」,不是按量那句「再开机可能没库存」", async () => {
+  it("subscription instance stop: the confirmation says no refund but stock kept, not the on-demand stock warning", async () => {
     const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeSubscription("running", { expiresAt: FUTURE })} />);
     await user.click(screen.getByRole("button", { name: BTN_STOP }));
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText(/周期内关机不退费/)).toBeInTheDocument();
-    expect(within(dialog).queryByText(/已租完/)).toBeNull();
+    expect(within(dialog).getByText(/周期内关机不退费/)).toBeInTheDocument(); // cjk-ok
+    expect(within(dialog).queryByText(/已租完/)).toBeNull(); // cjk-ok
     await user.click(within(dialog).getByRole("button", { name: BTN_STOP }));
     expect(stopMutateAsync).toHaveBeenCalledWith("u-2");
   });
 });
 
-describe("InstanceActions · 竞价", () => {
-  it("竞价 running 实例:出「转按量」,不出「转包周期」(market 是单值,两条路互斥)", async () => {
+describe("InstanceActions · spot", () => {
+  it("spot running instance: shows convert to on-demand, not convert to subscription (market is single-valued, the two paths exclude each other)", async () => {
     const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeSpot("running")} />);
     await user.click(screen.getByRole("button", { name: BTN_MORE }));
-    expect(await screen.findByRole("menuitem", { name: "转按量" })).toBeInTheDocument();
-    expect(screen.queryByRole("menuitem", { name: "转包周期" })).toBeNull();
+    expect(await screen.findByRole("menuitem", { name: "转按量" })).toBeInTheDocument(); // cjk-ok
+    expect(screen.queryByRole("menuitem", { name: "转包周期" })).toBeNull(); // cjk-ok
   });
 
-  it("竞价在途实例:「转按量」可见但灰置(后端只收 running / stopped)", async () => {
+  it("spot transitional instance: convert to on-demand visible but greyed (the backend accepts running / stopped only)", async () => {
     const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeSpot("creating")} />);
     await user.click(screen.getByRole("button", { name: BTN_MORE }));
-    expect(await screen.findByRole("menuitem", { name: "转按量" })).toHaveAttribute("aria-disabled", "true");
+    expect(await screen.findByRole("menuitem", { name: "转按量" })).toHaveAttribute("aria-disabled", "true"); // cjk-ok
   });
 
-  it("点「转按量」的确认框必须写明重算当前整点小时与不再被回收,确认后才下发", async () => {
+  it("the convert-to-on-demand confirmation must state the current-hour repricing and no more reclamation, dispatched only after confirm", async () => {
     const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeSpot("running")} />);
     await user.click(screen.getByRole("button", { name: BTN_MORE }));
-    await user.click(await screen.findByRole("menuitem", { name: "转按量" }));
+    await user.click(await screen.findByRole("menuitem", { name: "转按量" })); // cjk-ok
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText(/当前整点小时将整体改按按量价结算/)).toBeInTheDocument();
-    expect(within(dialog).getByText(/不再被回收/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/当前整点小时将整体改按按量价结算/)).toBeInTheDocument(); // cjk-ok
+    expect(within(dialog).getByText(/不再被回收/)).toBeInTheDocument(); // cjk-ok
     expect(toOnDemandMutateAsync).not.toHaveBeenCalled();
-    await user.click(within(dialog).getByRole("button", { name: "确认转按量" }));
+    await user.click(within(dialog).getByRole("button", { name: "确认转按量" })); // cjk-ok
     expect(toOnDemandMutateAsync).toHaveBeenCalled();
   });
 });
 
 describe("ReleaseModal", () => {
-  it("键入名不匹配时确认按钮保持禁用", async () => {
+  it("the confirm button stays disabled while the typed name does not match", async () => {
     const user = userEvent.setup();
     renderWithApp(<ReleaseModal instance={makeInstance("stopped")} open onClose={() => {}} />);
     const dialog = await screen.findByRole("dialog");
-    const confirm = within(dialog).getByRole("button", { name: "确认释放" });
+    const confirm = within(dialog).getByRole("button", { name: "确认释放" }); // cjk-ok
     expect(confirm).toBeDisabled();
     await user.type(within(dialog).getByPlaceholderText("demo-vm"), "demo-vm-typo");
     await user.click(within(dialog).getByRole("checkbox"));
@@ -311,28 +311,28 @@ describe("ReleaseModal", () => {
     expect(releaseMutate).not.toHaveBeenCalled();
   });
 
-  it("creating 取消创建:尚未落盘,不弹清盘勾选,键入名字即解锁", async () => {
+  it("creating cancel: nothing on disk yet, no wipe checkbox, typing the name unlocks", async () => {
     const user = userEvent.setup();
     renderWithApp(<ReleaseModal instance={makeInstance("creating")} open onClose={() => {}} />);
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).queryByRole("checkbox")).toBeNull();
-    const confirm = within(dialog).getByRole("button", { name: "确认取消" });
+    const confirm = within(dialog).getByRole("button", { name: "确认取消" }); // cjk-ok
     expect(confirm).toBeDisabled();
     await user.type(within(dialog).getByPlaceholderText("demo-vm"), "demo-vm");
     expect(confirm).toBeEnabled();
   });
 
-  it("包周期实例释放:正文额外写明「预付不退款、剩余天数作废」", async () => {
+  it("subscription instance release: the body also states no prepayment refund and forfeited days", async () => {
     renderWithApp(
       <ReleaseModal instance={makeSubscription("stopped", { expiresAt: FUTURE })} open onClose={() => {}} />,
     );
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText(/预付费用不退款,剩余 20 天将一并作废/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/预付费用不退款,剩余 20 天将一并作废/)).toBeInTheDocument(); // cjk-ok
   });
 
-  it("按量实例释放:不出现包周期专属提示", async () => {
+  it("on-demand instance release: no subscription-specific hint", async () => {
     renderWithApp(<ReleaseModal instance={makeInstance("stopped")} open onClose={() => {}} />);
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).queryByText(/预付费用不退款/)).toBeNull();
+    expect(within(dialog).queryByText(/预付费用不退款/)).toBeNull(); // cjk-ok
   });
 });

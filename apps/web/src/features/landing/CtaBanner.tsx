@@ -1,4 +1,4 @@
-/** CTA 横幅:实时空闲卡数,取不到则退化为静态口号。 */
+/** CTA banner: live idle card count, degrading to a static slogan when unavailable. */
 
 import { brand, brandInverseButtonStyle, layout, space } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";

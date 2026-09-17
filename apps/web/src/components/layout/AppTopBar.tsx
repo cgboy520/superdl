@@ -1,4 +1,4 @@
-/** 顶栏:public 使用品牌渐变与锚点导航;console 使用中性底与 right 插槽。 */
+/** Top bar: public uses the brand gradient and anchor navigation; console uses a neutral background and the right slot. */
 
 import { MenuOutlined, MoonOutlined, SunOutlined } from "@ant-design/icons";
 import { brand, brandInverseButtonStyle, fontSize, layout, space } from "@superdl/ui";

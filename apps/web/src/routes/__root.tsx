@@ -16,8 +16,8 @@ export const Route = createRootRoute({
   notFoundComponent: NotFoundPage,
 });
 
-/** locale + 主题 + 部署货币联动的唯一 Provider:主树/错误边界/404 共用。暗色 = darkAlgorithm + webDarkTheme 覆写;
- *  货币来自 /site-config,未知前金额只显示数字。 */
+/** The single Provider linking locale + theme + deployment currency: shared by the main tree / error boundary / 404. Dark = darkAlgorithm + webDarkTheme overrides;
+ *  the currency comes from /site-config, amounts show the number only until it is known. */
 function AppProviders({ children }: { children: ReactNode }) {
   const antdLocale = useAppLocale();
   const mode = useThemeMode();
@@ -55,7 +55,7 @@ function RootLayout() {
   );
 }
 
-/** 全局错误边界:渲染异常兜底为可恢复页面(Result 体与 admin 共用 RouteErrorFallbackView)。 */
+/** Global error boundary: render exceptions fall back to a recoverable page (the Result body shares RouteErrorFallbackView with admin). */
 function RouteErrorFallback({ error, reset }: ErrorComponentProps) {
   const { t } = useTranslation();
   return (

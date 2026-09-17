@@ -1,4 +1,4 @@
-/** 服务详情:端点、概览、密钥、监控、日志、历史与设置;版本更新使用抽屉。 */
+/** Service detail: endpoint, overview, keys, monitoring, logs, history and settings; revision updates use a drawer. */
 
 import { POLL, space } from "@superdl/ui";
 import type { InstanceOut, ServiceOut } from "@superdl/api-client";
@@ -41,7 +41,7 @@ import { requireAuth } from "../lib/guard";
 export const SERVICE_DETAIL_TABS = ["overview", "keys", "metrics", "logs", "history", "settings"] as const;
 export type ServiceDetailTab = (typeof SERVICE_DETAIL_TABS)[number];
 
-/** Tab 白名单;非法值回默认 Tab。 */
+/** Tab allow-list; invalid values fall back to the default tab. */
 export function serviceDetailValidateSearch(search: Record<string, unknown>): { tab?: ServiceDetailTab } {
   const tab = search.tab;
   if (typeof tab !== "string") return {};
@@ -54,7 +54,7 @@ export const Route = createFileRoute("/_console/services_/$slug")({
   component: ServiceDetail,
 });
 
-/** 概览:当前版本容器配置回显 + 调用示例。密文 env 只显示键名(接口只回 env_secret_keys)。 */
+/** Overview: echo of the current revision's container configuration + call example. Secret env shows key names only (the API returns env_secret_keys only). */
 function OverviewTab({ service }: { service: ServiceOut }) {
   const { t } = useTranslation();
   const c = service.container;
@@ -168,7 +168,7 @@ function OverviewTab({ service }: { service: ServiceOut }) {
   );
 }
 
-/** 版本历史:按实例 ID 降序展示首 50 条(含已释放),不提供翻页;当前版本打标。 */
+/** Revision history: the first 50 by instance ID descending (released included), no paging; the current revision is marked. */
 function RevisionsTab({ service }: { service: ServiceOut }) {
   const { t } = useTranslation(["web", "shared"]);
   const q = useServiceRevisions(service.slug);

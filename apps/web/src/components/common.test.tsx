@@ -1,4 +1,4 @@
-/** HexTag 渲染回归:暗色主题下档位/竞价/包周期 Tag 底色必须是 token 原值,不被 antd dark algorithm 调亮。 */
+/** HexTag rendering regression: tier / spot / subscription Tag backgrounds in dark mode must be the raw token values, not lightened by the antd dark algorithm. */
 import type { InstanceSubscriptionOut } from "@superdl/api-client";
 import { webDarkTheme, webTheme } from "@superdl/ui";
 import { ConfigProvider, theme as antdTheme } from "antd";
@@ -16,7 +16,7 @@ function renderThemed(node: ReactElement, dark: boolean) {
   );
 }
 
-/** 未过期包月订阅(colorPrimary 分支) */
+/** Unexpired monthly subscription (colorPrimary branch) */
 const SUB: InstanceSubscriptionOut = {
   period: "month",
   period_count: 1,
@@ -28,8 +28,8 @@ const SUB: InstanceSubscriptionOut = {
   unit_price: "1.0000",
 };
 
-describe("HexTag 替换后的 Tag 渲染", () => {
-  it("暗色主题:TierTag/SpotTag/SubscriptionTag 底色不被 algorithm 调亮,白字", () => {
+describe("Tag rendering after the HexTag replacement", () => {
+  it("dark theme: TierTag/SpotTag/SubscriptionTag backgrounds are not lightened by the algorithm, white text", () => {
     const { container } = renderThemed(
       <>
         <TierTag tier="dedicated" pool={null} />
@@ -48,7 +48,7 @@ describe("HexTag 替换后的 Tag 渲染", () => {
     }
   });
 
-  it("已过期的包周期标记转橙(statusColors.orange)", () => {
+  it("an expired subscription marker turns orange (statusColors.orange)", () => {
     const expired: InstanceSubscriptionOut = { ...SUB, expires_at: "2020-01-01T00:00:00Z" };
     const { container } = renderThemed(<SubscriptionTag market="subscription" subscription={expired} />, true);
     const tag = container.querySelector(".ant-tag");

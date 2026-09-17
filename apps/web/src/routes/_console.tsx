@@ -1,5 +1,5 @@
-/** 控制台布局:中性色顶栏(56px)压可折叠侧栏(200px,lg 断点收起;窄屏导航走顶栏汉堡 Drawer);market 未登录可看。
- *  <main id="main"> 地标 + 跳转链接给键盘用户;合规声明只在公开页脚与市场页脚,控制台不再常驻。 */
+/** Console layout: neutral top bar (56px) over a collapsible sidebar (200px, collapses at the lg breakpoint; narrow screens navigate through the top-bar hamburger Drawer); market is browsable when signed out.
+ *  <main id="main"> landmark + skip link for keyboard users; the compliance statement lives only in the public and market footers, no longer permanent in the console. */
 
 import { layout, space } from "@superdl/ui";
 import { createFileRoute, Outlet } from "@tanstack/react-router";

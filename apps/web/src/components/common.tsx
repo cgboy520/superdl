@@ -1,4 +1,4 @@
-/** 小件:状态徽标(StatusTag 的 ≤5 行包装)/ 档位标 / 购买模式标。 */
+/** Small pieces: status badge (≤ 5-line wrapper of StatusTag) / tier tag / purchase-mode tag. */
 
 import type { InstanceSubscriptionOut } from "@superdl/api-client";
 import {
@@ -22,7 +22,7 @@ import { useTranslation } from "react-i18next";
 
 import { useFormat } from "@superdl/ui";
 
-/** 冻结态附回收倒计时 */
+/** Frozen state with the reclamation countdown */
 function FrozenCountdown({ status, deadline }: { status: string; deadline?: string | null }) {
   const { formatReclaimCountdown } = useFormat();
   if (status !== "frozen" || !deadline) return null;
@@ -40,7 +40,7 @@ export function InstanceStatusBadge({ status, frozenDeadline }: { status: string
   );
 }
 
-/** 在线服务的派生状态徽标;unready 的解释 tooltip 由表里的 hintKey 自动出。 */
+/** Derived status badge of online services; the unready tooltip comes from the table's hintKey. */
 export function ServiceStatusBadge({ status, frozenDeadline }: { status: string; frozenDeadline?: string | null }) {
   return (
     <StatusTag

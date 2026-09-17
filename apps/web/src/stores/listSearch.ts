@@ -1,4 +1,4 @@
-/** 列表页最近一次筛选态(按列表路径记),供详情页「返回列表」链接带回原筛选;不入 URL,sessionStorage 持久化到本标签页。 */
+/** Last filter state of each list page (keyed by list path) so the detail page's "back to list" restores it; not in the URL, persisted in sessionStorage per tab. */
 
 import { createStore } from "zustand/vanilla";
 import { useStore } from "zustand";
@@ -34,10 +34,10 @@ export const listSearchStore = createStore<{
   },
 }));
 
-/** 无记录时返回的稳定空对象。 */
+/** Stable empty object returned without a record. */
 const EMPTY: ListSearch = Object.freeze({});
 
-/** 读取某列表路径最近的筛选态(无记录返回稳定的空对象)。 */
+/** Read the last filter state of a list path (a stable empty object without a record). */
 export function useRememberedListSearch(path: string): ListSearch {
   return useStore(listSearchStore, (s) => s.byPath[path] ?? EMPTY);
 }

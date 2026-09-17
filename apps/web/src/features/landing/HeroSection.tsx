@@ -1,4 +1,4 @@
-/** 主页 Hero:标题、两个 CTA 与实时行情板;窄屏纵向排列。 */
+/** Home Hero: title, two CTAs and the live price board; stacked vertically on narrow screens. */
 
 import { brand, brandInverseButtonStyle, fontSize, fontWeight, layout, space } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
