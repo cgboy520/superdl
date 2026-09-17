@@ -51,6 +51,7 @@ bash -n apps/api/app/modules/nodes/assets/node-join.sh && shellcheck apps/api/ap
 bats deploy/node-join/tests
 python3 scripts/check-docs-links.py
 python3 scripts/check-page-skeleton.py
+bash scripts/check-cjk.sh --scope repo
 ```
 
 ## 硬性规范(违反即返工)
@@ -87,6 +88,6 @@ python3 scripts/check-page-skeleton.py
     - ruff 复杂度上限(圈复杂度 12 / 分支 14 / 语句 60,`apps/api/pyproject.toml`)超了拆函数,不加 noqa;pyright 配置只认仓库根 `pyrightconfig.json`(standard + 多余 ignore / 多余比较 / 私有访问报错),白盒测试直探模块内部时文件头声明 `# pyright: reportPrivateUsage=false`
   - 前端:prettier --check → eslint → tsc → vitest;动文案/locale 加 `pnpm i18n`,动构建配置加 build
   - 脚本:bash -n → shellcheck → bats
-  - 文档:`python3 scripts/check-docs-links.py`;`deploy/` 与 `apps/api/` 之外的 Markdown 另过 `pnpm format:check`;只改文档或注释只需跑这两项
+  - 文档:`python3 scripts/check-docs-links.py` 与仓库级 CJK 闸门 `bash scripts/check-cjk.sh --scope repo`(新内容一律英文;中文只许留在 `locales/**`、zh-CN 错误目录、法务预置与 `cjk-ok` 标记行;仍待翻译的路径前缀在脚本的 `REPO_CJK_ALLOW` 里,只减不增);`deploy/` 与 `apps/api/` 之外的 Markdown 另过 `pnpm format:check`;只改文档或注释只需跑这两项
   - 用户可见主链路:Playwright 冒烟
   - 只在 CI:pip-audit / pnpm audit、gitleaks、kubeconform(`deploy/app/k8s`)、kind 上的 RealOrchestrator 冒烟

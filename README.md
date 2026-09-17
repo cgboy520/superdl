@@ -57,7 +57,7 @@ Production deployment, releases, cluster installation (RKE2 "full" or k3s "light
 
 ## Gates
 
-Run the local gates that match your change; do not push red. A PR merges only with a fully green CI. The single list of commands lives in [CLAUDE.md](CLAUDE.md) ("常用命令" and "工作流与提交约定").
+Run the local gates that match your change; do not push red. A PR merges only with a fully green CI. The single list of commands lives in [CLAUDE.md](CLAUDE.md) ("常用命令" and "工作流与提交约定"). <!-- cjk-ok -->
 
 ## Repository layout
 
