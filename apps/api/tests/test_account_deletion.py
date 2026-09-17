@@ -264,7 +264,7 @@ class TestApproveSuccess:
         me = await client.get("/api/v1/me", headers={"Authorization": f"Bearer {old_access}"})
         assert me.status_code == 401
         assert me.json()["message_key"] == "account.accountDeleted"
-        assert me.json()["message"] == "账号已注销"
+        assert me.json()["message"] == "Account deleted"
         refresh = await refresh_via_cookie(client, old_refresh)
         assert refresh.status_code == 401
         assert refresh.json()["message_key"] == "account.accountDeleted"

@@ -4483,7 +4483,7 @@
         "type": "object"
       },
       "LegalDocOut": {
-        "description": "公开端点:当前 published 版。fallback=true 表示请求语言缺失、回落 zh-CN。",
+        "description": "Public endpoint: the current published version. fallback=true means the requested locale\nhas no published version and another locale is served.",
         "properties": {
           "content_md": {
             "title": "Content Md",
@@ -18997,7 +18997,7 @@
     },
     "/api/v1/legal/{doc_key}": {
       "get": {
-        "description": "当前 published 版(免鉴权)。en-US 缺失回落 zh-CN 且 fallback=true;\ndoc_key 非法或无 published 均 404。",
+        "description": "Current published version (no auth). Missing locales fall back along the chain (requested →\nprofile default → others) with fallback=true; unknown doc_key or nothing published → 404.",
         "operationId": "get_legal_doc_api_v1_legal__doc_key__get",
         "parameters": [
           {

@@ -51,7 +51,7 @@ export function LegalDocPage({ docKey }: { docKey: LegalDocKey }) {
   const navigate = useNavigate();
   const screens = Grid.useBreakpoint();
   const wide = screens.lg ?? false;
-  const lang = i18n.language.startsWith("en") ? "en-US" : "zh-CN";
+  const lang = i18n.language.startsWith("zh") ? "zh-CN" : "en-US";
   const { data, isLoading, isError, refetch } = useLegalDoc(docKey, lang);
   const bodyRef = useRef<HTMLDivElement>(null);
   const toc = useMemo(() => parseTocHeadings(data?.content_md ?? ""), [data?.content_md]);

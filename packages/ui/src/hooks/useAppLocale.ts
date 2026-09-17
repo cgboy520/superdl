@@ -14,7 +14,7 @@ const DAYJS_LOCALES = { "zh-CN": "zh-cn", "en-US": "en" } as const;
 
 export function useAppLocale() {
   const { t, i18n } = useTranslation();
-  const lang = i18n.resolvedLanguage === "en-US" ? "en-US" : "zh-CN";
+  const lang = i18n.resolvedLanguage === "zh-CN" ? "zh-CN" : "en-US";
   useEffect(() => {
     dayjs.locale(DAYJS_LOCALES[lang]);
     document.documentElement.lang = lang;

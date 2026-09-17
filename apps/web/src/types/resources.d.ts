@@ -1155,7 +1155,7 @@ export default interface Resources {
       "docDeletionNotice": "《数据删除说明》",
       "docPrivacy": "《隐私政策》",
       "docTerms": "《用户协议》",
-      "fallbackNote": "英文版翻译中,当前显示中文版本",
+      "fallbackNote": "该文档暂无当前语言版本,显示的是其他语言版本",
       "toc": "目录",
       "versionLine": "版本 v{{version}} · 更新于 {{date}}"
     },

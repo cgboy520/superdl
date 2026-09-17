@@ -153,3 +153,29 @@ async def test_identity_migration_backfills_legacy_rows(scratch_url: str) -> Non
 
     check = _alembic(scratch_url, "check")
     assert check.returncode == 0, check.stdout + check.stderr
+
+
+async def test_legal_en_us_drafts_seeded_once(scratch_url: str) -> None:
+    """Head seeds one en-US draft v1 per document next to the baseline's zh-CN published v1;
+    re-running the statement (any en-US row present) inserts nothing."""
+    up = _alembic(scratch_url, "upgrade", "head")
+    assert up.returncode == 0, up.stderr
+    engine = create_async_engine(scratch_url)
+    async with engine.connect() as conn:
+        rows = (
+            await conn.execute(
+                text(
+                    "SELECT doc_key, locale, version, status FROM legal_doc_versions"
+                    " ORDER BY doc_key, locale"
+                )
+            )
+        ).all()
+    await engine.dispose()
+    assert [tuple(r) for r in rows] == [
+        ("deletion_notice", "en-US", 1, "draft"),
+        ("deletion_notice", "zh-CN", 1, "published"),
+        ("privacy", "en-US", 1, "draft"),
+        ("privacy", "zh-CN", 1, "published"),
+        ("terms", "en-US", 1, "draft"),
+        ("terms", "zh-CN", 1, "published"),
+    ]

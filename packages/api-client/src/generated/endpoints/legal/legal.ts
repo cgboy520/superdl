@@ -28,8 +28,8 @@ export const getGetLegalDocApiV1LegalDocKeyGetUrl = (docKey: string,
 }
 
 /**
- * 当前 published 版(免鉴权)。en-US 缺失回落 zh-CN 且 fallback=true;
- * doc_key 非法或无 published 均 404。
+ * Current published version (no auth). Missing locales fall back along the chain (requested →
+ * profile default → others) with fallback=true; unknown doc_key or nothing published → 404.
  * @summary Get Legal Doc
  */
 export const getLegalDocApiV1LegalDocKeyGet = async (docKey: string,

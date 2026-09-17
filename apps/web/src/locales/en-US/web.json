@@ -580,7 +580,7 @@
     "docDeletionNotice": "Data Deletion Notice",
     "docPrivacy": "Privacy Policy",
     "docTerms": "Terms of Service",
-    "fallbackNote": "English translation in progress — showing the Chinese version",
+    "fallbackNote": "This document is not yet available in your language — showing another language version",
     "toc": "Contents",
     "versionLine": "Version v{{version}} · Updated {{date}}"
   },

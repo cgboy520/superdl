@@ -1,4 +1,5 @@
-/** 两端 i18n 初始化共用壳:shared/errors 由 ui 提供;语言探测 localStorage("superdl.lang") → navigator,缺译回落 zh-CN。 */
+/** Shared i18n bootstrap for both consoles: `shared` / `errors` come from ui; language detection is
+ *  localStorage("superdl.lang") → navigator, and missing translations fall back to en-US. */
 
 import i18n, { type i18n as I18nInstance, type Resource } from "i18next";
 import LanguageDetector from "i18next-browser-languagedetector";
@@ -26,7 +27,7 @@ export function initAppI18n(opts: {
     .use(initReactI18next)
     .init({
       resources,
-      fallbackLng: "zh-CN",
+      fallbackLng: "en-US",
       supportedLngs: [...SUPPORTED_LANGS],
       defaultNS: opts.appNs,
       interpolation: { escapeValue: false },
