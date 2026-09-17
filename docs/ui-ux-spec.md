@@ -1,361 +1,361 @@
-# SuperDL UI/UX 规格
+# SuperDL UI/UX specification
 
-两端(`web` 用户控制台与公开层 / `admin` 管理控制台)的信息架构、逐屏交互规则与视觉约定。文案规范见 [`copy-style-guide.md`](./copy-style-guide.md),前端契约见 [`reference/web.md`](./reference/web.md) 与 [`reference/admin.md`](./reference/admin.md),共享组件的落点在 `packages/ui/src/components/`。
+Information architecture, per-screen interaction rules and visual conventions of both consoles (`web` user console and public layer / `admin` admin console). Copy rules in [`copy-style-guide.md`](./copy-style-guide.md), frontend contracts in [`reference/web.md`](./reference/web.md) and [`reference/admin.md`](./reference/admin.md), shared components live in `packages/ui/src/components/`.
 
-## 1. 全站交互规则
+## 1. Site-wide interaction rules
 
-1. **决定优先于说明**:常驻横幅只放「有时效、可行动」的事:到期 / 冻结 / 失败 / 低余额 / 欠费 / 公告 / 部分数据加载失败 / 配置风险。**一页至多一条横幅**,任何页面 ≥2 条 `Alert` 必须经共享 `AttentionBar` 聚合为「N 件需要处理」+ 展开列表,严重度取最高(用户端实例列表、费用中心;管理端总览、集群、平台配置、节点)。政策与口径说明进标题旁 `?` tooltip、「计费规则」弹窗或卡内脚注(≤30 字),不做常驻条。合规声明(禁挖矿)只在公开页脚与市场页脚。
-2. **一处一主动作**:每页一个 primary CTA,放在 `PageHeader.extra`。表格行内动作走 `RowActions` 三个槽位:`主动作`(随状态变)+ `次动作`(随状态变)+ `更多 ▾`(`RowMoreMenu`,危险项末尾、标 `danger`);槽位只能少不能多。进详情走名称链接;**禁止双击行**。
-3. **CTA 即库存**:首页行情板与价格墙的按钮直接写「可开实例 N」/「已租完」;市场表格用「可开实例」列 + 售罄行弱化底色(不用 opacity)并排到末尾。SKU `available_count` 是近似可开实例数(共享档含超卖系数),**不是物理空闲卡数**;页面一律用「可开实例 / 台」表述,禁止换算成「卡」。售罄从不是死胡同:售罄行 / 卡片给「看同型号其它档位」链接。
-4. **条件操作一律可见但禁用 + 原因可读**:禁用带原因的按钮唯一写法是 `GatedButton`(`reason` 非空 → `aria-disabled` + `tabIndex=0` + 拦截点击 + Tooltip 原因;键盘 Tab 可达)。`Tooltip` 直接包原生 `disabled` Button 由 **ESLint 禁止**;原生硬禁用只用于「提交在途」。菜单项(`RowMoreMenu`)同样永不隐藏条目,灰置项也用 `GatedButton` 渲染。占位项的去留有判据:只有「已排期、按当前设计确定要做」的能力留 disabled 占位并注「即将上线」;兑现或删除时 [`reference/web.md`](./reference/web.md) 与本节占位清单同提交更新。
-5. **价格口径显性化**:表头写清「单卡时价」或「整机时价」(货币符号由金额本身携带);卡数 >1 时行内副行给 `× N = 总价`;结算条大字带 `× N 卡` 后缀;包周期「原价 / 优惠 / 应付」直接摊在结算条第二行,不进 Popover;非金额项(到期时间)降级为正文字号。「数据盘费用(按日)」单独一栏(关机也扣的钱),无盘不出;与「今日消费」严格分词。
-6. **风险前置、同意一次**:选中「共享·经济」或「竞价」的那一刻,在 chip 下方给 ≤3 行风险摘要;提交时只弹**一个**分节知情同意弹窗(`ConsentGate`:竞价一节 / 经济一节,命中几节出几节),每节 ≤3 条 + 「完整说明」链接,一次勾选;创建失败重试不重置勾选;确认后先执行 `onProceed` 再关弹窗,按钮 loading 真实可见。竞价五条与经济四条的完整文案见 §3.5,②③④ 逐条对应 `apps/api/app/modules/orchestrator/preempt.py` 的三条硬规矩与结算口径,**改代码等于改文案,两边同提交**;折扣与宽限秒数从 `/policies` 读,不硬编码。
-7. **关机 ≠ 释放,多级删除防护**:释放需**键入实例名称** + 勾选「我确认将清除实例盘全部数据(数据盘不受影响)」两道闸才解锁红色按钮。`creating` 态入口文案「取消创建」,只过键入这道。删除数据盘同为两道闸(键入盘名 + 勾选「盘内数据将被清除」)。
-8. **确认强度分级(L0~L3),两端强制组件化**:L3 = `TypeConfirmModal`(键入目标名 + 勾选;释放实例、删除数据盘、删除服务、注销账号、管理端执行注销);L2 = `useConfirm`(后果前置 + 影响说明;关机、重启、SKU 改价、群发公告、重新生成注册命令、重新生成恢复码、改管理员角色、登出全部设备)或管理端 `ReasonAction`(原因必填 → 二次确认 → 审计;两步都显示目标标识);L1 = `useConfirm` 轻量(可逆且影响面 = 1:删 SSH key、解决 / 关闭工单、归档法务草稿);L0 = 无确认(开关类可逆操作、退出登录)。**恢复方向的管理动作(解封节点、解冻租户、上架 SKU)只填原因、不做第二步确认**(不倒挂:恢复不能比破坏更难)。**`Popconfirm` 全站禁用**;危险动作的确认按钮一律 `danger`;审计型原因一律手输。确认文案 = 「标题问句(含目标)+ 后果正文」。
-9. **给等待路径,不给死胡同**:库存不足给「换个规格」引导(结算条 `notice` 常驻,不用 toast);创建失败给「重新创建」按钮与失败原因;建盘成功而建实例失败,用页内不自动消失的 `Alert` + 「去存储页」按钮。
-10. **URL 即状态**:列表筛选、搜索词、Tab activeKey、深链目标(节点名 / 工单 id / 租户 id / 配置分组 / 对账日期)一律入 URL(`validateSearch` 白名单 + 默认值剥离 + `replace: true`);控件与 URL 双向同步(`useUrlFilters` / `useUrlCommittedInput`);抽屉开合若承载可转达视图(租户抽屉、节点详情)也入 URL。**所有详情页「返回列表」带回列表最近筛选态**(web `stores/listSearch`),实例、服务、工单一致。
-11. **轮询三律 + 新鲜度可见**:① 只经 react-query `refetchInterval`,周期取 `packages/ui/src/polling.ts` 的 `POLL`,禁止裸数字与原生 `setInterval`;② 一律函数式:过渡态 `POLL.transient`、稳态 `POLL.steady`、终态即停(false);③ `useInfiniteQuery` 上禁止轮询,列表新鲜度靠 `refetchOnWindowFocus` + 手动刷新;折叠 / 未打开的 UI 对应查询挂 `enabled`。**凡有轮询的页面必须在页头出新鲜度条**(`PageHeader.freshness` + `useAutoRefresh`:「更新于 · 每 N 秒自动刷新 · 暂停 / 立即刷新」),两端一致;局部面板用独立导出的 `Freshness`。
-12. **密度分级**:web「舒适」(表格 `cellPaddingBlock 12`、正文 14);admin「紧凑」(表格 13px / `cellPaddingBlock 8`,嵌套表 `size="small"`,顶层表不用 `small`);全站 `tabular-nums`。**表格规范(两端)**:数值与金额列右对齐;标识列(uuid / 订单号 / slug / 节点名)用 `Mono`;`scroll.x ≥ 1000` 的表**必须**固定标识列(左)与操作列(右)+ `sticky={{ offsetHeader: layout.topBarHeight }}`,固定右列必须是最后一列;宽表页用 `PageContainer width="full"`;空态一律 `EmptyState`(筛选无结果用 `search` 场景 + 「清除筛选」次动作),错误态 `TableErrorEmpty`;游标分页表一律 `CursorTable`。
-13. **尺寸与容器分档**:输入框 / 下拉宽度取 `controlWidth`(xs 96 / sm 160 / md 260 / lg 320);≥2 张卡或需滚动的编辑表单改 Drawer(`drawerWidth.md/lg` 两档,提交与取消固定在 `footer`,挂 `useLeaveGuard`,审计原因是最后一个字段);按钮尺寸「页头 CTA middle / 结算条 large / 卡内 middle / 行内 small」;锚点滚动目标加 `scroll-margin-top: layout.scrollMarginTop`。
-14. **「选一个」控件角色表**:`Segmented` = 视图 / Tab 切换(状态计数条、监控范围、登录方式);`ChipRow` = 筛选与轻量选项(市场筛选、GPU 数量、计费方式);`OptionTile` = 表单里的互斥大项(镜像、数据盘模式、充值渠道、访问鉴权、协议),`role=radiogroup` + 方向键;表内 radio 只用于「从列表里挑一行」。禁止 `Button + aria-pressed` 表示选中,禁止 `Radio.Group optionType="button"`。
-15. **可访问性底线**:两端 `<main id="main">` 地标 + 跳转链接;导航当前项 `aria-current="page"`;手写 `role="button"` 元素统一焦点框(`base.css .focus-ring`);Popover / Tooltip 信息触屏可点开(`trigger` 含 click,宿主可聚焦);快捷键在可编辑元素聚焦时不抢;告警严重度与状态从不只靠颜色(文字 + 图标);`HexTag` 文字色按底色亮度取黑 / 白;移动端也能切主题(用户菜单)。
-16. **页面骨架**:每个控制台页面自持 `PageContainer`(`title` / `description` / `extra` / `freshness` / `width`),下方可选 `FilterBar`(筛选控件 + 「清除筛选」+ 「共 N 条」),再是主体;两端一致(壳只提供顶栏 / 侧栏 / `<main>`,不包容器)。实体详情页与抽屉头部用 `EntityHeader`。闸门:`python3 scripts/check-page-skeleton.py`。
+1. **Decisions before explanations**: permanent banners carry only "time-bound, actionable" matters: expiry / freeze / failure / low balance / arrears / announcements / partial data-load failure / configuration risk. **At most one banner per page**; any page with ≥ 2 `Alert`s must aggregate them through the shared `AttentionBar` into "N items need attention" + an expandable list, severity = the highest (user console: instance list, billing; admin: overview, cluster, platform configuration, nodes). Policy and definition notes go into a `?` tooltip next to the title, the "Billing rules" dialog or a card footnote (≤ 30 characters), never a permanent bar. The compliance statement (no mining) appears only in the public footer and the market footer.
+2. **One primary action per place**: one primary CTA per page, in `PageHeader.extra`. Table row actions use the three `RowActions` slots: `primary` (varies with status) + `secondary` (varies with status) + `More ▾` (`RowMoreMenu`, dangerous items last and marked `danger`); slots may be fewer, never more. Details open through the name link; **no row double-click**.
+3. **The CTA is the stock indicator**: buttons on the home price board and price wall literally say "N available" / "Sold out"; the market table uses an "Available" column + a muted background for sold-out rows (not opacity), sorted last. SKU `available_count` is the approximate number of instances that can be started (the shared tier includes the oversell factor), **not the physical idle card count**; pages always say "available instances", never convert to "cards". Sold out is never a dead end: sold-out rows / cards link to "other tiers of the same model".
+4. **Conditional actions are always visible but disabled, with a readable reason**: the only way to write a disabled button with a reason is `GatedButton` (non-empty `reason` → `aria-disabled` + `tabIndex=0` + click intercepted + Tooltip reason; reachable by Tab). Wrapping a native `disabled` Button in `Tooltip` is **banned by ESLint**; native hard disabling is only for "submission in flight". Menu items (`RowMoreMenu`) likewise never hide entries; greyed items are also rendered with `GatedButton`. Whether a placeholder stays has a criterion: only capabilities that are "scheduled and definitely planned under the current design" keep a disabled placeholder marked "coming soon"; when delivered or dropped, [`reference/web.md`](./reference/web.md) and this section's placeholder list are updated in the same commit.
+5. **Explicit price basis**: headers say "per-card hourly" or "whole-machine hourly" (the currency symbol comes with the amount); with > 1 card the row gets a `× N = total` sub-row; the checkout bar's large figure carries a `× N cards` suffix; the subscription "list / discount / payable" sits directly on the second line of the checkout bar, not in a Popover; non-money items (expiry) drop to body size. "Data-disk fee (daily)" is its own line (money charged even when stopped), omitted without a disk; strictly separated from "today's spend".
+6. **Risk first, consent once**: the moment "shared · economy" or "spot" is selected, a ≤ 3-line risk summary appears under the chip; on submit exactly **one** sectioned consent dialog opens (`ConsentGate`: one section for spot / one for economy, as many as apply), each ≤ 3 items + a "full terms" link, one checkbox; a retry after a failed creation does not reset the checkbox; on confirm `onProceed` runs before the dialog closes so the button's loading state is really visible. The five spot items and four economy items are in §3.5; ②③④ correspond one to one to the three hard rules and the settlement definition in `apps/api/app/modules/orchestrator/preempt.py`, **changing the code means changing the copy, both in one commit**; the discount and grace seconds come from `/policies`, never hard-coded.
+7. **Stop ≠ release, multi-level deletion protection**: releasing requires **typing the instance name** + ticking "I confirm all data on the instance disk will be erased (data disks are unaffected)" before the red button unlocks. In `creating` the entry copy is "Cancel creation" and only the typing gate applies. Deleting a data disk has the same two gates (type the disk name + tick "the data on the disk will be erased").
+8. **Confirmation strength levels (L0–L3), componentised on both consoles**: L3 = `TypeConfirmModal` (type the target name + checkbox; release instance, delete data disk, delete service, delete account, admin executing a deletion); L2 = `useConfirm` (consequence first + impact; stop, restart, SKU price change, broadcast announcement, regenerate enrollment command, regenerate recovery codes, change admin role, sign out everywhere) or admin `ReasonAction` (reason required → second confirmation → audit; both steps show the target identifier); L1 = lightweight `useConfirm` (reversible and impact = 1: delete SSH key, resolve / close ticket, archive legal draft); L0 = no confirmation (reversible switch-type actions, sign out). **Recovery-direction admin actions (uncordon node, unfreeze tenant, list SKU) only take a reason, no second step** (no inversion: recovery must not be harder than destruction). **`Popconfirm` is banned site-wide**; confirm buttons of dangerous actions are always `danger`; audit reasons are always typed by hand. Confirmation copy = "title question (with the target) + consequence body".
+9. **Give a way forward, not a dead end**: insufficient stock offers "pick another spec" (permanent in the checkout bar `notice` slot, no toast); a failed creation offers a "Recreate" button and the failure reason; when the disk was created but the instance failed, an in-page non-dismissing `Alert` + "Go to storage" button.
+10. **URL is state**: list filters, search terms, Tab activeKey and deep-link targets (node name / ticket id / tenant id / config group / reconciliation date) always go into the URL (`validateSearch` allow-list + defaults stripped + `replace: true`); controls and URL sync both ways (`useUrlFilters` / `useUrlCommittedInput`); drawers whose open state carries a shareable view (tenant drawer, node detail) also go into the URL. **Every detail page's "back to list" restores the list's last filter state** (web `stores/listSearch`), consistently for instances, services and tickets.
+11. **Three polling laws + visible freshness**: ① only through react-query `refetchInterval`, with periods from `POLL` in `packages/ui/src/polling.ts`; bare numbers and native `setInterval` are banned; ② always functional: transitional `POLL.transient`, steady `POLL.steady`, terminal = stop (false); ③ no polling on `useInfiniteQuery`, list freshness relies on `refetchOnWindowFocus` + manual refresh; queries behind collapsed / unopened UI hang on `enabled`. **Every page that polls must show a freshness bar in its header** (`PageHeader.freshness` + `useAutoRefresh`: "updated at · auto-refresh every N s · pause / refresh now"), the same on both consoles; local panels use the separately exported `Freshness`.
+12. **Density levels**: web "comfortable" (table `cellPaddingBlock 12`, body 14); admin "compact" (table 13px / `cellPaddingBlock 8`, nested tables `size="small"`, top-level tables not `small`); `tabular-nums` site-wide. **Table rules (both consoles)**: numeric and money columns right-aligned; identifier columns (uuid / order no / slug / node name) in `Mono`; tables with `scroll.x ≥ 1000` **must** fix the identifier column (left) and the action column (right) + `sticky={{ offsetHeader: layout.topBarHeight }}`, and the fixed right column must be the last; wide-table pages use `PageContainer width="full"`; empty states always `EmptyState` (no filter results use the `search` scene + a "Clear filters" secondary action), error state `TableErrorEmpty`; cursor-paged tables always `CursorTable`.
+13. **Size and container tiers**: input / select widths from `controlWidth` (xs 96 / sm 160 / md 260 / lg 320); edit forms with ≥ 2 cards or needing scroll become a Drawer (`drawerWidth.md/lg`, submit and cancel fixed in the `footer`, `useLeaveGuard` attached, the audit reason is the last field); button sizes "page-header CTA middle / checkout bar large / in-card middle / in-row small"; anchor scroll targets get `scroll-margin-top: layout.scrollMarginTop`.
+14. **"Pick one" control roles**: `Segmented` = view / Tab switching (status count bar, monitoring range, sign-in method); `ChipRow` = filters and lightweight options (market filters, GPU count, billing mode); `OptionTile` = mutually exclusive major items inside forms (image, data-disk mode, top-up channel, access auth, protocol), `role=radiogroup` + arrow keys; in-table radio only for "pick one row from a list". `Button + aria-pressed` for selection and `Radio.Group optionType="button"` are banned.
+15. **Accessibility baseline**: both consoles have the `<main id="main">` landmark + skip link; the current nav item has `aria-current="page"`; hand-written `role="button"` elements share the focus ring (`base.css .focus-ring`); Popover / Tooltip information can be opened by touch (`trigger` includes click, the host is focusable); shortcuts do not fire while an editable element is focused; alert severity and status never rely on colour alone (text + icon); `HexTag` text colour is black / white by background luminance; the theme can be switched on mobile too (user menu).
+16. **Page skeleton**: every console page owns its `PageContainer` (`title` / `description` / `extra` / `freshness` / `width`), optionally followed by a `FilterBar` (filter controls + "Clear filters" + "N in total"), then the body; identical on both consoles (the shell only provides the top bar / sidebar / `<main>`, no container). Entity detail pages and drawer headers use `EntityHeader`. Gate: `python3 scripts/check-page-skeleton.py`.
 
-## 2. 视觉与主题
+## 2. Visuals and theme
 
-|          | 用户端 `web`                                                                                                                                                                                                                                                                 | 管理端 `admin`                                                                                                                                                                                                                           |
-| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 基调     | 浅色(默认)/ 暗色(深靛灰 `#0F1420` 系,顶栏图标钮与用户菜单「主题」项切换,`localStorage("superdl.theme")` 持久化,初值跟系统);**公开层同样跟随主题**                                                                                                                            | 深色 NOC 风                                                                                                                                                                                                                              |
-| 主色     | 靛蓝 `#4F46E5`;暗色下主色文本取 `#A5B4FC`                                                                                                                                                                                                                                    | 同主色;亮青 `#22D3EE` 数据强调、琥珀 `#F59E0B` 告警                                                                                                                                                                                      |
-| 品牌渐变 | 只用于公开顶栏 / 主页 Hero / CTA 横幅与登录页左栏;控制台顶栏**中性色**(与侧栏同底 + 下边线),渐变底上的反白 CTA 走 `brandInverseButtonStyle`;公开层另有深墨面板 `brand.ink`(行情板 / 页脚)                                                                                    | 不用渐变;prod 环境顶栏加 3px 红色上边线 + 红色环境徽标(判定收在 `lib/environment.ts` 的 `useEnvironment()`;后端暂无端点暴露 environment,现按构建模式判定,接口补上后只改这一处)                                                           |
-| 实现     | antd 6 ConfigProvider token + components 级 token;暗色 = `theme.darkAlgorithm` + `webDarkTheme` 覆写,定义在 `packages/ui/src/tokens.ts`;全局 reset / 工具类在 `packages/ui/src/base.css`(两端各 import 一次)+ `apps/web/src/styles.css`;`index.html` 内联脚本预置底色防 FOUC | antd `theme.darkAlgorithm` + 自定义背景 `#0B1220` 系(色值集中在 `adminColors`);表格密度由 `adminThemeComponents.Table` 统一                                                                                                              |
-| 字体     | 系统栈(`tokens.fontFamily`)+ body 级 tabular-nums;标识 / 价格 / 命令用 `fontFamilyMono`(公开层自托管 IBM Plex Mono 子集,放在 web 的 public 目录下,控制台回落 ui-monospace)                                                                                                   | 同左;标识符列 `Mono`                                                                                                                                                                                                                     |
-| 布局     | 中性顶栏 56px(logo \| 余额 · ⌘K · 通知铃 · 主题切换 · 用户菜单)+ 侧栏 `layout.siderWidth`(lg 以上常显;窄屏不渲染侧栏,导航走顶栏汉堡 Drawer `layout.navDrawerWidth`,与侧栏共用 `ConsoleNavMenu`)+ `<main>` 内容区,页面自持 `PageContainer`(default 1280)                      | 侧栏 200px(分组;按角色过滤;桌面可手动收成 80px 图标轨,收起态点图标导航;窄屏收为 0 宽走汉堡 Drawer,有遮罩、Esc 关闭)+ 56px sticky 顶栏(环境徽标 \| ⌘K 触发器 · 语言(图标下拉)· 告警铃(底部「查看全部」「全部确认」)· 用户名与角色 ▾ 退出) |
-| 状态色   | running 绿 / creating·starting 蓝 / stopped 灰 / frozen 橙 / failed·releasing 红;徽标可带图标(check / sync / pause / warning / close)                                                                                                                                        | 同一套语义色,深色版调亮;告警严重度 critical 红 / warning 琥珀 / info 蓝,徽标 = 图标 + 文字                                                                                                                                               |
+|                | User console `web`                                                                                                                                                                                                                                                                                                                                                                               | Admin console `admin`                                                                                                                                                                                                                                                                                                                                                                |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Tone           | Light (default) / dark (deep indigo-grey `#0F1420` family, toggled by the top-bar icon button and the user menu "Theme" item, persisted in `localStorage("superdl.theme")`, initial value follows the system); **the public layer follows the theme too**                                                                                                                                        | Dark NOC style                                                                                                                                                                                                                                                                                                                                                                       |
+| Primary        | Indigo `#4F46E5`; in dark mode primary text uses `#A5B4FC`                                                                                                                                                                                                                                                                                                                                       | Same primary; bright cyan `#22D3EE` for data emphasis, amber `#F59E0B` for alerts                                                                                                                                                                                                                                                                                                    |
+| Brand gradient | Only on the public top bar / home Hero / CTA banner and the login page's left column; the console top bar is **neutral** (same background as the sidebar + bottom border); inverse CTAs on gradient backgrounds use `brandInverseButtonStyle`; the public layer also has the deep ink panel `brand.ink` (price board / footer)                                                                   | No gradient; in prod the top bar gets a 3px red top border + a red environment badge (decided in `useEnvironment()` from `lib/environment.ts`; the backend exposes no environment endpoint yet, so it is decided by build mode for now — one place to change once the endpoint exists)                                                                                               |
+| Implementation | antd 6 ConfigProvider token + component-level tokens; dark = `theme.darkAlgorithm` + `webDarkTheme` overrides, defined in `packages/ui/src/tokens.ts`; global reset / utility classes in `packages/ui/src/base.css` (imported once per console) + `apps/web/src/styles.css`; the `index.html` inline script pre-sets the background against FOUC                                                 | antd `theme.darkAlgorithm` + custom background `#0B1220` family (colours centralised in `adminColors`); table density unified by `adminThemeComponents.Table`                                                                                                                                                                                                                        |
+| Fonts          | System stack (`tokens.fontFamily`) + body-level tabular-nums; identifiers / prices / commands use `fontFamilyMono` (the public layer self-hosts an IBM Plex Mono subset in web's public directory, the console falls back to ui-monospace)                                                                                                                                                       | Same; identifier columns in `Mono`                                                                                                                                                                                                                                                                                                                                                   |
+| Layout         | Neutral 56px top bar (logo \| balance · ⌘K · notification bell · theme toggle · user menu) + sidebar `layout.siderWidth` (always visible at lg and above; on narrow screens the sidebar is not rendered and navigation goes through the top-bar hamburger Drawer `layout.navDrawerWidth`, sharing `ConsoleNavMenu`) + `<main>` content area, each page owning its `PageContainer` (default 1280) | 200px sidebar (grouped; filtered by role; on desktop collapsible to an 80px icon rail, icons navigate when collapsed; on narrow screens it collapses to 0 width and a hamburger Drawer with mask, Esc closes) + 56px sticky top bar (environment badge \| ⌘K trigger · language (icon dropdown) · alert bell (footer "View all" / "Acknowledge all") · username and role ▾ sign out) |
+| Status colours | running green / creating·starting blue / stopped grey / frozen orange / failed·releasing red; badges may carry icons (check / sync / pause / warning / close)                                                                                                                                                                                                                                    | The same semantic colours, brightened for dark; alert severity critical red / warning amber / info blue, badge = icon + text                                                                                                                                                                                                                                                         |
 
-**设计 token 纪律**:`packages/ui/src/tokens.ts` 是唯一事实源。
-① 色值走 token(`webTheme` / `webDarkTheme` / `adminColors` / `statusColors` / `themeColors`),禁止硬编码 hex(ESLint);**JS 侧取语义色只经 `useThemeColors()`**(web 按主题给 `web-light` / `web-dark`,admin 固定 `admin`),禁止在组件里 `import { colorPrimary }` 或分支 `useThemeMode`;图表主题经 `useChartTheme()`;
-② 布局尺寸走 `space`(4 阶梯)与 `layout`(含 `topBarHeight` / `scrollMarginTop` / `siderWidth` / `siderCollapsedWidth` / `navDrawerWidth`),字号走 `fontSize`(pageTitle / sectionTitle / body / caption / kpi / display),图标走 `iconSize`(sm 14 / md 16 / lg 20),控件 / Drawer 宽度走 `controlWidth` / `drawerWidth`;`Space size` 只取 `space.*`;
-③ 高频模式组件化(`packages/ui` `src/components/`):页面骨架 `PageContainer` / `PageHeader` / `Freshness` / `FilterBar`(+ `useUrlFilters` / `useUrlCommittedInput`)/ `EntityHeader`;数据 `KpiGrid` / `StatCard` / `KeyValue` / `CursorTable` / `TableErrorEmpty` / `DataErrorAlert` / `EmptyState` / `EmptyValue` / `Mono` / `CopyField` / `InlineEdit` / `EChart`(三态 + `group` 联动);状态 `StatusTag`(tag / badge / dot / text 四形态,带 hint 与可选图标)/ `HexTag` / `StatusSummaryBar` / `TriageBar` / `AttentionBar`;动作 `GatedButton` / `RowActions` / `RowMoreMenu` / `DangerZone` / `LoadMore`;表单 `ChipRow` / `OptionTile` / `SectionRail`(+ `SectionAnchor` / `deriveSectionStatus`)/ `DiskSizeField`;钩子 `useLeaveGuard`(核心无路由依赖,各端 3 行包装注入 `useBlocker`)/ `useAutoRefresh` / `useThemeColors` / `useChartTheme`。用户端另有 `Field` / `SmsCodeField` / `LandingSection` / `CheckoutBar` / `ConsentGate` / `OnboardingSteps`,管理端另有 `ReasonAction` / `BulkBar` / `ListCapNote` / `AuditTable`;
-④ 确认强度组件化:L1 / L2 用 `useConfirm`(支持 `danger` / `okDisabled`),L3 用 `TypeConfirmModal`,管理端审计型用 `ReasonAction`(内部用 `GatedButton`);
-⑤ 动效走 `motion` token(fast 0.15 / normal 0.2 + easeOut):仅透明度 / 位移,路由切换不动效;自绘浮层 zIndex 走 `zIndex`(stickyBar / topBar / skipLink);
-⑥ CSS 覆盖区一律 `var(--sdl-*)`,取值经 `cssVars` 桥由 `__root.tsx` 注入;admin 端走 `var(--admin-*)`(`main.tsx` 从 `adminColors` 注入);新代码不写 inline 尺寸魔法数;
-⑦ 对比度底线 WCAG AA ≥4.5:1(文本)/ 3:1(图形),新增色值在 `tokens.test.ts` 补回归;`HexTag` 用 `color.ts` 的 `textOnColor` 取字色;
-⑧ 底色类 token 改动按 tokens.ts 顶部同步清单核对防 FOUC 位置(两端 index.html、`__root.tsx`);web 端 index.html 内联脚本任何改动同步重算 CSP sha256(`scripts/check-csp-hash.sh`)。
+**Design-token discipline**: `packages/ui/src/tokens.ts` is the single source of truth.
+① Colours go through tokens (`webTheme` / `webDarkTheme` / `adminColors` / `statusColors` / `themeColors`), hard-coded hex is banned (ESLint); **JS-side semantic colours come only from `useThemeColors()`** (web resolves `web-light` / `web-dark` by theme, admin is fixed to `admin`); `import { colorPrimary }` or branching on `useThemeMode` inside components is banned; chart themes go through `useChartTheme()`;
+② layout sizes go through `space` (4-step scale) and `layout` (including `topBarHeight` / `scrollMarginTop` / `siderWidth` / `siderCollapsedWidth` / `navDrawerWidth`), font sizes through `fontSize` (pageTitle / sectionTitle / body / caption / kpi / display), icons through `iconSize` (sm 14 / md 16 / lg 20), control / Drawer widths through `controlWidth` / `drawerWidth`; `Space size` only takes `space.*`;
+③ high-frequency patterns are components (`packages/ui` `src/components/`): page skeleton `PageContainer` / `PageHeader` / `Freshness` / `FilterBar` (+ `useUrlFilters` / `useUrlCommittedInput`) / `EntityHeader`; data `KpiGrid` / `StatCard` / `KeyValue` / `CursorTable` / `TableErrorEmpty` / `DataErrorAlert` / `EmptyState` / `EmptyValue` / `Mono` / `CopyField` / `InlineEdit` / `EChart` (three states + `group` linking); status `StatusTag` (four forms tag / badge / dot / text, with hint and optional icon) / `HexTag` / `StatusSummaryBar` / `TriageBar` / `AttentionBar`; actions `GatedButton` / `RowActions` / `RowMoreMenu` / `DangerZone` / `LoadMore`; forms `ChipRow` / `OptionTile` / `SectionRail` (+ `SectionAnchor` / `deriveSectionStatus`) / `DiskSizeField`; hooks `useLeaveGuard` (router-independent core, each console injects `useBlocker` with a 3-line wrapper) / `useAutoRefresh` / `useThemeColors` / `useChartTheme`. The user console additionally has `Field` / `SmsCodeField` / `LandingSection` / `CheckoutBar` / `ConsentGate` / `OnboardingSteps`, the admin console `ReasonAction` / `BulkBar` / `ListCapNote` / `AuditTable`;
+④ confirmation strength is componentised: L1 / L2 use `useConfirm` (supports `danger` / `okDisabled`), L3 uses `TypeConfirmModal`, admin audit-type actions use `ReasonAction` (built on `GatedButton`);
+⑤ motion goes through the `motion` token (fast 0.15 / normal 0.2 + easeOut): opacity / translation only, no route-transition animation; hand-drawn overlays take zIndex from `zIndex` (stickyBar / topBar / skipLink);
+⑥ CSS override areas always use `var(--sdl-*)`, injected by `__root.tsx` through the `cssVars` bridge; admin uses `var(--admin-*)` (`main.tsx` injects from `adminColors`); new code writes no inline magic sizes;
+⑦ contrast baseline WCAG AA ≥ 4.5:1 (text) / 3:1 (graphics); new colours add a regression in `tokens.test.ts`; `HexTag` takes its text colour from `textOnColor` in `color.ts`;
+⑧ background-token changes are checked against the FOUC sync list at the top of tokens.ts (both index.html files, `__root.tsx`); any change to the web `index.html` inline script recomputes the CSP sha256 (`scripts/check-csp-hash.sh`).
 
-## 3. 用户端
+## 3. User console
 
-### 3.0 公开层
+### 3.0 Public layer
 
-设计定位:面向中国 ML 工程师与小团队的 GPU 租用;差异点「价格即库存 · 按秒计费 · 数据盘独立」。**首屏是行情板,不是海报**:数字一律取真实数据,没有泛营销模块。
+Positioning: GPU rental for ML engineers and small teams; differentiators "price is stock · per-second billing · independent data disks". **The first screen is a price board, not a poster**: numbers always come from real data, there are no generic marketing modules.
 
-**主页 `/`**(public 顶栏:品牌渐变;logo | 算力市场 / GPU 价格 #pricing / 算力排名 #ranking / 帮助 | 主题 / 语言 / 登录 / 免费注册(反白 CTA);已登录换「进入控制台」→ `/instances`;<lg 汉堡 Drawer 同一份链接):
-
-```
-┌ [S SuperDL]  算力市场 · GPU 价格 · 算力排名 · 帮助        ☾ 中文▾ 登录 [免费注册] ┐
-│▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒│
-│  SuperDL GPU 算力云              ┌ 实时行情        12 秒前更新 ┐   │
-│  按秒开机、按量计费,             │ H100 SXM 标准  ¥2.50/时 可开16台 [租用]│
-│  价格牌上的库存就是真库存         │ RTX 4090 整卡  ¥3.99/时 可开16台 [租用]│
-│  [免费注册] [查看算力市场]        │ RTX 4090 经济  ¥0.99/时 可开180台[租用]│
-│                                  │ H100 SXM 标准  ¥2.00/时 已租完 看其它档位│
-│                                  └ 查看全部规格 → ─────────────────┘   │
-├──────────────────────────────────────────────────────────────────────┤
-│ 怎么计费   ┌按秒累计┐ ┌关机停表┐ ┌数据盘独立┐                          │
-│ 开机 ──●━━━━ 运行中(GPU 时费 ¥/时×卡) ━━●── 关机 ┈┈实例盘保留┈┈ ● 释放  │
-│ ━━━━━━━━━━━━━━━━━━ 数据盘 按日 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
-├──────────────────────────────────────────────────────────────────────┤
-│ GPU 租用价格(卡片内按档位分行,每行 CTA 即库存;售罄行 → 市场同型号)   │
-│ GPU 算力排名  [FP16][FP32][每 TFLOPS 时价]     三步开机     CTA 横幅   │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-1. **Hero**:左侧标题(`fontSize.display`,<lg 降到 `fontSize.kpi`)+ 一句话 + 两个 CTA;右侧**行情板**(`brand.ink` 面板,内部套 `ConfigProvider` dark 算法,antd 子件自行按深底取色):按 (型号 × 档位) 取代表 SKU 前 5 行(有货优先,其次单价低),每行 型号(`fontFamilyMono`)· 档位标 · 单卡 / 整机 ¥/时(等宽大字)· 「可开 N 台」(`themeColors["web-dark"].positive`)+ 「租用」→ `/market?model=&sku=`,或「已租完 · 看其它档位」→ `/market?model=`(**售罄行不摆禁用按钮**);头部「更新于 N 秒前」(`POLL.publicBoard` 60s 轮询,`Freshness intervalMs={false}`,不显示周期);接口失败整板降级为「前往算力市场」;**<lg 行情板整块落到 CTA 下方(行内换行,不横向滚动),不消失**。
-2. **怎么计费**:三条事实(按秒累计 / 关机停表 / 数据盘独立)+ 计费时间轴 SVG(开机 → 运行中计费 → 关机停表 → 释放;数据盘按日通贯;实例盘保留段虚线)。
-3. **GPU 价格墙**(`/skus` 公开端点,`POLL.publicBoard`):按型号一张卡,卡内按档位分行(专用整卡 / 共享·标准 / 共享·经济),每行价格 + 「可开 N 台」CTA → `/market?model=&sku=`(不直落创建页);售罄行链到 `/market?model=`;接口失败整区降级为「前往算力市场」。
-4. **算力排名**:`packages/ui/src/gpuSpecs.ts` 静态表驱动;`Segmented` 三档 FP16 / FP32 / **每 TFLOPS 时价**(只算在售型号,时价取该型号最低单卡价 ÷ FP16 峰值,真实数据,越便宜条越长);前三名奖牌序号,横向百分比条,在售型号带标记链到 `#pricing`,脚注按档切换(算力档「理论峰值算力」/ 性价比档说明口径);窄屏行内换行**并保留单位**。
-5. **三步开机**(`#quickstart`;充值 → 选规格 → SSH 连接):每步一条真实入口(费用中心 / 算力市场),第三步给命令形状(`ssh -p <端口> root@<主机>`,墨色块 + 等宽,与帮助页、实例详情同一口径,不编造主机名)。编号是真序列,不是装饰。
-6. **CTA 横幅**(真实可开台数)+ 三栏页脚(产品 / 支持(含帮助)/ 合规 + 防挖矿声明;ICP 与公安备案号取自 `/site-config`,缺失不渲染)。
-7. 整层跟随主题(底色取 `colorBgLayout`);Hero 渐变与墨色面板两种主题同一套;正文区包在 `<main id="main">` 里。
-
-**登录 `/login`**:分屏。左 45% 品牌渐变区(lg 以下隐藏)显示**真实行情摘要**(最低时价 / 当前可开 N 台 / 「按秒计费,关机停表」),不放口号列表;右侧表单:**字段带可见标签**(手机号 / 短信验证码 / 密码 / 新密码),**登录与注册分离** —— 登录态标题「登录 SuperDL」+ Segmented 二选一(验证码 / 密码,+86 前缀)+ 底部「没有账号?免费注册」,「忘记密码」在两种模式都可见;注册态标题「注册 SuperDL」+ 底部「已有账号?去登录」;重置密码态底部「返回登录」。`?mode=register` 直达注册态。`?redirect=` 按 `new URL(r, origin)` 解析,只接受同源且 pathname 不以 `//` 开头的目标,归一化为 `path + search + hash`。
-
-**帮助 `/help`**:帮助中心 IA —— 顶部「快速开始」卡(三步 + 命令)+ 搜索框(过滤问答);≥lg 左侧分类锚点(连接 / 计费 / 数据 / 故障),<lg 顶部横向 chips;问答展开(`#faq-<key>` 直达即展开并滚动),每条尾部「没解决?提交工单」(登录 → `/support`,未登录 → 登录带回跳);联系卡(来自平台配置,未配置不展示)。
-
-**法务 `/legal/*`**:顶部 Segmented 切换三份文档(用户协议 / 隐私政策 / 注销须知)+ 版本行置顶;≥lg 右侧 h2 目录;打印样式;英文回落提示保留;正文取后端当前 published 版。
-
-### 3.1 信息架构
+**Home `/`** (public top bar: brand gradient; logo | Market / GPU prices #pricing / Compute ranking #ranking / Help | theme / language / Sign in / Sign up free (inverse CTA); when signed in "Open console" → `/instances`; below lg a hamburger Drawer with the same links):
 
 ```
-公开层    /(首页)· /login · /help · /legal/terms · /legal/privacy · /legal/deletion-notice
-控制台(中性顶栏 + 分组侧栏;事实源 apps/web/src/components/layout/consoleNav.tsx)
-├─ 资源
-│  ├─ 容器实例  /instances   ← 登录后默认落地页(CONSOLE_HOME);只列开发机;真空态 = 整页新手引导;页顶 AttentionBar + 状态计数条
-│  ├─ 在线服务  /services    # /services/new 部署,/services/:slug 详情(?tab=)
-│  └─ 存储      /storage     # 数据盘 + 挂载全景
-├─ 购买与账务
-│  ├─ 算力市场  /market      ← 未登录可看,下单跳登录
-│  └─ 费用中心  /billing     # 余额/充值/账单/收支明细/退款/发票
-└─ 支持        /support     # FAQ / 联系客服 / 我的工单(/support/:ticketId 对话流)
-不在主导航(经顶栏到达)
-   通知中心    /notifications # 铃铛 → 「查看全部」/ 用户菜单;全部/未读筛选 + 行点击已读并跳转 + 全部已读
-   账户设置    /settings      # 用户菜单;四 Tab:SSH 公钥 / 通知 / 实名认证 / 账号(?tab=)
-创建实例     /market/create/:skuId   ← 全页路由(侧栏高亮「算力市场」)
+┌ [S SuperDL]  Market · GPU prices · Compute ranking · Help     ☾ EN▾ Sign in [Sign up free] ┐
+│▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒│
+│  SuperDL GPU cloud                 ┌ Live prices        updated 12 s ago ┐   │
+│  Start in seconds, pay as you go,   │ H100 SXM standard $2.50/h 16 available [Rent]│
+│  the stock on the price tag is real │ RTX 4090 whole    $3.99/h 16 available [Rent]│
+│  [Sign up free] [Browse the market] │ RTX 4090 economy  $0.99/h 180 available[Rent]│
+│                                     │ H100 SXM standard $2.00/h Sold out · other tiers│
+│                                     └ All specs → ───────────────────────┘   │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ How billing works  ┌per second┐ ┌stop = meter off┐ ┌independent data disks┐    │
+│ start ──●━━━━ running (GPU hourly × cards) ━━●── stopped ┈┈ instance disk kept ┈┈ ● released │
+│ ━━━━━━━━━━━━━━━━━━ data disk, daily ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ GPU prices (one card per model, a row per tier, the CTA is the stock; sold out → market) │
+│ Compute ranking  [FP16][FP32][hourly price per TFLOPS]   Three steps   CTA banner │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-无独立概览页:KPI 由顶栏余额与费用中心承接,公告 / 余额预警 / 欠费聚合进实例列表页顶的 `AttentionBar`,「一眼看全」由实例列表的 `StatusSummaryBar` 承担,新手引导落在实例列表真空态。
+1. **Hero**: left title (`fontSize.display`, drops to `fontSize.kpi` below lg) + one sentence + two CTAs; right **price board** (`brand.ink` panel wrapping a `ConfigProvider` dark algorithm so antd children pick dark colours): the first 5 representative SKUs per (model × tier) (in stock first, then lowest price), each row model (`fontFamilyMono`) · tier tag · per-card / whole-machine hourly price (large monospace) · "N available" (`themeColors["web-dark"].positive`) + "Rent" → `/market?model=&sku=`, or "Sold out · other tiers" → `/market?model=` (**sold-out rows never show a disabled button**); header "updated N s ago" (`POLL.publicBoard` 60 s polling, `Freshness intervalMs={false}`, the period is not shown); on API failure the whole board degrades to "Go to the market"; **below lg the board drops below the CTAs as a whole (rows wrap, no horizontal scroll) and never disappears**.
+2. **How billing works**: three facts (per second / stop = meter off / independent data disks) + a billing timeline SVG (start → running and billed → stopped, meter off → released; data disk billed daily throughout; the instance-disk-kept segment dashed).
+3. **GPU price wall** (public `/skus` endpoint, `POLL.publicBoard`): one card per model, rows per tier inside (dedicated whole card / shared · standard / shared · economy), each row price + "N available" CTA → `/market?model=&sku=` (never straight to the create page); sold-out rows link to `/market?model=`; on API failure the whole section degrades to "Go to the market".
+4. **Compute ranking**: driven by the static table `packages/ui/src/gpuSpecs.ts`; `Segmented` with three views FP16 / FP32 / **hourly price per TFLOPS** (models on sale only, price = the model's lowest per-card price ÷ FP16 peak, real data, cheaper = longer bar); medal numbers for the top three, horizontal percentage bars, models on sale carry a marker linking to `#pricing`, the footnote switches with the view (compute views "theoretical peak" / value view explains the basis); on narrow screens rows wrap **and keep their units**.
+5. **Three steps to start** (`#quickstart`; top up → pick a spec → connect by SSH): each step has one real entry point (billing / market), the third shows the command shape (`ssh -p <port> root@<host>`, ink block + monospace, the same as the help page and the instance detail, no invented hostnames). The numbers are a real sequence, not decoration.
+6. **CTA banner** (real available count) + three-column footer (product / support (incl. help) / compliance + anti-mining statement; ICP and public-security filing numbers come from `/site-config` and are not rendered when absent).
+7. The whole layer follows the theme (background from `colorBgLayout`); the Hero gradient and the ink panel are one set for both themes; the body sits inside `<main id="main">`.
 
-**顶栏右区**(`TopBarUser`):余额(→ 费用中心)· ⌘K(带 kbd 徽标,md 以上)· 通知铃(Popover:最近通知 + 全部已读 + 查看全部)· 主题切换(md 以上)· 用户菜单(账户设置 / 通知中心 / 帮助 / 主题 / 语言子菜单 / 退出)。窄屏(<md)只留余额 / 铃 / 用户,主题与语言经用户菜单到达。
+**Login `/login`**: split screen. The left 45 % brand-gradient area (hidden below lg) shows a **real market summary** (lowest hourly price / N available now / "per-second billing, the meter stops when stopped"), no slogan list; the right form has **visible field labels** (email or phone / verification code / password / new password), with **sign-in and sign-up separated** — sign-in title "Sign in to SuperDL" + a Segmented pair (code / password) over one `handle` field (email or E.164 phone) + footer "No account? Sign up free", "Forgot password" visible in both modes; sign-up title "Sign up for SuperDL" takes email + email code and, only when `site-config.phone_required`, a `PhoneField` (dial codes from `phone_dial_codes`) + SMS code, footer "Have an account? Sign in"; the password-reset state's footer is "Back to sign in". `?mode=register` opens the sign-up state. `?redirect=` is parsed with `new URL(r, origin)`; only same-origin targets whose pathname does not start with `//` are accepted, normalised to `path + search + hash`.
 
-**侧栏**(`ConsoleNavMenu`):多项分组出组标题(资源 / 购买与账务),单项分组前出分隔;整行可点(`Menu.onClick` 导航,label 仍是 Link 以支持中键 / 新标签,`aria-current="page"`);选中态为最长前缀匹配,`/settings` `/notifications` `/help` 不高亮任何项。
+**Help `/help`**: help-centre IA — a "Quick start" card at the top (three steps + command) + a search box (filters the FAQ); at ≥ lg category anchors on the left (connect / billing / data / troubleshooting), below lg horizontal chips at the top; expandable FAQ (`#faq-<key>` opens and scrolls to the entry), each entry ends with "Not solved? Open a ticket" (signed in → `/support`, otherwise login with a return path); contact card (from platform configuration, not shown when unset).
 
-**命令面板(Cmd+K / Ctrl+K)**:顶栏触发器 + 全局快捷键;命中范围 = 控制台页面导航(含不在主导航的通知中心 / 账户设置 / 帮助)/ 实例(列表缓存前 100 条,名称与 uuid 模糊)/ 在线服务 / 快捷动作(部署服务、租用新实例、充值、新建工单);双语关键词;无实例缓存时不渲染实例分组。**全局快捷键**:`/` 聚焦当前页搜索框;`g i` / `g s` / `g b` / `g m` 两键导航到实例 / 服务 / 费用 / 市场;输入框聚焦时不触发。
+**Legal `/legal/*`**: a Segmented at the top switches between the three documents (terms of service / privacy policy / deletion notice) + the version line pinned on top; at ≥ lg an h2 table of contents on the right; print styles; the fallback notice is shown when the body comes from another locale; the body is the backend's current published version.
 
-### 3.2 屏 ① 容器实例列表
-
-```
-┌ 容器实例                      12 秒前更新 · 每 45 秒 ⟳   [ 租用新实例 ] ┐
-│ 开发机;在线服务在「在线服务」页                                      │
-├──────────────────────────────────────────────────────────────────────┤
-│ [ 全部 12 | 运行中 5 | 已关机 4 | ●需处理 3 ]      [🔍 搜索名称 / ID ] │
-├──────────┬────────┬──────────────┬──────────┬──────────────┬─────────┤
-│ 名称 / ID│ 状态   │ 规格         │ GPU 利用率│ 费用         │ 操作 ⇥  │
-├──────────┼────────┼──────────────┼──────────┼──────────────┼─────────┤
-│ train-…  │ ●运行中│ H100 ×2 标准 │ ▁▂▅▇ 62% │ ¥5.00/时 ×2  │[连接▾][关机][更多▾]
-│ month-…  │ ○已关机│ H100 ×1 标准 │ —        │ 包月·剩 29 天│[开机 ][事件][更多▾]
-│ spot-…   │ ◐已冻结│ RTX4090 ×1   │ —        │ 竞价 ¥0.40   │[开机⃠][事件][更多▾]
-│ eval-…   │ ✕失败  │ RTX4090 ×4   │ —        │ ¥15.96/时    │[重新创建][事件][更多▾]
-└──────────┴────────┴──────────────┴──────────┴──────────────┴─────────┘
-```
-
-- **页头**(`PageContainer`):标题 + 描述「开发机;在线服务在「在线服务」页」+ 右侧「刷新」(新鲜度条:指标 `POLL.metrics`、今日消费 `POLL.daily`)+ `租用新实例`(唯一 primary,middle)。
-- **AttentionBar**(页顶唯一横幅,规则 1):条目来源 = 未读通知(公告 / 余额预警 / 欠费)+ 到期实例(`GET /api/v1/instances/expiring?within_days=N`,N 取 `policies.period_expire_warn_days`,最多 3 条,带 `立即续费` 与首条的 `开启自动续费`)+ 当前页冻结实例(带回收倒计时 + `去充值`)+ 当前页失败实例(带 `查看事件`)。1 条直接显示;多条折成「N 件需要处理」+ 展开列表,严重度取最高。
-- **状态计数条 + 搜索**(`StatusSummaryBar` + `FilterBar`,同一行):`全部 / 运行中 / 已关机 / 需处理`(需处理 = creating ∪ starting ∪ stopping ∪ frozen ∪ failed ∪ 即将到期),点击写 `?status=`(白名单含 `attention`,客户端解析为状态集合);计数取自已加载行,**全部加载完(无下一页)才显示数字**;搜索框客户端防抖 300ms(name / uuid)入 `?q=`。冻结策略说明在 stopped 徽标的 tooltip 与「计费规则」弹窗里,不做常驻条。
-- **表格 6 列**(固定名称列 + 操作列,sticky 表头):①`名称 / ID`:名称即详情链接,hover 出铅笔进入行内改名(`InlineEdit`,Enter 保存 / Esc 取消),第二行 uuid 前 12 位 `Mono`;②`状态` `StatusTag badge`(冻结态附红色回收倒计时,stopped 态 tooltip 出冻结策略;宿主可聚焦、可点);③`规格` GPU 型号 × 数量 + 档位徽标,Popover(hover / focus / click 三触发)展开完整配置;④`GPU 利用率` sparkline(近 1h,running 时;`GET /api/v1/metrics/instances` 批量端点)+ 末值 %,断源灰字「监控暂不可用」;⑤`费用` 随购买模式分化:按量 `按量` 标签 + `¥X.XX/时 × N 卡` + 第二行 `今日 ¥Y.YY`(`/bills/daily-summary`);包周期 `包月 · 剩 23 天` + 第二行 `¥X/月`,剩余天数由 `subscription.expires_at` 算,临期警示色、已到期写「已到期」,**不显示今日消费**;竞价 `竞价` 标签 + `¥X.XX/时` + 「可回收」标记,今日消费**照出**;⑥`操作`(`RowActions`,固定右):**主动作随状态** —— running `连接 ▾`(primary;菜单:复制 SSH 命令 / 打开 JupyterLab / 连接信息 / 实例监控,access 只在菜单打开后拉取)、failed `重新创建`(primary,链到同规格创建页)、其余 `开机`(primary;不可用时 `GatedButton` 带原因:需先关机 / 欠费请充值 / 包周期已到期);**次动作随状态** —— running `关机`、其余状态 `事件记录`;`更多 ▾`(`RowMoreMenu`)。
-- 窄屏(<md)换卡片流,同一套单元格组件;其它列表不做卡片流。
-- 「更多 ▾」条目与顺序:`重启` / `事件记录`(running 时;其它状态已在次动作)/(包周期)`续费`·`自动续费` /(竞价)`转按量` /(按量)`转包周期` / `释放实例`(红;`creating` 态「取消创建」)。占位清单为空。
-  **`转包周期`** 只对 running / stopped 的按量实例可用。它**是一次性预扣的支付动作**:modal 与续费同形(周期 chip + 数量 + 费用明细 + 余额变化 + 新到期时间),必须写清**转换前那段按量费用会先结清**、转换后**中途释放不退款**、周期从**现在**起算。转换失败分开说明:结算追平中(稍后再试)与该规格不支持包周期(换规格)。
-  **`转按量`** 只对竞价实例可用;确认弹窗必写的两条(转换后不再被回收、当前整点小时整体改按按量价结算)与「不带 `Idempotency-Key`、已是按量原样返回 200」见 [reference/web.md](./reference/web.md)。
-  不放:更换镜像 / 重置系统 / 升降配置 / 修改 SSH 密码 / 扩缩数据盘(归存储页)/ 保存镜像。
-- 不做的列:地区 / 主机号、本地磁盘 %、镜像状态、付费方式独立列、释放时间独立列。
-- 关机二次确认(L2,红色确认钮):按量实例说明 GPU 释放、再开机可能库存不足;**包周期实例的关机确认写清**周期内关机不退费,库存为其保留。释放走规则 7;包周期实例的释放确认额外写明**预付不退款、剩余天数作废**。
-- **续费 modal**(列表与详情共用):`当前周期` / `续费时长`(四个周期 chip + 数量,可与当前不同)/ `费用明细`(实例费用、周期折扣、应付)/ `可用余额`(当前 → 扣后)/ `新到期时间`。确认前明细是 `/policies` 折扣算的**预览值**,确认后以响应 `quote` 为准并在成功提示给出实扣金额;每次打开 modal 生成一个 `Idempotency-Key`。**提前续费从老到期时刻起算**,modal 里写出来。
-- 真空态(无筛选且无实例)= **整页替换**为新手引导(不渲染表头):三步(充值 → 选规格 → 创建,有已支付充值时第 1 步置完成)+ `去算力市场`;筛选无结果 `EmptyState(search)` + 「清除筛选」;查询失败错误态优先。
-
-### 3.3 屏 ② 实例详情
-
-`EntityHeader`(面包屑「容器实例 › {name}」带回列表最近筛选态):名称(铅笔行内改名)/ 状态徽标 / 档位 + 包周期 `包月 · 剩 23 天` / 竞价标 + 元信息条(ID 完整 uuid `Mono` + 复制 / 规格 / 单价 / 今日消费(包周期换「到期时间」)/ 创建时间)+ 操作组(同列表,middle 尺寸);订阅已到期时开机按钮 `GatedButton`「包周期已到期,请先续费」。窄屏自动换行:名称行 → 标签行 → 元信息 → 操作。
-
-Tab 固定 `连接 / 监控 / 日志 / 事件 / 账单 / 设置`(白名单常量 `DETAIL_TABS`,`?tab=` 直达,非法值回默认)。**默认 Tab 按状态**:running → 连接;其余 → 事件。
-
-- **连接**:SSH 卡片(完整登录指令 `CopyField` + 仅密钥登录说明)+ JupyterLab 卡片(打开 + token 重置)。在线服务的版本实例按 `with_ssh` 决定是否渲染 SSH 卡片,Jupyter 卡片不渲染。
-- **监控**:GPU 利用率 / 显存 / CPU / 内存 **2×2 栅格**,四图 `axisPointer` 联动(`EChart group`);工具行 sticky(范围 Segmented 1h/6h/24h + `Freshness`);`%` 类固定 0~100,MB 序列超 1 GB 整图换 GB;每图右上「当前 / 峰值」。**非 running 仍可查历史**(不自动刷新,标「显示历史数据」);running 时 `POLL.daily` 轮询;断源(503)显示「监控数据暂不可用,不影响计费」;其余错误可重试,不渲染成空图。
-- **日志**:容器日志末 N 行 + 行数选择 + 关键词过滤(只作用于已拉取行,给「匹配 M / N 行」)+ 换行开关 + 自动刷新(`POLL.logs`)开关 + 下载 `.log`;贴底跟随 + 新行计数;截断注明「仅显示末尾 N 行」;非 running/stopping 提示「实例运行中或关机中才能读取容器日志」。
-- **事件**:状态迁移时间线(状态走 `instanceStatusMap` 翻译;running 两侧带 `计费边界` Tag;时间 / 事件 / 操作者);「此记录即计费依据」放工具行 tooltip;Segmented「全部 / 只看计费边界 / 只看失败」(只作用于已加载页);reason 映射必须覆盖 `preempted`。
-- **账单**:该实例小时账单表(`CursorTable`,单价 / 金额右对齐)。
-- **设置**:只有危险区(`DangerZone`:释放实例,前置条件经 `GatedButton`);改名在头部完成。
-
-### 3.4 屏 ③ 算力市场
-
-- **页头**:标题 + 右侧 `?` 图标按钮「计费规则」(modal,middle)。无常驻合规条:禁挖矿声明只在本页页脚一行小字。
-- **版面**:「选择规格」卡 → 底部结算条。计费方式不单独成卡:`BillingModeCard` 的 chip 行(`role=group` 名「计费方式」)位于表格工具行,作为价格视角(按量 / 竞价 / 包周期)并透传创建页。
-- **「选择规格」卡 = `SkuPicker` full 变体**(与部署页 compact 变体同一份表格、库存口径与灰置规则):
-  - 顶部 `GPU 算力 / CPU 算力` Segmented,切换即清空已选行并重置筛选。
-  - **GPU 栏**筛选 chips:`GPU 型号`(每项只带一个数字「可开 N」)|`档位`(专用整卡 / 共享·标准 / 共享·经济);`显存` 折进「更多筛选」二级行;首位「全部」。**每个 chip 带 facet 计数**只在「共 N 个规格」行体现,0 结果的 chip 灰置(`GatedButton`)+ 原因「当前其他筛选下没有匹配的规格」,不隐藏。
-  - **购买数量**(`GPU 数量` 1/2/4/8)是独立 chip 行,**不是筛选**:改变不清空已选行、不进「清除筛选」;所选行库存不足该数量时保持选中但 CTA 灰置(`GatedButton`「该卡数当前空闲库存不足」)并在行内标「不足 N 卡」。
-  - **CPU 栏**只有 `vCPU` 与 `内存` 两行 chips(取值域从本栏 SKU 聚合,首位「全部」)。
-  - 表格上方工具行:「共 N 个规格 · 清除筛选」(有筛选时才出清除)+ 计费方式 chips。
-  - 筛选、选中、数量、计费方式全部入 URL(`MarketSearch`:`kind / model / tier / vram / vcpu / mem / sku / qty / mode / count`,默认值剥离)。
-- **SKU 表格(radio 单选,固定规格名列与价格列)**,列:选择 | 规格名 + 档位徽标(标准档 hint「显存与算力硬隔离」、经济档 hint「性能可能波动」、CPU 档 hint「不带 GPU」)| GPU 型号/显存(标准档写 MIG 切片名,经济档写份额与算力 %;CPU 档表头「CPU / 内存」)| 可开实例(≥ 所选卡数 绿数字 / 不足写「不足 N 卡」橙标 / =0「已租完」)| 实例配置 vCPU·内存 | 实例盘 | 最高 CUDA(CPU 档「-」)| 价格(钉右列)—— **表头「单卡 ¥/时」(GPU 栏)/「整机 ¥/时」(CPU 栏)**;所选卡数 >1 时价格格内副行 `× N 卡 = ¥Y/时`;竞价视角下价格显示折后价 + 原价划线。
-  **不可选行**(库存为 0 / 竞价档未上竞价):radio 禁用 + 弱化底色(`.sku-row--disabled`)+ radio 处 tooltip 原因,**排到末尾**,不隐藏。
-- 选中「共享·经济」规格时,卡内就地出一行风险摘要(完整条款在创建页提交前的知情同意里)。
-- **计费方式 chips**:`按量计费`(默认)|`竞价` 低至 X 折 |`包日` -5% |`包周` -10% |`包月` -20% |`包年` -30%,折扣角标从 `/policies` 读;选中规格 `period_enabled=false` 时四个周期项灰置、`spot_enabled=false` 时竞价项灰置(`GatedButton`「规格不支持」)。选中周期后出「购买时长」(1~36)。**选中的规格不支持当前计费方式时**:`message.info`「该规格不支持包月,已切回按量计费」并把 URL 里的 mode 清掉,不让 chip 静默跳动。
-- **底部通栏结算条(sticky,与创建页共用 `CheckoutBar`)**:规格汇总 + 费用大字(按量 / 竞价:`配置费用 ¥X.XX/时` 后缀「× N 卡」或「整机」;包周期:周期总价,原价划线 + 折后)+「费用明细」Popover(标明以创建页最终报价为准)+ 唯一主按钮:未登录「登录后租用」(未选规格同样灰置 + 原因;跳登录带回完整筛选态)/ 已登录「配置实例」。市场只建开发机,不放「部署服务」入口。
-- 未登录可浏览;`POLL.steady` 轮询 + 页头新鲜度;空态「没有符合条件的规格」+ 「清除筛选」。
-
-### 3.5 屏 ④ 创建实例
-
-全页 `SectionRail` 骨架(与部署页 §3.6 同一组件),只建开发机。承接查询参数:`?gpus=N`(1~8)、`?period=day|week|month|year`、`?market=spot`、`?count=`;**`period` 与 `market=spot` 互斥,同时带以 `period` 为准**。页头「← 返回算力市场」是**唯一返回入口**(带回市场筛选态;脏表单走离开确认),结算条不放「取消」。
+### 3.1 Information architecture
 
 ```
-├────────────┬─────────────────────────────────────────────────────────┤
-│ ✓ 基本信息 │ 基本信息                                    更换规格 → │
-│ ✓ 计费方式 │  H100 ×1 · 8 vCPU · 32G · 实例盘 100G · 标准 · ¥2.50/时 │
-│ ● 镜像     │  实例名称 [不填则自动生成      ]  GPU 数量 [1卡][2卡][4卡⃠]│
-│   选择镜像 ├─────────────────────────────────────────────────────────┤
-│ ○ 数据盘   │ 计费方式 [按量计费][竞价 低至4折][包日][包周][包月][包年]  │
-│ ○ SSH 密钥 ├─────────────────────────────────────────────────────────┤
-│ (sticky)   │ * 镜像   平台镜像 | 自定义镜像                            │
-│            │  ┌✓PyTorch 2.13┐┌TensorFlow┐┌Miniconda┐┌Paddle┐        │
-│            │ 数据盘(可选)  (●不需要)(○新建数据盘)(○挂载已有盘)         │
-│            │ * SSH 密钥   ☑ laptop-ed25519 (SHA256:…)    添加公钥      │
-├────────────┴─────────────────────────────────────────────────────────┤
-│ 还差 1 项:选择要挂载的数据盘                                          │
-│ [H100 ×1 · 8 vCPU · 32G]  配置费用 ¥2.50/时 ×1卡  费用明细  余额 ¥3,560│
-│                                                     [  创建并开机  ]  │
+Public layer   / (home) · /login · /help · /legal/terms · /legal/privacy · /legal/deletion-notice
+Console (neutral top bar + grouped sidebar; source of truth apps/web/src/components/layout/consoleNav.tsx)
+├─ Resources
+│  ├─ Instances        /instances   ← default landing page after login (CONSOLE_HOME); dev boxes only; true empty state = full-page onboarding; AttentionBar + status count bar at the top
+│  ├─ Online services  /services    # /services/new deploys, /services/:slug detail (?tab=)
+│  └─ Storage          /storage     # data disks + mount overview
+├─ Purchasing & billing
+│  ├─ Market           /market      ← browsable when signed out, ordering redirects to login
+│  └─ Billing          /billing     # balance / top-up / bills / ledger / refunds / invoices
+└─ Support             /support     # FAQ / contact support / my tickets (/support/:ticketId conversation)
+Not in the main navigation (reached from the top bar)
+   Notifications      /notifications # bell → "View all" / user menu; all / unread filter + click marks read and navigates + mark all read
+   Account settings   /settings      # user menu; four tabs: SSH keys / notifications / identity verification / account (?tab=)
+Create instance       /market/create/:skuId   ← full-page route (sidebar highlights "Market")
 ```
 
-**目标是一键创建**:从市场页落到本页,无需再输入任何必填项即可点主按钮 —— 镜像默认推荐项、只有一把公钥时自动选中、名称与数据盘可选。左侧 rail(≥md 竖向 sticky,<md 顶部横向)段状态由 `deriveSectionStatus` 派生:无问题且已触碰 = `finish`,无问题未触碰 = `wait`,第一个有问题的段 = `process`,**其它有问题的段只在被触碰或点过提交后才标 `error`**(首屏不出红叉)。卡片顺序:
+There is no separate overview page: KPIs are carried by the top-bar balance and the billing page, announcements / balance warnings / arrears are aggregated into the `AttentionBar` at the top of the instance list, "see everything at a glance" is the instance list's `StatusSummaryBar`, and onboarding lives in the instance list's true empty state.
 
-1. `基本信息`:已选规格**一行摘要**(`H100 × 1 · 8 vCPU · 32G 内存 · 实例盘 100G · 档位标 · ¥X/时`)+ 右上「更换规格」(→ 市场并带回筛选态)+ 实例名称(可选,默认生成)+ `GPU 数量` chip(1/2/4/8,受 SKU 上限与库存约束,不足档位 `GatedButton`;CPU 规格不出此 chip,提交 `gpu_count: 0`)。
-2. `计费方式`:`BillingModeCard`(chips 同 §3.4)。选了周期:结算条主数字换「包月费用 ¥X / 月」,**「原价 / 优惠 / 应付」三行直接摊在结算条第二行**,「到期时间 约 YYYY-MM-DD」降级为正文字号,主按钮**「支付并创建」**,提交 `market/period/period_count`。选了竞价:结算条主数字是折后时价(原价划线 + 折扣角标),提交体 `market='spot'`、不带 `period`。URL 带来的计费方式对该规格不可用时静默回按量(chip 已灰置并注原因)。
-3. `* 镜像`(必填,标题红星):Tab **平台镜像**(**常用镜像 `OptionTile` 网格** ≤4 个,每框架取清单首条,按 PyTorch / TensorFlow / Paddle / Miniconda / DataScience 排序,默认选中第一个;tile = 框架图标 + 「框架 版本」+ 副行「CUDA X · Py Y · 已预热 / 未预热」;「更多镜像…」展开四层级联 框架 → 版本 → Python → CUDA;选定后回显完整 `image_ref`(`CopyField`)与预热状态;CPU 规格只列不带 CUDA 的镜像且不承诺秒级启动)/ **自定义镜像**(仓库地址一栏,须钉版本,`:latest` 与无 tag 即时红框 + 原因;提示只写一行「镜像须内置 SSH 22 与 JupyterLab 8888」,其余说明进 `?`)。**切 Tab 记忆各自的选择**;切回平台镜像且为空时回填推荐项,当前生效的镜像只有一个来源。
-4. `数据盘(可选)`:`OptionTile` 三项「不需要 / 新建数据盘 / 挂载已有盘」(副行写口径与可挂载盘数);「新建」行内直建:`DiskSizeField`(滑块 + 数字框,初值取 `policies.disk_min_gb`),盘名称折在「高级」里;一句摘要「N GB · ¥X/GB·月,约 ¥Y/日;提交时自动创建并随实例挂载」。卡脚注:数据盘独立于实例、关机也计费 · 实例盘为节点本地盘不做冗余。
-5. `* SSH 密钥`(必填):多选已有公钥;只有一把时自动勾选;无密钥时行内添加(名称 + **多行公钥框**)并自动选中,给 `ssh-keygen -t ed25519` 命令 + 复制与「公钥在 ~/.ssh/id_ed25519.pub」指引(不支持密码登录)。
+**Top-bar right area** (`TopBarUser`): balance (→ billing) · ⌘K (with kbd badge, md and above) · notification bell (Popover: recent notifications + mark all read + view all) · theme toggle (md and above) · user menu (account settings / notifications / help / theme / language submenu / sign out). Narrow screens (< md) keep only balance / bell / user; theme and language are reached through the user menu.
 
-**结算条**(`CheckoutBar`):
+**Sidebar** (`ConsoleNavMenu`): groups with several items show a group title (Resources / Purchasing & billing), single-item groups get a divider before them; the whole row is clickable (`Menu.onClick` navigates, the label is still a Link for middle-click / new tab, `aria-current="page"`); the selected state is the longest prefix match, and `/settings` `/notifications` `/help` highlight nothing.
 
-- 条上方 `notice` 槽:**未完成项清单**「还差 N 项:选择镜像 · 选择或添加 SSH 公钥 · 选择要挂载的数据盘」,每项可点击滚到对应段(`scrollToSection`);`NO_CAPACITY` 也常驻在此槽(「当前规格空闲 GPU 不足」+ 「换个规格」按钮),不用 toast;主按钮灰置只作为兜底。
-- 费用项:按量 / 竞价 = `配置费用`(大字 + 「× N 卡」/「整机」后缀)+ `数据盘费用(按日)`(**只在真挂了盘时出**);包周期 = 周期费用 + 数据盘费用(如有)+ 到期时间(降级);「费用明细」Popover 逐行摊开(单价 × 卡数,CPU 规格写「整机 ¥X.XX」;盘价 GB·月折日;注明计费依据为实例事件流水)。
-- 主按钮文案:按量「创建并开机」、包周期「支付并创建」;提交中分步文案「正在创建数据盘…」→「正在创建实例…」;余额不足时按钮变「余额不足,去充值」;余额查询失败时 `GatedButton` + 可重试错误条。
-- **<sm 折叠为一行**:价格 + 主按钮常驻,明细 / 余额 / 未完成项进「明细 ▴」底部 sheet。
-- **知情同意只弹一个**(`ConsentGate`,§1 规则 6):竞价一节(五条)/ 共享·经济一节(四条),命中几节出几节,一次勾选「我已阅读并知悉以上事项」,确认文案「我已知悉,继续创建」;创建失败再提交时勾选态保留。
-- 创建带 `Idempotency-Key`(参数快照派生,失败不轮换);**建盘成功而建实例失败**:条上方常驻 `Alert`「数据盘已创建并开始计费…再次提交将直接挂载它,不重复建盘」+「去存储页」。
-- 成功后 message「实例 {name} 创建中」并**跳到该实例详情的「连接」Tab**(`/instances/:uuid?tab=access`)。
+**Command palette (Cmd+K / Ctrl+K)**: top-bar trigger + global shortcut; scope = console page navigation (including notifications / account settings / help outside the main navigation) / instances (first 100 cached list rows, fuzzy on name and uuid) / online services / quick actions (deploy a service, rent a new instance, top up, new ticket); bilingual keywords; the instance group is not rendered without an instance cache. **Global shortcuts**: `/` focuses the current page's search box; `g i` / `g s` / `g b` / `g m` two-key navigation to instances / services / billing / market; not triggered while an input is focused.
 
-### 3.6 屏 ⑤ 部署服务
-
-`/services/new`(入口:「在线服务」页头主按钮与空态按钮、命令面板「部署服务」;规格在本页 ① 段紧凑选择器里选。深链 `?sku_id=&gpus=&period=|market=spot&count=` 预填,已选规格折叠成一行回显 + 「更换规格」)。页头「← 返回在线服务」(脏表单走离开确认)。
-
-与创建实例同一 `SectionRail` 骨架 + 底部结算条:全部受控 state + 派生问题,不用 antd `Form.validateFields`;**每段独立标状态**(规则同 §3.5:首屏无红叉),点击滚到该段。**字段级错误就地显示**(端口 / 健康检查在 blur 后红框 + 红字),结算条上方给「还差 N 项」可点击清单。
-
-1. `基本信息`:`服务名称`(可空,自动生成)/ `算力规格`(`SkuPicker` compact:GPU / CPU 分栏 + 型号 / 档位 chips + SKU 表 radio;带 `?sku_id` 进来时折叠成一行回显 + `更换规格`;GPU 数量 chip 受库存约束)/ `计费方式`(与 §3.4 同 chips;竞价只警示不禁止:卡下一行「竞价实例可被回收,不建议用于对外服务」)。
-2. `容器配置`:镜像地址(**必须钉版本**,`:latest` 与无 tag 即时红框;一行规则 + `?` 详情)/ 启动命令 / 启动参数(`RowsEditor`:图标删除钮、行分隔、批量粘贴带预览)/ 环境变量(名 + 值(密文行用密码框)+ 密文勾选 + 批量粘贴带预览与跳过计数)/ **数据盘(可选)归在本段**(与创建实例同组件的 section 变体)。
-3. `服务配置`:服务端口(∉ {22, 8888})/ 协议(`OptionTile`:HTTP;TCP、gRPC 灰置「即将上线」)/ 健康检查路径(以 `/` 开头)/ 访问鉴权(`OptionTile`:需要 API Key / 公开访问)/ 服务端点「部署后生成」。
-4. `高级配置`:`☐ 同时开放 SSH`(勾选内联公钥多选,≥1,问题就地显示)/ 更新策略只读说明「重建更新:先停旧版本再起新版本,期间端点 503,地址与 Key 不变」/ 配置摘要(`KeyValue`)。
-
-结算条与创建实例同构:主按钮「部署服务」(包周期「支付并部署」),余额不足变「余额不足,去充值」;知情同意走 `ConsentGate`(确认文案「我已知悉,继续部署」);`Idempotency-Key` 按参数快照派生,失败不轮换;成功后 message「服务 {name} 部署中」并跳 `/services/:slug`。脏表单离开走确认。
-
-### 3.7 屏 ⑥ 在线服务列表
-
-- **页头**(`PageContainer`):标题 + 标题旁 `?` tooltip(停机 / 冻结策略:「停止的服务端点返回 503,不再产生 GPU 时费;欠费冻结 N 小时后回收实例盘,数据盘不受影响」,N 取 `policies.freeze_grace_hours`)+ 右侧「刷新(新鲜度)/ `部署服务`(唯一 primary)→ `/services/new`」;`FilterBar`:状态 Select + 搜索框(`?status=` 与 `?q=` 入 URL,replace)+ 清除筛选 + 共 N 条。
-- 表格 8 列(固定名称列 + 操作列,sticky):①`名称 / ID`(名称链到详情 + slug `Mono`)②`状态`(`serviceStatusMap` 徽标;`unready` 为 warning 并带解释 tooltip,冻结附回收倒计时)③`服务端点`(主机名 `CopyField` 复制完整 URL;第二行 running / unready 写「就绪 ✓/✗ · 需要 API Key / 公开访问」,其余「已停止,端点暂不可达」)④`规格`(取当前版本实例)⑤`版本`(`v{no}`)⑥`费用`(与实例列表同口径)⑦`创建时间` ⑧`操作`(`RowActions`:可启动(stopped / failed)主动作 `启动`,其余主动作 `端点 ▾`(primary + 链接图标,与实例「连接 ▾」同一外观;条目 复制访问地址 / 打开端点 / 调用示例,服务不在 running / unready 时条目灰置带原因「服务未运行,端点暂时打不通」);次动作 running / unready 为 `停止`,冻结与过渡态为灰置的 `启动` 带原因,可启动时无次动作;更多 ▾ 里 `访问密钥` / `设置` 直达详情对应 Tab 与 `删除服务`)。**不做双击行**。
-- 列表不轮询;`deploying / stopping / releasing` 逐条 `POLL.transient` 轻轮询。`unready` 不算过渡态。
-- 空态 `EmptyState`「还没有在线服务」+ `部署服务`;筛选无结果「没有匹配的服务」+ 清除筛选;查询失败错误态优先。
-- 停止 = 二次确认(端点 503、实例关机停止 GPU 计费、端点与 API Key 保留;包周期加「周期内停止不退费,库存为你保留」);删除 = 键入服务名 + 勾选「服务端点将立即失效,API Key 不可恢复」,运行中不能删(先停)。
-
-### 3.8 屏 ⑦ 服务详情
-
-`EntityHeader`(面包屑带回列表筛选态):名称(行内改名)/ 状态徽标 / 档位 / `v{no}` / 包周期与竞价标 + 元信息条(ID = slug `Mono` + 复制 / 规格 / 计费 / 今日消费或到期时间 / 创建时间)+ 操作组(middle;主动作同列表)。
-**服务端点卡常驻在 Tab 之上**:完整 URL(`CopyField code`)+ 打开;副行「就绪 ✓/✗ · 需要 API Key / 公开访问 · 容器端口 X · 健康检查 Y」;状态提示**四态分开**:`deploying`「正在部署 v{no},实例就绪前端点返回 503」;`unready`「服务还没就绪,实例仍在运行、照常计费」+「看日志」;`stopped / stopping`「服务已停止,端点暂时打不通;启动后恢复」;`frozen`(error)「因欠费冻结…充值后自动解冻」+「去充值」;`failed`(error)「新版本启动失败…」+「看日志」「查看事件」。**就绪为 ✗ 不报故障。**
-
-头部操作组多一个「更新版本」:`deploying / stopping / releasing / released` 灰置(`GatedButton`「部署完成后才能更新版本」),包周期灰置「包周期服务暂不支持更新版本」。
-
-Tab 固定 `概览 / 访问密钥 / 监控 / 日志 / 历史 / 设置`(白名单 `SERVICE_DETAIL_TABS`,`?tab=` 直达,切换 replace,非法值回默认;公开访问时不出「访问密钥」Tab,其深链落到「设置」):
-
-- **概览**(默认):`当前版本 v{no}` 只读回显(`KeyValue`:镜像 / 容器端口 / 健康检查 / 访问鉴权 / SSH / 启动命令 / 启动参数 / 环境变量:明文项显示值,密文项只显示键名)+ 尾注「参数随版本固定,创建后不可修改」;`调用示例` curl(URL 用端点根;Key 用未吊销 Key 前缀 + 省略号);**小时账单**(全部版本实例)在本 Tab 下方。
-- **访问密钥**(仅 `require_api_key` 时出):表(名称 / Key 前缀 `Mono` / 最近使用 / 创建时间 / 吊销)+「新建 Key」(成功态一次性展示:`CopyField secret` 全值 + 「关闭后无法再查看」,**关闭前必须勾选「我已保存」**);已删除的服务禁止新建。
-- **监控** / **日志**:打当前版本实例(面板同 §3.3);日志在 `deploying / running / unready` 可读。
-- **历史**:上半「版本」= 全部版本实例(含已释放)降序表(`v{no}` + 当前标 / 状态 / 镜像 / 实例(链到实例详情)/ 创建时间);下半「事件」= 全部版本实例事件并集(面板同 §3.3);版本更新的两条 reason 是「版本更新:旧版本关机」「版本更新:旧版本释放」。
-- **设置**:`访问鉴权` Switch(PATCH `require_api_key`;关 → L2 确认「任何人拿到端点都能调用,照常计费;已有 Key 保留」;开着但没有未吊销 Key → warning「当前没有可用的 API Key」+「去新建 Key」;副文案「保存后几秒内生效,不重新部署」)· `调试 SSH`(`with_ssh` 且运行中出连接串 `CopyField`;未开放写「SSH 开关随版本固定」)· 危险区删除服务。已删除的服务三处控件灰置。改名在头部完成。
-
-**「更新版本」= Drawer**(`RevisionDrawer`,`drawerWidth.lg`;提交与取消固定在 `footer`;脏表单点遮罩 / 关闭 / 路由跳走都走离开确认;提交后头部当场翻成 deploying;抽屉态不入 URL):
-顶部警示「重建更新:先停止旧版本,新版本就绪前端点返回 503;服务端点与 API Key 不变;新版本启动失败时旧版本保留(停机),可「启动」回滚」;
-`容器配置`(按当前版本预填;环境变量默认折叠为「N 项 · 展开编辑」;**密文键单独一栏**,每个默认「沿用当前值」(键名进 `env_secret_keep`),可「覆盖为新值」或「删除」;当前版本挂了数据盘时提示新版本不挂盘)· `服务配置`(端口 / 健康检查;鉴权注明「在「设置」里改」)· `高级配置`(☐ 同时开放 SSH → 公钥多选)· `规格与计费` 只读「沿用 v{no}:规格 · 计费;要换规格请新建服务」。提交前 L2 确认;幂等键 `idemKeyOf("svc-rev", [nonce, slug, revision, 表单快照])`;成功 message「新版本 v{n} 部署中」并关抽屉。
-
-「更多 ▾」两处(列表 / 详情)一致:访问密钥(→ `?tab=keys`)/ 设置(→ `?tab=settings`)/ ─ / 删除服务(红)。只有一条服务轮询(过渡态 `POLL.transient`、运行中 `POLL.steady`、已删除停)+ 页头新鲜度,端点卡与头部同源。
-
-### 3.9 屏 ⑧ 费用中心
+### 3.2 Screen ① Instance list
 
 ```
-┌ 费用中心                                                             ┐
-│ ⚠ 充值前需完成实名认证                                     [去认证]  │
-│ ┌可用余额──────────────┐ ┌2026-09 消费概览            [2026-09 ▾]─┐ │
-│ │ ¥3,560.00     [充值] │ │ GPU 时费 ¥1,505.50 │ 数据盘 ¥13.30 │ 今日 ¥41.70│
-│ │ 预警阈值 24 小时·修改│ │ 按实例  train-llama ████████████ ¥1,440.00 │
-│ └──────────────────────┘ └───────────────────────────────────────────┘ │
-│ ┌ 小时账单 | 收支明细 | 退款 | 发票                     [导出 CSV] ┐ │
+┌ Instances                    updated 12 s ago · every 45 s ⟳   [ Rent a new instance ] ┐
+│ Dev boxes; online services are on the "Online services" page                          │
+├───────────────────────────────────────────────────────────────────────────────────────┤
+│ [ All 12 | Running 5 | Stopped 4 | ●Attention 3 ]              [🔍 Search name / ID ] │
+├──────────┬─────────┬──────────────┬───────────┬──────────────────┬────────────────────┤
+│ Name / ID│ Status  │ Spec         │ GPU util  │ Cost             │ Actions ⇥          │
+├──────────┼─────────┼──────────────┼───────────┼──────────────────┼────────────────────┤
+│ train-…  │ ●Running│ H100 ×2 std  │ ▁▂▅▇ 62%  │ $5.00/h ×2       │[Connect▾][Stop][More▾]
+│ month-…  │ ○Stopped│ H100 ×1 std  │ —         │ Monthly · 29 d left│[Start ][Events][More▾]
+│ spot-…   │ ◐Frozen │ RTX4090 ×1   │ —         │ Spot $0.40       │[Start⃠][Events][More▾]
+│ eval-…   │ ✕Failed │ RTX4090 ×4   │ —         │ $15.96/h         │[Recreate][Events][More▾]
+└──────────┴─────────┴──────────────┴───────────┴──────────────────┴────────────────────┘
 ```
 
-- `PageContainer`;余额 / 月度 / 今日三路查询失败与实名横幅经 `AttentionBar` 聚合为一条。
-- 余额卡 = `StatCard`(`可用余额` 大数字 + `充值` 主按钮 middle)+ 脚注一行「预警阈值 N 小时 · 修改」(→ `/settings?tab=notify`);阈值设置只在账户设置页。
-- 充值 modal:渠道 `OptionTile`(由平台配置驱动,未开通的 tile 带原因「商户资质接入后开放」,开发环境可用「模拟支付」且默认选中);**金额只有一个控件**(档位 chip 写入数字框)+ 「充值后余额 ≈ ¥X」预览 → 二维码(antd QRCode)+ `expires_at` 倒计时(`formatCountdown`)+ 2s 轮询自动确认(终态即停);二维码态可「修改金额」回到上一步;倒计时归零显示「订单已过期」。
-- 消费概览卡:三张同尺寸 `StatCard`(本月 GPU 时费 / 数据盘费用 / 今日消费)+ 「按实例」横向条(可点进实例详情账单 Tab),不用饼图。
-- 账单区四个 Tab:`小时账单` | `收支明细`(`CursorTable`)| `退款` | `发票`;`导出 CSV` 与 Tab 同一行右侧,只在前两个 Tab 出现,按当前 Tab 口径走 `GET /api/v1/billing/export`,文件末尾出现截断标记行时页面提示已截断;脚注「日常费用…」只在小时账单 Tab 下出现。
+- **Header** (`PageContainer`): title + description "Dev boxes; online services are on the "Online services" page" + "Refresh" on the right (freshness bar: metrics `POLL.metrics`, today's spend `POLL.daily`) + `Rent a new instance` (the only primary, middle).
+- **AttentionBar** (the page's only banner, rule 1): items = unread notifications (announcements / balance warnings / arrears) + expiring instances (`GET /api/v1/instances/expiring?within_days=N`, N from `policies.period_expire_warn_days`, at most 3, with `Renew now` and `Enable auto-renew` on the first) + frozen instances on the current page (with reclamation countdown + `Top up`) + failed instances on the current page (with `View events`). One item shows directly; several fold into "N items need attention" + an expandable list, severity = the highest.
+- **Status count bar + search** (`StatusSummaryBar` + `FilterBar`, one row): `All / Running / Stopped / Attention` (attention = creating ∪ starting ∪ stopping ∪ frozen ∪ failed ∪ expiring soon); clicking writes `?status=` (allow-list includes `attention`, resolved client-side into a status set); counts come from loaded rows and **numbers appear only once everything is loaded (no next page)**; the search box debounces 300 ms client-side (name / uuid) into `?q=`. The freeze policy note lives in the stopped badge's tooltip and the "Billing rules" dialog, not in a permanent bar.
+- **6 table columns** (fixed name and action columns, sticky header): ①`Name / ID`: the name is the detail link, hover shows a pencil for inline rename (`InlineEdit`, Enter saves / Esc cancels), second line the first 12 uuid characters in `Mono`; ②`Status` `StatusTag badge` (frozen adds a red reclamation countdown, stopped's tooltip shows the freeze policy; the host is focusable and clickable); ③`Spec` GPU model × count + tier badge, Popover (hover / focus / click) with the full configuration; ④`GPU utilisation` sparkline (last 1 h while running; batch endpoint `GET /api/v1/metrics/instances`) + last value %, grey "monitoring unavailable" when the source is down; ⑤`Cost` differs by purchase mode: on-demand `On-demand` tag + `X.XX/h × N cards` + second line `Today Y.YY` (`/bills/daily-summary`); subscription `Monthly · 23 d left` + second line `X / month`, days left computed from `subscription.expires_at`, warning colour near expiry, "Expired" once expired, **no today's spend**; spot `Spot` tag + `X.XX/h` + a "reclaimable" marker, today's spend **is shown**; ⑥`Actions` (`RowActions`, fixed right): **the primary action follows the status** — running `Connect ▾` (primary; menu: copy SSH command / open JupyterLab / connection info / instance monitoring, access is fetched only after the menu opens), failed `Recreate` (primary, links to the create page for the same spec), others `Start` (primary; when unavailable a `GatedButton` with the reason: stop first / arrears, top up / subscription expired); **the secondary action follows the status** — running `Stop`, other states `Events`; `More ▾` (`RowMoreMenu`).
+- Narrow screens (< md) switch to a card flow with the same cell components; no other list does this.
+- `More ▾` entries and order: `Restart` / `Events` (while running; other states already show it as the secondary action) / (subscription) `Renew` · `Auto-renew` / (spot) `Convert to on-demand` / (on-demand) `Convert to subscription` / `Release instance` (red; "Cancel creation" in `creating`). The placeholder list is empty.
+  **`Convert to subscription`** is available only for running / stopped on-demand instances. It **is a one-off prepaid payment**: the modal mirrors renewal (period chips + count + cost breakdown + balance change + new expiry) and must state that **the on-demand charges up to the conversion are settled first**, that **releasing mid-period gives no refund**, and that the period starts **now**. Failures are explained separately: settlement catching up (try again later) vs. the spec does not support subscriptions (pick another spec).
+  **`Convert to on-demand`** is available only for spot instances; the two mandatory statements of its confirmation (no longer reclaimable after conversion; the current clock hour is settled entirely at the on-demand price) and "no `Idempotency-Key`, already on-demand returns 200 unchanged" are in [reference/web.md](./reference/web.md).
+  Not offered: change image / reset system / resize / change SSH password / resize data disks (storage page) / save image.
+- Columns not built: region / host number, local disk %, image status, a separate payment-method column, a separate release-time column.
+- Stop confirmation (L2, red confirm button): for on-demand instances it says the GPU is released and stock may be short on the next start; **for subscription instances the stop confirmation says** stopping within the period gives no refund and the stock stays reserved. Release follows rule 7; the release confirmation of a subscription instance additionally says **the prepayment is not refunded and the remaining days are forfeited**.
+- **Renewal modal** (shared by list and detail): `Current period` / `Renewal length` (four period chips + count, may differ from the current) / `Cost breakdown` (instance fee, period discount, payable) / `Available balance` (current → after) / `New expiry`. Before confirming, the breakdown is a **preview** computed from the `/policies` discount; after confirming, the response `quote` is authoritative and the success message shows the actual charge; one `Idempotency-Key` is generated per modal opening. **Early renewal counts from the old expiry**, stated in the modal.
+- The true empty state (no filter and no instances) = **the whole page is replaced** by onboarding (no table header): three steps (top up → pick a spec → create; step 1 is marked done when a paid top-up exists) + `Go to the market`; no filter results → `EmptyState(search)` + "Clear filters"; a failed query's error state takes precedence.
 
-### 3.10 屏 ⑨ 存储
+### 3.3 Screen ② Instance detail
 
-- `PageContainer`(主按钮「新建数据盘」→ modal:名称(可选,自动生成)+ `DiskSizeField`(初值取策略下限),实时折日估算)。
-- 顶部「挂载全景图」横条:`/root`(实例盘·随实例回收·免费,容量随规格,不写死数字)· `/root/data`(数据盘·¥X/GB·月·独立保留)。**只列真实挂载点**。
-- 数据盘列表:名称 / 容量(右对齐)/ 计费(每盘快照价 `price_gb_month`,折日小字)/ 状态 / 到期·回收(active「按日扣费中」;grace「宽限期(只读)剩 X 天」;frozen「冻结中,X 天后清除」;deadline 由 `grace_started_at`/`frozen_started_at` + `/policies` 天数前端计算)/ 挂载中的实例 / 创建时间 / 操作(`RowActions`:`扩容` 抽屉(`DiskSizeField` 带基线与差价,footer 取消 + 确认)、`删除` 两道闸(键入盘名 + 勾选))。
-- 无「续费」按钮。回收策略透明:欠费 → 7 天宽限(只读)→ 冻结 30 天 → 清除,列表行倒计时。空态 `EmptyState(disk)`「数据盘独立于实例,释放实例不丢数据」+ 新建。
+`EntityHeader` (breadcrumb "Instances › {name}" restores the list's last filter state): name (pencil inline rename) / status badge / tier + subscription `Monthly · 23 d left` / spot tag + meta bar (ID full uuid `Mono` + copy / spec / unit price / today's spend (subscription shows "expiry" instead) / created) + action group (as in the list, middle size); when the subscription has expired the start button is a `GatedButton` "Subscription expired, renew first". Narrow screens wrap automatically: name row → tag row → meta → actions.
 
-### 3.11 屏 ⑩ 账户设置
+Tabs are fixed to `Connect / Monitoring / Logs / Events / Bills / Settings` (allow-list constant `DETAIL_TABS`, `?tab=` deep link, invalid values fall back to the default). **The default tab follows the status**: running → Connect; otherwise → Events.
 
-`PageContainer width="narrow"`,四 Tab(`?tab=`,白名单 `ssh / notify / realname / account`,默认 `ssh`):
+- **Connect**: SSH card (full login command `CopyField` + key-only note) + JupyterLab card (open + token reset). For a service's revision instance the SSH card follows `with_ssh` and the Jupyter card is not rendered.
+- **Monitoring**: GPU utilisation / VRAM / CPU / memory in a **2×2 grid**, the four charts share `axisPointer` (`EChart group`); a sticky toolbar (range Segmented 1h/6h/24h + `Freshness`); `%` charts fixed 0–100, MB series switch the whole chart to GB above 1 GB; "current / peak" at each chart's top right. **History is available when not running** (no auto-refresh, marked "showing historical data"); while running `POLL.daily`; source down (503) shows "monitoring data unavailable, billing is unaffected"; other errors are retryable and never render as empty charts.
+- **Logs**: the container's last N lines + line count selector + keyword filter (applies to fetched lines only, shows "M of N lines match") + wrap toggle + auto-refresh (`POLL.logs`) toggle + download `.log`; follows the bottom + new-line counter; truncation notes "showing the last N lines only"; when not running/stopping: "container logs can be read while the instance is running or stopping".
+- **Events**: state-transition timeline (statuses translated through `instanceStatusMap`; running gets a `billing boundary` Tag on both sides; time / event / actor); "this record is the billing basis" sits in the toolbar tooltip; Segmented "All / billing boundaries only / failures only" (applies to loaded pages only); the reason map must cover `preempted`.
+- **Bills**: the instance's hourly bill table (`CursorTable`, unit price / amount right-aligned).
+- **Settings**: only the danger zone (`DangerZone`: release instance, preconditions through `GatedButton`); renaming happens in the header.
 
-- **SSH 公钥**:表(名称 / 指纹 `Mono` / 添加时间 / 删除(L1))+ 添加表单(名称 + 多行公钥框 + `添加公钥`);`/settings#ssh` 深链落本 Tab 并高亮。
-- **通知**:低余额预警阈值(小时)+ 保存;副文案「预计可用时长低于该值时短信 + 站内信提醒」。
-- **实名认证**:四态(未就绪骨架 / 错误可重试 / 已认证 / 未认证);未认证时竖向表单(姓名 / 身份证号 / 提交核验);平台未开通实名时表单可见但 `GatedButton` + 说明。
-- **账号**:手机号 · `设置 / 修改密码`(modal,凭手机号 + 验证码)· `退出登录`(普通按钮,L0)· `登出全部设备`(L2,非红)· 页尾 `DangerZone`「注销账号」(L3:键入手机号 + 原因必填;冷静期倒计时 + 撤销;驳回原因回显)。
+### 3.4 Screen ③ Market
 
-### 3.12 屏 ⑪ 支持与工单
+- **Header**: title + a `?` icon button "Billing rules" on the right (modal, middle). No permanent compliance bar: the anti-mining statement is one small line in this page's footer.
+- **Layout**: "Pick a spec" card → bottom checkout bar. The billing mode is not its own card: the `BillingModeCard` chip row (`role=group` named "Billing mode") sits in the table toolbar as the price view (on-demand / spot / subscription) and is passed through to the create page.
+- **"Pick a spec" card = the `SkuPicker` full variant** (the same table, stock definition and greying rules as the deploy page's compact variant):
+  - A `GPU compute / CPU compute` Segmented at the top; switching clears the selected row and resets the filters.
+  - **GPU column** filter chips: `GPU model` (each item carries one number, "N available") | `Tier` (dedicated whole card / shared · standard / shared · economy); `VRAM` folds into a second "More filters" row; "All" first. **Facet counts per chip** appear only in the "N specs in total" line; chips with 0 results are greyed (`GatedButton`) + reason "no spec matches under the other current filters", never hidden.
+  - **Purchase quantity** (`GPU count` 1/2/4/8) is its own chip row and **not a filter**: changing it keeps the selected row and is not part of "Clear filters"; when the selected row lacks stock for that quantity it stays selected but the CTA is greyed (`GatedButton` "not enough idle stock for this card count") and the row is marked "short of N cards".
+  - **CPU column** has only the `vCPU` and `memory` chip rows (values aggregated from this column's SKUs, "All" first).
+  - Toolbar above the table: "N specs in total · Clear filters" (clear only when filters are active) + billing-mode chips.
+  - Filters, selection, quantity and billing mode all go into the URL (`MarketSearch`: `kind / model / tier / vram / vcpu / mem / sku / qty / mode / count`, defaults stripped).
+- **SKU table (radio single select, fixed spec-name and price columns)**, columns: select | spec name + tier badge (standard hint "VRAM and compute hard-isolated", economy hint "performance may fluctuate", CPU hint "no GPU") | GPU model / VRAM (standard shows the MIG slice name, economy the share and compute %; CPU header "CPU / memory") | available (≥ selected cards green number / short → orange "short of N cards" / = 0 "Sold out") | instance config vCPU · memory | instance disk | max CUDA (CPU "-") | price (pinned right) — **header "per card / h" (GPU column) / "whole machine / h" (CPU column)**; with > 1 selected cards the price cell gets a `× N cards = Y/h` sub-row; in the spot view the price shows the discounted value + the struck-through list price.
+  **Unselectable rows** (stock 0 / spot view without spot enabled): radio disabled + muted background (`.sku-row--disabled`) + a tooltip reason at the radio, **sorted last**, never hidden.
+- Selecting a "shared · economy" spec shows a one-line risk summary in place inside the card (the full terms are in the consent before submitting on the create page).
+- **Billing-mode chips**: `On-demand` (default) | `Spot` from X % off | `Daily` -5% | `Weekly` -10% | `Monthly` -20% | `Yearly` -30%, discount badges from `/policies`; when the selected spec has `period_enabled=false` the four period items are greyed, with `spot_enabled=false` the spot item is greyed (`GatedButton` "not supported by this spec"). Selecting a period shows "Purchase length" (1–36). **When the selected spec does not support the current billing mode**: `message.info` "This spec does not support monthly billing, switched back to on-demand" and the `mode` is cleared from the URL; the chip never jumps silently.
+- **Bottom full-width checkout bar (sticky, shares `CheckoutBar` with the create page)**: spec summary + large cost figure (on-demand / spot: `Configuration cost X.XX/h` with suffix "× N cards" or "whole machine"; subscription: the period total, list price struck through + discounted) + a "Cost breakdown" Popover (noting that the final quote on the create page prevails) + the single primary button: signed out "Sign in to rent" (also greyed with a reason when no spec is selected; the login redirect carries the full filter state) / signed in "Configure instance". The market only creates dev boxes and has no "Deploy service" entry.
+- Browsable when signed out; `POLL.steady` polling + header freshness; empty state "No spec matches the filters" + "Clear filters".
 
-- `PageContainer width="narrow"`,主按钮「新建工单」;正文:自助排查 FAQ 链接 + 联系客服卡 + 我的工单列表(状态 Segmented 筛选入 `?status=`;行 = 工单号 `Mono` + 标题链接 + 状态标 + 更新时间;不整行点击)。
-- `/support/:ticketId`:`PageContainer back`(带回列表筛选态)+ 元信息(`KeyValue`)+ 对话流(`TicketBubble`,贴底,Ctrl/⌘+Enter 发送);发送按钮不足 2 字时 `GatedButton`「至少 2 个字」;`关闭工单` 常驻,非 resolved 时 `GatedButton`「工单解决后才能关闭」。
+### 3.5 Screen ④ Create instance
 
-### 3.13 通知中心
-
-`PageContainer width="narrow"`,标题旁「全部已读」;全部 / 未读 Segmented(`?filter=`);行点击已读并跳转(跳转优先结构化 `target_id` 精确深链);空态 `EmptyState(notification)`。
-
-### 3.14 状态与文案体系(两端共用,收进 `packages/ui`)
-
-- **状态枚举 → 徽标色 / antd Badge 语义 / 图标 / 文案 key 的单一映射表**(`status.ts`:三种显式形状 `LabelMeta`(只有文案)/ `ColorMeta`(+ 颜色)/ `StatusMeta`(+ badge 语义 + 可选 `icon`);实例 / 服务 / 订阅 / 镜像缓存 / 节点注册 / **节点状态** / **告警严重度** / 订单 / 调账 / 法务 / 退款 / 发票 / 工单 / 注销 / 数据盘 / 公告 / 购买模式 / 周期 / 事件原因;`ALL_STATUS_MAPS` 收口,`locales.test.ts` 遍历它保证键齐全)。页面禁止裸输出状态码:两端一律经 `StatusTag`(`map` + `value` + `variant`),web 的 `InstanceStatusBadge` / `ServiceStatusBadge` / `TierTag` 只是 ≤5 行包装;`hintKey` 自动出 tooltip(两端一致);未知值原样回显灰标,不进 `t()`。
-- **格式化只有一份**(`format.ts`,经 `useFormat` 拿到带 locale 的版本):金额 `¥1,234.56`(`formatMoney`,BigInt 万分位,禁浮点)、时价 `¥X.XX/时`(`formatHourlyPrice`,单价 × 份数走 `mulPrice`)、周期价 `¥X/月` 与 `¥X/3 月`(`formatPeriodPrice`)、时长 `X 小时 Y 分`、倒计时 `剩 Xh` / `剩 X 天` / `X 后回收`(`formatCountdown` / `formatDaysLeft` / `formatReclaimCountdown`)、容量 `formatSizeGb`、时间 `formatDateTime`(带时区后缀;相对时间只许 `Tooltip` 里带绝对时间)。查询未就绪或空值一律 `EmptyValue`(「—」),不显假 `¥0.00`、不混用「-」。
-- **文案分层**:后端 `core/messages.py` 是错误与状态文案事实源(经 `errors` namespace 同步到两端,组件里用 `useTranslation("errors")` 直接引用);两端页面文案在各自 `locales/*/web.json` / `admin.json`;共享状态 / 格式 / 通用件文案在 `packages/ui/locales/*/shared.json`(`common.*` / `filter.*` / `attention.*` / `leave.*` / `freshness.*` / `confirm.*` / `empty.*` / `status.*`)。namespace 划分与闸门见 [`reference/i18n.md`](./reference/i18n.md);GPU 公开规格静态表 `gpuSpecs.ts`。管理端平台配置的字段标签、策略参数名与风险复述同样进 locales(中国渠道运营域的专有名词按 `i18n-exempt` 标记不译)。
-- **确认文案 = 标题问句(含目标)+ 后果正文**(`useConfirm` 的 `title` / `consequences`);高危双步(`ReasonAction`)两步都回显目标,第二步再回显原因;知情同意条目与后端硬规矩同源(§1 规则 6)。
-- **禁词与语气**见 [`copy-style-guide.md`](./copy-style-guide.md):按钮动宾 ≤6 字、空态一句话 + 一个动作、禁用 tooltip 只写前置条件、不用「您」/ 感叹号 / emoji;CI 强制禁词表(`scripts/check-copy-banned.sh`)。
-
-## 4. 管理端
-
-### 4.1 信息架构与角色
-
-导航分四组(事实源 `apps/admin/src/lib/menu.ts` 的 `MENU` + `group`,侧栏与命令面板共用;可见性由 `MENU_ROLES` 按角色过滤;**页面标题必须等于导航标签**):
-
-```
-总览   运营总览 `/`
-资源   节点与 GPU `/nodes` · 集群 `/cluster` · SKU 与定价 `/skus` · 镜像与预热 `/images`
-业务   租户与实例 `/tenants` · 在线服务 `/services` · 财务对账 `/finance` · 工单 `/tickets`
-治理   告警中心 `/alerts` · 审计日志 `/audit` · 平台配置 `/platform` · 系统设置 `/settings`
-```
-
-侧栏组标题只在展开态渲染;桌面可手动收成 80px 图标轨(`localStorage("superdl.adminSider")`),收起态点图标由 `Menu.onClick` 导航;窄屏导航走带遮罩的 Drawer(Esc 关闭);`/alerts` 对 finance 不可见。顶栏 sticky(`layout.topBarHeight`),左环境徽标(`useEnvironment()`,prod 另加 3px 红色上边线),右 ⌘K 触发器 · 语言(图标下拉)· 告警铃(Popover 前 20 条 + 确认 + 底部「查看全部」「全部确认」)· 用户名与角色 ▾ 退出;md 以下三者收进用户下拉。壳带 skip-link 与 `<main id="main">`。
-
-**页面骨架**:`PageContainer`(宽表页 `width="full"`:节点 / SKU / 租户与实例 / 财务 / 在线服务 / 镜像)+ `PageHeader`(标题 · 右侧动作 · 轮询页新鲜度条:总览 / 节点 / 镜像 / 告警);首屏 KPI 用 `KpiGrid` + `StatCard`(逐卡骨架,各卡只等自己的 query,**每张可点击深链**)。
-
-**命令面板(Cmd+K / Ctrl+K)**:与 web 端同范式;页面按侧栏分组分节 + 实体检索(租户 id / 实例 uuid 前缀 / **节点名 / SKU 名 / 服务名**)+ 快捷动作(未确认告警深链 `/alerts?acked=unacked`、刷新当前页数据);双语关键词;选中行底色走 `base.css`。
-
-角色:admin(全部;SKU 增改与改价、策略参数写入仅 admin)/ ops(资源 + 实例;SKU 与策略只读)/ finance(财务区可写:调账发起与复核、订单核验与补单、退款审批与打款登记、发票开具与驳回、结算缺口重放与核销,其余只读)/ readonly(全站只读)。逐端点角色见 [`reference/admin.md`](./reference/admin.md)。
-
-高危与不可逆操作统一走 `ReasonAction`(原因必填 → 二次确认 → 审计):强制停止、强制回收、冻结租户、封锁节点、吊销注册令牌、重新生成注册命令、SKU 下架、死信重放与忽略、删除镜像、撤回公告、注销申请驳回、退款与发票驳回、结算缺口核销、管理员停用与重置两步验证。**恢复方向动作(解封节点、解冻租户、上架 SKU)只填原因,不做第二步确认。** 账号注销执行与**节点退役**走 L3(`TypeConfirmModal`:键入目标名 + 勾选 + 必填原因);节点退役的确认框须写明两条平台管不到的边界(不吊销 kubelet 证书、join token 轮换交回运维),节点上有未释放实例时确认按钮文案换成「强制退役」并前置红色告警。SKU 改价与强制上架走 `useConfirm`(变更行 + 影响面 + 范围说明;影响面查询在途时确认禁用)。调账另加双人复核,发起人不能自审。
-
-### 4.2 逐屏要点
-
-通用骨架:`PageContainer`(宽表页 `width="full"`)+ `PageHeader`(标题 · 右侧动作 · 轮询页新鲜度条);首屏 KPI `KpiGrid` + `StatCard`;宽表固定标识列 + 操作列 + sticky 表头,数值右对齐,标识 `Mono`;行内 `RowActions`(≤1 主 + 1 次 + `RowMoreMenu`);多选行出 `BulkBar`;**筛选一律 `FilterBar`**(清除筛选 + 服务端 total)并入 URL;检索框 ↔ URL 走 `useUrlCommittedInput`;截断表挂 `ListCapNote`;游标分页表走 `CursorTable`;状态标 `StatusTag`;空态 `EmptyState`,错误 / 403 走 `TableErrorEmpty`(抽屉内 `compact`),取数失败条走 `DataErrorAlert`;编辑抽屉 footer 提交 + 取消 + `useLeaveGuard`,宽度只取两档;图表三态(loading / empty / degraded)在 `EChart` 内。
-
-- **运营总览**:
+Full-page `SectionRail` skeleton (the same component as the deploy page §3.6), dev boxes only. Accepts the query parameters `?gpus=N` (1–8), `?period=day|week|month|year`, `?market=spot`, `?count=`; **`period` and `market=spot` are mutually exclusive, `period` wins when both are present**. The header's "← Back to the market" is the **only way back** (restores the market filter state; a dirty form goes through the leave confirmation); the checkout bar has no "Cancel".
 
 ```
-│ 运营总览   8 秒前更新 · 每 30 秒自动刷新 ⏸ ⟳                          │
-│ [✕2 未确认严重告警][⚠1 失联节点][⚠3 死信任务][ⓘ0 结算缺口][ⓘ4 待审批]│
-│ ┌今日收入 ↗┐┌本月收入 ↗┐┌今日新注册 ↗┐┌付费租户 ↗┐   ← 每张可点,深链 │
-│ ┌活跃实例 ↗┐┌包周期在保↗┐┌节点健康 ↗┐┌未确认告警 ↗┐                 │
-│ ┌实际超卖率(按池)? ────────────┐ ┌实时告警流  [级别▾] 8 秒前 ┐   │
-│ ├真实利用率 24h(按池)──────────┤ │ ✕ 严重 … [确认]              │   │
-│ ├死信任务 ● 3 条待处理(默认展开)┤ └─────────────────────────────┘   │
+├────────────┬─────────────────────────────────────────────────────────────┤
+│ ✓ Basics   │ Basics                                       Change spec → │
+│ ✓ Billing  │  H100 ×1 · 8 vCPU · 32G · instance disk 100G · std · $2.50/h│
+│ ● Image    │  Instance name [auto-generated if empty]  GPUs [1][2][4⃠]   │
+│   pick one ├─────────────────────────────────────────────────────────────┤
+│ ○ Data disk│ Billing mode [On-demand][Spot from 60% off][Daily][Weekly][Monthly][Yearly]│
+│ ○ SSH key  ├─────────────────────────────────────────────────────────────┤
+│ (sticky)   │ * Image   Platform images | Custom image                    │
+│            │  ┌✓PyTorch 2.13┐┌TensorFlow┐┌Miniconda┐┌Paddle┐            │
+│            │ Data disk (optional)  (●None)(○New data disk)(○Mount existing)│
+│            │ * SSH key   ☑ laptop-ed25519 (SHA256:…)    Add public key   │
+├────────────┴─────────────────────────────────────────────────────────────┤
+│ 1 item left: pick the data disk to mount                                 │
+│ [H100 ×1 · 8 vCPU · 32G]  Configuration cost $2.50/h ×1 card  Breakdown  Balance $3,560│
+│                                                       [ Create and start ]│
 ```
 
-`TriageBar` 置顶(未确认 critical 告警 → `/alerts?severity=critical&acked=unacked` · 失联节点 → `/nodes?status=Missing` · 死信任务 → 本页锚点 · 结算缺口 → `/finance?tab=gaps` · 待审批(退款 / 发票 / 注销)→ 对应 Tab;0 计数弱化不隐藏)。KPI **两行**——资金与租户(今日收入含昨日对照 / 本月收入 / 今日新注册环比 / 付费租户,分母进副行)、运行与风险(活跃实例 → 实例 Tab / 有效订阅 / 节点健康 → 节点 / **未确认告警** → 告警中心),各卡只等自己的 query;主图表拆两张单轴:「实际超卖率(按池)」与「真实利用率 24h(按池)」(60% / 85% 阈值线,规则说明进 `?`);GPU 池占用堆叠条(按节点池分组,已租 / 空闲,已租段内分出「其中竞价(可回收)」);右栏实时告警流(`POLL.steady` + 新鲜度;severity 筛选入 URL;条目 = 严重度图标 + 文字 + 标题;查询失败如实显示错误态;条目按 `target_kind` 深链:`tenant` → `/tenants?tenant=<id>` 直开抽屉、`node` → `/nodes?node=<名称>`、`ticket` → `/tickets?id=<id>`);有死信时任务死信卡**默认展开**(单条 / **勾选批量**重放 · 忽略,一条原因作用于全部所选)。
+**The goal is one-click creation**: arriving from the market, the primary button can be pressed without entering any required field — the image defaults to the recommended one, a single public key is auto-selected, name and data disk are optional. The left rail (vertical sticky at ≥ md, horizontal at the top below md) derives section states with `deriveSectionStatus`: no problem and touched = `finish`, no problem and untouched = `wait`, the first section with a problem = `process`, **other sections with problems are marked `error` only once touched or after a submit attempt** (no red crosses on first paint). Card order:
 
-- **节点与 GPU**(全宽;页头新鲜度条,`POLL.steady` 可暂停):待入网节点卡(池 / 主机名 / 备注 / 状态 / 阶段 / 心跳 / 错误 + 重新生成加入命令 / 吊销,确认文案带主机名)与「添加节点」生成一次性加入命令;`FilterBar`(名称 / 池 / 状态,入 URL);节点表(名称(`Mono`,固定左)/ **状态**(紧跟名称,`nodeStatusMap`:就绪 / 未就绪 / 已封锁 / 失联,带图标与 hint —— 放表尾会被横向滚动挡住)/ 池标签(切池在途显示「旧 → 新」)/ GPU 型号×数量 / 显存 / **已用(GPU 卡当量)** / **实例(未释放实例数,含已关机;链到 `/tenants?tab=instances&inode=<节点>`)** / 驱动 / CUDA / vCPU / 内存 / 磁盘(数值右对齐)/ 最近心跳(相对时间 + tooltip 绝对时间)/ 操作(固定右)`封锁`·`解封`(动词与状态同词根,不叫「停止调度」;经 outbox;解封只填原因;封锁可逆,触发钮不标红,红色留给确认框)· 次动作 `切换池`(`-SwitchPoolModal`:当前池只读 + 目标池 Select(排当前池与 cpu,机型不支持 MIG 的 `mig` 灰置)+ 原因,`useConfirm` 二次确认;切池不需要节点侧动作,提交即受理、无回执命令;节点上有未释放实例时触发钮灰置并说明条数)· 更多 ▾(`drain` 占位「经集群 Runbook 执行」、`退役` 标 danger);**勾选多节点批量封锁 / 解封**);点节点行(整行可键盘选中)→ **右侧 Drawer(`drawerWidth.lg`,`?node=` 入 URL 可直链)**:`EntityHeader`(名称 / 状态 / 池 / GPU / 驱动 / CUDA / 心跳 + 操作)+ 每卡热力网格 + 节点级 ECharts 曲线(1h/6h/24h,24h XID 计数红标),配了 `grafana_url` 才多一个外链按钮。子文件:`-GpuGrid` / `-NodeMetricsPanel` / `-AddNodeModal` / `-SwitchPoolModal` / `-EnrollmentsCard` / `-NodeDrawer`。
-- **集群**(全宽):横幅(取数失败 / 集群不可达 / 轻量集群 / 未打池标签 / 监控未接入)经 `AttentionBar` 聚合为一条。**组件体检整幅铺开,一项一个小面板**(`Col xs=24 sm=12 lg=8 xxl=6`):状态点(`componentHealthMap` 五态,图标 + 文字,不只靠颜色)+ 组件名 + 主数字(`fontSize.kpi`,`tabular-nums`,色随状态)+ 两条事实(label 灰、值 `Mono`,`tone` 决定着色);**面板正面只放可核对的数字与标识符,不放形容词**;按 `故障 → 降级 → 未启用 → 未知 → 正常` 排序,标题带待处理计数,故障态面板内联 `fix_hint`。点面板 → **`/cluster/$component` 子路由渲染成右侧 Drawer**(`drawerWidth.lg`,遮罩在集群页上,可直链、可转达、后退即关;页容器由父路由自持,该文件在 `scripts/check-page-skeleton.py` 有显式豁免):`EntityHeader size="drawer"`(组件名 + 状态徽标 + 探测时间)+ 判据 → 事实(`KeyValue`,值可复制)→ 对象明细(`Table size="small"`,列由 `-componentMeta` 定)→ 影响面(仅非正常态)→ 下一步(`diag_hint` 排障命令 + `fix_hint` 修复命令,`CopyField code block`)。池分布标签显示「就绪/总数」,可售性只看就绪数。子文件:`-ComponentPanel` / `-ComponentDrawer` / `-componentMeta`。
-- **SKU 与定价**(全宽):`FilterBar`(型号 / 档位 / 在售,入 URL);SKU 表(名称(固定左)/ 卡型 / 档位 / 切分规格 / 容量卡数 / 已售 / 实际超卖 / 算力超卖× / 单价(可排序,右对齐)/ **状态(在售 / 已下架)** / 操作(固定右:编辑 + 更多 ▾:上架 / 下架)),在架而容量为 0、实际超卖达上限时标红;**改价走 `useConfirm`**(变更行 + 影响面 + 范围说明,影响面查询在途时确认禁用),规格缺要素被拒时给「强制上架」出口(红色确认);编辑抽屉全参数表单(含 `包周期` 与 `竞价档` Switch,后者**新建默认关**,说明「开启后该规格可按竞价价售卖;竞价实例在容量紧张时会被平台回收」)+ 超卖风险文案挂在超卖字段的 `extra`(「变更仅影响新实例」)+ **编辑原因是最后一个字段**,右侧实时容量预览(sticky);footer 提交 + 取消,`useLeaveGuard`;新建可「从集群资源创建」。表单常量在 `-skuForm`。
-- **租户与实例**(全宽;三个 Tab,拆在 `-TenantsTab` / `-InstancesTab` / `-DeletionsTab`):租户表(ID / 手机脱敏(固定左)/ 余额(右对齐)/ 累计消费 / 实例数 / 数据盘 GB / 状态 / 注册时间 / 操作(固定右):查看账务 + `冻结`·`解冻`(解冻只填原因);`FilterBar` 检索落审计,输入框 ↔ `?q=`)+ 点行开租户抽屉(**`?tenant=<id>` 入 URL**,`TenantLink` 与告警都直开;头部 `EntityHeader size="drawer"`:租户 ID / 手机 / 状态 / 余额 / 累计消费 / 实名 + 主动作 `冻结`·`解冻`;Tab `账务`(小时账单 + 资金流水 + 订单)/ `实例`(含「配额」编辑区)/ `在线服务` / `事件`,`?dtab=`;嵌套表 403 用 compact 空态;宽度 `drawerWidth.lg`);全局实例表(`FilterBar`:状态 / 实例名 / 节点名,带清除与 total)按形态标(开发机 / 在线服务,服务行链到 `/services?q=<slug>`),名称下副行 uuid 前 8 位 `Mono`,操作 `RowActions`:主动作 `强制停止`,更多 ▾ 里 `强制回收`(目标 = 实例名 · uuid 前缀);注销申请表:状态筛选入 URL,执行走 L3(键入用户 ID + 勾选 + 必填原因),驳回走 `ReasonAction`,已处理行显示处理人与时刻。
-- **在线服务**(全宽):`FilterBar`(名称或 slug 前缀 / 状态 / 就绪 / 含已删除,入 URL);全局服务表(服务名 + slug `Mono`(固定左)/ 归属 / 服务端点主机名(`CopyField`)/ 状态徽标 + 就绪副行 / 当前实例(链到全局实例表按 uuid 检索)/ 版本 / 节点 / 创建时间 / 操作(固定右)),只读 + 唯一处置 `强制停止`(`ReasonAction`,目标 = 名称 · slug,委托当前版本实例 force-stop,仅 running / unready)。
-- **镜像与预热**(全宽;页头新鲜度条,`POLL.ticket` 可暂停):镜像表(框架(固定左)/ Python / CUDA / 镜像地址 `CopyField` / 预热开关 / 覆盖率 / 操作(固定右):立即预热 · 编辑 + 更多(删除));预热说明进 `?` tooltip,不做常驻条;**关闭预热走 L1 确认**;覆盖率里的「N 台失败」可点,展开该行节点缓存面板(`?image=<id>` 入 URL,可直链);编辑抽屉 footer + `useLeaveGuard`,校验失败就地红字。
-- **平台配置**(仅超管):左侧分组导航(安全 / 第三方渠道 / 基础设施 / 站点信息;导航项带状态点 + tooltip 与一行图例:红 = error、琥珀 = warning、绿 = 开关已开、灰 = 关闭或未配置;**有未保存修改的分组打点**;**当前分组 `?group=` 入 URL**)+ 顶部服务端配置风险告警经 `AttentionBar` 聚合(「前往」跳到对应分组,带回链)+ 右侧分组表单(字段标签、策略名与风险复述全部在 locales);「安全策略」页为开关行;全局「保存变更(N)」+ 原因必填,确认弹窗按分组列出变更,含关闭安全开关时红色复述风险。子文件:`-platformNav` / `-platformFields` / `-platformSecurity` / `-platformTestCards`。
-- **财务对账**(全宽;Tab 拆在 `-OrdersTab` / `-RefundsTab` / `-InvoicesTab` / `-AdjustmentsTab` / `-SettlementGapsTab` / `-AnomaliesTab`,筛选态在 `-financeFilters`):日对账卡(日期 `?day=` 入 URL)`事件计费合计` vs `指标估算合计` + **差异率**,>2% 标红并列差异实例(链到实例 Tab);充值流水(`FilterBar`;行内 **核验**,补单按状态门控);退款(退款单号 `Mono` 固定左,行内 `批准` / `驳回` 或 `打款登记`,`取消` 收进更多;确认文案带退款单号与金额;打款不能是审批人;渠道筛选标「本页已加载」)| 发票(开具 / 驳回,文案带 #id 与金额;操作列固定右且为最后一列)| 调账(发起 → 双人复核:**批准需勾选「已核对租户与金额」**,驳回需理由;发起人不能自审;操作列固定右)| 结算缺口(筛选入 URL;单条 / **勾选批量**重放,核销走 `ReasonAction` 带缺口 #id)| 异常清单(丢回调 / 关单 / 负余额,可渠道核验与补单;核验结果对话框状态走映射表,底部直接给「补单」;负余额只给提示)。不内嵌审计 Tab(独立页)。
-- **工单**:`FilterBar`(状态 / 分类 / user_id / 工单号,游标分页;「待回复 N」为常驻 Segmented 筛选)+ 详情抽屉(对话流 + 回复框贴底;`标记解决` / `关闭工单` 在抽屉 footer,走 `useConfirm`,标题带工单号);读全角色,写 ops / admin。
-- **告警中心**(页头新鲜度条):表格(严重度(图标 + 文字)/ 标题 / 目标 / 时间 / 确认状态)+ `ListCapNote`;`severity` 服务端过滤、`确认状态` 在服务端返回窗口(`LIST_CAPS.alerts`,与后端 `admin_alert_stream` 的 limit 同值)内客户端过滤,两个筛选入 URL(`FilterBar`);未确认项带复选框,全选并入 `BulkBar` + **批量确认**;条目深链与 AlertBell / 总览告警流共用 `alertLink`;确认闭环同一范式(写限 ops/admin,成功后 `["admin","alerts"]` 前缀失效);已确认条目显示确认人与时刻,错误态用 `TableErrorEmpty` 如实显示。
-- **系统设置**:策略参数(表格:参数(含单位与范围)/ 生效值(右对齐)/ 新值(右对齐),即时生效提示进确认框)/ 公告(发布 / 撤回走 `ReasonAction`,目标 = 标题)/ 法务文档(草稿 → 发布 → 归档,归档走 `ReasonAction`;**发布前若编辑器有未保存内容,先保存或阻止**,发布确认展示真实 diff)/ 管理员账号(建号 / **改角色**(`RowMoreMenu` 显式动作 → 确认)/ 停用 / **重置密码二次确认(目标 = 用户名,踢全部登录态)** / 重置两步验证走 `ReasonAction` 带用户名;用户名与操作列固定;自助改密与恢复码重新生成)。
-- **审计**:`FilterBar`(limit + 游标翻页 + 分钟级时间窗);详情只在展开行渲染一次;审计只在本页,财务页不内嵌。
+1. `Basics`: **one-line summary** of the selected spec (`H100 × 1 · 8 vCPU · 32G memory · instance disk 100G · tier tag · X/h`) + "Change spec" top right (→ market, restoring the filter state) + instance name (optional, generated by default) + `GPU count` chips (1/2/4/8, constrained by the SKU cap and stock, short tiers as `GatedButton`; CPU specs omit the chips and submit `gpu_count: 0`).
+2. `Billing mode`: `BillingModeCard` (the chips of §3.4). With a period: the checkout bar's main figure becomes "Monthly cost X / month", **the three lines "list / discount / payable" sit directly on the second line of the checkout bar**, "Expires about YYYY-MM-DD" drops to body size, the primary button becomes **"Pay and create"**, and `market/period/period_count` are submitted. With spot: the main figure is the discounted hourly price (list price struck through + discount badge), the body sends `market='spot'` without `period`. A billing mode from the URL that the spec does not support silently falls back to on-demand (the chip is already greyed with a reason).
+3. `* Image` (required, red asterisk): Tab **Platform images** (**common images as an `OptionTile` grid** of ≤ 4, the first entry per framework, ordered PyTorch / TensorFlow / Paddle / Miniconda / DataScience, the first selected by default; tile = framework icon + "framework version" + sub-line "CUDA X · Py Y · prewarmed / not prewarmed"; "More images…" expands a four-level cascader framework → version → Python → CUDA; the selection echoes the full `image_ref` (`CopyField`) and prewarm status; CPU specs list only images without CUDA and promise no second-level start) / **Custom image** (one field for the repository address; the version must be pinned, `:latest` and no tag get an immediate red frame + reason; the hint is one line "the image must ship SSH on 22 and JupyterLab on 8888", everything else in `?`). **Switching tabs remembers each tab's choice**; switching back to platform images with nothing selected restores the recommended one; the effective image has exactly one source.
+4. `Data disk (optional)`: three `OptionTile`s "None / New data disk / Mount existing" (sub-line states the basis and the number of mountable disks); "New" creates inline: `DiskSizeField` (slider + number, initial value `policies.disk_min_gb`), the disk name folded into "Advanced"; a one-line summary "N GB · X/GB·month, about Y/day; created on submit and mounted with the instance". Card footnote: data disks are independent of the instance and billed even when stopped · the instance disk is node-local without redundancy.
+5. `* SSH key` (required): multi-select of existing keys; a single key is ticked automatically; without keys, inline add (name + **multi-line key box**) auto-selects it, with the `ssh-keygen -t ed25519` command + copy and a "the public key is in ~/.ssh/id_ed25519.pub" hint (no password login).
+
+**Checkout bar** (`CheckoutBar`):
+
+- The `notice` slot above the bar: **the list of incomplete items** "N items left: pick an image · pick or add an SSH key · pick the data disk to mount", each clickable to scroll to its section (`scrollToSection`); `NO_CAPACITY` also lives permanently in this slot ("not enough idle GPUs for this spec" + a "Pick another spec" button), no toast; greying the primary button is only the fallback.
+- Cost items: on-demand / spot = `Configuration cost` (large + "× N cards" / "whole machine" suffix) + `Data-disk fee (daily)` (**only when a disk is really attached**); subscription = period cost + data-disk fee (if any) + expiry (demoted); the "Cost breakdown" Popover lists line by line (unit price × cards, CPU specs say "whole machine X.XX"; disk price GB·month converted to daily; notes that the billing basis is the instance event stream).
+- Primary button copy: on-demand "Create and start", subscription "Pay and create"; while submitting the staged copy "Creating data disk…" → "Creating instance…"; with insufficient balance the button becomes "Insufficient balance, top up"; when the balance query fails, `GatedButton` + a retryable error bar.
+- **Below sm it folds into one line**: price + primary button stay, breakdown / balance / incomplete items move into a "Details ▴" bottom sheet.
+- **Exactly one consent dialog** (`ConsentGate`, §1 rule 6): a spot section (five items) / a shared · economy section (four items), as many as apply, one checkbox "I have read and understood the above", confirm copy "Understood, continue creating"; the checkbox survives a resubmit after a failed creation.
+- Creation carries an `Idempotency-Key` (derived from the parameter snapshot, not rotated on failure); **disk created but instance failed**: a permanent `Alert` above the bar "The data disk has been created and is being billed… submitting again mounts it directly without creating another disk" + "Go to storage".
+- On success, message "Instance {name} is being created" and **navigation to the instance detail's "Connect" tab** (`/instances/:uuid?tab=access`).
+
+### 3.6 Screen ⑤ Deploy service
+
+`/services/new` (entry points: the primary button and the empty-state button of the "Online services" page, the command palette "Deploy service"; the spec is picked in this page's section ① compact picker. The deep link `?sku_id=&gpus=&period=|market=spot&count=` prefills, the selected spec collapses into a one-line echo + "Change spec"). Header "← Back to online services" (a dirty form goes through the leave confirmation).
+
+The same `SectionRail` skeleton + bottom checkout bar as instance creation: fully controlled state + derived problems, no antd `Form.validateFields`; **each section carries its own state** (rules as §3.5: no red crosses on first paint), clicking scrolls to the section. **Field-level errors show in place** (port / health check get a red frame + red text after blur), and the checkout bar shows the clickable "N items left" list above it.
+
+1. `Basics`: `Service name` (optional, auto-generated) / `Compute spec` (`SkuPicker` compact: GPU / CPU columns + model / tier chips + SKU table radio; arriving with `?sku_id` it collapses into a one-line echo + `Change spec`; the GPU count chips are constrained by stock) / `Billing mode` (the chips of §3.4; spot only warns, never blocks: a line under the card "spot instances may be reclaimed and are not recommended for public services").
+2. `Container config`: image address (**must pin a version**, `:latest` and no tag get an immediate red frame; one-line rule + `?` details) / command / arguments (`RowsEditor`: icon delete button, row separators, bulk paste with preview) / environment variables (name + value (password box for secret rows) + secret checkbox + bulk paste with preview and skip count) / **data disk (optional) belongs to this section** (the section variant of the same component as instance creation).
+3. `Service config`: service port (∉ {22, 8888}) / protocol (`OptionTile`: HTTP; TCP and gRPC greyed "coming soon") / health check path (starts with `/`) / access auth (`OptionTile`: API key required / public access) / service endpoint "generated after deployment".
+4. `Advanced`: `☐ Also enable SSH` (ticking shows the inline public-key multi-select, ≥ 1, problems shown in place) / a read-only note on the update strategy "Recreate update: the old revision stops before the new one starts, the endpoint returns 503 in between, address and keys do not change" / configuration summary (`KeyValue`).
+
+The checkout bar mirrors instance creation: primary button "Deploy service" (subscription "Pay and deploy"), insufficient balance becomes "Insufficient balance, top up"; consent through `ConsentGate` (confirm copy "Understood, continue deploying"); the `Idempotency-Key` derives from the parameter snapshot and is not rotated on failure; on success message "Service {name} is being deployed" and navigation to `/services/:slug`. Leaving a dirty form asks for confirmation.
+
+### 3.7 Screen ⑥ Online service list
+
+- **Header** (`PageContainer`): title + a `?` tooltip next to it (stop / freeze policy: "a stopped service's endpoint returns 503 and no GPU hourly fee accrues; after N hours of arrears freeze the instance disk is reclaimed, data disks are unaffected", N from `policies.freeze_grace_hours`) + on the right "Refresh (freshness) / `Deploy service` (the only primary) → `/services/new`"; `FilterBar`: status Select + search box (`?status=` and `?q=` in the URL, replace) + Clear filters + N in total.
+- 8 table columns (fixed name and action columns, sticky): ①`Name / ID` (name links to the detail + slug `Mono`) ②`Status` (`serviceStatusMap` badge; `unready` is a warning with an explanatory tooltip, frozen adds the reclamation countdown) ③`Endpoint` (hostname `CopyField` copying the full URL; the second line says "ready ✓/✗ · API key required / public access" for running / unready, "stopped, endpoint unreachable" otherwise) ④`Spec` (from the current revision instance) ⑤`Revision` (`v{no}`) ⑥`Cost` (same basis as the instance list) ⑦`Created` ⑧`Actions` (`RowActions`: startable (stopped / failed) → primary `Start`, otherwise primary `Endpoint ▾` (primary + link icon, the same look as the instance "Connect ▾"; entries copy access URL / open endpoint / call example, greyed with the reason "service not running, endpoint unreachable" unless running / unready); secondary `Stop` for running / unready, a greyed `Start` with reason for frozen and transitional states, none when startable; `More ▾` holds `Access keys` / `Settings` (deep links to the detail tabs) and `Delete service`). **No row double-click.**
+- The list does not poll; `deploying / stopping / releasing` rows poll lightly one by one with `POLL.transient`. `unready` is not a transitional state.
+- Empty state `EmptyState` "No online services yet" + `Deploy service`; no filter results "No matching services" + Clear filters; a failed query's error state takes precedence.
+- Stop = second confirmation (endpoint 503, the instance stops and GPU billing ends, endpoint and API keys are kept; subscriptions add "stopping within the period gives no refund, the stock stays reserved"); delete = type the service name + tick "the endpoint stops working immediately, API keys cannot be recovered", not allowed while running (stop first).
+
+### 3.8 Screen ⑦ Service detail
+
+`EntityHeader` (breadcrumb restores the list filter state): name (inline rename) / status badge / tier / `v{no}` / subscription and spot tags + meta bar (ID = slug `Mono` + copy / spec / billing / today's spend or expiry / created) + action group (middle; primary as in the list).
+**The endpoint card sits permanently above the tabs**: full URL (`CopyField code`) + open; sub-line "ready ✓/✗ · API key required / public access · container port X · health check Y"; **four distinct status hints**: `deploying` "Deploying v{no}; the endpoint returns 503 until the instance is ready"; `unready` "The service is not ready yet; the instance is running and billed as usual" + "View logs"; `stopped / stopping` "The service is stopped and the endpoint is unreachable; it recovers on start"; `frozen` (error) "Frozen for arrears… unfreezes automatically after a top-up" + "Top up"; `failed` (error) "The new revision failed to start…" + "View logs" "View events". **Ready ✗ is not reported as a fault.**
+
+The header action group has one more item, "Update revision": greyed for `deploying / stopping / releasing / released` (`GatedButton` "you can update once the deployment finishes"), greyed for subscriptions "subscription services cannot update revisions yet".
+
+Tabs are fixed to `Overview / Access keys / Monitoring / Logs / History / Settings` (allow-list `SERVICE_DETAIL_TABS`, `?tab=` deep link, switching uses replace, invalid values fall back to the default; the "Access keys" tab is hidden for public access and its deep link lands on "Settings"):
+
+- **Overview** (default): read-only echo of `Current revision v{no}` (`KeyValue`: image / container port / health check / access auth / SSH / command / arguments / environment variables: plaintext entries show their value, secret entries only the key name) + footnote "parameters are fixed per revision and cannot be changed after creation"; `Call example` curl (URL = the endpoint root; the key = an unrevoked key prefix + ellipsis); **hourly bills** (all revision instances) below in this tab.
+- **Access keys** (only with `require_api_key`): table (name / key prefix `Mono` / last used / created / revoke) + "New key" (the success state shows the full value once: `CopyField secret` + "cannot be viewed again after closing", **the "I have saved it" checkbox must be ticked before closing**); deleted services cannot create keys.
+- **Monitoring** / **Logs**: against the current revision instance (panels as §3.3); logs are readable in `deploying / running / unready`.
+- **History**: upper half "Revisions" = all revision instances (released included) in a descending table (`v{no}` + current marker / status / image / instance (links to the instance detail) / created); lower half "Events" = the union of all revision instances' events (panel as §3.3); the two revision-update reasons are "Revision update: old revision stopped" and "Revision update: old revision released".
+- **Settings**: `Access auth` Switch (PATCH `require_api_key`; turning it off → L2 confirmation "anyone with the endpoint can call it, billed as usual; existing keys are kept"; on without an unrevoked key → warning "no usable API key" + "Create a key"; sub-copy "takes effect within seconds after saving, no redeployment") · `Debug SSH` (with `with_ssh` and running, the connection string as `CopyField`; when not enabled "the SSH switch is fixed per revision") · danger zone delete service. All three controls are greyed for deleted services. Renaming happens in the header.
+
+**"Update revision" = Drawer** (`RevisionDrawer`, `drawerWidth.lg`; submit and cancel fixed in the `footer`; a dirty form asks for confirmation on mask click / close / route change; after submit the header flips to deploying on the spot; the drawer state is not in the URL):
+warning at the top "Recreate update: the old revision stops first and the endpoint returns 503 until the new one is ready; endpoint and API keys do not change; if the new revision fails to start the old one is kept (stopped) and "Start" rolls back";
+`Container config` (prefilled from the current revision; environment variables collapsed to "N entries · expand to edit" by default; **secret keys in their own column**, each defaulting to "keep current value" (the key name goes into `env_secret_keep`), with "override with a new value" or "delete"; when the current revision has a data disk, a note that the new revision mounts none) · `Service config` (port / health check; auth notes "change it under Settings") · `Advanced` (☐ Also enable SSH → public-key multi-select) · `Spec and billing` read-only "inherits v{no}: spec · billing; create a new service to change the spec". L2 confirmation before submit; idempotency key `idemKeyOf("svc-rev", [nonce, slug, revision, form snapshot])`; success message "New revision v{n} is being deployed" and the drawer closes.
+
+The two `More ▾` menus (list / detail) match: Access keys (→ `?tab=keys`) / Settings (→ `?tab=settings`) / ─ / Delete service (red). One service poll only (transitional `POLL.transient`, running `POLL.steady`, deleted stops) + header freshness; the endpoint card and the header share the source.
+
+### 3.9 Screen ⑧ Billing
+
+```
+┌ Billing                                                                    ┐
+│ ⚠ Identity verification is required before topping up          [Verify]   │
+│ ┌Available balance─────┐ ┌2026-09 spend overview           [2026-09 ▾]─┐  │
+│ │ $3,560.00   [Top up] │ │ GPU hours $1,505.50 │ Data disks $13.30 │ Today $41.70│
+│ │ warn at 24 h · change│ │ by instance  train-llama ████████████ $1,440.00 │
+│ └──────────────────────┘ └──────────────────────────────────────────────┘  │
+│ ┌ Hourly bills | Ledger | Refunds | Invoices                  [Export CSV] ┐│
+```
+
+- `PageContainer`; failures of the balance / monthly / today queries and the KYC banner (only under a profile with a KYC gate) are aggregated by `AttentionBar` into one item.
+- Balance card = `StatCard` (`Available balance` large number + `Top up` primary button, middle) + a one-line footnote "warn at N hours · change" (→ `/settings?tab=notify`); the threshold is edited only on the account settings page.
+- Top-up modal: channel `OptionTile`s (driven by platform configuration, listing only the enabled channels; in development the "mock payment" channel is available and selected by default); **the amount has exactly one control** (preset chips write into the number box) + a "balance after top-up ≈ X" preview → `presentation=qr`: QR code (antd QRCode) + `expires_at` countdown (`formatCountdown`) + 2 s polling that confirms automatically (stops at a terminal state), "change amount" returns to the previous step, an expired countdown shows "order expired"; `presentation=redirect`: hand-off to the provider's checkout page, and returning to `/billing?recharge=<order_no>` reopens the modal and resumes polling.
+- Spend overview card: three equal `StatCard`s (this month's GPU hours / data-disk fees / today's spend) + "by instance" horizontal bars (clickable into the instance detail's Bills tab), no pie chart.
+- The bills area has four tabs: `Hourly bills` | `Ledger` (`CursorTable`) | `Refunds` | `Invoices`; `Export CSV` sits on the tab row's right and appears only on the first two tabs, calling `GET /api/v1/billing/export` with the current tab's scope; when the file ends with a truncation marker row the page says so; the footnote "daily fees…" appears only under Hourly bills.
+
+### 3.10 Screen ⑨ Storage
+
+- `PageContainer` (primary button "New data disk" → modal: name (optional, auto-generated) + `DiskSizeField` (initial value = the policy minimum), live daily estimate).
+- A "mount overview" bar at the top: `/root` (instance disk · reclaimed with the instance · free, capacity per spec, no hard-coded number) · `/root/data` (data disk · X/GB·month · kept independently). **Only real mount points are listed.**
+- Data-disk list: name / size (right-aligned) / billing (per-disk snapshot price `price_gb_month`, daily in small type) / status / expiry · reclamation (active "billed daily"; grace "grace period (read-only), X days left"; frozen "frozen, erased in X days"; the deadline is computed client-side from `grace_started_at` / `frozen_started_at` + the `/policies` day counts) / mounting instance / created / actions (`RowActions`: `Expand` drawer (`DiskSizeField` with baseline and price difference, footer cancel + confirm), `Delete` with two gates (type the disk name + checkbox)).
+- No "Renew" button. The reclamation policy is transparent: arrears → 7-day grace (read-only) → frozen 30 days → erased, with a countdown in the row. Empty state `EmptyState(disk)` "Data disks are independent of instances; releasing an instance loses no data" + create.
+
+### 3.11 Screen ⑩ Account settings
+
+`PageContainer width="narrow"`, four tabs (`?tab=`, allow-list `ssh / notify / realname / account`, default `ssh`):
+
+- **SSH keys**: table (name / fingerprint `Mono` / added / delete (L1)) + add form (name + multi-line key box + `Add public key`); the `/settings#ssh` deep link lands on this tab and highlights it.
+- **Notifications**: low-balance warning threshold (hours) + save; sub-copy "SMS + in-app notification when the estimated remaining time drops below this value".
+- **Identity verification** (shown only when `site-config.kyc_form` is set): four states (skeleton while loading / retryable error / verified / not verified); when not verified a vertical form whose fields follow `kyc_form` (`cn_id_card`: full name / ID number / submit); when the platform has not enabled the provider the form stays visible but the submit is a `GatedButton` + explanation.
+- **Account**: sign-in handles (email · phone) with add / change modals (code sent to the new handle; "remove phone" hidden under a profile that requires it) · `Set / change password` (modal, by handle + verification code) · `Sign out` (plain button, L0) · `Sign out everywhere` (L2, not red) · `DangerZone` "Delete account" at the bottom (L3: retype the handle + reason required; cooling-off countdown + withdraw; the rejection reason is echoed).
+
+### 3.12 Screen ⑪ Support and tickets
+
+- `PageContainer width="narrow"`, primary button "New ticket"; body: self-service FAQ links + contact card + my tickets list (status Segmented filter into `?status=`; row = ticket number `Mono` + title link + status tag + updated; no whole-row click).
+- `/support/:ticketId`: `PageContainer back` (restores the list filter state) + meta (`KeyValue`) + conversation (`TicketBubble`, follows the bottom, Ctrl/⌘+Enter sends); the send button is a `GatedButton` "at least 2 characters" below 2 characters; `Close ticket` is always present, a `GatedButton` "a ticket can be closed once resolved" unless resolved.
+
+### 3.13 Notification centre
+
+`PageContainer width="narrow"`, "Mark all read" next to the title; all / unread Segmented (`?filter=`); a row click marks read and navigates (preferring the structured `target_id` exact deep link); empty state `EmptyState(notification)`.
+
+### 3.14 Status and copy system (shared by both consoles, in `packages/ui`)
+
+- **One mapping table from status enum → badge colour / antd Badge semantics / icon / copy key** (`status.ts`: three explicit shapes `LabelMeta` (copy only) / `ColorMeta` (+ colour) / `StatusMeta` (+ badge semantics + optional `icon`); instances / services / subscriptions / image cache / node enrollment / **node status** / **alert severity** / orders / adjustments / legal / refunds / invoices / tickets / deletions / data disks / announcements / purchase modes / periods / event reasons; collected in `ALL_STATUS_MAPS`, which `locales.test.ts` walks to guarantee complete keys). Pages never print raw status codes: both consoles go through `StatusTag` (`map` + `value` + `variant`), web's `InstanceStatusBadge` / `ServiceStatusBadge` / `TierTag` are ≤ 5-line wrappers; `hintKey` produces the tooltip automatically (same on both consoles); unknown values are echoed as a grey tag without `t()`.
+- **Formatting has one implementation** (`format.ts`, obtained with locale through `useFormat`): money via `Intl.NumberFormat` with the deployment currency (`formatMoney`, truncated to the currency's minor unit, string arithmetic only, no floats), hourly price `X.XX/h` (`formatHourlyPrice`, unit price × count via `mulPrice`), period price `X / month` and `X / 3 months` (`formatPeriodPrice`), durations `X h Y min`, countdowns `Xh left` / `X days left` / `reclaimed in X` (`formatCountdown` / `formatDaysLeft` / `formatReclaimCountdown`), sizes `formatSizeGb`, times `formatDateTime` (with time-zone suffix; relative times only inside a `Tooltip` together with the absolute time). Pending or empty values always render `EmptyValue` ("—"), never a fake zero amount, never a mixed "-".
+- **Copy layering**: the backend `core/messages.py` is the source of truth for error and status copy (synced to both consoles through the `errors` namespace, referenced in components with `useTranslation("errors")`); page copy of each console lives in its `locales/*/web.json` / `admin.json`; shared status / format / common-component copy in `packages/ui/locales/*/shared.json` (`common.*` / `filter.*` / `attention.*` / `leave.*` / `freshness.*` / `confirm.*` / `empty.*` / `status.*`). Namespace split and gates in [`reference/i18n.md`](./reference/i18n.md); the public GPU spec static table is `gpuSpecs.ts`. Field labels, policy parameter names and risk copy of the admin platform configuration also live in the locales (regulatory registration names without an official English name are allow-listed per key through `allowCjkInEn`).
+- **Confirmation copy = title question (with the target) + consequence body** (`useConfirm`'s `title` / `consequences`); high-risk two-step (`ReasonAction`) shows the target in both steps and echoes the reason in the second; consent items share their source with the backend hard rules (§1 rule 6).
+- **Banned words and tone** are in [`copy-style-guide.md`](./copy-style-guide.md): button = verb + object, empty state = one sentence + one action, disabled tooltips state only the precondition, no honorific / exclamation marks / emoji; the banned-word list is enforced in CI (`scripts/check-copy-banned.sh`).
+
+## 4. Admin console
+
+### 4.1 Information architecture and roles
+
+The navigation has four groups (source of truth: `MENU` + `group` in `apps/admin/src/lib/menu.ts`, shared by the sidebar and the command palette; visibility filtered by role through `MENU_ROLES`; **page titles must equal the navigation labels**):
+
+```
+Overview    Operations overview `/`
+Resources   Nodes and GPUs `/nodes` · Cluster `/cluster` · SKUs and pricing `/skus` · Images and prewarming `/images`
+Business    Tenants and instances `/tenants` · Online services `/services` · Finance `/finance` · Tickets `/tickets`
+Governance  Alert centre `/alerts` · Audit log `/audit` · Platform configuration `/platform` · System settings `/settings`
+```
+
+Group titles render only in the expanded state; on desktop the sidebar collapses manually to an 80px icon rail (`localStorage("superdl.adminSider")`), icons navigate via `Menu.onClick` when collapsed; narrow screens use a masked Drawer (Esc closes); `/alerts` is invisible to finance. The top bar is sticky (`layout.topBarHeight`), environment badge on the left (`useEnvironment()`, prod adds a 3px red top border), on the right the ⌘K trigger · language (icon dropdown) · alert bell (Popover with the first 20 + ack + footer "View all" "Acknowledge all") · username and role ▾ sign out; below md the three fold into the user dropdown. The shell has a skip link and `<main id="main">`.
+
+**Page skeleton**: `PageContainer` (wide-table pages `width="full"`: nodes / SKUs / tenants and instances / finance / online services / images) + `PageHeader` (title · right-side actions · freshness bar on polling pages: overview / nodes / images / alerts); first-screen KPIs use `KpiGrid` + `StatCard` (per-card skeleton, each card waits only for its own query, **each card is a clickable deep link**).
+
+**Command palette (Cmd+K / Ctrl+K)**: the same paradigm as web; pages sectioned by sidebar group + entity search (tenant id / instance uuid prefix / **node name / SKU name / service name**) + quick actions (deep link to unacknowledged alerts `/alerts?acked=unacked`, refresh the current page's data); bilingual keywords; the selected row background comes from `base.css`.
+
+Roles: admin (everything; SKU create / update and price changes, policy writes admin only) / ops (resources + instances; SKUs and policies read-only) / finance (writable in the finance area: adjustment initiation and review, order verification and backfill, refund approval and payout registration, invoice issue and reject, settlement-gap replay and write-off; read-only elsewhere) / readonly (read-only everywhere). Per-endpoint roles in [`reference/admin.md`](./reference/admin.md).
+
+High-risk and irreversible actions all go through `ReasonAction` (reason required → second confirmation → audit): force stop, force reclaim, freeze tenant, cordon node, revoke enrollment token, regenerate enrollment command, unlist SKU, dead-letter replay and discard, delete image, withdraw announcement, reject deletion request, reject refund and invoice, write off settlement gap, deactivate admin and reset two-factor. **Recovery-direction actions (uncordon node, unfreeze tenant, list SKU) only take a reason, no second step.** Executing an account deletion and **node decommissioning** use L3 (`TypeConfirmModal`: type the target name + checkbox + required reason); the decommission dialog must state the two boundaries the platform cannot manage (the kubelet certificate is not revoked, join-token rotation goes back to ops), and with unreleased instances on the node the confirm copy becomes "Force decommission" with a red warning first. SKU price changes and forced listing use `useConfirm` (change rows + impact + scope note; confirm disabled while the impact query is in flight). Adjustments additionally need two-person review; the initiator cannot review their own.
+
+### 4.2 Per-screen notes
+
+Common skeleton: `PageContainer` (wide-table pages `width="full"`) + `PageHeader` (title · right-side actions · freshness bar on polling pages); first-screen KPIs `KpiGrid` + `StatCard`; wide tables fix the identifier and action columns + sticky header, numbers right-aligned, identifiers `Mono`; row actions `RowActions` (≤ 1 primary + 1 secondary + `RowMoreMenu`); multi-select shows `BulkBar`; **filters always through `FilterBar`** (Clear filters + server-side total) and into the URL; search box ↔ URL via `useUrlCommittedInput`; capped tables carry `ListCapNote`; cursor-paged tables use `CursorTable`; status tags `StatusTag`; empty state `EmptyState`, error / 403 `TableErrorEmpty` (`compact` inside drawers), fetch-failure bars `DataErrorAlert`; edit drawers have submit + cancel in the footer + `useLeaveGuard`, widths from the two tiers only; chart states (loading / empty / degraded) live inside `EChart`.
+
+- **Operations overview**:
+
+```
+│ Operations overview   updated 8 s ago · auto-refresh every 30 s ⏸ ⟳                 │
+│ [✕2 unacked critical][⚠1 lost node][⚠3 dead letters][ⓘ0 settlement gaps][ⓘ4 pending approvals]│
+│ ┌Today's revenue ↗┐┌Month revenue ↗┐┌New sign-ups today ↗┐┌Paying tenants ↗┐ ← each clickable, deep link │
+│ ┌Active instances ↗┐┌Covered subscriptions ↗┐┌Node health ↗┐┌Unacked alerts ↗┐        │
+│ ┌Actual oversell ratio (by pool)? ──────┐ ┌Live alert feed  [severity▾] 8 s ago ┐   │
+│ ├Real utilisation 24h (by pool)─────────┤ │ ✕ critical … [Ack]                   │   │
+│ ├Dead letters ● 3 pending (expanded)────┤ └──────────────────────────────────────┘   │
+```
+
+`TriageBar` on top (unacknowledged critical alerts → `/alerts?severity=critical&acked=unacked` · lost nodes → `/nodes?status=Missing` · dead letters → this page's anchor · settlement gaps → `/finance?tab=gaps` · pending approvals (refunds / invoices / deletions) → the matching tab; zero counts are muted, not hidden). KPIs in **two rows** — money and tenants (today's revenue with yesterday's comparison / month revenue / new sign-ups today vs. previous / paying tenants, denominators in the sub-line), operations and risk (active instances → Instances tab / active subscriptions / node health → nodes / **unacknowledged alerts** → alert centre), each card waiting only for its own query; the main chart is split into two single-axis charts: "actual oversell ratio (by pool)" and "real utilisation 24h (by pool)" (60 % / 85 % threshold lines, the rule explanation in `?`); GPU pool occupancy stacked bars (grouped by node pool, rented / idle, the rented segment splits out "of which spot (reclaimable)"); the right column is the live alert feed (`POLL.steady` + freshness; severity filter in the URL; item = severity icon + text + title; a failed query shows its error state honestly; items deep-link by `target_kind`: `tenant` → `/tenants?tenant=<id>` opens the drawer directly, `node` → `/nodes?node=<name>`, `ticket` → `/tickets?id=<id>`); with dead letters present the dead-letter card is **expanded by default** (single / **bulk-selected** replay · discard, one reason applies to every selection).
+
+- **Nodes and GPUs** (full width; header freshness bar, `POLL.steady`, pausable): pending-node cards (pool / hostname / note / status / phase / heartbeat / error + regenerate join command / revoke, confirmation copy carries the hostname) and "Add node" generating a one-off join command; `FilterBar` (name / pool / status, in the URL); node table (name (`Mono`, fixed left) / **status** (right after the name, `nodeStatusMap`: ready / not ready / cordoned / missing, with icon and hint — at the table's end it would be hidden by horizontal scrolling) / pool label (a pool switch in flight shows "old → new") / GPU model × count / VRAM / **used (GPU card equivalents)** / **instances (unreleased instances incl. stopped; links to `/tenants?tab=instances&inode=<node>`)** / driver / CUDA / vCPU / memory / disk (numbers right-aligned) / last heartbeat (relative time + absolute in the tooltip) / actions (fixed right) `Cordon` · `Uncordon` (verb and status share a root, not "stop scheduling"; via outbox; uncordon only takes a reason; cordon is reversible, the trigger is not red, red is reserved for the confirmation) · secondary `Switch pool` (`-SwitchPoolModal`: current pool read-only + target pool Select (excluding the current pool and cpu, `mig` greyed for models without MIG support) + reason, `useConfirm` second confirmation; a pool switch needs no node-side action, it is accepted on submit without a receipt command; with unreleased instances on the node the trigger is greyed with the count) · More ▾ (`drain` placeholder "performed via the cluster runbook", `Decommission` marked danger); **multi-select for bulk cordon / uncordon**); clicking a node row (the whole row is keyboard-selectable) → **right Drawer (`drawerWidth.lg`, `?node=` in the URL, deep-linkable)**: `EntityHeader` (name / status / pool / GPU / driver / CUDA / heartbeat + actions) + per-card heat grid + node-level ECharts curves (1h/6h/24h, 24h XID count in red), one extra external-link button only when `grafana_url` is configured. Sub-files: `-GpuGrid` / `-NodeMetricsPanel` / `-AddNodeModal` / `-SwitchPoolModal` / `-EnrollmentsCard` / `-NodeDrawer`.
+- **Cluster** (full width): banners (fetch failure / cluster unreachable / light cluster / unlabeled pool / monitoring not connected) aggregated by `AttentionBar` into one. **Component health checks laid out in full, one small panel each** (`Col xs=24 sm=12 lg=8 xxl=6`): status dot (`componentHealthMap` five states, icon + text, never colour alone) + component name + headline number (`fontSize.kpi`, `tabular-nums`, coloured by state) + two facts (grey label, `Mono` value, `tone` decides the colour); **the front of a panel shows only checkable numbers and identifiers, no adjectives**; sorted `down → degraded → disabled → unknown → ok`, the title carries the pending count, a down panel inlines `fix_hint`. Clicking a panel → **the `/cluster/$component` child route renders as a right Drawer** (`drawerWidth.lg`, masked over the cluster page, deep-linkable, shareable, back closes it; the page container belongs to the parent route, and the file has an explicit exemption in `scripts/check-page-skeleton.py`): `EntityHeader size="drawer"` (component name + status badge + probe time) + criterion → facts (`KeyValue`, copyable values) → object details (`Table size="small"`, columns from `-componentMeta`) → impact (non-ok states only) → next steps (`diag_hint` troubleshooting command + `fix_hint` repair command, `CopyField code block`). Pool distribution tags show "ready/total"; sellability looks at ready counts only. Sub-files: `-ComponentPanel` / `-ComponentDrawer` / `-componentMeta`.
+- **SKUs and pricing** (full width): `FilterBar` (model / tier / on sale, in the URL); SKU table (name (fixed left) / GPU model / tier / partition spec / capacity cards / sold / actual oversell / compute oversell × / unit price (sortable, right-aligned) / **status (on sale / unlisted)** / actions (fixed right: edit + More ▾: list / unlist)), red when listed with capacity 0 or actual oversell at the cap; **price changes use `useConfirm`** (change rows + impact + scope note, confirm disabled while the impact query is in flight); when a spec is rejected for missing elements there is a "Force list" exit (red confirmation); the edit drawer is a full-parameter form (including `Subscription` and `Spot tier` Switches, the latter **off by default on creation**, with the note "when on, this spec is also sold at the spot price; spot instances are reclaimed by the platform when capacity is tight") + oversell risk copy in the oversell field's `extra` ("changes affect new instances only") + **the edit reason is the last field**, a live capacity preview on the right (sticky); footer submit + cancel, `useLeaveGuard`; creation offers "Create from cluster resources". Form constants in `-skuForm`.
+- **Tenants and instances** (full width; three tabs split into `-TenantsTab` / `-InstancesTab` / `-DeletionsTab`): tenant table (ID / masked handle (fixed left) / balance (right-aligned) / lifetime spend / instances / data-disk GB / status / registered / actions (fixed right): view billing + `Freeze` · `Unfreeze` (unfreeze only takes a reason); `FilterBar` searches are audited, the input ↔ `?q=`) + clicking a row opens the tenant drawer (**`?tenant=<id>` in the URL**, `TenantLink` and alerts open it directly; header `EntityHeader size="drawer"`: tenant ID / handle / status / balance / lifetime spend / KYC + primary action `Freeze` · `Unfreeze`; tabs `Billing` (hourly bills + ledger + orders) / `Instances` (with the "Quota" edit area) / `Online services` / `Events`, `?dtab=`; nested-table 403 uses the compact empty state; width `drawerWidth.lg`); the global instance table (`FilterBar`: status / instance name / node name, with clear and total) tagged by form (dev box / online service, service rows link to `/services?q=<slug>`), the first 8 uuid characters in `Mono` under the name, actions `RowActions`: primary `Force stop`, `Force reclaim` under More ▾ (target = instance name · uuid prefix); the deletion request table: status filter in the URL, execution via L3 (type the user ID + checkbox + required reason), rejection via `ReasonAction`, processed rows show who and when.
+- **Online services** (full width): `FilterBar` (name or slug prefix / status / ready / include deleted, in the URL); the global service table (service name + slug `Mono` (fixed left) / owner / endpoint hostname (`CopyField`) / status badge + ready sub-line / current instance (links to the global instance table searched by uuid) / revision / node / created / actions (fixed right)), read-only + the single action `Force stop` (`ReasonAction`, target = name · slug, delegates to the current revision instance's force-stop, running / unready only).
+- **Images and prewarming** (full width; header freshness bar, `POLL.ticket`, pausable): image table (framework (fixed left) / Python / CUDA / image address `CopyField` / prewarm switch / coverage / actions (fixed right): prewarm now · edit + More (delete)); the prewarm explanation goes into a `?` tooltip, no permanent bar; **turning prewarm off uses an L1 confirmation**; "N nodes failed" inside the coverage is clickable and expands that row's node cache panel (`?image=<id>` in the URL, deep-linkable); the edit drawer has a footer + `useLeaveGuard`, validation failures in red in place.
+- **Platform configuration** (super admin only): grouped left navigation (security / third-party channels / infrastructure / site information; items carry a status dot + tooltip and a one-line legend: red = error, amber = warning, green = switch on, grey = off or unset; **groups with unsaved changes are dotted**; **the current group `?group=` is in the URL**) + server-side configuration risk warnings aggregated at the top by `AttentionBar` ("Go" jumps to the group with a return link) + the group form on the right (field labels, policy names and risk copy all in the locales); the "Security policy" page is switch rows; a global "Save changes (N)" + required reason, the confirmation dialog lists the changes per group and restates the risk in red when a security switch is turned off. Sub-files: `-platformNav` / `-platformFields` / `-platformSecurity` / `-platformTestCards`.
+- **Finance** (full width; tabs split into `-OrdersTab` / `-RefundsTab` / `-InvoicesTab` / `-AdjustmentsTab` / `-SettlementGapsTab` / `-AnomaliesTab`, filter state in `-financeFilters`): daily reconciliation card (date `?day=` in the URL) `event billing total` vs `metric estimate total` + **difference rate**, red above 2 % with the divergent instances listed (linking to the Instances tab); top-up ledger (`FilterBar`; inline **verify**, backfill gated by status); refunds (refund number `Mono` fixed left, inline `Approve` / `Reject` or `Register payout`, `Cancel` under More; the confirmation copy carries the refund number and amount; the payer cannot be the approver; the channel filter is marked "loaded page only") | invoices (issue / reject, copy carries #id and amount; the action column is fixed right and last) | adjustments (initiate → two-person review: **approval requires ticking "tenant and amount checked"**, rejection needs a reason; the initiator cannot review their own; action column fixed right) | settlement gaps (filters in the URL; single / **bulk-selected** replay, write-off via `ReasonAction` with the gap #id) | anomaly list (lost callbacks / closed orders / negative balances, with channel verification and backfill; the verification result dialog's status goes through the mapping table and offers "Backfill" at the bottom; negative balances only get a hint). No embedded audit tab (separate page).
+- **Tickets**: `FilterBar` (status / category / user_id / ticket number, cursor paging; "Awaiting reply N" is a permanent Segmented filter) + detail drawer (conversation + reply box at the bottom; `Mark resolved` / `Close ticket` in the drawer footer via `useConfirm`, the title carries the ticket number); read all roles, write ops / admin.
+- **Alert centre** (header freshness bar): table (severity (icon + text) / title / target / time / ack state) + `ListCapNote`; `severity` filtered server-side, `ack state` filtered client-side within the server-returned window (`LIST_CAPS.alerts`, equal to the backend `admin_alert_stream` limit), both filters in the URL (`FilterBar`); unacknowledged rows have checkboxes, select-all feeds `BulkBar` + **bulk acknowledge**; item deep links share `alertLink` with AlertBell and the overview feed; the ack loop follows the same paradigm (writes limited to ops/admin, the `["admin","alerts"]` prefix is invalidated on success); acknowledged rows show who and when, error states use `TableErrorEmpty` honestly.
+- **System settings**: policy parameters (table: parameter (with unit and range) / effective value (right-aligned) / new value (right-aligned), the immediate-effect note goes into the confirmation) / announcements (publish / withdraw via `ReasonAction`, target = title) / legal documents (draft → published → archived, archiving via `ReasonAction`; **before publishing, unsaved editor content is saved or blocks the action**, the publish confirmation shows the real diff) / admin accounts (create / **change role** (explicit `RowMoreMenu` action → confirmation) / deactivate / **reset password with a second confirmation (target = username, all sessions revoked)** / reset two-factor via `ReasonAction` with the username; username and action columns fixed; self-service password change and recovery-code regeneration).
+- **Audit**: `FilterBar` (limit + cursor paging + minute-level time window); details render once in the expanded row only; audit lives on this page only, not embedded in finance.

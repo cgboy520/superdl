@@ -1,35 +1,35 @@
-# SuperDL 文案风格规范(voice & tone)
+# SuperDL copy style guide (voice & tone)
 
-所有用户可见文案(两端 locales JSON、后端 `core/messages.py`)遵守本规范;禁词由 `scripts/check-copy-banned.sh` 在 CI 强制。
-基调:克制、具体、可执行;讲事实与后果,不讲情绪与卖点。
+All user-visible copy (both consoles' locales JSON, the backend `core/messages.py`) follows this guide; banned words are enforced in CI by `scripts/check-copy-banned.sh`.
+Tone: restrained, concrete, actionable; facts and consequences, not emotion or sales pitch.
 
-## 句式规则
+## Sentence rules
 
-1. **标题 = 名词短语**(「容器实例」「费用中心」),不带解释性括号或副标题;术语定义放 tooltip。
-2. **按钮 = 动宾**,≤6 字(「创建并开机」「生成注册命令」);危险动作带宾语(「释放实例」而非「确认」)。
-3. **空态 = 一句话 + 一个动作**(「还没有实例」+「去算力市场」)。
-4. **禁用 tooltip 给前置条件**(「关机后才能释放实例」)。
-5. **错误 = 事实 + 下一步**(「数据盘挂载中,请先释放对应实例」);后端 message_key 是约束类文案的单一事实源,前端不复写。
-6. **确认框 = 后果前置**(「确认强制停止?将立即结算尾账并通知用户」)。
-7. **金额/时长/日期走 format 函数**,文案里不出现裸「¥」「元」拼接(经 `common.gbMonthPrice` 等模板键)。
+1. **Title = noun phrase** ("Instances", "Billing"), no explanatory parentheses or subtitle; term definitions go in a tooltip.
+2. **Button = verb + object**, ≤ 6 characters in zh-CN and about three words in en-US ("Create and start", "Generate enrollment command"); dangerous actions carry their object ("Release instance", not "Confirm").
+3. **Empty state = one sentence + one action** ("No instances yet" + "Go to the market").
+4. **A disabled tooltip states the precondition** ("Stop the instance before releasing it").
+5. **Error = fact + next step** ("The data disk is mounted; release the instance first"); the backend message_key is the single source of constraint copy, the frontend does not rewrite it.
+6. **Confirmation = consequence first** ("Force-stop this instance? The tail bill is settled immediately and the user is notified").
+7. **Amounts / durations / dates go through the format functions**; copy never concatenates a bare currency symbol (use template keys such as `common.gbMonthPrice`).
 
-## 禁则
+## Prohibitions
 
-- **实现细节不出口**:轮询间隔、巡检周期、outbox/poller/handler 等机制词、仓库路径、组件版本号。
-  - **例外:管理端运维页**(集群、节点、平台配置)受众是运维,K8s 对象名、命名空间、镜像与组件版本、条件 reason、kubectl 命令按原文出,不做「翻译」。仍受约束的是:禁词表照常强制;巡检周期与轮询间隔仍不出口(那是实现节奏,不是集群事实);**诊断面板正面只放可核对的数字与标识符(x/y、版本号、对象名、地址、时长),不放形容词**;业务解读(库存、可售性)不进组件面,归容量面。
-- **内部术语不出口**:「走调账」「端口池」等,改为可执行表述。
-- **不做空头承诺**:未实现的功能不写;预留功能统一「即将上线」。
-- **不堆排比模具**:「A · B · C」三段式口号限 hero 一处。
-- 感叹号、emoji、「您」、时间承诺(「一分钟开出」)不使用。
-- 禁词表(CI 强制):智能、强大、轻松、一键、全方位、高效、极速、助力、赋能、颠覆、极致。「一键加入」「一键添加」经白名单豁免。
+- **Implementation details stay inside**: polling intervals, patrol periods, mechanism words such as outbox / poller / handler, repository paths, component versions.
+  - **Exception: admin operations pages** (cluster, nodes, platform configuration) address operators, so K8s object names, namespaces, image and component versions, condition reasons and kubectl commands appear verbatim, without "translation". Still enforced: the banned-word list; patrol periods and polling intervals stay inside (they are implementation rhythm, not cluster facts); **the front of a diagnostic panel shows only checkable numbers and identifiers (x/y, versions, object names, addresses, durations), no adjectives**; business interpretation (stock, sellability) belongs to the capacity view, not the component view.
+- **Internal jargon stays inside**: "post an adjustment", "port pool" and the like become actionable wording.
+- **No empty promises**: unimplemented features are not written about; reserved features uniformly say "coming soon".
+- **No slogan moulds**: the "A · B · C" triplet is limited to the hero, once.
+- No exclamation marks, no emoji, no honorific 您 in zh-CN, no time promises ("up in one minute"). <!-- cjk-ok -->
+- Banned words (CI-enforced, zh-CN): 智能、强大、轻松、一键、全方位、高效、极速、助力、赋能、颠覆、极致; 「一键加入」 and 「一键添加」 are allow-listed. <!-- cjk-ok -->
 
-## i18n 配套
+## i18n companion rules
 
-- 新增文案同时提交 zh-CN 与 en-US;en 语序独立重写(复数走 `_one/_other`)。
-- 带 `count` 参数的键 en 侧会生成复数变体,提交前在 `apps/web` / `apps/admin` 下跑 `pnpm i18n:write` 补全。
-- 平台配置字段名 / 提供方名 / 风险复述与策略参数名同样进 locales(动态取键须进 `i18next.config.ts` 的 `preservePatterns`);只有无官方英文名的监管登记名(ICP 备案、公安联网备案)在 en 保留中文并加英文解释,由 `locales.test.ts` 的 `allowCjkInEn` 逐条放行。
+- New copy lands in zh-CN and en-US together; the English is rewritten with its own word order (plurals via `_one/_other`).
+- Keys with a `count` parameter get plural variants on the en side; run `pnpm i18n:write` under `apps/web` / `apps/admin` before committing to fill them in.
+- Platform-configuration field names / provider names / risk copy and policy parameter names also live in the locales (dynamically resolved keys must be listed in `preservePatterns` of `i18next.config.ts`); only regulatory registration names without an official English name (ICP filing, public security network filing) keep the Chinese term in en with an English explanation, allowed one by one through `allowCjkInEn` in `locales.test.ts`.
 
-## 术语表
+## Glossary
 
-- 通用技术缩写两种语言均保留原文:ID、IP、CUDA、Python、GPU、vCPU、SSH、API Key、JupyterLab、diff%。
-- 品牌字标 `SuperDL` 不译;「一键加入」「一键添加」按白名单原文使用。
+- Common technical abbreviations stay as-is in both languages: ID, IP, CUDA, Python, GPU, vCPU, SSH, API Key, JupyterLab, diff%.
+- The brand wordmark `SuperDL` is not translated; the allow-listed zh-CN phrases for "join" / "add" are used verbatim.
