@@ -1,0 +1,9 @@
+SuperDL
+Copyright 2026 The SuperDL Authors
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Bundled third-party assets:
+
+- IBM Plex Mono (apps/web/public/fonts/): SIL Open Font License 1.1,
+  see apps/web/public/fonts/LICENSE-IBM-Plex-Mono.txt
