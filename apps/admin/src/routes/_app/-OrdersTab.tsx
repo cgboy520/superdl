@@ -1,4 +1,4 @@
-/** 充值订单 Tab:FilterBar(状态 / 订单号 / 日期,入 URL)+ 行内核验 / 补单 + 导出。 */
+/** Recharge orders tab: FilterBar (status / order no / date, in the URL) + inline verify / backfill + export. */
 
 import { useQueryClient } from "@tanstack/react-query";
 import { Button, DatePicker, Input, Select } from "antd";

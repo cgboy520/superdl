@@ -1,4 +1,4 @@
-/** 平台配置字段:标签 / 附加说明 / 来源标 / 单字段控件 / 分组面板。 */
+/** Platform configuration fields: labels / extra notes / source tags / single-field controls / group panels. */
 
 import { ArrowLeftOutlined } from "@ant-design/icons";
 import { Collapse, Button, Form, Input, Select, Space, Switch, Tag, Typography } from "antd";
@@ -9,7 +9,7 @@ import { fontSize, formatDateTime, space } from "@superdl/ui";
 import { type PlatformConfigItem } from "../../api";
 import { GROUP_LABEL_KEY, Group } from "./-platformNav";
 
-/** 字段标签:值是 locale 键(platform.field.*),取用经 useFieldLabel。 */
+/** Field labels: values are locale keys (platform.field.*), read through useFieldLabel. */
 export const FIELD_LABELS = {
   admin_mfa_enabled: "platform.field.admin_mfa_enabled",
   captcha_enabled: "platform.field.captcha_enabled",
@@ -83,7 +83,7 @@ export const FIELD_LABELS = {
 } as const satisfies Record<string, string>;
 export type FieldLabelKey = (typeof FIELD_LABELS)[keyof typeof FIELD_LABELS];
 
-/** 字段标签查表:未登记的键回落键名本身。 */
+/** Field label lookup: unregistered keys fall back to the key name. */
 export function useFieldLabel(): (key: string) => string {
   const { t } = useTranslation();
   return (key: string) => {
@@ -115,7 +115,7 @@ export const FIELD_EXTRA_KEYS = {
 } as const;
 export type FieldExtraKey = (typeof FIELD_EXTRA_KEYS)[keyof typeof FIELD_EXTRA_KEYS];
 
-/** 选项标签:值是 locale 键(platform.provider.*)。 */
+/** Option labels: values are locale keys (platform.provider.*). */
 export const PROVIDER_LABELS = {
   mock: "platform.provider.mock",
   aliyun: "platform.provider.aliyun",
@@ -146,7 +146,7 @@ export const GROUP_INTRO_KEYS = {
   cluster: "platform.groupIntro.cluster",
 } as const satisfies Record<Group, string>;
 
-/** 字段级指引文案:locale 查表(fieldExtra.*) + 服务端 hint 拼一行。 */
+/** Field-level guidance copy: locale lookup (fieldExtra.*) + server hint joined on one line. */
 export function FieldExtraText({ itemKey, hint }: { itemKey: string; hint?: string | null }) {
   const { t } = useTranslation();
   const key = (FIELD_EXTRA_KEYS as Record<string, FieldExtraKey>)[itemKey];
@@ -243,7 +243,7 @@ export function GroupPanel({
   setDraft: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   disabled: boolean;
   extraContent?: React.ReactNode;
-  /** 安全组「前往」跳入的来源分组(渲染回链) */
+  /** Source group of a security-page "Go to" jump (renders the back link) */
   origin?: { group: Group; onBack: () => void };
 }) {
   const { t } = useTranslation();

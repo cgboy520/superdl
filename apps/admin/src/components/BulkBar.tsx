@@ -1,4 +1,4 @@
-/** 批量操作条:表格勾选后出现「已选 N 项 · 动作 · 清除」;后端无批量端点时逐条并发调用,统一给「成功 N / 失败 M」反馈(runBulk)。 */
+/** Bulk action bar: appears after table selection as "N selected · actions · clear"; without a backend bulk endpoint the calls run one by one concurrently with a single "N succeeded / M failed" feedback (runBulk). */
 
 import { fontSize, space } from "@superdl/ui";
 import { Button, Space, Typography, theme } from "antd";
@@ -38,7 +38,7 @@ export function BulkBar({ count, onClear, children }: { count: number; onClear: 
   );
 }
 
-/** 逐条并发执行,返回成败计数;调用方据此给一条汇总 message。 */
+/** Run one by one concurrently and return success/failure counts; the caller turns them into one summary message. */
 export async function runBulk<T>(
   items: T[],
   fn: (item: T) => Promise<unknown>,

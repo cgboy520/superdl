@@ -1,4 +1,4 @@
-/** 财务页共用:Tab 白名单、URL 筛选态解析与读取(各 Tab 从这里取 ?tab= 之外的筛选参数)。 */
+/** Shared by the finance page: tab allow-list, URL filter parsing and reading (each tab takes its filters other than ?tab= from here). */
 
 import { useNavigate, getRouteApi } from "@tanstack/react-router";
 
@@ -30,7 +30,7 @@ export interface FinanceSearch {
   g_open?: "0";
 }
 
-/** 各 Tab 共用的 URL 筛选读写(replace,保留他项)。 */
+/** URL filter read/write shared by the tabs (replace, other keys kept). */
 export function useFinanceFilters() {
   const navigate = useNavigate({ from: "/finance" });
   const search = routeApi.useSearch();

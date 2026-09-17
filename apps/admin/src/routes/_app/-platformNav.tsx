@@ -1,4 +1,4 @@
-/** 平台配置分组导航事实源:业务分组 → 配置组、组标题键、分组状态点。 */
+/** Source of truth of the platform configuration navigation: business sections → configuration groups, group title keys, section status dots. */
 
 import { Space, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
@@ -14,7 +14,7 @@ export interface ConfigWarning {
   message: string;
 }
 
-/** 左侧分组导航:业务分组 → 配置组;顺序即展示顺序,新增配置组须归入某分组。 */
+/** Left navigation: business sections → configuration groups; the order is the display order, a new configuration group must join a section. */
 export const NAV = [
   { labelKey: "platform.navSecurity", groups: ["security"] },
   {
@@ -40,7 +40,7 @@ export const GROUP_LABEL_KEY = {
   support: "platform.tabSupport",
 } as const satisfies Record<Group, string>;
 
-/** 导航项状态点语义(颜色非唯一线索:每点带 tooltip + aria-label,导航下方另出图例)。 */
+/** Navigation item status dot semantics (colour is not the only cue: each dot carries a tooltip + aria-label, a legend sits below the navigation). */
 export type DotStatus = "error" | "warning" | "on" | "configured" | "off";
 export const DOT_COLOR = {
   error: adminColors.negative,
@@ -101,7 +101,7 @@ export function NavLabel({ status, text, dirty }: { status: DotStatus; text: str
   );
 }
 
-/** 状态点图例(导航下方一行):颜色含义写明,不只靠颜色。 */
+/** Status dot legend (one line below the navigation): the colour meanings are spelled out, not colour alone. */
 export function NavDotLegend() {
   const { t } = useTranslation();
   return <div style={{ fontSize: fontSize.caption, color: adminColors.textMuted }}>{t("platform.dotLegend")}</div>;

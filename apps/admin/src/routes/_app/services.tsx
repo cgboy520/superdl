@@ -1,4 +1,4 @@
-/** 在线服务:全局服务表(不限租户),FilterBar(检索 / 含已删除,入 URL);处置只有强制停止。 */
+/** Online services: global service table (all tenants), FilterBar (search / include deleted, in the URL); the only disposal is force stop. */
 
 import { FilterBar, PageContainer } from "@superdl/ui/components";
 import { adminKeys } from "../../api";
@@ -17,7 +17,7 @@ export interface ServicesSearch {
   released?: "1";
 }
 
-/** q:名称或 slug 前缀;user_id:租户过滤;released=1:含已删除。 */
+/** q: name or slug prefix; user_id: tenant filter; released=1: include deleted. */
 export function servicesValidateSearch(search: Record<string, unknown>): ServicesSearch {
   const out: ServicesSearch = {};
   if (typeof search.q === "string" && search.q.trim()) out.q = search.q;

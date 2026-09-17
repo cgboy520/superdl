@@ -1,4 +1,4 @@
-/** 支付异常 Tab:渠道回调与订单状态不一致的清单与处置(补单主动作 / 核验次动作,对话框与补单弹窗在 components/orderActions)。 */
+/** Payment anomalies tab: list and disposal of orders whose channel callback disagrees with the order status (backfill primary / verify secondary; the dialog and backfill modal live in components/orderActions). */
 
 import { useQueryClient } from "@tanstack/react-query";
 import { Button, Table, Tag } from "antd";

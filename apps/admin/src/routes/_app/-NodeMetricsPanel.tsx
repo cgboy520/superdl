@@ -1,4 +1,4 @@
-/** 节点指标面板:选中节点的 GPU 利用率 / 显存时序;时间范围由抽屉给。 */
+/** Node metrics panel: GPU utilisation / VRAM time series of the selected node; the time range is given by the drawer. */
 
 import { Button, Card, Space, Tag, Typography } from "antd";
 import { useTranslation } from "react-i18next";
@@ -8,7 +8,7 @@ import { EChart } from "@superdl/ui/components";
 
 import { type NodeMetricsOut, type NodeRow } from "../../api";
 
-/** 节点级历史曲线(per-GPU util / 显存)+ XID 徽标 + 可选 Grafana 外链。 */
+/** Node-level history curves (per-GPU util / VRAM) + XID badge + optional Grafana link. */
 export function NodeMetricsPanel({ node, metrics }: { node: NodeRow; metrics: NodeMetricsOut | undefined }) {
   const { t } = useTranslation();
   const chartTheme = useChartTheme();

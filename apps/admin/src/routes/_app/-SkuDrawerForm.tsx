@@ -1,4 +1,4 @@
-/** SKU 新建 / 编辑抽屉:集群资源联动(推荐填表)+ 容量预览(sticky)+ 改价影响面确认;提交 / 取消在 footer,脏表单挂 useLeaveGuard,变更原因是最后一个字段;表单常量与联动纯函数在 -skuForm。 */
+/** SKU create / edit drawer: cluster resource linkage (recommended values) + capacity preview (sticky) + reprice impact confirmation; submit / cancel in the footer, dirty form guarded by useLeaveGuard, the change reason is the last field; form constants and pure linkage functions live in -skuForm. */
 
 import {
   App,
@@ -54,10 +54,10 @@ export function SkuDrawerForm({
   onClose,
   onSaved,
 }: {
-  /** "new" = 新建;null = 关闭 */
+  /** "new" = create; null = closed */
   editing: SkuAdminOut | "new" | null;
   onClose: () => void;
-  /** 保存成功后(列表刷新) */
+  /** After a successful save (list refresh) */
   onSaved: () => void;
 }) {
   const { t } = useTranslation(["admin", "shared"]);

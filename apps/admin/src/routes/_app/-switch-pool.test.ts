@@ -1,4 +1,4 @@
-/** 切池目标候选与可切判据(后端能力标志 → 目标池灰置;观测卡数掉 0 仍可切回)。 */
+/** Pool switch target candidates and switchability (backend capability flags → target pools greyed; an observed card count of 0 can still switch back). */
 
 import { describe, expect, it } from "vitest";
 
@@ -30,28 +30,28 @@ function node(over: Partial<NodeRow> = {}): NodeRow {
 }
 
 describe("switchTargets", () => {
-  it("排除当前池,不支持 MIG 的机型把 mig 灰置而非隐藏", () => {
+  it("excludes the current pool; a model without MIG support greys mig instead of hiding it", () => {
     expect(switchTargets(node())).toEqual([
       { pool: "kata", disabled: false },
       { pool: "mig", disabled: true },
     ]);
   });
 
-  it("集成 GPU 两个池都灰置,只剩 hami 可切", () => {
+  it("integrated GPU: both pools greyed, only hami remains", () => {
     expect(switchTargets(node({ gpu_model: "GB10" }))).toEqual([
       { pool: "kata", disabled: true },
       { pool: "mig", disabled: true },
     ]);
   });
 
-  it("支持 MIG 的机型三选二都可用", () => {
+  it("a MIG-capable model has two of three available", () => {
     expect(switchTargets(node({ gpu_model: "H100-80G", pool_label: "kata" }))).toEqual([
       { pool: "hami", disabled: false },
       { pool: "mig", disabled: false },
     ]);
   });
 
-  it("切池在途时当前池取期望池:候选里不再出现目标池自己", () => {
+  it("mid-switch the current pool is the desired pool: the target itself is no longer a candidate", () => {
     const n = node({ pool_label: "hami", desired_pool: "kata", gpu_model: "H100-80G" });
     expect(currentPool(n)).toBe("kata");
     expect(switchTargets(n).map((o) => o.pool)).toEqual(["hami", "mig"]);
@@ -59,16 +59,16 @@ describe("switchTargets", () => {
 });
 
 describe("canSwitchPool", () => {
-  it("cpu 池与未打标节点不可切", () => {
+  it("the cpu pool and unlabelled nodes cannot switch", () => {
     expect(canSwitchPool(node({ pool_label: "cpu", gpu_total: 0 }))).toBe(false);
     expect(canSwitchPool(node({ pool_label: "", gpu_total: 0 }))).toBe(false);
   });
 
-  it("观测卡数掉到 0 但还在 GPU 池:仍可切回,否则节点锁死在坏池里", () => {
+  it("observed card count dropped to 0 but still in a GPU pool: can still switch back, otherwise the node is locked in a bad pool", () => {
     expect(canSwitchPool(node({ pool_label: "kata", gpu_model: "GB10", gpu_total: 0 }))).toBe(true);
   });
 
-  it("目标池全被机型灰置时按钮不可用:免得弹窗开出来没得选、提交必被拒", () => {
+  it("button disabled when the model greys every target pool: the modal would open with nothing to pick and the submit would be rejected", () => {
     const gb10 = node({ pool_label: "hami", gpu_model: "GB10" });
     expect(inSwitchablePool(gb10)).toBe(true);
     expect(canSwitchPool(gb10)).toBe(false);

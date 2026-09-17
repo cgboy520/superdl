@@ -183,7 +183,7 @@ function AlertBell() {
   );
 }
 
-/** 命令面板触发器:桌面平铺顶栏,窄屏收入用户下拉 */
+/** Command palette trigger: flat in the desktop top bar, folded into the user dropdown on narrow screens */
 function CommandTrigger() {
   const { t } = useTranslation();
   return (
@@ -209,7 +209,7 @@ function CommandTrigger() {
   );
 }
 
-/** 桌面手动收起态的 localStorage 键 */
+/** localStorage key of the desktop manual-collapse state */
 const SIDER_COLLAPSED_KEY = "superdl.adminSider";
 
 const BRAND = "SuperDL · NOC";

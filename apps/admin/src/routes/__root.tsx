@@ -46,7 +46,7 @@ function RootLayout() {
   );
 }
 
-/** 全局错误边界(与 web 共用 RouteErrorFallbackView)。 */
+/** Global error boundary (RouteErrorFallbackView shared with web). */
 function RouteErrorFallback({ error, reset }: ErrorComponentProps) {
   const { t } = useTranslation();
   return (

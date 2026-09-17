@@ -1,4 +1,4 @@
-/** 租户抽屉:身份与账务摘要、冻结操作、账务/实例/服务/事件四个 Tab。 */
+/** Tenant drawer: identity and billing summary, freeze actions, and the billing / instances / services / events tabs. */
 
 import {
   controlWidth,
@@ -74,7 +74,7 @@ import { AdminServicesTable } from "./-AdminServicesTable";
 export const DRAWER_TABS = ["billing", "instances", "services", "events"] as const;
 export type DrawerTab = (typeof DRAWER_TABS)[number];
 
-/** 冻结 / 解冻(租户表行内与抽屉头共用):冻结是破坏方向(原因 + 二次确认),解冻是恢复方向(只填原因)。 */
+/** Freeze / unfreeze (shared by the tenant table rows and the drawer head): freeze is the destructive direction (reason + second confirmation), unfreeze the recovery direction (reason only). */
 export function TenantFreezeAction({
   tenant,
   writable,
@@ -83,7 +83,7 @@ export function TenantFreezeAction({
 }: {
   tenant: TenantRow;
   writable: boolean;
-  /** 提交成功后刷新列表 */
+  /** Refresh the list after a successful submit */
   onDone: () => void;
   size?: "small" | "middle";
 }) {
@@ -130,7 +130,7 @@ export function TenantFreezeAction({
   );
 }
 
-/** 抽屉内的分节标题(账务三段 / 实例两段)。 */
+/** Section title inside the drawer (three billing sections / two instance sections). */
 function DrawerSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section>
@@ -150,11 +150,11 @@ export function TenantDrawer({
   onChanged,
 }: {
   tenant: TenantRow | null;
-  /** 抽屉 Tab(受控,?dtab=) */
+  /** Drawer tab (controlled, ?dtab=) */
   dtab?: DrawerTab;
   onTabChange?: (tab: DrawerTab) => void;
   onClose: () => void;
-  /** 冻结 / 解冻成功后刷新租户列表 */
+  /** Refresh the tenant list after a successful freeze / unfreeze */
   onChanged: () => void;
 }) {
   const { t } = useTranslation(["admin", "shared"]);
@@ -211,7 +211,7 @@ export function TenantDrawer({
   );
 }
 
-/** 抽屉头:租户 #id / 手机脱敏 / 冻结态 + 关键账务信息 + 冻结·解冻。 */
+/** Drawer head: tenant #id / masked handle / frozen state + key billing facts + freeze · unfreeze. */
 function TenantHeader({ tenant, onChanged }: { tenant: TenantRow; onChanged: () => void }) {
   const { t } = useTranslation(["admin", "shared"]);
   const { formatMoney } = useFormat();
@@ -253,7 +253,7 @@ function TenantHeader({ tenant, onChanged }: { tenant: TenantRow; onChanged: () 
   );
 }
 
-/** 账务:小时账单 + 资金流水 + 订单,一屏分三段。 */
+/** Billing: hourly bills + ledger + orders, three sections on one screen. */
 function BillingTab({ userId, instances }: { userId: number; instances: AdminInstanceOut[] }) {
   const { t } = useTranslation(["admin", "shared"]);
   return (
@@ -271,7 +271,7 @@ function BillingTab({ userId, instances }: { userId: number; instances: AdminIns
   );
 }
 
-/** 小时账单:可按实例过滤;游标加载更多。 */
+/** Hourly bills: filterable by instance; cursor load more. */
 function BillsTab({ userId, instances }: { userId: number; instances: AdminInstanceOut[] }) {
   const { t } = useTranslation(["admin", "shared"]);
   const { formatMoney, formatHourlyPrice, formatDuration } = useFormat();
@@ -386,7 +386,7 @@ function LedgerTab({ userId }: { userId: number }) {
   );
 }
 
-/** 该租户的充值订单(游标分页)。 */
+/** The tenant's recharge orders (cursor pagination). */
 function OrdersTab({ userId }: { userId: number }) {
   const orders = useOrders({ user_id: userId });
   const rows = flattenPages(orders.data);
@@ -408,7 +408,7 @@ function OrdersTab({ userId }: { userId: number }) {
   );
 }
 
-/** 实例:配额覆盖 + 实例只读视图(前 100 条;写操作在「全局实例」Tab)。 */
+/** Instances: quota overrides + read-only instance view (first 100; writes live in the global "Instances" tab). */
 function TenantInstancesTab({
   userId,
   instances,
@@ -502,7 +502,7 @@ function TenantInstancesTab({
   );
 }
 
-/** 配额覆盖:留空 = 走默认链,全空保存 = 清除覆盖;note 必填。 */
+/** Quota overrides: blank = default chain, saving all blank = clear the override; note required. */
 function QuotaTab({ userId }: { userId: number }) {
   const { t } = useTranslation(["admin", "shared"]);
   const { message } = App.useApp();
@@ -616,7 +616,7 @@ function QuotaTab({ userId }: { userId: number }) {
   );
 }
 
-/** 事件时间线:实例选择器 + 状态迁移事件(倒序,游标)。 */
+/** Event timeline: instance selector + state transition events (descending, cursor). */
 function EventsTab({ instances }: { instances: AdminInstanceOut[] }) {
   const { t } = useTranslation(["admin", "shared"]);
   const [uuid, setUuid] = useState<string | null>(null);

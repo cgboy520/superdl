@@ -1,4 +1,4 @@
-/** 脏表单离开防护(admin):路由阻断器 = TanStack useBlocker;弹窗、beforeunload 与 confirmLeave 在 @superdl/ui useLeaveGuardCore。 */
+/** Dirty-form leave guard (admin): the router blocker is TanStack useBlocker; the dialog, beforeunload and confirmLeave live in @superdl/ui useLeaveGuardCore. */
 
 import { useLeaveGuardCore } from "@superdl/ui";
 import { useBlocker } from "@tanstack/react-router";

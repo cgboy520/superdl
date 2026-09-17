@@ -1,10 +1,10 @@
-/** 发票读取权限只允许 finance/admin。 */
+/** Invoice read permission is finance/admin only. */
 import { describe, expect, it } from "vitest";
 
 import { canReadInvoices } from "./auth";
 
 describe("canReadInvoices", () => {
-  it("只有 finance 与 admin 能读发票(ops/readonly 一律不给)", () => {
+  it("only finance and admin can read invoices (ops/readonly never)", () => {
     expect(canReadInvoices("finance")).toBe(true);
     expect(canReadInvoices("admin")).toBe(true);
     expect(canReadInvoices("ops")).toBe(false);

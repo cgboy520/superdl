@@ -19,7 +19,7 @@ export const Route = createFileRoute("/login")({
   component: LoginPage,
 });
 
-/** 登录落点:拿到正式 token 后写入并跳回原页。 */
+/** Login landing: store the real token and return to the original page. */
 function useFinishLogin() {
   const router = useRouter();
   const { returnTo } = Route.useSearch();
@@ -29,7 +29,7 @@ function useFinishLogin() {
   };
 }
 
-/** 二要素验证:6 位动态码或恢复码(XXXXX-XXXXX)。 */
+/** Second factor: 6-digit code or recovery code (XXXXX-XXXXX). */
 function MfaVerifyForm({ ticket }: { ticket: string }) {
   const { t } = useTranslation();
   const errText = useApiErrorText();
@@ -81,7 +81,7 @@ function MfaVerifyForm({ ticket }: { ticket: string }) {
   );
 }
 
-/** 首次绑定:二维码 + 手动密钥 → 首个动态码确认 → 恢复码(仅此一次)。 */
+/** First enrolment: QR code + manual secret → first code confirmation → recovery codes (shown once). */
 function MfaSetupForm({ ticket }: { ticket: string }) {
   const { t } = useTranslation(["admin", "shared"]);
   const errText = useApiErrorText();

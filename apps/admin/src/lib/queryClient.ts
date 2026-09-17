@@ -1,4 +1,4 @@
-/** QueryClient 单例(main.tsx Provider;_app.tsx beforeLoad 复用 /me 缓存)。 */
+/** QueryClient singleton (main.tsx Provider; _app.tsx beforeLoad reuses the /me cache). */
 
 import { QueryClient } from "@tanstack/react-query";
 

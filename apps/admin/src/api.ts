@@ -1,4 +1,4 @@
-/** 数据访问层:基于 @superdl/api-client 生成 fetcher 的 TanStack Query hooks。 */
+/** Data access layer: TanStack Query hooks over the fetchers generated in @superdl/api-client. */
 
 import {
   adminAckAlertApiAdminV1AlertsAlertIdAckPost,
@@ -242,14 +242,14 @@ interface MutOpts<TData, TVars> {
   mutation?: UseMutationOptions<TData, unknown, TVars>;
 }
 
-/** 变更 hook 工厂:mutationFn + 透传 opts.mutation。无参变更省略变量(TVars 默认 void,mutate() 直调)。 */
+/** Mutation hook factory: mutationFn + pass-through opts.mutation. Argument-less mutations omit the variables (TVars defaults to void, mutate() is called bare). */
 function adminMutation<TData, TVars = void>(mutationFn: (v: TVars) => Promise<TData>) {
   return function useBoundMutation(opts?: MutOpts<TData, TVars>) {
     return useMutation({ mutationFn, ...opts?.mutation });
   };
 }
 
-/** 游标分页公共形状:params 带 limit/cursor,响应带 next_cursor(audit 不走这里)。 */
+/** Common cursor pagination shape: params carry limit/cursor, the response next_cursor (audit does not use it). */
 interface CursorParams {
   limit?: number;
   cursor?: string;
@@ -258,7 +258,7 @@ interface CursorPage {
   next_cursor?: string | null;
 }
 
-/** 跨文件共享的查询键、详情键工厂与失效前缀。 */
+/** Query keys, detail-key factories and invalidation prefixes shared across files. */
 export const adminKeys = {
   alerts: ["admin", "alerts"],
   tickets: { all: ["admin", "tickets"], detail: (id: number | null) => ["admin", "ticket", id] },
@@ -268,7 +268,7 @@ export const adminKeys = {
   skus: ["admin", "skus"],
 };
 
-/** 查询 hook:结果附带 queryKey,queryFn 支持 skipToken。 */
+/** Query hook: the result carries its queryKey, queryFn supports skipToken. */
 function useKeyedQuery<T>(
   queryKey: readonly unknown[],
   queryFn: (() => Promise<T>) | SkipToken,
@@ -284,8 +284,8 @@ function useKeyedQuery<T>(
   return { ...q, queryKey };
 }
 
-/** 游标分页 useInfiniteQuery 骨架;fetcher 传 null = 条件不满足不取数(skipToken)。结果附带 queryKey。
- *  轮询只在停留于第一页时进行:refetch 会把已加载的每一页都重拉一遍,翻页后自动刷新即停,靠手动刷新。 */
+/** Cursor-paginated useInfiniteQuery skeleton; a null fetcher = precondition unmet, nothing is fetched (skipToken). The result carries its queryKey.
+ *  Polling runs only while staying on the first page: refetch re-pulls every loaded page, so after paging the auto refresh stops and manual refresh takes over. */
 function useCursorPages<TPage extends CursorPage, P extends CursorParams>(
   key: readonly unknown[],
   fetcher: ((params?: P) => Promise<TPage>) | null,
@@ -328,7 +328,7 @@ export const useTestClusterConnection = adminMutation(() =>
   adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost(),
 );
 
-/** 体检项实时深探,失败不重试。 */
+/** Live deep probe of a health item, no retry on failure. */
 export function useComponentProbe(componentKey: string) {
   return useKeyedQuery(
     ["admin", "component-probe", componentKey],
@@ -351,7 +351,7 @@ export function useSkuCapacityPreview(params: SkuCapacityPreviewApiAdminV1SkusCa
   });
 }
 
-/** 实例列表(游标分页):status/user_id/q/node_name 服务端过滤。 */
+/** Instance list (cursor pagination): status/user_id/q/node_name server-side filters. */
 export function useAdminInstances(
   params?: Omit<AdminListInstancesApiAdminV1InstancesGetParams, "cursor" | "limit">,
   options?: { enabled?: boolean; limit?: number },
@@ -364,7 +364,7 @@ export function useAdminInstances(
   );
 }
 
-/** 在线服务列表(不限租户);user_id 过滤时响应带 total。 */
+/** Online service list (all tenants); the response carries total when filtered by user_id. */
 export function useAdminServices(
   params?: Omit<AdminListServicesApiAdminV1ServicesGetParams, "cursor" | "limit">,
   options?: { enabled?: boolean; limit?: number },
@@ -377,12 +377,12 @@ export function useAdminServices(
   );
 }
 
-/** 租户列表(游标分页)。q = 手机号(完整精确,短串后缀);纯数字另按 id 命中。 */
+/** Tenant list (cursor pagination). q: `@` → exact email, leading `+` → exact E.164 phone, digits → phone suffix, otherwise email prefix. */
 export function useTenants(params?: Omit<AdminListTenantsApiAdminV1TenantsGetParams, "cursor" | "limit">) {
   return useCursorPages(["admin", "tenants", params], adminListTenantsApiAdminV1TenantsGet, params, undefined);
 }
 
-/** 租户资金流水(游标分页)。 */
+/** Tenant ledger (cursor pagination). */
 export function useTenantLedger(userId: number | null) {
   return useCursorPages(
     ["admin", "tenant-ledger", userId],
@@ -394,7 +394,7 @@ export function useTenantLedger(userId: number | null) {
   );
 }
 
-/** 租户小时账单;instanceId 非空时按实例过滤。 */
+/** Tenant hourly bills; filtered by instance when instanceId is set. */
 export function useTenantBills(userId: number | null, instanceId?: number | null) {
   return useCursorPages(
     ["admin", "tenant-bills", userId, instanceId ?? null],
@@ -406,7 +406,7 @@ export function useTenantBills(userId: number | null, instanceId?: number | null
   );
 }
 
-/** 租户配额覆盖 + 生效值(抽屉「配额」Tab)。 */
+/** Tenant quota overrides + effective values (drawer "Quota" tab). */
 export function useTenantQuota(userId: number | null) {
   return useKeyedQuery(
     ["admin", "tenant-quota", userId],
@@ -418,7 +418,7 @@ export const useSetTenantQuota = adminMutation((v: { userId: number; data: Tenan
   adminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut(v.userId, v.data),
 );
 
-/** 实例事件时间线(不限租户,游标分页)。 */
+/** Instance event timeline (all tenants, cursor pagination). */
 export function useInstanceEvents(uuid: string | null) {
   return useCursorPages(
     ["admin", "instance-events", uuid],
@@ -439,7 +439,7 @@ export function useNodeMetrics(nodeName: string | null, range: string) {
   });
 }
 
-/** 节点台账;轮询周期由页面给(可暂停),默认 POLL.steady。 */
+/** Node ledger; the polling interval is given by the page (pausable), default POLL.steady. */
 export function useNodes(options?: { refetchInterval?: number | false }) {
   return useQuery({
     queryKey: adminKeys.nodes,
@@ -483,7 +483,7 @@ export function useReconciliation(day: string) {
   });
 }
 
-/** 告警流首页(顶栏铃铛 / 总览卡片):服务端过滤,只取第一页;enabled=false 不取数。 */
+/** Alert stream front page (top-bar bell / overview card): server-side filters, first page only; enabled=false fetches nothing. */
 export function useAlerts(
   params?: AdminAlertsApiAdminV1AlertsGetParams,
   options?: { refetchInterval?: number | false; enabled?: boolean },
@@ -494,7 +494,7 @@ export function useAlerts(
   });
 }
 
-/** 告警中心:游标分页,severity / type / 确认状态全在服务端过滤。 */
+/** Alert centre: cursor pagination, severity / type / acknowledgement state all filtered server-side. */
 export function useAlertPages(
   params?: Omit<AdminAlertsApiAdminV1AlertsGetParams, "cursor" | "limit">,
   options?: { refetchInterval?: number | false },
@@ -504,7 +504,7 @@ export function useAlertPages(
   });
 }
 
-/** 未确认告警数(顶栏铃铛角标 / 总览待处理条)。 */
+/** Unacknowledged alert count (top-bar bell badge / overview pending bar). */
 export function useAlertUnreadCount(options?: { refetchInterval?: number | false }) {
   return useQuery({
     queryKey: [...adminKeys.alerts, "unread-count"],
@@ -517,7 +517,7 @@ export const useAckAlert = adminMutation((v: { alertId: number }) =>
   adminAckAlertApiAdminV1AlertsAlertIdAckPost(v.alertId),
 );
 
-/** 充值订单(游标分页)。order_no 精确;day=YYYY-MM-DD 按 UTC 下单日过滤。 */
+/** Recharge orders (cursor pagination). order_no exact; day=YYYY-MM-DD filters by UTC order date. */
 export function useOrders(
   params?: Omit<AdminListOrdersApiAdminV1OrdersGetParams, "cursor" | "limit">,
   options?: { enabled?: boolean },
@@ -525,7 +525,7 @@ export function useOrders(
   return useCursorPages(["admin", "orders", params], adminListOrdersApiAdminV1OrdersGet, params, options);
 }
 
-/** 调账单(游标分页):status/user_id/day 服务端过滤。 */
+/** Adjustments (cursor pagination): status/user_id/day server-side filters. */
 export function useAdjustments(params?: Omit<AdminListAdjustmentsApiAdminV1AdjustmentsGetParams, "cursor" | "limit">) {
   return useCursorPages(
     ["admin", "adjustments", params],
@@ -535,7 +535,7 @@ export function useAdjustments(params?: Omit<AdminListAdjustmentsApiAdminV1Adjus
   );
 }
 
-/** 退款单列表(游标分页)。status 服务端过滤;day=YYYY-MM-DD(UTC 日);enabled=false 不取数(无权角色)。 */
+/** Refund list (cursor pagination). status server-side filter; day=YYYY-MM-DD (UTC day); enabled=false fetches nothing (roles without access). */
 export function useRefunds(
   params?: Omit<AdminListRefundsApiAdminV1RefundsGetParams, "cursor" | "limit">,
   options?: { enabled?: boolean },
@@ -561,7 +561,7 @@ export const useCancelRefund = adminMutation((v: { refundId: number; data: Refun
   adminCancelRefundApiAdminV1RefundsRefundIdCancelPost(v.refundId, v.data),
 );
 
-/** 发票申请列表(finance/admin)。status/period(YYYY-MM)服务端过滤;抬头与邮箱默认脱敏,reveal=true + reason 回明文(进 queryKey)。 */
+/** Invoice request list (finance/admin). status/period (YYYY-MM) server-side filters; title and email masked by default, reveal=true + reason returns plaintext (part of the queryKey). */
 export function useInvoices(params?: AdminListInvoicesApiAdminV1InvoicesGetParams, options?: { enabled?: boolean }) {
   return useKeyedQuery(["admin", "invoices", params], () => adminListInvoicesApiAdminV1InvoicesGet(params), {
     enabled: options?.enabled,
@@ -576,7 +576,7 @@ export const useRejectInvoice = adminMutation((v: { invoiceId: number; data: Inv
   adminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost(v.invoiceId, v.data),
 );
 
-/** 结算缺口列表(游标分页):kind/reason 服务端过滤,unresolved 默认 true;不挂 refetchInterval。 */
+/** Settlement gap list (cursor pagination): kind/reason server-side filters, unresolved defaults to true; no refetchInterval. */
 export function useSettlementGaps(
   params?: Omit<AdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetParams, "cursor" | "limit">,
   options?: { enabled?: boolean },
@@ -597,14 +597,14 @@ export const useResolveSettlementGap = adminMutation((v: { gapId: number; data: 
   adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost(v.gapId, v.data),
 );
 
-/** 工单列表(游标分页):status/category 过滤,user_id/ticket_no 检索;不挂 refetchInterval。 */
+/** Ticket list (cursor pagination): status/category filters, user_id/ticket_no search; no refetchInterval. */
 export function useTickets(params?: Omit<AdminListTicketsApiAdminV1TicketsGetParams, "cursor" | "limit">) {
   return useCursorPages([...adminKeys.tickets.all, params], adminListTicketsApiAdminV1TicketsGet, params, {
     refetchOnWindowFocus: true,
   });
 }
 
-/** 待客服工单计数(60s 轮询)。 */
+/** Count of tickets awaiting support (60 s polling). */
 export function useTicketPendingCount() {
   return useKeyedQuery(
     ["admin", "tickets-count"],
@@ -615,7 +615,7 @@ export function useTicketPendingCount() {
   );
 }
 
-/** 注销申请列表。status 服务端过滤;行内附执行前校验计数。 */
+/** Deletion request list. status server-side filter; rows carry the pre-execution check counts. */
 export function useDeletionRequests(
   params?: AdminListDeletionRequestsApiAdminV1DeletionRequestsGetParams,
   options?: { enabled?: boolean },
@@ -627,7 +627,7 @@ export function useDeletionRequests(
   );
 }
 
-/** 执行注销(仅超管):校验不过 → 409,detail 含残留清单。 */
+/** Execute a deletion (super admin only): failed checks → 409, detail lists the leftovers. */
 export const useApproveDeletion = adminMutation((v: { requestId: number; data: AdminDeletionApprove }) =>
   adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost(v.requestId, v.data),
 );
@@ -636,7 +636,7 @@ export const useRejectDeletion = adminMutation((v: { requestId: number; data: Ad
   adminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost(v.requestId, v.data),
 );
 
-/** 工单详情 + 消息流(开启时 15s 轮询)。 */
+/** Ticket detail + message stream (15 s polling while enabled). */
 export function useTicketDetail(ticketId: number | null) {
   return useKeyedQuery(
     adminKeys.tickets.detail(ticketId),
@@ -651,12 +651,12 @@ export type {
   LegalDocVersionCreateLocale as LegalLocale,
 } from "@superdl/api-client";
 
-/** 法务文档总览:doc_key × locale 状态格(当前 published + 最新 draft)。 */
+/** Legal document overview: doc_key × locale status grid (current published + latest draft). */
 export function useLegalDocs() {
   return useKeyedQuery(["admin", "legal-docs"], () => adminListLegalDocsApiAdminV1LegalDocsGet());
 }
 
-/** 某 (doc_key, locale) 的版本历史(version 倒序)。 */
+/** Version history of one (doc_key, locale) (version descending). */
 export function useLegalDocVersions(docKey: string | null, locale: LegalLocale | null) {
   return useKeyedQuery(
     ["admin", "legal-doc-versions", docKey, locale],
@@ -690,7 +690,7 @@ export const useUpdateTicketStatus = adminMutation((v: { ticketId: number; data:
   adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost(v.ticketId, v.data),
 );
 
-/** 审计检索:响应是数组,游标 = 末行 id 的 base64。 */
+/** Audit search: the response is an array, the cursor is the base64 of the last row id. */
 type AuditFilters = Omit<AdminAuditLogApiAdminV1AuditGetParams, "cursor">;
 
 export const AUDIT_DEFAULT_LIMIT = 100;
@@ -715,7 +715,7 @@ export function useAuditLog(filters: AuditFilters) {
   return { ...q, queryKey };
 }
 
-/** 登录请求。 */
+/** Login request. */
 export const useAdminLogin = adminMutation((v: { data: AdminLoginRequest }) =>
   adminLoginApiAdminV1AuthLoginPost(v.data),
 );
@@ -775,12 +775,12 @@ export const useCordonNode = adminMutation((v: { nodeName: string; on: boolean; 
     : adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost(v.nodeName, v.data),
 );
 
-/** 切池:期望池落台账,标签收敛经 outbox;不创建任何行,重复提交由同池闸挡住。 */
+/** Pool switch: the desired pool goes to the ledger, label convergence runs through the outbox; no rows are created, repeated submits are blocked by the same-pool gate. */
 export const useSwitchNodePool = adminMutation((v: { nodeName: string; data: NodeSwitchPoolRequest }) =>
   adminSwitchNodePoolApiAdminV1NodesNodeNameSwitchPoolPost(v.nodeName, v.data),
 );
 
-/** 退役(不可逆);节点上有未释放实例时后端 409,force 才放行。 */
+/** Decommission (irreversible); the backend returns 409 while the node holds unreleased instances, force lets it through. */
 export const useDecommissionNode = adminMutation(
   (v: { nodeName: string; data: NodeDecommissionRequest; force?: boolean }) =>
     adminDecommissionNodeApiAdminV1NodesNodeNameDecommissionPost(
@@ -808,12 +808,12 @@ export const useForceStop = adminMutation((v: { uuid: string; data: AdminForceSt
   adminForceStopApiAdminV1InstancesUuidForceStopPost(v.uuid, v.data),
 );
 
-/** 强制回收一台竞价实例(与强制停止是两条后端路径)。 */
+/** Force-reclaim one spot instance (a separate backend path from force stop). */
 export const usePreemptInstance = adminMutation((v: { uuid: string; data: AdminForceStopRequest }) =>
   adminPreemptApiAdminV1InstancesUuidPreemptPost(v.uuid, v.data),
 );
 
-/** 冻结(原因必填);响应 instances_stopped = 一并停掉的 running 实例数。 */
+/** Freeze (reason required); the response instances_stopped = running instances stopped along the way. */
 export const useFreezeTenant = adminMutation((v: { userId: number; data: TenantFreezeRequest }) =>
   adminFreezeTenantApiAdminV1TenantsUserIdFreezePost(v.userId, v.data),
 );
@@ -872,7 +872,7 @@ export const useBackfillOrder = adminMutation(
     ),
 );
 
-/** 重放死信(原因必填)。 */
+/** Replay a dead-letter task (reason required). */
 export const useRetryDeadTask = adminMutation((v: { taskId: number; data: OutboxRetryRequest }) =>
   adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost(v.taskId, v.data),
 );
@@ -888,7 +888,7 @@ export const usePublishAnnouncement = adminMutation((v: { data: AnnouncementCrea
   ),
 );
 
-/** 公告历史(含已撤回;固定截断 200)。 */
+/** Announcement history (withdrawn included; fixed cap 200). */
 export function useAnnouncements() {
   return useKeyedQuery(["admin", "announcements"], () => adminListAnnouncementsApiAdminV1AnnouncementsGet());
 }
@@ -942,19 +942,19 @@ export const useChangeOwnPassword = adminMutation((v: { data: AdminSelfPasswordR
   adminChangeOwnPasswordApiAdminV1MePasswordPost(v.data),
 );
 
-/** /me 校准角色(路由守卫用)。 */
+/** /me role calibration (route guard). */
 export function fetchAdminMe(): Promise<AdminOut> {
   return adminMeApiAdminV1MeGet();
 }
 
-/** 总览聚合(精确 COUNT,全角色可读);轮询周期由页面给(可暂停),默认 POLL.daily。 */
+/** Overview aggregates (exact COUNT, readable by every role); the polling interval is given by the page (pausable), default POLL.daily. */
 export function useOverview(options?: { refetchInterval?: number | false }) {
   return useKeyedQuery(["admin", "overview"], () => adminOverviewApiAdminV1OverviewGet(), {
     refetchInterval: options?.refetchInterval ?? POLL.daily,
   });
 }
 
-/** 调账前置上下文:租户身份与资金现状;不存在 → 404。 */
+/** Adjustment pre-context: tenant identity and funds; missing → 404. */
 export function useAdjustContext(userId: number | null) {
   return useQuery({
     queryKey: ["admin", "adjust-context", userId],
@@ -964,7 +964,7 @@ export function useAdjustContext(userId: number | null) {
   });
 }
 
-/** 改价影响面:该 SKU 当前活跃实例数/用户数/卡数。 */
+/** Reprice impact: the SKU's current active instances / users / cards. */
 export function useSkuImpact(skuId: number | null) {
   return useQuery({
     queryKey: ["admin", "sku-impact", skuId],
@@ -975,7 +975,7 @@ export function useSkuImpact(skuId: number | null) {
 
 type CsvLang = "zh-CN" | "en-US";
 
-/** CSV 导出工厂:fetcher 文本响应 → downloadCsvChecked;name 为串或按入参派生。 */
+/** CSV export factory: fetcher text response → downloadCsvChecked; name is a string or derived from the arguments. */
 function makeCsvExporter<A extends unknown[]>(
   fetcher: (...args: A) => Promise<unknown>,
   name: string | ((...args: A) => string),
@@ -986,11 +986,11 @@ function makeCsvExporter<A extends unknown[]>(
   };
 }
 
-/** 导出参数合并:当前筛选 + 时区 + 语言。 */
+/** Export parameter merge: current filters + timezone + language. */
 const withTzLang = <P extends object>(params: P | undefined, tz: number, lang: CsvLang): P =>
   ({ ...params, tz_offset_minutes: tz, lang }) as P;
 
-/** 订单导出:跟随当前筛选(status/order_no/user_id/day)。 */
+/** Order export: follows the current filters (status/order_no/user_id/day). */
 export const exportOrdersCsv = makeCsvExporter(
   (params: AdminOrdersExportApiAdminV1OrdersExportGetParams | undefined, tz: number, lang: CsvLang) =>
     adminOrdersExportApiAdminV1OrdersExportGet(withTzLang(params, tz, lang)),
@@ -998,28 +998,28 @@ export const exportOrdersCsv = makeCsvExporter(
     `superdl-orders-${params?.day ?? "all"}.csv`,
 );
 
-/** 按传入筛选导出调账 CSV,附时区与语言。 */
+/** Export the adjustment CSV for the given filters, with timezone and language. */
 export const exportAdjustmentsCsv = makeCsvExporter(
   (params: AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetParams | undefined, tz: number, lang: CsvLang) =>
     adminAdjustmentsExportApiAdminV1AdjustmentsExportGet(withTzLang(params, tz, lang)),
   "superdl-adjustments.csv",
 );
 
-/** 按传入筛选导出退款 CSV,附时区与语言。 */
+/** Export the refund CSV for the given filters, with timezone and language. */
 export const exportRefundsCsv = makeCsvExporter(
   (params: AdminRefundsExportApiAdminV1RefundsExportGetParams | undefined, tz: number, lang: CsvLang) =>
     adminRefundsExportApiAdminV1RefundsExportGet(withTzLang(params, tz, lang)),
   "superdl-refunds.csv",
 );
 
-/** 发票导出:跟随当前筛选(status/period)与明文档位(reveal/reason)。 */
+/** Invoice export: follows the current filters (status/period) and the plaintext level (reveal/reason). */
 export const exportInvoicesCsv = makeCsvExporter(
   (params: AdminInvoicesExportApiAdminV1InvoicesExportGetParams | undefined, tz: number, lang: CsvLang) =>
     adminInvoicesExportApiAdminV1InvoicesExportGet(withTzLang(params, tz, lang)),
   "superdl-invoices.csv",
 );
 
-/** 租户资金流水导出(抽屉「流水」Tab)。 */
+/** Tenant ledger export (drawer "Ledger" tab). */
 export const exportTenantLedgerCsv = makeCsvExporter(
   (userId: number, tz: number, lang: CsvLang) =>
     adminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGet(userId, {
@@ -1029,14 +1029,14 @@ export const exportTenantLedgerCsv = makeCsvExporter(
   (userId: number) => `superdl-tenant-${userId}-ledger.csv`,
 );
 
-/** 审计检索导出:跟随当前筛选(actor_type/actor_id/q/since/until)。 */
+/** Audit search export: follows the current filters (actor_type/actor_id/q/since/until). */
 export const exportAuditCsv = makeCsvExporter(
   (filters: AdminAuditExportApiAdminV1AuditExportGetParams | undefined, tz: number, lang: CsvLang) =>
     adminAuditExportApiAdminV1AuditExportGet(withTzLang(filters, tz, lang)),
   "superdl-audit.csv",
 );
 
-/** 对账导出(按日,无 tz 参数)。 */
+/** Reconciliation export (by day, no tz parameter). */
 export const exportReconciliationCsv = makeCsvExporter(
   (day: string, lang: CsvLang) => reconciliationExportApiAdminV1ReconciliationExportGet({ day, lang }),
   (day: string) => `superdl-reconciliation-${day}.csv`,

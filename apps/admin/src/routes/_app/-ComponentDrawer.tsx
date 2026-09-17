@@ -1,4 +1,4 @@
-/** 组件诊断抽屉:判据、事实、对象明细、影响面与下一步。 */
+/** Component diagnosis drawer: criteria, facts, object details, impact and next steps. */
 
 import { Alert, Card, Space, Table, Typography } from "antd";
 import { useTranslation } from "react-i18next";
@@ -111,7 +111,7 @@ export function ComponentDrawerBody({ component, probedAt }: { component: Cluste
   );
 }
 
-/** 未就绪对象的现场状态与 Warning 事件;取数失败显示提示。 */
+/** Live state and Warning events of unready objects; a failed fetch shows a hint. */
 function LiveDetail({ probe }: { probe: ReturnType<typeof useComponentProbe> }) {
   const { t } = useTranslation(["admin", "shared"]);
   const errText = useApiErrorText();

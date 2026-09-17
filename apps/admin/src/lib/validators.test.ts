@@ -1,25 +1,25 @@
-/** 原因校验:必填、trim 后 2~200 字。 */
+/** Reason validation: required, 2–200 characters after trim. */
 import { describe, expect, it } from "vitest";
 
 import { isValidReason } from "./validators";
 
-describe("isValidReason(调账驳回理由必填)", () => {
-  it("空值/纯空白/单字均不通过", () => {
+describe("isValidReason (adjustment rejection reason is required)", () => {
+  it("empty, whitespace-only and single-character values fail", () => {
     expect(isValidReason(undefined)).toBe(false);
     expect(isValidReason(null)).toBe(false);
     expect(isValidReason("")).toBe(false);
     expect(isValidReason("   ")).toBe(false);
-    expect(isValidReason("错")).toBe(false);
-    expect(isValidReason(" 错 ")).toBe(false);
+    expect(isValidReason("x")).toBe(false);
+    expect(isValidReason(" x ")).toBe(false);
   });
 
-  it("两字及以上通过(首尾空白不计)", () => {
-    expect(isValidReason("误调")).toBe(true);
-    expect(isValidReason(" 金额录错了 ")).toBe(true);
+  it("two or more characters pass (surrounding whitespace not counted)", () => {
+    expect(isValidReason("ok")).toBe(true);
+    expect(isValidReason(" amount entered wrong ")).toBe(true);
   });
 
-  it("超过 200 字不通过", () => {
-    expect(isValidReason("很".repeat(200))).toBe(true);
-    expect(isValidReason("很".repeat(201))).toBe(false);
+  it("more than 200 characters fails", () => {
+    expect(isValidReason("a".repeat(200))).toBe(true);
+    expect(isValidReason("a".repeat(201))).toBe(false);
   });
 });

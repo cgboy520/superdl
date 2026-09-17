@@ -1,4 +1,4 @@
-/** 手输原因字段口径:trim 后 2~200 字。 */
+/** Typed reason field rule: 2–200 characters after trim. */
 
 export const REASON_MAX_LEN = 200;
 

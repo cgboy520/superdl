@@ -1,4 +1,4 @@
-/** 镜像页:清单、预热操作、节点缓存展开面板与编辑抽屉。 */
+/** Images page: list, prewarm actions, per-node cache expansion panel and edit drawer. */
 
 import { QuestionCircleOutlined } from "@ant-design/icons";
 import {
@@ -82,7 +82,7 @@ interface ImageFormValues {
   prewarm_enabled: boolean;
 }
 
-/** 行展开:每节点缓存明细(展开期间 30s 轮询) */
+/** Row expansion: per-node cache detail (30 s polling while expanded) */
 function ImageNodesPanel({ imageId }: { imageId: number }) {
   const { t } = useTranslation(["admin", "shared"]);
   const { data, isError, error, refetch } = useImageNodes(imageId, { refetchInterval: POLL.steady });

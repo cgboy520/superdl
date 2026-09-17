@@ -1,4 +1,4 @@
-/** 运营总览:待处理项、指标卡、资源图表、死信任务与告警流。 */
+/** Operations overview: pending items, metric cards, resource charts, dead-letter tasks and the alert stream. */
 
 import { QuestionCircleOutlined } from "@ant-design/icons";
 import {
@@ -76,7 +76,7 @@ export const Route = createFileRoute("/_app/")({
 
 const percent = (v: number) => `${(v * 100).toFixed(0)}%`;
 
-/** 实际超卖率(按池):单轴柱图。 */
+/** Actual oversell ratio (by pool): single-axis bar chart. */
 function OversellRatioChart({ rows }: { rows: OversellRow[] }) {
   const { t } = useTranslation();
   const chartTheme = useChartTheme();
@@ -106,7 +106,7 @@ function OversellRatioChart({ rows }: { rows: OversellRow[] }) {
   );
 }
 
-/** 真实利用率 24h(按池):0–100 折线 + 上调 / 回调阈值虚线。 */
+/** Real utilisation 24 h (by pool): 0–100 line + raise / lower threshold dashes. */
 function UtilChart({ rows }: { rows: OversellRow[] }) {
   const { t } = useTranslation();
   const chartTheme = useChartTheme();
@@ -200,7 +200,7 @@ function PoolOccupancy({ pools }: { pools: OverviewOut["pools"] }) {
   );
 }
 
-/** 任务死信卡(重放/忽略需原因 + 二次确认);有死信默认展开,#dead-tasks 供待处理条锚定。 */
+/** Dead-letter task card (replay/ignore need a reason + second confirmation); expanded by default when dead letters exist, #dead-tasks anchors the pending bar. */
 function DeadTasksCard() {
   const { t, i18n } = useTranslation(["admin", "shared"]);
   const qc = useQueryClient();
@@ -390,7 +390,7 @@ function DeadTasksCard() {
   );
 }
 
-/** 实时告警流:severity 过滤入 URL(?severity=)、确认闭环、深链跳受影响节点/租户(lib/alertLink);轮询节拍由页面给。 */
+/** Live alert stream: severity filter in the URL (?severity=), acknowledgement loop, deep links to the affected node/tenant (lib/alertLink); the polling cadence is given by the page. */
 function AlertStreamCard({ refetchInterval }: { refetchInterval: number | false }) {
   const { t } = useTranslation(["admin", "shared"]);
   const role = useAdminRole();
@@ -469,13 +469,13 @@ function AlertStreamCard({ refetchInterval }: { refetchInterval: number | false 
   );
 }
 
-/** 游标页计数:服务端 total 优先,缺省用已加载条数;未取到数据 = undefined。 */
+/** Cursor page count: server total first, otherwise the loaded row count; no data = undefined. */
 function pageCount(data: { pages: { items: unknown[]; total?: number | null }[] } | undefined): number | undefined {
   if (!data) return undefined;
   return data.pages[0]?.total ?? flattenPages(data).length;
 }
 
-/** 汇总严重告警、失联节点、死信、结算缺口与待审批计数。 */
+/** Aggregate critical alerts, lost nodes, dead letters, settlement gaps and pending approvals. */
 function useTriageItems({
   criticalUnacked,
   nodesMissing,
@@ -520,7 +520,7 @@ function useTriageItems({
 
 const triageLinkStyle = { display: "inline-block", textDecoration: "none", color: "inherit" } as const;
 
-/** 待处理条深链:按 item.key 落到预筛选列表;死信落本页锚点。 */
+/** Pending bar deep links: land on the prefiltered list by item.key; dead letters land on this page's anchor. */
 function triageLink(item: TriageItem, children: ReactNode): ReactNode {
   switch (item.key) {
     case "critical":
@@ -556,7 +556,7 @@ function triageLink(item: TriageItem, children: ReactNode): ReactNode {
   }
 }
 
-/** 继承文字色的块级整卡链接。 */
+/** Block-level whole-card link inheriting the text colour. */
 const cardLinkStyle = { display: "block", textDecoration: "none", color: "inherit" } as const;
 
 function Overview() {

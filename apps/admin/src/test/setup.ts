@@ -1,4 +1,4 @@
-/** jsdom 缺口补齐:antd 组件依赖的浏览器 API(jsdom 未实现);金额格式化钉 CNY(生产取 platform-config deployment)。 */
+/** jsdom gap fillers: browser APIs antd components need (unimplemented in jsdom); money formatting pinned to CNY (production reads platform-config deployment). */
 import { setFallbackCurrency } from "@superdl/ui";
 
 setFallbackCurrency("CNY");

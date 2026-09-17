@@ -1,4 +1,4 @@
-/** 组件体检的文案键映射与对象表列顺序。 */
+/** Locale key mapping and object table column order of the component health checks. */
 
 import type { ClusterComponent } from "../../api";
 
@@ -17,7 +17,7 @@ export const COMPONENT_LABEL = {
   monitoring: "cluster.comp.monitoring",
 } as const satisfies Record<ComponentKey, string>;
 
-/** 组件体检判据的文案键。 */
+/** Locale keys of the component health criteria. */
 export const COMPONENT_CRITERION = {
   nodes: "cluster.criterion.nodes",
   hami: "cluster.criterion.hami",
@@ -31,7 +31,7 @@ export const COMPONENT_CRITERION = {
   monitoring: "cluster.criterion.monitoring",
 } as const satisfies Record<ComponentKey, string>;
 
-/** 影响面:这项不正常时平台哪条链路断。只在非正常态显示。 */
+/** Impact: which platform chain breaks when this item is unhealthy. Shown only in non-healthy states. */
 export const COMPONENT_IMPACT = {
   nodes: "cluster.impact.nodes",
   hami: "cluster.impact.hami",
@@ -45,7 +45,7 @@ export const COMPONENT_IMPACT = {
   monitoring: "cluster.impact.monitoring",
 } as const satisfies Record<ComponentKey, string>;
 
-/** 事实 key → 文案键。后端新增事实而前端未跟上时 metaOf 返回 undefined,原样回显 key。 */
+/** Fact key → locale key. When the backend adds a fact the frontend has not caught up with, metaOf returns undefined and the key is echoed raw. */
 export const FACT_LABEL = {
   ready: "cluster.fact.ready",
   unschedulable: "cluster.fact.unschedulable",
@@ -81,7 +81,7 @@ export const FACT_LABEL = {
   alertsFiring: "cluster.fact.alertsFiring",
 } as const;
 
-/** 对象表列 key → 文案键。 */
+/** Object table column key → locale key. */
 export const OBJECT_COLUMN_LABEL = {
   name: "cluster.objcol.name",
   namespace: "cluster.objcol.namespace",
@@ -113,7 +113,7 @@ export const OBJECT_COLUMN_LABEL = {
   notAfter: "cluster.objcol.notAfter",
 } as const;
 
-/** 抽屉对象表的列顺序。 */
+/** Column order of the drawer object table. */
 export type ObjectColumn = keyof typeof OBJECT_COLUMN_LABEL;
 
 export const OBJECT_COLUMNS = {
@@ -129,7 +129,7 @@ export const OBJECT_COLUMNS = {
   monitoring: ["namespace", "ready", "image", "reason"],
 } as const satisfies Record<ComponentKey, readonly ObjectColumn[]>;
 
-/** 深探两张表的列:现场对象 / Warning 事件。节点项的现场表复用同一组件,列不同。 */
+/** Columns of the two deep-probe tables: live objects / Warning events. The node item's live table reuses the same component with different columns. */
 export const LIVE_POD_COLUMNS = [
   "namespace",
   "phase",

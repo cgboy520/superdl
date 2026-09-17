@@ -1,4 +1,4 @@
-/** 退款 Tab:FilterBar(状态 / 渠道 / 发起日,入 URL)+ 行内审批 / 驳回 / 打款登记,取消收进更多。 */
+/** Refunds tab: FilterBar (status / channel / creation day, in the URL) + inline approve / reject / payout registration, cancel folded into more. */
 
 import { useQueryClient } from "@tanstack/react-query";
 import { Button, DatePicker, Form, Input, Select, Typography } from "antd";
@@ -38,7 +38,7 @@ import { tenantColumn } from "../../components/TenantLink";
 import { canWriteFinance, useAdminRole, useAuth } from "../../stores/auth";
 import { useFinanceFilters } from "./-financeFilters";
 
-/** 登记打款弹窗:渠道 + 凭证号;出金只发生在这里。 */
+/** Payout registration modal: channel + voucher number; money leaves only here. */
 export function PayoutModal({
   target,
   onClose,

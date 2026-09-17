@@ -1,4 +1,4 @@
-/** 财务对账页:对账卡(?day=)+ Tab(充值订单 / 退款 / 发票 / 调账 / 结算缺口 / 支付异常),各 Tab 拆在同目录 -Xxx.tsx;筛选态入 URL(-financeFilters)。审计独立成页。 */
+/** Finance page: reconciliation card (?day=) + tabs (recharge orders / refunds / invoices / adjustments / settlement gaps / payment anomalies), each tab in a sibling -Xxx.tsx; filter state in the URL (-financeFilters). Audit is its own page. */
 
 import { WarningOutlined } from "@ant-design/icons";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";

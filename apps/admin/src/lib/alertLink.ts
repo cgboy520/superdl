@@ -1,4 +1,4 @@
-/** 告警跳转目标(后端派生 target_kind/target_id):无 target 不可点;node/ticket 深链带目标 id。 */
+/** Alert navigation target (backend-derived target_kind/target_id): no target = not clickable; node/ticket deep links carry the target id. */
 
 import { useQueryClient } from "@tanstack/react-query";
 import { App } from "antd";
@@ -8,7 +8,7 @@ import { useApiErrorText } from "@superdl/ui";
 
 import { adminKeys, type AlertRow, useAckAlert } from "../api";
 
-/** 告警确认闭环:成功文案 + 失效 adminKeys.alerts 前缀;错误文案走后端 message_key。 */
+/** Alert acknowledgement loop: success copy + invalidate the adminKeys.alerts prefix; error copy follows the backend message_key. */
 export function useAckAlertWithFeedback() {
   const { t } = useTranslation();
   const errText = useApiErrorText();

@@ -1,4 +1,4 @@
-/** 租户与实例:Tab(租户 -TenantsTab / 实例 -InstancesTab / 注销申请 -DeletionsTab)+ 租户抽屉(-TenantDrawer,?tenant= 深链);筛选与检索全部入 URL。 */
+/** Tenants and instances: tabs (tenants -TenantsTab / instances -InstancesTab / deletion requests -DeletionsTab) + tenant drawer (-TenantDrawer, ?tenant= deep link); filters and search all in the URL. */
 
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Card, Tabs } from "antd";
@@ -27,7 +27,7 @@ export const Route = createFileRoute("/_app/tenants")({
     tstatus?: string;
     order?: "asc";
     dstatus?: string;
-    /** 打开抽屉的租户 id(可转达的视图,入 URL) */
+    /** Tenant id whose drawer is open (shareable view, in the URL) */
     tenant?: number;
   } => ({
     q: typeof search.q === "string" && search.q ? search.q : undefined,

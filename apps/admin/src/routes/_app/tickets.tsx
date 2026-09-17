@@ -1,4 +1,4 @@
-/** 工单:FilterBar(待回复 Segmented / 状态 / 分类 / user_id / 工单号,入 URL;游标分页)+ 详情抽屉。读:全角色;写:ops/admin。 */
+/** Tickets: FilterBar (awaiting-reply Segmented / status / category / user_id / ticket no, in the URL; cursor pagination) + detail drawer. Read: every role; write: ops/admin. */
 
 import {
   controlWidth,

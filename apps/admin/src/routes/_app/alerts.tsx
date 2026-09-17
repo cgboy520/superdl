@@ -1,4 +1,4 @@
-/** 告警中心:FilterBar(severity / 类型 / 确认状态全走服务端过滤,入 URL)+ 游标翻页;表格勾选未确认项批量确认;深链与确认闭环走 alertLink(ops/admin 可写)。 */
+/** Alert centre: FilterBar (severity / type / acknowledgement state all server-side, in the URL) + cursor paging; ticking unacknowledged rows acknowledges in bulk; deep links and the acknowledgement loop go through alertLink (ops/admin may write). */
 
 import {
   controlWidth,
@@ -35,7 +35,7 @@ import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 const SEVERITIES = ["info", "warning", "critical"] as const;
 const ACK_FILTERS = ["unacked", "acked"] as const;
-/** 告警流的两类来源(与后端 notify.service.ALERT_STREAM_TYPES 同表)→ 文案键。 */
+/** The two alert stream sources (same table as the backend notify.service.ALERT_STREAM_TYPES) → locale keys. */
 const ALERT_TYPE_LABEL = {
   admin_alert: "alerts.typeAdminAlert",
   gpu_fault: "alerts.typeGpuFault",

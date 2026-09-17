@@ -1,4 +1,4 @@
-/** 全局在线服务表(在线服务页与租户抽屉共用);唯一处置「强制停止」委托当前版本实例的 force-stop。 */
+/** Global online service table (shared by the services page and the tenant drawer); the only disposal "force stop" delegates to the current revision instance's force-stop. */
 
 import { flattenPages, fontSize, formatDateTime, layout, metaOf, serviceStatusMap } from "@superdl/ui";
 import { CopyField, CursorTable, EmptyState, HexTag, Mono, RowActions, TableErrorEmpty } from "@superdl/ui/components";
@@ -28,11 +28,11 @@ export function AdminServicesTable({
   userId?: number;
   q?: string;
   includeReleased?: boolean;
-  /** 抽屉内:小表 + 前 100 条明示截断,不出归属列 */
+  /** Inside the drawer: small table + explicit first-100 truncation, no owner column */
   compact?: boolean;
-  /** 页面筛选态非空(空态切到「无匹配」) */
+  /** Page filter state is non-empty (empty state switches to "no match") */
   hasFilter?: boolean;
-  /** 空态「清除筛选」 */
+  /** Empty state "clear filters" */
   onClearFilters?: () => void;
 }) {
   const { t } = useTranslation(["admin", "shared"]);

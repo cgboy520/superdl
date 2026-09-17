@@ -1,4 +1,4 @@
-/** 带正负色的金额:正数正向色;负数默认负向色(highlightNegative={false} 保持默认色);色值经 useThemeColors 取。 */
+/** Signed amount colour: positive in the positive colour; negative in the negative colour by default (highlightNegative={false} keeps the default colour); colours via useThemeColors. */
 
 import { useFormat, useThemeColors } from "@superdl/ui";
 

@@ -1,4 +1,4 @@
-/** 管理端认证状态:token + 管理员身份;存储键与用户端隔离。 */
+/** Admin auth state: token + admin identity; storage keys isolated from the user console. */
 
 import { createStore } from "zustand/vanilla";
 import { useStore } from "zustand";
@@ -17,9 +17,9 @@ interface AuthState {
   accessToken: string | null;
   admin: AdminInfo | null;
   login: (accessToken: string, admin: AdminInfo) => void;
-  /** 静默续期换发:只换 token,身份不变。 */
+  /** Silent renewal: swaps the token only, identity unchanged. */
   setToken: (accessToken: string) => void;
-  /** 以 /me 响应校准本地身份;token 不变。 */
+  /** Calibrate the local identity from the /me response; token unchanged. */
   setAdmin: (admin: AdminInfo) => void;
   logout: () => void;
 }
@@ -52,7 +52,7 @@ export function useAuth(): AuthState {
   return useStore(authStore);
 }
 
-/** 请求路径读 localStorage(跨标签页续期即时生效)。 */
+/** Request path reads localStorage (cross-tab renewal takes effect at once). */
 export function readAdminToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
@@ -61,17 +61,17 @@ export function useAdminRole(): string {
   return useStore(authStore, (s) => s.admin?.role ?? "readonly");
 }
 
-/** 资源写权限(SKU/实例/租户):admin·ops */
+/** Resource write permission (SKU/instances/tenants): admin·ops */
 export function canWriteOps(role: string): boolean {
   return role === "admin" || role === "ops";
 }
 
-/** 财务写权限(发起/复核调账):admin·finance */
+/** Finance write permission (create/review adjustments): admin·finance */
 export function canWriteFinance(role: string): boolean {
   return role === "admin" || role === "finance";
 }
 
-/** 发票读权限(后端 require_roles("finance")):admin·finance;与 canWriteFinance 是两条规则。 */
+/** Invoice read permission (backend require_roles("finance")): admin·finance; a separate rule from canWriteFinance. */
 export function canReadInvoices(role: string): boolean {
   return role === "admin" || role === "finance";
 }

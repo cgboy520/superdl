@@ -1,4 +1,4 @@
-/** 命令面板:角色过滤导航、实体检索与快捷动作。 */
+/** Command palette: role-filtered navigation, entity search and quick actions. */
 
 import {
   AlertOutlined,
@@ -19,15 +19,15 @@ import { MENU, MENU_GROUP_LABEL_KEY, MENU_GROUP_ORDER, canSeeMenu } from "../lib
 import { queryClient } from "../lib/queryClient";
 import { useAdminRole } from "../stores/auth";
 
-/** 顶栏触发器与面板的事件总线名 */
+/** Event bus name between the top-bar trigger and the palette */
 export const COMMAND_PALETTE_OPEN_EVENT = "superdl:admin-command-palette-open";
 
 export { COMMAND_KBD_HINT };
 
-/** 每个实体分组最多列几条 */
+/** Max rows per entity group */
 const ENTITY_HITS = 8;
 
-/** 在线服务列表按参数分了多份缓存,前缀取全部再按 id 去重。 */
+/** The online service list is cached per parameter set; take every prefix match and deduplicate by id. */
 function cachedServices(): AdminServiceOut[] {
   const seen = new Set<number>();
   const out: AdminServiceOut[] = [];

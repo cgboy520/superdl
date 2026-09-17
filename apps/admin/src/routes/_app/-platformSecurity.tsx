@@ -1,4 +1,4 @@
-/** 安全策略页:开关行(依赖凭据 / 前置开关 / 关闭风险)与面板。 */
+/** Security policy page: switch rows (credential dependencies / prerequisite switches / off risks) and panels. */
 
 import { Collapse, Button, Space, Switch, Tag, Typography } from "antd";
 import { useTranslation } from "react-i18next";
@@ -38,7 +38,7 @@ export function switchDeps(
 export const SWITCH_REQUIRES: Record<string, string> = {
   real_name_required_for_recharge: "real_name_enabled",
 };
-/** 关闭安全开关时弹窗复述的风险:值是 locale 键(platform.riskOff.*)。 */
+/** Risks restated in the dialog when turning a security switch off: values are locale keys (platform.riskOff.*). */
 export const RISK_OFF = {
   captcha_enabled: "platform.riskOff.captcha_enabled",
   admin_mfa_enabled: "platform.riskOff.admin_mfa_enabled",
@@ -158,7 +158,7 @@ export function SwitchRow({
               </Typography.Text>
               {missing.length > 0 && (
                 <Button size="small" type="link" onClick={() => onGoTo(deps.group)}>
-                  {t("platform.goTo")}「{t(GROUP_LABEL_KEY[deps.group])}」
+                  {t("platform.goTo")} {t(GROUP_LABEL_KEY[deps.group])}
                 </Button>
               )}
             </Space>

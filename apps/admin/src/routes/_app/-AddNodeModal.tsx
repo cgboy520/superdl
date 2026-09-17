@@ -1,4 +1,4 @@
-/** 添加节点:生成注册命令(池 / 主机名 / 备注)+ 命令展示与复制。 */
+/** Add node: generate the enrollment command (pool / hostname / note) + command display and copy. */
 
 import { Alert, App, Button, Form, Input, InputNumber, Modal, Select, Space, Typography } from "antd";
 import { useState } from "react";
@@ -12,7 +12,7 @@ import { useFormDraft } from "@superdl/ui";
 import { type EnrollmentCommandOut, useCreateEnrollment } from "../../api";
 import { POOL_LABEL_KEY, type Pool } from "../../lib/pools";
 
-/** 命令展示(创建/重新生成共用):令牌只显示这一次 */
+/** Command display (shared by create / regenerate): the token is shown only this once */
 export function CommandPanel({ result }: { result: EnrollmentCommandOut }) {
   const { t } = useTranslation();
   return (

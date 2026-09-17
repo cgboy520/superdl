@@ -1,4 +1,4 @@
-/** 待加入节点卡:注册记录表(阶段 / 心跳 / 失败原因)+ 重新生成 / 吊销。 */
+/** Pending nodes card: enrollment table (stage / heartbeat / failure reason) + regenerate / revoke. */
 
 import { useQueryClient } from "@tanstack/react-query";
 import { Radio, Button, Card, Modal, Table, Tag, Tooltip, Typography } from "antd";

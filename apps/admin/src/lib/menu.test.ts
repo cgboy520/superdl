@@ -1,16 +1,16 @@
-/** 菜单键集与角色可见性矩阵测试。 */
+/** Menu key set and role visibility matrix. */
 import { describe, expect, it } from "vitest";
 
 import { MENU, MENU_ROLES, canSeeMenu } from "./menu";
 
-describe("menu 单一事实源", () => {
-  it("MENU 与 MENU_ROLES 键集一致(无漏登记/无残留)", () => {
+describe("menu single source of truth", () => {
+  it("MENU and MENU_ROLES have the same key set (nothing unregistered / left over)", () => {
     const menuKeys = MENU.map((m) => m.key).sort();
     const roleKeys = Object.keys(MENU_ROLES).sort();
     expect(menuKeys).toEqual(roleKeys);
   });
 
-  it("canSeeMenu:finance 无节点/告警权限,告警页 admin/ops/readonly 可见", () => {
+  it("canSeeMenu: finance has no nodes/alerts access, the alerts page is visible to admin/ops/readonly", () => {
     expect(canSeeMenu("/nodes", "finance")).toBe(false);
     expect(canSeeMenu("/alerts", "finance")).toBe(false);
     expect(canSeeMenu("/alerts", "ops")).toBe(true);

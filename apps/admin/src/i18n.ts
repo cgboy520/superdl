@@ -1,4 +1,4 @@
-/** 管理端 i18n:admin ns + 共享 shared/errors;初始化壳在 @superdl/ui initAppI18n。 */
+/** Admin i18n: admin namespace + shared shared/errors; the shell is initAppI18n from @superdl/ui. */
 import { initAppI18n, SUPPORTED_LANGS } from "@superdl/ui";
 
 import adminEn from "./locales/en-US/admin.json";
