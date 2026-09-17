@@ -1,6 +1,8 @@
 """Payment channel registry: one `ChannelSpec` per channel drives the enable check, webhook route,
 currency support, refund payout counterpart and how the console presents the payment (QR vs
-redirect). Adding a channel = one entry here plus its implementation module."""
+redirect). Adding a channel = one entry here plus its implementation module. Registered:
+`wechat` / `alipay` (CNY, QR), `stripe` (any platform currency, hosted checkout) and the
+dev-only `mock`."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -12,6 +14,7 @@ from app.core.platform_config import RuntimeConfig
 from app.modules.billing.payment_channels.alipay import ALIPAY_CFG_KEYS, AlipayChannel
 from app.modules.billing.payment_channels.base import PaymentChannel
 from app.modules.billing.payment_channels.mock import MockChannel
+from app.modules.billing.payment_channels.stripe import STRIPE_CFG_KEYS, StripeChannel
 from app.modules.billing.payment_channels.wechat import WECHAT_CFG_KEYS, WechatChannel
 
 Presentation = Literal["qr", "redirect"]
@@ -74,6 +77,17 @@ CHANNELS: dict[str, ChannelSpec] = {
             ack=lambda _status: PlainTextResponse("success"),
             currencies=frozenset({"CNY"}),
             payout_channel="alipay_transfer",
+        ),
+        ChannelSpec(
+            name="stripe",
+            presentation="redirect",
+            enabled_key="payment_stripe_enabled",
+            config_keys=STRIPE_CFG_KEYS,
+            factory=StripeChannel,
+            webhook_path="stripe",
+            ack=_json_ack(lambda status: {"received": status}),
+            currencies=None,
+            payout_channel=None,
         ),
         ChannelSpec(
             name="mock",

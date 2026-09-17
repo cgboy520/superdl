@@ -131,6 +131,9 @@ MESSAGES: dict[str, str] = {
     "billing.channelCurrencyUnsupported": (
         "This payment channel does not settle in the platform currency — choose another"
     ),
+    "billing.callbackOrderUnresolved": (
+        "The callback names neither an order nor a channel transaction"
+    ),
     "billing.channelNotEnabled": "This payment channel is not enabled — choose another",
     "billing.channelStateNotBackfillable": "Channel-side status is {status} — cannot backfill",
     "billing.insufficientAvailableFrozen": (
@@ -234,6 +237,12 @@ MESSAGES: dict[str, str] = {
         "The subscription has expired. Renew it before starting the instance"
     ),
     "billing.subscriptionMissing": "This instance has no renewable subscription",
+    "billing.stripeCallbackVerifyFailed": "Stripe webhook signature verification failed",
+    "billing.stripeCreateFailed": "Stripe could not create the checkout session: {message}",
+    "billing.stripeCredentialsIncomplete": (
+        "Stripe credentials are incomplete (secret key and webhook secret are required)"
+    ),
+    "billing.stripeQueryFailed": "Stripe checkout session lookup failed: {message}",
     "billing.unknownChannel": "Unknown payment channel: {name}",
     "billing.wechatCallbackMerchantMismatch": (
         "The WeChat Pay notification's merchant details do not match this platform"

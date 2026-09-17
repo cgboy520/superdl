@@ -229,6 +229,9 @@ class Settings(BaseSettings):
     recharge_order_ttl_seconds: int = 2 * 3600
     payment_wechat_enabled: bool = False
     payment_alipay_enabled: bool = False
+    payment_stripe_enabled: bool = False
+    stripe_secret_key: str | None = None
+    stripe_webhook_secret: str | None = None
     wechat_mchid: str | None = None
     wechat_private_key: str | None = None
     wechat_cert_serial_no: str | None = None

@@ -110,7 +110,8 @@
     "channel": {
       "wechat": "WeChat Pay",
       "alipay": "Alipay",
-      "mock": "Mock (dev)"
+      "mock": "Mock (dev)",
+      "stripe": "Card (Stripe)"
     },
     "disk": {
       "active": "Active",

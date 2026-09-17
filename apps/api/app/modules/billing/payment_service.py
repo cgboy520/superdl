@@ -157,10 +157,11 @@ def enabled_payment_channels(cfg: RuntimeConfig) -> list[ChannelSpec]:
     return enabled_channels(cfg, payment_mock=get_settings().payment_mock)
 
 
-def payment_config_warnings(cfg: RuntimeConfig) -> list[ConfigWarning]:
-    """An enabled channel that cannot settle the platform currency is a configuration error."""
+def payment_config_warnings(cfg: RuntimeConfig, environment: str) -> list[ConfigWarning]:
+    """Enabled channels that cannot settle the platform currency (error), Stripe enabled without
+    both credentials (error) and a Stripe test key in prod (warning)."""
     currency = platform_currency()
-    return [
+    out = [
         ConfigWarning(
             spec.enabled_key,
             "error",
@@ -170,6 +171,25 @@ def payment_config_warnings(cfg: RuntimeConfig) -> list[ConfigWarning]:
         for spec in enabled_payment_channels(cfg)
         if spec.enabled_key and spec.currencies is not None and currency not in spec.currencies
     ]
+    if cfg.payment_stripe_enabled:
+        if not (cfg.stripe_secret_key and cfg.stripe_webhook_secret):
+            out.append(
+                ConfigWarning(
+                    "payment_stripe_enabled",
+                    "error",
+                    "Stripe is enabled but the secret key or webhook secret is missing: every "
+                    "Stripe order and callback will fail",
+                )
+            )
+        elif environment == "prod" and "_test_" in cfg.stripe_secret_key:
+            out.append(
+                ConfigWarning(
+                    "stripe_secret_key",
+                    "warning",
+                    "Stripe test-mode key in prod: real customers cannot pay through it",
+                )
+            )
+    return out
 
 
 async def _attach_payment(session: AsyncSession, order: Order, channel: PaymentChannel) -> Order:
@@ -250,18 +270,29 @@ def _assert_callback_matches(order: Order, channel_name: str, result: CallbackRe
         raise channel_error("billing.callbackAmountMismatch")
 
 
+async def _order_for_callback(session: AsyncSession, result: CallbackResult) -> Order:
+    """Order row (locked) for a callback: by order number, else by the channel transaction id
+    (reversals such as card refunds / disputes only carry the latter)."""
+    if result.order_no:
+        clause = Order.order_no == result.order_no
+    elif result.channel_txn_id:
+        clause = Order.channel_txn_id == result.channel_txn_id
+    else:
+        raise channel_error("billing.callbackOrderUnresolved")
+    order = (
+        await session.execute(select(Order).where(clause).with_for_update())
+    ).scalar_one_or_none()
+    if order is None:
+        raise not_found(key="billing.orderNotFound")
+    return order
+
+
 async def handle_callback(session: AsyncSession, channel_name: str, result: CallbackResult) -> str:
     """持订单行锁处理回调,返回 'ok' 或抛错;调用方须先验签。
 
     支付成功同事务入账;已支付订单首次反向通知冻结等额余额,冲正通知重放不重复冻结。
     """
-    order = (
-        await session.execute(
-            select(Order).where(Order.order_no == result.order_no).with_for_update()
-        )
-    ).scalar_one_or_none()
-    if order is None:
-        raise not_found("订单不存在")
+    order = await _order_for_callback(session, result)
     if order.status == "paid":
         if not result.success and order.channel_reversed_at is not None:
             logger.error(

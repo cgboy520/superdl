@@ -54,6 +54,30 @@ export const mockWebhookApiV1WebhooksMockPost = async ( options?: Parameters<typ
 );}
 
 
+export const getStripeWebhookApiV1WebhooksStripePostUrl = () => {
+
+
+
+
+  return `/api/v1/webhooks/stripe`
+}
+
+/**
+ * stripe callback: verify → parse → credit once (channel_txn_id idempotency).
+ * @summary Stripe Webhook
+ */
+export const stripeWebhookApiV1WebhooksStripePost = async ( options?: Parameters<typeof customFetch>[1]): Promise<unknown> => {
+
+  return customFetch<unknown>(getStripeWebhookApiV1WebhooksStripePostUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
 export const getWechatpayWebhookApiV1WebhooksWechatpayPostUrl = () => {
 
 

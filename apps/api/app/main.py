@@ -71,7 +71,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
         for w in (
             *compute_config_warnings(cfg, settings.environment),
-            *billing_service.payment_config_warnings(cfg),
+            *billing_service.payment_config_warnings(cfg, settings.environment),
         ):
             (log.error if w.level == "error" else log.warning)(
                 "config_warning", key=w.key, hint=w.message

@@ -75,6 +75,7 @@ export default interface Resources {
       "badMonthFormat": "月份格式应为 YYYY-MM",
       "callbackAmountMismatch": "回调金额与订单不符",
       "callbackChannelMismatch": "回调渠道与订单不符",
+      "callbackOrderUnresolved": "回调既未指明订单号也未携带渠道交易号",
       "channelCurrencyUnsupported": "该支付渠道不支持平台结算币种,请选择其他渠道",
       "channelNotEnabled": "该支付渠道暂未开通,请选择其他支付方式",
       "channelStateNotBackfillable": "渠道侧状态为 {{status}},不能补单",
@@ -113,6 +114,10 @@ export default interface Resources {
       "settlementGapNotFound": "结算缺口不存在",
       "settlementGapNotReplayable": "该缺口类型({{reason}})不支持重放:请人工核查后核销",
       "settlementGapObjectGone": "缺口关联对象(id={{objectId}})已不存在,请人工核查后核销",
+      "stripeCallbackVerifyFailed": "Stripe 回调验签失败",
+      "stripeCreateFailed": "Stripe 创建支付页面失败:{{message}}",
+      "stripeCredentialsIncomplete": "Stripe 凭据不全(需同时配置 secret key 与 webhook secret)",
+      "stripeQueryFailed": "Stripe 查询支付页面失败:{{message}}",
       "subscriptionAlreadyActive": "该实例已在包周期内,如需延长请使用续费",
       "subscriptionCancelled": "该实例的包周期已作废,无法续费",
       "subscriptionExpired": "包周期已到期,请先续费再开机",
@@ -392,6 +397,7 @@ export default interface Resources {
       "channel": {
         "alipay": "支付宝",
         "mock": "模拟支付(开发)",
+        "stripe": "银行卡(Stripe)",
         "wechat": "微信支付"
       },
       "component": {

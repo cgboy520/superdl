@@ -28,11 +28,12 @@ class PaymentInit:
 
 class CallbackResult:
     """Parsed payment callback; `success` = paid, `refund_amount` = channel-side refund,
-    `currency` = ISO code reported by the channel (None when the wire format has none)."""
+    `currency` = ISO code reported by the channel (None when the wire format has none).
+    `order_no` may be None for reversals that only carry the channel transaction id."""
 
     def __init__(
         self,
-        order_no: str,
+        order_no: str | None,
         channel_txn_id: str,
         amount: Decimal,
         success: bool,
