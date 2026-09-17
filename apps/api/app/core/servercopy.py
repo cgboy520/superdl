@@ -310,6 +310,194 @@ _COPY: dict[str, dict[str, str]] = {
         "en-US": "Channel reversal write-off: {reason}",
         "zh-CN": "渠道冲正核销:{reason}",  # cjk-ok
     },
+    "account.login_anomaly.title": {
+        "en-US": "Unusual sign-in attempts detected",
+        "zh-CN": "检测到异常登录尝试",  # cjk-ok
+    },
+    "account.login_anomaly.content": {
+        "en-US": (
+            "Your account had {hits} failed sign-in attempts in the last 15 minutes; this sign-in"
+            " succeeded. If this was not you, change your password now and review your account"
+            " security."
+        ),
+        "zh-CN": (
+            "您的账号近 15 分钟内有 {hits} 次登录失败记录,本次登录成功。"  # cjk-ok
+            "若非本人操作,请立即修改密码并检查账号安全。"  # cjk-ok
+        ),
+    },
+    "account.deletion_reject.leftovers": {
+        "en-US": (
+            "Auto-rejected: {instances} unreleased instance(s) ({instance_list}) and {disks}"
+            " undeleted data disk(s) ({disk_list}) remain; clear them and apply again"
+        ),
+        "zh-CN": (
+            "自动驳回:名下仍有未释放实例 {instances} 台({instance_list})、"  # cjk-ok
+            "未删除数据盘 {disks} 块({disk_list});请先清空资源后重新申请"  # cjk-ok
+        ),
+    },
+    "account.deletion_reject.balance": {
+        "en-US": (
+            "Auto-rejected: balance {balance} not withdrawn; withdraw it through a refund first and"
+            " apply again once it arrives"
+        ),
+        "zh-CN": "自动驳回:余额 {balance} 未提现,请先经退款流程提现,到账后重新申请",  # cjk-ok
+    },
+    "billing.invoice_issued.title": {"en-US": "Invoice issued", "zh-CN": "发票已开具"},  # cjk-ok
+    "billing.invoice_issued.content": {
+        "en-US": (
+            "Your invoice for period {period} (amount {amount}) has been issued, invoice number"
+            " {invoice_no}; it will be sent to {email} within 1-3 business days."
+        ),
+        "zh-CN": (
+            "您 {period} 账期的发票(金额 {amount})已开具,"  # cjk-ok
+            "发票号 {invoice_no},将于 1-3 个工作日内发送至您的邮箱 {email}。"  # cjk-ok
+        ),
+    },
+    "billing.invoice_rejected.title": {
+        "en-US": "Invoice request rejected",
+        "zh-CN": "发票申请被驳回",  # cjk-ok
+    },
+    "billing.invoice_rejected.content": {
+        "en-US": (
+            "Your invoice request for period {period} was rejected: {reason}. Correct the title"
+            " information and submit again."
+        ),
+        "zh-CN": "您 {period} 账期的开票申请被驳回:{reason}。可修改抬头信息后重新提交。",  # cjk-ok
+    },
+    "billing.reconcile.title": {
+        "en-US": "Fund reconciliation found discrepancies",
+        "zh-CN": "资金账实核对发现差异",  # cjk-ok
+    },
+    "billing.reconcile.wallet_part": {
+        "en-US": "{count} account(s) whose balance disagrees with the ledger sum",
+        "zh-CN": "{count} 个账号的余额与流水累计不符",  # cjk-ok
+    },
+    "billing.reconcile.bill_part": {
+        "en-US": "billed {billed} for the day does not match consumed ledger {consumed}",
+        "zh-CN": "当日出账 {billed} 与消费流水 {consumed} 不符",  # cjk-ok
+    },
+    "billing.reconcile.content": {
+        "en-US": "{parts}. Do not adjust accounts by hand; trace the source in balance_ledger.",
+        "zh-CN": "{parts}。请勿自行改账,先按 balance_ledger 追溯来源。",  # cjk-ok
+    },
+    "billing.arrears.auto_stop.detail": {
+        "en-US": "Balance exhausted; your instances were stopped automatically",
+        "zh-CN": "余额耗尽,实例已自动关机",  # cjk-ok
+    },
+    "billing.arrears.freeze.detail": {
+        "en-US": "Frozen for arrears; the instance disk is reclaimed in {hours} hours",
+        "zh-CN": "欠费冻结,{hours} 小时后将回收实例盘",  # cjk-ok
+    },
+    "billing.arrears.reclaim.detail": {
+        "en-US": "Freeze period over; the instance was reclaimed (instance disk erased, data disks"
+        " kept)",
+        "zh-CN": "冻结期满,实例已回收(实例盘清除,数据盘保留)",  # cjk-ok
+    },
+    "billing.period.day": {"en-US": "daily", "zh-CN": "日"},  # cjk-ok
+    "billing.period.week": {"en-US": "weekly", "zh-CN": "周"},  # cjk-ok
+    "billing.period.month": {"en-US": "monthly", "zh-CN": "月"},  # cjk-ok
+    "billing.period.year": {"en-US": "yearly", "zh-CN": "年"},  # cjk-ok
+    "billing.subscription.expiring.detail": {
+        "en-US": (
+            "Your {period} plan expires at {expires} UTC ({days} days left); the instance stops"
+            " automatically on expiry. Renew in time."
+        ),
+        "zh-CN": (
+            "包{period}将于 {expires} UTC 到期(剩 {days} 天),"  # cjk-ok
+            "到期后自动停机。请及时续费。"  # cjk-ok
+        ),
+    },
+    "billing.subscription.renew_failed.detail": {
+        "en-US": (
+            "Insufficient balance, automatic renewal failed and the instance will stop. Top up and"
+            " renew manually."
+        ),
+        "zh-CN": "余额不足,自动续费失败,实例将停机。充值后可手动续费。",  # cjk-ok
+    },
+    "billing.subscription.renewed.detail": {
+        "en-US": "Renewed automatically: {period} plan ×{count}, charged {amount}.",
+        "zh-CN": "已自动续费 包{period}×{count},扣款 {amount}。",  # cjk-ok
+    },
+    "billing.subscription.expired.detail": {
+        "en-US": (
+            "The subscription expired and the instance was stopped; unless renewed within 72 hours"
+            " the instance disk is reclaimed (data disks unaffected)."
+        ),
+        "zh-CN": "包周期已到期,实例已停机;72 小时内未续费将回收实例盘(数据盘不受影响)。",  # cjk-ok
+    },
+    "billing.remark.subscription": {
+        "en-US": "{instance} {period} plan ×{count}",
+        "zh-CN": "{instance} 包{period}×{count}",  # cjk-ok
+    },
+    "billing.remark.renewal": {
+        "en-US": "{instance} renewal {period} plan ×{count}",
+        "zh-CN": "{instance} 续费 包{period}×{count}",  # cjk-ok
+    },
+    "billing.remark.unstarted_refund": {
+        "en-US": "Instance never started (scheduling timeout); subscription prepayment returned in"
+        " full",
+        "zh-CN": "实例调度超时未启动,包周期预付原额退回",  # cjk-ok
+    },
+    "billing.remark.refund": {
+        "en-US": "Refund {refund_no} (order {order_no})",
+        "zh-CN": "退款 {refund_no}(订单 {order_no})",  # cjk-ok
+    },
+    "billing.remark.hourly": {
+        "en-US": "Instance GPU hourly fee ({source})",
+        "zh-CN": "实例 GPU 时费({source})",  # cjk-ok
+    },
+    "billing.remark.reprice": {
+        "en-US": "Instance GPU hourly fee (on-demand conversion top-up)",
+        "zh-CN": "实例 GPU 时费(转按量补差价)",  # cjk-ok
+    },
+    "billing.remark.disk_daily": {
+        "en-US": "Data disk daily fee",
+        "zh-CN": "数据盘日常费用",  # cjk-ok
+    },
+    "billing.remark.reversal_freeze": {
+        "en-US": "Channel reversal freeze",
+        "zh-CN": "渠道冲正冻结",  # cjk-ok
+    },
+    "billing.remark.recharge": {"en-US": "{channel} top-up", "zh-CN": "{channel} 充值"},  # cjk-ok
+    "billing.remark.recharge_backfill": {
+        "en-US": "{channel} top-up (manual backfill)",
+        "zh-CN": "{channel} 充值(人工补单)",  # cjk-ok
+    },
+    "billing.recharge.subject": {
+        "en-US": "SuperDL top-up {order_no}",
+        "zh-CN": "SuperDL 充值 {order_no}",  # cjk-ok
+    },
+    "billing.anomaly.lost_callback": {
+        "en-US": "{channel} order pending for more than 10 minutes, callback probably lost",
+        "zh-CN": "{channel} 渠道 pending 超 10 分钟,疑似回调丢失",  # cjk-ok
+    },
+    "billing.anomaly.closed_order": {
+        "en-US": "Order closed on timeout; if the user claims to have paid, verify with the channel"
+        " and backfill",
+        "zh-CN": "订单超时关闭;若用户声称已付,先核验渠道再补单",  # cjk-ok
+    },
+    "billing.anomaly.failed_order": {
+        "en-US": "Set to failed by an intermediate / failure callback; order-query recovery rescues"
+        " paid orders automatically, manual backfill also works",
+        "zh-CN": "渠道中间态/失败回调置 failed;查单收敛会自动救回已支付单,亦可人工补单",  # cjk-ok
+    },
+    "billing.anomaly.channel_reversed": {
+        "en-US": (
+            "Credited order received a channel close / refund notice: the wallet froze the same"
+            " amount to block spending; after verification use"
+            " /finance/reversals/<order_no>/resolve"
+            " to release (noise) or charge back (confirmed reversal)"
+        ),
+        "zh-CN": (
+            "已入账订单收到渠道关单/退款通知:钱包已等额冻结阻断消费;"  # cjk-ok
+            "核实后经 /finance/reversals/<order_no>/resolve 解冻(噪音单)或扣回(确认反转)"  # cjk-ok
+        ),
+    },
+    "billing.anomaly.negative_balance": {
+        "en-US": "Negative wallet balance (left over after arrears reclamation), can be written off"
+        " by adjustment",
+        "zh-CN": "钱包负余额(欠费回收后残留),可调账核销",  # cjk-ok
+    },
 }
 
 

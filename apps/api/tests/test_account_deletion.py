@@ -210,7 +210,7 @@ class TestApproveGuards:
         async with sm() as session:
             req = await session.get(AccountDeletionRequest, req_id)
             assert req is not None and req.status == "rejected"
-            assert req.note is not None and "88.00" in req.note and "退款" in req.note
+            assert req.note is not None and "88.00" in req.note and "refund" in req.note
 
 
 class TestApproveSuccess:

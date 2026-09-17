@@ -166,7 +166,7 @@ class TestAccountLevelLock:
                     select(Notification).where(Notification.user_id == data["user"]["id"])
                 )
             ).scalar_one()
-            assert "异常登录" in row.title
+            assert "sign-in attempts" in row.title
             assert row.severity == "warning"
         assert (
             await read_hits(f"user-login-acct:{as_handle('13800000082')}", window_seconds=900.0)

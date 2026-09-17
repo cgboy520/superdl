@@ -34,7 +34,7 @@ class TestWalletLedgerInvariant:
             )
             w = (await session.execute(select(Wallet))).scalar_one()
             entries = (await session.execute(select(BalanceLedger))).scalars().all()
-        assert any("账实核对" in a.title for a in alerts)
+        assert any("reconciliation" in a.title.lower() for a in alerts)
         assert w.balance == Decimal("999.00")
         assert len(entries) == 1
 

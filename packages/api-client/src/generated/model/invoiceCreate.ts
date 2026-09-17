@@ -7,7 +7,7 @@
 import type { InvoiceCreateTitleType } from './invoiceCreateTitleType';
 
 /**
- * 开票申请。amount 不进契约:服务端按账期计算。
+ * Invoice request. amount is not part of the contract: computed server-side per period.
  */
 export interface InvoiceCreate {
   /**

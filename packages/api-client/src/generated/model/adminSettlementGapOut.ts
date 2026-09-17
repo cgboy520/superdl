@@ -6,7 +6,7 @@
  */
 
 /**
- * 管理端结算缺口视图。
+ * Admin settlement gap view.
  */
 export interface AdminSettlementGapOut {
   created_at: string;

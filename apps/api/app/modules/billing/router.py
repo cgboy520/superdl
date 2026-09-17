@@ -10,7 +10,7 @@ from app.core.db import DbSession
 from app.core.http import mark_idempotent_replay
 from app.core.money import as_amount
 from app.core.pagination import Page
-from app.core.params import Cursor, IdempotencyKey, Limit, TzOffset
+from app.core.params import Cursor, ExportLang, IdempotencyKey, Limit, TzOffset
 from app.core.platform_config import get_runtime_config, recharge_presets_of
 from app.core.ratelimit import check_rate_limit
 from app.core.timeutil import billing_month_range, parse_local_date
@@ -39,7 +39,8 @@ router = APIRouter(tags=["billing"])
 
 @router.get("/policies")
 async def get_policies(session: DbSession) -> PoliciesOut:
-    """计费/回收策略。公开;env 默认 + DB 覆盖,管理端在线调整。"""
+    """Billing / reclamation policies. Public; env defaults + DB overrides, adjusted online in the
+    admin console."""
     p = await get_runtime_config(session)
     cfg = p
     settings = get_settings()
@@ -110,7 +111,7 @@ async def list_hourly_bills(
 async def bill_summary(
     user: CurrentUser, session: DbSession, month: str, tz_offset_minutes: int = TzOffset
 ) -> BillSummaryOut:
-    """月度汇总 + 按实例成本归因。窗口按本地月界切。"""
+    """Monthly summary + cost attribution per instance. Window cut at the local month boundary."""
     start, end = billing_month_range(month, tz_offset_minutes=tz_offset_minutes)
     s = await wallet.consumption_summary(session, user.id, start, end)
     return BillSummaryOut(
@@ -125,7 +126,8 @@ async def bill_daily_summary(
     date: str,
     tz_offset_minutes: int = TzOffset,
 ) -> DailySummaryOut:
-    """当日消费,本地日界经 tz_offset 折算(缺省取计费时区当前偏移)。"""
+    """Today's consumption, local day boundary via tz_offset (default: the billing zone's current
+    offset)."""
     start, end = parse_local_date(date, tz_offset_minutes)
     s = await wallet.consumption_summary(session, user.id, start, end)
     return DailySummaryOut(date=date, gpu_total=s.gpu_total, disk_total=s.disk_total, items=s.items)
@@ -141,10 +143,11 @@ async def export_billing(
     dataset: Literal["hourly", "ledger"] = "hourly",
     month: str | None = None,
     tz_offset_minutes: int = TzOffset,
-    lang: Literal["zh-CN", "en-US"] = "zh-CN",
+    lang: str = ExportLang,
 ) -> StreamingResponse:
-    """账单 CSV 导出(流式)。month 仅作用于 hourly;行数硬上限,触顶在文件末尾写
-    #SUPERDL_EXPORT_TRUNCATED# 标记行。"""
+    """Billing CSV export (streamed). month applies to hourly only; hard row cap, when hit the file
+    ends with the
+    #SUPERDL_EXPORT_TRUNCATED# marker row."""
     if dataset == "hourly":
         stream = billing_export.stream_hourly_csv(
             session,
@@ -192,7 +195,8 @@ async def get_recharge(order_no: str, user: CurrentUser, session: DbSession) -> 
 
 @router.get("/wallet/refunds/eligible-orders")
 async def list_refundable_orders(user: CurrentUser, session: DbSession) -> list[RefundableOrderOut]:
-    """退款表单候选集:最近充值订单逐单标注可否申请(不可申请的给出原因码)。"""
+    """Refund form candidates: recent top-up orders each marked refundable or not (with a reason
+    code)."""
     rows = await refunds.refundable_orders(session, user.id)
     return [RefundableOrderOut.model_validate(r) for r in rows]
 
@@ -206,8 +210,9 @@ async def create_refund(
     response: Response,
     idempotency_key: IdempotencyKey = None,
 ) -> RefundOut:
-    """申请退款。Idempotency-Key 重放返回既有单(200 + X-Idempotent-Replay);
-    同订单活跃申请被部分唯一索引拦截。"""
+    """Request a refund. An Idempotency-Key replay returns the existing request (200 +
+    X-Idempotent-Replay);
+    an active request on the same order is caught by the partial unique index."""
     await check_rate_limit(f"billing-refund:{user.id}", max_attempts=10, window_seconds=3600.0)
     req, created = await refunds.create_refund(
         session,
@@ -230,13 +235,13 @@ async def list_my_refunds(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[RefundOut]:
-    """本人退款单(游标分页)。"""
+    """The caller's refund requests (cursor pagination)."""
     return await refunds.list_my_refunds(session, user.id, cursor=cursor, limit=limit)
 
 
 @router.get("/billing/invoices/eligible")
 async def list_invoice_eligible(user: CurrentUser, session: DbSession) -> list[InvoiceEligibleOut]:
-    """各账期可开票额度预览(仅 amount > 0 的已结束账期)。"""
+    """Invoiceable amount preview per period (finished periods with amount > 0 only)."""
     return await invoices.eligible_periods(session, user.id)
 
 
@@ -249,8 +254,9 @@ async def create_invoice(
     response: Response,
     idempotency_key: IdempotencyKey = None,
 ) -> InvoiceOut:
-    """申请开票。amount 由服务端按账期计算;Idempotency-Key 重放返回既有单
-    (200 + X-Idempotent-Replay)。"""
+    """Request an invoice. amount is computed server-side per period; an Idempotency-Key replay
+    returns the existing request
+    (200 + X-Idempotent-Replay)."""
     req, created = await invoices.create_invoice(
         session,
         user.id,
@@ -274,5 +280,5 @@ async def list_my_invoices(
     cursor: str | None = Cursor,
     limit: int | None = Limit,
 ) -> Page[InvoiceOut]:
-    """本人发票申请(游标分页)。"""
+    """The caller's invoice requests (cursor pagination)."""
     return await invoices.list_my_invoices(session, user.id, cursor=cursor, limit=limit)

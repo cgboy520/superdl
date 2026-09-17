@@ -1,20 +1,14 @@
 """Response / parameter helpers shared by the admin sub-routers."""
 
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import Depends, Query
 
-from app.core.compliance import current_profile
+from app.core.params import ExportLang
 from app.core.timeutil import billing_day_range
 
-
-def _export_lang(lang: Literal["zh-CN", "en-US"] | None = Query(default=None)) -> str:
-    """CSV language; defaults to the compliance profile's default locale."""
-    return lang or current_profile().default_locale
-
-
-ExportLang = Depends(_export_lang)
+__all__ = ["DayRange", "ExportLang", "day_suffix", "parse_day"]
 
 
 def parse_day(day: str) -> tuple[datetime, datetime]:

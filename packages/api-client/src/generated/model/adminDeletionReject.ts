@@ -6,7 +6,7 @@
  */
 
 /**
- * 驳回注销申请(理由必填,回写 note)。
+ * Reject a deletion request (reason required, written to note).
  */
 export interface AdminDeletionReject {
   /**

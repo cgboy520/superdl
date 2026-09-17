@@ -51,8 +51,9 @@ export const getExportBillingApiV1BillingExportGetUrl = (params?: ExportBillingA
 }
 
 /**
- * 账单 CSV 导出(流式)。month 仅作用于 hourly;行数硬上限,触顶在文件末尾写
- * #SUPERDL_EXPORT_TRUNCATED# 标记行。
+ * Billing CSV export (streamed). month applies to hourly only; hard row cap, when hit the file
+ * ends with the
+ * #SUPERDL_EXPORT_TRUNCATED# marker row.
  * @summary Export Billing
  */
 export const exportBillingApiV1BillingExportGet = async (params?: ExportBillingApiV1BillingExportGetParams, options?: Parameters<typeof customFetch>[1]): Promise<unknown | string> => {
@@ -83,7 +84,7 @@ export const getListMyInvoicesApiV1BillingInvoicesGetUrl = (params?: ListMyInvoi
 }
 
 /**
- * 本人发票申请(游标分页)。
+ * The caller's invoice requests (cursor pagination).
  * @summary List My Invoices
  */
 export const listMyInvoicesApiV1BillingInvoicesGet = async (params?: ListMyInvoicesApiV1BillingInvoicesGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageInvoiceOut> => {
@@ -107,8 +108,9 @@ export const getCreateInvoiceApiV1BillingInvoicesPostUrl = () => {
 }
 
 /**
- * 申请开票。amount 由服务端按账期计算;Idempotency-Key 重放返回既有单
- * (200 + X-Idempotent-Replay)。
+ * Request an invoice. amount is computed server-side per period; an Idempotency-Key replay
+ * returns the existing request
+ * (200 + X-Idempotent-Replay).
  * @summary Create Invoice
  */
 export const createInvoiceApiV1BillingInvoicesPost = async (invoiceCreate: InvoiceCreate,
@@ -133,7 +135,7 @@ export const getListInvoiceEligibleApiV1BillingInvoicesEligibleGetUrl = () => {
 }
 
 /**
- * 各账期可开票额度预览(仅 amount > 0 的已结束账期)。
+ * Invoiceable amount preview per period (finished periods with amount > 0 only).
  * @summary List Invoice Eligible
  */
 export const listInvoiceEligibleApiV1BillingInvoicesEligibleGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<InvoiceEligibleOut[]> => {
@@ -164,7 +166,8 @@ export const getBillDailySummaryApiV1BillsDailySummaryGetUrl = (params: BillDail
 }
 
 /**
- * 当日消费,本地日界经 tz_offset 折算(缺省取计费时区当前偏移)。
+ * Today's consumption, local day boundary via tz_offset (default: the billing zone's current
+ * offset).
  * @summary Bill Daily Summary
  */
 export const billDailySummaryApiV1BillsDailySummaryGet = async (params: BillDailySummaryApiV1BillsDailySummaryGetParams, options?: Parameters<typeof customFetch>[1]): Promise<DailySummaryOut> => {
@@ -225,7 +228,7 @@ export const getBillSummaryApiV1BillsSummaryGetUrl = (params: BillSummaryApiV1Bi
 }
 
 /**
- * 月度汇总 + 按实例成本归因。窗口按本地月界切。
+ * Monthly summary + cost attribution per instance. Window cut at the local month boundary.
  * @summary Bill Summary
  */
 export const billSummaryApiV1BillsSummaryGet = async (params: BillSummaryApiV1BillsSummaryGetParams, options?: Parameters<typeof customFetch>[1]): Promise<BillSummaryOut> => {
@@ -249,7 +252,8 @@ export const getGetPoliciesApiV1PoliciesGetUrl = () => {
 }
 
 /**
- * 计费/回收策略。公开;env 默认 + DB 覆盖,管理端在线调整。
+ * Billing / reclamation policies. Public; env defaults + DB overrides, adjusted online in the
+ * admin console.
  * @summary Get Policies
  */
 export const getPoliciesApiV1PoliciesGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<PoliciesOut> => {
@@ -380,7 +384,7 @@ export const getListMyRefundsApiV1WalletRefundsGetUrl = (params?: ListMyRefundsA
 }
 
 /**
- * 本人退款单(游标分页)。
+ * The caller's refund requests (cursor pagination).
  * @summary List My Refunds
  */
 export const listMyRefundsApiV1WalletRefundsGet = async (params?: ListMyRefundsApiV1WalletRefundsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageRefundOut> => {
@@ -404,8 +408,9 @@ export const getCreateRefundApiV1WalletRefundsPostUrl = () => {
 }
 
 /**
- * 申请退款。Idempotency-Key 重放返回既有单(200 + X-Idempotent-Replay);
- * 同订单活跃申请被部分唯一索引拦截。
+ * Request a refund. An Idempotency-Key replay returns the existing request (200 +
+ * X-Idempotent-Replay);
+ * an active request on the same order is caught by the partial unique index.
  * @summary Create Refund
  */
 export const createRefundApiV1WalletRefundsPost = async (refundCreate: RefundCreate,
@@ -430,7 +435,8 @@ export const getListRefundableOrdersApiV1WalletRefundsEligibleOrdersGetUrl = () 
 }
 
 /**
- * 退款表单候选集:最近充值订单逐单标注可否申请(不可申请的给出原因码)。
+ * Refund form candidates: recent top-up orders each marked refundable or not (with a reason
+ * code).
  * @summary List Refundable Orders
  */
 export const listRefundableOrdersApiV1WalletRefundsEligibleOrdersGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<RefundableOrderOut[]> => {

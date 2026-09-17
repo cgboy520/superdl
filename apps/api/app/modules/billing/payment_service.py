@@ -1,4 +1,5 @@
-"""充值订单与回调入账。回调幂等三重保障:channel_txn_id 唯一、订单状态检查、行锁。"""
+"""Top-up orders and callback crediting. Callback idempotency has three layers: unique
+channel_txn_id, order status check, row lock."""
 
 import asyncio
 import secrets
@@ -24,6 +25,7 @@ from app.core.metrics import (
 )
 from app.core.money import as_amount, money_label, platform_currency
 from app.core.platform_config import ConfigWarning, RuntimeConfig, get_runtime_config
+from app.core.servercopy import copy as server_copy
 from app.core.timeutil import now_utc
 from app.modules.billing import wallet
 from app.modules.billing.models import Order, Wallet
@@ -46,7 +48,8 @@ CHANNEL_QUERY_TIMEOUT_SECONDS = 15.0
 
 
 async def _query_with_timeout(channel: PaymentChannel, order: Order) -> QueryResult:
-    """带显式超时的渠道查单。超时抛 TimeoutError,调用方按「渠道不可达」处理。"""
+    """Channel order query with an explicit timeout. A timeout raises TimeoutError, which the caller
+    treats as "channel unreachable"."""
     return await asyncio.wait_for(channel.query_order(order), timeout=CHANNEL_QUERY_TIMEOUT_SECONDS)
 
 
@@ -61,9 +64,10 @@ async def create_recharge(
     channel_name: str,
     idempotency_key: str | None,
 ) -> tuple[Order, bool]:
-    """提交充值单后获取支付码,返回 (订单, created);调用方校验金额上下限。
+    """Submit the top-up order and obtain the payment code, returning (order, created); the caller
+    validates the amount bounds.
 
-    幂等重放 created=False,待支付且缺支付码时补取。
+    An idempotent replay has created=False; a pending order without a payment code fetches one.
     """
     amount = as_amount(amount)
     cfg = await get_runtime_config(session)
@@ -234,8 +238,10 @@ async def get_order(session: AsyncSession, user_id: int, order_no: str) -> Order
 async def _credit_paid_order(
     session: AsyncSession, order: Order, *, channel_txn_id: str, remark: str
 ) -> None:
-    """订单置 paid + 钱包入账(同事务,不 commit;回调与人工补单共用)。
-    先 flush,让 channel_txn_id / backfill_idempotency_key 唯一约束冲突在此显式抛 IntegrityError。
+    """Order → paid + wallet credit (same transaction, no commit; shared by callbacks and manual
+    backfill).
+    Flush first so channel_txn_id / backfill_idempotency_key unique conflicts raise IntegrityError
+    here explicitly.
     """
     order.status = "paid"
     order.channel_txn_id = channel_txn_id
@@ -299,9 +305,12 @@ async def _order_for_callback(session: AsyncSession, result: CallbackResult) -> 
 
 
 async def handle_callback(session: AsyncSession, channel_name: str, result: CallbackResult) -> str:
-    """持订单行锁处理回调,返回 'ok' 或抛错;调用方须先验签。
+    """Handle a callback under the order row lock, returning 'ok' or raising; the caller verifies
+    the
+    signature first.
 
-    支付成功同事务入账;已支付订单首次反向通知冻结等额余额,冲正通知重放不重复冻结。
+    A successful payment credits in the same transaction; the first reversal notice on a paid order
+    freezes the same amount, replays do not freeze again.
     """
     order = await _order_for_callback(session, result)
     if order.status == "paid":
@@ -320,7 +329,7 @@ async def handle_callback(session: AsyncSession, channel_name: str, result: Call
                 order.user_id,
                 order.amount,
                 ref_id=order.order_no,
-                remark="渠道冲正冻结",
+                remark=server_copy("billing.remark.reversal_freeze"),
             )
             await session.commit()
             logger.error(
@@ -344,7 +353,10 @@ async def handle_callback(session: AsyncSession, channel_name: str, result: Call
         return "ok"
 
     await _credit_paid_order(
-        session, order, channel_txn_id=result.channel_txn_id, remark=f"{channel_name} 充值"
+        session,
+        order,
+        channel_txn_id=result.channel_txn_id,
+        remark=server_copy("billing.remark.recharge", channel=channel_name),
     )
     await session.commit()
     if rescued:
@@ -355,9 +367,11 @@ async def handle_callback(session: AsyncSession, channel_name: str, result: Call
 
 
 async def reconcile_pending_orders(sm: async_sessionmaker[AsyncSession]) -> int:
-    """持咨询锁查验创建于 60 秒前至 48 小时内的 pending/failed/closed 订单,最多 50 笔。
+    """Under the advisory lock, verify pending/failed/closed orders created 60 s to 48 h ago, at
+    most 50.
 
-    closed 还要求 expires_at 在近 48 小时内;渠道已支付时按回调处理,单笔失败不终止整轮。
+    closed additionally requires expires_at within the last 48 h; paid on the channel side is
+    handled like a callback, a single failure does not end the round.
     """
     credited = 0
     async with advisory_lock(sm, LockKey.PAYMENT_RECONCILE) as got:
@@ -428,7 +442,7 @@ async def reconcile_pending_orders(sm: async_sessionmaker[AsyncSession]) -> int:
 
 
 async def verify_order(session: AsyncSession, order_no: str) -> dict:
-    """管理端:向渠道核验订单(补单前置)。"""
+    """Admin: verify the order with the channel (backfill precondition)."""
     order = (
         await session.execute(select(Order).where(Order.order_no == order_no))
     ).scalar_one_or_none()
@@ -456,8 +470,9 @@ async def verify_order(session: AsyncSession, order_no: str) -> dict:
 
 
 def _is_backfill_replay(order: Order, idempotency_key: str | None) -> bool:
-    """补单状态检查(锁外预检与锁内复核同一段):已入账且同键 → True(幂等重放);
-    已入账异键 → 409;不可补的状态 → 409;可补 → False。"""
+    """Backfill status check (the same block for the unlocked precheck and the locked re-check):
+    credited with the same key → True (idempotent replay);
+    credited with another key → 409; a non-backfillable status → 409; backfillable → False."""
     if order.status == "paid":
         if idempotency_key is not None and order.backfill_idempotency_key == idempotency_key:
             return True
@@ -473,11 +488,15 @@ async def backfill_order(
     idempotency_key: str | None = None,
     audit_writer: Callable[[AsyncSession], Awaitable[None]] | None = None,
 ) -> tuple[Order, bool]:
-    """管理端人工补单:仅当渠道侧核验为已支付且金额一致才入账,closed/failed 订单同样可补。
+    """Admin manual backfill: credits only when the channel confirms paid with a matching amount;
+    closed/failed orders can be backfilled too.
 
-    幂等:channel_txn_id 唯一约束 + 行锁 + 状态检查 + backfill_idempotency_key 唯一约束。
-    渠道查单在无锁状态下进行(带显式超时),落账前在锁内复核订单状态。
-    返回 (订单, replayed);首次入账在提交前调用可选 audit_writer,与入账同事务。
+    Idempotency: unique channel_txn_id + row lock + status check + unique
+    backfill_idempotency_key.
+    The channel query runs without the lock (explicit timeout); the order status is re-checked
+    under the lock before posting.
+    Returns (order, replayed); the first credit calls the optional audit_writer before commit, in
+    the same transaction.
     """
     order = (
         await session.execute(select(Order).where(Order.order_no == order_no))
@@ -513,7 +532,7 @@ async def backfill_order(
             session,
             order,
             channel_txn_id=result.channel_txn_id,
-            remark=f"{order.channel} 充值(人工补单)",
+            remark=server_copy("billing.remark.recharge_backfill", channel=order.channel),
         )
     except IntegrityError as exc:
         await session.rollback()
@@ -539,24 +558,25 @@ ANOMALY_LIMIT_PER_KIND = 100
 
 
 def _order_anomaly_specs(now: datetime) -> list[tuple[str, ColumnElement[bool], str, str]]:
-    """订单类异常分桶:(kind, 谓词, detail 模板, 时间列名)。detail 模板可引用 {channel}。"""
+    """Order anomaly buckets: (kind, predicate, detail copy key, time column). The copy takes
+    {channel}."""
     return [
         (
             "lost_callback",
             and_(Order.status == "pending", Order.created_at < now - timedelta(minutes=10)),
-            "{channel} 渠道 pending 超 10 分钟,疑似回调丢失",
+            "billing.anomaly.lost_callback",
             "created_at",
         ),
         (
             "closed_order",
             and_(Order.status == "closed", Order.expires_at > now - timedelta(hours=48)),
-            "订单超时关闭;若用户声称已付,先核验渠道再补单",
+            "billing.anomaly.closed_order",
             "created_at",
         ),
         (
             "failed_order",
             and_(Order.status == "failed", Order.created_at > now - timedelta(hours=48)),
-            "渠道中间态/失败回调置 failed;查单收敛会自动救回已支付单,亦可人工补单",
+            "billing.anomaly.failed_order",
             "created_at",
         ),
         (
@@ -565,16 +585,16 @@ def _order_anomaly_specs(now: datetime) -> list[tuple[str, ColumnElement[bool], 
                 Order.channel_reversed_at > now - timedelta(hours=48),
                 Order.channel_reversal_resolved_at.is_(None),
             ),
-            "已入账订单收到渠道关单/退款通知:钱包已等额冻结阻断消费;"
-            "核实后经 /finance/reversals/{{order_no}}/resolve 解冻(噪音单)或扣回(确认反转)",
+            "billing.anomaly.channel_reversed",
             "channel_reversed_at",
         ),
     ]
 
 
 async def list_payment_anomalies(session: AsyncSession) -> list[dict[str, Any]]:
-    """异常清单:疑似丢回调(pending 超 10 分钟)、近 48h 被关单、近 48h 失败单、
-    未处置的渠道冲正、负余额钱包。每桶最多 ANOMALY_LIMIT_PER_KIND 条。"""
+    """Anomaly list: suspected lost callbacks (pending > 10 minutes), orders closed in the last
+    48 h, failed orders of the last 48 h,
+    unhandled channel reversals, negative wallets. At most ANOMALY_LIMIT_PER_KIND per bucket."""
     now = now_utc()
     items: list[dict[str, Any]] = []
     for kind, predicate, detail, ts_attr in _order_anomaly_specs(now):
@@ -592,7 +612,7 @@ async def list_payment_anomalies(session: AsyncSession) -> list[dict[str, Any]]:
                 "order_no": o.order_no,
                 "user_id": o.user_id,
                 "amount": str(o.amount),
-                "detail": detail.format(channel=o.channel),
+                "detail": server_copy(detail, channel=o.channel),
                 "created_at": getattr(o, ts_attr),
             }
             for o in rows
@@ -608,7 +628,7 @@ async def list_payment_anomalies(session: AsyncSession) -> list[dict[str, Any]]:
             "order_no": None,
             "user_id": w.user_id,
             "amount": str(w.balance),
-            "detail": "钱包负余额(欠费回收后残留),可调账核销",
+            "detail": server_copy("billing.anomaly.negative_balance"),
             "created_at": w.updated_at,
         }
         for w in negative
@@ -617,7 +637,7 @@ async def list_payment_anomalies(session: AsyncSession) -> list[dict[str, Any]]:
 
 
 async def close_expired_orders(sm: async_sessionmaker[AsyncSession]) -> int:
-    """将 expires_at 已过期的 pending 订单置 closed 并提交,返回更新行数。"""
+    """Set expired pending orders to closed and commit, returning the updated row count."""
     async with sm() as session:
         result = await session.execute(
             update(Order)

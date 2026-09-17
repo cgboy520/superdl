@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode
 from app.core.platform_config import RuntimeConfig
+from app.core.servercopy import copy as server_copy
 from app.modules.billing.payment_channels.base import (
     SDK_TIMEOUT,
     CallbackResult,
@@ -34,8 +35,8 @@ WECHAT_CFG_KEYS = (
 
 
 class WechatChannel:
-    """微信支付 Native(扫码),APIv3。验签仅公钥模式:wechat_public_key 与
-    wechat_public_key_id 必填。"""
+    """WeChat Pay Native (QR), APIv3. Public-key mode only: wechat_public_key and
+    wechat_public_key_id are required."""
 
     name = "wechat"
 
@@ -69,7 +70,7 @@ class WechatChannel:
     ) -> PaymentInit:
         code, message = await run_in_sdk_pool(
             self._wxpay.pay,
-            description=f"SuperDL 充值 {order.order_no}",
+            description=server_copy("billing.recharge.subject", order_no=order.order_no),
             out_trade_no=order.order_no,
             amount={"total": int(order.amount * 100)},
             time_expire=order.expires_at.isoformat(timespec="seconds"),
@@ -85,9 +86,11 @@ class WechatChannel:
         return PaymentInit(json.loads(message)["code_url"])
 
     async def parse_callback(self, headers: dict[str, str], body: bytes) -> CallbackResult:
-        """先核对公钥 ID 与时间戳,再由 SDK 验签解密;未验签请求不得触发证书下载。
+        """Check the public key id and timestamp first, then let the SDK verify and decrypt;
+        unverified requests must never trigger a certificate download.
 
-        要求 TRANSACTION.SUCCESS、匹配的商户与应用、完整交易字段及 CNY 币种。
+        Requires TRANSACTION.SUCCESS, the matching merchant and app, complete transaction fields
+        and the CNY currency.
         """
         if header_value(headers, "Wechatpay-Serial") != self._public_key_id:
             raise channel_error("billing.wechatCallbackVerifyFailed")

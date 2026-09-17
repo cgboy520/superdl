@@ -48,7 +48,7 @@ class User(Base):
 
 
 class UserQuotaOverride(Base):
-    """用户级配额覆盖;配额字段为 None 时使用平台运行时配置。"""
+    """Per-user quota overrides; a None quota field uses the platform runtime configuration."""
 
     __tablename__ = "user_quota_overrides"
 
@@ -74,7 +74,8 @@ class SshKey(Base):
 
 
 class UsedRefreshToken(Base):
-    """refresh 消费记录及刷新宽限窗内可重建的轮换结果。"""
+    """Refresh consumption record and the rotation result rebuildable within the refresh grace
+    window."""
 
     __tablename__ = "used_refresh_tokens"
 
@@ -88,7 +89,8 @@ class UsedRefreshToken(Base):
 
 
 class AccountDeletionRequest(Base):
-    """账号注销申请;每用户至多一条 pending,冷静期由 DELETION_COOLDOWN 定义。"""
+    """Account deletion request; at most one pending per user, the cooling-off period is
+    DELETION_COOLDOWN."""
 
     __tablename__ = "account_deletion_requests"
     __table_args__ = (

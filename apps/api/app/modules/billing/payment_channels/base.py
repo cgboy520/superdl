@@ -61,7 +61,7 @@ async def run_in_sdk_pool(fn: Callable[..., Any], /, *args: Any, **kwargs: Any) 
 
 
 def header_value(headers: Mapping[str, str], name: str) -> str:
-    """忽略大小写读取首个同名头,缺失时返回空串。"""
+    """Read the first header of that name case-insensitively, empty string when missing."""
     lowered = name.lower()
     for k, v in headers.items():
         if k.lower() == lowered:
@@ -70,12 +70,13 @@ def header_value(headers: Mapping[str, str], name: str) -> str:
 
 
 def channel_error(key: str) -> AppError:
-    """渠道侧错误(凭据不全 / 验签失败 / 商户不符 / 回调过期等)的统一形态。"""
+    """Unified shape of channel-side errors (incomplete credentials / signature failure / merchant
+    mismatch / expired callback ...)."""
     return AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key=key)
 
 
 def assert_callback_fresh(ts: datetime | None, *, key: str) -> None:
-    """拒绝缺失或超出 ±CALLBACK_FRESHNESS_SECONDS 的回调时间戳。"""
+    """Reject callback timestamps that are missing or outside ±CALLBACK_FRESHNESS_SECONDS."""
     if ts is None or abs((now_utc() - ts).total_seconds()) > CALLBACK_FRESHNESS_SECONDS:
         raise channel_error(key)
 
@@ -114,5 +115,5 @@ class PaymentChannel(Protocol):
         ...
 
     async def query_order(self, order: "Order") -> QueryResult:
-        """查询渠道订单状态、交易号与金额;失败抛异常。"""
+        """Query the channel order status, transaction id and amount; failures raise."""
         ...

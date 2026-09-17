@@ -61,7 +61,9 @@ class TestHourlyExport:
 
         text = resp.text
         cur = platform_currency()
-        assert text.startswith(f"\ufeff小时,实例ID,运行秒数,单价({cur}/时),卡数,金额({cur})\r\n")
+        assert text.startswith(
+            f"\ufeffHour,Instance ID,Seconds,Unit price ({cur}/hr),GPUs,Amount ({cur})\r\n"
+        )
         lines = [ln for ln in text.removeprefix("\ufeff").split("\r\n") if ln]
         assert len(lines) == 1 + 3
         hours = {ln.split(",", 1)[0] for ln in lines[1:]}
@@ -126,8 +128,8 @@ class TestLedgerExport:
         assert resp.status_code == 200
         text = resp.text
         cur = platform_currency()
-        assert f"时间,类型,金额({cur}),余额快照({cur}),关联,备注" in text
-        assert "充值,100.00,100.00" in text
+        assert f"Time,Type,Amount ({cur}),Balance after ({cur}),Ref,Remark" in text
+        assert "Recharge,100.00,100.00" in text
         assert "(UTC+8)" in text
 
     async def test_isolation(self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]):

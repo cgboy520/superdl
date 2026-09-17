@@ -68,7 +68,9 @@ class UserOut(BaseModel):
 
 
 class TokenPair(BaseModel):
-    """服务层令牌对(refresh_token 只用于路由层种 Cookie,不进响应体)。"""
+    """Service-layer token pair (refresh_token is only used by the router to set the cookie, never
+    in
+    the response body)."""
 
     access_token: str
     refresh_token: str
@@ -76,7 +78,7 @@ class TokenPair(BaseModel):
 
 
 class TokenPairOut(BaseModel):
-    """认证响应:refresh token 只走 HttpOnly Cookie,不进响应体。"""
+    """Auth response: the refresh token travels only in the HttpOnly cookie, never in the body."""
 
     access_token: str
     user: UserOut
@@ -116,7 +118,7 @@ class DeletionRequestCreate(BaseModel):
 
 
 class DeletionRequestOut(BaseModel):
-    """用户端注销申请视图。cooldown_ends_at = requested_at + 7 天。"""
+    """User view of a deletion request. cooldown_ends_at = requested_at + 7 days."""
 
     id: int
     status: str
@@ -130,7 +132,7 @@ class DeletionRequestOut(BaseModel):
 
 
 class AdminDeletionRequestOut(DeletionRequestOut):
-    """管理端注销申请视图:附租户标识与执行前校验计数。"""
+    """Admin view of a deletion request: with the tenant identity and pre-execution check counts."""
 
     user_id: int
     email_masked: str | None
@@ -142,12 +144,13 @@ class AdminDeletionRequestOut(DeletionRequestOut):
 
 
 class AdminDeletionReject(BaseModel):
-    """驳回注销申请(理由必填,回写 note)。"""
+    """Reject a deletion request (reason required, written to note)."""
 
     note: str = Field(min_length=2, max_length=512)
 
 
 class AdminDeletionApprove(BaseModel):
-    """执行注销(操作原因必填,回写 note 并进审计 detail;不可逆操作一律留痕)。"""
+    """Execute the deletion (operator reason required, written to note and the audit detail;
+    irreversible actions always leave a trace)."""
 
     note: str = Field(min_length=2, max_length=512)

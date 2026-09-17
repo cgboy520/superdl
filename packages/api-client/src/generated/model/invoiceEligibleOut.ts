@@ -6,7 +6,7 @@
  */
 
 /**
- * 账期可开票额度预览项(仅 amount > 0 的账期)。
+ * Invoiceable amount preview item (periods with amount > 0 only).
  */
 export interface InvoiceEligibleOut {
   amount: string;

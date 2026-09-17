@@ -1,6 +1,7 @@
-"""钱包原语:所有余额变动的唯一入口。
+"""Wallet primitives: the single entry point of every balance change.
 
-更新必须 `SELECT ... FOR UPDATE`,同事务写 balance_ledger(balance_after 快照)。本文件函数不 commit。
+Updates must `SELECT ... FOR UPDATE` and write balance_ledger (balance_after snapshot) in the same
+transaction. Nothing here commits.
 """
 
 from collections.abc import Sequence
@@ -34,8 +35,8 @@ logger = get_logger(__name__)
 
 
 async def _wallet_row(session: AsyncSession, user_id: int, *, lock: bool) -> Wallet:
-    """钱包行,不存在则首建(INSERT ... ON CONFLICT DO NOTHING,随后重查)。
-    lock=True 时 FOR UPDATE,且带 populate_existing(强制重读加锁后的值)。
+    """The wallet row, created on first use (INSERT ... ON CONFLICT DO NOTHING, then re-read).
+    lock=True takes FOR UPDATE with populate_existing (forces re-reading the locked values).
     """
     stmt = select(Wallet).where(Wallet.user_id == user_id)
     if lock:
@@ -56,7 +57,7 @@ async def get_or_create_wallet(session: AsyncSession, user_id: int) -> Wallet:
 
 
 async def lock_wallet(session: AsyncSession, user_id: int) -> Wallet:
-    """FOR UPDATE 锁定钱包行(不存在则先创建)。"""
+    """FOR UPDATE lock on the wallet row (created first when missing)."""
     return await _wallet_row(session, user_id, lock=True)
 
 
@@ -110,10 +111,13 @@ async def debit(
     allow_negative: bool,
     allow_frozen: bool = False,
 ) -> BalanceLedger:
-    """持钱包行锁扣款并写流水,返回已 flush 的流水行;不提交。
+    """Debit under the wallet row lock and write the ledger row, returning the flushed row; no
+    commit.
 
-    allow_negative=False 禁止负余额;allow_frozen=False 禁止余额低于 frozen。
-    仅已发生消费的小时结算与盘日费可同时启用两项;预付消费不得启用。
+    allow_negative=False forbids a negative balance; allow_frozen=False forbids a balance below
+    frozen.
+    Only settlement of consumption that already happened (hourly and daily disk) may enable both;
+    prepaid consumption must not.
     """
     amount = as_amount(amount)
     if amount <= 0:
@@ -143,7 +147,7 @@ async def get_balance(session: AsyncSession, user_id: int) -> Decimal:
 
 
 def available_of(wallet: Wallet) -> Decimal:
-    """可用余额 = balance - frozen。"""
+    """Available balance = balance - frozen."""
     return as_amount(wallet.balance - wallet.frozen)
 
 
@@ -155,7 +159,8 @@ async def get_available_balance(session: AsyncSession, user_id: int) -> Decimal:
 
 
 async def refundable_capacity(session: AsyncSession, user_id: int) -> Decimal:
-    """返回排除正向 adjust 后的流水净额,下限为零;退款申请与打款须按此封顶。"""
+    """Net ledger excluding positive adjustments, floored at zero; refund requests and payouts are
+    capped by it."""
     total = (
         await session.execute(
             select(
@@ -177,8 +182,10 @@ async def refundable_capacity(session: AsyncSession, user_id: int) -> Decimal:
 async def freeze(
     session: AsyncSession, user_id: int, amount: Decimal, *, ref_id: str, remark: str
 ) -> Wallet:
-    """等额冻结(渠道冲正):不动 balance、不记 ledger;frozen 可超过 balance。
-    幂等由调用方(order 行标记)保证。"""
+    """Freeze the same amount (channel reversal): balance untouched, no ledger row; frozen may
+    exceed
+    balance.
+    Idempotency is guaranteed by the caller (order row flag)."""
     amount = as_amount(amount)
     if amount <= 0:
         raise ValueError("freeze amount must be positive")
@@ -189,7 +196,7 @@ async def freeze(
 
 
 async def release_freeze(session: AsyncSession, user_id: int, amount: Decimal) -> Wallet:
-    """解冻(核销 release)。floor 0。"""
+    """Unfreeze (release write-off). Floor 0."""
     amount = as_amount(amount)
     if amount <= 0:
         raise ValueError("release amount must be positive")
@@ -205,11 +212,13 @@ async def assert_can_afford(
     additional_hourly: Decimal = Decimal("0.00"),
     additional_daily_disk: Decimal = Decimal("0.00"),
 ) -> None:
-    """先锁钱包,再校验可用余额是否覆盖现有、待启动与新增资源的费用;不扣款。
+    """Lock the wallet, then check the available balance covers the fees of existing, pending and
+    new resources; no debit.
 
-    小时费按 afford_cover_hours、盘日费按 disk_grace_days 计,运行中的包周期实例不计时费。
-    不足抛 INSUFFICIENT_BALANCE,params 含 balance/required/inflight。
-    调用方须在同一事务内完成资源创建或开机并提交。
+    Hourly fees × afford_cover_hours, daily disk fees × disk_grace_days; running subscription
+    instances carry no hourly fee.
+    Shortfall raises INSUFFICIENT_BALANCE with params balance/required/inflight.
+    The caller must create or start the resource and commit in the same transaction.
     """
     locked = await lock_wallet(session, user_id)
     policies = await get_runtime_config(session)
@@ -258,7 +267,7 @@ async def assert_can_afford(
 async def ledger_page(
     session: AsyncSession, user_id: int, *, cursor: str | None = None, limit: int | None = None
 ):
-    """资金流水游标分页(用户端与管理端共用)。"""
+    """Ledger cursor pagination (shared by the user and admin sides)."""
     stmt = (
         select(BalanceLedger)
         .where(BalanceLedger.user_id == user_id)
@@ -282,7 +291,8 @@ async def hourly_bills_page(
     cursor: str | None = None,
     limit: int | None = None,
 ):
-    """小时账单游标分页(用户端与管理端共用)。instance_ids = 一组实例的并集;空列表即无账。"""
+    """Hourly bill cursor pagination (shared by the user and admin sides). instance_ids = the union
+    of a set of instances; an empty list means no bills."""
     stmt = select(BillHourly).where(BillHourly.user_id == user_id).order_by(BillHourly.id.desc())
     if instance_id is not None:
         stmt = stmt.where(BillHourly.instance_id == instance_id)
@@ -316,7 +326,8 @@ class ConsumptionSummary:
 async def consumption_summary(
     session: AsyncSession, user_id: int, start: datetime, end: datetime
 ) -> ConsumptionSummary:
-    """按账单归属期汇总 [start, end) 的实例时费与盘日费;items 含实例名与计费秒数。"""
+    """Sum instance hourly fees and daily disk fees of [start, end) by bill attribution period;
+    items carry instance names and billed seconds."""
     gpu_rows = (
         (
             await session.execute(
@@ -363,7 +374,7 @@ async def consumption_summary(
 
 
 async def billed_by_instance(session: AsyncSession, start, end) -> dict[int, Decimal]:
-    """按 hour_start 汇总 [start, end) 内各实例的小时账单金额。"""
+    """Sum the hourly bill amounts per instance within [start, end) by hour_start."""
     rows = (
         (
             await session.execute(
@@ -381,7 +392,7 @@ async def billed_by_instance(session: AsyncSession, start, end) -> dict[int, Dec
 async def balances_by_user(
     session: AsyncSession, user_ids: list[int] | None = None
 ) -> dict[int, Decimal]:
-    """返回已有钱包的用户余额;user_ids 非 None 时仅查询指定用户。"""
+    """Balances of users with a wallet; user_ids limits to the given users."""
     stmt = select(Wallet.user_id, Wallet.balance)
     if user_ids is not None:
         stmt = stmt.where(Wallet.user_id.in_(user_ids))
@@ -392,7 +403,7 @@ async def balances_by_user(
 async def consumed_by_user(
     session: AsyncSession, user_ids: list[int] | None = None
 ) -> dict[int, Decimal]:
-    """返回各用户 consume 流水合计的相反数;user_ids 非 None 时仅查询指定用户。"""
+    """Negated consume ledger total per user; user_ids limits to the given users."""
     stmt = (
         select(BalanceLedger.user_id, func.coalesce(-func.sum(BalanceLedger.amount), 0))
         .where(BalanceLedger.type == "consume")
@@ -405,10 +416,12 @@ async def consumed_by_user(
 
 
 async def revenue_summary(session: AsyncSession, *, tz_offset_minutes: int = 0) -> dict:
-    """今日/本月消费额与环比基数。本地日界按 tz_offset 折算。
+    """Today's / this month's consumption and comparison bases. Local day boundary via tz_offset.
 
-    计量出账按账单归属期切窗(bills_hourly.hour_start / bills_daily_disk.day);
-    包周期预付按收款当日切窗(subscriptions.created_at)。`*_revenue` 是两者之和,`*_prepaid` 单列。
+    Metered bills window by bill attribution period (bills_hourly.hour_start /
+    bills_daily_disk.day);
+    subscription prepayments by payment day (subscriptions.created_at). `*_revenue` is the sum,
+    `*_prepaid` is listed separately.
     """
     offset = timedelta(minutes=tz_offset_minutes)
     local_now = now_utc() + offset
@@ -459,8 +472,8 @@ def admin_orders_query(
     user_id: int | None = None,
     day_range: tuple[datetime, datetime] | None = None,
 ) -> Select[tuple[Order]]:
-    """管理端充值订单的筛选口径(列表与 CSV 共用):status 精确、order_no 精确、user_id、
-    day_range 为 [start, end) 的 created_at 窗口。"""
+    """Admin top-up order filters (shared by list and CSV): status exact, order_no exact, user_id,
+    day_range is the [start, end) created_at window."""
     stmt = select(Order)
     if status:
         stmt = stmt.where(Order.status == status)
@@ -483,7 +496,8 @@ async def admin_list_orders(
     cursor: str | None = None,
     limit: int | None = None,
 ) -> RawPage[Order]:
-    """充值订单列表(游标分页,降序)。order_no 精确匹配;day_range 按 created_at 过滤。"""
+    """Top-up order list (cursor pagination, descending). order_no exact; day_range filters by
+    created_at."""
     stmt = admin_orders_query(
         status=status, order_no=order_no, user_id=user_id, day_range=day_range
     ).order_by(Order.id.desc())

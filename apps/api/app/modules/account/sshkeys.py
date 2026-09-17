@@ -1,4 +1,4 @@
-"""SSH 公钥的增删与查询。"""
+"""SSH public key add / delete / query."""
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -52,7 +52,8 @@ async def add_ssh_key(session: AsyncSession, user_id: int, name: str, public_key
 
 
 async def delete_ssh_key(session: AsyncSession, user_id: int, key_id: int) -> None:
-    """同事务删除公钥并更新未释放实例的密钥快照;运行中实例下次启动生效。"""
+    """Delete the key and update the key snapshot of unreleased instances in one transaction;
+    running instances pick it up at their next start."""
     key = await session.get(SshKey, key_id)
     if key is None or key.user_id != user_id:
         raise not_found()

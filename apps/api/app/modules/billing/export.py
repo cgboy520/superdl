@@ -1,4 +1,5 @@
-"""计费 CSV 流式导出;行数受上限约束,超限写截断标记行。"""
+"""Streamed billing CSV exports; rows are capped, a truncation marker row is written past the
+cap."""
 
 from collections.abc import AsyncIterator
 from datetime import datetime
@@ -20,12 +21,12 @@ from app.modules.billing.models import (
 
 _HEADERS: dict[tuple[str, str], list[str]] = {
     ("hourly", "zh-CN"): [
-        "小时",
-        "实例ID",
-        "运行秒数",
-        "单价({currency}/时)",
-        "卡数",
-        "金额({currency})",
+        "小时",  # cjk-ok
+        "实例ID",  # cjk-ok
+        "运行秒数",  # cjk-ok
+        "单价({currency}/时)",  # cjk-ok
+        "卡数",  # cjk-ok
+        "金额({currency})",  # cjk-ok
     ],
     ("hourly", "en-US"): [
         "Hour",
@@ -36,12 +37,12 @@ _HEADERS: dict[tuple[str, str], list[str]] = {
         "Amount ({currency})",
     ],
     ("ledger", "zh-CN"): [
-        "时间",
-        "类型",
-        "金额({currency})",
-        "余额快照({currency})",
-        "关联",
-        "备注",
+        "时间",  # cjk-ok
+        "类型",  # cjk-ok
+        "金额({currency})",  # cjk-ok
+        "余额快照({currency})",  # cjk-ok
+        "关联",  # cjk-ok
+        "备注",  # cjk-ok
     ],
     ("ledger", "en-US"): [
         "Time",
@@ -52,13 +53,13 @@ _HEADERS: dict[tuple[str, str], list[str]] = {
         "Remark",
     ],
     ("admin_orders", "zh-CN"): [
-        "订单号",
-        "租户ID",
-        "金额({currency})",
-        "渠道",
-        "状态",
-        "支付时间",
-        "创建时间",
+        "订单号",  # cjk-ok
+        "租户ID",  # cjk-ok
+        "金额({currency})",  # cjk-ok
+        "渠道",  # cjk-ok
+        "状态",  # cjk-ok
+        "支付时间",  # cjk-ok
+        "创建时间",  # cjk-ok
     ],
     ("admin_orders", "en-US"): [
         "Order no",
@@ -70,15 +71,15 @@ _HEADERS: dict[tuple[str, str], list[str]] = {
         "Created at",
     ],
     ("admin_refunds", "zh-CN"): [
-        "退款单号",
-        "用户ID",
-        "订单号",
-        "金额({currency})",
-        "状态",
-        "审批人",
-        "打款渠道",
-        "凭证号",
-        "申请时间",
+        "退款单号",  # cjk-ok
+        "用户ID",  # cjk-ok
+        "订单号",  # cjk-ok
+        "金额({currency})",  # cjk-ok
+        "状态",  # cjk-ok
+        "审批人",  # cjk-ok
+        "打款渠道",  # cjk-ok
+        "凭证号",  # cjk-ok
+        "申请时间",  # cjk-ok
     ],
     ("admin_refunds", "en-US"): [
         "Refund no",
@@ -92,15 +93,15 @@ _HEADERS: dict[tuple[str, str], list[str]] = {
         "Applied at",
     ],
     ("admin_invoices", "zh-CN"): [
-        "发票号",
-        "用户ID",
-        "账期",
-        "金额({currency})",
-        "抬头",
-        "税号",
-        "状态",
-        "邮箱",
-        "申请时间",
+        "发票号",  # cjk-ok
+        "用户ID",  # cjk-ok
+        "账期",  # cjk-ok
+        "金额({currency})",  # cjk-ok
+        "抬头",  # cjk-ok
+        "税号",  # cjk-ok
+        "状态",  # cjk-ok
+        "邮箱",  # cjk-ok
+        "申请时间",  # cjk-ok
     ],
     ("admin_invoices", "en-US"): [
         "Invoice no",
@@ -116,7 +117,7 @@ _HEADERS: dict[tuple[str, str], list[str]] = {
 }
 
 _LEDGER_TYPE_LABEL: dict[str, dict[str, str]] = {
-    "zh-CN": {"recharge": "充值", "consume": "消费", "refund": "退款", "adjust": "调账"},
+    "zh-CN": {"recharge": "充值", "consume": "消费", "refund": "退款", "adjust": "调账"},  # cjk-ok
     "en-US": {
         "recharge": "Recharge",
         "consume": "Consumption",
@@ -126,22 +127,27 @@ _LEDGER_TYPE_LABEL: dict[str, dict[str, str]] = {
 }
 
 _ORDER_STATUS_LABEL: dict[str, dict[str, str]] = {
-    "zh-CN": {"pending": "待支付", "paid": "已支付", "closed": "已关闭", "failed": "失败"},
+    "zh-CN": {
+        "pending": "待支付",  # cjk-ok
+        "paid": "已支付",  # cjk-ok
+        "closed": "已关闭",  # cjk-ok
+        "failed": "失败",  # cjk-ok
+    },  # cjk-ok
     "en-US": {"pending": "Pending", "paid": "Paid", "closed": "Closed", "failed": "Failed"},
 }
 
 _ORDER_CHANNEL_LABEL: dict[str, dict[str, str]] = {
-    "zh-CN": {"wechat": "微信支付", "alipay": "支付宝", "mock": "模拟渠道"},
+    "zh-CN": {"wechat": "微信支付", "alipay": "支付宝", "mock": "模拟渠道"},  # cjk-ok
     "en-US": {"wechat": "WeChat Pay", "alipay": "Alipay", "mock": "Mock"},
 }
 
 _REFUND_STATUS_LABEL: dict[str, dict[str, str]] = {
     "zh-CN": {
-        "pending": "待审批",
-        "approved": "待打款",
-        "rejected": "已驳回",
-        "paid": "已完成",
-        "cancelled": "已取消",
+        "pending": "待审批",  # cjk-ok
+        "approved": "待打款",  # cjk-ok
+        "rejected": "已驳回",  # cjk-ok
+        "paid": "已完成",  # cjk-ok
+        "cancelled": "已取消",  # cjk-ok
     },
     "en-US": {
         "pending": "Pending review",
@@ -154,9 +160,9 @@ _REFUND_STATUS_LABEL: dict[str, dict[str, str]] = {
 
 _PAYOUT_CHANNEL_LABEL: dict[str, dict[str, str]] = {
     "zh-CN": {
-        "offline": "线下转账",
-        "alipay_transfer": "支付宝转账",
-        "wechat_transfer": "微信转账",
+        "offline": "线下转账",  # cjk-ok
+        "alipay_transfer": "支付宝转账",  # cjk-ok
+        "wechat_transfer": "微信转账",  # cjk-ok
     },
     "en-US": {
         "offline": "Offline transfer",
@@ -166,7 +172,7 @@ _PAYOUT_CHANNEL_LABEL: dict[str, dict[str, str]] = {
 }
 
 _INVOICE_STATUS_LABEL: dict[str, dict[str, str]] = {
-    "zh-CN": {"submitted": "审核中", "issued": "已开票", "rejected": "已驳回"},
+    "zh-CN": {"submitted": "审核中", "issued": "已开票", "rejected": "已驳回"},  # cjk-ok
     "en-US": {"submitted": "In review", "issued": "Issued", "rejected": "Rejected"},
 }
 
@@ -179,7 +185,7 @@ def stream_hourly_csv(
     tz_offset_minutes: int,
     lang: str = "zh-CN",
 ) -> AsyncIterator[str]:
-    """小时账单 CSV(降序,最新在前);month_range 为 [起, 讫) UTC 窗口。"""
+    """Hourly bill CSV (descending, newest first); month_range is the [start, end) UTC window."""
     stmt = select(BillHourly).where(BillHourly.user_id == user_id)
     if month_range is not None:
         stmt = stmt.where(
@@ -213,7 +219,8 @@ def stream_ledger_csv(
     tz_offset_minutes: int,
     lang: str = "zh-CN",
 ) -> AsyncIterator[str]:
-    """资金流水 CSV(降序,最新在前)。用户端与管理端租户下钻导出共用。"""
+    """Ledger CSV (descending, newest first). Shared by the user side and the admin tenant
+    drill-down."""
     labels = _LEDGER_TYPE_LABEL[lang]
 
     def row(r: BalanceLedger) -> list[object]:
@@ -246,7 +253,8 @@ def stream_admin_orders_csv(
     tz_offset_minutes: int,
     lang: str = "zh-CN",
 ) -> AsyncIterator[str]:
-    """按状态、订单号、用户与创建日窗口导出充值订单 CSV,按 id 降序。"""
+    """Export top-up orders as CSV filtered by status, order number, user and creation-day window,
+    by id descending."""
     stmt = wallet.admin_orders_query(
         status=status, order_no=order_no, user_id=user_id, day_range=day_range
     )
@@ -282,7 +290,7 @@ def stream_admin_refunds_csv(
     tz_offset_minutes: int,
     lang: str = "zh-CN",
 ) -> AsyncIterator[str]:
-    """按状态与申请日窗口导出退款单 CSV,按 id 降序。"""
+    """Export refund requests as CSV filtered by status and request-day window, by id descending."""
     stmt = refunds.admin_refunds_query(status=status, day_range=day_range)
     status_labels = _REFUND_STATUS_LABEL[lang]
     channel_labels = _PAYOUT_CHANNEL_LABEL[lang]
@@ -311,7 +319,8 @@ def stream_admin_refunds_csv(
 
 
 def mask_invoice_identity(value: str) -> str:
-    """脱敏发票抬头或邮箱;保留多字串首字,单字全掩,空串不变。"""
+    """Mask an invoice title or email; keep the first character of multi-character strings, mask
+    single characters fully, leave empty strings."""
     return account_service.mask_id_name(value) if value else value
 
 
@@ -325,9 +334,11 @@ def stream_admin_invoices_csv(
     reveal: bool = False,
     row_counter: dict[str, Any] | None = None,
 ) -> AsyncIterator[str]:
-    """按状态与账期导出发票 CSV,按 id 降序;默认脱敏抬头与邮箱,税号不脱敏。
+    """Export invoices as CSV filtered by status and period, by id descending; title and email
+    masked by default, tax id unmasked.
 
-    reveal=True 时调用方须校验权限与事由并落审计;row_counter 累计已格式化的数据行数。
+    With reveal=True the caller checks permission and reason and audits; row_counter accumulates
+    the formatted data rows.
     """
     stmt = invoices.admin_invoices_query(status=status, period=period)
     status_labels = _INVOICE_STATUS_LABEL[lang]

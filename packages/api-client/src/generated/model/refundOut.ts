@@ -6,7 +6,7 @@
  */
 
 /**
- * 用户端退款单视图。不透出 review_by/payout_by。
+ * User refund request view. review_by/payout_by are not exposed.
  */
 export interface RefundOut {
   amount: string;

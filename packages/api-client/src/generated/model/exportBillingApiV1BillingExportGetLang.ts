@@ -5,7 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type ExportBillingApiV1BillingExportGetLang = typeof ExportBillingApiV1BillingExportGetLang[keyof typeof ExportBillingApiV1BillingExportGetLang];
+export type ExportBillingApiV1BillingExportGetLang = typeof ExportBillingApiV1BillingExportGetLang[keyof typeof ExportBillingApiV1BillingExportGetLang] | null;
 
 
 export const ExportBillingApiV1BillingExportGetLang = {

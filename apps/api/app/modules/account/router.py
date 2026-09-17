@@ -55,7 +55,8 @@ def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
 
 
 def _refresh_token_from(request: Request) -> str:
-    """从 Cookie 读取 refresh,要求 X-Requested-With: fetch;缺 Cookie 回 422,头错误回 403。"""
+    """Read the refresh token from the cookie, requiring X-Requested-With: fetch; missing cookie →
+    422, wrong header → 403."""
     cookie_token = request.cookies.get(_refresh_cookie_name())
     if cookie_token is not None:
         if request.headers.get("x-requested-with") != "fetch":
@@ -173,7 +174,8 @@ async def reset_password(
 
 @router.post("/auth/refresh")
 async def refresh(session: DbSession, request: Request, response: Response) -> TokenPairOut:
-    """轮换刷新:refresh 只经 HttpOnly Cookie + X-Requested-With 头提交;成功写回新 Cookie。"""
+    """Rotating refresh: the refresh token travels only in the HttpOnly cookie + X-Requested-With
+    header; success writes the new cookie."""
     pair = await service.refresh_tokens(session, _refresh_token_from(request))
     _set_refresh_cookie(response, pair.refresh_token)
     return _token_pair_out(pair)
@@ -181,7 +183,8 @@ async def refresh(session: DbSession, request: Request, response: Response) -> T
 
 @router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(session: DbSession, request: Request) -> Response:
-    """登出当前会话(消费 refresh token + 清 Cookie)。token 无效也回 204。"""
+    """Log out the current session (consume the refresh token + clear the cookie). 204 even for an
+    invalid token."""
     await service.logout(session, _refresh_token_from(request))
     resp = Response(status_code=status.HTTP_204_NO_CONTENT)
     resp.delete_cookie(_refresh_cookie_name(), path="/")
@@ -190,7 +193,7 @@ async def logout(session: DbSession, request: Request) -> Response:
 
 @router.post("/auth/logout-all", status_code=status.HTTP_204_NO_CONTENT)
 async def logout_all(user: CurrentUser, session: DbSession, request: Request) -> Response:
-    """登出全部会话:token_version+1,已签发的 access/refresh 即刻全部失效。"""
+    """Log out everywhere: token_version+1, every issued access/refresh token is invalid at once."""
     await service.logout_all(session, user.id)
     set_audit_target(request, f"user:{user.id}", detail={"action": "logout_all"})
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -270,7 +273,7 @@ async def create_deletion_request(
 
 @router.get("/me/deletion-request")
 async def get_deletion_request(user: CurrentUser, session: DbSession) -> DeletionRequestOut | None:
-    """当前 pending 申请;无则最近一条;从未申请回 null。"""
+    """The current pending request; otherwise the most recent one; null when never requested."""
     req = await deletion.get_my_deletion_request(session, user.id)
     return DeletionRequestOut.model_validate(req) if req is not None else None
 
@@ -279,7 +282,7 @@ async def get_deletion_request(user: CurrentUser, session: DbSession) -> Deletio
 async def cancel_deletion_request(
     user: CurrentUser, session: DbSession, request: Request
 ) -> DeletionRequestOut:
-    """冷静期内撤销注销申请(仅 pending 可撤)。"""
+    """Cancel the deletion request within the cooling-off period (pending only)."""
     req = await deletion.cancel_deletion_request(session, user.id)
     set_audit_target(request, f"user:{user.id}", detail={"action": "account_deletion_cancel"})
     return DeletionRequestOut.model_validate(req)

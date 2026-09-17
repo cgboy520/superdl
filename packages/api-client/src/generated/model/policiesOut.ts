@@ -6,7 +6,7 @@
  */
 
 /**
- * 公开只读的计费与回收策略。
+ * Public read-only billing and reclamation policies.
  */
 export interface PoliciesOut {
   billing_timezone: string;

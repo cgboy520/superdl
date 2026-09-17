@@ -15,7 +15,8 @@ if TYPE_CHECKING:
 
 
 class MockChannel:
-    """无验签的开发测试渠道;成功回调记录到类级内存账本,查单读取该账本。"""
+    """Development / test channel without signatures; successful callbacks are recorded in a
+    class-level in-memory ledger that order queries read."""
 
     name = "mock"
 

@@ -1,4 +1,5 @@
-"""鉴权依赖:Bearer token → User;actor 写入 request.state 供审计中间件。"""
+"""Auth dependencies: Bearer token → User; the actor is written to request.state for the audit
+middleware."""
 
 from typing import Annotated
 
@@ -19,7 +20,8 @@ async def get_current_user(
     session: DbSession,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)] = None,
 ) -> User:
-    """校验用户 access token 与账户状态;版本缺失或不匹配时拒绝,成功后设置审计 actor。"""
+    """Validate the user access token and account status; a missing or mismatching version is
+    rejected, success sets the audit actor."""
     if credentials is None:
         raise unauthorized()
     payload = decode_token(credentials.credentials, "user")
