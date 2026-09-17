@@ -38,6 +38,7 @@ export default interface Resources {
       "announcementAlreadyRevoked": "公告已撤回,无需重复操作",
       "badDayFormat": "day 格式应为 YYYY-MM-DD",
       "cannotChangeSelf": "不能停用或降低自己的权限,请让另一位超级管理员操作",
+      "emailTestFailed": "测试邮件发送失败:{{message}}",
       "loginFailed": "用户名或密码错误",
       "mfaCodeInvalid": "动态码错误或已过期,请重试",
       "mfaNotBound": "该账号未绑定动态口令",
