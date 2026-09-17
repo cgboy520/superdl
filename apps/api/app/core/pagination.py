@@ -1,4 +1,4 @@
-"""游标分页:?cursor=&limit=。cursor 为不透明 base64(最后一行的排序键)。"""
+"""Cursor pagination: ?cursor=&limit=. The cursor is an opaque base64 of the last row's sort key."""
 
 import base64
 import binascii
@@ -24,7 +24,7 @@ class Page[T](BaseModel):
 
 @dataclass(frozen=True)
 class RawPage[T]:
-    """service 层内部载体:items 为 ORM 行,由 router 映射成 Page[Out]。"""
+    """Service-layer carrier: items are ORM rows, mapped to Page[Out] by the router."""
 
     items: list[T]
     next_cursor: str | None = None
@@ -36,7 +36,7 @@ def encode_cursor(value: int) -> str:
 
 
 def decode_cursor_int(cursor: str | None) -> int | None:
-    """解出整型排序键;非法 cursor 报 VALIDATION_ERROR。"""
+    """Decode the integer sort key; an invalid cursor is VALIDATION_ERROR."""
     if cursor is None:
         return None
     try:
@@ -54,7 +54,8 @@ def clamp_limit(limit: int | None) -> int:
 def slice_page[T](
     rows: Sequence[T], lim: int, key: Callable[[T], int]
 ) -> tuple[list[T], str | None]:
-    """行数超过 lim 时截取前 lim 行并生成末行游标,否则返回全部行和 None;lim 须为正。"""
+    """With more than lim rows keep the first lim and build the cursor from the last, otherwise
+    return all rows and None; lim must be positive."""
     if len(rows) > lim:
         return list(rows[:lim]), encode_cursor(key(rows[lim - 1]))
     return list(rows), None
@@ -68,7 +69,8 @@ async def paginate_by_id[RowT](
     cursor: str | None,
     limit: int | None,
 ) -> tuple[list[RowT], str | None]:
-    """按 id 降序分页;调用方须在 stmt 设置 id_col.desc() 排序,本函数只过滤和限行。"""
+    """Paginate by id descending; the caller sets id_col.desc() on stmt, this only filters and
+    limits."""
     lim = clamp_limit(limit)
     last_id = decode_cursor_int(cursor)
     if last_id is not None:

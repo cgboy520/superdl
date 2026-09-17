@@ -1,4 +1,5 @@
-"""PostgreSQL advisory lock:多副本下保证定时任务(结算/巡检/reconciler)单实例执行。"""
+"""PostgreSQL advisory locks: single-instance execution of scheduled jobs (settlement / patrols /
+reconciler) across replicas."""
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -25,9 +26,10 @@ class LockKey(IntEnum):
 
 @asynccontextmanager
 async def try_advisory_lock(session: AsyncSession, key: LockKey) -> AsyncIterator[bool]:
-    """尝试获取 PostgreSQL 连接级锁并 yield 是否成功,退出时解锁。
+    """Try to take a PostgreSQL connection-level lock, yield whether it succeeded, unlock on exit.
 
-    持锁期间调用方不得提交、回滚或更换底层连接。
+    While holding the lock the caller must not commit, roll back or switch the underlying
+    connection.
     """
     got = (
         await session.execute(text("SELECT pg_try_advisory_lock(:key)"), {"key": int(key)})
@@ -41,6 +43,7 @@ async def try_advisory_lock(session: AsyncSession, key: LockKey) -> AsyncIterato
 
 @asynccontextmanager
 async def advisory_lock(sm: async_sessionmaker[AsyncSession], key: LockKey) -> AsyncIterator[bool]:
-    """定时任务锁骨架:独立会话拿 try-lock,yield 是否拿到。"""
+    """Scheduled-job lock skeleton: try-lock on an independent session, yield whether it was
+    taken."""
     async with sm() as lock_session, try_advisory_lock(lock_session, key) as got:
         yield got

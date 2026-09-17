@@ -86,14 +86,14 @@ class TestDecryptDualRead:
         set_keys()
         token = crypto.encrypt_str("plain", aad="k")
         forged = token.replace(token.split(":")[2], "0" * 12, 1)
-        with pytest.raises(ValueError, match="未知 kid"):
+        with pytest.raises(ValueError, match="unknown kid"):
             crypto.decrypt_str(forged, aad="k")
 
     def test_malformed_tokens_rejected(self, set_keys):
         set_keys()
-        with pytest.raises(ValueError, match="版本前缀"):
+        with pytest.raises(ValueError, match="version prefix"):
             crypto.decrypt_str("not-a-token", aad="k")
-        with pytest.raises(ValueError, match="版本前缀"):
+        with pytest.raises(ValueError, match="version prefix"):
             crypto.decrypt_str("enc:v9:AAAA", aad="k")
         with pytest.raises(ValueError, match="kid"):
             crypto.decrypt_str("enc:v2:no-kid-separator", aad="k")

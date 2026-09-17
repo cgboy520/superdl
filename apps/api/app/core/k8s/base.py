@@ -1,5 +1,6 @@
-"""K8s 编排抽象:orchestrator 只面向本协议编程,dev/test 用 Fake,生产用 Real;业务代码禁止直接
-import kubernetes 客户端。"""
+"""K8s orchestration abstraction: the orchestrator programs against this protocol only, dev/test
+use Fake, production uses Real; business code must never
+import the kubernetes client directly."""
 
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -22,33 +23,36 @@ GATEWAY_PLURAL = "gateways"
 
 
 def jupyter_service_name(instance_name: str) -> str:
-    """Jupyter 的 ClusterIP Service 名(与 SSH NodePort Service 分开)。"""
+    """Name of Jupyter's ClusterIP Service (separate from the SSH NodePort Service)."""
     return f"{instance_name}-jupyter"
 
 
 def service_endpoint_service_name(instance_name: str) -> str:
-    """服务端点的 ClusterIP Service 名(与 SSH / Jupyter Service 分开)。"""
+    """Name of the service endpoint's ClusterIP Service (separate from the SSH / Jupyter
+    Services)."""
     return f"{instance_name}-svc"
 
 
 def instance_disk_pvc_name(instance_name: str) -> str:
-    """返回平台管理的实例盘 PVC 名。"""
+    """Name of the platform-managed instance disk PVC."""
     return f"{instance_name}-root"
 
 
 def data_disk_pvc_name(disk_uuid: str) -> str:
-    """返回数据盘 PVC 名;调用方须提供合法的 disk_uuid。"""
+    """Name of the data-disk PVC; the caller must pass a valid disk_uuid."""
     return f"disk-{disk_uuid}"
 
 
 def instance_env_secret_name(instance_name: str) -> str:
-    """per-instance 敏感 env 的 Secret 名(JUPYTER_TOKEN 等),随实例删除。"""
+    """Name of the per-instance Secret for sensitive env (JUPYTER_TOKEN etc.), deleted with the
+    instance."""
     return f"jupyter-{instance_name}"
 
 
 @dataclass(frozen=True)
 class InstancePodSpec:
-    """租户实例的 K8s 参数;敏感环境变量必须放入 secret_env,不得放入 env。"""
+    """K8s parameters of a tenant instance; sensitive environment variables go into secret_env,
+    never into env."""
 
     namespace: str
     name: str
@@ -81,7 +85,8 @@ class InstancePodSpec:
 
 
 class NodePortTaken(Exception):
-    """请求的 NodePort 已被其它对象占用(apiserver 422);调用方标 blocked 并换端口。"""
+    """The requested NodePort is held by another object (apiserver 422); the caller marks it blocked
+    and picks another port."""
 
     def __init__(self, port: int) -> None:
         super().__init__(f"node port {port} already allocated")
@@ -90,8 +95,9 @@ class NodePortTaken(Exception):
 
 @dataclass(frozen=True)
 class PodStatus:
-    """Pod 状态;deleting 表示已请求删除但对象仍存在,独立于 phase。
-    started_at = workspace 容器首次进入 running 的时刻(aware-UTC;未起过为 None)。"""
+    """Pod status; deleting means deletion was requested but the object still exists, independent of
+    phase.
+    started_at = when the workspace container first entered running (aware-UTC; None if never)."""
 
     exists: bool
     ready: bool = False
@@ -110,8 +116,9 @@ FactTone = Literal["normal", "warn", "bad"]
 
 @dataclass(frozen=True)
 class ComponentFact:
-    """一条可核对的事实。key 是文案后缀(前端出 label),value 是纯数据:计数、版本、对象名、
-    地址、时长。value 不含语言,不随 locale 变。"""
+    """One checkable fact. key is the copy suffix (the frontend renders the label), value is pure
+    data: counts, versions, object names,
+    addresses, durations. value carries no language and does not vary by locale."""
 
     key: str
     value: str
@@ -120,7 +127,8 @@ class ComponentFact:
 
 @dataclass(frozen=True)
 class ComponentObject:
-    """抽屉对象表的一行。name 是对象名;fields 的键是列名后缀,值同样是纯数据。"""
+    """One row of the drawer object table. name is the object name; the keys of fields are column
+    suffixes, values are pure data as well."""
 
     name: str
     fields: dict[str, str] = field(default_factory=dict)
@@ -128,8 +136,9 @@ class ComponentObject:
 
 @dataclass(frozen=True)
 class ComponentFacts:
-    """单个体检项的探测结果。headline 是面板主数字,facts 是面板与抽屉的事实行,
-    objects 是抽屉里的对象级明细(DaemonSet / listener / StorageClass / 节点)。"""
+    """Probe result of one health-check item. headline is the panel's main number, facts are the
+    fact rows of panel and drawer,
+    objects the object-level details in the drawer (DaemonSet / listener / StorageClass / node)."""
 
     state: ComponentState
     headline: ComponentFact | None = None
@@ -142,7 +151,7 @@ def _fact_to_json(f: ComponentFact) -> dict[str, str]:
 
 
 def component_facts_to_json(facts: dict[str, ComponentFacts]) -> dict[str, Any]:
-    """将组件事实转换为可写入 JSONB 的字典和列表。"""
+    """Convert component facts into JSONB-writable dicts and lists."""
     return {
         key: {
             "state": cf.state,
@@ -155,7 +164,8 @@ def component_facts_to_json(facts: dict[str, ComponentFacts]) -> dict[str, Any]:
 
 
 def component_facts_from_json(raw: Any) -> dict[str, ComponentFacts]:
-    """解析组件事实;跳过非字典或 state 非字符串的项,过滤无效明细并归一化字段。"""
+    """Parse component facts; skip non-dict items or items whose state is not a string, drop invalid
+    details and normalise fields."""
     if not isinstance(raw, dict):
         return {}
     out: dict[str, ComponentFacts] = {}
@@ -203,7 +213,7 @@ def _fact_from_json(v: Any) -> ComponentFact | None:
 
 @dataclass(frozen=True)
 class ComponentDetail:
-    """体检项实时明细:事实、Pod 或证书对象、告警事件。"""
+    """Live details of a health-check item: facts, Pod or certificate objects, warning events."""
 
     facts: tuple[ComponentFact, ...] = ()
     pods: tuple[ComponentObject, ...] = ()
@@ -212,7 +222,8 @@ class ComponentDetail:
 
 @dataclass(frozen=True)
 class ClusterProbe:
-    """集群能力探测快照(nodes 巡检落 cluster_status 表,门禁与集群页读表不实时探测)。"""
+    """Cluster capability probe snapshot (the nodes patrol writes it to cluster_status; the gate and
+    the cluster page read the table, never probe live)."""
 
     api_reachable: bool
     k8s_version: str | None = None
@@ -235,7 +246,7 @@ class ClusterProbe:
 
 
 def derive_distro(git_version: str | None) -> str | None:
-    """gitVersion 后缀派生发行版;识别不出返回 None。"""
+    """Distribution derived from the gitVersion suffix; None when unrecognised."""
     if not git_version:
         return None
     if "+rke2" in git_version:
@@ -247,120 +258,141 @@ def derive_distro(git_version: str | None) -> str | None:
 
 @dataclass(frozen=True)
 class PrewarmJobStatus:
-    """镜像预热 Job 状态。"""
+    """Image prewarm Job status."""
 
     state: str
     message: str | None = None
 
 
 class K8sOrchestrator(Protocol):
-    """全部操作必须幂等(outbox at-least-once 语义)。"""
+    """Every operation must be idempotent (outbox at-least-once semantics)."""
 
     async def ensure_namespace(self, namespace: str) -> None:
-        """创建或更新租户 namespace 标签、RBAC、NetworkPolicy、ResourceQuota 和 LimitRange。"""
+        """Create or update the tenant namespace labels, RBAC, NetworkPolicy, ResourceQuota and
+        LimitRange."""
         ...
 
     async def ensure_pull_secret(
         self, namespace: str, dockerconfigjson: str, fingerprint: str
     ) -> None:
-        """在 namespace 写/覆写镜像拉取 Secret(dockerconfigjson,core/registry.PULL_SECRET_NAME);
-        annotation 指纹相同即跳过。幂等。"""
+        """Write / overwrite the image pull Secret in the namespace (dockerconfigjson,
+        core/registry.PULL_SECRET_NAME);
+        skipped when the annotation fingerprint matches. Idempotent."""
         ...
 
     async def create_instance(self, spec: InstancePodSpec) -> None:
-        """创建实例盘、环境变量 Secret、Pod、Service 和 HTTPRoute,支持重放。
+        """Create the instance disk, env Secret, Pod, Services and HTTPRoute, replay-safe.
 
-        Secret 和 SSH 端口可收敛;删除中的 Pod/SSH Service 须等待消失后重试。
+        Secret and SSH port converge; a Pod / SSH Service that is being deleted must vanish before
+        the retry.
         """
         ...
 
     async def delete_instance(self, namespace: str, name: str, *, force: bool = False) -> None:
-        """删除实例 Pod、Service、HTTPRoute 和环境变量 Secret;忽略不存在的对象,保留实例盘。
-        force=True 使用零宽限期删除,只在节点失联时用。
+        """Delete the instance Pod, Services, HTTPRoute and env Secret; missing objects are ignored,
+        the instance disk is kept.
+        force=True deletes with zero grace period, only used when the node is lost.
         """
         ...
 
     async def delete_instance_disk(self, namespace: str, name: str) -> None:
-        """删除实例盘 PVC。只在实例终结(释放/回收/creating 超时)时调用,关机、重启、pod_lost 不许调;
-        调用点须先确认 Pod 已消失。不存在则跳过。"""
+        """Delete the instance disk PVC. Only on instance termination (release / reclamation /
+        creating timeout); never on stop, restart or pod_lost;
+        the call site must confirm the Pod is gone first. Missing = skipped."""
         ...
 
     async def get_status(self, namespace: str, name: str) -> PodStatus: ...
 
     async def read_instance_logs(self, namespace: str, name: str, *, tail_lines: int) -> str:
-        """读取实例容器日志末尾 tail_lines 行;允许请求路径直读,调用方必须鉴权和限流。"""
+        """Read the last tail_lines lines of the instance container log; allowed on the request
+        path, the caller must authenticate and rate-limit."""
         ...
 
     async def list_instance_pods(self) -> list[PodStatus]:
-        """列出租户命名空间内受管 Pod 的状态,包含受管 Job 的 Pod。"""
+        """List the status of managed Pods in the tenant namespaces, including Pods of managed
+        Jobs."""
         ...
 
     async def list_instance_endpoints(self) -> list[tuple[str, str]]:
-        """列出全部租户实例的 Service/HTTPRoute (namespace, 实例名),副名已归并;孤儿端点清理用。"""
+        """List the (namespace, instance name) of every tenant instance's Service / HTTPRoute,
+        aliases
+        merged; for orphan endpoint cleanup."""
         ...
 
     async def used_node_ports(self) -> set[int]:
-        """返回集群全部 Service 占用的 NodePort,包含非平台对象。"""
+        """NodePorts held by every Service in the cluster, non-platform objects included."""
         ...
 
     async def ensure_data_disk(self, namespace: str, name: str, size_gb: int) -> None:
-        """建或扩数据盘 PVC(幂等):不存在则建,已存在且更小则扩容。
-        PVC 容量即硬配额,不另下发。扩容后端不支持时抛异常交 outbox 重试。"""
+        """Create or grow the data-disk PVC (idempotent): create when missing, grow when smaller.
+        The PVC capacity is the hard quota, nothing else is applied. An unsupported grow raises for
+        the outbox to retry."""
         ...
 
     async def delete_data_disk(self, namespace: str, name: str) -> None:
-        """删除数据盘 PVC(reclaimPolicy=Delete,CSI 随之销毁 subvolume)。
-        不存在或 ns 已消失视为成功。"""
+        """Delete the data-disk PVC (reclaimPolicy=Delete, the CSI destroys the subvolume).
+        Missing PVC or vanished ns count as success."""
         ...
 
     async def list_nodes(self, include_unlabeled: bool = False) -> list["NodeInfo"]:
-        """节点视图;默认仅带池标签(POOL_NODE_LABEL)的节点,include_unlabeled=True 含未打标节点。"""
+        """Node view; by default only nodes with the pool label (POOL_NODE_LABEL),
+        include_unlabeled=True adds unlabeled nodes."""
         ...
 
     async def set_node_labels(self, node_name: str, labels: dict[str, str | None]) -> None:
-        """merge-patch 节点 labels(巡检收敛 superdl.io/gpu-model、切池收敛池与 operand 标签)。
-        值为 None = 删该键(merge-patch 原生语义)。幂等。"""
+        """merge-patch node labels (the patrol converges superdl.io/gpu-model, pool switches
+        converge
+        the pool and operand labels).
+        None = delete the key (native merge-patch semantics). Idempotent."""
         ...
 
     async def prewarm_image(
         self, node_name: str, image_ref: str, *, image_pull_secret: str | None = None
     ) -> None:
-        """在指定节点创建镜像预热 Job,创建即返回(完成态由巡检收敛);同名已存在则跳过。"""
+        """Create an image prewarm Job on the node and return at once (completion is converged by
+        the
+        patrol); skipped when the name exists."""
         ...
 
     async def get_prewarm_status(self, node_name: str, image_ref: str) -> "PrewarmJobStatus":
-        """查询该(节点,镜像)预热 Job 状态。"""
+        """Status of the prewarm Job for that (node, image)."""
         ...
 
     async def delete_prewarm_job(self, node_name: str, image_ref: str) -> None:
-        """清理预热 Job(收敛后回收;不存在则跳过)。"""
+        """Clean up the prewarm Job (reclaimed after convergence; missing = skipped)."""
         ...
 
     async def probe_cluster(self) -> "ClusterProbe":
-        """只读能力探测:版本/发行版/组件存在性/RuntimeClass/StorageClass/池分布。"""
+        """Read-only capability probe: version / distro / component presence / RuntimeClass /
+        StorageClass / pool distribution."""
         ...
 
     async def probe_component_detail(self, key: str) -> "ComponentDetail":
-        """单个体检项的实时深探(只读):Pod 级失败原因、最近告警事件、证书到期。
-        未知 key 或该项无可深探的对象时返回空结果,不抛。"""
+        """Live deep probe of one health-check item (read-only): Pod-level failure reasons, recent
+        warning events, certificate expiry.
+        Unknown key or nothing to probe returns an empty result, never raises."""
         ...
 
     async def set_node_unschedulable(self, node_name: str, unschedulable: bool) -> None:
-        """cordon(True)/uncordon(False)。幂等:重复设置同值无副作用。"""
+        """cordon (True) / uncordon (False). Idempotent: setting the same value again has no
+        effect."""
         ...
 
     async def delete_node(self, node_name: str) -> None:
-        """节点退役:先 cordon 再删 Node 对象;节点已不存在视为成功。不吊销 kubelet 证书
-        (控制面侧动作,见 nodes 模块 runbook)。"""
+        """Node decommissioning: cordon, then delete the Node object; a missing node counts as
+        success. Does not revoke the kubelet certificate
+        (a control-plane action, see the nodes module runbook)."""
         ...
 
 
 GPU_MODEL_NODE_LABEL = "superdl.io/gpu-model"
-# 池标签放 node-restriction.kubernetes.io/ 前缀:kubelet 不能自打,只由平台 SA 经准入策略③白名单写。
+# The pool label lives under the node-restriction.kubernetes.io/ prefix: the kubelet cannot set it,
+# only the platform SA can, through the allow-list of admission policy 3.
 POOL_NODE_LABEL = "node-restriction.kubernetes.io/superdl-pool"
-# 老键:pool_node_labels 收敛时删除。
+# Legacy key: deleted when pool_node_labels converges.
 LEGACY_POOL_NODE_LABEL = "superdl.io/pool"
-# infra 判据:平台组件落点标签或控制面角色标签任一在;这类节点不纳入未登记隔离。
+# infra criterion: the platform placement label or a control-plane role label is present; such
+# nodes are excluded from unenrolled isolation.
 INFRA_NODE_LABEL = "node-restriction.kubernetes.io/superdl-infra"
 INFRA_ROLE_LABELS = (
     "node-role.kubernetes.io/control-plane",
@@ -375,7 +407,7 @@ JOB_NAME_LABEL = "batch.kubernetes.io/job-name"
 
 @dataclass(frozen=True)
 class NodeInfo:
-    """管理端节点视图。"""
+    """Admin node view."""
 
     name: str
     pool_label: str

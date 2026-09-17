@@ -1,4 +1,5 @@
-"""阿里云 RPC 风格 OpenAPI:HMAC-SHA1 签名与 POST 调用(dysmsapi / captcha / cloudauth 共用)。"""
+"""Aliyun RPC-style OpenAPI: HMAC-SHA1 signing and POST calls (shared by dysmsapi / captcha /
+cloudauth)."""
 
 import base64
 import hashlib
@@ -23,7 +24,8 @@ def rpc_signed_params(
     nonce: str,
     timestamp: str,
 ) -> dict[str, str]:
-    """业务参数补齐公共参数并计算 Signature(POST form)。"""
+    """Add the common parameters to the business parameters and compute the Signature (POST
+    form)."""
     query = {
         **params,
         "AccessKeyId": access_key_id,
@@ -50,7 +52,8 @@ async def rpc_call(
     transport: httpx.AsyncBaseTransport | None,
     error_cls: type[Exception],
 ) -> dict:
-    """签名并 POST form 到 endpoint,返回 JSON 体;请求层异常转 error_cls,业务结果码由渠道判定。"""
+    """Sign and POST the form to endpoint, return the JSON body; transport errors become error_cls,
+    the business result code is judged by the channel."""
     signed = rpc_signed_params(
         params,
         access_key_id=access_key_id,

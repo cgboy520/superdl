@@ -1,6 +1,8 @@
-"""登录限流桶:IP / IP+账号 / 账号 15 分钟窗 / 账号日窗四层,用户端与管理端共用同一套机制,
-各自只声明阈值表。`preflight` 桶在 bcrypt 前「先计数再判定」(并发下原子),凭据正确后退还本次
-计数或清零(`clear_on_success`);`preflight=False` 的桶只在失败后计数、不做准入。"""
+"""Login rate-limit buckets: IP / IP+account / account 15-minute window / account daily window, one
+mechanism shared by the user and admin sides, each declaring only its thresholds. `preflight`
+buckets "count first, then decide" before bcrypt (atomic under concurrency) and refund this hit or
+reset on valid credentials (`clear_on_success`); `preflight=False` buckets count only after a
+failure and never gate admission."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -18,7 +20,8 @@ class LoginBucket:
 
 
 async def login_attempt(buckets: Sequence[LoginBucket]) -> None:
-    """凭据校验前:preflight 桶逐个计数并判定,超限 429(本次尝试已计入)。"""
+    """Before checking credentials: count and judge each preflight bucket, 429 when over (this
+    attempt is already counted)."""
     for b in buckets:
         if b.preflight:
             await check_rate_limit(
@@ -27,7 +30,8 @@ async def login_attempt(buckets: Sequence[LoginBucket]) -> None:
 
 
 async def login_failed(buckets: Sequence[LoginBucket], *, precounted: bool = False) -> None:
-    """凭据错误:precounted=True 时 preflight 桶已在 login_attempt 计过,只补计其余桶。"""
+    """Wrong credentials: with precounted=True the preflight buckets were counted in login_attempt,
+    so only the remaining buckets are counted."""
     for b in buckets:
         if precounted and b.preflight:
             continue
@@ -35,7 +39,8 @@ async def login_failed(buckets: Sequence[LoginBucket], *, precounted: bool = Fal
 
 
 async def login_succeeded(buckets: Sequence[LoginBucket], *, precounted: bool = False) -> None:
-    """凭据正确:clear_on_success 桶清零;其余已预计数的 preflight 桶退还本次命中。"""
+    """Valid credentials: clear_on_success buckets reset; the other pre-counted preflight buckets
+    refund this hit."""
     for b in buckets:
         if b.clear_on_success:
             await clear_rate_limit(b.key)

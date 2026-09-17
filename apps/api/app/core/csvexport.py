@@ -1,6 +1,7 @@
-"""CSV 导出原语(billing 与 adminapi 共用,不含业务查询)。BOM 头;含 ",\\n\\r 的字段加引号;
-公式前导字符(= + @ 制表/回车,或 - 开头非纯数字)置 ' 文本化;金额保持 numeric 字符串;
-时间按调用方时区偏移折算并带 (UTC+x) 后缀;数据超过单响应行数上限时追加截断标记行。
+"""CSV export primitives (shared by billing and adminapi, no business queries). BOM header; fields
+containing ",\\n\\r are quoted; formula-leading characters (= + @ tab/CR, or a leading - on a
+non-number) are forced to text with '; amounts stay numeric strings; timestamps are shifted by the
+caller's offset with a (UTC+x) suffix; a truncation marker row is appended past the row cap.
 """
 
 import re
@@ -21,7 +22,7 @@ TRUNCATED_MARKER = "#SUPERDL_EXPORT_TRUNCATED#"
 EXPORT_BATCH = 1_000
 
 TRUNCATED_NOTES: dict[str, str] = {
-    "zh-CN": "已达单次导出上限({limit} 行),仅导出前 {limit} 行;请缩小范围分次导出",
+    "zh-CN": "已达单次导出上限({limit} 行),仅导出前 {limit} 行;请缩小范围分次导出",  # cjk-ok
     "en-US": (
         "Export cap reached: only the first {limit} rows included;"
         " narrow the scope and export in parts"
@@ -30,12 +31,12 @@ TRUNCATED_NOTES: dict[str, str] = {
 
 
 CSV_RESPONSES: dict[int | str, dict[str, Any]] = {
-    200: {"description": "CSV 导出", "content": {"text/csv": {"schema": {"type": "string"}}}}
+    200: {"description": "CSV export", "content": {"text/csv": {"schema": {"type": "string"}}}}
 }
 
 
 def csv_response(stream: AsyncIterator[str], filename: str) -> StreamingResponse:
-    """CSV 流式响应(Content-Disposition 附件)。"""
+    """Streamed CSV response (Content-Disposition attachment)."""
     return StreamingResponse(
         stream,
         media_type="text/csv; charset=utf-8",
@@ -67,7 +68,7 @@ def csv_line(values: Sequence[object]) -> str:
 
 
 def utc_suffix(offset_minutes: int) -> str:
-    """480 → "(UTC+8)";-300 → "(UTC-5)";345 → "(UTC+5:45)"。"""
+    """480 → "(UTC+8)"; -300 → "(UTC-5)"; 345 → "(UTC+5:45)"."""
     sign = "+" if offset_minutes >= 0 else "-"
     h, m = divmod(abs(offset_minutes), 60)
     return f"(UTC{sign}{h}:{m:02d})" if m else f"(UTC{sign}{h})"
@@ -91,8 +92,9 @@ async def stream_rows(
     *,
     truncated_note: str,
 ) -> AsyncIterator[str]:
-    """流式 CSV:BOM + 表头,按 id 降序分批拉 stmt 的 ORM 行,最多 EXPORT_MAX_ROWS 行,触顶且有剩余
-    则在末尾写截断标记行(truncated_note 用 {limit} 占位)。stmt 只带过滤条件。"""
+    """Streamed CSV: BOM + header, then the ORM rows of stmt in batches by id descending, at most
+    EXPORT_MAX_ROWS rows; when the cap is hit with rows left, a truncation marker row is written
+    (truncated_note takes a {limit} placeholder). stmt carries only filters."""
     yield "\ufeff" + csv_line(headers)
     sent = 0
     last_id: int | None = None

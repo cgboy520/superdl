@@ -1,6 +1,7 @@
-"""创建类接口的幂等键重放:按 (归属列, 键) 查已有行,窗内重放(200 + X-Idempotent-Replay,
-core/http.mark_idempotent_replay);并发同键由 UNIQUE(归属列, idempotency_key) 兜底后回查胜出方;
-fingerprint 不符抛 409。
+"""Idempotency-key replay for creation endpoints: look up the existing row by (owner column, key);
+replay within the window (200 + X-Idempotent-Replay, core/http.mark_idempotent_replay); concurrent
+same-key inserts are caught by UNIQUE(owner column, idempotency_key) and the winner is re-read;
+a fingerprint mismatch raises 409.
 """
 
 import hashlib
@@ -24,13 +25,14 @@ class _HasIdempotencyKey(Protocol):
 
 
 class _HasRequestFingerprint(_HasIdempotencyKey, Protocol):
-    """落库了 request_fingerprint 的创建类表。"""
+    """Creation tables that store request_fingerprint."""
 
     request_fingerprint: Mapped[str | None]
 
 
 def request_fingerprint(*parts: object) -> str:
-    """对各参数 repr 以 | 拼接后的 UTF-8 字节取 SHA-256;调用方负责顺序和规范化。"""
+    """SHA-256 over the UTF-8 bytes of the parameters' repr joined with |; the caller owns ordering
+    and normalisation."""
     return hashlib.sha256("|".join(repr(p) for p in parts).encode()).hexdigest()
 
 
@@ -70,8 +72,9 @@ async def find_replay(
     window: timedelta | None = None,
     fingerprint: str | None = None,
 ) -> Any | None:
-    """返回同 (owner, key) 的已有行,没有则 None。owner_col=None 键全局唯一;window 给定时窗外行
-    先释放键位;fingerprint 给定时不符(含 NULL)抛 409。"""
+    """The existing row for the same (owner, key), else None. owner_col=None means a globally unique
+    key; with a window, rows outside it release the key first;
+    with a fingerprint, a mismatch (including NULL) raises 409."""
     stmt = select(model).where(model.idempotency_key == key)
     if owner_col is not None:
         stmt = stmt.where(owner_col == owner_id)
@@ -99,9 +102,10 @@ async def insert_idempotent[RowT: _HasIdempotencyKey](
     fingerprint: str | None = None,
     commit: bool = False,
 ) -> RowT:
-    """插入并 flush 或 commit;返回值 is row 表示新插入。
+    """Insert and flush or commit; a return value `is row` means a fresh insert.
 
-    IntegrityError 时回滚整个 session,按非空键回查重放行;无匹配行则重抛。
+    On IntegrityError the whole session is rolled back and the replay row re-read by the non-empty
+    key; re-raised when no row matches.
     """
     session.add(row)
     try:

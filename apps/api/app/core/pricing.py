@@ -1,5 +1,6 @@
-"""购买模式与计费周期:折扣的唯一计算点(市场页报价 / 创建预估 / 实例落库快照 / 续费共用)。
-`market`(按量 / 竞价 / 包周期)与 `skus.tier` 正交。"""
+"""Purchase modes and billing periods: the single point for discounts (market quotes / creation
+estimates / instance snapshot / renewal).
+`market` (on-demand / spot / subscription) is orthogonal to `skus.tier`."""
 
 from dataclasses import dataclass
 from datetime import timedelta
@@ -28,7 +29,8 @@ MAX_PERIOD_COUNT = 36
 
 
 def period_hours(period: str, count: int = 1) -> int:
-    """返回固定周期小时数(月为 30 天,年为 365 天);未知周期或数量不在 1..36 时抛 ValueError。"""
+    """Fixed hours per period (a month is 30 days, a year 365); ValueError for an unknown period or
+    a count outside 1..36."""
     if period not in PERIOD_HOURS:
         raise ValueError(f"unknown period: {period!r}")
     if not 1 <= count <= MAX_PERIOD_COUNT:
@@ -41,7 +43,7 @@ def period_delta(period: str, count: int = 1) -> timedelta:
 
 
 def period_discount_pct(policies: RuntimeConfig, period: str) -> int:
-    """周期折扣(百分数,80 = 8 折);未知周期抛 ValueError。"""
+    """Period discount (percent, 80 = 20 % off); ValueError for an unknown period."""
     match period:
         case "day":
             return policies.period_discount_day
@@ -61,7 +63,8 @@ def price_for(
     policies: RuntimeConfig,
     period: str | None = None,
 ) -> Decimal:
-    """该购买模式下的有效时价(4 位小数),即 `instances.price_hourly`;base_hourly 为 SKU 原价。"""
+    """Effective hourly price (4 dp) under the purchase mode, i.e. `instances.price_hourly`;
+    base_hourly is the SKU list price."""
     price = as_price(base_hourly)
     if market == MARKET_SUBSCRIPTION:
         if period is None:
@@ -74,7 +77,7 @@ def price_for(
 
 @dataclass(frozen=True)
 class SubscriptionQuote:
-    """包周期下单/续费报价;`discount_amount == list_amount - amount`。"""
+    """Subscription order / renewal quote; `discount_amount == list_amount - amount`."""
 
     period: str
     period_count: int
@@ -95,7 +98,8 @@ def quote_subscription(
     period_count: int,
     policies: RuntimeConfig,
 ) -> SubscriptionQuote:
-    """包周期报价。gpu_count 经 billing_units 折算份数(CPU 实例恒 1 份)。"""
+    """Subscription quote. gpu_count is converted to units by billing_units (CPU instances always
+    1)."""
     hours = period_hours(period, period_count)
     units = billing_units(gpu_count)
     base = as_price(base_hourly)

@@ -1,6 +1,8 @@
-"""K8s 编排实现;异步入口通过专属执行器调用官方同步客户端。
+"""K8s orchestration implementation; async entry points call the official sync client on a
+dedicated executor.
 
-实例 Pod、SSH Service 和 HTTPRoute 使用实例名;Jupyter 和服务端点 Service 分别加后缀。
+Instance Pod, SSH Service and HTTPRoute use the instance name; the Jupyter and service endpoint
+Services carry suffixes.
 """
 
 import asyncio
@@ -71,7 +73,8 @@ TENANT_NS_PSA_LABELS = {
 
 
 def tenant_security_context() -> "client.V1SecurityContext":
-    """租户容器基线:禁提权、RuntimeDefault seccomp,仅保留 SYS_CHROOT/SETUID/SETGID。"""
+    """Tenant container baseline: no privilege escalation, RuntimeDefault seccomp, only
+    SYS_CHROOT/SETUID/SETGID kept."""
     return client.V1SecurityContext(
         allow_privilege_escalation=False,
         capabilities=client.V1Capabilities(drop=["ALL"], add=["SYS_CHROOT", "SETUID", "SETGID"]),
@@ -80,7 +83,8 @@ def tenant_security_context() -> "client.V1SecurityContext":
 
 
 def platform_job_security_context() -> "client.V1SecurityContext":
-    """平台 Job 的非 root 上下文:UID/GID 65534、禁提权、零 capability、RuntimeDefault seccomp。"""
+    """Non-root context of platform Jobs: UID/GID 65534, no privilege escalation, zero capabilities,
+    RuntimeDefault seccomp."""
     return client.V1SecurityContext(
         run_as_non_root=True,
         run_as_user=65534,
@@ -96,7 +100,8 @@ def _is_conflict(exc: client.ApiException) -> bool:
 
 
 def _ignore(fn: Callable[[], Any], *statuses: int) -> Any:
-    """执行一次 K8s 调用,吞掉指定 HTTP 状态的 ApiException 并返回 None,其余照抛。"""
+    """Run one K8s call, swallow ApiException with the given HTTP statuses and return None, re-raise
+    the rest."""
     try:
         return fn()
     except client.ApiException as exc:
@@ -106,7 +111,7 @@ def _ignore(fn: Callable[[], Any], *statuses: int) -> Any:
 
 
 def _create_or_patch(create: Callable[[], Any], patch: Callable[[], Any]) -> None:
-    """幂等下发:create 撞 409 即 patch 收敛存量对象。"""
+    """Idempotent apply: create hitting 409 patches the existing object into shape."""
     try:
         create()
     except client.ApiException as exc:
@@ -116,12 +121,13 @@ def _create_or_patch(create: Callable[[], Any], patch: Callable[[], Any]) -> Non
 
 
 def _ready_condition(obj: Any) -> bool:
-    """Pod / Node 的 status.conditions 里 Ready 是否为 True。"""
+    """Whether Ready is True in the status.conditions of a Pod / Node."""
     return any(c.type == "Ready" and c.status == "True" for c in (obj.status.conditions or []))
 
 
 def _container_started_at(pod: Any) -> Any:
-    """workspace 容器最早一次 running / terminated 的 startedAt(重启后仍取首次);未起过为 None。"""
+    """Earliest running / terminated startedAt of the workspace container (still the first one after
+    restarts); None if never started."""
     starts: list[Any] = []
     for cs in pod.status.container_statuses or []:
         if cs.name != WORKSPACE_CONTAINER:
@@ -137,13 +143,15 @@ def _container_started_at(pod: Any) -> Any:
 
 
 def _node_is_infra(labels: dict[str, str]) -> bool:
-    """平台组件落点标签或控制面角色标签任一在即 infra 节点。"""
+    """infra node when the platform placement label or a control-plane role label is present."""
     return INFRA_NODE_LABEL in labels or any(k in labels for k in INFRA_ROLE_LABELS)
 
 
 def _is_node_port_taken(exc: client.ApiException) -> bool:
-    """apiserver 拒绝显式 nodePort 的形状:422 + "provided port is already allocated";
-    同名 Service 幂等重放也会命中,占用者是否自己须读对象判。"""
+    """Shape of the apiserver rejecting an explicit nodePort: 422 + "provided port is already
+    allocated";
+    an idempotent replay of the same-named Service hits it too, whether the holder is us needs a
+    read."""
     return exc.status == 422 and "already allocated" in str(exc.body or "")
 
 
@@ -195,7 +203,9 @@ TENANT_EPHEMERAL_LIMIT = "64Gi"
 
 
 def _container_ports(spec: InstancePodSpec) -> list["client.V1ContainerPort"]:
-    """容器端口声明(Service targetPort 按名引用):dev 22+8888;service 用户端口(+ 开 SSH 时的 22)。"""
+    """Container port declarations (Service targetPort refers by name): dev 22+8888; service the
+    user
+    port (+ 22 when SSH is on)."""
     ports: list[client.V1ContainerPort] = []
     if spec.with_ssh:
         ports.append(client.V1ContainerPort(container_port=22, name="ssh"))
@@ -207,8 +217,10 @@ def _container_ports(spec: InstancePodSpec) -> list["client.V1ContainerPort"]:
 
 
 def _health_probe(spec: InstancePodSpec, *, failure_threshold: int) -> "client.V1Probe | None":
-    """health_path 非空时的 httpGet 探针(startup 与 readiness 同形状,只差阈值);dev 实例无探针。
-    startup 阈值由 spec.startup_failure_threshold 给,总时长须小于平台 creating 超时。"""
+    """httpGet probe when health_path is set (startup and readiness share the shape, only the
+    threshold differs); dev instances have no probe.
+    The startup threshold comes from spec.startup_failure_threshold; the total must stay below the
+    platform creating timeout."""
     if not spec.health_path or spec.service_port is None:
         return None
     return client.V1Probe(
@@ -220,7 +232,7 @@ def _health_probe(spec: InstancePodSpec, *, failure_threshold: int) -> "client.V
 
 
 def _allowed_tcp_port_ranges() -> list["client.V1NetworkPolicyPort"]:
-    """1-65535 扣除黑名单端口后的允许区间(endPort)。"""
+    """Allowed range (endPort) of 1-65535 minus the blocked ports."""
     ports: list[client.V1NetworkPolicyPort] = []
     lo = 1
     for blocked in sorted(EGRESS_BLOCKED_TCP_PORTS):
@@ -232,7 +244,7 @@ def _allowed_tcp_port_ranges() -> list["client.V1NetworkPolicyPort"]:
 
 
 class _TimeoutApi:
-    """给官方同步客户端的每次调用注入 `_request_timeout`。"""
+    """Inject `_request_timeout` into every call of the official sync client."""
 
     def __init__(self, api: Any, timeout: tuple[float, float]) -> None:
         self._api = api
@@ -254,7 +266,8 @@ logger = get_logger(__name__)
 
 
 def build_instance_pod(spec: InstancePodSpec) -> "client.V1Pod":
-    """构造实例 Pod,不调用 API;secret_env 通过 Secret 引用注入。"""
+    """Build the instance Pod without calling the API; secret_env is injected via Secret
+    references."""
     requests = {
         "cpu": str(spec.vcpu),
         "memory": f"{spec.mem_gb}Gi",
@@ -345,7 +358,7 @@ _DRIVER_LABEL = "nvidia.com/cuda.driver-version.full"
 
 @dataclass
 class _Workloads:
-    """按体检项归类的平台工作负载就绪事实。"""
+    """Readiness facts of the platform workloads grouped by health-check item."""
 
     hami_scheduler: WorkloadRow = field(default_factory=lambda: WorkloadRow(_HAMI_SCHEDULER))
     hami_device_plugin: WorkloadRow = field(
@@ -375,7 +388,7 @@ def _first_image(template: Any) -> str:
 
 
 def _condition_reason(conditions: Any) -> str:
-    """返回非 True 条件中的首个非空 reason,没有则返回空串。"""
+    """First non-empty reason among the non-True conditions, else the empty string."""
     for c in conditions or []:
         if getattr(c, "status", "") != "True":
             reason = str(getattr(c, "reason", "") or "")
@@ -416,7 +429,8 @@ def _sts_row(st: Any) -> WorkloadRow:
 
 
 def _listener_rows(gw: dict[str, Any]) -> list[ListenerRow]:
-    """status.listeners 与 spec.listeners 按名对齐:端口协议在 spec,挂载数与条件在 status。"""
+    """status.listeners aligned with spec.listeners by name: port and protocol in spec, attached
+    count and conditions in status."""
     status: dict[str, Any] = gw.get("status") or {}
     spec_by_name = {
         str(lis.get("name", "")): lis for lis in ((gw.get("spec") or {}).get("listeners") or [])
@@ -445,7 +459,8 @@ def _listener_rows(gw: dict[str, Any]) -> list[ListenerRow]:
 
 @dataclass
 class _GatewayProbe:
-    """Gateway 对象的探测结果。programmed 是整体条件,listeners 逐个再判。"""
+    """Probe result of the Gateway object. programmed is the overall condition, listeners are judged
+    individually."""
 
     programmed: bool = False
     address: str = ""
@@ -455,7 +470,7 @@ class _GatewayProbe:
 
 @dataclass
 class _NodeProbe:
-    """节点探测结果。pools / pools_ready 由行派生,不单独探。"""
+    """Node probe result. pools / pools_ready derive from the rows, not probed separately."""
 
     rows: list[NodeRow] = field(default_factory=list)
     allocatable_gpu: int = 0
@@ -479,7 +494,8 @@ _CERTIFICATES_PLURAL = "certificates"
 
 
 def _pod_not_ready_reason(pod: Any) -> str:
-    """返回容器 waiting/terminated 的首个非 Completed 原因,否则取未调度原因。"""
+    """First non-Completed waiting/terminated reason of the containers, else the unscheduled
+    reason."""
     for cs in (pod.status.container_statuses or []) + (pod.status.init_container_statuses or []):
         state = cs.state
         for sub in (getattr(state, "waiting", None), getattr(state, "terminated", None)):
@@ -505,7 +521,7 @@ def _selector_text(rc: Any) -> str:
 
 
 def _node_not_ready_reason(node: Any) -> str:
-    """Ready 条件为非 True 时的 reason(KubeletNotReady 等);Ready 时留空。"""
+    """Reason of a non-True Ready condition (KubeletNotReady etc.); empty when Ready."""
     for c in node.status.conditions or []:
         if c.type == "Ready" and c.status != "True":
             return str(getattr(c, "reason", "") or "")
@@ -557,7 +573,7 @@ def _assemble_probe(
     *,
     error: str | None,
 ) -> ClusterProbe:
-    """将探测行转换为能力快照和组件事实。"""
+    """Convert probe rows into the capability snapshot and component facts."""
     pools, pools_ready = health.pool_counts(nodes.rows)
     nodes_ready = sum(pools_ready.values())
     rc_names = {r.name for r in rcs}
@@ -638,7 +654,7 @@ class RealOrchestrator:
         self._executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="k8s")
 
     async def _run(self, fn: Any, *args: Any) -> Any:
-        """在专属线程池执行同步调用;不传播 contextvars。"""
+        """Run a sync call on the dedicated thread pool; contextvars are not propagated."""
         return await asyncio.get_running_loop().run_in_executor(self._executor, fn, *args)
 
     async def ensure_namespace(self, namespace: str) -> None:
@@ -657,9 +673,11 @@ class RealOrchestrator:
         self._ensure_limit_range_sync(namespace)
 
     def _ensure_tenant_rbac_sync(self, namespace: str) -> None:
-        """租户 ns 内把预置 ClusterRole superdl-tenant-secrets(01-rbac.yaml,无集群级绑定)
-        经 RoleBinding 绑给 tenant-mgr;不现写 Role。存量 binding 仍指向旧版 namespaced Role 时
-        (roleRef 不可改)删掉重建,并清掉那只旧 Role(404 容忍)。"""
+        """Bind the pre-created ClusterRole superdl-tenant-secrets (01-rbac.yaml, no cluster-level
+        binding) to tenant-mgr via a RoleBinding in the tenant ns; no Role is written live.
+        A binding still pointing at the old namespaced Role (roleRef is immutable) is deleted and
+        recreated,
+        and the old Role removed (404 tolerated)."""
         binding = client.V1RoleBinding(
             metadata=client.V1ObjectMeta(
                 name=TENANT_MGR_ROLE_NAME, namespace=namespace, labels={MANAGED_LABEL: "true"}
@@ -725,9 +743,11 @@ class RealOrchestrator:
         )
 
     def _tenant_netpol(self, namespace: str) -> "client.V1NetworkPolicy":
-        """租户 NetworkPolicy。入方向:默认拒东西向,放行网关数据面(不限端口)与 SSH 22
-        (from 排 Pod 网段,不排私网);出方向:公网除私网/元数据网段,TCP 扣黑名单,
-        UDP 白名单 53/443,+ CoreDNS。
+        """Tenant NetworkPolicy. Ingress: east-west denied by default, the gateway data plane (any
+        port) and SSH 22 allowed
+        (from excludes the Pod range, not private ranges); egress: the internet minus private /
+        metadata ranges, TCP minus the blocklist,
+        UDP allow-list 53/443, + CoreDNS.
         """
         return client.V1NetworkPolicy(
             metadata=client.V1ObjectMeta(name="tenant-default", namespace=namespace),
@@ -792,7 +812,8 @@ class RealOrchestrator:
         )
 
     def _ssh_ingress_peers(self) -> list[Any]:
-        """允许 IPv4 SSH 来源但排除配置的 Pod 网段;空配置不设置 except。"""
+        """Allow IPv4 SSH sources except the configured Pod range; no except with an empty
+        config."""
         cidr = (self.settings.tenant_pod_cidr or "").strip()
         return [
             client.V1NetworkPolicyPeer(
@@ -835,7 +856,8 @@ class RealOrchestrator:
     def _ensure_pull_secret_sync(
         self, namespace: str, dockerconfigjson: str, fingerprint: str
     ) -> None:
-        """superdl-registry-pull:annotation 指纹相同即跳过,不同则 create/patch 覆写。"""
+        """superdl-registry-pull: skipped when the annotation fingerprint matches, otherwise
+        create/patch overwrites."""
         existing = _ignore(
             lambda: self.core.read_namespaced_secret(PULL_SECRET_NAME, namespace), 404
         )
@@ -866,7 +888,8 @@ class RealOrchestrator:
         )
 
     def _ensure_instance_secret_sync(self, spec: InstancePodSpec) -> None:
-        """per-instance 敏感 env 的 Secret(JUPYTER_TOKEN 等);已存在则 patch,随实例删除。"""
+        """Per-instance Secret for sensitive env (JUPYTER_TOKEN etc.); patched when present, deleted
+        with the instance."""
         if not spec.secret_env:
             return
         name = instance_env_secret_name(spec.name)
@@ -886,7 +909,9 @@ class RealOrchestrator:
         )
 
     def _ensure_instance_disk_sync(self, spec: InstancePodSpec) -> None:
-        """实例盘 PVC(TopoLVM 节点本地卷,PV 带 node affinity);已存在即跳过,不按新容量重建。"""
+        """Instance disk PVC (TopoLVM node-local volume, PV with node affinity); skipped when
+        present,
+        never recreated at a new size."""
         pvc = client.V1PersistentVolumeClaim(
             metadata=client.V1ObjectMeta(
                 name=instance_disk_pvc_name(spec.name),
@@ -919,8 +944,10 @@ class RealOrchestrator:
                 ) from exc
 
     def _create_service_sync(self, spec: InstancePodSpec) -> None:
-        """SSH 走 NodePort(显式端口),Jupyter/服务端点走 ClusterIP,拆成多个 Service。
-        dev 建 SSH + Jupyter;service 建(可选 SSH)+ <name>-svc。"""
+        """SSH uses a NodePort (explicit port), Jupyter / service endpoints use ClusterIP, split
+        into
+        several Services.
+        dev creates SSH + Jupyter; service creates (optional SSH) + <name>-svc."""
         if spec.service_port is not None:
             self._create_endpoint_service_sync(spec)
         if not spec.with_ssh:
@@ -965,7 +992,8 @@ class RealOrchestrator:
             _ignore(lambda: self.core.create_namespaced_service(spec.namespace, jupyter_svc), 409)
 
     def _create_endpoint_service_sync(self, spec: InstancePodSpec) -> None:
-        """服务端点的 ClusterIP Service;端口即用户声明的容器端口。"""
+        """ClusterIP Service of the service endpoint; the port is the user-declared container
+        port."""
         svc = client.V1Service(
             metadata=client.V1ObjectMeta(
                 name=service_endpoint_service_name(spec.name),
@@ -987,9 +1015,10 @@ class RealOrchestrator:
     def _reconcile_ssh_service_conflict_sync(
         self, spec: InstancePodSpec, create_exc: "client.ApiException"
     ) -> None:
-        """核对冲突的 SSH Service;端口相同则跳过,漂移则 patch,删除中则报错。
+        """Check the conflicting SSH Service; same port = skip, drift = patch, deleting = raise.
 
-        分配冲突且同名对象不存在,或 patch 遇分配冲突时抛 NodePortTaken。
+        Raises NodePortTaken on an allocation conflict without a same-named object, or when the
+        patch hits an allocation conflict.
         """
         port = spec.ssh_node_port
         if port is None:
@@ -1031,9 +1060,10 @@ class RealOrchestrator:
             raise
 
     def _httproute_body(self, spec: InstancePodSpec) -> dict[str, Any]:
-        """租户实例的 HTTPRoute:dev 指向 Jupyter,service 指向用户容器端口。
-        路由在租户 ns、Gateway 在平台 ns,由 listener allowedRoutes Selector 授权;sectionName 必填
-        且服务路由必须挂 GATEWAY_SVC_LISTENER(只有它挂 extAuth)。"""
+        """Tenant instance HTTPRoute: dev points at Jupyter, service at the user container port.
+        The route lives in the tenant ns, the Gateway in the platform ns, authorised by the listener
+        allowedRoutes Selector; sectionName is mandatory
+        and service routes must attach to GATEWAY_SVC_LISTENER (the only one with extAuth)."""
         if spec.service_port is not None:
             if not spec.service_host:
                 raise RuntimeError(f"instance {spec.name} has service_port but no service_host")
@@ -1211,7 +1241,8 @@ class RealOrchestrator:
 
     @staticmethod
     def batch_container(name: str, image: str, command: list[str], env: list[Any]) -> Any:
-        """构造一次性 Job 容器,声明资源请求/上限并应用非 root 安全上下文。"""
+        """Build a one-off Job container with resource requests / limits and the non-root security
+        context."""
         return client.V1Container(
             name=name,
             image=image,
@@ -1229,7 +1260,7 @@ class RealOrchestrator:
 
     @staticmethod
     def _requested_gi(pvc: Any) -> int:
-        """读取整数字符串 Gi 容量;缺失或其它格式返回 0。"""
+        """Read an integer Gi capacity string; missing or other formats return 0."""
         spec = getattr(pvc, "spec", None)
         res = getattr(spec, "resources", None) if spec else None
         value = (getattr(res, "requests", None) or {}).get("storage") if res else None
@@ -1238,7 +1269,8 @@ class RealOrchestrator:
         return 0
 
     def _ensure_data_disk_sync(self, namespace: str, name: str, size_gb: int) -> None:
-        """创建 CephFS RWX PVC;已有容量不足则申请扩容,不主动缩容。"""
+        """Create the CephFS RWX PVC; request a grow when the existing capacity is smaller, never
+        shrink."""
         want = f"{size_gb}Gi"
         existing: Any = _ignore(
             lambda: self.core.read_namespaced_persistent_volume_claim(name, namespace), 404
@@ -1268,13 +1300,16 @@ class RealOrchestrator:
         await self._run(self._delete_data_disk_sync, namespace, name)
 
     def _delete_data_disk_sync(self, namespace: str, name: str) -> None:
-        """删数据盘 PVC;SC 的 reclaimPolicy=Delete,CSI 随之销毁 subvolume。
-        PVC 不存在或租户 ns 已消失都视为成功(删盘链路幂等)。"""
+        """Delete the data-disk PVC; the SC has reclaimPolicy=Delete so the CSI destroys the
+        subvolume.
+        A missing PVC or a vanished tenant ns both count as success (the delete chain is
+        idempotent)."""
         _ignore(lambda: self.core.delete_namespaced_persistent_volume_claim(name, namespace), 404)
 
     @staticmethod
     def _gpu_amount(resources: dict[str, Any] | None) -> int:
-        """整卡 + MIG 分片统一计数(HAMi 池的 nvidia.com/gpu 为虚拟化后份额)。"""
+        """Whole cards + MIG slices counted together (in the hami pool nvidia.com/gpu is the
+        virtualised share)."""
         total = 0
         for key, value in (resources or {}).items():
             if key == "nvidia.com/gpu" or key.startswith("nvidia.com/mig-"):
@@ -1283,9 +1318,10 @@ class RealOrchestrator:
 
     @staticmethod
     def _physical_gpu_amount(node: Any) -> int:
-        """GFD 正整数卡数小于 allocatable 时取 GFD;否则有配额的 HAMi 节点报错并计 0。
+        """Take the GFD count when it is a positive integer below allocatable; otherwise a HAMi node
+        with quota logs an error and counts 0.
 
-        其余情况返回 allocatable 的整卡/MIG 份数。
+        Every other case returns the allocatable whole-card / MIG count.
         """
         labels = node.metadata.labels or {}
         gfd = labels.get("nvidia.com/gpu.count")
@@ -1299,14 +1335,17 @@ class RealOrchestrator:
                 "hami_node_missing_gfd_label",
                 node=node.metadata.name,
                 allocatable=allocatable,
-                hint="切分池节点缺 nvidia.com/gpu.count:按 0 纳管防超卖,查 GFD 与节点标签",
+                hint="hami node lacks nvidia.com/gpu.count: managed as 0 against overselling, check"
+                " GFD"
+                " and the node labels",
             )
             return 0
         return allocatable
 
     @staticmethod
     def _pod_gpu_occupancy(limits: dict[str, Any]) -> float:
-        """Pod 占用的物理卡当量:HAMi 按 gpucores 折算(N 虚卡 × X% = N·X/100);整卡/MIG 按 1/个。"""
+        """Physical card equivalent held by a Pod: HAMi converts by gpucores (N virtual cards × X% =
+        N·X/100); whole cards / MIG count 1 each."""
         whole = RealOrchestrator._gpu_amount(limits)
         cores = limits.get("nvidia.com/gpucores")
         if cores is not None and str(cores).isdigit() and whole > 0:
@@ -1315,7 +1354,7 @@ class RealOrchestrator:
 
     @staticmethod
     def _list_all(list_fn: Any, **kwargs: Any) -> list[Any]:
-        """分页拉满全量。"""
+        """Fetch everything through pagination."""
         items: list[Any] = []
         kwargs["limit"] = 500
         cont: str | None = None
@@ -1330,7 +1369,7 @@ class RealOrchestrator:
 
     @staticmethod
     def _list_all_custom(list_fn: Any, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
-        """_list_all 的 CustomObjectsApi 版(裸 dict,游标在 `metadata.continue`)。"""
+        """CustomObjectsApi variant of _list_all (raw dicts, cursor in `metadata.continue`)."""
         items: list[dict[str, Any]] = []
         kwargs["limit"] = 500
         cont: str | None = None
@@ -1344,7 +1383,8 @@ class RealOrchestrator:
                 return items
 
     def _used_gpus_by_node(self) -> dict[str, int]:
-        """按节点汇总非 Failed 的受管 Pod GPU 当量并向上取整;跳过未调度 Pod。"""
+        """Sum the GPU equivalents of non-Failed managed Pods per node, rounded up; unscheduled Pods
+        skipped."""
         pods = self._list_all(
             self.core.list_pod_for_all_namespaces,
             label_selector=MANAGED_LABEL,
@@ -1368,7 +1408,7 @@ class RealOrchestrator:
 
     @staticmethod
     def _qty_to_bytes(q: str | None) -> int:
-        """K8s 资源量(如 49192080Ki / 200Gi / 500M)转字节。无法解析返回 0。"""
+        """K8s quantity (e.g. 49192080Ki / 200Gi / 500M) to bytes. Unparseable returns 0."""
         if not q:
             return 0
         units = {
@@ -1392,7 +1432,7 @@ class RealOrchestrator:
 
     @staticmethod
     def _cpu_cores(q: str | None) -> int:
-        """CPU 量(核数 "4" 或毫核 "3920m")转整核。"""
+        """CPU quantity (cores "4" or millicores "3920m") to whole cores."""
         if not q:
             return 0
         try:
@@ -1402,7 +1442,8 @@ class RealOrchestrator:
 
     @staticmethod
     def _gfd_version(labels: dict[str, str], kind: str) -> str:
-        """GFD 版本标签:优先 <kind>-version.full,回落 major/minor(/revision)拼接。"""
+        """GFD version label: <kind>-version.full first, falling back to major/minor(/revision)
+        joined."""
         full = labels.get(f"nvidia.com/cuda.{kind}-version.full")
         if full:
             return full
@@ -1456,7 +1497,7 @@ class RealOrchestrator:
         return self._detail_pods_sync(patterns) if patterns else ComponentDetail()
 
     def _detail_pods_sync(self, patterns: tuple[str, ...]) -> ComponentDetail:
-        """匹配 Pod 的现场状态 + 它们最近的 Warning 事件。未就绪的排前面。"""
+        """Live state of the matching Pods + their recent Warning events. Unready first."""
         pods = [
             p
             for p in self._list_all(self.core.list_pod_for_all_namespaces)
@@ -1495,7 +1536,8 @@ class RealOrchestrator:
         )
 
     def _detail_events_sync(self, object_names: set[str]) -> tuple[ComponentObject, ...]:
-        """未就绪对象的 Warning 事件。需 ClusterRole events 只读(deploy/app/k8s/01-rbac.yaml)。"""
+        """Warning events of unready objects. Needs the ClusterRole events read
+        (deploy/app/k8s/01-rbac.yaml)."""
         if not object_names:
             return ()
         events = self._list_all(
@@ -1517,7 +1559,7 @@ class RealOrchestrator:
         )
 
     def _detail_nodes_sync(self) -> ComponentDetail:
-        """列出存在非 Ready 真值条件或污点的节点,明细按上限截断。"""
+        """List nodes with a true non-Ready condition or taints, details truncated at the cap."""
         rows: list[ComponentObject] = []
         for node in self._list_all(self.core.list_node):
             pressure = [
@@ -1543,8 +1585,9 @@ class RealOrchestrator:
         )
 
     def _detail_certificates_sync(self) -> ComponentDetail:
-        """cert-manager 证书到期日。需 ClusterRole cert-manager.io/certificates 只读;
-        CRD 未装(404)按无证书处理。"""
+        """cert-manager certificate expiry dates. Needs the ClusterRole cert-manager.io/certificates
+        read;
+        CRD not installed (404) is treated as no certificates."""
         try:
             items = self._list_all_custom(
                 self.custom.list_cluster_custom_object,
@@ -1622,7 +1665,8 @@ class RealOrchestrator:
         )
 
     def _probe_workloads_sync(self) -> "_Workloads":
-        """分别列出 Deployment、DaemonSet 和 StatefulSet,按体检项归类。"""
+        """List Deployments, DaemonSets and StatefulSets separately, grouped by health-check
+        item."""
         out = _Workloads()
         deployments: Any = self._apps.list_deployment_for_all_namespaces()
         for d in deployments.items:
@@ -1689,7 +1733,8 @@ class RealOrchestrator:
         )
 
     def _probe_nodes_sync(self) -> "_NodeProbe":
-        """节点行 + 可分配卡数 + 驱动版本。只按池标签粗略分组,不走 _list_nodes_sync。"""
+        """Node rows + allocatable cards + driver version. Coarse grouping by pool label only, not
+        through _list_nodes_sync."""
         out = _NodeProbe()
         for node in self._list_all(self.core.list_node):
             labels: dict[str, str] = node.metadata.labels or {}
@@ -1718,7 +1763,8 @@ class RealOrchestrator:
         await self._run(self._delete_node_sync, node_name)
 
     def _delete_node_sync(self, node_name: str) -> None:
-        """cordon → 删 Node,两步都吞 404;需 ClusterRole nodes patch + delete(01-rbac.yaml)。"""
+        """cordon → delete the Node, both swallowing 404; needs the ClusterRole nodes patch + delete
+        (01-rbac.yaml)."""
         _ignore(
             lambda: self.core.patch_node(node_name, {"spec": {"unschedulable": True}}),
             404,
@@ -1727,7 +1773,8 @@ class RealOrchestrator:
 
     @staticmethod
     def _prewarm_job_name(node_name: str, image_ref: str) -> str:
-        """确定性 Job 名(≤63 字符),同(节点,镜像)幂等;SHA1 仅作压缩指纹。"""
+        """Deterministic Job name (≤63 characters), idempotent per (node, image); SHA1 only as a
+        compact fingerprint."""
         ref_hash = hashlib.sha1(image_ref.encode(), usedforsecurity=False).hexdigest()[:10]
         node_hash = hashlib.sha1(node_name.encode(), usedforsecurity=False).hexdigest()[:8]
         return f"prewarm-{ref_hash}-{node_hash}"
@@ -1740,8 +1787,9 @@ class RealOrchestrator:
     def _prewarm_image_sync(
         self, node_name: str, image_ref: str, image_pull_secret: str | None
     ) -> None:
-        """nodeName 定点起拉取 Job,创建即返回(完成态由 prewarm_patrol 经 get_prewarm_status 收敛);
-        同名已存在则跳过。"""
+        """Start a pull Job pinned by nodeName and return at once (completion is converged by
+        prewarm_patrol via get_prewarm_status);
+        skipped when the name exists."""
         job_name = self._prewarm_job_name(node_name, image_ref)
         if _ignore(
             lambda: self.batch.read_namespaced_job(job_name, self.settings.k8s_platform_namespace),
@@ -1773,7 +1821,8 @@ class RealOrchestrator:
         return PrewarmJobStatus(state="running")
 
     def _prewarm_failure_sync(self, job_name: str) -> str:
-        """返回首个 Pod 容器 waiting/terminated 失败原因;取不到时返回固定失败摘要。"""
+        """First waiting/terminated failure reason of the first Pod's containers; a fixed failure
+        summary when unavailable."""
         try:
             pods: Any = self.core.list_namespaced_pod(
                 self.settings.k8s_platform_namespace, label_selector=f"job-name={job_name}"
@@ -1810,8 +1859,9 @@ def build_prewarm_job(
     image_ref: str,
     image_pull_secret: str | None,
 ) -> "client.V1Job":
-    """预热 Job 对象(纯构造):nodeName 定点、纯拉取触发(命令为 true)、restricted 非 root 上下文;
-    镜像缺 sh 由巡检记 failed。"""
+    """Prewarm Job object (pure construction): pinned by nodeName, pull-only trigger (command true),
+    restricted non-root context;
+    an image without sh is recorded failed by the patrol."""
     container = RealOrchestrator.batch_container(
         "prewarm", image_ref, ["/bin/sh", "-c", "true"], []
     )

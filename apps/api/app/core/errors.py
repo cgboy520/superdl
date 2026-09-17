@@ -68,7 +68,8 @@ class ErrorCode(StrEnum):
 
 
 class AppError(Exception):
-    """业务异常。service 层抛出,统一 handler 转 HTTP 响应。"""
+    """Business exception. Raised by the service layer, turned into an HTTP response by one
+    handler."""
 
     def __init__(
         self,
@@ -84,7 +85,7 @@ class AppError(Exception):
         if key is not None:
             message = render_message(key, params)
         elif message is None:
-            raise ValueError("AppError 需要 message 或 key 之一")
+            raise ValueError("AppError needs either message or key")
         super().__init__(message)
         self.code = code
         self.message = message
@@ -104,7 +105,7 @@ def _make(
     params: Mapping[str, Any] | None = None,
     detail: Any = None,
 ) -> AppError:
-    """给定 message 时不带文案键;否则用 key 或该状态的默认键。"""
+    """No copy key when a message is given; otherwise key, or the default key of that status."""
     key = None if message is not None else (key or default_key)
     return AppError(code, message, key=key, params=params, http_status=http_status, detail=detail)
 
@@ -149,7 +150,8 @@ def conflict(
 
 
 def _error_headers(http_status: int, headers: Mapping[str, str] | None) -> dict[str, str]:
-    """统一响应头:401 一律带 WWW-Authenticate(RFC 6750),调用方自定义头合并保留。"""
+    """Unified response headers: 401 always carries WWW-Authenticate (RFC 6750), caller headers are
+    merged in."""
     out = dict(headers or {})
     if http_status == status.HTTP_401_UNAUTHORIZED:
         out.setdefault("WWW-Authenticate", "Bearer")
@@ -157,7 +159,7 @@ def _error_headers(http_status: int, headers: Mapping[str, str] | None) -> dict[
 
 
 def current_request_id() -> str | None:
-    """读取 structlog 上下文的 request_id;缺失或为空时返回 None。"""
+    """request_id from the structlog context; None when missing or empty."""
     value = structlog.contextvars.get_contextvars().get("request_id")
     return str(value) if value else None
 
@@ -165,7 +167,8 @@ def current_request_id() -> str | None:
 def _error_body(
     code: ErrorCode, message: str, message_key: str | None, params: Any, detail: Any
 ) -> dict[str, Any]:
-    """统一错误体六键结构的单一定义点(全部 exception handler 与中间件直渲响应共用)。"""
+    """Single definition of the six-key unified error body (shared by every exception handler and
+    every middleware that renders responses directly)."""
     return {
         "code": code.value,
         "message": message,
@@ -183,7 +186,7 @@ _HTTP_STATUS_MAP: dict[int, tuple[ErrorCode, str]] = {
 
 
 def _unhandled_response(exc: Exception, *, path: str, method: str) -> JSONResponse:  # noqa: ARG001
-    """未捕获异常的统一渲染(structlog 留痕 + 统一错误体)。"""
+    """Unified rendering of uncaught exceptions (structlog trace + unified error body)."""
     get_logger("app.errors").exception("unhandled_exception", path=path, method=method)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -198,7 +201,7 @@ def _unhandled_response(exc: Exception, *, path: str, method: str) -> JSONRespon
 
 
 class Uniform500Middleware:
-    """捕获 HTTP 请求下游的未处理异常并渲染统一 500 响应。"""
+    """Catch unhandled exceptions downstream of the HTTP request and render the unified 500."""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -217,7 +220,7 @@ class Uniform500Middleware:
 
 
 def payload_too_large_response() -> JSONResponse:
-    """返回统一的 413 错误响应。"""
+    """Unified 413 error response."""
     return JSONResponse(
         status_code=status.HTTP_413_CONTENT_TOO_LARGE,
         content=_error_body(
@@ -231,7 +234,7 @@ def payload_too_large_response() -> JSONResponse:
 
 
 def audit_unavailable_response() -> JSONResponse:
-    """返回审计不可用的统一 503 错误响应。"""
+    """Unified 503 error response for an unavailable audit."""
     return JSONResponse(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         content=_error_body(
@@ -263,7 +266,7 @@ def install_error_handlers(app: FastAPI) -> None:
     async def http_exception_handler(
         _request: Request, exc: StarletteHTTPException
     ) -> JSONResponse:
-        """路由层 404/405 等框架异常渲染统一错误体。"""
+        """Framework exceptions such as route-level 404/405 rendered as the unified error body."""
         code, key = _HTTP_STATUS_MAP.get(
             exc.status_code,
             (ErrorCode.VALIDATION_ERROR, "common.validation")
@@ -280,7 +283,7 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def validation_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
-        """返回校验错误的位置、原因和类型,不回显 input。"""
+        """Location, reason and type of validation errors, without echoing the input."""
         detail = [
             {"loc": e.get("loc"), "msg": e.get("msg"), "type": e.get("type")} for e in exc.errors()
         ]
@@ -297,5 +300,6 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def unhandled_handler(request: Request, exc: Exception) -> JSONResponse:
-        """最外层兜底,只兜中间件自身的异常(正常路径 500 由 Uniform500Middleware 渲染)。"""
+        """Outermost safety net, only for the middleware's own exceptions (regular 500s are rendered
+        by Uniform500Middleware)."""
         return _unhandled_response(exc, path=request.url.path, method=request.method)

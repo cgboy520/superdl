@@ -1,6 +1,8 @@
-"""平台配置中心:env 默认 + DB 覆盖,一张 `platform_settings` 表、一份 `SETTING_SPECS` 白名单、
-一个强类型的 `RuntimeConfig` 读取面(渠道凭据 / 安全开关 / 合规信息 / 集群接入 / 运营策略参数
-全在其中)。敏感项经 crypto.py AES-GCM 加密落库,adminapi 只回状态与尾 4 位预览。"""
+"""Platform configuration centre: env defaults + DB overrides, one `platform_settings` table, one
+`SETTING_SPECS` allow-list and one strongly typed `RuntimeConfig` read surface (channel credentials
+/
+security switches / compliance info / cluster access / policy parameters). Secrets are stored
+AES-GCM encrypted via crypto.py; adminapi returns only the state and a last-4 preview."""
 
 import re
 from collections.abc import Mapping
@@ -58,7 +60,8 @@ POLICY_GROUP: SettingGroup = "policy"
 
 @dataclass(frozen=True)
 class SettingSpec:
-    """配置校验规则;正则须避免灾难性回溯,数值项须提供 lo 和 hi。"""
+    """Validation rule of a setting; patterns must avoid catastrophic backtracking, numeric kinds
+    must provide lo and hi."""
 
     group: SettingGroup
     kind: SettingKind
@@ -88,17 +91,24 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         prod_forbidden=("false",),
         prod_forbidden_profiles=("cn",),
         prod_gate=True,
-        hint="开启后 /auth/sms-code 必须带阿里云验证码 2.0 的一次性 token(凭据在「人机验证」组);"
-        "关闭 = 发码口子只剩 IP/手机号限流;prod 在线关闭已禁,env 层关闭启动 fail-fast",
-        prod_hint="生产环境人机验证已关闭:/auth/sms-code 对脚本敞开,仅剩 IP/手机号限流",
+        hint="When on, /auth/verification-code must carry a one-time CAPTCHA token (credentials in"
+        " the"
+        " CAPTCHA group); off = only IP / handle rate limits guard code sending; switching off"
+        " online in"
+        " prod is blocked, off in the env layer fails fast at boot",
+        prod_hint="CAPTCHA is off in production: /auth/verification-code is open to scripts, only"
+        " IP /"
+        " handle rate limits remain",
     ),
     "admin_mfa_enabled": SettingSpec(
         "security",
         "bool",
         prod_forbidden=("false",),
-        hint="开 = 管理端全角色强制 TOTP 两步验证(首登绑定);关 = 密码即登录,已绑定者也不再校验;"
-        "生产环境关闭属高危运营动作,prod 在线关闭已禁(需部署层变更)",
-        prod_hint="生产环境管理端两步验证已关闭:口令泄漏即可登录管理端",
+        hint="On = TOTP two-factor mandatory for every admin role (enrolled at first login); off ="
+        " password alone signs in, enrolled admins are no longer checked; switching off in"
+        " production is"
+        " a high-risk operation and blocked online (needs a deployment-layer change)",
+        prod_hint="Admin two-factor is off in production: a leaked password is enough to sign in",
     ),
     "real_name_enabled": SettingSpec(
         "security",
@@ -106,9 +116,14 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         prod_forbidden=("false",),
         prod_forbidden_profiles=("cn",),
         prod_gate=True,
-        hint="开启后用户端「账户设置」可提交三要素核验(凭据在「实名认证」组,缺失即 502);"
-        "关闭 = 提交返 409,不影响已实名用户;prod 在线关闭已禁,env 层关闭启动 fail-fast",
-        prod_hint="生产环境实名认证已关闭:境内合规要求实名后方可使用算力",
+        hint="When on, users can submit identity verification under Account settings (credentials"
+        " in the"
+        " identity-verification group, 502 when missing); off = submissions return 409, verified"
+        " users"
+        " are unaffected; switching off online in prod is blocked, off in the env layer fails fast",
+        prod_hint="Identity verification is off in production: the cn compliance profile requires"
+        " it"
+        " before compute can be used",
     ),
     "real_name_required_for_recharge": SettingSpec(
         "security",
@@ -116,62 +131,75 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         prod_forbidden=("false",),
         prod_forbidden_profiles=("cn",),
         prod_gate=True,
-        hint="开启后未实名用户不能充值、不能开通实例;须先开启实名认证(任意环境都拦这个组合);"
-        "prod 在线关闭已禁且启动 fail-fast(境内合规要求)",
-        prod_hint="生产环境未强制实名后充值:境内合规要求",
+        hint="When on, unverified users cannot top up or create instances; requires identity"
+        " verification to be on (the combination is rejected in every environment); switching off"
+        " online in prod is blocked and fails fast at boot (cn compliance requirement)",
+        prod_hint="Top-ups do not require identity verification in production: cn compliance"
+        " requirement",
     ),
     "payment_wechat_enabled": SettingSpec("payment_wechat", "bool"),
     "wechat_mchid": SettingSpec(
-        "payment_wechat", "str", pattern=r"\d{8,12}", hint="商户号为 8~12 位数字"
+        "payment_wechat", "str", pattern=r"\d{8,12}", hint="Merchant ID is 8-12 digits"
     ),
     "wechat_appid": SettingSpec(
-        "payment_wechat", "str", pattern=r"wx[0-9a-zA-Z]{10,30}", hint="AppID 以 wx 开头"
+        "payment_wechat", "str", pattern=r"wx[0-9a-zA-Z]{10,30}", hint="AppID starts with wx"
     ),
     "wechat_cert_serial_no": SettingSpec(
-        "payment_wechat", "str", pattern=r"[0-9A-Fa-f]{8,64}", hint="商户 API 证书序列号(十六进制)"
+        "payment_wechat",
+        "str",
+        pattern=r"[0-9A-Fa-f]{8,64}",
+        hint="Merchant API certificate serial (hex)",
     ),
     "wechat_private_key": SettingSpec(
         "payment_wechat",
         "secret",
         must_contain="-----BEGIN",
-        hint="需粘贴完整 PEM(apiclient_key.pem 内容,含 -----BEGIN PRIVATE KEY-----)",
+        hint="Paste the full PEM (contents of apiclient_key.pem, including -----BEGIN PRIVATE"
+        " KEY-----)",
     ),
     "wechat_apiv3_key": SettingSpec(
-        "payment_wechat", "secret", pattern=r"[0-9A-Za-z]{32}", hint="APIv3 密钥为 32 位字符"
+        "payment_wechat",
+        "secret",
+        pattern=r"[0-9A-Za-z]{32}",
+        hint="The APIv3 key is 32 characters",
     ),
     "wechat_public_key_id": SettingSpec(
         "payment_wechat",
         "str",
         pattern=r"PUB_KEY_ID_[0-9A-Za-z]+",
-        hint="微信支付公钥 ID 以 PUB_KEY_ID_ 开头(商户平台·API安全·微信支付公钥)",
+        hint="WeChat Pay public key ID starts with PUB_KEY_ID_ (merchant platform · API security ·"
+        " WeChat Pay public key)",
     ),
     "wechat_public_key": SettingSpec(
         "payment_wechat",
         "text",
         must_contain="-----BEGIN PUBLIC KEY-----",
-        hint="需粘贴完整微信支付公钥 PEM(pub_key.pem 内容)",
+        hint="Paste the full WeChat Pay public key PEM (contents of pub_key.pem)",
     ),
     "payment_alipay_enabled": SettingSpec("payment_alipay", "bool"),
     "alipay_app_id": SettingSpec(
-        "payment_alipay", "str", pattern=r"\d{13,16}", hint="应用 APPID 为 13~16 位数字"
+        "payment_alipay", "str", pattern=r"\d{13,16}", hint="The app APPID is 13-16 digits"
     ),
     "alipay_private_key": SettingSpec(
         "payment_alipay",
         "secret",
         forbid_contains="-----",
-        hint="粘贴纯 base64 应用私钥体(不含 -----BEGIN----- 头尾,官方 SDK 格式)",
+        hint="Paste the bare base64 app private key body (no -----BEGIN----- lines, official SDK"
+        " format)",
     ),
     "alipay_public_key": SettingSpec(
         "payment_alipay",
         "text",
         forbid_contains="-----",
-        hint="粘贴纯 base64 支付宝公钥体(开放平台·接口加签方式·支付宝公钥)",
+        hint="Paste the bare base64 Alipay public key body (open platform · signing method · Alipay"
+        " public key)",
     ),
     "alipay_seller_id": SettingSpec(
         "payment_alipay",
         "str",
         pattern=r"|2088\d{12}",
-        hint="收款账号 PID(2088 开头 16 位),开放平台·账户中心可查;prod 启用支付宝时必填",
+        hint="Payee PID (16 digits starting with 2088), found in the open platform account centre;"
+        " required in prod when Alipay is enabled",
     ),
     "payment_stripe_enabled": SettingSpec("payment_stripe", "bool"),
     "stripe_secret_key": SettingSpec(
@@ -195,18 +223,27 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         prod_forbidden=("mock",),
         hint="mock only logs (development); aliyun needs the sms_* credentials, "
         "twilio the sms_twilio_* credentials",
-        prod_hint="生产环境短信渠道为 mock:验证码是固定值",
+        prod_hint="The SMS channel is mock in production: verification codes are a fixed value",
     ),
     "sms_access_key_id": SettingSpec(
-        "sms", "str", pattern=r"[0-9A-Za-z]{16,30}", hint="AccessKey ID(建议 RAM 子账号最小授权)"
+        "sms",
+        "str",
+        pattern=r"[0-9A-Za-z]{16,30}",
+        hint="AccessKey ID (a least-privilege RAM sub-account)",
     ),
     "sms_access_key_secret": SettingSpec("sms", "secret", max_len=128),
-    "sms_sign_name": SettingSpec("sms", "str", max_len=24, hint="已报备的短信签名名称"),
+    "sms_sign_name": SettingSpec("sms", "str", max_len=24, hint="Registered SMS signature name"),
     "sms_template_verify": SettingSpec(
-        "sms", "str", pattern=r"SMS_[0-9A-Za-z]+", hint="验证码模板码,形如 SMS_123456789(变量 code)"
+        "sms",
+        "str",
+        pattern=r"SMS_[0-9A-Za-z]+",
+        hint="Verification template code, e.g. SMS_123456789 (variable code)",
     ),
     "sms_template_notice": SettingSpec(
-        "sms", "str", pattern=r"SMS_[0-9A-Za-z]+", hint="通知模板码,形如 SMS_123456789(变量 title)"
+        "sms",
+        "str",
+        pattern=r"SMS_[0-9A-Za-z]+",
+        hint="Notice template code, e.g. SMS_123456789 (variable title)",
     ),
     "sms_twilio_account_sid": SettingSpec(
         "sms", "str", pattern=r"AC[0-9a-fA-F]{32}", hint="Twilio Account SID (starts with AC)"
@@ -260,7 +297,10 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         hint="Optional Reply-To address",
     ),
     "real_name_access_key_id": SettingSpec(
-        "real_name", "str", pattern=r"[0-9A-Za-z]{16,30}", hint="AccessKey ID(建议独立 RAM 子账号)"
+        "real_name",
+        "str",
+        pattern=r"[0-9A-Za-z]{16,30}",
+        hint="AccessKey ID (a dedicated RAM sub-account)",
     ),
     "real_name_access_key_secret": SettingSpec("real_name", "secret", max_len=128),
     "kyc_provider": SettingSpec(
@@ -271,16 +311,23 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "(needs the real_name_* AccessKey and a +86 phone on the account)",
     ),
     "captcha_scene_id": SettingSpec(
-        "captcha", "str", max_len=64, hint="场景 ID(控制台·场景管理;服务端验签强制写入防篡改)"
+        "captcha",
+        "str",
+        max_len=64,
+        hint="Scene ID (console · scene management; written into the server-side verification"
+        " against tampering)",
     ),
     "captcha_prefix": SettingSpec(
-        "captcha", "str", max_len=64, hint="身份标(控制台·概览;前端 SDK 初始化用,公开信息)"
+        "captcha",
+        "str",
+        max_len=64,
+        hint="Identity prefix (console · overview; used by the frontend SDK, public information)",
     ),
     "captcha_access_key_id": SettingSpec(
         "captcha",
         "str",
         pattern=r"[0-9A-Za-z]{16,30}",
-        hint="AccessKey ID(建议独立 RAM 子账号,仅授 AliyunYundunAFSFullAccess)",
+        hint="AccessKey ID (a dedicated RAM sub-account with only AliyunYundunAFSFullAccess)",
     ),
     "captcha_access_key_secret": SettingSpec("captcha", "secret", max_len=128),
     "captcha_provider": SettingSpec(
@@ -298,69 +345,89 @@ SETTING_SPECS: dict[str, SettingSpec] = {
     ),
     "captcha_turnstile_secret_key": SettingSpec("captcha", "secret", max_len=128),
     "icp_number": SettingSpec(
-        "compliance", "str", max_len=64, hint="ICP 备案号,形如 京ICP备2026012345号-1"
+        "compliance",
+        "str",
+        max_len=64,
+        hint="ICP filing number, e.g. 京ICP备2026012345号-1",  # cjk-ok
     ),
     "police_record_number": SettingSpec(
-        "compliance", "str", max_len=64, hint="公安备案号,形如 京公网安备11010502000000号"
+        "compliance",
+        "str",
+        max_len=64,
+        hint="Public security filing number, e.g. 京公网安备11010502000000号",  # cjk-ok
     ),
     "company_name": SettingSpec(
-        "compliance", "str", max_len=128, hint="营业执照上的公司全称,如 某某科技(北京)有限公司"
+        "compliance", "str", max_len=128, hint="Full company name as on the business licence"
     ),
     "company_address": SettingSpec(
-        "compliance", "str", max_len=256, hint="公司注册地址(营业执照住所)"
+        "compliance",
+        "str",
+        max_len=256,
+        hint="Registered company address (as on the business licence)",
     ),
     "company_phone": SettingSpec(
-        "compliance", "str", max_len=32, hint="对外联系电话,形如 010-12345678 或 400-800-1234"
+        "compliance",
+        "str",
+        max_len=32,
+        hint="Public contact phone, e.g. 010-12345678 or 400-800-1234",
     ),
     "business_license_url": SettingSpec(
         "compliance",
         "str",
         pattern=r"|https?://\S+",
         max_len=256,
-        hint="营业执照电子版链接(亮照);留空则不展示",
+        hint="Link to the electronic business licence; empty = not shown",
     ),
     "support_email": SettingSpec(
         "support",
         "str",
         pattern=r"[^@\s]+@[^@\s]+\.[^@\s]+",
         max_len=128,
-        hint="客服邮箱,如 support@example.com",
+        hint="Support email, e.g. support@example.com",
     ),
     "support_wechat": SettingSpec(
-        "support", "str", max_len=64, hint="企业微信/微信客服号(展示为文本,用户自行搜索添加)"
+        "support",
+        "str",
+        max_len=64,
+        hint="WeCom / WeChat support account (shown as text for users to search)",
     ),
     "cluster_server_url": SettingSpec(
         "cluster",
         "str",
         pattern=r"https://[0-9A-Za-z.\-\[\]:]+:\d{1,5}",
-        hint="HA 集群填控制面 VIP:RKE2 形如 https://<vip>:9345;k3s 单 server 填 https://<server-ip>:6443",
+        hint="HA clusters: the control-plane VIP, RKE2 like https://<vip>:9345; single-server k3s:"
+        " https://<server-ip>:6443",
     ),
     "cluster_join_token": SettingSpec(
         "cluster",
         "secret",
-        # 负前瞻拒绝 server node-token 形态(K10<64hex>::server:<pw>),node-join.sh 同规则再拒
+        # negative lookahead rejects the server node-token shape (K10<64hex>::server:<pw>);
+        # node-join.sh
+        # applies the same rule
         pattern=r"(?!K10[0-9A-Fa-f]{64}::server:)[A-Za-z0-9:._~+/=\-]{16,512}",
         max_len=512,
-        hint="专用 agent token(server config 的 agent-token 值);"
-        "不得填 server node-token(K10…::server:…),只许 agent token",
+        hint="Dedicated agent token (the agent-token value of the server config);"
+        " never the server node-token (K10...::server:...), agent token only",
     ),
     "cluster_agent_version": SettingSpec(
         "cluster",
         "str",
         pattern=r"v\d+\.\d+\.\d+(\+(rke2r|k3s)\d+)?",
-        hint="装机脚本钉死的版本,形如 v1.36.2+rke2r1 / v1.36.3+k3s1",
+        hint="Version pinned by the install script, e.g. v1.36.2+rke2r1 / v1.36.3+k3s1",
     ),
     "node_driver_version": SettingSpec(
         "cluster",
         "str",
         pattern=r"\d{3}",
-        hint="NVIDIA 驱动主版本,如 580(与 GPU Operator 兼容矩阵核对)",
+        hint="NVIDIA driver major version, e.g. 580 (check the GPU Operator compatibility matrix)",
     ),
     "node_registries_yaml": SettingSpec(
         "cluster",
         "text",
         max_len=8192,
-        hint="高级覆盖:留空=平台按 server 地址自动生成(Spegel P2P + 内网 registry mirror)",
+        hint="Advanced override: empty = generated by the platform from the server address (Spegel"
+        " P2P +"
+        " internal registry mirror)",
     ),
     "node_install_mirror": SettingSpec(
         "cluster",
@@ -375,64 +442,78 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "str",
         pattern=r"[a-z0-9.-]+(?::\d{1,5})?",
         max_len=253,
-        hint="Harbor 访问地址,不带 scheme,如 harbor.example.com(内网自签证书时同时填 CA)",
+        hint="Harbor address without scheme, e.g. harbor.example.com (also fill the CA for an"
+        " internal"
+        " self-signed certificate)",
     ),
     "registry_project": SettingSpec(
         "registry",
         "str",
         pattern=r"[a-z0-9]+(?:[._-][a-z0-9]+)*",
         max_len=255,
-        hint="平台镜像所在的 Harbor 项目(默认 superdl):租户实例镜像与预热 Job 均从这里拉",
+        hint="Harbor project holding the platform images (default superdl): tenant instance images"
+        " and"
+        " prewarm Jobs pull from here",
     ),
     "registry_robot_name": SettingSpec(
         "registry",
         "str",
         pattern=r"robot\$[A-Za-z0-9._+-]+",
         max_len=255,
-        hint="机器人账户(项目级 robot$<项目>+<名> 或系统级 robot$<名>),至少授予 Pull Repository + "
-        "List Repository;项目为 public 可留空",
+        hint="Robot account (project-level robot$<project>+<name> or system-level robot$<name>)"
+        " with at"
+        " least Pull Repository + List Repository; may be empty for a public project",
     ),
     "registry_robot_secret": SettingSpec(
         "registry",
         "secret",
         max_len=256,
-        hint="机器人账户 Secret;轮换时先在此保存新值、待新建 Pod 拉取成功后再在 Harbor 撤销旧值",
+        hint="Robot account secret; on rotation save the new value here first and revoke the old"
+        " one in"
+        " Harbor once new Pods pull successfully",
     ),
     "registry_ca_pem": SettingSpec(
         "registry",
         "text",
         must_contain="-----BEGIN CERTIFICATE-----",
         max_len=16384,
-        hint="自签/私有 CA 时粘贴 PEM:node-join 落到节点并写 containerd tls.ca_file,"
-        "平台探测 Harbor API 也据此校验;公信证书留空",
+        hint="Paste the PEM of a self-signed / private CA: node-join installs it on the node and"
+        " writes"
+        " containerd tls.ca_file, the platform verifies the Harbor API with it too; leave empty for"
+        " a"
+        " public certificate",
     ),
     "registry_proxy_projects": SettingSpec(
         "registry",
         "text",
         line_pattern=r"[a-z0-9.-]+=[a-z0-9]+([._-][a-z0-9]+)*",
         max_len=2048,
-        hint="Harbor 代理缓存:每行 <上游>=<代理项目>,如 docker.io=dockerhub、ghcr.io=ghcr"
-        "(项目须先在 Harbor 建好并设 public);节点 containerd 对该上游做 mirror,拉不到回落上游",
+        hint="Harbor proxy cache: one <upstream>=<proxy project> per line, e.g."
+        " docker.io=dockerhub,"
+        " ghcr.io=ghcr (create the project in Harbor as public first); node containerd mirrors the"
+        " upstream through it and falls back to the upstream",
     ),
     "image_allowed_registries": SettingSpec(
         "registry",
         "text",
         line_pattern=r"[a-z0-9][a-z0-9.\-:/_]*",
         max_len=4096,
-        hint="创建实例的镜像来源白名单,每行一个仓库前缀(如 docker.io/);留空 = 不限制;"
-        "Harbor 地址自动放行,平台镜像目录内的引用恒放行",
+        hint="Image source allow-list for instance creation, one registry prefix per line (e.g."
+        " docker.io/); empty = unrestricted; the Harbor address is always allowed, references from"
+        " the"
+        " platform image catalog always pass",
     ),
     "grafana_url": SettingSpec(
         "observability",
         "str",
         pattern=r"https?://\S+",
-        hint="可选:Grafana 地址,配置后管理端节点页显示「在 Grafana 打开」外链",
+        hint='Optional Grafana URL; when set the admin nodes page shows an "Open in Grafana" link',
     ),
     "oncall_phone": SettingSpec(
         "observability",
         "str",
         pattern=r"|\+[1-9]\d{6,14}",
-        hint="值班手机号:critical 告警短信直发;留空则不启用",
+        hint="On-call phone: critical alerts are sent as SMS directly; empty = disabled",
     ),
     "disk_price_gb_month": _num(
         "decimal",
@@ -453,15 +534,15 @@ SETTING_SPECS: dict[str, SettingSpec] = {
     "disk_max_gb": _num("int", "10", "65536"),
     "disk_grace_days": _num("int", "1", "365"),
     "disk_frozen_days": _num("int", "1", "365"),
-    "freeze_grace_hours": _num("int", "1", "720", "欠费冻结时长"),
-    "afford_cover_hours": _num("int", "1", "24", "开机前余额须覆盖的小时数"),
+    "freeze_grace_hours": _num("int", "1", "720", "Hours from arrears freeze to reclamation"),
+    "afford_cover_hours": _num("int", "1", "24", "Hours the balance must cover before creation"),
     "prewarm_min_coverage_pct": _num("int", "1", "100"),
     "prewarm_recheck_hours": _num("int", "1", "168"),
     "max_instances_per_user": _num("int", "1", "1000"),
     "max_gpus_per_user": _num("int", "1", "1024"),
     "max_vcpus_per_user": _num("int", "1", "4096"),
     "max_disks_per_user": _num("int", "1", "1000"),
-    "max_disk_gb_per_user": _num("int", "10", "1048576", "每用户数据盘总容量上限"),
+    "max_disk_gb_per_user": _num("int", "10", "1048576", "Total data-disk capacity per user"),
     "gpu_node_cpu_instance_vcpu_cap": _num("int", "0", "1024"),
     "period_discount_day": _num("int", "50", "100"),
     "period_discount_week": _num("int", "50", "100"),
@@ -479,8 +560,9 @@ PREEMPT_TIME_RESERVE_SECONDS = 120
 
 @dataclass(frozen=True)
 class RuntimeConfig:
-    """生效配置(env 默认 + DB 覆盖)的强类型视图;字段与 SETTING_SPECS 一一对应,类型由 kind 决定。
-    secret 已解密,整体禁止入日志 / 响应。"""
+    """Strongly typed view of the effective configuration (env defaults + DB overrides); fields map
+    one to one to SETTING_SPECS, types follow kind.
+    Secrets are decrypted, so the whole object must never enter logs / responses."""
 
     captcha_enabled: bool
     admin_mfa_enabled: bool
@@ -579,7 +661,8 @@ class RuntimeConfig:
     spot_grace_seconds: int
 
     def image_allowlist(self) -> list[str]:
-        """生效镜像来源白名单(配置行 ∪ Harbor 地址前缀);空 = 不限制。"""
+        """Effective image source allow-list (configured lines ∪ Harbor address prefix); empty =
+        unrestricted."""
         return effective_image_allowlist(
             allowed_registries=self.image_allowed_registries, registry_host=self.registry_host
         )
@@ -587,7 +670,7 @@ class RuntimeConfig:
 
 RUNTIME_CONFIG_FIELDS: tuple[str, ...] = tuple(f.name for f in fields(RuntimeConfig))
 if set(RUNTIME_CONFIG_FIELDS) != set(SETTING_SPECS):
-    raise RuntimeError("RuntimeConfig 字段须与 SETTING_SPECS 一一对应")
+    raise RuntimeError("RuntimeConfig fields must map one to one to SETTING_SPECS")
 
 
 def _coerce(key: str, raw: str) -> Any:
@@ -602,7 +685,8 @@ def _coerce(key: str, raw: str) -> Any:
 
 
 def runtime_config_from_strings(values: Mapping[str, str]) -> RuntimeConfig:
-    """合并 env 默认并转换类型;忽略未知键和空的数值覆盖,不执行取值校验。"""
+    """Merge env defaults and convert types; unknown keys and empty numeric overrides are ignored,
+    no value validation."""
     merged = _env_layer()
     for key, value in values.items():
         spec = SETTING_SPECS.get(key)
@@ -614,7 +698,8 @@ def runtime_config_from_strings(values: Mapping[str, str]) -> RuntimeConfig:
 
 @dataclass(frozen=True)
 class ConfigWarning:
-    """配置风险(服务端计算):管理端配置页顶部红牌与 prod lifespan 启动日志共用同一份规则。"""
+    """Configuration risk (computed server-side): the admin config page badges and the prod lifespan
+    boot log share one rule set."""
 
     key: str
     level: Literal["error", "warning"]
@@ -643,8 +728,9 @@ def _prod_forbids(spec: SettingSpec, value: str) -> bool:
 
 
 def _prod_violations(cfg: RuntimeConfig) -> list[tuple[str, SettingSpec]]:
-    """生效值命中 prod_forbidden 的键(与 spec 声明同源;不区分环境,由调用方决定处置);
-    只含对当前合规档位生效的规则。"""
+    """Keys whose effective value hits prod_forbidden (same source as the spec declarations; not
+    environment-aware, the caller decides);
+    only rules that apply to the current compliance profile."""
     out: list[tuple[str, SettingSpec]] = []
     for key, spec in SETTING_SPECS.items():
         if (
@@ -670,12 +756,17 @@ def _captcha_credentials_warning(cfg: RuntimeConfig) -> ConfigWarning | None:
         complete = bool(
             cfg.captcha_scene_id and cfg.captcha_access_key_id and cfg.captcha_access_key_secret
         )
-        message = "人机验证已开启但阿里云验证码凭据/场景不全,发码将一律 502"
+        message = (
+            "CAPTCHA is on but the Aliyun CAPTCHA credentials / scene are incomplete, code sending"
+            " will"
+            " always be 502"
+        )
     return None if complete else ConfigWarning("captcha_enabled", "error", message)
 
 
 def compute_config_warnings(cfg: RuntimeConfig, environment: str) -> list[ConfigWarning]:
-    """安全开关与凭据的组合风险。prod 禁止取值的红牌从 SettingSpec.prod_forbidden 派生。"""
+    """Combined risks of security switches and credentials. Badges for prod-forbidden values derive
+    from SettingSpec.prod_forbidden."""
     prod = environment == "prod"
     out: list[ConfigWarning] = []
     if prod:
@@ -702,7 +793,9 @@ def compute_config_warnings(cfg: RuntimeConfig, environment: str) -> list[Config
             ConfigWarning(
                 "real_name_enabled",
                 "error",
-                "实名认证已开启但阿里云实人认证凭据不全,用户提交将一律 502",
+                "Identity verification is on but the Aliyun credentials are incomplete, user"
+                " submissions"
+                " will always be 502",
             )
         )
     if cfg.sms_provider == "twilio" and not (
@@ -729,7 +822,8 @@ def compute_config_warnings(cfg: RuntimeConfig, environment: str) -> list[Config
             ConfigWarning(
                 "registry_robot_name",
                 "error",
-                "镜像仓库已填机器人账户但未填 Secret:私有项目的镜像拉取将失败",
+                "The registry has a robot account but no secret: pulls from private projects will"
+                " fail",
             )
         )
     if prod and not cfg.image_allowlist():
@@ -737,51 +831,57 @@ def compute_config_warnings(cfg: RuntimeConfig, environment: str) -> list[Config
             ConfigWarning(
                 "image_allowed_registries",
                 "error",
-                "生产环境镜像来源白名单为空且未配 Harbor 地址:租户可把任意仓库的镜像拉进集群",
+                "The production image source allow-list is empty and no Harbor address is set:"
+                " tenants"
+                " can pull images from any registry into the cluster",
             )
         )
     return out
 
 
 def assert_prod_image_allowlist(cfg: RuntimeConfig, environment: str) -> None:
-    """prod 下生效镜像白名单(配置行 ∪ Harbor 地址)不得为空,否则拒绝启动。"""
+    """In prod the effective image allow-list (configured lines ∪ Harbor address) must not be empty,
+    otherwise refuse to boot."""
     if environment == "prod" and not cfg.image_allowlist():
         raise RuntimeError(
-            "生产环境镜像来源白名单为空且未配 Harbor 地址,拒绝启动:"
-            "填 registry_host 或 image_allowed_registries(env 或平台配置中心)"
+            "production image source allow-list is empty and no Harbor address is set, refusing to"
+            " boot: set registry_host or image_allowed_registries (env or platform configuration)"
         )
 
 
 def assert_prod_compliance_gates(cfg: RuntimeConfig, environment: str) -> None:
-    """prod 下 prod_gate 键的生效值不得命中 prod_forbidden(人机验证 / 实名 / 充值强制实名),
-    否则拒绝启动。"""
+    """In prod the effective values of prod_gate keys must not hit prod_forbidden (CAPTCHA / KYC /
+    KYC-before-top-up),
+    otherwise refuse to boot."""
     if environment != "prod":
         return
     gated = [key for key, spec in _prod_violations(cfg) if spec.prod_gate]
     if gated:
         raise RuntimeError(
-            "生产环境合规开关未全开,拒绝启动:"
+            "production compliance gates are not all on, refusing to boot: "
             + ",".join(gated)
-            + "(境内合规要求;经 env 或平台配置中心开启后再启动)"
+            + " (cn compliance requirement; turn them on via env or the platform configuration"
+            " first)"
         )
 
 
 def validate_setting_value(key: str, value: str) -> str:
-    """校验并归一化(strip;数值项按 kind 归一)。未知键/格式不符抛 ValueError(调用方转 AppError)。"""
+    """Validate and normalise (strip; numeric kinds normalised by kind). Unknown keys / malformed
+    values raise ValueError (the caller converts to AppError)."""
     spec = SETTING_SPECS.get(key)
     if spec is None:
-        raise ValueError(f"未知配置键:{key}")
+        raise ValueError(f"unknown setting key: {key}")
     value = value.strip()
     if len(value) > spec.max_len:
-        raise ValueError(f"{key} 超长(最多 {spec.max_len} 字符)")
+        raise ValueError(f"{key} too long (at most {spec.max_len} characters)")
     if spec.kind == "bool" and value not in ("true", "false"):
-        raise ValueError(f"{key} 只接受 true/false")
+        raise ValueError(f"{key} accepts only true/false")
     if spec.kind == "choice" and value not in spec.choices:
-        raise ValueError(f"{key} 只接受:{'/'.join(spec.choices)}")
+        raise ValueError(f"{key} accepts only: {'/'.join(spec.choices)}")
     if spec.kind in ("int", "decimal"):
         value = _validate_number(key, value, spec)
     if _prod_forbids(spec, value):
-        raise ValueError(f"{key} 生产环境禁止取值 {value}{_hint_suffix(spec)}")
+        raise ValueError(f"{key} value {value} is forbidden in production{_hint_suffix(spec)}")
     _validate_shape(key, value, spec)
     return value
 
@@ -791,19 +891,21 @@ def _hint_suffix(spec: SettingSpec) -> str:
 
 
 def _validate_shape(key: str, value: str, spec: SettingSpec) -> None:
-    """形态白名单:整串 fullmatch / 逐行 fullmatch / 必含子串 / 禁含子串。"""
+    """Shape allow-list: whole-string fullmatch / per-line fullmatch / required substring /
+    forbidden
+    substring."""
     suffix = _hint_suffix(spec)
     if spec.pattern and not re.fullmatch(spec.pattern, value):
-        raise ValueError(f"{key} 格式不符{suffix}")
+        raise ValueError(f"{key} is malformed{suffix}")
     if spec.line_pattern is not None:
         for line in value.replace(",", "\n").splitlines():
             line = line.strip()
             if line and not re.fullmatch(spec.line_pattern, line):
-                raise ValueError(f"{key} 含非法行:{line[:64]!r}{suffix}")
+                raise ValueError(f"{key} has an invalid line: {line[:64]!r}{suffix}")
     if spec.must_contain and spec.must_contain not in value:
-        raise ValueError(f"{key} 格式不符{suffix}")
+        raise ValueError(f"{key} is malformed{suffix}")
     if spec.forbid_contains and spec.forbid_contains in value:
-        raise ValueError(f"{key} 格式不符{suffix}")
+        raise ValueError(f"{key} is malformed{suffix}")
 
 
 def _validate_number(key: str, value: str, spec: SettingSpec) -> str:
@@ -811,24 +913,24 @@ def _validate_number(key: str, value: str, spec: SettingSpec) -> str:
     try:
         num = Decimal(value)
     except InvalidOperation as exc:
-        raise ValueError(f"{key} 不是合法数字:{value}") from exc
+        raise ValueError(f"{key} is not a valid number: {value}") from exc
     if spec.kind == "int" and num != num.to_integral_value():
-        raise ValueError(f"{key} 须为整数:{value}")
+        raise ValueError(f"{key} must be an integer: {value}")
     if not spec.lo <= num <= spec.hi:
-        raise ValueError(f"{key} 取值须在 {spec.lo}~{spec.hi} 之间")
+        raise ValueError(f"{key} must be between {spec.lo} and {spec.hi}")
     if key == "spot_grace_seconds":
         budget = get_settings().creating_timeout_seconds - PREEMPT_TIME_RESERVE_SECONDS
         if num > budget:
             raise ValueError(
-                f"spot_grace_seconds 不得超过 {budget} 秒"
-                f"(creating 超时 {get_settings().creating_timeout_seconds}s 减去"
-                f" {PREEMPT_TIME_RESERVE_SECONDS}s 调度余量)"
+                f"spot_grace_seconds must not exceed {budget} seconds"
+                f" (creating timeout {get_settings().creating_timeout_seconds}s minus the"
+                f" {PREEMPT_TIME_RESERVE_SECONDS}s scheduling margin)"
             )
     return str(int(num)) if spec.kind == "int" else str(num)
 
 
 def _to_string(value: object) -> str:
-    """字段值 → 配置中心的字符串形态(bool 为 true/false,None 为空串)。"""
+    """Field value → configuration-centre string form (bool as true/false, None as empty)."""
     if value is None:
         return ""
     if isinstance(value, bool):
@@ -845,7 +947,8 @@ def _env_layer() -> dict[str, str]:
 
 
 def env_layer_problems() -> list[str]:
-    """校验非空 env 配置的格式、范围及生产环境禁用值,返回错误描述。"""
+    """Validate format, range and prod-forbidden values of non-empty env settings; returns error
+    descriptions."""
     problems: list[str] = []
     for key, value in _env_layer().items():
         if value == "":
@@ -858,16 +961,20 @@ def env_layer_problems() -> list[str]:
 
 
 def _decrypt_row(key: str, value: str, *, aad: str) -> str:
-    """单行解密,fail-closed:密文损坏/主密钥不配套即抛,不回落 env。"""
+    """Decrypt one row, fail-closed: corrupt ciphertext / mismatched master key raises, no fallback
+    to env."""
     try:
         return crypto.decrypt_str(value, aad=aad)
     except Exception as exc:
         logger.error("platform_setting_decrypt_failed", key=key)
-        raise ValueError(f"平台配置项 {key} 解密失败(主密钥不配套或密文损坏)") from exc
+        raise ValueError(
+            f"platform setting {key}: decryption failed (master key mismatch or corrupt ciphertext)"
+        ) from exc
 
 
 async def effective_strings(session: AsyncSession) -> dict[str, str]:
-    """生效配置的字符串映射(secret 已解密;管理端配置页展示与 RuntimeConfig 构造共用),不缓存。"""
+    """String map of the effective configuration (secrets decrypted; shared by the admin config page
+    and the RuntimeConfig build), not cached."""
     eff = _env_layer()
     for row in (await session.execute(select(PlatformSetting))).scalars():
         spec = SETTING_SPECS.get(row.key)
@@ -880,7 +987,8 @@ async def effective_strings(session: AsyncSession) -> dict[str, str]:
 
 
 async def get_runtime_config(session: AsyncSession) -> RuntimeConfig:
-    """生效配置(强类型);每次全量读,写入即生效。"""
+    """Effective configuration (strongly typed); read in full every time, writes take effect at
+    once."""
     return runtime_config_from_strings(await effective_strings(session))
 
 
@@ -891,20 +999,23 @@ async def set_platform_settings(
     updated_by: int | None,
     allowed_groups: frozenset[str] | None = None,
 ) -> None:
-    """写覆盖(不 commit,由调用方与审计同事务提交)。空串 = 清除覆盖,回退 env 默认。
-    allowed_groups 限定本入口可写的配置组:/policies 只许 policy 组,/platform-config 不许 policy 组。
+    """Write overrides (no commit; the caller commits together with the audit). Empty string =
+    clear the override, back to the env default.
+    allowed_groups limits the groups this entry point may write: /policies only the policy group,
+    /platform-config never the policy group.
     """
     for key, raw in updates.items():
         spec = SETTING_SPECS.get(key)
         if spec is None or (allowed_groups is not None and spec.group not in allowed_groups):
-            raise ValueError(f"未知配置键:{key}")
+            raise ValueError(f"unknown setting key: {key}")
         PLATFORM_CONFIG_WRITE_TOTAL.labels(domain=spec.group).inc()
         if raw.strip() == "":
             fallback = _env_default(key)
             if _prod_forbids(spec, fallback):
                 raise ValueError(
-                    f"{key} 不允许清除覆盖:清除后回落到部署层取值 {fallback!r},"
-                    "生产环境禁止该取值(请显式写入合规值,或修改部署层 env 后清除)"
+                    f"{key} cannot clear the override: it would fall back to the deployment value"
+                    f" {fallback!r}, which is forbidden in production (write a compliant value"
+                    " explicitly, or change the deployment env and clear afterwards)"
                 )
             await session.execute(delete(PlatformSetting).where(PlatformSetting.key == key))
             continue
@@ -969,7 +1080,8 @@ async def list_platform_overrides(session: AsyncSession) -> dict[str, PlatformSe
 
 
 def secret_preview(plaintext: str) -> str | None:
-    """脱敏预览:尾 4 位(PEM 等结构化文本无意义,返回 None 只显示"已配置")。"""
+    """Masked preview: last 4 characters (meaningless for structured text such as PEM, then None and
+    only "configured" is shown)."""
     plaintext = plaintext.strip()
     if len(plaintext) < 8 or "-----" in plaintext:
         return None

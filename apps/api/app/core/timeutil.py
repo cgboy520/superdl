@@ -15,14 +15,14 @@ def now_utc() -> datetime:
 
 
 def ensure_utc(dt: datetime) -> datetime:
-    """转 UTC;naive datetime 直接拒绝。"""
+    """Convert to UTC; naive datetimes are rejected outright."""
     if dt.tzinfo is None:
         raise ValueError(f"naive datetime is forbidden: {dt!r}")
     return dt.astimezone(UTC)
 
 
 def hour_floor(dt: datetime) -> datetime:
-    """所在自然小时的起点(UTC)。计费小时桶的键。"""
+    """Start of the containing clock hour (UTC). The key of the billing hour bucket."""
     dt = ensure_utc(dt)
     return dt.replace(minute=0, second=0, microsecond=0)
 
@@ -115,7 +115,7 @@ def billing_month_range(month: str, *, tz_offset_minutes: int) -> tuple[datetime
 
 
 def prev_hour_range(dt: datetime) -> tuple[datetime, datetime]:
-    """上一个完整自然小时 [start, end)。小时结算的扫描窗口。"""
+    """The previous complete clock hour [start, end). The scan window of hourly settlement."""
     end = hour_floor(dt)
     return end - timedelta(hours=1), end
 

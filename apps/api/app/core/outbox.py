@@ -1,7 +1,9 @@
-"""事务性 outbox:业务写入与 enqueue() 同事务提交;worker 领取执行,失败指数退避,超限进 dead。
+"""Transactional outbox: business writes commit together with enqueue(); the worker claims and runs
+tasks, failures back off exponentially, exhausted retries go dead.
 
-领取三段式:claim(FOR UPDATE SKIP LOCKED → running,commit)→ 执行 handler(独立事务,须幂等)
-→ done / 退避回 pending / dead。reaper 按 locked_at 回收超时任务,计一次失败并退避或转 dead。
+Claiming has three stages: claim (FOR UPDATE SKIP LOCKED → running, commit) → run the handler
+(own transaction, must be idempotent) → done / back to pending with backoff / dead. The reaper
+reclaims timed-out tasks by locked_at, counting one failure and backing off or going dead.
 """
 
 import asyncio
@@ -33,7 +35,8 @@ RUNNING_TIMEOUT = timedelta(seconds=2 * TASK_TIMEOUT_SECONDS)
 
 @dataclass(frozen=True)
 class RetryPolicy:
-    """任务类型的重试预算、退避和超时;timeout_seconds 为 None 或 0 时用全局超时。"""
+    """Retry budget, backoff and timeout of a task type; timeout_seconds None or 0 uses the global
+    timeout."""
 
     max_retries: int = MAX_RETRIES
     backoff_base_seconds: int = BACKOFF_BASE_SECONDS
@@ -50,7 +53,8 @@ def retry_policy_for(task_type: str) -> RetryPolicy:
 
 
 def backoff_delay(policy: RetryPolicy, attempt: int) -> timedelta:
-    """第 attempt 次失败后的指数退避(带封顶)。重试与 running 回收共用同一公式。"""
+    """Exponential backoff (capped) after the attempt-th failure. Retries and running-reclamation
+    share the formula."""
     return timedelta(
         seconds=min(policy.backoff_base_seconds * 2 ** (attempt - 1), policy.backoff_max_seconds)
     )
@@ -90,7 +94,8 @@ REQUEST_ID_KEY = "_request_id"
 def outbox_handler(
     task_type: str, *, retry: RetryPolicy | None = None
 ) -> Callable[[Handler], Handler]:
-    """注册 outbox 任务处理器。handler 必须幂等(至少一次执行);retry 覆盖该类型的重试预算。"""
+    """Register an outbox task handler. The handler must be idempotent (at-least-once); retry
+    overrides the type's retry budget."""
 
     def deco(fn: Handler) -> Handler:
         if task_type in _registry:
@@ -110,7 +115,8 @@ def enqueue(
     *,
     delay_seconds: int = 0,
 ) -> OutboxTask:
-    """入队,不 commit(调用方放进业务事务);request_id 随 payload 落库;delay_seconds 推迟到期。"""
+    """Enqueue without commit (the caller puts it in the business transaction); request_id is stored
+    with the payload; delay_seconds postpones the due time."""
     if REQUEST_ID_KEY not in payload and (request_id := current_request_id()):
         payload = {**payload, REQUEST_ID_KEY: request_id}
     task = OutboxTask(type=task_type, payload=payload)
@@ -123,7 +129,8 @@ def enqueue(
 async def _claim_one(
     session: AsyncSession, worker_id: str, task_types: frozenset[str] | None = None
 ) -> OutboxTask | None:
-    """按到期时间、id 领取并提交一个任务;None 不过滤类型,空集合不领取。"""
+    """Claim and commit one task by due time and id; None means no type filter, an empty set claims
+    nothing."""
     stmt = (
         select(OutboxTask)
         .where(OutboxTask.status == "pending", OutboxTask.next_retry_at <= now_utc())
@@ -148,7 +155,7 @@ async def _process_one(
     worker_id: str = "worker-0",
     task_types: frozenset[str] | None = None,
 ) -> Outcome | None:
-    """领取并执行一个任务,返回执行结局;无任务可领返回 None。"""
+    """Claim and run one task, returning the outcome; None when nothing is claimable."""
     async with sm() as session:
         task = await _claim_one(session, worker_id, task_types)
     if task is None:
@@ -202,9 +209,11 @@ async def _run_handler(
     attempt: int,
     will_retry: bool,
 ) -> str | None:
-    """在独立事务中执行 handler,成功时提交;返回错误摘要或 None。
+    """Run the handler in its own transaction, committing on success; returns an error summary or
+    None.
 
-    应用协程超时并绑定 payload 中的 request_id;超时不终止底层同步线程。
+    Applies the coroutine timeout and binds the payload's request_id; a timeout does not stop the
+    underlying sync thread.
     """
     timeout = policy.timeout_seconds or TASK_TIMEOUT_SECONDS
     request_id = task.payload.get(REQUEST_ID_KEY)
@@ -256,12 +265,13 @@ async def process_one(
     worker_id: str = "worker-0",
     task_types: frozenset[str] | None = None,
 ) -> bool:
-    """领取并执行一个任务。返回是否有任务被处理。"""
+    """Claim and run one task. Returns whether a task was processed."""
     return await _process_one(sm, worker_id, task_types) is not None
 
 
 async def reap_stuck_running(sm: async_sessionmaker[AsyncSession]) -> int:
-    """把超时的 running 任务打回 pending(定时任务);复活计一次失败,预算耗尽进 dead。"""
+    """Return timed-out running tasks to pending (scheduled job); a revival counts one failure, an
+    exhausted budget goes dead."""
     async with sm() as session:
         rows = list(
             (
@@ -297,7 +307,7 @@ async def reap_stuck_running(sm: async_sessionmaker[AsyncSession]) -> int:
 
 
 async def report_pending_metrics(sm: async_sessionmaker[AsyncSession]) -> None:
-    """上报最老 pending 任务自创建以来的秒数;无任务时为 0。"""
+    """Report the age in seconds of the oldest pending task; 0 without tasks."""
     async with sm() as session:
         oldest = (
             await session.execute(

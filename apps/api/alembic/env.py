@@ -24,7 +24,7 @@ def get_url() -> str:
 
 
 def get_url_and_connect_args() -> tuple[str, dict[str, str]]:
-    """返回迁移数据库 URL 与 TLS 连接参数。"""
+    """Migration database URL and TLS connect arguments."""
     return _split_db_tls(get_url())
 
 

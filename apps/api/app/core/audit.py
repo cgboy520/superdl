@@ -1,7 +1,8 @@
-"""写请求和显式标记的读请求落审计,排除路径及同步审计请求不重复写入。
+"""Audit every write request and explicitly marked read requests; excluded paths and synchronously
 
-中间件独立提交;连续失败达到阈值后,受审计的写请求须通过 DB 探针,否则返回 503。
-同步审计由调用方与业务同事务提交;管理端动作带 admin. 前缀。
+The middleware commits independently; once consecutive failures reach the threshold, audited write
+requests must pass a DB probe or get 503. Synchronous audits commit in the caller's business
+transaction; admin actions carry the admin. prefix.
 """
 
 from datetime import datetime
@@ -37,18 +38,18 @@ _audit_consecutive_failures = 0
 
 
 def reset_audit_gate() -> None:
-    """复位进程内连续审计失败计数。"""
+    """Reset the in-process consecutive audit failure counter."""
     global _audit_consecutive_failures
     _audit_consecutive_failures = 0
 
 
 def audit_gate_open() -> bool:
-    """连续失败次数小于阈值时允许写请求。"""
+    """Allow write requests while the consecutive failure count is below the threshold."""
     return _audit_consecutive_failures < AUDIT_FAIL_CLOSED_THRESHOLD
 
 
 async def audit_probe_ok() -> bool:
-    """用独立 session 执行 SELECT 1,返回是否成功;不修改闸门状态。"""
+    """Run SELECT 1 on an independent session and return success; leaves the gate state alone."""
     try:
         async with get_sessionmaker()() as session:
             await session.execute(text("SELECT 1"))
@@ -81,7 +82,7 @@ class AuditLog(Base):
 
 
 class AuditActor:
-    """鉴权依赖构造后挂到 request.state.audit_actor。"""
+    """Attached to request.state.audit_actor once the auth dependency has run."""
 
     def __init__(self, actor_type: str, actor_id: str | None) -> None:
         self.actor_type = actor_type
@@ -89,7 +90,8 @@ class AuditActor:
 
 
 class AuditMiddleware:
-    """不缓冲响应;下游退出时按捕获的响应状态审计,未收到响应头时按 500 记录。"""
+    """Does not buffer the response; audits with the captured status when downstream exits, 500 when
+    no response headers were seen."""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -129,12 +131,14 @@ def _clip(value: str | None, limit: int) -> str | None:
 
 
 def _audit_request_id(request: Request) -> str | None:
-    """审计行的 request_id:中间件路径从响应头抄,同步审计路径读 contextvar。"""
+    """request_id of the audit row: copied from the response header on the middleware path, read
+    from the contextvar on the synchronous path."""
     return getattr(request.state, "audit_request_id", None) or current_request_id()
 
 
 def _build_audit_row(request: Request, result: int) -> AuditLog:
-    """构造审计行;action、target、request_id、user_agent 按列宽截断。"""
+    """Build the audit row; action, target, request_id and user_agent are truncated to column
+    width."""
     actor: AuditActor | None = getattr(request.state, "audit_actor", None)
     path = request.url.path
     action_prefix = "admin." if path.startswith("/api/admin/") else ""
@@ -172,19 +176,21 @@ async def _write_audit_row(request: Request, result: int) -> None:
 
 
 async def write_audit_sync(request: Request, session: AsyncSession, *, result: int = 200) -> None:
-    """将审计行加入业务 session 并标记中间件跳过;调用方负责 flush 和 commit。"""
+    """Add the audit row to the business session and mark the middleware to skip; the caller flushes
+    and commits."""
     session.add(_build_audit_row(request, result))
     request.state.audit_synced = True
 
 
 def set_audit_target(request: Request, target: str, detail: dict[str, Any] | None = None) -> None:
-    """业务代码在写操作里标注审计目标(如 instance:uuid)。detail 禁止落凭据明文,只落键名。"""
+    """Business code marks the audit target inside a write (e.g. instance:uuid). detail must never
+    carry credential plaintext, key names only."""
     request.state.audit_target = target
     if detail is not None:
         request.state.audit_detail = detail
 
 
 def mark_audited_read(request: Request, target: str, detail: dict[str, Any] | None = None) -> None:
-    """把一次**读**也记进审计(敏感检索用)。"""
+    """Record a **read** in the audit as well (for sensitive lookups)."""
     request.state.audit_force = True
     set_audit_target(request, target, detail)

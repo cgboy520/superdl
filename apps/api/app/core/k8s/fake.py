@@ -1,6 +1,6 @@
-"""内存态 K8s 后端;支持 Pod、节点、预热和故障注入。
+"""In-memory K8s backend; supports Pods, nodes, prewarming and fault injection.
 
-fail_next_disk 和 fail_next_logs 消费后复位;fail_probe 持续生效直到显式清除。
+fail_next_disk and fail_next_logs reset once consumed; fail_probe stays until cleared explicitly.
 """
 
 from dataclasses import dataclass, field
@@ -159,7 +159,8 @@ class FakeOrchestrator:
         )
 
     async def probe_component_detail(self, key: str) -> ComponentDetail:
-        """合成深探结果:默认全就绪(空表);fail_probe 时抛,供 503 降级路径断言。"""
+        """Synthetic deep-probe result: everything ready by default (empty tables); raises with
+        fail_probe for the 503 degradation path."""
         if self.fail_probe:
             raise RuntimeError("fake: connection refused")
         rows = await self._fake_probe_rows()
@@ -184,7 +185,8 @@ class FakeOrchestrator:
         )
 
     async def _fake_probe_rows(self) -> health.ProbeRows:
-        """合成与 real 同形状的探测行:节点由 pool_capacity 派生,工作负载按节点数铺开。"""
+        """Synthetic probe rows with the same shape as real: nodes derived from pool_capacity,
+        workloads spread over the node count."""
         nodes = [
             NodeRow(
                 name=n.name,
@@ -297,7 +299,7 @@ class FakeOrchestrator:
         self.endpoints.discard((namespace, name))
 
     def finish_delete(self, namespace: str, name: str) -> None:
-        """移除内存中的 Pod;保留端点、Secret 和实例盘记录。"""
+        """Remove the in-memory Pod; endpoints, Secret and instance disk records are kept."""
         self.pods.pop((namespace, name), None)
 
     async def list_instance_endpoints(self) -> list[tuple[str, str]]:
@@ -309,7 +311,7 @@ class FakeOrchestrator:
         } | set(self.external_node_ports)
 
     def inject_external_port(self, port: int) -> None:
-        """测试注入:集群里出现一个非平台对象占用了该 NodePort。"""
+        """Test injection: a non-platform object in the cluster holds this NodePort."""
         self.external_node_ports.add(port)
 
     async def delete_instance_disk(self, namespace: str, name: str) -> None:
@@ -331,7 +333,9 @@ class FakeOrchestrator:
         )
 
     async def read_instance_logs(self, namespace: str, name: str, *, tail_lines: int) -> str:
-        """合成日志(带时间戳的固定几行),不按 Pod 存在性报错;失败路径由 fail_next_logs 注入。"""
+        """Synthetic log (a few fixed timestamped lines), no error by Pod existence; the failure
+        path
+        is injected via fail_next_logs."""
         if self.fail_next_logs:
             self.fail_next_logs = False
             raise RuntimeError("fake: read_instance_logs failed (injected)")
@@ -395,15 +399,17 @@ class FakeOrchestrator:
         self.prewarm_jobs.pop((node_name, image_ref), None)
 
     def set_prewarm_state(self, node_name: str, image_ref: str, state: str) -> None:
-        """测试注入:直接改 Job 状态(running/succeeded/failed)。"""
+        """Test injection: set the Job status directly (running/succeeded/failed)."""
         self.prewarm_jobs[(node_name, image_ref)] = state
 
     def kill_pod(self, namespace: str, name: str) -> None:
-        """模拟 Pod 意外消失(节点故障)。"""
+        """Simulate a Pod vanishing unexpectedly (node failure)."""
         self.pods.pop((namespace, name), None)
 
     def mark_unready(self, namespace: str, name: str) -> None:
-        """模拟节点失联:kubelet 不可达,Ready 转 False 而 phase 仍是 Running、对象仍在。"""
+        """Simulate node loss: kubelet unreachable, Ready turns False while the phase stays Running
+        and
+        the object remains."""
         pod = self.pods[(namespace, name)]
         pod.ready = False
         pod.phase = "Running"
@@ -416,18 +422,19 @@ class FakeOrchestrator:
             pod.started_at = now_utc()
 
     def mark_started(self, namespace: str, name: str, *, started_at: datetime) -> None:
-        """模拟容器已在跑但探针未过:phase Running、Ready False、记容器起始时刻。"""
+        """Simulate a running container whose probe has not passed: phase Running, Ready False,
+        container start recorded."""
         pod = self.pods[(namespace, name)]
         pod.ready = False
         pod.phase = "Running"
         pod.started_at = started_at
 
     def inject_leaked_pod(self, namespace: str, name: str, spec: InstancePodSpec) -> None:
-        """模拟 DB 已 released 但 K8s 残留的泄漏 Pod。"""
+        """Simulate a leaked Pod: released in the DB but still present in K8s."""
         self.pods[(namespace, name)] = _FakePod(spec=spec, ready=True)
 
     async def list_nodes(self, include_unlabeled: bool = False) -> list[NodeInfo]:
-        """节点视图(Fake:按池合成节点;include_unlabeled 时附无标签节点)。"""
+        """Node view (Fake: nodes synthesised per pool; include_unlabeled adds unlabeled nodes)."""
         models = {"kata": "RTX4090", "hami": "RTX4090", "mig": "H100"}
         nodes = []
         for pool, cap in self.pool_capacity.items():
@@ -481,7 +488,7 @@ class FakeOrchestrator:
         ]
 
     def inject_node(self, node) -> None:
-        """模拟新 GPU 节点加入集群。传 NodeInfo。"""
+        """Simulate a new GPU node joining the cluster. Pass a NodeInfo."""
         self.extra_nodes.append(node)
 
     async def set_node_labels(self, node_name: str, labels: dict[str, str | None]) -> None:
@@ -499,6 +506,7 @@ class FakeOrchestrator:
             self.cordoned_nodes.discard(node_name)
 
     async def delete_node(self, node_name: str) -> None:
-        """退役:先 cordon 再从节点视图里摘掉。幂等 —— 已删除的节点重放不报错。"""
+        """Decommission: cordon, then drop from the node view. Idempotent - replaying on a deleted
+        node does not raise."""
         self.cordoned_nodes.add(node_name)
         self.deleted_nodes.add(node_name)

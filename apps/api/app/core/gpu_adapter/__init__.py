@@ -1,10 +1,12 @@
-"""GPU 资源申请抽象层:按节点池派发 device-plugin 语法(档位只表达售卖分类)。
+"""GPU resource request abstraction: device-plugin syntax dispatched per node pool (the tier only
+expresses the sales class).
 
-- kata → RuntimeClass=kata-qemu + VFIO 整卡直通,不叠 userns
-- mig  → runc + MIG device plugin + hostUsers=false(硬件隔离)
-- hami → runc + HAMi 软切分 + hostUsers=false(软件限额,非安全边界,见 docs/reference/security.md)
-- cpu  → runc + hostUsers=false,不申请 nvidia.com/*
-Kata 与 HAMi 不混布同一节点池;gpu_count == 0 先于池分支判定。
+- kata → RuntimeClass=kata-qemu + VFIO whole-card passthrough, no user namespace
+- mig  → runc + MIG device plugin + hostUsers=false (hardware isolation)
+- hami → runc + HAMi soft partitioning + hostUsers=false (software limit, not a security boundary,
+  see docs/reference/security.md)
+- cpu  → runc + hostUsers=false, no nvidia.com/* request
+Kata and HAMi never share a node pool; gpu_count == 0 is decided before the pool branch.
 """
 
 from dataclasses import dataclass, field
@@ -60,8 +62,10 @@ def build_gpu_request(
     hami_gputype: str | None = None,
     distro: str | None = None,
 ) -> GpuRequest:
-    """gpu_count=0 即 CPU 实例(不申请 nvidia.com/*,不钉型号);gpu_model 有值则钉型号;
-    hami_gputype 仅 hami 池注 annotation;distro=k3s 时 hami 池显式 runtimeClassName=nvidia。"""
+    """gpu_count=0 means a CPU instance (no nvidia.com/* request, no model pin); a gpu_model pins
+    the model;
+    hami_gputype is annotated only in the hami pool; with distro=k3s the hami pool sets
+    runtimeClassName=nvidia explicitly."""
     node_selector = {POOL_NODE_LABEL: pool_label}
     if gpu_count == 0:
         return GpuRequest(
@@ -105,7 +109,8 @@ def build_gpu_request(
 
 
 def pool_node_labels(pool_label: str) -> dict[str, str | None]:
-    """返回池标签的完整期望集(None 表示删除,含老键);未知池抛 ValueError。池标签只允许平台写入。"""
+    """The complete desired set of pool labels (None = delete, legacy keys included); unknown pools
+    raise ValueError. Pool labels are written by the platform only."""
     if pool_label not in (POOL_KATA, POOL_HAMI, POOL_MIG, POOL_CPU):
         raise ValueError(f"unknown pool: {pool_label}")
     return {
@@ -123,7 +128,7 @@ def spec_to_gpu_request(
     hami_use_gputype: bool = False,
     distro: str | None = None,
 ) -> GpuRequest:
-    """从实例的 SKU 快照构造(gpu_model_selector 为 None = 不钉型号)。"""
+    """Build from the instance's SKU snapshot (gpu_model_selector None = no model pin)."""
     return build_gpu_request(
         pool_label=spec["pool_label"],
         gpu_count=gpu_count,

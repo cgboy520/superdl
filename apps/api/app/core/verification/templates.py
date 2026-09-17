@@ -15,8 +15,8 @@ _SMS: dict[str, dict[str, str]] = {
         "notice": "[SuperDL] {title}",
     },
     "zh-CN": {
-        "verify": "【SuperDL】您的验证码是 {code},请勿泄露给他人。",
-        "notice": "【SuperDL】{title}",
+        "verify": "【SuperDL】您的验证码是 {code},请勿泄露给他人。",  # cjk-ok
+        "notice": "【SuperDL】{title}",  # cjk-ok
     },
 }
 
@@ -29,11 +29,11 @@ _EMAIL_SUBJECT: dict[str, dict[str, str]] = {
         "test": "SuperDL email channel test",
     },
     "zh-CN": {
-        "register": "确认注册 SuperDL",
-        "login": "您的 SuperDL 登录验证码",
-        "reset_password": "重置 SuperDL 密码",
-        "bind_handle": "确认新的 SuperDL 联系方式",
-        "test": "SuperDL 邮件渠道测试",
+        "register": "确认注册 SuperDL",  # cjk-ok
+        "login": "您的 SuperDL 登录验证码",  # cjk-ok
+        "reset_password": "重置 SuperDL 密码",  # cjk-ok
+        "bind_handle": "确认新的 SuperDL 联系方式",  # cjk-ok
+        "test": "SuperDL 邮件渠道测试",  # cjk-ok
     },
 }
 
@@ -42,7 +42,10 @@ _EMAIL_BODY: dict[str, str] = {
         "Your verification code is {code}.\n\n"
         "It can be used once and expires shortly. If you did not request it, ignore this email."
     ),
-    "zh-CN": "您的验证码是 {code}。\n\n验证码仅可使用一次并很快过期;如非本人操作,请忽略本邮件。",
+    "zh-CN": (
+        "您的验证码是 {code}。\n\n"  # cjk-ok
+        "验证码仅可使用一次并很快过期;如非本人操作,请忽略本邮件。"  # cjk-ok
+    ),
 }
 
 

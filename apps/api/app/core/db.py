@@ -24,23 +24,24 @@ if TYPE_CHECKING:
 
 
 def _split_db_tls(url: str) -> tuple[str, dict[str, Any]]:
-    """摘下 URL 里的 sslmode / sslrootcert 翻译成 asyncpg ssl 连接参;返回 (干净 url, connect_args)。
-    带 sslrootcert 时构造 SSLContext:verify-full 校验主机名,verify-ca / require 只校验证书链;
-    CA 文件缺失即抛错。"""
+    """Strip sslmode / sslrootcert from the URL and translate them into asyncpg ssl connect args;
+    returns (clean url, connect_args).
+    With sslrootcert an SSLContext is built: verify-full checks the hostname, verify-ca / require
+    check the chain only; a missing CA file raises."""
     parsed = urlparse(url)
     query = parse_qs(parsed.query)
     sslmode = query.pop("sslmode", [None])[0]
     sslrootcert = query.pop("sslrootcert", [None])[0]
     if sslmode is None:
         if sslrootcert is not None:
-            raise ValueError("database_url 带 sslrootcert 却无 sslmode")
+            raise ValueError("database_url has sslrootcert but no sslmode")
         return url, {}
     clean = urlunparse(parsed._replace(query=urlencode(query, doseq=True)))
     if sslrootcert is None:
         return clean, {"ssl": sslmode}
     if sslmode not in ("require", "verify-ca", "verify-full"):
         raise ValueError(
-            f"sslrootcert 只配合 require / verify-ca / verify-full,当前 sslmode={sslmode}"
+            f"sslrootcert needs sslmode require / verify-ca / verify-full, got sslmode={sslmode}"
         )
     ctx = ssl.create_default_context(cafile=sslrootcert)
     ctx.check_hostname = sslmode == "verify-full"
@@ -97,7 +98,8 @@ def get_sessionmaker() -> async_sessionmaker[AsyncSession]:
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
-    """提供请求级 session;调用方自行提交,退出时回滚未提交事务并关闭 session。"""
+    """Request-scoped session; the caller commits, uncommitted work is rolled back and the session
+    closed on exit."""
     async with get_sessionmaker()() as session:
         yield session
 
@@ -115,23 +117,26 @@ async def dispose_engine() -> None:
 
 @cache
 def _script_directory() -> "ScriptDirectory":
-    """alembic 脚本目录(进程内解析一次)。"""
+    """Alembic script directory (resolved once per process)."""
     api_root = Path(__file__).resolve().parents[2]
     return ScriptDirectory(str(api_root / "alembic"))
 
 
 def code_schema_head() -> str:
-    """返回唯一的 Alembic head;零个或多个 head 时抛出 RuntimeError。"""
+    """The single Alembic head; RuntimeError with zero or several heads."""
     heads = _script_directory().get_heads()
     if len(heads) != 1:
-        raise RuntimeError(f"alembic 多 head:{heads}——须保持线性历史,先 merge 出单 head")
+        raise RuntimeError(
+            f"alembic has several heads: {heads} - keep the history linear, merge to one head first"
+        )
     return heads[0]
 
 
 def schema_state(db_revisions: list[str]) -> str:
-    """返回 schema 状态:代码无唯一 head 为 multi_head,DB 无版本为 never_migrated。
+    """Schema state: multi_head when the code has no single head, never_migrated when the DB has no
+    version.
 
-    DB 版本列表恰为代码的单个 head 时为 ready,否则为 schema_mismatch。
+    ready when the DB version list is exactly the code's single head, otherwise schema_mismatch.
     """
     try:
         head = code_schema_head()

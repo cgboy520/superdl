@@ -1,11 +1,11 @@
-"""敏感配置加密(AES-256-GCM)与带密钥摘要(HMAC-SHA256)。
+"""Encryption of sensitive settings (AES-256-GCM) and keyed digests (HMAC-SHA256).
 
-主密钥只走 env(SUPERDL_CONFIG_ENCRYPTION_KEY,urlsafe-base64 32 字节),dev/test 未配置时
-从 jwt_secret 派生;轮换期旧密钥挂 SUPERDL_CONFIG_ENCRYPTION_KEY_PREVIOUS(只读),
-见 deploy/cluster/runbooks/key-rotation.md。
-密文 `enc:v2:<kid>:<b64(nonce+ct)>`,kid = 主密钥指纹(SHA-256 前 12 hex),未知 kid 拒;
-AAD 绑定配置键名。摘要读路径走 candidates(当前世代在前,previous 派生世代随后),
-写路径只写当前世代。
+The master key comes only from env (SUPERDL_CONFIG_ENCRYPTION_KEY, urlsafe-base64, 32 bytes); when
+unset in dev/test it is derived from jwt_secret; during rotation the old key is mounted as
+SUPERDL_CONFIG_ENCRYPTION_KEY_PREVIOUS (read-only), see deploy/cluster/runbooks/key-rotation.md.
+Ciphertext `enc:v2:<kid>:<b64(nonce+ct)>`, kid = master key fingerprint (first 12 hex of SHA-256),
+unknown kids are rejected; the AAD is bound to the setting key. Digest reads try the candidates
+(current generation first, then the previous-derived one); writes use the current generation only.
 """
 
 import base64
@@ -35,7 +35,7 @@ def _active_key() -> bytes:
 
 
 def _previous_key() -> bytes | None:
-    """轮换窗口内的旧主密钥(只读):未配置返回 None。"""
+    """Old master key within the rotation window (read-only): None when unset."""
     raw = get_settings().config_encryption_key_previous
     if not raw:
         return None
@@ -43,7 +43,7 @@ def _previous_key() -> bytes | None:
 
 
 def _kid_of(key: bytes) -> str:
-    """密钥指纹(12 hex)。"""
+    """Key fingerprint (12 hex)."""
     return hashlib.sha256(key).hexdigest()[:12]
 
 
@@ -59,7 +59,8 @@ def encrypt_str(plaintext: str, *, aad: str) -> str:
 
 
 def is_encrypted(value: str) -> bool:
-    """value 是否为 `enc:v2:<kid>:<b64>` 形态(kid 12 hex、b64 非空);不验密钥与完整性。"""
+    """Whether value has the `enc:v2:<kid>:<b64>` shape (12-hex kid, non-empty b64); no key or
+    integrity check."""
     if not value.startswith(_PREFIX_V2):
         return False
     kid, sep, b64 = value[len(_PREFIX_V2) :].partition(":")
@@ -70,34 +71,36 @@ def is_encrypted(value: str) -> bool:
 
 def decrypt_str(token: str, *, aad: str) -> str:
     if not token.startswith(_PREFIX_V2):
-        raise ValueError("密文缺少 enc: 版本前缀")
+        raise ValueError("ciphertext lacks the enc: version prefix")
     kid, sep, b64 = token[len(_PREFIX_V2) :].partition(":")
     if not sep:
-        raise ValueError("v2 密文缺少 kid 段")
+        raise ValueError("v2 ciphertext lacks the kid segment")
     keys_by_kid: dict[str, bytes] = {}
     for k in (_active_key(), _previous_key()):
         if k is not None:
             keys_by_kid[_kid_of(k)] = k
     master = keys_by_kid.get(kid)
     if master is None:
-        raise ValueError(f"v2 密文引用未知 kid:{kid}(主密钥已轮换且未挂 PREVIOUS?)")
+        raise ValueError(
+            f"v2 ciphertext references an unknown kid: {kid} (master key rotated without PREVIOUS?)"
+        )
     blob = base64.b64decode(b64)
     return AESGCM(_derive(master, _ENC_INFO)).decrypt(blob[:12], blob[12:], aad.encode()).decode()
 
 
 def _hmac_hex(mac_key: bytes, domain_msg: str) -> str:
-    """带密钥摘要(HMAC-SHA256, hex);调用方以固定前缀做域分离。"""
+    """Keyed digest (HMAC-SHA256, hex); callers separate domains with a fixed prefix."""
     return hmac.new(mac_key, domain_msg.encode(), hashlib.sha256).hexdigest()
 
 
 def _mac_candidates() -> list[bytes]:
-    """按当前、previous 的顺序去重主密钥,派生摘要子密钥。"""
+    """Master keys deduplicated in current, previous order, derived into digest sub-keys."""
     masters = dict.fromkeys(k for k in (_active_key(), _previous_key()) if k is not None)
     return [_derive(master, _MAC_INFO) for master in masters]
 
 
 def _hmac_candidates(domain_msg: str) -> list[str]:
-    """读路径候选摘要(写路径只用 [0] = 当前世代)。"""
+    """Candidate digests for the read path (the write path uses only [0] = current generation)."""
     return [_hmac_hex(k, domain_msg) for k in _mac_candidates()]
 
 
@@ -115,7 +118,7 @@ def hash_verification_code_candidates(
 
 
 def hash_api_key(key: str) -> str:
-    """服务端点 API Key 的带密钥摘要(写路径;域分离前缀 service-api-key|)。"""
+    """Keyed digest of a service endpoint API key (write path; domain prefix service-api-key|)."""
     return hash_api_key_candidates(key)[0]
 
 
@@ -135,7 +138,8 @@ def hash_kyc_identity_candidates(identity: str) -> list[str]:
 
 
 def hash_node_token(token: str) -> str:
-    """节点注册/进度令牌的带密钥摘要(写路径;域分离前缀 node-enroll|)。"""
+    """Keyed digest of a node enrollment / progress token (write path; domain prefix
+    node-enroll|)."""
     return hash_node_token_candidates(token)[0]
 
 

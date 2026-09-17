@@ -28,23 +28,24 @@ _HOSTNAME_RE = re.compile(
 
 
 def check_real_name_invariant(*, enabled: bool, required_for_recharge: bool) -> None:
-    """环境无关的组合约束:required_for_recharge=true ⇒ enabled=true。
-    Settings 启动校验与平台配置中心写入侧共用同一实现。"""
+    """Environment-independent combined constraint: required_for_recharge=true ⇒ enabled=true.
+    Shared by the Settings boot validation and the platform-config write side."""
     if required_for_recharge and not enabled:
         raise ValueError(
-            "real_name_required_for_recharge=true 需要 real_name_enabled=true"
-            "(实名未开通时用户无法完成实名,充值与开通实例会被永久卡住)"
+            "real_name_required_for_recharge=true requires real_name_enabled=true"
+            " (users could never verify, so top-ups and instance creation would stay blocked)"
         )
 
 
 def decode_master_key(raw: str, *, label: str) -> bytes:
-    """主密钥解码(urlsafe-base64,解码后 32 字节);label 进错误消息。"""
+    """Decode the master key (urlsafe-base64, 32 bytes decoded); label goes into the error
+    message."""
     try:
         key = base64.urlsafe_b64decode(raw)
     except ValueError as exc:
-        raise ValueError(f"{label} 不是合法 urlsafe-base64") from exc
+        raise ValueError(f"{label} is not valid urlsafe-base64") from exc
     if len(key) != 32:
-        raise ValueError(f"{label} 解码后须为 32 字节")
+        raise ValueError(f"{label} must decode to 32 bytes")
     return key
 
 
@@ -249,35 +250,45 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_invariants(self) -> "Settings":
-        """校验实名组合、CORS、共享池、地址、网段和密钥格式;主密钥与 previous 不得相同。"""
+        """Validate the KYC combination, CORS, shared pools, addresses, CIDR and key formats; the
+        master key and the previous key must differ."""
         check_real_name_invariant(
             enabled=self.real_name_enabled,
             required_for_recharge=self.real_name_required_for_recharge,
         )
         self._validate_deployment_identity()
         if "*" in self.cors_origins:
-            raise ValueError("cors_origins 不允许通配符 *(allow_credentials=true 下等于全网放行)")
+            raise ValueError(
+                "cors_origins must not contain the wildcard *"
+                " (with allow_credentials=true it means any origin)"
+            )
         bad_pools = set(self.parsed_shared_tier_pools()) - {"mig", "hami"}
         if bad_pools:
             raise ValueError(
-                f"shared_tier_allowed_pools 含未知池:{sorted(bad_pools)}(只认 mig/hami)"
+                f"shared_tier_allowed_pools has unknown pools: {sorted(bad_pools)} (only mig/hami)"
             )
         if not _URL_RE.match(self.public_base_url):
             raise ValueError(
-                "public_base_url 形态非法:须为 http(s)://<主机>[:端口][/路径],"
-                "不得含空白或 shell 元字符(它会逐字进 node-join.sh 的 root 执行上下文)"
+                "public_base_url is malformed: must be http(s)://<host>[:port][/path] without"
+                " whitespace or shell metacharacters (pasted verbatim into node-join.sh, run as"
+                " root)"
             )
         if not _URL_RE.match(self.web_base_url):
             raise ValueError("web_base_url must be http(s)://<host>[:port][/path]")
         for name in ("jupyter_domain_suffix", "service_domain_suffix", "admin_host"):
             value = getattr(self, name)
             if value and not _HOSTNAME_RE.match(value):
-                raise ValueError(f"{name} 形态非法:须为裸主机名(可带端口),不得含协议头或元字符")
+                raise ValueError(
+                    f"{name} is malformed: must be a bare hostname (port allowed),"
+                    " no scheme or metacharacters"
+                )
         if self.tenant_pod_cidr:
             try:
                 ipaddress.ip_network(self.tenant_pod_cidr, strict=False)
             except ValueError as exc:
-                raise ValueError(f"tenant_pod_cidr 不是合法网段:{self.tenant_pod_cidr}") from exc
+                raise ValueError(
+                    f"tenant_pod_cidr is not a valid network: {self.tenant_pod_cidr}"
+                ) from exc
         for name in ("config_encryption_key", "config_encryption_key_previous"):
             raw = getattr(self, name)
             if raw is not None:
@@ -288,8 +299,8 @@ class Settings(BaseSettings):
             and self.config_encryption_key == self.config_encryption_key_previous
         ):
             raise ValueError(
-                "config_encryption_key_previous 与当前主密钥相同:轮换窗口应挂「旧」密钥,"
-                "相同等于没轮换(钥匙串里去重后仍是一把)"
+                "config_encryption_key_previous equals the current master key: the rotation window"
+                " must carry the OLD key; identical keys mean no rotation happened"
             )
         return self
 
@@ -309,19 +320,21 @@ class Settings(BaseSettings):
             ) from exc
 
     def parsed_shared_tier_pools(self) -> tuple[str, ...]:
-        """共享档允许池(逗号分隔,去空白去空项)。"""
+        """Pools allowed for the shared tier (comma-separated, blanks and empty items dropped)."""
         return tuple(p.strip() for p in self.shared_tier_allowed_pools.split(",") if p.strip())
 
     def _secret_domains(self) -> frozenset[str]:
-        """本进程挂载的 Secret 域。"""
+        """Secret domains mounted into this process."""
         if self.process_role == "api":
             return frozenset({"auth", "crypto", "edge", "cloud", "payment", "registry"})
         return _WORKER_SECRET_DOMAINS.get(self.worker_component, _WORKER_SECRET_DOMAINS["all"])
 
     @model_validator(mode="after")
     def _validate_prod(self) -> "Settings":
-        """prod 配置 fail-fast:只管 provider 与基础设施项;渠道凭据由渠道工厂运行期 fail-closed。
-        分四组:进程凭据 / 替身 provider(只校验本组件挂载的 Secret 域)/ 数据库 / 对外地址。"""
+        """prod configuration fail-fast: only providers and infrastructure items; channel
+        credentials fail closed at runtime in the channel factories.
+        Four groups: process secrets / stand-in providers (only the Secret domains mounted into this
+        component) / database / public addresses."""
         if self.environment != "prod":
             return self
         problems = [
@@ -332,7 +345,7 @@ class Settings(BaseSettings):
             *self._prod_endpoint_problems(),
         ]
         if problems:
-            raise ValueError("生产配置校验失败:" + ";".join(problems))
+            raise ValueError("production configuration check failed: " + "; ".join(problems))
         return self
 
     def _prod_deployment_problems(self) -> list[str]:
@@ -353,66 +366,68 @@ class Settings(BaseSettings):
             or len(set(self.jwt_secret)) < 16
         ):
             out.append(
-                "jwt_secret 仍为开发默认值/占位符/低熵串"
-                "(需 ≥32 字符且唯一字符 ≥16;生成:openssl rand -hex 32)"
+                "jwt_secret is still the development default / a placeholder / low-entropy"
+                " (needs >= 32 characters with >= 16 distinct ones; generate: openssl rand -hex 32)"
             )
         if self.access_token_ttl_seconds > 3600:
-            out.append("access_token_ttl_seconds 超过 1 小时上限")
+            out.append("access_token_ttl_seconds exceeds the 1-hour cap")
         if self.refresh_token_ttl_seconds > 7 * 24 * 3600:
-            out.append("refresh_token_ttl_seconds 超过 7 天上限")
+            out.append("refresh_token_ttl_seconds exceeds the 7-day cap")
         if self.bcrypt_rounds < 12:
-            out.append("bcrypt_rounds 低于 12(口令哈希强度不足)")
+            out.append("bcrypt_rounds below 12 (password hash too weak)")
         if not self.metrics_token:
-            out.append("metrics_token 未配置(/metrics 将无鉴权暴露)")
+            out.append("metrics_token unset (/metrics would be exposed without auth)")
         if self.process_role == "api" and not self.admin_edge_token:
-            out.append("admin_edge_token 未配置(管理端边缘共享密钥:/api/admin 双闸的其中一闸)")
+            out.append(
+                "admin_edge_token unset (admin edge shared secret: one of the two /api/admin gates)"
+            )
         if "crypto" in domains and not self.config_encryption_key:
-            out.append("config_encryption_key 未配置(平台配置敏感项加密主密钥)")
+            out.append("config_encryption_key unset (master key for sensitive platform settings)")
         return out
 
     def _prod_provider_problems(self) -> list[str]:
         out: list[str] = []
         domains = self._secret_domains()
         if "cloud" in domains and self.sms_provider == "mock":
-            out.append("sms_provider 不得为 mock(验证码将是固定值)")
+            out.append("sms_provider must not be mock (verification codes would be a fixed value)")
         if "cloud" in domains and self.email_provider == "mock":
             out.append(
                 "email_provider must not be mock in prod "
                 "(verification codes would be a fixed value)"
             )
         if self.k8s_backend == "fake":
-            out.append("k8s_backend 不得为 fake")
+            out.append("k8s_backend must not be fake")
         if "payment" in domains and self.payment_mock:
-            out.append("payment_mock 必须为 false")
+            out.append("payment_mock must be false")
         if "payment" in domains and not self.web_base_url.startswith("https://"):
             out.append("web_base_url must be an https URL in prod (payment return URLs)")
         if self.payment_alipay_enabled and not self.alipay_seller_id:
             out.append(
-                "payment_alipay_enabled=true 时 alipay_seller_id 必填"
-                "(收款方 PID,2088 开头;缺失则回调无法核对收款账号)"
+                "alipay_seller_id is required when payment_alipay_enabled=true"
+                " (payee PID starting with 2088; without it callbacks cannot verify the payee)"
             )
         return out
 
     def _prod_database_problems(self) -> list[str]:
         out: list[str] = []
         if "superdl:superdl@localhost" in self.database_url:
-            out.append("database_url 仍为本地开发默认")
+            out.append("database_url is still the local development default")
         parsed = urlparse(self.database_url)
         if (parsed.hostname or "") not in ("localhost", "127.0.0.1", "::1"):
             sslmode = parse_qs(parsed.query).get("sslmode", [""])[0]
             if sslmode not in ("require", "verify-ca", "verify-full"):
                 out.append(
-                    "database_url 指向非本机 PG 但无 TLS:"
-                    "加 ?sslmode=require(或 verify-ca/verify-full)"
+                    "database_url points at a non-local PG without TLS:"
+                    " add ?sslmode=require (or verify-ca/verify-full)"
                 )
         return out
 
     def _prod_endpoint_problems(self) -> list[str]:
         out: list[str] = []
         if any("localhost" in o or "127.0.0.1" in o for o in self.cors_origins):
-            out.append("cors_origins 含 localhost")
+            out.append("cors_origins contains localhost")
         out.extend(
-            f"{name} 仍为占位域名"
+            f"{name} is still a placeholder domain"
             for name in (
                 "jupyter_domain_suffix",
                 "service_domain_suffix",
@@ -422,7 +437,10 @@ class Settings(BaseSettings):
             if "example.com" in getattr(self, name)
         )
         if not self.public_base_url.startswith("https://"):
-            out.append("public_base_url 必须是 https://(装机脚本与注册令牌走这条链路)")
+            out.append(
+                "public_base_url must start with https://"
+                " (the install script and enrollment tokens use it)"
+            )
         return out
 
 
@@ -432,6 +450,6 @@ def get_settings() -> Settings:
 
 
 def unknown_superdl_env_keys() -> list[str]:
-    """返回 SUPERDL_ 前缀里不命中任何 Settings 字段的环境变量键(启动时只 WARNING)。"""
+    """SUPERDL_-prefixed environment variables matching no Settings field (WARNING only at boot)."""
     known = {f"SUPERDL_{name.upper()}" for name in Settings.model_fields}
     return sorted(k for k in os.environ if k.startswith("SUPERDL_") and k.upper() not in known)
