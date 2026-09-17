@@ -32,7 +32,7 @@ full 档另需 `cert-manager/acme-dns-account`(DNS01 账户,见 `runbooks/acme-d
 
 - `values/rook-ceph-cluster.yaml` 的三个 OSD 必须落在三台不同机器上(`failureDomain: host`)。
 - 修改 Prometheus 存储参数前,先以 `--cascade=orphan` 删除 `monitoring` 中的 StatefulSet `prometheus-kube-prometheus-stack-prometheus`,保留 Pod/PVC,再通过 `./apply.sh <full|light>` 重建 StatefulSet。
-- 钉钉接收器使用 Alertmanager 内的 `localhost:8060/dingtalk/oncall/send`;使用前须在 `values/kps.yaml` 的 `alertmanager.alertmanagerSpec.containers` 配置 `prometheus-webhook-dingtalk` sidecar,固定镜像版本,profile 为 `oncall`,机器人凭据引用 `monitoring/superdl-dingtalk-token` 的 `token` 键。启用机器人加签时,同时配置转换器支持的签名参数与 Secret。
+- critical 告警默认双通道:平台 webhook + 外部 SMTP。可选第三通道在 `values/kps.yaml` 以注释示例给出(Slack incoming webhook / PagerDuty Events v2 / 钉钉群机器人),启用时取消对应 route、receiver 与 `alertmanagerSpec.secrets` 的注释并建好 Secret;钉钉还须在 `alertmanager.alertmanagerSpec.containers` 配置 `prometheus-webhook-dingtalk` sidecar,固定镜像版本,profile 为 `oncall`,机器人凭据引用 `monitoring/superdl-dingtalk-token` 的 `token` 键。启用机器人加签时,同时配置转换器支持的签名参数与 Secret。
 
 ## 北向入口:Envoy Gateway 与 Gateway API CRD(两档通用,首装前必读)
 
