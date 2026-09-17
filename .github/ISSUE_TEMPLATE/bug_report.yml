@@ -1,0 +1,49 @@
+name: Bug report
+description: Something behaves differently from what the docs or the UI promise
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      description: Release tag or commit SHA of the API and consoles (admin → About, or `git rev-parse HEAD`).
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - API (apps/api)
+        - Worker (apps/api workers)
+        - User console (apps/web)
+        - Admin console (apps/admin)
+        - Node join / provisioning (node-join.sh, deploy/ansible)
+        - Cluster (deploy/cluster)
+        - Docs
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: 1. … 2. … 3. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour (include the error body — code, message_key, request_id — or logs)
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Compliance profile, currency, timezone, K8s distro (RKE2 / k3s), GPU model and pool, OS of the node.
