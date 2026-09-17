@@ -2173,7 +2173,7 @@
             "type": "string"
           },
           "install_mirror": {
-            "default": "cn",
+            "default": "official",
             "title": "Install Mirror",
             "type": "string"
           },

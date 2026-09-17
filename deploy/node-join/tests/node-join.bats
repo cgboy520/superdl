@@ -61,7 +61,7 @@ data = {
     "script_sha256": sys.argv[4],
 }
 data["k8s_distro"] = distro
-data["install_mirror"] = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else "cn"
+data["install_mirror"] = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else "official"
 print(json.dumps(data))
 PYEOF
 }
@@ -387,7 +387,7 @@ EOF
 echo "rke2 version v0.0.0+rke2r0"
 RKESHIM
   chmod +x "$TMP/bin/rke2"
-  export SUPERDL_JOIN_PIN_RKE2_CN="0000000000000000000000000000000000000000000000000000000000000000"
+  export SUPERDL_JOIN_PIN_RKE2_OFFICIAL="0000000000000000000000000000000000000000000000000000000000000000"
   run_script
   [ "$status" -eq 1 ]
   [[ "$output" == *"checksum mismatch"* ]]
@@ -519,8 +519,8 @@ RKESHIM
   [[ "$output" == *"below the minimum 99.0.0"* || "$output" == *"below the security minimum 99.0.0"* ]]
 }
 
-@test "k3s mode: config/registries land in /etc/rancher/k3s, agent installed from the cn mirror and k3s-agent started" {
-  _write_fixture hami k3s
+@test "k3s mode: config/registries land in /etc/rancher/k3s, agent installed from the cn mirror when opted in, k3s-agent started" {
+  _write_fixture hami k3s cn
   cat > "$TMP/bin/k3s" <<'EOF'
 #!/usr/bin/env bash
 echo "k3s version v0.0.0+k3s0"
@@ -539,29 +539,73 @@ EOF
   grep -q "systemctl enable --now k3s-agent.service" "$SHIM_CALLS"
 }
 
-@test "rke2 install uses the cn mirror when install_mirror=cn" {
+_old_rke2_shim() {
   cat > "$TMP/bin/rke2" <<'RKESHIM'
 #!/usr/bin/env bash
 echo "rke2 version v0.0.0+rke2r0"
 RKESHIM
   chmod +x "$TMP/bin/rke2"
+}
+
+@test "install_mirror=cn opts into the mainland-China mirror for rke2" {
+  _write_fixture hami rke2 cn
+  _old_rke2_shim
   run_script
   [ "$status" -eq 0 ]
   grep -q "rancher-mirror.rancher.cn/rke2/install.sh" "$CURL_LOG"
   grep -q "sh INSTALL_RKE2_MIRROR=cn" "$SHIM_CALLS"
 }
 
-@test "install_mirror=official downloads from get.rke2.io" {
-  _write_fixture hami rke2 official
-  cat > "$TMP/bin/rke2" <<'RKESHIM'
-#!/usr/bin/env bash
-echo "rke2 version v0.0.0+rke2r0"
-RKESHIM
-  chmod +x "$TMP/bin/rke2"
+@test "default install_mirror (official) downloads rke2 from get.rke2.io without a mirror env" {
+  _old_rke2_shim
   run_script
   [ "$status" -eq 0 ]
   grep -q "get.rke2.io" "$CURL_LOG"
+  ! grep -q "rancher-mirror" "$CURL_LOG"
   ! grep -q "sh INSTALL_RKE2_MIRROR" "$SHIM_CALLS"
+}
+
+@test "default install_mirror (official) downloads k3s from get.k3s.io" {
+  _write_fixture hami k3s
+  cat > "$TMP/bin/k3s" <<'EOF'
+#!/usr/bin/env bash
+echo "k3s version v0.0.0+k3s0"
+EOF
+  chmod +x "$TMP/bin/k3s"
+  run_script
+  [ "$status" -eq 0 ]
+  grep -q "https://get.k3s.io" "$CURL_LOG"
+  ! grep -q "INSTALL_K3S_MIRROR" "$SHIM_CALLS"
+}
+
+@test "unknown or empty install_mirror refuses to download any installer" {
+  _write_fixture hami rke2 "mirror-x"
+  _old_rke2_shim
+  run_script
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"unknown install_mirror 'mirror-x'"* ]]
+  grep -q '"phase":"agent_install","state":"failed"' "$CURL_LOG"
+  ! grep -q "get.rke2.io" "$CURL_LOG"
+  ! grep -q "rancher-mirror" "$CURL_LOG"
+}
+
+@test "installer checksum mismatch names expected and actual digests" {
+  _old_rke2_shim
+  export SUPERDL_JOIN_PIN_RKE2_OFFICIAL="0000000000000000000000000000000000000000000000000000000000000000"
+  run_script
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"expected 0000000000000000000000000000000000000000000000000000000000000000, got"* ]]
+  [[ "$output" == *"curl -fsSL https://get.rke2.io | sha256sum"* ]]
+}
+
+@test "cn installer pins in node-join.sh match deploy/ansible/site.yml" {
+  local ansible="$BATS_TEST_DIRNAME/../../ansible/site.yml"
+  local rke2_pin k3s_pin
+  rke2_pin="$(sed -n 's/^PIN_RKE2_CN="${SUPERDL_JOIN_PIN_RKE2_CN:-\([0-9a-f]*\)}"$/\1/p' "$SCRIPT")"
+  k3s_pin="$(sed -n 's/^PIN_K3S_CN="${SUPERDL_JOIN_PIN_K3S_CN:-\([0-9a-f]*\)}"$/\1/p' "$SCRIPT")"
+  [ -n "$rke2_pin" ] && [ -n "$k3s_pin" ]
+  grep -q "rke2_installer_sha256: \"$rke2_pin\"" "$ansible"
+  grep -q "k3s_installer_sha256: \"$k3s_pin\"" "$ansible"
 }
 
 @test "loop fallback must be registered explicitly (nvme_devices=loop:80G): creates the loop VG and the boot-time unit" {

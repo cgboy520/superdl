@@ -562,41 +562,42 @@ step_agent_install() {
     echo "-- $DISTRO $want already installed, skipping"
     return 0
   fi
-  if [[ "$DISTRO" == "k3s" ]]; then
-    if [[ "$mirror" == "official" ]]; then
-      url="https://get.k3s.io"; pin="$PIN_K3S_OFFICIAL"
-    else
-      url="https://rancher-mirror.rancher.cn/k3s/k3s-install.sh"; pin="$PIN_K3S_CN"
-    fi
-  else
-    if [[ "$mirror" == "official" ]]; then
-      url="https://get.rke2.io"; pin="$PIN_RKE2_OFFICIAL"
-    else
-      url="https://rancher-mirror.rancher.cn/rke2/install.sh"; pin="$PIN_RKE2_CN"
-    fi
-  fi
-  local installer
+  # Installer origin is explicit: official (get.k3s.io / get.rke2.io) or the mainland-China mirror.
+  local mirror_env=""
+  case "$mirror" in
+    official)
+      if [[ "$DISTRO" == "k3s" ]]; then url="https://get.k3s.io"; pin="$PIN_K3S_OFFICIAL"
+      else url="https://get.rke2.io"; pin="$PIN_RKE2_OFFICIAL"; fi
+      ;;
+    cn)
+      if [[ "$DISTRO" == "k3s" ]]; then
+        url="https://rancher-mirror.rancher.cn/k3s/k3s-install.sh"; pin="$PIN_K3S_CN"; mirror_env="INSTALL_K3S_MIRROR=cn"
+      else
+        url="https://rancher-mirror.rancher.cn/rke2/install.sh"; pin="$PIN_RKE2_CN"; mirror_env="INSTALL_RKE2_MIRROR=cn"
+      fi
+      ;;
+    *)
+      echo "!! unknown install_mirror '${mirror:-<empty>}' from bootstrap (expected official or cn): refusing to download an installer;" \
+           "set node_install_mirror under Platform config > Cluster access" >&2
+      return 1
+      ;;
+  esac
+  local installer actual
   installer="$(mktemp "$STATE_DIR/installer.XXXXXX")"
   curl -fsSL "$url" -o "$installer"
   chmod 700 "$installer"
-  if ! echo "$pin  $installer" | sha256sum -c - >/dev/null 2>&1; then
-    echo "!! $DISTRO installer checksum mismatch ($url): upstream changed or the download was tampered with;" \
-         "verify upstream, update the pin built into this script and rerun" >&2
+  actual="$(sha256sum "$installer" | awk '{print $1}')"
+  if [[ "$actual" != "$pin" ]]; then
+    echo "!! $DISTRO installer checksum mismatch ($url): expected $pin, got $actual." \
+         "Upstream changed or the download was tampered with; verify with" \
+         "\"curl -fsSL $url | sha256sum\" and update the pin built into this script, then rerun" >&2
     rm -f "$installer"
     return 1
   fi
   if [[ "$DISTRO" == "k3s" ]]; then
-    if [[ "$mirror" == "official" ]]; then
-      INSTALL_K3S_EXEC=agent INSTALL_K3S_VERSION="$want" sh "$installer"
-    else
-      INSTALL_K3S_MIRROR=cn INSTALL_K3S_EXEC=agent INSTALL_K3S_VERSION="$want" sh "$installer"
-    fi
+    env ${mirror_env:+"$mirror_env"} INSTALL_K3S_EXEC=agent INSTALL_K3S_VERSION="$want" sh "$installer"
   else
-    if [[ "$mirror" == "official" ]]; then
-      INSTALL_RKE2_TYPE=agent INSTALL_RKE2_VERSION="$want" sh "$installer"
-    else
-      INSTALL_RKE2_MIRROR=cn INSTALL_RKE2_TYPE=agent INSTALL_RKE2_VERSION="$want" sh "$installer"
-    fi
+    env ${mirror_env:+"$mirror_env"} INSTALL_RKE2_TYPE=agent INSTALL_RKE2_VERSION="$want" sh "$installer"
   fi
   rm -f "$installer"
 }

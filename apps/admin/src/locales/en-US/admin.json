@@ -925,10 +925,10 @@
     "provider": {
       "aliyun": "Aliyun",
       "aliyun_mobile3": "Aliyun real-person · mobile three-factor",
-      "cn": "China mirror (rancher-mirror.rancher.cn)",
+      "cn": "Mainland China mirror (rancher-mirror.rancher.cn)",
       "mock": "Dev mode (nothing is sent; fixed code 123456 written to the log; development only)",
       "none": "No encryption (private networks only)",
-      "official": "Official source",
+      "official": "Official (get.k3s.io / get.rke2.io)",
       "smtp": "SMTP server",
       "starttls": "STARTTLS (587)",
       "tls": "Implicit TLS (465)",

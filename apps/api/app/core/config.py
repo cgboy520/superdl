@@ -187,7 +187,7 @@ class Settings(BaseSettings):
     cluster_agent_version: str = "v1.36.2+rke2r1"
     node_driver_version: str = "580"
     node_registries_yaml: str = ""
-    node_install_mirror: Literal["cn", "official"] = "cn"
+    node_install_mirror: Literal["official", "cn"] = "official"
 
     k8s_backend: Literal["fake", "real"] = "fake"
     tenant_pod_cidr: str = "10.42.0.0/16"

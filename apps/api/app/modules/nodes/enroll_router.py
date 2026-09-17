@@ -81,7 +81,7 @@ async def enroll_bootstrap(
         nvme_devices=enrollment.nvme_devices or [],
         registries_yaml=service.render_registries_yaml(cfg),
         registry_ca_pem=cfg.registry_ca_pem,
-        install_mirror=cfg.node_install_mirror or "cn",
+        install_mirror=cfg.node_install_mirror or "official",
         progress_token=progress_token,
         script_sha256=hashlib.sha256(_served_script().encode()).hexdigest(),
     )

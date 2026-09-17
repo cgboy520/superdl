@@ -903,10 +903,10 @@ export default interface Resources {
       "provider": {
         "aliyun": "阿里云",
         "aliyun_mobile3": "阿里云实人认证 · 手机号三要素",
-        "cn": "国内镜像(rancher-mirror.rancher.cn)",
+        "cn": "中国大陆镜像(rancher-mirror.rancher.cn)",
         "mock": "开发模式(不实际发送,固定码 123456 写日志;仅开发环境)",
         "none": "不加密(仅内网)",
-        "official": "官方源",
+        "official": "官方源(get.k3s.io / get.rke2.io)",
         "smtp": "SMTP 服务器",
         "starttls": "STARTTLS(587)",
         "tls": "隐式 TLS(465)",
