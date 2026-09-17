@@ -598,14 +598,17 @@ EOF
   [[ "$output" == *"curl -fsSL https://get.rke2.io | sha256sum"* ]]
 }
 
-@test "cn installer pins in node-join.sh match deploy/ansible/site.yml" {
+@test "installer pins in node-join.sh match deploy/ansible/site.yml for both origins" {
   local ansible="$BATS_TEST_DIRNAME/../../ansible/site.yml"
-  local rke2_pin k3s_pin
-  rke2_pin="$(sed -n 's/^PIN_RKE2_CN="${SUPERDL_JOIN_PIN_RKE2_CN:-\([0-9a-f]*\)}"$/\1/p' "$SCRIPT")"
-  k3s_pin="$(sed -n 's/^PIN_K3S_CN="${SUPERDL_JOIN_PIN_K3S_CN:-\([0-9a-f]*\)}"$/\1/p' "$SCRIPT")"
-  [ -n "$rke2_pin" ] && [ -n "$k3s_pin" ]
-  grep -q "rke2_installer_sha256: \"$rke2_pin\"" "$ansible"
-  grep -q "k3s_installer_sha256: \"$k3s_pin\"" "$ansible"
+  local name pin
+  for name in RKE2_OFFICIAL RKE2_CN K3S_OFFICIAL K3S_CN; do
+    pin="$(sed -n "s/^PIN_${name}=\"\${SUPERDL_JOIN_PIN_${name}:-\([0-9a-f]*\)}\"$/\1/p" "$SCRIPT")"
+    [ -n "$pin" ]
+    local distro origin
+    distro="$(echo "${name%_*}" | tr '[:upper:]' '[:lower:]')"
+    origin="$(echo "${name#*_}" | tr '[:upper:]' '[:lower:]')"
+    grep -q "${distro}_installer_sha256_${origin}: \"$pin\"" "$ansible"
+  done
 }
 
 @test "loop fallback must be registered explicitly (nvme_devices=loop:80G): creates the loop VG and the boot-time unit" {

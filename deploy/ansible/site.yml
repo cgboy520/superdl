@@ -4,8 +4,20 @@
   vars:
     cluster_distro: rke2
     rke2_channel: latest
-    rke2_installer_sha256: "5541410b86d4d19d927d820be85156e787be3fdb24be72507af52932a1d12de1"
-    k3s_installer_sha256: "3944aa467eb945b5ff2151a8e4f8d4a5f3a210d31ab39aec81f37606936d0863"
+    # Installer origin: official = get.rke2.io / get.k3s.io (default); cn = rancher-mirror.rancher.cn.
+    # The sha256 pins below must equal PIN_*_OFFICIAL / PIN_*_CN in
+    # apps/api/app/modules/nodes/assets/node-join.sh (a bats test cross-checks them).
+    k8s_install_mirror: official
+    rke2_installer_sha256_official: "42983c86d1da64a92061d83afb57630cedd69241989f1b0673f3db6c3d92ee6b"
+    rke2_installer_sha256_cn: "5541410b86d4d19d927d820be85156e787be3fdb24be72507af52932a1d12de1"
+    k3s_installer_sha256_official: "ed01f89fd977bf20ac1516bbebf8370bf3ddbaa55dac8aba610956a4c78cc00b"
+    k3s_installer_sha256_cn: "3944aa467eb945b5ff2151a8e4f8d4a5f3a210d31ab39aec81f37606936d0863"
+    rke2_installer_url: "{{ 'https://get.rke2.io' if k8s_install_mirror == 'official' else 'https://rancher-mirror.rancher.cn/rke2/install.sh' }}"
+    k3s_installer_url: "{{ 'https://get.k3s.io' if k8s_install_mirror == 'official' else 'https://rancher-mirror.rancher.cn/k3s/k3s-install.sh' }}"
+    rke2_installer_sha256: "{{ rke2_installer_sha256_official if k8s_install_mirror == 'official' else rke2_installer_sha256_cn }}"
+    k3s_installer_sha256: "{{ k3s_installer_sha256_official if k8s_install_mirror == 'official' else k3s_installer_sha256_cn }}"
+    rke2_installer_mirror_env: "{{ '' if k8s_install_mirror == 'official' else 'INSTALL_RKE2_MIRROR=cn' }}"
+    k3s_installer_mirror_env: "{{ '' if k8s_install_mirror == 'official' else 'INSTALL_K3S_MIRROR=cn' }}"
     etcd_snapshot_bucket: ""
     etcd_s3_region: ""
     etcd_s3_endpoint: ""
@@ -19,6 +31,11 @@
     kubectl_bin: "{{ '/var/lib/rancher/rke2/bin/kubectl' if cluster_distro == 'rke2' else '/usr/local/bin/kubectl' }}"
     kubeconfig_path: "/etc/rancher/{{ cluster_distro }}/{{ 'rke2.yaml' if cluster_distro == 'rke2' else 'k3s.yaml' }}"
   tasks:
+    - name: Installer source must be official or cn
+      assert:
+        that:
+          - k8s_install_mirror in ['official', 'cn']
+        fail_msg: "k8s_install_mirror must be 'official' (get.rke2.io / get.k3s.io) or 'cn' (rancher-mirror.rancher.cn), got '{{ k8s_install_mirror }}'"
     - name: 输入变量完备性(渲染前断言,而非断言渲染产物)
       assert:
         that:
@@ -159,7 +176,7 @@
 
     - name: 下载 rke2 安装器(get_url 按 sha256 校验后才落盘;force 覆盖旧文件)
       get_url:
-        url: https://rancher-mirror.rancher.cn/rke2/install.sh
+        url: "{{ rke2_installer_url }}"
         dest: /root/.cache/superdl/rke2-install.sh
         checksum: "sha256:{{ rke2_installer_sha256 }}"
         force: true
@@ -170,7 +187,7 @@
 
     - name: 安装 rke2 server(幂等:已装跳过)
       shell: >
-        INSTALL_RKE2_MIRROR=cn INSTALL_RKE2_CHANNEL={{ rke2_channel }} sh /root/.cache/superdl/rke2-install.sh
+        {{ rke2_installer_mirror_env }} INSTALL_RKE2_CHANNEL={{ rke2_channel }} sh /root/.cache/superdl/rke2-install.sh
       args:
         executable: /bin/bash
         creates: /etc/systemd/system/rke2-server.service
@@ -178,7 +195,7 @@
 
     - name: 下载 k3s 安装器(get_url 按 sha256 校验后才落盘;force 覆盖旧文件)
       get_url:
-        url: https://rancher-mirror.rancher.cn/k3s/k3s-install.sh
+        url: "{{ k3s_installer_url }}"
         dest: /root/.cache/superdl/k3s-install.sh
         checksum: "sha256:{{ k3s_installer_sha256 }}"
         force: true
@@ -189,7 +206,7 @@
 
     - name: 安装 k3s server(幂等:已装跳过)
       shell: >
-        INSTALL_K3S_MIRROR=cn sh /root/.cache/superdl/k3s-install.sh -s - server
+        {{ k3s_installer_mirror_env }} sh /root/.cache/superdl/k3s-install.sh -s - server
       args:
         executable: /bin/bash
         creates: /etc/systemd/system/k3s.service
