@@ -9,6 +9,10 @@
  * Request deletion: retype one of the account's handles (email or phone) plus a reason.
  */
 export interface DeletionRequestCreate {
+  /**
+     * Login handle: an email address or an E.164 phone number
+     * @maxLength 254
+     */
   handle: string;
   /**
      * @minLength 2

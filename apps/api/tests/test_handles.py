@@ -36,7 +36,15 @@ class TestNormalizePhone:
         assert normalize_phone("+86.138.0000.1111") == "+8613800001111"
 
     @pytest.mark.parametrize(
-        "raw", ["13800001111", "+0123456789", "+123456", "+1234567890123456", "+1415abc0123"]
+        "raw",
+        [
+            "13800001111",
+            "+0123456789",
+            "+123456",
+            "+1234567890123456",
+            "+1415abc0123",
+            "+1١٢٣٤٥٦٧",  # Arabic-Indic digits are not E.164 digits
+        ],
     )
     def test_rejects_non_e164(self, raw: str):
         with pytest.raises(ValueError):
@@ -62,8 +70,12 @@ class TestMaskHandle:
         assert mask_handle("+8613800001111") == "+86****1111"
         assert mask_handle("13800001111") == "138****1111"
 
-    @pytest.mark.parametrize("value", [None, "", "not-a-handle", "del:42:abcd"])
+    @pytest.mark.parametrize(
+        "value",
+        [None, "", "not-a-handle", "del:42:abcd", "1234567", "+123456789", "@secret", "a@b"],
+    )
     def test_everything_else_is_fully_masked(self, value: str | None):
+        """Short phones and malformed emails must not leak their digits or suffix."""
         assert mask_handle(value) == "******"
 
 

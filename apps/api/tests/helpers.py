@@ -108,10 +108,10 @@ async def fund_wallet(
 
 
 async def create_user_with_key(
-    client: AsyncClient, phone: str = "u13900000001@test.local"
+    client: AsyncClient, email: str = "u13900000001@test.local"
 ) -> tuple[dict[str, str], int, int]:
     """Register a user + add an SSH key. Returns (headers, user_id, ssh_key_id)."""
-    data = await register(client, phone)
+    data = await register(client, email)
     headers = {"Authorization": f"Bearer {data['access_token']}"}
     resp = await client.post(
         "/api/v1/ssh-keys",
@@ -438,10 +438,10 @@ async def get_instance(client: AsyncClient, headers: dict, uuid: str) -> dict:
 
 
 async def provision_running(
-    client, sm, fake, phone="u13900000010@test.local"
+    client, sm, fake, email="u13900000010@test.local"
 ) -> tuple[dict, str, int]:
     """Bring up a running instance. Returns (headers, uuid, user_id)."""
-    headers, user_id, key_id, sku_id = await new_user(client, sm, phone)
+    headers, user_id, key_id, sku_id = await new_user(client, sm, email)
     data = await create_instance_api(client, headers, sku_id, key_id)
     await drain(sm)
     fake.mark_ready(f"tenant-{user_id}", data["uuid"])
@@ -450,14 +450,14 @@ async def provision_running(
 
 
 async def user_headers(
-    client: AsyncClient, phone: str = "u13700000001@test.local"
+    client: AsyncClient, email: str = "u13700000001@test.local"
 ) -> dict[str, str]:
-    data = await register(client, phone)
+    data = await register(client, email)
     return {"Authorization": f"Bearer {data['access_token']}"}
 
 
-async def user_headers_with_id(client: AsyncClient, phone: str) -> tuple[dict[str, str], int]:
-    data = await register(client, phone)
+async def user_headers_with_id(client: AsyncClient, email: str) -> tuple[dict[str, str], int]:
+    data = await register(client, email)
     return {"Authorization": f"Bearer {data['access_token']}"}, data["user"]["id"]
 
 
@@ -674,17 +674,17 @@ def service_body(sku_id: int, **over) -> dict:
 
 
 async def funded_user(
-    client: AsyncClient, sm, phone: str, amount: str = "100.00"
+    client: AsyncClient, sm, email: str, amount: str = "100.00"
 ) -> tuple[dict[str, str], int, int]:
     """Register + add an SSH key + top up. Returns (headers, user_id, ssh_key_id)."""
-    headers, user_id, key_id = await create_user_with_key(client, phone)
+    headers, user_id, key_id = await create_user_with_key(client, email)
     await fund_wallet(sm, user_id, amount)
     return headers, user_id, key_id
 
 
-async def new_user(client: AsyncClient, sm, phone: str) -> tuple[dict[str, str], int, int, int]:
+async def new_user(client: AsyncClient, sm, email: str) -> tuple[dict[str, str], int, int, int]:
     """funded_user + the default SKU. Returns (headers, user_id, ssh_key_id, sku_id)."""
-    headers, user_id, key_id = await funded_user(client, sm, phone)
+    headers, user_id, key_id = await funded_user(client, sm, email)
     return headers, user_id, key_id, await create_test_sku(sm)
 
 
@@ -693,12 +693,12 @@ async def provision_service(
     sm: async_sessionmaker[AsyncSession],
     fake: FakeOrchestrator,
     *,
-    phone: str = "u13900000301@test.local",
+    email: str = "u13900000301@test.local",
     **over,
 ) -> tuple[dict[str, str], dict, int]:
     """Deploy a running online service. Returns (headers, service output, user_id);
     the revision instance uuid is svc["current_instance"]["uuid"]."""
-    headers, user_id, key_id, sku_id = await new_user(client, sm, phone)
+    headers, user_id, key_id, sku_id = await new_user(client, sm, email)
     over.setdefault("ssh_key_ids", [key_id] if over.get("with_ssh") else [])
     resp = await client.post("/api/v1/services", json=service_body(sku_id, **over), headers=headers)
     assert resp.status_code == 202, resp.text
@@ -777,13 +777,13 @@ async def buy_subscription(
     return resp.status_code, resp.json()
 
 
-async def provision_subscription(client, sm, fake, phone: str, *, period: str = "month", **kw):
+async def provision_subscription(client, sm, fake, email: str, *, period: str = "month", **kw):
     """Bring up a running subscription instance. Returns (headers, uuid, user_id, sku_id,
     key_id)."""
-    headers, user_id, key_id = await create_user_with_key(client, phone)
+    headers, user_id, key_id = await create_user_with_key(client, email)
     await fund_wallet(sm, user_id, kw.pop("fund", "5000.00"))
     sku_id = await create_test_sku(sm, **kw.pop("sku", {}))
-    await seed_node_spec(sm, node_name=f"node-{phone[-4:]}")
+    await seed_node_spec(sm, node_name=f"node-{user_id}")
     code, data = await buy_subscription(client, headers, sku_id, key_id, period=period)
     assert code == 202, data
     await drain(sm)

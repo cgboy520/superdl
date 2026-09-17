@@ -431,7 +431,7 @@ class TestRenewal:
 
     async def test_renew_rejects_on_demand_instance(self, client, sm, fake):
         headers, uuid, _ = await provision_running(
-            client, sm, fake, phone="u13911100043@test.local"
+            client, sm, fake, email="u13911100043@test.local"
         )
         resp = await client.post(
             f"/api/v1/instances/{uuid}/renew",
@@ -510,7 +510,7 @@ class TestIdempotencyFingerprint:
         from app.modules.billing import subscriptions
 
         headers, uuid, user_id = await provision_running(
-            client, sm, fake, phone="u13911100052@test.local"
+            client, sm, fake, email="u13911100052@test.local"
         )
         await fund_wallet(sm, user_id, "20000.00")
         body = {"period": "week", "period_count": 1}
@@ -992,8 +992,8 @@ class TestConvertToSubscription:
     """On-demand → subscription: no double or missing bills on either side of the conversion
     point."""
 
-    async def _on_demand_running(self, client, sm, fake, phone: str):
-        headers, uuid, user_id = await provision_running(client, sm, fake, phone=phone)
+    async def _on_demand_running(self, client, sm, fake, email: str):
+        headers, uuid, user_id = await provision_running(client, sm, fake, email=email)
         await fund_wallet(sm, user_id, "5000.00")
         return headers, uuid, user_id
 

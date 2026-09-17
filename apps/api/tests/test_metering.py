@@ -166,9 +166,9 @@ class TestAggregationPartialFailure:
     async def test_single_failure_does_not_drop_whole_hour(self, client, sm, fake):
         """A failing single-instance query loses only that instance-hour, the rest of the round
         aggregates as usual."""
-        _h1, uuid1, _u1 = await provision_running(client, sm, fake, phone="u13900000021@test.local")
+        _h1, uuid1, _u1 = await provision_running(client, sm, fake, email="u13900000021@test.local")
         _h2, _uuid2, _u2 = await provision_running(
-            client, sm, fake, phone="u13900000022@test.local"
+            client, sm, fake, email="u13900000022@test.local"
         )
 
         def handler(request: httpx.Request) -> httpx.Response:

@@ -19,6 +19,8 @@ from app.core.locale import DEFAULT_LOCALE, negotiate_locale
         ("*", "en-US"),
         ("fr, *;q=0.1, zh;q=0.5", "zh-CN"),
         ("zh;q=0, en", "en-US"),
+        ("en;q=0, *;q=1", "zh-CN"),
+        ("en;q=0, zh;q=0, *", "en-US"),
         ("ZH , en", "zh-CN"),
     ],
 )

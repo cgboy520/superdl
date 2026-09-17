@@ -271,7 +271,10 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         hint="Mail server hostname, e.g. smtp.example.com",
     ),
     "smtp_port": SettingSpec(
-        "email", "str", pattern=r"\d{2,5}", hint="587 for STARTTLS, 465 for implicit TLS"
+        "email",
+        "str",
+        pattern=r"[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]",
+        hint="TCP port 1-65535: 587 for STARTTLS, 465 for implicit TLS",
     ),
     "smtp_security": SettingSpec(
         "email",
@@ -754,12 +757,14 @@ def _captcha_credentials_warning(cfg: RuntimeConfig) -> ConfigWarning | None:
         )
     else:
         complete = bool(
-            cfg.captcha_scene_id and cfg.captcha_access_key_id and cfg.captcha_access_key_secret
+            cfg.captcha_scene_id
+            and cfg.captcha_prefix
+            and cfg.captcha_access_key_id
+            and cfg.captcha_access_key_secret
         )
         message = (
-            "CAPTCHA is on but the Aliyun CAPTCHA credentials / scene are incomplete, code sending"
-            " will"
-            " always be 502"
+            "CAPTCHA is on but the Aliyun CAPTCHA credentials / scene / prefix are incomplete,"
+            " code sending will always be 502"
         )
     return None if complete else ConfigWarning("captcha_enabled", "error", message)
 

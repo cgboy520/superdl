@@ -37,9 +37,8 @@ class TestPartition:
         registered = set(_registry)
         sharded = set().union(*(COMPONENT_OUTBOX_TYPES[c] for c in _SHARDED))
         assert registered == sharded, (
-            f"unregistered components: {sorted(registered - sharded)};"
-            " registered but non-existent types: "
-            f"{sorted(sharded - registered)}"
+            f"handler task types without a component: {sorted(registered - sharded)};"
+            f" component task types without a handler: {sorted(sharded - registered)}"
         )
 
     async def test_scheduled_jobs_table_matches_scheduler(self, pg_url):

@@ -9,6 +9,6 @@ export type AdminInvoicesExportApiAdminV1InvoicesExportGetLang = typeof AdminInv
 
 
 export const AdminInvoicesExportApiAdminV1InvoicesExportGetLang = {
-  'zh-CN': 'zh-CN',
   'en-US': 'en-US',
+  'zh-CN': 'zh-CN',
 } as const;

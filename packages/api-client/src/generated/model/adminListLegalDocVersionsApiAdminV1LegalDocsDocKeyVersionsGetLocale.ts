@@ -9,6 +9,6 @@ export type AdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetLocale 
 
 
 export const AdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetLocale = {
-  'zh-CN': 'zh-CN',
   'en-US': 'en-US',
+  'zh-CN': 'zh-CN',
 } as const;

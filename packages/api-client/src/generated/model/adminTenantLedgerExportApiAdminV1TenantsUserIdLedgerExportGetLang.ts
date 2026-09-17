@@ -9,6 +9,6 @@ export type AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetLang = 
 
 
 export const AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetLang = {
-  'zh-CN': 'zh-CN',
   'en-US': 'en-US',
+  'zh-CN': 'zh-CN',
 } as const;

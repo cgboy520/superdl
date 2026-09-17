@@ -53,12 +53,12 @@ async def _settle_rollout(client, sm, fake, headers, svc: dict, rollout: dict) -
     return (await client.get(f"/api/v1/services/{svc['slug']}", headers=headers)).json()
 
 
-async def _provision(client, sm, fake, phone: str, **over):
+async def _provision(client, sm, fake, email: str, **over):
     headers, svc, user_id = await provision_service(
         client,
         sm,
         fake,
-        phone=phone,
+        email=email,
         env={"MAX_MODEL_LEN": "4096", "HF_TOKEN": "hf_secret_v1"},
         env_secret_keys=["HF_TOKEN"],
         health_path="/health",

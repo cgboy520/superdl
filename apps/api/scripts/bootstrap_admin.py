@@ -52,7 +52,8 @@ async def main() -> None:
             print(  # noqa: T201
                 f"bootstrap_admin done [{settings.environment}]: username admin;"
                 f" random password in {out_path} (0600, delete after reading)."
-                " The first login enforces TOTP enrolment; change the password right after"
+                " The first login enforces TOTP enrolment; change the password right after that"
+                " first login"
             )
         else:
             print(  # noqa: T201

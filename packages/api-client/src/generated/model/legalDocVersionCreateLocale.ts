@@ -9,6 +9,6 @@ export type LegalDocVersionCreateLocale = typeof LegalDocVersionCreateLocale[key
 
 
 export const LegalDocVersionCreateLocale = {
-  'zh-CN': 'zh-CN',
   'en-US': 'en-US',
+  'zh-CN': 'zh-CN',
 } as const;

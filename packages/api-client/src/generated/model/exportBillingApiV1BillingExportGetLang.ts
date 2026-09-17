@@ -9,6 +9,6 @@ export type ExportBillingApiV1BillingExportGetLang = typeof ExportBillingApiV1Bi
 
 
 export const ExportBillingApiV1BillingExportGetLang = {
-  'zh-CN': 'zh-CN',
   'en-US': 'en-US',
+  'zh-CN': 'zh-CN',
 } as const;

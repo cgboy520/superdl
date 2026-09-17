@@ -9,6 +9,6 @@ export type ReconciliationExportApiAdminV1ReconciliationExportGetLang = typeof R
 
 
 export const ReconciliationExportApiAdminV1ReconciliationExportGetLang = {
-  'zh-CN': 'zh-CN',
   'en-US': 'en-US',
+  'zh-CN': 'zh-CN',
 } as const;

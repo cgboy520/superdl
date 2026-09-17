@@ -97,8 +97,12 @@ class AliyunMobile3Provider:
         biz_code = (body.get("ResultObject") or {}).get("BizCode")
         if biz_code not in ("1", "2", "3"):
             raise KycError(f"kyc unexpected BizCode: {biz_code}")
+        request_id = body.get("RequestId")
         return KycResult(
-            verified=biz_code == "1", provider=self.name, identity_key=subject.identity_number
+            verified=biz_code == "1",
+            provider=self.name,
+            ref=str(request_id) if request_id else None,
+            identity_key=subject.identity_number,
         )
 
 

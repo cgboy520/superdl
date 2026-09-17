@@ -514,19 +514,19 @@ class TestSmsCodeBruteForce:
                     session, Handle("email", phone), "123456", "register"
                 )
 
-    async def test_sms_login_rate_limited(self, client: AsyncClient):
-        """Code login shares the rate limit with the password path."""
-        phone = "u13800000089@test.local"
-        await register(client, phone)
+    async def test_code_login_rate_limited(self, client: AsyncClient):
+        """Code login (email handle) shares the rate limit with the password path."""
+        email = "u13800000089@test.local"
+        await register(client, email)
         for _ in range(5):
-            resp = await client.post("/api/v1/auth/login", json={"handle": phone, "code": "000000"})
+            resp = await client.post("/api/v1/auth/login", json={"handle": email, "code": "000000"})
             assert resp.json()["code"] == "LOGIN_FAILED"
-        resp = await client.post("/api/v1/auth/login", json={"handle": phone, "code": "000000"})
+        resp = await client.post("/api/v1/auth/login", json={"handle": email, "code": "000000"})
         assert resp.status_code == 429
         assert resp.json()["code"] == "RATE_LIMITED"
 
-    async def test_sms_send_ip_rate_limited(self, client: AsyncClient):
-        """One IP sending codes to many numbers at high frequency → 429."""
+    async def test_code_send_ip_rate_limited(self, client: AsyncClient):
+        """One IP sending codes to many handles at high frequency → 429."""
         for i in range(20):
             resp = await client.post(
                 "/api/v1/auth/verification-code",

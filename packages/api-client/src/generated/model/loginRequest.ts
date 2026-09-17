@@ -7,6 +7,10 @@
 
 export interface LoginRequest {
   code?: string | null;
+  /**
+     * Login handle: an email address or an E.164 phone number
+     * @maxLength 254
+     */
   handle: string;
   password?: string | null;
 }

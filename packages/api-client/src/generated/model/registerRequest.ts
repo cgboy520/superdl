@@ -11,6 +11,10 @@
  */
 export interface RegisterRequest {
   accept_terms?: boolean;
+  /**
+     * Email address; trimmed and lower-cased
+     * @maxLength 254
+     */
   email: string;
   /**
      * @minLength 4

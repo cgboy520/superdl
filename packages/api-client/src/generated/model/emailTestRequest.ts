@@ -6,5 +6,9 @@
  */
 
 export interface EmailTestRequest {
+  /**
+     * Email address; trimmed and lower-cased
+     * @maxLength 254
+     */
   email: string;
 }

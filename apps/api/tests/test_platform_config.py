@@ -37,6 +37,13 @@ class TestSpecValidation:
             == "https://example.com/l.png"
         )
 
+    @pytest.mark.parametrize("value", ["0", "00", "65536", "99999", "-25", "25.5"])
+    def test_smtp_port_must_be_a_tcp_port(self, value: str):
+        """An out-of-range port is refused at write time instead of failing at connect time."""
+        with pytest.raises(ValueError, match="smtp_port"):
+            validate_setting_value("smtp_port", value)
+        assert validate_setting_value("smtp_port", "587") == "587"
+
 
 SERVER_NODE_TOKEN = "K10" + "ab" * 32 + "::server:secretpassword"
 
@@ -611,6 +618,7 @@ class TestConfigWarnings:
             registry_host="",
             captcha_provider="aliyun",
             captcha_scene_id="s",
+            captcha_prefix="pfx",
             captcha_access_key_id="LTAI5tTESTTESTTEST",
             captcha_access_key_secret="k",
             real_name_access_key_id="LTAI5tTESTTESTTEST",
@@ -618,6 +626,10 @@ class TestConfigWarnings:
         )
         assert [(w.key, w.level) for w in compute_config_warnings(rc(no_registry), "prod")] == [
             ("image_allowed_registries", "error")
+        ]
+        no_prefix = dict(no_registry, captcha_prefix="")
+        assert ("captcha_enabled", "error") in [
+            (w.key, w.level) for w in compute_config_warnings(rc(no_prefix), "prod")
         ]
         assert [(w.key, w.level) for w in compute_config_warnings(rc(base), "prod")] == [
             ("captcha_enabled", "warning"),
@@ -635,6 +647,7 @@ class TestConfigWarnings:
             on,
             captcha_provider="aliyun",
             captcha_scene_id="scene",
+            captcha_prefix="pfx",
             captcha_access_key_id="LTAI5tTESTTESTTEST",
             captcha_access_key_secret="sk",
             real_name_access_key_id="LTAI5tTESTTESTTEST",

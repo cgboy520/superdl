@@ -12,6 +12,7 @@ class TestRegistry:
         assert rules_for_dial_code("+86") is REGIONS["CN"]
         assert rules_for_dial_code("86") is REGIONS["CN"]
         assert rules_for_dial_code("+1") is None
+        assert rules_for_dial_code("++86") is None
 
 
 class TestCnPhone:
@@ -29,7 +30,13 @@ class TestCnIdNumber:
 
     @pytest.mark.parametrize(
         "value",
-        ["110105194912310021", "1101051949123100", "11010519491231002XY", "abcdefghijklmnopqr"],
+        [
+            "110105194912310021",
+            "1101051949123100",
+            "11010519491231002XY",
+            "abcdefghijklmnopqr",
+            "١١٠١٠٥١٩٤٩١٢٣١٠٠٢X",  # Arabic-Indic digits are not GB 11643 digits
+        ],
     )
     def test_wrong_check_or_shape_rejected(self, value: str):
         assert not cn.validate_id_number(value)

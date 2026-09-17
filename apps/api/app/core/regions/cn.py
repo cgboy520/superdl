@@ -6,10 +6,10 @@ import re
 from app.core.regions.base import RegionRules
 
 DIAL_CODE = "86"
-NATIONAL_PHONE_RE = r"^1[3-9]\d{9}$"
-NATIONAL_PHONE_RE_LOOSE = r"^1\d{10}$"
-ID_NUMBER_RE = r"^\d{17}[\dX]$"
-USCC_RE = r"^[0-9A-HJ-NPQRTUWXY]{2}\d{6}[0-9A-HJ-NPQRTUWXY]{10}$"
+NATIONAL_PHONE_RE = r"^1[3-9][0-9]{9}$"
+NATIONAL_PHONE_RE_LOOSE = r"^1[0-9]{10}$"
+ID_NUMBER_RE = r"^[0-9]{17}[0-9X]$"
+USCC_RE = r"^[0-9A-HJ-NPQRTUWXY]{2}[0-9]{6}[0-9A-HJ-NPQRTUWXY]{10}$"
 
 _ID_WEIGHTS = (7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2)
 _ID_CHECK_CHARS = "10X98765432"
