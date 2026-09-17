@@ -11,6 +11,10 @@ status?: string | null;
 period?: string | null;
 reveal?: boolean;
 reason?: string | null;
-tz_offset_minutes?: number | null;
+/**
+ * @minimum -720
+ * @maximum 840
+ */
+tz_offset_minutes?: number;
 lang?: AdminInvoicesExportApiAdminV1InvoicesExportGetLang;
 };

@@ -84,6 +84,18 @@ def test_billing_day_floor_and_shift_across_dst(zone):
     assert billing_offset_minutes(datetime(2026, 1, 8, 12, 0, tzinfo=UTC)) == -300
 
 
+def test_admin_day_suffix_is_the_billing_zone_date(zone):
+    """A positive-offset zone: the UTC start of the day is the previous UTC date, the CSV suffix
+    must still say the requested day."""
+    from app.modules.adminapi.router_shared import day_suffix, parse_day
+
+    zone("Asia/Shanghai")
+    day_range = parse_day("2026-08-19")
+    assert day_range[0] == datetime(2026, 8, 18, 16, 0, tzinfo=UTC)
+    assert day_suffix(day_range) == "2026-08-19"
+    assert day_suffix(None) == "all"
+
+
 def test_billing_day_range_and_offsets(zone):
     zone("America/New_York")
     start, end = billing_day_range("2026-03-08")

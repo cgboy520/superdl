@@ -70,6 +70,7 @@ class TestPriceChangeAlerts:
         assert alerts[0].title.startswith("SKU price changed sharply within 24 hours")
         expected = f"{price_label('10')}/h 24 hours ago → {price_label('16')}/h now"
         assert expected in alerts[0].content and "60%" in alerts[0].content
+        assert f"this change {price_label('13')} → {price_label('16')}" in alerts[0].content
 
         async with sm() as session:
             await session.execute(

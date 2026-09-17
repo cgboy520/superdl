@@ -263,8 +263,8 @@ def _currency_matches(order: Order, reported: str | None) -> bool:
     return reported is None or reported == order.currency
 
 
-def _assert_callback_matches(order: Order, channel_name: str, result: CallbackResult) -> None:
-    """Channel, currency and amount must match the order; a mismatch is a channel error."""
+def _assert_callback_identity(order: Order, channel_name: str, result: CallbackResult) -> None:
+    """Channel and currency must match the order for every callback, reversals included."""
     if order.channel != channel_name:
         raise channel_error("billing.callbackChannelMismatch")
     if not _currency_matches(order, result.currency):
@@ -276,7 +276,13 @@ def _assert_callback_matches(order: Order, channel_name: str, result: CallbackRe
         )
         PAYMENT_CALLBACK_MISMATCH_TOTAL.inc()
         raise channel_error("billing.currencyMismatch")
-    if as_amount(result.amount) != order.amount:
+
+
+def _assert_callback_matches(order: Order, channel_name: str, result: CallbackResult) -> None:
+    """Channel, currency and amount (in the order's currency) must match; a mismatch is a channel
+    error."""
+    _assert_callback_identity(order, channel_name, result)
+    if as_amount(result.amount, currency=order.currency) != order.amount:
         logger.error(
             "callback_amount_mismatch",
             order_no=order.order_no,
@@ -310,9 +316,11 @@ async def handle_callback(session: AsyncSession, channel_name: str, result: Call
     signature first.
 
     A successful payment credits in the same transaction; the first reversal notice on a paid order
-    freezes the same amount, replays do not freeze again.
+    freezes the same amount, replays do not freeze again. A reversal that arrives before the
+    success event is remembered on the order and applied when the success credits it.
     """
     order = await _order_for_callback(session, result)
+    _assert_callback_identity(order, channel_name, result)
     if order.status == "paid":
         if not result.success and order.channel_reversed_at is not None:
             logger.error(
@@ -348,7 +356,16 @@ async def handle_callback(session: AsyncSession, channel_name: str, result: Call
         return "ok"
     _assert_callback_matches(order, channel_name, result)
     if not result.success:
-        order.status = "failed"
+        if result.refund_amount is not None and order.channel_reversed_at is None:
+            order.channel_reversed_at = now_utc()
+            logger.error(
+                "channel_reversed_before_success",
+                order_no=order.order_no,
+                channel=channel_name,
+                channel_txn_id=result.channel_txn_id,
+            )
+        else:
+            order.status = "failed"
         await session.commit()
         return "ok"
 
@@ -358,6 +375,23 @@ async def handle_callback(session: AsyncSession, channel_name: str, result: Call
         channel_txn_id=result.channel_txn_id,
         remark=server_copy("billing.remark.recharge", channel=channel_name),
     )
+    if order.channel_reversed_at is not None:
+        await wallet.freeze(
+            session,
+            order.user_id,
+            order.amount,
+            ref_id=order.order_no,
+            remark=server_copy("billing.remark.reversal_freeze"),
+        )
+        logger.error(
+            "channel_reversed_on_paid_order",
+            order_no=order.order_no,
+            channel=channel_name,
+            channel_txn_id=result.channel_txn_id,
+            frozen=str(order.amount),
+            refund_amount=None,
+        )
+        PAYMENT_CHANNEL_REVERSED_TOTAL.inc()
     await session.commit()
     if rescued:
         logger.info("closed_order_auto_credited", order_no=order.order_no)
@@ -453,7 +487,7 @@ async def verify_order(session: AsyncSession, order_no: str) -> dict:
     matches = (
         result.status == "paid"
         and result.amount is not None
-        and as_amount(result.amount) == order.amount
+        and as_amount(result.amount, currency=order.currency) == order.amount
         and _currency_matches(order, result.currency)
     )
     return {
@@ -515,7 +549,7 @@ async def backfill_order(
         )
     if not _currency_matches(order, result.currency):
         raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.currencyMismatch")
-    if as_amount(result.amount) != order.amount:
+    if as_amount(result.amount, currency=order.currency) != order.amount:
         raise AppError(
             ErrorCode.PAYMENT_CHANNEL_ERROR,
             key="billing.amountMismatchAdjust",

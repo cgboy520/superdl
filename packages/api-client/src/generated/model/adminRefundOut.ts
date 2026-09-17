@@ -7,7 +7,8 @@
 
 /**
  * Admin refund request view: operators / times and the write-off ledger link;
- * `order_channel` decides the payout channel options.
+ * `order_payout_channel` is the registry's payout counterpart of `order_channel` (None = offline
+ * only).
  */
 export interface AdminRefundOut {
   amount: string;
@@ -15,6 +16,7 @@ export interface AdminRefundOut {
   id: number;
   order_channel?: string | null;
   order_no: string;
+  order_payout_channel?: string | null;
   payout_at: string | null;
   payout_by: number | null;
   payout_channel: string | null;

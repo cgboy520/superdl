@@ -10,6 +10,10 @@ export type AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetParams = {
 status?: string | null;
 user_id?: number | null;
 day?: string | null;
-tz_offset_minutes?: number | null;
+/**
+ * @minimum -720
+ * @maximum 840
+ */
+tz_offset_minutes?: number;
 lang?: AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetLang;
 };

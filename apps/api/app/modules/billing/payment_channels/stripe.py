@@ -11,6 +11,7 @@ from app.core.errors import AppError, ErrorCode
 from app.core.platform_config import RuntimeConfig
 from app.core.timeutil import now_utc
 from app.modules.billing.payment_channels.base import (
+    SDK_TIMEOUT,
     CallbackResult,
     PaymentInit,
     QueryResult,
@@ -23,9 +24,11 @@ if TYPE_CHECKING:
     from app.modules.billing.models import Order
 
 STRIPE_CFG_KEYS = ("stripe_secret_key", "stripe_webhook_secret")
-#: Stripe requires Checkout Sessions to expire between 30 minutes and 24 hours after creation.
+#: Stripe requires Checkout Sessions to expire between 30 minutes and 24 hours after creation;
+#: the buffer keeps a request that crosses a second boundary above the lower bound.
 SESSION_EXPIRY_MIN_SECONDS = 30 * 60
 SESSION_EXPIRY_MAX_SECONDS = 24 * 3600
+SESSION_EXPIRY_BUFFER_SECONDS = 60
 #: Tolerance for the signed timestamp in `Stripe-Signature`.
 SIGNATURE_TOLERANCE_SECONDS = 300
 
@@ -44,7 +47,7 @@ def from_minor(amount: int, currency: str) -> Decimal:
 
 
 def _clamp_expiry(expires_at_ts: float, now_ts: float) -> int:
-    lo = int(now_ts) + SESSION_EXPIRY_MIN_SECONDS
+    lo = int(now_ts) + SESSION_EXPIRY_MIN_SECONDS + SESSION_EXPIRY_BUFFER_SECONDS
     hi = int(now_ts) + SESSION_EXPIRY_MAX_SECONDS
     return max(lo, min(hi, int(expires_at_ts)))
 
@@ -61,7 +64,9 @@ class StripeChannel:
         if client is None:
             import stripe
 
-            client = stripe.StripeClient(cfg.stripe_secret_key)
+            client = stripe.StripeClient(
+                cfg.stripe_secret_key, http_client=stripe.RequestsClient(timeout=SDK_TIMEOUT)
+            )
         self._client = client
 
     def session_params(self, order: "Order", *, return_url: str, cancel_url: str) -> dict[str, Any]:

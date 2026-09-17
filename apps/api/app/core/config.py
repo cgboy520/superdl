@@ -2,6 +2,7 @@ import base64
 import ipaddress
 import os
 import re
+from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 from typing import Literal
 from urllib.parse import parse_qs, urlparse
@@ -248,6 +249,20 @@ class Settings(BaseSettings):
     alipay_public_key: str | None = None
     alipay_seller_id: str | None = None
 
+    def _validate_recharge_policy(self) -> None:
+        """recharge_min ≤ recharge_max and every preset inside the range, on the env layer too;
+        malformed numbers are reported by `env_layer_problems`."""
+        try:
+            minimum, maximum = Decimal(self.recharge_min), Decimal(self.recharge_max)
+            presets = [Decimal(p) for p in self.recharge_presets.split(",") if p]
+        except InvalidOperation:
+            return
+        if minimum > maximum:
+            raise ValueError(f"recharge_min ({minimum}) must not exceed recharge_max ({maximum})")
+        for preset in presets:
+            if not minimum <= preset <= maximum:
+                raise ValueError(f"recharge preset {preset} is outside {minimum}~{maximum}")
+
     @model_validator(mode="after")
     def _validate_invariants(self) -> "Settings":
         """Validate the KYC combination, CORS, shared pools, addresses, CIDR and key formats; the
@@ -256,6 +271,7 @@ class Settings(BaseSettings):
             enabled=self.real_name_enabled,
             required_for_recharge=self.real_name_required_for_recharge,
         )
+        self._validate_recharge_policy()
         self._validate_deployment_identity()
         if "*" in self.cors_origins:
             raise ValueError(

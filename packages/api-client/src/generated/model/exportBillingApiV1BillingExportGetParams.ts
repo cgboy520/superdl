@@ -10,6 +10,10 @@ import type { ExportBillingApiV1BillingExportGetLang } from './exportBillingApiV
 export type ExportBillingApiV1BillingExportGetParams = {
 dataset?: ExportBillingApiV1BillingExportGetDataset;
 month?: string | null;
-tz_offset_minutes?: number | null;
+/**
+ * @minimum -720
+ * @maximum 840
+ */
+tz_offset_minutes?: number;
 lang?: ExportBillingApiV1BillingExportGetLang;
 };

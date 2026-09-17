@@ -356,7 +356,13 @@ async def _order_channels(session: AsyncSession, order_nos: list[str]) -> dict[s
 
 
 def _admin_out(req: RefundRequest, order_channel: str | None) -> AdminRefundOut:
-    return AdminRefundOut.model_validate(req).model_copy(update={"order_channel": order_channel})
+    spec = CHANNELS.get(order_channel) if order_channel else None
+    return AdminRefundOut.model_validate(req).model_copy(
+        update={
+            "order_channel": order_channel,
+            "order_payout_channel": spec.payout_channel if spec is not None else None,
+        }
+    )
 
 
 async def admin_refund_out(session: AsyncSession, req: RefundRequest) -> AdminRefundOut:

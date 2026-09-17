@@ -78,6 +78,7 @@ MATRIX: dict[str, str | frozenset[str]] = {
     "POST /api/admin/v1/legal-docs/versions/{version_id}/publish": _ADMIN_ONLY,
     "GET /api/admin/v1/legal-docs/{doc_key}/versions": _ANY_READ,
     "POST /api/admin/v1/legal-docs/{doc_key}/versions": _ADMIN_ONLY,
+    "GET /api/admin/v1/deployment": _ANY_READ,
     "GET /api/admin/v1/me": "any",
     "POST /api/admin/v1/me/mfa/recovery-codes": "any",
     "POST /api/admin/v1/me/password": "any",

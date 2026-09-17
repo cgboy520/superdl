@@ -6,7 +6,7 @@ from typing import Annotated
 from fastapi import Depends, Query
 
 from app.core.params import ExportLang
-from app.core.timeutil import billing_day_range
+from app.core.timeutil import billing_day_range, billing_local_date
 
 __all__ = ["DayRange", "ExportLang", "day_suffix", "parse_day"]
 
@@ -25,5 +25,5 @@ DayRange = Annotated[tuple[datetime, datetime] | None, Depends(_day_range)]
 
 
 def day_suffix(day_range: tuple[datetime, datetime] | None) -> str:
-    """CSV file name suffix: YYYY-MM-DD or all."""
-    return f"{day_range[0]:%Y-%m-%d}" if day_range else "all"
+    """CSV file name suffix: the billing-zone date YYYY-MM-DD, or all."""
+    return billing_local_date(day_range[0]).isoformat() if day_range else "all"

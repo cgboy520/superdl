@@ -277,9 +277,9 @@ MESSAGES: dict[str, str] = {
     ),
     "catalog.prewarmDisabled": "Prewarming is disabled for this image — enable it first",
     "catalog.priceHourlyTwoDecimals": (
-        "Hourly-billed specs allow at most 2 decimal places (billed per hour at 2 decimals — "
-        "more digits cause rounding drift); 4-digit precision is only for data-disk GB-month "
-        "prices"
+        "Hourly-billed specs are priced to the platform currency's minor unit (2 decimals for "
+        "USD / CNY, whole units for JPY / KRW / VND) because each hour posts at that precision; "
+        "4-digit precision is only for data-disk GB-month prices"
     ),
     "catalog.priceTooSmall": "Unit price too small: it must not round to 0 at four decimal places",
     "catalog.skuBusinessKeyExists": (

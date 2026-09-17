@@ -1045,7 +1045,7 @@
         "type": "object"
       },
       "AdminRefundOut": {
-        "description": "Admin refund request view: operators / times and the write-off ledger link;\n`order_channel` decides the payout channel options.",
+        "description": "Admin refund request view: operators / times and the write-off ledger link;\n`order_payout_channel` is the registry's payout counterpart of `order_channel` (None = offline\nonly).",
         "properties": {
           "amount": {
             "title": "Amount",
@@ -1074,6 +1074,17 @@
           "order_no": {
             "title": "Order No",
             "type": "string"
+          },
+          "order_payout_channel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Payout Channel"
           },
           "payout_at": {
             "anyOf": [
@@ -10412,17 +10423,10 @@
             "name": "tz_offset_minutes",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "maximum": 720,
-                  "minimum": -720,
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tz Offset Minutes"
+              "maximum": 840,
+              "minimum": -720,
+              "title": "Tz Offset Minutes",
+              "type": "integer"
             }
           },
           {
@@ -11384,17 +11388,10 @@
             "name": "tz_offset_minutes",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "maximum": 720,
-                  "minimum": -720,
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tz Offset Minutes"
+              "maximum": 840,
+              "minimum": -720,
+              "title": "Tz Offset Minutes",
+              "type": "integer"
             }
           },
           {
@@ -11995,6 +11992,33 @@
           }
         ],
         "summary": "Admin Reject Deletion",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/deployment": {
+      "get": {
+        "description": "Read-only deployment identity (compliance profile, currency, billing time zone) for every\nconsole role; the consoles format money with it.",
+        "operationId": "admin_get_deployment_api_admin_v1_deployment_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentIdentityOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Get Deployment",
         "tags": [
           "admin"
         ]
@@ -13225,17 +13249,10 @@
             "name": "tz_offset_minutes",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "maximum": 720,
-                  "minimum": -720,
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tz Offset Minutes"
+              "maximum": 840,
+              "minimum": -720,
+              "title": "Tz Offset Minutes",
+              "type": "integer"
             }
           },
           {
@@ -14620,17 +14637,10 @@
             "name": "tz_offset_minutes",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "maximum": 720,
-                  "minimum": -720,
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tz Offset Minutes"
+              "maximum": 840,
+              "minimum": -720,
+              "title": "Tz Offset Minutes",
+              "type": "integer"
             }
           },
           {
@@ -15394,17 +15404,10 @@
             "name": "tz_offset_minutes",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "maximum": 720,
-                  "minimum": -720,
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tz Offset Minutes"
+              "maximum": 840,
+              "minimum": -720,
+              "title": "Tz Offset Minutes",
+              "type": "integer"
             }
           },
           {
@@ -15696,17 +15699,10 @@
             "name": "tz_offset_minutes",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "maximum": 720,
-                  "minimum": -720,
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tz Offset Minutes"
+              "maximum": 840,
+              "minimum": -720,
+              "title": "Tz Offset Minutes",
+              "type": "integer"
             }
           }
         ],
@@ -16630,17 +16626,10 @@
             "name": "tz_offset_minutes",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "maximum": 720,
-                  "minimum": -720,
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tz Offset Minutes"
+              "maximum": 840,
+              "minimum": -720,
+              "title": "Tz Offset Minutes",
+              "type": "integer"
             }
           },
           {
@@ -17504,17 +17493,10 @@
             "name": "tz_offset_minutes",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "maximum": 720,
-                  "minimum": -720,
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tz Offset Minutes"
+              "maximum": 840,
+              "minimum": -720,
+              "title": "Tz Offset Minutes",
+              "type": "integer"
             }
           },
           {
@@ -17760,17 +17742,10 @@
             "name": "tz_offset_minutes",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "maximum": 720,
-                  "minimum": -720,
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tz Offset Minutes"
+              "maximum": 840,
+              "minimum": -720,
+              "title": "Tz Offset Minutes",
+              "type": "integer"
             }
           }
         ],
@@ -17881,17 +17856,10 @@
             "name": "tz_offset_minutes",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "maximum": 720,
-                  "minimum": -720,
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tz Offset Minutes"
+              "maximum": 840,
+              "minimum": -720,
+              "title": "Tz Offset Minutes",
+              "type": "integer"
             }
           }
         ],
@@ -17947,17 +17915,10 @@
             "name": "tz_offset_minutes",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "maximum": 720,
-                  "minimum": -720,
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tz Offset Minutes"
+              "maximum": 840,
+              "minimum": -720,
+              "title": "Tz Offset Minutes",
+              "type": "integer"
             }
           }
         ],

@@ -137,7 +137,7 @@
     "isolationChangeNeedsOffSale": "A listed SKU cannot change its pool or MIG profile: both decide the isolation mechanism and the spec buyers see, so changing them makes it a different product. Delist it first, or create a new SKU",
     "migProfileMismatch": "The mig pool requires a slice profile; other pools must leave it empty",
     "prewarmDisabled": "Prewarming is disabled for this image — enable it first",
-    "priceHourlyTwoDecimals": "Hourly-billed specs allow at most 2 decimal places (billed per hour at 2 decimals — more digits cause rounding drift); 4-digit precision is only for data-disk GB-month prices",
+    "priceHourlyTwoDecimals": "Hourly-billed specs are priced to the platform currency's minor unit (2 decimals for USD / CNY, whole units for JPY / KRW / VND) because each hour posts at that precision; 4-digit precision is only for data-disk GB-month prices",
     "priceTooSmall": "Unit price too small: it must not round to 0 at four decimal places",
     "skuBusinessKeyExists": "A SKU with the same model, tier, pool, MIG profile, cores share and vCPU/memory already exists — edit that one instead",
     "skuNotFound": "Spec not found",

@@ -76,6 +76,30 @@ class TestHourlyExport:
         assert lines[1].endswith(",1,3600,1.6800,1,1.68")
         assert csvexport.TRUNCATED_MARKER not in text
 
+    async def test_lang_explicit_and_profile_default(
+        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession], monkeypatch
+    ):
+        """lang=zh-CN renders the Chinese table; under the cn profile an omitted lang does the
+        same and lang=en-US still overrides it."""
+        from app.core.config import get_settings
+
+        headers, user_id, _ = await create_user_with_key(client, "u13900000302@test.local")
+        await seed_bill_hourly(
+            sm, user_id, rows=[(1, _hour(2026, 8, 1, 0), "1.68")], unit_price="1.6800"
+        )
+        params = {"dataset": "hourly", "month": "2026-08", "tz_offset_minutes": 480}
+        zh = await client.get(
+            "/api/v1/billing/export", params={**params, "lang": "zh-CN"}, headers=headers
+        )
+        assert zh.text.startswith("\ufeff小时,实例ID,运行秒数")  # cjk-ok
+        monkeypatch.setattr(get_settings(), "compliance_profile", "cn")
+        default = await client.get("/api/v1/billing/export", params=params, headers=headers)
+        assert default.text.startswith("\ufeff小时,实例ID,运行秒数")  # cjk-ok
+        en = await client.get(
+            "/api/v1/billing/export", params={**params, "lang": "en-US"}, headers=headers
+        )
+        assert en.text.startswith("\ufeffHour,Instance ID,Seconds")
+
     async def test_month_excludes_outside_rows(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):

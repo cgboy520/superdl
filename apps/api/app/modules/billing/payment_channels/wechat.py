@@ -118,7 +118,13 @@ class WechatChannel:
         amount_obj = resource.get("amount")
         total = amount_obj.get("total") if isinstance(amount_obj, dict) else None
         currency = amount_obj.get("currency") if isinstance(amount_obj, dict) else None
-        if not out_trade_no or not transaction_id or not trade_state or total is None:
+        if (
+            not out_trade_no
+            or not transaction_id
+            or not trade_state
+            or total is None
+            or not currency
+        ):
             raise channel_error("billing.wechatCallbackVerifyFailed")
         return CallbackResult(
             order_no=out_trade_no,
@@ -145,7 +151,7 @@ class WechatChannel:
                 "paid",
                 channel_txn_id=data["transaction_id"],
                 amount=Decimal(data["amount"]["total"]) / 100,
-                currency=data["amount"].get("currency"),
+                currency=data["amount"]["currency"],
             )
         if state in ("CLOSED", "REVOKED", "PAYERROR"):
             return QueryResult("closed")

@@ -37,6 +37,22 @@ class TestSpecValidation:
             == "https://example.com/l.png"
         )
 
+    def test_recharge_bounds_and_presets_follow_the_currency_quantum(self, monkeypatch):
+        """A bound the API would quantize away (1.005 → 1.00) is refused, so the published range
+        and the enforced range never differ."""
+        with pytest.raises(ValueError, match="recharge_min"):
+            validate_setting_value("recharge_min", "1.005")
+        with pytest.raises(ValueError, match="recharge_max"):
+            validate_setting_value("recharge_max", "100.001")
+        assert validate_setting_value("recharge_min", "1.50") == "1.50"
+        assert validate_setting_value("recharge_presets", "50,100.5") == "50,100.5"
+        monkeypatch.setattr(get_settings(), "platform_currency", "JPY")
+        with pytest.raises(ValueError, match="recharge_min"):
+            validate_setting_value("recharge_min", "1.5")
+        with pytest.raises(ValueError, match=r"preset 100\.5"):
+            validate_setting_value("recharge_presets", "50,100.5")
+        assert validate_setting_value("recharge_presets", "50,100") == "50,100"
+
     @pytest.mark.parametrize("value", ["0", "00", "65536", "99999", "-25", "25.5"])
     def test_smtp_port_must_be_a_tcp_port(self, value: str):
         """An out-of-range port is refused at write time instead of failing at connect time."""
@@ -910,3 +926,16 @@ class TestPolicyOverrides:
             headers=ah,
         )
         assert resp.status_code == 400
+
+
+class TestDeploymentIdentityEndpoint:
+    async def test_readable_by_every_console_role(self, client, sm):
+        """Money formatting in the admin console depends on this for non-admin roles."""
+        ro = await admin_headers(sm, client, role="readonly", username="ro-deploy")
+        resp = await client.get("/api/admin/v1/deployment", headers=ro)
+        assert resp.status_code == 200, resp.text
+        assert resp.json() == {
+            "compliance_profile": "none",
+            "currency": get_settings().platform_currency,
+            "billing_timezone": get_settings().billing_timezone,
+        }

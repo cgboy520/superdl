@@ -371,16 +371,23 @@ async def admin_get_platform_config(session: DbSession) -> PlatformConfigOut:
             *billing_service.payment_config_warnings(effective_cfg, get_settings().environment),
         )
     ]
+    return PlatformConfigOut(items=items, warnings=warnings, deployment=_deployment_identity())
+
+
+def _deployment_identity() -> DeploymentIdentityOut:
     settings = get_settings()
-    return PlatformConfigOut(
-        items=items,
-        warnings=warnings,
-        deployment=DeploymentIdentityOut(
-            compliance_profile=current_profile().name,
-            currency=settings.platform_currency,
-            billing_timezone=settings.billing_timezone,
-        ),
+    return DeploymentIdentityOut(
+        compliance_profile=current_profile().name,
+        currency=settings.platform_currency,
+        billing_timezone=settings.billing_timezone,
     )
+
+
+@router.get("/deployment", dependencies=[require_roles("ops", "finance", "readonly")])
+async def admin_get_deployment() -> DeploymentIdentityOut:
+    """Read-only deployment identity (compliance profile, currency, billing time zone) for every
+    console role; the consoles format money with it."""
+    return _deployment_identity()
 
 
 class PlatformConfigUpdateRequest(BaseModel):

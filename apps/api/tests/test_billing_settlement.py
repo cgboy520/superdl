@@ -9,6 +9,7 @@ from sqlalchemy import select, update
 from app.modules.billing import wallet
 from app.modules.billing.models import BalanceLedger, BillHourly, Wallet
 from app.modules.billing.settlement import (
+    _lag_windows,
     bill_amount,
     get_watermark,
     running_seconds_in_window,
@@ -841,3 +842,27 @@ class TestGapEndpoints:
         assert resp.json()["resolved_at"] is not None
         rows = (await client.get("/api/admin/v1/finance/settlement-gaps", headers=finance)).json()
         assert rows["items"] == []
+
+
+class TestLagWindows:
+    """The lag gauge counts windows: a DST day is one window, not 25/24 or 23/24."""
+
+    def test_fixed_step_divides_elapsed_time(self):
+        t0 = datetime(2026, 8, 19, 0, 0, tzinfo=UTC)
+        assert _lag_windows(None, t0, timedelta(hours=1), None) == 0.0
+        assert _lag_windows(t0, t0 + timedelta(hours=3), timedelta(hours=1), None) == 3.0
+        assert _lag_windows(t0 + timedelta(hours=3), t0, timedelta(hours=1), None) == 0.0
+
+    def test_calendar_shift_counts_steps(self, monkeypatch):
+        from app.core.config import get_settings
+        from app.core.timeutil import billing_day_floor, billing_day_shift
+
+        monkeypatch.setattr(get_settings(), "billing_timezone", "America/New_York")
+        fall = billing_day_floor(datetime(2026, 11, 1, 12, 0, tzinfo=UTC))
+        nxt = billing_day_shift(fall, 1)
+        assert (nxt - fall).total_seconds() == 25 * 3600
+        assert _lag_windows(fall, nxt, timedelta(days=1), billing_day_shift) == 1.0
+        assert (
+            _lag_windows(fall, billing_day_shift(fall, 3), timedelta(days=1), billing_day_shift)
+            == 3.0
+        )

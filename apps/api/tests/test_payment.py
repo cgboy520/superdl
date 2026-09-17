@@ -3,11 +3,14 @@
 from datetime import timedelta
 from decimal import Decimal
 
+import pytest
 from httpx import AsyncClient
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
+from app.core.errors import AppError
+from app.core.money import money_label
 from app.core.timeutil import now_utc
 from app.modules.billing.models import BalanceLedger, Order, Wallet
 from app.modules.billing.payment_service import close_expired_orders
@@ -267,10 +270,46 @@ class TestRecharge:
         )
         assert resp.status_code == 400
         assert resp.json()["message_key"] == "billing.rechargeAmountOutOfRange"
+        above_max = await client.post(
+            "/api/v1/wallet/recharges",
+            json={"amount": "50000.01", "channel": "mock"},
+            headers=headers,
+        )
+        assert above_max.status_code == 400, above_max.text
+        body = above_max.json()
+        assert body["message_key"] == "billing.rechargeAmountOutOfRange"
+        assert body["params"] == {"min": money_label("1.00"), "max": money_label("50000.00")}
 
 
 class TestCallbackOnNonPendingOrders:
     """Callbacks after close that disagree with the channel."""
+
+    async def test_paid_order_reversal_from_another_channel_is_rejected(
+        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
+    ):
+        """A reversal notice must name the order's own channel before it can freeze anything."""
+        from app.modules.billing.payment_channels import CallbackResult
+        from app.modules.billing.payment_service import handle_callback
+
+        headers = await user_headers(client, "u13700000046@test.local")
+        order = await create_order(client, headers, "30.00")
+        assert (await pay_mock(client, order["order_no"], "30.00")).status_code == 200
+        reversal = CallbackResult(
+            order["order_no"], "tx-other", Decimal("30.00"), False, refund_amount=Decimal("30.00")
+        )
+        async with sm() as session:
+            with pytest.raises(AppError) as exc:
+                await handle_callback(session, "stripe", reversal)
+            assert exc.value.message_key == "billing.callbackChannelMismatch"
+        async with sm() as session:
+            row = (
+                await session.execute(select(Order).where(Order.order_no == order["order_no"]))
+            ).scalar_one()
+            assert row.channel_reversed_at is None
+            frozen = (
+                await session.execute(select(Wallet.frozen).where(Wallet.user_id == row.user_id))
+            ).scalar_one()
+            assert frozen == Decimal("0.00")
 
     async def test_expired_orders_closed(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]

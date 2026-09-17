@@ -21,11 +21,13 @@ class MockChannel:
 
     name = "mock"
 
-    _channel_side: ClassVar[dict[str, tuple[str, Decimal]]] = {}
+    _channel_side: ClassVar[dict[str, tuple[str, Decimal, str | None]]] = {}
 
     @classmethod
-    def mark_paid(cls, order_no: str, txn_id: str, amount: Decimal | str) -> None:
-        cls._channel_side[order_no] = (txn_id, Decimal(str(amount)))
+    def mark_paid(
+        cls, order_no: str, txn_id: str, amount: Decimal | str, currency: str | None = None
+    ) -> None:
+        cls._channel_side[order_no] = (txn_id, Decimal(str(amount)), currency)
 
     @classmethod
     def reset(cls) -> None:
@@ -53,11 +55,11 @@ class MockChannel:
         except (ValueError, KeyError, TypeError, InvalidOperation) as exc:
             raise channel_error("billing.mockCallbackParseFailed") from exc
         if result.success and result.order_no:
-            self.mark_paid(result.order_no, result.channel_txn_id, result.amount)
+            self.mark_paid(result.order_no, result.channel_txn_id, result.amount, result.currency)
         return result
 
     async def query_order(self, order: "Order") -> QueryResult:
         hit = self._channel_side.get(order.order_no)
         if hit is None:
             return QueryResult("pending")
-        return QueryResult("paid", channel_txn_id=hit[0], amount=hit[1])
+        return QueryResult("paid", channel_txn_id=hit[0], amount=hit[1], currency=hit[2])
