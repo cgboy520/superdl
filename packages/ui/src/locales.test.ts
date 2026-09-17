@@ -8,7 +8,7 @@ import { assertLocaleParity } from "./localeParity";
 import * as status from "./status";
 import { ALL_STATUS_MAPS } from "./status";
 
-/** 按 "a.b.c" 路径取目录值;缺失或非字符串返回 undefined。 */
+/** Read a catalog value by "a.b.c" path; undefined when missing or not a string. */
 function lookup(catalog: Record<string, unknown>, dotted: string): string | undefined {
   let cur: unknown = catalog;
   for (const part of dotted.split(".")) {
@@ -29,29 +29,29 @@ for (const map of ALL_STATUS_MAPS) {
 }
 
 describe("packages/ui shared locale", () => {
-  it("status.ts 每张 *Map 都登记在 ALL_STATUS_MAPS(否则新表可以不带文案上线)", () => {
+  it("every *Map in status.ts is registered in ALL_STATUS_MAPS (otherwise a new table could ship without copy)", () => {
     const registered = new Set<unknown>(ALL_STATUS_MAPS);
     for (const [name, v] of Object.entries(status)) {
       if (!name.endsWith("Map") || typeof v !== "object") continue;
-      expect(registered.has(v), `${name} 未登记`).toBe(true);
+      expect(registered.has(v), `${name} not registered`).toBe(true);
     }
   });
 
-  it("每个 labelKey/hintKey 在 zh 与 en 均存在且非空", () => {
+  it("every labelKey/hintKey exists and is non-empty in zh and en", () => {
     for (const key of usedKeys) {
       const bare = key.slice("shared:".length);
-      expect(lookup(zhCN, bare)?.trim(), `zh 缺 ${bare}`).toBeTruthy();
-      expect(lookup(enUS, bare)?.trim(), `en 缺 ${bare}`).toBeTruthy();
+      expect(lookup(zhCN, bare)?.trim(), `zh missing ${bare}`).toBeTruthy();
+      expect(lookup(enUS, bare)?.trim(), `en missing ${bare}`).toBeTruthy();
     }
   });
 
-  it("shared.json zh/en 齐平(键集、非空、占位符)", () => {
+  it("shared.json zh/en parity (key set, non-empty, placeholders)", () => {
     assertLocaleParity(zhCN, enUS, { allowCjkInEn: ["lang.zh"] });
   });
 });
 
-describe("errors namespace(后端 MESSAGES 生成链)", () => {
-  it("errors.json zh/en 齐平(键集、非空、占位符)", () => {
+describe("errors namespace (generated from the backend MESSAGES)", () => {
+  it("errors.json zh/en parity (key set, non-empty, placeholders)", () => {
     assertLocaleParity(errorsZh, errorsEn);
   });
 });

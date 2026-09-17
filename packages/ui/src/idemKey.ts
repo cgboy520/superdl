@@ -1,4 +1,4 @@
-/** 幂等键派生:同一表单快照 → 同一键,失败不轮换;成功后再开新单由调用方把序号/nonce 放进 parts。 */
+/** Idempotency key derivation: the same form snapshot → the same key, never rotated on failure; for a fresh order after success the caller puts a sequence / nonce into parts. */
 export function idemKeyOf(scope: string, parts: readonly (string | number | null | undefined)[]): string {
   const s = `${scope}:${parts.map((p) => p ?? "").join("|")}`;
   let h = 0xcbf29ce484222325n;

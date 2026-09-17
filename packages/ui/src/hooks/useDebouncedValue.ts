@@ -1,4 +1,4 @@
-/** 尾随防抖(两端共用)。 */
+/** Trailing debounce (shared by both consoles). */
 
 import { useEffect, useState } from "react";
 

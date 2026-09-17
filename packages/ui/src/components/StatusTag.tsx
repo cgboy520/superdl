@@ -1,4 +1,4 @@
-/** 状态徽标:tag、badge、dot 或 text 形态,支持图标与提示;未知状态原样回显。 */
+/** Status badge: tag, badge, dot or text form, with icon and hint; unknown statuses are echoed as-is. */
 
 import {
   CheckCircleFilled,
@@ -17,7 +17,7 @@ import { isColorMeta, isStatusMeta, metaOf, type AnyStatusMap, type StatusIcon, 
 import { iconSize, space } from "../tokens";
 import { HexTag } from "./HexTag";
 
-/** 全部已知状态表的条目并集(labelKey / hintKey 保持字面量,t() 可校验) */
+/** Union of the entries of every known status table (labelKey / hintKey stay literals so t() can check them) */
 type KnownMeta = AnyStatusMap extends infer U ? (U extends Record<string, infer V> ? V : never) : never;
 
 const ICONS: Record<StatusIcon, ReactNode> = {
@@ -41,11 +41,11 @@ export function StatusTag({
   map: AnyStatusMap;
   value: string;
   variant?: "tag" | "badge" | "dot" | "text";
-  /** 文字前带表里声明的图标 */
+  /** Icon declared in the table before the text */
   icon?: boolean;
-  /** hintKey 存在时出 Tooltip(默认开) */
+  /** Tooltip when hintKey exists (default on) */
   hint?: boolean;
-  /** 尾部附加(冻结倒计时等) */
+  /** Trailing extra (freeze countdown etc.) */
   extra?: ReactNode;
 }) {
   const { t: typedT } = useTranslation();

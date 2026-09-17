@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import { apiErrorText, type LooseT } from "../apiError";
 
-/** 返回将 API 错误转换为当前语言文案的函数,支持自定义兜底。 */
+/** Returns a function that turns an API error into copy in the current language, with an optional fallback. */
 export function useApiErrorText() {
   const { t } = useTranslation("shared");
   return useCallback(

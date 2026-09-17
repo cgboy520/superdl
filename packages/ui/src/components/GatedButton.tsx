@@ -1,12 +1,12 @@
-/** reason 非空时保持可聚焦、拦截点击并显示 Tooltip;否则为普通按钮。 */
+/** With a non-empty reason it stays focusable, intercepts clicks and shows a Tooltip; otherwise a plain button. */
 
 import { Button, Tooltip, type ButtonProps, type TooltipProps } from "antd";
 import type { MouseEvent, ReactNode } from "react";
 
 export interface GatedButtonProps extends Omit<ButtonProps, "disabled"> {
-  /** 不可用原因;非空即门控 */
+  /** Reason why unavailable; non-empty = gated */
   reason?: ReactNode;
-  /** 硬禁用(无原因,仅提交在途等瞬态);有 reason 时忽略 */
+  /** Hard disable (no reason, only transient states such as submission in flight); ignored with a reason */
   disabled?: boolean;
   tooltipPlacement?: TooltipProps["placement"];
 }

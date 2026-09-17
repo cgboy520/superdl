@@ -1,19 +1,19 @@
-/** 共享轮询周期,单位毫秒。 */
+/** Shared polling periods in milliseconds. */
 export const POLL = {
-  /** 支付单等待回调 */
+  /** Payment order waiting for the callback */
   payment: 2_000,
-  /** 过渡态(creating / starting / stopping / releasing / deploying)逐条轻轮询 */
+  /** Transitional states (creating / starting / stopping / releasing / deploying) polled lightly per row */
   transient: 5_000,
-  /** 容器日志自动刷新 */
+  /** Container log auto-refresh */
   logs: 10_000,
-  /** 工单对话流(进行中) */
+  /** Ticket conversation (in progress) */
   ticket: 15_000,
-  /** 角标与稳态详情(未读数 / 告警计数 / 运行中实例详情 / 市场库存) */
+  /** Badges and steady-state details (unread count / alert count / running instance detail / market stock) */
   steady: 30_000,
-  /** 批量指标摘要(sparkline) */
+  /** Batch metric summary (sparklines) */
   metrics: 45_000,
-  /** 日消费 / 财务类汇总 */
+  /** Daily consumption / finance summaries */
   daily: 60_000,
-  /** 公开层行情板与价格墙(匿名访问,频率压到一分钟) */
+  /** Public price board and price wall (anonymous, throttled to one minute) */
   publicBoard: 60_000,
 } as const;

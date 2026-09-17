@@ -12,13 +12,13 @@ export type RowMenuItem =
       label: ReactNode;
       onClick: () => void;
       danger?: boolean;
-      /** 不可用原因;非空即灰置(仍可聚焦,tooltip 可读) */
+      /** Reason why unavailable; non-empty = greyed (still focusable, tooltip readable) */
       reason?: ReactNode;
       icon?: ReactNode;
     }
   | { type: "divider"; key: string };
 
-/** 行内更多菜单:可用的 items 条目点击后收起;自定义 children 不自动收起菜单。 */
+/** Row "more" menu: enabled items collapse the menu after a click; custom children do not collapse it automatically. */
 export function RowMoreMenu({
   items,
   children,
@@ -28,11 +28,11 @@ export function RowMoreMenu({
   icon,
 }: {
   items?: RowMenuItem[];
-  /** 自带弹窗流程的按钮(如管理端 ReasonAction),与 items 二选一或并列 */
+  /** Buttons with their own dialog flow (e.g. admin ReasonAction), alternative or in addition to items */
   children?: ReactNode;
   size?: "small" | "middle";
   label?: ReactNode;
-  /** 当这个下拉本身是行内主动作时(服务「端点 ▾」)给 primary,与实例「连接 ▾」同一外观 */
+  /** primary when this dropdown itself is the row's primary action (service "Endpoint ▾"), the same look as the instance "Connect ▾" */
   type?: "default" | "primary";
   icon?: ReactNode;
 }) {

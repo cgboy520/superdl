@@ -14,7 +14,7 @@ export const SUPPORTED_LANGS = ["zh-CN", "en-US"] as const;
 export type AppLang = (typeof SUPPORTED_LANGS)[number];
 
 export function initAppI18n(opts: {
-  /** 端默认 ns("web" / "admin") */
+  /** Default ns of the console ("web" / "admin") */
   appNs: string;
   appResources: { "zh-CN": unknown; "en-US": unknown };
 }): I18nInstance {

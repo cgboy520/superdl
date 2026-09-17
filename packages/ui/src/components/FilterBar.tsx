@@ -1,4 +1,4 @@
-/** 筛选条(两端统一):左侧筛选控件 + 「清除筛选」,右侧「共 N 条」+ 附加动作;筛选态由页面持有(入 URL),这里只负责排版与清除。 */
+/** Filter bar (shared by both consoles): filter controls + "Clear filters" on the left, "N in total" + extra actions on the right; the filter state belongs to the page (in the URL), this only lays out and clears. */
 
 import { Button, Space, Typography } from "antd";
 import type { ReactNode } from "react";
@@ -14,11 +14,11 @@ export function FilterBar({
   extra,
 }: {
   children: ReactNode;
-  /** 当前结果条数(未知不传) */
+  /** Current result count (omit when unknown) */
   count?: number;
   hasFilter: boolean;
   onClear: () => void;
-  /** 右侧附加动作(刷新 / 导出) */
+  /** Extra actions on the right (refresh / export) */
   extra?: ReactNode;
 }) {
   const { t } = useTranslation("shared");

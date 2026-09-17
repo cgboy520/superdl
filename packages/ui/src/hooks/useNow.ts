@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-/** 按间隔刷新当前时间戳,默认 30 秒;intervalMs<=0 时不刷新。 */
+/** Refresh the current timestamp at an interval, default 30 s; intervalMs<=0 never refreshes. */
 export function useNow(intervalMs = 30_000): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {

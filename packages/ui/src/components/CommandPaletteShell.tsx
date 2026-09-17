@@ -1,4 +1,4 @@
-/** ⌘K / Ctrl+K 命令面板壳(两端共用):全局热键 + 事件总线开合 + Modal/cmdk 骨架。两端只组装 groups,openEventName 各自传入。 */
+/** ⌘K / Ctrl+K command palette shell (shared by both consoles): global hotkey + event-bus open/close + Modal/cmdk skeleton. Each console only assembles groups and passes its own openEventName. */
 
 import { QuestionCircleOutlined, SearchOutlined } from "@ant-design/icons";
 import { Modal, theme, Typography } from "antd";
@@ -11,15 +11,15 @@ export function isMacPlatform(): boolean {
   return typeof navigator !== "undefined" && /mac|iphone|ipad/i.test(navigator.userAgent);
 }
 
-/** 顶栏 kbd 提示徽标 */
+/** kbd hint badge in the top bar */
 export const COMMAND_KBD_HINT = isMacPlatform() ? "⌘K" : "Ctrl K";
 
 export interface CommandPaletteItem {
   key: string;
   label: ReactNode;
-  /** 双语检索关键词 */
+  /** Bilingual search keywords */
   keywords?: string[];
-  /** cmdk 过滤值:label 为字符串时默认取 `${label} ${key}`;label 为复合节点(如实例行)时必传 */
+  /** cmdk filter value: defaults to `${label} ${key}` when label is a string; required when label is a composite node (such as an instance row) */
   value?: string;
   run: () => void;
 }
@@ -32,16 +32,16 @@ export interface CommandPaletteGroup {
 export interface CommandPaletteShellProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** 顶栏触发器与面板之间的事件总线名(两端各自不同) */
+  /** Event-bus name between the top-bar trigger and the palette (different per console) */
   openEventName: string;
-  /** aria label 与输入框占位 */
+  /** aria label and input placeholder */
   label: string;
   noResultsText: string;
   hintText: string;
-  /** 底部第二条快捷键提示(可选) */
+  /** Second shortcut hint at the bottom (optional) */
   hintExtraText?: string;
   groups: CommandPaletteGroup[];
-  /** 输入词变化(调用方据此做服务端实体检索,如租户 id / 实例 uuid 前缀) */
+  /** Input change (the caller runs server-side entity search on it, e.g. tenant id / instance uuid prefix) */
   onQueryChange?: (query: string) => void;
 }
 

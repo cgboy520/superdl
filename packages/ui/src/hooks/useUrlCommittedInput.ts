@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import { useDebouncedValue } from "./useDebouncedValue";
 
-/** 输入防抖后调用 commit,空白转为 undefined;committed 返回 urlValue。非 undefined 的 URL 变化同步到输入框。 */
+/** Debounce the input then call commit, blanks become undefined; committed returns urlValue. Non-undefined URL changes sync into the input. */
 export function useUrlCommittedInput(
   urlValue: string | undefined,
   commit: (next: string | undefined) => void,

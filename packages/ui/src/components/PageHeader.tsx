@@ -1,5 +1,5 @@
-/** 页头(两端统一):面包屑 / 返回 → 标题 + 描述 → 右侧动作;可选「数据新鲜度」行(Freshness)。
- *  路由链接由调用方渲染后经 breadcrumb 传入(本包不依赖路由库)。 */
+/** Page header (shared by both consoles): breadcrumb / back → title + description → actions on the right; optional "data freshness" row (Freshness).
+ *  Route links are rendered by the caller and passed via breadcrumb (this package has no router dependency). */
 
 import { ArrowLeftOutlined } from "@ant-design/icons";
 import { Breadcrumb, Button, Space, Typography } from "antd";
@@ -11,18 +11,18 @@ import { Freshness, type FreshnessProps } from "./Freshness";
 export type { FreshnessProps } from "./Freshness";
 
 export interface PageHeaderProps {
-  /** 不传则不渲染标题行(只有面包屑 / 返回的页面:详情页由 EntityHeader 承担标题) */
+  /** Omitted = no title row (pages with only breadcrumb / back: detail pages carry the title in EntityHeader) */
   title?: ReactNode;
-  /** 标题下方的描述。 */
+  /** Description under the title. */
   description?: ReactNode;
-  /** 右侧动作区(主按钮 + 次按钮) */
+  /** Action area on the right (primary + secondary buttons) */
   extra?: ReactNode;
-  /** 面包屑:除最后一项外由调用方渲染为链接;传入即渲染,最后一项默认当前页 */
+  /** Breadcrumb: every item but the last is rendered as a link by the caller; rendered when passed, the last item is the current page by default */
   breadcrumb?: ReactNode[];
-  /** 返回上一级(与 breadcrumb 二选一) */
+  /** Back to the parent (mutually exclusive with breadcrumb) */
   back?: { label: ReactNode; onClick: () => void };
   freshness?: FreshnessProps;
-  /** 标题右侧的徽标/标签组 */
+  /** Badge / tag group right of the title */
   tags?: ReactNode;
 }
 

@@ -1,4 +1,4 @@
-/** URL 筛选态的通用判定与清除(不依赖路由库):调用方传入当前 search、参与筛选的键与回写函数。 */
+/** Generic URL filter state check and clear (no router dependency): the caller passes the current search, the filter keys and the write-back function. */
 
 import { useCallback, useMemo } from "react";
 
@@ -10,9 +10,9 @@ export function useUrlFilters<S extends Record<string, FilterValue>>({
   commit,
 }: {
   search: S;
-  /** 参与「有筛选 / 清除筛选」判定的键 */
+  /** Keys taking part in the "has filters / clear filters" decision */
   keys: readonly (keyof S)[];
-  /** 回写 URL(调用方用 navigate({ search: prev => ({ ...prev, ...patch }), replace: true })) */
+  /** Write back to the URL (the caller uses navigate({ search: prev => ({ ...prev, ...patch }), replace: true })) */
   commit: (patch: Partial<S>) => void;
 }): { hasFilter: boolean; clear: () => void; set: (patch: Partial<S>) => void } {
   const hasFilter = useMemo(

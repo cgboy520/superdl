@@ -1,4 +1,4 @@
-/** 页面容器:最大宽度居中 + 可选页头(PageHeader)。width 四档:default 1280 / wide 1200 / narrow 880 / full(不限宽,管理端宽表页)。 */
+/** Page container: centred max width + optional header (PageHeader). Four widths: default 1280 / wide 1200 / narrow 880 / full (unbounded, admin wide-table pages). */
 
 import type { ReactNode } from "react";
 
@@ -20,7 +20,7 @@ export function PageContainer({
   children,
   ...header
 }: Partial<PageHeaderProps> & {
-  /** 页宽档位 */
+  /** Page width tier */
   width?: PageWidth;
   children: ReactNode;
 }) {

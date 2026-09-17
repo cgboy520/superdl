@@ -1,4 +1,4 @@
-/** 注意事项聚合条:单条直接显示,多条折叠展开,严重度取最高。 */
+/** Attention aggregate bar: one item shows directly, several fold into an expandable list, severity = the highest. */
 
 import { DownOutlined, UpOutlined } from "@ant-design/icons";
 import { Alert, Button, Space, Typography } from "antd";

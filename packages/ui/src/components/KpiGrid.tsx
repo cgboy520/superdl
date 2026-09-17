@@ -1,4 +1,4 @@
-/** KPI 卡网格:CSS grid 自适应列数(每卡 ≥ minWidth,默认 180px),任意块数在任意视口都能换行;loading 渲染同数量骨架卡。 */
+/** KPI card grid: CSS grid with adaptive column count (each card ≥ minWidth, default 180px), any number of blocks wraps on any viewport; loading renders the same number of skeleton cards. */
 
 import { Card, Skeleton } from "antd";
 import type { ReactNode } from "react";
@@ -12,7 +12,7 @@ export function KpiGrid({
 }: {
   items: ReactNode[];
   loading?: boolean;
-  /** 单卡最小宽度(px);窄屏按此值自动折行 */
+  /** Minimum card width (px); narrow screens wrap by it */
   minWidth?: number;
 }) {
   return (

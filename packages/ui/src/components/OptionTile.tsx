@@ -1,4 +1,4 @@
-/** 单选 tile 组:方向键切换,禁用项保持可见并显示原因。 */
+/** Single-select tile group: arrow keys switch, disabled items stay visible with their reason. */
 
 import { CheckCircleFilled } from "@ant-design/icons";
 import { Tooltip, theme, Typography } from "antd";
@@ -13,7 +13,7 @@ export interface OptionTileOption<T extends string> {
   description?: ReactNode;
   icon?: ReactNode;
   badge?: ReactNode;
-  /** 不可用原因;非空即门控 */
+  /** Reason why unavailable; non-empty = gated */
   reason?: ReactNode;
 }
 
@@ -36,7 +36,7 @@ export function OptionTileGroup<T extends string>({
   size?: "sm" | "md";
   required?: boolean;
   error?: ReactNode;
-  /** 只做 aria 标签,不渲染可见标题 */
+  /** aria label only, no visible title */
   hideLabel?: boolean;
 }) {
   const { token } = theme.useToken();

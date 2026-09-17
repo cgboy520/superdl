@@ -1,4 +1,4 @@
-/** 数据盘容量(两端统一):滑块 + 数字框联动同值,min / max 由调用方从 /policies 传入;可带折日估算与扩容基线差价。 */
+/** Data-disk size (shared by both consoles): slider + number box bound to one value, min / max passed by the caller from /policies; optional daily estimate and expansion baseline difference. */
 
 import { Flex, InputNumber, Slider, Space, Typography } from "antd";
 import { useTranslation } from "react-i18next";
@@ -24,9 +24,9 @@ export function DiskSizeField({
   min: number | undefined;
   max: number | undefined;
   step?: number;
-  /** ¥/GB·月;传入即出「约 ¥X/日」估算行 */
+  /** Price per GB·month; when given, an "about X/day" estimate row appears */
   priceGbMonth?: string;
-  /** 扩容:当前容量,估算只算差价 */
+  /** Expansion: current size, the estimate covers only the difference */
   baseline?: number;
   disabled?: boolean;
   ariaLabel: string;

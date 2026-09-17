@@ -1,4 +1,4 @@
-/** 数据新鲜度行(两端统一):更新于 · 自动刷新 Ns · 暂停 / 刷新。页头经 PageHeader.freshness 使用,局部面板直接用。 */
+/** Data freshness row (shared by both consoles): updated at · auto-refresh every N s · pause / refresh. Page headers use it via PageHeader.freshness, local panels directly. */
 
 import { PauseCircleOutlined, PlayCircleOutlined, ReloadOutlined } from "@ant-design/icons";
 import { Button, Space, Tooltip, Typography } from "antd";
@@ -9,9 +9,9 @@ import { useNow } from "../hooks/useNow";
 import { fontSize, space } from "../tokens";
 
 export interface FreshnessProps {
-  /** react-query 的 dataUpdatedAt(0 = 尚无数据) */
+  /** react-query dataUpdatedAt (0 = no data yet) */
   updatedAt: number;
-  /** 自动刷新周期(ms);false = 该页不轮询,只出「更新于」与手动刷新 */
+  /** Auto-refresh period (ms); false = the page does not poll, only "updated at" and manual refresh */
   intervalMs: number | false;
   paused?: boolean;
   onTogglePause?: () => void;

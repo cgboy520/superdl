@@ -17,7 +17,7 @@ interface ClientConfig {
   baseUrl: string;
   getToken: () => string | null;
   onUnauthorized: (() => void) | null;
-  /** 非 /auth/ 路径的 401 尝试静默续期(返回是否成功);未配置或重试后仍为 401 时调用 onUnauthorized。 */
+  /** Silent renewal attempt for a 401 outside /auth/ paths (returns success); onUnauthorized is called when unconfigured or still 401 after the retry. */
   refreshToken: (() => Promise<boolean>) | null;
   /** Current UI language sent as Accept-Language (server-rendered texts such as verification codes). */
   getLocale: () => string | null;
@@ -31,10 +31,10 @@ const config: ClientConfig = {
   getLocale: () => null,
 };
 
-/** 跨标签页续期互斥锁名。 */
+/** Cross-tab renewal mutex name. */
 const REFRESH_LOCK = "superdl:token-refresh";
 
-/** 在 Web Locks 内串行续期;当前 token 不同于请求时的 token 时直接返回成功。 */
+/** Renew serially inside Web Locks; returns success at once when the current token differs from the request's token. */
 async function refreshOnce(staleToken: string | null): Promise<boolean> {
   return navigator.locks.request(REFRESH_LOCK, async () => {
     if (config.getToken() !== staleToken) return true;
@@ -46,12 +46,12 @@ export function configureApiClient(opts: Partial<ClientConfig>): void {
   Object.assign(config, opts);
 }
 
-/** 请求选项,支持值为 null 或 undefined 的 header 记录。 */
+/** Request options whose header record allows null or undefined values. */
 export interface ApiRequestOptions extends Omit<RequestInit, "headers"> {
   headers?: HeadersInit | Record<string, string | null | undefined>;
 }
 
-/** 构造 Headers 时剔除记录中的 null 与 undefined 值。 */
+/** Drop null and undefined values from the record when building Headers. */
 function toHeaders(init: ApiRequestOptions["headers"]): Headers {
   if (!init) return new Headers();
   if (init instanceof Headers || Array.isArray(init)) return new Headers(init);
@@ -66,7 +66,7 @@ export function isApiError(e: unknown): e is ApiError {
   return typeof e === "object" && e !== null && "code" in e && "status" in e;
 }
 
-/** 直接 POST 刷新接口,失败返回 null。 */
+/** POST the refresh endpoint directly, null on failure. */
 async function postRefresh(path: string, init: RequestInit): Promise<{ access_token: string } | null> {
   try {
     const resp = await fetch(`${config.baseUrl}${path}`, { method: "POST", ...init });
@@ -77,7 +77,7 @@ async function postRefresh(path: string, init: RequestInit): Promise<{ access_to
   }
 }
 
-/** 使用同源 Cookie 与 X-Requested-With 请求用户端续期,不带请求体。 */
+/** User-side renewal with the same-origin cookie and X-Requested-With, no body. */
 export function requestTokenRefresh(): Promise<{ access_token: string } | null> {
   return postRefresh("/api/v1/auth/refresh", {
     credentials: "same-origin",
@@ -85,7 +85,7 @@ export function requestTokenRefresh(): Promise<{ access_token: string } | null> 
   });
 }
 
-/** 使用当前 access token 请求管理端续期。 */
+/** Admin renewal with the current access token. */
 export function requestAdminTokenRefresh(accessToken: string): Promise<{ access_token: string } | null> {
   return postRefresh("/api/admin/v1/auth/refresh", {
     headers: { "Content-Type": "application/json" },
@@ -93,7 +93,7 @@ export function requestAdminTokenRefresh(accessToken: string): Promise<{ access_
   });
 }
 
-/** 网络层失败(断网/DNS/连接拒绝)统一成 ApiError,不把 fetch 的 TypeError 原文透出。 */
+/** Network-layer failures (offline / DNS / connection refused) become ApiError; fetch's TypeError text is not exposed. */
 function networkError(): ApiError {
   return {
     code: "NETWORK_ERROR",

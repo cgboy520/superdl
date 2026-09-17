@@ -1,4 +1,4 @@
-/** 空值占位(两端统一):查询未就绪 / 字段为空一律显示「—」,不显假 0、不混用「-」。 */
+/** Empty value placeholder (shared by both consoles): pending queries / empty fields always show "—", never a fake 0 or a mixed "-". */
 
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -10,7 +10,7 @@ export function EmptyValue() {
   return <span aria-label={t("common.notAvailable")}>{EMPTY_VALUE}</span>;
 }
 
-/** 有值渲染 render(v),空值渲染 EmptyValue。 */
+/** Render render(v) when there is a value, EmptyValue otherwise. */
 export function valueOr<T>(v: T | null | undefined, render: (v: T) => ReactNode): ReactNode {
   return v == null ? <EmptyValue /> : render(v);
 }

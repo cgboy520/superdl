@@ -1,4 +1,4 @@
-/** 游标分页表格,包含错误/空态与加载更多。 */
+/** Cursor-paginated table with error / empty states and load more. */
 
 import { Table } from "antd";
 import type { TableProps } from "antd";
@@ -7,7 +7,7 @@ import type { ReactNode } from "react";
 import { LoadMore } from "./LoadMore";
 import { TableErrorEmpty } from "./TableErrorEmpty";
 
-/** 游标查询结果里 CursorTable 需要的字段(结构化最小面)。 */
+/** The fields CursorTable needs from a cursor query result (minimal structured surface). */
 export interface CursorListQuery {
   isLoading: boolean;
   isError: boolean;
@@ -29,11 +29,11 @@ export function CursorTable<T>({
 }: Omit<TableProps<T>, "dataSource" | "locale" | "pagination" | "loading"> & {
   query: CursorListQuery;
   rows: T[];
-  /** 非错误空态文案(进 antd Empty) */
+  /** Non-error empty copy (into antd Empty) */
   empty?: ReactNode;
-  /** 非错误空态整块自定义(EmptyState 等),优先于 empty */
+  /** Custom non-error empty block (EmptyState etc.), takes precedence over empty */
   emptyNode?: ReactNode;
-  /** 抽屉 / 嵌套里的紧凑错误态 */
+  /** Compact error state inside drawers / nested tables */
   compact?: boolean;
 }) {
   const err = query.error;

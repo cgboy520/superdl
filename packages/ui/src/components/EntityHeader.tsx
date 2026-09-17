@@ -1,5 +1,5 @@
-/** 实体头(两端统一):名称(可行内改名)/ 状态徽标 / 标签行 / 元信息条(KeyValue inline,ID 可复制)/ 操作组;窄屏自动换行。
- *  实例 / 服务详情、租户抽屉、节点抽屉共用;面包屑或返回由调用方经 PageContainer 提供。 */
+/** Entity header (shared by both consoles): name (inline rename) / status badge / tag row / meta bar (KeyValue inline, copyable ID) / action group; wraps on narrow screens.
+ *  Shared by instance / service details, the tenant drawer and the node drawer; breadcrumb or back is provided by the caller via PageContainer. */
 
 import { Card, Grid, Space, Typography } from "antd";
 import type { ReactNode } from "react";
@@ -10,19 +10,19 @@ import { KeyValue, type KeyValueItem } from "./KeyValue";
 
 export interface EntityHeaderProps {
   name: string;
-  /** 状态徽标(StatusTag badge) */
+  /** Status badge (StatusTag badge) */
   status?: ReactNode;
-  /** 名称行右侧的标签组 */
+  /** Tag group right of the name row */
   tags?: ReactNode;
-  /** 关键信息条 */
+  /** Key information bar */
   meta?: KeyValueItem[];
-  /** 操作组(RowActions size="middle") */
+  /** Action group (RowActions size="middle") */
   actions?: ReactNode;
-  /** 行内改名 */
+  /** Inline rename */
   rename?: { onSave: (next: string) => Promise<void>; ariaLabel: string; maxLength?: number };
-  /** page = 独立卡;drawer = 抽屉头(无卡边,紧凑) */
+  /** page = standalone card; drawer = drawer header (no card border, compact) */
   size?: "page" | "drawer";
-  /** 名称下方的一句副标题(如 slug / 主机名) */
+  /** One-line subtitle under the name (e.g. slug / hostname) */
   subtitle?: ReactNode;
 }
 

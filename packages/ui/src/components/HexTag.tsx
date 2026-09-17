@@ -1,4 +1,4 @@
-/** 实心底状态 Tag(两端共用):十六进制色用内联样式压成实心底,字色按底色亮度取白 / 深墨;antd preset 色名原样透传。 */
+/** Solid-background status Tag (shared by both consoles): hex colours become a solid background via inline style, text colour white / deep ink by background luminance; antd preset colour names pass through. */
 
 import { Tag } from "antd";
 import type { CSSProperties, ReactNode } from "react";

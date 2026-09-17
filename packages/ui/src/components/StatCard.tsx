@@ -1,4 +1,4 @@
-/** 指标卡(两端统一):标题 / 大数(单个文本节点)/ 副行 / 趋势;value 为 undefined 时出骨架;link 包住整卡即可点击深链(hover 描边 + 右上箭头)。 */
+/** Metric card (shared by both consoles): title / big number (one text node) / sub-line / trend; value undefined renders a skeleton; link wraps the whole card into a clickable deep link (hover border + top-right arrow). */
 
 import { ArrowUpOutlined, ArrowDownOutlined, ArrowRightOutlined, QuestionCircleOutlined } from "@ant-design/icons";
 import { Card, Skeleton, Space, Tooltip, Typography } from "antd";
@@ -9,22 +9,22 @@ import { fontSize, fontWeight, iconSize, motion, space } from "../tokens";
 
 export interface StatCardProps {
   title: ReactNode;
-  /** undefined = 加载中(骨架) */
+  /** undefined = loading (skeleton) */
   value: ReactNode | undefined;
   prefix?: ReactNode;
   suffix?: ReactNode;
-  /** 标题旁 ? tooltip */
+  /** ? tooltip next to the title */
   hint?: ReactNode;
   trend?: { text: ReactNode; direction: "up" | "down" | "flat" };
-  /** 副行(对照 / 分母 / 说明) */
+  /** Sub-line (comparison / denominator / note) */
   footer?: ReactNode;
   tone?: "default" | "positive" | "negative" | "warning";
-  /** 传入即整卡可点:用调用方的 Link 包住内容 */
+  /** When given the whole card is clickable: the caller's Link wraps the content */
   link?: (children: ReactNode) => ReactNode;
   ariaLabel?: string;
-  /** 加载失败时替换主体的错误条 */
+  /** Error bar replacing the body on load failure */
   error?: ReactNode;
-  /** 大数字号:kpi(默认)/ sectionTitle(并列多卡) */
+  /** Big number size: kpi (default) / sectionTitle (several cards side by side) */
   valueSize?: "kpi" | "sectionTitle";
 }
 

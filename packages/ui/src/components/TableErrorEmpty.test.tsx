@@ -1,4 +1,4 @@
-/** TableErrorEmpty:错误态渲染「加载失败 + 重试」,非错误态退回 antd 默认空态。 */
+/** TableErrorEmpty: the error state renders "load failed + retry", the non-error state falls back to the antd default empty state. */
 
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -13,7 +13,7 @@ beforeAll(async () => {
     lng: "zh-CN",
     resources: {
       "zh-CN": {
-        shared: { common: { loadFailed: "加载失败,请重试", retry: "重试" } },
+        shared: { common: { loadFailed: "Load failed, try again", retry: "Retry" } },
       },
     },
     defaultNS: "shared",
@@ -30,19 +30,19 @@ function renderEmpty(props: { isError: boolean; onRetry?: () => void }) {
 }
 
 describe("TableErrorEmpty", () => {
-  it("错误态渲染加载失败与重试按钮,点击触发 onRetry", async () => {
+  it("renders load failed with a retry button in the error state, click fires onRetry", async () => {
     const onRetry = vi.fn();
     renderEmpty({ isError: true, onRetry });
-    expect(screen.getByText("加载失败,请重试")).toBeInTheDocument();
+    expect(screen.getByText("Load failed, try again")).toBeInTheDocument();
     const btn = screen.getByRole("button");
-    expect(btn.textContent.replace(/\s/g, "")).toBe("重试");
+    expect(btn.textContent.replace(/\s/g, "")).toBe("Retry");
     await userEvent.click(btn);
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
-  it("非错误态退回 antd 默认空态(无失败文案、无重试按钮)", () => {
+  it("falls back to the antd default empty state without error (no failure copy, no retry)", () => {
     renderEmpty({ isError: false });
-    expect(screen.queryByText("加载失败,请重试")).not.toBeInTheDocument();
+    expect(screen.queryByText("Load failed, try again")).not.toBeInTheDocument();
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 });

@@ -1,4 +1,4 @@
-/** 表格的无权限、加载失败或空态展示;支持重试与自定义引导动作。 */
+/** Table no-permission, load-failed or empty display; supports retry and a custom guidance action. */
 
 import { Button, Empty, Result, Space, Typography } from "antd";
 import type { ReactNode } from "react";
@@ -14,14 +14,14 @@ export function TableErrorEmpty({
   children,
 }: {
   isError: boolean;
-  /** 403 无权;优先级高于 isError */
+  /** 403 no permission; takes precedence over isError */
   isForbidden?: boolean;
   onRetry?: () => void;
-  /** 空态引导动作 */
+  /** Empty-state guidance action */
   action?: ReactNode;
-  /** 行内紧凑形态 */
+  /** Inline compact form */
   compact?: boolean;
-  /** 业务空态文案(缺省 antd 默认) */
+  /** Business empty copy (antd default when omitted) */
   children?: ReactNode;
 }) {
   const { t } = useTranslation("shared");

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { configureApiClient, customFetch } from "./mutator";
 
-/** 按序返回预设响应,并记录每次请求带的 Authorization。 */
+/** Returns the preset responses in order and records the Authorization of every request. */
 function mockFetch(responses: Response[]): { auth: (string | null)[] } {
   const auth: (string | null)[] = [];
   let i = 0;
@@ -18,7 +18,7 @@ function mockFetch(responses: Response[]): { auth: (string | null)[] } {
 const ok = () => new Response(JSON.stringify({ ok: true }), { status: 200 });
 const unauthorized = () => new Response("", { status: 401 });
 
-/** 同名请求串行执行的 LockManager 替身。 */
+/** LockManager stand-in that runs same-named requests serially. */
 function fakeLocks(): Pick<LockManager, "request"> {
   const tails = new Map<string, Promise<unknown>>();
   return {
@@ -34,13 +34,13 @@ function fakeLocks(): Pick<LockManager, "request"> {
   };
 }
 
-describe("customFetch 401 静默续期", () => {
+describe("customFetch 401 silent renewal", () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
     vi.stubGlobal("navigator", { locks: fakeLocks() });
   });
 
-  it("续期成功后带新 token 重放一次", async () => {
+  it("replays once with the new token after a successful renewal", async () => {
     let token = "old";
     const refresh = vi.fn(() => {
       token = "new";
@@ -59,7 +59,7 @@ describe("customFetch 401 静默续期", () => {
     expect(auth).toEqual(["Bearer old", "Bearer new"]);
   });
 
-  it("并发 401 只续期一次:Web Locks 互斥 + 临界区内的 stale-token 复检", async () => {
+  it("concurrent 401s renew once: Web Locks mutual exclusion + stale-token re-check inside the critical section", async () => {
     let token = "old";
     const refresh = vi.fn(async () => {
       await new Promise((r) => setTimeout(r, 5));
@@ -76,7 +76,7 @@ describe("customFetch 401 静默续期", () => {
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
-  it("token 已被别的标签页换掉时不再续期,直接重放", async () => {
+  it("does not renew when another tab already replaced the token, replays directly", async () => {
     const tokens = ["old", "new", "new"];
     let i = 0;
     const refresh = vi.fn(() => Promise.resolve(true));
@@ -93,13 +93,13 @@ describe("customFetch 401 静默续期", () => {
   });
 });
 
-describe("错误体解析", () => {
+describe("error body parsing", () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
     configureApiClient({ baseUrl: "", getToken: () => null, refreshToken: null, onUnauthorized: null });
   });
 
-  it("网关 502 返回 HTML 时抛 ApiError,而不是 SyntaxError", async () => {
+  it("throws ApiError instead of SyntaxError when the gateway returns HTML with 502", async () => {
     mockFetch([
       new Response("<html><body>502 Bad Gateway</body></html>", {
         status: 502,
@@ -112,7 +112,7 @@ describe("错误体解析", () => {
     });
   });
 
-  it("结构化错误体照常透出 code / message_key", async () => {
+  it("passes code / message_key of a structured error body through", async () => {
     mockFetch([
       new Response(JSON.stringify({ code: "INSUFFICIENT_BALANCE", message_key: "billing.x" }), {
         status: 400,
@@ -124,7 +124,7 @@ describe("错误体解析", () => {
     });
   });
 
-  it("非 JSON 成功响应(text/csv 导出)原样透传文本", async () => {
+  it("passes non-JSON success responses (text/csv export) through as text", async () => {
     mockFetch([
       new Response("a,b\r\n1,2\r\n", {
         status: 200,

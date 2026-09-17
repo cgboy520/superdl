@@ -1,4 +1,4 @@
-/** 危险区卡(两端共用):红边 Card + 说明 + 一个或多个危险动作;动作前置条件经 GatedButton(可见、可聚焦、原因可读)。 */
+/** Danger zone card (shared by both consoles): red-bordered Card + description + one or more dangerous actions; preconditions go through GatedButton (visible, focusable, readable reason). */
 
 import { Card, Space, Typography, theme } from "antd";
 import type { ReactNode } from "react";
@@ -11,7 +11,7 @@ export interface DangerAction {
   label: ReactNode;
   onClick: () => void;
   disabled?: boolean;
-  /** 禁用时的前置条件说明 */
+  /** Precondition note shown while disabled */
   disabledReason?: ReactNode;
   loading?: boolean;
 }

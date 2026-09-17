@@ -1,4 +1,4 @@
-/** 语言切换(两端共用);浅色面传 variant="light"。 */
+/** Language switcher (shared by both consoles); pass variant="light" on light surfaces. */
 
 import { GlobalOutlined } from "@ant-design/icons";
 import { Select } from "antd";
