@@ -101,11 +101,11 @@ class WarnThresholdUpdate(BaseModel):
     low_balance_warn_hours: int = Field(ge=1, le=168)
 
 
-class RealNameRequest(BaseModel):
-    """实名认证(三要素核验:姓名 + 身份证号 + 账号手机号)。"""
+class KycSubmitRequest(BaseModel):
+    """Identity verification; the compliance profile decides which identity number is expected."""
 
-    name: str = Field(min_length=2, max_length=32)
-    id_number: str = Field(pattern=r"^\d{17}[\dXx]$")
+    full_name: str = Field(min_length=2, max_length=128)
+    identity_number: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class DeletionRequestCreate(BaseModel):

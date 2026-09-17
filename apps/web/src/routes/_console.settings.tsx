@@ -27,7 +27,7 @@ import {
   useLogout,
   useRemovePhone,
   useResetPassword,
-  useSubmitRealName,
+  useSubmitKyc,
 } from "../api/mutations";
 import { useMe, useMyDeletionRequest, usePolicies, useSiteConfig, useSshKeys } from "../api/queries";
 import { WarnThresholdField } from "../components/WarnThresholdField";
@@ -69,8 +69,11 @@ function SettingsPage() {
   const meQ = useMe();
   const { data: me } = meQ;
   const { data: policies } = usePolicies();
+  const { data: site } = useSiteConfig();
+  const kycAvailable = Boolean(site?.kyc_form);
   useHashScroll({ highlight: true });
-  const activeTab: SettingsTab = tab ?? tabOfHash(hash) ?? "ssh";
+  const requested: SettingsTab = tab ?? tabOfHash(hash) ?? "ssh";
+  const activeTab: SettingsTab = requested === "realname" && !kycAvailable ? "ssh" : requested;
 
   return (
     <PageContainer width="narrow" title={t("settings.title")}>
@@ -88,19 +91,23 @@ function SettingsPage() {
               </div>
             ),
           },
-          {
-            key: "realname",
-            label: t("settings.realNameCard"),
-            children: (
-              <RealNameTab
-                me={me}
-                enabled={policies?.real_name_enabled ?? false}
-                loading={meQ.isPending}
-                error={meQ.isError}
-                onRetry={() => void meQ.refetch()}
-              />
-            ),
-          },
+          ...(kycAvailable
+            ? [
+                {
+                  key: "realname",
+                  label: t("settings.realNameCard"),
+                  children: (
+                    <KycTab
+                      me={me}
+                      enabled={policies?.real_name_enabled ?? false}
+                      loading={meQ.isPending}
+                      error={meQ.isError}
+                      onRetry={() => void meQ.refetch()}
+                    />
+                  ),
+                },
+              ]
+            : []),
           { key: "account", label: t("settings.accountCard"), children: <AccountTab me={me} /> },
         ]}
       />
@@ -546,9 +553,9 @@ function DeletionZone({ handle }: { handle: string }) {
   );
 }
 
-/** Identity verification: skeleton / error with retry / verified / unverified; when the platform
- *  has it disabled (real_name_enabled=false) the form stays visible but disabled with a note. */
-function RealNameTab({
+/** Identity verification (shown only when the compliance profile offers a KYC form): skeleton /
+ *  error with retry / verified / unverified; with real_name_enabled=false the form is disabled. */
+function KycTab({
   me,
   enabled,
   loading,
@@ -563,8 +570,8 @@ function RealNameTab({
 }) {
   const { t } = useTranslation();
   const { message } = App.useApp();
-  const [form] = Form.useForm<{ name: string; id_number: string }>();
-  const submit = useSubmitRealName({
+  const [form] = Form.useForm<{ full_name: string; identity_number: string }>();
+  const submit = useSubmitKyc({
     onSuccess: () => {
       message.success(t("settings.realNameDone"));
     },
@@ -595,9 +602,9 @@ function RealNameTab({
             form={form}
             layout="inline"
             disabled={!enabled}
-            onFinish={(v) => submit.mutate({ name: v.name, id_number: v.id_number })}
+            onFinish={(v) => submit.mutate({ full_name: v.full_name, identity_number: v.identity_number })}
           >
-            <Form.Item name="name" rules={[{ required: true, min: 2, message: t("settings.realNameNameRule") }]}>
+            <Form.Item name="full_name" rules={[{ required: true, min: 2, message: t("settings.realNameNameRule") }]}>
               <Input
                 placeholder={t("settings.realNamePlaceholder")}
                 aria-label={t("settings.realNamePlaceholder")}
@@ -606,7 +613,7 @@ function RealNameTab({
               />
             </Form.Item>
             <Form.Item
-              name="id_number"
+              name="identity_number"
               rules={[
                 {
                   required: true,

@@ -10,9 +10,9 @@ import type {
   DeletionRequestOut,
   HandleCodeRequest,
   HandleConfirmRequest,
+  KycSubmitRequest,
   LoginRequest,
   PasswordResetRequest,
-  RealNameRequest,
   RegisterRequest,
   SshKeyCreate,
   SshKeyOut,
@@ -384,26 +384,27 @@ export const removePhoneApiV1MeHandlesPhoneDelete = async ( options?: Parameters
 );}
 
 
-export const getSubmitRealNameApiV1MeRealNamePostUrl = () => {
+export const getSubmitKycApiV1MeKycPostUrl = () => {
 
 
 
 
-  return `/api/v1/me/real-name`
+  return `/api/v1/me/kyc`
 }
 
 /**
- * 实名认证(三要素核验;身份证号仅存脱敏串)。
- * @summary Submit Real Name
+ * Identity verification through the configured provider; the identity number is stored
+ * masked.
+ * @summary Submit Kyc
  */
-export const submitRealNameApiV1MeRealNamePost = async (realNameRequest: RealNameRequest, options?: Parameters<typeof customFetch>[1]): Promise<UserOut> => {
+export const submitKycApiV1MeKycPost = async (kycSubmitRequest: KycSubmitRequest, options?: Parameters<typeof customFetch>[1]): Promise<UserOut> => {
 
-  return customFetch<UserOut>(getSubmitRealNameApiV1MeRealNamePostUrl(),
+  return customFetch<UserOut>(getSubmitKycApiV1MeKycPostUrl(),
   {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(realNameRequest)
+    body: JSON.stringify(kycSubmitRequest)
   }
 );}
 

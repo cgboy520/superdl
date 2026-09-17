@@ -1023,26 +1023,33 @@ class TestTenantRealnameExposure:
 
     async def _realname_user(self, client, sm) -> int:
         """开启 real_name_enabled 并注入恒过的假渠道,经正式提交路径落实名字段。"""
+        from app.core.config import get_settings
         from app.modules.account import service as account_service
-        from app.modules.account.realname import set_realname_provider
+        from app.modules.account.kyc import KycResult, KycSubject, set_kyc_provider
 
         class _Pass:
-            async def verify(self, name: str, id_number: str, phone: str) -> bool:
-                return True
+            name = "fake"
+
+            async def verify(self, subject: KycSubject) -> KycResult:
+                return KycResult(True, "fake", identity_key=subject.identity_number)
 
         data = await register(client, "13655550001")
         uid = data["user"]["id"]
         async with sm() as session:
             await session.execute(update(User).where(User.id == uid).values(phone="+8613655550001"))
             await session.commit()
-        set_realname_provider(_Pass())
+        set_kyc_provider(_Pass())
+        settings = get_settings()
+        previous_profile = settings.compliance_profile
+        settings.compliance_profile = "cn"
         try:
             await set_platform_setting(sm, "real_name_enabled", "true")
             async with sm() as session:
                 user = await account_service.get_user(session, uid)
-                await account_service.submit_real_name(session, user, "张三", "110101199001011234")
+                await account_service.submit_kyc(session, user, "张三", "110101199001011237")
         finally:
-            set_realname_provider(None)
+            set_kyc_provider(None)
+            settings.compliance_profile = previous_profile
         return uid
 
     async def test_default_masked_for_all_roles_and_no_audit(self, client, sm, fake):
@@ -1296,34 +1303,35 @@ class TestRealNameIdentityCap:
     async def test_same_id_number_bound_accounts_capped(self, client, sm, monkeypatch):
         from app.core.config import get_settings
         from app.modules.account import service as account_service
-        from app.modules.account.realname import set_realname_provider
+        from app.modules.account.kyc import KycResult, KycSubject, set_kyc_provider
 
         class _Pass:
-            async def verify(self, name: str, id_number: str, phone: str) -> bool:
-                return True
+            name = "fake"
+
+            async def verify(self, subject: KycSubject) -> KycResult:
+                return KycResult(True, "fake", identity_key=subject.identity_number)
 
         monkeypatch.setattr(get_settings(), "real_name_max_accounts_per_identity", 1)
         a = (await register(client, "13655550101"))["user"]["id"]
         b = (await register(client, "13655550102"))["user"]["id"]
+        monkeypatch.setattr(get_settings(), "compliance_profile", "cn")
         async with sm() as session:
             await session.execute(update(User).where(User.id == a).values(phone="+8613655550101"))
             await session.execute(update(User).where(User.id == b).values(phone="+8613655550102"))
             await session.commit()
-        set_realname_provider(_Pass())
+        set_kyc_provider(_Pass())
         try:
             await set_platform_setting(sm, "real_name_enabled", "true")
             async with sm() as session:
                 ua = await account_service.get_user(session, a)
-                await account_service.submit_real_name(session, ua, "张三", "110101199001011234")
-                assert ua.kyc_identity_hmac and ua.kyc_identity_masked == "1101************34"
+                await account_service.submit_kyc(session, ua, "张三", "110101199001011237")
+                assert ua.kyc_identity_hmac and ua.kyc_identity_masked == "1101************37"
             async with sm() as session:
                 ub = await account_service.get_user(session, b)
                 with pytest.raises(AppError) as exc:
-                    await account_service.submit_real_name(
-                        session, ub, "李四", "110101199001011234"
-                    )
+                    await account_service.submit_kyc(session, ub, "李四", "110101199001011237")
                 assert exc.value.message_key == "account.realNameIdentityLimit"
             async with sm() as session:
                 assert (await account_service.get_user(session, b)).kyc_status != "verified"
         finally:
-            set_realname_provider(None)
+            set_kyc_provider(None)

@@ -18,9 +18,9 @@ from app.modules.account.schemas import (
     DeletionRequestOut,
     HandleCodeRequest,
     HandleConfirmRequest,
+    KycSubmitRequest,
     LoginRequest,
     PasswordResetRequest,
-    RealNameRequest,
     RegisterRequest,
     SshKeyCreate,
     SshKeyOut,
@@ -246,13 +246,14 @@ async def remove_phone(user: CurrentUser, session: DbSession, request: Request) 
     return UserOut.model_validate(updated)
 
 
-@router.post("/me/real-name")
-async def submit_real_name(
-    body: RealNameRequest, user: CurrentUser, session: DbSession, request: Request
+@router.post("/me/kyc")
+async def submit_kyc(
+    body: KycSubmitRequest, user: CurrentUser, session: DbSession, request: Request
 ) -> UserOut:
-    """实名认证(三要素核验;身份证号仅存脱敏串)。"""
-    updated = await service.submit_real_name(session, user, body.name, body.id_number)
-    set_audit_target(request, f"user:{user.id}", detail={"action": "real_name_verified"})
+    """Identity verification through the configured provider; the identity number is stored
+    masked."""
+    updated = await service.submit_kyc(session, user, body.full_name, body.identity_number)
+    set_audit_target(request, f"user:{user.id}", detail={"action": "kyc_verified"})
     return UserOut.model_validate(updated)
 
 

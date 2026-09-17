@@ -19,6 +19,7 @@ from app.core.metrics import LOGIN_FAILED_TOTAL, USER_SIGNUP_TOTAL
 from app.core.pagination import RawPage, clamp_limit, decode_cursor_int, slice_page
 from app.core.platform_config import get_runtime_config
 from app.core.ratelimit import check_rate_limit, clear_rate_limit, read_hits
+from app.core.regions import cn
 from app.core.security import (
     create_token,
     decode_token,
@@ -29,17 +30,19 @@ from app.core.security import (
 from app.core.sqlutil import like_escape
 from app.core.timeutil import ensure_utc, local_day_range, now_utc
 from app.modules.account import verification
+from app.modules.account.kyc import (
+    KycError,
+    KycRegionUnsupported,
+    KycSubject,
+    get_kyc_provider,
+    mask_id_name,
+    mask_identity,
+)
 from app.modules.account.models import (
     SshKey,
     UsedRefreshToken,
     User,
     UserQuotaOverride,
-)
-from app.modules.account.realname import (
-    RealNameError,
-    get_realname_provider,
-    mask_id_name,
-    mask_id_number,
 )
 from app.modules.account.schemas import TokenPair, UserOut
 from app.modules.legal import service as legal_service
@@ -482,8 +485,12 @@ async def get_user(session: AsyncSession, user_id: int) -> User:
     return user
 
 
-async def submit_real_name(session: AsyncSession, user: User, name: str, id_number: str) -> User:
-    """实名认证:三要素核验,通过即 verified。身份证号只存脱敏串,原文不落库不打日志。"""
+async def submit_kyc(
+    session: AsyncSession, user: User, full_name: str, identity_number: str | None
+) -> User:
+    """Identity verification through the configured provider. The compliance profile selects the
+    form (`cn_id_card` validates the PRC ID checksum); a pass stores the masked identity, its keyed
+    digest, the provider and the reference — never the plaintext."""
     if user.kyc_status == "verified":
         raise conflict(key="account.realNameDone")
     cfg = await get_runtime_config(session)
@@ -493,23 +500,38 @@ async def submit_real_name(session: AsyncSession, user: User, name: str, id_numb
             key="account.realNameDisabled",
             http_status=status.HTTP_409_CONFLICT,
         )
-    if not user.phone or not user.phone.startswith("+86"):
-        raise AppError(ErrorCode.VALIDATION_ERROR, key="account.realNamePhoneRequired")
-    national_phone = user.phone[3:]
+    profile = current_profile()
+    if profile.kyc_form is None:
+        raise conflict(key="account.kycNotAvailable")
+    if profile.kyc_form == "cn_id_card":
+        if not identity_number or not cn.validate_id_number(identity_number):
+            raise AppError(ErrorCode.VALIDATION_ERROR, key="account.kycIdentityInvalid")
+        identity_number = identity_number.strip().upper()
     await check_rate_limit(f"real-name:{user.id}", max_attempts=5, window_seconds=3600.0)
+    subject = KycSubject(
+        user_id=user.id,
+        full_name=full_name,
+        identity_number=identity_number,
+        phone=user.phone,
+        email=user.email,
+        country="CN" if profile.kyc_form == "cn_id_card" else "",
+    )
     try:
-        provider = await get_realname_provider(session)
-        ok = await provider.verify(name, id_number, national_phone)
-    except RealNameError as exc:
-        logger.error("real_name_channel_error", user_id=user.id, error=str(exc))
+        provider = await get_kyc_provider(session)
+        result = await provider.verify(subject)
+    except KycRegionUnsupported as exc:
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="account.kycRegionUnsupported") from exc
+    except KycError as exc:
+        logger.error("kyc_channel_error", user_id=user.id, error=str(exc))
         raise AppError(
             ErrorCode.REAL_NAME_CHANNEL_ERROR,
             key="account.realNameChannelError",
             http_status=status.HTTP_502_BAD_GATEWAY,
         ) from exc
-    if not ok:
+    if not result.verified:
         raise AppError(ErrorCode.REAL_NAME_MISMATCH, key="account.realNameMismatch")
-    digest_candidates = hash_kyc_identity_candidates(id_number)
+    identity_key = result.identity_key or identity_number or f"user:{user.id}"
+    digest_candidates = hash_kyc_identity_candidates(identity_key)
     bound = (
         await session.execute(
             select(func.count()).where(
@@ -521,16 +543,17 @@ async def submit_real_name(session: AsyncSession, user: User, name: str, id_numb
     ).scalar_one()
     max_accounts = get_settings().real_name_max_accounts_per_identity
     if bound >= max_accounts:
-        logger.warning("real_name_identity_limit", user_id=user.id, bound=bound)
+        logger.warning("kyc_identity_limit", user_id=user.id, bound=bound)
         raise conflict(key="account.realNameIdentityLimit", params={"max": max_accounts})
-    user.kyc_name = name
-    user.kyc_identity_masked = mask_id_number(id_number)
+    user.kyc_name = full_name
+    user.kyc_identity_masked = mask_identity(identity_number) if identity_number else None
     user.kyc_identity_hmac = digest_candidates[0]
-    user.kyc_provider = "aliyun_mobile3"
+    user.kyc_provider = result.provider
+    user.kyc_ref = result.ref
     user.kyc_verified_at = now_utc()
     user.kyc_status = "verified"
     await session.commit()
-    logger.info("real_name_verified", user_id=user.id)
+    logger.info("kyc_verified", user_id=user.id, provider=result.provider)
     return user
 
 
@@ -562,9 +585,14 @@ async def is_active_user(session: AsyncSession, user_id: int) -> bool:
 
 
 async def require_real_name_if_required(session: AsyncSession, user: User, *, key: str) -> None:
-    """real_name_required_for_recharge=true 时拒绝未实名用户(403)。"""
+    """With real_name_required_for_recharge=true, unverified users get 403 — only when the
+    compliance profile offers a KYC form (no form, no gate)."""
     cfg = await get_runtime_config(session)
-    if cfg.real_name_required_for_recharge and user.kyc_status != "verified":
+    if (
+        cfg.real_name_required_for_recharge
+        and current_profile().kyc_form is not None
+        and user.kyc_status != "verified"
+    ):
         raise AppError(ErrorCode.REAL_NAME_REQUIRED, key=key, http_status=403)
 
 

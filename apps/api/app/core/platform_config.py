@@ -247,6 +247,13 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "real_name", "str", pattern=r"[0-9A-Za-z]{16,30}", hint="AccessKey ID(建议独立 RAM 子账号)"
     ),
     "real_name_access_key_secret": SettingSpec("real_name", "secret", max_len=128),
+    "kyc_provider": SettingSpec(
+        "real_name",
+        "choice",
+        choices=("aliyun_mobile3",),
+        hint="Identity-verification provider; aliyun_mobile3 = Aliyun three-factor mobile check "
+        "(needs the real_name_* AccessKey and a +86 phone on the account)",
+    ),
     "captcha_scene_id": SettingSpec(
         "captcha", "str", max_len=64, hint="场景 ID(控制台·场景管理;服务端验签强制写入防篡改)"
     ),
@@ -479,6 +486,7 @@ class RuntimeConfig:
     email_reply_to: str
     real_name_access_key_id: str
     real_name_access_key_secret: str
+    kyc_provider: str
     captcha_scene_id: str
     captcha_prefix: str
     captcha_access_key_id: str

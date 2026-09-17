@@ -831,6 +831,7 @@
       "grafana_url": "Grafana URL (optional, external link)",
       "icp_number": "ICP 备案 (ICP filing) number",
       "image_allowed_registries": "Allowed image sources (one prefix per line)",
+      "kyc_provider": "Identity-verification provider",
       "node_driver_version": "NVIDIA driver major version",
       "node_install_mirror": "Node install source",
       "node_registries_yaml": "registries.yaml (advanced override)",
@@ -918,6 +919,7 @@
     "networkError": "network error",
     "provider": {
       "aliyun": "Aliyun",
+      "aliyun_mobile3": "Aliyun real-person · mobile three-factor",
       "cn": "China mirror (rancher-mirror.rancher.cn)",
       "mock": "Dev mode (nothing is sent; fixed code 123456 written to the log; development only)",
       "none": "No encryption (private networks only)",

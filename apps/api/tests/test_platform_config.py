@@ -7,15 +7,17 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
+from app.core.config import get_settings
 from app.core.platform_config import (
     PlatformSetting,
     runtime_config_from_strings as rc,
     validate_setting_value,
 )
-from app.modules.account.realname import (
-    AliyunRealNameProvider,
-    RealNameError,
-    get_realname_provider,
+from app.modules.account.kyc import (
+    AliyunMobile3Provider,
+    KycError,
+    KycSubject,
+    get_kyc_provider,
 )
 from tests.helpers import admin_headers, create_order, pay_mock, user_headers
 
@@ -346,8 +348,10 @@ class TestAdminApi:
         assert resp.status_code == 200, resp.text
         assert (await put({"real_name_enabled": "false"})).status_code == 400
 
-    async def test_real_name_flag_flows_to_policies_and_gate(self, client: AsyncClient, sm):
-        """开关走平台配置:公开 policies 与充值门禁即时生效。"""
+    async def test_real_name_flag_flows_to_policies_and_gate(
+        self, client: AsyncClient, sm, monkeypatch
+    ):
+        """开关走平台配置:公开 policies 与充值门禁即时生效(门禁只在有 KYC 表单的 profile 生效)。"""
         ah = await admin_headers(sm, client, role="admin")
         base = (await client.get("/api/v1/policies")).json()
         assert base["real_name_enabled"] is False
@@ -367,6 +371,7 @@ class TestAdminApi:
         assert policies["real_name_required_for_recharge"] is True
 
         headers = await user_headers(client, "13700000201")
+        monkeypatch.setattr(get_settings(), "compliance_profile", "cn")
         resp = await client.post(
             "/api/v1/wallet/recharges",
             json={"amount": "50.00", "channel": "mock"},
@@ -404,9 +409,19 @@ class TestChannelGate:
         assert resp.json()["message_key"] == "billing.wechatCredentialsIncomplete"
 
 
-class TestAliyunRealNameProvider:
-    def _provider(self, handler) -> AliyunRealNameProvider:
-        return AliyunRealNameProvider("ak", "sk", transport=httpx.MockTransport(handler))
+_SUBJECT = KycSubject(
+    user_id=1,
+    full_name="张三",
+    identity_number="110101199001011237",
+    phone="+8613800000000",
+    email=None,
+    country="CN",
+)
+
+
+class TestAliyunMobile3Provider:
+    def _provider(self, handler) -> AliyunMobile3Provider:
+        return AliyunMobile3Provider("ak", "sk", transport=httpx.MockTransport(handler))
 
     async def test_bizcode_mapping(self):
         responses = iter(
@@ -422,11 +437,31 @@ class TestAliyunRealNameProvider:
             return httpx.Response(200, json=next(responses))
 
         provider = self._provider(handler)
-        assert await provider.verify("张三", "110101199001011234", "13800000000") is True
-        assert await provider.verify("张三", "110101199001011234", "13800000000") is False
-        assert await provider.verify("张三", "110101199001011234", "13800000000") is False
-        with pytest.raises(RealNameError, match="403"):
-            await provider.verify("张三", "110101199001011234", "13800000000")
+        first = await provider.verify(_SUBJECT)
+        assert first.verified and first.provider == "aliyun_mobile3"
+        assert first.identity_key == "110101199001011237"
+        assert (await provider.verify(_SUBJECT)).verified is False
+        assert (await provider.verify(_SUBJECT)).verified is False
+        with pytest.raises(KycError, match="403"):
+            await provider.verify(_SUBJECT)
+
+    async def test_national_phone_sent_and_region_check(self):
+        seen: list[dict[str, str]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(dict(pair.split("=", 1) for pair in request.content.decode().split("&")))
+            return httpx.Response(200, json={"Code": "200", "ResultObject": {"BizCode": "1"}})
+
+        await self._provider(handler).verify(_SUBJECT)
+        assert seen[0]["Mobile"] == "13800000000"
+        from dataclasses import replace
+
+        from app.modules.account.kyc import KycRegionUnsupported
+
+        with pytest.raises(KycRegionUnsupported):
+            await self._provider(handler).verify(replace(_SUBJECT, phone="+14155550123"))
+        with pytest.raises(KycRegionUnsupported):
+            await self._provider(handler).verify(replace(_SUBJECT, phone=None))
 
     async def test_factory_builds_aliyun_from_config(self, client: AsyncClient, sm):
         """凭据经管理端录入后,工厂按生效配置构造阿里云渠道。"""
@@ -443,8 +478,8 @@ class TestAliyunRealNameProvider:
             headers=ah,
         )
         async with sm() as session:
-            provider = await get_realname_provider(session)
-        assert isinstance(provider, AliyunRealNameProvider)
+            provider = await get_kyc_provider(session)
+        assert isinstance(provider, AliyunMobile3Provider)
 
 
 class TestRegistrySpecsAndProbeEndpoint:

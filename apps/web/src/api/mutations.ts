@@ -42,7 +42,7 @@ import {
   sendVerificationCodeApiV1AuthVerificationCodePost,
   setAutoRenewApiV1InstancesUuidAutoRenewPost,
   setWarnThresholdApiV1MeWarnThresholdPatch,
-  submitRealNameApiV1MeRealNamePost,
+  submitKycApiV1MeKycPost,
   startInstanceApiV1InstancesUuidStartPost,
   startServiceApiV1ServicesSlugStartPost,
   stopInstanceApiV1InstancesUuidStopPost,
@@ -61,7 +61,7 @@ import type {
   InstanceRenew,
   InvoiceCreate,
   LoginRequest,
-  RealNameRequest,
+  KycSubmitRequest,
   RechargeCreate,
   RefundCreate,
   PasswordResetRequest,
@@ -293,8 +293,8 @@ export const useCreateInvoice = (o?: { onSuccess?: () => void }) =>
       createInvoiceApiV1BillingInvoicesPost(body, { "Idempotency-Key": idempotencyKey }),
     { ...o, invalidates: [keys.invoices.all, keys.invoiceEligible] },
   );
-export const useSubmitRealName = (o?: { onSuccess?: () => void }) =>
-  useApiMutation((body: RealNameRequest) => submitRealNameApiV1MeRealNamePost(body), { ...o, invalidates: [keys.me] });
+export const useSubmitKyc = (o?: { onSuccess?: () => void }) =>
+  useApiMutation((body: KycSubmitRequest) => submitKycApiV1MeKycPost(body), { ...o, invalidates: [keys.me] });
 export const useSetWarnThreshold = (o?: { onSuccess?: () => void }) =>
   useApiMutation((hours: number) => setWarnThresholdApiV1MeWarnThresholdPatch({ low_balance_warn_hours: hours }), {
     ...o,
