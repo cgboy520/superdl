@@ -4,6 +4,8 @@ metadata:
   name: pg-backup-daily
   namespace: superdl
 spec:
+  # CronJob schedules are UTC by default. To run at a fixed local hour of the billing day, set
+  # spec.timeZone to the value of SUPERDL_BILLING_TIMEZONE (IANA) and express the schedule in that zone.
   schedule: "30 18 * * *"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3

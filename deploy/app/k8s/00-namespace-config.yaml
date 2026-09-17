@@ -21,6 +21,8 @@ data:
   # Deployment identity (required in prod; see docs/reference/platform-config.md « Deployment identity »).
   # Mainland-China deployments: SUPERDL_COMPLIANCE_PROFILE=cn, SUPERDL_PLATFORM_CURRENCY=CNY, SUPERDL_BILLING_TIMEZONE=Asia/Shanghai.
   # Currency and timezone are locked in the database on first boot.
+  # Node installer source defaults to the official hosts; mainland-China deployments set
+  # SUPERDL_NODE_INSTALL_MIRROR=cn (or the node_install_mirror platform setting).
   SUPERDL_COMPLIANCE_PROFILE: "none"
   SUPERDL_PLATFORM_CURRENCY: "USD"
   SUPERDL_BILLING_TIMEZONE: "UTC"

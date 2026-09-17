@@ -36,6 +36,8 @@ backups:
   retentionPolicy: "30d"
   scheduledBackups:
     - name: daily-basebackup
+      # UTC six-field cron (CNPG); pick the hour that falls in your maintenance window rather than
+      # assuming a specific billing time zone.
       schedule: "0 30 18 * * *"
       method: barmanObjectStore
       backupOwnerReference: self
