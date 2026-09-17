@@ -4,12 +4,16 @@
  * SuperDL API
  * OpenAPI spec version: 0.1.0
  */
+import type { CaptchaConfigOutProvider } from './captchaConfigOutProvider';
 
 /**
- * 验证码 SDK 初始化公开信息。enabled=false 时前端不加载 SDK,发码不带 token。
+ * Public CAPTCHA bootstrap: which SDK the web app loads and its public keys. enabled=false →
+ * no SDK is loaded and codes are requested without a token.
  */
 export interface CaptchaConfigOut {
   enabled: boolean;
   prefix: string | null;
+  provider: CaptchaConfigOutProvider;
   scene_id: string | null;
+  site_key: string | null;
 }

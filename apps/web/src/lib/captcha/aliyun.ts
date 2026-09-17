@@ -1,6 +1,7 @@
-/** 阿里云验证码接入:按配置加载 SDK,通过弹窗回调获取验证 token。 */
-import { captchaConfigApiV1AuthCaptchaConfigGet } from "@superdl/api-client";
+/** Aliyun Captcha 2.0: loads the SDK on demand and resolves the popup's verify parameter. */
 import type { CaptchaConfigOut } from "@superdl/api-client";
+
+import { CAPTCHA_TIMEOUT_MS } from "./index";
 
 const SDK_URL = "https://o.alicdn.com/captcha-frontend/aliyunCaptcha/AliyunCaptcha.js";
 const TRIGGER_ID = "superdl-aliyun-captcha-trigger";
@@ -12,19 +13,10 @@ declare global {
   }
 }
 
-let configPromise: Promise<CaptchaConfigOut> | null = null;
 let sdkReady: Promise<void> | null = null;
 let sdkInitialized = false;
 let pendingResolve: ((token: string) => void) | null = null;
 let pendingTimer: ReturnType<typeof setTimeout> | null = null;
-
-/** 弹窗验证最长等待,超时 reject。 */
-const CAPTCHA_TIMEOUT_MS = 120_000;
-
-function getConfig(): Promise<CaptchaConfigOut> {
-  configPromise ??= captchaConfigApiV1AuthCaptchaConfigGet();
-  return configPromise;
-}
 
 function loadSdk(): Promise<void> {
   sdkReady ??= new Promise<void>((resolve, reject) => {
@@ -56,7 +48,7 @@ function ensureContainers(): void {
   }
 }
 
-async function initAliyun(cfg: CaptchaConfigOut): Promise<void> {
+async function init(cfg: CaptchaConfigOut): Promise<void> {
   if (sdkInitialized) return;
   await loadSdk();
   if (typeof window.initAliyunCaptcha !== "function") {
@@ -86,11 +78,8 @@ async function initAliyun(cfg: CaptchaConfigOut): Promise<void> {
   sdkInitialized = true;
 }
 
-/** 获取一次人机校验 token;开关关闭返回 undefined。SDK 加载失败 / 不可用 / 验证超时则 reject。 */
-export async function requestCaptchaToken(): Promise<string | undefined> {
-  const cfg = await getConfig();
-  if (!cfg.enabled) return undefined;
-  await initAliyun(cfg);
+export async function requestAliyunToken(cfg: CaptchaConfigOut): Promise<string> {
+  await init(cfg);
   return new Promise<string>((resolve, reject) => {
     pendingResolve = resolve;
     pendingTimer = setTimeout(() => {

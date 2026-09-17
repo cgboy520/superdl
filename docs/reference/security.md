@@ -95,7 +95,7 @@
 
 ## 已接受取舍
 
-- **token 存 localStorage**;CSP 按站点收敛(web 放行域白名单化,admin 严格 'self')。
+- **token 存 localStorage**;CSP 按站点收敛(web 放行域白名单化,admin 严格 'self')。The web CSP allow-lists both CAPTCHA providers' origins (`o.alicdn.com` / `*.captcha-open.aliyuncs.com` and `challenges.cloudflare.com`) so `captcha_provider` can be switched online without a frontend rollout; operators wanting a single-provider policy can template the header at container start (`envsubst`, as `nginx.admin.conf` already does for `ADMIN_EDGE_TOKEN`).
 - **固定窗口限流 2× 突发**;精度敏感动作(MFA / 短信)窗口与配额单独收紧。
 - **用户端无 2FA**:SMS 验证码是信任根;管理端全角色强制 TOTP + 恢复码 + 防重放,开关 `admin_mfa_enabled` 默认开,prod 关闭需 reason 进审计。
 - **仅 +86 手机号**。

@@ -126,7 +126,7 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 
 ## K. 发布检查单(每次上线)
 
-- [ ] **CSP 与第三方 SDK 域核对**:用真实 aliyun captcha provider 走通注册/登录/找回密码全链路,浏览器控制台无 CSP 违规;新增域先切 `Content-Security-Policy-Report-Only` 收敛再 enforce(见 `deploy/app/security-headers-web-csp.conf`)
-- [ ] admin 站响应头含 `X-Robots-Tag: noindex, nofollow`,web 站 CSP 含 `o.alicdn.com` 与 `*.captcha-open.aliyuncs.com`
+- [ ] **CSP 与第三方 SDK 域核对**:with the configured `captcha_provider` (turnstile or aliyun) 走通注册/登录/找回密码全链路,浏览器控制台无 CSP 违规;新增域先切 `Content-Security-Policy-Report-Only` 收敛再 enforce(见 `deploy/app/security-headers-web-csp.conf`)
+- [ ] admin 站响应头含 `X-Robots-Tag: noindex, nofollow`,web 站 CSP 含 `challenges.cloudflare.com` 以及 `o.alicdn.com` 与 `*.captcha-open.aliyuncs.com`
 - [ ] 资金库 PITR:托管 PG 确认已开(设 `SUPERDL_MANAGED_PG_PITR_ACK`)或 cnpg 档启用且预检全绿(见 `preflight.sh`)
 - [ ] **切换 server-side apply 后一次性清理**(`scripts/release.sh` 已改为 `kubectl apply --server-side --force-conflicts`):五个 TLS Secret 若曾用客户端 apply 灌入,其 `last-applied-configuration` 注解里存着整份证书与私钥的副本,逐个摘掉:`for s in superdl-api-tls superdl-frontends-tls superdl-admin-tls superdl-jupyter-wildcard-tls superdl-svc-wildcard-tls; do kubectl -n superdl annotate secret "$s" kubectl.kubernetes.io/last-applied-configuration-; done`(`kubectl -n superdl get secret <name> -o jsonpath='{.metadata.annotations}'` 回读为空)

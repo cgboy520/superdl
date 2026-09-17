@@ -1,10 +1,18 @@
-"""人机校验:阿里云渠道 seam、captcha_enabled 开关下的 /auth/sms-code 前置闸、公开初始化配置。"""
+"""CAPTCHA: Aliyun and Turnstile channel seams, provider factory, the captcha_enabled gate in
+front of /auth/verification-code, and the public bootstrap config."""
 
 import httpx
 import pytest
 from httpx import AsyncClient
 
-from app.core.captcha import AliyunCaptchaChannel, CaptchaError, set_captcha_channel
+from app.core.captcha import (
+    AliyunCaptchaChannel,
+    CaptchaError,
+    TurnstileCaptchaChannel,
+    build_captcha_channel,
+    set_captcha_channel,
+)
+from app.core.platform_config import runtime_config_from_strings as rc
 from tests.helpers import as_handle, set_platform_setting
 
 
@@ -15,13 +23,67 @@ def _reset_channel():
 
 
 class _FailingChannel:
-    async def verify(self, captcha_verify_param: str) -> bool:
+    async def verify(self, token: str, *, client_ip: str | None = None) -> bool:
         raise CaptchaError("provider down")
 
 
 class _RejectingChannel:
-    async def verify(self, captcha_verify_param: str) -> bool:
+    async def verify(self, token: str, *, client_ip: str | None = None) -> bool:
         return False
+
+
+class TestTurnstileChannel:
+    async def test_success_false_and_remoteip(self):
+        seen: list[dict[str, str]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            body = dict(pair.split("=", 1) for pair in request.content.decode().split("&"))
+            seen.append(body)
+            return httpx.Response(200, json={"success": body["response"] == "good"})
+
+        ch = TurnstileCaptchaChannel("secret-1", transport=httpx.MockTransport(handler))
+        assert await ch.verify("good", client_ip="203.0.113.9") is True
+        assert seen[0] == {"secret": "secret-1", "response": "good", "remoteip": "203.0.113.9"}
+        assert await ch.verify("bad") is False
+        assert "remoteip" not in seen[1]
+
+    async def test_transport_and_malformed_raise(self):
+        def boom(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("down", request=request)
+
+        ch = TurnstileCaptchaChannel("s", transport=httpx.MockTransport(boom))
+        with pytest.raises(CaptchaError, match="request failed"):
+            await ch.verify("t")
+
+        def malformed(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"hello": "world"})
+
+        ch = TurnstileCaptchaChannel("s", transport=httpx.MockTransport(malformed))
+        with pytest.raises(CaptchaError, match="unexpected"):
+            await ch.verify("t")
+
+
+class TestFactory:
+    def test_provider_dispatch_and_credential_checks(self):
+        with pytest.raises(CaptchaError, match="Turnstile"):
+            build_captcha_channel(rc({"captcha_provider": "turnstile"}))
+        ch = build_captcha_channel(
+            rc({"captcha_provider": "turnstile", "captcha_turnstile_secret_key": "sec"})
+        )
+        assert isinstance(ch, TurnstileCaptchaChannel)
+        with pytest.raises(CaptchaError, match="Aliyun"):
+            build_captcha_channel(rc({"captcha_provider": "aliyun"}))
+        ali = build_captcha_channel(
+            rc(
+                {
+                    "captcha_provider": "aliyun",
+                    "captcha_scene_id": "s",
+                    "captcha_access_key_id": "LTAI5tTESTTESTTEST",
+                    "captcha_access_key_secret": "k",
+                }
+            )
+        )
+        assert isinstance(ali, AliyunCaptchaChannel)
 
 
 class TestAliyunChannel:
@@ -136,12 +198,29 @@ class TestSmsCodeGate:
         """前端初始化配置:免鉴权;开关即时跟随 DB 覆盖。"""
         resp = await client.get("/api/v1/auth/captcha-config")
         assert resp.status_code == 200
-        assert resp.json() == {"enabled": False, "scene_id": None, "prefix": None}
+        assert resp.json() == {
+            "enabled": False,
+            "provider": "turnstile",
+            "site_key": None,
+            "scene_id": None,
+            "prefix": None,
+        }
         await set_platform_setting(sm, "captcha_enabled", "true")
+        await set_platform_setting(sm, "captcha_turnstile_site_key", "0x4AAAAAAA_site")
+        assert (await client.get("/api/v1/auth/captcha-config")).json() == {
+            "enabled": True,
+            "provider": "turnstile",
+            "site_key": "0x4AAAAAAA_site",
+            "scene_id": None,
+            "prefix": None,
+        }
+        await set_platform_setting(sm, "captcha_provider", "aliyun")
         await set_platform_setting(sm, "captcha_scene_id", "scene-1")
         await set_platform_setting(sm, "captcha_prefix", "pfx")
         assert (await client.get("/api/v1/auth/captcha-config")).json() == {
             "enabled": True,
+            "provider": "aliyun",
+            "site_key": "0x4AAAAAAA_site",
             "scene_id": "scene-1",
             "prefix": "pfx",
         }

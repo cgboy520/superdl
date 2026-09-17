@@ -2293,7 +2293,7 @@
         "type": "object"
       },
       "CaptchaConfigOut": {
-        "description": "验证码 SDK 初始化公开信息。enabled=false 时前端不加载 SDK,发码不带 token。",
+        "description": "Public CAPTCHA bootstrap: which SDK the web app loads and its public keys. enabled=false →\nno SDK is loaded and codes are requested without a token.",
         "properties": {
           "enabled": {
             "title": "Enabled",
@@ -2310,6 +2310,14 @@
             ],
             "title": "Prefix"
           },
+          "provider": {
+            "enum": [
+              "aliyun",
+              "turnstile"
+            ],
+            "title": "Provider",
+            "type": "string"
+          },
           "scene_id": {
             "anyOf": [
               {
@@ -2320,10 +2328,23 @@
               }
             ],
             "title": "Scene Id"
+          },
+          "site_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Key"
           }
         },
         "required": [
           "enabled",
+          "provider",
+          "site_key",
           "scene_id",
           "prefix"
         ],
@@ -16949,7 +16970,7 @@
     },
     "/api/v1/auth/captcha-config": {
       "get": {
-        "description": "验证码 2.0 客户端初始化配置(免鉴权)。",
+        "description": "CAPTCHA client bootstrap (unauthenticated).",
         "operationId": "captcha_config_api_v1_auth_captcha_config_get",
         "responses": {
           "200": {

@@ -36,6 +36,9 @@ data:
   SUPERDL_REGISTRY_HOST: "harbor.superdl.example.com"
   SUPERDL_REGISTRY_PROJECT: "superdl"
   SUPERDL_CAPTCHA_ENABLED: "true"
+  # turnstile (default; Cloudflare site key below, secret in superdl-cloud) or aliyun (scene ID / prefix below, AccessKey in superdl-cloud).
+  SUPERDL_CAPTCHA_PROVIDER: "turnstile"
+  SUPERDL_CAPTCHA_TURNSTILE_SITE_KEY: "CHANGE_ME"
   SUPERDL_REAL_NAME_ENABLED: "true"
   SUPERDL_REAL_NAME_REQUIRED_FOR_RECHARGE: "true"
   SUPERDL_ADMIN_MFA_ENABLED: "true"

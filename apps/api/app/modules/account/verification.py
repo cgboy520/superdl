@@ -47,13 +47,15 @@ def channel_of(handle: Handle) -> Literal["email", "sms"]:
     return "email" if handle.kind == "email" else "sms"
 
 
-async def _verify_captcha(session: AsyncSession, captcha_token: str | None) -> None:
+async def _verify_captcha(
+    session: AsyncSession, captcha_token: str | None, client_ip: str | None
+) -> None:
     """With captcha_enabled: missing token → 400, channel failure → 502, rejected → 400."""
     if not captcha_token:
         raise AppError(ErrorCode.CAPTCHA_REQUIRED, key="account.captchaRequired")
     try:
         channel = await get_captcha_channel(session)
-        captcha_ok = await channel.verify(captcha_token)
+        captcha_ok = await channel.verify(captcha_token, client_ip=client_ip)
     except CaptchaError as exc:
         logger.error("captcha_channel_error", error=str(exc))
         raise AppError(
@@ -135,7 +137,7 @@ async def send_code(
     )
     cfg = await get_runtime_config(session)
     if require_captcha and cfg.captcha_enabled:
-        await _verify_captcha(session, captcha_token)
+        await _verify_captcha(session, captcha_token, client_ip)
     await check_rate_limit(
         f"code-send-ip:{client_ip or '-'}", max_attempts=SEND_IP_HOURLY_MAX, window_seconds=3600.0
     )

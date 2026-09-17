@@ -260,6 +260,20 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         hint="AccessKey ID(建议独立 RAM 子账号,仅授 AliyunYundunAFSFullAccess)",
     ),
     "captcha_access_key_secret": SettingSpec("captcha", "secret", max_len=128),
+    "captcha_provider": SettingSpec(
+        "captcha",
+        "choice",
+        choices=("aliyun", "turnstile"),
+        hint="turnstile needs the site key and secret key; aliyun needs scene ID, prefix and "
+        "AccessKey",
+    ),
+    "captcha_turnstile_site_key": SettingSpec(
+        "captcha",
+        "str",
+        pattern=r"[0-9A-Za-z_-]{10,128}",
+        hint="Turnstile site key (public; the web app renders the widget with it)",
+    ),
+    "captcha_turnstile_secret_key": SettingSpec("captcha", "secret", max_len=128),
     "icp_number": SettingSpec(
         "compliance", "str", max_len=64, hint="ICP 备案号,形如 京ICP备2026012345号-1"
     ),
@@ -469,6 +483,9 @@ class RuntimeConfig:
     captcha_prefix: str
     captcha_access_key_id: str
     captcha_access_key_secret: str
+    captcha_provider: str
+    captcha_turnstile_site_key: str
+    captcha_turnstile_secret_key: str
     icp_number: str
     police_record_number: str
     company_name: str
@@ -593,6 +610,24 @@ def _prod_violations(cfg: RuntimeConfig) -> list[tuple[str, SettingSpec]]:
     return out
 
 
+def _captcha_credentials_warning(cfg: RuntimeConfig) -> ConfigWarning | None:
+    """CAPTCHA on but the selected provider's credentials incomplete → every code request is 502."""
+    if not cfg.captcha_enabled:
+        return None
+    if cfg.captcha_provider == "turnstile":
+        complete = bool(cfg.captcha_turnstile_site_key and cfg.captcha_turnstile_secret_key)
+        message = (
+            "CAPTCHA is on but the Turnstile site key / secret key are missing: "
+            "every code request will fail (502)"
+        )
+    else:
+        complete = bool(
+            cfg.captcha_scene_id and cfg.captcha_access_key_id and cfg.captcha_access_key_secret
+        )
+        message = "人机验证已开启但阿里云验证码凭据/场景不全,发码将一律 502"
+    return None if complete else ConfigWarning("captcha_enabled", "error", message)
+
+
 def compute_config_warnings(cfg: RuntimeConfig, environment: str) -> list[ConfigWarning]:
     """安全开关与凭据的组合风险。prod 禁止取值的红牌从 SettingSpec.prod_forbidden 派生。"""
     prod = environment == "prod"
@@ -611,16 +646,9 @@ def compute_config_warnings(cfg: RuntimeConfig, environment: str) -> list[Config
                     "IP and account rate limits",
                 )
             )
-    if cfg.captcha_enabled and not (
-        cfg.captcha_scene_id and cfg.captcha_access_key_id and cfg.captcha_access_key_secret
-    ):
-        out.append(
-            ConfigWarning(
-                "captcha_enabled",
-                "error",
-                "人机验证已开启但阿里云验证码凭据/场景不全,发码将一律 502",
-            )
-        )
+    captcha_warning = _captcha_credentials_warning(cfg)
+    if captcha_warning is not None:
+        out.append(captcha_warning)
     if cfg.real_name_enabled and not (
         cfg.real_name_access_key_id and cfg.real_name_access_key_secret
     ):

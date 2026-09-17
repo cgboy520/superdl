@@ -9,10 +9,10 @@ import { type DeploymentIdentity, type PlatformConfigItem } from "../../api";
 import { FieldExtraText, GROUP_INTRO_KEYS, SOURCE_TAG, useFieldLabel } from "./-platformFields";
 import { ConfigWarning, GROUP_LABEL_KEY, Group } from "./-platformNav";
 
-/** 安全开关的依赖凭据(在别的分组录入)与「须先开启」的前置开关。 */
+/** Credentials a security switch depends on (entered in another group) and switches it requires. */
 export const SWITCH_DEPS: Record<string, { keys: string[]; group: Group }> = {
   captcha_enabled: {
-    keys: ["captcha_scene_id", "captcha_access_key_id", "captcha_access_key_secret"],
+    keys: ["captcha_turnstile_site_key", "captcha_turnstile_secret_key"],
     group: "captcha",
   },
   real_name_enabled: {
@@ -20,6 +20,21 @@ export const SWITCH_DEPS: Record<string, { keys: string[]; group: Group }> = {
     group: "real_name",
   },
 };
+const CAPTCHA_DEPS_BY_PROVIDER: Record<string, string[]> = {
+  aliyun: ["captcha_scene_id", "captcha_access_key_id", "captcha_access_key_secret"],
+  turnstile: ["captcha_turnstile_site_key", "captcha_turnstile_secret_key"],
+};
+/** Dependencies follow the effective captcha_provider (draft first, then the saved value). */
+export function switchDeps(
+  key: string,
+  draft: Record<string, string>,
+  byKey: Map<string, PlatformConfigItem>,
+): { keys: string[]; group: Group } | undefined {
+  const base = SWITCH_DEPS[key];
+  if (!base || key !== "captcha_enabled") return base;
+  const provider = draft.captcha_provider ?? byKey.get("captcha_provider")?.value ?? "turnstile";
+  return { keys: CAPTCHA_DEPS_BY_PROVIDER[provider] ?? base.keys, group: base.group };
+}
 export const SWITCH_REQUIRES: Record<string, string> = {
   real_name_required_for_recharge: "real_name_enabled",
 };
@@ -88,7 +103,7 @@ export function SwitchRow({
   const { t } = useTranslation();
   const fieldLabel = useFieldLabel();
   const effective = (draft[item.key] ?? item.value ?? "false") === "true";
-  const deps = SWITCH_DEPS[item.key];
+  const deps = switchDeps(item.key, draft, byKey);
   const missing = deps ? deps.keys.filter((k) => !byKey.get(k)?.configured) : [];
   const requires = SWITCH_REQUIRES[item.key];
   const requiresOn = requires ? (draft[requires] ?? byKey.get(requires)?.value) === "true" : true;

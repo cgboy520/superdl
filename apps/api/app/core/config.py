@@ -121,6 +121,9 @@ class Settings(BaseSettings):
     captcha_prefix: str | None = None
     captcha_access_key_id: str | None = None
     captcha_access_key_secret: str | None = None
+    captcha_provider: Literal["aliyun", "turnstile"] = "turnstile"
+    captcha_turnstile_site_key: str | None = None
+    captcha_turnstile_secret_key: str | None = None
 
     config_encryption_key: str | None = None
     config_encryption_key_previous: str | None = None
