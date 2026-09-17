@@ -156,7 +156,8 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/repo" \
             zricethezav/gitleaks:v8.29.1@sha256:aa036a2f4bdfe3cc3c55fa4326308efabb4a6be498c883c864fd1d0d5585438a \
-            git /repo --config /repo/.github/gitleaks.toml --verbose
+            git /repo --config /repo/.github/gitleaks.toml --verbose \
+            --log-opts="--full-history --diff-filter=tuxdb HEAD"
 
   k8s-real-smoke:
     needs: changes

@@ -1,51 +1,76 @@
+# CI scans the full history of the checked-out ref only (`--log-opts` in ci.yml).
+# Fixtures that must look like secrets: allow by path + line regex.
+# Wording retired from the tree but still in history: allow by commit + path, never by content.
+
 [extend]
 useDefault = true
 
 [[allowlists]]
-description = "test_payment_signature:APIV3_KEY 是 32 位十六进制等差序列假密钥"
+description = "test_payment_signature: APIV3_KEY is a fake 32-hex arithmetic sequence"
 condition = "AND"
 regexTarget = "line"
 paths = ['''apps/api/tests/test_payment_signature\.py''']
 regexes = ['''0123456789abcdef0123456789abcdef''']
 
 [[allowlists]]
-description = "platform_config:hint 文案里的 PEM 头字样,文件只定义配置项校验规格"
-condition = "AND"
-regexTarget = "line"
-paths = ['''apps/api/app/core/platform_config\.py''']
-regexes = ['''含 -----BEGIN PRIVATE KEY-----''']
-
-[[allowlists]]
-description = "runbook 中 curl 示例的占位口令 <强口令>"
-condition = "AND"
-regexTarget = "line"
-paths = ['''deploy/cluster/runbooks/image-prewarm\.md''']
-regexes = ['''curl -u ops:.{0,2}<强口令>''']
-
-[[allowlists]]
-description = "账号用例改密/找回的入参口令,断言 200/422 用的字面量"
+description = "account test cases: password inputs of change / recovery flows, literals asserted as 200/422"
 condition = "AND"
 regexTarget = "line"
 paths = ['''apps/api/tests/test_account_auth\.py''']
 regexes = ['''"(?:new_)?password": "(?:newpass|qwerty)123456"''']
 
 [[allowlists]]
-description = "prod 校验用例的 jwt_secret:64 位十六进制合法形态样本,只喂给 Settings"
+description = "prod validation test cases: jwt_secret as a well-formed 64-hex sample, fed only to Settings"
 condition = "AND"
 regexTarget = "line"
 paths = ['''apps/api/tests/test_[a-z_]+\.py''']
 regexes = ['''"jwt_secret": "[0-9a-f]{64}"''']
 
 [[allowlists]]
-description = "test_k8s_real_units:断言的是 Secret 对象名,不是密钥内容"
+description = "test_k8s_real_units: the assertion is on the Secret object name, not key material"
 condition = "AND"
 regexTarget = "line"
 paths = ['''apps/api/tests/test_k8s_real_units\.py''']
 regexes = ['''secret_key_ref\.name == "jupyter-inst-1"''']
 
-# 历史提交里已存在的那份泄漏哈希(已作废,禁止复用):只放行这几个 SHA 里的这一串;新提交再出现仍拦
 [[allowlists]]
-description = "superdl-leaked-registry-htpasswd 的历史提交"
+description = "Stripe test cases: fake sk_test / whsec literals for the fake SDK client and the webhook signer"
+condition = "AND"
+regexTarget = "line"
+paths = ['''apps/api/tests/test_payment_(?:stripe|registry)\.py''']
+regexes = ['''sk_test_0123456789abcdef''', '''whsec_(?:testsecret)?0123456789(?:abcdef)?''']
+
+# Retired wording: the runbook curl example once carried a placeholder password in -u.
+[[allowlists]]
+description = "historical commits of the image-prewarm runbook curl placeholder password"
+condition = "AND"
+paths = ['''deploy/cluster/runbooks/image-prewarm\.md''']
+commits = [
+  "298593134d351607cc12b3ea62232c6dc9480e31",
+  "0bbf5403082957d771607458c3a94ed41e7253c2",
+  "bcba30c724c36af21b2169454c8e6c5de066cdee",
+  "eab47256a185f5b0d8c1b71ef418ccc3f111b50d",
+  "734ff4ac22e56e587f8250c4af86ae26fdd42f2c",
+  "89e7e38feb2cdf30c4e180db828b8d894c33f313",
+]
+
+# Retired wording: the platform_config hint text once quoted a PEM header.
+[[allowlists]]
+description = "historical commits of the platform_config PEM header hint"
+condition = "AND"
+paths = ['''apps/api/app/core/platform_config\.py''']
+commits = [
+  "92521915a52d8562fed8ee6bfd7d2efbcf07712d",
+  "1668ba5c89509d92efb1328c83ea7327c11ed47d",
+  "bcba30c724c36af21b2169454c8e6c5de066cdee",
+  "eab47256a185f5b0d8c1b71ef418ccc3f111b50d",
+  "734ff4ac22e56e587f8250c4af86ae26fdd42f2c",
+  "89e7e38feb2cdf30c4e180db828b8d894c33f313",
+]
+
+# The leaked hash already present in historical commits (retired, never reuse): allowed only in these SHAs; a new commit containing it is still caught
+[[allowlists]]
+description = "historical commits of superdl-leaked-registry-htpasswd"
 condition = "AND"
 regexTarget = "line"
 commits = [
@@ -58,11 +83,11 @@ commits = [
 ]
 regexes = ['''\$2y\$05\$0JWd7XLpA2WBKjaBnw4KqupCZERl2Yx3cg9giAruPDxz1km4OCfSW''']
 
-# 禁止将此 bcrypt 哈希用于真实账号。
+# Never use this bcrypt hash for a real account.
 [[rules]]
 id = "superdl-leaked-registry-htpasswd"
-description = "已泄漏的 registry htpasswd bcrypt hash"
+description = "leaked registry htpasswd bcrypt hash"
 regex = '''\$2y\$05\$0JWd7XLpA2WBKjaBnw4KqupCZERl2Yx3cg9giAruPDxz1km4OCfSW'''
 [[rules.allowlists]]
-description = "规则定义与拦截器自身"
+description = "the rule definition and the interceptor itself"
 paths = ['''\.github/gitleaks\.toml''', '''deploy/cluster/preflight\.sh''']
