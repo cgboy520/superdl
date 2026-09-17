@@ -33,10 +33,10 @@ while [[ $# -gt 0 ]]; do
     --api-base) API_BASE="$2"; shift 2 ;;
     --force) FORCE=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
-    *) echo "未知参数: $1" >&2; exit 2 ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
-[[ "$(id -u)" == "0" ]] || { echo "必须 root 执行(sudo bash ...)" >&2; exit 2; }
+[[ "$(id -u)" == "0" ]] || { echo "must run as root (sudo bash ...)" >&2; exit 2; }
 
 if [[ "$UNINSTALL" == "1" ]]; then
   echo "==== $(date -Is) node-join --uninstall ===="
@@ -53,10 +53,10 @@ if [[ "$UNINSTALL" == "1" ]]; then
   fi
   if [[ -n "$DISTRO_NAME" && "$SERVER_HERE" == "0" ]]; then
     for us in "/usr/local/bin/${DISTRO_NAME}-agent-uninstall.sh" "/usr/local/bin/${DISTRO_NAME}-uninstall.sh"; do
-      [[ -x "$us" ]] && { echo "-- 执行 $us"; "$us"; }
+      [[ -x "$us" ]] && { echo "-- running $us"; "$us"; }
     done
   elif [[ "$SERVER_HERE" == "1" ]]; then
-    echo "-- 本机是 ${DISTRO_NAME} server:不卸载发行版、不动 server 配置;池标签需在平台侧摘除(kubectl label node ... node-restriction.kubernetes.io/superdl-pool-)"
+    echo "-- this host is the ${DISTRO_NAME} server: distribution and server config left untouched; remove the pool label on the platform side (kubectl label node ... node-restriction.kubernetes.io/superdl-pool-)"
   fi
   systemctl disable "${RESUME_UNIT}.service" 2>/dev/null || true
   rm -f "$ETC_DIR/systemd/system/${RESUME_UNIT}.service"
@@ -79,21 +79,21 @@ if [[ "$UNINSTALL" == "1" ]]; then
       "$RANCHER_STATE_DIR/$DISTRO_NAME/agent/etc/kubelet.conf.d/50-superdl.conf"
   fi
   rm -rf "$STATE_DIR"
-  echo "==== 卸载完成:agent 已移除,平台侧请记得在集群中删除该节点(kubectl delete node) ===="
-  echo "-- 注意:superdl-nvme VG 与 loop 镜像属业务数据,未动;NVIDIA 驱动/container-toolkit 未动"
+  echo "==== uninstall complete: agent removed; delete the node from the cluster on the platform side (kubectl delete node) ===="
+  echo "-- note: the superdl-nvme VG and loop image are business data and were left in place; NVIDIA driver / container-toolkit untouched"
   exit 0
 fi
 
-[[ -n "$TOKEN_FILE" ]] || { echo "缺少 --token-file(在管理端「添加节点」生成命令,token 不落命令行)" >&2; exit 2; }
-[[ -f "$TOKEN_FILE" ]] || { echo "token 文件不存在: $TOKEN_FILE" >&2; exit 2; }
-[[ "$API_BASE" != "__API_BASE__" ]] || { echo "脚本须经 API 下发(占位符未替换),或用 --api-base 指定" >&2; exit 2; }
+[[ -n "$TOKEN_FILE" ]] || { echo "missing --token-file (generate the command under Nodes > Add node in the admin console; the token never goes on the command line)" >&2; exit 2; }
+[[ -f "$TOKEN_FILE" ]] || { echo "token file not found: $TOKEN_FILE" >&2; exit 2; }
+[[ "$API_BASE" != "__API_BASE__" ]] || { echo "the script must be served by the API (placeholder not replaced) or run with --api-base" >&2; exit 2; }
 
 mkdir -p "$STATE_DIR/done.d"
 chmod 700 "$STATE_DIR"
 touch "$LOG_FILE"
 chmod 644 "$LOG_FILE"
 exec > >(tee -a "$LOG_FILE") 2>&1
-echo "==== $(date -Is) node-join 启动 (api=$API_BASE) ===="
+echo "==== $(date -Is) node-join start (api=$API_BASE) ===="
 
 json_escape() { python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'; }
 
@@ -125,7 +125,7 @@ on_error() {
   local tail_log
   tail_log="$(tail -n 20 "$LOG_FILE" 2>/dev/null || true)"
   report "$CURRENT_PHASE" failed "step=$CURRENT_PHASE; log tail: $tail_log"
-  echo "!! 失败于 $CURRENT_PHASE,详情见 $LOG_FILE;修复后可重跑同一条命令续跑" >&2
+  echo "!! failed at $CURRENT_PHASE; see $LOG_FILE. Fix the cause and rerun the same command to resume" >&2
 }
 trap on_error ERR
 
@@ -137,7 +137,7 @@ mark_done() { touch "$STATE_DIR/done.d/$1"; }
 
 run_step() {
   CURRENT_PHASE="$1"
-  if marker "$1"; then echo "-- $1: 已完成,跳过"; return 0; fi
+  if marker "$1"; then echo "-- $1: already done, skipping"; return 0; fi
   echo "== $1 =="
   report "$1" running
   "$2"
@@ -213,37 +213,37 @@ PYEOF
   printf '%s' "$(cfg_get progress_token)" > "$STATE_DIR/token"
   chmod 600 "$STATE_DIR/token"
   use_token_file "$STATE_DIR/token"
-  echo "-- bootstrap 完成: pool=$(cfg_get pool) agent=$(cfg_get cluster_agent_version)"
+  echo "-- bootstrap done: pool=$(cfg_get pool) agent=$(cfg_get cluster_agent_version)"
 }
 
 step_precheck() {
-  case "$(uname -m)" in x86_64 | aarch64) ;; *) echo "仅支持 x86_64 / aarch64(当前 $(uname -m))"; return 1 ;; esac
-  command -v python3 >/dev/null || { echo "缺少 python3"; return 1; }
-  command -v systemctl >/dev/null || { echo "需要 systemd"; return 1; }
+  case "$(uname -m)" in x86_64 | aarch64) ;; *) echo "only x86_64 / aarch64 are supported (this host: $(uname -m))"; return 1 ;; esac
+  command -v python3 >/dev/null || { echo "python3 is missing"; return 1; }
+  command -v systemctl >/dev/null || { echo "systemd is required"; return 1; }
   if is_cpu_pool; then
-    echo "-- cpu 池:跳过 NVIDIA GPU 探测"
+    echo "-- cpu pool: skipping NVIDIA GPU detection"
   else
-    lspci 2>/dev/null | grep -i nvidia >/dev/null || { echo "未检测到 NVIDIA GPU"; return 1; }
+    lspci 2>/dev/null | grep -i nvidia >/dev/null || { echo "no NVIDIA GPU detected"; return 1; }
   fi
   local avail_kb
   avail_kb="$(df --output=avail -k / | tail -1 | tr -d ' ')"
-  [[ "$avail_kb" -ge $((50 * 1024 * 1024)) ]] || { echo "/ 分区可用空间不足 50G"; return 1; }
+  [[ "$avail_kb" -ge $((50 * 1024 * 1024)) ]] || { echo "less than 50G free on /"; return 1; }
   local server host port default_port=9345
   [[ "$DISTRO" == "k3s" ]] && default_port=6443
   server="$(cfg_get cluster_server_url)"
   host="$(python3 -c "from urllib.parse import urlparse;u=urlparse('$server');print(u.hostname)")"
   port="$(python3 -c "from urllib.parse import urlparse;u=urlparse('$server');print(u.port or $default_port)")"
-  timeout 5 bash -c "</dev/tcp/$host/$port" || { echo "无法连通 $host:$port(检查内网路由/防火墙)"; return 1; }
+  timeout 5 bash -c "</dev/tcp/$host/$port" || { echo "cannot reach $host:$port (check routing / firewall)"; return 1; }
 }
 
 step_nouveau() {
-  if is_cpu_pool; then echo "-- cpu 池:无 NVIDIA 卡,跳过 nouveau 黑名单"; return 0; fi
+  if is_cpu_pool; then echo "-- cpu pool: no NVIDIA GPU, skipping the nouveau blacklist"; return 0; fi
   cat > "$ETC_DIR"/modprobe.d/blacklist-nouveau.conf <<'EOF'
 blacklist nouveau
 options nouveau modeset=0
 EOF
   update-initramfs -u
-  if lsmod | grep -q '^nouveau'; then NEED_REBOOT=1; echo "-- nouveau 已加载,需重启卸载"; fi
+  if lsmod | grep -q '^nouveau'; then NEED_REBOOT=1; echo "-- nouveau is loaded; a reboot is needed to unload it"; fi
 }
 
 step_sysctl() {
@@ -253,7 +253,7 @@ step_sysctl() {
 }
 
 step_iommu() {
-  if is_cpu_pool; then echo "-- cpu 池:无卡机,跳过 IOMMU"; return 0; fi
+  if is_cpu_pool; then echo "-- cpu pool: no GPU, skipping IOMMU"; return 0; fi
   if [[ "$(uname -m)" == "x86_64" && ! -f "$ETC_DIR"/default/grub.d/99-superdl.cfg ]]; then
     mkdir -p "$ETC_DIR"/default/grub.d
     # shellcheck disable=SC2016
@@ -263,34 +263,34 @@ step_iommu() {
   fi
   if [[ -z "$(ls -A "$IOMMU_GROUPS_DIR" 2>/dev/null)" ]]; then
     NEED_REBOOT=1
-    echo "-- IOMMU 未生效,需重启(重启后仍未生效请检查 BIOS VT-d/AMD-Vi 或固件 SMMU 设置)"
+    echo "-- IOMMU not active; reboot required (if still inactive afterwards, check BIOS VT-d/AMD-Vi or firmware SMMU settings)"
   else
-    echo "-- IOMMU 已生效(${IOMMU_GROUPS_DIR} 有分组)"
+    echo "-- IOMMU active (${IOMMU_GROUPS_DIR} has groups)"
   fi
 }
 
 step_driver() {
-  if is_cpu_pool; then echo "-- cpu 池:跳过 NVIDIA 驱动安装"; return 0; fi
+  if is_cpu_pool; then echo "-- cpu pool: skipping NVIDIA driver install"; return 0; fi
   if is_kata_pool; then
     if nvidia-smi > /dev/null 2>&1 || lsmod | grep -q '^nvidia' \
       || dpkg -l 'nvidia-driver-*' 2> /dev/null | grep -q '^ii'; then
-      echo "!! kata 池要求宿主无 NVIDIA 驱动:vfio-manager 见到预装驱动即 fatal,GPU 绑不上 vfio-pci" >&2
-      echo "   先卸载驱动再重跑本命令(步骤见 runbook node-pool-switch.md):" >&2
+      echo "!! kata pool requires a host without the NVIDIA driver: vfio-manager fails on a pre-installed driver and the GPU never binds to vfio-pci" >&2
+      echo "   uninstall the driver and rerun this command (steps in runbook node-pool-switch.md):" >&2
       echo "   systemctl disable --now nvidia-persistenced; apt-get purge -y 'nvidia-driver-*'; update-initramfs -u; reboot" >&2
       return 1
     fi
-    echo "-- kata 池:整卡直通由 vfio-pci 接管,跳过 NVIDIA 驱动安装"
+    echo "-- kata pool: whole-GPU passthrough via vfio-pci, skipping NVIDIA driver install"
     return 0
   fi
   local want
   want="$(cfg_get driver_version)"
   if nvidia-smi >/dev/null 2>&1; then
-    echo "-- 驱动已就绪: $(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)"
+    echo "-- driver ready: $(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)"
     return 0
   fi
   if dpkg -l "nvidia-driver-${want}-server" 2>/dev/null | grep -q '^ii'; then
     NEED_REBOOT=1
-    echo "-- 驱动已安装但未加载,需重启"
+    echo "-- driver installed but not loaded; reboot required"
     return 0
   fi
   export DEBIAN_FRONTEND=noninteractive
@@ -300,15 +300,15 @@ step_driver() {
 }
 
 step_nvidia_toolkit() {
-  if is_cpu_pool; then echo "-- cpu 池:跳过 nvidia-container-toolkit"; return 0; fi
-  if is_kata_pool; then echo "-- kata 池:宿主不跑 GPU 容器,跳过 nvidia-container-toolkit"; return 0; fi
+  if is_cpu_pool; then echo "-- cpu pool: skipping nvidia-container-toolkit"; return 0; fi
+  if is_kata_pool; then echo "-- kata pool: the host runs no GPU containers, skipping nvidia-container-toolkit"; return 0; fi
   local installed
   installed="$(dpkg-query -W -f='${Version}' nvidia-container-toolkit 2>/dev/null || true)"
   if [[ -n "$installed" ]] && dpkg --compare-versions "$installed" ge "$NVCTK_MIN_VERSION"; then
-    echo "-- nvidia-container-toolkit $installed ≥ $NVCTK_MIN_VERSION,跳过"
+    echo "-- nvidia-container-toolkit $installed >= $NVCTK_MIN_VERSION, skipping"
   else
     if [[ -n "$installed" ]]; then
-      echo "-- nvidia-container-toolkit $installed 低于下限 $NVCTK_MIN_VERSION,升级"
+      echo "-- nvidia-container-toolkit $installed is below the minimum $NVCTK_MIN_VERSION, upgrading"
     fi
     local key="$ETC_DIR/apt/keyrings/nvidia-container-toolkit-keyring.gpg"
     mkdir -p "$ETC_DIR/apt/keyrings" "$ETC_DIR/apt/sources.list.d"
@@ -322,15 +322,15 @@ step_nvidia_toolkit() {
     apt-get install -y -qq nvidia-container-toolkit
     installed="$(dpkg-query -W -f='${Version}' nvidia-container-toolkit 2>/dev/null || true)"
     if [[ -z "$installed" ]] || dpkg --compare-versions "$installed" lt "$NVCTK_MIN_VERSION"; then
-      echo "!! nvidia-container-toolkit 版本 ${installed:-缺失} 低于安全下限 $NVCTK_MIN_VERSION" >&2
+      echo "!! nvidia-container-toolkit version ${installed:-missing} is below the security minimum $NVCTK_MIN_VERSION" >&2
       return 1
     fi
   fi
   if systemctl is-active --quiet "$AGENT_UNIT" 2>/dev/null; then
-    echo "-- $AGENT_UNIT 已运行,重启以探测 nvidia runtime"
+    echo "-- $AGENT_UNIT is running; restarting it to detect the nvidia runtime"
     systemctl restart "$AGENT_UNIT"
   elif is_server_node; then
-    echo "-- 本机是 $SERVER_UNIT,重启以探测 nvidia runtime"
+    echo "-- this host is $SERVER_UNIT; restarting it to detect the nvidia runtime"
     systemctl restart "$SERVER_UNIT"
   fi
 }
@@ -339,15 +339,15 @@ step_nvme_vg() {
   local devices
   devices="$(cfg_get nvme_devices)"
   if [[ -z "$devices" ]]; then
-    echo "!! 未登记 NVMe 设备:不创建 superdl-nvme VG,也不自动兜底。" \
-         "该节点无本地实例盘能力;如需 TopoLVM 本地盘,请在管理端为本节点新建" \
-         "带 NVMe 登记的注册令牌,并用 --force 重跑。"
+    echo "!! no NVMe devices registered: the superdl-nvme VG is not created, nothing guessed." \
+         "This node has no local instance-disk capability; for TopoLVM local disks, issue a new" \
+         "enrollment token with NVMe devices registered and rerun with --force."
     report nvme_vg running \
-      "未登记 NVMe 设备:跳过实例盘 VG(superdl-nvme),不自动兜底。该节点暂无 TopoLVM 本地实例盘;新建带 NVMe 登记的注册令牌并 --force 重跑即可补齐。"
+      "no NVMe devices registered: skipping the instance-disk VG (superdl-nvme), nothing guessed. No TopoLVM local instance disks on this node yet; issue a token with NVMe registered and rerun with --force to add them."
     return 0
   fi
   step_lvm_discards
-  if vgs superdl-nvme >/dev/null 2>&1; then echo "-- VG 已存在,跳过"; return 0; fi
+  if vgs superdl-nvme >/dev/null 2>&1; then echo "-- VG already exists, skipping"; return 0; fi
   local dev size pvs=()
   for dev in $devices; do
     if [[ "$dev" == loop:* ]]; then
@@ -356,16 +356,16 @@ step_nvme_vg() {
       [[ -f "$LVM_IMG_DIR/superdl-nvme.img" ]] || truncate -s "${size}G" "$LVM_IMG_DIR/superdl-nvme.img"
       pvs+=("$(losetup --find --show "$LVM_IMG_DIR/superdl-nvme.img")")
       _write_loop_unit
-      echo "-- 按登记选择:用 loop 文件做实例盘(${size}G,仅测试,非专用盘性能)"
+      echo "-- per registration: loop file as the instance disk (${size}G; testing only, not dedicated-disk performance)"
     else
       if [[ ! -b "$dev" ]]; then
-        echo "!! NVMe 设备不存在:$dev(登记信息有误?管理端核对节点 NVMe 登记)" >&2
+        echo "!! NVMe device not found: $dev (wrong registration? check the node's NVMe registration in the admin console)" >&2
         return 1
       fi
       if wipefs -n "$dev" 2>/dev/null | grep -q .; then
-        echo "!! $dev 上已有签名(非空盘),拒绝 pvcreate:" >&2
+        echo "!! $dev carries existing signatures (not an empty disk); refusing pvcreate:" >&2
         wipefs -n "$dev" >&2
-        echo "!! 确认为空后先 wipefs -a $dev 再重跑;数据盘误登记请改登记信息" >&2
+        echo "!! once confirmed empty, run wipefs -a $dev and rerun; if a data disk was registered by mistake, fix the registration" >&2
         return 1
       fi
       pvs+=("$dev")
@@ -378,11 +378,11 @@ step_nvme_vg() {
 step_lvm_discards() {
   local conf="$ETC_DIR/lvm/lvm.conf"
   if grep -q "^[[:space:]]*issue_discards[[:space:]]*=" "$conf" 2>/dev/null; then
-    echo "-- lvm.conf 已含 issue_discards,跳过"
+    echo "-- lvm.conf already sets issue_discards, skipping"
     return 0
   fi
   mkdir -p "$ETC_DIR/lvm"
-  printf '\n# superdl:实例盘销毁发 NVMe TRIM(跨租户数据残留防护)\ndevices {\n    issue_discards = 1\n}\n' >> "$conf"
+  printf '\n# superdl: TRIM NVMe on instance-disk destruction (cross-tenant data remanence protection)\ndevices {\n    issue_discards = 1\n}\n' >> "$conf"
 }
 
 _write_loop_unit() {
@@ -409,7 +409,7 @@ maybe_reboot() {
   local count=0
   [[ -f "$STATE_DIR/reboot_count" ]] && count="$(cat "$STATE_DIR/reboot_count")"
   if [[ "$count" -ge 2 ]]; then
-    report reboot failed "已重启 ${count} 次仍未就绪(nouveau/IOMMU/驱动),请人工检查 BIOS 与内核日志"
+    report reboot failed "rebooted ${count} times and still not ready (nouveau/IOMMU/driver); check BIOS settings and kernel logs"
     exit 1
   fi
   echo $((count + 1)) > "$STATE_DIR/reboot_count"
@@ -421,13 +421,13 @@ maybe_reboot() {
     want="$(cfg_get script_sha256)"
     actual="$(sha256sum "$STATE_DIR/node-join.sh" | awk '{print $1}')"
     if [[ -z "$want" ]]; then
-      report reboot failed "bootstrap 未下发 script_sha256,拒绝执行无法校验的重拉脚本"
-      echo "!! bootstrap 未下发 script_sha256,已中止(拒绝执行无法校验的重拉脚本)" >&2
+      report reboot failed "bootstrap did not provide script_sha256; refusing to run an unverifiable re-downloaded script"
+      echo "!! bootstrap did not provide script_sha256; aborting (refusing to run an unverifiable re-downloaded script)" >&2
       exit 1
     fi
     if [[ "$actual" != "$want" ]]; then
-      report reboot failed "重拉脚本指纹不符(期望 $want,实际 $actual),请检查 API 链路"
-      echo "!! 重拉脚本指纹不符,已中止(期望 $want,实际 $actual)" >&2
+      report reboot failed "re-downloaded script checksum mismatch (expected $want, got $actual); check the API path"
+      echo "!! re-downloaded script checksum mismatch; aborting (expected $want, got $actual)" >&2
       exit 1
     fi
   fi
@@ -447,8 +447,8 @@ WantedBy=multi-user.target
 EOF
   systemctl daemon-reload
   systemctl enable "${RESUME_UNIT}.service"
-  report reboot rebooting "重启以生效 nouveau 卸载/IOMMU/驱动,oneshot 将自动续跑"
-  echo "==== 重启续跑 ===="
+  report reboot rebooting "rebooting to apply nouveau removal / IOMMU / driver; the oneshot unit resumes automatically"
+  echo "==== rebooting to resume ===="
   systemctl reboot
   exit 0
 }
@@ -456,7 +456,7 @@ EOF
 step_registries() {
   local content ca
   content="$(cfg_get registries_yaml)"
-  [[ -n "$content" ]] || { echo "-- registries_yaml 为空,跳过(镜像缓存未配置)"; return 0; }
+  [[ -n "$content" ]] || { echo "-- registries_yaml is empty, skipping (no image cache configured)"; return 0; }
   mkdir -p "$RANCHER_DIR"
   ca="$(cfg_get registry_ca_pem)"
   if [[ -n "$ca" ]]; then
@@ -471,9 +471,9 @@ step_registries() {
 
 step_agent_config() {
   if is_server_node; then
-    echo "-- 本机是 $SERVER_UNIT:不写 agent config;池标签由平台打到节点 $(hostname)"
+    echo "-- this host is $SERVER_UNIT: no agent config written; the platform labels node $(hostname) with its pool"
     collect_driver_versions
-    report agent_config running "server 本机:上报驱动版本,等平台打池标签"
+    report agent_config running "server host: driver versions reported, waiting for the platform to label the pool"
     return 0
   fi
   mkdir -p "$RANCHER_DIR"
@@ -481,22 +481,22 @@ step_agent_config() {
   join_token="$(cfg_get cluster_join_token)"
   server_url="$(cfg_get cluster_server_url)"
   if [[ -z "$join_token" ]]; then
-    echo "!! bootstrap 下发的 cluster_join_token 为空:拒绝写 agent 配置。" \
-         "检查管理端「平台配置 · 集群接入」与 ansible agent_token(site.yml 有渲染前断言)" >&2
+    echo "!! cluster_join_token from bootstrap is empty: refusing to write the agent config." \
+         "Check Platform config > Cluster access in the admin console and the ansible agent_token (site.yml asserts before rendering)" >&2
     return 1
   fi
   if [[ ! "$join_token" =~ ^[A-Za-z0-9:._~+/=-]{16,512}$ ]]; then
-    echo "!! cluster_join_token 含非法字符(只许 [A-Za-z0-9:._~+/=-]):拒绝写 agent 配置" >&2
+    echo "!! cluster_join_token contains illegal characters (allowed: [A-Za-z0-9:._~+/=-]): refusing to write the agent config" >&2
     return 1
   fi
-  # server node-token(K10<64hex>::server:<pw>)会让本机以 server 身份入群:只许 agent token
+  # a server node-token (K10<64hex>::server:<pw>) would join this host as a server: only agent tokens are accepted
   if [[ "$join_token" =~ ^K10[0-9A-Fa-f]{64}::server: ]]; then
-    echo "!! cluster_join_token 是 server node-token(K10…::server:…),只许 agent token:拒绝写 agent 配置。" \
-         "管理端「平台配置 · 集群接入」改填 server config 的 agent-token 值" >&2
+    echo "!! cluster_join_token is a server node-token (K10...::server:...); only an agent token is allowed: refusing to write the agent config." \
+         "Put the server config's agent-token value under Platform config > Cluster access in the admin console" >&2
     return 1
   fi
   if [[ ! "$server_url" =~ ^https://[][0-9A-Za-z.:-]+:[0-9]{1,5}$ ]]; then
-    echo "!! cluster_server_url 格式非法:拒绝写 agent 配置" >&2
+    echo "!! cluster_server_url is malformed: refusing to write the agent config" >&2
     return 1
   fi
   {
@@ -514,13 +514,13 @@ step_agent_config() {
 step_agent_install() {
   local want mirror url pin
   if is_server_node; then
-    echo "-- 本机是 $SERVER_UNIT(已在集群内),跳过 agent 安装"
+    echo "-- this host is $SERVER_UNIT (already in the cluster), skipping agent install"
     return 0
   fi
   want="$(cfg_get cluster_agent_version)"
   mirror="$(cfg_get install_mirror)"
   if command -v "$DISTRO" >/dev/null 2>&1 && "$DISTRO" --version | grep -q "$want"; then
-    echo "-- $DISTRO $want 已安装,跳过"
+    echo "-- $DISTRO $want already installed, skipping"
     return 0
   fi
   if [[ "$DISTRO" == "k3s" ]]; then
@@ -541,8 +541,8 @@ step_agent_install() {
   curl -fsSL "$url" -o "$installer"
   chmod 700 "$installer"
   if ! echo "$pin  $installer" | sha256sum -c - >/dev/null 2>&1; then
-    echo "!! $DISTRO 安装脚本校验和不符($url):上游已更新或链路被篡改;" \
-         "请核对上游后更新本平台脚本内置 pin 再重跑" >&2
+    echo "!! $DISTRO installer checksum mismatch ($url): upstream changed or the download was tampered with;" \
+         "verify upstream, update the pin built into this script and rerun" >&2
     rm -f "$installer"
     return 1
   fi
@@ -564,11 +564,11 @@ step_agent_install() {
 
 step_agent_start() {
   if is_server_node; then
-    echo "-- 本机是 $SERVER_UNIT,无 agent 可启动"
+    echo "-- this host is $SERVER_UNIT; no agent to start"
     return 0
   fi
   systemctl enable --now "$AGENT_UNIT"
-  echo "-- ${AGENT_UNIT%.service} 已运行"
+  echo "-- ${AGENT_UNIT%.service} is running"
 }
 
 finalize() {
@@ -576,7 +576,7 @@ finalize() {
   collect_driver_versions
   local unit="$AGENT_UNIT"
   is_server_node && unit="$SERVER_UNIT"
-  report waiting_node ok "${unit%.service} 已启动,等待平台对账确认节点 Ready(管理端「待加入节点」可见进度)"
+  report waiting_node ok "${unit%.service} started; waiting for the platform reconciler to confirm the node is Ready (progress under Pending nodes in the admin console)"
   if systemctl is-enabled --quiet "${RESUME_UNIT}.service" 2>/dev/null; then
     systemctl disable "${RESUME_UNIT}.service" || true
   fi
@@ -584,16 +584,16 @@ finalize() {
   systemctl daemon-reload
   rm -f "$STATE_DIR/bootstrap.json" "$STATE_DIR/token" "$STATE_DIR/curl.conf"
   mark_done completed
-  echo "==== 完成:节点已启动 ${unit%.service},加入结果以管理端为准 ===="
+  echo "==== done: ${unit%.service} started; the admin console is the source of truth for the join result ===="
 }
 
 if [[ "$FORCE" == "1" ]]; then
-  echo "-- --force:清除本地断点/已下发配置/旧令牌,从头装机(须用管理端新签发的令牌)"
+  echo "-- --force: clearing local markers / delivered config / old token and reinstalling from scratch (requires a newly issued token from the admin console)"
   rm -rf "$STATE_DIR/done.d" "$STATE_DIR/bootstrap.json" "$STATE_DIR/token" \
     "$STATE_DIR/curl.conf" "$STATE_DIR/reboot_count"
   mkdir -p "$STATE_DIR/done.d"
 elif marker completed; then
-  echo "本节点已完成加入,无需操作;如需从头重装:--force 并使用管理端新签发的令牌"
+  echo "this node has already joined; nothing to do. To reinstall from scratch: --force with a newly issued token from the admin console"
   exit 0
 fi
 if marker bootstrap; then
@@ -603,7 +603,7 @@ else
 fi
 
 if marker bootstrap; then
-  echo "-- bootstrap: 已完成,跳过(沿用已下发配置;注册令牌一次性,不重复 bootstrap)"
+  echo "-- bootstrap: already done, skipping (reusing the delivered config; enrollment tokens are single-use, bootstrap is not repeated)"
 else
   CURRENT_PHASE="bootstrap"
   step_bootstrap
