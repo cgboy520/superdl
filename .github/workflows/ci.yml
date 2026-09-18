@@ -64,7 +64,7 @@ jobs:
         working-directory: apps/api
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
         with:
           python-version: "3.13"
       - run: uv sync --frozen
@@ -139,7 +139,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
         with:
           python-version: "3.13"
       - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
@@ -170,7 +170,7 @@ jobs:
       - uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3
         with:
           config: .github/kind-config.yaml
-      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
         with:
           python-version: "3.13"
       - name: Install the Gateway API CRDs
@@ -532,7 +532,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
         with:
           python-version: "3.13"
           prune-cache: false
@@ -579,7 +579,7 @@ jobs:
         working-directory: deploy/cluster
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
         with:
           python-version: "3.13"
       - name: helm-render the monitoring stack (alloy / loki / kube-prometheus-stack, once for full and once for light)
@@ -678,7 +678,7 @@ jobs:
             -skip Certificate,ClusterIssuer,ServiceMonitor,PodMonitor,Kustomization,GatewayClass,Gateway,HTTPRoute,HTTPRouteFilter,EnvoyProxy,SecurityPolicy,BackendTrafficPolicy,ClientTrafficPolicy \
             -ignore-filename-pattern '10-migrate-job' \
             -summary /work/deploy/app/k8s
-      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
         with:
           python-version: "3.13"
       - name: Gateway manifest CRD schema validation
