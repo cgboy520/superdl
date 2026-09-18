@@ -139,7 +139,7 @@ export default interface Resources {
       "isolationChangeNeedsOffSale": "在售规格不能改池或 MIG 切片:两者决定隔离方式与用户看到的规格,改了就是另一件商品。请先下架,或新建规格",
       "migProfileMismatch": "mig 池必须填切片规格,其它池必须留空",
       "prewarmDisabled": "该镜像已关闭预热,请先开启",
-      "priceHourlyTwoDecimals": "按小时计费的规格单价最多 2 位小数(逐小时按 2 位入账,更多位数会产生舍入漂移);4 位精度仅用于数据盘 GB·月价",
+      "priceHourlyTwoDecimals": "按小时计费的规格单价须精确到平台币种的最小单位(USD / CNY 为 2 位小数,JPY / KRW / VND 为整数),逐小时按该精度入账;4 位精度仅用于数据盘 GB·月价",
       "priceTooSmall": "单价过小:精确到 0.0001 后不能为 0",
       "skuBusinessKeyExists": "相同型号、档位、池、切片、算力份额与 vCPU/内存的规格已存在,请直接编辑该规格",
       "skuNotFound": "规格不存在",
