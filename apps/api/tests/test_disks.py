@@ -63,7 +63,7 @@ class TestDiskCrud:
         assert fake.deleted_data_disks[-1] == (f"tenant-{user_id}", f"disk-{disk['uuid']}")
 
     async def test_create_requires_balance(self, client, sm, fake):
-        headers, _user_id, _key = await create_user_with_key(client, "13500000001")
+        headers, _user_id, _key = await create_user_with_key(client, "u13500000001@test.local")
         resp = await client.post(
             "/api/v1/disks", json={"name": "d", "size_gb": 100}, headers=headers
         )
@@ -71,7 +71,7 @@ class TestDiskCrud:
 
     async def test_expand_requires_balance(self, client, sm, fake):
         """Expansion goes through the same burn-rate guard as creation."""
-        headers, user_id, _key = await create_user_with_key(client, "13500000003")
+        headers, user_id, _key = await create_user_with_key(client, "u13500000003@test.local")
         await fund_wallet(sm, user_id)
         disk = await create_disk(client, headers, size_gb=100)
         await drain(sm)
@@ -86,7 +86,7 @@ class TestDiskCrud:
         assert d["size_gb"] == 100
 
     async def test_size_limits(self, client, sm, fake):
-        headers, _user_id, _key = await funded_user(client, sm, "13500000002")
+        headers, _user_id, _key = await funded_user(client, sm, "u13500000002@test.local")
         resp = await client.post("/api/v1/disks", json={"name": "d", "size_gb": 5}, headers=headers)
         assert resp.json()["code"] == "VALIDATION_ERROR"
 
@@ -94,7 +94,9 @@ class TestDiskCrud:
 class TestMountLifecycle:
     async def test_attach_rejected_until_provisioned(self, client, sm, fake):
         """A disk whose quota was not provisioned cannot be mounted; once synced it can."""
-        headers, _user_id, key_id = await funded_user(client, sm, "13500000013", "500.00")
+        headers, _user_id, key_id = await funded_user(
+            client, sm, "u13500000013@test.local", "500.00"
+        )
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
         resp = await client.post(
@@ -125,7 +127,9 @@ class TestMountLifecycle:
     async def test_start_after_delete_disk_detaches(self, client, sm, fake):
         """Deleting the disk after a stop removes the mount reference; the next start does not
         reference its PVC."""
-        headers, user_id, key_id = await funded_user(client, sm, "13500000011", "500.00")
+        headers, user_id, key_id = await funded_user(
+            client, sm, "u13500000011@test.local", "500.00"
+        )
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
         await drain(sm)
@@ -166,7 +170,9 @@ class TestMountLifecycle:
 
     async def test_start_rejected_when_disk_deleting(self, client, sm, fake):
         """A mounted disk in deleting refuses the start."""
-        headers, user_id, key_id = await funded_user(client, sm, "13500000012", "500.00")
+        headers, user_id, key_id = await funded_user(
+            client, sm, "u13500000012@test.local", "500.00"
+        )
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
         await drain(sm)
@@ -204,7 +210,9 @@ class TestMountLifecycle:
 
     async def test_cross_instance_mount(self, client, sm, fake):
         """The data disk survives the instance release and can be mounted on another instance."""
-        headers, user_id, key_id = await funded_user(client, sm, "13500000010", "500.00")
+        headers, user_id, key_id = await funded_user(
+            client, sm, "u13500000010@test.local", "500.00"
+        )
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
         await drain(sm)
@@ -272,7 +280,7 @@ class TestMountLifecycle:
 
 class TestDailyDiskBilling:
     async def test_daily_settlement_idempotent(self, client, sm, fake):
-        headers, _user_id, _key = await funded_user(client, sm, "13500000020")
+        headers, _user_id, _key = await funded_user(client, sm, "u13500000020@test.local")
         await create_disk(client, headers, size_gb=100)
         async with sm() as session:
             await session.execute(update(DataDisk).values(created_at=now_utc() - timedelta(days=2)))
@@ -299,7 +307,7 @@ class TestDailyDiskBilling:
         from app.core.config import get_settings
 
         monkeypatch.setattr(get_settings(), "billing_timezone", "America/New_York")
-        headers, _user_id, _key = await funded_user(client, sm, "13500000029")
+        headers, _user_id, _key = await funded_user(client, sm, "u13500000029@test.local")
         await create_disk(client, headers, size_gb=100)
         from app.modules.billing.settlement import _advance_watermark
 
@@ -327,13 +335,13 @@ class TestDailyDiskBilling:
         assert (bills[2].day - bills[1].day).total_seconds() == 24 * 3600
 
     async def test_new_disk_not_billed_for_yesterday(self, client, sm, fake):
-        headers, _user_id, _key = await funded_user(client, sm, "13500000021")
+        headers, _user_id, _key = await funded_user(client, sm, "u13500000021@test.local")
         await create_disk(client, headers)
         assert await settle_daily_disks(sm) == 0
 
     async def test_delete_same_day_pays_final_day(self, client, sm, fake):
         """Created and deleted the same day: the last day is billed."""
-        headers, _user_id, _key = await funded_user(client, sm, "13500000022")
+        headers, _user_id, _key = await funded_user(client, sm, "u13500000022@test.local")
         disk = await create_disk(client, headers, size_gb=100)
         await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
         async with sm() as session:
@@ -346,7 +354,7 @@ class TestDailyDiskBilling:
 
     async def test_delete_without_watermark_backfills_from_creation(self, client, sm, fake):
         """Missing watermark: deletion back-bills the owed days from the creation day."""
-        headers, _user_id, _key = await funded_user(client, sm, "13500000025")
+        headers, _user_id, _key = await funded_user(client, sm, "u13500000025@test.local")
         disk = await create_disk(client, headers, size_gb=100)
         async with sm() as session:
             await session.execute(update(DataDisk).values(created_at=now_utc() - timedelta(days=3)))
@@ -372,7 +380,7 @@ class TestDailyDiskBilling:
 
     async def test_expand_settles_old_size_first(self, client, sm, fake):
         """Unbilled days are settled at the old size before expansion."""
-        headers, _user_id, _key = await funded_user(client, sm, "13500000023")
+        headers, _user_id, _key = await funded_user(client, sm, "u13500000023@test.local")
         disk = await create_disk(client, headers, size_gb=100)
         resp = await client.patch(
             f"/api/v1/disks/{disk['uuid']}", json={"size_gb": 1000}, headers=headers
@@ -386,7 +394,7 @@ class TestDailyDiskBilling:
 
     async def test_frozen_disk_delete_not_billed(self, client, sm, fake):
         """Frozen is not billed: an arrears reclamation delete does not back-bill."""
-        headers, _user_id, _key = await funded_user(client, sm, "13500000024")
+        headers, _user_id, _key = await funded_user(client, sm, "u13500000024@test.local")
         disk = await create_disk(client, headers)
         async with sm() as session:
             await session.execute(
@@ -400,7 +408,7 @@ class TestDailyDiskBilling:
 
 class TestDiskArrearsChain:
     async def test_grace_frozen_reclaim_and_recovery(self, client, sm, fake):
-        headers, user_id, _key = await funded_user(client, sm, "13500000030")
+        headers, user_id, _key = await funded_user(client, sm, "u13500000030@test.local")
         await create_disk(client, headers)
         async with sm() as session:
             balance = await wallet.get_balance(session, user_id)
@@ -435,7 +443,7 @@ class TestDiskArrearsChain:
 
     async def test_recharge_restores_frozen_disk(self, client, sm, fake):
         """After a top-up the patrol restores frozen data disks to active."""
-        headers, user_id, _key = await funded_user(client, sm, "13500000032")
+        headers, user_id, _key = await funded_user(client, sm, "u13500000032@test.local")
         await create_disk(client, headers)
         async with sm() as session:
             balance = await wallet.get_balance(session, user_id)
@@ -465,7 +473,7 @@ class TestDiskQuota:
     async def test_count_quota_blocks_creation(self, client, sm, fake, monkeypatch):
         from app.core.config import get_settings
 
-        headers, _user_id, _key = await funded_user(client, sm, "13500000040")
+        headers, _user_id, _key = await funded_user(client, sm, "u13500000040@test.local")
         monkeypatch.setattr(get_settings(), "max_disks_per_user", 2, raising=False)
         await create_disk(client, headers, name="d1")
         await create_disk(client, headers, name="d2")
@@ -478,7 +486,7 @@ class TestDiskQuota:
     async def test_capacity_quota_caps_total_size_on_create_and_expand(self, client, sm, fake):
         """The policy max_disk_gb_per_user caps the size_gb sum of non-deleted disks: checked on
         creation and expansion, deletion frees the quota."""
-        headers, _user_id, _key = await funded_user(client, sm, "13500000041")
+        headers, _user_id, _key = await funded_user(client, sm, "u13500000041@test.local")
         await set_platform_setting(sm, "max_disk_gb_per_user", "250")
         d1 = await create_disk(client, headers, name="d1", size_gb=100)
         d2 = await create_disk(client, headers, name="d2", size_gb=100)
@@ -510,7 +518,7 @@ class TestDiskQuota:
 class TestDiskIdempotency:
     async def test_repeated_create_with_same_key_returns_same_disk(self, client, sm, fake):
         """A same-key replay adds no second disk."""
-        headers, _user_id, _key = await funded_user(client, sm, "13500000050")
+        headers, _user_id, _key = await funded_user(client, sm, "u13500000050@test.local")
         h = {**headers, "Idempotency-Key": "disk-idem-1"}
         a = await client.post("/api/v1/disks", json={"name": "d", "size_gb": 100}, headers=h)
         b = await client.post("/api/v1/disks", json={"name": "d", "size_gb": 100}, headers=h)
@@ -521,7 +529,7 @@ class TestDiskIdempotency:
 
     async def test_same_key_different_params_409(self, client, sm, fake):
         """Same key, different params (size changed): 409."""
-        headers, _user_id, _key = await funded_user(client, sm, "13500000051")
+        headers, _user_id, _key = await funded_user(client, sm, "u13500000051@test.local")
         h = {**headers, "Idempotency-Key": "disk-idem-mix"}
         a = await client.post("/api/v1/disks", json={"name": "d", "size_gb": 100}, headers=h)
         assert a.status_code == 201

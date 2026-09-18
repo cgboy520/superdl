@@ -287,7 +287,7 @@ class TestAdjustmentsExport:
 
 class TestTenantLedgerExport:
     async def test_rows_match_ledger(self, client: AsyncClient, sm):
-        data = await register(client, "13688880001")
+        data = await register(client, "u13688880001@test.local")
         uid = data["user"]["id"]
         await fund_wallet(sm, uid, "66.00")
         ops = await admin_headers(sm, client, role="ops", username="ops-exp-ledger")
@@ -306,8 +306,10 @@ class TestAuditExport:
         from app.core.audit import AuditLog
 
         h = await admin_headers(sm, client)
-        await register(client, "13688880002")
-        await client.get("/api/admin/v1/tenants", params={"q": "13688880002"}, headers=h)
+        await register(client, "u13688880002@test.local")
+        await client.get(
+            "/api/admin/v1/tenants", params={"q": "u13688880002@test.local"}, headers=h
+        )
 
         resp = await client.get(
             "/api/admin/v1/audit/export", params={"actor_type": "admin"}, headers=h

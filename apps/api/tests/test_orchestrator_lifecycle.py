@@ -37,7 +37,7 @@ class TestCreateLifecycle:
     async def test_idem_key_param_mismatch_409(self, client, sm, fake):
         """Same key, different params (GPU count changed): 409, the previous instance is not
         returned."""
-        headers, _user_id, key_id = await funded_user(client, sm, "13900000031")
+        headers, _user_id, key_id = await funded_user(client, sm, "u13900000031@test.local")
         sku_id = await create_test_sku(sm)
         h = {**headers, "Idempotency-Key": "inst-idem-mix"}
         body = {
@@ -119,7 +119,7 @@ class TestCreateLifecycle:
         assert resp.json()["code"] == "INSUFFICIENT_BALANCE"
 
     async def test_requires_ssh_key(self, client, sm):
-        data = await register(client, "13900000002")
+        data = await register(client, "u13900000002@test.local")
         headers = {"Authorization": f"Bearer {data['access_token']}"}
         await fund_wallet(sm, data["user"]["id"])
         sku_id = await create_test_sku(sm)
@@ -232,7 +232,7 @@ class TestFailureModes:
         assert all(p is None for p in ports)
 
     async def test_creating_timeout_fails_and_cleans(self, client, sm, fake):
-        headers, user_id, key_id = await funded_user(client, sm, "13900000021")
+        headers, user_id, key_id = await funded_user(client, sm, "u13900000021@test.local")
         sku_id = await create_test_sku(sm)
         data = await create_instance_api(client, headers, sku_id, key_id)
         uuid = data["uuid"]
@@ -306,7 +306,9 @@ class TestUnreadyTimer:
     async def test_timer_accumulates_across_rounds_then_fails(self, client, sm, fake, monkeypatch):
         """Two rounds crossing the grace window judge the node lost: round one starts the timer,
         round two hits it."""
-        headers, uuid, user_id = await provision_running(client, sm, fake, phone="13900000045")
+        headers, uuid, user_id = await provision_running(
+            client, sm, fake, phone="u13900000045@test.local"
+        )
         ns = f"tenant-{user_id}"
         clock = _Clock()
         self._pin(monkeypatch, clock)
@@ -333,7 +335,9 @@ class TestUnreadyTimer:
     async def test_recovery_restarts_the_timer(self, client, sm, fake, monkeypatch):
         """Flapping restarts the timer: the ready round clears it, the next not-ready starts from
         zero."""
-        headers, uuid, user_id = await provision_running(client, sm, fake, phone="13900000046")
+        headers, uuid, user_id = await provision_running(
+            client, sm, fake, phone="u13900000046@test.local"
+        )
         ns = f"tenant-{user_id}"
         clock = _Clock()
         self._pin(monkeypatch, clock)
@@ -467,7 +471,7 @@ class TestRelease:
 
     async def test_cancel_creating_instance(self, client, sm, fake):
         """creating can be cancelled by the user with zero charge."""
-        headers, _user_id, key_id = await funded_user(client, sm, "13900000041")
+        headers, _user_id, key_id = await funded_user(client, sm, "u13900000041@test.local")
         sku_id = await create_test_sku(sm)
         data = await create_instance_api(client, headers, sku_id, key_id)
         uuid = data["uuid"]
@@ -496,7 +500,9 @@ class TestPortPool:
         monkeypatch.setattr(settings, "ssh_port_range_start", 31000)
         monkeypatch.setattr(settings, "ssh_port_range_end", 31000)
 
-        headers, _user_id, key_id = await funded_user(client, sm, "13900000041", "500.00")
+        headers, _user_id, key_id = await funded_user(
+            client, sm, "u13900000041@test.local", "500.00"
+        )
         sku_id = await create_test_sku(sm)
         a = await create_instance_api(client, headers, sku_id, key_id)
         await drain(sm)
@@ -515,7 +521,9 @@ class TestPortPool:
         monkeypatch.setattr(settings, "ssh_port_range_start", 31500)
         monkeypatch.setattr(settings, "ssh_port_excluded", {31500, 31501})
 
-        headers, _user_id, key_id = await funded_user(client, sm, "13900000042", "500.00")
+        headers, _user_id, key_id = await funded_user(
+            client, sm, "u13900000042@test.local", "500.00"
+        )
         sku_id = await create_test_sku(sm)
         data = await create_instance_api(client, headers, sku_id, key_id)
         await drain(sm)
@@ -542,7 +550,9 @@ class TestPortPool:
 
         monkeypatch.setattr(fake, "create_instance", guarded)
 
-        headers, _user_id, key_id = await funded_user(client, sm, "13900000043", "500.00")
+        headers, _user_id, key_id = await funded_user(
+            client, sm, "u13900000043@test.local", "500.00"
+        )
         sku_id = await create_test_sku(sm)
         data = await create_instance_api(client, headers, sku_id, key_id)
         await drain(sm)
@@ -664,7 +674,7 @@ class TestImageRefValidation:
         assert ImageUpdate(image_ref=None).image_ref is None
 
     async def test_malformed_image_ref_rejected(self, client, sm):
-        headers, _user_id, key_id = await funded_user(client, sm, "13500000090")
+        headers, _user_id, key_id = await funded_user(client, sm, "u13500000090@test.local")
         sku_id = await create_test_sku(sm)
         resp = await client.post(
             "/api/v1/instances",
@@ -681,7 +691,7 @@ class TestImageRefValidation:
     async def test_registry_allowlist_blocks_foreign_registry(self, client, sm, monkeypatch):
         from app.core.config import get_settings
 
-        headers, _user_id, key_id = await funded_user(client, sm, "13500000091")
+        headers, _user_id, key_id = await funded_user(client, sm, "u13500000091@test.local")
         sku_id = await create_test_sku(sm)
         settings = get_settings()
         monkeypatch.setattr(

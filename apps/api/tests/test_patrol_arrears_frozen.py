@@ -137,7 +137,7 @@ class TestFrozenDiskClock:
     async def test_refreeze_resumes_original_deadline(self, client, sm, fake):
         """Top up on day 29 of the freeze, then arrears again: frozen_started_at is kept, deleted on
         the original deadline instead of waiting another 30 days."""
-        uuid, user_id = await _freeze_disk(client, sm, "13500000060")
+        uuid, user_id = await _freeze_disk(client, sm, "u13500000060@test.local")
         t0 = now_utc() - timedelta(days=29)
         await _set_disk(sm, uuid, frozen_started_at=t0)
 
@@ -165,7 +165,7 @@ class TestFrozenDiskClock:
     async def test_long_paid_up_period_resets_frozen_clock(self, client, sm, fake):
         """Staying in good standing beyond disk_frozen_days after payment: the next freeze starts
         from scratch."""
-        uuid, user_id = await _freeze_disk(client, sm, "13500000061")
+        uuid, user_id = await _freeze_disk(client, sm, "u13500000061@test.local")
         t0 = now_utc() - timedelta(days=29)
         await _set_disk(sm, uuid, frozen_started_at=t0)
         async with sm() as session:

@@ -74,7 +74,7 @@ class TestRegistrationConsents:
     async def test_consents_recorded(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        data = await register(client, "13800000031")
+        data = await register(client, "u13800000031@test.local")
         user_id = data["user"]["id"]
         async with sm() as session:
             rows = list(

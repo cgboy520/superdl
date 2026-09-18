@@ -108,7 +108,7 @@ class TestSpotPricing:
 
         sku_id = await spot_sku(sm)
         await seed_node_spec(sm, node_name="node-spot-1", pool_label="kata")
-        _, uuid, _ = await running_spot(client, sm, fake, "13922200001", sku_id)
+        _, uuid, _ = await running_spot(client, sm, fake, "u13922200001@test.local", sku_id)
         async with sm() as s:
             inst = (await s.execute(select(Instance).where(Instance.uuid == uuid))).scalar_one()
             policies = await get_runtime_config(s)
@@ -121,7 +121,9 @@ class TestSpotPricing:
         """An SKU without spot enabled is refused outright."""
         sku_id = await create_test_sku(sm)
         await seed_node_spec(sm, node_name="node-nospot")
-        headers, _user_id, key_id = await funded_user(client, sm, "13922200002", "5000.00")
+        headers, _user_id, key_id = await funded_user(
+            client, sm, "u13922200002@test.local", "5000.00"
+        )
         body = await create(client, headers, sku_id, key_id, expect=400)
         assert body["message_key"] == "orchestrator.spotNotEnabled"
 
@@ -192,13 +194,17 @@ class TestPreemptionFlow:
         """A full pool: an on-demand request triggers preemption and gets its capacity."""
         sku_id = await spot_sku(sm)
         await seed_node_spec(sm, node_name="node-p1", pool_label="kata", gpu_count=1)
-        _, victim_uuid, _victim_uid = await running_spot(client, sm, fake, "13922200010", sku_id)
+        _, victim_uuid, _victim_uid = await running_spot(
+            client, sm, fake, "u13922200010@test.local", sku_id
+        )
         await self._fill_pool(sm, cards=1)
         async with sm() as s:
             await s.execute(update(NodeSpec).values(gpu_used=1))
             await s.commit()
 
-        headers, buyer_uid, key_id = await funded_user(client, sm, "13922200011", "5000.00")
+        headers, buyer_uid, key_id = await funded_user(
+            client, sm, "u13922200011@test.local", "5000.00"
+        )
         await create(client, headers, sku_id, key_id, market=MARKET_ON_DEMAND)
 
         async with sm() as s:
@@ -222,12 +228,16 @@ class TestPreemptionFlow:
         delete task is claimable only when due."""
         sku_id = await spot_sku(sm)
         await seed_node_spec(sm, node_name="node-p2", pool_label="kata", gpu_count=1)
-        _, victim_uuid, victim_uid = await running_spot(client, sm, fake, "13922200012", sku_id)
+        _, victim_uuid, victim_uid = await running_spot(
+            client, sm, fake, "u13922200012@test.local", sku_id
+        )
         async with sm() as s:
             await s.execute(update(NodeSpec).values(gpu_count=1, gpu_used=1))
             await s.commit()
 
-        headers, _buyer_uid, key_id = await funded_user(client, sm, "13922200013", "5000.00")
+        headers, _buyer_uid, key_id = await funded_user(
+            client, sm, "u13922200013@test.local", "5000.00"
+        )
         await create(client, headers, sku_id, key_id, market=MARKET_ON_DEMAND)
 
         async with sm() as s:
@@ -251,7 +261,9 @@ class TestPreemptionFlow:
         """A preempted instance is tail-billed by actual seconds run, the grace window excluded."""
         sku_id = await spot_sku(sm)
         await seed_node_spec(sm, node_name="node-p3", pool_label="kata", gpu_count=1)
-        _, victim_uuid, _victim_uid = await running_spot(client, sm, fake, "13922200014", sku_id)
+        _, victim_uuid, _victim_uid = await running_spot(
+            client, sm, fake, "u13922200014@test.local", sku_id
+        )
         async with sm() as s:
             inst = (
                 await s.execute(select(Instance).where(Instance.uuid == victim_uuid))
@@ -265,7 +277,9 @@ class TestPreemptionFlow:
             await s.execute(update(NodeSpec).values(gpu_count=1, gpu_used=1))
             await s.commit()
 
-        headers, _buyer_uid, key_id = await funded_user(client, sm, "13922200015", "5000.00")
+        headers, _buyer_uid, key_id = await funded_user(
+            client, sm, "u13922200015@test.local", "5000.00"
+        )
         await create(client, headers, sku_id, key_id, market=MARKET_ON_DEMAND)
 
         async with sm() as s:
@@ -280,12 +294,12 @@ class TestPreemptionFlow:
         """A spot request does not trigger preemption."""
         sku_id = await spot_sku(sm)
         await seed_node_spec(sm, node_name="node-p4", pool_label="kata", gpu_count=1)
-        _, victim_uuid, _ = await running_spot(client, sm, fake, "13922200016", sku_id)
+        _, victim_uuid, _ = await running_spot(client, sm, fake, "u13922200016@test.local", sku_id)
         async with sm() as s:
             await s.execute(update(NodeSpec).values(gpu_count=1, gpu_used=1))
             await s.commit()
 
-        headers, _uid, key_id = await funded_user(client, sm, "13922200017", "5000.00")
+        headers, _uid, key_id = await funded_user(client, sm, "u13922200017@test.local", "5000.00")
         body = await create(client, headers, sku_id, key_id, market=MARKET_SPOT, expect=409)
         assert body["code"] == "NO_CAPACITY"
         async with sm() as s:
@@ -298,12 +312,12 @@ class TestPreemptionFlow:
         """The requester fails later (insufficient balance): the reclamation rolls back with it."""
         sku_id = await spot_sku(sm)
         await seed_node_spec(sm, node_name="node-p5", pool_label="kata", gpu_count=1)
-        _, victim_uuid, _ = await running_spot(client, sm, fake, "13922200018", sku_id)
+        _, victim_uuid, _ = await running_spot(client, sm, fake, "u13922200018@test.local", sku_id)
         async with sm() as s:
             await s.execute(update(NodeSpec).values(gpu_count=1, gpu_used=1))
             await s.commit()
 
-        headers, uid, key_id = await create_user_with_key(client, "13922200019")
+        headers, uid, key_id = await create_user_with_key(client, "u13922200019@test.local")
         await fund_wallet(sm, uid, "0.50")
         body = await create(client, headers, sku_id, key_id, market=MARKET_ON_DEMAND, expect=400)
         assert body["code"] == "INSUFFICIENT_BALANCE"
@@ -320,7 +334,9 @@ class TestConvertToOnDemand:
         Pod untouched."""
         sku_id = await spot_sku(sm)
         await seed_node_spec(sm, node_name="node-c1", pool_label="kata")
-        headers, uuid, user_id = await running_spot(client, sm, fake, "13922200020", sku_id)
+        headers, uuid, user_id = await running_spot(
+            client, sm, fake, "u13922200020@test.local", sku_id
+        )
         pod_before = fake.pods[(f"tenant-{user_id}", uuid)]
 
         resp = await client.post(f"/api/v1/instances/{uuid}/to-on-demand", headers=headers)
@@ -335,7 +351,7 @@ class TestConvertToOnDemand:
         """Already on-demand, pressed again: returned unchanged with 200."""
         sku_id = await spot_sku(sm)
         await seed_node_spec(sm, node_name="node-c2", pool_label="kata")
-        headers, uuid, _ = await running_spot(client, sm, fake, "13922200021", sku_id)
+        headers, uuid, _ = await running_spot(client, sm, fake, "u13922200021@test.local", sku_id)
         await client.post(f"/api/v1/instances/{uuid}/to-on-demand", headers=headers)
         again = await client.post(f"/api/v1/instances/{uuid}/to-on-demand", headers=headers)
         assert again.status_code == 200
@@ -348,7 +364,9 @@ class TestConvertToOnDemand:
 
         sku_id = await spot_sku(sm)
         await seed_node_spec(sm, node_name="node-c3", pool_label="kata")
-        headers, uuid, user_id = await running_spot(client, sm, fake, "13922200022", sku_id)
+        headers, uuid, user_id = await running_spot(
+            client, sm, fake, "u13922200022@test.local", sku_id
+        )
         async with sm() as s:
             inst = (await s.execute(select(Instance).where(Instance.uuid == uuid))).scalar_one()
             instance_id, spot_price = inst.id, inst.price_hourly
@@ -386,7 +404,9 @@ class TestConvertToOnDemand:
 
         sku_id = await spot_sku(sm)
         await seed_node_spec(sm, node_name="node-c4", pool_label="kata")
-        headers, uuid, _user_id = await running_spot(client, sm, fake, "13922200024", sku_id)
+        headers, uuid, _user_id = await running_spot(
+            client, sm, fake, "u13922200024@test.local", sku_id
+        )
         h0 = hour_floor(now_utc())
         async with sm() as s:
             inst = (await s.execute(select(Instance).where(Instance.uuid == uuid))).scalar_one()
@@ -422,7 +442,9 @@ class TestConvertToOnDemand:
 
     async def test_on_demand_instance_refuses(self, client, sm, fake):
         """Subscription instances cannot convert to on-demand."""
-        headers, uuid, _, _, _ = await provision_subscription(client, sm, fake, "13922200023")
+        headers, uuid, _, _, _ = await provision_subscription(
+            client, sm, fake, "u13922200023@test.local"
+        )
         resp = await client.post(f"/api/v1/instances/{uuid}/to-on-demand", headers=headers)
         assert resp.status_code == 400
         assert resp.json()["message_key"] == "orchestrator.toOnDemandNotSpot"
@@ -434,7 +456,7 @@ class TestAdminPreempt:
         and notification)."""
         sku_id = await spot_sku(sm)
         await seed_node_spec(sm, node_name="node-a1", pool_label="kata")
-        _, uuid, _user_id = await running_spot(client, sm, fake, "13922200030", sku_id)
+        _, uuid, _user_id = await running_spot(client, sm, fake, "u13922200030@test.local", sku_id)
         admin_headers = await make_admin_headers(sm, client, "ops")
 
         resp = await client.post(
@@ -459,7 +481,7 @@ class TestAdminPreempt:
 
     async def test_admin_cannot_preempt_non_spot(self, client, sm, fake):
         """Non-spot instances do not take the reclamation path."""
-        _, uuid, _ = await provision_running(client, sm, fake, phone="13922200031")
+        _, uuid, _ = await provision_running(client, sm, fake, phone="u13922200031@test.local")
         admin_headers = await make_admin_headers(sm, client, "ops")
         resp = await client.post(
             f"/api/admin/v1/instances/{uuid}/preempt",
@@ -487,9 +509,11 @@ class TestPreemptedBillingEqualsNormalStop:
         one second."""
         sku_id = await spot_sku(sm)
         await seed_node_spec(sm, node_name="node-twin", pool_label="kata", gpu_count=8)
-        _, victim_uuid, _victim_uid = await running_spot(client, sm, fake, "13922200040", sku_id)
+        _, victim_uuid, _victim_uid = await running_spot(
+            client, sm, fake, "u13922200040@test.local", sku_id
+        )
         twin_headers, twin_uuid, _twin_uid = await running_spot(
-            client, sm, fake, "13922200041", sku_id
+            client, sm, fake, "u13922200041@test.local", sku_id
         )
 
         start = hour_floor(now_utc())
@@ -512,7 +536,9 @@ class TestPreemptedBillingEqualsNormalStop:
             await s.execute(update(NodeSpec).values(gpu_count=2, gpu_used=2))
             await s.commit()
 
-        buyer_headers, _, buyer_key = await funded_user(client, sm, "13922200042", "5000.00")
+        buyer_headers, _, buyer_key = await funded_user(
+            client, sm, "u13922200042@test.local", "5000.00"
+        )
         await client.post(f"/api/v1/instances/{twin_uuid}/stop", headers=twin_headers)
         await create(client, buyer_headers, sku_id, buyer_key, market=MARKET_ON_DEMAND)
 
@@ -540,7 +566,7 @@ class TestPreemptedBillingEqualsNormalStop:
 
         sku_id = await spot_sku(sm)
         await seed_node_spec(sm, node_name="node-c4", pool_label="kata")
-        _, uuid, user_id = await running_spot(client, sm, fake, "13922200024", sku_id)
+        _, uuid, user_id = await running_spot(client, sm, fake, "u13922200024@test.local", sku_id)
         async with sm() as s:
             inst = (await s.execute(select(Instance).where(Instance.uuid == uuid))).scalar_one()
             s.add(

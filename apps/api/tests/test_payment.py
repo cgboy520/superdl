@@ -50,7 +50,7 @@ class TestRecharge:
     async def test_currency_mismatch_rejected(self, client: AsyncClient, sm):
         """A channel reporting another currency never credits, even with the right amount; the
         order stays pending and the matching callback still succeeds afterwards."""
-        headers = await user_headers(client, "13800000104")
+        headers = await user_headers(client, "u13800000104@test.local")
         order = await create_order(client, headers, "50.00")
         assert order["currency"] == get_settings().platform_currency
         resp = await client.post(
@@ -115,7 +115,10 @@ class TestRecharge:
 
     async def test_idempotency_key_param_mismatch_409(self, client: AsyncClient, sm):
         """Same key, different params (amount changed): 409."""
-        headers = {**(await user_headers(client, "13700000045")), "Idempotency-Key": "recharge-mix"}
+        headers = {
+            **(await user_headers(client, "u13700000045@test.local")),
+            "Idempotency-Key": "recharge-mix",
+        }
         a = await create_order(client, headers, "20.00")
         resp = await client.post(
             "/api/v1/wallet/recharges",
@@ -133,7 +136,10 @@ class TestRecharge:
         500."""
         import asyncio
 
-        headers = {**(await user_headers(client, "13700000039")), "Idempotency-Key": "race-1"}
+        headers = {
+            **(await user_headers(client, "u13700000039@test.local")),
+            "Idempotency-Key": "race-1",
+        }
 
         async def create():
             return await client.post(
@@ -153,7 +159,7 @@ class TestRecharge:
 
     async def test_failure_callback_marks_order_failed(self, client: AsyncClient, sm):
         """A callback stating payment failure → the order becomes failed without credit."""
-        headers = await user_headers(client, "13700000038")
+        headers = await user_headers(client, "u13700000038@test.local")
         order = await create_order(client, headers, "20.00")
         resp = await client.post(
             "/api/v1/webhooks/mock",
@@ -170,7 +176,7 @@ class TestRecharge:
     async def test_reversal_on_paid_order_flagged_not_debited(self, client: AsyncClient, sm):
         """A credited order receives a channel close / refund notice: no automatic reversal,
         channel_reversed_at set, listed as an anomaly."""
-        headers = await user_headers(client, "13700000044")
+        headers = await user_headers(client, "u13700000044@test.local")
         order = await create_order(client, headers, "20.00")
         resp = await pay_mock(client, order["order_no"], "20.00")
         assert resp.status_code == 200
@@ -196,7 +202,7 @@ class TestRecharge:
         )
 
     async def test_reversal_release_then_replay_does_not_refreeze(self, client: AsyncClient, sm):
-        headers = await user_headers(client, "13700000046")
+        headers = await user_headers(client, "u13700000046@test.local")
         order = await create_order(client, headers, "20.00")
         assert (await pay_mock(client, order["order_no"], "20.00")).status_code == 200
         reversal = {"order_no": order["order_no"], "amount": "20.00", "success": False}
@@ -247,7 +253,7 @@ class TestRecharge:
     async def test_amount_bounds_rejected_at_contract_layer(self, client: AsyncClient):
         """Absurd amounts (1e30, negative) fail the contract (422); a value below the policy
         minimum passes the contract and is refused by the recharge_min policy (400)."""
-        headers = await user_headers(client, "13700000045")
+        headers = await user_headers(client, "u13700000045@test.local")
         for amount in ("1e30", "-5"):
             resp = await client.post(
                 "/api/v1/wallet/recharges",
@@ -293,7 +299,7 @@ class TestCallbackOnNonPendingOrders:
     ):
         """Rescue after close only with a matching amount: a mismatch is still refused and goes to a
         manual adjustment."""
-        headers = await user_headers(client, "13700000031")
+        headers = await user_headers(client, "u13700000031@test.local")
         order = await create_order(client, headers, "20.00")
         async with sm() as session:
             await session.execute(
@@ -322,7 +328,7 @@ class TestCallbackOnNonPendingOrders:
         from app.modules.billing.payment_channels import CallbackResult
         from app.modules.billing.payment_service import handle_callback
 
-        headers = await user_headers(client, "13700000034")
+        headers = await user_headers(client, "u13700000034@test.local")
         order = await create_order(client, headers, "20.00")
         async with sm() as session:
             with _pytest.raises(AppError) as exc:
@@ -345,7 +351,7 @@ class TestRealChannelWebhookRoutes:
             return MockChannel()
 
         monkeypatch.setattr("app.modules.billing.webhooks_router.get_channel", fake_get_channel)
-        headers = await user_headers(client, "13700000035")
+        headers = await user_headers(client, "u13700000035@test.local")
         order = await create_order(client, headers, "20.00")
         async with sm() as session:
             await session.execute(
@@ -373,7 +379,7 @@ class TestRealChannelWebhookRoutes:
             return MockChannel()
 
         monkeypatch.setattr("app.modules.billing.webhooks_router.get_channel", fake_get_channel)
-        headers = await user_headers(client, "13700000036")
+        headers = await user_headers(client, "u13700000036@test.local")
         order = await create_order(client, headers, "30.00")
         async with sm() as session:
             await session.execute(

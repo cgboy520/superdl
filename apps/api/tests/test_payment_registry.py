@@ -110,7 +110,7 @@ class TestRechargeGating:
         """wechat enabled on a USD deployment: refused before any SDK call."""
         await set_platform_setting(sm, "payment_wechat_enabled", "true")
         monkeypatch.setattr(get_settings(), "platform_currency", "USD")
-        headers = await user_headers(client, "13700000401")
+        headers = await user_headers(client, "u13700000401@test.local")
         resp = await client.post(
             "/api/v1/wallet/recharges",
             json={"amount": "50.00", "channel": "wechat"},
@@ -122,7 +122,7 @@ class TestRechargeGating:
         assert ok["presentation"] == "qr" and ok["payment_url"]
 
     async def test_unknown_channel_is_validation_error(self, client: AsyncClient):
-        headers = await user_headers(client, "13700000402")
+        headers = await user_headers(client, "u13700000402@test.local")
         resp = await client.post(
             "/api/v1/wallet/recharges",
             json={"amount": "50.00", "channel": "paypal"},

@@ -36,7 +36,7 @@ class TestIdempotencyKeyLength:
 
     async def test_over_long_key_is_422_not_500(self, client: AsyncClient, sm):
         """A 65-character key → 422."""
-        headers, user_id, _ = await create_user_with_key(client, "13800000210")
+        headers, user_id, _ = await create_user_with_key(client, "u13800000210@test.local")
         resp = await client.post(
             "/api/v1/tickets",
             json=_BODY,
@@ -57,7 +57,7 @@ class TestIdempotencyKeyLength:
 
     async def test_exactly_max_length_key_still_works(self, client: AsyncClient, sm):
         """The boundary value of 64 characters is accepted."""
-        headers, _, _ = await create_user_with_key(client, "13800000211")
+        headers, _, _ = await create_user_with_key(client, "u13800000211@test.local")
         key = "k" * IDEMPOTENCY_KEY_MAX_LENGTH
         first = await client.post(
             "/api/v1/tickets", json=_BODY, headers={**headers, "Idempotency-Key": key}

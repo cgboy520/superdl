@@ -80,7 +80,7 @@ async def eligible(client: AsyncClient, headers: dict) -> list[dict]:
 class TestEligible:
     async def test_channel_reversed_excluded(self, client: AsyncClient, sm):
         """Paid orders reversed by the channel do not count towards the invoiceable amount."""
-        headers = await user_headers(client, "13700000203")
+        headers = await user_headers(client, "u13700000203@test.local")
         p1, at1 = past_period(1)
         order = await paid_order_at(client, sm, headers, "50.00", at1)
         await paid_order_at(client, sm, headers, "30.00", at1)
@@ -97,7 +97,7 @@ class TestEligible:
     async def test_grouped_by_period_and_summed(self, client: AsyncClient, sm):
         """Σpaid grouped by billing-zone period: two periods aggregated separately, descending,
         amounts as strings."""
-        headers = await user_headers(client, "13700000201")
+        headers = await user_headers(client, "u13700000201@test.local")
         p1, at1 = past_period(1)
         p2, at2 = past_period(2)
         await paid_order_at(client, sm, headers, "50.00", at1)
@@ -109,7 +109,7 @@ class TestEligible:
     async def test_submitted_and_issued_subtract(self, client: AsyncClient, sm):
         """Used amounts (submitted/issued) are subtracted; after a full request the period
         disappears."""
-        headers = await user_headers(client, "13700000202")
+        headers = await user_headers(client, "u13700000202@test.local")
         p1, at1 = past_period(1)
         await paid_order_at(client, sm, headers, "50.00", at1)
         resp = await apply_invoice(client, headers, p1)
@@ -127,7 +127,7 @@ class TestEligible:
 
     async def test_current_period_not_eligible(self, client: AsyncClient, sm):
         """The current billing month is not eligible."""
-        headers = await user_headers(client, "13700000203")
+        headers = await user_headers(client, "u13700000203@test.local")
         order = await create_order(client, headers, "50.00")
         assert (await pay_mock(client, order["order_no"], "50.00")).status_code == 200
         assert await eligible(client, headers) == []
@@ -160,7 +160,7 @@ class TestRefundDeduction:
         await self._approve_and_payout(client, sm, rid)
 
     async def test_refund_reduces_eligible_amount(self, client: AsyncClient, sm):
-        headers = await user_headers(client, "13700000204")
+        headers = await user_headers(client, "u13700000204@test.local")
         p1, at1 = past_period(1)
         order = await paid_order_at(client, sm, headers, "50.00", at1)
         await self._refund_paid(client, sm, headers, order["order_no"], "20.00")
@@ -170,7 +170,7 @@ class TestRefundDeduction:
     async def test_full_refund_leaves_nothing_to_bill(self, client: AsyncClient, sm):
         """After a full refund: the period leaves eligible and create is stopped by the server-side
         amount."""
-        headers = await user_headers(client, "13700000205")
+        headers = await user_headers(client, "u13700000205@test.local")
         p1, at1 = past_period(1)
         order = await paid_order_at(client, sm, headers, "50.00", at1)
         await self._refund_paid(client, sm, headers, order["order_no"], "50.00")
@@ -182,7 +182,7 @@ class TestRefundDeduction:
     async def test_pending_to_paid_across_months_keeps_order_period(self, client, sm):
         """Refunds of P1 orders, pending and paid, are subtracted from P1; an invoice requested at
         the pre-deducted amount recomputes consistently at issue."""
-        headers = await user_headers(client, "13700000206")
+        headers = await user_headers(client, "u13700000206@test.local")
         p1, at1 = past_period(1)
         order = await paid_order_at(client, sm, headers, "50.00", at1)
         rid = (await apply_refund(client, headers, order["order_no"], "20.00")).json()["id"]
@@ -206,7 +206,7 @@ class TestCreate:
     async def test_amount_computed_server_side(self, client: AsyncClient, sm):
         """The amount is computed server-side: a smuggled amount field is ignored, the response
         carries the full period amount."""
-        headers = await user_headers(client, "13700000211")
+        headers = await user_headers(client, "u13700000211@test.local")
         p1, at1 = past_period(1)
         await paid_order_at(client, sm, headers, "66.00", at1)
         resp = await apply_invoice(client, headers, p1, amount="0.01")
@@ -219,7 +219,7 @@ class TestCreate:
     async def test_duplicate_period_rejected(self, client: AsyncClient, sm):
         """An active request for the same period: a second request → 409 (a different idempotency
         key does not help)."""
-        headers = await user_headers(client, "13700000212")
+        headers = await user_headers(client, "u13700000212@test.local")
         p1, at1 = past_period(1)
         await paid_order_at(client, sm, headers, "50.00", at1)
         assert (await apply_invoice(client, headers, p1)).status_code == 201
@@ -228,7 +228,7 @@ class TestCreate:
         assert resp.json()["message_key"] == "billing.invoicePeriodAlreadyApplied"
 
     async def test_company_title_requires_tax_id(self, client: AsyncClient):
-        headers = await user_headers(client, "13700000213")
+        headers = await user_headers(client, "u13700000213@test.local")
         p1, _ = past_period(1)
         resp = await apply_invoice(client, headers, p1, tax_id=None)
         assert resp.status_code == 422
@@ -240,8 +240,8 @@ class TestCreate:
     ):
         """cn profile: the 18-character unified social credit code (upper-cased on input, GB 32100
         alphabet) is the only accepted form; the generic profile stores any 2–32 character ID."""
-        headers = await user_headers(client, "13700000217")
-        other = await user_headers(client, "13700000218")
+        headers = await user_headers(client, "u13700000217@test.local")
+        other = await user_headers(client, "u13700000218@test.local")
         p1, at1 = past_period(1)
         await paid_order_at(client, sm, headers, "50.00", at1)
         await paid_order_at(client, sm, other, "50.00", at1)
@@ -263,7 +263,7 @@ class TestCreate:
 
     async def test_personal_title_needs_no_tax_id(self, client: AsyncClient, sm):
         """Personal title: no tax id needed, a smuggled one is not stored."""
-        headers = await user_headers(client, "13700000215")
+        headers = await user_headers(client, "u13700000215@test.local")
         p1, at1 = past_period(1)
         await paid_order_at(client, sm, headers, "50.00", at1)
         resp = await apply_invoice(
@@ -279,7 +279,7 @@ class TestCreate:
 
     async def test_current_period_rejected(self, client: AsyncClient, sm):
         """The current month cannot be invoiced (even with paid orders this month)."""
-        headers = await user_headers(client, "13700000216")
+        headers = await user_headers(client, "u13700000216@test.local")
         order = await create_order(client, headers, "50.00")
         assert (await pay_mock(client, order["order_no"], "50.00")).status_code == 200
         resp = await apply_invoice(client, headers, current_period())
@@ -288,14 +288,14 @@ class TestCreate:
 
     async def test_nothing_to_bill_rejected(self, client: AsyncClient, sm):
         """Period without paid top-ups: invoiceable amount 0, not accepted."""
-        headers = await user_headers(client, "13700000217")
+        headers = await user_headers(client, "u13700000217@test.local")
         p1, _ = past_period(1)
         resp = await apply_invoice(client, headers, p1)
         assert resp.status_code == 409
         assert resp.json()["message_key"] == "billing.invoiceNothingToBill"
 
     async def test_idempotent_replay_returns_same(self, client: AsyncClient, sm):
-        headers = await user_headers(client, "13700000218")
+        headers = await user_headers(client, "u13700000218@test.local")
         p1, at1 = past_period(1)
         await paid_order_at(client, sm, headers, "50.00", at1)
         r1 = await apply_invoice(client, headers, p1, idem="inv-1")
@@ -309,7 +309,7 @@ class TestCreate:
 
     async def test_idem_key_param_mismatch_409(self, client: AsyncClient, sm):
         """Same key, different params (title changed): 409."""
-        headers = await user_headers(client, "13700000219")
+        headers = await user_headers(client, "u13700000219@test.local")
         p1, at1 = past_period(1)
         await paid_order_at(client, sm, headers, "50.00", at1)
         r1 = await apply_invoice(client, headers, p1, idem="inv-mix")
@@ -332,7 +332,7 @@ class TestAdminFlow:
 
     async def test_issue_fills_no_and_notifies(self, client: AsyncClient, sm):
         """Issue: status=issued + issued_by/at + in-app notification (with the invoice number)."""
-        headers, iid, p1 = await self._submitted(client, sm, "13700000221")
+        headers, iid, p1 = await self._submitted(client, sm, "u13700000221@test.local")
         finance = await admin_headers(sm, client, role="finance")
         resp = await client.post(
             f"/api/admin/v1/invoices/{iid}/issue",
@@ -352,7 +352,7 @@ class TestAdminFlow:
         assert "24XXXXXX01" in issued["content"]
 
     async def test_issue_non_submitted_conflict(self, client: AsyncClient, sm):
-        _headers, iid, _p1 = await self._submitted(client, sm, "13700000222")
+        _headers, iid, _p1 = await self._submitted(client, sm, "u13700000222@test.local")
         finance = await admin_headers(sm, client, role="finance")
         resp = await client.post(
             f"/api/admin/v1/invoices/{iid}/issue", json={"invoice_no": "NO-1"}, headers=finance
@@ -366,7 +366,7 @@ class TestAdminFlow:
 
     async def test_reject_notifies_with_reason(self, client: AsyncClient, sm):
         """Reject: the in-app notification carries the reason."""
-        headers, iid, _p1 = await self._submitted(client, sm, "13700000223")
+        headers, iid, _p1 = await self._submitted(client, sm, "u13700000223@test.local")
         finance = await admin_headers(sm, client, role="finance")
         resp = await client.post(
             f"/api/admin/v1/invoices/{iid}/reject",
@@ -383,7 +383,7 @@ class TestAdminFlow:
     async def test_rejected_period_can_reapply(self, client: AsyncClient, sm):
         """rejected does not hold the partial unique index: the period can be requested again, still
         at the full amount."""
-        headers = await user_headers(client, "13700000224")
+        headers = await user_headers(client, "u13700000224@test.local")
         p1, at1 = past_period(1)
         await paid_order_at(client, sm, headers, "50.00", at1)
         iid = (await apply_invoice(client, headers, p1)).json()["id"]
@@ -403,7 +403,7 @@ class TestAdminFlow:
 
     async def test_list_filters(self, client: AsyncClient, sm):
         """status/period exact filters; the admin view carries the tenant id."""
-        headers = await user_headers(client, "13700000225")
+        headers = await user_headers(client, "u13700000225@test.local")
         p1, at1 = past_period(1)
         p2, at2 = past_period(2)
         await paid_order_at(client, sm, headers, "50.00", at1)
@@ -428,11 +428,11 @@ class TestIdor:
     @pytest.mark.parametrize("probe", ["list", "eligible"])
     async def test_other_users_invoice_invisible(self, client: AsyncClient, sm, probe: str):
         """User B sees neither user A's list nor A's invoiceable periods."""
-        ha = await user_headers(client, "13700000231")
+        ha = await user_headers(client, "u13700000231@test.local")
         p1, at1 = past_period(1)
         await paid_order_at(client, sm, ha, "50.00", at1)
         assert (await apply_invoice(client, ha, p1)).status_code == 201
-        hb = await user_headers(client, "13700000232")
+        hb = await user_headers(client, "u13700000232@test.local")
         if probe == "list":
             mine = (await client.get("/api/v1/billing/invoices", headers=hb)).json()
             assert mine["items"] == []
@@ -445,7 +445,7 @@ class TestRefundLinkage:
     submitted does not block."""
 
     async def test_issued_period_blocks_refund(self, client: AsyncClient, sm):
-        headers = await user_headers(client, "13700000241")
+        headers = await user_headers(client, "u13700000241@test.local")
         p1, at1 = past_period(1)
         order = await paid_order_at(client, sm, headers, "50.00", at1)
         iid = (await apply_invoice(client, headers, p1)).json()["id"]
@@ -473,7 +473,7 @@ class TestRefundLinkage:
         assert row["reason_code"] == "invoiced"
 
     async def test_submitted_period_does_not_block_refund(self, client: AsyncClient, sm):
-        headers = await user_headers(client, "13700000242")
+        headers = await user_headers(client, "u13700000242@test.local")
         p1, at1 = past_period(1)
         order = await paid_order_at(client, sm, headers, "50.00", at1)
         assert (await apply_invoice(client, headers, p1)).status_code == 201
@@ -514,7 +514,7 @@ class TestDoubleSpendGate:
         """In-flight (pending) refunds are pre-deducted from the order's period: the eligible
         preview
         and the create amount shrink together."""
-        headers = await user_headers(client, "13700000243")
+        headers = await user_headers(client, "u13700000243@test.local")
         p1, at1 = past_period(1)
         order = await paid_order_at(client, sm, headers, "50.00", at1)
         resp = await client.post(
@@ -533,7 +533,7 @@ class TestDoubleSpendGate:
     async def test_issue_recalculates_and_rejects_stale_amount(self, client: AsyncClient, sm):
         """An in-flight refund between request and issue: the recomputation under the issue row lock
         mismatches → 409 invoiceAmountStale."""
-        headers = await user_headers(client, "13700000244")
+        headers = await user_headers(client, "u13700000244@test.local")
         p1, at1 = past_period(1)
         order = await paid_order_at(client, sm, headers, "50.00", at1)
         iid = (await apply_invoice(client, headers, p1)).json()["id"]
@@ -567,7 +567,7 @@ class TestDoubleSpendGate:
         """Request a refund → issue (invoice amount minus the in-flight refund) → register the
         payout
         successfully."""
-        headers = await user_headers(client, "13700000245")
+        headers = await user_headers(client, "u13700000245@test.local")
         p1, at1 = past_period(1)
         order = await paid_order_at(client, sm, headers, "50.00", at1)
         rid = (
@@ -610,7 +610,7 @@ class TestDoubleSpendGate:
         from app.core.errors import AppError
         from app.modules.billing import refunds
 
-        headers = await user_headers(client, "13700000246")
+        headers = await user_headers(client, "u13700000246@test.local")
         p1, at1 = past_period(1)
         order = await paid_order_at(client, sm, headers, "50.00", at1)
         iid = (await apply_invoice(client, headers, p1)).json()["id"]

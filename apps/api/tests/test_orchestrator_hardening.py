@@ -148,7 +148,9 @@ class TestStartingTimeout:
     async def test_starting_timeout_fails_and_keeps_disk(self, client, sm, fake):
         """starting timeout takes the starting→failed edge: Pod cleared, port returned, instance
         disk kept."""
-        headers, uuid, user_id = await provision_running(client, sm, fake, "13900000115")
+        headers, uuid, user_id = await provision_running(
+            client, sm, fake, "u13900000115@test.local"
+        )
         ns = f"tenant-{user_id}"
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
@@ -173,7 +175,9 @@ class TestStartingTimeout:
 class TestFailedRecovery:
     async def test_start_from_failed_reuses_instance_disk(self, client, sm, fake):
         """failed → start recovery edge: restarts on the same instance disk."""
-        headers, uuid, user_id = await provision_running(client, sm, fake, "13900000101")
+        headers, uuid, user_id = await provision_running(
+            client, sm, fake, "u13900000101@test.local"
+        )
         ns = f"tenant-{user_id}"
         disk_marker = fake.instance_disks[(ns, uuid)]
         fake.kill_pod(ns, uuid)
@@ -198,7 +202,9 @@ class TestFailedRecovery:
     async def test_start_from_failed_rejects_unprovisioned_disk(self, client, sm, fake):
         """failed recovery start goes through the mount gate: data disk provisioned=false → 409,
         the instance stays failed."""
-        headers, user_id, key_id = await funded_user(client, sm, "13900000109", "500.00")
+        headers, user_id, key_id = await funded_user(
+            client, sm, "u13900000109@test.local", "500.00"
+        )
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
         await drain(sm)
@@ -234,7 +240,9 @@ class TestFailedRecovery:
 
     async def test_release_from_stuck_stopping(self, client, sm, fake):
         """A user may release a stuck stop directly (stopping → releasing edge)."""
-        headers, uuid, _user_id = await provision_running(client, sm, fake, "13900000102")
+        headers, uuid, _user_id = await provision_running(
+            client, sm, fake, "u13900000102@test.local"
+        )
         resp = await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         assert resp.json()["status"] == "stopping"
         resp = await client.delete(f"/api/v1/instances/{uuid}", headers=headers)
@@ -249,7 +257,7 @@ class TestReadyWithoutPort:
     async def test_ready_pod_without_port_not_promoted(self, client, sm, fake):
         """Pod Ready but ssh_port not stored: no advance to running, stays creating until the
         timeout turns it failed."""
-        headers, user_id, key_id = await funded_user(client, sm, "13900000110")
+        headers, user_id, key_id = await funded_user(client, sm, "u13900000110@test.local")
         sku_id = await create_test_sku(sm)
         resp = await _raw_create(client, headers, sku_id, key_id)
         uuid = resp.json()["uuid"]
@@ -273,7 +281,9 @@ class TestStuckEscape:
     async def test_stopping_two_tier_escape(self, client, sm, fake):
         """stopping stuck: first timeout re-sends the delete, second timeout force-deletes and
         converges to stopped."""
-        headers, uuid, user_id = await provision_running(client, sm, fake, "13900000103")
+        headers, uuid, user_id = await provision_running(
+            client, sm, fake, "u13900000103@test.local"
+        )
         ns = f"tenant-{user_id}"
         fake.graceful_delete = True
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
@@ -311,7 +321,9 @@ class TestStuckEscape:
     async def test_releasing_two_tier_escape(self, client, sm, fake):
         """releasing stuck: the second-level force delete converges to released (port returned,
         instance disk destroyed)."""
-        headers, uuid, user_id = await provision_running(client, sm, fake, "13900000104")
+        headers, uuid, user_id = await provision_running(
+            client, sm, fake, "u13900000104@test.local"
+        )
         ns = f"tenant-{user_id}"
         fake.graceful_delete = True
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
@@ -331,7 +343,9 @@ class TestStuckEscape:
     async def test_stopping_reenqueue_ignores_expired_lease(self, client, sm, fake):
         """An expired locked_at lease on the running delete task is not in flight; the stuck check
         re-sends as usual."""
-        headers, uuid, _user_id = await provision_running(client, sm, fake, "13900000107")
+        headers, uuid, _user_id = await provision_running(
+            client, sm, fake, "u13900000107@test.local"
+        )
         fake.graceful_delete = True
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
@@ -356,7 +370,9 @@ class TestStuckEscape:
 
     async def test_stopping_reenqueue_skips_fresh_lease(self, client, sm, fake):
         """A running row with locked_at within the lease = in flight, no duplicate task."""
-        headers, uuid, _user_id = await provision_running(client, sm, fake, "13900000108")
+        headers, uuid, _user_id = await provision_running(
+            client, sm, fake, "u13900000108@test.local"
+        )
         fake.graceful_delete = True
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
@@ -383,7 +399,9 @@ class TestStuckEscape:
 class TestLeakReclaim:
     async def test_unknown_pod_ratio_trips_breaker(self, client, sm, fake):
         """Unknown-Pod share above the threshold → this round's reclamation trips."""
-        _headers, uuid, user_id = await provision_running(client, sm, fake, "13900000105")
+        _headers, uuid, user_id = await provision_running(
+            client, sm, fake, "u13900000105@test.local"
+        )
         ns = f"tenant-{user_id}"
         spec = fake.pods[(ns, uuid)].spec
         for i in range(4):
@@ -395,7 +413,9 @@ class TestLeakReclaim:
     async def test_stopped_instance_leftover_pod_force_reclaimed(self, client, sm, fake):
         """Leftover Pods of stopped instances are force-deleted past the grace; untouched within
         it."""
-        headers, uuid, user_id = await provision_running(client, sm, fake, "13900000106")
+        headers, uuid, user_id = await provision_running(
+            client, sm, fake, "u13900000106@test.local"
+        )
         ns = f"tenant-{user_id}"
         spec = fake.pods[(ns, uuid)].spec
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
@@ -417,7 +437,9 @@ class TestLeakReclaim:
         from app.core.k8s.base import JOB_NAME_LABEL
         from app.core.k8s.fake import MANAGED_LABEL
 
-        _headers, uuid, user_id = await provision_running(client, sm, fake, "13900000114")
+        _headers, uuid, user_id = await provision_running(
+            client, sm, fake, "u13900000114@test.local"
+        )
         ns = f"tenant-{user_id}"
         spec = fake.pods[(ns, uuid)].spec
         fake.job_pods[(ns, "some-job-pod")] = {
@@ -436,7 +458,7 @@ class TestLeakReclaim:
 class TestCreateCriticalSection:
     async def test_concurrent_create_second_rejected(self, client, sm, fake):
         """Balance for one instance, two concurrent creations: one succeeds, one is short."""
-        headers, user_id, key_id = await create_user_with_key(client, "13900000111")
+        headers, user_id, key_id = await create_user_with_key(client, "u13900000111@test.local")
         await fund_wallet(sm, user_id, "1.68")
         sku_id = await create_test_sku(sm)
         r1, r2 = await asyncio.gather(
@@ -453,7 +475,9 @@ class TestCreateCriticalSection:
     async def test_concurrent_same_idempotency_key_single_instance(self, client, sm, fake):
         """Concurrent replay of the same idempotency key: one instance; creator 202, replayer 200 +
         X-Idempotent-Replay."""
-        headers, _user_id, key_id = await funded_user(client, sm, "13900000112", "500.00")
+        headers, _user_id, key_id = await funded_user(
+            client, sm, "u13900000112@test.local", "500.00"
+        )
         sku_id = await create_test_sku(sm)
         r1, r2 = await asyncio.gather(
             _raw_create(client, headers, sku_id, key_id, idem="race-1"),
@@ -468,7 +492,9 @@ class TestCreateCriticalSection:
 
     async def test_idempotency_key_expires_after_24h(self, client, sm, fake):
         """Idempotency-key 24 h window: the same key outside the window is a new order."""
-        headers, _user_id, key_id = await funded_user(client, sm, "13900000113", "500.00")
+        headers, _user_id, key_id = await funded_user(
+            client, sm, "u13900000113@test.local", "500.00"
+        )
         sku_id = await create_test_sku(sm)
         r1 = await _raw_create(client, headers, sku_id, key_id, idem="day-key")
         assert r1.status_code == 202
@@ -488,7 +514,7 @@ class TestCreateCriticalSection:
 
     async def test_soft_admission_no_capacity(self, client, sm, fake):
         """Soft admission: (pool, model) allocatable 0 → 409 NO_CAPACITY."""
-        headers, _user_id, key_id = await funded_user(client, sm, "13900000114")
+        headers, _user_id, key_id = await funded_user(client, sm, "u13900000114@test.local")
         sku_id = await create_test_sku(sm)
         await seed_node_spec(sm, gpu_count=1, gpu_used=1)
         resp = await _raw_create(client, headers, sku_id, key_id)
@@ -549,7 +575,9 @@ class TestRetentionGC:
     async def test_failed_instance_gc_after_retention(self, client, sm, fake):
         """failed beyond retention (default 7 days) is released automatically with a
         notification."""
-        headers, uuid, user_id = await provision_running(client, sm, fake, "13900000121")
+        headers, uuid, user_id = await provision_running(
+            client, sm, fake, "u13900000121@test.local"
+        )
         ns = f"tenant-{user_id}"
         fake.kill_pod(ns, uuid)
         await reconcile_once(sm)
@@ -571,7 +599,9 @@ class TestRetentionGC:
     async def test_stopped_instance_gc_warn_then_reclaim(self, client, sm, fake):
         """stopped retention (default 30 days): warned first (default 7 days ahead), then released
         automatically."""
-        headers, uuid, _user_id = await provision_running(client, sm, fake, "13900000122")
+        headers, uuid, _user_id = await provision_running(
+            client, sm, fake, "u13900000122@test.local"
+        )
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
         await reconcile_once(sm)
@@ -602,7 +632,7 @@ class TestDiskArrearsHardening:
 
     async def test_grace_days_not_billed(self, client, sm, fake):
         """grace stops billing: grace days produce no bill and are not back-billed after payment."""
-        headers, user_id, _key = await funded_user(client, sm, "13900000131")
+        headers, user_id, _key = await funded_user(client, sm, "u13900000131@test.local")
         disk = await create_disk(client, headers)
         t0 = now_utc()
         await self._drain_wallet(sm, user_id)
@@ -645,7 +675,7 @@ class TestDiskArrearsHardening:
         from app.modules.billing.models import SettlementGap
         from app.modules.billing.settlement import _advance_watermark
 
-        headers, _user_id, _key = await funded_user(client, sm, "13900000132")
+        headers, _user_id, _key = await funded_user(client, sm, "u13900000132@test.local")
         await create_disk(client, headers)
         t0 = now_utc()
         t_day = billing_day_floor(t0)
@@ -696,7 +726,7 @@ class TestDiskArrearsHardening:
 
     async def test_grace_clock_not_reset_by_recharge(self, client, sm, fake):
         """A top-up recovery does not reset grace_started_at."""
-        headers, user_id, _key = await funded_user(client, sm, "13900000133")
+        headers, user_id, _key = await funded_user(client, sm, "u13900000133@test.local")
         disk = await create_disk(client, headers)
         await self._drain_wallet(sm, user_id)
         await balance_patrol(sm)
@@ -785,7 +815,9 @@ class TestRestartPortConflict:
     async def test_port_conflict_keeps_tail_bill(self, client, sm, fake, monkeypatch):
         """Restart hits NodePortTaken: stopping→stopped and the tail bill were committed
         independently and are not swallowed by the rollback."""
-        headers, uuid, user_id = await provision_running(client, sm, fake, "13900000141")
+        headers, uuid, user_id = await provision_running(
+            client, sm, fake, "u13900000141@test.local"
+        )
         await backdate_running_event(sm, uuid, 30)
         original = fake.create_instance
         fired = {"hit": False}
@@ -857,7 +889,7 @@ class TestNeverReadyOccupancy:
 
     async def test_on_demand_occupancy_is_billed(self, client, sm, fake):
         headers, user_id, uuid, ns, _svc = await self._deploy_never_ready(
-            client, sm, fake, "13900000601"
+            client, sm, fake, "u13900000601@test.local"
         )
         before = None
         async with sm() as session:
@@ -931,7 +963,7 @@ class TestNeverReadyOccupancy:
         from app.modules.billing.models import Subscription
 
         _headers, user_id, _uuid, _ns, _svc = await self._deploy_never_ready(
-            client, sm, fake, "13900000602", market="subscription", period="day"
+            client, sm, fake, "u13900000602@test.local", market="subscription", period="day"
         )
         async with sm() as session:
             before = await wallet.get_balance(session, user_id)
@@ -947,7 +979,7 @@ class TestNeverReadyOccupancy:
     async def test_dev_instance_timeout_stays_free(self, client, sm, fake):
         """A dev box (no health_path) timing out is the platform's fault: no bill, instance disk
         cleaned as usual."""
-        headers, user_id, key_id = await funded_user(client, sm, "13900000603")
+        headers, user_id, key_id = await funded_user(client, sm, "u13900000603@test.local")
         sku_id = await create_test_sku(sm)
         fake.auto_ready = False
         resp = await client.post(
@@ -996,7 +1028,9 @@ class TestLifecycleRateLimit:
         from app.core.ratelimit import check_rate_limit
         from app.modules.orchestrator.service import LIFECYCLE_MAX_PER_HOUR
 
-        headers, uuid, user_id = await provision_running(client, sm, fake, "13900000604")
+        headers, uuid, user_id = await provision_running(
+            client, sm, fake, "u13900000604@test.local"
+        )
         for _ in range(LIFECYCLE_MAX_PER_HOUR):
             await check_rate_limit(
                 f"instance-lifecycle:{user_id}",

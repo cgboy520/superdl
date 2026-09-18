@@ -35,7 +35,7 @@ class TestMetricsProxy:
 
     async def test_cannot_read_others_metrics(self, client, sm, fake):
         _headers, uuid, _user_id = await provision_running(client, sm, fake)
-        other = await register(client, "13600000001")
+        other = await register(client, "u13600000001@test.local")
         resp = await client.get(
             f"/api/v1/instances/{uuid}/metrics",
             headers={"Authorization": f"Bearer {other['access_token']}"},
@@ -166,8 +166,10 @@ class TestAggregationPartialFailure:
     async def test_single_failure_does_not_drop_whole_hour(self, client, sm, fake):
         """A failing single-instance query loses only that instance-hour, the rest of the round
         aggregates as usual."""
-        _h1, uuid1, _u1 = await provision_running(client, sm, fake, phone="13900000021")
-        _h2, _uuid2, _u2 = await provision_running(client, sm, fake, phone="13900000022")
+        _h1, uuid1, _u1 = await provision_running(client, sm, fake, phone="u13900000021@test.local")
+        _h2, _uuid2, _u2 = await provision_running(
+            client, sm, fake, phone="u13900000022@test.local"
+        )
 
         def handler(request: httpx.Request) -> httpx.Response:
             query = request.url.params.get("query", "")

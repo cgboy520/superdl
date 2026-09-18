@@ -311,7 +311,7 @@ class TestApiRoundTrip:
         await self._enable(sm, monkeypatch)
         site = (await client.get("/api/v1/site-config")).json()
         assert {"name": "stripe", "presentation": "redirect"} in site["payment_channels"]
-        headers = await user_headers(client, "13700000501")
+        headers = await user_headers(client, "u13700000501@test.local")
         resp = await client.post(
             "/api/v1/wallet/recharges",
             json={"amount": "50.00", "channel": "stripe"},

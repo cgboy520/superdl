@@ -174,7 +174,7 @@ class TestGateWiring:
         from app.modules.nodes.models import ClusterStatus
 
         await seed_skus(sm)
-        headers, _user_id, key_id = await funded_user(client, sm, "13900000077")
+        headers, _user_id, key_id = await funded_user(client, sm, "u13900000077@test.local")
         async with sm() as session:
             row = await session.get(ClusterStatus, 1)
             assert row is not None

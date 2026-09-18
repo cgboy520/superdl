@@ -49,7 +49,7 @@ def am_payload_for(user_id: int) -> dict:
 class TestBalanceWarnNotification:
     async def test_unread_count_endpoint(self, client, sm, fake):
         """Unread count endpoint: decreases after marking read."""
-        headers, user_id = await user_headers_with_id(client, "13700000061")
+        headers, user_id = await user_headers_with_id(client, "u13700000061@test.local")
         async with sm() as session:
             for i in range(3):
                 session.add(
@@ -95,7 +95,7 @@ class TestBalanceWarnNotification:
 
     async def test_read_all_marks_everything_and_is_idempotent(self, client, sm, fake):
         """Mark all read: several unread cleared at once; repeating is an idempotent 204."""
-        headers, user_id = await user_headers_with_id(client, "13700000064")
+        headers, user_id = await user_headers_with_id(client, "u13700000064@test.local")
         async with sm() as session:
             for i in range(3):
                 session.add(
@@ -122,7 +122,7 @@ class TestBalanceWarnNotification:
 
     async def test_read_all_scoped_to_self(self, client, sm, fake):
         """Mark all read touches only the caller: other users' unread stay."""
-        headers, user_id = await user_headers_with_id(client, "13700000065")
+        headers, user_id = await user_headers_with_id(client, "u13700000065@test.local")
         async with sm() as session:
             session.add(
                 Notification(
@@ -149,7 +149,7 @@ class TestBalanceWarnNotification:
 
     async def test_list_pagination_beyond_50(self, client, sm, fake):
         """Notification limit/cursor paging, descending, no duplicates, no gaps."""
-        headers, user_id = await user_headers_with_id(client, "13700000066")
+        headers, user_id = await user_headers_with_id(client, "u13700000066@test.local")
         async with sm() as session:
             for i in range(60):
                 session.add(
@@ -286,7 +286,7 @@ class TestAlertAck:
         assert again.json()["message_key"] == "adminapi.alertAlreadyAcked"
 
     async def test_unread_count_tracks_ack(self, client, sm, fake):
-        user = await register(client, "13900000991")
+        user = await register(client, "u13900000991@test.local")
         await client.post(
             "/api/v1/webhooks/alertmanager",
             json=am_payload_for(user["user"]["id"]),
@@ -315,7 +315,7 @@ class TestAlertAck:
         assert [r.type for r in rows] == ["admin_alert"]
 
     async def test_severity_filter(self, client, sm, fake):
-        user = await register(client, "13900000992")
+        user = await register(client, "u13900000992@test.local")
         await client.post(
             "/api/v1/webhooks/alertmanager",
             json=am_payload_for(user["user"]["id"]),
@@ -384,7 +384,7 @@ class TestAlertAck:
     async def test_type_filter(self, client, sm, fake):
         """The type filter runs in the database: tenant GPU faults and platform alerts can be viewed
         separately."""
-        user = await register(client, "13900000993")
+        user = await register(client, "u13900000993@test.local")
         await client.post(
             "/api/v1/webhooks/alertmanager",
             json=am_payload_for(user["user"]["id"]),

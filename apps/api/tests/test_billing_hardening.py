@@ -160,7 +160,7 @@ class TestWalletLockGuards:
         from app.modules.billing import refunds
         from app.modules.billing.models import Order
 
-        headers = await user_headers(client, "13700000116")
+        headers = await user_headers(client, "u13700000116@test.local")
         order = await paid_order(client, headers, "50.00")
         rid = (await apply_refund(client, headers, order["order_no"], "40.00")).json()["id"]
         reviewer, _payer_headers = await finance_pair(sm, client)
@@ -786,7 +786,7 @@ class TestSmsOutbox:
             async def send(self, phone, kind, params, *, locale="en-US"):
                 sent.append({"phone": phone, "params": params})
 
-        data = await register(client, "13900000077")
+        data = await register(client, "u13900000077@test.local")
         async with sm() as session:
             await session.execute(
                 update(User).where(User.id == data["user"]["id"]).values(phone="+8613900000077")
@@ -822,7 +822,7 @@ class TestSmsOutbox:
         from app.core.outbox import OutboxTask
         from app.modules.notify import service as notify_service
 
-        data = await register(client, "13900000078")
+        data = await register(client, "u13900000078@test.local")
         async with sm() as session:
             await notify_service.notify(
                 session, data["user"]["id"], type_="announcement", title="t", content="c"

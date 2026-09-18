@@ -108,7 +108,7 @@ async def fund_wallet(
 
 
 async def create_user_with_key(
-    client: AsyncClient, phone: str = "13900000001"
+    client: AsyncClient, phone: str = "u13900000001@test.local"
 ) -> tuple[dict[str, str], int, int]:
     """Register a user + add an SSH key. Returns (headers, user_id, ssh_key_id)."""
     data = await register(client, phone)
@@ -202,21 +202,12 @@ async def seed_node_spec(
         await session.commit()
 
 
-def as_handle(value: str) -> str:
-    """Tests historically identify users by bare PRC mobile numbers; map those to a deterministic
-    email so the same literals keep working with email-primary accounts."""
-    if "@" in value or value.startswith("+"):
-        return value
-    digits = "".join(ch for ch in value if ch.isdigit())
-    return f"u{digits}@test.local"
-
-
 async def send_code(
-    client: AsyncClient, handle: str = "13800000001", purpose: str = "register"
+    client: AsyncClient, handle: str = "u13800000001@test.local", purpose: str = "register"
 ) -> None:
     resp = await client.post(
         "/api/v1/auth/verification-code",
-        json={"handle": as_handle(handle), "purpose": purpose},
+        json={"handle": handle, "purpose": purpose},
     )
     assert resp.status_code == 204, resp.text
 
@@ -231,10 +222,10 @@ async def age_sms_codes(sm: async_sessionmaker[AsyncSession]) -> None:
 
 
 async def register(
-    client: AsyncClient, handle: str = "13800000001", password: str | None = None
+    client: AsyncClient, handle: str = "u13800000001@test.local", password: str | None = None
 ) -> dict:
-    """Register by email (bare digits are mapped through as_handle) with the mock code."""
-    email = as_handle(handle)
+    """Register by email with the mock code."""
+    email = handle
     await send_code(client, email, "register")
     body: dict = {"email": email, "email_code": "123456", "accept_terms": True}
     if password:
@@ -266,7 +257,7 @@ async def refresh_via_cookie(client: AsyncClient, token: str | None = None) -> R
 
 async def issue_code(sm, handle: str, purpose: str, code: str = "123456") -> None:
     """Insert a verification code row (expires in five minutes) for an email or E.164 handle."""
-    parsed = parse_handle(as_handle(handle))
+    parsed = parse_handle(handle)
     channel = "email" if parsed.kind == "email" else "sms"
     async with sm() as session:
         session.add(
@@ -446,7 +437,9 @@ async def get_instance(client: AsyncClient, headers: dict, uuid: str) -> dict:
     return resp.json()
 
 
-async def provision_running(client, sm, fake, phone="13900000010") -> tuple[dict, str, int]:
+async def provision_running(
+    client, sm, fake, phone="u13900000010@test.local"
+) -> tuple[dict, str, int]:
     """Bring up a running instance. Returns (headers, uuid, user_id)."""
     headers, user_id, key_id, sku_id = await new_user(client, sm, phone)
     data = await create_instance_api(client, headers, sku_id, key_id)
@@ -456,7 +449,9 @@ async def provision_running(client, sm, fake, phone="13900000010") -> tuple[dict
     return headers, data["uuid"], user_id
 
 
-async def user_headers(client: AsyncClient, phone: str = "13700000001") -> dict[str, str]:
+async def user_headers(
+    client: AsyncClient, phone: str = "u13700000001@test.local"
+) -> dict[str, str]:
     data = await register(client, phone)
     return {"Authorization": f"Bearer {data['access_token']}"}
 
@@ -698,7 +693,7 @@ async def provision_service(
     sm: async_sessionmaker[AsyncSession],
     fake: FakeOrchestrator,
     *,
-    phone: str = "13900000301",
+    phone: str = "u13900000301@test.local",
     **over,
 ) -> tuple[dict[str, str], dict, int]:
     """Deploy a running online service. Returns (headers, service output, user_id);

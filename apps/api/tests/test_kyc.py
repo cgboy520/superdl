@@ -15,7 +15,6 @@ from app.modules.account.kyc import (
 )
 from app.modules.account.models import User
 from tests.helpers import (
-    as_handle,
     create_test_sku,
     fund_wallet,
     gen_ed25519_key,
@@ -52,7 +51,7 @@ def _cn_profile(monkeypatch):
 
 async def _phone_user(client: AsyncClient, sm, digits: str) -> tuple[dict[str, str], int]:
     """Register an email account that also binds a +86 phone (the three-factor check needs it)."""
-    email, phone = as_handle(digits), f"+86{digits}"
+    email, phone = f"kyc{digits}@test.local", f"+86{digits}"
     await issue_code(sm, email, "register")
     await issue_code(sm, phone, "register")
     resp = await client.post(
@@ -146,7 +145,7 @@ class TestSubmitKyc:
         await set_platform_setting(sm, "real_name_enabled", "true")
         await set_platform_setting(sm, "real_name_required_for_recharge", "true")
         set_kyc_provider(_Provider(True))
-        headers, _ = await user_headers_with_id(client, "13800000169")
+        headers, _ = await user_headers_with_id(client, "u13800000169@test.local")
         resp = await client.post("/api/v1/me/kyc", json=_body(), headers=headers)
         assert resp.status_code == 409
         assert resp.json()["message_key"] == "account.kycNotAvailable"
@@ -167,7 +166,7 @@ class TestSubmitKyc:
         await set_platform_setting(sm, "real_name_enabled", "true")
         set_kyc_provider(AliyunMobile3Provider("ak", "sk"))
         monkeypatch.setattr(get_settings(), "compliance_profile", None)
-        headers, _ = await user_headers_with_id(client, "13800000167")
+        headers, _ = await user_headers_with_id(client, "u13800000167@test.local")
         monkeypatch.setattr(get_settings(), "compliance_profile", "cn")
         resp = await client.post("/api/v1/me/kyc", json=_body(), headers=headers)
         assert resp.status_code == 400
@@ -270,11 +269,11 @@ class TestGates:
     async def test_register_requires_terms(self, client):
         await client.post(
             "/api/v1/auth/verification-code",
-            json={"handle": as_handle("13800000163"), "purpose": "register"},
+            json={"handle": "u13800000163@test.local", "purpose": "register"},
         )
         resp = await client.post(
             "/api/v1/auth/register",
-            json={"email": as_handle("13800000163"), "email_code": "123456"},
+            json={"email": "u13800000163@test.local", "email_code": "123456"},
         )
         assert resp.status_code == 400
         assert resp.json()["code"] == "TERMS_NOT_ACCEPTED"

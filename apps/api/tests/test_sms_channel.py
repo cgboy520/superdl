@@ -8,7 +8,6 @@ from sqlalchemy import select
 
 from app.core.aliyun import rpc_signed_params
 from app.core.sms import AliyunSmsChannel, SmsError, TwilioSmsChannel, set_sms_channel
-from tests.helpers import as_handle
 
 
 @pytest.fixture(autouse=True)
@@ -133,16 +132,14 @@ class TestVerifyCodeSendFailure:
         set_sms_channel(_FailingChannel())
         resp = await client.post(
             "/api/v1/auth/verification-code",
-            json={"handle": as_handle("+8613800000090"), "purpose": "register"},
+            json={"handle": "+8613800000090", "purpose": "register"},
         )
         assert resp.status_code == 502
         assert resp.json()["code"] == "CODE_SEND_FAILED"
         async with sm() as session:
             row = (
                 await session.execute(
-                    select(VerificationCode).where(
-                        VerificationCode.target == as_handle("+8613800000090")
-                    )
+                    select(VerificationCode).where(VerificationCode.target == "+8613800000090")
                 )
             ).scalar_one()
             assert row.used_at is not None
@@ -161,16 +158,14 @@ class TestPlatformQuota:
         await sms_module.ensure_sms_platform_quota("verify")
         resp = await client.post(
             "/api/v1/auth/verification-code",
-            json={"handle": as_handle("+8613800000093"), "purpose": "register"},
+            json={"handle": "+8613800000093", "purpose": "register"},
         )
         assert resp.status_code == 429
         assert resp.json()["code"] == "RATE_LIMITED"
         async with sm() as session:
             row = (
                 await session.execute(
-                    select(VerificationCode).where(
-                        VerificationCode.target == as_handle("+8613800000093")
-                    )
+                    select(VerificationCode).where(VerificationCode.target == "+8613800000093")
                 )
             ).scalar_one_or_none()
             assert row is None

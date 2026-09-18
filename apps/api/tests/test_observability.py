@@ -10,7 +10,6 @@ from sqlalchemy import select, text, update
 
 from app.core.observability import request_id_from_header
 from app.core.timeutil import now_utc
-from tests.helpers import as_handle
 
 _HEX16 = re.compile(r"^[0-9a-f]{16}$")
 
@@ -112,7 +111,7 @@ class TestCleanup:
             session.add(
                 VerificationCode(
                     channel="email",
-                    target=as_handle("13800000150"),
+                    target="u13800000150@test.local",
                     code_hash="0" * 64,
                     purpose="register",
                     expires_at=now_utc() - timedelta(days=8),
@@ -124,7 +123,7 @@ class TestCleanup:
             await session.commit()
             await session.execute(
                 update(VerificationCode)
-                .where(VerificationCode.target == as_handle("13800000150"))
+                .where(VerificationCode.target == "u13800000150@test.local")
                 .values(created_at=now_utc() - timedelta(days=9))
             )
             await session.commit()
@@ -137,7 +136,7 @@ class TestCleanup:
             left = (
                 await session.execute(
                     select(VerificationCode).where(
-                        VerificationCode.target == as_handle("13800000150")
+                        VerificationCode.target == "u13800000150@test.local"
                     )
                 )
             ).scalar_one_or_none()

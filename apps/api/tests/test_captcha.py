@@ -13,7 +13,7 @@ from app.core.captcha import (
     set_captcha_channel,
 )
 from app.core.platform_config import runtime_config_from_strings as rc
-from tests.helpers import as_handle, set_platform_setting
+from tests.helpers import set_platform_setting
 
 
 @pytest.fixture(autouse=True)
@@ -131,7 +131,7 @@ class TestSmsCodeGate:
         set_captcha_channel(_FailingChannel())
         resp = await client.post(
             "/api/v1/auth/verification-code",
-            json={"handle": as_handle("13800000094"), "purpose": "register"},
+            json={"handle": "u13800000094@test.local", "purpose": "register"},
         )
         assert resp.status_code == 204, resp.text
 
@@ -141,7 +141,7 @@ class TestSmsCodeGate:
         set_captcha_channel(_RejectingChannel())
         resp = await client.post(
             "/api/v1/auth/verification-code",
-            json={"handle": as_handle("13800000095"), "purpose": "register"},
+            json={"handle": "u13800000095@test.local", "purpose": "register"},
         )
         assert resp.status_code == 400
         assert resp.json()["code"] == "CAPTCHA_REQUIRED"
@@ -152,7 +152,7 @@ class TestSmsCodeGate:
         resp = await client.post(
             "/api/v1/auth/verification-code",
             json={
-                "handle": as_handle("13800000095"),
+                "handle": "u13800000095@test.local",
                 "purpose": "register",
                 "captcha_token": "wrong",
             },
@@ -170,7 +170,7 @@ class TestSmsCodeGate:
         set_captcha_channel(_FailingChannel())
         resp = await client.post(
             "/api/v1/auth/verification-code",
-            json={"handle": as_handle("13800000095"), "purpose": "register", "captcha_token": "t"},
+            json={"handle": "u13800000095@test.local", "purpose": "register", "captcha_token": "t"},
         )
         assert resp.status_code == 502
         assert resp.json()["code"] == "CAPTCHA_CHANNEL_ERROR"
@@ -178,7 +178,7 @@ class TestSmsCodeGate:
             row = (
                 await session.execute(
                     select(VerificationCode).where(
-                        VerificationCode.target == as_handle("13800000095")
+                        VerificationCode.target == "u13800000095@test.local"
                     )
                 )
             ).scalar_one_or_none()
@@ -189,7 +189,7 @@ class TestSmsCodeGate:
         await set_platform_setting(sm, "captcha_enabled", "true")
         resp = await client.post(
             "/api/v1/auth/verification-code",
-            json={"handle": as_handle("13800000096"), "purpose": "register", "captcha_token": "t"},
+            json={"handle": "u13800000096@test.local", "purpose": "register", "captcha_token": "t"},
         )
         assert resp.status_code == 502
         assert resp.json()["code"] == "CAPTCHA_CHANNEL_ERROR"

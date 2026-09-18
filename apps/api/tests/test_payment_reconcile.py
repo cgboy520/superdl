@@ -35,7 +35,7 @@ class TestReconcilePoller:
     async def test_lost_callback_recovered_and_idempotent(self, client: AsyncClient, sm):
         """Paid on the channel but the callback was lost → the poller credits via order query;
         repeated runs never double-credit."""
-        headers = await user_headers(client, "13700000021")
+        headers = await user_headers(client, "u13700000021@test.local")
         order = await create_order(client, headers, "66.00")
         MockChannel.mark_paid(order["order_no"], "txn-lost-1", "66.00")
         await _backdate_order(sm, order["order_no"], 2)
@@ -49,7 +49,7 @@ class TestReconcilePoller:
         assert w["balance"] == "66.00"
 
     async def test_unpaid_order_untouched(self, client: AsyncClient, sm):
-        headers = await user_headers(client, "13700000022")
+        headers = await user_headers(client, "u13700000022@test.local")
         order = await create_order(client, headers, "10.00")
         await _backdate_order(sm, order["order_no"], 2)
         assert await reconcile_pending_orders(sm) == 0
@@ -61,7 +61,7 @@ class TestReconcilePoller:
     async def test_failed_order_recovered_by_poller(self, client: AsyncClient, sm):
         """A failed order (mis-transitioned intermediate state) actually paid on the channel → the
         poller credits; repeated runs are idempotent."""
-        headers = await user_headers(client, "13700000042")
+        headers = await user_headers(client, "u13700000042@test.local")
         order = await create_order(client, headers, "33.00")
         async with sm() as session:
             await session.execute(
@@ -82,7 +82,7 @@ class TestReconcilePoller:
         """Paid at the last moment before close with the callback lost: closed orders are part of
         the
         convergence scan, the poller rescues them."""
-        headers = await user_headers(client, "13700000044")
+        headers = await user_headers(client, "u13700000044@test.local")
         order = await create_order(client, headers, "55.00")
         async with sm() as session:
             await session.execute(
@@ -101,7 +101,7 @@ class TestReconcilePoller:
 
     async def test_stale_closed_order_outside_window_not_scanned(self, client: AsyncClient, sm):
         """Old closed orders whose expires_at is beyond 48 h are not queried."""
-        headers = await user_headers(client, "13700000046")
+        headers = await user_headers(client, "u13700000046@test.local")
         order = await create_order(client, headers, "45.00")
         async with sm() as session:
             await session.execute(
@@ -121,7 +121,7 @@ class TestReconcilePoller:
 
     async def test_stale_failed_order_outside_window_not_scanned(self, client: AsyncClient, sm):
         """Old failed orders outside the 48 h window are not queried."""
-        headers = await user_headers(client, "13700000043")
+        headers = await user_headers(client, "u13700000043@test.local")
         order = await create_order(client, headers, "44.00")
         async with sm() as session:
             await session.execute(
@@ -145,7 +145,7 @@ class TestReconcilePoller:
     async def test_channel_unreachable_skipped(self, client: AsyncClient, sm):
         """Channel unreachable (e.g. credentials missing) → skip the order, retry next round,
         without blocking the others."""
-        headers = await user_headers(client, "13700000027")
+        headers = await user_headers(client, "u13700000027@test.local")
         order = await create_order(client, headers, "12.00")
         async with sm() as session:
             await session.execute(
@@ -161,9 +161,9 @@ class TestReconcilePoller:
 
     async def test_single_order_failure_does_not_abort_round(self, client: AsyncClient, sm):
         """A single credit failure does not end the round."""
-        headers_bad = await user_headers(client, "13700000031")
+        headers_bad = await user_headers(client, "u13700000031@test.local")
         bad = await create_order(client, headers_bad, "66.00")
-        headers_good = await user_headers(client, "13700000032")
+        headers_good = await user_headers(client, "u13700000032@test.local")
         good = await create_order(client, headers_good, "20.00")
         MockChannel.mark_paid(bad["order_no"], "txn-bad-amount", "65.90")
         MockChannel.mark_paid(good["order_no"], "txn-good", "20.00")
@@ -184,7 +184,7 @@ class TestBackfill:
         """Closed on timeout but paid on the channel: verify → backfill credits; a repeated backfill
         is
         refused."""
-        headers = await user_headers(client, "13700000023")
+        headers = await user_headers(client, "u13700000023@test.local")
         order = await create_order(client, headers, "88.00")
         async with sm() as session:
             await session.execute(
@@ -223,7 +223,7 @@ class TestBackfill:
     async def test_backfill_idempotency_key_replay(self, client: AsyncClient, sm):
         """Backfill supports Idempotency-Key: a same-key replay returns the current state instead of
         409; a keyless retry stays 409."""
-        headers = await user_headers(client, "13700000041")
+        headers = await user_headers(client, "u13700000041@test.local")
         order = await create_order(client, headers, "66.00")
         MockChannel.mark_paid(order["order_no"], "txn-backfill-idem", "66.00")
 
@@ -249,7 +249,7 @@ class TestBackfill:
 
     async def test_backfill_key_reused_on_other_order_conflicts(self, client: AsyncClient, sm):
         """The same idempotency key used on another order: 409 naming the order holding the key."""
-        headers = await user_headers(client, "13700000042")
+        headers = await user_headers(client, "u13700000042@test.local")
         order_a = await create_order(client, headers, "61.00")
         order_b = await create_order(client, headers, "62.00")
         MockChannel.mark_paid(order_a["order_no"], "txn-backfill-a", "61.00")
@@ -275,7 +275,7 @@ class TestBackfill:
 
     async def test_backfill_refused_when_channel_unpaid(self, client: AsyncClient, sm):
         """Unpaid on the channel side → backfill refused."""
-        headers = await user_headers(client, "13700000024")
+        headers = await user_headers(client, "u13700000024@test.local")
         order = await create_order(client, headers, "20.00")
         ah = await admin_headers(sm, client, role="finance")
         resp = await client.post(
@@ -290,7 +290,7 @@ class TestBackfill:
 
     async def test_backfill_failed_order_after_verify(self, client: AsyncClient, sm):
         """A failed order verified as paid on the channel can be backfilled too."""
-        headers = await user_headers(client, "13700000029")
+        headers = await user_headers(client, "u13700000029@test.local")
         order = await create_order(client, headers, "11.00")
         async with sm() as session:
             await session.execute(
@@ -314,7 +314,7 @@ class TestBackfill:
         assert w["balance"] == "11.00"
 
     async def test_backfill_refused_on_amount_mismatch(self, client: AsyncClient, sm):
-        headers = await user_headers(client, "13700000025")
+        headers = await user_headers(client, "u13700000025@test.local")
         order = await create_order(client, headers, "30.00")
         MockChannel.mark_paid(order["order_no"], "txn-mismatch", "29.90")
         ah = await admin_headers(sm, client, role="finance")
@@ -330,7 +330,7 @@ class TestBackfill:
 
 class TestAnomalies:
     async def test_four_kinds_listed(self, client: AsyncClient, sm):
-        headers = await user_headers(client, "13700000026")
+        headers = await user_headers(client, "u13700000026@test.local")
         stale = await create_order(client, headers, "15.00")
         await _backdate_order(sm, stale["order_no"], 15)
         closed = await create_order(client, headers, "25.00")

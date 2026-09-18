@@ -174,7 +174,7 @@ class TestBillingApiEdges:
     async def test_ledger_cursor_pagination(self, client, sm):
         """Cursor continuation end to end: limit truncates → continue with next_cursor → no overlap
         between pages."""
-        data = await register(client, "13900000701")
+        data = await register(client, "u13900000701@test.local")
         headers, user_id = {"Authorization": f"Bearer {data['access_token']}"}, data["user"]["id"]
         async with sm() as session:
             for i in range(5):
