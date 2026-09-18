@@ -41,7 +41,7 @@
     "@vitejs/plugin-react": "^6.1.1",
     "i18next-cli": "^1.73.3",
     "jsdom": "^30.0.0",
-    "typescript": "~5.9.3",
+    "typescript": "~6.0.3",
     "vite": "^8.3.0",
     "vitest": "^5.0.0"
   }

@@ -30,11 +30,11 @@ importers:
         specifier: ^2.10.13
         version: 2.10.13
       typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
+        specifier: ~6.0.3
+        version: 6.0.3
       typescript-eslint:
         specifier: ^8.70.0
-        version: 8.70.0(eslint@10.10.0(jiti@2.7.0))(typescript@5.9.3)
+        version: 8.70.0(eslint@10.10.0(jiti@2.7.0))(typescript@6.0.3)
 
   apps/admin:
     dependencies:
@@ -64,7 +64,7 @@ importers:
         version: 6.1.0
       i18next:
         specifier: ^26.4.2
-        version: 26.4.2(typescript@5.9.3)
+        version: 26.4.2(typescript@6.0.3)
       motion:
         specifier: ^13.3.0
         version: 13.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -76,7 +76,7 @@ importers:
         version: 19.3.0(react@19.3.0)
       react-i18next:
         specifier: ^17.0.14
-        version: 17.0.14(i18next@26.4.2(typescript@5.9.3))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@5.9.3)
+        version: 17.0.14(i18next@26.4.2(typescript@6.0.3))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@6.0.3)
       react-markdown:
         specifier: ^10.1.0
         version: 10.1.0(@types/react@19.3.0)(react@19.3.0)
@@ -101,13 +101,13 @@ importers:
         version: 6.1.1(vite@8.3.0(@types/node@26.6.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
       i18next-cli:
         specifier: ^1.73.3
-        version: 1.74.0(@types/node@26.6.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@5.9.3)
+        version: 1.74.0(@types/node@26.6.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@6.0.3)
       jsdom:
         specifier: ^30.0.0
         version: 30.0.1
       typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
+        specifier: ~6.0.3
+        version: 6.0.3
       vite:
         specifier: ^8.3.0
         version: 8.3.0(@types/node@26.6.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0)
@@ -143,7 +143,7 @@ importers:
         version: 6.1.0
       i18next:
         specifier: ^26.4.2
-        version: 26.4.2(typescript@5.9.3)
+        version: 26.4.2(typescript@6.0.3)
       motion:
         specifier: ^13.3.0
         version: 13.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -155,7 +155,7 @@ importers:
         version: 19.3.0(react@19.3.0)
       react-i18next:
         specifier: ^17.0.14
-        version: 17.0.14(i18next@26.4.2(typescript@5.9.3))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@5.9.3)
+        version: 17.0.14(i18next@26.4.2(typescript@6.0.3))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@6.0.3)
       react-markdown:
         specifier: ^10.1.0
         version: 10.1.0(@types/react@19.3.0)(react@19.3.0)
@@ -189,13 +189,13 @@ importers:
         version: 6.1.1(vite@8.3.0(@types/node@26.6.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
       i18next-cli:
         specifier: ^1.73.3
-        version: 1.74.0(@types/node@26.6.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@5.9.3)
+        version: 1.74.0(@types/node@26.6.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@6.0.3)
       jsdom:
         specifier: ^30.0.0
         version: 30.0.1
       typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
+        specifier: ~6.0.3
+        version: 6.0.3
       vite:
         specifier: ^8.3.0
         version: 8.3.0(@types/node@26.6.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0)
@@ -215,17 +215,17 @@ importers:
         specifier: ^26.5.1
         version: 26.6.1
       typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
+        specifier: ~6.0.3
+        version: 6.0.3
 
   packages/api-client:
     devDependencies:
       orval:
         specifier: ^8.33.0
-        version: 8.33.0(@tanstack/react-query@5.103.1(react@19.3.0))(prettier@3.9.6)(typescript@5.9.3)(zod@4.6.5)
+        version: 8.33.0(@tanstack/react-query@5.103.1(react@19.3.0))(prettier@3.9.6)(typescript@6.0.3)(zod@4.6.5)
       typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
+        specifier: ~6.0.3
+        version: 6.0.3
       vitest:
         specifier: ^5.0.0
         version: 5.0.1(@types/node@26.6.1)(jsdom@30.0.1)(vite@8.3.0(@types/node@26.6.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
@@ -268,7 +268,7 @@ importers:
         version: 6.1.0
       i18next:
         specifier: ^26.4.2
-        version: 26.4.2(typescript@5.9.3)
+        version: 26.4.2(typescript@6.0.3)
       jsdom:
         specifier: ^30.0.0
         version: 30.0.1
@@ -283,7 +283,7 @@ importers:
         version: 19.3.0(react@19.3.0)
       react-i18next:
         specifier: ^17.0.14
-        version: 17.0.14(i18next@26.4.2(typescript@5.9.3))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@5.9.3)
+        version: 17.0.14(i18next@26.4.2(typescript@6.0.3))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@6.0.3)
       react-markdown:
         specifier: ^10.1.0
         version: 10.1.0(@types/react@19.3.0)(react@19.3.0)
@@ -291,8 +291,8 @@ importers:
         specifier: ^6.0.0
         version: 6.0.0
       typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
+        specifier: ~6.0.3
+        version: 6.0.3
       vitest:
         specifier: ^5.0.0
         version: 5.0.1(@types/node@26.6.1)(jsdom@30.0.1)(vite@8.3.0(@types/node@26.6.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
@@ -3300,8 +3300,8 @@ packages:
       eslint: ^8.57.0 || ^9.0.0 || ^10.0.0
       typescript: '>=4.8.4 <6.1.0'
 
-  typescript@5.9.3:
-    resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
+  typescript@6.0.3:
+    resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
     engines: {node: '>=14.17'}
     hasBin: true
 
@@ -4117,23 +4117,23 @@ snapshots:
 
   '@keyv/serialize@1.1.1': {}
 
-  '@orval/angular@8.33.0(typescript@5.9.3)':
+  '@orval/angular@8.33.0(typescript@6.0.3)':
     dependencies:
-      '@orval/core': 8.33.0(typescript@5.9.3)
+      '@orval/core': 8.33.0(typescript@6.0.3)
     transitivePeerDependencies:
       - '@faker-js/faker'
       - supports-color
       - typescript
 
-  '@orval/axios@8.33.0(typescript@5.9.3)':
+  '@orval/axios@8.33.0(typescript@6.0.3)':
     dependencies:
-      '@orval/core': 8.33.0(typescript@5.9.3)
+      '@orval/core': 8.33.0(typescript@6.0.3)
     transitivePeerDependencies:
       - '@faker-js/faker'
       - supports-color
       - typescript
 
-  '@orval/core@8.33.0(typescript@5.9.3)':
+  '@orval/core@8.33.0(typescript@6.0.3)':
     dependencies:
       '@scalar/openapi-types': 0.9.4
       acorn: 8.18.0
@@ -4146,73 +4146,73 @@ snapshots:
       jsesc: 3.1.0
       remeda: 2.41.0
       tinyglobby: 0.2.17
-      typedoc: 0.28.20(typescript@5.9.3)
+      typedoc: 0.28.20(typescript@6.0.3)
     transitivePeerDependencies:
       - supports-color
       - typescript
 
-  '@orval/effect@8.33.0(typescript@5.9.3)':
+  '@orval/effect@8.33.0(typescript@6.0.3)':
     dependencies:
-      '@orval/core': 8.33.0(typescript@5.9.3)
+      '@orval/core': 8.33.0(typescript@6.0.3)
       remeda: 2.41.0
     transitivePeerDependencies:
       - '@faker-js/faker'
       - supports-color
       - typescript
 
-  '@orval/fetch@8.33.0(typescript@5.9.3)':
+  '@orval/fetch@8.33.0(typescript@6.0.3)':
     dependencies:
-      '@orval/core': 8.33.0(typescript@5.9.3)
+      '@orval/core': 8.33.0(typescript@6.0.3)
     transitivePeerDependencies:
       - '@faker-js/faker'
       - supports-color
       - typescript
 
-  '@orval/hono@8.33.0(typescript@5.9.3)(zod@4.6.5)':
+  '@orval/hono@8.33.0(typescript@6.0.3)(zod@4.6.5)':
     dependencies:
-      '@orval/core': 8.33.0(typescript@5.9.3)
-      '@orval/zod': 8.33.0(typescript@5.9.3)(zod@4.6.5)
+      '@orval/core': 8.33.0(typescript@6.0.3)
+      '@orval/zod': 8.33.0(typescript@6.0.3)(zod@4.6.5)
       fs-extra: 11.4.0
     optionalDependencies:
-      typescript: 5.9.3
+      typescript: 6.0.3
     transitivePeerDependencies:
       - '@faker-js/faker'
       - supports-color
       - zod
 
-  '@orval/mcp@8.33.0(typescript@5.9.3)(zod@4.6.5)':
+  '@orval/mcp@8.33.0(typescript@6.0.3)(zod@4.6.5)':
     dependencies:
-      '@orval/core': 8.33.0(typescript@5.9.3)
-      '@orval/fetch': 8.33.0(typescript@5.9.3)
-      '@orval/zod': 8.33.0(typescript@5.9.3)(zod@4.6.5)
+      '@orval/core': 8.33.0(typescript@6.0.3)
+      '@orval/fetch': 8.33.0(typescript@6.0.3)
+      '@orval/zod': 8.33.0(typescript@6.0.3)(zod@4.6.5)
     transitivePeerDependencies:
       - '@faker-js/faker'
       - supports-color
       - typescript
       - zod
 
-  '@orval/mock@8.33.0(typescript@5.9.3)':
+  '@orval/mock@8.33.0(typescript@6.0.3)':
     dependencies:
-      '@orval/core': 8.33.0(typescript@5.9.3)
+      '@orval/core': 8.33.0(typescript@6.0.3)
       remeda: 2.41.0
     transitivePeerDependencies:
       - supports-color
       - typescript
 
-  '@orval/pinia-colada@8.33.0(typescript@5.9.3)':
+  '@orval/pinia-colada@8.33.0(typescript@6.0.3)':
     dependencies:
-      '@orval/axios': 8.33.0(typescript@5.9.3)
-      '@orval/core': 8.33.0(typescript@5.9.3)
-      '@orval/fetch': 8.33.0(typescript@5.9.3)
+      '@orval/axios': 8.33.0(typescript@6.0.3)
+      '@orval/core': 8.33.0(typescript@6.0.3)
+      '@orval/fetch': 8.33.0(typescript@6.0.3)
     transitivePeerDependencies:
       - '@faker-js/faker'
       - supports-color
       - typescript
 
-  '@orval/query@8.33.0(@tanstack/react-query@5.103.1(react@19.3.0))(typescript@5.9.3)':
+  '@orval/query@8.33.0(@tanstack/react-query@5.103.1(react@19.3.0))(typescript@6.0.3)':
     dependencies:
-      '@orval/core': 8.33.0(typescript@5.9.3)
-      '@orval/fetch': 8.33.0(typescript@5.9.3)
+      '@orval/core': 8.33.0(typescript@6.0.3)
+      '@orval/fetch': 8.33.0(typescript@6.0.3)
       remeda: 2.41.0
     optionalDependencies:
       '@tanstack/react-query': 5.103.1(react@19.3.0)
@@ -4221,26 +4221,26 @@ snapshots:
       - supports-color
       - typescript
 
-  '@orval/solid-start@8.33.0(typescript@5.9.3)':
+  '@orval/solid-start@8.33.0(typescript@6.0.3)':
     dependencies:
-      '@orval/core': 8.33.0(typescript@5.9.3)
+      '@orval/core': 8.33.0(typescript@6.0.3)
     transitivePeerDependencies:
       - '@faker-js/faker'
       - supports-color
       - typescript
 
-  '@orval/swr@8.33.0(typescript@5.9.3)':
+  '@orval/swr@8.33.0(typescript@6.0.3)':
     dependencies:
-      '@orval/core': 8.33.0(typescript@5.9.3)
-      '@orval/fetch': 8.33.0(typescript@5.9.3)
+      '@orval/core': 8.33.0(typescript@6.0.3)
+      '@orval/fetch': 8.33.0(typescript@6.0.3)
     transitivePeerDependencies:
       - '@faker-js/faker'
       - supports-color
       - typescript
 
-  '@orval/zod@8.33.0(typescript@5.9.3)(zod@4.6.5)':
+  '@orval/zod@8.33.0(typescript@6.0.3)(zod@4.6.5)':
     dependencies:
-      '@orval/core': 8.33.0(typescript@5.9.3)
+      '@orval/core': 8.33.0(typescript@6.0.3)
       jsesc: 3.1.0
       remeda: 2.41.0
     optionalDependencies:
@@ -5102,40 +5102,40 @@ snapshots:
 
   '@types/unist@3.0.3': {}
 
-  '@typescript-eslint/eslint-plugin@8.70.0(@typescript-eslint/parser@8.70.0(eslint@10.10.0(jiti@2.7.0))(typescript@5.9.3))(eslint@10.10.0(jiti@2.7.0))(typescript@5.9.3)':
+  '@typescript-eslint/eslint-plugin@8.70.0(@typescript-eslint/parser@8.70.0(eslint@10.10.0(jiti@2.7.0))(typescript@6.0.3))(eslint@10.10.0(jiti@2.7.0))(typescript@6.0.3)':
     dependencies:
       '@eslint-community/regexpp': 4.12.2
-      '@typescript-eslint/parser': 8.70.0(eslint@10.10.0(jiti@2.7.0))(typescript@5.9.3)
+      '@typescript-eslint/parser': 8.70.0(eslint@10.10.0(jiti@2.7.0))(typescript@6.0.3)
       '@typescript-eslint/scope-manager': 8.70.0
-      '@typescript-eslint/type-utils': 8.70.0(eslint@10.10.0(jiti@2.7.0))(typescript@5.9.3)
-      '@typescript-eslint/utils': 8.70.0(eslint@10.10.0(jiti@2.7.0))(typescript@5.9.3)
+      '@typescript-eslint/type-utils': 8.70.0(eslint@10.10.0(jiti@2.7.0))(typescript@6.0.3)
+      '@typescript-eslint/utils': 8.70.0(eslint@10.10.0(jiti@2.7.0))(typescript@6.0.3)
       '@typescript-eslint/visitor-keys': 8.70.0
       eslint: 10.10.0(jiti@2.7.0)
       ignore: 7.0.6
       natural-compare: 1.4.0
-      ts-api-utils: 2.5.0(typescript@5.9.3)
-      typescript: 5.9.3
+      ts-api-utils: 2.5.0(typescript@6.0.3)
+      typescript: 6.0.3
     transitivePeerDependencies:
       - supports-color
 
-  '@typescript-eslint/parser@8.70.0(eslint@10.10.0(jiti@2.7.0))(typescript@5.9.3)':
+  '@typescript-eslint/parser@8.70.0(eslint@10.10.0(jiti@2.7.0))(typescript@6.0.3)':
     dependencies:
       '@typescript-eslint/scope-manager': 8.70.0
       '@typescript-eslint/types': 8.70.0
-      '@typescript-eslint/typescript-estree': 8.70.0(typescript@5.9.3)
+      '@typescript-eslint/typescript-estree': 8.70.0(typescript@6.0.3)
       '@typescript-eslint/visitor-keys': 8.70.0
       debug: 4.4.3
       eslint: 10.10.0(jiti@2.7.0)
-      typescript: 5.9.3
+      typescript: 6.0.3
     transitivePeerDependencies:
       - supports-color
 
-  '@typescript-eslint/project-service@8.70.0(typescript@5.9.3)':
+  '@typescript-eslint/project-service@8.70.0(typescript@6.0.3)':
     dependencies:
-      '@typescript-eslint/tsconfig-utils': 8.70.0(typescript@5.9.3)
+      '@typescript-eslint/tsconfig-utils': 8.70.0(typescript@6.0.3)
       '@typescript-eslint/types': 8.70.0
       debug: 4.4.3
-      typescript: 5.9.3
+      typescript: 6.0.3
     transitivePeerDependencies:
       - supports-color
 
@@ -5144,47 +5144,47 @@ snapshots:
       '@typescript-eslint/types': 8.70.0
       '@typescript-eslint/visitor-keys': 8.70.0
 
-  '@typescript-eslint/tsconfig-utils@8.70.0(typescript@5.9.3)':
+  '@typescript-eslint/tsconfig-utils@8.70.0(typescript@6.0.3)':
     dependencies:
-      typescript: 5.9.3
+      typescript: 6.0.3
 
-  '@typescript-eslint/type-utils@8.70.0(eslint@10.10.0(jiti@2.7.0))(typescript@5.9.3)':
+  '@typescript-eslint/type-utils@8.70.0(eslint@10.10.0(jiti@2.7.0))(typescript@6.0.3)':
     dependencies:
       '@typescript-eslint/types': 8.70.0
-      '@typescript-eslint/typescript-estree': 8.70.0(typescript@5.9.3)
-      '@typescript-eslint/utils': 8.70.0(eslint@10.10.0(jiti@2.7.0))(typescript@5.9.3)
+      '@typescript-eslint/typescript-estree': 8.70.0(typescript@6.0.3)
+      '@typescript-eslint/utils': 8.70.0(eslint@10.10.0(jiti@2.7.0))(typescript@6.0.3)
       debug: 4.4.3
       eslint: 10.10.0(jiti@2.7.0)
-      ts-api-utils: 2.5.0(typescript@5.9.3)
-      typescript: 5.9.3
+      ts-api-utils: 2.5.0(typescript@6.0.3)
+      typescript: 6.0.3
     transitivePeerDependencies:
       - supports-color
 
   '@typescript-eslint/types@8.70.0': {}
 
-  '@typescript-eslint/typescript-estree@8.70.0(typescript@5.9.3)':
+  '@typescript-eslint/typescript-estree@8.70.0(typescript@6.0.3)':
     dependencies:
-      '@typescript-eslint/project-service': 8.70.0(typescript@5.9.3)
-      '@typescript-eslint/tsconfig-utils': 8.70.0(typescript@5.9.3)
+      '@typescript-eslint/project-service': 8.70.0(typescript@6.0.3)
+      '@typescript-eslint/tsconfig-utils': 8.70.0(typescript@6.0.3)
       '@typescript-eslint/types': 8.70.0
       '@typescript-eslint/visitor-keys': 8.70.0
       debug: 4.4.3
       minimatch: 10.2.6
       semver: 7.8.5
       tinyglobby: 0.2.17
-      ts-api-utils: 2.5.0(typescript@5.9.3)
-      typescript: 5.9.3
+      ts-api-utils: 2.5.0(typescript@6.0.3)
+      typescript: 6.0.3
     transitivePeerDependencies:
       - supports-color
 
-  '@typescript-eslint/utils@8.70.0(eslint@10.10.0(jiti@2.7.0))(typescript@5.9.3)':
+  '@typescript-eslint/utils@8.70.0(eslint@10.10.0(jiti@2.7.0))(typescript@6.0.3)':
     dependencies:
       '@eslint-community/eslint-utils': 4.10.1(eslint@10.10.0(jiti@2.7.0))
       '@typescript-eslint/scope-manager': 8.70.0
       '@typescript-eslint/types': 8.70.0
-      '@typescript-eslint/typescript-estree': 8.70.0(typescript@5.9.3)
+      '@typescript-eslint/typescript-estree': 8.70.0(typescript@6.0.3)
       eslint: 10.10.0(jiti@2.7.0)
-      typescript: 5.9.3
+      typescript: 6.0.3
     transitivePeerDependencies:
       - supports-color
 
@@ -5785,7 +5785,7 @@ snapshots:
     dependencies:
       '@babel/runtime': 7.29.7
 
-  i18next-cli@1.74.0(@types/node@26.6.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@5.9.3):
+  i18next-cli@1.74.0(@types/node@26.6.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@6.0.3):
     dependencies:
       '@croct/json5-parser': 0.2.2
       '@swc/core': 1.16.1
@@ -5793,7 +5793,7 @@ snapshots:
       commander: 15.0.0
       execa: 10.0.1
       glob: 13.0.6
-      i18next: 26.4.0(typescript@5.9.3)
+      i18next: 26.4.0(typescript@6.0.3)
       i18next-resources-for-ts: 2.1.0
       inquirer: 14.1.0(@types/node@26.6.1)
       jiti: 2.7.0
@@ -5801,7 +5801,7 @@ snapshots:
       magic-string: 1.4.1
       minimatch: 10.2.6
       ora: 9.4.1
-      react-i18next: 17.0.12(i18next@26.4.0(typescript@5.9.3))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@5.9.3)
+      react-i18next: 17.0.12(i18next@26.4.0(typescript@6.0.3))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@6.0.3)
       yaml: 2.9.0
     transitivePeerDependencies:
       - '@swc/helpers'
@@ -5820,13 +5820,13 @@ snapshots:
     transitivePeerDependencies:
       - '@swc/helpers'
 
-  i18next@26.4.0(typescript@5.9.3):
+  i18next@26.4.0(typescript@6.0.3):
     optionalDependencies:
-      typescript: 5.9.3
+      typescript: 6.0.3
 
-  i18next@26.4.2(typescript@5.9.3):
+  i18next@26.4.2(typescript@6.0.3):
     optionalDependencies:
-      typescript: 5.9.3
+      typescript: 6.0.3
 
   iconv-lite@0.7.3:
     dependencies:
@@ -6341,22 +6341,22 @@ snapshots:
       stdin-discarder: 0.3.2
       string-width: 8.2.2
 
-  orval@8.33.0(@tanstack/react-query@5.103.1(react@19.3.0))(prettier@3.9.6)(typescript@5.9.3)(zod@4.6.5):
+  orval@8.33.0(@tanstack/react-query@5.103.1(react@19.3.0))(prettier@3.9.6)(typescript@6.0.3)(zod@4.6.5):
     dependencies:
       '@commander-js/extra-typings': 15.0.0(commander@15.0.0)
-      '@orval/angular': 8.33.0(typescript@5.9.3)
-      '@orval/axios': 8.33.0(typescript@5.9.3)
-      '@orval/core': 8.33.0(typescript@5.9.3)
-      '@orval/effect': 8.33.0(typescript@5.9.3)
-      '@orval/fetch': 8.33.0(typescript@5.9.3)
-      '@orval/hono': 8.33.0(typescript@5.9.3)(zod@4.6.5)
-      '@orval/mcp': 8.33.0(typescript@5.9.3)(zod@4.6.5)
-      '@orval/mock': 8.33.0(typescript@5.9.3)
-      '@orval/pinia-colada': 8.33.0(typescript@5.9.3)
-      '@orval/query': 8.33.0(@tanstack/react-query@5.103.1(react@19.3.0))(typescript@5.9.3)
-      '@orval/solid-start': 8.33.0(typescript@5.9.3)
-      '@orval/swr': 8.33.0(typescript@5.9.3)
-      '@orval/zod': 8.33.0(typescript@5.9.3)(zod@4.6.5)
+      '@orval/angular': 8.33.0(typescript@6.0.3)
+      '@orval/axios': 8.33.0(typescript@6.0.3)
+      '@orval/core': 8.33.0(typescript@6.0.3)
+      '@orval/effect': 8.33.0(typescript@6.0.3)
+      '@orval/fetch': 8.33.0(typescript@6.0.3)
+      '@orval/hono': 8.33.0(typescript@6.0.3)(zod@4.6.5)
+      '@orval/mcp': 8.33.0(typescript@6.0.3)(zod@4.6.5)
+      '@orval/mock': 8.33.0(typescript@6.0.3)
+      '@orval/pinia-colada': 8.33.0(typescript@6.0.3)
+      '@orval/query': 8.33.0(@tanstack/react-query@5.103.1(react@19.3.0))(typescript@6.0.3)
+      '@orval/solid-start': 8.33.0(typescript@6.0.3)
+      '@orval/swr': 8.33.0(typescript@6.0.3)
+      '@orval/zod': 8.33.0(typescript@6.0.3)(zod@4.6.5)
       '@scalar/json-magic': 0.12.20
       '@scalar/openapi-parser': 0.28.14
       '@scalar/openapi-types': 0.9.4
@@ -6371,9 +6371,9 @@ snapshots:
       json5: 2.2.3
       remeda: 2.41.0
       string-argv: 0.3.2
-      typedoc: 0.28.20(typescript@5.9.3)
-      typedoc-plugin-coverage: 4.0.3(typedoc@0.28.20(typescript@5.9.3))
-      typedoc-plugin-markdown: 4.12.0(typedoc@0.28.20(typescript@5.9.3))
+      typedoc: 0.28.20(typescript@6.0.3)
+      typedoc-plugin-coverage: 4.0.3(typedoc@0.28.20(typescript@6.0.3))
+      typedoc-plugin-markdown: 4.12.0(typedoc@0.28.20(typescript@6.0.3))
     optionalDependencies:
       prettier: 3.9.6
     transitivePeerDependencies:
@@ -6482,27 +6482,27 @@ snapshots:
       react: 19.3.0
       scheduler: 0.28.0
 
-  react-i18next@17.0.12(i18next@26.4.0(typescript@5.9.3))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@5.9.3):
+  react-i18next@17.0.12(i18next@26.4.0(typescript@6.0.3))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@6.0.3):
     dependencies:
       '@babel/runtime': 7.29.7
       html-parse-stringify: 4.0.1
-      i18next: 26.4.0(typescript@5.9.3)
+      i18next: 26.4.0(typescript@6.0.3)
       react: 19.3.0
       use-sync-external-store: 1.6.0(react@19.3.0)
     optionalDependencies:
       react-dom: 19.3.0(react@19.3.0)
-      typescript: 5.9.3
+      typescript: 6.0.3
 
-  react-i18next@17.0.14(i18next@26.4.2(typescript@5.9.3))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@5.9.3):
+  react-i18next@17.0.14(i18next@26.4.2(typescript@6.0.3))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@6.0.3):
     dependencies:
       '@babel/runtime': 7.29.7
       html-parse-stringify: 4.0.1
-      i18next: 26.4.2(typescript@5.9.3)
+      i18next: 26.4.2(typescript@6.0.3)
       react: 19.3.0
       use-sync-external-store: 1.6.0(react@19.3.0)
     optionalDependencies:
       react-dom: 19.3.0(react@19.3.0)
-      typescript: 5.9.3
+      typescript: 6.0.3
 
   react-is@17.0.2: {}
 
@@ -6725,9 +6725,9 @@ snapshots:
 
   trough@2.2.0: {}
 
-  ts-api-utils@2.5.0(typescript@5.9.3):
+  ts-api-utils@2.5.0(typescript@6.0.3):
     dependencies:
-      typescript: 5.9.3
+      typescript: 6.0.3
 
   tslib@2.3.0: {}
 
@@ -6746,35 +6746,35 @@ snapshots:
     dependencies:
       prelude-ls: 1.2.1
 
-  typedoc-plugin-coverage@4.0.3(typedoc@0.28.20(typescript@5.9.3)):
+  typedoc-plugin-coverage@4.0.3(typedoc@0.28.20(typescript@6.0.3)):
     dependencies:
-      typedoc: 0.28.20(typescript@5.9.3)
+      typedoc: 0.28.20(typescript@6.0.3)
 
-  typedoc-plugin-markdown@4.12.0(typedoc@0.28.20(typescript@5.9.3)):
+  typedoc-plugin-markdown@4.12.0(typedoc@0.28.20(typescript@6.0.3)):
     dependencies:
-      typedoc: 0.28.20(typescript@5.9.3)
+      typedoc: 0.28.20(typescript@6.0.3)
 
-  typedoc@0.28.20(typescript@5.9.3):
+  typedoc@0.28.20(typescript@6.0.3):
     dependencies:
       '@gerrit0/mini-shiki': 3.23.0
       lunr: 2.3.9
       markdown-it: 14.3.0
       minimatch: 10.2.6
-      typescript: 5.9.3
+      typescript: 6.0.3
       yaml: 2.9.0
 
-  typescript-eslint@8.70.0(eslint@10.10.0(jiti@2.7.0))(typescript@5.9.3):
+  typescript-eslint@8.70.0(eslint@10.10.0(jiti@2.7.0))(typescript@6.0.3):
     dependencies:
-      '@typescript-eslint/eslint-plugin': 8.70.0(@typescript-eslint/parser@8.70.0(eslint@10.10.0(jiti@2.7.0))(typescript@5.9.3))(eslint@10.10.0(jiti@2.7.0))(typescript@5.9.3)
-      '@typescript-eslint/parser': 8.70.0(eslint@10.10.0(jiti@2.7.0))(typescript@5.9.3)
-      '@typescript-eslint/typescript-estree': 8.70.0(typescript@5.9.3)
-      '@typescript-eslint/utils': 8.70.0(eslint@10.10.0(jiti@2.7.0))(typescript@5.9.3)
+      '@typescript-eslint/eslint-plugin': 8.70.0(@typescript-eslint/parser@8.70.0(eslint@10.10.0(jiti@2.7.0))(typescript@6.0.3))(eslint@10.10.0(jiti@2.7.0))(typescript@6.0.3)
+      '@typescript-eslint/parser': 8.70.0(eslint@10.10.0(jiti@2.7.0))(typescript@6.0.3)
+      '@typescript-eslint/typescript-estree': 8.70.0(typescript@6.0.3)
+      '@typescript-eslint/utils': 8.70.0(eslint@10.10.0(jiti@2.7.0))(typescript@6.0.3)
       eslint: 10.10.0(jiti@2.7.0)
-      typescript: 5.9.3
+      typescript: 6.0.3
     transitivePeerDependencies:
       - supports-color
 
-  typescript@5.9.3: {}
+  typescript@6.0.3: {}
 
   uc.micro@2.1.0: {}
 
