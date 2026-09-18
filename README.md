@@ -52,8 +52,8 @@ Production deployment, releases, cluster installation (RKE2 "full" or k3s "light
 
 ## Internationalization and regions
 
-- Consoles ship in English (default) and Simplified Chinese; the error catalog's source language is English (`apps/api/app/core/messages.py`) with a hand-maintained zh-CN translation. See [docs/reference/i18n.md](docs/reference/i18n.md).
-- Defaults are region-neutral: email is the login handle, USD / UTC billing, Stripe Checkout, official k3s / rke2 installer hosts, generic invoice tax IDs. Mainland-China integrations (phone-required registration, Aliyun CAPTCHA / SMS / real-name verification, WeChat Pay / Alipay, PRC invoice tax IDs, the rancher-mirror installer source) are opt-in under `compliance_profile=cn` and the matching provider settings — nothing is hard-wired to a region.
+- Consoles ship in English and Simplified Chinese; the language follows the saved choice, then the browser language, and falls back to English; the error catalog's source language is English (`apps/api/app/core/messages.py`) with a hand-maintained zh-CN translation. See [docs/reference/i18n.md](docs/reference/i18n.md).
+- Defaults are region-neutral: email is the login handle, USD / UTC billing, Stripe Checkout, official k3s / rke2 installer hosts, generic invoice tax IDs. Two independent axes: `compliance_profile=cn` switches the jurisdictional rules (phone-required registration, the PRC identity-verification form, PRC invoice tax IDs, zh-CN as the default server-rendered locale), while providers and channels (Aliyun CAPTCHA / SMS / real-name verification, WeChat Pay / Alipay, the rancher-mirror installer source) are separate settings that any deployment may select — nothing is hard-wired to a region.
 
 ## Gates
 

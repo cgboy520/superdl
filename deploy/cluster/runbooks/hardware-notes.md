@@ -10,13 +10,20 @@ page records what differs per platform so nobody re-discovers it on a live node.
   kernel refuses to bind it to `vfio-pci`. `core/gpu_models.PASSTHROUGH_CAPABLE_FAMILIES` therefore
   excludes GB10 / GB200, the admin console greys out the `kata` pool for these nodes
   (`NodeOut.supports_passthrough=false`) and the API answers 409 to a forced switch.
-- **Unified CPU/GPU memory.** `nvidia-smi` reports the shared pool as GPU memory. HAMi's
-  `preConfiguredDeviceMemory` is deliberately **not** set in `values/hami.yaml`: the plugin reads the
-  reported size, and pinning a smaller number would only hide memory from tenants. Size disk-backed
-  swap and instance limits with the shared pool in mind.
+- **GB10 (DGX Spark): unified memory that NVML does not report.** `nvidia-smi` shows the memory
+  as N/A and the HAMi device plugin (pinned 2.9.0) skips such a device unless
+  `devicePlugin.preConfiguredDeviceMemory` is set; `values/hami.yaml` carries it as a commented
+  example. Set it per deployment to the share of the unified pool tenants may use (the running
+  Spark cluster uses 86016 MiB of 121 GiB, leaving the host and Ceph their reservation) and keep
+  `node_specs.vram_gb` in step; a value larger than the pool only hides the host's memory
+  pressure. `rollout restart ds/hami-device-plugin` after changing it.
+- **GB200: HBM reported normally.** NVML reports the GPU memory, HAMi auto-detects it; no
+  pre-configured size is needed.
 - **aarch64 kernel command line.** node-join writes the IOMMU argument to GRUB only on x86_64
-  (`intel_iommu=on` / `amd_iommu=on` by CPU vendor); on aarch64 the SMMU is enabled by firmware and
-  the script only checks that `/sys/kernel/iommu_groups` is populated after boot.
+  (`intel_iommu=on` / `amd_iommu=on` by CPU vendor); on aarch64 nothing is written, the SMMU must
+  be enabled by firmware, and the script only checks that `/sys/kernel/iommu_groups` is populated
+  after boot. When it stays empty after the reboot node-join retries with a reboot and asks the
+  operator to check the firmware SMMU setting; there is no software fallback.
 
 ## x86_64 servers
 
