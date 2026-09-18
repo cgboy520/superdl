@@ -6,7 +6,7 @@ body:
     id: version
     attributes:
       label: Version / commit
-      description: Release tag or commit SHA of the API and consoles (admin → About, or `git rev-parse HEAD`).
+      description: Release tag or commit SHA of the API and consoles (`git rev-parse HEAD` of the deployed revision, or the image tag).
     validations:
       required: true
   - type: dropdown

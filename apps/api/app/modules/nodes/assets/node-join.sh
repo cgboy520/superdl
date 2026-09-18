@@ -290,15 +290,20 @@ step_sysctl() {
 
 step_iommu() {
   if is_cpu_pool; then echo "-- cpu pool: no GPU, skipping IOMMU"; return 0; fi
-  if [[ "$(uname -m)" == "x86_64" && ! -f "$ETC_DIR"/default/grub.d/99-superdl.cfg ]]; then
-    local args
+  if [[ "$(uname -m)" == "x86_64" ]]; then
+    local args line cfg
     args="$(iommu_kernel_args)" || return 1
-    mkdir -p "$ETC_DIR"/default/grub.d
+    cfg="$ETC_DIR"/default/grub.d/99-superdl.cfg
     # shellcheck disable=SC2016
-    echo "GRUB_CMDLINE_LINUX_DEFAULT=\"\$GRUB_CMDLINE_LINUX_DEFAULT $args\"" \
-      > "$ETC_DIR"/default/grub.d/99-superdl.cfg
-    echo "-- GRUB: $args"
-    update-grub
+    line="GRUB_CMDLINE_LINUX_DEFAULT=\"\$GRUB_CMDLINE_LINUX_DEFAULT $args\""
+    if [[ -f "$cfg" && "$(cat "$cfg")" == "$line" ]]; then
+      echo "-- GRUB: $args (already configured)"
+    else
+      mkdir -p "$ETC_DIR"/default/grub.d
+      echo "$line" > "$cfg"
+      echo "-- GRUB: $args"
+      update-grub
+    fi
   fi
   if [[ -z "$(ls -A "$IOMMU_GROUPS_DIR" 2>/dev/null)" ]]; then
     NEED_REBOOT=1

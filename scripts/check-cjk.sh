@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Guards against Chinese text outside the places where it belongs.
 #   default        frontend source (apps/admin/src, apps/web/src) — the mode `pnpm copy-check` runs
-#   --scope repo   every tracked source / doc file. Permanently exempt paths are listed in
+#   --scope repo   every tracked file that decodes as UTF-8 text. Permanently exempt paths are listed in
 #                  REPO_CJK_EXEMPT, a line ending in `cjk-ok` is skipped (regulatory names, quoted
 #                  headings), and REPO_CJK_ALLOW is the shrinking list of path prefixes still waiting
 #                  for translation: each translation PR removes its prefixes, nothing is ever added.
@@ -52,13 +52,14 @@ CJK_ALLOW="$(printf '%s\n' "${REPO_CJK_ALLOW[@]}")" \
 python3 - <<'PY'
 import fnmatch, os, re, subprocess, sys
 
-EXTS = (".md", ".py", ".ts", ".tsx", ".sh", ".bats", ".yml", ".yaml", ".j2", ".conf", ".toml", ".html", ".css")
 # Han ideographs (U+4E00-U+9FFF), CJK symbols and punctuation (U+3000-U+303F) and fullwidth forms (U+FF00-U+FFEF).
 CJK = re.compile(r"[一-鿿　-〿＀-￯]")  # cjk-ok
 exempt = [p for p in os.environ["CJK_EXEMPT"].splitlines() if p]
 allow = [p for p in os.environ["CJK_ALLOW"].splitlines() if p]
 
-files = [f for f in subprocess.check_output(["git", "ls-files"], text=True).split("\n") if f.endswith(EXTS)]
+# Every tracked file; binaries and non-UTF-8 files drop out at decode time (Dockerfiles, SQL, env
+# examples and lock files are scanned like any other text).
+files = [f for f in subprocess.check_output(["git", "ls-files"], text=True).split("\n") if f]
 hits: list[str] = []
 waiting: set[str] = set()
 for path in files:
@@ -66,7 +67,11 @@ for path in files:
         continue
     allowed = any(path.startswith(prefix) for prefix in allow)
     try:
-        lines = open(path, encoding="utf-8").read().splitlines()
+        with open(path, "rb") as fh:
+            raw = fh.read()
+        if b"\0" in raw:
+            continue
+        lines = raw.decode("utf-8").splitlines()
     except (UnicodeDecodeError, OSError):
         continue
     for no, line in enumerate(lines, 1):
