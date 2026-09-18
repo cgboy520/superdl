@@ -761,7 +761,7 @@ function Overview() {
           <Card title={t("overview.poolOccupancy")} style={{ marginTop: 16 }}>
             {ovQ.isError ? (
               <DataErrorAlert title={t("overview.loadFailed")} description={null} onRetry={() => void ovQ.refetch()} />
-            ) : ov && ov.pools.length ? (
+            ) : ov?.pools.length ? (
               <PoolOccupancy pools={ov.pools} />
             ) : (
               <EmptyState scene="list" compact description={t("overview.poolEmpty")} />

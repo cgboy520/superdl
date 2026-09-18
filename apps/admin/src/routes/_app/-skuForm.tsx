@@ -116,7 +116,6 @@ export function buildSkuPayload(
     return { kind: "create", data: { tier, ...gpuFields, ...base } };
   }
   const { gpu_model, ...gpuUpdatable } = gpuFields;
-  void gpu_model;
   return { kind: "update", skuId: editing.id, data: { ...base, ...gpuUpdatable, reason: values.reason ?? "" } };
 }
 

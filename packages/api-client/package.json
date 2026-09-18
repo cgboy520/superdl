@@ -16,7 +16,7 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "orval": "^8.24.0",
+    "orval": "^8.33.0",
     "typescript": "~5.9.3",
     "vitest": "^4.1.11"
   }
